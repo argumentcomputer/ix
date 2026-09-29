@@ -1,6 +1,7 @@
-use multi_stark::p3_field::integers::QuotientMap;
+use ::multi_stark::p3_field::integers::QuotientMap;
 
 pub mod aggregate;
+mod multi_stark;
 pub mod protocol;
 pub mod toplevel;
 

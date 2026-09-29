@@ -146,61 +146,61 @@ impl PrimAddrs {
     };
     PrimAddrs {
       nat: h(
-        "1dfffde48c4ef6653b95ecc5474dee8b99461008d26d80ca384f1e59e927714d",
+        "35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc",
       ),
       nat_zero: h(
-        "50e5d69d806bc1c616cace4230c982a0ee5b350b3efe3b1a15801df77fc00c8c",
+        "eeb2e6268ff6d0e6b2e9764d9940b81bb64b9f8f4b1358d294ff9817e6941a46",
       ),
       nat_succ: h(
-        "8c09ca644b10decad158d37006e81cdc1b84761312260546449aa02e343b2b0c",
+        "42d6ed31536f0958176f1dc973383808ac8583223746ebca78dbe389b65321a6",
       ),
       nat_add: h(
-        "f9ac92a11388a7cdca229a8024208554feb32d6c0a3af74a7bc12c28b949543c",
+        "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
       ),
       nat_pred: h(
-        "fce916cf3c6dd01ad8c6d38641bca7b3eeac5bc93b3529ad7812768b3407d64e",
+        "76afa254a8bbf2ac4327d7b94be0c63bd708836b5f7384ce990388adb0a1d3cf",
       ),
       nat_sub: h(
-        "df38352ffa1d6e292349259f33eb678024bb646b358638a02da1995ed4abeb09",
+        "9de2d2c60e7d421a2fdfb8706e91e0e6d8576c3bd46ec00405c65875cb9b5a26",
       ),
       nat_mul: h(
-        "f38d4f7baaa021e3b555312145d9ffd3ddc5eacb7bfd5b86a7b0eafdfcf416aa",
+        "566a3c2249bc2076543d9bc561a841f6fd35ffb5bdbbc5c991a9c64feccbd5d4",
       ),
       nat_pow: h(
-        "68f61ef55b63cd23ad8ed185b7eec3dc754e61cc58056087a97e819d0e95e6fd",
+        "5ba43ac3e5d29fe5ce81f18a18178a2705c37ee674b9b6ee50e9466a86593b15",
       ),
       nat_gcd: h(
-        "ad47f2bbe891b825c48a278f9a0d72997b78baac79891ca6651988b7c9b47f03",
+        "76007dcf8b285cdbd6f779012290fe2e6afd221ce8821082a7e2ef81e8d815cf",
       ),
       nat_mod: h(
-        "f6eb742996c60f1068c2d437afdd8b3609040d64eec5e15f07a11dc11d070d7b",
+        "e6ffe78713d4b974a82d0187538f1a0cf5c4b260f0fd99264fab263b1af847f9",
       ),
       nat_div: h(
-        "23173649a58ea5095d1c51a21c7ad2cf8e8dccef342698e07e241668ff7ad3e7",
+        "c075ed976f1702f364fb0bb34aa8bbc166adace573f2ce914b43dc4f4aab6219",
       ),
       nat_bitwise: h(
-        "85a6fefff63e96a963ef8406d394ab39992323a0ff4530e134a94d46e3a7ba4d",
+        "aaf7df6a1f024f580fde236cba16235f071d1b796cc279faf43178d22b5ae36d",
       ),
       nat_beq: h(
-        "72c6d4a3b653798850a9ed57018b87ceee0e34195c0902858fd41f6f0e9962ae",
+        "ffd3f02a19fda649aa5608ed818db382e160231b76d5b09176d7dd1a8d5b1ec5",
       ),
       nat_ble: h(
-        "c37f2e811f44d59c07094947146ffcbd3aec5ec7002ac3c48ebdebcd83d4688e",
+        "68a3643ec69816aec107302ddbfa054cebcd3ec173cd5f7e6d883638631afe65",
       ),
       nat_land: h(
-        "8f475cc72da2ac6ce2a9282b6b5df4ccf7bc3cee0649d22766bebd32d1806f3b",
+        "c61fad46a102dbff5922312d4fbe6e704ec3c62c6c6f64b3d481b78c77cf315d",
       ),
       nat_lor: h(
-        "8f3c1c432c598e4240d36f8945942174675c5c91e03f6b8ab018e8b052622c63",
+        "cb7dccc020a530fed7c622b100ee52c1078b5018159ba4682f817e3776789ee8",
       ),
       nat_xor: h(
-        "800a8a2d6f91bd1a91d313d1e19ef69f37dedd07f7de4f929780be855a03fd1f",
+        "d8a6b05a1a4e5cadc69c53792e8e130314745e76e32bb30a9ce0272fa079e8a6",
       ),
       nat_shift_left: h(
-        "5473592e707943ec072a2ee53c433da2c77aa45ed634da54b24374d19eb90cd2",
+        "5c15f98e2bd9c257bcdfac62b0043a2e3e2bbdff8b210f104b5c3739e862ac0c",
       ),
       nat_shift_right: h(
-        "1b591149158d896937eebfd53232b5ae8a4bcdb25a6811c96bd94114a9f8bed5",
+        "3f92725324b09fa75c6fcd16da863671428ff33b7db667eb760e1cd503a2bcad",
       ),
       bool_type: h(
         "e6eba3c8b4d19f6a1076b39fa89aec61dccbb960f83d9a62e6acf35a69c9a0a4",
@@ -212,63 +212,63 @@ impl PrimAddrs {
         "dda12bcb330727f6dfb816bc9752aabd0520e6515b79fc8a5a9e713866f4c63e",
       ),
       string: h(
-        "4288f92ed1d51f4935e5d2775f33ec585d6fe5ec63dadf0ea698554478fd9fad",
+        "9d6ae43429ec02a9338bbcd0db0ac193d75ebd46f884bfcbd2c42bf7faea150d",
       ),
       string_mk: h(
-        "d54db71fee55311aafeead74768e6e952262c29abd24b9319fa6859481dd44b8",
+        "272ea5ce6bab8958165c7f56d71ffe2a5b175ed58110126dfa96e1f8a0c99ad2",
       ),
       char_type: h(
-        "d55429725a19c1837b34624fb35784b91bc8b0e2d79f98b3c296317fb6c5c789",
+        "4c59bc4eac82d31ebed59bb206909dbded65b92fd56de2518fcdadb0a42c11a0",
       ),
       char_mk: h(
-        "7b443f2f10fd4b2fb88b59e90f1a04b46552f73ea2e8f26d77290b7ae63dd531",
+        "82e09601422cae23b0b6df9922abb9f0b014e20047a00a7ab96871dd7da3e5ac",
       ),
       char_of_nat: h(
-        "29563da271c23f66b27d05f924fb0612272dcfba6b1083b348733e00f9b36b2a",
+        "caf51b039d71cfce7063e106064f9435f5337bbc42567c8c78b5f66c7f087920",
       ),
       // NOTE: `String.ofList` and `String.mk` share the canonical content-hash
       // because both compile to the same Ixon form (a one-constructor `String`
       // built from `List Char`). The Lean-side deprecation of `String.mk` in
       // favor of `String.ofList` is orthogonal to the compiled representation.
       string_of_list: h(
-        "d54db71fee55311aafeead74768e6e952262c29abd24b9319fa6859481dd44b8",
+        "272ea5ce6bab8958165c7f56d71ffe2a5b175ed58110126dfa96e1f8a0c99ad2",
       ),
       string_to_byte_array: h(
-        "ad700c0806e673e74adcafc28ca659d30a616633a4a36420324fc29eae69eb9c",
+        "79862acfbc2e37b7b6122143f0a6a51114c34fa483ff14146483de18835d4209",
       ),
       byte_array_empty: h(
-        "d838bb6bb651533081ac2495a25d690c54f8e345fff41efbd5585eb468705308",
+        "bf58e6cb3aa0f746850629041635cd30c0ad66262b6617660f2290241f08b08b",
       ),
       list: h(
-        "ae8d736dd3fcc89dc3f9d66aa54bed4ad8607fb9d4843f4c8736591dd0c9e000",
+        "4fb6b41c30532e6ab4acb4eefe01da1314ee7f2129af8989fd63f7ec277aaf01",
       ),
       list_nil: h(
-        "3c0149c3432969ee5d9354c8d2d89ceec4a79711f8dec8710879a12a12b72c42",
+        "3994bc51e3686f30a1d483d69d0a835a7b484d892393c084f87a5849de54f302",
       ),
       list_cons: h(
-        "d1e0802c38bcda14061e2012f12e73c2a24a671137984f8ef76744ea04d188c4",
+        "b3a7d80249fd823100ee03626232d1412a0e8335275d5df53b92943887b650f7",
       ),
-      eq: h("b20ea17ba3d9723f0bd06457d9cf48ce26ca36619b946980627de923873e9595"),
+      eq: h("c37d6290e00fb865fb5db7bce18fd69e6d1674ad573724b85466ea9f7578a207"),
       eq_refl: h(
-        "e308035bdf280c927556824d6a9f9236a1487651f0059a7df3bda85b331f67e6",
+        "d494dc601386ba8e8f0b711fe62a2d60ab60c6488c8cf6ce97796ebc3ad5fefb",
       ),
       quot_type: h(
-        "e775aa31759a9d4acdbc2b8519ff73f57552bb0cba4daf1659bba00f6a931b4b",
+        "45040b3126855169dad919a970a9c72cee5875658aedb3bd1f89fcdf8c88edfa",
       ),
       quot_ctor: h(
-        "0a4cc7c930dd6726bbd7f1bc3fea685df5f666549d651d3e766fe5746ec459a4",
+        "811600dfa59f3612cb03c0f0475af152399defff9226c6e19fd648041a6899a9",
       ),
       quot_lift: h(
-        "560276f95e0d93e27b8c05097995bf82876332c2e7e31033e0a194819e4e8d30",
+        "86b365e75bb4230f04c6e4f3a7ca6988adf574616d79a3d7477ad65cac102110",
       ),
       quot_ind: h(
-        "02f358808fd4328d74850582d3608d2d31e49519b4c6c66b3605fbe6f42d3c5d",
+        "1745491c0d651de0bea589d5fffbc9bc4d7fbe897c1d805b1f7f59ca9696a6ef",
       ),
       reduce_bool: h(
-        "d4d775ceff37ab7a402416118f1d2ce5b9e7f2143d0c3dc8fe5431571df3260c",
+        "bacc4c814a4572ddfd969a1857adfe18239eb6bd8b1627ee79744a6a9b23b030",
       ),
       reduce_nat: h(
-        "2075bda5457b299b27246770c8416273686bbf627aa6a01ac413a27e583eb95d",
+        "b6327d9a1bbb461a447f0c971e622dd9a35132bd7de75bf69e20794d7a0e8595",
       ),
       // Synthetic kernel-only marker. This is intentionally not the compiled
       // Lean content hash: `eagerReduce` canonicalizes to the same content
@@ -278,161 +278,161 @@ impl PrimAddrs {
         "ff00000000000000000000000000000000000000000000000000000000000003",
       ),
       system_platform_num_bits: h(
-        "5060a22df86307dd8bbe656e13868f3a1618e7a0d880b8cbb00759cffd31800d",
+        "6f620654d341990a301387b80ef75b1e0b6130ddf19164025b6dc37bf3c3dc18",
       ),
       system_platform_get_num_bits: h(
-        "80f975ded9d6ab7095e9db2ed1cfa6f5c35eafe5c56990e2c1321b02c5664e6c",
+        "00c266834f9039931b4be2fac5584cd176a0ae7ee4cb4064ddb5e04dd12b6cbb",
       ),
       subtype_val: h(
-        "7e4e9b33b696a7d3fce1745dfb5fbeeb938fc8882a82bee15723e0d253e59158",
+        "ea65f517457fae9b705299da08b0d3c8cf9a476f16470cca5cae5ea7bd238230",
       ),
       nat_dec_le: h(
-        "2999801598c1da48f562d4836064f635c045d0521452b5e74a12bf99d2e316ec",
+        "f0f15ed079822f06e82e36664bf61e797e5b1e7b0b4155152762c513274bfee1",
       ),
       nat_dec_eq: h(
-        "1bac041756ed22d73bbcac849a94f246ee2696999faf351940468d962970ca2a",
+        "8a5d5eee414a2fa5956b74e8323a20508d774ed1b5603f55e774ad896bd3e6e7",
       ),
       nat_dec_lt: h(
-        "12f386f486913b11b5473cb2538330d51f25aeec7f2d7d6b96904329c78b6967",
+        "7c4977196e95be2a759fc9c6d1533db8da49592f06419b155d888333c8dd8931",
       ),
       decidable_rec: h(
-        "6af73809a6128adcb9c5d7e73a30c28d489dba4d905717055ac2edd755ffa713",
+        "16cfddda9c274660f391b10eefe066275afffae1ccd49c6daf43afb8a80aea85",
       ),
       decidable_is_true: h(
-        "7b3f6a6eebf32a9d5a54305e693dce60511afeb1fa11bc8844a5c21bbfd3214c",
+        "363d071182be414e1a58599b83f5e19f9b873723054f4287ba69705aafef27da",
       ),
       decidable_is_false: h(
-        "ab1470196419f71d06feed9ccb8c1d03674528ec03012b095badc169d48d03d0",
+        "8cc0e1360c1b29108dab3d6172e7fce8a9aa9640daa4bbe99ba1305d9623624b",
       ),
       nat_le_of_ble_eq_true: h(
-        "23bea3bbf3a8d0a8d0033cf7e56af0c4aee01582d5a758c0df5615929ca6204d",
+        "ad25bfd207bae832c73d5ce614bead22ef9862e110f8d17a5064ffb7603eee3d",
       ),
       nat_not_le_of_not_ble_eq_true: h(
-        "be50b6053df0b07438a4ac2eefd70a11708b0cbb0fc90564bafee6e165615de8",
+        "e3658f50dc5123efff213588dee3d4c6063f5edb18950850ac0490c937819009",
       ),
       nat_eq_of_beq_eq_true: h(
-        "c489329197b59a040d1e5e4d5de6a770478d1ea4f9750176026dd2bf8593bf22",
+        "9c91e79de732226ba2e73cbdd330851baec40668eb40c6f32aa2f8dac5a04b51",
       ),
       nat_ne_of_beq_eq_false: h(
-        "0eb5b987f12124be0575a477cc0a535516a24b0ae5ceddbee2d472765aed299c",
+        "a07db532747e65ee77a7ba015069bdbaf1f709ce0d60b83c94f40d0e5e57595a",
       ),
       fin: h(
-        "a7e9a8b84a2fe96cc204acc93d7ed1366d9d0574aaf0f09633d2b09a94c9e860",
+        "3d79797bc572d8f33eb7cff5aa13f8dc73bcf21026bf05d03888c9aa0369dcef",
       ),
       bool_no_confusion: h(
-        "99e7eaac2b27ffae4adc4902f8965520ee696c662438f10169cf36c8ad4cc4e5",
+        "de7b523cc4470e15328a01d935988861dadf9bd012240400464dea8c79a9dfe2",
       ),
       // Int primitives — canonical content-hashes from
       // `lake test -- rust-kernel-build-primitives`.
       int: h(
-        "fb2bd9d8fb7c3cc603bc021dcdbc5c6aa3ae80688b7d2e85ab18fa336ccc04ba",
+        "c60c95e3cdbf4ed010d999b3277f4e1fd3695e8c30260876102905d7b36241a2",
       ),
       int_of_nat: h(
-        "48786b7f7adc632ae35059f3fd181df32d9e5cc7360c4fd02c3e8b1181a1539b",
+        "0a99f49cc73ab9f42783092e7120613225670bab89b9d63533d1adefc876182f",
       ),
       int_neg_succ: h(
-        "cfc934fd6d53a5b23b6a3b30d02165fdaa574e3b5eb13926bb166e6486fc0e50",
+        "f7130d5864e1ba77b0f6a7338f92159c35bd5147e0febcf1ebed456e513538cc",
       ),
       int_add: h(
-        "1e60bd377a746cb7bd7ae541d7dfb237097d883d28ec7aadd732c0674e0db964",
+        "9db0177e4e8b6a0e7323069509c2457de9598a7e38e72ffe19ad34617256e10d",
       ),
       int_sub: h(
-        "0d74ba85f9749a0c25aa6a2b70348e57e709831fb7cc05229fecd7d66adf184d",
+        "85621387ef3027028d835287f3cc1461ef041def1fd91e28e87f669cc04a5eea",
       ),
       int_mul: h(
-        "c5bef6be6c3fdc520454c11e9950eb2f1a6c92f41a646b5ca168ff198f13c55a",
+        "b05459623d23299d3a849eb7fb75badbc1547a1cd9ee560c15067fbd985c6cea",
       ),
       int_neg: h(
-        "bc61c10fcca6415223ed97bcae21cb99d4836d077b0786a2fc5c5905f8b04ba2",
+        "6701d765ff10bfa3a6c347df15194e0db862ee25b54f25a59f7cf21951a3997e",
       ),
       int_emod: h(
-        "d435a15e6f222f786b6130fa764c7fbe98746f798e97a627a6237a17e74f7227",
+        "e29cfa7921bb57f4782b021c977596a4fae04e94f7b07955fe2814fc48de90e7",
       ),
       int_ediv: h(
-        "3e13fc1a077eb692af40acbed4a6adae255c0cbbba9a3c1f0de29573b197cb0e",
+        "9c952d45a3bd43161529fcfb5e276beab0cf4fd64a01ba9bc2c7cda376cb8f54",
       ),
       int_bmod: h(
-        "9970f402c870e8a3146fbf4b76f949aa64b206de9b0157b469fde357b715f19c",
+        "0b1564dea6ffcd204ebcd1aa69d29ee6f3acccd87bd146ff674556ac9cc8ccb3",
       ),
       int_bdiv: h(
-        "867f8e9dfb752265ba4742368b6afa546ae4e240fc5ac69b4a4e86d85a6e46f6",
+        "6d35dc43660f6c509a13f2824c027ed99ab070a08f058ff0a5f46a759250797d",
       ),
       int_nat_abs: h(
-        "21d4dacc0f406b31e044fbf4d8987a332dd8b4244f7d9e62b086501474825544",
+        "261ae54edb66e900784a64350bc01e8b3fe1332a47caeab58e0361dffc7ea008",
       ),
       int_pow: h(
-        "878599e9f5bbccb942232ff93b62c63db4ebdf62b9f9237900a37049f422ad86",
+        "87266415982bbdec50c61dec5b73cc0ccd5c997445997a9724a1cc5c2e39d3a4",
       ),
       int_dec_eq: h(
-        "7a06496d07b59710348a5f657851a4eea1f59492a5b7de3f51abbc84f9bc1d17",
+        "fc8c44cc970cfc183ccd10a2d1cdeb2c849307760e91f5cd29a2b02f706d83da",
       ),
       int_dec_le: h(
-        "14eccee1deba05e9443bd169d00ed634170e3246b37921199edbbad3f67db5b4",
+        "fcdf1860ad4cd672239392e60e7b49e024af0475739c3a40195a914eaec42c04",
       ),
       int_dec_lt: h(
-        "ad32c05d7e3c5ddf4e4c85cf8f60d83e0fba55e2676bf8a1e608db54b167c9fa",
+        "1d54806ab1ebc791e1db96e88d0407cef3523927d60ba669689b92a8eeb36445",
       ),
       punit: h(
         "2dfc16af01b82b3b91c2ff704409d76236a83f956c0c6e6659a64fe21d76695b",
       ),
       pprod: h(
-        "7eac420873e8f1ea8fe66831a6c6f69d88693bed6aeb30bfba82069af60ebea8",
+        "90ca5bcf995d68d7dfcb3c7cfe466986dc4beaa402b262ca395b3e53c36f6cad",
       ),
       pprod_mk: h(
-        "f3993d287c47b81c9e0902aa91d227650f6f4e55b3a1c63a87f283b4ed9e418e",
+        "ce30fc0f4135e679cf3b16d0d667bd9df4e7a69dbb8177a29e5c75b48c4cec10",
       ),
       // Names previously matched via `is_const_named` in whnf.rs.
       // Canonical content-hashes from `lake test -- rust-kernel-build-primitives`.
       nat_rec: h(
-        "89d6690b0808b1da49e015a4f21df3fc3f00fb96ac502f5f097ce452e573704c",
+        "d1053449c217e5cc6fc29b2cb59cfd5ead385d392d00ada2221d4000dda7def3",
       ),
       nat_cases_on: h(
-        "b2f8855b5e76a480493cd6cc922977e60723b4bec665dd7e9b73ca2b215df576",
+        "c575abb02efd158091356aa793c809c0570f8a24a8a777f206a95b9ce0b88855",
       ),
       bit_vec: h(
-        "c7192ac507d67c3c3e1eb90633858ae7b7cbc80e3988312618c7ec09b483b04a",
+        "7f0f5feda1828072123f242a46a40549e85934f7395e4f93f65dda4e4809f325",
       ),
       bit_vec_to_nat: h(
-        "acd9f0a3f7e8c53a46b91759358366fa028240b0b6cc09205dde34a33544678d",
+        "c110d614b441c6cca69ecd7c1c2c76f3bc21fd40c4001e6a1a7d1cf481e23cdd",
       ),
       bit_vec_of_nat: h(
-        "5721ca2acf2c6994771509332fb185f783f442aefce417d2863e2d148edcdb8a",
+        "29b9f24086b1b1f88211358866139fdb7dcdfc97b5f6c77fc495bf8c77639982",
       ),
       bit_vec_ult: h(
-        "8d57c7c6aee1ba510d3208ddc4b08a83b44319f6af8ee09b3940d0ddedce1eb6",
+        "9301d850bde246940b7b3e81e786f7f12bae8e5cea6b3f4040060b3a7f59557c",
       ),
       decidable_decide: h(
-        "d1107c99ad9ebcb5028d9aea0da521ed5c12e71ea2ecdeaf637bb4a14d4a7e44",
+        "20e8906280b4dcd74a7a78e06d580e6f00eebba9fc40789262e95cacb6f0d699",
       ),
       lt_lt: h(
-        "c69df4833ecdce76bdb0d23159e1fac652d88919768c312c6611dc060da16f04",
+        "4802b183f4d6dcccacba57721824a7bb67daeb2725da17239271c135952caa61",
       ),
       of_nat_of_nat: h(
-        "c68bfa47519ff72b1d053b86e6e3b7356286eb2252616cc5b2acbed59ef1f5f0",
+        "a99dedbb1676866aed829c3d4bba86a37e98ec62a35834389c32937e4e2b1a4a",
       ),
       unit: h(
         "9232498667f765f437dedaac828e555f6cc67a20e6db28f614fdf3c262710feb",
       ),
       punit_size_of_1: h(
-        "84fe3d0f08f0651a6f0936a9a0f18e4f0dace169ac4233bf1adad05d6e078a25",
+        "e85bf516c76cadd8ce1fdab3cc94ed685e47be3c7a8b52f53fe2b3502e6f70c7",
       ),
       size_of_size_of: h(
-        "78f38887f6bbe54339ecec6b3c5f66856de7baa530378d2d9065bfe2daf4b801",
+        "402b71bcccf0be0315f1bda6bdbb20e559e31704617d3eaccb05d5c5fe03b53d",
       ),
       string_back: h(
-        "3f92a46a1451fd66215aae9cf789ce38a2c73fdd55909d454f61259634d90b6b",
+        "32104b03348d11acb2437fda24966dc58cc8c8bcca96582614e644d319a42c62",
       ),
       string_legacy_back: h(
-        "a2a310133d17371af67cd91d279aaf735fa8cb810c39aaa824a443c652e3df66",
+        "37ef5fee765dc2e5c7425c180cd42007db7d29ae0d5c091789f462f2805b0e09",
       ),
       string_utf8_byte_size: h(
-        "b1f6f04bde3d81f9102ea6b7d2c9f4236d72b17e01125523c5d5e261afc71105",
+        "52b0226ea14c94b1f9334c9957f5589399a86bcdae111f2847c9b0c2fb0a2261",
       ),
       string_append: h(
-        "b6ec2d443f3ee61de45ad859b8cc41a896d8fba49bc29883fc34c427dbdf71f8",
+        "132f1175cc3cac5a3e3d74e8797f9ba67f2e467b8004a3f28bb5dfd16a3647b1",
       ),
       string_dec_eq: h(
-        "d616327d4fc219bd7114bad46cd0866befe2551518b5bf2e10b5cac93381fb77",
+        "19134fdc188e8377d0173857e15d3b5065ed76da981397107e5c404db3f3b718",
       ),
     }
   }

@@ -887,7 +887,14 @@ pub fn decompile_expr(
           arena_lookup(arena, current_idx, &cache.current_const)?
         {
           for kvm in mdata {
-            mdata_layers.push(decompile_kvmap(kvm, stt)?);
+            let data = decompile_kvmap(kvm, stt)?;
+            if crate::semantic_contract::has_metadata(&data) {
+              return Err(DecompileError::BadConstantFormat {
+                msg: "semantic contracts cannot come from optional metadata"
+                  .into(),
+              });
+            }
+            mdata_layers.push(data);
           }
           current_idx = *child;
         }
@@ -897,6 +904,20 @@ pub fn decompile_expr(
         // Push CacheResult frame
         stack.push(Frame::CacheResult(Arc::as_ptr(&e), idx));
 
+        if matches!(
+          node,
+          ExprMetaData::CallSite { .. } | ExprMetaData::EtaCallSite { .. }
+        ) && crate::semantic_contract::contains_ixon(&e, &cache.sharing)
+          .map_err(|msg| DecompileError::BadConstantFormat { msg })?
+        {
+          return Err(DecompileError::BadConstantFormat {
+            msg: "optional call-site replay would rewrite a semantic contract"
+              .into(),
+          });
+        }
+        if let Some(contract) = crate::semantic_contract::of_ixon(&e) {
+          mdata_layers.push(contract.metadata());
+        }
         match (node, e.as_ref()) {
           // Leaf nodes: Var, Sort, Nat, Str
           (_, Expr::Var(v)) => {
@@ -1410,14 +1431,22 @@ pub fn decompile_expr(
           ) => {
             // See Lam arm above: binder address must resolve.
             let let_name = decompile_name(name_addr, stt)?;
-            stack.push(Frame::BuildLet(let_name, *non_dep, mdata_layers));
+            stack.push(Frame::BuildLet(
+              let_name,
+              non_dep.non_dep,
+              mdata_layers,
+            ));
             stack.push(Frame::Decompile(body.clone(), children[2]));
             stack.push(Frame::Decompile(val.clone(), children[1]));
             stack.push(Frame::Decompile(ty.clone(), children[0]));
           },
 
           (_, Expr::Let(non_dep, ty, val, body)) => {
-            stack.push(Frame::BuildLet(Name::anon(), *non_dep, mdata_layers));
+            stack.push(Frame::BuildLet(
+              Name::anon(),
+              non_dep.non_dep,
+              mdata_layers,
+            ));
             stack.push(Frame::Decompile(body.clone(), u64::MAX));
             stack.push(Frame::Decompile(val.clone(), u64::MAX));
             stack.push(Frame::Decompile(ty.clone(), u64::MAX));

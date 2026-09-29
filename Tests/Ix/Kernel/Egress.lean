@@ -42,7 +42,7 @@ def isMalformed : Search α → Bool
 def variedBlock : Ixon.Constant :=
   ⟨.muts #[
     .defn ⟨.opaq, .part, 2, .sort 2,
-      .letE true (.sort 0) (.ref 1 #[2, 1]) (.var 0)⟩,
+      .letE (.lean true) (.sort 0) (.ref 1 #[2, 1]) (.var 0)⟩,
     .indc ⟨true, 3, 4, 5, .sort 0, #[⟨true, 6, 0, 7, 8, .recur 1 #[]⟩]⟩,
     .recr ⟨true, true, 9, 10, 11, 12, 13, .sort 1,
       #[⟨14, .share 1⟩, ⟨15, .var 0⟩]⟩],
@@ -65,8 +65,11 @@ def variants : Ingress.Constants :=
   roundtrips [(address 1, ⟨.quot ⟨kind, 2, .sort 0⟩, #[], #[], #[.var 1]⟩)]
 
 #guard exprRoundtrips (ctx) (.var 18446744073709551615)
-#guard exprRoundtrips (ctx) (.letE false (.sort 0) (.var 0) (.var 1))
-#guard exprRoundtrips (ctx) (.letE true (.sort 0) (.var 0) (.var 1))
+#guard exprRoundtrips (ctx) (.letE (.lean false) (.sort 0) (.var 0) (.var 1))
+#guard exprRoundtrips (ctx) (.letE (.lean true) (.sort 0) (.var 0) (.var 1))
+-- Ixon v3 let contracts are erased by the reading and retained by the layout.
+#guard exprRoundtrips (ctx) (.letE (.borrow true .linear) (.sort 0) (.var 0) (.var 1))
+#guard exprRoundtrips (ctx) (.letE { nonDep := false, binder := .affine } (.sort 0) (.var 0) (.var 1))
 #guard exprRoundtrips (ctx sharedIdentity) (.share 2)
 #guard exprRoundtrips (ctx aliasIdentity) (.prj 0 18446744073709551615 (.var 0))
 #guard exprRoundtrips literalContext (.nat 0)

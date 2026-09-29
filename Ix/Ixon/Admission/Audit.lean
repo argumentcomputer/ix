@@ -43,10 +43,18 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.WorkAdmission] Ix.Ixon.Ad
 kernel and codec primitives only; the set-difference check below enforces
 that adding the adapter introduces no further extern or unsafe primitive. -/
 /-- info: runtime closure of [Ix.Ixon.Admission.preflight,
-Ix.Ixon.Admission.decodeRecords, Ix.Ixon.Admission.checkBytes]: 1250 compiled functions;
-inherited externs 56, implemented_by 0, unsafe 2, csimp 0 -/
+Ix.Ixon.Admission.decodeRecords, Ix.Ixon.Admission.checkBytes]: 1273 compiled functions;
+inherited externs 58, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Admission.Audit.operations #[`Init, `Std]
+
+run_cmd do
+  let env ← Lean.getEnv
+  let externs (roots : Array Lean.Name) := (Ix.Kernel.Audit.runtimeClosure env roots).externs
+  let components := externs Ix.Ixon.Audit.operations ++ externs Ix.Kernel.Audit.ingressOperations
+  let added := (externs Ix.Ixon.Admission.Audit.operations).filter (!components.contains ·)
+  unless added.isEmpty do
+    throwError "byte admission adds externs beyond the codec and ingress closures: {added}"
 
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.consume_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.preflight_ok_iff [propext, Classical.choice, Quot.sound]

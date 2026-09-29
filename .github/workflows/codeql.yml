@@ -8,9 +8,8 @@
 # The gates are job-level `if`s rather than workflow-level `on.paths`
 # (or a dynamically-built matrix) deliberately: a required check that
 # never triggers sticks at "Expected", while a skipped job satisfies it.
-# When the rust analysis does run, it runs on a warp host (CodeQL scales
-# with cores; default setup pins it to a stock 4-core runner) with the
-# dependency extraction cached between runs.
+# Rust analysis runs only when Rust inputs change, with dependency extraction
+# cached between runs.
 name: CodeQL
 
 on:
@@ -34,10 +33,10 @@ jobs:
     steps:
       # paths-filter diffs the PR via the API on pull_request events, but
       # needs a checkout to resolve the pushed commit range on push events.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -60,14 +59,14 @@ jobs:
       security-events: write
       packages: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: github/codeql-action/init@v4
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: actions
           build-mode: none
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: "/language:actions"
 
@@ -75,20 +74,21 @@ jobs:
     name: Analyze (rust)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: warp-ubuntu-latest-x64-8x
+    runs-on: runs-on=${{ github.run_id }}-analyze-rust-${{ github.run_attempt }}/cpu=32/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     permissions:
       contents: read
       security-events: write
       packages: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: github/codeql-action/init@v4
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: rust
           build-mode: none
           dependency-caching: true
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: "/language:rust"

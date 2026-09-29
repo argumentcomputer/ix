@@ -1,8 +1,8 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.Core
-public import Ix.IxVM.ByteStream
-public import Ix.IxVM.Blake3
+public import Ix.Aiur.Library.Core
+public import Ix.Aiur.Library.ByteStream
+public import Ix.Aiur.Library.Blake3
 public import Ix.IxVM.RBTreeMap
 public import Ix.IxVM.Ixon
 public import Ix.IxVM.IxonSerialize
@@ -57,7 +57,7 @@ def entrypoints := ⟦
       _ =>
         let n_minus_1 = n - 1;
         let (idx, len) = io_get_info(0, [n_minus_1]);
-        let bytes = #read_byte_stream(0, idx, len);
+        let bytes = read_finite_byte_stream(0, idx, len);
         let (const, rest) = get_constant(bytes);
         assert_eq!(load(rest), ListNode.Nil,
           "ixon deserialization left trailing bytes");
@@ -179,7 +179,8 @@ def entrypoints := ⟦
   }
 ⟧
 
-open IxVM (core byteStream blake3 rbTreeMap ixon ixonSerialize ixonDeserialize)
+open Aiur.Library (core byteStream blake3)
+open IxVM (rbTreeMap ixon ixonSerialize ixonDeserialize)
 
 /-- The full IxVM kernel toplevel: shared modules (core, ixon, blake3, …)
     merged with the kernel-specific `kernelTypes`, `convert`, `ingress`,

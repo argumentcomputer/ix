@@ -665,6 +665,15 @@ def toplevel := ⟦
     r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
   }
 
+  -- An assertion runs before the statements after it, even when those
+  -- begin with an inlined call whose splice hoists `let`s: the spliced
+  -- lets stay in the continuation instead of wrapping the assertion.
+  pub fn assert_before_inline(x: G) -> G {
+    assert_eq!(x, 1, "assertion first");
+    let (p1, p2) = @inl_pair(x);                  -- (2, 2)
+    p1 + p2
+  }
+
   ---------------------------------------------------------------------------
   -- Unconstrained big-uint div/mod: lists of [U8; 8] limbs in, the same
   -- list datatype at [G; 8] out. The datatype must declare Cons FIRST
@@ -794,6 +803,28 @@ def toplevel := ⟦
   pub fn calls_grouped(t: G, a: G, b: G) -> G {
     grouped_pick(t, a, b) + grouped_sum_range(a)
   }
+
+  pub fn match_scrut_call(x: G) -> G {
+    match id(x) {
+      0 => 7,
+      n => n + n,
+    }
+  }
+
+  -- Reused products and stores change polynomial columns and lookup counts.
+  -- Exercise both branches and a continuation with independent local values.
+  pub fn cse_constraints(tag: G, x: G) -> (G, G, G, G) {
+    let p = store(x);
+    let q = store(x);
+    assert_eq!(ptr_val(p), ptr_val(q));
+    let a = load(p);
+    let b = load(q);
+    let y = match tag {
+      0 => (x * x) + (x * x),
+      _ => (x + 1) * (x + 1),
+    };
+    (y, a + b, (x * x) + (x * x), eq_zero(x) + eq_zero(x))
+  }
 ⟧
 
 /-- The PROVING suite: every case runs the full prove+verify pipeline
@@ -806,6 +837,11 @@ def toplevel := ⟦
     differ only in which path is active, only a minimal covering set of
     proofs is kept — the other paths run in `aiur-cross`. -/
 def aiurTestCases : List AiurTestCase := [
+    .prove `cse_constraints #[0, 7] #[98, 14, 98, 0] (label := "CSE explicit branch"),
+    .prove `cse_constraints #[1, 7] #[64, 14, 98, 0] (label := "CSE default branch"),
+    .prove `cse_constraints #[0, 0] #[0, 0, 0, 2] (label := "CSE zero input"),
+    .prove `match_scrut_call #[0] #[7] (label := "match scrutinee explicit"),
+    .prove `match_scrut_call #[3] #[6] (label := "match scrutinee variable fallback"),
     -- Match: 1 explicit case + default, prove both paths (each side gates
     -- the other's constraints)
     .prove `match_mul #[0] #[0] (label := "match_mul(0)"),
@@ -915,6 +951,7 @@ def aiurTestCases : List AiurTestCase := [
 
     -- Inlined function calls (`@fn(args)`): all scenarios in one proof
     .prove `inline_test #[] #[3182],
+    .prove `assert_before_inline #[1] #[4],
 
     { AiurTestCase.prove `hoisting_regression #[9] #[2, 11, 13, 7, 3, 4, 5, 8] with
       expectedIOBuffer := {
@@ -947,6 +984,27 @@ def groupedTestCases : List AiurTestCase := [
   .prove `calls_grouped #[1, 3, 9] #[15]
     (label := "calls_grouped(1,3,9) [grouped]"),
 ]
+
+/-- The compiled `assert_before_inline` keeps its assertion ahead of the
+inlined continuation: the `assertEq` op precedes every `call` op. -/
+def assertOrderChecks (compiled : Aiur.CompiledToplevel) : TestSeq :=
+  match compiled.getFuncIdx `assert_before_inline with
+  | none => test "assert_before_inline compiles" false
+  | some idx =>
+    let ops := compiled.bytecode.functions[idx]!.body.ops
+    let isAssert : Aiur.Bytecode.Op → Bool
+      | .assertEq .. => true
+      | _ => false
+    let isCall : Aiur.Bytecode.Op → Bool
+      | .call .. => true
+      | _ => false
+    let firstAssert := ops.findIdx? isAssert
+    let firstCall := ops.findIdx? isCall
+    let ordered : Bool := match firstAssert, firstCall with
+      | some a, some c => a < c
+      | some _, none => true
+      | _, _ => false
+    test "assertion precedes the inlined continuation's calls" ordered
 
 /-- Structural checks on the grouped partition: the grouped circuit exists,
 holds exactly its members, its layout follows the merge rule (max inputs,

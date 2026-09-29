@@ -50,7 +50,7 @@ impl LeanIxSubstring<LeanOwned> {
   /// Build a Ix.Substring.
   pub fn build(ss: &Substring) -> Self {
     let ctor = LeanIxSubstring::alloc(0);
-    ctor.set_obj(0, LeanString::new(ss.str.as_str()));
+    ctor.set_obj(0, LeanString::from_bytes(ss.str.as_bytes()));
     ctor.set_obj(1, LeanNat::from_nat(&ss.start_pos));
     ctor.set_obj(2, LeanNat::from_nat(&ss.stop_pos));
     ctor
@@ -176,7 +176,7 @@ impl<R: LeanRef> LeanIxSyntaxPreresolved<R> {
 pub fn build_string_array(strings: &[String]) -> LeanArray<LeanOwned> {
   let arr = LeanArray::alloc(strings.len());
   for (i, s) in strings.iter().enumerate() {
-    arr.set(i, LeanString::new(s.as_str()));
+    arr.set(i, LeanString::from_bytes(s.as_bytes()));
   }
   arr
 }
@@ -199,7 +199,7 @@ impl LeanIxSyntax<LeanOwned> {
       Syntax::Atom(info, val) => {
         let ctor = LeanIxSyntax::alloc(2);
         ctor.set_obj(0, LeanIxSourceInfo::build(info));
-        ctor.set_obj(1, LeanString::new(val.as_str()));
+        ctor.set_obj(1, LeanString::from_bytes(val.as_bytes()));
         ctor
       },
       // | ident (info : SourceInfo) (rawVal : Substring) (val : Name) (preresolved : Array SyntaxPreresolved) -- tag 3
@@ -283,7 +283,7 @@ impl LeanIxDataValue<LeanOwned> {
     match dv {
       DataValue::OfString(s) => {
         let ctor = LeanIxDataValue::alloc(0);
-        ctor.set_obj(0, LeanString::new(s.as_str()));
+        ctor.set_obj(0, LeanString::from_bytes(s.as_bytes()));
         ctor
       },
       DataValue::OfBool(b) => {

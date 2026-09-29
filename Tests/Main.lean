@@ -1,9 +1,11 @@
 import Tests.Aiur
+import Tests.Aiur.RustSyntax
 import Tests.Ix.Ixon
 import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Exploits
+import Tests.Ix.IxVM.DefinitionDependencies
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
 import Tests.Ix.AssumptionTree
@@ -33,6 +35,10 @@ import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
+import Tests.Ix.SourceContract
+import Tests.Ix.SourceContract.ImportCheck
+import Tests.Ix.SourceContract.SyntaxCheck
+import Tests.Ix.SourceContract.Driver
 import Tests.Ix.BenchMeasures
 import Tests.Ix.Tc.Unit
 import Tests.Ix.Tc.Substrate
@@ -54,6 +60,7 @@ import Tests.FFI
 import Tests.Keccak
 import Tests.MultiStark
 import Tests.Aggr
+import Tests.AggrProof
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
@@ -94,6 +101,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("canon", [Tests.CanonM.suite]),
   ("keccak", Tests.Keccak.suite),
   ("sharing", Tests.Sharing.suite),
+  ("source-contract", Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
   ("bench-measures", Tests.Ix.BenchMeasures.suite),
@@ -161,6 +169,7 @@ execute at module initialization for unrelated invocations. All are
 seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
 each). -/
 def primaryRunners : List (String × IO UInt32) := [
+  ("aiur-rust-syntax", AiurTests.RustSyntax.run),
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
@@ -174,16 +183,17 @@ def primaryRunners : List (String × IO UInt32) := [
       | .ok genv => do
         let r2 ← LSpec.lspecEachIO groupedTestCases fun tc => pure (genv.runTestCase tc)
         let r3 ← LSpec.lspecIO
-          (.ofList [("aiur-grouping", [groupingStructureChecks genv.compiled])]) []
+          (.ofList [("aiur-grouping", [groupingStructureChecks genv.compiled]),
+            ("aiur-inline-order", [assertOrderChecks env.compiled])]) []
         return if r1 == 0 && r2 == 0 && r3 == 0 then 0 else 1),
   ("aiur-hashes", do
     IO.println "aiur-hashes"
     let .ok blake3Env := AiurTestEnv.build (do
-        let t ← IxVM.core.merge IxVM.byteStream; t.merge IxVM.blake3)
+        let t ← Aiur.Library.core.merge Aiur.Library.byteStream; t.merge Aiur.Library.blake3)
       | IO.eprintln "Blake3 setup failed"; return 1
     let r1 ← LSpec.lspecEachIO blake3TestCases fun tc => pure (blake3Env.runTestCase tc)
     let .ok sha256Env := AiurTestEnv.build (do
-        let t ← IxVM.core.merge IxVM.byteStream; t.merge IxVM.sha256)
+        let t ← Aiur.Library.core.merge Aiur.Library.byteStream; t.merge IxVM.sha256)
       | IO.eprintln "SHA256 setup failed"; return 1
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
@@ -197,7 +207,6 @@ def primaryRunners : List (String × IO UInt32) := [
   -- factorial-prove → recursive-verify → reject-tampering pipeline.
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
-  ("aggregate-first", Tests.MultiStark.joinSmokeSuite),
   -- Converged heterogeneous aggregation circuit: all ten `ix_aggr` shapes,
   -- driver/cache semantics, and one negative case per broken binding.
   ("ix-aggr", Tests.Aggr.convergedSuite),
@@ -207,6 +216,13 @@ def primaryRunners : List (String × IO UInt32) := [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("aggregate-proof", Tests.Aggr.proofRoundTrip),
+  ("kernel-dependencies", do
+    match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
+    | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1
+    | .ok vm =>
+      let tests ← Tests.Ix.IxVM.DefinitionDependencies.tests vm.compiled
+      LSpec.lspecIO (.ofList [("kernel-dependencies", [tests])]) []),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .
@@ -227,22 +243,23 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups, AiurTestEnv.build IxVM.ixVMFull with
     | .error e, _ | _, .error e =>
       IO.eprintln s!"IxVM env build failed: {e}"; return 1
-    | .ok v2Env, .ok v2FullEnv =>
+    | .ok vmEnv, .ok fullVmEnv =>
       -- Kernel-arena fixtures: the repo's NEGATIVE corpus (every
       -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
       -- through the kernel's subject-only `verify_const` debug
       -- entrypoint, which lives only in the FULL toplevel — the
       -- production one carries `verify_claim` alone.
-      let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env v2FullEnv.compiled
+      let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env fullVmEnv.compiled
       -- Adversarial Ixon: exploit attempts authored as raw Ixon
       -- constants, below the layer the arena's Lean fixtures can
       -- reach. Each case pins the kernel's verdict, which is REJECT
       -- except where accepting is the specified claim semantics.
-      let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env v2Env.compiled
+      let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env vmEnv.compiled
+      let dependencySeq ← Tests.Ix.IxVM.DefinitionDependencies.tests vmEnv.compiled
       let aiurSeq := (kernelChecks ++
           [envFull, envFrontier, checkAsm,
            revealFields, revealExpr, revealModes, revealCPrj, containsTc]).foldl
-        (init := .done) fun s tc => s ++ v2Env.runTestCase tc
+        (init := .done) fun s tc => s ++ vmEnv.runTestCase tc
       -- Codegen parity gate: the generated Rust kernel is emitted from
       -- the toplevel, so this runs the same witnesses through both
       -- engines and asserts they agree. It is only meaningful against a
@@ -251,9 +268,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       -- `kernelChecks` cases (`runParityCase` ignores the FFT pins), so
       -- the per-constant witness setup runs once, not twice.
       let paritySeq := kernelChecks.foldl (init := .done) fun s tc =>
-        s ++ runParityCase v2Env.compiled tc
+        s ++ runParityCase vmEnv.compiled tc
       let fullSeq := [kernelUnitTests, serdeTest].foldl (init := .done)
-        fun s tc => s ++ v2FullEnv.runTestCase tc
+        fun s tc => s ++ fullVmEnv.runTestCase tc
       -- Shard pipeline: witness built in Rust (thin-frontier claim,
       -- parallel closure walk) and run on the native kernel. Pinned FFT
       -- is the regression signal.
@@ -263,8 +280,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
         -- constants throws instead of skipping.
         | none => pure (LSpec.test "shard pipeline: SKIP (target absent)" true)
         | some (handle, ownedBlob) =>
-          let funIdx := v2Env.compiled.getFuncIdx `verify_claim |>.get!
-          match v2Env.compiled.bytecode.shardCheckWithEnv
+          let funIdx := vmEnv.compiled.getFuncIdx `verify_claim |>.get!
+          match vmEnv.compiled.bytecode.shardCheckWithEnv
                   funIdx handle ownedBlob false with
           | .error e =>
             pure (LSpec.test s!"shard pipeline execution: {e}" false)
@@ -273,13 +290,13 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             -- (`.round.toUInt64.toNat`): any cost shift must be an
             -- explicit, reviewed bump.
             let actual :=
-              (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
+              (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_999_296_124, got {actual}"
-              (actual = 6_999_296_124))
+              s!"Shard pipeline FFT matches: expected 7_189_745_580, got {actual}"
+              (actual = 7_189_745_580))
       LSpec.lspecIO
         (.ofList [("ixvm",
-          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
+          [fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) []),
   ("validate-aux", runCompileValidateAux env),
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see

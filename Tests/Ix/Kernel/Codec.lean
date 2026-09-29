@@ -96,15 +96,24 @@ def nonBooleanAxiom : ByteArray := Ixon.runPut do
   Ixon.putTag0 ⟨0⟩
   Ixon.putTag0 ⟨0⟩
 
--- Production decoding accepts these alternate spellings. Canonical decoding
--- rejects nonminimal integers, nonmaximal successor chains, ignored universe
--- tag sizes, and non-Boolean axiom flags rather than normalizing their bytes.
+-- Production decoding accepts these alternate universe spellings. Canonical
+-- decoding rejects nonmaximal successor chains and ignored universe tag sizes
+-- rather than normalizing their bytes.
 def alternateSpellings : List ByteArray := [
-  nonminimalSharingCount,
   recordUnivsPayload 1 ⟨#[1, 1, 0]⟩,
-  recordUnivsPayload 1 ⟨#[0x41, 0, 0]⟩,
-  recordUnivsPayload 1 ⟨#[0xE0, 0]⟩,
-  nonBooleanAxiom]
+  recordUnivsPayload 1 ⟨#[0x41, 0, 0]⟩]
+
+-- Ixon v3's production decoder itself rejects nonminimal integer tags and
+-- non-Boolean flags; the bounded and canonical decoders report its reason.
+def decoderRejectedSpellings : List (ByteArray × String) := [
+  (nonminimalSharingCount, "noncanonical Tag0 integer"),
+  (recordUnivsPayload 1 ⟨#[0xE0, 0]⟩, "noncanonical Tag2 integer"),
+  (nonBooleanAxiom, "expected Bool (0 or 1), got 2")]
+
+#guard decoderRejectedSpellings.all fun (bytes, reason) =>
+  (match Ixon.deConstantExact bytes with | .error e => e == reason | .ok _ => false) &&
+  (match Ixon.Bounded.deConstant 256 64 bytes with | .error e => e == reason | .ok _ => false) &&
+  (match Ixon.Canonical.deConstant 256 64 bytes with | .error e => e == reason | .ok _ => false)
 
 #guard alternateSpellings.all fun bytes =>
   (Ixon.Bounded.deConstant 256 64 bytes).isOk &&
@@ -182,11 +191,24 @@ def successorBomb : ByteArray := ⟨#[0x27, 255, 255, 255, 255, 255, 255, 255, 2
     (List.range bytes.size).all (fun n =>
       !(Ixon.Bounded.deUniv bytes.size value.nodeCount (bytes.extract 0 n)).isOk)
 
-#guard [Ixon.Uses.erased, .linear, .affine, .many].all fun uses =>
-  [Ixon.Owned.shared, .unique].all fun owned =>
-    exactExpr (.all uses owned (.sort 0)
-      (.lam uses (.var 0) (.letE true (.var 1) (.var 0) (.var 0))))
-#guard exactExpr (.letE false (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
+/-- All sixteen v3 binder contracts, four value contracts, and the four let
+flag spellings over a binder. -/
+def binderContracts : List Ixon.BinderContract :=
+  (List.range 16).filterMap fun bits => Ixon.BinderContract.ofBits? bits.toUInt8
+def valueContracts : List Ixon.ValueContract :=
+  (List.range 4).filterMap fun bits => Ixon.ValueContract.ofBits? bits.toUInt8
+def letContracts (binder : Ixon.BinderContract) : List Ixon.LetContract :=
+  (List.range 4).filterMap fun flags => Ixon.LetContract.ofFlags? flags.toUInt64 binder
+#guard binderContracts.length == 16 && valueContracts.length == 4 &&
+  (letContracts .many).length == 4
+
+-- Every v3 binder contract, forall result contract, and let flag spelling.
+#guard binderContracts.all fun binder =>
+  valueContracts.all fun result =>
+    letContracts binder |>.all fun letContract =>
+      exactExpr (.all binder result (.sort 0)
+        (.lam binder (.var 0) (.letE letContract (.var 1) (.var 0) (.var 0))))
+#guard exactExpr (.letE (.lean false) (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
 #guard [1, 7, 8, 31, 32, 128].all fun n =>
   exactExpr ((List.range n).foldl (fun e i => .app e (.var i.toUInt64)) (.ref 0 #[]))
 
@@ -260,11 +282,13 @@ def resourceConstant (value : Ixon.Constant) : Bool :=
 #guard wordBoundaries.all fun n =>
   [Ixon.Expr.var n, .sort n, .str n, .nat n, .share n,
     .ref n #[n], .recur n #[n], .prj n n (.var 0)].all resourceExpr
-#guard [Ixon.Uses.erased, .linear, .affine, .many].all fun uses =>
-  [Ixon.Owned.shared, .unique].all fun owned =>
-    resourceExpr (.all uses owned (.sort 0)
-      (.lam uses (.var 0) (.letE true (.var 1) (.var 0) (.var 0))))
-#guard resourceExpr (.letE false (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
+-- Every v3 binder contract, forall result contract, and let flag spelling.
+#guard binderContracts.all fun binder =>
+  valueContracts.all fun result =>
+    letContracts binder |>.all fun letContract =>
+      resourceExpr (.all binder result (.sort 0)
+        (.lam binder (.var 0) (.letE letContract (.var 1) (.var 0) (.var 0))))
+#guard resourceExpr (.letE (.lean false) (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
 #guard [0, 1, 7, 8, 31, 32, 128, 1024].all fun n =>
   let levels := Array.replicate n 0
   (Ixon.Expr.ref 0 levels).resourceSize == n + 1 &&
@@ -281,8 +305,10 @@ def compressedApp : Ixon.Expr :=
 
 #guard compressedApp.resourceSize > (Ixon.serExpr compressedApp).size
 #guard resourceExpr compressedApp
--- Nonminimal tag spellings remain covered by the production-reader theorem.
-#guard resourceRead Ixon.getExpr (fun e => e.resourceSize + 1) ⟨#[0x18, 0]⟩ (.var 0)
+-- Ixon v3's production reader rejects nonminimal tag spellings.
+#guard match Ixon.deExpr ⟨#[0x18, 0]⟩ with
+  | .error e => e == "noncanonical Tag4 integer"
+  | .ok _ => false
 
 def failsAt (reader : Ixon.GetM α) (bytes : ByteArray) (start finish : Nat) : Bool :=
   match reader { bytes, idx := start } with

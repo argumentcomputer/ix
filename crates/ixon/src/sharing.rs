@@ -32,166 +32,9 @@ pub struct SubtermInfo {
   pub children: Vec<blake3::Hash>,
 }
 
-/// Hash an expression node using Merkle-tree style hashing.
-/// Returns (hash, child_hashes, value_size) where value_size is the size of the
-/// serialized node value in a hash-consed store (not including the 32-byte key).
-fn hash_node(
-  expr: &Expr,
-  child_hashes: &FxHashMap<*const Expr, blake3::Hash>,
-  buf: &mut Vec<u8>,
-) -> (blake3::Hash, Vec<blake3::Hash>, usize) {
-  buf.clear();
-
-  let children = match expr {
-    Expr::Sort(univ_idx) => {
-      buf.push(Expr::FLAG_SORT);
-      buf.extend_from_slice(&univ_idx.to_le_bytes());
-      vec![]
-    },
-    Expr::Var(idx) => {
-      buf.push(Expr::FLAG_VAR);
-      buf.extend_from_slice(&idx.to_le_bytes());
-      vec![]
-    },
-    Expr::Ref(ref_idx, univ_indices) => {
-      buf.push(Expr::FLAG_REF);
-      buf.extend_from_slice(&ref_idx.to_le_bytes());
-      buf.extend_from_slice(&(univ_indices.len() as u64).to_le_bytes());
-      for idx in univ_indices {
-        buf.extend_from_slice(&idx.to_le_bytes());
-      }
-      vec![]
-    },
-    Expr::Rec(rec_idx, univ_indices) => {
-      buf.push(Expr::FLAG_REC);
-      buf.extend_from_slice(&rec_idx.to_le_bytes());
-      buf.extend_from_slice(&(univ_indices.len() as u64).to_le_bytes());
-      for idx in univ_indices {
-        buf.extend_from_slice(&idx.to_le_bytes());
-      }
-      vec![]
-    },
-    Expr::Prj(type_ref_idx, field_idx, val) => {
-      buf.push(Expr::FLAG_PRJ);
-      buf.extend_from_slice(&type_ref_idx.to_le_bytes());
-      buf.extend_from_slice(&field_idx.to_le_bytes());
-      let val_ptr = val.as_ref() as *const Expr;
-      let val_hash = child_hashes.get(&val_ptr).unwrap();
-      buf.extend_from_slice(val_hash.as_bytes());
-      vec![*val_hash]
-    },
-    Expr::Str(ref_idx) => {
-      buf.push(Expr::FLAG_STR);
-      buf.extend_from_slice(&ref_idx.to_le_bytes());
-      vec![]
-    },
-    Expr::Nat(ref_idx) => {
-      buf.push(Expr::FLAG_NAT);
-      buf.extend_from_slice(&ref_idx.to_le_bytes());
-      vec![]
-    },
-    Expr::App(fun, arg) => {
-      buf.push(Expr::FLAG_APP);
-      let fun_ptr = fun.as_ref() as *const Expr;
-      let arg_ptr = arg.as_ref() as *const Expr;
-      let fun_hash = child_hashes.get(&fun_ptr).unwrap();
-      let arg_hash = child_hashes.get(&arg_ptr).unwrap();
-      buf.extend_from_slice(fun_hash.as_bytes());
-      buf.extend_from_slice(arg_hash.as_bytes());
-      vec![*fun_hash, *arg_hash]
-    },
-    Expr::Lam(uses, ty, body) => {
-      buf.push(Expr::FLAG_LAM);
-      buf.push(uses.to_bits());
-      let ty_ptr = ty.as_ref() as *const Expr;
-      let body_ptr = body.as_ref() as *const Expr;
-      let ty_hash = child_hashes.get(&ty_ptr).unwrap();
-      let body_hash = child_hashes.get(&body_ptr).unwrap();
-      buf.extend_from_slice(ty_hash.as_bytes());
-      buf.extend_from_slice(body_hash.as_bytes());
-      vec![*ty_hash, *body_hash]
-    },
-    Expr::All(uses, owned, ty, body) => {
-      buf.push(Expr::FLAG_ALL);
-      buf.push(uses.to_bits() | (owned.to_bits() << 2));
-      let ty_ptr = ty.as_ref() as *const Expr;
-      let body_ptr = body.as_ref() as *const Expr;
-      let ty_hash = child_hashes.get(&ty_ptr).unwrap();
-      let body_hash = child_hashes.get(&body_ptr).unwrap();
-      buf.extend_from_slice(ty_hash.as_bytes());
-      buf.extend_from_slice(body_hash.as_bytes());
-      vec![*ty_hash, *body_hash]
-    },
-    Expr::Let(non_dep, ty, val, body) => {
-      buf.push(Expr::FLAG_LET);
-      buf.push(if *non_dep { 1 } else { 0 }); // size field encodes non_dep
-      let ty_ptr = ty.as_ref() as *const Expr;
-      let val_ptr = val.as_ref() as *const Expr;
-      let body_ptr = body.as_ref() as *const Expr;
-      let ty_hash = child_hashes.get(&ty_ptr).unwrap();
-      let val_hash = child_hashes.get(&val_ptr).unwrap();
-      let body_hash = child_hashes.get(&body_ptr).unwrap();
-      buf.extend_from_slice(ty_hash.as_bytes());
-      buf.extend_from_slice(val_hash.as_bytes());
-      buf.extend_from_slice(body_hash.as_bytes());
-      vec![*ty_hash, *val_hash, *body_hash]
-    },
-    Expr::Share(idx) => {
-      buf.push(Expr::FLAG_SHARE);
-      buf.extend_from_slice(&idx.to_le_bytes());
-      vec![]
-    },
-  };
-
-  let value_size = buf.len();
-  (blake3::hash(buf), children, value_size)
-}
-
-/// Compute the base size of a node (Tag4 header size) for Ixon serialization.
-fn compute_base_size(expr: &Expr) -> usize {
-  match expr {
-    Expr::Sort(univ_idx) => {
-      Tag4::new(Expr::FLAG_SORT, *univ_idx).encoded_size()
-    },
-    Expr::Var(idx) => Tag4::new(Expr::FLAG_VAR, *idx).encoded_size(),
-    Expr::Ref(ref_idx, univ_indices) => {
-      // tag + ref_idx + N univ indices
-      Tag4::new(Expr::FLAG_REF, univ_indices.len() as u64).encoded_size()
-        + Tag0::new(*ref_idx).encoded_size()
-        + univ_indices
-          .iter()
-          .map(|i| Tag0::new(*i).encoded_size())
-          .sum::<usize>()
-    },
-    Expr::Rec(rec_idx, univ_indices) => {
-      // tag + rec_idx + N univ indices
-      Tag4::new(Expr::FLAG_REC, univ_indices.len() as u64).encoded_size()
-        + Tag0::new(*rec_idx).encoded_size()
-        + univ_indices
-          .iter()
-          .map(|i| Tag0::new(*i).encoded_size())
-          .sum::<usize>()
-    },
-    Expr::Prj(type_ref_idx, field_idx, _) => {
-      // Tag (field_idx in payload) + type_ref_idx (variable length, estimate 2 bytes)
-      Tag4::new(Expr::FLAG_PRJ, *field_idx).encoded_size()
-        + Tag0::new(*type_ref_idx).encoded_size()
-    },
-    Expr::Str(ref_idx) => Tag4::new(Expr::FLAG_STR, *ref_idx).encoded_size(),
-    Expr::Nat(ref_idx) => Tag4::new(Expr::FLAG_NAT, *ref_idx).encoded_size(),
-    Expr::App(..) => Tag4::new(Expr::FLAG_APP, 1).encoded_size(), // telescope count >= 1
-    Expr::Lam(..) => Tag4::new(Expr::FLAG_LAM, 1).encoded_size() + 1,
-    Expr::All(..) => Tag4::new(Expr::FLAG_ALL, 1).encoded_size() + 1,
-    Expr::Let(non_dep, ..) => {
-      // size=0 for dep, size=1 for non_dep
-      Tag4::new(Expr::FLAG_LET, if *non_dep { 1 } else { 0 }).encoded_size()
-    },
-    Expr::Share(idx) => Tag4::new(Expr::FLAG_SHARE, *idx).encoded_size(),
-  }
-}
-
-/// Get child expressions for traversal.
-fn get_children(expr: &Expr) -> Vec<&Arc<Expr>> {
+/// Canonical scalar/contract data for one node, followed by fixed-size
+/// child hashes in structural order. All three mode axes are semantic.
+fn put_node_header(expr: &Expr, buf: &mut Vec<u8>) {
   match expr {
     Expr::Sort(_)
     | Expr::Var(_)
@@ -199,14 +42,53 @@ fn get_children(expr: &Expr) -> Vec<&Arc<Expr>> {
     | Expr::Rec(..)
     | Expr::Str(_)
     | Expr::Nat(_)
-    | Expr::Share(_) => {
-      vec![]
+    | Expr::Share(_) => crate::serialize::put_expr(expr, buf),
+    Expr::Prj(t, field, _) => {
+      Tag4::new(Expr::FLAG_PRJ, *field).put(buf);
+      Tag0::new(*t).put(buf);
     },
-    Expr::Prj(_, _, val) => vec![val],
-    Expr::App(fun, arg) => vec![fun, arg],
-    Expr::Lam(_, ty, body) | Expr::All(_, _, ty, body) => vec![ty, body],
-    Expr::Let(_, ty, val, body) => vec![ty, val, body],
+    Expr::App(..) => Tag4::new(Expr::FLAG_APP, 1).put(buf),
+    Expr::Lam(c, ..) => {
+      Tag4::new(Expr::FLAG_LAM, 1).put(buf);
+      buf.push(c.to_bits());
+    },
+    Expr::All(c, v, ..) => {
+      Tag4::new(Expr::FLAG_ALL, 1).put(buf);
+      buf.push(crate::contract::pack_all_contract(*c, *v));
+    },
+    Expr::Let(c, ..) => {
+      Tag4::new(Expr::FLAG_LET, c.flags()).put(buf);
+      buf.push(c.binder.to_bits());
+    },
   }
+}
+
+fn hash_node(
+  expr: &Expr,
+  child_hashes: &FxHashMap<*const Expr, blake3::Hash>,
+  buf: &mut Vec<u8>,
+) -> (blake3::Hash, Vec<blake3::Hash>, usize) {
+  buf.clear();
+  put_node_header(expr, buf);
+  let children: Vec<_> = get_children(expr)
+    .iter()
+    .map(|child| {
+      let hash = child_hashes[&(child.as_ref() as *const Expr)];
+      buf.extend_from_slice(hash.as_bytes());
+      hash
+    })
+    .collect();
+  (blake3::hash(buf), children, buf.len())
+}
+
+fn compute_base_size(expr: &Expr) -> usize {
+  let mut buf = Vec::with_capacity(16);
+  put_node_header(expr, &mut buf);
+  buf.len()
+}
+
+fn get_children(expr: &Expr) -> Vec<&Arc<Expr>> {
+  expr.children()
 }
 
 /// Analyze expressions for sharing opportunities within a block.
@@ -676,42 +558,25 @@ pub fn build_sharing_vec(
   (rewritten_exprs, sharing_vec)
 }
 
-/// Frame for iterative rewrite traversal.
 enum RewriteFrame<'a> {
-  /// Visit an expression (check cache/share, then push children)
   Visit(&'a Arc<Expr>),
-  /// Build a Prj node from rewritten children (type_ref_idx, field_idx)
-  BuildPrj(&'a Arc<Expr>, u64, u64),
-  /// Build an App node from rewritten children
-  BuildApp(&'a Arc<Expr>),
-  /// Build a Lam node from rewritten children
-  BuildLam(&'a Arc<Expr>),
-  /// Build an All node from rewritten children
-  BuildAll(&'a Arc<Expr>),
-  /// Build a Let node from rewritten children
-  BuildLet(&'a Arc<Expr>, bool),
+  Build(&'a Arc<Expr>),
 }
 
-/// Rewrite an expression tree to use Share(idx) references.
-/// Uses iterative traversal with caching to handle deep trees and Arc sharing.
+/// Iterative reconstruction preserves every contract while changing
+/// only expression children. The hash includes every mode and let flag.
 fn rewrite_expr(
   expr: &Arc<Expr>,
   hash_to_idx: &FxHashMap<blake3::Hash, u64>,
   ptr_to_hash: &FxHashMap<*const Expr, blake3::Hash>,
   cache: &mut FxHashMap<*const Expr, Arc<Expr>>,
 ) -> Arc<Expr> {
-  let mut stack: Vec<RewriteFrame<'_>> = vec![RewriteFrame::Visit(expr)];
-  let mut results: Vec<Arc<Expr>> = Vec::new();
-
+  let mut stack = vec![RewriteFrame::Visit(expr)];
+  let mut results: Vec<Arc<Expr>> = vec![];
   while let Some(frame) = stack.pop() {
     match frame {
       RewriteFrame::Visit(e) => {
         let ptr = e.as_ref() as *const Expr;
-
-        // Check hash_to_idx FIRST: if this expression is shareable, replace
-        // it with Share(idx) even if the cache has a stale (pre-sharing)
-        // entry. This ordering eliminates the need for cache.clear() in the
-        // outer build_sharing_vec loop.
         if let Some(hash) = ptr_to_hash.get(&ptr)
           && let Some(&idx) = hash_to_idx.get(hash)
         {
@@ -720,157 +585,42 @@ fn rewrite_expr(
           results.push(share);
           continue;
         }
-
-        // Cache hit for non-shareable sub-expressions
         if let Some(cached) = cache.get(&ptr) {
           results.push(cached.clone());
           continue;
         }
-
-        // Process based on node type
-        match e.as_ref() {
-          // Leaf nodes - return as-is
-          Expr::Sort(_)
-          | Expr::Var(_)
-          | Expr::Ref(..)
-          | Expr::Rec(..)
-          | Expr::Str(_)
-          | Expr::Nat(_)
-          | Expr::Share(_) => {
-            cache.insert(ptr, e.clone());
-            results.push(e.clone());
-          },
-
-          // Nodes with children - push build frame, then visit children
-          Expr::Prj(type_ref_idx, field_idx, val) => {
-            stack.push(RewriteFrame::BuildPrj(e, *type_ref_idx, *field_idx));
-            stack.push(RewriteFrame::Visit(val));
-          },
-          Expr::App(fun, arg) => {
-            stack.push(RewriteFrame::BuildApp(e));
-            stack.push(RewriteFrame::Visit(arg));
-            stack.push(RewriteFrame::Visit(fun));
-          },
-          Expr::Lam(_, ty, body) => {
-            stack.push(RewriteFrame::BuildLam(e));
-            stack.push(RewriteFrame::Visit(body));
-            stack.push(RewriteFrame::Visit(ty));
-          },
-          Expr::All(_, _, ty, body) => {
-            stack.push(RewriteFrame::BuildAll(e));
-            stack.push(RewriteFrame::Visit(body));
-            stack.push(RewriteFrame::Visit(ty));
-          },
-          Expr::Let(non_dep, ty, val, body) => {
-            stack.push(RewriteFrame::BuildLet(e, *non_dep));
-            stack.push(RewriteFrame::Visit(body));
-            stack.push(RewriteFrame::Visit(val));
-            stack.push(RewriteFrame::Visit(ty));
-          },
+        let children = get_children(e);
+        if children.is_empty() {
+          cache.insert(ptr, e.clone());
+          results.push(e.clone());
+        } else {
+          stack.push(RewriteFrame::Build(e));
+          stack.extend(children.into_iter().rev().map(RewriteFrame::Visit));
         }
       },
-
-      RewriteFrame::BuildPrj(orig, type_ref_idx, field_idx) => {
-        let new_val = results.pop().unwrap();
-        let orig_val = match orig.as_ref() {
-          Expr::Prj(_, _, v) => v,
-          _ => unreachable!(),
-        };
-        let result = if Arc::ptr_eq(&new_val, orig_val) {
-          orig.clone()
+      RewriteFrame::Build(original) => {
+        let children = get_children(original);
+        let start = results.len() - children.len();
+        let changed = children
+          .iter()
+          .zip(&results[start..])
+          .any(|(old, new)| !Arc::ptr_eq(old, new));
+        let rebuilt: Vec<_> = results.drain(start..).collect();
+        let result = if !changed {
+          original.clone()
         } else {
-          Expr::prj(type_ref_idx, field_idx, new_val)
+          Arc::new(
+            original
+              .with_children(&rebuilt)
+              .expect("sharing rewrite child count"),
+          )
         };
-        let ptr = orig.as_ref() as *const Expr;
-        cache.insert(ptr, result.clone());
-        results.push(result);
-      },
-
-      RewriteFrame::BuildApp(orig) => {
-        // Pop in reverse order of push: arg was pushed last, fun first
-        let new_arg = results.pop().unwrap();
-        let new_fun = results.pop().unwrap();
-        let (orig_fun, orig_arg) = match orig.as_ref() {
-          Expr::App(f, a) => (f, a),
-          _ => unreachable!(),
-        };
-        let result = if Arc::ptr_eq(&new_fun, orig_fun)
-          && Arc::ptr_eq(&new_arg, orig_arg)
-        {
-          orig.clone()
-        } else {
-          Expr::app(new_fun, new_arg)
-        };
-        let ptr = orig.as_ref() as *const Expr;
-        cache.insert(ptr, result.clone());
-        results.push(result);
-      },
-
-      RewriteFrame::BuildLam(orig) => {
-        // Pop in reverse order of push: body was pushed last, ty first
-        let new_body = results.pop().unwrap();
-        let new_ty = results.pop().unwrap();
-        let (uses, orig_ty, orig_body) = match orig.as_ref() {
-          Expr::Lam(uses, t, b) => (*uses, t, b),
-          _ => unreachable!(),
-        };
-        let result = if Arc::ptr_eq(&new_ty, orig_ty)
-          && Arc::ptr_eq(&new_body, orig_body)
-        {
-          orig.clone()
-        } else {
-          Expr::lam_mode(uses, new_ty, new_body)
-        };
-        let ptr = orig.as_ref() as *const Expr;
-        cache.insert(ptr, result.clone());
-        results.push(result);
-      },
-
-      RewriteFrame::BuildAll(orig) => {
-        // Pop in reverse order of push: body was pushed last, ty first
-        let new_body = results.pop().unwrap();
-        let new_ty = results.pop().unwrap();
-        let (uses, owned, orig_ty, orig_body) = match orig.as_ref() {
-          Expr::All(uses, owned, t, b) => (*uses, *owned, t, b),
-          _ => unreachable!(),
-        };
-        let result = if Arc::ptr_eq(&new_ty, orig_ty)
-          && Arc::ptr_eq(&new_body, orig_body)
-        {
-          orig.clone()
-        } else {
-          Expr::all_mode(uses, owned, new_ty, new_body)
-        };
-        let ptr = orig.as_ref() as *const Expr;
-        cache.insert(ptr, result.clone());
-        results.push(result);
-      },
-
-      RewriteFrame::BuildLet(orig, non_dep) => {
-        // Pop in reverse order of push: body, val, ty
-        let new_body = results.pop().unwrap();
-        let new_val = results.pop().unwrap();
-        let new_ty = results.pop().unwrap();
-        let (orig_ty, orig_val, orig_body) = match orig.as_ref() {
-          Expr::Let(_, t, v, b) => (t, v, b),
-          _ => unreachable!(),
-        };
-        let result = if Arc::ptr_eq(&new_ty, orig_ty)
-          && Arc::ptr_eq(&new_val, orig_val)
-          && Arc::ptr_eq(&new_body, orig_body)
-        {
-          orig.clone()
-        } else {
-          Expr::let_(non_dep, new_ty, new_val, new_body)
-        };
-        let ptr = orig.as_ref() as *const Expr;
-        cache.insert(ptr, result.clone());
+        cache.insert(original.as_ref() as *const Expr, result.clone());
         results.push(result);
       },
     }
   }
-
-  results.pop().unwrap()
+  results.pop().expect("sharing rewrite result")
 }
 
 #[cfg(test)]

@@ -126,8 +126,7 @@ def human (v : Option Float) (metric : String) : String :=
 /-- Metrics where a LARGER value is the improvement; everything else is
     lower-is-better (times, RAM, cycles, sizes). `throughput` means
     constants checked per second on EVERY backend (`ix_bench::throughput`
-    is the one calculator; a zkVM's cycle rate stays derivable from its
-    cycles / execute-time fields). -/
+    is the one calculator). -/
 def higherIsBetter (metric : String) : Bool :=
   dropStagePrefix metric == "throughput"
 
@@ -183,6 +182,20 @@ def ratio (mainV prV : Float) (metric : String) : Option (Float × String) :=
 structure CompareSection where
   heading : String := ""
   metrics : Array String
+  /-- Restrict a stage to its workloads (e.g. aggregation pairs). `none`
+      retains every row, including failures with no measurements. -/
+  names : Option (Array String) := none
+  rowNoun : Option String := none
+
+/-- Aggregation measures a pair, while the other Aiur stages measure each
+    constant. Select by workload identity so OOM/rejected rows remain visible
+    even when they have no metrics. -/
+def scopeAiurSection (names : Array String) (sec : CompareSection) : CompareSection :=
+  let join := sec.metrics.all (·.startsWith "join-")
+  { sec with
+    names := some (names.filter fun n =>
+      Ix.Cli.BenchCmd.aiurJoinBenchmarkNames.contains n == join)
+    rowNoun := some (if join then "pair" else "constant") }
 
 /-- The stage qualifier shared by every one of a section's measures, if
     they share one. A stage table's heading already says which stage it
@@ -247,20 +260,23 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   -- One rendered table per section, plus the names that regressed or
   -- improved ANYWHERE across them: the summary counts a constant once,
   -- however many stages moved.
-  let mut blocks : Array (String × Array String) := #[]
+  let mut blocks : Array (String × Array String × Nat × String) := #[]
   let mut regressedNames : Array String := #[]
   let mut improvedNames : Array String := #[]
   for sec in a.sections do
+    let sectionNames := names.filter fun n => sec.names.all (·.contains n)
+    if sectionNames.isEmpty then continue
+    let rowNoun := sec.rowNoun.getD a.rowNoun
     let drop := sectionLabelDrop sec.metrics
     let label := fun (m : String) =>
       metricLabel (if drop.isEmpty then m else (m.drop drop.length).toString)
-    let mut head := #[a.rowNoun]
+    let mut head := #[rowNoun]
     for m in sec.metrics do
       head := head ++ #[s!"{label m} ({a.baseLabel})", s!"{label m} (PR)", "Δ%"]
     let mut lines := #[
       "| " ++ " | ".intercalate head.toList ++ " |",
       "|" ++ "|".intercalate (head.toList.map fun _ => "---") ++ "|"]
-    for n in names do
+    for n in sectionNames do
       let mainStatus := rowStatus a.mainRows n
       let prStatus := rowStatus a.prRows n
       let mut rowRegressed := false
@@ -301,7 +317,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
       if rowImproved && !improvedNames.contains n then
         improvedNames := improvedNames.push n
       lines := lines.push ("| " ++ " | ".intercalate cols.toList ++ " |")
-    blocks := blocks.push (sec.heading, lines)
+    blocks := blocks.push (sec.heading, lines, sectionNames.size, rowNoun)
   let regressed := regressedNames.size
   let improved := improvedNames.size
 
@@ -330,20 +346,21 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   else if (rowNames a.prRows).isEmpty then
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
-  for (heading, lines) in blocks do
+  for (heading, lines, count, rowNoun) in blocks do
     let caption := if heading.isEmpty then "comparison table" else heading
-    if names.size > 5 then
+    -- Keep stage tables collapsible even for a single aggregation pair.
+    if !heading.isEmpty || count > 5 then
       out := out ++ #["",
         s!"<details><summary>{caption} \
-          ({plural names.size a.rowNoun})</summary>", ""]
+          ({plural count rowNoun})</summary>", ""]
         ++ lines ++ #["", "</details>"]
     else
       out := out ++ (if heading.isEmpty then #[""] else #["", s!"#### {heading}", ""])
         ++ lines
   -- Per-phase drill-down (only under `a.phases`): the tables above
   -- carry every constant's high-level row; below it, each constant with
-  -- `phase-<span>` fields (aiur witness/commit/quotient breakdowns, zkVM
-  -- coarse phases) gets its own collapsed mini-table
+  -- `phase-<span>` fields (aiur witness/commit/quotient breakdowns)
+  -- gets its own collapsed mini-table
   -- (`phase | base | PR | Δ%`), opened as desired.
   let mut detail : Array String := #[]
   if a.phases then
@@ -491,7 +508,7 @@ private def moverDriver (m pr : PerConstEntry) : String :=
     no double counting, and a change to a shared dependency surfaces in
     every consumer entry it affects. This is NOT the full-closure scope of
     the headline table's curated `--consts` measurements (which re-check
-    the whole closure, the zkVM hosts' semantics) — the same name can be
+    the whole closure) — the same name can be
     seconds there and milliseconds here.
 
     Movers split into two classes with different evidence quality:
@@ -570,7 +587,7 @@ def renderPerConstMovers (mainCsv prCsv : String) (baseLabel : String := "main")
     if rows.isEmpty then ""
     else Id.run do
       let mut s := s!"**{title}**\n\n\
-        | constant | {baseLabel} | PR | Δtime | Δcost (Zisk) | driver |\n\
+        | constant | {baseLabel} | PR | Δtime | Δcost | driver |\n\
         |---|---|---|---|---|---|\n"
       for (name, m, p, _) in rows do
         let dcost := fmtDeltaCell m.cost p.cost "cycles"
@@ -606,12 +623,18 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   -- registry decides, splitting a pipeline mode into its stage tables.
   let spec := Ix.Cli.BenchCmd.findBackend backend
   let flagged := (p.flag? "metric").map (·.as! (Array String)) |>.getD #[]
+  let mainRows ← readRows mainPath
+  let prRows ← readRows prPath
+  let names := rowNames mainRows ++ rowNames prRows
+  let pairNames := Ix.Cli.BenchCmd.aiurJoinBenchmarkNames
   let sections : Array CompareSection :=
     if !flagged.isEmpty then #[{ metrics := flagged }]
     else match (spec.map (·.stagesFor mode)).getD [] with
       | [] => #[{ metrics := ((spec.map (·.metricsFor mode)).getD []).toArray }]
       | stages => (stages.map fun (heading, ms) =>
-          ({ heading, metrics := ms.toArray } : CompareSection)).toArray
+          let sec : CompareSection := { heading, metrics := ms.toArray }
+          if backend == "aiur" && mode == "prove" then scopeAiurSection names sec
+          else sec).toArray
   if sections.all (·.metrics.isEmpty) then
     p.printError s!"error: no metrics for {backend}/{mode}; pass --metric or fix backendSpecs"
     return exitUsage
@@ -634,13 +657,13 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let sortMetric := if sections.size > 1
     then (sections.back?.bind (·.metrics[0]?)).getD "" else ""
   let mut table := renderCompare {
-    mainRows := ← readRows mainPath
-    prRows := ← readRows prPath
+    mainRows, prRows
     sections, sortMetric, threshold, title, baseLabel
     phases := ((← IO.getEnv "BENCH_PHASES").getD "0") == "1"
     rowNoun :=
       if backend == "compile" then "env"
       else if backend == "ooc" then "env/constant"
+      else if backend == "aiur" && names.any pairNames.contains then "workload"
       else "constant"
   }
   -- Per-constant attribution drill-down: rendered whenever an
@@ -652,12 +675,6 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     && (← System.FilePath.pathExists ⟨prAttrib⟩)
   then
     table := table ++ "\n\n" ++ (← renderPerConstMovers mainAttrib prAttrib baseLabel)
-  if let some path := (p.flag? "warning-file").map (·.as! String) then
-    if ← System.FilePath.pathExists ⟨path⟩ then
-      let warning := (← IO.FS.readFile path).trimAscii.toString
-      if !warning.isEmpty then
-        let lines := (warning.splitOn "\n").map fun line => "> " ++ line
-        table := "> [!WARNING]\n" ++ "\n".intercalate lines ++ "\n\n" ++ table
   match p.flag? "out" with
   | some f => IO.FS.writeFile (f.as! String) (table ++ "\n")
   | none => IO.println table
@@ -785,6 +802,8 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
       (·.testbedFor mode)
     | IO.println s!"fetch-main: no testbed for {backend}/{mode}"
       return exitUsage
+  let testbed := Ix.Cli.BenchCmd.testbedOnMachine testbed
+    (← Ix.Cli.BenchCmd.benchmarkMachine)
   let wanted : Option (Array String) ← do
     let names ← Ix.Cli.ConstsFile.gather p "consts" "names"
     if (p.flag? "consts").isNone && (p.flag? "names").isNone then pure none
@@ -900,6 +919,7 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     pair, and the rendered `--threshold-*` flags, so the workflow
     hardcodes none of it. -/
 def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
+  let machine ← Ix.Cli.BenchCmd.benchmarkMachine
   let mut entries : Array Json := #[]
   for b in Ix.Cli.BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
@@ -918,17 +938,13 @@ def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
         entries := entries.push <| Json.mkObj
           [("backend", Json.str b.name), ("env", Json.str env),
            ("mode", Json.str mode), ("label", Json.str label),
-           ("testbed", Json.str testbed),
+           ("testbed", Json.str (Ix.Cli.BenchCmd.testbedOnMachine testbed machine)),
            ("workload", Json.str (Ix.Cli.BenchCmd.workloadOf testbed)),
            ("thresholds", Json.str b.thresholdFlags)]
   IO.println (Json.arr entries).compress
   return 0
 
 /-! ## parse -/
-
-/-- The runner every CI benchmark run measures on — a `runs-on` field for
-    the workflows' job matrices, meaningless locally. -/
-def ciRunner : String := "warp-ubuntu-latest-x64-32x"
 
 /-- Reject the `!benchmark` command: stderr for the log, and a
     `parse-error` step output so the workflow's failure comment can quote
@@ -952,8 +968,9 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all)
+      !benchmark ([aiur] [ooc] [compile] [decompile] | all)
                  [execute] [fresh] [KEY=VALUE …]
+      (`all` covers the scheduled backends)
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive, any registry env;
                                     defaults to every env for the
                                     env-keyed backends (compile,
@@ -968,7 +985,7 @@ def parseError (msg : String) : IO UInt32 := do
                                     for FLT.* names — so BENCH_ENVS is
                                     never required. A single-env
                                     BENCH_ENVS still forces placement.)
-      BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
+      BENCH_PHASES=1 / RUST_LOG=… /
       RUSTFLAGS=… / IX_COMPILE_EAGER=… / IX_COMPILE_DEMOTE=… /
       IX_COMPILE_WORKERS=… / IX_DECOMPILE_KENV_CLEAR_ENTRIES=…
                                     (passthrough; BENCH_PHASES=1 adds the
@@ -1025,8 +1042,10 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     if t == "fresh" then
       freshFlag := true
       continue
+    -- `all` includes the scheduled backends.
     let requested := if t == "all"
-      then Ix.Cli.BenchCmd.backendSpecs
+      then Ix.Cli.BenchCmd.backendSpecs.filter fun b =>
+        b.disabled.isNone && b.scheduledModes.contains b.defaultMode
       else (Ix.Cli.BenchCmd.findBackend t).toList
     -- Everything after `!benchmark` on the command line must parse: a
     -- typo'd backend silently running the default would report numbers
@@ -1034,7 +1053,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     if requested.isEmpty then
       return ← parseError s!"unknown token `{t}` in the benchmark command \
         (expected a backend — \
-        {", ".intercalate (Ix.Cli.BenchCmd.backendSpecs.map (·.name))} — \
+        {", ".intercalate ((Ix.Cli.BenchCmd.backendSpecs.filter
+          (·.disabled.isNone)).map (·.name))} — \
         or `all` / `execute` / `fresh`)"
     for b in requested do
       if b.disabled.isSome then
@@ -1042,6 +1062,10 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       else if backends.all (·.name != b.name) then
         backends := backends.push b
   if backends.isEmpty then
+    if !skipped.isEmpty then
+      let reasons := ", ".intercalate <| skipped.toList.map fun b =>
+        s!"{b.name} ({b.disabled.getD "disabled in CI"})"
+      return ← parseError s!"no requested benchmark backend is enabled in CI: {reasons}"
     backends := (Ix.Cli.BenchCmd.findBackend "aiur").toList.toArray
 
   -- KEY=VALUE config: the inline command-line tokens (strict — an
@@ -1083,18 +1107,18 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
         for tok in Ix.Cli.ConstsFile.parseCommaList val do
           if !consts.contains tok then consts := consts.push tok
       | k =>
-        if ["BENCH_PHASES", "RUST_LOG", "WITHOUT_VK_VERIFICATION",
+        if ["BENCH_PHASES", "RUST_LOG",
             "RUSTFLAGS", "IX_COMPILE_EAGER", "IX_COMPILE_DEMOTE",
-            "IX_COMPILE_WORKERS",
+            "IX_COMPILE_WORKERS", "BENCH_TRACE_SHARDS",
             "IX_DECOMPILE_KENV_CLEAR_ENTRIES"].contains k then
           passthrough := passthrough.push s!"{k}={val}"
         else if strict then
           return ← parseError s!"unknown config key `{k}` in the \
             benchmark command (expected BENCH_ENVS / BENCH_CONSTS, \
             or passthrough: BENCH_PHASES, \
-            RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS, \
+            RUST_LOG, RUSTFLAGS, \
             IX_COMPILE_EAGER, IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS, \
-            IX_DECOMPILE_KENV_CLEAR_ENTRIES)"
+            BENCH_TRACE_SHARDS, IX_DECOMPILE_KENV_CLEAR_ENTRIES)"
     | [] => continue
 
   -- BENCH_CONSTS: bench exactly these constants on the per-constant
@@ -1190,7 +1214,6 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       entries := entries.push <| Json.mkObj
         [("backend", Json.str b.name), ("env", Json.str e),
          ("mode", Json.str (modeFor b)),
-         ("runner", Json.str ciRunner),
          ("consts", Json.str entryConsts),
          ("label", Json.str s!"{b.name}-{e}-{modeFor b}")]
 
@@ -1206,6 +1229,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     (backends.map (fun b =>
       if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList
   let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate allEnvs.toList}`"
+  summary := summary ++ s!" · machine: `{← Ix.Cli.BenchCmd.benchmarkMachine}`"
   if !consts.isEmpty then
     summary := summary ++ s!" · consts: `{",".intercalate consts.toList}`"
   if freshFlag then
@@ -1253,7 +1277,6 @@ def benchCompareCmd : Cli.Cmd := `[Cli|
     title         : String; "Table title (default: derived from the run)"
     "base-source" : String; "Where the base side came from, for the title"
     "base-label"  : String; "Name the base side in headers (default: main)"
-    "warning-file" : String; "Markdown warning file to prepend when present"
     out           : String; "Write the table here instead of stdout"
 ]
 
@@ -1328,7 +1351,6 @@ def benchCmd : Cli.Cmd := `[Cli|
 
   SUBCOMMANDS:
     benchRunCmd;
-    benchShardCmd;
     benchCompareCmd;
     benchReportCmd;
     benchBmfCmd;

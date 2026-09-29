@@ -327,7 +327,10 @@ def claim := ⟦
   fn load_assumption_tree(root: Addr) -> List‹Addr› {
     let raw = load(root);
     let (idx, len) = io_get_info(1, raw);
-    let bytes = #read_byte_stream(1, idx, len);
+    -- The free-form tree parser has no count that bounds its recursion.
+    -- Establish finiteness before parsing: a Merkle-root equality cannot
+    -- bind arbitrary returns from a cyclic lookup chain.
+    let bytes = read_finite_byte_stream(1, idx, len);
     let (tag, s) = get_tag4(bytes);
     let (flag, size) = tag;
     assert_eq!(flag, 0xE, "assumption tree: wrong tag4 flag");
@@ -471,14 +474,96 @@ def claim := ⟦
   -- being well-typed, so every constant the claim covers must be
   -- reached by this walk or assumed via the frontier.
   fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
-    let owned = load_assumption_tree(env_root);
-    let asm_leaves = match asm {
-      Option.None => store(ListNode.Nil),
-      Option.Some(r) => load_assumption_tree(r),
-    };
-    let owned_set = addr_set_build(owned, RBTreeMap.Nil);
-    let asm_set = addr_set_build(asm_leaves, RBTreeMap.Nil);
-    env_walk_leaves(owned, owned_set, asm_set)
+    match asm {
+      Option.None =>
+        -- The whole environment: every constant under `env_root` is
+        -- checked through `check_owned`, whose argument is the constant's
+        -- address BYTES rather than its interned pointer. That is what lets
+        -- one execution be split across records (trace-sharding design,
+        -- §13.3): a record that does not own a constant pushes the call
+        -- and executes nothing, and the owner's `check_owned` row pulls it
+        -- — pointers are per record, bytes are not. No ownership is
+        -- constrained: a call no record answers leaves the batch
+        -- unbalanced, and a constant two records both check is two
+        -- balanced rows. This walk has no owned-membership rule: a
+        -- constant reachable from the tree but outside it is checked too
+        -- (the sharded walk below aborts instead), so a claim without
+        -- assumptions proves every constant its tree reaches, not only
+        -- those it lists. For an environment's tree the two coincide.
+        walk_leaves_owned(load_assumption_tree(env_root)),
+      Option.Some(r) =>
+        let owned = load_assumption_tree(env_root);
+        let owned_set = addr_set_build(owned, RBTreeMap.Nil);
+        let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap.Nil);
+        env_walk_leaves(owned, owned_set, asm_set),
+    }
+  }
+
+  fn walk_leaves_owned(leaves: List‹Addr›) {
+    match load(leaves) {
+      ListNode.Nil => (),
+      ListNode.Cons(a, rest) =>
+        check_owned(load(a));
+        walk_leaves_owned(rest),
+    }
+  }
+
+  -- Check the constant with address `bytes` and, transitively, everything
+  -- it references (the unsharded walk of `env_walk`, without the owned and
+  -- assumption sets). An entry, so that a worker record can run it over
+  -- the leaves it owns; a caller in another record reaches the same row
+  -- through the executor's deferred call.
+  pub fn check_owned(bytes: [U8; 32]) {
+    env_walk_all(store(bytes))
+  }
+
+  fn env_walk_all(addr: Addr) {
+    let c = load_verified_constant(addr);
+    match c {
+      Constant.Mk(info, _, refs, _) =>
+        match info {
+          ConstantInfo.Muts(members) =>
+            check_muts_all(addr, members, members, 0),
+          ConstantInfo.DPrj(dprj) =>
+            match dprj {
+              DefinitionProj.Mk(_, block_addr) =>
+                run_check(addr);
+                check_owned(load(block_addr)),
+            },
+          ConstantInfo.IPrj(iprj) =>
+            match iprj {
+              InductiveProj.Mk(_, block_addr) =>
+                run_check(addr);
+                check_owned(load(block_addr)),
+            },
+          ConstantInfo.CPrj(cprj) =>
+            match cprj {
+              ConstructorProj.Mk(_, _, block_addr) =>
+                run_check(addr);
+                check_owned(load(block_addr)),
+            },
+          ConstantInfo.RPrj(rprj) =>
+            match rprj {
+              RecursorProj.Mk(_, block_addr) =>
+                run_check(addr);
+                check_owned(load(block_addr)),
+            },
+          _ => run_check(addr),
+        };
+        env_walk_refs_all(refs, const_idxs_of(c), 0),
+    }
+  }
+
+  fn env_walk_refs_all(refs: List‹Addr›, consts: List‹G›, i: G) {
+    match load(refs) {
+      ListNode.Nil => (),
+      ListNode.Cons(a, rest) =>
+        match g_list_has(consts, i) {
+          1 => check_owned(load(a)),
+          _ => (),
+        };
+        env_walk_refs_all(rest, consts, i + 1),
+    }
   }
 
   -- Option<Address> deserializer, mirror (Kernel/Claim.lean:109).
@@ -1203,7 +1288,7 @@ def claim := ⟦
     -- `digest` is the packed-4-byte public claim digest; the ch-0 key uses
     -- the same packed form (io keys are execution-side only — no columns).
     let (idx, len) = io_get_info(0, digest);
-    let bytes = #read_byte_stream(0, idx, len);
+    let bytes = read_finite_byte_stream(0, idx, len);
     -- Binding: the claim bytes must hash to the PUBLIC digest. Packed
     -- comparison (8 wiring-packed words), no byte-form digest needed.
     let h = @blake3(bytes);
@@ -1223,10 +1308,15 @@ def claim := ⟦
                   + to_field(sz7)), 0,
       "claim: tag4 size exceeds a single byte");
     let variant = size[0];
+    let (format, s) = read_byte(s);
+    assert_eq!(format, 3u8, "claim: unsupported object format");
+    let (validator, s) = read_byte(s);
     match variant {
       4 =>
+        assert_eq!(validator, 1u8, "claim: wrong validator identity");
         let (target, s2) = get_address(s);
-        let (asm, _s3) = get_opt_addr(s2);
+        let (asm, rest) = get_opt_addr(s2);
+        assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         match asm {
           Option.None => run_check_transitive(target),
           Option.Some(r) =>
@@ -1235,17 +1325,29 @@ def claim := ⟦
             env_walk(target, RBTreeMap.Nil, asm_set, 0),
         },
       5 =>
+        assert_eq!(validator, 1u8, "claim: wrong validator identity");
         let (root, s2) = get_address(s);
-        let (asm, _s3) = get_opt_addr(s2);
+        let (asm, rest) = get_opt_addr(s2);
+        assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         run_check_env(root, asm),
       6 =>
+        assert_eq!(validator, 0u8, "claim: wrong validator identity");
         let (comm, s2) = get_address(s);
-        let (info, _s3) = get_reveal_info(s2);
+        let (info, rest) = get_reveal_info(s2);
+        assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         run_reveal(comm, info),
       7 =>
+        assert_eq!(validator, 0u8, "claim: wrong validator identity");
         let (tree, s2) = get_address(s);
-        let (target, _s3) = get_address(s2);
+        let (target, rest) = get_address(s2);
+        assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         run_contains(tree, target),
+      9 =>
+        assert_eq!(validator, 2u8, "claim: wrong resource validator identity");
+        -- Native resource admission is not a circuit proof. Keep this
+        -- unsupported boundary explicit; no host success flag is trusted.
+        assert_eq!(0, 1, "claim: resource-v1 is not implemented by IxVM");
+        (),
     }
   }
 ⟧

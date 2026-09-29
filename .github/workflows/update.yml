@@ -2,8 +2,8 @@ name: Update Lean toolchain and pinned deps
 
 on:
   schedule:
-    # Daily at 00:00 UTC
-    - cron: "0 0 * * *"
+    - cron: "0 12 * * *"
+      timezone: America/New_York
   workflow_dispatch:
 
 permissions:
@@ -14,18 +14,16 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-
-      # Mint a token from the GitHub App so the opened PR triggers CI; pushes
-      # made with GITHUB_TOKEN do not. Same App as the org repo-sync workflows.
-      - uses: actions/create-github-app-token@v3
-        id: app-token
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          client-id: ${{ secrets.TOKEN_APP_ID }}
-          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
+          persist-credentials: false
 
-      # `dev` carries the fork's bump_mode/release_channel support; `main` only
-      # mirrors upstream, which silently ignores these inputs. A PR is opened
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ github.token }}
+
+      # `dev` carries pinned-tag updates and lean4-nix gating; `main` only
+      # mirrors upstream and ignores these inputs. A PR is opened
       # on an update/lean-{release} branch whether or not the build passes, so
       # an incompatible release shows up as a failing PR to review. Dependencies
       # pinned to a Lean version tag move with the toolchain; a dependency
@@ -39,4 +37,4 @@ jobs:
           lake_package_directory: ". Benchmarks/**"
           bump_mode: pinned-tags
           pr: true
-          token: ${{ steps.app-token.outputs.token }}
+          update_lean4_nix: true

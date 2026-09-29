@@ -26,11 +26,9 @@ pub use error::{Cap, ErrorKind, SyntaxError};
 pub use parse::{parse_file, parse_term};
 pub use print::{print_decl, print_file, print_term};
 
-/// Grammar version this implementation speaks (R7). The `ixon <n>`
-/// header is optional: absent means version 1, forever; grammar
-/// versions ≥ 2 must declare themselves, and canonical version-1
-/// output omits the header.
-pub const VERSION: u64 = 1;
+/// Current grammar version. Whole files require an explicit `ixon 3`
+/// header; standalone terms use the current grammar directly.
+pub const VERSION: u64 = 3;
 
 /// Parser resource caps (R2: gas for admission — parse cost is
 /// chargeable up front). Defaults are deliberately generous for
@@ -88,6 +86,57 @@ mod tests {
     assert_eq!(p1, p2, "printer not a fixpoint");
     assert_eq!(f1.decls.len(), f2.decls.len());
     p1
+  }
+
+  #[test]
+  fn all_contracts_match_shared_text_fixtures() {
+    let mut count = 0;
+    for line in
+      include_str!("../../../../Tests/Fixtures/ixon-v3/text.tsv").lines()
+    {
+      let columns: Vec<_> = line.split('\t').collect();
+      assert_eq!(columns.len(), 4);
+      let input: u8 = columns[1].parse().unwrap();
+      let output: u64 = columns[2].parse().unwrap();
+      let source = columns[3];
+      let term = parse_term(source, &lims()).unwrap();
+      let key = match &term {
+        Term::Fun { binders, .. } => ("lam", binders[0].contract.to_bits(), 0),
+        Term::Pi { binders, result, .. } => {
+          ("all", binders[0].contract.to_bits(), u64::from(result.to_bits()))
+        },
+        Term::Arrow { result, .. } => ("arrow", 7, u64::from(result.to_bits())),
+        Term::Let { contract, .. } => {
+          ("let", contract.binder.to_bits(), contract.flags())
+        },
+        other => panic!("unexpected fixture AST: {other:?}"),
+      };
+      assert_eq!(key, (columns[0], input, output), "{source}");
+      assert_eq!(roundtrip_term(source).replace('\n', " "), source);
+      count += 1;
+    }
+    assert_eq!(count, 148);
+    for source in [
+      "fun (!! x : A) => x",
+      "fun (~~ x : A) => x",
+      "fun (01 x : A) => x",
+      "fun (&1 x : A) => x",
+      "fun (~!x : A) => x",
+      "A → !! B",
+      "A → ~~ B",
+      "let borrow (~ x y : A) := z; x",
+      "let (!1 x y : A) := z; x",
+    ] {
+      assert!(parse_term(source, &lims()).is_err(), "{source}");
+    }
+  }
+
+  #[test]
+  fn numeric_unnamed_instance_types_preserve_usage() {
+    for ty in ["0", "1", "10", "101 0", "1 → Prop"] {
+      let source = format!("fun [({ty})] => Prop");
+      assert_eq!(roundtrip_term(&source), source);
+    }
   }
 
   #[test]
@@ -166,24 +215,36 @@ mod tests {
   fn let_vs_have_is_address_relevant() {
     let l = parse_term("let x : N := v; x", &lims()).unwrap();
     let h = parse_term("have x : N := v; x", &lims()).unwrap();
-    assert!(matches!(l, Term::Let { non_dep: false, .. }));
-    assert!(matches!(h, Term::Let { non_dep: true, .. }));
+    assert!(matches!(
+      l,
+      Term::Let {
+        contract: crate::contract::LetContract { non_dep: false, .. },
+        ..
+      }
+    ));
+    assert!(matches!(
+      h,
+      Term::Let {
+        contract: crate::contract::LetContract { non_dep: true, .. },
+        ..
+      }
+    ));
   }
 
   #[test]
   fn acceptance_fixture_file() {
     // Hand-formatted input…
     let src = "\
-ixon 1
+ixon 3
 import #9c41aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9c41
 
 def : String → Except PatchError String :=
   fun (s : String) => Except.ok PatchError String s
 ";
-    // …normalizes to the canonical form (no version header — absent
-    // means version 1; the def fits in WIDTH columns, so it stays
-    // flat).
+    // The canonical file includes its grammar version.
     let canonical = "\
+ixon 3
+
 import #9c41aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9c41
 
 def : String → Except PatchError String := \
@@ -195,7 +256,7 @@ fun (s : String) => Except.ok PatchError String s
 
   #[test]
   fn kitchen_sink_file() {
-    let src = r#"ixon 1
+    let src = r#"ixon 3
 
 import #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 import Std.V2#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -239,58 +300,38 @@ cprj Nat'.succ := #dddd 0 1
 
   #[test]
   fn main_expression() {
-    // Minimal main-only file is already canonical (no header).
-    assert_eq!(roundtrip_file("⊢ 1 : Nat\n"), "⊢ 1 : Nat\n");
-    // An explicit `ixon 1` header is accepted and canonically omitted.
-    assert_eq!(roundtrip_file("ixon 1\n⊢ 1 : Nat\n"), "⊢ 1 : Nat\n");
-    // The ASCII turnstile normalizes to `⊢`.
-    assert_eq!(roundtrip_file("|- 1 : Nat\n"), "⊢ 1 : Nat\n");
-    // Low-precedence values parenthesize canonically (both spellings
-    // reparse identically) — shared golden with the Lean suite.
-    assert_eq!(
-      roundtrip_file("⊢ fun (x : Nat) => x : Nat → Nat\n"),
-      "⊢ (fun (x : Nat) => x) : Nat → Nat\n"
-    );
-    // The annotation is mandatory.
-    let e = parse_file("⊢ 1\n", &lims()).unwrap_err();
-    assert!(matches!(e.kind, ErrorKind::UnexpectedToken { .. }));
-    // Bare form (no turnstile) is accepted as the file's SOLE item —
-    // the door wire, now ceremony-free — and normalizes to `⊢`.
-    assert_eq!(roundtrip_file("1 : Nat\n"), "⊢ 1 : Nat\n");
-    assert_eq!(
-      roundtrip_file(
-        "import \
-         #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
-         fun (x : Nat) => x : Nat → Nat\n"
+    let cases = [
+      ("⊢ 1 : Nat\n", "⊢ 1 : Nat\n"),
+      ("|- 1 : Nat\n", "⊢ 1 : Nat\n"),
+      ("1 : Nat\n", "⊢ 1 : Nat\n"),
+      (
+        "⊢ fun (x : Nat) => x : Nat → Nat\n",
+        "⊢ (fun (x : Nat) => x) : Nat → Nat\n",
       ),
-      "import \
-       #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\n\
-       ⊢ (fun (x : Nat) => x) : Nat → Nat\n"
-    );
-    // Leading `ixon` NOT followed by a numeral is content, not a
-    // header (a constant may be named `ixon`).
-    assert_eq!(roundtrip_file("ixon : Nat\n"), "⊢ ixon : Nat\n");
-    // The fully minimal wire: no header, no imports (resolution uses
-    // the application's default env), no turnstile — one judgment.
-    assert_eq!(
-      roundtrip_file(
-        "fun (s : String) => Except.ok PatchError String s : \
-         String -> Except PatchError String\n"
+      ("ixon : Nat\n", "⊢ ixon : Nat\n"),
+      (
+        "fun (s : String) => Except.ok PatchError String s : String -> Except PatchError String\n",
+        "⊢ (fun (s : String) => Except.ok PatchError String s) : String → Except PatchError String\n",
       ),
-      "⊢ (fun (s : String) => Except.ok PatchError String s) : \
-       String → Except PatchError String\n"
-    );
-    // After a declaration the turnstile is required: the bare form
-    // errors (the decl's value absorbs the atom, orphaning the `:`) —
-    // never a silent re-split.
-    let e =
-      parse_file("ixon 1\ndef x : N := v\n1 : Nat\n", &lims()).unwrap_err();
-    assert!(matches!(e.kind, ErrorKind::UnexpectedToken { .. }));
-    // At most one, and it must be last.
-    let e = parse_file("⊢ 1 : Nat ⊢ 2 : Nat\n", &lims()).unwrap_err();
-    assert!(matches!(e.kind, ErrorKind::MainExprNotLast));
-    let e = parse_file("⊢ 1 : Nat def x : A := b\n", &lims()).unwrap_err();
-    assert!(matches!(e.kind, ErrorKind::MainExprNotLast));
+      (
+        "import #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nfun (x : Nat) => x : Nat → Nat\n",
+        "import #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\n⊢ (fun (x : Nat) => x) : Nat → Nat\n",
+      ),
+    ];
+    for (src, expected) in cases {
+      assert_eq!(
+        roundtrip_file(&format!("ixon 3\n{src}")),
+        format!("ixon 3\n\n{expected}")
+      );
+    }
+    for src in ["⊢ 1\n", "def x : N := v\n1 : Nat\n"] {
+      let e = parse_file(&format!("ixon 3\n{src}"), &lims()).unwrap_err();
+      assert!(matches!(e.kind, ErrorKind::UnexpectedToken { .. }));
+    }
+    for src in ["⊢ 1 : Nat ⊢ 2 : Nat\n", "⊢ 1 : Nat def x : A := b\n"] {
+      let e = parse_file(&format!("ixon 3\n{src}"), &lims()).unwrap_err();
+      assert!(matches!(e.kind, ErrorKind::MainExprNotLast));
+    }
   }
 
   #[test]
@@ -299,7 +340,7 @@ cprj Nat'.succ := #dddd 0 1
     // preceding declaration's application spine — without it, `⊢ Prop`
     // would be absorbed as an argument of the inductive's type.
     let printed = roundtrip_file(
-      "ixon 1\ninductive N (params := 0) (indices := 0) : Prop\n\n⊢ Prop : Prop\n",
+      "ixon 3\ninductive N (params := 0) (indices := 0) : Prop\n\n⊢ Prop : Prop\n",
     );
     let f = parse_file(&printed, &lims()).unwrap();
     assert_eq!(f.decls.len(), 1);
@@ -307,23 +348,26 @@ cprj Nat'.succ := #dddd 0 1
     // Same shape after a where-block: `|` in ctor loops must not eat
     // the `|-` spelling.
     roundtrip_file(
-      "ixon 1\ninductive N (params := 0) (indices := 0) : Prop where\n  \
+      "ixon 3\ninductive N (params := 0) (indices := 0) : Prop where\n  \
        | c (params := 0) (fields := 0) : N\n|- c : N\n",
     );
   }
 
   #[test]
   fn version_gate() {
-    let e = parse_file("ixon 2\n", &lims()).unwrap_err();
-    assert!(matches!(
-      e.kind,
-      ErrorKind::UnknownVersion { found: 2, supported: 1 }
-    ));
+    for version in [1, 2, 4] {
+      let e = parse_file(&format!("ixon {version}\n"), &lims()).unwrap_err();
+      assert!(
+        matches!(e.kind, ErrorKind::UnknownVersion { found, supported: 3 } if found == version)
+      );
+    }
+    assert!(parse_file("⊢ 1 : Nat\n", &lims()).is_err());
+    assert!(parse_file("ixon 3\n", &lims()).is_ok());
   }
 
   #[test]
   fn import_hash_must_be_full() {
-    let e = parse_file("ixon 1\nimport #abcd\n", &lims()).unwrap_err();
+    let e = parse_file("ixon 3\nimport #abcd\n", &lims()).unwrap_err();
     assert!(matches!(e.kind, ErrorKind::ImportHashLength { found: 4 }));
   }
 
@@ -356,7 +400,7 @@ cprj Nat'.succ := #dddd 0 1
     assert!(matches!(e.kind, ErrorKind::EmptyLevels));
 
     // Line/col are 1-based and positioned.
-    let e = parse_file("ixon 1\ndef x : Nat :=\n", &lims()).unwrap_err();
+    let e = parse_file("ixon 3\ndef x : Nat :=\n", &lims()).unwrap_err();
     assert_eq!(e.line, 3);
   }
 

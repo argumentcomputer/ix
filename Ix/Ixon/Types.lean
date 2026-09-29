@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 module
 public import Ix.Address.Core
 public import Ix.Ixon.Types.Kinds
-public import Ix.Ixon.Types.Modes
+public import Ix.Ixon.Types.Contract
 
 /-! # Pure Ixon data
 
@@ -51,9 +51,9 @@ inductive Expr where
   | str : UInt64 → Expr
   | nat : UInt64 → Expr
   | app : Expr → Expr → Expr
-  | lam : Uses → Expr → Expr → Expr
-  | all : Uses → Owned → Expr → Expr → Expr
-  | letE : Bool → Expr → Expr → Expr → Expr
+  | lam : BinderContract → Expr → Expr → Expr
+  | all : BinderContract → ValueContract → Expr → Expr → Expr
+  | letE : LetContract → Expr → Expr → Expr → Expr
   | share : UInt64 → Expr
   deriving BEq, Repr, Inhabited, Hashable
 
@@ -71,22 +71,28 @@ namespace Expr
   def FLAG_LET : UInt8 := 0xA
   def FLAG_SHARE : UInt8 := 0xB
 
-  /-- Embed an ordinary Lean lambda in Ixon v2. -/
+  /-- Embed an ordinary Lean lambda in Ixon v3. -/
   def leanLam (ty body : Expr) : Expr := .lam .many ty body
 
-  /-- Embed an ordinary Lean forall in Ixon v2. -/
+  /-- Embed an ordinary Lean forall in Ixon v3. -/
   def leanAll (ty body : Expr) : Expr := .all .many .shared ty body
 
-  /-- The mode-free Lean fragment embedded in Ixon v2. -/
+  /-- Embed an ordinary Lean let with default contracts. -/
+  def leanLet (nonDep : Bool) (ty val body : Expr) : Expr :=
+    .letE (.lean nonDep) ty val body
+
+  /-- The ordinary Lean fragment uses explicit default contracts. -/
   def leanFragment : Expr → Bool
-    | .lam .many ty body => leanFragment ty && leanFragment body
-    | .lam .. => false
-    | .all .many .shared ty body => leanFragment ty && leanFragment body
-    | .all .. => false
+    | .lam contract ty body =>
+      contract == BinderContract.many && leanFragment ty && leanFragment body
+    | .all contract result ty body =>
+      contract == BinderContract.many && result == ValueContract.shared &&
+        leanFragment ty && leanFragment body
     | .app fn arg => leanFragment fn && leanFragment arg
     | .prj _ _ val => leanFragment val
-    | .letE _ ty val body =>
-      leanFragment ty && leanFragment val && leanFragment body
+    | .letE contract ty val body =>
+      contract.kind == .value && contract.binder == BinderContract.many &&
+        leanFragment ty && leanFragment val && leanFragment body
     | _ => true
 end Expr
 

@@ -3,7 +3,8 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 
 Extracted from Ix/Ixon.lean at Ix revision
-b067697b9d97552c6f52b2f72c892f84e4c7170f.
+b067697b9d97552c6f52b2f72c892f84e4c7170f, with the Ixon v3 changes from
+Ix/Ixon.lean at Ix revision b413cd93a43d75a37c358491ca65cd79f1a2a42c.
 -/
 
 module
@@ -11,7 +12,7 @@ public import Ix.Ixon.Types
 
 public section
 
-/-! Pure production Ixon v2 codecs. Anonymous encodings and decoder
+/-! Pure production Ixon v3 codecs. Anonymous encodings and decoder
 behavior are shared with the host; metadata, environments, hashing,
 and lazy transport remain in `Ix.Ixon`. -/
 
@@ -20,7 +21,7 @@ namespace Ixon
 open Ix (DefKind DefinitionSafety QuotKind)
 
 /-- Stable identifier for the v2 Ixon wire grammar. -/
-def wireFormatId : String := "ixon-v2"
+def wireFormatId : String := "ixon-v3"
 
 /-! ## Serialization Monad and Typeclass -/
 
@@ -205,6 +206,8 @@ def getTag0 : GetM Tag0 := do
     getU64TrimmedLE (small.toNat + 1)
   else
     pure small.toUInt64
+  if large && (size < 128 || u64ByteCount size != small + 1) then
+    throw "noncanonical Tag0 integer"
   return ⟨size⟩
 
 /-- Tag2: 2-bit flag + size.
@@ -233,6 +236,8 @@ def getTag2 : GetM Tag2 := do
     getU64TrimmedLE (small.toNat + 1)
   else
     pure small.toUInt64
+  if large && (size < 32 || u64ByteCount size != small + 1) then
+    throw "noncanonical Tag2 integer"
   return ⟨flag, size⟩
 
 /-- Tag4: 4-bit flag + size.
@@ -261,11 +266,40 @@ def getTag4 : GetM Tag4 := do
     getU64TrimmedLE (small.toNat + 1)
   else
     pure small.toUInt64
+  if large && (size < 8 || u64ByteCount size != small + 1) then
+    throw "noncanonical Tag4 integer"
   return ⟨flag, size⟩
 
 instance : Serialize Tag4 where
   put := putTag4
   get := getTag4
+
+/-! ## Contract serialization -/
+
+/-- Counts must fit the remaining input before a reader allocates or iterates. -/
+def checkCount (count : UInt64) (minBytes : Nat := 1) : GetM Unit := do
+  let st ← get
+  if count.toNat * minBytes > st.bytes.size - st.idx then
+    throw "count exceeds remaining bytes"
+
+def putValueContract (v : ValueContract) : PutM Unit := putU8 v.toBits
+
+def getValueContract : GetM ValueContract := do
+  let bits ← getU8
+  let some contract := ValueContract.ofBits? bits
+    | throw s!"invalid value contract {bits}"
+  return contract
+
+def putBinderContract (b : BinderContract) : PutM Unit := putU8 b.toBits
+
+def getBinderContract : GetM BinderContract := do
+  let bits ← getU8
+  let some contract := BinderContract.ofBits? bits
+    | throw s!"invalid binder contract {bits}"
+  return contract
+
+instance : Serialize ValueContract := ⟨putValueContract, getValueContract⟩
+instance : Serialize BinderContract := ⟨putBinderContract, getBinderContract⟩
 
 /-! ## Univ Serialization -/
 
@@ -367,14 +401,14 @@ instance : Serialize Univ where
 /-! ## Expr Serialization -/
 
 /-- Collect all mode/type pairs in a lambda telescope. -/
-def Expr.collectLamBinders : Expr → List (Uses × Expr) × Expr
+def Expr.collectLamBinders : Expr → List (BinderContract × Expr) × Expr
   | .lam uses ty body =>
     let (binders, base) := body.collectLamBinders
     ((uses, ty) :: binders, base)
   | e => ([], e)
 
 /-- Collect all mode/type triples in a forall telescope. -/
-def Expr.collectAllBinders : Expr → List (Uses × Owned × Expr) × Expr
+def Expr.collectAllBinders : Expr → List (BinderContract × ValueContract × Expr) × Expr
   | .all uses owned ty body =>
     let (binders, base) := body.collectAllBinders
     ((uses, owned, ty) :: binders, base)
@@ -412,7 +446,7 @@ theorem Expr.collectLamBinders_base_nodeCount_le (e : Expr) :
     exact Nat.le_refl _
 
 /-- A lambda telescope's base has fewer nodes than a lambda node. -/
-theorem Expr.collectLamBinders_base_nodeCount_lt (uses : Uses)
+theorem Expr.collectLamBinders_base_nodeCount_lt (uses : BinderContract)
     (binder body : Expr) :
     (Expr.lam uses binder body).collectLamBinders.2.nodeCount <
       (Expr.lam uses binder body).nodeCount := by
@@ -454,7 +488,7 @@ theorem Expr.collectAllBinders_base_nodeCount_le (e : Expr) :
     exact Nat.le_refl _
 
 /-- A forall telescope's base has fewer nodes than a forall node. -/
-theorem Expr.collectAllBinders_base_nodeCount_lt (uses : Uses) (owned : Owned)
+theorem Expr.collectAllBinders_base_nodeCount_lt (uses : BinderContract) (owned : ValueContract)
     (binder body : Expr) :
     (Expr.all uses owned binder body).collectAllBinders.2.nodeCount <
       (Expr.all uses owned binder body).nodeCount := by
@@ -540,7 +574,7 @@ private theorem nodeCount_right_lt_sum3 (left middle right : Nat) :
   Nat.lt_of_le_of_lt (Nat.le_add_left right (left + middle))
     (Nat.lt_succ_self _)
 
-/-- Total canonical v2 expression writer. Telescope collection preserves the
+/-- Total canonical v3 expression writer. Telescope collection preserves the
     Rust byte grammar; the node-count lemmas above expose its recursive calls
     to the kernel termination checker. -/
 def putExpr : Expr → PutM Unit
@@ -576,11 +610,12 @@ def putExpr : Expr → PutM Unit
   | e@(.all _ _ _ _) => do
     putTag4 ⟨Expr.FLAG_ALL, e.collectAllBinders.1.length.toUInt64⟩
     for binder in e.collectAllBinders.1 do
-      putU8 (binder.1.toBits ||| (binder.2.1.toBits <<< 2))
+      putU8 (packAllContract binder.1 binder.2.1)
       putExpr binder.2.2
     putExpr e.collectAllBinders.2
-  | .letE nonDep ty val body => do
-    putTag4 ⟨Expr.FLAG_LET, if nonDep then 1 else 0⟩
+  | .letE contract ty val body => do
+    putTag4 ⟨Expr.FLAG_LET, contract.flags⟩
+    putBinderContract contract.binder
     putExpr ty
     putExpr val
     putExpr body
@@ -632,33 +667,27 @@ def getExprAppArgs (recur : GetM Expr) : Nat → Expr → GetM Expr
     getExprAppArgs recur count (.app result arg)
 
 /-- Read a lambda telescope in outer-to-inner wire order. -/
-def getExprLamBinders (recur : GetM Expr) : Nat → GetM (List (Uses × Expr))
+def getExprLamBinders (recur : GetM Expr) : Nat → GetM (List (BinderContract × Expr))
   | 0 => pure []
   | count + 1 => do
-    let mode ← getU8
-    let some uses := Uses.ofBits? mode
-      | throw s!"getExpr: invalid lambda mode {mode}"
+    let contract ← getBinderContract
     let ty ← recur
     let tail ← getExprLamBinders recur count
-    return (uses, ty) :: tail
+    return (contract, ty) :: tail
 
 /-- Read a forall telescope in outer-to-inner wire order. -/
 def getExprAllBinders (recur : GetM Expr) :
-    Nat → GetM (List (Uses × Owned × Expr))
+    Nat → GetM (List (BinderContract × ValueContract × Expr))
   | 0 => pure []
   | count + 1 => do
-    let mode ← getU8
-    if mode > 7 then
-      throw s!"getExpr: invalid forall mode {mode}"
-    let some uses := Uses.ofBits? (mode &&& 0x03)
-      | throw s!"getExpr: invalid forall usage mode {mode}"
-    let some owned := Owned.ofBits? ((mode >>> 2) &&& 0x01)
-      | throw s!"getExpr: invalid forall ownership mode {mode}"
+    let bits ← getU8
+    let some (contract, result) := unpackAllContract? bits
+      | throw s!"getExpr: invalid forall contract {bits}"
     let ty ← recur
     let tail ← getExprAllBinders recur count
-    return (uses, owned, ty) :: tail
+    return (contract, result, ty) :: tail
 
-/-- Parse a v2 expression after its leading `Tag4`. Recursive reads are
+/-- Parse a v3 expression after its leading `Tag4`. Recursive reads are
     supplied explicitly so `getExprFuel` below remains structurally total. -/
 def getExprFromTag (recur : GetM Expr) (tag : Tag4) : GetM Expr := do
   match tag.flag with
@@ -666,10 +695,12 @@ def getExprFromTag (recur : GetM Expr) (tag : Tag4) : GetM Expr := do
   | 0x1 => return .var tag.size
   | 0x2 => do  -- REF: tag.size is array_len, then ref_idx, then elements
     let refIdx := (← getTag0).size
+    checkCount tag.size
     let univIdxs ← getTag0Sizes tag.size.toNat
     return .ref refIdx univIdxs.toArray
   | 0x3 => do  -- REC: tag.size is array_len, then rec_idx, then elements
     let recIdx := (← getTag0).size
+    checkCount tag.size
     let univIdxs ← getTag0Sizes tag.size.toNat
     return .recur recIdx univIdxs.toArray
   | 0x4 => do  -- PRJ: tag.size is field_idx, then type_ref_idx, then val
@@ -681,6 +712,7 @@ def getExprFromTag (recur : GetM Expr) (tag : Tag4) : GetM Expr := do
   | 0x7 => do  -- APP (telescope)
     if tag.size == 0 then
       throw "getExpr: empty app spine"
+    checkCount tag.size
     let base ← recur
     match base with
     | .app .. => throw "getExpr: non-canonical app base"
@@ -689,6 +721,7 @@ def getExprFromTag (recur : GetM Expr) (tag : Tag4) : GetM Expr := do
   | 0x8 => do  -- LAM (telescope)
     if tag.size == 0 then
       throw "getExpr: Lam with zero binders"
+    checkCount tag.size 2
     let binders ← getExprLamBinders recur tag.size.toNat
     let body ← recur
     match body with
@@ -698,6 +731,7 @@ def getExprFromTag (recur : GetM Expr) (tag : Tag4) : GetM Expr := do
   | 0x9 => do  -- ALL (telescope)
     if tag.size == 0 then
       throw "getExpr: All with zero binders"
+    checkCount tag.size 2
     let binders ← getExprAllBinders recur tag.size.toNat
     let body ← recur
     match body with
@@ -706,17 +740,19 @@ def getExprFromTag (recur : GetM Expr) (tag : Tag4) : GetM Expr := do
     return binders.foldr
       (fun (uses, owned, ty) result => .all uses owned ty result) body
   | 0xA => do  -- LET
-    if tag.size > 1 then
-      throw s!"getExpr: invalid letE nonDep {tag.size}"
-    let nonDep := tag.size == 1
+    if tag.size > 3 then
+      throw s!"getExpr: invalid let flags {tag.size}"
+    let binder ← getBinderContract
+    let some contract := LetContract.ofFlags? tag.size binder
+      | throw "getExpr: invalid let flags"
     let ty ← recur
     let val ← recur
     let body ← recur
-    return .letE nonDep ty val body
+    return .letE contract ty val body
   | 0xB => return .share tag.size
   | f => throw s!"getExpr: invalid flag {f}"
 
-/-- Total v2 expression reader. Every recursive layer consumes a `Tag4`
+/-- Total v3 expression reader. Every recursive layer consumes a `Tag4`
     header, so a caller-supplied byte budget is a complete termination
     measure even for telescope-compressed applications and binders. -/
 def getExprFuel : Nat → GetM Expr
@@ -759,7 +795,10 @@ def putDefinition (d : Definition) : PutM Unit := do
   putExpr d.value
 
 def getDefinition : GetM Definition := do
-  let (kind, safety) := unpackDefKindSafety (← getU8)
+  let flags ← getU8
+  if flags >>> 2 > 2 || (flags &&& 3) > 2 then
+    throw "invalid definition kind/safety"
+  let (kind, safety) := unpackDefKindSafety flags
   let lvls := (← getTag0).size
   let typ ← getExpr
   let value ← getExpr
@@ -794,7 +833,9 @@ def putRecursor (r : Recursor) : PutM Unit := do
   for rule in r.rules do putRecursorRule rule
 
 def getRecursor : GetM Recursor := do
-  let bools := unpackBools 2 (← getU8)
+  let flags ← getU8
+  if flags > 3 then throw "invalid recursor flags"
+  let bools := unpackBools 2 flags
   let k := bools[0]!
   let isUnsafe := bools[1]!
   let lvls := (← getTag0).size
@@ -804,6 +845,7 @@ def getRecursor : GetM Recursor := do
   let minors := (← getTag0).size
   let typ ← getExpr
   let numRules := (← getTag0).size.toNat
+  checkCount numRules.toUInt64 2
   let mut rules := #[]
   for _ in [0:numRules] do
     rules := rules.push (← getRecursorRule)
@@ -819,7 +861,7 @@ def putAxiom (a : Axiom) : PutM Unit := do
   putExpr a.typ
 
 def getAxiom : GetM Axiom := do
-  let isUnsafe := (← getU8) != 0
+  let isUnsafe ← Serialize.get
   let lvls := (← getTag0).size
   let typ ← getExpr
   return ⟨isUnsafe, lvls, typ⟩
@@ -856,7 +898,7 @@ def putConstructor (c : Constructor) : PutM Unit := do
   putExpr c.typ
 
 def getConstructor : GetM Constructor := do
-  let isUnsafe := (← getU8) != 0
+  let isUnsafe ← Serialize.get
   let lvls := (← getTag0).size
   let cidx := (← getTag0).size
   let params := (← getTag0).size
@@ -878,13 +920,13 @@ def putInductive (i : Inductive) : PutM Unit := do
   for c in i.ctors do putConstructor c
 
 def getInductive : GetM Inductive := do
-  let bools := unpackBools 1 (← getU8)
-  let isUnsafe := bools[0]!
+  let isUnsafe ← Serialize.get
   let lvls := (← getTag0).size
   let params := (← getTag0).size
   let indices := (← getTag0).size
   let typ ← getExpr
   let numCtors := (← getTag0).size.toNat
+  checkCount numCtors.toUInt64 6
   let mut ctors := #[]
   for _ in [0:numCtors] do
     ctors := ctors.push (← getConstructor)

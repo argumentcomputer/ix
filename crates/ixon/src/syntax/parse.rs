@@ -20,6 +20,8 @@ use ix_common::env::{BinderInfo, NameComponent};
 use nom::{Err as NErr, IResult};
 use num_bigint::BigUint;
 
+use crate::contract::{BinderContract, LetContract, LetKind, Locality};
+use crate::expr::{Owned, Uses};
 use crate::syntax::Limits;
 use crate::syntax::VERSION;
 use crate::syntax::ast::{
@@ -50,6 +52,7 @@ pub const RESERVED: &[&str] = &[
   "fun",
   "let",
   "have",
+  "borrow",
   "where",
   "proj",
   "Prop",
@@ -885,6 +888,55 @@ impl<'a> P<'a> {
     self.fail(i, "binder name")
   }
 
+  /// Independent compact prefixes; a repeated axis is an error.
+  fn contract_prefix(
+    &self,
+    i: &'a str,
+    allow_usage: bool,
+  ) -> R<'a, BinderContract> {
+    let mut rest = self.ws(i)?;
+    let start = rest;
+    let mut contract = BinderContract::default();
+    let mut usage = false;
+    let mut unique = false;
+    let mut local = false;
+    loop {
+      match rest.as_bytes().first().copied() {
+        Some(b'!') => {
+          if unique {
+            return self.fail(rest, "one ownership prefix");
+          }
+          unique = true;
+          contract.value.owned = Owned::Unique;
+        },
+        Some(b'~') => {
+          if local {
+            return self.fail(rest, "one locality prefix");
+          }
+          local = true;
+          contract.value.locality = Locality::Local;
+        },
+        Some(b'0' | b'1' | b'&') if allow_usage => {
+          if usage {
+            return self.fail(rest, "one usage prefix");
+          }
+          usage = true;
+          contract.uses = match rest.as_bytes()[0] {
+            b'0' => Uses::Erased,
+            b'1' => Uses::Linear,
+            _ => Uses::Affine,
+          };
+        },
+        _ => break,
+      }
+      rest = &rest[1..];
+    }
+    if rest.len() != start.len() && self.ws(rest)?.len() == rest.len() {
+      return self.fail(rest, "space after contract prefix");
+    }
+    Ok((rest, contract))
+  }
+
   /// One bracketed binder group. `(…)` is a *tentative* parse (a
   /// backtrackable failure before the `:` lets callers re-read it as a
   /// parenthesized term); `{…}`, `[…]`, `⦃…⦄` commit immediately —
@@ -904,7 +956,7 @@ impl<'a> P<'a> {
       } else {
         return self.fail(i, "binder");
       };
-    let r = &i[open.len_utf8()..];
+    let (r, contract) = self.contract_prefix(&i[open.len_utf8()..], true)?;
     if open == '[' {
       // `[inst : T]` or unnamed `[T]`.
       if let Ok((r2, names)) = self.binder_names_colon(r) {
@@ -912,14 +964,20 @@ impl<'a> P<'a> {
         let (r4, _) = cut(self.sym(r3, close))?;
         return Ok((
           r4,
-          BinderGroup { info, names, ty, span: self.sp(start, r4) },
+          BinderGroup { contract, info, names, ty, span: self.sp(start, r4) },
         ));
       }
       let (r2, ty) = cut(self.term(r))?;
       let (r3, _) = cut(self.sym(r2, close))?;
       return Ok((
         r3,
-        BinderGroup { info, names: vec![], ty, span: self.sp(start, r3) },
+        BinderGroup {
+          contract,
+          info,
+          names: vec![],
+          ty,
+          span: self.sp(start, r3),
+        },
       ));
     }
     let names_colon = self.binder_names_colon(r);
@@ -930,7 +988,10 @@ impl<'a> P<'a> {
     };
     let (r3, ty) = cut(self.term(r2))?;
     let (r4, _) = cut(self.sym(r3, close))?;
-    Ok((r4, BinderGroup { info, names, ty, span: self.sp(start, r4) }))
+    Ok((
+      r4,
+      BinderGroup { contract, info, names, ty, span: self.sp(start, r4) },
+    ))
   }
 
   /// `ident+ :` — the committing prefix of a named binder group.
@@ -981,9 +1042,25 @@ impl<'a> P<'a> {
   fn let_term(&self, i: &'a str, non_dep: bool) -> R<'a, Term> {
     let word = if non_dep { "have" } else { "let" };
     let (r, ksp) = self.kw(i, word)?;
-    let (r, name) = cut(self.binder_name(r))?;
-    let (r, _) = cut(self.sym(r, ":"))?;
-    let (r, ty) = cut(self.term(r))?;
+    let (r, kind) = if self.peek_word(r)?.1 == Some("borrow") {
+      let (r, _) = self.kw(r, "borrow")?;
+      (r, LetKind::BorrowShared)
+    } else {
+      (r, LetKind::Value)
+    };
+    let r = self.ws(r)?;
+    let (r, (name, ty, binder)) = if r.starts_with('(') {
+      let (r, group) = cut(self.binder_group(r))?;
+      if group.info != BinderInfo::Default || group.names.len() != 1 {
+        return cut(self.fail(r, "one explicit let binder"));
+      }
+      (r, (group.names.into_iter().next().unwrap(), group.ty, group.contract))
+    } else {
+      let (r, name) = cut(self.binder_name(r))?;
+      let (r, _) = cut(self.sym(r, ":"))?;
+      let (r, ty) = cut(self.term(r))?;
+      (r, (name, ty, BinderContract::default()))
+    };
     let (r, _) = cut(self.sym(r, ":="))?;
     let (r, val) = cut(self.term(r))?;
     let (r, _) = cut(self.sym(r, ";"))?;
@@ -992,7 +1069,7 @@ impl<'a> P<'a> {
     Ok((
       r,
       Term::Let {
-        non_dep,
+        contract: LetContract { non_dep, kind, binder },
         name,
         ty: Box::new(ty),
         val: Box::new(val),
@@ -1021,9 +1098,18 @@ impl<'a> P<'a> {
       }
     }
     let (r, _) = cut(self.arrow_tok(rest))?;
+    let (r, output) = cut(self.contract_prefix(r, false))?;
     let (r, body) = cut(self.term(r))?;
     let span = self.sp(start, start).to(body.span());
-    Ok((r, Term::Pi { binders: groups, body: Box::new(body), span }))
+    Ok((
+      r,
+      Term::Pi {
+        binders: groups,
+        result: output.value,
+        body: Box::new(body),
+        span,
+      },
+    ))
   }
 
   /// Arrow layer: dependent domain, or application with optional `→`.
@@ -1043,9 +1129,18 @@ impl<'a> P<'a> {
     let (r, lhs) = self.app(j)?;
     match self.arrow_tok(r) {
       Ok((r2, _)) => {
+        let (r2, output) = cut(self.contract_prefix(r2, false))?;
         let (r3, cod) = cut(self.term(r2))?;
         let span = lhs.span().to(cod.span());
-        Ok((r3, Term::Arrow { dom: Box::new(lhs), cod: Box::new(cod), span }))
+        Ok((
+          r3,
+          Term::Arrow {
+            result: output.value,
+            dom: Box::new(lhs),
+            cod: Box::new(cod),
+            span,
+          },
+        ))
       },
       Err(NErr::Failure(e)) => Err(NErr::Failure(e)),
       Err(_) => Ok((r, lhs)),
@@ -1528,32 +1623,14 @@ impl<'a> P<'a> {
   /// optional main expression, EOF.
   fn file(&self, i: &'a str) -> R<'a, File> {
     let start = self.ws(i)?;
-    // Optional version header: absent means version 1, forever
-    // (grammar versions ≥ 2 must declare themselves). A leading
-    // `ixon` followed by a numeral is always the header (a constant
-    // literally named `ixon` applied to a literal at file start needs
-    // parens); followed by anything else it is content.
-    let (r, version) = {
-      let (_, word) = self.peek_word(start)?;
-      if word == Some("ixon") {
-        let (after, _) = self.kw(start, "ixon")?;
-        let j = self.ws(after)?;
-        if j.starts_with(|c: char| c.is_ascii_digit()) {
-          let (r, (version, vsp)) = self.nat_u64(after)?;
-          if version != VERSION {
-            return self.fatal(
-              ErrorKind::UnknownVersion { found: version, supported: VERSION },
-              vsp,
-            );
-          }
-          (r, version)
-        } else {
-          (start, VERSION)
-        }
-      } else {
-        (start, VERSION)
-      }
-    };
+    let (r, _) = cut(self.kw(start, "ixon"))?;
+    let (r, (version, vsp)) = cut(self.nat_u64(r))?;
+    if version != VERSION {
+      return self.fatal(
+        ErrorKind::UnknownVersion { found: version, supported: VERSION },
+        vsp,
+      );
+    }
     let mut imports = Vec::new();
     let mut rest = r;
     loop {

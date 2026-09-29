@@ -74,6 +74,45 @@ inductive Op
   | u32ToField : Array ValIdx → Op
   deriving Repr, BEq, Hashable
 
+/-- Number of values appended to the bytecode value stack, including virtual
+results that do not allocate witness columns. -/
+def Op.outputCount : Op → Nat
+  | .const _ => 1
+  | .add .. | .sub .. | .mul .. | .eqZero .. => 1
+  | .call _ _ size _ | .load size _ | .ioRead _ _ size => size
+  | .store .. => 1
+  | .ioGetInfo .. => 2
+  | .u8BitDecomposition .. | .unconstrainedGToBytes .. => 8
+  | .u8ShiftLeft .. | .u8ShiftRight .. | .u8Xor .. | .u8And ..
+  | .u8Or .. | .u8LessThan .. | .u32LessThan .. => 1
+  | .u8Mul .. | .u8Add .. | .u8Sub .. | .u8XorSplit7 ..
+  | .u8XorSplit4 .. | .unconstrainedBigUintDivMod .. => 2
+  | .unconstrainedGInverse .. | .u32ToField .. => 1
+  | .unconstrainedU32Add .. | .unconstrainedU32Add3 .. => 5
+  | .assertEq .. | .ioSetInfo .. | .ioWrite .. | .u8RangeCheck ..
+  | .debug .. => 0
+
+/-- Value-stack operands in source evaluation order. Function indices,
+memory widths and result counts are metadata, not value references. -/
+def Op.inputs : Op → Array ValIdx
+  | .const _ => #[]
+  | .add a b | .sub a b | .mul a b | .u8Xor a b | .u8Add a b
+  | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b
+  | .u8LessThan a b | .u32LessThan a b | .u8XorSplit7 a b
+  | .u8XorSplit4 a b | .u8RangeCheck a b
+  | .unconstrainedBigUintDivMod a b => #[a, b]
+  | .eqZero a | .load _ a | .u8BitDecomposition a | .u8ShiftLeft a
+  | .u8ShiftRight a | .unconstrainedGToBytes a
+  | .unconstrainedGInverse a => #[a]
+  | .call _ args _ _ | .store args | .u32ToField args => args
+  | .assertEq xs ys _ | .unconstrainedU32Add xs ys => xs ++ ys
+  | .ioGetInfo channel key => #[channel] ++ key
+  | .ioSetInfo channel key idx len => #[channel] ++ key ++ #[idx, len]
+  | .ioRead channel idx _ => #[channel, idx]
+  | .ioWrite channel data => #[channel] ++ data
+  | .unconstrainedU32Add3 xs ys zs => xs ++ ys ++ zs
+  | .debug _ args => args.getD #[]
+
 mutual
   inductive Ctrl where
     | match : ValIdx → Array (G × Block) → Option Block → Ctrl
@@ -104,12 +143,14 @@ structure FunctionLayout where
 def FunctionLayout.width (l : FunctionLayout) : Nat :=
   l.inputSize + l.selectors + l.auxiliaries
 
+/-- Layout-only estimate of main and stage-2 width. This lacks the control
+tree, compiled lookup degrees and PCS parameters; use the built system's
+`circuitShapes` for actual widths after lookup tuning. -/
 def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
   -- Stage 2 commits max(⌈L/k⌉, 1) chained partial accumulators (no message
-  -- inverses); see `multi_stark::lookup::stage2_width`. Mirrors the
-  -- synthesis grouping rule (`crates/aiur/src/synthesis.rs`): branchless
-  -- functions (one selector) have raw degree-1 lookup arguments, so their
-  -- lookups are grouped 2 per accumulator step.
+  -- inverses); see `multi_stark::lookup::stage2_width`. Retain the original
+  -- single-selector heuristic here; synthesis checks control flow and
+  -- retunes using compiled degrees and the FFT cost.
   let slots := if l.selectors == 1 && l.lookups >= 2
     then (l.lookups + 1) / 2
     else max l.lookups 1

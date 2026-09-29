@@ -48,7 +48,8 @@ def exactExprCost (value : Ixon.Expr) (expected : Nat) : Bool :=
   exactExprCost ((List.range n).foldl (fun e _ => .lam .many (.sort 0) e) (.var 0)) (5 + 8 * n)
 #guard [1, 2, 7].all fun n =>
   exactExprCost ((List.range n).foldl (fun e _ => .all .many .shared (.sort 0) e) (.var 0)) (5 + 9 * n)
-#guard exactExprCost (.letE false (.sort 0) (.var 0) (.var 0)) 12
+-- A v3 let reads one binder-contract byte after its flags.
+#guard exactExprCost (.letE (.lean false) (.sort 0) (.var 0) (.var 0)) 13
 
 #guard match Work.tag0 { bytes := ⟨#[0x88]⟩ } with
   | (.error reason stop, work) => reason == "getU64TrimmedLE: len > 8" && stop.idx == 1 && work == 1
@@ -62,33 +63,43 @@ def exactExprCost (value : Ixon.Expr) (expected : Nat) : Bool :=
   | _ => false
 
 -- The first array element is complete. The second fails inside a let after
--- parsing its type. Its work must be retained, and the claimed array count
--- must not cause extra iterations or allocation.
+-- parsing its binder contract and type. Its work must be retained, and the
+-- claimed array count must not cause extra iterations or allocation.
 #guard [2, 64, 18446744073709551615].all fun count =>
-  match Work.array Work.expr count { bytes := ⟨#[0x10, 0xA0, 0x10]⟩ } with
-  | (.error reason stop, work) => reason == "EOF" && stop.idx == 3 && work == 11
+  match Work.array Work.expr count { bytes := ⟨#[0x10, 0xA0, 0x03, 0x10]⟩ } with
+  | (.error reason stop, work) => reason == "EOF" && stop.idx == 4 && work == 12
   | _ => false
+-- A let binder byte outside the sixteen v3 contracts fails before its type.
+#guard match Work.array Work.expr 2 { bytes := ⟨#[0x10, 0xA0, 0x10]⟩ } with
+  | (.error reason stop, work) => reason == "invalid binder contract 16" && stop.idx == 3 && work == 8
+  | _ => false
+-- Ixon v3 checks a claimed spine length against the remaining bytes first.
 #guard match Work.expr { bytes := ⟨#[0x72, 0x10]⟩ } with
-  | (.error reason stop, work) => reason == "EOF" && stop.idx == 2 && work == 6
+  | (.error reason stop, work) =>
+    reason == "count exceeds remaining bytes" && stop.idx == 1 && work == 2
   | _ => false
 
-def expressionCountBombs : List (ByteArray × Nat) :=
+-- Ixon v3 rejects a claimed count larger than the remaining bytes before
+-- reading any element: the stop index is right after the count's tag (and the
+-- reference index for `ref`/`recur`).
+def expressionCountBombs : List (ByteArray × Nat × Nat) :=
   [((Ixon.runPut do
       Ixon.putTag4 ⟨7, 18446744073709551615⟩
-      Ixon.putExpr (.var 0)), 22)] ++
+      Ixon.putExpr (.var 0)), 9, 18)] ++
     [8, 9].map (fun flag => ((Ixon.runPut do
       Ixon.putTag4 ⟨flag, 18446744073709551615⟩
       Ixon.putU8 3
-      Ixon.putExpr (.var 0)), 23)) ++
+      Ixon.putExpr (.var 0)), 9, 18)) ++
     [2, 3].map (fun flag => ((Ixon.runPut do
       Ixon.putTag4 ⟨flag, 18446744073709551615⟩
       Ixon.putTag0 ⟨0⟩
-      Ixon.putTag0 ⟨0⟩), 23))
+      Ixon.putTag0 ⟨0⟩), 10, 20))
 
-#guard expressionCountBombs.all fun (input, expected) =>
+#guard expressionCountBombs.all fun (input, stopIdx, expected) =>
   checked Work.expr Ixon.getExpr 0 input &&
     match Work.expr { bytes := input } with
-    | (.error reason stop, work) => reason == "EOF" && stop.idx == input.size && work == expected
+    | (.error reason stop, work) =>
+      reason == "count exceeds remaining bytes" && stop.idx == stopIdx && work == expected
     | _ => false
 
 def expressionCases : List Ixon.Expr := [
@@ -96,7 +107,7 @@ def expressionCases : List Ixon.Expr := [
   .prj 2 1 (.var 0), .app (.app (.var 0) (.var 1)) (.var 2),
   .lam .linear (.sort 0) (.lam .affine (.var 0) (.var 1)),
   .all .many .unique (.sort 0) (.all .erased .shared (.var 0) (.var 1)),
-  .letE true (.sort 0) (.var 0) (.letE false (.var 0) (.var 0) (.var 0))]
+  .letE (.lean true) (.sort 0) (.var 0) (.letE (.borrow false .linear) (.var 0) (.var 0) (.var 0))]
 
 -- Check every truncation from a nonzero cursor, including complete reads
 -- with an untouched suffix, and all single-byte tags/malformed branches.

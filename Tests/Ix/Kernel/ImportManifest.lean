@@ -58,6 +58,7 @@ Reorganized codec proofs retain their source path/revision in each header;
 they are not imports from the older model branch inventoried below. -/
 def authored : Array String := #[
   "Ix/Ixon/Types.lean", "Ix/Ixon/Types/Kinds.lean", "Ix/Ixon/Types/Modes.lean",
+  "Ix/Ixon/Types/Contract.lean",
   "Ix/Ixon/Codec.lean", "Ix/Ixon/Wire.lean", "Ix/Ixon/Verify.lean", "Ix/Ixon/Audit.lean",
   "Ix/Ixon/Verify/Basic.lean", "Ix/Ixon/Verify/Expr.lean", "Ix/Ixon/Verify/ExprSpine.lean",
   "Ix/Ixon/Verify/Constant.lean", "Ix/Ixon/Verify/ConstantTables.lean",

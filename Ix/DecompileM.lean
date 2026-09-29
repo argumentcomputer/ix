@@ -12,6 +12,7 @@ module
 -/
 
 public import Ix.Ixon
+public import Ix.SemanticContract
 public import Ix.Address
 public import Ix.Environment
 public import Ix.Common
@@ -99,7 +100,7 @@ structure BlockCtx where
 
 /-- Per-block mutable state (caches). -/
 structure BlockState where
-  exprCache : Std.HashMap (UInt64 × UInt64) Ix.Expr := {}
+  exprCache : Std.HashMap (Ixon.Expr × UInt64) Ix.Expr := {}
   univCache : Std.HashMap UInt64 Ix.Level := {}
   deriving Inhabited
 
@@ -394,7 +395,7 @@ partial def decompileExpr (e : Ixon.Expr) (arenaIdx : UInt64) : DecompileM Ix.Ex
   | _ =>
 
   -- Check cache
-  let cacheKey := (hash e, arenaIdx)
+  let cacheKey := (e, arenaIdx)
   if let some cached := (← get).exprCache.get? cacheKey then return cached
 
   -- 2. Follow mdata chain
@@ -405,11 +406,26 @@ partial def decompileExpr (e : Ixon.Expr) (arenaIdx : UInt64) : DecompileM Ix.Ex
     match ← getArenaNode currentIdx with
     | .mdata kvmaps child =>
       for kvm in kvmaps do
-        mdataLayers := mdataLayers.push (← decompileKVMap kvm)
+        let data ← decompileKVMap kvm
+        if Ix.SemanticContract.hasMetadata data then
+          throw (.badConstantFormat "semantic contracts cannot come from optional metadata")
+        mdataLayers := mdataLayers.push data
       currentIdx := child
     | _ => done := true
 
   let node ← getArenaNode currentIdx
+
+  match node with
+  | .callSite .. | .etaCallSite .. =>
+    let ctx ← getCtx
+    let annotated ← match Ix.SemanticContract.containsIxon ctx.sharing e with
+      | .ok annotated => pure annotated
+      | .error error => throw (.badConstantFormat error)
+    if annotated then
+      throw (.badConstantFormat "optional call-site replay would rewrite a semantic contract")
+  | _ => pure ()
+  if let some contract := Ix.SemanticContract.ofIxon? e then
+    mdataLayers := mdataLayers.push contract.ixMetadata
 
   -- 3. Match (arenaNode, ixonExpr) → Ix.Expr
   let result ← match node, e with
@@ -625,13 +641,13 @@ but canonical telescope has only {canonicalArgs.size} args")
     let tyExpr ← decompileExpr ty tyChild
     let valExpr ← decompileExpr val valChild
     let bodyExpr ← decompileExpr body bodyChild
-    pure (applyMdata (Ix.Expr.mkLetE letName tyExpr valExpr bodyExpr nonDep) mdataLayers)
+    pure (applyMdata (Ix.Expr.mkLetE letName tyExpr valExpr bodyExpr nonDep.nonDep) mdataLayers)
 
   | _, .letE nonDep ty val body => do
     let tyExpr ← decompileExpr ty UInt64.MAX
     let valExpr ← decompileExpr val UInt64.MAX
     let bodyExpr ← decompileExpr body UInt64.MAX
-    pure (applyMdata (Ix.Expr.mkLetE Ix.Name.mkAnon tyExpr valExpr bodyExpr nonDep) mdataLayers)
+    pure (applyMdata (Ix.Expr.mkLetE Ix.Name.mkAnon tyExpr valExpr bodyExpr nonDep.nonDep) mdataLayers)
 
   -- Prj with arena metadata
   | .prj structNameAddr child, .prj _typeRefIdx fieldIdx val => do
@@ -1009,3 +1025,4 @@ def decompileAllParallelIO (ixonEnv : Ixon.Env)
 end Ix.DecompileM
 
 end
+

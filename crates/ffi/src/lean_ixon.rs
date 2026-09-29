@@ -6,6 +6,7 @@
 #[cfg(feature = "test-ffi")]
 pub mod compare;
 pub mod constant;
+pub mod contract;
 pub mod diff;
 pub mod enums;
 pub mod env;

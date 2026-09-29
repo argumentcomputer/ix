@@ -90,6 +90,8 @@ def termCorpus : List String := [
   "(x : Nat) → Vec x",
   "(x y : Nat) (z : Bool) → f x y z",
   "Nat → Bool",
+  "(10767821210224983288 → ! B) a",
+  "A → 17932781577842061186",
   "Nat → Bool → Prop",
   "(Nat → Bool) → Prop",
   "let x : Nat := 5; f x",
@@ -134,7 +136,7 @@ def isUnaryApp : Term → Bool
   | _ => false
 
 def isLet (nonDep : Bool) : Term → Bool
-  | .letE nd .. => nd == nonDep
+  | .letE contract .. => contract.nonDep == nonDep
   | _ => false
 
 def adjacencyIsSignificant : TestSeq :=
@@ -160,13 +162,13 @@ def letVsHave : TestSeq :=
 /-- The acceptance fixture: hand-formatted input normalizes to the
     SAME canonical bytes the Rust printer emits (shared golden). -/
 def acceptanceFixture : TestSeq :=
-  let src := "ixon 1\n"
+  let src := "ixon 3\n"
     ++ "import #9c41aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9c41\n"
     ++ "\n"
     ++ "def : String → Except PatchError String :=\n"
     ++ "  fun (s : String) => Except.ok PatchError String s\n"
   let canonical :=
-    "import #9c41aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9c41\n"
+    "ixon 3\n\nimport #9c41aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9c41\n"
     ++ "\n"
     ++ "def : String → Except PatchError String := "
     ++ "fun (s : String) => Except.ok PatchError String s\n"
@@ -177,7 +179,7 @@ def acceptanceFixture : TestSeq :=
       (printed == canonical)
 
 def kitchenSink : TestSeq :=
-  let src := "ixon 1
+  let src := "ixon 3
 
 import #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 import Std.V2#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -224,68 +226,51 @@ def rtFileEq (src expect : String) : Bool :=
   | .error _ => false
 
 def mainExpression : TestSeq :=
-  test "minimal main-only file is canonical (no header)"
-    (rtFileEq "⊢ 1 : Nat\n" "⊢ 1 : Nat\n")
-  ++ test "explicit ixon 1 header accepted and canonically omitted"
-    (rtFileEq "ixon 1\n⊢ 1 : Nat\n" "⊢ 1 : Nat\n")
-  ++ test "ASCII turnstile normalizes to ⊢"
-    (rtFileEq "|- 1 : Nat\n" "⊢ 1 : Nat\n")
-  ++ test "low-precedence values parenthesize canonically"
-    (rtFileEq "⊢ fun (x : Nat) => x : Nat → Nat\n"
-      "⊢ (fun (x : Nat) => x) : Nat → Nat\n")
+  let cases : List (String × String) := [
+    ("⊢ 1 : Nat\n", "⊢ 1 : Nat\n"),
+    ("|- 1 : Nat\n", "⊢ 1 : Nat\n"),
+    ("1 : Nat\n", "⊢ 1 : Nat\n"),
+    ("⊢ fun (x : Nat) => x : Nat → Nat\n", "⊢ (fun (x : Nat) => x) : Nat → Nat\n"),
+    ("ixon : Nat\n", "⊢ ixon : Nat\n"),
+    ("fun (s : String) => Except.ok PatchError String s : String -> Except PatchError String\n",
+      "⊢ (fun (s : String) => Except.ok PatchError String s) : String → Except PatchError String\n"),
+    ("import #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nfun (x : Nat) => x : Nat → Nat\n",
+      "import #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\n⊢ (fun (x : Nat) => x) : Nat → Nat\n")]
+  let formats := cases.foldl (init := .done) fun tests (src, expected) =>
+    tests ++ test s!"v3 main {repr src}"
+      (rtFileEq ("ixon 3\n" ++ src) ("ixon 3\n\n" ++ expected))
+  formats
   ++ test "the annotation is mandatory"
-    (errKind (parseFile "⊢ 1\n") fun k =>
-      match k with
-      | .unexpectedToken .. => true
-      | _ => false)
-  ++ test "bare form accepted as the file's sole item"
-    (rtFileEq "1 : Nat\n" "⊢ 1 : Nat\n")
-  ++ test "bare form after imports"
-    (rtFileEq
-      ("import "
-        ++ "#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
-        ++ "fun (x : Nat) => x : Nat → Nat\n")
-      ("import "
-        ++ "#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\n"
-        ++ "⊢ (fun (x : Nat) => x) : Nat → Nat\n"))
-  ++ test "leading ixon without a numeral is content"
-    (rtFileEq "ixon : Nat\n" "⊢ ixon : Nat\n")
-  ++ test "the fully minimal wire: one bare judgment"
-    (rtFileEq
-      ("fun (s : String) => Except.ok PatchError String s : "
-        ++ "String -> Except PatchError String\n")
-      ("⊢ (fun (s : String) => Except.ok PatchError String s) : "
-        ++ "String → Except PatchError String\n"))
+    (errKind (parseFile "ixon 3\n⊢ 1\n") fun k =>
+      match k with | .unexpectedToken .. => true | _ => false)
   ++ test "after a declaration the turnstile is required"
-    (errKind (parseFile "ixon 1\ndef x : N := v\n1 : Nat\n") fun k =>
-      match k with
-      | .unexpectedToken .. => true
-      | _ => false)
+    (errKind (parseFile "ixon 3\ndef x : N := v\n1 : Nat\n") fun k =>
+      match k with | .unexpectedToken .. => true | _ => false)
   ++ test "at most one main expression"
-    (errKind (parseFile "ixon 1\n⊢ 1 : Nat ⊢ 2 : Nat\n")
-      (· == .mainExprNotLast))
+    (errKind (parseFile "ixon 3\n⊢ 1 : Nat ⊢ 2 : Nat\n") (· == .mainExprNotLast))
   ++ test "main expression must be last"
-    (errKind (parseFile "ixon 1\n⊢ 1 : Nat def x : A := b\n")
-      (· == .mainExprNotLast))
+    (errKind (parseFile "ixon 3\n⊢ 1 : Nat def x : A := b\n") (· == .mainExprNotLast))
 
 def mainAfterTermFinalDecl : TestSeq :=
   -- Regression (found by quickcheck on the Rust side): the turnstile
   -- stops the preceding declaration's application spine.
   checkExcept "main after where-less inductive"
     (roundtripFile
-      "ixon 1\ninductive N (params := 0) (indices := 0) : Prop\n\n⊢ Prop : Prop\n")
+      "ixon 3\ninductive N (params := 0) (indices := 0) : Prop\n\n⊢ Prop : Prop\n")
   ++ checkExcept "|- after a ctor block is not eaten by the bar"
     (roundtripFile
-      ("ixon 1\ninductive N (params := 0) (indices := 0) : Prop where\n"
+      ("ixon 3\ninductive N (params := 0) (indices := 0) : Prop where\n"
         ++ "  | c (params := 0) (fields := 0) : N\n|- c : N\n"))
 
 def versionGate : TestSeq :=
-  test "ixon 2 rejected"
-    (errKind (parseFile "ixon 2\n") fun k => k == .unknownVersion 2 1)
+  ([1, 2, 4] : List Nat).foldl (init :=
+      test "version header required" (errKind (parseFile "⊢ 1 : Nat\n") (fun _ => true)))
+    fun tests version => tests ++ test s!"ixon {version} rejected"
+      (errKind (parseFile s!"ixon {version}\n") (· == .unknownVersion version 3))
 
 def importHashLength : TestSeq :=
   test "short import hash rejected"
-    (errKind (parseFile "ixon 1\nimport #abcd\n")
+    (errKind (parseFile "ixon 3\nimport #abcd\n")
       fun k => k == .importHashLength 4)
 
 def errorShapes : TestSeq :=
@@ -309,7 +294,7 @@ def errorShapes : TestSeq :=
   ++ test "empty levels"
     (errKind (parseTerm "Nat.{}") (· == .emptyLevels))
   ++ test "line/col are 1-based"
-    (errLine (parseFile "ixon 1\ndef x : Nat :=\n") 3)
+    (errLine (parseFile "ixon 3\ndef x : Nat :=\n") 3)
 
 def depthCap : TestSeq :=
   let limits : Limits := { maxDepth := 16 }

@@ -143,15 +143,12 @@ opaque rsCheckAnonFFI :
     IO (Array (String × Option CheckError))
 
 /-- FFI: anon-mode type-check of named constants with (by default) their full
-    dependency closures — the same mode and scope as the zkVM hosts' `--consts`
-    execute path, so an out-of-circuit run is directly comparable to the
-    in-circuit one. The `Bool` after the names is `skip-deps`: `true` checks
-    only each name's own work item (subject-only; deps trusted), mirroring
-    `zisk-host --skip-deps`.
+    dependency closures. The `Bool` after the names is `skip-deps`: `true`
+    checks only each name's own work item (subject-only; deps trusted).
 
     Names are the constants' displayed forms (e.g. `"Nat.add_comm"`,
     `"_private.Init.….instRxcHasSize_eq"`), resolved through the env's `named`
-    metadata by string match — the same resolution the zkVM hosts use — after
+    metadata by string match, after
     which the check runs on the anon view (the kernel never sees names). A
     member of a mutual block selects the whole block's work item. Multiple
     names union their closures into one check set.
@@ -195,18 +192,24 @@ opaque rsEnvExtractFFI :
     IO Unit
 
 /-- FFI: partition a `.ixe` with the STATIC strategy (no out-of-circuit
-    profiling): byte-balanced min-cut over the static walk-edge nets + a
-    predicted-FFT-cost rebalance post-pass (`ix_kernel::shard::shard_static`;
-    model constants documented there). A nonzero `numShards` fixes the count;
-    otherwise `ramGib` selects the static block-shape seed after the `.ixe` has
-    been profiled. Writes a `.ixes` manifest; prints the report to stderr. -/
+    profiling). Layout `mincut`: byte-balanced min-cut over the static
+    walk-edge nets + a predicted-FFT-cost rebalance post-pass
+    (`ix_kernel::shard::shard_static`; model constants documented there).
+    Layout `ordered`: contiguous ranges of a dependency order, shard 0 at
+    the top, so a shard's reference closure lies in its own shard and later
+    ones (`ix_kernel::shard::shard_static_ordered`; what the distributed
+    prover wants). A nonzero `numShards` fixes the count; otherwise `ramGib`
+    selects the static block-shape seed after the `.ixe` has been profiled.
+    Writes a `.ixes` manifest; prints the report to stderr. -/
 @[extern "rs_shard_env_static"]
 opaque rsShardEnvStaticFFI :
     @& String →                          -- .ixe path
-    @& String →                          -- num_shards (N; "0" = score seed)
-    @& String →                          -- max RAM GiB (used when N = 0)
-    @& String →                          -- balance percent
+    USize →                              -- num_shards (N; 0 = score seed)
+    UInt64 →                             -- max RAM GiB (used when N = 0)
+    UInt64 →                             -- balance percent
+    @& String →                          -- layout: "mincut" or "ordered"
     @& String →                          -- .ixes output path ("" = skip)
+    USize →                              -- executions ahead of each prover (trace-shard seed)
     IO Unit
 
 /-- FFI: dump the static block-level reference graph of a `.ixe` as text:
@@ -235,28 +238,28 @@ opaque rsProfileAnonFFI :
     IO Unit
 
 /-- FFI: partition a `.ixprof` into `numShards` shards, writing a `.ixes`
-    manifest. `numShards` and `balancePct` are decimal strings (kept ABI-simple).
-    Empty `outPath` skips the manifest. Prints a what-if report to stderr. -/
+    manifest. Empty `outPath` skips the manifest. Prints a what-if report to
+    stderr. -/
 @[extern "rs_shard_esp"]
 opaque rsShardEspFFI :
     @& String →                          -- .ixprof path
-    @& String →                          -- num_shards (N)
-    @& String →                          -- balance percent
-    @& String →                          -- parallelism (provers for prove-time est)
+    USize →                              -- num_shards (N)
+    UInt64 →                             -- balance percent
+    USize →                              -- parallelism (provers for prove-time est)
     @& String →                          -- .ixes output path ("" = skip)
     IO Unit
 
 /-- FFI: partition a `.ixprof` to a per-shard cycle/RAM budget, writing a
-    `.ixes` manifest. `maxCycles` is a guest-STEP cap; if `ramGb` > 0 it is
+    `.ixes` manifest. `maxCycles` is a guest-STEP cap; if `ramGib` > 0 it is
     converted via the measured prover RAM model and overrides `maxCycles`. Pass
-    "0" for whichever is unused. Decimal strings (ABI-simple). -/
+    0 for whichever is unused. -/
 @[extern "rs_shard_esp_cap"]
 opaque rsShardEspCapFFI :
     @& String →                          -- .ixprof path
-    @& String →                          -- max_cycles ("0" = unset)
-    @& String →                          -- max_ram GiB ("0" = unset)
-    @& String →                          -- balance percent
-    @& String →                          -- parallelism (provers for prove-time est)
+    UInt64 →                             -- max_cycles (0 = unset)
+    UInt64 →                             -- max_ram GiB (0 = unset)
+    UInt64 →                             -- balance percent
+    USize →                              -- parallelism (provers for prove-time est)
     @& String →                          -- .ixes output path ("" = skip)
     IO Unit
 

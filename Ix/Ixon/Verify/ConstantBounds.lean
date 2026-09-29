@@ -9,10 +9,27 @@ namespace Ix.Ixon.Verify.ConstantBounds
 
 open _root_.Ixon ReaderBounds
 
+/-- Ixon v3 validates flag bytes before the payload: a rejected flag stops. -/
+theorem guard_bound {p : Prop} [Decidable p] {rest : GetM α} {units : α → Nat} (reason : String)
+    (h : ReaderBound rest units) :
+    ReaderBound (if p then (throw reason : GetM PUnit) >>= (fun _ => rest) else rest) units := by
+  split
+  · exact (throw_bound reason (fun _ => 0)).bind (fun _ => h) units (fun _ _ => by omega)
+  · exact h
+
+/-- The strict v3 Boolean reader consumes one byte. -/
+theorem getBool_bound : ReaderBound (Serialize.get (α := Bool)) (fun _ => 2) := by
+  intro start finish value valid read
+  change (EStateM.bind getU8 _) start = _ at read
+  obtain ⟨byte, middle, byteRead, read⟩ := bind_ok.mp read
+  have byteSpan := getU8_bound _ _ _ valid byteRead
+  split at read <;> first | (cases read; exact byteSpan) | cases read
+
 theorem getDefinition_bound : ReaderBound getDefinition Definition.resourceSize := by
   unfold getDefinition
   apply getU8_bound.skip
   intro mode
+  refine guard_bound _ ?_
   apply getTag0_bound.skip
   intro levels
   exact getExpr_bound.bind_map (fun _ => getExpr_bound) _ _
@@ -26,7 +43,7 @@ theorem getRecursorRule_bound : ReaderBound getRecursorRule RecursorRule.resourc
 
 theorem getAxiom_bound : ReaderBound getAxiom Axiom.resourceSize := by
   unfold getAxiom
-  apply getU8_bound.skip
+  apply getBool_bound.skip
   intro unsafeFlag
   apply getTag0_bound.skip
   intro levels
@@ -34,7 +51,7 @@ theorem getAxiom_bound : ReaderBound getAxiom Axiom.resourceSize := by
 
 theorem getConstructor_bound : ReaderBound getConstructor Constructor.resourceSize := by
   unfold getConstructor
-  apply getU8_bound.skip
+  apply getBool_bound.skip
   intro unsafeFlag
   apply getTag0_bound.skip
   intro levels
@@ -98,6 +115,8 @@ theorem getRecursorRules_bound (k unsafeFlag : Bool) (levels params indices moti
   unfold getRecursorRules
   apply getTag0_bound.skip
   intro count
+  apply (checkCount_bound _ _).skip
+  intro checked
   simpa [getArray] using (getArray_bound _ _ getRecursorRule_bound count.size.toNat).map
     (fun rules => (⟨k, unsafeFlag, levels, params, indices, motives, minors, type, rules⟩ : Recursor))
     (fun value => value.resourceSize - (type.resourceSize + 1))
@@ -109,6 +128,7 @@ theorem getRecursor_bound : ReaderBound getRecursor Recursor.resourceSize := by
   apply getU8_bound.skip
   intro flags
   unfold getRecursorFromFlags getRecursorAfterFlags
+  refine guard_bound _ ?_
   apply getTag0_bound.skip
   intro levels
   apply getTag0_bound.skip
@@ -129,6 +149,8 @@ theorem getInductiveConstructors_bound (unsafeFlag : Bool) (levels params indice
   unfold getInductiveConstructors
   apply getTag0_bound.skip
   intro count
+  apply (checkCount_bound _ _).skip
+  intro checked
   simpa [getArray] using (getArray_bound _ _ getConstructor_bound count.size.toNat).map
     (fun ctors => (⟨unsafeFlag, levels, params, indices, type, ctors⟩ : Inductive))
     (fun value => value.resourceSize - (type.resourceSize + 1))
@@ -137,9 +159,9 @@ theorem getInductiveConstructors_bound (unsafeFlag : Bool) (levels params indice
 open Codec.Ixon.MutualConstant in
 theorem getInductive_bound : ReaderBound getInductive Inductive.resourceSize := by
   rw [getInductive_eq]
-  apply getU8_bound.skip
-  intro flags
-  unfold getInductiveFromFlags getInductiveAfterFlags
+  apply getBool_bound.skip
+  intro unsafeFlag
+  unfold getInductiveAfterFlags
   apply getTag0_bound.skip
   intro levels
   apply getTag0_bound.skip

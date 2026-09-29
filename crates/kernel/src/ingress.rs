@@ -5,7 +5,7 @@
 //! universe params and optional metadata). Uses iterative stack-based traversal
 //! to avoid stack overflow on deeply nested expressions.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 #[cfg(not(target_arch = "riscv64"))]
 use std::hash::{BuildHasher, Hash};
 use std::sync::Arc;
@@ -23,7 +23,6 @@ use bignat::Nat;
 use ix_common::address::Address;
 #[cfg(not(target_arch = "riscv64"))]
 use ix_common::env::ConstantInfo as LeanCI;
-#[cfg(not(target_arch = "riscv64"))]
 use ix_common::env::DefinitionSafety;
 #[cfg(not(target_arch = "riscv64"))]
 use ix_common::env::Env as LeanEnv;
@@ -59,6 +58,8 @@ struct Ctx<'a, M: KernelMode> {
   univs: &'a [Arc<IxonUniv>],
   /// ZIds of mutual block members (for resolving `Expr::Rec`).
   mut_ctx: Vec<KId<M>>,
+  /// Rec edges for the definition currently being admitted.
+  local_refs: Option<&'a RefCell<FxHashSet<Address>>>,
   arena: &'a ExprMeta,
   names: &'a FxHashMap<Address, Name>,
   lvls: Vec<Name>,
@@ -970,6 +971,9 @@ fn ingress_expr<M: KernelMode>(
               )
               .ok_or_else(|| format!("invalid Rec index {rec_idx}"))?
               .clone();
+            if let Some(refs) = ctx.local_refs {
+              refs.borrow_mut().insert(mid.addr.clone());
+            }
             let univs =
               ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
             let decor: M::MField<Option<UnivDecor>> =
@@ -1121,6 +1125,9 @@ fn ingress_expr<M: KernelMode>(
                       format!("CallSite head: invalid Rec index {rec_idx}")
                     })?
                     .clone();
+                  if let Some(refs) = ctx.local_refs {
+                    refs.borrow_mut().insert(mid.addr.clone());
+                  }
                   let univs = ingress_univ_args(
                     univ_idxs, ctx, intern, univ_cache, stats,
                   )?;
@@ -1212,6 +1219,8 @@ fn ingress_expr<M: KernelMode>(
             }
           },
 
+          // Kernel ingress checks erased Lean types. Resource claims additionally
+          // require the addressed validator in `crate::resource`.
           IxonExpr::Lam(_, ty, body) => {
             bump_convert_stat!(stats, lam_nodes);
             if let ExprMetaData::EtaCallSite { wrapper_meta, .. } = node {
@@ -1297,7 +1306,7 @@ fn ingress_expr<M: KernelMode>(
             };
             stack.push(ExprFrame::LetDone {
               name: M::meta_field(name.clone()),
-              nd: *nd,
+              nd: nd.non_dep,
               mdata,
             });
             stack.push(ExprFrame::BinderPop);
@@ -1585,6 +1594,7 @@ fn ingress_defn<M: KernelMode>(
   // projection addresses; passing `Some(_)` skips the metadata-derived
   // `build_mut_ctx` call. Meta callers pass `None`.
   mut_ctx_override: Option<Vec<KId<M>>>,
+  local_dependencies: Option<&mut LocalDefnDependencies>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
@@ -1596,6 +1606,7 @@ fn ingress_defn<M: KernelMode>(
     .get(&self_id.addr)
     .map_or(ReducibilityHints::Regular(0), |r| *r);
   let safety = def.safety;
+  let local_refs = RefCell::new(FxHashSet::default());
   let (level_params, arena, type_root, value_root, all_addrs) = match &meta.info
   {
     ConstantMetaInfo::Def {
@@ -1624,6 +1635,7 @@ fn ingress_defn<M: KernelMode>(
     lvls: level_params.clone(),
     univ_patches: univ_patch_map(meta),
     meta_univs: &meta.meta_univs,
+    local_refs: local_dependencies.as_ref().map(|_| &local_refs),
     synth_counter: Cell::new(0),
   };
 
@@ -1656,6 +1668,10 @@ fn ingress_defn<M: KernelMode>(
     },
     names,
   );
+
+  if let Some(dependencies) = local_dependencies {
+    dependencies.insert(&self_id.addr, def.safety, local_refs.into_inner());
+  }
 
   Ok(vec![(
     self_id,
@@ -1729,6 +1745,7 @@ fn ingress_recursor<M: KernelMode>(
     lvls: level_params.clone(),
     univ_patches: univ_patch_map(meta),
     meta_univs: &meta.meta_univs,
+    local_refs: None,
     synth_counter: Cell::new(0),
   };
 
@@ -1820,21 +1837,27 @@ fn ingress_standalone<M: KernelMode>(
     KId::new(addr.clone(), M::meta_field(const_name.clone()));
 
   match &constant.info {
-    IxonCI::Defn(def) => ingress_defn(
-      def,
-      self_id.clone(),
-      meta,
-      ixon_env,
-      names,
-      name_to_addr,
-      &constant.sharing,
-      &constant.refs,
-      &constant.univs,
-      self_id,
-      intern,
-      stats,
-      None,
-    ),
+    IxonCI::Defn(def) => {
+      let mut local_dependencies = LocalDefnDependencies::default();
+      let entries = ingress_defn(
+        def,
+        self_id.clone(),
+        meta,
+        ixon_env,
+        names,
+        name_to_addr,
+        &constant.sharing,
+        &constant.refs,
+        &constant.univs,
+        self_id,
+        intern,
+        stats,
+        None,
+        Some(&mut local_dependencies),
+      )?;
+      local_dependencies.validate()?;
+      Ok(entries)
+    },
 
     IxonCI::Axio(ax) => {
       let mut cache: ExprCache<M> = FxHashMap::default();
@@ -1855,6 +1878,7 @@ fn ingress_standalone<M: KernelMode>(
         lvls: level_params.clone(),
         univ_patches: univ_patch_map(meta),
         meta_univs: &meta.meta_univs,
+        local_refs: None,
         synth_counter: Cell::new(0),
       };
       let typ = ingress_expr(
@@ -1905,6 +1929,7 @@ fn ingress_standalone<M: KernelMode>(
         lvls: level_params.clone(),
         univ_patches: univ_patch_map(meta),
         meta_univs: &meta.meta_univs,
+        local_refs: None,
         synth_counter: Cell::new(0),
       };
       let typ = ingress_expr(
@@ -2004,6 +2029,7 @@ fn ingress_muts_inductive<M: KernelMode>(
     lvls: level_params.clone(),
     univ_patches: univ_patch_map(meta),
     meta_univs: &meta.meta_univs,
+    local_refs: None,
     synth_counter: Cell::new(0),
   };
 
@@ -2105,6 +2131,7 @@ fn ingress_muts_inductive<M: KernelMode>(
       // own `meta_univs` (canonicity §10.6).
       univ_patches: univ_patch_map(&ctor_named_meta),
       meta_univs: &ctor_named_meta.meta_univs,
+      local_refs: None,
       synth_counter: Cell::new(0),
     };
     let mut ctor_univ_cache: UnivCache<M> = FxHashMap::default();
@@ -2162,6 +2189,7 @@ fn ingress_muts_block<M: KernelMode>(
   };
 
   let mut results: Vec<(KId<M>, KConst<M>)> = Vec::new();
+  let mut local_dependencies = LocalDefnDependencies::default();
 
   for (i, member) in members.iter().enumerate() {
     // `all[i][0]` is the name-hash address of this member's canonical Lean
@@ -2240,10 +2268,12 @@ fn ingress_muts_block<M: KernelMode>(
           intern,
           stats,
           None,
+          Some(&mut local_dependencies),
         )?);
       },
     }
   }
+  local_dependencies.validate()?;
 
   // Canonicity validation for Indc-only blocks.
   //
@@ -4385,6 +4415,72 @@ fn validate_no_reserved_marker_addresses(
 
 use crate::mode::Anon;
 
+/// Fetch a constant with an explicit binding to its map key, including sources
+/// assembled in memory rather than loaded with deferred address verification.
+fn anon_constant(
+  env: &IxonEnv,
+  addr: &Address,
+) -> Result<Option<Arc<Constant>>, String> {
+  env.consts.get(addr).map(|entry| entry.get_at(addr)).transpose()
+}
+
+/// A content-addressed file cannot encode a cycle between distinct blocks
+/// without a hash preimage. Rec slots are the only local back edges. Gather
+/// them during conversion and check the block before publishing any members.
+#[derive(Default)]
+struct LocalDefnDependencies {
+  edges: FxHashMap<Address, FxHashSet<Address>>,
+  safe: Vec<Address>,
+}
+
+impl LocalDefnDependencies {
+  fn insert(
+    &mut self,
+    addr: &Address,
+    safety: DefinitionSafety,
+    refs: FxHashSet<Address>,
+  ) {
+    // Most declarations have no Rec nodes: keep their admission allocation-free.
+    if refs.is_empty() {
+      return;
+    }
+    if safety == DefinitionSafety::Safe {
+      self.safe.push(addr.clone());
+    }
+    self.edges.insert(addr.clone(), refs);
+  }
+
+  fn validate(&self) -> Result<(), String> {
+    let mut finished = FxHashSet::default();
+    let mut active = FxHashSet::default();
+    for root in &self.safe {
+      let mut pending = vec![(root, false)];
+      while let Some((addr, exit)) = pending.pop() {
+        if exit {
+          active.remove(addr);
+          finished.insert(addr);
+          continue;
+        }
+        if finished.contains(addr) {
+          continue;
+        }
+        let Some(refs) = self.edges.get(addr) else {
+          continue;
+        };
+        if !active.insert(addr) {
+          return Err(format!(
+            "cyclic definition dependency at {}",
+            addr.hex()
+          ));
+        }
+        pending.push((addr, true));
+        pending.extend(refs.iter().map(|dependency| (dependency, false)));
+      }
+    }
+    Ok(())
+  }
+}
+
 /// Verify that a projection address computed from a block's structure
 /// is actually present in the env's consts. Wrapped here so the four
 /// dispatch arms in `ingress_anon_block` (DPrj/RPrj/IPrj/CPrj) all
@@ -4397,7 +4493,8 @@ fn verify_proj_addr_in_env(
   ctor_idx: Option<u64>,
   anon_env: &IxonEnv,
 ) -> Result<(), String> {
-  if anon_env.consts.contains_key(proj_addr) {
+  if let Some(entry) = anon_env.consts.get(proj_addr) {
+    entry.get_at(proj_addr)?;
     return Ok(());
   }
   match ctor_idx {
@@ -4480,6 +4577,7 @@ fn ingress_anon_standalone(
   let mut convert_stats = ConvertStats::new(false);
   let self_id: KId<Anon> = KId::new(addr.clone(), ());
 
+  let mut local_dependencies = LocalDefnDependencies::default();
   let entries = match &constant.info {
     IxonCI::Defn(def) => ingress_defn::<Anon>(
       def,
@@ -4495,6 +4593,7 @@ fn ingress_anon_standalone(
       &mut kenv.intern,
       &mut convert_stats,
       Some(vec![self_id.clone()]),
+      Some(&mut local_dependencies),
     )?,
     IxonCI::Recr(rec) => ingress_recursor::<Anon>(
       rec,
@@ -4523,6 +4622,7 @@ fn ingress_anon_standalone(
       &mut convert_stats,
     )?,
   };
+  local_dependencies.validate()?;
   insert_standalone_entries(kenv, entries);
   Ok(self_id)
 }
@@ -4570,6 +4670,7 @@ fn ingress_anon_inductive(
     // metadata-blind), so no patches are threaded here.
     univ_patches: FxHashMap::default(),
     meta_univs: &[],
+    local_refs: None,
     synth_counter: Cell::new(0),
   };
 
@@ -4618,6 +4719,7 @@ fn ingress_anon_inductive(
       lvls: Vec::new(),
       univ_patches: FxHashMap::default(),
       meta_univs: &[],
+      local_refs: None,
       synth_counter: Cell::new(0),
     };
     let mut ctor_univ_cache: UnivCache<Anon> = FxHashMap::default();
@@ -4698,6 +4800,7 @@ pub fn ingress_anon_block(
     })
     .collect();
 
+  let mut local_dependencies = LocalDefnDependencies::default();
   let mut all_entries: Vec<(KId<Anon>, KConst<Anon>)> = Vec::new();
   let mut member_kids: Vec<KId<Anon>> = Vec::with_capacity(members.len());
 
@@ -4726,6 +4829,7 @@ pub fn ingress_anon_block(
           &mut kenv.intern,
           &mut convert_stats,
           Some(mut_ctx.clone()),
+          Some(&mut local_dependencies),
         )?;
         all_entries.extend(entries);
       },
@@ -4792,6 +4896,7 @@ pub fn ingress_anon_block(
     }
   }
 
+  local_dependencies.validate()?;
   insert_muts_entries(kenv, all_entries);
   Ok(member_kids)
 }
@@ -4807,7 +4912,7 @@ pub fn ingress_anon_addr_shallow(
   anon_env: &IxonEnv,
   addr: &Address,
 ) -> Result<bool, String> {
-  let Some(constant) = anon_env.get_const(addr) else {
+  let Some(constant) = anon_constant(anon_env, addr)? else {
     return Ok(false);
   };
 
@@ -4837,13 +4942,14 @@ pub fn ingress_anon_addr_shallow(
     if kenv.blocks.contains_key(&block_kid) {
       return Ok(true);
     }
-    let block_const = anon_env.get_const(&block_addr).ok_or_else(|| {
-      format!(
-        "ingress_anon_addr_shallow: block {} (parent of {}) absent",
-        block_addr.hex(),
-        addr.hex()
-      )
-    })?;
+    let block_const =
+      anon_constant(anon_env, &block_addr)?.ok_or_else(|| {
+        format!(
+          "ingress_anon_addr_shallow: block {} (parent of {}) absent",
+          block_addr.hex(),
+          addr.hex()
+        )
+      })?;
     ingress_anon_block(kenv, anon_env, &block_const, &block_addr)?;
     return Ok(true);
   }
@@ -5106,6 +5212,85 @@ mod tests {
     };
     assert!(err.contains("eager_reduce"), "{err}");
     assert!(err.contains("refs[0]"), "{err}");
+  }
+
+  /// Meta-mode ingress must reject a local definition cycle before any member
+  /// is published: `TypeChecker::new_with_lazy_ixon` relies on that admission
+  /// check instead of walking definition dependencies on every check.
+  #[test]
+  fn ixon_ingress_meta_rejects_local_definition_cycles() {
+    use ix_common::env::DefinitionSafety;
+    use ixon::constant::{
+      Constant, ConstantInfo, DefKind, Definition, MutConst, defn_proj_constant,
+    };
+    use ixon::env::Named;
+    use ixon::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta};
+    use ixon::univ::Univ;
+    let definition = |value: IxonExpr| Definition {
+      kind: DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      lvls: 0,
+      typ: Arc::new(IxonExpr::Sort(1)),
+      value: Arc::new(value),
+    };
+    for cyclic in [false, true] {
+      let env = IxonEnv::new();
+      let mut block = Constant::new(ConstantInfo::Muts(vec![
+        MutConst::Defn(definition(IxonExpr::Rec(1, vec![]))),
+        MutConst::Defn(definition(if cyclic {
+          IxonExpr::Rec(0, vec![])
+        } else {
+          IxonExpr::Sort(0)
+        })),
+      ]));
+      block.univs = vec![Univ::zero(), Univ::succ(Univ::zero())];
+      let block_addr = block.commit().0;
+      env.store_const(block_addr.clone(), block);
+      let member_names = [mk_name("Cycle.f"), mk_name("Cycle.g")];
+      let name_addrs: Vec<Address> = member_names
+        .iter()
+        .map(|n| Address::hash(n.pretty().as_bytes()))
+        .collect();
+      let mut names: FxHashMap<Address, Name> = FxHashMap::default();
+      let mut name_to_addr: FxHashMap<Name, Address> = FxHashMap::default();
+      for (i, name) in member_names.iter().enumerate() {
+        let proj = defn_proj_constant(i as u64, block_addr.clone());
+        let proj_addr = proj.commit().0;
+        env.store_const(proj_addr.clone(), proj);
+        let meta = ConstantMeta::new(ConstantMetaInfo::Def {
+          name: name_addrs[i].clone(),
+          lvls: vec![],
+          all: name_addrs.clone(),
+          ctx: name_addrs.clone(),
+          arena: ExprMeta::default(),
+          type_root: 0,
+          value_root: 0,
+        });
+        env.register_name(name.clone(), Named::new(proj_addr.clone(), meta));
+        names.insert(name_addrs[i].clone(), name.clone());
+        name_to_addr.insert(name.clone(), proj_addr);
+      }
+      let all: Vec<Vec<Address>> =
+        name_addrs.iter().map(|a| vec![a.clone()]).collect();
+      let mut intern = InternTable::<Meta>::new();
+      let mut stats = ConvertStats::new(false);
+      let result = ingress_muts_block::<Meta>(
+        &mk_name("Cycle"),
+        &block_addr,
+        &all,
+        &env,
+        &names,
+        &name_to_addr,
+        &mut intern,
+        &mut stats,
+      );
+      if cyclic {
+        let err = result.unwrap_err();
+        assert!(err.contains("cyclic definition dependency"), "{err}");
+      } else {
+        assert!(!result.unwrap().is_empty());
+      }
+    }
   }
 
   // ---- lean_expr_to_zexpr: variant coverage ----
@@ -5391,6 +5576,7 @@ mod tests {
       lvls: vec![],
       univ_patches: FxHashMap::default(),
       meta_univs: &[],
+      local_refs: None,
       synth_counter: Cell::new(0),
     };
     let ixon_env = IxonEnv::new();
@@ -5456,6 +5642,7 @@ mod tests {
       lvls: vec![mk_name("u"), mk_name("v")],
       univ_patches,
       meta_univs: &meta_univs,
+      local_refs: None,
       synth_counter: Cell::new(0),
     };
     let mut intern = InternTable::<Meta>::new();
@@ -5515,6 +5702,7 @@ mod tests {
         lvls: vec![mk_name("u"), mk_name("v")],
         univ_patches: FxHashMap::default(),
         meta_univs: &[],
+        local_refs: None,
         synth_counter: Cell::new(0),
       };
       let mut intern = InternTable::<Meta>::new();
@@ -5585,6 +5773,7 @@ mod tests {
       lvls: vec![mk_name("u"), mk_name("v")],
       univ_patches,
       meta_univs: &meta_univs,
+      local_refs: None,
       synth_counter: Cell::new(0),
     };
     let mut intern = InternTable::<Meta>::new();

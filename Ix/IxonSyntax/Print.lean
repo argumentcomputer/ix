@@ -202,6 +202,15 @@ def binderNameStr : BinderName → String
   | .ident c _ => componentStr c
   | .anon _ => "_"
 
+def valuePrefix (value : Ixon.ValueContract) : String :=
+  (if value.locality == .local then "~" else "") ++
+    (if value.owned == .unique then "!" else "")
+
+def binderPrefix (contract : Ixon.BinderContract) : String :=
+  let prefixText := valuePrefix contract.value ++ (match contract.uses with
+    | .erased => "0" | .linear => "1" | .affine => "&" | .many => "")
+  if prefixText.isEmpty then "" else prefixText ++ " "
+
 mutual
 
 partial def termDoc (t : Term) (minPrec : Nat) : Doc :=
@@ -243,24 +252,40 @@ partial def termDocBare : Term → Doc
     ds := ds.push (text " =>")
     ds := ds.push (group (nest (cat #[line, termDoc body 0])))
     return cat ds
-  | .pi binders body _ => Id.run do
+  | .pi binders result body _ => Id.run do
     let mut ds := #[]
     for b in binders do
       ds := ds.push (binderDoc b)
       ds := ds.push (text " ")
     ds := ds.push (text "→")
-    ds := ds.push (group (nest (cat #[line, termDoc body 1])))
+    ds := ds.push (group (nest (cat #[line, resultDoc result body])))
     return cat ds
-  | .arrow dom cod _ =>
+  | .arrow result dom cod _ =>
     cat #[termDoc dom 2, text " →",
-      group (nest (cat #[line, termDoc cod 1]))]
-  | .letE nonDep name ty val body _ =>
-    let kwS := if nonDep then "have" else "let"
-    cat #[text s!"{kwS} {binderNameStr name} : ", termDoc ty 0,
-      text " :=", group (nest (cat #[line, termDoc val 0])), text ";",
-      hard, termDoc body 0]
+      group (nest (cat #[line, resultDoc result cod]))]
+  | .letE contract name ty val body _ =>
+    let kwS := if contract.nonDep then "have" else "let"
+    let borrow := if contract.kind == .borrowShared then " borrow" else ""
+    let annotated := contract.kind != .value || contract.binder != .many
+    let openS := if annotated then "(" else ""
+    let closeS := if annotated then ")" else ""
+    cat #[text s!"{kwS}{borrow} {openS}{binderPrefix contract.binder}{binderNameStr name} : ",
+      termDoc ty 0, text s!"{closeS} :=",
+      group (nest (cat #[line, termDoc val 0])), text ";", hard, termDoc body 0]
   | .proj typeRef idx val _ =>
     cat #[text s!"proj {crefStr typeRef} {idx} ", termDoc val 3]
+
+partial def resultDoc (result : Ixon.ValueContract) (term : Term) : Doc :=
+  let prefixText := valuePrefix result
+  if prefixText.isEmpty then termDoc term 1
+  else cat #[text (prefixText ++ " "), termDoc term 1]
+
+/-- Numeric unnamed types need parentheses to distinguish usage prefixes. -/
+partial def numericHead : Term → Bool
+  | .natLit .. => true
+  | .app head _ _ => numericHead head
+  | .arrow _ dom _ _ => numericHead dom
+  | _ => false
 
 partial def binderDoc (b : BinderGroup) : Doc :=
   let (openS, closeS) := match b.info with
@@ -269,11 +294,14 @@ partial def binderDoc (b : BinderGroup) : Doc :=
     | .strictImplicit => ("⦃", "⦄")
     | .instImplicit => ("[", "]")
   let inner :=
-    if b.names.isEmpty then #[termDoc b.ty 0]
+    if b.names.isEmpty then
+      if b.contract == Ixon.BinderContract.many && numericHead b.ty then
+        #[text "(", termDoc b.ty 0, text ")"]
+      else #[termDoc b.ty 0]
     else
       #[text (" ".intercalate (b.names.toList.map binderNameStr) ++ " : "),
         termDoc b.ty 0]
-  group (cat (#[text openS] ++ inner ++ #[text closeS]))
+  group (cat (#[text openS, text (binderPrefix b.contract)] ++ inner ++ #[text closeS]))
 
 end
 
@@ -382,15 +410,13 @@ def printDecl (d : Decl) : String :=
 
 /-- Print a whole file in canonical form: sections (imports block,
     declarations, optional trailing main expression) separated by
-    blank lines, trailing newline. The version header is emitted only
-    for versions ≥ 2 — absent means version 1, forever. The main
+    blank lines, trailing newline. The version header is always emitted. The main
     expression's value prints at precedence 2 — `fun`/`let`/arrows
     parenthesize, so `⊢ (fun (x : A) => x) : A → A` rather than the
     visually ambiguous bare form (both reparse identically). -/
 def printFile (f : File) : String := Id.run do
   let mut sections : Array String := #[]
-  if f.version != 1 then
-    sections := sections.push s!"ixon {f.version}"
+  sections := sections.push s!"ixon {f.version}"
   if !f.imports.isEmpty then
     sections := sections.push
       ("\n".intercalate (f.imports.toList.map Print.importStr))

@@ -242,9 +242,9 @@ pub enum Expr {
     Str(u64),                               // String literal (refs index to blob)
     Nat(u64),                               // Natural literal (refs index to blob)
     App(Arc<Expr>, Arc<Expr>),              // Application
-    Lam(Uses, Arc<Expr>, Arc<Expr>),        // Lambda (usage, type, body)
-    All(Uses, Owned, Arc<Expr>, Arc<Expr>), // Forall/Pi (usage, ownership, type, body)
-    Let(bool, Arc<Expr>, Arc<Expr>, Arc<Expr>), // Let (non_dep, type, value, body)
+    Lam(BinderContract, Arc<Expr>, Arc<Expr>), // Lambda (input contract, type, body)
+    All(BinderContract, ValueContract, Arc<Expr>, Arc<Expr>), // Forall/Pi
+    Let(LetContract, Arc<Expr>, Arc<Expr>, Arc<Expr>), // Let/borrow (contract, type, value, body)
     Share(u64),                             // Reference to sharing vector
 }
 ```
@@ -253,10 +253,15 @@ pub enum Expr {
 
 1. **No names**: Binders have no names—they use de Bruijn indices. Names are stored in metadata.
 
-2. **V2 binder modes**: Lambdas and foralls carry `Uses`
-   (`erased`, `linear`, `affine`, or `many`); foralls also carry `Owned`
-   (`unique` or `shared`). Implicit/explicit binder info remains metadata.
-   Ordinary Lean compilation emits `many`/`shared`.
+2. **Independent v3 contracts**: `BinderContract { uses, value }` separates
+   quantity (`erased`, `linear`, `affine`, `many`) from the
+   `ValueContract { owned, locality }` axes. Both bound and returned values
+   can be unique/shared and local/unrestricted. Foralls carry an independent
+   result contract. `LetContract { nonDep, kind, binder }` distinguishes
+   ordinary binding from a scoped shared borrow. Ordinary Lean compilation
+   uses many/shared/unrestricted inputs and shared/unrestricted results.
+   Names and implicit/explicit binder information remain metadata.
+   See [the v3 specification](Ixon-v3.md) for the resource semantics.
 
 3. **Indirection tables**: `Ref`, `Str`, `Nat` store indices into the constant's `refs` table, not raw addresses. `Sort` stores an index into the `univs` table.
 
@@ -274,9 +279,9 @@ pub enum Expr {
 | 0x5 | Str | Refs index | None |
 | 0x6 | Nat | Refs index | None |
 | 0x7 | App | App count | Function + args (telescoped) |
-| 0x8 | Lam | Binder count | `(Uses byte + type)` per binder + body |
-| 0x9 | All | Binder count | `(Uses/Owned byte + type)` per binder + body |
-| 0xA | Let | 0=dep, 1=non_dep | Type + value + body |
+| 0x8 | Lam | Binder count | `(input-contract byte + type)` per binder + body |
+| 0x9 | All | Binder count | `(input/result-contract byte + type)` per binder + body |
+| 0xA | Let | Non-dependent flag in bit 0; borrow flag in bit 1 | Binder-contract byte + type + value + body |
 | 0xB | Share | Share index | None |
 
 ### Telescope Compression
@@ -292,14 +297,21 @@ Tag4 { flag: 0x7, size: 3 }  // 3 applications
 **Lambdas**: `Lam(t1, Lam(t2, Lam(t3, body)))` becomes:
 ```
 Tag4 { flag: 0x8, size: 3 }  // 3 binders
-+ uses1 + t1 + uses2 + t2 + uses3 + t3 + body
++ contract1 + t1 + contract2 + t2 + contract3 + t3 + body
 ```
 
-Lambda mode bytes are `Uses` in bits 0–1. Forall mode bytes use bits 0–1
-for `Uses` and bit 2 for `Owned`; other bits are invalid. Foralls otherwise
-use the same telescope layout with flag 0x9. Readers require nonempty,
-maximal telescopes and reject a nested constructor of the same kind as the
-decoded base/body.
+Value codes are `0 = !`, `1 = unmarked`, `2 = ~!`, `3 = ~`.
+The binder byte is `uses | (value << 2)`, with quantity codes
+`0 = erased`, `1 = linear`, `2 = affine`, `3 = many`.
+Foralls store `input | (result << 4)`. Bits above bit 3 on lambdas
+or bit 5 on foralls are invalid. The ordinary lambda byte is `0x07`;
+the ordinary forall byte is `0x17`.
+
+Foralls use the same telescope layout with flag 0x9. Readers require
+nonempty, maximal telescopes and reject a nested constructor of the same
+kind as the decoded base/body. Let sizes above 3 and nonminimal integer
+encodings are invalid. A syntactically valid borrow record is still subject
+to the separate owner-place and resource checks.
 
 ### Expression Examples
 
@@ -319,9 +331,9 @@ Tag4 { flag: 0x2, size: 2 }
 + Tag0(1)  // second univ index
 Bytes: 0x22 0x00 0x00 0x01
 
-Expr::Lam(Many, type_expr, Lam(Affine, type_expr2, body))
+Expr::Lam(many_shared, type_expr, Lam(affine_shared, type_expr2, body))
 Tag4 { flag: 0x8, size: 2 }
-+ 0x03 + type_expr + 0x02 + type_expr2 + body
++ 0x07 + type_expr + 0x06 + type_expr2 + body
 
 Expr::Share(5)  // Reference to sharing[5]
 Tag4 { flag: 0xB, size: 5 }
@@ -550,13 +562,10 @@ An inductive type definition with its constructors.
 
 ```rust
 pub struct Inductive {
-    pub recr: bool,        // Has recursive occurrences
-    pub refl: bool,        // Is reflexive
     pub is_unsafe: bool,
     pub lvls: u64,         // Universe parameter count
     pub params: u64,       // Number of parameters
     pub indices: u64,      // Number of indices
-    pub nested: u64,       // Nested inductive depth
     pub typ: Arc<Expr>,    // Type expression
     pub ctors: Vec<Constructor>,
 }
@@ -564,11 +573,10 @@ pub struct Inductive {
 
 **Serialization**:
 ```
-Packed bools (1 byte): bit 0 = recr, bit 1 = refl, bit 2 = is_unsafe
+is_unsafe (1 byte: 0 or 1)
 + lvls (Tag0)
 + params (Tag0)
 + indices (Tag0)
-+ nested (Tag0)
 + typ (Expr)
 + ctors.len (Tag0)
 + [Constructor]*
@@ -607,7 +615,7 @@ The sharing system deduplicates common subexpressions within a constant.
 
 ### How It Works
 
-1. **Merkle hashing**: Every subexpression is assigned a structural hash using blake3
+1. **Merkle hashing**: Every subexpression is assigned a structural hash using blake3. Its preimage is the canonical isolated-node scalar/contract header followed by one fixed 32-byte hash per child, in structural order. Input, result, locality, let-kind, and dependency fields all participate.
 2. **Usage counting**: Count how many times each unique subexpression appears
 3. **Profitability analysis**: Decide which subexpressions to share based on size savings
 4. **Rewriting**: Replace selected subexpressions with `Share(idx)` references
@@ -868,9 +876,9 @@ The .ixe layout is a `Tag4(0xE, VERSION)` header byte followed by a
 32-byte canonical merkle root, the bundle header fields, and then 6
 sections (hot data first, metadata last).
 
-The format has the stable identifier `ixon-v2`. The Tag4 size field is the
-numeric **format version** (`Env::VERSION`, currently `2`, so the first byte
-of a v2 file is `0xE2`). Any change
+The format has the stable identifier `ixon-v3`. The Tag4 size field is the
+numeric **format version** (`Env::VERSION`, currently `3`, so the first byte
+of a v3 file is `0xE3`). Any change
 to serialized bytes bumps the version; every reader
 (`read_env_header` on the Rust side, `Ixon.getEnv` /
 `getEnvVerifiedLazy` on the Lean side) rejects a mismatch with an
@@ -880,7 +888,7 @@ artifacts. Versions 0–7 cost zero additional bytes (inline Tag4
 size); later versions cost a trimmed varint.
 
 ```
-Header:      Tag4 { flag: 0xE, size: VERSION }  -- 0xE2 for version 2
+Header:      Tag4 { flag: 0xE, size: VERSION }  -- 0xE3 for version 3
 Root:        32 bytes                     -- canonical merkle root over
                                             consts.keys(); for empty
                                             const sets this is the
@@ -1146,8 +1154,10 @@ fixed-width little-endian like `.ixes`; source of truth
 
 ```
 magic    b"IXC\0\0\0\0\0"            (8)
-version  u32 = 1
+version  u32 = 2
 flags    u32                          # bit0: storage profile (0 = fat, 1 = chunked)
+object_format     u8 = 3              # ixon-v3
+validator         u8 = 1              # erased-lean-v1 catalog claims
 members_root      32 bytes
 content_root      32 bytes
 member_count      u32
@@ -1187,16 +1197,22 @@ source of truth). The `Catalog` claim (below) binds both roots.
 
 Envs, commitments, the AssumptionTree data type, and all claims share
 Tag4 flag 0xE. Proofs (opaque ZK bytes) share Tag4 flag 0xF. Sizes
-0..=7 fit in single-byte tags; with variants 0–7 under 0xE all taken,
-the Catalog claim (variant 8) is the first — and so far only —
-multi-byte tag in this space: it encodes as `0xE8 0x08` (large bit
-set, one size byte).
+0..=7 fit in single-byte tags. Catalog (variant 8) and Resource (variant 9)
+use `0xE8 0x08` and `0xE8 0x09`. Environment tags are interpreted in
+the `.ixe` context: the v3 environment header is `0xE3`, independently of
+the Eval claim tag. The enclosing protocol must identify the object kind.
+
+Every claim and proof payload starts with two bytes immediately after Tag4:
+object format `3`, then validator `0` (structural-v1), `1` (erased-lean-v1),
+or `2` (resource-v1). Readers require the validator assigned to that variant.
+Whole-object readers reject trailing bytes and earlier unscoped encodings.
+These bytes are included in the claim digest and proof statement.
 
 ### Tag4 0xE Variant Layout (Env + Comm + AssumptionTree + Claims)
 
 | Size | Byte | Type | Payload |
 |------|------|------|---------|
-| 0 | `0xE0` | Environment | 32-byte merkle root + main/assumptions + 6 sections |
+| 3 (format) | `0xE3` | Environment (`.ixe` context) | 32-byte merkle root + main/assumptions + 6 sections |
 | 1 | `0xE1` | Commitment | 2 addr: secret, payload |
 | 2 | `0xE2` | AssumptionTree | recursive merkle-tree body (see below) |
 | 3 | `0xE3` | Eval claim | 2 addr (input, output) + opt assumptions |
@@ -1205,6 +1221,11 @@ set, one size byte).
 | 6 | `0xE6` | Reveal claim | 1 addr (comm) + RevealConstantInfo |
 | 7 | `0xE7` | Contains claim | 2 addr (tree, const) |
 | 8 | `0xE8 0x08` | Catalog claim | 2 addr (members root, content root) + opt assumptions |
+| 9 | `0xE8 0x09` | Resource claim | 2 addr (complete env root, resource profile) |
+
+The claim payloads in this table follow the two scope bytes. Reveal and
+Contains require validator `0`; Eval, Check, CheckEnv, and Catalog require
+validator `1`; Resource requires validator `2`.
 
 `opt assumptions` encoding: 1 byte `0x00` for `None`, or `0x01` followed
 by 32 bytes for `Some(merkle_root)`.
@@ -1228,10 +1249,14 @@ the multi-byte-tag path.
 | 3 | `0xF3` | Reveal proof | claim payload + Tag0 length + opaque ZK bytes |
 | 4 | `0xF4` | Contains proof | claim payload + Tag0 length + opaque ZK bytes |
 | 5 | `0xF5` | Catalog proof | claim payload + Tag0 length + opaque ZK bytes |
+| 6 | `0xF6` | Resource proof wrapper | claim payload + Tag0 length + opaque proof bytes |
 
 Proof bytes are uniform opaque ZK proofs — witness data (e.g., merkle
 paths for Contains) is prover-side scratch consumed by the ZK circuit
-and NOT transmitted on the wire.
+and NOT transmitted on the wire. Wrapper decoding alone proves nothing.
+IxVM supports Check, CheckEnv, Reveal, and Contains; Resource is currently
+validated by the native Lean/Rust boundary and is explicitly rejected as an
+IxVM proof request. Catalog proofs compose erased CheckEnv claims.
 
 ### Claim Types
 
@@ -1255,6 +1280,8 @@ pub enum Claim {
     /// COMPOSITION of per-piece CheckEnv claims with set discharge —
     /// there is deliberately no whole-catalog interpreter arm.
     Catalog { members: Address, content: Address, assumptions: Option<Address> },
+    /// Complete closure passes resource-v1 under the committed profile.
+    Resource { root: Address, profile: Address },
 }
 ```
 
@@ -1316,6 +1343,7 @@ pub struct Proof {
 **Eval claim** (0xE3, 2 addresses + opt assumptions byte):
 ```
 E3                    -- Tag4 { flag: 0xE, size: 3 } (Eval)
+03 01                 -- object format 3, erased-lean-v1
 [32 bytes]            -- input address
 [32 bytes]            -- output address
 00                    -- assumptions = None (or 01 + [32 bytes] for Some)
@@ -1324,6 +1352,7 @@ E3                    -- Tag4 { flag: 0xE, size: 3 } (Eval)
 **Eval proof** (0xF0, claim payload + opaque ZK bytes):
 ```
 F0                    -- Tag4 { flag: 0xF, size: 0 } (Eval proof)
+03 01                 -- object format 3, erased-lean-v1
 [32 bytes]            -- input address
 [32 bytes]            -- output address
 00                    -- assumptions = None
@@ -1334,6 +1363,7 @@ F0                    -- Tag4 { flag: 0xF, size: 0 } (Eval proof)
 **Check claim** (0xE4, 1 address + opt assumptions byte):
 ```
 E4                    -- Tag4 { flag: 0xE, size: 4 } (Check)
+03 01                 -- object format 3, erased-lean-v1
 [32 bytes]            -- const address
 00                    -- assumptions = None
 ```
@@ -1341,20 +1371,22 @@ E4                    -- Tag4 { flag: 0xE, size: 4 } (Check)
 **Reveal claim** — reveal that a committed Definition has `safety = Safe`:
 ```
 E6                    -- Tag4 { flag: 0xE, size: 6 } (Reveal)
+03 00                 -- object format 3, structural-v1
 [32 bytes]            -- comm_addr
 00                    -- variant: Definition
 02                    -- mask: bit 1 (safety) [Tag0]
 01                    -- DefinitionSafety::Safe
 ```
-Total: 36 bytes.
+Total: 38 bytes.
 
 **Contains claim** (0xE7, 2 addresses):
 ```
 E7                    -- Tag4 { flag: 0xE, size: 7 } (Contains)
+03 00                 -- object format 3, structural-v1
 [32 bytes]            -- tree (merkle root)
 [32 bytes]            -- const address (asserted leaf)
 ```
-Total: 65 bytes.
+Total: 67 bytes.
 
 ---
 
@@ -1382,12 +1414,18 @@ The `compile_expr` function transforms Lean expressions:
 | `Sort(level)` | `Sort(idx)` | Level added to univs table |
 | `Const(name, levels)` | `Ref(idx, univ_idxs)` | Name resolved to address |
 | `Const(name, levels)` in mutual | `Rec(ctx_idx, univ_idxs)` | Uses mutual context |
-| `Lam(name, ty, body, info)` | `Lam(many, ty, body)` | Conservative v2 mode; name/info to metadata |
-| `ForallE(name, ty, body, info)` | `All(many, shared, ty, body)` | Conservative v2 modes; name/info to metadata |
-| `LetE(name, ty, val, body, nd)` | `Let(nd, ty, val, body)` | Name to metadata |
+| `Lam(name, ty, body, info)` | `Lam(many_shared, ty, body)` | Ordinary v3 contract; name/info to metadata |
+| `ForallE(name, ty, body, info)` | `All(many_shared, shared, ty, body)` | Ordinary v3 contracts; name/info to metadata |
+| `LetE(name, ty, val, body, nd)` | `Let({nonDep: nd, kind: value, binder: many_shared}, ty, val, body)` | Name to metadata; ordinary let contract |
 | `Proj(type, idx, val)` | `Prj(type_idx, idx, val)` | Type name resolved |
 | `Lit(Nat n)` | `Nat(idx)` | Bytes stored in blobs |
 | `Lit(Str s)` | `Str(idx)` | Bytes stored in blobs |
+
+This table describes unannotated source. The source-contract frontend resolves
+annotations before canonicalization and sharing, then transports their exact
+contracts through the reserved semantic metadata frame. Both production
+compilers validate resources and erased typing before emitting annotated
+artifacts. Unsupported transformations reject explicitly.
 
 ### Metadata Extraction
 
@@ -1416,9 +1454,13 @@ Decompilation reconstructs Lean constants from Ixon format.
 1. **Load constant** from `env.consts` by address
 2. **Initialize tables** from `sharing`, `refs`, `univs`
 3. **Load metadata** from `env.named`
-4. **Reconstruct expressions** with names and binder info from metadata
+4. **Reconstruct expressions** with committed contracts, and names/binder info from metadata
 5. **Resolve references**: `Ref(idx, _)` → lookup `refs[idx]`, get name from `addr_to_name`
 6. **Expand shares**: `Share(idx)` → inline `sharing[idx]` (or cache result)
+
+Nondefault contracts are reconstructed from semantic bytes even without names
+or optional metadata. Optional metadata cannot inject contracts or replay an
+unsupported rewrite that would erase them.
 
 ### Roundtrip Verification
 
@@ -1466,15 +1508,15 @@ value: Lam("n", Const(`Nat, []),
 
 **Compile type**:
 ```
-All(Ref(0, []), Ref(0, []))
+All(many_shared, shared, Ref(0, []), Ref(0, []))
 ```
-Binary: `0x91` (All, 1 binder) + `0x20 0x00` (Ref, 0 univs, idx 0) + `0x20 0x00`
+Binary: `0x91 0x17` (All, 1 ordinary binder/result) + `0x20 0x00` (Ref, 0 univs, idx 0) + `0x20 0x00`
 
 **Compile value**:
 ```
-Lam(Ref(0, []), App(App(Ref(1, []), Var(0)), Var(0)))
+Lam(many_shared, Ref(0, []), App(App(Ref(1, []), Var(0)), Var(0)))
 ```
-Binary: `0x81` (Lam, 1 binder) + `0x20 0x00` (Ref 0) + `0x72` (App, 2 apps) + `0x20 0x01` (Ref 1) + `0x10` (Var 0) + `0x10` (Var 0)
+Binary: `0x81 0x07` (Lam, 1 ordinary binder) + `0x20 0x00` (Ref 0) + `0x72` (App, 2 apps) + `0x20 0x01` (Ref 1) + `0x10` (Var 0) + `0x10` (Var 0)
 
 **Sharing analysis**: `Var(0)` appears twice, but too small to benefit from sharing.
 
@@ -1485,8 +1527,8 @@ Constant {
     kind: Definition,
     safety: Safe,
     lvls: 0,
-    typ: All(Ref(0, []), Ref(0, [])),
-    value: Lam(Ref(0, []), App(App(Ref(1, []), Var(0)), Var(0))),
+    typ: All(many_shared, shared, Ref(0, []), Ref(0, [])),
+    value: Lam(many_shared, Ref(0, []), App(App(Ref(1, []), Var(0)), Var(0))),
   }),
   sharing: [],
   refs: [addr_of_Nat, addr_of_Nat_add],
@@ -1500,8 +1542,8 @@ Constant {
 D0                    -- Tag4 { flag: 0xD, size: 0 } (Constant, Defn variant)
 01                    -- DefKind+Safety packed: (Definition=0 << 2) | Safe=1
 00                    -- lvls = 0 (Tag0)
-91 20 00 20 00        -- type: All(Ref(0,[]), Ref(0,[]))
-81 20 00 72 20 01     -- value: Lam(Ref(0,[]), App(App(Ref(1,[])...
+91 17 20 00 20 00     -- type: All(Ref(0,[]), Ref(0,[]))
+81 07 20 00 72 20 01  -- value: Lam(Ref(0,[]), App(App(Ref(1,[])...
    10 10              --        ...Var(0)), Var(0)))
 00                    -- sharing.len = 0
 02                    -- refs.len = 2
@@ -1510,7 +1552,8 @@ D0                    -- Tag4 { flag: 0xD, size: 0 } (Constant, Defn variant)
 00                    -- univs.len = 0
 ```
 
-Total: ~69 bytes for the constant data (plus 64 bytes for addresses).
+Total: 21 bytes for the scalar/expression data and table counts, plus
+64 bytes for the two addresses: **85 bytes**.
 
 Note: The constant tag is always 1 byte (0xD0) since all non-Muts variants (0-7) fit in the 3-bit size field.
 
@@ -1582,24 +1625,21 @@ inductive Bool : Type where
 
 ### Mutual Block Structure
 
-Since `Bool` is an inductive type, it's stored in a mutual block containing:
-1. The inductive type itself (`Bool`)
-2. Its constructors (`Bool.false`, `Bool.true`)
-3. Its recursor (`Bool.rec`)
+The family block contains one inductive entry for `Bool`, including its two
+constructor records. The recursor has a separate block referring to the family.
+Constructors are nested in their inductive entry, rather than additional mutual
+members.
 
 ### Ixon Compilation
 
 **Inductive (Bool)**:
 ```rust
 Inductive {
-  recr: false,       // No recursive occurrences
-  refl: false,       // Not reflexive
   is_unsafe: false,
   lvls: 0,           // No universe parameters
   params: 0,         // No parameters
   indices: 0,        // No indices
-  nested: 0,         // Not nested
-  typ: Sort(0),      // Type : Type 0
+  typ: Sort(0),      // univs[0] = Succ(Zero), so Bool : Type
   ctors: [ctor_false, ctor_true],
 }
 ```
@@ -1633,15 +1673,14 @@ Constructor {
 The mutual block uses flag 0xC with entry count in size field:
 
 ```
-C3                    -- Tag4 { flag: 0xC, size: 3 } (Muts, 3 entries)
+C1                    -- Tag4 { flag: 0xC, size: 1 } (Muts, 1 entry)
 
 -- Entry 0: Inductive (Bool)
 01                    -- MutConst tag 1 = Indc
-00                    -- Packed bools: recr=0, refl=0, is_unsafe=0
+00                    -- is_unsafe = false
 00                    -- lvls = 0
 00                    -- params = 0
 00                    -- indices = 0
-00                    -- nested = 0
 00                    -- typ: Sort(0)
 02                    -- ctors.len = 2
   -- ctor_false
@@ -1659,17 +1698,11 @@ C3                    -- Tag4 { flag: 0xC, size: 3 } (Muts, 3 entries)
   00                  -- fields = 0
   30 00               -- typ: Rec(0, []) - mutual reference to Bool at index 0
 
--- Entry 1: Recursor (Bool.rec) - omitted for brevity
-02 ...
-
--- Entry 2: Definition for Bool.casesOn or similar - if present
-...
-
 -- Shared tables
 00                    -- sharing.len = 0
 00                    -- refs.len = 0 (no external references needed)
 01                    -- univs.len = 1
-00                    -- univs[0] = Zero
+01 00                 -- univs[0] = Succ(Zero)
 ```
 
 ### Projections
@@ -1678,7 +1711,7 @@ Individual constants are stored as projections into this block:
 - `Bool` → `IPrj { idx: 0, block: block_addr }`
 - `Bool.false` → `CPrj { idx: 0, cidx: 0, block: block_addr }`
 - `Bool.true` → `CPrj { idx: 0, cidx: 1, block: block_addr }`
-- `Bool.rec` → `RPrj { idx: 0, block: block_addr }`
+- `Bool.rec` → `RPrj { idx: 0, block: recursor_block_addr }`
 
 ---
 
@@ -1695,7 +1728,7 @@ pub struct Comm {
 
 The commitment address is computed as:
 ```
-commitment = blake3(Tag4(0xE, 5) + secret + payload)
+commitment = blake3(Tag4(0xE, 1) + secret + payload)
 ```
 
 The payload address is the content hash of the committed constant. Two commitments to the

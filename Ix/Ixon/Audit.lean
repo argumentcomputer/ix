@@ -92,8 +92,8 @@ Canonical re-encoding additionally uses Init's `ByteArray.decEq`, backed by
 hash is reached. -/
 /-- info: runtime closure of [Ixon.serUniv, Ixon.deUniv, Ixon.serExpr, Ixon.deExpr,
 Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv,
-Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 331 compiled functions;
-inherited externs 52, implemented_by 0, unsafe 2, csimp 0 -/
+Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 355 compiled functions;
+inherited externs 55, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Audit.operations #[`Init, `Std]
 

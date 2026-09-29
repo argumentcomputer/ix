@@ -1,0 +1,12 @@
+# Independently specified Ixon v3 bytes: relative locality, no lifetime parameters.
+app 7313121110
+lam 8307000700070010
+lam_local_unique 81090010
+lam_affine_local 810e0010
+all 922900170010
+ordinary_let a100006110
+local_unique_let a00a001110
+borrow a20e0041021110
+borrow_nondep a30f001110
+reference 2000
+recursion 32020001

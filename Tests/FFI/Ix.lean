@@ -151,6 +151,41 @@ def ixNameEq (a b : Ix.Name) : Bool := a.getHash == b.getHash
 def ixLevelEq (a b : Ix.Level) : Bool := a.getHash == b.getHash
 def ixExprEq (a b : Ix.Expr) : Bool := a.getHash == b.getHash
 
+/-! ## String payload preservation -/
+
+/-- Inspect payloads directly: cached Name/Expr hashes survive FFI conversion
+even when a string constructor corrupts the payload. -/
+def stringPayloadTests : TestSeq := Id.run do
+  let mut tests := TestSeq.done
+  for (label, value) in [
+      ("empty", ""),
+      ("leading NUL", "\x00prefix"),
+      ("interior NUL", "left\x00right"),
+      ("trailing NUL", "/profile\x00"),
+      ("multiple NULs", "\x00\x00"),
+      ("Unicode and NULs", "λ\x00雪\x00")] do
+    let name := Ix.Name.mkStr Ix.Name.mkAnon value
+    let expr := Ix.Expr.mkLit (.strVal value)
+    let substring : Ix.Substring := ⟨value, 0, value.utf8ByteSize⟩
+    let atom : Ix.Syntax := .atom .none value
+    let preresolved : Ix.SyntaxPreresolved := .decl name #[value]
+    let data : Ix.DataValue := .ofString value
+    let sameName : Bool := match roundtripIxName name with
+      | .str _ actual _ => actual == value
+      | _ => false
+    let sameLiteral : Bool := match roundtripIxExpr expr with
+      | .lit (.strVal actual) _ => actual == value
+      | _ => false
+    tests := tests ++
+      test s!"Ix.Name string payload: {label}" sameName ++
+      test s!"Ix.Expr string payload: {label}" sameLiteral ++
+      test s!"Ix.Substring string payload: {label}" (roundtripIxSubstring substring == substring) ++
+      test s!"Ix.Syntax string payload: {label}" (roundtripIxSyntax atom == atom) ++
+      test s!"Ix.SyntaxPreresolved string payload: {label}"
+        (roundtripIxSyntaxPreresolved preresolved == preresolved) ++
+      test s!"Ix.DataValue string payload: {label}" (roundtripIxDataValue data == data)
+  return tests
+
 /-! ## Comparison helpers -/
 
 /-- Compare RustCondensedBlocks by checking array sizes.
@@ -256,6 +291,7 @@ def compileErrorTests : TestSeq :=
 /-! ## Test Suite -/
 
 public def suite : List TestSeq := [
+  stringPayloadTests,
   -- Block comparison types
   blockCompareResultTests,
   blockCompareDetailTests,

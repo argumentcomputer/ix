@@ -41,7 +41,7 @@ def ingress := ⟦
   fn load_verified_constant(addr: Addr) -> Constant {
     let raw = load(addr);
     let (idx, len) = io_get_info(2, raw);
-    let bytes = #read_byte_stream(2, idx, len);
+    let bytes = read_finite_byte_stream(2, idx, len);
     verify_bytes_against(bytes, raw);
     let (constant, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil,
@@ -64,7 +64,7 @@ def ingress := ⟦
   fn load_verified_blob(addr: Addr) -> ByteStream {
     let raw = load(addr);
     let (idx, len) = io_get_info(4, raw);
-    let bytes = #read_byte_stream(4, idx, len);
+    let bytes = read_finite_byte_stream(4, idx, len);
     verify_bytes_against(bytes, raw);
     bytes
   }

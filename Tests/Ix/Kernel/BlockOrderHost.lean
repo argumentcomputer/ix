@@ -26,7 +26,7 @@ def expressionCases : List Case :=
     .app (.var 0) (.var 1), .app (.var 0) (.var 2),
     .lam .many (.sort 0) (.var 0), .lam .linear (.sort 0) (.var 0),
     .all .many .shared (.sort 0) (.var 0),
-    .letE false (.sort 0) (.var 0) (.var 1), .letE true (.sort 0) (.var 0) (.var 1),
+    .letE (.lean false) (.sort 0) (.var 0) (.var 1), .letE (.lean true) (.sort 0) (.var 0) (.var 1),
     .nat 0, .nat 1, .str 0, .str 1,
     .prj 0 0 (.var 0), .prj 0 1 (.var 0), .prj 1 0 (.var 0), .share 0]
   let blobs : Ingress.Blobs := [(address 1, "z".toUTF8), (address 2, "ab".toUTF8)]
@@ -56,14 +56,25 @@ def payloadCases : List Case :=
   members.zipIdx.flatMap fun (x, i) => members.zipIdx.map fun (y, j) =>
     { label := s!"payload-{i}-{j}", source := record #[x, y] }
 
+/-- Since ix #637 the native oracle's ingress rejects cyclic *safe* definition
+blocks before ordering them. Ordering is independent of a shared safety flag,
+so the recursive cases use partial definitions, whose policy is unchanged. -/
+def asPartial (source : Ixon.Constant) : Ixon.Constant :=
+  match source.info with
+  | .muts members => { source with info := .muts (members.map fun
+      | .defn definition => .defn { definition with safety := .part }
+      | member => member) }
+  | _ => source
+
 def cases : List Case := [
   ⟨"empty", record #[], []⟩, ⟨"singleton", record #[indc 0], []⟩,
   ⟨"sorted", simple, []⟩, ⟨"permuted", reversed, []⟩, ⟨"duplicate", duplicate, []⟩,
-  ⟨"weak", weak, []⟩, ⟨"weak-permuted", weakPermuted, []⟩,
-  ⟨"self-alpha", alphaSelf, []⟩, ⟨"cycle-alpha", alphaCycle, []⟩,
+  ⟨"weak", asPartial weak, []⟩, ⟨"weak-permuted", asPartial weakPermuted, []⟩,
+  ⟨"self-alpha", asPartial alphaSelf, []⟩, ⟨"cycle-alpha", asPartial alphaCycle, []⟩,
   ⟨"constructor-offsets", ctorBlock, []⟩,
   ⟨"unreduced-levels", { unreduced with info := .muts #[defn (.sort 0), defn (.sort 1)] }, []⟩,
-  ⟨"ref-recur-alias", { localAliases with info := .muts #[defn (.ref 0 #[]), defn (.recur 1 #[])] }, []⟩]
+  ⟨"ref-recur-alias", asPartial
+    { localAliases with info := .muts #[defn (.ref 0 #[]), defn (.recur 1 #[])] }, []⟩]
   ++ expressionCases ++ payloadCases
 
 def run (test : Case) : IO Bool := do

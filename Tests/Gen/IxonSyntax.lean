@@ -135,6 +135,21 @@ def genLitString : Gen String :=
       pure s)
   ]
 
+def genValueContract : Gen Ixon.ValueContract := do
+  return {
+    owned := if (← choose Nat 0 1) == 0 then .unique else .shared
+    locality := if (← choose Nat 0 1) == 0 then .unrestricted else .local }
+
+def genBinderContract : Gen Ixon.BinderContract := do
+  let uses ← elements #[Ixon.Uses.erased, .linear, .affine, .many]
+  return { uses, value := ← genValueContract }
+
+def genLetContract : Gen Ixon.LetContract := do
+  return {
+    nonDep := (← choose Nat 0 1) == 0
+    kind := if (← choose Nat 0 1) == 0 then .value else .borrowShared
+    binder := ← genBinderContract }
+
 mutual
 
 partial def genBinder (depth : Nat) : Gen BinderGroup := do
@@ -149,7 +164,7 @@ partial def genBinder (depth : Nat) : Gen BinderGroup := do
       for _ in [0:n] do
         ns := ns.push (← genBinderName)
       pure ns
-  return .mk info names (← genTerm depth) {}
+  return .mk (← genBinderContract) info names (← genTerm depth) {}
 
 partial def genTerm (depth : Nat) : Gen Term := do
   if depth == 0 then
@@ -180,10 +195,10 @@ partial def genTerm (depth : Nat) : Gen Term := do
         let mut bs := #[]
         for _ in [0:n] do
           bs := bs.push (← genBinder d)
-        return .pi bs (← genTerm d) {}),
-      (1, do return .arrow (← genTerm d) (← genTerm d) {}),
+        return .pi bs (← genValueContract) (← genTerm d) {}),
+      (1, do return .arrow (← genValueContract) (← genTerm d) (← genTerm d) {}),
       (1, do
-        return .letE ((← choose Nat 0 1) == 0) (← genBinderName)
+        return .letE (← genLetContract) (← genBinderName)
           (← genTerm d) (← genTerm d) (← genTerm d) {}),
       (1, do return .proj (← genCref) (← choose Nat 0 7) (← genTerm d) {}),
       (1, .ref <$> genCref)
@@ -306,9 +321,9 @@ def shrinkTerm (t : Term) : List Term := Id.run do
     if args.size > 1 then
       for i in [0:args.size] do
         out := out ++ [.app head (args.eraseIdxIfInBounds i) {}]
-  | .lam bs body _ | .pi bs body _ =>
+  | .lam bs body _ | .pi bs _ body _ =>
     out := out ++ [body] ++ (bs.toList.map (·.ty))
-  | .arrow d c _ => out := out ++ [d, c]
+  | .arrow _ d c _ => out := out ++ [d, c]
   | .letE _ _ ty val body _ => out := out ++ [ty, val, body]
   | .proj _ _ v _ => out := out ++ [v]
   | .ref r =>

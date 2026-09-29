@@ -20,6 +20,7 @@
 // expr.rs / constant.rs).
 #![allow(clippy::needless_pass_by_value)]
 
+use crate::contract::{BinderContract, LetContract, LetKind, ValueContract};
 use bignat::Nat;
 use ix_common::env::{BinderInfo, NameComponent};
 use num_bigint::BigUint;
@@ -162,7 +163,14 @@ fn arb_binder(g: &mut Gen, depth: usize) -> BinderGroup {
   } else {
     (0..1 + pick(g, 2)).map(|_| arb_binder_name(g)).collect()
   };
-  BinderGroup { info, names, ty: arb_term(g, depth), span: Span::default() }
+  BinderGroup {
+    contract: BinderContract::from_bits(u8::try_from(pick(g, 16)).unwrap())
+      .unwrap(),
+    info,
+    names,
+    ty: arb_term(g, depth),
+    span: Span::default(),
+  }
 }
 
 fn arb_sort(g: &mut Gen) -> SortKind {
@@ -198,17 +206,30 @@ fn arb_term(g: &mut Gen, depth: usize) -> Term {
       span: sp,
     },
     5 => Term::Pi {
+      result: ValueContract::from_bits(u8::try_from(pick(g, 4)).unwrap())
+        .unwrap(),
       binders: (0..1 + pick(g, 2)).map(|_| arb_binder(g, d)).collect(),
       body: Box::new(arb_term(g, d)),
       span: sp,
     },
     6 => Term::Arrow {
+      result: ValueContract::from_bits(u8::try_from(pick(g, 4)).unwrap())
+        .unwrap(),
       dom: Box::new(arb_term(g, d)),
       cod: Box::new(arb_term(g, d)),
       span: sp,
     },
     7 => Term::Let {
-      non_dep: bool::arbitrary(g),
+      contract: LetContract {
+        non_dep: bool::arbitrary(g),
+        kind: if bool::arbitrary(g) {
+          LetKind::Value
+        } else {
+          LetKind::BorrowShared
+        },
+        binder: BinderContract::from_bits(u8::try_from(pick(g, 16)).unwrap())
+          .unwrap(),
+      },
       name: arb_binder_name(g),
       ty: Box::new(arb_term(g, d)),
       val: Box::new(arb_term(g, d)),

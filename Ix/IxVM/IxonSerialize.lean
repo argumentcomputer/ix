@@ -49,10 +49,12 @@ def ixonSerialize := ⟦
         let count = all_telescope_count(expr);
         put_tag4(0x9, count, put_all_telescope(expr, rest)),
 
-      -- Let: Tag4(0xA, non_dep) + put_expr(ty) + put_expr(val) + put_expr(body)
-      -- non_dep: 0 for dependent, 1 for non-dependent
-      Expr.Let(non_dep, &ty, &val, &body) =>
-        put_tag4(0xA, non_dep, put_expr(ty, put_expr(val, put_expr(body, rest)))),
+      -- Let: flags in Tag4 size, then the binder byte and three children.
+      Expr.Let(LetContract.Mk(non_dep, kind, contract), &ty, &val, &body) =>
+        let kind_bit = match kind { LetKind.Value => 0, LetKind.BorrowShared => 1, };
+        let flags = [u8_from_field_unsafe(non_dep + 2 * kind_bit), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+        put_tag4(0xA, flags, put_lam_mode(contract,
+          put_expr(ty, put_expr(val, put_expr(body, rest))))),
 
       -- Share: Tag4(0xB, idx)
       Expr.Share(idx) => put_tag4(0xB, idx, rest),
@@ -119,28 +121,29 @@ def ixonSerialize := ⟦
     }
   }
 
-  -- Write an Ixon v2 lambda usage byte.
-  fn put_lam_mode(uses: Uses, rest: ByteStream) -> ByteStream {
-    match uses {
-      Uses.Erased => store(ListNode.Cons(0u8, rest)),
-      Uses.Linear => store(ListNode.Cons(1u8, rest)),
-      Uses.Affine => store(ListNode.Cons(2u8, rest)),
-      Uses.Many => store(ListNode.Cons(3u8, rest)),
-    }
+  -- Two-bit value contract: ownership and locality.
+  fn value_contract_code(value: ValueContract) -> G {
+    let ValueContract.Mk(owned, locality) = value;
+    let o = match owned { Owned.Unique => 0, Owned.Shared => 1, };
+    let l = match locality { Locality.Unrestricted => 0, Locality.Local => 1, };
+    o + 2 * l
   }
 
-  -- Write usage in bits 0-1 and forall-result ownership in bit 2.
-  fn put_all_mode(uses: Uses, owned: Owned, rest: ByteStream) -> ByteStream {
-    match (uses, owned) {
-      (Uses.Erased, Owned.Unique) => store(ListNode.Cons(0u8, rest)),
-      (Uses.Linear, Owned.Unique) => store(ListNode.Cons(1u8, rest)),
-      (Uses.Affine, Owned.Unique) => store(ListNode.Cons(2u8, rest)),
-      (Uses.Many, Owned.Unique) => store(ListNode.Cons(3u8, rest)),
-      (Uses.Erased, Owned.Shared) => store(ListNode.Cons(4u8, rest)),
-      (Uses.Linear, Owned.Shared) => store(ListNode.Cons(5u8, rest)),
-      (Uses.Affine, Owned.Shared) => store(ListNode.Cons(6u8, rest)),
-      (Uses.Many, Owned.Shared) => store(ListNode.Cons(7u8, rest)),
-    }
+  -- Four-bit binder contract: usage and value contract.
+  fn binder_contract_code(contract: BinderContract) -> G {
+    let BinderContract.Mk(uses, value) = contract;
+    let u = match uses { Uses.Erased => 0, Uses.Linear => 1, Uses.Affine => 2, Uses.Many => 3, };
+    u + 4 * value_contract_code(value)
+  }
+
+  fn put_lam_mode(contract: BinderContract, rest: ByteStream) -> ByteStream {
+    store(ListNode.Cons(u8_from_field_unsafe(binder_contract_code(contract)), rest))
+  }
+
+  -- Four input bits and two result bits.
+  fn put_all_mode(contract: BinderContract, result: ValueContract, rest: ByteStream) -> ByteStream {
+    let code = binder_contract_code(contract) + 16 * value_contract_code(result);
+    store(ListNode.Cons(u8_from_field_unsafe(code), rest))
   }
 
   -- Count nested App expressions
@@ -176,20 +179,20 @@ def ixonSerialize := ⟦
     }
   }
 
-  -- Serialize Lam telescope body (mode/type pairs, then body)
+  -- Serialize Lam telescope body (contract/type pairs, then body)
   fn put_lam_telescope(expr: Expr, rest: ByteStream) -> ByteStream {
     match expr {
-      Expr.Lam(uses, &ty, &body) =>
-        put_lam_mode(uses, put_expr(ty, put_lam_telescope(body, rest))),
+      Expr.Lam(contract, &ty, &body) =>
+        put_lam_mode(contract, put_expr(ty, put_lam_telescope(body, rest))),
       _ => put_expr(expr, rest),
     }
   }
 
-  -- Serialize All telescope body (mode/type pairs, then body)
+  -- Serialize All telescope body (input/result contracts and types, then body)
   fn put_all_telescope(expr: Expr, rest: ByteStream) -> ByteStream {
     match expr {
-      Expr.All(uses, owned, &ty, &body) =>
-        put_all_mode(uses, owned, put_expr(ty, put_all_telescope(body, rest))),
+      Expr.All(input, result, &ty, &body) =>
+        put_all_mode(input, result, put_expr(ty, put_all_telescope(body, rest))),
       _ => put_expr(expr, rest),
     }
   }

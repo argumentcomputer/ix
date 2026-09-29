@@ -3,14 +3,15 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 
 Extracted from Ix/Compile/Verify/Codec.lean at Ix revision
-b067697b9d97552c6f52b2f72c892f84e4c7170f.
+b067697b9d97552c6f52b2f72c892f84e4c7170f, with the Ixon v3 changes to that
+file at Ix revision b413cd93a43d75a37c358491ca65cd79f1a2a42c.
 -/
 
 import Ix.Ixon.Wire
 import Std.Tactic.BVDecide
 
 /-!
-# Proof-visible v2 codecs
+# Proof-visible v3 codecs
 
 These X1 slices make universe serialization kernel-visible end to end.
 `Reads` records exact cursor movement in arbitrary surrounding bytes, while
@@ -52,6 +53,30 @@ theorem Reads.pure (value : α) :
   intro before after
   change (EStateM.pure value) _ = _
   simp [EStateM.pure]
+
+/-- A validated count does not consume bytes and succeeds whenever the
+following canonical payload supplies the required minimum bytes. -/
+theorem Reads.checkCount {getm : Ixon.GetM α} {bytes : ByteArray} {value : α}
+    (count : UInt64) (minBytes : Nat)
+    (hsize : count.toNat * minBytes ≤ bytes.size)
+    (hread : Reads getm bytes value) :
+    Reads (do Ixon.checkCount count minBytes; getm) bytes value := by
+  intro before after
+  have hremaining : ¬ count.toNat * minBytes >
+      (before ++ bytes ++ after).size - before.size := by
+    simp only [ByteArray.size_append]
+    omega
+  have hcheck : Ixon.checkCount count minBytes
+      { idx := before.size, bytes := before ++ bytes ++ after } =
+      .ok () { idx := before.size, bytes := before ++ bytes ++ after } := by
+    unfold Ixon.checkCount
+    change (EStateM.bind EStateM.get _) _ = _
+    simp only [EStateM.bind, EStateM.get]
+    rw [if_neg hremaining]
+    rfl
+  change (EStateM.bind (Ixon.checkCount count minBytes) _) _ = _
+  rw [EStateM.bind, hcheck]
+  exact hread before after
 
 def Writes (putm : Ixon.PutM Unit) (bytes : ByteArray) : Prop :=
   ∀ before, putm.run before = ((), before ++ bytes)
@@ -351,7 +376,8 @@ theorem tag2_large_fields (flag byteCount : UInt8)
     let header := (flag <<< 6) ||| 0x20 ||| (byteCount - 1)
     header >>> 6 = flag ∧
       header &&& 0x20 = 0x20 ∧
-      (header &&& 0x1f).toNat + 1 = byteCount.toNat := by
+      (header &&& 0x1f).toNat + 1 = byteCount.toNat ∧
+      (header &&& 0x1f) + 1 = byteCount := by
   rcases uint8_cases4 flag hflag with rfl | rfl | rfl | rfl <;>
     rcases uint8_cases1_8 byteCount hpos hle with
       rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
@@ -389,7 +415,7 @@ theorem getTag2_reads_large (flag : UInt8) (size : UInt64)
     simp only [byteCount, hzero, Nat.mul_zero, Nat.pow_zero] at hfit
     omega
   have hcountLe : byteCount.toNat ≤ 8 := u64ByteCount_toNat_le size
-  obtain ⟨hdecodedFlag, hlarge, hdecodedLen⟩ :=
+  obtain ⟨hdecodedFlag, hlarge, hdecodedLen, hwidth⟩ :=
     tag2_large_fields flag byteCount hflag hcountPos hcountLe
   have hdecodedFlag' : header >>> 6 = flag := by
     simpa [header] using hdecodedFlag
@@ -399,15 +425,26 @@ theorem getTag2_reads_large (flag : UInt8) (size : UInt64)
   have hreturn : Reads
       (pure (⟨flag, size⟩ : Ixon.Tag2) : Ixon.GetM Ixon.Tag2)
       ByteArray.empty ⟨flag, size⟩ := Reads.pure _
+  have hcheckedReturn : Reads
+      (do
+        if size < 32 || Ixon.u64ByteCount size != (header &&& 0x1f) + 1 then
+          throw "noncanonical Tag2 integer"
+        return (⟨flag, size⟩ : Ixon.Tag2))
+      ByteArray.empty ⟨flag, size⟩ := by
+    simpa [hsize, hwidth, byteCount, header] using hreturn
   have hafterSize : Reads
       (do
         let decoded ← Ixon.getU64TrimmedLE byteCount.toNat
+        if decoded < 32 || Ixon.u64ByteCount decoded != (header &&& 0x1f) + 1 then
+          throw "noncanonical Tag2 integer"
         return (⟨flag, decoded⟩ : Ixon.Tag2))
       (trimmedBytes size byteCount.toNat) ⟨flag, size⟩ := by
     simpa [byteCount] using Reads.bind
-      (next := fun decoded : UInt64 =>
-        (pure (⟨flag, decoded⟩ : Ixon.Tag2) : Ixon.GetM Ixon.Tag2))
-      hsizeRead hreturn
+      (next := fun decoded : UInt64 => do
+        if decoded < 32 || Ixon.u64ByteCount decoded != (header &&& 0x1f) + 1 then
+          throw "noncanonical Tag2 integer"
+        return (⟨flag, decoded⟩ : Ixon.Tag2))
+      hsizeRead hcheckedReturn
   have hlargeNe : header &&& 0x20 ≠ 0 := by
     rw [hlarge]
     decide
@@ -422,6 +459,8 @@ theorem getTag2_reads_large (flag : UInt8) (size : UInt64)
           Ixon.getU64TrimmedLE (small.toNat + 1)
         else
           pure small.toUInt64
+        if large && (decodedSize < 32 || Ixon.u64ByteCount decodedSize != small + 1) then
+          throw "noncanonical Tag2 integer"
         return (⟨decodedFlag, decodedSize⟩ : Ixon.Tag2))
       (trimmedBytes size byteCount.toNat) ⟨flag, size⟩ := by
     simpa [hdecodedFlag', hlargeNe, hdecodedLen'] using hafterSize
@@ -434,6 +473,8 @@ theorem getTag2_reads_large (flag : UInt8) (size : UInt64)
         Ixon.getU64TrimmedLE (small.toNat + 1)
       else
         pure small.toUInt64
+      if large && (decodedSize < 32 || Ixon.u64ByteCount decodedSize != small + 1) then
+        throw "noncanonical Tag2 integer"
       return (⟨decodedFlag, decodedSize⟩ : Ixon.Tag2))
     hheader htail
   simpa [Ixon.getTag2, tag2Bytes, hsize, byteCount, header] using hall
@@ -623,7 +664,8 @@ theorem tag0_large_fields (byteCount : UInt8)
     (hpos : 0 < byteCount.toNat) (hle : byteCount.toNat ≤ 8) :
     let header := 0x80 ||| (byteCount - 1)
     header &&& 0x80 = 0x80 ∧
-      (header &&& 0x7f).toNat + 1 = byteCount.toNat := by
+      (header &&& 0x7f).toNat + 1 = byteCount.toNat ∧
+      (header &&& 0x7f) + 1 = byteCount := by
   rcases uint8_cases1_8 byteCount hpos hle with
     rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
     decide
@@ -642,7 +684,7 @@ theorem getTag0_reads_large (size : UInt64) (hsize : ¬ size < 128) :
     simp only [byteCount, hzero, Nat.mul_zero, Nat.pow_zero] at hfit
     omega
   have hcountLe : byteCount.toNat ≤ 8 := u64ByteCount_toNat_le size
-  obtain ⟨hlarge, hdecodedLen⟩ :=
+  obtain ⟨hlarge, hdecodedLen, hwidth⟩ :=
     tag0_large_fields byteCount hcountPos hcountLe
   have hheader : Reads Ixon.getU8 [header].toByteArray header :=
     getU8_reads header
@@ -650,15 +692,26 @@ theorem getTag0_reads_large (size : UInt64) (hsize : ¬ size < 128) :
   have hreturn : Reads
       (pure (⟨size⟩ : Ixon.Tag0) : Ixon.GetM Ixon.Tag0)
       ByteArray.empty ⟨size⟩ := Reads.pure _
+  have hcheckedReturn : Reads
+      (do
+        if size < 128 || Ixon.u64ByteCount size != (header &&& 0x7f) + 1 then
+          throw "noncanonical Tag0 integer"
+        return (⟨size⟩ : Ixon.Tag0))
+      ByteArray.empty ⟨size⟩ := by
+    simpa [hsize, hwidth, byteCount, header] using hreturn
   have hafterSize : Reads
       (do
         let decoded ← Ixon.getU64TrimmedLE byteCount.toNat
+        if decoded < 128 || Ixon.u64ByteCount decoded != (header &&& 0x7f) + 1 then
+          throw "noncanonical Tag0 integer"
         return (⟨decoded⟩ : Ixon.Tag0))
       (trimmedBytes size byteCount.toNat) ⟨size⟩ := by
     simpa [byteCount] using Reads.bind
-      (next := fun decoded : UInt64 =>
-        (pure (⟨decoded⟩ : Ixon.Tag0) : Ixon.GetM Ixon.Tag0))
-      hsizeRead hreturn
+      (next := fun decoded : UInt64 => do
+        if decoded < 128 || Ixon.u64ByteCount decoded != (header &&& 0x7f) + 1 then
+          throw "noncanonical Tag0 integer"
+        return (⟨decoded⟩ : Ixon.Tag0))
+      hsizeRead hcheckedReturn
   have hlargeNe : header &&& 0x80 ≠ 0 := by
     rw [hlarge]
     decide
@@ -672,6 +725,8 @@ theorem getTag0_reads_large (size : UInt64) (hsize : ¬ size < 128) :
           Ixon.getU64TrimmedLE (small.toNat + 1)
         else
           pure small.toUInt64
+        if large && (decodedSize < 128 || Ixon.u64ByteCount decodedSize != small + 1) then
+          throw "noncanonical Tag0 integer"
         return (⟨decodedSize⟩ : Ixon.Tag0))
       (trimmedBytes size byteCount.toNat) ⟨size⟩ := by
     simpa [hlargeNe, hdecodedLen'] using hafterSize
@@ -683,6 +738,8 @@ theorem getTag0_reads_large (size : UInt64) (hsize : ¬ size < 128) :
         Ixon.getU64TrimmedLE (small.toNat + 1)
       else
         pure small.toUInt64
+      if large && (decodedSize < 128 || Ixon.u64ByteCount decodedSize != small + 1) then
+        throw "noncanonical Tag0 integer"
       return (⟨decodedSize⟩ : Ixon.Tag0))
     hheader htail
   simpa [Ixon.getTag0, tag0Bytes, hsize, byteCount, header] using hall
@@ -762,7 +819,8 @@ theorem tag4_large_fields (flag byteCount : UInt8)
     let header := (flag <<< 4) ||| 0x08 ||| (byteCount - 1)
     header >>> 4 = flag ∧
       header &&& 0x08 = 0x08 ∧
-      (header &&& 0x07).toNat + 1 = byteCount.toNat := by
+      (header &&& 0x07).toNat + 1 = byteCount.toNat ∧
+      (header &&& 0x07) + 1 = byteCount := by
   rcases uint8_cases16 flag hflag with
       rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
       rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
@@ -785,7 +843,7 @@ theorem getTag4_reads_large (flag : UInt8) (size : UInt64)
     simp only [byteCount, hzero, Nat.mul_zero, Nat.pow_zero] at hfit
     omega
   have hcountLe : byteCount.toNat ≤ 8 := u64ByteCount_toNat_le size
-  obtain ⟨hdecodedFlag, hlarge, hdecodedLen⟩ :=
+  obtain ⟨hdecodedFlag, hlarge, hdecodedLen, hwidth⟩ :=
     tag4_large_fields flag byteCount hflag hcountPos hcountLe
   have hdecodedFlag' : header >>> 4 = flag := by
     simpa [header] using hdecodedFlag
@@ -795,15 +853,26 @@ theorem getTag4_reads_large (flag : UInt8) (size : UInt64)
   have hreturn : Reads
       (pure (⟨flag, size⟩ : Ixon.Tag4) : Ixon.GetM Ixon.Tag4)
       ByteArray.empty ⟨flag, size⟩ := Reads.pure _
+  have hcheckedReturn : Reads
+      (do
+        if size < 8 || Ixon.u64ByteCount size != (header &&& 0x07) + 1 then
+          throw "noncanonical Tag4 integer"
+        return (⟨flag, size⟩ : Ixon.Tag4))
+      ByteArray.empty ⟨flag, size⟩ := by
+    simpa [hsize, hwidth, byteCount, header] using hreturn
   have hafterSize : Reads
       (do
         let decoded ← Ixon.getU64TrimmedLE byteCount.toNat
+        if decoded < 8 || Ixon.u64ByteCount decoded != (header &&& 0x07) + 1 then
+          throw "noncanonical Tag4 integer"
         return (⟨flag, decoded⟩ : Ixon.Tag4))
       (trimmedBytes size byteCount.toNat) ⟨flag, size⟩ := by
     simpa [byteCount] using Reads.bind
-      (next := fun decoded : UInt64 =>
-        (pure (⟨flag, decoded⟩ : Ixon.Tag4) : Ixon.GetM Ixon.Tag4))
-      hsizeRead hreturn
+      (next := fun decoded : UInt64 => do
+        if decoded < 8 || Ixon.u64ByteCount decoded != (header &&& 0x07) + 1 then
+          throw "noncanonical Tag4 integer"
+        return (⟨flag, decoded⟩ : Ixon.Tag4))
+      hsizeRead hcheckedReturn
   have hlargeNe : header &&& 0x08 ≠ 0 := by
     rw [hlarge]
     decide
@@ -818,6 +887,8 @@ theorem getTag4_reads_large (flag : UInt8) (size : UInt64)
           Ixon.getU64TrimmedLE (small.toNat + 1)
         else
           pure small.toUInt64
+        if large && (decodedSize < 8 || Ixon.u64ByteCount decodedSize != small + 1) then
+          throw "noncanonical Tag4 integer"
         return (⟨decodedFlag, decodedSize⟩ : Ixon.Tag4))
       (trimmedBytes size byteCount.toNat) ⟨flag, size⟩ := by
     simpa [hdecodedFlag', hlargeNe, hdecodedLen'] using hafterSize
@@ -830,6 +901,8 @@ theorem getTag4_reads_large (flag : UInt8) (size : UInt64)
         Ixon.getU64TrimmedLE (small.toNat + 1)
       else
         pure small.toUInt64
+      if large && (decodedSize < 8 || Ixon.u64ByteCount decodedSize != small + 1) then
+        throw "noncanonical Tag4 integer"
       return (⟨decodedFlag, decodedSize⟩ : Ixon.Tag4))
     hheader htail
   simpa [Ixon.getTag4, tag4Bytes, hsize, byteCount, header] using hall

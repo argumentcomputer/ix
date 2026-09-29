@@ -11,8 +11,17 @@ namespace Ix.Ixon.Verify.Work
 
 open _root_.Ixon
 
+/-- Ixon v3's strict Boolean byte. -/
+def bool : M Bool := do
+  let byte ← u8
+  match byte with
+  | 0 => pure false
+  | 1 => pure true
+  | e => fail s!"expected Bool (0 or 1), got {e}"
+
 def defn : M Definition := do
   let flags ← u8
+  reject (flags >>> 2 > 2 || (flags &&& 3) > 2) "invalid definition kind/safety"
   let (kind, safety) := unpackDefKindSafety flags
   let lvls ← tag0
   let typ ← expr
@@ -26,6 +35,7 @@ def recursorRule : M RecursorRule := do
 
 def recursor : M Recursor := do
   let flags ← u8
+  reject (flags > 3) "invalid recursor flags"
   let bools := unpackBools 2 flags
   let lvls ← tag0
   let params ← tag0
@@ -34,15 +44,16 @@ def recursor : M Recursor := do
   let minors ← tag0
   let typ ← expr
   let count ← tag0
+  check count.size.toNat.toUInt64 2
   let rules ← array recursorRule count.size.toNat
   charged 1 (pure ⟨bools[0]!, bools[1]!, lvls.size, params.size, indices.size,
     motives.size, minors.size, typ, rules⟩)
 
 def axiomDecl : M Axiom := do
-  let flags ← u8
+  let isUnsafe ← bool
   let lvls ← tag0
   let typ ← expr
-  charged 1 (pure ⟨flags != 0, lvls.size, typ⟩)
+  charged 1 (pure ⟨isUnsafe, lvls.size, typ⟩)
 
 def quotient : M Quotient := do
   let flags ← u8
@@ -54,24 +65,24 @@ def quotient : M Quotient := do
   charged 1 (pure ⟨kind, lvls.size, typ⟩)
 
 def ctor : M Constructor := do
-  let flags ← u8
+  let isUnsafe ← bool
   let lvls ← tag0
   let cidx ← tag0
   let params ← tag0
   let fields ← tag0
   let typ ← expr
-  charged 1 (pure ⟨flags != 0, lvls.size, cidx.size, params.size, fields.size, typ⟩)
+  charged 1 (pure ⟨isUnsafe, lvls.size, cidx.size, params.size, fields.size, typ⟩)
 
 def inductiveDecl : M Inductive := do
-  let flags ← u8
-  let bools := unpackBools 1 flags
+  let isUnsafe ← bool
   let lvls ← tag0
   let params ← tag0
   let indices ← tag0
   let typ ← expr
   let count ← tag0
+  check count.size.toNat.toUInt64 6
   let ctors ← array ctor count.size.toNat
-  charged 1 (pure ⟨bools[0]!, lvls.size, params.size, indices.size, typ, ctors⟩)
+  charged 1 (pure ⟨isUnsafe, lvls.size, params.size, indices.size, typ, ctors⟩)
 
 def inductiveProj : M InductiveProj := do
   let idx ← tag0
@@ -139,10 +150,17 @@ def constant (budget : Nat) : M Constant := do
   let (univs, _) ← univArray count budget
   charged 1 (pure ⟨info, sharing, refs, univs⟩)
 
+theorem bool_erases : Erases bool (Serialize.get (α := Bool)) := by
+  unfold bool
+  apply u8_erases.bind
+  intro byte
+  split <;> simp_all only
+  all_goals first | exact pure_erases _ | exact fail_erases _
+
 theorem defn_erases : Erases defn getDefinition := by
   unfold defn getDefinition
-  exact u8_erases.bind fun _ => tag0_erases.bind fun _ => expr_erases.bind fun _ =>
-    expr_erases.bind fun _ => (pure_erases _).charged 1
+  exact u8_erases.bind fun _ => reject_erases _ _ (tag0_erases.bind fun _ =>
+    expr_erases.bind fun _ => expr_erases.bind fun _ => (pure_erases _).charged 1)
 
 theorem recursorRule_erases : Erases recursorRule getRecursorRule := by
   unfold recursorRule getRecursorRule
@@ -152,6 +170,7 @@ theorem recursor_erases : Erases recursor getRecursor := by
   unfold recursor getRecursor
   apply u8_erases.bind
   intro flags
+  apply reject_erases
   apply tag0_erases.bind
   intro lvls
   apply tag0_erases.bind
@@ -166,6 +185,8 @@ theorem recursor_erases : Erases recursor getRecursor := by
   intro typ
   apply tag0_erases.bind
   intro count
+  apply (check_erases _ _).bind
+  intro checked
   have h := (array_erases recursorRule_erases count.size.toNat).bind
     (fun rules => (pure_erases (⟨(unpackBools 2 flags)[0]!, (unpackBools 2 flags)[1]!,
       lvls.size, params.size, indices.size, motives.size, minors.size, typ, rules⟩ : Recursor)).charged 1)
@@ -174,7 +195,7 @@ theorem recursor_erases : Erases recursor getRecursor := by
 
 theorem axiomDecl_erases : Erases axiomDecl getAxiom := by
   unfold axiomDecl getAxiom
-  exact u8_erases.bind fun _ => tag0_erases.bind fun _ => expr_erases.bind fun _ =>
+  exact bool_erases.bind fun _ => tag0_erases.bind fun _ => expr_erases.bind fun _ =>
     (pure_erases _).charged 1
 
 theorem quotient_erases : Erases quotient getQuotient := by
@@ -188,14 +209,14 @@ theorem quotient_erases : Erases quotient getQuotient := by
 
 theorem ctor_erases : Erases ctor getConstructor := by
   unfold ctor getConstructor
-  exact u8_erases.bind fun _ => tag0_erases.bind fun _ => tag0_erases.bind fun _ =>
+  exact bool_erases.bind fun _ => tag0_erases.bind fun _ => tag0_erases.bind fun _ =>
     tag0_erases.bind fun _ => tag0_erases.bind fun _ => expr_erases.bind fun _ =>
     (pure_erases _).charged 1
 
 theorem inductiveDecl_erases : Erases inductiveDecl getInductive := by
   unfold inductiveDecl getInductive
-  apply u8_erases.bind
-  intro flags
+  apply bool_erases.bind
+  intro isUnsafe
   apply tag0_erases.bind
   intro lvls
   apply tag0_erases.bind
@@ -206,8 +227,10 @@ theorem inductiveDecl_erases : Erases inductiveDecl getInductive := by
   intro typ
   apply tag0_erases.bind
   intro count
+  apply (check_erases _ _).bind
+  intro checked
   have h := (array_erases ctor_erases count.size.toNat).bind
-    (fun ctors => (pure_erases (⟨(unpackBools 1 flags)[0]!, lvls.size, params.size,
+    (fun ctors => (pure_erases (⟨isUnsafe, lvls.size, params.size,
       indices.size, typ, ctors⟩ : Inductive)).charged 1)
   refine h.trans ?_
   simp only [getArray, bind_assoc, pure_bind]
@@ -280,10 +303,21 @@ theorem constant_erases (budget : Nat) : Erases (constant budget) (Bounded.getCo
   rintro ⟨univs, remaining⟩
   exact (pure_erases _).charged 1
 
+theorem bool_bound : Bound bool 16 0 (fun _ => 15) := by
+  unfold bool
+  apply (u8_bound 16 (by decide)).bind
+  intro byte
+  split
+  all_goals first
+  | exact pure_bound _ _ _ _ (Nat.le_refl _)
+  | exact fail_bound _ _ _ _
+
 theorem defn_bound : Bound defn 16 0 (fun _ => 2) := by
   unfold defn
   apply (u8_bound 16 (by decide)).bind_zero
   intro flags
+  apply (reject_bound 16 0 _ _).bind
+  intro checked
   apply (tag0_bound 16 (by decide)).bind_zero
   intro lvls
   apply expr_bound.bind_zero
@@ -300,6 +334,8 @@ theorem recursor_bound : Bound recursor 16 0 (fun _ => 2) := by
   unfold recursor
   apply (u8_bound 16 (by decide)).bind_zero
   intro flags
+  apply (reject_bound 16 0 _ _).bind
+  intro checked
   apply (tag0_bound 16 (by decide)).bind_zero
   intro lvls
   apply (tag0_bound 16 (by decide)).bind_zero
@@ -314,13 +350,15 @@ theorem recursor_bound : Bound recursor 16 0 (fun _ => 2) := by
   intro typ
   apply (tag0_bound 16 (by decide)).bind
   intro count
+  apply (check_bound _ _ _ _).bind
+  intro checked
   exact ((array_bound recursorRule_bound _).carry 14).bind fun _ =>
     charged_pure_bound _ _ _ _ _ (by decide)
 
 theorem axiomDecl_bound : Bound axiomDecl 16 0 (fun _ => 2) := by
   unfold axiomDecl
-  apply (u8_bound 16 (by decide)).bind_zero
-  intro flags
+  apply bool_bound.bind_zero
+  intro isUnsafe
   apply (tag0_bound 16 (by decide)).bind_zero
   intro lvls
   exact expr_bound.bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
@@ -338,8 +376,8 @@ theorem quotient_bound : Bound quotient 16 0 (fun _ => 2) := by
 
 theorem ctor_bound : Bound ctor 16 0 (fun _ => 2) := by
   unfold ctor
-  apply (u8_bound 16 (by decide)).bind_zero
-  intro flags
+  apply bool_bound.bind_zero
+  intro isUnsafe
   apply (tag0_bound 16 (by decide)).bind_zero
   intro lvls
   apply (tag0_bound 16 (by decide)).bind_zero
@@ -352,8 +390,8 @@ theorem ctor_bound : Bound ctor 16 0 (fun _ => 2) := by
 
 theorem inductiveDecl_bound : Bound inductiveDecl 16 0 (fun _ => 2) := by
   unfold inductiveDecl
-  apply (u8_bound 16 (by decide)).bind_zero
-  intro flags
+  apply bool_bound.bind_zero
+  intro isUnsafe
   apply (tag0_bound 16 (by decide)).bind_zero
   intro lvls
   apply (tag0_bound 16 (by decide)).bind_zero
@@ -364,6 +402,8 @@ theorem inductiveDecl_bound : Bound inductiveDecl 16 0 (fun _ => 2) := by
   intro typ
   apply (tag0_bound 16 (by decide)).bind
   intro count
+  apply (check_bound _ _ _ _).bind
+  intro checked
   exact ((array_bound ctor_bound _).carry 14).bind fun _ =>
     charged_pure_bound _ _ _ _ _ (by decide)
 

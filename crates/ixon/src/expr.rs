@@ -3,9 +3,10 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::needless_pass_by_value)]
 
+use crate::contract::{BinderContract, LetContract, Locality, ValueContract};
 use std::sync::Arc;
 
-/// Binder usage carried by Ixon v2 lambda and forall nodes.
+/// Computational usage, independent of ownership and locality.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Uses {
@@ -31,7 +32,7 @@ impl Uses {
   }
 }
 
-/// Ownership made available to the caller for a forall result.
+/// Ownership of a bound or returned value, independent of usage and locality.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Owned {
@@ -78,12 +79,12 @@ pub enum Expr {
   Nat(u64),
   /// Application: (function, argument)
   App(Arc<Expr>, Arc<Expr>),
-  /// Lambda: (binder_usage, binder_type, body)
-  Lam(Uses, Arc<Expr>, Arc<Expr>),
-  /// Forall/Pi: (binder_usage, result_ownership, binder_type, body)
-  All(Uses, Owned, Arc<Expr>, Arc<Expr>),
-  /// Let: (non_dep, type, value, body)
-  Let(bool, Arc<Expr>, Arc<Expr>, Arc<Expr>),
+  /// Lambda: (input contract, binder type, body)
+  Lam(BinderContract, Arc<Expr>, Arc<Expr>),
+  /// Forall/Pi: (input contract, independent result contract, domain, body)
+  All(BinderContract, ValueContract, Arc<Expr>, Arc<Expr>),
+  /// Ordinary let: (dependency/input contract, type, value, body)
+  Let(LetContract, Arc<Expr>, Arc<Expr>, Arc<Expr>),
   /// Reference to shared subexpression in MutualBlock.sharing[idx]
   Share(u64),
 }
@@ -100,7 +101,7 @@ impl Expr {
   pub const FLAG_APP: u8 = 0x7;
   pub const FLAG_LAM: u8 = 0x8;
   pub const FLAG_ALL: u8 = 0x9;
-  pub const FLAG_LET: u8 = 0xA; // size=0 for dep, size=1 for non_dep
+  pub const FLAG_LET: u8 = 0xA; // size holds dependency and borrow flags
   pub const FLAG_SHARE: u8 = 0xB;
 
   pub fn sort(univ_idx: u64) -> Arc<Self> {
@@ -140,7 +141,15 @@ impl Expr {
   }
 
   pub fn lam_mode(uses: Uses, ty: Arc<Expr>, body: Arc<Expr>) -> Arc<Self> {
-    Arc::new(Expr::Lam(uses, ty, body))
+    Self::lam_contract(BinderContract::plain(uses), ty, body)
+  }
+
+  pub fn lam_contract(
+    contract: BinderContract,
+    ty: Arc<Expr>,
+    body: Arc<Expr>,
+  ) -> Arc<Self> {
+    Arc::new(Expr::Lam(contract, ty, body))
   }
 
   pub fn all(ty: Arc<Expr>, body: Arc<Expr>) -> Arc<Self> {
@@ -153,7 +162,21 @@ impl Expr {
     ty: Arc<Expr>,
     body: Arc<Expr>,
   ) -> Arc<Self> {
-    Arc::new(Expr::All(uses, owned, ty, body))
+    Self::all_contract(
+      BinderContract::plain(uses),
+      ValueContract { owned, locality: Locality::Unrestricted },
+      ty,
+      body,
+    )
+  }
+
+  pub fn all_contract(
+    contract: BinderContract,
+    result: ValueContract,
+    ty: Arc<Expr>,
+    body: Arc<Expr>,
+  ) -> Arc<Self> {
+    Arc::new(Expr::All(contract, result, ty, body))
   }
 
   pub fn let_(
@@ -162,11 +185,68 @@ impl Expr {
     val: Arc<Expr>,
     body: Arc<Expr>,
   ) -> Arc<Self> {
-    Arc::new(Expr::Let(non_dep, ty, val, body))
+    Self::let_contract(LetContract::plain(non_dep), ty, val, body)
+  }
+
+  pub fn let_contract(
+    contract: LetContract,
+    ty: Arc<Expr>,
+    val: Arc<Expr>,
+    body: Arc<Expr>,
+  ) -> Arc<Self> {
+    Arc::new(Expr::Let(contract, ty, val, body))
   }
 
   pub fn share(idx: u64) -> Arc<Self> {
     Arc::new(Expr::Share(idx))
+  }
+
+  /// Direct expression children, preserving contracts on their parent.
+  pub fn children(&self) -> Vec<&Arc<Self>> {
+    match self {
+      Self::Sort(_)
+      | Self::Var(_)
+      | Self::Ref(..)
+      | Self::Rec(..)
+      | Self::Str(_)
+      | Self::Nat(_)
+      | Self::Share(_) => vec![],
+      Self::Prj(_, _, e) => vec![e],
+      Self::App(a, b) | Self::Lam(_, a, b) | Self::All(_, _, a, b) => {
+        vec![a, b]
+      },
+      Self::Let(_, a, b, c) => vec![a, b, c],
+    }
+  }
+
+  /// Rebuild a node without dropping any scalar or contract field.
+  pub fn with_children(&self, children: &[Arc<Self>]) -> Result<Self, String> {
+    if self.children().len() != children.len() {
+      return Err("expression reconstruction child count mismatch".into());
+    }
+    Ok(match self {
+      Self::Sort(_)
+      | Self::Var(_)
+      | Self::Ref(..)
+      | Self::Rec(..)
+      | Self::Str(_)
+      | Self::Nat(_)
+      | Self::Share(_) => self.clone(),
+      Self::Prj(t, f, _) => Self::Prj(*t, *f, children[0].clone()),
+      Self::App(..) => Self::App(children[0].clone(), children[1].clone()),
+      Self::Lam(c, ..) => {
+        Self::Lam(*c, children[0].clone(), children[1].clone())
+      },
+      Self::All(c, v, ..) => {
+        Self::All(*c, *v, children[0].clone(), children[1].clone())
+      },
+      Self::Let(c, ..) => Self::Let(
+        *c,
+        children[0].clone(),
+        children[1].clone(),
+        children[2].clone(),
+      ),
+    })
   }
 
   /// Count nested applications for telescope compression.
@@ -227,6 +307,21 @@ pub mod tests {
     All,
     Prj,
     Let,
+  }
+
+  fn arbitrary_value_contract(g: &mut Gen) -> ValueContract {
+    ValueContract {
+      owned: if bool::arbitrary(g) { Owned::Unique } else { Owned::Shared },
+      locality: if bool::arbitrary(g) {
+        Locality::Local
+      } else {
+        Locality::Unrestricted
+      },
+    }
+  }
+
+  fn arbitrary_binder_contract(g: &mut Gen, uses: Uses) -> BinderContract {
+    BinderContract { uses, value: arbitrary_value_contract(g) }
   }
 
   /// Generate an arbitrary Expr using pointer-tree technique (no stack overflow)
@@ -314,7 +409,10 @@ pub mod tests {
             Arc::get_mut(&mut body).unwrap() as *mut Expr,
           );
           unsafe {
-            ptr::write(ptr, Expr::Lam(uses, ty, body));
+            ptr::write(
+              ptr,
+              Expr::Lam(arbitrary_binder_contract(g, uses), ty, body),
+            );
           }
           stack.push(body_ptr);
           stack.push(ty_ptr);
@@ -326,8 +424,6 @@ pub mod tests {
             2 => Uses::Affine,
             _ => Uses::Many,
           };
-          let owned =
-            if gen_range(g, 0..2) == 0 { Owned::Unique } else { Owned::Shared };
           let mut ty = Arc::new(Expr::Var(0));
           let mut body = Arc::new(Expr::Var(0));
           let (ty_ptr, body_ptr) = (
@@ -335,7 +431,15 @@ pub mod tests {
             Arc::get_mut(&mut body).unwrap() as *mut Expr,
           );
           unsafe {
-            ptr::write(ptr, Expr::All(uses, owned, ty, body));
+            ptr::write(
+              ptr,
+              Expr::All(
+                arbitrary_binder_contract(g, uses),
+                arbitrary_value_contract(g),
+                ty,
+                body,
+              ),
+            );
           }
           stack.push(body_ptr);
           stack.push(ty_ptr);
@@ -351,6 +455,7 @@ pub mod tests {
           stack.push(val_ptr);
         },
         Case::Let => {
+          let uses = Uses::from_bits(gen_range(g, 0..4) as u8).unwrap();
           let mut ty = Arc::new(Expr::Var(0));
           let mut val = Arc::new(Expr::Var(0));
           let mut body = Arc::new(Expr::Var(0));
@@ -360,7 +465,23 @@ pub mod tests {
             Arc::get_mut(&mut body).unwrap() as *mut Expr,
           );
           unsafe {
-            ptr::write(ptr, Expr::Let(bool::arbitrary(g), ty, val, body));
+            ptr::write(
+              ptr,
+              Expr::Let(
+                LetContract {
+                  non_dep: bool::arbitrary(g),
+                  kind: if bool::arbitrary(g) {
+                    crate::contract::LetKind::BorrowShared
+                  } else {
+                    crate::contract::LetKind::Value
+                  },
+                  binder: arbitrary_binder_contract(g, uses),
+                },
+                ty,
+                val,
+                body,
+              ),
+            );
           }
           stack.push(body_ptr);
           stack.push(val_ptr);

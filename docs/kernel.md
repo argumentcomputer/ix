@@ -96,8 +96,10 @@ keys, exact source readings, and each primary record installed at its own
 reference. Projection records must name the proper owner, member kind, and
 position and have empty tables. Sharing edges must decrease; indexes resolve
 without narrowing. `checkEnv_has_model` applies to this executed Ixon entry
-point. Nat payloads are little-endian; strings and nonstandard binder modes
-decline. Address authentication, wire canonicality, and unused table entries
+point. Nat payloads are little-endian; strings and non-default lambda/forall
+contracts decline. A let's Ixon v3 contract (dependency bit, value or shared
+borrow, binder contract) is erased by the reading, as at upstream `Ix.Tc`'s
+erased typing boundary, and retained by the egress layout. Address authentication, wire canonicality, and unused table entries
 are outside this reading contract.
 
 `Egress.readRecords` retains the layout choices that expanded raw terms lose.
@@ -105,7 +107,7 @@ are outside this reading contract.
 checks their complete readings against the retained tables, and validates
 each reconstructed projection's actual variant and owner. It preserves every
 address, record position, declaration field, sharing node, repeated or unused
-table slot, and let nondependency hint. Numeric reconstruction rejects values
+table slot, and let contract. Numeric reconstruction rejects values
 outside `UInt64`; constructor and rule lists cannot silently truncate.
 
 `Egress.records_roundtrip` proves exact source recovery after any successful
@@ -267,10 +269,14 @@ Its recursive checks carry telescope counts, avoiding repeated scans of
 long application, binder, and successor chains. `Canonical.deConstant`
 combines the bounded parser, this validator, and exact re-encoding equality.
 Its successful-domain theorem is an iff: the result must be wire-well-formed,
-serialize to precisely the input bytes, and fit both limits. Tests exercise
-alternate spellings accepted by the production decoder, large truncated
-counts, aggregate budget exhaustion, 4,096-entry tables and application
-spines, and generated values compared against Rust serialization.
+serialize to precisely the input bytes, and fit both limits. The Ixon v3
+production decoder itself rejects nonminimal integer tags, counts larger than
+the remaining bytes, invalid definition/recursor flags, and non-Boolean flags;
+canonical decoding additionally rejects noncanonical universe spellings
+(split successor prefixes and ignored universe tag sizes) that the production
+decoder accepts. Tests exercise both groups, large truncated counts, aggregate
+budget exhaustion, 4,096-entry tables and application spines, and generated
+values compared against Rust serialization.
 
 `Ix.Ixon.Admission.checkBytes` connects canonical records to `checkEnv`.
 Before decoding, a short-circuiting preflight checks separate record/blob

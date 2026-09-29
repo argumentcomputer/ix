@@ -64,8 +64,8 @@ pub const CATALOG_MAGIC: &[u8; 8] = b"IXC\0\0\0\0\0";
 /// The manifest's filename inside a `.ixc` directory.
 pub const MANIFEST_FILE: &str = "manifest";
 
-/// `.ixc` format version.
-pub const CATALOG_VERSION: u32 = 1;
+/// Manifest v2 binds Ixon v3 and erased-lean-v1 catalog claims.
+pub const CATALOG_VERSION: u32 = 2;
 
 /// Storage-profile flag: bit0 of the header `flags` word.
 pub const FLAG_CHUNKED: u32 = 1;
@@ -228,6 +228,7 @@ impl Catalog {
     out.extend_from_slice(&CATALOG_VERSION.to_le_bytes());
     let flags: u32 = if self.is_chunked() { FLAG_CHUNKED } else { 0 };
     out.extend_from_slice(&flags.to_le_bytes());
+    out.extend_from_slice(&[3, 1]); // Ixon v3, erased-lean-v1.
     out.extend_from_slice(self.members_root.as_bytes());
     out.extend_from_slice(self.content_root.as_bytes());
     let count = u32::try_from(self.members.len())
@@ -305,6 +306,12 @@ impl Catalog {
       // Fail closed on flag bits this version does not understand:
       // they may change the meaning of everything that follows.
       return Err(format!("unknown .ixc flags 0x{flags:X}"));
+    }
+    if c.u8()? != 3 {
+      return Err("catalog: unsupported object format".into());
+    }
+    if c.u8()? != 1 {
+      return Err("catalog: wrong validator identity".into());
     }
     let members_root = c.addr()?;
     let content_root = c.addr()?;
@@ -1126,9 +1133,17 @@ mod tests {
     bad[12] |= 0x02;
     assert!(Catalog::from_bytes(&bad).unwrap_err().contains("flags"));
 
+    for (offset, value, message) in
+      [(8, 1, "version"), (16, 2, "format"), (17, 2, "validator")]
+    {
+      let mut bad = good.clone();
+      bad[offset] = value;
+      assert!(Catalog::from_bytes(&bad).unwrap_err().contains(message));
+    }
+
     // Flipped member env root breaks the recomputed members_root.
     let mut bad = good.clone();
-    let member_root_off = 8 + 4 + 4 + 32 + 32 + 4;
+    let member_root_off = 8 + 4 + 4 + 2 + 32 + 32 + 4;
     bad[member_root_off] ^= 0xFF;
     assert!(Catalog::from_bytes(&bad).unwrap_err().contains("members_root"));
 

@@ -33,7 +33,7 @@ namespace Parser
 def RESERVED : List String :=
   [ "import", "def", "theorem", "opaque", "axiom", "quot", "inductive",
     "recursor", "mutual", "end", "unsafe", "partial", "fun", "let",
-    "have", "where", "proj", "Prop", "Type", "Sort", "dprj", "iprj",
+    "have", "borrow", "where", "proj", "Prop", "Type", "Sort", "dprj", "iprj",
     "cprj", "rprj" ]
 
 def isReserved (s : String) : Bool := RESERVED.contains s
@@ -746,6 +746,44 @@ partial def appP : M Term := do
   if args.isEmpty then return head
   else return .app head args (head.span.to args.back!.span)
 
+
+/-- Compact independent mode prefixes. Repeating an axis is invalid. -/
+partial def contractPrefix (allowUsage : Bool) : M Ixon.BinderContract := do
+  ws
+  let ctx ← read
+  let start ← curIdx
+  let mut i := start
+  let mut uses : Ixon.Uses := .many
+  let mut usageSeen := false
+  let mut unique := false
+  let mut localSeen := false
+  let mut go := true
+  while go do
+    match ctx.chars[i]? with
+    | some '!' =>
+      if unique then return ← failExp i "one ownership prefix"
+      unique := true
+      i := i + 1
+    | some '~' =>
+      if localSeen then return ← failExp i "one locality prefix"
+      localSeen := true
+      i := i + 1
+    | some c =>
+      if allowUsage && (c == '0' || c == '1' || c == '&') then
+        if usageSeen then return ← failExp i "one usage prefix"
+        usageSeen := true
+        uses := if c == '0' then .erased else if c == '1' then .linear else .affine
+        i := i + 1
+      else go := false
+    | none => go := false
+  setIdx i
+  if i != start then
+    ws
+    if (← curIdx) == i then return ← failExp i "space after contract prefix"
+  return { uses, value := {
+    owned := if unique then .unique else .shared
+    locality := if localSeen then .local else .unrestricted } }
+
 /-- One bracketed binder group. `(…)` is tentative (backtrackable
     before the `:`); `{…}`, `[…]`, `⦃…⦄` commit. -/
 partial def binderGroup : M BinderGroup := do
@@ -763,23 +801,24 @@ partial def binderGroup : M BinderGroup := do
   | none => failExp start "binder"
   | some (openC, closeS, info) => do
     setIdx (start + 1)
+    let contract ← contractPrefix true
     if openC == '[' then do
       match ← attempt? binderNamesColon with
       | some names => do
         let ty ← cut term
         let _ ← cut (sym closeS)
-        return .mk info names ty (← sp start (← curIdx))
+        return .mk contract info names ty (← sp start (← curIdx))
       | none => do
         let ty ← cut term
         let _ ← cut (sym closeS)
-        return .mk info #[] ty (← sp start (← curIdx))
+        return .mk contract info #[] ty (← sp start (← curIdx))
     else do
       let names ←
         if openC == '(' then binderNamesColon
         else cut binderNamesColon
       let ty ← cut term
       let _ ← cut (sym closeS)
-      return .mk info names ty (← sp start (← curIdx))
+      return .mk contract info names ty (← sp start (← curIdx))
 
 /-- `ident+ :` — the committing prefix of a named binder group. -/
 partial def binderNamesColon : M (Array BinderName) := do
@@ -814,14 +853,27 @@ partial def lamTerm : M Term := do
 /-- `let x : T := v; b` / `have x : T := v; b`. -/
 partial def letTerm (nonDep : Bool) : M Term := do
   let ksp ← kw (if nonDep then "have" else "let")
-  let name ← cut binderNameP
-  let _ ← cut (sym ":")
-  let ty ← cut term
+  let kind ← if (← peekWord) == some "borrow" then do
+      let _ ← kw "borrow"
+      pure Ixon.LetKind.borrowShared
+    else pure Ixon.LetKind.value
+  ws
+  let ctx ← read
+  let (name, ty, binder) ← if ctx.chars[(← curIdx)]? == some '(' then do
+      let group ← cut binderGroup
+      if group.info != .default || group.names.size != 1 then
+        cut (failExp (← curIdx) "one explicit let binder")
+      else pure (group.names[0]!, group.ty, group.contract)
+    else do
+      let name ← cut binderNameP
+      let _ ← cut (sym ":")
+      let ty ← cut term
+      pure (name, ty, Ixon.BinderContract.many)
   let _ ← cut (sym ":=")
   let val ← cut term
   let _ ← cut (sym ";")
   let body ← cut term
-  return .letE nonDep name ty val body (ksp.to body.span)
+  return .letE { nonDep, kind, binder } name ty val body (ksp.to body.span)
 
 /-- Dependent domain: `binder+ → term` (committed once the first
     group parses). -/
@@ -830,8 +882,9 @@ partial def piTerm : M Term := do
   let start ← curIdx
   let groups ← binderGroups1
   let _ ← cut arrowTok
+  let output ← cut (contractPrefix false)
   let body ← cut term
-  return .pi groups body ⟨← off start, body.span.stop⟩
+  return .pi groups output.value body ⟨← off start, body.span.stop⟩
 
 /-- Arrow layer: dependent domain, or application with optional `→`. -/
 partial def piOrArrow : M Term := do
@@ -851,8 +904,9 @@ partial def appArrow : M Term := do
   let lhs ← appP
   match ← attempt? arrowTok with
   | some _ => do
+    let output ← cut (contractPrefix false)
     let cod ← cut term
-    return .arrow lhs cod (lhs.span.to cod.span)
+    return .arrow output.value lhs cod (lhs.span.to cod.span)
   | none => return lhs
 
 /-- Term entry point. -/
@@ -1217,26 +1271,11 @@ partial def mainExprP : M MainExpr := do
 partial def file : M File := do
   ws
   let startIdx ← curIdx
-  -- Optional version header: absent means version 1, forever
-  -- (grammar versions ≥ 2 must declare themselves). A leading `ixon`
-  -- followed by a numeral is always the header (a constant literally
-  -- named `ixon` applied to a literal at file start needs parens);
-  -- followed by anything else it is content.
-  let version ←
-    if (← peekWord) == some "ixon" then do
-      let saved ← get
-      let _ ← kw "ixon"
-      ws
-      let ctx ← read
-      if (ctx.chars[(← curIdx)]?).any Char.isDigit then do
-        let (version, vsp) ← natU64
-        if version != VERSION then
-          failFatal (.unknownVersion version VERSION) vsp
-        else pure version
-      else do
-        set saved
-        pure VERSION
-    else pure VERSION
+  let _ ← cut (kw "ixon")
+  let (version, vsp) ← cut natU64
+  if version != VERSION then
+    failFatal (.unknownVersion version VERSION) vsp
+  else pure ()
   do
     let mut imports := #[]
     let mut go := true

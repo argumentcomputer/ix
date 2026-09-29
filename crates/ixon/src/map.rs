@@ -2,8 +2,8 @@
 //!
 //! On host, this is `dashmap::DashMap` — concurrent reads/writes for the
 //! parallel ingress path. On `riscv64`, `DashMap` pulls in `parking_lot_core`,
-//! whose `HashTable::new` calls `Instant::now()` (unsupported in the Zisk
-//! guest's stdlib). Instead, alias to a thin single-threaded wrapper around
+//! whose `HashTable::new` calls `Instant::now()` (unavailable in guest
+//! standard libraries). Instead, alias to a thin single-threaded wrapper around
 //! `rustc_hash::FxHashMap` that mirrors the subset of DashMap's API used here.
 
 #[cfg(not(target_arch = "riscv64"))]

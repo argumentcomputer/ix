@@ -104,6 +104,9 @@ target ix_rs_net pkg : FilePath := do
 
 end FFI
 
+lean_lib MultiStark where
+  moreLinkObjs := #[ix_rs]
+
 @[default_target]
 lean_lib Ix where
   moreLinkObjs := #[ix_rs]
@@ -129,6 +132,22 @@ lean_exe IxTests where
 lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
   supportInterpreter := true
+
+/-- Focused source-contract checks, including fresh-module registration export. -/
+lean_exe «source-contract-tests» where
+  root := `Tests.SourceContractMain
+  supportInterpreter := true
+
+/-- Focused v3 codec, locality, and cross-language transport checks. -/
+lean_exe «ixon-v3-tests» where
+  root := `Tests.IxonV3Main
+  moreLinkObjs := #[ix_rs_test]
+
+/-- Regenerate format-specific primitive identities from the installed Lean environment. -/
+lean_exe «ixon-v3-primitives» where
+  root := `Tests.IxonV3Primitives
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_test]
 
 end Tests
 

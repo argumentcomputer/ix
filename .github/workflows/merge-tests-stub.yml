@@ -1,0 +1,17 @@
+name: Merge tests
+
+# Ignored suites run against merge-group commits. Pull requests publish the
+# same gate name so they can enter the queue before those suites run. This
+# workflow never runs on merge_group, where merge-tests.yml owns the real gate.
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  merge-gate:
+    name: merge-gate / pass
+    runs-on: ubuntu-latest
+    steps:
+      - name: Defer tests to merge queue
+        run: echo "Merge tests run against the merge group's synthetic commit."

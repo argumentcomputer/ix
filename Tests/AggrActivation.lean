@@ -154,7 +154,7 @@ private def findFixture (height : Height) : Except String Fixture := do
   let some salt := (Array.range 65536).find? fun salt =>
       let fixture := fixtureAt height salt
       fixture.statements.all fun statement =>
-        digestSelectsShort (Aggr.digestGs (Ix.Claim.ser statement.claim)) ==
+        digestSelectsShort (MultiStark.digestGs (Ix.Claim.ser statement.claim)) ==
           wantShort
     | throw s!"activation audit: no {height.label} statement fixture found"
   pure (fixtureAt height salt)
@@ -167,7 +167,7 @@ private def prepareHeightConfig (compiled : Aiur.CompiledToplevel)
     (indices : Indices) (probeIdx : Aiur.Bytecode.FunIdx) (height : Height) :
     Except String HeightConfig := do
   let fixture ← findFixture height
-  let input := Aggr.digestGs (Ix.Claim.ser fixture.leftNone.claim)
+  let input := MultiStark.digestGs (Ix.Claim.ser fixture.leftNone.claim)
   let (_, _, counts) ← compiled.bytecode.execute indices.verify input default
   let some count := counts[probeIdx]?
     | throw s!"activation audit: missing height-probe query count {probeIdx}"
@@ -192,7 +192,7 @@ private def prepareChild (ixvmSystem selfSystem : Aiur.AiurSystem)
     (statement : Aggr.CheckEnvTrees) : Except String PreparedChild := do
   let claimBytes := Ix.Claim.ser statement.claim
   let (system, idx, input) := match kind with
-    | .ixvm => (ixvmSystem, indices.verify, Aggr.digestGs claimBytes)
+    | .ixvm => (ixvmSystem, indices.verify, MultiStark.digestGs claimBytes)
     | .aggr => (selfSystem, indices.aggr, Aggr.pubInput allowed claimBytes)
   let (outer, proof, _) ← system.prove idx input default
   let proofAdviceBytes ← system.proofToAdviceBytes outer proof
@@ -482,9 +482,9 @@ def run : IO UInt32 := do
     IO.eprintln "activation audit: height probe not found"; return 1
   let indices : Indices := { verify := verifyIdx, aggr := fakeAggrIdx }
   let ixvmSystem := Aiur.AiurSystem.build childCompiled.bytecode
-    Tests.MultiStark.recCommitParams auditFri
+    Tests.ProofHelpers.recCommitParams auditFri
   let selfSystem := Aiur.AiurSystem.build childCompiled.bytecode
-    Tests.MultiStark.recCommitParams { auditFri with numQueries := 2 }
+    Tests.ProofHelpers.recCommitParams { auditFri with numQueries := 2 }
   let ixvmVk := ixvmSystem.vkBytes
   let selfVk := selfSystem.vkBytes
   let allowed := Aggr.allowedBlob ixvmVk verifyIdx selfVk fakeAggrIdx

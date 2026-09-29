@@ -5,7 +5,7 @@ import Ix.IxVM.ClaimHarness
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
-import Ix.MultiStark
+import MultiStark
 import Ix.Aggr
 import Ix.TracingTexray
 import Ix.Benchmark.Bench
@@ -30,8 +30,7 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                         (writes `foo.ixe`). Required.
   --consts <n1,n2,…>    comma-separated fully-qualified constant names to
                         benchmark (e.g. `Nat.add_comm,String.append`). Same
-                        flag/shape as `ix check --consts`, `zisk-host --consts`,
-                        and `sp1-host --consts`.
+                        flag/shape as `ix check --consts`.
   --consts-file <path>  additionally read names from a file: one per line, blank
                         lines and `#` comments ignored. Unions with --consts.
 
@@ -42,7 +41,7 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
 
   --skip-deps    check only each target itself (verify_const, trusting its
                  deps) instead of its whole transitive closure (verify_claim,
-                 the default). Same flag as `zisk-host --skip-deps`; reserved
+                 the default). Reserved
                  for targets too expensive to full-closure-check.
   --json <path>  write results JSON to <path> (per constant, plus one pair row
                  with --join). Off by default: normal CLI usage prints only
@@ -195,6 +194,9 @@ structure Result where
   /-- Wall time of `AiurSystem.verify` over the fresh proof — the other side
       of the same trade-off. `none` if verification failed (reported loudly). -/
   verifySec : Option Float := none
+  /-- The trace shards the fresh proof holds: one unless the prove was
+      budgeted (`--trace-shards`) and the record did not fit one shard. -/
+  traceShards : Option Nat := none
   /-- The constant's prove-phase RSS high-water in bytes (tracing-texray
       tree sampler; the window resets per prove). -/
   peakRss : Option Nat := none
@@ -232,7 +234,7 @@ structure Result where
 structure JoinArtifact where
   label : String
   constants : Nat
-  statement : MultiStark.CheckEnvTrees
+  statement : Aggr.CheckEnvTrees
   innerClaimsBytes : ByteArray
   checkEnvClaimBytes : ByteArray
   outerClaim : Array Aiur.G
@@ -328,6 +330,9 @@ def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
     let fields := match r.verifySec with
       | some v => fields ++ [ ("ixvm-verify-time", jsonRound 6 v) ]
       | none => fields
+    let fields := match r.traceShards with
+      | some n => fields ++ [ ("ixvm-trace-shards", Lean.toJson n) ]
+      | none => fields
     -- The stage-2 metrics, in measurement order; the execute-side pair
     -- lands before the outer prove runs, so an OOM'd outer prove still
     -- leaves them on disk.
@@ -412,8 +417,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Recursive: after each constant's prove, execute AND prove the in-circuit
   -- multi-stark verifier over the fresh proof (Phase 3).
   let recursive := p.hasFlag "recursive"
-  -- Join: retain exactly two successful recursive lifts, then benchmark one
-  -- production flat join over their singleton-CheckEnv statements.
+  -- Join: retain two verified IxVM proofs, then benchmark one production
+  -- direct flat join over their singleton-CheckEnv statements.
   let join := p.hasFlag "join"
   if recursive && executeOnly then
     IO.eprintln "error: --recursive measures the prove path; drop --execute-only"
@@ -429,6 +434,21 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let useInterp := p.hasFlag "interp"
   if join && useInterp then
     IO.eprintln "error: --join requires the native singleton-shard prover; drop --interp"
+    return Ix.Benchmark.Results.exitUsage
+  -- Trace shards: each constant's singleton CheckEnv shard proven as a
+  -- batch of trace shards within a RAM budget, the `ix prove --trace-shards
+  -- --max-ram` path. `BENCH_TRACE_SHARDS=<GiB>` is the `!benchmark`
+  -- spelling; a binary without the flag ignores the variable, so a base
+  -- checkout that predates it keeps proving whole.
+  let traceShardsEnv ← IO.getEnv "BENCH_TRACE_SHARDS"
+  let traceShards := p.hasFlag "trace-shards" || traceShardsEnv.isSome
+  let maxRamGib := match (p.flag? "max-ram").map (·.as! Nat) with
+    | some gib => gib
+    | none => (traceShardsEnv.bind String.toNat?).getD 0
+  let maxRamBytes := maxRamGib * 1024 * 1024 * 1024
+  if traceShards && (skipDeps || useInterp || executeOnly) then
+    IO.eprintln "error: --trace-shards proves singleton CheckEnv shards natively; \
+      drop --skip-deps, --interp and --execute-only"
     return Ix.Benchmark.Results.exitUsage
   -- Start the process-tree RSS sampler so each Result's peak-rss reflects the
   -- true high-water mark. With --texray, install the streaming subscriber up
@@ -660,14 +680,18 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
               aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
           proveRes.map fun (claim, proof, ioBuf) =>
             (claim, proof, ioBuf, (none : Option ByteArray))
-        else if join then
+        else if join || traceShards then
           match aiurSystem.shardProveWithEnv funIdx envHandle
-              (singletonOwnedBlob addr) with
+              (singletonOwnedBlob addr) maxRamBytes false traceShards with
           | .error e => .error e
           | .ok result => match result.proof with
             | none =>
-              .error s!"projected prover peak {result.peakBytes} bytes exceeds \
-                the budget; suggested {result.suggestedParts} parts"
+              if traceShards then
+                .error s!"no trace-shard count fits the budget \
+                  (whole-execution peak {result.peakBytes} bytes)"
+              else
+                .error s!"projected prover peak {result.peakBytes} bytes exceeds \
+                  the budget; suggested {result.suggestedParts} parts"
             | some proof =>
               let digest := Address.blake3 result.claimBytes
               let claim :=
@@ -709,11 +733,13 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             IO.eprintln s!"  verify {r.name} FAILED: {e}"
             r := { r with failed := true }
             pure none
+        let shards := Aiur.Proof.shardCount proof
         IO.println s!"  {r.name}: prove={proveSec}s verify={verifySec}s \
-          proof={proofBytes.size} bytes (cumulative {spent}s)"
+          proof={proofBytes.size} bytes, {shards} trace shard(s) (cumulative {spent}s)"
         ordered := ordered.set! i
           ({ r with proveSec := some proveSec, peakRss := some peak
-                  , proofSize := some proofBytes.size, verifySec := verifySec? }, addr)
+                  , proofSize := some proofBytes.size, verifySec := verifySec?
+                  , traceShards := some shards }, addr)
         writeJson (ordered.map (·.1))
         -- Phase 3 (--recursive): the in-circuit verifier over the fresh
         -- proof — execute it (fri-verifier-execute-time / fri-verifier-fft-cost), then prove
@@ -797,7 +823,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
                   throw <| IO.userError s!"join benchmark: native shard claim for \
                     {r.name} differs from host reconstruction"
                 let statement ← IO.ofExcept <|
-                  MultiStark.CheckEnvTrees.ofClaim expectedClaim trees
+                  Aggr.CheckEnvTrees.ofClaim expectedClaim trees
                 joinArtifacts := joinArtifacts.push {
                   label := r.name
                   constants := r.constants
@@ -886,6 +912,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         if useTexray then Aiur.printStats stats
         pure (some stats.totalFftCost)
     if let some joinFftCost := joinFftCost then
+      -- Persist the cheap phase before proving, so a watchdog kill still
+      -- reports the join's execution time and FFT cost.
+      if let some path := jsonOut then
+        Ix.Benchmark.Results.writeEntry path pairName <| Json.mkObj
+          [("status", Json.str "ok"),
+           ("constants", Lean.toJson (left.constants + right.constants)),
+           ("join-execute-time", jsonRound 6 joinExecuteSec),
+           ("join-fft-cost", jsonRound 0 joinFftCost)]
       IO.println s!"  proving join {pairName} …"
       (← IO.getStdout).flush
       TracingTexray.resetPeakTreeRss
@@ -943,13 +977,15 @@ def typecheckCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "ixe"          : String; "Path to a serialized `Ixon.Env` (e.g. produced by `ix compile`). Required."
-    "consts"       : String; "Comma-separated fully-qualified constant names to benchmark (e.g. `Nat.add_comm,String.append`). Same flag/shape as `ix check --consts`, `zisk-host --consts`, and `sp1-host --consts`."
+    "consts"       : String; "Comma-separated fully-qualified constant names to benchmark (e.g. `Nat.add_comm,String.append`). Same flag/shape as `ix check --consts`."
     "consts-file"  : String; "Additionally read constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
     "json"      : String; "Write results JSON to this path (per constant, plus one pair row with --join). Off by default; normal CLI usage prints only the human-readable summary."
-    "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
+    "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim)."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the fri-verifier-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
-    "join";               "With --recursive and exactly two resolved constants, prove each as a singleton CheckEnv shard, lift both, then execute/prove/verify one flat aggregate join. Emits a dedicated `left + right` row with join-* metrics. Conflicts with --skip-deps, --execute-only, and --interp."
+    "join";               "With --recursive and exactly two resolved constants, prove each as a singleton CheckEnv shard, then execute/prove/verify one direct flat aggregate join (ix_aggr shape 2). Emits a dedicated `left + right` row with join-* metrics. Conflicts with --skip-deps, --execute-only, and --interp."
+    "trace-shards";       "Prove each constant as a singleton CheckEnv shard planned to a batch of trace shards within --max-ram (the `ix prove --trace-shards` path); `BENCH_TRACE_SHARDS=<GiB>` sets both from the environment. Every proven row reports `ixvm-trace-shards`, the shard count of its proof."
+    "max-ram"   : Nat;    "With --trace-shards: the per-constant prover RAM budget in GiB (default 0: 85% of MemAvailable)."
     "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
     "queries"   : Nat;    "Override the positive FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."

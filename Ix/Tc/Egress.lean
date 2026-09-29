@@ -189,7 +189,7 @@ def kexprToIxon (root : KExpr .anon) : EgressM Ixon.Expr := do
       let body := values.back!; values := values.pop
       let val := values.back!; values := values.pop
       let ty := values.back!; values := values.pop
-      values := values.push (.letE nd ty val body)
+      values := values.push (.leanLet nd ty val body)
     | .prjDone refIdx field =>
       let val := values.back!; values := values.pop
       values := values.push (.prj refIdx field val)
@@ -397,9 +397,9 @@ end CanonM
 inductive CFrame where
   | process (e : Ixon.Expr)
   | appDone
-  | lamDone (uses : Ixon.Uses)
-  | allDone (uses : Ixon.Uses) (owned : Ixon.Owned)
-  | letDone (nd : Bool)
+  | lamDone (uses : Ixon.BinderContract)
+  | allDone (uses : Ixon.BinderContract) (owned : Ixon.ValueContract)
+  | letDone (nd : Ixon.LetContract)
   | prjDone (refIdx field : UInt64)
   | memoShare (idx : UInt64)
   deriving Inhabited
@@ -409,9 +409,9 @@ inductive CFrame where
 private inductive CFrameP where
   | process (e : Ixon.Expr)
   | appDone
-  | lamDone (uses : Ixon.Uses)
-  | allDone (uses : Ixon.Uses) (owned : Ixon.Owned)
-  | letDone (nd : Bool)
+  | lamDone (uses : Ixon.BinderContract)
+  | allDone (uses : Ixon.BinderContract) (owned : Ixon.ValueContract)
+  | letDone (nd : Ixon.LetContract)
   | prjDone (refIdx field : UInt64)
   | memoShare (idx : UInt64)
   | memoPtr (key : USize)

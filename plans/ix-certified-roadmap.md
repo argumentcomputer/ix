@@ -1217,12 +1217,12 @@ and lets. Ix's source-contract frontend surfaces them from Lean. The kernel
 erases them at ingress, and the egress layout retains them (section 3.1). This
 milestone gives them meaning and uses them:
 
-1. Mode checking over Ixon expressions or layouts: usage accounting with the
-   `Uses` algebra and `covers`, ownership and locality on results and loans,
-   and a stated contract for what an accepted assignment guarantees.
-   Upstream's resource admission (`Ix/Resource`) is the natural candidate to
-   certify. The set model ignores contracts unless a contract-aware semantics
-   is adopted; that choice is recorded here.
+1. Contract checking with a kernel-defined meaning: section 12, phase C,
+   defines the semantics of usage, ownership, locality, and borrows, and
+   certifies a checker against it. Upstream's resource admission
+   (`Ix/Resource`) is the algorithm to port. The set model continues to
+   ignore contracts; phase C's guarantee is stated against an instrumented
+   evaluation that is compatible with that model.
 2. Optimizations licensed by checked modes, each a promotion with a
    verdict-preservation proof: skipping erased arguments in reduction and
    conversion where the model justifies irrelevance, and in-place update
@@ -2114,7 +2114,7 @@ The gate was re-run at `f499ccf2`, the last v2 state, bookmarked as
 26 compiler cases, and 1,117 Rust order comparisons passed. Stale gate
 workspaces were forgotten.
 
-### V1 — merge ix `main` (`b413cd93`, Ixon v3)
+### V1 — merge ix `main` (`b413cd93`, Ixon v3) (complete, 2026-09-29)
 
 Merge `main` into the branch. Resolve the conflicts as follows:
 - The 17 D01 deletions that upstream edited stay deleted.
@@ -2138,6 +2138,30 @@ all others decline.
 Exit: the gate passes on v3 with regenerated compiler fixtures, with verdicts
 and reasons unchanged. Any statement the new `Ixon.Expr` forces to change is
 re-frozen, with its reason recorded.
+
+Result (`plans/review/v1-merge`):
+- **Gate.** The full gate passed: 189/212/645/975 jobs, 38 differential cases,
+  26 compiler cases (20 accept, 5 decline, 1 reject), and 1,117 Rust order
+  comparisons.
+- **Compiler cases.** 24 of the 26 inputs are re-encoded as v3, and no
+  verdict or reason changed.
+- **Ported code.**
+  - All 26 upstream `Ix/Ixon.lean` hunks were routed into `Types`, `Codec`,
+    and the host module.
+  - Six extracted codec proof modules took upstream's v3 revisions.
+  - The contract types moved to the pure `Ix.Ixon.Types.Contract`.
+  - The K4 parser-work and reader-bound proofs were ported by hand for
+    `checkCount`, canonical integer widths, strict Booleans, flag validation,
+    and contract bytes.
+- **Semantics.** Let contracts are erased by the reading, as at upstream
+  `Ix.Tc`'s erased typing boundary, and retained by egress.
+- **Frozen statements.** Frozen public statements are unchanged.
+- **Runtime audits.** Five runtime-closure counts were re-recorded. The only
+  new externs are `Nat.mul`, `UInt64.land`, and `UInt8.add`, all Lean core.
+  Byte admission's extern subset claim is now enforced by a check.
+- **Decoder behavior.** The v3 production decoder itself rejects nonminimal
+  integers and non-Boolean flags. Canonical decoding still rejects
+  noncanonical universe spellings.
 
 ### V2 — carry every v3 contract
 
@@ -2209,6 +2233,35 @@ installing a weaker entry.
 **R4.** Installed fidelity covers every supplied field: kinds, safety, arities,
 rules, and the K flag. Also prove reading determinism and a
 `checkEnv_ok_iff`.
+
+### C — contract semantics and a certified contract checker (later)
+
+The kernel defines what Ixon v3 contracts mean, and a checker is certified
+against that definition. Upstream `Ix/Resource` is a deterministic checker
+whose local invariants are proved: scope tree, outlives, and loans. It has no
+semantic model; its own statement is that "kernel typechecking alone has no
+resource meaning".
+
+Phase C has four parts:
+1. **Semantics.** Define in `Ix.Kernel.Model` a contract-aware judgment over
+   kernel terms and their retained contracts, using the `Uses` semiring. It
+   covers:
+   - usage in runtime-relevant positions;
+   - uniqueness of `unique` values;
+   - non-escape of `local` values through results, captures, stores, and
+     loans;
+   - borrow scopes.
+2. **Adequacy.** State the judgment's guarantee against an instrumented
+   evaluation, compatible with the set model; erasing contracts already
+   preserves meaning.
+3. **Certified checker.** Port the `Ix/Resource` algorithm in the kernel's
+   proof-carrying style, keeping accept/reject/decline.
+4. **Relevance.** Combine erased usage with `PropWhen` Prop regimes into a
+   certified relevance/erasure judgment. This is the annotation that
+   compilers such as Compilatr.ix currently check untrusted.
+
+K7's optimizations become promotions justified by this semantics. Phase C
+depends on V2 and follows L1 and R1–R4.
 
 The review's outcome vocabulary, byte pipeline composition, and glossary
 renames go with P11, before the D02 consumers. K5 is then designed against

@@ -1,6 +1,9 @@
 use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
-use crate::G;
+use crate::{
+  G,
+  execute::{ExecError, RecordBudget},
+};
 
 /// Immutable view of one query entry.
 #[derive(Clone, Copy)]
@@ -16,7 +19,9 @@ pub struct QueryRefMut<'a> {
   pub multiplicity: &'a mut G,
 }
 
-fn hash_g_slice(key: &[G]) -> u64 {
+/// Hash an immutable query key for reuse across lookup and registration.
+#[inline]
+pub fn hash_g_slice(key: &[G]) -> u64 {
   use std::hash::Hasher;
   let mut h = rustc_hash::FxHasher::default();
   for g in key {
@@ -252,10 +257,16 @@ pub struct QueryMap {
   mults: SegStore,
   hashes: SegU64s,
   table: hashbrown::HashTable<u32>,
+  // Fields drop in declaration order; release the charge after storage.
+  budget: RecordBudget,
 }
 
 impl QueryMap {
   pub fn new(key_stride: usize) -> Self {
+    Self::with_budget(key_stride, RecordBudget::default())
+  }
+
+  pub(crate) fn with_budget(key_stride: usize, budget: RecordBudget) -> Self {
     Self {
       out_stride_set: false,
       keys: SegStore::new(key_stride),
@@ -263,6 +274,7 @@ impl QueryMap {
       mults: SegStore::new(1),
       hashes: SegU64s::new(),
       table: hashbrown::HashTable::new(),
+      budget,
     }
   }
 
@@ -283,8 +295,20 @@ impl QueryMap {
   }
 
   pub fn get_index_of(&self, key: &[G]) -> Option<usize> {
-    debug_assert_eq!(key.len(), self.keys.stride);
+    self.lookup(key).1
+  }
+
+  /// Look up a key, retaining its hash for a subsequent insert or finish.
+  /// The hash is independent of the table's capacity and remains valid if
+  /// nested calls grow the table before the caller registers its result.
+  #[inline]
+  pub fn lookup(&self, key: &[G]) -> (u64, Option<usize>) {
     let hash = hash_g_slice(key);
+    (hash, self.get_index_of_hashed(key, hash))
+  }
+
+  fn get_index_of_hashed(&self, key: &[G], hash: u64) -> Option<usize> {
+    debug_assert_eq!(key.len(), self.keys.stride);
     self
       .table
       .find(hash, |&i| self.keys.at(i as usize) == key)
@@ -327,8 +351,27 @@ impl QueryMap {
 
   /// Register a function query at `Ctrl::Return`: insert on first
   /// registration and bump on constrained promotion of a cached hint row.
-  pub fn finish(&mut self, key: &[G], output: &[G], constrained: bool) {
-    if let Some(i) = self.get_index_of(key) {
+  pub fn finish(
+    &mut self,
+    key: &[G],
+    output: &[G],
+    constrained: bool,
+  ) -> Result<(), ExecError> {
+    self.finish_hashed(key, output, constrained, hash_g_slice(key))
+  }
+
+  /// Register using a hash previously obtained from `lookup` or
+  /// `hash_g_slice` for this exact key. Recheck presence after the body:
+  /// nested execution may have inserted rows, including this key.
+  pub fn finish_hashed(
+    &mut self,
+    key: &[G],
+    output: &[G],
+    constrained: bool,
+    hash: u64,
+  ) -> Result<(), ExecError> {
+    debug_assert_eq!(hash, hash_g_slice(key));
+    if let Some(i) = self.get_index_of_hashed(key, hash) {
       // The only ordinary way to execute an already cached function is
       // constrained promotion of an unconstrained hint entry.
       debug_assert_eq!(self.outs.at(i), output);
@@ -336,23 +379,43 @@ impl QueryMap {
         self.bump_multiplicity(i);
       }
     } else {
-      self.insert(key, output, G::from_bool(constrained));
+      self.insert_hashed(key, output, G::from_bool(constrained), hash)?;
     }
+    Ok(())
   }
 
   /// Append a new entry. The key must not already be present: call sites
   /// only insert on a confirmed miss, and a same-key re-entrant call
   /// would loop forever before reaching its own insert.
-  pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
+  pub fn insert(
+    &mut self,
+    key: &[G],
+    output: &[G],
+    multiplicity: G,
+  ) -> Result<(), ExecError> {
+    self.insert_hashed(key, output, multiplicity, hash_g_slice(key))
+  }
+
+  /// Append on a confirmed miss using the hash of this exact key. As with
+  /// `insert`, the key must not already exist. Hash-table growth is safe;
+  /// no bucket pointer or vacant-entry handle is retained across calls.
+  pub fn insert_hashed(
+    &mut self,
+    key: &[G],
+    output: &[G],
+    multiplicity: G,
+    hash: u64,
+  ) -> Result<(), ExecError> {
     debug_assert_eq!(key.len(), self.keys.stride);
-    debug_assert!(self.get_index_of(key).is_none());
+    debug_assert_eq!(hash, hash_g_slice(key));
+    debug_assert!(self.get_index_of_hashed(key, hash).is_none());
+    crate::execute::note_retained(key.len() + output.len(), &self.budget)?;
     if !self.out_stride_set {
       self.outs.stride = output.len();
       self.out_stride_set = true;
     } else {
       debug_assert_eq!(output.len(), self.outs.stride);
     }
-    let hash = hash_g_slice(key);
     let i = u32::try_from(self.mults.entries).expect("query map overflow");
     self.keys.push(key);
     self.outs.push(output);
@@ -360,6 +423,7 @@ impl QueryMap {
     self.hashes.push(hash);
     let hashes = &self.hashes;
     self.table.insert_unique(hash, i, |&j| hashes.at(j as usize));
+    Ok(())
   }
 
   /// Entry at insertion index `i`: the key slice plus a mutable handle on

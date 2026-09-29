@@ -13,7 +13,7 @@ inputs:
     description: Bencher testbed slug.
     required: true
   workload:
-    description: Workload key for the `refs/bencher/<workload>` anchor (the backend testbed minus its runner-arch suffix, e.g. zisk-check-execute).
+    description: Workload key for the `refs/bencher/<workload>` anchor (the backend testbed minus its hardware suffix, e.g. ooc-check).
     required: true
   file:
     description: Bencher Metric Format JSON file to upload.
@@ -35,7 +35,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: bencherdev/bencher@v0.6.8
+    - uses: bencherdev/bencher@f80847436d7157936b40525db4c2a1064124f04a # v0.6.13
     - shell: bash
       env:
         BENCHER_KEY: ${{ inputs.key }}
@@ -62,7 +62,7 @@ runs:
           "+refs/bencher/*:refs/bencher/*" 2>/dev/null || true
         if reset_epoch=$(git log -1 --format=%ct "refs/bencher/$WORKLOAD" 2>/dev/null); then
           bench=$(jq -r '[keys[]][0]' "$FILE")
-          sample=$(curl -fsS "https://api.bencher.dev/v0/projects/ix/reports?branch=${GITHUB_REF_NAME}&testbed=${TESTBED}&start_time=$((reset_epoch * 1000))&per_page=255" \
+          sample=$(curl -fsS "https://api.bencher.dev/v0/projects/ix/reports?branch=${GITHUB_REF_NAME}&testbed=${TESTBED}&start_time=$((reset_epoch * 1000))&per_page=255&expand=true" \
             | jq --arg b "$bench" '[.[] | select([.results[]?[]?.benchmark.name] | index($b))] | length')
         fi
         sample=${sample:-0}
@@ -72,8 +72,11 @@ runs:
         # No data points since the reset → omit thresholds so the reset commit
         # lands without an alert (--thresholds-reset clears stale models); they
         # re-arm next run. Otherwise substitute the window into each measure.
+        # The input spans several lines, so read to end of input (`-d ''`)
+        # rather than to the first newline; `read` then reports end of input
+        # as a failure, hence `|| true`.
         thresholds=()
-        [ "$sample" -gt 0 ] && thresholds=( ${THRESHOLDS//__WINDOW__/$sample} )
+        [ "$sample" -gt 0 ] && read -r -d '' -a thresholds <<< "${THRESHOLDS//__WINDOW__/$sample}" || true
 
         bencher run \
           --project ix \

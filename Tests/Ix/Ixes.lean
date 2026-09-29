@@ -1,6 +1,7 @@
 module
 
-import Ix.Cli.CheckCmd
+import Ix.Shard.Manifest
+import Ix.Unsigned
 
 /-!
 `.ixes` manifest parser: the optional trailing sections (bisection tree,
@@ -10,7 +11,7 @@ built byte by byte so no environment is needed.
 
 namespace Tests.Ix.Ixes
 
-open Ix.Cli.CheckCmd (AggregationTree parseIxesManifest)
+open Ix.Shard (AggregationTree parseIxesManifest)
 
 private def u32 (n : Nat) : ByteArray := n.toUInt32.toLEBytes
 private def u64 (n : Nat) : ByteArray := n.toUInt64.toLEBytes

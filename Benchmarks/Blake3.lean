@@ -1,6 +1,6 @@
-import Ix.IxVM.Core
-import Ix.IxVM.ByteStream
-import Ix.IxVM.Blake3
+import Ix.Aiur.Library.Core
+import Ix.Aiur.Library.ByteStream
+import Ix.Aiur.Library.Blake3
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Benchmark.Bench
@@ -24,8 +24,8 @@ def friParameters : Aiur.FriParameters := {
 }
 
 def mergedToplevel : Except Aiur.Global Aiur.Source.Toplevel := do
-  let tl ← IxVM.core.merge IxVM.byteStream
-  tl.merge IxVM.blake3
+  let tl ← Aiur.Library.core.merge Aiur.Library.byteStream
+  tl.merge Aiur.Library.blake3
 
 def blake3Bench : IO $ Array BenchReport := do
   let .ok toplevel := mergedToplevel

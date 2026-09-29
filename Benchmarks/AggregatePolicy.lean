@@ -1,4 +1,8 @@
-import Ix.Cli.AggregateCmd
+import Ix.Aggr
+import Ix.Aiur.Compiler
+import Ix.IxVM
+import Ix.IxVM.Toplevel
+import Ix.Aggr.Reference
 import Ix.Benchmark.Bench
 import Ix.TracingTexray
 
@@ -21,10 +25,22 @@ open Lean (Json)
 namespace Benchmarks.AggregatePolicy
 
 open Ix
-open Ix.Cli.AggregateCmd
+open Aggr Aggr.Reference
 
-abbrev AggregationTree := Ix.Cli.CheckCmd.AggregationTree
-abbrev FoldOp := Ix.Cli.CheckCmd.AggregationTree.FoldOp
+abbrev AggregationTree := Ix.Shard.AggregationTree
+abbrev FoldOp := Ix.Shard.AggregationTree.FoldOp
+
+structure AggregateSlot where
+  /-- Which verifying system a parent must use for this slot. Production
+  wrap-first slots are all `.aggr`; direct-join leaf slots remain `.ixvm`. -/
+  kind : Aggr.ChildKind := .aggr
+  statement : Aggr.CheckEnvTrees
+  subjectCount : Nat
+  outerClaim : Array Aiur.G
+  proof : Aiur.Proof
+  proofAddress? : Option Address
+  /-- Serialized singleton outer-claim list consumed by a parent. -/
+  claimsBytes : ByteArray := ByteArray.empty
 
 inductive Policy where
   | wrapFirst
@@ -94,9 +110,9 @@ def compileToplevel (label : String)
 
 def prepareShard (env : Ixon.Env) (blocks : Array Address) :
     Except String PreparedShard := do
-  let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks env blocks
+  let owned := Ix.Shard.ownedConstsForBlocks env blocks
   let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
-  let statement ← MultiStark.CheckEnvTrees.ofClaim claim trees
+  let statement ← Aggr.CheckEnvTrees.ofClaim claim trees
   pure { claim, statement }
 
 structure Fixture where
@@ -109,7 +125,7 @@ structure Fixture where
 /-- Select four retained manifest shards and contract every other tree leaf.
 The requested-id order determines dense indices; tree topology and left/right
 orientation remain those of the manifest. -/
-def selectFixture (env : Ixon.Env) (view : Ix.Cli.CheckCmd.IxesManifestView)
+def selectFixture (env : Ixon.Env) (view : Ix.Shard.IxesManifestView)
     (counts requestedIds : Array Nat) : Except String Fixture := do
   if requestedIds.size != 4 then
     throw "internal: policy benchmark requires exactly four shards"
@@ -148,8 +164,8 @@ def selectFixture (env : Ixon.Env) (view : Ix.Cli.CheckCmd.IxesManifestView)
 is exactly the selected manifest subtree rather than a full-environment root. -/
 def expectedStatements (plan : Array ScheduledFold)
     (prepared : Array PreparedShard) :
-    Except String (Array MultiStark.CheckEnvTrees) := do
-  let mut statements : Array MultiStark.CheckEnvTrees := #[]
+    Except String (Array Aggr.CheckEnvTrees) := do
+  let mut statements : Array Aggr.CheckEnvTrees := #[]
   for item in plan do
     match item.op with
     | .leaf shard =>
@@ -161,11 +177,9 @@ def expectedStatements (plan : Array ScheduledFold)
         | throw s!"expected fold references missing left slot {leftIdx}"
       let some right := statements[rightIdx]?
         | throw s!"expected fold references missing right slot {rightIdx}"
-      let left := toAggrCheckEnvTrees left
-      let right := toAggrCheckEnvTrees right
       let output := if item.structural then left.joinStructural right
         else left.join right
-      statements := statements.push (fromAggrCheckEnvTrees output)
+      statements := statements.push output
   pure statements
 
 def childKindLabel : Aggr.ChildKind → String
@@ -256,7 +270,7 @@ def loadInputProof (shardId : Nat) (proofAddress : String)
   catch error =>
     pure (.error s!"shard {shardId}: store read failed: {error}")
 
-def persistAggregateProof (statement : MultiStark.CheckEnvTrees)
+def persistAggregateProof (statement : Aggr.CheckEnvTrees)
     (proof : Aiur.Proof) : IO Address := do
   let claim := statement.claim
   let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
@@ -379,9 +393,9 @@ def runJoin (slotIdx : Nat) (item : ScheduledFold) (left right : AggregateSlot)
   let output := spec.statement
   let outputClaimBytes := Ix.Claim.ser output.claim
   let pubInput := Aggr.pubInput allowed outputClaimBytes
-  let leftStatement := toAggrCheckEnvTrees left.statement
-  let rightStatement := toAggrCheckEnvTrees right.statement
-  let outputStatement := toAggrCheckEnvTrees output
+  let leftStatement := left.statement
+  let rightStatement := right.statement
+  let outputStatement := output
   let preimagesBlob := Aggr.preimagesBlob
     #[Ix.Claim.ser left.statement.claim, Ix.Claim.ser right.statement.claim]
   let trees := if item.structural then
@@ -561,10 +575,10 @@ def main (args : List String) : IO UInt32 := do
   let env ← match Ixon.deEnvAnon ixeBytes with
     | .error error => IO.eprintln s!"deserialize {ixePath} failed: {error}"; return 1
     | .ok env => pure env
-  let rawView ← match Ix.Cli.CheckCmd.parseIxesManifest ixesBytes with
+  let rawView ← match Ix.Shard.parseIxesManifest ixesBytes with
     | .error error => IO.eprintln s!"manifest parse failed: {error}"; return 1
     | .ok view => pure view
-  if !(← Ix.Cli.CheckCmd.shardsCover env rawView.shards) then return 1
+  if !(← Ix.Shard.shardsCover env rawView.shards) then return 1
   let (view, counts) ← match rawView.pruneEmpty env with
     | .error error => IO.eprintln error; return 1
     | .ok result => pure result
@@ -620,13 +634,13 @@ def main (args : List String) : IO UInt32 := do
   let verifyIdx := ixvmCompiled.getFuncIdx `verify_claim |>.get!
   let aggrIdx := aggrCompiled.getFuncIdx `ix_aggr |>.get!
   let friParameters := { Aiur.defaultFriParameters with numQueries := queries }
-  let recursionParameters : MultiStark.RecursionParameters := {
+  let recursionParameters : Aggr.RecursionParameters := {
     commitment := Aiur.defaultCommitmentParameters
     fri := friParameters
   }
   let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
     Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-  let aggrSystem := MultiStark.buildRecursionSystem aggrCompiled.bytecode
+  let aggrSystem := Aggr.buildRecursionSystem aggrCompiled.bytecode
     recursionParameters
   let ixvmVk := ixvmSystem.vkBytes
   let aggrVk := aggrSystem.vkBytes

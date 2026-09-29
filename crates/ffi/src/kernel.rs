@@ -61,6 +61,7 @@ use ix_compile::decompile::decompile_env;
 use ix_compile::kernel_egress::{ixon_egress, lean_egress};
 use ix_kernel::env::KEnv;
 use ix_kernel::error::TcError;
+#[cfg(feature = "test-ffi")]
 use ix_kernel::id::KId;
 use ix_kernel::ingress::{
   IxonIngressLookups, build_ixon_ingress_lookups,
@@ -68,7 +69,7 @@ use ix_kernel::ingress::{
 };
 #[cfg(feature = "test-ffi")]
 use ix_kernel::ingress::{ixon_ingress, lean_ingress};
-use ix_kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
+use ix_kernel::mode::{CheckDupLevelParams, KernelMode, Meta};
 use ix_kernel::profile::{BlockProfile, OpCounts, ProfileBuilder, ProfileSink};
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as IxonCI;
@@ -552,16 +553,16 @@ fn wrong_successor_rule_returning_first_minor(
     IxonExpr::Lam(motive_uses, motive_ty, rest) => match rest.as_ref() {
       IxonExpr::Lam(h_zero_uses, h_zero_ty, rest) => match rest.as_ref() {
         IxonExpr::Lam(h_succ_uses, h_succ_ty, rest) => match rest.as_ref() {
-          IxonExpr::Lam(n_uses, n_ty, _) => Ok(IxonExpr::lam_mode(
+          IxonExpr::Lam(n_uses, n_ty, _) => Ok(IxonExpr::lam_contract(
             *motive_uses,
             motive_ty.clone(),
-            IxonExpr::lam_mode(
+            IxonExpr::lam_contract(
               *h_zero_uses,
               h_zero_ty.clone(),
-              IxonExpr::lam_mode(
+              IxonExpr::lam_contract(
                 *h_succ_uses,
                 h_succ_ty.clone(),
-                IxonExpr::lam_mode(*n_uses, n_ty.clone(), IxonExpr::var(2)),
+                IxonExpr::lam_contract(*n_uses, n_ty.clone(), IxonExpr::var(2)),
               ),
             ),
           )),
@@ -1331,7 +1332,7 @@ fn resolve_kernel_check_workers_from(
 // Companion to `run_checks_parallel_on_large_stacks` for the metadata-free
 // anon path. Iterates `env.consts` exactly once to enumerate work items
 // (block or standalone), then dispatches to workers each running
-// `TypeChecker::<Anon>::new_with_lazy_anon` against its own `KEnv<Anon>`.
+// `IxonChecker` owns each worker's kernel state and lazy Ixon ingress.
 // The lazy ingress mechanism (in `tc.rs`) handles cross-block faults
 // without consulting metadata.
 
@@ -1358,8 +1359,7 @@ enum AnonWorkItem {
 /// (blocks aren't kernel KIds).
 ///
 /// Delegates the enumeration to
-/// [`ix_kernel::anon_work::build_anon_work`] (shared with the
-/// SP1/Zisk guests) and layers the FFI's per-target result-slot
+/// [`ix_kernel::anon_work::build_anon_work`] and layers per-target result-slot
 /// bookkeeping on top.
 /// Assign result slots to a set of kernel work items — the indexing step
 /// shared by the whole-env check (every item) and the per-constant closure
@@ -1461,7 +1461,7 @@ fn run_anon_checks_parallel(
       .name(format!("ix-kernel-check-anon-{worker_idx}"))
       .stack_size(KERNEL_CHECK_STACK_SIZE)
       .spawn(move || {
-        let mut kenv = KEnv::<Anon>::new();
+        let mut checker = ix_kernel::ixon_checker::IxonChecker::new(&env);
         let clear_every = kernel_check_clear_every();
         let mut checks_since_clear = clear_every;
         loop {
@@ -1472,9 +1472,9 @@ fn run_anon_checks_parallel(
           let item = &work[work_idx];
           if checks_since_clear >= clear_every {
             if retain_capacity == 0 {
-              kenv.clear_releasing_memory();
+              checker.clear_releasing_memory();
             } else {
-              kenv.clear_with_capacity_limit(retain_capacity);
+              checker.clear_with_capacity_limit(retain_capacity);
             }
             checks_since_clear = 0;
           }
@@ -1491,18 +1491,13 @@ fn run_anon_checks_parallel(
           progress_worker.begin(worker_idx, &prefix);
 
           let tc_start = Instant::now();
-          let kid = KId::<Anon>::new(primary_addr.clone(), ());
           if record_per_const {
             // Reset this worker's op counters so the post-check read
             // attributes exactly this item (incl. TC setup + lazy ingress).
             let _ = ix_kernel::profile::take_op_counts();
           }
-          let (check_res, item_fuel) = {
-            let mut tc =
-              TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
-            let res = tc.check_const(&kid);
-            (res, tc.fuel_used())
-          };
+          let check_res = checker.check_const(&primary_addr);
+          let item_fuel = checker.last_check().fuel_used;
           let elapsed = tc_start.elapsed();
           if record_per_const {
             let ops = ix_kernel::profile::take_op_counts();
@@ -1635,8 +1630,7 @@ fn run_anon_checks_parallel(
 ///   projection constants (`IPrj`/`CPrj`/`RPrj`/`DPrj`); Muts blocks
 ///   become block work items whose member + ctor projection addresses
 ///   are reconstructed deterministically via `Constant::commit`.
-/// - Workers each get their own `KEnv<Anon>` and a
-///   `LazyAnonIngress`-backed `TypeChecker<Anon>`. Deep refs fault in
+/// - Workers each get their own `IxonChecker`. Deep refs fault in
 ///   lazily via the anon-mode shallow ingress (`ingress_anon_addr_shallow`).
 /// - Returns `Array (Option CheckError)`, one slot per kernel-checkable
 ///   address discovered during enumeration.
@@ -1882,13 +1876,11 @@ fn closure_work_items(
 }
 
 /// FFI: anon-mode type-check of named constants with (by default) their full
-/// dependency closures — the same mode and scope as the zkVM hosts' `--consts`
-/// execute path, so an out-of-circuit run is directly comparable to the
-/// in-circuit one. `skip_deps` restricts the check to each name's own work
-/// item (subject-only; deps trusted), mirroring `zisk-host --skip-deps`.
+/// dependency closures. `skip_deps` restricts the check to each name's own
+/// work item (subject-only; deps trusted).
 ///
-/// Names resolve through the env's `named` metadata by displayed form (the
-/// same string match the zkVM hosts use), then the metadata is dropped and
+/// Names resolve through the env's `named` metadata by displayed form,
+/// then the metadata is dropped and
 /// the check runs on the anon view — the kernel never sees names. A member
 /// of a mutual block selects the whole block's work item (blocks check
 /// atomically). Multiple names union their closures into one check set.
@@ -2280,7 +2272,7 @@ fn profile_block_size(env: &IxonEnv, block: &Address) -> u32 {
 ///   granularity, deduped, self-edges dropped. These are exactly the
 ///   edges that generate a shard's thin frontier, i.e. its ingress.
 #[allow(clippy::cast_possible_truncation)] // block sizes clamped to u32::MAX
-fn static_block_profile(env: &IxonEnv) -> BlockProfile {
+pub(crate) fn static_block_profile(env: &IxonEnv) -> BlockProfile {
   use rayon::prelude::*;
   let addrs: Vec<Address> =
     env.consts.iter().map(|e| e.key().clone()).collect();
@@ -2345,32 +2337,105 @@ fn static_block_profile(env: &IxonEnv) -> BlockProfile {
   builder.finish()
 }
 
+/// The blocks each block of `profile` references, by block id — every
+/// constant's `refs` mapped to their home blocks, the edges a byte scope
+/// (`Env::bfs_closure`) follows between blocks; projections reference
+/// their own block and a block its wrappers, so those edges never leave a
+/// block — and the blocks of the primitives the environment carries, which
+/// every byte scope also starts from. A superset of the profile's walk
+/// edges, which follow only the references a constant's body uses.
+fn static_block_dependencies(
+  env: &IxonEnv,
+  profile: &BlockProfile,
+) -> (Vec<Vec<u32>>, Vec<u32>) {
+  use ix_common::prim_addrs::PrimAddrs;
+  use rayon::prelude::*;
+  let id_of: FxHashMap<&Address, u32> = profile
+    .blocks()
+    .iter()
+    .enumerate()
+    .map(|(i, b)| (&b.addr, u32::try_from(i).expect("block ids are u32")))
+    .collect();
+  let addrs: Vec<Address> =
+    env.consts.iter().map(|e| e.key().clone()).collect();
+  let rows: Vec<(Address, Address, Vec<Address>)> = addrs
+    .par_iter()
+    .filter_map(|addr| {
+      let c = env.get_const(addr)?;
+      let home = match &c.info {
+        IxonCI::IPrj(p) => p.block.clone(),
+        IxonCI::CPrj(p) => p.block.clone(),
+        IxonCI::RPrj(p) => p.block.clone(),
+        IxonCI::DPrj(p) => p.block.clone(),
+        _ => addr.clone(),
+      };
+      Some((addr.clone(), home, c.refs.clone()))
+    })
+    .collect();
+  // Every constant's block id, projections included; a blob has none.
+  let block_of: FxHashMap<&Address, u32> = rows
+    .iter()
+    .filter_map(|(addr, home, _)| id_of.get(home).map(|&id| (addr, id)))
+    .collect();
+  let mut depends: Vec<Vec<u32>> = vec![Vec::new(); profile.num_blocks()];
+  for (addr, _, refs) in &rows {
+    let Some(&consumer) = block_of.get(addr) else { continue };
+    for r in refs {
+      if let Some(&producer) = block_of.get(r)
+        && producer != consumer
+      {
+        depends[consumer as usize].push(producer);
+      }
+    }
+  }
+  for d in &mut depends {
+    d.sort_unstable();
+    d.dedup();
+  }
+  let mut primitives: Vec<u32> = PrimAddrs::lean_parity_table()
+    .iter()
+    .filter_map(|(_, hex)| Address::from_hex(hex))
+    .chain(PrimAddrs::reserved_marker_addrs().iter().map(|(_, a)| a.clone()))
+    .filter_map(|a| block_of.get(&a).copied())
+    .collect();
+  primitives.sort_unstable();
+  primitives.dedup();
+  (depends, primitives)
+}
+
 /// FFI: partition a `.ixe` with the STATIC strategy — no out-of-circuit
 /// profiling run. An explicit nonzero `num_shards` fixes the count. Otherwise,
 /// `ram_gib` seeds it from the static block-shape score after the profile is
 /// loaded ([`ix_kernel::shard::static_seed_shards`]). Builds the static block
-/// profile ([`static_block_profile`]), byte-balanced min-cut over the walk-edge
-/// nets, then the predicted-cost rebalance post-pass
-/// (`ix_kernel::shard::shard_static`). Writes a `.ixes` manifest.
+/// profile ([`static_block_profile`]), then either the byte-balanced min-cut
+/// over the walk-edge nets with the predicted-cost rebalance post-pass
+/// (`ix_kernel::shard::shard_static`, `layout` = `mincut`) or contiguous
+/// ranges of a dependency order (`ix_kernel::shard::shard_static_ordered`,
+/// `layout` = `ordered`). Writes a `.ixes` manifest.
 #[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_env_static(
   env_path: LeanString<LeanBorrowed<'_>>,
-  num_shards: LeanString<LeanBorrowed<'_>>,
-  ram_gib: LeanString<LeanBorrowed<'_>>,
-  balance_pct: LeanString<LeanBorrowed<'_>>,
+  requested_shards: usize,
+  ram_gib: u64,
+  balance_pct: u64,
+  layout: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
+  exec_ahead: usize,
 ) -> LeanIOResult<LeanOwned> {
   let path = env_path.to_string();
-  let requested_shards = num_shards.to_string().parse::<usize>().unwrap_or(0);
-  let ram_gib = ram_gib.to_string().parse::<u64>().unwrap_or(0);
+  let layout = layout.to_string();
+  if layout != "mincut" && layout != "ordered" {
+    return LeanIOResult::error_string(&format!(
+      "rs_shard_env_static: unknown layout `{layout}` (mincut or ordered)"
+    ));
+  }
   if requested_shards == 0 && ram_gib == 0 {
     return LeanIOResult::error_string(
       "rs_shard_env_static: pass a positive shard count or RAM budget",
     );
   }
-  let balance =
-    (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
+  let balance = (balance_pct as f64) / 100.0;
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
   let t0 = Instant::now();
@@ -2394,11 +2459,30 @@ pub extern "C" fn rs_shard_env_static(
   );
   let num_shards = if requested_shards > 0 {
     requested_shards
+  } else if cfg!(feature = "cuda") {
+    // The trace-shard prover: seed against one execution's record share,
+    // computed as `ix prove --exec-jobs` computes it.
+    let cells = crate::aiur::protocol::trace_shard_max_cells();
+    let budget = usize::try_from(ram_gib << 30).unwrap_or(usize::MAX);
+    let share =
+      crate::aiur::protocol::record_share(budget, cells, exec_ahead + 2);
+    let tenths =
+      u32::try_from(share.saturating_mul(10) >> 30).unwrap_or(u32::MAX);
+    let share_gib = f64::from(tenths) / 10.0;
+    let bytes = ix_kernel::shard::static_env_bytes(&profile);
+    let n = ix_kernel::shard::gpu_seed_shards(&profile, share_gib);
+    eprintln!(
+      "[shard] trace-shard seed (cuda build): bytes={bytes:.4e}; round({} x (bytes/{:.4e}) x ({} GiB / {share_gib:.1} GiB record share: {ram_gib} GiB per worker, {cells} cells, {exec_ahead} executions ahead)) -> {n} shard(s) (heuristic; the record cap names any shard over its share)",
+      ix_kernel::shard::GPU_SEED_REFERENCE_SHARDS,
+      ix_kernel::shard::GPU_SEED_REFERENCE_BYTES,
+      ix_kernel::shard::GPU_SEED_REFERENCE_SHARE_GIB,
+    );
+    n
   } else {
     let score = ix_kernel::shard::static_env_score(&profile);
     let n = ix_kernel::shard::static_seed_shards(&profile, ram_gib);
     eprintln!(
-      "[shard] static seed: score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{ram_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
+      "[shard] static seed (cpu prover model): score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{ram_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
       ix_kernel::shard::STATIC_SEED_REFERENCE_SHARDS,
       ix_kernel::shard::STATIC_SEED_REFERENCE_SCORE,
       ix_kernel::shard::STATIC_SEED_SCORE_EXPONENT,
@@ -2407,7 +2491,19 @@ pub extern "C" fn rs_shard_env_static(
     );
     n
   };
-  match ix_kernel::shard::shard_static(&profile, num_shards, balance, out_opt) {
+  let report = if layout == "ordered" {
+    let (depends, primitives) = static_block_dependencies(&env, &profile);
+    ix_kernel::shard::shard_static_ordered(
+      &profile,
+      &depends,
+      &primitives,
+      num_shards,
+      out_opt,
+    )
+  } else {
+    ix_kernel::shard::shard_static(&profile, num_shards, balance, out_opt)
+  };
+  match report {
     Ok(report) => {
       eprintln!("[rs_shard_static]\n{report}");
       LeanIOResult::ok(LeanOwned::box_usize(0))
@@ -2692,7 +2788,7 @@ pub extern "C" fn rs_shard_static_graph(
 }
 
 /// Print the general-purpose cost breakdown for `ix profile` — the kernel-work
-/// metrics plus the predicted Zisk leaf cost/RAM (à la `cargo-zisk … -p summary`).
+/// metrics plus the legacy guest-cost and RAM estimates.
 // `steps as f64` is a display-only cast for `{:.2e}` formatting; precision loss
 // past 2⁵³ steps is irrelevant to a two-sig-fig estimate.
 #[allow(clippy::cast_precision_loss)]
@@ -2739,7 +2835,7 @@ fn print_profile_summary(
      \u{20}\u{20}nat-arith      {nat:>14}\n\
      \u{20}\u{20}intern nodes   {intern:>14}\n\
      \u{20}\u{20}ingress bytes  {ingress:>14}\n\n\
-     predicted Zisk leaf  ({SHARD_COST_FLOOR} + {COST_PER_SUBST}·subst + {COST_PER_WHNF}·whnf + {COST_PER_DEF_EQ}·def_eq + {COST_PER_INTERN}·intern; cross-shard + {COST_PER_INGRESS_BYTE}·bytes)\n\
+     estimated guest leaf  ({SHARD_COST_FLOOR} + {COST_PER_SUBST}·subst + {COST_PER_WHNF}·whnf + {COST_PER_DEF_EQ}·def_eq + {COST_PER_INTERN}·intern; cross-shard + {COST_PER_INGRESS_BYTE}·bytes)\n\
      \u{20}\u{20}cost units ≈ {:.2e}  (~92.5/guest step)\n\
      \u{20}\u{20}RAM        ≈ {ram_gib:.0} GiB{warn}",
     sink.records.len(),
@@ -2811,8 +2907,8 @@ fn run_anon_profile_parallel(
       .name(format!("ix-kernel-profile-{worker_idx}"))
       .stack_size(KERNEL_CHECK_STACK_SIZE)
       .spawn(move || {
-        let mut kenv = KEnv::<Anon>::new();
-        kenv.profile_sink = Some(ProfileSink::new(isolate));
+        let mut checker = ix_kernel::ixon_checker::IxonChecker::new(&env);
+        checker.set_profile_sink(ProfileSink::new(isolate));
         let clear_every = kernel_check_clear_every();
         let mut checks_since_clear = clear_every;
         loop {
@@ -2823,24 +2919,14 @@ fn run_anon_profile_parallel(
           // `clear_releasing_memory` preserves `profile_sink`, so recording
           // accumulates across scheduled-block boundaries.
           if checks_since_clear >= clear_every {
-            kenv.clear_releasing_memory();
+            checker.clear_releasing_memory();
             checks_since_clear = 0;
           }
           let primary_addr = match &work[work_idx] {
             AnonWorkItem::Standalone { addr, .. } => addr.clone(),
             AnonWorkItem::Block { primary_addr, .. } => primary_addr.clone(),
           };
-          let kid = KId::<Anon>::new(primary_addr, ());
-          let res = {
-            let mut tc =
-              TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
-            let r = tc.check_const(&kid);
-            // The TypeChecker is recreated per work item, so the final
-            // constant's record would never be flushed by a trailing reset —
-            // flush it explicitly.
-            tc.finish_constant_accounting();
-            r
-          };
+          let res = checker.check_const(&primary_addr);
           if res.is_ok() {
             passed.fetch_add(1, Ordering::Relaxed);
           } else {
@@ -2848,7 +2934,7 @@ fn run_anon_profile_parallel(
           }
           checks_since_clear += 1;
         }
-        if let Some(sink) = kenv.profile_sink.take() {
+        if let Some(sink) = checker.take_profile_sink() {
           sinks.lock().unwrap().push(sink);
         }
       })
@@ -2958,15 +3044,13 @@ pub extern "C" fn rs_kernel_profile_anon(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp(
   esp_path: LeanString<LeanBorrowed<'_>>,
-  num_shards: LeanString<LeanBorrowed<'_>>,
-  balance_pct: LeanString<LeanBorrowed<'_>>,
-  parallelism: LeanString<LeanBorrowed<'_>>,
+  num_shards: usize,
+  balance_pct: u64,
+  parallelism: usize,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1);
-  let balance_pct = balance_pct.to_string().parse::<u64>().unwrap_or(5);
-  let parallelism =
-    parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
+  let num_shards = num_shards.max(1);
+  let parallelism = parallelism.max(1);
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
   let balance = (balance_pct as f64) / 100.0;
@@ -2994,25 +3078,23 @@ fn system_ram_gib() -> Option<f64> {
 }
 
 /// FFI: partition a `.ixprof` to a per-shard cycle/RAM budget and write a
-/// `.ixes` manifest. `max_cycles` is a guest-STEP cap; if `ram_gb` > 0 it is
+/// `.ixes` manifest. `max_cycles` is a guest-STEP cap; if `ram_gib` > 0 it is
 /// converted via the measured prover RAM model and overrides `max_cycles`. Pass
-/// "0" for both to default the budget to detected system RAM.
+/// 0 for both to default the budget to detected system RAM.
 #[allow(clippy::cast_precision_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp_cap(
   esp_path: LeanString<LeanBorrowed<'_>>,
-  max_cycles: LeanString<LeanBorrowed<'_>>,
-  ram_gb: LeanString<LeanBorrowed<'_>>,
-  balance_pct: LeanString<LeanBorrowed<'_>>,
-  parallelism: LeanString<LeanBorrowed<'_>>,
+  max_cycles: u64,
+  ram_gib: u64,
+  balance_pct: u64,
+  parallelism: usize,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let mc = max_cycles.to_string().parse::<u64>().unwrap_or(0);
-  let mut ram = ram_gb.to_string().parse::<f64>().unwrap_or(0.0);
-  let parallelism =
-    parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
-  let balance =
-    (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
+  let mc = max_cycles;
+  let mut ram = ram_gib as f64;
+  let parallelism = parallelism.max(1);
+  let balance = (balance_pct as f64) / 100.0;
   // No explicit cap → default the RAM budget to detected system RAM.
   if mc == 0 && ram <= 0.0 {
     match system_ram_gib() {

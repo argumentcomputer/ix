@@ -40,14 +40,6 @@
       inputs.lean4-nix.follows = "lean4-nix";
     };
 
-    # Zisk dev shell (cargo-zisk, ziskemu, RISC-V toolchain) for `zisk-guest`.
-    zisk.url = "github:argumentcomputer/zisk.nix/blake3-precompile";
-
-    # SP1 dev shell (cargo-prove + succinct Rust toolchain) for `sp1/guest`.
-    sp1 = {
-      url = "github:argumentcomputer/sp1.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
@@ -57,8 +49,6 @@
       fenix,
       crane,
       blake3-lean,
-      zisk,
-      sp1,
       ...
     }:
     flake-parts.lib.mkFlake { inherit inputs; } {
@@ -109,25 +99,62 @@
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
-          src = craneLib.cleanCargoSource ./.;
-          craneArgs = {
-            inherit src;
-            pname = "ix";
-            version = "0.1.0";
-            strictDeps = true;
-
-            # build.rs uses LEAN_SYSROOT to locate lean/lean.h for bindgen
-            LEAN_SYSROOT = "${lean}";
-            # bindgen needs libclang to parse C headers
-            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-
-            buildInputs =
-              [ ]
-              ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-                # Additional darwin specific inputs can be set here
-                pkgs.libiconv
-              ];
+          # Rust tests embed the shared golden and binary handoff fixtures.
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              (pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.))
+              ./Tests/Fixtures/ixon-v3
+            ];
           };
+          # Rust code generation for the sandboxed builds. `.cargo/config.toml`
+          # selects `-Ctarget-cpu=native`, and crane keeps that file in the
+          # source, so without an override every Rust derivation is compiled
+          # for whichever host builds it while sharing one store path: Cachix
+          # then hands Intel-native binaries to AMD hosts and vice versa.
+          # Default to the x86-64-v4 baseline setup-rust-toolchain's `portable`
+          # mode uses, so CI caches one portable set. For a build tuned to the
+          # local machine (the dev shell's cargo already is, via the config
+          # file):
+          #
+          #   IX_RUST_CODEGEN=native nix build --impure
+          #
+          # The flag string is part of the derivation, so a native build has
+          # its own store path and is never substituted from Cachix. Pure
+          # evaluation sees an empty variable and takes the default.
+          rustCodegen =
+            let
+              requested = builtins.getEnv "IX_RUST_CODEGEN";
+            in
+            if requested == "native" then
+              "-Ctarget-cpu=native"
+            else if requested == "" || requested == "portable" then
+              "-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni"
+            else
+              throw "IX_RUST_CODEGEN must be `portable` or `native`, got `${requested}`";
+          craneArgs =
+            pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
+              # Environment form of the `build.rustflags` key the config file sets
+              CARGO_BUILD_RUSTFLAGS = rustCodegen;
+            }
+            // {
+              inherit src;
+              pname = "ix";
+              version = "0.1.0";
+              strictDeps = true;
+
+              # build.rs uses LEAN_SYSROOT to locate lean/lean.h for bindgen
+              LEAN_SYSROOT = "${lean}";
+              # bindgen needs libclang to parse C headers
+              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+
+              buildInputs =
+                [ ]
+                ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+                  # Additional darwin specific inputs can be set here
+                  pkgs.libiconv
+                ];
+            };
           # Build dependencies once with every host feature enabled so the
           # `net` stack (tokio/iroh) is compiled and cached here, then shared
           # by the package builds and clippy. CUDA remains opt-in and is
@@ -332,7 +359,9 @@
             # Lean test suite. The suite reads fixtures and writes scratch
             # files by paths relative to the working dir, so run it from a
             # writable copy of the source tree, as if from a checkout.
-            ix-tests = pkgs.runCommand "ix-tests" { } ''
+            ix-tests = pkgs.runCommandCC "ix-tests" {
+              nativeBuildInputs = [ rustToolchain ];
+            } ''
               cp -r ${./.} src
               chmod -R u+w src
               # IxTests depends on the ix target, so its wrapped output already
@@ -406,32 +435,6 @@
               '';
             };
           };
-
-          # TODO: Re-enable the zkVM shells once they build in CI.
-          # Zisk shell for `zisk-guest/` (cargo-zisk, ziskemu, RISC-V toolchain).
-          # Kept separate from `default`: merging cross-pollinates NIX_CFLAGS_COMPILE
-          # between zisk.nix's and this flake's nixpkgs, which breaks bindgen on
-          # `lean.h`.
-          # devShells.zisk = zisk.devShells.${system}.default;
-
-          # SP1 shell for `sp1/host` + `sp1/guest`: host Rust toolchain plus
-          # cargo-prove and the succinct Rust toolchain (~/.sp1) from sp1.nix.
-          # `rustup-shim` wraps the host `rustc` to dispatch to the succinct
-          # toolchain when `RUSTUP_TOOLCHAIN=succinct` (set by `sp1-build`); the
-          # plain host rustc doesn't know `riscv64im-succinct-zkvm-elf`.
-          # `sp1-prover-types`'s build script needs `protoc`.
-          # devShells.sp1 = pkgs.mkShell {
-          #   name = "sp1";
-          #   inputsFrom = [ sp1.devShells.${system}.default ];
-          #   LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-          #   packages = with pkgs; [
-          #     pkg-config
-          #     openssl
-          #     protobuf
-          #     clang
-          #     (sp1.packages.${system}.rustup-shim.override { inherit rustToolchain; })
-          #   ];
-          # };
 
           # The treefmt wrapper around `nixfmt`, so `nix fmt .` can take a
           # directory; bare `nixfmt` only accepts individual files.

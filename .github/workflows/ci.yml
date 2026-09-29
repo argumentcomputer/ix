@@ -3,6 +3,12 @@ name: CI Jobs
 on:
   pull_request:
   merge_group:
+  # Pushes to main run the same jobs so their sticky disks get a `main`
+  # snapshot: RunsOn files each run's snapshot under its own ref, and a ref
+  # with none falls back to the default branch's. Without this run every
+  # new PR branch and every merge-queue entry starts from an empty disk.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -13,79 +19,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Build Ix once and cache `.lake` under lean-action's per-sha key. That cache
-  # holds the base Ix build — lean-action saves it right after building the
-  # default lib, before the all-targets lint below — and the parallel lean-test
-  # job and merge-tests.yml's Lake jobs restore it instead of recompiling the
-  # base. `test: false` keeps this job build-only; those jobs run the tests. It
-  # also compiles and publishes the small `nataddcomm.ixe` fixture the zkVM
-  # execution gates (sp1-build/zisk-build) run their guests over: they need this
-  # exact `ix` build, so they consume it as an artifact and gate on this job
-  # succeeding.
-  build:
-    runs-on: warp-ubuntu-latest-x64-16x
+  # Each job has its own sticky cache, so the checks run independently. Lean
+  # builds, tests, and lints share one job and one incremental build cache.
+  lean-test:
+    runs-on: runs-on=${{ github.run_id }}-lean-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
     steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-rust-toolchain
-      - uses: leanprover/lean-action@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # sccache keys rustc outputs by content, so the workspace crates, which
+      # cargo rebuilds after every fresh checkout because their mtimes moved,
+      # come back as cache hits. RunsOn configures it before anything can
+      # start an sccache server.
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+        with:
+          sccache: s3
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: $/.github/actions/setup-rust-toolchain
+        with:
+          codegen: portable
+          use-github-cache: "false"
+      # lean-action runs `lake build`, then `lake test`, then `lake lint`.
+      # The build-all lint driver compiles every lib/exe target with --wfail,
+      # so a warning in any target (exes, benchmarks, Apps) — not just the
+      # default lib — fails CI. A push to main already passed the tests in
+      # the merge queue; that run only exists to snapshot the build
+      # products, so the tests are skipped there.
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           build-args: "--wfail -v"
-          test: false
-      # build-all lint driver compiles every lib/exe target with --wfail, so a
-      # warning in any target (exes, benchmarks, Apps) — not just the default lib
-      # lean-action builds above — fails CI.
-      - name: Build all targets
-        run: lake lint -- --wfail -v
+          test: ${{ github.event_name != 'push' }}
+          test-args: "--wfail"
+          lint-args: "-- --wfail -v"
+          use-github-cache: false
       - name: Check codegen'd IxVM kernel is up to date
+        if: github.event_name != 'push'
         run: lake exe ix codegen --check
       - name: Check Lean versions match for Ix and compiler bench
+        if: github.event_name != 'push'
         run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
-      # `Nat.add_comm`'s transitive-dependency closure (~40 kB, ~40 constants)
-      # is a real theorem, not an empty environment. `--consts` keeps this much
-      # smaller than the complete Init+Std environment used by benchmarks. The
-      # zkVM execution gates download this artifact and run their guests over it.
-      - name: Compile nataddcomm.ixe
-        run: lake exe ix compile Ix.lean --consts Nat.add_comm --out nataddcomm.ixe
-      - name: Upload nataddcomm.ixe
-        uses: actions/upload-artifact@v7
-        with:
-          name: nataddcomm-ixe
-          path: nataddcomm.ixe
-          if-no-files-found: error
-          retention-days: 1
-
-  # The primary test tier, plus the two extras, over the base build the
-  # `build` job cached. Restores `.lake` read-only (exact per-sha key the
-  # `build` job wrote, prefix fallback otherwise); lean-action runs the whole
-  # primary tier as a bare `lake test` against that restored build (no
-  # build/cache of its own). No `--wfail` there: `test-args` is declared but
-  # unwired in the released `v1`, so it would be silently ignored, and the
-  # `build` job already compiles every lib and exe -- `Tests` and `IxTests`
-  # included -- under `lake lint -- --wfail -v`. The CLI step covers the one
-  # primary runner that is special-cased ahead of suite dispatch in
-  # `Tests/Main.lean`; ignored suites run only in `merge-tests.yml`.
-  lean-test:
-    needs: build
-    runs-on: warp-ubuntu-latest-x64-16x
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-rust-toolchain
-      # `./.lake`, not `.lake`: the cache path is hashed into the entry's
-      # version, and lean-action saves under `./.lake`, so a bare `.lake` here
-      # computes a different version and the restore misses despite the key
-      # matching.
-      - uses: actions/cache/restore@v6
-        with:
-          path: ./.lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
-      - uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          test: true
-          use-github-cache: false
       - name: Test Ix CLI
+        if: github.event_name != 'push'
         run: lake test --wfail -- cli
+      - name: Test Ixon v3 contracts and consumers
+        if: github.event_name != 'push'
+        run: |
+          lake exe ixon-v3-primitives
+          lake exe ixon-v3-tests --primitives
 
   # A fresh package build keeps host dependencies out of the certified import
   # closure. Mathlib is confined to its separate model package; its cache only
@@ -121,37 +104,67 @@ jobs:
           if-no-files-found: warn
 
   rust-test:
-    runs-on: warp-ubuntu-latest-x64-8x
+    runs-on: runs-on=${{ github.run_id }}-rust-test-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-rust-test-x86-64-v4:50gb/extras=s3-cache
     steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-rust-toolchain
-      - uses: taiki-e/install-action@nextest
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # sccache keys rustc outputs by content, so the workspace crates, which
+      # cargo rebuilds after every fresh checkout because their mtimes moved,
+      # come back as cache hits. RunsOn configures it before anything can
+      # start an sccache server.
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+        with:
+          sccache: s3
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: $/.github/actions/setup-rust-toolchain
+        with:
+          codegen: portable
+          use-github-cache: "false"
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: nextest
       # Install Lean for rust-bindgen step
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           use-github-cache: false
+      # A push to main already passed the lints and tests in the merge
+      # queue; that run only builds, so the sticky disk holds the check,
+      # clippy and test-binary artifacts the next PR run will fingerprint.
       - name: Check Rustfmt code style
-        uses: actions-rust-lang/rustfmt@v1
+        if: github.event_name != 'push'
+        uses: actions-rust-lang/rustfmt@4066006ec54a31931b9b1fddfd38f2fdf2d27143 # v1.1.2
       - name: Check clippy warnings
         run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi -- -D warnings
       - name: Check *everything* compiles
         run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi
       - name: Tests
-        run: cargo nextest run --release --profile ci --workspace
+        run: cargo nextest run --release --profile ci --workspace ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Get Rust version
+        if: github.event_name != 'push'
         run: |
           echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a $GITHUB_ENV
+      # A Docker action: the job's RUSTC_WRAPPER reaches its container, where
+      # sccache is not installed, and cargo fails before deny runs. Deny only
+      # reads metadata, and cargo treats an empty wrapper as none.
       - name: Cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v2
+        if: github.event_name != 'push'
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        env:
+          RUSTC_WRAPPER: ""
         with:
           rust-version: ${{ env.RUST_VERSION }}
 
   # Compile and link the opt-in backend without requiring a GPU. Runtime and
   # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.
   cuda-compile:
-    runs-on: warp-ubuntu-latest-x64-8x
-    container: nvidia/cuda:12.8.1-devel-ubuntu24.04
+    runs-on: runs-on=${{ github.run_id }}-cuda-compile-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    container:
+      image: nvidia/cuda:13.3.1-devel-ubuntu26.04
     env:
       # This job validates feature plumbing and the Rust-staticlib-to-Lean
       # link without paying for a GPU runner. Multi-stark CI compiles the
@@ -159,14 +172,32 @@ jobs:
       # sufficient for this downstream integration gate.
       MULTI_STARK_CUDA_ARCHS: "80"
     steps:
-      - uses: actions/checkout@v7
+      # No sccache here yet. Once the GPU benchmark lands after #644, wire
+      # it for both compilers: `sccache: s3` plus the sccache action for
+      # rustc (this job runs in a container, so its S3 credentials via the
+      # instance role need checking first), and an `NVCC` wrapper running
+      # `sccache nvcc` for the kernels, which multi-stark's build script
+      # must compile with `-c` per source for sccache to cache them.
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install toolchain bootstrap dependencies
         run: |
           apt-get update
           apt-get install --yes --no-install-recommends \
-            build-essential ca-certificates curl git libclang-dev
-      - uses: ./.github/actions/setup-rust-toolchain
-      - uses: leanprover/lean-action@v1
+            build-essential ca-certificates curl git libclang-dev sudo
+      - uses: $/.github/actions/setup-rust-toolchain
+        with:
+          codegen: portable
+          cache-key: cuda-13.3.1-ubuntu26
+      # S3 caching keeps the container independent of host bind mounts.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .lake
+          key: lake-cuda-13.3.1-ubuntu26-x86-64-v4-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: lake-cuda-13.3.1-ubuntu26-x86-64-v4-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           use-github-cache: false
@@ -175,96 +206,25 @@ jobs:
       - name: Link a CUDA-enabled Lean executable
         run: IX_CUDA=1 lake build bench-typecheck
 
-  # zkVM host build + execute gate: do the Zisk/SP1 hosts (and their guest
-  # ELFs, via each workspace's build.rs) still compile AND run? rust-test
-  # doesn't build these workspaces (special toolchains), and bench-main.yml's
-  # zkVM runs — which also run real executions — tolerate per-constant
-  # failures by design (dropped rows, OOM sentinels), so they never turn red
-  # on a breakage. These jobs are the red-X signal: each builds its host, then
-  # runs the guest in the VM over `nataddcomm.ixe` (a ~40-constant closure the
-  # `build` job publishes as an artifact). They run in parallel with the test
-  # jobs and with each other after `build` succeeds. Both hosts exit
-  # non-zero when the kernel rejects a constant (sp1: EXIT_REJECTED; zisk:
-  # `reject_failures`), so a guest that compiles but panics / faults / rejects
-  # fails the job. Both execute paths are keyless: Zisk uses its SDK's
-  # standalone execute-only client, which retains the ASM executor without
-  # initializing the prover. SP1 and Zisk build as independent jobs so they
-  # parallelize; each installs only its own toolchain via sp1up / ziskup.
-  sp1-build:
-    name: SP1 host build
-    needs: build
-    runs-on: warp-ubuntu-latest-x64-16x
+  lints:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          cache-workspaces: sp1
-      - uses: ./.github/actions/install-sp1
-      # The precompile-aware SP1 runner-binary is auto-built from the fork git
-      # dep by `sp1-core-executor-runner`'s build script — no manual override.
-      # `cargo test` reuses the build's dep graph and runs the host's unit
-      # tests — the clap surface `ix bench run` drives (`--consts` comma-splitting,
-      # `--consts-file` union/dedup), so a CLI regression reds this gate too.
-      - name: Build + test sp1-host (guest ELF via build.rs)
-        run: |
-          cd sp1
-          cargo build --release --bin sp1-host
-          cargo test --release --bin sp1-host
-          # --release shares the build's dep artifacts. Under clippy,
-          # sp1-build skips the guest compilation and the host cfg-gates its
-          # ELF embed accordingly, so this lints host code only.
-          cargo clippy --release --workspace --all-targets
-      - name: Download nataddcomm.ixe
-        uses: actions/download-artifact@v8
-        with:
-          name: nataddcomm-ixe
-          path: .
-      # Run the guest ELF in SP1's RISC-V executor over the nataddcomm env —
-      # pure emulation, no GPU or proving key. `--execute` exits 3
-      # (EXIT_REJECTED) if the kernel rejects any constant and non-zero on any
-      # VM fault, so this reds the gate on a guest that compiles but doesn't run.
-      - name: Execute sp1-guest over the nataddcomm env
-        run: cargo run --release --bin sp1-host -- --execute --ixe ../nataddcomm.ixe
-        working-directory: sp1
-        env:
-          RUST_LOG: info
+          persist-credentials: false
+      # actionlint, shellcheck over composite action scripts, pinact (actions
+      # must be SHA-pinned with a matching version comment) and zizmor
+      - uses: argumentcomputer/ci-workflows/.github/actions/lint-workflows@main
 
-  zisk-build:
-    name: Zisk host build
-    needs: build
-    runs-on: warp-ubuntu-latest-x64-16x
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-rust-toolchain
-        with:
-          cache-workspaces: zisk
-      - uses: ./.github/actions/install-zisk
-        with:
-          proving-key: false
-      # Unit tests: the clap surface `ix bench run` drives, plus the closure auditor
-      # (closure_detects_missing_dep self-skips without an IX_TEST_IXE
-      # fixture — this gate has no Lean build to produce one).
-      - name: Build + test zisk-host (guest ELF via build.rs)
-        run: |
-          cd zisk
-          cargo build --release --bin zisk-host
-          cargo test --release --bin zisk-host
-          # --release shares the build's dep artifacts (including the guest
-          # ELFs its build scripts already produced).
-          cargo clippy --release --workspace --all-targets
-      - name: Download nataddcomm.ixe
-        uses: actions/download-artifact@v8
-        with:
-          name: nataddcomm-ixe
-          path: .
-      # Run the guest ELF through Zisk's keyless ASM executor. `zisk-host` exits
-      # 3 (EXIT_REJECTED, via `reject_failures`) if the kernel rejects any
-      # constant and non-zero on any VM fault. The ASM executor mmaps with
-      # MAP_LOCKED, so raise the memlock limit for the tool it spawns.
-      - name: Execute zisk-guest over the nataddcomm env
-        working-directory: zisk
-        env:
-          RUST_LOG: info
-        run: |
-          sudo prlimit --pid $$ --memlock=unlimited:unlimited
-          cargo run --release --bin zisk-host -- --execute --ixe ../nataddcomm.ixe
+  ci-gate:
+    if: ${{ always() }}
+    needs: [lean-test, rust-test, cuda-compile, lints]
+    permissions:
+      actions: read
+      checks: read
+    uses: runs-on/spot-retry-gate/.github/workflows/merge-queue.yml@451eea7c3d2c58d14a1f80f0bbb99eaa347b9471 # v1.0.0
+    with:
+      job_results: ${{ toJSON(needs) }}

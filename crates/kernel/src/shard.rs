@@ -15,16 +15,10 @@
 //!   pre-partition for a **cut-coherent order** so dependency overlap packs into
 //!   the same shard (overlap paid once, not re-ingressed per shard).
 //!
-//! **Why the order comes from min-cut.** Lean typecheck is reduction-dominated:
-//! across Init/Std/Mathlib (mathlib's 631k blocks included) own-bytes is only
-//! 2.6–7% of member cost, so on Zisk alone cross-ingress is a ≤3% cost term and a
-//! plain block-id order packs within ~2% of min-cut. min-cut still earns the
-//! default because the same `.ixprof`/`.ixes` also drives Aiur, where ingress is
-//! a first-order cost; because it stays robust if an ingress-heavy env flips that
-//! balance; and because it keeps each shard's injected closure small, which the
-//! 512 MB guest heap requires. A cheaper id/dfs order trades those properties for
-//! ~2% on Zisk only. The cap planner ([`partition_for_cycle_cap`]) is
-//! order-agnostic, so the order is a pluggable choice.
+//! Min-cut keeps dependency-overlapping blocks together, reducing repeated
+//! ingress and bounding each shard's injected closure. The cap planner
+//! ([`partition_for_cycle_cap`]) is order-agnostic, so the ordering remains a
+//! pluggable choice.
 //!
 //! ## Model
 //!
@@ -152,7 +146,7 @@ const PACK_PIECES_PER_CAP: u128 = 32;
 /// A weighted hypergraph derived from a [`BlockProfile`]. Vertex ids are block
 /// ids (identical to the profile's). Nets are stored with global pins.
 pub struct Hypergraph {
-  /// Vertex (block) weights = predicted Zisk guest STEPS ([`block_step_cost`]:
+  /// Vertex (block) weights = estimated guest cost ([`block_step_cost`]:
   /// reduction `heartbeats` + own ingress bytes), so the balanced partition
   /// equalizes predicted per-shard *cycles* (the prover-RAM driver) rather than
   /// heartbeats alone — which underweighted ingress-heavy shards.
@@ -256,6 +250,37 @@ impl Hypergraph {
     prog.done();
     let assignment = shard_of.into_iter().map(AtomicU32::into_inner).collect();
     (assignment, tree)
+  }
+
+  fn bisect_subset(&self, vertices: &[u32], epsilon: f64) -> [Vec<u32>; 2] {
+    let mut local = vec![u32::MAX; self.num_vertices()];
+    let mut weights = Vec::with_capacity(vertices.len());
+    for (index, &vertex) in vertices.iter().enumerate() {
+      local[vertex as usize] = index as u32;
+      weights.push(self.vweight[vertex as usize]);
+    }
+    let cap = (weights.iter().map(|&w| u128::from(w)).sum::<u128>() / 2)
+      .clamp(1, u128::from(u64::MAX)) as u64;
+    let nets = self
+      .net_pins
+      .iter()
+      .zip(&self.net_weight)
+      .filter_map(|(pins, &weight)| {
+        let pins: Vec<_> = pins
+          .iter()
+          .map(|&v| local[v as usize])
+          .filter(|&v| v != u32::MAX)
+          .collect();
+        (pins.len() >= 2).then_some((weight, pins))
+      })
+      .collect();
+    let sub = SubHyper::assemble(vertices.to_vec(), weights, nets, cap);
+    let side = bisect(&sub, epsilon);
+    let mut parts = [Vec::new(), Vec::new()];
+    for (&vertex, side) in vertices.iter().zip(side) {
+      parts[side as usize].push(vertex);
+    }
+    parts
   }
 }
 
@@ -1712,6 +1737,47 @@ pub const STATIC_SEED_SCORE_EXPONENT: f64 = 1.10;
 /// exponent, this changes no reference-budget prediction.
 pub const STATIC_SEED_BUDGET_EXPONENT: f64 = 1.20;
 
+/// Reference point for the shard-count seed of the trace-shard prover
+/// (the CUDA build): Mathlib's serialized block bytes and its 78-way cut
+/// proven on four RTX PRO 6000 on 2026-09-15 (`--max-ram 230`, three
+/// executions ahead of each prover, 1.5e9 cells: a 41.4 GiB record
+/// share). 78 is the p90-scaled candidate of the 111-shard seed, and its
+/// own run confirmed it: claim records mean 29.3 GiB, p90 33.9 GiB at a
+/// 36.5 GiB initial reservation, no growth waits.
+pub const GPU_SEED_REFERENCE_BYTES: f64 = 1_468_041_216.0;
+/// Shards of the reference cut.
+pub const GPU_SEED_REFERENCE_SHARDS: f64 = 78.0;
+/// Record share of the reference calibration, GiB.
+pub const GPU_SEED_REFERENCE_SHARE_GIB: f64 = 41.4;
+
+/// Seed count for the trace-shard prover: the reference count scaled by
+/// serialized block bytes and inversely by the record share, so the
+/// seed owns the reference's bytes per shard at the reference share.
+///
+/// A claim's execution record is close to linear in the bytes its shard
+/// owns, about 1,700 bytes of record per serialized byte, from Mathlib's
+/// ordinary shards (18.8 MB, 29.3 GiB) to Anthropic FLT's single-constant
+/// outliers (58.5 MB, 89.5 GiB), so matching bytes per shard reproduces
+/// the reference's record distribution. The static score's per-block
+/// `size^1.5` term is deliberately left out: it dominates environments
+/// with multi-megabyte proof bodies (93% of FLT's score) while their
+/// measured records stay linear, and would seed them several times too
+/// fine. Like [`static_seed_shards`] it is a seed, not a bound; the
+/// record cap names any shard whose record exceeds its share, and atomic
+/// blocks above the share are isolated by the balance-weight cap.
+pub fn gpu_seed_shards(profile: &BlockProfile, share_gib: f64) -> usize {
+  let scaled = GPU_SEED_REFERENCE_SHARDS
+    * (static_env_bytes(profile) / GPU_SEED_REFERENCE_BYTES)
+    * (GPU_SEED_REFERENCE_SHARE_GIB / share_gib.max(f64::EPSILON));
+  (scaled.round().max(1.0) as usize).min(profile.num_blocks().max(1))
+}
+
+/// Serialized bytes over every block: what the trace-shard seed scales
+/// with, and the balance weight the static cut distributes.
+pub fn static_env_bytes(profile: &BlockProfile) -> f64 {
+  profile.blocks().iter().map(|b| f64::from(b.serialized_size)).sum()
+}
+
 /// Predicted owned-side cost of one block under the static model.
 fn static_owned_weight(size: u32) -> f64 {
   let s = f64::from(size);
@@ -1993,6 +2059,127 @@ pub fn shard_static(
   ))
 }
 
+/// Lay the blocks out as `num_shards` contiguous ranges of a dependency
+/// order, cut at equal predicted cost, numbered from the top down: shard 0
+/// holds the blocks nothing depends on, the last shard the blocks
+/// everything depends on. `depends[b]` lists the blocks `b` references
+/// through any edge the byte scope follows, so a shard's reference closure
+/// lies in its own shard and higher-numbered ones. The distributed prover's
+/// static caller graph over such a manifest is acyclic, and its records
+/// commit one at a time in shard order. The blocks in `first` and their
+/// dependencies are laid out at the bottom of the order, ahead of
+/// everything else: the primitives the kernel reaches from any constant
+/// without a reference belong there. Blocks on a reference cycle keep the
+/// order they are first reached in; the report counts the edges that
+/// point from a shard to a lower-numbered one. No aggregation tree is
+/// attached.
+pub fn shard_static_ordered(
+  profile: &BlockProfile,
+  depends: &[Vec<u32>],
+  first: &[u32],
+  num_shards: usize,
+  out_path: Option<&str>,
+) -> Result<String, String> {
+  let n = profile.num_blocks();
+  if num_shards == 0 || num_shards > n {
+    return Err(format!(
+      "shard_static_ordered: {num_shards} shards for {n} blocks"
+    ));
+  }
+  let t0 = Instant::now();
+  let (shard_of, backward) =
+    ordered_layout(profile, depends, first, num_shards);
+  let mut manifest = ShardManifest::build(profile, &shard_of, num_shards);
+  seal_and_write(&mut manifest, out_path)?;
+  let costs = static_predicted_costs(profile, &shard_of, num_shards);
+  let (mut lo, mut hi, mut sum) = (f64::INFINITY, 0.0f64, 0.0f64);
+  for &c in &costs {
+    lo = lo.min(c);
+    hi = hi.max(c);
+    sum += c;
+  }
+  Ok(format!(
+    "blocks={} dependency_edges={} layout=ordered ({:.1?})\n{}\nbackward edges={backward}  predicted FFT/shard mean={:.3e} min={:.3e} max={:.3e} spread={:.2}x",
+    n,
+    depends.iter().map(Vec::len).sum::<usize>(),
+    t0.elapsed(),
+    manifest.summary(),
+    sum / num_shards as f64,
+    lo,
+    hi,
+    hi / lo.max(1.0),
+  ))
+}
+
+/// The shard of every block under the ordered layout (see
+/// [`shard_static_ordered`]) and the number of dependency edges that point
+/// to a lower-numbered shard, zero when `depends` is acyclic.
+fn ordered_layout(
+  profile: &BlockProfile,
+  depends: &[Vec<u32>],
+  first: &[u32],
+  num_shards: usize,
+) -> (Vec<u32>, usize) {
+  let n = profile.num_blocks();
+  // Post-order of a depth-first walk along `depends`: every block after the
+  // blocks it references, from the bottom of the environment upward.
+  let mut order: Vec<u32> = Vec::with_capacity(n);
+  let mut state = vec![0u8; n]; // 0 unseen, 1 on the stack, 2 emitted
+  for root in first.iter().copied().chain(0..n as u32) {
+    if state[root as usize] != 0 {
+      continue;
+    }
+    let mut stack: Vec<(u32, usize)> = vec![(root, 0)];
+    state[root as usize] = 1;
+    while let Some(top) = stack.len().checked_sub(1) {
+      let (b, next) = stack[top];
+      if let Some(&d) = depends[b as usize].get(next) {
+        stack[top].1 = next + 1;
+        if state[d as usize] == 0 {
+          state[d as usize] = 1;
+          stack.push((d, 0));
+        }
+      } else {
+        state[b as usize] = 2;
+        order.push(b);
+        stack.pop();
+      }
+    }
+  }
+  // Cut the order at equal predicted owned cost, every range non-empty;
+  // the range index counts from the bottom, the shard id from the top.
+  let weight = |b: u32| static_owned_weight(profile.block(b).serialized_size);
+  let total: f64 = order.iter().map(|&b| weight(b)).sum();
+  let mut shard_of = vec![0u32; n];
+  let mut range = 0usize;
+  let mut range_blocks = 0usize;
+  let mut cumulative = 0.0f64;
+  for (position, &b) in order.iter().enumerate() {
+    let remaining_blocks = n - position;
+    let remaining_ranges = num_shards - range;
+    let boundary = total * (range + 1) as f64 / num_shards as f64;
+    if range_blocks > 0
+      && range + 1 < num_shards
+      && (cumulative >= boundary || remaining_blocks == remaining_ranges)
+    {
+      range += 1;
+      range_blocks = 0;
+    }
+    cumulative += weight(b);
+    range_blocks += 1;
+    shard_of[b as usize] = (num_shards - 1 - range) as u32;
+  }
+  let backward: usize = (0..n as u32)
+    .map(|b| {
+      depends[b as usize]
+        .iter()
+        .filter(|&&d| shard_of[d as usize] < shard_of[b as usize])
+        .count()
+    })
+    .sum();
+  (shard_of, backward)
+}
+
 /// Read a `.ixprof`, partition into `num_shards` shards, and emit a manifest with
 /// per-shard cost metrics, foreign-block sets, and (delta-based) assumption
 /// roots. Optionally writes the manifest (`.ixes`). Returns a what-if report.
@@ -2107,6 +2294,60 @@ pub struct LeafRefinement {
 }
 
 impl ShardManifest {
+  /// Bisect selected leaves along their internal dependency edges. Every
+  /// block remains atomic, and unaffected leaves keep their IDs and tree
+  /// positions so their claim and aggregate proofs remain reusable.
+  pub fn bisect_leaves(
+    &self,
+    profile: &BlockProfile,
+    ids: &[u32],
+  ) -> Result<(ShardManifest, Vec<Vec<u32>>), String> {
+    let block_ids: rustc_hash::FxHashMap<_, _> = profile
+      .blocks()
+      .iter()
+      .enumerate()
+      .map(|(i, b)| (&b.addr, i as u32))
+      .collect();
+    let graph = Hypergraph::from_profile(profile);
+    let mut refinements = Vec::with_capacity(ids.len());
+    for &id in ids {
+      let shard = self
+        .shards
+        .iter()
+        .find(|shard| shard.id == id)
+        .ok_or_else(|| format!("cannot split missing shard {id}"))?;
+      if shard.blocks.len() < 2 {
+        return Err(format!(
+          "shard {id} contains {} atomic block(s) and cannot be split further",
+          shard.blocks.len()
+        ));
+      }
+      let vertices = shard
+        .blocks
+        .iter()
+        .map(|block| {
+          block_ids.get(block).copied().ok_or_else(|| {
+            format!(
+              "shard {id}: block {} is absent from the profile",
+              block.hex()
+            )
+          })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+      let parts = graph
+        .bisect_subset(&vertices, 0.05)
+        .into_iter()
+        .map(|part| {
+          part.into_iter().map(|b| profile.block(b).addr.clone()).collect()
+        })
+        .collect();
+      refinements.push(LeafRefinement { id, parts, part_peaks: vec![0, 0] });
+    }
+    let (mut refined, part_ids) = self.refine(profile, &refinements, &[])?;
+    seal_and_write(&mut refined, None)?;
+    Ok((refined, part_ids))
+  }
+
   /// Refine this manifest by cutting some of its leaves into parts, leaving
   /// every other leaf — block list, record, and place in the aggregation
   /// tree — exactly as it was.
@@ -2284,7 +2525,7 @@ pub fn shard_manifest_refine(
   Ok((manifest.summary(), part_ids))
 }
 
-/// Like [`shard_esp`] but sized to a per-shard Zisk **cycle** budget
+/// Like [`shard_esp`] but sized to a per-shard estimated **cycle** budget
 /// (`max_cycles`) rather than a fixed shard count: grows `N` until the heaviest
 /// splittable shard fits the budget (see [`partition_for_cycle_cap`]). Use
 /// [`cycle_cap_for_ram`] to derive `max_cycles` from a host-RAM target.
@@ -2325,10 +2566,8 @@ pub fn shard_esp_cap(
   ))
 }
 
-/// Calibrated Zisk guest-COST model — the **single source of truth** for
-/// predicting a block's in-circuit cost contribution, in **ziskemu cost
-/// units** (`ziskemu -X` TOTAL: MAIN + OPCODES + MEMORY + PRECOMPILES +
-/// BASE). Cost, not raw steps, is the packing denomination: it prices the
+/// Legacy guest-cost estimate for the profiled partitioner. Cost, rather
+/// than raw steps, is the packing denomination: it prices the
 /// axes that don't ride the main trace — DMA/blake3 precompile area and
 /// memory ops — though on the uid-identity kernel the mix is stable
 /// (~92.5 units per guest step ± 7% across the calibration corpus, blake3
@@ -2336,7 +2575,7 @@ pub fn shard_esp_cap(
 /// (`.ixprof` v2): substitution-node visits, whnf/def-eq entries, and
 /// intern-table visits (term-construction volume — the proxy for the
 /// memory-traffic/DMA axis reduction counters can't see). **Best-fit**
-/// coefficients over 118 `ziskemu -X`-measured InitStd shards across 13
+/// coefficients over 118 measured InitStd shards across 13
 /// constants (weighted least squares on relative error, MAPE 10.9%, worst
 /// under-prediction −33%). One definition, used everywhere: the
 /// `ix profile` breakdown, per-shard prediction, and the packer's cap test.
@@ -2358,7 +2597,7 @@ pub const SHARD_COST_FLOOR: u64 = 293_600_000;
 /// per-block features).
 pub const COST_MODEL_HEADROOM: f64 = 1.5;
 
-/// Predicted Zisk guest cost units for a bag of raw op counters — the same
+/// Estimated guest cost units for a bag of raw op counters — the same
 /// linear model as [`block_step_cost`], for callers that hold an
 /// [`OpCounts`] rather than a profile block (e.g. the per-constant
 /// attribution CSV `ix check-rs --per-const` emits).
@@ -2370,7 +2609,7 @@ pub fn op_counts_cost(ops: &crate::profile::OpCounts) -> u64 {
     .saturating_add(COST_PER_INTERN.saturating_mul(ops.intern_nodes))
 }
 
-/// Predicted Zisk guest cost units contributed by a single block. The
+/// Estimated guest cost units contributed by a single block. The
 /// per-shard floor and any cross-shard re-ingress are added at the shard
 /// level, not here. Producer-only blocks (never directly checked) carry no
 /// op counts and predict zero — their load cost is priced through the
@@ -2523,8 +2762,8 @@ fn prove_report(
   )
 }
 
-/// A partition sized to a per-shard Zisk **cycle** budget (rather than a fixed
-/// shard count). See [`partition_for_cycle_cap`].
+/// A partition sized to a per-shard estimated **cycle** budget rather than a
+/// fixed shard count. See [`partition_for_cycle_cap`].
 pub struct BudgetPlan {
   /// Chosen shard count.
   pub num_shards: usize,
@@ -2553,7 +2792,7 @@ pub struct BudgetPlan {
 /// Size a partition to a per-shard **cycle** (guest-STEP) budget by **bin-packing
 /// to the cap**, not by balancing into a fixed shard count.
 ///
-/// `max_cycles` is the ceiling on a single shard's in-circuit Zisk guest steps
+/// `max_cycles` is the ceiling on a single shard's estimated guest steps
 /// — the leaf prover's trace size, which is what sets peak prover RAM. Get it
 /// from a host-RAM budget with [`cycle_cap_for_ram`] (the measured prover model
 /// `peak_RAM_GiB ≈ 50 + 33 × steps_billions`).
@@ -2798,6 +3037,36 @@ mod tests {
     // thin cross edge A->B
     b.delta_edge(addr(3), addr(4));
     b.finish()
+  }
+
+  /// Blocks 1 → 2 → 3 and 4 → 3 (`→` = depends on), equal sizes, two
+  /// shards: the bottom half {3, 2} is shard 1, the top half {1, 4} shard
+  /// 0, and every dependency points to the same or a higher-numbered shard.
+  #[test]
+  fn ordered_layout_puts_dependencies_in_later_shards() {
+    let mut b = ProfileBuilder::new();
+    for i in 1..=4u8 {
+      b.block(addr(i), 100, 1000, 1, ops(100));
+    }
+    let profile = b.finish();
+    let depends = vec![vec![1], vec![2], vec![], vec![2]];
+    let (shard_of, backward) = ordered_layout(&profile, &depends, &[], 2);
+    assert_eq!(shard_of, vec![0, 1, 1, 0]);
+    assert_eq!(backward, 0);
+    for (block, deps) in depends.iter().enumerate() {
+      for &d in deps {
+        assert!(shard_of[d as usize] >= shard_of[block]);
+      }
+    }
+    // A block laid out first sinks to the bottom with its dependencies.
+    let (with_first, backward) = ordered_layout(&profile, &depends, &[3], 2);
+    assert_eq!(with_first, vec![0, 0, 1, 1]);
+    assert_eq!(backward, 0);
+    // Every shard is non-empty even when the cut lands on the last blocks.
+    let (four, _) = ordered_layout(&profile, &depends, &[], 4);
+    let mut seen = four.clone();
+    seen.sort_unstable();
+    assert_eq!(seen, vec![0, 1, 2, 3]);
   }
 
   #[test]
@@ -3478,6 +3747,68 @@ mod tests {
     // Round trip keeps the tree and the peaks.
     let back = ShardManifest::from_bytes(&sealed.to_bytes()).unwrap();
     assert_eq!(back, sealed);
+  }
+
+  #[test]
+  fn bisect_leaves_preserves_other_claims_and_repeated_splits_progress() {
+    let (profile, original) = three_way();
+    let (refined, ids) = original.bisect_leaves(&profile, &[1]).unwrap();
+    assert_eq!(ids, vec![vec![1, 3]]);
+    assert_eq!(refined.shards[0], original.shards[0]);
+    assert_eq!(refined.shards[2], original.shards[2]);
+    let mut before = original.shards[1].blocks.clone();
+    before.sort_unstable();
+    let mut after = refined.shards[1].blocks.clone();
+    after.extend_from_slice(&refined.shards[3].blocks);
+    after.sort_unstable();
+    assert_eq!(before, after);
+    assert!(refined.shards[1].blocks.len() < before.len());
+    assert!(refined.shards[3].blocks.len() < before.len());
+    assert_eq!(
+      refined.tree,
+      original
+        .tree
+        .as_ref()
+        .map(|tree| tree.replace_leaf(1, &node(leaf(1), leaf(3))))
+    );
+    assert_eq!(
+      ShardManifest::from_bytes(&refined.to_bytes()).unwrap(),
+      refined
+    );
+    assert!(
+      refined
+        .bisect_leaves(&profile, &[1])
+        .unwrap_err()
+        .contains("atomic block")
+    );
+    assert!(
+      original
+        .bisect_leaves(&profile, &[99])
+        .unwrap_err()
+        .contains("missing shard")
+    );
+    assert!(
+      original
+        .bisect_leaves(&profile, &[1, 1])
+        .unwrap_err()
+        .contains("listed twice")
+    );
+  }
+
+  #[test]
+  fn bisect_leaves_handles_several_oversized_claims_in_one_pass() {
+    let (profile, original) = three_way();
+    let (refined, ids) = original.bisect_leaves(&profile, &[0, 2]).unwrap();
+    assert_eq!(ids, vec![vec![0, 3], vec![2, 4]]);
+    assert_eq!(refined.shards[1], original.shards[1]);
+    let mut blocks: Vec<_> =
+      refined.shards.iter().flat_map(|s| s.blocks.clone()).collect();
+    blocks.sort_unstable();
+    let mut expected: Vec<_> =
+      profile.blocks().iter().map(|b| b.addr.clone()).collect();
+    expected.sort_unstable();
+    assert_eq!(blocks, expected);
+    assert_eq!(refined.num_shards, original.num_shards + 2);
   }
 
   #[test]

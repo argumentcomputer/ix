@@ -267,8 +267,9 @@ impl LeanIxLiteral<LeanOwned> {
         ctor
       },
       Literal::StrVal(s) => {
+        // Preserve NUL bytes instead of filtering them through a C string.
         let ctor = LeanIxLiteral::alloc(1);
-        ctor.set_obj(0, LeanString::new(s.as_str()));
+        ctor.set_obj(0, LeanString::from_bytes(s.as_bytes()));
         ctor
       },
     }

@@ -174,6 +174,8 @@ pub enum Claim {
   /// shard protocol one level up) — there is deliberately no
   /// whole-catalog interpreter arm.
   Catalog { members: Address, content: Address, assumptions: Option<Address> },
+  /// Combined erased typing and resource admission of a complete addressed closure.
+  Resource { root: Address, profile: Address },
 }
 
 /// A proof of a claim.
@@ -217,6 +219,7 @@ pub const VARIANT_CHECK_ENV_CLAIM: u64 = 5;
 pub const VARIANT_REVEAL_CLAIM: u64 = 6;
 pub const VARIANT_CONTAINS_CLAIM: u64 = 7;
 pub const VARIANT_CATALOG_CLAIM: u64 = 8;
+pub const VARIANT_RESOURCE_CLAIM: u64 = 9;
 
 /// Tag4 flag for ZK proofs (0xF). All variants in single-byte tags
 /// (`0xF0`–`0xF5`). Slots 6-7 reserved for future proof variants.
@@ -239,6 +242,7 @@ pub const VARIANT_CHECK_ENV_PROOF: u64 = 2;
 pub const VARIANT_REVEAL_PROOF: u64 = 3;
 pub const VARIANT_CONTAINS_PROOF: u64 = 4;
 pub const VARIANT_CATALOG_PROOF: u64 = 5;
+pub const VARIANT_RESOURCE_PROOF: u64 = 6;
 
 // Backwards-compatibility re-export: many call sites refer to FLAG.
 pub const FLAG: u8 = FLAG_CLAIM;
@@ -943,41 +947,61 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
   }
 }
 
+fn validator_for_variant(variant: u64) -> u8 {
+  match variant {
+    VARIANT_REVEAL_CLAIM | VARIANT_CONTAINS_CLAIM => 0,
+    VARIANT_RESOURCE_CLAIM => 2,
+    _ => 1,
+  }
+}
+fn put_scope(validator: u8, buf: &mut Vec<u8>) {
+  buf.extend_from_slice(&[3, validator]);
+}
+fn get_scope(validator: u8, buf: &mut &[u8]) -> Result<(), String> {
+  if get_u8(buf)? != 3 {
+    return Err("claim: unsupported object format".into());
+  }
+  if get_u8(buf)? != validator {
+    return Err("claim: wrong validator identity".into());
+  }
+  Ok(())
+}
+
 impl Claim {
   pub fn put(&self, buf: &mut Vec<u8>) {
+    Tag4::new(FLAG_CLAIM, self.proof_variant_size() + 3).put(buf);
+    put_scope(validator_for_variant(self.proof_variant_size() + 3), buf);
     match self {
       Claim::Eval { input, output, assumptions } => {
-        Tag4::new(FLAG_CLAIM, VARIANT_EVAL_CLAIM).put(buf);
         buf.extend_from_slice(input.as_bytes());
         buf.extend_from_slice(output.as_bytes());
         put_opt_addr(assumptions, buf);
       },
       Claim::Check { const_addr, assumptions } => {
-        Tag4::new(FLAG_CLAIM, VARIANT_CHECK_CLAIM).put(buf);
         buf.extend_from_slice(const_addr.as_bytes());
         put_opt_addr(assumptions, buf);
       },
       Claim::CheckEnv { root, assumptions } => {
-        Tag4::new(FLAG_CLAIM, VARIANT_CHECK_ENV_CLAIM).put(buf);
         buf.extend_from_slice(root.as_bytes());
         put_opt_addr(assumptions, buf);
       },
       Claim::Reveal { comm, info } => {
-        Tag4::new(FLAG_CLAIM, VARIANT_REVEAL_CLAIM).put(buf);
         buf.extend_from_slice(comm.as_bytes());
         info.put(buf);
       },
       Claim::Contains { tree, const_addr } => {
-        Tag4::new(FLAG_CLAIM, VARIANT_CONTAINS_CLAIM).put(buf);
         buf.extend_from_slice(tree.as_bytes());
         buf.extend_from_slice(const_addr.as_bytes());
       },
       Claim::Catalog { members, content, assumptions } => {
         // First multi-byte claim tag: 0xE8 0x08 on the wire.
-        Tag4::new(FLAG_CLAIM, VARIANT_CATALOG_CLAIM).put(buf);
         buf.extend_from_slice(members.as_bytes());
         buf.extend_from_slice(content.as_bytes());
         put_opt_addr(assumptions, buf);
+      },
+      Claim::Resource { root, profile } => {
+        buf.extend_from_slice(root.as_bytes());
+        buf.extend_from_slice(profile.as_bytes());
       },
     }
   }
@@ -990,6 +1014,7 @@ impl Claim {
         FLAG_CLAIM, tag.flag
       ));
     }
+    get_scope(validator_for_variant(tag.size), buf)?;
     match tag.size {
       VARIANT_EVAL_CLAIM => {
         let input = get_address(buf)?;
@@ -1023,10 +1048,23 @@ impl Claim {
         let assumptions = get_opt_addr(buf)?;
         Ok(Claim::Catalog { members, content, assumptions })
       },
+      VARIANT_RESOURCE_CLAIM => Ok(Claim::Resource {
+        root: get_address(buf)?,
+        profile: get_address(buf)?,
+      }),
       x => {
         Err(format!("Claim::get: invalid claim variant {x} under flag 0xE",))
       },
     }
+  }
+
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    let mut rest = bytes;
+    let claim = Self::get(&mut rest)?;
+    if !rest.is_empty() {
+      return Err("claim: trailing bytes".into());
+    }
+    Ok(claim)
   }
 
   /// Serialize a claim and compute its content address.
@@ -1046,6 +1084,7 @@ impl Claim {
       Claim::Reveal { .. } => VARIANT_REVEAL_PROOF,
       Claim::Contains { .. } => VARIANT_CONTAINS_PROOF,
       Claim::Catalog { .. } => VARIANT_CATALOG_PROOF,
+      Claim::Resource { .. } => VARIANT_RESOURCE_PROOF,
     }
   }
 }
@@ -1064,6 +1103,7 @@ impl Proof {
     // Proofs live under flag 0xF; claim payload is the same body as the
     // matching Claim variant.
     Tag4::new(FLAG_PROOF, proof_size).put(buf);
+    put_scope(validator_for_variant(proof_size + 3), buf);
     match &self.claim {
       Claim::Eval { input, output, assumptions } => {
         buf.extend_from_slice(input.as_bytes());
@@ -1091,6 +1131,10 @@ impl Proof {
         buf.extend_from_slice(content.as_bytes());
         put_opt_addr(assumptions, buf);
       },
+      Claim::Resource { root, profile } => {
+        buf.extend_from_slice(root.as_bytes());
+        buf.extend_from_slice(profile.as_bytes());
+      },
     }
     // Opaque ZK proof bytes: length prefix + data
     Tag0::new(self.proof.len() as u64).put(buf);
@@ -1105,6 +1149,7 @@ impl Proof {
         FLAG_PROOF, tag.flag
       ));
     }
+    get_scope(validator_for_variant(tag.size.wrapping_add(3)), buf)?;
     let claim = match tag.size {
       VARIANT_EVAL_PROOF => {
         let input = get_address(buf)?;
@@ -1137,6 +1182,9 @@ impl Proof {
         let content = get_address(buf)?;
         let assumptions = get_opt_addr(buf)?;
         Claim::Catalog { members, content, assumptions }
+      },
+      VARIANT_RESOURCE_PROOF => {
+        Claim::Resource { root: get_address(buf)?, profile: get_address(buf)? }
       },
       x => {
         return Err(format!(
@@ -1374,7 +1422,7 @@ mod tests {
 
   impl Arbitrary for Claim {
     fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 6 {
+      match u8::arbitrary(g) % 7 {
         0 => Claim::Eval {
           input: Address::arbitrary(g),
           output: Address::arbitrary(g),
@@ -1396,6 +1444,10 @@ mod tests {
           members: Address::arbitrary(g),
           content: Address::arbitrary(g),
           assumptions: gen_opt_addr(g),
+        },
+        5 => Claim::Resource {
+          root: Address::arbitrary(g),
+          profile: Address::arbitrary(g),
         },
         _ => Claim::Contains {
           tree: Address::arbitrary(g),
@@ -1455,7 +1507,7 @@ mod tests {
       assumptions: Some(asm.clone()),
     };
     let (addr, bytes) = claim.commit();
-    let mut expected = vec![0xE8, 0x08];
+    let mut expected = vec![0xE8, 0x08, 3, 1];
     expected.extend_from_slice(members.as_bytes());
     expected.extend_from_slice(content.as_bytes());
     expected.push(0x01);
@@ -1467,14 +1519,14 @@ mod tests {
     // two serializers cannot drift on the large-tag path unnoticed.
     assert_eq!(
       addr.hex(),
-      "608af1f5477517d14427da664ae7a62d46cd9236b2183481c7801910683579bf",
+      "1ae7fec8efde892b6b540888df70d53977a264bbc84be300d4335ce04c916072",
       "catalog claim digest drifted"
     );
     // Unconditional form: trailing 0x00, same 2-byte tag.
     let claim_none = Claim::Catalog { members, content, assumptions: None };
     let mut buf = Vec::new();
     claim_none.put(&mut buf);
-    assert_eq!(buf.len(), 2 + 32 + 32 + 1);
+    assert_eq!(buf.len(), 2 + 2 + 32 + 32 + 1);
     assert_eq!(&buf[0..2], &[0xE8, 0x08]);
     assert_eq!(*buf.last().unwrap(), 0x00);
     // The proof wrapper stays a single-byte tag: 0xF5.
@@ -1815,8 +1867,8 @@ mod tests {
         assumptions: None
       })
       .len(),
-      1 + 64 + 1,
-      "Eval no-asm = 66 bytes"
+      1 + 2 + 64 + 1,
+      "Eval no-asm = 68 bytes"
     );
     assert_eq!(
       claim_bytes(&Claim::Eval {
@@ -1825,14 +1877,14 @@ mod tests {
         assumptions: Some(asm.clone())
       })
       .len(),
-      1 + 64 + 1 + 32,
-      "Eval with-asm = 98 bytes"
+      1 + 2 + 64 + 1 + 32,
+      "Eval with-asm = 100 bytes"
     );
     assert_eq!(
       claim_bytes(&Claim::Check { const_addr: a.clone(), assumptions: None })
         .len(),
-      1 + 32 + 1,
-      "Check no-asm = 34 bytes"
+      1 + 2 + 32 + 1,
+      "Check no-asm = 36 bytes"
     );
     assert_eq!(
       claim_bytes(&Claim::Check {
@@ -1840,19 +1892,19 @@ mod tests {
         assumptions: Some(asm.clone())
       })
       .len(),
-      1 + 32 + 1 + 32,
-      "Check with-asm = 66 bytes"
+      1 + 2 + 32 + 1 + 32,
+      "Check with-asm = 68 bytes"
     );
     assert_eq!(
       claim_bytes(&Claim::CheckEnv { root: a.clone(), assumptions: None })
         .len(),
-      1 + 32 + 1,
-      "CheckEnv no-asm = 34 bytes"
+      1 + 2 + 32 + 1,
+      "CheckEnv no-asm = 36 bytes"
     );
     assert_eq!(
       claim_bytes(&Claim::Contains { tree: a, const_addr: b }).len(),
-      1 + 64,
-      "Contains = 65 bytes"
+      1 + 2 + 64,
+      "Contains = 67 bytes"
     );
   }
 
@@ -1933,11 +1985,11 @@ mod tests {
     let mut buf = Vec::new();
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE6); // Tag4: flag=0xE, size=6 (Reveal claim)
-    // buf[1..33] = comm_addr (32 bytes)
-    assert_eq!(buf[33], 0x00); // RevealConstantInfo variant: Definition
-    assert_eq!(buf[34], 0x02); // mask: bit 1 (safety)
-    assert_eq!(buf[35], 0x01); // DefinitionSafety::Safe
-    assert_eq!(buf.len(), 36); // Total: 1 + 32 + 1 + 1 + 1 = 36 bytes
+    // buf[3..35] = comm_addr (32 bytes)
+    assert_eq!(buf[35], 0x00); // RevealConstantInfo variant: Definition
+    assert_eq!(buf[36], 0x02); // mask: bit 1 (safety)
+    assert_eq!(buf[37], 0x01); // DefinitionSafety::Safe
+    assert_eq!(buf.len(), 38); // Total: 1 + 2 + 32 + 1 + 1 + 1 = 38 bytes
   }
 
   #[test]
@@ -1957,10 +2009,10 @@ mod tests {
     let mut buf = Vec::new();
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE6);
-    assert_eq!(buf[33], 0x00); // RevealConstantInfo variant: Definition
-    assert_eq!(buf[34], 0x08); // mask: bit 3 (typ)
+    assert_eq!(buf[35], 0x00); // RevealConstantInfo variant: Definition
+    assert_eq!(buf[36], 0x08); // mask: bit 3 (typ)
     // buf[35..67] = typ address (32 bytes)
-    assert_eq!(buf.len(), 67); // Total: 1 + 32 + 1 + 1 + 32 = 67 bytes
+    assert_eq!(buf.len(), 69); // Total: 1 + 2 + 32 + 1 + 1 + 32 = 69 bytes
   }
 
   #[test]
@@ -1984,14 +2036,14 @@ mod tests {
     let mut buf = Vec::new();
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE6);
-    assert_eq!(buf[33], 0x08); // RevealConstantInfo variant: Muts
-    assert_eq!(buf[34], 0x01); // mask: bit 0 (components)
-    assert_eq!(buf[35], 0x01); // Tag0: 1 component revealed
-    assert_eq!(buf[36], 0x02); // Tag0: component index 2
-    assert_eq!(buf[37], 0x00); // RevealMutConstInfo variant: Definition
-    assert_eq!(buf[38], 0x02); // mask: bit 1 (safety)
-    assert_eq!(buf[39], 0x01); // DefinitionSafety::Safe
-    assert_eq!(buf.len(), 40); // Total: 1 + 32 + 7 = 40 bytes
+    assert_eq!(buf[35], 0x08); // RevealConstantInfo variant: Muts
+    assert_eq!(buf[36], 0x01); // mask: bit 0 (components)
+    assert_eq!(buf[37], 0x01); // Tag0: 1 component revealed
+    assert_eq!(buf[38], 0x02); // Tag0: component index 2
+    assert_eq!(buf[39], 0x00); // RevealMutConstInfo variant: Definition
+    assert_eq!(buf[40], 0x02); // mask: bit 1 (safety)
+    assert_eq!(buf[41], 0x01); // DefinitionSafety::Safe
+    assert_eq!(buf.len(), 42); // Total: 1 + 32 + 7 = 40 bytes
   }
 
   // ========== All RevealConstantInfo variant roundtrips ==========
@@ -2110,6 +2162,44 @@ mod tests {
         reveal_info_roundtrip(info),
         "RevealConstantInfo roundtrip failed for case {i}"
       );
+    }
+  }
+  #[test]
+  fn v3_claim_fixtures_and_strict_scope() {
+    for line in
+      include_str!("../../../Tests/Fixtures/ixon-v3/claims.tsv").lines()
+    {
+      if line.starts_with('#') || line.is_empty() {
+        continue;
+      }
+      let fields: Vec<_> = line.split('\t').collect();
+      let bytes: Vec<_> = fields[2]
+        .as_bytes()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| {
+          u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()
+        })
+        .collect();
+      let claim = Claim::from_bytes(&bytes).unwrap();
+      let (address, encoded) = claim.commit();
+      assert_eq!(encoded, bytes, "{}", fields[0]);
+      assert_eq!(address.hex(), fields[1]);
+      for len in 0..bytes.len() {
+        assert!(Claim::from_bytes(&bytes[..len]).is_err());
+      }
+      let mut trailing = bytes.clone();
+      trailing.push(0);
+      assert!(Claim::from_bytes(&trailing).is_err());
+      let header = if claim.proof_variant_size() + 3 >= 8 { 2 } else { 1 };
+      let mut old_format = bytes.clone();
+      old_format[header] = 2;
+      assert!(Claim::from_bytes(&old_format).is_err());
+      let mut wrong_validator = bytes.clone();
+      wrong_validator[header + 1] = 255;
+      assert!(Claim::from_bytes(&wrong_validator).is_err());
+      assert!(proof_roundtrip(&Proof::new(claim, vec![1, 2, 3])));
     }
   }
 }

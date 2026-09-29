@@ -5,6 +5,9 @@ public section
 
 namespace IxVM
 
+/-- Erased Lean typing only. Contracts remain committed in the source bytes;
+`Check` and `CheckEnv` bind validator `erased-lean-v1`. Resource validity
+requires the separate native `resource-v1` validator. -/
 def convert := ⟦
   -- ============================================================================
   -- Convert — addr-first Ixon → KExpr / KConstantInfo
@@ -185,6 +188,8 @@ def convert := ⟦
           convert_expr(ty, sharing, refs, recur_addrs, univs),
           convert_expr(body, sharing, refs, recur_addrs, univs))),
 
+      -- A shared borrow has the same erased value as an ordinary let.
+      -- This conversion proves no ownership, usage, or escape property.
       Expr.Let(_, ty, val, body) =>
         store(KExprNode.Let(
           convert_expr(ty, sharing, refs, recur_addrs, univs),

@@ -33,7 +33,7 @@ public import Ix.Aiur.Compiler
 public import Ix.Aiur.Stages.Codegen
 public import Ix.IxVM
 public import Ix.IxVM.Toplevel
-public import Ix.MultiStark
+public import MultiStark
 
 public section
 

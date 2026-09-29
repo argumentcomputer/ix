@@ -159,7 +159,21 @@ impl AiurGadget for Bytes1 {
     record: &QueryRecord,
     slot_arg_widths: &[usize],
   ) -> (RowMajorMatrix<G>, LookupValues<G>) {
-    let mut rows = vec![G::ZERO; 256 * TRACE_WIDTH];
+    let mut rows = G::zero_vec(256 * TRACE_WIDTH);
+    for (row, multiplicities) in rows
+      .as_chunks_mut::<TRACE_WIDTH>()
+      .0
+      .iter_mut()
+      .zip(&record.bytes1_queries.0)
+    {
+      *row = *multiplicities;
+    }
+    if crate::trace::trace_only_lookups() {
+      return (
+        RowMajorMatrix::new(rows, TRACE_WIDTH),
+        LookupValues::shape_only(256, slot_arg_widths),
+      );
+    }
 
     // There are `TRACE_WIDTH` lookups per row, one for each multiplicity.
     let mut builder = LookupValues::builder(256, slot_arg_widths);
@@ -171,17 +185,13 @@ impl AiurGadget for Bytes1 {
 
     // There are at most 256 rows so parallelism is not necessay.
     rows
-      .as_chunks_mut::<TRACE_WIDTH>()
+      .as_chunks::<TRACE_WIDTH>()
       .0
-      .iter_mut()
+      .iter()
       .enumerate()
-      .zip(&record.bytes1_queries.0)
       .zip(row_writers.iter_mut())
-      .for_each(|(((byte, row), &[bd, shl, shr]), row_lookups)| {
+      .for_each(|((byte, &[bd, shl, shr]), row_lookups)| {
         let byte = G::from_usize(byte);
-        row[0] = bd;
-        row[1] = shl;
-        row[2] = shr;
 
         // Pull bit decomposition.
         let mut bit_decomposition_args = Vec::with_capacity(10);

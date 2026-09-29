@@ -10,19 +10,10 @@ def ixonDeserialize := ⟦
   -- Byte reading primitives
   -- ============================================================================
 
-  -- NOTE: hot readers (`get_u64_le`, the tag parsers, `get_address`) inline
-  -- the uncons as `let ListNode.Cons(byte, s) = load(stream)` instead of
-  -- calling this: a `load` is a memory-table lookup already paid by
-  -- `read_byte` itself, so inlining deletes one full dispatch row per byte
-  -- read. The behavioral difference is only on truncated input: `read_byte`
-  -- zero-pads at Nil, the inline uncons fails the prover (well-formed Ixon
-  -- never over-reads). Cold once-per-constant parsers keep the call for the
-  -- padding semantics and narrower circuits.
+  -- Every reader rejects truncation, including cold declaration fields.
   fn read_byte(stream: ByteStream) -> (U8, ByteStream) {
-    match load(stream) {
-      ListNode.Cons(byte, rest) => (byte, rest),
-      ListNode.Nil => (0u8, store(ListNode.Nil)),
-    }
+    let ListNode.Cons(byte, rest) = load(stream);
+    (byte, rest)
   }
 
   -- Read num_bytes little-endian bytes into a u64
@@ -61,7 +52,13 @@ def ixonDeserialize := ⟦
         -- matches the format.
         assert_eq!(u8_less_than(u8_from_field_unsafe(num_bytes), 9u8), 1,
           "tag0: payload width exceeds 8 bytes");
-        get_u64_le(s, num_bytes),
+        let (size, s2) = get_u64_le(s, num_bytes);
+        assert_eq!(to_field(u64_byte_count(size)), num_bytes, "nonminimal tag0 width");
+        match num_bytes {
+          1 => assert_eq!(u8_less_than(size[0], 128u8), 0, "nonminimal tag0 value"); (); (),
+          _ => (),
+        };
+        (size, s2),
     }
   }
 
@@ -82,6 +79,11 @@ def ixonDeserialize := ⟦
         assert_eq!(u8_less_than(u8_from_field_unsafe(num_bytes), 9u8), 1,
           "tag2: payload width exceeds 8 bytes");
         let (size, s2) = get_u64_le(s, num_bytes);
+        assert_eq!(to_field(u64_byte_count(size)), num_bytes, "nonminimal tag2 width");
+        match num_bytes {
+          1 => assert_eq!(u8_less_than(size[0], 32u8), 0, "nonminimal tag2 value"); (); (),
+          _ => (),
+        };
         ((flag, size), s2),
     }
   }
@@ -99,6 +101,11 @@ def ixonDeserialize := ⟦
       _ =>
         let num_bytes = small_size + 1;
         let (size, s2) = get_u64_le(s, num_bytes);
+        assert_eq!(to_field(u64_byte_count(size)), num_bytes, "nonminimal tag4 width");
+        match num_bytes {
+          1 => assert_eq!(u8_less_than(size[0], 8u8), 0, "nonminimal tag4 value"); (); (),
+          _ => (),
+        };
         ((flag, size), s2),
     }
   }
@@ -122,6 +129,10 @@ def ixonDeserialize := ⟦
   -- Expression deserialization
   -- ============================================================================
 
+  -- Counted parsers consume each element through strict readers before
+  -- recurring. Truncation therefore rejects during parsing, without a
+  -- preliminary traversal of the byte stream.
+
   -- App telescope: read count args, wrapping func in App nodes. `func` is passed
   -- by pointer (loaded only at the base case) so the recursion doesn't carry the
   -- wide `Expr` union by value on every row.
@@ -135,37 +146,35 @@ def ixonDeserialize := ⟦
     }
   }
 
-  -- Ixon v2 encodes one usage byte before each lambda binder type.
-  fn get_lam_mode(stream: ByteStream) -> (Uses, ByteStream) {
-    let ListNode.Cons(mode, s) = load(stream);
-    assert_eq!(u8_less_than(mode, 4u8), 1, "invalid lambda mode");
-    match mode {
-      0 => (Uses.Erased, s),
-      1 => (Uses.Linear, s),
-      2 => (Uses.Affine, s),
-      3 => (Uses.Many, s),
-    }
+  -- Decode independent usage, ownership, and locality bits.
+  fn value_contract_from_bits(owned_bit: G, locality_bit: G) -> ValueContract {
+    let owned = match owned_bit { 0 => Owned.Unique, 1 => Owned.Shared, };
+    let locality = match locality_bit { 0 => Locality.Unrestricted, 1 => Locality.Local, };
+    ValueContract.Mk(owned, locality)
   }
 
-  -- Ixon v2 forall mode: usage in bits 0-1, result ownership in bit 2.
-  -- Values above 7 carry reserved bits and are rejected by the host codecs.
-  fn get_all_mode(stream: ByteStream) -> ((Uses, Owned), ByteStream) {
-    let ListNode.Cons(mode, s) = load(stream);
-    assert_eq!(u8_less_than(mode, 8u8), 1, "invalid forall mode");
-    match mode {
-      0 => ((Uses.Erased, Owned.Unique), s),
-      1 => ((Uses.Linear, Owned.Unique), s),
-      2 => ((Uses.Affine, Owned.Unique), s),
-      3 => ((Uses.Many, Owned.Unique), s),
-      4 => ((Uses.Erased, Owned.Shared), s),
-      5 => ((Uses.Linear, Owned.Shared), s),
-      6 => ((Uses.Affine, Owned.Shared), s),
-      7 => ((Uses.Many, Owned.Shared), s),
-    }
+  fn binder_contract_from_bits(b0: G, b1: G, b2: G, b3: G) -> BinderContract {
+    let uses = match b0 + 2 * b1 { 0 => Uses.Erased, 1 => Uses.Linear, 2 => Uses.Affine, 3 => Uses.Many, };
+    BinderContract.Mk(uses, value_contract_from_bits(b2, b3))
   }
 
-  -- Lam telescope: read count (mode, type) binders then body, wrap as nested
-  -- Lams. The base may not itself be a Lam: the v2 encoding requires maximal
+  fn get_lam_mode(stream: ByteStream) -> (BinderContract, ByteStream) {
+    let (mode, s) = read_byte(stream);
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = u8_bit_decomposition(mode);
+    assert_eq!(b4 + b5 + b6 + b7, 0, "reserved binder contract bits");
+    (binder_contract_from_bits(b0, b1, b2, b3), s)
+  }
+
+  -- Decode the complete input and result contracts.
+  fn get_all_mode(stream: ByteStream) -> ((BinderContract, ValueContract), ByteStream) {
+    let (mode, s) = read_byte(stream);
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = u8_bit_decomposition(mode);
+    assert_eq!(b6 + b7, 0, "reserved forall contract bits");
+    ((binder_contract_from_bits(b0, b1, b2, b3), value_contract_from_bits(b4, b5)), s)
+  }
+
+  -- Lam telescope: read count (contract, type) binders then body, wrap as nested
+  -- Lams. The base may not itself be a Lam: the v3 encoding requires maximal
   -- telescope compression.
   fn get_lam_telescope(stream: ByteStream, count: U64) -> (&Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
@@ -179,15 +188,15 @@ def ixonDeserialize := ⟦
           _ => (body, s),
         },
       0 =>
-        let (uses, s) = get_lam_mode(stream);
+        let (contract, s) = get_lam_mode(stream);
         let (ty, s2) = get_expr(s);
         let (inner, s3) = get_lam_telescope(s2, relaxed_u64_pred(count));
-        (store(Expr.Lam(uses, ty, inner)), s3),
+        (store(Expr.Lam(contract, ty, inner)), s3),
     }
   }
 
-  -- All telescope: read count (mode, type) binders then body, wrap as nested
-  -- Alls, again requiring maximal telescope compression.
+  -- All telescope: read count (input/result contracts, type) binders then body,
+  -- wrap as nested Alls, again requiring maximal telescope compression.
   fn get_all_telescope(stream: ByteStream, count: U64) -> (&Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
@@ -201,10 +210,10 @@ def ixonDeserialize := ⟦
         },
       0 =>
         let (mode, s) = get_all_mode(stream);
-        let (uses, owned) = mode;
+        let (input, result) = mode;
         let (ty, s2) = get_expr(s);
         let (inner, s3) = get_all_telescope(s2, relaxed_u64_pred(count));
-        (store(Expr.All(uses, owned, ty, inner)), s3),
+        (store(Expr.All(input, result, ty, inner)), s3),
     }
   }
 
@@ -268,17 +277,17 @@ def ixonDeserialize := ⟦
           _ => get_app_telescope(func, s2, size),
         },
 
-      -- Lam: Tag4(0x8, count) + (uses, type)... + body
+      -- Lam: Tag4(0x8, count) + (contract, type)... + body
       0x8 =>
         assert_eq!(u64_is_zero(size), 0, "Lam with zero binders");
         get_lam_telescope(s, size),
 
-      -- All: Tag4(0x9, count) + (uses|owned<<2, type)... + body
+      -- All: Tag4(0x9, count) + (input|result<<4, type)... + body
       0x9 =>
         assert_eq!(u64_is_zero(size), 0, "All with zero binders");
         get_all_telescope(s, size),
 
-      -- Let: Tag4(0xA, non_dep) + expr(ty) + expr(val) + expr(body)
+      -- Let: Tag4(0xA, flags) + binder + expr(ty) + expr(val) + expr(body)
       0xA => get_expr_let(s, size),
 
       -- Share: Tag4(0xB, idx)
@@ -289,13 +298,17 @@ def ixonDeserialize := ⟦
   -- Let arm of get_expr, split out: three recursive `get_expr` calls make it the
   -- widest (and a rare) arm, so inlined it taxes every get_expr row.
   fn get_expr_let(s: ByteStream, size: U64) -> (&Expr, ByteStream) {
-    let is_dep = u64_eq(size, [0u8; 8]);
-    let is_non_dep = u64_eq(size, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    assert_eq!(is_dep + is_non_dep, 1, "invalid let nonDep flag");
-    let (ty, s2) = get_expr(s);
-    let (val, s3) = get_expr(s2);
-    let (body, s4) = get_expr(s3);
-    (store(Expr.Let(size, ty, val, body)), s4)
+    let [head, b1, b2, b3, b4, b5, b6, b7] = size;
+    assert_eq!(to_field(b1) + to_field(b2) + to_field(b3) + to_field(b4) +
+      to_field(b5) + to_field(b6) + to_field(b7), 0, "oversized let flags");
+    assert_eq!(u8_less_than(head, 4u8), 1, "reserved let flags");
+    let bits = u8_bit_decomposition(head);
+    let kind = match bits[1] { 0 => LetKind.Value, 1 => LetKind.BorrowShared, };
+    let (contract, s1) = get_lam_mode(s);
+    let (ty, s2) = get_expr(s1);
+    let (value, s3) = get_expr(s2);
+    let (body, rest) = get_expr(s3);
+    (store(Expr.Let(LetContract.Mk(bits[0], kind, contract), ty, value, body)), rest)
   }
 
 
@@ -505,6 +518,7 @@ def ixonDeserialize := ⟦
   --           Tag0(motives) + Tag0(minors) + expr(typ) + Tag0(rules_len) + rules...
   fn get_recursor(stream: ByteStream) -> (Recursor, ByteStream) {
     let (bools_byte, s) = read_byte(stream);
+    assert_eq!(u8_less_than(bools_byte, 4u8), 1, "invalid recursor flags");
     let bits = u8_bit_decomposition(bools_byte);
     let k = bits[0];
     let is_unsafe = bits[1];
@@ -589,6 +603,7 @@ def ixonDeserialize := ⟦
   --            expr(typ) + Tag0(ctors_len) + ctors...
   fn get_inductive(stream: ByteStream) -> (Inductive, ByteStream) {
     let (bools_byte, s) = read_byte(stream);
+    assert_wire_bool(bools_byte);
     let bits = u8_bit_decomposition(bools_byte);
     let is_unsafe = bits[0];
     let (lvls, s2) = get_tag0(s);

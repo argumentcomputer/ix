@@ -154,6 +154,9 @@ inductive Claim where
   | reveal   (comm : Address) (info : RevealConstantInfo)
   | contains (tree : Address) (const : Address)
   | catalog  (members content : Address) (assumptions : Option Address)
+  /-- Combined erased typing and resource admission of the complete addressed
+  environment under the profile committed by `profile`. -/
+  | resource (root profile : Address)
   deriving BEq, Repr, Inhabited
 
 -- ============================================================================
@@ -478,6 +481,7 @@ def VARIANT_CHECK_ENV_CLAIM  : UInt64 := 5
 def VARIANT_REVEAL_CLAIM     : UInt64 := 6
 def VARIANT_CONTAINS_CLAIM   : UInt64 := 7
 def VARIANT_CATALOG_CLAIM    : UInt64 := 8
+def VARIANT_RESOURCE_CLAIM   : UInt64 := 9
 
 def VARIANT_EVAL_PROOF       : UInt64 := 0
 def VARIANT_CHECK_PROOF      : UInt64 := 1
@@ -485,6 +489,7 @@ def VARIANT_CHECK_ENV_PROOF  : UInt64 := 2
 def VARIANT_REVEAL_PROOF     : UInt64 := 3
 def VARIANT_CONTAINS_PROOF   : UInt64 := 4
 def VARIANT_CATALOG_PROOF    : UInt64 := 5
+def VARIANT_RESOURCE_PROOF   : UInt64 := 6
 
 /-- Encode an `Option Address` as `[0x00]` (none) or `[0x01][addr:32]`
     (some). Mirrors `put_opt_addr` in src/ix/ixon/proof.rs. -/
@@ -498,39 +503,64 @@ def getOptAddr : GetM (Option Address) := do
   else if b == 0x01 then return some (← Serialize.get)
   else throw s!"getOptAddr: invalid tag {b}"
 
-def put : Claim → PutM Unit
+/-- Claim and proof payloads bind both the object format and the validator.
+0 is structural-v1, 1 is erased-lean-v1, 2 is resource-v1. -/
+def validatorForVariant (variant : UInt64) : UInt8 :=
+  if variant == VARIANT_REVEAL_CLAIM || variant == VARIANT_CONTAINS_CLAIM then 0
+  else if variant == VARIANT_RESOURCE_CLAIM then 2
+  else 1
+
+def variantOf : Claim → UInt64
+  | .eval .. => VARIANT_EVAL_CLAIM
+  | .check .. => VARIANT_CHECK_CLAIM
+  | .checkEnv .. => VARIANT_CHECK_ENV_CLAIM
+  | .reveal .. => VARIANT_REVEAL_CLAIM
+  | .contains .. => VARIANT_CONTAINS_CLAIM
+  | .catalog .. => VARIANT_CATALOG_CLAIM
+  | .resource .. => VARIANT_RESOURCE_CLAIM
+
+def putScope (validator : UInt8) : PutM Unit := do
+  putU8 3
+  putU8 validator
+
+def getScope (validator : UInt8) : GetM Unit := do
+  unless (← getU8) == 3 do throw "claim: unsupported object format"
+  unless (← getU8) == validator do throw "claim: wrong validator identity"
+
+def put (claim : Claim) : PutM Unit := do
+  putTag4 ⟨FLAG_CLAIM, variantOf claim⟩
+  putScope (validatorForVariant (variantOf claim))
+  match claim with
   | .eval input output assumptions => do
-    putTag4 ⟨FLAG_CLAIM, VARIANT_EVAL_CLAIM⟩
     Serialize.put input
     Serialize.put output
     putOptAddr assumptions
   | .check const assumptions => do
-    putTag4 ⟨FLAG_CLAIM, VARIANT_CHECK_CLAIM⟩
     Serialize.put const
     putOptAddr assumptions
   | .checkEnv root assumptions => do
-    putTag4 ⟨FLAG_CLAIM, VARIANT_CHECK_ENV_CLAIM⟩
     Serialize.put root
     putOptAddr assumptions
   | .reveal comm info => do
-    putTag4 ⟨FLAG_CLAIM, VARIANT_REVEAL_CLAIM⟩
     Serialize.put comm
     RevealConstantInfo.put info
   | .contains tree const => do
-    putTag4 ⟨FLAG_CLAIM, VARIANT_CONTAINS_CLAIM⟩
     Serialize.put tree
     Serialize.put const
   | .catalog members content assumptions => do
     -- First multi-byte claim tag: 0xE8 0x08 on the wire.
-    putTag4 ⟨FLAG_CLAIM, VARIANT_CATALOG_CLAIM⟩
     Serialize.put members
     Serialize.put content
     putOptAddr assumptions
+  | .resource root profile => do
+    Serialize.put root
+    Serialize.put profile
 
 def get : GetM Claim := do
   let tag ← getTag4
   if tag.flag != FLAG_CLAIM then
     throw s!"Claim.get: expected flag 0xE, got {tag.flag}"
+  getScope (validatorForVariant tag.size)
   if tag.size == VARIANT_EVAL_CLAIM then
     let input ← Serialize.get
     let output ← Serialize.get
@@ -553,10 +583,13 @@ def get : GetM Claim := do
     let content ← Serialize.get
     let asm ← getOptAddr
     return .catalog members content asm
+  else if tag.size == VARIANT_RESOURCE_CLAIM then
+    return .resource (← Serialize.get) (← Serialize.get)
   else
     throw s!"Claim.get: invalid claim variant {tag.size}"
 
 def ser (c : Claim) : ByteArray := runPut (put c)
+def de (bytes : ByteArray) : Except String Claim := runGetExact get bytes
 def commit (c : Claim) : Address := Address.blake3 (ser c)
 
 instance : ToString Claim where
@@ -567,6 +600,7 @@ instance : ToString Claim where
     | .reveal comm info => s!"Reveal({comm}, {repr info})"
     | .contains t c => s!"Contains({t}, {c})"
     | .catalog m c asm => s!"Catalog({m}, {c}, {asm})"
+    | .resource root profile => s!"Resource({root}, {profile})"
 
 end Claim
 
@@ -596,9 +630,11 @@ def variantOf : Ix.Claim → UInt64
   | .reveal _ _     => Ix.Claim.VARIANT_REVEAL_PROOF
   | .contains _ _   => Ix.Claim.VARIANT_CONTAINS_PROOF
   | .catalog _ _ _  => Ix.Claim.VARIANT_CATALOG_PROOF
+  | .resource _ _   => Ix.Claim.VARIANT_RESOURCE_PROOF
 
 def put (p : Proof) : PutM Unit := do
   putTag4 ⟨Ix.Claim.FLAG_PROOF, variantOf p.claim⟩
+  Ix.Claim.putScope (Ix.Claim.validatorForVariant (Ix.Claim.variantOf p.claim))
   match p.claim with
   | .eval input output asm => do
     Serialize.put input
@@ -620,6 +656,9 @@ def put (p : Proof) : PutM Unit := do
     Serialize.put members
     Serialize.put content
     Ix.Claim.putOptAddr asm
+  | .resource root profile => do
+    Serialize.put root
+    Serialize.put profile
   putTag0 ⟨p.proof.size.toUInt64⟩
   putBytes p.proof
 
@@ -627,6 +666,7 @@ def get : GetM Proof := do
   let tag ← getTag4
   if tag.flag != Ix.Claim.FLAG_PROOF then
     throw s!"Ixon.Proof.get: expected flag 0xF, got {tag.flag}"
+  Ix.Claim.getScope (Ix.Claim.validatorForVariant (tag.size + 3))
   let claim : Ix.Claim ←
     if tag.size == Ix.Claim.VARIANT_EVAL_PROOF then do
       let input ← Serialize.get
@@ -654,6 +694,8 @@ def get : GetM Proof := do
       let content ← Serialize.get
       let asm ← Ix.Claim.getOptAddr
       pure (.catalog members content asm)
+    else if tag.size == Ix.Claim.VARIANT_RESOURCE_PROOF then do
+      pure (.resource (← Serialize.get) (← Serialize.get))
     else
       throw s!"Ixon.Proof.get: invalid proof variant {tag.size}"
   let lenTag ← getTag0
@@ -661,10 +703,11 @@ def get : GetM Proof := do
   pure { claim, proof := bytes }
 
 def ser (p : Proof) : ByteArray := runPut (put p)
-def de (bytes : ByteArray) : Except String Proof := runGet get bytes
+def de (bytes : ByteArray) : Except String Proof := runGetExact get bytes
 
 end Proof
 
 end Ixon
 
 end
+

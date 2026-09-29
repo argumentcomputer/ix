@@ -32,7 +32,7 @@ impl LeanIxName<LeanOwned> {
       },
       NameData::Str(parent, s, h) => {
         let parent_obj = Self::build(cache, parent);
-        let s_obj = LeanString::new(s.as_str());
+        let s_obj = LeanString::from_bytes(s.as_bytes());
         let ctor = LeanIxName::alloc(1);
         ctor.set_obj(0, parent_obj);
         ctor.set_obj(1, s_obj);

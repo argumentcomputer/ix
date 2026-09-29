@@ -1,5 +1,5 @@
-// Diagnostic env-var helpers. zkVM std targets (`target_os = "zkvm"` — Zisk,
-// SP1, risc0, …) return `Ok` from `std::env::var` for any key (no real env
+// Diagnostic env-var helpers. Some zkVM standard libraries return `Ok`
+// from `std::env::var` for any key (no real env
 // in the guest), so every `IX_*` flag fires "on" by default and runs
 // expensive diagnostic code paths whose output the guest can't even surface.
 // These wrappers short-circuit to "not present" on any zkVM target and
@@ -145,6 +145,7 @@ pub mod id;
 pub mod inductive;
 pub mod infer;
 pub mod ingress;
+pub mod ixon_checker;
 pub mod lctx;
 pub mod level;
 pub mod mode;
@@ -161,6 +162,7 @@ pub mod primitive;
 // host-only partitioner — it uses rayon + `std::time` (gated to the same
 // non-riscv targets that supply those deps), and the guest never partitions.
 pub mod profile;
+pub mod resource;
 #[cfg(not(target_arch = "riscv64"))]
 pub mod shard;
 pub mod subst;

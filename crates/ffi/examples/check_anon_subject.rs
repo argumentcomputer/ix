@@ -33,10 +33,7 @@ use std::{
 use ix_common::address::Address;
 use ix_kernel::{
   anon_work::{AnonWorkItem, build_anon_work},
-  env::KEnv,
-  id::KId,
-  mode::Anon,
-  tc::TypeChecker,
+  ixon_checker::IxonChecker,
 };
 use ixon::env::Env;
 
@@ -132,45 +129,37 @@ fn check(path: &str, primary: &Address) -> Result<bool, String> {
     ix_kernel::tc::max_rec_fuel(),
     start.elapsed().as_secs_f64()
   );
-  let mut kenv = KEnv::<Anon>::new();
+  let mut checker = IxonChecker::new(&env);
+  checker.set_debug_label(format!("#{}", primary.hex()));
   let _ = ix_kernel::profile::take_op_counts();
   ix_kernel::perf::same_head::reset();
   let start = Instant::now();
-  let (result, last_member_fuel, peak_def_eq_depth, hot_misses) = {
-    let mut tc = TypeChecker::new_with_lazy_anon(&mut kenv, &env);
-    tc.set_debug_label(format!("#{}", primary.hex()));
-    let result = tc.check_const(&KId::new(primary.clone(), ()));
-    let fuel = tc.fuel_used();
-    let peak = tc.def_eq_peak;
-    // TypeChecker has no Drop accounting. Flush the final member explicitly,
-    // after capturing its allowance and before discarding the checker.
-    tc.finish_constant_accounting();
-    (result, fuel, peak, tc.hot_miss_summary())
-  };
+  let result = checker.check_const(primary);
+  let stats = checker.last_check();
   let check_secs = start.elapsed().as_secs_f64();
   let ops = ix_kernel::profile::take_op_counts();
   let aggregate_fuel = ix_kernel::perf::enabled()
-    .then(|| kenv.perf.total_rec_fuel_used.load(Ordering::Relaxed));
+    .then(|| checker.perf().total_rec_fuel_used.load(Ordering::Relaxed));
   let report = serde_json::json!({
     "primary": primary.hex(), "scope": "subject-only", "targets": targets,
     "passed": result.is_ok(), "error": result.as_ref().err().map(ToString::to_string),
     "load_secs": load_secs, "check_secs": check_secs,
     "fuel_cap_per_member": ix_kernel::tc::max_rec_fuel(),
-    "last_member_fuel": last_member_fuel,
+    "last_member_fuel": stats.fuel_used,
     // Null unless IX_PERF_COUNTERS is enabled; do not label the final member's
     // budget as the total fuel of a multi-member work item.
-    "aggregate_fuel": aggregate_fuel, "last_member_def_eq_peak": peak_def_eq_depth,
+    "aggregate_fuel": aggregate_fuel, "last_member_def_eq_peak": stats.def_eq_peak,
     "subst": ops.subst_nodes, "whnf": ops.whnf_calls,
     "def_eq": ops.def_eq_calls, "intern": ops.intern_nodes,
     "nat_arith": ops.nat_arith,
   });
   println!("{report}");
-  eprint!("{hot_misses}");
+  eprint!("{}", stats.hot_misses);
   eprint!("{}", ix_kernel::perf::same_head::summary());
   if ix_kernel::perf::enabled() {
     // The example does not install a log backend, so KEnv's log::info!
     // drop summary would otherwise be invisible. No checker work is rerun.
-    eprint!("{}", kenv.perf.summary());
+    eprint!("{}", checker.perf().summary());
   }
   if ix_kernel::perf::reduce_histo_enabled() {
     print_reductions(

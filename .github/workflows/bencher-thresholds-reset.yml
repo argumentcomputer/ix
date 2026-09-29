@@ -21,8 +21,8 @@ name: Bencher thresholds reset
 #     Triage+ collaborator can queue a reset by applying the label directly, and
 #     cancel by removing it before merge. Naming convention: one label per token,
 #     `bencher-thresholds-reset:<token>` where <token> is a workload (a backend
-#     testbed in Ix/Cli/BenchCmd.lean (backendSpecs) minus its runner-arch suffix:
-#     `ix-compile`, `ix-decompile`, `aiur`, `zisk-check-execute`, `sp1-check-execute`, `ooc-check`) or
+#     testbed stem in Ix/Cli/BenchCmd.lean (backendSpecs):
+#     `ix-compile`, `ix-decompile`, `aiur`, `ooc-check`) or
 #     `all` (the merge step expands an `all` label into every workload). Labeling
 #     requires Triage+, so PR authors from forks cannot self-queue a reset. The
 #     label shares the command/workflow name; the ref it moves is
@@ -30,10 +30,10 @@ name: Bencher thresholds reset
 #   - workflow_dispatch: reset the chosen workload at a given commit (default
 #     HEAD); does not read PR contents. For ad-hoc or bootstrap resets.
 #
-# pull_request_target / issue_comment both run in the base-repo context with a
-# write token (works for fork PRs too). Safe here because the jobs run no
-# PR-provided code — only `gh` calls against the trusted event payload, with the
-# comment body used purely as data (never evaluated).
+# `pull_request` rather than `pull_request_target`: same-repo PRs already get
+# a write-capable token on merge, and fork PRs are not supported (bench-pr.yml
+# refuses them too). The jobs run no PR-provided code — only `gh` calls against
+# the event payload, with the comment body used purely as data.
 on:
   workflow_dispatch:
     inputs:
@@ -44,26 +44,27 @@ on:
         # GitHub requires literal choice options, so this list stays static:
         # keep it (and the jobs' valid= lists below) in sync with the
         # backend testbeds in Ix/Cli/BenchCmd.lean (backendSpecs).
-        options: [ix-compile, ix-decompile, aiur, aiur-sharded-env-check, zisk-check-execute, sp1-check-execute, ooc-check, all]
+        options: [ix-compile, ix-decompile, aiur, aiur-sharded-env-check, ooc-check, all]
       sha:
         description: "Commit to anchor to (default: HEAD)"
         required: false
-  pull_request_target:
+  pull_request:
     types: [closed]
   issue_comment:
     types: [created]
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write # ack creates/applies the bencher-thresholds-reset:<workload> label
+permissions: {}
 
 jobs:
   reset:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       EVENT: ${{ github.event_name }}
       INPUT_WORKLOAD: ${{ inputs.workload }}
@@ -74,10 +75,10 @@ jobs:
     steps:
       - run: |
           # Workload registry: the backend testbeds in Ix/Cli/BenchCmd.lean
-          # (backendSpecs) minus the runner-arch suffix. Static because this
+          # (backendSpecs), before its hardware suffix. Static because this
           # job runs on a cheap runner with no built `ix`; keep in sync when
           # adding a backend.
-          valid="aiur aiur-sharded-env-check ix-compile ix-decompile ooc-check sp1-check-execute zisk-check-execute"
+          valid="aiur aiur-sharded-env-check ix-compile ix-decompile ooc-check"
           if [ "$EVENT" = workflow_dispatch ]; then
             # Reset the chosen workload(s) at the given commit; no PR scan.
             sha="${INPUT_SHA:-$HEAD_SHA}"
@@ -111,7 +112,7 @@ jobs:
           [ -z "$done_list" ] && { echo "Nothing to reset."; exit 0; }
 
           # Confirm on the PR for the merge-triggered path.
-          [ "$EVENT" = pull_request_target ] && gh pr comment "$PR" --repo "$REPO" \
+          [ "$EVENT" = pull_request ] && gh pr comment "$PR" --repo "$REPO" \
             --body "♻️ Baseline reset to \`${sha:0:7}\` for:$done_list"
           true
 
@@ -122,8 +123,11 @@ jobs:
   ack:
     if: github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.issue.state == 'open' && github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, '!bencher-thresholds-reset') && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       PR: ${{ github.event.issue.number }}
       BODY: ${{ github.event.comment.body }}
@@ -133,7 +137,7 @@ jobs:
           # which the merge job expands into every workload). Same static
           # list as the reset job; keep both in sync with backendSpecs in
           # Ix/Cli/BenchCmd.lean.
-          valid="aiur aiur-sharded-env-check ix-compile ix-decompile ooc-check sp1-check-execute zisk-check-execute"
+          valid="aiur aiur-sharded-env-check ix-compile ix-decompile ooc-check"
           accepted="$valid all"
           # Parse the workload token(s) after the command, lowercased.
           workloads=$(printf '%s' "$BODY" \

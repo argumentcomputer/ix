@@ -142,7 +142,7 @@ pub fn encode_name(cache: &mut LeanEncodeCache, name: &Name) -> LeanOwned {
     NameData::Anonymous(_) => unreachable!("handled above"),
     NameData::Str(parent, s, _) => {
       let parent = encode_name(cache, parent);
-      let part = LeanString::new(s);
+      let part = LeanString::from_bytes(s.as_bytes());
       unsafe {
         LeanOwned::from_raw(lean_name_mk_string(
           parent.into_raw(),
@@ -214,7 +214,7 @@ pub fn encode_level(cache: &mut LeanEncodeCache, level: &Level) -> LeanOwned {
 
 fn encode_substring(s: &Substring) -> LeanOwned {
   let obj = LeanIxSubstring::alloc(0);
-  obj.set_obj(0, LeanString::new(&s.str));
+  obj.set_obj(0, LeanString::from_bytes(s.str.as_bytes()));
   obj.set_obj(1, LeanNat::from_nat(&s.start_pos));
   obj.set_obj(2, LeanNat::from_nat(&s.stop_pos));
   obj.into()
@@ -256,7 +256,10 @@ fn encode_syntax_preresolved(
       obj.set_obj(0, encode_name(cache, name));
       obj.set_obj(
         1,
-        fields.iter().map(|f| LeanString::new(f)).collect::<LeanList<_>>(),
+        fields
+          .iter()
+          .map(|f| LeanString::from_bytes(f.as_bytes()))
+          .collect::<LeanList<_>>(),
       );
       obj.into()
     },
@@ -280,7 +283,7 @@ fn encode_syntax(cache: &mut LeanEncodeCache, syn: &Syntax) -> LeanOwned {
     Syntax::Atom(info, val) => {
       let obj = LeanIxSyntax::alloc(2);
       obj.set_obj(0, encode_source_info(info));
-      obj.set_obj(1, LeanString::new(val));
+      obj.set_obj(1, LeanString::from_bytes(val.as_bytes()));
       obj.into()
     },
     Syntax::Ident(info, raw_val, val, preresolved) => {
@@ -307,7 +310,7 @@ fn encode_data_value(
   Ok(match dv {
     DataValue::OfString(s) => {
       let obj = LeanIxDataValue::alloc(0);
-      obj.set_obj(0, LeanString::new(s));
+      obj.set_obj(0, LeanString::from_bytes(s.as_bytes()));
       obj.into()
     },
     DataValue::OfBool(b) => {
@@ -364,8 +367,9 @@ fn encode_literal(lit: &Literal) -> LeanOwned {
       obj.into()
     },
     Literal::StrVal(s) => {
+      // Source strings may contain NULs; the C-string constructor drops them.
       let obj = LeanIxLiteral::alloc(1);
-      obj.set_obj(0, LeanString::new(s));
+      obj.set_obj(0, LeanString::from_bytes(s.as_bytes()));
       obj.into()
     },
   }

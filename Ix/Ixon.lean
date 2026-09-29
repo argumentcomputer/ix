@@ -9,7 +9,7 @@ module
 public import Ix.Address
 public import Ix.Common
 public import Ix.Environment
-public import Ix.IxonMode
+public import Ix.IxonContract
 public import Ix.Ixon.Codec
 public import Ix.Merkle
 
@@ -1306,7 +1306,7 @@ structure RawEnv where
 namespace RawEnv
 
 /-- Recursively add all name components to the names map.
-    Uses Ix.Name.getHash for address computation. -/
+    BinderContract Ix.Name.getHash for address computation. -/
 partial def addNameComponents (names : Std.HashMap Address Ix.Name) (name : Ix.Name) : Std.HashMap Address Ix.Name :=
   let addr := name.getHash
   if names.contains addr then names
@@ -1397,7 +1397,7 @@ def FLAG : UInt8 := 0xE
     mismatch and there is no back-compat reading of old versions —
     `.ixe` files are regenerated artifacts. Mirrors Rust
     `Env::VERSION` in `crates/ixon/src/serialize.rs`. -/
-def VERSION : UInt64 := 2
+def VERSION : UInt64 := 3
 
 /-- Serialize a name component (references parent by address).
     Format: tag (1 byte) + parent_addr (32 bytes) + data -/

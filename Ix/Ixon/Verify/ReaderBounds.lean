@@ -172,12 +172,45 @@ theorem getU64TrimmedLE_bound (count : Nat) :
   · exact throw_bound _ _
   · simpa using getU64TrimmedLEAux_bound count
 
+/-- Ixon v3's canonical-width check: a rejected integer stops the read. -/
+theorem reject_bound (bad : Bool) (reason : String) (value : α) :
+    ReaderBound (if bad = true then (throw reason : GetM PUnit) >>= (fun _ => pure value)
+      else pure value) (fun _ => 0) := by
+  cases bad
+  · exact pure_bound value
+  · exact (throw_bound reason (fun _ => 0)).bind (fun _ => pure_bound value) (fun _ => 0)
+      (fun _ _ => by omega)
+
+/-- `checkCount` reads the cursor and consumes nothing. -/
+theorem checkCount_bound (count : UInt64) (minBytes : Nat) :
+    ReaderBound (checkCount count minBytes) (fun _ => 0) := by
+  intro start finish value valid read
+  unfold checkCount at read
+  change (EStateM.bind EStateM.get _) start = _ at read
+  simp only [EStateM.bind, EStateM.get] at read
+  split at read
+  · cases read
+  · cases read
+    exact Span.refl start valid
+
+theorem getBinderContract_bound : ReaderBound getBinderContract (fun _ => 2) := by
+  intro start finish value valid read
+  unfold getBinderContract at read
+  obtain ⟨bits, middle, bitsRead, read⟩ := bind_ok.mp read
+  have bitsSpan := getU8_bound _ _ _ valid bitsRead
+  cases decoded : BinderContract.ofBits? bits with
+  | none => simp only [decoded] at read; cases read
+  | some contract =>
+    simp only [decoded] at read
+    cases read
+    exact bitsSpan
+
 theorem getTag0_bound : ReaderBound getTag0 (fun _ => 2) := by
   unfold getTag0
   apply getU8_bound.bind (rightUnits := fun _ _ => 0) (fun byte => ?_) _ (fun _ _ => by omega)
   by_cases large : (byte &&& 128 != 0) = true
   · simp only [large, if_true]
-    exact (getU64TrimmedLE_bound _).bind (fun value => pure_bound (Tag0.mk value))
+    exact (getU64TrimmedLE_bound _).bind (fun value => reject_bound _ _ (Tag0.mk value))
       (fun _ => 0) (fun _ _ => by omega)
   · simp only [large]
     exact (pure_bound _).bind (fun value => pure_bound (Tag0.mk value))
@@ -188,7 +221,7 @@ theorem getTag2_bound : ReaderBound getTag2 (fun _ => 2) := by
   apply getU8_bound.bind (rightUnits := fun _ _ => 0) (fun byte => ?_) _ (fun _ _ => by omega)
   by_cases large : (byte &&& 32 != 0) = true
   · simp only [large, if_true]
-    exact (getU64TrimmedLE_bound _).bind (fun value => pure_bound (Tag2.mk _ value))
+    exact (getU64TrimmedLE_bound _).bind (fun value => reject_bound _ _ (Tag2.mk _ value))
       (fun _ => 0) (fun _ _ => by omega)
   · simp only [large]
     exact (pure_bound _).bind (fun value => pure_bound (Tag2.mk _ value))
@@ -199,7 +232,7 @@ theorem getTag4_bound : ReaderBound getTag4 (fun _ => 2) := by
   apply getU8_bound.bind (rightUnits := fun _ _ => 0) (fun byte => ?_) _ (fun _ _ => by omega)
   by_cases large : (byte &&& 8 != 0) = true
   · simp only [large, if_true]
-    exact (getU64TrimmedLE_bound _).bind (fun value => pure_bound (Tag4.mk _ value))
+    exact (getU64TrimmedLE_bound _).bind (fun value => reject_bound _ _ (Tag4.mk _ value))
       (fun _ => 0) (fun _ _ => by omega)
   · simp only [large]
     exact (pure_bound _).bind (fun value => pure_bound (Tag4.mk _ value))
@@ -339,13 +372,13 @@ theorem getExprAppArgs_spec (recur : GetM Expr)
     simp only [Expr.resourceSize] at larger tailSpan
     exact ⟨by omega, (argSpan.trans tailSpan).weaken (by dsimp; omega)⟩
 
-def lamUnits (binders : List (Uses × Expr)) : Nat :=
+def lamUnits (binders : List (BinderContract × Expr)) : Nat :=
   (binders.map (fun binder => binder.2.resourceSize + 1)).sum
 
-def allUnits (binders : List (Uses × Owned × Expr)) : Nat :=
+def allUnits (binders : List (BinderContract × ValueContract × Expr)) : Nat :=
   (binders.map (fun binder => binder.2.2.resourceSize + 1)).sum
 
-theorem lamUnits_fold (binders : List (Uses × Expr)) (body : Expr) :
+theorem lamUnits_fold (binders : List (BinderContract × Expr)) (body : Expr) :
     (binders.foldr (fun (uses, type) rest => .lam uses type rest) body).resourceSize =
       lamUnits binders + body.resourceSize := by
   induction binders with
@@ -354,7 +387,7 @@ theorem lamUnits_fold (binders : List (Uses × Expr)) (body : Expr) :
     simp only [List.foldr_cons, Expr.resourceSize, ih, lamUnits, List.map_cons, List.sum_cons]
     omega
 
-theorem allUnits_fold (binders : List (Uses × Owned × Expr)) (body : Expr) :
+theorem allUnits_fold (binders : List (BinderContract × ValueContract × Expr)) (body : Expr) :
     (binders.foldr (fun (uses, owned, type) rest => .all uses owned type rest) body).resourceSize =
       allUnits binders + body.resourceSize := by
   induction binders with
@@ -374,19 +407,15 @@ theorem getExprLamBinders_bound (recur : GetM Expr)
   | succ count ih =>
     intro start finish values valid read
     rw [getExprLamBinders] at read
-    obtain ⟨mode, modeState, modeRead, read⟩ := bind_ok.mp read
-    have modeSpan := getU8_bound _ _ _ valid modeRead
-    cases decoded : Uses.ofBits? mode with
-    | none => simp only [decoded] at read; cases read
-    | some uses =>
-      simp only [decoded] at read
-      obtain ⟨type, typeState, typeRead, read⟩ := bind_ok.mp read
-      have typeSpan := bound _ _ _ modeSpan.valid typeRead
-      obtain ⟨tail, final, tailRead, result⟩ := bind_ok.mp read
-      have tailSpan := ih _ _ _ typeSpan.valid tailRead
-      change EStateM.Result.ok _ _ = .ok values finish at result
-      cases result
-      exact ((modeSpan.trans typeSpan).trans tailSpan).weaken (by simp [lamUnits])
+    obtain ⟨contract, modeState, modeRead, read⟩ := bind_ok.mp read
+    have modeSpan := getBinderContract_bound _ _ _ valid modeRead
+    obtain ⟨type, typeState, typeRead, read⟩ := bind_ok.mp read
+    have typeSpan := bound _ _ _ modeSpan.valid typeRead
+    obtain ⟨tail, final, tailRead, result⟩ := bind_ok.mp read
+    have tailSpan := ih _ _ _ typeSpan.valid tailRead
+    change EStateM.Result.ok _ _ = .ok values finish at result
+    cases result
+    exact ((modeSpan.trans typeSpan).trans tailSpan).weaken (by simp [lamUnits])
 
 theorem getExprAllBinders_bound (recur : GetM Expr)
     (bound : ReaderBound recur (fun e => e.resourceSize + 1)) (count : Nat) :
@@ -399,27 +428,20 @@ theorem getExprAllBinders_bound (recur : GetM Expr)
   | succ count ih =>
     intro start finish values valid read
     rw [getExprAllBinders] at read
-    obtain ⟨mode, modeState, modeRead, read⟩ := bind_ok.mp read
+    obtain ⟨bits, modeState, modeRead, read⟩ := bind_ok.mp read
     have modeSpan := getU8_bound _ _ _ valid modeRead
-    by_cases badMode : mode > 7
-    · simp only [if_pos badMode] at read
-      cases read
-    · simp only [if_neg badMode] at read
-      cases decoded : Uses.ofBits? (mode &&& 0x03) with
-      | none => simp only [decoded] at read; cases read
-      | some uses =>
-        simp only [decoded] at read
-        cases decodedOwned : Owned.ofBits? ((mode >>> 2) &&& 0x01) with
-        | none => simp only [decodedOwned] at read; cases read
-        | some owned =>
-          simp only [decodedOwned] at read
-          obtain ⟨type, typeState, typeRead, read⟩ := bind_ok.mp read
-          have typeSpan := bound _ _ _ modeSpan.valid typeRead
-          obtain ⟨tail, final, tailRead, result⟩ := bind_ok.mp read
-          have tailSpan := ih _ _ _ typeSpan.valid tailRead
-          change EStateM.Result.ok _ _ = .ok values finish at result
-          cases result
-          exact ((modeSpan.trans typeSpan).trans tailSpan).weaken (by simp [allUnits])
+    cases decoded : unpackAllContract? bits with
+    | none => simp only [decoded] at read; cases read
+    | some contracts =>
+      rcases contracts with ⟨contract, result⟩
+      simp only [decoded] at read
+      obtain ⟨type, typeState, typeRead, read⟩ := bind_ok.mp read
+      have typeSpan := bound _ _ _ modeSpan.valid typeRead
+      obtain ⟨tail, final, tailRead, result⟩ := bind_ok.mp read
+      have tailSpan := ih _ _ _ typeSpan.valid tailRead
+      change EStateM.Result.ok _ _ = .ok values finish at result
+      cases result
+      exact ((modeSpan.trans typeSpan).trans tailSpan).weaken (by simp [allUnits])
 
 theorem getExprFromTag_bound (recur : GetM Expr)
     (bound : ReaderBound recur (fun e => e.resourceSize + 1)) (tag : Tag4) :
@@ -437,20 +459,26 @@ theorem getExprFromTag_bound (recur : GetM Expr)
   · simp only [getExprFromTag, refTag] at read
     obtain ⟨index, middle, indexRead, read⟩ := bind_ok.mp read
     have indexSpan := getTag0_bound _ _ _ valid indexRead
+    obtain ⟨_, checked, checkRead, read⟩ := bind_ok.mp read
+    have checkSpan := checkCount_bound _ _ _ _ _ indexSpan.valid checkRead
     obtain ⟨levels, final, levelsRead, result⟩ := bind_ok.mp read
-    obtain ⟨length, levelsSpan⟩ := getTag0Sizes_spec _ _ _ _ indexSpan.valid levelsRead
+    obtain ⟨length, levelsSpan⟩ := getTag0Sizes_spec _ _ _ _ checkSpan.valid levelsRead
     change EStateM.Result.ok _ _ = .ok value finish at result
     cases result
-    exact (indexSpan.trans levelsSpan).weaken (by simp [Expr.resourceSize, length]; omega)
+    exact ((indexSpan.trans checkSpan).trans levelsSpan).weaken
+      (by simp [Expr.resourceSize, length]; omega)
   by_cases recurTag : tag.flag = 3
   · simp only [getExprFromTag, recurTag] at read
     obtain ⟨index, middle, indexRead, read⟩ := bind_ok.mp read
     have indexSpan := getTag0_bound _ _ _ valid indexRead
+    obtain ⟨_, checked, checkRead, read⟩ := bind_ok.mp read
+    have checkSpan := checkCount_bound _ _ _ _ _ indexSpan.valid checkRead
     obtain ⟨levels, final, levelsRead, result⟩ := bind_ok.mp read
-    obtain ⟨length, levelsSpan⟩ := getTag0Sizes_spec _ _ _ _ indexSpan.valid levelsRead
+    obtain ⟨length, levelsSpan⟩ := getTag0Sizes_spec _ _ _ _ checkSpan.valid levelsRead
     change EStateM.Result.ok _ _ = .ok value finish at result
     cases result
-    exact (indexSpan.trans levelsSpan).weaken (by simp [Expr.resourceSize, length]; omega)
+    exact ((indexSpan.trans checkSpan).trans levelsSpan).weaken
+      (by simp [Expr.resourceSize, length]; omega)
   by_cases projectionTag : tag.flag = 4
   · simp only [getExprFromTag, projectionTag] at read
     obtain ⟨index, middle, indexRead, read⟩ := bind_ok.mp read
@@ -474,57 +502,72 @@ theorem getExprFromTag_bound (recur : GetM Expr)
     · simp only [if_pos empty] at read
       cases read
     · simp only [if_neg empty] at read
+      obtain ⟨_, checked, checkRead, read⟩ := bind_ok.mp read
+      have checkSpan := checkCount_bound _ _ _ _ _ valid checkRead
       obtain ⟨base, middle, baseRead, read⟩ := bind_ok.mp read
-      have baseSpan := bound _ _ _ valid baseRead
+      have baseSpan := bound _ _ _ checkSpan.valid baseRead
       have argsRead : getExprAppArgs recur tag.size.toNat base middle = .ok value finish := by
         cases base <;> first | exact read | cases read
       obtain ⟨larger, argsSpan⟩ := getExprAppArgs_spec _ bound _ _ _ _ _ baseSpan.valid argsRead
-      exact (baseSpan.trans argsSpan).weaken (by dsimp; omega)
+      exact ((checkSpan.trans baseSpan).trans argsSpan).weaken (by dsimp; omega)
   by_cases lamTag : tag.flag = 8
   · simp only [getExprFromTag, lamTag] at read
     by_cases empty : (tag.size == 0) = true
     · simp only [if_pos empty] at read
       cases read
     · simp only [if_neg empty] at read
+      obtain ⟨_, checked, checkRead, read⟩ := bind_ok.mp read
+      have checkSpan := checkCount_bound _ _ _ _ _ valid checkRead
       obtain ⟨binders, middle, bindersRead, read⟩ := bind_ok.mp read
-      have bindersSpan := getExprLamBinders_bound _ bound _ _ _ _ valid bindersRead
+      have bindersSpan := getExprLamBinders_bound _ bound _ _ _ _ checkSpan.valid bindersRead
       obtain ⟨body, final, bodyRead, result⟩ := bind_ok.mp read
       have bodySpan := bound _ _ _ bindersSpan.valid bodyRead
       have same : value = binders.foldr (fun (uses, type) rest => .lam uses type rest) body ∧
           finish = final := by
         cases body <;> cases result <;> exact ⟨rfl, rfl⟩
       rcases same with ⟨rfl, rfl⟩
-      exact (bindersSpan.trans bodySpan).weaken (by dsimp only; rw [lamUnits_fold]; omega)
+      exact ((checkSpan.trans bindersSpan).trans bodySpan).weaken
+        (by dsimp only; rw [lamUnits_fold]; omega)
   by_cases allTag : tag.flag = 9
   · simp only [getExprFromTag, allTag] at read
     by_cases empty : (tag.size == 0) = true
     · simp only [if_pos empty] at read
       cases read
     · simp only [if_neg empty] at read
+      obtain ⟨_, checked, checkRead, read⟩ := bind_ok.mp read
+      have checkSpan := checkCount_bound _ _ _ _ _ valid checkRead
       obtain ⟨binders, middle, bindersRead, read⟩ := bind_ok.mp read
-      have bindersSpan := getExprAllBinders_bound _ bound _ _ _ _ valid bindersRead
+      have bindersSpan := getExprAllBinders_bound _ bound _ _ _ _ checkSpan.valid bindersRead
       obtain ⟨body, final, bodyRead, result⟩ := bind_ok.mp read
       have bodySpan := bound _ _ _ bindersSpan.valid bodyRead
       have same : value = binders.foldr (fun (uses, owned, type) rest => .all uses owned type rest) body ∧
           finish = final := by
         cases body <;> cases result <;> exact ⟨rfl, rfl⟩
       rcases same with ⟨rfl, rfl⟩
-      exact (bindersSpan.trans bodySpan).weaken (by dsimp only; rw [allUnits_fold]; omega)
+      exact ((checkSpan.trans bindersSpan).trans bodySpan).weaken
+        (by dsimp only; rw [allUnits_fold]; omega)
   by_cases letTag : tag.flag = 10
   · simp only [getExprFromTag, letTag] at read
-    by_cases badMode : tag.size > 1
-    · simp only [if_pos badMode] at read
+    by_cases badFlags : tag.size > 3
+    · simp only [if_pos badFlags] at read
       cases read
-    · simp only [if_neg badMode] at read
-      obtain ⟨type, typeState, typeRead, read⟩ := bind_ok.mp read
-      have typeSpan := bound _ _ _ valid typeRead
-      obtain ⟨inner, innerState, innerRead, read⟩ := bind_ok.mp read
-      have innerSpan := bound _ _ _ typeSpan.valid innerRead
-      obtain ⟨body, final, bodyRead, result⟩ := bind_ok.mp read
-      have bodySpan := bound _ _ _ innerSpan.valid bodyRead
-      change EStateM.Result.ok _ _ = .ok value finish at result
-      cases result
-      exact ((typeSpan.trans innerSpan).trans bodySpan).weaken (by simp [Expr.resourceSize]; omega)
+    · simp only [if_neg badFlags] at read
+      obtain ⟨binder, binderState, binderRead, read⟩ := bind_ok.mp read
+      have binderSpan := getBinderContract_bound _ _ _ valid binderRead
+      cases decoded : LetContract.ofFlags? tag.size binder with
+      | none => simp only [decoded] at read; cases read
+      | some contract =>
+        simp only [decoded] at read
+        obtain ⟨type, typeState, typeRead, read⟩ := bind_ok.mp read
+        have typeSpan := bound _ _ _ binderSpan.valid typeRead
+        obtain ⟨inner, innerState, innerRead, read⟩ := bind_ok.mp read
+        have innerSpan := bound _ _ _ typeSpan.valid innerRead
+        obtain ⟨body, final, bodyRead, result⟩ := bind_ok.mp read
+        have bodySpan := bound _ _ _ innerSpan.valid bodyRead
+        change EStateM.Result.ok _ _ = .ok value finish at result
+        cases result
+        exact (((binderSpan.trans typeSpan).trans innerSpan).trans bodySpan).weaken
+          (by simp [Expr.resourceSize]; omega)
   by_cases shareTag : tag.flag = 11
   · simp only [getExprFromTag, shareTag] at read
     cases read

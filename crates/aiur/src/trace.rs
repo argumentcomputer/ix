@@ -20,11 +20,11 @@ use crate::{
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
-  querymap::QueryRef,
-  u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
-  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
-  u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  querymap::QueryMap,
+  u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
+  u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
+  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  u16_range_check_channel,
 };
 
 struct ColumnIndex {
@@ -36,7 +36,24 @@ struct ColumnMutSlice<'a, 'b> {
   inputs: &'a mut [G],
   selectors: &'a mut [G],
   auxiliaries: &'a mut [G],
-  lookups: &'a mut LookupRowMut<'b, G>,
+  /// `None` builds the trace alone (see [`trace_only_lookups`]).
+  lookups: Option<&'a mut LookupRowMut<'b, G>>,
+}
+
+/// Whether witness builders skip the lookup witness and hand the prover a
+/// shape-only lookup witness (`LookupValues::shape_only`), which any
+/// prover path that would read the payload refuses. The CUDA backend derives
+/// every lookup message from the committed trace through the constraint
+/// graph and never reads the host lookup witness, so building it is wasted
+/// work there. Enabled by `AIUR_TRACE_ONLY_LOOKUPS=1`; a prover that reads
+/// the host lookup witness (the CPU backend, or the CUDA backend's host
+/// fallback for a circuit it cannot evaluate on the device) fails instead of
+/// proving.
+pub fn trace_only_lookups() -> bool {
+  static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+  *FLAG.get_or_init(|| {
+    std::env::var("AIUR_TRACE_ONLY_LOOKUPS").is_ok_and(|v| v == "1")
+  })
 }
 
 type Degree = u8;
@@ -65,7 +82,7 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
     circuit_layout: &FunctionLayout,
     sel_offset: usize,
     slice: &'a mut [G],
-    lookups: &'a mut LookupRowMut<'b, G>,
+    lookups: Option<&'a mut LookupRowMut<'b, G>>,
   ) -> Self {
     let (inputs, slice) = slice.split_at_mut(circuit_layout.input_size);
     let (selectors, auxiliaries) = slice.split_at_mut(circuit_layout.selectors);
@@ -87,7 +104,9 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
     multiplicity: G,
     args: &[G],
   ) {
-    self.lookups.push(index.lookup, multiplicity, args);
+    if let Some(lookups) = self.lookups.as_deref_mut() {
+      lookups.push(index.lookup, multiplicity, args);
+    }
     index.lookup += 1;
   }
 }
@@ -101,18 +120,55 @@ struct TraceContext<'a> {
   query_record: &'a QueryRecord,
 }
 
-/// One row of a circuit trace: the member function it belongs to, the
-/// member's selector offset within the circuit, its function index, and the
-/// recorded query.
-struct RowMeta<'a> {
+/// Shared by all queried rows of one member of a circuit.
+struct MemberMeta<'a> {
   function: &'a Function,
   sel_offset: usize,
   function_index: G,
-  inputs: &'a [G],
-  result: QueryRef<'a>,
+  queries: &'a QueryMap,
 }
 
+/// Query slices and function metadata stay in their original storage.
+/// Only these two indices are repeated per active row.
+struct RowMeta {
+  member: usize,
+  query: usize,
+}
+
+/// Function witness metadata, excluding the lookup row writers shared by
+/// every circuit type. The estimator may conservatively include advice rows.
+pub(crate) fn witness_metadata_bytes(members: usize, rows: usize) -> usize {
+  members * size_of::<MemberMeta<'_>>() + rows * size_of::<RowMeta>()
+}
+
+/// A position in a function circuit's concatenated query maps: the member
+/// (its index within the circuit's member list) and the position within that
+/// member's query map. `(members, 0)` is one past the last query.
+pub type QueryPosition = (usize, usize);
+
 impl Toplevel {
+  /// The number of rows function circuit `circuit_index` contributes: its
+  /// members' queries with a nonzero multiplicity, in member order then
+  /// record order. The unit [`Self::witness_data_range`] indexes.
+  pub fn function_rows(
+    &self,
+    circuit_index: usize,
+    query_record: &QueryRecord,
+  ) -> usize {
+    self.circuits[circuit_index]
+      .members
+      .iter()
+      .map(|&member| {
+        query_record.function_queries[member]
+          .iter()
+          .filter(|(_, res)| !res.multiplicity.is_zero())
+          .count()
+      })
+      .sum()
+  }
+
+  /// All of function circuit `circuit_index`'s rows as one trace:
+  /// [`Self::witness_data_range`] over every member's every query.
   pub fn witness_data(
     &self,
     circuit_index: usize,
@@ -120,30 +176,87 @@ impl Toplevel {
     io_buffer: &IOBuffer,
     slot_arg_widths: &[usize],
   ) -> (RowMajorMatrix<G>, LookupValues<G>) {
+    let members = self.circuits[circuit_index].members.len();
+    let rows = self.function_rows(circuit_index, query_record);
+    self.witness_data_range(
+      circuit_index,
+      query_record,
+      io_buffer,
+      slot_arg_widths,
+      (0, 0),
+      (members, 0),
+      rows,
+    )
+  }
+
+  /// The rows among the queries from `start` to `end` (positions in the
+  /// concatenated query maps of circuit `circuit_index`'s members) as a
+  /// trace: the queries in that span with a nonzero multiplicity, of which
+  /// there must be exactly `row_count`. An empty span yields an EMPTY trace
+  /// (not a padded height-1 one): the prover deactivates the circuit, so it
+  /// is neither committed nor opened.
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/cpu_witness", fields(circuit = circuit_index, rows = row_count))]
+  pub fn witness_data_range(
+    &self,
+    circuit_index: usize,
+    query_record: &QueryRecord,
+    io_buffer: &IOBuffer,
+    slot_arg_widths: &[usize],
+    start: QueryPosition,
+    end: QueryPosition,
+    row_count: usize,
+  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
     let circuit = &self.circuits[circuit_index];
     let layout = &circuit.layout;
     let width = layout.width();
-    // Concatenate the members' queried rows, in member order.
-    let mut rows_meta = Vec::new();
+    // Concatenate the members' queried rows in the span, in member order.
+    let mut members_meta = Vec::with_capacity(circuit.members.len());
     let mut sel_offset = 0;
     for &member in &circuit.members {
       let function = &self.functions[member];
-      let function_index = G::from_usize(member);
-      rows_meta.extend(
-        query_record.function_queries[member]
-          .iter()
-          .filter(|(_, res)| !res.multiplicity.is_zero())
-          .map(|(inputs, result)| RowMeta {
-            function,
-            sel_offset,
-            function_index,
-            inputs,
-            result,
-          }),
-      );
+      members_meta.push(MemberMeta {
+        function,
+        sel_offset,
+        function_index: G::from_usize(member),
+        queries: &query_record.function_queries[member],
+      });
       sel_offset += function.layout.selectors;
     }
-    let height_no_padding = rows_meta.len();
+    // A member's share of the span: the positions of its query map the
+    // span covers, empty for a member outside it.
+    let span = |m: usize, queries: &QueryMap| -> std::ops::Range<usize> {
+      if !(start.0..=end.0).contains(&m) {
+        return 0..0;
+      }
+      let lo = if m == start.0 { start.1 } else { 0 };
+      let hi = if m == end.0 { end.1 } else { queries.len() };
+      lo..hi
+    };
+    // Count before allocating: no geometric growth or metadata for advice.
+    fn active_queries(
+      queries: &QueryMap,
+      span: std::ops::Range<usize>,
+    ) -> impl Iterator<Item = usize> + '_ {
+      span.filter(move |&i| !queries.mult_at(i).is_zero())
+    }
+    let height_no_padding: usize = members_meta
+      .iter()
+      .enumerate()
+      .map(|(m, meta)| {
+        active_queries(meta.queries, span(m, meta.queries)).count()
+      })
+      .sum();
+    assert_eq!(
+      height_no_padding, row_count,
+      "query span holds a different row count"
+    );
+    let mut rows_meta = Vec::with_capacity(height_no_padding);
+    for (member, meta) in members_meta.iter().enumerate() {
+      rows_meta.extend(
+        active_queries(meta.queries, span(member, meta.queries))
+          .map(|query| RowMeta { member, query }),
+      );
+    }
     // An unqueried circuit yields an EMPTY trace (not a padded height-1 one):
     // the prover deactivates it, so it is neither committed nor opened.
     let height = if height_no_padding == 0 {
@@ -151,18 +264,20 @@ impl Toplevel {
     } else {
       height_no_padding.next_power_of_two()
     };
-    let mut rows = vec![G::ZERO; height * width];
+    // A zeroed allocation: pages materialize when rows are written, so the
+    // padding rows cost nothing and no fill pass touches the whole matrix.
+    let mut rows = {
+      let _g =
+        tracing::info_span!("aiur/witness_zero", height, width).entered();
+      G::zero_vec(height * width)
+    };
     let rows_no_padding = &mut rows[0..height_no_padding * width];
-    // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
-    // rows need no writes at all.
-    let mut builder = LookupValues::builder(height, slot_arg_widths);
-    let mut row_writers = builder.rows_mut();
-    rows_no_padding
-      .par_chunks_mut(width)
-      .zip(row_writers[..height_no_padding].par_iter_mut())
-      .enumerate()
-      .for_each(|(i, (row, lookups))| {
-        let meta = &rows_meta[i];
+    let populate =
+      |i: usize, row: &mut [G], lookups: Option<&mut LookupRowMut<'_, G>>| {
+        let row_meta = &rows_meta[i];
+        let meta = &members_meta[row_meta.member];
+        let (inputs, result) =
+          meta.queries.get_index(row_meta.query).expect("recorded query");
         let index = &mut ColumnIndex {
           auxiliary: 0,
           // we skip the first lookup, which is reserved for return
@@ -177,13 +292,30 @@ impl Toplevel {
         );
         let context = TraceContext {
           function_index: meta.function_index,
-          inputs: meta.inputs,
-          multiplicity: meta.result.multiplicity,
-          output: meta.result.output,
+          inputs,
+          multiplicity: result.multiplicity,
+          output: result.output,
           query_record,
         };
         meta.function.populate_row(index, slice, context, io_buffer);
-      });
+      };
+    if trace_only_lookups() {
+      rows_no_padding
+        .par_chunks_mut(width)
+        .enumerate()
+        .for_each(|(i, row)| populate(i, row, None));
+      let trace = RowMajorMatrix::new(rows, width);
+      return (trace, LookupValues::shape_only(height, slot_arg_widths));
+    }
+    // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
+    // rows need no writes at all.
+    let mut builder = LookupValues::builder(height, slot_arg_widths);
+    let mut row_writers = builder.rows_mut();
+    rows_no_padding
+      .par_chunks_mut(width)
+      .zip(row_writers[..height_no_padding].par_iter_mut())
+      .enumerate()
+      .for_each(|(i, (row, lookups))| populate(i, row, Some(lookups)));
     drop(row_writers);
     let trace = RowMajorMatrix::new(rows, width);
     (trace, builder.finish())
@@ -282,7 +414,9 @@ impl Ctrl {
         );
         // The first lookup slot is reserved for the function return, which
         // pulls the query claim with the query's multiplicity.
-        slice.lookups.pull(0, context.multiplicity, &args);
+        if let Some(lookups) = slice.lookups.as_deref_mut() {
+          lookups.pull(0, context.multiplicity, &args);
+        }
         None
       },
       Ctrl::Yield(sel, vals) => {
@@ -404,7 +538,8 @@ impl Op {
           .expect("Invalid memory size");
         let values = values.iter().map(|a| map[*a].0).collect::<Vec<_>>();
         let ptr = G::from_usize(
-          memory_queries.get_index_of(&values).expect("Unbound pointer"),
+          context.query_record.pointer_base
+            + memory_queries.get_index_of(&values).expect("Unbound pointer"),
         );
         map.push((ptr, 1));
         slice.push_auxiliary(index, ptr);
@@ -419,9 +554,12 @@ impl Op {
           .expect("Invalid memory size");
         let (ptr, _) = map[*ptr];
         let ptr_u64 = ptr.as_canonical_u64();
-        let ptr_usize = usize::try_from(ptr_u64).expect("Pointer is too big");
+        let table_index = usize::try_from(ptr_u64)
+          .expect("Pointer is too big")
+          .checked_sub(context.query_record.pointer_base)
+          .expect("Pointer below the record's base");
         let (values, _) =
-          memory_queries.get_index(ptr_usize).expect("Unbound pointer");
+          memory_queries.get_index(table_index).expect("Unbound pointer");
         for f in values.iter() {
           map.push((*f, 1));
           slice.push_auxiliary(index, *f);
@@ -558,7 +696,11 @@ impl Op {
         let and = Bytes2::and(&i, &j);
         map.push((and, 1));
         slice.push_auxiliary(index, and);
-        slice.push_lookup(index, G::ONE, &[u8_and_channel(), i, j, and]);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_channel(), i, j, i + j - G::TWO * and],
+        );
       },
       Op::U8Or(i, j) => {
         let (i, _) = map[*i];
@@ -566,7 +708,11 @@ impl Op {
         let or = Bytes2::or(&i, &j);
         map.push((or, 1));
         slice.push_auxiliary(index, or);
-        slice.push_lookup(index, G::ONE, &[u8_or_channel(), i, j, or]);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_channel(), i, j, G::TWO * or - i - j],
+        );
       },
       Op::U8LessThan(i, j) => {
         let (i, _) = map[*i];
@@ -577,7 +723,7 @@ impl Op {
         slice.push_lookup(
           index,
           G::ONE,
-          &[u8_less_than_channel(), i, j, less_than],
+          &[u8_sub_channel(), i, j, i - j + G::from_u16(256) * less_than],
         );
       },
       Op::U8XorSplit7(i, j) => {
@@ -611,37 +757,21 @@ impl Op {
         let (b, _) = map[*y_idx];
         let a_u32 = u32::try_from(a.as_canonical_u64()).unwrap();
         let b_u32 = u32::try_from(b.as_canonical_u64()).unwrap();
-        let x_bytes: [u8; 4] = a_u32.to_le_bytes();
-        let z_bytes: [u8; 4] = b_u32.to_le_bytes();
-        // Witness: c = if a < b then b - a - 1 else 2^32 + b - a - 1
-        let c_u32 = b_u32.wrapping_sub(a_u32).wrapping_sub(1);
-        let y_bytes: [u8; 4] = c_u32.to_le_bytes();
-
-        // Push 12 byte auxiliaries: x (a bytes), y (c bytes), z (b bytes)
-        for &byte in x_bytes.iter().chain(y_bytes.iter()).chain(z_bytes.iter())
-        {
-          slice.push_auxiliary(index, G::from_u8(byte));
+        let c_u32 = a_u32.wrapping_sub(b_u32);
+        // Six auxiliaries and scalar queries, ordered as a, c, b, low first.
+        // Execution already recorded these multiplicities.
+        for word in [a_u32, c_u32, b_u32] {
+          for shift in [0, 16] {
+            let limb = G::from_u16(((word >> shift) & 0xffff) as u16);
+            slice.push_auxiliary(index, limb);
+            slice.push_lookup(
+              index,
+              G::ONE,
+              &[u16_range_check_channel(), limb],
+            );
+          }
         }
-
-        // Range-check byte pairs via Bytes2 lookups
-        let rc_channel = u8_range_check_channel();
-        for (i, j) in [
-          (x_bytes[0], x_bytes[1]),
-          (x_bytes[2], x_bytes[3]),
-          (y_bytes[0], y_bytes[1]),
-          (y_bytes[2], y_bytes[3]),
-          (z_bytes[0], z_bytes[1]),
-          (z_bytes[2], z_bytes[3]),
-        ] {
-          slice.push_lookup(
-            index,
-            G::ONE,
-            &[rc_channel, G::from_u8(i), G::from_u8(j)],
-          );
-        }
-
-        let result = G::from_bool(a_u32 < b_u32);
-        map.push((result, 1));
+        map.push((G::from_bool(a_u32 < b_u32), 1));
       },
       Op::U8RangeCheck(i, j) => {
         // No `map.push`: the `u8` outputs alias the inputs. Just require the
@@ -662,6 +792,7 @@ impl Op {
           map[*a].0,
           map[*b].0,
           &context.query_record.memory_queries,
+          context.query_record.pointer_base,
         )
         .expect("BigUint div-mod result not recorded");
         for f in [q_ptr, r_ptr] {
