@@ -20,3 +20,20 @@ lean_lib IxKernel where
   srcDir := ".."
   roots := #[`Ix.Kernel, `Ix.Address.Core]
   globs := #[.andSubmodules `Ix.Kernel, .one `Ix.Address.Core]
+
+/-- Certified fixtures also run without the host package's dependencies. -/
+def kernelFixtureRoots : Array Lean.Name := #[
+  `Tests.Ix.Kernel.Fixtures, `Tests.Ix.Kernel.Inductives,
+  `Tests.Ix.Kernel.Structures, `Tests.Ix.Kernel.Literals,
+  `Tests.Ix.Kernel.Quotients, `Tests.Ix.Kernel.Axioms,
+  `Tests.Ix.Kernel.SearchOutcomes]
+
+@[default_target]
+lean_lib KernelFixtures where
+  srcDir := ".."
+  roots := kernelFixtureRoots
+  globs := kernelFixtureRoots.map (fun root => .one root)
+
+lean_exe «bench-certified-kernel» where
+  srcDir := ".."
+  root := `Benchmarks.Kernel.Certified

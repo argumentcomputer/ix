@@ -164,6 +164,9 @@ end Tests
 
 section Benchmarks
 
+lean_exe «bench-certified-kernel» where
+  root := `Benchmarks.Kernel.Certified
+
 lean_exe «bench-aiur» where
   root := `Benchmarks.Aiur
 
@@ -389,7 +392,7 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "kernel-provenance", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes"]
   run ".lake/build/bin/kernel-provenance" #[]
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
