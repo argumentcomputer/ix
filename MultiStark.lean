@@ -62,6 +62,8 @@ def entrypoints := ⟦
     -- Verifying key (`System<AiurCircuit>`) from IO channel 1: fetch the raw
     -- bytes once as advice, then constrain both the hash and deserialization
     -- against that exact byte stream (the same binding pattern as IxVM).
+    -- read_system's constrained countdowns and the empty-remainder assertion
+    -- establish finiteness; the hash alone would not reject a cyclic stream.
     let (sidx, slen) = io_get_info(1, [0]);
     let sbytes = #read_byte_stream(1, sidx, slen);
     assert_eq!(@b3_pack(@blake3(sbytes)), system_digest);
@@ -71,6 +73,8 @@ def entrypoints := ⟦
     -- public Blake3 `claims_digest`, then deserialize. The batch's own
     -- claims (in its headers, bound by the batch transcript) must equal
     -- them, which is what ties the public statement to the lookup argument.
+    -- read_claims also uses constrained countdowns. Keep the empty-remainder
+    -- check: together they rule out cyclic advice without another list walk.
     let (cidx, clen) = io_get_info(2, [0]);
     let cbytes = #read_byte_stream(2, cidx, clen);
     assert_eq!(@b3_pack(@blake3(cbytes)), claims_digest);

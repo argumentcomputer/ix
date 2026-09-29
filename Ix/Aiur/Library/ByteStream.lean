@@ -20,6 +20,16 @@ def byteStream := ⟦
     }
   }
 
+  -- Keep the IO materialization as advice, but prove that the exact returned
+  -- list is finite before any hashing or parsing can consume it. This wrapper
+  -- must be called CONSTRAINED: putting the check under `#` proves nothing.
+  -- `len` remains an IO locator, not a trusted termination bound.
+  fn read_finite_byte_stream(channel: G, idx: G, len: G) -> ByteStream {
+    let bytes = #read_byte_stream(channel, idx, len);
+    list_depth_checked(bytes);
+    bytes
+  }
+
   -- Count bytes needed to represent a u64.
   -- Important: this implementation differs from the Lean and Rust ones, returning
   -- 1 for [0; 8] instead of 0.
