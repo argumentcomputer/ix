@@ -290,6 +290,16 @@ independent ELF interpretation, and the N2 source endpoint consumes actual
 object execution. The JSON retains stable boundary identifiers and records
 exactly which portions are discharged.
 
+The required `x86-hardware` check tests the local model against the host
+processor. It runs every generated case natively through
+[`hw_diff_harness.c`](../fixtures/x86/hw_diff_harness.c): all emitted forms,
+widths, addressing shapes, conditions and edge values, 11,067 cases in total.
+It compares exit, registers, model-defined flags, changed memory and faults
+with `ByteEval`, and requires LLVM's `llvm-mc` to decode each case to the
+same instruction sequence and mnemonics. This is test evidence, not a proof
+of faithfulness: an error shared by encoder, decoder and processor
+expectations would pass. The Sail agreement (S2) remains the proof route.
+
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal
 to the original decoder and stream checker on all inputs. Production

@@ -5,6 +5,7 @@
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
   "check-x86-streams": {"roots": ["CheckX86Streams"], "kind": "lean_exe"},
   "check-x86-object": {"roots": ["CheckX86Object"], "kind": "lean_exe"},
+  "check-x86-hardware": {"roots": ["CheckX86Hardware"], "kind": "lean_exe"},
   "check-x86-encoder": {"roots": ["CheckX86Encoder"], "kind": "lean_exe"},
   "check-x86-bytes": {"roots": ["CheckX86Bytes"], "kind": "lean_exe"},
   "check-trusted-externs":
@@ -1109,6 +1110,12 @@
   "CheckX86Object":
   {"path": "scripts/CheckX86Object.lean",
    "imports": ["Compilatrix.Tools.X86Check"]},
+  "CheckX86Hardware":
+  {"path": "scripts/CheckX86Hardware.lean",
+   "imports":
+   ["Compilatrix.Tools.Check",
+    "Compilatrix.X86.ByteEval",
+    "Compilatrix.X86.Encode"]},
   "CheckX86Encoder":
   {"path": "scripts/CheckX86Encoder.lean",
    "imports": ["Compilatrix.Tools.Check"]},

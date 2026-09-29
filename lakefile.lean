@@ -83,3 +83,8 @@ lean_exe «check-build-graph» where
 lean_exe census where
   srcDir := "scripts"
   root := `Census
+
+/- Differential check of the local x86 byte model against the host processor. -/
+lean_exe «check-x86-hardware» where
+  srcDir := "scripts"
+  root := `CheckX86Hardware
