@@ -46,25 +46,29 @@ jobs:
   # with native code generation for r8i, with caches and measured results
   # isolated from other hardware and compiler flags.
   build:
-    runs-on: runs-on=${{ github.run_id }}-build-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    # The sticky disk is the native-r8i lineage bench-pr's build job shares:
+    # this push run leaves the lineage's `main` snapshot, which a
+    # `!benchmark` run dispatched on its PR branch reads without writing.
+    runs-on: runs-on=${{ github.run_id }}-build-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=bench-build-r8i-native:50gb/extras=s3-cache
     steps:
-      - uses: runs-on/action@v2
       - uses: actions/checkout@v7
-      - name: Mount Lake build cache
-        uses: actions/cache@v6
+      # Lake and cargo artifacts live on the sticky disk; sccache serves the
+      # workspace crates cargo rebuilds after every fresh checkout (see
+      # ci.yml), under entries the native codegen flags keep apart from CI's.
+      - uses: runs-on/action@v2
         with:
-          path: .lake
-          key: ${{ env.BENCH_CACHE }}-lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: ${{ env.BENCH_CACHE }}-lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+          sccache: s3
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - name: Log build CPU
         uses: ./.github/actions/log-cpu
         with:
           label: Benchmark binary build CPU
-      # Rust toolchain + cargo cache, so the cargo step inside `lake build`
-      # does not recompile the Plonky3/multi-stark dependencies every run.
       - uses: ./.github/actions/setup-rust-toolchain
         with:
-          cache-key: ${{ env.BENCH_CACHE }}
+          use-github-cache: "false"
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
@@ -126,7 +130,10 @@ jobs:
     # job title.
     name: compile-${{ matrix.env }}
     needs: build
-    runs-on: runs-on=${{ github.run_id }}-compile-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    # One sticky lineage per env: concurrent jobs on one lineage keep only
+    # the last clean completion, so a shared disk would drop every other
+    # env's Lake packages and oleans each run.
+    runs-on: runs-on=${{ github.run_id }}-compile-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=bench-compile-${{ matrix.env }}-r8i-native:100gb/extras=s3-cache
     permissions:
       contents: read
       checks: write
@@ -148,10 +155,16 @@ jobs:
           # shared Compile package; no mathlib cache needed.
           - { env: ISLB }
           - { env: Mathlib, mathlib: true }
-          - { env: FLT, cache_pkg: flt, mathlib: true }
+          - { env: FLT, mathlib: true }
     steps:
-      - uses: runs-on/action@v2
       - uses: actions/checkout@v7
+      # The compile workspace's `.lake` persists on the sticky disk: its
+      # Lake packages, the Mathlib oleans `cache get` fetched, and the env's
+      # own build, so later runs replay instead of refetching and rebuilding.
+      - uses: runs-on/action@v2
+        with:
+          sticky_cache: |
+            custom,path=${{ env.COMPILE_DIR }}/.lake
       # `lake build` below clones this package's Lake dependencies.
       - uses: ./.github/actions/authenticate-github-fetches
       - uses: actions/cache/restore@v6
@@ -174,12 +187,6 @@ jobs:
           auto-config: false
           use-github-cache: false
           use-mathlib-cache: ${{ matrix.mathlib && 'true' || 'false' }}
-      # FLT takes a few minutes to rebuild, so cache its build artifacts.
-      - if: matrix.cache_pkg
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
-          key: ${{ env.BENCH_CACHE }}-${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
       - run: lake build Compile${{ matrix.env }}
         working-directory: ${{ env.COMPILE_DIR }}
       # The measured compile: serializes the env to `<env>.ixe` at the
