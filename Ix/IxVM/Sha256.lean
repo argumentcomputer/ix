@@ -10,7 +10,7 @@ def sha256 := ⟦
 
   pub fn sha256_test() -> [[U8; 4]; 8] {
     let (idx, len) = io_get_info(0, [0]);
-    let byte_stream = #read_byte_stream(0, idx, len);
+    let byte_stream = read_finite_byte_stream(0, idx, len);
     sha256(byte_stream)
   }
 
@@ -20,7 +20,7 @@ def sha256 := ⟦
     let num_hashes_pred = num_hashes - 1;
     let key = [num_hashes_pred];
     let (idx, len) = io_get_info(0, key);
-    let byte_stream = #read_byte_stream(0, idx, len);
+    let byte_stream = read_finite_byte_stream(0, idx, len);
     sha256(byte_stream);
     match num_hashes_pred {
       0 => 0,
