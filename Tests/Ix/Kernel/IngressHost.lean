@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Ingress
 import Ix.Kernel.Egress
 import Ix.Ixon.Admission
+import Ix.Ixon.Projection
 import Ix.CompileDriver
 import Ix.Meta
 import Tests.Ix.Kernel.TutorialDefs
@@ -133,6 +134,14 @@ def egressRoundtrip (input : Ingress.Constants) (blobs : Ingress.Blobs)
 def byteLimits : Ix.Ixon.Admission.Limits :=
   ⟨1024, 1024, 16 * 1024 * 1024, 4 * 1024 * 1024, 1024 * 1024⟩
 
+def maxProjections : Nat := 4096
+
+def sameStore (left right : Ingress.Constants) : Bool :=
+  (left.all fun (key, record) =>
+    match Ingress.lookup right key with | some value => value == record | none => false) &&
+  (right.all fun (key, record) =>
+    match Ingress.lookup left key with | some value => value == record | none => false)
+
 def referenceJson : ConstRef Address → Lean.Json
   | .member address index => Lean.Json.mkObj [
     ("kind", Lean.toJson "member"), ("block", Lean.toJson (toString address)),
@@ -176,8 +185,23 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   let (egressExact, egressReason) := match egressRoundtrip input blobs family with
     | .ok _ => (true, "")
     | .error reason => (false, reason)
+  -- Omit every projection: the new route must derive their exact physical
+  -- keys and payloads, while preserving the original primary order.
+  let primaryInput := Ix.Ixon.Projection.primaries input
+  let primaryRecords := primaryInput.map fun (key, record) => (key, Ixon.serConstant record)
+  let reconstructionExact := match Ix.Ixon.Projection.reconstruct maxProjections primaryInput with
+    | .error _ => false
+    | .ok reconstructed => sameStore reconstructed input &&
+      Ix.Ixon.Projection.primaries reconstructed == primaryInput
+  let (projectionOutcome, projectionReason) := match Ix.Ixon.Projection.checkBytes.{1}
+      maxProjections byteLimits cfg primaryRecords blobs family with
+    | .ok _ => ("accept", "")
+    | .error (.admission (.kernel (.rejected reason))) => ("reject", reason)
+    | .error (.admission (.kernel (.declined reason))) => ("decline", reason)
+    | .error reason => ("projection-error", reprStr reason)
+  let projectionsAgree := reconstructionExact && projectionOutcome == outcome && projectionReason == reason
   let bytesAgree := byteOutcome == outcome && byteReason == reason && byteDecodeExact
-  let passed := outcome == test.expected && bytesAgree && egressExact
+  let passed := outcome == test.expected && bytesAgree && projectionsAgree && egressExact
   let constantJson := records.map fun (address, bytes) => Lean.Json.mkObj [
     ("address", Lean.toJson (toString address)),
     ("ixonHex", Lean.toJson (hexOfBytes bytes))]
@@ -189,6 +213,12 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
     ("outcome", Lean.toJson outcome), ("reason", Lean.toJson reason),
     ("byteOutcome", Lean.toJson byteOutcome), ("byteReason", Lean.toJson byteReason),
     ("byteDecodeExact", Lean.toJson byteDecodeExact),
+    ("maxProjections", Lean.toJson maxProjections),
+    ("reconstructionExact", Lean.toJson reconstructionExact),
+    ("projectionOutcome", Lean.toJson projectionOutcome),
+    ("projectionReason", Lean.toJson projectionReason),
+    ("projectionInput", Lean.toJson (primaryRecords.map fun (key, bytes) => Lean.Json.mkObj [
+      ("address", Lean.toJson (toString key)), ("ixonHex", Lean.toJson (hexOfBytes bytes))])),
     ("byteLimits", Lean.Json.mkObj [
       ("maxRecords", Lean.toJson byteLimits.maxRecords),
       ("maxBlobs", Lean.toJson byteLimits.maxBlobs),
@@ -203,6 +233,8 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   if !bytesAgree then
     IO.eprintln s!"{test.label}: byte admission disagrees: {byteOutcome}: {byteReason}; exact decoding: {byteDecodeExact}"
   if !egressExact then IO.eprintln s!"{test.label}: egress failed: {egressReason}"
+  if !projectionsAgree then
+    IO.eprintln s!"{test.label}: projection reconstruction disagrees: {projectionOutcome}: {projectionReason}; exact store: {reconstructionExact}"
   return passed
 
 def main : IO UInt32 := do

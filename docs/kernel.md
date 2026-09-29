@@ -23,6 +23,7 @@ system. It does not certify the Lean-to-Ixon compiler, Rust checker, or IxVM.
 | `Ix.Ixon.Bounded.Constant`, `WireCheck`, `Canonical` | Complete-record input/expansion limits, wire validity, and canonical byte spelling | Success iff the record is wire-well-formed, re-encodes to the supplied bytes, and fits both limits |
 | `Ix.Ixon.Bounded.Size`, `Verify.ReaderBounds`, `Verify.ConstantBounds` | Structural constructors and table slots in successful production reads | At most two structural units per consumed byte, plus the separate expanded-universe budget; no additional runtime traversal |
 | `Ix.Ixon.Admission`, `Verify.Admission.RecordsRead` | Ordered canonical record bytes, unchanged address keys, exact literal blobs, and batch limits | Exact decoding/acceptance domains, installed readings, model existence, and preservation of kernel outcomes |
+| `Ix.Ixon.Projection`, `ProjectionProofs` | Projection records derived from physical mutual blocks and addressed with pure BLAKE3 | Complete reconstruction, exact input preservation, primary order, bounded requests, and byte-admission/model contracts |
 | `AExpr`, `PropWhen` | A reading with a condition at each binder describing when its codomain is a proposition | `annotate_erase` proves exact erasure; separate scope checks include annotation conditions |
 | `Typed`, `TypedSort`, `Reduced`, `Conv` | Search results with erased semantic evidence for this environment and context | `inferA`, normalization, conversion, and the declaration checkers |
 | Admission candidate | An ordinary inductive shape, structure description, or standard primitive interface | A reader proposes it; validation and exact generated-block comparison justify installation |
@@ -283,12 +284,43 @@ replacement. A set-difference check confirms that these primitives all
 already occur in the kernel/codec closures. Their narrower allowlists and
 existing public contracts remain unchanged.
 
+`Ix.Ixon.Projection.checkBytes` now accepts the same canonical record format
+with projection records optionally omitted. It derives definition,
+inductive, recursor, and constructor projections from physical mutual-block
+positions, writes them with the certified projection writer, and hashes their
+complete production encodings with `Address.blake3Pure`. Standalone
+definitions and recursors retain their primary address. Owner keys in
+projection payloads must be 32 bytes, and positions must fit UInt64.
+
+Reconstruction reuses an identical existing projection or prepends a new one
+at a fresh key; a conflicting payload fails. The proofs characterize the
+exact successful extension, establish every requested projection's presence
+and every added record's structural origin, preserve all supplied records,
+lookups, and primary declaration order, and bound output count by input count
+plus `maxProjections`. This separate limit counts requests, including reused
+records, and is spent before writing/hashing. Request enumeration itself
+visits the supplied block arrays; the byte entry point bounds those inputs.
+The byte-reading and installed-declaration relation use the same expanded
+store as the executed checker. All kernel outcomes are preserved for that
+store, and accepted environments have models.
+
+The new hash adapter has its own audit and is built in the root package,
+where the pinned Blake3 package is available. The standalone kernel/codec
+package remains dependency-free. Data imports allow exactly `Blake3` and
+`Blake3.Pure`, plus their permitted Lean-core/Std dependencies; C/Rust hash
+backends and proof-module imports are excluded. Its measured runtime closure
+has 1,381 functions, 70 inherited externs, two inherited unsafe accessors, and
+no project replacement. The additional primitives are 14 standard array and
+integer operations used by pure BLAKE3. Reconstruction assumes no hash
+injectivity: conflicting payloads are rejected. Primary keys, supplied alias
+keys, and blob keys remain unauthenticated until K5.
+
 K4 remains open for complete parser-work accounting, including nested
-failure paths, canonical mutual-block order, and pure projection-address
-reconstruction. The canonical
+failure paths, and canonical mutual-block order. The canonical
 record API establishes byte spelling; semantic admission still has K3's
 supported profile. Existing production callers use the original decoders
-pending D02. Address keys are not authenticated hashes, and the theorem does
+pending D02. Supplied primary, alias, and blob keys are not authenticated
+hashes, and the theorem does
 not certify the compiler or host container loader. K5 will connect
 authenticated subjects and receipts.
 
@@ -393,6 +425,22 @@ authored/reorganized modules plus four license files. Evidence is in
 `plans/review/k4-reader-bounds/summary.json`; tested source:
 `e34c8cc3aad3f7d13fbc65a3c4f20351be3352e5`. Complete parser-work accounting
 and whole-corpus parity remain open.
+
+The K4 projection-reconstruction checkpoint passed the incremental full gate
+on 2026-09-29: 179 standalone, 197 host fixture/provenance, 550 runner, and
+975 model jobs, with all 38 differential and 26 compiler cases passing.
+Fifteen compiler cases omitted a total of 44 projection records. Pure
+reconstruction recovered every original key/value store and primary order;
+all 26 cases preserved their verdict and exact reason. The retained inputs
+include the projection-free record sequence and request limit. Directed
+fixtures compare all four variants and UInt64 tag boundaries with Rust hashes
+and cover reuse, conflicts, index/owner-width errors, limits, and constructor
+metadata validation. Sixteen new exact axiom checks cover the new contracts;
+provenance covers 97 ported, 70 authored/reorganized modules, and four license
+files. Tested source: `19313f7ea597202ed3d544980d898ea6f5d8ba7c`; evidence:
+`plans/review/k4-projection-reconstruction/summary.json`. This completes pure
+projection reconstruction, while K4 canonical block ordering, complete work
+accounting, and the D02 consumer cutover remain open.
 
 ## Removal ledger: lean4ix and Ix.Tc
 

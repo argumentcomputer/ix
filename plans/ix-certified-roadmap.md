@@ -42,8 +42,9 @@ bounds, composed with universe expansion and the byte-admission limits.
 D01 is complete: both
 lean4ix/Lean4Lean dependency paths, the old verification trees, and their build/benchmark/CI consumers
 have been removed and validated in a fresh jj workspace and through Nix.
-The remaining K4 parser-work accounting, canonical block order, projection-address
-reconstruction, and measured core improvements in
+Pure projection-address reconstruction and its separate byte-admission path
+are now implemented outside the hash-free kernel. The remaining K4
+parser-work accounting, canonical block order, and measured core improvements in
 section 10 are next. D02's final runtime Ix.Tc cutover remains required.
 
 ## Revision note
@@ -661,7 +662,7 @@ checkpoint. Initial entries:
 | Ixon data types | `Ix.Ixon.Types` | pure production data in the standalone audited closure | K3 split complete |
 | Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `WireCheck`, `Bounded`, `Canonical`, `Verify` | production grammar and inverses, complete-record byte/universe limits, exact wire validation, and canonical re-encoding | K4 further resource bounds and mutual-block order remain |
 | Ixon to kernel ingress and egress | `Ix.Kernel.Ingress`, `Ix.Kernel.Egress` | exact readings, physical-reference fidelity, model theorem for accepted in-memory input, and exact reconstruction with retained layout | K3 complete |
-| Byte admission | `Ix.Ixon.Admission`, `Verify.Admission`, `Admission.Audit` | exact ordered canonical-byte reading, aggregate input limits, installed declarations, and model theorem for the executed checker | K4 implemented; projection-address reconstruction remains |
+| Byte admission | `Ix.Ixon.Admission`, `Verify.Admission`, `Admission.Audit`; `Ix.Ixon.Projection`, `ProjectionProofs`, `ProjectionAudit` | exact canonical-byte reading, bounded input and projection reconstruction, installed declarations, and model theorem for the executed checker | K4 implemented; canonical mutual-block order remains |
 | Claims, assumption trees, Merkle roots, commitments | `Ix.Claim`, `Ix.AssumptionTree`, `Ix.Merkle`, `Ix.Commit` | host | K5, with explicit cryptographic assumptions |
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
 | Rust kernel | `crates/kernel`, `Ix.KernelCheck` | host fast path | differential parity against `Ix.Kernel`; verdicts are not certified |
@@ -1026,9 +1027,30 @@ aggregate limit of `2 * maxTotalBytes + maxRecords * maxRecordUnivNodes`.
 The proofs add no parser traversal or admission operation. They do not bound
 heap bytes, wall time, blob interpretation, or ingress/checker expansion.
 
+`Ix.Ixon.Projection` now reconstructs all four projection variants from
+physical mutual-block positions, using the certified projection writer and
+`Address.blake3Pure` over complete production encodings. Its request limit
+includes reused projections and is reserved before writing/hashing; index
+overflow and non-32-byte owners fail explicitly. Existing exact records are
+reused, fresh records are prepended, and conflicting payloads at computed
+keys fail without assuming hash injectivity. Standalone definitions and
+recursors retain their primary addresses.
+
+`ProjectionProofs` characterizes the exact successful extension independently
+of the loop: every required member/constructor projection is present, every
+added record has a structural source and computed hash, all supplied records
+and lookups are preserved, primary declaration order is unchanged, and output
+count is bounded by input count plus the request limit. The new `checkBytes`
+entry composes canonical reading, reconstruction, and the same kernel at the
+same fuel and literal family, with exact outcome and model theorems.
+
+The new adapter is outside the dependency-free kernel/codec package; its root
+package audit allows exactly the shared Blake3 types and pure hash module,
+and excludes both hash FFI backends. Existing import and execution boundaries
+are unchanged. Primary/alias/blob key authentication remains K5.
+
 Remaining: complete parser-work accounting (including nested failure paths
-and element-reader cost), canonical mutual-block order, and pure
-projection-address reconstruction.
+and element-reader cost) and canonical mutual-block order.
 
 Port the earlier plan's serialization milestone against the split types:
 schema and version, pure encoders and bounded decoders for the supported
@@ -1038,9 +1060,9 @@ as a differential oracle. Compose with K3 so the statement names which
 declarations the bytes describe. Port `Ix.Tc.CanonicalCheck` as the
 canonical block order validation with its own contract: a stored mutual
 block is accepted only in the order the kernel recomputes, so a permuted
-block is rejected without trusting compiler metadata. With the certified
-encoder and `Address.blake3Pure`, ingress may reconstruct projection
-addresses exactly as production does instead of requiring them supplied.
+block is rejected without trusting compiler metadata. The certified encoder
+and `Address.blake3Pure` now reconstruct projection addresses through the
+separately audited adapter; production consumers will adopt this path during D02.
 Fuel and size limits are documented coverage boundaries.
 
 ### K5: claims and receipts
@@ -1492,6 +1514,21 @@ Implementation checkpoint (2026-09-29):
   source: `e34c8cc3aad3f7d13fbc65a3c4f20351be3352e5`; evidence:
   `plans/review/k4-reader-bounds/summary.json`. Complete parser-work accounting
   remains open, including nested failure paths and element-reader cost.
+- K4's pure projection-reconstruction checkpoint passes the incremental full
+  gate: 179 standalone, 197 host fixture/provenance, 550 runner, and 975 model
+  jobs; all 38 differential and 26 compiler cases, plus the codec suite.
+  Fifteen compiler cases omit 44 projection records in total, recovering
+  every original key/value store and primary order; all 26 retain the same
+  verdict and exact reason. Inputs retain the projection-free record list
+  and request limit. Sixteen new exact axiom checks cover structural request
+  enumeration, exact bounded extension, preservation, completeness, origin,
+  byte admission, and model existence. The separately audited pure-hash
+  adapter has 1,381 functions, 70 inherited externs, two inherited unsafe
+  accessors, and no project replacement. All narrower existing boundaries
+  remain unchanged. Provenance covers 97 ported, 70 authored/reorganized
+  modules, and four licenses. Tested source:
+  `19313f7ea597202ed3d544980d898ea6f5d8ba7c`; evidence:
+  `plans/review/k4-projection-reconstruction/summary.json`.
 - P04–P12 and the remaining K4–K7 work stay open; whole-corpus parity has
   not been run. D02's runtime consumer cutover and deletion of Ix.Tc remain
   required.

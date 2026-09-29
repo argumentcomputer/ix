@@ -69,6 +69,7 @@ def authored : Array String := #[
   "Ix/Ixon/WireCheck.lean", "Ix/Ixon/Verify/WireCheck.lean",
   "Ix/Ixon/Canonical.lean", "Ix/Ixon/Verify/Canonical.lean",
   "Ix/Ixon/Admission.lean", "Ix/Ixon/Verify/Admission.lean", "Ix/Ixon/Admission/Audit.lean",
+  "Ix/Ixon/Projection.lean", "Ix/Ixon/ProjectionProofs.lean", "Ix/Ixon/ProjectionAudit.lean",
   "Ix/Kernel/Ingress.lean", "Ix/Kernel/Ingress/Reading.lean",
   "Ix/Kernel/Ingress/Expr.lean", "Ix/Kernel/Ingress/Constant.lean",
   "Ix/Kernel/Ingress/Declarations.lean", "Ix/Kernel/Certified/Ordinary/Stage.lean",
