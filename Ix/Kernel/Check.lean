@@ -98,6 +98,109 @@ private def installDefinition (env : Env β) (r : ConstRef β) (universes : Nat)
         (fun _ h => nomatch h) (fun _ h => nomatch h),
     env.preserves_push r entry fresh⟩⟩
 
+/-- The family and its recursor retain their original, independent references.
+The reader only proposes a shape; acceptance compares both complete source
+records with that shape before using its semantic construction. -/
+def checkInductiveC (cfg : Config) (env : Env β) (source : β) (recursor : ConstRef β)
+    (family rec : Const β) : Except Error { env' : Env β //
+      AdmissionClaim.{u,v} env env' ∧ family.Installed source 0 env'.toEnvironment ∧
+        ∃ entry, env'.toEnvironment recursor = some entry ∧ rec.Reads entry } :=
+  let entries := env.toEnvironment
+  if (entries (.member source 0)).isSome || (entries recursor).isSome then
+    .error (.rejected "duplicate inductive or recursor reference")
+  else if !(family.refs ++ rec.refs).all (fun q => q.block == source || q == recursor || (entries q).isSome) then
+    .error (.rejected "the declaration references a constant that is not installed")
+  else
+    match readBlock.{u,v} cfg.fuel entries source ⟨[family, rec]⟩ with
+    | .error .noMatch => .error (.declined "the inductive and recursor are not in the ordinary shape class")
+    | .error failure => .error (Error.ofSearch "inductive reading" failure)
+    | .ok reading =>
+      let shape := reading.shape
+      let mode := reading.mode
+      let k := reading.k
+      if hf : family = shape.source source then
+      if hr : rec = shape.recursorSource source mode k recursor then
+        if k && !decide shape.SupportsK then
+          .error (.rejected "K-like reduction is declared for an inductive that does not support it")
+        else
+          match checkBlock.{u,v} cfg.fuel entries source shape mode recursor with
+          | .ok ⟨hb⟩ =>
+            if hnat : shape = Natural.shape then
+              match Natural.check.{u,v} entries source (.recursor mode recursor) (hnat ▸ hb) with
+              | some ⟨hn⟩ =>
+                let installed := installNatural env source mode hn
+                .ok ⟨installed.val, installed.property, by
+                  simpa only [hf, hr, hnat] using installNatural_members env source mode hn k⟩
+              | none =>
+                let installed := installOrdinary env source shape mode hb
+                .ok ⟨installed.val, installed.property, by
+                  simpa only [hf, hr] using installOrdinary_members env source shape mode hb k⟩
+            else
+            match readDescription.{u,v} cfg.fuel entries shape with
+            | .ok description =>
+              if hd : description.ordinary = shape then
+                match Structure.check.{u,v} cfg.fuel entries description source (.recursor mode recursor) (hd ▸ hb) with
+                | .ok ⟨hs⟩ =>
+                  let installed := installStructure env source description mode hs
+                  .ok ⟨installed.val, installed.property, by
+                    simpa only [hf, hr, ← hd] using installStructure_members env source description mode hs k⟩
+                | .error _ =>
+                  let installed := installOrdinary env source shape mode hb
+                  .ok ⟨installed.val, installed.property, by
+                    simpa only [hf, hr] using installOrdinary_members env source shape mode hb k⟩
+              else
+                let installed := installOrdinary env source shape mode hb
+                .ok ⟨installed.val, installed.property, by
+                  simpa only [hf, hr] using installOrdinary_members env source shape mode hb k⟩
+            | .error _ =>
+              let installed := installOrdinary env source shape mode hb
+              .ok ⟨installed.val, installed.property, by
+                simpa only [hf, hr] using installOrdinary_members env source shape mode hb k⟩
+          | .error failure => .error (Error.ofSearch "inductive block" failure)
+      else .error (.declined "the supplied recursor differs from the generated ordinary recursor")
+      else .error (.declined "the supplied inductive differs from the generated ordinary family")
+
+/-- Check a supplied family and its constructors without an absent recursor.
+The same Nat and structure fact checks apply to this smaller stage. -/
+def checkFamilyC (cfg : Config) (env : Env β) (source : β) (family : Const β) :
+    Except Error { env' : Env β // AdmissionClaim.{u,v} env env' ∧
+      family.Installed source 0 env'.toEnvironment } := do
+  let entries := env.toEnvironment
+  if (entries (.member source 0)).isSome then
+    throw (.rejected "duplicate inductive reference")
+  if !family.refs.all (fun q => q.block == source || (entries q).isSome) then
+    throw (.rejected "the declaration references a constant that is not installed")
+  let shape ← (readFamily.{u,v} cfg.fuel entries source family).mapError
+    (Error.ofSearch "inductive family reading")
+  if hf : family = shape.source source then
+    let ⟨hb⟩ ← ((Stage.family : Stage β).check.{u,v} cfg.fuel entries source shape).mapError
+      (Error.ofSearch "inductive family")
+    let fallback : Except Error { env' : Env β // AdmissionClaim.{u,v} env env' ∧
+        family.Installed source 0 env'.toEnvironment } :=
+      let installed := installFamily env source shape hb
+      .ok ⟨installed.val, installed.property, by
+        simpa only [hf] using installFamily_fidelity env source shape hb⟩
+    if hnat : shape = Natural.shape then
+      match Natural.check.{u,v} entries source .family (hnat ▸ hb) with
+      | some ⟨hn⟩ =>
+        let installed := installNaturalStage env source .family hn
+        return ⟨installed.val, installed.property, by
+          simpa only [hf, hnat] using installNaturalStage_family env source .family hn⟩
+      | none => fallback
+    else
+      match readDescription.{u,v} cfg.fuel entries shape with
+      | .ok description =>
+        if hd : description.ordinary = shape then
+          match Structure.check.{u,v} cfg.fuel entries description source .family (hd ▸ hb) with
+          | .ok ⟨hs⟩ =>
+            let installed := installStructureStage env source description .family hs
+            return ⟨installed.val, installed.property, by
+              simpa only [hf, ← hd] using installStructureStage_family env source description .family hs⟩
+          | .error _ => fallback
+        else fallback
+      | .error _ => fallback
+  else throw (.declined "the supplied inductive differs from the generated ordinary family")
+
 /-- Check one declaration, returning model extension, preservation, and
 the exact installed reading with the environment. -/
 def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
@@ -153,49 +256,22 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
       | .error failure, _ => .error (Error.ofSearch "declared type" failure)
       | _, .error failure => .error (Error.ofSearch "body" failure)
     else .error (.rejected "duplicate declaration address")
-  | [.induct _ _ _ _ _ .safe, .recursor _ _ _ _ _ _ _ _ .safe] =>
-    let source := d.address
-    let entries := env.toEnvironment
-    if (entries (.member source 0)).isSome || (entries (.member source 1)).isSome then
-      .error (.rejected "duplicate declaration address")
-    else if !d.block.refs.all (fun q => q.block == source || (entries q).isSome) then
-      .error (.rejected "the declaration references a constant that is not installed")
-    else
-      match readBlock.{u,v} cfg.fuel entries source d.block with
-      | .error .noMatch => .error (.declined "the inductive block is not in the ordinary shape class")
-      | .error failure => .error (Error.ofSearch "inductive reading" failure)
-      | .ok reading =>
-        let shape := reading.shape
-        let mode := reading.mode
-        let k := reading.k
-        if hblock : d.block = ⟨[shape.source source, shape.recursorSource source mode k]⟩ then
-          if k && !decide shape.SupportsK then
-            .error (.rejected "K-like reduction is declared for an inductive that does not support it")
-          else
-            match checkBlock.{u,v} cfg.fuel entries source shape mode with
-            | .ok ⟨hb⟩ =>
-              if hnat : shape = Natural.shape then
-                match Natural.check.{u,v} entries source mode (hnat ▸ hb) with
-                | some ⟨hn⟩ => acceptInstalled env d (installNatural env source mode hn) (by
-                    simpa only [hblock, hnat] using installNatural_fidelity env source mode hn k)
-                | none => acceptInstalled env d (installOrdinary env source shape mode hb) (by
-                    rw [hblock]; exact installOrdinary_fidelity env source shape mode hb k)
-              else
-              match readDescription.{u,v} cfg.fuel entries reading with
-              | .ok description =>
-                if hd : description.ordinary = shape then
-                  match Structure.check.{u,v} cfg.fuel entries description source mode (hd ▸ hb) with
-                  | .ok ⟨hs⟩ => acceptInstalled env d (installStructure env source description mode hs) (by
-                      rw [hblock, ← hd]
-                      exact installStructure_fidelity env source description mode hs k)
-                  | .error _ => acceptInstalled env d (installOrdinary env source shape mode hb) (by
-                      rw [hblock]; exact installOrdinary_fidelity env source shape mode hb k)
-                else acceptInstalled env d (installOrdinary env source shape mode hb) (by
-                  rw [hblock]; exact installOrdinary_fidelity env source shape mode hb k)
-              | .error _ => acceptInstalled env d (installOrdinary env source shape mode hb) (by
-                  rw [hblock]; exact installOrdinary_fidelity env source shape mode hb k)
-            | .error failure => .error (Error.ofSearch "inductive block" failure)
-        else .error (.declined "the block is not the generated ordinary block of its inductive")
+  | [.induct iu ip ii it ics .safe, .recursor ru rp ri rm rn rt rr rk .safe] => do
+    let family := Const.induct iu ip ii it ics .safe
+    let recDecl := Const.recursor ru rp ri rm rn rt rr rk .safe
+    let ⟨env', step, hf, hr⟩ ←
+      checkInductiveC.{u,v} cfg env d.address (.member d.address 1) family recDecl
+    return ⟨env', step, by
+      have hblock : d.block = ⟨[family, recDecl]⟩ := congrArg Block.mk hm
+      rw [hblock]
+      exact Block.installed_pair hf ⟨hr, trivial⟩⟩
+  | [.induct iu ip ii it ics .safe] => do
+    let family := Const.induct iu ip ii it ics .safe
+    let ⟨env', step, hf⟩ ← checkFamilyC.{u,v} cfg env d.address family
+    return ⟨env', step, by
+      have hblock : d.block = ⟨[family]⟩ := congrArg Block.mk hm
+      rw [hblock]
+      exact Block.installed_singleton hf⟩
   | [.induct _ _ _ _ _ _, .recursor _ _ _ _ _ _ _ _ _] =>
     .error (.declined "unsafe inductive blocks are not supported")
   | [.defn _ _ _ _ _] => .error (.declined "unsafe and partial definitions are not supported")

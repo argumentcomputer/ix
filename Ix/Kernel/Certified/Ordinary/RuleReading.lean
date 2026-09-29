@@ -3,6 +3,7 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/Certified/Ordinary/RuleReading.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
+K3: the recursor reference is explicit and may belong to a separate block.
 K2: the input store and its exact-source facts are removed (comparing the
 stored block with the generated one is the caller's check) and the recursor is
 member 1 of the family's block, so the bare `recursor` address parameter is
@@ -20,7 +21,7 @@ namespace Ix.Kernel.Model
 open SetTheory
 
 universe u v
-variable {β : Type u} {V : Type v} [SetTheory V]
+variable {β : Type u} {recursor : ConstRef β} {V : Type v} [SetTheory V]
 
 theorem Assignment.AgreesOn.interp_inserted {entries : Environment β}
     {constants reading : Assignment β V} (h : Assignment.AgreesOn entries constants reading)
@@ -41,7 +42,7 @@ namespace Ix.Kernel.Certified.Ordinary.Shape
 open Model Model.SetTheory Model.SetTheory.Tower Model.SetModel Inductive
 
 universe u v
-variable {β : Type u} {V : Type v} [SetTheory V]
+variable {β : Type u} {recursor : ConstRef β} {V : Type v} [SetTheory V]
 
 noncomputable def recursorCall (shape : Shape β) (constants : Assignment β V) (levels : List Nat)
     (env : Nat → V) (mode : ElimMode) (m : V) (minors xs fs : List V) (j : Nat) (field : RecursiveField β) : V :=
@@ -70,7 +71,7 @@ variable {entries : Environment β} {shape : Shape β} {source : β}
   {constants reading : Assignment β V} {levels : List Nat} {mode : ElimMode}
 
 theorem ruleCall_interp (h : CheckedShape.{u,v} entries source shape)
-    (hr : RecursorReading entries shape source mode constants reading)
+    (hr : RecursorReading (recursor := recursor) entries shape source mode constants reading)
     (hmode : ModeEvidence.{u,v} entries shape mode) (hM : Realizes constants entries)
     (hn : levels.length = mode.recUvars shape.universes) {ctor : Constructor β} (hc : ctor ∈ shape.constructors)
     {j : Nat} {field : RecursiveField β} (hf : ctor.recursive[j]? = some field)
@@ -84,7 +85,7 @@ theorem ruleCall_interp (h : CheckedShape.{u,v} entries source shape)
       (mode.motiveLevel.eval levels) m minors) :
     interp reading levels
       (Telescope.extend (Telescope.extend (Telescope.extend (Telescope.extend (fun _ => empty) ps) (m :: minors)) xs) fs)
-      (shape.ruleCall source mode ctor j field) =
+      (shape.ruleCall (recursor := recursor) source mode ctor j field) =
       shape.recursorCall constants levels (Telescope.extend (fun _ => empty) ps) mode m minors xs fs j field := by
   have hctor := h.constructors ctor hc
   have hfield := hctor.2.2.2.2 field (List.mem_of_getElem? hf)
@@ -170,7 +171,7 @@ theorem ruleIndices_interp (h : CheckedShape.{u,v} entries source shape)
     hxlen, hflen, hmlen, Telescope.extend, Nat.add_comm, Function.comp_def] using ht
 
 theorem ruleLhsBody_interp (h : CheckedShape.{u,v} entries source shape)
-    (hr : RecursorReading entries shape source mode constants reading)
+    (hr : RecursorReading (recursor := recursor) entries shape source mode constants reading)
     (hmode : ModeEvidence.{u,v} entries shape mode) (hM : Realizes constants entries)
     (hn : levels.length = mode.recUvars shape.universes) {i : Nat} {ctor : Constructor β}
     (hc : shape.constructors[i]? = some ctor) {ps xs fs minors : List V} {m : V}
@@ -183,7 +184,7 @@ theorem ruleLhsBody_interp (h : CheckedShape.{u,v} entries source shape)
       (mode.motiveLevel.eval levels) m minors) :
     interp reading levels
       (Telescope.extend (Telescope.extend (Telescope.extend (Telescope.extend (fun _ => empty) ps) (m :: minors)) xs) fs)
-      (shape.ruleLhsBody source mode i ctor) =
+      (shape.ruleLhsBody (recursor := recursor) source mode i ctor) =
       Telescope.applyN (shape.recursorAt constants levels (Telescope.extend (fun _ => empty) ps) mode m minors)
         (ctor.indices.map (interp constants (mode.sourceArgs levels) (Telescope.extend (Telescope.extend (fun _ => empty) ps) xs)) ++
           [shape.constructorValue constants (mode.sourceArgs levels) (Telescope.extend (fun _ => empty) ps) ctor i xs fs]) := by
@@ -204,7 +205,7 @@ theorem ruleLhsBody_interp (h : CheckedShape.{u,v} entries source shape)
     Telescope.applyN_append]
 
 theorem ruleRhsBody_interp (h : CheckedShape.{u,v} entries source shape)
-    (hr : RecursorReading entries shape source mode constants reading)
+    (hr : RecursorReading (recursor := recursor) entries shape source mode constants reading)
     (hmode : ModeEvidence.{u,v} entries shape mode) (hM : Realizes constants entries)
     (hn : levels.length = mode.recUvars shape.universes) {i : Nat} {ctor : Constructor β}
     (hc : shape.constructors[i]? = some ctor) {ps xs fs minors : List V} {m : V}
@@ -217,7 +218,7 @@ theorem ruleRhsBody_interp (h : CheckedShape.{u,v} entries source shape)
       (mode.motiveLevel.eval levels) m minors) :
     interp reading levels
       (Telescope.extend (Telescope.extend (Telescope.extend (Telescope.extend (fun _ => empty) ps) (m :: minors)) xs) fs)
-      (shape.ruleRhsBody source mode i ctor) =
+      (shape.ruleRhsBody (recursor := recursor) source mode i ctor) =
       Telescope.applyN (minors.getD i empty)
         (xs ++ fs ++ shape.recursorCalls constants levels (Telescope.extend (fun _ => empty) ps) mode m minors ctor xs fs) := by
   have hflen : fs.length = ctor.recursive.length := by simpa using FitsS.length_eq hfs
@@ -234,7 +235,7 @@ theorem ruleRhsBody_interp (h : CheckedShape.{u,v} entries source shape)
   have hfields := interp_parameterVars_extend reading levels
     (Telescope.extend (Telescope.extend (fun _ => empty) ps) (m :: minors)) (xs ++ fs)
   simp only [List.length_append, FitsS.length_eq hxs, hflen, Telescope.extend_append] at hfields
-  have hcalls : (ctor.recursive.zipIdx.map fun (field, j) => shape.ruleCall source mode ctor j field).map
+  have hcalls : (ctor.recursive.zipIdx.map fun (field, j) => shape.ruleCall (recursor := recursor) source mode ctor j field).map
       (interp reading levels (Telescope.extend
         (Telescope.extend (Telescope.extend (Telescope.extend (fun _ => empty) ps) (m :: minors)) xs) fs)) =
       shape.recursorCalls constants levels (Telescope.extend (fun _ => empty) ps) mode m minors ctor xs fs := by
@@ -250,7 +251,7 @@ theorem ruleRhsBody_interp (h : CheckedShape.{u,v} entries source shape)
   simp only [interp, hmvar, List.map_append, hfields, hcalls]
 
 theorem large_ruleBody_eq (h : CheckedShape.{u,v} entries source shape)
-    (hr : RecursorReading entries shape source .large constants reading)
+    (hr : RecursorReading (recursor := recursor) entries shape source .large constants reading)
     (hmode : ModeEvidence.{u,v} entries shape .large) (hM : Realizes constants entries)
     (hn : levels.length = ElimMode.large.recUvars shape.universes) {i : Nat} {ctor : Constructor β}
     (hc : shape.constructors[i]? = some ctor) {ps xs fs minors : List V} {m : V}
@@ -263,10 +264,10 @@ theorem large_ruleBody_eq (h : CheckedShape.{u,v} entries source shape)
       (ElimMode.large.motiveLevel.eval levels) m minors) :
     interp reading levels
       (Telescope.extend (Telescope.extend (Telescope.extend (Telescope.extend (fun _ => empty) ps) (m :: minors)) xs) fs)
-      (shape.ruleLhsBody source .large i ctor) =
+      (shape.ruleLhsBody (recursor := recursor) source .large i ctor) =
     interp reading levels
       (Telescope.extend (Telescope.extend (Telescope.extend (Telescope.extend (fun _ => empty) ps) (m :: minors)) xs) fs)
-      (shape.ruleRhsBody source .large i ctor) := by
+      (shape.ruleRhsBody (recursor := recursor) source .large i ctor) := by
   rw [ruleLhsBody_interp h hr hmode hM hn hc hps hxs hfs hm hminors,
     ruleRhsBody_interp h hr hmode hM hn hc hps hxs hfs hm hminors]
   have hΓ := h.parameters.valid constants hM (ElimMode.large.sourceArgs levels)

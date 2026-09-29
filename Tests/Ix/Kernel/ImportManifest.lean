@@ -22,6 +22,8 @@ split of the equality basis, inference in place of witness validation),
 and the natural-number family reference on literals. P01 changes bounded
 validators to structured search outcomes without changing their semantic
 claims. P02 adds exact reference-transfer and admission fidelity evidence,
+and K3 makes recursor references explicit and shares Nat/structure facts
+between family-only and supplied-recursor stages,
 as the header of
 every ported file states. License and notice files are verbatim copies. The
 file inventory, hashes, headers, and licenses are enforced by
@@ -54,6 +56,9 @@ structure PortedFile where
 /-- Modules authored in this repository under `Ix/Kernel`, with no source hash. -/
 def authored : Array String := #[
   "Ix/Ixon/Types.lean", "Ix/Ixon/Types/Kinds.lean", "Ix/Ixon/Types/Modes.lean",
+  "Ix/Kernel/Ingress.lean", "Ix/Kernel/Ingress/Reading.lean",
+  "Ix/Kernel/Ingress/Expr.lean", "Ix/Kernel/Ingress/Constant.lean",
+  "Ix/Kernel/Ingress/Declarations.lean", "Ix/Kernel/Certified/Ordinary/Stage.lean",
   "Ix/Kernel.lean", "Ix/Kernel/Model.lean", "Ix/Kernel/Env.lean", "Ix/Kernel/Check.lean",
   "Ix/Kernel/Consistency.lean", "Ix/Kernel/Audit/Axioms.lean", "Ix/Kernel/Audit/Imports.lean",
   "Ix/Kernel/Audit/Runtime.lean", "Ix/Kernel/Audit/Roots.lean", "Ix/Address/Core.lean",
@@ -74,10 +79,10 @@ def ported : Array PortedFile := #[
   ⟨"Ix/Theory/Certified/Basis/Nonempty.lean", "Ix/Kernel/Certified/Basis/Nonempty.lean", "b717b2ea0c59eb6b359df24c0f45fbeeb2a9cafe0775fe319e8e38b4c2427065", "284ac37e35abca883356730e7bb108e5d8ed9fbe6f184d157d3cb1a0fd81b906"⟩,
   ⟨"Ix/Theory/Certified/LevelEq.lean", "Ix/Kernel/Certified/LevelEq.lean", "f2597b5a6c63ba437c90c77d3ea92d45ce9d340fc9e4fb615a8843fabdb1f7fb", "efbd7eb167a895a810c5c0dad3d02dfb26a821399ec300915718ed70b4d6df9f"⟩,
   ⟨"Ix/Theory/Certified/Level.lean", "Ix/Kernel/Certified/Level.lean", "d129fb7cbced78b6e03c65ec17d2199c83986266d84b4c08966ef489a69a0332", "b338a6e6c4c64f63aab9d0b180d03976dfc4853b78daf861e0b67fff991cc7f6"⟩,
-  ⟨"Ix/Theory/Certified/Natural/Checked.lean", "Ix/Kernel/Certified/Natural/Checked.lean", "d1bff0ed4bc1231d76044bac3964947a6dd4d6272256537a1d69ccc9e061a53b", "7351e5c477412a6ba2d0592c56ba4b3f197b8e8e3e0a37e811676a1e2842d68f"⟩,
-  ⟨"Ix/Theory/Certified/Natural/Publish.lean", "Ix/Kernel/Certified/Natural/Publish.lean", "6ac732a887610b95b85da5f6dbd516c7c261ecb1a53c8b20c1ccf526a16a54fb", "48e148341394cb225c828846b19f30bc099ba703dad8ac373c67584b2d6c31ee"⟩,
+  ⟨"Ix/Theory/Certified/Natural/Checked.lean", "Ix/Kernel/Certified/Natural/Checked.lean", "d1bff0ed4bc1231d76044bac3964947a6dd4d6272256537a1d69ccc9e061a53b", "54896cf569ce581fbccb2e9b7fdecb64e11a14148627a0f70a6e719965ec2626"⟩,
+  ⟨"Ix/Theory/Certified/Natural/Publish.lean", "Ix/Kernel/Certified/Natural/Publish.lean", "6ac732a887610b95b85da5f6dbd516c7c261ecb1a53c8b20c1ccf526a16a54fb", "891149aa2b612a32277239e4722051984a2c69bb39142a2d8306dfd60e3e9ebf"⟩,
   ⟨"Ix/Theory/Certified/Natural/Value.lean", "Ix/Kernel/Certified/Natural/Value.lean", "767478f45bbf8ab14125a40ec79f8e92bda04bf8dabba367643b44603984623c", "65605d1e58677fcfa8b81b9333126c9ebc1573ad6c2e2599c149c4b09d8ee243"⟩,
-  ⟨"Ix/Theory/Certified/Ordinary/Checked.lean", "Ix/Kernel/Certified/Ordinary/Checked.lean", "057c155790636810073b2fee33877e581e1feda5192de32b2358b1838e14966d", "9407a6940ba51053442a93cc5501f1fedee789a8cbe567dc0666a2ba5e528637"⟩,
+  ⟨"Ix/Theory/Certified/Ordinary/Checked.lean", "Ix/Kernel/Certified/Ordinary/Checked.lean", "057c155790636810073b2fee33877e581e1feda5192de32b2358b1838e14966d", "982b53fc057e89bbd06cbc6b0899a14d955a8439732899c2f99be7e1d47e9581"⟩,
   ⟨"Ix/Theory/Certified/Ordinary/Computation.lean", "Ix/Kernel/Certified/Ordinary/Computation.lean", "0ec36fa1fb5bf9d3865f4b389df1eb6e23b79fbe7b8e29a3a91ccd02794dd578", "f91eb0ba4e7434ece504489dd2613dc94d2d8efc90ce8ed823eba1f1dbbcb2ba"⟩,
   ⟨"Ix/Theory/Certified/Ordinary/Constructors.lean", "Ix/Kernel/Certified/Ordinary/Constructors.lean", "ce1fcbcd3644cc3485764cb9b3e39f271a146486db395668024f9e5c9f8b3b1a", "f64cda9e731d223284d33b8639721d897a10f9163bb63f3774f2eb8f98414587"⟩,
   ⟨"Ix/Theory/Certified/Ordinary/ConstructorStage.lean", "Ix/Kernel/Certified/Ordinary/ConstructorStage.lean", "8612f402adad29023d40195337679f7cdd17915f500d11461e746f608d46fa37", "245b06c5b59448b020604474776a64d91660bcb5733f6afe3cd32f4cefec71f9"⟩,
@@ -87,12 +92,12 @@ def ported : Array PortedFile := #[
   ⟨"Ix/Theory/Certified/Ordinary/LargeElim.lean", "Ix/Kernel/Certified/Ordinary/LargeElim.lean", "cea67ca384c6c67bc8f110ca73a981fc2054a4eb8814a06bff194c46e35577cc", "6f5e0f0d9bdd97693baf08dd2acf6d616063f40746c3340f66ee537c5c84220a"⟩,
   ⟨"Ix/Theory/Certified/Ordinary/Reading.lean", "Ix/Kernel/Certified/Ordinary/Reading.lean", "ae00e1e0185abc8f2208f3d0665ab1d6119e58589b37ed8059ded5e72869fccc", "9a5b54e58b4b8712f53c749c1159b8a961e8a28542a3ea1e4f70c713f2480a8b"⟩,
   ⟨"Ix/Theory/Certified/Ordinary/RecursorReading.lean", "Ix/Kernel/Certified/Ordinary/RecursorReading.lean", "7418c845cbea665fd05504ceec48dd13d252c84a554ea511ac45107823f79b98", "3bff55614bc237a5ead680475e81884aaa2d9b17bda5a4659bbadd07d2ae13c4"⟩,
-  ⟨"Ix/Theory/Certified/Ordinary/RecursorStage.lean", "Ix/Kernel/Certified/Ordinary/RecursorStage.lean", "e6b240ea2dd0365184be563f6e2894fc2e0bf560ee2fb5abf2bebf52058b736d", "7e6f6a672d75c601e0127c5c659aa365f9498a12d8de6e67a816fb298ec21706"⟩,
-  ⟨"Ix/Theory/Certified/Ordinary/RecursorSyntax.lean", "Ix/Kernel/Certified/Ordinary/RecursorSyntax.lean", "a15eb2395e6bd2a91dde535e931baaedc2e36a7e96a415905635da942316c18d", "f3502416fab1fc41f64d05d83d2f7e69d7f17bf564750cb3ea30c69347c0e903"⟩,
+  ⟨"Ix/Theory/Certified/Ordinary/RecursorStage.lean", "Ix/Kernel/Certified/Ordinary/RecursorStage.lean", "e6b240ea2dd0365184be563f6e2894fc2e0bf560ee2fb5abf2bebf52058b736d", "f04bb95461e5f3e7eba8915b262ceddae1049ce0ea5a0796016843d375d7370a"⟩,
+  ⟨"Ix/Theory/Certified/Ordinary/RecursorSyntax.lean", "Ix/Kernel/Certified/Ordinary/RecursorSyntax.lean", "a15eb2395e6bd2a91dde535e931baaedc2e36a7e96a415905635da942316c18d", "990d3dbf8631c6d8b166fc7bd6c0fdd6783c34cce810978a3e53086dbb4dadb9"⟩,
   ⟨"Ix/Theory/Certified/Ordinary/RecursorValue.lean", "Ix/Kernel/Certified/Ordinary/RecursorValue.lean", "f0915684633f08b93588652dc5cc9d44ae0ad79e5de1bbbf2816511559d59a0a", "10677986e3f5c8ef097cfad26c673077bf75b5fd6bf31710c87ef8b129012669"⟩,
-  ⟨"Ix/Theory/Certified/Ordinary/RuleChecks.lean", "Ix/Kernel/Certified/Ordinary/RuleChecks.lean", "6e748d47998f1d3314f71c4a320f28a6bb400e8a3068e4d58357f38c16bb51ef", "6fd3ace7c71ab695ed010000a7c7127deda0f85eb1366cef61243e130613d4a3"⟩,
-  ⟨"Ix/Theory/Certified/Ordinary/RuleEquations.lean", "Ix/Kernel/Certified/Ordinary/RuleEquations.lean", "ffa708a84577d0edee7bf90abdbaeab41f025b74fd55b9faa430c0fc6ebf418f", "21d3f67c2fc89cfa0f0b45eb2aeed21bf2f7b8d1c19cb4e969e355f5234f5254"⟩,
-  ⟨"Ix/Theory/Certified/Ordinary/RuleReading.lean", "Ix/Kernel/Certified/Ordinary/RuleReading.lean", "42ca1e10514a2c1e97f8e645dfc584fc1788e87bfb6fe9fc63cf82e5c6b491c3", "1a45e0af2a8965df8cfa43f5e03c338e17e475e1f194ea8174659d351fa50f93"⟩,
+  ⟨"Ix/Theory/Certified/Ordinary/RuleChecks.lean", "Ix/Kernel/Certified/Ordinary/RuleChecks.lean", "6e748d47998f1d3314f71c4a320f28a6bb400e8a3068e4d58357f38c16bb51ef", "560743864397bc554eb2aeccf9891d0bdfffdf49cfbac0f60d6935016af3b572"⟩,
+  ⟨"Ix/Theory/Certified/Ordinary/RuleEquations.lean", "Ix/Kernel/Certified/Ordinary/RuleEquations.lean", "ffa708a84577d0edee7bf90abdbaeab41f025b74fd55b9faa430c0fc6ebf418f", "d9ceab6b6c4f08426035de5e1337bc547c78f27c4bb3a5f2eeb4e598ed7a49bc"⟩,
+  ⟨"Ix/Theory/Certified/Ordinary/RuleReading.lean", "Ix/Kernel/Certified/Ordinary/RuleReading.lean", "42ca1e10514a2c1e97f8e645dfc584fc1788e87bfb6fe9fc63cf82e5c6b491c3", "a79b3567fdc0fe765baada06bb9325e75bc9aefb765ad0d1ab4885803ea3ea29"⟩,
   ⟨"Ix/Theory/Certified/Ordinary/Shape.lean", "Ix/Kernel/Certified/Ordinary/Shape.lean", "b90dfc2e5e5366d9bac38b6a3afb80f5a5ebb4939d0f8a56cf967e48e4559f3a", "2c07c632b100e06a6a519daf42652cb9985d9ee74b98f1060c81eabb4c5e53c5"⟩,
   ⟨"Ix/Theory/Certified/PropWhen.lean", "Ix/Kernel/Certified/PropWhen.lean", "ba546bec95eee9e01b85f28048290a9aad0d3d9d8d4f3041ca55554cb9975e3c", "970966c84576fa99dfdee890e94024d071b54cbe5debbfcded9059df222cd93c"⟩,
   ⟨"Ix/Theory/Certified/Quotient/Reading.lean", "Ix/Kernel/Certified/Quotient/Reading.lean", "879cd33813a146d4f42a27954a49b3a14c0b577f74e667225eb3c3b6949f3f8d", "8d5a2f538fc27634854388eb493d3ef18afeb77d52bd89097ea6873f35cde80f"⟩,
@@ -100,9 +105,9 @@ def ported : Array PortedFile := #[
   ⟨"Ix/Theory/Certified/Signature.lean", "Ix/Kernel/Certified/Signature.lean", "e06ebc68dbd7b7997ed9c85ea6cc8bfe541c7830cc1af06c12a4062fbc4c8f00", "ef38a7af27d54e0cc25e8f9f4fa8bc8f82603f30764985e7becf825223ad4ddb"⟩,
   ⟨"Ix/Theory/Certified/Standard/Checked.lean", "Ix/Kernel/Certified/Standard/Checked.lean", "3090dea2c13b7a4cfe48fc298121f8671a776166f2ce27b7736cba38e8a87c85", "46b41cd12a4f66708c41ac82b9d413a85ffcf93eb7af50707caf260d1755e0b4"⟩,
   ⟨"Ix/Theory/Certified/Standard/Realization.lean", "Ix/Kernel/Certified/Standard/Realization.lean", "f0b7a970b3a4a9d8f1eafcd807bf91707139024a089b88f227c6fb8930cba4fa", "d4bb4f8be74595049ba6ba62e9a4df77ae7d5fa5b37525648e08b4f5eb873833"⟩,
-  ⟨"Ix/Theory/Certified/Structure/Checked.lean", "Ix/Kernel/Certified/Structure/Checked.lean", "bd8336b3506f61303e5f2068ad300bfbcff9fbbca3f4ea40fdd3a08e1caabf13", "44dfa63f2b0455ec8c367cd588706f1dfaa52962d53c9c669550f9391819d12a"⟩,
+  ⟨"Ix/Theory/Certified/Structure/Checked.lean", "Ix/Kernel/Certified/Structure/Checked.lean", "bd8336b3506f61303e5f2068ad300bfbcff9fbbca3f4ea40fdd3a08e1caabf13", "5ae5234a499a82a6381172fb488ee46c4e5d554571e18d6af69b699e55eaa387"⟩,
   ⟨"Ix/Theory/Certified/Structure/Computation.lean", "Ix/Kernel/Certified/Structure/Computation.lean", "e9319a046b644a5412b4c0b88433af3522d5d7038ac24807477dd0045badcc92", "2b0e43d7a8bf68d3a47b21c28d7f6d6fa6453c1b7b4a712a87b1303b4c40eece"⟩,
-  ⟨"Ix/Theory/Certified/Structure/Publish.lean", "Ix/Kernel/Certified/Structure/Publish.lean", "562aa6be637c211cbc44a79ea7051f5322e7a378cb54150a02fafff606b47d1c", "33bc8dde71b41b27f631b849460c641028fad399097f00a069f7a705ca3566e6"⟩,
+  ⟨"Ix/Theory/Certified/Structure/Publish.lean", "Ix/Kernel/Certified/Structure/Publish.lean", "562aa6be637c211cbc44a79ea7051f5322e7a378cb54150a02fafff606b47d1c", "992f6d88c161fe761ac9bd7e54b90911fbcfe8589eb0ae1fecd5c101fd664559"⟩,
   ⟨"Ix/Theory/Certified/Structure/Reading.lean", "Ix/Kernel/Certified/Structure/Reading.lean", "ea25446679471ed786d5487f1375ee2ccf07e7602b10787b4ff51b7fb7dd2f38", "b9a9f0945d015959d4e269c9103e6c6f909061e45038c955a6f2340f97c67b3b"⟩,
   ⟨"Ix/Theory/Certified/Structure/Syntax.lean", "Ix/Kernel/Certified/Structure/Syntax.lean", "e114fddb504393ee7975ce521a1e0218ece270c9cbece13850a334252f1ad3b9", "9b5e947e6b9de8a5b47fcbd9c7c220b8a074a70af39ffbca76fe37e01684427d"⟩,
   ⟨"Ix/Theory/Certified/Structure/Value.lean", "Ix/Kernel/Certified/Structure/Value.lean", "e89f5f99c5b1154812062665fba0704902400d8209a6300cad6c72533e163f53", "d702cfe3e097e268719c235debb0303b112b1f30646f0c5af50d52dbf6c295e9"⟩,

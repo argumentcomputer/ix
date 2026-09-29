@@ -3,6 +3,7 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/Certified/Ordinary/RecursorStage.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
+K3: the recursor reference is explicit and may belong to a separate block.
 K2: the input store and its exact-source facts are removed (comparing the
 stored block with the generated one is the caller's check) and the recursor is
 member 1 of the family's block; `RecursorSourceMatches` is removed,
@@ -23,18 +24,18 @@ namespace Ix.Kernel.Certified.Ordinary
 open Model Model.SetTheory Model.SetTheory.Tower Model.SetModel Inductive
 
 universe u v
-variable {β : Type u} [DecidableEq β]
+variable {β : Type u} {recursor : ConstRef β} [DecidableEq β]
 
 namespace Shape
 
 def recursorEntry (shape : Shape β) (source : β) (mode : ElimMode) : ConstantEntry β :=
   ⟨mode.recUvars shape.universes, shape.recursorType source mode, none, [], []⟩
 
-def recursorSource (shape : Shape β) (source : β) (mode : ElimMode) (k : Bool := false) : Const β :=
+def recursorSource (shape : Shape β) (source : β) (mode : ElimMode) (k : Bool := false) (recursor : ConstRef β := .member source 1) : Const β :=
   .recursor (mode.recUvars shape.universes) shape.parameters.length shape.indices.length 1
     shape.constructors.length (shape.recursorType source mode).erase
     (shape.constructors.zipIdx.map fun (ctor, i) =>
-      ⟨ctor.fields.length + ctor.recursive.length, (shape.ruleRhs source mode i ctor).erase⟩)
+      ⟨ctor.fields.length + ctor.recursive.length, (shape.ruleRhs (recursor := recursor) source mode i ctor).erase⟩)
     k .safe
 
 /-- K metadata is supported for a singleton proposition whose constructor has
@@ -50,25 +51,43 @@ instance (shape : Shape β) : Decidable shape.SupportsK :=
   | [] => .isFalse (by simp [SupportsK, h])
   | _ :: _ :: _ => .isFalse (by simp [SupportsK, h])
 
-def recursorLaws (shape : Shape β) (source : β) (mode : ElimMode) : List (ConstantEquation β) :=
+def recursorLaws (shape : Shape β) (source : β) (mode : ElimMode) (recursor : ConstRef β := .member source 1) : List (ConstantEquation β) :=
   shape.constructors.zipIdx.map fun (ctor, i) =>
-    ⟨shape.ruleLhs source mode i ctor, shape.ruleRhs source mode i ctor⟩
+    ⟨shape.ruleLhs (recursor := recursor) source mode i ctor, shape.ruleRhs (recursor := recursor) source mode i ctor⟩
 
 def recursorEnvironment (shape : Shape β) (entries : Environment β) (source : β)
-    (mode : ElimMode) : Environment β :=
-  (shape.constructorEnvironment entries source).insert (.member source 1) (shape.recursorEntry source mode)
+    (mode : ElimMode) (recursor : ConstRef β := .member source 1) : Environment β :=
+  (shape.constructorEnvironment entries source).insert recursor (shape.recursorEntry source mode)
 
 structure RecursorFormation (entries : Environment β) (shape : Shape β)
-    (source : β) (mode : ElimMode) : Prop where
-  fresh : shape.constructorEnvironment entries source (.member source 1) = none
+    (source : β) (mode : ElimMode) (recursor : ConstRef β := .member source 1) : Prop where
+  fresh : shape.constructorEnvironment entries source recursor = none
   closed : EntryClosed (shape.constructorEnvironment entries source) (shape.recursorEntry source mode)
   typing : ∃ l, TypingClaim.{u,v} (shape.constructorEnvironment entries source) []
     (shape.recursorType source mode) (.sort l)
 
+theorem RecursorFormation.ne_family {entries : Environment β} {shape : Shape β}
+    {source : β} {mode : ElimMode}
+    (h : RecursorFormation entries shape source mode recursor) :
+    recursor ≠ .member source 0 := by
+  intro same
+  have fresh := h.fresh
+  simp [same, constructorEnvironment, familyEnvironment, Environment.overlay,
+    constructorEntries] at fresh
+
+theorem RecursorFormation.ne_constructor {entries : Environment β} {shape : Shape β}
+    {source : β} {mode : ElimMode}
+    (h : RecursorFormation entries shape source mode recursor)
+    {i : Nat} {ctor : Constructor β} (hc : shape.constructors[i]? = some ctor) :
+    recursor ≠ .ctor source 0 i := by
+  intro same
+  have fresh := h.fresh
+  simp [same, constructorEnvironment, Environment.overlay, constructorEntries, hc] at fresh
+
 def checkRecursorType (fuel : Nat) (entries : Environment β) (shape : Shape β)
-    (source : β) (mode : ElimMode) :
-    Search (CheckedClaim.{u} (RecursorFormation.{u,v} entries shape source mode)) :=
-  if hfresh : shape.constructorEnvironment entries source (.member source 1) = none then
+    (source : β) (mode : ElimMode) (recursor : ConstRef β := .member source 1) :
+    Search (CheckedClaim.{u} (RecursorFormation.{u,v} (recursor := recursor) entries shape source mode)) :=
+  if hfresh : shape.constructorEnvironment entries source recursor = none then
     if hs : (shape.recursorType source mode).Scope (mode.recUvars shape.universes) 0 then
       if hr : (shape.recursorType source mode).ReferencesIn (shape.constructorEnvironment entries source) then do
         let ⟨l, ht⟩ ← checkSort.{u,v} fuel (shape.constructorEnvironment entries source) []
@@ -84,8 +103,8 @@ theorem recursorEnvironment_wf {entries : Environment β} {source : β}
     {shape : Shape β} {mode : ElimMode}
     (h : CheckedShape.{u,v} entries source shape) (hE : entries.WF)
     (hC : ConstructorFormation.{u,v} entries shape source)
-    (hR : RecursorFormation.{u,v} entries shape source mode) :
-    (shape.recursorEnvironment entries source mode).WF :=
+    (hR : RecursorFormation.{u,v} (recursor := recursor) entries shape source mode) :
+    (shape.recursorEnvironment (recursor := recursor) entries source mode).WF :=
   (constructorEnvironment_wf h hE hC).insert hR.closed.typeScope hR.closed.bodyScope
     hR.closed.typeReferences hR.closed.bodyReferences hR.closed.equationScope hR.closed.equationReferences
     hR.closed.factScope hR.closed.factReferences
@@ -93,8 +112,8 @@ theorem recursorEnvironment_wf {entries : Environment β} {source : β}
 variable {V : Type v} [SetTheory V]
 
 noncomputable def recursorAssignment (shape : Shape β) (constants : Assignment β V)
-    (source : β) (mode : ElimMode) : Assignment β V :=
-  (shape.constructorAssignment constants source).insert (.member source 1)
+    (source : β) (mode : ElimMode) (recursor : ConstRef β := .member source 1) : Assignment β V :=
+  (shape.constructorAssignment constants source).insert recursor
     (fun levels => shape.closedRecursorValue constants levels mode)
 
 end Shape
@@ -102,23 +121,23 @@ end Shape
 variable {V : Type v} [SetTheory V]
 
 structure RecursorReading (entries : Environment β) (shape : Shape β) (source : β)
-    (mode : ElimMode) (constants reading : Assignment β V) : Prop
+    (mode : ElimMode) (constants reading : Assignment β V) (recursor : ConstRef β := .member source 1) : Prop
     extends ConstructorReading entries shape source constants reading where
   recursor : ∀ levels, levels.length = mode.recUvars shape.universes →
-    reading (.member source 1) levels = shape.closedRecursorValue constants levels mode
+    reading recursor levels = shape.closedRecursorValue constants levels mode
 
 namespace Shape
 
 theorem recursorAssignment_agreesConstructors {entries : Environment β} {source : β}
     {shape : Shape β} {mode : ElimMode}
-    (hR : RecursorFormation.{u,v} entries shape source mode) (constants : Assignment β V) :
+    (hR : RecursorFormation.{u,v} (recursor := recursor) entries shape source mode) (constants : Assignment β V) :
     Assignment.AgreesOn (shape.constructorEnvironment entries source) (shape.constructorAssignment constants source)
-      (shape.recursorAssignment constants source mode) := Assignment.insert_agrees hR.fresh _ _
+      (shape.recursorAssignment (recursor := recursor) constants source mode) := Assignment.insert_agrees hR.fresh _ _
 
 theorem recursorAssignment_reading {entries : Environment β} {source : β}
     {shape : Shape β} {mode : ElimMode} (h : CheckedShape.{u,v} entries source shape)
-    (hR : RecursorFormation.{u,v} entries shape source mode) (constants : Assignment β V) :
-    RecursorReading entries shape source mode constants (shape.recursorAssignment constants source mode) := by
+    (hR : RecursorFormation.{u,v} (recursor := recursor) entries shape source mode) (constants : Assignment β V) :
+    RecursorReading (recursor := recursor) entries shape source mode constants (shape.recursorAssignment (recursor := recursor) constants source mode) := by
   have hr := constructorAssignment_reading h constants
   have ha := recursorAssignment_agreesConstructors hR constants
   constructor
@@ -140,9 +159,9 @@ theorem recursorAssignment_realizes {entries : Environment β} {source : β}
     {shape : Shape β} {mode : ElimMode}
     (h : CheckedShape.{u,v} entries source shape) (hE : entries.WF)
     (hC : ConstructorFormation.{u,v} entries shape source)
-    (hR : RecursorFormation.{u,v} entries shape source mode)
+    (hR : RecursorFormation.{u,v} (recursor := recursor) entries shape source mode)
     (hmode : ModeEvidence.{u,v} entries shape mode) (constants : Assignment β V) (hM : Realizes constants entries) :
-    Realizes (shape.recursorAssignment constants source mode) (shape.recursorEnvironment entries source mode) := by
+    Realizes (shape.recursorAssignment (recursor := recursor) constants source mode) (shape.recursorEnvironment (recursor := recursor) entries source mode) := by
   have hr := recursorAssignment_reading h hR constants
   have hbase := (constructorAssignment_realizes h hE hC constants hM).of_agrees
     (constructorEnvironment_wf h hE hC) (recursorAssignment_agreesConstructors hR constants)

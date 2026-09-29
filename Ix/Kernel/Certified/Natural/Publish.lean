@@ -3,6 +3,8 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/Certified/Natural/Publish.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
+K3: facts are checked and realized over either the constructor stage or
+the stage with a recursor at its explicit reference.
 K2: the input store, its exact-source facts, the `EntrySource` provenance, and
 the pin parameter are removed; the recursor is member 1 of the family's block;
 `succApp` proves the successor's function membership for the fact's meaning.
@@ -19,23 +21,20 @@ namespace Ix.Kernel.Certified.Natural
 open Model Model.SetTheory Model.SetTheory.Tower Model.SetModel
 
 universe u v
-variable {β : Type u} [DecidableEq β] {entries : Environment β} {source : β} {mode : Inductive.ElimMode}
+variable {β : Type u} [DecidableEq β] {entries : Environment β} {source : β} {stage : Ordinary.Stage β}
 
-theorem family_lookup (h : Checked.{u,v} entries source mode) :
-    shape.publishedEnvironment entries source mode (.member source 0) = some (shape : Ordinary.Shape β).familyEntry := by
-  apply Environment.insert_old h.block.recursorChecked.fresh
-  simp [Ordinary.Shape.constructorEnvironment, Environment.overlay, Ordinary.Shape.constructorEntries,
-    Ordinary.Shape.familyEnvironment]
+theorem family_lookup (h : Checked.{u,v} entries source stage) :
+    stage.environment shape entries source (.member source 0) = some (shape : Ordinary.Shape β).familyEntry :=
+  Ordinary.Stage.family_lookup h.block
 
-theorem succ_lookup (h : Checked.{u,v} entries source mode) :
-    shape.publishedEnvironment entries source mode (.ctor source 0 1) =
-      some ((shape : Ordinary.Shape β).constructorEntry source succConstructor) := by
-  apply Environment.insert_old h.block.recursorChecked.fresh
-  simp [Ordinary.Shape.constructorEnvironment, Environment.overlay, Ordinary.Shape.constructorEntries, shape]
+theorem succ_lookup (h : Checked.{u,v} entries source stage) :
+    stage.environment shape entries source (.ctor source 0 1) =
+      some ((shape : Ordinary.Shape β).constructorEntry source succConstructor) :=
+  Ordinary.Stage.constructor_lookup h.block rfl
 
-theorem environment_wf (h : Checked.{u,v} entries source mode) (hE : entries.WF) :
-    (environment entries source mode).WF := by
-  have hb := Ordinary.Shape.publishedEnvironment_wf h.block hE
+theorem environment_wf (h : Checked.{u,v} entries source stage) (hE : entries.WF) :
+    (environment entries source stage).WF := by
+  have hb := Ordinary.Stage.environment_wf h.block hE
   exact hb.insert (hb.typeScope _ (shape : Ordinary.Shape β).familyEntry (family_lookup h))
     (by simp [entry, Ordinary.Shape.familyEntry])
     (hb.typeReferences _ (shape : Ordinary.Shape β).familyEntry (family_lookup h))
@@ -45,28 +44,28 @@ theorem environment_wf (h : Checked.{u,v} entries source mode) (hE : entries.WF)
     (by simp [entry, fact, ConstantFact.Scope, shape, Ordinary.Shape.familyEntry])
     (by simpa only [entry, List.mem_singleton, forall_eq] using h.references)
 
-theorem environment_old (h : Checked.{u,v} entries source mode)
+theorem environment_old (h : Checked.{u,v} entries source stage)
     {r : ConstRef β} {old : ConstantEntry β} (hr : entries r = some old) :
-    environment entries source mode r = some old := by
+    environment entries source stage r = some old := by
   simp only [environment, Environment.insert,
     if_neg (fresh_ne (h.block.shapeChecked.fresh _ (List.mem_cons_self ..)) hr)]
-  exact Ordinary.Shape.publishedEnvironment_old h.block hr
+  exact Ordinary.Stage.environment_old h.block hr
 
 variable {V : Type v} [SetTheory V]
 
 /-- The successor constructor is a function on the carrier, which contains
 every numeral: the meaning of `natural` needed for literal unfolding. -/
-theorem succApp (h : Checked.{u,v} entries source mode) (hE : entries.WF)
+theorem succApp (h : Checked.{u,v} entries source stage) (hE : entries.WF)
     (constants : Assignment β V) (hM : Realizes constants entries) (n : Nat) :
     ∃ (v : Nat) (A : V) (B : V → V),
-      shape.recursorAssignment constants source mode (.ctor source 0 1) [] ∈ˢ piR v A B ∧
+      stage.assignment shape constants source (.ctor source 0 1) [] ∈ˢ piR v A B ∧
         Numeral.value n ∈ˢ A ∧ ∀ x, x ∈ˢ A → B x ∈ˢ univ v := by
-  have hb := Ordinary.Shape.publishedAssignment_realizes h.block hE constants hM
-  have hr := Ordinary.Shape.recursorAssignment_reading h.block.shapeChecked h.block.recursorChecked constants
+  have hb := Ordinary.Stage.assignment_realizes h.block hE constants hM
+  have hr := Ordinary.Stage.assignment_reading h.block constants
   have hmem := hb.member _ _ (succ_lookup h) [] rfl (fun _ => empty)
   have hfam := hb.member _ _ (family_lookup h) [] rfl (fun _ => empty)
-  refine ⟨1, shape.recursorAssignment constants source mode (.member source 0) [],
-    fun _ => shape.recursorAssignment constants source mode (.member source 0) [], ?_, ?_, ?_⟩
+  refine ⟨1, stage.assignment shape constants source (.member source 0) [],
+    fun _ => stage.assignment shape constants source (.member source 0) [], ?_, ?_, ?_⟩
   · simpa [Ordinary.Shape.constructorEntry, Ordinary.Constructor.type, Ordinary.Constructor.recursiveTypes,
       Ordinary.recursiveTypesFrom, Ordinary.RecursiveField.type, Ordinary.Shape.familyApp,
       Ordinary.parameterVars, shape, succConstructor, AExpr.forallN, AExpr.appN, AExpr.liftN, VLevel.params,
@@ -76,11 +75,11 @@ theorem succApp (h : Checked.{u,v} entries source mode) (hE : entries.WF)
   · intro x _
     simpa [Ordinary.Shape.familyEntry, Ordinary.Shape.type, shape, AExpr.forallN, interp, VLevel.eval] using hfam
 
-theorem assignment_realizes (h : Checked.{u,v} entries source mode)
+theorem assignment_realizes (h : Checked.{u,v} entries source stage)
     (hE : entries.WF) (constants : Assignment β V) (hM : Realizes constants entries) :
-    Realizes (shape.recursorAssignment constants source mode) (environment entries source mode) := by
-  have hb := Ordinary.Shape.publishedAssignment_realizes h.block hE constants hM
-  have hr := Ordinary.Shape.recursorAssignment_reading h.block.shapeChecked h.block.recursorChecked constants
+    Realizes (stage.assignment shape constants source) (environment entries source stage) := by
+  have hb := Ordinary.Stage.assignment_realizes h.block hE constants hM
+  have hr := Ordinary.Stage.assignment_reading h.block constants
   apply hb.insert
   constructor
   · exact hb.typeValid _ (shape : Ordinary.Shape β).familyEntry (family_lookup h)
@@ -92,6 +91,6 @@ theorem assignment_realizes (h : Checked.{u,v} entries source mode)
     cases List.mem_singleton.mp hf
     have he : levels = [] := List.eq_nil_of_length_eq_zero hn
     subst levels
-    exact ⟨rfl, meaning h.block.shapeChecked hr.toConstructorReading hM (succApp h hE constants hM)⟩
+    exact ⟨rfl, meaning h.block.shapeChecked hr hM (succApp h hE constants hM)⟩
 
 end Ix.Kernel.Certified.Natural

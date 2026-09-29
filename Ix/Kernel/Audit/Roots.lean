@@ -44,7 +44,9 @@ causes and adds `String.append` for contextual diagnostics and `Nat.decLe`
 for an out-of-range projection diagnostic. Both are inherited from `Init`;
 the axiom, import, and replacement allowlists are unchanged. P03 adds the
 `checkAgainst` helper to the compiled closure (899 → 900 functions), reusing
-expected-type formation while keeping the same inherited replacements. -/
+expected-type formation while keeping the same inherited replacements. K3
+adds family-only admission and a shared optional-recursor stage for Nat and
+structure facts (900 → 920 functions), with the same replacements. -/
 
 open Lean
 
@@ -63,6 +65,14 @@ def fidelityRoots : Array Name :=
 def publicOperations : Array Name :=
   #[``Ix.Kernel.check, ``Ix.Kernel.checkDecls, ``Ix.Kernel.checkDecl,
     ``Ix.Kernel.Env.lookup, ``Ix.Kernel.Env.toEnvironment]
+
+/-- K3's Ixon entry points additionally reach Lean's byte/array access and
+UInt conversions and physical declaration association. Their separate closure
+is frozen below: 961 functions,
+23 inherited externs, and two inherited unsafe array accessors. -/
+def ingressOperations : Array Name :=
+  #[``Ix.Kernel.checkEnv, ``Ix.Kernel.Ingress.readExpr,
+    ``Ix.Kernel.Ingress.readBlock, ``Ix.Kernel.Ingress.reference]
 
 /-- Module prefixes the certified import closure may use: Lean core, the
 kernel itself, the pure address key, and the pure Ixon types. Measured after the K0 import trim,
@@ -91,6 +101,15 @@ end Ix.Kernel.Audit
 #guard_kernel_axioms Ix.Kernel.check_installed [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDecl_preserves [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDecls_preserves [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.readExpr_reading [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.readBlock_reading [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.ExprReads.deterministic [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.readExpr_agree [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.Installed.primary [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkFamilyC [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkEnv_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkEnv_has_model [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkEnv [propext, Classical.choice, Quot.sound]
 
 /-! ## Import and runtime closures -/
 
@@ -98,10 +117,16 @@ end Ix.Kernel.Audit
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Audit.importAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
-Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 900 compiled functions; inherited externs 16,
+Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 920 compiled functions; inherited externs 16,
 implemented_by 0, unsafe 1, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
+
+/-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
+Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 961 compiled functions;
+inherited externs 23, implemented_by 0, unsafe 2, csimp 0 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-! ## Frozen statements -/
 

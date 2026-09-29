@@ -92,11 +92,11 @@ structure Reading (β : Type u) where
   mode : ElimMode
   k : Bool
 
-/-- Read a block holding one inductive member and its recursor. -/
-def readBlock (fuel : Nat) (entries : Environment β) (source : β) (block : Block β) :
-    Search (Reading β) :=
-  match block.members with
-  | [.induct uvars nparams nindices type ctors .safe, .recursor ruvars _ _ _ _ _ _ k .safe] => do
+/-- Read the family's shape independently of whether a recursor is supplied. -/
+def readFamily (fuel : Nat) (entries : Environment β) (source : β) (family : Const β) :
+    Search (Shape β) :=
+  match family with
+  | .induct uvars nparams nindices type ctors .safe => do
     let (rawParams, rest) ← splitN nparams type
     let (rawIndices, body) ← splitN nindices rest
     match body with
@@ -105,11 +105,20 @@ def readBlock (fuel : Nat) (entries : Environment β) (source : β) (block : Blo
       let Γp := Telescope.context [] parameters
       let indices ← annotateTelescope.{u,v} fuel entries Γp rawIndices
       let constructors ← ctors.mapM (readConstructor.{u,v} fuel entries (.member source 0) nparams Γp)
-      let shape : Shape β := ⟨uvars, parameters, indices, level, constructors⟩
-      if ruvars = uvars + 1 then return ⟨shape, .large, k⟩
-      else if ruvars = uvars then return ⟨shape, .small, k⟩
-      else .error .noMatch
+      return ⟨uvars, parameters, indices, level, constructors⟩
     | _ => .error .noMatch
+  | _ => .error .noMatch
+
+/-- The two input records need not occupy the same physical block. This
+logical pair only supplies the family shape and recursor elimination mode. -/
+def readBlock (fuel : Nat) (entries : Environment β) (source : β) (block : Block β) :
+    Search (Reading β) :=
+  match block.members with
+  | [family, .recursor ruvars _ _ _ _ _ _ k .safe] => do
+    let shape ← readFamily.{u,v} fuel entries source family
+    if ruvars = shape.universes + 1 then return ⟨shape, .large, k⟩
+    else if ruvars = shape.universes then return ⟨shape, .small, k⟩
+    else .error .noMatch
   | _ => .error .noMatch
 
 end Ix.Kernel.Certified.Ordinary

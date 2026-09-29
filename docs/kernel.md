@@ -16,9 +16,11 @@ system. It does not certify the Lean-to-Ixon compiler, Rust checker, or IxVM.
 | Layer | Meaning | Established by |
 | --- | --- | --- |
 | `Decl`, `Block`, `Const`, `VExpr`, `VLevel`, `ConstRef` | The supplied declarations, member/constructor positions, terms, and positional universes | Input data, without a typing assumption |
+| `Ix.Ixon.Types`, `Ingress.Context`, `ExprReads`, `BlockReads` | Pure production Ixon data and its exact reading after table, projection, sharing, and literal resolution | `readExpr_reading`, `readBlock_reading`, and reading determinism |
 | `AExpr`, `PropWhen` | A reading with a condition at each binder describing when its codomain is a proposition | `annotate_erase` proves exact erasure; separate scope checks include annotation conditions |
 | `Typed`, `TypedSort`, `Reduced`, `Conv` | Search results with erased semantic evidence for this environment and context | `inferA`, normalization, conversion, and the declaration checkers |
 | Admission candidate | An ordinary inductive shape, structure description, or standard primitive interface | A reader proposes it; validation and exact generated-block comparison justify installation |
+| `Certified.Ordinary.Stage` | The family/constructor stage, optionally extended with a supplied recursor at its actual reference | Each stage constructs its model and constructor reading; Nat and structure facts share this interface |
 | `Env`, `ConstantEntry`, `Environment` | Concrete storage and its functional lookup view, including types, bodies, equations, and facts | Admission constructs `AdmissionClaim` and exact `Block.Installed` readings |
 | `Model`, `SetTheory`, interpretation | A simultaneous realization of the installed entries in an explicit set theory | Model extension and the closed acceptance theorem |
 
@@ -39,12 +41,15 @@ it requires a formed intermediate term.
 
 The current checked input is a list of `Decl β`, for any `β` with decidable
 equality. `checkAddressed` specializes it to opaque `Address` keys.
+`checkEnv` reads ordered production Ixon constant pairs and literal blobs
+through the pure `Ix.Ixon.Types` boundary.
 
 | Input | Current behavior |
 | --- | --- |
 | Single safe definition, theorem, or opaque | Check its declared type and body; theorems must have a propositional type |
 | Variables, universes, constants, applications, lambdas, Pi types, lets | Check scope, universe arity, typing, and binder conditions |
-| Ordinary inductive block | Recognize one supported family with its constructors and recursor; validate positivity, universe constraints, elimination, and exact generated declarations |
+| Ordinary inductive family | Check the family and constructors independently; validate positivity, universe constraints, and the complete supplied declarations |
+| Supplied ordinary recursor | Associate by the major premise; check its complete type, metadata, rules, elimination, and freshness at its own reference |
 | Structure-shaped ordinary block | Publish projection typing, iota, and eta when the field and Prop restrictions hold; otherwise try ordinary admission |
 | Natural numbers | Recognize the natural-number interface; literals name their admitted family; literal/constructor conversion and recursor iota are supported |
 | Equality | Ordinary admission plus K-like reduction through checked constructor synthesis and proof irrelevance |
@@ -60,8 +65,31 @@ supported-profile check, not a completeness theorem about Lean.
 
 Declarations must arrive in dependency order. References to unavailable
 constants and duplicate addresses are rejected. An inductive block's own
-members are handled by its admission construction. Host-side dependency
-scheduling and Ixon table resolution are separate ingress work.
+members are handled by its admission construction. Ixon ingress preserves
+physical member and constructor references. Production stores an inductive
+family and its recursor separately; the driver consumes an associated pair
+together and checks all intervening records afterward in their relative
+order. Every external reference must resolve against the checked prefix.
+The existing combined family/recursor fixture layout remains supported.
+
+`Ix.Tc` and Rust discover a recursor's owner through its major premise and
+compare the complete generated candidate. The certified ordinary reader
+uses the same association, restricted to syntactic telescopes in its current
+profile; it never normalizes an open peeled body in an empty context.
+Association cannot authorize acceptance. A missing recursor admits only the
+family and constructors, with Nat or structure facts when applicable. It
+does not generate a replacement recursor. Mutual/nested auxiliary recursors
+and adding a separate recursor later through single-declaration admission
+remain outside this interface.
+
+`checkEnv_reading` establishes `Ingress.Installed`: unique constant and blob
+keys, exact source readings, and each primary record installed at its own
+reference. Projection records must name the proper owner, member kind, and
+position and have empty tables. Sharing edges must decrease; indexes resolve
+without narrowing. `checkEnv_has_model` applies to this executed Ixon entry
+point. Nat payloads are little-endian; strings and nonstandard binder modes
+decline. Address authentication, wire canonicality, and unused table entries
+are outside this reading contract.
 
 The certified environment retains the checked body of every definition-like
 declaration, including theorem and opaque declarations. Delta reduction can
@@ -115,17 +143,22 @@ statements, import auditing, and compiled runtime auditing are independent
 checks. Axiom sets alone do not establish that theorem premises are useful.
 
 The execution foundation is Lean's kernel, compiler, runtime, and core data
-representations. At P03 the public runtime closure contains 900 compiled
+representations. At this K3 checkpoint the public runtime closure contains 920 compiled
 functions, 16 inherited externs, one inherited unsafe declaration, and no
 `implemented_by` or `csimp` replacement. The allowed inherited operations
 are listed and explained in
 [`Ix/Kernel/Audit/Roots.lean`](../Ix/Kernel/Audit/Roots.lean). No project FFI,
 Rust checker, or BLAKE3 operation is reached by the certified checker. An
-address is only a key inside this boundary; it is never hashed there.
+address is only a key inside this boundary; it is never hashed there. The
+Ixon ingress closure contains 961 compiled functions, 23 inherited externs,
+two inherited unsafe array accessors, and no `implemented_by` or `csimp`.
 
 Byte decoding, canonicality, address reconstruction, claims, and receipts
-have no acceptance theorem at this checkpoint. K3 will prove exact Ixon
-readings; K4 will connect supported bytes and pure serialization/decoding;
+have no acceptance theorem at this checkpoint. K3's exact Ixon readings and
+admission are implemented; egress remains open. Expanding sharing and table
+indexes loses layout information, so an inverse from raw terms alone cannot
+recover arbitrary source encodings. The egress contract must retain layout
+or restrict and prove a canonical domain. K4 will connect supported bytes and pure serialization/decoding;
 K5 will connect authenticated subjects and receipts. A theorem about an
 accepted raw environment does not by itself prove any of those contracts.
 
@@ -139,7 +172,7 @@ lake run check-kernel --with-model
 
 The standalone package reads the repository's kernel sources and has no
 external packages. Its default strict build checks all kernel modules,
-frozen audits (including negative controls), and eight fixture modules.
+frozen audits (including negative controls), and nine fixture modules.
 Provenance validates the port inventory, inspected target hashes, source
 pins, headers, and license files. `--source PATH` additionally checks the
 old source checkout against the recorded source hashes.
@@ -154,14 +187,26 @@ storage groups, preserves the source K flag, and configures the fixture
 primitive references. Neither its translation nor the oracle is a premise
 of a certified theorem.
 
+The host-only `kernel-ingress` executable compiles tutorial declarations with
+`Ix.CompileM`, serializes and reloads them through the production codec, and
+runs `checkEnv`. Its 26 cases cover eight ordinary families, definition and
+reduction examples, family-only dependencies, and mutations of recursor
+rules, field counts, metadata, and K flags. The compiler, loader, and host
+ordering remain untrusted producers. Exact Ixon bytes and outcomes are
+retained in `.lake/build/kernel-ingress.jsonl`.
+
 `lake run check-kernel` writes exact raw input trees, outcomes and reasons
 to `.lake/build/kernel-differential.jsonl`. The CI job **Certified Lean
 kernel** runs the host/standalone/provenance/model gate and uploads that
-file. The 2026-09-29 release run passed in a fresh jj workspace with no
+file and the ingress JSONL. The 2026-09-29 K2 release run passed in a fresh jj workspace with no
 project Lean artifacts: 134 standalone jobs, 144 host fixture/provenance
 jobs, 342 differential build jobs, 38 comparison cases, and 975 model jobs
 including its full axiom audit. That run reused pinned third-party package
 caches and unchanged Rust artifacts. No dependency revision changed.
+The later K3 incremental full gate passed 144 standalone jobs, 154 host
+fixture/provenance jobs, 457 runner build jobs, all 38 differential and 26
+ingress cases, and the 975-job model gate. Provenance covers 97 ported,
+35 authored modules, and four license files. This run was not a clean build.
 Native performance commands and retained
 operation counts are documented in
 [`Benchmarks/Kernel/README.md`](../Benchmarks/Kernel/README.md). Diagnostic

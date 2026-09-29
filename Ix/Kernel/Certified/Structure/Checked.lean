@@ -3,6 +3,8 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/Certified/Structure/Checked.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
+K3: facts are checked and realized over either the constructor stage or
+the stage with a recursor at its explicit reference.
 K2: the input store, its exact-source facts, and the witnesses are removed;
 the recursor is member 1 of the family's block; `checkFacts` and `check` take
 the ordinary block's proof from the caller and infer with `Ix.Kernel.Infer`;
@@ -20,6 +22,8 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Certified.Structure.Computation
 import Ix.Kernel.Certified.Signature
 
+import Ix.Kernel.Certified.Ordinary.Stage
+
 namespace Ix.Kernel.Certified.Structure
 
 open Model
@@ -31,8 +35,8 @@ def Description.factEntry (d : Description β) (source : β) : ConstantEntry β 
   { d.ordinary.familyEntry with facts := d.structureFact :: d.facts source }
 
 def Description.factEnvironment (d : Description β) (entries : Environment β) (source : β)
-    (mode : Inductive.ElimMode) : Environment β :=
-  (d.ordinary.publishedEnvironment entries source mode).insert (.member source 0) (d.factEntry source)
+    (stage : Ordinary.Stage β) : Environment β :=
+  (stage.environment d.ordinary entries source).insert (.member source 0) (d.factEntry source)
 
 /-- The family entry as published: the arities, the projection facts, and the
 eta and iota equations. Rules are typed in the published environment. -/
@@ -40,28 +44,28 @@ def Description.publishedEntry (d : Description β) (source : β) : ConstantEntr
   { d.factEntry source with equations := d.equations source }
 
 def Description.publishedEnvironment (d : Description β) (entries : Environment β) (source : β)
-    (mode : Inductive.ElimMode) : Environment β :=
-  (d.ordinary.publishedEnvironment entries source mode).insert (.member source 0) (d.publishedEntry source)
+    (stage : Ordinary.Stage β) : Environment β :=
+  (stage.environment d.ordinary entries source).insert (.member source 0) (d.publishedEntry source)
 
 structure FactsChecked (entries : Environment β) (d : Description β)
-    (source : β) (mode : Inductive.ElimMode) : Prop where
-  block : Ordinary.CheckedBlock.{u,v} entries source d.ordinary mode
+    (source : β) (stage : Ordinary.Stage β) : Prop where
+  block : stage.Checked.{u,v} entries source d.ordinary
   fields : FieldsFormed.{u,v} entries d.level d.ordinary.parameterContext d.fields
-  domains : Telescope.Formed.{u,v} (d.ordinary.publishedEnvironment entries source mode) []
+  domains : Telescope.Formed.{u,v} (stage.environment d.ordinary entries source) []
     (d.projectionDomains source)
   scope : ∀ fact ∈ d.facts source, fact.Scope d.universes
   references : ∀ fact ∈ d.facts source,
-    fact.ReferencesIn (d.ordinary.publishedEnvironment entries source mode)
+    fact.ReferencesIn (stage.environment d.ordinary entries source)
 
 /-- The ordinary block is already checked by the caller. -/
 def checkFacts (fuel : Nat) (entries : Environment β) (d : Description β) (source : β)
-    (mode : Inductive.ElimMode) (hb : Ordinary.CheckedBlock.{u,v} entries source d.ordinary mode) :
-    Search (CheckedClaim.{u} (FactsChecked.{u,v} entries d source mode)) :=
+    (stage : Ordinary.Stage β) (hb : stage.Checked.{u,v} entries source d.ordinary) :
+    Search (CheckedClaim.{u} (FactsChecked.{u,v} entries d source stage)) :=
   if hs : ∀ fact ∈ d.facts source, fact.Scope d.universes then
     if hr : ∀ fact ∈ d.facts source,
-        fact.ReferencesIn (d.ordinary.publishedEnvironment entries source mode) then do
+        fact.ReferencesIn (stage.environment d.ordinary entries source) then do
       let hf ← checkFields.{u,v} fuel entries d.level d.ordinary.parameterContext d.fields
-      let hd ← checkTelescope.{u,v} fuel (d.ordinary.publishedEnvironment entries source mode) none []
+      let hd ← checkTelescope.{u,v} fuel (stage.environment d.ordinary entries source) none []
         (d.projectionDomains source)
       return ⟨⟨hb, hf.down, hd.down.1, hs, hr⟩⟩
     else .error (.malformed "structure fact references an uninstalled constant")
@@ -76,21 +80,21 @@ def Description.iotaRule (d : Description β) (source : β) (i : Nat) (field : F
     (field.domain.liftN (d.fields.length - i)), d.iotaLhs source i field, d.iotaRhs i field⟩
 
 structure Checked (entries : Environment β) (d : Description β)
-    (source : β) (mode : Inductive.ElimMode) : Prop where
-  facts : FactsChecked.{u,v} entries d source mode
-  eta : Signature.RuleFormed.{u,v} (d.publishedEnvironment entries source mode) (d.etaRule source)
+    (source : β) (stage : Ordinary.Stage β) : Prop where
+  facts : FactsChecked.{u,v} entries d source stage
+  eta : Signature.RuleFormed.{u,v} (d.publishedEnvironment entries source stage) (d.etaRule source)
   iota : ∀ field i, (field, i) ∈ d.fields.zipIdx →
-    Signature.RuleFormed.{u,v} (d.publishedEnvironment entries source mode) (d.iotaRule source i field)
+    Signature.RuleFormed.{u,v} (d.publishedEnvironment entries source stage) (d.iotaRule source i field)
 
 def checkIota (fuel : Nat) (entries : Environment β) (d : Description β) (source : β)
-    (mode : Inductive.ElimMode) :
+    (stage : Ordinary.Stage β) :
     (fields : List (Field β × Nat)) →
       Search (CheckedClaim.{u} (∀ field i, (field, i) ∈ fields →
-        Signature.RuleFormed.{u,v} (d.publishedEnvironment entries source mode) (d.iotaRule source i field)))
+        Signature.RuleFormed.{u,v} (d.publishedEnvironment entries source stage) (d.iotaRule source i field)))
   | [] => .ok ⟨by simp⟩
   | (field, i) :: fields => do
-    let ht ← Signature.checkRule.{u,v} fuel (d.publishedEnvironment entries source mode) (d.iotaRule source i field)
-    let rest ← checkIota fuel entries d source mode fields
+    let ht ← Signature.checkRule.{u,v} fuel (d.publishedEnvironment entries source stage) (d.iotaRule source i field)
+    let rest ← checkIota fuel entries d source stage fields
     return ⟨by
       intro field' j hj
       rcases List.mem_cons.mp hj with he | hj
@@ -98,16 +102,16 @@ def checkIota (fuel : Nat) (entries : Environment β) (d : Description β) (sour
       · exact rest.down field' j hj⟩
 
 def check (fuel : Nat) (entries : Environment β) (d : Description β) (source : β)
-    (mode : Inductive.ElimMode) (hb : Ordinary.CheckedBlock.{u,v} entries source d.ordinary mode) :
-    Search (CheckedClaim.{u} (Checked.{u,v} entries d source mode)) := do
-  let facts ← checkFacts.{u,v} fuel entries d source mode hb
-  let eta ← Signature.checkRule.{u,v} fuel (d.publishedEnvironment entries source mode) (d.etaRule source)
-  let iota ← checkIota.{u,v} fuel entries d source mode d.fields.zipIdx
+    (stage : Ordinary.Stage β) (hb : stage.Checked.{u,v} entries source d.ordinary) :
+    Search (CheckedClaim.{u} (Checked.{u,v} entries d source stage)) := do
+  let facts ← checkFacts.{u,v} fuel entries d source stage hb
+  let eta ← Signature.checkRule.{u,v} fuel (d.publishedEnvironment entries source stage) (d.etaRule source)
+  let iota ← checkIota.{u,v} fuel entries d source stage d.fields.zipIdx
   return ⟨⟨facts.down, eta.down, iota.down⟩⟩
 
 theorem check_sound {fuel : Nat} {entries : Environment β} {d : Description β} {source : β}
-    {mode : Inductive.ElimMode} {hb : Ordinary.CheckedBlock.{u,v} entries source d.ordinary mode}
-    {result} (_ : check.{u,v} fuel entries d source mode hb = .ok result) :
-    Checked.{u,v} entries d source mode := result.down
+    {stage : Ordinary.Stage β} {hb : stage.Checked.{u,v} entries source d.ordinary}
+    {result} (_ : check.{u,v} fuel entries d source stage hb = .ok result) :
+    Checked.{u,v} entries d source stage := result.down
 
 end Ix.Kernel.Certified.Structure

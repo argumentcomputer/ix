@@ -31,9 +31,9 @@ def readFields (fuel : Nat) (entries : Environment β) :
     return ⟨D, l⟩ :: fields
 
 /-- The description of a structure-like reading. -/
-def readDescription (fuel : Nat) (entries : Environment β) (reading : Ordinary.Reading β) :
+def readDescription (fuel : Nat) (entries : Environment β) (shape : Ordinary.Shape β) :
     Search (Description β) :=
-  match reading.shape with
+  match shape with
   | ⟨universes, parameters, [], level, [⟨domains, [], []⟩]⟩ => do
     let fields ← readFields.{u,v} fuel entries (Telescope.context [] parameters) domains
     return ⟨universes, parameters, fields, level⟩

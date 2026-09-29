@@ -3,6 +3,7 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/Certified/Ordinary/RuleEquations.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
+K3: the recursor reference is explicit and may belong to a separate block.
 K2: the input store and its exact-source facts are removed (comparing the
 stored block with the generated one is the caller's check) and the recursor is
 member 1 of the family's block.
@@ -19,7 +20,7 @@ namespace Ix.Kernel.Certified.Ordinary.Shape
 open Model Model.SetTheory Model.SetTheory.Tower Model.SetModel Inductive
 
 universe u v
-variable {β : Type u} {V : Type v} [SetTheory V]
+variable {β : Type u} {recursor : ConstRef β} {V : Type v} [SetTheory V]
   {entries : Environment β} {shape : Shape β} {source : β}
   {constants reading : Assignment β V} {levels : List Nat} {mode : ElimMode}
 
@@ -56,12 +57,12 @@ theorem ruleFields_curry (h : CheckedShape.{u,v} entries source shape)
 /-- Equality of the complete lambda-abstracted rule, including parameters,
 the motive, every minor premise, and all constructor fields. -/
 theorem large_rule_eq (h : CheckedShape.{u,v} entries source shape)
-    (hr : RecursorReading entries shape source .large constants reading)
+    (hr : RecursorReading (recursor := recursor) entries shape source .large constants reading)
     (hmode : ModeEvidence.{u,v} entries shape .large) (hM : Realizes constants entries)
     (hn : levels.length = ElimMode.large.recUvars shape.universes) {i : Nat} {ctor : Constructor β}
     (hc : shape.constructors[i]? = some ctor) :
-    interp reading levels (fun _ => empty) (shape.ruleLhs source .large i ctor) =
-      interp reading levels (fun _ => empty) (shape.ruleRhs source .large i ctor) := by
+    interp reading levels (fun _ => empty) (shape.ruleLhs (recursor := recursor) source .large i ctor) =
+      interp reading levels (fun _ => empty) (shape.ruleRhs (recursor := recursor) source .large i ctor) := by
   simp only [ruleLhs, ruleRhs, ruleBinders, AExpr.lamN_append, AExpr.interp_lamN,
     Telescope.curry_instL, ElimMode.sourceLevels_eval _ hn,
     hr.agrees.telescope (fun A ha => h.references A (List.mem_append_left _ ha))]
@@ -90,15 +91,15 @@ theorem large_rule_eq (h : CheckedShape.{u,v} entries source shape)
   exact large_ruleBody_eq h hr hmode hM hn hc hps hxs hfs hm hminors
 
 theorem large_rule_eq_closed (h : CheckedShape.{u,v} entries source shape)
-    (hr : RecursorReading entries shape source .large constants reading)
+    (hr : RecursorReading (recursor := recursor) entries shape source .large constants reading)
     (hmode : ModeEvidence.{u,v} entries shape .large) (hM : Realizes constants entries)
     (hn : levels.length = ElimMode.large.recUvars shape.universes) {i : Nat} {ctor : Constructor β}
     (hc : shape.constructors[i]? = some ctor)
-    (hscope : (shape.ruleLhs source .large i ctor).Scope (ElimMode.large.recUvars shape.universes) 0 ∧
-      (shape.ruleRhs source .large i ctor).Scope (ElimMode.large.recUvars shape.universes) 0)
+    (hscope : (shape.ruleLhs (recursor := recursor) source .large i ctor).Scope (ElimMode.large.recUvars shape.universes) 0 ∧
+      (shape.ruleRhs (recursor := recursor) source .large i ctor).Scope (ElimMode.large.recUvars shape.universes) 0)
     (env : Nat → V) :
-    interp reading levels env (shape.ruleLhs source .large i ctor) =
-      interp reading levels env (shape.ruleRhs source .large i ctor) := by
+    interp reading levels env (shape.ruleLhs (recursor := recursor) source .large i ctor) =
+      interp reading levels env (shape.ruleRhs (recursor := recursor) source .large i ctor) := by
   rw [← interp_closed _ _ _ hscope.1 (fun _ => empty) env,
     ← interp_closed _ _ _ hscope.2 (fun _ => empty) env]
   exact large_rule_eq h hr hmode hM hn hc
@@ -107,14 +108,14 @@ variable [DecidableEq β]
 
 theorem produced_rule_eq (h : CheckedShape.{u,v} entries source shape)
     (hE : entries.WF) (hC : ConstructorFormation.{u,v} entries shape source)
-    (hR : RecursorFormation.{u,v} entries shape source mode)
+    (hR : RecursorFormation.{u,v} (recursor := recursor) entries shape source mode)
     (hmode : ModeEvidence.{u,v} entries shape mode) (hM : Realizes constants entries)
     (hn : levels.length = mode.recUvars shape.universes) {i : Nat} {ctor : Constructor β}
     (hc : shape.constructors[i]? = some ctor)
-    (hRule : RuleFormation.{u,v} (shape.recursorEnvironment entries source mode)
+    (hRule : RuleFormation.{u,v} (recursor := recursor) (shape.recursorEnvironment (recursor := recursor) entries source mode)
       shape source mode i ctor) (env : Nat → V) :
-    interp (shape.recursorAssignment constants source mode) levels env (shape.ruleLhs source mode i ctor) =
-      interp (shape.recursorAssignment constants source mode) levels env (shape.ruleRhs source mode i ctor) := by
+    interp (shape.recursorAssignment (recursor := recursor) constants source mode) levels env (shape.ruleLhs (recursor := recursor) source mode i ctor) =
+      interp (shape.recursorAssignment (recursor := recursor) constants source mode) levels env (shape.ruleRhs (recursor := recursor) source mode i ctor) := by
   cases mode with
   | small =>
     exact small_rule_eq hRule _ (recursorAssignment_realizes h hE hC hR hmode constants hM) levels env

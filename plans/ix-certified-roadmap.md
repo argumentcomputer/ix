@@ -10,7 +10,7 @@ builds against that package with Mathlib. K1: single definitions, theorems,
 and opaques are checked by a proof-carrying inference, reduction, and
 conversion core (`Ix.Kernel.Infer`) and installed with their model
 extension. K2 so far: ordinary inductive blocks (a family with its
-constructors and recursor, in Ixon's `muts` layout) are read, validated,
+constructors and recursor in one logical fixture block) are read, validated,
 installed with the ported set-theoretic construction, and their recursors
 reduce (iota) through published typed rules; `False`, `True`, `And`, `Or`,
 `Nat`, `List`, and `Eq` are fixtures, with `Nat.rec` computing `1 + 1 = 2`
@@ -29,8 +29,11 @@ the `Eq`, `Iff`, and `Nonempty` interfaces. Every K2 route is connected and
 The subsequent implementation completed P00–P03 and ran the full K2 gate
 in a fresh jj workspace on 2026-09-29, including 38 host differential cases
 and the Mathlib model audit. This is supported-profile coverage with the
-explicit policies in `docs/kernel.md`, not whole-corpus Lean parity. Next:
-K3/K4 and the measured core improvements in section 10. Section 11 makes
+explicit policies in `docs/kernel.md`, not whole-corpus Lean parity.
+K3's pure production types, exact ingress readings, separate physical
+inductive/recursor admission, and `checkEnv` are now implemented with 26
+compiler ingress cases. Egress is still open. Next: the remaining K3/K4 work
+and the measured core improvements in section 10. Section 11 makes
 removal of `lean4ix` (the
 dependency named `lean4lean` by Lake) and the old verification machinery
 an explicit deliverable, independent of speculative optimization work.
@@ -632,9 +635,9 @@ checkpoint. Initial entries:
 | Certified kernel | `Ix.Kernel.*` | K1: definitions, theorems, and opaques certified; inductives at K2 | K0 to K2 |
 | Address key | `Ix.Address.Core` | pure data | K0 |
 | BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
-| Ixon data types | `Ix.Ixon` types | host | K3 split, then certified data |
+| Ixon data types | `Ix.Ixon.Types` | pure production data in the standalone audited closure | K3 split complete |
 | Ixon codecs | `Ix.Ixon` encoders and decoders | host | K4, supported subset |
-| Ixon to kernel ingress | `Ix.Tc.Ingress` today | host | K3 certified reading relation |
+| Ixon to kernel ingress | `Ix.Kernel.Ingress` | exact readings, physical-reference fidelity, and model theorem for accepted in-memory input | K3 ingress complete; egress open |
 | Claims, assumption trees, Merkle roots, commitments | `Ix.Claim`, `Ix.AssumptionTree`, `Ix.Merkle`, `Ix.Commit` | host | K5, with explicit cryptographic assumptions |
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
 | Rust kernel | `crates/kernel`, `Ix.KernelCheck` | host fast path | differential parity against `Ix.Kernel`; verdicts are not certified |
@@ -858,25 +861,51 @@ Exit: `lake -d IxKernel build --wfail` and `check-kernel` pass on a clean
 checkout; the theorem applies to the fixtures; the release is usable
 without Ixon bytes, `Ix.Tc`, or claims.
 
-### K3: Ixon ingress
+### K3: Ixon ingress (ingress implemented; egress open)
 
-1. Land the `Ix.Ixon.Types` split.
+1. Land the `Ix.Ixon.Types` split (done, `xztqxzxr`). Production codecs and
+   the standalone kernel use the same pure data definitions. Hash-dependent
+   projection defaults remain in the host compatibility module.
 2. `Ix.Kernel.Ingress`: expand `share`, resolve `refs` and `univs` tables,
    map projection constants to `ConstRef`, read Nat blobs to `Nat`, reject
    strings and unsupported binder modes, check reference bounds and block
-   ownership.
+   ownership (done).
 3. State the reading relation between an Ixon constant and the kernel
    declaration; prove ingress success establishes it, including declared
-   types, universe counts, mutual identities, and binder modes. Add the
-   egress back to an Ixon constant with `egress (ingress c) = c` on the
-   supported subset; this replaces the kernel round-trip phases of
-   `ix validate-lean`.
+   types, universe counts, mutual identities, and binder modes (done, with
+   deterministic expression readings and exact installed primary records).
+   Egress remains: prove `egress (ingress c) = c` on an explicitly supported
+   canonical domain, or retain and check the layout needed to reconstruct
+   `c`. Expanded raw terms alone do not determine sharing, table order,
+   unused entries, or let hints. Do not claim an unrestricted inverse. This
+   replaces the kernel round-trip phases of `ix validate-lean`.
 4. `checkEnv` over a list of address-to-constant pairs and the blob bytes
-   behind literals, composed with `check`; theorem for the Ixon-shaped
-   in-memory input. The host supplies the order, the pairs, and the blobs;
-   the kernel treats addresses as keys.
+   behind literals, composed with certified admission; theorem for the
+   Ixon-shaped in-memory input (done: `checkEnv_reading` and
+   `checkEnv_has_model`). The host supplies the order, pairs, and blobs;
+   addresses remain keys and each physical record retains its own reading.
 5. Tests on environments compiled by `Ix.CompileM` from the tutorial corpus,
-   loaded by the ordinary host loader, which remains untrusted.
+   loaded by the ordinary host loader, which remains untrusted (done: 26
+   cases including altered rules, field counts, header counts, and K flags;
+   CI retains exact inputs and outcomes).
+
+The production-layout investigation corrected the K2 fixture assumption:
+Ixon keeps inductives and recursors in separate records. `Ix.Tc.Ingress` and
+Rust ingress preserve those identities; their recursor checkers recover the
+family from the major premise before comparing the full generated candidate.
+K3 therefore makes the model's recursor reference explicit, associates
+separate records without renumbering them, and admits family/constructors
+alone when no recursor is supplied. `Certified.Ordinary.Stage` shares Nat and
+structure fact proofs between both admission stages. No absent recursor is
+generated or checked. The ordinary profile uses syntactic major discovery;
+future WHNF under binders must retain their local context. Mutual/nested
+auxiliary recursors remain a later profile extension.
+
+The initial pure association search scans remaining declarations. P04 should
+add a proved index from major-family references to candidate recursors,
+together with the checked environment index, preserving full validation and
+input coverage. The current change removes unnecessary recursor checking
+for family-only inputs; it makes no measured speedup claim.
 
 Exit: acceptance of Ixon-shaped input establishes the meaning of the
 selected declarations; unsupported input declines explicitly.
@@ -1247,7 +1276,15 @@ Implementation checkpoint (2026-09-29):
   CI runs the same gate and retains exact raw inputs and verdicts as JSONL.
   D00 identifies the pure codec roots to preserve and the `Catalog` import
   that must be split before removing Lean4Lean transitively.
-- P04–P12 and K3–K7 remain open; whole-corpus parity has not been run.
+- K3's ingress checkpoint passes the incremental full gate: 144 standalone,
+  154 host fixture/provenance, 457 runner build, and 975 model jobs; 38/38
+  differential and 26/26 compiler ingress cases. The public theorem statements
+  are unchanged. Runtime closures are 920 core and 961 ingress functions,
+  with no additional foreign replacements beyond the documented Lean runtime
+  array/byte accessors. Provenance covers 97 ported, 35 authored modules and
+  four license files. The physical-layout correction and family-only stage
+  are part of K3, not a claim of general mutual/nested support.
+- P04–P12, K3 egress, and K4–K7 remain open; whole-corpus parity has not been run.
   K3/K4 may proceed next to unlock the mandatory D01 removal. D01/D02 remain
   required: neither dependency retirement nor runtime cutover is claimed
   by the K2 gate.

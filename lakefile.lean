@@ -387,6 +387,11 @@ lean_exe «kernel-differential» where
   -- as for bench-aggregate-policy. Neither archive enters IxKernel/.
   moreLinkObjs := #[ix_rs]
 
+lean_exe «kernel-ingress» where
+  root := `Tests.Ix.Kernel.IngressHost
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 /-- Run the certified kernel gate: the standalone strict build with its audits,
 the host-side tests, and provenance. -/
 script "check-kernel" (args) := do
@@ -399,14 +404,19 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "kernel-provenance", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.Fidelity"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.Fidelity", "Tests.Ix.Kernel.Ingress"]
   run ".lake/build/bin/kernel-provenance" #[]
-  run "lake" #["build", "--wfail", "kernel-differential"]
+  run "lake" #["build", "--wfail", "kernel-differential", "kernel-ingress"]
   let differential ← IO.Process.output { cmd := ".lake/build/bin/kernel-differential" }
   IO.FS.writeFile ".lake/build/kernel-differential.jsonl" differential.stdout
   IO.eprint differential.stderr
   unless differential.exitCode == 0 do
     throw <| IO.userError "kernel-differential failed; see .lake/build/kernel-differential.jsonl"
+  let ingress ← IO.Process.output { cmd := ".lake/build/bin/kernel-ingress" }
+  IO.FS.writeFile ".lake/build/kernel-ingress.jsonl" ingress.stdout
+  IO.eprint ingress.stderr
+  unless ingress.exitCode == 0 do
+    throw <| IO.userError "kernel-ingress failed; see .lake/build/kernel-ingress.jsonl"
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
   IO.println "Certified kernel checks passed."

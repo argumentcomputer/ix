@@ -3,6 +3,7 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/Certified/Ordinary/RecursorSyntax.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
+K3: the recursor reference is explicit and may belong to a separate block.
 K2: the input store and its exact-source facts are removed (comparing the
 stored block with the generated one is the caller's check) and the recursor is
 member 1 of the family's block, so the bare `recursor` address parameter is
@@ -28,7 +29,7 @@ namespace Ix.Kernel.Certified.Ordinary
 open Model Inductive
 
 universe u
-variable {β : Type u}
+variable {β : Type u} {recursor : ConstRef β}
 
 namespace Shape
 
@@ -104,7 +105,7 @@ def ruleBinders (shape : Shape β) (source : β) (mode : ElimMode) (ctor : Const
         (AExpr.instL (mode.sourceLevels shape.universes)))
 
 def ruleCall (shape : Shape β) (source : β) (mode : ElimMode)
-    (ctor : Constructor β) (j : Nat) (field : RecursiveField β) : AExpr β :=
+    (ctor : Constructor β) (j : Nat) (field : RecursiveField β) (recursor : ConstRef β := .member source 1) : AExpr β :=
   let sl := mode.sourceLevels shape.universes
   let common := 1 + shape.constructors.length
   let a := ctor.fields.length
@@ -112,21 +113,21 @@ def ruleCall (shape : Shape β) (source : β) (mode : ElimMode)
   let d := field.domains.length
   .lamN (zeroCondition mode.motiveLevel)
     (Telescope.lift b (Telescope.lift common (field.domains.map (AExpr.instL sl)) a))
-    (.appN (.const (.member source 1) (mode.recLevels shape.universes))
+    (.appN (.const recursor (mode.recLevels shape.universes))
       (parameterVars (a + b + d) (shape.parameters.length + common) ++
         field.indices.map (fun e => ((e.instL sl).liftN common (a + d)).liftN b d) ++
         [.appN (.bvar (b - 1 - j + d)) (parameterVars 0 d)]))
 
 def ruleRhsBody (shape : Shape β) (source : β) (mode : ElimMode) (i : Nat)
-    (ctor : Constructor β) : AExpr β :=
+    (ctor : Constructor β) (recursor : ConstRef β := .member source 1) : AExpr β :=
   .appN (.bvar (shape.constructors.length - 1 - i + ctor.fields.length + ctor.recursive.length))
     (parameterVars 0 (ctor.fields.length + ctor.recursive.length) ++
-      ctor.recursive.zipIdx.map (fun (field, j) => shape.ruleCall source mode ctor j field))
+      ctor.recursive.zipIdx.map (fun (field, j) => shape.ruleCall (recursor := recursor) source mode ctor j field))
 
 def ruleRhs (shape : Shape β) (source : β) (mode : ElimMode) (i : Nat)
-    (ctor : Constructor β) : AExpr β :=
+    (ctor : Constructor β) (recursor : ConstRef β := .member source 1) : AExpr β :=
   .lamN (zeroCondition mode.motiveLevel) (shape.ruleBinders source mode ctor)
-    (shape.ruleRhsBody source mode i ctor)
+    (shape.ruleRhsBody (recursor := recursor) source mode i ctor)
 
 def ruleIndices (shape : Shape β) (mode : ElimMode) (ctor : Constructor β) : List (AExpr β) :=
   ctor.indices.map fun e =>
@@ -150,16 +151,16 @@ def ruleType (shape : Shape β) (source : β) (mode : ElimMode) (i : Nat)
     (shape.ruleResult source mode i ctor)
 
 def ruleLhsBody (shape : Shape β) (source : β) (mode : ElimMode) (i : Nat)
-    (ctor : Constructor β) : AExpr β :=
-  .appN (.const (.member source 1) (mode.recLevels shape.universes))
+    (ctor : Constructor β) (recursor : ConstRef β := .member source 1) : AExpr β :=
+  .appN (.const recursor (mode.recLevels shape.universes))
     (parameterVars (ctor.fields.length + ctor.recursive.length)
       (shape.parameters.length + 1 + shape.constructors.length) ++
       shape.ruleIndices mode ctor ++ [shape.ruleConstructor source mode i ctor])
 
 def ruleLhs (shape : Shape β) (source : β) (mode : ElimMode) (i : Nat)
-    (ctor : Constructor β) : AExpr β :=
+    (ctor : Constructor β) (recursor : ConstRef β := .member source 1) : AExpr β :=
   .lamN (zeroCondition mode.motiveLevel) (shape.ruleBinders source mode ctor)
-    (shape.ruleLhsBody source mode i ctor)
+    (shape.ruleLhsBody (recursor := recursor) source mode i ctor)
 
 end Shape
 end Ix.Kernel.Certified.Ordinary

@@ -156,7 +156,7 @@ def bigShape : Shape String := ⟨0, [], [], .succ .zero, [⟨[type0], [], []⟩
 #guard declines [block "Big" bigShape .large]
   "inductive block: field universe bound was not established"
 
-#guard rejects [natDecl, natDecl] "duplicate declaration address"
+#guard rejects [natDecl, natDecl] "duplicate inductive or recursor reference"
 
 -- `Or` may not eliminate into `Type`.
 #guard rejects [block "Or" orShape .large]
@@ -166,7 +166,7 @@ def bigShape : Shape String := ⟨0, [], [], .succ .zero, [⟨[type0], [], []⟩
 def tamperedRule : E := .lam motiveT (.lam zeroMinorT (.lam succMinorT (.bvar 0)))
 def natTampered : Decl String :=
   ⟨"Nat", ⟨[natInduct, .recursor 1 0 0 1 2 natRecT [⟨0, tamperedRule⟩, ⟨1, succRule⟩] false .safe]⟩⟩
-#guard declines [natTampered] "the block is not the generated ordinary block of its inductive"
+#guard declines [natTampered] "the supplied recursor differs from the generated ordinary recursor"
 
 -- A block whose recursor is unsafe.
 #guard declines [⟨"Nat", ⟨[natInduct, .recursor 1 0 0 1 2 natRecT [⟨0, zeroRule⟩, ⟨1, succRule⟩] false .unsafe]⟩⟩]

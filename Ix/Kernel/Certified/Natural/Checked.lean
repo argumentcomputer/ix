@@ -3,6 +3,8 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/Certified/Natural/Checked.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
+K3: facts are checked and realized over either the constructor stage or
+the stage with a recursor at its explicit reference.
 K2: the input store, its exact-source facts, the witness, and the pin parameter
 are removed (the block is recognized by its shape); the recursor is member 1 of
 the family's block; `check` takes the ordinary block's proof from the caller.
@@ -14,6 +16,8 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Certified.Natural.Value
 
+import Ix.Kernel.Certified.Ordinary.Stage
+
 namespace Ix.Kernel.Certified.Natural
 
 open Model
@@ -24,19 +28,19 @@ variable {β : Type u} [DecidableEq β]
 def fact (source : β) : ConstantFact β := .natural (.ctor source 0 0) (.ctor source 0 1)
 def entry (source : β) : ConstantEntry β :=
   { (shape : Ordinary.Shape β).familyEntry with facts := [fact source] }
-def environment (entries : Environment β) (source : β) (mode : Inductive.ElimMode) : Environment β :=
-  (shape.publishedEnvironment entries source mode).insert (.member source 0) (entry source)
+def environment (entries : Environment β) (source : β) (stage : Ordinary.Stage β) : Environment β :=
+  (stage.environment shape entries source).insert (.member source 0) (entry source)
 
 /-- Literal support is tied to the whole ordinary zero/successor block, not to
 a name or a marker. -/
-structure Checked (entries : Environment β) (source : β) (mode : Inductive.ElimMode) : Prop where
-  block : Ordinary.CheckedBlock.{u,v} entries source shape mode
-  references : (fact source).ReferencesIn (shape.publishedEnvironment entries source mode)
+structure Checked (entries : Environment β) (source : β) (stage : Ordinary.Stage β) : Prop where
+  block : stage.Checked.{u,v} entries source shape
+  references : (fact source).ReferencesIn (stage.environment shape entries source)
 
-def check (entries : Environment β) (source : β) (mode : Inductive.ElimMode)
-    (hb : Ordinary.CheckedBlock.{u,v} entries source shape mode) :
-    Option (CheckedClaim.{u} (Checked.{u,v} entries source mode)) :=
-  if hr : (fact source).ReferencesIn (shape.publishedEnvironment entries source mode) then
+def check (entries : Environment β) (source : β) (stage : Ordinary.Stage β)
+    (hb : stage.Checked.{u,v} entries source shape) :
+    Option (CheckedClaim.{u} (Checked.{u,v} entries source stage)) :=
+  if hr : (fact source).ReferencesIn (stage.environment shape entries source) then
     some ⟨⟨hb, hr⟩⟩
   else none
 
