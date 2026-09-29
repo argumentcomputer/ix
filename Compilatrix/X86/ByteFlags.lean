@@ -76,6 +76,42 @@ theorem restrict_nil (flags : Flags) : flags.restrict [] = {} := by
   cases flags
   rfl
 
+/-- A condition reads only the flags it names. -/
+theorem test_congr {first second : Flags} (condition : Condition)
+    (same : ∀ flag ∈ condition.reads, first.get flag = second.get flag) :
+    first.test condition = second.test condition := by
+  cases condition <;>
+    simp only [Condition.reads, List.mem_cons, List.mem_nil_iff, or_false, forall_eq_or_imp, forall_eq,
+      Flags.get] at same <;>
+    simp only [Flags.test, same]
+
+theorem merge_get_set {effect : Flag → FlagEffect} {flag : Flag} (set : effect flag = .set)
+    (before computed : Flags) : (before.merge effect computed).get flag = computed.get flag := by
+  cases flag <;> simp [Flags.merge, Flags.get, set, FlagEffect.pick]
+
+/-- The flags a row sets do not depend on the flags before it: a consumer
+that reads only set flags sees the same values from any earlier flags. -/
+theorem test_merge_set {condition : Condition} {effect : Flag → FlagEffect}
+    (set : ∀ flag ∈ condition.reads, effect flag = .set) (before other computed : Flags) :
+    (before.merge effect computed).test condition = (other.merge effect computed).test condition :=
+  test_congr condition fun flag member => by
+    rw [merge_get_set (set flag member), merge_get_set (set flag member)]
+
+theorem restrict_merge_set {reads : List Flag} {effect : Flag → FlagEffect}
+    (set : ∀ flag ∈ reads, effect flag = .set) (before other computed : Flags) :
+    (before.merge effect computed).restrict reads = (other.merge effect computed).restrict reads := by
+  have same : ∀ flag, reads.contains flag = true →
+      (before.merge effect computed).get flag = (other.merge effect computed).get flag := fun flag found => by
+    rw [merge_get_set (set flag (List.contains_iff_mem.mp found)),
+      merge_get_set (set flag (List.contains_iff_mem.mp found))]
+  have cf := same .cf
+  have zf := same .zf
+  have sf := same .sf
+  have of := same .of
+  simp only [Flags.get] at cf zf sf of
+  simp only [Flags.restrict]
+  congr 1 <;> split <;> simp_all
+
 end Compilatrix.X86.ByteEval
 
 namespace Compilatrix.X86
@@ -127,14 +163,6 @@ theorem Compare.exec_eq (comparison : Compare) (core : Core) (flags : ByteEval.F
           Table.Arith.sem, Table.Arith.role, Table.rmSlot, Table.immSlot, Table.cmpSem, readSlots, writeSlots,
           Arg.load, ByteEval.merge_allSet, Except.mapError]
 
-/-- A comparison's row is a straight-line row. -/
-theorem Compare.row_linear (comparison : Compare) : comparison.row.1.linear = true := by
-  cases comparison with
-  | mk width left right =>
-      cases right with
-      | reg => rfl
-      | imm => simp only [Compare.row, aluImmRow]; split <;> rfl
-
 theorem Compare.flags_eq (comparison : Compare) (core : Core) :
     comparison.flags core =
       ByteEval.aluFlags .sub comparison.width (core.readReg comparison.left) (comparison.operand core) := by
@@ -151,5 +179,22 @@ theorem Compare.holds_eq (comparison : Compare) (condition : Condition) (core : 
 theorem Compare.flags_test (comparison : Compare) (condition : Condition) (core : Core) :
     (comparison.flags core).test condition = some (comparison.holds condition core) := by
   rw [Compare.holds, Compare.flags_eq, ByteEval.compare_flags, Option.getD_some]
+
+/-- A compare-and-branch goes where its comparison's condition says. -/
+theorem executeTerminator_compare (checked : Checked) (comparison : Compare) (condition : Condition)
+    (yes no : BlockId) (machine : Machine) :
+    executeTerminator checked (.compare comparison condition yes no) machine =
+      machine.goto checked (if comparison.holds condition machine.core then yes else no) := by
+  have test := Compare.flags_test comparison condition machine.core
+  rw [Compare.flags_eq] at test
+  simp only [Terminator.compare, executeTerminator, Compare.exec_eq, test]
+
+/-- `FusedOk` as a statement about flag effects. -/
+theorem FusedOk.set {producer consumer : Op} (fused : FusedOk producer consumer = true) :
+    ∀ flag ∈ (desc consumer).flagsIn, (desc producer).flagsOut flag = .set := by
+  intro flag member
+  simpa using List.all_eq_true.mp fused flag member
+
+@[simp] theorem jcc_flagsIn (condition : Condition) : (desc (Op.jccRel32 condition)).flagsIn = condition.reads := rfl
 
 end Compilatrix.X86

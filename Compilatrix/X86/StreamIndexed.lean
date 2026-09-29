@@ -38,9 +38,9 @@ private def instructionIndexed (program : Program) (layout : Index) (text : Byte
 private def terminatorIndexed (program : Program) (layout : Index) (text : ByteArray) (offset : Nat) : Terminator → Bool
   | .jump target | .tailCall target => targetsIndexed program layout text offset .jump 5 target
   | .ret => decodesIndexed text offset .ret 1
-  | .branch comparison condition yes no =>
-      let size := (Encode.encodeCompare comparison).size
-      decodesIndexed text offset (.op comparison.row.1 comparison.row.2) size &&
+  | .branch producer args condition yes no =>
+      let size := (Encode.encodeOp producer args).size
+      decodesIndexed text offset (.op producer args) size &&
         targetsIndexed program layout text (offset + size) (.branch condition) 6 yes &&
         targetsIndexed program layout text (offset + size + 6) .jump 5 no
 

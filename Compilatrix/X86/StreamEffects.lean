@@ -293,6 +293,24 @@ section Footprints
 
 open Encode (instructionOperation)
 
+/-- A comparison's `cmp` row reads and writes no memory. -/
+@[simp] theorem footprint_compare (comparison : Compare) (core : Core) :
+    operationReads (.op comparison.row.1 comparison.row.2) core = [] ∧
+      operationWrites (.op comparison.row.1 comparison.row.2) core = [] := by
+  cases comparison with
+  | mk width left right =>
+      cases right with
+      | reg =>
+          simp [Compare.row, operationReads, operationWrites, Op.reads, Op.writes, Op.pops, Op.pushes, desc,
+            Table.arithDesc, Table.cmpArith, Table.Arith.role, Table.rmSlot, Table.regSlot, slotReads, slotWrites,
+            Arg.access]
+      | imm =>
+          simp only [Compare.row, aluImmRow]
+          split <;>
+            simp [operationReads, operationWrites, Op.reads, Op.writes, Op.pops, Op.pushes, desc,
+              Table.arithDesc, Table.cmpArith, Table.Arith.role, Table.rmSlot, Table.immSlot, slotReads, slotWrites,
+              Arg.access]
+
 @[simp] theorem footprint_mov (width : Width) (destination : GPR) (source : MoveSource) (core : Core) :
     operationReads (instructionOperation (.mov width destination source)) core = [] ∧
       operationWrites (instructionOperation (.mov width destination source)) core = [] := by

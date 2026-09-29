@@ -10,10 +10,13 @@ the operands. Branch and call destinations are bounded symbolic block
 identifiers, and byte layout and relocation belong to the encoder and object
 layer.
 
-The AST combines compare-and-branch into one target operation. This keeps
-EFLAGS local by construction while the encoder emits the usual `cmp`/`jcc`
-pair. Memory operands separate index registers from general registers,
-excluding the x86 `rsp`-as-index encoding hole by type.
+A branch terminator owns the row that produces its flags (a `cmp` or
+`test` in any operand form, or `add`/`sub` for carry and borrow), and a
+fused instruction pairs a producer with a flag-reading row (`setcc`,
+`cmovcc`). This keeps EFLAGS local by construction while the encoder emits
+the usual producer/consumer pairs. Memory operands separate index registers
+from general registers, excluding the x86 `rsp`-as-index encoding hole by
+type.
 
 The former per-form constructors (`mov`, `load`, `alu`, `spill`, ...) remain
 as definitions choosing a row; they are how programs are written.
@@ -30,11 +33,13 @@ inductive Instr where
   | callRuntime (intrinsic : Intrinsic)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
-/-- Control operations close a target block.  A conditional branch owns its
-comparison, so no later operation can consume stale EFLAGS. -/
+/-- Control operations close a target block. A conditional branch owns the
+row that produces its flags (`cmp` or `test` in any operand form, or `add`
+and `sub` for carry and borrow), so no other operation can consume stale
+EFLAGS: flags exist only inside the terminator. -/
 inductive Terminator where
   | jump (target : BlockId)
-  | branch (comparison : Compare) (condition : Condition)
+  | branch (producer : Op) (args : List Arg) (condition : Condition)
       (ifTrue ifFalse : BlockId)
   | tailCall (target : BlockId)
   | ret
@@ -100,6 +105,10 @@ def Compare.row (comparison : Compare) : Op × List Arg :=
   match comparison.right with
   | .reg right => ({ mn := .cmp, w := comparison.width, form := .MR }, [.reg comparison.left, .reg right])
   | .imm value => aluImmRow .cmp comparison.width (.reg comparison.left) (signExtend32 value)
+
+/-- Compare-and-branch: the comparison's `cmp` row produces the flags. -/
+def Terminator.compare (comparison : Compare) (condition : Condition) (ifTrue ifFalse : BlockId) : Terminator :=
+  .branch comparison.row.1 comparison.row.2 condition ifTrue ifFalse
 
 namespace Instr
 
@@ -257,7 +266,7 @@ def Instr.targetsValid (program : Program) : Instr → Bool
 
 def Terminator.targetsValid (program : Program) : Terminator → Bool
   | .jump target | .tailCall target => program.hasBlock target
-  | .branch _ _ ifTrue ifFalse =>
+  | .branch _ _ _ ifTrue ifFalse =>
       program.hasBlock ifTrue && program.hasBlock ifFalse
   | .ret => true
 
@@ -277,12 +286,22 @@ def Instr.wellFormed : Instr → Bool
 def Block.instructionsValid (block : Block) : Bool :=
   block.instructions.all Instr.wellFormed
 
+/-- A branch's producer is a listed linear row that reads no flags, with
+operands of its slot kinds, and it sets every flag the condition reads
+(`FusedOk` with the `jcc` row). -/
+def Terminator.wellFormed : Terminator → Bool
+  | .branch producer args condition _ _ =>
+      Op.rows.contains producer && producer.linear && (desc producer).flagsIn.isEmpty &&
+        producer.argsOk args && FusedOk producer (Op.jccRel32 condition)
+  | .jump _ | .tailCall _ | .ret => true
+
 def Program.wellFormed (program : Program) : Bool :=
   !program.blocks.isEmpty &&
     decide (program.blocks.size < 2 ^ 32) &&
     program.hasBlock program.entry &&
     program.blocks.all fun block =>
-      block.offsetsFit && block.targetsValid program && block.instructionsValid
+      block.offsetsFit && block.targetsValid program && block.instructionsValid &&
+        block.terminator.wellFormed
 
 structure Checked where
   program : Program

@@ -102,16 +102,19 @@ theorem BlockCode.jump {checked : Checked} {block target : BlockId} {instruction
   rw [code.terminator]
   simp [executeTerminator, Machine.goto, valid, leaf]
 
+/-- A branch runs its producer and moves to the target its condition picks,
+with the producer's core. -/
 theorem BlockCode.branch {checked : Checked} {block yes no : BlockId} {instructions : List Instr}
-    {comparison : Compare} {condition : Condition}
-    (code : BlockCode checked block instructions (.branch comparison condition yes no))
-    (runtime : Runtime) (core : Core) (answer : Bool)
-    (holds : comparison.holds condition core = answer)
+    {producer : Op} {args : List Arg} {condition : Condition}
+    (code : BlockCode checked block instructions (.branch producer args condition yes no))
+    (runtime : Runtime) (core : Core) {after : Core} {flags : ByteEval.Flags}
+    (produced : producer.exec args core {} = .ok (after, flags)) {answer : Bool}
+    (tested : flags.test condition = some answer)
     (valid : checked.program.hasBlock (if answer then yes else no) = true) :
     step runtime checked (leaf core block instructions.length) =
-      leaf core (if answer then yes else no) 0 := by
+      leaf after (if answer then yes else no) 0 := by
   rw [code.terminator]
-  simp [executeTerminator, leaf, holds, Machine.goto, valid]
+  simp [executeTerminator, leaf, produced, tested, Machine.goto, valid]
 
 theorem BlockCode.ret {checked : Checked} {block : BlockId} {instructions : List Instr}
     (code : BlockCode checked block instructions .ret) (runtime : Runtime) (core : Core) :

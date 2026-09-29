@@ -77,6 +77,11 @@ theorem instruction_size (instruction : Instr) (wf : instruction.wellFormed = tr
   | call target | callRuntime intrinsic =>
       simpa [encodeInstr, rel32_bytes, encodeOp] using encodeList_bounded control_rows.1 [.imm 0]
 
+theorem row_size {o : Op} (row : o ∈ Op.rows) (args : List Arg) :
+    0 < (encodeOp o args).size ∧ (encodeOp o args).size ≤ 15 := by
+  simp only [encodeOp, bytes_size]
+  exact ⟨encodeList_length_pos _ _, encodeList_bounded row _⟩
+
 theorem compare_size (comparison : Compare) :
     0 < (encodeCompare comparison).size ∧ (encodeCompare comparison).size ≤ 15 := by
   simp only [encodeCompare, encodeOp, bytes_size]

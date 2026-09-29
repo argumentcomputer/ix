@@ -15,7 +15,7 @@ def holeStep (program : Program) (machine : Machine) (holes : Holes) : Holes :=
       match block.instructions[machine.pc.offset.toNat]? with
       | some (.call _) => addRange holes (machine.core.readReg .rsp - 8) 8
       | some instruction => nextHoles holes (Encode.instructionOperation instruction) machine.core
-      | none => holes
+      | none => terminatorHoles holes block.terminator machine.core
 
 def SafeAt (program : Program) (holes : Holes) (machine : Machine) : Prop :=
   match program.blocks[machine.pc.block.toNat]? with
@@ -38,7 +38,8 @@ def SafeAt (program : Program) (holes : Holes) (machine : Machine) : Prop :=
                   machine.core.readReg .rsp = frame.returnSlot ∧
                   machine.core.memory.read64? frame.returnSlot = .ok frame.continuation.encode ∧
                   machine.core.calleeSavedMatch frame.calleeSaved = true
-          | _ => True
+          | .branch producer args _ _ _ => OperationSafe holes machine.returns (.op producer args) machine.core
+          | .jump _ | .tailCall _ => True
 
 def SafeTrace (runtime : Runtime) (checked : Checked) : Nat → Holes → Machine → Prop
   | 0, _, _ => True
@@ -91,9 +92,12 @@ theorem safe_progress {checked : Checked} {output : Encode.Output} {externals : 
             obtain ⟨after, executed, next⟩ := ret_progress valid runtime machine base holes state related
               found safe.1 term frame rest returns access.1 access.2.1 access.2.2
             refine ⟨1, after, by decide, by decide, by simp [ByteEval.run, executed], ?_⟩
-            simpa only [holeStep, found, foundInstruction] using next
-      · obtain ⟨count, after, positive, countBound, executed, next⟩ :=
-          paired_control_progress valid runtime machine base holes state related found safe.1 term
+            simpa only [holeStep, found, foundInstruction, term, terminatorHoles] using next
+      · have access : TerminatorSafe holes machine.returns block.terminator machine.core := by
+          have terminatorSafe := safe.2
+          cases hterm : block.terminator <;> simp_all [TerminatorSafe]
+        obtain ⟨count, after, positive, countBound, executed, next⟩ :=
+          paired_control_progress valid runtime machine base holes state related found safe.1 term access nextRunning
         refine ⟨count, after, positive, countBound, executed, ?_⟩
         simpa only [holeStep, found, foundInstruction] using next
 
@@ -128,9 +132,9 @@ theorem halting_shape {checked : Checked} (runtime : Runtime) (machine : Machine
             | jump target | tailCall target =>
                 simp only [one, term, executeTerminator] at halted
                 exact False.elim (gotoStatus _ halted)
-            | branch comparison condition yes no =>
-                simp only [one, term, executeTerminator] at halted
-                exact False.elim (gotoStatus _ halted)
+            | branch producer args condition yes no =>
+                rw [one, term] at halted
+                exact False.elim (branch_not_halted checked machine running producer args condition yes no result halted)
             | ret =>
                 cases returns : machine.returns with
                 | nil => exact ⟨block, rfl, position, term, rfl, by simp [one, term, executeTerminator, returns]⟩

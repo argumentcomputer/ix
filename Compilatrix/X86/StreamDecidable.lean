@@ -53,6 +53,11 @@ instance (holes : Holes) [DecidablePred holes] (operation : Decode.Operation) (c
   unfold nextHoles
   infer_instance
 
+instance (holes : Holes) [DecidablePred holes] (terminator : Terminator) (core : Core) :
+    DecidablePred (terminatorHoles holes terminator core) := by
+  unfold terminatorHoles
+  split <;> infer_instance
+
 instance (program : Program) (machine : Machine) (holes : Holes) [DecidablePred holes] :
     DecidablePred (holeStep program machine holes) := by
   unfold holeStep

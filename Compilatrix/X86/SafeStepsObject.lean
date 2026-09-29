@@ -50,11 +50,13 @@ theorem SafeSteps.run_with_calls {runtime : Runtime} {checked : Checked} {count 
           have middleHalted : (step runtime checked machine).status = .halted value := first ▸ status
           obtain ⟨block, found, position, term, returns, coreEqual⟩ := halting_shape runtime machine related.running middleHalted
           have absent : block.instructions[machine.pc.offset.toNat]? = none := by simp [position]
-          have fixedBefore : ∀ mask, holeStep checked.program machine mask = mask := by simp [holeStep, found, absent]
+          have fixedBefore : ∀ mask, holeStep checked.program machine mask = mask := by
+            simp [holeStep, found, absent, term, terminatorHoles]
           have pcSame : middle.pc = machine.pc := by
             rw [← first, source_terminator runtime machine related.running found position]
             simp [term, executeTerminator, returns]
-          have fixedMiddle : ∀ mask, holeStep checked.program middle mask = mask := by simp [holeStep, pcSame, found, absent]
+          have fixedMiddle : ∀ mask, holeStep checked.program middle mask = mask := by
+            simp [holeStep, pcSame, found, absent, term, terminatorHoles]
           obtain ⟨same, maskSame⟩ := rest.finished (by simp [status]) fixedMiddle
           have maskSame : finalHoles = holes := maskSame.trans (fixedBefore holes)
           obtain ⟨finalState, last, returned, core⟩ := final_ret valid runtime machine base holes state related access

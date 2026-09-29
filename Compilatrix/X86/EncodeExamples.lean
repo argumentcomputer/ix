@@ -159,11 +159,19 @@ def runtimeCallPlaceholderAccepted : Bool :=
 #guard (encodeTerminator (.jump 1)).bytes ==
   expected #[0xe9, 0, 0, 0, 0]
 
-#guard (encodeTerminator (.branch
+#guard (encodeTerminator (.compare
     { width := .w64, left := .rax, right := .imm 42 }
     .eq 1 2)).bytes ==
   expected #[0x48, 0x83, 0xf8, 0x2a,
     0x0f, 0x84, 0, 0, 0, 0,
+    0xe9, 0, 0, 0, 0]
+
+-- A branch's producer may take a memory operand: the prologue's stack check
+-- `cmp r11, [r15 − 56]; jb`.
+#guard (encodeTerminator (.branch { mn := .cmp, w := .w64, form := .RM }
+    [.reg .r11, .mem { base := some .r15, displacement := 0xffffffc8 }] .unsignedLt 1 2)).bytes ==
+  expected #[0x4d, 0x3b, 0x5f, 0xc8,
+    0x0f, 0x82, 0, 0, 0, 0,
     0xe9, 0, 0, 0, 0]
 
 #guard (encodeTerminator (.tailCall 1)).bytes ==

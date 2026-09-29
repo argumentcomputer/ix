@@ -40,47 +40,93 @@ theorem jump_at {program : Program} {text : ByteArray} {offset : Nat} {target : 
   rw [resolved]
 
 theorem branch_at {program : Program} {text : ByteArray} {offset : Nat}
-    {comparison : Compare} {condition : Condition} {yes no : BlockId}
-    (accepted : terminatorMatches program text offset (.branch comparison condition yes no) = true)
+    {producer : Op} {args : List Arg} {condition : Condition} {yes no : BlockId}
+    (accepted : terminatorMatches program text offset (.branch producer args condition yes no) = true)
+    (linear : producer.linear = true)
     (base : Word) (state : ByteEval.State)
     (address : state.rip = base + UInt64.ofNat offset)
-    (bound : offset + (Encode.encodeCompare comparison).size + 6 < UInt64.size) :
-    ByteEval.run text base (if comparison.holds condition state.core then 2 else 3) state =
-      .ok { Encode.comparedState comparison state with
-        rip := base + UInt64.ofNat (blockOffset program
-          (if comparison.holds condition state.core then yes else no).toNat) } := by
+    (bound : offset + (Encode.encodeOp producer args).size + 6 < UInt64.size)
+    {core : Core} {flags : ByteEval.Flags}
+    (produced : producer.exec args state.core state.flags = .ok (core, flags)) {take : Bool}
+    (tested : flags.test condition = some take) :
+    ByteEval.run text base (if take then 2 else 3) state =
+      .ok { core, flags, rip := base + UInt64.ofNat (blockOffset program (if take then yes else no).toNat) } := by
   simp only [terminatorMatches, Bool.and_eq_true, and_assoc] at accepted
-  obtain ⟨compareAccepted, yesAccepted, noAccepted⟩ := accepted
-  have compareFetched : Decode.decodeAt text offset = some
-      ⟨.op comparison.row.1 comparison.row.2,
-        (Encode.encodeCompare comparison).size⟩ := by
-    simpa [decodes, beq_iff_eq] using compareAccepted
-  have first : ByteEval.step text base state = .ok (Encode.comparedState comparison state) := by
-    rw [step_decoded address (by omega) compareFetched, Encode.compare_step]
-    rfl
-  have compareAddress : (Encode.comparedState comparison state).rip =
-      base + UInt64.ofNat (offset + (Encode.encodeCompare comparison).size) := by
-    simp [Encode.comparedState, address, UInt64.ofNat_add, UInt64.add_assoc]
+  obtain ⟨producerAccepted, yesAccepted, noAccepted⟩ := accepted
+  have producerFetched : Decode.decodeAt text offset = some
+      ⟨.op producer args, (Encode.encodeOp producer args).size⟩ := by
+    simpa [decodes, beq_iff_eq] using producerAccepted
+  let middle : ByteEval.State :=
+    { core, flags, rip := base + UInt64.ofNat (offset + (Encode.encodeOp producer args).size) }
+  have first : ByteEval.step text base state = .ok middle := by
+    rw [step_decoded address (by omega) producerFetched, Encode.producer_step linear _ state produced]
+    simp [middle, address, UInt64.ofNat_add, UInt64.add_assoc]
   obtain ⟨_, fits, fetched⟩ := targets_sound yesAccepted
-  have second := step_decoded compareAddress (by omega) fetched
-  have resolved := Encode.relative_resolves_base base (offset + (Encode.encodeCompare comparison).size + 6)
+  have second := step_decoded (state := middle) rfl (by omega) fetched
+  have resolved := Encode.relative_resolves_base base (offset + (Encode.encodeOp producer args).size + 6)
     (blockOffset program yes.toNat) fits
-  have taken : ByteEval.step text base (Encode.comparedState comparison state) =
-      .ok { Encode.comparedState comparison state with
-        rip := if comparison.holds condition state.core then
-          base + UInt64.ofNat (blockOffset program yes.toNat)
-        else base + UInt64.ofNat (offset + (Encode.encodeCompare comparison).size + 6) } := by
-    rw [second, Encode.execute_branch, Encode.comparedState_test]
-    have nextAddress : (Encode.comparedState comparison state).rip + UInt64.ofNat 6 =
-        base + UInt64.ofNat (offset + (Encode.encodeCompare comparison).size + 6) := by
-      simp [compareAddress, UInt64.ofNat_add, UInt64.add_assoc]
+  have taken : ByteEval.step text base middle =
+      .ok { middle with
+        rip := if take then base + UInt64.ofNat (blockOffset program yes.toNat)
+        else base + UInt64.ofNat (offset + (Encode.encodeOp producer args).size + 6) } := by
+    rw [second, Encode.execute_branch]
+    change (match flags.test condition with | none => _ | some take => _) = _
+    rw [tested]
+    have nextAddress : middle.rip + UInt64.ofNat 6 =
+        base + UInt64.ofNat (offset + (Encode.encodeOp producer args).size + 6) := by
+      simp [middle, UInt64.ofNat_add, UInt64.add_assoc]
     simp only [nextAddress, displacement, resolved]
   have third := jump_at noAccepted base
-    ({ Encode.comparedState comparison state with
-      rip := base + UInt64.ofNat (offset + (Encode.encodeCompare comparison).size + 6) }) rfl bound
-  cases take : comparison.holds condition state.core <;>
-    simp only [take, Bool.false_eq_true, ↓reduceIte, ByteEval.run, first, taken,
-      bind, Except.bind, third]
+    ({ middle with rip := base + UInt64.ofNat (offset + (Encode.encodeOp producer args).size + 6) }) rfl bound
+  cases take <;>
+    simp only [Bool.false_eq_true, ↓reduceIte, ByteEval.run, first, taken, bind, Except.bind, third, middle]
+
+/-- A branch that keeps the typed machine running ran its producer, found
+its condition's flags defined, and moved to a listed target with the
+producer's core. -/
+theorem branch_running {checked : Checked} {machine : Machine} {producer : Op} {args : List Arg}
+    {condition : Condition} {yes no : BlockId}
+    (running : (executeTerminator checked (.branch producer args condition yes no) machine).status = .running) :
+    ∃ core flags take, producer.exec args machine.core {} = .ok (core, flags) ∧
+      flags.test condition = some take ∧ (if take then yes else no).toNat < checked.program.blocks.size ∧
+      executeTerminator checked (.branch producer args condition yes no) machine =
+        { machine with core, pc := ⟨if take then yes else no, 0⟩ } := by
+  simp only [executeTerminator] at running ⊢
+  cases hexec : producer.exec args machine.core {} with
+  | error fault =>
+      rw [hexec] at running
+      cases fault <;> simp [Machine.afterRow, Machine.trap] at running
+  | ok result =>
+      obtain ⟨core, flags⟩ := result
+      rw [hexec] at running
+      simp only at running ⊢
+      cases htest : flags.test condition with
+      | none =>
+          rw [htest] at running
+          simp [Machine.trap] at running
+      | some take =>
+          rw [htest] at running
+          simp only at running ⊢
+          by_cases valid : checked.program.hasBlock (if take then yes else no) = true
+          · refine ⟨core, flags, take, rfl, htest, by simpa [Program.hasBlock] using valid, ?_⟩
+            simp [Machine.goto, valid]
+          · simp [Machine.goto, valid, Machine.trap] at running
+
+/-- A branch never halts the typed machine. -/
+theorem branch_not_halted (checked : Checked) (machine : Machine) (running : machine.status = .running)
+    (producer : Op) (args : List Arg) (condition : Condition) (yes no : BlockId) (result : Word) :
+    (executeTerminator checked (.branch producer args condition yes no) machine).status ≠ .halted result := by
+  simp only [executeTerminator]
+  cases hexec : producer.exec args machine.core {} with
+  | error fault => cases fault <;> simp [Machine.afterRow, Machine.trap]
+  | ok value =>
+      obtain ⟨core, flags⟩ := value
+      simp only
+      cases flags.test condition with
+      | none => simp [Machine.trap]
+      | some take =>
+          simp only [Machine.goto]
+          split <;> split <;> simp [Machine.trap, running]
 
 theorem terminator_bound {program : Program} {blockIndex : Nat} {block : Block}
     (found : program.blocks[blockIndex]? = some block) :

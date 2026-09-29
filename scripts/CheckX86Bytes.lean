@@ -171,7 +171,7 @@ private def branchMatrix : Except String Nat := do
           let core := (initial.setReg .r9 left).setReg .r12 right
           let comparison : Compare := { width, left := .r9, right := source }
           for condition in conditions do
-            let raw := (Encode.encodeTerminator (.branch comparison condition 0 0)).bytes
+            let raw := (Encode.encodeTerminator (.compare comparison condition 0 0)).bytes
             let comparisonSize := (Encode.encodeCompare comparison).size
             let bytes ← (Encode.patchSigned32 raw (comparisonSize + 2) 13).mapError reprStr
             let bytes ← (Encode.patchSigned32 bytes (comparisonSize + 7) (-19)).mapError reprStr
@@ -184,6 +184,47 @@ private def branchMatrix : Except String Nat := do
             need (result.rip == expected && sameRegisters core result.core && result.flags.test condition == some take)
               s!"patched branch mismatch: {repr comparison}, {repr condition}, {left}, {right}"
             count := count + 1
+  return count
+
+/-- Patched branches whose producer is any listed flag producer (`cmp` and
+`test` in every operand form, and `add`/`sub`), with register and memory
+operands: the byte run lands where the typed terminator goes, with the
+producer's core. -/
+private def producerBranchMatrix : Except String Nat := do
+  let mut count := 0
+  let producers := Op.rows.filter fun o =>
+    (o.mn == .cmp || o.mn == .test || o.mn == .add || o.mn == .sub) && o.linear
+  for o in producers do
+    for (args, i) in ((rowArguments (desc o).slots).filter o.argsOk).zipIdx do
+      if i % 11 != 0 then continue
+      for condition in conditions do
+        if FusedOk o (Op.jccRel32 condition) then
+          let program : Program := { entry := 0, blocks := #[
+            { instructions := #[], terminator := .branch o args condition 1 2 },
+            { instructions := #[], terminator := .ret }, { instructions := #[], terminator := .ret }] }
+          let target ← program.check.mapError reprStr
+          let typed := step Runtime.rejecting target (Machine.initial target initial)
+          let raw := (Encode.encodeTerminator (.branch o args condition 1 2)).bytes
+          let size := (Encode.encodeOp o args).size
+          let bytes ← (Encode.patchSigned32 raw (size + 2) 13).mapError reprStr
+          let bytes ← (Encode.patchSigned32 bytes (size + 7) (-19)).mapError reprStr
+          match typed.status with
+          | .running =>
+              let take := typed.pc.block == 1
+              let result ← (ByteEval.run bytes 0x2000 (if take then 2 else 3) ⟨initial, 0x2000, {}⟩).mapError reprStr
+              let expected := if take then 0x2000 + UInt64.ofNat (size + 6) + 13
+                else 0x2000 + UInt64.ofNat (size + 11) - 19
+              let address := touched (.op o args) initial
+              let probes := (List.range 24).map fun index => address - 8 + UInt64.ofNat index
+              need (result.rip == expected && sameRegisters typed.core result.core &&
+                  sameBytes typed.core.memory result.core.memory probes)
+                s!"producer branch mismatch: {repr o}, {repr args}, {repr condition}"
+          | .trapped (.memoryFault fault) =>
+              let .error (.memory byteFault) := ByteEval.run bytes 0x2000 1 ⟨initial, 0x2000, {}⟩
+                | throw s!"producer fault disagreement: {repr o}, {repr args}"
+              need (byteFault == fault) s!"producer fault differs: {repr o}, {repr args}"
+          | status => throw s!"unexpected producer branch status: {repr o}, {repr args}, {repr status}"
+          count := count + 1
   return count
 
 private def windowCases : Except String Nat := do
@@ -281,7 +322,8 @@ def main : IO UInt32 := cli "x86 byte execution check failed" do
   let target ← checked (Examples.arithmeticProgram.check.mapError reprStr)
   let forms ← checked (instructionMatrix target)
   let branches ← checked branchMatrix
+  let producerBranches ← checked producerBranchMatrix
   let windows ← checked windowCases
   checked (failureCases target)
   checked smallPrograms
-  IO.println s!"x86 byte execution check ok: {forms} instruction cases, {branches} patched branches, {windows} bounded-window cases, truncation/fault/corruption checks, four complete streams"
+  IO.println s!"x86 byte execution check ok: {forms} instruction cases, {branches} patched branches, {producerBranches} patched producer branches, {windows} bounded-window cases, truncation/fault/corruption checks, four complete streams"

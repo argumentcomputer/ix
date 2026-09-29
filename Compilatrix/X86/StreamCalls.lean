@@ -68,19 +68,49 @@ theorem CoreRelated.comparison {program : Program} {base : Word} {holes : Holes}
     cases comparison.right <;> simp [AluSource.eval, related.readReg]
   rw [Compare.holds_eq, Compare.holds_eq, source, related.readReg]
 
+/-- The return-slot mask after a terminator: a branch's producer clears the
+bytes it writes, like any row; other terminators write no memory. -/
+def terminatorHoles (holes : Holes) (terminator : Terminator) (core : Core) : Holes :=
+  match terminator with
+  | .branch producer args _ _ _ => nextHoles holes (.op producer args) core
+  | .jump _ | .tailCall _ | .ret => holes
+
+/-- The access condition of a non-return terminator: a branch's producer
+reads only ordinary data and writes no active return slot. -/
+def TerminatorSafe (holes : Holes) (frames : List ReturnFrame) (terminator : Terminator) (core : Core) : Prop :=
+  match terminator with
+  | .branch producer args _ _ _ => OperationSafe holes frames (.op producer args) core
+  | .jump _ | .tailCall _ | .ret => True
+
+/-- A flag-free producer's typed run is its run on empty flags, with the
+flags merged from none. -/
+theorem exec_run {o : Op} (free : (desc o).flagsIn = []) {args : List Arg} {core after : Core}
+    {flags : ByteEval.Flags} (executed : o.exec args core {} = .ok (after, flags)) :
+    ∃ out, o.run args core {} = .ok (after, out) ∧ flags = ({} : ByteEval.Flags).merge (desc o).flagsOut out.flags := by
+  rw [Encode.exec_flagsFree free] at executed
+  cases hrun : o.run args core {} with
+  | error fault => simp [hrun] at executed
+  | ok result =>
+      simp only [hrun, Except.map, Except.ok.injEq, Prod.mk.injEq] at executed
+      exact ⟨result.2, by rw [← executed.1], executed.2.symm⟩
+
 theorem paired_control_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
     (valid : Valid checked.program output externals) (runtime : Runtime) (machine : Machine)
     (base : Word) (holes : Holes) (state : ByteEval.State) (related : Related checked.program base holes machine state)
     {block : Block} (found : checked.program.blocks[machine.pc.block.toNat]? = some block)
-    (position : machine.pc.offset.toNat = block.instructions.size) (notRet : block.terminator ≠ .ret) :
+    (position : machine.pc.offset.toNat = block.instructions.size) (notRet : block.terminator ≠ .ret)
+    (safe : TerminatorSafe holes machine.returns block.terminator machine.core)
+    (nextRunning : (step runtime checked machine).status = .running) :
     ∃ count after, 0 < count ∧ count ≤ 3 ∧ ByteEval.run output.text base count state = .ok after ∧
-      Related checked.program base holes (step runtime checked machine) after := by
+      Related checked.program base (terminatorHoles holes block.terminator machine.core)
+        (step runtime checked machine) after := by
   have sourceStep := source_terminator runtime machine related.running found position
   have address := related.pc.offset found (by omega)
   rw [position] at address
   have accepted := valid.terminator machine.pc.block.toNat block found
   have bound := terminator_bound found
   have textBound := valid.textBound
+  have wf := checked_terminator_wf found
   cases term : block.terminator with
   | ret => exact False.elim (notRet term)
   | jump target | tailCall target =>
@@ -94,24 +124,36 @@ theorem paired_control_progress {checked : Checked} {output : Encode.Output} {ex
         by decide, by decide, by simp [ByteEval.run, jumped], ?_⟩
       rw [goEqual]
       exact ⟨related.core, related.running, _, target_entry targetBound, rfl⟩
-  | branch comparison condition yes no =>
-      rw [term] at accepted bound
-      have branched := branch_at accepted base state address (by simp only [terminatorSize] at bound; omega)
-      have parts := accepted
-      simp only [terminatorMatches, Bool.and_eq_true, and_assoc] at parts
-      have yesBound := (targets_sound parts.2.1).1
-      have noBound := (targets_sound parts.2.2).1
-      have targetBound : (if comparison.holds condition state.core then yes else no).toNat < checked.program.blocks.size := by
-        split <;> assumption
-      have goEqual : step runtime checked machine =
-          { machine with pc := ⟨if comparison.holds condition state.core then yes else no, 0⟩ } := by
-        simp [sourceStep, term, executeTerminator, related.core.comparison comparison condition,
-          Machine.goto, hasBlock_of_bound targetBound]
-      refine ⟨if comparison.holds condition state.core then 2 else 3, _, ?_, ?_, branched, ?_⟩
-      · split <;> decide
-      · split <;> decide
-      · rw [goEqual]
-        exact ⟨related.core, related.running, _, target_entry targetBound, rfl⟩
+  | branch producer args condition yes no =>
+      rw [term] at accepted bound wf safe
+      obtain ⟨_, linear, free, _, fused⟩ := Encode.wellFormed_branch wf
+      rw [term] at sourceStep
+      rw [sourceStep] at nextRunning
+      obtain ⟨core, flags, take, typed, tested, targetBound, goEqual⟩ := branch_running nextRunning
+      obtain ⟨out, ranTyped, typedFlags⟩ := exec_run free typed
+      have pair := run_pair related.core producer args {} safe
+      rw [ranTyped] at pair
+      cases ranByte : producer.run args state.core {} with
+      | error fault => simp [ranByte, RunPair] at pair
+      | ok result =>
+          obtain ⟨physical, byteOut⟩ := result
+          simp only [ranByte, RunPair] at pair
+          obtain ⟨sameOut, coresRelated⟩ := pair
+          subst sameOut
+          have produced : producer.exec args state.core state.flags =
+              .ok (physical, state.flags.merge (desc producer).flagsOut out.flags) := by
+            rw [Encode.exec_flagsFree free, ranByte]
+            rfl
+          have byteTest : (state.flags.merge (desc producer).flagsOut out.flags).test condition = some take := by
+            rw [ByteEval.test_merge_set (fun flag member => FusedOk.set fused flag (by simpa using member))
+              state.flags {} out.flags, ← typedFlags, tested]
+          have branched := branch_at accepted linear base state address
+            (by simp only [terminatorSize] at bound; omega) produced byteTest
+          refine ⟨if take then 2 else 3, _, ?_, ?_, branched, ?_⟩
+          · split <;> decide
+          · split <;> decide
+          · rw [sourceStep, goEqual]
+            exact ⟨coresRelated, related.running, _, target_entry targetBound, rfl⟩
 
 theorem call_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
     (valid : Valid checked.program output externals) (runtime : Runtime) (machine : Machine)

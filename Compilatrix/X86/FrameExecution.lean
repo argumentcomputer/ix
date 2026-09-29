@@ -37,15 +37,16 @@ theorem BlockCode.jump_inFrame {checked : Checked} {block target : BlockId} {ins
   simp [executeTerminator, Machine.goto, valid, inFrame]
 
 theorem BlockCode.branch_inFrame {checked : Checked} {block yes no : BlockId} {instructions : List Instr}
-    {comparison : Compare} {condition : Condition}
-    (code : BlockCode checked block instructions (.branch comparison condition yes no))
-    (runtime : Runtime) (core : Core) (returns : List ReturnFrame) (answer : Bool)
-    (holds : comparison.holds condition core = answer)
+    {producer : Op} {args : List Arg} {condition : Condition}
+    (code : BlockCode checked block instructions (.branch producer args condition yes no))
+    (runtime : Runtime) (core : Core) (returns : List ReturnFrame) {after : Core} {flags : ByteEval.Flags}
+    (produced : producer.exec args core {} = .ok (after, flags)) {answer : Bool}
+    (tested : flags.test condition = some answer)
     (valid : checked.program.hasBlock (if answer then yes else no) = true) :
     step runtime checked (inFrame core block instructions.length returns) =
-      inFrame core (if answer then yes else no) 0 returns := by
+      inFrame after (if answer then yes else no) 0 returns := by
   rw [code.terminator_inFrame]
-  simp [executeTerminator, inFrame, holds, Machine.goto, valid]
+  simp [executeTerminator, inFrame, produced, tested, Machine.goto, valid]
 
 theorem Straight.Sequence.steps_inFrame {instructions : List Instr} {before after : Core}
     (sequence : Straight.Sequence instructions before after) (runtime : Runtime) (checked : Checked)

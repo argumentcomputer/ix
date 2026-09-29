@@ -144,10 +144,28 @@ theorem linear_permissions (runtime : Runtime) (checked : Checked) (machine : Ma
           · exact permissions
   | call target | callRuntime intrinsic => simp [Encode.linearInstruction] at linear
 
-theorem terminator_memory (checked : Checked) (machine : Machine) (terminator : Terminator) :
-    (executeTerminator checked terminator machine).core.memory = machine.core.memory := by
-  cases terminator <;> simp only [executeTerminator, Machine.goto]
-  all_goals (repeat' split) <;> rfl
+/-- A terminator keeps page permissions: a branch's producer is an ordinary
+row, and the other terminators leave memory alone. -/
+theorem terminator_permissions (checked : Checked) (machine : Machine) (terminator : Terminator) :
+    Permissions machine.core (executeTerminator checked terminator machine).core := by
+  cases terminator with
+  | branch producer args condition yes no =>
+      simp only [executeTerminator]
+      cases hexec : producer.exec args machine.core {} with
+      | error fault => cases fault <;> exact Permissions.refl _
+      | ok result =>
+          obtain ⟨after, flags⟩ := result
+          obtain ⟨out, ran⟩ := exec_ok hexec
+          have permissions := run_permissions_row ran
+          simp only
+          cases flags.test condition with
+          | none => exact Permissions.refl _
+          | some take =>
+              simp only [Machine.goto]
+              split <;> split <;> exact permissions
+  | jump _ | tailCall _ | ret =>
+      simp only [executeTerminator, Machine.goto]
+      all_goals (repeat' split) <;> exact Permissions.refl _
 
 theorem step_permissions (runtime : Runtime) (checked : Checked) (free : CallFree checked.program) (machine : Machine) :
     Permissions machine.core (step runtime checked machine).core := by
@@ -164,7 +182,7 @@ theorem step_permissions (runtime : Runtime) (checked : Checked) (free : CallFre
           | none =>
               simp only [step, running, found, foundInstruction]
               split
-              · simp [Permissions, terminator_memory]
+              · exact terminator_permissions checked machine block.terminator
               · simp [Permissions, Machine.trap]
 
 theorem run_permissions (runtime : Runtime) (checked : Checked) (free : CallFree checked.program) (fuel : Nat) (machine : Machine) :

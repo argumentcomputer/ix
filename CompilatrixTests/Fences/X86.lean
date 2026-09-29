@@ -235,3 +235,15 @@ failure exit. -/
 
 /-- info: 'Compilatrix.X86.Op.safe_ok' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Op.safe_ok
+
+/-- info: 'Compilatrix.X86.Encode.compare_branch_bytes_execution' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.compare_branch_bytes_execution
+
+/-- info: 'Compilatrix.X86.executeTerminator_compare' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.executeTerminator_compare
+
+/-- info: 'Compilatrix.X86.Terminator.compare_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Terminator.compare_wellFormed
+
+/-- info: 'Compilatrix.X86.Encode.produced_flags' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.produced_flags

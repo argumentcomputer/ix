@@ -55,7 +55,7 @@ def instructionSize (instruction : Instr) : Nat := (Encode.encodeInstr instructi
 
 def terminatorSize : Terminator → Nat
   | .jump _ | .tailCall _ => 5
-  | .branch comparison _ _ _ => (Encode.encodeCompare comparison).size + 11
+  | .branch producer args _ _ _ => (Encode.encodeOp producer args).size + 11
   | .ret => 1
 
 def instructionSizes (block : Block) : List Nat := block.instructions.toList.map instructionSize
@@ -209,7 +209,7 @@ theorem checked_block_bound {checked : Checked} {index : Nat} {block : Block}
   have fields := Array.all_eq_true.mp valid.2.2.2 index bound
   rw [equal] at fields
   simp only [Bool.and_eq_true] at fields
-  simpa [Block.offsetsFit, UInt32.size] using fields.1.1
+  simpa [Block.offsetsFit, UInt32.size] using fields.1.1.1
 
 /-- Every instruction of a checked program is a listed row with operands of
 its slot kinds, or a call. -/
@@ -224,8 +224,20 @@ theorem checked_instruction_wf {checked : Checked} {index : Nat} {block : Block}
   rw [equal] at fields
   simp only [Bool.and_eq_true, Block.instructionsValid] at fields
   obtain ⟨inner, same⟩ := Array.getElem?_eq_some_iff.mp foundInstruction
-  have cell := Array.all_eq_true.mp fields.2 position inner
+  have cell := Array.all_eq_true.mp fields.1.2 position inner
   rwa [same] at cell
+
+/-- Every terminator of a checked program is well-formed: a branch's producer
+is a listed linear row that reads no flags and sets its condition's. -/
+theorem checked_terminator_wf {checked : Checked} {index : Nat} {block : Block}
+    (found : checked.program.blocks[index]? = some block) : block.terminator.wellFormed = true := by
+  have valid := checked.valid
+  simp only [Program.wellFormed, Bool.and_eq_true, and_assoc] at valid
+  obtain ⟨bound, equal⟩ := Array.getElem?_eq_some_iff.mp found
+  have fields := Array.all_eq_true.mp valid.2.2.2 index bound
+  rw [equal] at fields
+  simp only [Bool.and_eq_true] at fields
+  exact fields.2
 
 /-- In a checked program, every non-call instruction is linear. -/
 theorem checked_linear {checked : Checked} {index : Nat} {block : Block}

@@ -20,7 +20,7 @@ def arithmeticProgram : Program :=
           .mov .w64 .rax (.imm 40),
           .alu .add .w64 .rax (.imm 2)]
         terminator :=
-          .branch
+          .compare
             { width := .w64, left := .rax, right := .imm 42 }
             .eq 1 2 },
       { instructions := #[], terminator := .ret },

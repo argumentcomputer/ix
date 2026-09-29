@@ -109,23 +109,23 @@ theorem control_progress {checked : Checked} {output : Encode.Output} {externals
       · simp [ByteEval.run, jumped]
       · rw [goEqual]
         exact ⟨related.core, related.running, related.returns, _, target_entry targetBound, rfl⟩
-  | branch comparison condition yes no =>
+  | branch producer args condition yes no =>
       rw [term] at accepted bound
-      have branched := branch_at accepted base state address (by simp only [terminatorSize] at bound; omega)
-      have parts := accepted
-      simp only [terminatorMatches, Bool.and_eq_true, and_assoc] at parts
-      have yesBound := (targets_sound parts.2.1).1
-      have noBound := (targets_sound parts.2.2).1
-      have targetBound : (if comparison.holds condition state.core then yes else no).toNat < checked.program.blocks.size := by
-        split <;> assumption
-      have goEqual : step runtime checked machine =
-          { machine with pc := ⟨if comparison.holds condition state.core then yes else no, 0⟩ } := by
-        simp [sourceStep, term, executeTerminator, ← related.core, Machine.goto, hasBlock_of_bound targetBound]
-      refine ⟨if comparison.holds condition state.core then 2 else 3, _, ?_, ?_, branched, ?_⟩
+      have wf := checked_terminator_wf found
+      rw [term] at wf
+      obtain ⟨_, linear, free, _, fused⟩ := Encode.wellFormed_branch wf
+      rw [term] at sourceStep
+      rw [sourceStep] at nextRunning
+      obtain ⟨core, flags, take, typed, tested, targetBound, goEqual⟩ := branch_running nextRunning
+      obtain ⟨byteFlags, produced, sameTest⟩ := Encode.produced_flags free fused typed state.flags
+      rw [← related.core] at produced
+      have branched := branch_at accepted linear base state address (by simp only [terminatorSize] at bound; omega)
+        produced (sameTest.trans tested)
+      refine ⟨if take then 2 else 3, _, ?_, ?_, branched, ?_⟩
       · split <;> decide
       · split <;> decide
-      · rw [goEqual]
-        exact ⟨related.core, related.running, related.returns, _, target_entry targetBound, rfl⟩
+      · rw [sourceStep, goEqual]
+        exact ⟨rfl, related.running, related.returns, _, target_entry targetBound, rfl⟩
 
 theorem running_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
     (valid : Valid checked.program output externals) (free : CallFree checked.program)
@@ -191,9 +191,9 @@ theorem halting_ret {checked : Checked} {output : Encode.Output} {externals : Ex
       | jump target | tailCall target =>
           simp only [sourceStep, term, executeTerminator] at halted
           exact False.elim (gotoStatus _ halted)
-      | branch comparison condition yes no =>
-          simp only [sourceStep, term, executeTerminator] at halted
-          exact False.elim (gotoStatus _ halted)
+      | branch producer args condition yes no =>
+          rw [sourceStep, term] at halted
+          exact False.elim (branch_not_halted checked machine related.running producer args condition yes no result halted)
 
 theorem byte_run_add (text : ByteArray) (base : Word) (first second : Nat) (state : ByteEval.State) :
     ByteEval.run text base (first + second) state =

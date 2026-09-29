@@ -13,8 +13,10 @@ RIP.
 
 Linear operations run their table row through `Op.exec`, the executor the
 byte machine also uses. The typed machine has no flags: a row's semantics
-observes only the flags it declares, and linear rows declare none. A
-comparison's outcome is its `cmp` row's flags, tested as `jcc` tests them.
+observes only the flags it declares, and linear rows declare none. A branch
+runs its producer row and tests the condition on the flags that row sets, as
+`jcc` tests them; the producer defines every flag the condition reads
+(`FusedOk`), so no flag value ever crosses a typed instruction boundary.
 
 Runtime intrinsics are supplied as an explicit semantic parameter.  Their
 result type can mutate memory and caller-saved registers only, so preservation
@@ -240,9 +242,13 @@ def executeTerminator (checked : Checked) (terminator : Terminator)
   let core := machine.core
   match terminator with
   | .jump target => machine.goto checked target
-  | .branch comparison condition ifTrue ifFalse =>
-      machine.goto checked
-        (if comparison.holds condition core then ifTrue else ifFalse)
+  | .branch producer args condition ifTrue ifFalse =>
+      match producer.exec args core {} with
+      | .error fault => machine.afterRow (.error fault)
+      | .ok (core, flags) =>
+          match flags.test condition with
+          | none => machine.trap (.semantic (.undefinedCondition condition))
+          | some taken => { machine with core }.goto checked (if taken then ifTrue else ifFalse)
   | .tailCall target => machine.goto checked target
   | .ret =>
       match machine.returns with

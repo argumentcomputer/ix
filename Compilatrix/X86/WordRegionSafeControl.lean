@@ -29,7 +29,7 @@ theorem SafeTrace.branch {layout : Layout} {returns : List ReturnFrame} {instruc
     (trace : SafeTrace layout returns instructions before holes after finalHoles)
     (outside memory : Memory) (represented : Realizes layout outside before.words memory)
     (checked : Checked) (block yes no : BlockId) (comparison : Compare) (condition : Condition)
-    (code : BlockCode checked block instructions (.branch comparison condition yes no))
+    (code : BlockCode checked block instructions (.compare comparison condition yes no))
     (answer : Bool) (holds : comparison.holds condition (after.core Memory.unmapped) = answer)
     (valid : checked.program.hasBlock (if answer then yes else no) = true) :
     ∃ nextMemory, Realizes layout outside after.words nextMemory ∧
@@ -40,7 +40,7 @@ theorem SafeTrace.branch {layout : Layout} {returns : List ReturnFrame} {instruc
     code.segment (by simpa using code.fits)
   simp only [Nat.zero_add] at executed
   refine ⟨nextMemory, nextView, ?_⟩
-  exact executed.append (code.safe_branch Runtime.rejecting (after.core nextMemory) returns finalHoles answer
+  exact executed.append (code.safe_compare Runtime.rejecting (after.core nextMemory) returns finalHoles answer
     ((after.compare_core nextMemory comparison condition).trans holds) valid)
 
 end Compilatrix.X86.WordRegion

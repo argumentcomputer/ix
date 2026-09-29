@@ -100,11 +100,45 @@ private def branchCases : Except String Nat := do
         entry := 0
         blocks := #[
           { instructions := #[.mov .w64 .rax (.imm left), .mov .w64 .rcx (.imm right)]
-            terminator := .branch { width := .w64, left := .rax, right := .reg .rcx } condition 1 2 },
+            terminator := .compare { width := .w64, left := .rax, right := .reg .rcx } condition 1 2 },
           { instructions := #[.mov .w64 .rax (.imm 42)], terminator := .ret },
           { instructions := #[.mov .w64 .rax (.imm 99)], terminator := .ret }] }
       programCase program textBase
   return conditions.length * pairs.length
+
+/-- Branches whose producer is not a register `cmp`: a memory operand (the
+prologue's `cmp r, [m]`), a tag `test`, an `add` whose carry decides `jc`
+(rule 4) and keeps its sum, and an `add` into memory that a target reads. -/
+private def producerCases : Except String Nat := do
+  let conditions : List Condition := [.eq, .ne, .unsignedLt, .unsignedLe, .unsignedGt, .unsignedGe,
+    .signedLt, .signedLe, .signedGt, .signedGe]
+  let pairs : List (Word × Word) := [(0, 0), (0, 1), (1, 0),
+    (0x8000000000000000, 1), (0x7fffffffffffffff, 0xffffffffffffffff)]
+  let slot : MemAddr := { base := some .rsp, displacement := 0xfffffff0 }
+  let targets : Array Block := #[
+    { instructions := #[.mov .w64 .rdx (.imm 42)], terminator := .ret },
+    { instructions := #[.mov .w64 .rdx (.imm 99)], terminator := .ret }]
+  let mut count := 0
+  for (left, right) in pairs do
+    let setup : Array Instr := #[.mov .w64 .rax (.imm left), .mov .w64 .rcx (.imm right), .store .w64 slot .rcx]
+    let producers : List (Op × List Arg × List Condition) := [
+      ({ mn := .cmp, w := .w64, form := .RM }, [.reg .rax, .mem slot], conditions),
+      ({ mn := .cmp, w := .w32, form := .MR }, [.mem slot, .reg .rax], conditions),
+      ({ mn := .test, w := .w8, form := .MI }, [.reg .rax, .imm 1], [.eq, .ne]),
+      ({ mn := .test, w := .w64, form := .MR }, [.mem slot, .reg .rax], [.eq, .ne, .signedLt]),
+      ({ mn := .add, w := .w64, form := .MR }, [.reg .rax, .reg .rcx], [.unsignedLt, .eq]),
+      ({ mn := .sub, w := .w64, form := .RM }, [.reg .rax, .mem slot], [.unsignedLt, .eq]),
+      ({ mn := .add, w := .w64, form := .MR }, [.mem slot, .reg .rax], [.unsignedLt, .eq])]
+    for (producer, args, branchConditions) in producers do
+      for condition in branchConditions do
+        let program : Program := {
+          entry := 0
+          blocks := #[{ instructions := setup, terminator := .branch producer args condition 1 2 },
+            { targets[0]! with instructions := #[.load .w64 .rsi slot] ++ targets[0]!.instructions },
+            targets[1]!] }
+        programCase program textBase
+        count := count + 1
+  return count
 
 private def streamCorruptions : Except String Nat := do
   let (target, input, _) ← artifact Examples.arithmeticProgram
@@ -119,8 +153,8 @@ private def streamCorruptions : Except String Nat := do
     ("unclaimed relocation", { encoded with relocations := #[{ offset := 2, symbol := "unexpected", addend := -4 }] })]
   let block := target.program.blocks[0]!
   let term := Stream.instructionOffset block block.instructions.size
-  let .branch comparison _ _ _ := block.terminator | throw "branch fixture changed"
-  let jcc := term + (Encode.encodeCompare comparison).size
+  let .branch producer args _ _ _ := block.terminator | throw "branch fixture changed"
+  let jcc := term + (Encode.encodeOp producer args).size
   corruptions := corruptions ++ [
     ("wrong conditional target", { encoded with text := encoded.text.set! (jcc + 2) 1 }),
     ("wrong fallthrough target", { encoded with text := encoded.text.set! (jcc + 7) 0 }),
@@ -302,10 +336,11 @@ private def contractCases : Except String Nat := do
 def main : IO UInt32 := cli "x86 stream/object check failed" do
   let streams ← checked completePrograms
   let branches ← checked branchCases
+  let producers ← checked producerCases
   let streamNegatives ← checked streamCorruptions
   let layouts ← checked indexedLayouts
   let objectNegatives ← checked objectCorruptions
   let relocations ← checked relocationCases
   checked returnFault
   let contracts ← checked contractCases
-  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, caller-slot fault"
+  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {producers} producer branch objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, caller-slot fault"

@@ -259,7 +259,7 @@ def encodeInstr : Instr → Chunk
   | .call target => rel32 Op.callRel32 (.block target)
   | .callRuntime intrinsic => rel32 Op.callRel32 (.intrinsic intrinsic)
 
-/-- The `cmp` row of a compare-and-branch. -/
+/-- The `cmp` row of a compare-and-branch (`Terminator.compare`). -/
 def encodeCompare (comparison : Compare) : ByteArray :=
   encodeOp comparison.row.1 comparison.row.2
 
@@ -269,8 +269,8 @@ def nearOpcode (condition : Condition) : UInt8 :=
 
 def encodeTerminator : Terminator → Chunk
   | .jump target => rel32 Op.jmpRel32 (.block target)
-  | .branch comparison condition ifTrue ifFalse =>
-      (Chunk.raw (encodeCompare comparison)).append
+  | .branch producer args condition ifTrue ifFalse =>
+      (Chunk.raw (encodeOp producer args)).append
         ((rel32 (Op.jccRel32 condition) (.block ifTrue)).append
           (rel32 Op.jmpRel32 (.block ifFalse)))
   | .tailCall target => rel32 Op.jmpRel32 (.block target)

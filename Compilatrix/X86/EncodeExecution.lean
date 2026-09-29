@@ -58,6 +58,24 @@ theorem exec_flagsFree {o : Op} (free : (desc o).flagsIn = []) (args : List Arg)
   rw [free, ByteEval.restrict_nil]
   cases o.run args core {} <;> rfl
 
+/-- A branch producer computes the same core from the typed machine's empty
+flags as from the byte machine's, and the flags its condition reads agree:
+the producer sets them all (`FusedOk`). -/
+theorem produced_flags {producer : Op} {args : List Arg} {condition : Condition}
+    (free : (desc producer).flagsIn = []) (fused : FusedOk producer (Op.jccRel32 condition) = true)
+    {core after : Core} {typedFlags : ByteEval.Flags}
+    (typed : producer.exec args core {} = .ok (after, typedFlags)) (flags : ByteEval.Flags) :
+    ∃ byteFlags, producer.exec args core flags = .ok (after, byteFlags) ∧
+      byteFlags.test condition = typedFlags.test condition := by
+  rw [exec_flagsFree free] at typed ⊢
+  cases hrun : producer.run args core {} with
+  | error fault => simp [hrun] at typed
+  | ok result =>
+      simp only [hrun, Except.map, Except.ok.injEq, Prod.mk.injEq] at typed
+      obtain ⟨rfl, rfl⟩ := typed
+      refine ⟨_, rfl, ?_⟩
+      exact ByteEval.test_merge_set (fun flag member => FusedOk.set fused flag (by simpa using member)) _ _ _
+
 theorem execute_linear {o : Op} (linear : o.linear = true) (args : List Arg) (length : Nat)
     (state : ByteEval.State) :
     ByteEval.execute ⟨.op o args, length⟩ state =

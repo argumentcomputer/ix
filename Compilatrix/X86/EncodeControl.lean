@@ -159,11 +159,54 @@ theorem Compare.row_ok (comparison : Compare) :
             simp [Op.argsOk, desc, Table.arithDesc, Table.cmpArith, Table.rmSlot,
               Table.immSlot, Table.fullImm, Table.ImmKind.argKind, slotsAccept, ArgKind.accepts, norm_idem]
 
+/-- A comparison's row is a straight-line row. -/
+theorem _root_.Compilatrix.X86.Compare.row_linear (comparison : Compare) : comparison.row.1.linear = true := by
+  cases comparison with
+  | mk width left right =>
+      cases right with
+      | reg => rfl
+      | imm => simp only [Compare.row, aluImmRow]; split <;> rfl
+
+theorem _root_.Compilatrix.X86.Compare.row_flagsFree (comparison : Compare) : (desc comparison.row.1).flagsIn = [] := by
+  cases comparison with
+  | mk width left right =>
+      cases right with
+      | reg => rfl
+      | imm => simp only [Compare.row, aluImmRow]; split <;> rfl
+
+/-- A `cmp` row sets every flag any condition reads. -/
+theorem _root_.Compilatrix.X86.Compare.row_fused (comparison : Compare) (condition : Condition) :
+    FusedOk comparison.row.1 (Op.jccRel32 condition) = true := by
+  cases comparison with
+  | mk width left right =>
+      cases right with
+      | reg => cases condition <;> rfl
+      | imm => simp only [Compare.row, aluImmRow]; split <;> cases condition <;> rfl
+
 def terminatorOperations : Terminator → List Decode.Operation
   | .jump _ | .tailCall _ => [.jump 0]
-  | .branch comparison condition _ _ =>
-      [.op comparison.row.1 comparison.row.2, .branch condition 0, .jump 0]
+  | .branch producer args condition _ _ => [.op producer args, .branch condition 0, .jump 0]
   | .ret => [.ret]
+
+/-- A well-formed branch's producer is a listed row with operands of its
+slot kinds, linear, reading no flags, and setting every flag the condition
+reads. -/
+theorem wellFormed_branch {producer : Op} {args : List Arg} {condition : Condition} {yes no : BlockId}
+    (wf : (Terminator.branch producer args condition yes no).wellFormed = true) :
+    producer ∈ Op.rows ∧ producer.linear = true ∧ (desc producer).flagsIn = [] ∧
+      producer.argsOk args = true ∧ FusedOk producer (Op.jccRel32 condition) = true := by
+  simp only [Terminator.wellFormed, Bool.and_eq_true, List.contains_iff_mem, List.isEmpty_iff] at wf
+  exact ⟨wf.1.1.1.1, wf.1.1.1.2, wf.1.1.2, wf.1.2, wf.2⟩
+
+/-- A compare-and-branch is well-formed. -/
+theorem _root_.Compilatrix.X86.Terminator.compare_wellFormed (comparison : Compare) (condition : Condition) (yes no : BlockId) :
+    (Terminator.compare comparison condition yes no).wellFormed = true := by
+  have ok := Compare.row_ok comparison
+  have linear := Compare.row_linear comparison
+  have free := Compare.row_flagsFree comparison
+  have fused := Compare.row_fused comparison condition
+  simp only [Terminator.compare, Terminator.wellFormed, Bool.and_eq_true, List.contains_iff_mem, List.isEmpty_iff]
+  exact ⟨⟨⟨⟨ok.1, linear⟩, free⟩, ok.2⟩, fused⟩
 
 theorem encodeCompare_decode (comparison : Compare) (rest : List UInt8) :
     Decode.one ((encodeCompare comparison).data.toList ++ rest) =
@@ -175,7 +218,7 @@ theorem compare_list_decode (comparison : Compare) (rest : List UInt8) :
       some (.op comparison.row.1 comparison.row.2, rest) :=
   row_decode _ _ (Compare.row_ok comparison).1 (Compare.row_ok comparison).2 rest
 
-theorem terminator_decode (terminator : Terminator) (rest : List UInt8) :
+theorem terminator_decode (terminator : Terminator) (wf : terminator.wellFormed = true) (rest : List UInt8) :
     Decode.sequence (terminatorOperations terminator).length
       ((encodeTerminator terminator).bytes.data.toList ++ rest) =
         some (terminatorOperations terminator, rest) := by
@@ -184,9 +227,10 @@ theorem terminator_decode (terminator : Terminator) (rest : List UInt8) :
       simp [terminatorOperations, encodeTerminator, rel32_bytes, encodeOp, Decode.sequence, jump_placeholder]
   | ret =>
       simp [terminatorOperations, encodeTerminator, Chunk.raw, encodeOp, Decode.sequence, ret_row]
-  | branch comparison condition yes no =>
+  | branch producer args condition yes no =>
+      obtain ⟨row, _, _, ok, _⟩ := wellFormed_branch wf
       simp [terminatorOperations, encodeTerminator, Chunk.append, Chunk.raw, rel32_bytes, encodeOp,
-        encodeCompare, Decode.sequence, compare_list_decode, branch_placeholder, jump_placeholder]
+        Decode.sequence, row_decode _ _ row ok, branch_placeholder, jump_placeholder]
 
 end Compilatrix.X86.Encode
 
