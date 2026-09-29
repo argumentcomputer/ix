@@ -211,3 +211,22 @@ The largest closures come from well-founded recursion and `for` loops: their
 termination proofs pull in `Nat`/`omega` lemmas, which relevance analysis
 will erase. All are within the v3 consumer budgets, the tightest being 4,096
 typing declarations and depth 256.
+
+## Measurement notes (first local session, 2026-09-29)
+
+The first [runner](../runner/README.md) session (10 paired blocks, whole-process
+wall time) showed three properties of these fixtures that any comparison must
+account for:
+- **`sum-loop`'s twin folds to a closed form.** Clang at `-O2` and `-O3`
+  replaces `for (i < n) s += i` with arithmetic, so the twin's row (2–3 ms at
+  `n = 10⁸`) measures process startup, not a loop. Compare Compilatrix with
+  `lean-clang` on this fixture, or add a twin whose loop cannot be solved in
+  closed form.
+- **`tak` and `gcd` are startup-dominated.** At their bench arguments every
+  row finishes in under 10 ms, so process and runtime initialisation dominate.
+  Their ratios need the in-process entry profile with repetition counts
+  ([benchmark design](../../docs/benchmark-plan.md), "Timing boundaries").
+- **Two twins are slower than Lean.** `rbmap_checkpoint` (a persistent-tree
+  twin) and `const_fold` (Koka's `cfold.cpp`) allocate through `malloc`/`new`
+  and take 1.4× and 2.1× `lean-clang`'s time. These rows compare allocators
+  as much as code generation.
