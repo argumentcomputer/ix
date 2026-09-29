@@ -58,6 +58,19 @@ end Ix.Ixon.Audit
 #guard_kernel_axioms Ix.Ixon.Verify.ConstantBounds.getConstant_bound [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.ConstantBounds.deConstantExact_resource_bound [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.ConstantBounds.boundedConstant_resource_bound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.Erases.bind [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.Bound.bind [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.Bound.work_le [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.expr_erases [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.expr_bound [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.univ_erases [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.univ_bound [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.univArray_bound [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.array_erases [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.array_bound [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.constant_erases [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.constant_bound [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.record_accounted [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.WireCheck.validConstant_iff [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Canonical.deConstant_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Canonical.deConstant_serConstant [propext, Classical.choice, Quot.sound]
@@ -153,6 +166,45 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Audit.operations #[`Init, `Std]
 
 /- Freeze both the resource predicates and their public contracts. Successful
 reads need only a valid starting cursor, not a canonicality premise. -/
+/-- info: def Ix.Ixon.Verify.Work.Erases : {α : Type} → Ix.Ixon.Verify.Work.M α → Ixon.GetM α → Prop :=
+fun {α} metered production => Ix.Ixon.Verify.Work.erase metered = production -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Ixon.Verify.Work.Erases
+
+/-- info: def Ix.Ixon.Verify.Work.Costs : {α : Type} →
+  Ixon.GetState → Ix.Ixon.Verify.Work.Outcome α → Nat → Nat → Nat → (α → Nat) → Prop :=
+fun {α} start result spent rate credit remaining =>
+  Ix.Ixon.Verify.Work.Progress start (Ix.Ixon.Verify.Work.finish result) ∧
+    match result with
+    | EStateM.Result.ok value stop => spent + remaining value ≤ rate * (stop.idx - start.idx) + credit
+    | EStateM.Result.error a stop => spent ≤ rate * (stop.idx - start.idx) + credit + 1 -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Ixon.Verify.Work.Costs
+
+/-- info: def Ix.Ixon.Verify.Work.Bound : {α : Type} → Ix.Ixon.Verify.Work.M α → Nat → Nat → (α → Nat) → Prop :=
+fun {α} reader rate credit remaining =>
+  ∀ (start : Ixon.GetState),
+    start.idx ≤ start.bytes.size →
+      Ix.Ixon.Verify.Work.Costs start (reader start).fst (reader start).snd rate credit remaining -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Ixon.Verify.Work.Bound
+
+/-- info: Ix.Ixon.Verify.Work.constant_erases : ∀ (budget : Nat),
+  Ix.Ixon.Verify.Work.Erases (Ix.Ixon.Verify.Work.constant budget) (Ixon.Bounded.getConstant budget) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.Work.constant_erases
+
+/-- info: Ix.Ixon.Verify.Work.constant_bound : ∀ (budget : Nat),
+  Ix.Ixon.Verify.Work.Bound (Ix.Ixon.Verify.Work.constant budget) 16 (2 * budget) fun x => 0 -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.Work.constant_bound
+
+/-- info: Ix.Ixon.Verify.Work.record_accounted : ∀ (maxBytes budget : Nat) (input : ByteArray),
+  (Ix.Ixon.Verify.Work.record maxBytes budget input).fst = Ixon.Bounded.deConstant maxBytes budget input ∧
+    (Ix.Ixon.Verify.Work.record maxBytes budget input).snd ≤ 16 * input.size + 2 * budget + 3 -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.Work.record_accounted
+
 /-- info: def Ix.Ixon.Verify.ReaderBounds.ReaderBound : {α : Type} → Ixon.GetM α → (α → Nat) → Prop :=
 fun {α} reader units =>
   ∀ (start finish : Ixon.GetState) (value : α),

@@ -241,6 +241,27 @@ consumes a byte, that prefix has at most the available byte count. This
 bounds array iterations, not the work inside an element reader. These are
 structural and prefix bounds, not heap-byte or wall-clock guarantees.
 
+`Verify.Work` through `WorkRecord` additionally bound complete bounded-record
+parser work, including work inside a failed element. Their ghost interpreter
+erases exactly to production, preserving successful values, error strings,
+buffers, and cursors on every outcome. Byte potential and transferable credits
+fund construction and collection work without trusting declared counts. Nested
+binds share one terminal-failure allowance. Universe expansion reserves work
+before descending, with one budget across the whole table, so a later failure
+cannot erase earlier work or restart the allowance.
+
+The bound is `16 * input.size + 2 * universeBudget + 3` per attempted record.
+`WorkAdmission` preserves the complete canonical parser-stage result and proves
+an aggregate bound of
+`16 * maxTotalBytes + maxRecords * (2 * maxRecordUnivNodes + 3)` without assuming
+success. Preflight failure performs no parsing, and canonical failure stops
+before subsequent records. The production decoder executes no counters.
+These abstract units count byte attempts/copies, tag and structural construction,
+collection work, telescope folds, reserved expansion, and record framing/checks.
+They do not measure heap bytes, wall time, or arithmetic bit complexity;
+canonical validation/re-encoding, batch administration, projection hashing,
+ordering, literal interpretation, ingress, and checking are outside the metric.
+
 `WireCheck.validConstant` decides the complete `Constant.wireWF` predicate.
 Its recursive checks carry telescope counts, avoiding repeated scans of
 long application, binder, and successor chains. `Canonical.deConstant`
@@ -341,8 +362,8 @@ has 1,509 functions, 77 inherited externs, two inherited unsafe accessors, and
 no project replacement. Seven added externs are standard string/UTF-8,
 UInt64, and array operations; no unsafe accessor was added.
 
-K4 remains open for complete parser-work accounting, including nested
-failure paths and element-reader cost. The canonical
+K4's byte contracts, reconstruction, ordering, and abstract parser-work
+accounting are implemented and validated. The canonical
 record API establishes byte spelling; semantic admission still has K3's
 supported profile. Existing production callers use the original decoders
 pending D02. Supplied primary, alias, and blob keys are not authenticated
@@ -449,8 +470,8 @@ resource theorem. All parser implementations, import allowlists, and audited
 runtime closures are unchanged. Provenance covers 97 ported and 67
 authored/reorganized modules plus four license files. Evidence is in
 `plans/review/k4-reader-bounds/summary.json`; tested source:
-`e34c8cc3aad3f7d13fbc65a3c4f20351be3352e5`. Complete parser-work accounting
-and whole-corpus parity remain open.
+`e34c8cc3aad3f7d13fbc65a3c4f20351be3352e5`. At that checkpoint, complete
+parser-work accounting and whole-corpus parity remained open.
 
 The K4 projection-reconstruction checkpoint passed the incremental full gate
 on 2026-09-29: 179 standalone, 197 host fixture/provenance, 550 runner, and
@@ -465,9 +486,9 @@ metadata validation. Sixteen new exact axiom checks cover the new contracts;
 provenance covers 97 ported, 70 authored/reorganized modules, and four license
 files. Tested source: `19313f7ea597202ed3d544980d898ea6f5d8ba7c`; evidence:
 `plans/review/k4-projection-reconstruction/summary.json`. This completes pure
-projection reconstruction. The subsequent block-order checkpoint below
-closes canonical ordering; complete parser-work accounting and the D02
-consumer cutover remain open.
+projection reconstruction. Canonical ordering and complete parser-work
+accounting remained open at that checkpoint and were completed in the two
+checkpoints below. The D02 consumer cutover remains open.
 
 The canonical-block-order checkpoint passed the incremental full gate on
 2026-09-29: 179 standalone, 202 host fixture/provenance, 607 runner, and 975
@@ -482,9 +503,24 @@ own projection keys and uses native ingress/comparison/refinement. Thirteen
 exact axiom checks and six frozen signatures cover the new contracts;
 provenance covers 97 ported, 74 authored/reorganized modules, and four license
 files. Tested source: `d0377deba61b6b57fe24b6a72bacaeb0b1098990`; evidence:
-`plans/review/k4-block-order/summary.json`. K4's remaining work is complete
-parser-work accounting, including nested failure paths and element-reader
-cost; full-corpus parity and consumer cutover remain later milestones.
+`plans/review/k4-block-order/summary.json`. At that checkpoint K4 still needed
+complete parser-work accounting, including nested failure paths and
+element-reader cost.
+
+The parser-work checkpoint passed the incremental full gate on 2026-09-29:
+188 standalone, 211 host fixture/provenance, 621 runner, and 975 model jobs.
+All 38 differential cases, 26 compiler cases, 1,117 Rust order comparisons,
+and the codec suite pass. Thirty-seven parser guard groups pin operation
+counts and cover malformed/truncated readers, huge declared counts, failed
+array elements, shared universe budgets, and admission short-circuiting.
+Eighteen exact axiom checks and eight frozen contracts cover complete outcome
+erasure and record/batch work bounds. The prior import/runtime boundaries are
+unchanged; nine production files are byte-identical to the preceding checkpoint.
+Provenance covers 97 ported, 82 authored/reorganized modules, and four license
+files. Tested source: `5079c6edf77b88e2c267186a169998c36646b7e5`; evidence:
+`plans/review/k4-parser-work/summary.json`. K4 is complete under the stated
+parser metric and supported admission profile. K5, P04–P12, D02 consumer
+migration and Ix.Tc deletion, whole-corpus Rust parity, and K7 remain open.
 
 ## Removal ledger: lean4ix and Ix.Tc
 

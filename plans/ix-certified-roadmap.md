@@ -44,8 +44,10 @@ lean4ix/Lean4Lean dependency paths, the old verification trees, and their build/
 have been removed and validated in a fresh jj workspace and through Nix.
 Pure projection-address reconstruction and canonical mutual-block ordering
 are now implemented outside the hash-free kernel, composed with byte admission.
-The remaining K4 parser-work accounting and measured core improvements in
-section 10 are next. D02's final runtime Ix.Tc cutover remains required.
+K4's complete abstract parser-work accounting is now implemented and validated,
+including nested failures and aggregate admission limits, without adding
+production counters. K5 and the measured core improvements in section 10 remain
+next. D02's final runtime Ix.Tc cutover remains required.
 
 ## Revision note
 
@@ -660,9 +662,9 @@ checkpoint. Initial entries:
 | Address key | `Ix.Address.Core` | pure data | K0 |
 | BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
 | Ixon data types | `Ix.Ixon.Types` | pure production data in the standalone audited closure | K3 split complete |
-| Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `WireCheck`, `Bounded`, `Canonical`, `Verify` | production grammar and inverses, complete-record byte/universe limits, exact wire validation, and canonical re-encoding | K4 complete parser-work accounting remains |
+| Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `WireCheck`, `Bounded`, `Canonical`, `Verify` | production grammar and inverses, complete-record byte/universe limits, exact wire validation, canonical re-encoding, and all-outcome abstract parser-work bounds | K4 implemented |
 | Ixon to kernel ingress and egress | `Ix.Kernel.Ingress`, `Ix.Kernel.Egress` | exact readings, physical-reference fidelity, model theorem for accepted in-memory input, and exact reconstruction with retained layout | K3 complete |
-| Byte admission | `Ix.Ixon.Admission`, `Verify.Admission`, `Admission.Audit`; `Ix.Ixon.Projection`, `ProjectionProofs`, `ProjectionAudit`; `Ix.Ixon.BlockOrder`, `BlockOrderProofs`, `BlockOrderAudit` | exact canonical-byte reading, bounded input and projection reconstruction, recomputed canonical block order, installed declarations, and model theorem for the executed checker | K4 implemented; complete parser-work accounting remains |
+| Byte admission | `Ix.Ixon.Admission`, `Verify.Admission`, `Verify.WorkAdmission`, `Admission.Audit`; `Ix.Ixon.Projection`, `ProjectionProofs`, `ProjectionAudit`; `Ix.Ixon.BlockOrder`, `BlockOrderProofs`, `BlockOrderAudit` | exact canonical-byte reading, aggregate parser-work bound, bounded projection reconstruction, recomputed canonical block order, installed declarations, and model theorem for the executed checker | K4 implemented |
 | Claims, assumption trees, Merkle roots, commitments | `Ix.Claim`, `Ix.AssumptionTree`, `Ix.Merkle`, `Ix.Commit` | host | K5, with explicit cryptographic assumptions |
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
 | Rust kernel | `crates/kernel`, `Ix.KernelCheck` | host fast path | differential parity against `Ix.Kernel`; verdicts are not certified |
@@ -942,7 +944,7 @@ for family-only inputs; it makes no measured speedup claim.
 Exit: acceptance of Ixon-shaped input establishes the meaning of the
 selected declarations; unsupported input declines explicitly.
 
-### K4: Ixon bytes (canonical decoding, block order, and byte admission implemented)
+### K4: Ixon bytes (implemented and validated)
 
 Implemented: production anonymous encoders/decoders moved unchanged into
 `Ix.Ixon.Codec`, reexported by the host; structural count/address predicates
@@ -1071,8 +1073,26 @@ inputs have exact installed readings and models. It assumes neither compiler
 ordering metadata nor hash injectivity. Rust agreement is differential
 evidence, not a theorem of compiler or native-kernel equivalence.
 
-Remaining: complete parser-work accounting, including nested failure paths
-and element-reader cost. These limits do not claim heap or wall-clock bounds.
+`Verify.Work` through `WorkRecord` now account for the complete bounded record
+grammar on both success and failure. The ghost interpreter erases exactly to
+the production outcome, including error text, unchanged bytes, and cursor.
+Compositional byte potential and transferable credits retain work spent before
+an error, with only one terminal-failure allowance across nested binds. Units
+count byte attempts/copies, tag reconstruction, expression/declaration and
+collection construction, telescope folds, reserved universe expansion, and
+record framing/byte checks. Declared counts never supply work credit or reserve
+array capacity. The entire universe table shares one expansion allowance;
+reserved construction is conservatively charged even if a descendant fails.
+
+Every bounded record has work at most `16 * input.size + 2 * universeBudget + 3`.
+`WorkAdmission` preserves the canonical parser stage's complete production
+result and short-circuit behavior. Without a success premise, aggregate parser
+work is at most `16 * maxTotalBytes + maxRecords * (2 * maxRecordUnivNodes + 3)`;
+preflight failure performs no parsing. Production executes no counters and its
+decoder/admission sources are unchanged. These are abstract parser units, not
+heap bytes, wall time, or arithmetic bit complexity. Canonical validation and
+re-encoding, batch administration, projection hashing, ordering, literal
+interpretation, ingress, and checking are outside this decoder metric.
 
 Port the earlier plan's serialization milestone against the split types:
 schema and version, pure encoders and bounded decoders for the supported
@@ -1534,8 +1554,9 @@ Implementation checkpoint (2026-09-29):
   import allowlists, and runtime closures are unchanged. Provenance covers
   97 ported, 67 authored/reorganized modules, and four license files. Tested
   source: `e34c8cc3aad3f7d13fbc65a3c4f20351be3352e5`; evidence:
-  `plans/review/k4-reader-bounds/summary.json`. Complete parser-work accounting
-  remains open, including nested failure paths and element-reader cost.
+  `plans/review/k4-reader-bounds/summary.json`. At that checkpoint, complete
+  parser-work accounting remained open, including nested failure paths and
+  element-reader cost.
 - K4's pure projection-reconstruction checkpoint passes the incremental full
   gate: 179 standalone, 197 host fixture/provenance, 550 runner, and 975 model
   jobs; all 38 differential and 26 compiler cases, plus the codec suite.
@@ -1565,9 +1586,23 @@ Implementation checkpoint (2026-09-29):
   replacement; all earlier boundaries remain unchanged. Provenance covers
   97 ported, 74 authored/reorganized modules, and four licenses. Tested source:
   `d0377deba61b6b57fe24b6a72bacaeb0b1098990`; evidence:
-  `plans/review/k4-block-order/summary.json`. K4 now remains open for complete
-  parser-work accounting, including nested failures and element-reader cost.
-- P04–P12 and the remaining K4–K7 work stay open; whole-corpus parity has
+  `plans/review/k4-block-order/summary.json`. At that checkpoint, K4 still needed
+  complete parser-work accounting, including nested failures and element-reader cost.
+- K4's complete abstract parser-work checkpoint passes the incremental full
+  gate: 188 standalone, 211 host fixture/provenance, 621 runner, and 975 model
+  jobs; all 38 differential, 26 compiler, and 1,117 Rust order comparisons,
+  plus the codec suite. Thirty-seven parser guard groups cover exact operation
+  counts, every fixture truncation at nonzero cursors, all 256 one-byte tags,
+  maximum declared counts, nested element failures, shared expansion budgets,
+  and admission short-circuiting. Eighteen exact axiom checks and eight frozen
+  contracts cover erasure, work composition, records, and batches. All prior
+  import/runtime boundaries remain unchanged; nine production codec/admission
+  files are byte-identical to the preceding checkpoint. Provenance covers
+  97 ported, 82 authored/reorganized modules, and four licenses. Tested source:
+  `5079c6edf77b88e2c267186a169998c36646b7e5`; evidence:
+  `plans/review/k4-parser-work/summary.json`. This closes K4 under the stated
+  parser metric and supported admission profile.
+- P04–P12 and the remaining K5–K7 work stay open; whole-corpus parity has
   not been run. D02's runtime consumer cutover and deletion of Ix.Tc remain
   required.
 

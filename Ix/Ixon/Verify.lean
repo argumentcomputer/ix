@@ -10,11 +10,13 @@ import Ix.Ixon.Verify.Framing
 import Ix.Ixon.Verify.BoundedUniverse
 import Ix.Ixon.Verify.BoundedConstant
 import Ix.Ixon.Verify.ConstantBounds
+import Ix.Ixon.Verify.WorkRecord
 import Ix.Ixon.Verify.Canonical
 
 /-! Preserved production codec contracts, independent of Lean4Lean.
 The universe/expression entry points consume the whole buffer. The
 legacy `deConstant` remains a prefix decoder; `deConstantExact` checks the
 whole buffer. Byte-consumption bounds cover arbitrary successful production
-reads; universe expansion uses its separate budget. Canonical decoding has
-a separate K4 contract. -/
+reads; universe expansion uses its separate budget. The accounting interpreter
+additionally bounds complete record-parser work on success and failure, with
+exact erasure to production. Canonical decoding has a separate K4 contract. -/

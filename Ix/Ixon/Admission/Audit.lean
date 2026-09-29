@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Ixon.Verify.Admission
+import Ix.Ixon.Verify.WorkAdmission
 import Ix.Ixon.Audit
 import Ix.Kernel.Audit.Roots
 
@@ -28,6 +29,9 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Admission] Ix.Ixon.Admission.Aud
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.Admission] Ix.Ixon.Admission.Audit.proofImports
+
+#guard_msgs (drop info) in
+run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.WorkAdmission] Ix.Ixon.Admission.Audit.proofImports
 
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.Verify.Admission
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Lean
@@ -57,7 +61,27 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Admission.Audit.operations #[`Init,
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytes_unique_keys [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytes_resources [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytes_has_model [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.canonicalRecord_erases [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.decodeLoop_erases [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.decodeLoop_work_le [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.parserStage_erases [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.parserStage_work_le [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Admission.checkBytes [propext, Classical.choice, Quot.sound]
+
+/-- info: Ix.Ixon.Verify.Work.Admission.parserStage_erases : ∀ (limits : Ix.Ixon.Admission.Limits)
+  (records : Ix.Ixon.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs),
+  (Ix.Ixon.Verify.Work.Admission.parserStage limits records blobs).fst = do
+    Ix.Ixon.Admission.preflight limits records blobs
+    Ix.Ixon.Admission.decodeRecords limits records -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.Work.Admission.parserStage_erases
+
+/-- info: Ix.Ixon.Verify.Work.Admission.parserStage_work_le : ∀ (limits : Ix.Ixon.Admission.Limits)
+  (records : Ix.Ixon.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs),
+  (Ix.Ixon.Verify.Work.Admission.parserStage limits records blobs).snd ≤
+    16 * limits.maxTotalBytes + limits.maxRecords * (2 * limits.maxRecordUnivNodes + 3) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.Work.Admission.parserStage_work_le
 
 /-- info: Ix.Ixon.Verify.Admission.preflight_ok_iff : ∀ (limits : Ix.Ixon.Admission.Limits)
   (records : Ix.Ixon.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs),

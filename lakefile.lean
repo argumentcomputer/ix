@@ -309,7 +309,7 @@ script "check-kernel" (args) := do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "python3" #["scripts/check-kernel-retirement.py"]
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.Fidelity", "Tests.Ix.Kernel.Ingress", "Tests.Ix.Kernel.Egress", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.Fidelity", "Tests.Ix.Kernel.Ingress", "Tests.Ix.Kernel.Egress", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork"]
   run ".lake/build/bin/kernel-provenance" #[]
   run "lake" #["build", "--wfail", "kernel-differential", "kernel-ingress", "kernel-codec", "kernel-order"]
   let differential ← IO.Process.output { cmd := ".lake/build/bin/kernel-differential" }

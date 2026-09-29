@@ -36,7 +36,7 @@ def kernelFixtureRoots : Array Lean.Name := #[
   `Tests.Ix.Kernel.Quotients, `Tests.Ix.Kernel.Axioms,
   `Tests.Ix.Kernel.SearchOutcomes, `Tests.Ix.Kernel.Fidelity,
   `Tests.Ix.Kernel.Ingress, `Tests.Ix.Kernel.Egress, `Tests.Ix.Kernel.Codec,
-  `Tests.Ix.Kernel.ByteAdmission]
+  `Tests.Ix.Kernel.ByteAdmission, `Tests.Ix.Kernel.ParserWork]
 
 @[default_target]
 lean_lib KernelFixtures where
