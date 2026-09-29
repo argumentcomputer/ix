@@ -37,10 +37,12 @@ isolated production codecs, the retained all-variant inverse proofs,
 exact constant framing, aggregate universe bounds over complete records,
 executable wire validation, canonical record decoding, and byte admission
 with exact reading/acceptance domains, installed declarations, and model
-guarantees. D01 is complete: both
+guarantees. Successful production reads now have structural byte-consumption
+bounds, composed with universe expansion and the byte-admission limits.
+D01 is complete: both
 lean4ix/Lean4Lean dependency paths, the old verification trees, and their build/benchmark/CI consumers
 have been removed and validated in a fresh jj workspace and through Nix.
-The remaining K4 reader bounds, canonical block order, projection-address
+The remaining K4 parser-work accounting, canonical block order, projection-address
 reconstruction, and measured core improvements in
 section 10 are next. D02's final runtime Ix.Tc cutover remains required.
 
@@ -1007,8 +1009,26 @@ without widening either existing import allowlist. All 26 compiler fixtures
 exercise both byte and in-memory admission and compare exact decoded inputs,
 outcomes, and reasons. Production consumer migration remains D02.
 
-Remaining: structural/work bounds for the other production readers,
-canonical mutual-block order, and pure projection-address reconstruction.
+`Verify.ReaderBounds` proves that successful production reads preserve their
+buffer and advance within it, with at most two structural units per consumed
+byte. The bound covers compressed expression telescopes, reference-index
+vectors, all constant variants, and arbitrary noncanonical successful reads
+from nonzero cursors. Counted-array errors decompose into a successful prefix
+and one failing element; for byte-consuming elements, the successful prefix
+is bounded by available bytes even when the declared count is `UInt64.max`.
+
+`Constant.resourceSize` counts structural constructors and variable table
+slots; expanded universe nodes use the existing separate budget.
+`Verify.ConstantBounds` bounds every exact decoded record by twice its input
+size and combines that result with the bounded universe table.
+`checkBytes_resources` composes the same installed byte reading with an
+aggregate limit of `2 * maxTotalBytes + maxRecords * maxRecordUnivNodes`.
+The proofs add no parser traversal or admission operation. They do not bound
+heap bytes, wall time, blob interpretation, or ingress/checker expansion.
+
+Remaining: complete parser-work accounting (including nested failure paths
+and element-reader cost), canonical mutual-block order, and pure
+projection-address reconstruction.
 
 Port the earlier plan's serialization milestone against the split types:
 schema and version, pure encoders and bounded decoders for the supported
@@ -1458,6 +1478,20 @@ Implementation checkpoint (2026-09-29):
   64 authored/reorganized modules, and four license files. Tested source:
   `d8f5ca265ed496b060c197dfaedf87a77cd4ce47`; evidence:
   `plans/review/k4-byte-admission/summary.json`.
+- K4's reader-resource checkpoint passes the incremental full gate:
+  179 standalone, 187 host fixture/provenance, 543 runner, and 975 model
+  jobs; all 38 differential and 26 compiler ingress/byte-admission/exact-egress
+  cases, plus generated resource checks against Rust serialization.
+  Thirteen new exact axiom checks cover byte-consumption bounds, failed
+  counted-array prefixes, complete-record structure, and the accepted batch's
+  resource theorem. Tests include nonzero cursors, noncanonical successful
+  reads, compressed telescopes, large index vectors, and huge counts that
+  stop at the first malformed element. The parser/admission implementations,
+  import allowlists, and runtime closures are unchanged. Provenance covers
+  97 ported, 67 authored/reorganized modules, and four license files. Tested
+  source: `e34c8cc3aad3f7d13fbc65a3c4f20351be3352e5`; evidence:
+  `plans/review/k4-reader-bounds/summary.json`. Complete parser-work accounting
+  remains open, including nested failure paths and element-reader cost.
 - P04–P12 and the remaining K4–K7 work stay open; whole-corpus parity has
   not been run. D02's runtime consumer cutover and deletion of Ix.Tc remain
   required.

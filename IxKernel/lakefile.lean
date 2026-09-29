@@ -21,7 +21,7 @@ package «ix-kernel» where
 lean_lib IxKernel where
   srcDir := ".."
   roots := #[`Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
-    `Ix.Ixon.WireCheck, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant,
+    `Ix.Ixon.WireCheck, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant, `Ix.Ixon.Bounded.Size,
     `Ix.Ixon.Canonical, `Ix.Ixon.Verify, `Ix.Ixon.Audit,
     `Ix.Ixon.Admission, `Ix.Ixon.Admission.Audit]
   globs := #[.andSubmodules `Ix.Kernel, .one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types,

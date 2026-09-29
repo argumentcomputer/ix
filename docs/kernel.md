@@ -21,6 +21,7 @@ system. It does not certify the Lean-to-Ixon compiler, Rust checker, or IxVM.
 | `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.Verify` | Production anonymous byte grammar, representable counts/address widths, and cursor/append laws | All-variant serializer inverses, exact constant framing, and separate codec audits |
 | `Ix.Ixon.Bounded.Universe` | Universe decoding with explicit byte and expanded-constructor limits | Exact budget accounting, production-decoder agreement, round trips within limits, and wire validity below the wire count capacity |
 | `Ix.Ixon.Bounded.Constant`, `WireCheck`, `Canonical` | Complete-record input/expansion limits, wire validity, and canonical byte spelling | Success iff the record is wire-well-formed, re-encodes to the supplied bytes, and fits both limits |
+| `Ix.Ixon.Bounded.Size`, `Verify.ReaderBounds`, `Verify.ConstantBounds` | Structural constructors and table slots in successful production reads | At most two structural units per consumed byte, plus the separate expanded-universe budget; no additional runtime traversal |
 | `Ix.Ixon.Admission`, `Verify.Admission.RecordsRead` | Ordered canonical record bytes, unchanged address keys, exact literal blobs, and batch limits | Exact decoding/acceptance domains, installed readings, model existence, and preservation of kernel outcomes |
 | `AExpr`, `PropWhen` | A reading with a condition at each binder describing when its codomain is a proposition | `annotate_erase` proves exact erasure; separate scope checks include annotation conditions |
 | `Typed`, `TypedSort`, `Reduced`, `Conv` | Search results with erased semantic evidence for this environment and context | `inferA`, normalization, conversion, and the declaration checkers |
@@ -221,6 +222,24 @@ on every input and state. The bounded record API accepts exactly its
 successful full-buffer reads that fit the byte and aggregate universe-node
 limits, with all-variant round trips and suffix rejection.
 
+`Verify.ReaderBounds` and `Verify.ConstantBounds` now prove structural bounds
+for the original readers, including arbitrary successful byte spellings and
+nonzero starting cursors. `Span` records an unchanged buffer, a monotone
+in-bounds cursor, and at most two structural units per consumed byte. The
+units count expression/declaration constructors and variable table slots;
+reference universe-index vectors count too. Compressed application spines
+can exceed one constructor per byte, which is why the bound uses two.
+Universe trees retain their separate expanded-node budget.
+
+For exact records, `constant.resourceSize ≤ 2 * bytes.size`; bounded records
+add the expanded universe count to obtain a limit of
+`2 * maxBytes + maxUnivNodes`. No parser implementation changes or extra
+validation traversal are needed. A counted-array failure is a successful
+prefix followed by the first failing element; when each successful element
+consumes a byte, that prefix has at most the available byte count. This
+bounds array iterations, not the work inside an element reader. These are
+structural and prefix bounds, not heap-byte or wall-clock guarantees.
+
 `WireCheck.validConstant` decides the complete `Constant.wireWF` predicate.
 Its recursive checks carry telescope counts, avoiding repeated scans of
 long application, binder, and successor chains. `Canonical.deConstant`
@@ -249,6 +268,10 @@ kernel outcomes on bounded canonical input. `checkBytes_reading` ties that
 same ordered reading to the installed declarations, and
 `checkBytes_has_model` establishes the accepted environment's model.
 Uniqueness of both key lists is proved from successful byte admission.
+`checkBytes_resources` ties the same installed reading to a decoded-record
+bound of `2 * maxTotalBytes + maxRecords * maxRecordUnivNodes`. The measure
+includes unused side tables and expanded universe nodes; it does not measure
+blob interpretation, host keys, or later ingress/checker expansion.
 Literal blobs retain their exact supplied bytes and the existing natural
 number interpretation; this does not require a canonical spelling of blobs.
 
@@ -260,8 +283,9 @@ replacement. A set-difference check confirms that these primitives all
 already occur in the kernel/codec closures. Their narrower allowlists and
 existing public contracts remain unchanged.
 
-K4 remains open for structural/work bounds over the other readers, canonical
-mutual-block order, and pure projection-address reconstruction. The canonical
+K4 remains open for complete parser-work accounting, including nested
+failure paths, canonical mutual-block order, and pure projection-address
+reconstruction. The canonical
 record API establishes byte spelling; semantic admission still has K3's
 supported profile. Existing production callers use the original decoders
 pending D02. Address keys are not authenticated hashes, and the theorem does
@@ -355,6 +379,20 @@ The retained inputs include every byte-admission argument. Evidence is in
 `plans/review/k4-byte-admission/summary.json`; its tested source is
 `d8f5ca265ed496b060c197dfaedf87a77cd4ce47`. This was an incremental run, not
 whole-corpus parity or the D02 runtime cutover.
+
+The subsequent K4 reader-resource checkpoint passed the incremental full
+gate on 2026-09-29: 179 standalone, 187 host fixture/provenance, 543 runner,
+and 975 model jobs; all 38 differential and 26 compiler cases retain their
+outcomes. The codec suite adds generated expression-resource checks with
+nonzero cursors and Rust serialization comparisons, and checks the combined
+record/universe bound. Thirteen new exact axiom checks cover successful
+reader bounds, counted-array failure prefixes, and the accepted batch's
+resource theorem. All parser implementations, import allowlists, and audited
+runtime closures are unchanged. Provenance covers 97 ported and 67
+authored/reorganized modules plus four license files. Evidence is in
+`plans/review/k4-reader-bounds/summary.json`; tested source:
+`e34c8cc3aad3f7d13fbc65a3c4f20351be3352e5`. Complete parser-work accounting
+and whole-corpus parity remain open.
 
 ## Removal ledger: lean4ix and Ix.Tc
 

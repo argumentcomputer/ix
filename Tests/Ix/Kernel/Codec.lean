@@ -223,6 +223,81 @@ def successorBomb : ByteArray := ⟨#[0x27, 255, 255, 255, 255, 255, 255, 255, 2
     (List.range bytes.size).all (fun n =>
       !(Ixon.Canonical.deConstant bytes.size nodes (bytes.extract 0 n)).isOk)
 
+-- Resource bounds apply to the bytes actually consumed, excluding an
+-- untouched prefix and suffix. Every fixture must successfully read its
+-- expected value; an error cannot vacuously satisfy these controls.
+def resourceRead [BEq α] (reader : Ixon.GetM α) (units : α → Nat)
+    (payload : ByteArray) (expected : α) : Bool :=
+  let bytes := (⟨#[0xff, 0xee]⟩ : ByteArray) ++ payload ++ ⟨#[0xdd]⟩
+  match reader { bytes, idx := 2 } with
+  | .error _ _ => false
+  | .ok value finish =>
+    value == expected && finish.bytes == bytes && finish.idx == 2 + payload.size &&
+      units value ≤ 2 * (finish.idx - 2)
+
+def resourceExpr (value : Ixon.Expr) : Bool :=
+  resourceRead Ixon.getExpr (fun expr => expr.resourceSize + 1) (Ixon.serExpr value) value
+
+def resourceConstant (value : Ixon.Constant) : Bool :=
+  let bytes := Ixon.serConstant value
+  let nodes := Ixon.Bounded.univNodes value.univs
+  resourceRead Ixon.getConstant Ixon.Constant.resourceSize bytes value &&
+    match Ixon.Bounded.deConstant bytes.size nodes bytes with
+    | .error _ => false
+    | .ok decoded => decoded.resourceSize + Ixon.Bounded.univNodes decoded.univs ≤ 2 * bytes.size + nodes
+
+#guard (variants ++ falseStore ++ separatedFalse).all fun (_, value) => resourceConstant value
+#guard resourceConstant sharedIdentity
+#guard resourceConstant sharedUniverseBudget
+#guard resourceConstant ⟨.muts #[], #[], #[], #[]⟩
+#guard resourceConstant ⟨.muts #[], Array.replicate 128 (.var 0),
+  Array.replicate 128 (address 0), Array.replicate 128 .zero⟩
+#guard alternateSpellings.all fun bytes =>
+  match Ixon.deConstantExact bytes with
+  | .error _ => false
+  | .ok value => resourceRead Ixon.getConstant Ixon.Constant.resourceSize bytes value
+
+#guard wordBoundaries.all fun n =>
+  [Ixon.Expr.var n, .sort n, .str n, .nat n, .share n,
+    .ref n #[n], .recur n #[n], .prj n n (.var 0)].all resourceExpr
+#guard [Ixon.Uses.erased, .linear, .affine, .many].all fun uses =>
+  [Ixon.Owned.shared, .unique].all fun owned =>
+    resourceExpr (.all uses owned (.sort 0)
+      (.lam uses (.var 0) (.letE true (.var 1) (.var 0) (.var 0))))
+#guard resourceExpr (.letE false (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
+#guard [0, 1, 7, 8, 31, 32, 128, 1024].all fun n =>
+  let levels := Array.replicate n 0
+  (Ixon.Expr.ref 0 levels).resourceSize == n + 1 &&
+    resourceExpr (.ref 0 levels) && resourceExpr (.recur 0 levels)
+#guard [1, 7, 8, 31, 32, 128].all fun n =>
+  resourceExpr ((List.range n).foldl (fun e _ => .app e (.var 0)) (.var 0)) &&
+    resourceExpr ((List.range n).foldl (fun e _ => .lam .many (.sort 0) e) (.var 0)) &&
+    resourceExpr ((List.range n).foldl (fun e _ => .all .many .shared (.sort 0) e) (.var 0))
+
+-- Compressed application spines can contain more constructors than bytes;
+-- a one-unit-per-byte claim would be false even on canonical input.
+def compressedApp : Ixon.Expr :=
+  (List.range 128).foldl (fun e _ => .app e (.var 0)) (.var 0)
+
+#guard compressedApp.resourceSize > (Ixon.serExpr compressedApp).size
+#guard resourceExpr compressedApp
+-- Nonminimal tag spellings remain covered by the production-reader theorem.
+#guard resourceRead Ixon.getExpr (fun e => e.resourceSize + 1) ⟨#[0x18, 0]⟩ (.var 0)
+
+def failsAt (reader : Ixon.GetM α) (bytes : ByteArray) (start finish : Nat) : Bool :=
+  match reader { bytes, idx := start } with
+  | .error _ state => state.bytes == bytes && state.idx == finish
+  | .ok _ _ => false
+
+-- UInt64.max counts stop at the first failed element. A malformed element
+-- with a valid element after it checks short-circuiting independently of EOF.
+#guard failsAt (Ixon.getArray Ixon.getU8 18446744073709551615) ⟨#[9, 8, 7, 6, 5]⟩ 2 5
+#guard failsAt (Ixon.getArray Ixon.getExpr 18446744073709551615) ⟨#[9, 8, 0x10, 0xc0, 0x10]⟩ 2 4
+#guard failsAt (Ixon.getArray Ixon.getTag0 18446744073709551615) ⟨#[9, 8, 0, 0x88, 0]⟩ 2 4
+#guard failsAt (Ixon.getArray (Ixon.Serialize.get : Ixon.GetM Address) 18446744073709551615)
+  ⟨Array.replicate 65 0⟩ 2 34
+#guard failsAt (Ixon.getArray Ixon.getExpr 18446744073709551615) ⟨#[0x10, 0x10]⟩ 0 2
+
 example (value : Ixon.Constant) (h : value.wireWF) :
     Ixon.deConstantExact (Ixon.serConstant value) = .ok value :=
   Ix.Ixon.Verify.deConstantExact_serConstant value h
@@ -236,5 +311,14 @@ example (value : Ixon.Constant) (h : value.wireWF) :
     Ixon.Canonical.deConstant (Ixon.serConstant value).size
       (Ixon.Bounded.univNodes value.univs) (Ixon.serConstant value) = .ok value :=
   Ix.Ixon.Verify.Canonical.deConstant_serConstant value h _ _ (by omega) (by omega)
+
+example (start finish : Ixon.GetState) (value : Ixon.Expr)
+    (valid : start.idx ≤ start.bytes.size) (read : Ixon.getExpr start = .ok value finish) :
+    value.resourceSize + 1 ≤ 2 * (finish.idx - start.idx) :=
+  (Ix.Ixon.Verify.ReaderBounds.getExpr_bound _ _ _ valid read).units_le
+
+example (bytes : ByteArray) (value : Ixon.Constant)
+    (read : Ixon.deConstantExact bytes = .ok value) : value.resourceSize ≤ 2 * bytes.size :=
+  Ix.Ixon.Verify.ConstantBounds.deConstantExact_resource_bound bytes value read
 
 end Tests.Ix.Kernel.Codec

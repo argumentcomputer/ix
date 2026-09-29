@@ -47,6 +47,17 @@ end Ix.Ixon.Audit
 #guard_kernel_axioms Ix.Ixon.Verify.BoundedConstant.deConstant_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.BoundedConstant.deConstant_serConstant [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.BoundedConstant.deConstant_noTrailing [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ReaderBounds.getTag0Sizes_spec [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ReaderBounds.getArray_spec [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ReaderBounds.getArray_error_prefix [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ReaderBounds.getArray_error_work [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ReaderBounds.getArray_tooMany [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ReaderBounds.getExprFuel_bound [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ReaderBounds.getExpr_bound [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ReaderBounds.deExpr_resource_bound [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ConstantBounds.getConstant_bound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ConstantBounds.deConstantExact_resource_bound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.ConstantBounds.boundedConstant_resource_bound [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.WireCheck.validConstant_iff [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Canonical.deConstant_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Canonical.deConstant_serConstant [propext, Classical.choice, Quot.sound]
@@ -54,7 +65,7 @@ end Ix.Ixon.Audit
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Codec, `Ix.Ixon.Wire,
-  `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant, `Ix.Ixon.WireCheck,
+  `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant, `Ix.Ixon.Bounded.Size, `Ix.Ixon.WireCheck,
   `Ix.Ixon.Canonical] Ix.Ixon.Audit.dataImports
 
 #guard_msgs (drop info) in
@@ -139,3 +150,72 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Audit.operations #[`Init, `Std]
   Ixon.Bounded.univNodes constant.univs ≤ maxUnivNodes -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Verify.Canonical.deConstant_ok_iff
+
+/- Freeze both the resource predicates and their public contracts. Successful
+reads need only a valid starting cursor, not a canonicality premise. -/
+/-- info: def Ix.Ixon.Verify.ReaderBounds.ReaderBound : {α : Type} → Ixon.GetM α → (α → Nat) → Prop :=
+fun {α} reader units =>
+  ∀ (start finish : Ixon.GetState) (value : α),
+    start.idx ≤ start.bytes.size →
+      reader start = EStateM.Result.ok value finish → Ix.Ixon.Verify.ReaderBounds.Span start finish (units value) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Ixon.Verify.ReaderBounds.ReaderBound
+
+/-- info: @Ix.Ixon.Verify.ReaderBounds.Span.mk : ∀ {start finish : Ixon.GetState} {units : Nat},
+  finish.bytes = start.bytes →
+    start.idx ≤ finish.idx →
+      finish.idx ≤ start.bytes.size →
+        units + 2 * start.idx ≤ 2 * finish.idx → Ix.Ixon.Verify.ReaderBounds.Span start finish units -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.ReaderBounds.Span.mk
+
+/-- info: @Ix.Ixon.Verify.ReaderBounds.getArray_error_work : ∀ {α : Type} (reader : Ixon.GetM α),
+  (Ix.Ixon.Verify.ReaderBounds.ReaderBound reader fun x => 2) →
+    ∀ (count : Nat) (start finish : Ixon.GetState) (reason : String),
+      start.idx ≤ start.bytes.size →
+        Ixon.getArray reader count start = EStateM.Result.error reason finish →
+          ∃ parsed values middle,
+            parsed < count ∧
+              parsed ≤ start.bytes.size - start.idx ∧
+                values.size = parsed ∧
+                  Ixon.getArray reader parsed start = EStateM.Result.ok values middle ∧
+                    reader middle = EStateM.Result.error reason finish -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.ReaderBounds.getArray_error_work
+
+/-- info: @Ix.Ixon.Verify.ReaderBounds.getArray_tooMany : ∀ {α : Type} (reader : Ixon.GetM α),
+  (Ix.Ixon.Verify.ReaderBounds.ReaderBound reader fun x => 2) →
+    ∀ (count : Nat) (start : Ixon.GetState),
+      start.idx ≤ start.bytes.size →
+        start.bytes.size - start.idx < count →
+          ∀ (values : Array α) (finish : Ixon.GetState),
+            Ixon.getArray reader count start ≠ EStateM.Result.ok values finish -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.ReaderBounds.getArray_tooMany
+
+/-- info: Ix.Ixon.Verify.ReaderBounds.getExprFuel_bound : ∀ (fuel : Nat),
+  Ix.Ixon.Verify.ReaderBounds.ReaderBound (Ixon.getExprFuel fuel) fun expr => expr.resourceSize + 1 -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.ReaderBounds.getExprFuel_bound
+
+/-- info: Ix.Ixon.Verify.ReaderBounds.deExpr_resource_bound : ∀ (bytes : ByteArray) (value : Ixon.Expr),
+  Ixon.deExpr bytes = Except.ok value → value.resourceSize + 1 ≤ 2 * bytes.size -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.ReaderBounds.deExpr_resource_bound
+
+/-- info: Ix.Ixon.Verify.ConstantBounds.getConstant_bound : Ix.Ixon.Verify.ReaderBounds.ReaderBound Ixon.getConstant
+  Ixon.Constant.resourceSize -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.ConstantBounds.getConstant_bound
+
+/-- info: Ix.Ixon.Verify.ConstantBounds.deConstantExact_resource_bound : ∀ (bytes : ByteArray) (value : Ixon.Constant),
+  Ixon.deConstantExact bytes = Except.ok value → value.resourceSize ≤ 2 * bytes.size -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.ConstantBounds.deConstantExact_resource_bound
+
+/-- info: Ix.Ixon.Verify.ConstantBounds.boundedConstant_resource_bound : ∀ (maxBytes maxUnivNodes : Nat)
+  (bytes : ByteArray) (value : Ixon.Constant),
+  Ixon.Bounded.deConstant maxBytes maxUnivNodes bytes = Except.ok value →
+    value.resourceSize + Ixon.Bounded.univNodes value.univs ≤ 2 * maxBytes + maxUnivNodes -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.ConstantBounds.boundedConstant_resource_bound

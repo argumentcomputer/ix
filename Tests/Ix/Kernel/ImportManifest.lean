@@ -65,6 +65,7 @@ def authored : Array String := #[
   "Ix/Ixon/Verify/MutualConstant.lean", "Ix/Ixon/Verify/Framing.lean",
   "Ix/Ixon/Bounded/Universe.lean", "Ix/Ixon/Verify/BoundedUniverse.lean",
   "Ix/Ixon/Bounded/Constant.lean", "Ix/Ixon/Verify/BoundedConstant.lean",
+  "Ix/Ixon/Bounded/Size.lean", "Ix/Ixon/Verify/ReaderBounds.lean", "Ix/Ixon/Verify/ConstantBounds.lean",
   "Ix/Ixon/WireCheck.lean", "Ix/Ixon/Verify/WireCheck.lean",
   "Ix/Ixon/Canonical.lean", "Ix/Ixon/Verify/Canonical.lean",
   "Ix/Ixon/Admission.lean", "Ix/Ixon/Verify/Admission.lean", "Ix/Ixon/Admission/Audit.lean",

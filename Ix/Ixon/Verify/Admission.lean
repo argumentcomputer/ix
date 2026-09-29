@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Ixon.Admission
 import Ix.Ixon.Verify.Canonical
+import Ix.Ixon.Verify.ConstantBounds
 
 /-! # Exact byte admission
 
@@ -113,6 +114,25 @@ theorem RecordsRead.univNodes_le {limits : Limits} {records : Records}
     simp only [List.map_cons, List.sum_cons, List.length_cons, Nat.add_mul, Nat.one_mul]
     omega
 
+/-- Structural units in the decoded records, plus expanded universe nodes.
+This measure is proof-only and is not recomputed by byte admission. -/
+def resourceUnits (constants : Ingress.Constants) : Nat :=
+  (constants.map (fun pair => pair.2.resourceSize + Bounded.univNodes pair.2.univs)).sum
+
+theorem RecordsRead.resourceUnits_le {limits : Limits} {records : Records}
+    {constants : Ingress.Constants} (reading : RecordsRead limits records constants) :
+    resourceUnits constants ≤ 2 * payloadBytes records + records.length * limits.maxRecordUnivNodes := by
+  induction reading with
+  | nil => simp [resourceUnits, payloadBytes]
+  | cons wire encoded _ nodesFit _ ih =>
+    have exactRead := deConstantExact_serConstant _ wire
+    rw [encoded] at exactRead
+    have structural := ConstantBounds.deConstantExact_resource_bound _ _ exactRead
+    simp only [resourceUnits] at ih
+    simp only [resourceUnits, List.map_cons, List.sum_cons, payloadBytes, List.length_cons,
+      Nat.mul_add, Nat.add_mul, Nat.one_mul]
+    omega
+
 theorem decodeLoop_spec {limits : Limits} {position : Nat} {records : Records}
     {reversed output : Ingress.Constants}
     (accepted : decodeLoop limits position records reversed = .ok output) :
@@ -218,6 +238,20 @@ theorem checkBytes_unique_keys {limits : Limits} {cfg : Config} {records : Recor
   obtain ⟨_, constants, reading, installed⟩ := checkBytes_reading accepted
   rw [reading.keys]
   exact ⟨installed.constantKeys, installed.blobKeys⟩
+
+/-- The executed byte-admission limits bound the whole decoded constant
+representation, including expanded universes, while retaining the exact
+reading and installed declarations. No extra runtime traversal is needed. -/
+theorem checkBytes_resources {limits : Limits} {cfg : Config} {records : Records}
+    {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}
+    (accepted : checkBytes.{v} limits cfg records blobs family = .ok env) :
+    ∃ constants, RecordsRead limits records constants ∧ Ingress.Installed constants blobs family env ∧
+      resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes := by
+  obtain ⟨within, constants, reading, installed⟩ := checkBytes_reading accepted
+  have resources := reading.resourceUnits_le
+  obtain ⟨recordCount, _, totalBytes⟩ := within
+  have countProduct := Nat.mul_le_mul_right limits.maxRecordUnivNodes recordCount
+  exact ⟨constants, reading, installed, by omega⟩
 
 theorem checkBytes_has_model (V : Type v) [Model.SetTheory V] {limits : Limits} {cfg : Config}
     {records : Records} {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}

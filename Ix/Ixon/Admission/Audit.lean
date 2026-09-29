@@ -48,12 +48,14 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Admission.Audit.operations #[`Init,
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.preflight_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.RecordsRead.encode [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.RecordsRead.univNodes_le [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Admission.RecordsRead.resourceUnits_le [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.RecordsRead.deterministic [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.decodeRecords_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytes_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytes_of_reading [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytes_reading [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytes_unique_keys [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytes_resources [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytes_has_model [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Admission.checkBytes [propext, Classical.choice, Quot.sound]
 
@@ -111,6 +113,18 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Admission.Audit.operations #[`Init,
     Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Verify.Admission.checkBytes_has_model
+
+/-- info: @Ix.Ixon.Verify.Admission.checkBytes_resources : ∀ {limits : Ix.Ixon.Admission.Limits}
+  {cfg : Ix.Kernel.Config} {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
+  Ix.Ixon.Admission.checkBytes limits cfg records blobs family = Except.ok env →
+    ∃ constants,
+      Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
+        Ix.Kernel.Ingress.Installed constants blobs family env ∧
+          Ix.Ixon.Verify.Admission.resourceUnits constants ≤
+            2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.Admission.checkBytes_resources
 
 /-- info: Additional byte-admission externs: []
 ---
