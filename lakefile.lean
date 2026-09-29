@@ -99,7 +99,7 @@ target ix_rs pkg : FilePath := do
   buildRustStatic pkg (← cargoArgs) "default"
 
 /-- Rebuild the Rust static lib with `test-ffi`.
-Only triggered by `lake test` (via `moreLinkObjs` on `IxTests`).
+Used by `IxTests` and the focused `kernel-codec` differential runner.
 Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
 target ix_rs_test pkg : FilePath := do
   let base ← ix_rs.fetch
@@ -392,6 +392,10 @@ lean_exe «kernel-ingress» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
+lean_exe «kernel-codec» where
+  root := `Tests.Ix.Kernel.CodecHost
+  moreLinkObjs := #[ix_rs_test]
+
 /-- Run the certified kernel gate: the standalone strict build with its audits,
 the host-side tests, and provenance. -/
 script "check-kernel" (args) := do
@@ -404,9 +408,9 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "kernel-provenance", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.Fidelity", "Tests.Ix.Kernel.Ingress", "Tests.Ix.Kernel.Egress"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.Fidelity", "Tests.Ix.Kernel.Ingress", "Tests.Ix.Kernel.Egress", "Tests.Ix.Kernel.Codec"]
   run ".lake/build/bin/kernel-provenance" #[]
-  run "lake" #["build", "--wfail", "kernel-differential", "kernel-ingress"]
+  run "lake" #["build", "--wfail", "kernel-differential", "kernel-ingress", "kernel-codec"]
   let differential ← IO.Process.output { cmd := ".lake/build/bin/kernel-differential" }
   IO.FS.writeFile ".lake/build/kernel-differential.jsonl" differential.stdout
   IO.eprint differential.stderr
@@ -417,6 +421,12 @@ script "check-kernel" (args) := do
   IO.eprint ingress.stderr
   unless ingress.exitCode == 0 do
     throw <| IO.userError "kernel-ingress failed; see .lake/build/kernel-ingress.jsonl"
+  let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
+  IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)
+  IO.eprint codec.stderr
+  unless codec.exitCode == 0 do
+    throw <| IO.userError "kernel-codec failed; see .lake/build/kernel-codec.log"
+  IO.println "Production Ixon codec and Rust differential checks passed."
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
   IO.println "Certified kernel checks passed."

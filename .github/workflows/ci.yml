@@ -109,7 +109,7 @@ jobs:
             Mathlib.SetTheory.ZFC.Cardinal
       - name: Check certified kernel, host differential, provenance, and model
         run: lake run check-kernel --with-model
-      - name: Retain differential and ingress inputs and verdicts
+      - name: Retain kernel inputs, verdicts, and codec comparisons
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
@@ -117,6 +117,7 @@ jobs:
           path: |
             .lake/build/kernel-differential.jsonl
             .lake/build/kernel-ingress.jsonl
+            .lake/build/kernel-codec.log
           if-no-files-found: warn
 
   rust-test:

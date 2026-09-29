@@ -32,8 +32,10 @@ and the Mathlib model audit. This is supported-profile coverage with the
 explicit policies in `docs/kernel.md`, not whole-corpus Lean parity.
 K3's pure production types, exact ingress readings, separate physical
 inductive/recursor admission, `checkEnv`, and layout-preserving egress are now
-implemented with 26 compiler ingress and byte-exact egress cases. Next: K4
-and the measured core improvements in section 10. Section 11 makes
+implemented with 26 compiler ingress and byte-exact egress cases. K4 now has
+isolated production codecs, the retained all-variant inverse proofs, and
+exact constant framing. The remaining K4 byte-admission work, D01 dependency
+retirement, and the measured core improvements in section 10 are next. Section 11 makes
 removal of `lean4ix` (the
 dependency named `lean4lean` by Lake) and the old verification machinery
 an explicit deliverable, independent of speculative optimization work.
@@ -558,8 +560,13 @@ Ix/Kernel/
   Consistency.lean             check_has_model, no_proof_of_False
   Audit/                       Axiom, import, runtime, provenance audits
   Ingress.lean                 K3: Ixon constants to kernel declarations
+  Egress.lean                  K3: exact record reconstruction with retained layout
 Ix/Address/Core.lean           Pure address key (K0 split, see below)
 Ix/Ixon/Types.lean             K3: pure Ixon data types split from codecs
+Ix/Ixon/Codec.lean             K4: pure production anonymous encoders/decoders
+Ix/Ixon/Wire.lean              K4: structural wire representability
+Ix/Ixon/Verify/                K4: retained codec and exact framing proofs
+Ix/Ixon/Audit.lean             K4: independent codec/proof boundaries
 IxKernel/lakefile.lean         The kernel as a dependency-free package over the sources above
 Tests/Ix/Kernel/               Fixtures, soundness tests, audit controls, provenance
 Models/SetTheory/              Mathlib instance package (ported), depends on IxKernel only
@@ -596,6 +603,11 @@ Both are mechanical, reviewed separately, and change no behavior.
   module, nothing else under `Ix`, no `Blake3`, no `lean4lean`, no `Ix.Tc`.
   The standalone package build enforces this structurally; the import audit
   records the exact closure.
+- K4's `Ix.Ixon.Codec` and `Wire` likewise import only Lean core and the
+  pure address/types. Their proof modules additionally use Lean/Std proof
+  tooling, without host code, Lean4Lean, or foreign execution replacements.
+  `Ix.Ixon.Audit` checks these separate boundaries; the kernel's narrower
+  allowlist is unchanged.
 - Implementation modules do not import `Model` or `Verify`. Proofs import the
   implementation. Audits and tests import the library; the library never
   imports them.
@@ -636,7 +648,7 @@ checkpoint. Initial entries:
 | Address key | `Ix.Address.Core` | pure data | K0 |
 | BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
 | Ixon data types | `Ix.Ixon.Types` | pure production data in the standalone audited closure | K3 split complete |
-| Ixon codecs | `Ix.Ixon` encoders and decoders | host | K4, supported subset |
+| Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `Verify` | pure production grammar, all-variant inverse proofs, and exact constant framing | K4 decoding validity, resource limits, canonicality, and byte admission remain |
 | Ixon to kernel ingress and egress | `Ix.Kernel.Ingress`, `Ix.Kernel.Egress` | exact readings, physical-reference fidelity, model theorem for accepted in-memory input, and exact reconstruction with retained layout | K3 complete; byte contracts remain K4 |
 | Claims, assumption trees, Merkle roots, commitments | `Ix.Claim`, `Ix.AssumptionTree`, `Ix.Merkle`, `Ix.Commit` | host | K5, with explicit cryptographic assumptions |
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
@@ -917,7 +929,24 @@ for family-only inputs; it makes no measured speedup claim.
 Exit: acceptance of Ixon-shaped input establishes the meaning of the
 selected declarations; unsupported input declines explicitly.
 
-### K4: Ixon bytes
+### K4: Ixon bytes (codec extraction and inverse/framing proofs implemented)
+
+Implemented: production anonymous encoders/decoders moved unchanged into
+`Ix.Ixon.Codec`, reexported by the host; structural count/address predicates
+split into `Ix.Ixon.Wire`; all eight selected codec proof modules retained
+under `Ix.Ixon.Verify`, with source revision/path headers. The old and new
+proofs share the pure universe wire predicate. This removes the retained
+chain's transitive `Catalog`/Lean4Lean dependency and preserves the full
+all-variant domain, including expression spines, modes, and arbitrary side
+tables. `deConstantExact` and its inverse/cursor/suffix theorems add whole-buffer
+framing without changing the old prefix API. Dedicated audits freeze the
+contracts and confirm the codec/data closure is Lean core only, the proofs
+use only Lean/Std tooling, and execution reaches no project replacement.
+
+Remaining: resource-bounded decoding, decode validity, canonical re-encoding,
+mutual-block order, and composition with K3. Total decoders can still expand
+short compressed successor encodings to huge values; exact framing is not a
+resource bound. No byte-admission theorem is claimed at this checkpoint.
 
 Port the earlier plan's serialization milestone against the split types:
 schema and version, pure encoders and bounded decoders for the supported
@@ -1302,10 +1331,22 @@ Implementation checkpoint (2026-09-29):
   supplied records, and egress additionally uses bounded `UInt64.ofNat`.
   No project execution replacements are reached. Provenance covers 97
   ported, 40 authored modules and four license files.
-- P04–P12 and K4–K7 remain open; whole-corpus parity has not been run.
-  K4 is next to unlock the mandatory D01 removal. D01/D02 remain
-  required: neither dependency retirement nor runtime cutover is claimed
-  by the K2 gate.
+- K4's codec extraction and preservation checkpoint passes the full gate:
+  164 standalone, 173 host fixture/provenance, 529 runner build, and 975 model
+  jobs; 38 differential cases, 26 compiler ingress/exact-egress cases, and the
+  production codec unit/property suite with Rust serialization comparisons.
+  Eleven pure fixture modules include exact framing, all constant variants,
+  integer boundaries, and truncation tests. The temporary legacy codec chain
+  also builds against the extracted predicates (71 jobs). Provenance covers
+  97 ported, 53 repository-authored/reorganized modules and four license files.
+  The codec runtime closure is frozen at 269 functions, 51 inherited externs,
+  two inherited array accessors, and no project replacements; kernel/ingress/
+  egress closures and public theorem statements are unchanged. The selected
+  D00 codec contracts are preserved, so D01 can proceed independently of the
+  remaining K4 byte-admission work.
+- P04–P12 and the remaining K4–K7 work stay open; whole-corpus parity has
+  not been run. D01/D02 remain required: dependency retirement and runtime
+  cutover are not complete.
 
 ### Ontology and contracts to preserve
 

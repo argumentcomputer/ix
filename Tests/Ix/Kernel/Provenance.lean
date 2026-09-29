@@ -9,7 +9,8 @@ import Tests.Ix.Kernel.ImportManifest
 
 Checks, against `Tests.Ix.Kernel.ImportManifest`:
 
-* the inventory of `Ix/Kernel/**/*.lean` is exactly the ported targets plus
+* the inventory of `Ix/Kernel/**/*.lean` and the pure `Ix/Ixon/**/*.lean`
+  boundary is exactly the ported targets plus
   the authored modules (a file added or removed without a manifest update
   fails);
 * every ported file has the recorded SHA-256 and starts with the port header
@@ -67,9 +68,8 @@ def main (args : List String) : IO UInt32 := do
     let files := ((← (FilePath.mk "Ix/Kernel").walkDir).filter (·.extension == some "lean")).map (·.toString)
     let files := if ← (FilePath.mk "Ix/Kernel.lean").pathExists then files.push "Ix/Kernel.lean" else files
     let files := if ← (FilePath.mk "Ix/Address/Core.lean").pathExists then files.push "Ix/Address/Core.lean" else files
-    let files := if ← (FilePath.mk "Ix/Ixon/Types.lean").pathExists then files.push "Ix/Ixon/Types.lean" else files
-    let typeFiles := ((← (FilePath.mk "Ix/Ixon/Types").walkDir).filter (·.extension == some "lean")).map (·.toString)
-    sameFiles "Ix/Kernel source" (files ++ typeFiles) (ported.map (·.target) ++ authored)
+    let ixonFiles := ((← (FilePath.mk "Ix/Ixon").walkDir).filter (·.extension == some "lean")).map (·.toString)
+    sameFiles "Ix/Kernel and pure Ixon source" (files ++ ixonFiles) (ported.map (·.target) ++ authored)
     for row in ported do checkRow row true
     for row in licenses do checkRow row false
     if let some workspace := workspace? then

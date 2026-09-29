@@ -3,8 +3,10 @@ open Lake DSL
 
 /-! # The certified kernel as its own package
 
-`ix-kernel` builds `Ix.Kernel`, `Ix.Address.Core`, and `Ix.Ixon.Types` from the repository's
-`Ix/` tree (`srcDir := ".."`) with no dependencies beyond the Lean toolchain.
+`ix-kernel` builds `Ix.Kernel`, `Ix.Address.Core`, and the pure Ixon
+types/codecs/proofs from the repository's `Ix/` tree (`srcDir := ".."`) with
+no dependencies beyond the Lean toolchain. Kernel/data import closures use
+Lean core only; codec proofs additionally use Lean/Std proof tooling.
 The root `ix` package builds the same modules for its host consumers; this
 package is what the certified gate builds (`lake -d IxKernel build --wfail`),
 so a kernel module that imports anything outside the kernel fails here even
@@ -18,8 +20,10 @@ package «ix-kernel» where
 @[default_target]
 lean_lib IxKernel where
   srcDir := ".."
-  roots := #[`Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types]
-  globs := #[.andSubmodules `Ix.Kernel, .one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types]
+  roots := #[`Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
+    `Ix.Ixon.Verify, `Ix.Ixon.Audit]
+  globs := #[.andSubmodules `Ix.Kernel, .one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types,
+    .one `Ix.Ixon.Codec, .one `Ix.Ixon.Wire, .andSubmodules `Ix.Ixon.Verify, .one `Ix.Ixon.Audit]
 
 /-- Certified fixtures also run without the host package's dependencies. -/
 def kernelFixtureRoots : Array Lean.Name := #[
@@ -27,7 +31,7 @@ def kernelFixtureRoots : Array Lean.Name := #[
   `Tests.Ix.Kernel.Structures, `Tests.Ix.Kernel.Literals,
   `Tests.Ix.Kernel.Quotients, `Tests.Ix.Kernel.Axioms,
   `Tests.Ix.Kernel.SearchOutcomes, `Tests.Ix.Kernel.Fidelity,
-  `Tests.Ix.Kernel.Ingress, `Tests.Ix.Kernel.Egress]
+  `Tests.Ix.Kernel.Ingress, `Tests.Ix.Kernel.Egress, `Tests.Ix.Kernel.Codec]
 
 @[default_target]
 lean_lib KernelFixtures where

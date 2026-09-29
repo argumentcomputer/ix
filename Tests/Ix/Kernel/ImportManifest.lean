@@ -53,9 +53,16 @@ structure PortedFile where
   targetSha256 : String
   deriving Repr
 
-/-- Modules authored in this repository under `Ix/Kernel`, with no source hash. -/
+/-- Modules authored in this repository, including the pure Ixon boundary.
+Reorganized codec proofs retain their source path/revision in each header;
+they are not imports from the older model branch inventoried below. -/
 def authored : Array String := #[
   "Ix/Ixon/Types.lean", "Ix/Ixon/Types/Kinds.lean", "Ix/Ixon/Types/Modes.lean",
+  "Ix/Ixon/Codec.lean", "Ix/Ixon/Wire.lean", "Ix/Ixon/Verify.lean", "Ix/Ixon/Audit.lean",
+  "Ix/Ixon/Verify/Basic.lean", "Ix/Ixon/Verify/Expr.lean", "Ix/Ixon/Verify/ExprSpine.lean",
+  "Ix/Ixon/Verify/Constant.lean", "Ix/Ixon/Verify/ConstantTables.lean",
+  "Ix/Ixon/Verify/NonrecursiveConstant.lean", "Ix/Ixon/Verify/RecursorConstant.lean",
+  "Ix/Ixon/Verify/MutualConstant.lean", "Ix/Ixon/Verify/Framing.lean",
   "Ix/Kernel/Ingress.lean", "Ix/Kernel/Ingress/Reading.lean",
   "Ix/Kernel/Ingress/Expr.lean", "Ix/Kernel/Ingress/Constant.lean",
   "Ix/Kernel/Ingress/Declarations.lean", "Ix/Kernel/Certified/Ordinary/Stage.lean",

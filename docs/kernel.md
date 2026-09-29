@@ -18,6 +18,7 @@ system. It does not certify the Lean-to-Ixon compiler, Rust checker, or IxVM.
 | `Decl`, `Block`, `Const`, `VExpr`, `VLevel`, `ConstRef` | The supplied declarations, member/constructor positions, terms, and positional universes | Input data, without a typing assumption |
 | `Ix.Ixon.Types`, `Ingress.Context`, `ExprReads`, `BlockReads` | Pure production Ixon data and its exact reading after table, projection, sharing, and literal resolution | `readExpr_reading`, `readBlock_reading`, and reading determinism |
 | `Egress.Record`, expression/declaration layouts | Raw payloads plus the sharing, table, and let-spelling choices needed to reconstruct the source | Checked writer readings and `records_roundtrip`, with exact list equality |
+| `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.Verify` | Production anonymous byte grammar, representable counts/address widths, and cursor/append laws | All-variant serializer inverses, exact constant framing, and separate codec audits |
 | `AExpr`, `PropWhen` | A reading with a condition at each binder describing when its codomain is a proposition | `annotate_erase` proves exact erasure; separate scope checks include annotation conditions |
 | `Typed`, `TypedSort`, `Reduced`, `Conv` | Search results with erased semantic evidence for this environment and context | `inferA`, normalization, conversion, and the declaration checkers |
 | Admission candidate | An ordinary inductive shape, structure description, or standard primitive interface | A reader proposes it; validation and exact generated-block comparison justify installation |
@@ -175,12 +176,29 @@ The separate reader/writer closure contains 202 compiled functions, 21
 inherited externs, and the same two array accessors, also without project
 replacements. Its bounded conversions additionally use `UInt64.ofNat`.
 
-Byte decoding, canonicality, address reconstruction, claims, and receipts
-have no acceptance theorem at this checkpoint. K3's exact Ixon readings,
-admission, and layout-preserving egress are implemented. K4 will connect
-supported bytes and pure serialization/decoding;
-K5 will connect authenticated subjects and receipts. A theorem about an
-accepted raw environment does not by itself prove any of those contracts.
+`Ix.Ixon.Codec` now owns the production anonymous encoders and total decoders;
+`Ix.Ixon` reexports them for host consumers. `Ix.Ixon.Wire` describes the
+lossless wire domain independently of compiler/source semantics. The eight
+retained proof modules under `Ix.Ixon.Verify` prove universe, full expression
+spine, and all-variant constant inverses, including arbitrary representable
+side tables. `deConstant` retains prefix behavior; `deConstantExact` consumes
+the whole buffer, with round-trip and nonempty-suffix rejection theorems.
+
+The pure codec/data import closure uses only Lean core. The proof closure
+additionally uses Lean/Std tactics, including checked bit-vector proofs;
+it imports no host code or Lean4Lean. `Ix.Ixon.Audit` freezes theorem types,
+axiom sets, both import boundaries, and the codec's execution closure: 269
+compiled functions, 51 inherited externs, two inherited unsafe array
+accessors, and no `implemented_by`, `csimp`, or project replacement. The
+existing kernel and egress closures remain unchanged.
+
+K4 remains open for resource-bounded decoding, decoder validity, canonical
+re-encoding and mutual-block order, and composition with K3's admission
+theorem. Totality and exact framing alone are not resource bounds: a short
+compressed universe can request a very large successor expansion. No
+byte-to-accepted-environment theorem, address authentication, claims, or
+receipt contract is asserted yet. K5 will connect authenticated subjects
+and receipts.
 
 ## Validation
 
@@ -192,7 +210,8 @@ lake run check-kernel --with-model
 
 The standalone package reads the repository's kernel sources and has no
 external packages. Its default strict build checks all kernel modules,
-frozen audits (including negative controls), and ten fixture modules.
+frozen audits (including negative controls), the isolated codec proof chain,
+and eleven fixture modules.
 Provenance validates the port inventory, inspected target hashes, source
 pins, headers, and license files. `--source PATH` additionally checks the
 old source checkout against the recorded source hashes.
@@ -219,6 +238,14 @@ Pure egress fixtures cover layout duplication, unused entries, sharing,
 projection variants, numeric overflow, count mismatches, and changed raw
 payloads behind retained table slots. Exact Ixon bytes and outcomes are
 retained in `.lake/build/kernel-ingress.jsonl`.
+
+The host-only `kernel-codec` runner executes the existing production codec
+unit/property suite, including Rust serialization comparisons for universes,
+expressions, constants, and environments. It links the `test-ffi` Rust
+archive; no such dependency enters the standalone package. Results are
+retained in `.lake/build/kernel-codec.log`. Pure codec fixtures additionally
+cover all constant variants, binder modes, integer/tag boundaries, every
+proper prefix of a representative record, and exact suffix rejection.
 
 `lake run check-kernel` writes exact raw input trees, outcomes and reasons
 to `.lake/build/kernel-differential.jsonl`. The CI job **Certified Lean
@@ -251,8 +278,8 @@ leave. The following inventory was checked against the P03 tree on
 | --- | --- | --- |
 | `Ix/Tc/Verify/**` checker statements and proof frontier | Executed `Ix.Kernel` acceptance/model/fidelity roots; retain useful adversarial inputs in kernel fixtures | D01 after K2 gates; behavior outside K2 remains in runtime tests until D02 |
 | `Ix/Tc/Verify/Audit/{Basic,Completed,Conditional,Statements,SorryFrontier}.lean` | Kernel axiom/import/runtime audits already supply strict mechanisms and negative controls; discard upstream/native/sorry allowances | D01; no retained helper imports the old audit namespace |
-| `Ix/Compile/Verify/{Codec,ExprCodec,ExprSpineCodec,ConstantCodec,ConstantTablesCodec,NonrecursiveConstantCodec,RecursorConstantCodec,MutualConstantCodec}.lean` | Retain useful pure codec proofs under the K4 owner, with exact domains and fresh audits; see contract table below | Port before D01 deletion |
-| `Ix/Compile/Verify/{Catalog,IxonValue,SourceValue,Reference}.lean` | Reuse structural wire/table definitions where needed; replace Lean4Lean value relations with K3 exact readings; retire the old semantic square | K3/K4 contracts before D01 |
+| `Ix/Compile/Verify/{Codec,ExprCodec,ExprSpineCodec,ConstantCodec,ConstantTablesCodec,NonrecursiveConstantCodec,RecursorConstantCodec,MutualConstantCodec}.lean` | Preserved under `Ix/Ixon/Verify`, with the complete wire domains, frozen contracts, and fresh audits | Preservation complete; delete old copies in D01 |
+| `Ix/Compile/Verify/{Catalog,IxonValue,SourceValue,Reference}.lean` | Structural wire predicates extracted into `Ix/Ixon/Wire`; K3 exact readings replace resolved-value claims; retire the old semantic square | Selected K3/K4 contracts preserved; delete old semantic machinery in D01 |
 | Remaining `Ix/Compile/Verify/**`, including `Compile*`, `Arena`, `Sharing`, `Statements`, and its audits | Retire the old compiler/specification proof machinery; do not relabel it as an Ix.Kernel compiler-correctness theorem | D01 after selected structural contracts are retained |
 | Root `lakefile.lean` / `lake-manifest.json` | Remove `require lean4lean`, `IxTcVerify`, `IxCompileVerify`, `Lean4LeanBench`, `bench-lean4lean`, the proof dynlib target, and the `build-all` exception | D01; regenerate lockfile and strict fresh host build |
 | `ix_ffi_dyn`, `crates/ffi-dyn`, workspace `Cargo.toml` / `Cargo.lock` | Remove the proof-only loader and crate; ordinary host FFI remains independently owned | D01 after final consumer scan and Rust workspace checks |
@@ -275,20 +302,22 @@ so integration from main cannot leave an orphaned consumer.
 
 | Old contract | Selected replacement | Explicit limits |
 | --- | --- | --- |
-| `deUniv_serUniv` | K4 universe serializer/decoder inverse using the production codec | Keep compressed-successor and UInt64 wire bounds |
-| `deExpr_serExpr` | K4 full expression-spine inverse | Keep wire-sized vectors, spine counts, binder bits, and exact whole-buffer consumption |
-| `deConstant_serConstant` | K4 all constant variants and side-table inverse | Keep count/address/table bounds; do not silently restrict the old all-variant theorem to singleton definitions |
-| `Reads` / `Writes` | Reuse compositional cursor and append laws under the codec owner | These prove codec behavior, not semantic typing |
+| `deUniv_serUniv` | `Ix.Ixon.Verify.deUniv_serUniv` (implemented) | Compressed-successor and UInt64 wire bounds retained |
+| `deExpr_serExpr` | `Ix.Ixon.Verify.deExpr_serExpr` (implemented) | Wire-sized vectors, spine counts, binder bits, and whole-buffer consumption retained |
+| `deConstant_serConstant` | `Ix.Ixon.Verify.deConstant_serConstant`, plus `deConstantExact_serConstant` (implemented) | All variants and arbitrary side tables retained with count/address/table bounds |
+| `Reads` / `Writes` | `Ix.Ixon.Verify.Codec` cursor and append laws (implemented) | Codec behavior only; exact consumption and suffix rejection added in `Verify.Framing` |
 | `ExprTableWF`, decreasing sharing bounds, reference/universe table resolution | K3 checked resolution plus exact erasure to the supplied Ixon declaration | Detect bad indexes, missing payloads, sharing cycles/forward entries, and unsupported modes before certification |
 | Binder-mode erasure relation | K3 explicit accepted mode policy and exact reading; K7 for nonstandard semantic modes | No Lean4Lean interpretation is retained as a hidden premise |
 | Production compiler refinement/value-preservation and end-to-end semantic square | Retired as part of D01; a separate compiler-correctness project would need new source semantics and proofs | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
 
-The codec chain currently imports `Catalog` from `ExprSpineCodec`, and
-`Catalog` imports `IxonValue`. Extract the structural `wireWF` definitions
-before porting that chain; merely renaming the codec namespace would keep a
-transitive Lean4Lean dependency. The selected codec roots' current audit
-lists only the three standard axioms. Other compiler roots permit native
-hash/name axioms; those allowances are not inherited by the new boundary.
+The retained codec chain imports the pure structural `wireWF` predicates,
+so the former `ExprSpineCodec → Catalog → IxonValue → Lean4Lean` dependency
+is gone from its closure. The temporary old codec proofs and `Catalog`
+share those predicates and still build, pending D01 deletion. The retained
+codec roots use only the three standard axioms. Old compiler allowances for
+native hash/name axioms are not inherited by this boundary. The selected
+D00 preservation prerequisite is satisfied; D01 dependency retirement and
+the remaining K4 byte-admission work are still required.
 
 D01 finishes only when active source imports, every tracked Lake manifest,
 generator source/output, build target, backend dispatch, CI and Nix

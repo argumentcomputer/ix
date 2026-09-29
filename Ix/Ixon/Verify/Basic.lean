@@ -1,4 +1,11 @@
-import Ix.Ixon
+/-
+Copyright (c) 2026 Argument Computer Corporation.
+SPDX-License-Identifier: MIT OR Apache-2.0
+
+Extracted from Ix/Compile/Verify/Codec.lean at Ix revision
+b067697b9d97552c6f52b2f72c892f84e4c7170f.
+-/
+
 import Ix.Ixon.Wire
 import Std.Tactic.BVDecide
 
@@ -13,7 +20,7 @@ necessary `UInt64` bound on compressed successor chains.  The smaller theorem
 for `Sort 1` remains as a compatibility corollary.
 -/
 
-namespace Ix.Compile.Verify.Codec
+namespace Ix.Ixon.Verify.Codec
 
 
 def Reads (getm : Ixon.GetM α) (bytes : ByteArray) (value : α) : Prop :=
@@ -1449,9 +1456,9 @@ theorem deUniv_serUniv_small_via_full (u : Ixon.Univ)
 
 end Ixon.Univ
 
-end Ix.Compile.Verify.Codec
+end Ix.Ixon.Verify.Codec
 
-namespace Ix.Compile.Verify
+namespace Ix.Ixon.Verify
 
 /-- Universe values whose compressed successor counts fit the v2 `UInt64`
     field.  Explicit variables are representable by construction. -/
@@ -1488,4 +1495,4 @@ theorem deUniv_serUniv_sortOne :
     Ixon.deUniv (Ixon.serUniv (.succ .zero)) = .ok (.succ .zero) :=
   deUniv_serUniv _ sortOne_univWireWF
 
-end Ix.Compile.Verify
+end Ix.Ixon.Verify
