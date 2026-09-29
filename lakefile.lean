@@ -43,6 +43,11 @@ lean_exe «check-ixon-v3-catalog» where
 lean_exe «tests-aiur» where
   root := `CompilatrixTests.Aiur.Main
 
+/- Lir: kernels, then generated SSA programs checked for well-formedness,
+critical-edge splitting, clock monotonicity and exactness, and determinism. -/
+lean_exe «check-lir» where
+  root := `CompilatrixTests.Lir.Main
+
 lean_exe «check-aiur» where
   srcDir := "scripts"
   root := `CheckAiur

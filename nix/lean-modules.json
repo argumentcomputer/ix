@@ -11,6 +11,7 @@
   "check-trusted-externs":
   {"roots": ["CheckTrustedExterns"], "kind": "lean_exe"},
   "check-tools-tests": {"roots": ["CheckToolsTests"], "kind": "lean_exe"},
+  "check-lir": {"roots": ["CompilatrixTests.Lir.Main"], "kind": "lean_exe"},
   "check-ixon-v3-catalog":
   {"roots": ["CheckIxonV3Catalog"], "kind": "lean_exe"},
   "check-ixon-v3": {"roots": ["CheckIxonV3"], "kind": "lean_exe"},
@@ -62,6 +63,8 @@
   "Ix.Aiur":
   {"path": "vendor/aiur/Ix/Aiur.lean",
    "imports": ["Ix.Aiur.Stages.Bytecode", "Ix.Aiur.Compiler.CallOrder"]},
+  "CompilatrixTests.Support.Rng":
+  {"path": "CompilatrixTests/Support/Rng.lean", "imports": []},
   "CompilatrixTests.Proofs":
   {"path": "CompilatrixTests/Proofs.lean",
    "imports":
@@ -93,6 +96,40 @@
     "CompilatrixTests.Aiur.MemoryAIR.Proofs",
     "CompilatrixTests.Aiur.RankAIR.Proofs",
     "CompilatrixTests.Fences"]},
+  "CompilatrixTests.Lir.Run":
+  {"path": "CompilatrixTests/Lir/Run.lean",
+   "imports": ["CompilatrixTests.Lir.Props", "CompilatrixTests.Lir.Cases"]},
+  "CompilatrixTests.Lir.Region":
+  {"path": "CompilatrixTests/Lir/Region.lean",
+   "imports": ["Compilatrix.Lir.Semantics"]},
+  "CompilatrixTests.Lir.Props":
+  {"path": "CompilatrixTests/Lir/Props.lean",
+   "imports":
+   ["Compilatrix.Lir.WellFormed",
+    "Compilatrix.Lir.SplitEdges",
+    "Compilatrix.Lir.Semantics",
+    "Compilatrix.Lir.Print",
+    "CompilatrixTests.Lir.Gen",
+    "CompilatrixTests.Lir.Kernels"]},
+  "CompilatrixTests.Lir.Main":
+  {"path": "CompilatrixTests/Lir/Main.lean",
+   "imports": ["CompilatrixTests.Lir.Run"]},
+  "CompilatrixTests.Lir.Kernels":
+  {"path": "CompilatrixTests/Lir/Kernels.lean",
+   "imports": ["Compilatrix.Lir.Syntax"]},
+  "CompilatrixTests.Lir.Gen":
+  {"path": "CompilatrixTests/Lir/Gen.lean",
+   "imports":
+   ["Compilatrix.Lir.Graph",
+    "CompilatrixTests.Support.Rng",
+    "CompilatrixTests.Lir.Region"]},
+  "CompilatrixTests.Lir.Cases":
+  {"path": "CompilatrixTests/Lir/Cases.lean",
+   "imports":
+   ["Compilatrix.Lir.WellFormed",
+    "Compilatrix.Lir.SplitEdges",
+    "Compilatrix.Lir.Operands",
+    "CompilatrixTests.Lir.Region"]},
   "CompilatrixTests.IxonV3.TypingFixtures":
   {"path": "CompilatrixTests/IxonV3/TypingFixtures.lean",
    "imports": ["Compilatrix.Ixon.V3.Validate"]},
@@ -359,7 +396,8 @@
   {"path": "CompilatrixTests/Aiur/CounterAnalysis/Fixtures.lean",
    "imports": ["CompilatrixTests.Aiur.Static.Fixtures"]},
   "CompilatrixTests":
-  {"path": "CompilatrixTests.lean", "imports": ["CompilatrixTests.Proofs"]},
+  {"path": "CompilatrixTests.lean",
+   "imports": ["CompilatrixTests.Proofs", "CompilatrixTests.Lir.Run"]},
   "Compilatrix.X86.WordRegionSafeTrace":
   {"path": "Compilatrix/X86/WordRegionSafeTrace.lean",
    "imports":
