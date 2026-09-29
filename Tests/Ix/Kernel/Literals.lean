@@ -40,6 +40,9 @@ def accepts (decls : List (Decl String)) : Bool :=
 def rejects (decls : List (Decl String)) (reason : String) : Bool :=
   match run decls with | .error (.rejected r) => r == reason | _ => false
 
+def declines (decls : List (Decl String)) (reason : String) : Bool :=
+  match run decls with | .error (.declined r) => r == reason | _ => false
+
 /-- The family entry carries exactly the `natural` fact. -/
 def natFacts : Nat :=
   match run [natDecl] with
@@ -70,14 +73,16 @@ def twoThree : Decl String := thm "twoThree" (eqNat (.natLit natRef 2) (.natLit 
 #guard accepts [natDecl, three]
 #guard accepts [natDecl, eqDecl, threeSucc, zeroZero]
 #guard accepts [natDecl, eqDecl, addDecl, twoPlusTwo]
-#guard rejects [natDecl, eqDecl, addDecl, twoPlusTwoWrong] "the body does not have the declared type"
-#guard rejects [natDecl, eqDecl, twoThree] "the body does not have the declared type"
+#guard declines [natDecl, eqDecl, addDecl, twoPlusTwoWrong]
+  "body conversion: conversion search did not establish equality"
+#guard declines [natDecl, eqDecl, twoThree]
+  "body conversion: conversion search did not establish equality"
 
 -- A literal naming a family that is not installed is a missing reference.
 #guard rejects [three] "the declaration references a constant that is not installed"
 -- A literal naming a family that is not the natural numbers is ill-typed.
 def eqRef : ConstRef String := .member "Eq" 0
 def threeEq : Decl String := ⟨"threeEq", ⟨[.defn 0 .definition natC (.natLit eqRef 3) .safe]⟩⟩
-#guard rejects [natDecl, eqDecl, threeEq] "the body is ill-typed"
+#guard rejects [natDecl, eqDecl, threeEq] "body: literal family is not the admitted natural numbers"
 
 end Tests.Ix.Kernel.Literals

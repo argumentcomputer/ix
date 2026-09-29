@@ -23,8 +23,8 @@ variable {β : Type u} [DecidableEq β]
 
 /-- Field sorts by inference, each in the context of its predecessors. -/
 def readFields (fuel : Nat) (entries : Environment β) :
-    Context β → List (AExpr β) → Option (List (Field β))
-  | _, [] => some []
+    Context β → List (AExpr β) → Search (List (Field β))
+  | _, [] => .ok []
   | Γ, D :: rest => do
     let ⟨l, _⟩ ← checkSort.{u,v} fuel entries Γ D
     let fields ← readFields fuel entries (Γ.push D) rest
@@ -32,11 +32,11 @@ def readFields (fuel : Nat) (entries : Environment β) :
 
 /-- The description of a structure-like reading. -/
 def readDescription (fuel : Nat) (entries : Environment β) (reading : Ordinary.Reading β) :
-    Option (Description β) :=
+    Search (Description β) :=
   match reading.shape with
   | ⟨universes, parameters, [], level, [⟨domains, [], []⟩]⟩ => do
     let fields ← readFields.{u,v} fuel entries (Telescope.context [] parameters) domains
     return ⟨universes, parameters, fields, level⟩
-  | _ => none
+  | _ => .error .noMatch
 
 end Ix.Kernel.Certified.Structure

@@ -112,14 +112,14 @@ example (V : Type 1) [Ix.Kernel.Model.SetTheory V] {env : Env String}
 
 #guard rejects [defn "badThm" 0 .theorem idTType (.lam type0 (.lam (.bvar 0) (.bvar 0)))]
   "the type of a theorem must be a proposition"
-#guard rejects [defn "badBody" 1 .definition idType (.lam sortU (.lam (.bvar 0) (.bvar 1)))]
-  "the body does not have the declared type"
+#guard declines [defn "badBody" 1 .definition idType (.lam sortU (.lam (.bvar 0) (.bvar 1)))]
+  "body conversion: conversion search did not establish equality"
 #guard rejects [defn "ill" 0 .definition type0 (.app prop prop)]
-  "the body is ill-typed"
+  "body: a sort-valued term was used as a function"
 #guard rejects [defn "illType" 0 .definition (.app prop prop) prop]
-  "the declared type is ill-typed"
-#guard rejects [defn "notType" 0 .definition idTType idTType]
-  "the body does not have the declared type"
+  "declared type: a sort-valued term was used as a function"
+#guard declines [defn "notType" 0 .definition idTType idTType]
+  "body conversion: conversion search did not establish equality"
 #guard rejects [defn "useMissing" 0 .definition idTType
     (.lam type0 (.app (.const (.member "nope" 0) []) (.bvar 0)))]
   "the declaration references a constant that is not installed"
@@ -129,7 +129,7 @@ example (V : Type 1) [Ix.Kernel.Model.SetTheory V] {env : Env String}
 #guard rejects [defn "openVariable" 0 .definition type0 (.bvar 0)]
   "the body is not closed in its universe parameters and variables"
 #guard rejects [idDecl, defn "wrongLevels" 0 .definition idTType (.const (.member "id" 0) [])]
-  "the body is ill-typed"
+  "body: constant has the wrong number of universe arguments"
 
 /-! ## Declined -/
 

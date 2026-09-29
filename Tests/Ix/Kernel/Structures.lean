@@ -64,6 +64,9 @@ def accepts (decls : List (Decl String)) : Bool :=
 def rejects (decls : List (Decl String)) (reason : String) : Bool :=
   match run decls with | .error (.rejected r) => r == reason | _ => false
 
+def declines (decls : List (Decl String)) (reason : String) : Bool :=
+  match run decls with | .error (.declined r) => r == reason | _ => false
+
 /-- The number of facts on the family entry: a structure publishes the
 arities and one projection fact per field. -/
 def familyFacts (decls : List (Decl String)) (source : String) : Nat :=
@@ -121,14 +124,14 @@ def exProj : Decl String :=
   ⟨"exProj", ⟨[.defn 0 .definition
     (.forallE natT (.forallE (.forallE (.bvar 0) (.sort .zero)) (.forallE (exC (.bvar 1) (.bvar 0)) (.bvar 2))))
     (.lam natT (.lam (.forallE (.bvar 0) (.sort .zero)) (.lam (exC (.bvar 1) (.bvar 0)) (proj "Ex" 0 (.bvar 0))))) .safe]⟩⟩
-#guard rejects (accepted ++ [exProj]) "the body is ill-typed"
+#guard declines (accepted ++ [exProj]) "body: projection family has no admitted structure interface"
 
 /-- A projection index past the fields. -/
 def badIndex : Decl String :=
   ⟨"badIndex", ⟨[.defn 0 .definition
     (.forallE natT (.forallE natT (.forallE (prodC (.bvar 1) (.bvar 0)) (.bvar 2))))
     (.lam natT (.lam natT (.lam (prodC (.bvar 1) (.bvar 0)) (proj "Prod" 2 (.bvar 0))))) .safe]⟩⟩
-#guard rejects (accepted ++ [badIndex]) "the body is ill-typed"
+#guard rejects (accepted ++ [badIndex]) "body: projection field index is out of range"
 
 /-! ## Iota and eta -/
 
@@ -155,6 +158,6 @@ def fstMkWrong : Decl String :=
       (eqC (.bvar 2) (proj "Prod" 0 (mkC (.bvar 2) (.bvar 2) (.bvar 1) (.bvar 0))) (.bvar 0)))))
     (.lam natT (.lam (.bvar 0) (.lam (.bvar 1) (reflC (.bvar 2) (.bvar 0))))) .safe]⟩⟩
 #guard accepts (accepted ++ [fstMk, etaProd])
-#guard rejects (accepted ++ [fstMkWrong]) "the body does not have the declared type"
+#guard declines (accepted ++ [fstMkWrong]) "body conversion: conversion search did not establish equality"
 
 end Tests.Ix.Kernel.Structures

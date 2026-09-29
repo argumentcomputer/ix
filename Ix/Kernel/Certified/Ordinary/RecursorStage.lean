@@ -8,6 +8,8 @@ stored block with the generated one is the caller's check) and the recursor is
 member 1 of the family's block; `RecursorSourceMatches` is removed,
 `RecursorFormation` drops `exactSource`, and `checkRecursorType` infers
 instead of validating a witness.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -65,7 +67,7 @@ structure RecursorFormation (entries : Environment β) (shape : Shape β)
 
 def checkRecursorType (fuel : Nat) (entries : Environment β) (shape : Shape β)
     (source : β) (mode : ElimMode) :
-    Option (CheckedClaim.{u} (RecursorFormation.{u,v} entries shape source mode)) :=
+    Search (CheckedClaim.{u} (RecursorFormation.{u,v} entries shape source mode)) :=
   if hfresh : shape.constructorEnvironment entries source (.member source 1) = none then
     if hs : (shape.recursorType source mode).Scope (mode.recUvars shape.universes) 0 then
       if hr : (shape.recursorType source mode).ReferencesIn (shape.constructorEnvironment entries source) then do
@@ -74,9 +76,9 @@ def checkRecursorType (fuel : Nat) (entries : Environment β) (shape : Shape β)
         return ⟨⟨hfresh, ⟨hs, by simp [recursorEntry], hr, by simp [recursorEntry],
           by simp [recursorEntry], by simp [recursorEntry],
           by simp [recursorEntry], by simp [recursorEntry]⟩, l, ht⟩⟩
-      else none
-    else none
-  else none
+      else .error (.malformed "recursor type references an uninstalled constant")
+    else .error (.malformed "recursor type is not closed")
+  else .error (.malformed "duplicate recursor reference")
 
 theorem recursorEnvironment_wf {entries : Environment β} {source : β}
     {shape : Shape β} {mode : ElimMode}

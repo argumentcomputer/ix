@@ -9,6 +9,8 @@ member 1 of the family's block; `BlockWitness` and the `EntrySource`
 provenance are removed, `checkBlock` takes the shape and mode, and the
 published recursor entry carries `recursorFact` and the typed rule facts
 `ruleFacts`, with their well-formedness and realization.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -34,7 +36,7 @@ structure CheckedBlock (entries : Environment β) (source : β)
     shape.RuleFormation.{u,v} (shape.recursorEnvironment entries source mode) source mode i ctor
 
 def checkBlock (fuel : Nat) (entries : Environment β) (source : β) (shape : Shape β) (mode : ElimMode) :
-    Option (CheckedClaim.{u} (CheckedBlock.{u,v} entries source shape mode)) := do
+    Search (CheckedClaim.{u} (CheckedBlock.{u,v} entries source shape mode)) := do
   let shapeChecked ← checkShape.{u,v} fuel entries source shape
   let modeChecked ← checkMode.{u,v} fuel entries shape mode
   let constructors ← shape.checkConstructorTypes.{u,v} fuel entries source shape.constructors
@@ -45,7 +47,7 @@ def checkBlock (fuel : Nat) (entries : Environment β) (source : β) (shape : Sh
     rules.down ctor i (List.mk_mem_zipIdx_iff_getElem?.mpr hc)⟩⟩
 
 theorem checkBlock_sound {fuel : Nat} {entries : Environment β} {source : β} {shape : Shape β}
-    {mode : ElimMode} {result} (_ : checkBlock.{u,v} fuel entries source shape mode = some result) :
+    {mode : ElimMode} {result} (_ : checkBlock.{u,v} fuel entries source shape mode = .ok result) :
     CheckedBlock.{u,v} entries source shape mode := result.down
 
 namespace Shape

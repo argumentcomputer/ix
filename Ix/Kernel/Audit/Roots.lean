@@ -38,7 +38,10 @@ the one `unsafe` declaration, `Array.ugetBorrowed`), which the inductive
 route uses to number constructors and publish rule facts. The quotient and
 standard-axiom routes (K2) grow the closure with the decidable interface
 checks, the generated primitive types, and the derived rule endpoints, and
-reach no further replacement. -/
+reach no further replacement. P01 (2026-09-29) retains structured failure
+causes and adds `String.append` for contextual diagnostics and `Nat.decLe`
+for an out-of-range projection diagnostic. Both are inherited from `Init`;
+the axiom, import, and replacement allowlists are unchanged. -/
 
 open Lean
 
@@ -81,7 +84,7 @@ end Ix.Kernel.Audit
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel] Ix.Kernel.Audit.importAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
-Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 757 compiled functions; inherited externs 14,
+Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 899 compiled functions; inherited externs 16,
 implemented_by 0, unsafe 1, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist

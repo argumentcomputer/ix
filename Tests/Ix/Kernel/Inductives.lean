@@ -148,16 +148,19 @@ def falseElim : Decl String :=
 /-- `Bad : Type` with `mk : (Bad → Nat) → Bad`: a negative occurrence. -/
 def badShape : Shape String :=
   ⟨0, [], [], .succ .zero, [⟨[.forallE .never (.const (.member "Bad" 0) []) (.const (.member "Nat" 0) [])], [], []⟩]⟩
-#guard rejects [natDecl, block "Bad" badShape .large] "the inductive block is ill-formed"
+#guard rejects [natDecl, block "Bad" badShape .large]
+  "inductive block: constructor field references an uninstalled constant"
 
 /-- `Big : Type` with `mk : Type → Big`: a field above the carrier's universe. -/
 def bigShape : Shape String := ⟨0, [], [], .succ .zero, [⟨[type0], [], []⟩]⟩
-#guard rejects [block "Big" bigShape .large] "the inductive block is ill-formed"
+#guard declines [block "Big" bigShape .large]
+  "inductive block: field universe bound was not established"
 
 #guard rejects [natDecl, natDecl] "duplicate declaration address"
 
 -- `Or` may not eliminate into `Type`.
-#guard rejects [block "Or" orShape .large] "the inductive block is ill-formed"
+#guard rejects [block "Or" orShape .large]
+  "inductive block: large elimination from a possible proposition with multiple constructors"
 
 /-- A tampered recursor: the `zero` rule returns the `succ` minor. -/
 def tamperedRule : E := .lam motiveT (.lam zeroMinorT (.lam succMinorT (.bvar 0)))
@@ -203,7 +206,8 @@ def addOneOneWrong : Decl String :=
 def arithmetic : List (Decl String) := accepted ++ [oneDecl, twoDecl, addDecl]
 
 #guard accepts (arithmetic ++ [addOneOne])
-#guard rejects (arithmetic ++ [addOneOneWrong]) "the body does not have the declared type"
+#guard declines (arithmetic ++ [addOneOneWrong])
+  "body conversion: conversion search did not establish equality"
 
 end Tests.Ix.Kernel.Inductives
 

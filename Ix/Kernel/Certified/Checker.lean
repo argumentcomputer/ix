@@ -11,7 +11,7 @@ The old branch validated typing witnesses here (`verifyType`). The kernel
 instead infers: `checkSort` reads the sort of a type and `checkType` infers a
 term's type and converts it to the expected one, each returning the semantic
 claim. `CheckedClaim` wraps a proposition at the data universe so proof-
-producing checks compose inside `Option` with the syntax they check. -/
+producing checks compose inside `Search` with the syntax they check. -/
 
 namespace Ix.Kernel.Certified
 
@@ -28,13 +28,13 @@ variable {β : Type u} [DecidableEq β]
 /-- `e` is a type: infer its type and read the sort off its weak head normal
 form. -/
 def checkSort (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
-    Option (TypedSort.{u,v} entries Γ e) := do
+    Search (TypedSort.{u,v} entries Γ e) := do
   let ⟨S, hS⟩ ← inferA.{u,v} fuel entries Γ e
   sortOf (whnf.{u,v} fuel entries Γ S) hS
 
 /-- `e` has the type `A`: infer, check that `A` is a type, and convert. -/
 def checkType (fuel : Nat) (entries : Environment β) (Γ : Context β) (e A : AExpr β) :
-    Option (CheckedClaim.{u} (TypingClaim.{u,v} entries Γ e A)) := do
+    Search (CheckedClaim.{u} (TypingClaim.{u,v} entries Γ e A)) := do
   let ⟨B, hb⟩ ← inferA.{u,v} fuel entries Γ e
   let ⟨_, hA⟩ ← checkSort.{u,v} fuel entries Γ A
   let ⟨hc⟩ ← isDefEq.{u,v} fuel entries Γ B A

@@ -6,6 +6,8 @@ namespaces, qualified names, and documentation paths; this header added;
 K2: the input store and its exact-source facts are removed (comparing the
 stored block with the generated one is the caller's check) and the recursor is
 member 1 of the family's block; `checkMode` takes the shape.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -26,9 +28,9 @@ def ModeEvidence (entries : Environment β) (shape : Shape β) : ElimMode → Pr
   | .large => LargeEvidence.{u,v} entries shape
 
 def checkMode [DecidableEq β] (fuel : Nat) (entries : Environment β) (shape : Shape β)
-    (mode : ElimMode) : Option (CheckedClaim.{u} (ModeEvidence.{u,v} entries shape mode)) :=
+    (mode : ElimMode) : Search (CheckedClaim.{u} (ModeEvidence.{u,v} entries shape mode)) :=
   match mode with
-  | .small => some ⟨trivial⟩
+  | .small => .ok ⟨trivial⟩
   | .large => checkLarge fuel entries shape
 
 namespace Shape

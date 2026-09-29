@@ -6,6 +6,8 @@ namespaces, qualified names, and documentation paths; this header added;
 K2: the input store, the witness, and the typing witness are removed; the
 checked facts are about a reference and a spec, and the type is checked by
 inference (`checkSort`) in place of witness validation.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -30,18 +32,18 @@ structure Checked (entries : Environment β) (ref : ConstRef β) (spec : Spec β
   typing : ∃ level, TypingClaim.{u,v} entries [] spec.type (.sort level)
 
 def check (fuel : Nat) (entries : Environment β) (ref : ConstRef β) (spec : Spec β) :
-    Option (CheckedClaim.{u} (Checked.{u,v} entries ref spec)) :=
+    Search (CheckedClaim.{u} (Checked.{u,v} entries ref spec)) :=
   if hf : entries ref = none then
     if hp : spec.Prerequisites entries then
       if hc : spec.type.Scope spec.universes 0 then
         if hr : spec.type.ReferencesIn entries then
           match checkSort.{u,v} fuel entries [] spec.type with
-          | some ⟨level, ht⟩ => some ⟨⟨hf, hp, hc, hr, ⟨level, ht⟩⟩⟩
-          | none => none
-        else none
-      else none
-    else none
-  else none
+          | .ok ⟨level, ht⟩ => .ok ⟨⟨hf, hp, hc, hr, ⟨level, ht⟩⟩⟩
+          | .error failure => .error failure
+        else .error (.malformed "axiom type references an uninstalled constant")
+      else .error (.malformed "axiom type is not closed")
+    else .error (.malformed "axiom prerequisites are not admitted")
+  else .error (.malformed "duplicate axiom reference")
 
 variable {entries : Environment β} {ref : ConstRef β} {spec : Spec β}
 

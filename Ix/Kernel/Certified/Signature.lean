@@ -5,6 +5,8 @@ Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
 K2: `checkTypes` and `checkRule` infer with `Ix.Kernel.Infer` instead of
 validating witnesses; the witness structures are gone.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -45,8 +47,8 @@ inductive Formed : Environment β → List (Header β) → Prop where
       (tail : Formed (entries.insert header.ref header.entry) rest) : Formed entries (header :: rest)
 
 def checkTypes (fuel : Nat) (entries : Environment β) : (headers : List (Header β)) →
-    Option (CheckedClaim.{u} (Formed.{u,v} entries headers))
-  | [] => some ⟨.nil entries⟩
+    Search (CheckedClaim.{u} (Formed.{u,v} entries headers))
+  | [] => .ok ⟨.nil entries⟩
   | header :: headers =>
     if hf : entries header.ref = none then
       if hs : header.type.Scope header.universes 0 then
@@ -54,12 +56,12 @@ def checkTypes (fuel : Nat) (entries : Environment β) : (headers : List (Header
           let ⟨_, ht⟩ ← checkSort.{u,v} fuel entries [] header.type
           let rest ← checkTypes fuel (entries.insert header.ref header.entry) headers
           return ⟨.cons hf hs hr ht rest.down⟩
-        else none
-      else none
-    else none
+        else .error (.malformed "signature type references an uninstalled constant")
+      else .error (.malformed "signature type is not closed")
+    else .error (.malformed "duplicate signature reference")
 
 theorem checkTypes_sound {fuel : Nat} {entries : Environment β} {headers : List (Header β)}
-    {result} (_ : checkTypes.{u,v} fuel entries headers = some result) : Formed.{u,v} entries headers := result.down
+    {result} (_ : checkTypes.{u,v} fuel entries headers = .ok result) : Formed.{u,v} entries headers := result.down
 
 theorem Formed.old {entries : Environment β} {headers : List (Header β)}
     (h : Formed.{u,v} entries headers) {r : ConstRef β} {entry : ConstantEntry β}
@@ -118,13 +120,13 @@ structure RuleFormed (entries : Environment β) (rule : Rule β) : Prop where
 /-- Both complete endpoints are checked against their common formed type,
 before the environment has acquired the new computation equations. -/
 def checkRule (fuel : Nat) (entries : Environment β) (rule : Rule β) :
-    Option (CheckedClaim.{u} (RuleFormed.{u,v} entries rule)) :=
+    Search (CheckedClaim.{u} (RuleFormed.{u,v} entries rule)) :=
   if hs : rule.type.Scope rule.universes 0 ∧ rule.lhs.Scope rule.universes 0 ∧ rule.rhs.Scope rule.universes 0 then
     if hr : rule.type.ReferencesIn entries ∧ rule.lhs.ReferencesIn entries ∧ rule.rhs.ReferencesIn entries then do
       let ⟨level, ht⟩ ← checkSort.{u,v} fuel entries [] rule.type
       let hl ← checkType.{u,v} fuel entries [] rule.lhs rule.type
       let hh ← checkType.{u,v} fuel entries [] rule.rhs rule.type
       return ⟨⟨hs, hr, ⟨level, ht⟩, hl.down, hh.down⟩⟩
-    else none
-  else none
+    else .error (.malformed "computation rule references an uninstalled constant")
+  else .error (.malformed "computation rule is not closed")
 

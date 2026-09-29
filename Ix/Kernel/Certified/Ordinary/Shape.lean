@@ -8,6 +8,8 @@ stored block with the generated one is the caller's check) and the recursor is
 member 1 of the family's block; `CheckedShape` drops `exactSource`, and
 `checkShape`, `checkConstructors`, and `checkRecursive` infer with
 `Ix.Kernel.Infer` instead of validating witnesses.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -139,8 +141,8 @@ variable [DecidableEq β]
 
 def checkRecursive (fuel : Nat) (entries : Environment β) (shape : Shape β)
     (ctor : Constructor β) : (fields : List (RecursiveField β)) →
-      Option (CheckedClaim.{u} (∀ field ∈ fields, RecursiveEvidence.{u,v} entries shape ctor field))
-  | [] => some ⟨by simp⟩
+      Search (CheckedClaim.{u} (∀ field ∈ fields, RecursiveEvidence.{u,v} entries shape ctor field))
+  | [] => .ok ⟨by simp⟩
   | field :: fields =>
     if hrefs : ∀ e ∈ field.domains ++ field.indices, e.ReferencesIn entries then do
       let domains ← checkTelescope.{u,v} fuel entries (some shape.level) (ctor.context shape) field.domains
@@ -153,12 +155,12 @@ def checkRecursive (fuel : Nat) (entries : Environment β) (shape : Shape β)
         rcases List.mem_cons.mp hf with rfl | hf
         · exact ⟨hrefs, domains.down.1, domains.down.2, indices.down⟩
         · exact rest.down field' hf⟩
-    else none
+    else .error (.malformed "recursive field references an uninstalled constant")
 
 def checkConstructors (fuel : Nat) (entries : Environment β) (shape : Shape β) :
     (ctors : List (Constructor β)) →
-      Option (CheckedClaim.{u} (∀ ctor ∈ ctors, ConstructorEvidence.{u,v} entries shape ctor))
-  | [] => some ⟨by simp⟩
+      Search (CheckedClaim.{u} (∀ ctor ∈ ctors, ConstructorEvidence.{u,v} entries shape ctor))
+  | [] => .ok ⟨by simp⟩
   | ctor :: ctors =>
     if hrefs : ∀ e ∈ ctor.fields ++ ctor.indices, e.ReferencesIn entries then do
       let fields ← checkTelescope.{u,v} fuel entries (some shape.level) shape.parameterContext ctor.fields
@@ -171,10 +173,10 @@ def checkConstructors (fuel : Nat) (entries : Environment β) (shape : Shape β)
         rcases List.mem_cons.mp hc with rfl | hc
         · exact ⟨hrefs, fields.down.1, fields.down.2, indices.down, recursive.down⟩
         · exact rest.down ctor' hc⟩
-    else none
+    else .error (.malformed "constructor field references an uninstalled constant")
 
 def checkShape (fuel : Nat) (entries : Environment β) (source : β) (shape : Shape β) :
-    Option (CheckedClaim.{u} (CheckedShape.{u,v} entries source shape)) :=
+    Search (CheckedClaim.{u} (CheckedShape.{u,v} entries source shape)) :=
   if hfresh : ∀ r ∈ shape.references source, entries r = none then
     if hrefs : ∀ e ∈ shape.parameters ++ shape.indices, e.ReferencesIn entries then
       if hscope : shape.type.Scope shape.universes 0 then
@@ -183,13 +185,13 @@ def checkShape (fuel : Nat) (entries : Environment β) (source : β) (shape : Sh
           let indices ← checkTelescope.{u,v} fuel entries none shape.parameterContext shape.indices
           let constructors ← checkConstructors fuel entries shape shape.constructors
           return ⟨⟨hfresh, hrefs, hscope, hctors, parameters.down.1, indices.down.1, constructors.down⟩⟩
-        else none
-      else none
-    else none
-  else none
+        else .error (.malformed "constructor type is not closed")
+      else .error (.malformed "inductive type is not closed")
+    else .error (.malformed "inductive parameter or index references an uninstalled constant")
+  else .error (.malformed "duplicate inductive reference")
 
 theorem checkShape_sound {fuel : Nat} {entries : Environment β} {source : β} {shape : Shape β}
-    {result} (_ : checkShape.{u,v} fuel entries source shape = some result) :
+    {result} (_ : checkShape.{u,v} fuel entries source shape = .ok result) :
     CheckedShape.{u,v} entries source shape := result.down
 
 end Ix.Kernel.Certified.Ordinary

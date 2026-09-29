@@ -8,6 +8,8 @@ K2: the witness validators `verifyTelescope`, `verifyArguments`, and
 `checkPropTelescope`, which infer sorts and types with `Ix.Kernel.Infer`; the
 universe-count parameter and the witness structures are gone; level
 comparison uses `Ix.Kernel.Level`.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -73,15 +75,15 @@ theorem TelescopeBound.cons {entries : Environment β} {Γ : Context β}
 predecessors; its sort is inferred, not supplied. -/
 def checkTelescope (fuel : Nat) (entries : Environment β) (bound : Option VLevel) :
     (Γ : Context β) → (domains : List (AExpr β)) →
-      Option (CheckedClaim.{u} (Telescope.Formed.{u,v} entries Γ domains ∧
+      Search (CheckedClaim.{u} (Telescope.Formed.{u,v} entries Γ domains ∧
         TelescopeBound.{u,v} entries Γ domains bound))
-  | Γ, [] => some ⟨⟨.nil, TelescopeBound.nil entries Γ bound⟩⟩
+  | Γ, [] => .ok ⟨⟨.nil, TelescopeBound.nil entries Γ bound⟩⟩
   | Γ, A :: rest => do
     let ⟨l, hA⟩ ← checkSort.{u,v} fuel entries Γ A
     if hl : checkDomainBound bound l = true then
       let hrest ← checkTelescope fuel entries bound (Γ.push A) rest
       return ⟨⟨.cons l hA hrest.down.1, TelescopeBound.cons hA (checkDomainBound_sound hl) hrest.down.2⟩⟩
-    else none
+    else .error (.unresolved "field universe bound was not established")
 
 /-- Indices are checked against their actual dependent telescope, with every
 earlier argument substituted before the next check. -/
@@ -109,13 +111,13 @@ theorem ArgumentsFit.cons {entries : Environment β} {Γ : Context β}
 
 def checkArguments (fuel : Nat) (entries : Environment β) (Γ : Context β) :
     (domains args : List (AExpr β)) →
-      Option (CheckedClaim.{u} (ArgumentsFit.{u,v} entries Γ domains args))
-  | [], [] => some ⟨ArgumentsFit.nil entries Γ⟩
+      Search (CheckedClaim.{u} (ArgumentsFit.{u,v} entries Γ domains args))
+  | [], [] => .ok ⟨ArgumentsFit.nil entries Γ⟩
   | A :: domains, a :: args => do
       let ha ← checkType.{u,v} fuel entries Γ a A
       let hrest ← checkArguments fuel entries Γ (Telescope.inst a domains) args
       return ⟨ArgumentsFit.cons ha.down hrest.down⟩
-  | _, _ => none
+  | _, _ => .error (.malformed "argument count does not match the telescope")
 
 def checkZeroImplies (a b : VLevel) : Bool :=
   decide ((zeroCondition a).inter (zeroCondition b) = zeroCondition a)
@@ -153,13 +155,13 @@ theorem TelescopeProp.cons {entries : Environment β} {Γ : Context β}
 having one constructor is insufficient for large elimination from Prop. -/
 def checkPropTelescope (fuel : Nat) (entries : Environment β) (atLevel : VLevel) :
     (Γ : Context β) → (domains : List (AExpr β)) →
-      Option (CheckedClaim.{u} (TelescopeProp.{u,v} entries Γ domains atLevel))
-  | Γ, [] => some ⟨TelescopeProp.nil entries Γ atLevel⟩
+      Search (CheckedClaim.{u} (TelescopeProp.{u,v} entries Γ domains atLevel))
+  | Γ, [] => .ok ⟨TelescopeProp.nil entries Γ atLevel⟩
   | Γ, A :: rest => do
     let ⟨l, hA⟩ ← checkSort.{u,v} fuel entries Γ A
     if hl : checkZeroImplies atLevel l = true then
       let htail ← checkPropTelescope fuel entries atLevel (Γ.push A) rest
       return ⟨TelescopeProp.cons hA (checkZeroImplies_sound hl) htail.down⟩
-    else none
+    else .error (.unresolved "the field was not established to be proposition-valued")
 
 end Ix.Kernel.Certified

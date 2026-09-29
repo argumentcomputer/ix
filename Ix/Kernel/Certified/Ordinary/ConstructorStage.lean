@@ -7,6 +7,8 @@ K2: the input store and its exact-source facts are removed (comparing the
 stored block with the generated one is the caller's check) and the recursor is
 member 1 of the family's block; `checkConstructorTypes` infers instead of
 validating witnesses.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -67,10 +69,10 @@ def ConstructorFormation (entries : Environment β) (shape : Shape β) (source :
 
 def checkConstructorTypes (fuel : Nat) (entries : Environment β) (shape : Shape β) (source : β) :
     (ctors : List (Constructor β)) →
-      Option (CheckedClaim.{u} (∀ ctor ∈ ctors,
+      Search (CheckedClaim.{u} (∀ ctor ∈ ctors,
         EntryClosed (shape.familyEnvironment entries source) (shape.constructorEntry source ctor) ∧
         ∃ l, TypingClaim.{u,v} (shape.familyEnvironment entries source) [] (ctor.type shape source) (.sort l)))
-  | [] => some ⟨by simp⟩
+  | [] => .ok ⟨by simp⟩
   | ctor :: ctors =>
     if hs : (ctor.type shape source).Scope shape.universes 0 then
       if hr : (ctor.type shape source).ReferencesIn (shape.familyEnvironment entries source) then do
@@ -83,8 +85,8 @@ def checkConstructorTypes (fuel : Nat) (entries : Environment β) (shape : Shape
               by simp [constructorEntry], by simp [constructorEntry],
               by simp [constructorEntry], by simp [constructorEntry]⟩, l, ht⟩
           · exact rest.down ctor' hc⟩
-      else none
-    else none
+      else .error (.malformed "constructor type references an uninstalled constant")
+    else .error (.malformed "constructor type is not closed")
 
 theorem constructorEnvironment_wf {entries : Environment β} {source : β} {shape : Shape β}
     (h : CheckedShape.{u,v} entries source shape) (hE : entries.WF)

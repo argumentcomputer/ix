@@ -9,6 +9,8 @@ the ordinary block's proof from the caller and infer with `Ix.Kernel.Infer`;
 the check-time family entry carries the `structure` arity fact; the published
 entry and environment are defined here, and every rule is typed in the
 published environment instead of a staged one.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -54,7 +56,7 @@ structure FactsChecked (entries : Environment β) (d : Description β)
 /-- The ordinary block is already checked by the caller. -/
 def checkFacts (fuel : Nat) (entries : Environment β) (d : Description β) (source : β)
     (mode : Inductive.ElimMode) (hb : Ordinary.CheckedBlock.{u,v} entries source d.ordinary mode) :
-    Option (CheckedClaim.{u} (FactsChecked.{u,v} entries d source mode)) :=
+    Search (CheckedClaim.{u} (FactsChecked.{u,v} entries d source mode)) :=
   if hs : ∀ fact ∈ d.facts source, fact.Scope d.universes then
     if hr : ∀ fact ∈ d.facts source,
         fact.ReferencesIn (d.ordinary.publishedEnvironment entries source mode) then do
@@ -62,8 +64,8 @@ def checkFacts (fuel : Nat) (entries : Environment β) (d : Description β) (sou
       let hd ← checkTelescope.{u,v} fuel (d.ordinary.publishedEnvironment entries source mode) none []
         (d.projectionDomains source)
       return ⟨⟨hb, hf.down, hd.down.1, hs, hr⟩⟩
-    else none
-  else none
+    else .error (.malformed "structure fact references an uninstalled constant")
+  else .error (.malformed "structure fact is not closed")
 
 def Description.etaRule (d : Description β) (source : β) : Signature.Rule β :=
   ⟨d.universes, .forallN (zeroCondition d.level) (d.projectionDomains source)
@@ -83,9 +85,9 @@ structure Checked (entries : Environment β) (d : Description β)
 def checkIota (fuel : Nat) (entries : Environment β) (d : Description β) (source : β)
     (mode : Inductive.ElimMode) :
     (fields : List (Field β × Nat)) →
-      Option (CheckedClaim.{u} (∀ field i, (field, i) ∈ fields →
+      Search (CheckedClaim.{u} (∀ field i, (field, i) ∈ fields →
         Signature.RuleFormed.{u,v} (d.publishedEnvironment entries source mode) (d.iotaRule source i field)))
-  | [] => some ⟨by simp⟩
+  | [] => .ok ⟨by simp⟩
   | (field, i) :: fields => do
     let ht ← Signature.checkRule.{u,v} fuel (d.publishedEnvironment entries source mode) (d.iotaRule source i field)
     let rest ← checkIota fuel entries d source mode fields
@@ -97,7 +99,7 @@ def checkIota (fuel : Nat) (entries : Environment β) (d : Description β) (sour
 
 def check (fuel : Nat) (entries : Environment β) (d : Description β) (source : β)
     (mode : Inductive.ElimMode) (hb : Ordinary.CheckedBlock.{u,v} entries source d.ordinary mode) :
-    Option (CheckedClaim.{u} (Checked.{u,v} entries d source mode)) := do
+    Search (CheckedClaim.{u} (Checked.{u,v} entries d source mode)) := do
   let facts ← checkFacts.{u,v} fuel entries d source mode hb
   let eta ← Signature.checkRule.{u,v} fuel (d.publishedEnvironment entries source mode) (d.etaRule source)
   let iota ← checkIota.{u,v} fuel entries d source mode d.fields.zipIdx
@@ -105,7 +107,7 @@ def check (fuel : Nat) (entries : Environment β) (d : Description β) (source :
 
 theorem check_sound {fuel : Nat} {entries : Environment β} {d : Description β} {source : β}
     {mode : Inductive.ElimMode} {hb : Ordinary.CheckedBlock.{u,v} entries source d.ordinary mode}
-    {result} (_ : check.{u,v} fuel entries d source mode hb = some result) :
+    {result} (_ : check.{u,v} fuel entries d source mode hb = .ok result) :
     Checked.{u,v} entries d source mode := result.down
 
 end Ix.Kernel.Certified.Structure

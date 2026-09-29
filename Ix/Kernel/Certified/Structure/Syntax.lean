@@ -5,6 +5,8 @@ Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
 K2: the recursor is member 1 of the family's block; `checkFields` infers instead
 of validating witnesses; `Description.structureFact` publishes the arities.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -110,13 +112,13 @@ theorem FieldsFormed.prop {entries : Environment β} {w : VLevel} {Γ : Context 
 
 def checkFields [DecidableEq β] (fuel : Nat) (entries : Environment β) (w : VLevel) :
     (Γ : Context β) → (fields : List (Field β)) →
-      Option (CheckedClaim.{u} (FieldsFormed.{u,v} entries w Γ fields))
-  | _, [] => some ⟨.nil⟩
+      Search (CheckedClaim.{u} (FieldsFormed.{u,v} entries w Γ fields))
+  | _, [] => .ok ⟨.nil⟩
   | Γ, field :: fields =>
     if hz : checkZeroImplies w field.level = true then do
       let hA ← checkType.{u,v} fuel entries Γ field.domain (.sort field.level)
       let rest ← checkFields fuel entries w (Γ.push field.domain) fields
       return ⟨.cons hA.down (checkZeroImplies_sound hz) rest.down⟩
-    else none
+    else .error (.unresolved "the structure field does not satisfy the supported Prop restriction")
 
 end Ix.Kernel.Certified.Structure

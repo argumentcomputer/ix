@@ -63,8 +63,8 @@ input fidelity come first, then reuse of checked information, environment
 indexing, context representation, and structured computation rules. These
 steps supersede the previous interning-first K6 order. Section 11 records
 the complete `lean4ix` dependency and consumer removal, including build,
-test, CI, Nix, and generated benchmark configuration. This revision changes
-the plan only; none of those implementation steps is claimed complete.
+test, CI, Nix, and generated benchmark configuration. Implementation progress
+is recorded in section 10; the full retirement remains required.
 
 ## 1. Thesis and scope
 
@@ -1200,6 +1200,24 @@ replacement contracts are ready; they do not depend on caches or interning.
 | P11 | Shared validation traversals and narrower module boundaries | P02, P04, P07 |
 | P12 | Workload-driven promotions and complete consumer parity | K3, K4, retained measurements |
 
+Implementation checkpoint (2026-09-29):
+
+- P00's tracked native runner, seven fixture modules, and 37 baseline
+  configurations are in jj change `xqrwovol` (`457591a8`). Diagnostic
+  operation counters remain required before the corresponding performance
+  promotions; P00's instrumentation gate is not yet complete.
+- P01 is implemented in `qlslmuxn`. The strict standalone build passes
+  (132 jobs), including the frozen theorem/axiom/import/runtime checks and
+  all seven fixture modules. The provenance executable passes with 97
+  ported modules, 25 authored modules, and four license files. All 37 native
+  configurations accept; the paired comparison and diagnostic overhead
+  are recorded in `Benchmarks/Kernel/README.md`. The public theorem
+  statements and axiom/import allowlists remain unchanged.
+- P02–P12, the K2 release gate, and K3–K7 remain open. The host/model and
+  corpus parity gates have not been rerun at this checkpoint. D00–D02
+  remain required: neither dependency retirement nor runtime cutover is
+  claimed by the standalone checks.
+
 ### Ontology and contracts to preserve
 
 The refactor gives the existing concepts explicit boundaries:
@@ -1280,7 +1298,7 @@ than treating it as malformed input. A positive conversion proof obtained
 from partial reducts remains usable.
 
 Exit: `A : Type 1 := Type; x : A := Prop` declines, never rejects, at
-insufficient fuel and accepts at sufficient fuel (the current run rejects
+insufficient fuel and accepts at sufficient fuel (the P00 baseline rejects
 at 1 and 2, then accepts at 3). Cover nested annotation exhaustion,
 inductive-reader exhaustion, exhausted rule application, and conservative
 level-equivalence failure. Duplicate addresses, out-of-scope variables,

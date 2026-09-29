@@ -51,6 +51,15 @@ inductive Error where
   | declined (reason : String)
   deriving Repr, DecidableEq
 
+/-- Translate a bounded search failure without treating lack of evidence as
+evidence that the input is wrong. The context locates a nested failure. -/
+def Error.ofSearch (context : String) : SearchFailure → Error
+  | .exhausted => .declined s!"{context}: out of fuel"
+  | .unsupported reason => .declined s!"{context}: {reason}"
+  | .unresolved reason => .declined s!"{context}: {reason}"
+  | .malformed reason => .rejected s!"{context}: {reason}"
+  | .noMatch => .declined s!"{context}: no applicable supported rule"
+
 /-- An input declaration: a block of constants at its address. -/
 structure Decl (β : Type u) where
   address : β
@@ -95,29 +104,32 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
             if hTr : type'.ReferencesIn entries then
               if hBr : body'.ReferencesIn entries then
                 match inferA.{u,v} cfg.fuel entries [] type' with
-                | some ⟨S, hS⟩ =>
+                | .ok ⟨S, hS⟩ =>
                   match sortOf (whnf.{u,v} cfg.fuel entries [] S) hS with
-                  | some ⟨l, hT⟩ =>
+                  | .ok ⟨l, hT⟩ =>
                     if kind = .theorem && !levelIsZero l then
-                      .error (.rejected "the type of a theorem must be a proposition")
+                      if zeroCondition l = .never then
+                        .error (.rejected "the type of a theorem must be a proposition")
+                      else
+                        .error (.declined "the theorem's type was not established to be a proposition")
                     else
                       match inferA.{u,v} cfg.fuel entries [] body' with
-                      | some ⟨B, hb⟩ =>
+                      | .ok ⟨B, hb⟩ =>
                         match isDefEq.{u,v} cfg.fuel entries [] B type' with
-                        | some ⟨hc⟩ =>
+                        | .ok ⟨hc⟩ =>
                           .ok (installDefinition env r universes type' body' fresh hTs hBs hTr hBr hT
                             (hb.convF hT.formed hc))
-                        | none => .error (.rejected "the body does not have the declared type")
-                      | none => .error (.rejected "the body is ill-typed")
-                  | none => .error (.rejected "the declared type is not a type")
-                | none => .error (.rejected "the declared type is ill-typed")
+                        | .error failure => .error (Error.ofSearch "body conversion" failure)
+                      | .error failure => .error (Error.ofSearch "body" failure)
+                  | .error failure => .error (Error.ofSearch "declared type" failure)
+                | .error failure => .error (Error.ofSearch "declared type" failure)
               else .error (.rejected "the body references a constant that is not installed")
             else .error (.rejected "the declared type references a constant that is not installed")
           else .error (.rejected "the body is not closed in its universe parameters and variables")
         else .error (.rejected "the declared type is not closed in its universe parameters and variables")
-      | .error .fuel, _ | _, .error .fuel => .error (.declined "out of fuel")
-      | .error .illTyped, _ => .error (.rejected "the declared type is ill-typed")
-      | _, .error .illTyped => .error (.rejected "the body is ill-typed")
+      | .error a, .error b => .error (Error.ofSearch "annotation" (a.merge b))
+      | .error failure, _ => .error (Error.ofSearch "declared type" failure)
+      | _, .error failure => .error (Error.ofSearch "body" failure)
     else .error (.rejected "duplicate declaration address")
   | [.induct _ _ _ _ _ .safe, .recursor _ _ _ _ _ _ _ _ .safe] =>
     let source := d.address
@@ -128,8 +140,9 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
       .error (.rejected "the declaration references a constant that is not installed")
     else
       match readBlock.{u,v} cfg.fuel entries source d.block with
-      | none => .error (.declined "the inductive block is not in the ordinary shape class")
-      | some reading =>
+      | .error .noMatch => .error (.declined "the inductive block is not in the ordinary shape class")
+      | .error failure => .error (Error.ofSearch "inductive reading" failure)
+      | .ok reading =>
         let shape := reading.shape
         let mode := reading.mode
         let k := reading.k
@@ -138,21 +151,21 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
             .error (.rejected "K-like reduction is declared for an inductive that does not support it")
           else
             match checkBlock.{u,v} cfg.fuel entries source shape mode with
-            | some ⟨hb⟩ =>
+            | .ok ⟨hb⟩ =>
               if hnat : shape = Natural.shape then
                 match Natural.check.{u,v} entries source mode (hnat ▸ hb) with
                 | some ⟨hn⟩ => .ok (installNatural env source mode hn)
                 | none => .ok (installOrdinary env source shape mode hb)
               else
               match readDescription.{u,v} cfg.fuel entries reading with
-              | some d =>
+              | .ok d =>
                 if hd : d.ordinary = shape then
                   match Structure.check.{u,v} cfg.fuel entries d source mode (hd ▸ hb) with
-                  | some ⟨hs⟩ => .ok (installStructure env source d mode hs)
-                  | none => .ok (installOrdinary env source shape mode hb)
+                  | .ok ⟨hs⟩ => .ok (installStructure env source d mode hs)
+                  | .error _ => .ok (installOrdinary env source shape mode hb)
                 else .ok (installOrdinary env source shape mode hb)
-              | none => .ok (installOrdinary env source shape mode hb)
-            | none => .error (.rejected "the inductive block is ill-formed")
+              | .error _ => .ok (installOrdinary env source shape mode hb)
+            | .error failure => .error (Error.ofSearch "inductive block" failure)
         else .error (.declined "the block is not the generated ordinary block of its inductive")
   | [.induct _ _ _ _ _ _, .recursor _ _ _ _ _ _ _ _ _] =>
     .error (.declined "unsafe inductive blocks are not supported")
@@ -169,8 +182,8 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
         if d.block = ⟨[Quotient.Refs.source (⟨self, self, self, self, self⟩ : Quotient.Refs β) .type]⟩ then
           if hTs : (Quotient.typeType : AExpr β).Scope 1 0 then
             match checkSort.{u,v} cfg.fuel entries [] Quotient.typeType with
-            | some ⟨_, ht⟩ => .ok (Quotient.installType env self fresh hTs ht)
-            | none => .error (.rejected "the quotient former's type is ill-typed")
+            | .ok ⟨_, ht⟩ => .ok (Quotient.installType env self fresh hTs ht)
+            | .error failure => .error (Error.ofSearch "quotient former type" failure)
           else .error (.rejected "the quotient former's type is not closed")
         else .error (.declined "the quotient former is not the primitive one")
       | .ctor, 1, [q] =>
@@ -180,8 +193,8 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
             if hTs : (Quotient.ctorType refs).Scope 1 0 then
               if hTr : (Quotient.ctorType refs).ReferencesIn entries then
                 match checkSort.{u,v} cfg.fuel entries [] (Quotient.ctorType refs) with
-                | some ⟨_, ht⟩ => .ok (Quotient.installCtor env refs fresh hTs hq hTr ht)
-                | none => .error (.rejected "the quotient constructor's type is ill-typed")
+                | .ok ⟨_, ht⟩ => .ok (Quotient.installCtor env refs fresh hTs hq hTr ht)
+                | .error failure => .error (Error.ofSearch "quotient constructor type" failure)
               else .error (.rejected "the quotient constructor references a constant that is not installed")
             else .error (.rejected "the quotient constructor's type is not closed")
           else .error (.rejected "the quotient constructor does not follow the admitted former")
@@ -193,8 +206,8 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
             if hTs : (Quotient.liftType refs).Scope 2 0 then
               if hTr : (Quotient.liftType refs).ReferencesIn entries then
                 match checkSort.{u,v} cfg.fuel entries [] (Quotient.liftType refs) with
-                | some ⟨_, ht⟩ => .ok (Quotient.installLift env refs fresh hTs hq hTr ht)
-                | none => .error (.rejected "the quotient lift's type is ill-typed")
+                | .ok ⟨_, ht⟩ => .ok (Quotient.installLift env refs fresh hTs hq hTr ht)
+                | .error failure => .error (Error.ofSearch "quotient lift type" failure)
               else .error (.rejected "the quotient lift references a constant that is not installed")
             else .error (.rejected "the quotient lift's type is not closed")
           else .error (.rejected "the quotient lift does not follow the admitted former")
@@ -207,8 +220,8 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
               if hTs : (Quotient.indType refs).Scope 1 0 then
                 if hTr : (Quotient.indType refs).ReferencesIn entries then
                   match checkSort.{u,v} cfg.fuel entries [] (Quotient.indType refs) with
-                  | some ⟨_, ht⟩ => .ok (Quotient.installInd env refs fresh hTs hq hc hTr ht)
-                  | none => .error (.rejected "the quotient eliminator's type is ill-typed")
+                  | .ok ⟨_, ht⟩ => .ok (Quotient.installInd env refs fresh hTs hq hc hTr ht)
+                  | .error failure => .error (Error.ofSearch "quotient eliminator type" failure)
                 else .error (.rejected "the quotient eliminator references a constant that is not installed")
               else .error (.rejected "the quotient eliminator's type is not closed")
             else .error (.rejected "the quotient eliminator does not follow the admitted constructor")
@@ -232,8 +245,8 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
               if hTs : spec.type.Scope spec.universes 0 then
                 if hTr : spec.type.ReferencesIn entries then
                   match checkSort.{u,v} cfg.fuel entries [] spec.type with
-                  | some ⟨level, ht⟩ => .ok (Standard.install env self spec ⟨fresh, hp, hTs, hTr, ⟨level, ht⟩⟩)
-                  | none => .error (.rejected "the axiom's type is ill-typed")
+                  | .ok ⟨level, ht⟩ => .ok (Standard.install env self spec ⟨fresh, hp, hTs, hTr, ⟨level, ht⟩⟩)
+                  | .error failure => .error (Error.ofSearch "axiom type" failure)
                 else .error (.rejected "the axiom references a constant that is not installed")
               else .error (.rejected "the axiom's type is not closed")
             else .error (.rejected "the axiom's prerequisites are not the admitted interfaces")
@@ -258,8 +271,8 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
                 if hTs : (Quotient.soundType refs).Scope 1 0 then
                   if hTr : (Quotient.soundType refs).ReferencesIn entries then
                     match checkSort.{u,v} cfg.fuel entries [] (Quotient.soundType refs) with
-                    | some ⟨_, ht⟩ => .ok (Quotient.installSound env refs self fresh hTs hq hc hE hTr ht)
-                    | none => .error (.rejected "the quotient soundness axiom's type is ill-typed")
+                    | .ok ⟨_, ht⟩ => .ok (Quotient.installSound env refs self fresh hTs hq hc hE hTr ht)
+                    | .error failure => .error (Error.ofSearch "quotient soundness type" failure)
                   else .error (.rejected "the quotient soundness axiom references a constant that is not installed")
                 else .error (.rejected "the quotient soundness axiom's type is not closed")
               else .error (.rejected "the quotient soundness axiom's equality is not the admitted one")
@@ -274,8 +287,8 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
               if hTs : spec.type.Scope spec.universes 0 then
                 if hTr : spec.type.ReferencesIn entries then
                   match checkSort.{u,v} cfg.fuel entries [] spec.type with
-                  | some ⟨level, ht⟩ => .ok (Standard.install env self spec ⟨fresh, hp, hTs, hTr, ⟨level, ht⟩⟩)
-                  | none => .error (.rejected "the axiom's type is ill-typed")
+                  | .ok ⟨level, ht⟩ => .ok (Standard.install env self spec ⟨fresh, hp, hTs, hTr, ⟨level, ht⟩⟩)
+                  | .error failure => .error (Error.ofSearch "axiom type" failure)
                 else .error (.rejected "the axiom references a constant that is not installed")
               else .error (.rejected "the axiom's type is not closed")
             else .error (.rejected "the axiom's prerequisites are not the admitted interfaces")

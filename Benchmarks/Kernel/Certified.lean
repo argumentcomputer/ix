@@ -81,7 +81,7 @@ def prepare (kind : String) (size fuel : Nat) : IO (IO Nat) := do
   | "spine" =>
     let e := AExpr.appN (.bvar 0) (List.replicate size (.sort .zero))
     let ctx := [arityType size]
-    unless (inferA.{0,1} fuel (fun _ => none) ctx e).isSome do
+    unless (inferA.{0,1} fuel (fun _ => none) ctx e).isOk do
       throw (IO.userError "stuck-spine input failed its typing precheck")
     let input ← IO.mkRef (ctx, e)
     return do

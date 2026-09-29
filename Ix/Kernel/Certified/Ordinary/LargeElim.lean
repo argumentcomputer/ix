@@ -6,6 +6,8 @@ namespaces, qualified names, and documentation paths; this header added;
 K2: the input store and its exact-source facts are removed (comparing the
 stored block with the generated one is the caller's check) and the recursor is
 member 1 of the family's block; `checkLarge` takes the shape and infers.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -28,22 +30,22 @@ def LargeEvidence (entries : Environment β) (shape : Shape β) : Prop :=
       TelescopeProp.{u,v} entries shape.parameterContext ctor.fields shape.level
 
 def checkLarge [DecidableEq β] (fuel : Nat) (entries : Environment β) (shape : Shape β) :
-    Option (CheckedClaim.{u} (LargeEvidence.{u,v} entries shape)) :=
+    Search (CheckedClaim.{u} (LargeEvidence.{u,v} entries shape)) :=
   if hp : zeroCondition shape.level = .never then
-    some ⟨Or.inl (by
+    .ok ⟨Or.inl (by
       intro levels he
       have hz := zeroCondition_correct shape.level levels
       simp only [hp, PropWhen.holds_never, he, beq_self_eq_true, Bool.false_eq_true] at hz)⟩
   else
     match hc : shape.constructors with
-    | [] => some ⟨Or.inr (Or.inl hc)⟩
+    | [] => .ok ⟨Or.inr (Or.inl hc)⟩
     | [ctor] => do
       let fields ← checkPropTelescope.{u,v} fuel entries shape.level shape.parameterContext ctor.fields
       return ⟨Or.inr (Or.inr ⟨ctor, hc, fields.down⟩)⟩
-    | _ => none
+    | _ => .error (.malformed "large elimination from a possible proposition with multiple constructors")
 
 theorem checkLarge_sound [DecidableEq β] {fuel : Nat} {entries : Environment β} {shape : Shape β}
-    {result} (_ : checkLarge.{u,v} fuel entries shape = some result) :
+    {result} (_ : checkLarge.{u,v} fuel entries shape = .ok result) :
     LargeEvidence.{u,v} entries shape := result.down
 
 variable {V : Type v} [SetTheory V]

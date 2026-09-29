@@ -85,7 +85,7 @@ def liftMkWrong : Decl String :=
       .appN liftC [.bvar 6, .bvar 5, .bvar 4, .bvar 3, .bvar 2, .appN mkC [.bvar 6, .bvar 5, .bvar 1]],
       .app (.bvar 3) (.bvar 0)]))
     (.lamN (liftBinders ++ [.bvar 5]) (.appN reflC [.bvar 4, .app (.bvar 3) (.bvar 1)])) .safe]⟩⟩
-#guard rejects (primitives ++ [liftMkWrong]) "the body does not have the declared type"
+#guard declines (primitives ++ [liftMkWrong]) "body conversion: conversion search did not establish equality"
 
 /-- The binders of the eliminator's rule: `A R B h a`. -/
 def indBinders : List E := (Quotient.indRuleBinders refs).map fun b => b.erase

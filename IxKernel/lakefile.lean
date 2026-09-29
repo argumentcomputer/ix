@@ -37,3 +37,12 @@ lean_lib KernelFixtures where
 lean_exe «bench-certified-kernel» where
   srcDir := ".."
   root := `Benchmarks.Kernel.Certified
+
+lean_lib KernelProvenance where
+  srcDir := ".."
+  roots := #[`Tests.Ix.Kernel.ImportManifest]
+  globs := #[.one `Tests.Ix.Kernel.ImportManifest]
+
+lean_exe «kernel-provenance» where
+  srcDir := ".."
+  root := `Tests.Ix.Kernel.Provenance

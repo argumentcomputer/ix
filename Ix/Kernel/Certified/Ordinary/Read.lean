@@ -26,10 +26,10 @@ variable {β : Type u} [DecidableEq β]
 
 /-- Annotate a raw telescope, each domain in the context of its predecessors. -/
 def annotateTelescope (fuel : Nat) (entries : Environment β) :
-    Context β → List (VExpr β) → Option (List (AExpr β))
-  | _, [] => some []
+    Context β → List (VExpr β) → Search (List (AExpr β))
+  | _, [] => .ok []
   | Γ, D :: rest => do
-    let D' ← (annotate.{u,v} fuel entries Γ D).toOption
+    let D' ← (annotate.{u,v} fuel entries Γ D)
     let rest' ← annotateTelescope fuel entries (Γ.push D') rest
     return D' :: rest'
 
@@ -55,27 +55,27 @@ def peelToFamily (family : ConstRef β) : VExpr β → Option (List (VExpr β) �
 /-- Read a constructor's fields: ordinary fields first, then recursive fields
 whose raw types are lowered over the earlier recursive fields. -/
 def readFields (fuel : Nat) (entries : Environment β) (family : ConstRef β) (nparams : Nat) :
-    Context β → List (VExpr β) → Nat → Option (List (AExpr β) × List (RecursiveField β))
-  | _, [], _ => some ([], [])
+    Context β → List (VExpr β) → Nat → Search (List (AExpr β) × List (RecursiveField β))
+  | _, [], _ => .ok ([], [])
   | Γc, F :: raw, nrec =>
     match peelToFamily family (F.unliftN nrec 0) with
     | some (rawDomains, args) => do
       let domains ← annotateTelescope.{u,v} fuel entries Γc rawDomains
-      let indices ← (args.drop nparams).mapM fun a => (annotate.{u,v} fuel entries (Telescope.context Γc domains) a).toOption
+      let indices ← (args.drop nparams).mapM fun a => (annotate.{u,v} fuel entries (Telescope.context Γc domains) a)
       let rest ← readFields fuel entries family nparams Γc raw (nrec + 1)
       match rest with
       | (ordinary, recursive) =>
-        if ordinary.isEmpty then return ([], ⟨domains, indices⟩ :: recursive) else none
+        if ordinary.isEmpty then return ([], ⟨domains, indices⟩ :: recursive) else .error .noMatch
     | none =>
-      if nrec ≠ 0 then none else do
-        let D ← (annotate.{u,v} fuel entries Γc F).toOption
+      if nrec ≠ 0 then .error .noMatch else do
+        let D ← (annotate.{u,v} fuel entries Γc F)
         let rest ← readFields fuel entries family nparams (Γc.push D) raw 0
         match rest with
         | (ordinary, recursive) => return (D :: ordinary, recursive)
 
 /-- Read one constructor from its stored declaration. -/
 def readConstructor (fuel : Nat) (entries : Environment β) (family : ConstRef β) (nparams : Nat)
-    (Γp : Context β) (ctor : Ctor β) : Option (Constructor β) := do
+    (Γp : Context β) (ctor : Ctor β) : Search (Constructor β) := do
   let (_, rest) ← splitN nparams ctor.type
   let (rawFields, result) ← splitN ctor.nfields rest
   let read ← readFields.{u,v} fuel entries family nparams Γp rawFields 0
@@ -83,7 +83,7 @@ def readConstructor (fuel : Nat) (entries : Environment β) (family : ConstRef �
   | (fields, recursive) =>
     let Γc := Telescope.context Γp fields
     let (_, args) ← peelToFamily family (result.unliftN recursive.length 0)
-    let indices ← (args.drop nparams).mapM fun a => (annotate.{u,v} fuel entries Γc a).toOption
+    let indices ← (args.drop nparams).mapM fun a => (annotate.{u,v} fuel entries Γc a)
     return ⟨fields, recursive, indices⟩
 
 /-- What the reader recovers from a block. -/
@@ -94,7 +94,7 @@ structure Reading (β : Type u) where
 
 /-- Read a block holding one inductive member and its recursor. -/
 def readBlock (fuel : Nat) (entries : Environment β) (source : β) (block : Block β) :
-    Option (Reading β) :=
+    Search (Reading β) :=
   match block.members with
   | [.induct uvars nparams nindices type ctors .safe, .recursor ruvars _ _ _ _ _ _ k .safe] => do
     let (rawParams, rest) ← splitN nparams type
@@ -108,8 +108,8 @@ def readBlock (fuel : Nat) (entries : Environment β) (source : β) (block : Blo
       let shape : Shape β := ⟨uvars, parameters, indices, level, constructors⟩
       if ruvars = uvars + 1 then return ⟨shape, .large, k⟩
       else if ruvars = uvars then return ⟨shape, .small, k⟩
-      else none
-    | _ => none
-  | _ => none
+      else .error .noMatch
+    | _ => .error .noMatch
+  | _ => .error .noMatch
 
 end Ix.Kernel.Certified.Ordinary

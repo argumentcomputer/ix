@@ -8,6 +8,8 @@ stored block with the generated one is the caller's check) and the recursor is
 member 1 of the family's block; `checkRule` and `checkRules` infer instead of
 validating witnesses, and `RuleFormation` records the rule type's scope and
 references for the published typed facts.
+P01: bounded validators return `Search`, preserving nested exhaustion and
+unresolved search; direct validation failures carry specific diagnostics.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -43,7 +45,7 @@ structure RuleFormation (entries : Environment β) (shape : Shape β) (source : 
 
 def checkRule (fuel : Nat) (entries : Environment β) (shape : Shape β) (source : β)
     (mode : ElimMode) (i : Nat) (ctor : Constructor β) :
-    Option (CheckedClaim.{u} (RuleFormation.{u,v} entries shape source mode i ctor)) :=
+    Search (CheckedClaim.{u} (RuleFormation.{u,v} entries shape source mode i ctor)) :=
   if hs : (shape.ruleLhs source mode i ctor).Scope (mode.recUvars shape.universes) 0 ∧
       (shape.ruleRhs source mode i ctor).Scope (mode.recUvars shape.universes) 0 then
     if hr : (shape.ruleLhs source mode i ctor).ReferencesIn entries ∧
@@ -57,17 +59,17 @@ def checkRule (fuel : Nat) (entries : Environment β) (shape : Shape β) (source
         let hh ← checkType.{u,v} fuel entries [] (shape.ruleRhs source mode i ctor)
           (shape.ruleType source mode i ctor)
         return ⟨⟨hs, hr, hts, htr, ⟨l, ht, fun he levels => levelIsZero_sound (hsmall he) levels⟩, hl.down, hh.down⟩⟩
-      else none
-      else none
-      else none
-    else none
-  else none
+      else .error (.unresolved "small-elimination rule type was not established to be Prop")
+      else .error (.malformed "rule type references an uninstalled constant")
+      else .error (.malformed "rule type is not closed")
+    else .error (.malformed "rule endpoint references an uninstalled constant")
+  else .error (.malformed "rule endpoint is not closed")
 
 def checkRules (fuel : Nat) (entries : Environment β) (shape : Shape β) (source : β)
     (mode : ElimMode) : (ctors : List (Constructor β × Nat)) →
-      Option (CheckedClaim.{u} (∀ ctor i, (ctor, i) ∈ ctors →
+      Search (CheckedClaim.{u} (∀ ctor i, (ctor, i) ∈ ctors →
         RuleFormation.{u,v} entries shape source mode i ctor))
-  | [] => some ⟨by simp⟩
+  | [] => .ok ⟨by simp⟩
   | (ctor, i) :: ctors => do
     let rule ← checkRule fuel entries shape source mode i ctor
     let rest ← checkRules fuel entries shape source mode ctors
