@@ -398,6 +398,30 @@
   "CompilatrixTests":
   {"path": "CompilatrixTests.lean",
    "imports": ["CompilatrixTests.Proofs", "CompilatrixTests.Lir.Run"]},
+  "Compilatrix.Xv.XlSemantics":
+  {"path": "Compilatrix/Xv/XlSemantics.lean",
+   "imports": ["Compilatrix.Xv.Semantics", "Compilatrix.Lir.Operands"]},
+  "Compilatrix.Xv.WellFormed":
+  {"path": "Compilatrix/Xv/WellFormed.lean",
+   "imports": ["Compilatrix.Xv.Operands", "Compilatrix.Lir.Graph"]},
+  "Compilatrix.Xv.Syntax":
+  {"path": "Compilatrix/Xv/Syntax.lean",
+   "imports": ["Compilatrix.Lir.Syntax", "Compilatrix.X86.Table.Rows"]},
+  "Compilatrix.Xv.Slots":
+  {"path": "Compilatrix/Xv/Slots.lean",
+   "imports": ["Compilatrix.Xv.Syntax", "Compilatrix.X86.Table.Exec"]},
+  "Compilatrix.Xv.Semantics":
+  {"path": "Compilatrix/Xv/Semantics.lean",
+   "imports":
+   ["Compilatrix.Xv.Slots",
+    "Compilatrix.Lir.Semantics",
+    "Compilatrix.Sem.Clock"]},
+  "Compilatrix.Xv.Print":
+  {"path": "Compilatrix/Xv/Print.lean",
+   "imports": ["Compilatrix.Xv.Syntax", "Compilatrix.Lir.Print"]},
+  "Compilatrix.Xv.Operands":
+  {"path": "Compilatrix/Xv/Operands.lean",
+   "imports": ["Compilatrix.Xv.Slots", "Compilatrix.Lir.Operands"]},
   "Compilatrix.X86.WordRegionSafeTrace":
   {"path": "Compilatrix/X86/WordRegionSafeTrace.lean",
    "imports":
@@ -652,6 +676,8 @@
    "imports": ["Compilatrix.Tools.Check"]},
   "Compilatrix.Sem.Result":
   {"path": "Compilatrix/Sem/Result.lean", "imports": []},
+  "Compilatrix.Sem.Clock":
+  {"path": "Compilatrix/Sem/Clock.lean", "imports": ["Compilatrix.Sem.Result"]},
   "Compilatrix.Lir.WellFormed":
   {"path": "Compilatrix/Lir/WellFormed.lean",
    "imports": ["Compilatrix.Lir.Graph", "Std.Data.HashMap"]},
@@ -1143,6 +1169,7 @@
    "imports":
    ["Compilatrix.Ixon.V3",
     "Compilatrix.Sem.Result",
+    "Compilatrix.Sem.Clock",
     "Compilatrix.Lir.Syntax",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Lir.Graph",
@@ -1150,6 +1177,13 @@
     "Compilatrix.Lir.Operands",
     "Compilatrix.Lir.SplitEdges",
     "Compilatrix.Lir.Print",
+    "Compilatrix.Xv.Syntax",
+    "Compilatrix.Xv.Slots",
+    "Compilatrix.Xv.Semantics",
+    "Compilatrix.Xv.XlSemantics",
+    "Compilatrix.Xv.Operands",
+    "Compilatrix.Xv.WellFormed",
+    "Compilatrix.Xv.Print",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
