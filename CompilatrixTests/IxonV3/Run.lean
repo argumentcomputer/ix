@@ -3,6 +3,7 @@ import CompilatrixTests.IxonV3.Handoff
 import CompilatrixTests.IxonV3.Typing
 import CompilatrixTests.IxonV3.Primitives
 import CompilatrixTests.IxonV3.Catalog.Run
+import CompilatrixTests.IxonV3.K1
 import Compilatrix.Tools.Check
 
 namespace CompilatrixTests.IxonV3
@@ -76,6 +77,7 @@ def run : IO Bool := do
     assertions := assertions + (← Typing.run root)
     assertions := assertions + (← Primitives.run root)
     assertions := assertions + (← CatalogTests.run root)
+    assertions := assertions + (← K1.run root)
     IO.println s!"ixon-v3-tests-ok: {assertions} contract, wire, typing, and resource assertions"
     return true
   catch error =>

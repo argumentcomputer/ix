@@ -14,3 +14,12 @@ remaining backend obligations. The additional `typing/` bundles have their
 own extraction provenance; they are not part of the original portable package.
 The `catalog/` fixtures record producer assembly and an independently checked
 chunk partition over those same primitive bytes.
+
+## K1 pack
+
+[`k1/`](k1/README.md) holds the first-rung scalar programs of the x86 plan, compiled
+from ordinary Lean with `ix compile --equations`. The closure includes the
+realized unfolding theorem (`f.eq_def`) of every recursive definition it
+reaches, and `equations.json` names each definition/theorem pair by address.
+The producer is a local ix change on top of the pinned revision; its provenance
+records the exact revision, binary and commands.

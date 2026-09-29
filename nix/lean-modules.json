@@ -105,6 +105,7 @@
     "CompilatrixTests.IxonV3.Typing",
     "CompilatrixTests.IxonV3.Primitives",
     "CompilatrixTests.IxonV3.Catalog.Run",
+    "CompilatrixTests.IxonV3.K1",
     "Compilatrix.Tools.Check"]},
   "CompilatrixTests.IxonV3.Primitives":
   {"path": "CompilatrixTests/IxonV3/Primitives.lean",
@@ -112,6 +113,9 @@
   "CompilatrixTests.IxonV3.Main":
   {"path": "CompilatrixTests/IxonV3/Main.lean",
    "imports": ["CompilatrixTests.IxonV3.Run"]},
+  "CompilatrixTests.IxonV3.K1":
+  {"path": "CompilatrixTests/IxonV3/K1.lean",
+   "imports": ["Compilatrix.Ixon.V3.Validate", "Compilatrix.Tools.Check"]},
   "CompilatrixTests.IxonV3.Handoff":
   {"path": "CompilatrixTests/IxonV3/Handoff.lean",
    "imports": ["Compilatrix.Ixon.V3.Source", "Compilatrix.Tools.Check"]},

@@ -182,6 +182,12 @@ different provenance and independent Rust verification.
 
 ## Evidence and provenance
 
+The [K1 pack](../fixtures/ixon-v3/k1/README.md) adds a 1,651-constant closure of
+ordinary Lean programs (`fib`, a `for` loop, Ackermann, `tak`, `gcd`) with the
+unfolding theorems of all 40 recursive definitions it reaches. The suite checks
+strict ingress, the recorded root, definition and equation addresses, and erased
+typing of the whole closure.
+
 The complete portable fixture package is copied byte-for-byte from the
 producer snapshot. The compiled `tests-ixon-v3` suite checks expression
 vectors, every binder/arrow bit pattern, all 66 resource cases, addressed
