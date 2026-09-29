@@ -116,9 +116,14 @@ jobs:
         if: github.event_name != 'push'
         run: |
           echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a $GITHUB_ENV
+      # A Docker action: the job's RUSTC_WRAPPER reaches its container, where
+      # sccache is not installed, and cargo fails before deny runs. Deny only
+      # reads metadata, and cargo treats an empty wrapper as none.
       - name: Cargo-deny
         if: github.event_name != 'push'
         uses: EmbarkStudios/cargo-deny-action@v2
+        env:
+          RUSTC_WRAPPER: ""
         with:
           rust-version: ${{ env.RUST_VERSION }}
 
