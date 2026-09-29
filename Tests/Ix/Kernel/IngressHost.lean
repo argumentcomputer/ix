@@ -7,6 +7,7 @@ import Ix.Kernel.Ingress
 import Ix.Kernel.Egress
 import Ix.Ixon.Admission
 import Ix.Ixon.Projection
+import Ix.Ixon.BlockOrder
 import Ix.CompileDriver
 import Ix.Meta
 import Tests.Ix.Kernel.TutorialDefs
@@ -200,8 +201,16 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
     | .error (.admission (.kernel (.declined reason))) => ("decline", reason)
     | .error reason => ("projection-error", reprStr reason)
   let projectionsAgree := reconstructionExact && projectionOutcome == outcome && projectionReason == reason
+  let orderLimits : Ix.Ixon.BlockOrder.Limits := {}
+  let (orderOutcome, orderReason) := match Ix.Ixon.BlockOrder.checkBytes.{1}
+      maxProjections byteLimits orderLimits cfg primaryRecords blobs family with
+    | .ok _ => ("accept", "")
+    | .error (.admission (.kernel (.rejected reason))) => ("reject", reason)
+    | .error (.admission (.kernel (.declined reason))) => ("decline", reason)
+    | .error reason => ("order-error", reprStr reason)
+  let orderAgrees := orderOutcome == outcome && orderReason == reason
   let bytesAgree := byteOutcome == outcome && byteReason == reason && byteDecodeExact
-  let passed := outcome == test.expected && bytesAgree && projectionsAgree && egressExact
+  let passed := outcome == test.expected && bytesAgree && projectionsAgree && orderAgrees && egressExact
   let constantJson := records.map fun (address, bytes) => Lean.Json.mkObj [
     ("address", Lean.toJson (toString address)),
     ("ixonHex", Lean.toJson (hexOfBytes bytes))]
@@ -217,6 +226,9 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
     ("reconstructionExact", Lean.toJson reconstructionExact),
     ("projectionOutcome", Lean.toJson projectionOutcome),
     ("projectionReason", Lean.toJson projectionReason),
+    ("orderOutcome", Lean.toJson orderOutcome), ("orderReason", Lean.toJson orderReason),
+    ("comparisonLimit", Lean.toJson orderLimits.comparison),
+    ("refinementLimit", Lean.toJson orderLimits.refinement),
     ("projectionInput", Lean.toJson (primaryRecords.map fun (key, bytes) => Lean.Json.mkObj [
       ("address", Lean.toJson (toString key)), ("ixonHex", Lean.toJson (hexOfBytes bytes))])),
     ("byteLimits", Lean.Json.mkObj [
@@ -235,6 +247,7 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   if !egressExact then IO.eprintln s!"{test.label}: egress failed: {egressReason}"
   if !projectionsAgree then
     IO.eprintln s!"{test.label}: projection reconstruction disagrees: {projectionOutcome}: {projectionReason}; exact store: {reconstructionExact}"
+  if !orderAgrees then IO.eprintln s!"{test.label}: canonical block order disagrees: {orderOutcome}: {orderReason}"
   return passed
 
 def main : IO UInt32 := do

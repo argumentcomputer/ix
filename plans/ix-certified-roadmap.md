@@ -42,9 +42,9 @@ bounds, composed with universe expansion and the byte-admission limits.
 D01 is complete: both
 lean4ix/Lean4Lean dependency paths, the old verification trees, and their build/benchmark/CI consumers
 have been removed and validated in a fresh jj workspace and through Nix.
-Pure projection-address reconstruction and its separate byte-admission path
-are now implemented outside the hash-free kernel. The remaining K4
-parser-work accounting, canonical block order, and measured core improvements in
+Pure projection-address reconstruction and canonical mutual-block ordering
+are now implemented outside the hash-free kernel, composed with byte admission.
+The remaining K4 parser-work accounting and measured core improvements in
 section 10 are next. D02's final runtime Ix.Tc cutover remains required.
 
 ## Revision note
@@ -660,9 +660,9 @@ checkpoint. Initial entries:
 | Address key | `Ix.Address.Core` | pure data | K0 |
 | BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
 | Ixon data types | `Ix.Ixon.Types` | pure production data in the standalone audited closure | K3 split complete |
-| Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `WireCheck`, `Bounded`, `Canonical`, `Verify` | production grammar and inverses, complete-record byte/universe limits, exact wire validation, and canonical re-encoding | K4 further resource bounds and mutual-block order remain |
+| Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `WireCheck`, `Bounded`, `Canonical`, `Verify` | production grammar and inverses, complete-record byte/universe limits, exact wire validation, and canonical re-encoding | K4 complete parser-work accounting remains |
 | Ixon to kernel ingress and egress | `Ix.Kernel.Ingress`, `Ix.Kernel.Egress` | exact readings, physical-reference fidelity, model theorem for accepted in-memory input, and exact reconstruction with retained layout | K3 complete |
-| Byte admission | `Ix.Ixon.Admission`, `Verify.Admission`, `Admission.Audit`; `Ix.Ixon.Projection`, `ProjectionProofs`, `ProjectionAudit` | exact canonical-byte reading, bounded input and projection reconstruction, installed declarations, and model theorem for the executed checker | K4 implemented; canonical mutual-block order remains |
+| Byte admission | `Ix.Ixon.Admission`, `Verify.Admission`, `Admission.Audit`; `Ix.Ixon.Projection`, `ProjectionProofs`, `ProjectionAudit`; `Ix.Ixon.BlockOrder`, `BlockOrderProofs`, `BlockOrderAudit` | exact canonical-byte reading, bounded input and projection reconstruction, recomputed canonical block order, installed declarations, and model theorem for the executed checker | K4 implemented; complete parser-work accounting remains |
 | Claims, assumption trees, Merkle roots, commitments | `Ix.Claim`, `Ix.AssumptionTree`, `Ix.Merkle`, `Ix.Commit` | host | K5, with explicit cryptographic assumptions |
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
 | Rust kernel | `crates/kernel`, `Ix.KernelCheck` | host fast path | differential parity against `Ix.Kernel`; verdicts are not certified |
@@ -942,7 +942,7 @@ for family-only inputs; it makes no measured speedup claim.
 Exit: acceptance of Ixon-shaped input establishes the meaning of the
 selected declarations; unsupported input declines explicitly.
 
-### K4: Ixon bytes (canonical decoding and byte admission implemented)
+### K4: Ixon bytes (canonical decoding, block order, and byte admission implemented)
 
 Implemented: production anonymous encoders/decoders moved unchanged into
 `Ix.Ixon.Codec`, reexported by the host; structural count/address predicates
@@ -1049,16 +1049,38 @@ package audit allows exactly the shared Blake3 types and pure hash module,
 and excludes both hash FFI backends. Existing import and execution boundaries
 are unchanged. Primary/alias/blob key authentication remains K5.
 
-Remaining: complete parser-work accounting (including nested failure paths
-and element-reader cost) and canonical mutual-block order.
+`Ix.Ixon.BlockOrder` now compares the physical input directly: computed
+projection keys for recursive references, supplied keys for external aliases,
+decoded natural/string values, and universes rebuilt by the unchanged shared
+ingress rules in `Ix.Ixon.ReduceUniverse`. Stable merge sort and consecutive
+grouping refine one address-seeded class until an unchanged pass is observed.
+Acceptance requires the resulting classes to be the original ordered
+singletons. Exhaustion returns a distinct error; it never returns an
+unfinished partition. Comparison descent and refinement passes have explicit
+limits, independent of the existing byte, universe, and projection limits.
+
+The implementation follows the production Rust lexicographic comparator,
+including unequal vector lengths; the old Ix.Tc mirror compared lengths
+first. It runs full refinement without the native strong-order/hash-equality
+shortcut. `BlockOrderProofs` gives an independently counted derivation for
+the exact successful loop domain, final fixed-point and fuel-monotonicity
+theorems, and exact block/byte acceptance contracts. The byte entry executes
+canonical decoding, projection reconstruction, ordering, and the same kernel;
+all final kernel outcomes are preserved on ordered inputs and accepted byte
+inputs have exact installed readings and models. It assumes neither compiler
+ordering metadata nor hash injectivity. Rust agreement is differential
+evidence, not a theorem of compiler or native-kernel equivalence.
+
+Remaining: complete parser-work accounting, including nested failure paths
+and element-reader cost. These limits do not claim heap or wall-clock bounds.
 
 Port the earlier plan's serialization milestone against the split types:
 schema and version, pure encoders and bounded decoders for the supported
 subset, `decode (encode x) = .ok x`, decode validity, canonical re-encoding,
 full-input consumption, and adversarial mutation tests with the Rust codec
 as a differential oracle. Compose with K3 so the statement names which
-declarations the bytes describe. Port `Ix.Tc.CanonicalCheck` as the
-canonical block order validation with its own contract: a stored mutual
+declarations the bytes describe. Canonical block order validation now has
+its own contract: a stored mutual
 block is accepted only in the order the kernel recomputes, so a permuted
 block is rejected without trusting compiler metadata. The certified encoder
 and `Address.blake3Pure` now reconstruct projection addresses through the
@@ -1192,7 +1214,7 @@ helpers are justified by their enclosing proved algorithm.
 | Command | Purpose |
 | --- | --- |
 | `lake -d IxKernel build --wfail` | Strict standalone build of the certified closure, its audits, and the public roots |
-| `lake run check-kernel` | Build, audits, provenance, and certified fixtures; add the differential target at the K2 release gate in section 10 (the current script does not run it) |
+| `lake run check-kernel` | Standalone and host builds, audits, provenance, certified fixtures, host differential and compiler-ingress cases, Rust codec and canonical-order comparisons |
 | `lake run check-kernel --with-model` | Also build and audit `Models/SetTheory` |
 
 Required evidence at every checkpoint:
@@ -1529,6 +1551,22 @@ Implementation checkpoint (2026-09-29):
   modules, and four licenses. Tested source:
   `19313f7ea597202ed3d544980d898ea6f5d8ba7c`; evidence:
   `plans/review/k4-projection-reconstruction/summary.json`.
+- K4's canonical-block-order checkpoint passes the incremental full gate:
+  179 standalone, 202 host fixture/provenance, 607 runner, and 975 model jobs;
+  all 38 differential, 26 compiler, and 1,117 native Rust order comparisons,
+  plus the codec suite and 44 directed order regressions. Compiler cases
+  execute the new order-aware byte path and preserve every prior verdict and
+  reason. The Rust oracle independently reconstructs projection keys and
+  ingresses the original Ixon records; it compares both final classes and
+  native acceptance, without consuming a Lean-produced order. Thirteen new
+  exact axiom checks and six frozen signatures cover the refinement and
+  admission contracts. The separate runtime closure has 1,509 functions,
+  77 inherited externs, two inherited unsafe accessors, and no project
+  replacement; all earlier boundaries remain unchanged. Provenance covers
+  97 ported, 74 authored/reorganized modules, and four licenses. Tested source:
+  `d0377deba61b6b57fe24b6a72bacaeb0b1098990`; evidence:
+  `plans/review/k4-block-order/summary.json`. K4 now remains open for complete
+  parser-work accounting, including nested failures and element-reader cost.
 - P04–P12 and the remaining K4–K7 work stay open; whole-corpus parity has
   not been run. D02's runtime consumer cutover and deletion of Ix.Tc remain
   required.

@@ -315,8 +315,34 @@ integer operations used by pure BLAKE3. Reconstruction assumes no hash
 injectivity: conflicting payloads are rejected. Primary keys, supplied alias
 keys, and blob keys remain unauthenticated until K5.
 
+`Ix.Ixon.BlockOrder.checkBytes` adds canonical mutual-block order to that
+path. It computes member/constructor projection keys, retains physical
+external alias addresses, compares literal values, and rebuilds universes
+through the shared ingress rules. Stable merge sort and consecutive grouping
+refine one address-seeded class; acceptance requires the original ordered
+singletons after an observed unchanged pass. Explicit comparison-descent and
+refinement-pass limits report exhaustion without accepting unfinished work.
+This does not typecheck unused expression branches: complete semantic
+admission still comes from the final kernel invocation.
+
+The successful refinement loop is equivalent to a finite counted derivation;
+its output is a fixed point and remains the same at larger refinement fuel.
+Block and byte acceptance have exact iff contracts, and the composed path
+retains exact readings, installed declarations, model existence, and every
+final kernel outcome/reason on ordered inputs. The implementation follows
+Rust's lexicographic vector comparison (the old Ix.Tc mirror was length-first)
+and uses full refinement without the native strong-order/hash-equality fast
+path. No compiler ordering metadata is trusted. Differential agreement is
+not a formal equivalence theorem about the Rust implementation.
+
+Its separate audit admits the pure shared universe reducer and block-order
+adapter without widening any prior boundary. The measured runtime closure
+has 1,509 functions, 77 inherited externs, two inherited unsafe accessors, and
+no project replacement. Seven added externs are standard string/UTF-8,
+UInt64, and array operations; no unsafe accessor was added.
+
 K4 remains open for complete parser-work accounting, including nested
-failure paths, and canonical mutual-block order. The canonical
+failure paths and element-reader cost. The canonical
 record API establishes byte spelling; semantic admission still has K3's
 supported profile. Existing production callers use the original decoders
 pending D02. Supplied primary, alias, and blob keys are not authenticated
@@ -439,8 +465,26 @@ metadata validation. Sixteen new exact axiom checks cover the new contracts;
 provenance covers 97 ported, 70 authored/reorganized modules, and four license
 files. Tested source: `19313f7ea597202ed3d544980d898ea6f5d8ba7c`; evidence:
 `plans/review/k4-projection-reconstruction/summary.json`. This completes pure
-projection reconstruction, while K4 canonical block ordering, complete work
-accounting, and the D02 consumer cutover remain open.
+projection reconstruction. The subsequent block-order checkpoint below
+closes canonical ordering; complete parser-work accounting and the D02
+consumer cutover remain open.
+
+The canonical-block-order checkpoint passed the incremental full gate on
+2026-09-29: 179 standalone, 202 host fixture/provenance, 607 runner, and 975
+model jobs. All 38 host differential cases, 26 compiler cases, the codec
+suite, and 1,117 Rust canonical-order comparisons pass. The compiler cases
+run the new order-aware byte entry point with identical prior verdicts and
+reasons. Forty-four directed controls cover permutations, weak refinement,
+alpha-equivalent self/cyclic references, constructor offsets, unequal-length
+universe vectors, normalized levels, sharing, literal values, limits, and
+byte-admission outcomes. The independent test-only Rust oracle computes its
+own projection keys and uses native ingress/comparison/refinement. Thirteen
+exact axiom checks and six frozen signatures cover the new contracts;
+provenance covers 97 ported, 74 authored/reorganized modules, and four license
+files. Tested source: `d0377deba61b6b57fe24b6a72bacaeb0b1098990`; evidence:
+`plans/review/k4-block-order/summary.json`. K4's remaining work is complete
+parser-work accounting, including nested failure paths and element-reader
+cost; full-corpus parity and consumer cutover remain later milestones.
 
 ## Removal ledger: lean4ix and Ix.Tc
 
