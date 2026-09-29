@@ -30,6 +30,21 @@ lean_lib Compilatrix where
 lean_lib CompilatrixTests where
   roots := #[`CompilatrixTests]
 
+/- The K1 research fixture compiled natively: the independent oracle of the
+Src differential suite. Test-only; nothing in `Compilatrix` imports it. -/
+lean_lib K1Fixture where
+  srcDir := "fixtures/ixon-v3/k1"
+  roots := #[`K1]
+
+/- Src: rules, the K1 table and runs, the native differential, pins,
+diagnostics and the bench-k1 entries (design note 01 §10). -/
+lean_exe «tests-src» where
+  root := `CompilatrixTests.Src.Main
+
+/- Src rows over the 60 s budget: `ack 3 10`, `fib 30` without primitives. -/
+lean_exe «tests-src-slow» where
+  root := `CompilatrixTests.Src.SlowMain
+
 lean_exe «tests-ixon-v3» where
   root := `CompilatrixTests.IxonV3.Main
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]
