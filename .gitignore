@@ -19,3 +19,6 @@ scratchpad
 
 # Retained benchmark bundles are addressed by digest in reviewed reports.
 /benchmarks/runs/
+
+# Local Claude Code state (agent worktrees)
+/.claude/

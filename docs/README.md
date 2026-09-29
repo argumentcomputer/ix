@@ -44,7 +44,9 @@ backend and the Stage2 fixture are on branch `jcb/ixby-archive`.
 - [Trusted-extern ledger](trusted-extern-ledger.md) and its
   [machine-readable form](trusted-externs.json): native interfaces,
   specification assumptions and the build and seed supply chain.
-- [Benchmark design](benchmark-plan.md): comparison rules and rows.
+- [Benchmark design](benchmark-plan.md): comparison rules and rows; the
+  [first-wave fixtures](../benchmarks/fixtures/README.md) and the optional
+  [measurement runner](../benchmarks/runner/README.md).
 - [Performance reports](performance/README.md): historical measurements of
   the retired pipeline.
 - [2026-09-09 review](review-2026-09-09.md): a historical snapshot.

@@ -2,9 +2,11 @@
 
 This document defines comparison rules. The [roadmap](roadmap.md) owns the
 benchmark ladder and targets. [Performance reports](performance/README.md)
-retain earlier results. The measurement runner is being rebuilt around
-workloads. The earlier reversal-only runner and its protocol are on branch
-`jcb/ixby-archive`.
+retain earlier results. The first-wave [fixtures](../benchmarks/fixtures/README.md)
+and the optional [runner](../benchmarks/runner/README.md) implement these rules for
+the `lean-clang` and `clang-idiomatic` rows; Compilatrix rows join when the rebuilt
+pipeline compiles the fixtures. The earlier reversal-only runner and its protocol
+are on branch `jcb/ixby-archive`.
 
 ## Questions
 
