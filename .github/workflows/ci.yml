@@ -47,17 +47,24 @@ jobs:
         run: lake lint -- --wfail -v
       - name: Build Ix.Tc formal verification
         run: lake build IxTcVerify
+      # A push to main already passed these checks in the merge queue; that
+      # run only exists to snapshot the build products above.
       - name: Check codegen'd IxVM kernel is up to date
+        if: github.event_name != 'push'
         run: lake exe ix codegen --check
       - name: Check Lean versions match for Ix and compiler bench
+        if: github.event_name != 'push'
         run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
       # The primary test tier runs over the targets the lint step just built,
       # so the tests add no compilation of their own.
       - name: Run primary tests
+        if: github.event_name != 'push'
         run: lake test --wfail
       - name: Test Ix CLI
+        if: github.event_name != 'push'
         run: lake test --wfail -- cli
       - name: Test Ixon v3 contracts and consumers
+        if: github.event_name != 'push'
         run: |
           lake exe ixon-v3-primitives
           lake exe ixon-v3-tests --primitives
@@ -81,18 +88,24 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
+      # A push to main already passed the lints and tests in the merge
+      # queue; that run only builds, so the sticky disk holds the check,
+      # clippy and test-binary artifacts the next PR run will fingerprint.
       - name: Check Rustfmt code style
+        if: github.event_name != 'push'
         uses: actions-rust-lang/rustfmt@v1
       - name: Check clippy warnings
         run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi -- -D warnings
       - name: Check *everything* compiles
         run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi
       - name: Tests
-        run: cargo nextest run --release --profile ci --workspace
+        run: cargo nextest run --release --profile ci --workspace ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Get Rust version
+        if: github.event_name != 'push'
         run: |
           echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a $GITHUB_ENV
       - name: Cargo-deny
+        if: github.event_name != 'push'
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           rust-version: ${{ env.RUST_VERSION }}
