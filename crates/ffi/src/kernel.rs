@@ -3047,15 +3047,13 @@ pub extern "C" fn rs_kernel_profile_anon(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp(
   esp_path: LeanString<LeanBorrowed<'_>>,
-  num_shards: LeanString<LeanBorrowed<'_>>,
-  balance_pct: LeanString<LeanBorrowed<'_>>,
-  parallelism: LeanString<LeanBorrowed<'_>>,
+  num_shards: usize,
+  balance_pct: u64,
+  parallelism: usize,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1);
-  let balance_pct = balance_pct.to_string().parse::<u64>().unwrap_or(5);
-  let parallelism =
-    parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
+  let num_shards = num_shards.max(1);
+  let parallelism = parallelism.max(1);
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
   let balance = (balance_pct as f64) / 100.0;
@@ -3083,25 +3081,23 @@ fn system_ram_gib() -> Option<f64> {
 }
 
 /// FFI: partition a `.ixprof` to a per-shard cycle/RAM budget and write a
-/// `.ixes` manifest. `max_cycles` is a guest-STEP cap; if `ram_gb` > 0 it is
+/// `.ixes` manifest. `max_cycles` is a guest-STEP cap; if `ram_gib` > 0 it is
 /// converted via the measured prover RAM model and overrides `max_cycles`. Pass
-/// "0" for both to default the budget to detected system RAM.
+/// 0 for both to default the budget to detected system RAM.
 #[allow(clippy::cast_precision_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp_cap(
   esp_path: LeanString<LeanBorrowed<'_>>,
-  max_cycles: LeanString<LeanBorrowed<'_>>,
-  ram_gb: LeanString<LeanBorrowed<'_>>,
-  balance_pct: LeanString<LeanBorrowed<'_>>,
-  parallelism: LeanString<LeanBorrowed<'_>>,
+  max_cycles: u64,
+  ram_gib: u64,
+  balance_pct: u64,
+  parallelism: usize,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let mc = max_cycles.to_string().parse::<u64>().unwrap_or(0);
-  let mut ram = ram_gb.to_string().parse::<f64>().unwrap_or(0.0);
-  let parallelism =
-    parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
-  let balance =
-    (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
+  let mc = max_cycles;
+  let mut ram = ram_gib as f64;
+  let parallelism = parallelism.max(1);
+  let balance = (balance_pct as f64) / 100.0;
   // No explicit cap → default the RAM budget to detected system RAM.
   if mc == 0 && ram <= 0.0 {
     match system_ram_gib() {

@@ -187,15 +187,14 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     match shardsFlag with
     | some n =>
       IO.println s!"Sharding {espPath} into {n} shards (balance ±{balancePct}%)"
-      rsShardEspFFI espPath (toString n) (toString balancePct) (toString parallelism)
-        outPath
+      rsShardEspFFI espPath n.toUSize balancePct.toUInt64 parallelism.toUSize outPath
     | none =>
       if maxCycles.isNone && maxRam.isNone then
         IO.println s!"Sharding {espPath} to detected system RAM (balance ±{balancePct}%)"
       else
         IO.println s!"Sharding {espPath} to budget (max-cycles={maxCycles.getD 0}, max-ram={maxRam.getD 0} GiB, balance ±{balancePct}%)"
-      rsShardEspCapFFI espPath (toString (maxCycles.getD 0)) (toString (maxRam.getD 0))
-        (toString balancePct) (toString parallelism) outPath
+      rsShardEspCapFFI espPath (maxCycles.getD 0).toUInt64 (maxRam.getD 0).toUInt64
+        balancePct.toUInt64 parallelism.toUSize outPath
   if !outPath.isEmpty then
     IO.println s!"[shard] wrote {outPath}"
   return 0
