@@ -181,6 +181,9 @@
   "CompilatrixTests.IxonV3.Catalog.Admission":
   {"path": "CompilatrixTests/IxonV3/Catalog/Admission.lean",
    "imports": ["CompilatrixTests.IxonV3.Catalog.Fixtures"]},
+  "CompilatrixTests.Fences.Xv":
+  {"path": "CompilatrixTests/Fences/Xv.lean",
+   "imports": ["Compilatrix.Xv.Select.Lemmas"]},
   "CompilatrixTests.Fences.X86":
   {"path": "CompilatrixTests/Fences/X86.lean",
    "imports":
@@ -269,7 +272,8 @@
     "CompilatrixTests.Fences.IxonV3Typing",
     "CompilatrixTests.Fences.IxonV3Catalog",
     "CompilatrixTests.Fences.X86",
-    "CompilatrixTests.Fences.Lir"]},
+    "CompilatrixTests.Fences.Lir",
+    "CompilatrixTests.Fences.Xv"]},
   "CompilatrixTests.Aiur.WireRun":
   {"path": "CompilatrixTests/Aiur/WireRun.lean",
    "imports": ["CompilatrixTests.Aiur.WireFixtures"]},
@@ -416,6 +420,31 @@
    ["Compilatrix.Xv.Slots",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Sem.Clock"]},
+  "Compilatrix.Xv.Select.Rules":
+  {"path": "Compilatrix/Xv/Select/Rules.lean",
+   "imports": ["Compilatrix.Xv.Select.Amode"]},
+  "Compilatrix.Xv.Select.Lemmas":
+  {"path": "Compilatrix/Xv/Select/Lemmas.lean",
+   "imports":
+   ["Compilatrix.Xv.Select.Basic",
+    "Compilatrix.Xv.Select.Cond",
+    "Compilatrix.Lir.Semantics",
+    "Compilatrix.X86.ByteFlags"]},
+  "Compilatrix.Xv.Select.Driver":
+  {"path": "Compilatrix/Xv/Select/Driver.lean",
+   "imports": ["Compilatrix.Xv.Select.Branch"]},
+  "Compilatrix.Xv.Select.Cond":
+  {"path": "Compilatrix/Xv/Select/Cond.lean",
+   "imports": ["Compilatrix.Lir.Syntax", "Compilatrix.X86.Types"]},
+  "Compilatrix.Xv.Select.Branch":
+  {"path": "Compilatrix/Xv/Select/Branch.lean",
+   "imports": ["Compilatrix.Xv.Select.Rules", "Compilatrix.Xv.Select.Cond"]},
+  "Compilatrix.Xv.Select.Basic":
+  {"path": "Compilatrix/Xv/Select/Basic.lean",
+   "imports": ["Compilatrix.Xv.Syntax", "Compilatrix.X86.Basic"]},
+  "Compilatrix.Xv.Select.Amode":
+  {"path": "Compilatrix/Xv/Select/Amode.lean",
+   "imports": ["Compilatrix.Xv.Select.Basic", "Compilatrix.Lir.Semantics"]},
   "Compilatrix.Xv.Print":
   {"path": "Compilatrix/Xv/Print.lean",
    "imports": ["Compilatrix.Xv.Syntax", "Compilatrix.Lir.Print"]},
@@ -1184,6 +1213,13 @@
     "Compilatrix.Xv.Operands",
     "Compilatrix.Xv.WellFormed",
     "Compilatrix.Xv.Print",
+    "Compilatrix.Xv.Select.Cond",
+    "Compilatrix.Xv.Select.Basic",
+    "Compilatrix.Xv.Select.Amode",
+    "Compilatrix.Xv.Select.Rules",
+    "Compilatrix.Xv.Select.Branch",
+    "Compilatrix.Xv.Select.Driver",
+    "Compilatrix.Xv.Select.Lemmas",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

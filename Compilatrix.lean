@@ -15,6 +15,13 @@ import Compilatrix.Xv.XlSemantics
 import Compilatrix.Xv.Operands
 import Compilatrix.Xv.WellFormed
 import Compilatrix.Xv.Print
+import Compilatrix.Xv.Select.Cond
+import Compilatrix.Xv.Select.Basic
+import Compilatrix.Xv.Select.Amode
+import Compilatrix.Xv.Select.Rules
+import Compilatrix.Xv.Select.Branch
+import Compilatrix.Xv.Select.Driver
+import Compilatrix.Xv.Select.Lemmas
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
@@ -81,7 +88,8 @@ import Compilatrix.Aiur
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, Lir (the
 backend's first IR), Xv and Xl (x86 instructions over virtual registers and
-over locations), the x86 target model with its certified encoder (E1) and
-stream/ELF layer (E2), and the Aiur target. The compiler pipeline is being
-rebuilt; see `docs/roadmap.md`. The complete regression and proof collection
-is built explicitly through `CompilatrixTests.Proofs`. -/
+over locations) with rule-based selection from Lir, the x86 target model with
+its certified encoder (E1) and stream/ELF layer (E2), and the Aiur target. The
+compiler pipeline is being rebuilt; see `docs/roadmap.md`. The complete
+regression and proof collection is built explicitly through
+`CompilatrixTests.Proofs`. -/

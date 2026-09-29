@@ -197,6 +197,10 @@
   "Compilatrix.X86.Table.Rows",
   "Compilatrix.X86.Types",
   "Compilatrix.X86.Width",
+  "Compilatrix.Xv.Select.Basic",
+  "Compilatrix.Xv.Select.Cond",
+  "Compilatrix.Xv.Select.Lemmas",
+  "Compilatrix.Xv.Syntax",
   "CompilatrixTests.Aiur.CounterAnalysis.Fixtures",
   "CompilatrixTests.Aiur.CounterAnalysis.Proofs",
   "CompilatrixTests.Aiur.Execution.ControlFixtures",
@@ -226,6 +230,7 @@
   "CompilatrixTests.Fences.IxonV3Typing",
   "CompilatrixTests.Fences.Lir",
   "CompilatrixTests.Fences.X86",
+  "CompilatrixTests.Fences.Xv",
   "Ix.Aiur.Compiler.CallOrder",
   "Ix.Aiur.Compiler.Layout",
   "Ix.Aiur.Compiler.UnitCounter",
@@ -237,7 +242,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/p1-lir: Lir operand and frame fences",
+ "baseline": "jcb/p1-xv: Xv selection fences",
  "axiom_sha256":
- "d04d60a7fca4528ba1f38edb67a256996cdff7c932d487ca62abe16b22c8640c",
- "axiom_count": 417}
+ "42263903289b8f864db03a33675a7f9ca5b501659512314d8d51b8779c0257de",
+ "axiom_count": 426}
