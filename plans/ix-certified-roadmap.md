@@ -1203,9 +1203,10 @@ replacement contracts are ready; they do not depend on caches or interning.
 Implementation checkpoint (2026-09-29):
 
 - P00's tracked native runner, seven fixture modules, and 37 baseline
-  configurations are in jj change `xqrwovol` (`457591a8`). Diagnostic
-  operation counters remain required before the corresponding performance
-  promotions; P00's instrumentation gate is not yet complete.
+  configurations are in jj change `xqrwovol` (`457591a8`). P03 adds isolated
+  diagnostic operation counters and alternating native comparisons, completing
+  P00's instrumentation gate. Counters exclude startup and fixture preparation;
+  diagnostic timings are discarded. Commands and scope are in the benchmark README.
 - P01 is implemented in `qlslmuxn`. The strict standalone build passes
   (132 jobs), including the frozen theorem/axiom/import/runtime checks and
   all seven fixture modules. The provenance executable passes with 97
@@ -1222,7 +1223,17 @@ Implementation checkpoint (2026-09-29):
   modules. The pinned Mathlib model build and full dependency audit pass
   (981 jobs). This Nix toolchain needed a temporary overlay supplying
   Lean 4.33.1's pinned `leantar` 0.1.20; dependency revisions were unchanged.
-- P03–P12, the K2 release gate, and K3–K7 remain open. The host and
+- P03 is implemented in `pnnnlonx`: `checkAgainst` reuses formation for rule
+  endpoints, `checkType_acceptance` preserves successful checking at the same
+  fuel, and branches explicitly share context extensions. The strict standalone
+  build passes (134 jobs), as does provenance (97 ported, 26 authored, four
+  license files). Runtime grows by one helper to 900 functions, with the same
+  16 inherited externs. The ten diagnostic probes retain outcomes and confirm
+  reduced formation/inference/lifting work on admission. All 37 alternating
+  native comparisons accept; small admission probes improve about 5–9%, with
+  mixed larger-input timings and no separate context-sharing speedup claim.
+  The full counts, timing ranges, and RSS are documented in the benchmark README.
+- P04–P12, the K2 release gate, and K3–K7 remain open. The host and
   corpus parity gates have not been rerun at this checkpoint. D00–D02
   remain required: neither dependency retirement nor runtime cutover is
   claimed by the standalone checks.

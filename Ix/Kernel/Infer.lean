@@ -491,17 +491,19 @@ def inferA : Nat → (entries : Environment β) → (Γ : Context β) → (e : A
     | .lam p D b => do
       let ⟨S, hS⟩ ← inferA fuel entries Γ D
       let ⟨_, hD⟩ ← sortOf (whnf fuel entries Γ S) hS
-      let ⟨B, hb⟩ ← inferA fuel entries (Γ.push D) b
-      let ⟨SB, hSB⟩ ← inferA fuel entries (Γ.push D) B
-      let ⟨lB, hB⟩ ← sortOf (whnf fuel entries (Γ.push D) SB) hSB
+      let Γ' := Γ.push D
+      let ⟨B, hb⟩ ← inferA fuel entries Γ' b
+      let ⟨SB, hSB⟩ ← inferA fuel entries Γ' B
+      let ⟨lB, hB⟩ ← sortOf (whnf fuel entries Γ' SB) hSB
       if hp : p = zeroCondition lB then
         return ⟨.forallE p D B, TypingClaim.lam hD hB hb hp⟩
       else .error (.malformed "lambda annotation disagrees with its codomain sort")
     | .forallE p D B => do
       let ⟨S, hS⟩ ← inferA fuel entries Γ D
       let ⟨lD, hD⟩ ← sortOf (whnf fuel entries Γ S) hS
-      let ⟨SB, hSB⟩ ← inferA fuel entries (Γ.push D) B
-      let ⟨lB, hB⟩ ← sortOf (whnf fuel entries (Γ.push D) SB) hSB
+      let Γ' := Γ.push D
+      let ⟨SB, hSB⟩ ← inferA fuel entries Γ' B
+      let ⟨lB, hB⟩ ← sortOf (whnf fuel entries Γ' SB) hSB
       if hp : p = zeroCondition lB then
         return ⟨.sort (.imax lD lB), TypingClaim.forallE hD hB hp⟩
       else .error (.malformed "Pi annotation disagrees with its codomain sort")

@@ -32,12 +32,34 @@ def checkSort (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AEx
   let ⟨S, hS⟩ ← inferA.{u,v} fuel entries Γ e
   sortOf (whnf.{u,v} fuel entries Γ S) hS
 
-/-- `e` has the type `A`: infer, check that `A` is a type, and convert. -/
-def checkType (fuel : Nat) (entries : Environment β) (Γ : Context β) (e A : AExpr β) :
+/-- Check against an already formed expected type in this exact environment
+and context. Its formation evidence is reused, without another type check. -/
+def checkAgainst (fuel : Nat) (entries : Environment β) (Γ : Context β) (e A : AExpr β)
+    (formed : FormedClaim.{u,v} entries Γ A) :
     Search (CheckedClaim.{u} (TypingClaim.{u,v} entries Γ e A)) := do
   let ⟨B, hb⟩ ← inferA.{u,v} fuel entries Γ e
-  let ⟨_, hA⟩ ← checkSort.{u,v} fuel entries Γ A
   let ⟨hc⟩ ← isDefEq.{u,v} fuel entries Γ B A
-  return ⟨hb.convF hA.formed hc⟩
+  return ⟨hb.convF formed hc⟩
+
+/-- Check formation once before checking a term against its expected type. -/
+def checkType (fuel : Nat) (entries : Environment β) (Γ : Context β) (e A : AExpr β) :
+    Search (CheckedClaim.{u} (TypingClaim.{u,v} entries Γ e A)) := do
+  let ⟨_, hA⟩ ← checkSort.{u,v} fuel entries Γ A
+  checkAgainst.{u,v} fuel entries Γ e A hA.formed
+
+/-- At the same fuel, successful checking is unchanged by obtaining expected
+formation first. Both independent checks and the same conversion must still
+succeed. When both checks fail, the first diagnostic may differ. -/
+theorem checkType_acceptance (fuel : Nat) (entries : Environment β) (Γ : Context β)
+    (e A : AExpr β) :
+    (checkType.{u,v} fuel entries Γ e A).isOk =
+      (do
+        let ⟨B, hb⟩ ← inferA.{u,v} fuel entries Γ e
+        let ⟨_, hA⟩ ← checkSort.{u,v} fuel entries Γ A
+        let ⟨hc⟩ ← isDefEq.{u,v} fuel entries Γ B A
+        pure (⟨hb.convF hA.formed hc⟩ : CheckedClaim.{u} (TypingClaim.{u,v} entries Γ e A))).isOk := by
+  cases ht : inferA.{u,v} fuel entries Γ e <;>
+    cases hA : checkSort.{u,v} fuel entries Γ A <;>
+    simp [checkType, checkAgainst, ht, hA, bind, Except.bind, pure, Except.pure, Except.isOk] <;> rfl
 
 end Ix.Kernel.Certified

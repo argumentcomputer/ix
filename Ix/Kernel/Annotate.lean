@@ -45,16 +45,18 @@ def annotate : Nat → (entries : Environment β) → (Γ : Context β) → VExp
       return .proj r i x'
     | .lam D b => do
       let D' ← annotate fuel entries Γ D
-      let b' ← annotate fuel entries (Γ.push D') b
-      let ⟨B, _⟩ ← inferA.{u,v} fuel entries (Γ.push D') b'
-      let ⟨SB, hSB⟩ ← inferA.{u,v} fuel entries (Γ.push D') B
-      let ⟨lB, _⟩ ← sortOf (whnf.{u,v} fuel entries (Γ.push D') SB) hSB
+      let Γ' := Γ.push D'
+      let b' ← annotate fuel entries Γ' b
+      let ⟨B, _⟩ ← inferA.{u,v} fuel entries Γ' b'
+      let ⟨SB, hSB⟩ ← inferA.{u,v} fuel entries Γ' B
+      let ⟨lB, _⟩ ← sortOf (whnf.{u,v} fuel entries Γ' SB) hSB
       return .lam (zeroCondition lB) D' b'
     | .forallE D B => do
       let D' ← annotate fuel entries Γ D
-      let B' ← annotate fuel entries (Γ.push D') B
-      let ⟨SB, hSB⟩ ← inferA.{u,v} fuel entries (Γ.push D') B'
-      let ⟨lB, _⟩ ← sortOf (whnf.{u,v} fuel entries (Γ.push D') SB) hSB
+      let Γ' := Γ.push D'
+      let B' ← annotate fuel entries Γ' B
+      let ⟨SB, hSB⟩ ← inferA.{u,v} fuel entries Γ' B'
+      let ⟨lB, _⟩ ← sortOf (whnf.{u,v} fuel entries Γ' SB) hSB
       return .forallE (zeroCondition lB) D' B'
     | .letE t v b => do
       let t' ← annotate fuel entries Γ t

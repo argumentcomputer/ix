@@ -80,6 +80,8 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--binary", type=Path, default=ROOT / "IxKernel/.lake/build/bin/bench-certified-kernel")
+    parser.add_argument("--baseline-binary", type=Path, help="alternate samples with this uninstrumented baseline")
+    parser.add_argument("--baseline-revision", help="revision used to build the baseline binary")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.runs < 1 or args.fuel < 0 or any(n < 0 for n in args.sizes or []):
@@ -87,6 +89,11 @@ def main() -> None:
     binary = args.binary.resolve()
     if not binary.is_file():
         parser.error(f"build bench-certified-kernel first: {binary}")
+    if bool(args.baseline_binary) != bool(args.baseline_revision):
+        parser.error("baseline-binary and baseline-revision must be supplied together")
+    baseline = args.baseline_binary.resolve() if args.baseline_binary else None
+    if baseline and not baseline.is_file():
+        parser.error(f"baseline binary does not exist: {baseline}")
     timer = shutil.which("time")
     if timer is None:
         parser.error("GNU time is required to measure each process's peak RSS")
@@ -97,13 +104,26 @@ def main() -> None:
         "machine": os.uname().machine, "runs": args.runs, "warmups": 1,
         "rss_scope": "whole process, including untimed fixture preparation",
     }
+    baseline_metadata = {
+        "revision": args.baseline_revision,
+        "binary_sha256": hashlib.sha256(baseline.read_bytes()).hexdigest(),
+    } if baseline else None
     output = args.output.open("w") if args.output else None
     try:
         for kind in args.cases or CASES:
             for size in args.sizes or CASES[kind]:
                 sample(binary, timer, kind, size, args.fuel, args.timeout)
-                samples = [sample(binary, timer, kind, size, args.fuel, args.timeout)
-                           for _ in range(args.runs)]
+                if baseline:
+                    sample(baseline, timer, kind, size, args.fuel, args.timeout)
+                samples, baseline_samples = [], []
+                for i in range(args.runs):
+                    pair = [(binary, samples)]
+                    if baseline:
+                        pair.append((baseline, baseline_samples))
+                        if i % 2 == 0:
+                            pair.reverse()
+                    for path, rows in pair:
+                        rows.append(sample(path, timer, kind, size, args.fuel, args.timeout))
                 if len({(s["checksum"], s["lean"]) for s in samples}) != 1:
                     raise ValueError("inconsistent results across benchmark samples")
                 elapsed = [s["elapsed_ns"] for s in samples]
@@ -114,6 +134,18 @@ def main() -> None:
                     "peak_rss_kib": max(s["peak_rss_kib"] for s in samples),
                     "samples": samples,
                 }
+                if baseline:
+                    if {(s["checksum"], s["lean"]) for s in baseline_samples} != \
+                            {(s["checksum"], s["lean"]) for s in samples}:
+                        raise ValueError("baseline/current outcomes or Lean versions differ")
+                    before = [s["elapsed_ns"] for s in baseline_samples]
+                    record["sampling"] = "alternating before/after pairs in fresh processes"
+                    record["baseline"] = {
+                        **baseline_metadata, "outcome": "accept", "samples": baseline_samples,
+                        "median_ns": statistics.median(before), "min_ns": min(before), "max_ns": max(before),
+                        "peak_rss_kib": max(s["peak_rss_kib"] for s in baseline_samples),
+                    }
+                    record["current_over_baseline"] = record["median_ns"] / record["baseline"]["median_ns"]
                 line = json.dumps(record, sort_keys=True)
                 print(line, flush=True)
                 if output:

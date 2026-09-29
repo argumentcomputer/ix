@@ -10,6 +10,7 @@ validating witnesses, and `RuleFormation` records the rule type's scope and
 references for the published typed facts.
 P01: bounded validators return `Search`, preserving nested exhaustion and
 unresolved search; direct validation failures carry specific diagnostics.
+P03: check the rule's common type once and reuse its formation for endpoints.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -54,10 +55,10 @@ def checkRule (fuel : Nat) (entries : Environment β) (shape : Shape β) (source
       if htr : (shape.ruleType source mode i ctor).ReferencesIn entries then
       let ⟨l, ht⟩ ← checkSort.{u,v} fuel entries [] (shape.ruleType source mode i ctor)
       if hsmall : mode = .small → levelIsZero l = true then
-        let hl ← checkType.{u,v} fuel entries [] (shape.ruleLhs source mode i ctor)
-          (shape.ruleType source mode i ctor)
-        let hh ← checkType.{u,v} fuel entries [] (shape.ruleRhs source mode i ctor)
-          (shape.ruleType source mode i ctor)
+        let hl ← checkAgainst.{u,v} fuel entries [] (shape.ruleLhs source mode i ctor)
+          (shape.ruleType source mode i ctor) ht.formed
+        let hh ← checkAgainst.{u,v} fuel entries [] (shape.ruleRhs source mode i ctor)
+          (shape.ruleType source mode i ctor) ht.formed
         return ⟨⟨hs, hr, hts, htr, ⟨l, ht, fun he levels => levelIsZero_sound (hsmall he) levels⟩, hl.down, hh.down⟩⟩
       else .error (.unresolved "small-elimination rule type was not established to be Prop")
       else .error (.malformed "rule type references an uninstalled constant")

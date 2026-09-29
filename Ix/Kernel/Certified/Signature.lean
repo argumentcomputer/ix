@@ -7,6 +7,7 @@ K2: `checkTypes` and `checkRule` infer with `Ix.Kernel.Infer` instead of
 validating witnesses; the witness structures are gone.
 P01: bounded validators return `Search`, preserving nested exhaustion and
 unresolved search; direct validation failures carry specific diagnostics.
+P03: check the rule's common type once and reuse its formation for endpoints.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -124,9 +125,8 @@ def checkRule (fuel : Nat) (entries : Environment β) (rule : Rule β) :
   if hs : rule.type.Scope rule.universes 0 ∧ rule.lhs.Scope rule.universes 0 ∧ rule.rhs.Scope rule.universes 0 then
     if hr : rule.type.ReferencesIn entries ∧ rule.lhs.ReferencesIn entries ∧ rule.rhs.ReferencesIn entries then do
       let ⟨level, ht⟩ ← checkSort.{u,v} fuel entries [] rule.type
-      let hl ← checkType.{u,v} fuel entries [] rule.lhs rule.type
-      let hh ← checkType.{u,v} fuel entries [] rule.rhs rule.type
+      let hl ← checkAgainst.{u,v} fuel entries [] rule.lhs rule.type ht.formed
+      let hh ← checkAgainst.{u,v} fuel entries [] rule.rhs rule.type ht.formed
       return ⟨⟨hs, hr, ⟨level, ht⟩, hl.down, hh.down⟩⟩
     else .error (.malformed "computation rule references an uninstalled constant")
   else .error (.malformed "computation rule is not closed")
-

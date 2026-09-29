@@ -41,7 +41,9 @@ checks, the generated primitive types, and the derived rule endpoints, and
 reach no further replacement. P01 (2026-09-29) retains structured failure
 causes and adds `String.append` for contextual diagnostics and `Nat.decLe`
 for an out-of-range projection diagnostic. Both are inherited from `Init`;
-the axiom, import, and replacement allowlists are unchanged. -/
+the axiom, import, and replacement allowlists are unchanged. P03 adds the
+`checkAgainst` helper to the compiled closure (899 → 900 functions), reusing
+expected-type formation while keeping the same inherited replacements. -/
 
 open Lean
 
@@ -95,7 +97,7 @@ end Ix.Kernel.Audit
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel] Ix.Kernel.Audit.importAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
-Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 899 compiled functions; inherited externs 16,
+Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 900 compiled functions; inherited externs 16,
 implemented_by 0, unsafe 1, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
