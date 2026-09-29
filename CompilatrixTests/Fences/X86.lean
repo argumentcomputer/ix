@@ -103,7 +103,7 @@ import Compilatrix.X86.UniqueSafeLoop
 /-- info: 'Compilatrix.X86.Core.applyIntrinsicResult_calleeSaved' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Core.applyIntrinsicResult_calleeSaved
 
-/-- info: 'Compilatrix.X86.Select.Output.sourceValid' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.X86.Select.Output.sourceValid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Select.Output.sourceValid
 
 /-- info: 'Compilatrix.X86.Select.select_scalarMoveProgram' depends on axioms: [propext, Classical.choice, Quot.sound] -/

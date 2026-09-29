@@ -136,9 +136,11 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
     copyRelative blakeSource blake path
   let interfaces ← arrField originalLedger "native_interfaces"
   let mut cargoRelative := ""
+  let mut blake3Version := ""
   for entry in interfaces do
     if (entry.getObjValAs? String "lake_package").toOption == some "Blake3" then
       cargoRelative ← strField (← field entry "cargo_lock") "path"
+      blake3Version ← strField (← field entry "pins") "blake3_version"
   need (!cargoRelative.isEmpty) "test fixture lost the Blake3 Cargo lock"
   copyFile (blakeSource / cargoRelative) (blake / cargoRelative)
   let check := audit root [("Blake3", blake.toString)] (some "6.3.0")
@@ -187,8 +189,11 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
   withFile (blake / "Sibling.lean") "@[extern \"unreviewed_sibling\"] opaque sibling : Nat\n" do
     rejects "dependency sibling extern" "package-tree extern inventory drifted" check
   let cargo := blake / cargoRelative
-  let duplicate := (← IO.FS.readFile cargo) ++ "\n[[package]]\nname = \"blake3\"\nversion = \"999.0.0\"\n"
-  for (contents, diagnostic) in [(duplicate, "Cargo package names"), ("package = [", "invalid Cargo TOML")] do
+  let original ← IO.FS.readFile cargo
+  let record (version : String) := s!"\n[[package]]\nname = \"blake3\"\nversion = \"{version}\"\n"
+  for (contents, diagnostic) in [(original ++ record blake3Version, "Cargo package records"),
+      (original ++ record "999.0.0", "Cargo package inventory drifted"),
+      ("package = [", "invalid Cargo TOML")] do
     withFile cargo contents do
       rejects "Cargo hash drift" "Cargo lockfile hash drifted" check
       let entries ← interfaces.mapM fun entry => do

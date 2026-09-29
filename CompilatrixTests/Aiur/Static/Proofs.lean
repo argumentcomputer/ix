@@ -27,11 +27,14 @@ private theorem output_inferred (increasing : Bool) :
       ⟨⟨0, false⟩, true, 1, some ⟨.output, 0, if increasing then 1 else 0 - 1⟩⟩] := by
   cases increasing <;> cbv
 
+-- Lean v4.34.0 `cbv` builds an ill-typed `ite_true` proof for a literal `if True`;
+-- rewriting it first keeps `cbv` on its well-typed path.
 private theorem input_accepted (increasing : Bool) :
     (certify (inputProgram increasing) (inputTrace increasing) #[0, 0, 0] inputReplies).isOk = true := by
   cases increasing <;>
     (unfold certify Static.validate Static.prepare
-     simp only [Static.prepareChecked_ok ({} : Wire.CheckLimits) _ _ (by cbv) _ (input_inferred _)]
+     simp only [Static.prepareChecked_ok ({} : Wire.CheckLimits) _ _ (by cbv) _ (input_inferred _),
+       ite_true]
      cbv)
 
 private theorem output_accepted (increasing : Bool) :
@@ -39,7 +42,8 @@ private theorem output_accepted (increasing : Bool) :
       (outputReplies increasing)).isOk = true := by
   cases increasing <;>
     (unfold certify Static.validate Static.prepare
-     simp only [Static.prepareChecked_ok ({} : Wire.CheckLimits) _ _ (by cbv) _ (output_inferred _)]
+     simp only [Static.prepareChecked_ok ({} : Wire.CheckLimits) _ _ (by cbv) _ (output_inferred _),
+       ite_true]
      cbv)
 
 private theorem mixed_accepted : (certify mixedProgram mixedTrace mixedRanks mixedReplies).isOk = true := by

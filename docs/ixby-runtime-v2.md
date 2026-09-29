@@ -3,7 +3,7 @@
 Compilatrix now emits format 1, semantics 2 for IXBF programs, IXFI inputs,
 and IXFO outputs. All 15 vendored Ixby source files match upstream revision
 `6836a77c3f432c83c42428490e56811f4a69808d`; there are no mixed-revision codec
-exceptions. The compiler remains on Lean 4.33.0. The [vendor inventory](../vendor/ixby/upstream.json)
+exceptions. The compiler uses Lean 4.34.0. The [vendor inventory](../vendor/ixby/upstream.json)
 and [binary specification](ixby-binary.md) define the exact source and wire ABI.
 
 The typed runtime uses unboxed Nat/Word32/Field conversions, native persistent

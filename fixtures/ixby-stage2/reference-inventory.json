@@ -75,7 +75,7 @@
   "protected_prefix": 112,
   "pass": "ordinary-leaf-inlining",
   "original_binary_blake3":
-  "e6b59a3f0a065a7353b250c9bb6dfc4b7773cb8ab4c875b75f732582b2b776aa",
+  "e7b2d8ec31c91807aafb79a77c001e4b804b514d471c9edba1553a23a369a6a5",
   "max_work": 1000000,
   "enabled": true,
   "decoded_program_certificate_checked": true},
@@ -2343,7 +2343,7 @@
   {"name": "MultiStark.Verify.Mmcs.Error.groupRow", "index": 139, "fields": 0}],
  "blocks": 5824,
  "artifact":
- {"sha256": "a11acaea8f8be6e4546c3a1971ddddf73e770381cfc219c2dc6764f52169f397",
+ {"sha256": "2231dc101b3aa17a95d1cc347dcd5c1bf0f7ab7b4b2b6b6300b1c1c3aff674b4",
   "program_semantics": 2,
   "max_steps": 16000000000,
   "format": "compilatrix-ixby-binary/1",

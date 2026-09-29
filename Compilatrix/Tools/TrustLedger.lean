@@ -37,6 +37,17 @@ private def jsonStrings (value : Json) : IO (List String) := do
 private def stringPairs (value : Json) : IO (List (String × String)) := do
   (← pairs value).mapM fun (key, value) => return (key, ← string value)
 
+/-- A Cargo inventory maps each crate to its version, or to a list of versions
+when the lockfile resolves several releases of that crate. -/
+private def cargoPairs (value : Json) : IO (List (String × String)) := do
+  (← pairs value).foldlM (init := []) fun acc (name, versions) => do
+    match versions with
+    | .str version => return acc ++ [(name, version)]
+    | _ =>
+      let versions ← jsonStrings versions
+      need (versions.length ≥ 2) s!"Cargo crate {name}: a version list needs several versions"
+      return acc ++ versions.map (name, ·)
+
 def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) := do
   need ((← nat (← field ledger "schema_version")) == 2) "unsupported ledger schema_version"
   let interfaces ← arrField ledger "native_interfaces"
@@ -298,9 +309,12 @@ def validateNative (root : FilePath) (interfaces : Array Json)
       need ((← sha256 path) == (← strField cargo "sha256")) s!"Cargo lockfile hash drifted for {package}"
       let records ← cargoPackages path
       let packages ← records.mapM fun table => return (← tomlString table "name", ← tomlString table "version")
-      unique (packages.map (·.1)) "Cargo package names; ledger needs name+version keys"
-      sameSet packages (← stringPairs (← field cargo "packages")) s!"{package} Cargo package inventory"
-      need (optional packages "blake3" == some (← strField pins "blake3_version")) "BLAKE3 crate version drifted"
+      unique packages "Cargo package records"
+      let expected ← cargoPairs (← field cargo "packages")
+      unique expected "ledger Cargo package versions"
+      sameSet packages expected s!"{package} Cargo package inventory"
+      need (packages.filter (·.1 == "blake3") == [("blake3", ← strField pins "blake3_version")])
+        "BLAKE3 crate version drifted"
       let mut ffiSource := ""
       for record in records do
         if (← tomlString record "name") == "lean-ffi" then ffiSource ← tomlString record "source"

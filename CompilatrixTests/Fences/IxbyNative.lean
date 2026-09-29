@@ -4,13 +4,17 @@ import Compilatrix.Ixby.Runtime.Chunked.Simulation
 /-! Exact revision 2 helper and chunked-executor proof inventory.
 Only ordinary Lean logical axioms occur in this collection. -/
 
-/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.nat_word_distinct' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.nat_word_distinct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.LeanFrontend.Image.nat_word_distinct
 
-/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.number_decode_roundtrip_v2' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.number_decode_roundtrip_v2' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.LeanFrontend.Image.number_decode_roundtrip_v2
 
-/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.word_decode_roundtrip_v2' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.word_decode_roundtrip_v2' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.LeanFrontend.Image.word_decode_roundtrip_v2
 
 /-- info: 'Compilatrix.Ixby.Runtime.Chunked.Builder.freeze_append' depends on axioms: [propext, Quot.sound] -/

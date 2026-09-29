@@ -32,7 +32,7 @@ unchanged Lean modules and both upstream licenses from argumentcomputer/ix
 at `a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03`. They supply Goldilocks,
 the source-to-bytecode IR vocabulary, layout and call-component definitions,
 and the existing abstract counter/order lemmas. Their upstream toolchain is
-Lean 4.33.1; they build unchanged with this repository's pinned Lean 4.33.0.
+Lean 4.33.1; they build unchanged with this repository's pinned Lean 4.34.0.
 
 The `AiurReference` Lake library imports no native Aiur FFI. The upstream
 bytecode evaluator currently imports its IO types from an FFI module, so it

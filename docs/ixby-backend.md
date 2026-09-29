@@ -12,7 +12,7 @@ modules, canonical codec, profile, and pure BLAKE3 implementation are vendored
 unchanged under [`vendor/ixby`](../vendor/ixby/README.md), all at the same
 revision. IXBF, IXFI, and IXFO use format 1 and semantics 2; IXFP is the current
 184-byte profile. The old semantic profiles are retired. The upstream toolchain
-is 4.33.1; these exact modules also build with this repository's pinned 4.33.0.
+is 4.33.1; these exact modules also build with this repository's pinned 4.34.0.
 
 ## Entry points
 

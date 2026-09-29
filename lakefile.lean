@@ -30,7 +30,7 @@ lean_lib AiurReference where
 `blake3-lean` input and `lake-manifest.json`. -/
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @
-  "c9b2273fb9c2c33b94eba091dc4111163f5db2bc"
+  "c32002eeed36c520dfb73de32ef53483652e3aa5"
 
 /- The portable Lean filesystem API stops at buffered flush. Compile the
 small, ledgered POSIX durability boundary as a normal traced Lake input. -/

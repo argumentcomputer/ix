@@ -14,7 +14,7 @@ The Stage2 handoff is [stage2.ixby](../fixtures/ixby-stage2/stage2.ixby), with
 | Property | Value |
 | --- | --- |
 | Bytes | 991,071 |
-| SHA-256 | `a11acaea8f8be6e4546c3a1971ddddf73e770381cfc219c2dc6764f52169f397` |
+| SHA-256 | `2231dc101b3aa17a95d1cc347dcd5c1bf0f7ab7b4b2b6b6300b1c1c3aff674b4` |
 | Entry | Function 669, arity 2 |
 | Functions / blocks / constructor layouts | 670 / 5,824 / 140 |
 | Maximum reference transitions | 16,000,000,000 |

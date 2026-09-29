@@ -178,14 +178,21 @@ prefix. No native or reference interface changes.
 | Assumed semantics | Standard BLAKE3 XOF over exactly the input bytes; a 32-byte request is the standard 256-bit digest |
 | Logical/proof status | Assumption: no Lean refinement theorem currently connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and stay in the ordinary logical axiom set. Production addressed-lowering corollaries, checked HPT cache/summary/consumer results, and the public reachability theorems that validate an exact input digest consume native hashes, so `Compilatrix/Fence.lean` pins their exact additional `Blake3.HasherOps.hash._native.native_decide.ax_1✝` dependency. |
 | Evidence | Official empty-input vector, output length, determinism/input-sensitivity checks, a full constant-address fixture, complete IxIR₀/IxIR₁ declaration byte+address fixtures, frozen dependency-chain/nested-lambda/constructor-wrapper readdressing digests, executable semantic audits, a protected-source-identity collision regression, the frozen ledger-oracle cyclic block/member digests, and five version-3 HPT cache keys plus five checked recursively field-aware summary addresses exercised through deterministic production, persistent canonical record/store ingress, record-streamed filesystem parity with the pure codec, malformed-stream rejection, dependency-cone rebuilding, file-backed corruption recovery, depth-two fetch/case refinement, checked case-binder field recovery through the ordinary checker and deterministic producer, checked finite-constructor case pruning, PAP fusion across all saturation classes, exact scalar fetch forwarding after allocation and reuse, and checked rooted declaration/SCC removal with exported-root and dynamic-apply fallbacks through deterministic one-rebuild regressions in `Tests.lean` |
-| Primary pin | Blake3.lean `c9b2273fb9c2c33b94eba091dc4111163f5db2bc` |
-| Rust implementation | `blake3` 1.8.4; `lean-ffi` `cc98ebf67bf453ac3827cb767f78b13ea674dd6a` |
+| Primary pin | Blake3.lean `c32002eeed36c520dfb73de32ef53483652e3aa5` |
+| Rust implementation | `blake3` 1.8.7; `lean-ffi` `163a661847d8171a685570ed12b4c03bfa092778` |
 | Retirement | Pure Lean BLAKE3 plus a refinement theorem and official corpus compatibility, compiled by our backend after M3 |
 
-The Nix build shares the root Lean 4.33.0 toolchain with Blake3's Lean modules
+The Nix build shares the root Lean 4.34.0 toolchain with Blake3's Lean modules
 and Rust FFI header generation. It rejects differing root and dependency
-`lean-toolchain` pins. This dependency update preserves the BLAKE3 and
-lean-ffi revisions, Cargo lock, Lean declarations, and native source code.
+`lean-toolchain` pins. The Lean 4.34.0 update moves Blake3.lean from
+`c9b2273f` to `c32002ee`. That revision updates the `blake3` crate and C
+sources to 1.8.7 and lean-ffi to `163a6618`, and refreshes the Cargo lock.
+The lock now resolves two `shlex` releases, which the ledger records as a
+version list. The package precompiles its Lean libraries, so importing
+elaborators load the same native objects as shared libraries. It also adds a
+pure Lean `Blake3.Pure` module with no extern declarations, which Compilatr.ix
+does not import. The native symbol set and the Rust entry points are unchanged
+apart from the reported version string.
 
 The v3 checker uses incremental `Hasher.init`, `update` and
 `finalizeWithLength` for tagged node and context preimages. These call the
@@ -547,7 +554,7 @@ a project FFI symbol.
 
 | Entry | Current role | Retirement/containment |
 | --- | --- | --- |
-| Lean 4.33.0 seed/runtime | Elaborates, kernel-checks, compiles, executes `#guard`s, and hosts compiled tests | Gen-1 self-host plus address-exact diverse double compilation; production checking moves to the public lean4ix/ix verified checker |
+| Lean 4.34.0 seed/runtime | Elaborates, kernel-checks, compiles, executes `#guard`s, and hosts compiled tests | Gen-1 self-host plus address-exact diverse double compilation; production checking moves to the public lean4ix/ix verified checker |
 | GMP 6.3.0 | Lean runtime arbitrary-precision arithmetic; direct Nix build input | Verified limb bignums refining `Nat`/`Int`, compiled in the no-runtime fragment after M3 |
 | Host C ABI/runtime | glibc 2.40-66 on the x86_64-linux baseline, plus compiler runtime; hosts Lean/Rust and implements the ledgered `open`/`fstat`/`fsync`/`close` durability shim | Gen 1 removes upstream runtime; allocator/memcpy and libc surface retire to verified `.ix` code plus a syscall model |
 | Locked Nix supply chain | nixpkgs, lean4-nix, flake-parts, crane, fenix/Rust, host C compiler/linker, GNU binutils readelf/objdump, rsync, binary substitution | Locked hashes now; later diverse reproduction and address-exact output comparison remove it from the semantic TCB |

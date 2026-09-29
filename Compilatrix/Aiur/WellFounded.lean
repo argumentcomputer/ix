@@ -16,11 +16,11 @@ structure RowFacts where
   counter : G
   rank : Nat
 
-structure StaticCertificate (Row : Type) (requires : Row → Row → Prop) where
+structure StaticCertificate (Row : Type) (requiresRel : Row → Row → Prop) where
   facts : Row → RowFacts
   /-- One choice per static component, never a witness choice per edge. -/
   ranked : Nat → Bool
-  edge : ∀ child parent, requires child parent →
+  edge : ∀ child parent, requiresRel child parent →
     (facts parent).order < (facts child).order ∨
     ((facts parent).order = (facts child).order ∧
       if ranked (facts parent).order then (facts parent).rank < (facts child).rank
@@ -28,13 +28,13 @@ structure StaticCertificate (Row : Type) (requires : Row → Row → Prop) where
 
 namespace StaticCertificate
 
-variable {Row : Type} {requires : Row → Row → Prop} (certificate : StaticCertificate Row requires)
+variable {Row : Type} {requiresRel : Row → Row → Prop} (certificate : StaticCertificate Row requiresRel)
 
-def ClosedWalk (_certificate : StaticCertificate Row requires) (walk : Nat → Row) (length : Nat) : Prop :=
-  (∀ i, i < length → requires (walk (i + 1)) (walk i)) ∧ walk length = walk 0
+def ClosedWalk (_certificate : StaticCertificate Row requiresRel) (walk : Nat → Row) (length : Nat) : Prop :=
+  (∀ i, i < length → requiresRel (walk (i + 1)) (walk i)) ∧ walk length = walk 0
 
 theorem order_mono (walk : Nat → Row) (length : Nat)
-    (edges : ∀ i, i < length → requires (walk (i + 1)) (walk i)) :
+    (edges : ∀ i, i < length → requiresRel (walk (i + 1)) (walk i)) :
     ∀ i, i ≤ length → (certificate.facts (walk 0)).order ≤ (certificate.facts (walk i)).order := by
   intro i
   induction i with
@@ -93,9 +93,9 @@ theorem noShortCycle (walk : Nat → Row) (length : Nat)
       (fun i hi => by simpa [ranked] using steps i hi)
     exact counter (by rw [closed.2])
 
-theorem wellFounded {n : Nat} {requires : Fin n → Fin n → Prop}
-    (certificate : StaticCertificate (Fin n) requires) (bound : n < gSize.toNat) :
-    WellFounded requires := by
+theorem wellFounded {n : Nat} {requiresRel : Fin n → Fin n → Prop}
+    (certificate : StaticCertificate (Fin n) requiresRel) (bound : n < gSize.toNat) :
+    WellFounded requiresRel := by
   apply Finite.wellFounded_of_noShortCycle
   intro walk length positive bounded edges closed
   exact certificate.noShortCycle walk length positive (by omega) ⟨edges, closed⟩

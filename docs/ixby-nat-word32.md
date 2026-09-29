@@ -7,7 +7,7 @@ vendor inventory, runtime representations, and measurements. Retained
 
 Compilatrix emits the breaking IXBF program revision with direct Nat/Word32
 conversions from Ixby revision `d4405b3ceb82e6d4cce19e48186f3272f8482e04`.
-The compiler remains on Lean 4.33.0. The [vendor record](../vendor/ixby/upstream.json)
+The compiler uses Lean 4.34.0. The [vendor record](../vendor/ixby/upstream.json)
 gives every retained file's revision and digest; the experimental crypto
 profile/codec files stay at their prior revision.
 

@@ -248,7 +248,7 @@ import Compilatrix.Ixby.Inline.ImageSound
 /-- info: 'Compilatrix.Ixby.Inline.optimize' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.Inline.optimize
 
-/-- info: 'Compilatrix.Ixby.Inline.optimizeImage' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Ixby.Inline.optimizeImage' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.Inline.optimizeImage
 
 /-- info: 'Compilatrix.Ixby.Inline.primitive_extraStack' depends on axioms: [propext, Classical.choice, Quot.sound] -/

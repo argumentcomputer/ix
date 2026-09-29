@@ -33,9 +33,9 @@ theorem row_derivation (trace : Trace) (activity : trace.Activity)
     intro message member
     obtain ⟨child, sameMessage, weight, childActive⟩ := trace.provider_exists activity balanced bound
       (trace.demand_mem_requirements id active member)
-    have requires : trace.Requires child id := by
+    have requiresRel : trace.Requires child id := by
       exact ⟨active, childActive, weight, by simpa [sameMessage] using member⟩
-    have result := ih child requires childActive weight
+    have result := ih child requiresRel childActive weight
     simpa [sameMessage] using result
 
 /-- A public claim has a finite rooted derivation once extraction supplies

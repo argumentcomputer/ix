@@ -158,9 +158,9 @@ in rec {
     ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 compile stage2.ixby
     ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 compile replay.ixby
     ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 compile-baseline baseline.ixby
-    echo '246cbf337d3a732ab394101848cb5b2fbbf91c00a36d195c2939fb7426d3c56b  baseline.ixby' | sha256sum -c
+    echo '5b67f41a68578a510c1145df143257da65d74e5fd2f94619a5aa096cc2866057  baseline.ixby' | sha256sum -c
     ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 compile-no-fri no-fri.ixby
-    echo '96b8a397b7803ce36eb35de56821db88ceb8753d62482132d1a8e6217a74638c  no-fri.ixby' | sha256sum -c
+    echo 'ff5d2f2b65518cb84112a4e3e25883df9d4680d11af11e4190e46370b901d4f6  no-fri.ixby' | sha256sum -c
     cmp stage2.ixby replay.ixby
     cmp stage2.ixby.json replay.ixby.json
     cmp ${auditSrc}/fixtures/ixby-stage2/stage2.ixby stage2.ixby

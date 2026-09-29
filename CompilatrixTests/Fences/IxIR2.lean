@@ -305,7 +305,7 @@ import Compilatrix.IxIR2.WirePipeline
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Artifact.functionTrace_of_source_mem
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.valid' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.valid
 
 /-- info: 'Compilatrix.IxIR2.Lower.CheckedRun.valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -1009,13 +1009,19 @@ import Compilatrix.IxIR2.WirePipeline
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.functionTraceSource_eq_of_match
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.codeScalarLeavesMatch_of_child' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.codeScalarLeavesMatch_of_child' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.codeScalarLeavesMatch_of_child
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.codeScalarLeavesMatch_descendant' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.codeScalarLeavesMatch_descendant' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.codeScalarLeavesMatch_descendant
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.functionCodeScalarLeavesMatch' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.functionCodeScalarLeavesMatch' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.functionCodeScalarLeavesMatch
 
 /-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_of_codeScalarLeavesMatch' depends on axioms: [propext,
@@ -1023,13 +1029,19 @@ import Compilatrix.IxIR2.WirePipeline
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_of_codeScalarLeavesMatch
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.codeExactFetchesMatch_of_child' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.codeExactFetchesMatch_of_child' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.codeExactFetchesMatch_of_child
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.codeExactFetchesMatch_descendant' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.codeExactFetchesMatch_descendant' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.codeExactFetchesMatch_descendant
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.functionCodeExactFetchesMatch' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.functionCodeExactFetchesMatch' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.functionCodeExactFetchesMatch
 
 /-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.exactConstructorAt?_of_codeExactFetchesMatch' depends on axioms: [propext,
@@ -1079,7 +1091,7 @@ import Compilatrix.IxIR2.WirePipeline
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Attached.schema_fields_replicate
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteFacts?_next' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteFacts?_next' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.siteFacts?_next
 
 /-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_next' depends on axioms: [propext] -/
@@ -1088,22 +1100,28 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_alternative' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_alternative
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_root' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_root' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_root
 
 /-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_main' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_main
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteFacts?_sourceCodeAt' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteFacts?_sourceCodeAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.siteFacts?_sourceCodeAt
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteFacts?_alternative_of_sourceCodeAt' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteFacts?_alternative_of_sourceCodeAt' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.siteFacts?_alternative_of_sourceCodeAt
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_root' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_root' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_root
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_main' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_main' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_main
 
 /-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_alternative_ctor' depends on axioms: [propext,
@@ -1111,7 +1129,9 @@ import Compilatrix.IxIR2.WirePipeline
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_alternative_ctor
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_alternative_natZero' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_alternative_natZero' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_alternative_natZero
 
 /-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_alternative_natSucc' depends on axioms: [propext,
@@ -1129,22 +1149,30 @@ import Compilatrix.IxIR2.WirePipeline
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.siteEnvironmentHolds_next_of_currentCompatible
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.exactConstructorAt?_eq_some' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.exactConstructorAt?_eq_some' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.exactConstructorAt?_eq_some
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.exactConstructorAt?_runtime' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.exactConstructorAt?_runtime' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.exactConstructorAt?_runtime
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.exactConstructorAt?_matches_node' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.exactConstructorAt?_matches_node' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.exactConstructorAt?_matches_node
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_eq_some' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_eq_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_eq_some
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_runtime' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_runtime' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_runtime
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_matches_node' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_matches_node' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.scalarLeafAt?_matches_node
 
 /-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.simulate_traced_free_freeUnique_state_hpt' depends on axioms: [propext,
@@ -1167,7 +1195,9 @@ import Compilatrix.IxIR2.WirePipeline
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.simulate_traced_free_freeUnique_state_of_run_hpt
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_functionRoot' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_functionRoot' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.sourceCodeAt?_functionRoot
 
 /-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.functionEntryTraceState' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -1403,7 +1433,9 @@ import Compilatrix.IxIR2.WirePipeline
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.TraceStateRel.constructorChild
 
-/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.TraceStateRel.natZeroChild' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.TraceStateRel.natZeroChild' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Pipeline.Sidecars.TraceStateRel.natZeroChild
 
 /-- info: 'Compilatrix.IxIR2.Pipeline.Sidecars.TraceStateRel.natSuccChild' depends on axioms: [propext,
@@ -1502,7 +1534,7 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Lower.Trace.functionPositionsMatch' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Trace.functionPositionsMatch
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.position' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.position' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.position
 
 /-- info: 'Compilatrix.IxIR2.Lower.BindingCap.matchesParameter' depends on axioms: [propext] -/
@@ -1536,10 +1568,10 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Lower.Trace.functionParameterCapabilitiesMatch' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Trace.functionParameterCapabilitiesMatch
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.ownedParameterCapability' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.ownedParameterCapability' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.ownedParameterCapability
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.parameterCapability' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.parameterCapability' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.parameterCapability
 
 /-- info: 'Compilatrix.IxIR2.Lower.CodeTrace.pureTransition_of_match' depends on axioms: [propext, Quot.sound] -/
@@ -1554,7 +1586,7 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Lower.Trace.functionPureCapabilitiesMatch' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Trace.functionPureCapabilitiesMatch
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.pureTransition' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.pureTransition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.pureTransition
 
 /-- info: 'Compilatrix.IxIR2.Lower.CodeTrace.dupTransition_of_match' depends on axioms: [propext, Quot.sound] -/
@@ -1569,7 +1601,7 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Lower.Trace.functionDupCapabilitiesMatch' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Trace.functionDupCapabilitiesMatch
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.dupTransition' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.dupTransition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.dupTransition
 
 /-- info: 'Compilatrix.IxIR2.Lower.CodeTrace.fetchTransition_of_match' depends on axioms: [propext, Quot.sound] -/
@@ -1584,7 +1616,7 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Lower.Trace.functionFetchCapabilitiesMatch' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Trace.functionFetchCapabilitiesMatch
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.fetchTransition' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.fetchTransition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.fetchTransition
 
 /-- info: 'Compilatrix.IxIR2.Lower.retireOwnerCapabilities?_size' depends on axioms: [propext, Quot.sound] -/
@@ -1593,7 +1625,7 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Lower.CodeTrace.destructionTransition_of_match' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.CodeTrace.destructionTransition_of_match
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.destructionTransition' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.destructionTransition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.destructionTransition
 
 /-- info: 'Compilatrix.IxIR2.Lower.consumeCapability?_size' depends on axioms: [propext, Quot.sound] -/
@@ -1605,13 +1637,13 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Lower.CodeTrace.allocationTransition_of_capabilities_match' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.CodeTrace.allocationTransition_of_capabilities_match
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.allocationTransition' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.allocationTransition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.allocationTransition
 
 /-- info: 'Compilatrix.IxIR2.Lower.CodeTrace.pappTransition_of_capabilities_match' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.CodeTrace.pappTransition_of_capabilities_match
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.pappTransition' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.pappTransition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.pappTransition
 
 /-- info: 'Compilatrix.IxIR2.Lower.CodeTrace.callTransition_of_capabilities_match' depends on axioms: [propext, Quot.sound] -/
@@ -1620,10 +1652,10 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Lower.CodeTrace.callSelfTransition_of_capabilities_match' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.CodeTrace.callSelfTransition_of_capabilities_match
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.callTransition' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.callTransition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.callTransition
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.callSelfTransition' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.callSelfTransition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.callSelfTransition
 
 /-- info: 'Compilatrix.IxIR2.Lower.PositionTrace.sourceCapabilities_size_of_allocationMatch' depends on axioms: [propext,
@@ -1646,7 +1678,7 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Lower.Trace.functionAllocationCapabilitiesMatch' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Trace.functionAllocationCapabilitiesMatch
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.allocationPosition' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.allocationPosition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.allocationPosition
 
 /-- info: 'Compilatrix.IxIR2.Lower.Sim.SourceOwnershipInvariant.empty' depends on axioms: [propext, Quot.sound] -/
@@ -2200,10 +2232,10 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Reuse.Site.tailArgumentsFound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Reuse.Site.tailArgumentsFound
 
-/-- info: 'Compilatrix.IxIR2.Reuse.Output.sourceValid' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Reuse.Output.sourceValid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Reuse.Output.sourceValid
 
-/-- info: 'Compilatrix.IxIR2.Reuse.Output.targetValid' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Reuse.Output.targetValid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Reuse.Output.targetValid
 
 /-- info: 'Compilatrix.IxIR2.Reuse.FunctionRewrite.decisionAt' depends on axioms: [propext] -/
@@ -2226,10 +2258,10 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Reuse.Trace.context_fn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Reuse.Trace.context_fn
 
-/-- info: 'Compilatrix.IxIR2.Reuse.Output.trace_target' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Reuse.Output.trace_target' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Reuse.Output.trace_target
 
-/-- info: 'Compilatrix.IxIR2.Reuse.Output.trace_report' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Reuse.Output.trace_report' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Reuse.Output.trace_report
 
 /-- info: 'Compilatrix.IxIR2.ReuseSim.translateRegister?_range' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -4299,7 +4331,7 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Lower.CodeTrace.tailCallResult_of_capabilities_match' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.CodeTrace.tailCallResult_of_capabilities_match
 
-/-- info: 'Compilatrix.IxIR2.Lower.Checked.tailCallResult' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Lower.Checked.tailCallResult' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Lower.Checked.tailCallResult
 
 /-- info: 'Compilatrix.IxIR2.Pipeline.ApplyMorePlan.sourceRun' depends on axioms: [propext,
@@ -4353,16 +4385,16 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Eval.runMachine_steps' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Eval.runMachine_steps
 
-/-- info: 'Compilatrix.IxIR2.Reuse.sourceValid_of_invalidTarget' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Reuse.sourceValid_of_invalidTarget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Reuse.sourceValid_of_invalidTarget
 
-/-- info: 'Compilatrix.IxIR2.Reuse.sourceRejected_of_invalidSource' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Reuse.sourceRejected_of_invalidSource' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Reuse.sourceRejected_of_invalidSource
 
-/-- info: 'Compilatrix.IxIR2.Reuse.Selection.valid' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Reuse.Selection.valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Reuse.Selection.valid
 
-/-- info: 'Compilatrix.IxIR2.Reuse.selectCheckedWith' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Reuse.selectCheckedWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Reuse.selectCheckedWith
 
 /-- info: 'Compilatrix.IxIR2.ReuseLiveSim.selectAttachment' depends on axioms: [propext,
@@ -4596,7 +4628,7 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Eval.Policy.runMain_success_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Eval.Policy.runMain_success_unique
 
-/-- info: 'Compilatrix.IxIR2.CallReuse.Selection.valid' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.CallReuse.Selection.valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.CallReuse.Selection.valid
 
 /-- info: 'Compilatrix.IxIR2.CallReuse.Sim.simulate_to_halt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -4664,22 +4696,22 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.CreditRefinement.checked_runMain_owned' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.CreditRefinement.checked_runMain_owned
 
-/-- info: 'Compilatrix.IxIR2.Borrow.Checked.valid' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Borrow.Checked.valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Checked.valid
 
-/-- info: 'Compilatrix.IxIR2.Borrow.Checked.exactRewrite' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Borrow.Checked.exactRewrite' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Checked.exactRewrite
 
 /-- info: 'Compilatrix.IxIR2.Borrow.Execution.steps' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Execution.steps
 
-/-- info: 'Compilatrix.IxIR2.Borrow.Improved.preservation' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Borrow.Improved.preservation' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Improved.preservation
 
-/-- info: 'Compilatrix.IxIR2.Borrow.Improved.resources' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Borrow.Improved.resources' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Improved.resources
 
-/-- info: 'Compilatrix.IxIR2.Borrow.Selection.fallbackExact' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Borrow.Selection.fallbackExact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Selection.fallbackExact
 
 /-- info: 'Compilatrix.IxIR2.Borrow.Open.retain_release_cancel' depends on axioms: [propext, Quot.sound] -/
@@ -4697,7 +4729,7 @@ import Compilatrix.IxIR2.WirePipeline
 /-- info: 'Compilatrix.IxIR2.Borrow.Open.Certificate.strictImprovement' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Open.Certificate.strictImprovement
 
-/-- info: 'Compilatrix.IxIR2.Borrow.Open.Certificate.controlCost' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.IxIR2.Borrow.Open.Certificate.controlCost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.IxIR2.Borrow.Open.Certificate.controlCost
 
 /-- info: 'Compilatrix.IxIR2.Borrow.Open.Certificate.runFunctions' depends on axioms: [propext, Classical.choice, Quot.sound] -/

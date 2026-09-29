@@ -16,7 +16,7 @@
 
     # Lean 4 & Lake. Pinned to the exact rev lean4lean locks so the
     # toolchain derivation dedups with its builds; move deliberately.
-    lean4-nix.url = "github:argumentcomputer/lean4-nix/c41a770e44a990da275dad0f70da75f22197e597";
+    lean4-nix.url = "github:argumentcomputer/lean4-nix/c8bce66594bbf62073d0097ca5ddc44321f2d14e";
 
     # flake-parts via the copy lean4-nix already locks (single node)
     flake-parts.follows = "lean4-nix/flake-parts";
@@ -29,7 +29,7 @@
     # flake.lock revs — the combination proven on this machine.
     # Share the toolchain helper so Lean modules and Rust FFI headers use
     # the same reviewed Lean release and Nix derivation.
-    blake3-lean.url = "github:argumentcomputer/Blake3.lean/c9b2273fb9c2c33b94eba091dc4111163f5db2bc";
+    blake3-lean.url = "github:argumentcomputer/Blake3.lean/c32002eeed36c520dfb73de32ef53483652e3aa5";
     blake3-lean.inputs.lean4-nix.follows = "lean4-nix";
   };
 
