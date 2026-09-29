@@ -3,6 +3,10 @@ name: Nix CI
 on:
   pull_request:
   merge_group:
+  # Pushes to main keep the sticky disk's `main` snapshot fresh, which every
+  # new PR branch and merge-queue ref falls back to (see ci.yml).
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
