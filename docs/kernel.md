@@ -267,38 +267,46 @@ runtime. Timings use uninstrumented native executables.
 
 ## Removal ledger: lean4ix and Ix.Tc
 
-The root dependency is named `lean4lean` by Lake, fetches
-`argumentcomputer/lean4ix` at `a4188d7c2979378d85c6bb41fdd96c3a48a71371`, and
-exports `Lean4Lean.*`. TruthMines independently fetches
-`digama0/lean4lean` at `e0e3f6bcccb840cb0ea6f11c2b274ada93a12e00`. Both must
-leave. The following inventory was checked against the P03 tree on
-2026-09-29; all removal rows remain pending.
+D01 removed both dependency paths on 2026-09-29: the root Lake package
+`lean4lean` fetched `argumentcomputer/lean4ix` at
+`a4188d7c2979378d85c6bb41fdd96c3a48a71371`, and TruthMines independently
+fetched `digama0/lean4lean` at `e0e3f6bcccb840cb0ea6f11c2b274ada93a12e00`.
+The old verification trees and their consumers are gone. Runtime `Ix.Tc`
+remains until D02's consumer and corpus-parity gates are satisfied.
 
-| Existing surface | Replacement or disposition | Removal gate |
+| Retired or remaining surface | Replacement or disposition | Status |
 | --- | --- | --- |
-| `Ix/Tc/Verify/**` checker statements and proof frontier | Executed `Ix.Kernel` acceptance/model/fidelity roots; retain useful adversarial inputs in kernel fixtures | D01 after K2 gates; behavior outside K2 remains in runtime tests until D02 |
-| `Ix/Tc/Verify/Audit/{Basic,Completed,Conditional,Statements,SorryFrontier}.lean` | Kernel axiom/import/runtime audits already supply strict mechanisms and negative controls; discard upstream/native/sorry allowances | D01; no retained helper imports the old audit namespace |
-| `Ix/Compile/Verify/{Codec,ExprCodec,ExprSpineCodec,ConstantCodec,ConstantTablesCodec,NonrecursiveConstantCodec,RecursorConstantCodec,MutualConstantCodec}.lean` | Preserved under `Ix/Ixon/Verify`, with the complete wire domains, frozen contracts, and fresh audits | Preservation complete; delete old copies in D01 |
-| `Ix/Compile/Verify/{Catalog,IxonValue,SourceValue,Reference}.lean` | Structural wire predicates extracted into `Ix/Ixon/Wire`; K3 exact readings replace resolved-value claims; retire the old semantic square | Selected K3/K4 contracts preserved; delete old semantic machinery in D01 |
-| Remaining `Ix/Compile/Verify/**`, including `Compile*`, `Arena`, `Sharing`, `Statements`, and its audits | Retire the old compiler/specification proof machinery; do not relabel it as an Ix.Kernel compiler-correctness theorem | D01 after selected structural contracts are retained |
-| Root `lakefile.lean` / `lake-manifest.json` | Remove `require lean4lean`, `IxTcVerify`, `IxCompileVerify`, `Lean4LeanBench`, `bench-lean4lean`, the proof dynlib target, and the `build-all` exception | D01; regenerate lockfile and strict fresh host build |
-| `ix_ffi_dyn`, `crates/ffi-dyn`, workspace `Cargo.toml` / `Cargo.lock` | Remove the proof-only loader and crate; ordinary host FFI remains independently owned | D01 after final consumer scan and Rust workspace checks |
-| `Benchmarks/Lean4Lean.lean`, `Benchmarks/Lean4LeanMain.lean`, `Tests/Ix/Lean4Lean.lean`, `Tests/Main.lean` | Remove replay library, executable, smoke runner and registration; keep kernel-supported test inputs | D01; host runner and benchmark tests |
-| `Ix/Cli/BenchCmd.lean`, `Ix/BenchConstants.lean`, `docs/benchmarking.md` | Remove backend selection, registry, help and active instructions; expose measured Ix.Kernel/Rust comparison through their respective drivers | D01; CLI dispatch and help checks |
-| `Benchmarks/TruthMinesSpec/{Catalog,Spec}.lean` | Remove the package/member from the generator source | D01; regenerate and assert absence |
-| `Benchmarks/TruthMines/{lakefile.lean,lake-manifest.json,Drivers/Lean4Lean.lean}` | Remove the independent upstream dependency and generated driver | D01 regeneration |
-| `Benchmarks/Compile/{lake-manifest.json,TruthMines/lake-manifest.json,TruthMines/Members/Lean4Lean.lean}` | Remove both inherited dependency paths and the generated compile member | D01 regeneration and fresh benchmark configuration build |
-| `.github/workflows/merge-tests.yml`, `.github/workflows/ci.yml` | Replace proof-frontier jobs with strict kernel/model/provenance/differential gates; remove the old runner entry | K2 introduces replacement gate; D01 removes obsolete jobs |
-| `flake.nix` | Remove the `lean4lean` target-name/build override and dependency closure | D01; fresh Nix build without stale Lean4Lean artifacts |
-| `docs/ffi.md`, `docs/tc-k0-backedge-audit.md`, this ledger | Remove obsolete active commands; mark historical proof claims retired and document the replacement's actual scope | D01/D02 |
-| `Ix/Tc.lean`, remaining `Ix/Tc/**`, `Tests/Ix/Tc/**`, CLI, AuxGen, IxVM claim harness, and validation round trips | Move runtime consumers, primitive tables, names/metadata bridges, and behavior tests to their new owners; switch the differential oracle to Rust | D02 after K3/K4 and K6 consumer parity; delete Ix.Tc last |
-| Kernel/model LICENSE and NOTICE; explanatory attribution in Rust, IxVM, tests and historical documentation | Retain attribution; a historical mention is not an active import or dependency | No deletion required; active-reference scanner distinguishes these |
+| `Ix/Tc/Verify/**` checker statements and proof frontier | Executed `Ix.Kernel` acceptance/model/fidelity roots and adversarial fixtures; behavior outside the supported profile remains in runtime tests | D01 complete |
+| `Ix/Tc/Verify/Audit/{Basic,Completed,Conditional,Statements,SorryFrontier}.lean` | Kernel axiom/import/runtime audits supply strict checks and negative controls; obsolete upstream/native/sorry allowances were deleted | D01 complete |
+| `Ix/Compile/Verify/{Codec,ExprCodec,ExprSpineCodec,ConstantCodec,ConstantTablesCodec,NonrecursiveConstantCodec,RecursorConstantCodec,MutualConstantCodec}.lean` | Preserved under `Ix/Ixon/Verify`, with complete wire domains, frozen contracts, and independent audits | D01 complete; old copies deleted |
+| `Ix/Compile/Verify/{Catalog,IxonValue,SourceValue,Reference}.lean` | Structural predicates live in `Ix/Ixon/Wire`; K3 exact readings cover resolved values; the old semantic square is retired | D01 complete |
+| Remaining `Ix/Compile/Verify/**`, including `Compile*`, `Arena`, `Sharing`, `Statements`, and its audits | Retired compiler/specification machinery; no Ix.Kernel compiler-correctness theorem is claimed | D01 complete |
+| Root `lakefile.lean` / `lake-manifest.json` | Removed dependency, proof libraries, replay benchmark, proof loader, and `build-all` exception; Lake regenerated the manifest | D01 complete; all 24 remaining targets build strictly |
+| `ix_ffi_dyn`, `crates/ffi-dyn`, workspace `Cargo.toml` / `Cargo.lock` | Removed the proof-only crate and loader; ordinary runtime FFI remains | D01 complete; Cargo regenerated the lockfile |
+| `Benchmarks/Lean4Lean.lean`, `Benchmarks/Lean4LeanMain.lean`, `Tests/Ix/Lean4Lean.lean`, `Tests/Main.lean` | Removed replay library, executable, smoke runner and registration; fixture dispositions below | D01 complete |
+| `Ix/Cli/BenchCmd.lean`, `Ix/BenchConstants.lean`, `docs/benchmarking.md` | Removed backend registry, dispatch, help, and active commands; measurements use the existing certified harness and Rust driver | D01 complete; removed backend exits 2 as unknown |
+| `Benchmarks/TruthMinesSpec/{Catalog,Spec}.lean` | Removed package/member at the generator source | D01 complete; generator checks pass |
+| `Benchmarks/TruthMines/{lakefile.lean,lake-manifest.json,Drivers/Lean4Lean.lean}` | Regenerated configuration without the independent upstream dependency; deleted the generated driver | D01 complete; 78 retained package entries |
+| `Benchmarks/Compile/{lake-manifest.json,TruthMines/lake-manifest.json,TruthMines/Members/Lean4Lean.lean}` | Removed inherited package entries and generated member; retained unrelated pins | D01 complete; 24 and 80 retained package entries |
+| `.github/workflows/merge-tests.yml`, `.github/workflows/ci.yml` | Removed old proof jobs and runner; the certified kernel/model/provenance/differential job covers PRs and merge groups; temporary runtime parity jobs remain | D01 complete |
+| `flake.nix` | Removed dependency override; added the retirement source check and Python to development shells | D01 complete; native x86_64-linux Nix gate passes |
+| `docs/ffi.md`, `docs/tc-k0-backedge-audit.md`, this ledger | Obsolete active commands retired; historical audit labeled explicitly; replacement guarantees stated below | D01 complete |
+| `Ix/Tc.lean`, remaining `Ix/Tc/**`, `Tests/Ix/Tc/**`, CLI, AuxGen, IxVM claim harness, and validation round trips | Move consumers and behavior tests to their new owners; switch differential testing to Rust; delete Ix.Tc last | D02 pending after K3/K4 and K6 consumer parity |
+| Kernel/model LICENSE and NOTICE; explanatory attribution in Rust, IxVM, tests and historical documentation | Retained; historical mentions are outside the active-reference guard | Preserved |
 
-The only Lake consumer of `ix_ffi_dyn` in this inventory is
-`ix_native_decide_dynlib`, attached to `IxTcVerify`. Recheck at removal time
-so integration from main cannot leave an orphaned consumer.
+The final consumer scan confirmed that the proof loader was the only Lake
+consumer of `ix_ffi_dyn`. The ordinary Rust `unsigned` implementation and
+its runtime symbols remain in `ix-ffi`.
 
-### Contracts to preserve before deleting compiler verification
+The retired dependency smoke test replayed `Nat.add_comm` and submitted an
+axiom whose type was the natural-number literal zero. `Nat.add_comm` remains
+the normal CI compiler/zkVM fixture; the certified suite separately covers
+natural-number recursion/literals, non-type declared types, and unsupported
+axioms. The arbitrary-axiom route declines under the current certified
+profile, so this retirement does not claim the old smoke test's exact
+acceptance/rejection behavior or full `Nat.add_comm` certified parity.
+
+### Preserved and retired compiler contracts
 
 | Old contract | Selected replacement | Explicit limits |
 | --- | --- | --- |
@@ -312,17 +320,51 @@ so integration from main cannot leave an orphaned consumer.
 
 The retained codec chain imports the pure structural `wireWF` predicates,
 so the former `ExprSpineCodec → Catalog → IxonValue → Lean4Lean` dependency
-is gone from its closure. The temporary old codec proofs and `Catalog`
-share those predicates and still build, pending D01 deletion. The retained
-codec roots use only the three standard axioms. Old compiler allowances for
-native hash/name axioms are not inherited by this boundary. The selected
-D00 preservation prerequisite is satisfied; D01 dependency retirement and
-the remaining K4 byte-admission work are still required.
+is gone. The temporary old copies have been deleted. Retained codec roots
+use only the three standard axioms; native hash/name allowances from the
+old compiler proofs are not inherited. K4's resource bounds, validity,
+canonicality, and byte-admission composition remain open.
 
-D01 finishes only when active source imports, every tracked Lake manifest,
-generator source/output, build target, backend dispatch, CI and Nix
-configuration have no removed consumer. Run the normal host tests, the
-clean kernel/model gate, benchmark regeneration, and affected Rust/Nix
-checks. D02 additionally requires no active `Ix.Tc` source dependency and
-the documented consumer parity corpus, including the ordered-reference
-policy. Neither gate is satisfied by deleting the dependency URL alone.
+### D01 validation and recurrence guard
+
+`python3 scripts/check-kernel-retirement.py` runs before `check-kernel`
+and as a Nix check. It checks tracked Lean code (including `public import`,
+`import all`, and multiline imports), every tracked Lake manifest, and
+active build/CI/Nix/Cargo/generator configuration. Nested Lean comments,
+historical documentation, and legal attribution are preserved. Negative
+controls cover import forms, aliased repository URLs, stale target/crate
+names, retired paths, and malformed manifests. A source-export walk covers
+Nix builds without VCS metadata.
+
+Validation used a fresh jj workspace with no project Lean artifacts and no
+Lean4Lean package. Only retained pinned third-party package caches and the
+Rust artifact cache were reused. All 24 host library/executable targets
+passed `lake lint -- --wfail`; default tests (including TruthMines records,
+benchmark measures, runtime Tc, and FFI), CLI tests, generator checks, and
+the explicit removed-backend/help checks passed. The regenerated TruthMines
+Lake configuration compiled. Lake's manifest reader/writer removed the
+three nested entries while retaining every other entry and revision; no
+unrelated package pin changed. This validates corpus configuration, not a
+build or parity sweep of all retained corpus packages.
+
+`lake run check-kernel --with-model` passed: 164 standalone, 173 host
+fixture/provenance, 529 runner, and 975 model jobs; 38 differential cases,
+26 compiler ingress/exact-egress cases, and the production codec property
+tests with Rust comparisons. Provenance remains 97 ported, 53 authored or
+reorganized modules, and four license files. Public statements and audit
+allowlists are unchanged.
+
+The x86_64-linux Nix gate used immutable source snapshot
+`a829f6d86f49dec0acb9447da014bf76b32ab9ec`, with no workspace caches in the
+source. The library, packaged Lean tests, retirement guard, clippy, nextest,
+and distributable CLI smoke check passed. Nextest ran 1,533 tests with
+1,533 passes and 14 skips. Other operating systems were not tested.
+The final checkpoint differs from that tested snapshot only in this ledger
+and the roadmap's completion notes.
+The remaining Rust workspace also passed the local locked release
+all-target build and clippy checks with `parallel,net,test-ffi` enabled,
+and the default-feature workspace tests and doc tests.
+
+D02 still requires no active `Ix.Tc` dependency and the documented consumer
+parity corpus, including the ordered-reference policy. Dependency
+retirement does not complete the runtime cutover.

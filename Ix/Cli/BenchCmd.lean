@@ -12,7 +12,6 @@
      the benchmark);
   3. spawns the run's measured tool — `bench-typecheck` (aiur),
      `zisk-host`/`sp1-host` (zkVM execute), `ix check-rs` (ooc),
-     `bench-lean4lean` (lean4lean; olean-driven, no `.ixe`),
      `ix compile` (compile) — wrapped in the RAM watchdog (`Ix.Watchdog`:
      cgroup `memory.max` via a systemd user scope; the kernel OOM-kills
      at the ceiling). The per-constant backends (aiur, zkVM) spawn
@@ -335,22 +334,6 @@ def backendSpecs : List BackendSpec := [
     metrics := [("execute", ["check-time", "throughput", "peak-rss"])],
     thresholds := [("constants", "0", "0"), ("check-time", "0.10", "_"),
                    ("throughput", "_", "0.10"), ("peak-rss", "0.10", "_")] },
-  -- lean4lean (github.com/digama0/lean4lean, required by the lakefile at a
-  -- pinned rev): the reference Lean4-in-Lean4 kernel, the external
-  -- yardstick for the Ix kernels (`ooc` / `ix check-lean`) on the same
-  -- libraries. Checks the env's library from its oleans (no `.ixe`):
-  -- whole-library row (module-parallel replay of the import closure) plus
-  -- one full-closure row per constant, mirroring ooc's row shape and
-  -- metric names so cross-kernel tables line up. Disabled in CI until a
-  -- bencher testbed exists — `ix bench run --backend lean4lean` works
-  -- locally regardless (`disabled` only gates the CI matrix and
-  -- `!benchmark` scheduling).
-  { name := "lean4lean", defaultMode := "execute",
-    inputs := .perConstantWithEnv,
-    disabled := some "local-only: no bencher testbed yet",
-    testbeds := [("execute", "lean4lean-check-x64-32x")],
-    metrics := [("execute", ["check-time", "throughput", "peak-rss",
-                             "constants"])] },
   -- AnthropicFLT remains on-demand: its from-scratch upstream build needs
   -- substantially more than the per-push workflow's one-hour budget. An
   -- explicit `--env AnthropicFLT` or `BENCH_ENVS=AnthropicFLT` still runs it.
@@ -804,27 +787,6 @@ is not a benchmark run"
         "--json", out, "--json-name", info.name]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env aiur check failed (exit {exit})"
-  | "lean4lean" =>
-    -- The reference Lean4-in-Lean4 kernel checks the env's library from
-    -- its oleans, so no `.ixe` is resolved. The tool takes the same
-    -- registry `module` path `ix compile` does (its lake project supplies
-    -- the search path; the tool builds the module itself, outside every
-    -- timed window). Whole-library row keyed by the env name …
-    let bl ← resolveBin repo "bench-lean4lean"
-    let modulePath := s!"{repo}/{info.module}"
-    let exit ← runGuarded watchdog ceilingGb bl
-      #[modulePath, "--json", out, "--json-name", info.name]
-    if exit != 0 && exit != exitRejected then
-      IO.eprintln s!"[bench] whole-library replay failed (exit {exit})"
-    -- … plus one full-closure row per constant. ONE process for all names
-    -- (the ooc pattern): the imported env is shared across the closure
-    -- replays instead of re-paying the library import per name.
-    if !names.isEmpty then
-      IO.FS.writeFile namesFile ("\n".intercalate names.toList ++ "\n")
-      let exit ← runGuarded watchdog ceilingGb bl
-        #[modulePath, "--no-build", "--consts-file", namesFile, "--json", out]
-      if exit != 0 && exit != exitRejected then
-        IO.eprintln s!"[bench] per-constant closures failed (exit {exit})"
   | "aiur" =>
     -- prove runs the whole pipeline (`bench-typecheck --recursive`):
     -- every stage per constant, closed by the pipeline ledger. One process
@@ -891,7 +853,7 @@ is not a benchmark run"
   let expected := match backend with
     | "compile" => #[info.name]
     | "decompile" => #[info.name]
-    | "ooc" | "lean4lean" => #[info.name] ++ names
+    | "ooc" => #[info.name] ++ names
     | _ => names
   let code ← gate out expected
   if code == 0 || code == exitRejected then
@@ -930,7 +892,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   "Execute one benchmark run (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
-    backend      : String; "aiur | aiur-sharded-env | zisk | sp1 | ooc | lean4lean | compile | decompile"
+    backend      : String; "aiur | aiur-sharded-env | zisk | sp1 | ooc | compile | decompile"
     env          : String; "Benchmark env from the registry (default: InitStd)"
     mode         : String; "prove | execute (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"

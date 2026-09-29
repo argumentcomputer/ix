@@ -34,11 +34,11 @@ K3's pure production types, exact ingress readings, separate physical
 inductive/recursor admission, `checkEnv`, and layout-preserving egress are now
 implemented with 26 compiler ingress and byte-exact egress cases. K4 now has
 isolated production codecs, the retained all-variant inverse proofs, and
-exact constant framing. The remaining K4 byte-admission work, D01 dependency
-retirement, and the measured core improvements in section 10 are next. Section 11 makes
-removal of `lean4ix` (the
-dependency named `lean4lean` by Lake) and the old verification machinery
-an explicit deliverable, independent of speculative optimization work.
+exact constant framing. D01 is complete: both lean4ix/Lean4Lean dependency
+paths, the old verification trees, and their build/benchmark/CI consumers
+have been removed and validated in a fresh jj workspace and through Nix.
+The remaining K4 byte-admission work and measured core improvements in
+section 10 are next. D02's final runtime Ix.Tc cutover remains required.
 
 ## Revision note
 
@@ -934,8 +934,8 @@ selected declarations; unsupported input declines explicitly.
 Implemented: production anonymous encoders/decoders moved unchanged into
 `Ix.Ixon.Codec`, reexported by the host; structural count/address predicates
 split into `Ix.Ixon.Wire`; all eight selected codec proof modules retained
-under `Ix.Ixon.Verify`, with source revision/path headers. The old and new
-proofs share the pure universe wire predicate. This removes the retained
+under `Ix.Ixon.Verify`, with source revision/path headers. These proofs
+use the pure universe wire predicate; D01 deleted the old copies. This removes the retained
 chain's transitive `Catalog`/Lean4Lean dependency and preserves the full
 all-variant domain, including expression spines, modes, and arbitrary side
 tables. `deConstantExact` and its inverse/cursor/suffix theorems add whole-buffer
@@ -1344,9 +1344,21 @@ Implementation checkpoint (2026-09-29):
   egress closures and public theorem statements are unchanged. The selected
   D00 codec contracts are preserved, so D01 can proceed independently of the
   remaining K4 byte-admission work.
+- D01 removes both lean4ix/Lean4Lean dependency paths, the two old proof
+  trees, the proof-only FFI crate, replay benchmark/runner, backend dispatch,
+  and obsolete Lake/CI/Nix targets. TruthMines source/output and all four
+  affected Lake manifests are updated with unrelated pins retained. A
+  tracked guard checks active references and runs in the certified and Nix
+  gates. In a fresh jj workspace without project Lean artifacts or a
+  Lean4Lean checkout, all 24 remaining targets build strictly, primary/CLI
+  and generator tests pass, and the full kernel/model gate retains the
+  38 differential and 26 ingress/exact-egress cases. Native x86_64-linux
+  Nix checks and the distributable CLI pass; nextest reports 1,533 passed,
+  14 skipped. The removal ledger in `docs/kernel.md` records exact scope,
+  fixture dispositions, immutable source revision, and remaining limits.
 - P04–P12 and the remaining K4–K7 work stay open; whole-corpus parity has
-  not been run. D01/D02 remain required: dependency retirement and runtime
-  cutover are not complete.
+  not been run. D02's runtime consumer cutover and deletion of Ix.Tc remain
+  required.
 
 ### Ontology and contracts to preserve
 
@@ -1757,6 +1769,10 @@ them; `Ix.Kernel.Audit` already provides axiom/import/runtime checks, so
 obsolete allowances and sorry-frontier infrastructure need not survive.
 
 ### D01 — remove the dependency and proof system in one coherent change
+
+Implemented and validated on 2026-09-29; see the D01 evidence and removal
+ledger in `docs/kernel.md`. The following requirements remain the
+recurrence checks for this completed milestone.
 
 Prerequisites: K2's replacement proof/CI gates pass, and the useful
 reading/codec contracts selected in D00 have their K3/K4 replacements.

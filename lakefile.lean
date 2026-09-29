@@ -7,15 +7,8 @@ package ix where
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "ab4d5eb461941837f48eb891be755c8c73e89fdd"
 
-/- Blake3 precompiles its libraries, so Lake loads their shared objects -- which
-bundle the C and Rust FFI objects -- into any process elaborating a module that
-imports them. That is what supplies the BLAKE3 backend to Lean's native evaluator
-for the `native_decide` proofs in `IxTcVerify`, so this pin must stay at or after
-the revision that turned precompilation on. Before it, Blake3 exposed a
-`blake3_rs_shared` cdylib that `ix_native_decide_dynlib` had to fetch and link;
-that target no longer exists. The pin is now at or after `18b4b1c8`, which
-adds `Blake3.Pure`, the total pure Lean implementation that certified paths
-use through `Ix.Address.Pure`; it imports neither FFI backend. -/
+/- The pinned package supplies the pure Lean hash and host C/Rust
+accelerators. -/
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @ "18b4b1c8937e32f88463bb8f5ee16a7b5f24fcc1"
 
@@ -24,20 +17,6 @@ require Cli from git
 
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.33.0"
-
-/- Reference Lean4-in-Lean4 theory and checker. `IxTcVerify` imports its
-Theory/Verify specification surface, while `bench-lean4lean` and the ignored
-`lean4lean` test runner exercise the implementation. The default `ix` target
-still does not build this dependency. Pin `argumentcomputer/lean4ix` exactly --
-the Argument development line, a standalone repository rather than a GitHub
-fork of digama0/lean4lean: this revision carries the upstream v4.32/v4.33
-kernel hardening — including the `checkNoMVarNoFVar` check on an opaque's
-value (leanprover/lean4#14498), which the replay path in
-`Benchmarks/Lean4Lean.lean` reaches — on top of that line's certified
-inductive-environment and projection development, and tracks Lean v4.33.1 as
-this package does. -/
-require lean4lean from git
-  "https://github.com/argumentcomputer/lean4ix" @ "a4188d7c2979378d85c6bb41fdd96c3a48a71371"
 
 /-! ## FFI
 
@@ -123,15 +102,6 @@ target ix_rs_net pkg : FilePath := do
     copyFile built output
     return output
 
-/-- The `ix-ffi-dyn` cdylib: Ix's own raw `@[extern]` symbols (currently the
-`toLEBytes` operations) as a small standalone shared library. Consumed by
-`ix_native_decide_dynlib`; kept separate from `ix-ffi` so proofs don't load
-that crate's full dependency graph. -/
-target ix_ffi_dyn pkg : FilePath := do
-  let args := #["build", "--release", "-p", "ix-ffi-dyn"]
-  proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-  inputBinFile $ pkg.dir / "target" / "release" / nameToSharedLib "ix_ffi_dyn"
-
 end FFI
 
 @[default_target]
@@ -199,18 +169,6 @@ lean_exe «bench-aggregate-policy» where
   -- symbols are then resolved from ix_ffi and not pulled twice.
   moreLinkObjs := #[ix_rs]
 
-/- The lean4lean replay machinery as an importable lib: the
-`bench-lean4lean` exe root and the ignored `lean4lean` test runner both
-import `Benchmarks.Lean4Lean`, and modules under `Benchmarks/` belong to
-no other lib target, so without this Lake cannot schedule the module from
-the Tests import graph. -/
-lean_lib Lean4LeanBench where
-  globs := #[.one `Benchmarks.Lean4Lean]
-
-lean_exe «bench-lean4lean» where
-  root := `Benchmarks.Lean4LeanMain
-  supportInterpreter := true
-
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 
@@ -232,65 +190,6 @@ lean_exe truthmines where
   root := `Benchmarks.TruthMinesSpec.Main
 
 end Benchmarks
-
-section IxTcVerify
-
-/-- Loadable FFI for Lean's native evaluator while `IxTcVerify` is elaborated.
-
-`native_decide` runs compiled Lean before any executable is linked, so for each
-opaque `@[extern]` it reaches, both symbol layers must be loadable up front:
-
-* the boxed entry point Lean calls (`lp_..._boxed`), taken from Lean's own
-  generated object for the declaring module, so no ABI is mirrored by hand; and
-* the raw Rust symbol it forwards to, taken from that crate's `cdylib`, recorded
-  by absolute path so no `LD_LIBRARY_PATH` is needed.
-
-Covers Ix's own externs only -- currently `Ix.Unsigned.toLEBytes` against
-`ix-ffi-dyn`. Blake3's are not here: that package precompiles its libraries, so
-Lake loads their shared objects into the elaborating process by itself. -/
-target ix_native_decide_dynlib pkg : Dynlib := do
-  let some ixUnsigned ← findModule? `Ix.Unsigned
-    | error "module `Ix.Unsigned` not found"
-  -- Raw symbols come from the crate's cdylib, recorded by path, and are built
-  -- by fetching the owning target (no direct cargo calls here).
-  let ixCdylib ← ix_ffi_dyn.fetch
-  -- Boxed entry points are Lean's own generated objects for the declaring module.
-  let boxedObjs ← (ixUnsigned.nativeFacets true).mapM (·.fetch ixUnsigned)
-  buildSharedLib "ix_native_decide"
-    (pkg.buildDir / nameToSharedLib "ix_native_decide")
-    (boxedObjs.push ixCdylib) #[]
-
-/- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec.
-Non-default: `lake build ix` never
-touches it, and `build-all` (the lint driver) skips it by name because its
-pinned Lean4Lean dependencies still emit named `sorry` warnings — `lake lint
--- --wfail` would otherwise fail even though the Ix verification source has
-no local `sorry` tokens. Required CI builds it separately without `--wfail`,
-audits the exact local sorry frontier, and checks exact per-root transitive
-axiom plus direct-`sorryAx`-origin manifests. Dev loop:
-`lake build IxTcVerify`; focused trust audit:
-`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Conditional
-Ix.Tc.Verify.Audit.Statements`. -/
-lean_lib IxTcVerify where
-  globs := #[.submodules `Ix.Tc.Verify]
-  -- `supportInterpreter` is a `lean_exe` option and takes effect only when
-  -- that executable is linked, after its modules have been elaborated.
-  -- These native-decide proofs need the boxed FFI symbols while the library
-  -- modules are being elaborated, so they must be supplied as a dynlib.
-  dynlibs := #[ix_native_decide_dynlib]
-
-end IxTcVerify
-
-section IxCompileVerify
-
-/- Formal verification of the Lean-to-Ixon compiler against the same
-Lean4Lean Theory endpoint as `IxTcVerify`.  Kept as a separate non-default
-library so compiler proofs cannot accidentally inherit checker acceptance
-theorems as their specification. -/
-lean_lib IxCompileVerify where
-  globs := #[.submodules `Ix.Compile.Verify]
-
-end IxCompileVerify
 
 section IxApplications
 
@@ -349,10 +248,7 @@ script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
-  -- IxTcVerify is the WIP proofs lib: sorry-bearing by design while the
-  -- verification frontier is open, so it must not run under `--wfail`.
-  -- Required CI builds it separately and audits the exact frontier.
-  let allNames := (libNames ++ exeNames |>.toList).filter (· != "IxTcVerify")
+  let allNames := (libNames ++ exeNames).toList
   for name in allNames do
     IO.println s!"Building: {name}"
     let child ← IO.Process.spawn {
@@ -407,6 +303,7 @@ script "check-kernel" (args) := do
     let code ← child.wait
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
+  run "python3" #["scripts/check-kernel-retirement.py"]
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
   run "lake" #["build", "--wfail", "kernel-provenance", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.Fidelity", "Tests.Ix.Kernel.Ingress", "Tests.Ix.Kernel.Egress", "Tests.Ix.Kernel.Codec"]
   run ".lake/build/bin/kernel-provenance" #[]

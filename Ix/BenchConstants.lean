@@ -1,7 +1,7 @@
 /-
   The shared benchmark constant set: the single source of truth for which
-  constants every per-constant benchmark backend (aiur, zisk, sp1, ooc,
-  lean4lean) runs. Every backend runs this same set — spanning the cheap →
+  constants every per-constant benchmark backend (aiur, zisk, sp1, ooc)
+  runs. Every backend runs this same set — spanning the cheap →
   heavy cost range across the registry envs — so their numbers stay
   comparable per constant; the only per-backend carve-outs are the hard
   feasibility exclusions in `Ix.Cli.BenchCmd.benchExclusions`.

@@ -60,7 +60,6 @@ import Tests.Cli
 import Tests.Ix.Ixes
 import Tests.ShardMap
 import Tests.Ix.EnvBody
-import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
 import Tests.Ix.CatalogDedup
@@ -287,9 +286,6 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Tests.Ix.Compile.AuxGenDiff).
   ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
   ("decompile-diff", Tests.Compile.DecompileDiff.run env),
-  -- lean4lean dependency smoke: accept a real closure, reject an
-  -- ill-typed decl (see Tests.Ix.Lean4Lean).
-  ("lean4lean", Tests.Ix.Lean4Lean.run env),
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).
   ("tc-pins", Tests.Tc.Pins.run),

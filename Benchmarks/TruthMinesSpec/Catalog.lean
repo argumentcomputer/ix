@@ -326,11 +326,6 @@ member of the mini infrastructure tier."),
     "079463134b9c50450b8393e1566a09fc492a34d9"
     #[] "NONE" "2026-07-20"
     #[`Sail] (notes := "UNLICENSED. REMS' Sail-to-Lean runtime library, the substrate for Sail-generated ISA models. Zero deps."),
-  gitPackage "lean4lean" `Lean4Lean
-    "https://github.com/digama0/lean4lean"
-    "e0e3f6bcccb840cb0ea6f11c2b274ada93a12e00"
-    #["batteries"] "Apache-2.0" "2026-08-14"
-    #[`Lean4Lean] (notes := "The Lean 4 kernel reimplemented and verified in Lean 4. Clean pure-Lean build, batteries only. Library target is Lean4Lean, not the capitalisation Lake would guess from the package name."),
   gitPackage "phi-confluence" `PhiConfluence
     "https://github.com/objectionary/proof"
     "58aa7731076d02bf51b2dfbcdc06c4f764101fb4"
