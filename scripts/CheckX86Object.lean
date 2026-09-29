@@ -50,10 +50,10 @@ private def inspect (readelf objdump : String) (fixture : Fixture) (path : FileP
   let elf ← inspectElf readelf path
   let disassembly ← disassemble objdump path
   let expected ← match fixture.kind with
-    | "arithmetic" => pure ["movabs rax,0x28", "add    rax,0x2", "je     23", "jmp    24"]
-    | "direct-call" => pure ["push   rbp", "call   f", "pop    rbp", "add    rax,0x2", "movabs rax,0x28"]
+    | "arithmetic" => pure ["mov    eax,0x28", "add    rax,0x2", "cmp    rax,0x2a", "je     18", "jmp    19"]
+    | "direct-call" => pure ["push   rbp", "call   c", "pop    rbp", "add    rax,0x2", "mov    eax,0x28"]
     | "runtime" => pure [
-        "push   rbp", "movabs rdi,0x10", "movabs rsi,0x8",
+        "push   rbp", "mov    edi,0x10", "mov    esi,0x8",
         "r_x86_64_pc32\tcompilatrix_rt_allocate-0x4", "pop    rbp"]
     | _ => throw (IO.userError "unknown fixture kind")
   requireAll disassembly expected s!"{fixture.name}: disassembly"

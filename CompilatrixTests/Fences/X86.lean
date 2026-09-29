@@ -196,6 +196,15 @@ E1/E2 laws. -/
 /-- info: 'Compilatrix.X86.Encode.instruction_decode' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Encode.instruction_decode
 
+/-- info: 'Compilatrix.X86.Instr.mov_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Instr.mov_wellFormed
+
+/-- info: 'Compilatrix.X86.Instr.alu_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Instr.alu_wellFormed
+
+/-- info: 'Compilatrix.X86.Instr.allocFrame_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Instr.allocFrame_wellFormed
+
 /-- info: 'Compilatrix.X86.Encode.row_execution' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Encode.row_execution
 

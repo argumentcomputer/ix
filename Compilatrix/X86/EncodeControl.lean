@@ -145,9 +145,19 @@ theorem Compare.row_ok (comparison : Compare) :
           simp [Compare.row, Op.argsOk, desc, Table.arithDesc, Table.cmpArith, Table.rmSlot, Table.regSlot,
             slotsAccept, ArgKind.accepts]
     | imm value =>
-        cases width <;> refine ⟨by simp only [Compare.row, aluImmRow]; decide, ?_⟩ <;>
-          simp [Compare.row, aluImmRow, Op.argsOk, desc, Table.arithDesc, Table.cmpArith, Table.rmSlot,
-            Table.immSlot, Table.fullImm, Table.ImmKind.argKind, slotsAccept, ArgKind.accepts, norm_idem]
+        simp only [Compare.row, aluImmRow]
+        split
+        · rename_i fits
+          have narrow := fitsImm8_narrow fits
+          cases width
+          · contradiction
+          all_goals
+            refine ⟨by dsimp only; decide, ?_⟩
+            simp [Op.argsOk, desc, Table.arithDesc, Table.cmpArith, Table.rmSlot, Table.immSlot,
+              slotsAccept, ArgKind.accepts, norm_idem]
+        · cases width <;> refine ⟨by dsimp only; decide, ?_⟩ <;>
+            simp [Op.argsOk, desc, Table.arithDesc, Table.cmpArith, Table.rmSlot,
+              Table.immSlot, Table.fullImm, Table.ImmKind.argKind, slotsAccept, ArgKind.accepts, norm_idem]
 
 def terminatorOperations : Terminator → List Decode.Operation
   | .jump _ | .tailCall _ => [.jump 0]
@@ -179,3 +189,80 @@ theorem terminator_decode (terminator : Terminator) (rest : List UInt8) :
         encodeCompare, Decode.sequence, compare_list_decode, branch_placeholder, jump_placeholder]
 
 end Compilatrix.X86.Encode
+
+namespace Compilatrix.X86
+
+/-! ## The typed constructors choose listed rows
+
+Every typed constructor yields a well-formed instruction, so the E1 laws
+stated for well-formed instructions hold for each of them without premise. -/
+
+open Encode
+
+attribute [local simp] Instr.wellFormed Op.argsOk desc Table.movDesc Table.movzxDesc Table.leaDesc
+  Table.imulDesc Table.arithDesc Table.pushDesc Table.popDesc Table.rmSlot Table.regSlot Table.immSlot
+  Table.ImmKind.argKind Table.moveImm Table.fullImm slotsAccept ArgKind.accepts norm_idem
+  normalize_canonical Op.linear
+
+theorem Instr.mov_wellFormed (width : Width) (destination : GPR) (source : MoveSource) :
+    (Instr.mov width destination source).wellFormed = true := by
+  cases source <;> cases width <;> simp only [Instr.mov, Instr.ofRow, movImmRow] <;> (try split) <;>
+    (try split) <;> simp_all <;> decide
+
+theorem Instr.alu_wellFormed (operation : AluOp) (width : Width) (destination : GPR) (source : AluSource) :
+    (Instr.alu operation width destination source).wellFormed = true := by
+  cases source with
+  | reg => cases operation <;> cases width <;> simp [Instr.alu, AluOp.mnemonic] <;> decide
+  | imm value =>
+      simp only [Instr.alu, Instr.ofRow, aluImmRow]
+      split
+      · have narrow := fitsImm8_narrow ‹_›
+        cases operation <;> cases width <;> first | contradiction | (simp [AluOp.mnemonic]; decide)
+      · cases operation <;> cases width <;> simp [AluOp.mnemonic] <;> decide
+
+theorem Instr.imul_wellFormed (width : MulWidth) (destination source : GPR) :
+    (Instr.imul width destination source).wellFormed = true := by
+  cases width <;> simp [Instr.imul, MulWidth.width] <;> decide
+
+theorem Instr.imulImm_wellFormed (width : MulWidth) (destination source : GPR) (value : Imm32) :
+    (Instr.imulImm width destination source value).wellFormed = true := by
+  simp only [Instr.imulImm]
+  split <;> cases width <;> simp [MulWidth.width] <;> decide
+
+theorem Instr.load_wellFormed (width : Width) (destination : GPR) (source : MemAddr) :
+    (Instr.load width destination source).wellFormed = true := by
+  cases width <;> simp [Instr.load] <;> decide
+
+theorem Instr.store_wellFormed (width : Width) (destination : MemAddr) (source : GPR) :
+    (Instr.store width destination source).wellFormed = true := by
+  cases width <;> simp [Instr.store] <;> decide
+
+theorem Instr.lea_wellFormed (destination : GPR) (source : MemAddr) :
+    (Instr.lea destination source).wellFormed = true := by
+  simp [Instr.lea]
+  decide
+
+theorem Instr.push_wellFormed (source : GPR) : (Instr.push source).wellFormed = true := by
+  simp [Instr.push]
+  decide
+
+theorem Instr.pop_wellFormed (destination : GPR) : (Instr.pop destination).wellFormed = true := by
+  simp [Instr.pop]
+  decide
+
+theorem Instr.allocFrame_wellFormed (size : FrameSize) : (Instr.allocFrame size).wellFormed = true := by
+  simp only [Instr.allocFrame, Instr.ofRow, aluImmRow]
+  split <;> simp <;> decide
+
+theorem Instr.freeFrame_wellFormed (size : FrameSize) : (Instr.freeFrame size).wellFormed = true := by
+  simp only [Instr.freeFrame, Instr.ofRow, aluImmRow]
+  split <;> simp <;> decide
+
+theorem Instr.spill_wellFormed (slot : StackSlot) (source : GPR) : (Instr.spill slot source).wellFormed = true :=
+  Instr.store_wellFormed _ _ _
+
+theorem Instr.reload_wellFormed (destination : GPR) (slot : StackSlot) :
+    (Instr.reload destination slot).wellFormed = true :=
+  Instr.load_wellFormed _ _ _
+
+end Compilatrix.X86

@@ -17,6 +17,23 @@ def linearInstruction : Instr → Bool
   | .op o _ => o.linear && (desc o).flagsIn.isEmpty
   | .call _ | .callRuntime _ => false
 
+@[simp] theorem linear_mov (width : Width) (destination : GPR) (source : MoveSource) :
+    linearInstruction (.mov width destination source) = true := by
+  cases source <;> cases width <;> simp only [Instr.mov, Instr.ofRow, movImmRow] <;> (try split) <;>
+    (try split) <;> rfl
+
+@[simp] theorem linear_alu (operation : AluOp) (width : Width) (destination : GPR) (source : AluSource) :
+    linearInstruction (.alu operation width destination source) = true := by
+  cases operation <;> cases source <;> simp only [Instr.alu, Instr.ofRow, aluImmRow] <;> (try split) <;> rfl
+
+@[simp] theorem linear_allocFrame (size : FrameSize) : linearInstruction (.allocFrame size) = true := by
+  simp only [Instr.allocFrame, Instr.ofRow, aluImmRow]
+  split <;> rfl
+
+@[simp] theorem linear_freeFrame (size : FrameSize) : linearInstruction (.freeFrame size) = true := by
+  simp only [Instr.freeFrame, Instr.ofRow, aluImmRow]
+  split <;> rfl
+
 /-- Every listed linear row declares no input flags. -/
 theorem table_flagsFree : Op.rows.all (fun o => !o.linear || (desc o).flagsIn.isEmpty) = true := by decide
 
@@ -111,9 +128,7 @@ theorem compare_execution (comparison : Compare) (condition : Condition)
     ∃ after, next = .ok after ∧ after.core = state.core ∧
       after.rip = state.rip + UInt64.ofNat length ∧
       after.flags.test condition = some (comparison.holds condition state.core) := by
-  have linear : comparison.row.1.linear = true := by
-    cases comparison with
-    | mk width left right => cases right <;> rfl
+  have linear := Compare.row_linear comparison
   refine ⟨⟨state.core, state.rip + UInt64.ofNat length, comparison.flags state.core⟩,
     by rw [execute_linear linear, Compare.exec_eq, Compare.flags_eq], rfl, rfl, ?_⟩
   exact Compare.flags_test comparison condition state.core

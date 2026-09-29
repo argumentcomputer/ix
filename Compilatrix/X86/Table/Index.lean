@@ -116,6 +116,7 @@ end Table
 /-- Every row fits the architectural fifteen-byte instruction limit. -/
 theorem table_bounded : Op.rows.all (fun o => decide (Table.maxLength o ≤ 15)) = true := by decide
 
+set_option maxRecDepth 8192 in
 /-- The index keys are pairwise distinct: the decoder is deterministic. -/
 theorem table_injective : (Table.index.map (·.1)).Nodup := by decide
 

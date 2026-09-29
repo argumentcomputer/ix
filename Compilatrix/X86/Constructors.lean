@@ -40,6 +40,20 @@ theorem frame_imm (size : FrameSize) : (Table.fullImm .w64).norm size.bytes = si
   simp only [UInt32.toNat_toUInt64, UInt64.toNat_toUInt32]
   omega
 
+open Encode in
+/-- The row `aluImmRow` chooses carries an immediate with the requested
+value at the operation width, provided the full-size form can hold it. -/
+theorem aluImmRow_spec (mn : Mnemonic) (width : Width) (target : Arg) (value : Word)
+    (full : width.truncate ((Table.fullImm width).norm value) = width.truncate value) :
+    ∃ form imm, (form = .MI8 ∨ form = .MI) ∧
+      aluImmRow mn width target value = ({ mn, w := width, form }, [target, .imm imm]) ∧
+      width.truncate imm = width.truncate value := by
+  unfold aluImmRow
+  split
+  · rename_i fits
+    exact ⟨_, _, .inl rfl, rfl, fitsImm8_truncate fits⟩
+  · exact ⟨_, _, .inr rfl, rfl, full⟩
+
 def AluOp.arith : AluOp → Table.Arith
   | .add => Table.addArith
   | .sub => Table.subArith
@@ -70,10 +84,26 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
         Table.regSlot, Table.moveSem, readSlots, writeSlots, Arg.load, Arg.store, Except.mapError,
         MoveSource.eval]
   | imm value =>
-      simp only [Instr.mov, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.movDesc,
-        Table.regSlot, Table.immSlot, Table.moveSem, readSlots, writeSlots, Arg.load, Arg.store,
-        Except.mapError, MoveSource.eval, bind, Except.bind, pure, Except.pure, List.headD_cons]
-      rw [Encode.writeReg_congr _ _ _ _ _ (Encode.moveImm_truncate width value)]
+      cases width with
+      | w64 =>
+          simp only [Instr.mov, Instr.ofRow, movImmRow, MoveSource.eval]
+          split
+          · rename_i small
+            simp only [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.movDesc,
+              Table.regSlot, Table.immSlot, Table.moveSem, readSlots, writeSlots, Arg.load, Arg.store,
+              Except.mapError, bind, Except.bind, pure, Except.pure, List.headD_cons]
+            have low : Width.w32.truncate (ImmKind.imm32.norm value) = value := by
+              rw [Encode.norm_truncate .imm32 .w32 _ (by decide) rfl, Encode.truncate32_of_small _ small]
+            simp only [Core.writeReg, low]
+          · split <;>
+              simp only [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.movDesc,
+                Table.regSlot, Table.rmSlot, Table.immSlot, Table.moveSem, readSlots, writeSlots, Arg.load,
+                Arg.store, Except.mapError, bind, Except.bind, pure, Except.pure, List.headD_cons]
+      | w8 | w16 | w32 =>
+          simp only [Instr.mov, Instr.ofRow, movImmRow, MoveSource.eval, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.movDesc,
+            Table.regSlot, Table.immSlot, Table.moveSem, readSlots, writeSlots, Arg.load, Arg.store,
+            Except.mapError, bind, Except.bind, pure, Except.pure, List.headD_cons]
+          rw [Encode.writeReg_congr _ _ _ _ _ (Encode.moveImm_truncate _ value)]
 
 @[simp] theorem executeInstr_lea (destination : GPR) (address : MemAddr) :
     executeInstr runtime checked (.lea destination address) machine =
@@ -92,12 +122,16 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
         readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, AluSource.eval, bind, Except.bind, pure,
         Except.pure, List.headD_cons, List.tail_cons]
   | imm value =>
-      simp only [Instr.alu, Instr.ofRow, aluImmRow, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs,
+      obtain ⟨form, imm, form_ok, row, low⟩ := aluImmRow_spec operation.mnemonic width (.reg destination)
+        (signExtend32 value) (Encode.fullImm_truncate _ _)
+      simp only [Instr.alu, Instr.ofRow, row, AluSource.eval]
+      rcases form_ok with rfl | rfl <;>
+      simp only [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs,
         Op.stage, desc_alu, Table.arithDesc, AluOp.arith_sem, AluOp.arith_role, Table.rmSlot, Table.immSlot,
-        Table.aluSem, readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, AluSource.eval, bind,
-        Except.bind, pure, Except.pure, List.headD_cons, List.tail_cons]
+        Table.aluSem, readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, bind,
+        Except.bind, pure, Except.pure, List.headD_cons, List.tail_cons] <;>
       exact congrArg machine.advanceWith (Encode.writeReg_congr _ _ _ _ _
-        (Encode.alu_congr_right _ _ _ _ _ (Encode.fullImm_truncate _ _)))
+        (Encode.alu_congr_right _ _ _ _ _ low))
 
 @[simp] theorem executeInstr_imul (width : MulWidth) (destination source : GPR) :
     executeInstr runtime checked (.imul width destination source) machine =
@@ -153,16 +187,26 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
 @[simp] theorem executeInstr_allocFrame (size : FrameSize) :
     executeInstr runtime checked (.allocFrame size) machine =
       machine.advanceWith (machine.core.setReg .rsp (machine.core.readReg .rsp - size.bytes)) := by
-  simp [Instr.allocFrame, Instr.ofRow, aluImmRow, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc,
+  obtain ⟨form, imm, form_ok, row, low⟩ := aluImmRow_spec .sub .w64 (.reg .rsp) size.bytes (by rw [frame_imm])
+  simp only [Encode.truncate64] at low
+  subst low
+  simp only [Instr.allocFrame, Instr.ofRow, row]
+  rcases form_ok with rfl | rfl <;>
+  simp [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc,
     Table.arithDesc, Table.subArith, Table.Arith.sem, Table.Arith.role, Table.rmSlot, Table.immSlot, Table.aluSem,
-    readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, AluOp.eval, Core.writeReg, frame_imm]
+    readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, AluOp.eval, Core.writeReg]
 
 @[simp] theorem executeInstr_freeFrame (size : FrameSize) :
     executeInstr runtime checked (.freeFrame size) machine =
       machine.advanceWith (machine.core.setReg .rsp (machine.core.readReg .rsp + size.bytes)) := by
-  simp [Instr.freeFrame, Instr.ofRow, aluImmRow, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc,
+  obtain ⟨form, imm, form_ok, row, low⟩ := aluImmRow_spec .add .w64 (.reg .rsp) size.bytes (by rw [frame_imm])
+  simp only [Encode.truncate64] at low
+  subst low
+  simp only [Instr.freeFrame, Instr.ofRow, row]
+  rcases form_ok with rfl | rfl <;>
+  simp [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc,
     Table.arithDesc, Table.addArith, Table.Arith.sem, Table.Arith.role, Table.rmSlot, Table.immSlot, Table.aluSem,
-    readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, AluOp.eval, Core.writeReg, frame_imm]
+    readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, AluOp.eval, Core.writeReg]
 
 @[simp] theorem executeInstr_spill (slot : StackSlot) (source : GPR) :
     executeInstr runtime checked (.spill slot source) machine =

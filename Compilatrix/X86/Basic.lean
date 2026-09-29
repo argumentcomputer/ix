@@ -66,10 +66,34 @@ def AluOp.mnemonic : AluOp → Mnemonic
   | .or => .or
   | .xor => .xor
 
-/-- An ALU or compare row with an immediate operand. `value` is the
-immediate's sign-extended 64-bit value; only its low `width` bits matter. -/
+/-- Whether an imm8 field, sign-extended, has the same low `width` bits. -/
+def fitsImm8 (width : Width) (value : Word) : Bool :=
+  width != .w8 && width.truncate (ImmKind.imm8.norm value) == width.truncate value
+
+/-- An ALU or compare row with an immediate operand: `op r/m, imm8` (83 /d)
+when the value sign-extends from a byte, otherwise the full-size form.
+`value` is the immediate's sign-extended 64-bit value; only its low `width`
+bits matter. -/
 def aluImmRow (mn : Mnemonic) (width : Width) (target : Arg) (value : Word) : Op × List Arg :=
-  ({ mn, w := width, form := .MI }, [target, .imm ((Table.fullImm width).norm value)])
+  if fitsImm8 width value then
+    ({ mn, w := width, form := .MI8 }, [target, .imm (ImmKind.imm8.norm value)])
+  else
+    ({ mn, w := width, form := .MI }, [target, .imm ((Table.fullImm width).norm value)])
+
+/-- `mov r, imm`, choosing the shortest row: a 64-bit value that fits in 32
+unsigned bits uses the zero-extending `mov r32, imm32` (B8+r), one that
+sign-extends from 32 bits uses `mov r/m64, imm32` (C7 /0), and any other
+uses `movabs` (REX.W B8+r). -/
+def movImmRow (width : Width) (destination : GPR) (value : Word) : Op × List Arg :=
+  match width with
+  | .w64 =>
+      if value.toNat < 2 ^ 32 then
+        ({ mn := .mov, w := .w32, form := .OI }, [.reg destination, .imm (ImmKind.imm32.norm value)])
+      else if ImmKind.imm32.norm value == value then
+        ({ mn := .mov, w := .w64, form := .MI }, [.reg destination, .imm value])
+      else
+        ({ mn := .mov, w := .w64, form := .OI }, [.reg destination, .imm value])
+  | width => ({ mn := .mov, w := width, form := .OI }, [.reg destination, .imm ((Table.moveImm width).norm value)])
 
 /-- The row a comparison executes. -/
 def Compare.row (comparison : Compare) : Op × List Arg :=
@@ -84,9 +108,7 @@ def ofRow (row : Op × List Arg) : Instr := .op row.1 row.2
 /-- `mov r, r` or `mov r, imm`. -/
 def mov (width : Width) (destination : GPR) : MoveSource → Instr
   | .reg source => .op { mn := .mov, w := width, form := .MR } [.reg destination, .reg source]
-  | .imm value =>
-      .op { mn := .mov, w := width, form := .OI }
-        [.reg destination, .imm ((Table.moveImm width).norm value)]
+  | .imm value => ofRow (movImmRow width destination value)
 
 /-- Narrow loads zero-extend (`movzx`); w32 follows the architectural
 zero-extension rule and w64 is a normal move. -/
@@ -111,6 +133,16 @@ def alu (operation : AluOp) (width : Width) (destination : GPR) : AluSource → 
 
 def imul (width : MulWidth) (destination source : GPR) : Instr :=
   .op { mn := .imul, w := width.width, form := .RM } [.reg destination, .reg source]
+
+/-- `imul r, r, imm`: 6B with an imm8 when the value sign-extends from a
+byte, otherwise 69 with the full-size immediate. -/
+def imulImm (width : MulWidth) (destination source : GPR) (value : Imm32) : Instr :=
+  if fitsImm8 width.width (signExtend32 value) then
+    .op { mn := .imul, w := width.width, form := .RMI8 }
+      [.reg destination, .reg source, .imm (ImmKind.imm8.norm (signExtend32 value))]
+  else
+    .op { mn := .imul, w := width.width, form := .RMI }
+      [.reg destination, .reg source, .imm ((Table.fullImm width.width).norm (signExtend32 value))]
 
 def push (source : GPR) : Instr := .op { mn := .push, w := .w64, form := .O } [.reg source]
 def pop (destination : GPR) : Instr := .op { mn := .pop, w := .w64, form := .O } [.reg destination]

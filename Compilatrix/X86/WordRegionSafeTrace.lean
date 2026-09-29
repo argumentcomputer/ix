@@ -5,10 +5,7 @@ namespace Compilatrix.X86.WordRegion
 
 theorem Effect.linear {layout : Layout} {instruction : Instr} {before after : State}
     (effect : Effect layout instruction before after) : Encode.linearInstruction instruction = true := by
-  cases effect with
-  | mov _ _ source => cases source <;> rfl
-  | alu _ operation _ source => cases operation <;> cases source <;> rfl
-  | _ => rfl
+  cases effect <;> first | rfl | simp
 
 theorem operationSafe_memory (instruction : Instr) (state : State) (memory : Memory)
     (holes : Stream.Holes) (returns : List ReturnFrame) :

@@ -18,8 +18,18 @@ def expected (values : Array UInt8) : ByteArray := ByteArray.mk values
 
 def instr (instruction : Instr) : ByteArray := (encodeInstr instruction).bytes
 
-#guard instr (.mov .w64 .rax (.imm 42)) ==
-  expected #[0x48, 0xb8, 0x2a, 0, 0, 0, 0, 0, 0, 0]
+-- A 64-bit move of a value below 2^32 uses `mov r32, imm32`, which zero-extends.
+#guard instr (.mov .w64 .rax (.imm 42)) == expected #[0xb8, 0x2a, 0, 0, 0]
+
+-- A value that sign-extends from 32 bits uses `mov r/m64, imm32`.
+#guard instr (.mov .w64 .rax (.imm 0xffffffffffffffff)) ==
+  expected #[0x48, 0xc7, 0xc0, 0xff, 0xff, 0xff, 0xff]
+
+-- Only a value that needs all 64 bits uses `movabs`.
+#guard instr (.mov .w64 .rax (.imm 0x100000000)) ==
+  expected #[0x48, 0xb8, 0, 0, 0, 0, 0x01, 0, 0, 0]
+
+#guard instr (.mov .w32 .r9 (.imm 5)) == expected #[0x41, 0xb9, 0x05, 0, 0, 0]
 
 -- REX selects SIL rather than DH.
 #guard instr (.mov .w8 .rsi (.imm 7)) == expected #[0x40, 0xb6, 0x07]
@@ -53,8 +63,14 @@ def instr (instruction : Instr) : ByteArray := (encodeInstr instruction).bytes
     { base := some .rbx, index := some .r9, scale := .four, displacement := 32 }) ==
   expected #[0x4e, 0x8d, 0x54, 0x8b, 0x20]
 
-#guard instr (.alu .add .w64 .rax (.imm 2)) == expected #[0x48, 0x81, 0xc0, 0x02, 0, 0, 0]
+-- An immediate that sign-extends from a byte uses `83 /d ib`.
+#guard instr (.alu .add .w64 .rax (.imm 2)) == expected #[0x48, 0x83, 0xc0, 0x02]
+#guard instr (.alu .and .w16 .rcx (.imm 0xffff)) == expected #[0x66, 0x83, 0xe1, 0xff]
+#guard instr (.alu .or .w32 .r8 (.imm 0xffffff80)) == expected #[0x41, 0x83, 0xc8, 0x80]
 
+-- Otherwise the full-size immediate: `81 /d id` (or `80 /d ib` at byte width).
+#guard instr (.alu .add .w64 .rax (.imm 200)) == expected #[0x48, 0x81, 0xc0, 0xc8, 0, 0, 0]
+#guard instr (.alu .xor .w16 .rdx (.imm 0x1234)) == expected #[0x66, 0x81, 0xf2, 0x34, 0x12]
 #guard instr (.alu .sub .w8 .rsi (.imm 1)) == expected #[0x40, 0x80, 0xee, 0x01]
 
 #guard instr (.alu .xor .w32 .r9 (.reg .r10)) == expected #[0x45, 0x31, 0xd1]
@@ -63,13 +79,19 @@ def instr (instruction : Instr) : ByteArray := (encodeInstr instruction).bytes
 
 #guard instr (.imul .w64 .r9 .r10) == expected #[0x4d, 0x0f, 0xaf, 0xca]
 
+-- Three-operand multiply: `6B /r ib` for a byte immediate, else `69 /r id`.
+#guard instr (.imulImm .w64 .r9 .r10 3) == expected #[0x4d, 0x6b, 0xca, 0x03]
+#guard instr (.imulImm .w32 .rax .rcx 1000) == expected #[0x69, 0xc1, 0xe8, 0x03, 0, 0]
+
 #guard instr (.push .r12) == expected #[0x41, 0x54]
 #guard instr (.pop .r12) == expected #[0x41, 0x5c]
 #guard instr (.push .rbp) == expected #[0x55]
 
-#guard instr (.allocFrame { units16 := 1 }) == expected #[0x48, 0x81, 0xec, 0x10, 0, 0, 0]
+#guard instr (.allocFrame { units16 := 1 }) == expected #[0x48, 0x83, 0xec, 0x10]
 
-#guard instr (.freeFrame { units16 := 1 }) == expected #[0x48, 0x81, 0xc4, 0x10, 0, 0, 0]
+#guard instr (.freeFrame { units16 := 1 }) == expected #[0x48, 0x83, 0xc4, 0x10]
+
+#guard instr (.allocFrame { units16 := 8 }) == expected #[0x48, 0x81, 0xec, 0x80, 0, 0, 0]
 
 #guard instr (.spill { index := 0 } .r12) == expected #[0x4c, 0x89, 0x65, 0xf8]
 
@@ -79,7 +101,10 @@ def instr (instruction : Instr) : ByteArray := (encodeInstr instruction).bytes
   expected #[0x4c, 0x89, 0xa5, 0, 0, 0xfc, 0xff]
 
 #guard encodeCompare { width := .w64, left := .rax, right := .imm 42 } ==
-  expected #[0x48, 0x81, 0xf8, 0x2a, 0, 0, 0]
+  expected #[0x48, 0x83, 0xf8, 0x2a]
+
+#guard encodeCompare { width := .w32, left := .rbx, right := .imm 0x10000 } ==
+  expected #[0x81, 0xfb, 0, 0, 0x01, 0]
 
 #guard encodeCompare { width := .w32, left := .r9, right := .reg .r10 } ==
   expected #[0x45, 0x39, 0xd1]
@@ -104,7 +129,7 @@ def runtimeCallPlaceholderAccepted : Bool :=
 #guard (encodeTerminator (.branch
     { width := .w64, left := .rax, right := .imm 42 }
     .eq 1 2)).bytes ==
-  expected #[0x48, 0x81, 0xf8, 0x2a, 0, 0, 0,
+  expected #[0x48, 0x83, 0xf8, 0x2a,
     0x0f, 0x84, 0, 0, 0, 0,
     0xe9, 0, 0, 0, 0]
 
@@ -119,15 +144,15 @@ def arithmeticProgramBytesAccepted : Bool :=
   | .error _ => false
   | .ok output =>
       output.text == expected #[
-        0x48, 0xb8, 0x28, 0, 0, 0, 0, 0, 0, 0,
-        0x48, 0x81, 0xc0, 0x02, 0, 0, 0,
-        0x48, 0x81, 0xf8, 0x2a, 0, 0, 0,
+        0xb8, 0x28, 0, 0, 0,
+        0x48, 0x83, 0xc0, 0x02,
+        0x48, 0x83, 0xf8, 0x2a,
         0x0f, 0x84, 0x05, 0, 0, 0,
         0xe9, 0x01, 0, 0, 0,
         0xc3,
-        0x48, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0,
+        0xb8, 0, 0, 0, 0,
         0xc3] &&
-      output.blockOffsets == #[0, 35, 36] &&
+      output.blockOffsets == #[0, 24, 25] &&
       output.relocations.isEmpty
 
 #guard arithmeticProgramBytesAccepted
@@ -139,13 +164,13 @@ def directCallProgramBytesAccepted : Bool :=
   | .ok output =>
       output.text == expected #[
         0x55,
-        0xe8, 0x09, 0, 0, 0,
+        0xe8, 0x06, 0, 0, 0,
         0x5d,
-        0x48, 0x81, 0xc0, 0x02, 0, 0, 0,
+        0x48, 0x83, 0xc0, 0x02,
         0xc3,
-        0x48, 0xb8, 0x28, 0, 0, 0, 0, 0, 0, 0,
+        0xb8, 0x28, 0, 0, 0,
         0xc3] &&
-      output.blockOffsets == #[0, 15] &&
+      output.blockOffsets == #[0, 12] &&
       output.relocations.isEmpty
 
 #guard directCallProgramBytesAccepted
@@ -157,13 +182,13 @@ def runtimeRelocationAccepted : Bool :=
   | .ok output =>
       output.text == expected #[
         0x55,
-        0x48, 0xbf, 0x10, 0, 0, 0, 0, 0, 0, 0,
-        0x48, 0xbe, 0x08, 0, 0, 0, 0, 0, 0, 0,
+        0xbf, 0x10, 0, 0, 0,
+        0xbe, 0x08, 0, 0, 0,
         0xe8, 0, 0, 0, 0,
         0x5d,
         0xc3] &&
       output.relocations == #[
-        { offset := 22
+        { offset := 12
           symbol := "compilatrix_rt_allocate"
           addend := -4 }]
 

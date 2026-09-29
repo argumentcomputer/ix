@@ -88,11 +88,13 @@ theorem condition_congr (condition : Condition) (width : Width) (left first seco
   cases condition <;> simp [Condition.holds, Width.signedValue, equal]
 
 /-- The value a comparison's row compares against: its register, or its
-immediate at the row's canonical width. -/
+immediate at the row's canonical width (imm8 when the value fits). -/
 def Compare.operand (comparison : Compare) (core : Core) : Word :=
   match comparison.right with
   | .reg register => core.readReg register
-  | .imm value => (Table.fullImm comparison.width).norm (signExtend32 value)
+  | .imm value =>
+      if fitsImm8 comparison.width (signExtend32 value) then ImmKind.imm8.norm (signExtend32 value)
+      else (Table.fullImm comparison.width).norm (signExtend32 value)
 
 theorem Compare.operand_low (comparison : Compare) (core : Core) :
     comparison.width.truncate (comparison.operand core) = comparison.width.truncate (comparison.right.eval core) := by
@@ -100,7 +102,11 @@ theorem Compare.operand_low (comparison : Compare) (core : Core) :
   | mk width left right =>
     cases right with
     | reg register => rfl
-    | imm value => exact Encode.fullImm_truncate width value
+    | imm value =>
+        simp only [Compare.operand]
+        split
+        · exact Encode.fitsImm8_truncate ‹_›
+        · exact Encode.fullImm_truncate width value
 
 /-- The `cmp` row reads its operands, leaves the core unchanged and sets
 the four flags of the subtraction. -/
@@ -115,9 +121,19 @@ theorem Compare.exec_eq (comparison : Compare) (core : Core) (flags : ByteEval.F
           Table.Arith.role, Table.rmSlot, Table.regSlot, Table.cmpSem, readSlots, writeSlots, Arg.load,
           ByteEval.merge_allSet, Except.mapError]
     | imm value =>
-        simp [Compare.row, aluImmRow, Compare.operand, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.arithDesc, Table.cmpArith,
+        simp only [Compare.row, aluImmRow, Compare.operand]
+        split <;>
+        simp [Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.arithDesc, Table.cmpArith,
           Table.Arith.sem, Table.Arith.role, Table.rmSlot, Table.immSlot, Table.cmpSem, readSlots, writeSlots,
           Arg.load, ByteEval.merge_allSet, Except.mapError]
+
+/-- A comparison's row is a straight-line row. -/
+theorem Compare.row_linear (comparison : Compare) : comparison.row.1.linear = true := by
+  cases comparison with
+  | mk width left right =>
+      cases right with
+      | reg => rfl
+      | imm => simp only [Compare.row, aluImmRow]; split <;> rfl
 
 theorem Compare.flags_eq (comparison : Compare) (core : Core) :
     comparison.flags core =

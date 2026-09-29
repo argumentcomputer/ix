@@ -290,8 +290,8 @@ open Encode (instructionOperation)
 @[simp] theorem footprint_mov (width : Width) (destination : GPR) (source : MoveSource) (core : Core) :
     operationReads (instructionOperation (.mov width destination source)) core = [] ∧
       operationWrites (instructionOperation (.mov width destination source)) core = [] := by
-  cases source <;>
-    simp [Instr.mov, instructionOperation, operationReads, operationWrites, Op.reads, Op.writes, Op.pops,
+  cases source <;> cases width <;> simp only [Instr.mov, Instr.ofRow, movImmRow] <;> (try split) <;> (try split) <;>
+    simp [instructionOperation, operationReads, operationWrites, Op.reads, Op.writes, Op.pops,
       Op.pushes, desc, Table.movDesc, Table.rmSlot, Table.regSlot, Table.immSlot, slotReads, slotWrites,
       Arg.access]
 
@@ -299,8 +299,8 @@ open Encode (instructionOperation)
     (core : Core) :
     operationReads (instructionOperation (.alu operation width destination source)) core = [] ∧
       operationWrites (instructionOperation (.alu operation width destination source)) core = [] := by
-  cases operation <;> cases source <;>
-    simp [Instr.alu, Instr.ofRow, aluImmRow, AluOp.mnemonic, instructionOperation, operationReads,
+  cases operation <;> cases source <;> simp only [Instr.alu, Instr.ofRow, aluImmRow] <;> (try split) <;>
+    simp [AluOp.mnemonic, instructionOperation, operationReads,
       operationWrites, Op.reads, Op.writes, Op.pops, Op.pushes, desc, Table.arithDesc, Table.rmSlot, Table.Arith.role,
       Table.addArith, Table.subArith, Table.andArith, Table.orArith, Table.xorArith,
       Table.regSlot, Table.immSlot, slotReads, slotWrites, Arg.access]
@@ -310,10 +310,12 @@ open Encode (instructionOperation)
       operationWrites (instructionOperation (.allocFrame size)) core = [] ∧
       operationReads (instructionOperation (.freeFrame size)) core = [] ∧
       operationWrites (instructionOperation (.freeFrame size)) core = [] := by
-  simp [Instr.allocFrame, Instr.freeFrame, Instr.ofRow, aluImmRow, instructionOperation, operationReads,
-    operationWrites, Op.reads, Op.writes, Op.pops, Op.pushes, desc, Table.arithDesc, Table.rmSlot, Table.Arith.role,
-    Table.addArith, Table.subArith,
-    Table.immSlot, slotReads, slotWrites, Arg.access]
+  simp only [Instr.allocFrame, Instr.freeFrame, Instr.ofRow, aluImmRow]
+  split <;>
+    simp [instructionOperation, operationReads,
+      operationWrites, Op.reads, Op.writes, Op.pops, Op.pushes, desc, Table.arithDesc, Table.rmSlot, Table.Arith.role,
+      Table.addArith, Table.subArith,
+      Table.immSlot, slotReads, slotWrites, Arg.access]
 
 @[simp] theorem footprint_load (width : Width) (destination : GPR) (source : MemAddr) (core : Core) :
     operationReads (instructionOperation (.load width destination source)) core =

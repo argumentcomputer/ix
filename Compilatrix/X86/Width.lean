@@ -212,4 +212,16 @@ theorem signExtend32_neg (value : Word) (bound : value.toNat < 2 ^ 31) :
   rw [signExtend32_neg _ (spill_bound slot).2]
   simp [UInt64.sub_eq_add_neg]
 
+/-! ## Compact immediates -/
+
+theorem fitsImm8_truncate {width : Width} {value : Word} (fits : fitsImm8 width value = true) :
+    width.truncate (ImmKind.imm8.norm value) = width.truncate value := by
+  simp only [fitsImm8, Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at fits
+  exact fits.2
+
+theorem fitsImm8_narrow {width : Width} {value : Word} (fits : fitsImm8 width value = true) :
+    width ≠ .w8 := by
+  simp only [fitsImm8, Bool.and_eq_true, bne_iff_ne, ne_eq] at fits
+  exact fits.1
+
 end Compilatrix.X86.Encode

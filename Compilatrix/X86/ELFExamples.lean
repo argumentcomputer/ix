@@ -74,7 +74,7 @@ def runtimeRelocationAccepted : Bool :=
       let relocationSize := readNatural object (relocationHeader + 32) 8
       relocationSize == 24 &&
         object.extract relocationOffset (relocationOffset + 24) ==
-          (u64 22 ++ word64 (relocationInfo 3 2) ++
+          (u64 12 ++ word64 (relocationInfo 3 2) ++
             word64 (Int64.ofInt (-4)).toUInt64) &&
         containsBytes object "compilatrix_rt_allocate".toUTF8
 
@@ -134,7 +134,7 @@ def invalidRelocationAddendRejected : Bool :=
           { encoded := invalid
             entryBlock := 0
             provenance := fixtureProvenance } with
-      | .error (.invalidRelocationAddend 22 0) => true
+      | .error (.invalidRelocationAddend 12 0) => true
       | _ => false
 
 #guard invalidRelocationAddendRejected

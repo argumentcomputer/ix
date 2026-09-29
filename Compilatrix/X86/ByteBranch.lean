@@ -59,10 +59,7 @@ def comparedState (comparison : Compare) (state : ByteEval.State) : ByteEval.Sta
 theorem compare_step (comparison : Compare) (length : Nat) (state : ByteEval.State) :
     ByteEval.execute ⟨.op comparison.row.1 comparison.row.2, length⟩ state =
       .ok { state with rip := state.rip + UInt64.ofNat length, flags := comparison.flags state.core } := by
-  have linear : comparison.row.1.linear = true := by
-    cases comparison with
-    | mk width left right => cases right <;> rfl
-  rw [execute_linear linear, Compare.exec_eq, Compare.flags_eq]
+  rw [execute_linear (Compare.row_linear comparison), Compare.exec_eq, Compare.flags_eq]
 
 theorem branch_step_compare (comparison : Compare) (condition : Condition) (yes no : Imm32)
     (state : ByteEval.State) :

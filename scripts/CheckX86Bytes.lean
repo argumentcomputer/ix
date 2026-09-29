@@ -29,7 +29,8 @@ private def conditions : List Condition :=
    .signedLt, .signedLe, .signedGt, .signedGe]
 private def immediates : List Word :=
   [0, 1, 0x7f, 0x80, 0xff, 0x8000, 0xffff, 0x7fffffff, 0x80000000,
-   0xffffffff, 0x8000000000000000, 0xffffffffffffffff]
+   0xffffffff, 0xffffffff80000000, 0xffffffffffffff80, 0x100000000,
+   0x8000000000000000, 0xffffffffffffffff]
 
 private def initial : Core :=
   { registers := fun register =>
@@ -88,6 +89,7 @@ private def instructionMatrix (target : Checked) : Except String Nat := do
   for width in ([.w16, .w32, .w64] : List MulWidth) do
     for destination in registers do
       for source in registers do cases := cases.push (.imul width destination source)
+      for value in immediates do cases := cases.push (.imulImm width destination .r9 value.toUInt32)
   for register in registers do
     cases := cases.push (.push register) |>.push (.pop register)
     for index in ([0, 1, 0x7fff, 0xffff] : List UInt16) do

@@ -321,13 +321,16 @@ def Op.rows : List Op :=
   let arith : List Mnemonic := [.add, .or, .and, .sub, .xor, .cmp]
   arith.flatMap (fun mn => widths.map fun w => { mn, w, form := .MR }) ++
   arith.flatMap (fun mn => widths.map fun w => { mn, w, form := .MI }) ++
+  arith.flatMap (fun mn => ([.w16, .w32, .w64] : List Width).map fun w => { mn, w, form := .MI8 }) ++
   widths.map (fun w => { mn := .mov, w, form := .MR }) ++
   [{ mn := .mov, w := .w32, form := .RM }, { mn := .mov, w := .w64, form := .RM }] ++
   widths.map (fun w => { mn := .mov, w, form := .OI }) ++
+  widths.map (fun w => { mn := .mov, w, form := .MI }) ++
   [{ mn := .movzx, w := .w32, form := .RM, src := .w8 },
     { mn := .movzx, w := .w32, form := .RM, src := .w16 },
     { mn := .lea, w := .w64, form := .RM }] ++
-  ([.w16, .w32, .w64] : List Width).map (fun w => { mn := .imul, w, form := .RM }) ++
+  ([.w16, .w32, .w64] : List Width).flatMap (fun w =>
+    [{ mn := .imul, w, form := .RM }, { mn := .imul, w, form := .RMI8 }, { mn := .imul, w, form := .RMI }]) ++
   [{ mn := .push, w := .w64, form := .O }, { mn := .pop, w := .w64, form := .O },
     { mn := .call, w := .w64, form := .D32 }, { mn := .jmp, w := .w64, form := .D32 }] ++
   Condition.all.map (fun condition => { mn := .jcc condition, w := .w64, form := .D32 }) ++

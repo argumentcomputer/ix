@@ -39,7 +39,7 @@ instance (holes : Holes) [DecidablePred holes] (frames : List ReturnFrame)
   unfold OperationSafe
   infer_instance
 
-def clearAccessesDecidable (holes : Holes) [DecidablePred holes] :
+@[instance_reducible] def clearAccessesDecidable (holes : Holes) [DecidablePred holes] :
     (accesses : List Access) → DecidablePred (clearAccesses holes accesses)
   | [] => inferInstanceAs (DecidablePred holes)
   | access :: accesses =>
