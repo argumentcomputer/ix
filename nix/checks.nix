@@ -29,6 +29,11 @@ in
       ./.lake/build/bin/census ${auditSrc}/fixtures/ixon-v3/k1/k1.ixe \
         --names ${auditSrc}/fixtures/ixon-v3/k1/equations.json --out census.json
       diff -u ${auditSrc}/fixtures/ixon-v3/k1/census.json census.json
+      for name in fib sum-loop ackermann tak gcd; do
+        ./.lake/build/bin/census ${auditSrc}/fixtures/ixon-v3/bench-k1/$name.ixe \
+          --names ${auditSrc}/fixtures/ixon-v3/bench-k1/$name.equations.json --out $name.census.json
+        diff -u ${auditSrc}/fixtures/ixon-v3/bench-k1/$name.census.json $name.census.json
+      done
     '';
 
     aiur = mkCheck "aiur" [] ''

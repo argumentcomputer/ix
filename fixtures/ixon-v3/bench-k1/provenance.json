@@ -1,0 +1,109 @@
+{
+  "producer_revision": "9c4b9c654f06e88f021cfd9753701e52852e5500",
+  "producer_parent": "0a31c8dbc63755924c645bf1afedc563e395e88a",
+  "producer_bookmark": "jcb/compile-equations (local ix change adding --equations, request R1/R5)",
+  "producer_binary_sha256": "d8ba031a087810c8cbd0ea96a6251c27fcd07b0b161e1cadd67d8647604e580c",
+  "producer_version": "4.34.0|0.0.1",
+  "producer_build": "Built with Lake (lake build Ix ix) from the recorded ix revision; not a Nix build.",
+  "lean": "leanprover/lean4 v4.34.0 (pinned Nix toolchain on PATH)",
+  "commands": [
+    "cd benchmarks/fixtures",
+    "ix compile --no-build --consts entry --equations --anon --out NAME.ixe NAME/SOURCE.lean",
+    "ix compile --no-build --consts entry --equations --out NAME.named.ixe NAME/SOURCE.lean",
+    "ix addr-of --ixe NAME.named.ixe N, for the root and every definition and equation name",
+    "census NAME.ixe --names NAME.equations.json --out NAME.census.json"
+  ],
+  "generator": "plans/x86-phase1/bench-k1/build.sh (untracked); the commands above are its content",
+  "fixtures": {
+    "fib": {
+      "source": "benchmarks/fixtures/fib/Fib.lean",
+      "source_sha256": "410055e55b1327f69ff18f0cecad896d204aeeb40646f69935b8fe10a1ec3b84",
+      "named_env_sha256": "74a047e471ae33765138deee2aa61103802b135d9700123f193ef27454a1acc2",
+      "files": {
+        "fib.ixe": {
+          "sha256": "7113d8a2d54777e05739fc30b7a79e7a4195750cfe942610ee91d53746f2ffd2",
+          "bytes": 15634,
+          "constants": 55
+        },
+        "fib.equations.json": {
+          "sha256": "b91246fbc1409c0fc62ce789e43ede8f26b703bc978ed11fb4bc42a2a7d3160d",
+          "roots": 1,
+          "equations": 2,
+          "failures": 0
+        }
+      }
+    },
+    "sum-loop": {
+      "source": "benchmarks/fixtures/sum-loop/SumLoop.lean",
+      "source_sha256": "bcf93526eb678c1ac4fdb06dd87b68f861b601d560824946efe7c96db66d45be",
+      "named_env_sha256": "8c5295ae2754aca8560a85a1337b539e944ca5a89cdbfb887bbbcfaea76c18dd",
+      "files": {
+        "sum-loop.ixe": {
+          "sha256": "8a7c5019229ab5f8fc40820edb52c204328b3348da093ddcb54db3ddf4ce3f41",
+          "bytes": 1138673,
+          "constants": 1540
+        },
+        "sum-loop.equations.json": {
+          "sha256": "ef0d5c25f0ee892f6001f6cbef0f24f08bb61b48bc50fa8c06b6bcb5d9ce7fe2",
+          "roots": 1,
+          "equations": 34,
+          "failures": 0
+        }
+      }
+    },
+    "ackermann": {
+      "source": "benchmarks/fixtures/ackermann/Ackermann.lean",
+      "source_sha256": "540f1426991018bbe763e0a9e0d74b175be8267f09cb0780bff2657e206518f3",
+      "named_env_sha256": "73984fa71284419d784e8bd75d6cf7a3a0618f3f5cd8263c8bf1c2bb99ae2ee6",
+      "files": {
+        "ackermann.ixe": {
+          "sha256": "34daaa90479268ce76cb8cb249f2471dc220b44eee9cfebeb7a4388da52fe638",
+          "bytes": 992719,
+          "constants": 1405
+        },
+        "ackermann.equations.json": {
+          "sha256": "28b0d99cacc05c4c62939169b274fd3f4907a82e2c159139d974c138c4a8512f",
+          "roots": 1,
+          "equations": 34,
+          "failures": 0
+        }
+      }
+    },
+    "tak": {
+      "source": "benchmarks/fixtures/tak/Tak.lean",
+      "source_sha256": "f9aee6b94574943b3cd58cf255e2add91d484b8118695d859436b41d63cc156f",
+      "named_env_sha256": "2f219050620cb1dd4eb2e1f772dc51a35050efca1d2f45bbdc15fc65b3fabe18",
+      "files": {
+        "tak.ixe": {
+          "sha256": "b29b1e9d6cf1fe66620506b60239e0ebd6cb5282101273637326435beac65915",
+          "bytes": 52623,
+          "constants": 149
+        },
+        "tak.equations.json": {
+          "sha256": "d93c693a2fa546c1c02e4e459935e6f9817c8e3756f56a47d6930cd0856602bc",
+          "roots": 1,
+          "equations": 5,
+          "failures": 0
+        }
+      }
+    },
+    "gcd": {
+      "source": "benchmarks/fixtures/gcd/Gcd.lean",
+      "source_sha256": "d2ca375ac21718e34cbf108ee11f04ddbd6b8ef27674760abec547187a53ff13",
+      "named_env_sha256": "5c88ae835961087d9006bc27cbbbc46f4061288772ee594587e63aafab288843",
+      "files": {
+        "gcd.ixe": {
+          "sha256": "e4e9dcfd3ce0ebdb8778bcf3c074df9ef336a146fc468c426d7848a8411f826a",
+          "bytes": 119929,
+          "constants": 265
+        },
+        "gcd.equations.json": {
+          "sha256": "0dfc0d791aad9c4d90ef2f3113f2257d1a554e9b0ff1b269856267879147681f",
+          "roots": 1,
+          "equations": 7,
+          "failures": 0
+        }
+      }
+    }
+  }
+}
