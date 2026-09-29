@@ -610,6 +610,23 @@
    "imports": ["Compilatrix.Tools.Check"]},
   "Compilatrix.Sem.Result":
   {"path": "Compilatrix/Sem/Result.lean", "imports": []},
+  "Compilatrix.Lir.WellFormed":
+  {"path": "Compilatrix/Lir/WellFormed.lean",
+   "imports": ["Compilatrix.Lir.Graph", "Std.Data.HashMap"]},
+  "Compilatrix.Lir.Syntax":
+  {"path": "Compilatrix/Lir/Syntax.lean",
+   "imports": ["Compilatrix.X86.Types", "Compilatrix.Sem.Result"]},
+  "Compilatrix.Lir.SplitEdges":
+  {"path": "Compilatrix/Lir/SplitEdges.lean",
+   "imports": ["Compilatrix.Lir.Graph"]},
+  "Compilatrix.Lir.Semantics":
+  {"path": "Compilatrix/Lir/Semantics.lean",
+   "imports":
+   ["Compilatrix.Lir.Syntax", "Compilatrix.X86.State", "Std.Data.HashMap"]},
+  "Compilatrix.Lir.Print":
+  {"path": "Compilatrix/Lir/Print.lean", "imports": ["Compilatrix.Lir.Syntax"]},
+  "Compilatrix.Lir.Graph":
+  {"path": "Compilatrix/Lir/Graph.lean", "imports": ["Compilatrix.Lir.Syntax"]},
   "Compilatrix.Ixon.V3.Validate":
   {"path": "Compilatrix/Ixon/V3/Validate.lean",
    "imports": ["Compilatrix.Ixon.V3.Source", "Compilatrix.Ixon.V3.Tc.Driver"]},
@@ -1081,6 +1098,12 @@
    "imports":
    ["Compilatrix.Ixon.V3",
     "Compilatrix.Sem.Result",
+    "Compilatrix.Lir.Syntax",
+    "Compilatrix.Lir.Semantics",
+    "Compilatrix.Lir.Graph",
+    "Compilatrix.Lir.WellFormed",
+    "Compilatrix.Lir.SplitEdges",
+    "Compilatrix.Lir.Print",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
