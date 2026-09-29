@@ -3,6 +3,12 @@ name: CI Jobs
 on:
   pull_request:
   merge_group:
+  # Pushes to main run the same jobs so their sticky disks get a `main`
+  # snapshot: RunsOn files each run's snapshot under its own ref, and a ref
+  # with none falls back to the default branch's. Without this run every
+  # new PR branch and every merge-queue entry starts from an empty disk.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
