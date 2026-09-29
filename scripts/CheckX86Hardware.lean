@@ -200,9 +200,19 @@ are SPL–DIL (with REX) in byte rows. -/
 def registerChoices : Array GPR :=
   #[.rax, .rcx, .rdx, .rbx, .rsp, .rbp, .rsi, .rdi, .r8, .r12, .r13, .r15]
 
-/-- Displacements: none, ±1, the disp8 edges (127, −128) and the first
-disp32 values (128, −129, 256). -/
-def displacements : Array Imm32 := #[0, 1, 0xffffffff, 0x7f, 0xffffff80, 0x80, 0xffffff7f, 0x100]
+/-- Displacements: none, ±1, the disp8 edges (127, −128), the first disp32
+values (128, −129, 256) and the disp32 extremes (2³¹ − 1, −2³¹). -/
+def displacements : Array Imm32 :=
+  #[0, 1, 0xffffffff, 0x7f, 0xffffff80, 0x80, 0xffffff7f, 0x100, 0x7fffffff, 0x80000000]
+
+/-- The disp32 extremes, which only a compensating base can bring back into
+the mapped window. -/
+def extremeDisplacement (displacement : Imm32) : Bool :=
+  displacement == 0x7fffffff || displacement == 0x80000000
+
+/-- A disp32 sign-extended to 64 bits, as address generation uses it. -/
+def signExtend32 (displacement : Imm32) : Word :=
+  (displacement.toUInt64 ^^^ 0x80000000) - 0x80000000
 
 def bases : Array (Option GPR) :=
   #[none, some .rax, some .rbx, some .rbp, some .rsp, some .r12, some .r13, some .r15]
@@ -215,21 +225,28 @@ def scales : Array Scale := #[.one, .two, .four, .eight]
 def baseValue (base : GPR) : Word := if base == .rsp then stackTop else dataPage + 0x400
 
 /-- Every address shape, pointing into a mapped page once its registers are
-placed. An absolute address carries the data page in its displacement. -/
+placed. An absolute address carries the data page in its displacement, so it
+skips the disp32 extremes. -/
 def addresses : Array MemAddr := Id.run do
   let mut out := #[]
   for base in bases do
     for index in indexChoices do
       for displacement in displacements do
+        if base.isNone && extremeDisplacement displacement then continue
         let scale := scales[out.size % scales.size]!
         let displacement := if base.isNone then (dataPage + 0x400).toUInt32 + displacement else displacement
         out := out.push ({ base, index, scale, displacement } : MemAddr).normalize
   return out
 
-/-- Point the address's registers into the mapped window. -/
+/-- Point the address's registers into the mapped window. A base under a
+disp32 extreme is offset by the displacement, except `rsp`, which stays the
+stack pointer, so those cases fault on both machines. -/
 def placeAddress (registers : Array Word) (address : MemAddr) (n : Nat) : Array Word :=
   let registers := match address.base with
-    | some base => registers.set! (registerIndex base) (baseValue base)
+    | some base =>
+      let value := if extremeDisplacement address.displacement && base != .rsp
+        then baseValue base - signExtend32 address.displacement else baseValue base
+      registers.set! (registerIndex base) value
     | none => registers
   match address.index with
   | some index => registers.set! (registerIndex index.gpr) (n.toUInt64 % 16)
@@ -280,7 +297,11 @@ def rowCase (id : String) (n : Nat) (o : Op) (args : List Arg) (base : Array Wor
     { id := s!"{id}.{n}"
       code := Encode.encodeOp o args
       registers
-      flags := (next (n.toUInt64 + 7)) &&& 0x8c1
+      -- Input flags: all clear, all set (OF, SF, ZF, CF), or random.
+      flags := match n % 4 with
+        | 0 => 0
+        | 1 => 0x8c1
+        | _ => (next (n.toUInt64 + 7)) &&& 0x8c1
       seed := n.toUInt64 * 0x9e37 + 11 }
   { c with writes := !(o.writes args c.initial.core).isEmpty }
 

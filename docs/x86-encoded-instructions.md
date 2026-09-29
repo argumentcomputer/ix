@@ -130,9 +130,10 @@ The compiled [`check-x86-bytes`](../scripts/CheckX86Bytes.lean) gate covers:
 
 The [`check-x86-hardware`](../scripts/CheckX86Hardware.lean) gate enumerates
 `Op.rows`: for every linear row and each kind combination of its slots it
-generates register, address (SIB and displacement holes, disp8/disp32 edges)
-and immediate edge cases, plus an unmapped-address fault per memory slot and
-CMP/Jcc, JMP, CALL and RET recipes. It currently runs 18,767 cases natively
+generates register, address (SIB and displacement holes, disp8 and disp32
+edges including ±2³¹) and immediate edge cases, plus an unmapped-address
+fault per memory slot and CMP/Jcc, JMP, CALL and RET recipes, with input
+flags all clear, all set or random. It currently runs 22,463 cases natively
 and compares exit, all sixteen registers, model-defined flags, changed page
 bytes and faults with `ByteEval`; `llvm-mc` must decode every case to the
 same instruction lengths, mnemonics and encodings.

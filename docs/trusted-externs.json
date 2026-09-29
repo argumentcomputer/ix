@@ -421,7 +421,7 @@
         "Compilatrix.X86.EvalExamples executes arithmetic branches, stack/spill roundtrips, direct call/return, callee-saved ABI trapping, runtime dispatch, permission faults, and call-alignment faults",
         "E1 proves, for every row of the declarative instruction table, that a separate table-indexed decoder recovers the row and operands from the encoder's bytes and that byte-RIP ByteEval produces the typed effect, including defined comparison flags and explicit unknown IMUL flags; both machines share each row's semantic function, so this local-to-local proof checks decoding and execution plumbing, not the semantic functions, and does not establish hardware faithfulness",
         "docs/x86-reference-model.json pins the inspected Sail x86 snapshot and per-form source mapping; reference execution comparison, a reproducible Lean adapter and S2 agreement remain pending",
-        "check-x86-hardware enumerates Op.rows and runs every generated case (currently 18,767: each linear row with each kind combination of its slots, addressing shapes, immediate edges, all conditions and the control recipes) natively on the host processor, compares exit, registers, model-defined flags, changed memory and faults with ByteEval, and requires llvm-mc to decode each case to the same instruction lengths, mnemonics and encodings; this tests, and does not prove, hardware faithfulness"
+        "check-x86-hardware enumerates Op.rows and runs every generated case (currently 22,463: each linear row with each kind combination of its slots, addressing shapes including the disp32 extremes, immediate edges, fixed and random input flags, all conditions and the control recipes) natively on the host processor, compares exit, registers, model-defined flags, changed memory and faults with ByteEval, and requires llvm-mc to decode each case to the same instruction lengths, mnemonics and encodings; this tests, and does not prove, hardware faithfulness"
       ],
       "tests": [
         "Compilatrix.X86.Examples.arithmeticBranchAccepted",
@@ -925,7 +925,7 @@
       "scripts/CheckTrustedExterns.lean": "b0713e930fee2db7ebc6adc9b31b6412ba50e4a965a3a9833eb4bda523568bbf",
       "scripts/CheckX86Bytes.lean": "1c423b5a3e27c0a62a8ab265894d8239459e881ffb8e6852bf65c1b7a60dd37a",
       "scripts/CheckX86Encoder.lean": "d1ae5b7db71ba233028c2f7b77e44b1a03b0a61610e797a0675ff6eb86e5e256",
-      "scripts/CheckX86Hardware.lean": "87b1583036c9d3785177ca99cd37ef0370ed76c2094e4bbfd051195939ee5bfc",
+      "scripts/CheckX86Hardware.lean": "eedc98c587d43d47ac05bd87d870cea405c327e9eaac3211c08aa78b7bbfc558",
       "scripts/CheckX86Object.lean": "c855df48a1a8c86263e3eddcb29ae682f75f3b8e96d618688d2d27a02ce4ba75",
       "scripts/CheckX86Streams.lean": "dd0a3b7a1f8675815f6c239432263aa4bcfcaa81e8c54da27885ddaa6bb7dca2",
       "tools/aiur-memory-reference/Cargo.toml.in": "85eb9003cb10781338cb8d4ba341d060c75fea4419e5e9f323474f58b721d522",
