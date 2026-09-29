@@ -608,6 +608,8 @@
   "Compilatrix.Tools.AiurCheck":
   {"path": "Compilatrix/Tools/AiurCheck.lean",
    "imports": ["Compilatrix.Tools.Check"]},
+  "Compilatrix.Sem.Result":
+  {"path": "Compilatrix/Sem/Result.lean", "imports": []},
   "Compilatrix.Ixon.V3.Validate":
   {"path": "Compilatrix/Ixon/V3/Validate.lean",
    "imports": ["Compilatrix.Ixon.V3.Source", "Compilatrix.Ixon.V3.Tc.Driver"]},
@@ -1078,6 +1080,7 @@
   {"path": "Compilatrix.lean",
    "imports":
    ["Compilatrix.Ixon.V3",
+    "Compilatrix.Sem.Result",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
