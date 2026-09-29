@@ -3,7 +3,7 @@ open Lake DSL
 
 /-! # The certified kernel as its own package
 
-`ix-kernel` builds `Ix.Kernel` and `Ix.Address.Core` from the repository's
+`ix-kernel` builds `Ix.Kernel`, `Ix.Address.Core`, and `Ix.Ixon.Types` from the repository's
 `Ix/` tree (`srcDir := ".."`) with no dependencies beyond the Lean toolchain.
 The root `ix` package builds the same modules for its host consumers; this
 package is what the certified gate builds (`lake -d IxKernel build --wfail`),
@@ -18,8 +18,8 @@ package «ix-kernel» where
 @[default_target]
 lean_lib IxKernel where
   srcDir := ".."
-  roots := #[`Ix.Kernel, `Ix.Address.Core]
-  globs := #[.andSubmodules `Ix.Kernel, .one `Ix.Address.Core]
+  roots := #[`Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types]
+  globs := #[.andSubmodules `Ix.Kernel, .one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types]
 
 /-- Certified fixtures also run without the host package's dependencies. -/
 def kernelFixtureRoots : Array Lean.Name := #[

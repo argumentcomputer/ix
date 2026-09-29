@@ -1,4 +1,5 @@
 module
+public import Ix.Ixon.Types.Kinds
 public import Lean.Data.Name
 public import Lean.Expr
 public import Lean.Declaration
@@ -115,25 +116,6 @@ def Nat.toBytesLE (x: Nat) : Array UInt8 :=
 def Nat.fromBytesLE (xs: Array UInt8) : Nat :=
   (xs.toList.zipIdx 0).foldl (fun acc (b, i) => acc + (UInt8.toNat b) * 256 ^ i) 0
 
-/-- Distinguish different kinds of Ix definitions --/
-inductive Ix.DefKind where
-| defn : Ix.DefKind
-| opaq : Ix.DefKind
-| thm : Ix.DefKind
-deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited, DecidableEq
-
-inductive Ix.DefinitionSafety where
-  | unsaf : Ix.DefinitionSafety
-  | safe : Ix.DefinitionSafety
-  | part : Ix.DefinitionSafety
-  deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited, DecidableEq
-
-inductive Ix.QuotKind where
-  | type : Ix.QuotKind
-  | ctor : Ix.QuotKind
-  | lift : Ix.QuotKind
-  | ind : Ix.QuotKind
-  deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited, DecidableEq
 
 namespace List
 

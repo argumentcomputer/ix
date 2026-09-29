@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel
+import Ix.Ixon.Types
 import Ix.Kernel.Audit.Axioms
 import Ix.Kernel.Audit.Imports
 import Ix.Kernel.Audit.Runtime
@@ -64,12 +65,12 @@ def publicOperations : Array Name :=
     ``Ix.Kernel.Env.lookup, ``Ix.Kernel.Env.toEnvironment]
 
 /-- Module prefixes the certified import closure may use: Lean core, the
-kernel itself, and the pure address key. Measured after the K0 import trim,
+kernel itself, the pure address key, and the pure Ixon types. Measured after the K0 import trim,
 the closure of `Ix.Kernel` has 690 modules, all under `Init` except the
-kernel's own and `Ix.Address.Core`. No `Std`, `Lean`, or `Batteries` module,
+kernel's own and `Ix.Address.Core`. K3 also checks the pure Ixon types independently. No `Std`, `Lean`, or `Batteries` module,
 nothing else under `Ix`, and no `Blake3`, `LSpec`, `Cli`, or `lean4lean`
 module may enter. -/
-def importAllowlist : Array Name := #[`Init, `Ix.Kernel, `Ix.Address.Core]
+def importAllowlist : Array Name := #[`Init, `Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types]
 
 /-- Modules whose execution replacements are inherited Lean runtime. -/
 def runtimeAllowlist : Array Name := #[`Init, `Std]
@@ -94,7 +95,7 @@ end Ix.Kernel.Audit
 /-! ## Import and runtime closures -/
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel] Ix.Kernel.Audit.importAllowlist
+run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Audit.importAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
 Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 900 compiled functions; inherited externs 16,

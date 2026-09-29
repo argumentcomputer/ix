@@ -67,7 +67,9 @@ def main (args : List String) : IO UInt32 := do
     let files := ((← (FilePath.mk "Ix/Kernel").walkDir).filter (·.extension == some "lean")).map (·.toString)
     let files := if ← (FilePath.mk "Ix/Kernel.lean").pathExists then files.push "Ix/Kernel.lean" else files
     let files := if ← (FilePath.mk "Ix/Address/Core.lean").pathExists then files.push "Ix/Address/Core.lean" else files
-    sameFiles "Ix/Kernel source" files (ported.map (·.target) ++ authored)
+    let files := if ← (FilePath.mk "Ix/Ixon/Types.lean").pathExists then files.push "Ix/Ixon/Types.lean" else files
+    let typeFiles := ((← (FilePath.mk "Ix/Ixon/Types").walkDir).filter (·.extension == some "lean")).map (·.toString)
+    sameFiles "Ix/Kernel source" (files ++ typeFiles) (ported.map (·.target) ++ authored)
     for row in ported do checkRow row true
     for row in licenses do checkRow row false
     if let some workspace := workspace? then

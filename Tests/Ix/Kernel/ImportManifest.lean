@@ -53,6 +53,7 @@ structure PortedFile where
 
 /-- Modules authored in this repository under `Ix/Kernel`, with no source hash. -/
 def authored : Array String := #[
+  "Ix/Ixon/Types.lean", "Ix/Ixon/Types/Kinds.lean", "Ix/Ixon/Types/Modes.lean",
   "Ix/Kernel.lean", "Ix/Kernel/Model.lean", "Ix/Kernel/Env.lean", "Ix/Kernel/Check.lean",
   "Ix/Kernel/Consistency.lean", "Ix/Kernel/Audit/Axioms.lean", "Ix/Kernel/Audit/Imports.lean",
   "Ix/Kernel/Audit/Runtime.lean", "Ix/Kernel/Audit/Roots.lean", "Ix/Address/Core.lean",
