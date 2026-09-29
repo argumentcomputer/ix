@@ -26,11 +26,17 @@ jobs:
     runs-on: runs-on=${{ github.run_id }}-lean-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
+      # sccache keys rustc outputs by content, so the workspace crates, which
+      # cargo rebuilds after every fresh checkout because their mtimes moved,
+      # come back as cache hits. RunsOn configures it before anything can
+      # start an sccache server.
       - uses: runs-on/action@v2
         with:
+          sccache: s3
           sticky_cache: |
             rust
             custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           codegen: portable
@@ -73,11 +79,17 @@ jobs:
     runs-on: runs-on=${{ github.run_id }}-rust-test-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-rust-test-x86-64-v4:50gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
+      # sccache keys rustc outputs by content, so the workspace crates, which
+      # cargo rebuilds after every fresh checkout because their mtimes moved,
+      # come back as cache hits. RunsOn configures it before anything can
+      # start an sccache server.
       - uses: runs-on/action@v2
         with:
+          sccache: s3
           sticky_cache: |
             rust
             custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           codegen: portable
@@ -123,6 +135,12 @@ jobs:
       # sufficient for this downstream integration gate.
       MULTI_STARK_CUDA_ARCHS: "80"
     steps:
+      # No sccache here yet. Once the GPU benchmark lands after #644, wire
+      # it for both compilers: `sccache: s3` plus the sccache action for
+      # rustc (this job runs in a container, so its S3 credentials via the
+      # instance role need checking first), and an `NVCC` wrapper running
+      # `sccache nvcc` for the kernels, which multi-stark's build script
+      # must compile with `-c` per source for sccache to cache them.
       - uses: runs-on/action@v2
       - uses: actions/checkout@v7
       - name: Install toolchain bootstrap dependencies

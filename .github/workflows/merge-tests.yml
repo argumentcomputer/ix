@@ -185,11 +185,16 @@ jobs:
             exit 1
           fi
 
+      # sccache keys rustc outputs by content, so the workspace crates, which
+      # cargo rebuilds after every fresh checkout because their mtimes moved,
+      # come back as cache hits (see ci.yml).
       - uses: runs-on/action@v2
         with:
+          sccache: s3
           sticky_cache: |
             rust
             custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           codegen: portable
