@@ -51,6 +51,11 @@ namespace Ix.Kernel.Audit
 def publicRoots : Array Name :=
   #[``Ix.Kernel.check_has_model, ``Ix.Kernel.checkDecls_has_model, ``Ix.Kernel.no_proof_of_False]
 
+/-- Fidelity complements the frozen model-existence roots. -/
+def fidelityRoots : Array Name :=
+  #[``Ix.Kernel.annotate_erase, ``Ix.Kernel.checkDecl_installed, ``Ix.Kernel.checkDecls_installed,
+    ``Ix.Kernel.check_installed, ``Ix.Kernel.checkDecl_preserves, ``Ix.Kernel.checkDecls_preserves]
+
 /-- The executable operations whose runtime closure is audited. -/
 def publicOperations : Array Name :=
   #[``Ix.Kernel.check, ``Ix.Kernel.checkDecls, ``Ix.Kernel.checkDecl,
@@ -77,6 +82,12 @@ end Ix.Kernel.Audit
 #guard_kernel_axioms Ix.Kernel.check [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDecls [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Env.toEnvironment []
+#guard_kernel_axioms Ix.Kernel.annotate_erase [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkDecl_installed [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkDecls_installed [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.check_installed [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkDecl_preserves [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkDecls_preserves [propext, Classical.choice, Quot.sound]
 
 /-! ## Import and runtime closures -/
 

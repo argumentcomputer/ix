@@ -52,7 +52,39 @@ theorem Except.map_eq_ok {ε α γ : Type _} {f : α → γ} {x : Except ε α} 
 theorem checkDecls_step {cfg : Config} {env env' : Env β} {decls : List (Decl β)}
     (h : checkDecls.{u,v} cfg env decls = .ok env') : StepClaim.{u,v} env env' := by
   obtain ⟨⟨e, claim⟩, -, rfl⟩ := Except.map_eq_ok h
-  exact claim
+  exact claim.1.step
+
+/-- Admission cannot overwrite any earlier entry, including its complete
+body, equations, and facts. This is separate from model existence. -/
+theorem checkDecl_preserves {cfg : Config} {env env' : Env β} {decl : Decl β}
+    (h : checkDecl.{u,v} cfg env decl = .ok env') : env.Preserves env' := by
+  obtain ⟨⟨e, claim⟩, -, rfl⟩ := Except.map_eq_ok h
+  exact claim.1.preserves
+
+/-- Every accepted suffix preserves all lookups in the starting environment. -/
+theorem checkDecls_preserves {cfg : Config} {env env' : Env β} {decls : List (Decl β)}
+    (h : checkDecls.{u,v} cfg env decls = .ok env') : env.Preserves env' := by
+  obtain ⟨⟨e, claim⟩, -, rfl⟩ := Except.map_eq_ok h
+  exact claim.1.preserves
+
+/-- The accepted declaration is installed at its supplied member and
+constructor positions, with the exact type, body, and universe count. -/
+theorem checkDecl_installed {cfg : Config} {env env' : Env β} {decl : Decl β}
+    (h : checkDecl.{u,v} cfg env decl = .ok env') :
+    decl.block.Installed decl.address env'.toEnvironment := by
+  obtain ⟨⟨e, claim⟩, -, rfl⟩ := Except.map_eq_ok h
+  exact claim.2
+
+/-- Later declarations preserve the exact reading of every earlier input. -/
+theorem checkDecls_installed {cfg : Config} {env env' : Env β} {decls : List (Decl β)}
+    (h : checkDecls.{u,v} cfg env decls = .ok env') :
+    ∀ d ∈ decls, d.block.Installed d.address env'.toEnvironment := by
+  obtain ⟨⟨e, claim⟩, -, rfl⟩ := Except.map_eq_ok h
+  exact claim.2
+
+theorem check_installed {cfg : Config} {env : Env β} {decls : List (Decl β)}
+    (h : check.{u,v} cfg decls = .ok env) :
+    ∀ d ∈ decls, d.block.Installed d.address env.toEnvironment := checkDecls_installed h
 
 /-- Checking against an environment that already has a model yields an
 environment with a model. -/

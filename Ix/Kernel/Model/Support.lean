@@ -5,6 +5,7 @@ Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
 K2: the `ConstantFact.recursor`, `ConstantFact.structure`, and quotient fact cases; `natLit`
 carries the reference of its family, which its references list.
+P02: prove exact agreement between raw and annotated reference traversal.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -29,6 +30,10 @@ def references : AExpr β → List (ConstRef β)
   | .app f a | .lam _ f a | .forallE _ f a => f.references ++ a.references
   | .letE t v b => t.references ++ v.references ++ b.references
   | .proj r _ e => r :: e.references
+
+/-- Erasure preserves references, including their order and multiplicity. -/
+@[simp] theorem refs_erase (e : AExpr β) : e.erase.refs = e.references := by
+  induction e <;> simp_all [erase, VExpr.refs, references]
 
 def ReferencesIn (entries : Environment β) (e : AExpr β) : Prop :=
   ∀ r ∈ e.references, (entries r).isSome = true

@@ -67,6 +67,26 @@ theorem toEnvironment_push (env : Env β) (r : ConstRef β) (entry : Model.Const
   · have : (r == q) = false := beq_eq_false_iff_ne.mpr (Ne.symm h)
     simp [toEnvironment, lookup, push, Environment.insert, this, h]
 
+/-- Existing entries, including bodies, equations, and facts, are unchanged. -/
+def Preserves (before after : Env β) : Prop :=
+  ∀ r entry, before.toEnvironment r = some entry → after.toEnvironment r = some entry
+
+theorem Preserves.refl (env : Env β) : Preserves env env := fun _ _ h => h
+
+theorem Preserves.trans {a b c : Env β} (h₁ : Preserves a b) (h₂ : Preserves b c) :
+    Preserves a c := fun r e h => h₂ r e (h₁ r e h)
+
+theorem preserves_push (env : Env β) (r : ConstRef β) (entry : ConstantEntry β)
+    (fresh : env.toEnvironment r = none) : env.Preserves (env.push r entry) := by
+  intro q old hq
+  rw [toEnvironment_push]
+  exact Environment.insert_old fresh hq
+
+@[simp] theorem lookup_push_same (env : Env β) (r : ConstRef β) (entry : ConstantEntry β) :
+    (env.push r entry).toEnvironment r = some entry := by
+  rw [toEnvironment_push]
+  exact Environment.insert_same ..
+
 end Env
 
 variable {β : Type u} [DecidableEq β]
@@ -111,6 +131,19 @@ theorem StepClaim.refl (env : Env β) : StepClaim.{u,v} env env := fun _ _ m => 
 theorem StepClaim.trans {a b c : Env β} (h₁ : StepClaim.{u,v} a b) (h₂ : StepClaim.{u,v} b c) :
     StepClaim.{u,v} a c := fun V _ m => (h₁ V m).elim fun m' => h₂ V m'
 
+/-- Admission supplies both model extension and exact old-lookup preservation.
+Model existence alone does not establish the latter. Both fields are erased. -/
+structure AdmissionClaim (before after : Env β) : Prop where
+  step : StepClaim.{u,v} before after
+  preserves : before.Preserves after
+
+theorem AdmissionClaim.refl (env : Env β) : AdmissionClaim.{u,v} env env :=
+  ⟨StepClaim.refl env, Env.Preserves.refl env⟩
+
+theorem AdmissionClaim.trans {a b c : Env β}
+    (h₁ : AdmissionClaim.{u,v} a b) (h₂ : AdmissionClaim.{u,v} b c) :
+    AdmissionClaim.{u,v} a c := ⟨h₁.step.trans h₂.step, h₁.preserves.trans h₂.preserves⟩
+
 end Ix.Kernel
 
 namespace Ix.Kernel.Env
@@ -142,4 +175,3 @@ end Ix.Kernel.Env
 namespace Ix.Kernel.Env
 
 variable {β : Type u} [DecidableEq β]
-

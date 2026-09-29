@@ -21,7 +21,8 @@ routes (no input store, per-primitive facts and readings, the model-only
 split of the equality basis, inference in place of witness validation),
 and the natural-number family reference on literals. P01 changes bounded
 validators to structured search outcomes without changing their semantic
-claims, as the header of
+claims. P02 adds exact reference-transfer and admission fidelity evidence,
+as the header of
 every ported file states. License and notice files are verbatim copies. The
 file inventory, hashes, headers, and licenses are enforced by
 `Tests/Ix/Kernel/Provenance.lean` (`lake exe kernel-provenance`).
@@ -58,7 +59,7 @@ def authored : Array String := #[
   "Ix/Kernel/Model/LetRules.lean", "Ix/Kernel/Level.lean", "Ix/Kernel/Claims.lean", "Ix/Kernel/Infer.lean",
   "Ix/Kernel/Annotate.lean", "Ix/Kernel/Search.lean", "Ix/Kernel/Certified/Checker.lean", "Ix/Kernel/Certified/Ordinary/Read.lean",
   "Ix/Kernel/Inductive/Ordinary.lean", "Ix/Kernel/Certified/Structure/Read.lean",
-  "Ix/Kernel/Inductive/Structure.lean", "Ix/Kernel/Inductive/Natural.lean",
+  "Ix/Kernel/Inductive/Structure.lean", "Ix/Kernel/Inductive/Natural.lean", "Ix/Kernel/Fidelity.lean",
   "Ix/Kernel/Model/QuotientValues.lean", "Ix/Kernel/Certified/Quotient/Install.lean",
   "Ix/Kernel/Certified/Standard/Install.lean"
 ]
@@ -149,7 +150,7 @@ def ported : Array PortedFile := #[
   ⟨"Ix/Theory/Model/SetTheory/Derive/Univ.lean", "Ix/Kernel/Model/SetTheory/Derive/Univ.lean", "33e83e18da0a782904f42acc563c1c4259b60a1833bf2b22af41a28f1bd797e0", "59140f05a139f36e57fc8770e700ef53557d867771df0392911cad04ef0a8826"⟩,
   ⟨"Ix/Theory/Model/Signature.lean", "Ix/Kernel/Model/Signature.lean", "bb1a22e9c2e82a865b9c0c221f4f53356417a539099c42814f4290cfd71029c6", "ce5c71df5744183ccb6fbb4909031fb87e837ba556d5191a063f5f29011df8a0"⟩,
   ⟨"Ix/Theory/Model/Substitution.lean", "Ix/Kernel/Model/Substitution.lean", "e90eace7615fb232d1f948fd1f25bfccec833277d8df16239dbe7225ecd5adcd", "e099a74df59e17e099dc91baaac1d6ffcf81c89516fe92c746b890626050f3c4"⟩,
-  ⟨"Ix/Theory/Model/Support.lean", "Ix/Kernel/Model/Support.lean", "85a181776d1c09e59f024b45faffdd2ac25129eea88644f499771befc3b215d0", "a749c9d978e7fabe2413c55968fcdea51c974fdf5800fd8b741a4a2a7622eedb"⟩,
+  ⟨"Ix/Theory/Model/Support.lean", "Ix/Kernel/Model/Support.lean", "85a181776d1c09e59f024b45faffdd2ac25129eea88644f499771befc3b215d0", "62296bc479621eca5549b8f330cce7f180d9fd351b5db27c7c3e9ad23890fd55"⟩,
   ⟨"Ix/Theory/Model/TelescopeSemantics.lean", "Ix/Kernel/Model/TelescopeSemantics.lean", "d6bd21fe9f80863e7ccf6cbf7bb374228309be2929be9b56130b2601840bc27c", "d87146f45b304aaeaefba2f6ed2593b3279004e3002f02d8a9cb909458406476"⟩,
   ⟨"Ix/Theory/Model/UniverseBounds.lean", "Ix/Kernel/Model/UniverseBounds.lean", "6122c479c70781d03dc890aa01fe62433a87a9e6b8ee18c04593f4b0394f8fcd", "4b702d3b0ca93165cd363ac2f6edb5b6815da9f77b76765eba4d39a3566a5d93"⟩,
   ⟨"Ix/Theory/Model/Value.lean", "Ix/Kernel/Model/Value.lean", "5165837492c4f96220f275ada33f881529c18c476f7485a02140f103967361fb", "d036f404789ed6123eb2b2badc6906b06ce60dfbd468a63f0b92592a6c973a4a"⟩,

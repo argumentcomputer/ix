@@ -28,8 +28,10 @@ Milestone K1 supports single-member blocks holding one safe definition,
 theorem, or opaque: the declared type is annotated and checked to be a type,
 the body is annotated and checked to have the declared type (a theorem's
 type must be a proposition), and the constant is installed with its body. The
-proof-carrying `checkDeclC` returns the environment together with the model
-extension (`StepClaim`); the public `checkDecl` erases it. -/
+proof-carrying `checkDeclC` returns the environment together with model
+extension, old-lookup preservation (`AdmissionClaim`), and the exact
+installed reading of the supplied block. The public `checkDecl` erases
+that evidence. -/
 
 namespace Ix.Kernel
 
@@ -67,6 +69,15 @@ structure Decl (β : Type u) where
 
 variable {β : Type u} [DecidableEq β]
 
+/-- Attach the exact supplied block to an admission without another runtime
+validation or a second copy of the environment. -/
+private def acceptInstalled (env : Env β) (d : Decl β)
+    (result : { env' : Env β // AdmissionClaim.{u,v} env env' })
+    (source : d.block.Installed d.address result.val.toEnvironment) :
+    Except Error { env' : Env β // AdmissionClaim.{u,v} env env' ∧
+      d.block.Installed d.address env'.toEnvironment } :=
+  .ok ⟨result.val, result.property, source⟩
+
 /-- Install one checked definition. -/
 private def installDefinition (env : Env β) (r : ConstRef β) (universes : Nat)
     (type body : AExpr β) (fresh : env.toEnvironment r = none)
@@ -74,9 +85,9 @@ private def installDefinition (env : Env β) (r : ConstRef β) (universes : Nat)
     (hTr : type.ReferencesIn env.toEnvironment) (hBr : body.ReferencesIn env.toEnvironment)
     {level : VLevel} (hT : TypingClaim.{u,v} env.toEnvironment [] type (.sort level))
     (hB : TypingClaim.{u,v} env.toEnvironment [] body type) :
-    { env' : Env β // StepClaim.{u,v} env env' } :=
+    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
   let entry : ConstantEntry β := ⟨universes, type, some body, [], []⟩
-  ⟨env.push r entry, fun V _ m => by
+  ⟨env.push r entry, ⟨fun V _ m => by
     obtain ⟨constants', hM', -⟩ := extend_definition (entry := entry) m.wf fresh rfl rfl rfl hBs hTr hBr
       hT hB m.constants m.realizes
     refine ⟨⟨constants', ?_, ?_⟩⟩
@@ -84,12 +95,15 @@ private def installDefinition (env : Env β) (r : ConstRef β) (universes : Nat)
     · rw [Env.toEnvironment_push]
       exact m.wf.insert hTs (fun b hb => by cases hb; exact hBs) hTr
         (fun b hb => by cases hb; exact hBr) (fun _ h => nomatch h) (fun _ h => nomatch h)
-        (fun _ h => nomatch h) (fun _ h => nomatch h)⟩
+        (fun _ h => nomatch h) (fun _ h => nomatch h),
+    env.preserves_push r entry fresh⟩⟩
 
-/-- Check one declaration, returning the model extension with the environment. -/
+/-- Check one declaration, returning model extension, preservation, and
+the exact installed reading with the environment. -/
 def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
-    Except Error { env' : Env β // StepClaim.{u,v} env env' } :=
-  match d.block.members with
+    Except Error { env' : Env β // AdmissionClaim.{u,v} env env' ∧
+      d.block.Installed d.address env'.toEnvironment } :=
+  match hm : d.block.members with
   | [.defn universes kind type body .safe] =>
     let r : ConstRef β := .member d.address 0
     let entries := env.toEnvironment
@@ -97,7 +111,8 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
       if !(type.refs ++ body.refs).all (fun q => (entries q).isSome) then
         .error (.rejected "the declaration references a constant that is not installed")
       else
-      match annotate.{u,v} cfg.fuel entries [] type, annotate.{u,v} cfg.fuel entries [] body with
+      match hTypeReading : annotate.{u,v} cfg.fuel entries [] type,
+          hBodyReading : annotate.{u,v} cfg.fuel entries [] body with
       | .ok type', .ok body' =>
         if hTs : type'.Scope universes 0 then
           if hBs : body'.Scope universes 0 then
@@ -117,8 +132,15 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
                       | .ok ⟨B, hb⟩ =>
                         match isDefEq.{u,v} cfg.fuel entries [] B type' with
                         | .ok ⟨hc⟩ =>
-                          .ok (installDefinition env r universes type' body' fresh hTs hBs hTr hBr hT
-                            (hb.convF hT.formed hc))
+                          acceptInstalled env d
+                            (installDefinition env r universes type' body' fresh hTs hBs hTr hBr hT
+                              (hb.convF hT.formed hc)) (by
+                              have hblock : d.block = ⟨[.defn universes kind type body .safe]⟩ :=
+                                congrArg Block.mk hm
+                              rw [hblock]
+                              exact Block.installed_singleton_push env d.address _ _
+                                ⟨rfl, annotate_erase hTypeReading,
+                                  congrArg some (annotate_erase hBodyReading)⟩ rfl)
                         | .error failure => .error (Error.ofSearch "body conversion" failure)
                       | .error failure => .error (Error.ofSearch "body" failure)
                   | .error failure => .error (Error.ofSearch "declared type" failure)
@@ -146,7 +168,7 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
         let shape := reading.shape
         let mode := reading.mode
         let k := reading.k
-        if d.block = ⟨[shape.source source, shape.recursorSource source mode k]⟩ then
+        if hblock : d.block = ⟨[shape.source source, shape.recursorSource source mode k]⟩ then
           if k && !decide shape.SupportsK then
             .error (.rejected "K-like reduction is declared for an inductive that does not support it")
           else
@@ -154,17 +176,24 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
             | .ok ⟨hb⟩ =>
               if hnat : shape = Natural.shape then
                 match Natural.check.{u,v} entries source mode (hnat ▸ hb) with
-                | some ⟨hn⟩ => .ok (installNatural env source mode hn)
-                | none => .ok (installOrdinary env source shape mode hb)
+                | some ⟨hn⟩ => acceptInstalled env d (installNatural env source mode hn) (by
+                    simpa only [hblock, hnat] using installNatural_fidelity env source mode hn k)
+                | none => acceptInstalled env d (installOrdinary env source shape mode hb) (by
+                    rw [hblock]; exact installOrdinary_fidelity env source shape mode hb k)
               else
               match readDescription.{u,v} cfg.fuel entries reading with
-              | .ok d =>
-                if hd : d.ordinary = shape then
-                  match Structure.check.{u,v} cfg.fuel entries d source mode (hd ▸ hb) with
-                  | .ok ⟨hs⟩ => .ok (installStructure env source d mode hs)
-                  | .error _ => .ok (installOrdinary env source shape mode hb)
-                else .ok (installOrdinary env source shape mode hb)
-              | .error _ => .ok (installOrdinary env source shape mode hb)
+              | .ok description =>
+                if hd : description.ordinary = shape then
+                  match Structure.check.{u,v} cfg.fuel entries description source mode (hd ▸ hb) with
+                  | .ok ⟨hs⟩ => acceptInstalled env d (installStructure env source description mode hs) (by
+                      rw [hblock, ← hd]
+                      exact installStructure_fidelity env source description mode hs k)
+                  | .error _ => acceptInstalled env d (installOrdinary env source shape mode hb) (by
+                      rw [hblock]; exact installOrdinary_fidelity env source shape mode hb k)
+                else acceptInstalled env d (installOrdinary env source shape mode hb) (by
+                  rw [hblock]; exact installOrdinary_fidelity env source shape mode hb k)
+              | .error _ => acceptInstalled env d (installOrdinary env source shape mode hb) (by
+                  rw [hblock]; exact installOrdinary_fidelity env source shape mode hb k)
             | .error failure => .error (Error.ofSearch "inductive block" failure)
         else .error (.declined "the block is not the generated ordinary block of its inductive")
   | [.induct _ _ _ _ _ _, .recursor _ _ _ _ _ _ _ _ _] =>
@@ -179,21 +208,25 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
       else
       match kind, uvars, Quotient.occurrences t with
       | .type, 1, [] =>
-        if d.block = ⟨[Quotient.Refs.source (⟨self, self, self, self, self⟩ : Quotient.Refs β) .type]⟩ then
+        if hblock : d.block = ⟨[Quotient.Refs.source (⟨self, self, self, self, self⟩ : Quotient.Refs β) .type]⟩ then
           if hTs : (Quotient.typeType : AExpr β).Scope 1 0 then
             match checkSort.{u,v} cfg.fuel entries [] Quotient.typeType with
-            | .ok ⟨_, ht⟩ => .ok (Quotient.installType env self fresh hTs ht)
+            | .ok ⟨_, ht⟩ => acceptInstalled env d (Quotient.installType env self fresh hTs ht) (by
+                rw [hblock]
+                exact Block.installed_singleton_push env d.address _ _ ⟨rfl, rfl, rfl⟩ rfl)
             | .error failure => .error (Error.ofSearch "quotient former type" failure)
           else .error (.rejected "the quotient former's type is not closed")
         else .error (.declined "the quotient former is not the primitive one")
       | .ctor, 1, [q] =>
         let refs : Quotient.Refs β := ⟨q, q, self, self, self⟩
-        if d.block = ⟨[Quotient.Refs.source refs .ctor]⟩ then
+        if hblock : d.block = ⟨[Quotient.Refs.source refs .ctor]⟩ then
           if hq : Quotient.HasFormer entries refs then
             if hTs : (Quotient.ctorType refs).Scope 1 0 then
               if hTr : (Quotient.ctorType refs).ReferencesIn entries then
                 match checkSort.{u,v} cfg.fuel entries [] (Quotient.ctorType refs) with
-                | .ok ⟨_, ht⟩ => .ok (Quotient.installCtor env refs fresh hTs hq hTr ht)
+                | .ok ⟨_, ht⟩ => acceptInstalled env d (Quotient.installCtor env refs fresh hTs hq hTr ht) (by
+                    rw [hblock]
+                    exact Block.installed_singleton_push env d.address _ _ ⟨rfl, rfl, rfl⟩ rfl)
                 | .error failure => .error (Error.ofSearch "quotient constructor type" failure)
               else .error (.rejected "the quotient constructor references a constant that is not installed")
             else .error (.rejected "the quotient constructor's type is not closed")
@@ -201,12 +234,14 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
         else .error (.declined "the quotient constructor is not the primitive one")
       | .lift, 2, [eq, q] =>
         let refs : Quotient.Refs β := ⟨eq, q, self, self, self⟩
-        if d.block = ⟨[Quotient.Refs.source refs .lift]⟩ then
+        if hblock : d.block = ⟨[Quotient.Refs.source refs .lift]⟩ then
           if hq : Quotient.HasFormer entries refs then
             if hTs : (Quotient.liftType refs).Scope 2 0 then
               if hTr : (Quotient.liftType refs).ReferencesIn entries then
                 match checkSort.{u,v} cfg.fuel entries [] (Quotient.liftType refs) with
-                | .ok ⟨_, ht⟩ => .ok (Quotient.installLift env refs fresh hTs hq hTr ht)
+                | .ok ⟨_, ht⟩ => acceptInstalled env d (Quotient.installLift env refs fresh hTs hq hTr ht) (by
+                    rw [hblock]
+                    exact Block.installed_singleton_push env d.address _ _ ⟨rfl, rfl, rfl⟩ rfl)
                 | .error failure => .error (Error.ofSearch "quotient lift type" failure)
               else .error (.rejected "the quotient lift references a constant that is not installed")
             else .error (.rejected "the quotient lift's type is not closed")
@@ -214,13 +249,15 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
         else .error (.declined "the quotient lift is not the primitive one")
       | .ind, 1, [q, c] =>
         let refs : Quotient.Refs β := ⟨q, q, c, self, self⟩
-        if d.block = ⟨[Quotient.Refs.source refs .ind]⟩ then
+        if hblock : d.block = ⟨[Quotient.Refs.source refs .ind]⟩ then
           if hq : Quotient.HasFormer entries refs then
             if hc : Quotient.HasCtor entries refs then
               if hTs : (Quotient.indType refs).Scope 1 0 then
                 if hTr : (Quotient.indType refs).ReferencesIn entries then
                   match checkSort.{u,v} cfg.fuel entries [] (Quotient.indType refs) with
-                  | .ok ⟨_, ht⟩ => .ok (Quotient.installInd env refs fresh hTs hq hc hTr ht)
+                  | .ok ⟨_, ht⟩ => acceptInstalled env d (Quotient.installInd env refs fresh hTs hq hc hTr ht) (by
+                      rw [hblock]
+                      exact Block.installed_singleton_push env d.address _ _ ⟨rfl, rfl, rfl⟩ rfl)
                   | .error failure => .error (Error.ofSearch "quotient eliminator type" failure)
                 else .error (.rejected "the quotient eliminator references a constant that is not installed")
               else .error (.rejected "the quotient eliminator's type is not closed")
@@ -240,12 +277,15 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
       | [iff, eq] =>
         match Standard.propextSpec eq iff with
         | some spec =>
-          if d.block = ⟨[spec.source]⟩ then
+          if hblock : d.block = ⟨[spec.source]⟩ then
             if hp : spec.Prerequisites entries then
               if hTs : spec.type.Scope spec.universes 0 then
                 if hTr : spec.type.ReferencesIn entries then
                   match checkSort.{u,v} cfg.fuel entries [] spec.type with
-                  | .ok ⟨level, ht⟩ => .ok (Standard.install env self spec ⟨fresh, hp, hTs, hTr, ⟨level, ht⟩⟩)
+                  | .ok ⟨level, ht⟩ => acceptInstalled env d
+                      (Standard.install env self spec ⟨fresh, hp, hTs, hTr, ⟨level, ht⟩⟩) (by
+                        rw [hblock]
+                        exact Block.installed_singleton_push env d.address _ _ ⟨rfl, rfl, rfl⟩ rfl)
                   | .error failure => .error (Error.ofSearch "axiom type" failure)
                 else .error (.rejected "the axiom references a constant that is not installed")
               else .error (.rejected "the axiom's type is not closed")
@@ -264,14 +304,17 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
       match Quotient.occurrences t with
       | [eq, q, c] =>
         let refs : Quotient.Refs β := ⟨eq, q, c, self, self⟩
-        if d.block = ⟨[Quotient.Refs.soundSource refs]⟩ then
+        if hblock : d.block = ⟨[Quotient.Refs.soundSource refs]⟩ then
           if hq : Quotient.HasFormer entries refs then
             if hc : Quotient.HasCtor entries refs then
               if hE : Quotient.EqInterface entries eq then
                 if hTs : (Quotient.soundType refs).Scope 1 0 then
                   if hTr : (Quotient.soundType refs).ReferencesIn entries then
                     match checkSort.{u,v} cfg.fuel entries [] (Quotient.soundType refs) with
-                    | .ok ⟨_, ht⟩ => .ok (Quotient.installSound env refs self fresh hTs hq hc hE hTr ht)
+                    | .ok ⟨_, ht⟩ => acceptInstalled env d
+                        (Quotient.installSound env refs self fresh hTs hq hc hE hTr ht) (by
+                          rw [hblock]
+                          exact Block.installed_singleton_push env d.address _ _ ⟨rfl, rfl, rfl⟩ rfl)
                     | .error failure => .error (Error.ofSearch "quotient soundness type" failure)
                   else .error (.rejected "the quotient soundness axiom references a constant that is not installed")
                 else .error (.rejected "the quotient soundness axiom's type is not closed")
@@ -282,12 +325,15 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
       | [nonempty] =>
         match Standard.choiceSpec nonempty with
         | some spec =>
-          if d.block = ⟨[spec.source]⟩ then
+          if hblock : d.block = ⟨[spec.source]⟩ then
             if hp : spec.Prerequisites entries then
               if hTs : spec.type.Scope spec.universes 0 then
                 if hTr : spec.type.ReferencesIn entries then
                   match checkSort.{u,v} cfg.fuel entries [] spec.type with
-                  | .ok ⟨level, ht⟩ => .ok (Standard.install env self spec ⟨fresh, hp, hTs, hTr, ⟨level, ht⟩⟩)
+                  | .ok ⟨level, ht⟩ => acceptInstalled env d
+                      (Standard.install env self spec ⟨fresh, hp, hTs, hTr, ⟨level, ht⟩⟩) (by
+                        rw [hblock]
+                        exact Block.installed_singleton_push env d.address _ _ ⟨rfl, rfl, rfl⟩ rfl)
                   | .error failure => .error (Error.ofSearch "axiom type" failure)
                 else .error (.rejected "the axiom references a constant that is not installed")
               else .error (.rejected "the axiom's type is not closed")
@@ -306,12 +352,17 @@ def checkDecl (cfg : Config) (env : Env β) (d : Decl β) : Except Error (Env β
 
 /-- The proof-carrying fold. -/
 def checkDeclsC (cfg : Config) (env : Env β) :
-    List (Decl β) → Except Error { env' : Env β // StepClaim.{u,v} env env' }
-  | [] => .ok ⟨env, StepClaim.refl env⟩
+    (decls : List (Decl β)) → Except Error { env' : Env β // AdmissionClaim.{u,v} env env' ∧
+      ∀ d ∈ decls, d.block.Installed d.address env'.toEnvironment }
+  | [] => .ok ⟨env, AdmissionClaim.refl env, by simp⟩
   | d :: ds => do
-    let ⟨env₁, h₁⟩ ← checkDeclC.{u,v} cfg env d
-    let ⟨env₂, h₂⟩ ← checkDeclsC cfg env₁ ds
-    return ⟨env₂, h₁.trans h₂⟩
+    let ⟨env₁, h₁, hd⟩ ← checkDeclC.{u,v} cfg env d
+    let ⟨env₂, h₂, hds⟩ ← checkDeclsC cfg env₁ ds
+    return ⟨env₂, h₁.trans h₂, by
+      intro d' hmem
+      rcases List.mem_cons.mp hmem with rfl | hmem
+      · exact hd.mono h₂.preserves
+      · exact hds d' hmem⟩
 
 /-- The closed fold: check declarations in the supplied order, each against the
 environment the earlier ones built. -/

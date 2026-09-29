@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Env
+import Ix.Kernel.Fidelity
 import Ix.Kernel.Certified.Ordinary.Checked
 import Ix.Kernel.Certified.Ordinary.Read
 
@@ -135,17 +136,52 @@ theorem toEnvironment_installed (env : Env β) (shape : Shape β) (source : β) 
   unfold publishedEnvironment constructorEnvironment familyEnvironment
   exact toEnvironment_installedWith env shape source mode shape.familyEntry
 
+/-- The generated block's supplied members and constructors are installed at
+their exact positions. Specializations may add facts to the family entry. -/
+theorem installedWith_fidelity (env : Env β) (shape : Shape β) (source : β)
+    (mode : ElimMode) (k : Bool) (fam : ConstantEntry β)
+    (hf : (shape.source source).Reads fam) :
+    (Block.mk [shape.source source, shape.recursorSource source mode k]).Installed source
+      (env.pushList (shape.installedWith source mode fam)).toEnvironment := by
+  apply Block.installed_pair
+  · refine ⟨⟨fam, ?_, hf⟩, ?_⟩
+    · rw [toEnvironment_installedWith]
+      simp [Environment.insert, Environment.overlay, constructorEntries]
+    · intro j ctor hc
+      change (shape.constructors.map (fun c => c.source shape source))[j]? = some ctor at hc
+      cases hj : shape.constructors[j]? with
+      | none => simp [List.getElem?_map, hj] at hc
+      | some c =>
+        simp only [List.getElem?_map, hj, Option.map_some, Option.some.injEq] at hc
+        subst ctor
+        refine ⟨shape.constructorEntry source c, ?_, rfl, rfl, rfl⟩
+        rw [toEnvironment_installedWith]
+        simp [Environment.insert, Environment.overlay, constructorEntries, hj]
+  · refine ⟨⟨shape.publishedRecursorEntry source mode, ?_, rfl, rfl, rfl⟩, trivial⟩
+    rw [toEnvironment_installedWith]
+    exact Environment.insert_same ..
+
 end Certified.Ordinary.Shape
 
 /-- Install a checked ordinary block with its model extension. -/
 def installOrdinary (env : Env β) (source : β) (shape : Shape β) (mode : ElimMode)
     (h : CheckedBlock.{u,v} env.toEnvironment source shape mode) :
-    { env' : Env β // StepClaim.{u,v} env env' } :=
-  ⟨env.pushList (shape.installed source mode), fun V _ m => by
+    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
+  ⟨env.pushList (shape.installed source mode), ⟨fun V _ m => by
     refine ⟨⟨shape.recursorAssignment m.constants source mode, ?_, ?_⟩⟩
     · rw [Shape.toEnvironment_installed]
       exact Shape.publishedAssignment_realizes h m.wf m.constants m.realizes
     · rw [Shape.toEnvironment_installed]
-      exact Shape.publishedEnvironment_wf h m.wf⟩
+      exact Shape.publishedEnvironment_wf h m.wf,
+    by
+      intro r entry hr
+      rw [Shape.toEnvironment_installed]
+      exact Shape.publishedEnvironment_old h hr⟩⟩
+
+theorem installOrdinary_fidelity (env : Env β) (source : β) (shape : Shape β)
+    (mode : ElimMode) (h : CheckedBlock.{u,v} env.toEnvironment source shape mode) (k : Bool) :
+    (Block.mk [shape.source source, shape.recursorSource source mode k]).Installed source
+      (installOrdinary env source shape mode h).val.toEnvironment :=
+  shape.installedWith_fidelity env source mode k shape.familyEntry ⟨rfl, rfl, rfl⟩
 
 end Ix.Kernel

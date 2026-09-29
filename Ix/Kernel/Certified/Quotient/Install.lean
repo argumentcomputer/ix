@@ -29,15 +29,17 @@ variable {β : Type u} [DecidableEq β]
 /-- Install an entry without a body at a fresh reference, given its
 well-formedness and its realization in every model of the environment. -/
 def installEntry (env : Env β) (r : ConstRef β) (entry : ConstantEntry β)
+    (fresh : env.toEnvironment r = none)
     (wf : env.toEnvironment.WF → (env.toEnvironment.insert r entry).WF)
     (realize : ∀ (V : Type v) [SetTheory V] (_ : Model.{u,v} V env),
       ∃ constants' : Assignment β V, Realizes constants' (env.toEnvironment.insert r entry)) :
-    { env' : Env β // StepClaim.{u,v} env env' } :=
-  ⟨env.push r entry, fun V _ m => by
+    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
+  ⟨env.push r entry, ⟨fun V _ m => by
     obtain ⟨c', hc'⟩ := realize V m
     refine ⟨⟨c', ?_, ?_⟩⟩
     · rw [Env.toEnvironment_push]; exact hc'
-    · rw [Env.toEnvironment_push]; exact wf m.wf⟩
+    · rw [Env.toEnvironment_push]; exact wf m.wf,
+    env.preserves_push r entry fresh⟩⟩
 
 /-- The syntactic side of installing a quotient entry: the entry without its
 equations first, then with them, so the equations may refer to the entry. -/
@@ -67,8 +69,8 @@ theorem constants_ne_of_fresh {entries : Environment β} {r q : ConstRef β} {e 
 def installType (env : Env β) (q : ConstRef β) (fresh : env.toEnvironment q = none)
     (hTs : (typeType : AExpr β).Scope 1 0)
     {l : VLevel} (ht : TypingClaim.{u,v} env.toEnvironment [] typeType (.sort l)) :
-    { env' : Env β // StepClaim.{u,v} env env' } :=
-  installEntry env q ⟨1, typeType, none, [], [.quotient .type]⟩
+    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
+  installEntry env q ⟨1, typeType, none, [], [.quotient .type]⟩ fresh
     (fun hE => wf_insert hE rfl hTs (fun _ h => by simp [typeType, relationType, AExpr.references] at h)
       (fun _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => by simp at h; subst h; trivial)
       (fun _ h => by simp at h; subst h; intro _ h; simp [ConstantFact.references] at h))
@@ -96,8 +98,8 @@ def installCtor (env : Env β) (refs : Refs β) (fresh : env.toEnvironment refs.
     (hTs : (ctorType refs).Scope 1 0)
     (hq : HasFormer env.toEnvironment refs) (hTr : (ctorType refs).ReferencesIn env.toEnvironment)
     {l : VLevel} (ht : TypingClaim.{u,v} env.toEnvironment [] (ctorType refs) (.sort l)) :
-    { env' : Env β // StepClaim.{u,v} env env' } :=
-  installEntry env refs.ctor ⟨1, ctorType refs, none, [], [.quotient .ctor]⟩
+    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
+  installEntry env refs.ctor ⟨1, ctorType refs, none, [], [.quotient .ctor]⟩ fresh
     (fun hE => wf_insert hE rfl hTs hTr (fun _ h => nomatch h) (fun _ h => nomatch h)
       (fun _ h => by simp at h; subst h; trivial)
       (fun _ h => by simp at h; subst h; intro _ h; simp [ConstantFact.references] at h))
@@ -125,8 +127,8 @@ def installLift (env : Env β) (refs : Refs β) (fresh : env.toEnvironment refs.
     (hTs : (liftType refs).Scope 2 0)
     (hq : HasFormer env.toEnvironment refs) (hTr : (liftType refs).ReferencesIn env.toEnvironment)
     {l : VLevel} (ht : TypingClaim.{u,v} env.toEnvironment [] (liftType refs) (.sort l)) :
-    { env' : Env β // StepClaim.{u,v} env env' } :=
-  installEntry env refs.lift ⟨2, liftType refs, none, [], [.quotientLift refs.eq]⟩
+    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
+  installEntry env refs.lift ⟨2, liftType refs, none, [], [.quotientLift refs.eq]⟩ fresh
     (fun hE => wf_insert hE rfl hTs hTr (fun _ h => nomatch h) (fun _ h => nomatch h)
       (fun _ h => by simp at h; subst h; trivial)
       (fun _ h => by
@@ -180,8 +182,8 @@ def installInd (env : Env β) (refs : Refs β) (fresh : env.toEnvironment refs.i
     (hq : HasFormer env.toEnvironment refs) (hc : HasCtor env.toEnvironment refs)
     (hTr : (indType refs).ReferencesIn env.toEnvironment)
     {l : VLevel} (ht : TypingClaim.{u,v} env.toEnvironment [] (indType refs) (.sort l)) :
-    { env' : Env β // StepClaim.{u,v} env env' } :=
-  installEntry env refs.ind ⟨1, indType refs, none, [], [.quotient .ind]⟩
+    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
+  installEntry env refs.ind ⟨1, indType refs, none, [], [.quotient .ind]⟩ fresh
     (fun hE => wf_insert hE rfl hTs hTr (fun _ h => nomatch h) (fun _ h => nomatch h)
       (fun _ h => by simp at h; subst h; trivial)
       (fun _ h => by simp at h; subst h; intro _ h; simp [ConstantFact.references] at h))
@@ -211,8 +213,8 @@ def installSound (env : Env β) (refs : Refs β) (sound : ConstRef β) (fresh : 
     (hE : EqInterface env.toEnvironment refs.eq)
     (hTr : (soundType refs).ReferencesIn env.toEnvironment)
     {l : VLevel} (ht : TypingClaim.{u,v} env.toEnvironment [] (soundType refs) (.sort l)) :
-    { env' : Env β // StepClaim.{u,v} env env' } :=
-  installEntry env sound ⟨1, soundType refs, none, [], []⟩
+    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
+  installEntry env sound ⟨1, soundType refs, none, [], []⟩ fresh
     (fun hE' => wf_insert hE' rfl hTs hTr (fun _ h => nomatch h) (fun _ h => nomatch h)
       (fun _ h => nomatch h) (fun _ h => nomatch h))
     (fun V _ m => by

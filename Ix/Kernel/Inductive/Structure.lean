@@ -49,12 +49,22 @@ end Certified.Structure.Description
 /-- Install a checked structure with its model extension. -/
 def installStructure (env : Env β) (source : β) (d : Description β) (mode : ElimMode)
     (h : Checked.{u,v} env.toEnvironment d source mode) :
-    { env' : Env β // StepClaim.{u,v} env env' } :=
-  ⟨env.pushList (d.installed source mode), fun V _ m => by
+    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
+  ⟨env.pushList (d.installed source mode), ⟨fun V _ m => by
     refine ⟨⟨d.ordinary.recursorAssignment m.constants source mode, ?_, ?_⟩⟩
     · rw [Description.toEnvironment_installed]
       exact d.publishedAssignment_realizes h m.wf m.constants m.realizes
     · rw [Description.toEnvironment_installed]
-      exact d.publishedEnvironment_wf h m.wf⟩
+      exact d.publishedEnvironment_wf h m.wf,
+    by
+      intro r entry hr
+      rw [Description.toEnvironment_installed]
+      exact d.publishedEnvironment_old h hr⟩⟩
+
+theorem installStructure_fidelity (env : Env β) (source : β) (d : Description β)
+    (mode : ElimMode) (h : Checked.{u,v} env.toEnvironment d source mode) (k : Bool) :
+    (Block.mk [d.ordinary.source source, d.ordinary.recursorSource source mode k]).Installed source
+      (installStructure env source d mode h).val.toEnvironment :=
+  d.ordinary.installedWith_fidelity env source mode k (d.publishedEntry source) ⟨rfl, rfl, rfl⟩
 
 end Ix.Kernel

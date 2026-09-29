@@ -46,12 +46,24 @@ end Certified.Natural
 /-- Install a checked natural-number block with its model extension. -/
 def installNatural (env : Env β) (source : β) (mode : ElimMode)
     (h : Natural.Checked.{u,v} env.toEnvironment source mode) :
-    { env' : Env β // StepClaim.{u,v} env env' } :=
-  ⟨env.pushList (Natural.installed source mode), fun V _ m => by
+    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
+  ⟨env.pushList (Natural.installed source mode), ⟨fun V _ m => by
     refine ⟨⟨(Natural.shape : Shape β).recursorAssignment m.constants source mode, ?_, ?_⟩⟩
     · rw [Natural.toEnvironment_installed]
       exact Natural.assignment_realizes h m.wf m.constants m.realizes
     · rw [Natural.toEnvironment_installed]
-      exact Natural.environment_wf h m.wf⟩
+      exact Natural.environment_wf h m.wf,
+    by
+      intro r entry hr
+      rw [Natural.toEnvironment_installed]
+      exact Natural.environment_old h hr⟩⟩
+
+theorem installNatural_fidelity (env : Env β) (source : β) (mode : ElimMode)
+    (h : Natural.Checked.{u,v} env.toEnvironment source mode) (k : Bool) :
+    (Block.mk [(Natural.shape : Shape β).source source,
+      (Natural.shape : Shape β).recursorSource source mode k]).Installed source
+      (installNatural env source mode h).val.toEnvironment :=
+  (Natural.shape : Shape β).installedWith_fidelity env source mode k (Natural.entry source)
+    ⟨rfl, rfl, rfl⟩
 
 end Ix.Kernel

@@ -1213,7 +1213,16 @@ Implementation checkpoint (2026-09-29):
   configurations accept; the paired comparison and diagnostic overhead
   are recorded in `Benchmarks/Kernel/README.md`. The public theorem
   statements and axiom/import allowlists remain unchanged.
-- P02–P12, the K2 release gate, and K3–K7 remain open. The host/model and
+- P02 is implemented in `vqsxslky`: `annotate_erase`, reference transfer,
+  exact installed-block readings through every route, and old-lookup
+  preservation through the fold. The strict standalone build passes
+  (134 jobs, eight fixture modules), as do the six new fidelity axiom
+  audits. Runtime closure remains 899 compiled functions with the same
+  16 inherited externs. Provenance passes with 97 ported and 26 authored
+  modules. The pinned Mathlib model build and full dependency audit pass
+  (981 jobs). This Nix toolchain needed a temporary overlay supplying
+  Lean 4.33.1's pinned `leantar` 0.1.20; dependency revisions were unchanged.
+- P03–P12, the K2 release gate, and K3–K7 remain open. The host and
   corpus parity gates have not been rerun at this checkpoint. D00–D02
   remain required: neither dependency retirement nor runtime cutover is
   claimed by the standalone checks.
