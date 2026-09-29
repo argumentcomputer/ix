@@ -46,8 +46,13 @@ Pure projection-address reconstruction and canonical mutual-block ordering
 are now implemented outside the hash-free kernel, composed with byte admission.
 K4's complete abstract parser-work accounting is now implemented and validated,
 including nested failures and aggregate admission limits, without adding
-production counters. K5 and the measured core improvements in section 10 remain
-next. D02's final runtime Ix.Tc cutover remains required.
+production counters. D02's final runtime Ix.Tc cutover remains required.
+
+Takeover, 2026-09-29: work continues from `f499ccf2`, where the full gate was
+re-run (`plans/review/t0-baseline`). That commit is the last Ixon v2 state,
+bookmarked as `jcb/ix-certified-v2`. Ix `main` has emitted only Ixon v3 since
+#636, and the Compilatr.ix consumer builds on Lean 4.34.0. Section 12's v3 and
+Lean 4.34 sequence therefore precedes K5 and the remaining section 10 work.
 
 ## Revision note
 
@@ -82,6 +87,18 @@ steps supersede the previous interning-first K6 order. Section 11 records
 the complete `lean4ix` dependency and consumer removal, including build,
 test, CI, Nix, and generated benchmark configuration. Implementation progress
 is recorded in section 10; the full retirement remains required.
+
+Fourth pass, 2026-09-29: the branch moves to Ixon v3 and Lean 4.34.0
+(section 12). It merges ix `main` at `b413cd93` for v3, then
+`jcb/ix-compilatrix` at `0a31c8db` for Lean 4.34.0. That second commit is the
+producer that the Compilatr.ix consumer pins. The branch integrates these by
+merging, not rebasing: conflicts are resolved once, and every earlier commit
+keeps its recorded gate evidence.
+
+Binder, forall-result, and let contracts are layout data. They are accepted,
+retained for exact egress, and ignored by typing, conversion, and the model.
+Section 3.1 and K7 are corrected accordingly. The second ontology review
+(`c1536731`) adds four contract fixes (R1–R4) to section 12.
 
 ## 1. Thesis and scope
 
@@ -277,8 +294,8 @@ inductive Expr (β)
   | sort (u : Level)
   | const (r : ConstRef β) (us : List Level)
   | app (f a : Expr β)
-  | lam (uses : Uses) (dom body : Expr β)
-  | forallE (uses : Uses) (owned : Owned) (dom body : Expr β)
+  | lam (dom body : Expr β)
+  | forallE (dom body : Expr β)
   | letE (ty val body : Expr β)
   | proj (r : ConstRef β) (i : Nat) (e : Expr β)
   | natLit (n : Nat)
@@ -298,14 +315,23 @@ reduction; they are written by annotation, validated by inference, compared
 during conversion, and read by the model. P09 explicitly revises that
 operational rule for the proved `.never` beta shortcut.
 
-`Uses` and `Owned` are Ixon v2's substructural binder modes
-(`Ix/IxonMode.lean`): usage `erased`, `linear`, `affine`, or `many` on every
-binder, and ownership `unique` or `shared` on a forall's result. They are
-carried as data so ingress and egress lose nothing. The first release
-accepts only the conservative fragment that ordinary Lean compilation
-emits, `many` and `shared`, and declines other modes; conversion compares
-modes structurally; the model ignores them. Mode checking and the
-optimizations modes license are K7.
+Ixon's substructural contracts are layout data, not kernel syntax. Ixon v3
+defines three kinds:
+- a binder contract: usage `erased`, `linear`, `affine`, or `many`, plus an
+  input value contract of ownership (`unique`/`shared`) and locality
+  (`unrestricted`/`local`);
+- a forall result contract;
+- a let contract: dependency, value or shared borrow, and a binder contract.
+
+Kernel terms carry none of them. Ingress reads the kernel term, and the egress
+layout retains each contract, so records reproduce exactly. Typing,
+conversion, and the model ignore contracts. Two terms that differ only in
+their contracts are therefore the same kernel term.
+
+The implementation first had this shape under Ixon v2, where it declined
+non-default modes. Section 12 (V2) accepts every v3 contract. Mode checking,
+and any optimization contracts license, operate on Ixon expressions or their
+layouts (K7).
 
 There are no names, no binder info, no metadata, no free variables, no
 metavariables, and no string literals in the first release. Binders are
@@ -1186,14 +1212,17 @@ meet the milestone.
 
 ### K7: binder modes and the optimizations they license
 
-Ixon v2 carries usage and ownership on binders, and Ix's annotation
-extensions to Lean are expected to surface them in source. The kernel
-carries them from K1; this milestone gives them meaning and uses them:
+Ixon v3 carries usage, ownership, and locality contracts on binders, results,
+and lets. Ix's source-contract frontend surfaces them from Lean. The kernel
+erases them at ingress, and the egress layout retains them (section 3.1). This
+milestone gives them meaning and uses them:
 
-1. Mode checking: usage accounting with the `Uses` algebra and `covers`,
-   ownership on results, and a stated contract for what an accepted mode
-   assignment guarantees. The set model ignores modes unless a mode-aware
-   semantics is adopted; that choice is recorded here.
+1. Mode checking over Ixon expressions or layouts: usage accounting with the
+   `Uses` algebra and `covers`, ownership and locality on results and loans,
+   and a stated contract for what an accepted assignment guarantees.
+   Upstream's resource admission (`Ix/Resource`) is the natural candidate to
+   certify. The set model ignores contracts unless a contract-aware semantics
+   is adopted; that choice is recorded here.
 2. Optimizations licensed by checked modes, each a promotion with a
    verdict-preservation proof: skipping erased arguments in reduction and
    conversion where the model justifies irrelevance, and in-place update
@@ -2068,3 +2097,119 @@ the fresh host/kernel/model builds and consumer tests pass, the documented
 parity corpus agrees subject to the explicit ordered-reference policy,
 and the removal ledger is complete. This is required for K6 completion,
 even if optional performance work is deferred.
+
+## 12. Ixon v3 and Lean 4.34
+
+Ix `main` has emitted only Ixon v3 since #636 (2026-09-16), one commit after
+this branch's original base `cf77c957`. Until V1 below, K3 and K4 certified the
+v2 grammar. The migration keeps the kernel, its public theorems, and the
+supported profile unchanged. Contracts are layout data (section 3.1). Each step
+below closes with the full `check-kernel --with-model` gate and evidence under
+`plans/review/<step>/`.
+
+### T0 — takeover baseline (complete, 2026-09-29)
+
+The gate was re-run at `f499ccf2`, the last v2 state, bookmarked as
+`jcb/ix-certified-v2`. Results: 188/211/621/975 jobs, 38 differential cases,
+26 compiler cases, and 1,117 Rust order comparisons passed. Stale gate
+workspaces were forgotten.
+
+### V1 — merge ix `main` (`b413cd93`, Ixon v3)
+
+Merge `main` into the branch. Resolve the conflicts as follows:
+- The 17 D01 deletions that upstream edited stay deleted.
+- Upstream's v3 hunks for the retained codec proofs go into the extracted
+  `Ix/Ixon/Verify/*` modules. Each module's provenance header moves to the
+  new revision.
+- The v3 contract types go into the pure `Ix.Ixon.Types` closure. The host
+  modules `Ix/IxonContract.lean` and `Ix/IxonMode.lean` become re-export
+  shims.
+- v3 reader/writer changes go into `Ix.Ixon.Codec`: contract bytes, the let
+  flags plus binder byte, `checkCount`, canonical integer tags, and flag
+  validation.
+- The upstream `Ix/Resource/Audit` moves off the deleted `Ix.Tc.Verify` audit
+  helper.
+
+The K4-authored modules (`Bounded`, `WireCheck`, `Canonical`, `ReaderBounds`,
+`ConstantBounds`, `Work*`) and the certified ingress/egress are ported by
+hand. The supported profile is unchanged: default contracts are accepted, and
+all others decline.
+
+Exit: the gate passes on v3 with regenerated compiler fixtures, with verdicts
+and reasons unchanged. Any statement the new `Ixon.Expr` forces to change is
+re-frozen, with its reason recorded.
+
+### V2 — carry every v3 contract
+
+Changes:
+- `ExprLayout` retains binder, forall-result, and let contracts.
+- Ingress accepts every contract value, and the reading relation ignores
+  contracts.
+- The record round-trip theorems cover exact contract recovery.
+- `let borrow` has the ordinary let typing rule, confirmed against upstream
+  `Ix.Tc` before it is accepted.
+
+Tests:
+- every binder, forall, and let contract spelling;
+- upstream `Tests/Fixtures/ixon-v3`;
+- the Compilatr.ix v3 fixtures.
+
+Exit: every contract spelling is accepted and round-trips byte-exactly.
+
+### V3 — the byte ladder against the v3 decoder
+
+The v3 production decoder rejects several inputs itself: noncanonical integer
+tags, counts larger than the remaining bytes, invalid kind/safety/recursor
+flags, and non-Boolean flags. Restate the K4 ladder against this decoder:
+- Prove or drop the runtime canonical re-encode check.
+- Simplify the counted-array bounds.
+- Settle the treatment of single-use sharing entries.
+- Name the per-record canonical contract.
+- Keep one wire-well-formedness predicate per sort, and delete the superseded
+  milestone domains.
+
+Exit: the ladder theorems and adversarial controls are restated for v3. Every
+freeze or audit change is recorded with its reason.
+
+### L1 — Lean 4.34.0
+
+Merge `jcb/ix-compilatrix` at `0a31c8db`. That brings:
+- the Lean 4.34.0 toolchain and Blake3 `c32002ee`;
+- updated primitive addresses.
+
+Also:
+- Bump every `lean-toolchain`, and Mathlib to `v4.34.0`.
+- Fix the 4.34 deprecations, so strict builds stay free of warnings.
+- Re-run every exact axiom audit. `Std.HashMap` now reaches
+  `Classical.choice`. A changed axiom set for a kernel public root is a
+  finding, not a re-record.
+- Regenerate the address-dependent fixtures.
+
+Benchmark packages whose third-party dependencies lag Lean 4.34 are recorded
+as such.
+
+Exit: 4.34.0 throughout, and `IxKernel/` consumable at a pinned revision.
+
+### R1–R4 — contract fixes from the second ontology review
+
+**R1.** `EqInterface`, `propextSpec`, and `choiceSpec` take the Eq/Iff/Nonempty
+recursor reference explicitly, instead of assuming `.member b 1`. Production
+input stores recursors as separate records, which the positional form rejects.
+Failed prerequisites decline. Add production-layout `Quot`, `propext`, and
+`Classical.choice` host cases. R1 lands right after V1.
+
+**R2.** The structure and Nat fallbacks propagate exhaustion instead of
+installing a weaker entry.
+
+**R3.** One admission fold over physical records:
+- Freeze the `checkEnv` statements.
+- Add a no-False theorem for `checkEnv`.
+- Add the syntactic `EmptyType` corollary promised in section 2.
+
+**R4.** Installed fidelity covers every supplied field: kinds, safety, arities,
+rules, and the K flag. Also prove reading determinism and a
+`checkEnv_ok_iff`.
+
+The review's outcome vocabulary, byte pipeline composition, and glossary
+renames go with P11, before the D02 consumers. K5 is then designed against
+v3's format-3 environment header and constant-set Merkle root.
