@@ -33,6 +33,10 @@ private def instructionIndexed (program : Program) (layout : Index) (text : Byte
       | none => decodesIndexed text offset (.call 0) 5
       | some target => Encode.fitsSigned32 (target - (offset + 5)) &&
           decodesIndexed text offset (.call (externalDisplacement (offset + 5) target)) 5
+  | .fused producer pargs consumer cargs =>
+      let size := (Encode.encodeOp producer pargs).size
+      decodesIndexed text offset (.op producer pargs) size &&
+        decodesIndexed text (offset + size) (.op consumer cargs) (Encode.encodeOp consumer cargs).size
   | _ => decodesIndexed text offset (Encode.instructionOperation instruction) (instructionSize instruction)
 
 private def terminatorIndexed (program : Program) (layout : Index) (text : ByteArray) (offset : Nat) : Terminator → Bool

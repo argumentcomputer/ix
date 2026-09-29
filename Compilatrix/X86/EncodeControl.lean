@@ -94,15 +94,41 @@ theorem ret_decode (rest : List UInt8) :
 /-! ## Typed instructions -/
 
 /-- The operation the decoder recovers from a typed instruction's bytes;
-calls carry the encoder's zero rel32 placeholder. -/
+calls carry the encoder's zero rel32 placeholder. A fused pair's first
+operation is its producer. -/
 def instructionOperation : Instr → Decode.Operation
   | .op o args => .op o args
+  | .fused producer pargs _ _ => .op producer pargs
   | .call _ | .callRuntime _ => .call 0
+
+/-- Every operation the decoder recovers from a typed instruction's bytes:
+two for a fused pair, one otherwise. -/
+def instructionOperations : Instr → List Decode.Operation
+  | .fused producer pargs consumer cargs => [.op producer pargs, .op consumer cargs]
+  | instruction => [instructionOperation instruction]
+
+/-- Instructions the encoder emits as one decoded operation: all but fused
+pairs. -/
+def _root_.Compilatrix.X86.Instr.single : Instr → Bool
+  | .fused .. => false
+  | _ => true
 
 theorem wellFormed_op {o : Op} {args : List Arg} (wf : (Instr.op o args).wellFormed = true) :
     o ∈ Op.rows ∧ o.linear = true ∧ o.argsOk args = true := by
   simp only [Instr.wellFormed, Bool.and_eq_true, List.contains_iff_mem] at wf
   exact ⟨wf.1.1, wf.1.2, wf.2⟩
+
+/-- A well-formed fused pair: a listed linear producer that reads no flags
+and writes only flags, a listed consumer, operands of their slot kinds, and
+the producer setting every flag the consumer reads. -/
+theorem wellFormed_fused {producer consumer : Op} {pargs cargs : List Arg}
+    (wf : (Instr.fused producer pargs consumer cargs).wellFormed = true) :
+    producer ∈ Op.rows ∧ producer.linear = true ∧ (desc producer).flagsIn = [] ∧ producer.flagsOnly = true ∧
+      producer.argsOk pargs = true ∧ consumer ∈ Op.rows ∧ consumer.consumer = true ∧
+      consumer.argsOk cargs = true ∧ FusedOk producer consumer = true := by
+  simp only [Instr.wellFormed, Bool.and_eq_true, List.contains_iff_mem, List.isEmpty_iff] at wf
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨row, linear⟩, free⟩, only⟩, pok⟩, crow⟩, consumes⟩, cok⟩, fused⟩ := wf
+  exact ⟨row, linear, free, only, pok, crow, consumes, cok, fused⟩
 
 theorem rel32_bytes (o : Op) (target : FixupTarget) : (rel32 o target).bytes = encodeOp o [.imm 0] := rfl
 
@@ -124,15 +150,34 @@ theorem ret_row (rest : List UInt8) :
     Decode.one (encodeList Op.retZO [] ++ rest) = some (.ret, rest) :=
   row_decode _ _ control_rows.2.2 (by decide) rest
 
-theorem instruction_decode (instruction : Instr) (wf : instruction.wellFormed = true) (rest : List UInt8) :
+theorem instruction_decode (instruction : Instr) (wf : instruction.wellFormed = true)
+    (single : instruction.single = true) (rest : List UInt8) :
     Decode.one ((encodeInstr instruction).bytes.data.toList ++ rest) =
       some (instructionOperation instruction, rest) := by
   cases instruction with
   | op o args =>
       obtain ⟨row, _, ok⟩ := wellFormed_op wf
       exact encodeOp_decode o args row ok rest
+  | fused => simp [Instr.single] at single
   | call target | callRuntime intrinsic =>
       simpa [encodeInstr, rel32_bytes, encodeOp, instructionOperation] using call_placeholder rest
+
+/-- A fused pair's bytes decode to its producer, then its consumer. -/
+theorem fused_decode {producer consumer : Op} {pargs cargs : List Arg}
+    (wf : (Instr.fused producer pargs consumer cargs).wellFormed = true) (rest : List UInt8) :
+    Decode.sequence 2 ((encodeInstr (.fused producer pargs consumer cargs)).bytes.data.toList ++ rest) =
+      some ([.op producer pargs, .op consumer cargs], rest) := by
+  obtain ⟨row, _, _, _, pok, crow, _, cok, _⟩ := wellFormed_fused wf
+  simp [encodeInstr, Chunk.raw, encodeOp, bytes, Decode.sequence, row_decode _ _ row pok,
+    row_decode _ _ crow cok]
+
+theorem instructions_decode (instruction : Instr) (wf : instruction.wellFormed = true) (rest : List UInt8) :
+    Decode.sequence (instructionOperations instruction).length
+      ((encodeInstr instruction).bytes.data.toList ++ rest) = some (instructionOperations instruction, rest) := by
+  cases instruction with
+  | fused producer pargs consumer cargs => exact fused_decode wf rest
+  | op o args | call target | callRuntime intrinsic =>
+      simp [instructionOperations, Decode.sequence, instruction_decode _ wf rfl rest]
 
 /-- The row of a comparison is listed and its operands have the row's kinds. -/
 theorem Compare.row_ok (comparison : Compare) :

@@ -138,6 +138,10 @@ def row (o : Op) (args : List Arg) : ByteArray := encodeOp o args
   expected #[0x4d, 0x3b, 0x5f, 0xc8]
 #guard row { mn := .add, w := .w64, form := .RM } [.reg .rax, .mem { base := some .rbx }] ==
   expected #[0x48, 0x03, 0x03]
+-- A fused pair is its producer's and consumer's bytes back to back: `cmp rdi, rsi; setb al`.
+#guard instr (.fused { mn := .cmp, w := .w64, form := .MR } [.reg .rdi, .reg .rsi] (Op.setccM .unsignedLt) [.reg .rax]) ==
+  expected #[0x48, 0x39, 0xf7, 0x0f, 0x92, 0xc0]
+
 -- The failure exit's `unwind [r15 − 64]` is the `mov r64, r/m64` row.
 #guard row { mn := .mov, w := .w64, form := .RM } [.reg .rsp, .mem { base := some .r15, displacement := 0xffffffc0 }] ==
   expected #[0x49, 0x8b, 0x67, 0xc0]

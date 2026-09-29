@@ -140,6 +140,34 @@ private def producerCases : Except String Nat := do
         count := count + 1
   return count
 
+/-- Fused pairs in complete objects: `xor edx, edx; cmp; setcc dl` (rule
+11's 0/1 word) and a `cmp`/`test` into `cmovcc` from memory (rule 10's
+select), for every condition. -/
+private def fusedCases : Except String Nat := do
+  let conditions : List Condition := [.eq, .ne, .unsignedLt, .unsignedLe, .unsignedGt, .unsignedGe,
+    .signedLt, .signedLe, .signedGt, .signedGe]
+  let pairs : List (Word × Word) := [(0, 0), (0, 1), (1, 0),
+    (0x8000000000000000, 1), (0x7fffffffffffffff, 0xffffffffffffffff)]
+  let slot : MemAddr := { base := some .rsp, displacement := 0xfffffff0 }
+  let mut count := 0
+  for condition in conditions do
+    for (left, right) in pairs do
+      let program : Program := {
+        entry := 0
+        blocks := #[{
+          instructions := #[.mov .w64 .rax (.imm left), .mov .w64 .rcx (.imm right), .store .w64 slot .rcx,
+            .alu .xor .w32 .rdx (.reg .rdx),
+            .fused { mn := .cmp, w := .w64, form := .RM } [.reg .rax, .mem slot] (Op.setccM condition) [.reg .rdx],
+            .mov .w64 .rsi (.imm 7),
+            .fused { mn := .test, w := .w64, form := .MR } [.reg .rax, .reg .rcx]
+              (Op.cmovRM condition .w64) [.reg .rsi, .mem slot],
+            .fused { mn := .cmp, w := .w32, form := .MR } [.reg .rcx, .reg .rax]
+              (Op.cmovRM condition .w32) [.reg .rdi, .reg .rax]]
+          terminator := .ret }] }
+      programCase program textBase
+      count := count + 1
+  return count
+
 private def streamCorruptions : Except String Nat := do
   let (target, input, _) ← artifact Examples.arithmeticProgram
   let encoded := input.encoded
@@ -337,10 +365,11 @@ def main : IO UInt32 := cli "x86 stream/object check failed" do
   let streams ← checked completePrograms
   let branches ← checked branchCases
   let producers ← checked producerCases
+  let fused ← checked fusedCases
   let streamNegatives ← checked streamCorruptions
   let layouts ← checked indexedLayouts
   let objectNegatives ← checked objectCorruptions
   let relocations ← checked relocationCases
   checked returnFault
   let contracts ← checked contractCases
-  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {producers} producer branch objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, caller-slot fault"
+  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {producers} producer branch objects, {fused} fused-pair objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, caller-slot fault"

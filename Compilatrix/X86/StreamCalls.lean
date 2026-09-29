@@ -155,6 +155,139 @@ theorem paired_control_progress {checked : Checked} {output : Encode.Output} {ex
           · rw [sourceStep, goEqual]
             exact ⟨coresRelated, related.running, _, target_entry targetBound, rfl⟩
 
+/-- A fused pair that keeps the typed machine running ran its producer, then
+its consumer on the producer's flags, and advanced with the consumer's
+core. -/
+theorem fused_running {runtime : Runtime} {checked : Checked} {machine : Machine} {producer consumer : Op}
+    {pargs cargs : List Arg}
+    (running : (executeInstr runtime checked (.fused producer pargs consumer cargs) machine).status = .running) :
+    ∃ core flags after flagsAfter, producer.exec pargs machine.core {} = .ok (core, flags) ∧
+      consumer.exec cargs core flags = .ok (after, flagsAfter) ∧
+      executeInstr runtime checked (.fused producer pargs consumer cargs) machine = machine.advanceWith after := by
+  simp only [executeInstr] at running ⊢
+  cases hproducer : producer.exec pargs machine.core {} with
+  | error fault =>
+      rw [hproducer] at running
+      cases fault <;> simp [Machine.afterRow, Machine.trap] at running
+  | ok result =>
+      obtain ⟨core, flags⟩ := result
+      rw [hproducer] at running
+      simp only at running ⊢
+      cases hconsumer : consumer.exec cargs core flags with
+      | error fault =>
+          rw [hconsumer] at running
+          cases fault <;> simp [Machine.afterRow, Machine.trap] at running
+      | ok value =>
+          obtain ⟨after, flagsAfter⟩ := value
+          refine ⟨core, flags, after, flagsAfter, ?_, ?_, ?_⟩ <;>
+            first | rfl | exact hproducer | exact hconsumer | (rw [hconsumer]; rfl)
+
+theorem instructionSize_fused (producer consumer : Op) (pargs cargs : List Arg) :
+    instructionSize (.fused producer pargs consumer cargs) =
+      (Encode.encodeOp producer pargs).size + (Encode.encodeOp consumer cargs).size := by
+  simp [instructionSize, Encode.encodeInstr, Encode.Chunk.raw]
+
+/-- E2 for a fused pair: its two byte steps keep the machines related, and
+the mask clears exactly what the consumer writes (the producer writes only
+flags). -/
+theorem fused_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
+    (valid : Valid checked.program output externals) (runtime : Runtime) (machine : Machine)
+    (base : Word) (holes : Holes) (state : ByteEval.State) (related : Related checked.program base holes machine state)
+    {block : Block} {producer consumer : Op} {pargs cargs : List Arg}
+    (found : checked.program.blocks[machine.pc.block.toNat]? = some block)
+    (foundInstruction : block.instructions[machine.pc.offset.toNat]? = some (.fused producer pargs consumer cargs))
+    (producerSafe : OperationSafe holes machine.returns (.op producer pargs) machine.core)
+    (consumerSafe : OperationSafe holes machine.returns (.op consumer cargs) machine.core)
+    (nextRunning : (step runtime checked machine).status = .running) :
+    ∃ after, ByteEval.run output.text base 2 state = .ok after ∧
+      Related checked.program base (nextHoles holes (.op consumer cargs) machine.core)
+        (step runtime checked machine) after := by
+  have wf := checked_instruction_wf found foundInstruction
+  obtain ⟨_, linear, free, only, _, _, consumes, _, fused⟩ := Encode.wellFormed_fused wf
+  have sourceStep : step runtime checked machine =
+      executeInstr runtime checked (.fused producer pargs consumer cargs) machine := by
+    simp [step, related.running, found, foundInstruction]
+  rw [sourceStep] at nextRunning ⊢
+  obtain ⟨core1, flags1, core2, flags2, typedProducer, typedConsumer, stepEq⟩ := fused_running nextRunning
+  rw [stepEq]
+  obtain ⟨outP, ranP, flags1Eq⟩ := exec_run free typedProducer
+  have core1Eq : core1 = machine.core := run_flagsOnly only ranP
+  subst core1Eq
+  -- The producer on the byte machine.
+  have pairP := run_pair related.core producer pargs {} producerSafe
+  rw [ranP] at pairP
+  cases ranBP : producer.run pargs state.core {} with
+  | error fault => simp [ranBP, RunPair] at pairP
+  | ok resultB =>
+    obtain ⟨phys1, outB⟩ := resultB
+    simp only [ranBP, RunPair] at pairP
+    obtain ⟨sameOut, _⟩ := pairP
+    subst sameOut
+    have phys1Eq : phys1 = state.core := run_flagsOnly only ranBP
+    subst phys1Eq
+    -- The consumer, typed and on bytes, observes the same flags.
+    have observedEq : (state.flags.merge (desc producer).flagsOut outP.flags).restrict (desc consumer).flagsIn =
+        flags1.restrict (desc consumer).flagsIn := by
+      rw [flags1Eq]
+      exact ByteEval.restrict_merge_set (FusedOk.set fused) _ _ _
+    unfold Op.exec at typedConsumer
+    cases ranC : consumer.run cargs machine.core (flags1.restrict (desc consumer).flagsIn) with
+    | error fault => simp [ranC] at typedConsumer
+    | ok resultC =>
+      obtain ⟨typedCore, outC⟩ := resultC
+      simp only [ranC, bind, Except.bind, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at typedConsumer
+      obtain ⟨rfl, _⟩ := typedConsumer
+      have pairC := run_pair related.core consumer cargs (flags1.restrict (desc consumer).flagsIn) consumerSafe
+      rw [ranC] at pairC
+      cases ranBC : consumer.run cargs state.core (flags1.restrict (desc consumer).flagsIn) with
+      | error fault => simp [ranBC, RunPair] at pairC
+      | ok resultBC =>
+        obtain ⟨phys2, outBC⟩ := resultBC
+        simp only [ranBC, RunPair] at pairC
+        obtain ⟨sameC, related2⟩ := pairC
+        subst sameC
+        -- Fetch both rows from the certified text.
+        have accepted := valid.instruction _ _ found _ _ foundInstruction
+        simp only [instructionMatches, Bool.and_eq_true, decodes, beq_iff_eq] at accepted
+        obtain ⟨producerFetched, consumerFetched⟩ := accepted
+        have indexBound := (Array.getElem?_eq_some_iff.mp foundInstruction).1
+        have address := related.pc.offset found (by omega)
+        have mapped : pcOffset? checked.program machine.pc =
+            some (blockOffset checked.program machine.pc.block.toNat + instructionOffset block machine.pc.offset.toNat) := by
+          simp [pcOffset?, found, show machine.pc.offset.toNat ≤ block.instructions.size by omega]
+        have small := AtPC.small valid.textBound mapped
+        have nextMapped := pcOffset_next found foundInstruction
+        have nextSmall := AtPC.small valid.textBound nextMapped
+        rw [instructionSize_fused] at nextMapped nextSmall
+        let offset := blockOffset checked.program machine.pc.block.toNat + instructionOffset block machine.pc.offset.toNat
+        let middle : ByteEval.State :=
+          { core := state.core
+            rip := base + UInt64.ofNat (offset + (Encode.encodeOp producer pargs).size)
+            flags := state.flags.merge (desc producer).flagsOut outP.flags }
+        have first : ByteEval.step output.text base state = .ok middle := by
+          rw [step_decoded address small producerFetched, Encode.execute_linear linear, Encode.exec_flagsFree free, ranBP]
+          simp [middle, offset, address, UInt64.ofNat_add, UInt64.add_assoc]
+        let final : ByteEval.State :=
+          { core := phys2
+            rip := base + UInt64.ofNat
+              (offset + ((Encode.encodeOp producer pargs).size + (Encode.encodeOp consumer cargs).size))
+            flags := (state.flags.merge (desc producer).flagsOut outP.flags).merge (desc consumer).flagsOut outC.flags }
+        have second : ByteEval.step output.text base middle = .ok final := by
+          rw [step_decoded (state := middle) rfl (by omega) consumerFetched,
+            Encode.execute_row (Op.control_of_consumer consumes)]
+          unfold Op.exec
+          rw [observedEq, ranBC]
+          simp [final, middle, UInt64.ofNat_add, UInt64.add_assoc]
+        refine ⟨final, by simp [ByteEval.run, first, second], ?_⟩
+        have next := pc_next found foundInstruction
+        refine ⟨?_, ?_, ?_⟩
+        · simp only [Machine.advanceWith, next.1]
+          exact related2
+        · simp only [Machine.advanceWith, next.1]
+          exact related.running
+        · simp only [Machine.advanceWith, next.1]
+          exact ⟨_, nextMapped, rfl⟩
+
 theorem call_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
     (valid : Valid checked.program output externals) (runtime : Runtime) (machine : Machine)
     (base : Word) (holes : Holes) (state : ByteEval.State) (related : Related checked.program base holes machine state)

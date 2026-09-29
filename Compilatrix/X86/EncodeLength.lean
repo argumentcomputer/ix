@@ -66,14 +66,22 @@ theorem encodeList_bounded {o : Op} (row : o ∈ Op.rows) (args : List Arg) : (e
   exact Nat.le_trans (encodeList_length_le o args) bound
 
 theorem instruction_size_pos (instruction : Instr) : 0 < (encodeInstr instruction).bytes.size := by
-  cases instruction <;> simp [encodeInstr, Chunk.raw, rel32_bytes, encodeOp, encodeList_length_pos]
+  cases instruction with
+  | fused producer pargs consumer cargs =>
+      have := encodeList_length_pos producer pargs
+      simp only [encodeInstr, Chunk.raw, encodeOp, ByteArray.size_append, bytes_size]
+      omega
+  | op | call | callRuntime => simp [encodeInstr, Chunk.raw, rel32_bytes, encodeOp, encodeList_length_pos]
 
-theorem instruction_size (instruction : Instr) (wf : instruction.wellFormed = true) :
+/-- A single-operation instruction fits the fifteen-byte limit. -/
+theorem instruction_size (instruction : Instr) (wf : instruction.wellFormed = true)
+    (single : instruction.single = true) :
     0 < (encodeInstr instruction).bytes.size ∧ (encodeInstr instruction).bytes.size ≤ 15 := by
   refine ⟨instruction_size_pos instruction, ?_⟩
   cases instruction with
   | op o args =>
       simpa [encodeInstr, Chunk.raw, encodeOp] using encodeList_bounded (wellFormed_op wf).1 args
+  | fused => simp [Instr.single] at single
   | call target | callRuntime intrinsic =>
       simpa [encodeInstr, rel32_bytes, encodeOp] using encodeList_bounded control_rows.1 [.imm 0]
 
@@ -99,10 +107,10 @@ theorem decodeAt_of_one (encoded before after : ByteArray) (operation : Decode.O
   omega
 
 theorem instruction_decodeAt (instruction : Instr) (wf : instruction.wellFormed = true)
-    (before after : ByteArray) :
+    (single : instruction.single = true) (before after : ByteArray) :
     Decode.decodeAt (before ++ (encodeInstr instruction).bytes ++ after) before.size =
       some ⟨instructionOperation instruction, (encodeInstr instruction).bytes.size⟩ :=
-  decodeAt_of_one _ before after _ (instruction_decode instruction wf after.data.toList)
-    (instruction_size instruction wf).1 (instruction_size instruction wf).2
+  decodeAt_of_one _ before after _ (instruction_decode instruction wf single after.data.toList)
+    (instruction_size instruction wf single).1 (instruction_size instruction wf single).2
 
 end Compilatrix.X86.Encode

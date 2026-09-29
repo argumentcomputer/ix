@@ -206,6 +206,10 @@ def executeInstr (runtime : Runtime) (checked : Checked)
   let core := machine.core
   match instruction with
   | .op o args => machine.afterRow (o.exec args core {})
+  | .fused producer pargs consumer cargs =>
+      match producer.exec pargs core {} with
+      | .error fault => machine.afterRow (.error fault)
+      | .ok (core, flags) => machine.afterRow (consumer.exec cargs core flags)
   | .call target =>
       if !SysV.callSiteAligned (core.readReg .rsp) then
         machine.trap (.misalignedCall (core.readReg .rsp))

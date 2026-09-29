@@ -33,6 +33,10 @@ def instructionMatches (program : Program) (text : ByteArray) (externals : Exter
       | none => decodes text offset (.call 0) 5
       | some target => Encode.fitsSigned32 (target - (offset + 5)) &&
           decodes text offset (.call (externalDisplacement (offset + 5) target)) 5
+  | .fused producer pargs consumer cargs =>
+      let size := (Encode.encodeOp producer pargs).size
+      decodes text offset (.op producer pargs) size &&
+        decodes text (offset + size) (.op consumer cargs) (Encode.encodeOp consumer cargs).size
   | _ => decodes text offset (Encode.instructionOperation instruction) (instructionSize instruction)
 
 def terminatorMatches (program : Program) (text : ByteArray) (offset : Nat) : Terminator → Bool

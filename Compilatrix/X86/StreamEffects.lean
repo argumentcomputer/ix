@@ -261,6 +261,72 @@ theorem run_pair {program : Program} {base : Word} {holes : Holes} {frames : Lis
             · simpa [Except.mapError, RunPair, hsem, hl, hp, hwl, hwp] using
                 written.implicits (desc o).implicit out.implicit
 
+/-! ## Flag-only rows -/
+
+theorem writeSlots_readOnly (before : Core) :
+    ∀ (core : Core) (slots : List Slot) (args : List Arg) (results : List Word),
+      slots.all (fun slot => !slot.role.writes) = true → writeSlots before core slots args results = .ok core
+  | core, [], args, results, _ => by cases args <;> rfl
+  | core, slot :: slots, [], results, _ => rfl
+  | core, slot :: slots, arg :: args, results, readOnly => by
+      simp only [List.all_cons, Bool.and_eq_true, Bool.not_eq_true'] at readOnly
+      have rest := writeSlots_readOnly before core slots args results (by simpa using readOnly.2)
+      cases hrole : slot.role <;> simp_all [writeSlots, Role.writes]
+
+theorem writeImplicits_readOnly :
+    ∀ (core : Core) (implicits : List Implicit) (results : List Word),
+      implicits.all (fun implicit => !implicit.role.writes) = true → writeImplicits core implicits results = core
+  | core, [], results, _ => by simp
+  | core, implicit :: implicits, results, readOnly => by
+      simp only [List.all_cons, Bool.and_eq_true, Bool.not_eq_true'] at readOnly
+      simp only [writeImplicits, readOnly.1, Bool.false_eq_true, ↓reduceIte]
+      exact writeImplicits_readOnly core implicits results readOnly.2
+
+theorem flagsOnly_parts {o : Op} (only : o.flagsOnly = true) :
+    (desc o).slots.all (fun slot => !slot.role.writes) = true ∧
+      (desc o).implicit.all (fun implicit => !implicit.role.writes) = true ∧ (desc o).stack = .none := by
+  simp only [Op.flagsOnly, Bool.and_eq_true, beq_iff_eq] at only
+  exact ⟨only.1.1, only.1.2, only.2⟩
+
+/-- A row that writes only flags leaves the core unchanged. -/
+theorem run_flagsOnly {o : Op} (only : o.flagsOnly = true) {args : List Arg} {core after : Core}
+    {observed : ByteEval.Flags} {out : SemOut} (ran : o.run args core observed = .ok (after, out)) :
+    after = core := by
+  obtain ⟨slots, implicits, stack⟩ := flagsOnly_parts only
+  unfold Op.run at ran
+  cases hinputs : o.inputs args core with
+  | error fault => simp [hinputs, Except.mapError] at ran
+  | ok inputs =>
+      cases hsem : (desc o).sem ⟨inputs, observed⟩ with
+      | error fault => simp [hinputs, hsem, Except.mapError] at ran
+      | ok result =>
+          have staged : o.stage core result = .ok core := by simp [Op.stage, stack]
+          simp [hinputs, hsem, staged, writeSlots_readOnly core core _ args result.results slots,
+            writeImplicits_readOnly core _ result.implicit implicits, Except.mapError] at ran
+          exact ran.1.symm
+
+/-- A row that writes only flags writes no memory. -/
+theorem writes_flagsOnly {o : Op} (only : o.flagsOnly = true) (args : List Arg) (core : Core) :
+    o.writes args core = [] := by
+  obtain ⟨slots, _, stack⟩ := flagsOnly_parts only
+  have none : ∀ (slots : List Slot) (args : List Arg), slots.all (fun slot => !slot.role.writes) = true →
+      slotWrites core slots args = [] := by
+    intro slots
+    induction slots with
+    | nil => intro args _; cases args <;> rfl
+    | cons slot slots ih =>
+        intro args readOnly
+        cases args with
+        | nil => rfl
+        | cons arg args =>
+            simp only [List.all_cons, Bool.and_eq_true, Bool.not_eq_true'] at readOnly
+            cases hrole : slot.role <;> simp_all [slotWrites, Role.writes]
+  simp [Op.writes, Op.pushes, stack, none _ args slots]
+
+theorem nextHoles_flagsOnly {o : Op} (only : o.flagsOnly = true) (holes : Holes) (args : List Arg)
+    (core : Core) : nextHoles holes (.op o args) core = holes := by
+  simp [nextHoles, operationWrites, writes_flagsOnly only, clearAccesses]
+
 theorem CoreRelated.operand {program : Program} {base : Word} {holes : Holes} {frames : List ReturnFrame}
     {logical physical : Core} (related : CoreRelated program base holes frames logical physical)
     (address : MemAddr) : address.eval logical = address.eval physical := related.address address
@@ -399,6 +465,6 @@ theorem instruction_linear_operation (instruction : Instr) (linear : Encode.line
   | op o args =>
       simp only [Encode.linearInstruction, Bool.and_eq_true] at linear
       exact linear.1
-  | call target | callRuntime intrinsic => simp [Encode.linearInstruction] at linear
+  | fused | call | callRuntime => simp [Encode.linearInstruction] at linear
 
 end Compilatrix.X86.Stream

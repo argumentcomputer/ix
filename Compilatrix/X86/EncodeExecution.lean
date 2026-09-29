@@ -15,7 +15,11 @@ attribute [local simp] pure Except.pure Functor.map Except.map bind Except.bind
 control laws. -/
 def linearInstruction : Instr → Bool
   | .op o _ => o.linear && (desc o).flagsIn.isEmpty
-  | .call _ | .callRuntime _ => false
+  | .fused .. | .call _ | .callRuntime _ => false
+
+theorem single_of_linear {instruction : Instr} (linear : linearInstruction instruction = true) :
+    instruction.single = true := by
+  cases instruction <;> simp_all [linearInstruction, Instr.single]
 
 @[simp] theorem linear_mov (width : Width) (destination : GPR) (source : MoveSource) :
     linearInstruction (.mov width destination source) = true := by
@@ -38,7 +42,8 @@ def linearInstruction : Instr → Bool
 theorem table_flagsFree : Op.rows.all (fun o => !o.linear || (desc o).flagsIn.isEmpty) = true := by decide
 
 theorem linear_of_wellFormed {instruction : Instr} (wf : instruction.wellFormed = true)
-    (notCall : ∀ target, instruction ≠ .call target) (notRuntime : ∀ intrinsic, instruction ≠ .callRuntime intrinsic) :
+    (notCall : ∀ target, instruction ≠ .call target) (notRuntime : ∀ intrinsic, instruction ≠ .callRuntime intrinsic)
+    (notFused : ∀ producer pargs consumer cargs, instruction ≠ .fused producer pargs consumer cargs) :
     linearInstruction instruction = true := by
   cases instruction with
   | op o args =>
@@ -46,6 +51,7 @@ theorem linear_of_wellFormed {instruction : Instr} (wf : instruction.wellFormed 
       have free := List.all_eq_true.mp table_flagsFree o row
       simp only [linear, Bool.not_true, Bool.false_or] at free
       simp [linearInstruction, linear, free]
+  | fused producer pargs consumer cargs => exact absurd rfl (notFused producer pargs consumer cargs)
   | call target => exact absurd rfl (notCall target)
   | callRuntime intrinsic => exact absurd rfl (notRuntime intrinsic)
 
@@ -76,17 +82,37 @@ theorem produced_flags {producer : Op} {args : List Arg} {condition : Condition}
       refine ⟨_, rfl, ?_⟩
       exact ByteEval.test_merge_set (fun flag member => FusedOk.set fused flag (by simpa using member)) _ _ _
 
-theorem execute_linear {o : Op} (linear : o.linear = true) (args : List Arg) (length : Nat)
+/-- The byte machine runs every non-control row through `Op.exec` on its
+flags: linear rows and flag consumers alike. -/
+theorem execute_row {o : Op} (control : o.control = false) (args : List Arg) (length : Nat)
     (state : ByteEval.State) :
     ByteEval.execute ⟨.op o args, length⟩ state =
       match o.exec args state.core state.flags with
       | .ok (core, flags) => .ok { core, rip := state.rip + UInt64.ofNat length, flags }
       | .error fault => .error (ByteEval.Fault.ofExec fault) := by
   unfold ByteEval.execute
-  cases hmn : o.mn <;> simp only [Op.linear, hmn, Bool.false_eq_true] at linear
+  cases hmn : o.mn <;> simp only [Op.control, hmn, Bool.true_eq_false] at control
   all_goals
     simp only [hmn]
     cases o.exec args state.core state.flags <;> rfl
+
+theorem _root_.Compilatrix.X86.Op.control_of_linear {o : Op} (linear : o.linear = true) : o.control = false := by
+  unfold Op.linear at linear
+  unfold Op.control
+  split <;> simp_all
+
+theorem _root_.Compilatrix.X86.Op.control_of_consumer {o : Op} (consumer : o.consumer = true) : o.control = false := by
+  unfold Op.consumer at consumer
+  unfold Op.control
+  split <;> simp_all
+
+theorem execute_linear {o : Op} (linear : o.linear = true) (args : List Arg) (length : Nat)
+    (state : ByteEval.State) :
+    ByteEval.execute ⟨.op o args, length⟩ state =
+      match o.exec args state.core state.flags with
+      | .ok (core, flags) => .ok { core, rip := state.rip + UInt64.ofNat length, flags }
+      | .error fault => .error (ByteEval.Fault.ofExec fault) :=
+  execute_row (Op.control_of_linear linear) args length state
 
 def LinearAgreement (before after : Machine) : Except ByteEval.Fault ByteEval.State → Prop
   | .ok state => after = before.advanceWith state.core
@@ -114,6 +140,61 @@ theorem row_execution {o : Op} (linear : o.linear = true) (free : (desc o).flags
       | semantic fault =>
           cases fault <;> rfl
 
+/-- A consumer computes the same core and faults from any flags that agree
+with its producer's on the flags it reads. -/
+theorem consumer_flags {producer consumer : Op} (fused : FusedOk producer consumer = true)
+    (args : List Arg) (core : Core) (before other computed : ByteEval.Flags) :
+    (consumer.exec args core (before.merge (desc producer).flagsOut computed)).map (·.1) =
+      (consumer.exec args core (other.merge (desc producer).flagsOut computed)).map (·.1) := by
+  unfold Op.exec
+  rw [ByteEval.restrict_merge_set (FusedOk.set fused) before other computed]
+  cases consumer.run args core ((other.merge (desc producer).flagsOut computed).restrict (desc consumer).flagsIn) <;>
+    rfl
+
+/-- E1 for fused pairs: the byte machine's two steps (producer, then
+consumer on the producer's flags) agree with the typed pair's one step on
+the core, or raise the same fault. The consumer reads only flags the
+producer sets (`FusedOk`), so the byte machine's earlier flags do not
+matter. -/
+theorem fused_execution {producer consumer : Op} {pargs cargs : List Arg}
+    (wf : (Instr.fused producer pargs consumer cargs).wellFormed = true)
+    (runtime : Runtime) (checked : Checked) (machine : Machine) (rip : Word) (flags : ByteEval.Flags)
+    (producerLength consumerLength : Nat) :
+    LinearAgreement machine (executeInstr runtime checked (.fused producer pargs consumer cargs) machine)
+      (ByteEval.execute ⟨.op producer pargs, producerLength⟩ ⟨machine.core, rip, flags⟩ >>= fun middle =>
+        ByteEval.execute ⟨.op consumer cargs, consumerLength⟩ middle) := by
+  obtain ⟨_, linear, free, _, _, _, consumes, _, fused⟩ := wellFormed_fused wf
+  rw [execute_linear linear]
+  simp only [executeInstr]
+  rw [exec_flagsFree free, exec_flagsFree free]
+  cases hrun : producer.run pargs machine.core {} with
+  | error fault =>
+      cases fault with
+      | memory fault => rfl
+      | semantic fault => cases fault <;> rfl
+  | ok result =>
+      obtain ⟨core, out⟩ := result
+      simp only [Except.map, bind, Except.bind]
+      rw [execute_row (Op.control_of_consumer consumes)]
+      have same := consumer_flags fused cargs core flags {} out.flags
+      cases htyped : consumer.exec cargs core (({} : ByteEval.Flags).merge (desc producer).flagsOut out.flags) with
+      | error fault =>
+          cases hbyte : consumer.exec cargs core (flags.merge (desc producer).flagsOut out.flags) with
+          | ok value => rw [htyped, hbyte] at same; cases same
+          | error byteFault =>
+              rw [htyped, hbyte] at same
+              cases same
+              cases fault with
+              | memory fault => rfl
+              | semantic fault => cases fault <;> rfl
+      | ok value =>
+          cases hbyte : consumer.exec cargs core (flags.merge (desc producer).flagsOut out.flags) with
+          | error fault => rw [htyped, hbyte] at same; cases same
+          | ok byteValue =>
+              rw [htyped, hbyte] at same
+              simp only [Except.map, Except.ok.injEq] at same
+              simp only [Machine.afterRow, LinearAgreement, same]
+
 theorem instruction_execution (instruction : Instr) (linear : linearInstruction instruction = true)
     (runtime : Runtime) (checked : Checked) (machine : Machine)
     (rip : Word) (flags : ByteEval.Flags) (length : Nat) :
@@ -123,7 +204,7 @@ theorem instruction_execution (instruction : Instr) (linear : linearInstruction 
   | op o args =>
       simp only [linearInstruction, Bool.and_eq_true, List.isEmpty_iff] at linear
       exact row_execution linear.1 linear.2 args runtime checked machine rip flags length
-  | call target | callRuntime intrinsic => simp [linearInstruction] at linear
+  | fused | call | callRuntime => simp [linearInstruction] at linear
 
 /-- The execution theorem consumes the actual encoder bytes, surrounded by
 arbitrary bytes. The explicit boundary is a premise for this local E1 result. -/
@@ -135,7 +216,7 @@ theorem encoded_instruction_execution (instruction : Instr)
     LinearAgreement machine (executeInstr runtime checked instruction machine)
       (ByteEval.step (before ++ (encodeInstr instruction).bytes ++ after) textBase
         ⟨machine.core, rip, flags⟩) := by
-  rw [ByteEval.step, boundary, instruction_decodeAt instruction wf]
+  rw [ByteEval.step, boundary, instruction_decodeAt instruction wf (single_of_linear linear)]
   exact instruction_execution instruction linear runtime checked machine rip flags _
 
 /-- The emitted `cmp` row leaves the core unchanged and produces flags

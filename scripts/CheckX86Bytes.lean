@@ -227,6 +227,47 @@ private def producerBranchMatrix : Except String Nat := do
           count := count + 1
   return count
 
+/-- Fused pairs: every `cmp`/`test` producer with register and memory
+operands, into `setcc` and `cmovcc` at each width, for every condition. The
+two decoded rows run on the byte machine from arbitrary earlier flags and
+agree with the one typed step on registers, touched memory and faults. -/
+private def fusedMatrix (target : Checked) : Except String Nat := do
+  let mut count := 0
+  let producers := Op.rows.filter fun o => o.flagsOnly && o.linear
+  let earlier : List ByteEval.Flags := [{}, ⟨some true, some true, some true, some true⟩,
+    ⟨some false, some false, some false, some false⟩]
+  for p in producers do
+    for (pargs, i) in ((rowArguments (desc p).slots).filter p.argsOk).zipIdx do
+      if i % 13 != 0 then continue
+      for condition in conditions do
+        for consumer in [Op.setccM condition, Op.cmovRM condition .w16, Op.cmovRM condition .w32,
+            Op.cmovRM condition .w64] do
+          let consumerSets := (rowArguments (desc consumer).slots).filter consumer.argsOk
+          let cargs := consumerSets[(i * 7 + count) % consumerSets.length]!
+          let instruction : Instr := .fused p pargs consumer cargs
+          need instruction.wellFormed s!"fused pair rejected: {repr instruction}"
+          let bytes := (Encode.encodeInstr instruction).bytes
+          let text := Encode.bytes [0xaa, 0xbb] ++ bytes ++ Encode.bytes [0xc3, 0xff]
+          let producerSize := (Encode.encodeOp p pargs).size
+          need (Decode.decodeAt text 2 == some ⟨.op p pargs, producerSize⟩ &&
+              Decode.decodeAt text (2 + producerSize) == some ⟨.op consumer cargs, bytes.size - producerSize⟩)
+            s!"fused decode: {repr instruction}"
+          let typed := executeInstr Runtime.rejecting target instruction (Machine.initial target initial)
+          for flags in earlier do
+            match ByteEval.run text 0x1000 2 ⟨initial, 0x1002, flags⟩ with
+            | .error (.memory fault) =>
+                need (typed.status == .trapped (.memoryFault fault)) s!"fused fault disagreement: {repr instruction}"
+            | .error fault => throw s!"unexpected fused byte fault: {repr instruction}, {repr fault}"
+            | .ok result =>
+                let address := touched (.op consumer cargs) initial
+                let probes := (List.range 24).map fun index => address - 8 + UInt64.ofNat index
+                need (typed.status == .running && sameRegisters typed.core result.core &&
+                    sameBytes typed.core.memory result.core.memory probes &&
+                    result.rip == 0x1002 + UInt64.ofNat bytes.size)
+                  s!"fused register, memory or RIP disagreement: {repr instruction}"
+          count := count + 1
+  return count
+
 private def windowCases : Except String Nat := do
   let mut count := 0
   -- Exhaust the two-byte opcode/prefix space both truncated and followed by
@@ -270,6 +311,28 @@ private def failureCases (target : Checked) : Except String Unit := do
     "IMUL undefined flag policy changed"
   let .error (.undefinedCondition .eq) := ByteEval.step (Encode.bytes [0x0f, 0x84, 0, 0, 0, 0]) product.rip product
     | throw "branch read an undefined IMUL flag"
+  -- Flag consumers run only in fused pairs, after a flag-only producer that
+  -- sets what they read; a branch's producer must set its condition's flags.
+  need (!(Instr.op (Op.setccM .eq) [.reg .rax]).wellFormed) "standalone setcc accepted"
+  need (!(Instr.op (Op.cmovRM .eq .w64) [.reg .rax, .reg .rcx]).wellFormed) "standalone cmovcc accepted"
+  need (!(Instr.fused { mn := .add, w := .w64, form := .MR } [.reg .rax, .reg .rcx]
+    (Op.setccM .eq) [.reg .rax]).wellFormed) "fused pair with a writing producer accepted"
+  need (!(Instr.fused { mn := .cmp, w := .w64, form := .MR } [.reg .rax, .reg .rcx]
+    { mn := .add, w := .w64, form := .MR } [.reg .rax, .reg .rcx]).wellFormed) "fused pair without a consumer accepted"
+  need (!(Terminator.branch { mn := .imul, w := .w64, form := .RM } [.reg .rax, .reg .rcx] .eq 0 0).wellFormed)
+    "branch on an undefined flag accepted"
+  need (Terminator.branch { mn := .imul, w := .w64, form := .RM } [.reg .rax, .reg .rcx] .unsignedLt 0 0).wellFormed
+    "branch on a defined IMUL flag rejected"
+  -- A shift by zero leaves flags undefined in the model, so a branch on them faults.
+  let shifted ← (ByteEval.step (Encode.encodeOp { mn := .shl, w := .w64, form := .MI } [.reg .rax, .imm 0])
+    0x1000 ⟨initial, 0x1000, {}⟩).mapError reprStr
+  let .error (.undefinedCondition .unsignedLt) := ByteEval.step (Encode.bytes [0x0f, 0x82, 0, 0, 0, 0]) shifted.rip shifted
+    | throw "branch read a flag of a zero-count shift"
+  -- div faults with #DE on a zero divisor and on quotient overflow.
+  let .error .divideError := ByteEval.step (Encode.encodeOp (Op.divM .w64) [.reg .rcx]) 0x1000
+      ⟨initial.setReg .rcx 0, 0x1000, {}⟩ | throw "division by zero succeeded"
+  let .error .divideError := ByteEval.step (Encode.encodeOp (Op.divM .w64) [.reg .rcx]) 0x1000
+      ⟨(initial.setReg .rcx 5).setReg .rdx 5, 0x1000, {}⟩ | throw "quotient overflow succeeded"
   let .error (.invalidPatch _ _) := Encode.patchSigned32 (Encode.bytes [0xe9, 0, 0, 0, 0]) 2 0
     | throw "out-of-bounds relocation accepted"
   for value in ([-2147483648, 2147483647] : List Int) do
@@ -323,7 +386,8 @@ def main : IO UInt32 := cli "x86 byte execution check failed" do
   let forms ← checked (instructionMatrix target)
   let branches ← checked branchMatrix
   let producerBranches ← checked producerBranchMatrix
+  let fused ← checked (fusedMatrix target)
   let windows ← checked windowCases
   checked (failureCases target)
   checked smallPrograms
-  IO.println s!"x86 byte execution check ok: {forms} instruction cases, {branches} patched branches, {producerBranches} patched producer branches, {windows} bounded-window cases, truncation/fault/corruption checks, four complete streams"
+  IO.println s!"x86 byte execution check ok: {forms} instruction cases, {branches} patched branches, {producerBranches} patched producer branches, {fused} fused pairs, {windows} bounded-window cases, truncation/fault/corruption checks, four complete streams"

@@ -247,3 +247,12 @@ failure exit. -/
 
 /-- info: 'Compilatrix.X86.Encode.produced_flags' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Encode.produced_flags
+
+/-- info: 'Compilatrix.X86.Encode.fused_execution' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.fused_execution
+
+/-- info: 'Compilatrix.X86.Encode.fused_decode' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Encode.fused_decode
+
+/-- info: 'Compilatrix.X86.Stream.fused_progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.fused_progress

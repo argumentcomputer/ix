@@ -29,6 +29,10 @@ namespace Compilatrix.X86
 runtime symbol, no indirect call and no raw byte escape hatch. -/
 inductive Instr where
   | op (o : Op) (args : List Arg)
+  /-- A flag producer (`cmp`, `test`) and a flag consumer (`setcc`,
+  `cmovcc`) as one typed instruction: the producer's flags exist only
+  between the two rows, which the encoder emits back to back. -/
+  | fused (producer : Op) (pargs : List Arg) (consumer : Op) (cargs : List Arg)
   | call (target : BlockId)
   | callRuntime (intrinsic : Intrinsic)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
@@ -215,6 +219,7 @@ def Mnemonic.form : Mnemonic → Form
 
 def Instr.form : Instr → Form
   | .op o _ => o.mn.form
+  | .fused _ _ consumer _ => consumer.mn.form
   | .call .. => .directCall
   | .callRuntime .. => .runtimeCall
 
@@ -232,6 +237,7 @@ theorem Mnemonic.inV0 (mn : Mnemonic) : mn.form.InV0 := by
 theorem Instr.inV0 (instruction : Instr) : instruction.form.InV0 := by
   cases instruction with
   | op o args => exact o.mn.inV0
+  | fused producer pargs consumer cargs => exact consumer.mn.inV0
   | call target => trivial
   | callRuntime intrinsic => trivial
 
@@ -278,9 +284,15 @@ def Block.offsetsFit (block : Block) : Bool :=
   decide (block.instructions.size < 2 ^ 32)
 
 /-- A linear operation is a listed, non-control row with operands of its
-slot kinds. -/
+slot kinds. A fused pair is a listed producer that reads no flags and
+writes nothing but flags (`flagsOnly`), and a listed flag consumer whose
+flags the producer sets (`FusedOk`). -/
 def Instr.wellFormed : Instr → Bool
   | .op o args => Op.rows.contains o && o.linear && o.argsOk args
+  | .fused producer pargs consumer cargs =>
+      Op.rows.contains producer && producer.linear && (desc producer).flagsIn.isEmpty && producer.flagsOnly &&
+        producer.argsOk pargs && Op.rows.contains consumer && consumer.consumer && consumer.argsOk cargs &&
+        FusedOk producer consumer
   | .call _ | .callRuntime _ => true
 
 def Block.instructionsValid (block : Block) : Bool :=

@@ -245,7 +245,7 @@ theorem checked_linear {checked : Checked} {index : Nat} {block : Block}
     (foundInstruction : block.instructions[position]? = some (.op o args)) :
     Encode.linearInstruction (.op o args) = true :=
   Encode.linear_of_wellFormed (checked_instruction_wf found foundInstruction) (fun _ => by simp)
-    (fun _ => by simp)
+    (fun _ => by simp) (fun _ _ _ _ => by simp)
 
 theorem pc_next {checked : Checked} {block : Block} {pc : PC} {instruction : Instr}
     (found : checked.program.blocks[pc.block.toNat]? = some block)

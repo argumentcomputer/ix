@@ -14,6 +14,7 @@ def holeStep (program : Program) (machine : Machine) (holes : Holes) : Holes :=
   | some block =>
       match block.instructions[machine.pc.offset.toNat]? with
       | some (.call _) => addRange holes (machine.core.readReg .rsp - 8) 8
+      | some (.fused _ _ consumer cargs) => nextHoles holes (.op consumer cargs) machine.core
       | some instruction => nextHoles holes (Encode.instructionOperation instruction) machine.core
       | none => terminatorHoles holes block.terminator machine.core
 
@@ -27,6 +28,9 @@ def SafeAt (program : Program) (holes : Holes) (machine : Machine) : Prop :=
           Memory.rangeAllowed machine.core.memory.writable (machine.core.readReg .rsp - 8) 8 = true ∧
           FramesDisjoint machine.returns (machine.core.readReg .rsp - 8) 8
       | some (.callRuntime _) => False
+      | some (.fused producer pargs consumer cargs) =>
+          OperationSafe holes machine.returns (.op producer pargs) machine.core ∧
+            OperationSafe holes machine.returns (.op consumer cargs) machine.core
       | some instruction => OperationSafe holes machine.returns (Encode.instructionOperation instruction) machine.core
       | none =>
           machine.pc.offset.toNat = block.instructions.size ∧
@@ -78,6 +82,12 @@ theorem safe_progress {checked : Checked} {output : Encode.Output} {externals : 
           refine ⟨1, after, by decide, by decide, by simp [ByteEval.run, executed], ?_⟩
           simpa only [holeStep, found, foundInstruction] using next
         case callRuntime intrinsic => simp [SafeAt, found, foundInstruction] at safe
+        case fused producer pargs consumer cargs =>
+          simp only [SafeAt, found, foundInstruction] at safe
+          obtain ⟨after, executed, next⟩ := fused_progress valid runtime machine base holes state related
+            found foundInstruction safe.1 safe.2 nextRunning
+          refine ⟨2, after, by decide, by decide, executed, ?_⟩
+          simpa only [holeStep, found, foundInstruction] using next
   | none =>
       simp only [SafeAt, found, foundInstruction] at safe
       by_cases term : block.terminator = .ret
