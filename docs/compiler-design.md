@@ -117,7 +117,9 @@ constant is marked relevant, proof or type.
 **Why a wrong annotation is safe.** Marking a position irrelevant only makes
 evaluation lazier, and the structural checks prevent erased code from
 needing a value that was never computed. A wrong but consistent annotation
-can make compilation fail; it cannot produce a wrong result.
+can make compilation fail or the source evaluator get stuck; it cannot make
+the evaluator produce a wrong result. A stuck run falls under the
+safe-source condition of the correctness statement.
 
 **Erasure** then:
 - replaces irrelevant arguments with □ but keeps every binder slot
@@ -147,8 +149,10 @@ can make compilation fail; it cannot produce a wrong result.
 A checked program refines its Fir program up to heap isomorphism. When the
 checker rejects the optimised output, the plain dup/drop output is used.
 
-**v3 resource admission** remains an early, diagnosable gate. It is not a
-premise of the compiler's theorems.
+**v3 resource admission** is an early diagnostic, not a compile gate: it may
+reject annotated matchers and recursors that the ownership checker accepts.
+It is not a premise of the compiler's theorems. Immediates satisfy every
+ownership kind, so a literal may flow into a `unique` position.
 
 | Guarantee | Effect in generated code |
 | --- | --- |
