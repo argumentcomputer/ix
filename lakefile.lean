@@ -11,16 +11,6 @@ package compilatrix where
         "-lleanshared_2", "-lleanshared_1", "-lInit_shared"]
     | none => #[]
 
-/- Exact pure Ixby reference, pinned independently of its proving backends. -/
-lean_lib Ixby where
-  srcDir := "vendor/ixby"
-  roots := #[`Ix.Ixby]
-
-/- Exact source reference for Stage2 differential execution tests. -/
-lean_lib Stage2Source where
-  srcDir := "vendor/stage2"
-  roots := #[`Ix.MultiStark.Verify]
-
 /- Pure Aiur target definitions and abstract counter/order lemmas. -/
 lean_lib AiurReference where
   srcDir := "vendor/aiur"
@@ -87,67 +77,11 @@ lean_exe «catalog-contact» where
 lean_exe «x86-object-fixture» where
   root := `X86ObjectFixture
 
-/- Source-stage coverage and fresh-process compiler artifact snapshots. -/
-lean_exe «ixon-to-ixby» where
-  root := `IxonToIxby
-
-lean_exe «ixby-run» where
-  srcDir := "scripts"
-  root := `IxbyRun
-
-lean_exe «check-ixby» where
-  srcDir := "scripts"
-  root := `CheckIxby
-
 lean_exe «check-aiur» where
   srcDir := "scripts"
   root := `CheckAiur
 
-lean_exe «check-ixby-lean» where
-  srcDir := "scripts"
-  root := `CheckIxbyLean
-
-lean_exe «check-ixby-inline» where
-  srcDir := "scripts"
-  root := `CheckIxbyInline
-
-lean_exe «check-ixby-fri» where
-  srcDir := "scripts"
-  root := `CheckIxbyFri
-
-lean_exe «check-ixby-binary» where
-  srcDir := "scripts"
-  root := `CheckIxbyBinary
-
-lean_exe «ixby-exec» where
-  srcDir := "scripts"
-  root := `IxbyExec
-
-lean_exe «source-ixby» where
-  root := `SourceIxby
-
-lean_exe «source-ixby-symbolic» where
-  root := `SourceIxbySymbolic
-
-lean_exe «source-ixby-stage2» where
-  root := `SourceIxbyStage2
-
-lean_exe «stage2-source-run» where
-  srcDir := "scripts"
-  root := `Stage2SourceRun
-
-lean_exe «stage2-ixby» where
-  srcDir := "scripts"
-  root := `Stage2Ixby
-
-lean_exe «check-ixby-stage2» where
-  srcDir := "scripts"
-  root := `CheckIxbyStage2
-
-lean_exe «check-ixby-symbolic» where
-  srcDir := "scripts"
-  root := `CheckIxbySymbolic
-
+/- Source-stage coverage and fresh-process compiler artifact snapshots. -/
 lean_exe «source-coverage» where
   root := `SourceCoverage
 

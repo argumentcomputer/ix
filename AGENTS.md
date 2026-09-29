@@ -23,7 +23,7 @@ tree still contains monolithic test and proof modules that need migration.
 ## Modules, namespaces, and dependencies
 
 - Keep production declarations under `Compilatrix.<Area>`, following the
-  existing Ixon, IxIR₀, IxIR₁, IxIR₂, Ixby, and target responsibilities. Match
+  existing Ixon, IxIR₀, IxIR₁, IxIR₂, and target responsibilities. Match
   module paths to their area and purpose; avoid unrelated global declarations.
 - Put new test-only modules under `CompilatrixTests.<Area>`, with shared test
   utilities in `CompilatrixTests.Support`. Give them explicit Lake library and

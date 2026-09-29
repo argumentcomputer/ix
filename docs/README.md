@@ -88,13 +88,3 @@ The [2026-09-09 code and documentation review](review-2026-09-09.md) is a
 historical snapshot; use the roadmap and focused specifications for current
 status.
 
-- [Ixby backend](ixby-backend.md): checked Ixon compilation, functional bytecode, canonical profile export, and per-input execution certificates.
-- [Certified Ixby inlining](ixby-inline.md): complete-image leaf-call certificates, fuel and continuation accounting, and Stage2/CSLib measurements.
-- [Single-dispatch array reads](ixby-array-read.md): preserved helper contracts, lower fuel and stack requirements, and measured Stage2/CSLib savings.
-- [FRI coordinate loop fusion](ixby-fri-fusion.md): kernel source equality, checked selection and fallback, and measured savings on both Stage2 workloads.
-- [Certified row hashing](ixby-row-hash.md): builder-based MMCS row serialization with complete-body certificates, an unchanged hash preimage, and measured savings on both Stage2 workloads.
-- [Shift-by-one and fixed-width writes](ixby-shift-width.md): direct halving in the shift wrapper, precomputed integer-write bounds with certified bodies, and measured savings on both Stage2 workloads.
-- [Experimental typed Lean frontend](ixby-lean.md): retained LCNF lowering, runtime representations, and Stage2 reference execution without a source certificate.
-- [Historical Nat/Word32 integration](ixby-nat-word32.md): revision 1 conversion proofs, artifacts, CSLib measurements, and small-proof verification; superseded by runtime revision 2.
-- [Typed runtime representation proofs](ixby-representation.md): current scalar, array, byte-view/builder and caller contracts; exact body certificates; and the chunked/reference executor equivalence.
-- [Runtime revision 2 integration](ixby-runtime-v2.md): regenerated artifacts and commitments, CSLib execution/helper census, native fixture verification, and retained gate coverage.

@@ -114,7 +114,7 @@ on the existing native BLAKE3 boundary and the pinned checker's correctness.
 A whole-checker semantic soundness theorem is not provided by the adapter.
 IxVM Resource proofs remain unsupported.
 
-The existing native and Ixby compiler entry points retain their frozen v2
+The existing native compiler entry points retain their frozen v2
 source types and proof scope. V3 does not implicitly project into them:
 v2 linear/affine inputs imply uniqueness, while v3 usage and ownership are
 independent. A contract-preserving, source-bound backend simulation is still

@@ -176,7 +176,6 @@ import Compilatrix.Borrow.RuntimeInput
 import Compilatrix.IxIR2.Borrow.OpenExamples
 import Compilatrix.Fence
 
-import Compilatrix.Ixby.Catalog
 import Compilatrix.Ixon.V3.Resource.StateProofs
 import CompilatrixTests.Aiur.Proofs
 import CompilatrixTests.Aiur.WireProofs
@@ -185,16 +184,6 @@ import CompilatrixTests.Aiur.Static.Proofs
 import CompilatrixTests.Aiur.CounterAnalysis.Proofs
 import CompilatrixTests.Aiur.MemoryAIR.Proofs
 import CompilatrixTests.Aiur.RankAIR.Proofs
-import Compilatrix.Ixby.Examples
-import Compilatrix.Ixby.Report
-import Compilatrix.Ixby.SymbolicExamples
-import Compilatrix.Ixby.SymbolicReport
-import Compilatrix.Ixby.Fence
-import Compilatrix.Ixby.Lean
-import Compilatrix.Ixby.Binary
-import CompilatrixTests.Ixby.Conversions
-import Compilatrix.Ixby.Runtime.Execute
-import Compilatrix.Ixby.Runtime.Run
 
 import CompilatrixTests.IxIR1.Lower
 import CompilatrixTests.Pipeline.Integration

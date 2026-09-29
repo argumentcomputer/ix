@@ -12,13 +12,6 @@ import CompilatrixTests.Fences.HPT
 import CompilatrixTests.Fences.IxIR0
 import CompilatrixTests.Fences.IxIR1
 import CompilatrixTests.Fences.IxIR2
-import CompilatrixTests.Fences.Ixby
-import CompilatrixTests.Fences.IxbyNative
-import CompilatrixTests.Fences.IxbyArrayRead
-import CompilatrixTests.Fences.IxbyInline
-import CompilatrixTests.Fences.IxbyFri
-import CompilatrixTests.Fences.IxbyRowHash
-import CompilatrixTests.Fences.IxbyWireNat
 import CompilatrixTests.Fences.Ixon
 import CompilatrixTests.Fences.IxonV3
 import CompilatrixTests.Fences.IxonV3Typing

@@ -489,7 +489,6 @@ belong in those references.
 | Ingress and identity | Strict [Ixon codecs/sharing](ixon-v2-wire.md), bounded [catalog ingress](catalog-ingress.md), and cycle-safe [IxIR₀/IxIR₁ addressing](ixir-content-addressing.md). The full Std catalog retains a downstream rejection. |
 | I2 snapshots | [Canonical IxIR₂ identity](ixir2-wire.md): complete ordered programs and finite contexts, bounded codec proofs, addressed ingress, exact checked-source recovery, and an independent fresh-process gate. Logical declaration keys are retained; modular certification and durable storage remain separate. |
 | I3 source units | [Modular source certification](modular-source.md): exact finite interfaces, proved evidence transport/composition, unaffected-unit reuse, strict retained proof recovery, and 611 reachable declarations assembled from 11 bounded units. Automatic partitioning and the compiler's full closure remain open. |
-| Ixby backend | [Functional Ixby](ixby-backend.md): checked Ixon erasure, closures/recursors, runtime data arguments and current upstream codecs. [Reusable refinement](ixby-symbolic.md) covers finite symbolic paths and opaque parameters. The [typed Lean frontend](ixby-lean.md) emits semantics-2 images with unboxed scalars, native persistent arrays, immutable byte builders, complete helper-body certificates, and a kernel-proved chunked/reference executor equivalence. [Representation proofs](ixby-representation.md) cover scalar operations, loops, native arrays, packed views, builders, and callers. Stage2 and CSLib execute with exact independently expected outputs. General LCNF source/image refinement, remaining helper source-operation proofs, native circuit refinement, and full CSLib proving remain open. |
 | Validated source and O1 | [Source preservation](simulation-strategy.md), owned IxIR₁, checked [HPT](hpt-certificates.md), and five [shrinking consumers](optimizer-harness.md). Source sharing/oracle premises remain explicit; the optimized universal counter law is `frees ≤ allocs`. |
 | Baseline IxIR₂ and R1–R4 | [Checked CFG lowering](ixir2-spec.md), physical baseline transport, selected shared reuse, fallback, reclamation, allocation/free comparison, and RC/peak-live bounds in the accepted compiler domain. |
 | C1/N1 | [Bounded coverage](source-coverage.md) and synthetic exact-Word scalar native entries, with complete fresh-process artifacts. |
@@ -507,43 +506,8 @@ belong in those references.
 | B1/B2 | [Closed borrowed-call certificates](source-borrow.md) and [structural runtime borrowing](source-borrow-runtime.md), with lender preservation, two fewer RC operations, full reclamation, and unchanged peak. Recursive SCCs and native shared borrowing remain open. |
 | PERF1/PERF3 | [Native comparisons](performance/native-reverse-2026-09-09/README.md), [checked counter folding](performance/counter-fold-2026-09-10/README.md), [bounded compiler scaling](performance/compiler-scaling-2026-09-12/README.md), and [modular source costs](performance/modular-source-2026-09-12/README.md), with retained data and artifact/check/analysis replay. Broader workloads remain extensions. |
 
-The [Ixby runtime revision 2](ixby-runtime-v2.md) emits format 1, semantics 2
-for programs and I/O, with regenerated 184-byte profiles and commitments.
-CSLib preserves the exact expected output in 360,337,913 logical transitions,
-82.28% fewer than the retained revision 1 run. The eleven-opcode fixture's
-517,843-byte native proof passes fresh verification against an independently
-calculated statement. Full CSLib proving and typed source/image refinement
-remain open.
-
-[Certified ordinary leaf-call inlining](ixby-inline.md) further reduces the
-CSLib run to 299,248,427 transitions, 16.95% below the runtime revision 2
-baseline. Complete-image certificates preserve successful results and account
-explicitly for eliminated fuel and continuation overhead.
-
-[Single-dispatch array reads](ixby-array-read.md) reduce that run to
-276,667,563 transitions, another 7.55%, with identical output. The updated
-complete-body certificate retains the original helper contracts and adds
-kernel proofs for reduced stack requirements, writer reads and error ordering.
-
-[FRI coordinate loop fusion](ixby-fri-fusion.md) reduces Stage2–CSLib further
-to 254,245,163 transitions (8.10%) and the singleton smoke fixture to
-500,247,577 (8.18%), preserving exact outputs. Kernel proofs equate the fused
-source function with the unchanged pinned verifier; checked source selection,
-all runtime certificates, and the inliner's separate image proof remain in
-place. General LCNF source/image refinement and full native proving remain open.
-
-[Certified row hashing](ixby-row-hash.md) reduces Stage2–CSLib further to
-227,780,761 transitions (10.41%) and the singleton smoke fixture to
-458,512,092 (8.34%), with identical outputs. The pinned MMCS row hash is bound
-to a builder-based runtime body whose complete-body certificate hashes exactly
-the source preimage; source equality, inlining, and all earlier helper
-certificates remain in place.
-
-[Shift-by-one and fixed-width writes](ixby-shift-width.md) reduce Stage2–CSLib
-to 217,047,989 transitions (4.71%) and the singleton fixture to 441,279,047
-(3.76%), with identical outputs. The shift wrapper halves directly when the
-count is one, and the pinned fixed-width integer writer compares against
-precomputed bounds; both retain complete-body certificates.
+The Ixby backend and its Stage2/CSLib results left main on 2026-09-29; the
+code, documents and measurements remain on branch `jcb/ixby-archive`.
 
 The [compiler entry-point table](compiler-design.md#compiler-entry-points)
 identifies the checked APIs. `Pipeline.compileValidated` supplies source

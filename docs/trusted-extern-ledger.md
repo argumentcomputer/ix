@@ -1,8 +1,14 @@
 # Trusted-extern ledger
 
 The machine-readable ledger is
-[`trusted-externs.json`](trusted-externs.json); `nix flake check` validates
+[`trusted-externs.json`](trusted-externs.json); `check-trusted-externs` validates
 it with [`scripts/CheckTrustedExterns.lean`](../scripts/CheckTrustedExterns.lean).
+
+**Status, 2026-09-29.** The required checks were removed while the compiler
+is rebuilt ([CI guide](ci.md)), and the Ixby backend left main (branch
+`jcb/ixby-archive`). `check-trusted-externs` no longer runs. The integrity
+pins in `trusted-externs.json` still name removed files; they are refreshed
+when the audit returns as a gate.
 
 This document separates four things that are easy to blur:
 
@@ -104,8 +110,8 @@ boundaries. The `CompilatrixTests` Lake root keeps every moved test and fence
 inside the audited source inventory. Its files, the exact axiom/runtime
 inventory, import manifest, Nix job groups, shared-build definitions, and
 workflow are integrity-pinned. The required proof aggregate imports every
-fence; the old `Compilatrix/Fence.lean` and `Compilatrix/Ixby/Fence.lean` paths
-remain test-only compatibility imports. The native interfaces, theorem
+fence; the old `Compilatrix/Fence.lean` path remains a test-only
+compatibility import. The native interfaces, theorem
 premises, expected axiom sets, and toolchain revisions are unchanged.
 
 The pinned upload/download actions transfer the producing workflow run's
@@ -114,60 +120,6 @@ and reject digest mismatch; a separate SHA-256 and expected Nix output-path
 check precede execution. Pinned Lean shared libraries supply the same CI
 runtime symbols previously linked into each executable. These changes affect
 build/runtime packaging and add no target-language native interface.
-
-The [runtime revision 2 integration](ixby-runtime-v2.md) pins every Ixby source
-file to one upstream revision. Current artifacts use format 1 and semantics 2;
-the retired crypto profile is absent. Unboxed scalars, persistent arrays, and
-immutable builders replace the typed runtime's numeric and collection trees.
-All 2,414 previous exact axiom assertions and 267 runtime failure assertions
-remain unchanged. Another 235 exact roots cover current helper contracts and
-the unrestricted chunked/reference simulation on the ordinary logical basis.
-Old boxed/tree proofs remain checked models, with an explicit
-[gate mapping](ixby-representation.md#required-validation-and-retained-coverage).
-The compiler toolchain and native interfaces are unchanged. New fixture and
-CSLib records bind current program/profile/input/output commitments and
-statements. Fresh verification of the existing revision 2 fixture root is
-integration evidence; full CSLib proving and universal source/image refinement
-remain open.
-
-The [certified inliner](ixby-inline.md) adds 111 exact ordinary-logical axiom
-fences while preserving all 2,649 earlier assertions. Its complete-image
-checker binds original and selected code; same-fuel success preservation and
-explicit fuel/continuation reflection are kernel proofs. Selected and decoded
-images retain all 107 runtime/wire body certificates. No upstream reference,
-native interface, or source-refinement assumption changes.
-
-The [single-dispatch array-read implementation](ixby-array-read.md) reproves
-the existing native/packed read contracts against the complete new helper
-body. Seven additional ordinary-logical fences cover lower resource premises,
-writer reads and rejection ordering; all 2,760 prior assertions remain exact.
-Only function 62 changes in the fresh Stage2 and CSLib images. The upstream
-reference, all other helper certificates and the inliner proof scope remain
-unchanged; the typed source-refinement boundary remains open.
-
-[FRI array-loop fusion](ixby-fri-fusion.md) adds four exact fences proving
-source equality against the unchanged pinned verifier. Optional replacements
-must name closed safe-definition equalities using only the existing ordinary
-Lean axiom basis; missing bodies, arity changes, overlap, protected helpers,
-and oversized requests retain the original compilation. All 2,767 prior
-fences, helper theorem premises and 107 runtime/wire certificates remain.
-This adds source equality evidence without closing general LCNF lowering or
-whole-verifier source-to-image refinement. No native or reference interface changes.
-
-[Certified row hashing](ixby-row-hash.md) binds the pinned MMCS row hash to a
-builder-based runtime body with ten exact ordinary-logical fences: the hashed
-bytes are the source preimage by definition, the loop and complete helper
-contracts are kernel proofs against the reference machine, and byte views
-trap. All 2,771 prior fences, helper theorem premises, and the 107 earlier
-body certificates remain; two certified bodies are added and the inliner
-protects the 110-function prefix. No native or reference interface changes.
-
-[Shift-by-one and fixed-width writes](ixby-shift-width.md) change one runtime
-helper body and add two certified wire bodies with eight exact ordinary-logical
-fences; the shift contract is re-proved with its previous statement, and the
-fixed-width bounds equal the source powers by decision. All 2,781 prior fences
-and helper theorem premises remain; the inliner protects the 112-function
-prefix. No native or reference interface changes.
 
 ## Active native interface: BLAKE3 Rust
 
