@@ -37,10 +37,15 @@ pipeline, its IRs and their contracts are on branch `jcb/ixby-archive`.
 ## Correctness statement
 
 For a compiled root `f` with first-order argument and result types:
-- If the native entry returns `r` on inputs `xs`, then `r` reads back as a
-  value `v`, and `f xs` denotes `v`.
-- Every other outcome is an explicit resource failure (heap, stack, or Nat
-  overflow until bignums) or an unfinished run.
+- If the native entry returns `r` on inputs `xs`, then either `r` reads
+  back as a value `v` and `f xs` denotes `v`, or the source evaluator goes
+  wrong on `f xs` (gets stuck or traps), in which case nothing is claimed.
+  This is CompCert's "safe source" condition; a planned shape typing
+  removes it.
+- For a source that does not go wrong, every other outcome is an explicit
+  resource failure (heap, stack, or Nat overflow until bignums) or an
+  unfinished run. Nat overflow is a target failure: every IR above Lir has
+  exact `Nat`.
 
 This is partial correctness plus safety; termination is not claimed. The
 statement is established in two stages:
@@ -103,7 +108,11 @@ constant is marked relevant, proof or type.
 - An untrusted analysis produces it.
 - A proved structural checker verifies its consistency: irrelevant binders
   have no relevant uses, call sites match callee parameters, constructor and
-  projection fields agree, and Prop eliminators are recognised by address.
+  projection fields agree. Prop eliminators are classified from kernel
+  data (subsingleton with index-carried fields, or empty), not by address.
+- Only two facts are soundness premises: every node is tagged, and every
+  dropped constructor field is built from an irrelevant argument. The
+  other checks give early, precise rejection.
 
 **Why a wrong annotation is safe.** Marking a position irrelevant only makes
 evaluation lazier, and the structural checks prevent erased code from
@@ -111,7 +120,9 @@ needing a value that was never computed. A wrong but consistent annotation
 can make compilation fail; it cannot produce a wrong result.
 
 **Erasure** then:
-- drops irrelevant arguments, parameters and fields;
+- replaces irrelevant arguments with □ but keeps every binder slot
+  (dropping parameters of globals is a later Anf worker/wrapper pass), and
+  drops irrelevant constructor fields;
 - turns casts into identities;
 - unboxes single-field structures (`Fin`, `Subtype`, `BitVec`, `UInt64`, …);
 - represents field-free enums as immediates.
@@ -151,10 +162,12 @@ premise of the compiler's theorems.
 
 **Representation.**
 - Words are immediates when the low bit is set: small `Nat` as `2n+1`,
-  enums, `Bool`, `Char`, and □.
-- Objects carry one 8-byte header (scan count, auxiliary byte, tag, 32-bit
-  RC), followed by scanned fields, then scalar fields.
-- `UInt64` is unboxed.
+  enums and other field-free constructors, `Bool`, `Char`, `UInt8/16/32`,
+  and □.
+- Objects carry one 8-byte header (scan count, size class, 16-bit tag,
+  32-bit RC), followed by scanned fields, then scalar fields.
+- `UInt64` is raw in registers and scalar fields once a checked
+  representation annotation exists; until then it is a tagged `Nat`.
 
 **Services.**
 - Allocation uses size-class free lists refilled by bump pointer from a heap
