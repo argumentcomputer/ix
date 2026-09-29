@@ -2,10 +2,20 @@ name: Merge tests
 
 on:
   merge_group:
+  # `!merge-tests` on a PR: the relay job dispatches this workflow on the
+  # PR's branch, so the run carries the branch's ref. RunsOn files the
+  # sticky-disk snapshot under the run's ref, and a comment event's ref is
+  # the default branch; dispatching keeps a PR's build out of `main`'s
+  # cache while still reading from it.
   issue_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number whose test merge commit to run
+        required: true
 
-run-name: "${{ github.event_name == 'issue_comment' && format('Merge tests for PR #{0}', github.event.issue.number) || 'Merge tests' }}"
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('Merge tests for PR #{0}', inputs.pr) || (github.event_name == 'issue_comment' && 'Relay merge-tests comment' || 'Merge tests') }}"
 
 permissions:
   contents: read
@@ -14,17 +24,44 @@ permissions:
 # cannot satisfy the required check, so runs are never superseded here.
 
 jobs:
+  relay:
+    name: Relay !merge-tests comment
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      github.event.issue.state == 'open' &&
+      github.event.comment.user.type != 'Bot' &&
+      contains(github.event.comment.body, '!merge-tests') &&
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      pull-requests: write
+    steps:
+      - name: Dispatch on the PR branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] \
+            || { echo "::error::PR number must be a positive integer"; exit 1; }
+          read -r head_ref head_repo < <(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+            --jq '"\(.head.ref) \(.head.repo.full_name)"')
+          fail() {
+            printf '%s\n' "$1" > comment-body.md
+            gh pr comment "$PR_NUMBER" --body-file comment-body.md
+            echo "::error::$1"
+            exit 1
+          }
+          [ "$head_repo" = "$GITHUB_REPOSITORY" ] \
+            || fail "Merge tests run on branches of this repository only; \`$head_repo\` is a fork."
+          gh workflow run merge-tests.yml --ref "$head_ref" -f pr="$PR_NUMBER" 2> dispatch-error.txt \
+            || fail "Could not dispatch merge tests on \`$head_ref\`: $(cat dispatch-error.txt). The branch needs this workflow's \`workflow_dispatch\` trigger; merge \`main\` into it and comment again."
+
   prepare:
     name: Prepare merge tests
-    if: >-
-      github.event_name == 'merge_group' ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request &&
-       github.event.issue.state == 'open' &&
-       github.event.comment.user.type != 'Bot' &&
-       contains(github.event.comment.body, '!merge-tests') &&
-       (github.event.comment.author_association == 'MEMBER' ||
-        github.event.comment.author_association == 'OWNER'))
+    if: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -40,9 +77,9 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_SHA: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.issue.number }}
+          PR_NUMBER: ${{ inputs.pr }}
         run: |
-          if [ "$EVENT_NAME" = issue_comment ]; then
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
             [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] \
               || { echo "::error::PR number must be a positive integer"; exit 1; }
             revision=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
@@ -57,7 +94,7 @@ jobs:
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
 
       - name: Compose initial comment
-        if: github.event_name == 'issue_comment'
+        if: github.event_name == 'workflow_dispatch'
         env:
           MERGE_SHA: ${{ steps.target.outputs.revision }}
           PR_NUMBER: ${{ steps.target.outputs.pr }}
@@ -71,7 +108,7 @@ jobs:
           } > comment-body.md
 
       - name: Post initial comment
-        if: github.event_name == 'issue_comment'
+        if: github.event_name == 'workflow_dispatch'
         id: post
         uses: peter-evans/create-or-update-comment@v5
         with:
@@ -82,7 +119,7 @@ jobs:
   merge-tests:
     name: ${{ matrix.name }}
     needs: prepare
-    if: ${{ github.event_name == 'merge_group' || github.event_name == 'issue_comment' }}
+    if: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
     strategy:
       fail-fast: false
       matrix:
@@ -117,7 +154,12 @@ jobs:
     # only after the whole attempt finishes, and the longest partitions
     # already run close to the merge queue's status-check timeout, so one
     # reclaim is enough to dequeue the PR.
-    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r7i+r8i+r7a+r8a/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=merge-tests-x86-64-v4:50gb/extras=s3-cache
+    #
+    # The sticky disk is ci.yml's lean-test lineage: same toolchain, same
+    # portable codegen, same cached paths, and that job's push-to-main runs
+    # are what keep the lineage's `main` snapshot fresh. A merge-queue ref
+    # has no snapshot of its own and falls back to that one.
+    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r7i+r8i+r7a+r8a/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
     steps:
       - name: Validate merge-test variant
         env:
@@ -130,7 +172,7 @@ jobs:
 
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
           persist-credentials: false
 
       - name: Verify test revision
@@ -174,7 +216,7 @@ jobs:
   valgrind:
     name: Valgrind FFI
     needs: prepare
-    if: ${{ github.event_name == 'merge_group' || github.event_name == 'issue_comment' }}
+    if: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
     # Valgrind cannot decode AVX-512, so this job builds generic artifacts and
     # keeps them in the S3-backed actions cache under their own key rather
     # than sharing a sticky disk with the x86-64-v4 partitions.
@@ -182,7 +224,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
           persist-credentials: false
 
       - name: Verify test revision
@@ -231,9 +273,7 @@ jobs:
             .lake/build/bin/IxTests ffi
 
   merge-gate:
-    if: >-
-      always() &&
-      (github.event_name != 'issue_comment' || needs.prepare.result != 'skipped')
+    if: ${{ always() && github.event_name != 'issue_comment' }}
     needs: [prepare, merge-tests, valgrind]
     permissions:
       actions: read
@@ -246,7 +286,7 @@ jobs:
     name: Report merge tests
     if: >-
       always() &&
-      github.event_name == 'issue_comment' &&
+      github.event_name == 'workflow_dispatch' &&
       needs.prepare.result == 'success'
     needs: [prepare, merge-tests, valgrind, merge-gate]
     runs-on: ubuntu-latest
