@@ -1,5 +1,6 @@
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Table.Index
+import Compilatrix.X86.Table.Safe
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.StreamEffects
 import Compilatrix.X86.ByteBranch
@@ -228,3 +229,9 @@ E1/E2 laws. -/
 
 /-- info: 'Compilatrix.X86.executeInstr_load' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.executeInstr_load
+
+/-! Phase 1 table rows (M1.B1): row safety, fused pairs, branch producers and the
+failure exit. -/
+
+/-- info: 'Compilatrix.X86.Op.safe_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Op.safe_ok

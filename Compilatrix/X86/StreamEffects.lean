@@ -113,6 +113,10 @@ theorem readSlots_related {program : Program} {base : Word} {holes : Holes} {fra
           · rw [related.load slot.width arg (fun access member => data access (Or.inl (by simpa [hrole] using member)))]
           · cases arg <;> simp [Arg.address, related.readReg, related.address]
 
+theorem readImplicits_registers {first second : Core} (same : first.registers = second.registers)
+    (implicits : List Implicit) : readImplicits first implicits = readImplicits second implicits := by
+  simp [readImplicits, Core.readReg, same]
+
 theorem inputs_related {program : Program} {base : Word} {holes : Holes} {frames : List ReturnFrame}
     {logical physical : Core} (related : CoreRelated program base holes frames logical physical)
     (o : Op) (args : List Arg)
@@ -120,7 +124,8 @@ theorem inputs_related {program : Program} {base : Word} {holes : Holes} {frames
     o.inputs args logical = o.inputs args physical := by
   simp only [Op.reads, List.mem_append] at data
   unfold Op.inputs
-  rw [readSlots_related related _ args (fun access member => data access (Or.inl member))]
+  rw [readSlots_related related _ args (fun access member => data access (Or.inl member)),
+    readImplicits_registers related.registers]
   cases hstack : (desc o).stack with
   | push | none => rfl
   | pop =>
@@ -253,7 +258,8 @@ theorem run_pair {program : Program} {base : Word} {holes : Holes} {frames : Lis
               cases hwp : writeSlots physical stagedPhysical (desc o).slots args out.results <;>
               simp only [hwl, hwp, CoreStep] at written
             · simp [Except.mapError, RunPair, hsem, hl, hp, hwl, hwp, written]
-            · simpa [Except.mapError, RunPair, hsem, hl, hp, hwl, hwp] using written
+            · simpa [Except.mapError, RunPair, hsem, hl, hp, hwl, hwp] using
+                written.implicits (desc o).implicit out.implicit
 
 theorem CoreRelated.operand {program : Program} {base : Word} {holes : Holes} {frames : List ReturnFrame}
     {logical physical : Core} (related : CoreRelated program base holes frames logical physical)

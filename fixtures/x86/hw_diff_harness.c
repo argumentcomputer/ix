@@ -41,7 +41,8 @@
 /* Fixed trampoline layout (offsets from TRAMPOLINE). */
 #define OFF_STATE 0x000   /* in regs[16], in flags, out regs[16], out flags, host rsp, exit */
 #define OFF_ENTRY 0x200
-#define OFF_TEST 0x800    /* CODE_TEST; up to 15 bytes */
+#define OFF_TEST 0x800    /* CODE_TEST; up to MAX_CODE bytes (a short instruction sequence) */
+#define MAX_CODE 64
 #define OFF_TAKEN 0xc00   /* EXIT_TAKEN */
 
 struct state {
@@ -189,10 +190,10 @@ int main(void) {
          (unsigned long)(uintptr_t)(TRAMPOLINE + OFF_TAKEN),
          (unsigned long)(uintptr_t)DATA_PAGE, (unsigned long)(uintptr_t)STACK_PAGE);
   while (fgets(line, sizeof line, stdin)) {
-    char id[128], code_hex[64];
+    char id[128], code_hex[2 * MAX_CODE + 2];
     unsigned long long regs[16], flags, seed;
     int fields = sscanf(line,
-                        "%127s %63s %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx",
+                        "%127s %129s %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx",
                         id, code_hex, &regs[0], &regs[1], &regs[2], &regs[3], &regs[4], &regs[5], &regs[6],
                         &regs[7], &regs[8], &regs[9], &regs[10], &regs[11], &regs[12], &regs[13], &regs[14],
                         &regs[15], &flags, &seed);
@@ -201,7 +202,7 @@ int main(void) {
       return 2;
     }
     size_t code_len = strlen(code_hex) / 2;
-    if (code_len == 0 || code_len > 15) {
+    if (code_len == 0 || code_len > MAX_CODE) {
       fprintf(stderr, "bad code length in %s\n", id);
       return 2;
     }

@@ -74,7 +74,7 @@ theorem linear_progress {checked : Checked} {output : Encode.Output} {externals 
       exact ⟨after, rfl, agreement.1.symm, agreement.2.1, returns, agreement.2.2⟩
   | error fault =>
       cases fault with
-      | memory fault | undefinedCondition fault =>
+      | memory fault | undefinedCondition fault | divideError =>
           simp only [evaluated, LinearResult] at agreement
           rw [agreement] at nextRunning
           contradiction
@@ -164,7 +164,7 @@ theorem halting_ret {checked : Checked} {output : Encode.Output} {externals : Ex
       | ok after => simp only [evaluated, LinearResult] at agreement; rw [agreement.2.1] at halted; contradiction
       | error fault =>
           cases fault with
-          | memory fault | undefinedCondition fault =>
+          | memory fault | undefinedCondition fault | divideError =>
               simp only [evaluated, LinearResult] at agreement
               rw [agreement] at halted
               contradiction

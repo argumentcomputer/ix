@@ -16,6 +16,20 @@ private def forms := "b8 2a 00 00 00 48 c7 c0 ff ff ff ff 48 b8 00 00 00 00 01 0
   "45 31 d1 01 c8 4d 0f af ca 4d 6b ca 03 69 c1 e8 03 00 00 41 54 41 5c 55 " ++
   "48 83 ec 10 48 81 ec 80 00 00 00 48 83 f8 2a 81 fb 00 00 01 00 45 39 d1"
 
+/-- The Phase 1 rows: `div`, shifts by imm8 and `cl`, `test`, `setcc`,
+`cmovcc`, `op r, r/m` (the prologue's stack check), and the failure exit's
+`mov rsp, [r15 − 64]`. -/
+private def phaseOne := "48 f7 f1 41 f7 f1 48 c1 e0 03 49 c1 e9 01 48 d3 ff 40 d2 e6 c1 6b 08 02 " ++
+  "48 f7 c7 01 00 00 00 40 f6 c7 01 85 c8 0f 94 c0 41 0f 92 c1 40 0f 9c c6 " ++
+  "48 0f 45 c1 44 0f 4c 53 08 4d 3b 5f c8 48 03 03 49 8b 67 c0"
+
+private def phaseOneNames : List String := [
+  "div    rcx", "div    r9d", "shl    rax,0x3", "shr    r9,0x1", "sar    rdi,cl", "shl    sil,cl",
+  "shr    dword ptr [rbx+0x8],0x2", "test   rdi,0x1", "test   dil,0x1", "test   eax,ecx",
+  "sete   al", "setb   r9b", "setl   sil", "cmovne rax,rcx", "cmovl  r10d,dword ptr [rbx+0x8]",
+  "cmp    r11,qword ptr [r15-0x38]", "add    rax,qword ptr [rbx]", "mov    rsp,qword ptr [r15-0x40]"
+]
+
 /-- Displacement and REX edges: no displacement, the RBP/R13 disp8-zero hole,
 the RSP/R12 SIB hole, disp32, and a byte register that needs a bare REX. -/
 private def addressing := "48 89 03 49 89 45 00 48 89 04 24 49 89 84 24 80 00 00 00 " ++
@@ -51,6 +65,7 @@ def main (args : List String) : IO UInt32 := cli "x86 encoder decoder check fail
   let args ← checked (parseArgs ["--objdump"] args)
   let objdump := option args "--objdump" "objdump"
   decode objdump forms formNames "instruction forms"
+  decode objdump phaseOne phaseOneNames "Phase 1 forms"
   decode objdump addressing [
     "mov    qword ptr [rbx],rax", "mov    qword ptr [r13+0x0],rax", "mov    qword ptr [rsp],rax",
     "mov    qword ptr [r12+0x80],rax", "mov    qword ptr [rbp-0x40000],r12", "mov    al,spl"
@@ -60,4 +75,4 @@ def main (args : List String) : IO UInt32 := cli "x86 encoder decoder check fail
   decode objdump callProgram [
     "push   rbp", "call   0xc", "pop    rbp", "add    rax,0x2", "mov    eax,0x28", "ret"
   ] "direct call program"
-  IO.println s!"x86 encoder decoder check ok: {formNames.length} forms, 6 addressing/REX forms, branch layout, direct call"
+  IO.println s!"x86 encoder decoder check ok: {formNames.length} forms, {phaseOneNames.length} Phase 1 forms, 6 addressing/REX forms, branch layout, direct call"

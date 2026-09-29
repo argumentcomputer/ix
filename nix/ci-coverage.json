@@ -195,6 +195,7 @@
   "Compilatrix.X86.Table.Index",
   "Compilatrix.X86.Table.Op",
   "Compilatrix.X86.Table.Rows",
+  "Compilatrix.X86.Table.Safe",
   "Compilatrix.X86.Types",
   "Compilatrix.X86.Width",
   "Compilatrix.Xv.Select.Basic",
@@ -242,7 +243,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/p1-xv: Xv selection fences",
+ "baseline": "jcb/x86-phase1: Lir, Xv and the Phase 1 table rows",
  "axiom_sha256":
- "42263903289b8f864db03a33675a7f9ca5b501659512314d8d51b8779c0257de",
- "axiom_count": 426}
+ "6e784a2fdeb73407c5d32960dad00c6fd31f883d6f362a2484f3e6d0c28e821a",
+ "axiom_count": 427}

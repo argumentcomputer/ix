@@ -13,7 +13,12 @@ rows; none of them enumerates instruction forms.
 Flags are the four the model reads (CF, ZF, SF, OF). Each row declares, per
 flag, whether it sets it, leaves it undefined or leaves it unchanged, and
 which flags its semantics may read (`flagsIn`). PF and AF are unmodelled and
-never read.
+never read. A `set` flag whose value the semantics leaves `none` is
+undefined after that execution (a shift's OF for counts other than one).
+
+Besides its slots, a row may name implicit register operands (`div`'s
+`rax`/`rdx`, a shift's `cl`) and implicit stack traffic through `rsp`
+(`push`, `pop`, `call`, `ret`).
 -/
 
 namespace Compilatrix.X86
@@ -21,8 +26,10 @@ namespace Compilatrix.X86
 /-! ## Rows -/
 
 inductive Mnemonic where
-  | add | or | and | sub | xor | cmp
-  | mov | movzx | lea | imul
+  | add | or | and | sub | xor | cmp | test
+  | shl | shr | sar
+  | mov | movzx | lea | imul | div
+  | setcc (condition : Condition) | cmovcc (condition : Condition)
   | push | pop
   | call | jmp | jcc (condition : Condition) | ret
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
@@ -38,6 +45,10 @@ inductive OpEn where
   | MI
   /-- `op r/m, imm8` (sign-extended) with ModRM.reg an opcode extension -/
   | MI8
+  /-- `op r/m` with ModRM.reg an opcode extension -/
+  | M
+  /-- `op r/m, cl` with ModRM.reg an opcode extension; `cl` is implicit -/
+  | MC
   /-- `op r, imm` with the register in the opcode -/
   | OI
   /-- `op r` with the register in the opcode -/
@@ -61,10 +72,23 @@ structure Op where
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 /-- Rows that transfer control have dedicated typed constructors and byte
-effects; every other row is linear. -/
+effects. -/
+def Op.control (o : Op) : Bool :=
+  match o.mn with
+  | .call | .jmp | .jcc _ | .ret => true
+  | _ => false
+
+/-- Rows that read flags as data (`setcc`, `cmovcc`). The typed machine has
+no flags, so they run only as the consumer of a fused pair. -/
+def Op.consumer (o : Op) : Bool :=
+  match o.mn with
+  | .setcc _ | .cmovcc _ => true
+  | _ => false
+
+/-- Rows the typed machine runs alone: neither control nor flag consumers. -/
 def Op.linear (o : Op) : Bool :=
   match o.mn with
-  | .call | .jmp | .jcc _ | .ret => false
+  | .call | .jmp | .jcc _ | .ret | .setcc _ | .cmovcc _ => false
   | _ => true
 
 /-! ## Operands -/
@@ -144,6 +168,23 @@ structure Slot where
 inductive StackEffect where
   | none | push | pop
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
+
+/-- An implicit register operand: `div`'s `rax`/`rdx`, or a shift's `cl`.
+Reads see the full register (the semantics truncates); writes follow the
+width's partial-register rule, like explicit register slots. -/
+structure Implicit where
+  reg : GPR
+  width : Width
+  role : Role
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
+
+def Role.reads : Role → Bool
+  | .read | .readWrite => true
+  | .write | .address => false
+
+def Role.writes : Role → Bool
+  | .write | .readWrite => true
+  | .read | .address => false
 
 /-! ## Flags -/
 
@@ -233,6 +274,54 @@ def mulFlags (width : Width) (left right : Word) : Flags :=
 
 end ByteEval
 
+inductive ShiftOp where
+  | shl | shr | sar
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
+
+/-- The count a shift uses: the low five bits, or six at width 64. -/
+def shiftCount (width : Width) (count : Word) : Nat :=
+  (count &&& (if width == .w64 then 63 else 31)).toNat
+
+/-- The shifted low `width` bits. A count at or above the width (possible at
+widths 8 and 16) shifts every bit out. -/
+def ShiftOp.apply (operation : ShiftOp) (width : Width) (value : Word) (count : Nat) : BitVec width.bits :=
+  let bits := value.toBitVec.setWidth width.bits
+  match operation with
+  | .shl => bits <<< count
+  | .shr => bits >>> count
+  | .sar => bits.sshiftRight count
+
+namespace ByteEval
+
+/-- SHL/SHR/SAR flags (SDM, SAL/SAR/SHL/SHR) for a masked count. For a
+nonzero count CF is the last bit shifted out, SF and ZF follow the result,
+and OF is defined only for a one-bit shift. CF is left undefined once the
+count reaches the width (the SDM leaves it undefined for SHL and SHR; the
+model does so for SAR too). A zero count leaves every flag unchanged on
+the processor; the model makes them undefined, which removes behaviours
+but adds none, since reading an undefined flag faults. -/
+def shiftFlags (operation : ShiftOp) (width : Width) (value : Word) (count : Nat) : Flags :=
+  if count == 0 then {}
+  else
+    let bits := value.toBitVec.setWidth width.bits
+    let result := operation.apply width value count
+    let carry : Option Bool :=
+      if count < width.bits then
+        some (match operation with
+          | .shl => bits.getLsbD (width.bits - count)
+          | .shr | .sar => bits.getLsbD (count - 1))
+      else none
+    let overflow : Option Bool :=
+      if count == 1 then
+        match operation with
+        | .shl => carry.map (result.msb ^^ ·)
+        | .shr => some bits.msb
+        | .sar => some false
+      else none
+    { carry, zero := some (result == 0), sign := some result.msb, overflow }
+
+end ByteEval
+
 def Condition.reads : Condition → List Flag
   | .eq | .ne => [.zf]
   | .unsignedLt | .unsignedGe => [.cf]
@@ -252,10 +341,13 @@ def AluOp.eval (operation : AluOp) (left right : Word) : Word :=
 
 inductive SemFault where
   | undefinedCondition (condition : Condition)
+  /-- `#DE`: a zero divisor or a quotient that does not fit. -/
+  | divideError
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 structure SemIn where
-  /-- Values of the read slots in order, then an implicit popped word. -/
+  /-- Values of the read slots in order, then the implicit registers read,
+  then an implicit popped word. -/
   args : List Word
   /-- The flags the row declares in `flagsIn`; the rest are undefined. -/
   flags : ByteEval.Flags
@@ -263,6 +355,8 @@ structure SemIn where
 structure SemOut where
   /-- Values for the written slots in order (or the pushed word). -/
   results : List Word
+  /-- Values for the implicit registers written, in order. -/
+  implicit : List Word := []
   /-- Values of the flags the row sets; the rest are ignored. -/
   flags : ByteEval.Flags := {}
   /-- For conditional control rows: whether the branch is taken. -/
@@ -303,6 +397,9 @@ structure EncDesc where
 
 structure OpDesc where
   slots : List Slot
+  /-- Implicit register operands, read after the slots and written after
+  them. -/
+  implicit : List Implicit := []
   stack : StackEffect := .none
   /-- The one semantic function, shared by the typed and byte machines. -/
   sem : SemIn → Except SemFault SemOut

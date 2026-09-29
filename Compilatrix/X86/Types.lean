@@ -142,8 +142,8 @@ structure Compare where
   right : AluSource
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
-/-- The named runtime surface reachable from v0 target code.  General division
-is deliberately a runtime call rather than an x86 `div` instruction. -/
+/-- The named runtime surface reachable from v0 target code. `unsignedDiv`
+predates the table's `div` row; runtime calls retire with D10. -/
 inductive Intrinsic where
   | allocate
   | reserve

@@ -39,7 +39,7 @@ theorem paired_linear_progress {checked : Checked} {output : Encode.Output} {ext
       ⟨machine.core, state.rip, state.flags⟩ with
   | error fault =>
       cases fault with
-      | memory fault | undefinedCondition fault =>
+      | memory fault | undefinedCondition fault | divideError =>
           simp only [logicalStep, LinearResult] at agreement
           rw [agreement] at nextRunning
           contradiction

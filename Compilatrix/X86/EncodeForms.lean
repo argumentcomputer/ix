@@ -169,6 +169,26 @@ theorem fieldsOk {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok : o.argsOk
     | [], shape => simp at shape
     | [_], shape => simp at shape
     | _ :: _ :: _ :: _, shape => simp at shape
+  case M | MC =>
+    match slots, shape with
+    | [first], shape =>
+      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at shape
+      obtain ⟨⟨⟨⟨notNone, notReg⟩, hemb⟩, himm⟩, rmOk⟩ := shape
+      obtain ⟨a, rfl, accA⟩ := slotsAccept_one rfl ok
+      have rm := accepts_rm rmOk accA
+      refine ⟨?_, ?_, ?_, ?_⟩
+      · simp [fields, Decode.assemble, hform]
+      · intro arg found
+        simp only [fields, hform, Option.some.injEq] at found
+        exact found ▸ rm
+      · cases hmodrm : (desc o).enc.modrm with
+        | none => exact absurd hmodrm notNone
+        | reg => exact absurd hmodrm notReg
+        | digit digit => simp [fields, hform]
+      · intro rest
+        simp [himm, fields, hform, immediate_none]
+    | [], shape => simp at shape
+    | _ :: _ :: _, shape => simp at shape
   case OI =>
     match slots, shape with
     | [first, second], shape =>

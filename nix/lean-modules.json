@@ -227,6 +227,7 @@
    "imports":
    ["Compilatrix.X86.Basic",
     "Compilatrix.X86.Table.Index",
+    "Compilatrix.X86.Table.Safe",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.StreamEffects",
     "Compilatrix.X86.ByteBranch",
@@ -516,6 +517,9 @@
   {"path": "Compilatrix/X86/Width.lean", "imports": ["Compilatrix.X86.Basic"]},
   "Compilatrix.X86.Types":
   {"path": "Compilatrix/X86/Types.lean", "imports": ["Std"]},
+  "Compilatrix.X86.Table.Safe":
+  {"path": "Compilatrix/X86/Table/Safe.lean",
+   "imports": ["Compilatrix.X86.Table.Rows"]},
   "Compilatrix.X86.Table.Rows":
   {"path": "Compilatrix/X86/Table/Rows.lean",
    "imports": ["Compilatrix.X86.Table.Op"]},
@@ -1315,6 +1319,7 @@
     "Compilatrix.X86.Table.Index",
     "Compilatrix.X86.Table.Op",
     "Compilatrix.X86.Table.Rows",
+    "Compilatrix.X86.Table.Safe",
     "Compilatrix.X86.Types",
     "Compilatrix.X86.WordRegion",
     "Compilatrix.X86.WordRegionExecution",

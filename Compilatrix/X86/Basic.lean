@@ -171,27 +171,33 @@ end Instr
 /-- A vocabulary wider than the v0 AST, used to state what remains excluded. -/
 inductive Form where
   | move | load | store | address | arithmetic | multiply
+  | shift | conditionSet | conditionalMove | scalarDivision
   | stack | spill | reload | directCall | runtimeCall
   | jump | compareBranch | tailCall | ret
-  | scalarDivision | float | simd | atomic | indirectCall | syscall | tls
+  | float | simd | atomic | indirectCall | syscall | tls
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
-/-- The reviewed sequential v0 emitted fragment. -/
+/-- The reviewed sequential v0 emitted fragment. Unsigned scalar division
+(`div`, with its `#DE` precondition) joined it with the Phase 1 rows. -/
 def Form.InV0 : Form → Prop
   | .move | .load | .store | .address | .arithmetic | .multiply
+  | .shift | .conditionSet | .conditionalMove | .scalarDivision
   | .stack | .spill | .reload | .directCall | .runtimeCall
   | .jump | .compareBranch | .tailCall | .ret => True
-  | .scalarDivision | .float | .simd | .atomic | .indirectCall | .syscall
-  | .tls => False
+  | .float | .simd | .atomic | .indirectCall | .syscall | .tls => False
 
-/-- The fragment vocabulary of a table mnemonic. The table has no division,
+/-- The fragment vocabulary of a table mnemonic. The table has no
 floating-point, vector, atomic, indirect-call, system-call or TLS rows. -/
 def Mnemonic.form : Mnemonic → Form
-  | .add | .or | .and | .sub | .xor | .cmp => .arithmetic
+  | .add | .or | .and | .sub | .xor | .cmp | .test => .arithmetic
+  | .shl | .shr | .sar => .shift
   | .mov => .move
   | .movzx => .load
   | .lea => .address
   | .imul => .multiply
+  | .div => .scalarDivision
+  | .setcc _ => .conditionSet
+  | .cmovcc _ => .conditionalMove
   | .push | .pop => .stack
   | .call => .directCall
   | .jmp => .jump

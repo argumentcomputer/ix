@@ -99,6 +99,7 @@ def fields (form : OpEn) (args : List Arg) : Fields :=
   | .MR, [rm, .reg reg] => { reg := some reg, rm := some rm }
   | .RM, [.reg reg, rm] => { reg := some reg, rm := some rm }
   | .MI, [rm, .imm value] | .MI8, [rm, .imm value] => { rm := some rm, imm := some value }
+  | .M, [rm] | .MC, [rm] => { rm := some rm }
   | .OI, [.reg reg, .imm value] => { reg := some reg, imm := some value }
   | .O, [.reg reg] => { reg := some reg }
   | .RMI, [.reg reg, rm, .imm value] | .RMI8, [.reg reg, rm, .imm value] =>

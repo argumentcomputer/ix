@@ -12,7 +12,7 @@ the same state. The gate compares:
 - all sixteen registers;
 - every flag the model defines;
 - every changed page byte;
-- memory faults.
+- faults: memory faults (SIGSEGV or SIGBUS) and `div`'s `#DE` (SIGFPE).
 
 This tests, rather than proves, that the local model agrees with the
 processor; the trust ledger records it as such. -/
@@ -76,22 +76,36 @@ def Case.initial (c : Case) : ByteEval.State :=
       carry := some (bit c.flags 0), zero := some (bit c.flags 6),
       sign := some (bit c.flags 7), overflow := some (bit c.flags 11) } }
 
-/-- Observations: `none` for a memory fault; otherwise exit, registers,
-the four modeled flags, and changed bytes (address, value). -/
+/-- Observations: exit, registers, the four modeled flags, and changed
+bytes (address, value). -/
 structure Observed where
   exit : Nat
   registers : Array Word
   flags : ByteEval.Flags
   changed : Array (Word × UInt8)
 
+/-- The faults the model predicts, with the signals the harness reports for
+them: a memory fault is SIGSEGV (or SIGBUS), and `div`'s `#DE` is SIGFPE. -/
+inductive FaultKind where
+  | memory | divide
+  deriving BEq, Repr
+
+def FaultKind.signals : FaultKind → List Nat
+  | .memory => [11, 7]
+  | .divide => [8]
+
+inductive Outcome where
+  | observed (observed : Observed)
+  | fault (kind : FaultKind)
+
 def pageBytes : Array Word :=
   (Array.range pageSize.toNat).map (dataPage + ·.toUInt64) ++
     (Array.range pageSize.toNat).map (stackPage + ·.toUInt64)
 
 /-- Run the model over the case bytes until control leaves them. -/
-def model (c : Case) : Except String (Option Observed) := do
+def model (c : Case) : Except String Outcome := do
   let finish := testAddress + c.code.size.toUInt64
-  let rec loop : Nat → ByteEval.State → Except String (Option Observed)
+  let rec loop : Nat → ByteEval.State → Except String Outcome
     | 0, _ => throw "model did not leave the case bytes"
     | fuel + 1, state =>
       if state.rip == finish || state.rip == takenAddress then
@@ -100,7 +114,7 @@ def model (c : Case) : Except String (Option Observed) := do
               let v := state.core.memory.bytes a
               if v != pattern c.seed a then some (a, v) else none
           else #[]
-        pure (some {
+        pure (.observed {
           exit := if state.rip == takenAddress then 1 else 0
           registers := registerOrder.map state.core.readReg
           flags := state.flags
@@ -110,15 +124,19 @@ def model (c : Case) : Except String (Option Observed) := do
       else
         match ByteEval.step c.code testAddress state with
         | .ok next => loop fuel next
-        | .error (.memory _) => pure none
+        | .error (.memory _) => pure (.fault .memory)
+        | .error .divideError => pure (.fault .divide)
         | .error fault => throw s!"model fault {repr fault}"
   loop 8 c.initial
 
+/-- What the harness reports: a signal number, or the observations. -/
+abbrev Native := Except Nat (Nat × Array Word × Word × Array (Word × UInt8))
+
 /-- Parse one harness output line. -/
-def parseNative (line : String) : Except String (String × Option (Nat × Array Word × Word × Array (Word × UInt8))) := do
+def parseNative (line : String) : Except String (String × Native) := do
   let parts := line.splitOn " " |>.filter (· != "")
   match parts with
-  | id :: "fault" :: _ => return (id, none)
+  | id :: "fault" :: signal :: _ => return (id, .error signal.toNat!)
   | id :: "ok" :: exit :: rest =>
     let hex (s : String) : Except String Word := do
       let bytes ← unhex (if s.length % 2 == 1 then "0" ++ s else s)
@@ -128,18 +146,18 @@ def parseNative (line : String) : Except String (String × Option (Nat × Array 
     let changed ← (rest.drop 18).mapM fun pair => do
       let [address, value] := pair.splitOn "=" | throw s!"bad byte {pair}"
       return (← hex address, (← hex value).toUInt8)
-    return (id, some (exit.toNat!, registers.toArray, flags, changed.toArray))
+    return (id, .ok (exit.toNat!, registers.toArray, flags, changed.toArray))
   | _ => throw s!"unparsed harness line: {line}"
 
 /-- Compare one case; the result is the list of differences. -/
-def compare (c : Case) (native : Option (Nat × Array Word × Word × Array (Word × UInt8))) :
-    Except String (List String) := do
+def compare (c : Case) (native : Native) : Except String (List String) := do
   let expected ← model c
   match expected, native with
-  | none, none => return []
-  | none, some _ => return ["model faults, processor does not"]
-  | some _, none => return ["processor faults, model does not"]
-  | some m, some (exit, registers, flags, changed) =>
+  | .fault kind, .error signal =>
+    return if kind.signals.contains signal then [] else [s!"model {repr kind} fault, processor signal {signal}"]
+  | .fault kind, .ok _ => return [s!"model {repr kind} fault, processor does not fault"]
+  | .observed _, .error signal => return [s!"processor signal {signal}, model does not fault"]
+  | .observed m, .ok (exit, registers, flags, changed) =>
     let mut errors := []
     if m.exit != exit then errors := s!"exit model {m.exit} native {exit}" :: errors
     for i in [:16] do
@@ -314,17 +332,62 @@ def controlCase (id : String) (n : Nat) (code : ByteArray) (flags : Word) (write
     writes }
 
 def formName : OpEn → String
-  | .MR => "MR" | .RM => "RM" | .MI => "MI" | .MI8 => "MI8" | .OI => "OI" | .O => "O"
+  | .MR => "MR" | .RM => "RM" | .MI => "MI" | .MI8 => "MI8" | .M => "M" | .MC => "MC" | .OI => "OI" | .O => "O"
   | .RMI => "RMI" | .RMI8 => "RMI8" | .D32 => "D32" | .ZO => "ZO"
 
 def rowName (o : Op) : String :=
   s!"{(desc o).mnemonic}-{formName o.form}-{o.w.bits}" ++ (if o.src != o.w then s!"-{o.src.bits}" else "")
 
+/-- A case for a sequence of rows (a fused pair): the rows' bytes in order,
+with every memory operand placed. -/
+def sequenceCase (id : String) (n : Nat) (rows : List (Op × List Arg)) (base : Array Word) : Case :=
+  let registers := rows.foldl (fun registers (_, args) => args.foldl (fun registers arg =>
+    match arg with
+    | .mem address => placeAddress registers address n
+    | _ => registers) registers) base
+  let c := rowCase id n (rows.headD default).1 (rows.headD default).2 registers (place := false)
+  { c with
+    code := rows.foldl (fun code (o, args) => code ++ Encode.encodeOp o args) ByteArray.empty
+    writes := rows.any fun (o, args) => !(o.writes args c.initial.core).isEmpty }
+
+/-- Rows run alone: every row that does not transfer control. The flag
+consumers (`setcc`, `cmovcc`) read the case's input flags. -/
+def standaloneRows : List Op := Op.rows.filter (!·.control)
+
+/-- Flag producers of fused pairs and branches: `cmp` and `test`. -/
+def producerRows : List Op := Op.rows.filter fun o => o.flagsOnly && !o.control
+
+/-- Shift counts around the masks and widths: zero, one, each width minus
+one, the width and one more, the masks, and counts the mask wraps. -/
+def shiftCounts : List Word := [0, 1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 0xff]
+
+/-- A value with the given low `width` bits and arbitrary high bits. -/
+def withHigh (width : Width) (low garbage : Word) : Word :=
+  (low &&& width.mask) ||| (garbage &&& ~~~width.mask)
+
+/-- `div` scenarios for a divisor register: a zero divisor, a zero high half,
+the largest quotient that fits, a quotient overflow, random halves, and a
+divisor of one. -/
+def divScenario (width : Width) (n scenario : Nat) (registers : Array Word) (divisor : GPR) : Array Word :=
+  let garbage := next (n.toUInt64 * 0x51ed27)
+  let random := next (n.toUInt64 * 0x2545f491) ||| 1
+  let d := match scenario with
+    | 0 => 0
+    | 5 => 1
+    | _ => random
+  let registers := registers.set! (registerIndex divisor) (withHigh width d garbage)
+  let high := match scenario with
+    | 0 | 1 | 5 => 0
+    | 2 => (width.truncate d) - 1
+    | 3 => width.truncate d
+    | _ => next garbage
+  registers.set! (registerIndex .rdx) (withHigh width high (next garbage))
+
 /-- All generated cases. -/
 def cases : Array Case := Id.run do
   let mut out : Array Case := #[]
   let mut n := 0
-  for o in Op.rows.filter (·.linear) do
+  for o in standaloneRows do
     let slots := (desc o).slots
     for args in argumentSets slots do
       if o.argsOk args then
@@ -339,18 +402,66 @@ def cases : Array Case := Id.run do
         if o.argsOk args then
           let registers := (registersFor n).set! (registerIndex .rbx) 0x40300000
           out := out.push (rowCase (rowName o ++ "-fault") n o args registers (place := false))
-  -- Compare-and-branch: every condition after every register/immediate `cmp` row.
-  let compareRows := Op.rows.filter fun o => o.mn == .cmp
+  -- Shifts: every count class, by imm8 and by `cl` (whose high bits are
+  -- noise), into register and memory destinations.
+  for o in Op.rows.filter fun o => o.mn == .shl || o.mn == .shr || o.mn == .sar do
+    for count in shiftCounts do
+      for target in ([.reg .rax, .reg .rsi, .reg .r9, .reg .rcx, .mem { base := some .rbx, displacement := 8 }] : List Arg) do
+        let args := if o.form == .MC then [target] else [target, .imm (ImmKind.imm8.norm count)]
+        if o.argsOk args then
+          n := n + 1
+          let registers := if o.form == .MC
+            then (registersFor n).set! (registerIndex .rcx) (count ||| (next n.toUInt64 <<< 8))
+            else registersFor n
+          out := out.push (rowCase (rowName o ++ s!"-count{count}") n o args registers)
+  -- Division: zero divisors, quotient overflow and in-range quotients (#DE
+  -- is SIGFPE), with the divisor in rax, rdx or elsewhere, or in memory.
+  for o in Op.rows.filter (·.mn == .div) do
+    for divisor in ([.rbx, .r12, .rax, .rdx, .rcx] : List GPR) do
+      for scenario in [:6] do
+        n := n + 1
+        let registers := divScenario o.w n scenario (registersFor n) divisor
+        out := out.push (rowCase (rowName o ++ s!"-{repr divisor}-{scenario}") n o [.reg divisor] registers)
+    for high in ([0, 1, 0xffffffffffffffff] : List Word) do
+      n := n + 1
+      let registers := (registersFor n).set! (registerIndex .rdx) high
+      out := out.push (rowCase (rowName o ++ "-mem") n o [.mem { base := some .rbx, displacement := 16 }] registers)
+  -- Fused pairs: every condition, from register and memory `cmp`/`test`
+  -- producers, into `setcc` and each `cmovcc` width.
   for c in conditions do
-    for o in compareRows do
-      for args in (argumentSets (desc o).slots).toList.take 6 do
-        let isMemory := args.any fun | .mem _ => true | _ => false
-        if o.argsOk args && !isMemory then
+    for p in producerRows do
+      let producerSets := argumentSets (desc p).slots
+      for pick in [0, 7, 90] do
+        let pargs := producerSets[pick % producerSets.size]!
+        for consumer in [Op.setccM c, Op.cmovRM c .w16, Op.cmovRM c .w32, Op.cmovRM c .w64] do
+          let consumerSets := argumentSets (desc consumer).slots
+          let cargs := consumerSets[(n * 7 + pick) % consumerSets.size]!
+          if p.argsOk pargs && consumer.argsOk cargs && FusedOk p consumer then
+            n := n + 1
+            out := out.push (sequenceCase (s!"fused-{rowName p}-{rowName consumer}") n
+              [(p, pargs), (consumer, cargs)] (registersFor n))
+  -- Branches: every condition after `cmp`/`test` rows, including memory
+  -- operands (the prologue's `cmp r, [m]`), and `jb`/`je` after `add`/`sub`
+  -- (rule 4's carry and borrow).
+  for c in conditions do
+    for o in producerRows do
+      for (args, i) in (argumentSets (desc o).slots).toList.zipIdx do
+        if (i < 6 || i % 53 == 0) && o.argsOk args then
           n := n + 1
           let producer := Encode.encodeOp o args
           let after := testAddress + producer.size.toUInt64 + 6
-          let compared := rowCase (s!"cmp-j{c.suffix}-" ++ rowName o) n o args (registersFor n)
+          let compared := rowCase (s!"j{c.suffix}-" ++ rowName o) n o args (registersFor n)
           out := out.push { compared with
+            code := producer ++ rel32 [0x0f, (desc (Op.jccRel32 c)).enc.opcode] after }
+  for c in ([.unsignedLt, .eq] : List Condition) do
+    for o in Op.rows.filter fun o => (o.mn == .add || o.mn == .sub) && (o.form == .MR || o.form == .RM) do
+      for (args, i) in (argumentSets (desc o).slots).toList.zipIdx do
+        if (i < 4 || i % 71 == 0) && o.argsOk args then
+          n := n + 1
+          let producer := Encode.encodeOp o args
+          let after := testAddress + producer.size.toUInt64 + 6
+          let computed := rowCase (s!"j{c.suffix}-" ++ rowName o) n o args (registersFor n)
+          out := out.push { computed with
             code := producer ++ rel32 [0x0f, (desc (Op.jccRel32 c)).enc.opcode] after }
   -- Unconditional control rows.
   n := n + 1
@@ -459,10 +570,12 @@ def main (args : List String) : IO UInt32 := cli "x86 hardware-differential chec
   need (results.length == cases.size) s!"harness returned {results.length} of {cases.size} cases"
   let mut failures := 0
   let mut faults := 0
+  let mut divides := 0
   for (c, line) in cases.toList.zip results do
     let (id, native) ← checked (parseNative line)
     need (id == c.id) s!"harness order: expected {c.id}, got {id}"
-    if native.isNone then faults := faults + 1
+    if let .error signal := native then
+      if signal == 8 then divides := divides + 1 else faults := faults + 1
     let errors ← checked (compare c native)
     unless errors.isEmpty do
       failures := failures + 1
@@ -471,4 +584,4 @@ def main (args : List String) : IO UInt32 := cli "x86 hardware-differential chec
   let decoded ← match optional args "--llvm-mc" with
     | some llvmMc => pure s!"; llvm-mc decodes all {← checkLlvm llvmMc} identically"
     | none => pure ""
-  IO.println s!"x86 hardware-differential check ok: {cases.size} cases ({faults} expected faults) agree with the host processor{decoded}"
+  IO.println s!"x86 hardware-differential check ok: {cases.size} cases ({faults} expected memory faults, {divides} expected divide errors) agree with the host processor{decoded}"

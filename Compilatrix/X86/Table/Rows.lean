@@ -76,7 +76,59 @@ def jccSem (condition : Condition) : SemIn → Except SemFault SemOut
 
 def controlSem : SemIn → Except SemFault SemOut := fun _ => .ok { results := [] }
 
+/-- `test`: the flags of `and`, no result. -/
+def testSem (width : Width) : SemIn → Except SemFault SemOut
+  | ⟨[left, right], _⟩ => .ok { results := [], flags := ByteEval.aluFlags .and width left right }
+  | _ => .ok { results := [] }
+
+/-- A shift of the destination by an imm8 or `cl` count. -/
+def shiftSem (operation : ShiftOp) (width : Width) : SemIn → Except SemFault SemOut
+  | ⟨[value, count], _⟩ =>
+      let count := shiftCount width count
+      .ok { results := [⟨(operation.apply width value count).setWidth 64⟩]
+            flags := ByteEval.shiftFlags operation width value count }
+  | _ => .ok { results := [] }
+
+/-- Unsigned `div`: the dividend is `rdx:rax` at the width, the divisor the
+slot. `#DE` when the divisor is zero or the quotient does not fit, which is
+exactly when the high half is not below the divisor. -/
+def divSem (width : Width) : SemIn → Except SemFault SemOut
+  | ⟨[divisor, low, high], _⟩ =>
+      let divisor := (width.truncate divisor).toNat
+      let high := (width.truncate high).toNat
+      if divisor == 0 || divisor ≤ high then .error .divideError
+      else
+        let dividend := high * 2 ^ width.bits + (width.truncate low).toNat
+        .ok { results := [], implicit := [UInt64.ofNat (dividend / divisor), UInt64.ofNat (dividend % divisor)] }
+  | _ => .ok { results := [] }
+
+/-- `div` cannot fault: a nonzero divisor above the high half. -/
+def divSafe (width : Width) (input : SemIn) : Bool :=
+  match input.args with
+  | [divisor, _, high] =>
+      (width.truncate divisor).toNat != 0 && (width.truncate high).toNat < (width.truncate divisor).toNat
+  | _ => true
+
+/-- `setcc`: one if the condition holds on the flags, else zero. -/
+def setccSem (condition : Condition) : SemIn → Except SemFault SemOut
+  | ⟨_, flags⟩ =>
+      match flags.test condition with
+      | some holds => .ok { results := [if holds then 1 else 0] }
+      | none => .error (.undefinedCondition condition)
+
+/-- `cmovcc`: the source if the condition holds, else the destination. The
+destination is written either way, so a 32-bit destination is zero-extended
+even when the condition fails, and a memory source is always read. -/
+def cmovSem (condition : Condition) : SemIn → Except SemFault SemOut
+  | ⟨[destination, source], flags⟩ =>
+      match flags.test condition with
+      | some holds => .ok { results := [if holds then source else destination] }
+      | none => .error (.undefinedCondition condition)
+  | _ => .ok { results := [] }
+
 def allSet : Flag → FlagEffect := fun _ => .set
+
+def allUndefined : Flag → FlagEffect := fun _ => .undefined
 
 def mulEffect : Flag → FlagEffect
   | .cf | .of => .set
@@ -106,7 +158,8 @@ def Arith.role (arith : Arith) : Role :=
   if arith.operation.isSome then .readWrite else .read
 
 
-/-- `op r/m, r` (00–39), `op r/m, imm` (80/81 /d) and `op r/m, imm8` (83 /d). -/
+/-- `op r/m, r` (00–39), `op r, r/m` (02–3B), `op r/m, imm` (80/81 /d) and
+`op r/m, imm8` (83 /d). -/
 def arithDesc (arith : Arith) (width : Width) : OpEn → OpDesc
   | .MR =>
       { slots := [rmSlot width arith.role, regSlot width .read]
@@ -114,6 +167,16 @@ def arithDesc (arith : Arith) (width : Width) : OpEn → OpDesc
         flagsOut := allSet
         enc := sized width
           { opcode := if width == .w8 then arith.wide - 1 else arith.wide
+            modrm := .reg
+            byteReg := width == .w8
+            byteRM := width == .w8 }
+        mnemonic := arith.name }
+  | .RM =>
+      { slots := [regSlot width arith.role, rmSlot width .read]
+        sem := arith.sem width
+        flagsOut := allSet
+        enc := sized width
+          { opcode := if width == .w8 then arith.wide + 1 else arith.wide + 2
             modrm := .reg
             byteReg := width == .w8
             byteRM := width == .w8 }
@@ -214,6 +277,73 @@ def imulDesc (width : Width) : OpEn → OpDesc
         enc := sized width { map := .x0F, opcode := 0xaf, modrm := .reg }
         mnemonic := "imul" }
 
+/-- `test r/m, r` (84/85) and `test r/m, imm` (F6/F7 /0). -/
+def testDesc (width : Width) : OpEn → OpDesc
+  | .MR =>
+      { slots := [rmSlot width .read, regSlot width .read]
+        sem := testSem width
+        flagsOut := allSet
+        enc := sized width
+          { opcode := if width == .w8 then 0x84 else 0x85
+            modrm := .reg
+            byteReg := width == .w8
+            byteRM := width == .w8 }
+        mnemonic := "test" }
+  | _ =>
+      { slots := [rmSlot width .read, immSlot (ImmKind.argKind (fullImm width)) width]
+        sem := testSem width
+        flagsOut := allSet
+        enc := sized width
+          { opcode := if width == .w8 then 0xf6 else 0xf7
+            modrm := .digit 0
+            imm := fullImm width
+            byteRM := width == .w8 }
+        mnemonic := "test" }
+
+def _root_.Compilatrix.X86.ShiftOp.digit : ShiftOp → Nat
+  | .shl => 4
+  | .shr => 5
+  | .sar => 7
+
+def _root_.Compilatrix.X86.ShiftOp.name : ShiftOp → String
+  | .shl => "shl"
+  | .shr => "shr"
+  | .sar => "sar"
+
+/-- `shl`/`shr`/`sar r/m, imm8` (C0/C1 /4,/5,/7) and `r/m, cl` (D2/D3 /4,/5,/7,
+with `cl` implicit). -/
+def shiftDesc (operation : ShiftOp) (width : Width) : OpEn → OpDesc
+  | .MC =>
+      { slots := [rmSlot width .readWrite]
+        implicit := [⟨.rcx, .w8, .read⟩]
+        sem := shiftSem operation width
+        flagsOut := allSet
+        enc := sized width
+          { opcode := if width == .w8 then 0xd2 else 0xd3
+            modrm := .digit operation.digit
+            byteRM := width == .w8 }
+        mnemonic := operation.name }
+  | _ =>
+      { slots := [rmSlot width .readWrite, immSlot .imm8 width]
+        sem := shiftSem operation width
+        flagsOut := allSet
+        enc := sized width
+          { opcode := if width == .w8 then 0xc0 else 0xc1
+            modrm := .digit operation.digit
+            imm := .imm8
+            byteRM := width == .w8 }
+        mnemonic := operation.name }
+
+/-- Unsigned `div r/m` (F7 /6): implicit `rax` and `rdx` at the width. -/
+def divDesc (width : Width) : OpDesc :=
+  { slots := [rmSlot width .read]
+    implicit := [⟨.rax, width, .readWrite⟩, ⟨.rdx, width, .readWrite⟩]
+    sem := divSem width
+    flagsOut := allUndefined
+    safe := divSafe width
+    enc := sized width { opcode := 0xf7, modrm := .digit 6 }
+    mnemonic := "div" }
+
 def pushDesc : OpDesc :=
   { slots := [regSlot .w64 .read]
     stack := .push
@@ -287,6 +417,24 @@ def jccDesc (condition : Condition) : OpDesc :=
     enc := { map := .x0F, opcode := 0x80 + condition.code, imm := .imm32 }
     mnemonic := "j" ++ condition.suffix }
 
+/-- `setcc r/m8` (0F 90+cc /0). -/
+def setccDesc (condition : Condition) : OpDesc :=
+  { slots := [rmSlot .w8 .write]
+    sem := setccSem condition
+    flagsIn := condition.reads
+    safe := fun input => (input.flags.test condition).isSome
+    enc := { map := .x0F, opcode := 0x90 + condition.code, modrm := .digit 0, byteRM := true }
+    mnemonic := "set" ++ condition.suffix }
+
+/-- `cmovcc r, r/m` (0F 40+cc). -/
+def cmovDesc (condition : Condition) (width : Width) : OpDesc :=
+  { slots := [regSlot width .readWrite, rmSlot width .read]
+    sem := cmovSem condition
+    flagsIn := condition.reads
+    safe := fun input => (input.flags.test condition).isSome
+    enc := sized width { map := .x0F, opcode := 0x40 + condition.code, modrm := .reg }
+    mnemonic := "cmov" ++ condition.suffix }
+
 end Table
 
 
@@ -304,6 +452,13 @@ def desc (o : Op) : OpDesc :=
   | .movzx => movzxDesc o.w o.src
   | .lea => leaDesc o.w
   | .imul => imulDesc o.w o.form
+  | .test => testDesc o.w o.form
+  | .shl => shiftDesc .shl o.w o.form
+  | .shr => shiftDesc .shr o.w o.form
+  | .sar => shiftDesc .sar o.w o.form
+  | .div => divDesc o.w
+  | .setcc condition => setccDesc condition
+  | .cmovcc condition => cmovDesc condition o.w
   | .push => pushDesc
   | .pop => popDesc
   | .call => callDesc
@@ -334,13 +489,40 @@ def Op.rows : List Op :=
   [{ mn := .push, w := .w64, form := .O }, { mn := .pop, w := .w64, form := .O },
     { mn := .call, w := .w64, form := .D32 }, { mn := .jmp, w := .w64, form := .D32 }] ++
   Condition.all.map (fun condition => { mn := .jcc condition, w := .w64, form := .D32 }) ++
-  [{ mn := .ret, w := .w64, form := .ZO }]
+  [{ mn := .ret, w := .w64, form := .ZO }] ++
+  arith.flatMap (fun mn => widths.map fun w => { mn, w, form := .RM }) ++
+  widths.map (fun w => { mn := .test, w, form := .MR }) ++
+  widths.map (fun w => { mn := .test, w, form := .MI }) ++
+  ([.shl, .shr, .sar] : List Mnemonic).flatMap (fun mn =>
+    widths.flatMap fun w => [{ mn, w, form := .MI }, { mn, w, form := .MC }]) ++
+  ([.w32, .w64] : List Width).map (fun w => { mn := .div, w, form := .M }) ++
+  Condition.all.map (fun condition => { mn := .setcc condition, w := .w8, form := .M }) ++
+  Condition.all.flatMap (fun condition =>
+    ([.w16, .w32, .w64] : List Width).map fun w => { mn := .cmovcc condition, w, form := .RM })
 
 /-- Control rows. -/
 def Op.callRel32 : Op := { mn := .call, w := .w64, form := .D32 }
 def Op.jmpRel32 : Op := { mn := .jmp, w := .w64, form := .D32 }
 def Op.jccRel32 (condition : Condition) : Op := { mn := .jcc condition, w := .w64, form := .D32 }
 def Op.retZO : Op := { mn := .ret, w := .w64, form := .ZO }
+
+/-- Rows the backend selects by name. -/
+def Op.divM (width : Width) : Op := { mn := .div, w := width, form := .M }
+def Op.setccM (condition : Condition) : Op := { mn := .setcc condition, w := .w8, form := .M }
+def Op.cmovRM (condition : Condition) (width : Width) : Op := { mn := .cmovcc condition, w := width, form := .RM }
+
+/-- A producer defines every flag its consumer reads (note 05 §3): the
+consumer of a fused pair, or the `jcc` of a branch, sees only flags the
+producer has just computed, never older ones. -/
+def FusedOk (producer consumer : Op) : Bool :=
+  (desc consumer).flagsIn.all fun flag => (desc producer).flagsOut flag == .set
+
+/-- A row that writes nothing but flags (`cmp`, `test`): no written slot,
+implicit register or stack traffic. Only these produce a fused pair's
+flags, so the consumer runs on the unchanged core. -/
+def Op.flagsOnly (o : Op) : Bool :=
+  (desc o).slots.all (fun slot => !slot.role.writes) &&
+    (desc o).implicit.all (fun implicit => !implicit.role.writes) && (desc o).stack == .none
 
 def slotsAccept : List Slot → List Arg → Bool
   | [], [] => true

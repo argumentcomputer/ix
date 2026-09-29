@@ -76,6 +76,7 @@ import Compilatrix.X86.Table.Exec
 import Compilatrix.X86.Table.Index
 import Compilatrix.X86.Table.Op
 import Compilatrix.X86.Table.Rows
+import Compilatrix.X86.Table.Safe
 import Compilatrix.X86.Types
 import Compilatrix.X86.WordRegion
 import Compilatrix.X86.WordRegionExecution

@@ -60,6 +60,7 @@ def LinearResult (program : Program) (base : Word) (before after : Machine) :
   | .ok state => after.core = state.core ∧ after.status = .running ∧ AtPC program base after.pc state.rip
   | .error (.memory fault) => after = before.trap (.memoryFault fault)
   | .error (.undefinedCondition condition) => after = before.trap (.semantic (.undefinedCondition condition))
+  | .error .divideError => after = before.trap (.semantic .divideError)
   | .error (.decode _) => False
 
 theorem linear_step {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
@@ -84,7 +85,7 @@ theorem linear_step {checked : Checked} {output : Encode.Output} {externals : Ex
       ⟨machine.core, rip, flags⟩ with
   | error fault =>
       cases fault with
-      | memory fault | undefinedCondition fault =>
+      | memory fault | undefinedCondition fault | divideError =>
           exact (by simpa [LinearResult, Encode.LinearAgreement, evaluated] using agreement)
       | decode address => simp [Encode.LinearAgreement, evaluated] at agreement
   | ok after =>

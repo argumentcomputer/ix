@@ -93,6 +93,8 @@ def shaped (o : Op) : Bool :=
       enc.modrm == .reg && enc.emb == .none && enc.imm == .none && regKinds reg && rmKinds rm
   | .MI, [rm, imm] | .MI8, [rm, imm] =>
       enc.modrm != .none && enc.modrm != .reg && enc.emb == .none && rmKinds rm && immKinds enc.imm imm
+  | .M, [rm] | .MC, [rm] =>
+      enc.modrm != .none && enc.modrm != .reg && enc.emb == .none && enc.imm == .none && rmKinds rm
   | .OI, [reg, imm] =>
       enc.modrm == .none && enc.emb == .regLow3 && regKinds reg && immKinds enc.imm imm
   | .O, [reg] =>
@@ -120,9 +122,11 @@ set_option maxRecDepth 8192 in
 /-- The index keys are pairwise distinct: the decoder is deterministic. -/
 theorem table_injective : (Table.index.map (·.1)).Nodup := by decide
 
+set_option maxRecDepth 8192 in
 /-- Every row is found by the decoder from its own encoding fields. -/
 theorem table_reachable : Op.rows.all Table.reachable = true := by decide
 
+set_option maxRecDepth 8192 in
 /-- Every row's slots match its encoding class. -/
 theorem table_shaped : Op.rows.all Table.shaped = true := by decide
 

@@ -74,6 +74,7 @@ def LinearAgreement (before after : Machine) : Except ByteEval.Fault ByteEval.St
   | .ok state => after = before.advanceWith state.core
   | .error (.memory fault) => after = before.trap (.memoryFault fault)
   | .error (.undefinedCondition condition) => after = before.trap (.semantic (.undefinedCondition condition))
+  | .error .divideError => after = before.trap (.semantic .divideError)
   | .error (.decode _) => False
 
 /-- One generic execution law for every linear row: the byte machine's
@@ -93,8 +94,7 @@ theorem row_execution {o : Op} (linear : o.linear = true) (free : (desc o).flags
       cases fault with
       | memory fault => rfl
       | semantic fault =>
-          cases fault
-          rfl
+          cases fault <;> rfl
 
 theorem instruction_execution (instruction : Instr) (linear : linearInstruction instruction = true)
     (runtime : Runtime) (checked : Checked) (machine : Machine)

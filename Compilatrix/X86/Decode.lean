@@ -135,6 +135,7 @@ def assemble (form : OpEn) (reg : Option GPR) (rm : Option Arg) (imm : Option Wo
   | .MR, some reg, some rm, none => some [rm, .reg reg]
   | .RM, some reg, some rm, none => some [.reg reg, rm]
   | .MI, none, some rm, some imm | .MI8, none, some rm, some imm => some [rm, .imm imm]
+  | .M, none, some rm, none | .MC, none, some rm, none => some [rm]
   | .OI, some reg, none, some imm => some [.reg reg, .imm imm]
   | .O, some reg, none, none => some [.reg reg]
   | .RMI, some reg, some rm, some imm | .RMI8, some reg, some rm, some imm =>

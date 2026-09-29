@@ -6,7 +6,7 @@ the four condition flags read by the emitted branches. Linear rows run the
 table's executor `Op.exec` on the machine's flags, exactly the executor and
 semantic function the typed machine uses; control rows move RIP and the
 stack. Memory permissions are the per-byte local model. Undefined flags
-(IMUL's SF and ZF) stay unknown, so an unsupported read is a fault rather
+(IMUL's SF and ZF, a shift's OF) stay unknown, so an unsupported read is a fault rather
 than a guess. -/
 
 namespace Compilatrix.X86
@@ -36,11 +36,14 @@ inductive Fault where
   | memory (fault : MemoryFault)
   | decode (rip : Word)
   | undefinedCondition (condition : Condition)
+  /-- `#DE` from `div`. -/
+  | divideError
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 def Fault.ofExec : ExecFault → Fault
   | .memory fault => .memory fault
   | .semantic (.undefinedCondition condition) => .undefinedCondition condition
+  | .semantic .divideError => .divideError
 
 /-- Arithmetic RIP addition wraps at 64 bits, as do effective addresses. -/
 def relative (next : Word) (displacement : Imm32) : Word := next + signExtend32 displacement

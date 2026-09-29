@@ -66,14 +66,34 @@ def writeSlots (before : Core) : Core → List Slot → List Arg → List Word �
       | .read | .address => writeSlots before core slots args results
   | core, _, _, _ => pure core
 
+/-- Values of the implicit registers a row reads, in order: full register
+words, as for explicit register slots. -/
+def readImplicits (core : Core) (implicits : List Implicit) : List Word :=
+  implicits.filterMap fun implicit => if implicit.role.reads then some (core.readReg implicit.reg) else none
+
+/-- Write the implicit registers a row writes, in order, with the width's
+partial-register rule. Register writes cannot fault. -/
+def writeImplicits : Core → List Implicit → List Word → Core
+  | core, implicit :: implicits, results =>
+      if implicit.role.writes then
+        writeImplicits (core.writeReg implicit.width implicit.reg (results.headD 0)) implicits results.tail
+      else writeImplicits core implicits results
+  | core, [], _ => core
+
+@[simp] theorem readImplicits_nil (core : Core) : readImplicits core [] = [] := rfl
+@[simp] theorem writeImplicits_nil (core : Core) (results : List Word) : writeImplicits core [] results = core := by
+  cases results <;> rfl
+
 inductive ExecFault where
   | memory (fault : MemoryFault)
   | semantic (fault : SemFault)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
-/-- A row's inputs: its read slots, then an implicitly popped word. -/
+/-- A row's inputs: its read slots, the implicit registers it reads, then an
+implicitly popped word. -/
 def Op.inputs (o : Op) (args : List Arg) (core : Core) : Except MemoryFault (List Word) := do
   let inputs ← readSlots core (desc o).slots args
+  let inputs := inputs ++ readImplicits core (desc o).implicit
   match (desc o).stack with
   | .pop => do
       let value ← core.memory.read64? (core.readReg .rsp)
@@ -96,7 +116,7 @@ def Op.run (o : Op) (args : List Arg) (core : Core) (observed : ByteEval.Flags) 
   let out ← ((desc o).sem ⟨inputs, observed⟩).mapError ExecFault.semantic
   let staged ← (o.stage core out).mapError ExecFault.memory
   let final ← (writeSlots core staged (desc o).slots args out.results).mapError ExecFault.memory
-  pure (final, out)
+  pure (writeImplicits final (desc o).implicit out.implicit, out)
 
 /-- Execute a row over flags: the semantics observes only the flags the row
 declares, and the result merges its flag effects. -/

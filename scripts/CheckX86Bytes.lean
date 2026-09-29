@@ -32,6 +32,34 @@ private def immediates : List Word :=
    0xffffffff, 0xffffffff80000000, 0xffffffffffffff80, 0x100000000,
    0x8000000000000000, 0xffffffffffffffff]
 
+/-- The rows M1.B1 added: `test`, shifts, `div`, `setcc`, `cmovcc` and
+`op r, r/m`. -/
+private def phaseOneRow (o : Op) : Bool :=
+  match o.mn with
+  | .test | .shl | .shr | .sar | .div | .setcc _ | .cmovcc _ => true
+  | .add | .or | .and | .sub | .xor | .cmp => o.form == .RM
+  | _ => false
+
+private def rowAddresses : List MemAddr :=
+  [{ base := some .rbx, displacement := 8 }, { base := some .rbp },
+   { base := some .r12, index := some .r13, scale := .eight, displacement := 0x80000000 },
+   { base := some .rsp, displacement := 0xfffffff8 }, { base := none, displacement := 0x100 }]
+
+/-- Every operand choice per slot: all sixteen registers, the addresses
+above, and the immediate edges in their canonical form. -/
+private def slotArguments (slot : Slot) : List Arg :=
+  slot.kinds.flatMap fun
+    | .reg => registers.map .reg
+    | .mem => rowAddresses.map .mem
+    | .imm8 => (immediates.map fun value => .imm (ImmKind.imm8.norm value)).eraseDups
+    | .imm16 => (immediates.map fun value => .imm (ImmKind.imm16.norm value)).eraseDups
+    | .imm32 | .rel32 => (immediates.map fun value => .imm (ImmKind.imm32.norm value)).eraseDups
+    | .imm64 => immediates.map .imm
+
+private def rowArguments : List Slot → List (List Arg)
+  | [] => [[]]
+  | slot :: slots => (slotArguments slot).flatMap fun arg => (rowArguments slots).map (arg :: ·)
+
 private def initial : Core :=
   { registers := fun register =>
       if register == .rsp then 0x8008 else if register == .rbp then 0x9000
@@ -68,6 +96,8 @@ private def instructionCase (target : Checked) (instruction : Instr) (core : Cor
     match ByteEval.step text 0x1000 ⟨core, 0x1002, {}⟩ with
     | .error (.memory fault) =>
         need (typed.status == .trapped (.memoryFault fault)) s!"fault disagreement: {repr instruction}"
+    | .error .divideError =>
+        need (typed.status == .trapped (.semantic .divideError)) s!"divide fault disagreement: {repr instruction}"
     | .error fault => throw s!"unexpected byte fault: {repr instruction}, {repr fault}"
     | .ok result =>
         need (typed.status == .running && sameRegisters typed.core result.core &&
@@ -115,8 +145,21 @@ private def instructionMatrix (target : Checked) : Except String Nat := do
   for intrinsic in ([.allocate, .reserve, .reuse, .releaseReservation, .retainShared,
       .releaseShared, .memcpy, .unsignedDiv] : List Intrinsic) do
     cases := cases.push (.callRuntime intrinsic)
+  -- The Phase 1 rows over every register pair, addressing holes and
+  -- immediate edges. Flag consumers only decode here; they execute as fused
+  -- pairs (`fusedMatrix`).
+  for o in Op.rows.filter phaseOneRow do
+    for args in rowArguments (desc o).slots do
+      if o.argsOk args then cases := cases.push (.op o args)
   for instruction in cases do instructionCase target instruction initial
-  return cases.size
+  -- `div` with a zero high half: in-range quotients and zero divisors.
+  let mut divisions := 0
+  for o in Op.rows.filter (·.mn == .div) do
+    for register in registers do
+      for divisor in ([0, 1, 7, 0xffffffff, 0xffffffffffffffff] : List Word) do
+        instructionCase target (.op o [.reg register]) ((initial.setReg .rdx 0).setReg register divisor)
+        divisions := divisions + 1
+  return cases.size + divisions
 
 private def branchMatrix : Except String Nat := do
   let mut count := 0

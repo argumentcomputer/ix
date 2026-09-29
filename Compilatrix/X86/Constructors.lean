@@ -89,18 +89,18 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
           simp only [Instr.mov, Instr.ofRow, movImmRow, MoveSource.eval]
           split
           · rename_i small
-            simp only [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.movDesc,
+            simp only [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, readImplicits_nil, writeImplicits_nil, List.append_nil, Op.stage, desc, Table.movDesc,
               Table.regSlot, Table.immSlot, Table.moveSem, readSlots, writeSlots, Arg.load, Arg.store,
               Except.mapError, bind, Except.bind, pure, Except.pure, List.headD_cons]
             have low : Width.w32.truncate (ImmKind.imm32.norm value) = value := by
               rw [Encode.norm_truncate .imm32 .w32 _ (by decide) rfl, Encode.truncate32_of_small _ small]
             simp only [Core.writeReg, low]
           · split <;>
-              simp only [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.movDesc,
+              simp only [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, readImplicits_nil, writeImplicits_nil, List.append_nil, Op.stage, desc, Table.movDesc,
                 Table.regSlot, Table.rmSlot, Table.immSlot, Table.moveSem, readSlots, writeSlots, Arg.load,
                 Arg.store, Except.mapError, bind, Except.bind, pure, Except.pure, List.headD_cons]
       | w8 | w16 | w32 =>
-          simp only [Instr.mov, Instr.ofRow, movImmRow, MoveSource.eval, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.movDesc,
+          simp only [Instr.mov, Instr.ofRow, movImmRow, MoveSource.eval, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, readImplicits_nil, writeImplicits_nil, List.append_nil, Op.stage, desc, Table.movDesc,
             Table.regSlot, Table.immSlot, Table.moveSem, readSlots, writeSlots, Arg.load, Arg.store,
             Except.mapError, bind, Except.bind, pure, Except.pure, List.headD_cons]
           rw [Encode.writeReg_congr _ _ _ _ _ (Encode.moveImm_truncate _ value)]
@@ -117,7 +117,7 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
         (operation.eval (machine.core.readReg destination) (source.eval machine.core))) := by
   cases source with
   | reg source =>
-      simp only [Instr.alu, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc_alu,
+      simp only [Instr.alu, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, readImplicits_nil, writeImplicits_nil, List.append_nil, Op.stage, desc_alu,
         Table.arithDesc, AluOp.arith_sem, AluOp.arith_role, Table.rmSlot, Table.regSlot, Table.aluSem,
         readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, AluSource.eval, bind, Except.bind, pure,
         Except.pure, List.headD_cons]
@@ -126,7 +126,7 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
         (signExtend32 value) (Encode.fullImm_truncate _ _)
       simp only [Instr.alu, Instr.ofRow, row, AluSource.eval]
       rcases form_ok with rfl | rfl <;>
-      simp only [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs,
+      simp only [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, readImplicits_nil, writeImplicits_nil, List.append_nil,
         Op.stage, desc_alu, Table.arithDesc, AluOp.arith_sem, AluOp.arith_role, Table.rmSlot, Table.immSlot,
         Table.aluSem, readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, bind,
         Except.bind, pure, Except.pure, List.headD_cons] <;>
@@ -146,7 +146,7 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
       | .error fault => machine.trap (.memoryFault fault)
       | .ok loaded => machine.advanceWith loaded := by
   cases width <;>
-    simp only [Instr.load, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.movzxDesc,
+    simp only [Instr.load, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, readImplicits_nil, writeImplicits_nil, List.append_nil, Op.stage, desc, Table.movzxDesc,
       Table.movDesc, Table.rmSlot, Table.regSlot, Table.zeroExtendSem, Table.moveSem, readSlots, writeSlots,
       Arg.load, Arg.store, Except.mapError, Core.loadReg?, MemAddr.normalize_eval] <;>
     cases machine.core.memory.read? _ (address.eval machine.core) <;>
@@ -157,7 +157,7 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
       match machine.core.storeReg? width (address.eval machine.core) source with
       | .error fault => machine.trap (.memoryFault fault)
       | .ok stored => machine.advanceWith stored := by
-  simp only [Instr.store, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.movDesc, Table.rmSlot,
+  simp only [Instr.store, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, readImplicits_nil, writeImplicits_nil, List.append_nil, Op.stage, desc, Table.movDesc, Table.rmSlot,
     Table.regSlot, Table.moveSem, readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, Core.storeReg?,
     MemAddr.normalize_eval]
   cases hw : machine.core.memory.write? width (address.eval machine.core) (machine.core.readReg source) <;>
@@ -169,7 +169,7 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
       | .error fault => machine.trap (.memoryFault fault)
       | .ok memory =>
           machine.advanceWith { machine.core.setReg .rsp (machine.core.readReg .rsp - 8) with memory } := by
-  simp only [Instr.push, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.pushDesc, Table.regSlot,
+  simp only [Instr.push, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, readImplicits_nil, writeImplicits_nil, List.append_nil, Op.stage, desc, Table.pushDesc, Table.regSlot,
     Table.moveSem, readSlots, writeSlots, Arg.load, Except.mapError]
   cases hw : machine.core.memory.write64? (machine.core.readReg .rsp - 8) (machine.core.readReg source) <;>
     simp [hw] <;> rfl
@@ -180,7 +180,7 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
       | .error fault => machine.trap (.memoryFault fault)
       | .ok value =>
           machine.advanceWith ((machine.core.setReg .rsp (machine.core.readReg .rsp + 8)).setReg destination value) := by
-  simp only [Instr.pop, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.popDesc, Table.regSlot,
+  simp only [Instr.pop, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, readImplicits_nil, writeImplicits_nil, List.append_nil, Op.stage, desc, Table.popDesc, Table.regSlot,
     Table.moveSem, readSlots, writeSlots, Arg.store, Except.mapError]
   cases machine.core.memory.read64? (machine.core.readReg .rsp) <;> simp [Core.writeReg]
 

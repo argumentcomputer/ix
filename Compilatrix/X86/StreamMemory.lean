@@ -135,6 +135,20 @@ theorem CoreRelated.writeReg {program : Program} {base : Word} {holes : Holes} {
     CoreRelated program base holes frames (logical.writeReg width register value) (physical.writeReg width register value) := by
   cases width <;> simp only [Core.writeReg, related.readReg] <;> exact related.setReg _ _
 
+/-- Implicit register writes keep cores related: they touch no memory. -/
+theorem CoreRelated.implicits {program : Program} {base : Word} {holes : Holes} {frames : List ReturnFrame}
+    {logical physical : Core} (related : CoreRelated program base holes frames logical physical)
+    (implicits : List Implicit) (results : List Word) :
+    CoreRelated program base holes frames (writeImplicits logical implicits results)
+      (writeImplicits physical implicits results) := by
+  induction implicits generalizing logical physical results with
+  | nil => simpa using related
+  | cons implicit implicits ih =>
+      simp only [writeImplicits]
+      split
+      · exact ih (related.writeReg _ _ _) _
+      · exact ih related _
+
 theorem CoreRelated.write {program : Program} {base : Word} {holes : Holes} {frames : List ReturnFrame}
     {logical physical : Core} (related : CoreRelated program base holes frames logical physical)
     (address value : Word) (count : Nat) (bound : count ≤ 8) (disjoint : FramesDisjoint frames address count) :

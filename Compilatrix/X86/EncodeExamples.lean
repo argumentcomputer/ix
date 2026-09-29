@@ -109,6 +109,39 @@ def instr (instruction : Instr) : ByteArray := (encodeInstr instruction).bytes
 #guard encodeCompare { width := .w32, left := .r9, right := .reg .r10 } ==
   expected #[0x45, 0x39, 0xd1]
 
+/-! Phase 1 rows (M1.B1): `div`, shifts by imm8 and `cl`, `test`, `setcc`,
+`cmovcc`, `op r, r/m`, and the `mov rsp, [r15 − 64]` of the failure exit. -/
+
+def row (o : Op) (args : List Arg) : ByteArray := encodeOp o args
+
+#guard row { mn := .div, w := .w64, form := .M } [.reg .rcx] == expected #[0x48, 0xf7, 0xf1]
+#guard row { mn := .div, w := .w32, form := .M } [.reg .r9] == expected #[0x41, 0xf7, 0xf1]
+#guard row { mn := .shl, w := .w64, form := .MI } [.reg .rax, .imm 3] == expected #[0x48, 0xc1, 0xe0, 0x03]
+#guard row { mn := .shr, w := .w64, form := .MI } [.reg .r9, .imm 1] == expected #[0x49, 0xc1, 0xe9, 0x01]
+#guard row { mn := .sar, w := .w64, form := .MC } [.reg .rdi] == expected #[0x48, 0xd3, 0xff]
+-- REX selects SIL rather than DH.
+#guard row { mn := .shl, w := .w8, form := .MC } [.reg .rsi] == expected #[0x40, 0xd2, 0xe6]
+#guard row { mn := .shr, w := .w32, form := .MI } [.mem { base := some .rbx, displacement := 8 }, .imm 2] ==
+  expected #[0xc1, 0x6b, 0x08, 0x02]
+#guard row { mn := .test, w := .w64, form := .MI } [.reg .rdi, .imm 1] ==
+  expected #[0x48, 0xf7, 0xc7, 0x01, 0, 0, 0]
+#guard row { mn := .test, w := .w8, form := .MI } [.reg .rdi, .imm 1] == expected #[0x40, 0xf6, 0xc7, 0x01]
+#guard row { mn := .test, w := .w32, form := .MR } [.reg .rax, .reg .rcx] == expected #[0x85, 0xc8]
+#guard row (Op.setccM .eq) [.reg .rax] == expected #[0x0f, 0x94, 0xc0]
+#guard row (Op.setccM .unsignedLt) [.reg .r9] == expected #[0x41, 0x0f, 0x92, 0xc1]
+#guard row (Op.setccM .signedLt) [.reg .rsi] == expected #[0x40, 0x0f, 0x9c, 0xc6]
+#guard row (Op.cmovRM .ne .w64) [.reg .rax, .reg .rcx] == expected #[0x48, 0x0f, 0x45, 0xc1]
+#guard row (Op.cmovRM .signedLt .w32) [.reg .r10, .mem { base := some .rbx, displacement := 8 }] ==
+  expected #[0x44, 0x0f, 0x4c, 0x53, 0x08]
+-- The prologue's stack check compares with the context's `stackLimit`.
+#guard row { mn := .cmp, w := .w64, form := .RM } [.reg .r11, .mem { base := some .r15, displacement := 0xffffffc8 }] ==
+  expected #[0x4d, 0x3b, 0x5f, 0xc8]
+#guard row { mn := .add, w := .w64, form := .RM } [.reg .rax, .mem { base := some .rbx }] ==
+  expected #[0x48, 0x03, 0x03]
+-- The failure exit's `unwind [r15 − 64]` is the `mov r64, r/m64` row.
+#guard row { mn := .mov, w := .w64, form := .RM } [.reg .rsp, .mem { base := some .r15, displacement := 0xffffffc0 }] ==
+  expected #[0x49, 0x8b, 0x67, 0xc0]
+
 def directCallPlaceholderAccepted : Bool :=
   let chunk := encodeInstr (.call 3)
   chunk.bytes == expected #[0xe8, 0, 0, 0, 0] &&

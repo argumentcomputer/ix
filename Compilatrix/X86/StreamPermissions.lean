@@ -64,6 +64,18 @@ theorem writeSlots_permissions (before : Core) (slots : List Slot) (args : List 
                 rw [hstore] at written
                 exact (store_permissions hstore).trans (ih args results.tail written)
 
+theorem writeImplicits_permissions (core : Core) (implicits : List Implicit) (results : List Word) :
+    Permissions core (writeImplicits core implicits results) := by
+  induction implicits generalizing core results with
+  | nil => simpa using Permissions.refl core
+  | cons implicit implicits ih =>
+      simp only [writeImplicits]
+      split
+      · have first : Permissions core (core.writeReg implicit.width implicit.reg (results.headD 0)) := by
+          cases implicit.width <;> exact ⟨rfl, rfl⟩
+        exact first.trans (ih _ _)
+      · exact ih _ _
+
 theorem stage_permissions {o : Op} {core after : Core} {out : SemOut}
     (staged : o.stage core out = .ok after) : Permissions core after := by
   unfold Op.stage at staged
@@ -98,7 +110,8 @@ theorem run_permissions_row {o : Op} {args : List Arg} {core after : Core} {obse
         | ok final =>
           simp [hinputs, hsem, hstage, hwrite, Except.mapError] at ran
           obtain ⟨rfl, rfl⟩ := ran
-          exact (stage_permissions hstage).trans (writeSlots_permissions core _ args _ hwrite)
+          exact ((stage_permissions hstage).trans (writeSlots_permissions core _ args _ hwrite)).trans
+            (writeImplicits_permissions _ _ _)
 
 theorem exec_ok {o : Op} {args : List Arg} {core after : Core} {flags flagsAfter : ByteEval.Flags}
     (executed : o.exec args core flags = .ok (after, flagsAfter)) :
