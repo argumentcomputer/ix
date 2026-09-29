@@ -35,8 +35,19 @@ block/instruction positions to byte offsets. The map is injective and stays
 inside the text; successful linear instructions have valid symbolic
 successors. `StreamLinear` proves actual whole-text fetch, register/memory
 effects, precise modeled memory faults, and PC advancement. `StreamControl`
-composes one-byte-machine-step jumps and the two- or three-step CMP/Jcc/JMP
-branch expansion, including both signed and unsigned comparisons.
+composes one-byte-machine-step jumps and the two- or three-step
+producer/Jcc/JMP branch expansion (`branch_at`) for any well-formed producer:
+a `cmp` or `test` in any operand form, including memory, or `add`/`sub`
+deciding carry or borrow. The producer's core and flags carry into the
+target; its condition's flags agree with the typed machine's because the
+producer sets all of them (`FusedOk`). A checked program's terminators are
+well-formed (`checked_terminator_wf`), which also discharges
+`terminator_decode`'s premise.
+
+Fused pairs (`Instr.fused`) are checked as two decoded rows at consecutive
+offsets. `fused_progress` relates their two byte steps to the typed pair's
+one step: the flag-only producer leaves the core unchanged, and the consumer
+reads only flags the producer set.
 
 `Stream.run_to_return` covers every finite successful call-free typed run,
 with arbitrary initial flags and text base. A run of `fuel` typed steps uses
@@ -66,6 +77,10 @@ conditions for `run_with_calls`:
 - Internal RET has the expected stack position, intact typed return token,
   and preserved callee-saved registers. Its physical slot value follows from
   the maintained frame relation.
+- A branch's producer and both rows of a fused pair meet the ordinary access
+  conditions; the mask clears exactly the bytes the producer or consumer
+  writes.
+- `unwind` reads its eight-byte source as ordinary data.
 - The final RET reads an ordinary caller slot. External runtime invocations
   require a separate procedure contract and are excluded from this theorem.
 
@@ -82,6 +97,44 @@ full conditions for nested calls and repeated calls followed by slot reuse.
 The final theorem gives register equality and byte equality outside the
 remaining mask. It makes no claim that a program observing a physical return
 address as ordinary data will agree with the symbolic evaluator.
+
+## The failure exit
+
+Every failure (`fail heap`, the prologue's `fail stack`, `fail
+natOverflow`, `trap`) leaves through the export wrapper that was entered,
+with status 1–4 in `rax`, 0 in `rdx`, and the caller's callee-saved
+registers restored (note 05 §6.1). The wrapper saves `rsp` in the context
+(`entrySp`, at `[r15 − 64]`); the exit group runs `unwind [r15 − 64]`, whose
+bytes are `mov rsp, [r15 − 64]` (`49 8B 67 C0`), then restores the saved
+registers and returns.
+
+`Instr.unwind m` runs that `mov` row on the typed machine too, then keeps
+only the ghost frames outside the one the reloaded stack returns through
+(`cutAt`), or every frame at depth 0; it traps with `unwindMismatch` when no
+frame matches. The frames it keeps are a suffix (`cutAt_suffix`), so their
+physical slots stay mapped (`FramesMapped.suffix`) and `unwind_progress`
+keeps the machines related in one byte step with the mask unchanged: the
+dropped frames' slots stay masked until ordinary writes clear them.
+`unwind_inFrame` and `Straight.Segment.safe_unwind` state the typed step
+inside a caller continuation, and `ObjectEval.run_exit` lifts any certified
+run that ends as an export does (`Exit`: halted with the status in `rax`,
+the value in `rdx`, the caller's callee-saved registers and stack pointer
+restored) to the parsed object. `StreamExamples.unwind_safe` kernel-checks
+the access conditions of a wrapper failing from three nested calls. The
+`Wrapper.fail_safe` theorem that derives these conditions from the frame
+invariant belongs to the stacking pass.
+
+`CallFree` still excludes `unwind`, fused pairs and calls, so `run_to_return`,
+`run_from_typed` and `run_permissions` do not cover programs using them;
+`run_with_calls`, `SafeSteps.run_with_calls` and `ObjectEval.run_exit` do.
+
+Natively, `check-x86-object` links the `unwind` fixture (an export that
+recurses with the prologue's stack check and fails or succeeds by argument)
+under [`unwind_harness.c`](../fixtures/x86/unwind_harness.c), which loads
+sentinels into the callee-saved registers and checks `rax:rdx`, the
+sentinels and `rsp` for failures at depths 0, 1 and 3, a second successful
+call on the same context, and a deep recursion under a small stack budget
+(status 2).
 
 ## Object interpretation and relocation
 
@@ -148,7 +201,14 @@ addressed-source BLAKE3 boundary. No new native reflection or ISA axiom is
 introduced.
 
 [`check-x86-streams`](../scripts/CheckX86Streams.lean) checks complete objects,
-all branch conditions, a nonzero entry, wrapping byte addresses, nested and
+all branch conditions, branches after memory `cmp`, `test`, `add` and `sub`
+producers (155 objects), fused `cmp`/`test` pairs into `setcc` and `cmovcc`
+(50 objects), the failure exit at depths 0, 1, 3 and 7 and after a completed
+call (sentinel callee-saved registers restored, `rax:rdx = 1:0`), a corrupted
+`entrySp` (`unwindMismatch`), an `entrySp` cell on a live return slot
+(rejected by `SafeTrace`), an unreadable cell (the same fault on both
+machines), a plain `mov rsp, [m]` before `ret` (`stackMismatch`), a nonzero
+entry, wrapping byte addresses, nested and
 reused call slots, partial overwrites, rejected unsafe stack observations,
 corrupted instructions and relocation metadata, ELF field mutations and every
 truncated prefix, positive/negative relocation endpoints and overflow, and

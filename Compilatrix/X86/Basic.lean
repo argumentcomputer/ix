@@ -296,7 +296,8 @@ def Block.offsetsFit (block : Block) : Bool :=
 /-- A linear operation is a listed, non-control row with operands of its
 slot kinds. A fused pair is a listed producer that reads no flags and
 writes nothing but flags (`flagsOnly`), and a listed flag consumer whose
-flags the producer sets (`FusedOk`). -/
+flags the producer sets (`FusedOk`). An `unwind`'s source is a canonical
+address for the `mov r64, r/m64` row. -/
 def Instr.wellFormed : Instr → Bool
   | .op o args => Op.rows.contains o && o.linear && o.argsOk args
   | .fused producer pargs consumer cargs =>

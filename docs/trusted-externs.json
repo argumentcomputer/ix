@@ -412,16 +412,16 @@
       "status": "active-specification",
       "owner": "Compilatr.ix maintainers",
       "scope": "Compilatrix.X86 typed AST, independent byte decoder, and executable local semantics",
-      "assumption": "For sequential x86-64 v0 executions that satisfy the compiler ABI invariants and use canonical mapped user addresses, the local register, permissioned little-endian memory, stack, comparison/branch, and architectural-fault behavior agrees with corresponding 64-bit user-mode behavior at Compilatr.ix observations. Misaligned-call, stack-mismatch, corrupt-return, and callee-saved-clobber outcomes are compiler-contract failures that must be proved unreachable, not hardware exceptions. E2 relates symbolic PCs and return tokens to byte RIP and physical stack slots under explicit access conditions and accounts for the final physical RET. Agreement of the local byte model with a reference ISA, including unified instruction fetch and canonical-address faults, remains unproved.",
+      "assumption": "For sequential x86-64 v0 executions that satisfy the compiler ABI invariants and use canonical mapped user addresses, the local register, permissioned little-endian memory, stack, comparison/branch, flag producer/consumer, and architectural-fault behavior (memory faults and div's #DE) agrees with corresponding 64-bit user-mode behavior at Compilatr.ix observations. Misaligned-call, stack-mismatch, corrupt-return, and callee-saved-clobber outcomes are compiler-contract failures that must be proved unreachable, not hardware exceptions. E2 relates symbolic PCs and return tokens to byte RIP and physical stack slots under explicit access conditions and accounts for the final physical RET. Agreement of the local byte model with a reference ISA, including unified instruction fetch and canonical-address faults, remains unproved.",
       "proof_effect": "Lean theorems about the local semantics use only ordinary logical axioms and do not assert hardware correctness. Any native-correctness claim that treats the local model as its reference is conditional on this specification assumption until the emitted-fragment bridge is proved.",
       "trust_basis": [
         "Intel 64 and IA-32 Software Developer's Manual combined instruction-set reference, version 092",
         "AMD64 Architecture Programmer's Manual Volume 3, revision 3.37",
-        "Op.rows lists every row the table may emit or decode; the typed constructors choose listed rows (Instr.*_wellFormed) and exclude division, floating point, SIMD, atomics, indirect calls, raw syscalls, TLS, high-byte registers, rsp SIB indices, and byte-width imul",
+        "Op.rows lists every row the table may emit or decode; the typed constructors choose listed rows (Instr.*_wellFormed) and exclude signed division, floating point, SIMD, atomics, indirect calls, raw syscalls, TLS, high-byte registers, rsp SIB indices, and byte-width imul",
         "Compilatrix.X86.EvalExamples executes arithmetic branches, stack/spill roundtrips, direct call/return, callee-saved ABI trapping, runtime dispatch, permission faults, and call-alignment faults",
-        "E1 proves, for every row of the declarative instruction table, that a separate table-indexed decoder recovers the row and operands from the encoder's bytes and that byte-RIP ByteEval produces the typed effect, including defined comparison flags and explicit unknown IMUL flags; both machines share each row's semantic function, so this local-to-local proof checks decoding and execution plumbing, not the semantic functions, and does not establish hardware faithfulness",
+        "E1 proves, for every row of the declarative instruction table, that a separate table-indexed decoder recovers the row and operands from the encoder's bytes and that byte-RIP ByteEval produces the typed effect, including defined comparison and test flags, fused producer/consumer pairs whose consumer reads only flags its producer sets, and explicit unknown IMUL and shift flags; both machines share each row's semantic function, so this local-to-local proof checks decoding and execution plumbing, not the semantic functions, and does not establish hardware faithfulness",
         "docs/x86-reference-model.json pins the inspected Sail x86 snapshot and per-form source mapping; reference execution comparison, a reproducible Lean adapter and S2 agreement remain pending",
-        "check-x86-hardware enumerates Op.rows and runs every generated case (currently 22,463: each linear row with each kind combination of its slots, addressing shapes including the disp32 extremes, immediate edges, fixed and random input flags, all conditions and the control recipes) natively on the host processor, compares exit, registers, model-defined flags, changed memory and faults with ByteEval, and requires llvm-mc to decode each case to the same instruction lengths, mnemonics and encodings; this tests, and does not prove, hardware faithfulness"
+        "check-x86-hardware enumerates Op.rows and runs every generated case (currently 53,279: each non-control row with each kind combination of its slots, addressing shapes including the disp32 extremes, immediate edges, fixed and random input flags, shift counts around each width and mask, div with zero divisors, quotient overflow and in-range quotients, fused cmp/test pairs into setcc and cmovcc, branches after register and memory producers, all conditions and the control recipes) natively on the host processor, compares exit, registers, model-defined flags, changed memory and faults (memory faults as SIGSEGV or SIGBUS, #DE as SIGFPE) with ByteEval, and requires llvm-mc to decode each case to the same instruction lengths, mnemonics and encodings; this tests, and does not prove, hardware faithfulness"
       ],
       "tests": [
         "Compilatrix.X86.Examples.arithmeticBranchAccepted",
@@ -435,7 +435,11 @@
         "Compilatrix.X86.ObjectEval.run_with_calls",
         "check-x86-hardware (hardware-differential and llvm-mc decode gate)",
         "Compilatrix.X86.Encode.row_execution",
-        "Compilatrix.X86.Compare.holds_eq"
+        "Compilatrix.X86.Compare.holds_eq",
+        "Compilatrix.X86.Examples.unwindExitAccepted",
+        "Compilatrix.X86.Encode.fused_execution",
+        "Compilatrix.X86.ObjectEval.run_exit",
+        "check-x86-object unwind fixture (native failure exit under callee-saved sentinels)"
       ],
       "retirement": {
         "milestone": "ISA plan S2 emitted-fragment equivalence",

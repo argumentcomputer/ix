@@ -45,7 +45,7 @@ original decoder. It shares each row's semantic function with the typed
 evaluator, so it is an independent decoding path but not an independent
 semantics; the hardware-differential gate tests the semantics.
 
-The byte gate compares both decoders across 33,793 emitted instruction cases,
+The byte gate compares both decoders across 55,940 emitted instruction cases,
 every proper truncation, 2,000 patched branches, and 131,084 short/padded or
 out-of-range inputs. The stream gate checks both validators on ordinary and
 corrupted text, offsets, and runtime relocations; it adds empty programs,

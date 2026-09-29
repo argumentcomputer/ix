@@ -297,11 +297,13 @@ no longer checks one semantics against another; a wrong semantic function or
 opcode in a row would pass every proof. The required `x86-hardware` check
 tests the table against the host processor. It enumerates `Op.rows` and runs
 every generated case natively through
-[`hw_diff_harness.c`](../fixtures/x86/hw_diff_harness.c): each linear row
-with each kind combination of its slots, addressing shapes, immediate edges,
-all conditions and the control recipes, 22,463 cases in total. It compares
-exit, registers, model-defined flags, changed memory and faults with
-`ByteEval`, and requires LLVM's `llvm-mc` to decode each case to the same
+[`hw_diff_harness.c`](../fixtures/x86/hw_diff_harness.c): each non-control
+row with each kind combination of its slots, addressing shapes, immediate
+edges, shift counts, `div` scenarios, fused producer/consumer pairs,
+branches after every producer form, all conditions and the control recipes,
+53,279 cases in total. It compares exit, registers, model-defined flags,
+changed memory and faults (memory faults as SIGSEGV or SIGBUS, `#DE` as
+SIGFPE) with `ByteEval`, and requires LLVM's `llvm-mc` to decode each case to the same
 instruction lengths, mnemonics and encodings. This is test evidence, not a
 proof of faithfulness: operand values the generator does not reach and
 flags the model leaves undefined are not compared. The Sail agreement (S2)

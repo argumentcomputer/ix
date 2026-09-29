@@ -3,11 +3,12 @@ import Compilatrix.X86.Table.Rows
 /-!
 # Executing a table row
 
-`Op.exec` is the one executor of linear rows. It reads the row's input
-slots (and an implicitly popped word), applies the row's semantic function
-to them and to the flags the row declares in `flagsIn`, pushes or pops
-through `rsp`, and writes the results back to the output slots with the
-architectural partial-register rule (`Core.writeReg`). The typed machine
+`Op.exec` is the one executor of non-control rows. It reads the row's input
+slots, its implicit input registers (and an implicitly popped word), applies
+the row's semantic function to them and to the flags the row declares in
+`flagsIn`, pushes or pops through `rsp`, and writes the results back to the
+output slots and implicit output registers with the architectural
+partial-register rule (`Core.writeReg`). The typed machine
 calls it with undefined flags; the byte machine calls it with its current
 flags and keeps the merged result. Because a linear row declares no input
 flags, both machines compute the same core.
