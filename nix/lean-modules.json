@@ -3,6 +3,7 @@
   "tests-ixon-v3":
   {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
+  "pin-src-tables": {"roots": ["PinSrcTables"], "kind": "lean_exe"},
   "check-xv-select":
   {"roots": ["CompilatrixTests.Xv.Main"], "kind": "lean_exe"},
   "check-x86-streams": {"roots": ["CheckX86Streams"], "kind": "lean_exe"},
@@ -29,6 +30,9 @@
  {"X86ObjectFixture":
   {"path": "X86ObjectFixture.lean",
    "imports": ["Compilatrix.X86.ELFValidate", "Compilatrix.X86.EvalExamples"]},
+  "PinSrcTables":
+  {"path": "scripts/PinSrcTables.lean",
+   "imports": ["Lean", "Compilatrix.Tools.Check"]},
   "Ix.Lib":
   {"path": "vendor/aiur/Ix/Lib.lean",
    "imports": ["Std.Data.HashMap.Basic", "Std.Data.HashMap.Lemmas"]},
@@ -749,6 +753,28 @@
   "Compilatrix.Tools.AiurCheck":
   {"path": "Compilatrix/Tools/AiurCheck.lean",
    "imports": ["Compilatrix.Tools.Check"]},
+  "Compilatrix.Src.Table.Check":
+  {"path": "Compilatrix/Src/Table/Check.lean",
+   "imports": ["Compilatrix.Src.Pinned"]},
+  "Compilatrix.Src.Table.Build":
+  {"path": "Compilatrix/Src/Table/Build.lean",
+   "imports": ["Compilatrix.Src.Table.Check", "Compilatrix.Src.Hints"]},
+  "Compilatrix.Src.Syntax":
+  {"path": "Compilatrix/Src/Syntax.lean",
+   "imports": ["Compilatrix.Ixon.V3.Const", "Std.Data.HashMap"]},
+  "Compilatrix.Src.Pinned":
+  {"path": "Compilatrix/Src/Pinned.lean",
+   "imports": ["Compilatrix.Src.Syntax", "Compilatrix.Ixon.V3.Tc.Support"]},
+  "Compilatrix.Src.Ingress":
+  {"path": "Compilatrix/Src/Ingress.lean",
+   "imports": ["Compilatrix.Src.Syntax", "Compilatrix.Ixon.V3.Typed"]},
+  "Compilatrix.Src.Hints":
+  {"path": "Compilatrix/Src/Hints.lean",
+   "imports":
+   ["Compilatrix.Src.Syntax",
+    "Compilatrix.Ixon.V3.Tc.Support",
+    "Lean.Data.Json.Basic",
+    "Lean.Data.Json.Parser"]},
   "Compilatrix.Sem.Result":
   {"path": "Compilatrix/Sem/Result.lean", "imports": []},
   "Compilatrix.Sem.Clock":
@@ -776,6 +802,9 @@
   "Compilatrix.Ixon.V3.Validate":
   {"path": "Compilatrix/Ixon/V3/Validate.lean",
    "imports": ["Compilatrix.Ixon.V3.Source", "Compilatrix.Ixon.V3.Tc.Driver"]},
+  "Compilatrix.Ixon.V3.Typed":
+  {"path": "Compilatrix/Ixon/V3/Typed.lean",
+   "imports": ["Compilatrix.Ixon.V3.Tc.Driver"]},
   "Compilatrix.Ixon.V3.Tc.Whnf":
   {"path": "Compilatrix/Ixon/V3/Tc/Whnf.lean",
    "imports": ["Compilatrix.Ixon.V3.Tc.Monad"]},
@@ -1243,6 +1272,7 @@
   {"path": "Compilatrix.lean",
    "imports":
    ["Compilatrix.Ixon.V3",
+    "Compilatrix.Ixon.V3.Typed",
     "Compilatrix.Sem.Result",
     "Compilatrix.Sem.Clock",
     "Compilatrix.Lir.Syntax",
@@ -1266,6 +1296,12 @@
     "Compilatrix.Xv.Select.Branch",
     "Compilatrix.Xv.Select.Driver",
     "Compilatrix.Xv.Select.Lemmas",
+    "Compilatrix.Src.Syntax",
+    "Compilatrix.Src.Ingress",
+    "Compilatrix.Src.Pinned",
+    "Compilatrix.Src.Hints",
+    "Compilatrix.Src.Table.Check",
+    "Compilatrix.Src.Table.Build",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

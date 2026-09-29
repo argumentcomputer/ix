@@ -1,4 +1,5 @@
 import Compilatrix.Ixon.V3
+import Compilatrix.Ixon.V3.Typed
 import Compilatrix.Sem.Result
 import Compilatrix.Sem.Clock
 import Compilatrix.Lir.Syntax
@@ -22,6 +23,12 @@ import Compilatrix.Xv.Select.Rules
 import Compilatrix.Xv.Select.Branch
 import Compilatrix.Xv.Select.Driver
 import Compilatrix.Xv.Select.Lemmas
+import Compilatrix.Src.Syntax
+import Compilatrix.Src.Ingress
+import Compilatrix.Src.Pinned
+import Compilatrix.Src.Hints
+import Compilatrix.Src.Table.Check
+import Compilatrix.Src.Table.Build
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
@@ -87,7 +94,8 @@ import Compilatrix.X86.WordRegionSafeTrace
 import Compilatrix.X86.Width
 import Compilatrix.Aiur
 
-/-! Production API: Ixon v3 ingress, the shared semantic vocabulary, Lir (the
+/-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
+front end (ingress, the checked unfolding table, SrcEval, relevance), Lir (the
 backend's first IR), Xv and Xl (x86 instructions over virtual registers and
 over locations) with rule-based selection from Lir, the x86 target model with
 its certified encoder (E1) and stream/ELF layer (E2), and the Aiur target. The

@@ -98,3 +98,9 @@ lean_exe census where
 lean_exe «check-x86-hardware» where
   srcDir := "scripts"
   root := `CheckX86Hardware
+
+/- Manual generator for `fixtures/ixon-v3/src-tables.tsv` (runs ix). -/
+lean_exe «pin-src-tables» where
+  srcDir := "scripts"
+  root := `PinSrcTables
+  supportInterpreter := true
