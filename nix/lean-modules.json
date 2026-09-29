@@ -753,6 +753,8 @@
   "Compilatrix.Tools.AiurCheck":
   {"path": "Compilatrix/Tools/AiurCheck.lean",
    "imports": ["Compilatrix.Tools.Check"]},
+  "Compilatrix.Src.Value":
+  {"path": "Compilatrix/Src/Value.lean", "imports": ["Compilatrix.Src.Syntax"]},
   "Compilatrix.Src.Table.Check":
   {"path": "Compilatrix/Src/Table/Check.lean",
    "imports": ["Compilatrix.Src.Pinned"]},
@@ -762,9 +764,24 @@
   "Compilatrix.Src.Syntax":
   {"path": "Compilatrix/Src/Syntax.lean",
    "imports": ["Compilatrix.Ixon.V3.Const", "Std.Data.HashMap"]},
+  "Compilatrix.Src.Semantics":
+  {"path": "Compilatrix/Src/Semantics.lean",
+   "imports":
+   ["Compilatrix.Src.Value", "Compilatrix.Src.Prim", "Compilatrix.Sem.Result"]},
+  "Compilatrix.Src.Runtime":
+  {"path": "Compilatrix/Src/Runtime.lean",
+   "imports": ["Compilatrix.Src.Syntax"]},
+  "Compilatrix.Src.Readback":
+  {"path": "Compilatrix/Src/Readback.lean",
+   "imports": ["Compilatrix.Src.Value", "Compilatrix.Sem.Result"]},
+  "Compilatrix.Src.Prim":
+  {"path": "Compilatrix/Src/Prim.lean", "imports": ["Compilatrix.Src.Syntax"]},
   "Compilatrix.Src.Pinned":
   {"path": "Compilatrix/Src/Pinned.lean",
    "imports": ["Compilatrix.Src.Syntax", "Compilatrix.Ixon.V3.Tc.Support"]},
+  "Compilatrix.Src.Lazify":
+  {"path": "Compilatrix/Src/Lazify.lean",
+   "imports": ["Compilatrix.Src.Runtime"]},
   "Compilatrix.Src.Ingress":
   {"path": "Compilatrix/Src/Ingress.lean",
    "imports": ["Compilatrix.Src.Syntax", "Compilatrix.Ixon.V3.Typed"]},
@@ -775,6 +792,9 @@
     "Compilatrix.Ixon.V3.Tc.Support",
     "Lean.Data.Json.Basic",
     "Lean.Data.Json.Parser"]},
+  "Compilatrix.Src.Admit":
+  {"path": "Compilatrix/Src/Admit.lean",
+   "imports": ["Compilatrix.Src.Runtime"]},
   "Compilatrix.Sem.Result":
   {"path": "Compilatrix/Sem/Result.lean", "imports": []},
   "Compilatrix.Sem.Clock":
@@ -1302,6 +1322,13 @@
     "Compilatrix.Src.Hints",
     "Compilatrix.Src.Table.Check",
     "Compilatrix.Src.Table.Build",
+    "Compilatrix.Src.Runtime",
+    "Compilatrix.Src.Lazify",
+    "Compilatrix.Src.Admit",
+    "Compilatrix.Src.Value",
+    "Compilatrix.Src.Prim",
+    "Compilatrix.Src.Semantics",
+    "Compilatrix.Src.Readback",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
