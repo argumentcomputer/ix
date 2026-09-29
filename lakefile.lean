@@ -78,3 +78,8 @@ lean_exe «check-tools-tests» where
 lean_exe «check-build-graph» where
   srcDir := "scripts"
   root := `CheckBuildGraph
+
+/- Admission census over an Ixon v3 closure: first rejecting stage per constant. -/
+lean_exe census where
+  srcDir := "scripts"
+  root := `Census

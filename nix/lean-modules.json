@@ -15,6 +15,7 @@
   "check-ixon-v3": {"roots": ["CheckIxonV3"], "kind": "lean_exe"},
   "check-build-graph": {"roots": ["CheckBuildGraph"], "kind": "lean_exe"},
   "check-aiur": {"roots": ["CheckAiur"], "kind": "lean_exe"},
+  "census": {"roots": ["Census"], "kind": "lean_exe"},
   "CompilatrixTests": {"roots": ["CompilatrixTests"], "kind": "lean_lib"},
   "Compilatrix": {"roots": ["Compilatrix"], "kind": "lean_lib"},
   "AiurReference":
@@ -553,6 +554,9 @@
    "imports": ["Compilatrix.Ixon.V3.Catalog", "Compilatrix.Tools.Check"]},
   "Compilatrix.Tools.Check":
   {"path": "Compilatrix/Tools/Check.lean", "imports": ["Lean"]},
+  "Compilatrix.Tools.Census":
+  {"path": "Compilatrix/Tools/Census.lean",
+   "imports": ["Compilatrix.Ixon.V3.Validate", "Compilatrix.Tools.Check"]},
   "Compilatrix.Tools.BuildGraph":
   {"path": "Compilatrix/Tools/BuildGraph.lean",
    "imports": ["Compilatrix.Tools.TrustLedger"]},
@@ -1139,4 +1143,6 @@
    ["Compilatrix.Tools.AiurCheck",
     "Compilatrix.Tools.AiurWireCheck",
     "Compilatrix.Tools.AiurMemoryCheck",
-    "Compilatrix.Tools.AiurRankCheck"]}}}
+    "Compilatrix.Tools.AiurRankCheck"]},
+  "Census":
+  {"path": "scripts/Census.lean", "imports": ["Compilatrix.Tools.Census"]}}}

@@ -22,6 +22,14 @@ in {
       ${auditSrc}/fixtures/ixon-v3/catalog/chunked.ixc/members.json
   '';
 
+  # The admission census must reproduce its reviewed baseline exactly, so
+  # per-constant verdicts and budget headroom change only with review.
+  census = mkCheck "census" [pkgs.diffutils] ''
+    ./.lake/build/bin/census ${auditSrc}/fixtures/ixon-v3/k1/k1.ixe \
+      --names ${auditSrc}/fixtures/ixon-v3/k1/equations.json --out census.json
+    diff -u ${auditSrc}/fixtures/ixon-v3/k1/census.json census.json
+  '';
+
   aiur = mkCheck "aiur" [] ''
     ./.lake/build/bin/tests-aiur
     ./.lake/build/bin/check-aiur --root ${auditSrc}

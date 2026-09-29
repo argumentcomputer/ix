@@ -31,3 +31,10 @@ not retained; its SHA-256 is in the provenance.
 The required `tests-ixon-v3` suite decodes `k1.ixe` through strict v3
 ingress, checks that every recorded root, definition and equation address is
 present, and runs erased typing over the whole closure.
+
+[`census.json`](census.json) is the reviewed admission census of `k1.ixe`
+(`lake exe census k1.ixe --names equations.json`). Every one of the 1,596
+anonymous constants passes decoding, erased typing and the D12 policy stage.
+Budget headroom: 1.19 MB of 16 MiB, 1,596 of 16,384 table entries, 1,596 of
+4,096 typing declarations, and expression depth 66 of 256. The `census`
+check requires the tool to reproduce this file exactly.

@@ -33,6 +33,7 @@ with the checks.
 | `x86-elf-object` | `check-x86-object` with readelf and objdump; on x86-64 Linux, native link and run |
 | `trusted-extern-ledger` | `check-trusted-externs` against the pinned Blake3 source and GMP version; `check-tools-tests` |
 | `build-graph` | `check-build-graph`: the module manifest, production-import hygiene, and the proof, fence and runtime coverage inventory in [`nix/ci-coverage.json`](../nix/ci-coverage.json) |
+| `census` | `census` on the K1 pack; the report must equal the reviewed [`fixtures/ixon-v3/k1/census.json`](../fixtures/ixon-v3/k1/census.json) |
 
 After changing imports or Lake roots, regenerate the manifest with
 `lake exe check-build-graph --write`.
@@ -53,6 +54,7 @@ changes visible.
 | --- | --- | --- |
 | 2026-09-29 | Removed the complete required surface | `build`, `proofs`, `build-graph`, `ci-workflow`, `trusted-extern-ledger`, `tests`, `catalog-contact`, `x86-encoder-decoder`, `x86-byte-execution`, `x86-stream-objects`, `x86-elf-object`, `source-coverage`, `source-recursion`, `source-call-reuse`, `source-space`, `source-modular`, `assembly-scaling`, `source-evidence`, `ixir2-identity`, `source-unique-reuse`, `source-borrow`, `source-borrow-runtime`, `source-native-{unique,runtime,allocating,upstream,scalar,physical-scalar,heap,captured-scalar}`, `native-sharing`, `native-graph`, `aiur`, `ixby`, `ixby-symbolic`, `ixby-stage2`, `ixby-lean`, and eight `ixby-stage2-binary-*` checks |
 | 2026-09-29 | Restored the kept foundations | `build`, `proofs` (387 exact axiom assertions), `ixon-v3` (new; its suite was part of the former `tests`), `aiur`, `x86-encoder-decoder`, `x86-byte-execution`, `x86-stream-objects` and `x86-elf-object` (without their legacy reversal cases), `trusted-extern-ledger` (reset inventory), and `build-graph` (redefined coverage inventory) |
+| 2026-09-29 | Added the admission census | `census` (new): per-constant first rejecting stage and v3 budget headroom for the K1 pack, exact match against its reviewed baseline |
 
 The restored surface builds in about 2.5 minutes cold at `--max-jobs 2`,
 measured with `--rebuild`: the library in 82 s, the shared program and
