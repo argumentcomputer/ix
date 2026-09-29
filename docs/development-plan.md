@@ -45,108 +45,24 @@ encoder or compiler correctness.
 ## Validation commands
 
 Use the Lean version pinned in `lean-toolchain` and the repository's Nix
-environment. The CI gate is:
+environment. The required check surface is empty while the compiler is
+rebuilt ([CI guide](ci.md)); gates return one at a time. Until a gate covers
+your change, validate it directly:
 
-```sh
-nix flake check
-```
+- Build the affected targets: `nix develop -c lake build <targets>`.
+- Run the focused suites for the area: `lake exe tests-ixon-v3`,
+  `lake exe check-ixon-v3 …`, `lake exe check-ixon-v3-catalog …`, and the
+  x86 gates `check-x86-encoder`, `check-x86-bytes`, `check-x86-streams` and
+  `check-x86-object`.
+- After changing imports or Lake roots, run
+  `lake exe check-build-graph --write` and review the manifest.
 
-The [CI guide](ci.md) describes the shared build artifacts, required job
-groups, source boundaries, and coverage inventory. Focused runtime suites are
-`lake exe tests-addressing`, `lake exe tests-pipeline`, `lake exe tests-hpt`,
-`lake exe tests-ixon`, and `lake exe tests-ixon-v3`. Build all proofs and elaboration tests explicitly
-with `lake build CompilatrixTests.Proofs`; the default production library
-does not aggregate them. After changing imports or Lake roots, run
-`lake exe check-build-graph --write`, review the generated manifest, and run
-`lake exe check-build-graph`.
-
-The focused Ixby optimizer gate is `lake exe check-ixby-inline`; it also runs
-inside `check-ixby-lean` and the required `ixby-lean` Nix check. Its kernel
-contracts and exact axiom fences are included in `CompilatrixTests.Proofs`.
-The [single-dispatch array-read checks](ixby-array-read.md) run through
-`check-ixby-lean`, including previous-body comparisons and exact resource costs;
-their strengthened contracts are in the same required proof aggregate.
-The [FRI fusion gate](ixby-fri-fusion.md) is `lake exe check-ixby-fri`; it also
-runs through `check-ixby-lean` and the required `ixby-lean` Nix check. Its
-source equality proofs and exact fences remain in `CompilatrixTests.Proofs`.
-The [row-hash helpers](ixby-row-hash.md) run through `check-ixby-lean`, including
-oracle, resource, exact-fuel, mutation and source suites; their body
-certificates and ten exact fences are in `CompilatrixTests.Proofs`. The
-[shift and fixed-width helpers](ixby-shift-width.md) are covered by the same
-gate; their re-proved and new contracts and eight exact fences are in
-`CompilatrixTests.Proofs`.
+The former complete surface, including every family gate and its command,
+is documented on branch `jcb/ixby-archive`.
 
 Compiler-comparison and measurement runners are built separately with
 `lake -d benchmarks/comparisons build`. Their [optional environment and commands](../benchmarks/comparisons/README.md)
 include CakeML and CompCert; those toolchains are outside the CI check closure.
-The root package retains the compiler's native and artifact regression gates.
-
-For the configured local development environment, the complete build and
-compiled regression surface is:
-
-```sh
-lake build Compilatrix CompilatrixTests.Proofs tests catalog-contact x86-object-fixture ixir2-fixture \
-  source-coverage source-modular assembly-scaling source-evidence source-recursion source-call-reuse source-unique-reuse \
-  source-native-unique source-native-runtime source-native-allocating source-native-upstream source-native-scalar \
-  source-native-physical-scalar source-native-heap heap-snapshot-object source-native-captured-scalar source-borrow source-borrow-runtime \
-  check-trusted-externs check-ixir2 check-x86-encoder check-x86-bytes check-x86-streams \
-  check-x86-object check-source-coverage check-source-modular check-assembly-scaling check-source-recursion \
-  check-source-evidence check-source-call-reuse check-source-unique-reuse \
-  check-source-native-unique check-source-native-runtime check-source-native-allocating check-source-native-upstream check-source-native-scalar \
-  check-source-native-physical-scalar check-source-native-heap check-source-native-captured-scalar check-source-borrow \
-  check-source-borrow-runtime check-tools-tests check-build-graph
-./.lake/build/bin/tests
-./.lake/build/bin/check-build-graph
-./.lake/build/bin/check-trusted-externs --root .
-./.lake/build/bin/check-tools-tests --root .
-./.lake/build/bin/check-x86-encoder --objdump objdump
-./.lake/build/bin/check-x86-bytes
-./.lake/build/bin/check-x86-streams
-./.lake/build/bin/check-x86-object \
-  --fixture .lake/build/bin/x86-object-fixture \
-  --readelf readelf --objdump objdump --cc cc \
-  --harness fixtures/x86/native_harness.c
-./.lake/build/bin/check-source-coverage \
-  --fixture .lake/build/bin/source-coverage \
-  --cc cc --harness fixtures/x86/native_harness.c
-./.lake/build/bin/check-source-recursion --fixture .lake/build/bin/source-recursion
-./.lake/build/bin/check-source-modular --fixture .lake/build/bin/source-modular
-./.lake/build/bin/check-assembly-scaling --fixture .lake/build/bin/assembly-scaling
-./.lake/build/bin/check-source-evidence --fixture .lake/build/bin/source-evidence
-./.lake/build/bin/check-source-call-reuse --fixture .lake/build/bin/source-call-reuse
-./.lake/build/bin/check-ixir2 --fixture .lake/build/bin/ixir2-fixture
-./.lake/build/bin/check-source-unique-reuse --fixture .lake/build/bin/source-unique-reuse
-./.lake/build/bin/check-source-native-unique \
-  --fixture .lake/build/bin/source-native-unique \
-  --readelf readelf --objdump objdump --cc cc \
-  --harness fixtures/source-native-unique/native_harness.c
-./.lake/build/bin/check-source-native-runtime \
-  --fixture .lake/build/bin/source-native-runtime \
-  --readelf readelf --objdump objdump --cc cc \
-  --harness fixtures/source-native-runtime/native_harness.c
-./.lake/build/bin/check-source-native-allocating \
-  --fixture .lake/build/bin/source-native-allocating \
-  --readelf readelf --objdump objdump --cc cc \
-  --harness fixtures/source-native-allocating/native_harness.c
-./.lake/build/bin/check-source-borrow --fixture .lake/build/bin/source-borrow
-./.lake/build/bin/check-source-native-upstream \
-  --fixture .lake/build/bin/source-native-upstream \
-  --cc gcc --harness fixtures/source-native-upstream/native_harness.c
-./.lake/build/bin/check-source-native-scalar \
-  --fixture .lake/build/bin/source-native-scalar \
-  --cc gcc --harness fixtures/source-native-scalar/native_harness.c
-./.lake/build/bin/check-source-native-physical-scalar \
-  --fixture .lake/build/bin/source-native-physical-scalar \
-  --cc cc --harness fixtures/source-native-physical-scalar/native_harness.c
-./.lake/build/bin/check-source-native-heap \
-  --fixture .lake/build/bin/source-native-heap \
-  --consumer .lake/build/bin/heap-snapshot-object \
-  --cc cc --harness fixtures/source-native-heap/native_harness.c
-./.lake/build/bin/check-source-native-captured-scalar \
-  --fixture .lake/build/bin/source-native-captured-scalar \
-  --cc cc --harness fixtures/source-native-captured-scalar/native_harness.c
-./.lake/build/bin/check-source-borrow-runtime --fixture .lake/build/bin/source-borrow-runtime
-```
 
 Elaboration-time guards run in the build. Compiled gates check native ABI and
 object behavior, complete fresh-process artifacts, independent corruption

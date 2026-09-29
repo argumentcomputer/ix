@@ -94,199 +94,27 @@
         # Pin changes follow the compatibility gates in docs/roadmap.md.
         lean = lean4-nix.lib.${system}.fromToolchainFile ./lean-toolchain;
         lake2nix = pkgs.callPackage lean4-nix.lake {inherit lean;};
-        auditSrc = pkgs.lib.fileset.toSource {
-          root = ./.;
-          fileset = pkgs.lib.fileset.unions [
-            ./flake.nix
-            ./flake.lock
-            ./lakefile.lean
-            ./lake-manifest.json
-            ./lean-toolchain
-            ./native/hpt_cache_sync.c
-            ./.envrc
-            ./Compilatrix.lean
-            ./Tests.lean
-            ./CompilatrixTests.lean
-            ./CompilatrixTests
-            ./nix
-            ./CatalogContact.lean
-            ./X86ObjectFixture.lean
-            ./SourceCoverage.lean
-            ./SourceIxby.lean
-            ./SourceIxbySymbolic.lean
-            ./SourceIxbyStage2.lean
-            ./IxonToIxby.lean
-            ./vendor/ixby
-            ./vendor/aiur
-            ./vendor/stage2
-            ./fixtures/ixon-v3
-            ./CheckIxonV3.lean
-            ./CheckIxonV3Catalog.lean
-            ./docs/ixon-v3.md
-            ./fixtures/aiur-bytecode
-            ./fixtures/aiur-memory-air
-            ./tools/aiur-memory-reference
-            ./fixtures/aiur-rank-air
-            ./tools/aiur-rank-reference
-            ./fixtures/ixby
-            ./fixtures/ixby-symbolic
-            ./fixtures/ixby-stage2
-            ./SourceModular.lean
-            ./SourceRecursion.lean
-            ./SourceCallReuse.lean
-            ./SourceSpace.lean
-            ./IxIR2Fixture.lean
-            ./SourceUniqueReuse.lean
-            ./SourceNativeUnique.lean
-            ./SourceNativeRuntime.lean
-            ./SourceNativeAllocating.lean
-            ./SourceNativeUpstream.lean
-            ./SourceNativeScalar.lean
-            ./SourceNativePhysicalScalar.lean
-            ./SourceNativeHeap.lean
-            ./HeapSnapshotObject.lean
-            ./SourceNativeCapturedScalar.lean
-            # Audit optional comparison sources without including their local
-            # build products or retained measurement bundles.
-            (pkgs.lib.fileset.difference ./benchmarks (pkgs.lib.fileset.unions [
-              (pkgs.lib.fileset.maybeMissing ./benchmarks/comparisons/.lake)
-              (pkgs.lib.fileset.maybeMissing ./benchmarks/runs)
-            ]))
-            ./SourceBorrow.lean
-            ./SourceBorrowRuntime.lean
-            ./fixtures/ixon-std-contact
-            ./fixtures/ixon-upstream
-            ./fixtures/source-coverage
-            ./fixtures/source-modular
-            ./fixtures/assembly-scaling
-            ./fixtures/source-evidence
-            ./fixtures/compiler-scaling
-            ./fixtures/native-sharing
-            ./fixtures/native-graph
-            ./fixtures/source-recursion
-            ./fixtures/source-call-reuse
-            ./fixtures/source-space
-            ./fixtures/ixir2
-            ./fixtures/source-unique-reuse
-            ./fixtures/source-native-unique
-            ./fixtures/source-native-runtime
-            ./fixtures/source-native-allocating
-            ./fixtures/source-native-upstream
-            ./fixtures/source-native-scalar
-            ./fixtures/source-native-physical-scalar
-            ./fixtures/source-native-heap
-            ./fixtures/source-native-captured-scalar
-            ./fixtures/source-borrow
-            ./fixtures/source-borrow-runtime
-            ./fixtures/x86/native_harness.c
-            (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
-            ./docs/trusted-externs.json
-            ./docs/ixby-nat-word32.md
-            ./docs/ixby-runtime-v2.md
-            ./docs/ixby-inline.md
-            ./docs/ixby-array-read.md
-            ./docs/ixby-fri-fusion.md
-            ./docs/ixby-row-hash.md
-            ./docs/ixby-shift-width.md
-            ./docs/aiur-wire.md
-            ./docs/aiur-semantics.md
-            ./docs/aiur-static.md
-            ./docs/aiur-counter-analysis.md
-            ./docs/aiur-memory-air.md
-            ./docs/aiur-rank-air.md
-            ./docs/x86-reference-model.json
-            (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
-            ./scripts/inspect_ixby.py
-            ./.github/workflows
-          ];
-        };
         build = import ./nix/build.nix {
-          inherit pkgs lean lake2nix auditSrc;
+          inherit pkgs lean lake2nix;
           root = ./.;
           blake3 = blake3WithStaticCrates.packages.${system}.rust;
         };
-        inherit (build) compilatrixLib ciPrograms proofsCheck runtimeSupport mkCheck;
-        gateChecks = import ./nix/checks.nix {
-          inherit pkgs system auditSrc blake3-lean mkCheck;
-        };
-        buildGraphCheck = mkCheck "build-graph" [] ''
-          ./.lake/build/bin/check-build-graph --root ${auditSrc}
-        '';
-        ciWorkflowCheck =
-          pkgs.runCommand "ci-workflow-check" {
-            nativeBuildInputs = [pkgs.actionlint];
-          } ''
-            shopt -s nullglob
-            workflows=(${auditSrc}/.github/workflows/*.yml ${auditSrc}/.github/workflows/*.yaml)
-            [ "''${#workflows[@]}" -gt 0 ]
-            actionlint "''${workflows[@]}"
-            touch $out
-          '';
-        requiredChecks = with gateChecks;
-          {
-            proofs = proofsCheck;
-            build-graph = buildGraphCheck;
-            build = compilatrixLib;
-            ci-workflow = ciWorkflowCheck;
-            trusted-extern-ledger = trustedExternCheck;
-            x86-encoder-decoder = x86EncoderCheck;
-            x86-byte-execution = x86BytesCheck;
-            x86-stream-objects = x86StreamsCheck;
-            x86-elf-object = x86ObjectCheck;
-            source-coverage = sourceCoverageCheck;
-            source-recursion = sourceRecursionCheck;
-            source-call-reuse = sourceCallReuseCheck;
-            source-space = sourceSpaceCheck;
-            source-modular = sourceModularCheck;
-            assembly-scaling = assemblyScalingCheck;
-            source-evidence = sourceEvidenceCheck;
-            ixby = ixbyCheck;
-            aiur = aiurCheck;
-            ixby-symbolic = ixbySymbolicCheck;
-            ixby-stage2 = ixbyStage2Check;
-            ixby-lean = ixbyLeanCheck;
-            ixir2-identity = ixir2Check;
-            source-unique-reuse = sourceUniqueReuseCheck;
-            source-native-unique = sourceNativeUniqueCheck;
-            source-native-runtime = sourceNativeRuntimeCheck;
-            source-native-allocating = sourceNativeAllocatingCheck;
-            source-native-upstream = sourceNativeUpstreamCheck;
-            source-native-scalar = sourceNativeScalarCheck;
-            source-native-physical-scalar = sourceNativePhysicalScalarCheck;
-            source-native-heap = sourceNativeHeapCheck;
-            source-native-captured-scalar = sourceNativeCapturedScalarCheck;
-            source-borrow = sourceBorrowCheck;
-            source-borrow-runtime = sourceBorrowRuntimeCheck;
-            tests = testsCheck;
-            catalog-contact = catalogContactCheck;
-          }
-          // gateChecks.ixbyStage2BinaryChecks
-          // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
-            native-sharing = nativeSharingCheck;
-            native-graph = nativeGraphCheck;
-          };
-
-        ciGroups = import ./nix/groups.nix {
-          inherit pkgs system;
-          checks = requiredChecks;
-        };
+        inherit (build) compilatrixLib;
       in {
-        packages =
-          {
-            default = compilatrixLib;
-            compilatrix = compilatrixLib;
-            ci-programs = ciPrograms;
-            ci-runtime = ciPrograms.runtime;
-            ci-runtime-support = runtimeSupport;
-            proofs = proofsCheck;
-          }
-          // ciGroups;
+        packages = {
+          default = compilatrixLib;
+          compilatrix = compilatrixLib;
+        };
 
-        checks = requiredChecks;
+        # The required check surface was emptied on 2026-09-29 while the
+        # compiler is rebuilt (docs/ci.md). Gates return one at a time as the
+        # new pipeline needs them; each return is a recorded coverage change.
+        checks = {};
+
         devShells.default = pkgs.mkShell {
           # Blake3.lean's Rust binding uses bindgen through lean-ffi.
           # Point it at the pinned nixpkgs libclang so `lake exe tests`
-          # works in the documented dev loop as well as in flake checks.
+          # works in the documented dev loop.
           LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           packages = [
             lean

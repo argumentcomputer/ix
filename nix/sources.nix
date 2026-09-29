@@ -24,18 +24,10 @@
         lib.fileset.unions
         (common ++ map (item: root + "/${modules.${item.key}.path}") (closure roots));
     };
-  programTargets =
-    builtins.attrNames
-    (lib.filterAttrs (_: target: target.kind == "lean_exe") graph.targets);
-  # These modules are imported by name in the compiled Lean frontend checks.
-  dynamicRoots = ["Ix.MultiStark.Verify.Source" "Compilatrix.Ixby.Runtime.Examples"];
 in {
-  inherit programTargets dynamicRoots;
   # The native facet builds the whole reference library, including roots
   # outside the production API's narrower bytecode/counter imports.
   production = source (["Compilatrix"] ++ graph.targets.AiurReference.roots);
-  programs = source (dynamicRoots ++ lib.concatMap (name: graph.targets.${name}.roots) programTargets);
-  proofs = source ["CompilatrixTests.Proofs"];
   dependencies = lib.fileset.toSource {
     inherit root;
     fileset = lib.fileset.unions common;

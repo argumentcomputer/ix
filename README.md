@@ -47,7 +47,7 @@ and the [trust ledger](docs/trusted-extern-ledger.md) for remaining assumptions.
 
 ```sh
 nix build                          # library and elaboration-time tests
-nix flake check                    # complete CI validation
+nix flake check                    # required checks (none while rebuilding; docs/ci.md)
 nix develop -c lake build          # local development build
 lake exe catalog-contact -- DIR    # load a bounded ix catalog
 ```
