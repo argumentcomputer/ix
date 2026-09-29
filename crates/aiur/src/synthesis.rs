@@ -1313,7 +1313,6 @@ mod tests {
     shard::ShardRows,
   };
   use multi_stark::{
-    batch::ShardInput,
     lookup::LookupValues,
     p3_field::PrimeCharacteristicRing,
     system::SystemWitness,
@@ -2362,7 +2361,10 @@ mod tests {
     let mut claim = vec![function_channel(), G::ZERO];
     claim.extend(&input);
     claim.extend(&output);
-    let shards = vec![ShardInput { claims: vec![claim.clone()], witness }];
+    let shards = vec![multi_stark::batch::ShardInput {
+      claims: vec![claim.clone()],
+      witness,
+    }];
     let messages = AiurSystem::boundary_messages(&plan);
     let proof = system.prove_witnesses(shards, messages);
     // The padding rows' multiplicities cancel, so the batch would balance;
