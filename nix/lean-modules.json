@@ -176,6 +176,9 @@
     "Compilatrix.X86.StreamRun",
     "Compilatrix.X86.StreamSpec",
     "Compilatrix.X86.StreamTrace"]},
+  "CompilatrixTests.Fences.Lir":
+  {"path": "CompilatrixTests/Fences/Lir.lean",
+   "imports": ["Compilatrix.Lir.Operands"]},
   "CompilatrixTests.Fences.IxonV3Typing":
   {"path": "CompilatrixTests/Fences/IxonV3Typing.lean",
    "imports": ["Compilatrix.Ixon.V3.Validate"]},
@@ -228,7 +231,8 @@
     "CompilatrixTests.Fences.IxonV3",
     "CompilatrixTests.Fences.IxonV3Typing",
     "CompilatrixTests.Fences.IxonV3Catalog",
-    "CompilatrixTests.Fences.X86"]},
+    "CompilatrixTests.Fences.X86",
+    "CompilatrixTests.Fences.Lir"]},
   "CompilatrixTests.Aiur.WireRun":
   {"path": "CompilatrixTests/Aiur/WireRun.lean",
    "imports": ["CompilatrixTests.Aiur.WireFixtures"]},
@@ -625,6 +629,9 @@
    ["Compilatrix.Lir.Syntax", "Compilatrix.X86.State", "Std.Data.HashMap"]},
   "Compilatrix.Lir.Print":
   {"path": "Compilatrix/Lir/Print.lean", "imports": ["Compilatrix.Lir.Syntax"]},
+  "Compilatrix.Lir.Operands":
+  {"path": "Compilatrix/Lir/Operands.lean",
+   "imports": ["Compilatrix.Lir.Semantics"]},
   "Compilatrix.Lir.Graph":
   {"path": "Compilatrix/Lir/Graph.lean", "imports": ["Compilatrix.Lir.Syntax"]},
   "Compilatrix.Ixon.V3.Validate":
@@ -1102,6 +1109,7 @@
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Lir.Graph",
     "Compilatrix.Lir.WellFormed",
+    "Compilatrix.Lir.Operands",
     "Compilatrix.Lir.SplitEdges",
     "Compilatrix.Lir.Print",
     "Compilatrix.X86.Basic",

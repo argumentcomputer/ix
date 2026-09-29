@@ -4,6 +4,7 @@ import Compilatrix.Lir.Syntax
 import Compilatrix.Lir.Semantics
 import Compilatrix.Lir.Graph
 import Compilatrix.Lir.WellFormed
+import Compilatrix.Lir.Operands
 import Compilatrix.Lir.SplitEdges
 import Compilatrix.Lir.Print
 import Compilatrix.X86.Basic

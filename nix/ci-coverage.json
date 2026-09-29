@@ -134,6 +134,10 @@
   "Compilatrix.Ixon.V3.Tc.Support",
   "Compilatrix.Ixon.V3.Tc.Whnf",
   "Compilatrix.Ixon.V3.Validate",
+  "Compilatrix.Lir.Operands",
+  "Compilatrix.Lir.Semantics",
+  "Compilatrix.Lir.Syntax",
+  "Compilatrix.Sem.Result",
   "Compilatrix.X86.Basic",
   "Compilatrix.X86.ByteBranch",
   "Compilatrix.X86.ByteCall",
@@ -220,6 +224,7 @@
   "CompilatrixTests.Fences.IxonV3",
   "CompilatrixTests.Fences.IxonV3Catalog",
   "CompilatrixTests.Fences.IxonV3Typing",
+  "CompilatrixTests.Fences.Lir",
   "CompilatrixTests.Fences.X86",
   "Ix.Aiur.Compiler.CallOrder",
   "Ix.Aiur.Compiler.Layout",
@@ -232,7 +237,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/x86-table: x86 instruction table",
+ "baseline": "jcb/p1-lir: Lir operand and frame fences",
  "axiom_sha256":
- "e785905b7530d29e17b07e9db03aae0dc2cd55db8c34a266fb45041b63fb5019",
- "axiom_count": 405}
+ "d04d60a7fca4528ba1f38edb67a256996cdff7c932d487ca62abe16b22c8640c",
+ "axiom_count": 417}

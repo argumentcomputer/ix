@@ -9,3 +9,4 @@ import CompilatrixTests.Fences.IxonV3
 import CompilatrixTests.Fences.IxonV3Typing
 import CompilatrixTests.Fences.IxonV3Catalog
 import CompilatrixTests.Fences.X86
+import CompilatrixTests.Fences.Lir
