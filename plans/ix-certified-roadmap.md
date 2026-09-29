@@ -1,6 +1,6 @@
 # Ix.Kernel: certified kernel roadmap
 
-Date: 2026-09-16, status updated 2026-09-17. K0 and K1 are complete and K2
+Date: 2026-09-16, implementation plan updated 2026-09-29. K0 and K1 are complete and K2
 is under way on `jcb/ix-certified`. K0: the model is ported to
 `Ix.Kernel.Model`, the address split and Blake3 pin bump are in, the kernel
 builds as a dependency-free package (`IxKernel/`) whose import closure is
@@ -24,8 +24,13 @@ constructor from the recursor's parameters; the quotient primitives are
 installed one by one with their computation rules derived from published
 facts at reduction time; `propext` and `Classical.choice` are admitted over
 the `Eq`, `Iff`, and `Nonempty` interfaces. Every K2 route is connected and
-`lake run check-kernel --with-model` passes. Next: the differential run
-against `Ix.Tc`, `docs/kernel.md`, and CI, then K3.
+`lake run check-kernel --with-model` was recorded as passing on 2026-09-17.
+The 2026-09-29 review re-ran the strict standalone build (123 jobs), but
+did not re-run the host gate, the Mathlib model, or corpus parity. Next:
+the contract repairs and K2 release gate in section 10, then K3 and the
+measured core improvements. Section 11 makes removal of `lean4ix` (the
+dependency named `lean4lean` by Lake) and the old verification machinery
+an explicit deliverable, independent of speculative optimization work.
 
 ## Revision note
 
@@ -52,6 +57,15 @@ needed; `Ix.Kernel` is planned to replace `Ix.Tc` completely rather than
 coexist with it; and Ixon's substructural binder modes are carried from the
 start and planned as a later performance lever.
 
+Third pass, 2026-09-29: the ontology and performance review of `ade9216d`
+becomes the implementation sequence in section 10. Failure reporting and
+input fidelity come first, then reuse of checked information, environment
+indexing, context representation, and structured computation rules. These
+steps supersede the previous interning-first K6 order. Section 11 records
+the complete `lean4ix` dependency and consumer removal, including build,
+test, CI, Nix, and generated benchmark configuration. This revision changes
+the plan only; none of those implementation steps is claimed complete.
+
 ## 1. Thesis and scope
 
 `Ix.Kernel` is a reference type checker for Ixon-shaped declarations,
@@ -69,6 +83,7 @@ through promotions that carry their own simulation theorems.
 | `~/projects/ix-certified` | `main` at `cf77c957e50d64a5ed42330d3ae8c176296e7d1d` | jj workspace; branch `jcb/ix-certified`; destination |
 | `~/projects/ix`, branch `jcb/ix-kernel-consistency` | `ad60e5f6dd23655da79cf9898d2b6b3fefbe8658` | `Ix.Theory`: address-native set model, semantic judgments, admission constructions, closed acceptance theorems; `Models/SetTheory`: Mathlib instance of the set theory |
 | `~/projects/con-leche` | `c431b1ca1b7a93486dd3e0440d3ee82abe90ccd0` | Proof style, checker soundness techniques, inductive/Nat/quotient constructions, audit and regression practice |
+| `~/projects/ix-certified/plans/refs/con-leche` | `ae0c0c4e4ce6a0081648aff03fe9c39d002c4526` | Untracked reference for the 2026-09-29 review; 152 commits beyond the original pin; retain the exact origin of any subsequently adapted lemma |
 
 The destination and the old branch both use Lean `v4.33.1`; con-leche uses
 `v4.33.0`. Because code is taken from the old branch and only techniques
@@ -83,7 +98,7 @@ Sizes that shape the choices (measured on the pinned trees):
 | con-leche `ConLeche/` | 220,971 in 486 modules | `Model/` 80K, `Verify/` 70K, `Semantics/` 23K, `Kernel/` 18K, `Frontend/` 16K, `Cached/` 5K, set theory and set model 5K |
 | old branch `Ix/Theory/` without `Named/` | about 27K | model 9K, set theory and set model 4K, inductive support 1K, syntax 2K, `Certified/` 10K, `Certificate/` 1K |
 | old branch `Ix/Theory/Named/` | 112K | lean4lean-derived named specification; excluded |
-| main `Ix/Tc/` implementation | 16K | production pure-Lean checker mirroring `crates/kernel` |
+| main `Ix/Tc/` implementation | 16K | pure-Lean reference checker mirroring `crates/kernel`; the Rust checker remains the production fast path |
 | main `Ix/Tc/Verify/` | 181K in 404 modules | sorry-bearing verification against lean4lean; excluded |
 
 The old branch's `Ix.Theory` imports nothing from the rest of `Ix` except
@@ -109,7 +124,8 @@ this plan builds on.
   about bytes or hashes (K3 to K5 below).
 - Replacement of `Ix.Tc` (K6) and parity or refinement claims about the Rust
   kernel or the IxVM kernel.
-- Continuation of `Ix.Tc.Verify` or any lean4lean-based specification.
+- Continuation of `Ix.Tc.Verify` or any `lean4ix`/Lean4Lean-based specification;
+  their repository-wide removal is planned in section 11.
 - Mutual and nested inductives, string literals, accelerated Nat operations,
   caches, interning, and parallel checking.
 - Rust, IxVM, Aiur, circuit, or proof-system execution correctness.
@@ -214,6 +230,11 @@ The kernel has three outcomes: accept, reject (the input is wrong), and
 decline (the kernel does not support the input and says why). Only accept
 carries the theorem. Fuel exhaustion declines. No certified command falls
 back to `Ix.Tc` or the Rust kernel and reports their verdict as certified.
+Failed conversion search also declines unless an independent check
+establishes a malformed input; failure of a conservative procedure is not
+evidence of non-convertibility. P01 repairs the current nested-fuel reporting
+that does not yet meet this contract. Fuel remains a recursive depth bound,
+not a count of total work.
 
 Positive accepted fixtures accompany every feature and every rejection
 fixture. A kernel that rejects everything satisfies the no-False theorem and
@@ -255,8 +276,10 @@ only the exact zero/successor block receives.
 The annotated form `AExpr` adds a `PropWhen` regime condition to `lam` and
 `forallE` and nothing else. `letE` carries no annotation: its meaning is
 substitution, and the kernel zeta-reduces before any structural comparison,
-as con-leche does. Annotations never steer reduction; they are written by
-inference, compared during conversion, and read by the model.
+as con-leche does. At the reviewed baseline, annotations do not steer
+reduction; they are written by annotation, validated by inference, compared
+during conversion, and read by the model. P09 explicitly revises that
+operational rule for the proved `.never` beta shortcut.
 
 `Uses` and `Owned` are Ixon v2's substructural binder modes
 (`Ix/IxonMode.lean`): usage `erased`, `linear`, `affine`, or `many` on every
@@ -326,10 +349,11 @@ proved about the functions afterwards.
 - `annotate` (unverified, `Ix.Kernel.Annotate`): raw terms carry no binder
   regimes; this pass computes the zero condition of every binder's inferred
   codomain sort bottom up by calling the certified operations on the
-  already annotated subterms. Nothing depends on its correctness: its
-  output is validated by `inferA`, so a wrong annotation is rejected, never
-  accepted. This is con-leche's arrangement, an unverified annotate pass
-  under a verified validator, with the validator merged into inference.
+  already annotated subterms. Annotation validity is established by
+  `inferA`, so acceptance does not trust the annotator to choose valid
+  regimes. Fidelity to the supplied raw term is a separate obligation,
+  made explicit in P02. P04 reuses the evidence obtained while annotating
+  instead of validating the same subtrees repeatedly.
 - `inferA`: infers the type of an annotated term and returns
   `TypingClaim Γ e A`. Binder cases check that the recorded regime equals
   the zero condition of the inferred codomain sort.
@@ -339,8 +363,8 @@ proved about the functions afterwards.
   before the redex fires, because the set model licenses substitution only
   when the argument denotes a member of the domain, and denotational typing
   cannot recover the domain of a function in the `Prop` regime. Fuel-bounded;
-  no caches; no reducibility hints. K6 may annotate applications with their
-  domains so that the re-inference becomes a lookup.
+  no caches; no reducibility hints. P07 shares typed rule arguments; P09
+  eliminates argument rechecking in the non-Prop `.never` case by proof.
   Iota (K2): a recursor applied to a constructor reduces through the rule
   the inductive route published as an equation with typed endpoints; the
   target is converted to the typed instance of the left side (which checks
@@ -367,19 +391,19 @@ proved about the functions afterwards.
   eta on either side, and proof irrelevance for terms whose type is a
   proposition; returns `ConvClaim`. Regimes are compared syntactically;
   `PropWhen` is canonical (`PropWhen.eq_of_holds`), so this is semantic
-  equality of conditions. Since every annotation is computed internally, a
-  regime disagreement is a conversion failure like any other and can never
-  redirect work.
+  equality of conditions. An unsuccessful comparison follows P01's search
+  outcome policy; it is not by itself a proof of non-convertibility.
 - `checkDeclC`: for a single-member block holding a safe definition,
   theorem, or opaque: the address is fresh, the term forms are supported,
   every reference is installed, the annotated type and body are closed in
-  their universe parameters and variables, the type is a sort, the body has
+  their universe parameters and variables, the declared type inhabits a sort, the body has
   the declared type, and a theorem's type is a proposition. It installs the
   entry with its body and returns the environment with `StepClaim`, the
   proof that every model of the input environment extends
   (`extend_definition` with `Environment.WF.insert`). Unsupported inputs
-  decline by name: unsafe or partial definitions, non-definitions,
-  multi-member blocks, projections and literals, fuel exhaustion.
+  decline by name, including unsafe or partial definitions, unsupported
+  block shapes, and fuel exhaustion. Projections and Nat literals are
+  supported by the K2 routes described above.
   For a block holding an inductive and its recursor (K2), an unverified
   reader (`Ix.Kernel.Certified.Ordinary.Read`) recovers the `Shape`; the
   block is accepted only if it equals the block generated from that shape
@@ -612,7 +636,7 @@ checkpoint. Initial entries:
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
 | Rust kernel | `crates/kernel`, `Ix.KernelCheck` | host fast path | differential parity against `Ix.Kernel`; verdicts are not certified |
 | In-circuit kernel | `Ix.IxVM.Kernel` (Aiur program) | separate implementation | refinement to `Ix.Kernel` is the long-term composition point; out of scope here |
-| Lean4lean-based verification | `Ix.Tc.Verify`, `Ix.Compile.Verify`, `Benchmarks/Lean4Lean*`, one TruthMines driver, and the `lean4lean` dependency with its `IxTcVerify`, `IxCompileVerify`, `Lean4LeanBench`, `bench-lean4lean`, and `ix_native_decide_dynlib` targets | outside the closure | the dependency is removed from the repository entirely with these consumers, no later than K6; the audit helper `Ix.Tc.Verify.Audit.Basic` moves to `Ix.Kernel.Audit` first |
+| `lean4ix` / Lean4Lean verification | `Ix.Tc.Verify`, `Ix.Compile.Verify`, `Benchmarks/Lean4Lean*`, the test runner and TruthMines member, and the Lake dependency named `lean4lean` | outside the closure | section 11 removes the dependency, old proofs, targets, FFI proof loader, CI jobs, Nix override, and generated benchmark dependencies; useful contracts and audit behavior move to `Ix.Kernel` first, without importing the old specification |
 | Auxiliary generation | `Ix.AuxGen` | host consumer of the kernel's four operations | migrates to `Ix.Kernel` in K6 |
 | Compiler and decompiler | `Ix.CompileM`, `Ix.CondenseM`, `Ix.GraphM`, `Ix.CanonM`, `Ix.Sharing`, `Ix.EnvScope`, `Ix.DecompileM`, `Ix.Environment` | host; `Ix.Compile.Verify` currently admits native-decision axioms for BLAKE3 and name hashing | source-fidelity contracts later; the pure BLAKE3 offers a way to drop those axioms |
 | Transport and IO | `Ix.ImportIxe`, `Ix.Catalog`, `Ix.Replay`, `Ix.Watchdog`, `Ix.Iroh`, `Ix.Cli` | host | stays host |
@@ -643,9 +667,12 @@ Techniques and evidence, each recorded with its origin:
   extrinsic verification style (certifying variants of `infer`, `whnf`,
   and `isDefEq` proved after the fact) was considered and not adopted;
   the K1 checker is proof-carrying (3.4).
-- The annotation law that annotations never steer reduction. Con-leche's
-  second law, that a mismatch declines, is moot here: annotations are
-  internal (3.4), so a regime disagreement is an ordinary conversion failure.
+- The baseline annotation law that annotations never steer reduction.
+  P09 proposes a narrow, proved exception: a validated `.never` binder
+  licenses omission of beta argument rechecking, with the same reduct.
+  Any such change must update the operational policy explicitly. Internal
+  annotation validation remains mandatory; failures follow P01's diagnostic
+  contract rather than implying non-convertibility.
 - The decline/reject distinction and the exit-code discipline.
 - The layering fence with negative tests, and the trust-surface allowlist.
 - The iteration protocol: start from a kernel that rejects everything with
@@ -703,7 +730,7 @@ fixture bytes or pinned declarations.
 | K3 | Ixon ingress with a proved reading relation; `checkEnv` over Ixon-shaped input | K2 |
 | K4 | Ixon byte decoding for the supported subset with round-trip and framing theorems | K3 |
 | K5 | Claims, subject roots, receipts, and host commands routed through the kernel | K3, K4 |
-| K6 | Optimize `Ix.Kernel` and replace `Ix.Tc` completely | K3, K4 |
+| K6 | Measured core improvements, all consumers on `Ix.Kernel`, and complete removal of `Ix.Tc` and `lean4ix` verification machinery | K3, K4 for final cutover; core changes can start after K2 |
 | K7 | Substructural binder modes and the optimizations they license | K6 |
 
 ### K0: scaffold and foundation
@@ -783,7 +810,6 @@ unchanged.
    with the singleton exception, recursor and rule typing, exact comparison
    with the stored block, iota in `whnf` through published typed rules, and
    the `Prop` restriction; structures with projections, eta, iota, and the
-   `Prop` field restriction; `Nat` literals through the `natural` fact.
    `Prop` field restriction; `Nat` literals through the `natural` fact;
    K-like reduction for `Eq`; the quotient primitives with `Quot.sound`;
    `propext` and `Classical.choice`.
@@ -818,8 +844,11 @@ unchanged.
    `Classical.choice` over `Nonempty`, each used; an axiom before its
    interfaces, an `Iff` with a small eliminator, and a duplicate rejected;
    other axioms decline.
-5. Differential run against `Ix.Tc` on the accepted corpus (pending).
-6. `docs/kernel.md` and CI (pending).
+5. Differential run against `Ix.Tc` on the accepted corpus (pending): the
+   test-only bridge and categorized comparisons in section 10, without
+   waiting for certified Ixon ingress.
+6. `docs/kernel.md` and CI (pending), including P01's corrected failure
+   contract, P02's fidelity statements, and the section 11 removal ledger.
 
 Exit: `lake build --wfail IxKernel` and `check-kernel` pass on a clean
 checkout; the theorem applies to the fixtures; the release is usable
@@ -901,7 +930,7 @@ parity corpus agrees:
 | `ix validate-lean` phases 3 and 4 | The K3 round trip for anon; the meta round trip is metadata plumbing and moves to the metadata modules, not into the kernel |
 | `Ix.AuxGen.Kernel` | The four exported operations over kernel terms; provisional addresses are ordinary keys; the name bridge stays in `Ix.AuxGen` |
 | `Ix.IxVM.ClaimHarness` | The primitive address table, re-homed as `Ix.Kernel.Primitive` |
-| `Ix.Compile.Verify.Audit` | The audit helper, re-homed as `Ix.Kernel.Audit` |
+| `Ix.Compile.Verify.Audit` | Retain only audit behavior needed by the new contracts in `Ix.Kernel.Audit`; delete the old verification consumer in section 11 |
 | `Tests/Ix/Tc`, `Tests/Ix/Kernel/PrimAddrs` | Ported to `Tests/Ix/Kernel`; the differential tests run against `check-rs` |
 | `Ix.lean` | Imports `Ix.Kernel` |
 
@@ -911,29 +940,34 @@ reference cycle would be accepted by it and by the Rust kernel; the ordered
 fold rejects the forward reference. Real environments have no cycles, and
 the difference is the correct direction.
 
-Optimizations land in this order, each with the contract from section 7
-and measured on the retained workloads:
+The concrete work packets and exit checks are in section 10. The revised
+order is:
 
-1. Interning and hash-consing with structural keys, as con-leche's arena;
-   simulation against the reference operations.
-2. Memo tables for `whnf`, `infer`, and `isDefEq` keyed by structural
-   identity, with the state invariant that every entry came from an
-   execution; no union-find conversion cache.
-3. Lazy delta by reducibility hints and same-head shortcuts, with the
-   verdict-preservation proof.
-4. Nat and literal acceleration, each operation enabled only after its
-   defining equations are proved in the model; con-leche's division
-   certificates are the source for `Nat.div` and `Nat.mod`.
-5. The install/check parallel driver and bounded per-worker memory, so
-   Mathlib-scale anon runs fit without cache clearing tricks.
-6. String literals, mutual and nested inductives, K beyond `Eq`, reflexive
-   blocks, so the accepted corpus matches `Ix.Tc`'s.
+1. P00–P03: reproducible baselines, failure/fidelity contracts, and reuse of
+   already formed expected types; finish the K2 release gate.
+2. P04–P06: combine annotation with checking, index addressed environments,
+   and defer local-context lifting to lookup.
+3. P07–P10: publish typed rules, traverse application spines once, use
+   positive structural conversion before delta, integrate the proved
+   `.never` beta shortcut, and improve level equivalence.
+4. P11: consolidate validation traversals and narrow imports, keeping
+   runtime schemas distinct from semantic predicates.
+5. P12: only then promote interning, memoization, certified Nat shortcuts,
+   and bounded parallel checking where retained workloads justify them.
+   Complete string, mutual/nested, K, and reflexive-block coverage needed
+   by the parity corpus. No union-find conversion cache.
+
+Core changes can proceed without Ixon bytes; the final consumer cutover
+still needs K3 and K4. Removal of the old verification dependency follows
+section 11 and does not wait for every optional performance promotion.
 
 The first target is `Ix.Tc` parity on the three recorded workloads with
 bounded memory. After that, the Rust gap is narrowed with the same
 discipline. When every consumer is migrated and the differential corpus
-agrees, `Ix.Tc`, `Ix.Tc.Verify`, and the `lean4lean` dependency are
-deleted in one change with the ledger updated.
+agrees, delete `Ix.Tc` and close the removal ledger. The `lean4ix` dependency
+and verification trees must already be gone, or leave in that same cutover;
+keeping an unused optional dependency or obsolete proof target does not
+meet the milestone.
 
 ### K7: binder modes and the optimizations they license
 
@@ -985,7 +1019,7 @@ helpers are justified by their enclosing proved algorithm.
 | Command | Purpose |
 | --- | --- |
 | `lake -d IxKernel build --wfail` | Strict standalone build of the certified closure, its audits, and the public roots |
-| `lake run check-kernel` | Build, audits, provenance, fixtures, differential tests |
+| `lake run check-kernel` | Build, audits, provenance, and certified fixtures; add the differential target at the K2 release gate in section 10 (the current script does not run it) |
 | `lake run check-kernel --with-model` | Also build and audit `Models/SetTheory` |
 
 Required evidence at every checkpoint:
@@ -1052,16 +1086,19 @@ strategy.
 - `Ix.Kernel` replaces `Ix.Tc` completely (K6). The Rust kernel remains the
   production fast path, differentially tested against `Ix.Kernel`; the IxVM
   kernel remains the in-circuit implementation. `Ix.Tc.Verify` and the
-  lean4lean dependency leave with `Ix.Tc`.
+  `lean4ix` dependency leave no later than `Ix.Tc`.
 - BLAKE3 is `Blake3.Pure.hash` wherever a certified operation hashes; the C
   and Rust backends are host accelerators.
 - The kernel is certified as its own dependency-free Lake package
   (`IxKernel/`) over the shared `Ix/` sources, and `Models/SetTheory`
   depends on that package only.
-- The `lean4lean` dependency is removed from the repository entirely,
+- The `argumentcomputer/lean4ix` dependency, named `lean4lean` by Lake and
+  exporting `Lean4Lean.*`, is removed from the repository entirely,
   together with its consumers (`Ix.Tc.Verify`, `Ix.Compile.Verify`, the
-  Lean4Lean benchmarks and test runner, and their Lake targets), no later
-  than the K6 deletion of `Ix.Tc`; nothing new may depend on it.
+  Lean4Lean benchmarks and test runner, their Lake/CI/Nix targets, and the
+  separately pinned upstream TruthMines package), no later than the K6
+  deletion of `Ix.Tc`; nothing new may depend on it. Section 11 is the
+  concrete removal checklist and gate.
 - Standard logical axioms only; `SetTheory` explicit; the Mathlib instance
   in its own package.
 
@@ -1130,24 +1167,494 @@ strategy.
   and name labels live after `Ix.Tc`: K6.
 - The semantics of binder modes in the model: K7.
 
-## 10. Immediate execution sequence
+## 10. Concrete implementation sequence from the review
 
-1. Record the pins and write the port manifest; compare the old branch's
-   working copy with its pin.
-2. Land `Ix.Address.Core`, the Blake3 pin bump, and `Address.blake3Pure`.
-3. Port `Ix.Theory` model and syntax modules to `Ix.Kernel.Model`; build
-   strictly; port the model fixtures.
-4. Add the Lake target, the `check-kernel` script, and the audits with
-   negative controls; port and retarget `Models/SetTheory`.
-5. Define the API and the declining kernel; prove the public theorems; freeze
-   their statements.
-6. Proceed through K1 and K2 one feature at a time, keeping the theorems
-   green, then publish the first release before starting K3.
-7. After K3 and K4, run K6 to `Ix.Tc` parity, migrate every consumer,
-   delete `Ix.Tc`, then start K7.
+All packets below are planned. The reviewed baseline is `ade9216d` in the
+Git-backed jj workspace `~/projects/ix-certified`. Use a small jj change
+for each coherent implementation/proof/test unit; the larger packets need
+several changes. Keep mechanical moves separate from behavioral changes.
+Each change description records its packet, contract, validation, and
+measured effect. The local review and experiments live under ignored
+`plans/`; the implementation and its durable contracts must be tracked.
 
-Success for the first release is a usable `Ix.Kernel` whose actual
-acceptance function has a complete model-existence and relative-consistency
-theorem over Ix-native declarations. Success afterwards is a growing part of
-`Ix` with that standard of proof and an explicit, audited boundary around
-what remains host code.
+The default next stack is P00 → P01 → P02 → P03, followed by the K2 release
+gate. Then follow P04–P11 in order, allowing the independent K3/K4 work to
+proceed after K2. P12 and the K6 consumer cutover use those results. D00–D02
+in section 11 remove the obsolete verification system as soon as their
+replacement contracts are ready; they do not depend on caches or interning.
+
+| Packet | Deliverable | Prerequisite |
+| --- | --- | --- |
+| P00 | Reproducible correctness and performance baselines | reviewed tree |
+| P01 | Honest search outcomes and fuel reporting | P00 |
+| P02 | Exact annotation/declaration fidelity and prefix preservation | P01 |
+| P03 | Reuse formed expected types and context extensions | P01 |
+| K2 gate | Supported-profile differential tests, docs, CI, model build | P00–P03 |
+| P04 | Annotation and checking share inferred evidence | P02, P03 |
+| P05 | Verified indexed environment for addressed checking | P02 |
+| P06 | Local contexts that lift at lookup | P04 |
+| P07 | Structured, typed published computation rules | P03, P02 |
+| P08 | Single spine traversal and positive structural conversion | P01, P07 |
+| P09 | Proved beta shortcut for `.never` binders | P01, P04 |
+| P10 | Sound associative/commutative `max` normalization | P01 |
+| P11 | Shared validation traversals and narrower module boundaries | P02, P04, P07 |
+| P12 | Workload-driven promotions and complete consumer parity | K3, K4, retained measurements |
+
+### Ontology and contracts to preserve
+
+The refactor gives the existing concepts explicit boundaries:
+
+| Boundary | Runtime data | Evidence / responsibility |
+| --- | --- | --- |
+| Raw input | `Decl`, `Block`, `VExpr`, `VLevel`, `ConstRef` | Exact supplied identities, bodies, types, and universe counts |
+| Reading | `AExpr`, `PropWhen` | Erases to that input; scope includes annotation conditions |
+| Checking | `Typed`, `TypedSort`, `Reduced`, `Conv` | Semantic claims indexed by the exact environment and context |
+| Candidate admission | Shape/description/primitive candidates | Recognition is separate from validation and checked publication |
+| Storage | `ConstantEntry`, concrete store, functional `Environment` | Lookup agreement, old-entry preservation, `Realizes`, `WF` |
+| Foundation | `SetTheory`, interpretation, `WellDenoted` | Existing mathematical model; no new project axioms |
+
+Keep the three frozen public theorem statements, including the generic
+`[DecidableEq β]` API and the explicit `SetTheory` assumption. Add fidelity
+and representation lemmas alongside them. `StepClaim` alone does not state
+input fidelity or old-entry preservation. `ConvClaim` composes only with
+formed intermediate terms; it is not an unconditional equivalence relation.
+Erased proofs are not a runtime storage optimization target.
+
+Representation changes need lookup/erasure simulation and the existing
+semantic claims. Search-strategy changes also need a stated coverage
+comparison: preserve prior successes with an explicit fuel correspondence
+or a proved fallback, and measure any new successes separately. Equal fuel
+does not mean equal work. A successful model theorem alone cannot rule out
+a checker that declines more inputs. Do not promise Lean completeness from
+finite testing or require identical normal forms from different strategies.
+
+### P00 — retain the baseline and expose the costs
+
+Add `Tests/Ix/Kernel/SearchOutcomes.lean` and a native benchmark target
+rooted at `Benchmarks/Kernel/Certified.lean`. Promote the useful inputs from
+the local probes into tracked fixtures, without importing the reference
+checkout. Wire correctness fixtures into `check-kernel`; keep timing runs
+outside the pass/fail CI gate. Initially characterize the low-fuel defect,
+then change its expected outcome in P01.
+
+Retain the following baseline observations, all sequential Lean `--run`
+measurements with `Nat` keys, not native corpus performance:
+
+| Input | Sizes | Observed milliseconds |
+| --- | --- | --- |
+| Independent definitions | 1K / 2K / 4K / 8K | 77 / 278 / 1113 / 4531 |
+| Nested lambdas | 16 / 32 / 64 / 128 | 5 / 40 / 310 / 4350 |
+| Context pushes | 1K / 2K / 4K / 8K | 39 / 158 / 654 / 2531 |
+| Typed stuck application spine | 400 / 800 / 1600 / 3200 | 15 / 44 / 221 / 623 |
+
+The depth-128 phase probe spent 3974 ms annotating the body, versus 82 ms
+inferring it afterward; annotation took about 98% of the measured phases.
+Add addressed keys, rule-heavy inductive/structure/quotient workloads,
+repeated references, and beta-heavy terms before optimizing those paths.
+
+Exit: a reproducible native command records revision, Lean version, backend,
+input size, fuel, outcome, median/range of five runs after warmup, and peak
+RSS. Separate construction from checking, and force pure results inside
+timed regions. Record operation counts in diagnostic runs for inference,
+lookup/comparison, lifting, spine visits, and rule argument checking.
+Native results establish a new baseline; do not compare them directly to
+the interpreter numbers as a speedup.
+
+### P01 — distinguish exhaustion, search failure, and invalid input
+
+Change `Infer.lean`, `Annotate.lean`, `Certified/Checker.lean`, the ordinary
+reader/checkers, and `Check.lean`. Introduce an internal structured search
+failure type for exhausted, unsupported, unresolved, and independently
+detected malformed input. Retain public `Error.rejected`/`Error.declined`
+and `Config.fuel`. Carry causes through nested inference/conversion instead
+of erasing them with `Option` or `.toOption`.
+
+Separate a step that does not apply from a step blocked by search failure.
+Return normalization progress together with why it stopped; a partial
+`Reduced` is still sound, but is not evidence that normalization completed.
+Completion means no rule in the supported strategy applies, not completeness
+for all Lean reductions. Candidate mismatch permits the next strategy;
+an exhausted optional strategy must not prevent a later proved success.
+When no strategy succeeds, retain the exhaustion/unsupported cause rather
+than treating it as malformed input. A positive conversion proof obtained
+from partial reducts remains usable.
+
+Exit: `A : Type 1 := Type; x : A := Prop` declines, never rejects, at
+insufficient fuel and accepts at sufficient fuel (the current run rejects
+at 1 and 2, then accepts at 3). Cover nested annotation exhaustion,
+inductive-reader exhaustion, exhausted rule application, and conservative
+level-equivalence failure. Duplicate addresses, out-of-scope variables,
+wrong universe arity, and missing references still have direct diagnostics.
+Update tests that currently assert rejection from unsuccessful conversion
+to the documented unresolved outcome; they must still never accept.
+Preserve the baseline successful paths and their semantic claims.
+
+### P02 — prove exact reading and installation fidelity
+
+In `Annotate.lean` and `Model/Annotated.lean`, prove the success law
+`annotate fuel entries Γ raw = .ok a → a.erase = raw`. Package it with
+scope/reference evidence when validated, reusing the existing `Reading`
+concept rather than maintaining a second annotation-tree interface.
+Prove reference transfer and scoped erasure separately: erasure alone does
+not establish that `PropWhen`'s own universe parameters are in scope.
+
+In `Check.lean`, `Env.lean`, and the admission adapters, add installation
+lemmas for the exact supplied type, body, reference positions, and universe
+count. For generated inductive declarations, use the existing exact block
+comparison to connect installed entries to the supplied block. Prove an
+accepted step and fold preserve every old lookup, separately from
+`StepClaim`; describe newly published equations/facts explicitly. Keep the
+current whole-input checks until equivalent evidence replaces them.
+
+Exit: tracked fidelity fixtures cover definitions, let, projections,
+literals, universe instances, and all K2 admission routes. Existing public
+theorem types and assumptions remain unchanged. These new lemmas are the
+composition points for K3 ingress and the P04/P05/P11 refactors.
+
+### P03 — remove small, repeated formation checks
+
+Add `Certified.checkAgainst` in `Certified/Checker.lean`: given an already
+formed expected type (`TypedSort` or `FormedClaim`), infer the term once,
+convert its inferred type, and return its `TypingClaim` via `convF`.
+Implement `checkType` as the wrapper that first obtains formation evidence.
+Use `checkAgainst` in `Certified/Signature.checkRule` and
+`Certified/Ordinary/RuleChecks.checkRule` so the common rule type is checked
+once for both endpoints. Bind and share repeated `Γ.push D` values inside
+individual branches of `Infer` and `Annotate`.
+
+Exit: rule formation drops from three common-type checks to one; endpoint
+typing and conversion checks remain. The helper's evidence has the exact
+same environment/context indices as its caller. Fixtures and the audits
+pass, with no cache or entry-schema change in this packet.
+
+### K2 release gate — close the current milestone
+
+Add a host-only `Tests/Ix/Kernel/Differential.lean` bridge for the supported
+raw declaration profile and run it against `Ix.Tc`; production ingress is
+still K3. The bridge is test infrastructure and never a theorem assumption.
+Include positives and corrupted variants for each K2 route. Report accept,
+reject, decline, and failure causes separately, with explicit unsupported
+cases and the intended ordered-reference difference. Preserve the oracle
+inputs/results so the final oracle can become Rust after `Ix.Tc` is removed.
+This gate requires supported-profile parity, not full Mathlib support.
+
+Wire the new targets into `lake run check-kernel` and CI. Write
+`docs/kernel.md` with the ontology, actual trust boundary, supported profile,
+fuel behavior, transparency behavior, and the retirement ledger in section
+11. Run `lake run check-kernel --with-model` from a clean checkout. This
+closes K2; P04–P12 are not first-release prerequisites.
+
+### P04 — make annotation reuse typing evidence
+
+Replace the annotate-then-reinfer declaration path incrementally in
+`Annotate.lean`, `Infer.lean`, and `Check.lean`. First return the exact
+reading with the inferred type/evidence already obtained while processing
+each binder. Then add an expected-type path for declaration bodies: check
+the declared type once and use its formed Pi telescope while checking a
+lambda. Use `Model/Checking.lean` (`CheckingClaim.lam`, `typing`, and
+`TypingClaim.appChecking`) as proof building blocks.
+
+A returned annotation must still erase to the raw binder domain. Do not
+silently substitute the expected domain for the supplied one. Start with
+the case where the annotated domain matches the expected domain exactly;
+use the existing certified synthesis path otherwise. Supporting merely
+convertible domains requires the appropriate context/codomain transport
+proof before that fast path is enabled. The expected binder regime must
+be justified by formation, including the empty-domain case. Share evidence
+locally; do not retain an auxiliary proof-result tree for every node.
+
+Exit: fully annotated subtrees are no longer re-inferred at every ancestor
+on the optimized binder path. The nested-lambda benchmark improves, with
+counts attributing the change to removed traversals and RSS reported.
+Erasure, typing, and baseline acceptance are preserved; adversarial Prop
+conditions, dependent binders, lets, and convertible domains stay covered.
+No global memo table or wholesale rewrite of the mutual core is needed.
+
+### P05 — index addressed environments behind a proved lookup view
+
+Keep the generic list-backed API and frozen theorem signatures. Factor
+admission through a small store interface with lookup, fresh insertion,
+block insertion, a reference `Env` view, and proofs of agreement. Add an
+addressed implementation in `Ix/Kernel/Store.lean` and
+`Ix/Kernel/Store/Address.lean`; use a deterministic ordered index with full
+`ConstRef` comparison and keep the entry list for publication.
+
+Prove `Address.cmpBytes` agrees with the structural ordering, establish the
+ordering laws, and extend them over member/constructor positions. Implement
+the minimal verified balanced tree under the existing Init-only boundary;
+do not silently add `Ord β` to public roots or import `Std.HashMap`. Give
+lookup, insert, and atomic block insertion their view-agreement lemmas.
+The addressed driver must actually use the index for freshness, reference
+validation, and inference lookup, with no rebuilding or list scan per step.
+
+Route `checkAddressed` in `Ix/Kernel.lean` through that store and add its
+own acceptance theorem and audit roots, derived from the same checked
+core/store simulation. Keep `check` as the generic reference instantiation;
+share the search implementation between the two. A theorem about the old
+list function does not certify a new function merely because their tests
+agree. Test arbitrary byte-array keys as well as 32-byte addresses;
+`Address`'s constructor does not enforce its documented width.
+
+Exit: old/new lookup and accepted environment views agree, including
+duplicate handling and multi-entry publication. Fresh independent
+declarations stop making N(N−1)/2 key comparisons; measure index allocation
+and scaling on both monotone and shuffled addressed inputs. Later host
+adapters select the audited addressed entry point, not the slow reference.
+
+### P06 — store local types relative to their introduction context
+
+Add a concrete local-context representation in `Ix/Kernel/LocalContext.lean`
+while retaining `Model.Context` as the semantic specification. Store each
+type with its creation depth; pushing adds an unshifted entry, and lookup
+lifts by the difference between current and creation depth. First use a
+simple persistent representation; changing variable-lookup asymptotics can
+be a separate measured step.
+
+Prove the materialized view equals the existing eager context, especially
+`view (push A Γ) = (view Γ).push A`, and prove lookup agreement and transport
+of `Context.Valid`. Thread the representation through the checker without
+materializing its view at runtime on every call. Use the P02/P04 evidence
+indices to keep the proofs over that view.
+
+Exit: pushing N constant-size domains performs O(N) additions and no
+traversal/lifting of previous entries. Test dependent domains, shadowed
+indices, lets, lookup at every depth, and substitution under binders.
+Measure whole-checker behavior as well as the isolated push probe, since
+work deferred to frequently used variables can offset the construction gain.
+
+### P07 — publish typed rules as a single semantic object
+
+Introduce a small runtime rule schema (`Ix/Kernel/Rule.lean`) containing a
+selector, common telescope/type, and both endpoints. Reuse or subsume
+`Certified.Signature.Rule` rather than adding a competing schema. Extend
+`ConstantEntry`, `Realizes`, and `WF` in `Model/Environment.lean` and
+`Model/Support.lean` with typing, formation, equality, scope, and reference
+obligations for each published rule.
+
+Migrate producers separately: ordinary recursors, structures, then quotient
+primitives. Preserve each producer's admission stage; rule typing must not
+be justified circularly by the equation it is publishing. Structure rules
+currently check in their published environment, which needs an explicit
+staging proof when the schema changes. Publish the checked quotient
+interfaces/rules once instead of rediscovering them at every reduction.
+
+Update `Infer.iota`, `reduceByRule`, `projIota`, and `etaStruct` to select the
+structured rule, instantiate its certified telescope, and check arguments
+once where the endpoint telescopes are proved to agree. Remove the parallel
+`facts[1+2*j]`/`facts[2+2*j]` convention only after all producers migrate.
+The current recursor/structure hints mean `True`; they cannot justify
+removing endpoint checks until the stronger invariant is installed.
+
+Exit: the rule-heavy benchmarks show no repeated endpoint inference or
+duplicate argument checking for the migrated paths. Fixtures include
+multiple constructors, dependent fields, universe instances, under- and
+overapplication, malformed selectors/telescopes, and quotient computation.
+Update the Mathlib model build and provenance for changed model files.
+
+### P08 — traverse application spines once and delay delta when possible
+
+Refactor `step` and the rule reducers in `Infer.lean` to carry one head and
+argument stack. Prove decomposition/rebuilding and compose reduction claims
+as arguments are consumed or reapplied. Dispatch iota/quotient rules using
+the existing stack rather than recollecting every application prefix.
+
+In a separate change, add a small positive congruence attempt to `isDefEq`
+before delta: matching heads, universe instances, and arguments can yield
+a `ConvClaim`; failure falls back to the existing strategy. Do not invoke
+the full expensive eta/proof-irrelevance fallback twice. Bound speculative
+work and preserve the fallback's fuel allowance. Keep current unfolding
+policy for this optimization; separately document and test how definitions,
+theorems, and opaques should compare against the external oracle before
+changing their transparency or retaining fewer bodies.
+
+Exit: the stuck-spine probe makes a linear number of spine visits. Beta,
+iota, quotient, projection, partial applications, and extra arguments retain
+their semantic claims and coverage. Matching-head benchmarks demonstrate
+avoided unfolds, while a failed cheap comparison still reaches the previous
+successful conversion path.
+
+### P09 — integrate the proved `.never` beta shortcut
+
+Move the checked local `BetaNever.lean` experiment into `Claims.lean` with
+its exact provenance. Its target is a `ReductionClaim` from
+`(.lam .never D b).app a` to `b.inst a`, with no argument-inference premise;
+the source term's `WellDenoted` assumption supplies what the set model
+needs through non-Prop function-domain uniqueness.
+
+Use it in `Infer.step` for `.never` only. Keep typed beta for binders whose
+codomain can be Prop, and retain complete input annotation/typing validation.
+Record the operational-policy change from the baseline annotation rule:
+the condition selects which checks are needed, not a different reduct.
+
+Exit: the integrated lemma passes the same axiom guard, beta-heavy typed
+terms skip the intended argument inference/conversion calls, and Prop-side
+and malformed-annotation fixtures remain non-accepting where required.
+The local proof is feasibility evidence; a speedup is still to be measured.
+
+### P10 — canonicalize the supported `max` fragment
+
+In `Certified/LevelEq.lean`, flatten nested `max`, order operands
+structurally, eliminate duplicates, and remove zero, with a theorem that
+evaluation is preserved under every level assignment. Keep existing sound
+`imax` rules; do not extrapolate `max` laws to `imax`. Reuse the normal form
+for level comparison without changing the mathematical universe model.
+
+Exit: `max u v` and `max v u`, reassociation, idempotence, and zero laws
+compare successfully. Valuations where an `imax` argument becomes zero
+have explicit regressions. Unresolved comparisons follow P01. This is a
+coverage improvement as well as a simplification; report its new successes
+separately from runtime measurements.
+
+### P11 — consolidate traversals and clarify module ownership
+
+Replace append-heavy `VExpr.refs`/`AExpr.references` in `Expr.lean` and
+`Model/Support.lean` with an accumulator or a direct short-circuit reference
+check, proving membership/result agreement. Use P02 to remove duplicate
+raw/annotated scans only when the new validation result proves all the
+same scope, level, annotation-condition, and reference obligations.
+
+Then make mechanical module moves: small executable syntax/entry/rule
+schemas below the checker, semantic predicates in `Model`, candidate
+readers distinct from admission, and an optional proof-support umbrella.
+Use precise imports instead of the full `Ix.Kernel.Model` umbrella where
+possible. Keep the useful Checking/ContextTransport/Substitution helpers;
+P04–P07 may now use some of the eight previously unnecessary imports.
+Do not introduce a generic syntax functor or rename the whole tree.
+
+Exit: linear traversal counts on large left spines, unchanged validator
+predicates, and a fresh source/import/runtime closure inventory. Report
+downstream import/build effects separately: the standalone package's glob
+still builds every kernel module. Preserve port headers and refresh only
+the provenance hashes corresponding to inspected changes.
+
+### P12 — use corpus evidence to finish K6
+
+K3 supplies the proved Ixon reading and K4 the byte/round-trip contracts;
+route the tutorial and then InitStd, Lean, and Mathlib workloads through
+those APIs. The recorded `Ix.Tc`/Rust timings in section 6 are historical
+yardsticks, not measurements of `Ix.Kernel`. Track coverage, runtime, and
+peak memory separately for the certified Lean checker and Rust.
+
+Only add interning or memo tables when the post-P04–P11 profiles show
+remaining repeated work. Prove simulation and a cache-state invariant;
+keys include structural terms, environment/context identity, universes,
+and any active reduction policy. Transport evidence explicitly across
+extension/weakening. Failed search at one fuel is not a reusable negative
+conversion result, and conditional conversion never licenses union-find.
+Nat accelerators need their defining-equation proofs before use. A parallel
+driver must preserve checked dependency order and model extension, with a
+fixed measured memory bound per worker.
+
+Complete unsupported language features according to the actual parity
+gaps, each with admission/reduction proofs and adversarial controls. Migrate
+the consumer table in section 6, including all four AuxGen operations and
+the two validate-lean round trips. For every command labeled certified,
+test that success comes from the exact audited `Ix.Kernel` entry point.
+Finish D02, delete `Ix.Tc`, and begin K7 only after these gates are met.
+
+### Validation and promotion checklist
+
+For each semantic change, run the strict standalone build and the relevant
+tracked fixtures through `check-kernel`; inspect axiom, import, runtime,
+and provenance differences before updating frozen reports. Run the model
+gate when model statements/producers change and at release/cutover.
+Mechanical documentation-only edits do not require rebuilding Lean.
+
+For each performance change, retain before/after operation counts and native
+median/range/RSS on its target workload and a small representative mixed
+suite. Promote only with a demonstrated benefit and explained regressions;
+do not add timing thresholds to CI or promise an unmeasured speedup. Keep
+the reference path until simulation and coverage checks justify removing
+it. Negative tests check meaningful invalid or unsupported inputs, not
+implementation details or line-by-line copies of the new algorithm.
+
+## 11. Eliminate lean4ix and the Ix.Tc verification machinery
+
+This is a required outcome of `jcb/ix-certified`. At the reviewed revision,
+the root `require lean4lean` fetches `argumentcomputer/lean4ix` at
+`a4188d7c2979378d85c6bb41fdd96c3a48a71371`, and its modules are named
+`Lean4Lean.*`. TruthMines separately pins upstream `digama0/lean4lean`.
+Removing only the root URL would leave a buildable dependency and several
+active consumers. The final repository must have neither dependency path.
+
+### D00 — inventory the consumers and replacement contracts
+
+Start after P00 and keep the inventory current while the branch integrates
+main. Put a tracked removal/contract ledger in `docs/kernel.md`; each row
+names the replacement, its proof/test gate, and when the old consumer leaves.
+
+| Existing surface | Action and replacement |
+| --- | --- |
+| `Ix/Tc/Verify/**`, its statement/conditional/sorry-frontier audits | Replace checker acceptance claims with the executed `Ix.Kernel` claims and frozen roots; port useful adversarial inputs, then delete the tree |
+| `Ix/Compile/Verify/**` and `Ix.Tc.Verify.Audit.Basic` | Salvage needed pure codec/reading lemmas into K3/K4 and reusable audit behavior into `Ix.Kernel.Audit`; delete the Lean4Lean-based translation/specification machinery and unused helpers |
+| `lakefile.lean`, root `lake-manifest.json` | Remove `require lean4lean`, `IxTcVerify`, `IxCompileVerify`, `Lean4LeanBench`, `bench-lean4lean`, `ix_native_decide_dynlib`, and the obsolete `build-all` exception; regenerate the manifest |
+| `ix_ffi_dyn`, `crates/ffi-dyn`, `Cargo.toml`, `Cargo.lock` | At baseline this crate's only Lake consumer is the old proof loader; remove it and its workspace/lock entries once the final consumer check confirms that, retaining the ordinary runtime FFI |
+| `Benchmarks/Lean4Lean.lean`, `Lean4LeanMain.lean`, `Tests/Ix/Lean4Lean.lean`, `Tests/Main.lean` | Remove replay/smoke machinery and runner registration; preserve useful inputs in certified kernel fixtures |
+| `Ix/Cli/BenchCmd.lean`, `Ix/BenchConstants.lean`, `docs/benchmarking.md` | Remove the backend dispatch, registry, help, and active instructions; measure `Ix.Kernel` and Rust through the replacement harness |
+| `Benchmarks/TruthMinesSpec/{Catalog,Spec}.lean` | Remove the Lean4Lean package/member at its generator source so regeneration cannot restore it |
+| `Benchmarks/TruthMines/{lakefile.lean,lake-manifest.json,Drivers/Lean4Lean.lean}`; `Benchmarks/Compile/TruthMines/Members/Lean4Lean.lean`; nested Compile manifests | Regenerate the corpus configuration and lockfiles without the package, driver, and member; retain unrelated benchmark packages |
+| `.github/workflows/merge-tests.yml`, `.github/workflows/ci.yml`, other workflow callers | Replace old proof-library and sorry-frontier jobs with strict kernel/model/provenance/differential gates; remove the Lean4Lean runner entry |
+| `flake.nix` and generated dependency closure | Remove the `lean4lean` target-name override and dependency build; validate the Nix build without a cached package masking its removal |
+| `docs/ffi.md`, old Tc audit documentation, certification ledger | Retire obsolete commands/claims and explain which new theorem covers each retained guarantee |
+
+Reusing a test case is not porting its proof. Kernel model existence does
+not establish end-to-end correctness of the Lean-to-Ixon compiler. State
+K3's reading and K4's codec guarantees exactly, and mark any stronger old
+compiler claim as retired/unproved until a separate proof exists. This
+prevents dependency removal from silently overstating certification.
+
+Exit: every active import, target, package entry, runner, and generated
+reference has a disposition. Inspect common audit helpers before moving
+them; `Ix.Kernel.Audit` already provides axiom/import/runtime checks, so
+obsolete allowances and sorry-frontier infrastructure need not survive.
+
+### D01 — remove the dependency and proof system in one coherent change
+
+Prerequisites: K2's replacement proof/CI gates pass, and the useful
+reading/codec contracts selected in D00 have their K3/K4 replacements.
+This checkpoint can land before the final executable `Ix.Tc` migration:
+the old runtime checker may remain temporarily as a differential oracle,
+without `Ix.Tc.Verify`, `Ix.Compile.Verify`, or Lean4Lean dependencies.
+
+Perform the deletions, import/runner updates, target/CI/Nix changes, and
+manifest regeneration from the ledger together. Do not retain optional
+Lean4Lean benchmark dependencies or make the ordinary build depend on the
+untracked con-leche reference. Preserve required copyright/NOTICE material
+and historical attribution; mentioning Lean4Lean in provenance is not a
+runtime dependency. Port fixtures before deleting their only source.
+
+Exit checks:
+
+1. Scan tracked imports, including `public import` and `import all`, for
+   `Lean4Lean`, `Ix.Tc.Verify`, and the removed `Ix.Compile.Verify` tree.
+   There must be no active imports. Parse every tracked Lake manifest and
+   generator catalog for the package name and both repository URLs;
+   remove all dependency entries, not just the root lock entry.
+2. Check active build/test/CI/Nix configuration for removed target names
+   and backend dispatch. A repository check prevents their reintroduction;
+   its scope excludes historical documentation and legal provenance.
+3. Regenerate the benchmark configuration and verify it produces no
+   removed package/member. Build/test from a fresh jj workspace or clean
+   package directories, without stale `.olean` files or a local Lean4Lean
+   checkout supplying missing imports.
+4. Run the normal host build/tests, `lake run check-kernel --with-model`,
+   affected benchmark/CLI tests, and the Nix gate. If `ffi-dyn` is removed,
+   also validate the remaining Rust workspace build/tests and lockfile.
+   Preserve existing audit negative controls and supported-profile parity.
+
+### D02 — finish the Ix.Tc runtime cutover
+
+After K3/K4 and the section 6 consumer migration/parity gates, port the
+remaining `Tests/Ix/Tc` behavior tests, switch differential testing to Rust,
+remove `Ix/Tc.lean` and `Ix/Tc/**`, and remove their Lake roots, runners,
+imports, CLI adapters, and obsolete CI commands. Re-home primitive tables
+and any still-needed audit helpers before deletion. The main umbrella,
+AuxGen, IxVM claim harness, and validate/check commands must use their new
+owners. Keep metadata/name bridges in host code.
+
+Exit: no active source or build/test configuration depends on `Ix.Tc`,
+`Ix.Tc.Verify`, `Ix.Compile.Verify`, `Lean4Lean.*`, or the `lean4ix` package;
+the fresh host/kernel/model builds and consumer tests pass, the documented
+parity corpus agrees subject to the explicit ordered-reference policy,
+and the removal ledger is complete. This is required for K6 completion,
+even if optional performance work is deferred.
