@@ -7,6 +7,7 @@ public import Ix.Ixon
 public import Ix.IxonSyntax
 public import Ix.Meta
 public import Ix.EnvScope
+public import Ix.Compile.Equations
 public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.CompileM
