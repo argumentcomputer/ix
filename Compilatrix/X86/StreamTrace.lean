@@ -88,6 +88,16 @@ theorem safe_progress {checked : Checked} {output : Encode.Output} {externals : 
             found foundInstruction safe.1 safe.2 nextRunning
           refine ⟨2, after, by decide, by decide, executed, ?_⟩
           simpa only [holeStep, found, foundInstruction] using next
+        case unwind source =>
+          simp only [SafeAt, found, foundInstruction] at safe
+          have data : ReadableData holes (source.eval machine.core) 8 :=
+            safe.1 ⟨source.eval machine.core, 8⟩ (by simp)
+          obtain ⟨after, executed, next⟩ := unwind_progress valid runtime machine base holes state related
+            found foundInstruction data nextRunning
+          refine ⟨1, after, by decide, by decide, by simp [ByteEval.run, executed], ?_⟩
+          have unchanged : holeStep checked.program machine holes = holes := by
+            simp [holeStep, found, foundInstruction, nextHoles, clearAccesses]
+          rwa [unchanged]
   | none =>
       simp only [SafeAt, found, foundInstruction] at safe
       by_cases term : block.terminator = .ret

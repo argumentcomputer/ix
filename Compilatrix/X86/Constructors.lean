@@ -224,4 +224,38 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
 
 end
 
+theorem merge_unchanged (flags computed : ByteEval.Flags) : flags.merge (fun _ => .unchanged) computed = flags := by
+  cases flags
+  rfl
+
+/-- `unwind`'s row loads `rsp` from its source and leaves the flags. -/
+theorem unwindRow_exec (source : MemAddr) (core : Core) (flags : ByteEval.Flags) :
+    unwindRow.exec [.reg .rsp, .mem source] core flags =
+      match core.memory.read64? (source.eval core) with
+      | .ok sp => .ok (core.setReg .rsp sp, flags)
+      | .error fault => .error (.memory fault) := by
+  simp only [unwindRow, Op.exec, Op.run, Op.inputs, readImplicits_nil, writeImplicits_nil, List.append_nil,
+    Op.stage, desc, Table.movDesc, Table.rmSlot, Table.regSlot, Table.moveSem, readSlots, writeSlots, Arg.load,
+    Arg.store, Except.mapError, Memory.read64?]
+  cases machine : core.memory.read? .w64 (source.eval core) <;>
+    simp [Core.writeReg, merge_unchanged]
+
+/-- The typed failure exit: load `rsp`, then keep the ghost frames outside
+the one the loaded stack pointer returns through. -/
+theorem executeInstr_unwind (runtime : Runtime) (checked : Checked) (machine : Machine) (source : MemAddr) :
+    executeInstr runtime checked (.unwind source) machine =
+      match machine.core.memory.read64? (source.eval machine.core) with
+      | .error fault => machine.trap (.memoryFault fault)
+      | .ok sp =>
+          match cutAt sp machine.returns with
+          | none => machine.trap (.unwindMismatch sp)
+          | some returns => { machine.advanceWith (machine.core.setReg .rsp sp) with returns } := by
+  simp only [executeInstr, unwindRow_exec]
+  cases machine.core.memory.read64? (source.eval machine.core) with
+  | error fault => rfl
+  | ok sp =>
+      have read : (machine.core.setReg .rsp sp).readReg .rsp = sp := by simp [Core.readReg, Core.setReg, Registers.set]
+      simp only [read]
+      rfl
+
 end Compilatrix.X86

@@ -88,3 +88,95 @@ theorem run_safeSteps {checked : Checked} {input : ELF.Input} {bytes : ByteArray
   simp [run, object.text, selected, executed, Except.mapError]
 
 end Compilatrix.X86.ObjectEval
+
+namespace Compilatrix.X86
+
+/-- A step that halts the typed machine is a top-level `ret`, which reports
+`rax`. -/
+theorem step_halted_rax {runtime : Runtime} {checked : Checked} {machine : Machine}
+    (running : machine.status = .running) {result : Word}
+    (halted : (step runtime checked machine).status = .halted result) :
+    result = (step runtime checked machine).core.readReg .rax := by
+  obtain ⟨block, found, position, term, returns, coreEqual⟩ := Stream.halting_shape runtime machine running halted
+  have one := Stream.source_terminator runtime machine running found position
+  rw [one, term] at halted ⊢
+  simp only [executeTerminator, returns, Status.halted.injEq] at halted ⊢
+  exact halted.symm
+
+theorem Steps.of_not_running {runtime : Runtime} {checked : Checked} {count : Nat} {before after : Machine}
+    (steps : Steps runtime checked count before after) (finished : before.status ≠ .running) : after = before := by
+  have same := steps.run_eq
+  rw [run_of_not_running _ _ _ _ finished] at same
+  exact same.symm
+
+/-- A halted run's status is the `rax` of its final core. -/
+theorem Steps.halted_rax {runtime : Runtime} {checked : Checked} {count : Nat} {before after : Machine}
+    (steps : Steps runtime checked count before after) (running : before.status = .running) {result : Word}
+    (halted : after.status = .halted result) : result = after.core.readReg .rax := by
+  induction steps with
+  | refl => rw [running] at halted; cases halted
+  | @cons before middle after count first rest ih =>
+      cases status : middle.status with
+      | running => exact ih status halted
+      | halted value =>
+          have same := rest.of_not_running (by simp [status])
+          subst same
+          rw [← first] at status halted ⊢
+          exact step_halted_rax running halted
+      | trapped fault =>
+          have same := rest.of_not_running (by simp [status])
+          subst same
+          rw [status] at halted
+          cases halted
+
+/-- How an export ends (note 05 §6.1): halted with status `st` in `rax` and
+value `val` in `rdx`, the caller's callee-saved registers and stack pointer
+restored, and the caller's return address in its slot. -/
+structure Exit (core₀ : Core) (retAddr st val : Word) (after : Machine) : Prop where
+  halted : after.status = .halted st
+  value : after.core.readReg .rdx = val
+  saved : ∀ register ∈ SysV.calleeSaved, after.core.readReg register = core₀.readReg register
+  rsp : after.core.readReg .rsp = core₀.readReg .rsp
+  slot : after.core.memory.read64? (after.core.readReg .rsp) = .ok retAddr
+
+theorem rsp_not_calleeSaved {register : GPR} (member : register ∈ SysV.calleeSaved) : register ≠ .rsp := by
+  intro equal
+  subst equal
+  simp [SysV.calleeSaved] at member
+
+end Compilatrix.X86
+
+namespace Compilatrix.X86.ObjectEval
+
+/-- A certified run that ends as an export does (successfully or through the
+failure exit) runs the same way from the parsed object: the physical `ret`
+reaches the caller with the status and value in `rax:rdx`, the caller's
+callee-saved registers, and `rsp` past the return address. -/
+theorem run_exit {checked : Checked} {input : ELF.Input} {bytes : ByteArray}
+    (stream : Stream.Valid checked.program input.encoded) (object : ELF.Valid input bytes)
+    (entry : input.entryBlock = checked.program.entry)
+    {runtime : Runtime} {count : Nat} (base : Word) (core₀ : Core) (flags : ByteEval.Flags)
+    {after : Machine} {holes : Stream.Holes} {retAddr st val : Word}
+    (steps : Stream.SafeSteps runtime checked count (fun _ => False) (Machine.initial checked core₀) holes after)
+    (exit : Exit core₀ retAddr st val after) :
+    ∃ byteCount s, 0 < byteCount ∧ byteCount ≤ 3 * count ∧
+      run bytes input.exportName base byteCount core₀ flags = .ok s ∧
+      s.rip = retAddr ∧ s.core.readReg .rax = st ∧ s.core.readReg .rdx = val ∧
+      s.core.readReg .rsp = core₀.readReg .rsp + 8 ∧
+      (∀ register ∈ SysV.calleeSaved, s.core.readReg register = core₀.readReg register) ∧
+      Stream.MemoryRelated holes after.core.memory s.core.memory := by
+  obtain ⟨byteCount, s, positive, bound, executed, returned, related⟩ :=
+    run_safeSteps stream object entry base core₀ flags steps exit.halted exit.slot
+  have rax := steps.steps.halted_rax rfl exit.halted
+  have register (target : GPR) (other : target ≠ .rsp) : s.core.readReg target = after.core.readReg target := by
+    rw [← related.readReg target]
+    simp [Core.readReg, Core.setReg, Registers.set, other]
+  refine ⟨byteCount, s, positive, bound, executed, returned, ?_, ?_, ?_, ?_, related.memory⟩
+  · rw [register .rax (by decide), rax]
+  · rw [register .rdx (by decide), exit.value]
+  · rw [← related.readReg .rsp, exit.rsp]
+    simp [Core.readReg, Core.setReg, Registers.set]
+  · intro target member
+    rw [register target (rsp_not_calleeSaved member), exit.saved target member]
+
+end Compilatrix.X86.ObjectEval

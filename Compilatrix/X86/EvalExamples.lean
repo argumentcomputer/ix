@@ -172,6 +172,61 @@ def misalignedCallTraps : Bool :=
 
 #guard misalignedCallTraps
 
+/-- An export with the failure exit (note 05 §6.1), called as
+`compilatrix_main(ctx, depth, mode)`. The wrapper saves the callee-saved
+registers and its stack pointer at `[ctx]` (`r15 = ctx + 64`) and calls
+`f(depth)`. Each level of `f` checks the stack against `stackLimit` at
+`[ctx + 8]` (`lea r11, [rsp − 64]; cmp r11, [r15 − 56]; jb fail₂`) and
+recurses; at depth 0 it returns 42 (status 0, value 42) when `mode` is 0 and
+fails with status 1 otherwise. Failures leave through the exit group's
+`unwind [r15 − 64]` with `rax:rdx = status:0`. -/
+def unwindProgram : Program :=
+  let entrySlot : MemAddr := { base := some .r15, displacement := 0xffffffc0 }
+  let stackLimit : MemAddr := { base := some .r15, displacement := 0xffffffc8 }
+  { entry := 0
+    blocks := #[
+      -- 0: the export wrapper.
+      { instructions := #[.push .rbx, .push .rbp, .push .r12, .push .r13, .push .r14, .push .r15,
+          .alu .sub .w64 .rsp (.imm 8), .lea .r15 { base := some .rdi, displacement := 64 },
+          .store .w64 entrySlot .rsp, .call 4, .mov .w64 .rdx (.reg .rax), .alu .xor .w32 .rax (.reg .rax)]
+        terminator := .jump 3 },
+      -- 1: fail₁ (status 1).
+      { instructions := #[.mov .w32 .rax (.imm 1)], terminator := .jump 2 },
+      -- 2: the failure exit.
+      { instructions := #[.unwind entrySlot, .alu .xor .w32 .rdx (.reg .rdx)], terminator := .jump 3 },
+      -- 3: the epilogue.
+      { instructions := #[.alu .add .w64 .rsp (.imm 8), .pop .r15, .pop .r14, .pop .r13, .pop .r12, .pop .rbp,
+          .pop .rbx]
+        terminator := .ret },
+      -- 4: f's stack check.
+      { instructions := #[.lea .r11 { base := some .rsp, displacement := 0xffffffc0 }]
+        terminator := .branch { mn := .cmp, w := .w64, form := .RM } [.reg .r11, .mem stackLimit] .unsignedLt 8 5 },
+      -- 5: base case or recursion.
+      { instructions := #[], terminator := .compare { width := .w64, left := .rsi, right := .imm 0 } .eq 6 7 },
+      -- 6: succeed or fail by mode.
+      { instructions := #[], terminator := .compare { width := .w64, left := .rdx, right := .imm 0 } .eq 9 1 },
+      -- 7: recurse.
+      { instructions := #[.alu .sub .w64 .rsi (.imm 1), .push .rbp, .call 4, .pop .rbp], terminator := .ret },
+      -- 8: fail₂ (status 2, stack).
+      { instructions := #[.mov .w32 .rax (.imm 2)], terminator := .jump 2 },
+      -- 9: the base case's result.
+      { instructions := #[.mov .w64 .rax (.imm 42)], terminator := .ret }] }
+
+def unwindCore (depth mode : Word) : Core := ((Core.empty 0x1008).setReg .rsi depth).setReg .rdx mode
+
+def unwindExitAccepted : Bool :=
+  match unwindProgram.check with
+  | .error _ => false
+  | .ok checked =>
+      let failed := runFrom Runtime.rejecting checked 64 (unwindCore 3 1)
+      let succeeded := runFrom Runtime.rejecting checked 64 (unwindCore 3 0)
+      let early := runFrom Runtime.rejecting checked 64 (unwindCore 0 1)
+      failed.status == .halted 1 && failed.core.readReg .rdx == 0 && failed.core.readReg .rsp == 0x1008 &&
+        failed.returns.isEmpty && succeeded.status == .halted 0 && succeeded.core.readReg .rdx == 42 &&
+        early.status == .halted 1
+
+#guard unwindExitAccepted
+
 example : arithmeticProgram.InV0 := arithmeticProgram.inV0
 example : callProgram.InV0 := callProgram.inV0
 

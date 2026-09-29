@@ -377,6 +377,13 @@ open Encode (instructionOperation)
               Table.arithDesc, Table.cmpArith, Table.Arith.role, Table.rmSlot, Table.immSlot, slotReads, slotWrites,
               Arg.access]
 
+/-- `unwind` reads its eight-byte source and writes no memory. -/
+@[simp] theorem footprint_unwind (source : MemAddr) (core : Core) :
+    operationReads (Encode.instructionOperation (.unwind source)) core = [⟨source.eval core, 8⟩] ∧
+      operationWrites (Encode.instructionOperation (.unwind source)) core = [] := by
+  simp [Encode.instructionOperation, operationReads, operationWrites, Op.reads, Op.writes, Op.pops, Op.pushes,
+    unwindRow, desc, Table.movDesc, Table.rmSlot, Table.regSlot, slotReads, slotWrites, Arg.access, Width.bytes]
+
 @[simp] theorem footprint_mov (width : Width) (destination : GPR) (source : MoveSource) (core : Core) :
     operationReads (instructionOperation (.mov width destination source)) core = [] ∧
       operationWrites (instructionOperation (.mov width destination source)) core = [] := by
@@ -465,6 +472,6 @@ theorem instruction_linear_operation (instruction : Instr) (linear : Encode.line
   | op o args =>
       simp only [Encode.linearInstruction, Bool.and_eq_true] at linear
       exact linear.1
-  | fused | call | callRuntime => simp [Encode.linearInstruction] at linear
+  | fused | call | callRuntime | unwind => simp [Encode.linearInstruction] at linear
 
 end Compilatrix.X86.Stream

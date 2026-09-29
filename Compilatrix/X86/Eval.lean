@@ -110,6 +110,9 @@ inductive Trap where
   | intrinsicFailure (intrinsic : Intrinsic) (code : Nat)
   /-- A row's semantics faulted (for example by reading an undefined flag). -/
   | semantic (fault : SemFault)
+  /-- An `unwind` reloaded a stack pointer that no active ghost frame returns
+  to. -/
+  | unwindMismatch (stack : Word)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 inductive Status where
@@ -201,6 +204,14 @@ def Machine.afterRow (machine : Machine) :
   | .error (.memory fault) => machine.trap (.memoryFault fault)
   | .error (.semantic fault) => machine.trap (.semantic fault)
 
+/-- The ghost frames kept when execution resumes with stack pointer `sp`
+(note 05 §6.1): every frame at depth 0; otherwise the frames outside the
+first one whose return slot is `sp − 8`, which is the frame the reloaded
+stack returns through. `none` when no frame matches. -/
+def cutAt (sp : Word) : List ReturnFrame → Option (List ReturnFrame)
+  | [] => some []
+  | frames => (frames.findIdx? (·.returnSlot + 8 == sp)).map fun index => frames.drop (index + 1)
+
 def executeInstr (runtime : Runtime) (checked : Checked)
     (instruction : Instr) (machine : Machine) : Machine :=
   let core := machine.core
@@ -210,6 +221,13 @@ def executeInstr (runtime : Runtime) (checked : Checked)
       match producer.exec pargs core {} with
       | .error fault => machine.afterRow (.error fault)
       | .ok (core, flags) => machine.afterRow (consumer.exec cargs core flags)
+  | .unwind source =>
+      match unwindRow.exec [.reg .rsp, .mem source] core {} with
+      | .error fault => machine.afterRow (.error fault)
+      | .ok (core, _) =>
+          match cutAt (core.readReg .rsp) machine.returns with
+          | none => machine.trap (.unwindMismatch (core.readReg .rsp))
+          | some returns => { machine.advanceWith core with returns }
   | .call target =>
       if !SysV.callSiteAligned (core.readReg .rsp) then
         machine.trap (.misalignedCall (core.readReg .rsp))

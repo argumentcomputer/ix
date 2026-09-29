@@ -71,7 +71,7 @@ theorem instruction_size_pos (instruction : Instr) : 0 < (encodeInstr instructio
       have := encodeList_length_pos producer pargs
       simp only [encodeInstr, Chunk.raw, encodeOp, ByteArray.size_append, bytes_size]
       omega
-  | op | call | callRuntime => simp [encodeInstr, Chunk.raw, rel32_bytes, encodeOp, encodeList_length_pos]
+  | op | call | callRuntime | unwind => simp [encodeInstr, Chunk.raw, rel32_bytes, encodeOp, encodeList_length_pos]
 
 /-- A single-operation instruction fits the fifteen-byte limit. -/
 theorem instruction_size (instruction : Instr) (wf : instruction.wellFormed = true)
@@ -82,6 +82,8 @@ theorem instruction_size (instruction : Instr) (wf : instruction.wellFormed = tr
   | op o args =>
       simpa [encodeInstr, Chunk.raw, encodeOp] using encodeList_bounded (wellFormed_op wf).1 args
   | fused => simp [Instr.single] at single
+  | unwind source =>
+      simpa [encodeInstr, Chunk.raw, encodeOp] using encodeList_bounded (o := unwindRow) (by decide) _
   | call target | callRuntime intrinsic =>
       simpa [encodeInstr, rel32_bytes, encodeOp] using encodeList_bounded control_rows.1 [.imm 0]
 

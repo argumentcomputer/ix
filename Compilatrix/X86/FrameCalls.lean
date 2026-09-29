@@ -48,6 +48,19 @@ theorem call_inFrame {checked : Checked} {block target : BlockId} {offset : Nat}
     valid, PC.next_ofNat block fits]
   simp [Memory.write64?, Memory.write?, Width.bytes, writable, callCore, callFrame, Memory.write64]
 
+/-- `unwind` inside a caller continuation: `rsp` is reloaded from the source
+and the ghost frames the reloaded stack has left are dropped (note 05 §6.1). -/
+theorem unwind_inFrame {checked : Checked} {block : BlockId} {offset : Nat} {source : MemAddr}
+    (segment : Straight.Segment checked block offset [.unwind source]) (fits : offset + 1 < UInt32.size)
+    (runtime : Runtime) (core : Core) (returns : List ReturnFrame) {sp : Word} {rest : List ReturnFrame}
+    (read : core.memory.read64? (source.eval core) = .ok sp) (cut : cutAt sp returns = some rest) :
+    step runtime checked (inFrame core block offset returns) = inFrame (core.setReg .rsp sp) block (offset + 1) rest := by
+  rw [segment.instruction_inFrame (by omega), executeInstr_unwind]
+  have coreEq : (inFrame core block offset returns).core = core := rfl
+  have returnsEq : (inFrame core block offset returns).returns = returns := rfl
+  simp only [coreEq, returnsEq, read, cut, inFrame_advance _ _ _ _ fits]
+  rfl
+
 /-- A callee returns to the actual stored continuation after restoring its
 entry stack pointer and the System V saved-register set. -/
 theorem BlockCode.ret_inFrame {checked : Checked} {block : BlockId} {instructions : List Instr}

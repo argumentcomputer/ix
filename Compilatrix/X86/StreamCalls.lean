@@ -288,6 +288,59 @@ theorem fused_progress {checked : Checked} {output : Encode.Output} {externals :
         · simp only [Machine.advanceWith, next.1]
           exact ⟨_, nextMapped, rfl⟩
 
+/-- E2 for `unwind`: its byte step is the `mov rsp, [m]` row, which keeps
+the machines related; the typed step also drops the ghost frames above the
+reloaded stack pointer, and the frames it keeps are a suffix, so their
+physical return slots stay mapped. The mask is unchanged: the row writes no
+memory, and the dropped frames' slots stay masked until ordinary writes
+clear them (note 05 §6.1). -/
+theorem unwind_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
+    (valid : Valid checked.program output externals) (runtime : Runtime) (machine : Machine)
+    (base : Word) (holes : Holes) (state : ByteEval.State) (related : Related checked.program base holes machine state)
+    {block : Block} {source : MemAddr}
+    (found : checked.program.blocks[machine.pc.block.toNat]? = some block)
+    (located : block.instructions[machine.pc.offset.toNat]? = some (.unwind source))
+    (data : ReadableData holes (source.eval machine.core) 8)
+    (nextRunning : (step runtime checked machine).status = .running) :
+    ∃ after, ByteEval.step output.text base state = .ok after ∧
+      Related checked.program base holes (step runtime checked machine) after := by
+  have sourceStep : step runtime checked machine = executeInstr runtime checked (.unwind source) machine := by
+    simp [step, related.running, found, located]
+  have next := pc_next found located
+  rw [sourceStep, executeInstr_unwind] at nextRunning ⊢
+  revert nextRunning
+  cases hread : machine.core.memory.read64? (source.eval machine.core) with
+  | error fault => intro nextRunning; simp [Machine.trap] at nextRunning
+  | ok sp =>
+    simp only
+    cases hcut : cutAt sp machine.returns with
+    | none => intro nextRunning; simp [Machine.trap] at nextRunning
+    | some rest =>
+      intro nextRunning
+      simp only [Machine.advanceWith, next.1] at nextRunning ⊢
+      -- The byte machine fetches and runs the same `mov rsp, [m]` row.
+      have accepted := valid.instruction _ _ found _ _ located
+      simp only [instructionMatches, decodes, beq_iff_eq, Encode.instructionOperation] at accepted
+      have indexBound := (Array.getElem?_eq_some_iff.mp located).1
+      have address := related.pc.offset found (by omega)
+      have mapped : pcOffset? checked.program machine.pc =
+          some (blockOffset checked.program machine.pc.block.toNat + instructionOffset block machine.pc.offset.toNat) := by
+        simp [pcOffset?, found, show machine.pc.offset.toNat ≤ block.instructions.size by omega]
+      have small := AtPC.small valid.textBound mapped
+      have physicalRead : state.core.memory.read64? (source.eval state.core) = .ok sp := by
+        rw [← related.core.address source]
+        change state.core.memory.read? .w64 (source.eval machine.core) = .ok sp
+        rw [← related.core.memory.read? .w64 _ data]
+        exact hread
+      have linear : unwindRow.linear = true := rfl
+      refine ⟨⟨state.core.setReg .rsp sp, state.rip + UInt64.ofNat (instructionSize (.unwind source)), state.flags⟩,
+        ?_, ?_, nextRunning, ?_⟩
+      · rw [step_decoded address small accepted, Encode.execute_linear linear, unwindRow_exec, physicalRead]
+      · refine ⟨(related.core.setReg .rsp sp).registers, related.core.memory, ?_⟩
+        exact related.core.frames.suffix (cutAt_suffix hcut)
+      · refine ⟨_, pcOffset_next found located, ?_⟩
+        simp [address, UInt64.ofNat_add, UInt64.add_assoc]
+
 theorem call_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
     (valid : Valid checked.program output externals) (runtime : Runtime) (machine : Machine)
     (base : Word) (holes : Holes) (state : ByteEval.State) (related : Related checked.program base holes machine state)

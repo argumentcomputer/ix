@@ -173,6 +173,7 @@
   "Compilatrix.X86.FrameExecution",
   "Compilatrix.X86.Memory",
   "Compilatrix.X86.ObjectExecution",
+  "Compilatrix.X86.SafeControl",
   "Compilatrix.X86.SafeSteps",
   "Compilatrix.X86.SafeStepsObject",
   "Compilatrix.X86.State",
@@ -245,5 +246,5 @@
   "Ix.Lib"],
  "baseline": "jcb/x86-phase1: Lir, Xv and the Phase 1 table rows",
  "axiom_sha256":
- "d0eec89cb12999583f2b3d962e4adaa5f7a1c99546447124bc8e400bd64e058f",
- "axiom_count": 434}
+ "b5fd4cf14a691e84c3fddbb69a1bc32a3600e1e4591e0b779a29e4de9bba6348",
+ "axiom_count": 442}

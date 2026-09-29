@@ -36,7 +36,7 @@ theorem linear_rip (instruction : Instr) (linear : Encode.linearInstruction inst
       · cases evaluated
         rfl
       · contradiction
-  | fused | call | callRuntime => simp [Encode.linearInstruction] at linear
+  | fused | call | callRuntime | unwind => simp [Encode.linearInstruction] at linear
 
 /-- Fetch uses the complete certified text and its actual byte RIP. -/
 theorem fetch_linear {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}

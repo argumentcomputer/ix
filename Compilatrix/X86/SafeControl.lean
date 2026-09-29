@@ -77,4 +77,26 @@ theorem BlockCode.safe_ret {checked : Checked} {block : BlockId} {instructions :
   have one := Stream.SafeSteps.single safe (code.ret_inFrame runtime core frame returns stack readable saved)
   simpa only [code.holeStep, Stream.terminatorHoles] using one
 
+/-- `unwind` is one checked step: its source is ordinary data, it writes no
+memory, so the mask is unchanged (note 05 §6.1). -/
+theorem Straight.Segment.safe_unwind {checked : Checked} {block : BlockId} {offset : Nat} {source : MemAddr}
+    (segment : Straight.Segment checked block offset [.unwind source]) (fits : offset + 1 < UInt32.size)
+    (runtime : Runtime) (core : Core) (returns : List ReturnFrame) (holes : Stream.Holes) {sp : Word}
+    {rest : List ReturnFrame} (data : Stream.ReadableData holes (source.eval core) 8)
+    (read : core.memory.read64? (source.eval core) = .ok sp) (cut : cutAt sp returns = some rest) :
+    Stream.SafeSteps runtime checked 1 holes (inFrame core block offset returns) holes
+      (inFrame (core.setReg .rsp sp) block (offset + 1) rest) := by
+  have one_step := unwind_inFrame segment fits runtime core returns read cut
+  obtain ⟨code, found, reads⟩ := segment
+  have head := reads 0 (by simp)
+  simp only [Nat.add_zero, List.getElem?_cons_zero] at head
+  have offsetBound : offset < UInt32.size := by omega
+  have safe : Stream.SafeAt checked.program holes (inFrame core block offset returns) := by
+    simpa [Stream.SafeAt, inFrame, UInt32.toNat_ofNat_of_lt' offsetBound, found, head, Stream.OperationSafe] using data
+  have one := Stream.SafeSteps.single safe one_step
+  have unchanged : Stream.holeStep checked.program (inFrame core block offset returns) holes = holes := by
+    simp [Stream.holeStep, inFrame, UInt32.toNat_ofNat_of_lt' offsetBound, found, head, Stream.nextHoles,
+      Stream.clearAccesses]
+  rwa [unchanged] at one
+
 end Compilatrix.X86

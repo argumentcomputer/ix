@@ -327,6 +327,82 @@ private def relocationCases : Except String Nat := do
     need (!(ELFLink.apply symbols [bad] stream.output.text).isOk) "malformed relocation accepted"
   return targets.length + 6
 
+/-! ## The failure exit (note 05 §6.1) -/
+
+/-- The caller's callee-saved registers hold sentinels; `rdi` points at the
+context, so `entrySp` lives at `[0x100]`. -/
+private def sentinelCore : Core :=
+  let values : List (GPR × Word) := [(.rbx, 0x1111111111111111), (.rbp, 0x2222222222222222),
+    (.r12, 0x3333333333333333), (.r13, 0x4444444444444444), (.r14, 0x5555555555555555),
+    (.r15, 0x6666666666666666), (.rdi, 0xc0)]
+  values.foldl (fun core (register, value) => core.setReg register value) StreamExamples.core
+
+private def calleeSaved : List GPR := [.rbx, .rbp, .r12, .r13, .r14, .r15]
+
+/-- A failing export: the typed run halts with the status, meets the
+concrete call/stack contract, and the parsed object returns the same status
+with `rdx = 0`, the sentinels restored and `rsp` past the return address. -/
+private def unwindCase (program : Program) (status : Word) : Except String Unit := do
+  let (target, input, bytes) ← artifact program
+  let typed := runFrom Runtime.rejecting target 300 sentinelCore
+  need (typed.status == .halted status) s!"typed failure exit status: {repr typed.status}"
+  need (decide (Stream.SafeTrace Runtime.rejecting target 300 (fun _ => False) (Machine.initial target sentinelCore)))
+    "failing export violates the concrete call/stack contract"
+  let (result, _) ← runObject bytes input.exportName textBase 900 sentinelCore
+  need (result.core.readReg .rax == status && result.core.readReg .rdx == 0 &&
+      result.core.readReg .rsp == 0x8010 &&
+      calleeSaved.all (fun register => result.core.readReg register == sentinelCore.readReg register) &&
+      sameRegisters typed.core (result.core.setReg .rsp 0x8008))
+    s!"object failure exit differs: rax {result.core.readReg .rax}, rdx {result.core.readReg .rdx}"
+
+/-- A wrapper whose function first completes a call (its released slot is in
+the region the exit drops), then calls a function that fails. -/
+private def unwindAfterCall : Program :=
+  { entry := 0
+    blocks := #[{ instructions := StreamExamples.wrapperPrologue ++ #[.call 4], terminator := .jump 3 }] ++
+      StreamExamples.exitGroup ++ #[
+        { instructions := #[.push .rbp, .call 5, .call 6, .pop .rbp], terminator := .ret },
+        { instructions := #[.mov .w64 .rcx (.imm 5)], terminator := .ret },
+        { instructions := #[], terminator := .jump 1 }] }
+
+/-- Replace the failure exit's `unwind` in a program. -/
+private def replaceExit (program : Program) (exit : Array Instr) : Program :=
+  { program with blocks := program.blocks.set! 2 { program.blocks[2]! with instructions := exit } }
+
+private def unwindCases : Except String Nat := do
+  for depth in [0, 1, 3, 7] do
+    unwindCase (StreamExamples.unwindCalls depth) 1
+  unwindCase unwindAfterCall 1
+  -- A corrupted `entrySp` matches no ghost frame: the typed machine traps.
+  let innermost : Block :=
+    { instructions := #[.mov .w64 .rcx (.imm 0x1234), .store .w64 StreamExamples.entrySlot .rcx]
+      terminator := .jump 1 }
+  let base := StreamExamples.unwindCalls 3
+  let corrupt : Program := { base with blocks := base.blocks.set! 6 innermost }
+  let target ← corrupt.check.mapError reprStr
+  need ((runFrom Runtime.rejecting target 300 sentinelCore).status == .trapped (.unwindMismatch 0x1234))
+    "corrupted entrySp did not trap"
+  -- An `entrySp` cell on a live return slot is not ordinary data.
+  let target ← (StreamExamples.unwindCalls 3).check.mapError reprStr
+  let onSlot := sentinelCore.setReg .rdi 0x7fc8
+  need (!decide (Stream.SafeTrace Runtime.rejecting target 300 (fun _ => False) (Machine.initial target onSlot)))
+    "entrySp on a live return slot accepted"
+  -- An unreadable cell faults identically on both machines.
+  let memory : Memory := { sentinelCore.memory with readable := fun address => !(0xc0 ≤ address && address < 0xc8) }
+  let unreadable : Core := { sentinelCore with memory }
+  let (_, input, bytes) ← artifact (StreamExamples.unwindCalls 3)
+  need ((runFrom Runtime.rejecting target 300 unreadable).status == .trapped (.memoryFault ⟨.read, 0xc0, 8⟩))
+    "typed unreadable entrySp did not fault"
+  let .error (.machine (.memory ⟨.read, 0xc0, 8⟩)) := ObjectEval.run bytes input.exportName textBase 900 unreadable
+    | throw "object unreadable entrySp did not fault identically"
+  -- A plain `mov rsp, [m]` keeps the ghost frames, so the epilogue's RET traps.
+  let plain := replaceExit (StreamExamples.unwindCalls 3)
+    #[.load .w64 .rsp StreamExamples.entrySlot, .alu .xor .w32 .rdx (.reg .rdx)]
+  let target ← plain.check.mapError reprStr
+  let .trapped (.stackMismatch _ _) := (runFrom Runtime.rejecting target 300 sentinelCore).status
+    | throw "plain mov rsp before ret did not trap"
+  return 9
+
 private def returnFault : Except String Unit := do
   let (_, input, bytes) ← artifact { entry := 0, blocks := #[{ instructions := #[], terminator := .ret }] }
   let .error (.machine (.memory ⟨.read, 0x8008, 8⟩)) :=
@@ -371,5 +447,6 @@ def main : IO UInt32 := cli "x86 stream/object check failed" do
   let objectNegatives ← checked objectCorruptions
   let relocations ← checked relocationCases
   checked returnFault
+  let unwinds ← checked unwindCases
   let contracts ← checked contractCases
-  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {producers} producer branch objects, {fused} fused-pair objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, caller-slot fault"
+  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {producers} producer branch objects, {fused} fused-pair objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, {unwinds} failure-exit cases, caller-slot fault"

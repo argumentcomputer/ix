@@ -15,7 +15,8 @@ private structure Fixture where
 private def fixtures : List Fixture := [
   { name := "arithmetic", kind := "arithmetic", expected := 42 },
   { name := "direct-call", kind := "direct-call", expected := 42 },
-  { name := "runtime", kind := "runtime", expected := 0x2000 }
+  { name := "runtime", kind := "runtime", expected := 0x2000 },
+  { name := "unwind", kind := "unwind", expected := 1 }
 ]
 
 private def reportValue (text key : String) : IO String := do
@@ -55,6 +56,9 @@ private def inspect (readelf objdump : String) (fixture : Fixture) (path : FileP
     | "runtime" => pure [
         "push   rbp", "mov    edi,0x10", "mov    esi,0x8",
         "r_x86_64_pc32\tcompilatrix_rt_allocate-0x4", "pop    rbp"]
+    | "unwind" => pure [
+        "push   r15", "lea    r15,[rdi+0x40]", "mov    qword ptr [r15-0x40],rsp", "lea    r11,[rsp-0x40]",
+        "cmp    r11,qword ptr [r15-0x38]", "jb", "mov    rsp,qword ptr [r15-0x40]", "xor    edx,edx", "pop    rbx"]
     | _ => throw (IO.userError "unknown fixture kind")
   requireAll disassembly expected s!"{fixture.name}: disassembly"
   if fixture.kind == "runtime" then
@@ -81,6 +85,9 @@ def main (args : List String) : IO UInt32 := cli "x86 ELF object check failed" d
       need (source == none) s!"unexpected source observation for {fixture.name}"
       inspect readelf objdump fixture path
       if let some (cc, harness) := native then
+        -- The failure exit runs under a harness that checks sentinels in the
+        -- callee-saved registers, rax:rdx, rsp and a second call on the region.
+        let harness := if fixture.kind == "unwind" then (harness.parent.getD ".") / "unwind_harness.c" else harness
         linkAndRun cc readelf harness path (directory / s!"{fixture.name}-native") localValue
   let suffix := if native.isSome then ", native link/run result match" else ""
   IO.println s!"x86 ELF object check ok: {fixtures.length} deterministic objects, provenance goldens, local semantics, readelf, objdump{suffix}"

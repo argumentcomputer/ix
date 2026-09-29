@@ -95,6 +95,25 @@ def FramesDisjoint (frames : List ReturnFrame) (address : Word) (count : Nat) : 
   ∀ frame ∈ frames, ∀ i < 8, ∀ j < count,
     frame.returnSlot + UInt64.ofNat i ≠ address + UInt64.ofNat j
 
+/-- `unwind` keeps a suffix of the ghost frames. -/
+theorem _root_.Compilatrix.X86.cutAt_suffix {sp : Word} {frames rest : List ReturnFrame}
+    (cut : cutAt sp frames = some rest) : rest <:+ frames := by
+  cases frames with
+  | nil =>
+      simp only [cutAt, Option.some.injEq] at cut
+      subst cut
+      exact List.nil_suffix
+  | cons frame frames =>
+      simp only [cutAt, Option.map_eq_some_iff] at cut
+      obtain ⟨index, _, rfl⟩ := cut
+      exact List.drop_suffix _ _
+
+/-- Every frame of a suffix is one of the mapped frames. -/
+theorem FramesMapped.suffix {program : Program} {base : Word} {memory : Memory} {frames rest : List ReturnFrame}
+    (mapped : FramesMapped program base memory frames) (suffix : rest <:+ frames) :
+    FramesMapped program base memory rest :=
+  fun frame member => mapped frame (suffix.subset member)
+
 theorem FramesMapped.write {program : Program} {base : Word} {memory : Memory} {frames : List ReturnFrame}
     (mapped : FramesMapped program base memory frames) (address value : Word) (count : Nat)
     (disjoint : FramesDisjoint frames address count) :

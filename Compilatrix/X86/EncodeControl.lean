@@ -99,6 +99,7 @@ operation is its producer. -/
 def instructionOperation : Instr → Decode.Operation
   | .op o args => .op o args
   | .fused producer pargs _ _ => .op producer pargs
+  | .unwind source => .op unwindRow [.reg .rsp, .mem source]
   | .call _ | .callRuntime _ => .call 0
 
 /-- Every operation the decoder recovers from a typed instruction's bytes:
@@ -159,6 +160,8 @@ theorem instruction_decode (instruction : Instr) (wf : instruction.wellFormed = 
       obtain ⟨row, _, ok⟩ := wellFormed_op wf
       exact encodeOp_decode o args row ok rest
   | fused => simp [Instr.single] at single
+  | unwind source =>
+      exact encodeOp_decode unwindRow _ (by decide) (by simpa [Instr.wellFormed] using wf) rest
   | call target | callRuntime intrinsic =>
       simpa [encodeInstr, rel32_bytes, encodeOp, instructionOperation] using call_placeholder rest
 
@@ -176,7 +179,7 @@ theorem instructions_decode (instruction : Instr) (wf : instruction.wellFormed =
       ((encodeInstr instruction).bytes.data.toList ++ rest) = some (instructionOperations instruction, rest) := by
   cases instruction with
   | fused producer pargs consumer cargs => exact fused_decode wf rest
-  | op o args | call target | callRuntime intrinsic =>
+  | op o args | call target | callRuntime intrinsic | unwind source =>
       simp [instructionOperations, Decode.sequence, instruction_decode _ wf rfl rest]
 
 /-- The row of a comparison is listed and its operands have the row's kinds. -/

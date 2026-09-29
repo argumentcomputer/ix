@@ -15,7 +15,7 @@ attribute [local simp] pure Except.pure Functor.map Except.map bind Except.bind
 control laws. -/
 def linearInstruction : Instr → Bool
   | .op o _ => o.linear && (desc o).flagsIn.isEmpty
-  | .fused .. | .call _ | .callRuntime _ => false
+  | .fused .. | .call _ | .callRuntime _ | .unwind _ => false
 
 theorem single_of_linear {instruction : Instr} (linear : linearInstruction instruction = true) :
     instruction.single = true := by
@@ -43,7 +43,8 @@ theorem table_flagsFree : Op.rows.all (fun o => !o.linear || (desc o).flagsIn.is
 
 theorem linear_of_wellFormed {instruction : Instr} (wf : instruction.wellFormed = true)
     (notCall : ∀ target, instruction ≠ .call target) (notRuntime : ∀ intrinsic, instruction ≠ .callRuntime intrinsic)
-    (notFused : ∀ producer pargs consumer cargs, instruction ≠ .fused producer pargs consumer cargs) :
+    (notFused : ∀ producer pargs consumer cargs, instruction ≠ .fused producer pargs consumer cargs)
+    (notUnwind : ∀ source, instruction ≠ .unwind source) :
     linearInstruction instruction = true := by
   cases instruction with
   | op o args =>
@@ -52,6 +53,7 @@ theorem linear_of_wellFormed {instruction : Instr} (wf : instruction.wellFormed 
       simp only [linear, Bool.not_true, Bool.false_or] at free
       simp [linearInstruction, linear, free]
   | fused producer pargs consumer cargs => exact absurd rfl (notFused producer pargs consumer cargs)
+  | unwind source => exact absurd rfl (notUnwind source)
   | call target => exact absurd rfl (notCall target)
   | callRuntime intrinsic => exact absurd rfl (notRuntime intrinsic)
 
@@ -204,7 +206,7 @@ theorem instruction_execution (instruction : Instr) (linear : linearInstruction 
   | op o args =>
       simp only [linearInstruction, Bool.and_eq_true, List.isEmpty_iff] at linear
       exact row_execution linear.1 linear.2 args runtime checked machine rip flags length
-  | fused | call | callRuntime => simp [linearInstruction] at linear
+  | fused | call | callRuntime | unwind => simp [linearInstruction] at linear
 
 /-- The execution theorem consumes the actual encoder bytes, surrounded by
 arbitrary bytes. The explicit boundary is a premise for this local E1 result. -/

@@ -35,6 +35,10 @@ inductive Instr where
   | fused (producer : Op) (pargs : List Arg) (consumer : Op) (cargs : List Arg)
   | call (target : BlockId)
   | callRuntime (intrinsic : Intrinsic)
+  /-- The failure exit: `mov rsp, [source]` (the `mov r64, r/m64` row), after
+  which the typed machine drops the ghost return frames the reloaded stack
+  pointer has left (`cutAt`). Only an export wrapper's exit group uses it. -/
+  | unwind (source : MemAddr)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 /-- Control operations close a target block. A conditional branch owns the
@@ -109,6 +113,10 @@ def Compare.row (comparison : Compare) : Op × List Arg :=
   match comparison.right with
   | .reg right => ({ mn := .cmp, w := comparison.width, form := .MR }, [.reg comparison.left, .reg right])
   | .imm value => aluImmRow .cmp comparison.width (.reg comparison.left) (signExtend32 value)
+
+/-- The row an `unwind` executes: `mov r64, r/m64` (REX.W 8B /r) with `rsp` as
+its destination. -/
+def unwindRow : Op := { mn := .mov, w := .w64, form := .RM }
 
 /-- Compare-and-branch: the comparison's `cmp` row produces the flags. -/
 def Terminator.compare (comparison : Compare) (condition : Condition) (ifTrue ifFalse : BlockId) : Terminator :=
@@ -222,6 +230,7 @@ def Instr.form : Instr → Form
   | .fused _ _ consumer _ => consumer.mn.form
   | .call .. => .directCall
   | .callRuntime .. => .runtimeCall
+  | .unwind .. => .stack
 
 def Terminator.form : Terminator → Form
   | .jump .. => .jump
@@ -240,6 +249,7 @@ theorem Instr.inV0 (instruction : Instr) : instruction.form.InV0 := by
   | fused producer pargs consumer cargs => exact consumer.mn.inV0
   | call target => trivial
   | callRuntime intrinsic => trivial
+  | unwind source => trivial
 
 /-- Unsupported ISA forms cannot be constructed as v0 terminators. -/
 theorem Terminator.inV0 (terminator : Terminator) : terminator.form.InV0 := by
@@ -293,6 +303,7 @@ def Instr.wellFormed : Instr → Bool
       Op.rows.contains producer && producer.linear && (desc producer).flagsIn.isEmpty && producer.flagsOnly &&
         producer.argsOk pargs && Op.rows.contains consumer && consumer.consumer && consumer.argsOk cargs &&
         FusedOk producer consumer
+  | .unwind source => unwindRow.argsOk [.reg .rsp, .mem source]
   | .call _ | .callRuntime _ => true
 
 def Block.instructionsValid (block : Block) : Bool :=

@@ -142,7 +142,7 @@ theorem linear_permissions (runtime : Runtime) (checked : Checked) (machine : Ma
           split
           · exact Permissions.refl _
           · exact permissions
-  | fused | call | callRuntime => simp [Encode.linearInstruction] at linear
+  | fused | call | callRuntime | unwind => simp [Encode.linearInstruction] at linear
 
 /-- A terminator keeps page permissions: a branch's producer is an ordinary
 row, and the other terminators leave memory alone. -/

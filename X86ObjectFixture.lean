@@ -8,7 +8,7 @@ open Compilatrix.X86
 open Compilatrix.Ixon
 
 private def usage : String :=
-  "usage: lake exe x86-object-fixture (arithmetic|direct-call|runtime) <output.o>"
+  "usage: lake exe x86-object-fixture (arithmetic|direct-call|runtime|unwind) <output.o>"
 
 /-- Provenance for the hand-written target fixtures. -/
 private def fixtureProvenance : X86.ELF.Provenance :=
@@ -20,6 +20,8 @@ private structure Fixture where
   sourceResult : Option Word := none
   sourceRoot : Option Address := none
   provenance : X86.ELF.Provenance := fixtureProvenance
+  /-- The typed run's initial core (its `rsp` is 0x1008). -/
+  core : Core := Core.empty 0x1008
 
 private def fixture? : String → Except String Fixture
   | "arithmetic" =>
@@ -31,6 +33,10 @@ private def fixture? : String → Except String Fixture
   | "runtime" =>
       pure { program := X86.Examples.runtimeProgram
              runtime := X86.Examples.fixtureRuntime }
+  | "unwind" =>
+      pure { program := X86.Examples.unwindProgram
+             runtime := Runtime.rejecting
+             core := X86.Examples.unwindCore 3 1 }
   | _ => .error usage
 
 def main (args : List String) : IO UInt32 := do
@@ -50,7 +56,7 @@ def main (args : List String) : IO UInt32 := do
         IO.eprintln s!"x86-object-fixture: validation failed: {repr error}"
         return 1
   let localResult ←
-    match (runFrom runtime checked 64 (Core.empty 0x1008)).status with
+    match (runFrom runtime checked 64 selectedFixture.core).status with
     | .halted result => pure result
     | status =>
         IO.eprintln s!"x86-object-fixture: local execution failed: {repr status}"

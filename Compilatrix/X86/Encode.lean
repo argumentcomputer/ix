@@ -257,6 +257,7 @@ def rel32 (o : Op) (target : FixupTarget) : Chunk :=
 def encodeInstr : Instr → Chunk
   | .op o args => .raw (encodeOp o args)
   | .fused producer pargs consumer cargs => .raw (encodeOp producer pargs ++ encodeOp consumer cargs)
+  | .unwind source => .raw (encodeOp unwindRow [.reg .rsp, .mem source])
   | .call target => rel32 Op.callRel32 (.block target)
   | .callRuntime intrinsic => rel32 Op.callRel32 (.intrinsic intrinsic)
 

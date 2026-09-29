@@ -41,7 +41,7 @@ theorem linear_returns (runtime : Runtime) (checked : Checked) (machine : Machin
       · exact advance_returns _ _
       · rfl
       · rfl
-  | fused | call | callRuntime => simp [Encode.linearInstruction] at linear
+  | fused | call | callRuntime | unwind => simp [Encode.linearInstruction] at linear
 
 structure RunningAt (program : Program) (base : Word) (machine : Machine) (state : ByteEval.State) : Prop where
   core : state.core = machine.core

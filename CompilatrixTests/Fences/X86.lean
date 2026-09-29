@@ -17,6 +17,7 @@ import Compilatrix.X86.Eval
 import Compilatrix.X86.ExactNat
 import Compilatrix.X86.Memory
 import Compilatrix.X86.ObjectExecution
+import Compilatrix.X86.SafeControl
 import Compilatrix.X86.SafeStepsObject
 import Compilatrix.X86.StreamCalls
 import Compilatrix.X86.StreamControl
@@ -256,3 +257,27 @@ failure exit. -/
 
 /-- info: 'Compilatrix.X86.Stream.fused_progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Stream.fused_progress
+
+/-- info: 'Compilatrix.X86.cutAt_suffix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.cutAt_suffix
+
+/-- info: 'Compilatrix.X86.Stream.FramesMapped.suffix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.FramesMapped.suffix
+
+/-- info: 'Compilatrix.X86.executeInstr_unwind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.executeInstr_unwind
+
+/-- info: 'Compilatrix.X86.Stream.unwind_progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.unwind_progress
+
+/-- info: 'Compilatrix.X86.unwind_inFrame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.unwind_inFrame
+
+/-- info: 'Compilatrix.X86.Straight.Segment.safe_unwind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Straight.Segment.safe_unwind
+
+/-- info: 'Compilatrix.X86.ObjectEval.run_exit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ObjectEval.run_exit
+
+/-- info: 'Compilatrix.X86.StreamExamples.unwind_safe' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.StreamExamples.unwind_safe

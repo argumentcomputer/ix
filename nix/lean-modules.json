@@ -244,6 +244,7 @@
     "Compilatrix.X86.ExactNat",
     "Compilatrix.X86.Memory",
     "Compilatrix.X86.ObjectExecution",
+    "Compilatrix.X86.SafeControl",
     "Compilatrix.X86.SafeStepsObject",
     "Compilatrix.X86.StreamCalls",
     "Compilatrix.X86.StreamControl",
