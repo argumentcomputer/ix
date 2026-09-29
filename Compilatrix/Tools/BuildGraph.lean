@@ -77,26 +77,53 @@ def digest (values : List String) : IO String :=
     handle.flush
     sha256 path
 
-def checkCoverage (root : FilePath) (graph : Json) : IO Unit := do
-  let expected ← readJson (root / "nix/ci-coverage.json")
-  let proofs ← closure graph ["CompilatrixTests.Proofs"]
-  for name in ← (← arrField expected "proof_modules").toList.mapM string do
-    need (proofs.contains name) s!"required proof aggregate no longer builds {name}"
+/-- The exact axiom assertions of every registered fence module. -/
+def fenceAssertions (root : FilePath) (proofs : List String) : IO (List String) := do
   let mut axioms := []
   for path in ← files (root / "CompilatrixTests/Fences") do
     if path.extension != some "lean" then continue
     let name := "CompilatrixTests.Fences." ++ (path.fileStem.getD "")
     need (proofs.contains name) s!"unregistered axiom-fence module {name}"
     axioms := axioms ++ (← axiomAssertions (← IO.FS.readFile path))
-  need (axioms.length == (← nat (← field expected "axiom_count")) &&
-    (← digest axioms) == (← strField expected "axiom_sha256"))
-    "required axiom assertions or expected messages changed; review the coverage inventory"
+  return axioms
+
+/-- Runtime failure assertions of each suite `S`, whose `CompilatrixTests.S.Run`
+module must be reachable from its executable root `CompilatrixTests.S.Main`. -/
+def suiteFailures (root : FilePath) (graph : Json) (suites : List String) :
+    IO (List String) := do
   let mut failures := []
-  let runtime ← closure graph ["CompilatrixTests.Runtime"]
-  for suite in ["Addressing", "Pipeline", "HPT", "Ixon", "IxonV3"] do
+  for suite in suites do
+    let runtime ← closure graph [s!"CompilatrixTests.{suite}.Main"]
     need (runtime.contains s!"CompilatrixTests.{suite}.Run") s!"unregistered runtime suite {suite}"
     failures := failures ++ (← runtimeFailures
       (← IO.FS.readFile (root / s!"CompilatrixTests/{suite}/Run.lean")))
+  return failures
+
+/-- The coverage inventory of the current tree, for review before it replaces
+`nix/ci-coverage.json`. -/
+def coverage (root : FilePath) (graph : Json) (baseline : String)
+    (suites : List String) : IO Json := do
+  let proofs := (← closure graph ["CompilatrixTests.Proofs"]).filter (· != "CompilatrixTests.Proofs")
+  let axioms ← fenceAssertions root proofs
+  let failures ← suiteFailures root graph suites
+  return Json.mkObj [("baseline", toJson baseline),
+    ("proof_modules", toJson proofs),
+    ("axiom_count", toJson axioms.length), ("axiom_sha256", toJson (← digest axioms)),
+    ("runtime_suites", toJson suites),
+    ("runtime_failure_count", toJson failures.length),
+    ("runtime_failure_sha256", toJson (← digest failures))]
+
+def checkCoverage (root : FilePath) (graph : Json) : IO Unit := do
+  let expected ← readJson (root / "nix/ci-coverage.json")
+  let proofs ← closure graph ["CompilatrixTests.Proofs"]
+  for name in ← (← arrField expected "proof_modules").toList.mapM string do
+    need (proofs.contains name) s!"required proof aggregate no longer builds {name}"
+  let axioms ← fenceAssertions root proofs
+  need (axioms.length == (← nat (← field expected "axiom_count")) &&
+    (← digest axioms) == (← strField expected "axiom_sha256"))
+    "required axiom assertions or expected messages changed; review the coverage inventory"
+  let suites ← (← arrField expected "runtime_suites").toList.mapM string
+  let failures ← suiteFailures root graph suites
   need (failures.length == (← nat (← field expected "runtime_failure_count")) &&
     (← digest failures) == (← strField expected "runtime_failure_sha256"))
     "runtime assertion inventory changed; review the coverage inventory"

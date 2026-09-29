@@ -76,7 +76,6 @@ def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) 
     ids := (← strField entry "id") :: ids
   unique ids "ledger ids"
   let modeled ← arrField ledger "modeled_oracles"
-  need (!modeled.isEmpty) "empty modeled_oracles"
   let mut modeledIds := []
   for entry in modeled do
     fields entry ["id", "address", "declaration", "scope", "semantics"]
@@ -343,9 +342,10 @@ def validateSeeds (root : FilePath) (seeds : Array Json) (gmp : Option String) :
   need (foundLean && foundGmp) "missing Lean/GMP seed entries"
 
 def validateCI (root : FilePath) (ledger : Json) : IO Unit := do
-  let workflows := (← (root / ".github/workflows").readDir).toList.filter fun entry =>
+  let directory := root / ".github/workflows"
+  let entries ← if ← directory.pathExists then pure (← directory.readDir).toList else pure []
+  let workflows := entries.filter fun entry =>
     entry.path.extension == some "yml" || entry.path.extension == some "yaml"
-  need (!workflows.isEmpty) "no CI workflows found"
   let mut actual := []
   for workflow in workflows do
     for (line, index) in (← IO.FS.readFile workflow.path).splitOn "\n" |>.zipIdx do

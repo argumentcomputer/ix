@@ -46,8 +46,10 @@ private def cloneProject (source target : FilePath) : IO Unit := do
   for (path, _) in ← pairs (← field (← field ledger "integrity") "tracked_files") do
     copyRelative source target (source / path)
   copyFile (source / "docs/trusted-externs.json") (target / "docs/trusted-externs.json")
-  for entry in ← (source / ".github/workflows").readDir do
-    copyFile entry.path (target / ".github/workflows" / entry.fileName)
+  let workflows := source / ".github/workflows"
+  if ← workflows.pathExists then
+    for entry in ← workflows.readDir do
+      copyFile entry.path (target / ".github/workflows" / entry.fileName)
 
 private def lexerTests : IO Unit := do
   let safe := "/- outer /- axiom hidden : False -/ sorry -/\n" ++
@@ -107,23 +109,23 @@ private def buildGraphTests (root : FilePath) : IO Unit := do
   let checkGraph := Compilatrix.Tools.BuildGraph.check root
   checkGraph
   let api := root / "Compilatrix.lean"
-  withFile api ("import CompilatrixTests.Runtime\n" ++ (← IO.FS.readFile api)) do
+  withFile api ("import CompilatrixTests.IxonV3.Run\n" ++ (← IO.FS.readFile api)) do
     rejects "stale source manifest" "Nix import manifest is stale" checkGraph
     let actual ← Compilatrix.Tools.BuildGraph.manifest root
     withFile (root / "nix/lean-modules.json") actual.pretty do
       rejects "production imports tests" "production imports regression module" checkGraph
   let proofs := root / "CompilatrixTests/Proofs.lean"
   withFile proofs ((← IO.FS.readFile proofs).replace
-      "import CompilatrixTests.IxIR1.Lower\n" "") do
+      "import Compilatrix.X86.ELFExamples\n" "") do
     rejects "missing moved proof module" "required proof aggregate no longer builds" do
       Compilatrix.Tools.BuildGraph.checkCoverage root (← Compilatrix.Tools.BuildGraph.manifest root)
-  let fence := root / "CompilatrixTests/Fences/Borrow.lean"
+  let fence := root / "CompilatrixTests/Fences/X86.lean"
   let source ← IO.FS.readFile fence
   let assertions ← Compilatrix.Tools.BuildGraph.axiomAssertions source
   need (!assertions.isEmpty) "empty axiom-fence regression fixture"
   withFile fence (source.replace assertions.head! "") do
     rejects "removed axiom assertion" "required axiom assertions or expected messages changed" checkGraph
-  let runtime := root / "CompilatrixTests/Pipeline/Run.lean"
+  let runtime := root / "CompilatrixTests/IxonV3/Run.lean"
   withFile runtime ((← IO.FS.readFile runtime).replace "FAIL:" "REMOVED:") do
     rejects "removed runtime assertions" "runtime assertion inventory changed" checkGraph
 
@@ -156,16 +158,15 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
     rejects "external import drift" "external Lean import roots drifted" check
   withFile regression "def drift := Blake3.Rust.internalVersion\n" do
     rejects "native entrypoint drift" "qualified uses of Blake3.Rust drifted" check
+  -- The CI action inventory is empty while hosted workflows are removed; any
+  -- added workflow action must be pinned and reviewed into the ledger.
   let workflow := root / ".github/workflows/regression.yml"
-  let action := (← arrField originalLedger "ci_actions")[0]!
-  let pinned := (← strField action "repository") ++ "@" ++ (← strField action "commit")
-  for quote in ["\"", "'"] do
-    withFile workflow s!"jobs:\n  test:\n    steps:\n      - uses: {quote}{pinned}{quote}\t# reviewed\n" check
-  withFile workflow ("jobs:\n  test:\n    steps:\n      - uses: " ++
-    (← strField action "repository") ++ "@\"" ++ (← strField action "commit") ++ "\"\n") do
-    rejects "embedded CI quotes" "unpinned CI action" check
+  withFile workflow "jobs:\n  test:\n    steps:\n      - run: true\n" check
   withFile workflow "jobs:\n  test:\n    steps:\n      - uses: actions/checkout@main\n" do
     rejects "unpinned CI action" "unpinned CI action" check
+  withFile workflow ("jobs:\n  test:\n    steps:\n      - uses: \"unreviewed/action@" ++
+      String.join (List.replicate 40 "1") ++ "\"\t# reviewed\n") do
+    rejects "new quoted pinned CI action" "CI action inventory drifted" check
   withFile workflow ("jobs:\n  test:\n    steps:\n      - uses: unreviewed/action@" ++
       String.join (List.replicate 40 "1") ++ "\n") do
     rejects "new pinned CI action" "CI action inventory drifted" check

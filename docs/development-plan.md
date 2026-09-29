@@ -45,17 +45,29 @@ encoder or compiler correctness.
 ## Validation commands
 
 Use the Lean version pinned in `lean-toolchain` and the repository's Nix
-environment. The required check surface is empty while the compiler is
-rebuilt ([CI guide](ci.md)); gates return one at a time. Until a gate covers
-your change, validate it directly:
+environment. The required integration gate is:
+
+```sh
+nix flake check
+```
+
+The [CI guide](ci.md) lists its checks, the shared program build, the
+coverage inventory and the coverage-change record. During development:
 
 - Build the affected targets: `nix develop -c lake build <targets>`.
+- Build every program and the proof collection:
+  `nix develop -c lake build CompilatrixTests.Proofs <executables>`.
 - Run the focused suites for the area: `lake exe tests-ixon-v3`,
-  `lake exe check-ixon-v3 …`, `lake exe check-ixon-v3-catalog …`, and the
-  x86 gates `check-x86-encoder`, `check-x86-bytes`, `check-x86-streams` and
-  `check-x86-object`.
+  `lake exe check-ixon-v3 …`, `lake exe check-ixon-v3-catalog …`,
+  `lake exe tests-aiur`, and the x86 checks `check-x86-encoder`,
+  `check-x86-bytes`, `check-x86-streams` and `check-x86-object`.
 - After changing imports or Lake roots, run
-  `lake exe check-build-graph --write` and review the manifest.
+  `lake exe check-build-graph --write` and review the manifest. After a
+  reviewed fence or assertion change, regenerate the coverage inventory
+  with `--write-coverage` (see the CI guide).
+- After changing an integrity-pinned file, review and update its pin in
+  `docs/trusted-externs.json`, then run `check-trusted-externs` and
+  `check-tools-tests`.
 
 The former complete surface, including every family gate and its command,
 is documented on branch `jcb/ixby-archive`.

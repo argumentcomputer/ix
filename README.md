@@ -36,7 +36,7 @@ The earlier pipeline, the Ixby backend and their measurements are on branch
 
 ```sh
 nix build                          # production library
-nix flake check                    # required checks (being re-added; docs/ci.md)
+nix flake check                    # required checks (docs/ci.md)
 nix develop -c lake build          # local development build
 ```
 

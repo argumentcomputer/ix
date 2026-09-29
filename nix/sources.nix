@@ -23,10 +23,16 @@
         lib.fileset.unions
         (common ++ map (item: root + "/${modules.${item.key}.path}") (closure roots));
     };
+  programTargets =
+    builtins.attrNames
+    (lib.filterAttrs (_: target: target.kind == "lean_exe") graph.targets);
 in {
-  # The native facet builds the whole reference library, including roots
-  # outside the production API's narrower bytecode/counter imports.
+  inherit programTargets;
+  # The production library, including the Aiur reference roots it builds on.
   production = source (["Compilatrix"] ++ graph.targets.AiurReference.roots);
+  # Every executable plus the complete proof and fence collection, built once.
+  programs = source (["CompilatrixTests.Proofs"]
+    ++ lib.concatMap (name: graph.targets.${name}.roots) programTargets);
   dependencies = lib.fileset.toSource {
     inherit root;
     fileset = lib.fileset.unions common;

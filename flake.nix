@@ -94,22 +94,30 @@
         # Pin changes follow the compatibility gates in docs/roadmap.md.
         lean = lean4-nix.lib.${system}.fromToolchainFile ./lean-toolchain;
         lake2nix = pkgs.callPackage lean4-nix.lake {inherit lean;};
+        # The trust audit and checks see the complete tracked source tree;
+        # the compiler builds use the narrower module source sets.
+        auditSrc = ./.;
         build = import ./nix/build.nix {
-          inherit pkgs lean lake2nix;
+          inherit pkgs lean lake2nix auditSrc;
           root = ./.;
           blake3 = blake3WithStaticCrates.packages.${system}.rust;
         };
-        inherit (build) compilatrixLib;
+        inherit (build) compilatrixLib programs mkCheck;
+        gateChecks = import ./nix/checks.nix {
+          inherit pkgs system auditSrc blake3-lean mkCheck;
+        };
       in {
         packages = {
           default = compilatrixLib;
           compilatrix = compilatrixLib;
         };
 
-        # The required check surface was emptied on 2026-09-29 while the
-        # compiler is rebuilt (docs/ci.md). Gates return one at a time as the
-        # new pipeline needs them; each return is a recorded coverage change.
-        checks = {};
+        # The required check surface was emptied on 2026-09-29 and returns
+        # gate by gate (docs/ci.md). Every check reuses one program build.
+        checks = {
+          build = compilatrixLib;
+          proofs = programs;
+        } // gateChecks;
 
         devShells.default = pkgs.mkShell {
           # Blake3.lean's Rust binding uses bindgen through lean-ffi.

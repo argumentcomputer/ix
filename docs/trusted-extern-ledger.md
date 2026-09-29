@@ -1,14 +1,14 @@
 # Trusted-extern ledger
 
 The machine-readable ledger is
-[`trusted-externs.json`](trusted-externs.json); `check-trusted-externs` validates
+[`trusted-externs.json`](trusted-externs.json); `nix flake check` validates
 it with [`scripts/CheckTrustedExterns.lean`](../scripts/CheckTrustedExterns.lean).
 
-**Status, 2026-09-29.** The required checks were removed while the compiler
-is rebuilt ([CI guide](ci.md)), and the Ixby backend left main (branch
-`jcb/ixby-archive`). `check-trusted-externs` no longer runs. The integrity
-pins in `trusted-externs.json` still name removed files; they are refreshed
-when the audit returns as a gate.
+**Status, 2026-09-29.** The inventory was reset for the rebuilt compiler.
+Removed with the legacy pipeline: the durable-filesystem native interface,
+the IxIR and Ixby specification assumptions, the modeled IxIR oracles, the
+hosted CI actions and runner, and the comparison-runtime pins. All remain
+on branch `jcb/ixby-archive`. `nix flake check` runs the audit again.
 
 This document separates four things that are easy to blur:
 
@@ -62,12 +62,9 @@ The checker deliberately fails closed on changes to:
   `.envrc` (it injects `NIX_CONFIG` for direnv users);
 - the integrity-pinned independent x86 decoder and ELF object/link checks used
   as E0 evidence, including their native harness;
-- the fresh-process source-coverage, source-recursion, source-call-reuse, and
-  source-unique-reuse checkers and their reviewed address, observation, and
-  rejection matrices;
-- every `uses:` reference in every CI workflow file: a reference not pinned
+- every `uses:` reference in any CI workflow file: a reference not pinned
   to a full 40-hex commit is rejected outright, and the pinned inventory must
-  match the ledger.
+  match the ledger. The inventory is empty while hosted workflows are removed.
 
 Updating a dependency therefore requires reviewing and updating this ledger,
 not merely refreshing a lockfile. An entry may only be removed when its exit
@@ -81,10 +78,9 @@ tools and introduce no project native interface or proof axiom. The
 support modules, executable scripts, native harness, and source matrices
 have reviewed integrity pins.
 
-The ledger also pins benchmark adapters, runner/checkers, manifest, and
-comparison toolchains. Clock, allocation, GC, process-memory, compiler, and
-runtime measurements belong to build/measurement trust, separately from
-production source/compiler proof assumptions.
+Clock, allocation, GC, process-memory, compiler and runtime measurements
+belong to build and measurement trust, separately from production
+source/compiler proof assumptions.
 
 Compiler comparisons and measurement runners live in an optional package
 outside the root flake, being rebuilt for the new benchmark ladder
@@ -101,13 +97,6 @@ The `CompilatrixTests` Lake root keeps every test and fence inside the
 audited source inventory, and the proof aggregate `CompilatrixTests.Proofs`
 imports every fence. The [CI guide](ci.md) records the current check surface
 and its coverage changes.
-
-The pinned upload/download actions transfer the producing workflow run's
-compiled runtime artifact and diagnostic logs. Downloads use its artifact ID
-and reject digest mismatch; a separate SHA-256 and expected Nix output-path
-check precede execution. Pinned Lean shared libraries supply the same CI
-runtime symbols previously linked into each executable. These changes affect
-build/runtime packaging and add no target-language native interface.
 
 ## Active native interface: BLAKE3 Rust
 
@@ -349,10 +338,9 @@ a project FFI symbol.
 | Entry | Current role | Retirement/containment |
 | --- | --- | --- |
 | Lean 4.34.0 seed/runtime | Elaborates, kernel-checks, compiles, executes `#guard`s, and hosts compiled tests | Gen-1 self-host plus address-exact diverse double compilation; production checking moves to the public lean4ix/ix verified checker |
-| GMP 6.3.0 | Lean runtime arbitrary-precision arithmetic; direct Nix build input | Verified limb bignums refining `Nat`/`Int`, compiled in the no-runtime fragment after M3 |
-| Host C ABI/runtime | glibc 2.40-66 on the x86_64-linux baseline, plus compiler runtime; hosts Lean/Rust and implements the ledgered `open`/`fstat`/`fsync`/`close` durability shim | Gen 1 removes upstream runtime; allocator/memcpy and libc surface retire to verified `.ix` code plus a syscall model |
+| GMP 6.3.0 | Lean runtime arbitrary-precision arithmetic; direct Nix build input | Verified limb bignums refining `Nat`/`Int`, compiled by Compilatr.ix |
+| Host C ABI/runtime | glibc 2.40-66 on the x86_64-linux baseline, plus compiler runtime; hosts Lean/Rust and the native x86 test harness | Gen 1 removes upstream runtime; allocator/memcpy and libc surface retire to verified `.ix` code plus a syscall model |
 | Locked Nix supply chain | nixpkgs, lean4-nix, flake-parts, crane, fenix/Rust, host C compiler/linker, GNU binutils readelf/objdump, rsync, binary substitution | Locked hashes now; later diverse reproduction and address-exact output comparison remove it from the semantic TCB |
-| GitHub runner/actions | Runs the locked flake automatically | CI is advisory; release attestation must reproduce the flake independently |
 
 The recorded GMP/glibc versions describe the inspected x86_64-linux closure.
 Other configured systems use their corresponding locked Nix platform closure;
@@ -363,8 +351,6 @@ the ledger does not claim that Darwin uses glibc.
 - BLAKE3 has conformance tests, not a refinement proof or collision-resistance
   formalization. Address-identity theorems expose the required pairwise
   no-collision condition as a premise rather than hiding it in the TCB.
-- The GitHub-hosted runner image is mutable even though both actions are pinned
-  by full commit.
 - The ledger covers the current Gen-0 repository/build closure. Future libc,
   IO, store, thread, float, or syscall primitives are unapproved until added
   per symbol/address.
