@@ -9,8 +9,11 @@ bodies, and system linker/loader behavior remain explicit boundaries.
 ## Complete text
 
 [`StreamValidate.lean`](../Compilatrix/X86/StreamValidate.lean) validates the
-ordinary encoder's output using the independent instruction decoder. It
-checks every instruction and terminator, exact lengths and total text size,
+ordinary encoder's output using the separate table-indexed instruction
+decoder ([E1](x86-encoded-instructions.md)). A checked program's instructions
+are listed table rows with operands of their slot kinds
+(`Program.wellFormed`), which discharges E1's well-formedness premise. The
+validator checks every instruction and terminator, exact lengths and total text size,
 canonical block offsets, all internal destinations and signed displacement
 bounds, and the complete ordered runtime-relocation inventory. It validates
 unreachable blocks as well as reachable ones. A runtime call before linking
@@ -65,6 +68,12 @@ conditions for `run_with_calls`:
   the maintained frame relation.
 - The final RET reads an ordinary caller slot. External runtime invocations
   require a separate procedure contract and are excluded from this theorem.
+
+An instruction's memory footprint comes from the table: the reads and writes
+of its memory slots by role and width, plus the word a PUSH, POP, CALL or
+RET moves (`Op.reads`, `Op.writes`). `Stream.run_pair` relates the logical
+and physical runs of any row whose footprint meets these conditions, so
+new rows need no per-form stack proof.
 
 `SafeTrace` describes only typed execution and these concrete access
 conditions. It assumes no byte-step simulation callback. Its decisions are

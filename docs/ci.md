@@ -34,7 +34,7 @@ with the checks.
 | `trusted-extern-ledger` | `check-trusted-externs` against the pinned Blake3 source and GMP version; `check-tools-tests` |
 | `build-graph` | `check-build-graph`: the module manifest, production-import hygiene, and the proof, fence and runtime coverage inventory in [`nix/ci-coverage.json`](../nix/ci-coverage.json) |
 | `census` | `census` on the K1 pack; the report must equal the reviewed [`fixtures/ixon-v3/k1/census.json`](../fixtures/ixon-v3/k1/census.json) |
-| `x86-hardware` | x86-64 Linux only: `check-x86-hardware` runs 11,067 generated cases natively and compares them with `ByteEval`, and checks `llvm-mc` decodes each identically |
+| `x86-hardware` | x86-64 Linux only: `check-x86-hardware` enumerates `Op.rows` and runs 18,767 generated cases natively, compares them with `ByteEval`, and checks `llvm-mc` decodes each identically |
 
 After changing imports or Lake roots, regenerate the manifest with
 `lake exe check-build-graph --write`.
@@ -57,6 +57,7 @@ changes visible.
 | 2026-09-29 | Restored the kept foundations | `build`, `proofs` (387 exact axiom assertions), `ixon-v3` (new; its suite was part of the former `tests`), `aiur`, `x86-encoder-decoder`, `x86-byte-execution`, `x86-stream-objects` and `x86-elf-object` (without their legacy reversal cases), `trusted-extern-ledger` (reset inventory), and `build-graph` (redefined coverage inventory) |
 | 2026-09-29 | Added the admission census | `census` (new): per-constant first rejecting stage and v3 budget headroom for the K1 pack, exact match against its reviewed baseline |
 | 2026-09-29 | Added the hardware-differential gate | `x86-hardware` (new): native execution and LLVM decoding of every generated case |
+| 2026-09-29 | Drove x86 from one instruction table (C2) | `proofs`: 405 exact axiom assertions (from 387); 18 new x86 fences (table facts, `row_decode`, `row_execution`, `instruction_decode`, `instruction_execution`, `Compare.holds_eq`, `Decode.one_stable`, `Stream.run_pair`, `Stream.operation_pair`, three constructor well-formedness laws and two constructor semantics laws); no fence removed or renamed. `Checked.inV0` gains `Quot.sound` (well-formedness decides table membership); `Stream.run_permissions` loses `Classical.choice`. `instruction_decodeAt` and `encoded_instruction_execution` gain an `Instr.wellFormed` premise, discharged for every typed constructor and by `Program.wellFormed`; `compare_execution` states the `cmp` row in place of the retired compare operation. `x86-hardware` enumerates `Op.rows` (18,767 cases, from 11,067); `x86-byte-execution` runs 33,793 instruction cases (from 31,921); `x86-encoder-decoder` checks 30 forms (from 19) |
 
 The restored surface builds in about 2.5 minutes cold at `--max-jobs 2`,
 measured with `--rebuild`: the library in 82 s, the shared program and

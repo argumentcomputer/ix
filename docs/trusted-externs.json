@@ -417,11 +417,11 @@
       "trust_basis": [
         "Intel 64 and IA-32 Software Developer's Manual combined instruction-set reference, version 092",
         "AMD64 Architecture Programmer's Manual Volume 3, revision 3.37",
-        "typed constructors exclude division, floating point, SIMD, atomics, indirect calls, raw syscalls, TLS, high-byte registers, rsp SIB indices, and byte-width two-operand imul",
+        "Op.rows lists every row the table may emit or decode; the typed constructors choose listed rows (Instr.*_wellFormed) and exclude division, floating point, SIMD, atomics, indirect calls, raw syscalls, TLS, high-byte registers, rsp SIB indices, and byte-width imul",
         "Compilatrix.X86.EvalExamples executes arithmetic branches, stack/spill roundtrips, direct call/return, callee-saved ABI trapping, runtime dispatch, permission faults, and call-alignment faults",
-        "E1 proves local encoded-instruction agreement through independent Decode and byte-RIP ByteEval, including defined comparison flags and explicit unknown IMUL flags; this local-to-local proof does not establish hardware faithfulness",
+        "E1 proves, for every row of the declarative instruction table, that a separate table-indexed decoder recovers the row and operands from the encoder's bytes and that byte-RIP ByteEval produces the typed effect, including defined comparison flags and explicit unknown IMUL flags; both machines share each row's semantic function, so this local-to-local proof checks decoding and execution plumbing, not the semantic functions, and does not establish hardware faithfulness",
         "docs/x86-reference-model.json pins the inspected Sail x86 snapshot and per-form source mapping; reference execution comparison, a reproducible Lean adapter and S2 agreement remain pending",
-        "check-x86-hardware runs every generated case (currently 11,067 across all emitted forms, widths, addressing shapes, conditions and edge values) natively on the host processor and compares exit, registers, model-defined flags, changed memory and faults with ByteEval, and requires llvm-mc to decode each case to the same instruction sequence and mnemonics; this tests, and does not prove, hardware faithfulness"
+        "check-x86-hardware enumerates Op.rows and runs every generated case (currently 18,767: each linear row with each kind combination of its slots, addressing shapes, immediate edges, all conditions and the control recipes) natively on the host processor, compares exit, registers, model-defined flags, changed memory and faults with ByteEval, and requires llvm-mc to decode each case to the same instruction lengths, mnemonics and encodings; this tests, and does not prove, hardware faithfulness"
       ],
       "tests": [
         "Compilatrix.X86.Examples.arithmeticBranchAccepted",
@@ -433,7 +433,9 @@
         "Compilatrix.X86.Examples.misalignedCallTraps",
         "Compilatrix.X86.Stream.run_with_calls",
         "Compilatrix.X86.ObjectEval.run_with_calls",
-        "check-x86-hardware (hardware-differential and llvm-mc decode gate)"
+        "check-x86-hardware (hardware-differential and llvm-mc decode gate)",
+        "Compilatrix.X86.Encode.row_execution",
+        "Compilatrix.X86.Compare.holds_eq"
       ],
       "retirement": {
         "milestone": "ISA plan S2 emitted-fragment equivalence",
@@ -472,14 +474,14 @@
         "physical-leaf-cfg/1 composes checked leaf allocation, unique reuse, hot shared reset, parallel value/credit copies, joins and nonrecursive allocating calls through fixed spills and disjoint activations; universal successful source/physical execution implies actual ELF return with a sufficient finite heap/stack workspace, exact counters and complete reclamation, and invalid capacity has a separate no-write rejection theorem; emitted provenance binds the complete canonical IxIR2 artifact"
       ],
       "trust_basis": [
-        "one total pattern-match case per typed instruction and terminator constructor",
+        "one generic encoder over each table row's encoding descriptor (operand-size prefix, REX only when a field needs it, ModRM mod 0/1/2 with SIB and the shortest displacement, immediate), with kernel-evaluated table injectivity, reachability, slot-shape and 15-byte bounds; typed constructors choose the compact imm8 (83 /d, 6B), mov r32, imm32 and mov r/m64, imm32 rows when the value allows",
         "elaboration-time byte-exact goldens in Compilatrix.X86.EncodeExamples",
-        "GNU objdump 2.44 independently decodes representative forms and resolved branch/call streams in the pinned Nix check",
+        "GNU objdump 2.44 independently decodes 30 frozen instruction forms, six addressing/REX edges and resolved branch/call streams in the pinned Nix check",
         "the decoder check script is integrity-pinned by this ledger",
         "the source-native-unique check independently decodes 16 source-produced main/release objects, compares their exact .text bytes, rejects external relocations and non-leaf register/instruction use, and links eight native reversal/reclamation runs",
         "the source-native-runtime check independently decodes each baseline/counter-fold function/release pair, checks exact .text bytes and leaf restrictions, then links each pair once for eight runtime inputs and 203 malformed calls in one process; both variants pass 20 corruption regressions",
-        "E1's independent decoder and byte evaluator have twelve public axiom fences; check-x86-bytes runs 31921 instruction cases, 2000 patched branches, negative/fault/corruption checks, four complete streams and eight actual source-selected runtime main/release inputs",
-        "E2 adds 23 public axiom fences, kernel-evaluated nested/reused-call safety examples and the integrity-pinned check-x86-streams gate; all production object emitters use Stream.encode and ELF.writeChecked",
+        "E1's table, decoder and byte evaluator have 28 public axiom fences; check-x86-bytes runs 33793 instruction cases, 2000 patched branches, negative/fault/corruption checks and four complete streams",
+        "E2 adds 25 public axiom fences, kernel-evaluated nested/reused-call safety examples and the integrity-pinned check-x86-streams gate; all production object emitters use Stream.encode and ELF.writeChecked",
         "C3 independently reconstructs three unchanged upstream closed Nat call objects, including static capture transport from the actual physical PAP initializer through exact parameter order and expression-preserving specialization; source/physical results, complete baseline release, exact Word representation, supplied-state call certificates, 42 artifact corruptions and native ABI observations are checked; five capture fences retain the existing logical/hash basis and broader N3/F1 contracts remain open",
         "the scalar source gate checks five full source compilations, 45 source inputs, 95 object executions, admission/conversion/capacity negatives, 25 artifact corruptions and 830 linked calls with ordinary and guarded stacks; fifteen axiom fences cover universal contracts rather than per-input native certificates",
         "the physical scalar gate checks seven full source compilations, 133 source/application/object inputs including maximum Words and exact closure reclamation, 76 additional CFG stream inputs covering joins and parallel transfers, 26 admission negatives, 35 export negatives, 3 conversion negatives, 13 stack negatives, 42 application boundary checks, 70 artifact corruptions and 1162 linked calls with ordinary and guarded stacks; nine ordinary-basis physical-to-object fences and eleven source-bridge fences retain the existing Blake3 compiler hash boundary without adding axioms or native interfaces",
@@ -549,7 +551,15 @@
         "Compilatrix.X86.PhysicalHeap.Compiled.policyReturns",
         "Compilatrix.X86.PhysicalHeap.Exported.sourceNatReturns",
         "Compilatrix.X86.PhysicalHeap.Compiled.rejectsCapacity",
-        "scripts/CheckSourceNativeHeap.lean"
+        "scripts/CheckSourceNativeHeap.lean",
+        "Compilatrix.X86.Encode.row_decode",
+        "Compilatrix.X86.Encode.instruction_decode",
+        "Compilatrix.X86.table_injective",
+        "Compilatrix.X86.table_reachable",
+        "Compilatrix.X86.table_shaped",
+        "Compilatrix.X86.table_bounded",
+        "Compilatrix.X86.Instr.mov_wellFormed",
+        "Compilatrix.X86.Instr.alu_wellFormed"
       ],
       "retirement": {
         "milestone": "E2 delivered for certified production outputs; unchecked API completeness remains outside that claim",

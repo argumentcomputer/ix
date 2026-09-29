@@ -284,21 +284,28 @@ not a new cryptographic or native trust assumption.
 
 ## Target specification boundaries: x86-64 v0
 
-[E1](x86-encoded-instructions.md) proves every emitted local instruction
-form. [E2](x86-stream-objects.md) now certifies complete production text and
-independent ELF interpretation, and the N2 source endpoint consumes actual
-object execution. The JSON retains stable boundary identifiers and records
-exactly which portions are discharged.
+[E1](x86-encoded-instructions.md) proves every row of the x86 instruction
+table: one declarative row supplies the typed semantics, the byte semantics
+and the encoding, and a separate decoder finds rows through a kernel-checked
+injective index. [E2](x86-stream-objects.md) now certifies complete
+production text and independent ELF interpretation, and the N2 source
+endpoint consumes actual object execution. The JSON retains stable boundary
+identifiers and records exactly which portions are discharged.
 
-The required `x86-hardware` check tests the local model against the host
-processor. It runs every generated case natively through
-[`hw_diff_harness.c`](../fixtures/x86/hw_diff_harness.c): all emitted forms,
-widths, addressing shapes, conditions and edge values, 11,067 cases in total.
-It compares exit, registers, model-defined flags, changed memory and faults
-with `ByteEval`, and requires LLVM's `llvm-mc` to decode each case to the
-same instruction sequence and mnemonics. This is test evidence, not a proof
-of faithfulness: an error shared by encoder, decoder and processor
-expectations would pass. The Sail agreement (S2) remains the proof route.
+Because the typed and byte machines share each row's semantic function, E1
+no longer checks one semantics against another; a wrong semantic function or
+opcode in a row would pass every proof. The required `x86-hardware` check
+tests the table against the host processor. It enumerates `Op.rows` and runs
+every generated case natively through
+[`hw_diff_harness.c`](../fixtures/x86/hw_diff_harness.c): each linear row
+with each kind combination of its slots, addressing shapes, immediate edges,
+all conditions and the control recipes, 18,767 cases in total. It compares
+exit, registers, model-defined flags, changed memory and faults with
+`ByteEval`, and requires LLVM's `llvm-mc` to decode each case to the same
+instruction lengths, mnemonics and encodings. This is test evidence, not a
+proof of faithfulness: operand values the generator does not reach and
+flags the model leaves undefined are not compared. The Sail agreement (S2)
+remains the proof route.
 
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal

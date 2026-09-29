@@ -9,12 +9,13 @@ decoder and prefix-sum layout specification.
 
 [`DecodeWindow.lean`](../Compilatrix/X86/DecodeWindow.lean) extracts at most
 15 bytes at the requested position before converting them to a list. It uses
-the same independent instruction parser. Prefix-consumption lemmas show
+the same table-indexed instruction parser. Prefix-consumption lemmas show
 that accepted instructions do not inspect their remaining suffix;
 `Decode.decodeWindowAt_eq` proves equality with `Decode.decodeAt` for every
 byte array and natural offset. This includes malformed bytes, truncation,
 unsupported prefixes, alternative encodings, and positions past the end.
-The bound is the existing decoder's maximum accepted instruction length.
+The bound is the architectural limit; `table_bounded` proves that every
+listed row encodes within it.
 
 [`StreamIndex.lean`](../Compilatrix/X86/StreamIndex.lean) computes canonical
 instruction positions, block starts, and total text size in one traversal of
@@ -40,9 +41,11 @@ bounded work per decode and stores one position per instruction plus block
 metadata. Its additional retained layout space grows with instruction and
 block count. These implementation properties and the fixture timings do not
 establish a universal machine-cost theorem. The byte evaluator retains the
-original decoder and remains an independent semantic regression path.
+original decoder. It shares each row's semantic function with the typed
+evaluator, so it is an independent decoding path but not an independent
+semantics; the hardware-differential gate tests the semantics.
 
-The byte gate compares both decoders across 31,921 emitted instruction forms,
+The byte gate compares both decoders across 33,793 emitted instruction cases,
 every proper truncation, 2,000 patched branches, and 131,084 short/padded or
 out-of-range inputs. The stream gate checks both validators on ordinary and
 corrupted text, offsets, and runtime relocations; it adds empty programs,
