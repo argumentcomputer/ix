@@ -771,6 +771,16 @@
   "Compilatrix.Src.Runtime":
   {"path": "Compilatrix/Src/Runtime.lean",
    "imports": ["Compilatrix.Src.Syntax"]},
+  "Compilatrix.Src.Relevance.Syntax":
+  {"path": "Compilatrix/Src/Relevance/Syntax.lean",
+   "imports": ["Compilatrix.Src.Runtime"]},
+  "Compilatrix.Src.Relevance.Check":
+  {"path": "Compilatrix/Src/Relevance/Check.lean",
+   "imports": ["Compilatrix.Src.Relevance.Syntax"]},
+  "Compilatrix.Src.Relevance.Annotate":
+  {"path": "Compilatrix/Src/Relevance/Annotate.lean",
+   "imports":
+   ["Compilatrix.Src.Relevance.Syntax", "Compilatrix.Ixon.V3.Tc.Driver"]},
   "Compilatrix.Src.Readback":
   {"path": "Compilatrix/Src/Readback.lean",
    "imports": ["Compilatrix.Src.Value", "Compilatrix.Sem.Result"]},
@@ -779,6 +789,17 @@
   "Compilatrix.Src.Pinned":
   {"path": "Compilatrix/Src/Pinned.lean",
    "imports": ["Compilatrix.Src.Syntax", "Compilatrix.Ixon.V3.Tc.Support"]},
+  "Compilatrix.Src.Load":
+  {"path": "Compilatrix/Src/Load.lean",
+   "imports":
+   ["Compilatrix.Src.Ingress",
+    "Compilatrix.Src.Table.Build",
+    "Compilatrix.Src.Relevance.Annotate",
+    "Compilatrix.Src.Relevance.Check",
+    "Compilatrix.Src.Lazify",
+    "Compilatrix.Src.Admit",
+    "Compilatrix.Src.Semantics",
+    "Compilatrix.Src.Readback"]},
   "Compilatrix.Src.Lazify":
   {"path": "Compilatrix/Src/Lazify.lean",
    "imports": ["Compilatrix.Src.Runtime"]},
@@ -1323,12 +1344,16 @@
     "Compilatrix.Src.Table.Check",
     "Compilatrix.Src.Table.Build",
     "Compilatrix.Src.Runtime",
+    "Compilatrix.Src.Relevance.Syntax",
+    "Compilatrix.Src.Relevance.Annotate",
+    "Compilatrix.Src.Relevance.Check",
     "Compilatrix.Src.Lazify",
     "Compilatrix.Src.Admit",
     "Compilatrix.Src.Value",
     "Compilatrix.Src.Prim",
     "Compilatrix.Src.Semantics",
     "Compilatrix.Src.Readback",
+    "Compilatrix.Src.Load",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

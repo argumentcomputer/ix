@@ -30,12 +30,16 @@ import Compilatrix.Src.Hints
 import Compilatrix.Src.Table.Check
 import Compilatrix.Src.Table.Build
 import Compilatrix.Src.Runtime
+import Compilatrix.Src.Relevance.Syntax
+import Compilatrix.Src.Relevance.Annotate
+import Compilatrix.Src.Relevance.Check
 import Compilatrix.Src.Lazify
 import Compilatrix.Src.Admit
 import Compilatrix.Src.Value
 import Compilatrix.Src.Prim
 import Compilatrix.Src.Semantics
 import Compilatrix.Src.Readback
+import Compilatrix.Src.Load
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
