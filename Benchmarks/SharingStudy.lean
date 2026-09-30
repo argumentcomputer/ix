@@ -390,10 +390,17 @@ with the gain `g(n, H, b) = (n−1)·b + (H−1)·hdr(t) − n·w`:
 `headdeg` counts the `deg` occurrences that pay `t`'s own header: an App that
 is the function child of an App, and a Lam (All) that is the body of a Lam
 (All), are continuations, not heads; roots are heads. `payloadMin` is the
-scalar bytes (Lam/All/Let contract byte, Prj `Tag0` type index; 0 for App)
-plus one byte per child; `payloadMax` is the unshared size minus the node's
-own Tag4 header; leaves use their full size for both and `hdr = 0`, internal
-nodes `hdr = 1`. All arithmetic is exact (`Nat`/`Int`, no capping of `occ`).
+width-aware recursive lower bound, computed bottom-up for each `w`: a leaf has
+`inlineMin = size`; an internal node has `payloadMin = scalar + Σ childCost`
+(scalar: Lam/All/Let contract byte, Prj `Tag0` type index, 0 for App), where
+a head-position child costs `cmin` and a continuation-position child (App
+function child that is an App, Lam/All body of the same kind) costs
+`cminCont`, and `inlineMin = hdr + payloadMin`; for a candidate
+`cmin = min(w, inlineMin)` and `cminCont = min(w, payloadMin)`, otherwise
+`cmin = inlineMin` and `cminCont = payloadMin`. (The first version used one
+byte per child.) `payloadMax` is the unshared size minus the node's own Tag4
+header; leaves use their full size for both and `hdr = 0`, internal nodes
+`hdr = 1`. All arithmetic is exact (`Nat`/`Int`, no capping of `occ`).
 
 Two uncertain nodes are related when a directed DAG path joins them whose
 intermediate nodes are not certain-stored; components are the transitive
@@ -416,6 +423,8 @@ structure WStats where
   comp : Nat := 0
   /-- Candidates satisfying both certain conditions (counted as stored). -/
   conflicts : Nat := 0
+  /-- Candidates whose `payloadMin` exceeds `payloadMax` (sanity; expect 0). -/
+  minGtMax : Nat := 0
   /-- Candidates whose class changes when every function-child occurrence
   (not only an App inside an App spine) is treated as a non-head. -/
   litDiff : Nat := 0
@@ -445,7 +454,7 @@ def classify (res : Ix.Sharing.AnalyzeResult) (sizes : Std.HashMap Address NodeS
   let mut kind : Array UInt8 := Array.mkEmpty n
   let mut occ : Array Nat := Array.mkEmpty n
   let mut sz : Array Nat := Array.mkEmpty n
-  let mut pMin : Array Nat := Array.mkEmpty n
+  let mut scalar : Array Nat := Array.mkEmpty n
   let mut pMax : Array Nat := Array.mkEmpty n
   let mut hdr : Array Nat := Array.mkEmpty n
   for i in [0:n] do
@@ -453,15 +462,15 @@ def classify (res : Ix.Sharing.AnalyzeResult) (sizes : Std.HashMap Address NodeS
     let ks ← info.children.mapM fun c =>
       match idxOf.get? c with | some j => pure j | none => throw "child not analyzed"
     let ns := sizes.getD order[i]! default
-    let (k, lo, hi, hd) : UInt8 × Nat × Nat × Nat := match info.expr with
-      | .app .. => (1, 2, ns.payload, 1)
-      | .lam .. => (2, 3, ns.payload, 1)
-      | .all .. => (3, 3, ns.payload, 1)
-      | .letE c .. => (4, 4, ns.sz - tag4Size c.flags.toNat, 1)
-      | .prj t f _ => (5, tag0Size t.toNat + 1, ns.sz - tag4Size f.toNat, 1)
-      | _ => (0, ns.sz, ns.sz, 0)
+    let (k, sc, hi, hd) : UInt8 × Nat × Nat × Nat := match info.expr with
+      | .app .. => (1, 0, ns.payload, 1)
+      | .lam .. => (2, 1, ns.payload, 1)
+      | .all .. => (3, 1, ns.payload, 1)
+      | .letE c .. => (4, 1, ns.sz - tag4Size c.flags.toNat, 1)
+      | .prj t f _ => (5, tag0Size t.toNat, ns.sz - tag4Size f.toNat, 1)
+      | _ => (0, 0, ns.sz, 0)
     kids := kids.push ks; kind := kind.push k; occ := occ.push info.usageCount
-    sz := sz.push ns.sz; pMin := pMin.push lo; pMax := pMax.push hi; hdr := hdr.push hd
+    sz := sz.push ns.sz; scalar := scalar.push sc; pMax := pMax.push hi; hdr := hdr.push hd
   let mut deg : Array Nat := Array.replicate n 0
   let mut head : Array Nat := Array.replicate n 0
   let mut headLit : Array Nat := Array.replicate n 0
@@ -487,8 +496,34 @@ def classify (res : Ix.Sharing.AnalyzeResult) (sizes : Std.HashMap Address NodeS
     -- 0 non-candidate, 1 certain-stored, 2 certain-excluded, 3 uncertain
     let mut cls : Array UInt8 := Array.replicate n 0
     let mut st : WStats := {}
+    -- Width-aware recursive lower bound, children first.
+    let mut pMin : Array Nat := Array.replicate n 0
+    let mut cmin : Array Nat := Array.replicate n 0
+    let mut cminCont : Array Nat := Array.replicate n 0
+    for i in [0:n] do
+      let isCand := deg[i]! ≥ 2 && sz[i]! > 1
+      let k := kind[i]!
+      if k == 0 then
+        let v := sz[i]!
+        pMin := pMin.set! i v
+        cmin := cmin.set! i (if isCand then min w v else v)
+        cminCont := cminCont.set! i (if isCand then min w v else v)
+      else
+        let ks := kids[i]!
+        let mut pay := scalar[i]!
+        for pos in [0:ks.size] do
+          let ch := ks[pos]!
+          let ck := kind[ch]!
+          let cont := (k == 1 && pos == 0 && ck == 1) || (k == 2 && pos == 1 && ck == 2) ||
+            (k == 3 && pos == 1 && ck == 3)
+          pay := pay + (if cont then cminCont[ch]! else cmin[ch]!)
+        pMin := pMin.set! i pay
+        let inl := hdr[i]! + pay
+        cmin := cmin.set! i (if isCand then min w inl else inl)
+        cminCont := cminCont.set! i (if isCand then min w pay else pay)
     for i in [0:n] do
       if deg[i]! ≥ 2 && sz[i]! > 1 then
+        if pMin[i]! > pMax[i]! then st := { st with minGtMax := st.minGtMax + 1 }
         let stored := gain deg[i]! head[i]! pMin[i]! hdr[i]! w > 0
         let leafEx := hdr[i]! == 0 &&
           ((occ[i]! : Int) - 1) * sz[i]! < (occ[i]! : Int) * w
@@ -948,7 +983,7 @@ def uwReport (rows : Array Row) : String := Id.run do
   let wr := rows.filter (·.roots > 0)
   let errs := rows.filter (·.uwErr.isSome)
   let mut md := "## Uniform-reference-width classification\n\n"
-  md := md ++ "Candidates are the subterms with compact `deg ≥ 2` and unshared size > 1 (the MSS stored set). For `w ∈ {1, 2, 3}` each candidate is CERTAIN-STORED if `g(deg, headdeg, payloadMin) > 0`, CERTAIN-EXCLUDED if `g(occ, occ, payloadMax) < 0` or it is a leaf with `(occ−1)·size < occ·w`, and UNCERTAIN otherwise, where `g(n, H, b) = (n−1)·b + (H−1)·hdr − n·w`. Uncertain nodes are in one component when a directed DAG path whose intermediate nodes are not certain-stored joins them (transitively). Arithmetic is exact; `occ` is not capped.\n\n"
+  md := md ++ "Candidates are the subterms with compact `deg ≥ 2` and unshared size > 1 (the MSS stored set). For `w ∈ {1, 2, 3}` each candidate is CERTAIN-STORED if `g(deg, headdeg, payloadMin) > 0`, CERTAIN-EXCLUDED if `g(occ, occ, payloadMax) < 0` or it is a leaf with `(occ−1)·size < occ·w`, and UNCERTAIN otherwise, where `g(n, H, b) = (n−1)·b + (H−1)·hdr − n·w`. `payloadMin` is the width-aware recursive lower bound (a candidate child costs at most `w`, a non-candidate child its own recursive minimum; continuation children without their header). `headdeg` treats only an App in App-function position and a Lam/All in same-kind body position as continuations. Uncertain nodes are in one component when a directed DAG path whose intermediate nodes are not certain-stored joins them (transitively). Arithmetic is exact; `occ` is not capped.\n\n"
   md := md ++ s!"- Classification errors: {errs.size}.\n"
   for r in errs.extract 0 10 do
     md := md ++ s!"  - `{r.name}`: {r.uwErr.getD ""}\n"
@@ -974,7 +1009,7 @@ def uwReport (rows : Array Row) : String := Id.run do
     let w := k + 1
     let sum (f : WStats → Nat) : Nat := wr.foldl (fun a r => a + f (get k r)) 0
     md := md ++ s!"### w = {w}\n\n"
-    md := md ++ s!"- Totals: certain-stored {sum (·.cs)}, certain-excluded {sum (·.ce)}, uncertain {sum (·.unc)}; nodes meeting both certain conditions {sum (·.conflicts)}; candidates whose class changes when every function-child occurrence counts as a non-head {sum (·.litDiff)}.\n"
+    md := md ++ s!"- Totals: certain-stored {sum (·.cs)} ({fmtPct (sum (·.cs)) (sum (·.cand))} of candidates), certain-excluded {sum (·.ce)} ({fmtPct (sum (·.ce)) (sum (·.cand))}), uncertain {sum (·.unc)} ({fmtPct (sum (·.unc)) (sum (·.cand))}); nodes meeting both certain conditions {sum (·.conflicts)}; candidates with `payloadMin > payloadMax` {sum (·.minGtMax)}; candidates whose class changes when every function-child occurrence counts as a non-head {sum (·.litDiff)}.\n"
     let chk := wr.map fun r => (get k r).compCheck
     md := md ++ s!"- Largest component recomputed by the literal brute force (DAGs with ≤ 1000 nodes): {(chk.filter (· == some true)).size} equal, **{(chk.filter (· == some false)).size}** different, {(chk.filter (·.isNone)).size} not checked.\n\n"
     md := md ++ "| Metric | min | median | p90 | p99 | max | mean |\n|---|---:|---:|---:|---:|---:|---:|\n"
