@@ -56,8 +56,10 @@ so the closure walked here is the one SrcEval can reach.
   β guard, rule A1, never fires on it).
 
 **Style (D17).** The closure loop, the term walk and the per-instance rules
-recurse structurally (the loop on a fuel), keep their state in lists and a
-persistent `NatMap`, and index no array on the hot path. The `Program` and
+recurse structurally (the loop on a fuel; the term walk is a mutual
+structural recursion over `Term`, fixed by `termination_by structural`, so
+the kernel never unfolds a well-founded fixpoint), keep their state in lists
+and a persistent `NatMap`, and index no array on the hot path. The `Program` and
 `Ann` tables they consult are still arrays (M1.K1). -/
 
 namespace Compilatrix.Src.Relevance
@@ -316,70 +318,108 @@ def lamHead (ctx : Ctx) (errs : List RelError) (head : Term) (args : List Term.A
       else errs
   go args (lamRels head) errs
 
+/-- C1/S1 at a variable. -/
+def varRule (ctx : Ctx) (binders : List Rel) (errs : List RelError) (i : Nat) :
+    List RelError :=
+  match binders[i]? with
+  | some r =>
+    if r.irrP ctx.prof then err ctx "C1" s!"relevant use of a {relName r} binder (#{i})" :: errs
+    else errs
+  | none => err ctx "S1" s!"variable #{i} out of scope" :: errs
+
+/-- S1 and C0 at a λ, then C6: the errors, and whether to enter the body. -/
+def lamRule (ctx : Ctx) (errs : List RelError) (b : Binder) : List RelError × Bool :=
+  let errs := if pwOk ctx.lvls b.propWhen && relOk ctx.lvls b.rel then errs
+    else err ctx "S1" "a condition names a parameter beyond the constant's levels" :: errs
+  let errs := if b.contract.uses == .erased && !b.rel.irrP ctx.prof then
+      err ctx "C0" "a binder written erased is annotated relevant" :: errs
+    else errs
+  if b.propWhen.holdsP ctx.prof then
+    (err ctx "C6" "a λ in a relevant position is a proof at this instance" :: errs, false)
+  else (errs, true)
+
+/-- S1 and C0 at a let. -/
+def letRule (ctx : Ctx) (errs : List RelError) (c : Ixon.V3.LetContract) (r : Rel) :
+    List RelError :=
+  let errs := if relOk ctx.lvls r then errs
+    else err ctx "S1" "a condition names a parameter beyond the constant's levels" :: errs
+  if c.binder.uses == .erased && !r.irrP ctx.prof then
+    err ctx "C0" "a let written erased is annotated relevant" :: errs
+  else errs
+
+/-- C3/S1 at a projection. -/
+def projRule (ctx : Ctx) (errs : List RelError) (s i : Nat) : List RelError :=
+  match onlyCtor? ctx.p s with
+  | some k =>
+    match ctx.ann.ctorRel? k with
+    | some rel =>
+      match rel.fields[i]? with
+      | some cls =>
+        if cls.alwaysDropped then
+          err ctx "C3" s!"field {i} is never kept but is projected relevantly" (some k) :: errs
+        else errs
+      | none => err ctx "C3" s!"projection of field {i} beyond the fields" (some k) :: errs
+    | none =>
+      err ctx "S1" "projection of a structure without a constructor record" (some k) :: errs
+  | none => err ctx "C3" "projection out of a type that is not a structure" (some s) :: errs
+
+/-- S1 on an argument's class. -/
+def argRule (ctx : Ctx) (errs : List RelError) (r : Rel) : List RelError :=
+  if relOk ctx.lvls r then errs
+  else err ctx "S1" "a condition names a parameter beyond the constant's levels" :: errs
+
+/-- The rules at an application node `t`: C2/S2/C3/C4 at its spine's head,
+then S1 on its argument's class `r`. -/
+def appRule (ctx : Ctx) (errs : List RelError) (t : Term) (r : Rel) : List RelError :=
+  let (head, args) := t.spineL
+  let errs := match head with
+    | .const c us => knownHead ctx errs c us args
+    | .lam .. => lamHead ctx errs head args
+    | _ => errs
+  argRule ctx errs r
+
 mutual
 
 /-- Check the relevant positions of a term under binder classes `binders`
 (innermost first). -/
 def term (ctx : Ctx) (binders : List Rel) (errs : List RelError) : Term → List RelError
-  | .var i =>
-    match binders[i]? with
-    | some r =>
-      if r.irrP ctx.prof then err ctx "C1" s!"relevant use of a {relName r} binder (#{i})" :: errs
-      else errs
-    | none => err ctx "S1" s!"variable #{i} out of scope" :: errs
+  | .var i => varRule ctx binders errs i
   | .const c us => constHead ctx c us errs
   | .lam b _ t =>
-    let errs := if pwOk ctx.lvls b.propWhen && relOk ctx.lvls b.rel then errs
-      else err ctx "S1" "a condition names a parameter beyond the constant's levels" :: errs
-    let errs := if b.contract.uses == .erased && !b.rel.irrP ctx.prof then
-        err ctx "C0" "a binder written erased is annotated relevant" :: errs
-      else errs
-    if b.propWhen.holdsP ctx.prof then
-      err ctx "C6" "a λ in a relevant position is a proof at this instance" :: errs
-    else term ctx (b.rel :: binders) errs t
+    let (errs, enter) := lamRule ctx errs b
+    if enter then term ctx (b.rel :: binders) errs t else errs
   | .letE c r _ v b =>
-    let errs := if relOk ctx.lvls r then errs
-      else err ctx "S1" "a condition names a parameter beyond the constant's levels" :: errs
-    let errs := if c.binder.uses == .erased && !r.irrP ctx.prof then
-        err ctx "C0" "a let written erased is annotated relevant" :: errs
-      else errs
+    let errs := letRule ctx errs c r
     let errs := if r.irrP ctx.prof then errs else term ctx binders errs v
     term ctx (r :: binders) errs b
-  | .proj s i e =>
-    let errs := match onlyCtor? ctx.p s with
-      | some k =>
-        match ctx.ann.ctorRel? k with
-        | some rel =>
-          match rel.fields[i]? with
-          | some cls =>
-            if cls.alwaysDropped then
-              err ctx "C3" s!"field {i} is never kept but is projected relevantly" (some k) :: errs
-            else errs
-          | none => err ctx "C3" s!"projection of field {i} beyond the fields" (some k) :: errs
-        | none =>
-          err ctx "S1" "projection of a structure without a constructor record" (some k) :: errs
-      | none => err ctx "C3" "projection out of a type that is not a structure" (some s) :: errs
-    term ctx binders errs e
+  | .proj s i e => term ctx binders (projRule ctx errs s i) e
   | .app f a m r =>
-    let (head, args) := (Term.app f a m r).spineL
-    let errs := match head with
-      | .const c us => knownHead ctx errs c us args
-      | .lam .. => lamHead ctx errs head args
-      | _ => errs
-    let errs := if relOk ctx.lvls r then errs
-      else err ctx "S1" "a condition names a parameter beyond the constant's levels" :: errs
+    let errs := appRule ctx errs (.app f a m r) r
     let errs := rest ctx binders errs f
     if r.irrP ctx.prof then errs else term ctx binders errs a
   | _ => errs
+termination_by structural t => t
 
-/-- The rest of an application spine: its relevant arguments and its head. -/
+/-- The rest of an application spine: its relevant arguments and its head,
+which is checked as `term` checks it (the cases are repeated so that both
+functions recurse structurally on `Term`). -/
 def rest (ctx : Ctx) (binders : List Rel) (errs : List RelError) : Term → List RelError
   | .app f a _ r =>
-    let errs := if relOk ctx.lvls r then errs
-      else err ctx "S1" "a condition names a parameter beyond the constant's levels" :: errs
+    let errs := argRule ctx errs r
     let errs := rest ctx binders errs f
     if r.irrP ctx.prof then errs else term ctx binders errs a
-  | h => term ctx binders errs h
+  | .var i => varRule ctx binders errs i
+  | .const c us => constHead ctx c us errs
+  | .lam b _ t =>
+    let (errs, enter) := lamRule ctx errs b
+    if enter then term ctx (b.rel :: binders) errs t else errs
+  | .letE c r _ v b =>
+    let errs := letRule ctx errs c r
+    let errs := if r.irrP ctx.prof then errs else term ctx binders errs v
+    term ctx (r :: binders) errs b
+  | .proj s i e => term ctx binders (projRule ctx errs s i) e
+  | _ => errs
+termination_by structural t => t
 
 end
 
