@@ -106,7 +106,7 @@ def mutations (a : Assert) (l : Loaded) : IO Unit := do
   let some (.defn _ _ _ addTy addVal) := p.decl? add | throw (IO.userError "Nat.add")
   let (pg, g) := withConst p (.defn .defn .safe 0 addTy addVal)
   let csimpTy := fun (x y : CId) => Term.mkApps (.const eq [.succ .zero])
-    #[(addTy, .strict), (.const x [], .strict), (.const y [], .strict)]
+    #[(addTy, .strict, .rel), (.const x [], .strict, .rel), (.const y [], .strict, .rel)]
   let (pc, fwd) := withConst pg (.defn .thm .safe 0 (csimpTy add g) (.natLit 0))
   let (pc, rev) := withConst pc (.defn .thm .safe 0 (csimpTy g add) (.natLit 0))
   expect a (isOk (Table.checkCsimp pc add g fwd)) "csimp: @f = @g accepted"

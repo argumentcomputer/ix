@@ -41,7 +41,7 @@ def run (a : Assert) : IO Unit := do
   expect a (codes (admit p) == ["unsupported"]) s!"admit: string declined, got {codes (admit p)}"
   expect a (!isRejection "unsupported" && !isRejection "budget") "admit: decline codes"
   -- An irrelevant reference to a theorem is not reached.
-  let (p, _) := pushConst w.p (.defn .defn .safe 0 ty (.app (lam (.natLit 1)) (.const w.thm []) .irr))
+  let (p, _) := pushConst w.p (.defn .defn .safe 0 ty (appIrr (lam (.natLit 1)) (.const w.thm [])))
     7000 (root := true)
   expect a (codes (admit p) == []) "admit: an irrelevant theorem is not reached"
   -- The size budget declines.

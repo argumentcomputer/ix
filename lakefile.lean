@@ -36,6 +36,12 @@ lean_lib K1Fixture where
   srcDir := "fixtures/ixon-v3/k1"
   roots := #[`K1]
 
+/- The sort-polymorphism fixture compiled natively: the independent oracle of
+the level-exact relevance regression (D18). Test-only, like `K1Fixture`. -/
+lean_lib SortPolyFixture where
+  srcDir := "fixtures/ixon-v3/src-sortpoly"
+  roots := #[`SortPoly]
+
 /- Src: rules, the K1 table and runs, the native differential, pins,
 diagnostics and the bench-k1 entries (design note 01 §10). -/
 lean_exe «tests-src» where

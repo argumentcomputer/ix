@@ -120,18 +120,19 @@ partial def eval (p : Program) (k : Nat) (ls : Levels) (ρ : Env) : Term → Out
   | .strLit s => .ok (.str s)
   | .lam b d body => .ok (.clo b d body ρ ls)
   | .letE _ r _ v body =>
-    if r == .rel then do
+    if r.irrAt ls then eval p k ls (.val (.irr (some v) ρ ls) :: ρ) body
+    else do
       let x ← eval p k ls ρ v
       eval p k ls (.val x :: ρ) body
-    else eval p k ls (.val (.irr (some v) ρ ls) :: ρ) body
   | .proj s i e => do
     Program.projectField p s i (← eval p k ls ρ e)
-  | .app f a m => do
+  | .app f a m r => do
     let fv ← eval p k ls ρ f
-    match m with
-    | .strict => apply p k fv (.val (← eval p k ls ρ a))
-    | .byName => apply p k fv (.name a ρ ls)
-    | .irr => apply p k fv (.val (.irr (some a) ρ ls))
+    if r.irrAt ls then apply p k fv (.val (.irr (some a) ρ ls))
+    else
+      match m with
+      | .strict => apply p k fv (.val (← eval p k ls ρ a))
+      | .byName => apply p k fv (.name a ρ ls)
   | .const c us => evalConst p k (us.map (evalUniv ls)) c
 
 partial def evalConst (p : Program) (k : Nat) (ls : Levels) (c : CId) : Out Value :=
@@ -226,14 +227,14 @@ partial def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List S
     match k with
     | 0 => .error .timeout
     | k + 1 =>
-      match p.decl? r, p.table.recKindOf r with
+      match p.decl? r, (p.table.recKindOf r).map (fun k => RecKind.atLevels ls k) with
       | some (.recr _ _ _ np nmot nmin ni ind rules _), some kind => do
         let pre := args.take (np + nmot + nmin)
         let (j, fields) ← match kind with
           | .empty => .error .trap
           | .ordinary => do
             Program.selectRule p ind np (← force p k (args.getD (np + nmot + nmin + ni) default))
-          | .subsingleton srcs =>
+          | .subsingleton _ srcs =>
             let indices := (args.drop (np + nmot + nmin)).take ni
             .ok (0, srcs.toList.map fun
               | .index i => indices.getD i (Slot.irrNone ls)
@@ -252,13 +253,13 @@ partial def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List S
     | k + 1 =>
       match p.table.resolveOf c with
       | some (.case r) =>
-        match p.decl? r, p.table.recKindOf r with
+        match p.decl? r, (p.table.recKindOf r).map (fun k => RecKind.atLevels ls k) with
         | some (.recr _ _ _ np _ _ ni ind _ _), some kind => do
           let (j, fields) ← match kind with
             | .empty => .error .trap
             | .ordinary => do
               Program.selectRule p ind np (← force p k (args.getD (np + 1 + ni) default))
-            | .subsingleton srcs =>
+            | .subsingleton _ srcs =>
               .ok (0, srcs.toList.map fun
                 | .index i => args.getD (np + 1 + i) (Slot.irrNone ls)
                 | .proof => Slot.irrNone ls)

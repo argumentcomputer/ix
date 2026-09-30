@@ -24,6 +24,7 @@ import Compilatrix.Xv.Select.Rules
 import Compilatrix.Xv.Select.Branch
 import Compilatrix.Xv.Select.Driver
 import Compilatrix.Xv.Select.Lemmas
+import Compilatrix.Src.Level
 import Compilatrix.Src.Syntax
 import Compilatrix.Src.Ingress
 import Compilatrix.Src.Pinned
@@ -33,6 +34,7 @@ import Compilatrix.Src.Table.Build
 import Compilatrix.Src.Runtime
 import Compilatrix.Src.Relevance.Syntax
 import Compilatrix.Src.Relevance.Annotate
+import Compilatrix.Src.NatMap
 import Compilatrix.Src.Relevance.Check
 import Compilatrix.Src.Lazify
 import Compilatrix.Src.Admit

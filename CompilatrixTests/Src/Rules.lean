@@ -105,8 +105,8 @@ def rules (a : Assert) : IO Unit := do
   expectOutcome a (ev w 0 (lam (.var 0))) "ok clo" "E4 lam"
   -- E5: a relevant let evaluates; an irrelevant one binds irr without evaluating.
   expectNat a (ev w 5 (.letE {nonDep := false} .rel ty (lit 3) (.var 0))) 3 "E5 relevant let"
-  expectNat a (ev w 0 (.letE {nonDep := false} .proof ty (c w.loop) (lit 1))) 1 "E5 irrelevant let"
-  expectOutcome a (ev w 5 (.letE {nonDep := false} .proof ty (lit 3) (.var 0))) "ok irr"
+  expectNat a (ev w 0 (.letE {nonDep := false} Rel.prf ty (c w.loop) (lit 1))) 1 "E5 irrelevant let"
+  expectOutcome a (ev w 5 (.letE {nonDep := false} Rel.prf ty (lit 3) (.var 0))) "ok irr"
     "E5 irrelevant let binds irr"
   -- E6: projections.
   let pairT := app (c b.pairMk) [lit 1, lit 2]
@@ -116,10 +116,19 @@ def rules (a : Assert) : IO Unit := do
   expectOutcome a (ev w 5 (.proj b.pair 0 (lit 3))) "stuck" "E6 projecting a literal"
   expectOutcome a (ev w 5 (.proj b.pair 0 (.strLit "ab"))) "stuck" "E6 string subject (E9 declined)"
   -- E7: argument modes.
-  expectNat a (ev w 5 (.app (lam (lit 9)) (c w.loop) .byName)) 9 "E7 byName argument unevaluated"
-  expectNat a (ev w 5 (.app (lam (lit 9)) (c w.loop) .irr)) 9 "E7 irr argument unevaluated"
-  expectOutcome a (ev w 50 (.app (lam (lit 9)) (c w.loop) .strict)) "timeout"
+  expectNat a (ev w 5 (.app (lam (lit 9)) (c w.loop) .byName .rel)) 9 "E7 byName argument unevaluated"
+  expectNat a (ev w 5 (appIrr (lam (lit 9)) (c w.loop))) 9 "E7 irr argument unevaluated"
+  expectOutcome a (ev w 50 (.app (lam (lit 9)) (c w.loop) .strict .rel)) "timeout"
     "E7 strict argument evaluated"
+  -- E5 and E7 are level-exact (D18): a proof under `allZero [0]` is `irr`
+  -- at level 0 and evaluated at level 1.
+  let condArg := appM (lam (lit 9)) [(c w.loop, .irrWhen (.allZero [0]))]
+  expectNat a (ev w 5 condArg [0]) 9 "E7 conditional argument irr at level 0"
+  expectOutcome a (ev w 50 condArg [1]) "timeout" "E7 conditional argument evaluated at level 1"
+  expectOutcome a (ev w 50 condArg []) "ok lit 9" "E7 missing levels read as zero"
+  let condLet := Term.letE {nonDep := false} (.proof (.allZero [0])) ty (c w.loop) (lit 1)
+  expectNat a (ev w 5 condLet [0]) 1 "E5 conditional let irr at level 0"
+  expectOutcome a (ev w 50 condLet [2]) "timeout" "E5 conditional let evaluated at level 2"
   -- E8: δ through the table and the declaration.
   expectNat a (ev w 5 (app (c w.ident) [lit 4])) 4 "E8 safe definition"
   expectOutcome a (ev w 0 (app (c w.ident) [lit 4])) "timeout" "E8 δ charges"
@@ -164,6 +173,14 @@ def rules (a : Assert) : IO Unit := do
   expectNat a (ev w 5 (appM (.const b.isNatRec [.zero])
     [(irrArg, .irr), (lam (.var 0), .strict), (lit 11, .strict), (irrArg, .irr)])) 11
     "F3 subsingleton ι from an index"
+  -- F2/F3 per profile (D18): a `subsingleton (allZero [0])` eliminator (a
+  -- `PUnit.{u}.rec`) does not force its major at u = 0 and is ordinary at u = 1.
+  let unitElim := fun (major : Term) (m : A) => appM (.const b.unitRec [.succ .zero, .var 0])
+    [(irrArg, .irr), (lit 5, .strict), (major, m)]
+  expectNat a (ev w 5 (unitElim irrArg .irr) [0]) 5 "F3 where the family is a proposition"
+  expectOutcome a (ev w 5 (unitElim irrArg .irr) [1]) "stuck"
+    "F2 where it is not: an irr major is stuck"
+  expectNat a (ev w 5 (unitElim (c b.unitMk) .strict) [1]) 5 "F2 on the constructor at u = 1"
   -- F4: an empty recursor traps.
   expectOutcome a (ev w 5 (appM (.const b.emptyRec [.zero]) [(irrArg, .irr), (irrArg, .irr)]))
     "trap" "F4 empty recursor"
@@ -231,7 +248,8 @@ def genTerm (w : World) : Nat → Nat → Gen → Term × Gen
       let (f, g) := genTerm w fuel scope g
       let (x, g) := genTerm w fuel scope g
       let (m, g) := g.next 3
-      (.app f x (if m == 0 then .strict else if m == 1 then .byName else .irr), g)
+      (if m == 0 then .app f x .strict .rel else if m == 1 then .app f x .byName .rel
+        else appIrr f x, g)
     | 3 =>
       let (x, g) := genTerm w fuel scope g
       let (y, g) := genTerm w fuel scope g

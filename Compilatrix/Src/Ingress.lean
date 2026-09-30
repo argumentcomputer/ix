@@ -156,7 +156,7 @@ def conv (ctx : Ctx) : Nat → V3.Expr → ConvM Term
       | some s => return .strLit s
       | none => throw "src ingress: string blob is not valid UTF-8"
     | .nat i => return .natLit (V3.Tc.natFromBytesLE (← blob ctx i).data)
-    | .app f a => return .app (← conv ctx fuel f) (← conv ctx fuel a) .strict
+    | .app f a => return .app (← conv ctx fuel f) (← conv ctx fuel a) .strict .rel
     | .lam c d b => return .lam { contract := c } (← conv ctx fuel d) (← conv ctx fuel b)
     | .all c r d b => return .pi { contract := c } r (← conv ctx fuel d) (← conv ctx fuel b)
     | .letE c t v b =>

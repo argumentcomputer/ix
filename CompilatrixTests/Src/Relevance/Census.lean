@@ -23,7 +23,11 @@ def names : IO (List (String × Ixon.Address)) := do
     | _ => throw (IO.userError s!"src-names.tsv: bad row {row}")
 
 def relName : Rel → String
-  | .rel => "rel" | .proof => "proof" | .type => "type"
+  | .rel => "rel"
+  | .proof .never => "rel"
+  | .proof (.allZero []) => "proof"
+  | .proof (.allZero ps) => s!"proof when {ps} are zero"
+  | .type => "type"
 
 /-- A deterministic JSON line per reached constant (SRC-9). -/
 def report (l : Loaded) : Json :=
@@ -53,17 +57,17 @@ def run (a : Assert) (reportPath : Option System.FilePath) : IO (Array String) :
   -- Recursor kinds.
   for n in ["Eq.rec", "HEq.rec", "And.rec", "Acc.rec", "True.rec"] do
     if let some c := idOf n then
-      expect a (match p.table.recKindOf c with | some (.subsingleton _) => true | _ => false)
+      expect a (match p.table.recKindOf c with | some (.subsingleton ..) => true | _ => false)
         s!"census: {n} is subsingleton"
   for n in ["False.rec", "Empty.rec"] do
     if let some c := idOf n then
       expect a (p.table.recKindOf c == some .empty) s!"census: {n} is empty"
   -- Acc.intro's x is read from the index; Exists eliminates only into proofs.
   let accRec ← need "Acc.rec"
-  expect a (p.table.recKindOf accRec == some (.subsingleton #[.index 0, .proof]))
+  expect a (p.table.recKindOf accRec == some (.subsingleton .always #[.index 0, .proof]))
     s!"census: Acc.rec reads x from its index ({repr (p.table.recKindOf accRec)})"
   if let some c := idOf "Exists.rec" then
-    expect a (p.table.recKindOf c == some (.subsingleton #[.proof, .proof]))
+    expect a (p.table.recKindOf c == some (.subsingleton .always #[.proof, .proof]))
       s!"census: Exists.rec has only proof fields ({repr (p.table.recKindOf c)})"
   -- unbox? on the one-field structures, from their constructors' classes.
   let structs := ["Fin", "Subtype", "BitVec", "UInt64", "Char", "OfNat", "HAdd"]
@@ -78,7 +82,8 @@ def run (a : Assert) (reportPath : Option System.FilePath) : IO (Array String) :
   let rels ← IO.ofExcept (ctorRels l.env p ctors)
   let relOf := fun (k : CId) => (rels.find? (·.1 == k)).map (·.2)
   for (n, t) in present do
-    expect a ((unboxOf p relOf t).isSome) s!"census: {n} unboxes"
+    let atType := (List.range (((p.decl? t).map Decl.lvls).getD 0)).map fun _ => false
+    expect a ((unboxOf p relOf t atType).isSome) s!"census: {n} unboxes"
   -- Decidable has two constructors with no kept field.
   let dec ← need "Decidable"
   match p.decl? dec with

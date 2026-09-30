@@ -26,6 +26,7 @@
   "check-build-graph": {"roots": ["CheckBuildGraph"], "kind": "lean_exe"},
   "check-aiur": {"roots": ["CheckAiur"], "kind": "lean_exe"},
   "census": {"roots": ["Census"], "kind": "lean_exe"},
+  "SortPolyFixture": {"roots": ["SortPoly"], "kind": "lean_lib"},
   "K1Fixture": {"roots": ["K1"], "kind": "lean_lib"},
   "CompilatrixTests": {"roots": ["CompilatrixTests"], "kind": "lean_lib"},
   "Compilatrix": {"roots": ["Compilatrix"], "kind": "lean_lib"},
@@ -36,6 +37,8 @@
  {"X86ObjectFixture":
   {"path": "X86ObjectFixture.lean",
    "imports": ["Compilatrix.X86.ELFValidate", "Compilatrix.X86.EvalExamples"]},
+  "SortPoly":
+  {"path": "fixtures/ixon-v3/src-sortpoly/SortPoly.lean", "imports": []},
   "PinSrcTables":
   {"path": "scripts/PinSrcTables.lean",
    "imports": ["Lean", "Compilatrix.Tools.Check"]},
@@ -127,6 +130,9 @@
   "CompilatrixTests.Src.StuckEval":
   {"path": "CompilatrixTests/Src/StuckEval.lean",
    "imports": ["CompilatrixTests.Src.Support"]},
+  "CompilatrixTests.Src.SortPoly":
+  {"path": "CompilatrixTests/Src/SortPoly.lean",
+   "imports": ["CompilatrixTests.Src.StuckEval", "SortPoly"]},
   "CompilatrixTests.Src.SlowMain":
   {"path": "CompilatrixTests/Src/SlowMain.lean",
    "imports": ["CompilatrixTests.Src.Run"]},
@@ -142,7 +148,8 @@
     "CompilatrixTests.Src.Differential",
     "CompilatrixTests.Src.Pins",
     "CompilatrixTests.Src.Diagnostics",
-    "CompilatrixTests.Src.Bench"]},
+    "CompilatrixTests.Src.Bench",
+    "CompilatrixTests.Src.SortPoly"]},
   "CompilatrixTests.Src.Rules":
   {"path": "CompilatrixTests/Src/Rules.lean",
    "imports": ["CompilatrixTests.Src.Support", "Compilatrix.Src.Lazify"]},
@@ -853,7 +860,8 @@
    "imports": ["Compilatrix.Src.Table.Check", "Compilatrix.Src.Hints"]},
   "Compilatrix.Src.Syntax":
   {"path": "Compilatrix/Src/Syntax.lean",
-   "imports": ["Compilatrix.Ixon.V3.Const", "Std.Data.HashMap"]},
+   "imports":
+   ["Compilatrix.Ixon.V3.Const", "Compilatrix.Src.Level", "Std.Data.HashMap"]},
   "Compilatrix.Src.Semantics":
   {"path": "Compilatrix/Src/Semantics.lean",
    "imports":
@@ -866,7 +874,7 @@
    "imports": ["Compilatrix.Src.Runtime"]},
   "Compilatrix.Src.Relevance.Check":
   {"path": "Compilatrix/Src/Relevance/Check.lean",
-   "imports": ["Compilatrix.Src.Relevance.Syntax"]},
+   "imports": ["Compilatrix.Src.Relevance.Syntax", "Compilatrix.Src.NatMap"]},
   "Compilatrix.Src.Relevance.Annotate":
   {"path": "Compilatrix/Src/Relevance/Annotate.lean",
    "imports":
@@ -879,6 +887,8 @@
   "Compilatrix.Src.Pinned":
   {"path": "Compilatrix/Src/Pinned.lean",
    "imports": ["Compilatrix.Src.Syntax", "Compilatrix.Ixon.V3.Tc.Support"]},
+  "Compilatrix.Src.NatMap":
+  {"path": "Compilatrix/Src/NatMap.lean", "imports": []},
   "Compilatrix.Src.Load":
   {"path": "Compilatrix/Src/Load.lean",
    "imports":
@@ -890,6 +900,8 @@
     "Compilatrix.Src.Admit",
     "Compilatrix.Src.Semantics",
     "Compilatrix.Src.Readback"]},
+  "Compilatrix.Src.Level":
+  {"path": "Compilatrix/Src/Level.lean", "imports": ["Compilatrix.Ixon.Univ"]},
   "Compilatrix.Src.Lazify":
   {"path": "Compilatrix/Src/Lazify.lean",
    "imports": ["Compilatrix.Src.Runtime"]},
@@ -1428,6 +1440,7 @@
     "Compilatrix.Xv.Select.Branch",
     "Compilatrix.Xv.Select.Driver",
     "Compilatrix.Xv.Select.Lemmas",
+    "Compilatrix.Src.Level",
     "Compilatrix.Src.Syntax",
     "Compilatrix.Src.Ingress",
     "Compilatrix.Src.Pinned",
@@ -1437,6 +1450,7 @@
     "Compilatrix.Src.Runtime",
     "Compilatrix.Src.Relevance.Syntax",
     "Compilatrix.Src.Relevance.Annotate",
+    "Compilatrix.Src.NatMap",
     "Compilatrix.Src.Relevance.Check",
     "Compilatrix.Src.Lazify",
     "Compilatrix.Src.Admit",

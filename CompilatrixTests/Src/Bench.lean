@@ -67,7 +67,7 @@ def runtimeSet (l : Loaded) (tsvNames : List (String × Ixon.Address)) : String 
     ((Pinned.lazyRows.find? fun (_, hex, _) => Pinned.addr hex == p.addr c).map (·.1)).getD (p.short c)
   let recs := l.admitted.recursors.toList.map fun (c, k) =>
     let kind := match k with
-      | .ordinary => "ordinary" | .subsingleton _ => "subsingleton" | .empty => "empty"
+      | .ordinary => "ordinary" | .subsingleton .. => "subsingleton" | .empty => "empty"
     s!"{(pinned c).getD (p.short c)}:{kind}"
   let cases := l.admitted.cases.toList.map fun c => (pinned c).getD (p.short c)
   s!"prims {l.admitted.prims.toList.map (·.2.name)}; recursors {recs}; case {cases}; " ++

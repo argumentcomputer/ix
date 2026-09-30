@@ -6,17 +6,20 @@ import Compilatrix.Ixon.V3.Tc.Driver
 Produces an `Ann` for the runtime-reachable part of a program (design note
 02 §3.2) with the ported checker's context: each runtime term is walked in
 step with its kernel reading (`KExpr`, from the same v3 expression, so the
-shapes agree node for node), opening binders as free variables. A binder,
-argument or let whose type whnf's to a Π-telescope ending in a sort is
-`type`; one whose type satisfies `isPropType` is `proof`; anything else is
-`rel`. Each λ gets `propWhen` from the zero condition of the sort of its
-body's type. Field classes and constant classes use the same test.
+shapes agree node for node), opening binders as free variables. Relevance is
+level-exact (D18): a binder, argument or let whose type's sort is zero under
+a condition on the constant's universe parameters (`kZeroCond` of the
+inferred sort, exact without normalisation) is `proof` under that condition;
+otherwise one whose type whnf's to a Π-telescope ending in a sort is `type`;
+anything else is `rel`. Each λ gets `propWhen` from the zero condition of
+the sort of its body's type. Field classes and constant classes use the same
+test.
 
 The annotator is an oracle of the pipeline: nothing it produces is trusted.
 `Src.Relevance.check` decides the result, and a wrong annotation only makes
-SrcEval stuck. It starts from the roots and follows relevant references, so
-theorems and types reached only through irrelevant positions are never
-walked. -/
+SrcEval stuck. It starts from the roots and follows references in positions
+relevant at some instance, so theorems and types reached only through
+always-irrelevant positions are never walked. -/
 
 namespace Compilatrix.Src.Relevance.Annotate
 
@@ -49,29 +52,51 @@ def endsInSort : Nat → KExpr .anon → M Bool
       endsInSort fuel b
     | _ => pure false
 
+/-- Zero condition of a level: `none` when never zero, `some ps` when zero
+exactly when every parameter in `ps` is. Exact for every form, so no
+normalisation is needed (`Src.zeroCond` on `Univ` is the same recursion). -/
+def kZeroCond : KUniv .anon → Option (List Nat)
+  | .zero _ => some []
+  | .succ .. => none
+  | .param i _ _ => some [i.toNat]
+  | .max a b _ =>
+    match kZeroCond a, kZeroCond b with
+    | some xs, some ys => some (xs ++ ys)
+    | _, _ => none
+  | .imax _ b _ => kZeroCond b
+
+/-- The zero condition of a level as a `PropWhen` (duplicates removed). -/
+def condOfLevel (u : KUniv .anon) : PropWhen :=
+  match kZeroCond u with
+  | none => .never
+  | some ps => .allZero ps.eraseDups
+
+/-- When a term of type `ty` is a proof: the zero condition of `ty`'s sort
+(D18). Only `ty`'s type is inferred and reduced to a sort, never `ty`
+itself; inner errors and sorts that do not reduce count as `never`, as
+`isPropType` counts them as not a proof. -/
+def sortCond (ty : KExpr .anon) : M PropWhen := do
+  resetFuel
+  let some s ← (try some <$> inferType ty catch _ => pure none) | return .never
+  resetFuel
+  let w : Option (KExpr .anon) ← (try some <$> TcM.whnf s catch _ => pure none)
+  match w with
+  | some (.sort u _) => return condOfLevel u
+  | _ => return .never
+
 /-- The proof test comes first: it only infers the type's sort, while the
 sort-telescope test reduces the type itself, which for a proposition (a
-well-founded decreasing goal, say) can unfold arbitrarily much. -/
+well-founded decreasing goal, say) can unfold arbitrarily much. A type whose
+sort is zero under a condition on the universe parameters is a `proof`
+under that condition; a type-former's sort is never zero. -/
 def classifyType (ty : KExpr .anon) : M Rel := do
-  resetFuel
-  if ← TcM.runRec (RecM.isPropType ty) then return .proof
+  let w ← sortCond ty
+  if w != .never then return .proof w
   if ← endsInSort 256 ty then return .type
   return .rel
 
 def classifyTerm (e : KExpr .anon) : M Rel := do
   classifyType (← inferType e)
-
-/-- Zero condition of a level: `none` when never zero, `some ps` when zero
-exactly when every parameter in `ps` is. -/
-def zeroCond : KUniv .anon → Option (List Nat)
-  | .zero _ => some []
-  | .succ .. => none
-  | .param i _ _ => some [i.toNat]
-  | .max a b _ =>
-    match zeroCond a, zeroCond b with
-    | some xs, some ys => some (xs ++ ys)
-    | _, _ => none
-  | .imax _ b _ => zeroCond b
 
 /-- `propWhen` of a λ from its opened body: the λ's type is a proof exactly
 when the sort of the body's type is zero. -/
@@ -80,14 +105,7 @@ def propWhenOf (bodyOpen : KExpr .anon) : M PropWhen := do
   let s ← inferType bty
   resetFuel
   let u ← TcM.ensureSort s
-  return match zeroCond u with
-    | none => .never
-    | some ps => .allZero ps.eraseDups
-
-def fieldClass : Rel → FieldClass
-  | .rel => .keep
-  | .proof => .proof
-  | .type => .type
+  return condOfLevel u
 
 structure Acc where
   tags : Array Tag := #[]
@@ -113,11 +131,10 @@ def propWhenOfLam (lamE : KExpr .anon) : M PropWhen := do
   let s ← inferType ty
   resetFuel
   let u ← TcM.ensureSort s
-  return match zeroCond u with
-    | none => .never
-    | some ps => .allZero ps.eraseDups
+  return condOfLevel u
 
-/-- Walk the relevant positions of a Src term and its kernel reading. -/
+/-- Walk the positions of a Src term that are relevant at some instance,
+with its kernel reading. -/
 def walk (via : PropWhenVia) : Nat → Term → KExpr .anon → Acc → M Acc
   | 0, _, _, _ => fail "relevance annotator: depth budget exhausted"
   | fuel + 1, t, e, acc => do
@@ -133,15 +150,15 @@ def walk (via : PropWhenVia) : Nat → Term → KExpr .anon → Acc → M Acc
           | some pw => pure pw
           | none => propWhenOf kb
         walk via fuel body kb { acc with tags := acc.tags.push (.lam r pw) }
-    | .app f a _, .app kf ka _ => do
+    | .app f a _ _, .app kf ka _ => do
       let acc ← walk via fuel f kf acc
       let r ← classifyTerm ka
       let acc := { acc with tags := acc.tags.push (.arg r) }
-      if r == .rel then walk via fuel a ka acc else pure acc
+      if r.alwaysIrr then pure acc else walk via fuel a ka acc
     | .letE _ _ _ v body, .letE _ kty kv kbody _ _ => do
       let r ← classifyType kty
       let acc := { acc with tags := acc.tags.push (.letE r) }
-      let acc ← if r == .rel then walk via fuel v kv acc else pure acc
+      let acc ← if r.alwaysIrr then pure acc else walk via fuel v kv acc
       withScope do
         let (kb, _) ← TcM.openLet RecM.anonN kty kv kbody
         walk via fuel body kb acc
@@ -221,7 +238,7 @@ def ctorRel (p : Program) (c : CId) : M CtorRel := do
     let mut fields := #[]
     for _ in [0:nf.toNat] do
       let some (dom, b) ← openPi cur | fail "relevance annotator: constructor fields"
-      fields := fields.push (fieldClass (← classifyType dom))
+      fields := fields.push (FieldClass.ofRel (← classifyType dom))
       cur := b
     return { fields }
 
@@ -257,7 +274,7 @@ def run (p : Program) (via : PropWhenVia := .body) : M Ann := do
       nodes := nodes.push (key, acc.tags)
       queue := queue ++ acc.refs
       for s in acc.projs do ctorQueue := ctorQueue ++ ctorsOf p s
-    queue := queue ++ p.runtimeRefs c
+    queue := queue ++ (p.runtimeRefs c).toArray.map (·.1)
   for c in ctorQueue do
     if (ctors[c]?).join.isNone then ctors := ctors.set! c (some (← ctorRel p c))
   return { consts, ctors, nodes }

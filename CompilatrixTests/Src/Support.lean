@@ -146,10 +146,31 @@ def pushConst (p : Program) (decl : Decl) (salt : Nat) (root : Bool := false) : 
 def ty : Term := .sort (.succ .zero)
 
 def app (f : Term) (args : List Term) (m : Mode := .strict) : Term :=
-  args.foldl (fun t a => .app t a m) f
+  args.foldl (fun t a => .app t a m .rel) f
 
-def appM (f : Term) (args : List (Term × Mode)) : Term :=
-  args.foldl (fun t (a, m) => .app t a m) f
+/-- How a test passes an argument: relevant (strictly or by name), a proof at
+every instance, or a proof under a level condition (passed strictly where
+it is relevant). -/
+inductive A where
+  | strict
+  | byName
+  | irr
+  | irrWhen (w : PropWhen)
+
+def A.mode : A → Mode
+  | .byName => .byName
+  | _ => .strict
+
+def A.rel : A → Rel
+  | .irr => Rel.prf
+  | .irrWhen w => .proof w
+  | _ => .rel
+
+def appM (f : Term) (args : List (Term × A)) : Term :=
+  args.foldl (fun t (a, m) => .app t a m.mode m.rel) f
+
+/-- An argument irrelevant at every instance. -/
+def appIrr (f a : Term) : Term := .app f a .strict Rel.prf
 
 def lam (body : Term) (b : Binder := {}) : Term := .lam b ty body
 
@@ -185,6 +206,15 @@ structure Base where
   quotMk : CId
   quotLift : CId
   quotInd : CId
+  /-- `PUnit.{u}`-like: one field-less constructor; its eliminator is a
+  subsingleton one exactly at u = 0 (D18). -/
+  unit : CId
+  unitMk : CId
+  unitRec : CId
+  /-- `PSigma.{u}`-like: `mk (fst : α) (snd : Nat)` with `α : Sort u`, so its
+  first field is a proof exactly at u = 0. -/
+  ppair : CId
+  ppairMk : CId
 
 /-- Nat, Bool, a structure, an empty type, an index-carrying Prop family,
 quotients and three primitives, with hand-written recursor rules. -/
@@ -244,7 +274,7 @@ def base : Builder × Base := Id.run do
   b := b.setDecl isNat (.induct true 0 0 1 ty #[isNatMk])
   let (b1, isNatRec) := b.add (.recr true false 1 0 1 1 1 isNat
     #[{ ctor := isNatMk, fields := 1, rhs := lams 3 (appM (.var 1) [(.var 0, .strict)]) }] ty)
-  b := { b1 with recKind := b1.recKind.set! isNatRec (some (.subsingleton #[.index 0])) }
+  b := { b1 with recKind := b1.recKind.set! isNatRec (some (.subsingleton .always #[.index 0])) }
   let (b1, quot) := b.add (.quot .type 1 ty)
   b := b1
   let (b1, quotMk) := b.add (.quot .ctor 1 ty)
@@ -253,11 +283,26 @@ def base : Builder × Base := Id.run do
   b := b1
   let (b1, quotInd) := b.add (.quot .ind 1 ty)
   b := b1
+  let (b1, unit) := b.add (.induct true 1 0 0 ty #[])
+  b := b1
+  let (b1, unitMk) := b.add (.ctor true 1 unit 0 0 0 (.const unit [.var 0]))
+  b := b1
+  b := b.setDecl unit (.induct true 1 0 0 ty #[unitMk])
+  -- PUnit.rec.{v, u}: the major's type `unit.{u}` names recursor parameter 1.
+  let recTy := Term.pi {} {} ty (Term.pi {} {} ty (Term.pi {} {} (.const unit [.var 1]) ty))
+  let (b1, unitRec) := b.add (.recr true false 2 0 1 1 0 unit
+    #[{ ctor := unitMk, fields := 0, rhs := lams 2 (.var 0) }] recTy)
+  b := { b1 with recKind := b1.recKind.set! unitRec (some (.subsingleton (.allZero [1]) #[])) }
+  let (b1, ppair) := b.add (.induct true 1 0 0 ty #[])
+  b := b1
+  let (b1, ppairMk) := b.add (.ctor true 1 ppair 0 0 2 ty)
+  b := b1
+  b := b.setDecl ppair (.induct true 1 0 0 ty #[ppairMk])
   b := { b with known := { nat := some nat, natZero := some zeroC, natSucc := some succ,
                             natRec := some natRec, bool := some bool, boolTrue := some btrue,
                             boolFalse := some bfalse } }
   return (b, { nat, zero := zeroC, succ, natRec, natCases, bool, btrue, bfalse, boolRec, boolCases, add, sub,
                beq, pair, pairMk, empty, emptyRec, isNat, isNatMk, isNatRec, quot, quotMk,
-               quotLift, quotInd })
+               quotLift, quotInd, unit, unitMk, unitRec, ppair, ppairMk })
 
 end CompilatrixTests.Src

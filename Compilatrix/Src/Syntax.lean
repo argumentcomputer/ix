@@ -1,4 +1,5 @@
 import Compilatrix.Ixon.V3.Const
+import Compilatrix.Src.Level
 import Std.Data.HashMap
 
 /-! # Src syntax
@@ -7,6 +8,11 @@ The first IR of the rebuilt pipeline (design note `plans/x86-v2/01-src.md`
 §2): the resolved, table-free reading of a Tc-typed Ixon v3 closure, with the
 relevance annotation (note 02 §3) written into its binders, arguments and
 lets, and the evaluation modes that `Src.Lazify` sets.
+
+Relevance is level-exact (D18): every annotated position carries a `Rel`
+whose `proof` class holds under a zero condition over the constant's universe
+parameters (`Src.Level`), so sort-polymorphic code is irrelevant exactly at
+the instances where its position is a proof.
 
 Constants are numbered densely (`CId`) by ingress; each entry keeps its source
 identity (`CRef`, Ix.Kernel's `ConstRef` shape) and its v3 address. Src is not
@@ -27,35 +33,58 @@ inductive CRef where
 /-- Dense constant index into `Program.consts`, fixed by ingress. -/
 abbrev CId := Nat
 
-/-- Evaluation mode of an argument. `irr` comes from the relevance
-annotation; `byName` only from `Src.Lazify`. Any assignment preserves meaning,
-and an `irr` argument is never evaluated. -/
+/-- Evaluation mode of an argument where it is relevant: `byName` comes only
+from `Src.Lazify`. Any assignment preserves meaning. Whether the argument is
+relevant at all is its `Rel`. -/
 inductive Mode where
   | strict
   | byName
-  | irr
   deriving BEq, DecidableEq, Repr, Inhabited, Hashable
 
-/-- Relevance class of a binder, argument or let (note 02 §3.1). -/
+/-- Relevance class of a binder, argument, let or constructor field (note 02
+§3.1), level-exact (D18): `proof when` is a proof exactly where `when` holds
+and relevant elsewhere (`proof .never` is written `rel`); a `type` is
+irrelevant at every instance. -/
 inductive Rel where
   | rel
-  | proof
+  | proof (when : PropWhen)
   | type
   deriving BEq, DecidableEq, Repr, Inhabited, Hashable
 
-/-- When a λ is a proof: `never`, or exactly when every listed universe
-parameter is zero (`allZero []` means always). The β guard of rule A1. -/
-inductive PropWhen where
-  | never
-  | allZero (params : List Nat)
-  deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+namespace Rel
+
+/-- A proof at every instance. -/
+def prf : Rel := .proof .always
+
+/-- When the position is irrelevant. -/
+def irrWhen : Rel → PropWhen
+  | .rel => .never
+  | .proof w => w
+  | .type => .always
+
+/-- Irrelevant at concrete levels (SrcEval). -/
+def irrAt (ls : Levels) (r : Rel) : Bool := r.irrWhen.holds ls
+
+/-- Irrelevant at a profile (the checker, `Admit`, erasure). -/
+def irrP (prof : Profile) (r : Rel) : Bool := r.irrWhen.holdsP prof
+
+/-- Irrelevant at every instance: never evaluated, never annotated inside. -/
+def alwaysIrr (r : Rel) : Bool := r.irrWhen == .always
+
+/-- A proof at this profile (as opposed to a type or relevant). -/
+def proofP (prof : Profile) : Rel → Bool
+  | .proof w => w.holdsP prof
+  | _ => false
+
+end Rel
 
 structure Binder where
   /-- Written contract: carried, never read. -/
   contract : V3.BinderContract := {}
-  /-- Untrusted relevance annotation (note 02). -/
+  /-- Untrusted relevance annotation of the parameter (note 02). -/
   rel : Rel := .rel
-  /-- When this λ is a proof (the A1 guard). -/
+  /-- When this λ is a proof (the A1 guard): the zero condition of its
+  codomain's sort. -/
   propWhen : PropWhen := .never
   deriving BEq, DecidableEq, Repr, Inhabited, Hashable
 
@@ -63,7 +92,8 @@ inductive Term where
   | var (i : Nat)
   | sort (u : Univ)
   | const (c : CId) (us : List Univ)
-  | app (f a : Term) (m : Mode)
+  /-- `a` is irrelevant where `r` is; elsewhere it is passed by `m`. -/
+  | app (f a : Term) (m : Mode) (r : Rel)
   | lam (b : Binder) (dom body : Term)
   | pi (b : Binder) (res : V3.ValueContract) (dom cod : Term)
   | letE (c : V3.LetContract) (r : Rel) (ty val body : Term)
@@ -175,12 +205,35 @@ inductive FieldSrc where
   | proof
   deriving BEq, DecidableEq, Repr, Inhabited
 
-/-- Derived recursor kind (note 01 §4.1). -/
+/-- Derived recursor kind (note 01 §4.1), per universe profile (D18): a
+`subsingleton when` recursor is a subsingleton eliminator where `when` holds
+(its inductive is a proposition there) and an ordinary one elsewhere; for
+`PUnit.{u}.rec` it is `u = 0`, for `Eq.rec` always. -/
 inductive RecKind where
   | ordinary
-  | subsingleton (fields : Array FieldSrc)
+  | subsingleton (when : PropWhen) (fields : Array FieldSrc)
   | empty
   deriving BEq, Repr, Inhabited
+
+namespace RecKind
+
+/-- The kind at concrete levels (a subsingleton kind whose condition fails
+is ordinary). -/
+def atLevels (ls : Levels) : RecKind → RecKind
+  | .subsingleton w fs => if w.holds ls then .subsingleton w fs else .ordinary
+  | k => k
+
+/-- The kind at a profile. -/
+def atProfile (prof : Profile) : RecKind → RecKind
+  | .subsingleton w fs => if w.holdsP prof then .subsingleton w fs else .ordinary
+  | k => k
+
+/-- Whether an irrelevant major is allowed (subsingleton or empty). -/
+def allowsIrrMajor : RecKind → Bool
+  | .ordinary => false
+  | _ => true
+
+end RecKind
 
 /-- The checked unfolding table, indexed by `CId`. -/
 structure Table where
@@ -279,17 +332,28 @@ instance : ToString Diag := ⟨Diag.render⟩
 
 namespace Term
 
-/-- Collect an application spine: head and arguments with their modes, left
-to right. -/
-def spine (t : Term) : Term × Array (Term × Mode) :=
+/-- An application argument: the term, its mode where relevant, and its class. -/
+abbrev Arg := Term × Mode × Rel
+
+/-- Collect an application spine: head and arguments with their modes and
+classes, left to right. -/
+def spine (t : Term) : Term × Array Arg :=
   go t #[]
 where
-  go : Term → Array (Term × Mode) → Term × Array (Term × Mode)
-    | .app f a m, acc => go f (acc.push (a, m))
+  go : Term → Array Arg → Term × Array Arg
+    | .app f a m r, acc => go f (acc.push (a, m, r))
     | t, acc => (t, acc.reverse)
 
-def mkApps (f : Term) (args : Array (Term × Mode)) : Term :=
-  args.foldl (fun t (a, m) => .app t a m) f
+/-- The same, as a list (structural; for the checker). -/
+def spineL (t : Term) : Term × List Arg :=
+  go t []
+where
+  go : Term → List Arg → Term × List Arg
+    | .app f a m r, acc => go f ((a, m, r) :: acc)
+    | t, acc => (t, acc)
+
+def mkApps (f : Term) (args : Array Arg) : Term :=
+  args.foldl (fun t (a, m, r) => .app t a m r) f
 
 /-- Split a leading λ-telescope. -/
 def lams : Term → Array (Binder × Term) × Term
@@ -317,7 +381,7 @@ def eqv : Term → Term → Bool
   | .var i, .var j => i == j
   | .sort u, .sort v => u == v
   | .const c us, .const d vs => c == d && us == vs
-  | .app f a _, .app g b _ => eqv f g && eqv a b
+  | .app f a _ _, .app g b _ _ => eqv f g && eqv a b
   | .lam _ d t, .lam _ e u => eqv d e && eqv t u
   | .pi _ _ d t, .pi _ _ e u => eqv d e && eqv t u
   | .letE _ _ t v b, .letE _ _ t' v' b' => eqv t t' && eqv v v' && eqv b b'
@@ -333,14 +397,14 @@ def leanFragment : Term → Bool
   | .pi b r d t => b.contract == .many && r == .shared && d.leanFragment && t.leanFragment
   | .letE c _ t v b => c.kind == .value && c.binder == .many &&
       t.leanFragment && v.leanFragment && b.leanFragment
-  | .app f a _ => f.leanFragment && a.leanFragment
+  | .app f a _ _ => f.leanFragment && a.leanFragment
   | .proj _ _ e => e.leanFragment
   | _ => true
 
 /-- Whether constant `c` occurs syntactically. -/
 def mentions (c : CId) : Term → Bool
   | .const d _ => c == d
-  | .app f a _ => f.mentions c || a.mentions c
+  | .app f a _ _ => f.mentions c || a.mentions c
   | .lam _ d t | .pi _ _ d t => d.mentions c || t.mentions c
   | .letE _ _ t v b => t.mentions c || v.mentions c || b.mentions c
   | .proj s _ e => s == c || e.mentions c
@@ -348,29 +412,29 @@ def mentions (c : CId) : Term → Bool
 
 /-- Number of nodes (a tree size; shared subterms count once per use). -/
 def nodes : Term → Nat
-  | .app f a _ => f.nodes + a.nodes + 1
+  | .app f a _ _ => f.nodes + a.nodes + 1
   | .lam _ d t | .pi _ _ d t => d.nodes + t.nodes + 1
   | .letE _ _ t v b => t.nodes + v.nodes + b.nodes + 1
   | .proj _ _ e => e.nodes + 1
   | _ => 1
 
+/-- The universe arguments of a Π-telescope's `i`-th binder domain head
+(structural: no array indexing). -/
+def domainUnivs? : Nat → Term → Option (List Univ)
+  | 0, .pi _ _ d _ =>
+    match d.spineL.1 with
+    | .const _ us => some us
+    | _ => none
+  | i + 1, .pi _ _ _ t => domainUnivs? i t
+  | _, _ => none
+
 end Term
 
-/-- Concrete universe instantiation. -/
-abbrev Levels := List Nat
-
-/-- Evaluate a universe at a concrete instantiation (out-of-range parameters
-read as zero; well-formed programs have none). -/
-def evalUniv (ls : Levels) : Univ → Nat
-  | .zero => 0
-  | .succ u => evalUniv ls u + 1
-  | .max a b => Nat.max (evalUniv ls a) (evalUniv ls b)
-  | .imax a b => let vb := evalUniv ls b; if vb == 0 then 0 else Nat.max (evalUniv ls a) vb
-  | .var i => ls.getD i.toNat 0
-
-/-- The λ's regime at an instantiation: `false` when it is a proof there. -/
-def PropWhen.allowsBeta (ls : Levels) : PropWhen → Bool
-  | .never => true
-  | .allZero ps => !ps.all fun p => ls.getD p 0 == 0
+/-- The universe arguments of a recursor's major inductive, over the
+recursor's own universe parameters (read off the major binder's domain). -/
+def Program.majorUnivs (p : Program) (r : CId) : Option (List Univ) :=
+  match p.decl? r with
+  | some (.recr _ _ _ np nmot nmin ni _ _ ty) => ty.domainUnivs? (np + nmot + nmin + ni)
+  | _ => none
 
 end Compilatrix.Src

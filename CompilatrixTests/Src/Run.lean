@@ -5,9 +5,11 @@ import CompilatrixTests.Src.Differential
 import CompilatrixTests.Src.Pins
 import CompilatrixTests.Src.Diagnostics
 import CompilatrixTests.Src.Bench
+import CompilatrixTests.Src.SortPoly
 
 /-! The `tests-src` suite (design note 01 §10): rules, the K1 table, K1 runs
-on the eqn route, the native differential, pins, diagnostics, and the
+on the eqn route, the native differential, pins, diagnostics, sort-polymorphic
+code at `Sort 0` (level-exact relevance, D18), and the
 bench-k1 entries. `tests-src-slow` adds `ack 3 10` and `fib 30` without
 primitives. -/
 
@@ -44,6 +46,8 @@ def main (args : List String) : IO UInt32 := do
     part a "diagnostics" do
       Diagnostics.run a
       for line in ← Diagnostics.ixFixture a do IO.println s!"    {line}"
+    part a "sort polymorphism at Sort 0" do
+      for line in ← SortPoly.run a do IO.println s!"    {line}"
     part a "bench-k1 entries" do
       for line in ← Bench.run a (← IO.appPath) do IO.println s!"    {line}"
     IO.println s!"tests-src: {← a.get} assertions passed"

@@ -16,7 +16,7 @@ open CompilatrixTests.Src.Rules (Gen)
 open Compilatrix.Sem (Result Obs)
 
 def flipRel : Rel → Rel
-  | .rel => .proof
+  | .rel => Rel.prf
   | _ => .rel
 
 /-- Flip the annotation of the `target`-th tagged node, in `tagOrder`.
@@ -32,18 +32,18 @@ def mutateCounting (variant : Bool) (target : Nat) : Term → StateM Nat Term
         else { b with rel := flipRel b.rel }
       return .lam b d t
     return .lam b d (← mutateCounting variant target t)
-  | .app f a m => do
+  | .app f a m r => do
     let f ← mutateCounting variant target f
     let i ← get
     set (i + 1)
-    if i == target then return .app f a (if m == .irr then .strict else .irr)
-    if m == .irr then return .app f a m
-    return .app f (← mutateCounting variant target a) m
+    if i == target then return .app f a m (flipRel r)
+    if r.alwaysIrr then return .app f a m r
+    return .app f (← mutateCounting variant target a) m r
   | .letE c r ty v body => do
     let i ← get
     set (i + 1)
     if i == target then return .letE c (flipRel r) ty v body
-    let v ← if r == .rel then mutateCounting variant target v else pure v
+    let v ← if r.alwaysIrr then pure v else mutateCounting variant target v
     return .letE c r ty v (← mutateCounting variant target body)
   | .proj s i e => return .proj s i (← mutateCounting variant target e)
   | t => pure t
@@ -86,12 +86,12 @@ def mutant (pI : Program) (ann : Ann) (g : Gen) : Ann × String × Gen := Id.run
     let rel := (ann.ctorRel? c).get!
     let (fi, g) := g.next rel.fields.size
     let fields := rel.fields.modify fi fun
-      | .keep => .proof
+      | .keep => FieldClass.prf
       | _ => .keep
     return ({ ann with ctors := ann.ctors.set! c (some { fields }) }, s!"CtorRel {pI.short c} #{fi}", g)
 
 /-- An outcome as an observation, if it has one. -/
-def observe (p : Program) (keep : CId → Nat → Bool) : Result Value → Option Obs
+def observe (p : Program) (keep : CId → Levels → Nat → Bool) : Result Value → Option Obs
   | .ok v => readback p keep v
   | _ => none
 
@@ -106,13 +106,15 @@ structure Tally where
   uncheckedNone : Nat := 0
   /-- Accepted mutants with no observation, by outcome and stuck cause group. -/
   acceptedWhy : Array (String × Nat) := #[]
+  /-- The mutations behind the first few accepted stuck runs. -/
+  stuckExamples : Array String := #[]
 
 /-- Why a run has no observation: its outcome, or its stuck cause group. -/
 def why : StuckEval.Out Value → String
   | .ok _ => "no readback"
   | .error .timeout => "timeout"
   | .error .trap => "trap"
-  | .error (.stuck c) => s!"stuck {c.group}"
+  | .error (.stuck c) => s!"stuck {c.group}: {c.name}"
 
 def bump (xs : Array (String × Nat)) (k : String) : Array (String × Nat) :=
   match xs.findIdx? (·.1 == k) with
@@ -124,7 +126,8 @@ def Tally.render (t : Tally) : String :=
   s!"{t.mutants} mutants: rejected S {t.rejectedS}, C {t.rejectedC}, other {t.rejectedOther}; " ++
   s!"accepted with the same result {t.acceptedSame}, with no observation {t.acceptedNone} " ++
   s!"({String.intercalate ", " why}); " ++
-  s!"unchecked same {t.uncheckedSame}, none {t.uncheckedNone}"
+  s!"unchecked same {t.uncheckedSame}, none {t.uncheckedNone}" ++
+  (if t.stuckExamples.isEmpty then "" else s!"; e.g. {t.stuckExamples.toList}")
 
 /-- Small inputs per fixture. -/
 def smallArgs : String → List Nat
@@ -171,6 +174,8 @@ def fixture (a : Assert) (name : String) (count : Nat) (seed : Nat) : IO Tally :
         let s := StuckEval.run pm clock root (args.map .lit)
         expect a (outcome r == s.outcome) s!"{name}: StuckEval disagrees with SrcEval on {what}"
         t := { t with acceptedNone := t.acceptedNone + 1, acceptedWhy := bump t.acceptedWhy (why s) }
+        if s matches .error (.stuck _) && t.stuckExamples.size < 3 then
+          t := { t with stuckExamples := t.stuckExamples.push s!"{what}: {why s}" }
       | some o =>
         expect a (some o == original) s!"{name}: accepted mutant {what} changed the result"
         t := { t with acceptedSame := t.acceptedSame + 1 }
@@ -179,8 +184,8 @@ def fixture (a : Assert) (name : String) (count : Nat) (seed : Nat) : IO Tally :
     | .error _ => pure ()
     | .ok pm =>
       let pm := Lazify.run pm (m.nodes.map (·.1))
-      let keep := fun (c : CId) (i : Nat) => match m.ctorRel? c with
-        | some r => r.fields[i]? == some .keep
+      let keep := fun (c : CId) (ls : Levels) (i : Nat) => match m.ctorRel? c with
+        | some r => (r.fields[i]?.map fun cls => !cls.dropP (profileOf ls)).getD false
         | none => true
       match observe pm keep (run pm clock root (args.map .lit)) with
       | none => t := { t with uncheckedNone := t.uncheckedNone + 1 }

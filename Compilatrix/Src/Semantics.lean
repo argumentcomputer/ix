@@ -10,11 +10,13 @@ meaning of a program. Rules (§3.2):
 * E1 `var`: a `val` slot gives its value; a `name` slot is evaluated in its
   environment (clock charge, not memoised).
 * E2 `sort`/`pi`: `irr`. E3 literals. E4 `lam`: a closure.
-* E5 `letE`: a relevant let evaluates its value; others bind `irr`.
+* E5 `letE`: a let irrelevant at the current levels binds `irr`; others
+  evaluate their value.
 * E6 `proj`: the field of the structure's constructor; anything else stuck.
-* E7 `app f a m`: `f`, then the argument slot by mode (`strict` evaluates,
-  `byName` suspends, `irr` binds `irr`), then `apply` — the curried
-  left-to-right order that Lam uses (02 §4.2).
+* E7 `app f a m r`: `f`, then the argument slot: `irr` where `r` is
+  irrelevant at the current levels, otherwise by mode (`strict` evaluates,
+  `byName` suspends), then `apply` — the curried left-to-right order that
+  Lam uses (02 §4.2).
 * E8 `const` (δ): through the table (`prim`, `csimp`, `eqn`, `case`), then
   the declaration: special heads give a `pap` (fired at once when nullary);
   a safe definition or an allowlisted opaque evaluates its value (charged);
@@ -24,14 +26,18 @@ meaning of a program. Rules (§3.2):
 * F1 constructors force their fields (`Nat.zero`/`succ` give literals);
   F2 ordinary ι forces the major, peeling `Nat` literals (charged); F3
   subsingleton ι takes fields from index slots or `irr` without forcing the
-  major; F4 empty recursors trap; F5 `case` forces the major and the
+  major (a `subsingleton when` recursor takes F3 where `when` holds at its
+  levels and F2 elsewhere); F4 empty recursors trap; F5 `case` forces the major and the
   selected minor and applies it to the fields (charged); F6 primitives on
   literals; F7 `Quot.mk`; F8 `Quot.lift` (charged).
 * E9 string expansion is not in the Phase 1 fragment: a string used as a
   projection subject or major is stuck (`Admit` declines strings).
 
-Applying or projecting `irr` is stuck at every level (06 S38). SrcEval never
-returns `resource`; `Nat` is exact (06 S19). -/
+Relevance is level-exact (D18): every `irr` decision (E5, E7, and the kind
+of F2/F3/F5) is taken at the concrete levels SrcEval carries, so
+sort-polymorphic code at `Sort 0` passes `irr` exactly where its position is
+a proof. Applying or projecting `irr` is stuck at every level (06 S38).
+SrcEval never returns `resource`; `Nat` is exact (06 S19). -/
 
 namespace Compilatrix.Src
 
@@ -122,14 +128,14 @@ def eval (p : Program) (k : Nat) (ls : Levels) (ρ : Env) (t : Term) : Result Va
   | .strLit s => .ok (.str s)
   | .lam b d body => .ok (.clo b d body ρ ls)
   | .letE _ r _ v body =>
-    if r == .rel then
+    if r.irrAt ls then eval p k ls (.val (.irr (some v) ρ ls) :: ρ) body
+    else
       match eval p k ls ρ v with
       | .ok x => eval p k ls (.val x :: ρ) body
       | .timeout => .timeout
       | .resource r => .resource r
       | .trap => .trap
       | .stuck => .stuck
-    else eval p k ls (.val (.irr (some v) ρ ls) :: ρ) body
   | .proj s i e =>
     match eval p k ls ρ e with
     | .ok v => p.projectField s i v
@@ -137,19 +143,20 @@ def eval (p : Program) (k : Nat) (ls : Levels) (ρ : Env) (t : Term) : Result Va
     | .resource r => .resource r
     | .trap => .trap
     | .stuck => .stuck
-  | .app f a m =>
+  | .app f a m r =>
     match eval p k ls ρ f with
     | .ok fv =>
-      match m with
-      | .strict =>
-        match eval p k ls ρ a with
-        | .ok x => apply p k fv (.val x)
-        | .timeout => .timeout
-        | .resource r => .resource r
-        | .trap => .trap
-        | .stuck => .stuck
-      | .byName => apply p k fv (.name a ρ ls)
-      | .irr => apply p k fv (.val (.irr (some a) ρ ls))
+      if r.irrAt ls then apply p k fv (.val (.irr (some a) ρ ls))
+      else
+        match m with
+        | .strict =>
+          match eval p k ls ρ a with
+          | .ok x => apply p k fv (.val x)
+          | .timeout => .timeout
+          | .resource r => .resource r
+          | .trap => .trap
+          | .stuck => .stuck
+        | .byName => apply p k fv (.name a ρ ls)
     | .timeout => .timeout
     | .resource r => .resource r
     | .trap => .trap
@@ -278,7 +285,7 @@ def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List Slot) : R
     match k with
     | 0 => .timeout
     | k + 1 =>
-      match p.decl? r, p.table.recKindOf r with
+      match p.decl? r, (p.table.recKindOf r).map (·.atLevels ls) with
       | some (.recr _ _ _ np nmot nmin ni ind rules _), some kind =>
         let pre := args.take (np + nmot + nmin)
         let chosen : Result (Nat × List Slot) :=
@@ -291,7 +298,7 @@ def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List Slot) : R
             | .resource r => .resource r
             | .trap => .trap
             | .stuck => .stuck
-          | .subsingleton srcs =>
+          | .subsingleton _ srcs =>
             let indices := (args.drop (np + nmot + nmin)).take ni
             .ok (0, srcs.toList.map fun
               | .index i => indices.getD i (Slot.irrNone ls)
@@ -316,7 +323,7 @@ def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List Slot) : R
     | k + 1 =>
       match p.table.resolveOf c with
       | some (.case r) =>
-        match p.decl? r, p.table.recKindOf r with
+        match p.decl? r, (p.table.recKindOf r).map (·.atLevels ls) with
         | some (.recr _ _ _ np _ _ ni ind _ _), some kind =>
           let chosen : Result (Nat × List Slot) :=
             match kind with
@@ -328,7 +335,7 @@ def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List Slot) : R
               | .resource r => .resource r
               | .trap => .trap
               | .stuck => .stuck
-            | .subsingleton srcs =>
+            | .subsingleton _ srcs =>
               .ok (0, srcs.toList.map fun
                 | .index i => args.getD (np + 1 + i) (Slot.irrNone ls)
                 | .proof => Slot.irrNone ls)

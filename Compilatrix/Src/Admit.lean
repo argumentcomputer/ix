@@ -5,7 +5,11 @@ import Compilatrix.Src.Runtime
 The relevant closure and its rejection diagnostics (design note 01 §5):
 reachability from the roots through the relevant positions of the runtime
 view (resolved bodies, `eqn` bodies, `csimp` targets, the rules of reached
-recursors, and the recursor under each reached `case` key). Every reached
+recursors, and the recursor under each reached `case` key). Reachability is
+per universe profile (D18): a constant is reached as an instance
+`(constant, profile)`, and a position is followed only where its class is
+relevant at that profile, so a sort-polymorphic body instantiated at
+`Sort 0` never reaches the proofs in its proof positions. Every reached
 reference is classified:
 
 | Code | Condition | Outcome |
@@ -37,10 +41,14 @@ structure AdmitConfig where
 structure Admitted where
   /-- Reached constants, in discovery order. -/
   reached : Array CId
+  /-- Every instance `(constant, profile)` of the closure, in discovery order
+  (a constant reached at two profiles appears twice). -/
+  instances : Array Inst
   /-- The runtime terms of the closure. -/
   keys : Array TermKey
   prims : Array (CId × PrimOp)
   cases : Array CId
+  /-- Each reached recursor instance with its kind at that profile. -/
   recursors : Array (CId × RecKind)
   lazy : Array CId
   quotHeads : Array CId
@@ -77,13 +85,15 @@ def classify (p : Program) (c : CId) : Option (String × String) :=
     | some _ => none
     | none => some ("unsupported", "a reference without a declaration")
 
-/-- Whether a runtime term has a string literal in a relevant position. -/
-def hasRelevantString : Term → Bool
+/-- Whether a runtime term has a string literal in a position relevant at
+`prof`. -/
+def hasRelevantString (prof : Profile) : Term → Bool
   | .strLit _ => true
-  | .app f a m => hasRelevantString f || (m != .irr && hasRelevantString a)
-  | .lam _ _ t => hasRelevantString t
-  | .letE _ r _ v b => (r == .rel && hasRelevantString v) || hasRelevantString b
-  | .proj _ _ e => hasRelevantString e
+  | .app f a _ r => hasRelevantString prof f || (!r.irrP prof && hasRelevantString prof a)
+  | .lam b _ t => !b.propWhen.holdsP prof && hasRelevantString prof t
+  | .letE _ r _ v b =>
+    (!r.irrP prof && hasRelevantString prof v) || hasRelevantString prof b
+  | .proj _ _ e => hasRelevantString prof e
   | _ => false
 
 end Admit
@@ -100,7 +110,9 @@ def admit (p : Program) (names : Address → Option String := fun _ => none)
   let mut keys : Array TermKey := #[]
   let mut diags : Array Diag := #[]
   let mut nodes := 0
-  let mut queue : Array (CId × Option CId) := p.roots.map fun (_, c) => (c, none)
+  let mut seen : Std.HashSet Inst := {}
+  let mut instances : Array Inst := #[]
+  let mut queue : Array (Inst × Option CId) := p.roots.map fun (_, c) => (p.instOf c [], none)
   let mut qi := 0
   let pathOf := fun (parent : Array (Option CId)) (c : CId) => Id.run do
     let mut path : List Address := []
@@ -113,33 +125,43 @@ def admit (p : Program) (names : Address → Option String := fun _ => none)
       | none => break
     return path
   while qi < queue.size do
-    let (c, from_) := queue[qi]!
+    let ((c, prof), from_) := queue[qi]!
     qi := qi + 1
-    if reached[c]?.getD true then continue
-    reached := reached.set! c true
-    parent := parent.set! c from_
-    order := order.push c
-    if order.size > cfg.maxConsts then
-      diags := diags.push (Diag.of "budget" s!"more than {cfg.maxConsts} runtime constants" (some (p.addr c)))
-      break
-    if let some (code, message) := classify p c then
-      diags := diags.push (Diag.of code message (some (p.addr c)) (pathOf parent c) (names (p.addr c)))
-      continue
+    if c ≥ n || seen.contains (c, prof) then continue
+    seen := seen.insert (c, prof)
+    instances := instances.push (c, prof)
+    let first := !(reached[c]?.getD true)
+    if first then
+      reached := reached.set! c true
+      parent := parent.set! c from_
+      order := order.push c
+      if order.size > cfg.maxConsts then
+        diags := diags.push (Diag.of "budget" s!"more than {cfg.maxConsts} runtime constants" (some (p.addr c)))
+        break
+      if let some (code, message) := classify p c then
+        diags := diags.push (Diag.of code message (some (p.addr c)) (pathOf parent c) (names (p.addr c)))
+        continue
+    else if (classify p c).isSome then continue
     for key in p.runtimeKeys c do
       let some t := p.termOf key | continue
-      keys := keys.push key
-      nodes := nodes + t.nodes
-      if hasRelevantString t then
+      if first then
+        keys := keys.push key
+        nodes := nodes + t.nodes
+      if hasRelevantString prof t then
         diags := diags.push (Diag.of "unsupported"
           "a string literal in a relevant position (strings are declined before K4)"
           (some (p.addr c)) (pathOf parent c) (names (p.addr c)))
-      for d in t.relevantConsts #[] do queue := queue.push (d, some c)
-    for d in p.runtimeRefs c do queue := queue.push (d, some c)
+    for (d, q) in p.instRefs c prof do queue := queue.push (p.instOf d q, some c)
   if nodes > cfg.maxNodes then
     diags := diags.push (Diag.of "budget" s!"runtime terms exceed {cfg.maxNodes} nodes")
   if !diags.isEmpty then return .error diags
-  let mut out : Admitted := { reached := order, keys, prims := #[], cases := #[], recursors := #[]
-                              lazy := #[], quotHeads := #[], eqns := #[], csimps := #[], bodies := #[] }
+  let recursors := instances.filterMap fun (c, prof) =>
+    match p.table.resolveOf c, p.decl? c with
+    | none, some (.recr ..) => some (c, ((p.table.recKindOf c).getD .ordinary).atProfile prof)
+    | _, _ => none
+  let mut out : Admitted := { reached := order, instances, keys, prims := #[], cases := #[]
+                              recursors, lazy := #[], quotHeads := #[], eqns := #[], csimps := #[]
+                              bodies := #[] }
   for c in order do
     if (p.table.lazyOf c).isSome then out := { out with lazy := out.lazy.push c }
     match p.table.resolveOf c with
@@ -149,8 +171,6 @@ def admit (p : Program) (names : Address → Option String := fun _ => none)
     | some (.csimp ..) => out := { out with csimps := out.csimps.push c }
     | none =>
       match p.decl? c with
-      | some (.recr ..) =>
-        out := { out with recursors := out.recursors.push (c, (p.table.recKindOf c).getD .ordinary) }
       | some (.quot ..) => out := { out with quotHeads := out.quotHeads.push c }
       | some (.defn ..) => out := { out with bodies := out.bodies.push c }
       | _ => pure ()

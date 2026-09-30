@@ -2,12 +2,14 @@ import Compilatrix.Src.Runtime
 
 /-! # Src.Lazify
 
-Sets `byName` on the relevant arguments of saturated `lazy` spines (the
-first `arity` arguments), on the minors of saturated recursor and `case`
-spines, and on every IH argument of every rule `rhs` (design note 01 §4.4).
-It never changes an `irr` argument or a major, and it touches only modes, so
-the erased program is unchanged (`Lazify.erase_eq`). It runs after the
-relevance check, on the checked runtime terms. -/
+Sets `byName` on the arguments of saturated `lazy` spines (the first
+`arity` arguments), on the minors of saturated recursor and `case` spines,
+and on every IH argument of every rule `rhs` (design note 01 §4.4). A mode
+matters only where its argument is relevant, so a level-conditional argument
+(D18) gets its mode like any other; arguments irrelevant at every instance
+are not entered. It never changes a class or a major, and it touches only
+modes, so the erased program is unchanged (`Lazify.erase_eq`). It runs after
+the relevance check, on the checked runtime terms. -/
 
 namespace Compilatrix.Src.Lazify
 
@@ -30,28 +32,28 @@ def byNameMask (p : Program) (head : Term) (n : Nat) : Array Bool := Id.run do
   | _ => pure ()
   return mask
 
-def newMode (mask : Array Bool) (i : Nat) (m : Mode) : Mode :=
-  if m != .irr && mask[i]?.getD false then .byName else m
+def newMode (mask : Array Bool) (i : Nat) (m : Mode) (r : Rel) : Mode :=
+  if !r.alwaysIrr && mask[i]?.getD false then .byName else m
 
 mutual
 
 /-- Lazify the relevant positions of a term. -/
 def term (p : Program) : Term → Term
-  | .app f a m =>
-    let (head, args) := (Term.app f a m).spine
+  | .app f a m r =>
+    let (head, args) := (Term.app f a m r).spine
     let mask := byNameMask p head args.size
     let i := args.size - 1
-    .app (spine p mask (i - 1) f) (if m == .irr then a else term p a) (newMode mask i m)
+    .app (spine p mask (i - 1) f) (if r.alwaysIrr then a else term p a) (newMode mask i m r) r
   | .lam b d t => .lam b d (term p t)
-  | .letE c r ty v b => .letE c r ty (if r == .rel then term p v else v) (term p b)
+  | .letE c r ty v b => .letE c r ty (if r.alwaysIrr then v else term p v) (term p b)
   | .proj s i e => .proj s i (term p e)
   | t => t
 
 /-- Rebuild the rest of a spine whose outermost remaining argument has
 index `i`. -/
 def spine (p : Program) (mask : Array Bool) (i : Nat) : Term → Term
-  | .app f a m =>
-    .app (spine p mask (i - 1) f) (if m == .irr then a else term p a) (newMode mask i m)
+  | .app f a m r =>
+    .app (spine p mask (i - 1) f) (if r.alwaysIrr then a else term p a) (newMode mask i m r) r
   | head => term p head
 
 end
@@ -62,8 +64,8 @@ def ihs (np nmot nmin : Nat) (rule : Rule) : Rule :=
   let (binders, body) := rule.rhs.lams
   if binders.size != total then rule else
   let (head, args) := body.spine
-  let args := args.mapIdx fun i (a, m) =>
-    (a, if i ≥ rule.fields && m != .irr then Mode.byName else m)
+  let args := args.mapIdx fun i (a, m, r) =>
+    (a, (if i ≥ rule.fields && !r.alwaysIrr then Mode.byName else m), r)
   let body := Term.mkApps head args
   { rule with rhs := binders.foldr (fun (b, d) acc => .lam b d acc) body }
 

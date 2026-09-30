@@ -140,12 +140,60 @@ def firstOrderConsts (p : Program) : Array (CId × Nat) :=
 
 def clock : Nat := 10000
 
+/-- What level-exact relevance changes in a closure (D18): positions whose
+class is a proof under a proper universe condition (neither never nor
+always), and the instances the checker reaches. -/
+structure LevelStats where
+  condTags : Nat := 0
+  tags : Nat := 0
+  condParams : Nat := 0
+  condFields : Nat := 0
+  condRecKinds : Nat := 0
+  instances : Nat := 0
+  constants : Nat := 0
+  splits : Nat := 0
+
+def isCond (w : PropWhen) : Bool :=
+  match w with
+  | .allZero (_ :: _) => true
+  | _ => false
+
+def LevelStats.render (s : LevelStats) : String :=
+  s!"level-exact: {s.condTags} of {s.tags} tags conditional, {s.condParams} conditional parameter \
+    classes, {s.condFields} conditional field classes, {s.condRecKinds} conditional recursor kinds; \
+    {s.instances} instances of {s.constants} constants, {s.splits} at two or more profiles"
+
+def LevelStats.json (s : LevelStats) : Json :=
+  Json.mkObj [("conditional_tags", toJson s.condTags), ("tags", toJson s.tags),
+    ("conditional_params", toJson s.condParams), ("conditional_fields", toJson s.condFields),
+    ("conditional_rec_kinds", toJson s.condRecKinds), ("instances", toJson s.instances),
+    ("constants", toJson s.constants), ("profile_split", toJson s.splits)]
+
+def levelStats (p : Program) (ann : Ann) (ch : Checked) : LevelStats :=
+  let tags := ann.nodes.foldl (fun acc (_, ts) => acc ++ ts) #[]
+  let tagCond : Tag → Bool
+    | .lam r pw => isCond r.irrWhen || isCond pw
+    | .arg r | .letE r => isCond r.irrWhen
+  let params := ch.reached.foldl (fun n c => match ann.constRel? c with
+    | some rel => n + (rel.params.filter (isCond ·.irrWhen)).size
+    | none => n) 0
+  let fields := ann.ctors.foldl (fun n r => match r with
+    | some rel => n + (rel.fields.filter (isCond ·.dropWhen)).size
+    | none => n) 0
+  let recKinds := ch.reached.foldl (fun n c => match p.table.recKindOf c with
+    | some (.subsingleton w _) => if isCond w then n + 1 else n
+    | _ => n) 0
+  { condTags := (tags.filter tagCond).size, tags := tags.size, condParams := params
+    condFields := fields, condRecKinds := recKinds, instances := ch.instances.size
+    constants := ch.reached.size, splits := ch.profileSplit.size }
+
 /-- What happened to one pack's annotation. -/
 structure Verdict where
   checker : String
   roots : Tally := {}
   firstOrder : Tally := {}
   firstOrderConsts : Nat := 0
+  level : LevelStats := {}
 
 /-- Annotate, install, check (recording the verdict) and lazify `p`. -/
 def prepareRuns (env : Ixon.V3.Env) (p : Program) : Except String (Program × String) := do
@@ -198,7 +246,13 @@ def censusPack (a : Assert) (pack : Pack) : IO Verdict := do
   for (c, arity) in fo do
     t ← runRoot a p c (names hints p c) (smallTuples arity) t
   let checker := if verdicts.isEmpty then "accepted" else String.intercalate "; " verdicts.toList
-  return { v with firstOrder := t, firstOrderConsts := fo.size, checker }
+  -- Level-exact statistics of the pack's own closure.
+  let ann ← IO.ofExcept (annotate env p0)
+  let pI ← IO.ofExcept (install p0 ann)
+  let level := match check pI ann with
+    | .ok ch => levelStats pI ann ch
+    | .error _ => {}
+  return { v with firstOrder := t, firstOrderConsts := fo.size, checker, level }
 
 def run (a : Assert) (reportPath : Option System.FilePath) : IO (Array String) := do
   let mut out := #[]
@@ -208,11 +262,12 @@ def run (a : Assert) (reportPath : Option System.FilePath) : IO (Array String) :
     out := out.push s!"{pack.name}: checker {v.checker}"
     out := out.push s!"  roots: {v.roots.render}"
     out := out.push s!"  {v.firstOrderConsts} first-order constants: {v.firstOrder.render}"
+    out := out.push s!"  {v.level.render}"
     for (k, n, ex) in v.roots.causes ++ v.firstOrder.causes do
       out := out.push s!"    {n} × {k} (e.g. {ex})"
     rows := rows.push (pack.name, Json.mkObj [("checker", toJson v.checker),
       ("roots", v.roots.json), ("first_order_constants", toJson v.firstOrderConsts),
-      ("first_order", v.firstOrder.json)])
+      ("first_order", v.firstOrder.json), ("level_exact", v.level.json)])
   if let some path := reportPath then
     IO.FS.writeFile path ((Json.mkObj rows.toList).pretty ++ "\n")
     out := out.push s!"stuck census written to {path}"

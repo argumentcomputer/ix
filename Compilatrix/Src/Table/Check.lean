@@ -64,7 +64,7 @@ def contractWrapper (p : Program) (t : Term) : Term :=
 
 /-- Remove saturated wrapper applications everywhere, bottom-up. -/
 def stripWrappers (p : Program) : Term → Term
-  | .app f a m => contractWrapper p (.app (stripWrappers p f) (stripWrappers p a) m)
+  | .app f a m r => contractWrapper p (.app (stripWrappers p f) (stripWrappers p a) m r)
   | .lam b d t => .lam b (stripWrappers p d) (stripWrappers p t)
   | .pi b r d t => .pi b r (stripWrappers p d) (stripWrappers p t)
   | .letE c r ty v b => .letE c r (stripWrappers p ty) (stripWrappers p v) (stripWrappers p b)
@@ -89,7 +89,7 @@ def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
     | throw "eqn: the theorem is not a Π-telescope over Eq"
   let k := binders.size
   let expectedLhs := Term.mkApps (.const f (paramUnivs n))
-    ((boundVars k).toArray.map (·, Mode.strict))
+    ((boundVars k).toArray.map (·, Mode.strict, Rel.rel))
   unless lhs.eqv expectedLhs do
     throw "eqn: the left-hand side is not f applied to the bound variables in order"
   let some (fBinders, fBody) := peelPis k tf
@@ -175,7 +175,7 @@ def checkCase (p : Program) (key : CId) : Except String Resolve := do
     unless wBinders.size == f + ihs do throw s!"case: minor wrapper {j} has the wrong arity"
     let minorIdx := (total - 1 - (np + 1 + ni + 1 + j)) + f + ihs
     let expected := Term.mkApps (.var minorIdx)
-      ((List.range f).toArray.map fun i => (Term.var (f + ihs - 1 - i), Mode.strict))
+      ((List.range f).toArray.map fun i => (Term.var (f + ihs - 1 - i), Mode.strict, Rel.rel))
     unless wBody.eqv expected do throw s!"case: minor wrapper {j} is not the minor on its fields"
   return .case r
 
@@ -210,21 +210,22 @@ def checkPrim (p : Program) (f : CId) (op : PrimOp) (enabled : List PrimOp) :
 
 /-! ## Derived `RecKind` -/
 
-/-- Whether a type is a Π-telescope ending syntactically in `sort zero`. -/
-def endsInProp (t : Term) : Bool :=
-  match t.pis.2 with
-  | .sort .zero => true
-  | _ => false
-
-/-- Derive a recursor's kind (§4.1): `empty` with no rules; `subsingleton`
-for a single-rule recursor of a family whose type ends in `sort zero`, with
-each field read from the constructor index that is exactly that field, or a
-proof; `ordinary` otherwise. -/
+/-- Derive a recursor's kind (§4.1, per profile as D18 asks): `empty` with no
+rules; for a single-rule recursor of a family whose type ends in `sort u`,
+`subsingleton when` with `when` the zero condition of `u` over the
+recursor's own universe parameters (read through the major's universe
+arguments), each field read from the constructor index that is exactly that
+field, or a proof; `ordinary` otherwise (and where `when` fails). Lean's
+large-elimination criterion makes the non-index fields propositions whenever
+the recursor can eliminate into a relevant motive. -/
 def deriveRecKind (p : Program) (r : CId) : Option RecKind := do
   let .recr _ _ _ _ _ _ _ ind rules _ ← p.decl? r | none
   if rules.isEmpty then return .empty
   let .induct _ _ _ _ indTy _ ← p.decl? ind | none
-  unless endsInProp indTy && rules.size == 1 do return .ordinary
+  let .sort u := indTy.pis.2 | return .ordinary
+  let some us := p.majorUnivs r | return .ordinary
+  let when := ((zeroCond u).inst us).dedup
+  if when == .never || rules.size != 1 then return .ordinary
   let rule ← rules[0]?
   let .ctor _ _ _ _ np nf ctorTy ← p.decl? rule.ctor | none
   let (_, result) := ctorTy.pis
@@ -234,6 +235,6 @@ def deriveRecKind (p : Program) (r : CId) : Option RecKind := do
     match indices.findIdx? (·.eqv (.var (nf - 1 - j))) with
     | some i => FieldSrc.index i
     | none => FieldSrc.proof
-  return .subsingleton fields
+  return .subsingleton when fields
 
 end Compilatrix.Src.Table
