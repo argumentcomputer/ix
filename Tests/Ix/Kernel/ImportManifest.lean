@@ -83,7 +83,7 @@ def authored : Array String := #[
   "Ix/Kernel.lean", "Ix/Kernel/Model.lean", "Ix/Kernel/Env.lean", "Ix/Kernel/Check.lean",
   "Ix/Kernel/Consistency.lean", "Ix/Kernel/Audit/Axioms.lean", "Ix/Kernel/Audit/Imports.lean",
   "Ix/Kernel/Audit/Runtime.lean", "Ix/Kernel/Audit/Roots.lean", "Ix/Address/Core.lean",
-  "Ix/Kernel/Model/LetRules.lean", "Ix/Kernel/Level.lean", "Ix/Kernel/Claims.lean", "Ix/Kernel/Infer.lean",
+  "Ix/Kernel/Model/LetRules.lean", "Ix/Kernel/Level.lean", "Ix/Kernel/Certified/LevelNorm.lean", "Ix/Kernel/Claims.lean", "Ix/Kernel/Infer.lean",
   "Ix/Kernel/Annotate.lean", "Ix/Kernel/Search.lean", "Ix/Kernel/Certified/Checker.lean", "Ix/Kernel/Certified/Ordinary/Read.lean",
   "Ix/Kernel/Inductive/Ordinary.lean", "Ix/Kernel/Certified/Structure/Read.lean",
   "Ix/Kernel/Inductive/Structure.lean", "Ix/Kernel/Inductive/Natural.lean", "Ix/Kernel/Fidelity.lean",

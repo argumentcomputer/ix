@@ -84,13 +84,18 @@ def egressOperations : Array Name :=
   #[``Ix.Kernel.Egress.readRecords, ``Ix.Kernel.Egress.writeRecords,
     ``Ix.Kernel.Egress.writeExpr, ``Ix.Kernel.Egress.writeProjection]
 
-/-- Module prefixes the certified import closure may use: Lean core, the
-kernel itself, the pure address key, and the pure Ixon types. Measured after the K0 import trim,
-the closure of `Ix.Kernel` has 690 modules, all under `Init` except the
-kernel's own and `Ix.Address.Core`. K3 also checks the pure Ixon types independently. No `Std`, `Lean`, or `Batteries` module,
-nothing else under `Ix`, and no `Blake3`, `LSpec`, `Cli`, or `lean4lean`
-module may enter. -/
-def importAllowlist : Array Name := #[`Init, `Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types]
+/-- Module prefixes the certified import closure may use: Lean core (`Init`
+and `Std`, which ships with the toolchain), the kernel itself, the pure address
+key, and the pure Ixon types. `Std` was admitted by the user's decision of
+2026-09-30 (`plans/ix-kernel-competitive.md`) for its maps and their lemmas, as
+con-leche's kernel uses them; `Classical.choice` reaching kernel definitions
+through it is accepted, and the axiom guards below record where. Measured after
+the K0 import trim, the closure of `Ix.Kernel` had 690 modules, all under `Init`
+except the kernel's own and `Ix.Address.Core`. K3 also checks the pure Ixon
+types independently. No `Lean` or `Batteries` module, nothing else under `Ix`,
+and no `Blake3`, `LSpec`, `Cli`, or `lean4lean` module may enter. -/
+def importAllowlist : Array Name :=
+  #[`Init, `Std, `Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types]
 
 /-- Modules whose execution replacements are inherited Lean runtime. -/
 def runtimeAllowlist : Array Name := #[`Init, `Std]
@@ -148,14 +153,19 @@ end Ix.Kernel.Audit
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Audit.importAllowlist
 
+-- `Std` is admitted; the compiler frontend and third-party libraries are not.
+#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Std.Data.TreeMap
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Lean.Elab.Command
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Batteries.Data.RBMap
+
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
-Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 947 compiled functions; inherited externs 16,
+Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 952 compiled functions; inherited externs 16,
 implemented_by 0, unsafe 1, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
-Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 976 compiled functions;
+Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 981 compiled functions;
 inherited externs 23, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist

@@ -45,15 +45,29 @@ def aliasOutcome (fuel : Nat) : Outcome :=
 #guard ([3, 4, 8, 32].map aliasOutcome).all (· == .accept)
 #guard ((List.range 33).map aliasOutcome).all (· != .reject)
 
-/-- A conservative level comparison can fail on equal universe expressions. -/
+/-- Level comparison is complete (`levelEquiv_iff`): equal universe expressions
+compare equal however they are written. The previous conservative comparison
+failed on `max u v` against `max v u`. -/
 def maxUV : VLevel := .max (.param 0) (.param 1)
 def maxVU : VLevel := .max (.param 1) (.param 0)
 
 example (values : List Nat) : maxUV.eval values = maxVU.eval values := by
   simp [maxUV, maxVU, VLevel.eval, Nat.max_comm]
 
-#guard !levelEquiv maxUV maxVU
+#guard levelEquiv maxUV maxVU
 #guard levelEquiv maxUV maxUV
+#guard !levelEquiv maxUV (.param 0)
+
+-- `DecidableEq`'s body lives in `imax u (imax u 1)`, its declared type in `max 1 u`.
+#guard levelEquiv (.imax (.param 0) (.imax (.param 0) (.succ .zero))) (.max (.succ .zero) (.param 0))
+-- `imax u v ≤ max u v`, as a field bound, and not conversely.
+#guard levelEquiv (.max (.imax (.param 0) (.param 1)) (.max (.param 0) (.param 1)))
+  (.max (.param 0) (.param 1))
+#guard !levelEquiv (.max (.max (.param 0) (.param 1)) (.imax (.param 0) (.param 1)))
+  (.imax (.param 0) (.param 1))
+-- A zero test sees through `imax` with a zero right side, and nothing else.
+#guard levelIsZero (.imax (.param 0) .zero)
+#guard !levelIsZero (.imax .zero (.param 0))
 
 -- Direct input defects remain distinguishable from search exhaustion.
 #guard outcome (check.{0,1} {} [alias, alias]) == .reject
@@ -124,16 +138,26 @@ def exhaustedApplication : Bool :=
   | .error _ => false
 #guard exhaustedApplication
 
+#guard match isDefEq.{0,1} 64 (β := Nat) (fun _ => none) [] (.sort maxUV) (.sort maxVU) with
+  | .ok _ => true
+  | .error _ => false
 #guard failureIs
-  (isDefEq.{0,1} 64 (β := Nat) (fun _ => none) [] (.sort maxUV) (.sort maxVU))
+  (isDefEq.{0,1} 64 (β := Nat) (fun _ => none) [] (.sort maxUV) (.sort (.param 0)))
   (.unresolved "conversion search did not establish equality")
 
--- This identity is valid by max commutativity, which the current conservative
--- level comparison does not establish. The whole declaration must decline.
+-- This identity is valid by max commutativity, which the complete level
+-- comparison establishes.
 def maxIdentity : Decl Nat :=
   ⟨5, ⟨[.defn 2 .definition (.forallE (.sort maxUV) (.sort maxUV))
     (.lam (.sort maxVU) (.bvar 0)) .safe]⟩⟩
-#guard outcome (check.{0,1} {} [maxIdentity]) == .decline
+#guard outcome (check.{0,1} {} [maxIdentity]) == .accept
+
+-- A body at a different universe still fails its conversion: the declaration
+-- declines, since conversion search as a whole is not complete.
+def maxMismatch : Decl Nat :=
+  ⟨5, ⟨[.defn 2 .definition (.forallE (.sort maxUV) (.sort maxUV))
+    (.lam (.sort (.param 0)) (.bvar 0)) .safe]⟩⟩
+#guard outcome (check.{0,1} {} [maxMismatch]) == .decline
 
 -- Binder regimes are still validated, including on the non-Prop beta path.
 #guard failureIs (inferA.{0,1} 64 (β := Nat) (fun _ => none) []

@@ -302,6 +302,11 @@ also verify the recorded source hashes. -/
 lean_exe «kernel-provenance» where
   root := `Tests.Ix.Kernel.Provenance
 
+/-- Géran level order against brute-force evaluation and Ix.Tc. -/
+lean_exe «kernel-level-differential» where
+  root := `Tests.Ix.Kernel.LevelDifferential
+  moreLinkObjs := #[ix_rs]
+
 /-- Host-only comparison with the temporary Ix.Tc oracle. -/
 lean_exe «kernel-differential» where
   root := `Tests.Ix.Kernel.Differential
@@ -350,7 +355,9 @@ script "check-kernel" (args) := do
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
   run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.Fidelity", "Tests.Ix.Kernel.Ingress", "Tests.Ix.Kernel.Egress", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork"]
   run ".lake/build/bin/kernel-provenance" #[]
-  run "lake" #["build", "--wfail", "kernel-differential", "kernel-ingress", "kernel-codec", "kernel-order"]
+  run "lake" #["build", "--wfail", "kernel-differential", "kernel-ingress", "kernel-codec", "kernel-order",
+    "kernel-level-differential"]
+  run ".lake/build/bin/kernel-level-differential" #[]
   let differential ← IO.Process.output { cmd := ".lake/build/bin/kernel-differential" }
   IO.FS.writeFile ".lake/build/kernel-differential.jsonl" differential.stdout
   IO.eprint differential.stderr
