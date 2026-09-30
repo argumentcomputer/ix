@@ -78,8 +78,11 @@ def countRun (p : VProgram) (fuel k : Nat) (s : Lir.State) : Outcome × Nat × N
     | .stuck => return (.stuck, steps, charges)
   return (.timeout, steps, charges)
 
+/-- Counts by name (rule firings, declined forms). -/
+abbrev Counts := Std.TreeMap String Nat compare
+
 /-- The selected program, or the selection error's text. -/
-def select (p : Lir.Program) : Except String (VProgram × Std.HashMap String Nat) :=
+def select (p : Lir.Program) : Except String (VProgram × Counts) :=
   match Select.run p with
   | .ok r => .ok r
   | .error e => .error e.text

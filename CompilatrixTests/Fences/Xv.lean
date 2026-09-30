@@ -1,8 +1,9 @@
 import Compilatrix.Xv.Select.Lemmas
 
-/-! Required axiom fences for Xv selection: the branch producers decide the
-Lir condition, carry or borrow, and selected immediates keep the Lir
-constant's low bits. Expected messages are preserved verbatim. -/
+/-! Required axiom fences for Xv selection: the branch producers (`test a, a`
+included) decide the Lir condition, carry or borrow, and selected
+immediates keep the Lir constant's low bits. Expected messages are
+preserved verbatim. -/
 
 /-- info: 'Compilatrix.Xv.Select.condX86_holds' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Xv.Select.condX86_holds
@@ -30,3 +31,9 @@ constant's low bits. Expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Xv.Select.immFull?_low' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Xv.Select.immFull?_low
+
+/-- info: 'Compilatrix.Xv.Select.test_self_flags' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Xv.Select.test_self_flags
+
+/-- info: 'Compilatrix.Xv.Select.test_self_test' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Xv.Select.test_self_test

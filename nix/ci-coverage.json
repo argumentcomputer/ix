@@ -244,8 +244,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline":
- "jcb/x86-phase1: Src, relevance, Lir, Xv and the Phase 1 table rows",
+ "baseline": "jcb/p1-xv2: Xv selection with the Phase 1 rows",
  "axiom_sha256":
- "b5fd4cf14a691e84c3fddbb69a1bc32a3600e1e4591e0b779a29e4de9bba6348",
- "axiom_count": 442}
+ "2d3c33369e8171712b7507163eaee1ccda763d1ef540fe48037d0d88ac0aec5a",
+ "axiom_count": 444}

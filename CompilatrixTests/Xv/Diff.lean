@@ -33,7 +33,7 @@ structure Report where
   cases : Nat := 0
   selected : Nat := 0
   /-- Programs rejected, by the first unsupported form. -/
-  unsupported : Std.HashMap String Nat := {}
+  unsupported : Counts := {}
   /-- Programs whose Lir run is `stuck` (only selection is checked). -/
   stuck : Nat := 0
   outcomes : Array Nat := Array.replicate 7 0
@@ -42,16 +42,16 @@ structure Report where
   charged : Nat := 0
   maxCharges : Nat := 0
   /-- Programs on which each rule fired, and its total firings. -/
-  rulePrograms : Std.HashMap String Nat := {}
-  ruleFirings : Std.HashMap String Nat := {}
+  rulePrograms : Counts := {}
+  ruleFirings : Counts := {}
   lirStmts : Nat := 0
   xvInsts : Nat := 0
   lirSteps : Nat := 0
   xvSteps : Nat := 0
   deriving Inhabited
 
-def addCounts (a b : Std.HashMap String Nat) : Std.HashMap String Nat :=
-  b.fold (init := a) fun acc k v => acc.insert k (acc.getD k 0 + v)
+def addCounts (a b : Counts) : Counts :=
+  b.foldl (init := a) fun acc k v => acc.insert k (acc.getD k 0 + v)
 
 def Report.add (a b : Report) : Report :=
   { cases := a.cases + b.cases, selected := a.selected + b.selected
@@ -82,14 +82,14 @@ def xvSize (q : VProgram) : Nat :=
 def checkLir (p : Lir.Program) (args : List Word) (seed : UInt64) : Except String Report := do
   match Select.run p with
   | .error e =>
-      return { cases := 1, unsupported := ({} : Std.HashMap String Nat).insert e.form 1 }
+      return { cases := 1, unsupported := ({} : Counts).insert e.form 1 }
   | .ok (q, fired) =>
   match Select.run p with
   | .ok (q', _) => unless q == q' do throw "selection is not deterministic"
   | .error _ => throw "selection is not deterministic"
   if let .error e := q.check then throw s!"the selected program is not well formed: {e}"
   unless operandsAgree q do throw "operand metadata disagrees with the instructions' uses or definitions"
-  let rules : Std.HashMap String Nat := fired.fold (init := {}) fun acc k v => if v > 0 then acc.insert k 1 else acc
+  let rules : Counts := fired.foldl (init := {}) fun acc k v => if v > 0 then acc.insert k 1 else acc
   let base : Report := { cases := 1, selected := 1, rulePrograms := rules, ruleFirings := fired
                          lirStmts := programSize p, xvInsts := xvSize q }
   let mem := Region.initial seed

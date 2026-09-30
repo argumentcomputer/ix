@@ -226,13 +226,30 @@ def sweepBranch (_ : Unit) : Bool :=
       agrees (brProg c w (v 0) (i k)) (two a 0) && agrees (brProg c w (i k) (v 0)) (two a 0) &&
       agrees (brProg c w (v 0) (v 1)) (two a k) && agrees (brProg c w (i a) (i k)) []
 
-/-! ## Rule 2: tag tests by `and` -/
+/- Rule 1's zero test: `test a, a`, at any width, when the immediate's low
+bits are zero. -/
+#guard jccRow (brProg .slt .w64 (v 0) (i 0)) == some (Select.row .test .w64 .MR, [.r 0, .r 0], .signedLt)
+#guard jccRow (brProg .ult .w8 (i 0x100) (v 0)) == some (Select.row .test .w8 .MR, [.r 0, .r 0], .unsignedGt)
+#guard fired (brProg .eq .w32 (v 0) (i 0x100000000)) "cmp.testSelf"
 
-#guard (jccRow (brProg .tz .w8 (v 0) (i 1))).map (fun (o, _, c) => (o, c)) == some (Select.row .and .w8 .MI, .eq)
+/-! ## Rule 2: tag tests by `test` -/
+
+#guard jccRow (brProg .tz .w64 (v 0) (i 1)) == some (Select.row .test .w8 .MI, [.r 0, .i 1], .eq)
+#guard (jccRow (brProg .tz .w64 (v 0) (i 0x80))).map (·.1) == some (Select.row .test .w8 .MI)
+#guard (jccRow (brProg .tz .w64 (v 0) (i 0x12345))).map (·.1) == some (Select.row .test .w32 .MI)
+#guard (jccRow (brProg .tz .w64 (v 0) (i 0x80000000))).map (·.1) == some (Select.row .test .w32 .MI)
+#guard (jccRow (brProg .tz .w64 (v 0) (i 0x100000000))).map (·.1) == some (Select.row .test .w64 .MR)
+#guard (jccRow (brProg .tz .w64 (v 0) (i 0xffffffff80000000))).map (·.1) == some (Select.row .test .w64 .MI)
+#guard (jccRow (brProg .tz .w16 (v 0) (i 0xff00))).map (·.1) == some (Select.row .test .w16 .MI)
 #guard (jccRow (brProg .tnz .w64 (v 0) (v 1))).map (fun (o, _, c) => (o, c)) ==
-  some (Select.row .and .w64 .MR, .ne)
+  some (Select.row .test .w64 .MR, .ne)
 #guard agrees (brProg .tz .w8 (v 0) (i 0x1ff)) (two 0x100 0)
 #guard agrees (brProg .tnz .w32 (v 0) (v 1)) (two 0x100000000 0x100000001)
+def sweepTag (_ : Unit) : Bool :=
+  [Cond.tz, .tnz].all fun c => [X86.Width.w8, .w16, .w32, .w64].all fun w =>
+  [1, 0x80, 0xff, 0x100, 0x8000, 0x12345, 0x80000000, 0xffffffff, 0x100000000, 0xffffffff80000000,
+    0x8000000000000000, 0xffffffffffffffff].all fun k =>
+    edgeWords.all fun a => agrees (brProg c w (v 0) (i k)) (two a 0) && agrees (brProg c w (i k) (v 0)) (two a 0)
 
 /-! ## Rule 4: overflow branches -/
 
@@ -251,7 +268,42 @@ def sweepOverflow (_ : Unit) : Bool :=
     agrees (ovfProg o (v 0) (v 1)) (two a b) && agrees (ovfProg o (v 0) (i b)) (two a 0) &&
     agrees (ovfProg o (i a) (v 1)) (two 0 b) && agrees (ovfProg o (i a) (i b)) []
 
-/-! ## Narrow arithmetic, `imul`, sign-extending loads, constant shifts -/
+/-- `brOvf o x a (load [p])`, the load possibly first. -/
+def ovfLoadProg (o : Ovf) (loadFirst : Bool) (between : Array Stmt := #[]) : Lir.Program :=
+  let y : Lir.Arg := v 6
+  single #[
+    { body := #[heapBase, .store .w64 { base := some (.v 5) } (v 1),
+        .assign 6 (.load .w64 .zero { base := some (.v 5) })] ++ between
+      term := .brOvf o 9 (if loadFirst then y else v 0) (if loadFirst then v 0 else y) (to 1) (to 2) },
+    { term := .ret [v 9] }, { term := .fail .natOverflow }]
+#guard (jccRow (ovfLoadProg .addC false)).map (·.1) == some (Select.row .add .w64 .RM)
+#guard (jccRow (ovfLoadProg .addC true)).map (·.1) == some (Select.row .add .w64 .RM)
+#guard (jccRow (ovfLoadProg .subB false)).map (·.1) == some (Select.row .sub .w64 .RM)
+#guard (jccRow (ovfLoadProg .subB true)).map (·.1) == some (Select.row .sub .w64 .MR)
+#guard (jccRow (ovfLoadProg .addC false #[.store .w8 { base := some (.v 5), disp := 64 } (i 0)])).map (·.1) ==
+  some (Select.row .add .w64 .MR)
+def sweepOverflowLoad (_ : Unit) : Bool :=
+  [(0xffffffffffffffff, 1), (0x8000000000000000, 0x8000000000000000), (5, 7), (7, 5), (0, 0)].all fun (a, b) =>
+  [Ovf.addC, .subB].all fun o => [false, true].all fun first =>
+    agrees (ovfLoadProg o first) (two a b)
+
+/-! ## Rule 9: ALU operations with a folded load -/
+
+/-- `y := load w [p]; x := a op y` (or `y op a`). -/
+def aluLoadProg (o : BinOp) (w w' : Width) (loadFirst : Bool) (between : Array Stmt := #[]) : Lir.Program :=
+  expr (#[heapBase, .store .w64 { base := some (.v 5) } (v 1), .assign 6 (.load w .zero { base := some (.v 5) })] ++
+    between ++ #[bin 9 o w' (if loadFirst then v 6 else v 0) (if loadFirst then v 0 else v 6)])
+#guard fired (aluLoadProg .add .w64 .w64 false) "alu.load"
+#guard lastRow (aluLoadProg .xor .w64 .w32 true) == some (Select.row .xor .w32 .RM)
+#guard !fired (aluLoadProg .sub .w64 .w64 true) "alu.load"
+#guard !fired (aluLoadProg .and .w16 .w64 false) "alu.load"
+#guard !fired (aluLoadProg .or .w64 .w64 false #[.store .w64 { base := some (.v 5), disp := 8 } (i 1)]) "alu.load"
+def sweepAluLoad (_ : Unit) : Bool :=
+  [BinOp.add, .sub, .and, .or, .xor].all fun o => [X86.Width.w8, .w32, .w64].all fun w =>
+  [X86.Width.w8, .w16, .w32, .w64].all fun w' => [false, true].all fun first =>
+    agrees (aluLoadProg o w w' first) (two 0xfedcba9876543210 0x8000000180000001)
+
+/-! ## Narrow arithmetic, `imul`, sign-extending loads -/
 
 def sweepNarrow (_ : Unit) : Bool :=
   [BinOp.add, .sub, .and, .or, .xor, .mul].all fun o => [X86.Width.w8, .w16].all fun w =>
@@ -272,21 +324,74 @@ def sweepLoads (_ : Unit) : Bool :=
   [0x8080808080808080, 0x7f7f7f7f7f7f7f7f, 0, 0xffffffffffffffff].all fun a => agrees (loadProg w e) (two a 0)
 #guard fired (loadProg .w16 .sign) "load.sext"
 
-def sweepShl (_ : Unit) : Bool :=
-  [0, 1, 3, 4, 31, 32, 63, 64, 65].all fun s => [X86.Width.w8, .w16, .w32, .w64].all fun w =>
-  agrees (expr #[bin 9 .shl w (v 0) (i s)]) (two 0x8000000180000003 0) &&
-  agrees (expr #[bin 9 .shl w (i 0xf0f0f0f0f0f0f0f1) (i s)]) []
-#guard fired (expr #[bin 9 .shl .w64 (v 0) (i 3)]) "shl.lea"
-#guard fired (expr #[bin 9 .shl .w64 (v 0) (i 4)]) "shl.imul"
-#guard fired (expr #[bin 9 .shl .w64 (v 0) (i 64)]) "shl.zero"
+/-! ## Rule 12: shifts and division -/
 
-/-! ## Unsupported forms are named -/
+def shiftCounts : List Word := [0, 1, 3, 4, 7, 8, 15, 16, 31, 32, 33, 63, 64, 65, 0xffffffffffffffff]
+def sweepShifts (_ : Unit) : Bool :=
+  [BinOp.shl, .shr, .sar].all fun o => [X86.Width.w8, .w16, .w32, .w64].all fun w =>
+  shiftCounts.all fun s =>
+    [0x8000000180008083, 0x7fffffff7fff7f7f].all fun a =>
+      agrees (expr #[bin 9 o w (v 0) (i s)]) (two a 0) && agrees (expr #[bin 9 o w (v 0) (v 1)]) (two a s) &&
+      agrees (expr #[bin 9 o w (i a) (v 1)]) (two 0 s) && agrees (expr #[bin 9 o w (v 0) (v 0)]) (two s 0)
+#guard lastRow (expr #[bin 9 .sar .w64 (v 0) (i 3)]) == some (Select.row .sar .w64 .MI)
+#guard lastInst (expr #[bin 9 .shr .w32 (v 0) (v 1)]) == some (.op (Select.row .shr .w32 .MC) [9] [.r 0, .r 1])
+#guard fired (expr #[bin 9 .shl .w16 (v 0) (i 3)]) "alu.narrow"
+#guard fired (expr #[bin 9 .shl .w64 (v 0) (i 64)]) "shift.zero"
+/- `shl` by at most 3 is an untied `lea` when the operand lives on. -/
+#guard fired (single (results := 2) #[{ body := #[bin 9 .shl .w64 (v 0) (i 3)], term := .ret [v 9, v 0] }]) "shl.lea"
+#guard fired (expr #[bin 9 .shl .w64 (v 0) (i 3)]) "shift.imm"
 
-#guard unsupportedForm (expr #[bin 9 .shr .w64 (v 0) (i 1)]) == some "shr.64"
-#guard unsupportedForm (expr #[bin 9 .shl .w32 (v 0) (v 1)]) == some "shl.32 by a register"
-#guard unsupportedForm (expr #[bin 9 .urem .w64 (v 0) (v 1)]) == some "urem.64"
-#guard unsupportedForm (expr #[.assign 9 (.select .eq .w8 (v 0) (v 1) (v 0) (v 1))]) == some "select.8"
-#guard unsupportedForm (expr #[.assign 9 (.test .ult .w16 (v 0) (v 1))]) == some "test.16"
+def divWords : List Word :=
+  [0, 1, 2, 3, 7, 0xff, 0x100, 0xffff, 0x10000, 0x7fffffff, 0xffffffff, 0x100000000,
+    0x7fffffffffffffff, 0xffffffffffffffff]
+def sweepDiv (_ : Unit) : Bool :=
+  [BinOp.udiv, .urem].all fun o => [X86.Width.w8, .w16, .w32, .w64].all fun w =>
+  divWords.all fun a => divWords.all fun b =>
+    agrees (expr #[bin 9 o w (v 0) (v 1)]) (two a b) && agrees (expr #[bin 9 o w (v 0) (i b)]) (two a 0)
+#guard lastRow (expr #[bin 9 .urem .w64 (v 0) (v 1)]) == some (X86.Op.divM .w64)
+#guard lastInst (expr #[bin 9 .udiv .w32 (v 0) (v 1)]) ==
+  some (.op (X86.Op.divM .w32) [9, 11] [.r 1, .r 0, .r 10])
+/- Division by zero is `stuck` at both levels. -/
+#guard agrees (expr #[bin 9 .udiv .w64 (v 0) (v 1)]) (two 5 0)
+#guard match Lir.eval (expr #[bin 9 .udiv .w64 (v 0) (v 1)]) 10 (two 5 0) (Region.initial 0) Region.ctx with
+  | .stuck => true
+  | _ => false
+/- A single-use load divisor folds. -/
+def divLoadProg (w : Width) : Lir.Program :=
+  expr #[heapBase, .store .w64 { base := some (.v 5) } (v 1), .assign 6 (.load .w64 .zero { base := some (.v 5) }),
+    bin 9 .udiv w (v 0) (v 6)]
+#guard fired (divLoadProg .w64) "div.load" && fired (divLoadProg .w32) "div.load"
+#guard !fired (divLoadProg .w16) "div.load"
+#guard [X86.Width.w8, .w16, .w32, .w64].all fun w =>
+  [(0xffffffffffffffff, 3), (100, 7), (5, 0x100000003)].all fun (a, b) => agrees (divLoadProg w) (two a b)
+
+/-! ## Rules 10 and 11: `select` and `test` as fused pairs -/
+
+def selectProg (c : Cond) (w : Width) (a b t f : Lir.Arg) : Lir.Program :=
+  expr #[.assign 9 (.select c w a b t f)]
+def testProg (c : Cond) (w : Width) (a b : Lir.Arg) : Lir.Program :=
+  expr #[.assign 9 (.test c w a b)]
+#guard lastInst (selectProg .ult .w64 (v 0) (v 1) (v 2) (v 3)) ==
+  some (.fused (Select.row .cmp .w64 .MR) [.r 0, .r 1] (X86.Op.cmovRM .unsignedLt .w64) [9] [.r 3, .r 2])
+#guard lastInst (testProg .tz .w8 (v 0) (i 1)) ==
+  some (.fused (Select.row .test .w8 .MI) [.r 0, .i 1] (X86.Op.setccM .eq) [9] [])
+/-- `v9 := rhs; ret v9` with four parameters. -/
+def prog4 (body : Array Stmt) : Lir.Program := single (params := [0, 1, 2, 3]) #[{ body, term := .ret [v 9] }]
+def sweepSelectTest (_ : Unit) : Bool :=
+  [Cond.eq, .ne, .ult, .ule, .ugt, .uge, .slt, .sle, .sgt, .sge, .tz, .tnz].all fun c =>
+  [X86.Width.w8, .w16, .w32, .w64].all fun w => [0, 0x80, 0xffffffff, 0x100000000].all fun k =>
+    [0, 0x80, 0xffffffff80000000, 0xffffffffffffffff].all fun a =>
+      let args := [a, k, 0x1111111111111111, 0x2222222222222222]
+      agrees (prog4 #[.assign 9 (.select c w (v 0) (v 1) (v 2) (v 3))]) args &&
+      agrees (prog4 #[.assign 9 (.select c w (v 0) (i k) (i 7) (v 3))]) args &&
+      agrees (prog4 #[.assign 9 (.test c w (v 0) (v 1))]) args &&
+      agrees (prog4 #[.assign 9 (.test c w (i k) (v 0))]) args
+/- A single-use load as `select`'s true value folds into `cmovcc`. -/
+def selectLoadProg : Lir.Program :=
+  prog4 #[heapBase, .store .w64 { base := some (.v 5) } (v 2), .assign 6 (.load .w64 .zero { base := some (.v 5) }),
+    .assign 9 (.select .ne .w64 (v 0) (v 1) (v 6) (v 3))]
+#guard fired selectLoadProg "select.load"
+#guard agrees selectLoadProg [1, 2, 3, 4] && agrees selectLoadProg [2, 2, 3, 4]
 
 /-! ## The clock -/
 
@@ -348,6 +453,34 @@ a store and a call. -/
   [useAt .reg 0]
 #guard (Inst.operands (.call 3 [0, 1] [9] : Inst VReg)) ==
   [useAt (.fixed .rdi) 0, useAt (.fixed .rsi) 1, defAt (.fixed .rax) 9]
+/- Implicit operands are fixed: `div`'s `rax`/`rdx`, a shift's `cl`. -/
+#guard (Inst.operands (.op (X86.Op.divM .w64) [9, 10] [.r 0, .r 1, .r 2] : Inst VReg)) ==
+  [useAt .any 0, useAt (.fixed .rax) 1, useAt (.fixed .rdx) 2, defAt (.fixed .rax) 9, defAt (.fixed .rdx) 10]
+#guard (Inst.operands (.op (Select.row .shl .w64 .MC) [9] [.r 0, .r 1] : Inst VReg)) ==
+  [useAt .any 0, useAt (.fixed .rcx) 1, defAt (.reuse 0) 9]
+/- A fused `setcc` definition is early (zeroed before the compare reads);
+`cmovcc`'s is tied to its destination operand. -/
+#guard (Inst.operands (.fused (Select.row .cmp .w64 .MR) [.r 0, .r 1] (X86.Op.setccM .eq) [9] [] : Inst VReg)) ==
+  [useAt .any 0, useAt .reg 1, earlyDefAt .reg 9]
+#guard (Inst.operands (.fused (Select.row .cmp .w64 .MR) [.r 0, .r 1] (X86.Op.cmovRM .eq .w64) [9] [.r 2, .r 3]
+    : Inst VReg)) == [useAt .any 0, useAt .reg 1, useAt .reg 2, useAt .any 3, defAt (.reuse 2) 9]
+
+/- Fused pairs: a flags-only producer and a flag consumer; a narrow
+write-only destination only as a fused consumer's. -/
+#guard (one #[.fused (Select.row .cmp .w64 .MR) [.r 0, .r 1] (X86.Op.setccM .eq) [9] []]).wellFormed
+#guard !(one #[.fused (Select.row .add .w64 .MR) [.r 0, .r 1] (X86.Op.setccM .eq) [9] []]).wellFormed
+#guard !(one #[.fused (Select.row .cmp .w64 .MR) [.r 0, .r 1] (Select.row .mov .w32 .RM) [9] [.r 0]]).wellFormed
+#guard !(one #[.op (X86.Op.setccM .eq) [9] []]).wellFormed
+/- `test`'s CF is 0, so a `jb` after it is well-formed; `imul`'s ZF is not
+defined, so a fused `sete` after it is not. -/
+#guard !(one #[.fused (Select.row .imul .w64 .RM) [.r 0, .r 1] (X86.Op.setccM .eq) [9] []]).wellFormed
+/- The implicit operands bind after the slots; a wrong count does not bind. -/
+#guard (one #[.zero 2, .op (X86.Op.divM .w64) [9, 10] [.r 0, .r 1, .r 2]]).wellFormed
+#guard !(one #[.zero 2, .op (X86.Op.divM .w64) [9] [.r 0, .r 1, .r 2]]).wellFormed
+#guard match Xv.eval (one #[.zero 2, .op (X86.Op.divM .w64) [9, 10] [.r 0, .r 1, .r 2]]) 10 [0, 7]
+    (Region.initial 0) Region.ctx with
+  | .stuck => true
+  | _ => false
 
 /-- The edge-value sweeps: Lir against Xv at every width, operand shape and
 boundary value above. `check-xv-select` runs them compiled. -/
@@ -355,11 +488,16 @@ def sweeps : List (String × (Unit → Bool)) :=
   [("rule 6: op r/m, imm8/imm32 at each width and boundary", sweepAluImm),
    ("rule 3: compare with a folded load, by load and compare width", sweepCmpLoad),
    ("rule 9: imul with a folded load, by load and multiply width", sweepMulLoad),
+   ("rule 9: ALU ops with a folded load, by load and operation width", sweepAluLoad),
    ("rules 1–2: every condition, width and immediate side", sweepBranch),
+   ("rule 2: tag tests at every width and immediate size", sweepTag),
    ("rule 4: carry and borrow boundaries, register and immediate operands", sweepOverflow),
+   ("rule 4: carry and borrow with a folded load", sweepOverflowLoad),
+   ("rules 10–11: select and test for every condition and width", sweepSelectTest),
+   ("rule 12: shifts by constants and registers at every width", sweepShifts),
+   ("rule 12: division and remainder at every width", sweepDiv),
    ("narrow arithmetic at w8/w16", sweepNarrow),
    ("imul by imm8/imm32/register at each width", sweepImul),
-   ("loads at each width and extension", sweepLoads),
-   ("shl by constants at each width", sweepShl)]
+   ("loads at each width and extension", sweepLoads)]
 
 end CompilatrixTests.Xv.Cases

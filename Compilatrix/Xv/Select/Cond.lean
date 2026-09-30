@@ -6,8 +6,7 @@ import Compilatrix.X86.Types
 
 The ten comparisons of `Lir.Cond` are x86 conditions on the low `w` bits
 (`Lir.Cond.holds` mirrors `X86.Condition.holds`); `tz`/`tnz` test
-`a &&& b`, which selection turns into a flag-setting `and` (and, once
-M1.B1's rows land, `test`) followed by `je`/`jne`. Swapping a comparison's
+`a &&& b`, which selection turns into `test` followed by `je`/`jne`. Swapping a comparison's
 operands swaps its condition. `Select.Lemmas` proves both facts.
 -/
 

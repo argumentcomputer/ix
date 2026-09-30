@@ -13,8 +13,10 @@ the flag producers the branch rules pick decide exactly the Lir condition.
   conditions, and swapping operands swaps the condition (rule 1).
 - `cmp_test`: the `cmp` row's flags, tested as the `jcc` row tests them,
   are the Lir comparison (rules 1 and 3).
-- `and_test_tz`, `and_test_tnz`: the `and` row's zero flag is the Lir tag
-  test (rule 2).
+- `and_test_tz`, `and_test_tnz`: the flags of `and`, which the `test` row
+  computes too, give the Lir tag test through the zero flag (rule 2).
+- `test_self_flags`, `test_self_test`: `test a, a` sets the flags of
+  `cmp a, 0`, so it decides every comparison with zero (rule 1).
 - `add_carry`, `sub_borrow`: `jb`/`jc` after the 64-bit `add` or `sub` row
   is Lir's `brOvf` carry or borrow (rule 4, 06 S9).
 - `imm8?_low`, `immFull?_low`: a selected immediate has the Lir constant's
@@ -77,6 +79,26 @@ theorem and_test_tnz (w : Width) (a b : Word) :
     (ByteEval.aluFlags .and w a b).test .ne = some (Lir.Cond.holds .tnz w a b) := by
   simp only [ByteEval.aluFlags, ByteEval.resultFlags, ByteEval.Flags.test, Lir.Cond.holds, and_zero,
     Option.map_some, bne]
+
+/-- `test a, a` sets the flags `cmp a, 0` sets. -/
+theorem test_self_flags (w : Width) (a : Word) :
+    ByteEval.aluFlags .and w a a = ByteEval.aluFlags .sub w a 0 := by
+  simp only [ByteEval.aluFlags, ByteEval.subFlags, ByteEval.resultFlags, BitVec.and_self]
+  generalize a.toBitVec.setWidth w.bits = x
+  have z : (0 : Word).toBitVec.setWidth w.bits = 0#w.bits := by simp
+  rw [z, BitVec.sub_zero]
+  have hu : BitVec.usubOverflow x 0#w.bits = false := by simp [BitVec.usubOverflow]
+  have hs : BitVec.ssubOverflow x 0#w.bits = false := by
+    have h1 := x.toInt_lt
+    have h2 := x.le_toInt
+    simp [BitVec.ssubOverflow]
+    omega
+  rw [hu, hs]
+
+/-- Rule 1's zero test: `test a, a` decides every comparison with 0. -/
+theorem test_self_test {c : Lir.Cond} {cx : Condition} (h : condX86 c = some cx) (w : Width) (a : Word) :
+    (ByteEval.aluFlags .and w a a).test cx = some (c.holds w a 0) := by
+  rw [test_self_flags, cmp_test h]
 
 theorem imm8?_low {w : Width} {k c : Word} (h : imm8? w k = some c) : w.truncate c = w.truncate k := by
   unfold imm8? at h

@@ -19,6 +19,7 @@ import Compilatrix.Xv.Print
 import Compilatrix.Xv.Select.Cond
 import Compilatrix.Xv.Select.Basic
 import Compilatrix.Xv.Select.Amode
+import Compilatrix.Xv.Select.Producer
 import Compilatrix.Xv.Select.Rules
 import Compilatrix.Xv.Select.Branch
 import Compilatrix.Xv.Select.Driver

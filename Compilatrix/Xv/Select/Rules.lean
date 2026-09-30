@@ -1,4 +1,4 @@
-import Compilatrix.Xv.Select.Amode
+import Compilatrix.Xv.Select.Producer
 
 /-!
 # Statement rules
@@ -11,12 +11,16 @@ The rules for Lir statements (05 §4), each named for the firing counts:
 | `x := a` | `move` | `move` |
 | `x := a op b` (add, sub, and, or, xor) | `op r/m, r`, tied to `a` | `alu.rr` |
 | `x := a op k` | `op r/m, imm8` (83 /d) or `imm32` (81 /d), tied | 6 (`alu.imm8`, `alu.imm32`) |
+| `x := a op (load m)` | `op r, m` (RM), tied | 9 (`alu.load`) |
 | `x := a + b`, `a ± k` at w64, `a` live on | `lea x, [a + b·s + k]`, untied, with folding | 7 (`lea.add`) |
 | `x := addr m` | `lea` | 8 (`lea.addr`) |
 | `x := a * b`, `a * k` | `imul r, r/m` (tied), `imul r, r/m, imm8/imm32` | 12 (`imul.*`) |
 | `x := a * (load m)` | `imul r, m` | 9 (`imul.load`) |
-| `x := a << k` | `lea [a·2^k]` for `k ≤ 3` at w64, else `imul` by `2^k` | `shl.lea`, `shl.imul` |
-| narrow (w8, w16) arithmetic | the w32 row, then `movzx` | `alu.narrow` |
+| `x := a shift k`, `a shift c` | `shl/shr/sar r/m, imm8` (C1), `r/m, cl` (D3, `c` fixed `rcx`), tied; `lea [a·2^k]` for a live-on `a`, `k ≤ 3` | 12 (`shift.imm`, `shift.cl`, `shl.lea`) |
+| `x := a udiv b`, `a urem b` | `xor hi32, hi32; div r/m` with `a`, `hi` fixed `rax`, `rdx` | 12 (`div.quot`, `div.rem`, `div.load`) |
+| `x := select c w a b t f` | `fused cmp/test (cmovcc)` with `x` tied to `f` | 10 (`select.cmov`) |
+| `x := test c w a b` | `fused cmp/test (setcc)` with `x` zeroed first (an early definition) | 11 (`test.setcc`) |
+| narrow (w8, w16) arithmetic | the w32 row (shifts: the w8/w16 row), then `movzx` | `alu.narrow` |
 | `x := load w zero m` | `mov r64/r32, m`, `movzx r32, m8/m16` | `load.*` |
 | `x := load w sign m` | zero-extending load, `xor 2^(w−1)`, `add −2^(w−1)` | `load.sext` |
 | `store w m a` | `mov m, r` or `mov m, imm` | `store.*` |
@@ -24,14 +28,12 @@ The rules for Lir statements (05 §4), each named for the firing counts:
 
 Lir results are zero-extended at every width; 32-bit machine writes
 zero-extend too, and narrower ones do not, so narrow arithmetic runs at
-width 32 (its low bits depend only on its operands' low bits) and is
-zero-extended with `movzx`. A sign-extending load uses `movzx`, `xor` and
-`add` until `movsx` joins the table (05 §8.6 item 2).
-
-**Waiting for M1.B1** (reported as unsupported forms): shifts right
-(`shr`, `sar`) and left by a register (the `cl` rows), `udiv`/`urem`
-(`div`), `select` (`cmovcc` in a fused pair) and `test` (`setcc` after
-`xor`-zeroing, in a fused pair).
+width 32 (its low bits depend only on its operands' low bits), narrow
+shifts run at their own width (a right shift reads only the low `w` bits),
+and both are zero-extended with `movzx`; narrow division zero-extends its
+operands to 32 bits first. Shift counts are masked alike by Lir and the
+machine (63 at width 64, else 31). A sign-extending load uses `movzx`, `xor`
+and `add` until `movsx` joins the table (05 §8.6 item 2).
 -/
 
 namespace Compilatrix.Xv.Select
@@ -45,10 +47,22 @@ def aluMnemonic : Lir.BinOp → X86.Mnemonic
   | .or => .or
   | _ => .xor
 
+def shiftMnemonic : Lir.BinOp → X86.Mnemonic
+  | .shl => .shl
+  | .shr => .shr
+  | _ => .sar
+
 def narrowWidth (w : X86.Width) : Bool := w == .w8 || w == .w16
 
 /-- The width a Lir operation at `w` runs at: 32 for narrow widths. -/
 def opWidth (w : X86.Width) : X86.Width := if narrowWidth w then .w32 else w
+
+/-- Zero-extend a narrow result computed in `dst` into `x`. -/
+def narrowed (w : X86.Width) (x dst : VReg) (body : List (Inst VReg)) : SelM (List (Inst VReg)) := do
+  if narrowWidth w then
+    fire "alu.narrow"
+    return body ++ [.op (row .movzx .w32 .RM w) [x] [.r dst]]
+  return body
 
 /-- `dst := a op k` at width `wo`, tied to `a` (rule 6). -/
 def aluImm (mn : X86.Mnemonic) (wo : X86.Width) (dst a : VReg) (k : Word) : SelM (List (Inst VReg)) := do
@@ -94,8 +108,9 @@ def leaAdd? (x : VReg) (o : Lir.BinOp) (a b : Lir.Arg) : SelM (Option (List (Ins
       return some [.op leaRow [x] [.m am]]
   | none => return none
 
-/-- `x := a op b` for add, sub, and, or, xor. -/
-def selectAlu (x : VReg) (o : Lir.BinOp) (w : X86.Width) (a b : Lir.Arg) : SelM (List (Inst VReg)) := do
+/-- `x := a op b` for add, sub, and, or, xor, at statement `i`. -/
+def selectAlu (i : Nat) (x : VReg) (o : Lir.BinOp) (w : X86.Width) (a b : Lir.Arg) :
+    SelM (List (Inst VReg)) := do
   if w == .w64 && (o == .add || o == .sub) then
     if let some out ← leaAdd? x o a b then return out
   let narrow := narrowWidth w
@@ -105,6 +120,14 @@ def selectAlu (x : VReg) (o : Lir.BinOp) (w : X86.Width) (a b : Lir.Arg) : SelM 
   let trunc (k : Word) : Word := if narrow then w.truncate k else k
   let body ← match a, b with
     | .v a, .v b => do
+        -- Rule 9: a single-use load operand folds into `op r, m`.
+        if let some m ← sinkLoad? b i wo.bytes then
+          fire "alu.load"
+          return ← narrowed w x dst [.op (row mn wo .RM) [dst] [.r a, .m m]]
+        if o != .sub then
+          if let some m ← sinkLoad? a i wo.bytes then
+            fire "alu.load"
+            return ← narrowed w x dst [.op (row mn wo .RM) [dst] [.r b, .m m]]
         let (a, b) ← if o == .sub then pure (a, b) else tieOrder a b
         fire "alu.rr"
         pure [.op (row mn wo .MR) [dst] [.r a, .r b]]
@@ -120,10 +143,7 @@ def selectAlu (x : VReg) (o : Lir.BinOp) (w : X86.Width) (a b : Lir.Arg) : SelM 
     | .imm ka, .imm kb => do
         let (t, pre) ← materialize ka
         pure (pre ++ (← aluImm mn wo dst t (trunc kb)))
-  if narrow then
-    fire "alu.narrow"
-    return body ++ [.op (row .movzx .w32 .RM w) [x] [.r dst]]
-  return body
+  narrowed w x dst body
 
 /-- `dst := a * k` at width `wo` (untied three-operand `imul`). -/
 def mulImm (wo : X86.Width) (dst a : VReg) (k : Word) : SelM (List (Inst VReg)) := do
@@ -167,41 +187,98 @@ def selectMul (i : Nat) (x : VReg) (w : X86.Width) (a b : Lir.Arg) : SelM (List 
     | .imm ka, .imm kb => do
         let (t, pre) ← materialize ka
         pure (pre ++ (← mulImm wo dst t (trunc kb)))
-  if narrow then
-    fire "alu.narrow"
-    return body ++ [.op (row .movzx .w32 .RM w) [x] [.r dst]]
-  return body
+  narrowed w x dst body
 
-/-- `x := a << s` for a constant, already masked, count `s`. -/
-def selectShlImm (i : Nat) (x : VReg) (w : X86.Width) (a : Lir.Arg) (s : Nat) : SelM (List (Inst VReg)) := do
+/-- `x := a shift b` (rule 12): by a constant count (already masked as Lir
+and the machine mask it) or by a register in `cl`. -/
+def selectShift (x : VReg) (o : Lir.BinOp) (w : X86.Width) (a b : Lir.Arg) : SelM (List (Inst VReg)) := do
+  let liveOn ← match a with
+    | .v y => do pure (decide ((← useCount y) > 1))
+    | .imm _ => pure false
   let (a, pre) ← argReg a
-  if s == 0 then
-    fire "shl.zero"
-    return pre ++ truncTo w x a
-  if w == .w64 && s ≤ 3 then
-    match encodeTerms [(.r a, 2 ^ s)] 0 with
-    | some am =>
-        fire "shl.lea"
-        return pre ++ [.op leaRow [x] [.m am]]
-    | none => pure ()
-  fire "shl.imul"
-  return pre ++ (← selectMul i x w (.v a) (.imm (UInt64.ofNat (2 ^ s))))
+  let mn := shiftMnemonic o
+  match b with
+  | .imm k =>
+      let s := (k &&& Lir.shiftMask w).toNat
+      if s == 0 then
+        fire "shift.zero"
+        return pre ++ truncTo w x a
+      if o == .shl && w == .w64 && s ≤ 3 && liveOn then
+        if let some am := encodeTerms [(.r a, 2 ^ s)] 0 then
+          fire "shl.lea"
+          return pre ++ [.op leaRow [x] [.m am]]
+      let dst ← if narrowWidth w then fresh else pure x
+      fire "shift.imm"
+      return pre ++ (← narrowed w x dst [.op (row mn w .MI) [dst] [.r a, .i (UInt64.ofNat s)]])
+  | .v c =>
+      let dst ← if narrowWidth w then fresh else pure x
+      fire "shift.cl"
+      return pre ++ (← narrowed w x dst [.op (row mn w .MC) [dst] [.r a, .r c]])
+
+/-- `x := a udiv b` (`rem`: `urem`) at statement `i` (rule 12): `div` on
+`rdx:rax` with the high half zeroed, so it never overflows; a zero divisor
+is Lir's `stuck` and the row's `#DE` alike. Narrow widths divide the
+zero-extended operands at width 32. A single-use load divisor folds. -/
+def selectDiv (i : Nat) (x : VReg) (rem : Bool) (w : X86.Width) (a b : Lir.Arg) : SelM (List (Inst VReg)) := do
+  let narrow := narrowWidth w
+  let wo := opWidth w
+  let (lo, preA) ← if narrow then argTrunc w a else argReg a
+  let (divisor, preB) ← match b with
+    | .v y =>
+        if narrow then do
+          let (t, pre) ← argTrunc w (.v y)
+          pure (XArg.r t, pre)
+        else do
+          match ← sinkLoad? y i wo.bytes with
+          | some m =>
+              fire "div.load"
+              pure (XArg.m m, [])
+          | none => pure (XArg.r y, [])
+    | .imm k => do
+        let (t, pre) ← materialize (w.truncate k)
+        pure (XArg.r t, pre)
+  let hi ← fresh
+  let q ← if rem then fresh else pure x
+  let r ← if rem then pure x else fresh
+  fire (if rem then "div.rem" else "div.quot")
+  return preA ++ preB ++ [.zero hi, .op (X86.Op.divM wo) [q, r] [divisor, .r lo, .r hi]]
 
 /-- `x := a op b`. -/
 def selectBin (i : Nat) (x : VReg) (o : Lir.BinOp) (w : X86.Width) (a b : Lir.Arg) :
     SelM (List (Inst VReg)) :=
   match o with
-  | .add | .sub | .and | .or | .xor => selectAlu x o w a b
+  | .add | .sub | .and | .or | .xor => selectAlu i x o w a b
   | .mul => selectMul i x w a b
-  | .shl =>
-      match b with
-      | .imm k => selectShlImm i x w a (k &&& Lir.shiftMask w).toNat
-      | .v _ => unsupported s!"shl.{w.bits} by a register"
-          "needs `shl r/m, cl` with the implicit `cl` operand (M1.B1)"
-  | .shr => unsupported s!"shr.{w.bits}" "needs `shr r/m, imm8` and `shr r/m, cl` (M1.B1)"
-  | .sar => unsupported s!"sar.{w.bits}" "needs `sar r/m, imm8` and `sar r/m, cl` (M1.B1)"
-  | .udiv => unsupported s!"udiv.{w.bits}" "needs `div r/m` with implicit `rax`/`rdx` (M1.B1)"
-  | .urem => unsupported s!"urem.{w.bits}" "needs `div r/m` with implicit `rax`/`rdx` (M1.B1)"
+  | .shl | .shr | .sar => selectShift x o w a b
+  | .udiv => selectDiv i x false w a b
+  | .urem => selectDiv i x true w a b
+
+/-- Rule 10: `x := if c w a b then t else f` as a fused compare and `cmovcc`
+(64-bit: `t` and `f` are whole words), `x` tied to `f`; a single-use
+64-bit load `t` folds into the `cmovcc` source. -/
+def selectSelect (i : Nat) (x : VReg) (c : Lir.Cond) (w : X86.Width) (a b t f : Lir.Arg) :
+    SelM (List (Inst VReg)) := do
+  let pr ← compareProducer c w a b
+  let (f, preF) ← argReg f
+  let (t, preT) ← match t with
+    | .v y => do
+        match ← sinkLoad? y i 8 with
+        | some m =>
+            fire "select.load"
+            pure (XArg.m m, [])
+        | none => pure (XArg.r y, [])
+    | .imm k => do
+        let (y, pre) ← materialize k
+        pure (XArg.r y, pre)
+  fire "select.cmov"
+  return pr.pre ++ preF ++ preT ++ [.fused pr.op pr.args (X86.Op.cmovRM pr.cond .w64) [x] [.r f, t]]
+
+/-- Rule 11: `x := if c w a b then 1 else 0` as a fused compare and
+`setcc`, whose expansion zeroes `x` first. -/
+def selectTest (x : VReg) (c : Lir.Cond) (w : X86.Width) (a b : Lir.Arg) : SelM (List (Inst VReg)) := do
+  let pr ← compareProducer c w a b
+  fire "test.setcc"
+  return pr.pre ++ [.fused pr.op pr.args (X86.Op.setccM pr.cond) [x] []]
 
 /-- A load, zero- or sign-extended. -/
 def selectLoad (x : VReg) (w : X86.Width) (e : Lir.Ext) (m : Lir.Addr) : SelM (List (Inst VReg)) := do
@@ -270,10 +347,8 @@ def selectAssign (i : Nat) (x : VReg) : Lir.Rhs → SelM (List (Inst VReg))
       let am ← buildAmode m
       fire "lea.addr"
       return [.op leaRow [x] [.m am]]
-  | .select _ w .. => unsupported s!"select.{w.bits}"
-      "needs `cmovcc` and a fused `cmp`/`cmovcc` pair (M1.B1)"
-  | .test _ w .. => unsupported s!"test.{w.bits}"
-      "needs `setcc` and a fused `xor`/`cmp`/`setcc` sequence (M1.B1)"
+  | .select c w a b t f => selectSelect i x c w a b t f
+  | .test c w a b => selectTest x c w a b
 
 /-- The Xv instructions for statement `i`. -/
 def selectStmt (i : Nat) : Lir.Stmt → SelM (List (Inst VReg))

@@ -96,10 +96,14 @@
    "imports":
    ["CompilatrixTests.Xv.Diff",
     "CompilatrixTests.Xv.Cases",
-    "CompilatrixTests.Xv.XlCases"]},
+    "CompilatrixTests.Xv.XlCases",
+    "CompilatrixTests.Xv.KernelEval"]},
   "CompilatrixTests.Xv.Main":
   {"path": "CompilatrixTests/Xv/Main.lean",
    "imports": ["CompilatrixTests.Xv.Run"]},
+  "CompilatrixTests.Xv.KernelEval":
+  {"path": "CompilatrixTests/Xv/KernelEval.lean",
+   "imports": ["Compilatrix.Xv.Select.Driver", "CompilatrixTests.Lir.Kernels"]},
   "CompilatrixTests.Xv.Diff":
   {"path": "CompilatrixTests/Xv/Diff.lean",
    "imports":
@@ -538,7 +542,10 @@
     "Compilatrix.Sem.Clock"]},
   "Compilatrix.Xv.Select.Rules":
   {"path": "Compilatrix/Xv/Select/Rules.lean",
-   "imports": ["Compilatrix.Xv.Select.Amode"]},
+   "imports": ["Compilatrix.Xv.Select.Producer"]},
+  "Compilatrix.Xv.Select.Producer":
+  {"path": "Compilatrix/Xv/Select/Producer.lean",
+   "imports": ["Compilatrix.Xv.Select.Amode", "Compilatrix.Xv.Select.Cond"]},
   "Compilatrix.Xv.Select.Lemmas":
   {"path": "Compilatrix/Xv/Select/Lemmas.lean",
    "imports":
@@ -554,10 +561,11 @@
    "imports": ["Compilatrix.Lir.Syntax", "Compilatrix.X86.Types"]},
   "Compilatrix.Xv.Select.Branch":
   {"path": "Compilatrix/Xv/Select/Branch.lean",
-   "imports": ["Compilatrix.Xv.Select.Rules", "Compilatrix.Xv.Select.Cond"]},
+   "imports": ["Compilatrix.Xv.Select.Rules"]},
   "Compilatrix.Xv.Select.Basic":
   {"path": "Compilatrix/Xv/Select/Basic.lean",
-   "imports": ["Compilatrix.Xv.Syntax", "Compilatrix.X86.Basic"]},
+   "imports":
+   ["Compilatrix.Xv.Syntax", "Compilatrix.X86.Basic", "Std.Data.TreeMap"]},
   "Compilatrix.Xv.Select.Amode":
   {"path": "Compilatrix/Xv/Select/Amode.lean",
    "imports": ["Compilatrix.Xv.Select.Basic", "Compilatrix.Lir.Semantics"]},
@@ -1402,6 +1410,7 @@
     "Compilatrix.Xv.Select.Cond",
     "Compilatrix.Xv.Select.Basic",
     "Compilatrix.Xv.Select.Amode",
+    "Compilatrix.Xv.Select.Producer",
     "Compilatrix.Xv.Select.Rules",
     "Compilatrix.Xv.Select.Branch",
     "Compilatrix.Xv.Select.Driver",

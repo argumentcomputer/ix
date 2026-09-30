@@ -1,19 +1,20 @@
 import CompilatrixTests.Xv.Diff
 import CompilatrixTests.Xv.Cases
 import CompilatrixTests.Xv.XlCases
+import CompilatrixTests.Xv.KernelEval
 
 /-!
 # `check-xv-select`
 
-Runs the kernels through selection, then the Lir generator over
-`programs × seeds` programs restricted to the forms the instruction table
-expresses (`restricted`), with every property of `Diff`, and a smaller run
-of the unrestricted generator that counts the forms selection declines.
+Runs the edge-value sweeps, the kernels through selection, then the Lir
+generator over `programs × seeds` programs with every property of `Diff`.
+Every generated program must select: a declined form fails the run.
 Prints counts, and each rule's firings and the programs it fired on. A
 failure prints the seed, the property and both programs, and fails the
-run.
+run. `--restricted` narrows the generator to the forms selection had before
+M1.B1 (constant left shifts; no division, `select` or `test`).
 
-Usage: `check-xv-select [--programs N] [--full N] [--seeds S1,S2,…] [--max-blocks B]`.
+Usage: `check-xv-select [--programs N] [--seeds S1,S2,…] [--max-blocks B] [--restricted]`.
 -/
 
 namespace CompilatrixTests.Xv
@@ -22,8 +23,8 @@ open Compilatrix Compilatrix.Lir CompilatrixTests.Lir
 
 structure Options where
   programs : Nat := 2000
-  /-- Programs per seed from the unrestricted generator. -/
-  full : Nat := 250
+  /-- Narrow the generator to the pre-B1 forms. -/
+  restricted : Bool := false
   seeds : List UInt64 := [0x5eed0001, 0x5eed0002, 0x5eed0003, 0x5eed0004]
   maxBlocks : Nat := 200
 
@@ -35,7 +36,7 @@ def parseNat (flag n : String) : Except String Nat :=
 def parseOptions : List String → Except String Options
   | [] => pure {}
   | "--programs" :: n :: rest => do return { (← parseOptions rest) with programs := ← parseNat "--programs" n }
-  | "--full" :: n :: rest => do return { (← parseOptions rest) with full := ← parseNat "--full" n }
+  | "--restricted" :: rest => do return { (← parseOptions rest) with restricted := true }
   | "--max-blocks" :: n :: rest => do
       return { (← parseOptions rest) with maxBlocks := ← parseNat "--max-blocks" n }
   | "--seeds" :: s :: rest => do
@@ -44,8 +45,8 @@ def parseOptions : List String → Except String Options
       pure { o with seeds }
   | arg :: _ => throw s!"unknown argument {arg}"
 
-/-- The generator restricted to the forms the current table expresses:
-left shifts by constants only; no division, `select` or `test`. -/
+/-- The generator narrowed to the forms selection had before M1.B1: left
+shifts by constants only; no division, `select` or `test`. -/
 def restricted (maxBlocks : Nat) : Gen.Config :=
   { maxBlocks, shiftOps := #[.shl], varShifts := false, divs := false, selects := false, tests := false }
 
@@ -123,15 +124,14 @@ def run (args : List String) : IO Bool := do
       let start ← IO.monoMsNow
       unless ← runSweeps do return false
       unless ← runKernels do return false
-      let some r ← runGenerated "restricted" (restricted o.maxBlocks) o.programs o.seeds | return false
-      printReport "restricted generator" r
+      let (label, cfg) := if o.restricted then ("restricted", restricted o.maxBlocks)
+        else ("generated", ({ maxBlocks := o.maxBlocks } : Gen.Config))
+      let some r ← runGenerated label cfg o.programs o.seeds | return false
+      printReport s!"{label} programs" r
       printRules r
       if r.selected != r.cases then
-        IO.eprintln s!"check-xv-select: selection declined {r.cases - r.selected} restricted programs"
+        IO.eprintln s!"check-xv-select: selection declined {r.cases - r.selected} programs"
         return false
-      if o.full > 0 then
-        let some f ← runGenerated "full" { maxBlocks := o.maxBlocks } o.full o.seeds | return false
-        printReport "full generator" f
       IO.println s!"check-xv-select: ok ({(← IO.monoMsNow) - start} ms)"
       return true
 

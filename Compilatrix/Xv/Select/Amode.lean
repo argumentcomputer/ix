@@ -104,32 +104,39 @@ def rhsLin : Lir.Rhs → Option Lin
       if [1, 2, 4, 8].contains k.toNat then some ((Lin.ofArg a).scale k.toNat) else none
   | _ => none
 
+/-- Fold the first term of `terms` (all of `l`'s) whose register is a
+single-use, unconsumed assignment of this block contributing address
+arithmetic, if the sum still encodes: the new sum and the statement. -/
+def foldOne (l : Lin) (used : List Nat) : List (Base VReg × Nat) → SelM (Option (Lin × Nat))
+  | [] => pure none
+  | (t, m) :: rest => do
+      let attempt : SelM (Option (Lin × Nat)) := do
+        let .r x := t | return none
+        unless ← singleUse x do return none
+        let some (j, rhs) ← defStmt? x | return none
+        if used.contains j then return none
+        let some sub := rhsLin rhs | return none
+        let cand := ({ l with terms := l.terms.filter (·.1 != t) } : Lin).add (sub.scale m)
+        return if cand.encode.isSome then some (cand, j) else none
+      match ← attempt with
+      | some r => pure (some r)
+      | none => foldOne l used rest
+
+/-- At most `fuel` folds, one at a time. -/
+def foldLinFuel : Nat → Lin → List Nat → SelM (Lin × List Nat)
+  | 0, l, used => pure (l, used)
+  | fuel + 1, l, used => do
+      match ← foldOne l used l.terms with
+      | some (l', j) => foldLinFuel fuel l' (j :: used)
+      | none => pure (l, used)
+
 /-- Fold the block's single-use address arithmetic into `l` (without
 committing): the result and the statements it consumes. -/
-def foldLin (l : Lin) : SelM (Lin × List Nat) := do
-  let mut l := l
-  let mut used : List Nat := []
-  for _ in [:4] do
-    let mut changed := false
-    for (t, m) in l.terms do
-      let .r x := t | continue
-      unless ← singleUse x do continue
-      let some (j, rhs) ← defStmt? x | continue
-      if used.contains j then continue
-      let some sub := rhsLin rhs | continue
-      let rest : Lin := { l with terms := l.terms.filter (·.1 != t) }
-      let cand := rest.add (sub.scale m)
-      if cand.encode.isSome then
-        l := cand
-        used := j :: used
-        changed := true
-        break
-    unless changed do break
-  return (l, used)
+def foldLin (l : Lin) : SelM (Lin × List Nat) := foldLinFuel 4 l []
 
 /-- Commit the consumed statements of a fold. -/
-def commitFold (used : List Nat) : SelM Unit := do
-  for j in used do
+def commitFold (used : List Nat) : SelM Unit :=
+  used.forM fun j => do
     consume j
     fire "amode.fold"
 
