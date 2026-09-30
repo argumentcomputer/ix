@@ -71,11 +71,6 @@ def irrP (prof : Profile) (r : Rel) : Bool := r.irrWhen.holdsP prof
 /-- Irrelevant at every instance: never evaluated, never annotated inside. -/
 def alwaysIrr (r : Rel) : Bool := r.irrWhen == .always
 
-/-- A proof at this profile (as opposed to a type or relevant). -/
-def proofP (prof : Profile) : Rel → Bool
-  | .proof w => w.holdsP prof
-  | _ => false
-
 end Rel
 
 structure Binder where

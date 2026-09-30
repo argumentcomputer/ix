@@ -104,9 +104,12 @@ def levelExact (a : Assert) : IO Unit := do
        (1, (irrArg, .irr), "C2", "proof argument, parameter relevant at u = 1 (sort polymorphism)")] do
     let (p, ann) := build (lam (appM (.const f [lv u]) [arg]))
     expectRule a p ann rule s!"C2 at a profile: {msg}"
-  -- A type may reach a relevant parameter of a type-polymorphic callee.
+  -- A type for a parameter relevant at the instance is rejected too: no
+  -- universe condition covers it (the `typeArg` case of src-sortpoly).
   let (pT, annT) := build (lam (.app (.const f [lv 1]) (.sort .zero) .strict .type))
-  expectRule a pT annT "" "C2: a type for a parameter relevant at u = 1"
+  expectRule a pT annT "C2" "C2: a type for a parameter relevant at u = 1"
+  let (pT0, annT0) := build (lam (.app (.const f [lv 0]) (.sort .zero) .strict .type))
+  expectRule a pT0 annT0 "" "C2: a type for a parameter irrelevant at u = 0"
   -- One constant at two profiles: both instances are checked and recorded.
   let (pS, annS) := build (lam (app (c b.add)
     [appM (.const f [lv 0]) [(irrArg, .irr)], appM (.const f [lv 1]) [(.var 0, .strict)]]))

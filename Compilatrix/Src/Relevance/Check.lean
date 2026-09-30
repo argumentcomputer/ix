@@ -35,14 +35,15 @@ so the closure walked here is the one SrcEval can reach.
 **Tier C** (consistency; early rejection with a precise diagnostic):
 * C0 a binder written `erased` is irrelevant at the instance.
 * C1 no relevant use of a binder irrelevant at the instance.
-* C2 at a constant head, the argument and the parameter agree at the
-  instance: a parameter irrelevant at the callee's profile gets an
-  irrelevant argument, and a *proof* argument goes to a parameter
-  irrelevant at the callee's profile (level-exact relevance makes this an
-  equality for proofs; a type may still reach a relevant parameter of a
-  type-polymorphic callee, which is not a universe condition). The same
-  holds between a β-redex's arguments and its λ binders (`have` and
-  `let_fun` elaborate to such redexes).
+* C2 at a constant head, an argument is irrelevant at the instance exactly
+  when its parameter is irrelevant at the callee's profile (the parameter's
+  condition instantiated at the call's universe arguments). This equality
+  replaces M1.F2's one-way rule, under which `Function.comp` at `Sort 0`
+  received □ in a parameter its body treats as relevant. It also rejects a
+  *type* passed to a relevant parameter of a type-polymorphic callee, which
+  no universe condition covers and which SrcEval gets stuck on if the callee
+  applies it. The same holds between a β-redex's arguments and its λ
+  binders (`have` and `let_fun` elaborate to such redexes).
 * C3 fields dropped at the constructor's profile are bound by irrelevant
   minor binders; a projection in a relevant position does not read a field
   dropped at every instance (a projection carries no universe arguments, so
@@ -241,8 +242,8 @@ def paramArgs (ctx : Ctx) (c : CId) (q : Profile) :
     let errs :=
       if r.irrP q && !a.irrP ctx.prof then
         err ctx "C2" s!"a {relName r} parameter gets a relevant argument" (some c) :: errs
-      else if a.proofP ctx.prof && !r.irrP q then
-        err ctx "C2" s!"a proof argument for a parameter relevant at this instance ({relName r})"
+      else if a.irrP ctx.prof && !r.irrP q then
+        err ctx "C2" s!"a {relName a} argument for a parameter relevant at this instance"
           (some c) :: errs
       else errs
     paramArgs ctx c q args params errs
@@ -309,8 +310,8 @@ def lamHead (ctx : Ctx) (errs : List RelError) (head : Term) (args : List Term.A
     fun args binders errs => (args.zip binders).foldl (init := errs) fun errs ((_, _, a), r) =>
       if r.irrP ctx.prof && !a.irrP ctx.prof then
         err ctx "C2" s!"a {relName r} λ binder gets a relevant argument" :: errs
-      else if a.proofP ctx.prof && !r.irrP ctx.prof then
-        err ctx "C2" s!"a proof argument for a λ binder relevant at this instance ({relName r})"
+      else if a.irrP ctx.prof && !r.irrP ctx.prof then
+        err ctx "C2" s!"a {relName a} argument for a λ binder relevant at this instance"
           :: errs
       else errs
   go args (lamRels head) errs

@@ -230,12 +230,14 @@ def censusPack (a : Assert) (pack : Pack) : IO Verdict := do
   -- not hide the others.
   let mut v : Verdict := { checker := "" }
   let mut verdicts : Array String := #[]
+  let mut accepted : Array (Ixon.Address × CId) := #[]
   for (addr, c) in p0.roots do
     let label := (Loaded.names hints addr).getD (p0.short c)
     let argss := pack.args label
     if argss.isEmpty then continue
     let (p, verdict) ← IO.ofExcept (prepareRuns env { p0 with roots := #[(addr, c)] })
-    unless verdict == "accepted" do verdicts := verdicts.push s!"{label}: {verdict}"
+    if verdict == "accepted" then accepted := accepted.push (addr, c)
+    else verdicts := verdicts.push s!"{label}: {verdict}"
     v := { v with roots := ← runRoot a p c label argss v.roots }
   -- First-order constants of the closure, as extra roots.
   let fo := firstOrderConsts p0
@@ -246,9 +248,10 @@ def censusPack (a : Assert) (pack : Pack) : IO Verdict := do
   for (c, arity) in fo do
     t ← runRoot a p c (names hints p c) (smallTuples arity) t
   let checker := if verdicts.isEmpty then "accepted" else String.intercalate "; " verdicts.toList
-  -- Level-exact statistics of the pack's own closure.
-  let ann ← IO.ofExcept (annotate env p0)
-  let pI ← IO.ofExcept (install p0 ann)
+  -- Level-exact statistics of the closure of the roots the checker accepts.
+  let pa := { p0 with roots := accepted }
+  let ann ← IO.ofExcept (annotate env pa)
+  let pI ← IO.ofExcept (install pa ann)
   let level := match check pI ann with
     | .ok ch => levelStats pI ann ch
     | .error _ => {}
