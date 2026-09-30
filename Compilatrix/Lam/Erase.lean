@@ -79,12 +79,21 @@ def ruleBody (r : CId) (q : Profile) (pre depth : Nat) (minors : List (Nat × Li
   let cx := cx.under ((List.range pre).map some ++ fields)
   let (head, args) := body.spineL
   match head with
-  | .var _ =>
+  | .var v =>
     let h ← rec_ I cx head
     let args ← args.mapM fun (a, m, rl) => do
       if rl.irrP q then pure (Term.box, Mode.strict)
       else if m == .byName then return (← rec_ I cx a, Mode.name)
       else return (← rec_ I cx a, Mode.strict)
+    -- By-name IH arguments reach only a minor binder with exactly this
+    -- dispatch, which holds a λ-telescope (S25), never a wrapper.
+    let modes := args.map (·.2)
+    if hasName modes then
+      match cx.ctx[v]? with
+      | some (some l) =>
+        unless cx.minors.lookup l == some modes do
+          decline "erase-minor" s!"a rule of {r} applies a binder by name outside its dispatch" r
+      | _ => decline "erase-minor" s!"a rule of {r} applies a non-minor by name" r
     return Term.apps h args
   | _ => rec_ I cx body
 
@@ -108,6 +117,8 @@ def recStarBody (r : CId) (q : Profile) : M Term := do
         | .proof => none
       ruleBody I r q pre arity minors rule fields
     | some .ordinary =>
+      if (I.unbox? ind q).isSome then
+        decline "erase-unbox-elim" "an eliminator of an unboxed structure" r
       let alts ← (rules.zipIdx).mapM fun (rule, j) => do
         let (k, n, fields) ← ruleAlt I r q arity ind j rule
         return Alt.mk k n (← ruleBody I r q pre (arity + n) minors rule fields)
@@ -116,7 +127,11 @@ def recStarBody (r : CId) (q : Profile) : M Term := do
   return Term.lams modes body
 
 /-- The wrapper of special head `h` at `q`: its saturated form over strict
-binders, with argument classes from the head's parameters. -/
+binders. An argument the head reads (`headReads`) is relevant, since its
+slot arrives as the applying site built it (□ or a value); another argument
+takes the head's parameter class. So a constructor wrapper with a dropped
+field is declined (`erase-S2`): a later application could supply a
+relevant value there. -/
 def wrapperBody (h : Head) (q : Profile) : M Term := do
   let a := headArity I h
   let modes := List.replicate a Mode.strict
@@ -126,7 +141,8 @@ def wrapperBody (h : Head) (q : Profile) : M Term := do
     return Term.lams modes (.prim (Prim.ofSrc op) ((List.range a).map fun i => cx.lvl i))
   | .ctor c | .quotMk c | .quotLift c | .recr c | .cases c =>
     let args := (List.range a).map fun i =>
-      (Src.Term.var (a - 1 - i), Src.Mode.strict, (I.params c).getD i .rel)
+      (Src.Term.var (a - 1 - i), Src.Mode.strict,
+        if headReads I h i then Rel.rel else (I.params c).getD i .rel)
     return Term.lams modes (← saturated I (rec_ I) cx h q args)
 
 /-- Erase the global of one key. -/
@@ -183,6 +199,10 @@ def rootId (c : CId) : M GlobalId := do
 
 /-- The whole erasure. -/
 def run : M (List GlobalId) := do
+  -- `Nat` literals peel into `Nat.succ` with one field, so its field must
+  -- be kept (an annotation fact the checker does not state).
+  if let some s := I.known.natSucc then
+    unless I.kept s [] 0 do decline "erase-pin" "Nat.succ's field is not kept" s
   let roots ← I.roots.mapM (rootId I)
   loop I loopFuel
   return roots

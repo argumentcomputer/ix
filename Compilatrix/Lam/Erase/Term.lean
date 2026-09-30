@@ -340,6 +340,8 @@ def casesForm (cx : Cx) (key r : CId) (q : Profile) (args : List Src.Term.Arg) :
       let major := refs.getD (np + 1 + ni) .box
       if major matches .box then
         decline "erase-C4" "an ordinary eliminator with an irrelevant major" r
+      if (I.unbox? ind q).isSome then
+        decline "erase-unbox-elim" "an eliminator of an unboxed structure" r
       let scrut ← refTerm rec cx' major
       let alts ← (rules.zipIdx).mapM fun (rule, j) => do
         let (k, arity, fields) ← ruleAlt I r q cx'.depth ind j rule
@@ -422,6 +424,29 @@ def headArity : Head → Nat
     | _ => 0
   | .prim op => op.arity
 
+/-- Whether firing a special head reads argument `i` (SrcEval F1–F8): the
+fields of a constructor, `Quot.mk`'s element, `Quot.lift`'s function and
+quotient, every argument of a recursor (its rule receives them), and a
+`casesOn`'s indices, major and minors. A wrapper passes such an argument
+through as it arrives, whatever the head's parameter class says, because
+the application that supplied it decided its relevance. -/
+def headReads : Head → Nat → Bool
+  | .ctor c, i =>
+    match I.decl? c with
+    | some (.ctor _ _ _ _ np _ _) => np ≤ i
+    | _ => true
+  | .quotMk _, i => i == 2
+  | .quotLift _, i => i == 3 || i == 5
+  | .recr _, _ => true
+  | .cases c, i =>
+    match I.resolve.get? c with
+    | some (.case r) =>
+      match I.decl? r with
+      | some (.recr _ _ _ np _ _ _ _ _ _) => np + 1 ≤ i
+      | _ => true
+    | _ => true
+  | .prim _, _ => true
+
 /-- A special head applied to exactly its arity. -/
 def saturated (cx : Cx) (h : Head) (q : Profile) (args : List Src.Term.Arg) : M Term :=
   match h with
@@ -474,7 +499,9 @@ def plainConst (cx : Cx) (f : CId) (q : Profile) (args : List Src.Term.Arg) : M 
     return Term.apps (.glob g) (← strictArgs rec cx args)
 
 /-- A spine headed by constant `c` with universe arguments `us`. -/
-def constSpine (cx : Cx) (c : CId) (us : List Ixon.Univ) (args : List Src.Term.Arg) : M Term :=
+def constSpine (cx : Cx) (c : CId) (us : List Ixon.Univ) (args : List Src.Term.Arg) : M Term := do
+  if us.length > I.lvls c then
+    decline "erase-univs" s!"{us.length} universe arguments for {I.lvls c} parameters" c
   let q := I.profileOf c cx.prof us
   match I.resolve.get? c with
   | some (.prim op) => special I rec cx (.prim op) q args
