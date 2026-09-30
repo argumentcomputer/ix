@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Check
 import Ix.Kernel.Model.Interpret
+import Ix.Kernel.Certified.Basis.Empty
 
 /-! # The public theorems
 
@@ -102,5 +103,26 @@ theorem no_proof_of_False (V : Type v) [SetTheory V] {cfg : Config}
     (by simp) (fun _ => SetTheory.empty)
   rw [hA V m _ (by simp) _] at hmem
   exact not_mem_empty _ hmem
+
+/-- The syntactic corollary: a parameter-free, index-free family whose
+installed large eliminator has the constructor-free type
+(`Certified.Basis.Empty.Interface`, a decidable check) is an empty type. -/
+theorem Env.emptyType_of_empty {env : Env β} {source : β} {recursor : ConstRef β}
+    (h : Certified.Basis.Empty.Interface env.toEnvironment source recursor) :
+    env.EmptyType.{u,v} 0 (.const (.member source 0) []) := by
+  intro V _ m levels hl valuation
+  have : levels = [] := List.eq_nil_of_length_eq_zero hl
+  subst this
+  simpa [interp] using Certified.Basis.Empty.value_eq_empty h m.realizes
+
+/-- No accepted constant has a constructor-free family type, such as Lean's
+`False` or `Empty`, once the family's eliminator is installed. -/
+theorem no_inhabitant_of_empty (V : Type v) [SetTheory V] {cfg : Config}
+    {decls : List (Decl β)} {env : Env β} (h : check.{u,v} cfg decls = .ok env)
+    {source : β} {recursor : ConstRef β}
+    (hE : Certified.Basis.Empty.Interface env.toEnvironment source recursor)
+    {r : ConstRef β} {entry : ConstantEntry β} (hr : env.toEnvironment r = some entry)
+    (hu : entry.universes = 0) (ht : entry.type = .const (.member source 0) []) : False :=
+  no_proof_of_False V h hr (by rw [hu, ht]; exact Env.emptyType_of_empty hE)
 
 end Ix.Kernel

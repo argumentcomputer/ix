@@ -4,7 +4,6 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Ingress.Constant
-import Ix.Kernel.Ingress.Declarations
 import Ix.Kernel.Consistency
 
 /-! # Checking Ixon-shaped in-memory input
@@ -100,7 +99,7 @@ def checkEnvC (cfg : Config) (constants : Constants) (blobs : Blobs)
     if hb : (blobs.map Prod.fst).Nodup then
       let declarations ← (readDeclarationsC constants blobs family cfg.fuel constants).mapError
         (Error.ofSearch "Ixon ingress")
-      let checked ← checkDeclarationsC.{0,v} cfg Env.empty declarations.val
+      let checked ← checkDeclsC.{0,v} cfg Env.empty declarations.val
       return ⟨checked.val, ⟨hc, hb, declarations.val, declarations.property, checked.property.2⟩,
         fun V _ => checked.property.1.step V (Model.emptyEnv V)⟩
     else throw (.rejected "duplicate blob address")
@@ -131,5 +130,33 @@ theorem checkEnv_has_model (V : Type v) [Model.SetTheory V] {cfg : Config}
     (h : checkEnv.{v} cfg constants blobs family = .ok env) : Nonempty (Model V env) := by
   obtain ⟨⟨_, _, model⟩, _, rfl⟩ := Except.map_eq_ok h
   exact model V
+
+/-- No constant accepted from Ixon records inhabits a type that denotes the
+empty set in every model of the checked environment. -/
+theorem checkEnv_no_proof_of_False (V : Type v) [Model.SetTheory V] {cfg : Config}
+    {constants : Ingress.Constants} {blobs : Ingress.Blobs}
+    {family : Option (ConstRef Address)} {env : Env Address}
+    (h : checkEnv.{v} cfg constants blobs family = .ok env)
+    {r : ConstRef Address} {entry : Model.ConstantEntry Address}
+    (hr : env.toEnvironment r = some entry)
+    (hA : env.EmptyType.{0,v} entry.universes entry.type) : False := by
+  obtain ⟨m⟩ := checkEnv_has_model V h
+  have hmem := m.realizes.member r entry hr (List.replicate entry.universes 0)
+    (by simp) (fun _ => Model.SetTheory.empty)
+  rw [hA V m _ (by simp) _] at hmem
+  exact Model.SetTheory.not_mem_empty _ hmem
+
+/-- The Ixon form of `no_inhabitant_of_empty`: once a constructor-free family's
+eliminator is installed, no accepted record inhabits the family. -/
+theorem checkEnv_no_inhabitant_of_empty (V : Type v) [Model.SetTheory V] {cfg : Config}
+    {constants : Ingress.Constants} {blobs : Ingress.Blobs}
+    {family : Option (ConstRef Address)} {env : Env Address}
+    (h : checkEnv.{v} cfg constants blobs family = .ok env) {source : Address}
+    {recursor : ConstRef Address}
+    (hE : Certified.Basis.Empty.Interface env.toEnvironment source recursor)
+    {r : ConstRef Address} {entry : Model.ConstantEntry Address}
+    (hr : env.toEnvironment r = some entry)
+    (hu : entry.universes = 0) (ht : entry.type = .const (.member source 0) []) : False :=
+  checkEnv_no_proof_of_False V h hr (by rw [hu, ht]; exact Env.emptyType_of_empty hE)
 
 end Ix.Kernel

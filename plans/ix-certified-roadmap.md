@@ -2303,6 +2303,23 @@ R2 is complete (2026-09-29, `plans/review/r2-exhaustion`):
 - Add a no-False theorem for `checkEnv`.
 - Add the syntactic `EmptyType` corollary promised in section 2.
 
+R3 is complete (2026-09-29, `plans/review/r3-fold-emptiness`):
+- **One fold.** `checkDeclsC` is now the single admission fold. It associates
+  a singleton family with a later separately stored recursor, and
+  `checkEnv` uses it. The K0 `check`/`checkDecls` theorems therefore cover the
+  production layout, and their statements are unchanged.
+  `Ingress/Declarations` is folded into `Check`.
+- **Emptiness.** `Certified.Basis.Empty` defines a decidable interface for the
+  constructor-free large eliminator and proves the family denotes ∅ in every
+  model realizing it.
+- **New theorems.** `Env.emptyType_of_empty`, `no_inhabitant_of_empty`,
+  `checkEnv_no_proof_of_False`, and `checkEnv_no_inhabitant_of_empty`. These,
+  together with `checkEnv_reading` and `checkEnv_has_model`, are frozen by
+  `#check` and have exact axiom guards.
+- **Tests.** `False` satisfies the interface in both the paired and the
+  production layout. `True`, and a family admitted without its recursor, do
+  not.
+
 **R4.** Installed fidelity covers every supplied field: kinds, safety, arities,
 rules, and the K flag. Also prove reading determinism and a
 `checkEnv_ok_iff`.

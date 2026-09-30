@@ -77,7 +77,7 @@ def authored : Array String := #[
   "Ix/Ixon/ReduceUniverse.lean", "Ix/Ixon/BlockOrder.lean", "Ix/Ixon/BlockOrderProofs.lean", "Ix/Ixon/BlockOrderAudit.lean",
   "Ix/Kernel/Ingress.lean", "Ix/Kernel/Ingress/Reading.lean",
   "Ix/Kernel/Ingress/Expr.lean", "Ix/Kernel/Ingress/Constant.lean",
-  "Ix/Kernel/Ingress/Declarations.lean", "Ix/Kernel/Certified/Ordinary/Stage.lean",
+  "Ix/Kernel/Certified/Ordinary/Stage.lean",
   "Ix/Kernel/Egress.lean", "Ix/Kernel/Egress/Layout.lean", "Ix/Kernel/Egress/Expr.lean",
   "Ix/Kernel/Egress/Constant.lean", "Ix/Kernel/Egress/Projection.lean",
   "Ix/Kernel.lean", "Ix/Kernel/Model.lean", "Ix/Kernel/Env.lean", "Ix/Kernel/Check.lean",
@@ -88,7 +88,7 @@ def authored : Array String := #[
   "Ix/Kernel/Inductive/Ordinary.lean", "Ix/Kernel/Certified/Structure/Read.lean",
   "Ix/Kernel/Inductive/Structure.lean", "Ix/Kernel/Inductive/Natural.lean", "Ix/Kernel/Fidelity.lean",
   "Ix/Kernel/Model/QuotientValues.lean", "Ix/Kernel/Certified/Quotient/Install.lean",
-  "Ix/Kernel/Certified/Standard/Install.lean"
+  "Ix/Kernel/Certified/Standard/Install.lean", "Ix/Kernel/Certified/Basis/Empty.lean"
 ]
 
 /-- Ported Lean modules. -/

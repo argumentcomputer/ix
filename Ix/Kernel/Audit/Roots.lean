@@ -120,6 +120,10 @@ end Ix.Kernel.Audit
 #guard_kernel_axioms Ix.Kernel.checkEnv_reading [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkEnv_has_model [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkEnv [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkEnv_no_proof_of_False [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkEnv_no_inhabitant_of_empty [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Env.emptyType_of_empty [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.no_inhabitant_of_empty [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Egress.writeExpr_reading [propext, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Egress.writeExpr_roundtrip [propext, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Egress.writeBlock_reading [propext, Quot.sound]
@@ -142,7 +146,7 @@ end Ix.Kernel.Audit
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Audit.importAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
-Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 942 compiled functions; inherited externs 16,
+Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 947 compiled functions; inherited externs 16,
 implemented_by 0, unsafe 1, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
@@ -181,3 +185,63 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.egressOperations Ix.Kernel.
       env.toEnvironment r = some entry → env.EmptyType entry.universes entry.type → False -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.no_proof_of_False
+
+/-! ## Frozen statements added with the Ixon v3 takeover (R3)
+
+`checkEnv` is the Ixon entry point over the same admission fold as `check`;
+its reading, model, and no-False statements are frozen like the K0 ones, as is
+the syntactic `EmptyType` corollary for constructor-free families. -/
+
+/-- info: @Ix.Kernel.checkEnv_reading : ∀ {cfg : Ix.Kernel.Config} {constants : Ix.Kernel.Ingress.Constants}
+  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
+  Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env → Ix.Kernel.Ingress.Installed constants blobs family env -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.checkEnv_reading
+
+/-- info: Ix.Kernel.checkEnv_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config}
+  {constants : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
+  {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
+  Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env → Nonempty (Ix.Kernel.Model V env) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.checkEnv_has_model
+
+/-- info: Ix.Kernel.checkEnv_no_proof_of_False : ∀ (V : Type u_1) [Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config}
+  {constants : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
+  {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
+  Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env →
+    ∀ {r : Ix.Kernel.ConstRef Address} {entry : Ix.Kernel.Model.ConstantEntry Address},
+      env.toEnvironment r = some entry → env.EmptyType entry.universes entry.type → False -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.checkEnv_no_proof_of_False
+
+/-- info: @Ix.Kernel.Env.emptyType_of_empty : ∀ {β : Type u_1} [inst : DecidableEq β] {env : Ix.Kernel.Env β} {source : β}
+  {recursor : Ix.Kernel.ConstRef β},
+  Ix.Kernel.Certified.Basis.Empty.Interface env.toEnvironment source recursor →
+    env.EmptyType 0 (Ix.Kernel.Model.AExpr.const (Ix.Kernel.ConstRef.member source 0) []) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Env.emptyType_of_empty
+
+/-- info: @Ix.Kernel.no_inhabitant_of_empty : ∀ {β : Type u_1} [inst : DecidableEq β] (V : Type u_2) [Ix.Kernel.Model.SetTheory V]
+  {cfg : Ix.Kernel.Config} {decls : List (Ix.Kernel.Decl β)} {env : Ix.Kernel.Env β},
+  Ix.Kernel.check cfg decls = Except.ok env →
+    ∀ {source : β} {recursor : Ix.Kernel.ConstRef β},
+      Ix.Kernel.Certified.Basis.Empty.Interface env.toEnvironment source recursor →
+        ∀ {r : Ix.Kernel.ConstRef β} {entry : Ix.Kernel.Model.ConstantEntry β},
+          env.toEnvironment r = some entry →
+            entry.universes = 0 →
+              entry.type = Ix.Kernel.Model.AExpr.const (Ix.Kernel.ConstRef.member source 0) [] → False -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.no_inhabitant_of_empty
+
+/-- info: Ix.Kernel.checkEnv_no_inhabitant_of_empty : ∀ (V : Type u_1) [Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config}
+  {constants : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
+  {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
+  Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env →
+    ∀ {source : Address} {recursor : Ix.Kernel.ConstRef Address},
+      Ix.Kernel.Certified.Basis.Empty.Interface env.toEnvironment source recursor →
+        ∀ {r : Ix.Kernel.ConstRef Address} {entry : Ix.Kernel.Model.ConstantEntry Address},
+          env.toEnvironment r = some entry →
+            entry.universes = 0 →
+              entry.type = Ix.Kernel.Model.AExpr.const (Ix.Kernel.ConstRef.member source 0) [] → False -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.checkEnv_no_inhabitant_of_empty

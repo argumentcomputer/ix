@@ -137,6 +137,16 @@ def separatedFalse (recursor : Ixon.Recursor := falseRecursor) : Constants :=
   [(address 3, falseFamily), (address 6, falseRecursorRecord recursor), (address 4, falseProjection)]
 
 #guard accepts separatedFalse
+-- Production layout: the separately stored eliminator at its own record
+-- satisfies the `EmptyType` interface; a family admitted without its
+-- recursor does not, since its emptiness is not constrained.
+#guard match checkEnv.{1} {} separatedFalse [] with
+  | .ok env => decide (Certified.Basis.Empty.Interface env.toEnvironment (address 3) (.member (address 6) 0))
+  | .error _ => false
+#guard match checkEnv.{1} {} [(address 3, falseFamily), (address 4, falseProjection)] [] with
+  | .ok env => (env.entries.map (·.1)).all fun r =>
+      !decide (Certified.Basis.Empty.Interface env.toEnvironment (address 3) r)
+  | .error _ => false
 #guard accepts [(address 3, falseFamily), (address 4, falseProjection)]
 #guard match checkEnv.{1} {} separatedFalse [] with
   | .ok env => (env.lookup (.member (address 3) 0)).isSome &&

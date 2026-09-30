@@ -167,7 +167,16 @@ reported can differ when both independent checks fail.
 `check_has_model` and `checkDecls_has_model` are relative to an explicit
 `SetTheory V`. It supplies the set-theoretic operations and a countable tower
 of Grothendieck universes. `no_proof_of_False` rules out an accepted
-inhabitant of a type interpreted as empty. The separate
+inhabitant of a type interpreted as empty. Its hypothesis is semantic;
+`Env.emptyType_of_empty` discharges it syntactically for a parameter-free,
+index-free family whose installed large eliminator has the constructor-free
+type (`Certified.Basis.Empty.Interface`, a decidable check), so
+`no_inhabitant_of_empty` rules out accepted proofs of `False` and inhabitants
+of `Empty`. The eliminator is required: a family admitted without its
+recursor is not constrained to be empty. `checkEnv_has_model`,
+`checkEnv_no_proof_of_False`, and `checkEnv_no_inhabitant_of_empty` state the
+same for Ixon records, which `checkEnv` admits through the same fold as
+`check`, associating separately stored recursors with their families. The separate
 [`Models/SetTheory`](../Models/SetTheory) package constructs the model with
 Mathlib under its stated `OmegaInaccessibles` hypothesis.
 

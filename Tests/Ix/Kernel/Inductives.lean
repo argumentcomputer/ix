@@ -111,6 +111,15 @@ def declines (decls : List (Decl String)) (reason : String) : Bool :=
 /-! ## Accepted -/
 
 #guard accepts [falseDecl]
+-- `False` with its paired eliminator satisfies the syntactic interface of the
+-- `EmptyType` corollary (`Env.emptyType_of_empty`).
+#guard match run [falseDecl] with
+  | .ok env => decide (Certified.Basis.Empty.Interface env.toEnvironment "False" (.member "False" 1))
+  | .error _ => false
+-- `True` has a constructor; its eliminator does not have the empty type.
+#guard match run [trueDecl] with
+  | .ok env => !decide (Certified.Basis.Empty.Interface env.toEnvironment "True" (.member "True" 1))
+  | .error _ => false
 #guard accepts [trueDecl]
 #guard accepts [andDecl]
 #guard accepts [orDecl]
