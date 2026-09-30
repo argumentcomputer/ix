@@ -124,6 +124,9 @@ end Ix.Kernel.Audit
 #guard_kernel_axioms Ix.Kernel.checkEnv_no_inhabitant_of_empty [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Env.emptyType_of_empty [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.no_inhabitant_of_empty [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkEnv_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.DeclarationsRead.deterministic [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.BlockReads.deterministic [propext, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Egress.writeExpr_reading [propext, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Egress.writeExpr_roundtrip [propext, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Egress.writeBlock_reading [propext, Quot.sound]
@@ -245,3 +248,22 @@ the syntactic `EmptyType` corollary for constructor-free families. -/
               entry.type = Ix.Kernel.Model.AExpr.const (Ix.Kernel.ConstRef.member source 0) [] → False -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.checkEnv_no_inhabitant_of_empty
+
+/-- info: @Ix.Kernel.checkEnv_ok_iff : ∀ {cfg : Ix.Kernel.Config} {constants : Ix.Kernel.Ingress.Constants}
+  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
+  Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env ↔
+    (List.map Prod.fst constants).Nodup ∧
+      (List.map Prod.fst blobs).Nodup ∧
+        ∃ decls,
+          Ix.Kernel.Ingress.readDeclarations constants blobs family cfg.fuel constants = Except.ok decls ∧
+            Ix.Kernel.check cfg decls = Except.ok env -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.checkEnv_ok_iff
+
+/-- info: @Ix.Kernel.Ingress.DeclarationsRead.deterministic : ∀ {constants : Ix.Kernel.Ingress.Constants}
+  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)}
+  {inputs : Ix.Kernel.Ingress.Constants} {left right : List (Ix.Kernel.Decl Address)},
+  Ix.Kernel.Ingress.DeclarationsRead constants blobs family inputs left →
+    Ix.Kernel.Ingress.DeclarationsRead constants blobs family inputs right → left = right -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Ingress.DeclarationsRead.deterministic

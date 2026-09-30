@@ -2324,6 +2324,30 @@ R3 is complete (2026-09-29, `plans/review/r3-fold-emptiness`):
 rules, and the K flag. Also prove reading determinism and a
 `checkEnv_ok_iff`.
 
+R4 is complete (2026-09-29, `plans/review/r4-fidelity`), with one revision:
+
+**Fidelity is renamed, not widened.** The takeover plan allowed either, and
+widening would not have been meaningful yet:
+- Admission already validates every other supplied field by requiring the
+  supplied records to equal the records the admitted shape generates.
+- Retaining those fields in a public relation would expose `Shape`, which
+  P07 replaces with first-class typed rules.
+
+So `Const.Reads`/`Ctor.Reads` become `Const.TypeBodyReads`/`Ctor.TypeReads`,
+and `Ix.Kernel.Fidelity` and the five overstated docstrings now state the
+scope exactly: universe count, erased type, definition body, and positions.
+Widening fidelity to every supplied field follows P07.
+
+**Determinism.** `DefinitionReads`, `ConstructorReads`, `RuleReads`,
+`RecursorReads`, `InductiveReads`, `MemberReads`, `InfoReads`/`BlockReads`, and
+`DeclarationsRead` are deterministic. A projection record has no declaration
+reading.
+
+**Acceptance domain.** `checkEnv_ok_iff` states it in two stages: distinct
+keys, `readDeclarations` at the configured fuel, and the closed `check`. It is
+frozen by `#check` with exact axiom guards, as is
+`DeclarationsRead.deterministic`.
+
 ### C — contract semantics and a certified contract checker (later)
 
 The kernel defines what Ixon v3 contracts mean, and a checker is certified

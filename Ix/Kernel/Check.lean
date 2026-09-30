@@ -30,7 +30,7 @@ the body is annotated and checked to have the declared type (a theorem's
 type must be a proposition), and the constant is installed with its body. The
 proof-carrying `checkDeclC` returns the environment together with model
 extension, old-lookup preservation (`AdmissionClaim`), and the exact
-installed reading of the supplied block. The public `checkDecl` erases
+installed type and body reading of the supplied block (`Block.Installed`). The public `checkDecl` erases
 that evidence. -/
 
 namespace Ix.Kernel
@@ -116,7 +116,7 @@ records with that shape before using its semantic construction. -/
 def checkInductiveC (cfg : Config) (env : Env β) (source : β) (recursor : ConstRef β)
     (family rec : Const β) : Except Error { env' : Env β //
       AdmissionClaim.{u,v} env env' ∧ family.Installed source 0 env'.toEnvironment ∧
-        ∃ entry, env'.toEnvironment recursor = some entry ∧ rec.Reads entry } :=
+        ∃ entry, env'.toEnvironment recursor = some entry ∧ rec.TypeBodyReads entry } :=
   let entries := env.toEnvironment
   if (entries (.member source 0)).isSome || (entries recursor).isSome then
     .error (.rejected "duplicate inductive or recursor reference")
@@ -218,7 +218,7 @@ def checkFamilyC (cfg : Config) (env : Env β) (source : β) (family : Const β)
   else throw (.declined "the supplied inductive differs from the generated ordinary family")
 
 /-- Check one declaration, returning model extension, preservation, and
-the exact installed reading with the environment. -/
+the installed type and body reading with the environment. -/
 def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
     Except Error { env' : Env β // AdmissionClaim.{u,v} env env' ∧
       d.block.Installed d.address env'.toEnvironment } :=
@@ -519,7 +519,8 @@ def findRecursor (family : ConstRef β) : (decls : List (Decl β)) → Option (R
 A singleton inductive family is admitted together with the first later
 singleton recursor whose major premise names it (Ixon stores the two as
 separate records); the ordinary paired layout remains supported by
-`checkDeclC`. Every consumed declaration gets its exact installed reading. -/
+`checkDeclC`. Every consumed declaration gets its installed type and body
+reading (`Block.Installed`). -/
 def checkDeclsC (cfg : Config) (env : Env β) :
     (decls : List (Decl β)) → Except Error { env' : Env β // AdmissionClaim.{u,v} env env' ∧
       ∀ d ∈ decls, d.block.Installed d.address env'.toEnvironment }

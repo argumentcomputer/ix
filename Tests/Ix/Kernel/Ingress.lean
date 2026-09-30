@@ -137,6 +137,10 @@ def separatedFalse (recursor : Ixon.Recursor := falseRecursor) : Constants :=
   [(address 3, falseFamily), (address 6, falseRecursorRecord recursor), (address 4, falseProjection)]
 
 #guard accepts separatedFalse
+-- `checkEnv_ok_iff`: the entry point agrees with reading then the closed check.
+#guard match readDeclarations separatedFalse [] none ({} : Config).fuel separatedFalse with
+  | .ok decls => (check.{0,1} {} decls).isOk && decls.length == 2
+  | .error _ => false
 -- Production layout: the separately stored eliminator at its own record
 -- satisfies the `EmptyType` interface; a family admitted without its
 -- recursor does not, since its emptiness is not constrained.

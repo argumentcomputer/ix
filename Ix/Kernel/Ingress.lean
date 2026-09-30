@@ -69,8 +69,46 @@ def readDeclarationsC (constants : Constants) (blobs : Blobs)
       let decls ← readDeclarationsC constants blobs family fuel rest
       return ⟨⟨pair.1, block.val⟩ :: decls.val, .declaration block.property decls.property⟩
 
-/-- The supplied Ixon records read as exactly the declarations installed in the
-accepted environment. This is separate from the existence of its model. -/
+/-- The executable declaration reader without its proof component. -/
+def readDeclarations (constants : Constants) (blobs : Blobs)
+    (family : Option (ConstRef Address)) (fuel : Nat) (inputs : Constants) :
+    Search (List (Decl Address)) :=
+  (readDeclarationsC constants blobs family fuel inputs).map Subtype.val
+
+theorem readDeclarations_reading {constants : Constants} {blobs : Blobs}
+    {family : Option (ConstRef Address)} {fuel : Nat} {inputs : Constants}
+    {decls : List (Decl Address)}
+    (h : readDeclarations constants blobs family fuel inputs = .ok decls) :
+    DeclarationsRead constants blobs family inputs decls := by
+  obtain ⟨⟨_, reading⟩, _, rfl⟩ := Except.map_eq_ok h
+  exact reading
+
+/-- The declaration reading is a function of the records: the records
+describe at most one declaration list. -/
+theorem DeclarationsRead.deterministic {constants : Constants} {blobs : Blobs}
+    {family : Option (ConstRef Address)} {inputs : Constants} {left right : List (Decl Address)}
+    (h : DeclarationsRead constants blobs family inputs left)
+    (other : DeclarationsRead constants blobs family inputs right) : left = right := by
+  induction h generalizing right with
+  | nil => cases other; rfl
+  | declaration hb _ ih =>
+    cases other with
+    | declaration hb' rest' => rw [BlockReads.deterministic hb hb', ih rest']
+    | projection hp _ _ =>
+      have := InfoReads.not_projection hb
+      simp_all [context]
+  | projection hp _ _ ih =>
+    cases other with
+    | declaration hb' _ =>
+      have := InfoReads.not_projection hb'
+      simp_all [context]
+    | projection _ _ rest' => exact ih rest'
+
+/-- The supplied Ixon records read as declarations (`DeclarationsRead`, an exact
+reading of every table, sharing node, and reference), and each declaration's
+type and body reading is installed in the accepted environment
+(`Block.Installed`, whose scope `Ix.Kernel.Fidelity` states). This is separate
+from the existence of its model. -/
 structure Installed (constants : Constants) (blobs : Blobs)
     (family : Option (ConstRef Address)) (env : Env Address) : Prop where
   constantKeys : (constants.map Prod.fst).Nodup
@@ -78,7 +116,7 @@ structure Installed (constants : Constants) (blobs : Blobs)
   declarations : ∃ decls, DeclarationsRead constants blobs family constants decls ∧
     ∀ d ∈ decls, d.block.Installed d.address env.toEnvironment
 
-/-- Every supplied primary record has its own exact installed reading. -/
+/-- Every supplied primary record has its own installed type and body reading. -/
 theorem Installed.primary {constants : Constants} {blobs : Blobs}
     {family : Option (ConstRef Address)} {env : Env Address}
     (h : Installed constants blobs family env) {pair : Address × Ixon.Constant}
@@ -130,6 +168,31 @@ theorem checkEnv_has_model (V : Type v) [Model.SetTheory V] {cfg : Config}
     (h : checkEnv.{v} cfg constants blobs family = .ok env) : Nonempty (Model V env) := by
   obtain ⟨⟨_, _, model⟩, _, rfl⟩ := Except.map_eq_ok h
   exact model V
+
+/-- The exact acceptance domain of the Ixon entry point, as two stages: the
+record and blob keys are distinct, the records read as declarations at the
+configured fuel (`Ingress.readDeclarations_reading`; the reading is
+deterministic), and the closed `check` accepts those declarations. -/
+theorem checkEnv_ok_iff {cfg : Config} {constants : Ingress.Constants} {blobs : Ingress.Blobs}
+    {family : Option (ConstRef Address)} {env : Env Address} :
+    checkEnv.{v} cfg constants blobs family = .ok env ↔
+      (constants.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup ∧
+        ∃ decls, Ingress.readDeclarations constants blobs family cfg.fuel constants = .ok decls ∧
+          check.{0,v} cfg decls = .ok env := by
+  unfold checkEnv Ingress.checkEnvC Ingress.readDeclarations check checkDecls
+  by_cases hc : (constants.map Prod.fst).Nodup
+  · by_cases hb : (blobs.map Prod.fst).Nodup
+    · cases hr : Ingress.readDeclarationsC constants blobs family cfg.fuel constants with
+      | error failure =>
+        simp [hc, hb, Except.mapError, bind, Except.bind, Except.map]
+      | ok declarations =>
+        cases hk : checkDeclsC.{0,v} cfg Env.empty declarations.val with
+        | error failure =>
+          simp [hc, hb, hk, Except.mapError, bind, Except.bind, Except.map]
+        | ok checked =>
+          simp [hc, hb, hk, Except.mapError, bind, Except.bind, Except.map, pure, Except.pure]
+    · simp [hc, hb, Except.map]
+  · simp [hc, Except.map]
 
 /-- No constant accepted from Ixon records inhabits a type that denotes the
 empty set in every model of the checked environment. -/

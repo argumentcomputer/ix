@@ -6,11 +6,16 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Env
 import Ix.Kernel.Const
 
-/-! # Exact declaration readings in an installed environment
+/-! # Installed type and body readings
 
-These syntactic contracts complement model existence. They retain the raw
-type, definition body, universe count, member position, and constructor
-position. Equations and facts are specified by each admission adapter's
+These syntactic contracts complement model existence. They retain exactly the
+raw type, definition body, universe count, member position, and constructor
+position of each supplied member; the names say so. Admission also checks the
+other supplied fields — definition kind (a theorem's type is a proposition),
+safety (only safe declarations are admitted), inductive arities, recursor
+rules and metadata, and the K flag — by comparing complete supplied records
+with those its admitted shape generates, but these relations do not retain
+them. Published equations and facts are specified by each admission adapter's
 published-entry equality and are preserved by `Env.Preserves`.
 -/
 
@@ -19,22 +24,24 @@ open Model
 universe u
 variable {β : Type u}
 
-/-- The fields supplied for one member, before adding certified facts. -/
-def Const.Reads (c : Const β) (entry : ConstantEntry β) : Prop :=
+/-- The universe count, erased type, and definition body supplied for one
+member, before adding certified facts. Other supplied fields are checked at
+admission but not retained here. -/
+def Const.TypeBodyReads (c : Const β) (entry : ConstantEntry β) : Prop :=
   entry.universes = c.uvars ∧ entry.type.erase = c.type ∧
     match c with
     | .defn _ _ _ body _ => entry.body.map AExpr.erase = some body
     | _ => entry.body = none
 
-/-- A constructor reading preserves its complete supplied type. -/
-def Ctor.Reads (c : Ctor β) (entry : ConstantEntry β) : Prop :=
+/-- A constructor's supplied universe count and complete type. -/
+def Ctor.TypeReads (c : Ctor β) (entry : ConstantEntry β) : Prop :=
   entry.universes = c.uvars ∧ entry.type.erase = c.type ∧ entry.body = none
 
 def Const.Installed (c : Const β) (source : β) (index : Nat) (entries : Environment β) : Prop :=
-  (∃ entry, entries (.member source index) = some entry ∧ c.Reads entry) ∧
+  (∃ entry, entries (.member source index) = some entry ∧ c.TypeBodyReads entry) ∧
     match c with
     | .induct _ _ _ _ ctors _ => ∀ j ctor, ctors[j]? = some ctor →
-        ∃ entry, entries (.ctor source index j) = some entry ∧ ctor.Reads entry
+        ∃ entry, entries (.ctor source index j) = some entry ∧ ctor.TypeReads entry
     | _ => True
 
 def Block.Installed (block : Block β) (source : β) (entries : Environment β) : Prop :=
@@ -42,7 +49,7 @@ def Block.Installed (block : Block β) (source : β) (entries : Environment β) 
 
 theorem Const.installed_of_lookup {c : Const β} {entry : ConstantEntry β}
     {source : β} {index : Nat} {entries : Environment β}
-    (he : entries (.member source index) = some entry) (hr : c.Reads entry)
+    (he : entries (.member source index) = some entry) (hr : c.TypeBodyReads entry)
     (hc : c.ctorCount = 0) : c.Installed source index entries := by
   refine ⟨⟨entry, he, hr⟩, ?_⟩
   cases c <;> try trivial
@@ -69,7 +76,7 @@ theorem Block.installed_pair {a b : Const β} {source : β} {entries : Environme
     | succ i => simp at hd
 
 theorem Block.installed_singleton_push [DecidableEq β] (env : Env β) (source : β)
-    (c : Const β) (entry : ConstantEntry β) (hr : c.Reads entry) (hc : c.ctorCount = 0) :
+    (c : Const β) (entry : ConstantEntry β) (hr : c.TypeBodyReads entry) (hc : c.ctorCount = 0) :
     (Block.mk [c]).Installed source (env.push (.member source 0) entry).toEnvironment :=
   installed_singleton (Const.installed_of_lookup (Env.lookup_push_same ..) hr hc)
 

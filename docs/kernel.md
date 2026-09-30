@@ -96,7 +96,10 @@ remain outside this interface.
 keys, exact source readings, and each primary record installed at its own
 reference. Projection records must name the proper owner, member kind, and
 position and have empty tables. Sharing edges must decrease; indexes resolve
-without narrowing. `checkEnv_has_model` applies to this executed Ixon entry
+without narrowing. `checkEnv_ok_iff` gives the exact acceptance domain: distinct keys, the
+records read as declarations by `readDeclarations` at the configured fuel (the
+reading is deterministic, `DeclarationsRead.deterministic`), and the closed
+`check` accepts them. `checkEnv_has_model` applies to this executed Ixon entry
 point. Nat payloads are little-endian; strings decline. Every Ixon v3
 contract is erased by the reading, as at upstream `Ix.Tc`'s erased typing
 boundary: lambda binder contracts, forall input and result contracts, and let

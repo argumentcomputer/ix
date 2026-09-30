@@ -75,7 +75,7 @@ theorem installStructure_members (env : Env β) (source : β) (d : Description �
     (d.ordinary.source source).Installed source 0
         (installStructure env source d mode h).val.toEnvironment ∧
       ∃ entry, (installStructure env source d mode h).val.toEnvironment recursor = some entry ∧
-        (d.ordinary.recursorSource source mode k recursor).Reads entry :=
+        (d.ordinary.recursorSource source mode k recursor).TypeBodyReads entry :=
   Shape.installedWith_members env d.ordinary source mode k (d.publishedEntry source) recursor
     ⟨rfl, rfl, rfl⟩ h.facts.block.recursorChecked
 

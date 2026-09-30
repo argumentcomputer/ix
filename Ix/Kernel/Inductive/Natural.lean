@@ -74,7 +74,7 @@ theorem installNatural_members (env : Env β) (source : β) (mode : ElimMode)
     ((Natural.shape : Shape β).source source).Installed source 0
         (installNatural env source mode h).val.toEnvironment ∧
       ∃ entry, (installNatural env source mode h).val.toEnvironment recursor = some entry ∧
-        ((Natural.shape : Shape β).recursorSource source mode k recursor).Reads entry :=
+        ((Natural.shape : Shape β).recursorSource source mode k recursor).TypeBodyReads entry :=
   Shape.installedWith_members env (Natural.shape : Shape β) source mode k (Natural.entry source) recursor
     ⟨rfl, rfl, rfl⟩ h.block.recursorChecked
 

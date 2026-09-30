@@ -164,7 +164,7 @@ theorem toEnvironment_installed (env : Env β) (shape : Shape β) (source : β) 
 their exact positions. Specializations may add facts to the family entry. -/
 theorem installedWith_fidelity (env : Env β) (shape : Shape β) (source : β)
     (mode : ElimMode) (k : Bool) (fam : ConstantEntry β)
-    (hf : (shape.source source).Reads fam) :
+    (hf : (shape.source source).TypeBodyReads fam) :
     (Block.mk [shape.source source, shape.recursorSource source mode k]).Installed source
       (env.pushList (shape.installedWith source mode fam)).toEnvironment := by
   apply Block.installed_pair
@@ -189,12 +189,12 @@ theorem installedWith_fidelity (env : Env β) (shape : Shape β) (source : β)
 that publishing the recursor preserves the family and every constructor. -/
 theorem installedWith_members (env : Env β) (shape : Shape β) (source : β)
     (mode : ElimMode) (k : Bool) (fam : ConstantEntry β) (recursor : ConstRef β)
-    (hf : (shape.source source).Reads fam)
+    (hf : (shape.source source).TypeBodyReads fam)
     (hR : RecursorFormation.{u,v} env.toEnvironment shape source mode recursor) :
     (shape.source source).Installed source 0
         (env.pushList (shape.installedWith source mode fam recursor)).toEnvironment ∧
       ∃ entry, (env.pushList (shape.installedWith source mode fam recursor)).toEnvironment recursor =
-        some entry ∧ (shape.recursorSource source mode k recursor).Reads entry := by
+        some entry ∧ (shape.recursorSource source mode k recursor).TypeBodyReads entry := by
   constructor
   · refine ⟨⟨fam, ?_, hf⟩, ?_⟩
     · rw [toEnvironment_installedWith (recursor := recursor)]
@@ -246,7 +246,7 @@ theorem toEnvironment_stagedInstalledWith (env : Env β) (shape : Shape β) (sou
 
 theorem stagedInstalledWith_family (env : Env β) (shape : Shape β) (source : β)
     (stage : Stage β) (fam : ConstantEntry β) (h : stage.Checked.{u,v} env.toEnvironment source shape)
-    (hf : (shape.source source).Reads fam) :
+    (hf : (shape.source source).TypeBodyReads fam) :
     (shape.source source).Installed source 0
       (env.pushList (shape.stagedInstalledWith source stage fam)).toEnvironment := by
   rw [toEnvironment_stagedInstalledWith env shape source stage fam h]
@@ -289,7 +289,7 @@ theorem installOrdinary_members (env : Env β) (source : β) (shape : Shape β)
     (h : CheckedBlock.{u,v} env.toEnvironment source shape mode recursor) (k : Bool) :
     (shape.source source).Installed source 0 (installOrdinary env source shape mode h).val.toEnvironment ∧
       ∃ entry, (installOrdinary env source shape mode h).val.toEnvironment recursor = some entry ∧
-        (shape.recursorSource source mode k recursor).Reads entry :=
+        (shape.recursorSource source mode k recursor).TypeBodyReads entry :=
   shape.installedWith_members env source mode k shape.familyEntry recursor ⟨rfl, rfl, rfl⟩ h.recursorChecked
 
 /-- Admit a family and its constructors without generating or checking an

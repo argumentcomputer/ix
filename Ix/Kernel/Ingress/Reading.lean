@@ -230,4 +230,93 @@ inductive InfoReads (ctx : Context) : Ixon.ConstantInfo → Block Address → Pr
 
 abbrev BlockReads (ctx : Context) := InfoReads ctx ctx.source.info
 
+/-! ## Determinism
+
+Each reading relation relates a record to at most one kernel declaration. -/
+
+theorem forall₂_deterministic {α γ : Type} {R : α → γ → Prop}
+    (unique : ∀ x y z, R x y → R x z → y = z) :
+    ∀ {xs : List α} {ys zs : List γ}, Forall₂ R xs ys → Forall₂ R xs zs → ys = zs
+  | [], [], [], .nil, .nil => rfl
+  | _ :: _, _ :: _, _ :: _, .cons hx hxs, .cons hy hys => by
+    rw [unique _ _ _ hx hy, forall₂_deterministic unique hxs hys]
+
+theorem DefinitionReads.deterministic {ctx : Context} {source : Ixon.Definition}
+    {left right : Const Address} (h : DefinitionReads ctx source left)
+    (other : DefinitionReads ctx source right) : left = right := by
+  cases h with
+  | mk ht hv => cases other with
+    | mk ht' hv' =>
+      obtain rfl := ExprReads.deterministic ht ht'
+      obtain rfl := ExprReads.deterministic hv hv'
+      rfl
+
+theorem ConstructorReads.deterministic {ctx : Context} {source : Ixon.Constructor × Nat}
+    {left right : Ctor Address} (h : ConstructorReads ctx source left)
+    (other : ConstructorReads ctx source right) : left = right := by
+  obtain ⟨-, hu, hp, hf, hs, ht⟩ := h
+  obtain ⟨-, hu', hp', hf', hs', ht'⟩ := other
+  have same := ExprReads.deterministic ht ht'
+  cases left; cases right
+  simp_all
+
+theorem RuleReads.deterministic {ctx : Context} {source : Ixon.RecursorRule}
+    {left right : RecRule Address} (h : RuleReads ctx source left)
+    (other : RuleReads ctx source right) : left = right := by
+  obtain ⟨hn, hr⟩ := h
+  obtain ⟨hn', hr'⟩ := other
+  have same := ExprReads.deterministic hr hr'
+  cases left; cases right
+  simp_all
+
+theorem RecursorReads.deterministic {ctx : Context} {source : Ixon.Recursor}
+    {left right : Const Address} (h : RecursorReads ctx source left)
+    (other : RecursorReads ctx source right) : left = right := by
+  cases h with
+  | mk ht hr => cases other with
+    | mk ht' hr' =>
+      obtain rfl := ExprReads.deterministic ht ht'
+      obtain rfl := forall₂_deterministic (R := RuleReads ctx) (fun _ _ _ h h' => RuleReads.deterministic h h') hr hr'
+      rfl
+
+theorem InductiveReads.deterministic {ctx : Context} {source : Ixon.Inductive}
+    {left right : Const Address} (h : InductiveReads ctx source left)
+    (other : InductiveReads ctx source right) : left = right := by
+  cases h with
+  | mk ht hc => cases other with
+    | mk ht' hc' =>
+      obtain rfl := ExprReads.deterministic ht ht'
+      obtain rfl := forall₂_deterministic (R := ConstructorReads ctx) (fun _ _ _ h h' => ConstructorReads.deterministic h h') hc hc'
+      rfl
+
+theorem MemberReads.deterministic {ctx : Context} {source : Ixon.MutConst}
+    {left right : Const Address} (h : MemberReads ctx source left)
+    (other : MemberReads ctx source right) : left = right := by
+  cases h with
+  | defn h => cases other with | defn h' => exact h.deterministic h'
+  | indc h => cases other with | indc h' => exact h.deterministic h'
+  | recr h => cases other with | recr h' => exact h.deterministic h'
+
+theorem InfoReads.deterministic {ctx : Context} {source : Ixon.ConstantInfo}
+    {left right : Block Address} (h : InfoReads ctx source left)
+    (other : InfoReads ctx source right) : left = right := by
+  cases h with
+  | defn h => cases other with | defn h' => rw [h.deterministic h']
+  | recr h => cases other with | recr h' => rw [h.deterministic h']
+  | axio h => cases other with
+    | axio h' => obtain rfl := ExprReads.deterministic h h'; rfl
+  | quot h => cases other with
+    | quot h' => obtain rfl := ExprReads.deterministic h h'; rfl
+  | muts h => cases other with
+    | muts h' => rw [forall₂_deterministic (R := MemberReads ctx) (fun _ _ _ h h' => MemberReads.deterministic h h') h h']
+
+theorem BlockReads.deterministic {ctx : Context} {left right : Block Address}
+    (h : BlockReads ctx left) (other : BlockReads ctx right) : left = right :=
+  InfoReads.deterministic h other
+
+/-- A projection record has no declaration reading. -/
+theorem InfoReads.not_projection {ctx : Context} {source : Ixon.ConstantInfo}
+    {block : Block Address} (h : InfoReads ctx source block) : isProjection source = false := by
+  cases h <;> rfl
+
 end Ix.Kernel.Ingress

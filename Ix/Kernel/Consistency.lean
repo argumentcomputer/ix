@@ -69,7 +69,8 @@ theorem checkDecl_installed {cfg : Config} {env env' : Env β} {decl : Decl β}
   obtain ⟨⟨e, claim⟩, -, rfl⟩ := Except.map_eq_ok h
   exact claim.2
 
-/-- Later declarations preserve the exact reading of every earlier input. -/
+/-- Later declarations preserve the installed type and body reading of every
+earlier input (`Block.Installed`; see `Ix.Kernel.Fidelity` for its scope). -/
 theorem checkDecls_installed {cfg : Config} {env env' : Env β} {decls : List (Decl β)}
     (h : checkDecls.{u,v} cfg env decls = .ok env') :
     ∀ d ∈ decls, d.block.Installed d.address env'.toEnvironment := by
