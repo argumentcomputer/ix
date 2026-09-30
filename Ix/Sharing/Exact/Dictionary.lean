@@ -2,12 +2,12 @@
   Exact minimum sharing (W1): fixed-dictionary optimizer (§5).
 
   For a dictionary `M` (available term IDs with their Share widths),
-  `dictCosts` computes `C_M(t)`, the minimum byte length of a standalone
+  `Prep.eval` computes `C_M(t)`, the minimum byte length of a standalone
   expression expanding to `t`, for every term in increasing ID order
   (children first). Leaves, `Prj` and `Let` add their fixed header to optimal
-  children. `App`, `Lam` and `All` walk their maximal same-family spine
-  `t = t₀, t₁, …, t_l` (tail `t_l` of another family) and consider every
-  inline prefix length `j ∈ 1..l`:
+  children. `App`, `Lam` and `All` have a maximal same-family spine
+  `t = t₀, t₁, …, t_{l-1}` with natural tail `t_l` of another family, and every
+  inline prefix length `j ∈ 1..l` is a candidate:
 
   * Tag4 header for `j`, plus every emitted contract byte and every side
     child's optimal standalone cost along the prefix;
@@ -17,6 +17,13 @@
   * for `j = l` the natural tail is written at its optimal standalone cost.
 
   Whole-term sharing is another option when `t` itself is available.
+
+  Evaluation is O(1 + number of available spine descendants) per term: the
+  per-dictionary suffix sum `sides[t]` of spine bytes gives every prefix sum
+  as `sides[t] - sides[t_j]`, and `below[t]` links each telescope node to its
+  nearest available spine descendant, so only legal cuts are visited. This is
+  the same recurrence as a walk over all `j` (the tests compare it with that
+  walk and with exhaustive enumeration).
 
   `materialize` rebuilds, for a dictionary with actual table indices, the
   byte-lexicographically least encoding among the minimum-length ones. At
@@ -74,6 +81,19 @@ a `Lam`/`All` binder. -/
   | .app => 0
   | _ => 1
 
+/-- One dictionary evaluation. `cost[t] = C_M(t)`. For a telescope node `t`,
+`sides[t]` is the byte sum of the contract bytes and side-child costs along
+its maximal spine, and `below[t]` is the nearest available node strictly
+below `t` on that spine. Non-telescope nodes have `sides = 0`,
+`below = none`. -/
+structure DictEval where
+  cost : Array Nat
+  sides : Array Nat
+  below : Array (Option Nat)
+  /-- Terms evaluated plus available spine descendants visited. -/
+  work : Nat := 0
+  deriving Inhabited
+
 /-- Per-DAG tables shared by every dictionary evaluation. -/
 structure Prep where
   dag : Dag
@@ -81,88 +101,114 @@ structure Prep where
   /-- For a telescope node, the number of nodes in its maximal same-family
   spine (at least 1); 0 for other nodes. -/
   spineLen : Array Nat
-  /-- `C_∅`: the standalone unshared length of every term. -/
-  base : Array Nat
+  /-- For a telescope node, the natural tail below its maximal spine. -/
+  tail : Array Nat
+  /-- Evaluation under the empty dictionary (`empty.cost = C_∅`). -/
+  empty : DictEval
   deriving Inhabited
 
-/-- Spine lengths, children before parents. -/
-def spineLengths (dag : Dag) (family : Array Family) : Array Nat := Id.run do
+/-- `C_∅`: the standalone unshared length of every term. -/
+@[inline] def Prep.base (p : Prep) : Array Nat := p.empty.cost
+
+/-- Spine lengths and natural tails, children before parents. -/
+def spineTables (dag : Dag) (family : Array Family) : Array Nat × Array Nat := Id.run do
   let mut len : Array Nat := Array.replicate dag.size 0
+  let mut tail : Array Nat := Array.replicate dag.size 0
   for t in [0:dag.size] do
     let fam := family[t]!
     if fam != .none then
       let nxt := (dag.node t).spineNext
-      let rest := if family[nxt]! == fam then len[nxt]! else 0
-      len := len.set! t (rest + 1)
-  return len
+      if family[nxt]! == fam then
+        len := len.set! t (len[nxt]! + 1)
+        tail := tail.set! t tail[nxt]!
+      else
+        len := len.set! t 1
+        tail := tail.set! t nxt
+  return (len, tail)
 
 /-- Width of term `t` in a dictionary (`none` when unavailable). -/
 @[inline] def widthOf (width : Array (Option Nat)) (t : Nat) : Option Nat :=
   width[t]?.getD none
 
-/-- `C_M(t)` given `cost[c] = C_M(c)` for every `c < t`. Returns the cost and
-the number of telescope spine steps taken. -/
-def termCost (dag : Dag) (family : Array Family) (spineLen : Array Nat)
-    (cost : Array Nat) (width : Array (Option Nat)) (t : Nat) : Nat × Nat := Id.run do
-  let node := dag.node t
-  let mut steps := 0
-  let inl ← match family[t]! with
-    | .none => pure (node.children.foldl (fun acc c => acc + cost[c]!) node.head.ownBytes)
-    | _ =>
-      let l := spineLen[t]!
-      let mut cur := t
-      let mut sides := 0
-      let mut best := 0
-      for j in [1:l + 1] do
-        let cn := dag.node cur
-        sides := sides + cn.sideExtra + cost[cn.sideChild]!
-        let nxt := cn.spineNext
-        if j < l then
-          if let some w := widthOf width nxt then
-            let cand := tag4Size j + sides + w
-            if best == 0 || cand < best then best := cand
-        else
-          let cand := tag4Size j + sides + cost[nxt]!
-          if best == 0 || cand < best then best := cand
-        cur := nxt
-      steps := l
-      pure best
-  let c := match widthOf width t with
-    | some w => min inl w
-    | none => inl
-  return (c, steps)
-
-/-- `C_M` for every term. Terms with `affected[t] = false` keep `init[t]`
-(sound when no available term occurs inside them). Returns the costs and the
-work performed (terms evaluated plus spine steps). -/
-def dictCostsFrom (dag : Dag) (family : Array Family) (spineLen : Array Nat)
-    (init : Array Nat) (width : Array (Option Nat)) (affected : Array Bool) :
-    Array Nat × Nat := Id.run do
-  let mut cost := init
+/-- Evaluate a dictionary. Terms with `affected[t] = false` keep their `init`
+entries (sound when no available term occurs inside them, since then their
+cost, spine sums and descendant links are those of the empty dictionary). -/
+def evalFrom (dag : Dag) (family : Array Family) (spineLen tail : Array Nat)
+    (init : DictEval) (width : Array (Option Nat)) (affected : Array Bool) :
+    DictEval := Id.run do
+  let mut cost := init.cost
+  let mut sides := init.sides
+  let mut below := init.below
   let mut work := 0
   for t in [0:dag.size] do
     if affected[t]! then
-      let (c, steps) := termCost dag family spineLen cost width t
+      let node := dag.node t
+      let fam := family[t]!
+      let mut inl := 0
+      if fam == .none then
+        inl := node.children.foldl (fun acc c => acc + cost[c]!) node.head.ownBytes
+      else
+        let nxt := node.spineNext
+        let same := family[nxt]! == fam
+        let s := node.sideExtra + cost[node.sideChild]! + (if same then sides[nxt]! else 0)
+        let bl : Option Nat :=
+          if same then (if (widthOf width nxt).isSome then some nxt else below[nxt]!)
+          else none
+        sides := sides.set! t s
+        below := below.set! t bl
+        let l := spineLen[t]!
+        -- Natural end: all `l` spine nodes inline, then the tail.
+        let mut best := tag4Size l + s + cost[tail[t]!]!
+        -- Internal cuts: only at available spine descendants.
+        let mut cur := bl
+        for _ in [0:l] do
+          match cur with
+          | none => break
+          | some u =>
+            work := work + 1
+            let cand := tag4Size (l - spineLen[u]!) + (s - sides[u]!) +
+              (widthOf width u).getD 0
+            if cand < best then best := cand
+            cur := below[u]!
+        inl := best
+      let c := match widthOf width t with
+        | some w => min inl w
+        | none => inl
       cost := cost.set! t c
-      work := work + 1 + steps
-  return (cost, work)
+      work := work + 1
+  return { cost, sides, below, work }
 
-/-- Build the per-DAG tables, including the unshared costs `C_∅`. -/
+/-- Build the per-DAG tables, including the empty-dictionary evaluation. -/
 def Prep.ofDag (dag : Dag) : Prep :=
   let family := dag.nodes.map (·.head.family)
-  let spineLen := spineLengths dag family
-  let (base, _) := dictCostsFrom dag family spineLen (Array.replicate dag.size 0)
-    (Array.replicate dag.size none) (Array.replicate dag.size true)
-  { dag, family, spineLen, base }
+  let (spineLen, tail) := spineTables dag family
+  let n := dag.size
+  let zero : DictEval :=
+    { cost := Array.replicate n 0, sides := Array.replicate n 0,
+      below := Array.replicate n none }
+  let empty := evalFrom dag family spineLen tail zero (Array.replicate n none)
+    (Array.replicate n true)
+  { dag, family, spineLen, tail, empty := { empty with work := 0 } }
 
-/-- `C_M` for every term under `width`, recomputing only `affected` terms. -/
+/-- Evaluate `width`, recomputing only `affected` terms. -/
+def Prep.eval (p : Prep) (width : Array (Option Nat)) (affected : Array Bool) : DictEval :=
+  evalFrom p.dag p.family p.spineLen p.tail p.empty width affected
+
+/-- Evaluate `width`, recomputing every term. -/
+def Prep.evalAll (p : Prep) (width : Array (Option Nat)) : DictEval :=
+  p.eval width (Array.replicate p.dag.size true)
+
+/-- `C_M` for every term under `width` (recomputing `affected` terms) and the
+work performed. -/
 def Prep.costs (p : Prep) (width : Array (Option Nat)) (affected : Array Bool) :
     Array Nat × Nat :=
-  dictCostsFrom p.dag p.family p.spineLen p.base width affected
+  let ev := p.eval width affected
+  (ev.cost, ev.work)
 
 /-- `C_M` for every term, recomputing everything. -/
 def Prep.costsAll (p : Prep) (width : Array (Option Nat)) : Array Nat × Nat :=
-  p.costs width (Array.replicate p.dag.size true)
+  let ev := p.evalAll width
+  (ev.cost, ev.work)
 
 /-! ## Materialization with the byte-least tie-break -/
 
@@ -184,34 +230,33 @@ def widthsOfIndex (index : Array (Option Nat)) : Array (Option Nat) :=
 /-- Tag4 header bytes from the production encoder. -/
 def tag4Bytes (flag : UInt8) (n : Nat) : ByteArray := runPut (putTag4 ⟨flag, n.toUInt64⟩)
 
-/-- Every legal option at `t` with its exact cost and header bytes. -/
-def Prep.options (p : Prep) (cost : Array Nat) (index : Array (Option Nat)) (t : Nat) :
+/-- Every legal option at `t` with its exact cost and header bytes, given the
+evaluation `ev` of the dictionary `index`. -/
+def Prep.options (p : Prep) (ev : DictEval) (index : Array (Option Nat)) (t : Nat) :
     Array (Choice × Nat × ByteArray) := Id.run do
   let node := p.dag.node t
   let mut opts : Array (Choice × Nat × ByteArray) := #[]
   if let some i := index[t]?.getD none then
     opts := opts.push (.share, shareWidth i, tag4Bytes Ixon.Expr.FLAG_SHARE i)
-  match p.family[t]! with
-  | .none =>
-    let c := node.children.foldl (fun acc c => acc + cost[c]!) node.head.ownBytes
-    opts := opts.push (.inline, c,
-      runPut (putTag4 ⟨node.head.flag, node.head.tag4Field⟩))
-  | _ =>
+  if p.family[t]! == .none then
+    let c := node.children.foldl (fun acc c => acc + ev.cost[c]!) node.head.ownBytes
+    opts := opts.push (.inline, c, runPut (putTag4 ⟨node.head.flag, node.head.tag4Field⟩))
+  else
     let l := p.spineLen[t]!
-    let mut cur := t
-    let mut sides := 0
-    for j in [1:l + 1] do
-      let cn := p.dag.node cur
-      sides := sides + cn.sideExtra + cost[cn.sideChild]!
-      let nxt := cn.spineNext
-      if j < l then
-        if let some i := index[nxt]?.getD none then
-          opts := opts.push (.cut j, tag4Size j + sides + shareWidth i,
+    let s := ev.sides[t]!
+    opts := opts.push (.cut l, tag4Size l + s + ev.cost[p.tail[t]!]!, tag4Bytes node.head.flag l)
+    let mut cur := ev.below[t]!
+    for _ in [0:l] do
+      match cur with
+      | none => break
+      | some u =>
+        let j := l - p.spineLen[u]!
+        match index[u]?.getD none with
+        | some i =>
+          opts := opts.push (.cut j, tag4Size j + (s - ev.sides[u]!) + shareWidth i,
             tag4Bytes node.head.flag j)
-      else
-        opts := opts.push (.cut j, tag4Size j + sides + cost[nxt]!,
-          tag4Bytes node.head.flag j)
-      cur := nxt
+        | none => pure ()
+        cur := ev.below[u]!
   return opts
 
 /-- The minimum-cost option whose header is byte-least. -/
@@ -236,15 +281,15 @@ abbrev MatM := StateT MatState (Except SharingError)
 /-- Build the chosen encoding of `t`. `fuel` bounds the recursion depth; every
 recursive call descends to a strictly smaller term ID, so `dag.size + 1`
 suffices. -/
-def Prep.build (p : Prep) (cost : Array Nat) (index : Array (Option Nat))
+def Prep.build (p : Prep) (ev : DictEval) (index : Array (Option Nat))
     (limits : Limits) : Nat → Nat → MatM Ixon.Expr
   | 0, _ => throw (.internal "materialization fuel exhausted")
   | fuel + 1, t => do
     if let some e := (← get).memo.get? t then return e
-    let some (choice, c) := pickOption (p.options cost index t)
+    let some (choice, c) := pickOption (p.options ev index t)
       | throw (.internal s!"no option for term {t}")
-    unless c == cost[t]! do
-      throw (.internal s!"option cost {c} differs from C_M = {cost[t]!} at term {t}")
+    unless c == ev.cost[t]! do
+      throw (.internal s!"option cost {c} differs from C_M = {ev.cost[t]!} at term {t}")
     let node := p.dag.node t
     let e ← match choice with
       | .share =>
@@ -254,12 +299,12 @@ def Prep.build (p : Prep) (cost : Array Nat) (index : Array (Option Nat))
       | .inline =>
         match node.head with
         | .prj ti f => do
-          let v ← p.build cost index limits fuel (node.child 0)
+          let v ← p.build ev index limits fuel (node.child 0)
           pure (Ixon.Expr.prj ti f v)
         | .letE lc => do
-          let ty ← p.build cost index limits fuel (node.child 0)
-          let v ← p.build cost index limits fuel (node.child 1)
-          let b ← p.build cost index limits fuel (node.child 2)
+          let ty ← p.build ev index limits fuel (node.child 0)
+          let v ← p.build ev index limits fuel (node.child 1)
+          let b ← p.build ev index limits fuel (node.child 2)
           pure (Ixon.Expr.letE lc ty v b)
         | _ => pure (node.toExpr fun _ => default)
       | .cut j => do
@@ -274,10 +319,10 @@ def Prep.build (p : Prep) (cost : Array Nat) (index : Array (Option Nat))
             match index[cur]?.getD none with
             | some i => pure (Ixon.Expr.share i.toUInt64)
             | none => throw (.internal "telescope cut at unavailable term")
-          else p.build cost index limits fuel cur
+          else p.build ev index limits fuel cur
         for k in [0:j] do
           let sn := spine[j - 1 - k]!
-          let side ← p.build cost index limits fuel sn.sideChild
+          let side ← p.build ev index limits fuel sn.sideChild
           acc := match sn.head with
             | .app => .app acc side
             | .lam bc => .lam bc side acc
@@ -299,9 +344,9 @@ def Prep.materialize (p : Prep) (index : Array (Option Nat)) (targets : Array Na
   for i in index do
     if let some i := i then
       if i ≥ wordBound then throw (.formatBound "share index" i)
-  let (cost, work) := p.costsAll (widthsOfIndex index)
-  let (out, st) ← (targets.mapM fun t => p.build cost index limits (p.dag.size + 1) t).run {}
-  return (out, cost, work + st.nodes)
+  let ev := p.evalAll (widthsOfIndex index)
+  let (out, st) ← (targets.mapM fun t => p.build ev index limits (p.dag.size + 1) t).run {}
+  return (out, ev.cost, ev.work + st.nodes)
 
 /-- A dictionary index from `(term, table index)` pairs. -/
 def indexOfPairs (size : Nat) (pairs : List (Nat × Nat)) : Array (Option Nat) :=

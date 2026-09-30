@@ -519,6 +519,99 @@ def dictionaryAgreement (dag : Dag) (offsets : List Nat) (maxOrders : Nat) (stri
 
 def dictOffsets : List Nat := [0, 5, 250, 65530, 2^24 - 3, 2^32 - 3, 2^56 - 3, 2^64 - 8]
 
+/-- Reference `C_M`: for every telescope node, walk every inline prefix
+length `j = 1..l` directly (quadratic in the spine length). -/
+def walkCosts (dag : Dag) (width : Array (Option Nat)) : Array Nat := Id.run do
+  let mut cost : Array Nat := Array.replicate dag.size 0
+  for t in [0:dag.size] do
+    let node := dag.node t
+    let fam := node.head.family
+    let mut inl := 0
+    if fam == .none then
+      inl := node.children.foldl (fun acc c => acc + cost[c]!) node.head.ownBytes
+    else
+      let mut l := 0
+      let mut cur := t
+      for _ in [0:dag.size] do
+        if (dag.node cur).head.family == fam then
+          l := l + 1
+          cur := (dag.node cur).spineNext
+        else break
+      cur := t
+      let mut sides := 0
+      let mut best : Option Nat := none
+      for j in [1:l + 1] do
+        let cn := dag.node cur
+        sides := sides + cn.sideExtra + cost[cn.sideChild]!
+        let nxt := cn.spineNext
+        let cand? : Option Nat :=
+          if j < l then (width[nxt]!).map fun w => tag4Size j + sides + w
+          else some (tag4Size j + sides + cost[nxt]!)
+        if let some cand := cand? then
+          best := some (match best with | some b => min b cand | none => cand)
+        cur := nxt
+      inl := best.getD 0
+    cost := cost.set! t (match width[t]! with | some w => min inl w | none => inl)
+  return cost
+
+/-- Long spines over a small pool: App spines, Lam and All telescopes with
+mixed contracts, nested in each other. -/
+def genSpines : RGen (Array Ixon.Expr) := do
+  let pool ← (List.range 4).toArray.mapM fun _ => genLeaf
+  let mut roots : Array Ixon.Expr := #[]
+  for _ in [0:1 + (← rand 3)] do
+    let len := 5 + (← rand 40)
+    let mut e := pool[← rand pool.size]!
+    for _ in [0:len] do
+      let a := pool[← rand pool.size]!
+      e ← match ← rand 5 with
+        | 0 | 1 => pure (.app e a)
+        | 2 => do pure (.lam (← genBinder) a e)
+        | 3 => do pure (.all (← genBinder) (← genValue) a e)
+        | _ => pure (arr a e)
+    roots := roots.push e
+    roots := roots.push (.app e e)
+  return roots
+
+def spineWalkTests (_ : Unit) : TestSeq :=
+  let (checked, err) := runGen 53 do
+    let mut checked := 0
+    let mut err : Option String := none
+    for i in [0:200] do
+      if err.isSome then break
+      let roots ← genSpines
+      match expandRoots roots with
+      | .ok ex =>
+        let n := ex.dag.size
+        let p := Prep.ofDag ex.dag
+        let mut width : Array (Option Nat) := Array.replicate n none
+        for t in [0:n] do
+          if (← rand 3) == 0 then
+            let idx := [← rand 8, 8 + (← rand 300), 65530 + (← rand 12), 2^32 + (← rand 3)][← rand 4]!
+            width := width.set! t (some (shareWidth idx))
+        checked := checked + 1
+        unless (p.costsAll width).1 == walkCosts ex.dag width &&
+            p.base == walkCosts ex.dag (Array.replicate n none) do
+          err := some s!"case {i}: available-descendant evaluation differs from the full spine walk"
+      | .error e => err := some s!"case {i}: error {reprStr e}"
+    return (checked, err)
+  group "telescope evaluation vs full spine walk" <|
+    test s!"{checked} long-spine DAGs with random dictionaries (widths 1–5): costs equal the O(l) walk over every cut" (err.isNone && checked == 200) ++
+    (match err with | some m => test m false | none => .done)
+
+def deepTests (_ : Unit) : TestSeq :=
+  let d := 10000
+  let nested : Ixon.Expr :=
+    (List.range d).foldl (fun acc i => .app (.var (i % 2).toUInt64) acc) (.sort 0)
+  let telescope : Ixon.Expr :=
+    (List.range d).foldl (fun acc i => .lam .many (.var (i % 3).toUInt64) acc) (.sort 0)
+  group "deep inputs" <|
+    withOk "deep" (optimizeSharing #[nested, telescope]) fun r =>
+      test s!"{d}-deep argument nesting and a {d}-binder telescope optimize under default limits ({r.variableBytes} bytes = unshared {r.unsharedBytes})"
+        (r.variableBytes == r.unsharedBytes &&
+          r.variableBytes == exprSize nested + exprSize telescope + 1 &&
+          r.variableBytes == (serExpr nested).size + (serExpr telescope).size + 1)
+
 def dictionaryTests (_ : Unit) : TestSeq :=
   let fixtures : List (String × Array Ixon.Expr) :=
     [("T2→T2", #[arr (chain 2) (chain 2)]), ("A→A→B→B", #[twoMinimaRoot]),
@@ -976,6 +1069,8 @@ public def suite : List TestSeq := [
   deferred "bounded share expansion" expansionTests,
   deferred "root extraction and reassembly" rootApiTests,
   deferred "fixed-dictionary optimizer vs enumeration" dictionaryTests,
+  deferred "telescope evaluation vs full spine walk" spineWalkTests,
+  deferred "deep inputs" deepTests,
   deferred "optimizer vs exhaustive oracle" oracleTests,
   deferred "unit-width relaxation oracle" unitWidthTests,
   deferred "multi-width buckets vs brute force" atomsTests,
