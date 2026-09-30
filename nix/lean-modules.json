@@ -6,6 +6,8 @@
   "tests-rt": {"roots": ["CompilatrixTests.Rt.Main"], "kind": "lean_exe"},
   "tests-relevance":
   {"roots": ["CompilatrixTests.Src.Relevance.Main"], "kind": "lean_exe"},
+  "tests-recheck":
+  {"roots": ["CompilatrixTests.Recheck.Main"], "kind": "lean_exe"},
   "tests-pipeline":
   {"roots": ["CompilatrixTests.Pipeline.Main"], "kind": "lean_exe"},
   "tests-lam": {"roots": ["CompilatrixTests.Lam.Main"], "kind": "lean_exe"},
@@ -17,6 +19,8 @@
   "pin-src-tables": {"roots": ["PinSrcTables"], "kind": "lean_exe"},
   "gen-src-artifacts":
   {"roots": ["CompilatrixTests.Src.ArtifactMain"], "kind": "lean_exe"},
+  "gen-recheck-artifacts":
+  {"roots": ["CompilatrixTests.Recheck.ArtifactMain"], "kind": "lean_exe"},
   "compilatrix": {"roots": ["Compilatrix.Cli.Main"], "kind": "lean_exe"},
   "check-xv-select":
   {"roots": ["CompilatrixTests.Xv.Main"], "kind": "lean_exe"},
@@ -376,6 +380,81 @@
   "CompilatrixTests.Rt.Cases":
   {"path": "CompilatrixTests/Rt/Cases.lean",
    "imports": ["CompilatrixTests.Rt.Support"]},
+  "CompilatrixTests.Recheck.Stages":
+  {"path": "CompilatrixTests/Recheck/Stages.lean",
+   "imports": ["Compilatrix.Recheck.Run", "CompilatrixTests.Rt.Kernel"]},
+  "CompilatrixTests.Recheck.Run":
+  {"path": "CompilatrixTests/Recheck/Run.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Artifact", "CompilatrixTests.Recheck.Kernel"]},
+  "CompilatrixTests.Recheck.Main":
+  {"path": "CompilatrixTests/Recheck/Main.lean",
+   "imports": ["CompilatrixTests.Recheck.Run"]},
+  "CompilatrixTests.Recheck.KernelSlow":
+  {"path": "CompilatrixTests/Recheck/KernelSlow.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Kernel.Ackermann",
+    "CompilatrixTests.Recheck.Kernel.SumLoop"]},
+  "CompilatrixTests.Recheck.Kernel.Tak":
+  {"path": "CompilatrixTests/Recheck/Kernel/Tak.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Artifacts.Tak",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Recheck.Kernel.Support":
+  {"path": "CompilatrixTests/Recheck/Kernel/Support.lean",
+   "imports": ["Compilatrix.Recheck.Run"]},
+  "CompilatrixTests.Recheck.Kernel.SumLoop":
+  {"path": "CompilatrixTests/Recheck/Kernel/SumLoop.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Artifacts.SumLoop",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Recheck.Kernel.Gcd":
+  {"path": "CompilatrixTests/Recheck/Kernel/Gcd.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Artifacts.Gcd",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Recheck.Kernel.Fib":
+  {"path": "CompilatrixTests/Recheck/Kernel/Fib.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Artifacts.Fib",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Recheck.Kernel.Ackermann":
+  {"path": "CompilatrixTests/Recheck/Kernel/Ackermann.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Artifacts.Ackermann",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Recheck.Kernel":
+  {"path": "CompilatrixTests/Recheck/Kernel.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Kernel.Fib",
+    "CompilatrixTests.Recheck.Kernel.Tak",
+    "CompilatrixTests.Recheck.Kernel.Gcd"]},
+  "CompilatrixTests.Recheck.Artifacts.Tak":
+  {"path": "CompilatrixTests/Recheck/Artifacts/Tak.lean",
+   "imports": ["Compilatrix.Recheck.Run"]},
+  "CompilatrixTests.Recheck.Artifacts.SumLoop":
+  {"path": "CompilatrixTests/Recheck/Artifacts/SumLoop.lean",
+   "imports": ["Compilatrix.Recheck.Run"]},
+  "CompilatrixTests.Recheck.Artifacts.Gcd":
+  {"path": "CompilatrixTests/Recheck/Artifacts/Gcd.lean",
+   "imports": ["Compilatrix.Recheck.Run"]},
+  "CompilatrixTests.Recheck.Artifacts.Fib":
+  {"path": "CompilatrixTests/Recheck/Artifacts/Fib.lean",
+   "imports": ["Compilatrix.Recheck.Run"]},
+  "CompilatrixTests.Recheck.Artifacts.Ackermann":
+  {"path": "CompilatrixTests/Recheck/Artifacts/Ackermann.lean",
+   "imports": ["Compilatrix.Recheck.Run"]},
+  "CompilatrixTests.Recheck.ArtifactMain":
+  {"path": "CompilatrixTests/Recheck/ArtifactMain.lean",
+   "imports": ["CompilatrixTests.Recheck.Artifact"]},
+  "CompilatrixTests.Recheck.Artifact":
+  {"path": "CompilatrixTests/Recheck/Artifact.lean",
+   "imports":
+   ["CompilatrixTests.Src.Artifact",
+    "CompilatrixTests.Anf.LeanRender",
+    "CompilatrixTests.Pipeline.Support",
+    "CompilatrixTests.Recheck.Stages",
+    "Std.Data.HashMap"]},
   "CompilatrixTests.Proofs":
   {"path": "CompilatrixTests/Proofs.lean",
    "imports":
@@ -1043,7 +1122,9 @@
     "CompilatrixTests.Anf.Run",
     "CompilatrixTests.Fir.Run",
     "CompilatrixTests.Rt.Run",
-    "CompilatrixTests.Pipeline.Run"]},
+    "CompilatrixTests.Pipeline.Run",
+    "CompilatrixTests.Recheck.Run",
+    "CompilatrixTests.Recheck.KernelSlow"]},
   "Compilatrix.Xv.XlSemantics":
   {"path": "Compilatrix/Xv/XlSemantics.lean",
    "imports": ["Compilatrix.Xv.Semantics", "Compilatrix.Lir.Operands"]},

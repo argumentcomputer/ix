@@ -87,18 +87,26 @@ def lay (p : LProgram) (cfg : Config) : Except Error (Stacking.Stacked × X86.Pr
   let exports := stacked.exports.map fun e => (e.symbol, UInt32.ofNat ((pos.get? e.block).getD e.block))
   pure (stacked, program, exports)
 
+/-- The laid-out typed program to a checked ELF object: `Program.check`, E1
+encoding with E2's stream check, and the ELF writer with its validator.
+`main` is the function whose wrapper is the entry symbol. -/
+def finish (main : Lir.FunId) (stacked : Stacking.Stacked) (program : X86.Program)
+    (exports : List (String × X86.BlockId)) (provenance : X86.ELF.Provenance) :
+    Except Error Artifact := do
+  let checked ← program.check.mapError .check
+  let stream ← (X86.Stream.encode checked).mapError .stream
+  let some entry := stacked.exports.find? (·.fn == main) | throw (.stacking .noEntry)
+  let object ← (X86.ELF.writeChecked
+    { encoded := stream.output, entryBlock := program.entry, exportName := entry.symbol,
+      exports := exports.filter (·.1 != entry.symbol), provenance }).mapError .elf
+  pure { stacked, program, checked, encoded := stream.output, object := object.bytes,
+         exportName := entry.symbol, exports }
+
 /-- Xl to a checked ELF object exporting every export's wrapper, `main`'s
 as the entry symbol. -/
 def emit (p : LProgram) (cfg : Config) : Except Error Artifact := do
   let (stacked, program, exports) ← lay p cfg
-  let checked ← program.check.mapError .check
-  let stream ← (X86.Stream.encode checked).mapError .stream
-  let some main := stacked.exports.find? (·.fn == p.main) | throw (.stacking .noEntry)
-  let object ← (X86.ELF.writeChecked
-    { encoded := stream.output, entryBlock := program.entry, exportName := main.symbol,
-      exports := exports.filter (·.1 != main.symbol), provenance := cfg.provenance }).mapError .elf
-  pure { stacked, program, checked, encoded := stream.output, object := object.bytes,
-         exportName := main.symbol, exports }
+  finish p.main stacked program exports cfg.provenance
 
 /-- Lir to an ELF object: selection, the given allocator, then `emit`. -/
 def compileWith (alloc : VProgram → Except String LProgram) (p : Lir.Program) (cfg : Config) :

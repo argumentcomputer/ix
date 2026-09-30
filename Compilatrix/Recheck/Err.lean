@@ -65,7 +65,7 @@ structure Err where
   stage : Stage
   code : String
   message : String
-  deriving Inhabited
+  deriving Inhabited, DecidableEq
 
 def Err.render (e : Err) : String := s!"{e.stage.name}: {e.code}: {e.message}"
 

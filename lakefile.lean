@@ -109,6 +109,20 @@ certificate mutations (rejected, or code that agrees on every tested input). -/
 lean_exe «tests-pipeline» where
   root := `CompilatrixTests.Pipeline.Main
 
+/- Regenerates (or with `--check` compares) the recheck artifacts the kernel
+evaluates (M1.K1): `CompilatrixTests/Recheck/Artifacts/*.lean`, each bench-k1
+closure's `Src.Program`, configuration and certificate as shared Lean terms,
+with the typed program and object bytes of the native run. -/
+lean_exe «gen-recheck-artifacts» where
+  root := `CompilatrixTests.Recheck.ArtifactMain
+
+/- The recheck path in kernel-evaluable style (M1.K1): building it evaluates
+`Recheck.runTyped` on the fib, tak and gcd artifacts by `decide +kernel`;
+running it checks every committed artifact against a fresh ingress,
+`produce` and native run. -/
+lean_exe «tests-recheck» where
+  root := `CompilatrixTests.Recheck.Main
+
 lean_exe «tests-ixon-v3» where
   root := `CompilatrixTests.IxonV3.Main
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]

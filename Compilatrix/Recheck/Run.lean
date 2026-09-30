@@ -30,12 +30,13 @@ accepts gives code as correct as any other it would accept (the passes'
 theorems quantify over the certificate). `Recheck.sound` (M2.8) is stated of
 this function.
 
-**Kernel style.** Everything up to `Backend.emit`'s layout step is written in
-kernel-evaluable style (persistent `NatMap`s, lists, structural recursion or
-fuel), with the exceptions the status note of M1.I1 lists: the final checks
-and encodings (`X86.Program.check`, E1's `ByteArray` encoder, E2's indexed
-checker and the ELF writer) and a few non-kernel idioms inside passes that
-still reduce (`Lir.Func.splitCriticalEdges`, Lir's `Array` containers). -/
+**Kernel style.** `runTyped` is `run` up to the laid-out typed x86 program
+(everything before `Backend.finish`); it is written in kernel-evaluable style
+(persistent `NatMap`s, lists, structural recursion or fuel), and
+`decide +kernel` evaluates it on the K1 artifacts
+(`CompilatrixTests.Recheck.Kernel`, M1.K1). `run` adds `Backend.finish`:
+`X86.Program.check`, E1 encoding, E2's stream check and the ELF writer with
+its validator. -/
 
 namespace Compilatrix.Recheck
 
@@ -80,6 +81,10 @@ structure Artifact where
 
 /-- The ELF object. -/
 def Artifact.object (a : Artifact) : ByteArray := a.backend.object
+
+/-- The ELF object's bytes as a list: what a kernel evaluation of `run`
+states (`(run cfg P c).map Artifact.bytes = .ok bytes`, M1.K1, M2.8). -/
+def Artifact.bytes (a : Artifact) : List UInt8 := a.object.data.toList
 
 /-! ## Roots -/
 
@@ -165,29 +170,64 @@ def backendConfig (cfg : Config) (l : Rt.Lowered) (root : Ixon.Address) (c : Cer
   { l.config (cfg.provenance.getD (defaultProvenance root)) with
     layouts := some c.frames, order := some c.order, env := cfg.env }
 
-/-- Lir to the object: selection, the allocation certificate, emission with
-the certificate's layouts and order. -/
-def back (cfg : Config) (l : Rt.Lowered) (root : Ixon.Address) (c : Cert) :
-    Except Err (Xv.VProgram × Xv.LProgram × Backend.Artifact) := do
+/-- Lir to the laid-out typed program: selection, the allocation
+certificate, stacking and layout with the certificate's layouts and order. -/
+def backTyped (cfg : Config) (l : Rt.Lowered) (root : Ixon.Address) (c : Cert) :
+    Except Err (Xv.VProgram × Xv.LProgram × Xv.Stacking.Stacked × X86.Program ×
+      List (String × X86.BlockId)) := do
   let (xv, _) ← (Xv.Select.run l.program).mapError Err.ofSelect
   (Xv.Validate.program cfg.env xv c.alloc).mapError Err.ofValidate
   let xl ← (Xv.Alloc.applyProgram xv c.alloc).mapError fun msg =>
     { stage := .alloc, code := "alloc.apply", message := msg }
-  let a ← (Backend.emit xl (backendConfig cfg l root c)).mapError Err.ofBackend
-  pure (xv, xl, a)
+  let (stacked, program, exports) ← (Backend.lay xl (backendConfig cfg l root c)).mapError
+    Err.ofBackend
+  pure (xv, xl, stacked, program, exports)
 
-/-- The recheck path (D17): the object `P` compiles to under certificate `c`,
-or the stage and code that declined or rejected it. -/
-def run (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Artifact := do
+/-- What the recheck path makes up to the laid-out typed x86 program, before
+`X86.Program.check`: every level, the stacked and laid-out programs, each
+export's block, the provenance the object will carry, and the roots. -/
+structure Typed where
+  src : Src.Program
+  checked : Src.Relevance.Checked
+  lam : Lam.Program
+  anf : Anf.Program
+  fir : Fir.Program
+  own : Own.Program
+  cfg : Cfg.Program
+  lowered : Rt.Lowered
+  xv : Xv.VProgram
+  xl : Xv.LProgram
+  stacked : Xv.Stacking.Stacked
+  /-- The laid-out typed program. -/
+  program : X86.Program
+  exports : List (String × X86.BlockId)
+  provenance : X86.ELF.Provenance
+  roots : List Root
+
+/-- The recheck path up to the laid-out typed program: `run` without its
+final checks and encodings (`Program.check`, E1/E2 and the ELF writer). -/
+def runTyped (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Typed := do
   let (src, checked) ← front cfg P c
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
   let (anf, fir, own, C) ← middle c lam
   checkParams cfg C (List.zipIdx C.exports |>.map fun (f, i) => (i, f))
   let lowered ← (Rt.lower { names := cfg.names } C).mapError Err.ofRt
   let root := (src.roots.head?.map (·.1)).getD default
-  let (xv, xl, backend) ← back cfg lowered root c
+  let (xv, xl, stacked, program, exports) ← backTyped cfg lowered root c
   let rows := (List.range src.roots.length).zip (src.roots.zip (C.exports.zip lowered.roots))
   let roots := rootsOf cfg src C lowered rows
-  pure { src, checked, lam, anf, fir, own, cfg := C, lowered, xv, xl, backend, roots }
+  pure { src, checked, lam, anf, fir, own, cfg := C, lowered, xv, xl, stacked, program, exports
+         provenance := cfg.provenance.getD (defaultProvenance root), roots }
+
+/-- The recheck path (D17): the object `P` compiles to under certificate `c`,
+or the stage and code that declined or rejected it: `runTyped`, then
+`Backend.finish` (`Program.check`, E1/E2 and the ELF writer). -/
+def run (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Artifact := do
+  let t ← runTyped cfg P c
+  let backend ← (Backend.finish t.xl.main t.stacked t.program t.exports t.provenance).mapError
+    Err.ofBackend
+  pure { src := t.src, checked := t.checked, lam := t.lam, anf := t.anf, fir := t.fir
+         own := t.own, cfg := t.cfg, lowered := t.lowered, xv := t.xv, xl := t.xl, backend
+         roots := t.roots }
 
 end Compilatrix.Recheck
