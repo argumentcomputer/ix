@@ -20,3 +20,4 @@ import CompilatrixTests.Fences.Fir
 import CompilatrixTests.Fences.Own
 import CompilatrixTests.Fences.Rt
 import CompilatrixTests.Fences.Erase
+import CompilatrixTests.Fences.Anf

@@ -872,6 +872,9 @@
    ["Compilatrix.Xv.Stacking.Frame",
     "Compilatrix.X86.Layout.Tunnel",
     "Compilatrix.X86.Layout.Linearize"]},
+  "CompilatrixTests.Fences.Anf":
+  {"path": "CompilatrixTests/Fences/Anf.lean",
+   "imports": ["Compilatrix.Anf.Proof.Mono"]},
   "CompilatrixTests.Fences.AiurWire":
   {"path": "CompilatrixTests/Fences/AiurWire.lean",
    "imports": ["CompilatrixTests.Aiur.WireProofs"]},
@@ -925,7 +928,8 @@
     "CompilatrixTests.Fences.Fir",
     "CompilatrixTests.Fences.Own",
     "CompilatrixTests.Fences.Rt",
-    "CompilatrixTests.Fences.Erase"]},
+    "CompilatrixTests.Fences.Erase",
+    "CompilatrixTests.Fences.Anf"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":
@@ -2380,6 +2384,12 @@
   "Compilatrix.Anf.Props":
   {"path": "Compilatrix/Anf/Props.lean",
    "imports": ["Compilatrix.Anf.Semantics"]},
+  "Compilatrix.Anf.Proof.Unfold":
+  {"path": "Compilatrix/Anf/Proof/Unfold.lean",
+   "imports": ["Compilatrix.Anf.Semantics", "Compilatrix.Sem.Agrees"]},
+  "Compilatrix.Anf.Proof.Mono":
+  {"path": "Compilatrix/Anf/Proof/Mono.lean",
+   "imports": ["Compilatrix.Anf.Proof.Unfold", "Compilatrix.Sem.SimUpTo"]},
   "Compilatrix.Anf.Print":
   {"path": "Compilatrix/Anf/Print.lean", "imports": ["Compilatrix.Anf.Syntax"]},
   "Compilatrix.Anf.Pipeline":
@@ -2815,6 +2825,8 @@
     "Compilatrix.Anf.Specialize",
     "Compilatrix.Anf.Prune",
     "Compilatrix.Anf.Pipeline",
+    "Compilatrix.Anf.Proof.Unfold",
+    "Compilatrix.Anf.Proof.Mono",
     "Compilatrix.Own.Kind",
     "Compilatrix.Fir.Syntax",
     "Compilatrix.Fir.Semantics",

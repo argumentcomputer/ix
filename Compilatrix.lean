@@ -129,6 +129,8 @@ import Compilatrix.Anf.Inline
 import Compilatrix.Anf.Specialize
 import Compilatrix.Anf.Prune
 import Compilatrix.Anf.Pipeline
+import Compilatrix.Anf.Proof.Unfold
+import Compilatrix.Anf.Proof.Mono
 import Compilatrix.Own.Kind
 import Compilatrix.Fir.Syntax
 import Compilatrix.Fir.Semantics

@@ -80,6 +80,10 @@
   "Compilatrix.Aiur.Wire.Records",
   "Compilatrix.Aiur.Wire.Tree",
   "Compilatrix.Aiur.Wire.TreeProofs",
+  "Compilatrix.Anf.Proof.Mono",
+  "Compilatrix.Anf.Proof.Unfold",
+  "Compilatrix.Anf.Semantics",
+  "Compilatrix.Anf.Syntax",
   "Compilatrix.Fir.Semantics",
   "Compilatrix.Fir.Syntax",
   "Compilatrix.IxIR.Bounded",
@@ -356,6 +360,7 @@
   "CompilatrixTests.Fences.AiurRankAIR",
   "CompilatrixTests.Fences.AiurStatic",
   "CompilatrixTests.Fences.AiurWire",
+  "CompilatrixTests.Fences.Anf",
   "CompilatrixTests.Fences.Backend",
   "CompilatrixTests.Fences.Erase",
   "CompilatrixTests.Fences.Fir",
@@ -393,7 +398,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/x86: merge M1.K1",
+ "baseline": "jcb/x86: merge M2.3",
  "axiom_sha256":
- "53487e8f4d50d5fa0936fcbae641f4c102dbdc1191ce924158429f00ad4e76cd",
- "axiom_count": 1189}
+ "7dabb89384e34282676a8e1603cc55accf28b2294864fd50636d3205f2282363",
+ "axiom_count": 1198}
