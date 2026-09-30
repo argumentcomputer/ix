@@ -22,6 +22,9 @@ pin-src-tables --sortpoly fixtures/ixon-v3/src-sortpoly` with ix `9c4b9c65`;
 Without level-exact relevance, SrcEval is stuck on `comp`, `throughRoot`,
 `unitBoth` and `typeArg`, and the relevance checker rejects `punitCases`
 and `punitRec` (C4). Level-exact relevance fixes all but `typeArg`: a type
-flowing into a relevant position is not a universe condition, so it stays a
-stuck case until a shape typing (SRC-10) or □ absorption covers it.
-`tests-relevance` classifies these runs in its stuck-cause census.
+flowing into a relevant position is not a universe condition, so the
+checker rejects it (C2, an exact equality) and, run unchecked, it stays
+stuck until a shape typing (SRC-10) or □ absorption covers it. `tests-src`
+runs every other root against the same source compiled natively (the
+test-only `SortPolyFixture` library), and `tests-relevance` classifies the
+runs in its stuck-cause census.
