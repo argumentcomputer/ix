@@ -19,6 +19,14 @@ program, `run` returns its layout shape (a group per function, wrapper and
 the exit group, with the blocks to place last) and the exported symbols.
 Kernel-evaluable style: lists, folds, and a persistent map from function
 to entry block.
+
+**Clobber sets** (06 S15). The allocation validator trusts `Xl.Env.clobbers`:
+after a call it keeps the caller's values in every register outside the
+callee's declared set. Stacking checks the declaration against the code it
+emits: what each function writes and does not save, `r11` for a stack
+check, and what its callees may change must lie within its clobbers and
+result registers. The default (every caller-saved register) always passes;
+a runtime procedure declaring less (04 §7) is checked here.
 -/
 
 namespace Compilatrix.Xv.Stacking
@@ -35,6 +43,9 @@ inductive Error where
   /-- `main` is not a SysV export, so nothing can call the program. -/
   | noEntry
   | tooLarge (blocks : Nat)
+  /-- A function may change registers outside its declared clobber set
+  (`Xl.Env.clobbers`) and results. -/
+  | clobbers (fn : FunId) (extra : List X86.GPR)
   deriving DecidableEq, Repr, Inhabited
 
 def Error.toString : Error → String
@@ -44,6 +55,7 @@ def Error.toString : Error → String
   | .export fn why => s!"stacking: the wrapper of function {fn}: {why}"
   | .noEntry => "stacking: main is not a SysV export"
   | .tooLarge n => s!"stacking: {n} blocks"
+  | .clobbers fn extra => s!"stacking: function {fn} changes {repr extra} beyond its declared clobbers"
 
 instance : ToString Error := ⟨Error.toString⟩
 
@@ -89,13 +101,41 @@ def coldBlocks (pl : Placed) : List Nat :=
   let shift := if FrameLayout.checked pl.facts pl.layout then 1 else 0
   pl.func.blocks.toList.zipIdx.filterMap fun (b, l) => if b.cold then some (pl.start + shift + l) else none
 
-def run (p : LProgram) (layouts : List FrameLayout) (reps : FunId → Option (List ArgRep) := fun _ => none) :
-    Except Error Stacked := do
+/-- The functions a function calls or tail-calls. -/
+def callees (f : Func Loc) : List FunId :=
+  f.blocks.toList.flatMap fun b =>
+    b.body.toList.filterMap (fun | .call g _ _ => some g | _ => none) ++
+      match b.term with
+      | .tail g _ => [g]
+      | _ => []
+
+/-- The registers a call to a function may change, as its caller sees them
+once the emitted code runs: those it writes and does not save, `r11` if its
+prologue checks the stack, and whatever its own calls and tail calls may
+change (their declared clobbers). -/
+def mayChange (env : Xl.Env) (f : Func Loc) (a : Facts) (l : FrameLayout) : List X86.GPR :=
+  a.writes.filter (!l.saved.contains ·) ++ (if FrameLayout.checked a l then [.r11] else []) ++
+    (callees f).flatMap env.clobbers
+
+/-- The registers a call may change in Xl (`Xl.returnRegs`): the callee's
+declared clobbers and its result registers. -/
+def allowedChanges (env : Xl.Env) (fn : FunId) (f : Func Loc) : List X86.GPR :=
+  env.clobbers fn ++ Lir.Conv.resultRegs.take f.results
+
+def run (p : LProgram) (layouts : List FrameLayout) (reps : FunId → Option (List ArgRep) := fun _ => none)
+    (env : Xl.Env := {}) : Except Error Stacked := do
   let funcs := p.funcs.toList.zipIdx
   unless layouts.length == funcs.length do throw (.layouts funcs.length layouts.length)
   let checkedFns := (funcs.zip layouts).map fun ((f, fn), l) => (f, fn, l, f.facts)
   match checkedFns.find? (fun (_, _, l, a) => !l.check a) with
   | some (_, fn, _, _) => throw (.layout fn)
+  | none => pure ()
+  -- The validator trusts `env.clobbers` (06 S15): every function must change
+  -- no register its callers assume it keeps.
+  let extra (f : Func Loc) (fn : FunId) (l : FrameLayout) (a : Facts) : List X86.GPR :=
+    (mayChange env f a l).filter (!(allowedChanges env fn f).contains ·)
+  match checkedFns.find? (fun (f, fn, l, a) => !(extra f fn l a).isEmpty) with
+  | some (f, fn, l, a) => throw (.clobbers fn (extra f fn l a))
   | none => pure ()
   let exports := checkedFns.filterMap fun (f, fn, _, _) =>
     match f.conv with

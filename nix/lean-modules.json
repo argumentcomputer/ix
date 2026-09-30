@@ -471,20 +471,17 @@
     "Compilatrix.Xv.XlSemantics",
     "CompilatrixTests.Backend.Machine",
     "CompilatrixTests.Lir.Region"]},
-  "CompilatrixTests.Backend.SlotAlloc":
-  {"path": "CompilatrixTests/Backend/SlotAlloc.lean",
-   "imports": ["Compilatrix.Xv.Operands", "Compilatrix.Xv.XlSemantics"]},
   "CompilatrixTests.Backend.Run":
   {"path": "CompilatrixTests/Backend/Run.lean",
    "imports":
    ["CompilatrixTests.Backend.Native",
     "CompilatrixTests.Backend.Cases",
     "CompilatrixTests.Backend.KernelEval",
-    "CompilatrixTests.Backend.SlotAlloc",
     "CompilatrixTests.Backend.Programs",
     "CompilatrixTests.Lir.Kernels",
     "CompilatrixTests.Lir.Gen",
     "Compilatrix.Xv.Select.Driver",
+    "Compilatrix.Xv.Alloc.Driver",
     "Compilatrix.Xv.Semantics",
     "Compilatrix.Lir.SplitEdges",
     "Compilatrix.Lir.WellFormed"]},
@@ -1305,6 +1302,7 @@
   {"path": "Compilatrix/Backend.lean",
    "imports":
    ["Compilatrix.Xv.Select.Driver",
+    "Compilatrix.Xv.Alloc.Driver",
     "Compilatrix.Xv.Stacking.Run",
     "Compilatrix.X86.Layout.Tunnel",
     "Compilatrix.X86.Layout.Linearize",

@@ -144,6 +144,17 @@ def sixParams : Func Loc := { params := (List.range 6).map Xl.paramLoc, results 
 
 #guard rejects (exported "t" [sixParams])
 
+-- Declared clobber sets (06 S15): `inc` changes `rcx` and `r11` besides its
+-- result (its saved `rbx` does not count), so declaring `rax` alone is
+-- rejected; a caller's declaration must cover its own stack check's `r11`
+-- and what its callees may change.
+def withClobbers (p : LProgram) (declared : Nat → List X86.GPR) : Bool :=
+  (Stacking.run p (Stacking.produce p) (env := { clobbers := declared })).toOption.isSome
+
+#guard withClobbers calls fun f => if f == 1 then [.rax, .rcx, .r11] else X86.SysV.callerSaved.toList
+#guard !withClobbers calls fun f => if f == 1 then [.rax] else X86.SysV.callerSaved.toList
+#guard !withClobbers calls fun f => if f == 0 then [.rax, .rdi] else X86.SysV.callerSaved.toList
+
 /-! ## Tunnelling, order and linearisation -/
 
 -- In `deep`, the recursion's failure branches are tunnelled straight to

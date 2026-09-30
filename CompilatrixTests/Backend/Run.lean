@@ -1,11 +1,11 @@
 import CompilatrixTests.Backend.Native
 import CompilatrixTests.Backend.Cases
 import CompilatrixTests.Backend.KernelEval
-import CompilatrixTests.Backend.SlotAlloc
 import CompilatrixTests.Backend.Programs
 import CompilatrixTests.Lir.Kernels
 import CompilatrixTests.Lir.Gen
 import Compilatrix.Xv.Select.Driver
+import Compilatrix.Xv.Alloc.Driver
 import Compilatrix.Xv.Semantics
 import Compilatrix.Lir.SplitEdges
 import Compilatrix.Lir.WellFormed
@@ -19,16 +19,18 @@ Stacking, layout and emission (M1.B5), end to end:
    leaf, calls with callee-saved registers, stack arguments, tail calls at
    constant stack, failures deep in a call chain, a stack-budget failure,
    heap traffic and fused pairs.
-2. **Kernels** (`CompilatrixTests.Lir.Kernels`: fib, sumLoop, gcd, natDiv,
-   natMod, natAdd, natSub) through selection and the test allocator
-   (`SlotAlloc`, until M1.B4's allocator lands): `Lir.eval`, `Xv.eval` and
-   `Xl.eval` agree, `Xl.eval` finishes at the kernel's exact clock and times
-   out one below; then the object runs on the typed machine, the byte
-   machine and natively. Step counts are reported per input.
+2. **Kernels** (`CompilatrixTests.Lir.Kernels`: fib, sumLoop, sumFrom, gcd,
+   natDiv, natMod, natAdd, natSub) through selection and M1.B4's allocation,
+   both ways (`Alloc.run`: linear scan with the all-slots fallback; and all
+   slots): `Lir.eval`, `Xv.eval` and `Xl.eval` agree, `Xl.eval` finishes at
+   the kernel's exact clock and times out one below; then the object runs on
+   the typed machine, the byte machine and natively (with bench-sized
+   native-only inputs). Static spills, reloads and moves and the step
+   counts are reported.
 3. **Generated Lir** (`CompilatrixTests.Lir.Gen`, split): every program that
    selects, allocates and runs without getting stuck goes through the
-   same levels; a sample also runs natively, in a region at the Lean
-   region's address.
+   same levels, both allocations; a sample of linear-scan objects also runs
+   natively, in a region at the Lean region's address.
 
 Each object runs on the typed machine and the byte machine
 (`Support.runOne`) and, with `--cc`, natively under
@@ -70,7 +72,7 @@ structure Options where
   cc : Option String := none
   driver : System.FilePath := "fixtures/x86/backend_driver.c"
   work : Option System.FilePath := none
-  programs : Nat := 250
+  programs : Nat := 125
   seeds : List UInt64 := [0x5eed0001, 0x5eed0002, 0x5eed0003, 0x5eed0004]
   nativeEvery : Nat := 25
   maxBlocks : Nat := 60
@@ -164,16 +166,30 @@ def handCases : List Case := [
     inputs := [⟨[100, 7], defaultBudget, none, true⟩, ⟨[7, 100], defaultBudget, none, true⟩,
       ⟨[2 ^ 64 - 1, 3], defaultBudget, none, true⟩] }]
 
-/-! ## Kernels -/
+/-! ## Allocation -/
 
-/-- Select a Lir program and allocate it with the test allocator. -/
-def allocate (p : Lir.Program) : Except String (VProgram × LProgram) := do
+/-- A Lir program selected, then allocated two ways: M1.B4's `Alloc.run`
+(linear scan, validated, falling back to all slots per function) and all
+slots for every function. -/
+structure Allocated where
+  xv : VProgram
+  scan : Alloc.Result
+  slots : Alloc.Result
+
+def allocate (p : Lir.Program) : Except String Allocated := do
   let (xv, _) ← (Select.run p).mapError fun e => s!"selection: {e.form}: {e.reason}"
-  let xl ← (SlotAlloc.run xv).mapError (s!"allocation: " ++ ·)
-  pure (xv, xl)
+  let scan ← (Alloc.run {} xv).mapError (s!"allocation: " ++ ·)
+  let slots ← (Alloc.runAllSlots {} xv).mapError (s!"all slots: " ++ ·)
+  pure { xv, scan, slots }
 
-structure KernelInput where
-  args : List Nat
+def countsOf (r : Alloc.Result) : Alloc.EditCounts := r.outs.foldl (fun c o => c.add o.counts) {}
+
+/-- Functions whose linear-scan allocation was accepted. -/
+def scanned (r : Alloc.Result) : Nat := r.outcomes.countP fun | .scan => true | _ => false
+
+def Allocated.both (a : Allocated) : List (String × Alloc.Result) := [("scan", a.scan), ("slots", a.slots)]
+
+/-! ## Kernels -/
 
 def kernelInputs : List (Lir.Func × List (List Nat)) := [
   (Kernels.fib, [[0], [1], [2], [10], [15]]),
@@ -210,36 +226,41 @@ def exactClock (p : LProgram) (args : List Word) (limit : Nat) : Option Nat :=
 def checkKernels (tools : Option Native.Tools) : ExceptT String IO Unit := do
   for (f, inputs) in kernelInputs do
     let p := Kernels.program f
-    let (xv, xl) ← match allocate p with
+    let a ← match allocate p with
       | .ok r => pure r
       | .error e => throw s!"{f.name}: {e}"
-    for args in inputs do
-      let words := args.map Kernels.tag
-      let mem := refMemory 0 defaultBudget
-      let lir := Lir.eval p 1000000 words mem Region.ctx
-      let v := Xv.eval xv 1000000 words mem Region.ctx
-      let l := Xl.eval xl {} 1000000 words mem Region.ctx
-      unless expected lir == expected v && expected v == expected l do
-        throw s!"{f.name} {args}: Lir, Xv and Xl disagree"
-      match exactClock xl words 1000000 with
-      | some k =>
-          if k > 0 then
-            match Xl.eval xl {} (k - 1) words mem Region.ctx with
-            | .timeout => pure ()
-            | _ => throw s!"{f.name} {args}: Xl does not time out below its exact clock {k}"
-      | none => throw s!"{f.name} {args}: Xl times out"
-    let big := kernelBig.filterMap fun (name, args, e) =>
-      if name == f.name then some ({ args := args.map nat, expect := some e, models := false } : Input) else none
-    let c : Case := { name := s!"kernel_{f.name}", program := xl, reps := natReps f.params.length,
-                      inputs := inputs.map (fun args => ({ args := args.map nat } : Input)) ++ big }
-    let r ← checkCase tools c
-    IO.println s!"kernel {f.name}: {r.blocks} blocks, {r.text} bytes of text, {r.native} native runs"
-    for run in r.runs do
-      let clock := match exactClock xl (run.args.map (2 * · + 1)) 1000000 with
-        | some 0 => "exact clock 0"
-        | some k => s!"exact clock {k} ({k - 1} times out)"
-        | none => "no exact clock"
-      IO.println s!"  {run.args.map (·.toNat)} → {showExit run.exit}: {clock}, typed steps {run.typedSteps}, byte steps {run.byteSteps}"
+    for (label, alloc) in a.both do
+      let xl := alloc.program
+      for args in inputs do
+        let words := args.map Kernels.tag
+        let mem := refMemory 0 defaultBudget
+        let lir := Lir.eval p 1000000 words mem Region.ctx
+        let v := Xv.eval a.xv 1000000 words mem Region.ctx
+        let l := Xl.eval xl {} 1000000 words mem Region.ctx
+        unless expected lir == expected v && expected v == expected l do
+          throw s!"{f.name} {args} ({label}): Lir, Xv and Xl disagree"
+        match exactClock xl words 1000000 with
+        | some k =>
+            if k > 0 then
+              match Xl.eval xl {} (k - 1) words mem Region.ctx with
+              | .timeout => pure ()
+              | _ => throw s!"{f.name} {args} ({label}): Xl does not time out below its exact clock {k}"
+        | none => throw s!"{f.name} {args} ({label}): Xl times out"
+      let big := kernelBig.filterMap fun (name, args, e) =>
+        if name == f.name then some ({ args := args.map nat, expect := some e, models := false } : Input) else none
+      let c : Case := { name := s!"kernel_{f.name}_{label}", program := xl, reps := natReps f.params.length,
+                        inputs := inputs.map (fun args => ({ args := args.map nat } : Input)) ++ big }
+      let r ← checkCase tools c
+      let e := countsOf alloc
+      let slots := alloc.outs.foldl (· + ·.numSlots) 0
+      let fell := if label == "scan" && scanned alloc != alloc.outcomes.length then ", fell back to all slots" else ""
+      IO.println s!"kernel {f.name} ({label}{fell}): {slots} slots, {e.spills} spills, {e.reloads} reloads, {e.moves} moves; {r.blocks} blocks, {r.text} bytes of text, {r.native} native runs"
+      for run in r.runs do
+        let clock := match exactClock xl (run.args.map (2 * · + 1)) 1000000 with
+          | some 0 => "exact clock 0"
+          | some k => s!"exact clock {k} ({k - 1} times out)"
+          | none => "no exact clock"
+        IO.println s!"  {run.args.map (·.toNat)} → {showExit run.exit}: {clock}, typed steps {run.typedSteps}, byte steps {run.byteSteps}"
 
 /-! ## Generated programs -/
 
@@ -276,6 +297,11 @@ structure GenReport where
   compiled : Nat := 0
   skipped : Nat := 0
   outcomes : Array Nat := Array.replicate 5 0
+  /-- Functions allocated, and those whose linear-scan allocation was accepted. -/
+  funcs : Nat := 0
+  scanned : Nat := 0
+  /-- Objects emitted and run (two allocations per program). -/
+  objects : Nat := 0
   typedSteps : Nat := 0
   byteSteps : Nat := 0
   text : Nat := 0
@@ -300,25 +326,32 @@ def checkGenerated (tools : Option Native.Tools) (o : Options) : ExceptT String 
       match expected lir with
       | none => report := { report with skipped := report.skipped + 1 }; continue
       | some _ => pure ()
-      let (xv, xl) ← match allocate p with
+      let a ← match allocate p with
         | .ok r => pure r
         | .error e => throw s!"generated {seed}/{n} (program seed {programSeed}): {e}"
-      let v := Xv.eval xv genClock args mem Region.ctx
-      let l := Xl.eval xl {} genClock args mem Region.ctx
-      unless expected lir == expected v && expected v == expected l do
-        throw s!"generated {seed}/{n} (program seed {programSeed}): Lir {showExit (expected lir)}, Xv {showExit (expected v)}, Xl {showExit (expected l)}"
-      let native := tools.isSome && o.nativeEvery != 0 && n % o.nativeEvery == 0 && !readsFrameFields p
-      let c : Case := { name := s!"gen_{seed}_{n}", program := xl, reps := wordReps args.length,
-                        inputs := [{ args }], clock := genClock, seed := programSeed, fixed := true }
-      let r ← checkCase (if native then tools else none) c
-      let idx := match (expected l).map (·.status.toNat) with | some s => min s 4 | none => 4
+      let v := Xv.eval a.xv genClock args mem Region.ctx
+      let idx := match (expected v).map (·.status.toNat) with | some s => min s 4 | none => 4
       report := { report with
         compiled := report.compiled + 1
         outcomes := report.outcomes.modify idx (· + 1)
-        typedSteps := report.typedSteps + (r.runs.map (·.typedSteps)).sum
-        byteSteps := report.byteSteps + (r.runs.map (·.byteSteps)).sum
-        text := report.text + r.text
-        native := report.native + (if r.native > 0 then 1 else 0) }
+        funcs := report.funcs + a.scan.outcomes.length
+        scanned := report.scanned + scanned a.scan }
+      for (label, alloc) in a.both do
+        let l := Xl.eval alloc.program {} genClock args mem Region.ctx
+        unless expected lir == expected v && expected v == expected l do
+          throw s!"generated {seed}/{n} (program seed {programSeed}, {label}): Lir {showExit (expected lir)}, Xv {showExit (expected v)}, Xl {showExit (expected l)}"
+        let native := tools.isSome && label == "scan" && o.nativeEvery != 0 && n % o.nativeEvery == 0 &&
+          !readsFrameFields p
+        let c : Case := { name := s!"gen_{seed}_{n}_{label}", program := alloc.program, reps := wordReps args.length,
+                          inputs := [{ args }], clock := genClock, seed := programSeed, fixed := true }
+        let r ← tryCatch (checkCase (if native then tools else none) c) fun e =>
+          throw s!"{e} (program seed {programSeed})"
+        report := { report with
+          objects := report.objects + 1
+          typedSteps := report.typedSteps + (r.runs.map (·.typedSteps)).sum
+          byteSteps := report.byteSteps + (r.runs.map (·.byteSteps)).sum
+          text := report.text + r.text
+          native := report.native + (if r.native > 0 then 1 else 0) }
   pure report
 
 /-! ## Driver -/
@@ -356,8 +389,9 @@ def suite (o : Options) (tools : Option Native.Tools) : ExceptT String IO Unit :
   IO.println s!"kernels ok ({(← IO.monoMsNow) - kernelStart} ms)"
   let genStart ← IO.monoMsNow
   let g ← checkGenerated tools o
-  IO.println s!"generated: {g.programs} programs, {g.compiled} compiled and run ({g.skipped} skipped: stuck, timed out or over five arguments), {g.native} native"
+  IO.println s!"generated: {g.programs} programs, {g.compiled} compiled ({g.skipped} skipped: stuck, timed out or over five arguments); {g.objects} objects run (linear scan and all slots), {g.native} natively"
   IO.println s!"  outcomes: ok {g.outcomes[0]!}, heap {g.outcomes[1]!}, stack {g.outcomes[2]!}, natOverflow {g.outcomes[3]!}, trap {g.outcomes[4]!}"
+  IO.println s!"  linear scan accepted for {g.scanned} of {g.funcs} functions (the rest fell back to all slots)"
   IO.println s!"  steps: typed {g.typedSteps}, byte {g.byteSteps}; text {g.text} bytes ({(← IO.monoMsNow) - genStart} ms)"
 
 def run (args : List String) : IO Bool := do
