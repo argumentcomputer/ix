@@ -548,6 +548,17 @@
   "Compilatrix.Xv.WellFormed":
   {"path": "Compilatrix/Xv/WellFormed.lean",
    "imports": ["Compilatrix.Xv.Operands", "Compilatrix.Lir.Graph"]},
+  "Compilatrix.Xv.Validate.State":
+  {"path": "Compilatrix/Xv/Validate/State.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.NatMap",
+    "Compilatrix.Xv.Syntax",
+    "Compilatrix.Xv.Slots"]},
+  "Compilatrix.Xv.Validate.NatMap":
+  {"path": "Compilatrix/Xv/Validate/NatMap.lean", "imports": []},
+  "Compilatrix.Xv.Validate.Check":
+  {"path": "Compilatrix/Xv/Validate/Check.lean",
+   "imports": ["Compilatrix.Xv.Validate.State", "Compilatrix.Xv.Alloc.Apply"]},
   "Compilatrix.Xv.Syntax":
   {"path": "Compilatrix/Xv/Syntax.lean",
    "imports": ["Compilatrix.Lir.Syntax", "Compilatrix.X86.Table.Rows"]},
@@ -595,6 +606,15 @@
   "Compilatrix.Xv.Operands":
   {"path": "Compilatrix/Xv/Operands.lean",
    "imports": ["Compilatrix.Xv.Slots", "Compilatrix.Lir.Operands"]},
+  "Compilatrix.Xv.Alloc.Output":
+  {"path": "Compilatrix/Xv/Alloc/Output.lean",
+   "imports": ["Compilatrix.Xv.Syntax"]},
+  "Compilatrix.Xv.Alloc.Apply":
+  {"path": "Compilatrix/Xv/Alloc/Apply.lean",
+   "imports":
+   ["Compilatrix.Xv.Alloc.Output",
+    "Compilatrix.Xv.Operands",
+    "Compilatrix.Xv.XlSemantics"]},
   "Compilatrix.X86.WordRegionSafeTrace":
   {"path": "Compilatrix/X86/WordRegionSafeTrace.lean",
    "imports":
@@ -1441,6 +1461,11 @@
     "Compilatrix.Xv.Select.Driver",
     "Compilatrix.Xv.Select.Lemmas",
     "Compilatrix.Src.Level",
+    "Compilatrix.Xv.Validate.NatMap",
+    "Compilatrix.Xv.Validate.State",
+    "Compilatrix.Xv.Validate.Check",
+    "Compilatrix.Xv.Alloc.Output",
+    "Compilatrix.Xv.Alloc.Apply",
     "Compilatrix.Src.Syntax",
     "Compilatrix.Src.Ingress",
     "Compilatrix.Src.Pinned",
