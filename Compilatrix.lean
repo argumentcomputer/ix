@@ -52,6 +52,10 @@ import Compilatrix.Xv.Validate.Proof.Lookup
 import Compilatrix.Xv.Validate.Proof.Steps
 import Compilatrix.Xv.Validate.Proof.Match
 import Compilatrix.Xv.Validate.Proof.Calls
+import Compilatrix.Xv.Validate.Proof.Terms
+import Compilatrix.Xv.Validate.Proof.Frames
+import Compilatrix.Xv.Validate.Proof.Diagram
+import Compilatrix.Xv.Validate.Proof.Sound
 import Compilatrix.Xv.Alloc.Output
 import Compilatrix.Xv.Alloc.Apply
 import Compilatrix.Xv.Alloc.Liveness
