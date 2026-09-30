@@ -14,8 +14,9 @@ The pass interface of design note `plans/x86-v2/00-conventions.md` (MetaCoq's
 - `Refines s t`: on every input, the behaviour of `t` refines that of `s` up
   to equal observations; the target may add resource failures, and a stuck
   source imposes nothing. `Refines.backward` and `Refines.safe` have the
-  shapes of `compile_sound` and `compile_safe` (roadmap §1.1).
-- `Transform I S T`: a pass that reads an untrusted certificate and is
+  shapes of `compile_sound` and `compile_safe` (roadmap §1.1), and
+  `Refines.diverges` keeps a diverging source from a returning target.
+- `Transform S T`: a pass that reads an untrusted certificate and is
   correct for every certificate; `Transform.comp` composes passes and
   `Transform.comp_correct` their correctness. `Transform.compile` runs a pass
   on the certificate of an arbitrary producer (the produce/recheck split,
@@ -111,12 +112,27 @@ theorem safe {s : S} {t : T} (h : Refines s t) {i : I}
       Classical.byContradiction fun hk' => hex ⟨k', hk'⟩] at hsb
     exact hsb
 
+/-- Divergence is preserved: a source that times out at every clock has a
+target that times out at every clock or fails for a resource. -/
+theorem diverges {s : S} {t : T} (h : Refines s t) {i : I}
+    (hs : ∀ k, Lang.run s i k = .timeout) :
+    (∀ k, Lang.run t i k = .timeout) ∨ ∃ k failure, Lang.run t i k = .resource failure := by
+  have href := h i
+  unfold Lang.behaviour at href
+  rw [behaviour_of_forall_timeout hs] at href
+  generalize hb : Sem.behaviour (Lang.run t i) = b at href
+  cases href with
+  | diverges => exact .inl ((behaviour_eq_diverges_iff (Lang.mono t i)).1 hb)
+  | resource failure =>
+    obtain ⟨k, hk⟩ := (behaviour_eq_resource_iff (Lang.mono t i)).1 hb
+    exact .inr ⟨k, failure, hk⟩
+
 end Refines
 
 /-- A pass from `S` to `T` that reads a certificate (`Unit` if it has none)
 and is correct for every certificate. `run` is the kernel-evaluable pass
 (style P re-runs it, style V checks the certificate and applies it). -/
-structure Transform (I S T : Type) [Lang I S] [Lang I T] where
+structure Transform {I : Type} (S T : Type) [Lang I S] [Lang I T] where
   name : String
   /-- Untrusted certificate data the pass reads. -/
   Cert : Type := Unit
@@ -131,8 +147,8 @@ namespace Transform
 
 /-- Sequential composition: the certificate is a pair, and the first pass's
 postcondition must give the second's precondition. -/
-def comp (t₁ : Transform I S T) (t₂ : Transform I T U) (h : ∀ t, t₁.post t → t₂.pre t) :
-    Transform I S U where
+def comp (t₁ : Transform S T) (t₂ : Transform T U) (h : ∀ t, t₁.post t → t₂.pre t) :
+    Transform S U where
   name := t₁.name ++ " ; " ++ t₂.name
   Cert := t₁.Cert × t₂.Cert
   pre := t₁.pre
@@ -147,23 +163,23 @@ def comp (t₁ : Transform I S T) (t₂ : Transform I T U) (h : ∀ t, t₁.post
       obtain ⟨hpost', htu⟩ := t₂.correct t c.2 u (h t hpost) hu
       exact ⟨hpost', hst.trans htu⟩
 
-theorem comp_run (t₁ : Transform I S T) (t₂ : Transform I T U) (h : ∀ t, t₁.post t → t₂.pre t)
+theorem comp_run (t₁ : Transform S T) (t₂ : Transform T U) (h : ∀ t, t₁.post t → t₂.pre t)
     (s : S) (c₁ : t₁.Cert) (c₂ : t₂.Cert) :
     (t₁.comp t₂ h).run s (c₁, c₂) = (t₁.run s c₁).bind fun t => t₂.run t c₂ := rfl
 
 /-- Correctness of a composed pass, for every pair of certificates. -/
-theorem comp_correct (t₁ : Transform I S T) (t₂ : Transform I T U)
+theorem comp_correct (t₁ : Transform S T) (t₂ : Transform T U)
     (h : ∀ t, t₁.post t → t₂.pre t) {s : S} {c₁ : t₁.Cert} {c₂ : t₂.Cert} {u : U}
     (hs : t₁.pre s) (hu : (t₁.comp t₂ h).run s (c₁, c₂) = .ok u) :
     t₂.post u ∧ Refines s u :=
   (t₁.comp t₂ h).correct s (c₁, c₂) u hs hu
 
 /-- Run a pass on the certificate an untrusted producer proposes. -/
-def compile (t : Transform I S T) (produce : S → t.Cert) (s : S) : Except String T :=
+def compile (t : Transform S T) (produce : S → t.Cert) (s : S) : Except String T :=
   t.run s (produce s)
 
 /-- Whatever the producer, a successful run is correct. -/
-theorem compile_correct (t : Transform I S T) (produce : S → t.Cert) {s : S} {u : T}
+theorem compile_correct (t : Transform S T) (produce : S → t.Cert) {s : S} {u : T}
     (hs : t.pre s) (hu : t.compile produce s = .ok u) : t.post u ∧ Refines s u :=
   t.correct s (produce s) u hs hu
 
