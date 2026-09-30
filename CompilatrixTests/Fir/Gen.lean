@@ -185,8 +185,8 @@ partial def exp (E : Env) (τ : Ty) (depth : Nat) : RngM Exp := do
 
 /-- A program of 2–6 globals: global 0 the root (one `Nat` parameter), the
 others of arity 0–3 (0: a CAF); a global of arity ≥ 1 is sometimes recursive
-on its first parameter. -/
-def program : RngM AProgram := do
+on its first parameter. With the root's result type. -/
+def programTy : RngM (AProgram × Ty) := do
   let n ← range 2 6
   let tys := #[Ty.nat, .nat, .bool, .pair, .opt]
   let mut sigs : Array (Nat × Ty) := #[(1, ← pick tys)]
@@ -206,11 +206,16 @@ def program : RngM AProgram := do
         pure (Exp.case (E.var 0) [.mk natZ 0 zero, .mk natS 1 succ] none)
       else exp E τ 4
     gs := gs.push { key := .const g [], ps := List.replicate arity {}, body }
-  return { globals := Src.NatMap.ofList (gs.toList.zipIdx.map fun (gd, i) => (i, gd))
-           size := n, roots := [0], ctors := LamGen.ctors, known := LamGen.known }
+  return ({ globals := Src.NatMap.ofList (gs.toList.zipIdx.map fun (gd, i) => (i, gd))
+            size := n, roots := [0], ctors := LamGen.ctors, known := LamGen.known }, sigs[0]!.2)
 
-def ofSeed (seed : Nat) : AProgram :=
-  program.run' (Rng.ofSeed (UInt64.ofNat (seed * 104729 + 7))) |>.run
+def program : RngM AProgram := Prod.fst <$> programTy
+
+/-- A seed's program and its root's result type. -/
+def ofSeedTy (seed : Nat) : AProgram × Ty :=
+  programTy.run' (Rng.ofSeed (UInt64.ofNat (seed * 104729 + 7))) |>.run
+
+def ofSeed (seed : Nat) : AProgram := (ofSeedTy seed).1
 
 /-- Counts over the generated programs. -/
 structure Stats where

@@ -84,6 +84,16 @@ and the lowerings re-run by the kernel. -/
 lean_exe «tests-fir» where
   root := `CompilatrixTests.Fir.Main
 
+/- The runtime lowering (design note 04, M1.F6): `Rt.lower` from Cfg to
+Lir on k1.ixe, bench-k1 and generated programs against Cfg (related values,
+typed readback, traps, the clock relation, heap and natOverflow), the
+primitive sequences at their boundaries, `cx_init`, hand-written cases and
+planted mutations; with `--cc`, `Backend.compile` to native objects run at
+every level and under `fixtures/x86/runtime_driver.c`; and the lowering
+re-run by the kernel. -/
+lean_exe «tests-rt» where
+  root := `CompilatrixTests.Rt.Main
+
 lean_exe «tests-ixon-v3» where
   root := `CompilatrixTests.IxonV3.Main
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]

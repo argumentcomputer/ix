@@ -3,6 +3,7 @@
   "tests-src-slow":
   {"roots": ["CompilatrixTests.Src.SlowMain"], "kind": "lean_exe"},
   "tests-src": {"roots": ["CompilatrixTests.Src.Main"], "kind": "lean_exe"},
+  "tests-rt": {"roots": ["CompilatrixTests.Rt.Main"], "kind": "lean_exe"},
   "tests-relevance":
   {"roots": ["CompilatrixTests.Src.Relevance.Main"], "kind": "lean_exe"},
   "tests-lam": {"roots": ["CompilatrixTests.Lam.Main"], "kind": "lean_exe"},
@@ -287,6 +288,28 @@
   "CompilatrixTests.Sem.Toy.Big":
   {"path": "CompilatrixTests/Sem/Toy/Big.lean",
    "imports": ["Compilatrix.Sem.Transform"]},
+  "CompilatrixTests.Rt.Support":
+  {"path": "CompilatrixTests/Rt/Support.lean",
+   "imports":
+   ["CompilatrixTests.Fir.Support",
+    "Compilatrix.Rt.Lower",
+    "Compilatrix.Rt.Readback",
+    "Compilatrix.Lir.Semantics",
+    "Compilatrix.Lir.WellFormed",
+    "Compilatrix.Lir.Print"]},
+  "CompilatrixTests.Rt.Run":
+  {"path": "CompilatrixTests/Rt/Run.lean",
+   "imports": ["CompilatrixTests.Rt.Differential"]},
+  "CompilatrixTests.Rt.Main":
+  {"path": "CompilatrixTests/Rt/Main.lean",
+   "imports": ["CompilatrixTests.Rt.Run"]},
+  "CompilatrixTests.Rt.Differential":
+  {"path": "CompilatrixTests/Rt/Differential.lean",
+   "imports":
+   ["CompilatrixTests.Rt.Support",
+    "CompilatrixTests.Fir.Differential",
+    "CompilatrixTests.Fir.Gen",
+    "CompilatrixTests.Src.Bench"]},
   "CompilatrixTests.Proofs":
   {"path": "CompilatrixTests/Proofs.lean",
    "imports":
@@ -885,7 +908,8 @@
     "CompilatrixTests.Lam.Run",
     "CompilatrixTests.Lam.KernelK1",
     "CompilatrixTests.Anf.Run",
-    "CompilatrixTests.Fir.Run"]},
+    "CompilatrixTests.Fir.Run",
+    "CompilatrixTests.Rt.Run"]},
   "Compilatrix.Xv.XlSemantics":
   {"path": "Compilatrix/Xv/XlSemantics.lean",
    "imports": ["Compilatrix.Xv.Semantics", "Compilatrix.Lir.Operands"]},
@@ -1458,6 +1482,24 @@
    "imports": ["Compilatrix.Sem.Result"]},
   "Compilatrix.Sem.Clock":
   {"path": "Compilatrix/Sem/Clock.lean", "imports": ["Compilatrix.Sem.Result"]},
+  "Compilatrix.Rt.Readback":
+  {"path": "Compilatrix/Rt/Readback.lean",
+   "imports": ["Compilatrix.Rt.Layout", "Compilatrix.X86.State"]},
+  "Compilatrix.Rt.Procs.Nat":
+  {"path": "Compilatrix/Rt/Procs/Nat.lean",
+   "imports": ["Compilatrix.Rt.Layout"]},
+  "Compilatrix.Rt.Procs.Entry":
+  {"path": "Compilatrix/Rt/Procs/Entry.lean",
+   "imports": ["Compilatrix.Rt.Layout"]},
+  "Compilatrix.Rt.Lower":
+  {"path": "Compilatrix/Rt/Lower.lean",
+   "imports":
+   ["Compilatrix.Cfg.WellFormed",
+    "Compilatrix.Lir.SplitEdges",
+    "Compilatrix.Rt.Procs.Entry",
+    "Compilatrix.Rt.Procs.Nat"]},
+  "Compilatrix.Rt.Layout":
+  {"path": "Compilatrix/Rt/Layout.lean", "imports": ["Compilatrix.Lir.Syntax"]},
   "Compilatrix.Own.WellFormed":
   {"path": "Compilatrix/Own/WellFormed.lean",
    "imports": ["Compilatrix.Own.Immortal", "Compilatrix.Fir.WellFormed"]},
@@ -2232,6 +2274,11 @@
     "Compilatrix.Cfg.WellFormed",
     "Compilatrix.Cfg.Lower",
     "Compilatrix.Cfg.Print",
+    "Compilatrix.Rt.Layout",
+    "Compilatrix.Rt.Procs.Entry",
+    "Compilatrix.Rt.Procs.Nat",
+    "Compilatrix.Rt.Lower",
+    "Compilatrix.Rt.Readback",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
