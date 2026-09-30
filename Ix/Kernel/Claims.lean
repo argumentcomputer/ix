@@ -721,6 +721,10 @@ theorem proj {w x : AExpr β} {r : ConstRef β} {i : Nat}
     (h : SupportClaim.{u,v} entries Γ w (.proj r i x)) : SupportClaim.{u,v} entries Γ w x :=
   fun V _ constants hM levels env hΓ hw => h V constants hM levels env hΓ hw
 
+theorem projOf {w x : AExpr β} (r : ConstRef β) (i : Nat)
+    (h : SupportClaim.{u,v} entries Γ w x) : SupportClaim.{u,v} entries Γ w (.proj r i x) :=
+  fun V _ constants hM levels env hΓ hw => h V constants hM levels env hΓ hw
+
 theorem lamDomain {w D b : AExpr β} {p : Certified.PropWhen}
     (h : SupportClaim.{u,v} entries Γ w (.lam p D b)) : SupportClaim.{u,v} entries Γ w D :=
   fun V _ constants hM levels env hΓ hw => (h V constants hM levels env hΓ hw).1
@@ -854,6 +858,51 @@ theorem append {w f f' r : AExpr β} {xs ys : List (AExpr β)}
   exact appN ys h₁ h₂
 
 end IOReductionClaim
+
+/-- Conversion under a witness: wherever `w` is well denoted, `e` and `e'`
+denote the same set. -/
+def IOConversionClaim (entries : Environment β) (Γ : Context β) (w e e' : AExpr β) : Prop :=
+  ∀ (V : Type v) [SetTheory V] (constants : Assignment β V), Realizes constants entries →
+    ∀ (levels : List Nat) (env : Nat → V), Γ.Valid constants levels env →
+      WellDenoted constants levels env w →
+        interp constants levels env e = interp constants levels env e'
+
+namespace IOConversionClaim
+
+theorem refl (w e : AExpr β) : IOConversionClaim.{u,v} entries Γ w e e :=
+  fun _ _ _ _ _ _ _ _ => rfl
+
+/-- Beta at a uniformly non-Prop lambda needs only the argument's membership
+in the lambda's domain: the lambda denotes a graph over it (`app_lamR_pos`),
+so neither the lambda's well-denotedness nor its body's typing is used. -/
+theorem betaNever {w D b a : AExpr β} (ha : IOClaim.{u,v} entries Γ w a D) :
+    IOConversionClaim.{u,v} entries Γ w (.app (.lam .never D b) a) (b.inst a) := by
+  intro V _ constants hM levels env hΓ hw
+  obtain ⟨-, -, ham⟩ := ha V constants hM levels env hΓ hw
+  simp only [interp, interp_inst, Valuation.skip_zero, Valuation.insert_zero, regime_never]
+  exact app_lamR_pos (by decide) ham
+
+theorem appN {w f f' r : AExpr β} (args : List (AExpr β))
+    (h₁ : IOConversionClaim.{u,v} entries Γ w f f')
+    (h₂ : IOConversionClaim.{u,v} entries Γ w (f'.appN args) r) :
+    IOConversionClaim.{u,v} entries Γ w (f.appN args) r := by
+  intro V _ constants hM levels env hΓ hw
+  exact (interp_appN_congr args (h₁ V constants hM levels env hΓ hw)).trans
+    (h₂ V constants hM levels env hΓ hw)
+
+end IOConversionClaim
+
+/-- Iota whose instances are known well denoted under the target by their
+shape, so the rule's endpoints need no typing: the applications of the
+endpoints only have to denote their instances. -/
+theorem ReductionClaim.iotaSupported {e l L R r : AExpr β} (hc : ConvClaim.{u,v} entries Γ e l)
+    (hl : IOConversionClaim.{u,v} entries Γ e L l) (hlw : SupportClaim.{u,v} entries Γ e l)
+    (heq : ConversionClaim.{u,v} entries Γ L R) (hr : IOConversionClaim.{u,v} entries Γ e R r)
+    (hrw : SupportClaim.{u,v} entries Γ e r) : ReductionClaim.{u,v} entries Γ e r := by
+  intro V _ constants hM levels env hΓ hwe
+  exact ⟨(hc V constants hM levels env hΓ hwe (hlw V constants hM levels env hΓ hwe)).trans
+    ((hl V constants hM levels env hΓ hwe).symm.trans ((heq V constants hM levels env hΓ).trans
+      (hr V constants hM levels env hΓ hwe))), hrw V constants hM levels env hΓ hwe⟩
 
 /-- Iota under the target's own well-denotedness: the target converts to the
 left instance, the rule's equation relates the unreduced applications of its

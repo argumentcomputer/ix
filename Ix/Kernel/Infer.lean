@@ -683,6 +683,34 @@ def fitArg {w : AExpr β} (D a : AExpr β) (rest : List (AExpr β))
     let ⟨fit⟩ ← checked ()
     pure ⟨fit, none⟩
 
+/-- The endpoints of a rule applied by beta steps at uniformly non-Prop
+lambdas only, with the applications' denotations under the witness. -/
+structure NeverApplied (entries : Environment β) (Γ : Context β) (w lhs rhs : AExpr β)
+    (args : List (AExpr β)) : Type u where
+  lhs' : AExpr β
+  rhs' : AExpr β
+  hl : IOConversionClaim.{u,v} entries Γ w (AExpr.appN lhs args) lhs'
+  hr : IOConversionClaim.{u,v} entries Γ w (AExpr.appN rhs args) rhs'
+
+/-- Apply both endpoints of a rule without inference and without their
+typing: every lambda must be uniformly non-Prop, and every argument is fitted
+by domain determination at a uniformly non-Prop binder of the witness whose
+domain is the lambdas'. `none` as soon as either fails. -/
+def applyNever {w : AExpr β} : (lhs rhs : AExpr β) → (args : List (AExpr β)) →
+    Witness.{u,v} entries Γ w args → Option (NeverApplied.{u,v} entries Γ w lhs rhs args)
+  | lhs, rhs, [], _ => some ⟨lhs, rhs, IOConversionClaim.refl _ _, IOConversionClaim.refl _ _⟩
+  | .lam .never D b, .lam .never D' b', a :: args, ⟨g, .forallE .never DG B, hg, hs⟩ =>
+    if h : DG = D ∧ D' = D then
+      have hs' : SupportClaim.{u,v} entries Γ w (AExpr.appN (.app g a) args) := hs
+      have ha : IOClaim.{u,v} entries Γ w a D := h.1 ▸ hg.argNever hs'.appNHead
+      have ha' : IOClaim.{u,v} entries Γ w a D' := h.2 ▸ ha
+      (applyNever (b.inst a) (b'.inst a) args
+        ⟨.app g a, B.inst a, hg.appNever hs'.appNHead, hs'⟩).map fun rest =>
+          ⟨rest.lhs', rest.rhs', IOConversionClaim.appN args (IOConversionClaim.betaNever ha) rest.hl,
+            IOConversionClaim.appN args (IOConversionClaim.betaNever ha') rest.hr⟩
+    else none
+  | _, _, _, _ => none
+
 mutual
 
 /-- Evaluate a numeric operation whose arguments normalize to literals
@@ -1085,9 +1113,11 @@ def quotIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r 
     | none => throw .noMatch
 
 /-- Projection iota: a projection of a constructor application reduces
-through the structure's published iota rule, whose endpoints are typed by
-inference. The rule's arguments are the constructor's, fitted by the
-constructor's type along the reduced major. -/
+through the structure's published iota rule. The rule's arguments are the
+constructor's, fitted by the constructor's type along the reduced major. At a
+field whose rule lambdas are uniformly non-Prop the endpoints are applied by
+`applyNever`, without inference; otherwise they are typed by inference and
+applied by `applyIOC`. -/
 def projIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r : ConstRef β) → (i : Nat) →
     (x : AExpr β) → KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (.proj r i x))
   | 0, _, _, _, _, _ => throw .exhausted
@@ -1103,12 +1133,16 @@ def projIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r 
             if r = .member s 0 ∧ cargs.length = np + nf ∧ i < nf then
               match hq : entry.equations[1 + i]? with
               | some law =>
-                if hn : ls.length = entry.universes then do
-                  let ⟨_, hL⟩ ← inferAC fuel entries Γ (law.lhs.instL ls)
-                  let ⟨_, hR⟩ ← inferAC fuel entries Γ (law.rhs.instL ls)
+                if hn : ls.length = entry.universes then
+                  have hmajor : SupportClaim.{u,v} entries Γ (.proj r i x) x' :=
+                    (SupportClaim.refl _).proj.ofReduction hx
                   have hsupp : SupportClaim.{u,v} entries Γ (.proj r i x)
                       (AExpr.appN (.const (.ctor s 0 0) ls) cargs) :=
-                    ((SupportClaim.refl _).proj.ofReduction hx).trans (SupportClaim.ofSpine hsp)
+                    hmajor.trans (SupportClaim.ofSpine hsp)
+                  have heq : ConversionClaim.{u,v} entries Γ (law.lhs.instL ls) (law.rhs.instL ls) :=
+                    ConversionClaim.equation h (List.mem_of_getElem? hq) hn
+                  have hc₀ : ConvClaim.{u,v} entries Γ (.proj r i x) (.proj r i x') :=
+                    ConvClaim.proj (ConvClaim.ofReduction hx)
                   let wit : Option (Witness.{u,v} entries Γ (.proj r i x) cargs) :=
                     match hc : entries (.ctor s 0 0) with
                     | some centry =>
@@ -1117,16 +1151,29 @@ def projIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r 
                           IOClaim.ofTyping (TypingClaim.const hc hcn), hsupp⟩
                       else none
                     | none => none
-                  let app ← applyIOC fuel entries Γ (.proj r i x) (law.lhs.instL ls) (law.rhs.instL ls)
-                    (SupportClaim.ofFormed hL.formed) (SupportClaim.ofFormed hR.formed) cargs wit
-                  if hl : app.lhs' = .proj r i x' then
-                    have heq : ConversionClaim.{u,v} entries Γ (law.lhs.instL ls) (law.rhs.instL ls) :=
-                      ConversionClaim.equation h (List.mem_of_getElem? hq) hn
-                    have hc : ConvClaim.{u,v} entries Γ (.proj r i x) app.lhs' := by
-                      rw [hl]
-                      exact ConvClaim.proj (ConvClaim.ofReduction hx)
-                    return ⟨app.rhs', ReductionClaim.iotaIO hc app.hl (heq.appN cargs) app.hr⟩
-                  else throw .noMatch
+                  -- At a non-Prop field the rule's lambdas are graphs, and both instances
+                  -- are well denoted by shape (the reduced major's projection, one of its
+                  -- fields), so the endpoints are not inferred.
+                  let direct : Option (Reduced.{u,v} entries Γ (.proj r i x)) := do
+                    let app ← wit.bind (applyNever (law.lhs.instL ls) (law.rhs.instL ls) cargs)
+                    if hl : app.lhs' = .proj r i x' then
+                      if hr : cargs[np + i]? = some app.rhs' then
+                        some ⟨app.rhs', ReductionClaim.iotaSupported (hl ▸ hc₀) app.hl
+                          (hl ▸ hmajor.projOf r i) (heq.appN cargs) app.hr
+                          (hsupp.appNArg (List.mem_of_getElem? hr))⟩
+                      else none
+                    else none
+                  match direct with
+                  | some reduced => pure reduced
+                  | none => do
+                    let ⟨_, hL⟩ ← inferAC fuel entries Γ (law.lhs.instL ls)
+                    let ⟨_, hR⟩ ← inferAC fuel entries Γ (law.rhs.instL ls)
+                    let app ← applyIOC fuel entries Γ (.proj r i x) (law.lhs.instL ls)
+                      (law.rhs.instL ls) (SupportClaim.ofFormed hL.formed)
+                      (SupportClaim.ofFormed hR.formed) cargs wit
+                    if hl : app.lhs' = .proj r i x' then
+                      return ⟨app.rhs', ReductionClaim.iotaIO (hl ▸ hc₀) app.hl (heq.appN cargs) app.hr⟩
+                    else throw .noMatch
                 else throw .noMatch
               | none => throw .noMatch
             else throw .noMatch

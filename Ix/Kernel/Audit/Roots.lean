@@ -49,7 +49,9 @@ adds family-only admission and a shared optional-recursor stage for Nat and
 structure facts (900 → 920 functions), with the same replacements. B1
 (2026-09-30) applies rule endpoints by infer-only fitting (`applyIOC`,
 `applyTypedWC`, `fitArg`, `Witness.advance`; 1543 → 1560 functions, ingress
-1519 → 1536, on the spine-form reduction), with the same replacements. -/
+1519 → 1536, on the spine-form reduction) and projection iota at non-Prop
+fields without endpoint inference (`applyNever`; 1560 → 1563, ingress
+1536 → 1540), with the same replacements. -/
 
 open Lean
 
@@ -162,13 +164,13 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Aud
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Batteries.Data.RBMap
 
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
-Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 1560 compiled functions; inherited externs 32,
+Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 1563 compiled functions; inherited externs 32,
 implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
-Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 1536 compiled functions;
+Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 1540 compiled functions;
 inherited externs 45, implemented_by 0, unsafe 3, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist
