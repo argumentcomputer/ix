@@ -1,5 +1,12 @@
 # Ix.Kernel: certified kernel roadmap
 
+The [UID and performance plan](../docs/certified-kernel-uids-plan.md), dated
+2026-09-30, specifies the proposed internal arenas, external BLAKE3 boundary,
+optional metadata, declaration receipts, proof obligations, and staged
+InitStd performance gates. Its checkpoint notes distinguish completed work
+from pending combined validation; the historical milestones below retain
+their original scope.
+
 Date: 2026-09-16, implementation plan updated 2026-09-29. K0, K1, and the
 supported-profile K2 release gate are complete on `jcb/ix-certified`.
 K0: the model is ported to

@@ -29,7 +29,15 @@ Environment variables: `CENSUS_THREADED` runs each check on its own task with a
 timeout instead, the environment marked persistent first so the task does not
 mark it multi-threaded;
 `CENSUS_PROBE=<name or address prefix>` prints why a supplied recursor differs
-from the generated one. -/
+from the generated one.
+
+The work budget bounds calls, not the size of the terms a call builds, so an
+inline check can still outgrow memory. A watchdog thread ends the run when one
+check exceeds `CENSUS_WATCH_MS` (default 60000) or the process exceeds
+`CENSUS_WATCH_MB` of resident memory (default 20000): it appends the record's
+address to `<output>.runaway` and exits with code 3. `CENSUS_SKIP` (comma
+separated addresses) declines those records unchecked, so a driver
+(`scripts/census-guarded.sh`) restarts the run with them skipped. -/
 
 open Ix.Kernel
 
@@ -204,6 +212,12 @@ def searchOutcome : SearchFailure → String × String
   | .malformed r => ("reject", s!"ingress: {r}")
   | .noMatch => ("decline", "ingress: no applicable rule")
 
+/-- Lean's reducibility hint as a kernel unfolding height. -/
+def hintHeight : Lean.ReducibilityHints → Nat
+  | .opaque => 0
+  | .abbrev => abbrevHeight
+  | .regular h => h.toNat
+
 def errorOutcome : Error → String × String
   | .rejected r => ("reject", r)
   | .declined r => ("decline", r)
@@ -286,6 +300,28 @@ def run (args : List String) : IO UInt32 := do
           if let some (.member family 0) := recursorMajor recursor then
             recursors := recursors.insert family ((recursors.getD family #[]).push (address, recursor))
   IO.eprintln s!"census: recursors indexed after {(← IO.monoMsNow) - started} ms"
+  let skip : Std.HashSet String := match ← IO.getEnv "CENSUS_SKIP" with
+    | some list => (list.splitOn ",").foldl (fun set a => if a.isEmpty then set else set.insert a) {}
+    | none => {}
+  let watchMs := ((← IO.getEnv "CENSUS_WATCH_MS").bind String.toNat?).getD 60000
+  let watchKb := ((← IO.getEnv "CENSUS_WATCH_MB").bind String.toNat?).getD 20000 * 1024
+  -- The record being checked inline and when its check started.
+  let checking : IO.Ref (Option (Address × Nat)) ← IO.mkRef none
+  let running ← IO.mkRef true
+  if inline then
+    let runaway := options.output.toString ++ ".runaway"
+    let _ ← IO.asTask (prio := .dedicated) do
+      while ← running.get do
+        IO.sleep 500
+        if let some (address, since) ← checking.get then
+          let elapsed := (← IO.monoMsNow) - since
+          let rss ← statusKb "VmRSS:"
+          if elapsed > watchMs || rss > watchKb then
+            IO.eprintln s!"census: watchdog: {address} ran {elapsed} ms, RSS {rss / 1024} MB; exiting"
+            let file ← IO.FS.Handle.mk runaway .append
+            file.putStrLn (toString address)
+            file.flush
+            IO.Process.exit 3
   let handle ← IO.FS.Handle.mk options.output .write
   let mut kenv : Env Address := Env.emptyWith Ingress.addressKeyHash
   let mut failed : Std.HashMap Address Address := {}
@@ -332,6 +368,13 @@ def run (args : List String) : IO UInt32 := do
         counts := counts.insert "blocked" (counts.getD "blocked" 0 + 1)
         emit ⟨address, label, kind, "blocked", toString (failed.getD blocker blocker), 0, readMicros⟩
       | none =>
+        if skip.contains (toString address) then
+          let reason := "census: skipped: exceeded the watchdog's limits on an earlier run"
+          failed := failed.insert address address
+          counts := counts.insert "decline" (counts.getD "decline" 0 + 1)
+          reasons := reasons.insert reason (reasons.getD reason 0 + 1)
+          emit ⟨address, label, kind, "decline", reason, 0, readMicros⟩
+          continue
         let pair : Option (Address × Const Address × Const Address) := match block.members with
           | [family@(.induct ..)] => do
             let (recAddress, recursor) ← (recursors.getD address #[]).find? (!consumed.contains ·.1)
@@ -346,7 +389,8 @@ def run (args : List String) : IO UInt32 := do
         let check : Unit → Except Error (Env Address) := fun _ => match pair with
           | some (recAddress, family, recursor) =>
             (checkInductiveC.{0,1} cfg current address (.member recAddress 0) family recursor).map Subtype.val
-          | none => checkDecl.{0,1} cfg current ⟨address, block⟩
+          | none => checkDecl.{0,1} cfg current ⟨address, block⟩ (hintHeight <$> env.anonHints[address]?)
+        checking.set (some (address, ← IO.monoMsNow))
         let task ← if inline then pure (Task.pure (.ok (check ())))
           else IO.asTask (prio := .dedicated) (IO.lazyPure check)
         -- Poll rather than start a timer task: a sleeping timer would hold a
@@ -357,6 +401,7 @@ def run (args : List String) : IO UInt32 := do
           IO.sleep pause
           pause := min 5 (pause + 1)
         let finished ← if ← IO.hasFinished task then pure (some task.get) else pure none
+        checking.set none
         let micros := ((← IO.monoNanosNow) - t0) / 1000
         let result : Except Error (Env Address) ← match finished with
           | some (.ok r) => pure r
@@ -397,6 +442,7 @@ def run (args : List String) : IO UInt32 := do
             counts := counts.insert outcome (counts.getD outcome 0 + 1)
             emit ⟨rowAddress, names.getD rowAddress #[], rowKind, outcome, reason, micros, readMicros⟩
           reasons := reasons.insert reason (reasons.getD reason 0 + 1)
+  running.set false
   let ranked := reasons.toArray.qsort (fun a b => a.2 > b.2)
   IO.eprintln s!"census: done in {(← IO.monoMsNow) - started} ms; {counts.toList}"
   IO.eprintln s!"census: peak RSS {(← statusKb "VmHWM:") / 1024} MB"

@@ -7,6 +7,7 @@ K2: the `ConstantFact.recursor`, `ConstantFact.structure`, and quotient fact cas
 transfer of `NaturalMeaning.succApp` under agreeing assignments.
 R1: the lift fact case binds the equality eliminator it does not use.
 A5: the `natOp` and `natTest` fact cases.
+A6: the `height` fact case; a definition may carry height facts.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -216,6 +217,7 @@ theorem Assignment.AgreesOn.factMeaning {entries : Environment β}
     refine ⟨hm.1, fun a b => ?_⟩
     rw [h r entry hr []]
     exact hm.2 a b
+  | height _ => trivial
   | natTest test yes no =>
     refine ⟨hm.1, fun a b => ?_⟩
     rw [h r entry hr [], heq yes (by simp [ConstantFact.references]) [],
@@ -302,7 +304,7 @@ value is constructed from the checked body in that very model. -/
 theorem extend_definition {entries : Environment β} {r : ConstRef β}
     {entry : ConstantEntry β} {body : AExpr β} {level : VLevel}
     (hE : entries.WF) (fresh : entries r = none) (hb : entry.body = some body)
-    (hq : entry.equations = []) (hf : entry.facts = [])
+    (hq : entry.equations = []) (hf : ∀ fact ∈ entry.facts, ∃ n, fact = .height n)
     (hBs : body.Scope entry.universes 0)
     (hTr : entry.type.ReferencesIn entries) (hBr : body.ReferencesIn entries)
     (hT : TypingClaim.{u,v} entries [] entry.type (.sort level))
@@ -374,7 +376,8 @@ theorem extend_definition {entries : Environment β} {r : ConstRef β}
     unfold Environment.insert at h
     split at h
     · cases Option.some.inj h
-      simp only [hf, List.not_mem_nil] at hfact
+      obtain ⟨n, rfl⟩ := hf fact hfact
+      trivial
     · exact hagree.factMeaning h (hE.factReferences q old h fact hfact) levels env
         (hM.factMeaning q old h fact hfact levels hn env)
 

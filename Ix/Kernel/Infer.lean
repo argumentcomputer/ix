@@ -146,6 +146,20 @@ def findNatTest : (facts : List (ConstantFact β)) →
   | .natTest test yes no :: _ => some ⟨(test, yes, no), List.mem_cons_self ..⟩
   | _ :: rest => (findNatTest rest).map fun ⟨p, h⟩ => ⟨p, List.mem_cons_of_mem _ h⟩
 
+/-- A definition's unfolding height (`ConstantFact.height`), 0 if it has none. -/
+def heightOf (facts : List (ConstantFact β)) : Nat :=
+  (facts.findSome? fun | .height n => some n | _ => none).getD 0
+
+/-- The height of an `abbrev`: above every regular height. Such heads unfold
+eagerly and are never compared argument-wise, as in the official kernel. -/
+def abbrevHeight : Nat := 2 ^ 32
+
+/-- The unfolding height of a term's head constant. -/
+def headHeight (entries : Environment β) (e : AExpr β) : Nat :=
+  match spine e [] with
+  | (.const r _, _) => ((entries r).map (heightOf ·.facts)).getD 0
+  | _ => 0
+
 /-- The largest exponent `pow` is evaluated at, as in the official kernel. -/
 def natPowMaxExponent : Nat := 2 ^ 24
 
@@ -951,13 +965,13 @@ def whnfCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (e 
     | .error .noMatch => pure ⟨e, ReductionClaim.refl e, none⟩
     | .error failure => pure ⟨e, ReductionClaim.refl e, some failure⟩
 
-/-- Lazy delta: normalize both sides without head delta and compare; before
-constructing unfolded bodies, try congruence for equal constant heads. Full
-argument conversion is a bounded optional attempt: if a function ignores
-different arguments, unfolding can still establish equality after congruence
-fails. Argument failures use the ordinary conversion cache; failure of the
-congruence attempt itself is never cached as failure of the whole conversion.
-On the first round only, proof irrelevance is tried before unfolding a proof. -/
+/-- Lazy delta: normalize without head delta and compare; the higher head
+(`ConstantFact.height`) unfolds first. Equal constant heads try syntactic
+congruence before constructing either body, then bounded argument conversion
+unless the head is an abbreviation. Failure retains the delta fallback: a
+function can ignore unequal arguments. Only argument failures enter the
+conversion cache, never failure of the whole congruence attempt. On the first
+round, proof irrelevance is tried before unfolding a proof. -/
 def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) → Bool →
     KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
   | 0, _, _, _, _, _ => throw .exhausted
@@ -978,7 +992,9 @@ def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a
           | none =>
             match a', b' with
             | .app f x, .app g y =>
-              KM.speculate 256 (appCongrC fuel entries Γ (.app f x) (.app g y))
+              if headHeight entries a' < abbrevHeight then
+                KM.speculate 256 (appCongrC fuel entries Γ (.app f x) (.app g y))
+              else throw .noMatch
             | _, _ => throw .noMatch
         else throw .noMatch
       KM.orElse congruence fun _ =>
@@ -991,8 +1007,20 @@ def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a
           KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions (ReductionClaim.refl a') hb' hc⟩)
             (lazyDeltaC fuel entries Γ a' b'' false)
         | some ⟨a'', ha'⟩, some ⟨b'', hb'⟩ =>
-          KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' hb' hc⟩)
-            (lazyDeltaC fuel entries Γ a'' b'' false)
+          let heightA := headHeight entries a'
+          let heightB := headHeight entries b'
+          if heightB < heightA then
+            KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' (ReductionClaim.refl b') hc⟩)
+              (lazyDeltaC fuel entries Γ a'' b' false)
+          else if heightA < heightB then
+            KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions (ReductionClaim.refl a') hb' hc⟩)
+              (lazyDeltaC fuel entries Γ a' b'' false)
+          else
+          match quickConv.{u,v} entries Γ a' b' with
+          | some c => pure c
+          | none =>
+            KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' hb' hc⟩)
+              (lazyDeltaC fuel entries Γ a'' b'' false)
     KM.remember stoppedA <| KM.remember stoppedB <|
       KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha hb hc⟩) compared
 
@@ -1057,7 +1085,9 @@ def inferBodyC : Nat → (entries : Environment β) → (Γ : Context β) → (b
     else throw (.malformed "lambda annotation disagrees with its codomain sort")
   | fuel + 1, entries, Γ, b => do
     let ⟨B, hb⟩ ← inferAC fuel entries Γ b
-    let ⟨SB, hSB⟩ ← inferFormedC fuel entries Γ B hb.formedType
+    let ⟨SB, hSB⟩ ← match B with
+      | .app .. => inferFormedC fuel entries Γ B hb.formedType
+      | _ => inferAC fuel entries Γ B
     let ⟨lB, hB⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ SB) hSB)
     return ⟨B, hb, lB, hB⟩
 
