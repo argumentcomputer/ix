@@ -338,6 +338,17 @@ decoder against `Rt.readback` of the dump. `native_harness.c` stays only as
 still needs its `compilatrix_rt_allocate` stub) until `Instr.callRuntime`
 retires.
 
+The benchmark runner's entry profile
+([`benchmarks/runner/entry/`](../benchmarks/runner/entry/): the timing
+driver, one adapter per row, and tagged C twins of `ackermann` and `tak`)
+is untrusted measurement code, integrity-pinned so that a change to how a
+row is built or timed is reviewed with the ledger. Its compilatrix adapter
+calls `cx_init` once and then the root's SysV wrapper directly, under the
+runtime driver's contract (a private region untouched by C, a stack budget
+that leaves at least 1 MiB below the thread's stack limit); it checks the
+status and the Nat tag of every result. No check, proof or production
+artifact depends on these files, and the runner is outside the root flake.
+
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal
 to the original decoder and stream checker on all inputs. Production

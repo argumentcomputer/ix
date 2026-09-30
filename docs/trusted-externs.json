@@ -668,6 +668,13 @@
   "ci_actions": [],
   "integrity": {
     "tracked_files": {
+      "benchmarks/runner/entry/driver.c": "aa604895b80ac49ce0f9ee26f2b2763a83297d9943d5c0517b97bc6504dc652a",
+      "benchmarks/runner/entry/row_compilatrix.c": "93512d54685ae07ccbc548d2b60a5c46f73c221866afa2ab9b70ddc637c5236b",
+      "benchmarks/runner/entry/row_idiomatic.c": "bc4eb94e533f6f6bb9670ebb0792917d9b1914bb57c137be72cea3cf1b0c84cb",
+      "benchmarks/runner/entry/row_lean.c": "7e2bc1377e424fd6e08d248946f2f9ac4feedc98f801e1523c58b1b942bad148",
+      "benchmarks/runner/entry/row_lir.c": "0a71244e982081f4eb576f202c53d2cd95475c33c53f4311c23c9c029e1218fb",
+      "benchmarks/runner/entry/row_tagged.c": "6b7bbcfd393bb249d57e31fd6cf63fddee0fa6b0145fa5a6b3a15047edae6d05",
+      "benchmarks/runner/entry/tagged.c": "f87c68e621a6f006f70bac656578a330ed369324fc809ac94d39300c4dd44480",
       "benchmarks/toolchains.json": "09e45dd434919f5b0147034b974e158abe72cc1ed58452554c60a39dba568e13",
       "CheckIxonV3Catalog.lean": "0ae99c3b8a2d9752771aadbf32c0035858428a2d482f819dfb31f09a37184441",
       "CheckIxonV3.lean": "078d4ff3d6be0325ec53550ed97f86a5ee164bda9411b4aba4ce4da20dd90cdc",

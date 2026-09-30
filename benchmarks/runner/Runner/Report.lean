@@ -1,60 +1,47 @@
 import Runner.Measure
 
-/-! Summaries: per fixture and row, the median over blocks; per fixture, the
-ratio of each row to `lean-clang` with a percentile-bootstrap interval over
-paired blocks; per rung, the geometric mean of those ratios. A ratio above 1
-means the row is slower than `lean-clang`. -/
+/-! Summaries of both profiles.
+
+**Process** (`report.md`, `report.json`): per fixture and row, the median
+whole-process time over blocks; per fixture, the ratio of each row to
+`lean-clang` with a percentile-bootstrap interval over paired blocks; per
+rung, the geometric mean of those ratios.
+
+**Entry** (`entry-report.md`, `entry-report.json`, when `entry-samples.json`
+exists): per fixture and row, the median time per call; the ratio of each row
+to `lean-clang`, `clang-O2`, `clang-O3` and the diagnostic `clang-tagged`
+row, paired per block, with 95% percentile-bootstrap intervals; the `perf`
+counters per call (instructions, cycles, IPC, branches, branch misses) and
+the bytes the row allocated per call where it reports them; then per rung
+the geometric mean of each row's ratios to each baseline over the fixtures
+where both exist, with a hierarchical bootstrap interval (blocks resampled
+within each fixture), the largest per-fixture ratio, and the fixtures used
+and missing. A ratio above 1 means the row is slower than the baseline. -/
 
 namespace Runner
 
 open Lean System
 
-def median (values : Array Float) : Float :=
-  let sorted := values.qsort (· < ·)
-  if sorted.isEmpty then 0
-  else if sorted.size % 2 == 1 then sorted[sorted.size / 2]!
-  else (sorted[sorted.size / 2 - 1]! + sorted[sorted.size / 2]!) / 2
+/-! ## Process profile -/
 
-/-- Percentile bootstrap of the median paired ratio (deterministic resampling). -/
-def bootstrap (ratios : Array Float) (rounds : Nat := 2000) : Float × Float := Id.run do
-  if ratios.isEmpty then return (0, 0)
-  let mut state : UInt64 := 0x243f6a8885a308d3
-  let mut estimates : Array Float := #[]
-  for _ in [:rounds] do
-    let mut resample : Array Float := #[]
-    for _ in [:ratios.size] do
-      state := state ^^^ (state <<< 13)
-      state := state ^^^ (state >>> 7)
-      state := state ^^^ (state <<< 17)
-      resample := resample.push ratios[state.toNat % ratios.size]!
-    estimates := estimates.push (median resample)
-  let sorted := estimates.qsort (· < ·)
-  return (sorted[rounds * 25 / 1000]!, sorted[rounds * 975 / 1000]!)
-
-/-- Fixed-point decimal text with `digits` fractional digits. -/
-def fmt (value : Float) (digits : Nat := 3) : String :=
-  let scaled := (value.abs * (10 : Float) ^ digits.toFloat).round.toUInt64.toNat
-  let whole := scaled / 10 ^ digits
-  let frac := toString (scaled % 10 ^ digits)
-  let sign := if value < 0 then "-" else ""
-  if digits == 0 then s!"{sign}{whole}"
-  else s!"{sign}{whole}.{"".pushn '0' (digits - frac.length)}{frac}"
-
-def report (manifest : Manifest) (out : FilePath) : IO Unit := do
+def reportProcess (manifest : Manifest) (out : FilePath) : IO Unit := do
   let json ← IO.ofExcept (Json.parse (← IO.FS.readFile (out / "samples.json")))
   let samples ← IO.ofExcept do
     (← (← json.getObjVal? "samples").getArr?).mapM fun s => do
       return (← (← s.getObjVal? "fixture").getStr?, ← (← s.getObjVal? "row").getStr?,
         ← (← s.getObjVal? "block").getNat?, ← (← s.getObjVal? "ns").getNat?)
   let env := json.getObjValD "environment"
+  let rows := Row.process.filter fun r => samples.any (·.2.1 == r.name)
+  let others := rows.filter (· != .leanClang)
   let mut lines : Array String := #[
-    "# Local benchmark report", "",
+    "# Local benchmark report: process profile", "",
     s!"Host: {env.getObjValD "cpu_model" |>.compress}, worker CPU {env.getObjValD "worker_cpu" |>.compress}, governor {env.getObjValD "governor" |>.compress}, load {env.getObjValD "loadavg" |>.compress}.",
-    s!"Blocks per fixture: {json.getObjValD "blocks" |>.compress}. Whole-process wall time; ratio = row / lean-clang (above 1 is slower); 95% percentile-bootstrap intervals over paired blocks.", "",
-    "| Fixture | Rung | lean-clang ms | clang-O2 ms | clang-O3 ms | clang-O2 / lean-clang | clang-O3 / lean-clang |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: |"]
+    s!"Blocks per fixture: {json.getObjValD "blocks" |>.compress}. Whole-process wall time (startup included); ratio = row / lean-clang (above 1 is slower); 95% percentile-bootstrap intervals over paired blocks.", "",
+    "| Fixture | Rung | " ++ " | ".intercalate (rows.map (s!"{·.name} ms")) ++ " | " ++
+      " | ".intercalate (others.map (s!"{·.name} / lean-clang")) ++ " |",
+    "| --- | --- | " ++ " | ".intercalate ((rows ++ others).map fun _ => "---:") ++ " |"]
   let mut rungRatios : Array (String × String × Float) := #[]
-  let mut rows : Array Json := #[]
+  let mut rowsJson : Array Json := #[]
   for fixture in manifest.fixtures do
     let of (row : String) := samples.filter fun (f, r, _, _) => f == fixture.name && r == row
     let base := of "lean-clang"
@@ -64,23 +51,178 @@ def report (manifest : Manifest) (out : FilePath) : IO Unit := do
       (base.find? fun (_, _, b, _) => b == block).map fun (_, _, _, baseNs) => ns.toFloat / baseNs.toFloat
     let cell (row : String) : String :=
       let ratios := paired row
+      if ratios.isEmpty then "-" else
       let (low, high) := bootstrap ratios
-      s!"{fmt (median ratios)} [{fmt low}, {fmt high}]"
-    for row in ["clang-O2", "clang-O3"] do
-      rungRatios := rungRatios.push (fixture.rung, row, median (paired row))
-    lines := lines.push s!"| {fixture.name} | {fixture.rung} | {fmt (ms "lean-clang") 1} | {fmt (ms "clang-O2") 1} | {fmt (ms "clang-O3") 1} | {cell "clang-O2"} | {cell "clang-O3"} |"
-    rows := rows.push (Json.mkObj [("fixture", Json.str fixture.name), ("rung", Json.str fixture.rung),
-      ("median_ms", Json.mkObj (["lean-clang", "clang-O2", "clang-O3"].map fun r => (r, toJson (ms r)))),
-      ("ratio_to_lean_clang", Json.mkObj (["clang-O2", "clang-O3"].map fun r => (r, toJson (median (paired r)))))])
+      fmtInterval (median ratios) low high
+    for row in others do
+      unless (paired row.name).isEmpty do
+        rungRatios := rungRatios.push (fixture.rung, row.name, median (paired row.name))
+    lines := lines.push (s!"| {fixture.name} | {fixture.rung} | " ++
+      " | ".intercalate (rows.map fun r => if (of r.name).isEmpty then "-" else fmt (ms r.name) 1) ++ " | " ++
+      " | ".intercalate (others.map (cell ·.name)) ++ " |")
+    rowsJson := rowsJson.push (Json.mkObj [("fixture", Json.str fixture.name), ("rung", Json.str fixture.rung),
+      ("median_ms", Json.mkObj (rows.filterMap fun r =>
+        if (of r.name).isEmpty then none else some (r.name, toJson (ms r.name)))),
+      ("ratio_to_lean_clang", Json.mkObj (others.filterMap fun r =>
+        if (paired r.name).isEmpty then none else some (r.name, toJson (median (paired r.name)))))])
   lines := lines ++ #["", "| Rung | Row | Geomean ratio to lean-clang | Fixtures |", "| --- | --- | ---: | ---: |"]
   for rung in ["K1", "K2", "K3"] do
-    for row in ["clang-O2", "clang-O3"] do
-      let values := rungRatios.filterMap fun (r, w, v) => if r == rung && w == row && v > 0 then some v else none
+    for row in others do
+      let values := rungRatios.filterMap fun (r, w, v) => if r == rung && w == row.name && v > 0 then some v else none
       unless values.isEmpty do
-        let geo := Float.exp ((values.foldl (fun acc v => acc + Float.log v) 0) / values.size.toFloat)
-        lines := lines.push s!"| {rung} | {row} | {fmt geo} | {values.size} |"
+        lines := lines.push s!"| {rung} | {row.name} | {fmt (geomean values)} | {values.size} |"
   IO.FS.writeFile (out / "report.md") ("\n".intercalate lines.toList ++ "\n")
-  IO.FS.writeFile (out / "report.json") ((Json.mkObj [("environment", env), ("fixtures", Json.arr rows)]).pretty ++ "\n")
+  IO.FS.writeFile (out / "report.json") ((Json.mkObj [("environment", env), ("fixtures", Json.arr rowsJson)]).pretty ++ "\n")
   IO.println s!"wrote {out / "report.md"}"
+
+/-! ## Entry profile -/
+
+/-- The paired per-block ratios of one row to one baseline on one fixture. -/
+structure RatioSet where
+  rung : String
+  fixture : String
+  row : String
+  base : String
+  ratios : Array Float
+
+/-- Baselines of the entry report's ratio columns. -/
+def entryBaselines : List Row := [.leanClang, .clangO2, .clangO3, .clangTagged]
+
+/-- Rows whose geometric means the entry report gives. -/
+def geomeanRows : List Row := [.compilatrix, .lirKernel, .clangTagged, .leanClang]
+
+def fmtNs (ns : Float) : String :=
+  if ns ≥ 1e6 then s!"{fmt (ns / 1e6) 3} ms" else if ns ≥ 1e3 then s!"{fmt (ns / 1e3) 3} µs"
+  else s!"{fmt ns 1} ns"
+
+def fmtCount (value : Float) : String :=
+  if value.abs ≥ 1e9 then s!"{fmt (value / 1e9) 3} G" else if value.abs ≥ 1e6 then s!"{fmt (value / 1e6) 3} M"
+  else if value.abs ≥ 1e4 then s!"{fmt (value / 1e3) 1} k" else fmt value 1
+
+def reportEntry (manifest : Manifest) (out : FilePath) : IO Unit := do
+  let json ← IO.ofExcept (Json.parse (← IO.FS.readFile (out / "entry-samples.json")))
+  let samples ← IO.ofExcept do
+    (← (← json.getObjVal? "samples").getArr?).mapM fun s => do
+      return (← (← s.getObjVal? "fixture").getStr?, ← (← s.getObjVal? "row").getStr?,
+        ← (← s.getObjVal? "block").getNat?, (← (← s.getObjVal? "ns_per_call").getNum?).toFloat,
+        (s.getObjValD "heap_bytes").getNat?.toOption, ← (← s.getObjVal? "reps").getNat?,
+        ← (← s.getObjVal? "warmup").getNat?)
+  let env := json.getObjValD "environment"
+  let envEnd := json.getObjValD "environment_end"
+  let perf ← try some <$> IO.ofExcept (Json.parse (← IO.FS.readFile (out / "entry-perf.json"))) catch _ => pure none
+  let build ← try some <$> IO.ofExcept (Json.parse (← IO.FS.readFile (out / "build.json"))) catch _ => pure none
+  let reps ← try some <$> IO.ofExcept (Json.parse (← IO.FS.readFile (repsFile out))) catch _ => pure none
+  let counter (fixture row event : String) : Option Float := do
+    let p ← perf
+    let entry ← (p.getArr?.toOption.getD #[]).find? fun e =>
+      e.getObjValD "fixture" == Json.str fixture && e.getObjValD "row" == Json.str row
+    (entry.getObjValD event).getNum?.toOption.map (·.toFloat)
+  let str (j : Json) (k : String) : String := (j.getObjValD k).getStr?.toOption.getD "unavailable"
+  let mut lines : Array String := #[
+    "# Local benchmark report: entry profile", "",
+    s!"Host: {str env "cpu_model"}, worker CPU {env.getObjValD "worker_cpu" |>.compress} (SMT siblings {str env "worker_siblings"}, max {str env "worker_max_khz"} kHz), governor {str env "governor"}, energy preference {str env "energy_preference"}, boost {str env "boost"}, kernel {str env "kernel"}.",
+    s!"Load average at the start: {str env "loadavg"}; at the end: {str envEnd "loadavg"}.",
+    s!"Blocks per fixture: {json.getObjValD "blocks" |>.compress}; each block runs every row once in a shuffled order, a fresh pinned process each. Target chunk: {(reps.map (·.getObjValD "target_ms" |>.compress)).getD "?"} ms.",
+    "Time per call of the fixture's `entry`, in process (the entry profile: startup and runtime initialisation excluded, the entry's guards and result handoff included); medians over blocks. Ratios are row / baseline (above 1 is slower), paired per block, with 95% percentile-bootstrap intervals (2000 rounds). Counters are user-space `perf` events per call (a run with the repetitions minus one without; median of the runs). `clang-tagged` and `lir-kernel` are diagnostic rows that attribute a gap; they are never real-program results.", ""]
+  if let some b := build then
+    lines := lines.push s!"Toolchains: {(b.getObjValD "versions").compress}."
+    lines := lines.push ""
+  let mut ratioSets : Array RatioSet := #[]
+  let mut rowsJson : Array Json := #[]
+  for fixture in manifest.fixtures do
+    let of (row : String) := samples.filter fun (f, r, _) => f == fixture.name && r == row
+    let rows := Row.entry.filter fun r => !(of r.name).isEmpty
+    if rows.isEmpty then continue
+    let ns (row : String) := median ((of row).map (·.2.2.2.1))
+    let paired (row base : String) : Array Float := (of row).filterMap fun (_, _, block, t, _) =>
+      ((of base).find? fun (_, _, b, _) => b == block).map fun (_, _, _, bt, _) => t / bt
+    let baselines := entryBaselines.filter rows.contains
+    lines := lines ++ #[s!"## {fixture.name} ({fixture.rung}): entry {" ".intercalate fixture.benchArgs} = {(fixture.benchExpected.map trimmed).getD "?"}", "",
+      "| Row | time/call | " ++ " | ".intercalate (baselines.map (s!"/ {·.name}")) ++
+        " | instructions/call | cycles/call | IPC | branches/call | branch misses/call | heap B/call | reps |",
+      "| --- | ---: | " ++ " | ".intercalate (baselines.map fun _ => "---:") ++ " | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    for row in rows do
+      let cells := baselines.map fun base =>
+        if base == row then "1" else
+        let ratios := paired row.name base.name
+        if ratios.isEmpty then "-" else
+        let (low, high) := bootstrap ratios
+        s!"{fmtRatio (median ratios)} [{fmtRatio low}, {fmtRatio high}]"
+      for base in baselines do
+        if base != row then
+          ratioSets := ratioSets.push
+            { rung := fixture.rung, fixture := fixture.name, row := row.name,
+              base := base.name, ratios := paired row.name base.name }
+      let c (e : String) := (counter fixture.name row.name e).map fmtCount |>.getD "-"
+      let ipc := match counter fixture.name row.name "instructions", counter fixture.name row.name "cycles" with
+        | some i, some cy => if cy > 0 then fmt (i / cy) 2 else "-"
+        | _, _ => "-"
+      let heaps := (of row.name).filterMap fun (_, _, _, _, h, r, w) => h.map fun h => h.toFloat / (r + w).toFloat
+      let heap := if heaps.isEmpty then "-" else fmt (median heaps) 1
+      let repsCell := match (of row.name)[0]? with | some (_, _, _, _, _, r, _) => toString r | none => "-"
+      lines := lines.push (s!"| {row.name} | {fmtNs (ns row.name)} | " ++ " | ".intercalate cells ++
+        s!" | {c "instructions"} | {c "cycles"} | {ipc} | {c "branches"} | {c "branch-misses"} | {heap} | {repsCell} |")
+      rowsJson := rowsJson.push (Json.mkObj [("fixture", Json.str fixture.name), ("row", Json.str row.name),
+        ("median_ns_per_call", toJson (ns row.name)),
+        ("ratios", Json.mkObj (baselines.filterMap fun base =>
+          let ratios := paired row.name base.name
+          if base == row || ratios.isEmpty then none else
+          let (low, high) := bootstrap ratios
+          some (base.name, Json.mkObj [("median", toJson (median ratios)), ("low", toJson low), ("high", toJson high)])))])
+    lines := lines.push ""
+  -- geometric means per rung
+  lines := lines ++ #["## Geometric means", "",
+    "Over the fixtures of the rung where both rows exist: the geometric mean of the per-fixture median paired ratios, with a 95% hierarchical-bootstrap interval (blocks resampled within each fixture); the largest per-fixture ratio; and the geometric mean without that fixture, which shows whether one fixture drives the mean (for example a twin that clang folds to a closed form).", "",
+    "| Rung | Row | Baseline | Geomean [95%] | Largest (fixture) | Without the largest [95%] | Fixtures | Missing |",
+    "| --- | --- | --- | ---: | ---: | ---: | --- | --- |"]
+  let mut geoJson : Array Json := #[]
+  for rung in ["K1", "K2", "K3"] do
+    let rungFixtures := manifest.fixtures.filter (·.rung == rung) |>.map (·.name)
+    for row in geomeanRows do
+      for base in entryBaselines do
+        if row == base then continue
+        let groups := ratioSets.filter fun s =>
+          s.rung == rung && s.row == row.name && s.base == base.name && !s.ratios.isEmpty
+        if groups.isEmpty then continue
+        let (point, low, high) := geomeanBootstrap (groups.map (·.ratios))
+        let (worst, worstFixture) := groups.foldl (fun (m, n) s =>
+          let v := median s.ratios
+          if v > m then (v, s.fixture) else (m, n)) (0.0, "")
+        let rest := groups.filter (·.fixture != worstFixture)
+        let (restPoint, restLow, restHigh) := geomeanBootstrap (rest.map (·.ratios))
+        let restCell := if rest.isEmpty then "-" else s!"{fmtRatio restPoint} [{fmtRatio restLow}, {fmtRatio restHigh}]"
+        let used := groups.map (·.fixture)
+        let missing := rungFixtures.filter (!used.contains ·)
+        lines := lines.push s!"| {rung} | {row.name} | {base.name} | {fmtRatio point} [{fmtRatio low}, {fmtRatio high}] | {fmtRatio worst} ({worstFixture}) | {restCell} | {", ".intercalate used.toList} | {if missing.isEmpty then "-" else ", ".intercalate missing.toList} |"
+        geoJson := geoJson.push (Json.mkObj [("rung", Json.str rung), ("row", Json.str row.name),
+          ("baseline", Json.str base.name), ("geomean", toJson point), ("low", toJson low), ("high", toJson high),
+          ("largest", toJson worst), ("largest_fixture", Json.str worstFixture),
+          ("without_largest", if rest.isEmpty then Json.null else Json.mkObj [("geomean", toJson restPoint),
+            ("low", toJson restLow), ("high", toJson restHigh)]),
+          ("fixtures", toJson used), ("missing", toJson missing)])
+  -- compile times
+  if let some b := build then
+    let compiles := (b.getObjValD "compilatrix_compiles").getArr?.toOption.getD #[]
+    unless compiles.isEmpty do
+      lines := lines ++ #["", "## compilatrix compiles", "",
+        "`compilatrix compile … --no-typecheck` per closure: wall time of the process, and its `--stats` lines.", "",
+        "| Fixture | Wall ms | Stats |", "| --- | ---: | --- |"]
+      for c in compiles do
+        let stats := ((c.getObjValD "stats").getStr?.toOption.getD "").splitOn "\n" |>.filter (!·.isEmpty)
+        lines := lines.push s!"| {str c "fixture"} | {fmt ((c.getObjValD "wall_ms").getNum?.toOption.map (·.toFloat) |>.getD 0) 1} | {"; ".intercalate stats} |"
+    let statuses := ((b.getObjValD "statuses").getArr?.toOption.getD #[]).filter fun s =>
+      (s.getObjValD "status").getStr?.toOption != some "built"
+    unless statuses.isEmpty do
+      lines := lines ++ #["", "Rows not built:", ""]
+      for s in statuses do
+        lines := lines.push s!"- {str s "row"}/{str s "fixture"}: {str s "status"}: {str s "detail"}"
+  IO.FS.writeFile (out / "entry-report.md") ("\n".intercalate lines.toList ++ "\n")
+  IO.FS.writeFile (out / "entry-report.json") ((Json.mkObj [("environment", env), ("environment_end", envEnd),
+    ("rows", Json.arr rowsJson), ("geomeans", Json.arr geoJson)]).pretty ++ "\n")
+  IO.println s!"wrote {out / "entry-report.md"}"
+
+def report (manifest : Manifest) (out : FilePath) : IO Unit := do
+  if ← (out / "samples.json").pathExists then reportProcess manifest out
+  if ← (out / "entry-samples.json").pathExists then reportEntry manifest out
 
 end Runner
