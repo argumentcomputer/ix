@@ -97,6 +97,12 @@ and (with `--cc`) natively under `fixtures/x86/backend_driver.c`. -/
 lean_exe «check-backend» where
   root := `CompilatrixTests.Backend.Main
 
+/- MEAS-4 (M1.B6): the Lir kernels fib, sumLoop and gcd as ELF objects, with
+their static spill and move counts and compile times, for the optional
+measurement in benchmarks/meas4 (not a CI gate). -/
+lean_exe «backend-probe» where
+  root := `CompilatrixTests.Backend.ProbeMain
+
 lean_exe «check-aiur» where
   srcDir := "scripts"
   root := `CheckAiur

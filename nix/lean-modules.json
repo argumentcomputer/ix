@@ -31,6 +31,8 @@
   {"roots": ["CompilatrixTests.Backend.Main"], "kind": "lean_exe"},
   "check-aiur": {"roots": ["CheckAiur"], "kind": "lean_exe"},
   "census": {"roots": ["Census"], "kind": "lean_exe"},
+  "backend-probe":
+  {"roots": ["CompilatrixTests.Backend.ProbeMain"], "kind": "lean_exe"},
   "SortPolyFixture": {"roots": ["SortPoly"], "kind": "lean_lib"},
   "K1Fixture": {"roots": ["K1"], "kind": "lean_lib"},
   "CompilatrixTests": {"roots": ["CompilatrixTests"], "kind": "lean_lib"},
@@ -557,6 +559,13 @@
   "CompilatrixTests.Backend.Programs":
   {"path": "CompilatrixTests/Backend/Programs.lean",
    "imports": ["Compilatrix.Xv.XlSemantics"]},
+  "CompilatrixTests.Backend.ProbeMain":
+  {"path": "CompilatrixTests/Backend/ProbeMain.lean",
+   "imports": ["CompilatrixTests.Backend.Probe"]},
+  "CompilatrixTests.Backend.Probe":
+  {"path": "CompilatrixTests/Backend/Probe.lean",
+   "imports":
+   ["Compilatrix.Backend", "CompilatrixTests.Lir.Kernels", "Lean.Data.Json"]},
   "CompilatrixTests.Backend.Native":
   {"path": "CompilatrixTests/Backend/Native.lean",
    "imports": ["CompilatrixTests.Backend.Support"]},
