@@ -45,6 +45,18 @@ structure Config where
   relabel : Nat := 25
   /-- Percent of programs that may divide by zero or access denied memory. -/
   wild : Nat := 3
+  /-- Shift operators to draw. The defaults draw every form; `check-xv-select`
+  narrows them to the forms the instruction table expresses, and the
+  defaults keep the random stream (and so `check-lir`) unchanged. -/
+  shiftOps : Array BinOp := #[.shl, .shr, .sar]
+  /-- Draw register shift counts. -/
+  varShifts : Bool := true
+  /-- Draw guarded `udiv`/`urem` (and, in wild programs, unguarded ones). -/
+  divs : Bool := true
+  /-- Draw `select`. -/
+  selects : Bool := true
+  /-- Draw `test`. -/
+  tests : Bool := true
 
 structure Sig where
   params : Nat
@@ -226,7 +238,9 @@ def genCall (b : Label) (env : Array Val) (tail : Bool) : G (Option (FunId × Li
 def genStmt (b : Label) (env : Array Val) : G (Array Val) := do
   let s ← get
   let plain (x : VReg) : Array Val := env.push { v := x }
-  match ← weighted [2, 1, 8, 3, 2, 2, 2, 3, 2, 1, 1, 1, 1, 2, if s.wild then 2 else 0] with
+  let cfg := s.cfg
+  match ← weighted [2, 1, 8, if cfg.shiftOps.isEmpty then 0 else 3, if cfg.divs then 2 else 0,
+      if cfg.selects then 2 else 0, if cfg.tests then 2 else 0, 3, 2, 1, 1, 1, 1, 2, if s.wild then 2 else 0] with
   | 0 => return plain (← assign b (.arg (.imm (← immWord))))
   | 1 => return plain (← assign b (.arg (← pickArg env)))
   | 2 =>
@@ -234,8 +248,8 @@ def genStmt (b : Label) (env : Array Val) : G (Array Val) := do
       return plain (← assign b (.bin o (← width) (← pickArg env) (← pickArg env)))
   | 3 =>
       stat fun t => { t with shifts := t.shifts + 1 }
-      let o ← rand (RngM.pick #[BinOp.shl, .shr, .sar])
-      let amount ← if ← chance 50 then Arg.v <$> pickVal env else Arg.imm <$> (UInt64.ofNat <$> range 0 70)
+      let o ← rand (RngM.pick cfg.shiftOps)
+      let amount ← if cfg.varShifts && (← chance 50) then Arg.v <$> pickVal env else Arg.imm <$> (UInt64.ofNat <$> range 0 70)
       return plain (← assign b (.bin o (← width) (← pickArg env) amount))
   | 4 =>
       stat fun t => { t with divs := t.divs + 1 }
@@ -295,7 +309,7 @@ def genStmt (b : Label) (env : Array Val) : G (Array Val) := do
       | none => return env
   | _ =>
       -- Wild: possibly stuck.
-      match ← weighted [3, 1, 1] with
+      match ← weighted [if cfg.divs then 3 else 0, 1, 1] with
       | 0 =>
           stat fun t => { t with divs := t.divs + 1 }
           let o ← rand (RngM.pick #[BinOp.udiv, .urem])

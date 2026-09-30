@@ -48,6 +48,11 @@ critical-edge splitting, clock monotonicity and exactness, and determinism. -/
 lean_exe «check-lir» where
   root := `CompilatrixTests.Lir.Main
 
+/- Selection: Lir.eval against Xv.eval on the kernels and on generated Lir, in
+lock-step (outcome, memory and clock), with per-rule firing counts. -/
+lean_exe «check-xv-select» where
+  root := `CompilatrixTests.Xv.Main
+
 lean_exe «check-aiur» where
   srcDir := "scripts"
   root := `CheckAiur

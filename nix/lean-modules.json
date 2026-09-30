@@ -3,6 +3,8 @@
   "tests-ixon-v3":
   {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
+  "check-xv-select":
+  {"roots": ["CompilatrixTests.Xv.Main"], "kind": "lean_exe"},
   "check-x86-streams": {"roots": ["CheckX86Streams"], "kind": "lean_exe"},
   "check-x86-object": {"roots": ["CheckX86Object"], "kind": "lean_exe"},
   "check-x86-hardware": {"roots": ["CheckX86Hardware"], "kind": "lean_exe"},
@@ -63,6 +65,41 @@
   "Ix.Aiur":
   {"path": "vendor/aiur/Ix/Aiur.lean",
    "imports": ["Ix.Aiur.Stages.Bytecode", "Ix.Aiur.Compiler.CallOrder"]},
+  "CompilatrixTests.Xv.XlCases":
+  {"path": "CompilatrixTests/Xv/XlCases.lean",
+   "imports":
+   ["Compilatrix.Xv.XlSemantics",
+    "Compilatrix.Xv.Select.Basic",
+    "CompilatrixTests.Lir.Region"]},
+  "CompilatrixTests.Xv.Support":
+  {"path": "CompilatrixTests/Xv/Support.lean",
+   "imports":
+   ["Compilatrix.Xv.Select.Driver",
+    "Compilatrix.Xv.WellFormed",
+    "Compilatrix.Xv.Semantics",
+    "Compilatrix.Xv.Print",
+    "CompilatrixTests.Lir.Region"]},
+  "CompilatrixTests.Xv.Run":
+  {"path": "CompilatrixTests/Xv/Run.lean",
+   "imports":
+   ["CompilatrixTests.Xv.Diff",
+    "CompilatrixTests.Xv.Cases",
+    "CompilatrixTests.Xv.XlCases"]},
+  "CompilatrixTests.Xv.Main":
+  {"path": "CompilatrixTests/Xv/Main.lean",
+   "imports": ["CompilatrixTests.Xv.Run"]},
+  "CompilatrixTests.Xv.Diff":
+  {"path": "CompilatrixTests/Xv/Diff.lean",
+   "imports":
+   ["CompilatrixTests.Xv.Support",
+    "CompilatrixTests.Lir.Gen",
+    "CompilatrixTests.Lir.Kernels",
+    "CompilatrixTests.Lir.Props",
+    "Compilatrix.Lir.SplitEdges",
+    "Compilatrix.Lir.WellFormed"]},
+  "CompilatrixTests.Xv.Cases":
+  {"path": "CompilatrixTests/Xv/Cases.lean",
+   "imports": ["CompilatrixTests.Xv.Support", "CompilatrixTests.Lir.Props"]},
   "CompilatrixTests.Support.Rng":
   {"path": "CompilatrixTests/Support/Rng.lean", "imports": []},
   "CompilatrixTests.Proofs":
@@ -401,7 +438,10 @@
    "imports": ["CompilatrixTests.Aiur.Static.Fixtures"]},
   "CompilatrixTests":
   {"path": "CompilatrixTests.lean",
-   "imports": ["CompilatrixTests.Proofs", "CompilatrixTests.Lir.Run"]},
+   "imports":
+   ["CompilatrixTests.Proofs",
+    "CompilatrixTests.Lir.Run",
+    "CompilatrixTests.Xv.Run"]},
   "Compilatrix.Xv.XlSemantics":
   {"path": "Compilatrix/Xv/XlSemantics.lean",
    "imports": ["Compilatrix.Xv.Semantics", "Compilatrix.Lir.Operands"]},
