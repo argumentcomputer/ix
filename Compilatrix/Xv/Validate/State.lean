@@ -58,9 +58,10 @@ def insert (x : VReg) : VSet → VSet
   | [] => [x]
   | y :: ys => if x == y then y :: ys else if x < y then x :: y :: ys else y :: insert x ys
 
-def erase (x : VReg) : VSet → VSet
-  | [] => []
-  | y :: ys => if x == y then ys else if x < y then y :: ys else y :: erase x ys
+/-- `xs` without `x`. A filter: on the sorted sets built here it is the
+same as stopping at `x`'s place, and it is correct without sortedness, which
+`Validate.sound` then need not track. -/
+def erase (x : VReg) (xs : VSet) : VSet := xs.filter (· != x)
 
 def subset (xs ys : VSet) : Bool := xs.all (mem · ys)
 

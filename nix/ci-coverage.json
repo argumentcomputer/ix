@@ -264,7 +264,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/x86-phase1: through Anf P1–P4",
+ "baseline": "jcb/x86-phase1: through the validator soundness proof",
  "axiom_sha256":
  "c2e7ddd865cf43f959e807a04f69dbc7713821d2a424f36a6c958ca183039278",
  "axiom_count": 567}

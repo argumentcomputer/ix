@@ -32,6 +32,12 @@ import Compilatrix.Src.Level
 import Compilatrix.Xv.Validate.NatMap
 import Compilatrix.Xv.Validate.State
 import Compilatrix.Xv.Validate.Check
+import Compilatrix.Xv.Validate.Proof.NatMap
+import Compilatrix.Xv.Validate.Proof.State
+import Compilatrix.Xv.Validate.Proof.Exec
+import Compilatrix.Xv.Validate.Proof.Map
+import Compilatrix.Xv.Validate.Proof.Place
+import Compilatrix.Xv.Validate.Proof.Assign
 import Compilatrix.Xv.Alloc.Output
 import Compilatrix.Xv.Alloc.Apply
 import Compilatrix.Xv.Alloc.Liveness

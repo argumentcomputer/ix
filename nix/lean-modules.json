@@ -825,6 +825,30 @@
    ["Compilatrix.Xv.Validate.NatMap",
     "Compilatrix.Xv.Syntax",
     "Compilatrix.Xv.Slots"]},
+  "Compilatrix.Xv.Validate.Proof.State":
+  {"path": "Compilatrix/Xv/Validate/Proof/State.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.State",
+    "Compilatrix.Xv.Validate.Proof.NatMap",
+    "Compilatrix.Lir.Semantics"]},
+  "Compilatrix.Xv.Validate.Proof.Place":
+  {"path": "Compilatrix/Xv/Validate/Proof/Place.lean",
+   "imports":
+   ["Compilatrix.Xv.Semantics", "Compilatrix.Xv.Validate.Proof.Map"]},
+  "Compilatrix.Xv.Validate.Proof.NatMap":
+  {"path": "Compilatrix/Xv/Validate/Proof/NatMap.lean",
+   "imports": ["Compilatrix.Xv.Validate.NatMap"]},
+  "Compilatrix.Xv.Validate.Proof.Map":
+  {"path": "Compilatrix/Xv/Validate/Proof/Map.lean",
+   "imports": ["Compilatrix.Xv.Operands"]},
+  "Compilatrix.Xv.Validate.Proof.Exec":
+  {"path": "Compilatrix/Xv/Validate/Proof/Exec.lean",
+   "imports": ["Compilatrix.X86.Table.Exec"]},
+  "Compilatrix.Xv.Validate.Proof.Assign":
+  {"path": "Compilatrix/Xv/Validate/Proof/Assign.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.Proof.Place",
+    "Compilatrix.Xv.Validate.Proof.Exec"]},
   "Compilatrix.Xv.Validate.NatMap":
   {"path": "Compilatrix/Xv/Validate/NatMap.lean", "imports": []},
   "Compilatrix.Xv.Validate.Check":
@@ -1911,6 +1935,12 @@
     "Compilatrix.Xv.Validate.NatMap",
     "Compilatrix.Xv.Validate.State",
     "Compilatrix.Xv.Validate.Check",
+    "Compilatrix.Xv.Validate.Proof.NatMap",
+    "Compilatrix.Xv.Validate.Proof.State",
+    "Compilatrix.Xv.Validate.Proof.Exec",
+    "Compilatrix.Xv.Validate.Proof.Map",
+    "Compilatrix.Xv.Validate.Proof.Place",
+    "Compilatrix.Xv.Validate.Proof.Assign",
     "Compilatrix.Xv.Alloc.Output",
     "Compilatrix.Xv.Alloc.Apply",
     "Compilatrix.Xv.Alloc.Liveness",
