@@ -35,6 +35,12 @@ def main (args : List String) : IO UInt32 := do
   | ["--entry", name] =>
     IO.println (← Shapes.runEntry name)
     return 0
+  | ["--generated", n] =>
+    -- a longer campaign of generated programs alone
+    let a ← IO.mkRef 0
+    for line in ← Generated.run a n.toNat! do IO.println line
+    IO.println s!"tests-anf --generated {n}: {← a.get} assertions passed"
+    return 0
   | ["--dump", name] =>
     let l ← loadBench name
     let e ← CompilatrixTests.Lam.eraseLoaded l
@@ -53,7 +59,7 @@ def main (args : List String) : IO UInt32 := do
     part a "bench-k1 entries through the pipeline's output" do
       for line in ← Shapes.entries a (← IO.appPath) do IO.println s!"    {line}"
     part a "generated Lam programs under random oracles" do
-      for line in ← Generated.run a 400 do IO.println s!"    {line}"
+      for line in ← Generated.run a 1000 do IO.println s!"    {line}"
     IO.println s!"tests-anf: {← a.get} assertions passed"
     return 0
   catch e =>

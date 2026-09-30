@@ -129,17 +129,29 @@ def Trees.levelHole (t : Trees) (l : Nat) : Trees × Nat :=
     let (t, h) := t.hole (.level l)
     ({ t with levelHoles := t.levelHoles ++ [(l, h)] }, h)
 
+/-- Distinct elements, first occurrences first (structural). -/
+def dedup (xs : List Nat) : List Nat :=
+  (xs.foldl (fun acc x => if acc.contains x then acc else x :: acc) []).reverse
+
+/-- Insert into an ascending list (structural). -/
+def insertSorted (x : Nat) : List Nat → List Nat
+  | [] => [x]
+  | y :: ys => if x ≤ y then x :: y :: ys else y :: insertSorted x ys
+
+/-- Ascending order (insertion sort; the lists are short). -/
+def sortNats (xs : List Nat) : List Nat := xs.foldl (fun acc x => insertSorted x acc) []
+
 /-- Key of a global. -/
 def gkey (P : Program) (g : GlobalId) : Key.GKey := ((P.global? g).map (·.key)).getD (.dispatch 0)
 
-/-- A shared level's key (its definition's head, without holes). -/
-def keyOf (P : Program) (defs : Src.NatMap Def) (fkey : Key.GKey) (inv : Nat) (l : Nat) :
-    Key.ArgKey :=
-  match defs.get? l with
-  | some (.glob g) => .glob (gkey P g)
-  | some (.fn _ _ _ idx) => .glob (.lam fkey [inv, idx])
-  | some (.con c _) => .con c []
-  | _ => .hole 0
+/-- Rebuild level `l` in the prologue (once). -/
+def Trees.need (t : Trees) (l : Nat) : Trees :=
+  if t.needed.contains l then t else { t with needed := t.needed ++ [l] }
+
+/-- An unknown value: a hole (one per level). -/
+def Trees.holeOf (t : Trees) : Opd → Trees × Key.ArgKey
+  | .lvl l => let (t, h) := t.levelHole l; (t, .hole h)
+  | o => let (t, h) := t.hole (.atom o); (t, .hole h)
 
 mutual
 
@@ -147,30 +159,25 @@ mutual
 levels. -/
 def tree (P : Program) (defs : Src.NatMap Def) (fkey : Key.GKey) (inv : Nat) :
     Nat → Trees → Opd → Trees × Key.ArgKey
-  | 0, t, _ => let (t, h) := t.hole (.atom .box); (t, .hole h)
+  | 0, t, o => t.holeOf o
   | fuel + 1, t, o =>
     match o with
     | .lit (.nat n) => (t, .lit n)
-    | .lit l => let (t, h) := t.hole (.atom (.lit l)); (t, .hole h)
-    | .box => let (t, h) := t.hole (.atom .box); (t, .hole h)
     | .lvl l =>
-      if t.needed.contains l then
-        -- shared: already rebuilt; name it again
-        (t, keyOf P defs fkey inv l)
-      else
-        match defs.get? l with
-        | some (.con c fs) =>
-          let t := { t with needed := t.needed ++ [l] }
-          let (t, ks) := trees P defs fkey inv fuel t fs
-          (t, .con c ks)
-        | some (.lit n) => (t, .lit n)
-        | some (.glob g) => ({ t with needed := t.needed ++ [l] }, .glob (gkey P g))
-        | some (.fn df ps b idx) =>
-          let t := { t with needed := t.needed ++ [l] }
-          let frees := ((b.free ps.length).eraseDups.map fun j => Opd.lvl (df - 1 - j))
-          let (t, _) := trees P defs fkey inv fuel t frees
-          (t, .glob (.lam fkey [inv, idx]))
-        | _ => let (t, h) := t.levelHole l; (t, .hole h)
+      -- a shared definition is described again in full (the key describes
+      -- the value) and rebuilt once
+      match defs.get? l with
+      | some (.con c fs) =>
+        let (t, ks) := trees P defs fkey inv fuel (t.need l) fs
+        (t, .con c ks)
+      | some (.lit n) => (t, .lit n)
+      | some (.glob g) => (t.need l, .glob (gkey P g))
+      | some (.fn df ps b idx) =>
+        let frees := (dedup (b.free ps.length)).map fun j => Opd.lvl (df - 1 - j)
+        let (t, _) := trees P defs fkey inv fuel (t.need l) frees
+        (t, .glob (.lam fkey [inv, idx]))
+      | _ => t.holeOf o
+    | o => t.holeOf o
 
 def trees (P : Program) (defs : Src.NatMap Def) (fkey : Key.GKey) (inv : Nat) :
     Nat → Trees → List Opd → Trees × List Key.ArgKey
@@ -185,9 +192,14 @@ end
 
 /-! ## Building a specialisation -/
 
-/-- The operand of a caller operand inside the specialisation. -/
-def mapOpd (m : List (Nat × Opd)) : Opd → Opd
-  | .lvl l => (m.lookup l).getD .box
+/-- The operand of a caller operand inside the specialisation: a rebuilt
+level, a hole's parameter, or the literal a level is known to hold. -/
+def mapOpd (defs : Src.NatMap Def) (m : List (Nat × Opd)) : Opd → Opd
+  | .lvl l =>
+    match m.lookup l, defs.get? l with
+    | some o, _ => o
+    | none, some (.lit n) => .lit (.nat n)
+    | none, _ => .box
   | o => o
 
 /-- The prologue: rebuild the needed levels (ascending) from target level
@@ -197,11 +209,11 @@ def prologue (P : Program) (defs : Src.NatMap Def) (m : List (Nat × Opd)) (t : 
   | [] => pure ([], m)
   | l :: ls => do
     let b ← match defs.get? l with
-      | some (.con c fs) => pure (Bind.con c (fs.map fun o => (mapOpd m o).atom t))
+      | some (.con c fs) => pure (Bind.con c (fs.map fun o => (mapOpd defs m o).atom t))
       | some (.glob g) => pure (Bind.glob g)
       | some (.fn df ps body _) => do
         let n := ps.length
-        let captured := (List.range df).map fun j => Ent.opd (mapOpd m (.lvl (df - 1 - j)))
+        let captured := (List.range df).map fun j => Ent.opd (mapOpd defs m (.lvl (df - 1 - j)))
         let (body', _) ← (Walk.walk { prog := P } Walk.fuel
           { σ := Walk.entsOf (paramOpds t n) ++ captured }
           { d := t + n, dj := 0, facts := .leaf } body .ret).run {}
@@ -243,7 +255,9 @@ def specialize (src : Program) (inv : Nat) (fkey : Key.GKey) (defs : Src.NatMap 
       let (t, h) := t.hole (.param i)
       (t, ks ++ [.hole h], roots)
   let (t, keys, roots) := (os.zipIdx.zip mask).foldl step (({} : Trees), [], [])
-  if roots.all (fun (_, o) => match o with
+  -- nothing known, or nothing left to pass (a specialisation is a function,
+  -- never a CAF): leave the call
+  if t.holes.isEmpty || roots.all (fun (_, o) => match o with
       | .lvl l => (t.levelHoles.lookup l).isSome
       | .lit (.nat _) => false
       | _ => true) then
@@ -261,8 +275,8 @@ def specialize (src : Program) (inv : Nat) (fkey : Key.GKey) (defs : Src.NatMap 
     let H := t.holes.length
     -- the specialisation's frame: holes are its parameters
     let m0 : List (Nat × Opd) := t.levelHoles.map fun (l, h) => (l, .lvl h)
-    let (pro, m) ← liftM (prologue src defs m0 H (t.needed.mergeSort (· ≤ ·)))
-    let fixedOf := fun (i : Nat) => (roots.lookup i).map fun o => mapOpd m o
+    let (pro, m) ← liftM (prologue src defs m0 H (sortNats t.needed))
+    let fixedOf := fun (i : Nat) => (roots.lookup i).map fun o => mapOpd defs m o
     let holeOf := fun (i : Nat) =>
       ((t.holes.zipIdx.find? fun (s, _) => match s with
         | .param j => j == i

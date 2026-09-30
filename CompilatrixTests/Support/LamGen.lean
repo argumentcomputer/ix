@@ -49,6 +49,16 @@ def gRoot : Nat := 0
 def gLoop : Nat := 1
 def gDict : Nat := 2
 def gIte : Nat := 3
+def gLoop2 : Nat := 4
+
+/-- `loop2 d n acc = case n | 0 ⇒ acc | m+1 ⇒ loop2 d m (d.0 acc d.1)`: a
+loop over a dictionary it passes unchanged. -/
+def loop2Body : Term :=
+  .lam .strict {} (.lam .strict {} (.lam .strict {} (.case (v 1)
+    [.mk natZ 0 (v 0),
+     .mk natS 1 (.app (.app (.app (.glob gLoop2) (v 3) .strict) (v 0) .strict)
+       (.app (.app (.proj pairK 0 (v 3)) (v 1) .strict) (.proj pairK 1 (v 3)) .strict) .strict)]
+    none)))
 
 /-- `loop f n acc = case n | 0 ⇒ acc | m+1 ⇒ loop f m (f acc)`. -/
 def loopBody : Term :=
@@ -128,9 +138,17 @@ partial def term (sigs : Sigs) (env : List Mode) (depth : Nat) : RngM Term := do
 /-- The root: uses of the templates and a random body over `x`. -/
 def rootBody (sigs : Sigs) : RngM Term := do
   let step := Term.lam .strict {} (.prim .natAdd [v 0, lit (← range 1 3)])
+  -- a step function capturing the root's argument (abstracted by P4)
+  let open_ := Term.lam .strict {} (.prim .natAdd [v 0, v 1])
+  let dict := Term.con pairK [.lam .strict {} (.lam .strict {} (.prim .natMul [v 1, v 0])),
+    lit (← range 1 3)]
   let uses : List Term :=
     [ -- the loop with a fixed step function
       .app (.app (.app (.glob gLoop) step .strict) (v 0) .strict) (lit (← below 3)) .strict,
+      .app (.app (.app (.glob gLoop) open_ .strict) (v 0) .strict) (lit 1) .strict,
+      -- the dictionary loop, on a local and on a global dictionary
+      .app (.app (.app (.glob gLoop2) dict .strict) (v 0) .strict) (lit 1) .strict,
+      .app (.app (.app (.glob gLoop2) (.glob gDict) .strict) (v 0) .strict) (v 0) .strict,
       -- the dictionary's method, applied
       .app (.app (.proj pairK 0 (.glob gDict)) (v 0) .strict) (.proj pairK 1 (.glob gDict)) .strict,
       -- the by-name conditional
@@ -145,12 +163,14 @@ def rootBody (sigs : Sigs) : RngM Term := do
 
 /-- A program of the templates and `extra` random globals. -/
 def program (extra : Nat) : RngM Lam.Program := do
-  let mut sigs : Sigs := #[[.strict], [.strict, .strict, .strict], [], [.strict, .name, .name]]
+  let mut sigs : Sigs := #[[.strict], [.strict, .strict, .strict], [], [.strict, .name, .name],
+    [.strict, .strict, .strict]]
   for _ in [0:extra] do
     let arity ← below 3
     sigs := sigs.push (List.replicate arity .strict)
-  let mut bodies : Array Term := #[← rootBody sigs, loopBody, dictBody (← below 5), iteBody]
-  for g in [4:sigs.size] do
+  let mut bodies : Array Term :=
+    #[← rootBody sigs, loopBody, dictBody (← below 5), iteBody, loop2Body]
+  for g in [5:sigs.size] do
     let arity := sigs[g]!.length
     bodies := bodies.push (Term.lams (List.replicate arity .strict)
       (← term sigs (List.replicate arity .strict) 4))
