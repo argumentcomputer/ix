@@ -157,6 +157,8 @@ import Compilatrix.Lam.Erase.Proof.RecStar
 import Compilatrix.Lam.Erase.Proof.Bind
 import Compilatrix.Lam.Erase.Proof.Proj
 import Compilatrix.Lam.Erase.Proof.SimTerm
+import Compilatrix.Lam.Erase.Proof.Apply
+import Compilatrix.Lam.Erase.Proof.Main
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
