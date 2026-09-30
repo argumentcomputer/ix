@@ -34,12 +34,12 @@ theorem ctorInfo?_eq {c ind : CId} {i np nf : Nat} :
 /-- The parts of the check. -/
 theorem progWF_parts (h : I.progWF = true) :
     (∀ c d, I.decl? c = some d → I.declWF c d = true) ∧ I.natPinsOk = true ∧
-      I.zeroPinOk = true ∧ I.boolPinsOk = true ∧ I.decOtherOk = true ∧
+      I.zeroPinOk = true ∧ I.succPinOk = true ∧ I.boolPinsOk = true ∧ I.decOtherOk = true ∧
       I.ctorIdxOk I.known.decIsFalse 0 = true ∧ I.ctorIdxOk I.known.decIsTrue 1 = true := by
   unfold Input.progWF at h
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨hall, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
-  refine ⟨fun c d hd => ?_, h1, h2, h3, h4, h5, h6⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨hall, h1⟩, h2⟩, h7⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
+  refine ⟨fun c d hd => ?_, h1, h2, h7, h3, h4, h5, h6⟩
   have hd' := hd
   unfold Input.decl? at hd'
   obtain ⟨e, he, rfl⟩ := Option.map_eq_some_iff.1 hd'
@@ -50,14 +50,15 @@ theorem progWF_parts (h : I.progWF = true) :
 
 /-- **The check is sound**: it establishes `ProgWF`. -/
 theorem progWF_sound (h : I.progWF = true) : ProgWF I := by
-  obtain ⟨hd, hnat, hzero, hbool, hdec, hdf, hdt⟩ := progWF_parts h
-  refine { ctorIn := ?_, ctorOf := ?_, natPins := ?_, zeroPin := ?_, boolFalse := ?_,
+  obtain ⟨hd, hnat, hzero, hsucc, hbool, hdec, hdf, hdt⟩ := progWF_parts h
+  refine { ctorIn := ?_, ctorOf := ?_, natPins := ?_, zeroPin := ?_, succPin := ?_,
+           ctorFields := ?_, boolFalse := ?_,
            boolTrue := ?_, decOther := ?_, recRules := ?_, recKindIdx := ?_, subMinor := ?_,
            decIsFalse := ?_, decIsTrue := ?_ }
   · intro c sf lv ind cidx np nf ty hc
     have := hd c _ hc
-    simp only [Input.declWF] at this
-    exact beq_iff_eq.1 this
+    simp only [Input.declWF, Bool.and_eq_true] at this
+    exact beq_iff_eq.1 this.1
   · intro t k i h
     unfold Input.ctorsOf at h
     split at h
@@ -96,6 +97,21 @@ theorem progWF_sound (h : I.progWF = true) : ProgWF I := by
       obtain ⟨sf, lv, ty, hz⟩ := ctorInfo?_eq.1 hi
       exact ⟨sf, lv, N, cidx, ty, hz⟩
     · cases hzero
+  · intro S hS
+    unfold Input.succPinOk at hsucc
+    rw [hS] at hsucc
+    dsimp only at hsucc
+    split at hsucc
+    · next N cidx np nf hi =>
+      simp only [Bool.and_eq_true, beq_iff_eq] at hsucc
+      obtain ⟨rfl, rfl⟩ := hsucc
+      obtain ⟨sf, lv, ty, hz⟩ := ctorInfo?_eq.1 hi
+      exact ⟨sf, lv, N, cidx, ty, hz⟩
+    · cases hsucc
+  · intro c sf lv ind cidx np nf ty hc fs hfs
+    have := hd c _ hc
+    simp only [Input.declWF, Bool.and_eq_true, hfs, Option.all_some, beq_iff_eq] at this
+    exact this.2
   · intro c hc
     unfold Input.boolPinsOk at hbool
     split at hbool
@@ -183,7 +199,10 @@ theorem declWF_of (wf : ProgWF I) {c : CId} {d : Src.Decl} (hd : I.decl? c = som
     I.declWF c d = true := by
   cases d with
   | ctor sf lv ind cidx np nf ty =>
-    simp only [Input.declWF, wf.ctorIn hd, BEq.rfl]
+    simp only [Input.declWF, wf.ctorIn hd, BEq.rfl, Bool.true_and]
+    cases hfs : I.fields? c with
+    | none => rfl
+    | some fs => simp [wf.ctorFields hd hfs]
   | induct sf lv np ni ty ctors =>
     simp only [Input.declWF]
     refine List.all_eq_true.2 fun ⟨k, i⟩ hm => ?_
@@ -211,7 +230,7 @@ theorem declWF_of (wf : ProgWF I) {c : CId} {d : Src.Decl} (hd : I.decl? c = som
 theorem progWF_complete (wf : ProgWF I) : I.progWF = true := by
   unfold Input.progWF
   simp only [Bool.and_eq_true]
-  refine ⟨⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+  refine ⟨⟨⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
   · refine List.all_eq_true.2 fun ⟨c, e⟩ _ => ?_
     dsimp only
     split
@@ -230,6 +249,12 @@ theorem progWF_complete (wf : ProgWF I) : I.progWF = true := by
     · next Z hZ =>
       obtain ⟨sf, lv, N, cidx, ty, hz⟩ := wf.zeroPin hZ
       simp [ctorInfo?_eq.2 ⟨sf, lv, ty, hz⟩]
+  · unfold Input.succPinOk
+    split
+    · rfl
+    · next S hS =>
+      obtain ⟨sf, lv, N, cidx, ty, hs⟩ := wf.succPin hS
+      simp [ctorInfo?_eq.2 ⟨sf, lv, ty, hs⟩]
   · unfold Input.boolPinsOk
     cases hf : I.known.boolFalse with
     | none =>

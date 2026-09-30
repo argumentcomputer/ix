@@ -224,6 +224,14 @@ structure ProgWF (I : Input) : Prop where
   /-- A pinned `Nat.zero` has neither parameters nor fields. -/
   zeroPin : ∀ {Z : CId}, I.known.natZero = some Z →
     ∃ sf lv N cidx ty, I.decl? Z = some (.ctor sf lv N cidx 0 0 ty)
+  /-- A pinned `Nat.succ` has no parameters and one field. -/
+  succPin : ∀ {S : CId}, I.known.natSucc = some S →
+    ∃ sf lv N cidx ty, I.decl? S = some (.ctor sf lv N cidx 0 1 ty)
+  /-- A constructor's field classes, where annotated, are as many as its
+  fields. -/
+  ctorFields : ∀ {c : CId} {sf : Bool} {lv : Nat} {ind : CId} {cidx np nf : Nat} {ty : Src.Term},
+    I.decl? c = some (.ctor sf lv ind cidx np nf ty) → ∀ {fs : List Src.Relevance.FieldClass},
+      I.fields? c = some fs → fs.length = nf
   /-- The pinned `Bool` constructors: `false` at index 0 and `true` at index
   1 of one inductive, without fields. -/
   boolFalse : ∀ {c : CId}, I.known.boolFalse = some c →

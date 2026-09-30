@@ -4,13 +4,15 @@ import Compilatrix.Lam.Erase.Input
 
 `Input.progWF` decides the structural facts about the Src declarations
 that erasure's correctness proof assumes (`Erase.Proof.ProgWF`, with
-`progWF_iff`): every constructor is listed by its inductive at its index
-and every listed constructor declares that inductive and index; a
+`progWF_iff`): every constructor is listed by its inductive at its index,
+every listed constructor declares that inductive and index, and a
+constructor's field classes, where annotated, are as many as its fields; a
 recursor has a rule per constructor and at most one per minor, and a
 subsingleton recursor has its minor and index fields within its indices;
 the pinned `Nat`, `Bool` and `Decidable` constructors have their shapes.
-Tc typing ensures all of it; erasure checks it (`erase-progwf`). It reads
-every declaration once, through the persistent map (D17). -/
+Tc typing and the relevance check ensure all of it; erasure checks it
+(`erase-progwf`). It reads every declaration once, through the persistent
+map (D17). -/
 
 namespace Compilatrix.Lam.Erase
 
@@ -28,7 +30,8 @@ def ctorInfo? (c : CId) : Option (CId × Nat × Nat × Nat) :=
 
 /-- The facts about one declaration `c`. -/
 def declWF (c : CId) : Decl → Bool
-  | .ctor _ _ ind cidx _ _ _ => (I.ctorsOf ind)[cidx]? == some c
+  | .ctor _ _ ind cidx _ nf _ =>
+    (I.ctorsOf ind)[cidx]? == some c && (I.fields? c).all (·.length == nf)
   | .induct _ _ _ _ _ ctors =>
     ctors.zipIdx.all fun (k, i) =>
       match I.ctorInfo? k with
@@ -61,6 +64,15 @@ def zeroPinOk : Bool :=
   | some Z =>
     match I.ctorInfo? Z with
     | some (_, _, np, nf) => np == 0 && nf == 0
+    | none => false
+
+/-- A pinned `Nat.succ` has no parameters and one field. -/
+def succPinOk : Bool :=
+  match I.known.natSucc with
+  | none => true
+  | some S =>
+    match I.ctorInfo? S with
+    | some (_, _, np, nf) => np == 0 && nf == 1
     | none => false
 
 /-- The pinned `Bool` constructors come together: `false` at index 0 and
@@ -103,7 +115,7 @@ def progWF : Bool :=
     match I.decl? c with
     | some d => I.declWF c d
     | none => true) &&
-  I.natPinsOk && I.zeroPinOk && I.boolPinsOk && I.decOtherOk &&
+  I.natPinsOk && I.zeroPinOk && I.succPinOk && I.boolPinsOk && I.decOtherOk &&
   I.ctorIdxOk I.known.decIsFalse 0 && I.ctorIdxOk I.known.decIsTrue 1
 
 end Input
