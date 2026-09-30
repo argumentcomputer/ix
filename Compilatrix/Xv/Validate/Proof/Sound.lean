@@ -7,7 +7,7 @@ import Compilatrix.Xv.Validate.Proof.Diagram
 `Validate.sound` (05 §5): from matching states, each Xv step is matched by
 Xl steps (the edits before the instruction as silent moves, then its image)
 spending the same charges, and each final Xv step other than a stuck one by
-the same final Xl step. `Validate.diagram` packs both as a `StuckDiagram`.
+the same final Xl step. `Validate.diagram` packs both as a `LockStep`.
 -/
 
 namespace Compilatrix.Xv.Validate
@@ -28,7 +28,7 @@ theorem inst_case {t : Xl.State} {fr : Lir.Frame} {fl : Xl.Frame} {rest' : List 
     {inst : Inst VReg} {insts : List (Inst VReg)} (hd : b.body.toList.drop fr.pos = inst :: insts)
     (hnc : ∀ g a r, inst ≠ .call g a r) {ρ : Env} {mem : X86.Memory}
     (hx : inst.exec fr.env t.mem t.ctx = some (ρ, mem)) :
-    ∃ n t', Sem.Star (Xl.step q env) t n t' ∧ t'.mem = mem ∧ t'.ctx = t.ctx ∧ t'.regs.size = 16 ∧
+    ∃ t', Sem.Star (Xl.step q env) t 0 t' ∧ t'.mem = mem ∧ t'.ctx = t.ctx ∧ t'.regs.size = 16 ∧
       ∃ fl', t'.stack = fl' :: rest' ∧
         RunMatch env p outs q { fr with pos := fr.pos + 1, env := ρ } fl' t'.regs := by
   obtain ⟨ls, now, x, a₁, a₂, hdl, he, hsi, hsub, hrest'⟩ := hr.rest.inst hd
@@ -40,7 +40,7 @@ theorem inst_case {t : Xl.State} {fr : Lir.Frame} {fl : Xl.Frame} {rest' : List 
     inst_sound hnc hsi hsub hag₁ hs₁ (by rw [hin₁]; exact hr.inArgs) hx
   have hstep := xl_step_inst q env (t := { t with regs := regs₁, stack := fl₁ :: rest' }) rfl
     (by rw [hfn₁]; exact hg') (by rw [hlab₁]; exact hbl') hd₁ hxnc hxl
-  refine ⟨_, _, hstar.trans (Sem.Star.single hstep), rfl, rfl, hs', _, rfl, ?_⟩
+  refine ⟨_, star_zero_step hstar hstep, rfl, rfl, hs', _, rfl, ?_⟩
   refine ⟨by rw [hctl.fn, hfn₁, hr.fn], by rw [hctl.label, hlab₁, hr.label], f, o, g, b, bo, bl, a₂,
     hr.hf, hr.ho, hr.hg, hr.hfunc, hr.happ, hr.hb, hr.hbo, hr.hbl, ?_, ?_, ?_⟩
   · show BlockRest _ _ b bo bl (fr.pos + 1) (fl₁.pos + 1) a₂
@@ -64,7 +64,7 @@ theorem call_case (hacc : Accepted env p outs q) {t : Xl.State} {fr : Lir.Frame}
     (hd : b.body.toList.drop fr.pos = .call g' args rets :: insts)
     {vals : List Word} {callee : Lir.Frame} (hvals : Xv.readAll fr.env args = some vals)
     (hcallee : Xv.enter p g' vals = some callee) :
-    ∃ n t', Sem.Star (Xl.step q env) t n t' ∧ 1 ≤ n ∧ t'.mem = t.mem ∧ t'.ctx = t.ctx ∧
+    ∃ t', Sem.Star (Xl.step q env) t 1 t' ∧ t'.mem = t.mem ∧ t'.ctx = t.ctx ∧
       t'.regs.size = 16 ∧ ∃ cl fl', t'.stack = cl :: fl' :: rest' ∧
         RunMatch env p outs q callee cl t'.regs ∧
         RetMatch env p outs q { fr with pos := fr.pos + 1, dsts := rets } fl' := by
@@ -83,7 +83,7 @@ theorem call_case (hacc : Accepted env p outs q) {t : Xl.State} {fr : Lir.Frame}
   have hstep := xl_step_call q env (t := { t with regs := regs₁, stack := fl₁ :: rest' }) rfl
     (by rw [hfn₁]; exact hg') (by rw [hlab₁]; exact hbl') hd₁ (conventionArgs_argLocs _)
     (conventionResults_resultLocs hk) hread hent
-  refine ⟨_, _, hstar.trans (Sem.Star.single hstep), by simp, rfl, rfl, entryRegs_size vals, cl, _, rfl,
+  refine ⟨_, star_zero_step hstar hstep, rfl, rfl, entryRegs_size vals, cl, _, rfl,
     hcm, ?_, hs₁, ?_⟩
   · exact resultLocs_length hk
   · intro vals' ρ' hb
@@ -109,7 +109,7 @@ theorem term_next (hacc : Accepted env p outs q) {s s' : Lir.State} {t : Xl.Stat
     {f : Func VReg} {o : Output} {g : Func Loc} {b : Block VReg} {bo : BlockOut} {bl : Block Loc}
     {a : AState} (hr : Running env p outs q fr fl t.regs f o g b bo bl a)
     (hpos : ¬ fr.pos < b.body.size) (hs : Xv.step p s = .next s' c) :
-    ∃ n t', Sem.Star (Xl.step q env) t n t' ∧ c.toNat ≤ n ∧ Match env p outs q s' t' := by
+    ∃ t', Sem.Star (Xl.step q env) t c.toNat t' ∧ Match env p outs q s' t' := by
   obtain ⟨now, a₁, a₂, hdl, he, ht, hce⟩ := hr.rest.atTerm (by omega)
   have hg' : q.funcs[fl.fn]? = some g := by rw [hr.fn]; exact hr.hg
   have hbl' : g.blocks[fl.label]? = some bl := by rw [hr.label]; exact hr.hbl
@@ -135,7 +135,7 @@ theorem term_next (hacc : Accepted env p outs q) {s s' : Lir.State} {t : Xl.Stat
       hr.hfunc hr.happ hfn' hlab' hin' { t with regs := regs₁, stack := fl₁ :: rest' } rest'
     have hstep := (xl_step_jmp q env (t := { t with regs := regs₁, stack := fl₁ :: rest' }) rfl hgf hblf
       hd₁ hblT).trans hxl
-    exact ⟨_, _, hstar.trans (Sem.Star.single hstep), by simp, hmem, hctx, hs₁, _, _, _, _, rfl, rfl,
+    exact ⟨_, star_zero_step hstar hstep, hmem, hctx, hs₁, _, _, _, _, rfl, rfl,
       hrun', hstack⟩
   | jcc p' pargs defs cond e₁ e₂ =>
     simp only [hT] at hs
@@ -158,7 +158,7 @@ theorem term_next (hacc : Accepted env p outs q) {s s' : Lir.State} {t : Xl.Stat
       have hedge : (if taken then (⟨e₁.target, []⟩ : Edge Loc) else ⟨e₂.target, []⟩) =
           ⟨(if taken then e₁ else e₂).target, []⟩ := by cases taken <;> rfl
       rw [hedge, hxl] at hstep
-      exact ⟨_, _, hstar.trans (Sem.Star.single hstep), by simp, rfl, hctx, hs', _, _, _, _, rfl, rfl,
+      exact ⟨_, star_zero_step hstar hstep, rfl, hctx, hs', _, _, _, _, rfl, rfl,
         hrun', hstack⟩
   | ret vs =>
     simp only [hT] at hs
@@ -188,7 +188,7 @@ theorem term_next (hacc : Accepted env p outs q) {s s' : Lir.State} {t : Xl.Stat
             have hstep := xl_step_ret q env (t := { t with regs := regs₁, stack := fl₁ :: cl :: rest₃ }) rfl
               hgf hblf hd₁ hblT (conventionResults_resultLocs hk) hread
               (by rw [hres, bindParams_length hb])
-            exact ⟨_, _, hstar.trans (Sem.Star.single hstep), by simp, hmem, hctx,
+            exact ⟨_, star_zero_step hstar hstep, hmem, hctx,
               returnRegs_size hsaved _ _, _, _, _, _, rfl, rfl, hret vals ρ hb, hstack'⟩
   | tail g' args =>
     simp only [hT] at hs
@@ -209,7 +209,7 @@ theorem term_next (hacc : Accepted env p outs q) {s s' : Lir.State} {t : Xl.Stat
         obtain ⟨cl, hent, hcm⟩ := callee_match hacc hen
         have hstep := xl_step_tail q env (t := { t with regs := regs₁, stack := fl₁ :: rest' }) rfl hgf hblf
           hd₁ hblT (by rw [argLocs_length]; exact hk) (conventionArgs_argLocs _) hread hent
-        exact ⟨_, _, hstar.trans (Sem.Star.single hstep), by simp, hmem, hctx, entryRegs_size vals,
+        exact ⟨_, star_zero_step hstar hstep, hmem, hctx, entryRegs_size vals,
           _, _, _, _, rfl, rfl, hcm, hstack⟩
   | fail failure => simp [hT] at hs
   | trap => simp [hT] at hs
@@ -222,10 +222,10 @@ theorem drop_getElem_cons {α : Type} {arr : Array α} {i : Nat} (h : i < arr.si
   simp
 
 /-- Per-step simulation (05 §5): matching states stay matched through each
-Xv step, the Xl steps spending at least its charge. -/
+Xv step, the Xl steps (edits, then the image) spending exactly its charge. -/
 theorem sound (hacc : Accepted env p outs q) {s s' : Lir.State} {t : Xl.State} {c : Bool}
     (hm : Match env p outs q s t) (hs : Xv.step p s = .next s' c) :
-    ∃ n t', Sem.Star (Xl.step q env) t n t' ∧ c.toNat ≤ n ∧ Match env p outs q s' t' := by
+    ∃ t', Sem.Star (Xl.step q env) t c.toNat t' ∧ Match env p outs q s' t' := by
   obtain ⟨hmem, hctx, hsize, fr, rest, fl, rest', hss, hts, hrun, hstack⟩ := hm
   obtain ⟨f, o, g, b, bo, bl, a, hr⟩ := hrun.running
   by_cases hpos : fr.pos < b.body.size
@@ -243,9 +243,9 @@ theorem sound (hacc : Accepted env p outs q) {s s' : Lir.State} {t : Xl.State} {
         obtain ⟨rfl, rfl⟩ := hs
         simp only [Option.bind_eq_bind, Option.bind_eq_some_iff] at hc
         obtain ⟨vals, hv, hen⟩ := hc
-        obtain ⟨n, t', hstar, hn, hmem', hctx', hs', cl, fl', hts', hcm, hret⟩ :=
+        obtain ⟨t', hstar, hmem', hctx', hs', cl, fl', hts', hcm, hret⟩ :=
           call_case hacc hts hsize hr hd hv hen
-        exact ⟨n, t', hstar, by simpa using hn, by rw [hmem']; exact hmem, by rw [hctx']; exact hctx, hs',
+        exact ⟨t', hstar, by rw [hmem']; exact hmem, by rw [hctx']; exact hctx, hs',
           callee, _, cl, _, rfl, hts', hcm, hret, hstack⟩
     · rename_i hnc
       cases hx : b.body[fr.pos].exec fr.env s.mem s.ctx with
@@ -255,9 +255,9 @@ theorem sound (hacc : Accepted env p outs q) {s s' : Lir.State} {t : Xl.State} {
         simp only [hx, Sem.Step.next.injEq] at hs
         obtain ⟨rfl, rfl⟩ := hs
         rw [hmem, hctx] at hx
-        obtain ⟨n, t', hstar, hmem', hctx', hs', fl', hts', hrun'⟩ :=
+        obtain ⟨t', hstar, hmem', hctx', hs', fl', hts', hrun'⟩ :=
           inst_case hts hsize hr hd (fun g a r e => hnc g a r e) hx
-        exact ⟨n, t', hstar, by simp, hmem'.symm, by rw [hctx']; exact hctx, hs', _, _, _, _, rfl, hts',
+        exact ⟨t', hstar, hmem'.symm, by rw [hctx']; exact hctx, hs', _, _, _, _, rfl, hts',
           hrun', hstack⟩
   · exact term_next hacc hmem hctx hsize hss hts hstack hr hpos hs
 
@@ -266,8 +266,7 @@ Xl step, after the edits before the terminator. -/
 theorem sound_final {s : Lir.State} {t : Xl.State}
     {r : Sem.Result (List Word × X86.Memory)} (hm : Match env p outs q s t)
     (hf : Sem.Final (Xv.step p s) r) (hr : r ≠ .stuck) :
-    ∃ n t' r₂, Sem.Star (Xl.step q env) t n t' ∧ Sem.Final (Xl.step q env t') r₂ ∧
-      Sem.Result.Refines Eq r r₂ := by
+    ∃ t', Sem.Star (Xl.step q env) t 0 t' ∧ Sem.Final (Xl.step q env t') r := by
   obtain ⟨hmem, -, hsize, fr, rest, fl, rest', hss, hts, hrun, hstack⟩ := hm
   obtain ⟨f, o, g, b, bo, bl, a, hru⟩ := hrun.running
   obtain ⟨hpos, hcase⟩ := xv_step_final hss hru.hf hru.hb hf hr
@@ -291,25 +290,25 @@ theorem sound_final {s : Lir.State} {t : Xl.State}
     | nil =>
       have hstep := xl_step_ret_done q env (t := { t with regs := regs₁, stack := [fl₁] }) rfl hgf hblf hd₁
         hblT (conventionResults_resultLocs hk) hread
-      refine ⟨_, _, _, hstar, ?_, .ok (by rw [hmem])⟩
-      rw [hstep]
+      refine ⟨_, hstar, ?_⟩
+      rw [hstep, hmem]
       exact .done
   · rw [hT] at hsubT
     have hstep := xl_step_fail q env (t := { t with regs := regs₁, stack := fl₁ :: rest' }) rfl hgf hblf hd₁
       (fail_substitute hsubT)
-    refine ⟨_, _, _, hstar, ?_, .resource failure⟩
+    refine ⟨_, hstar, ?_⟩
     rw [hstep]
     exact .fail
   · rw [hT] at hsubT
     have hstep := xl_step_trap q env (t := { t with regs := regs₁, stack := fl₁ :: rest' }) rfl hgf hblf hd₁
       (trap_substitute hsubT)
-    refine ⟨_, _, _, hstar, ?_, .trap⟩
+    refine ⟨_, hstar, ?_⟩
     rw [hstep]
     exact .trap
 
 /-- The validator's simulation diagram between Xv and Xl. -/
 theorem diagram (hacc : Accepted env p outs q) :
-    StuckDiagram (Xv.step p) (Xl.step q env) Eq (Match env p outs q) where
+    LockStep (Xv.step p) (Xl.step q env) (Match env p outs q) where
   next hm hs := sound hacc hm hs
   final hm hf hr := sound_final hm hf hr
 

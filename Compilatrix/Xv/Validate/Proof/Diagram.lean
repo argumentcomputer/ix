@@ -1,82 +1,82 @@
 import Compilatrix.Sem.Smallstep
 
 /-!
-# A diagram that asks nothing of a stuck source
+# A lock-step diagram that asks nothing of a stuck source
 
 `Sem.Diagram.final` asks a stuck source step to be matched by a final
 target step. A register allocation cannot promise that: where Xv is stuck
 (an unbound register, a call of the wrong arity) Xl runs on with whatever
-its locations hold, and need not stop. `StuckDiagram` drops that case, and
-its forward clause needs no resource failure; `StuckDiagram.sim` still gives
-a clocked simulation with the identity clock map, since `Sim` asks nothing
-of a stuck source either.
+its locations hold, and need not stop. `LockStep` drops that case, and asks
+more of the others: each source step is matched by target steps spending
+exactly its charge, and each final source step other than a stuck one by
+the same final target step after free steps. Then the target reaches every
+outcome of the source other than a stuck one at the same clock
+(`LockStep.reaches`), timeouts included, which gives a clocked simulation
+with the identity clock map (`LockStep.sim`).
 -/
 
 namespace Compilatrix.Xv.Validate
 
 open Compilatrix.Sem
 
-variable {σ₁ σ₂ α β : Type} {step₁ : σ₁ → Step σ₁ α} {step₂ : σ₂ → Step σ₂ β}
+variable {σ₁ σ₂ α : Type} {step₁ : σ₁ → Step σ₁ α} {step₂ : σ₂ → Step σ₂ α}
 
-/-- A forward simulation diagram with state relation `M` and value relation
-`R`: each source step is matched by target steps spending at least as many
-charges, and each final source step other than a stuck one by a final
-target step. -/
-structure StuckDiagram (step₁ : σ₁ → Step σ₁ α) (step₂ : σ₂ → Step σ₂ β) (R : α → β → Prop)
-    (M : σ₁ → σ₂ → Prop) : Prop where
+/-- A step followed by free steps. -/
+theorem star_zero_step {σ : Type} {step : σ → Step σ α} {s s' s'' : σ} {b : Bool}
+    (h : Star step s 0 s') (hs : step s' = .next s'' b) : Star step s b.toNat s'' := by
+  have := h.trans (Star.single hs)
+  rwa [Nat.zero_add] at this
+
+/-- A lock-step forward diagram with state relation `M`: each source step
+is matched by target steps spending the same charge, and each final source
+step other than a stuck one by free target steps and the same final step. -/
+structure LockStep (step₁ : σ₁ → Step σ₁ α) (step₂ : σ₂ → Step σ₂ α) (M : σ₁ → σ₂ → Prop) : Prop where
   next : ∀ {s₁ s₁' : σ₁} {s₂ : σ₂} {b : Bool}, M s₁ s₂ → step₁ s₁ = .next s₁' b →
-    ∃ c s₂', Star step₂ s₂ c s₂' ∧ b.toNat ≤ c ∧ M s₁' s₂'
+    ∃ s₂', Star step₂ s₂ b.toNat s₂' ∧ M s₁' s₂'
   final : ∀ {s₁ : σ₁} {s₂ : σ₂} {r : Result α}, M s₁ s₂ → Final (step₁ s₁) r → r ≠ .stuck →
-    ∃ c s₂' r₂, Star step₂ s₂ c s₂' ∧ Final (step₂ s₂') r₂ ∧ Result.Refines R r r₂
+    ∃ s₂', Star step₂ s₂ 0 s₂' ∧ Final (step₂ s₂') r
 
-namespace StuckDiagram
+namespace LockStep
 
-variable {R : α → β → Prop} {M : σ₁ → σ₂ → Prop}
+variable {M : σ₁ → σ₂ → Prop}
 
-/-- The forward clause at the level of `Reaches`. -/
-theorem forward (hd : StuckDiagram step₁ step₂ R M) {s₁ : σ₁} {k : Nat} {r : Result α}
-    (h : Reaches step₁ s₁ k r) (hr : r ≠ .timeout) (hs : r ≠ .stuck) {s₂ : σ₂} (hm : M s₁ s₂) :
-    ∃ k' r₂, Reaches step₂ s₂ k' r₂ ∧ Result.Refines R r r₂ := by
+/-- The target reaches each outcome of the source other than a stuck one,
+at the same clock. -/
+theorem reaches (hd : LockStep step₁ step₂ M) {s₁ : σ₁} {k : Nat} {r : Result α}
+    (h : Reaches step₁ s₁ k r) (hr : r ≠ .stuck) {s₂ : σ₂} (hm : M s₁ s₂) : Reaches step₂ s₂ k r := by
   induction h generalizing s₂ with
   | final hf =>
-    obtain ⟨c, s₂', r₂, hst, hf₂, href⟩ := hd.final hm hf hs
-    exact ⟨c, r₂, .of_final hst hf₂ (Nat.le_refl _), href⟩
-  | free hst _ ih | charge hst _ ih =>
-    obtain ⟨c, s₂', hst₂, _, hm'⟩ := hd.next hm hst
-    obtain ⟨k', r₂, h₂, href⟩ := ih hr hs hm'
-    exact ⟨k' + c, r₂, h₂.star hst₂, href⟩
-  | timeout _ => exact absurd rfl hr
-
-/-- A source timeout is a target timeout at the same clock. -/
-theorem timeout (hd : StuckDiagram step₁ step₂ R M) {s₁ : σ₁} {k : Nat} {r : Result α}
-    (h : Reaches step₁ s₁ k r) (hr : r = .timeout) {s₂ : σ₂} (hm : M s₁ s₂) :
-    Reaches step₂ s₂ k .timeout := by
-  induction h generalizing s₂ with
-  | final hf => exact absurd hr hf.ne_timeout
-  | @free _ _ k _ hst _ ih =>
-    obtain ⟨c, s₂', hst₂, _, hm'⟩ := hd.next hm hst
-    exact ((ih hr hm').star hst₂).timeout_le (by omega)
-  | @charge _ _ k _ hst _ ih =>
-    obtain ⟨c, s₂', hst₂, hc, hm'⟩ := hd.next hm hst
-    simp only [Bool.toNat_true] at hc
-    exact ((ih hr hm').star hst₂).timeout_le (by omega)
+    obtain ⟨s₂', hst, hf₂⟩ := hd.final hm hf hr
+    exact .of_final hst hf₂ (Nat.zero_le _)
+  | free hst _ ih =>
+    obtain ⟨s₂', hst₂, hm'⟩ := hd.next hm hst
+    exact (ih hr hm').star hst₂
+  | charge hst _ ih =>
+    obtain ⟨s₂', hst₂, hm'⟩ := hd.next hm hst
+    exact (ih hr hm').star hst₂
   | timeout hst =>
-    obtain ⟨c, s₂', hst₂, hc, _⟩ := hd.next hm hst
-    simp only [Bool.toNat_true] at hc
-    exact Reaches.timeout_of_star hst₂ (by omega)
+    obtain ⟨s₂', hst₂, _⟩ := hd.next hm hst
+    exact Reaches.timeout_of_star hst₂ (by simp)
 
-/-- A stuck-tolerant diagram gives a clocked simulation with the identity
-clock map between related states that both run. -/
-theorem sim (hd : StuckDiagram step₁ step₂ R M) {s₁ : σ₁} {s₂ : σ₂} (hm : M s₁ s₂)
-    {c₁ : Nat → Result α} {c₂ : Nat → Result β} (h₁ : Runs step₁ s₁ c₁)
-    (h₂ : Runs step₂ s₂ c₂) : Sim R id c₁ c₂ where
-  forward k hk := by
+/-- Between related states that both run, the target's outcome at each
+clock is the source's, unless the source is stuck. -/
+theorem eq (hd : LockStep step₁ step₂ M) {s₁ : σ₁} {s₂ : σ₂} (hm : M s₁ s₂)
+    {c₁ c₂ : Nat → Result α} (h₁ : Runs step₁ s₁ c₁) (h₂ : Runs step₂ s₂ c₂) {k : Nat}
+    (hk : c₁ k ≠ .stuck) : c₂ k = c₁ k :=
+  h₂.eq (hd.reaches (h₁ k) hk hm)
+
+/-- A lock-step diagram gives a clocked simulation with the identity clock
+map, with equal values and no extra target resource failures. -/
+theorem sim (hd : LockStep step₁ step₂ M) {s₁ : σ₁} {s₂ : σ₂} (hm : M s₁ s₂)
+    {c₁ c₂ : Nat → Result α} (h₁ : Runs step₁ s₁ c₁) (h₂ : Runs step₂ s₂ c₂) : Sim Eq id c₁ c₂ where
+  forward k _ := by
     by_cases hs : c₁ k = .stuck
     · exact ⟨0, hs ▸ .stuck⟩
-    · obtain ⟨k', r₂, hr₂, href⟩ := hd.forward (h₁ k) hk hs hm
-      exact ⟨k', h₂.eq hr₂ ▸ href⟩
-  timeout k hk := .inl (h₂.eq (hd.timeout (h₁ k) hk hm))
+    · exact ⟨k, hd.eq hm h₁ h₂ hs ▸ .refl fun _ => rfl⟩
+  timeout k hk := by
+    have hk' : c₁ k = .timeout := hk
+    exact .inl ((hd.eq hm h₁ h₂ (by rw [hk']; simp)).trans hk')
 
-end StuckDiagram
+end LockStep
 
 end Compilatrix.Xv.Validate

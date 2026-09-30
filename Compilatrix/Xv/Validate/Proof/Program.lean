@@ -4,11 +4,15 @@ import Compilatrix.Xv.Validate.Proof.Fuel
 /-!
 # Validated allocations refine their programs
 
-`Validate.program_sim`: when `Validate.run env p outs` accepts and gives
-`q`, the Xl run of `q` simulates the Xv run of `p` on every input with the
-identity clock map; `Validate.program_sound` is the resulting refinement of
-behaviours, divergence included: every Xv behaviour other than a stuck one
-is Xl's, up to extra Xl resource failures.
+When `Validate.run env p outs` accepts and gives `q`:
+
+- `Validate.program_eval_eq` (05 §5's `program_sound`): at every clock,
+  on every input, the Xl run of `q` has the Xv run's outcome unless that
+  is stuck, timeouts included;
+- `Validate.program_sim`: hence a clocked simulation with the identity
+  clock map, equal values and no extra Xl resource failures;
+- `Validate.program_sound`: hence refinement of behaviours, divergence
+  included.
 -/
 
 namespace Compilatrix.Xv.Validate
@@ -30,6 +34,19 @@ theorem initial_match (hacc : Accepted env p outs q) {args : List Word} {mem : X
     fr, [], fl, [], rfl, rfl, hrun, trivial⟩
   simp [Xl.State.initial, hacc.main, hent]
 
+/-- Validator soundness per clock (05 §5): an accepted allocation's Xl run
+has the Xv run's outcome at every clock, timeouts included, unless the Xv
+run is stuck. -/
+theorem program_eval_eq (h : Validate.run env p outs = .ok q) {k : Nat} {args : List Word}
+    {mem : X86.Memory} {ctx : Word} (hk : Xv.eval p k args mem ctx ≠ .stuck) :
+    Xl.eval q env k args mem ctx = Xv.eval p k args mem ctx := by
+  have hacc := accepted_of_run h
+  cases hi : Xv.State.initial p args mem ctx with
+  | none => exact absurd (by simp [Xv.eval, hi]) hk
+  | some s =>
+    obtain ⟨t, ht, hm⟩ := initial_match hacc hi
+    exact (diagram hacc).eq hm (runs_eval hi) (Xl.runs_eval ht) hk
+
 /-- Whole-program simulation: an accepted allocation's Xl run simulates
 the Xv run on every input, with the identity clock map. -/
 theorem program_sim (h : Validate.run env p outs = .ok q) (args : List Word) (mem : X86.Memory)
@@ -47,8 +64,8 @@ theorem program_sim (h : Validate.run env p outs = .ok q) (args : List Word) (me
 
 /-- Validator soundness (M2.6): an accepted allocation refines its
 program. On every input, each behaviour of the Xv program other than a
-stuck one (a result, divergence, a trap) is the Xl program's, which may
-also fail for a resource. -/
+stuck one (a result, divergence, a trap, a resource failure) is the Xl
+program's. -/
 theorem program_sound (h : Validate.run env p outs = .ok q) (args : List Word) (mem : X86.Memory)
     (ctx : Word) :
     Sem.Behaviour.Refines Eq (Sem.behaviour fun k => Xv.eval p k args mem ctx)
