@@ -73,6 +73,7 @@ end Ix.Ixon.Audit
 #guard_kernel_axioms Ix.Ixon.Verify.Work.record_accounted [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.WireCheck.validConstant_iff [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Canonical.deConstant_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Canonical.deConstant_reads_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Canonical.deConstant_serConstant [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Canonical.deConstant_noTrailing [propext, Classical.choice, Quot.sound]
 

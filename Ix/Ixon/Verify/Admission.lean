@@ -75,16 +75,15 @@ theorem preflight_ok_iff (limits : Limits) (records : Records) (blobs : Ingress.
     simp [preflight, recordsRead, blobsRead, bind, Except.bind, pure, Except.pure]
 
 /-- An exact ordered reading of record bytes. Keys are unchanged; each
-payload is the canonical encoding of its entire wire-well-formed constant,
-including sharing and side tables, within the per-record limits. This does
-not assert canonical mutual-block order or authenticate address hashes. -/
+payload satisfies the per-record canonical contract `Canonical.Reads`: it is
+the canonical encoding of its entire wire-well-formed constant, including
+sharing and side tables, within the per-record limits. This does not assert
+canonical mutual-block order or authenticate address hashes. -/
 inductive RecordsRead (limits : Limits) : Records → Ingress.Constants → Prop where
   | nil : RecordsRead limits [] []
   | cons {address : Address} {bytes : ByteArray} {constant : Constant}
       {rest : Records} {constants : Ingress.Constants}
-      (wire : constant.wireWF) (encoded : serConstant constant = bytes)
-      (bytesFit : bytes.size ≤ limits.maxRecordBytes)
-      (nodesFit : Bounded.univNodes constant.univs ≤ limits.maxRecordUnivNodes)
+      (reads : Canonical.Reads limits.maxRecordBytes limits.maxRecordUnivNodes bytes constant)
       (tail : RecordsRead limits rest constants) :
       RecordsRead limits ((address, bytes) :: rest) ((address, constant) :: constants)
 
@@ -93,14 +92,14 @@ theorem RecordsRead.encode {limits : Limits} {records : Records} {constants : In
     records = constants.map (fun (address, constant) => (address, serConstant constant)) := by
   induction reading with
   | nil => rfl
-  | cons _ encoded _ _ _ ih => simp [List.map_cons, encoded, ih]
+  | cons reads _ ih => simp [List.map_cons, reads.encoded, ih]
 
 theorem RecordsRead.keys {limits : Limits} {records : Records} {constants : Ingress.Constants}
     (reading : RecordsRead limits records constants) :
     records.map Prod.fst = constants.map Prod.fst := by
   induction reading with
   | nil => rfl
-  | cons _ _ _ _ _ ih => simp [List.map_cons, ih]
+  | cons _ _ ih => simp [List.map_cons, ih]
 
 /-- The per-record universe budgets imply a bound for the complete batch;
 unused universe entries count just like referenced entries. -/
@@ -110,7 +109,8 @@ theorem RecordsRead.univNodes_le {limits : Limits} {records : Records}
       records.length * limits.maxRecordUnivNodes := by
   induction reading with
   | nil => simp
-  | cons _ _ _ nodesFit _ ih =>
+  | cons reads _ ih =>
+    have nodesFit := reads.nodesFit
     simp only [List.map_cons, List.sum_cons, List.length_cons, Nat.add_mul, Nat.one_mul]
     omega
 
@@ -124,9 +124,10 @@ theorem RecordsRead.resourceUnits_le {limits : Limits} {records : Records}
     resourceUnits constants ≤ 2 * payloadBytes records + records.length * limits.maxRecordUnivNodes := by
   induction reading with
   | nil => simp [resourceUnits, payloadBytes]
-  | cons wire encoded _ nodesFit _ ih =>
-    have exactRead := deConstantExact_serConstant _ wire
-    rw [encoded] at exactRead
+  | cons reads _ ih =>
+    have nodesFit := reads.nodesFit
+    have exactRead := deConstantExact_serConstant _ reads.wire
+    rw [reads.encoded] at exactRead
     have structural := ConstantBounds.deConstantExact_resource_bound _ _ exactRead
     simp only [resourceUnits] at ih
     simp only [resourceUnits, List.map_cons, List.sum_cons, payloadBytes, List.length_cons,
@@ -150,9 +151,8 @@ theorem decodeLoop_spec {limits : Limits} {position : Nat} {records : Records}
           .ok output := by
         simpa [decodeLoop, decoded, Except.mapError, bind, Except.bind] using accepted
       obtain ⟨constants, reading, same⟩ := ih tail
-      obtain ⟨wire, encoded, bytesFit, nodesFit⟩ :=
-        (Canonical.deConstant_ok_iff _ _ _ _).mp decoded
-      exact ⟨(address, constant) :: constants, .cons wire encoded bytesFit nodesFit reading,
+      exact ⟨(address, constant) :: constants,
+        .cons ((Canonical.deConstant_reads_iff _ _ _ _).mp decoded) reading,
         by simpa [List.reverse_cons, List.append_assoc] using same⟩
 
 theorem decodeLoop_complete {limits : Limits} {records : Records} {constants : Ingress.Constants}
@@ -160,8 +160,8 @@ theorem decodeLoop_complete {limits : Limits} {records : Records} {constants : I
     decodeLoop limits position records reversed = .ok (reversed.reverse ++ constants) := by
   induction reading generalizing position reversed with
   | nil => simp [decodeLoop]
-  | cons wire encoded bytesFit nodesFit _ ih =>
-    have decoded := (Canonical.deConstant_ok_iff _ _ _ _).mpr ⟨wire, encoded, bytesFit, nodesFit⟩
+  | cons reads _ ih =>
+    have decoded := (Canonical.deConstant_reads_iff _ _ _ _).mpr reads
     simp only [decodeLoop, decoded, Except.mapError, bind, Except.bind]
     simpa [List.reverse_cons, List.append_assoc] using ih (position + 1) (_ :: reversed)
 

@@ -2196,7 +2196,7 @@ Result (`plans/review/v2-contracts`):
 - **Deferred.** The Compilatr.ix `k1` closures come from the Lean 4.34
   producer and follow L1.
 
-### V3 — the byte ladder against the v3 decoder
+### V3 — the byte ladder against the v3 decoder (complete, 2026-09-29)
 
 The v3 production decoder rejects several inputs itself: noncanonical integer
 tags, counts larger than the remaining bytes, invalid kind/safety/recursor
@@ -2210,6 +2210,23 @@ flags, and non-Boolean flags. Restate the K4 ladder against this decoder:
 
 Exit: the ladder theorems and adversarial controls are restated for v3. Every
 freeze or audit change is recorded with its reason.
+
+Result (`plans/review/v3-byte-ladder`):
+- **Canonical re-encode.** It stays necessary: the v3 decoder still accepts
+  two noncanonical universe spellings.
+- **Counted arrays.** The general counted-array bound stays, because v3 checks
+  counts for expression telescopes, rules, and constructors but not for a
+  record's sharing, refs, or univs tables.
+- **Single-use sharing.** Entries are admitted by canonical decoding, the
+  kernel, and exact egress.
+- **Named contract.** `Verify.Canonical.Reads` names the per-record contract,
+  `RecordsRead` carries it, and `deConstant_reads_iff` states it.
+
+Revision: the extracted codec proof modules keep their codec-level predicates
+and milestone domains, so they stay aligned with upstream's ongoing edits;
+V1 ported upstream's v3 revisions of them mechanically. The public contracts
+already use one predicate per sort, and `constantWireWF_iff_codec` bridges
+the two.
 
 ### L1 — Lean 4.34.0
 

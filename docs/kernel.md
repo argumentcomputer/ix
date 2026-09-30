@@ -269,6 +269,11 @@ They do not measure heap bytes, wall time, or arithmetic bit complexity;
 canonical validation/re-encoding, batch administration, projection hashing,
 ordering, literal interpretation, ingress, and checking are outside the metric.
 
+`Verify.Canonical.Reads` names the per-record contract that canonical decoding
+characterizes (`deConstant_reads_iff`) and every byte-admission record reading
+carries: a wire-well-formed constant whose serialization is exactly the input,
+within the byte and aggregate universe-node limits.
+
 `WireCheck.validConstant` decides the complete `Constant.wireWF` predicate.
 Its recursive checks carry telescope counts, avoiding repeated scans of
 long application, binder, and successor chains. `Canonical.deConstant`

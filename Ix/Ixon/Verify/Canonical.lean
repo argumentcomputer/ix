@@ -11,6 +11,16 @@ namespace Ix.Ixon.Verify.Canonical
 
 open _root_.Ixon
 
+/-- The per-record canonical contract: `bytes` is exactly the serialization of
+a wire-well-formed constant, within the byte and aggregate universe-node
+limits. Canonicality here is byte spelling; it asserts nothing about
+mutual-block order, typing, or address authentication. -/
+structure Reads (maxBytes maxUnivNodes : Nat) (bytes : ByteArray) (constant : Constant) : Prop where
+  wire : constant.wireWF
+  encoded : serConstant constant = bytes
+  bytesFit : bytes.size ≤ maxBytes
+  nodesFit : Bounded.univNodes constant.univs ≤ maxUnivNodes
+
 theorem deConstant_spec (maxBytes maxUnivNodes : Nat) (bytes : ByteArray) (constant : Constant)
     (h : Canonical.deConstant maxBytes maxUnivNodes bytes = .ok constant) :
     Bounded.deConstant maxBytes maxUnivNodes bytes = .ok constant ∧
@@ -50,6 +60,15 @@ theorem deConstant_ok_iff (maxBytes maxUnivNodes : Nat) (bytes : ByteArray) (con
     exact ⟨valid, canonical, bytesFit, nodesFit⟩
   · rintro ⟨valid, rfl, bytesFit, nodesFit⟩
     exact deConstant_serConstant constant valid _ _ bytesFit nodesFit
+
+/-- `deConstant_ok_iff` in terms of the named per-record contract. -/
+theorem deConstant_reads_iff (maxBytes maxUnivNodes : Nat) (bytes : ByteArray)
+    (constant : Constant) :
+    Canonical.deConstant maxBytes maxUnivNodes bytes = .ok constant ↔
+      Reads maxBytes maxUnivNodes bytes constant :=
+  (deConstant_ok_iff _ _ _ _).trans
+    ⟨fun ⟨wire, encoded, bytesFit, nodesFit⟩ => ⟨wire, encoded, bytesFit, nodesFit⟩,
+     fun ⟨wire, encoded, bytesFit, nodesFit⟩ => ⟨wire, encoded, bytesFit, nodesFit⟩⟩
 
 theorem deConstant_noTrailing (constant : Constant) (wf : constant.wireWF)
     (maxBytes maxUnivNodes : Nat) (suffix : ByteArray) (nonempty : suffix.size ≠ 0) :

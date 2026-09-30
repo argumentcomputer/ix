@@ -369,3 +369,16 @@ def upstreamV3Expressions : List (String × Bool × List UInt8) := [
   | .ok source =>
     Ixon.serExpr source == ⟨bytes.toArray⟩ && (!standalone || exprRoundtrips (ctx) source)
   | .error _ => false
+
+-- Ixon v3 admits single-use sharing entries: canonical decoding, the kernel,
+-- and exact egress accept a table slot referenced exactly once.
+def singleUseSharing : Ixon.Constant :=
+  { identity with
+    sharing := #[.var 0]
+    info := .defn ⟨.defn, .safe, 1, idType, .leanLam (.sort 0) (.leanLam (.var 0) (.share 0))⟩ }
+
+#guard match Ixon.Canonical.deConstant 256 64 (Ixon.serConstant singleUseSharing) with
+  | .ok value => value == singleUseSharing
+  | .error _ => false
+#guard accepts [(address 1, singleUseSharing)]
+#guard roundtrips [(address 1, singleUseSharing)]
