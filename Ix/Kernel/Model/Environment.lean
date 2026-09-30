@@ -12,6 +12,7 @@ R1: `ConstantFact.quotientLift` also names the equality family's admitted
 eliminator, which Ixon stores as its own record; its meaning is unchanged.
 A5: `NatOp`, `NatTest`, `ConstantFact.natOp` and `ConstantFact.natTest`, values of
 operations and tests on numerals.
+A6: `ConstantFact.height`, a definition's unfolding height, a strategy hint without meaning.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -84,6 +85,10 @@ inductive ConstantFact (β : Type u) where
   | natOp (op : NatOp)
   /-- The entry computes `test` on numerals, as the constant `yes` or `no`. -/
   | natTest (test : NatTest) (yes no : ConstRef β)
+  /-- The definition's unfolding height: one more than the highest height among
+  the constants its body mentions. Conversion unfolds the higher side first.
+  Carries no meaning. -/
+  | height (n : Nat)
 deriving DecidableEq
 
 structure NaturalMeaning {β : Type u} {V : Type v} [SetTheory V]
@@ -119,6 +124,7 @@ def ConstantFact.Meaning {β : Type u} {V : Type v} [SetTheory V]
     constants owner levels = Quotient.liftValue constants eq (levels.getD 0 0) (levels.getD 1 0)
   | .natOp op => levels = [] ∧
     ∀ a b, op.apply (constants owner []) a b = Numeral.value (op.eval a b)
+  | .height _ => True
   | .natTest test yes no => levels = [] ∧
     ∀ a b, app (app (constants owner []) (Numeral.value a)) (Numeral.value b) =
       if test.eval a b then constants yes [] else constants no []

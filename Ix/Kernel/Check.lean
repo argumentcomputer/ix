@@ -96,26 +96,36 @@ theorem TypingClaim.ofReductionView (env : Env β) {Γ : Context β} {e A : AExp
     (h : TypingClaim.{u,v} env.reductionView Γ e A) : TypingClaim.{u,v} env.toEnvironment Γ e A :=
   fun V _ constants hM => h V constants (Env.realizes_reductionView env hM)
 
-/-- Install one checked definition; a theorem's or an opaque's body (`hidden`)
-is installed but not unfolded by conversion. -/
+/-- The height of a definition's body: one more than the highest height among
+the constants it mentions (a strategy hint for conversion). -/
+def definitionHeight (entries : Environment β) (body : AExpr β) : Nat :=
+  1 + body.references.foldl (fun h q =>
+    match entries q with
+    | some entry => max h (heightOf entry.facts)
+    | none => h) 0
+
+/-- Install one checked definition with its height; a theorem's or an opaque's
+body (`hidden`) is installed but not unfolded by conversion. -/
 private def installDefinition (env : Env β) (r : ConstRef β) (universes : Nat)
-    (type body : AExpr β) (hidden : Bool) (fresh : env.toEnvironment r = none)
+    (type body : AExpr β) (height : Nat) (hidden : Bool) (fresh : env.toEnvironment r = none)
     (hTs : type.Scope universes 0) (hBs : body.Scope universes 0)
     (hTr : type.ReferencesIn env.toEnvironment) (hBr : body.ReferencesIn env.toEnvironment)
     {level : VLevel} (hT : TypingClaim.{u,v} env.toEnvironment [] type (.sort level))
     (hB : TypingClaim.{u,v} env.toEnvironment [] body type) :
     { env' : Env β // AdmissionClaim.{u,v} env env' ∧
-      env'.toEnvironment = (env.push r ⟨universes, type, some body, [], []⟩).toEnvironment } :=
-  let entry : ConstantEntry β := ⟨universes, type, some body, [], []⟩
+      env'.toEnvironment = (env.push r ⟨universes, type, some body, [], [.height height]⟩).toEnvironment } :=
+  let entry : ConstantEntry β := ⟨universes, type, some body, [], [.height height]⟩
   ⟨env.pushWith hidden r entry, ⟨⟨fun V _ m => by
-    obtain ⟨constants', hM', -⟩ := extend_definition (entry := entry) m.wf fresh rfl rfl rfl hBs hTr hBr
+    obtain ⟨constants', hM', -⟩ := extend_definition (entry := entry) m.wf fresh rfl rfl
+      (fun f hf => ⟨height, List.mem_singleton.mp hf⟩) hBs hTr hBr
       hT hB m.constants m.realizes
     refine ⟨⟨constants', ?_, ?_⟩⟩
     · rw [Env.toEnvironment_pushWith, Env.toEnvironment_push]; exact hM'
     · rw [Env.toEnvironment_pushWith, Env.toEnvironment_push]
       exact m.wf.insert hTs (fun b hb => by cases hb; exact hBs) hTr
         (fun b hb => by cases hb; exact hBr) (fun _ h => nomatch h) (fun _ h => nomatch h)
-        (fun _ h => nomatch h) (fun _ h => nomatch h),
+        (fun f hf => by cases List.mem_singleton.mp hf; trivial)
+        (fun f hf => by cases List.mem_singleton.mp hf; intro q hq; cases hq),
     fun q e hq => by
       rw [Env.toEnvironment_pushWith]
       exact env.preserves_push r entry fresh q e hq⟩,
@@ -474,7 +484,7 @@ def checkFamilyC (cfg : Config) (env : Env β) (source : β) (family : Const β)
 
 /-- Check one declaration, returning model extension, preservation, and
 the installed type and body reading with the environment. -/
-def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
+def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) (height? : Option Nat := none) :
     Except Error { env' : Env β // AdmissionClaim.{u,v} env env' ∧
       d.block.Installed d.address env'.toEnvironment } :=
   match hm : d.block.members with
@@ -509,11 +519,13 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
                       | .ok ⟨B, hb⟩ =>
                         match isDefEq.{u,v} cfg.fuel view [] B type' with
                         | .ok ⟨hc⟩ =>
-                          let installed := installDefinition env r universes type' body'
+                          -- The supplied height (Lean's reducibility hint) or a computed one.
+                          let height := height?.getD (definitionHeight entries body')
+                          let installed := installDefinition env r universes type' body' height
                             (kind != .definition) fresh hTs hBs hTr hBr
                             (TypingClaim.ofReductionView env hT)
                             (TypingClaim.ofReductionView env (hb.convF hT.formed hc))
-                          let entry : ConstantEntry β := ⟨universes, type', some body', [], []⟩
+                          let entry : ConstantEntry β := ⟨universes, type', some body', [], [.height height]⟩
                           -- A definition computing a numeric operation publishes it.
                           let final : { env'' : Env β // AdmissionClaim.{u,v} env env'' ∧
                               ∃ facts, env''.toEnvironment =
@@ -526,9 +538,9 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
                                   let published := publishArithmetic env installed.val r entry fresh
                                     installed.property.1 installed.property.2 hu.1 checked hrefs
                                   ⟨published.val, published.property.1, _, published.property.2⟩
-                                else ⟨installed.val, installed.property.1, [], installed.property.2⟩
-                              | none => ⟨installed.val, installed.property.1, [], installed.property.2⟩
-                            else ⟨installed.val, installed.property.1, [], installed.property.2⟩
+                                else ⟨installed.val, installed.property.1, entry.facts, installed.property.2⟩
+                              | none => ⟨installed.val, installed.property.1, entry.facts, installed.property.2⟩
+                            else ⟨installed.val, installed.property.1, entry.facts, installed.property.2⟩
                           acceptInstalled env d ⟨final.val, final.property.1⟩ (by
                               have hblock : d.block = ⟨[.defn universes kind type body .safe]⟩ :=
                                 congrArg Block.mk hm
@@ -726,9 +738,12 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
   | [_] => .error (.declined "only definitions, inductive blocks, quotient primitives, and the standard axioms are supported")
   | _ => .error (.declined "multi-member blocks are not supported")
 
-/-- Check one declaration against the environment. -/
-def checkDecl (cfg : Config) (env : Env β) (d : Decl β) : Except Error (Env β) :=
-  (checkDeclC.{u,v} cfg env d).map Subtype.val
+/-- Check one declaration against the environment. `height?` is the definition's unfolding height, a
+conversion hint (e.g. from Lean's reducibility hints); it affects only the
+order of conversion steps. -/
+def checkDecl (cfg : Config) (env : Env β) (d : Decl β) (height? : Option Nat := none) :
+    Except Error (Env β) :=
+  (checkDeclC.{u,v} cfg env d height?).map Subtype.val
 
 /-! ## Association of separate inductive and recursor records
 

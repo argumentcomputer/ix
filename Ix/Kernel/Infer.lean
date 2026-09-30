@@ -146,6 +146,20 @@ def findNatTest : (facts : List (ConstantFact β)) →
   | .natTest test yes no :: _ => some ⟨(test, yes, no), List.mem_cons_self ..⟩
   | _ :: rest => (findNatTest rest).map fun ⟨p, h⟩ => ⟨p, List.mem_cons_of_mem _ h⟩
 
+/-- A definition's unfolding height (`ConstantFact.height`), 0 if it has none. -/
+def heightOf (facts : List (ConstantFact β)) : Nat :=
+  (facts.findSome? fun | .height n => some n | _ => none).getD 0
+
+/-- The height of an `abbrev`: above every regular height. Such heads unfold
+eagerly and are never compared argument-wise, as in the official kernel. -/
+def abbrevHeight : Nat := 2 ^ 32
+
+/-- The unfolding height of a term's head constant. -/
+def headHeight (entries : Environment β) (e : AExpr β) : Nat :=
+  match spine e [] with
+  | (.const r _, _) => ((entries r).map (heightOf ·.facts)).getD 0
+  | _ => 0
+
 /-- The largest exponent `pow` is evaluated at, as in the official kernel. -/
 def natPowMaxExponent : Nat := 2 ^ 24
 
@@ -823,10 +837,30 @@ def whnfCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (e 
     | .error .noMatch => pure ⟨e, ReductionClaim.refl e, none⟩
     | .error failure => pure ⟨e, ReductionClaim.refl e, some failure⟩
 
-/-- Lazy delta: normalize both sides without head delta and compare; unfold a
-head only when the comparison needs it, trying syntactic congruence first
-when both heads unfold. On the first round only, proof irrelevance is tried
-before unfolding a proof. -/
+/-- Same-head congruence: the heads are the same constant at equivalent levels
+and the arguments convert pairwise. The heads are compared before any
+argument. -/
+def appCongrC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
+    KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
+  | 0, _, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, .app f x, .app g y => do
+    let ⟨hf⟩ ← appCongrC fuel entries Γ f g
+    let ⟨hx⟩ ← isDefEqC fuel entries Γ x y
+    return ⟨ConvClaim.app hf hx⟩
+  | _ + 1, _, _, .const r ls, .const r' ls' =>
+    if hr : r = r' then
+      if hl : levelsEquiv ls ls' then pure ⟨hr ▸ ConvClaim.const (levelsEquiv_sound hl)⟩
+      else throw .noMatch
+    else throw .noMatch
+  | _ + 1, _, _, _, _ => throw .noMatch
+
+/-- Lazy delta, as in the official kernel: normalize both sides without head
+delta and compare; unfold a head only when the comparison needs it. When both
+heads unfold, the higher one (`ConstantFact.height`) unfolds first; at equal
+heights, syntactic and then same-head argument congruence are tried before
+both unfold (failures are memoized by the conversion cache). On the first
+round only, proof irrelevance is tried before unfolding a proof. Heights steer
+order only: every branch is a sound step. -/
 def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) → Bool →
     KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
   | 0, _, _, _, _, _ => throw .exhausted
@@ -849,11 +883,23 @@ def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a
           KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions (ReductionClaim.refl a') hb' hc⟩)
             (lazyDeltaC fuel entries Γ a' b'' false)
         | some ⟨a'', ha'⟩, some ⟨b'', hb'⟩ =>
+          let heightA := headHeight entries a'
+          let heightB := headHeight entries b'
+          if heightB < heightA then
+            KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' (ReductionClaim.refl b') hc⟩)
+              (lazyDeltaC fuel entries Γ a'' b' false)
+          else if heightA < heightB then
+            KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions (ReductionClaim.refl a') hb' hc⟩)
+              (lazyDeltaC fuel entries Γ a' b'' false)
+          else
           match quickConv.{u,v} entries Γ a' b' with
           | some c => pure c
           | none =>
-            KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' hb' hc⟩)
-              (lazyDeltaC fuel entries Γ a'' b'' false)
+            let congruence : KM.{u,v} entries Γ (Conv.{u,v} entries Γ a' b') :=
+              if heightA < abbrevHeight then appCongrC fuel entries Γ a' b' else throw .noMatch
+            KM.orElse (KM.mapError SearchFailure.speculative congruence) fun _ =>
+              KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' hb' hc⟩)
+                (lazyDeltaC fuel entries Γ a'' b'' false)
     KM.remember stoppedA <| KM.remember stoppedB <|
       KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha hb hc⟩) compared
 

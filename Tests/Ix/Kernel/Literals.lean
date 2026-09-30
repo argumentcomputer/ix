@@ -93,7 +93,7 @@ def lit (n : Nat) : E := .natLit natRef n
 def app2 (f a b : E) : E := .app (.app f a) b
 def recNat (motive base step major : E) : E := .app (.app (.app (.app natRec1 motive) base) step) major
 
-#guard factsOf [natDecl, addDecl] (.member "add" 0) == [.natOp .add]
+#guard (factsOf [natDecl, addDecl] (.member "add" 0)).contains (.natOp .add)
 
 def bigSum : Decl String := thm "bigSum" (eqNat (app2 addC (lit 1000000) (lit 2345678)) (lit 3345678))
   (reflNat (lit 3345678))
@@ -107,7 +107,7 @@ def bigSumWrong : Decl String := thm "bigSumWrong" (eqNat (app2 addC (lit 100000
 def keepDecl : Decl String := ⟨"keep", ⟨[.defn 0 .definition (.forallE natC (.forallE natC natC))
   (.lam natC (.lam natC (recNat (.lam natC natC) (.bvar 1) (.lam natC (.lam natC (.bvar 0))) (.bvar 0))))
   .safe]⟩⟩
-#guard factsOf [natDecl, keepDecl] (.member "keep" 0) == []
+#guard (factsOf [natDecl, keepDecl] (.member "keep" 0)).all (· matches .height _)
 
 /-- Multiplication by its recurrence over the certified `add`. -/
 def mulDecl : Decl String := ⟨"mul", ⟨[.defn 0 .definition (.forallE natC (.forallE natC natC))
@@ -116,13 +116,14 @@ def mulDecl : Decl String := ⟨"mul", ⟨[.defn 0 .definition (.forallE natC (.
 def mulC : E := .const (.member "mul" 0) []
 def bigProduct : Decl String := thm "bigProduct" (eqNat (app2 mulC (lit 1234) (lit 5678)) (lit 7006652))
   (reflNat (lit 7006652))
-#guard factsOf [natDecl, addDecl, mulDecl] (.member "mul" 0) == [.natOp .mul]
+#guard (factsOf [natDecl, addDecl, mulDecl] (.member "mul" 0)).contains (.natOp .mul)
 #guard accepts [natDecl, eqDecl, addDecl, mulDecl, bigProduct]
 /-- Multiplication's shape over `keep`, which is not addition: nothing is published. -/
 def mulKeepDecl : Decl String := ⟨"mulKeep", ⟨[.defn 0 .definition (.forallE natC (.forallE natC natC))
   (.lam natC (.lam natC (recNat (.lam natC natC) (lit 0)
     (.lam natC (.lam natC (app2 (.const (.member "keep" 0) []) (.bvar 0) (.bvar 3)))) (.bvar 0)))) .safe]⟩⟩
-#guard factsOf [natDecl, addDecl, keepDecl, mulKeepDecl] (.member "mulKeep" 0) == []
+#guard (factsOf [natDecl, addDecl, keepDecl, mulKeepDecl] (.member "mulKeep" 0)).all
+  (· matches .height _)
 
 def boolShape : Shape String := ⟨0, [], [], .succ .zero, [⟨[], [], []⟩, ⟨[], [], []⟩]⟩
 def boolDecl : Decl String := ⟨"Bool", ⟨[boolShape.source "Bool", boolShape.recursorSource "Bool" .large]⟩⟩
@@ -143,8 +144,8 @@ def bleDecl : Decl String := ⟨"ble", ⟨[.defn 0 .definition (.forallE natC (.
 def bleC : E := .const (.member "ble" 0) []
 def bleTrue : Decl String := thm "bleTrue" (eqBool (app2 bleC (lit 300000) (lit 500000)) trueC) (reflBool trueC)
 def bleFalse : Decl String := thm "bleFalse" (eqBool (app2 bleC (lit 500001) (lit 500000)) falseC) (reflBool falseC)
-#guard factsOf [natDecl, boolDecl, bleDecl] (.member "ble" 0) ==
-  [.natTest .ble (.ctor "Bool" 0 1) (.ctor "Bool" 0 0)]
+#guard (factsOf [natDecl, boolDecl, bleDecl] (.member "ble" 0)).contains
+  (.natTest .ble (.ctor "Bool" 0 1) (.ctor "Bool" 0 0))
 #guard accepts [natDecl, boolDecl, eqDecl, bleDecl, bleTrue, bleFalse]
 
 -- A literal naming a family that is not installed is a missing reference.
