@@ -26,6 +26,13 @@ require Blake3 from git
 lean_lib Compilatrix where
   roots := #[`Compilatrix]
 
+/- The compiler (M1.I1): `compilatrix compile CLOSURE.ixe --equations EQ.json
+--root NAME -o OUT.o` runs ingress, `produce` and `Recheck.run` and writes the
+ELF object; `compilatrix check-cert` rechecks a certificate. The logic is in
+`Compilatrix.Cli`; the root only calls it. -/
+lean_exe compilatrix where
+  root := `Compilatrix.Cli.Main
+
 /- Test modules are separate from the production import root. -/
 lean_lib CompilatrixTests where
   roots := #[`CompilatrixTests]

@@ -15,6 +15,7 @@
   "pin-src-tables": {"roots": ["PinSrcTables"], "kind": "lean_exe"},
   "gen-src-artifacts":
   {"roots": ["CompilatrixTests.Src.ArtifactMain"], "kind": "lean_exe"},
+  "compilatrix": {"roots": ["Compilatrix.Cli.Main"], "kind": "lean_exe"},
   "check-xv-select":
   {"roots": ["CompilatrixTests.Xv.Main"], "kind": "lean_exe"},
   "check-x86-streams": {"roots": ["CheckX86Streams"], "kind": "lean_exe"},
@@ -1447,6 +1448,9 @@
   "Compilatrix.Src.Table.Check":
   {"path": "Compilatrix/Src/Table/Check.lean",
    "imports": ["Compilatrix.Src.Pinned"]},
+  "Compilatrix.Src.Table.Cert":
+  {"path": "Compilatrix/Src/Table/Cert.lean",
+   "imports": ["Compilatrix.Src.Table.Validate"]},
   "Compilatrix.Src.Table.Build":
   {"path": "Compilatrix/Src/Table/Build.lean",
    "imports":
@@ -1583,6 +1587,69 @@
   "Compilatrix.Rt.Backend":
   {"path": "Compilatrix/Rt/Backend.lean",
    "imports": ["Compilatrix.Rt.Lower", "Compilatrix.Backend"]},
+  "Compilatrix.Recheck.Run":
+  {"path": "Compilatrix/Recheck/Run.lean",
+   "imports":
+   ["Compilatrix.Recheck.Cert",
+    "Compilatrix.Recheck.Err",
+    "Compilatrix.Src.Recheck",
+    "Compilatrix.Lam.Erase",
+    "Compilatrix.Cfg.Lower",
+    "Compilatrix.Rt.Backend",
+    "Compilatrix.Rt.Readback"]},
+  "Compilatrix.Recheck.Produce":
+  {"path": "Compilatrix/Recheck/Produce.lean",
+   "imports":
+   ["Compilatrix.Recheck.Run",
+    "Compilatrix.Ixon.V3.Env",
+    "Compilatrix.Ixon.V3.Tc.Driver",
+    "Compilatrix.Src.Ingress",
+    "Compilatrix.Src.Pinned",
+    "Compilatrix.Src.Hints",
+    "Compilatrix.Src.Table.Build",
+    "Compilatrix.Src.Relevance.Annotate",
+    "Compilatrix.Src.Admit",
+    "Compilatrix.Xv.Alloc.Driver",
+    "Compilatrix.Xv.Stacking.Run",
+    "Compilatrix.X86.Layout.Tunnel"]},
+  "Compilatrix.Recheck.Json":
+  {"path": "Compilatrix/Recheck/Json.lean",
+   "imports":
+   ["Compilatrix.Recheck.Cert",
+    "Compilatrix.Recheck.Err",
+    "Lean.Data.Json.Basic",
+    "Lean.Data.Json.Parser",
+    "Lean.Data.Json.Printer",
+    "Lean.Data.Json.FromToJson"]},
+  "Compilatrix.Recheck.Err":
+  {"path": "Compilatrix/Recheck/Err.lean",
+   "imports":
+   ["Compilatrix.Src.Syntax",
+    "Compilatrix.Src.Relevance.Check",
+    "Compilatrix.Lam.Erase.Term",
+    "Compilatrix.Fir.Lower",
+    "Compilatrix.Rt.Lower",
+    "Compilatrix.Backend"]},
+  "Compilatrix.Recheck.Cert":
+  {"path": "Compilatrix/Recheck/Cert.lean",
+   "imports":
+   ["Compilatrix.Src.Table.Cert",
+    "Compilatrix.Src.Admit",
+    "Compilatrix.Src.Relevance.Syntax",
+    "Compilatrix.Anf.Pipeline",
+    "Compilatrix.Xv.Alloc.Output",
+    "Compilatrix.Xv.Stacking.Frame",
+    "Compilatrix.X86.Layout.Order",
+    "Compilatrix.X86.ELF",
+    "Compilatrix.Xv.XlSemantics"]},
+  "Compilatrix.Recheck":
+  {"path": "Compilatrix/Recheck.lean",
+   "imports":
+   ["Compilatrix.Recheck.Err",
+    "Compilatrix.Recheck.Cert",
+    "Compilatrix.Recheck.Run",
+    "Compilatrix.Recheck.Produce",
+    "Compilatrix.Recheck.Json"]},
   "Compilatrix.Own.WellFormed":
   {"path": "Compilatrix/Own/WellFormed.lean",
    "imports": ["Compilatrix.Own.Immortal", "Compilatrix.Fir.WellFormed"]},
@@ -1957,6 +2024,17 @@
    ["Compilatrix.Fir.Syntax",
     "Compilatrix.Anf.WellFormed",
     "Compilatrix.Anf.Census"]},
+  "Compilatrix.Cli.Main":
+  {"path": "Compilatrix/Cli/Main.lean", "imports": ["Compilatrix.Cli"]},
+  "Compilatrix.Cli":
+  {"path": "Compilatrix/Cli.lean",
+   "imports":
+   ["Compilatrix.Recheck",
+    "Compilatrix.Anf.Print",
+    "Compilatrix.Fir.Print",
+    "Compilatrix.Cfg.Print",
+    "Compilatrix.Lir.Print",
+    "Compilatrix.Xv.Print"]},
   "Compilatrix.Cfg.WellFormed":
   {"path": "Compilatrix/Cfg/WellFormed.lean",
    "imports": ["Compilatrix.Cfg.Syntax"]},
@@ -2557,6 +2635,9 @@
     "Compilatrix.X86.Layout.Linearize",
     "Compilatrix.Backend",
     "Compilatrix.Rt.Backend",
+    "Compilatrix.Src.Table.Cert",
+    "Compilatrix.Recheck",
+    "Compilatrix.Cli",
     "Compilatrix.Aiur"]},
   "CheckX86Streams":
   {"path": "scripts/CheckX86Streams.lean",

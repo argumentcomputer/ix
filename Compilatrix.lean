@@ -238,6 +238,9 @@ import Compilatrix.X86.Layout.Order
 import Compilatrix.X86.Layout.Linearize
 import Compilatrix.Backend
 import Compilatrix.Rt.Backend
+import Compilatrix.Src.Table.Cert
+import Compilatrix.Recheck
+import Compilatrix.Cli
 import Compilatrix.Aiur
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
@@ -252,7 +255,9 @@ over locations) with rule-based selection from Lir, register allocation
 (linear scan, the all-slots fallback and the kernel-evaluable validator),
 stacking (frames, the SysV export wrapper and the exit group) and block layout
 down to typed x86 (`Backend.emit`), the x86 target model with its certified
-encoder (E1) and stream/ELF layer (E2), and the Aiur target. The
+encoder (E1) and stream/ELF layer (E2), the compiler itself (`Recheck`: the
+certificate, `produce`, the recheck path `Recheck.run` and `compile`; `Cli`: the
+`compilatrix` command line), and the Aiur target. The
 compiler pipeline is being rebuilt; see `docs/roadmap.md`. The complete
 regression and proof collection is built explicitly through
 `CompilatrixTests.Proofs`. -/
