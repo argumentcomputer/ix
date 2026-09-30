@@ -166,6 +166,10 @@
   "Compilatrix.Lam.Erase.Proof.Sound",
   "Compilatrix.Lam.Erase.Proof.Spec",
   "Compilatrix.Lam.Erase.Proof.Values",
+  "Compilatrix.Lam.Erase.Proof.WFBase",
+  "Compilatrix.Lam.Erase.Proof.WFBody",
+  "Compilatrix.Lam.Erase.Proof.WFProg",
+  "Compilatrix.Lam.Erase.Proof.WFTerm",
   "Compilatrix.Lam.Erase.Term",
   "Compilatrix.Lam.Erase.Val",
   "Compilatrix.Lam.ModesOk",
@@ -177,6 +181,7 @@
   "Compilatrix.Lam.Readback",
   "Compilatrix.Lam.Semantics",
   "Compilatrix.Lam.Syntax",
+  "Compilatrix.Lam.WellFormed",
   "Compilatrix.Lir.Operands",
   "Compilatrix.Lir.Semantics",
   "Compilatrix.Lir.Syntax",
@@ -371,5 +376,5 @@
   "Ix.Lib"],
  "baseline": "jcb/x86-phase1: merge M2.2 remainder",
  "axiom_sha256":
- "c46b746b9d132d52ec1c092029f8c7d1572a0a4355e3c450d7c8c18c1f33bf72",
- "axiom_count": 1067}
+ "ceeae204cbc443203c511b5ee75a05a92196f9f99549365d250af85abb37fd61",
+ "axiom_count": 1071}

@@ -7,7 +7,8 @@ Erasure registers a constructor key in its table (`registerCtor`) before it
 emits a term with that key, and the table only grows. So every constructor
 key in an erased term is in the final table (`RegT`), and each row's arity
 is its constructor's kept-field count (`CtorInv`). `CSound x R` is the
-monad's judgement for this: `x` keeps every row and the invariant, with `R`
+monad's judgement for this: `x` keeps every row and the invariant (and the
+erased globals, and every id below `next` naming a key: `IdsSurj`), with `R`
 of its result against every key-arity relation containing the final table
 (like `Sound` for the key table) (M2.2). -/
 
@@ -40,18 +41,28 @@ structure CtorInv (I : Input) (s : St) : Prop where
 theorem CtorInv.empty (I : Input) : CtorInv I {} :=
   ⟨fun _ _ h => by simp [NatMap.get?] at h, List.nodup_nil, fun c => by simp [NatMap.get?]⟩
 
-/-- A step keeps every row and the invariant. -/
+/-- Every id below `next` names a key. -/
+def IdsSurj (s : St) : Prop := ∀ g, g < s.next → ∃ key, keyOf s key = some g
+
+/-- A step keeps every row, the table's invariant, the erased globals, and
+every id naming a key. -/
 structure CGrows (I : Input) (s s' : St) : Prop where
   ctors : ∀ c info, s.ctors.get? c = some info → s'.ctors.get? c = some info
   inv : CtorInv I s → CtorInv I s'
   globals : s'.globals = s.globals
+  surj : IdsSurj s → IdsSurj s'
 
-theorem CGrows.refl (I : Input) (s : St) : CGrows I s s := ⟨fun _ _ h => h, id, rfl⟩
+theorem CGrows.refl (I : Input) (s : St) : CGrows I s s := ⟨fun _ _ h => h, id, rfl, id⟩
 
 theorem CGrows.trans {I : Input} {s₁ s₂ s₃ : St} (h₁ : CGrows I s₁ s₂) (h₂ : CGrows I s₂ s₃) :
     CGrows I s₁ s₃ :=
   ⟨fun c info h => h₂.ctors c info (h₁.ctors c info h), fun h => h₂.inv (h₁.inv h),
-    h₂.globals.trans h₁.globals⟩
+    h₂.globals.trans h₁.globals, fun h => h₂.surj (h₁.surj h)⟩
+
+theorem IdsSurj.frame {s s' : St} (hi : s'.ids = s.ids) (hn : s'.next = s.next)
+    (h : IdsSurj s) : IdsSurj s' := fun g hg => by
+  obtain ⟨key, hk⟩ := h g (hn ▸ hg)
+  exact ⟨key, by unfold keyOf at hk ⊢; rw [hi]; exact hk⟩
 
 /-- A step that keeps the table (and the globals). -/
 theorem CtorInv.frame {I : Input} {s s' : St} (hc : s'.ctors = s.ctors)
@@ -60,8 +71,9 @@ theorem CtorInv.frame {I : Input} {s s' : St} (hc : s'.ctors = s.ctors)
   ⟨fun c info h => h₁ c info (hc ▸ h), ho ▸ h₂, fun c => by rw [ho, hc]; exact h₃ c⟩
 
 theorem CGrows.frame {I : Input} {s s' : St} (hc : s'.ctors = s.ctors)
-    (ho : s'.ctorOrder = s.ctorOrder) (hg : s'.globals = s.globals) : CGrows I s s' :=
-  ⟨fun c info h => by rw [hc]; exact h, CtorInv.frame hc ho, hg⟩
+    (ho : s'.ctorOrder = s.ctorOrder) (hg : s'.globals = s.globals) (hi : s'.ids = s.ids)
+    (hn : s'.next = s.next) : CGrows I s s' :=
+  ⟨fun c info h => by rw [hc]; exact h, CtorInv.frame hc ho, hg, IdsSurj.frame hi hn⟩
 
 theorem tabOf_grows {I : Input} {s s' : St} (h : CGrows I s s') {k : Key.CtorKey} {n : Nat} :
     tabOf s k n → tabOf s' k n := fun ⟨c, info, hc, hk, hn⟩ => ⟨c, info, h.ctors c info hc, hk, hn⟩
@@ -182,7 +194,19 @@ theorem csound_globalId (I : Input) (key : Key.GKey) :
     rw [hl] at e
     simp only [StateT.run_bind, StateT.run_set, StateT.run_pure, pure_bind] at e
     cases e
-    exact ⟨CGrows.frame rfl rfl rfl, fun _ _ => trivial⟩
+    refine ⟨⟨fun _ _ h => h, CtorInv.frame rfl rfl, rfl, fun h g' hg' => ?_⟩, fun _ _ => trivial⟩
+    have hnew := fun key' => keyOf_globalId_new s key key' hl
+    by_cases e : g' = s.next
+    · exact ⟨key, by rw [hnew key]; simp [e]⟩
+    · obtain ⟨key', hk'⟩ := h g' (by simp only at hg'; omega)
+      refine ⟨key', ?_⟩
+      rw [hnew key']
+      by_cases e' : key' = key
+      · subst e'
+        unfold keyOf at hk'
+        rw [hl] at hk'
+        cases hk'
+      · simp [e', hk']
 
 /-- Registering a row of its shape: afterwards the key has that arity. -/
 theorem csound_registerCtor (I : Input) (c : CId) (tag arity : Nat) (hs : RowShape I c arity) :
@@ -206,7 +230,7 @@ theorem csound_registerCtor (I : Input) (c : CId) (tag arity : Nat) (hs : RowSha
     simp only [StateT.run_set] at e
     cases e
     refine ⟨⟨fun c' info' h' => ?_, fun ⟨h₁, h₂, h₃⟩ => ⟨fun c' info' h' => ?_, ?_, fun c' => ?_⟩,
-      rfl⟩,
+      rfl, id⟩,
       fun T hT => hT _ _ ⟨c, _, NatMap.get?_insert_self _ _ _, rfl, rfl⟩⟩
     · dsimp only
       rw [NatMap.get?_insert_ne]
@@ -232,7 +256,7 @@ theorem csound_registerCtor (I : Input) (c : CId) (tag arity : Nat) (hs : RowSha
       · simp [e]
 
 /-- `alias` keeps a constructor that is neither pinned `Decidable` one. -/
-theorem alias_self {I : Input} {c : CId} (hf : ∀ d, I.known.decIsFalse = some d → d ≠ c)
+theorem alias_of_notDec {I : Input} {c : CId} (hf : ∀ d, I.known.decIsFalse = some d → d ≠ c)
     (ht : ∀ d, I.known.decIsTrue = some d → d ≠ c) : I.alias c = c := by
   unfold Input.alias
   split
@@ -272,7 +296,7 @@ theorem csound_registerBool (I : Input) (wf : ProgWF I) :
         subst e
         exact wf.decOther hdd (by rcases hb with h | h; exact .inl h; exact .inr (.inl h)) hd hd rfl
       refine CSound.bind (csound_registerCtor I c cidx 0
-        ⟨c, sf, lv, ind, cidx, np, nf, ty, hd, alias_self (fun d h => hne d (.inl h))
+        ⟨c, sf, lv, ind, cidx, np, nf, ty, hd, alias_of_notDec (fun d h => hne d (.inl h))
           (fun d h => hne d (.inr h)), by rw [hnf]; rfl⟩) fun _ => CSound.pure fun _ _ => trivial
     · exact CSound.pure fun _ => trivial
 

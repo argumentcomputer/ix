@@ -21,7 +21,7 @@ theorem mem_globalList {P : Program} {g : GlobalId} {gl : Global} :
 theorem globalList_pairwise (P : Program) : P.globalList.Pairwise fun p p' => p.1 < p'.1 := by
   unfold globalList
   refine List.Pairwise.filterMap _ (fun a a' h b hb b' hb' => ?_) List.pairwise_lt_range
-  simp only [Option.mem_def, Option.map_eq_some_iff] at hb hb'
+  simp only [Option.map_eq_some_iff] at hb hb'
   obtain ⟨_, _, rfl⟩ := hb
   obtain ⟨_, _, rfl⟩ := hb'
   exact h

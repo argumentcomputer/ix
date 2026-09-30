@@ -178,14 +178,17 @@ theorem idsOk_empty : IdsOk {} := by
   · intro key g h; cases h
   · intro key key' g h; cases h
 
-/-- The setting a successful erasure provides: the final key table relates
-every global to its body, every root to its global. -/
-theorem erase_spec {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program} {st : Erase.Stats}
-    (h : erase p ch = .ok (L, st)) :
-    ∃ G : Key.GKey → GlobalId → Prop, ProgR (Input.ofProgram p ch) G L ∧
+/-- The state a successful erasure ends in: its key table relates every
+global to its body and every root to its global, and its ids lie below
+`next`, one key each. -/
+theorem erase_spec_run {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program}
+    {st : Erase.Stats} (h : erase p ch = .ok (L, st)) :
+    ∃ s : St, (Erase.run (Input.ofProgram p ch)).run {} = .ok (L.roots, s) ∧ IdsOk s ∧
+      ProgR (Input.ofProgram p ch) (fun key g => keyOf s key = some g) L ∧
       L.known = (Input.ofProgram p ch).lamKnown ∧
-      (∀ s, p.known.natSucc = some s → (Input.ofProgram p ch).kept s [] 0 = true) ∧
-      Forall2 (RootR (Input.ofProgram p ch) G) (Input.ofProgram p ch).roots L.roots := by
+      (∀ s', p.known.natSucc = some s' → (Input.ofProgram p ch).kept s' [] 0 = true) ∧
+      Forall2 (RootR (Input.ofProgram p ch) (fun key g => keyOf s key = some g))
+        (Input.ofProgram p ch).roots L.roots := by
   unfold erase at h
   dsimp only at h
   split at h
@@ -197,19 +200,21 @@ theorem erase_spec {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program} 
     · cases h
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, -⟩ := h
+    refine ⟨s, hrun, ?_⟩
     have main : ∀ (s₀ : St) (hk : ∀ s₁, p.known.natSucc = some s₁ →
         (Input.ofProgram p ch).kept s₁ [] 0 = true),
         (do
           let roots ← List.mapM (rootId (Input.ofProgram p ch)) (Input.ofProgram p ch).roots
           loop (Input.ofProgram p ch) loopFuel
           pure roots : M (List GlobalId)).run s₀ = .ok (roots, s) → s₀ = {} →
-        ∃ G : Key.GKey → GlobalId → Prop, ProgR (Input.ofProgram p ch) G
+        IdsOk s ∧ ProgR (Input.ofProgram p ch) (fun key g => keyOf s key = some g)
             { globals := s.globals, size := s.next, roots,
               ctors := s.ctorOrder.reverse.filterMap s.ctors.get?,
               known := (Input.ofProgram p ch).lamKnown } ∧
           (Input.ofProgram p ch).lamKnown = (Input.ofProgram p ch).lamKnown ∧
           (∀ s₁, p.known.natSucc = some s₁ → (Input.ofProgram p ch).kept s₁ [] 0 = true) ∧
-          Forall2 (RootR (Input.ofProgram p ch) G) (Input.ofProgram p ch).roots roots := by
+          Forall2 (RootR (Input.ofProgram p ch) (fun key g => keyOf s key = some g))
+            (Input.ofProgram p ch).roots roots := by
       intro s₀ hk e h0
       subst h0
       obtain ⟨rs, s_r, er, e'⟩ := Sound.bind_run e
@@ -232,7 +237,7 @@ theorem erase_spec {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program} 
             · cases h
             · exact h
       obtain ⟨hinv', hfr, hbk, hkeys⟩ := loop_sound _ loopFuel s_r _ el hinv
-      refine ⟨fun key g => keyOf s_l key = some g, fun key g hk => ?_, rfl, hk, ?_⟩
+      refine ⟨hinv'.ids, fun key g hk => ?_, rfl, hk, ?_⟩
       · rcases hinv'.keys key g hk with ⟨gl, hgl, hkey, hB⟩ | hq | hq
         · exact ⟨gl, hgl, hkey, hB _ fun _ _ h => h⟩
         · rw [hfr] at hq; cases hq
@@ -259,5 +264,16 @@ theorem erase_spec {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program} 
         have h₂' : (Input.ofProgram p ch).known.natSucc = some s₂ := h₂
         rw [h₂'] at hs
         exact absurd rfl (hs s₂)) hrun rfl
+
+/-- The setting a successful erasure provides: the final key table relates
+every global to its body, every root to its global. -/
+theorem erase_spec {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program} {st : Erase.Stats}
+    (h : erase p ch = .ok (L, st)) :
+    ∃ G : Key.GKey → GlobalId → Prop, ProgR (Input.ofProgram p ch) G L ∧
+      L.known = (Input.ofProgram p ch).lamKnown ∧
+      (∀ s, p.known.natSucc = some s → (Input.ofProgram p ch).kept s [] 0 = true) ∧
+      Forall2 (RootR (Input.ofProgram p ch) G) (Input.ofProgram p ch).roots L.roots := by
+  obtain ⟨s, -, -, hprog, hknown, hsucc, hroots⟩ := erase_spec_run h
+  exact ⟨_, hprog, hknown, hsucc, hroots⟩
 
 end Compilatrix.Lam.Erase.Proof

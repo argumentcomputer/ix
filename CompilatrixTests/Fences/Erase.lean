@@ -3,7 +3,7 @@ import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Erase.Proof.Correct
 import Compilatrix.Src.Relevance.Proof.Sound
 import Compilatrix.Lam.Erase.Proof.ModesOk
-import Compilatrix.Lam.Erase.Proof.RegBody
+import Compilatrix.Lam.Erase.Proof.WFProg
 
 /-! Required axiom fences for the source-to-Lam theorems (M2.2): clock
 monotonicity of SrcEval and Lam, erasure's correctness, and the relevance
@@ -131,6 +131,20 @@ checker's soundness. Expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Lam.Erase.Proof.erase_reg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.erase_reg
+
+/-! Erasure's output is well formed. -/
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.erase_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.erase_wellFormed
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.erase_spec_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.erase_spec_run
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.tr_wf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.tr_wf
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.bodyR_wf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.bodyR_wf
 
 /-! `ModesOk` as a proposition, its checker's soundness, and erasure's output
 checked against it. -/

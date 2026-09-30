@@ -127,7 +127,7 @@ theorem tabOf_mono {s s' : St}
 
 theorem reg_loop : ∀ (fuel : Nat) (s s' : St), (loop I fuel).run s = .ok ((), s') →
     (∀ c info, s.ctors.get? c = some info → s'.ctors.get? c = some info) ∧
-      (CtorInv I s → CtorInv I s') ∧ (GlobReg s → GlobReg s')
+      (CtorInv I s → CtorInv I s') ∧ (GlobReg s → GlobReg s') ∧ (IdsSurj s → IdsSurj s')
   | 0, s, s', e => by
     unfold loop at e
     exact ((CSound.decline (I := I) (R := fun _ _ => False) s () s' e).2 (fun _ _ => True)
@@ -154,10 +154,13 @@ theorem reg_loop : ∀ (fuel : Nat) (s s' : St), (loop I fuel).run s = .ok ((), 
       have hgl₃ : s₃.globals = s₂.globals.insert g ⟨key, body, res⟩ := by rw [← e₅]
       have hsub : ∀ c info, s.ctors.get? c = some info → s₃.ctors.get? c = some info :=
         fun c info h => by rw [hc₃]; exact hg₂.ctors c info h
-      obtain ⟨h₁, h₂, h₃⟩ := reg_loop fuel s₃ s' e₆
+      have hi₃ : s₃.ids = s₂.ids := by rw [← e₅]
+      have hn₃ : s₃.next = s₂.next := by rw [← e₅]
+      obtain ⟨h₁, h₂, h₃, h₄⟩ := reg_loop fuel s₃ s' e₆
       refine ⟨fun c info h => h₁ c info (hsub c info h),
         fun h => h₂ (CtorInv.frame hc₃ ho₃ (hg₂.inv (CtorInv.frame (s := s) rfl rfl h))),
-        fun hs => h₃ fun g' gl hgl T hT => ?_⟩
+        fun hs => h₃ fun g' gl hgl T hT => ?_,
+        fun hs => h₄ (IdsSurj.frame hi₃ hn₃ (hg₂.surj (IdsSurj.frame (s := s) rfl rfl hs)))⟩
       have hT₂ : ∀ k n, tabOf s₂ k n → T k n := fun k n h => hT k n (by rw [tabOf, hc₃]; exact h)
       rw [hgl₃, NatMap.get?_insert] at hgl
       split at hgl
@@ -173,15 +176,16 @@ theorem reg_loop : ∀ (fuel : Nat) (s s' : St), (loop I fuel).run s = .ok ((), 
         rw [hb] at e
         simp only [StateT.run_pure] at e
         cases e
-        exact ⟨fun _ _ h => h, id, id⟩
+        exact ⟨fun _ _ h => h, id, id, id⟩
       | cons p ps =>
         rw [hb] at e
         dsimp only at e
         obtain ⟨_, s₁, e₁, e₂⟩ := Sound.bind_run e
         simp only [StateT.run_set] at e₁
         cases e₁
-        obtain ⟨h₁, h₂, h₃⟩ := reg_loop fuel _ s' e₂
-        exact ⟨h₁, fun h => h₂ (CtorInv.frame (s := s) rfl rfl h), fun hs => h₃ hs⟩
+        obtain ⟨h₁, h₂, h₃, h₄⟩ := reg_loop fuel _ s' e₂
+        exact ⟨h₁, fun h => h₂ (CtorInv.frame (s := s) rfl rfl h), fun hs => h₃ hs,
+          fun hs => h₄ (IdsSurj.frame (s := s) rfl rfl hs)⟩
 
 omit wf in
 theorem reg_rootId (c : CId) : CSound I (rootId I c) fun _ _ => True := by
@@ -199,8 +203,10 @@ ends in a state whose table keeps its invariant and has a row for every
 constructor key of every global body. -/
 theorem erase_reg {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program}
     {st : Erase.Stats} (h : erase p ch = .ok (L, st)) :
-    ∃ s : St, L.globals = s.globals ∧ L.ctors = s.ctorOrder.reverse.filterMap s.ctors.get? ∧
-      CtorInv (Input.ofProgram p ch) s ∧
+    ∃ s : St, (Erase.run (Input.ofProgram p ch)).run {} = .ok (L.roots, s) ∧
+      L.globals = s.globals ∧ L.size = s.next ∧
+      L.ctors = s.ctorOrder.reverse.filterMap s.ctors.get? ∧
+      CtorInv (Input.ofProgram p ch) s ∧ IdsSurj s ∧
       ∀ g gl, L.global? g = some gl → RegT (tabOf s) gl.body := by
   have wf := erase_progWF h
   unfold erase at h
@@ -214,14 +220,14 @@ theorem erase_reg {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program}
     · cases h
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, -⟩ := h
-    refine ⟨s, rfl, rfl, ?_⟩
+    refine ⟨s, hrun, rfl, rfl, rfl, ?_⟩
     unfold Erase.run at hrun
     dsimp only at hrun
     have main : ∀ (s₀ : St), (do
         let roots ← List.mapM (rootId (Input.ofProgram p ch)) (Input.ofProgram p ch).roots
         loop (Input.ofProgram p ch) loopFuel
         pure roots : M (List GlobalId)).run s₀ = .ok (roots, s) → s₀ = {} →
-        CtorInv (Input.ofProgram p ch) s ∧
+        CtorInv (Input.ofProgram p ch) s ∧ IdsSurj s ∧
           ∀ g gl, s.globals.get? g = some gl → RegT (tabOf s) gl.body := by
       intro s₀ e h0
       subst h0
@@ -233,13 +239,13 @@ theorem erase_reg {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program}
       subst hs
       obtain ⟨hg_r, -⟩ := CSound.mapM_all (P := fun _ _ => True)
         (fun c _ => reg_rootId (Input.ofProgram p ch) c) {} rs s_r er
-      obtain ⟨_, hinv, hglob⟩ := reg_loop (Input.ofProgram p ch) wf loopFuel s_r s_l el
+      obtain ⟨_, hinv, hglob, hsurj⟩ := reg_loop (Input.ofProgram p ch) wf loopFuel s_r s_l el
       have hgr : GlobReg s_r := by
         intro g gl hgl
         rw [hg_r.globals] at hgl
         simp [NatMap.get?] at hgl
-      exact ⟨hinv (hg_r.inv (CtorInv.empty _)), fun g gl hgl => hglob hgr g gl hgl _
-        fun _ _ h => h⟩
+      exact ⟨hinv (hg_r.inv (CtorInv.empty _)), hsurj (hg_r.surj fun g hg => by cases hg),
+        fun g gl hgl => hglob hgr g gl hgl _ fun _ _ h => h⟩
     split at hrun
     · next s₁ hs =>
       by_cases hkept : (Input.ofProgram p ch).kept s₁ [] 0 = true

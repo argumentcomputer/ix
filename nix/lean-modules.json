@@ -720,7 +720,7 @@
     "Compilatrix.Lam.Erase.Proof.Correct",
     "Compilatrix.Src.Relevance.Proof.Sound",
     "Compilatrix.Lam.Erase.Proof.ModesOk",
-    "Compilatrix.Lam.Erase.Proof.RegBody"]},
+    "Compilatrix.Lam.Erase.Proof.WFProg"]},
   "CompilatrixTests.Fences.Backend":
   {"path": "CompilatrixTests/Fences/Backend.lean",
    "imports":
@@ -1783,6 +1783,25 @@
   "Compilatrix.Lam.Erase.Term":
   {"path": "Compilatrix/Lam/Erase/Term.lean",
    "imports": ["Compilatrix.Lam.Erase.Input"]},
+  "Compilatrix.Lam.Erase.Proof.WFTerm":
+  {"path": "Compilatrix/Lam/Erase/Proof/WFTerm.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.WFBase",
+    "Compilatrix.Lam.Erase.Proof.RegBuild"]},
+  "Compilatrix.Lam.Erase.Proof.WFProg":
+  {"path": "Compilatrix/Lam/Erase/Proof/WFProg.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.WFBody",
+    "Compilatrix.Lam.Erase.Proof.RegBody",
+    "Compilatrix.Lam.Erase.Proof.Build",
+    "Compilatrix.Lam.Proof.Program"]},
+  "Compilatrix.Lam.Erase.Proof.WFBody":
+  {"path": "Compilatrix/Lam/Erase/Proof/WFBody.lean",
+   "imports": ["Compilatrix.Lam.Erase.Proof.WFTerm"]},
+  "Compilatrix.Lam.Erase.Proof.WFBase":
+  {"path": "Compilatrix/Lam/Erase/Proof/WFBase.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.Reg", "Compilatrix.Lam.WellFormed"]},
   "Compilatrix.Lam.Erase.Proof.Values":
   {"path": "Compilatrix/Lam/Erase/Proof/Values.lean",
    "imports":
@@ -2659,6 +2678,10 @@
     "Compilatrix.Lam.Erase.Proof.Reg",
     "Compilatrix.Lam.Erase.Proof.RegBuild",
     "Compilatrix.Lam.Erase.Proof.RegBody",
+    "Compilatrix.Lam.Erase.Proof.WFBase",
+    "Compilatrix.Lam.Erase.Proof.WFTerm",
+    "Compilatrix.Lam.Erase.Proof.WFBody",
+    "Compilatrix.Lam.Erase.Proof.WFProg",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
