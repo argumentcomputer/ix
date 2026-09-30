@@ -132,9 +132,10 @@ Natively, `check-x86-object` links the `unwind` fixture (an export that
 recurses with the prologue's stack check and fails or succeeds by argument)
 under [`unwind_harness.c`](../fixtures/x86/unwind_harness.c), which loads
 sentinels into the callee-saved registers and checks `rax:rdx`, the
-sentinels and `rsp` for failures at depths 0, 1 and 3, a second successful
-call on the same context, and a deep recursion under a small stack budget
-(status 2).
+sentinels and `rsp` for failures one, two and four frames deep, a second
+successful call on the same context, and a deep recursion under a small
+stack budget (status 2). A failure before any call (the wrapper's argument
+check) is covered by `check-x86-streams`.
 
 ## Object interpretation and relocation
 
