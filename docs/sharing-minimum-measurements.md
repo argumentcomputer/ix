@@ -173,82 +173,117 @@ the same total the MSS builder produced, computed independently.
 them whose intermediate nodes are not certain-stored; components are the transitive
 closure of that relation.
 
+### Change note: corrected `payloadMin`
+
+The first run of this section used the coordinator's first specification of
+`payloadMin`: scalar bytes plus 1 byte per child. At `w ≥ 2` that bound is too weak,
+because a stored child costs `w` bytes as a reference, not 1. The numbers below use the
+corrected specification, a width-aware recursive lower bound computed bottom-up on the
+compact DAG for each `w`:
+
+| node | `payloadMin` | `inlineMin` | `cmin` (head use) | `cminCont` (continuation use) |
+|---|---|---|---|---|
+| leaf | — | its size | `min(w, size)` if a candidate, else `size` | — |
+| internal | `scalar + Σ childCost` | `hdr + payloadMin` | `min(w, inlineMin)` if a candidate, else `inlineMin` | `min(w, payloadMin)` if a candidate, else `payloadMin` |
+
+- `childCost` is `cmin` for a head-position child and `cminCont` for a
+  continuation-position child: the function child of an App when that child is an App,
+  or the body of a Lam (All) when that body is a Lam (All).
+- The certain-excluded test, the component definition and everything else are unchanged.
+- The previous numbers were reported in commit `0b2ccbb3`:
+
+  | w | certain-stored (previous) | uncertain (previous) | largest component, median / p90 / p99 / max (previous) |
+  |---:|---:|---:|---|
+  | 1 | 1,698,177 | 647,405 | 1 / 4 / 8 / 87 |
+  | 2 | 408,749 | 1,586,970 | 5 / 46 / 253 / 3,585 |
+  | 3 | 23,501 | 1,751,949 | 4 / 65 / 361 / 5,059 |
+
+  The certain-excluded counts are unchanged: 0, 349,863 and 570,132.
+
 ### Implementation notes and interpretations
 
-- **`headdeg`.** An occurrence is a non-head only when `t` is an App in the function
-  position of an App, or a Lam (All) in the body position of a Lam (All). Roots are
-  heads.
-  - Read literally, "NOT (function child of an App)" would also treat a *non-App*
-    function head as a non-head, for example a Lam applied to arguments.
-  - The harness classifies both ways. The literal reading changes the class of 573, 317
-    and 207 candidates for w = 1, 2 and 3 respectively, out of 2,345,582.
-- **`payloadMin` per node kind:**
-
-  | kind | `payloadMin` | breakdown |
-  |---|---:|---|
-  | App | 2 | two 1-byte child references |
-  | Lam / All | 3 | contract byte + 2 children |
-  | Let | 4 | binder-contract byte + 3 children; the Let flags (≤ 3) sit in its one-byte Tag4 header |
-  | Prj | `Tag0(type index)` + 1 | |
-
+- **`headdeg`.** I kept my non-literal reading. An occurrence is a non-head only when `t`
+  is an App in the function position of an App, or a Lam (All) in the body position of a
+  Lam (All). Roots are heads.
+  - The same rule decides continuation positions in `payloadMin`.
+  - The literal reading ("NOT (function child of an App)" for any `t`) changes the class of
+    100, 100 and 92 candidates for w = 1, 2 and 3 respectively, out of 2,345,582.
+- **`scalar`:** App 0; Lam, All and Let 1 (the contract byte; the Let flags, ≤ 3, sit in
+  its one-byte Tag4 header); Prj `Tag0(type index)`.
 - **`payloadMax`** is the unshared size minus the node's own Tag4 header. For App, Lam and
-  All that is the header of the maximal telescope the node heads.
-- **Prj header approximation.** A Prj's field index sits in its Tag4 header. When the index
-  is ≥ 8 that header is 2 bytes, but `hdr` is taken as 1 per the definition. This is the
-  only place the definition approximates the byte grammar that I am aware of. I did not
-  count how many candidates it affects.
+  All that is the header of the maximal telescope it heads.
+- **Header approximation.** `hdr = 1` for every internal node, although a Prj with field
+  index ≥ 8, or a telescope of 8 or more nodes, has a 2-byte header. As a lower bound this
+  is on the safe side.
 - **Arithmetic** is exact (`Nat`/`Int`). `occ` is not capped.
-- **`occ` is `usageCount`**, checked against a brute-force walk as described earlier.
-- **Component check.** The fast union-find computation was compared with a literal brute
-  force: a walk from every uncertain node through all non-certain-stored nodes. It covered
-  every rooted constant with at most 1,000 DAG nodes (53,652 of 55,386) and found 0
-  differences for each `w`.
-  - My first version of the fast computation wrongly merged uncertain nodes through a
-    shared "transparent" leaf. The `A → A → B → B` witness and the brute force exposed it.
-    All numbers here come from the corrected version.
-- **Witness classifications** (certain-stored / certain-excluded / uncertain / largest
-  component, for w = 1 | 2 | 3). These match hand computation from the definitions:
-  - `T2 → T2`: 1/0/0/0 | 0/0/1/1 | 0/0/1/1
-  - `T16 → T16`: 1/0/0/0 | 0/0/1/1 | 0/0/1/1
-  - `A → A → B → B`: 2/0/0/0 | 0/0/2/1 | 0/2/0/0
-- **No candidate** met both certain conditions, for any `w`.
+- **Sanity checks:** no candidate has `payloadMin > payloadMax`, and none met both certain
+  conditions, for any `w`.
+- **Component check.** The fast union-find computation agrees with a literal brute force
+  (a walk from every uncertain node through all non-certain-stored nodes) on every rooted
+  constant with at most 1,000 DAG nodes (53,652 of 55,386), with 0 differences for each
+  `w`. The first version of the fast computation merged components through a shared leaf;
+  the `A → A → B → B` witness and the brute force exposed it, and it was fixed before any
+  numbers were reported.
+- **Witnesses**, checked by hand (certain-stored / certain-excluded / uncertain / largest
+  component, for w = 1 | 2 | 3). The harness output matches.
+  - **`T2 → T2`: 1/0/0/0 | 1/0/0/0 | 0/0/1/1.** The one candidate is `T2 = All(P, T1)`, with
+    `deg 2`, `headdeg 1` (its body occurrence continues the root's All telescope).
+    - `T1` is not a candidate and is a continuation child, so it costs its payload 3.
+    - So `payloadMin(T2) = 1 + 1 + 3 = 5` and `g = 5 − 2w`, which is 3 and 1 for w = 1 and
+      2 (stored) and −1 for w = 3.
+    - The upper bound at w = 3 is `g(2, 2, 5) = 0`, which is not negative, so `T2` is
+      uncertain.
+  - **`T16 → T16`: stored for every w.** `payloadMin(T16) = 33` and `g = 33 − 2w > 0`.
+  - **`A → A → B → B`: 2/0/0/0 | 0/0/2/1 | 0/2/0/0.**
+    - `A` has `headdeg 2` and `payloadMin 3`, so `g = 4 − 2w`.
+    - `B` has `headdeg 1` and `payloadMin 3`, so `g = 3 − 2w`.
+    - The upper bounds `g(2, 2, 3) = 4 − 2w` are 0 at w = 2 (uncertain) and −2 at w = 3
+      (excluded).
+    - `A` and `B` are not joined by a DAG path, so the largest component at w = 2 is 1.
 
 ### Results over the 55,386 constants with at least one root
 
 **Class totals and counts of uncertain nodes per constant:**
 
-| w | certain-stored | certain-excluded | uncertain | constants with 0 uncertain | uncertain per constant: median / p90 / p99 / max |
-|---:|---:|---:|---:|---:|---|
-| 1 | 1,698,177 | 0 | 647,405 | 9,827 (17.7%) | 3 / 30 / 129 / 1,446 |
-| 2 | 408,749 | 349,863 | 1,586,970 | 3,913 (7.1%) | 9 / 67 / 304 / 3,689 |
-| 3 | 23,501 | 570,132 | 1,751,949 | 5,742 (10.4%) | 7 / 75 / 375 / 5,059 |
+| w | certain-stored | certain-excluded | uncertain | uncertain per constant: median / p90 / p99 / max |
+|---:|---:|---:|---:|---|
+| 1 | 1,887,527 (80.5%) | 0 | 458,055 (19.5%) | 2 / 21 / 95 / 970 |
+| 2 | 1,504,278 (**64.1%**) | 349,863 (14.9%) | 491,441 (21.0%) | 3 / 22 / 84 / 736 |
+| 3 | 1,276,154 (**54.4%**) | 570,132 (24.3%) | 499,296 (21.3%) | 2 / 22 / 98 / 978 |
+
+Percentages are of the 2,345,582 candidates.
 
 **Largest uncertain component per constant:**
 
-| w | median / p90 / p99 / max | ≤ 8 | ≤ 16 | ≤ 32 | > 32 | > 1024 |
-|---:|---|---:|---:|---:|---:|---:|
-| 1 | 1 / 4 / 8 / 87 | 99.2% | 99.8% | 100.0% (55,359) | 27 | 0 |
-| 2 | 5 / 46 / 253 / 3,585 | 61.9% | 74.4% | 86.0% | 7,740 | 46 |
-| 3 | 4 / 65 / 361 / 5,059 | 60.1% | 71.0% | 82.3% | 9,822 | 84 |
+| w | median / p90 / p99 / max | ≤ 8 | ≤ 16 | ≤ 32 | > 32 |
+|---:|---|---:|---:|---:|---:|
+| 1 | 1 / 2 / 4 / 45 | 55,332 (99.9%) | 55,382 | 55,384 | 2 |
+| 2 | 1 / 3 / 5 / 44 | 55,328 (99.9%) | 55,384 | 55,385 | 1 |
+| 3 | 1 / 3 / 6 / 44 | 55,228 (99.7%) | 55,378 | 55,385 | 1 |
+
+**Constants by number of uncertain nodes (cumulative except the first and last columns):**
+
+| w | = 0 | ≤ 8 | ≤ 16 | ≤ 32 | > 32 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 13,486 | 43,174 | 48,357 | 52,353 | 3,033 |
+| 2 | 11,593 | 39,615 | 47,353 | 52,492 | 2,894 |
+| 3 | 14,878 | 40,386 | 47,612 | 52,174 | 3,212 |
 
 - **Why w = 1 has no certain-excluded candidates.** At w = 1 the maximal-gain bound is
   never negative when `occ ≥ 2`:
   - an internal node has `(occ−1)·(payloadMax + 1) − occ ≥ 2·occ − 3 > 0`;
   - a leaf of size ≥ 2 has `(occ−1)·size − occ ≥ occ − 2 ≥ 0`.
-- **The largest components:**
-  - At w = 2 and w = 3, the list of largest components is led by the big
-    `Init.Data.{Vector,Array}.Extract` proofs and the string-pattern lemma: up to 3,585 uncertain nodes in one component at
-    w = 2 and 5,059 at w = 3.
-  - At w = 1 the largest component has 87 nodes
-    (`String.Slice.Pattern.Model.LawfulToForwardSearcherModel.defaultImplementation` and
-    `…SplitIterator.toList_eq_splitFromSteps`).
-  - The ten largest for each `w` are in the harness output below.
+- **The largest components** are 45 at w = 1 and 44 at w = 2 and 3, all in
+  `Lean.Grind.Config.mk.injEq`. The next are `Lean.Meta.Simp.Config.mk.injEq` (30–31) and
+  `UInt8.utf8ByteSize_eq_utf8ByteSize_parseFirstByte` (35 at w = 1, 31 at w = 3). The ten
+  largest for each `w` are in the harness output below.
 
 ### Share-width loss in the current stored encoding
 
-Share references are counted syntactically in the stored roots and table entries (the
-current heuristic encoding). The largest stored table has 22,088 entries, so every index
-≥ 256 costs 3 bytes today.
+This part does not depend on `payloadMin` and is unchanged from the previous run. Share
+references are counted syntactically in the stored roots and table entries (the current
+heuristic encoding). The largest stored table has 22,088 entries, so every index ≥ 256
+costs 3 bytes today.
 
 | stored table entries | constants | refs to 0–7 (1 B now) | refs to 8–255 (2 B) | refs to ≥ 256 (3 B) | loss under uniform width |
 |---|---:|---:|---:|---:|---|
@@ -348,24 +383,25 @@ nix develop --command bash -c 'lake build sharing-study'
 #   -> Build completed successfully (96 jobs).
 S=/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad
 nix develop --command bash -c "lake exe sharing-study $S/init.ixe \
-    --md $S/w3-results3.md --csv $S/sharing-minimum-measurements.csv"
+    --md $S/w3-results4.md --csv $S/sharing-minimum-measurements.csv"
 #   -> exit 0; defaults --validate-max 16777216 --occ-check-max 65536
 ```
 
-There were three full runs. The output below is from the third.
+There were four full runs. The output below is from the fourth.
 
 | run | measured | harness-internal time | end to end |
 |---|---|---|---|
 | First (commit `ecdd47ed`) | P1.5 only | 146.8 s | about 152 s |
 | Second (commit `1598a9be`) | P1.5 + MSS | 185.2 s | 193.3 s |
-| Third | P1.5 + MSS + uniform-width classification | 316.3 s (0.44 s load + 315.9 s measuring) | 335.0 s, measured by the shell |
+| Third (commit `97824804`) | P1.5 + MSS + uniform-width classification (first `payloadMin`) | 316.3 s | 335.0 s |
+| Fourth | same, with the corrected `payloadMin` | 379.5 s (0.73 s load + 378.8 s measuring) | 397.6 s, measured by the shell |
 
 - In each run, the output for the earlier sections was identical to the previous run's
   except for the timing lines and the "slowest constants" table. This was checked with
   `diff`.
-- The slowest single constant took 1.8 s in the third run. The harness is single-threaded.
+- The slowest single constant took 2.6 s in the fourth run. The harness is single-threaded.
 
-The per-constant CSV is 9,058,144 bytes (56,622 rows plus a header, 42 columns), which is
+The per-constant CSV is 9,022,202 bytes (56,622 rows plus a header, 42 columns), which is
 too large to track here. It is kept at
 `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/sharing-minimum-measurements.csv`.
 Its columns are:
@@ -383,13 +419,13 @@ Rerunning the command above regenerates it.
 
 ---
 
-The rest of this document is the harness's `--md` output from the third run, unedited.
+The rest of this document is the harness's `--md` output from the fourth run, unedited.
 
 ## Results
 
 - Corpus: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe` (195387870 bytes), 56622 stored constants (distinct addresses), 66621 names.
 - Constants processed: 56622; skipped: 0; with at least one expression root: 55386.
-- Harness wall time: load 441 ms, measurement 315896 ms, total 316337 ms.
+- Harness wall time: load 734 ms, measurement 378794 ms, total 379528 ms.
 - Production rebuild (`buildConstantWithSharing` on expanded roots, then `serConstant`) differs from `rawBytes`: **0** constants.
 - Decode/encode roundtrip (`serConstant ∘ get`) differs from `rawBytes`: 0 constants.
 - Compositional unshared size checked against `serConstant` of the real unshared Constant: 56615 equal, 0 different, 7 not checked (unshared roots > 16777216 bytes).
@@ -503,11 +539,11 @@ The rest of this document is the harness's `--md` output from the third run, une
 
 | constant | kind | ms | `N` | stored B |
 |---|---|---:|---:|---:|
-| `_private.Init.Data.Vector.Extract.«0».Vector.extract_append_extract._proof_1` | defn | 1817 | 24658 | 142164 |
-| `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_ediv._proof_1_1` | defn | 1658 | 7257 | 44503 |
-| `_private.Init.Data.Nat.ToString.«0».Nat.digitChar_iff_aux` | defn | 1334 | 17671 | 72333 |
-| `_private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_1` | defn | 1218 | 24507 | 141015 |
-| `_private.Init.Data.Iterators.Lemmas.Combinators.Monadic.FilterMap.«0».Std.IterM.toList_filterMapWithPostcondition_filterMapWithPostcondition'` | defn | 1094 | 16156 | 90971 |
+| `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1` | defn | 2610 | 18802 | 109553 |
+| `_private.Init.Data.Vector.Extract.«0».Vector.extract_add_left._proof_1` | defn | 1594 | 14521 | 76215 |
+| `_private.Init.Data.Iterators.Lemmas.Combinators.Monadic.FlatMap.«0».Std.IterM.toList_flattenAfter` | defn | 1291 | 9181 | 50804 |
+| `_private.Init.Data.Nat.Lemmas.«0».Nat.sub_min_sub_left._proof_1_1` | defn | 1080 | 8517 | 45016 |
+| `_private.Init.Data.Dyadic.Basic.«0».Dyadic.toRat_mul._proof_1_8` | defn | 1050 | 6530 | 38929 |
 
 ## Maximal structural sharing (MSS)
 
@@ -609,125 +645,125 @@ Negative controls for the MSS decode/expand/equality check:
 
 ## Uniform-reference-width classification
 
-Candidates are the subterms with compact `deg ≥ 2` and unshared size > 1 (the MSS stored set). For `w ∈ {1, 2, 3}` each candidate is CERTAIN-STORED if `g(deg, headdeg, payloadMin) > 0`, CERTAIN-EXCLUDED if `g(occ, occ, payloadMax) < 0` or it is a leaf with `(occ−1)·size < occ·w`, and UNCERTAIN otherwise, where `g(n, H, b) = (n−1)·b + (H−1)·hdr − n·w`. Uncertain nodes are in one component when a directed DAG path whose intermediate nodes are not certain-stored joins them (transitively). Arithmetic is exact; `occ` is not capped.
+Candidates are the subterms with compact `deg ≥ 2` and unshared size > 1 (the MSS stored set). For `w ∈ {1, 2, 3}` each candidate is CERTAIN-STORED if `g(deg, headdeg, payloadMin) > 0`, CERTAIN-EXCLUDED if `g(occ, occ, payloadMax) < 0` or it is a leaf with `(occ−1)·size < occ·w`, and UNCERTAIN otherwise, where `g(n, H, b) = (n−1)·b + (H−1)·hdr − n·w`. `payloadMin` is the width-aware recursive lower bound (a candidate child costs at most `w`, a non-candidate child its own recursive minimum; continuation children without their header). `headdeg` treats only an App in App-function position and a Lam/All in same-kind body position as continuations. Uncertain nodes are in one component when a directed DAG path whose intermediate nodes are not certain-stored joins them (transitively). Arithmetic is exact; `occ` is not capped.
 
 - Classification errors: 0.
 - Witnesses (cs/ce/unc/largest component for w = 1 | 2 | 3):
-  - `T2 → T2`: 1/0/0/0 | 0/0/1/1 | 0/0/1/1 (candidates 1)
-  - `T16 → T16`: 1/0/0/0 | 0/0/1/1 | 0/0/1/1 (candidates 1)
+  - `T2 → T2`: 1/0/0/0 | 1/0/0/0 | 0/0/1/1 (candidates 1)
+  - `T16 → T16`: 1/0/0/0 | 1/0/0/0 | 1/0/0/0 (candidates 1)
   - `A → A → B → B`: 2/0/0/0 | 0/0/2/1 | 0/2/0/0 (candidates 2)
 - Candidates over the 55386 rooted constants: 2345582 (MSS table entries: 2345582).
 
 ### w = 1
 
-- Totals: certain-stored 1698177, certain-excluded 0, uncertain 647405; nodes meeting both certain conditions 0; candidates whose class changes when every function-child occurrence counts as a non-head 573.
+- Totals: certain-stored 1887527 (80.5% of candidates), certain-excluded 0 (0.0%), uncertain 458055 (19.5%); nodes meeting both certain conditions 0; candidates with `payloadMin > payloadMax` 0; candidates whose class changes when every function-child occurrence counts as a non-head 100.
 - Largest component recomputed by the literal brute force (DAGs with ≤ 1000 nodes): 53652 equal, **0** different, 1734 not checked.
 
 | Metric | min | median | p90 | p99 | max | mean |
 |---|---:|---:|---:|---:|---:|---:|
-| certain-stored | 0 | 9 | 72 | 311 | 3863 | 30.66 |
+| certain-stored | 0 | 10 | 81 | 341 | 4211 | 34.08 |
 | certain-excluded | 0 | 0 | 0 | 0 | 0 | 0.00 |
-| uncertain | 0 | 3 | 30 | 129 | 1446 | 11.69 |
-| largest uncertain component | 0 | 1 | 4 | 8 | 87 | 1.67 |
+| uncertain | 0 | 2 | 21 | 95 | 970 | 8.27 |
+| largest uncertain component | 0 | 1 | 2 | 4 | 45 | 1.06 |
 
 | bucket | constants by `uncertain` | share | constants by largest component | share |
 |---|---:|---:|---:|---:|
-| = 0 | 9827 | 17.7% | 9827 | 17.7% |
-| ≤ 8 | 39113 | 70.6% | 54925 | 99.2% |
-| ≤ 16 | 45596 | 82.3% | 55286 | 99.8% |
-| ≤ 32 | 50522 | 91.2% | 55359 | 100.0% |
-| > 32 | 4864 | 8.8% | 27 | 0.0% |
-| > 128 | 562 | 1.0% | 0 | 0.0% |
-| > 1024 | 6 | 0.0% | 0 | 0.0% |
+| = 0 | 13486 | 24.3% | 13486 | 24.3% |
+| ≤ 8 | 43174 | 78.0% | 55332 | 99.9% |
+| ≤ 16 | 48357 | 87.3% | 55382 | 100.0% |
+| ≤ 32 | 52353 | 94.5% | 55384 | 100.0% |
+| > 32 | 3033 | 5.5% | 2 | 0.0% |
+| > 128 | 332 | 0.6% | 0 | 0.0% |
+| > 1024 | 0 | 0.0% | 0 | 0.0% |
 
 Ten constants with the largest uncertain component (w = 1):
 
 | # | constant | kind | `N` | candidates | certain-stored | certain-excluded | uncertain | largest component |
 |---:|---|---|---:|---:|---:|---:|---:|---:|
-| 1 | `String.Slice.Pattern.Model.LawfulToForwardSearcherModel.defaultImplementation` | defn | 11022 | 2411 | 1785 | 0 | 626 | 87 |
-| 2 | `_private.Init.Data.String.Lemmas.Pattern.Split.Basic.«0».String.Slice.Pattern.Model.SplitIterator.toList_eq_splitFromSteps` | defn | 7436 | 1352 | 939 | 0 | 413 | 87 |
-| 3 | `String.Slice.Pattern.Model.LawfulToBackwardSearcherModel.defaultImplementation` | defn | 11111 | 2407 | 1798 | 0 | 609 | 81 |
-| 4 | `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_ediv._proof_1_1` | defn | 7257 | 1574 | 1170 | 0 | 404 | 80 |
-| 5 | `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.fdiv_eq_tdiv._proof_1_1` | defn | 2899 | 742 | 464 | 0 | 278 | 65 |
-| 6 | `_private.Init.Data.Range.Polymorphic.IntLemmas.«0».Int.zero_lt_getElem!_toArray_roc_iff._proof_1_2` | defn | 2544 | 580 | 429 | 0 | 151 | 54 |
-| 7 | `_private.Init.Data.Range.Polymorphic.RangeIterator.«0».Std.Rxc.Iterator.instIteratorLoop.loop_eq_wf` | defn | 7295 | 1333 | 1008 | 0 | 325 | 53 |
-| 8 | `_private.Init.Data.Range.Polymorphic.RangeIterator.«0».Std.Rxo.Iterator.instIteratorLoop.loop_eq_wf` | defn | 7222 | 1333 | 1008 | 0 | 325 | 53 |
-| 9 | `_private.Init.Data.Range.Polymorphic.IntLemmas.«0».Int.getElem!_toArray_roc_eq_zero_iff._proof_1_2` | defn | 2549 | 569 | 426 | 0 | 143 | 51 |
-| 10 | `_private.Init.Data.Array.Extract.«0».Array.extract_append._proof_1_1` | defn | 26754 | 5146 | 3849 | 0 | 1297 | 49 |
+| 1 | `Lean.Grind.Config.mk.injEq` | defn | 3512 | 360 | 236 | 0 | 124 | 45 |
+| 2 | `_private.Init.Data.String.Decode.«0».UInt8.utf8ByteSize_eq_utf8ByteSize_parseFirstByte` | defn | 1056 | 296 | 192 | 0 | 104 | 35 |
+| 3 | `Lean.Meta.Simp.Config.mk.injEq` | defn | 1994 | 256 | 164 | 0 | 92 | 31 |
+| 4 | `_private.Init.Data.BitVec.Bitblast.«0».BitVec.addRecAux_cpopTree._unary` | defn | 2614 | 594 | 471 | 0 | 123 | 17 |
+| 5 | `_private.Init.Data.Array.Extract.«0».Array.extract_extract._proof_1_1` | defn | 19523 | 3640 | 3062 | 0 | 578 | 16 |
+| 6 | `_private.Init.Data.Nat.Internal.SOM.«0».Nat.Internal.SOM.Poly.add_denote.go` | defn | 1474 | 340 | 224 | 0 | 116 | 16 |
+| 7 | `Lean.Meta.DSimp.Config.mk.injEq` | defn | 746 | 126 | 82 | 0 | 44 | 15 |
+| 8 | `Std.IterM.toArray_map_mapM` | defn | 2933 | 432 | 326 | 0 | 106 | 15 |
+| 9 | `Std.IterM.toList_map` | defn | 2506 | 404 | 314 | 0 | 90 | 15 |
+| 10 | `Std.IterM.toList_mapM_mapM` | defn | 2891 | 413 | 312 | 0 | 101 | 15 |
 
 ### w = 2
 
-- Totals: certain-stored 408749, certain-excluded 349863, uncertain 1586970; nodes meeting both certain conditions 0; candidates whose class changes when every function-child occurrence counts as a non-head 317.
+- Totals: certain-stored 1504278 (64.1% of candidates), certain-excluded 349863 (14.9%), uncertain 491441 (21.0%); nodes meeting both certain conditions 0; candidates with `payloadMin > payloadMax` 0; candidates whose class changes when every function-child occurrence counts as a non-head 100.
 - Largest component recomputed by the literal brute force (DAGs with ≤ 1000 nodes): 53652 equal, **0** different, 1734 not checked.
 
 | Metric | min | median | p90 | p99 | max | mean |
 |---|---:|---:|---:|---:|---:|---:|
-| certain-stored | 0 | 1 | 19 | 96 | 1434 | 7.38 |
+| certain-stored | 0 | 6 | 63 | 315 | 4455 | 27.16 |
 | certain-excluded | 0 | 3 | 17 | 46 | 135 | 6.32 |
-| uncertain | 0 | 9 | 67 | 304 | 3689 | 28.65 |
-| largest uncertain component | 0 | 5 | 46 | 253 | 3585 | 21.16 |
+| uncertain | 0 | 3 | 22 | 84 | 736 | 8.87 |
+| largest uncertain component | 0 | 1 | 3 | 5 | 44 | 1.51 |
 
 | bucket | constants by `uncertain` | share | constants by largest component | share |
 |---|---:|---:|---:|---:|
-| = 0 | 3913 | 7.1% | 3913 | 7.1% |
-| ≤ 8 | 27565 | 49.8% | 34274 | 61.9% |
-| ≤ 16 | 35955 | 64.9% | 41186 | 74.4% |
-| ≤ 32 | 44057 | 79.5% | 47646 | 86.0% |
-| > 32 | 11329 | 20.5% | 7740 | 14.0% |
-| > 128 | 2151 | 3.9% | 1516 | 2.7% |
-| > 1024 | 53 | 0.1% | 46 | 0.1% |
+| = 0 | 11593 | 20.9% | 11593 | 20.9% |
+| ≤ 8 | 39615 | 71.5% | 55328 | 99.9% |
+| ≤ 16 | 47353 | 85.5% | 55384 | 100.0% |
+| ≤ 32 | 52492 | 94.8% | 55385 | 100.0% |
+| > 32 | 2894 | 5.2% | 1 | 0.0% |
+| > 128 | 213 | 0.4% | 0 | 0.0% |
+| > 1024 | 0 | 0.0% | 0 | 0.0% |
 
 Ten constants with the largest uncertain component (w = 2):
 
 | # | constant | kind | `N` | candidates | certain-stored | certain-excluded | uncertain | largest component |
 |---:|---|---|---:|---:|---:|---:|---:|---:|
-| 1 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_append._proof_1` | defn | 26943 | 5136 | 1426 | 75 | 3635 | 3585 |
-| 2 | `_private.Init.Data.Array.Extract.«0».Array.extract_append._proof_1_1` | defn | 26754 | 5146 | 1434 | 73 | 3639 | 3579 |
-| 3 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_extract._proof_1` | defn | 26494 | 4919 | 1369 | 75 | 3475 | 3415 |
-| 4 | `_private.Init.Data.String.Lemmas.Pattern.String.ForwardSearcher.«0».String.Slice.Pattern.Model.ForwardSliceSearcher.Invariants.isValidSearchFrom_toList` | defn | 27628 | 4874 | 1050 | 135 | 3689 | 3268 |
-| 5 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_append_extract._proof_1` | defn | 24658 | 4703 | 1357 | 77 | 3269 | 3219 |
-| 6 | `_private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_1` | defn | 24507 | 4678 | 1356 | 75 | 3247 | 3197 |
-| 7 | `_private.Init.Data.Array.Extract.«0».Array.extract_extract._proof_1_1` | defn | 19523 | 3640 | 1006 | 70 | 2564 | 2508 |
-| 8 | `_private.Init.Data.Nat.ToString.«0».Nat.digitChar_iff_aux` | defn | 17671 | 2763 | 437 | 33 | 2293 | 2272 |
-| 9 | `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1` | defn | 18802 | 3236 | 949 | 74 | 2213 | 2159 |
-| 10 | `_private.Init.Data.Array.Lemmas.«0».Array.toList_reverse.go._unary` | defn | 12884 | 2769 | 466 | 104 | 2199 | 2097 |
+| 1 | `Lean.Grind.Config.mk.injEq` | defn | 3512 | 360 | 148 | 91 | 121 | 44 |
+| 2 | `Lean.Meta.Simp.Config.mk.injEq` | defn | 1994 | 256 | 103 | 64 | 89 | 30 |
+| 3 | `List.min_findIdx_findIdx` | defn | 932 | 234 | 135 | 22 | 77 | 15 |
+| 4 | `Array.getD_getElem?` | defn | 359 | 76 | 41 | 9 | 26 | 14 |
+| 5 | `Lean.Meta.DSimp.Config.mk.injEq` | defn | 746 | 126 | 53 | 31 | 42 | 14 |
+| 6 | `List.getD_getElem?` | defn | 359 | 76 | 41 | 9 | 26 | 14 |
+| 7 | `Vector.getD_getElem?` | defn | 392 | 77 | 50 | 8 | 19 | 14 |
+| 8 | `Lean.Grind.AC.imp_eq` | defn | 130 | 30 | 10 | 5 | 15 | 13 |
+| 9 | `Lean.Grind.AC.eq_simp_lhs_exact` | defn | 130 | 31 | 13 | 4 | 14 | 12 |
+| 10 | `_private.Init.Data.Nat.Internal.SOM.«0».Nat.Internal.SOM.Poly.add_denote.go` | defn | 1474 | 340 | 182 | 44 | 114 | 12 |
 
 ### w = 3
 
-- Totals: certain-stored 23501, certain-excluded 570132, uncertain 1751949; nodes meeting both certain conditions 0; candidates whose class changes when every function-child occurrence counts as a non-head 207.
+- Totals: certain-stored 1276154 (54.4% of candidates), certain-excluded 570132 (24.3%), uncertain 499296 (21.3%); nodes meeting both certain conditions 0; candidates with `payloadMin > payloadMax` 0; candidates whose class changes when every function-child occurrence counts as a non-head 92.
 - Largest component recomputed by the literal brute force (DAGs with ≤ 1000 nodes): 53652 equal, **0** different, 1734 not checked.
 
 | Metric | min | median | p90 | p99 | max | mean |
 |---|---:|---:|---:|---:|---:|---:|
-| certain-stored | 0 | 0 | 1 | 7 | 165 | 0.42 |
+| certain-stored | 0 | 4 | 53 | 286 | 4392 | 23.04 |
 | certain-excluded | 0 | 5 | 27 | 60 | 229 | 10.29 |
-| uncertain | 0 | 7 | 75 | 375 | 5059 | 31.63 |
-| largest uncertain component | 0 | 4 | 65 | 361 | 5059 | 28.06 |
+| uncertain | 0 | 2 | 22 | 98 | 978 | 9.01 |
+| largest uncertain component | 0 | 1 | 3 | 6 | 44 | 1.37 |
 
 | bucket | constants by `uncertain` | share | constants by largest component | share |
 |---|---:|---:|---:|---:|
-| = 0 | 5742 | 10.4% | 5742 | 10.4% |
-| ≤ 8 | 29853 | 53.9% | 33292 | 60.1% |
-| ≤ 16 | 36830 | 66.5% | 39349 | 71.0% |
-| ≤ 32 | 44027 | 79.5% | 45564 | 82.3% |
-| > 32 | 11359 | 20.5% | 9822 | 17.7% |
-| > 128 | 2802 | 5.1% | 2521 | 4.6% |
-| > 1024 | 89 | 0.2% | 84 | 0.2% |
+| = 0 | 14878 | 26.9% | 14878 | 26.9% |
+| ≤ 8 | 40386 | 72.9% | 55228 | 99.7% |
+| ≤ 16 | 47612 | 86.0% | 55378 | 100.0% |
+| ≤ 32 | 52174 | 94.2% | 55385 | 100.0% |
+| > 32 | 3212 | 5.8% | 1 | 0.0% |
+| > 128 | 318 | 0.6% | 0 | 0.0% |
+| > 1024 | 0 | 0.0% | 0 | 0.0% |
 
 Ten constants with the largest uncertain component (w = 3):
 
 | # | constant | kind | `N` | candidates | certain-stored | certain-excluded | uncertain | largest component |
 |---:|---|---|---:|---:|---:|---:|---:|---:|
-| 1 | `_private.Init.Data.Array.Extract.«0».Array.extract_append._proof_1_1` | defn | 26754 | 5146 | 1 | 86 | 5059 | 5059 |
-| 2 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_append._proof_1` | defn | 26943 | 5136 | 1 | 84 | 5051 | 5050 |
-| 3 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_extract._proof_1` | defn | 26494 | 4919 | 1 | 82 | 4836 | 4836 |
-| 4 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_append_extract._proof_1` | defn | 24658 | 4703 | 1 | 84 | 4618 | 4617 |
-| 5 | `_private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_1` | defn | 24507 | 4678 | 1 | 84 | 4593 | 4593 |
-| 6 | `_private.Init.Data.String.Lemmas.Pattern.String.ForwardSearcher.«0».String.Slice.Pattern.Model.ForwardSliceSearcher.Invariants.isValidSearchFrom_toList` | defn | 27628 | 4874 | 165 | 229 | 4480 | 4346 |
-| 7 | `_private.Init.Data.Array.Extract.«0».Array.extract_extract._proof_1_1` | defn | 19523 | 3640 | 1 | 79 | 3560 | 3560 |
-| 8 | `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1` | defn | 18802 | 3236 | 0 | 81 | 3155 | 3151 |
-| 9 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_add_left._proof_1` | defn | 14521 | 2854 | 1 | 76 | 2777 | 2775 |
-| 10 | `_private.Init.Data.Nat.ToString.«0».Nat.digitChar_iff_aux` | defn | 17671 | 2763 | 0 | 36 | 2727 | 2716 |
+| 1 | `Lean.Grind.Config.mk.injEq` | defn | 3512 | 360 | 145 | 92 | 123 | 44 |
+| 2 | `_private.Init.Data.String.Decode.«0».UInt8.utf8ByteSize_eq_utf8ByteSize_parseFirstByte` | defn | 1056 | 296 | 154 | 42 | 100 | 31 |
+| 3 | `Lean.Meta.Simp.Config.mk.injEq` | defn | 1994 | 256 | 100 | 65 | 91 | 30 |
+| 4 | `BitVec.getMsbD_setWidth` | defn | 1044 | 258 | 125 | 44 | 89 | 20 |
+| 5 | `Lean.Grind.imp_eq` | defn | 249 | 56 | 19 | 11 | 26 | 19 |
+| 6 | `_private.Init.Data.Order.PackageFactories.«0».Std.FactoryInstances.isGE_compare` | defn | 405 | 105 | 27 | 28 | 50 | 19 |
+| 7 | `_private.Init.Data.Order.PackageFactories.«0».Std.FactoryInstances.isLE_compare` | defn | 359 | 99 | 27 | 24 | 48 | 19 |
+| 8 | `BitVec.msb_neg` | defn | 1541 | 378 | 202 | 61 | 115 | 18 |
+| 9 | `Std.LinearPreorderPackage.ofOrd._proof_1` | defn | 567 | 143 | 54 | 32 | 57 | 16 |
+| 10 | `Std.LinearPreorderPackage.ofOrd._proof_9` | defn | 401 | 96 | 41 | 23 | 32 | 16 |
 
 ### Reference-width loss in the current stored encoding
 
