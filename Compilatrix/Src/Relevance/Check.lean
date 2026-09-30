@@ -449,6 +449,21 @@ structure St where
   keys : List TermKey := []
   errs : List RelError := []
 
+/-- One runtime key of an instance's visit: on the constant's first visit
+an unannotated key is reported and an annotated one recorded; an annotated
+key's term is checked at the instance. -/
+def visitKey (p : Program) (ann : Ann) (marked : List TermKey) (prof : Profile) (lvls : Nat)
+    (first : Bool) (s : St) (key : TermKey) : St :=
+  if !marked.contains key then
+    if first then
+      { s with errs := RelError.of "S1" "runtime term not annotated" none (some key) :: s.errs }
+    else s
+  else
+    let s := if first then { s with keys := key :: s.keys } else s
+    match p.termOf key with
+    | some t => { s with errs := term { p, ann, key, lvls, prof } [] s.errs t }
+    | none => s
+
 /-- Visit one new instance: check its runtime terms at its profile, and
 return the instances they reach. `first` is the constant's first visit
 (its keys are recorded once). -/
@@ -458,16 +473,7 @@ def visit (p : Program) (ann : Ann) (annotated : NatMap (List TermKey)) (c : CId
   let s := if first && (ann.constRel? c).isNone then
       { s with errs := RelError.of "S1" "reached constant without a record" (some c) :: s.errs }
     else s
-  let s := (p.runtimeKeys c).foldl (init := s) fun s key =>
-    if !marked.contains key then
-      if first then
-        { s with errs := RelError.of "S1" "runtime term not annotated" none (some key) :: s.errs }
-      else s
-    else
-      let s := if first then { s with keys := key :: s.keys } else s
-      match p.termOf key with
-      | some t => { s with errs := term { p, ann, key, lvls, prof } [] s.errs t }
-      | none => s
+  let s := (p.runtimeKeys c).foldl (init := s) (visitKey p ann marked prof lvls first)
   let s := { s with errs := subsingletonFields p ann c prof s.errs }
   -- Unannotated terms carry ingress defaults; the closure follows them anyway,
   -- as SrcEval would.
