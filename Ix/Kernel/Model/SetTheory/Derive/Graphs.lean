@@ -69,13 +69,13 @@ noncomputable def app (f a : V) : V :=
   if f = pt then pt else sUnion (sep (sUnion (sUnion f)) (fun y => kpair a y ∈ˢ f))
 
 theorem app_pt (a : V) : app (pt : V) a = pt := by
-  unfold app; exact if_pos rfl
+  unfold app; exact ite_eq_left rfl
 
 /-- Application computes on single-valued positions. -/
 theorem app_eq_of_unique {f a b : V} (hf : f ≠ pt) (hab : kpair a b ∈ˢ f)
     (huniq : ∀ y, kpair a y ∈ˢ f → y = b) : app f a = b := by
   unfold app
-  rw [if_neg hf]
+  rw [ite_eq_right hf]
   have : sep (sUnion (sUnion f)) (fun y => kpair a y ∈ˢ f) = sing b := by
     apply ext fun z => ?_
     rw [mem_sep, mem_sing]
@@ -218,7 +218,7 @@ pointwise agreement on fitting inputs (`eq_of_mem_piSet_app_eq`, and
 theorem app_eq_empty_of_not_mem {f a : V} (hf : f ≠ pt)
     (h : ∀ y, ¬ kpair a y ∈ˢ f) : app f a = empty := by
   unfold app
-  rw [if_neg hf]
+  rw [ite_eq_right hf]
   refine eq_empty fun z hz => ?_
   obtain ⟨y, hy, -⟩ := mem_sUnion.mp hz
   exact h y (mem_sep.mp hy).2

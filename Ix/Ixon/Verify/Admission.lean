@@ -34,9 +34,9 @@ theorem consume_ok_iff (resource : Resource) (count budget : Nat) (records : Rec
     | zero => simp [consume]
     | succ count =>
       by_cases fits : bytes.size ≤ budget
-      · simp only [consume, if_pos fits, ih, List.length_cons, payloadBytes]
+      · simp only [consume, ite_eq_left fits, ih, List.length_cons, payloadBytes]
         omega
-      · simp only [consume, if_neg fits]
+      · simp only [consume, ite_eq_right fits]
         constructor
         · intro impossible
           cases impossible

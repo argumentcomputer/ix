@@ -60,7 +60,7 @@ theorem node_mem_fibre {D : IndexedContainer V} {w : Nat} {X i a g : V}
   by_cases hw : w = 0
   · subst w
     exact pt_mem_sigma ha hg
-  · simpa only [node, if_neg hw, fibre] using spair_mem hw ha hg
+  · simpa only [node, ite_eq_right hw, fibre] using spair_mem hw ha hg
 
 theorem mem_fibre {D : IndexedContainer V} {w : Nat} {X i x : V} :
     x ∈ˢ D.fibre w X i ↔ ∃ a, a ∈ˢ D.shapes i ∧
@@ -70,8 +70,8 @@ theorem mem_fibre {D : IndexedContainer V} {w : Nat} {X i x : V} :
     obtain ⟨a, g, ha, hg, hz, hp⟩ := mem_sigma_elim hx
     refine ⟨a, ha, g, hg, ?_⟩
     by_cases hw : w = 0
-    · simpa only [node, if_pos hw] using hz hw
-    · simpa only [node, if_neg hw] using hp hw
+    · simpa only [node, ite_eq_left hw] using hz hw
+    · simpa only [node, ite_eq_right hw] using hp hw
   · rintro ⟨a, ha, g, hg, rfl⟩
     exact node_mem_fibre ha hg
 
@@ -142,7 +142,7 @@ theorem closed_exists {D : IndexedContainer V} {w : Nat} (hD : D.WF w) :
     · intro X hX i hi x hx
       rw [app_app_step hX hi] at hx
       obtain ⟨a, ha, g, hg, h⟩ := mem_fibre.mp hx
-      exact ⟨a, ha, g, hg, by simpa only [node, if_neg hw] using h⟩
+      exact ⟨a, ha, g, hg, by simpa only [node, ite_eq_right hw] using h⟩
 
 theorem carrier_mem (D : IndexedContainer V) (w : Nat) :
     D.carrier w ∈ˢ famSpace w D.indices := lfpFamSet_mem _ _ _

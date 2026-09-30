@@ -104,7 +104,7 @@ theorem constructorValue_apply {u : Nat} {A R a : V}
   by_cases hu : u = 0
   · subst u
     simp [constructorValue, bit, lamR_zero, app_pt, quotClass]
-  · simp only [constructorValue, bit, if_neg hu]
+  · simp only [constructorValue, bit, ite_eq_right hu]
     rw [app_lamR_pos (by decide : 1 ≠ 0) hA,
       app_lamR_pos (by decide : 1 ≠ 0) hR, app_lamR_pos (by decide : 1 ≠ 0) ha]
 

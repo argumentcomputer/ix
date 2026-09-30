@@ -40,7 +40,7 @@ theorem Codec.Reads.noTrailing {decoder : Ixon.GetM α} {bytes : ByteArray} {val
   have trailing : bytes.size ≠ (bytes ++ suffix).size := by
     simp only [ByteArray.size_append]
     omega
-  simp only [Ixon.runGetExact, read, if_neg trailing]
+  simp only [Ixon.runGetExact, read, ite_eq_right trailing]
   rfl
 
 /-- All constant variants and side tables retain the existing wire domain;

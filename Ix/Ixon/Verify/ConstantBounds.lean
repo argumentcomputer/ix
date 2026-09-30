@@ -188,13 +188,13 @@ theorem getConstantInfo_bound : ReaderBound getConstantInfo ConstantInfo.resourc
   apply getTag4_bound.bind (rightUnits := fun _ value => value.resourceSize - 1)
     (fun tag => ?_) _ (fun _ value => by omega)
   by_cases mutualTag : (tag.flag == Constant.FLAG_MUTS) = true
-  · simp only [if_pos mutualTag]
+  · simp only [ite_eq_left mutualTag]
     simpa [getArray] using (getArray_bound _ _ getMutConst_bound tag.size.toNat).map
       ConstantInfo.muts (fun value => value.resourceSize - 1)
       (fun _ => by simp [ConstantInfo.resourceSize])
-  · simp only [if_neg mutualTag]
+  · simp only [ite_eq_right mutualTag]
     by_cases singleTag : (tag.flag == Constant.FLAG) = true
-    · simp only [if_pos singleTag]
+    · simp only [ite_eq_left singleTag]
       split
       · exact getDefinition_bound.map _ _ (fun _ => by simp [ConstantInfo.resourceSize])
       · exact getRecursor_bound.map _ _ (fun _ => by simp [ConstantInfo.resourceSize])
@@ -205,7 +205,7 @@ theorem getConstantInfo_bound : ReaderBound getConstantInfo ConstantInfo.resourc
       · exact getInductiveProj_bound.map _ _ (fun _ => by simp [ConstantInfo.resourceSize])
       · exact getDefinitionProj_bound.map _ _ (fun _ => by simp [ConstantInfo.resourceSize])
       · exact throw_bound _ _
-    · simp only [if_neg singleTag]
+    · simp only [ite_eq_right singleTag]
       exact throw_bound _ _
 
 /-- Universe parsing also preserves the buffer and consumes a tag. This

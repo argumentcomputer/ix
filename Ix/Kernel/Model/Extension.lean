@@ -58,13 +58,13 @@ theorem fresh_ne {entries : Environment β} {r q : ConstRef β} {entry : Constan
 theorem Environment.insert_old {entries : Environment β} {r q : ConstRef β}
     {entry old : ConstantEntry β} (fresh : entries r = none) (h : entries q = some old) :
     entries.insert r entry q = some old := by
-  simp only [insert, if_neg (fresh_ne fresh h), h]
+  simp only [insert, ite_eq_right (fresh_ne fresh h), h]
 
 theorem Assignment.insert_agrees {entries : Environment β} {r : ConstRef β}
     (fresh : entries r = none) (constants : Assignment β V) (value : List Nat → V) :
     Assignment.AgreesOn entries constants (constants.insert r value) := by
   intro q entry h levels
-  simp only [Assignment.insert, if_neg (fresh_ne fresh h)]
+  simp only [Assignment.insert, ite_eq_right (fresh_ne fresh h)]
 
 theorem AExpr.ReferencesIn.insert {entries : Environment β} {r : ConstRef β}
     {entry : ConstantEntry β} {e : AExpr β} (h : e.ReferencesIn entries) :
@@ -303,7 +303,7 @@ theorem extend_definition {entries : Environment β} {r : ConstRef β}
   let constants' := constants.insert r (fun levels => interp constants levels (fun _ => empty) body)
   have hagree : Assignment.AgreesOn entries constants constants' := by
     intro q old h levels
-    simp only [constants', Assignment.insert, if_neg (fresh_ne fresh h)]
+    simp only [constants', Assignment.insert, ite_eq_right (fresh_ne fresh h)]
   have hnew (levels : List Nat) (env : Nat → V) :
       constants' r levels = interp constants levels env body := by
     simp only [constants', Assignment.insert, ↓reduceIte]

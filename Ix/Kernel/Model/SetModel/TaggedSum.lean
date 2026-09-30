@@ -63,7 +63,7 @@ noncomputable def natFibre (f : Nat → V) (k : V) : V :=
 
 theorem natFibre_vnat (f : Nat → V) (i : Nat) : natFibre f (vnat i) = f i := by
   unfold natFibre
-  rw [dif_pos ⟨i, rfl⟩]
+  rw [dite_eq_left ⟨i, rfl⟩]
   congr 1
   exact (vnat_inj (Classical.choose_spec (⟨i, rfl⟩ : ∃ i', (vnat i : V) = vnat i'))).symm
 

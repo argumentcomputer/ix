@@ -6,7 +6,7 @@ defaultTargets = ["IxSetTheoryModel"]
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4"
-rev = "v4.33.1"
+rev = "v4.34.0"
 
 [[require]]
 name = "ix-kernel"

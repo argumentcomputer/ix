@@ -167,10 +167,10 @@ theorem eq_pt_of_mem_truthVal {p : Prop} {z : V} (hz : z ∈ˢ (truthVal p : V))
   (mem_truthVal.mp hz).2
 
 theorem truthVal_eq_unitSet {p : Prop} (hp : p) : (truthVal p : V) = unitSet := by
-  unfold truthVal; exact if_pos hp
+  unfold truthVal; exact ite_eq_left hp
 
 theorem truthVal_eq_empty {p : Prop} (hp : ¬ p) : (truthVal p : V) = empty := by
-  unfold truthVal; exact if_neg hp
+  unfold truthVal; exact ite_eq_right hp
 
 /-- Truth values are `∅` or `{pt}` — never the point `{∅}` itself. -/
 theorem truthVal_ne_pt (p : Prop) : (truthVal p : V) ≠ pt := by

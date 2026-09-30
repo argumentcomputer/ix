@@ -103,10 +103,10 @@ theorem quotClass_surj {u : Nat} {A R q : V} (hq : q ∈ˢ quotSet u A R) :
   split at hq
   · next h =>
     obtain ⟨a, ha, rfl⟩ := mem_image.mp hq
-    exact ⟨a, ha, (if_pos h).symm⟩
+    exact ⟨a, ha, (ite_eq_left h).symm⟩
   · next h =>
     obtain ⟨a, ha, rfl⟩ := mem_image.mp hq
-    exact ⟨a, ha, (if_neg h).symm⟩
+    exact ⟨a, ha, (ite_eq_right h).symm⟩
 
 /-- A class formed at ONE pair of parameters that lands in the quotient
 of ANOTHER: its representative lies in the second parameter's carrier,
@@ -122,13 +122,13 @@ theorem quotClass_of_mem_quotSet {u : Nat} {Aset R A' R' a : V}
   obtain ⟨b, hb, hcls⟩ := quotClass_surj hmem
   by_cases hu : u = 0
   · subst hu
-    refine ⟨?_, by unfold quotClass; rw [if_pos rfl, if_pos rfl]⟩
+    refine ⟨?_, by unfold quotClass; rw [ite_eq_left rfl, ite_eq_left rfl]⟩
     rw [univ_zero] at hA' hAset
     rw [eq_pt_of_mem_univZero hA' ha, ← eq_pt_of_mem_univZero hAset hb]
     exact hb
   · unfold quotClass at hcls ⊢
-    rw [if_neg hu, if_neg hu] at hcls
-    rw [if_neg hu, if_neg hu]
+    rw [ite_eq_right hu, ite_eq_right hu] at hcls
+    rw [ite_eq_right hu, ite_eq_right hu]
     have hab : a ∈ˢ qclass Aset R b := by rw [← hcls]; exact self_mem_qclass ha
     obtain ⟨haA, hrel⟩ := mem_qclass.mp hab
     exact ⟨haA, hcls.trans (qclass_eq_of_rel hrel)⟩
@@ -164,7 +164,7 @@ noncomputable def qrep (u : Nat) (A R q : V) : V :=
 theorem qrep_spec {u : Nat} {A R q : V} (hq : q ∈ˢ quotSet u A R) :
     qrep u A R q ∈ˢ A ∧ q = quotClass u A R (qrep u A R q) := by
   unfold qrep
-  rw [dif_pos (quotClass_surj hq)]
+  rw [dite_eq_left (quotClass_surj hq)]
   exact Classical.choose_spec (quotClass_surj hq)
 
 /-- The invariance premise extends from the base relation to its
@@ -225,7 +225,7 @@ theorem quotSet_eq_pt_countermodel :
     rw [mem_qclass]
     exact ⟨fun h => h.1, fun hz => ⟨hz, hrel a z ha hz⟩⟩
   unfold quotSet
-  rw [if_neg Nat.one_ne_zero]
+  rw [ite_eq_right Nat.one_ne_zero]
   apply ext fun z => ?_
   rw [mem_image, mem_pt]
   constructor

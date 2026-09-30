@@ -456,10 +456,10 @@ theorem mem_allCodes {S : V} : S ∈ˢ allCodes A B tgt I ↔ ∃ t, t ∈ˢ I �
     exact ⟨_, mem_image.mpr ⟨t, ht, rfl⟩, hS⟩
 
 theorem codePred_of_root {S : V} (h : HasRoot S) : codePred B S = image (subCode S) (B (lab S)) := by
-  unfold codePred; exact if_pos h
+  unfold codePred; exact ite_eq_left h
 
 theorem codePred_of_not {S : V} (h : ¬ HasRoot S) : codePred B S = empty := by
-  unfold codePred; exact if_neg h
+  unfold codePred; exact ite_eq_right h
 
 theorem codePred_sub {S : V} (hS : S ∈ˢ allCodes A B tgt I) : codePred B S ⊆ˢ allCodes A B tgt I := by
   intro x hx
@@ -574,7 +574,7 @@ theorem decode_eq {S : V} (hS : S ∈ˢ allCodes A B tgt I)
   unfold decodeGraph at heq ⊢
   rw [heq]
   unfold codeStep
-  rw [if_pos ⟨hroot, hlab⟩]
+  rw [ite_eq_left ⟨hroot, hlab⟩]
   congr 1
   refine graph_congr fun p hp => ?_
   rw [app_graph (show subCode S p ∈ˢ codePred B S from by
@@ -648,7 +648,7 @@ theorem container_closed_exists {w : Nat} (hw : w ≠ 0) {I : V} (Φ : V → V)
     intro p hp
     have hcp : cs p = Classical.choose (hsub p hp) := by
       show (if h : p ∈ˢ B a then Classical.choose (hsub p h) else empty) = _
-      rw [dif_pos hp]
+      rw [dite_eq_left hp]
     rw [hcp]
     exact Classical.choose_spec (hsub p hp)
   have hgS : ∀ p, p ∈ˢ B a → app (graph cs (B a)) p = cs p := fun p hp => app_graph hp

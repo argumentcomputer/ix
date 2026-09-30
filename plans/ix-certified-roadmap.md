@@ -48,7 +48,8 @@ K4's complete abstract parser-work accounting is now implemented and validated,
 including nested failures and aggregate admission limits, without adding
 production counters. D02's final runtime Ix.Tc cutover remains required.
 
-Takeover, 2026-09-29: work continues from `f499ccf2`, where the full gate was
+Takeover, 2026-09-29: V1–V3 (Ixon v3) and L1 (Lean 4.34.0) are complete; R1–R4
+follow. Work continues from `f499ccf2`, where the full gate was
 re-run (`plans/review/t0-baseline`). That commit is the last Ixon v2 state,
 bookmarked as `jcb/ix-certified-v2`. Ix `main` has emitted only Ixon v3 since
 #636, and the Compilatr.ix consumer builds on Lean 4.34.0. Section 12's v3 and
@@ -2228,7 +2229,7 @@ V1 ported upstream's v3 revisions of them mechanically. The public contracts
 already use one predicate per sort, and `constantWireWF_iff_codec` bridges
 the two.
 
-### L1 — Lean 4.34.0
+### L1 — Lean 4.34.0 (complete, 2026-09-29)
 
 Merge `jcb/ix-compilatrix` at `0a31c8db`. That brings:
 - the Lean 4.34.0 toolchain and Blake3 `c32002ee`;
@@ -2246,6 +2247,21 @@ Benchmark packages whose third-party dependencies lag Lean 4.34 are recorded
 as such.
 
 Exit: 4.34.0 throughout, and `IxKernel/` consumable at a pinned revision.
+
+Result (`plans/review/l1-lean434`):
+- **Merge.** `0a31c8db` merged. Blake3 moved from `18b4b1c8` to `c32002ee`,
+  and Mathlib to `v4.34.0`.
+- **Validation.** The full gate passed (985 model jobs), as did all-target
+  `--wfail` lint and the test tier.
+- **Deprecations.** Six deprecated lemma names were replaced by their
+  identical-statement successors. 25 ported files changed only by these
+  renames, and their hashes were re-recorded.
+- **Axiom audits.** No exact axiom set changed.
+- **Runtime audits.** Lean 4.34 no longer reaches `UInt8.ofNatLT` as an
+  extern, which lowers four byte-layer closure counts.
+- **Benchmarks.** The benchmark workspaces declare 4.34.0, but their
+  third-party locks still pin 4.33-era revisions. They are unverified on 4.34
+  and outside the gate.
 
 ### R1–R4 — contract fixes from the second ontology review
 

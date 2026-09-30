@@ -55,7 +55,7 @@ theorem node_inj {D : IndexedContainer V} {w : Nat} (hD : D.WF w)
     exact (eq_pt_of_mem_univZero hP (app_mem_of_mem_piSet (a := p) hg hp)).trans
       (eq_pt_of_mem_univZero hP (app_mem_of_mem_piSet (a := p) hh hp)).symm
   · apply kpair_inj
-    simpa only [node, if_neg hw, spair] using he
+    simpa only [node, ite_eq_right hw, spair] using he
 
 def Child (D : IndexedContainer V) (w : Nat) (child parent : D.Element w) : Prop :=
   ∃ a, a ∈ˢ D.shapes parent.val.1 ∧ ∃ g,
@@ -120,7 +120,7 @@ theorem app_childResults {D : IndexedContainer V} {w : Nat} (hD : D.WF w)
     (hg : g ∈ˢ piSet (D.positions a) (fun p => app (D.carrier w) (D.target a p)))
     (r : D.Element w → V) {p : V} (hp : p ∈ˢ D.positions a) :
     app (childResults hD hi ha hg r) p = r (child hD hi ha hg p hp) := by
-  simp only [childResults, app_graph hp, dif_pos hp]
+  simp only [childResults, app_graph hp, dite_eq_left hp]
 
 noncomputable def foldStep {D : IndexedContainer V} {w : Nat} (hD : D.WF w)
     (algebra : V → V → V → V → V) (z : D.Element w)
@@ -179,7 +179,7 @@ theorem fold_mem {D : IndexedContainer V} {w : Nat} (hD : D.WF w)
         piSet (D.positions v.shape) (fun p => M (D.target v.shape p) (app v.branches p)) := by
       apply graph_mem_piSet
       intro p hp
-      simpa only [dif_pos hp, child] using
+      simpa only [dite_eq_left hp, child] using
         ih (child hD z.property.1 v.shape_mem v.branches_mem p hp) (child_rel hD v hp)
     have hstep := ha z.val.1 z.property.1 v.shape v.shape_mem v.branches v.branches_mem
       _ hresults
@@ -197,7 +197,7 @@ theorem foldAt_eq {D : IndexedContainer V} {w : Nat} (hD : D.WF w)
     (hlarge : D.LargeElim w) (algebra : V → V → V → V → V) {i x : V}
     (hi : i ∈ˢ D.indices) (hx : x ∈ˢ app (D.carrier w) i) :
     foldAt hD hlarge algebra i x = fold hD hlarge algebra ⟨(i, x), hi, hx⟩ := by
-  simp only [foldAt, dif_pos (And.intro hi hx)]
+  simp only [foldAt, dite_eq_left (And.intro hi hx)]
 
 theorem foldAt_mem {D : IndexedContainer V} {w : Nat} (hD : D.WF w)
     (hlarge : D.LargeElim w) {M : V → V → V} {algebra : V → V → V → V → V}

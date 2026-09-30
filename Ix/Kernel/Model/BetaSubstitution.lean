@@ -91,8 +91,8 @@ theorem liftN_inst (term argument : AExpr β) (count cutoff depth : Nat) :
           show index < cutoff + depth by omega, show index < cutoff + depth + 1 by omega]
       · by_cases equal : index = depth
         · subst index
-          simp only [inst, instVar, Nat.lt_irrefl, if_false, if_true, liftN,
-            liftVar, if_pos (show depth < cutoff + depth + 1 by omega)]
+          simp only [inst, instVar, Nat.lt_irrefl, ite_false, ite_true, liftN,
+            liftVar, ite_eq_left (show depth < cutoff + depth + 1 by omega)]
           simpa only [Nat.add_zero, Nat.add_comm] using
             (liftN_liftN_comm argument count cutoff depth 0 (Nat.zero_le _)).symm
         · by_cases before : index < cutoff + depth + 1
@@ -145,7 +145,7 @@ theorem inst_liftN (term argument : AExpr β) (count lower upper : Nat)
         · simp [liftN, liftVar, inst, instVar, below, before]
         · by_cases equal : index = upper
           · subst index
-            simp only [liftN, liftVar, if_neg below, inst, instVar, Nat.lt_irrefl, if_false, if_true]
+            simp only [liftN, liftVar, ite_eq_right below, inst, instVar, Nat.lt_irrefl, ite_false, ite_true]
             simpa only [Nat.zero_add, Nat.add_comm] using
               (liftN_liftN_merge argument upper count 0 lower (Nat.zero_le _) ordered).symm
           · simp [liftN, liftVar, inst, instVar, below, before, equal,
@@ -193,16 +193,16 @@ theorem inst_inst (term first second : AExpr β) (cutoff depth : Nat) :
           show index < cutoff + depth + 1 by omega]
       · by_cases equal : index = depth
         · subst index
-          simp only [inst, instVar, Nat.lt_irrefl, if_false, if_true,
-            if_pos (show depth < cutoff + depth + 1 by omega)]
+          simp only [inst, instVar, Nat.lt_irrefl, ite_false, ite_true,
+            ite_eq_left (show depth < cutoff + depth + 1 by omega)]
           simpa only [Nat.add_comm] using inst_liftN first second depth 0 cutoff (Nat.zero_le _)
         · by_cases before : index < cutoff + depth + 1
           · simp [inst, instVar, below, equal, before,
               show index - 1 < cutoff + depth by omega]
           · by_cases selected : index = cutoff + depth + 1
             · subst index
-              simp only [inst, instVar, Nat.lt_irrefl, if_false, if_true, if_neg below,
-                if_neg equal, Nat.add_sub_cancel]
+              simp only [inst, instVar, Nat.lt_irrefl, ite_false, ite_true, ite_eq_right below,
+                ite_eq_right equal, Nat.add_sub_cancel]
               have skipped := inst_liftN_within second (first.inst second cutoff) (cutoff + depth) 0 depth
                 (Nat.zero_le _) (by omega)
               simpa only [Nat.add_zero] using skipped.symm
@@ -293,7 +293,7 @@ theorem instRevAt_bvar_below (arguments : List (AExpr β)) (index cutoff : Nat)
   induction arguments with
   | nil => rfl
   | cons argument arguments ih =>
-      simpa only [instRevAt, inst, instVar, if_pos (show index < cutoff + arguments.length by omega)] using ih
+      simpa only [instRevAt, inst, instVar, ite_eq_left (show index < cutoff + arguments.length by omega)] using ih
 
 theorem instRevAt_bvar_above (arguments : List (AExpr β)) (index cutoff : Nat)
     (above : cutoff + arguments.length ≤ index) :
@@ -303,8 +303,8 @@ theorem instRevAt_bvar_above (arguments : List (AExpr β)) (index cutoff : Nat)
   | cons argument arguments ih =>
       simp only [List.length_cons] at above
       simp only [instRevAt, inst, instVar,
-        if_neg (show ¬ index < cutoff + arguments.length by omega),
-        if_neg (show index ≠ cutoff + arguments.length by omega)]
+        ite_eq_right (show ¬ index < cutoff + arguments.length by omega),
+        ite_eq_right (show index ≠ cutoff + arguments.length by omega)]
       rw [ih (index - 1) (by omega)]
       congr 1
       simp only [List.length_cons]
@@ -320,12 +320,12 @@ theorem instRevAt_bvar_selected (arguments : List (AExpr β)) (index cutoff : Na
       simp only [List.length_cons] at inside
       by_cases outermost : index = arguments.length
       · subst index
-        simp only [instRevAt, inst, instVar, Nat.lt_irrefl, if_false, if_true]
+        simp only [instRevAt, inst, instVar, Nat.lt_irrefl, ite_false, ite_true]
         rw [show cutoff + arguments.length = arguments.length + cutoff by omega, instRevAt_liftN]
         simp
       · have inner : index < arguments.length := by omega
         simp only [instRevAt, inst, instVar,
-          if_pos (show cutoff + index < cutoff + arguments.length by omega)]
+          ite_eq_left (show cutoff + index < cutoff + arguments.length by omega)]
         rw [ih index inner]
         simp only [List.length_cons,
           show arguments.length + 1 - index - 1 = (arguments.length - index - 1) + 1 by omega,

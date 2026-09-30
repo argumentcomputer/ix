@@ -83,10 +83,10 @@ theorem reject_erases {α : Type} (bad : Prop) [Decidable bad] (reason : String)
       (if bad then (throw reason : GetM PUnit) >>= (fun _ => rest) else rest) := by
   unfold reject
   by_cases hb : bad
-  · simp only [if_pos hb]
+  · simp only [ite_eq_left hb]
     funext state
     rfl
-  · simp only [if_neg hb]
+  · simp only [ite_eq_right hb]
     show Erases (Work.bind (pure ()) fun _ => next) rest
     rw [bind_pure_left]; exact h
 

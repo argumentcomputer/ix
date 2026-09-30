@@ -97,7 +97,7 @@ theorem publishedEnvironment_old (h : Checked.{u,v} entries d source stage)
     {r : ConstRef β} {entry : ConstantEntry β} (hr : entries r = some entry) :
     d.publishedEnvironment entries source stage r = some entry := by
   simp only [publishedEnvironment, Environment.insert,
-    if_neg (fresh_ne (h.facts.block.shapeChecked.fresh _ (List.mem_cons_self ..)) hr)]
+    ite_eq_right (fresh_ne (h.facts.block.shapeChecked.fresh _ (List.mem_cons_self ..)) hr)]
   exact Ordinary.Stage.environment_old h.facts.block hr
 
 variable {V : Type v} [SetTheory V]

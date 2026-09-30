@@ -28,9 +28,9 @@ def word (n : Nat) : Option UInt64 :=
 theorem word_reading {n : Nat} {value : UInt64} (h : word n = some value) : value.toNat = n := by
   dsimp only [word] at h
   by_cases bound : (UInt64.ofNat n).toNat = n
-  · simp only [if_pos bound, Option.some.injEq] at h
+  · simp only [ite_eq_left bound, Option.some.injEq] at h
     exact h ▸ bound
-  · simp only [if_neg bound] at h
+  · simp only [ite_eq_right bound] at h
     cases h
 
 inductive ExprLayout where

@@ -48,7 +48,7 @@ theorem environment_old (h : Checked.{u,v} entries source stage)
     {r : ConstRef β} {old : ConstantEntry β} (hr : entries r = some old) :
     environment entries source stage r = some old := by
   simp only [environment, Environment.insert,
-    if_neg (fresh_ne (h.block.shapeChecked.fresh _ (List.mem_cons_self ..)) hr)]
+    ite_eq_right (fresh_ne (h.block.shapeChecked.fresh _ (List.mem_cons_self ..)) hr)]
   exact Ordinary.Stage.environment_old h.block hr
 
 variable {V : Type v} [SetTheory V]

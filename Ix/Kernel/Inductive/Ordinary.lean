@@ -129,7 +129,7 @@ theorem toEnvironment_installedWith (env : Env β) (shape : Shape β) (source : 
   by_cases hr : q = recursor
   · subst q; simp
   · have hr' : (recursor == q) = false := beq_eq_false_iff_ne.mpr (Ne.symm hr)
-    simp only [hr', if_neg hr]
+    simp only [hr', ite_eq_right hr]
     cases q with
     | member b j =>
       rw [find?_constructorList_member]
@@ -142,12 +142,12 @@ theorem toEnvironment_installedWith (env : Env β) (shape : Shape β) (source : 
     | ctor b j i =>
       simp only [show (ConstRef.member source 0 == ConstRef.ctor b j i) = false from by simp,
         show ConstRef.ctor b j i ≠ ConstRef.member source 0 from by simp,
-        if_false, find?_constructorList_ctor, List.find?_nil]
+        ite_false, find?_constructorList_ctor, List.find?_nil]
       cases j with
       | zero =>
         by_cases hb : b = source
         · subst hb
-          simp only [constructorEntries, true_and, if_true]
+          simp only [constructorEntries, true_and, ite_true]
           cases shape.constructors[i]? <;> simp
         · simp [constructorEntries, hb]
       | succ j => simp [constructorEntries]

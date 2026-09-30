@@ -87,12 +87,12 @@ noncomputable def lfpFamSet (w : Nat) (I F : V) : V :=
 
 theorem lfpFamSet_of_not {w : Nat} {I F : V} (h : ¬ ∃ L, IsClosedFam w I F L) :
     lfpFamSet w I F = graph (fun _ => empty) I := by
-  unfold lfpFamSet; exact dif_neg h
+  unfold lfpFamSet; exact dite_eq_right h
 
 theorem mem_app_lfpFamSet {w : Nat} {I F i x : V} (h : ∃ L, IsClosedFam w I F L) (hi : i ∈ˢ I) :
     x ∈ˢ app (lfpFamSet w I F) i ↔ ∀ X, IsClosedFam w I F X → x ∈ˢ app X i := by
   unfold lfpFamSet
-  rw [dif_pos h, app_graph hi, mem_sep]
+  rw [dite_eq_left h, app_graph hi, mem_sep]
   exact ⟨fun hx => hx.2, fun hx => ⟨hx _ (Classical.choose_spec h), hx⟩⟩
 
 /-- **Leastness**: the least pre-fixed family lies in every closed
@@ -106,7 +106,7 @@ family space. -/
 theorem lfpFamSet_mem (w : Nat) (I F : V) : lfpFamSet w I F ∈ˢ famSpace w I := by
   by_cases h : ∃ L, IsClosedFam w I F L
   · unfold lfpFamSet
-    rw [dif_pos h]
+    rw [dite_eq_left h]
     exact graph_mem_famSpace fun _ hi =>
       univ_sep_mem (famSpace_app (Classical.choose_spec h).1 hi)
   · rw [lfpFamSet_of_not h]

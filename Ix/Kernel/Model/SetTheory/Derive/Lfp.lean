@@ -97,12 +97,12 @@ noncomputable def lfpSet (w : Nat) (F : V) : V :=
 
 theorem lfpSet_of_not {w : Nat} {F : V} (h : ¬ ∃ L, IsClosedIn w F L) :
     lfpSet w F = empty := by
-  unfold lfpSet; exact dif_neg h
+  unfold lfpSet; exact dite_eq_right h
 
 theorem mem_lfpSet {w : Nat} {F x : V} (h : ∃ L, IsClosedIn w F L) :
     x ∈ˢ lfpSet w F ↔ ∀ X, IsClosedIn w F X → x ∈ˢ X := by
   unfold lfpSet
-  rw [dif_pos h, mem_sep]
+  rw [dite_eq_left h, mem_sep]
   exact ⟨fun hx => hx.2, fun hx => ⟨hx _ (Classical.choose_spec h), hx⟩⟩
 
 /-- **Leastness**: the least pre-fixed point lies in every closed

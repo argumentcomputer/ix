@@ -63,7 +63,7 @@ noncomputable def chooseSet (A : V) : V :=
   if h : ∃ a, a ∈ˢ A then Classical.choose h else empty
 
 theorem chooseSet_mem {A : V} (h : ∃ a, a ∈ˢ A) : chooseSet A ∈ˢ A := by
-  rw [chooseSet, dif_pos h]
+  rw [chooseSet, dite_eq_left h]
   exact Classical.choose_spec h
 
 noncomputable def choiceValue (constants : Assignment β V) (nonempty : ConstRef β) (u : Nat) : V :=

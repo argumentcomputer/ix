@@ -220,7 +220,7 @@ noncomputable def recSel (G : V) (i : V) : V :=
 
 theorem recSel_mem {G i : V} (h : ∃ v, v ∈ˢ app G i) : recSel G i ∈ˢ app G i := by
   unfold recSel
-  rw [dif_pos h]
+  rw [dite_eq_left h]
   exact Classical.choose_spec h
 
 /-- **The recursion equation** at an index whose fibre and whose

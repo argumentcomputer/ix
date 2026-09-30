@@ -82,15 +82,15 @@ noncomputable def lamR (v : Nat) (A : V) (F : V → V) : V :=
 /-! ## The two branches -/
 
 theorem piR_zero {A : V} {B : V → V} :
-    piR 0 A B = truthVal (∀ x, x ∈ˢ A → ∃ y, y ∈ˢ B x) := if_pos rfl
+    piR 0 A B = truthVal (∀ x, x ∈ˢ A → ∃ y, y ∈ˢ B x) := ite_eq_left rfl
 
 theorem piR_pos {v : Nat} (hv : v ≠ 0) {A : V} {B : V → V} :
-    piR v A B = piSet A B := if_neg hv
+    piR v A B = piSet A B := ite_eq_right hv
 
-theorem lamR_zero {A : V} {F : V → V} : lamR 0 A F = (pt : V) := if_pos rfl
+theorem lamR_zero {A : V} {F : V → V} : lamR 0 A F = (pt : V) := ite_eq_left rfl
 
 theorem lamR_pos {v : Nat} (hv : v ≠ 0) {A : V} {F : V → V} :
-    lamR v A F = graph F A := if_neg hv
+    lamR v A F = graph F A := ite_eq_right hv
 
 /-! ## Congruence -/
 
@@ -143,7 +143,7 @@ theorem imax_eq_zero_iff (x y : Nat) :
     (if y = 0 then 0 else Nat.max x y) = 0 ↔ y = 0 := by
   by_cases hy : y = 0
   · simp [hy]
-  · rw [if_neg hy]
+  · rw [ite_eq_right hy]
     exact ⟨fun h => absurd (Nat.le_zero.mp (h ▸ Nat.le_max_right x y)) hy,
       fun h => absurd h hy⟩
 

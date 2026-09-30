@@ -209,7 +209,7 @@ theorem getTag0_bound : ReaderBound getTag0 (fun _ => 2) := by
   unfold getTag0
   apply getU8_bound.bind (rightUnits := fun _ _ => 0) (fun byte => ?_) _ (fun _ _ => by omega)
   by_cases large : (byte &&& 128 != 0) = true
-  · simp only [large, if_true]
+  · simp only [large, ite_true]
     exact (getU64TrimmedLE_bound _).bind (fun value => reject_bound _ _ (Tag0.mk value))
       (fun _ => 0) (fun _ _ => by omega)
   · simp only [large]
@@ -220,7 +220,7 @@ theorem getTag2_bound : ReaderBound getTag2 (fun _ => 2) := by
   unfold getTag2
   apply getU8_bound.bind (rightUnits := fun _ _ => 0) (fun byte => ?_) _ (fun _ _ => by omega)
   by_cases large : (byte &&& 32 != 0) = true
-  · simp only [large, if_true]
+  · simp only [large, ite_true]
     exact (getU64TrimmedLE_bound _).bind (fun value => reject_bound _ _ (Tag2.mk _ value))
       (fun _ => 0) (fun _ _ => by omega)
   · simp only [large]
@@ -231,7 +231,7 @@ theorem getTag4_bound : ReaderBound getTag4 (fun _ => 2) := by
   unfold getTag4
   apply getU8_bound.bind (rightUnits := fun _ _ => 0) (fun byte => ?_) _ (fun _ _ => by omega)
   by_cases large : (byte &&& 8 != 0) = true
-  · simp only [large, if_true]
+  · simp only [large, ite_true]
     exact (getU64TrimmedLE_bound _).bind (fun value => reject_bound _ _ (Tag4.mk _ value))
       (fun _ => 0) (fun _ _ => by omega)
   · simp only [large]
@@ -499,9 +499,9 @@ theorem getExprFromTag_bound (recur : GetM Expr)
   by_cases appTag : tag.flag = 7
   · simp only [getExprFromTag, appTag] at read
     by_cases empty : (tag.size == 0) = true
-    · simp only [if_pos empty] at read
+    · simp only [ite_eq_left empty] at read
       cases read
-    · simp only [if_neg empty] at read
+    · simp only [ite_eq_right empty] at read
       obtain ⟨_, checked, checkRead, read⟩ := bind_ok.mp read
       have checkSpan := checkCount_bound _ _ _ _ _ valid checkRead
       obtain ⟨base, middle, baseRead, read⟩ := bind_ok.mp read
@@ -513,9 +513,9 @@ theorem getExprFromTag_bound (recur : GetM Expr)
   by_cases lamTag : tag.flag = 8
   · simp only [getExprFromTag, lamTag] at read
     by_cases empty : (tag.size == 0) = true
-    · simp only [if_pos empty] at read
+    · simp only [ite_eq_left empty] at read
       cases read
-    · simp only [if_neg empty] at read
+    · simp only [ite_eq_right empty] at read
       obtain ⟨_, checked, checkRead, read⟩ := bind_ok.mp read
       have checkSpan := checkCount_bound _ _ _ _ _ valid checkRead
       obtain ⟨binders, middle, bindersRead, read⟩ := bind_ok.mp read
@@ -531,9 +531,9 @@ theorem getExprFromTag_bound (recur : GetM Expr)
   by_cases allTag : tag.flag = 9
   · simp only [getExprFromTag, allTag] at read
     by_cases empty : (tag.size == 0) = true
-    · simp only [if_pos empty] at read
+    · simp only [ite_eq_left empty] at read
       cases read
-    · simp only [if_neg empty] at read
+    · simp only [ite_eq_right empty] at read
       obtain ⟨_, checked, checkRead, read⟩ := bind_ok.mp read
       have checkSpan := checkCount_bound _ _ _ _ _ valid checkRead
       obtain ⟨binders, middle, bindersRead, read⟩ := bind_ok.mp read
@@ -549,9 +549,9 @@ theorem getExprFromTag_bound (recur : GetM Expr)
   by_cases letTag : tag.flag = 10
   · simp only [getExprFromTag, letTag] at read
     by_cases badFlags : tag.size > 3
-    · simp only [if_pos badFlags] at read
+    · simp only [ite_eq_left badFlags] at read
       cases read
-    · simp only [if_neg badFlags] at read
+    · simp only [ite_eq_right badFlags] at read
       obtain ⟨binder, binderState, binderRead, read⟩ := bind_ok.mp read
       have binderSpan := getBinderContract_bound _ _ _ valid binderRead
       cases decoded : LetContract.ofFlags? tag.size binder with

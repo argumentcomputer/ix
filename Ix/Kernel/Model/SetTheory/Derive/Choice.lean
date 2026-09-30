@@ -48,7 +48,7 @@ noncomputable def schoice (A : V) : V :=
 
 theorem schoice_mem {A x : V} (hx : x ∈ˢ A) : schoice A ∈ˢ A := by
   unfold schoice
-  rw [dif_pos ⟨x, hx⟩]
+  rw [dite_eq_left ⟨x, hx⟩]
   exact Classical.choose_spec (⟨x, hx⟩ : ∃ x, x ∈ˢ A)
 
 /-- The axiom of choice, Jech-form, as a theorem: every family `X` has

@@ -33,7 +33,7 @@ theorem Context.Valid.pop {V : Type v} [SetTheory V]
   intro i B found
   have previous := valid (i + 1) (B.liftN 1) (by simp [Context.push, found])
   simpa only [wellDenoted_liftN, interp_liftN, Valuation.skip, Nat.not_lt_zero,
-    if_false, Nat.add_comm 1] using previous
+    ite_false, Nat.add_comm 1] using previous
 
 theorem TypingClaim.weaken {entries : Environment β} {Γ : Context β}
     {e A : AExpr β} (typed : TypingClaim.{u,v} entries Γ e A) (D : AExpr β) :

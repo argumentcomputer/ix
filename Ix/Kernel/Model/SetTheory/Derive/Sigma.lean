@@ -58,11 +58,11 @@ noncomputable def ssnd (p : V) : V :=
 
 theorem sigmaSet_zero {A : V} {B : V → V} :
     sigmaSet 0 A B = truthVal (∃ x, x ∈ˢ A ∧ ∃ y, y ∈ˢ B x) := by
-  unfold sigmaSet; exact if_pos rfl
+  unfold sigmaSet; exact ite_eq_left rfl
 
 theorem sigmaSet_pos {w : Nat} (hw : w ≠ 0) {A : V} {B : V → V} :
     sigmaSet w A B = sigmaPairs A B := by
-  unfold sigmaSet; exact if_neg hw
+  unfold sigmaSet; exact ite_eq_right hw
 
 theorem sigma_congr {w : Nat} {A : V} {B B' : V → V}
     (h : ∀ x, x ∈ˢ A → B x = B' x) : sigmaSet w A B = sigmaSet w A B' := by
@@ -98,7 +98,7 @@ theorem mem_sigma_elim {w : Nat} {A : V} {B : V → V} {t : V}
 
 theorem sfst_spair (a b : V) : sfst (spair a b) = a := by
   unfold sfst spair
-  rw [dif_pos ⟨a, b, rfl⟩]
+  rw [dite_eq_left ⟨a, b, rfl⟩]
   have hs := Classical.choose_spec
     (⟨a, b, rfl⟩ : ∃ a' b', (kpair a b : V) = kpair a' b')
   have hs2 := Classical.choose_spec hs
@@ -106,7 +106,7 @@ theorem sfst_spair (a b : V) : sfst (spair a b) = a := by
 
 theorem ssnd_spair (a b : V) : ssnd (spair a b) = b := by
   unfold ssnd spair
-  rw [dif_pos ⟨a, b, rfl⟩]
+  rw [dite_eq_left ⟨a, b, rfl⟩]
   have hs := Classical.choose_spec
     (⟨a, b, rfl⟩ : ∃ a' b', (kpair a b : V) = kpair a' b')
   have hs2 := Classical.choose_spec hs
@@ -118,13 +118,13 @@ theorem ssnd_kpair (a b : V) : ssnd (kpair a b) = b := by rw [← spair_eq_kpair
 
 theorem sfst_pt : sfst (pt : V) = pt := by
   unfold sfst
-  rw [dif_neg]
+  rw [dite_eq_right]
   rintro ⟨a, b, h⟩
   exact pt_ne_kpair a b h
 
 theorem ssnd_pt : ssnd (pt : V) = pt := by
   unfold ssnd
-  rw [dif_neg]
+  rw [dite_eq_right]
   rintro ⟨a, b, h⟩
   exact pt_ne_kpair a b h
 

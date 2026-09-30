@@ -5,18 +5,18 @@ package ix where
   version := v!"0.1.0"
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "ab4d5eb461941837f48eb891be755c8c73e89fdd"
+  "https://github.com/argumentcomputer/LSpec" @ "369c09df268d7077dfea04a136abbd168351a6b4"
 
 /- The pinned package supplies the pure Lean hash and host C/Rust
 accelerators. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "18b4b1c8937e32f88463bb8f5ee16a7b5f24fcc1"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "c32002eeed36c520dfb73de32ef53483652e3aa5"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
+  "https://github.com/leanprover/lean4-cli" @ "v4.34.0"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "v4.33.0"
+  "https://github.com/leanprover-community/batteries" @ "v4.34.0"
 
 /-! ## FFI
 

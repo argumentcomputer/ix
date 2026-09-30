@@ -285,17 +285,17 @@ theorem u8_bound (rate : Nat) (positive : 0 < rate) :
     Bound u8 rate 0 (fun _ => rate - 1) := by
   intro start valid
   by_cases fits : start.idx < start.bytes.size
-  · simp only [u8, getU8_run, if_pos fits, Costs, finish]
+  · simp only [u8, getU8_run, ite_eq_left fits, Costs, finish]
     exact ⟨⟨rfl, by simp, by dsimp; omega⟩, by dsimp; simp; omega⟩
-  · simp only [u8, getU8_run, if_neg fits, Costs, finish]
+  · simp only [u8, getU8_run, ite_eq_right fits, Costs, finish]
     exact ⟨Progress.refl start valid, by simp⟩
 
 theorem bytes_bound (count : Nat) : Bound (bytes count) 1 1 (fun _ => 0) := by
   intro start valid
   by_cases fits : start.idx + count ≤ start.bytes.size
-  · simp only [bytes, getBytes_run, if_pos fits, Costs, finish]
+  · simp only [bytes, getBytes_run, ite_eq_left fits, Costs, finish]
     exact ⟨⟨rfl, by simp, fits⟩, by simp⟩
-  · simp only [bytes, getBytes_run, if_neg fits, Costs, finish]
+  · simp only [bytes, getBytes_run, ite_eq_right fits, Costs, finish]
     exact ⟨Progress.refl start valid, by simp⟩
 
 end Ix.Ixon.Verify.Work

@@ -205,11 +205,11 @@ theorem liftValue_apply {entries : Environment β} {refl recursor : ConstRef β}
   · subst v
     have he : f = pt := eq_pt_of_mem_piR_zero hf
     simp [liftValue, bit, lamR_zero, he, app_pt]
-  · simp only [liftValue, bit, if_neg hv]
+  · simp only [liftValue, bit, ite_eq_right hv]
     rw [app_lamR_pos (by decide : 1 ≠ 0) hA,
       app_lamR_pos (by decide : 1 ≠ 0) hR,
       app_lamR_pos (by decide : 1 ≠ 0) hB,
-      app_lamR_pos (by decide : 1 ≠ 0) (by simpa only [bit, if_neg hv] using hf),
+      app_lamR_pos (by decide : 1 ≠ 0) (by simpa only [bit, ite_eq_right hv] using hf),
       app_lamR_pos (by decide : 1 ≠ 0) hh,
       app_lamR_pos (by decide : 1 ≠ 0) (quotClass_mem ha)]
     have hs := qrep_spec (u := u) (R := R) (quotClass_mem ha)

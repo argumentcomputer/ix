@@ -117,9 +117,9 @@ theorem projections_fit (h : Ordinary.CheckedShape.{u,v} entries source d.ordina
   obtain ⟨xs, hxs, rfl⟩ := carrier_member h hM hΓ hx
   have hlen : xs.length = d.fields.length := by simpa [constructor] using FitsS.length_eq hxs
   by_cases hw : d.level.eval levels = 0
-  · rw [IndexedContainer.node, if_pos hw, projectValues_pt]
+  · rw [IndexedContainer.node, ite_eq_left hw, projectValues_pt]
     simpa only [constructor, List.length_map] using fitsS_replicate_of_prop (hF.prop V constants hM levels env hΓ hw) hxs
-  · rw [IndexedContainer.node, if_neg hw, projectValues_node _ xs hlen]
+  · rw [IndexedContainer.node, ite_eq_right hw, projectValues_node _ xs hlen]
     exact hxs
 
 theorem constructor_eta (h : Ordinary.CheckedShape.{u,v} entries source d.ordinary)
@@ -129,8 +129,8 @@ theorem constructor_eta (h : Ordinary.CheckedShape.{u,v} entries source d.ordina
   obtain ⟨xs, hxs, rfl⟩ := carrier_member h hM hΓ hx
   rw [d.constructorValue_eq constants levels env _ (by simp [constructor, projectValues_length])]
   by_cases hw : d.level.eval levels = 0
-  · simp only [IndexedContainer.node, if_pos hw]
-  · simp only [IndexedContainer.node, if_neg hw,
+  · simp only [IndexedContainer.node, ite_eq_left hw]
+  · simp only [IndexedContainer.node, ite_eq_right hw,
       projectValues_node _ xs (by simpa [constructor] using FitsS.length_eq hxs)]
 
 theorem constructor_iota (hF : FieldsFormed.{u,v} entries d.level d.ordinary.parameterContext d.fields)
@@ -140,10 +140,10 @@ theorem constructor_iota (hF : FieldsFormed.{u,v} entries d.level d.ordinary.par
   have hlen := FitsS.length_eq hxs
   rw [d.constructorValue_eq constants levels env xs hlen]
   by_cases hw : d.level.eval levels = 0
-  · rw [IndexedContainer.node, if_pos hw, projectValues_pt]
+  · rw [IndexedContainer.node, ite_eq_left hw, projectValues_pt]
     exact Telescope.fits_unique_of_prop (hF.prop V constants hM levels env hΓ hw)
       (by simpa only [List.length_map] using fitsS_replicate_of_prop (hF.prop V constants hM levels env hΓ hw) hxs) hxs
-  · rw [IndexedContainer.node, if_neg hw, projectValues_node _ xs (by simpa [constructor] using hlen)]
+  · rw [IndexedContainer.node, ite_eq_right hw, projectValues_node _ xs (by simpa [constructor] using hlen)]
 
 end Description
 end Ix.Kernel.Certified.Structure

@@ -58,9 +58,9 @@ theorem bytes_positive_bound (count : Nat) (positive : 0 < count) :
     Bound (bytes count) 16 0 (fun _ => 8) := by
   intro start valid
   by_cases fits : start.idx + count ≤ start.bytes.size
-  · simp only [bytes, getBytes_run, if_pos fits, Costs, finish]
+  · simp only [bytes, getBytes_run, ite_eq_left fits, Costs, finish]
     exact ⟨⟨rfl, by simp, fits⟩, by dsimp; omega⟩
-  · simp only [bytes, getBytes_run, if_neg fits, Costs, finish]
+  · simp only [bytes, getBytes_run, ite_eq_right fits, Costs, finish]
     exact ⟨Progress.refl start valid, by simp⟩
 
 def address : M Address := do

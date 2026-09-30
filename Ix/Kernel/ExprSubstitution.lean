@@ -27,9 +27,9 @@ namespace Ix.Kernel
 universe u
 variable {β : Type u}
 
-theorem liftVar_lt {i k n : Nat} (h : i < k) : liftVar n i k = i := if_pos h
+theorem liftVar_lt {i k n : Nat} (h : i < k) : liftVar n i k = i := ite_eq_left h
 theorem liftVar_le {i k n : Nat} (h : k ≤ i) : liftVar n i k = n + i :=
-  if_neg (Nat.not_lt.mpr h)
+  ite_eq_right (Nat.not_lt.mpr h)
 
 namespace VExpr
 
@@ -69,15 +69,15 @@ theorem liftN_instVar_lo (n : Nat) (e : VExpr β) (i j k : Nat) (order : k ≤ j
     (instVar i e j).liftN n k = instVar (liftVar n i k) e (n + j) := by
   simp only [instVar]
   split <;> rename_i before
-  · rw [if_pos]
+  · rw [ite_eq_left]
     · rfl
     · simp only [liftVar]; split <;> omega
   split <;> rename_i equal
   · subst i
     rw [liftN_combine (Nat.zero_le _) order, liftVar_le order,
-      if_neg (by omega), if_pos rfl, Nat.add_comm]
+      ite_eq_right (by omega), ite_eq_left rfl, Nat.add_comm]
   · have greater : j < i := by omega
-    rw [liftVar_le (by omega : k ≤ i), if_neg (by omega), if_neg (by omega)]
+    rw [liftVar_le (by omega : k ≤ i), ite_eq_right (by omega), ite_eq_right (by omega)]
     simp only [liftN, liftVar_le (by omega : k ≤ i - 1), VExpr.bvar.injEq]
     omega
 
@@ -96,17 +96,17 @@ theorem liftN_instVar_hi (i : Nat) (a : VExpr β) (n k j : Nat) :
       instVar (liftVar n i (k + j + 1)) (a.liftN n k) j := by
   simp only [instVar]
   split <;> rename_i before
-  · rw [liftVar_lt (by omega : i < k + j + 1), if_pos before]
+  · rw [liftVar_lt (by omega : i < k + j + 1), ite_eq_left before]
     simp [liftN, liftVar_lt (by omega : i < k + j)]
   split <;> rename_i equal
   · subst i
     simp only [liftVar_lt (by omega : j < k + j + 1), Nat.lt_irrefl,
-      if_false, if_true]
+      ite_false, ite_true]
     rw [liftN_comm a n j k 0 (Nat.zero_le _), Nat.add_comm]
   · by_cases cut : i < k + j + 1
-    · rw [liftVar_lt cut, if_neg before, if_neg equal]
+    · rw [liftVar_lt cut, ite_eq_right before, ite_eq_right equal]
       simp [liftN, liftVar_lt (by omega : i - 1 < k + j)]
-    · rw [liftVar_le (by omega : k + j + 1 ≤ i), if_neg (by omega), if_neg (by omega)]
+    · rw [liftVar_le (by omega : k + j + 1 ≤ i), ite_eq_right (by omega), ite_eq_right (by omega)]
       simp only [liftN, liftVar_le (by omega : k + j ≤ i - 1), VExpr.bvar.injEq]
       omega
 
@@ -131,8 +131,8 @@ theorem inst_liftN (e a : VExpr β) (k : Nat) : (e.liftN 1 k).inst a k = e := by
       simp only [liftN, inst, liftVar]
       split <;> rename_i before
       · simp [instVar, before]
-      · simp only [instVar, if_neg (by omega : ¬ 1 + i < k),
-          if_neg (by omega : 1 + i ≠ k), VExpr.bvar.injEq]
+      · simp only [instVar, ite_eq_right (by omega : ¬ 1 + i < k),
+          ite_eq_right (by omega : 1 + i ≠ k), VExpr.bvar.injEq]
         omega
   | _ => simp_all [liftN, inst]
 
@@ -145,22 +145,22 @@ theorem inst_instVar_hi (i : Nat) (a b : VExpr β) (k j : Nat) :
       show i < j + k by omega]
   split <;> rename_i equal
   · subst i
-    simp only [if_pos (by omega : k < j + k + 1), inst, instVar,
-      Nat.lt_irrefl, if_false, if_true]
+    simp only [ite_eq_left (by omega : k < j + k + 1), inst, instVar,
+      Nat.lt_irrefl, ite_false, ite_true]
     simpa only [Nat.zero_add, Nat.add_comm] using
       (liftN_inst_lo k a b j 0 (Nat.zero_le _)).symm
   · by_cases below : i < j + k + 1
     · simp [inst, instVar, below, before, equal, show i - 1 < j + k by omega]
     · by_cases sameIndex : i = j + k + 1
       · subst i
-        simp only [if_true,
+        simp only [ite_true,
           show j + k + 1 - 1 = j + k by omega, inst, instVar,
-          Nat.lt_irrefl, if_false, if_true]
+          Nat.lt_irrefl, ite_false, ite_true]
         rw [← liftN_combine (e := b) (n₁ := j + k) (n₂ := 1)
           (k₁ := 0) (k₂ := k) (by omega) (by omega), inst_liftN]
-      · simp only [if_neg below, if_neg sameIndex, inst, instVar,
-          if_neg (by omega : ¬ i - 1 < j + k), if_neg (by omega : i - 1 ≠ j + k),
-          if_neg (by omega : ¬ i - 1 < k), if_neg (by omega : i - 1 ≠ k)]
+      · simp only [ite_eq_right below, ite_eq_right sameIndex, inst, instVar,
+          ite_eq_right (by omega : ¬ i - 1 < j + k), ite_eq_right (by omega : i - 1 ≠ j + k),
+          ite_eq_right (by omega : ¬ i - 1 < k), ite_eq_right (by omega : i - 1 ≠ k)]
 
 theorem inst_inst_hi (e a b : VExpr β) (k j : Nat) :
     (e.inst a k).inst b (j + k) =

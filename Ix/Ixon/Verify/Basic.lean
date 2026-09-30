@@ -72,7 +72,7 @@ theorem Reads.checkCount {getm : Ixon.GetM α} {bytes : ByteArray} {value : α}
     unfold Ixon.checkCount
     change (EStateM.bind EStateM.get _) _ = _
     simp only [EStateM.bind, EStateM.get]
-    rw [if_neg hremaining]
+    rw [ite_eq_right hremaining]
     rfl
   change (EStateM.bind (Ixon.checkCount count minBytes) _) _ = _
   rw [EStateM.bind, hcheck]
@@ -111,7 +111,7 @@ theorem getU8_reads (byte : UInt8) :
     bytes := before ++ [byte].toByteArray ++ after
   } : Ixon.GetState) = _
   simp only [EStateM.bind, EStateM.get]
-  rw [if_pos (by
+  rw [ite_eq_left (by
     simp only [ByteArray.size_append, List.size_toByteArray, List.length_cons,
       List.length_nil]
     omega)]
@@ -204,7 +204,7 @@ theorem putTag2_writes_small (flag : UInt8) (size : UInt64)
     Writes (Ixon.putTag2 ⟨flag, size⟩)
       [((flag <<< 6) ||| size.toUInt8)].toByteArray := by
   unfold Ixon.putTag2
-  rw [if_pos hsize]
+  rw [ite_eq_left hsize]
   exact putU8_writes _
 
 /-- Splitting off the low byte and shifting the remainder back reconstructs
@@ -360,7 +360,7 @@ theorem getU64TrimmedLE_reads (x : UInt64) :
   have hshift := shiftBytes_eq_zero_of_lt x
     (Ixon.u64ByteCount x).toNat (u64ByteCount_fits x)
   unfold Ixon.getU64TrimmedLE
-  rw [if_neg (by omega)]
+  rw [ite_eq_right (by omega)]
   exact getU64TrimmedLEAux_reads x _ hshift
 
 private theorem uint8_cases1_8 (count : UInt8)

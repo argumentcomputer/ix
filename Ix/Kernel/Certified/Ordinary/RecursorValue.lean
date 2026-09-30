@@ -58,7 +58,7 @@ theorem recursorAt_large (shape : Shape β) (constants : Assignment β V) (level
     shape.recursorAt constants levels env .large m minors =
       shape.largeValue constants (ElimMode.large.sourceArgs levels) env
         (ElimMode.large.motiveLevel.eval levels) m minors hD hlarge := by
-  simp only [recursorAt, dif_pos hD, dif_pos hlarge]
+  simp only [recursorAt, dite_eq_left hD, dite_eq_left hlarge]
 
 theorem recursorSet_zero (shape : Shape β) (constants : Assignment β V) (levels : List Nat)
     (env : Nat → V) (m : V) :

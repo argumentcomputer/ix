@@ -106,7 +106,7 @@ theorem inst_variable_appN (head : AExpr β) (initialArguments arguments : List 
     ((AExpr.bvar cutoff).appN arguments).inst (head.appN initialArguments) cutoff =
       (head.liftN cutoff).appN (initialArguments.map (AExpr.liftN cutoff ·) ++
         arguments.map (AExpr.inst · (head.appN initialArguments) cutoff)) := by
-  simp only [inst_appN, inst, instVar, Nat.lt_irrefl, if_false, if_true, liftN_appN, appN_append]
+  simp only [inst_appN, inst, instVar, Nat.lt_irrefl, ite_false, ite_true, liftN_appN, appN_append]
 
 /-- Substitution preserves a reduction justified by the original lambda
 prefix. Lambdas newly exposed beyond that prefix need their own origin. -/

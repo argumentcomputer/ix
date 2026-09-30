@@ -281,7 +281,7 @@ theorem reads_fst {decoder : GetM (α × β)} {bytes : ByteArray} {value : α ×
 theorem deUniv_serUniv (u : Univ) (wf : u.wireWF) (maxBytes maxNodes : Nat)
     (bytesFit : (serUniv u).size ≤ maxBytes) (nodesFit : u.nodeCount ≤ maxNodes) :
     Bounded.deUniv maxBytes maxNodes (serUniv u) = .ok u := by
-  rw [Bounded.deUniv, if_pos bytesFit, Codec.Ixon.Univ.serUniv_eq_wireEncode u wf]
+  rw [Bounded.deUniv, ite_eq_left bytesFit, Codec.Ixon.Univ.serUniv_eq_wireEncode u wf]
   exact (reads_fst (getUniv_reads u wf maxNodes nodesFit)).runGetExact
 
 /-- A successful bounded universe decode respects both limits and agrees

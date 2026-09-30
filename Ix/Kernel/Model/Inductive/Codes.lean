@@ -25,7 +25,7 @@ noncomputable def natIndex (x : V) : Nat :=
 
 theorem natIndex_vnat (i : Nat) : natIndex (vnat i : V) = i := by
   unfold natIndex
-  rw [dif_pos ⟨i, rfl⟩]
+  rw [dite_eq_left ⟨i, rfl⟩]
   exact (vnat_inj (Classical.choose_spec (⟨i, rfl⟩ : ∃ j, (vnat i : V) = vnat j))).symm
 
 noncomputable def tag (x : V) : Nat := natIndex (sfst x)
