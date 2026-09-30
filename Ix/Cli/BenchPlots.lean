@@ -1,7 +1,7 @@
 /-
   `ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
   registry — one plot per (workload, measure) that bench-main.yml tracks,
-  with one line per benchmark row on r8i, plus the cross-cutting
+  with separate lines per benchmark row on Warp and r8i, plus the cross-cutting
   shared input-constants trend. The spec derives from the registry
   (`Ix.Cli.BenchCmd`) + the shared constant set (`Ix.BenchConstants`), so
   nothing is hand-listed, and
@@ -232,6 +232,13 @@ def findUuid (items : Array Json) (key val : String) : Option String :=
   items.findSome? fun it =>
     if objStr it key == some val then objStr it "uuid" else none
 
+/-- Historical Warp and current testbeds share a plot as separate series,
+    so changing benchmark hardware preserves the visible history. -/
+def testbedsForPlot (testbeds : Array Json) (workload : String) : Array String :=
+  let slugs := #[s!"{workload}-x64-32x"] ++
+    BenchCmd.benchmarkMachines.toArray.map (BenchCmd.testbedOnMachine workload)
+  slugs.filterMap (findUuid testbeds "slug" ·)
+
 /-! ## Sync -/
 
 /-- History window (seconds) for a plot, overriding the global `--window`
@@ -335,8 +342,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
     -- pending after a rename or a new backend) has no plots to sync:
     -- warn and skip it, like a not-yet-uploaded benchmark, instead of
     -- failing the whole run. Picked up on a later sync once data lands.
-    let testbedUuids := BenchCmd.benchmarkMachines.toArray.filterMap fun machine =>
-      findUuid testbeds "slug" (BenchCmd.testbedOnMachine spec.testbed machine)
+    let testbedUuids := testbedsForPlot testbeds workload
     if testbedUuids.isEmpty then
       IO.eprintln s!"warn: no testbeds for '{spec.testbed}' on bencher yet — skipped"
       continue
@@ -417,7 +423,7 @@ end Ix.Cli.BenchPlots
 open Ix.Cli.BenchPlots in
 def benchPlotsCmd : Cli.Cmd := `[Cli|
   plots VIA runPlotsCmd;
-  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (workload, measure) on r8i, plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
+  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (workload, measure) across historical Warp and current testbeds, plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
 
   FLAGS:
     "dry-run";         "Print the create/replace/keep decisions without writing (no key needed)"
