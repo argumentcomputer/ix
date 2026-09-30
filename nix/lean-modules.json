@@ -3,6 +3,8 @@
   "tests-src-slow":
   {"roots": ["CompilatrixTests.Src.SlowMain"], "kind": "lean_exe"},
   "tests-src": {"roots": ["CompilatrixTests.Src.Main"], "kind": "lean_exe"},
+  "tests-relevance":
+  {"roots": ["CompilatrixTests.Src.Relevance.Main"], "kind": "lean_exe"},
   "tests-ixon-v3":
   {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
@@ -137,6 +139,25 @@
   "CompilatrixTests.Src.Rules":
   {"path": "CompilatrixTests/Src/Rules.lean",
    "imports": ["CompilatrixTests.Src.Support", "Compilatrix.Src.Lazify"]},
+  "CompilatrixTests.Src.Relevance.Run":
+  {"path": "CompilatrixTests/Src/Relevance/Run.lean",
+   "imports":
+   ["CompilatrixTests.Src.Relevance.Checker",
+    "CompilatrixTests.Src.Relevance.Census",
+    "CompilatrixTests.Src.Relevance.Mutation"]},
+  "CompilatrixTests.Src.Relevance.Mutation":
+  {"path": "CompilatrixTests/Src/Relevance/Mutation.lean",
+   "imports": ["CompilatrixTests.Src.Support", "CompilatrixTests.Src.Rules"]},
+  "CompilatrixTests.Src.Relevance.Main":
+  {"path": "CompilatrixTests/Src/Relevance/Main.lean",
+   "imports": ["CompilatrixTests.Src.Relevance.Run"]},
+  "CompilatrixTests.Src.Relevance.Checker":
+  {"path": "CompilatrixTests/Src/Relevance/Checker.lean",
+   "imports":
+   ["CompilatrixTests.Src.Support", "Compilatrix.Src.Relevance.Check"]},
+  "CompilatrixTests.Src.Relevance.Census":
+  {"path": "CompilatrixTests/Src/Relevance/Census.lean",
+   "imports": ["CompilatrixTests.Src.Support", "Compilatrix.Tools.Check"]},
   "CompilatrixTests.Src.Pins":
   {"path": "CompilatrixTests/Src/Pins.lean",
    "imports": ["CompilatrixTests.Src.Support", "Compilatrix.Tools.Check"]},
@@ -495,7 +516,8 @@
    ["CompilatrixTests.Proofs",
     "CompilatrixTests.Lir.Run",
     "CompilatrixTests.Xv.Run",
-    "CompilatrixTests.Src.Run"]},
+    "CompilatrixTests.Src.Run",
+    "CompilatrixTests.Src.Relevance.Run"]},
   "Compilatrix.Xv.XlSemantics":
   {"path": "Compilatrix/Xv/XlSemantics.lean",
    "imports": ["Compilatrix.Xv.Semantics", "Compilatrix.Lir.Operands"]},

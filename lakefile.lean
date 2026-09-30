@@ -45,6 +45,10 @@ lean_exe «tests-src» where
 lean_exe «tests-src-slow» where
   root := `CompilatrixTests.Src.SlowMain
 
+/- The relevance annotator and checker (design note 02 §3, §13). -/
+lean_exe «tests-relevance» where
+  root := `CompilatrixTests.Src.Relevance.Main
+
 lean_exe «tests-ixon-v3» where
   root := `CompilatrixTests.IxonV3.Main
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]
