@@ -610,6 +610,79 @@ def neutralSpineDepth (entries : Environment β) : AExpr β → Nat → Option N
   | .bvar _, depth | .sort _, depth | .forallE .., depth | .natLit .., depth => some depth
   | _, _ => none
 
+omit [DecidableEq β] in
+/-- A term supports its own application spine. -/
+theorem SupportClaim.ofSpine {e h : AExpr β} {args : List (AExpr β)}
+    (hsp : spine e [] = (h, args)) : SupportClaim.{u,v} entries Γ e (AExpr.appN h args) := by
+  have he : AExpr.appN h args = e := by simpa [hsp, AExpr.appN] using spine_appN e []
+  rw [he]
+  exact SupportClaim.refl e
+
+/-- The endpoints of a rule applied to an argument spine by beta steps. Each
+reduction holds wherever the witness `w` (the rule's target) is well denoted. -/
+structure RuleApplied (entries : Environment β) (Γ : Context β) (w lhs rhs : AExpr β)
+    (args : List (AExpr β)) : Type u where
+  lhs' : AExpr β
+  rhs' : AExpr β
+  hl : IOReductionClaim.{u,v} entries Γ w (AExpr.appN lhs args) lhs'
+  hr : IOReductionClaim.{u,v} entries Γ w (AExpr.appN rhs args) rhs'
+
+/-- A typed head whose application to `args` is well denoted wherever `w` is:
+the source of domain determination for those arguments. -/
+structure Witness (entries : Environment β) (Γ : Context β) (w : AExpr β)
+    (args : List (AExpr β)) : Type u where
+  head : AExpr β
+  type : AExpr β
+  typed : IOClaim.{u,v} entries Γ w head type
+  support : SupportClaim.{u,v} entries Γ w (AExpr.appN head args)
+
+/-- An argument fitted at a domain under a witness. -/
+structure Fit (entries : Environment β) (Γ : Context β) (w a D : AExpr β) : Type u where
+  claim : IOClaim.{u,v} entries Γ w a D
+
+/-- An argument's fit, and the witness for the arguments after it while it
+still applies. -/
+structure ArgFit (entries : Environment β) (Γ : Context β) (w a D : AExpr β)
+    (rest : List (AExpr β)) : Type u where
+  fit : IOClaim.{u,v} entries Γ w a D
+  next : Option (Witness.{u,v} entries Γ w rest)
+
+/-- Advance a witness through its first `n` arguments by substitution alone,
+at uniformly non-Prop binders; `none` at the first other binder. -/
+def Witness.advance {w : AExpr β} : (n : Nat) → (args : List (AExpr β)) →
+    Witness.{u,v} entries Γ w args → Option (Witness.{u,v} entries Γ w (args.drop n))
+  | 0, _, wit => some wit
+  | n + 1, a :: rest, ⟨g, .forallE .never _ B, hg, hs⟩ =>
+    have hs' : SupportClaim.{u,v} entries Γ w (AExpr.appN (.app g a) rest) := hs
+    Witness.advance n rest ⟨.app g a, B.inst a, hg.appNever hs'.appNHead, hs'⟩
+  | _ + 1, _, _ => none
+
+/-- Fit an argument at a lambda's domain `D`. At a uniformly non-Prop binder of
+the witness whose domain is `D` itself, domain determination supplies the fit
+without inference and the witness advances by substitution. Otherwise
+`checked` infers the argument and converts its type to `D`, the possibly-Prop
+residue; the witness still advances if its domain is `D`. -/
+def fitArg {w : AExpr β} (D a : AExpr β) (rest : List (AExpr β))
+    (checked : Unit → KM.{u,v} entries Γ (Fit.{u,v} entries Γ w a D)) :
+    Option (Witness.{u,v} entries Γ w (a :: rest)) →
+      KM.{u,v} entries Γ (ArgFit.{u,v} entries Γ w a D rest)
+  | some ⟨g, .forallE .never D' B, hg, hs⟩ =>
+    have hs' : SupportClaim.{u,v} entries Γ w (AExpr.appN (.app g a) rest) := hs
+    if h : D' = D then
+      pure ⟨h ▸ hg.argNever hs'.appNHead, some ⟨.app g a, B.inst a, hg.appNever hs'.appNHead, hs'⟩⟩
+    else do
+      let ⟨fit⟩ ← checked ()
+      pure ⟨fit, none⟩
+  | some ⟨g, .forallE _ D' B, hg, hs⟩ => do
+    have hs' : SupportClaim.{u,v} entries Γ w (AExpr.appN (.app g a) rest) := hs
+    let ⟨fit⟩ ← checked ()
+    if h : D' = D then
+      pure ⟨fit, some ⟨.app g a, B.inst a, hg.app (h ▸ fit), hs'⟩⟩
+    else pure ⟨fit, none⟩
+  | _ => do
+    let ⟨fit⟩ ← checked ()
+    pure ⟨fit, none⟩
+
 mutual
 
 /-- Evaluate a numeric operation whose arguments normalize to literals
@@ -723,7 +796,7 @@ def stepSpineC : Nat → (entries : Environment β) → (Γ : Context β) → (d
                     natStepC fuel entries Γ (AExpr.appN (.const r ls) pre)
                   else throw .noMatch) fun _ =>
               KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ r ls entry h args))
-                fun _ => KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ r ls entry args)
+                fun _ => KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ r ls entry h args)
             else throw .noMatch
         if delta then
           KM.orElse (rules ()) fun _ =>
@@ -759,17 +832,77 @@ def applyTypedC : Nat → (entries : Environment β) → (Γ : Context β) → (
       else throw .noMatch
     | _, _, _ => throw .noMatch
 
+/-- Apply both endpoints of a rule to an argument spine by beta steps. Each
+argument is fitted at the lambdas' domain under the witness `w`, the rule's
+target: at a uniformly non-Prop binder of the witness, by domain determination
+from the target's own application node, with no inference; at any other binder
+by inference and conversion to the domain, the possibly-Prop residue. -/
+def applyIOC : Nat → (entries : Environment β) → (Γ : Context β) → (w lhs rhs : AExpr β) →
+    SupportClaim.{u,v} entries Γ w lhs → SupportClaim.{u,v} entries Γ w rhs →
+    (args : List (AExpr β)) → Option (Witness.{u,v} entries Γ w args) →
+      KM.{u,v} entries Γ (RuleApplied.{u,v} entries Γ w lhs rhs args)
+  | _, _, _, _, lhs, rhs, hl, hr, [], _ =>
+    pure ⟨lhs, rhs, IOReductionClaim.refl hl, IOReductionClaim.refl hr⟩
+  | 0, _, _, _, _, _, _, _, _ :: _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, w, lhs, rhs, hl, hr, a :: args, wit =>
+    match lhs, rhs, hl, hr with
+    | .lam _ D b, .lam _ D' b', hl, hr => do
+      let checked := fun (E : AExpr β) (hE : SupportClaim.{u,v} entries Γ w E) =>
+        show KM.{u,v} entries Γ (Fit.{u,v} entries Γ w a E) from do
+          let ⟨A', ha⟩ ← inferAC fuel entries Γ a
+          let ⟨hc⟩ ← isDefEqC fuel entries Γ A' E
+          pure ⟨IOClaim.checked ha hc hE⟩
+      let ⟨ha, wit'⟩ ← fitArg D a args (fun _ => checked D hl.lamDomain) wit
+      let ⟨ha'⟩ ← if h : D' = D then pure ⟨h ▸ ha⟩ else checked D' hr.lamDomain
+      have hl' := IOReductionClaim.beta hl ha
+      have hr' := IOReductionClaim.beta hr ha'
+      let rest ← applyIOC fuel entries Γ w (b.inst a) (b'.inst a) hl'.support hr'.support args wit'
+      return ⟨rest.lhs', rest.rhs', IOReductionClaim.appN args hl' rest.hl,
+        IOReductionClaim.appN args hr' rest.hr⟩
+    | _, _, _, _ => throw .noMatch
+
+/-- `applyTypedC` with its arguments fitted under a formed witness: at a
+uniformly non-Prop binder of the witness whose domain is the lambda's, domain
+determination types the argument without inference. -/
+def applyTypedWC : Nat → (entries : Environment β) → (Γ : Context β) → (w f F : AExpr β) →
+    FormedClaim.{u,v} entries Γ w → TypingClaim.{u,v} entries Γ f F → (args : List (AExpr β)) →
+      Option (Witness.{u,v} entries Γ w args) → KM.{u,v} entries Γ (Applied.{u,v} entries Γ f args)
+  | _, _, _, _, f, F, _, hf, [], _ => pure ⟨f, F, hf, ConversionClaim.refl _⟩
+  | 0, _, _, _, _, _, _, _, _ :: _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, w, f, F, hw, hf, a :: args, wit =>
+    match f, F, hf with
+    | .lam p D b, .forallE p' D' B, hf =>
+      if h : p = p' ∧ D = D' then do
+        have hf' : TypingClaim.{u,v} entries Γ (.lam p D b) (.forallE p D B) := by
+          obtain ⟨rfl, rfl⟩ := h
+          exact hf
+        let ⟨ha, wit'⟩ ← fitArg D a args (fun _ => do
+          let ⟨A', ha⟩ ← inferAC fuel entries Γ a
+          let ⟨hc⟩ ← isDefEqC fuel entries Γ A' D
+          pure ⟨IOClaim.checked ha hc (SupportClaim.ofFormed hf'.formedType.domain)⟩) wit
+        have haD : TypingClaim.{u,v} entries Γ a D := ha.typing hw
+        let rest ← applyTypedWC fuel entries Γ w (b.inst a) (B.inst a) hw
+          (TypingClaim.betaResult hf' haD) args wit'
+        return ⟨rest.result, rest.type, rest.typed,
+          (ConversionClaim.appN (ConversionClaim.beta hf' haD) args).trans rest.conv⟩
+      else throw .noMatch
+    | _, _, _ => throw .noMatch
+
 /-- Iota: a recursor applied to a constructor reduces through the published
-rule. The target is converted to the typed instance of the rule's left side
-(which checks the constructor's parameters and the indices against the
-recursor's), and the rule's equation takes it to the typed instance of the
-right side. A literal major is unfolded one step first. K-like reduction: if
-the major is not a constructor application but the recursor has a single rule
-without fields, the constructor is synthesized from the recursor's parameters;
-the conversion of the major to it is then proof irrelevance, which holds
-exactly when the major's type converts to the constructor's. The rule receives
-the spine of the recursor application and fires at the recursor's arity; an
-over-applied spine reduces its prefix (`atPrefix`). -/
+rule. The target is converted to the left instance (which checks the
+constructor's parameters and the indices against the recursor's), and the
+rule's equation takes it to the right instance. Both endpoints are applied by
+`applyIOC` under the target: the parameters, motive and minors are fitted by
+the recursor's own type along the target's spine, and the fields by the
+constructor's type along the major's, so no argument is inferred at a
+uniformly non-Prop binder. A literal major is unfolded one step first.
+K-like reduction: if the major is not a constructor application but the
+recursor has a single rule without fields, the constructor is synthesized
+from the recursor's parameters; the conversion of the major to it is then
+proof irrelevance, which holds exactly when the major's type converts to the
+constructor's. The rule receives the spine of the recursor application and
+fires at the recursor's arity; an over-applied spine reduces its prefix
+(`atPrefix`), which is then the target and the witnesses' support. -/
 def iotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r : ConstRef β) →
     (ls : List VLevel) → (entry : ConstantEntry β) → entries r = some entry →
     (args : List (AExpr β)) →
@@ -780,65 +913,97 @@ def iotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r : Co
     | some (np, nm, ni, rules) =>
       let majorIdx := np + 1 + nm + ni
       atPrefix (majorIdx + 1) (.const r ls) args fun args =>
-        match args[majorIdx]? with
+        match hmaj : args[majorIdx]? with
         | some major => do
           let normalized ← whnfC fuel entries Γ major
           KM.remember normalized.stopped <| do
-            let major' := normalized.result
-            let major' := match major' with
-              | .natLit f n => match unfoldLit.{u,v} entries Γ f n with
-                | some u => u.result
-                | none => major'
-              | _ => major'
-            let candidate : Option (Nat × Nat × List (AExpr β)) :=
-              match spine major' [] with
-              | (.const c _, cargs) => (ruleIndex rules c).map fun (j, nf) => (j, nf, cargs)
-              | _ =>
-                match rules with
-                | [(_, 0)] => some (0, 0, args.take np)
-                | _ => none
-            match candidate with
-            | some (j, nf, cargs) =>
+            have hsupp : SupportClaim.{u,v} entries Γ (AExpr.appN (.const r ls) args)
+                (AExpr.appN (.const r ls) args) := SupportClaim.refl _
+            have hmajor : SupportClaim.{u,v} entries Γ (AExpr.appN (.const r ls) args)
+                normalized.result :=
+              (hsupp.appNArg (List.mem_of_getElem? hmaj)).ofReduction normalized.claim
+            let ⟨major', hmajor'⟩ :
+                { m : AExpr β // SupportClaim.{u,v} entries Γ (AExpr.appN (.const r ls) args) m } :=
+              match normalized.result, hmajor with
+              | .natLit f n, hm => match unfoldLit.{u,v} entries Γ f n with
+                | some u => ⟨u.result, SupportClaim.ofFormed u.formed⟩
+                | none => ⟨.natLit f n, hm⟩
+              | m, hm => ⟨m, hm⟩
+            let fire := fun (j nf : Nat) (cargs : List (AExpr β))
+                (fieldWit : Option (Witness.{u,v} entries Γ (AExpr.appN (.const r ls) args)
+                  (cargs.drop np))) =>
+              show KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (AExpr.appN (.const r ls) args)) from
               if cargs.length = np + nf then
-                let bargs := args.take (np + 1 + nm) ++ cargs.drop np
                 match hj : entry.equations[j]?, hf1 : entry.facts[1 + 2 * j]?,
                     hf2 : entry.facts[2 + 2 * j]? with
-                | some law, some (.typed lhs T), some (.typed rhs T') =>
+                | some law, some (.typed lhs _), some (.typed rhs _) =>
                   if hlaw : law.lhs = lhs ∧ law.rhs = rhs then
                     if hn : ls.length = entry.universes then do
-                      let appL ← applyTypedC fuel entries Γ (lhs.instL ls) (T.instL ls)
-                        (TypingClaim.fact h (List.mem_of_getElem? hf1) hn) bargs
-                      let appR ← applyTypedC fuel entries Γ (rhs.instL ls) (T'.instL ls)
-                        (TypingClaim.fact h (List.mem_of_getElem? hf2) hn) bargs
-                      let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ (AExpr.appN (.const r ls) args) appL.result
+                      let prefixArgs := args.take (np + 1 + nm)
+                      let wit : Witness.{u,v} entries Γ (AExpr.appN (.const r ls) args) prefixArgs :=
+                        ⟨.const r ls, entry.type.instL ls,
+                          IOClaim.ofTyping (TypingClaim.const h hn), hsupp.appNTake _⟩
+                      have hL := TypingClaim.fact h (List.mem_of_getElem? hf1) hn
+                      have hR := TypingClaim.fact h (List.mem_of_getElem? hf2) hn
+                      let app₁ ← applyIOC fuel entries Γ (AExpr.appN (.const r ls) args)
+                        (lhs.instL ls) (rhs.instL ls)
+                        (SupportClaim.ofFormed hL.formed) (SupportClaim.ofFormed hR.formed)
+                        prefixArgs (some wit)
+                      let app₂ ← applyIOC fuel entries Γ (AExpr.appN (.const r ls) args)
+                        app₁.lhs' app₁.rhs' app₁.hl.support app₁.hr.support (cargs.drop np) fieldWit
+                      let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ (AExpr.appN (.const r ls) args) app₂.lhs'
                       have heq : ConversionClaim.{u,v} entries Γ (lhs.instL ls) (rhs.instL ls) := by
                         have := ConversionClaim.equation (Γ := Γ) h (List.mem_of_getElem? hj) hn
                         rwa [hlaw.1, hlaw.2] at this
-                      return ⟨appR.result, ReductionClaim.iota hc appL.typed.formed
-                        (appL.conv.symm.trans ((heq.appN bargs).trans appR.conv)) appR.typed.formed⟩
+                      return ⟨app₂.rhs', ReductionClaim.iotaIO hc (app₁.hl.append app₂.hl)
+                        (heq.appN _) (app₁.hr.append app₂.hr)⟩
                     else throw .noMatch
                   else throw .noMatch
                 | _, _, _ => throw .noMatch
               else throw .noMatch
-            | none => throw .noMatch
+            match hms : spine major' [] with
+            | (.const c cls, cargs) =>
+              match ruleIndex rules c with
+              | some (j, nf) =>
+                let fieldWit : Option (Witness.{u,v} entries Γ (AExpr.appN (.const r ls) args)
+                    (cargs.drop np)) :=
+                  match hc : entries c with
+                  | some centry =>
+                    if hcn : cls.length = centry.universes then
+                      Witness.advance np cargs ⟨.const c cls, centry.type.instL cls,
+                        IOClaim.ofTyping (TypingClaim.const hc hcn),
+                        hmajor'.trans (SupportClaim.ofSpine hms)⟩
+                    else none
+                  | none => none
+                fire j nf cargs fieldWit
+              | none => throw .noMatch
+            | _ =>
+              match rules with
+              | [(_, 0)] => fire 0 0 (args.take np) none
+              | _ => throw .noMatch
         | none => throw .noMatch
     | none => throw .noMatch
 
 /-- Reduce through a rule whose endpoints are typed by inference: the target is
-converted to the typed instance of the left side, and the rule's conversion
-takes it to the typed instance of the right side. -/
+converted to the left instance, and the rule's conversion takes it to the right
+instance. The endpoints are applied by `applyIOC` under the target, first to
+the prefix arguments with the prefix witness, then to the field arguments
+with the field witness. -/
 def reduceByRuleC : Nat → (entries : Environment β) → (Γ : Context β) → (e lhs rhs : AExpr β) →
-    ConversionClaim.{u,v} entries Γ lhs rhs → (bargs : List (AExpr β)) →
+    ConversionClaim.{u,v} entries Γ lhs rhs → (prefixArgs fieldArgs : List (AExpr β)) →
+    Option (Witness.{u,v} entries Γ e prefixArgs) → Option (Witness.{u,v} entries Γ e fieldArgs) →
       KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)
-  | 0, _, _, _, _, _, _, _ => throw .exhausted
-  | fuel + 1, entries, Γ, e, lhs, rhs, heq, bargs => do
-    let ⟨TL, hL⟩ ← inferAC fuel entries Γ lhs
-    let ⟨TR, hR⟩ ← inferAC fuel entries Γ rhs
-    let appL ← applyTypedC fuel entries Γ lhs TL hL bargs
-    let appR ← applyTypedC fuel entries Γ rhs TR hR bargs
-    let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ e appL.result
-    return ⟨appR.result, ReductionClaim.iota hc appL.typed.formed
-      (appL.conv.symm.trans ((heq.appN bargs).trans appR.conv)) appR.typed.formed⟩
+  | 0, _, _, _, _, _, _, _, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, e, lhs, rhs, heq, prefixArgs, fieldArgs, wit₁, wit₂ => do
+    let ⟨_, hL⟩ ← inferAC fuel entries Γ lhs
+    let ⟨_, hR⟩ ← inferAC fuel entries Γ rhs
+    let app₁ ← applyIOC fuel entries Γ e lhs rhs (SupportClaim.ofFormed hL.formed)
+      (SupportClaim.ofFormed hR.formed) prefixArgs wit₁
+    let app₂ ← applyIOC fuel entries Γ e app₁.lhs' app₁.rhs' app₁.hl.support app₁.hr.support
+      fieldArgs wit₂
+    let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ e app₂.lhs'
+    return ⟨app₂.rhs', ReductionClaim.iotaIO hc (app₁.hl.append app₂.hl) (heq.appN _)
+      (app₁.hr.append app₂.hr)⟩
 
 /-- Quotient computation: the lift or the eliminator applied to a constructor
 application reduces through its rule, which is derived from the published
@@ -846,23 +1011,45 @@ facts. The lift's rule needs the former, the constructor, the lift itself, and
 the equality family to be the admitted ones; the eliminator's rule holds
 outright, since both sides are proofs. The former is read off the entry's
 type as the reference other than the known ones. Like `iotaC`, the rule
-receives the spine and fires at its arity. -/
+receives the spine and fires at its arity. The rule's arguments are fitted
+by the entry's type along the target and by the constructor's type along the
+major. -/
 def quotIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r : ConstRef β) →
-    (ls : List VLevel) → (entry : ConstantEntry β) → (args : List (AExpr β)) →
+    (ls : List VLevel) → (entry : ConstantEntry β) → entries r = some entry →
+    (args : List (AExpr β)) →
       KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (AExpr.appN (.const r ls) args))
-  | 0, _, _, _, _, _, _ => throw .exhausted
-  | fuel + 1, entries, Γ, r, ls, entry, args =>
+  | 0, _, _, _, _, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, r, ls, entry, hr, args =>
     match quotientRule entry.facts with
     | some role =>
       let arity := if role.isSome then 6 else 5
       atPrefix arity (.const r ls) args fun args =>
-        match args[arity - 1]? with
+        match hmaj : args[arity - 1]? with
         | some major => do
           let normalized ← whnfC fuel entries Γ major
           KM.remember normalized.stopped <| do
-            match spine normalized.result [] with
-            | (.const c _, [_, _, a]) =>
-              let bargs := args.take (arity - 1) ++ [a]
+            have hsupp : SupportClaim.{u,v} entries Γ (AExpr.appN (.const r ls) args)
+                (AExpr.appN (.const r ls) args) := SupportClaim.refl _
+            have hmajor : SupportClaim.{u,v} entries Γ (AExpr.appN (.const r ls) args)
+                normalized.result :=
+              (hsupp.appNArg (List.mem_of_getElem? hmaj)).ofReduction normalized.claim
+            match hms : spine normalized.result [] with
+            | (.const c cls, [A, R, a]) =>
+              let prefixArgs := args.take (arity - 1)
+              let wit₁ : Option (Witness.{u,v} entries Γ (AExpr.appN (.const r ls) args) prefixArgs) :=
+                if hn : ls.length = entry.universes then
+                  some ⟨.const r ls, entry.type.instL ls, IOClaim.ofTyping (TypingClaim.const hr hn),
+                    hsupp.appNTake _⟩
+                else none
+              let wit₂ : Option (Witness.{u,v} entries Γ (AExpr.appN (.const r ls) args) [a]) :=
+                match hc : entries c with
+                | some centry =>
+                  if hcn : cls.length = centry.universes then
+                    Witness.advance 2 [A, R, a] ⟨.const c cls, centry.type.instL cls,
+                      IOClaim.ofTyping (TypingClaim.const hc hcn),
+                      hmajor.trans (SupportClaim.ofSpine hms)⟩
+                  else none
+                | none => none
               match role with
               | some (eq, recursor) =>
                 match entry.type.references.eraseDups.filter (· ≠ eq) with
@@ -876,7 +1063,8 @@ def quotIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r 
                             reduceByRuleC fuel entries Γ (AExpr.appN (.const r ls) args)
                               ((Certified.Quotient.liftRuleLhs refs).instL ls)
                               ((Certified.Quotient.liftRuleRhs refs).instL ls)
-                              (Certified.Quotient.liftRule_claim Γ hq hc hl hE hn) bargs
+                              (Certified.Quotient.liftRule_claim Γ hq hc hl hE hn)
+                              prefixArgs [a] wit₁ wit₂
                           else throw .noMatch
                         else throw .noMatch
                       else throw .noMatch
@@ -890,7 +1078,7 @@ def quotIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r 
                   reduceByRuleC fuel entries Γ (AExpr.appN (.const r ls) args)
                     ((Certified.Quotient.indRuleLhs refs).instL ls)
                     ((Certified.Quotient.indRuleRhs refs).instL ls)
-                    (Certified.Quotient.indRule_claim refs Γ ls) bargs
+                    (Certified.Quotient.indRule_claim refs Γ ls) prefixArgs [a] wit₁ wit₂
                 | _ => throw .noMatch
             | _ => throw .noMatch
         | none => throw .noMatch
@@ -898,14 +1086,15 @@ def quotIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r 
 
 /-- Projection iota: a projection of a constructor application reduces
 through the structure's published iota rule, whose endpoints are typed by
-inference. -/
+inference. The rule's arguments are the constructor's, fitted by the
+constructor's type along the reduced major. -/
 def projIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r : ConstRef β) → (i : Nat) →
     (x : AExpr β) → KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (.proj r i x))
   | 0, _, _, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, r, i, x => do
     let ⟨x', hx, stopped⟩ ← whnfC fuel entries Γ x
     KM.remember stopped <| do
-      match spine x' [] with
+      match hsp : spine x' [] with
       | (.const (.ctor s 0 0) ls, cargs) =>
         match h : entries r with
         | some entry =>
@@ -915,18 +1104,28 @@ def projIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r 
               match hq : entry.equations[1 + i]? with
               | some law =>
                 if hn : ls.length = entry.universes then do
-                  let ⟨TL, hL⟩ ← inferAC fuel entries Γ (law.lhs.instL ls)
-                  let ⟨TR, hR⟩ ← inferAC fuel entries Γ (law.rhs.instL ls)
-                  let appL ← applyTypedC fuel entries Γ (law.lhs.instL ls) TL hL cargs
-                  let appR ← applyTypedC fuel entries Γ (law.rhs.instL ls) TR hR cargs
-                  if hl : appL.result = .proj r i x' then
+                  let ⟨_, hL⟩ ← inferAC fuel entries Γ (law.lhs.instL ls)
+                  let ⟨_, hR⟩ ← inferAC fuel entries Γ (law.rhs.instL ls)
+                  have hsupp : SupportClaim.{u,v} entries Γ (.proj r i x)
+                      (AExpr.appN (.const (.ctor s 0 0) ls) cargs) :=
+                    ((SupportClaim.refl _).proj.ofReduction hx).trans (SupportClaim.ofSpine hsp)
+                  let wit : Option (Witness.{u,v} entries Γ (.proj r i x) cargs) :=
+                    match hc : entries (.ctor s 0 0) with
+                    | some centry =>
+                      if hcn : ls.length = centry.universes then
+                        some ⟨.const (.ctor s 0 0) ls, centry.type.instL ls,
+                          IOClaim.ofTyping (TypingClaim.const hc hcn), hsupp⟩
+                      else none
+                    | none => none
+                  let app ← applyIOC fuel entries Γ (.proj r i x) (law.lhs.instL ls) (law.rhs.instL ls)
+                    (SupportClaim.ofFormed hL.formed) (SupportClaim.ofFormed hR.formed) cargs wit
+                  if hl : app.lhs' = .proj r i x' then
                     have heq : ConversionClaim.{u,v} entries Γ (law.lhs.instL ls) (law.rhs.instL ls) :=
                       ConversionClaim.equation h (List.mem_of_getElem? hq) hn
-                    have hc : ConvClaim.{u,v} entries Γ (.proj r i x) appL.result := by
+                    have hc : ConvClaim.{u,v} entries Γ (.proj r i x) app.lhs' := by
                       rw [hl]
                       exact ConvClaim.proj (ConvClaim.ofReduction hx)
-                    return ⟨appR.result, ReductionClaim.iota hc appL.typed.formed
-                      (appL.conv.symm.trans ((heq.appN cargs).trans appR.conv)) appR.typed.formed⟩
+                    return ⟨app.rhs', ReductionClaim.iotaIO hc app.hl (heq.appN cargs) app.hr⟩
                   else throw .noMatch
                 else throw .noMatch
               | none => throw .noMatch
@@ -937,35 +1136,46 @@ def projIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r 
 
 /-- Structure eta: a constructor application of a structure converts to any
 term of the structure's type whose projections convert to the fields, through
-the published eta rule, whose endpoints are typed by inference. -/
+the published eta rule, whose endpoints are typed by inference. The
+parameters are fitted by the constructor's type along the constructor
+application; the other side is inferred. -/
 def etaStructC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
     KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
   | 0, _, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, a, b =>
-    match spine a [] with
+    match hsp : spine a [] with
     | (.const (.ctor s 0 0) ls, args) =>
       match h : entries (.member s 0) with
       | some entry =>
         match structureInfo entry.facts with
         | some (np, nf) =>
           if args.length = np + nf then
-            let bargs := args.take np ++ [b]
             match hq : entry.equations[(0 : Nat)]? with
             | some law =>
               if hn : ls.length = entry.universes then do
-                let ⟨TL, hL⟩ ← inferAC fuel entries Γ (law.lhs.instL ls)
-                let ⟨TR, hR⟩ ← inferAC fuel entries Γ (law.rhs.instL ls)
-                let appL ← applyTypedC fuel entries Γ (law.lhs.instL ls) TL hL bargs
-                let appR ← applyTypedC fuel entries Γ (law.rhs.instL ls) TR hR bargs
-                if hb : appR.result = b then do
-                  let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ a appL.result
+                let ⟨_, hL⟩ ← inferAC fuel entries Γ (law.lhs.instL ls)
+                let ⟨_, hR⟩ ← inferAC fuel entries Γ (law.rhs.instL ls)
+                let params := args.take np
+                let wit : Option (Witness.{u,v} entries Γ a params) :=
+                  match hc : entries (.ctor s 0 0) with
+                  | some centry =>
+                    if hcn : ls.length = centry.universes then
+                      some ⟨.const (.ctor s 0 0) ls, centry.type.instL ls,
+                        IOClaim.ofTyping (TypingClaim.const hc hcn), (SupportClaim.ofSpine hsp).appNTake np⟩
+                    else none
+                  | none => none
+                let app₁ ← applyIOC fuel entries Γ a (law.lhs.instL ls) (law.rhs.instL ls)
+                  (SupportClaim.ofFormed hL.formed) (SupportClaim.ofFormed hR.formed) params wit
+                let app₂ ← applyIOC fuel entries Γ a app₁.lhs' app₁.rhs' app₁.hl.support
+                  app₁.hr.support [b] none
+                if hb : app₂.rhs' = b then do
+                  let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ a app₂.lhs'
                   have heq : ConversionClaim.{u,v} entries Γ (law.lhs.instL ls) (law.rhs.instL ls) :=
                     ConversionClaim.equation h (List.mem_of_getElem? hq) hn
-                  have hr : ConversionClaim.{u,v} entries Γ (AExpr.appN (law.rhs.instL ls) bargs) b := by
-                    rw [← hb]
-                    exact appR.conv
-                  return ⟨hc.trans appL.typed.formed
-                    (ConvClaim.ofConversion (appL.conv.symm.trans ((heq.appN bargs).trans hr)))⟩
+                  have hr : IOReductionClaim.{u,v} entries Γ a
+                      (AExpr.appN (law.rhs.instL ls) (params ++ [b])) b :=
+                    by have h₂ := app₁.hr.append app₂.hr; rw [hb] at h₂; exact h₂
+                  return ⟨ConvClaim.ofRuleIO hc (app₁.hl.append app₂.hl) (heq.appN _) hr⟩
                 else throw .noMatch
               else throw .noMatch
             | none => throw .noMatch
@@ -1239,12 +1449,12 @@ def inferCore : Nat → (entries : Environment β) → (Γ : Context β) → (e 
       let ⟨B, hb⟩ ← inferAC fuel entries Γ (b.inst v)
       return ⟨B, TypingClaim.letSubst ht hv' hb⟩
     | .proj r i x => do
-      let ⟨T, _⟩ ← inferAC fuel entries Γ x
+      let ⟨T, hx⟩ ← inferAC fuel entries Γ x
       let normalized ← whnfC fuel entries Γ T
       KM.remember normalized.stopped <| do
-        match spine normalized.result [] with
+        match hsp : spine normalized.result [] with
         | (.const r' ls, params) =>
-          if r' = r then
+          if hr' : r' = r then
             match h : entries r with
             | some entry =>
               match structureInfo entry.facts with
@@ -1253,10 +1463,19 @@ def inferCore : Nat → (entries : Environment β) → (Γ : Context β) → (e 
                   match hf : entry.facts[1 + i]? with
                   | some (.typed pj pjT) =>
                     if hn : ls.length = entry.universes then do
-                      let app ← applyTypedC fuel entries Γ (pj.instL ls) (pjT.instL ls)
-                        (TypingClaim.fact h (List.mem_of_getElem? hf) hn) (params ++ [x])
-                      if hres : app.result = .proj r i x then
-                        return ⟨app.type, hres ▸ app.typed⟩
+                      -- The parameters are fitted by the family's type along the
+                      -- major's reduced type, which is formed; the major by inference.
+                      have hT : FormedClaim.{u,v} entries Γ normalized.result :=
+                        normalized.claim.formed hx.formedType
+                      have hsp' : spine normalized.result [] = (.const r ls, params) := hr' ▸ hsp
+                      let wit : Witness.{u,v} entries Γ normalized.result params :=
+                        ⟨.const r ls, entry.type.instL ls, IOClaim.ofTyping (TypingClaim.const h hn),
+                          SupportClaim.ofSpine hsp'⟩
+                      let app₁ ← applyTypedWC fuel entries Γ normalized.result (pj.instL ls)
+                        (pjT.instL ls) hT (TypingClaim.fact h (List.mem_of_getElem? hf) hn) params (some wit)
+                      let app₂ ← applyTypedC fuel entries Γ app₁.result app₁.type app₁.typed [x]
+                      if hres : app₂.result = .proj r i x then
+                        return ⟨app₂.type, hres ▸ app₂.typed⟩
                       else throw .noMatch
                     else throw .noMatch
                   | _ => throw .noMatch

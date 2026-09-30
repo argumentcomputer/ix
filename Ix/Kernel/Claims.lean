@@ -628,6 +628,15 @@ theorem Model.wellDenoted_appN_head {V : Type v} [SetTheory V] {constants : Assi
   | _, [], h => h
   | f, a :: args, h => (wellDenoted_appN_head (f := .app f a) (args := args) h).1
 
+theorem Model.wellDenoted_appN_arg {V : Type v} [SetTheory V] {constants : Assignment β V}
+    {levels : List Nat} {env : Nat → V} {a : AExpr β} :
+    ∀ {f : AExpr β} {args : List (AExpr β)}, a ∈ args →
+      WellDenoted constants levels env (f.appN args) → WellDenoted constants levels env a
+  | f, x :: args, hmem, h => by
+    rcases List.mem_cons.mp hmem with rfl | hmem
+    · exact (wellDenoted_appN_head (f := .app f a) (args := args) h).2.1
+    · exact wellDenoted_appN_arg (f := .app f x) hmem h
+
 theorem Model.interp_appN_congr {V : Type v} [SetTheory V] {constants : Assignment β V}
     {levels : List Nat} {env : Nat → V} :
     ∀ {f f' : AExpr β} (args : List (AExpr β)),
@@ -669,6 +678,11 @@ theorem ofFormed {w e : AExpr β} (h : FormedClaim.{u,v} entries Γ e) :
     SupportClaim.{u,v} entries Γ w e :=
   fun V _ constants hM levels env hΓ _ => h V constants hM levels env hΓ
 
+theorem trans {w e e' : AExpr β} (h₁ : SupportClaim.{u,v} entries Γ w e)
+    (h₂ : SupportClaim.{u,v} entries Γ e e') : SupportClaim.{u,v} entries Γ w e' :=
+  fun V _ constants hM levels env hΓ hw =>
+    h₂ V constants hM levels env hΓ (h₁ V constants hM levels env hΓ hw)
+
 theorem ofReduction {w e e' : AExpr β} (hs : SupportClaim.{u,v} entries Γ w e)
     (h : ReductionClaim.{u,v} entries Γ e e') : SupportClaim.{u,v} entries Γ w e' :=
   fun V _ constants hM levels env hΓ hw =>
@@ -691,6 +705,17 @@ theorem appNPrefix {w f : AExpr β} {xs ys : List (AExpr β)}
     SupportClaim.{u,v} entries Γ w (f.appN xs) := by
   rw [AExpr.appN_append] at h
   exact h.appNHead
+
+theorem appNTake {w f : AExpr β} {args : List (AExpr β)}
+    (h : SupportClaim.{u,v} entries Γ w (f.appN args)) (n : Nat) :
+    SupportClaim.{u,v} entries Γ w (f.appN (args.take n)) := by
+  rw [← List.take_append_drop n args] at h
+  exact h.appNPrefix
+
+theorem appNArg {w f a : AExpr β} {args : List (AExpr β)}
+    (h : SupportClaim.{u,v} entries Γ w (f.appN args)) (ha : a ∈ args) :
+    SupportClaim.{u,v} entries Γ w a :=
+  fun V _ constants hM levels env hΓ hw => wellDenoted_appN_arg ha (h V constants hM levels env hΓ hw)
 
 theorem proj {w x : AExpr β} {r : ConstRef β} {i : Nat}
     (h : SupportClaim.{u,v} entries Γ w (.proj r i x)) : SupportClaim.{u,v} entries Γ w x :=
