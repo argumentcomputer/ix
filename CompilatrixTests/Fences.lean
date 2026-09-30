@@ -12,3 +12,4 @@ import CompilatrixTests.Fences.X86
 import CompilatrixTests.Fences.Lir
 import CompilatrixTests.Fences.Xv
 import CompilatrixTests.Fences.Backend
+import CompilatrixTests.Fences.Sem

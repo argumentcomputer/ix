@@ -246,6 +246,22 @@
   "CompilatrixTests.Src.Bench":
   {"path": "CompilatrixTests/Src/Bench.lean",
    "imports": ["CompilatrixTests.Src.Support", "Compilatrix.Tools.Check"]},
+  "CompilatrixTests.Sem.Toy.Tick":
+  {"path": "CompilatrixTests/Sem/Toy/Tick.lean",
+   "imports": ["CompilatrixTests.Sem.Toy.Big"]},
+  "CompilatrixTests.Sem.Toy.Stack":
+  {"path": "CompilatrixTests/Sem/Toy/Stack.lean",
+   "imports": ["CompilatrixTests.Sem.Toy.Big", "Compilatrix.Sem.Smallstep"]},
+  "CompilatrixTests.Sem.Toy.Pipeline":
+  {"path": "CompilatrixTests/Sem/Toy/Pipeline.lean",
+   "imports":
+   ["CompilatrixTests.Sem.Toy.Tick", "CompilatrixTests.Sem.Toy.Stack"]},
+  "CompilatrixTests.Sem.Toy.Cases":
+  {"path": "CompilatrixTests/Sem/Toy/Cases.lean",
+   "imports": ["CompilatrixTests.Sem.Toy.Pipeline"]},
+  "CompilatrixTests.Sem.Toy.Big":
+  {"path": "CompilatrixTests/Sem/Toy/Big.lean",
+   "imports": ["Compilatrix.Sem.Transform"]},
   "CompilatrixTests.Proofs":
   {"path": "CompilatrixTests/Proofs.lean",
    "imports":
@@ -276,6 +292,7 @@
     "CompilatrixTests.Aiur.CounterAnalysis.Proofs",
     "CompilatrixTests.Aiur.MemoryAIR.Proofs",
     "CompilatrixTests.Aiur.RankAIR.Proofs",
+    "CompilatrixTests.Sem.Toy.Cases",
     "CompilatrixTests.Fences"]},
   "CompilatrixTests.Lir.Run":
   {"path": "CompilatrixTests/Lir/Run.lean",
@@ -399,6 +416,12 @@
     "Compilatrix.X86.StreamRun",
     "Compilatrix.X86.StreamSpec",
     "Compilatrix.X86.StreamTrace"]},
+  "CompilatrixTests.Fences.Sem":
+  {"path": "CompilatrixTests/Fences/Sem.lean",
+   "imports":
+   ["Compilatrix.Sem.Smallstep",
+    "Compilatrix.Sem.Transform",
+    "CompilatrixTests.Sem.Toy.Cases"]},
   "CompilatrixTests.Fences.Lir":
   {"path": "CompilatrixTests/Fences/Lir.lean",
    "imports": ["Compilatrix.Lir.Operands"]},
@@ -463,7 +486,8 @@
     "CompilatrixTests.Fences.X86",
     "CompilatrixTests.Fences.Lir",
     "CompilatrixTests.Fences.Xv",
-    "CompilatrixTests.Fences.Backend"]},
+    "CompilatrixTests.Fences.Backend",
+    "CompilatrixTests.Fences.Sem"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":

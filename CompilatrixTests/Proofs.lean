@@ -25,6 +25,7 @@ import CompilatrixTests.Aiur.Static.Proofs
 import CompilatrixTests.Aiur.CounterAnalysis.Proofs
 import CompilatrixTests.Aiur.MemoryAIR.Proofs
 import CompilatrixTests.Aiur.RankAIR.Proofs
+import CompilatrixTests.Sem.Toy.Cases
 import CompilatrixTests.Fences
 
 /-! Complete proof and fence collection: elaboration-time proofs of the kept
