@@ -447,3 +447,44 @@ pub fn check_canonical_sharing(
     CanonicalCheck::NonCanonical { expected: Box::new(expected) }
   })
 }
+
+/// Failure of [`normalize_constant_bytes`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NormalizeBytesError {
+  /// The input is not exactly one wire-valid serialized Constant.
+  Decode(String),
+  Sharing(SharingError),
+}
+
+impl fmt::Display for NormalizeBytesError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      NormalizeBytesError::Decode(e) => write!(f, "decode: {e}"),
+      NormalizeBytesError::Sharing(e) => write!(f, "{e}"),
+    }
+  }
+}
+
+impl std::error::Error for NormalizeBytesError {}
+
+/// Byte-level normalization: decode exactly one serialized Constant (no
+/// trailing bytes), expand and validate its table, and return the serialized
+/// canonical exact-minimum Constant.
+pub fn normalize_constant_bytes(
+  bytes: &[u8],
+  limits: &ExactSharingLimits,
+) -> Result<Vec<u8>, NormalizeBytesError> {
+  let mut input = bytes;
+  let c = Constant::get(&mut input).map_err(NormalizeBytesError::Decode)?;
+  if !input.is_empty() {
+    return Err(NormalizeBytesError::Decode(format!(
+      "{} trailing bytes after the Constant",
+      input.len()
+    )));
+  }
+  let out = normalize_constant_sharing(&c, limits)
+    .map_err(NormalizeBytesError::Sharing)?;
+  let mut buf = Vec::new();
+  out.put(&mut buf);
+  Ok(buf)
+}

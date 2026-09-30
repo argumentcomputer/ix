@@ -1216,12 +1216,19 @@ fn representation_independence() {
 #[test]
 fn exact_is_idempotent_and_never_worse() {
   let mut stats = (0u64, 0u64, 0u64, 0u64);
+  let mut most_states = 0u64;
+  let mut l = limits();
+  l.max_states = 200_000;
+  l.max_layer_states = 100_000;
   for seed in 0..150 {
     let c = gen_constant(seed + 20_000, 4, 45, 6);
     let h = heuristic(&c);
     let u = unshared(&c);
-    let exact = match normalize_constant_sharing(&c, &limits()) {
-      Ok(x) => x,
+    let exact = match normalize_constant_sharing_with_stats(&c, &l) {
+      Ok((x, r)) => {
+        most_states = most_states.max(r.stats.states_created);
+        x
+      },
       Err(SharingError::ResourceExhausted(r)) => {
         stats.3 += 1;
         eprintln!("seed {seed}: resource limit {r:?}");
@@ -1252,7 +1259,8 @@ fn exact_is_idempotent_and_never_worse() {
     }
   }
   eprintln!(
-    "never-worse: {} solved, saved {} bytes vs heuristic and {} vs unshared, {} resource errors",
+    "never-worse: {} solved, saved {} bytes vs heuristic and {} vs unshared, \
+     {} resource errors, most states in a solved case {most_states}",
     stats.0, stats.1, stats.2, stats.3
   );
   assert!(stats.0 >= 140);
@@ -1527,4 +1535,89 @@ fn ordering_parent_stored_before_its_inlined_descendant() {
   let child_first = sequence_len(&dag, &child_first).unwrap();
   eprintln!("parent-first {parent_first:?} vs child-first {child_first:?}");
   assert!(parent_first < child_first);
+}
+
+#[test]
+fn byte_level_normalization() {
+  let t2 = chain(2);
+  let c = axiom(Expr::all(t2.clone(), t2), 1);
+  let heuristic_bytes = put(&heuristic(&c));
+  let out = normalize_constant_bytes(&heuristic_bytes, &limits()).unwrap();
+  assert_eq!(hex(&out), "d200009117b0b001921700170000000100");
+  assert_eq!(normalize_constant_bytes(&out, &limits()).unwrap(), out);
+  let mut trailing = out.clone();
+  trailing.push(0);
+  assert!(matches!(
+    normalize_constant_bytes(&trailing, &limits()),
+    Err(NormalizeBytesError::Decode(_))
+  ));
+  assert!(matches!(
+    normalize_constant_bytes(&out[..5], &limits()),
+    Err(NormalizeBytesError::Decode(_))
+  ));
+  let mut cyclic = c.clone();
+  cyclic.sharing = vec![Expr::app(Expr::share(0), Expr::var(0))];
+  assert_eq!(
+    normalize_constant_bytes(&put(&cyclic), &limits()).unwrap_err().to_string(),
+    "malformed sharing: CyclicShare { entry: 0, index: 0 }"
+  );
+}
+
+#[test]
+fn telescope_cuts_at_header_boundaries_match_enumeration() {
+  let mut rng = Rng(99);
+  let mut checked = 0u64;
+  for kind in 0..3u8 {
+    for n in [1usize, 6, 7, 8, 9, 15, 16, 17, 255, 256, 257] {
+      // Mixed contracts and side children; the tail is another family.
+      let tail = telescope((kind + 1) % 3, 2, Expr::sort(0), &mut rng);
+      let e = telescope(kind, n, tail, &mut rng);
+      let dag =
+        SharingDag::from_expanded_roots(std::slice::from_ref(&e), &limits())
+          .unwrap();
+      let terms = dag.term_exprs();
+      // The spine suffixes of the root, outermost first.
+      let mut spine: Vec<u32> = vec![dag.roots()[0]];
+      loop {
+        let cur = *spine.last().unwrap();
+        let next = match dag.node(cur) {
+          Node::App(f, _) => *f,
+          Node::Lam(_, _, b) | Node::All(_, _, _, b) => *b,
+          _ => break,
+        };
+        if dag.node(next).family() != dag.node(cur).family() {
+          break;
+        }
+        spine.push(next);
+      }
+      assert_eq!(spine.len(), n);
+      for trial in 0..6 {
+        let mut dict = FixedDictionary::new();
+        let mut avail: Vec<(E, u64)> = Vec::new();
+        let indices = [0u64, 7, 8, 255, 256, 65535, 65536];
+        for (slot, _) in (0..1 + trial % 3).enumerate() {
+          let t = spine[rng.below(spine.len() as u64) as usize];
+          if dict.index_of(t).is_some() {
+            continue;
+          }
+          let idx = indices[(slot + trial) % indices.len()];
+          dict.insert(t, idx);
+          avail.push((terms[t as usize].clone(), idx));
+        }
+        for &t in &[spine[0], spine[spine.len() / 2]] {
+          assert!(variant_count(&terms[t as usize], &avail) <= 64);
+          let (len, bytes) = brute_best(&terms[t as usize], &avail);
+          assert_eq!(
+            dictionary_cost(&dag, &dict, t),
+            Len::new(len),
+            "{kind} {n}"
+          );
+          let got = materialize_with_dictionary(&dag, &dict, &[t]).unwrap();
+          assert_eq!(bytes_of(&got[0]), bytes, "{kind} {n}");
+          checked += 1;
+        }
+      }
+    }
+  }
+  eprintln!("telescope boundary cases compared with enumeration: {checked}");
 }
