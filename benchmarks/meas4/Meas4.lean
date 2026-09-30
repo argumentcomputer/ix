@@ -30,7 +30,10 @@ lean --run benchmarks/meas4/Meas4.lean report OUT
 
 `build` takes `--probe PATH` (default `.lake/build/bin/backend-probe`) and
 uses `cc` for C, `lean` and `leanc` for the Lean row, and `objdump` and `nm`
-for code size and static counts. `measure` runs one untimed warm-up per row
+for code size and static counts. With `--baseline DIR` (an earlier
+backend's `lir_<kernel>.o` objects) it also builds a `compilatrix-baseline`
+row, and `report` gives its ratio to `compilatrix-probe`: the measured
+effect of a backend increment. `measure` runs one untimed warm-up per row
 and kernel, then blocks; each block runs every row once in a shuffled order,
 pinned with `taskset`, and fails if the rows' results differ. `perf` counts
 user-space instructions, cycles, branches and branch misses per operation
@@ -100,6 +103,13 @@ def firstLine (cmd : String) (args : List String) : IO String := do
 
 def binary (out : FilePath) (row : String) : FilePath := out / "bin" / row
 
+/-- The rows built into `out`: the four above, and `compilatrix-baseline`
+when `build` was given `--baseline DIR` (an earlier backend's objects, to
+measure a backend increment). -/
+def rowsIn (out : FilePath) : IO (List String) := do
+  if ← (binary out "compilatrix-baseline").pathExists then return rows ++ ["compilatrix-baseline"]
+  else return rows
+
 /-- Run a row on a kernel: `(result, ns per operation)`. -/
 def runRow (out : FilePath) (cpu : Option Nat) (row : String) (k : Kernel) (reps : Nat) : IO (Nat × Float) := do
   let exe := (binary out row).toString
@@ -154,7 +164,7 @@ def symbolSizes (nm : String) : List (String × Nat) :=
         else none
     | _ => none
 
-def build (out probe : FilePath) : IO Unit := do
+def build (out probe : FilePath) (baseline : Option FilePath := none) : IO Unit := do
   let here : FilePath := "benchmarks/meas4"
   IO.FS.createDirAll out
   let out ← IO.FS.realPath out
@@ -177,6 +187,9 @@ def build (out probe : FilePath) : IO Unit := do
   let lirs := kernels.map fun k => (obj / s!"lir_{k.lir}.o").toString
   let _ ← cc (["-o", (binary out "compilatrix-probe").toString, (obj / "driver.o").toString,
     (obj / "row_compilatrix.o").toString] ++ lirs)
+  if let some dir := baseline then
+    let _ ← cc (["-o", (binary out "compilatrix-baseline").toString, (obj / "driver.o").toString,
+      (obj / "row_compilatrix.o").toString] ++ kernels.map fun k => (dir / s!"lir_{k.lir}.o").toString)
   let _ ← cc ["-o", (binary out "clang-twin").toString, (obj / "driver.o").toString,
     (obj / "row_twin.o").toString, (obj / "twins.o").toString]
   let _ ← cc ["-o", (binary out "clang-natural").toString, (obj / "driver.o").toString,
@@ -226,11 +239,12 @@ def build (out probe : FilePath) : IO Unit := do
     ("rows", toJson rows), ("versions", versions), ("cc_flags", toJson ccFlags),
     ("cc_env", Json.str "NIX_HARDENING_ENABLE="),
     ("lean_flags", Json.str "lean -c; leanc -O3 -DNDEBUG (K1Probe.c), leanc -O2 (row_lean.c)")]).pretty ++ "\n")
-  IO.println s!"built {rows.length} rows into {out}"
+  IO.println s!"built {(← rowsIn out).length} rows into {out}"
 
 /-! ## Check -/
 
 def check (out : FilePath) : IO Unit := do
+  let rows ← rowsIn out
   for k in kernels do
     for row in rows do
       let (result, _) ← runRow out none row k 1
@@ -266,6 +280,7 @@ def environment (cpu : Nat) : IO Json := do
     ("kernel", Json.str uname.stdout.trimAscii.toString)]
 
 def measure (out : FilePath) (cpu blocks : Nat) : IO Unit := do
+  let rows ← rowsIn out
   let env ← environment cpu
   let mut samples : Array Json := #[]
   for (k, index) in kernels.zipIdx do
@@ -302,6 +317,7 @@ def perfStat (perf : String) (out : FilePath) (cpu : Nat) (row : String) (k : Ke
   return counters output.stderr
 
 def perfAll (out : FilePath) (cpu : Nat) (perf : String) : IO Unit := do
+  let rows ← rowsIn out
   let mut rowsJson : Array Json := #[]
   for k in kernels do
     for row in rows do
@@ -362,6 +378,7 @@ def report (out : FilePath) : IO Unit := do
       return (← (← s.getObjVal? "kernel").getStr?, ← (← s.getObjVal? "row").getStr?,
         ← (← s.getObjVal? "block").getNat?, (← (← s.getObjVal? "ns_per_op").getNum?).toFloat)
   let env := json.getObjValD "environment"
+  let allRows ← rowsIn out
   let perf ← try some <$> readJson (out / "perf.json") catch _ => pure none
   let code ← readJson (out / "code.json")
   let probe ← (← IO.FS.readFile (out / "probe.jsonl")).splitOn "\n" |>.filter (!·.isEmpty) |>.mapM
@@ -400,13 +417,15 @@ def report (out : FilePath) : IO Unit := do
     lines := lines ++ #[s!"## {k.name}: {k.op}", "",
       "| Row | ns/op (median) | / clang-twin | / lean-clang | instructions/op | cycles/op | IPC | branch misses/op |",
       "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
-    for row in rows do
+    for row in allRows do
       lines := lines.push s!"| {row} | {fmt (ns row) 1} | {cell row "clang-twin"} | {cell row "lean-clang"} | {perfOf row "instructions"} | {perfOf row "cycles"} | {ipc row} | {perfOf row "branch-misses"} |"
       summary := summary.push (Json.mkObj [("kernel", Json.str k.name), ("row", Json.str row),
         ("median_ns", toJson (ns row)),
         ("ratio_to_clang_twin", toJson (median (paired row "clang-twin"))),
         ("ratio_to_lean_clang", toJson (median (paired row "lean-clang")))])
     lines := lines.push ""
+    if allRows.contains "compilatrix-baseline" then
+      lines := lines ++ #[s!"Backend increment: compilatrix-baseline / compilatrix-probe = {cell "compilatrix-baseline" "compilatrix-probe"}.", ""]
   -- code size and static counts
   lines := lines ++ #["## Code size and static counts", "",
     "Bytes of the kernel's own code (`nm -S`; for compilatrix-probe the function without its export wrapper and exit group, from `backend-probe`), and static counts over those instructions (`objdump`): register-to-register moves, `rsp`-relative stores and loads (spills, reloads and callee-saved saves), pushes and pops.", "",
@@ -445,11 +464,17 @@ end Meas4
 
 open Meas4 in
 def main (args : List String) : IO UInt32 := do
-  let usage := "usage: Meas4.lean (build OUT [--probe PATH] | check OUT | measure OUT [--cpu N] [--blocks B] | perf OUT [--cpu N] [--perf PATH] | report OUT)"
+  let usage := "usage: Meas4.lean (build OUT [--probe PATH] [--baseline DIR] | check OUT | measure OUT [--cpu N] [--blocks B] | perf OUT [--cpu N] [--perf PATH] | report OUT)"
   try
     match args with
-    | ["build", out] => build out ".lake/build/bin/backend-probe"
-    | ["build", out, "--probe", probe] => build out probe
+    | "build" :: out :: rest =>
+        let rec buildOptions (probe : String) (baseline : Option String) : List String → IO (String × Option String)
+          | "--probe" :: p :: more => buildOptions p baseline more
+          | "--baseline" :: d :: more => buildOptions probe (some d) more
+          | [] => pure (probe, baseline)
+          | _ => throw (IO.userError usage)
+        let (probe, baseline) ← buildOptions ".lake/build/bin/backend-probe" none rest
+        build out probe (baseline.map System.FilePath.mk)
     | ["check", out] => check out
     | "measure" :: out :: rest =>
         let rec options (cpu blocks : Nat) : List String → IO (Nat × Nat)
