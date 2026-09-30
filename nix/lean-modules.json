@@ -825,16 +825,39 @@
    ["Compilatrix.Xv.Validate.NatMap",
     "Compilatrix.Xv.Syntax",
     "Compilatrix.Xv.Slots"]},
+  "Compilatrix.Xv.Validate.Proof.XvRow":
+  {"path": "Compilatrix/Xv/Validate/Proof/XvRow.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Assign"]},
+  "Compilatrix.Xv.Validate.Proof.XlPlace":
+  {"path": "Compilatrix/Xv/Validate/Proof/XlPlace.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.Proof.XlLoc",
+    "Compilatrix.Xv.Validate.Proof.Part"]},
+  "Compilatrix.Xv.Validate.Proof.XlLoc":
+  {"path": "Compilatrix/Xv/Validate/Proof/XlLoc.lean",
+   "imports": ["Compilatrix.Xv.XlSemantics"]},
   "Compilatrix.Xv.Validate.Proof.State":
   {"path": "Compilatrix/Xv/Validate/Proof/State.lean",
    "imports":
    ["Compilatrix.Xv.Validate.State",
     "Compilatrix.Xv.Validate.Proof.NatMap",
     "Compilatrix.Lir.Semantics"]},
+  "Compilatrix.Xv.Validate.Proof.Rows":
+  {"path": "Compilatrix/Xv/Validate/Proof/Rows.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.XlPlace"]},
+  "Compilatrix.Xv.Validate.Proof.RowSim":
+  {"path": "Compilatrix/Xv/Validate/Proof/RowSim.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Row"]},
+  "Compilatrix.Xv.Validate.Proof.Row":
+  {"path": "Compilatrix/Xv/Validate/Proof/Row.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Rows"]},
   "Compilatrix.Xv.Validate.Proof.Place":
   {"path": "Compilatrix/Xv/Validate/Proof/Place.lean",
    "imports":
    ["Compilatrix.Xv.Semantics", "Compilatrix.Xv.Validate.Proof.Map"]},
+  "Compilatrix.Xv.Validate.Proof.Part":
+  {"path": "Compilatrix/Xv/Validate/Proof/Part.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.XvRow"]},
   "Compilatrix.Xv.Validate.Proof.NatMap":
   {"path": "Compilatrix/Xv/Validate/Proof/NatMap.lean",
    "imports": ["Compilatrix.Xv.Validate.NatMap"]},
@@ -844,6 +867,12 @@
   "Compilatrix.Xv.Validate.Proof.Exec":
   {"path": "Compilatrix/Xv/Validate/Proof/Exec.lean",
    "imports": ["Compilatrix.X86.Table.Exec"]},
+  "Compilatrix.Xv.Validate.Proof.Checks":
+  {"path": "Compilatrix/Xv/Validate/Proof/Checks.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.Check",
+    "Compilatrix.Xv.Validate.Proof.RowSim",
+    "Compilatrix.Xv.Validate.Proof.State"]},
   "Compilatrix.Xv.Validate.Proof.Assign":
   {"path": "Compilatrix/Xv/Validate/Proof/Assign.lean",
    "imports":
@@ -1941,6 +1970,14 @@
     "Compilatrix.Xv.Validate.Proof.Map",
     "Compilatrix.Xv.Validate.Proof.Place",
     "Compilatrix.Xv.Validate.Proof.Assign",
+    "Compilatrix.Xv.Validate.Proof.XvRow",
+    "Compilatrix.Xv.Validate.Proof.Part",
+    "Compilatrix.Xv.Validate.Proof.XlLoc",
+    "Compilatrix.Xv.Validate.Proof.XlPlace",
+    "Compilatrix.Xv.Validate.Proof.Rows",
+    "Compilatrix.Xv.Validate.Proof.Row",
+    "Compilatrix.Xv.Validate.Proof.RowSim",
+    "Compilatrix.Xv.Validate.Proof.Checks",
     "Compilatrix.Xv.Alloc.Output",
     "Compilatrix.Xv.Alloc.Apply",
     "Compilatrix.Xv.Alloc.Liveness",

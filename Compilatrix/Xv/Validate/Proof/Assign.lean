@@ -38,6 +38,7 @@ def Bound.implicit? : Bound α → Option X86.Implicit
 
 /-- Each form in the role binding gives it. -/
 def Bound.RoleOk : Bound α → Prop
+  | .input s _ => s.role.writes = false
   | .output s _ => s.role = .write
   | .tied s _ _ => s.role = .readWrite
   | .fixedUse i _ => i.role.reads = true ∧ i.role.writes = false
@@ -85,7 +86,7 @@ theorem bindSlots_shape :
       | read | address =>
         cases args with
         | nil => simp [bindSlots] at h
-        | cons a args => exact cons_eq _ _ _ h rfl trivial
+        | cons a args => exact cons_eq _ _ _ h rfl rfl
       | readWrite =>
         cases args with
         | nil => simp [bindSlots] at h

@@ -38,6 +38,14 @@ import Compilatrix.Xv.Validate.Proof.Exec
 import Compilatrix.Xv.Validate.Proof.Map
 import Compilatrix.Xv.Validate.Proof.Place
 import Compilatrix.Xv.Validate.Proof.Assign
+import Compilatrix.Xv.Validate.Proof.XvRow
+import Compilatrix.Xv.Validate.Proof.Part
+import Compilatrix.Xv.Validate.Proof.XlLoc
+import Compilatrix.Xv.Validate.Proof.XlPlace
+import Compilatrix.Xv.Validate.Proof.Rows
+import Compilatrix.Xv.Validate.Proof.Row
+import Compilatrix.Xv.Validate.Proof.RowSim
+import Compilatrix.Xv.Validate.Proof.Checks
 import Compilatrix.Xv.Alloc.Output
 import Compilatrix.Xv.Alloc.Apply
 import Compilatrix.Xv.Alloc.Liveness
