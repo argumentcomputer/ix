@@ -121,6 +121,12 @@ structure St where
 
 def St.fresh (st : St) : Var × St := (st.vars, { st with vars := st.vars + 1 })
 
+/-- The variable an Anf `bind` with contract `c` binds, recorded when it is a
+`let borrow` site. -/
+def St.bindFresh (st : St) (c : V3.LetContract) : Var × St :=
+  let (x, st) := st.fresh
+  (x, if c.kind == .borrowShared then { st with lets := (x, c) :: st.lets } else st)
+
 /-- `n` fresh variables, in order. -/
 def St.freshN (st : St) (n : Nat) : List Var × St :=
   (List.range' st.vars n, { st with vars := st.vars + n })
@@ -175,13 +181,12 @@ mutual
 def exp (A : Anf.Program) (g : Anf.GlobalId) (ρ : List Var) (J : List JoinId) (st : St) :
     Anf.Exp → Except Error (Code × St)
   | .bind c b e => do
-    let st := if c.kind == .borrowShared then { st with lets := (st.vars, c) :: st.lets } else st
     match b with
     | .call h as =>
       let args ← atoms g ρ as
       if returnsTop e then pure (.tcall h args, st)
       else
-        let (x, st) := st.fresh
+        let (x, st) := st.bindFresh c
         let (k, st) ← exp A g (x :: ρ) J st e
         pure (.bind x (.call h args) k, st)
     | .glob h =>
@@ -190,32 +195,32 @@ def exp (A : Anf.Program) (g : Anf.GlobalId) (ρ : List Var) (J : List JoinId) (
         if hd.ps.isEmpty then
           if returnsTop e then pure (.tcall h [], st)
           else
-            let (x, st) := st.fresh
+            let (x, st) := st.bindFresh c
             let (k, st) ← exp A g (x :: ρ) J st e
             pure (.bind x (.call h []) k, st)
         else throw (.closures [] [] [g])
       | none => throw (.malformed g s!"glob of a missing global {h}")
     | .atom a =>
       let arg ← atom g ρ a
-      let (x, st) := st.fresh
+      let (x, st) := st.bindFresh c
       let (k, st) ← exp A g (x :: ρ) J st e
       pure (.bind x (.arg arg) k, st)
     | .con key as =>
       let args ← atoms g ρ as
       match CtorInfo.ofKey A.ctors key with
       | some info =>
-        let (x, st) := st.fresh
+        let (x, st) := st.bindFresh c
         let (k, st) ← exp A g (x :: ρ) J st e
         pure (.bind x (.ctor info args) k, st)
       | none => throw (.malformed g s!"constructor key {reprStr key} is not in the table")
     | .proj key i a =>
       let (y, pre, st) ← atomVar g ρ st a
-      let (x, st) := st.fresh
+      let (x, st) := st.bindFresh c
       let (k, st) ← exp A g (x :: ρ) J st e
       pure (pre (.bind x (.proj y key i) k), st)
     | .prim p as =>
       let args ← atoms g ρ as
-      let (x, st) := st.fresh
+      let (x, st) := st.bindFresh c
       let (k, st) ← exp A g (x :: ρ) J st e
       pure (.bind x (.prim p args) k, st)
     | .app .. => throw (.closures [] [g] [])

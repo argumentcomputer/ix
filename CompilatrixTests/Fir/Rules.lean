@@ -241,6 +241,18 @@ def anf (a : Assert) : IO (Array String) := do
   expect a ((L.fir.fun? 7).any (isTail ·.body)) "a call before ticks and ret is not a tail call"
   expect a ((← runAnf L.anf 10 5 [0]) matches .stuck) "Anf projects a literal"
   natIs a L.fir 5 [0] 4 "Fir projects the literal 5 as succ"
+  -- a `let borrow` site names the variable it binds (v2), not the temporary
+  -- holding the projected literal (v1)
+  let bc := Compilatrix.Ixon.V3.LetContract.borrow true
+  let gd : Anf.GDef :=
+    { key := .const 0 [], ps := [{}], body := .bind bc (.proj natS 0 (.lit (.nat 5))) (.ret (.var 0)) }
+  let borrowProg : AProgram :=
+    { anfProgram with globals := Src.NatMap.ofList [(0, gd)], size := 1, roots := [0] }
+  match Compilatrix.Fir.lower borrowProg with
+  | .ok F =>
+    let sites := ((F.fun? 0).map (·.letContracts.map (·.1))).getD []
+    expect a (sites == [2]) s!"the borrow site is recorded on {sites}, expected [2]"
+  | .error e => expect a false s!"borrow program: {e.render}"
   return #[s!"hand-written Anf: {sizes L}", s!"  {t.render}"]
 
 /-! ## Well-formedness and the fragment -/
