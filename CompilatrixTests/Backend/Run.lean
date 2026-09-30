@@ -1,5 +1,6 @@
 import CompilatrixTests.Backend.Native
 import CompilatrixTests.Backend.Cases
+import CompilatrixTests.Backend.KernelEval
 import CompilatrixTests.Backend.SlotAlloc
 import CompilatrixTests.Backend.Programs
 import CompilatrixTests.Lir.Kernels

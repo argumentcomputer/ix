@@ -479,6 +479,7 @@
    "imports":
    ["CompilatrixTests.Backend.Native",
     "CompilatrixTests.Backend.Cases",
+    "CompilatrixTests.Backend.KernelEval",
     "CompilatrixTests.Backend.SlotAlloc",
     "CompilatrixTests.Backend.Programs",
     "CompilatrixTests.Lir.Kernels",
@@ -499,6 +500,9 @@
   "CompilatrixTests.Backend.Machine":
   {"path": "CompilatrixTests/Backend/Machine.lean",
    "imports": ["Compilatrix.X86.Eval", "Compilatrix.X86.ByteEval"]},
+  "CompilatrixTests.Backend.KernelEval":
+  {"path": "CompilatrixTests/Backend/KernelEval.lean",
+   "imports": ["Compilatrix.Backend", "CompilatrixTests.Backend.Programs"]},
   "CompilatrixTests.Backend.Cases":
   {"path": "CompilatrixTests/Backend/Cases.lean",
    "imports": ["Compilatrix.Backend", "CompilatrixTests.Backend.Programs"]},

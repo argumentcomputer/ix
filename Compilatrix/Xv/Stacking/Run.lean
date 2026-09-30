@@ -9,7 +9,7 @@ certificate, one per function, from `Stacking.produce` or elsewhere), then
 emits one typed x86 program:
 
 ```text
-[0, 5)                       the exit group: fail₁ … fail₄, failExit
+[0, 5)                       the exit group: fail₁ … fail₄, failExit (laid out last)
 wrappers                     one per sysvExport function, in function order
 functions                    per function: the stack check (if any), then one block per label
 ```
@@ -118,12 +118,14 @@ def run (p : LProgram) (layouts : List FrameLayout) (reps : FunId → Option (Li
   let funcCode ← placed.mapM fun pl =>
     (emitFunc entries exit pl.func pl.layout pl.facts pl.start).mapError (.func pl.fn)
   let some main := wrappers.find? (·.fn == p.main) | throw .noEntry
+  -- Laid out as wrappers, functions, then the exit group, so an export's
+  -- symbol starts the text.
   let groups : List X86.Layout.Group :=
-    { start := exit, count := exitBlocks, cold := (List.range exitBlocks).map (exit + ·) } ::
     (wrappers.map fun w => { start := w.start, count := wrapperBlocks w.reps, entry := some w.start }) ++
     (placed.map fun pl =>
       { start := pl.start, count := funcBlocks pl.func pl.layout pl.facts, entry := some pl.start,
-        cold := coldBlocks pl })
+        cold := coldBlocks pl }) ++
+    [{ start := exit, count := exitBlocks, cold := (List.range exitBlocks).map (exit + ·) }]
   pure {
     program := { blocks := (exitGroup exit ++ wrapperCode.flatten ++ funcCode.flatten).toArray,
                  entry := UInt32.ofNat main.start }
