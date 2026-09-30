@@ -13,6 +13,8 @@ import Ix.Kernel.Certified.Quotient.Install
 import Ix.Kernel.Certified.Standard.Install
 import Ix.Kernel.Certified.Basis.EqualityChecked
 import Ix.Kernel.Arithmetic
+import Ix.Kernel.Revalue
+import Ix.Kernel.Inductive.Interleaved
 
 /-! # The declaration checker
 
@@ -38,7 +40,7 @@ namespace Ix.Kernel
 
 open Model Model.SetTheory Certified Certified.Ordinary Certified.Structure Inductive
 
-universe u v
+universe u v w
 
 /-- Kernel configuration. -/
 structure Config where
@@ -404,6 +406,312 @@ private def retypedRecursorC (cfg : Config) (env : Env β) (source : β) (recurs
     else .error (.declined "the supplied recursor differs from the generated ordinary recursor")
   | _, _ => .error (.declined "the supplied recursor differs from the generated ordinary recursor")
 
+/-! ## Ordinary fields after recursive fields (A2)
+
+A family whose constructors interleave ordinary and recursive fields, with no
+ordinary field depending on a recursive one, is admitted through its canonical
+(ordinary-first) block: the canonical block is checked and installed as usual,
+then the supplied constructors and recursor replace the canonical entries,
+valued by closed wrapper terms over them (`Ix.Kernel.Revalue`). The supplied
+types and rules are installed as supplied; every wrapper, rule and typing is
+checked by inference and conversion first. -/
+
+/-- Claims against the reduction view hold against the environment. -/
+theorem ConvClaim.ofReductionView (env : Env β) {Γ : Context β} {a b : AExpr β}
+    (h : ConvClaim.{u,v} env.reductionView Γ a b) : ConvClaim.{u,v} env.toEnvironment Γ a b :=
+  fun V _ constants hM => h V constants (Env.realizes_reductionView env hM)
+
+theorem FormedClaim.ofReductionView (env : Env β) {Γ : Context β} {e : AExpr β}
+    (h : FormedClaim.{u,v} env.reductionView Γ e) : FormedClaim.{u,v} env.toEnvironment Γ e :=
+  fun V _ constants hM => h V constants (Env.realizes_reductionView env hM)
+
+/-- Establish `e : T` at the empty context: `T` is a type and `e`'s inferred
+type converts to it. -/
+private def checkClosedTyping (fuel : Nat) (entries : Environment β) (what : String)
+    (e T : AExpr β) : Except Error (CheckedClaim.{u} (TypingClaim.{u,v} entries [] e T)) :=
+  match inferA.{u,v} fuel entries [] T with
+  | .error failure => .error (Error.ofSearch what failure)
+  | .ok ⟨S, hS⟩ =>
+    match sortOf (whnf.{u,v} fuel entries [] S) hS with
+    | .error failure => .error (Error.ofSearch what failure)
+    | .ok ⟨_, hT⟩ =>
+      match inferA.{u,v} fuel entries [] e with
+      | .error failure => .error (Error.ofSearch what failure)
+      | .ok ⟨T', he⟩ =>
+        match isDefEq.{u,v} fuel entries [] T' T with
+        | .error failure => .error (Error.ofSearch what failure)
+        | .ok ⟨hc⟩ => .ok ⟨he.convF hT.formed hc⟩
+
+/-- Check a claim for every element of a list. -/
+private def checkEach {α : Type w} {P : α → Prop} (check : (x : α) → Except Error (CheckedClaim.{u} (P x))) :
+    (xs : List α) → Except Error (CheckedClaim.{u} (∀ x ∈ xs, P x))
+  | [] => .ok ⟨by simp⟩
+  | x :: xs => do
+    let ⟨hx⟩ ← check x
+    let ⟨hxs⟩ ← checkEach check xs
+    return ⟨by
+      intro y hy
+      rcases List.mem_cons.mp hy with rfl | hy
+      · exact hx
+      · exact hxs y hy⟩
+
+theorem Model.Revalued.Claims.ofReductionView (env : Env β) {σ : ConstRef β → Option (AExpr β)}
+    {b : Revalued β} (h : Revalued.Claims.{u,v} env.reductionView σ b) :
+    Revalued.Claims.{u,v} env.toEnvironment σ b where
+  closed := h.closed
+  body := h.body
+  typed := TypingClaim.ofReductionView env h.typed
+  equations := fun q hq =>
+    let ⟨hc, hl, hr⟩ := h.equations q hq
+    ⟨ConvClaim.ofReductionView env hc, FormedClaim.ofReductionView env hl,
+      FormedClaim.ofReductionView env hr⟩
+  facts := fun fact hf =>
+    match h.facts fact hf with
+    | .inl ha => .inl ha
+    | .inr ⟨e, T, he, ht⟩ => .inr ⟨e, T, he, TypingClaim.ofReductionView env ht⟩
+
+/-- What the kernel checks of one revalued entry, against the reduction view. -/
+private def checkRevalued (fuel : Nat) (view : Environment β) (σ : ConstRef β → Option (AExpr β))
+    (b : Revalued β) : Except Error (CheckedClaim.{u} (Revalued.Claims.{u,v} view σ b)) := do
+  if hs : b.term.Scope b.entry.universes 0 then
+    if hbody : b.entry.body = none then
+      let what := if b.entry.equations.isEmpty then "interleaved: constructor wrapper"
+        else "interleaved: recursor wrapper"
+      let ⟨ht⟩ ← checkClosedTyping.{u,v} fuel view what b.term (b.entry.type.substConsts σ)
+      let ⟨heq⟩ ← checkEach (P := fun q : ConstantEquation β =>
+          ConvClaim.{u,v} view [] (q.lhs.substConsts σ) (q.rhs.substConsts σ) ∧
+            FormedClaim.{u,v} view [] (q.lhs.substConsts σ) ∧ FormedClaim.{u,v} view [] (q.rhs.substConsts σ))
+        (fun q => do
+          let ⟨_, hl⟩ ← (inferA.{u,v} fuel view [] (q.lhs.substConsts σ)).mapError
+            (Error.ofSearch "interleaved: rule")
+          let ⟨_, hr⟩ ← (inferA.{u,v} fuel view [] (q.rhs.substConsts σ)).mapError
+            (Error.ofSearch "interleaved: rule")
+          let ⟨hc⟩ ← (isDefEq.{u,v} fuel view [] (q.lhs.substConsts σ) (q.rhs.substConsts σ)).mapError
+            (Error.ofSearch "interleaved: rule conversion")
+          return ⟨⟨hc, hl.formed, hr.formed⟩⟩) b.entry.equations
+      let ⟨hf⟩ ← checkEach (P := fun fact : ConstantFact β => fact.Arity ∨
+          ∃ e T, fact = .typed e T ∧ TypingClaim.{u,v} view [] (e.substConsts σ) (T.substConsts σ))
+        (fun fact => match fact with
+          | .typed e T => do
+            let ⟨h⟩ ← checkClosedTyping.{u,v} fuel view "interleaved: rule type" (e.substConsts σ) (T.substConsts σ)
+            return ⟨.inr ⟨e, T, rfl, h⟩⟩
+          | fact => if h : fact.Arity then pure ⟨.inl h⟩
+            else throw (.declined "interleaved: unexpected fact")) b.entry.facts
+      return ⟨⟨hs, hbody, ht, heq, hf⟩⟩
+    else throw (.declined "interleaved: a supplied entry has a body")
+  else throw (.declined "interleaved: a wrapper is not closed")
+
+/-- A revalued entry's scopes and references, decided. -/
+private def checkFormed (after : Environment β) (b : Revalued β) :
+    Except Error (CheckedClaim.{u} (Revalued.Formed after b)) :=
+  if h : b.entry.type.Scope b.entry.universes 0 ∧ b.entry.type.ReferencesIn after ∧ b.entry.body = none ∧
+      (∀ q ∈ b.entry.equations, q.lhs.Scope b.entry.universes 0 ∧ q.rhs.Scope b.entry.universes 0) ∧
+      (∀ q ∈ b.entry.equations, q.lhs.ReferencesIn after ∧ q.rhs.ReferencesIn after) ∧
+      (∀ fact ∈ b.entry.facts, fact.Scope b.entry.universes) ∧
+      (∀ fact ∈ b.entry.facts, fact.ReferencesIn after) then
+    .ok ⟨⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2⟩⟩
+  else .error (.rejected "interleaved: a supplied entry is not closed or mentions an uninstalled constant")
+
+instance {c : Const β} {entry : ConstantEntry β} : Decidable (c.TypeBodyReads entry) := by
+  unfold Const.TypeBodyReads; cases c <;> infer_instance
+
+instance {c : Ctor β} {entry : ConstantEntry β} : Decidable (c.TypeReads entry) := by
+  unfold Ctor.TypeReads; infer_instance
+
+/-- Decide constructor `j`'s installed reading. -/
+private def decideCtorReads (ctors : List (Ctor β)) (source : β) (entries : Environment β) (j : Nat) :
+    Except Error (CheckedClaim.{u} (∀ ctor, ctors[j]? = some ctor →
+      ∃ entry, entries (.ctor source 0 j) = some entry ∧ ctor.TypeReads entry)) :=
+  match hcj : ctors[j]? with
+  | none => .ok ⟨fun _ h => by cases h⟩
+  | some ctor =>
+    match entries (.ctor source 0 j) with
+    | none => .error (.declined "interleaved: a constructor is not installed")
+    | some e =>
+      if ht : ctor.TypeReads e then
+        .ok ⟨fun ctor' h => by cases h; exact ⟨e, rfl, ht⟩⟩
+      else .error (.declined "interleaved: a constructor's installed type differs")
+
+/-- Decide a family's installed reading. -/
+private def decideFamilyInstalled (c : Const β) (source : β) (entries : Environment β) :
+    Except Error (CheckedClaim.{u} (c.Installed source 0 entries)) :=
+  match c with
+  | .induct uvars _ _ type ctors _ =>
+    match hf : entries (.member source 0) with
+    | none => .error (.declined "interleaved: the family is not installed")
+    | some fe =>
+      if hr : fe.universes = uvars ∧ fe.type.erase = type ∧ fe.body = none then do
+        let ⟨hc⟩ ← checkEach (decideCtorReads ctors source entries) (List.range ctors.length)
+        return ⟨⟨⟨fe, hf, hr⟩, fun j ctor h =>
+          hc j (List.mem_range.mpr (List.getElem?_eq_some_iff.mp h).1) ctor h⟩⟩
+      else .error (.declined "interleaved: the family's installed type differs")
+  | _ => .error (.declined "interleaved: not an inductive family")
+
+/-- Decide a recursor's installed reading. -/
+private def decideRecursorReads (rec : Const β) (recursor : ConstRef β) (entries : Environment β) :
+    Except Error (CheckedClaim.{u} (∃ entry, entries recursor = some entry ∧ rec.TypeBodyReads entry)) :=
+  match entries recursor with
+  | none => .error (.declined "interleaved: the recursor is not installed")
+  | some e =>
+    if h : rec.TypeBodyReads e then .ok ⟨⟨e, rfl, h⟩⟩
+    else .error (.declined "interleaved: the recursor's installed type differs")
+
+
+theorem Model.Revalued.find_isSome {block : List (Revalued β)} {b : Revalued β} (hb : b ∈ block) :
+    (Revalued.find block b.ref).isSome := by
+  unfold Revalued.find
+  exact List.find?_isSome.mpr ⟨b, hb, by simp⟩
+
+omit [DecidableEq β] in
+theorem Model.Environment.WF.references_installed {entries : Environment β} (hE : entries.WF)
+    {q : ConstRef β} {entry : ConstantEntry β} (hq : entries q = some entry) :
+    ∀ r ∈ entry.references, (entries r).isSome := by
+  intro r hr
+  simp only [ConstantEntry.references, List.mem_append, List.mem_flatMap] at hr
+  rcases hr with ((hr | hr) | ⟨law, hl, hr⟩) | ⟨fact, hf, hr⟩
+  · exact hE.typeReferences q entry hq r hr
+  · cases hb : entry.body with
+    | none => simp [hb] at hr
+    | some body =>
+      simp only [hb, Option.map_some, Option.getD_some] at hr
+      exact hE.bodyReferences q entry hq body hb r hr
+  · rcases hr with hr | hr
+    · exact (hE.equationReferences q entry hq law hl).1 r hr
+    · exact (hE.equationReferences q entry hq law hl).2 r hr
+  · exact hE.factReferences q entry hq fact hf r hr
+
+/-- Admit a family whose constructors interleave ordinary and recursive fields
+(see the section note). -/
+private def checkInterleavedC (cfg : Config) (env : Env β) (source : β) (recursor : ConstRef β)
+    (family rec : Const β) : Except Error { env' : Env β //
+      AdmissionClaim.{u,v} env env' ∧ family.Installed source 0 env'.toEnvironment ∧
+        ∃ entry, env'.toEnvironment recursor = some entry ∧ rec.TypeBodyReads entry } := do
+  let entries := env.toEnvironment
+  let reading ← (readInterleavedBlock.{u,v} cfg.fuel entries source ⟨[family, rec]⟩).mapError fun
+    | .noMatch => .declined "the inductive and recursor are not in the ordinary shape class"
+    | failure => Error.ofSearch "inductive reading" failure
+  let shape := reading.reading.shape
+  let mode := reading.reading.mode
+  if reading.reading.k then throw (.declined "interleaved: K-like reduction is not supported")
+  match family, rec with
+  | .induct fu fnp fni _ ctors .safe, .recursor ru _ _ _ _ rtype rules _ .safe =>
+    let ⟨hb⟩ ← (checkBlock.{u,v} cfg.fuel entries source shape mode recursor).mapError
+      (Error.ofSearch "inductive block (interleaved)")
+    let installed := installOrdinary env source shape mode hb
+    let env' := installed.val
+    let view := env'.reductionView
+    -- The supplied types and rules, read over the canonical block.
+    let ctorTypes ← ctors.mapM fun c =>
+      (annotate.{u,v} cfg.fuel view [] c.type).mapError (Error.ofSearch "constructor type")
+    -- The recursor's type and rules mention the declared constructors (and the
+    -- rules the declared recursor): annotate them where those have their
+    -- supplied types. Annotation only proposes binder data; every term is
+    -- checked against the canonical block below.
+    let declared := env'.pushList (ctorTypes.zipIdx.map fun (T, j) => (.ctor source 0 j, ⟨fu, T, none, [], []⟩))
+    let recType ← (annotate.{u,v} cfg.fuel declared.reductionView [] rtype).mapError
+      (Error.ofSearch "recursor type (interleaved)")
+    let withRec := declared.push recursor ⟨ru, recType, none, [], []⟩
+    let rhss ← rules.mapM fun r =>
+      (annotate.{u,v} cfg.fuel withRec.reductionView [] r.rhs).mapError (Error.ofSearch "recursor rule (interleaved)")
+    let nminors := ctors.length
+    let some ctorTerms := ((ctorTypes.zip reading.positions).zipIdx.mapM fun ((T, pos), j) =>
+        ctorWrapper source j fu fnp pos T)
+      | throw (.declined "interleaved: a constructor wrapper could not be built")
+    let info := (shape.constructors.zip reading.positions).map fun (c, pos) => (c.recursive.length, pos)
+    let ctorBlock : List (Revalued β) :=
+      (ctorTypes.zip ctorTerms).zipIdx.map fun ((T, W), j) => ⟨.ctor source 0 j, ⟨fu, T, none, [], []⟩, W⟩
+    -- The wrapper's binders take the recursor type's domains over the canonical
+    -- block: the declared constructors replaced by their wrappers.
+    let some recTerm := recWrapper recursor ru fnp nminors fni (shape.recursorType source mode) info
+        (recType.substConsts (Revalued.valuation ctorBlock))
+      | throw (.declined "interleaved: the recursor wrapper could not be built")
+    let some built := ((ctorTypes.zip (rules.zip rhss)).zipIdx.mapM fun ((T, (r, rhs)), j) =>
+        declaredRule source recursor mode fu ru fnp nminors j recType T r.nfields rhs)
+      | throw (.declined "interleaved: a rule could not be built")
+    let recEntry : ConstantEntry β := ⟨ru, recType, none, built.map (·.1),
+      shape.recursorFact source :: built.flatMap fun (law, ty) => [.typed law.lhs ty, .typed law.rhs ty]⟩
+    let block : List (Revalued β) := ctorBlock ++ [⟨recursor, recEntry, recTerm⟩]
+    let σ := Revalued.valuation block
+    let ⟨hclaims⟩ ← checkEach (checkRevalued.{u,v} cfg.fuel view σ) block
+    let after := Revalued.environment block env'.toEnvironment
+    let ⟨hformed⟩ ← checkEach (checkFormed after) block
+    -- The block's references are fresh before it and cover the canonical block.
+    let famEnv := shape.familyEnvironment entries source
+    if hfresh : ∀ b ∈ block, famEnv b.ref = none then
+    if hrec : (Revalued.find block recursor).isSome then
+    if hctors : ∀ i ∈ List.range shape.constructors.length, (Revalued.find block (.ctor source 0 i)).isSome then
+      let env'' := env'.pushList (block.map fun b => (b.ref, b.entry))
+      have henv'' : env''.toEnvironment = after := by
+        funext q
+        rw [Env.toEnvironment_pushList, List.find?_map]
+        have hp : ((fun e : ConstRef β × ConstantEntry β => e.1 == q) ∘ fun b : Revalued β => (b.ref, b.entry)) =
+            fun b => decide (b.ref = q) := by
+          funext b; rfl
+        rw [hp]
+        simp only [after, Revalued.environment, Revalued.find]
+        cases block.find? (fun b => decide (b.ref = q)) <;> rfl
+      have henv' : env'.toEnvironment = shape.publishedEnvironment entries source mode recursor :=
+        Shape.toEnvironment_installed env shape source mode recursor
+      have hstep : StepClaim.{u,v} env env'' := fun V _ m => by
+        obtain ⟨m'⟩ := installed.property.step V m
+        have hE := m.wf
+        have hfamWF : famEnv.WF := Shape.familyEnvironment_wf hb.shapeChecked hE
+        have hkeep : ∀ q entry, env'.toEnvironment q = some entry → Revalued.find block q = none →
+            ∀ r ∈ entry.references, Revalued.find block r = none := by
+          intro q entry hq hn r hr
+          -- `q` is outside the block, so its entry is the family stage's.
+          have hq' : famEnv q = some entry := by
+            rw [henv'] at hq
+            have hqr : q ≠ recursor := fun h => by rw [h] at hn; simp [hn] at hrec
+            have hctor : shape.constructorEntries source q = none := by
+              cases he : shape.constructorEntries source q with
+              | none => rfl
+              | some e =>
+                obtain ⟨i, ctor, rfl, hc, _⟩ := Shape.constructorEntries_some he
+                have := hctors i (List.mem_range.mpr (List.getElem?_eq_some_iff.mp hc).1)
+                simp [hn] at this
+            simpa [Shape.publishedEnvironment, Shape.constructorEnvironment, Environment.insert, hqr,
+              Environment.overlay, hctor, famEnv] using hq
+          have hinst := hfamWF.references_installed hq' r hr
+          cases hfind : Revalued.find block r with
+          | none => rfl
+          | some b =>
+            obtain ⟨hmem, hbr⟩ := Revalued.find_ref hfind
+            have := hfresh b hmem
+            rw [hbr] at this
+            simp [this] at hinst
+        have hc' := fun b hb => (hclaims b hb).ofReductionView env'
+        refine ⟨⟨m'.constants.revalue σ, ?_, ?_⟩⟩
+        · rw [henv'']; exact Revalued.realizes m'.wf m'.realizes hkeep hc'
+        · rw [henv'']; exact Revalued.wf m'.wf hkeep hformed
+      have hpres : env.Preserves env'' := fun q e hq => by
+        have hq' := installed.property.preserves q e hq
+        rw [henv'']
+        simp only [after, Revalued.environment]
+        cases hfind : Revalued.find block q with
+        | none => simpa using hq'
+        | some b =>
+          obtain ⟨hmem, hbr⟩ := Revalued.find_ref hfind
+          have hf := hfresh b hmem
+          rw [hbr] at hf
+          have : famEnv q = some e := by
+            have hqf : q ≠ .member source 0 := by
+              intro h
+              have h0 : env.toEnvironment (.member source 0) = none :=
+                hb.shapeChecked.fresh _ (List.mem_cons_self ..)
+              rw [h, h0] at hq
+              cases hq
+            simp only [famEnv, Shape.familyEnvironment, Environment.insert, hqf, ↓reduceIte]
+            exact hq
+          simp [this] at hf
+      let ⟨hfam⟩ ← decideFamilyInstalled family source env''.toEnvironment
+      let ⟨hrecReads⟩ ← decideRecursorReads rec recursor env''.toEnvironment
+      return ⟨env'', ⟨hstep, hpres⟩, hfam, hrecReads⟩
+    else throw (.declined "interleaved: a canonical constructor is not in the block")
+    else throw (.declined "interleaved: the recursor is not in the block")
+    else throw (.rejected "interleaved: a block reference is not fresh")
+  | _, _ => throw (.declined "the inductive and recursor are not in the ordinary shape class")
+
 /-- The family and its recursor retain their original, independent references.
 The reader only proposes a shape; acceptance compares both complete source
 records with that shape before using its semantic construction. A supplied
@@ -420,7 +728,9 @@ def checkInductiveC (cfg : Config) (env : Env β) (source : β) (recursor : Cons
     .error (.rejected "the declaration references a constant that is not installed")
   else
     match readBlock.{u,v} cfg.fuel entries source ⟨[family, rec]⟩ with
-    | .error .noMatch => .error (.declined "the inductive and recursor are not in the ordinary shape class")
+    | .error .noMatch =>
+      -- Ordinary fields after recursive ones: the canonical block and wrappers.
+      checkInterleavedC.{u,v} cfg env source recursor family rec
     | .error failure => .error (Error.ofSearch "inductive reading" failure)
     | .ok reading =>
       let shape := reading.shape

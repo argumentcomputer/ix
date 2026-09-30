@@ -10,6 +10,10 @@ member 1 of the family's block; `CheckedShape` drops `exactSource`, and
 `Ix.Kernel.Infer` instead of validating witnesses.
 P01: bounded validators return `Search`, preserving nested exhaustion and
 unresolved search; direct validation failures carry specific diagnostics.
+A2: a field mentioning a constant outside the environment is malformed when it
+occurs in a binder domain (a non-positive occurrence of the family) and
+unsupported otherwise: callers have checked every other reference, so it is
+the family itself occurring nested (as in `Lean.Syntax`'s `Array Syntax`).
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -139,6 +143,12 @@ structure CheckedShape (entries : Environment β) (source : β)
 
 variable [DecidableEq β]
 
+/-- Whether a constant that is not installed occurs in a binder domain of `e`:
+a non-positive occurrence of the family being declared. -/
+def uninstalledInDomain (entries : Environment β) : AExpr β → Bool
+  | .forallE _ D B => D.references.any (fun r => (entries r).isNone) || uninstalledInDomain entries B
+  | _ => false
+
 def checkRecursive (fuel : Nat) (entries : Environment β) (shape : Shape β)
     (ctor : Constructor β) : (fields : List (RecursiveField β)) →
       Search (CheckedClaim.{u} (∀ field ∈ fields, RecursiveEvidence.{u,v} entries shape ctor field))
@@ -155,7 +165,9 @@ def checkRecursive (fuel : Nat) (entries : Environment β) (shape : Shape β)
         rcases List.mem_cons.mp hf with rfl | hf
         · exact ⟨hrefs, domains.down.1, domains.down.2, indices.down⟩
         · exact rest.down field' hf⟩
-    else .error (.malformed "recursive field references an uninstalled constant")
+    else if field.domains.any fun D => D.references.any (fun r => (entries r).isNone) then
+      .error (.malformed "recursive field references an uninstalled constant")
+    else .error (.unsupported "a recursive field mentions the family nested in another type")
 
 def checkConstructors (fuel : Nat) (entries : Environment β) (shape : Shape β) :
     (ctors : List (Constructor β)) →
@@ -173,7 +185,9 @@ def checkConstructors (fuel : Nat) (entries : Environment β) (shape : Shape β)
         rcases List.mem_cons.mp hc with rfl | hc
         · exact ⟨hrefs, fields.down.1, fields.down.2, indices.down, recursive.down⟩
         · exact rest.down ctor' hc⟩
-    else .error (.malformed "constructor field references an uninstalled constant")
+    else if ctor.fields.any (uninstalledInDomain entries) then
+      .error (.malformed "constructor field references an uninstalled constant")
+    else .error (.unsupported "a constructor field mentions the family nested in another type")
 
 def checkShape (fuel : Nat) (entries : Environment β) (source : β) (shape : Shape β) :
     Search (CheckedClaim.{u} (CheckedShape.{u,v} entries source shape)) :=
