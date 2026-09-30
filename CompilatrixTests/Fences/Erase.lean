@@ -1,5 +1,6 @@
 import Compilatrix.Src.Proof.Mono
 import Compilatrix.Lam.Proof.Mono
+import Compilatrix.Lam.Erase.Proof.Correct
 
 /-! Required axiom fences for the source-to-Lam theorems (M2.2): clock
 monotonicity of SrcEval and Lam. Expected messages are preserved verbatim. -/
@@ -45,3 +46,44 @@ monotonicity of SrcEval and Lam. Expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Lam.run_mono' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Lam.run_mono
+
+/-! Erasure's simulation and correctness. -/
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.erase_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.erase_correct
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.erase_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.erase_refines
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.erase_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.erase_spec
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.readback_erase' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.readback_erase
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.readback_erase_nat' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.readback_erase_nat
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.vr_eraseVal' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.vr_eraseVal
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.vr_obs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.vr_obs
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.Setting.level' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.Setting.level
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.Setting.tr_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.Setting.tr_correct
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.Setting.apply_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.Setting.apply_correct
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.Setting.run_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.Setting.run_correct
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.sound_term' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.sound_term
+
+/-- info: 'Compilatrix.Sem.SimUpTo.sim' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.SimUpTo.sim
