@@ -1,5 +1,6 @@
 import CompilatrixTests.Src.Support
 import CompilatrixTests.Src.Rules
+import CompilatrixTests.Src.StuckEval
 
 /-! Annotation mutation (design note 02 §13.2): flip one tag or record of an
 accepted annotation. Tier S rejects what violates S1–S4 and tier C most of
@@ -103,10 +104,26 @@ structure Tally where
   acceptedNone : Nat := 0
   uncheckedSame : Nat := 0
   uncheckedNone : Nat := 0
+  /-- Accepted mutants with no observation, by outcome and stuck cause group. -/
+  acceptedWhy : Array (String × Nat) := #[]
+
+/-- Why a run has no observation: its outcome, or its stuck cause group. -/
+def why : StuckEval.Out Value → String
+  | .ok _ => "no readback"
+  | .error .timeout => "timeout"
+  | .error .trap => "trap"
+  | .error (.stuck c) => s!"stuck {c.group}"
+
+def bump (xs : Array (String × Nat)) (k : String) : Array (String × Nat) :=
+  match xs.findIdx? (·.1 == k) with
+  | some i => xs.modify i fun (k, n) => (k, n + 1)
+  | none => xs.push (k, 1)
 
 def Tally.render (t : Tally) : String :=
+  let why := (t.acceptedWhy.qsort (fun a b => a.1 < b.1)).toList.map fun (k, n) => s!"{k} {n}"
   s!"{t.mutants} mutants: rejected S {t.rejectedS}, C {t.rejectedC}, other {t.rejectedOther}; " ++
-  s!"accepted with the same result {t.acceptedSame}, with no observation {t.acceptedNone}; " ++
+  s!"accepted with the same result {t.acceptedSame}, with no observation {t.acceptedNone} " ++
+  s!"({String.intercalate ", " why}); " ++
   s!"unchecked same {t.uncheckedSame}, none {t.uncheckedNone}"
 
 /-- Small inputs per fixture. -/
@@ -148,8 +165,12 @@ def fixture (a : Assert) (name : String) (count : Nat) (seed : Nat) : IO Tally :
       else if d.code.startsWith "relevance-C" then t := { t with rejectedC := t.rejectedC + 1 }
       else t := { t with rejectedOther := t.rejectedOther + 1 }
     | .ok (pm, ch, _) =>
-      match observe pm ch.keeps (run pm clock root (args.map .lit)) with
-      | none => t := { t with acceptedNone := t.acceptedNone + 1 }
+      let r := run pm clock root (args.map .lit)
+      match observe pm ch.keeps r with
+      | none =>
+        let s := StuckEval.run pm clock root (args.map .lit)
+        expect a (outcome r == s.outcome) s!"{name}: StuckEval disagrees with SrcEval on {what}"
+        t := { t with acceptedNone := t.acceptedNone + 1, acceptedWhy := bump t.acceptedWhy (why s) }
       | some o =>
         expect a (some o == original) s!"{name}: accepted mutant {what} changed the result"
         t := { t with acceptedSame := t.acceptedSame + 1 }

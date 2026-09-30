@@ -124,6 +124,9 @@
   "CompilatrixTests.Src.Support":
   {"path": "CompilatrixTests/Src/Support.lean",
    "imports": ["Compilatrix.Src.Load"]},
+  "CompilatrixTests.Src.StuckEval":
+  {"path": "CompilatrixTests/Src/StuckEval.lean",
+   "imports": ["CompilatrixTests.Src.Support"]},
   "CompilatrixTests.Src.SlowMain":
   {"path": "CompilatrixTests/Src/SlowMain.lean",
    "imports": ["CompilatrixTests.Src.Run"]},
@@ -143,15 +146,25 @@
   "CompilatrixTests.Src.Rules":
   {"path": "CompilatrixTests/Src/Rules.lean",
    "imports": ["CompilatrixTests.Src.Support", "Compilatrix.Src.Lazify"]},
+  "CompilatrixTests.Src.Relevance.Stuck":
+  {"path": "CompilatrixTests/Src/Relevance/Stuck.lean",
+   "imports":
+   ["CompilatrixTests.Src.StuckEval",
+    "Compilatrix.Src.Load",
+    "Lean.Data.Json"]},
   "CompilatrixTests.Src.Relevance.Run":
   {"path": "CompilatrixTests/Src/Relevance/Run.lean",
    "imports":
    ["CompilatrixTests.Src.Relevance.Checker",
     "CompilatrixTests.Src.Relevance.Census",
-    "CompilatrixTests.Src.Relevance.Mutation"]},
+    "CompilatrixTests.Src.Relevance.Mutation",
+    "CompilatrixTests.Src.Relevance.Stuck"]},
   "CompilatrixTests.Src.Relevance.Mutation":
   {"path": "CompilatrixTests/Src/Relevance/Mutation.lean",
-   "imports": ["CompilatrixTests.Src.Support", "CompilatrixTests.Src.Rules"]},
+   "imports":
+   ["CompilatrixTests.Src.Support",
+    "CompilatrixTests.Src.Rules",
+    "CompilatrixTests.Src.StuckEval"]},
   "CompilatrixTests.Src.Relevance.Main":
   {"path": "CompilatrixTests/Src/Relevance/Main.lean",
    "imports": ["CompilatrixTests.Src.Relevance.Run"]},

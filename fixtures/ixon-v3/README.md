@@ -31,7 +31,9 @@ records the exact revision, binary and commands.
 by-name arities) and its opaque-by-value row (`Lean.opaqueId`), transcribed
 in `Compilatrix.Src.Pinned`. `src-names.tsv` resolves a few Init names for
 tests only; it is an untrusted oracle. [`src-diag/`](src-diag/README.md) is
-the admission-diagnostics closure. All three come from `lake exe
-pin-src-tables` (`scripts/PinSrcTables.lean`) with the same ix producer as the
-K1 packs; `src-tables.provenance.json` and `src-diag/provenance.json` record
-it, and `tests-src` compares the TSVs with the Lean tables.
+the admission-diagnostics closure, and [`src-sortpoly/`](src-sortpoly/README.md)
+the sort-polymorphism closure (level-exact relevance). All four come from
+`lake exe pin-src-tables` (`scripts/PinSrcTables.lean`) with the same ix
+producer as the K1 packs; `src-tables.provenance.json` and each directory's
+`provenance.json` record it, and `tests-src` compares the TSVs with the Lean
+tables.

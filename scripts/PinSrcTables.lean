@@ -20,6 +20,10 @@ lake exe pin-src-tables --ix PATH/TO/ix --work plans/<task>/src-tables \
   --provenance fixtures/ixon-v3/src-tables.provenance.json \
   --names fixtures/ixon-v3/src-names.tsv
 ```
+
+`--diagnostics fixtures/ixon-v3/src-diag` and `--sortpoly
+fixtures/ixon-v3/src-sortpoly` instead compile a roots-only fixture from the
+Lean source in that directory.
 -/
 
 open Lean Compilatrix.Tools.Check
@@ -60,55 +64,76 @@ def valueOf (env : Environment) (name : Name) : IO Expr := do
   | some _ => throw (IO.userError s!"{name}: not a definition")
   | none => throw (IO.userError s!"{name}: not in the Init environment")
 
-/-- Roots of the admission-diagnostics fixture `fixtures/ixon-v3/src-diag/`. -/
-def diagRoots : List Name :=
-  [`SrcDiag.rootPartial, `SrcDiag.rootMixHash, `SrcDiag.rootFloat, `SrcDiag.rootClassical,
-   `SrcDiag.rootSorry, `SrcDiag.rootOpaqueId]
+/-- A roots-only fixture: a Lean source in its directory, the file stem of
+its closure and sidecar, and its roots. -/
+structure RootsFixture where
+  source : String
+  stem : String
+  roots : List Name
 
-/-- Compile `Diag.lean` (anonymous and named), resolve its roots and write
-the closure, its `compilatrix/k1-equations/1` sidecar (roots only) and a
-provenance record. -/
-def diagnostics (ix : String) (work dir : System.FilePath) (revision : String) : IO Unit := do
+/-- The admission-diagnostics fixture `fixtures/ixon-v3/src-diag/`. -/
+def diagFixture : RootsFixture where
+  source := "Diag.lean"
+  stem := "diag"
+  roots := [`SrcDiag.rootPartial, `SrcDiag.rootMixHash, `SrcDiag.rootFloat,
+    `SrcDiag.rootClassical, `SrcDiag.rootSorry, `SrcDiag.rootOpaqueId]
+
+/-- The sort-polymorphism fixture `fixtures/ixon-v3/src-sortpoly/` (level-exact
+relevance, D18). -/
+def sortPolyFixture : RootsFixture where
+  source := "SortPoly.lean"
+  stem := "sortpoly"
+  roots := [`SortPoly.comp, `SortPoly.throughRoot, `SortPoly.punitCases,
+    `SortPoly.punitCasesType, `SortPoly.punitRec, `SortPoly.unitBoth, `SortPoly.sigmaRoot,
+    `SortPoly.typeArg]
+
+/-- Compile a roots-only fixture (anonymous and named), resolve its roots and
+write the closure, its `compilatrix/k1-equations/1` sidecar (roots only) and
+a provenance record. -/
+def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
+    (revision : String) : IO Unit := do
   IO.FS.createDirAll work
-  let source := dir / "Diag.lean"
-  let closure := dir / "diag.ixe"
-  let named := work / "diag.named.ixe"
-  let consts := String.intercalate "," (diagRoots.map toString)
+  let source := dir / fx.source
+  let closure := dir / s!"{fx.stem}.ixe"
+  let named := work / s!"{fx.stem}.named.ixe"
+  let consts := String.intercalate "," (fx.roots.map toString)
   let _ ← run ix #["compile", "--no-build", "--consts", consts, "--anon", "--out", closure.toString,
     source.toString]
   let _ ← run ix #["compile", "--no-build", "--consts", consts, "--out", named.toString,
     source.toString]
   let mut roots : Array Json := #[]
-  for name in diagRoots do
+  for name in fx.roots do
     let output ← run ix #["addr-of", "--ixe", named.toString, name.toString]
     let address := (words output).getLastD ""
     need (isHex 64 address) s!"{name}: ix addr-of gave {repr output}"
     roots := roots.push (Json.mkObj [("name", name.toString), ("address", address)])
-  let sidecar := dir / "diag.equations.json"
+  let sidecar := dir / s!"{fx.stem}.equations.json"
   IO.FS.writeFile sidecar ((Json.mkObj [("format", "compilatrix/k1-equations/1"),
-    ("source", "Diag.lean"), ("roots", Json.arr roots), ("equations", Json.arr #[]),
+    ("source", fx.source), ("roots", Json.arr roots), ("equations", Json.arr #[]),
     ("failures", Json.arr #[])]).pretty ++ "\n")
   IO.FS.writeFile (dir / "provenance.json") ((Json.mkObj [
     ("producer_version", String.intercalate " " (words (← run ix #["--version"]))),
     ("producer_revision", revision),
     ("producer_binary_sha256", ← sha256 ix),
-    ("commands", toJson [s!"ix compile --no-build --consts <roots> --anon --out diag.ixe Diag.lean",
-      "ix compile --no-build --consts <roots> --out diag.named.ixe Diag.lean",
-      "ix addr-of --ixe diag.named.ixe NAME, for every root"]),
+    ("commands", toJson [
+      s!"ix compile --no-build --consts <roots> --anon --out {fx.stem}.ixe {fx.source}",
+      s!"ix compile --no-build --consts <roots> --out {fx.stem}.named.ixe {fx.source}",
+      s!"ix addr-of --ixe {fx.stem}.named.ixe NAME, for every root"]),
     ("source_sha256", ← sha256 source),
     ("named_env_sha256", ← sha256 named),
-    ("files", Json.mkObj [("diag.ixe", toJson (← sha256 closure)),
-      ("diag.equations.json", toJson (← sha256 sidecar))])]).pretty ++ "\n")
-  IO.println s!"wrote {closure} with {diagRoots.length} roots"
+    ("files", Json.mkObj [(s!"{fx.stem}.ixe", toJson (← sha256 closure)),
+      (s!"{fx.stem}.equations.json", toJson (← sha256 sidecar))])]).pretty ++ "\n")
+  IO.println s!"wrote {closure} with {fx.roots.length} roots"
 
 def main (args : List String) : IO Unit := do
   let options ← checked (parseArgs ["--ix", "--work", "--out", "--provenance", "--names", "--revision",
-    "--diagnostics"] args)
-  if let some dir := optional options "--diagnostics" then
-    let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
-    diagnostics ix (option options "--work" "plans/src-tables") dir
-      (option options "--revision" "unrecorded")
-    return
+    "--diagnostics", "--sortpoly"] args)
+  for (flag, fx) in [("--diagnostics", diagFixture), ("--sortpoly", sortPolyFixture)] do
+    if let some dir := optional options flag then
+      let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
+      rootsFixture fx ix (option options "--work" "plans/src-tables") dir
+        (option options "--revision" "unrecorded")
+      return
   let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
   let work : System.FilePath := option options "--work" "plans/src-tables"
   let out : System.FilePath := option options "--out" "fixtures/ixon-v3/src-tables.tsv"
