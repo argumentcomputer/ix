@@ -50,6 +50,8 @@ import Compilatrix.Xv.Validate.Proof.RowChecks
 import Compilatrix.Xv.Validate.Proof.Inst
 import Compilatrix.Xv.Validate.Proof.Lookup
 import Compilatrix.Xv.Validate.Proof.Steps
+import Compilatrix.Xv.Validate.Proof.Match
+import Compilatrix.Xv.Validate.Proof.Calls
 import Compilatrix.Xv.Alloc.Output
 import Compilatrix.Xv.Alloc.Apply
 import Compilatrix.Xv.Alloc.Liveness
