@@ -7,6 +7,10 @@ K2: `natLit` carries the reference of its natural-number family, on raw and
 annotated syntax alike, with its cases.
 `letE` added (2026-09-17): the let-binding constructor, interpreted by
 substitution, with its cases in every definition and proof here.
+Zero-shift substitution (2026-09-30): reuse the replacement at depth zero;
+the helper's equality to the original lift and the original `instVar`
+equation are proved below. Interpretations and consistency contracts are
+unchanged.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -141,8 +145,28 @@ def liftN (count : Nat) : AExpr β → (cutoff : Nat := 0) → AExpr β
     (e.liftN n k).erase = e.erase.liftN n k := by
   induction e generalizing k <;> simp_all [liftN, erase, VExpr.liftN]
 
+/-- Substitution at depth zero can reuse its argument, including any shared
+subterms, without rebuilding it through an identity lift. -/
+private def liftNUnlessZero (count : Nat) (e : AExpr β) : AExpr β :=
+  if count = 0 then e else e.liftN count
+
+@[simp] private theorem liftNUnlessZero_eq_liftN (count : Nat) (e : AExpr β) :
+    liftNUnlessZero count e = e.liftN count := by
+  by_cases h : count = 0
+  · subst count
+    simp only [liftNUnlessZero, ↓reduceIte]
+    have zero (e : AExpr β) (cutoff : Nat) : e.liftN 0 cutoff = e := by
+      induction e generalizing cutoff <;> simp_all [liftN, liftVar]
+    exact (zero e 0).symm
+  · simp only [liftNUnlessZero, h, ↓reduceIte]
+
 def instVar (i : Nat) (a : AExpr β) (k : Nat) : AExpr β :=
-  if i < k then .bvar i else if i = k then a.liftN k else .bvar (i - 1)
+  if i < k then .bvar i else if i = k then liftNUnlessZero k a else .bvar (i - 1)
+
+/-- The sharing shortcut preserves the original substitution equation. -/
+theorem instVar_eq (i : Nat) (a : AExpr β) (k : Nat) :
+    instVar i a k = if i < k then .bvar i else if i = k then a.liftN k else .bvar (i - 1) := by
+  simp only [instVar, liftNUnlessZero_eq_liftN]
 
 def inst : AExpr β → AExpr β → (cutoff : Nat := 0) → AExpr β
   | .bvar i, a, k => instVar i a k

@@ -7,6 +7,8 @@ K2: `natLit` carries the reference of its natural-number family, on raw and
 annotated syntax alike, with its cases.
 `letE` added (2026-09-17): the let-binding constructor, interpreted by
 substitution, with its cases in every definition and proof here.
+Zero-shift substitution (2026-09-30): proofs use the proved `instVar_eq`
+equation when unfolding the optimized executable syntax helper.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -91,7 +93,7 @@ theorem liftN_inst (term argument : AExpr β) (count cutoff depth : Nat) :
           show index < cutoff + depth by omega, show index < cutoff + depth + 1 by omega]
       · by_cases equal : index = depth
         · subst index
-          simp only [inst, instVar, Nat.lt_irrefl, ite_false, ite_true, liftN,
+          simp only [inst, instVar_eq, Nat.lt_irrefl, ite_false, ite_true, liftN,
             liftVar, ite_eq_left (show depth < cutoff + depth + 1 by omega)]
           simpa only [Nat.add_zero, Nat.add_comm] using
             (liftN_liftN_comm argument count cutoff depth 0 (Nat.zero_le _)).symm
@@ -145,7 +147,7 @@ theorem inst_liftN (term argument : AExpr β) (count lower upper : Nat)
         · simp [liftN, liftVar, inst, instVar, below, before]
         · by_cases equal : index = upper
           · subst index
-            simp only [liftN, liftVar, ite_eq_right below, inst, instVar, Nat.lt_irrefl, ite_false, ite_true]
+            simp only [liftN, liftVar, ite_eq_right below, inst, instVar_eq, Nat.lt_irrefl, ite_false, ite_true]
             simpa only [Nat.zero_add, Nat.add_comm] using
               (liftN_liftN_merge argument upper count 0 lower (Nat.zero_le _) ordered).symm
           · simp [liftN, liftVar, inst, instVar, below, before, equal,
@@ -193,7 +195,7 @@ theorem inst_inst (term first second : AExpr β) (cutoff depth : Nat) :
           show index < cutoff + depth + 1 by omega]
       · by_cases equal : index = depth
         · subst index
-          simp only [inst, instVar, Nat.lt_irrefl, ite_false, ite_true,
+          simp only [inst, instVar_eq, Nat.lt_irrefl, ite_false, ite_true,
             ite_eq_left (show depth < cutoff + depth + 1 by omega)]
           simpa only [Nat.add_comm] using inst_liftN first second depth 0 cutoff (Nat.zero_le _)
         · by_cases before : index < cutoff + depth + 1
@@ -201,7 +203,7 @@ theorem inst_inst (term first second : AExpr β) (cutoff depth : Nat) :
               show index - 1 < cutoff + depth by omega]
           · by_cases selected : index = cutoff + depth + 1
             · subst index
-              simp only [inst, instVar, Nat.lt_irrefl, ite_false, ite_true, ite_eq_right below,
+              simp only [inst, instVar_eq, Nat.lt_irrefl, ite_false, ite_true, ite_eq_right below,
                 ite_eq_right equal, Nat.add_sub_cancel]
               have skipped := inst_liftN_within second (first.inst second cutoff) (cutoff + depth) 0 depth
                 (Nat.zero_le _) (by omega)
@@ -320,7 +322,7 @@ theorem instRevAt_bvar_selected (arguments : List (AExpr β)) (index cutoff : Na
       simp only [List.length_cons] at inside
       by_cases outermost : index = arguments.length
       · subst index
-        simp only [instRevAt, inst, instVar, Nat.lt_irrefl, ite_false, ite_true]
+        simp only [instRevAt, inst, instVar_eq, Nat.lt_irrefl, ite_false, ite_true]
         rw [show cutoff + arguments.length = arguments.length + cutoff by omega, instRevAt_liftN]
         simp
       · have inner : index < arguments.length := by omega

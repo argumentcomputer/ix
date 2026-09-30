@@ -46,7 +46,7 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.WorkAdmission] Ix.Ixon.Ad
 kernel and codec primitives only; the set-difference check below enforces
 that adding the adapter introduces no further extern or unsafe primitive. -/
 /-- info: runtime closure of [Ix.Ixon.Admission.preflight,
-Ix.Ixon.Admission.decodeRecords, Ix.Ixon.Admission.checkBytes]: 1592 compiled functions;
+Ix.Ixon.Admission.decodeRecords, Ix.Ixon.Admission.checkBytes]: 1613 compiled functions;
 inherited externs 70, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Admission.Audit.operations #[`Init, `Std]

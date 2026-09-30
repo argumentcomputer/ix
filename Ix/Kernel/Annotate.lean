@@ -196,7 +196,9 @@ compute. These readers return it where the syntax already determines it
 exactly: a Pi's own (validated) annotation, since `zeroCondition (imax u v) =
 zeroCondition v`; a sort, never a proposition's sort; a constant family whose
 type telescope ends in a sort after its arguments; and a local variable whose
-type is a sort. Anything else is `none` and `annotate` infers. Annotations are
+type is a sort. For a constant application, the last consumed Pi annotation
+already describes its result type's sort, even when that type is a telescope
+variable. Anything else is `none` and `annotate` infers. Annotations are
 proposals: `inferA` validates every one against the sort it computes. -/
 
 /-- The rest of a type telescope after `n` Pi binders, if it has that many. -/
@@ -204,6 +206,15 @@ def telescopeAfter : AExpr β → Nat → Option (AExpr β)
   | e, 0 => some e
   | .forallE _ _ B, n + 1 => telescopeAfter B n
   | _, _ + 1 => none
+
+/-- The last consumed Pi's codomain condition after a positive number of
+arguments. Term substitution preserves that condition; only the constant's
+universe arguments need instantiation. Hidden Pis and overapplication fall
+back to inference. -/
+def telescopeCodomainCondition : AExpr β → Nat → Option PropWhen
+  | .forallE p _ _, 1 => some p
+  | .forallE _ _ B, n + 2 => telescopeCodomainCondition B (n + 1)
+  | _, _ => none
 
 /-- The zero condition of a constant family's sort after `n` arguments. -/
 def familyCondition (entries : Environment β) (d : ConstRef β) (ls : List VLevel) (n : Nat) :
@@ -250,10 +261,9 @@ private def termConditionWith (entries : Environment β) (lookup : Nat → Optio
     | (.const c ls, args) =>
       match entries c with
       | some entry =>
-        match telescopeAfter entry.type args.length with
-        -- The rest's variables are the telescope's binders, not the caller's locals.
-        | some rest => typeConditionWith entries (fun _ => none) (rest.instL ls)
-        | none => none
+        match args.length with
+        | 0 => typeConditionWith entries (fun _ => none) (entry.type.instL ls)
+        | n + 1 => (telescopeCodomainCondition entry.type (n + 1)).map (instCondition ls)
       | none => none
     | _ => none
 

@@ -22,8 +22,9 @@ environment of the rows accepted before it.
 Usage: `kernel-census <input.ixe> <output.jsonl> [limit] [fuel]`. Rows are
 written as they are produced; the summary goes to stderr.
 
-Checks run on the main thread by default: the kernel's work budget bounds
-every check, so no timeout is needed and timings have no polling floor.
+Checks run on the main thread by default, so timings have no polling floor.
+The work budget bounds charged search calls, not allocation or elapsed time;
+large-corpus diagnostics should also use external time and memory limits.
 Environment variables: `CENSUS_THREADED` runs each check on its own task with a
 timeout instead, the environment marked persistent first so the task does not
 mark it multi-threaded;
@@ -265,8 +266,8 @@ def run (args : List String) : IO UInt32 := do
   let ordered := order store
   let cfg : Config := { fuel := options.fuel }
   let probe ← IO.getEnv "CENSUS_PROBE"
-  -- The default: checks on the main thread, bounded by the kernel's work
-  -- budget; `CENSUS_THREADED` opts into tasks with a timeout.
+  -- The default checks on the main thread. `CENSUS_THREADED` opts into
+  -- tasks with a timeout; external caps also bound the inline process.
   let inline := (← IO.getEnv "CENSUS_THREADED").isNone
   IO.eprintln s!"census: {store.size} records, {ordered.size} primary, {env.blobs.size} blobs, \
     Nat family {natFamily.isSome}, string constants {strings.isSome}, loaded in {(← IO.monoMsNow) - started} ms"

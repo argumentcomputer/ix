@@ -3,6 +3,8 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/Model/BetaSpine.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added.
+Zero-shift substitution (2026-09-30): the variable-spine proof uses the
+proved `instVar_eq` equation for the optimized executable syntax helper.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -106,7 +108,7 @@ theorem inst_variable_appN (head : AExpr β) (initialArguments arguments : List 
     ((AExpr.bvar cutoff).appN arguments).inst (head.appN initialArguments) cutoff =
       (head.liftN cutoff).appN (initialArguments.map (AExpr.liftN cutoff ·) ++
         arguments.map (AExpr.inst · (head.appN initialArguments) cutoff)) := by
-  simp only [inst_appN, inst, instVar, Nat.lt_irrefl, ite_false, ite_true, liftN_appN, appN_append]
+  simp only [inst_appN, inst, instVar_eq, Nat.lt_irrefl, ite_false, ite_true, liftN_appN, appN_append]
 
 /-- Substitution preserves a reduction justified by the original lambda
 prefix. Lambdas newly exposed beyond that prefix need their own origin. -/

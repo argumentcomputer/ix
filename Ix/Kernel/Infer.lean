@@ -237,6 +237,39 @@ def proofHead (entries : Environment β) (e : AExpr β) : Bool :=
     | none => false
   | _ => false
 
+/-- A proof-point witness, erased at run time. -/
+structure ProofValue (entries : Environment β) (Γ : Context β) (e : AExpr β) : Type u where
+  claim : ProofValueClaim.{u,v} entries Γ e
+
+/-- Read a certified proof value without normalization or argument inference.
+Only the outermost Pi annotation in a constant's stored type is instantiated
+and checked; a deeper telescope annotation would not justify this rule.
+Proposition expressions themselves are deliberately not proof values. -/
+def proofValue (entries : Environment β) (Γ : Context β) : (e : AExpr β) →
+    Option (ProofValue.{u,v} entries Γ e)
+  | .const r ls =>
+    match hr : entries r with
+    | some entry =>
+      match ht : entry.type with
+      | .forallE p _ _ =>
+        if hn : ls.length = entry.universes then
+          if hp : instCondition ls p = .always then
+            some ⟨ProofValueClaim.const hr hn ht hp⟩
+          else none
+        else none
+      | _ => none
+    | none => none
+  | .lam (.allZero [] _) _ _ => some ⟨ProofValueClaim.lam⟩
+  | .app f _ => (proofValue entries Γ f).map fun ⟨hf⟩ => ⟨hf.app⟩
+  | _ => none
+
+/-- Proof irrelevance when both proof points can be read structurally. -/
+def quickProofIrrelevance (entries : Environment β) (Γ : Context β) (a b : AExpr β) :
+    Option (Conv.{u,v} entries Γ a b) := do
+  let ⟨ha⟩ ← proofValue entries Γ a
+  let ⟨hb⟩ ← proofValue entries Γ b
+  return ⟨ConvClaim.ofProofValues ha hb⟩
+
 /-- Whether a type telescope, after `n` arguments, is never a proposition: the
 binder consumed last, or the remaining function type, is annotated `.never`, or
 what remains is a sort. -/
@@ -835,12 +868,25 @@ def etaStructC : Nat → (entries : Environment β) → (Γ : Context β) → (a
       | none => throw .noMatch
     | _ => throw .noMatch
 
+/-- Infer only the side of a proof comparison that lacks a syntactic witness. -/
+def inferProofValueC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    KM.{u,v} entries Γ (ProofValue.{u,v} entries Γ e)
+  | 0, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, e => do
+    let ⟨A, he⟩ ← inferAC fuel entries Γ e
+    let ⟨SA, hSA⟩ ← inferAC fuel entries Γ A
+    let ⟨l, hA⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ SA) hSA)
+    if hl : levelIsZero l then
+      return ⟨ProofValueClaim.ofTyping (hA.sortEquiv (levelIsZero_sound hl)) he⟩
+    else throw .noMatch
+
 /-- Proof irrelevance: both sides inhabit propositions, whose proofs have
 the same interpretation even when the propositions differ. -/
 def proofIrrelevanceC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
     KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
   | 0, _, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, a, b => do
+    if let some h := quickProofIrrelevance entries Γ a b then return h
     let ⟨A, haA⟩ ← inferAC fuel entries Γ a
     let ⟨SA, hSA⟩ ← inferAC fuel entries Γ A
     let ⟨l, hA⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ SA) hSA)
@@ -968,6 +1014,32 @@ def inferAC : Nat → (entries : Environment β) → (Γ : Context β) → (e : 
       if cacheable then KM.modifyCache (·.addInfer e result)
       pure result
 
+/-- Infer an already-formed expression, reusing that evidence only at
+non-Prop applications. Its ordinary typing claim can share the full inference
+cache. Other application regimes still check the argument and its domain;
+other heads use full inference. Front-door inference never calls this helper
+without a formedness claim for the exact expression. -/
+def inferFormedC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    FormedClaim.{u,v} entries Γ e → KM.{u,v} entries Γ (Typed.{u,v} entries Γ e)
+  | 0, _, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, .app f a, hfa => do
+    KM.tick
+    let cache ← KM.cache
+    match cache.findInfer (.app f a) with
+    | some t => pure t
+    | none =>
+      let ⟨T, hf⟩ ← inferFormedC fuel entries Γ f hfa.appFn
+      let ⟨p, D, B, hf'⟩ ← KM.ofSearch (piOf (← whnfC fuel entries Γ T) hf)
+      let result ← match p, hf' with
+        | .never, hf' => pure ⟨B.inst a, TypingClaim.appFormedNever hf' hfa⟩
+        | p, hf' => do
+          let ⟨A', ha⟩ ← inferAC fuel entries Γ a
+          let ⟨hc⟩ ← isDefEqC fuel entries Γ A' D
+          pure ⟨B.inst a, TypingClaim.app (p := p) hf' (ha.convF hf'.formedType.domain hc)⟩
+      KM.modifyCache (·.addInfer (.app f a) result)
+      pure result
+  | fuel + 1, entries, Γ, e, _ => inferAC fuel entries Γ e
+
 /-- A binder body's type and the sort of that type. A λ body's type is the Π
 its own inference builds, and that inference already has the Π's sort, so a
 tower of λs is inferred in one pass instead of re-inferring each inner Π. -/
@@ -985,7 +1057,7 @@ def inferBodyC : Nat → (entries : Environment β) → (Γ : Context β) → (b
     else throw (.malformed "lambda annotation disagrees with its codomain sort")
   | fuel + 1, entries, Γ, b => do
     let ⟨B, hb⟩ ← inferAC fuel entries Γ b
-    let ⟨SB, hSB⟩ ← inferAC fuel entries Γ B
+    let ⟨SB, hSB⟩ ← inferFormedC fuel entries Γ B hb.formedType
     let ⟨lB, hB⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ SB) hSB)
     return ⟨B, hb, lB, hB⟩
 
@@ -1190,7 +1262,20 @@ def isDefEqC : Nat → (entries : Environment β) → (Γ : Context β) → (a b
       match cache.findConv a b with
       | some r => KM.ofSearch r
       | none =>
-        let r ← KM.attempt (KM.mapError SearchFailure.conversion (lazyDeltaC fuel entries Γ a b true))
+        let fast : KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b) := do
+          match proofValue entries Γ a, proofValue entries Γ b with
+          | some ⟨ha⟩, some ⟨hb⟩ => return ⟨ConvClaim.ofProofValues ha hb⟩
+          | some ⟨ha⟩, none =>
+            let ⟨hb⟩ ← KM.speculate 256 (inferProofValueC fuel entries Γ b)
+            return ⟨ConvClaim.ofProofValues ha hb⟩
+          | none, some ⟨hb⟩ =>
+            let ⟨ha⟩ ← KM.speculate 256 (inferProofValueC fuel entries Γ a)
+            return ⟨ConvClaim.ofProofValues ha hb⟩
+          | none, none => throw .noMatch
+        -- A failed optional proof search always tries ordinary conversion.
+        -- Keep exhaustion visible if both fail so it is not cached negatively.
+        let r ← KM.attempt (KM.mapError SearchFailure.conversion <|
+          KM.orElse fast fun _ => lazyDeltaC fuel entries Γ a b true)
         match r with
         | .error .exhausted => pure ⟨⟩
         | _ => KM.modifyCache (·.addConv a b r)

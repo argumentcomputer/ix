@@ -18,6 +18,9 @@ erased at run time. Besides the ported `TypingClaim` and `ConversionClaim`:
 * `ConvClaim`: conditional conversion, equal interpretations wherever both
   sides are well denoted; the head-reduction based conversion check produces
   this form, and typing transports it (`TypingClaim.convF`);
+* `ProofValueClaim`: a well-denoted term denotes the canonical proof point;
+  a proposition-valued constant telescope and its applications can establish
+  this without re-inferring their arguments;
 * `ReductionClaim`: head reduction preserves interpretation and
   well-denotedness. Beta needs the argument's typing at the lambda's own
   domain (`ReductionClaim.beta`), which the checker re-establishes at each
@@ -47,6 +50,13 @@ def ConvClaim (entries : Environment β) (Γ : Context β) (a b : AExpr β) : Pr
     ∀ (levels : List Nat) (env : Nat → V), Γ.Valid constants levels env →
       WellDenoted constants levels env a → WellDenoted constants levels env b →
         interp constants levels env a = interp constants levels env b
+
+/-- A conditional proof value, without a claim about the term's inferred
+type or the well-denotedness of unchecked arguments. -/
+def ProofValueClaim (entries : Environment β) (Γ : Context β) (e : AExpr β) : Prop :=
+  ∀ (V : Type v) [SetTheory V] (constants : Assignment β V), Realizes constants entries →
+    ∀ (levels : List Nat) (env : Nat → V), Γ.Valid constants levels env →
+      WellDenoted constants levels env e → interp constants levels env e = pt
 
 /-- Head reduction: `e'` denotes what `e` denotes and stays well denoted. -/
 def ReductionClaim (entries : Environment β) (Γ : Context β) (e e' : AExpr β) : Prop :=
@@ -103,6 +113,10 @@ namespace FormedClaim
 theorem sort (l : VLevel) : FormedClaim.{u,v} entries Γ (.sort l) :=
   fun _ _ _ _ _ _ _ => trivial
 
+theorem appFn {f a : AExpr β} (h : FormedClaim.{u,v} entries Γ (.app f a)) :
+    FormedClaim.{u,v} entries Γ f :=
+  fun V _ constants hM levels env hΓ => (h V constants hM levels env hΓ).1
+
 theorem domain {p : Certified.PropWhen} {A B : AExpr β}
     (h : FormedClaim.{u,v} entries Γ (.forallE p A B)) : FormedClaim.{u,v} entries Γ A :=
   fun V _ constants hM levels env hΓ => by
@@ -116,6 +130,76 @@ theorem lamDomain {p : Certified.PropWhen} {A b : AExpr β}
     exact hA
 
 end FormedClaim
+
+namespace Model.TypingClaim
+
+/-- An already-formed application of a non-Prop function supplies its own
+argument membership. Positive-regime products determine their domain, so no
+second inference of the argument is needed to recover the ordinary claim. -/
+theorem appFormedNever {f a D B : AExpr β}
+    (hf : TypingClaim.{u,v} entries Γ f (.forallE .never D B))
+    (hfa : FormedClaim.{u,v} entries Γ (.app f a)) :
+    TypingClaim.{u,v} entries Γ (.app f a) (B.inst a) := by
+  apply TypingClaim.app hf
+  intro V _ constants hM levels env hΓ
+  obtain ⟨_, hPi, hfm⟩ := hf V constants hM levels env hΓ
+  obtain ⟨_, haw, k, A, C, hfk, ham, _⟩ := hfa V constants hM levels env hΓ
+  change interp constants levels env f ∈ˢ
+    piR 1 (interp constants levels env D)
+      (fun x => interp constants levels (Valuation.cons x env) B) at hfm
+  have hk : k ≠ 0 := by
+    intro hk
+    subst k
+    have hpt := eq_pt_of_mem_piR_zero hfk
+    exact not_pt_mem_piR_pos (by decide : 1 ≠ 0) (hpt ▸ hfm)
+  have hdom := piR_dom_unique (by decide : 1 ≠ 0) hk hfm hfk
+  exact ⟨haw, hPi.1, hdom ▸ ham⟩
+
+end Model.TypingClaim
+
+namespace ProofValueClaim
+
+/-- The outermost proposition-valued product already makes the constant a
+proof, before any argument is applied. The universe arity is checked against
+the entry because well-denotedness of a constant alone does not check it. -/
+theorem const {r : ConstRef β} {entry : ConstantEntry β} {ls : List VLevel} {D B : AExpr β}
+    {p : Certified.PropWhen}
+    (hr : entries r = some entry) (hn : ls.length = entry.universes)
+    (ht : entry.type = .forallE p D B) (hp : Certified.instCondition ls p = .always) :
+    ProofValueClaim.{u,v} entries Γ (.const r ls) := by
+  intro V _ constants hM levels env _ _
+  have member := hM.member r entry hr (ls.map (VLevel.eval levels)) (by simpa using hn) env
+  rw [ht] at member
+  have hp0 : regime p (ls.map (VLevel.eval levels)) = 0 := by
+    rw [← regime_instCondition, hp, regime_always]
+  change constants r (ls.map (VLevel.eval levels)) = pt
+  apply eq_pt_of_mem_piR_zero
+  simpa only [interp, hp0] using member
+
+/-- Proof-valued lambdas interpret as the proof point. This does not certify
+their binder annotations: ordinary type checking still validates those. -/
+theorem lam {D b : AExpr β} : ProofValueClaim.{u,v} entries Γ (.lam .always D b) := by
+  intro V _ constants _ levels env _ _
+  simp only [interp, regime_always, lamR_zero]
+
+/-- Applying a proof value keeps the proof point. No argument inference is
+needed: conversion remains conditional on the supplied term's validity. -/
+theorem app {f a : AExpr β} (hf : ProofValueClaim.{u,v} entries Γ f) :
+    ProofValueClaim.{u,v} entries Γ (.app f a) := by
+  intro V _ constants hM levels env hΓ hw
+  simp only [interp, hf V constants hM levels env hΓ hw.1, app_pt]
+
+/-- Ordinary inference can supply the same proof-point witness when syntax
+alone does not identify a proof, for example at a local variable. -/
+theorem ofTyping {e A : AExpr β} (hA : TypingClaim.{u,v} entries Γ A (.sort .zero))
+    (he : TypingClaim.{u,v} entries Γ e A) : ProofValueClaim.{u,v} entries Γ e := by
+  intro V _ constants hM levels env hΓ _
+  have hAm := (hA V constants hM levels env hΓ).2.2
+  have hA0 : interp constants levels env A ∈ˢ (univZero : V) := by
+    simpa only [interp, VLevel.eval, univ_zero] using hAm
+  exact eq_pt_of_mem_univZero hA0 (he V constants hM levels env hΓ).2.2
+
+end ProofValueClaim
 
 namespace ConvClaim
 
@@ -204,6 +288,11 @@ theorem proofIrrel {A a b : AExpr β} (hA : TypingClaim.{u,v} entries Γ A (.sor
     (ha : TypingClaim.{u,v} entries Γ a A) (hb : TypingClaim.{u,v} entries Γ b A) :
     ConvClaim.{u,v} entries Γ a b :=
   ofConversion (ConversionClaim.proofIrrel hA ha hb)
+
+theorem ofProofValues {a b : AExpr β} (ha : ProofValueClaim.{u,v} entries Γ a)
+    (hb : ProofValueClaim.{u,v} entries Γ b) : ConvClaim.{u,v} entries Γ a b := by
+  intro V _ constants hM levels env hΓ haw hbw
+  exact (ha V constants hM levels env hΓ haw).trans (hb V constants hM levels env hΓ hbw).symm
 
 /-- Proofs of proposition-valued types have the same interpretation even
 when establishing conversion of their types would require further search.
