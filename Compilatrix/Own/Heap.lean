@@ -19,6 +19,13 @@ namespace Compilatrix.Own
 
 open Compilatrix.Sem (Obs)
 
+/-- What evaluating a right-hand side reads from a program: Lam's
+constructor table (`Fir.CtorInfo.ofKey`) and the pinned keys. -/
+structure Tables where
+  ctors : List Lam.CtorInfo
+  known : Lam.Known
+  deriving Inhabited
+
 inductive RVal where
   | loc (ℓ : Nat)
   | lit (l : Lam.Lit)

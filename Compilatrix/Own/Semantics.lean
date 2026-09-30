@@ -49,33 +49,35 @@ def natArgs : List RVal → Option (List Nat)
   | .lit (.nat n) :: vs => (natArgs vs).map (n :: ·)
   | _ => none
 
+def Program.tables (P : Program) : Tables := { ctors := P.ctors, known := P.known }
+
 /-- A field-less constructor as an immediate. -/
-def ctor0Of (P : Program) (c : Key.CtorKey) : Option RVal :=
-  match P.ctorInfo? c with
+def ctor0Of (T : Tables) (c : Key.CtorKey) : Option RVal :=
+  match Fir.CtorInfo.ofKey T.ctors c with
   | some info => if info.fieldless then some (.ctor0 info) else none
   | none => none
 
-def primResult (P : Program) (p : Lam.Prim) (vs : List RVal) : Result RVal :=
+def primResult (T : Tables) (p : Lam.Prim) (vs : List RVal) : Result RVal :=
   match natArgs vs with
   | some ns =>
     match p.sem ns with
     | some (.nat n) => .ok (.lit (.nat n))
     | some (.bool b) =>
-      match (if b then P.known.boolTrue else P.known.boolFalse) with
-      | some c => Result.ofOption (ctor0Of P c)
+      match (if b then T.known.boolTrue else T.known.boolFalse) with
+      | some c => Result.ofOption (ctor0Of T c)
       | none => .stuck
     | none => .stuck
   | none => .stuck
 
 /-- A right-hand side other than a call. -/
-def evalRhs (pol : AllocPol) (P : Program) (ρ : Env) (H : Heap) : Rhs → Result (RVal × Heap)
+def evalRhs (pol : AllocPol) (T : Tables) (ρ : Env) (H : Heap) : Rhs → Result (RVal × Heap)
   | .fir (.arg a) =>
     match evalArg ρ a with
     | some v => .ok (v, H)
     | none => .stuck
   | .fir (.prim op as) =>
     match evalArgs ρ as with
-    | some vs => (primResult P op vs).map (·, H)
+    | some vs => (primResult T op vs).map (·, H)
     | none => .stuck
   | .fir _ => .stuck
   | .alloc c as _ =>
@@ -88,7 +90,7 @@ def evalRhs (pol : AllocPol) (P : Program) (ρ : Env) (H : Heap) : Rhs → Resul
   | .proj x c i =>
     match ρ.get? x with
     | some v =>
-      match v.asCtor P.known H with
+      match v.asCtor T.known H with
       | some (c', fs) => if c' = c then (Result.ofOption fs[i]?).map (·, H) else .stuck
       | none => .stuck
     | none => .stuck
@@ -153,7 +155,7 @@ def eval (pol : AllocPol) (P : Program) (k : Nat) (ρ : Env) (J : List JEntry) (
       | .stuck => .stuck
     | none => .stuck
   | .bind x r c' =>
-    match evalRhs pol P ρ H r with
+    match evalRhs pol P.tables ρ H r with
     | .ok (v, H') => eval pol P k (ρ.insert x v) J H' c'
     | .timeout => .timeout
     | .resource r => .resource r

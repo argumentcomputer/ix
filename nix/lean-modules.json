@@ -1669,6 +1669,27 @@
    ["Compilatrix.Fir.Syntax",
     "Compilatrix.Anf.WellFormed",
     "Compilatrix.Anf.Census"]},
+  "Compilatrix.Cfg.WellFormed":
+  {"path": "Compilatrix/Cfg/WellFormed.lean",
+   "imports": ["Compilatrix.Cfg.Syntax"]},
+  "Compilatrix.Cfg.Syntax":
+  {"path": "Compilatrix/Cfg/Syntax.lean",
+   "imports": ["Compilatrix.Own.Syntax"]},
+  "Compilatrix.Cfg.Semantics":
+  {"path": "Compilatrix/Cfg/Semantics.lean",
+   "imports":
+   ["Compilatrix.Cfg.Syntax",
+    "Compilatrix.Own.Semantics",
+    "Compilatrix.Sem.Clock"]},
+  "Compilatrix.Cfg.Print":
+  {"path": "Compilatrix/Cfg/Print.lean",
+   "imports": ["Compilatrix.Cfg.Syntax", "Compilatrix.Fir.Print"]},
+  "Compilatrix.Cfg.Lower":
+  {"path": "Compilatrix/Cfg/Lower.lean",
+   "imports":
+   ["Compilatrix.Cfg.Syntax",
+    "Compilatrix.Own.Immortal",
+    "Compilatrix.Fir.Lower"]},
   "Compilatrix.Backend":
   {"path": "Compilatrix/Backend.lean",
    "imports":
@@ -2137,6 +2158,11 @@
     "Compilatrix.Own.Semantics",
     "Compilatrix.Own.Immortal",
     "Compilatrix.Own.WellFormed",
+    "Compilatrix.Cfg.Syntax",
+    "Compilatrix.Cfg.Semantics",
+    "Compilatrix.Cfg.WellFormed",
+    "Compilatrix.Cfg.Lower",
+    "Compilatrix.Cfg.Print",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

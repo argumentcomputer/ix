@@ -127,6 +127,11 @@ import Compilatrix.Own.Heap
 import Compilatrix.Own.Semantics
 import Compilatrix.Own.Immortal
 import Compilatrix.Own.WellFormed
+import Compilatrix.Cfg.Syntax
+import Compilatrix.Cfg.Semantics
+import Compilatrix.Cfg.WellFormed
+import Compilatrix.Cfg.Lower
+import Compilatrix.Cfg.Print
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
