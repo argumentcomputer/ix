@@ -103,6 +103,73 @@ def primAddr (op : PrimOp) : Address :=
 def primAt? (a : Address) : Option PrimOp :=
   (primRows.find? fun (_, _, hex) => addr hex == a).map (·.1)
 
+/-! ## Kernel-evaluable pins
+
+The recheck path compares addresses with pins (note 01 §1.2), and the kernel
+has no byte literals and parses no hex strings cheaply (D17), so a pin is
+also written as a 256-bit number: an address's bytes read big-endian. The
+`#guard`s below tie each number to its row. -/
+
+/-- An address as a 256-bit number, its bytes read big-endian. -/
+def addrNat (a : Address) : Nat := a.hash.data.toList.foldl (fun n b => n * 256 + b.toNat) 0
+
+/-- The pinned address of each primitive operation, as a number. -/
+def primPin : PrimOp → Nat
+  | .add => 0x724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac
+  | .sub => 0x9de2d2c60e7d421a2fdfb8706e91e0e6d8576c3bd46ec00405c65875cb9b5a26
+  | .mul => 0x566a3c2249bc2076543d9bc561a841f6fd35ffb5bdbbc5c991a9c64feccbd5d4
+  | .div => 0xc075ed976f1702f364fb0bb34aa8bbc166adace573f2ce914b43dc4f4aab6219
+  | .mod => 0xe6ffe78713d4b974a82d0187538f1a0cf5c4b260f0fd99264fab263b1af847f9
+  | .pow => 0x5ba43ac3e5d29fe5ce81f18a18178a2705c37ee674b9b6ee50e9466a86593b15
+  | .gcd => 0x76007dcf8b285cdbd6f779012290fe2e6afd221ce8821082a7e2ef81e8d815cf
+  | .beq => 0xffd3f02a19fda649aa5608ed818db382e160231b76d5b09176d7dd1a8d5b1ec5
+  | .ble => 0x68a3643ec69816aec107302ddbfa054cebcd3ec173cd5f7e6d883638631afe65
+  | .land => 0x4c2ffd1f1e5559025966a1ff25424652ea1d8475b06ca392cdc0848b0a3143c9
+  | .lor => 0xe5a455e4bb5d788a10282612ed86d0fe4e05f751d2e6d69714064dea2df1a81c
+  | .xor => 0x581035b84dc55a4c9fbdb0e0b33f688a360105c48bb8410b0248184f92b6f5d6
+  | .shiftLeft => 0x5c15f98e2bd9c257bcdfac62b0043a2e3e2bbdff8b210f104b5c3739e862ac0c
+  | .shiftRight => 0x3f92725324b09fa75c6fcd16da863671428ff33b7db667eb760e1cd503a2bcad
+  | .pred => 0x76afa254a8bbf2ac4327d7b94be0c63bd708836b5f7384ce990388adb0a1d3cf
+
+/-- The pinned constants `Known` names, as numbers. -/
+structure KnownPins where
+  nat : Nat
+  natZero : Nat
+  natSucc : Nat
+  natRec : Nat
+  bool : Nat
+  boolTrue : Nat
+  boolFalse : Nat
+  eq : Nat
+  decIsFalse : Nat
+  decIsTrue : Nat
+
+def knownPins : KnownPins :=
+  { nat := 0x35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc
+    natZero := 0xeeb2e6268ff6d0e6b2e9764d9940b81bb64b9f8f4b1358d294ff9817e6941a46
+    natSucc := 0x42d6ed31536f0958176f1dc973383808ac8583223746ebca78dbe389b65321a6
+    natRec := 0xd1053449c217e5cc6fc29b2cb59cfd5ead385d392d00ada2221d4000dda7def3
+    bool := 0xe6eba3c8b4d19f6a1076b39fa89aec61dccbb960f83d9a62e6acf35a69c9a0a4
+    boolTrue := 0xa29a636176cf1135d077eb074798f9007c78e7801383e9cff363bae5edf05762
+    boolFalse := 0xdda12bcb330727f6dfb816bc9752aabd0520e6515b79fc8a5a9e713866f4c63e
+    eq := 0xc37d6290e00fb865fb5db7bce18fd69e6d1674ad573724b85466ea9f7578a207
+    decIsFalse := 0x8cc0e1360c1b29108dab3d6172e7fce8a9aa9640daa4bbe99ba1305d9623624b
+    decIsTrue := 0x363d071182be414e1a58599b83f5e19f9b873723054f4287ba69705aafef27da }
+
+/-- The opaque-by-value allowlist (D12), as numbers. -/
+def opaqueByValuePins : List Nat :=
+  [0xd0e998ecf33a57f1fcf98311611d1402b361f426d81d6a8ade77123e2e7b8046]
+
+#guard PrimOp.all.all fun op => addrNat (primAddr op) == primPin op
+#guard [addrNat (constAddr "Nat"), addrNat (constAddr "Nat.zero"),
+    addrNat (constAddr "Nat.succ"), addrNat (constAddr "Nat.rec"), addrNat (constAddr "Bool"),
+    addrNat (constAddr "Bool.true"), addrNat (constAddr "Bool.false"), addrNat (constAddr "Eq"),
+    addrNat (constAddr "Decidable.isFalse"), addrNat (constAddr "Decidable.isTrue")] ==
+  [knownPins.nat, knownPins.natZero, knownPins.natSucc, knownPins.natRec, knownPins.bool,
+    knownPins.boolTrue, knownPins.boolFalse, knownPins.eq, knownPins.decIsFalse,
+    knownPins.decIsTrue]
+#guard opaqueByValueRows.map (addrNat ∘ addr ∘ (·.2)) == opaqueByValuePins
+
 /-- Resolve the pinned constants present in a program. -/
 def known (p : Program) : Known :=
   let at_ := fun name => p.lookup (constAddr name)
@@ -110,5 +177,21 @@ def known (p : Program) : Known :=
     natRec := at_ "Nat.rec", bool := at_ "Bool", boolTrue := at_ "Bool.true"
     boolFalse := at_ "Bool.false", eq := at_ "Eq", decIsFalse := at_ "Decidable.isFalse"
     decIsTrue := at_ "Decidable.isTrue" }
+
+/-- A `Known` entry names the constant pinned at `pin` (or is absent). -/
+def knownAt (p : Program) (pin : Nat) : Option CId → Bool
+  | some c => c < p.size && addrNat (p.addr c) == pin
+  | none => true
+
+/-- Every constant `p.known` names is the pinned one (kernel-evaluable; the
+recheck path's check of what `known` resolved). -/
+def knownOk (p : Program) : Bool :=
+  let k := p.known
+  let pins := knownPins
+  knownAt p pins.nat k.nat && knownAt p pins.natZero k.natZero &&
+  knownAt p pins.natSucc k.natSucc && knownAt p pins.natRec k.natRec &&
+  knownAt p pins.bool k.bool && knownAt p pins.boolTrue k.boolTrue &&
+  knownAt p pins.boolFalse k.boolFalse && knownAt p pins.eq k.eq &&
+  knownAt p pins.decIsFalse k.decIsFalse && knownAt p pins.decIsTrue k.decIsTrue
 
 end Compilatrix.Src.Pinned

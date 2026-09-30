@@ -15,14 +15,6 @@ namespace Compilatrix.Src.Table
 
 open Compilatrix.Ixon
 
-structure Config where
-  /-- The primitive operations with native lowering (§3.4); others resolve
-  through their `eqn` entry or kernel body. -/
-  prims : List PrimOp := PrimOp.all
-  /-- Node cap for `inline` entries. -/
-  inlineCap : Nat := 256
-  deriving Inhabited
-
 /-- What the build accepted, for tests and the census. -/
 structure Stats where
   primAccepted : Array CId := #[]
@@ -70,20 +62,6 @@ def caseCandidates (p : Program) : Array CId := Id.run do
       if let (.const r _, _) := value.lams.2.spine then
         if let some (.recr _ _ _ _ 1 _ _ _ _ _) := p.decl? r then out := out.push c
   return out
-
-/-- Follow `csimp` redirects from `cur` for at most `fuel` steps; `false` if
-the chain revisits `start` or runs out (structural on the fuel). -/
-def csimpChainF (resolve : NatMap Resolve) (start : CId) : Nat → CId → Bool
-  | 0, _ => false
-  | fuel + 1, cur =>
-    match resolve.get? cur with
-    | some (.csimp g _ _) => if g == start then false else csimpChainF resolve start fuel g
-    | _ => true
-
-/-- Follow `csimp` redirects; `false` if a chain revisits a constant (`n`:
-the program size, a bound on any acyclic chain). -/
-def csimpAcyclic (resolve : NatMap Resolve) (n : Nat) (start : CId) : Bool :=
-  csimpChainF resolve start (n + 1) start
 
 def build (cfg : Config) (p : Program) (hints : Array Proposal) :
     Table × Array Diag × Stats := Id.run do

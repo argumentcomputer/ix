@@ -11,6 +11,14 @@ namespace Compilatrix.Src.Table
 
 open Compilatrix.Ixon
 
+structure Config where
+  /-- The primitive operations with native lowering (§3.4); others resolve
+  through their `eqn` entry or kernel body. -/
+  prims : List PrimOp := PrimOp.all
+  /-- Node cap for `inline` entries. -/
+  inlineCap : Nat := 256
+  deriving Inhabited
+
 /-- `param 0 … param (n-1)`. -/
 def paramUnivs (n : Nat) : List Univ := (List.range n).map fun i => .var i.toUInt64
 
@@ -124,6 +132,20 @@ def checkCsimp (p : Program) (f g thm : CId) : Except String Resolve := do
     else throw "csimp: the right side is not @g"
   | _ => throw "csimp: the right side is not a constant"
 
+/-- Follow `csimp` redirects from `cur` for at most `fuel` steps; `false` if
+the chain revisits `start` or runs out (structural on the fuel). -/
+def csimpChainF (resolve : NatMap Resolve) (start : CId) : Nat → CId → Bool
+  | 0, _ => false
+  | fuel + 1, cur =>
+    match resolve.get? cur with
+    | some (.csimp g _ _) => if g == start then false else csimpChainF resolve start fuel g
+    | _ => true
+
+/-- Follow `csimp` redirects; `false` if a chain revisits a constant (`n`:
+the program size, a bound on any acyclic chain). -/
+def csimpAcyclic (resolve : NatMap Resolve) (n : Nat) (start : CId) : Bool :=
+  csimpChainF resolve start (n + 1) start
+
 /-! ## `case` -/
 
 /-- IH count of a recursor rule: its `rhs` is `λ ps motives minors fields.
@@ -209,7 +231,8 @@ types, by the operation's arity and result. -/
 def checkPrim (p : Program) (f : CId) (op : PrimOp) (enabled : List PrimOp) :
     Except String Unit := do
   unless enabled.contains op do throw s!"prim: {op.name} is not in the configured set"
-  unless Pinned.primAddr op == p.addr f do throw "prim: the address is not the pinned one"
+  unless Pinned.addrNat (p.addr f) == Pinned.primPin op do
+    throw "prim: the address is not the pinned one"
   let some natId := p.known.nat | throw "prim: Nat is absent"
   let nat := Term.const natId []
   let result ← if op.isPredicate then
