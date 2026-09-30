@@ -205,6 +205,7 @@ import Compilatrix.X86.Layout.Tunnel
 import Compilatrix.X86.Layout.Order
 import Compilatrix.X86.Layout.Linearize
 import Compilatrix.Backend
+import Compilatrix.Rt.Backend
 import Compilatrix.Aiur
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src

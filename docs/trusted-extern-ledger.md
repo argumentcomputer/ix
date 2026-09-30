@@ -318,6 +318,26 @@ sentinels in the callee-saved registers, and prints `rax:rdx` and whether
 the sentinels and `rsp` survived. It is integrity-pinned test code; no
 production path depends on it.
 
+The runtime driver of note 04 §6 is
+[`runtime_driver.c`](../fixtures/x86/runtime_driver.c) (M1.F6), untrusted
+and integrity-pinned. It links with an object compiled from `Rt.lower`'s
+output, which exports `cx_init` and a SysV wrapper per root, maps a
+private region (`--region`, default 64 MiB) and a separate stack for the
+program (`--stack`, default 8 MiB, above a guard page), and for each input
+calls `cx_init(region, size, stack_budget)` and the root, both on that
+stack with sentinels in the callee-saved registers, printing `rax:rdx` and
+whether the sentinels and `rsp` survived. Its contract: the region is
+private, writable, untouched between `cx_init` and the root's return, and
+disjoint from `.rodata` and the stack; `stack_budget` is the stack size less
+4 KiB, which leaves room above the guard page for the wrapper frame and the
+64-byte slack of the largest frameless leaf (so a deep recursion ends in
+status 2, not a fault). In test mode it decodes the result with a C mirror
+of `Rt.readback` and dumps the object area, and `tests-rt` checks the C
+decoder against `Rt.readback` of the dump. `native_harness.c` stays only as
+`check-x86-object`'s harness for the legacy `callRuntime` fixture (which
+still needs its `compilatrix_rt_allocate` stub) until `Instr.callRuntime`
+retires.
+
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal
 to the original decoder and stream checker on all inputs. Production

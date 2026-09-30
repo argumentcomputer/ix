@@ -302,13 +302,35 @@
    "imports":
    ["CompilatrixTests.Rt.Differential",
     "CompilatrixTests.Rt.Cases",
-    "CompilatrixTests.Rt.Mutants"]},
+    "CompilatrixTests.Rt.Mutants",
+    "CompilatrixTests.Rt.Levels"]},
+  "CompilatrixTests.Rt.Native":
+  {"path": "CompilatrixTests/Rt/Native.lean",
+   "imports": ["CompilatrixTests.Rt.Support"]},
   "CompilatrixTests.Rt.Mutants":
   {"path": "CompilatrixTests/Rt/Mutants.lean",
    "imports": ["CompilatrixTests.Rt.Cases"]},
   "CompilatrixTests.Rt.Main":
   {"path": "CompilatrixTests/Rt/Main.lean",
    "imports": ["CompilatrixTests.Rt.Run"]},
+  "CompilatrixTests.Rt.Machine":
+  {"path": "CompilatrixTests/Rt/Machine.lean",
+   "imports":
+   ["CompilatrixTests.Rt.Support",
+    "CompilatrixTests.Backend.Support",
+    "Compilatrix.Rt.Backend",
+    "Compilatrix.Xv.Select.Driver",
+    "Compilatrix.Xv.Alloc.Driver",
+    "Compilatrix.Xv.Semantics",
+    "Compilatrix.Xv.XlSemantics"]},
+  "CompilatrixTests.Rt.Levels":
+  {"path": "CompilatrixTests/Rt/Levels.lean",
+   "imports":
+   ["CompilatrixTests.Rt.Machine",
+    "CompilatrixTests.Rt.Native",
+    "CompilatrixTests.Rt.Differential",
+    "CompilatrixTests.Rt.Cases",
+    "Compilatrix.Tools.Check"]},
   "CompilatrixTests.Rt.Differential":
   {"path": "CompilatrixTests/Rt/Differential.lean",
    "imports":
@@ -1509,6 +1531,9 @@
     "Compilatrix.Rt.Procs.Nat"]},
   "Compilatrix.Rt.Layout":
   {"path": "Compilatrix/Rt/Layout.lean", "imports": ["Compilatrix.Lir.Syntax"]},
+  "Compilatrix.Rt.Backend":
+  {"path": "Compilatrix/Rt/Backend.lean",
+   "imports": ["Compilatrix.Rt.Lower", "Compilatrix.Backend"]},
   "Compilatrix.Own.WellFormed":
   {"path": "Compilatrix/Own/WellFormed.lean",
    "imports": ["Compilatrix.Own.Immortal", "Compilatrix.Fir.WellFormed"]},
@@ -2356,6 +2381,7 @@
     "Compilatrix.X86.Layout.Order",
     "Compilatrix.X86.Layout.Linearize",
     "Compilatrix.Backend",
+    "Compilatrix.Rt.Backend",
     "Compilatrix.Aiur"]},
   "CheckX86Streams":
   {"path": "scripts/CheckX86Streams.lean",
