@@ -212,9 +212,19 @@ theorem liftN_of_looseBound_le {n : Nat} : ∀ {e : AExpr β} {k : Nat},
     simp only [looseBound] at h
     simp [liftN, liftN_of_looseBound_le h]
 
-/-- `liftN`, stopping at subterms bounded by the cutoff. -/
+theorem liftN_count_zero : ∀ (e : AExpr β) (k : Nat), e.liftN 0 k = e
+  | .bvar i, k => by simp only [liftN, liftVar]; split <;> simp
+  | .sort _, _ | .const _ _, _ | .natLit _ _, _ => rfl
+  | .app f a, k => by simp [liftN, liftN_count_zero f, liftN_count_zero a]
+  | .lam p a b, k | .forallE p a b, k => by
+    simp [liftN, liftN_count_zero a, liftN_count_zero b]
+  | .letE t v b, k => by simp [liftN, liftN_count_zero t, liftN_count_zero v, liftN_count_zero b]
+  | .proj r i e, k => by simp [liftN, liftN_count_zero e]
+
+/-- `liftN`, stopping at subterms bounded by the cutoff (and at once for a
+lift by zero). -/
 def liftNFast (count : Nat) (e : AExpr β) (cutoff : Nat := 0) : AExpr β :=
-  if e.looseBound ≤ cutoff then e else
+  if count = 0 ∨ e.looseBound ≤ cutoff then e else
   match e with
   | .bvar i => .bvar (liftVar count i cutoff)
   | .sort l => .sort l
@@ -233,23 +243,23 @@ theorem liftNFast_eq (count : Nat) : ∀ (e : AExpr β) (cutoff : Nat),
   induction e with
   | bvar _ | sort _ | const _ _ | natLit _ _ =>
     intro k; unfold liftNFast; split
-    · exact (liftN_of_looseBound_le ‹_›).symm
+    · rename_i h; exact (h.elim (fun h0 => h0 ▸ liftN_count_zero _ _) liftN_of_looseBound_le).symm
     · rfl
   | app f a hf ha =>
     intro k; unfold liftNFast; split
-    · exact (liftN_of_looseBound_le ‹_›).symm
+    · rename_i h; exact (h.elim (fun h0 => h0 ▸ liftN_count_zero _ _) liftN_of_looseBound_le).symm
     · simp [liftN, hf, ha]
   | lam p a b ha hb | forallE p a b ha hb =>
     intro k; unfold liftNFast; split
-    · exact (liftN_of_looseBound_le ‹_›).symm
+    · rename_i h; exact (h.elim (fun h0 => h0 ▸ liftN_count_zero _ _) liftN_of_looseBound_le).symm
     · simp [liftN, ha, hb]
   | letE t v b ht hv hb =>
     intro k; unfold liftNFast; split
-    · exact (liftN_of_looseBound_le ‹_›).symm
+    · rename_i h; exact (h.elim (fun h0 => h0 ▸ liftN_count_zero _ _) liftN_of_looseBound_le).symm
     · simp [liftN, ht, hv, hb]
   | proj r i e he =>
     intro k; unfold liftNFast; split
-    · exact (liftN_of_looseBound_le ‹_›).symm
+    · rename_i h; exact (h.elim (fun h0 => h0 ▸ liftN_count_zero _ _) liftN_of_looseBound_le).symm
     · simp [liftN, he]
 
 @[csimp] theorem liftN_eq_liftNFast : @liftN = @liftNFast := by
