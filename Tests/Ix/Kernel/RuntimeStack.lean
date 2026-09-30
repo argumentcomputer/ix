@@ -3,14 +3,16 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Kernel.Runtime.Expr
+import Ix.Kernel.Runtime.Stack
 
 /-! # Runtime terms with free variables as levels (S1, phase 1)
 
 Opening a binder substitutes a level without shifting it, closing reads
 levels back as indices, and abstraction inverts opening. The `rfl` checks
 require `inst1` to return an arbitrary bvar-closed replacement as it is,
-including under binders, where `AExpr.inst` would lift it. -/
+including under binders, where `AExpr.inst` would lift it. Stamps stay valid
+under deeper pushes and die at a pop below their depth, including when a
+sibling binder of the same type is pushed in its place. -/
 
 open Ix.Kernel Ix.Kernel.Model Ix.Kernel.Runtime
 
@@ -53,5 +55,28 @@ example (replacement : RExpr β) (condition : Certified.PropWhen) :
 -- Pointer-first equality agrees with structural equality.
 #guard (RExpr.app (.fvar 1) (.bvar 0) : RExpr Nat) = .app (.fvar 1) (.bvar 0)
 #guard (RExpr.app (.fvar 1) (.bvar 0) : RExpr Nat) ≠ .app (.bvar 1) (.bvar 0)
+
+/-! ## The stack -/
+
+def s0 : Stack Nat := .empty
+def s1 : Stack Nat := s0.push (.sort .zero)
+def s2 : Stack Nat := s1.push (.fvar 0)
+
+-- Entries are read at their own depth and lifted by `Context.push`.
+#guard s2.view = [.bvar 1, .sort .zero]
+#guard s2.fvarType? 1 = some (.fvar 0)
+
+#guard s2.stamp.valid s2
+-- Deeper stacks extending the prefix keep the stamp.
+#guard s2.stamp.valid (s2.push (.fvar 1))
+#guard s2.stamp.valid ((s2.push (.fvar 1)).pop)
+-- A pop below the stamp's depth invalidates it, and so does a sibling binder,
+-- even of the same type: only weakening is licensed.
+#guard !(s2.stamp.valid s2.pop)
+#guard !(s2.stamp.valid (s2.pop.push (.fvar 0)))
+-- The level below survives the sibling.
+#guard s1.stamp.valid (s2.pop.push (.fvar 0))
+#guard !(s1.stamp.valid (s2.pop.pop.push (.sort .zero)))
+#guard s0.stamp.valid s2.pop.pop
 
 end Tests.Ix.Kernel.RuntimeStack
