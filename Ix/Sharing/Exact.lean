@@ -94,6 +94,48 @@ def fixedConstantBytes (c : Constant) : Except SharingError Nat := do
   let size := (serConstant { c with info, sharing := #[] }).size
   return size - roots.size - tag0Size 0
 
+/-- Size profile of a Constant's sharing problem, without running the search
+(for corpus measurements). All byte counts are variable bytes: roots, table
+count and table bodies. -/
+structure SharingProfile where
+  /-- Distinct subterms of the expanded roots (`N`). -/
+  distinctSubterms : Nat
+  /-- Subterms with at least two logical occurrences. -/
+  repeated : Nat
+  /-- Search candidates after R1 and R2. -/
+  candidates : Nat
+  /-- Height of the expanded DAG. -/
+  height : Nat
+  /-- Variable bytes of the unshared encoding. -/
+  unsharedBytes : Nat
+  /-- Variable bytes of the input encoding as stored. -/
+  inputBytes : Nat
+  /-- Variable bytes of the old heuristic on the expanded roots, when it runs
+  and its output validates. -/
+  heuristicBytes : Option Nat
+  deriving Repr, Inhabited
+
+/-- Expand `c` and report its sharing-problem profile. -/
+def sharingProfile (c : Constant) (limits : Limits := {}) :
+    Except SharingError SharingProfile := do
+  let roots := constantInfoRoots c.info
+  let ex ← expand limits c.sharing roots true
+  let p := Prep.ofDag ex.dag
+  let occ := occurrences ex.dag ex.roots
+  let unshared := tag0Size 0 + rootsCost p.base ex.roots
+  let heuristic :=
+    if limits.useHeuristicBound && unshared ≤ limits.heuristicMaxUnsharedBytes then
+      heuristicVariableBytes limits ex.dag ex.roots
+    else none
+  return {
+    distinctSubterms := ex.dag.size
+    repeated := (occ.filter (· ≥ 2)).size
+    candidates := (candidateTerms p occ).size
+    height := (nodeHeights ex.dag.nodes).foldl max 0
+    unsharedBytes := unshared
+    inputBytes := tag0Size c.sharing.size + exprsSize c.sharing + exprsSize roots
+    heuristicBytes := heuristic }
+
 /-- Writer of complete candidate Constants for the oracle. -/
 def constantWriter (c : Constant) (sharing roots : Array Ixon.Expr) :
     Except SharingError ByteArray := do

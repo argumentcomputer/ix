@@ -33,21 +33,27 @@ namespace Ix.Sharing.Exact
 
 open Ixon
 
-/-- Oracle work: `(tables, variants)`. -/
-abbrev OracleM := StateT (Nat × Nat) (Except SharingError)
+/-- Oracle work counters. `candidates` counts complete candidates compared
+(one per table for `oracle`, the whole product for `oracleProduct`). -/
+structure OracleWork where
+  tables : Nat := 0
+  variants : Nat := 0
+  candidates : Nat := 0
+  deriving Inhabited, Repr
+
+abbrev OracleM := StateT OracleWork (Except SharingError)
 
 def chargeVariants (limits : Limits) (k : Nat) : OracleM Unit := do
-  let (tables, variants) ← get
-  let variants' := variants + k
-  if variants' > limits.maxOracleVariants then
+  let w ← get
+  if w.variants + k > limits.maxOracleVariants then
     throw (.resourceExhausted .oracleVariants limits.maxOracleVariants)
-  set (tables, variants')
+  set { w with variants := w.variants + k }
 
-def chargeTable (limits : Limits) : OracleM Unit := do
-  let (tables, variants) ← get
-  if tables + 1 > limits.maxOracleTables then
+def chargeTable (limits : Limits) (candidates : Nat) : OracleM Unit := do
+  let w ← get
+  if w.tables + 1 > limits.maxOracleTables then
     throw (.resourceExhausted .oracleTables limits.maxOracleTables)
-  set (tables + 1, variants)
+  set { w with tables := w.tables + 1, candidates := w.candidates + candidates }
 
 /-- Every representation of term `t`: a Share to its entry if available,
 plus the inline node over every combination of child representations. -/
@@ -127,8 +133,7 @@ structure OracleResult where
   table : Array Nat
   sharing : Array Ixon.Expr
   roots : Array Ixon.Expr
-  tables : Nat
-  variants : Nat
+  work : OracleWork
   /-- Distinct byte strings of the per-table winners that attain the minimum
   length, in enumeration order. -/
   minima : Array ByteArray
@@ -146,7 +151,7 @@ def fullKeyLess (bytes : ByteArray) (table : Array Nat) (bytes' : ByteArray)
 def OracleResult.consider (best : Option OracleResult) (bytes : ByteArray)
     (table : Array Nat) (sharing roots : Array Ixon.Expr) : Option OracleResult :=
   match best with
-  | none => some { bytes, table, sharing, roots, tables := 0, variants := 0, minima := #[bytes] }
+  | none => some { bytes, table, sharing, roots, work := {}, minima := #[bytes] }
   | some b =>
     let minima :=
       if bytes.size < b.bytes.size then #[bytes]
@@ -165,7 +170,7 @@ def oracle (dag : Dag) (rootIds : Array Nat)
   let run : OracleM (Option OracleResult) := do
     let mut best : Option OracleResult := none
     for order in orderedSubsets n (List.range n) do
-      chargeTable limits
+      chargeTable limits 1
       let table := order.toArray
       let mut entries : Array Ixon.Expr := #[]
       for h : i in [0:table.size] do
@@ -179,9 +184,9 @@ def oracle (dag : Dag) (rootIds : Array Nat)
       let bytes ← liftM (write entries roots)
       best := OracleResult.consider best bytes table entries roots
     return best
-  let (best, (tables, variants)) ← run.run (0, 0)
+  let (best, work) ← run.run {}
   match best with
-  | some b => return { b with tables, variants }
+  | some b => return { b with work }
   | none => throw (.internal "oracle enumerated no table")
 where
   liftM {α} (x : Except SharingError α) : OracleM α :=
@@ -207,7 +212,7 @@ def oracleProduct (dag : Dag) (rootIds : Array Nat)
   let run : OracleM (Option OracleResult) := do
     let mut best : Option OracleResult := none
     for order in orderedSubsets n (List.range n) do
-      chargeTable limits
+      chargeTable limits 0
       let table := order.toArray
       let mut parts : List (List Ixon.Expr) := []
       for h : i in [0:table.size] do
@@ -217,6 +222,7 @@ def oracleProduct (dag : Dag) (rootIds : Array Nat)
         parts := parts ++ [← variantsOf dag full limits (n + 1) r]
       let count := parts.foldl (fun acc p => acc * p.length) 1
       chargeVariants limits count
+      modify fun w => { w with candidates := w.candidates + count }
       let step (combo : Array Ixon.Expr) (b : Option OracleResult) :
           Except SharingError (Option OracleResult) := do
         let entries := combo.extract 0 table.size
@@ -227,9 +233,9 @@ def oracleProduct (dag : Dag) (rootIds : Array Nat)
         | .ok b => pure b
         | .error e => throw e
     return best
-  let (best, (tables, variants)) ← run.run (0, 0)
+  let (best, work) ← run.run {}
   match best with
-  | some b => return { b with tables, variants }
+  | some b => return { b with work }
   | none => throw (.internal "oracle enumerated no table")
 
 end Ix.Sharing.Exact

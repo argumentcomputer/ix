@@ -146,7 +146,7 @@ def search (inp : SearchInput) (limits : Limits) (upper : Nat) : SearchM Best :=
         let (c, w) := inp.prep.costs (optimisticWidths n cands key) inp.affected
         chargeCost limits w
         pure (rootsCost c inp.roots)
-      if f + tag0Size k + rootLB > incumbent then
+      if limits.prune && f + tag0Size k + rootLB > incumbent then
         modify fun s => { s with statesPruned := s.statesPruned + 1 }
         continue
       modify fun s => { s with statesExpanded := s.statesExpanded + 1 }
@@ -165,7 +165,7 @@ def search (inp : SearchInput) (limits : Limits) (upper : Nat) : SearchM Best :=
         if (width[t]!).isSome then continue
         chargeTransition limits
         let f' := f + cost[t]!
-        if f' + quickRest > incumbent then
+        if limits.prune && f' + quickRest > incumbent then
           modify fun s => { s with transitionsPruned := s.transitionsPruned + 1 }
           continue
         let key' := key.insertSorted t nw

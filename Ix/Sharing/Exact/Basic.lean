@@ -336,6 +336,9 @@ structure Limits where
   /-- Run the heuristic only when the unshared variable length is at most
   this many bytes (bounds its tree walks). -/
   heuristicMaxUnsharedBytes : Nat := 1 <<< 20
+  /-- Lower-bound pruning. Disabling it (for testing) explores every
+  reachable width state; the result must not change. -/
+  prune : Bool := true
   deriving Repr, Inhabited
 
 /-- Nonsemantic work statistics. -/

@@ -243,11 +243,15 @@ structure Expanded where
   deriving Inhabited
 
 /-- Expand `(sharing, roots)` into the canonical DAG of the roots' distinct
-subterms. -/
+subterms. The DAG height (which bounds the nesting depth of every later
+recursive walk, including of the optimizer's output) must not exceed
+`limits.maxDepth`. -/
 def expand (limits : Limits) (sharing roots : Array Ixon.Expr) (allowShare : Bool) :
     Except SharingError Expanded := do
   let ((_, rootTemps), st) ← (ingestTable limits sharing roots allowShare).run {}
   let (dag, rootIds) ← canonicalize st.interner.nodes rootTemps
+  if (nodeHeights dag.nodes).any (· > limits.maxDepth) then
+    throw (.resourceExhausted .depth limits.maxDepth)
   return { dag, roots := rootIds, visits := st.visits,
            internedNodes := st.interner.nodes.size }
 
