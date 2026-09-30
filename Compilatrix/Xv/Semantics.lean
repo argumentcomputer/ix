@@ -13,15 +13,16 @@ and edges whose target label is at most their source label) and a
 selected program runs in lock-step with its source.
 
 **Rows.** An `op` runs its table row through `Op.exec` (`Xv.Slots`) with
-undefined input flags, as typed `X86.Eval` does. Its register operands sit
-in scratch registers for the duration of the row (`assignRegs`): the uses
-are read, the row runs, and the definitions are read back, a tied
-definition from its use's register. A definition's register starts at 0,
-so a well-formed instruction (no narrow write-only register destination,
-`Xv.WellFormed`) never depends on anything but its uses. `fused` runs the
-producer and then the consumer on one core, threading the producer's flags
-into the consumer; `jcc` runs its producer and decides with the `jcc` row's
-own semantics. The context register is `r15`, holding `ctx`.
+undefined input flags, as typed `X86.Eval` does. Each operand position sits
+in its own scratch register for the duration of the row (`Placer`), an
+implicit operand in its fixed register: the uses are read, the row runs,
+and the definitions are read back, a tied definition from its use's
+register. A definition's register starts at 0, so a well-formed
+instruction never depends on anything but its uses, and a fused `setcc`
+definition is zero-extended, as its `xor`-first expansion makes it.
+`fused` runs the producer and then the consumer on one core, threading the
+producer's flags into the consumer; `jcc` runs its producer and decides with
+the `jcc` row's own semantics. The context register is `r15`, holding `ctx`.
 
 **Outcomes** are Lir's: `stuck` for an undefined register, a faulting row
 (denied memory, or a flag the consumer reads left undefined), a missing
@@ -32,38 +33,84 @@ namespace Compilatrix.Xv
 
 open Compilatrix.Lir (VReg Label FunId Word Env Frame State)
 
-/-- Every register operand the bound slots name, tied definitions excluded
-(they share their use's register). -/
-def placeVars (bs : List (Bound VReg)) : List VReg :=
-  bs.flatMap fun
-    | .input _ a => a.regs
-    | .output _ x => [x]
-    | .tied _ a _ => [a]
-    | .memory _ m => m.regs
+/-- Registers for one Xv instruction's operands, handed out as its bound
+operands are visited: `free` scratch registers (the instruction's fixed
+registers excluded), the registers to fill with operand values before the
+rows run, and the definitions to read back after. -/
+structure Placer where
+  free : List X86.GPR
+  loads : List (X86.GPR × VReg) := []
+  reads : List (VReg × X86.GPR) := []
 
-/-- Scratch registers for each distinct operand, in order. -/
-def assignRegs (bs : List (Bound VReg)) : Option (List (VReg × X86.GPR)) :=
-  let vars := dedup (placeVars bs)
-  if vars.length ≤ scratch.length then some (vars.zip scratch) else none
+def Placer.take (p : Placer) : Option (X86.GPR × Placer) :=
+  match p.free with
+  | r :: rs => some (r, { p with free := rs })
+  | [] => none
+
+/-- A fresh register holding the value of `x`. -/
+def Placer.use (p : Placer) (x : VReg) : Option (X86.GPR × Placer) := do
+  let (r, p) ← p.take
+  pure (r, { p with loads := (r, x) :: p.loads })
+
+def Placer.amode (p : Placer) (a : Amode VReg) : Option (X86.MemAddr × Placer) := do
+  let (base, p) ← match a.base with
+    | none => pure (none, p)
+    | some .ctx => pure (some X86.GPR.r15, p)
+    | some (.r b) => do
+        let (r, p) ← p.use b
+        pure (some r, p)
+  let (index, scale, p) ← match a.index with
+    | none => pure (none, X86.Scale.one, p)
+    | some (x, s) => do
+        let (r, p) ← p.use x
+        pure (some (← indexReg r), s, p)
+  pure ({ base, index, scale, displacement := a.disp.toUInt32 }, p)
+
+/-- Place one bound operand: its machine argument (none for an implicit
+register) and the updated placer. -/
+def Placer.bound (p : Placer) : Bound VReg → Option (Option X86.Arg × Placer)
+  | .input _ (.r a) => do
+      let (r, p) ← p.use a
+      pure (some (.reg r), p)
+  | .input _ (.m a) | .memory _ a => do
+      let (m, p) ← p.amode a
+      pure (some (.mem m), p)
+  | .input _ (.i w) => pure (some (.imm w), p)
+  | .output _ x => do
+      let (r, p) ← p.take
+      pure (some (.reg r), { p with reads := (x, r) :: p.reads })
+  | .tied _ a x => do
+      let (r, p) ← p.use a
+      pure (some (.reg r), { p with reads := (x, r) :: p.reads })
+  | .fixedUse i a => pure (none, { p with loads := (i.reg, a) :: p.loads })
+  | .fixedDef i x => pure (none, { p with reads := (x, i.reg) :: p.reads })
+  | .fixedTied i a x => pure (none, { p with loads := (i.reg, a) :: p.loads, reads := (x, i.reg) :: p.reads })
+
+def Placer.bounds (p : Placer) : List (Bound VReg) → Option (List X86.Arg × Placer)
+  | [] => some ([], p)
+  | b :: bs => do
+      let (arg, p) ← p.bound b
+      let (args, p) ← Placer.bounds p bs
+      pure (arg.toList ++ args, p)
 
 /-- Run rows whose slots are bound over virtual registers, on one core: the
-new environment (definitions read back), memory and flags. -/
+new environment (definitions read back, in order), memory and flags. Each
+operand position has its own register, so a register named twice sits in
+two; an implicit operand sits in its fixed register, and two fixed uses of
+one register must agree. A definition's register starts at 0. -/
 def execBound (parts : List (X86.Op × List (Bound VReg))) (ρ : Env) (mem : X86.Memory) (ctx : Word) :
     Option (Env × X86.Memory × X86.ByteEval.Flags) := do
-  let bs := parts.flatMap (·.2)
-  let table ← assignRegs bs
-  let place (x : VReg) : Option X86.GPR := table.lookup x
-  let uses := bs.flatMap Bound.uses
-  let _ ← uses.mapM fun x => ρ[x]?
+  let fixed := parts.flatMap fun (_, bs) => bs.filterMap Bound.fixed?
+  let (margs, p) ← parts.foldlM (init := ([], ({ free := scratch.filter (!fixed.contains ·) } : Placer)))
+    fun (acc, p) (o, bs) => do
+      let (args, p) ← p.bounds bs
+      pure (acc ++ [(o, args)], p)
+  let vals ← p.loads.mapM fun (r, x) => do pure (r, ← ρ[x]?)
+  guard (vals.all fun (r, v) => vals.all fun (r', v') => r != r' || v == v')
   let registers : X86.Registers := fun r =>
-    if r == .r15 then ctx else
-    match table.find? (·.2 == r) with
-    | some (x, _) => if uses.contains x then ρ[x]?.getD 0 else 0
-    | none => 0
-  let margs ← parts.mapM fun (o, bs) => do return (o, ← bs.mapM (Bound.machine place place))
+    if r == .r15 then ctx else ((vals.find? (·.1 == r)).map (·.2)).getD 0
   let (core, flags) ← execRows margs { registers, memory := mem }
-  let ρ' ← (bs.flatMap (Bound.readback place)).foldlM (init := ρ) fun ρ (x, r) => do
-    return ρ.insert x (core.readReg (← r))
+  let ρ' := p.reads.reverse.foldl (fun ρ (x, r) => ρ.insert x (core.readReg r)) ρ
   return (ρ', core.memory, flags)
 
 /-- The row of the zeroing idiom, `xor r32, r32`. -/

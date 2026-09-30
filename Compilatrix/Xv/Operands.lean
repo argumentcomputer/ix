@@ -24,8 +24,11 @@ which operands are read and written.
 - `call`, `ret` and `tail` operands are fixed by the internal convention
   (`Lir.Conv.argCon`, `resultCon`, 05 §6); `move` is `any` to `any`; `zero`
   defines a register.
-- M1.B1's implicit register operands (`div`'s `rax`/`rdx`, a shift's `cl`)
-  will be `fixed`.
+- Implicit register operands (`div`'s `rax`/`rdx`, a shift's `cl`) are
+  `fixed` to their register, uses and definitions alike.
+- A fused `setcc`'s 8-bit destination is an early `reg` definition: its
+  expansion (`xor d32, d32`, then the pair) writes it before the compare
+  reads its uses, so it must not share a location with any of them.
 
 Uses come first, in slot order, then definitions. Edge arguments are
 block-parameter bindings, not operands (as at Lir).
@@ -54,20 +57,28 @@ def boundUses : List (Bound ρ) → List (Operand ρ)
       (match b with
         | .input s (.r a) => [useAt (readCon s) a]
         | .input _ (.m m) | .memory _ m => m.regs.map (useAt .reg)
-        | .input _ (.i _) | .output .. => []
-        | .tied s a _ => [useAt (writeCon s) a]) ++ boundUses bs
+        | .input _ (.i _) | .output .. | .fixedDef .. => []
+        | .tied s a _ => [useAt (writeCon s) a]
+        | .fixedUse i a | .fixedTied i a _ => [useAt (.fixed i.reg) a]) ++ boundUses bs
+
+/-- An early definition: written before the instruction reads its uses. -/
+def earlyDefAt (con : Con) (x : ρ) : Operand ρ := ⟨x, .define, .early, con⟩
 
 /-- Definitions of bound slots; `i` is the position of the first slot's
-first use, for `reuse`. -/
-def boundDefs : Nat → List (Bound ρ) → List (Operand ρ)
+first use, for `reuse`. With `zeroFirst` (a fused `setcc`), a narrow
+register output is an early `reg` definition. -/
+def boundDefs (zeroFirst : Bool := false) : Nat → List (Bound ρ) → List (Operand ρ)
   | _, [] => []
   | i, b :: bs =>
       (match b with
-        | .output s x => [defAt (writeCon s) x]
+        | .output s x =>
+            if zeroFirst && b.narrowOutput then [earlyDefAt .reg x] else [defAt (writeCon s) x]
         | .tied _ _ x => [defAt (.reuse i) x]
-        | _ => []) ++ boundDefs (i + (boundUses [b]).length) bs
+        | .fixedDef j x | .fixedTied j _ x => [defAt (.fixed j.reg) x]
+        | _ => []) ++ boundDefs zeroFirst (i + (boundUses [b]).length) bs
 
-def boundOperands (bs : List (Bound ρ)) : List (Operand ρ) := boundUses bs ++ boundDefs 0 bs
+def boundOperands (bs : List (Bound ρ)) (zeroFirst : Bool := false) : List (Operand ρ) :=
+  boundUses bs ++ boundDefs zeroFirst 0 bs
 
 /-- Positional operands fixed by the convention. -/
 def conUses (con : Nat → Con) (xs : List ρ) : List (Operand ρ) :=
@@ -82,7 +93,7 @@ def Inst.operands : Inst ρ → List (Operand ρ)
   | .op o defs args => ((bindRow o defs args).map boundOperands).getD []
   | .fused p pargs c defs cargs =>
       match bindRow p [] pargs, bindRow c defs cargs with
-      | some pb, some cb => boundOperands (pb ++ cb)
+      | some pb, some cb => boundOperands (pb ++ cb) (zeroFirst := true)
       | _, _ => []
   | .move dst src => [useAt .any src, defAt .any dst]
   | .zero x => [defAt .reg x]

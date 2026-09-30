@@ -32,8 +32,8 @@ entry per slot that the row reads or addresses, and one per written slot
 whose operand is memory; `defs` holds one register per written slot whose
 operand is a register. A read-write slot with a register argument is a tie:
 its argument is a use and its definition the next entry of `defs`. The
-table's implicit register operands (from M1.B1: `div`'s `rax`/`rdx`, a
-shift's `cl`) follow the slots in the same way, fixed to their registers.
+row's implicit register operands (`div`'s `rax`/`rdx`, a shift's `cl`)
+follow the slots in the same way, fixed to their registers.
 -/
 
 namespace Compilatrix.Xv

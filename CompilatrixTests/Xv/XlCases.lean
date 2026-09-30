@@ -116,6 +116,41 @@ def tailer : Func Loc := { params := [r .rdi], results := 1, blocks := #[
 
 #guard values (run (prog #[tailer, inc]) [5]) == some [16]
 
+/-! ## Implicit operands and fused pairs -/
+
+/-- `rdi / rsi` and `rdi % rsi` by `div`: the dividend in `rax`, the high
+half zeroed in `rdx`. -/
+def divide (lo : Loc) (ret : X86.GPR) : LProgram := prog #[{ params := [r .rdi, r .rsi], results := 1, blocks := #[
+  { body := #[.move (r .rax) (r .rdi), .zero (r .rdx),
+      .op (X86.Op.divM .w64) [r .rax, r .rdx] [.r (r .rsi), .r lo, .r (r .rdx)], .move (r .rax) (r ret)]
+    term := .ret [r .rax] }] }]
+
+#guard values (run (divide (r .rax) .rax) [47, 5]) == some [9]
+#guard values (run (divide (r .rax) .rdx) [47, 5]) == some [2]
+/- The dividend must be in `rax`; a zero divisor faults (stuck). -/
+#guard isStuck (run (divide (r .rdi) .rax) [47, 5])
+#guard isStuck (run (divide (r .rax) .rax) [47, 0])
+
+/-- `rax := rdi < rsi` by a fused `cmp`/`setb` into `dst` after writing
+garbage there: the expansion zeroes `dst` first, so it must not alias a use. -/
+def lessThan (dst : X86.GPR) : LProgram := prog #[{ params := [r .rdi, r .rsi], results := 1, blocks := #[
+  { body := #[.op (Select.row .mov .w64 .OI) [r dst] [.i 0xdeadbeefcafe0000],
+      .fused cmpMR [.r (r .rdi), .r (r .rsi)] (X86.Op.setccM .unsignedLt) [r dst] [], .move (r .rax) (r dst)]
+    term := .ret [r .rax] }] }]
+
+#guard values (run (lessThan .rcx) [3, 4]) == some [1]
+#guard values (run (lessThan .rcx) [4, 3]) == some [0]
+#guard isStuck (run (lessThan .rsi) [3, 4])
+
+/-- A shift by `cl`: the count must be in `rcx`. -/
+def shiftBy (count : Loc) : LProgram := prog #[{ params := [r .rdi, r .rsi], results := 1, blocks := #[
+  { body := #[.move (r .rcx) (r .rsi), .move (r .rax) (r .rdi),
+      .op (Select.row .shl .w64 .MC) [r .rax] [.r (r .rax), .r count]]
+    term := .ret [r .rax] }] }]
+
+#guard values (run (shiftBy (r .rcx)) [3, 65]) == some [6]
+#guard isStuck (run (shiftBy (r .rsi)) [3, 65])
+
 /-! ## Lock-step with Xv -/
 
 /-- `Σ i < n, i` at Xv, and a register allocation of it at Xl. -/

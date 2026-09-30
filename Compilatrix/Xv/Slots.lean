@@ -4,26 +4,29 @@ import Compilatrix.X86.Table.Exec
 /-!
 # Row operands and row execution
 
-How an Xv/Xl instruction's `defs` and `args` fill a table row's slots
-(`bindSlots`), and how the row then runs: every row executes through the
-table's `Op.exec`, the one x86 semantics that the typed and byte machines
-also use (05 §3, §8.1).
+How an Xv/Xl instruction's `defs` and `args` fill a table row's slots and
+implicit registers (`bindRow`), and how the row then runs: every row
+executes through the table's `Op.exec`, the one x86 semantics that the
+typed and byte machines also use (05 §3, §8.1).
 
 **Binding.** Slots are filled in order. A read or address slot takes the
 next argument. A read-write slot takes the next argument: a register is a
 tie (a use, and the next definition, which shares its location), a memory
 operand is read and written in place. A write slot takes the next argument
 if it is a memory operand the slot accepts, and otherwise the next
-definition. Both lists must be used up. No row has two memory-capable slots,
-so the layout is unambiguous. (M1.B1's implicit register operands will bind
-after the slots, fixed to their registers.)
+definition. The row's implicit registers (`div`'s `rax`/`rdx`, a shift's
+`cl`) follow, in the table's order and fixed to their registers: one that
+is read takes the next argument, which must be a register; one that is
+written takes the next definition. Both lists must be used up. No row has
+two memory-capable slots, so the layout is unambiguous, and it matches the
+order in which `Op.exec` reads its inputs (slots, then implicit registers).
 
 **Execution.** A row runs on a machine core in which each operand occupies
-a register (`place`): the instruction reads all its uses, runs the row, and
-reads its definitions back from their registers; the tied definition from
-its use's register. Xv chooses the registers (`Xv.assignRegs`); Xl's
-locations are registers already, and stack cells borrow scratch registers
-(`Xv.Xl.execBound`).
+a register: the instruction reads all its uses, runs the row, and reads its
+definitions back; a tied definition from its use's register and an
+implicit one from its fixed register. Xv chooses a register per operand
+position (`Xv.view`); Xl's locations are registers already, and stack cells
+borrow scratch registers (`Xv.Xl.execBound`).
 -/
 
 namespace Compilatrix.Xv
@@ -32,7 +35,7 @@ open Compilatrix.Lir (VReg Word)
 
 variable {ρ : Type}
 
-/-- One slot of a row, filled. -/
+/-- One slot or implicit register of a row, filled. -/
 inductive Bound (ρ : Type) where
   /-- A read or address slot and its argument. -/
   | input (s : X86.Slot) (a : XArg ρ)
@@ -43,39 +46,77 @@ inductive Bound (ρ : Type) where
   | tied (s : X86.Slot) (a x : ρ)
   /-- A written or read-write slot with a memory operand. -/
   | memory (s : X86.Slot) (m : Amode ρ)
+  /-- An implicit register the row reads: the use sits in it. -/
+  | fixedUse (i : X86.Implicit) (a : ρ)
+  /-- An implicit register the row writes: the definition. -/
+  | fixedDef (i : X86.Implicit) (x : ρ)
+  /-- An implicit register the row reads and writes. -/
+  | fixedTied (i : X86.Implicit) (a x : ρ)
   deriving DecidableEq, Repr, Inhabited
 
-def bindSlots : List X86.Slot → List ρ → List (XArg ρ) → Option (List (Bound ρ))
-  | [], [], [] => some []
-  | [], _, _ => none
+/-- Fill slots in order; the definitions and arguments left over. -/
+def bindSlots : List X86.Slot → List ρ → List (XArg ρ) → Option (List (Bound ρ) × List ρ × List (XArg ρ))
+  | [], defs, args => some ([], defs, args)
   | s :: ss, defs, args =>
+      let cons (b : Bound ρ) (defs : List ρ) (args : List (XArg ρ)) :=
+        (fun (bs, rest) => (b :: bs, rest)) <$> bindSlots ss defs args
       match s.role, args, defs with
-      | .read, a :: args, defs | .address, a :: args, defs =>
-          (Bound.input s a :: ·) <$> bindSlots ss defs args
-      | .readWrite, .r a :: args, x :: defs => (Bound.tied s a x :: ·) <$> bindSlots ss defs args
-      | .readWrite, .m m :: args, defs => (Bound.memory s m :: ·) <$> bindSlots ss defs args
+      | .read, a :: args, defs | .address, a :: args, defs => cons (.input s a) defs args
+      | .readWrite, .r a :: args, x :: defs => cons (.tied s a x) defs args
+      | .readWrite, .m m :: args, defs => cons (.memory s m) defs args
       | .write, .m m :: args, defs =>
-          if s.kinds.contains .mem then (Bound.memory s m :: ·) <$> bindSlots ss defs args
+          if s.kinds.contains .mem then cons (.memory s m) defs args
           else match defs with
-            | x :: defs => (Bound.output s x :: ·) <$> bindSlots ss defs (.m m :: args)
+            | x :: defs => cons (.output s x) defs (.m m :: args)
             | [] => none
-      | .write, args, x :: defs => (Bound.output s x :: ·) <$> bindSlots ss defs args
+      | .write, args, x :: defs => cons (.output s x) defs args
       | _, _, _ => none
 
-/-- The slots of row `o` filled with `defs` and `args`. -/
-def bindRow (o : X86.Op) (defs : List ρ) (args : List (XArg ρ)) : Option (List (Bound ρ)) :=
-  bindSlots (X86.desc o).slots defs args
+/-- Fill implicit registers in order; both lists must be used up. -/
+def bindImplicits : List X86.Implicit → List ρ → List (XArg ρ) → Option (List (Bound ρ))
+  | [], [], [] => some []
+  | [], _, _ => none
+  | i :: is, defs, args =>
+      match i.role.reads, i.role.writes, args, defs with
+      | true, true, .r a :: args, x :: defs => (Bound.fixedTied i a x :: ·) <$> bindImplicits is defs args
+      | true, false, .r a :: args, defs => (Bound.fixedUse i a :: ·) <$> bindImplicits is defs args
+      | false, true, args, x :: defs => (Bound.fixedDef i x :: ·) <$> bindImplicits is defs args
+      | _, _, _, _ => none
 
-/-- Operands the bound slots read, in slot order (addresses included). -/
+/-- The slots and implicit registers of row `o` filled with `defs` and
+`args`. -/
+def bindRow (o : X86.Op) (defs : List ρ) (args : List (XArg ρ)) : Option (List (Bound ρ)) := do
+  let (bs, defs, args) ← bindSlots (X86.desc o).slots defs args
+  let is ← bindImplicits (X86.desc o).implicit defs args
+  pure (bs ++ is)
+
+/-- Operands the bound slots read, in order (addresses included). -/
 def Bound.uses : Bound ρ → List ρ
   | .input _ a => a.regs
-  | .output _ _ => []
-  | .tied _ a _ => [a]
+  | .output .. | .fixedDef .. => []
+  | .tied _ a _ | .fixedUse _ a | .fixedTied _ a _ => [a]
   | .memory _ m => m.regs
 
 def Bound.defs : Bound ρ → List ρ
-  | .output _ x | .tied _ _ x => [x]
+  | .output _ x | .tied _ _ x | .fixedDef _ x | .fixedTied _ _ x => [x]
   | _ => []
+
+/-- A slot of the row (implicit registers have no machine argument). -/
+def Bound.isSlot : Bound ρ → Bool
+  | .fixedUse .. | .fixedDef .. | .fixedTied .. => false
+  | _ => true
+
+/-- The register a bound operand is fixed to. -/
+def Bound.fixed? : Bound ρ → Option X86.GPR
+  | .fixedUse i _ | .fixedDef i _ | .fixedTied i _ _ => some i.reg
+  | _ => none
+
+/-- A write-only register destination narrower than 32 bits: the write
+keeps the register's other bits. Only a fused consumer (`setcc`) may have
+one, and its expansion zeroes the register first (an early definition). -/
+def Bound.narrowOutput : Bound ρ → Bool
+  | .output s _ => s.width == .w8 || s.width == .w16
+  | _ => false
 
 /-! ## The machine view -/
 
@@ -102,7 +143,7 @@ def Amode.toMem (place : ρ → Option X86.GPR) (a : Amode ρ) : Option X86.MemA
   pure { base, index, scale, displacement := a.disp.toUInt32 }
 
 /-- A bound slot's machine operand. `addr` places address registers, which
-must be registers even at Xl. -/
+must be registers even at Xl. Implicit registers have none. -/
 def Bound.machine (place addr : ρ → Option X86.GPR) : Bound ρ → Option X86.Arg
   | .input _ (.r x) => .reg <$> place x
   | .input _ (.m a) => .mem <$> a.toMem addr
@@ -110,11 +151,17 @@ def Bound.machine (place addr : ρ → Option X86.GPR) : Bound ρ → Option X86
   | .output _ x => .reg <$> place x
   | .tied _ a _ => .reg <$> place a
   | .memory _ m => .mem <$> m.toMem addr
+  | .fixedUse .. | .fixedDef .. | .fixedTied .. => none
+
+/-- The machine arguments of a row: one per slot. -/
+def slotArgs (place addr : ρ → Option X86.GPR) (bs : List (Bound ρ)) : Option (List X86.Arg) :=
+  (bs.filter Bound.isSlot).mapM (Bound.machine place addr)
 
 /-- Where each definition is read back after the row. -/
 def Bound.readback (place : ρ → Option X86.GPR) : Bound ρ → List (ρ × Option X86.GPR)
   | .output _ x => [(x, place x)]
   | .tied _ a x => [(x, place a)]
+  | .fixedDef i x | .fixedTied i _ x => [(x, some i.reg)]
   | _ => []
 
 /-- The distinct elements of a list, in order of first appearance. -/

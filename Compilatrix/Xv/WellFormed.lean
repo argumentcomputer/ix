@@ -13,14 +13,17 @@ and assumed by the allocator. Validator soundness does not rely on them.
    edges; every block is reachable.
 2. **Rows.** An `op` names a row of `Op.rows` that is linear and has no
    stack effect (`rsp` is never an operand), its `defs` and `args` bind the
-   row's slots, each argument has a kind its slot accepts (register, memory,
-   or an immediate in the slot's canonical form), and no written slot is an
-   8- or 16-bit register destination without a tie (such a write keeps the
-   register's other bits, which are not an operand). A `jcc` producer obeys
-   the same, and a `fused` producer has no definitions.
+   row's slots and implicit registers, each argument has a kind its slot
+   accepts (register, memory, or an immediate in the slot's canonical
+   form), and no written slot is an 8- or 16-bit register destination
+   without a tie (such a write keeps the register's other bits, which are
+   not an operand). A `jcc` producer obeys the same. A `fused` pair is a
+   flags-only producer and a flag consumer, whose narrow destination
+   (`setcc`) is allowed: its expansion zeroes it first.
 3. **Flags** (`Inst.flagsOk`, `Term.flagsOk`): a lone row reads no flags; in
    a fused pair or a `jcc`, the producer reads none and sets every flag the
-   consumer reads (`FusedOk`).
+   consumer reads (`X86.FusedOk`); a fused producer writes nothing but
+   flags (`Op.flagsOnly`) and its consumer is a flag consumer.
 4. **Aliasing basics:** an instruction's definitions are distinct and none
    is also one of its uses.
 5. **SSA:** each register is defined once and each definition dominates its
@@ -37,48 +40,42 @@ open Compilatrix.Lir (VReg Label FunId)
 
 /-! ## Flags -/
 
-/-- The producer sets every flag the consumer reads. -/
-def FusedOk (p c : X86.Op) : Bool :=
-  (X86.desc c).flagsIn.all fun f => (X86.desc p).flagsOut f == .set
-
 def Inst.flagsOk {ρ : Type} : Inst ρ → Bool
   | .op o .. => (X86.desc o).flagsIn.isEmpty
-  | .fused p _ c .. => (X86.desc p).flagsIn.isEmpty && !(X86.desc c).flagsIn.isEmpty && FusedOk p c
+  | .fused p _ c .. => (X86.desc p).flagsIn.isEmpty && !(X86.desc c).flagsIn.isEmpty && X86.FusedOk p c
   | _ => true
 
 def Term.flagsOk {ρ : Type} : Term ρ → Bool
-  | .jcc p _ _ c _ _ => (X86.desc p).flagsIn.isEmpty && FusedOk p (X86.Op.jccRel32 c)
+  | .jcc p _ _ c _ _ => (X86.desc p).flagsIn.isEmpty && X86.FusedOk p (X86.Op.jccRel32 c)
   | _ => true
 
 /-! ## Rows -/
 
-/-- A row that may appear as an Xv `op` or producer: listed, linear, with
-no stack traffic. -/
+/-- A row that may appear as an Xv `op` or producer: listed, linear (not
+control and not a flag consumer), with no stack traffic. -/
 def rowOk (o : X86.Op) : Bool :=
   X86.Op.rows.contains o && o.linear && (X86.desc o).stack == .none
 
-/-- A control row never appears in `op` or `fused`. -/
-def controlRow (o : X86.Op) : Bool :=
-  match o.mn with
-  | .call | .jmp | .jcc _ | .ret => true
-  | _ => false
-
+/-- Each operand has a kind its slot accepts; implicit operands are
+registers by construction. -/
 def Bound.kindOk {ρ : Type} : Bound ρ → Bool
   | .input s (.r _) => s.kinds.contains .reg
   | .input s (.m _) => s.kinds.contains .mem
   | .input s (.i w) => s.kinds.any (·.accepts (.imm w))
-  | .output s _ => s.kinds.contains .reg && (s.width == .w32 || s.width == .w64)
-  | .tied s _ _ => s.kinds.contains .reg
+  | .output s _ | .tied s _ _ => s.kinds.contains .reg
   | .memory s _ => s.kinds.contains .mem
+  | .fixedUse .. | .fixedDef .. | .fixedTied .. => true
 
 def distinct : List VReg → Bool
   | [] => true
   | x :: xs => !xs.contains x && distinct xs
 
-/-- A row's operands bind and fit its slots (condition 2). -/
-def rowArgsOk (o : X86.Op) (defs : List VReg) (args : List (XArg VReg)) : Bool :=
+/-- A row's operands bind and fit its slots (condition 2); a narrow
+write-only register destination only where `narrowOk` (a fused consumer,
+whose expansion zeroes it first). -/
+def rowArgsOk (o : X86.Op) (defs : List VReg) (args : List (XArg VReg)) (narrowOk : Bool := false) : Bool :=
   match bindRow o defs args with
-  | some bs => bs.all Bound.kindOk
+  | some bs => bs.all fun b => b.kindOk && (narrowOk || !b.narrowOutput)
   | none => false
 
 def Bound.protectedStore {ρ : Type} : Bound ρ → Bool
@@ -100,10 +97,10 @@ def Inst.check (i : Inst VReg) : Except String Unit := do
       unless rowArgsOk o defs args do throw s!"operands do not fit row {repr o}"
       unless rowStoresOk o defs args do throw "store may reach the context's entrySp or stackLimit cell"
   | .fused p pargs c defs cargs =>
-      unless rowOk p && X86.Op.rows.contains c && !controlRow c do
-        throw s!"fused rows {repr p}, {repr c} are not allowed"
+      unless rowOk p && p.flagsOnly && X86.Op.rows.contains c && c.consumer do
+        throw s!"fused rows {repr p}, {repr c} are not a flags-only producer and a flag consumer"
       unless rowArgsOk p [] pargs do throw s!"operands do not fit producer {repr p}"
-      unless rowArgsOk c defs cargs do throw s!"operands do not fit consumer {repr c}"
+      unless rowArgsOk c defs cargs (narrowOk := true) do throw s!"operands do not fit consumer {repr c}"
       unless rowStoresOk c defs cargs do throw "store may reach the context's entrySp or stackLimit cell"
   | .move .. | .zero _ | .call .. => pure ()
 

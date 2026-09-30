@@ -28,9 +28,12 @@ instruction does not name; it may be read at any width, since a row's
 results depend only on the low `width` bits of its inputs, but written only
 at width 64, where a register write and an 8-byte memory write agree (a
 narrower definition must be `reg`, `Xv.Operands`). A tied definition must
-sit at its use's location, address registers must be registers, and no
-operand may be `rsp`, `rbp` or the context register `r15` (05 §5); any
-other case is `stuck`, which the validator's constraint checks exclude.
+sit at its use's location, an implicit operand at its fixed register,
+address registers must be registers, and no operand may be `rsp`, `rbp` or
+the context register `r15` (05 §5). A fused `setcc` zeroes its destination
+register first, as its expansion's `xor` does, so that register must not
+hold any of the pair's uses (an early definition). Any other case is
+`stuck`, which the validator's constraint checks exclude.
 -/
 
 namespace Compilatrix.Xv.Xl
@@ -121,23 +124,33 @@ def writeAll (regs : Regs) (fr : Frame) : List Loc → List Word → Option (Reg
       writeAll regs fr ls vs
   | _, _ => none
 
-/-- Whether a bound slot's locations are encodable (see the module note). -/
+/-- Whether a bound operand's locations are encodable (see the module note):
+stack cells only in r/m slots (written only at width 64), ties at their
+use's location, implicit operands at their fixed register. -/
 def Bound.placeable : Bound Loc → Bool
   | .input s (.r l) => !l.isCell || s.kinds.contains .mem
   | .output s l => !l.isCell || (s.kinds.contains .mem && s.width == .w64)
   | .tied s a x => a == x && (!a.isCell || (s.kinds.contains .mem && s.width == .w64))
+  | .fixedUse i a => a == .reg i.reg
+  | .fixedDef i x => x == .reg i.reg
+  | .fixedTied i a x => a == .reg i.reg && x == .reg i.reg
   | _ => true
 
 def Bound.locs : Bound Loc → List Loc
   | .input _ a => a.regs
-  | .output _ x => [x]
-  | .tied _ a x => [a, x]
+  | .output _ x | .fixedDef _ x => [x]
+  | .tied _ a x | .fixedTied _ a x => [a, x]
+  | .fixedUse _ a => [a]
   | .memory _ m => m.regs
 
 /-- Run rows whose slots are bound over locations, on one core: new
-registers, frame, memory and flags. -/
+registers, frame, memory and flags. With `zeroFirst`, the last row's narrow
+register outputs (a fused `setcc`) are zeroed before the rows run, as the
+expansion's `xor` does; each is an early definition, so it must not share a
+location with any use. -/
 def execBound (parts : List (X86.Op × List (Bound Loc))) (regs : Regs) (fr : Frame)
-    (mem : X86.Memory) (ctx : Word) : Option (Regs × Frame × X86.Memory × X86.ByteEval.Flags) := do
+    (mem : X86.Memory) (ctx : Word) (zeroFirst : Bool := false) :
+    Option (Regs × Frame × X86.Memory × X86.ByteEval.Flags) := do
   let bs := parts.flatMap (·.2)
   guard (bs.all Bound.placeable)
   let locs := bs.flatMap Bound.locs
@@ -155,12 +168,19 @@ def execBound (parts : List (X86.Op × List (Bound Loc))) (regs : Regs) (fr : Fr
     | _ => none
   let uses := bs.flatMap Bound.uses
   let _ ← readAll regs fr uses
+  let zeroed : List X86.GPR :=
+    if zeroFirst then
+      ((parts.getLast?.map (·.2)).getD []).filter Bound.narrowOutput |>.flatMap Bound.defs |>.filterMap
+        fun | .reg r => some r | _ => none
+    else []
+  guard (zeroed.all fun r => !uses.contains (.reg r))
   let registers : X86.Registers := fun r =>
     if r == .r15 then ctx else
+    if zeroed.contains r then 0 else
     match table.find? (·.2 == r) with
     | some (l, _) => (read regs fr l).getD 0
     | none => (regs.get r).getD 0
-  let margs ← parts.mapM fun (o, bs) => do return (o, ← bs.mapM (Bound.machine place addr))
+  let margs ← parts.mapM fun (o, bs) => do return (o, ← slotArgs place addr bs)
   let (core, flags) ← execRows margs { registers, memory := mem }
   let (regs', fr') ← (bs.flatMap (Bound.readback place)).foldlM (init := (regs, fr))
     fun (regs, fr) (l, r) => do write regs fr l (core.readReg (← r))
@@ -175,7 +195,7 @@ def execInst (regs : Regs) (fr : Frame) (mem : X86.Memory) (ctx : Word) :
   | .fused p pargs c defs cargs => do
       let pb ← bindRow p [] pargs
       let cb ← bindRow c defs cargs
-      let (regs, fr, mem, _) ← execBound [(p, pb), (c, cb)] regs fr mem ctx
+      let (regs, fr, mem, _) ← execBound [(p, pb), (c, cb)] regs fr mem ctx (zeroFirst := true)
       pure (regs, fr, mem)
   | .move dst src => do
       let (regs, fr) ← write regs fr dst (← read regs fr src)
