@@ -637,12 +637,14 @@
   {"path": "CompilatrixTests/Anf/Run.lean",
    "imports":
    ["CompilatrixTests.Anf.Differential",
-    "Compilatrix.Anf.Shrink",
-    "Compilatrix.Anf.Inline",
-    "Compilatrix.Anf.Specialize"]},
+    "Compilatrix.Anf.Pipeline",
+    "CompilatrixTests.Anf.KernelEval"]},
   "CompilatrixTests.Anf.Main":
   {"path": "CompilatrixTests/Anf/Main.lean",
    "imports": ["CompilatrixTests.Anf.Run"]},
+  "CompilatrixTests.Anf.KernelEval":
+  {"path": "CompilatrixTests/Anf/KernelEval.lean",
+   "imports": ["Compilatrix.Anf.Pipeline"]},
   "CompilatrixTests.Anf.Differential":
   {"path": "CompilatrixTests/Anf/Differential.lean",
    "imports":
@@ -1540,11 +1542,21 @@
   "Compilatrix.Anf.Readback":
   {"path": "Compilatrix/Anf/Readback.lean",
    "imports": ["Compilatrix.Anf.Semantics"]},
+  "Compilatrix.Anf.Prune":
+  {"path": "Compilatrix/Anf/Prune.lean", "imports": ["Compilatrix.Anf.Census"]},
   "Compilatrix.Anf.Props":
   {"path": "Compilatrix/Anf/Props.lean",
    "imports": ["Compilatrix.Anf.Semantics"]},
   "Compilatrix.Anf.Print":
   {"path": "Compilatrix/Anf/Print.lean", "imports": ["Compilatrix.Anf.Syntax"]},
+  "Compilatrix.Anf.Pipeline":
+  {"path": "Compilatrix/Anf/Pipeline.lean",
+   "imports":
+   ["Compilatrix.Anf.Convert",
+    "Compilatrix.Anf.Shrink",
+    "Compilatrix.Anf.Inline",
+    "Compilatrix.Anf.Specialize",
+    "Compilatrix.Anf.Prune"]},
   "Compilatrix.Anf.Opd":
   {"path": "Compilatrix/Anf/Opd.lean", "imports": ["Compilatrix.Anf.Syntax"]},
   "Compilatrix.Anf.Inline":
@@ -1929,6 +1941,8 @@
     "Compilatrix.Anf.Shrink",
     "Compilatrix.Anf.Inline",
     "Compilatrix.Anf.Specialize",
+    "Compilatrix.Anf.Prune",
+    "Compilatrix.Anf.Pipeline",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

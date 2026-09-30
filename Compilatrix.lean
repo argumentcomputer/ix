@@ -88,6 +88,8 @@ import Compilatrix.Anf.Walk
 import Compilatrix.Anf.Shrink
 import Compilatrix.Anf.Inline
 import Compilatrix.Anf.Specialize
+import Compilatrix.Anf.Prune
+import Compilatrix.Anf.Pipeline
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
