@@ -107,7 +107,7 @@ theorem rows_corr {val : α → Word} {g : α → GPR} :
           (fun a ha => hsh a (List.mem_cons_of_mem _ ha))
           (fun a ha => hass a (List.mem_cons_of_mem _ ha))
           (fun a ha => hlast a (by
-            simp only [List.dropLast_cons₂] at ha ⊢
+            simp only [List.dropLast_cons_cons] at ha ⊢
             exact List.mem_cons_of_mem _ ha))
           hmem' (by rw [hr₁, hr₂, hctx])
           (fun q hq => by rw [hr₁]; exact hv₁ q (List.mem_append_right _ hq))

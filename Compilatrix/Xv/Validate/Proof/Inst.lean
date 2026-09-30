@@ -29,6 +29,7 @@ abbrev XlVal (regs : Xl.Regs) (fr : Xl.Frame) : Loc → Option Word := Xl.read r
 
 /-! ## Generic operands -/
 
+set_option linter.unusedSimpArgs false in
 theorem stepOperands_ok {c : Ctx} {a a' : AState} {ops : List (Operand VReg)} {ls : List Loc}
     {row : Bool} (h : stepOperands c a ops ls row = .ok a') :
     ops.length = ls.length ∧ operandCode c (ops.zip ls) row = none ∧
@@ -214,6 +215,7 @@ theorem op_sound {c : Ctx} {a a' : AState} {o : X86.Op} {defs : List VReg} {args
   rw [hbs', Option.bind_some, hxl]
   rfl
 
+set_option linter.unusedSimpArgs false in
 theorem fused_sound {c : Ctx} {a a' : AState} {p q : X86.Op} {defs : List VReg}
     {pargs qargs : List (XArg VReg)} {ls : List Loc} {x : Inst Loc}
     (hv : stepInst c a (.fused p pargs q defs qargs) ls = .ok a')

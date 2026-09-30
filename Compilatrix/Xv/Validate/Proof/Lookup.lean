@@ -27,6 +27,7 @@ def funcCtx (env : Xl.Env) (f : Func VReg) (o : Output) : Ctx :=
 /-- The certificates and parameters `func` checks edges against. -/
 def funcInfo (f : Func VReg) (o : Output) : BlockInfo := blockInfo f.blocks.toList o.blocks
 
+set_option linter.unusedSimpArgs false in
 theorem checkBlocks_ok {c : Ctx} {fi : Nat} {info : BlockInfo} :
     ∀ {bs : List (Block VReg)} {os : List BlockOut} {l : Nat}, checkBlocks c fi info bs os l = .ok () →
       bs.length = os.length ∧ ∀ (k : Nat) b bo, bs[k]? = some b → os[k]? = some bo → checkBlock c info b bo = .ok ()
@@ -53,6 +54,7 @@ structure FuncOk (env : Xl.Env) (f : Func VReg) (o : Output) : Prop where
   blocks : ∀ (L : Nat) b bo, f.blocks[L]? = some b → o.blocks[L]? = some bo →
     checkBlock (funcCtx env f o) (funcInfo f o) b bo = .ok ()
 
+set_option linter.unusedSimpArgs false in
 theorem func_ok {env : Xl.Env} {fi : Nat} {f : Func VReg} {o : Output} (h : func env fi f o = .ok ()) :
     FuncOk env f o := by
   unfold func at h
@@ -78,7 +80,7 @@ theorem func_ok {env : Xl.Env} {fi : Nat} {f : Func VReg} {o : Output} (h : func
       exact hblocks L b bo (by simpa using hb') ho
 
 /-- The block information of a validated function. -/
-theorem blockInfo_find {bs : List (Block VReg)} {os : List BlockOut} (hl : bs.length = os.length)
+theorem blockInfo_find {bs : List (Block VReg)} {os : List BlockOut} (_hl : bs.length = os.length)
     {L : Nat} {b : Block VReg} {bo : BlockOut} (hb : bs[L]? = some b) (ho : os[L]? = some bo) :
     (blockInfo bs os).find? L = some (b.params, AState.ofList bo.cert) := by
   unfold blockInfo
@@ -185,6 +187,7 @@ structure ApplyBlockOk (b : Block VReg) (bo : BlockOut) (bl : Block Loc) : Prop 
   body : ∃ insts left, interleave b.body.toList bo.locs bo.edits 0 = some (insts, left) ∧
     (takeAt b.body.size left).2 = [] ∧ bl.body.toList = insts ++ (takeAt b.body.size left).1.map Edit.toInst
 
+set_option linter.unusedSimpArgs false in
 theorem applyBlock_ok {b : Block VReg} {bo : BlockOut} {bl : Block Loc} (h : applyBlock b bo = .ok bl) :
     ApplyBlockOk b bo bl := by
   unfold applyBlock at h
@@ -290,6 +293,7 @@ theorem mapError_ok {ε ε' α : Type} {f : ε → ε'} {e : Except ε α} {a : 
     e = .ok a := by
   cases e <;> simp_all [Except.mapError]
 
+set_option linter.unusedSimpArgs false in
 theorem checkBlock_ok {c : Ctx} {info : BlockInfo} {b : Block VReg} {bo : BlockOut}
     (h : checkBlock c info b bo = .ok ()) :
     b.params.Nodup ∧ ∃ aEnd left, walkBody c (AState.ofList bo.cert) b.body.toList bo.locs bo.edits 0 =
