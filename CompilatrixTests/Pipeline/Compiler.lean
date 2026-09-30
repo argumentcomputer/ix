@@ -219,4 +219,30 @@ def declines (a : Assert) (t : Tools) : IO (Array String) := do
   expectEq a code 2 "a usage error's exit code"
   return out
 
+/-! ## Reports -/
+
+/-- The command line's parser, its IR dumps, statistics and signatures
+(the parts `compile` prints). -/
+def reports (a : Assert) : IO (Array String) := do
+  let base := ["compile", "c.ixe", "--equations", "e.json", "-o", "o.o"]
+  match Compilatrix.Cli.parse (base ++ ["--root", "A", "--root", "B", "--dump-ir", "all", "--stats"]) with
+  | .ok o => expect a (o.roots == ["A", "B"] && o.dumps == Compilatrix.Cli.dumpLevels && o.stats) "parse"
+  | .error e => expect a false s!"parse: {e}"
+  for bad in [["compile", "c.ixe"], ["compile", "c.ixe", "--equations", "e.json"], ["check-cert", "c.ixe",
+      "--equations", "e.json"], base ++ ["--dump-ir", "asm"], ["frobnicate"], base ++ ["extra"]] do
+    expect a (!(Compilatrix.Cli.parse bad).toBool) s!"parse accepted {bad}"
+  let (_, art) ← compileIn "gcd" (← benchInput "gcd")
+  let mut sizes := #[]
+  for l in Compilatrix.Cli.dumpLevels do
+    let text := Compilatrix.Cli.dump art l
+    expect a (text.length > 20 && !text.startsWith "(no level") s!"--dump-ir {l}: {text.take 80}"
+    sizes := sizes.push s!"{l} {text.length}"
+  let stats := Compilatrix.Cli.statsLines art none
+  expect a (stats.any (·.startsWith "root entry: cx_entry, parameters 2, driver --type n --sig ''"))
+    s!"--stats: {stats}"
+  let sig := Compilatrix.Cli.signaturesJson art
+  expect a (sig.compress == "{\"roots\":[{\"name\":\"entry\",\"params\":2,\"sig\":\"\",\"symbol\":\"cx_entry\",\"type\":\"n\"}]}")
+    s!"--signatures: {sig.compress}"
+  return #[s!"gcd: --dump-ir text sizes {sizes.toList}; {stats.length} --stats lines; signatures {sig.compress}"]
+
 end CompilatrixTests.Pipeline.Compiler

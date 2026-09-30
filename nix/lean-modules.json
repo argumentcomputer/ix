@@ -388,6 +388,10 @@
     "CompilatrixTests.Aiur.RankAIR.Proofs",
     "CompilatrixTests.Sem.Toy.Cases",
     "CompilatrixTests.Fences"]},
+  "CompilatrixTests.Pipeline.Twin":
+  {"path": "CompilatrixTests/Pipeline/Twin.lean",
+   "imports":
+   ["CompilatrixTests.Pipeline.Support", "CompilatrixTests.Support.Rng", "K1"]},
   "CompilatrixTests.Pipeline.Support":
   {"path": "CompilatrixTests/Pipeline/Support.lean",
    "imports":
@@ -400,7 +404,10 @@
   "CompilatrixTests.Pipeline.Run":
   {"path": "CompilatrixTests/Pipeline/Run.lean",
    "imports":
-   ["CompilatrixTests.Pipeline.Compiler", "CompilatrixTests.Pipeline.Mutants"]},
+   ["CompilatrixTests.Pipeline.Compiler",
+    "CompilatrixTests.Pipeline.Mutants",
+    "CompilatrixTests.Pipeline.Levels",
+    "CompilatrixTests.Pipeline.Twin"]},
   "CompilatrixTests.Pipeline.Mutants":
   {"path": "CompilatrixTests/Pipeline/Mutants.lean",
    "imports":
@@ -410,6 +417,13 @@
   "CompilatrixTests.Pipeline.Main":
   {"path": "CompilatrixTests/Pipeline/Main.lean",
    "imports": ["CompilatrixTests.Pipeline.Run"]},
+  "CompilatrixTests.Pipeline.Levels":
+  {"path": "CompilatrixTests/Pipeline/Levels.lean",
+   "imports":
+   ["CompilatrixTests.Pipeline.Support",
+    "CompilatrixTests.Fir.Support",
+    "Compilatrix.Xv.Semantics",
+    "Compilatrix.Xv.XlSemantics"]},
   "CompilatrixTests.Pipeline.Compiler":
   {"path": "CompilatrixTests/Pipeline/Compiler.lean",
    "imports":

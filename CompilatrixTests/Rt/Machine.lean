@@ -64,25 +64,31 @@ structure Machines where
 
 def Machines.initial (size : Nat) : Machines := { typed := { base := machineMem size }, bytes := { base := machineMem size } }
 
-/-- Run one export's wrapper on both machines: its `rax:rdx`, and the
-machines' memories after it. -/
-def runExport (c : Compiled) (symbol : String) (args : List Word) (ms : Machines) (fuel : Nat := 50000000) :
-    Except String (Exit × Machines) := do
+/-- One export's wrapper on the typed machine: its `rax:rdx`, the memory
+after it and the steps taken. -/
+def runExportTyped (c : Compiled) (symbol : String) (args : List Word) (s : Shadow) (fuel : Nat := 50000000) :
+    Except String (Exit × Shadow × Nat) := do
   let some (_, block) := c.artifact.exports.find? (·.1 == symbol) | throw s!"no export {symbol}"
   let checked ← (X86.Program.check { c.artifact.checked.program with entry := block }).mapError
     fun e => s!"typed: the export does not check: {repr e}"
-  let typed := runTyped checked (entryCore ms.typed.memory args) ms.typed fuel
+  let typed := runTyped checked (entryCore s.memory args) s fuel
   let m := typed.machine
   let exitT ← match m.status with
     | .halted st => pure (⟨st, m.core.readReg .rdx⟩ : Exit)
     | s => throw s!"typed: {repr s} after {typed.steps} steps"
   unless m.core.readReg .rsp == sp0 && m.returns.isEmpty do throw "typed: rsp or frames not restored"
   unless sentinels.all (fun (r, v) => m.core.readReg r == v) do throw "typed: a callee-saved register changed"
+  pure (exitT, typed.shadow, typed.steps)
+
+/-- One export's wrapper on the byte machine over the object's own `.text`:
+its `rax:rdx`, the memory after it and the steps taken. -/
+def runExportBytes (c : Compiled) (symbol : String) (args : List Word) (s : Shadow) (fuel : Nat := 50000000) :
+    Except String (Exit × Shadow × Nat) := do
   let some text := X86.ELFRead.text? c.artifact.object | throw "the object has no text"
   let some offset := X86.ELF.symbol? c.artifact.object symbol <|> X86.ELF.entry? c.artifact.object symbol
     | throw s!"the object has no symbol {symbol}"
   let base : Word := 0x400000
-  let bytes := runBytes text base ⟨entryCore ms.bytes.memory args, base + UInt64.ofNat offset, {}⟩ ms.bytes retSentinel fuel
+  let bytes := runBytes text base ⟨entryCore s.memory args, base + UInt64.ofNat offset, {}⟩ s retSentinel fuel
   let exitB ← match bytes.result with
     | .ok st =>
       unless st.rip == retSentinel do throw s!"bytes: stopped at {st.rip} after {bytes.steps} steps"
@@ -90,9 +96,16 @@ def runExport (c : Compiled) (symbol : String) (args : List Word) (ms : Machines
       unless sentinels.all (fun (r, v) => st.core.readReg r == v) do throw "bytes: a callee-saved register changed"
       pure (⟨st.core.readReg .rax, st.core.readReg .rdx⟩ : Exit)
     | .error f => throw s!"bytes: fault {repr f}"
+  pure (exitB, bytes.shadow, bytes.steps)
+
+/-- Run one export's wrapper on both machines: its `rax:rdx`, and the
+machines' memories after it. -/
+def runExport (c : Compiled) (symbol : String) (args : List Word) (ms : Machines) (fuel : Nat := 50000000) :
+    Except String (Exit × Machines) := do
+  let (exitT, typed, typedSteps) ← runExportTyped c symbol args ms.typed fuel
+  let (exitB, bytes, byteSteps) ← runExportBytes c symbol args ms.bytes fuel
   unless exitT == exitB do throw s!"typed {exitT.status}:{exitT.value}, bytes {exitB.status}:{exitB.value}"
-  pure (exitT, { typed := typed.shadow, bytes := bytes.shadow
-                 typedSteps := ms.typedSteps + typed.steps, byteSteps := ms.byteSteps + bytes.steps })
+  pure (exitT, { typed, bytes, typedSteps := ms.typedSteps + typedSteps, byteSteps := ms.byteSteps + byteSteps })
 
 /-- `cx_init` on both machines: status 0 and the free bytes. -/
 def initMachines (c : Compiled) (size : Nat := defaultSize) (budget : Word := defaultBudget) :
