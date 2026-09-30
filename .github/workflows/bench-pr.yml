@@ -118,21 +118,32 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
-      pull-requests: read
+      pull-requests: write
     steps:
       # issue_comment doesn't carry the PR's base/head; this action looks
       # them up.
       - uses: xt0rted/pull-request-comment-branch@v3
         id: comment-branch
-      - name: Dispatch the trusted run
+      # Dispatched on the PR's branch, not the default branch: RunsOn files
+      # each run's sticky-disk snapshot under its ref, so the build lands on
+      # the branch and only reads `main`'s (bench-main's) snapshot. A fork
+      # branch cannot be dispatched, and would write `main`'s otherwise.
+      - name: Dispatch on the PR branch
         env:
           GH_TOKEN: ${{ github.token }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           PR_NUMBER: ${{ github.event.issue.number }}
+          HEAD_REF: ${{ steps.comment-branch.outputs.head_ref }}
         run: |
+          head_repo=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.repo.full_name')
+          if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
+            printf '%s\n' "Benchmarks run on branches of this repository only; \`$head_repo\` is a fork." > comment-body.md
+            gh pr comment "$PR_NUMBER" --body-file comment-body.md
+            exit 1
+          fi
           gh workflow run bench-pr.yml \
             --repo "$GITHUB_REPOSITORY" \
-            --ref "${{ github.event.repository.default_branch }}" \
+            --ref "$HEAD_REF" \
             -f pr="$PR_NUMBER" \
             -f base-sha="${{ steps.comment-branch.outputs.base_sha }}" \
             -f base-ref="${{ steps.comment-branch.outputs.base_ref }}" \
@@ -151,7 +162,10 @@ jobs:
   # available.
   build:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: runs-on=${{ github.run_id }}-build-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    # bench-main's build lineage: its push-to-main runs leave the `main`
+    # snapshot this run falls back to; this run's own snapshot goes to
+    # the PR branch the relay dispatched on.
+    runs-on: runs-on=${{ github.run_id }}-build-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=bench-build-r8i-native:50gb/extras=s3-cache
     outputs:
       revision: ${{ steps.target.outputs.revision }}
       matrix: ${{ steps.parse.outputs.matrix }}
@@ -163,7 +177,6 @@ jobs:
       # rejected; the failure comment quotes it.
       parse-error: ${{ steps.parse.outputs.parse-error }}
     steps:
-      - uses: runs-on/action@v2
       # Comment dispatch requires an org MEMBER/OWNER; manual dispatch requires
       # repo write access. Emit the validated full SHA once for every checkout.
       - name: Validate SHAs
@@ -180,6 +193,16 @@ jobs:
           ref: ${{ steps.target.outputs.revision }}
           # The job builds and runs PR code; never leave the token in .git.
           persist-credentials: false
+      # Lake and cargo artifacts live on the sticky disk; sccache serves the
+      # workspace crates cargo rebuilds after every fresh checkout (see
+      # ci.yml), under entries the native codegen flags keep apart from CI's.
+      - uses: runs-on/action@v2
+        with:
+          sccache: s3
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - id: bins
         uses: actions/cache/restore@v6
         with:
@@ -190,7 +213,7 @@ jobs:
       - if: steps.bins.outputs.cache-hit != 'true'
         uses: ./.github/actions/setup-rust-toolchain
         with:
-          cache-key: ${{ env.BENCH_CACHE }}
+          use-github-cache: "false"
       # A persistent hit still needs the matching toolchain for libleanshared.
       - uses: leanprover/lean-action@v1
         with:
@@ -216,7 +239,7 @@ jobs:
       - if: steps.parse.outputs.fresh == '1' && steps.bins.outputs.cache-hit == 'true'
         uses: ./.github/actions/setup-rust-toolchain
         with:
-          cache-key: ${{ env.BENCH_CACHE }}
+          use-github-cache: "false"
       - name: Log build CPU
         uses: ./.github/actions/log-cpu
         with:
@@ -314,20 +337,25 @@ jobs:
     name: compile-${{ matrix.env }}
     needs: build
     if: needs.build.outputs.envs != '[]'
-    runs-on: runs-on=${{ github.run_id }}-compile-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    # bench-main's per-env compile lineage (see there): this run reads the
+    # env's `main` snapshot and leaves its own on the PR branch.
+    runs-on: runs-on=${{ github.run_id }}-compile-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=bench-compile-${{ matrix.env }}-r8i-native:100gb/extras=s3-cache
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         env: ${{ fromJSON(needs.build.outputs.envs) }}
     steps:
-      - uses: runs-on/action@v2
       - name: Checkout PR
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.build.outputs.revision }}
           # The job runs PR code; never leave the token in .git.
           persist-credentials: false
+      - uses: runs-on/action@v2
+        with:
+          sticky_cache: |
+            custom,path=Benchmarks/Compile/.lake
       # `lake build` below clones this package's Lake dependencies.
       - uses: ./.github/actions/authenticate-github-fetches
       # Apply the allowlisted KEY=VALUE lines from the !benchmark comment,
@@ -473,7 +501,12 @@ jobs:
       HEAD_SHA: ${{ needs.build.outputs.revision }}
       FRESH: ${{ needs.build.outputs.fresh }}
     steps:
+      # sccache for the from-scratch base build below: its workspace crates
+      # are what the base's own bench-main run compiled (see ci.yml).
       - uses: runs-on/action@v2
+        with:
+          sccache: s3
+      - uses: mozilla-actions/sccache-action@v0.0.11
       # The PR is checked out at the workspace root (the local composite
       # actions resolve from there); the base checkout, when needed, goes
       # under base/.

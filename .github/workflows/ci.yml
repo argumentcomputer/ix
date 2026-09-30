@@ -3,6 +3,12 @@ name: CI Jobs
 on:
   pull_request:
   merge_group:
+  # Pushes to main run the same jobs so their sticky disks get a `main`
+  # snapshot: RunsOn files each run's snapshot under its own ref, and a ref
+  # with none falls back to the default branch's. Without this run every
+  # new PR branch and every merge-queue entry starts from an empty disk.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -20,11 +26,17 @@ jobs:
     runs-on: runs-on=${{ github.run_id }}-lean-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
+      # sccache keys rustc outputs by content, so the workspace crates, which
+      # cargo rebuilds after every fresh checkout because their mtimes moved,
+      # come back as cache hits. RunsOn configures it before anything can
+      # start an sccache server.
       - uses: runs-on/action@v2
         with:
+          sccache: s3
           sticky_cache: |
             rust
             custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           codegen: portable
@@ -41,17 +53,24 @@ jobs:
         run: lake lint -- --wfail -v
       - name: Build Ix.Tc formal verification
         run: lake build IxTcVerify
+      # A push to main already passed these checks in the merge queue; that
+      # run only exists to snapshot the build products above.
       - name: Check codegen'd IxVM kernel is up to date
+        if: github.event_name != 'push'
         run: lake exe ix codegen --check
       - name: Check Lean versions match for Ix and compiler bench
+        if: github.event_name != 'push'
         run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
       # The primary test tier runs over the targets the lint step just built,
       # so the tests add no compilation of their own.
       - name: Run primary tests
+        if: github.event_name != 'push'
         run: lake test --wfail
       - name: Test Ix CLI
+        if: github.event_name != 'push'
         run: lake test --wfail -- cli
       - name: Test Ixon v3 contracts and consumers
+        if: github.event_name != 'push'
         run: |
           lake exe ixon-v3-primitives
           lake exe ixon-v3-tests --primitives
@@ -60,11 +79,17 @@ jobs:
     runs-on: runs-on=${{ github.run_id }}-rust-test-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-rust-test-x86-64-v4:50gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
+      # sccache keys rustc outputs by content, so the workspace crates, which
+      # cargo rebuilds after every fresh checkout because their mtimes moved,
+      # come back as cache hits. RunsOn configures it before anything can
+      # start an sccache server.
       - uses: runs-on/action@v2
         with:
+          sccache: s3
           sticky_cache: |
             rust
             custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           codegen: portable
@@ -75,19 +100,30 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
+      # A push to main already passed the lints and tests in the merge
+      # queue; that run only builds, so the sticky disk holds the check,
+      # clippy and test-binary artifacts the next PR run will fingerprint.
       - name: Check Rustfmt code style
+        if: github.event_name != 'push'
         uses: actions-rust-lang/rustfmt@v1
       - name: Check clippy warnings
         run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi -- -D warnings
       - name: Check *everything* compiles
         run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi
       - name: Tests
-        run: cargo nextest run --release --profile ci --workspace
+        run: cargo nextest run --release --profile ci --workspace ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Get Rust version
+        if: github.event_name != 'push'
         run: |
           echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a $GITHUB_ENV
+      # A Docker action: the job's RUSTC_WRAPPER reaches its container, where
+      # sccache is not installed, and cargo fails before deny runs. Deny only
+      # reads metadata, and cargo treats an empty wrapper as none.
       - name: Cargo-deny
+        if: github.event_name != 'push'
         uses: EmbarkStudios/cargo-deny-action@v2
+        env:
+          RUSTC_WRAPPER: ""
         with:
           rust-version: ${{ env.RUST_VERSION }}
 
@@ -104,6 +140,12 @@ jobs:
       # sufficient for this downstream integration gate.
       MULTI_STARK_CUDA_ARCHS: "80"
     steps:
+      # No sccache here yet. Once the GPU benchmark lands after #644, wire
+      # it for both compilers: `sccache: s3` plus the sccache action for
+      # rustc (this job runs in a container, so its S3 credentials via the
+      # instance role need checking first), and an `NVCC` wrapper running
+      # `sccache nvcc` for the kernels, which multi-stark's build script
+      # must compile with `-c` per source for sccache to cache them.
       - uses: runs-on/action@v2
       - uses: actions/checkout@v7
       - name: Install toolchain bootstrap dependencies
