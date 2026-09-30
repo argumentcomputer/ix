@@ -5,12 +5,12 @@ import CompilatrixTests.Src.Relevance.Checker
 per form — constructor parameters (evaluated, kept or unboxed), `casesOn`
 of every kind (ordinary with λ and non-λ minors, subsingleton, empty,
 over-applied), recursors with `Nat.rec` IHs, quotients, wrappers of
-unsaturated heads, the `Decidable ↦ Bool` alias, `lazy` by-name variants
-and a recursor at two universe profiles — each compared with SrcEval
-(readback, traps, timeouts, least clocks) and checked `WellFormed` and
-`ModesOk`; and the named declines (a non-λ minor dispatched by name, an
-unsaturated recursor dispatched by name, a sort-polymorphic projection, a
-string). -/
+unsaturated heads, the `Decidable ↦ Bool` alias, `lazy` by-name variants,
+a recursor at two universe profiles and a projection out of a structure at
+two profiles — each compared with SrcEval (readback, traps, timeouts, least
+clocks) and checked `WellFormed` and `ModesOk`; and the named declines (a
+non-λ minor dispatched by name, an unsaturated recursor dispatched by name,
+a string, an ordinary eliminator with an irrelevant major). -/
 
 namespace CompilatrixTests.Lam.Erase
 
@@ -256,8 +256,15 @@ def run (a : Assert) : IO (Array String) := do
     (lam (.app (lam (appM (.var 0) [motive, (lit 0, .strict), (lams 2 n0, .strict),
         (.var 1, .strict)]))
       (.const b.natRec [.zero]) .strict .rel)) "erase-minor"
-  declined a w "a sort-polymorphic projection"
-    (lam (.proj b.ppair 1 (app (.const b.ppairMk [.succ .zero]) [n0, n0]))) "erase-proj-sortpoly"
+  -- A structure whose first field is a proof exactly at u = 0: one layout
+  -- (□ in that field at u = 0), so a projection needs no profile.
+  let (t1, ep) ← accepted a w "a sort-polymorphic projection"
+    (lam (app (c b.add) [.proj b.ppair 1 (app (.const b.ppairMk [.succ .zero]) [n0, n0]),
+      .proj b.ppair 1 (appM (.const b.ppairMk [.zero]) [(irrArg, .irr), (n0, .strict)])]))
+    natArgs t
+  t := t1
+  expect a (ep.lam.ctors.any fun r => r.key == .src b.ppairMk && r.arity == 2)
+    "one layout for a structure at two profiles"
   declined a w "a string" (lam (.strLit "s")) "erase-string"
   declinedUnchecked a w "casesOn with an irrelevant major (C4)"
     (lam (appM (.const b.natCases [.zero]) [motive, (irrArg, .irr), (lit 1, .byName),

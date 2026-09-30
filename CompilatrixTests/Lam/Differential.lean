@@ -16,14 +16,17 @@ and 3):
   readback, traps and timeouts preserved, least clocks never earlier and
   equal without wrappers;
 * **src-sortpoly**, one root at a time: every root but `typeArg` (rejected by
-  the checker) erases and matches native Lean on 0–20, except `sigmaRoot`,
-  whose `PSigma` projection is declined (`erase-proj-sortpoly`); `unitBoth`
-  makes one global per profile;
+  the checker) erases and matches native Lean on 0–20, `sigmaRoot`'s `PSigma`
+  projection included; `unitBoth` makes one global per profile;
+* the **fallback route** (no `eqn` entries), whose recursors reach run time:
+  `brecOn` through `Nat.rec` with by-name IHs and `PProd` projections,
+  `WellFounded.fix` through `Acc.rec`;
 * **native Lean** (`K1Fixture`) against Lam on the K1 roots, as `tests-src`
   does for SrcEval; the bench-k1 entries at their test sizes
   (`sum-loop` 10⁶ in a child process with a larger stack);
-* `Erase.Input.unbox?` equals `Checked.unbox?` on every inductive at every
-  profile; `WellFormed`, `ModesOk` and erased sizes of every program. -/
+* `Erase.Input.unbox?` equals `Checked.unbox?` on every inductive whose
+  field classes do not depend on the profile, at every profile;
+  `WellFormed`, `ModesOk` and erased sizes of every program. -/
 
 namespace CompilatrixTests.Lam.Differential
 
@@ -54,12 +57,20 @@ def profiles : Nat → List Profile
   | 0 => [[]]
   | n + 1 => (profiles n).flatMap fun p => [true :: p, false :: p]
 
-/-- S3 on lists agrees with the checker's `unbox?`. -/
+/-- S3 on lists agrees with the checker's `unbox?`, on every inductive whose
+field classes do not depend on the profile (the others have one layout at
+every profile, `Erase.Input.layoutClass`). -/
 def unboxAgrees (a : Assert) (e : Erased) (label : String) : IO Nat := do
   let mut n := 0
   for c in List.range e.src.size do
-    let some (.induct _ lvls _ _ _ _) := e.src.decl? c | continue
+    let some (.induct _ lvls _ _ _ ctors) := e.src.decl? c | continue
     if lvls > 3 then continue
+    let conditional := ctors.toList.any fun k => match e.checked.ctorRel? k with
+      | some r => r.fields.any fun
+        | .proof (.allZero (_ :: _)) => true
+        | _ => false
+      | none => false
+    if conditional then continue
     for prof in profiles lvls do
       expect a (e.input.unbox? c prof == e.checked.unbox? e.src c prof)
         s!"{label}: unbox? of {c} at {prof.render}"
@@ -120,13 +131,9 @@ def sortpoly (a : Assert) : IO (Array String) := do
       | .ok l => pure l
       | .error d => throw (IO.userError s!"src-sortpoly {name}: {d}")
     match erase l.program l.checked with
-    | .error msg =>
-      expect a (name == "SortPoly.sigmaRoot" && msg.startsWith "[erase-proj-sortpoly]")
-        s!"src-sortpoly {name}: declined: {msg}"
-      out := out.push s!"{name}: declined {(msg.take 60).toString}…"
+    | .error msg => expect a false s!"src-sortpoly {name}: declined: {msg}"
     | .ok e =>
       checkStatic a e name
-      expect a (name != "SortPoly.sigmaRoot") "sigmaRoot needs the Phase 1 projection decline"
       let some f := CompilatrixTests.Src.SortPoly.native name
         | throw (IO.userError s!"src-sortpoly: no native twin for {name}")
       let some c := l.root? | throw (IO.userError s!"src-sortpoly {name}: no root")
@@ -227,12 +234,10 @@ def leastClocks (a : Assert) : IO (Array String) := do
     out := out.push s!"{name} {args}: least clock {s.getD 0} (SrcEval and Lam)"
   return out
 
-/-- The fallback route (no `eqn` entries): `fib` through `brecOn` (`Nat.rec`
-with IHs) and `ack` through `WellFounded.fix` (`Acc.rec`, a subsingleton
-recursor), as `tests-src` runs them. `brecOn` projects out of `PProd`, whose
-field classes depend on its universe levels, so Phase 1 declines it
-(`erase-proj-sortpoly`, the projection gap of M1.F2b); the rest of the
-route is checked once that gap closes. -/
+/-- The fallback route (no `eqn` entries), as `tests-src` runs it: `fib`
+through `brecOn` (`Nat.rec` with by-name IHs, projections out of `PProd`,
+whose field classes depend on its levels) and `ack` through
+`WellFounded.fix` (`Acc.rec`, a subsingleton recursor). -/
 def fallback (a : Assert) : IO (Array String) := do
   let bytes ← IO.FS.readBinFile (fixtures / "k1/k1.ixe")
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (fixtures / "k1/equations.json")))
@@ -241,22 +246,17 @@ def fallback (a : Assert) : IO (Array String) := do
   let l ← match loadEnv { typecheck := false } env { hints with proposals := #[] } with
     | .ok l => pure l
     | .error d => throw (IO.userError s!"fallback load: {d}")
-  let e ← match Compilatrix.Lam.erase l.program l.checked with
-    | .ok (lam, stats) => pure ({ src := l.program, checked := l.checked
-                                  input := .ofProgram l.program l.checked, lam, stats } : Erased)
-    | .error err =>
-      let pprod := l.program.lookup (Pinned.addr
-        "90ca5bcf995d68d7dfcb3c7cfe466986dc4beaa402b262ca395b3e53c36f6cad")
-      expect a (err.code == "erase-proj-sortpoly" && err.const.isSome && err.const == pprod)
-        s!"fallback: expected the PProd projection decline, got {err}"
-      return #[s!"fallback: declined as expected (PProd projection in brecOn): {err}"]
+  let e ← eraseLoaded l
   checkStatic a e "fallback"
+  expect a (e.lam.globalList.any fun (_, gl) => gl.key matches .recStar ..)
+    "the fallback route has recursors at run time"
   let mut t : Tally := {}
-  for (root, argss) in [("K1.fib", [[0], [1], [2], [7], [15]]), ("K1.ack", [[0, 0], [1, 2], [2, 3]]),
-      ("K1.gcd", [[30, 12], [0, 5]]), ("K1.tak", [[6, 4, 2, 1]]), ("K1.sumLoop", [[0], [20]])] do
+  for (root, argss) in [("K1.fib", [[0], [1], [2], [7], [15]]),
+      ("K1.ack", [[0, 0], [1, 2], [2, 3]]), ("K1.gcd", [[30, 12], [0, 5]]),
+      ("K1.tak", [[6, 4, 2, 1]]), ("K1.sumLoop", [[0], [20]])] do
     let c ← rootNamed l root
     for xs in argss do
-      t ← compareRun a e c xs 100000000 s!"fallback {root}" t
+      t ← compareRun a e c xs 1000000 s!"fallback {root}" t
   return #[s!"fallback (no eqn entries): {sizes e}", s!"  {t.render}"]
 
 def packs (a : Assert) : IO (Array String) := do

@@ -7,11 +7,15 @@ What erasure reads from a checked Src program (design note 02 §2, §5.1),
 built once into persistent `Nat`-keyed maps and lists (D17): the program's
 tables are still arrays and hash maps (M1.K1), so erasure never indexes them
 on its path. Every query decides relevance at a universe profile (D18):
-field classes and recursor kinds at the constructor's or recursor's profile,
-parameter classes at the callee's.
+recursor kinds at the recursor's profile, parameter classes at the
+callee's. Constructor layouts are the exception: a field whose class
+depends on the profile is kept at every profile (`layoutClass`), so each
+constructor has one layout and projections, which carry no universe
+arguments, need none.
 
 `unbox?` is reimplemented here on lists; `tests-lam` checks it equal to
-`Relevance.Checked.unbox?` on every inductive at every profile. -/
+`Relevance.Checked.unbox?` on every inductive whose field classes do not
+depend on the profile, at every profile. -/
 
 namespace Compilatrix.Lam.Erase
 
@@ -82,7 +86,19 @@ def params (c : CId) : List Rel := ((I.consts.get? c).map (·.params)).getD []
 (a missing class reads as relevant). -/
 def paramIrr (c : CId) (q : Profile) (i : Nat) : Bool := ((I.params c).getD i .rel).irrP q
 
-def fields? (k : CId) : Option (List FieldClass) := I.ctorFields.get? k
+/-- A field class for a constructor's **layout**: a class that depends on the
+profile (a proof only where some universe parameters are zero) is kept, so
+a constructor has one layout at every profile. Where such a field is a proof,
+the construction site passes an irrelevant argument (S2) and Lam stores □
+in its slot, as box-passing does for arguments. `CtorKey.src c` therefore
+has one kept-field arity, and a projection needs no profile (`proj S i e`
+carries none). -/
+def layoutClass : FieldClass → FieldClass
+  | .proof (.allZero (_ :: _)) => .keep
+  | c => c
+
+/-- Field classes of constructor `k`, for its layout. -/
+def fields? (k : CId) : Option (List FieldClass) := (I.ctorFields.get? k).map (·.map layoutClass)
 
 /-- Field `i` of constructor `k` is kept at profile `q` (unannotated: kept). -/
 def kept (k : CId) (q : Profile) (i : Nat) : Bool :=

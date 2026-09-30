@@ -36,7 +36,7 @@ open Compilatrix.Src Compilatrix.Src.Relevance
 /-- A named decline. -/
 structure EraseError where
   /-- `erase-const-kind`, `erase-string`, `erase-mode`, `erase-minor` (S25),
-  `erase-lazy`, `erase-proj`, `erase-proj-sortpoly`, `erase-ctor-layout`,
+  `erase-lazy`, `erase-proj`, `erase-ctor-layout`,
   `erase-C2`, `erase-C4`, `erase-S2`, `erase-scope`, `erase-recursor`, `erase-root`,
   `erase-record`, `erase-fuel`, `erase-budget`. -/
   code : String
@@ -493,21 +493,15 @@ def constSpine (cx : Cx) (c : CId) (us : List Ixon.Univ) (args : List Src.Term.A
     | some d => decline "erase-const-kind" s!"a {d.kindName} in a relevant position" c
     | none => decline "erase-const-kind" "a reference without a declaration" c
 
-/-- A field class that depends on the profile. -/
-def conditional : FieldClass → Bool
-  | .proof (.allZero (_ :: _)) => true
-  | _ => false
-
-/-- `proj S i e`. Projections carry no universe arguments, so a structure
-whose field classes depend on the profile is declined (the M1.F2b gap). A
-dropped field still evaluates `e` (06 S41); an unboxed structure is its
-field; otherwise a keyed projection of the kept rank. -/
+/-- `proj S i e`. A constructor has one layout at every profile (conditional
+field classes are kept, `Input.layoutClass`), so a projection, which carries
+no universe arguments, needs no profile: a field dropped at every profile
+still evaluates `e` (06 S41); an unboxed structure is its field; otherwise a
+keyed projection of the kept rank. -/
 def projForm (cx : Cx) (s i : Nat) (e : Src.Term) : M Term := do
   let e' ← rec cx e
   let [k] := I.ctorsOf s | decline "erase-proj" s!"projection out of {s}, not a structure" s
   let some fields := I.fields? k | decline "erase-record" "a structure without field classes" k
-  if fields.any conditional then
-    decline "erase-proj-sortpoly" s!"projection out of {s}, whose field classes depend on levels" s
   let some cls := fields[i]? | decline "erase-proj" s!"projection of field {i} beyond the fields" s
   if cls.dropP [] then return .letE letC e' .box
   if (I.unbox? s []).isSome then return e'
