@@ -12,7 +12,7 @@ the identity clock map: a Src result is matched by a related Lam result, a
 trap by a trap, a Src timeout at clock `k` by a Lam timeout at `k`; a stuck
 Src run imposes nothing). On first-order values the relation is erasure
 itself (`readback_erase`: the Lam result is `eraseVal` of the Src result),
-and first-order observations agree (`obs_erase`). With runs from a root on
+and first-order observations agree (`vr_obs`). With runs from a root on
 `Nat` arguments as the languages' semantics, erasure refines the checked
 Src program (`erase_refines`, through `Refines.of_sim`) (M2.2). -/
 
