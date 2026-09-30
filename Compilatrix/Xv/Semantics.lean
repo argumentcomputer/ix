@@ -93,6 +93,25 @@ def Placer.bounds (p : Placer) : List (Bound VReg) → Option (List X86.Arg × P
       let (args, p) ← Placer.bounds p bs
       pure (arg.toList ++ args, p)
 
+/-- Place one part's operands after the previous parts'. -/
+def placePart (s : List (X86.Op × List X86.Arg) × Placer) (part : X86.Op × List (Bound VReg)) :
+    Option (List (X86.Op × List X86.Arg) × Placer) := do
+  let (args, p) ← s.2.bounds part.2
+  pure (s.1 ++ [(part.1, args)], p)
+
+/-- A loaded register with its operand's value. -/
+def loadValue (ρ : Env) (l : X86.GPR × VReg) : Option (X86.GPR × Word) := do
+  pure (l.1, ← ρ[l.2]?)
+
+/-- The core's registers before a row: the context register, each loaded
+value, and zero elsewhere. -/
+def loadRegisters (ctx : Word) (vals : List (X86.GPR × Word)) : X86.Registers := fun r =>
+  if r == .r15 then ctx else ((vals.find? (·.1 == r)).map (·.2)).getD 0
+
+/-- Read definitions back from their registers, in order. -/
+def readBack (core : X86.Core) (ρ : Env) (reads : List (VReg × X86.GPR)) : Env :=
+  reads.foldl (fun ρ d => ρ.insert d.1 (core.readReg d.2)) ρ
+
 /-- Run rows whose slots are bound over virtual registers, on one core: the
 new environment (definitions read back, in order), memory and flags. Each
 operand position has its own register, so a register named twice sits in
@@ -100,18 +119,13 @@ two; an implicit operand sits in its fixed register, and two fixed uses of
 one register must agree. A definition's register starts at 0. -/
 def execBound (parts : List (X86.Op × List (Bound VReg))) (ρ : Env) (mem : X86.Memory) (ctx : Word) :
     Option (Env × X86.Memory × X86.ByteEval.Flags) := do
-  let fixed := parts.flatMap fun (_, bs) => bs.filterMap Bound.fixed?
+  let fixed := parts.flatMap fun part => part.2.filterMap Bound.fixed?
   let (margs, p) ← parts.foldlM (init := ([], ({ free := scratch.filter (!fixed.contains ·) } : Placer)))
-    fun (acc, p) (o, bs) => do
-      let (args, p) ← p.bounds bs
-      pure (acc ++ [(o, args)], p)
-  let vals ← p.loads.mapM fun (r, x) => do pure (r, ← ρ[x]?)
-  guard (vals.all fun (r, v) => vals.all fun (r', v') => r != r' || v == v')
-  let registers : X86.Registers := fun r =>
-    if r == .r15 then ctx else ((vals.find? (·.1 == r)).map (·.2)).getD 0
-  let (core, flags) ← execRows margs { registers, memory := mem }
-  let ρ' := p.reads.reverse.foldl (fun ρ (x, r) => ρ.insert x (core.readReg r)) ρ
-  return (ρ', core.memory, flags)
+    placePart
+  let vals ← p.loads.mapM (loadValue ρ)
+  guard (vals.all fun v => vals.all fun v' => v.1 != v'.1 || v.2 == v'.2)
+  let (core, flags) ← execRows margs { registers := loadRegisters ctx vals, memory := mem }
+  return (readBack core ρ p.reads.reverse, core.memory, flags)
 
 /-- The row of the zeroing idiom, `xor r32, r32`. -/
 def zeroRow : X86.Op := { mn := .xor, w := .w32, form := .MR }

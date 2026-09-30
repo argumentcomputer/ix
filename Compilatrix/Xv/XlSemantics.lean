@@ -143,6 +143,44 @@ def Bound.locs : Bound Loc → List Loc
   | .fixedUse _ a => [a]
   | .memory _ m => m.regs
 
+/-- A register location's register. -/
+def Loc.reg? : Loc → Option X86.GPR
+  | .reg r => some r
+  | _ => none
+
+/-- Where an operand runs: a register location in itself, a stack cell in
+the scratch register `table` lends it. -/
+def placeIn (table : List (Loc × X86.GPR)) : Loc → Option X86.GPR
+  | .reg r => some r
+  | l => table.lookup l
+
+/-- The last row's narrow register outputs, which `zeroFirst` zeroes. -/
+def zeroedRegs (parts : List (X86.Op × List (Bound Loc))) (zeroFirst : Bool) : List X86.GPR :=
+  if zeroFirst then
+    ((parts.getLast?.map (·.2)).getD []).filter Bound.narrowOutput |>.flatMap Bound.defs |>.filterMap
+      Loc.reg?
+  else []
+
+/-- The core's registers before a row: the context register, the zeroed
+outputs, each lent scratch register holding its cell, and the other
+registers as they are. -/
+def rowRegisters (regs : Regs) (fr : Frame) (ctx : Word) (table : List (Loc × X86.GPR))
+    (zeroed : List X86.GPR) : X86.Registers := fun r =>
+  if r == .r15 then ctx else
+  if zeroed.contains r then 0 else
+  match table.find? (·.2 == r) with
+  | some (l, _) => (read regs fr l).getD 0
+  | none => (regs.get r).getD 0
+
+/-- A part's machine arguments. -/
+def partArgs (place : Loc → Option X86.GPR) (part : X86.Op × List (Bound Loc)) :
+    Option (X86.Op × List X86.Arg) := do
+  return (part.1, ← slotArgs place Loc.reg? part.2)
+
+/-- Write one definition back from the register it ran in. -/
+def writeBack (core : X86.Core) : Regs × Frame → Loc × Option X86.GPR → Option (Regs × Frame)
+  | (regs, fr), (l, r) => do write regs fr l (core.readReg (← r))
+
 /-- Run rows whose slots are bound over locations, on one core: new
 registers, frame, memory and flags. With `zeroFirst`, the last row's narrow
 register outputs (a fused `setcc`) are zeroed before the rows run, as the
@@ -154,36 +192,20 @@ def execBound (parts : List (X86.Op × List (Bound Loc))) (regs : Regs) (fr : Fr
   let bs := parts.flatMap (·.2)
   guard (bs.all Bound.placeable)
   let locs := bs.flatMap Bound.locs
-  let named := locs.filterMap fun | .reg r => some r | _ => none
+  let named := locs.filterMap Loc.reg?
   guard (named.all (!reserved ·))
   let cells := dedup (locs.filter Loc.isCell)
   let free := scratch.filter (!named.contains ·)
   guard (cells.length ≤ free.length)
   let table := cells.zip free
-  let place : Loc → Option X86.GPR
-    | .reg r => some r
-    | l => table.lookup l
-  let addr : Loc → Option X86.GPR
-    | .reg r => some r
-    | _ => none
+  let place := placeIn table
   let uses := bs.flatMap Bound.uses
   let _ ← readAll regs fr uses
-  let zeroed : List X86.GPR :=
-    if zeroFirst then
-      ((parts.getLast?.map (·.2)).getD []).filter Bound.narrowOutput |>.flatMap Bound.defs |>.filterMap
-        fun | .reg r => some r | _ => none
-    else []
+  let zeroed := zeroedRegs parts zeroFirst
   guard (zeroed.all fun r => !uses.contains (.reg r))
-  let registers : X86.Registers := fun r =>
-    if r == .r15 then ctx else
-    if zeroed.contains r then 0 else
-    match table.find? (·.2 == r) with
-    | some (l, _) => (read regs fr l).getD 0
-    | none => (regs.get r).getD 0
-  let margs ← parts.mapM fun (o, bs) => do return (o, ← slotArgs place addr bs)
-  let (core, flags) ← execRows margs { registers, memory := mem }
-  let (regs', fr') ← (bs.flatMap (Bound.readback place)).foldlM (init := (regs, fr))
-    fun (regs, fr) (l, r) => do write regs fr l (core.readReg (← r))
+  let margs ← parts.mapM (partArgs place)
+  let (core, flags) ← execRows margs { registers := rowRegisters regs fr ctx table zeroed, memory := mem }
+  let (regs', fr') ← (bs.flatMap (Bound.readback place)).foldlM (init := (regs, fr)) (writeBack core)
   return (regs', fr', core.memory, flags)
 
 def execInst (regs : Regs) (fr : Frame) (mem : X86.Memory) (ctx : Word) :
