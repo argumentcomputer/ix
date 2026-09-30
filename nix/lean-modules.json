@@ -26,6 +26,8 @@
   {"roots": ["CheckIxonV3Catalog"], "kind": "lean_exe"},
   "check-ixon-v3": {"roots": ["CheckIxonV3"], "kind": "lean_exe"},
   "check-build-graph": {"roots": ["CheckBuildGraph"], "kind": "lean_exe"},
+  "check-backend":
+  {"roots": ["CompilatrixTests.Backend.Main"], "kind": "lean_exe"},
   "check-aiur": {"roots": ["CheckAiur"], "kind": "lean_exe"},
   "census": {"roots": ["Census"], "kind": "lean_exe"},
   "SortPolyFixture": {"roots": ["SortPoly"], "kind": "lean_lib"},
@@ -410,6 +412,12 @@
   {"path": "CompilatrixTests/Fences/IxonV3.lean",
    "imports":
    ["Compilatrix.Ixon.V3.Resource.StateProofs", "Compilatrix.Ixon.V3.Source"]},
+  "CompilatrixTests.Fences.Backend":
+  {"path": "CompilatrixTests/Fences/Backend.lean",
+   "imports":
+   ["Compilatrix.Xv.Stacking.Frame",
+    "Compilatrix.X86.Layout.Tunnel",
+    "Compilatrix.X86.Layout.Linearize"]},
   "CompilatrixTests.Fences.AiurWire":
   {"path": "CompilatrixTests/Fences/AiurWire.lean",
    "imports": ["CompilatrixTests.Aiur.WireProofs"]},
@@ -454,7 +462,46 @@
     "CompilatrixTests.Fences.IxonV3Catalog",
     "CompilatrixTests.Fences.X86",
     "CompilatrixTests.Fences.Lir",
-    "CompilatrixTests.Fences.Xv"]},
+    "CompilatrixTests.Fences.Xv",
+    "CompilatrixTests.Fences.Backend"]},
+  "CompilatrixTests.Backend.Support":
+  {"path": "CompilatrixTests/Backend/Support.lean",
+   "imports":
+   ["Compilatrix.Backend",
+    "Compilatrix.Xv.XlSemantics",
+    "CompilatrixTests.Backend.Machine",
+    "CompilatrixTests.Lir.Region"]},
+  "CompilatrixTests.Backend.SlotAlloc":
+  {"path": "CompilatrixTests/Backend/SlotAlloc.lean",
+   "imports": ["Compilatrix.Xv.Operands", "Compilatrix.Xv.XlSemantics"]},
+  "CompilatrixTests.Backend.Run":
+  {"path": "CompilatrixTests/Backend/Run.lean",
+   "imports":
+   ["CompilatrixTests.Backend.Native",
+    "CompilatrixTests.Backend.Cases",
+    "CompilatrixTests.Backend.SlotAlloc",
+    "CompilatrixTests.Backend.Programs",
+    "CompilatrixTests.Lir.Kernels",
+    "CompilatrixTests.Lir.Gen",
+    "Compilatrix.Xv.Select.Driver",
+    "Compilatrix.Xv.Semantics",
+    "Compilatrix.Lir.SplitEdges",
+    "Compilatrix.Lir.WellFormed"]},
+  "CompilatrixTests.Backend.Programs":
+  {"path": "CompilatrixTests/Backend/Programs.lean",
+   "imports": ["Compilatrix.Xv.XlSemantics"]},
+  "CompilatrixTests.Backend.Native":
+  {"path": "CompilatrixTests/Backend/Native.lean",
+   "imports": ["CompilatrixTests.Backend.Support"]},
+  "CompilatrixTests.Backend.Main":
+  {"path": "CompilatrixTests/Backend/Main.lean",
+   "imports": ["CompilatrixTests.Backend.Run"]},
+  "CompilatrixTests.Backend.Machine":
+  {"path": "CompilatrixTests/Backend/Machine.lean",
+   "imports": ["Compilatrix.X86.Eval", "Compilatrix.X86.ByteEval"]},
+  "CompilatrixTests.Backend.Cases":
+  {"path": "CompilatrixTests/Backend/Cases.lean",
+   "imports": ["Compilatrix.Backend", "CompilatrixTests.Backend.Programs"]},
   "CompilatrixTests.Aiur.WireRun":
   {"path": "CompilatrixTests/Aiur/WireRun.lean",
    "imports": ["CompilatrixTests.Aiur.WireFixtures"]},
@@ -587,6 +634,7 @@
     "CompilatrixTests.Lir.Run",
     "CompilatrixTests.Xv.Run",
     "CompilatrixTests.Xv.Alloc.Run",
+    "CompilatrixTests.Backend.Run",
     "CompilatrixTests.Src.Run",
     "CompilatrixTests.Src.Relevance.Run"]},
   "Compilatrix.Xv.XlSemantics":
@@ -609,6 +657,22 @@
   "Compilatrix.Xv.Syntax":
   {"path": "Compilatrix/Xv/Syntax.lean",
    "imports": ["Compilatrix.Lir.Syntax", "Compilatrix.X86.Table.Rows"]},
+  "Compilatrix.Xv.Stacking.Wrapper":
+  {"path": "Compilatrix/Xv/Stacking/Wrapper.lean",
+   "imports": ["Compilatrix.Xv.Stacking.Emit"]},
+  "Compilatrix.Xv.Stacking.Run":
+  {"path": "Compilatrix/Xv/Stacking/Run.lean",
+   "imports":
+   ["Compilatrix.Xv.Stacking.Wrapper", "Compilatrix.X86.Layout.Basic"]},
+  "Compilatrix.Xv.Stacking.Frame":
+  {"path": "Compilatrix/Xv/Stacking/Frame.lean",
+   "imports": ["Compilatrix.Xv.XlSemantics"]},
+  "Compilatrix.Xv.Stacking.Emit":
+  {"path": "Compilatrix/Xv/Stacking/Emit.lean",
+   "imports":
+   ["Compilatrix.Xv.Stacking.Frame",
+    "Compilatrix.Xv.Semantics",
+    "Compilatrix.X86.Basic"]},
   "Compilatrix.Xv.Slots":
   {"path": "Compilatrix/Xv/Slots.lean",
    "imports": ["Compilatrix.Xv.Syntax", "Compilatrix.X86.Table.Exec"]},
@@ -792,6 +856,18 @@
    "imports": ["Compilatrix.X86.ELFLink"]},
   "Compilatrix.X86.Memory":
   {"path": "Compilatrix/X86/Memory.lean", "imports": ["Compilatrix.X86.Eval"]},
+  "Compilatrix.X86.Layout.Tunnel":
+  {"path": "Compilatrix/X86/Layout/Tunnel.lean",
+   "imports": ["Compilatrix.X86.Layout.Basic", "Compilatrix.X86.Eval"]},
+  "Compilatrix.X86.Layout.Order":
+  {"path": "Compilatrix/X86/Layout/Order.lean",
+   "imports": ["Compilatrix.X86.Layout.Basic"]},
+  "Compilatrix.X86.Layout.Linearize":
+  {"path": "Compilatrix/X86/Layout/Linearize.lean",
+   "imports": ["Compilatrix.X86.Layout.Order", "Compilatrix.X86.Eval"]},
+  "Compilatrix.X86.Layout.Basic":
+  {"path": "Compilatrix/X86/Layout/Basic.lean",
+   "imports": ["Compilatrix.X86.Basic"]},
   "Compilatrix.X86.FrameExecution":
   {"path": "Compilatrix/X86/FrameExecution.lean",
    "imports": ["Compilatrix.X86.Execution"]},
@@ -1221,6 +1297,15 @@
   "Compilatrix.IxIR.Bounded":
   {"path": "Compilatrix/IxIR/Bounded.lean",
    "imports": ["Compilatrix.IxIR.Decode"]},
+  "Compilatrix.Backend":
+  {"path": "Compilatrix/Backend.lean",
+   "imports":
+   ["Compilatrix.Xv.Select.Driver",
+    "Compilatrix.Xv.Stacking.Run",
+    "Compilatrix.X86.Layout.Tunnel",
+    "Compilatrix.X86.Layout.Linearize",
+    "Compilatrix.X86.StreamValidate",
+    "Compilatrix.X86.ELFValidate"]},
   "Compilatrix.Aiur.Wire.TreeProofs":
   {"path": "Compilatrix/Aiur/Wire/TreeProofs.lean",
    "imports": ["Compilatrix.Aiur.Wire.Tree", "Compilatrix.Aiur.Wire.OpProofs"]},
@@ -1543,6 +1628,10 @@
     "Compilatrix.Xv.Alloc.LinearScan",
     "Compilatrix.Xv.Alloc.AllSlots",
     "Compilatrix.Xv.Alloc.Driver",
+    "Compilatrix.Xv.Stacking.Frame",
+    "Compilatrix.Xv.Stacking.Emit",
+    "Compilatrix.Xv.Stacking.Wrapper",
+    "Compilatrix.Xv.Stacking.Run",
     "Compilatrix.Src.Syntax",
     "Compilatrix.Src.Ingress",
     "Compilatrix.Src.Pinned",
@@ -1624,6 +1713,11 @@
     "Compilatrix.X86.WordRegionSafeMacros",
     "Compilatrix.X86.WordRegionSafeTrace",
     "Compilatrix.X86.Width",
+    "Compilatrix.X86.Layout.Basic",
+    "Compilatrix.X86.Layout.Tunnel",
+    "Compilatrix.X86.Layout.Order",
+    "Compilatrix.X86.Layout.Linearize",
+    "Compilatrix.Backend",
     "Compilatrix.Aiur"]},
   "CheckX86Streams":
   {"path": "scripts/CheckX86Streams.lean",

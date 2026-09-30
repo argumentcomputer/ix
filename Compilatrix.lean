@@ -36,6 +36,10 @@ import Compilatrix.Xv.Alloc.State
 import Compilatrix.Xv.Alloc.LinearScan
 import Compilatrix.Xv.Alloc.AllSlots
 import Compilatrix.Xv.Alloc.Driver
+import Compilatrix.Xv.Stacking.Frame
+import Compilatrix.Xv.Stacking.Emit
+import Compilatrix.Xv.Stacking.Wrapper
+import Compilatrix.Xv.Stacking.Run
 import Compilatrix.Src.Syntax
 import Compilatrix.Src.Ingress
 import Compilatrix.Src.Pinned
@@ -117,15 +121,21 @@ import Compilatrix.X86.WordRegionSafeControl
 import Compilatrix.X86.WordRegionSafeMacros
 import Compilatrix.X86.WordRegionSafeTrace
 import Compilatrix.X86.Width
+import Compilatrix.X86.Layout.Basic
+import Compilatrix.X86.Layout.Tunnel
+import Compilatrix.X86.Layout.Order
+import Compilatrix.X86.Layout.Linearize
+import Compilatrix.Backend
 import Compilatrix.Aiur
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), Lir (the
 backend's first IR), Xv and Xl (x86 instructions over virtual registers and
-over locations) with rule-based selection from Lir and register allocation
-(linear scan, the all-slots fallback and the kernel-evaluable validator), the
-x86 target model with its certified encoder (E1) and stream/ELF layer (E2), and
-the Aiur target. The
+over locations) with rule-based selection from Lir, register allocation
+(linear scan, the all-slots fallback and the kernel-evaluable validator),
+stacking (frames, the SysV export wrapper and the exit group) and block layout
+down to typed x86 (`Backend.emit`), the x86 target model with its certified
+encoder (E1) and stream/ELF layer (E2), and the Aiur target. The
 compiler pipeline is being rebuilt; see `docs/roadmap.md`. The complete
 regression and proof collection is built explicitly through
 `CompilatrixTests.Proofs`. -/

@@ -309,6 +309,15 @@ proof of faithfulness: operand values the generator does not reach and
 flags the model leaves undefined are not compared. The Sail agreement (S2)
 remains the proof route.
 
+The backend gate `check-backend` links each object it emits with
+[`backend_driver.c`](../fixtures/x86/backend_driver.c), an untrusted C
+driver standing in for the runtime driver of note 04 §6: it maps a private
+region (at the Lean test region's address for generated programs), sets up
+the context block as `cx_init` would, calls the exported wrapper with
+sentinels in the callee-saved registers, and prints `rax:rdx` and whether
+the sentinels and `rsp` survived. It is integrity-pinned test code; no
+production path depends on it.
+
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal
 to the original decoder and stream checker on all inputs. Production

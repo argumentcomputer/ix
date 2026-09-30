@@ -84,6 +84,12 @@ and Xv.eval against Xl.eval on every accepted allocation. -/
 lean_exe «check-regalloc» where
   root := `CompilatrixTests.Xv.Alloc.Main
 
+/- Stacking, layout and emission: hand-written Xl, the Lir kernels and
+generated Lir to ELF objects, run on the typed machine, the byte machine
+and (with `--cc`) natively under `fixtures/x86/backend_driver.c`. -/
+lean_exe «check-backend» where
+  root := `CompilatrixTests.Backend.Main
+
 lean_exe «check-aiur» where
   srcDir := "scripts"
   root := `CheckAiur
