@@ -944,7 +944,7 @@
       "nix/build.nix": "19144af14c10247515becb1de7cfc87c27b1ed1f916ce5f60f67a2466ea4e2b0",
       "nix/checks.nix": "0d649c88869de611cd7506c2261c0612652bb2b45716556cc0c50a7d41bc51b9",
       "nix/ci-coverage.json": "3ddf8dffc70dd9118474b8e67118d000ff10a7c427974e9c45f2745f41cb0d26",
-      "nix/lean-modules.json": "3b9f87c0232b3929d40d09ffb0138a6f0e1785bff1b7b85bb69a94790ac5578b",
+      "nix/lean-modules.json": "fc5dae28b7613e6cb0565afc2829915c72655d30f300bf68c310044f621803f5",
       "nix/sources.nix": "247a3ff3bd7588e528005a48aebb53f97aea440181218082462967b3846edb2b",
       "scripts/CheckAiur.lean": "f7d14b79813a3c0702067aa1470e2d706907480a2d236854ee8fdaedd03f353d",
       "scripts/CheckBuildGraph.lean": "1db60bc2996ca295780aaba0078e631f526204f57fa419df50b84aedde1dc5c4",

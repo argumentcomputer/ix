@@ -490,13 +490,21 @@
   "CompilatrixTests.Fir.Run":
   {"path": "CompilatrixTests/Fir/Run.lean",
    "imports":
-   ["CompilatrixTests.Fir.Differential", "CompilatrixTests.Fir.Rules"]},
+   ["CompilatrixTests.Fir.Differential",
+    "CompilatrixTests.Fir.Rules",
+    "CompilatrixTests.Fir.Gen"]},
   "CompilatrixTests.Fir.Rules":
   {"path": "CompilatrixTests/Fir/Rules.lean",
    "imports": ["CompilatrixTests.Fir.Support"]},
   "CompilatrixTests.Fir.Main":
   {"path": "CompilatrixTests/Fir/Main.lean",
    "imports": ["CompilatrixTests.Fir.Run"]},
+  "CompilatrixTests.Fir.Gen":
+  {"path": "CompilatrixTests/Fir/Gen.lean",
+   "imports":
+   ["CompilatrixTests.Fir.Support",
+    "CompilatrixTests.Support.LamGen",
+    "Compilatrix.Anf.Pipeline"]},
   "CompilatrixTests.Fir.Differential":
   {"path": "CompilatrixTests/Fir/Differential.lean",
    "imports":

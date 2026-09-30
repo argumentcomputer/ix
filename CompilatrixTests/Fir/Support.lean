@@ -206,6 +206,7 @@ def compareRun (a : Assert) (L : Levels) (lam : Option (LProgram × Nat)) (ar : 
       let rl ← runLam LP (64 * clock) lr args
       match rl with
       | .ok lv => expect a (Compilatrix.Lam.readback LP lv == want) (msg "Lam and Anf readback differ")
+      | .stuck => pure ()   -- a stuck source imposes nothing
       | r => expect a false (msg s!"Lam gives {lamOutcome r}")
     -- Fir: a related value at Anf's least clock; its own least clock is no later
     let rf ← runFir L.fir la ar args
