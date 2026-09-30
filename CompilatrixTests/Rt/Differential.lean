@@ -13,7 +13,9 @@ import CompilatrixTests.Src.Bench
 * generated first-order Anf programs (`CompilatrixTests.Fir.Gen`: `Nat`,
   `Bool`, pairs and options, join points, loops, allocation), each run on
   the full region and, where Cfg allocates, on object areas just too small
-  and just large enough (`fail heap` exactly when the cells do not fit). -/
+  and just large enough (`fail heap` exactly when the cells do not fit);
+  every tenth program also on arguments near 2^63, where a result that
+  leaves the words must be `fail natOverflow` (it has no related word). -/
 
 namespace CompilatrixTests.Rt.Differential
 
@@ -106,6 +108,8 @@ structure GenStats where
   statements : Nat := 0
   /-- Runs on a small object area. -/
   small : Nat := 0
+  /-- The slowest runs (milliseconds, seed, arguments). -/
+  slow : List (Nat × Nat × List Nat) := []
   tally : Tally := {}
 
 def generated (a : Assert) (count : Nat) : IO (Array String) := do
@@ -117,16 +121,23 @@ def generated (a : Assert) (count : Nat) : IO (Array String) := do
     checkLir a S.lir label
     let mut t := s.tally
     let mut small := s.small
-    for xs in [[0], [1], [2], [3], [5]] do
+    -- arguments near 2^63 (natOverflow where a value leaves the words) on every tenth program
+    let big := if seed % 10 == 0 then [[2 ^ 62], [2 ^ 63 - 1]] else []
+    for xs in [[0], [1], [2], [3], [5]] ++ big do
       let r : Run := { label, cfg := S.levels.cfg, lir := S.lir, root := 0, args := xs, mem := S.mem
                        ty := some (genSig, genTy ty) }
-      t ← compare a r 100000 t
+      -- a small clock for the large arguments: their recursions run long and
+      -- Cfg's exact products grow without bound
+      let clock := if xs.any (· ≥ 2 ^ 62) then 400 else 100000
+      let (t', ms) ← timed (compare a r clock t)
+      t := t'
+      s := { s with slow := ((ms, seed, xs) :: s.slow).mergeSort (fun x y => x.1 ≥ y.1) |>.take 3 }
       -- object areas just too small and just large enough
-      if let .ok (_, H) ← runCfg .immortal S.levels.cfg 100000 0 xs then
+      if let .ok (_, H) ← runCfg .immortal S.levels.cfg clock 0 xs then
         let need := heapBytes H
         if need > 0 then
           for cap in [0, need - 8, need] do
-            t ← compare a { r with mem := withLimit S.mem cap, capacity := cap } 100000 t
+            t ← compare a { r with mem := withLimit S.mem cap, capacity := cap } clock t
             small := small + 1
     let lir := S.lir.program
     s := { s with programs := s.programs + 1, tally := t, small
@@ -134,6 +145,6 @@ def generated (a : Assert) (count : Nat) : IO (Array String) := do
                   statements := s.statements + lir.size }
   return #[s!"{s.programs} generated first-order programs: {s.blocks} Lir blocks, {s.statements} \
       statements and terminators; {s.small} runs on small object areas",
-    s!"  {s.tally.render}"]
+    s!"  {s.tally.render}", s!"  slowest runs (ms, seed, arguments): {s.slow}"]
 
 end CompilatrixTests.Rt.Differential

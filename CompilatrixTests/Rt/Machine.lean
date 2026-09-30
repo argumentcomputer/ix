@@ -40,6 +40,9 @@ def compile (l : Compilatrix.Rt.Lowered) : Except String Compiled := do
   let (xv, _) ← (Select.run l.program).mapError fun e => s!"selection: {e.form}: {e.reason}"
   let r ← (Alloc.run {} xv).mapError (s!"allocation: " ++ ·)
   let a ← (Backend.emit r.program (l.config testProvenance)).mapError toString
+  -- `Rt.Lowered.compile` (the glue M1.I1 uses) makes the same object
+  let whole ← (l.compile testProvenance).mapError toString
+  unless whole.object == a.object do throw "Rt.Lowered.compile made a different object"
   pure { lir := l, xv, xl := r.program, artifact := a }
 
 /-- The region plus the stack, with the return sentinel on top. -/
