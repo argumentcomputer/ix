@@ -146,6 +146,8 @@
   "Compilatrix.Own.Kind",
   "Compilatrix.Own.Semantics",
   "Compilatrix.Own.Syntax",
+  "Compilatrix.Rt.Layout",
+  "Compilatrix.Rt.Readback",
   "Compilatrix.Sem.Clock",
   "Compilatrix.Sem.Clocked",
   "Compilatrix.Sem.Result",
@@ -293,6 +295,7 @@
   "CompilatrixTests.Fences.IxonV3Typing",
   "CompilatrixTests.Fences.Lir",
   "CompilatrixTests.Fences.Own",
+  "CompilatrixTests.Fences.Rt",
   "CompilatrixTests.Fences.Sem",
   "CompilatrixTests.Fences.Validate",
   "CompilatrixTests.Fences.X86",
@@ -313,7 +316,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "M1.F5: Fir and Phase 1 Own fences",
+ "baseline": "M1.F6: Rt encoding and readback lemmas",
  "axiom_sha256":
- "ed071885819bef47eeaa5ab32b75bc1326de393acfbe7e4a04287091bc16e257",
- "axiom_count": 1014}
+ "13c816ba097f20e023ffddd69fa1660de3be1d376e83eb69f4040ab04d6cf9f9",
+ "axiom_count": 1025}

@@ -644,6 +644,9 @@
    ["Compilatrix.Sem.Smallstep",
     "Compilatrix.Sem.Transform",
     "CompilatrixTests.Sem.Toy.Cases"]},
+  "CompilatrixTests.Fences.Rt":
+  {"path": "CompilatrixTests/Fences/Rt.lean",
+   "imports": ["Compilatrix.Rt.Readback"]},
   "CompilatrixTests.Fences.Own":
   {"path": "CompilatrixTests/Fences/Own.lean",
    "imports": ["Compilatrix.Own.Immortal", "Compilatrix.Own.Semantics"]},
@@ -718,7 +721,8 @@
     "CompilatrixTests.Fences.Sem",
     "CompilatrixTests.Fences.Validate",
     "CompilatrixTests.Fences.Fir",
-    "CompilatrixTests.Fences.Own"]},
+    "CompilatrixTests.Fences.Own",
+    "CompilatrixTests.Fences.Rt"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":

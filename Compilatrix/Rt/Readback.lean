@@ -114,4 +114,37 @@ def renderFields : List Obs → String
 
 end
 
+/-! ## Readback lemmas
+
+The cases of `Rt.readback_sound` (M2.5) that need no heap invariant: a
+`Nat`'s word and a field-less constructor's word read back as themselves,
+and an immortal cell unfolds to its fields' readbacks. -/
+
+theorem readback_nat {sig : Sig} {fuel : Nat} {m : X86.Memory} {n : Nat} {w : Word}
+    (h : natWord n = some w) : readback sig fuel m .nat w = some (.nat n) := by
+  obtain ⟨h1, h2⟩ := odd_word (natWord_toNat h)
+  unfold readback
+  simp [h1, h2]
+
+theorem readback_ctor0 {sig : Sig} {fuel : Nat} {m : X86.Memory} {i tag : Nat}
+    (ht : tag < natLimit) (hc : sig.ctor? i tag = some []) :
+    readback sig fuel m (.ind i) (ctor0Word tag) = some (.ctor tag []) := by
+  obtain ⟨h1, h2⟩ := odd_word (ctor0Word_toNat ht)
+  unfold readback
+  simp [h1, h2, hc]
+
+/-- A cell with the immortal header of a constructor of the expected type
+reads back as that constructor over its fields' readbacks. -/
+theorem readback_cell {sig : Sig} {fuel : Nat} {m : X86.Memory} {i n tag : Nat} {w : Word}
+    {tys : List FoTy} (hw : w &&& 1 ≠ 1) (hh : m.read64? w = .ok (immortalHeader n tag))
+    (hn : n ≤ maxFields) (ht : tag ≤ maxTag) (hc : sig.ctor? i tag = some tys) (hl : tys.length = n)
+    (hpos : 0 < n) :
+    readback sig (fuel + 1) m (.ind i) w =
+      (tys.zipIdx.mapM fun (t, j) =>
+        match m.read64? (w + UInt64.ofNat (8 + 8 * j)) with
+        | .ok v => readback sig fuel m t v
+        | .error _ => none).map (.ctor tag) := by
+  conv => lhs; unfold readback
+  simp [hw, hh, immortalHeader_scan hn ht, immortalHeader_tag hn ht, hc, hl, hpos]
+
 end Compilatrix.Rt

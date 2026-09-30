@@ -117,4 +117,71 @@ def statusOf : Sem.Resource → Nat
   | .natOverflow => 3
 def statusTrap : Nat := 4
 
+/-! ## Encoding lemmas
+
+What `Rt.readback_sound` (M2.5) needs of the encodings: immediates are odd
+and halve back to their value, the immortal header's scan and tag fields
+read back, and the first object is 64-aligned past the context block. -/
+
+theorem natWord_toNat {n : Nat} {w : Word} (h : natWord n = some w) : w.toNat = 2 * n + 1 := by
+  unfold natWord natLimit at h
+  split at h
+  · cases h
+    rw [UInt64.toNat_ofNat']
+    apply Nat.mod_eq_of_lt
+    omega
+  · cases h
+
+theorem ctor0Word_toNat {tag : Nat} (h : tag < natLimit) : (ctor0Word tag).toNat = 2 * tag + 1 := by
+  unfold ctor0Word natLimit at *
+  rw [UInt64.toNat_ofNat']
+  apply Nat.mod_eq_of_lt
+  omega
+
+/-- An odd word has its low bit set and halves to its value. -/
+theorem odd_word {w : Word} {k : Nat} (h : w.toNat = 2 * k + 1) : w &&& 1 = 1 ∧ (w >>> 1).toNat = k := by
+  constructor
+  · apply UInt64.toNat_inj.mp
+    rw [UInt64.toNat_and, h]
+    simp only [UInt64.toNat_one]
+    rw [show (1 : Nat) = 2 ^ 1 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod]
+    omega
+  · rw [UInt64.toNat_shiftRight, h, Nat.shiftRight_eq_div_pow]
+    simp
+    omega
+
+theorem immortalHeader_toNat {n tag : Nat} (hn : n ≤ maxFields) (ht : tag ≤ maxTag) :
+    (immortalHeader n tag).toNat = n + 65536 * tag + 2 ^ 32 * immortalRc := by
+  unfold immortalHeader header headerLow maxFields maxTag immortalRc at *
+  rw [UInt64.toNat_ofNat']
+  apply Nat.mod_eq_of_lt
+  omega
+
+/-- The header's `scan` byte is the field count. -/
+theorem immortalHeader_scan {n tag : Nat} (hn : n ≤ maxFields) (ht : tag ≤ maxTag) :
+    ((immortalHeader n tag) &&& 0xFF).toNat = n := by
+  rw [UInt64.toNat_and, immortalHeader_toNat hn ht]
+  rw [show (UInt64.toNat 0xFF) = 2 ^ 8 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod]
+  unfold maxFields maxTag immortalRc at *
+  omega
+
+/-- The header's `tag` half-word is the tag. -/
+theorem immortalHeader_tag {n tag : Nat} (hn : n ≤ maxFields) (ht : tag ≤ maxTag) :
+    (((immortalHeader n tag) >>> 16) &&& 0xFFFF).toNat = tag := by
+  rw [UInt64.toNat_and, UInt64.toNat_shiftRight, immortalHeader_toNat hn ht]
+  rw [show (UInt64.toNat 0xFFFF) = 2 ^ 16 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod,
+    Nat.shiftRight_eq_div_pow]
+  unfold maxFields maxTag immortalRc at *
+  simp
+  omega
+
+theorem objectsStart_aligned (b : Nat) : objectsStart b % objectAlign = 0 := by
+  unfold objectsStart objectAlign ctxBlockBytes
+  omega
+
+theorem objectsStart_bounds (b : Nat) :
+    b + ctxBlockBytes ≤ objectsStart b ∧ objectsStart b < b + ctxBlockBytes + objectAlign := by
+  unfold objectsStart objectAlign ctxBlockBytes
+  omega
+
 end Compilatrix.Rt
