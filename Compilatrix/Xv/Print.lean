@@ -69,7 +69,7 @@ def XArg.text : XArg ρ → String
 
 def formText : X86.OpEn → String
   | .MR => "MR" | .RM => "RM" | .MI => "MI" | .MI8 => "MI8" | .OI => "OI" | .O => "O"
-  | .RMI => "RMI" | .RMI8 => "RMI8" | .D32 => "D32" | .ZO => "ZO"
+  | .RMI => "RMI" | .RMI8 => "RMI8" | .D32 => "D32" | .ZO => "ZO" | .M => "M" | .MC => "MC"
 
 def opText (o : X86.Op) : String :=
   let src := if o.src == o.w then "" else s!".{o.src.bits}"
