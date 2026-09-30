@@ -1,6 +1,7 @@
 import CompilatrixTests.Fir.Support
 import CompilatrixTests.Fir.Differential
 import CompilatrixTests.Src.Bench
+import CompilatrixTests.Fir.KernelEval
 
 /-! The bench-k1 entries at their test sizes (`benchmarks/fixtures/
 manifest.json`) through Fir, Own and Cfg, against `expected.txt`, with the
@@ -13,6 +14,12 @@ Own and Cfg heaps are empty. -/
 namespace CompilatrixTests.Fir.Bench
 
 open Compilatrix CompilatrixTests.Src CompilatrixTests.Lam CompilatrixTests.Anf
+
+/-- A bench name as a Lean identifier (`sum-loop` ↦ `sumLoop`). -/
+def ident (name : String) : String :=
+  match name.splitOn "-" with
+  | [] => name
+  | w :: ws => w ++ String.join (ws.map String.capitalize)
 
 /-- An entry's program at every level, and its root. -/
 def entryLevels (name : String) : IO (Levels × Nat) := do
@@ -69,6 +76,25 @@ def entries (a : Assert) (self : System.FilePath) : IO (Array String) := do
       line := line ++ s!" {level} {ms} ms"
     out := out.push line
     out := out.push s!"  {sizes L}"
+  return out
+
+/-- The kernel artifacts (`CompilatrixTests.Fir.Artifacts`) are the live
+pipeline's output, and the summaries the kernel checks
+(`KernelEval.expected`) hold natively. -/
+def kernelArtifacts (a : Assert) : IO (Array String) := do
+  let mut out := #[]
+  for (name, art, e) in KernelEval.expected do
+    let (L, _) ← entryLevels name
+    let A := L.anf
+    let same := art.beq A && art.ctors == A.ctors && art.known.natZero == A.known.natZero &&
+      art.known.natSucc == A.known.natSucc && art.known.boolFalse == A.known.boolFalse &&
+      art.known.boolTrue == A.known.boolTrue
+    expect a same s!"{name}: CompilatrixTests/Fir/Artifacts.lean is stale \
+      (regenerate with `lake exe tests-fir --render-artifacts`)"
+    expect a (KernelEval.summary art == some e) s!"{name}: the kernel's expected summary differs natively"
+    let (fs, bs, is, be, n) := e
+    out := out.push s!"{name}: artifact current; {fs} functions, {bs} blocks, {is} instructions, \
+      {be} back edges, N = {n}"
   return out
 
 end CompilatrixTests.Fir.Bench

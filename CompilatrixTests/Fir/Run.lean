@@ -2,11 +2,13 @@ import CompilatrixTests.Fir.Differential
 import CompilatrixTests.Fir.Rules
 import CompilatrixTests.Fir.Gen
 import CompilatrixTests.Fir.Bench
+import CompilatrixTests.Fir.Render
 
 /-! The `tests-fir` suite (design note 03 §11, M1.F5): the rules of Fir, the
 Phase 1 Own fragment and Cfg; every root and first-order constant of the K1
 fixtures through Anf → Fir → Own → Cfg; the fallback route declined at Fir;
-generated programs; the bench-k1 entries at their test sizes.
+generated programs; the bench-k1 entries at their test sizes. Building the
+suite runs the lowerings in the kernel (`CompilatrixTests.Fir.KernelEval`).
 
 Modes: `--entry NAME LEVEL` runs one bench entry at one level (the child
 process for `sum-loop`'s deep big-step runs); `--generated N` a longer
@@ -39,6 +41,13 @@ def main (args : List String) : IO UInt32 := do
     let (L, root) ← Bench.entryLevels name
     IO.println s!"== Anf (root g{root})\n{L.anf.render}\n== Fir\n{L.fir.render}\n== Cfg\n{L.cfg.render}"
     return 0
+  | ["--render-artifacts"] =>
+    let mut entries := #[]
+    for name in benchNames do
+      let (L, _) ← Bench.entryLevels name
+      entries := entries.push (Bench.ident name, L.anf)
+    IO.print (Render.module entries.toList)
+    return 0
   | _ => pure ()
   let a ← IO.mkRef 0
   try
@@ -49,6 +58,8 @@ def main (args : List String) : IO UInt32 := do
     part a "generated first-order Anf programs" (Gen.firstOrder a 1000)
     part a "generated Lam programs through the Anf pipeline" (Gen.lamGen a 300)
     part a "bench-k1 entries at their test sizes" (Bench.entries a (← IO.appPath))
+    part a "kernel artifacts (the lowerings re-run by decide +kernel at build time)"
+      (Bench.kernelArtifacts a)
     IO.println s!"tests-fir: {← a.get} assertions passed"
     return 0
   catch e =>

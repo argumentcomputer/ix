@@ -493,13 +493,23 @@
    ["CompilatrixTests.Fir.Differential",
     "CompilatrixTests.Fir.Rules",
     "CompilatrixTests.Fir.Gen",
-    "CompilatrixTests.Fir.Bench"]},
+    "CompilatrixTests.Fir.Bench",
+    "CompilatrixTests.Fir.Render"]},
   "CompilatrixTests.Fir.Rules":
   {"path": "CompilatrixTests/Fir/Rules.lean",
    "imports": ["CompilatrixTests.Fir.Support"]},
+  "CompilatrixTests.Fir.Render":
+  {"path": "CompilatrixTests/Fir/Render.lean",
+   "imports": ["Compilatrix.Anf.Syntax"]},
   "CompilatrixTests.Fir.Main":
   {"path": "CompilatrixTests/Fir/Main.lean",
    "imports": ["CompilatrixTests.Fir.Run"]},
+  "CompilatrixTests.Fir.KernelEval":
+  {"path": "CompilatrixTests/Fir/KernelEval.lean",
+   "imports":
+   ["CompilatrixTests.Fir.Artifacts",
+    "Compilatrix.Cfg.Lower",
+    "Compilatrix.Cfg.WellFormed"]},
   "CompilatrixTests.Fir.Gen":
   {"path": "CompilatrixTests/Fir/Gen.lean",
    "imports":
@@ -517,7 +527,11 @@
    "imports":
    ["CompilatrixTests.Fir.Support",
     "CompilatrixTests.Fir.Differential",
-    "CompilatrixTests.Src.Bench"]},
+    "CompilatrixTests.Src.Bench",
+    "CompilatrixTests.Fir.KernelEval"]},
+  "CompilatrixTests.Fir.Artifacts":
+  {"path": "CompilatrixTests/Fir/Artifacts.lean",
+   "imports": ["Compilatrix.Anf.Syntax"]},
   "CompilatrixTests.Fences.Xv":
   {"path": "CompilatrixTests/Fences/Xv.lean",
    "imports": ["Compilatrix.Xv.Select.Lemmas"]},
