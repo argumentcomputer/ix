@@ -210,6 +210,55 @@ def bench (a : Assert) (self : System.FilePath) : IO (Array String) := do
     out := out.push s!"{name} {args} = {got} (expected {expected}) in {ms} ms"
   return out
 
+/-- Least clocks of SrcEval and Lam on the K1 roots (as `tests-src` reports
+SrcEval's): equal, since erasure is clock-exact outside wrappers. -/
+def leastClocks (a : Assert) : IO (Array String) := do
+  let l ← loadK1
+  let e ← eraseLoaded l
+  let mut out := #[]
+  for (name, args) in [("K1.fib", [15]), ("K1.ack", [2, 3]), ("K1.tak", [8, 6, 4, 2]),
+      ("K1.sumLoop", [100]), ("K1.gcd", [832040, 514229])] do
+    let c ← rootNamed l name
+    let g ← lamRoot e c
+    let hi := 10000000
+    let s ← leastClock (fun k => do return notTimeout (← runSrc e.src k c args)) hi
+    let m ← leastClock (fun k => do return notTimeout (← runLam e.lam k g args)) hi
+    expect a (s.isSome && s == m) s!"{name} {args}: least clocks SrcEval {s}, Lam {m}"
+    out := out.push s!"{name} {args}: least clock {s.getD 0} (SrcEval and Lam)"
+  return out
+
+/-- The fallback route (no `eqn` entries): `fib` through `brecOn` (`Nat.rec`
+with IHs) and `ack` through `WellFounded.fix` (`Acc.rec`, a subsingleton
+recursor), as `tests-src` runs them. `brecOn` projects out of `PProd`, whose
+field classes depend on its universe levels, so Phase 1 declines it
+(`erase-proj-sortpoly`, the projection gap of M1.F2b); the rest of the
+route is checked once that gap closes. -/
+def fallback (a : Assert) : IO (Array String) := do
+  let bytes ← IO.FS.readBinFile (fixtures / "k1/k1.ixe")
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (fixtures / "k1/equations.json")))
+  let hints ← IO.ofExcept (Hints.ofK1Json json)
+  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  let l ← match loadEnv { typecheck := false } env { hints with proposals := #[] } with
+    | .ok l => pure l
+    | .error d => throw (IO.userError s!"fallback load: {d}")
+  let e ← match Compilatrix.Lam.erase l.program l.checked with
+    | .ok (lam, stats) => pure ({ src := l.program, checked := l.checked
+                                  input := .ofProgram l.program l.checked, lam, stats } : Erased)
+    | .error err =>
+      let pprod := l.program.lookup (Pinned.addr
+        "90ca5bcf995d68d7dfcb3c7cfe466986dc4beaa402b262ca395b3e53c36f6cad")
+      expect a (err.code == "erase-proj-sortpoly" && err.const.isSome && err.const == pprod)
+        s!"fallback: expected the PProd projection decline, got {err}"
+      return #[s!"fallback: declined as expected (PProd projection in brecOn): {err}"]
+  checkStatic a e "fallback"
+  let mut t : Tally := {}
+  for (root, argss) in [("K1.fib", [[0], [1], [2], [7], [15]]), ("K1.ack", [[0, 0], [1, 2], [2, 3]]),
+      ("K1.gcd", [[30, 12], [0, 5]]), ("K1.tak", [[6, 4, 2, 1]]), ("K1.sumLoop", [[0], [20]])] do
+    let c ← rootNamed l root
+    for xs in argss do
+      t ← compareRun a e c xs 100000000 s!"fallback {root}" t
+  return #[s!"fallback (no eqn entries): {sizes e}", s!"  {t.render}"]
+
 def packs (a : Assert) : IO (Array String) := do
   let mut out ← pack a "k1.ixe" (fixtures / "k1/k1.ixe") (fixtures / "k1/equations.json")
     rootArgs 1000000

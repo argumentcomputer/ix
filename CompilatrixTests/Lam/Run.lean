@@ -39,6 +39,10 @@ def main (args : List String) : IO UInt32 := do
       for line in ← Differential.packs a do IO.println s!"    {line}"
     part a "src-sortpoly" do
       for line in ← Differential.sortpoly a do IO.println s!"    {line}"
+    part a "fallback route (recursors at run time)" do
+      for line in ← Differential.fallback a do IO.println s!"    {line}"
+    part a "least clocks on the K1 roots" do
+      for line in ← Differential.leastClocks a do IO.println s!"    {line}"
     part a "Lam against native Lean" (Differential.native a)
     part a "bench-k1 entries through Lam" do
       for line in ← Differential.bench a (← IO.appPath) do IO.println s!"    {line}"
