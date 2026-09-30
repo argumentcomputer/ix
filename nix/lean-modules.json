@@ -285,6 +285,26 @@
   {"path": "CompilatrixTests/Sem/Toy/Pipeline.lean",
    "imports":
    ["CompilatrixTests.Sem.Toy.Tick", "CompilatrixTests.Sem.Toy.Stack"]},
+  "CompilatrixTests.Sem.Toy.IO.Tick":
+  {"path": "CompilatrixTests/Sem/Toy/IO/Tick.lean",
+   "imports": ["CompilatrixTests.Sem.Toy.IO.Big"]},
+  "CompilatrixTests.Sem.Toy.IO.Stack":
+  {"path": "CompilatrixTests/Sem/Toy/IO/Stack.lean",
+   "imports":
+   ["CompilatrixTests.Sem.Toy.IO.Big", "CompilatrixTests.Sem.Toy.IO.Runner"]},
+  "CompilatrixTests.Sem.Toy.IO.Runner":
+  {"path": "CompilatrixTests/Sem/Toy/IO/Runner.lean",
+   "imports": ["Compilatrix.Sem.Smallstep", "Compilatrix.Sem.Traced"]},
+  "CompilatrixTests.Sem.Toy.IO.Pipeline":
+  {"path": "CompilatrixTests/Sem/Toy/IO/Pipeline.lean",
+   "imports":
+   ["CompilatrixTests.Sem.Toy.IO.Tick", "CompilatrixTests.Sem.Toy.IO.Stack"]},
+  "CompilatrixTests.Sem.Toy.IO.Cases":
+  {"path": "CompilatrixTests/Sem/Toy/IO/Cases.lean",
+   "imports": ["CompilatrixTests.Sem.Toy.IO.Pipeline"]},
+  "CompilatrixTests.Sem.Toy.IO.Big":
+  {"path": "CompilatrixTests/Sem/Toy/IO/Big.lean",
+   "imports": ["Compilatrix.Sem.TracedTransform"]},
   "CompilatrixTests.Sem.Toy.Cases":
   {"path": "CompilatrixTests/Sem/Toy/Cases.lean",
    "imports": ["CompilatrixTests.Sem.Toy.Pipeline"]},
@@ -387,6 +407,7 @@
     "CompilatrixTests.Aiur.MemoryAIR.Proofs",
     "CompilatrixTests.Aiur.RankAIR.Proofs",
     "CompilatrixTests.Sem.Toy.Cases",
+    "CompilatrixTests.Sem.Toy.IO.Cases",
     "CompilatrixTests.Fences"]},
   "CompilatrixTests.Pipeline.Twin":
   {"path": "CompilatrixTests/Pipeline/Twin.lean",
@@ -684,6 +705,13 @@
   "CompilatrixTests.Fences.Validate":
   {"path": "CompilatrixTests/Fences/Validate.lean",
    "imports": ["Compilatrix.Xv.Validate.Proof.Program"]},
+  "CompilatrixTests.Fences.SemTraced":
+  {"path": "CompilatrixTests/Fences/SemTraced.lean",
+   "imports":
+   ["Compilatrix.Sem.TracedTransform",
+    "Compilatrix.Lam.Erase.Proof.Traced",
+    "Compilatrix.Xv.Validate.Proof.Traced",
+    "CompilatrixTests.Sem.Toy.IO.Cases"]},
   "CompilatrixTests.Fences.Sem":
   {"path": "CompilatrixTests/Fences/Sem.lean",
    "imports":
@@ -774,6 +802,7 @@
     "CompilatrixTests.Fences.Xv",
     "CompilatrixTests.Fences.Backend",
     "CompilatrixTests.Fences.Sem",
+    "CompilatrixTests.Fences.SemTraced",
     "CompilatrixTests.Fences.Validate",
     "CompilatrixTests.Fences.Fir",
     "CompilatrixTests.Fences.Own",

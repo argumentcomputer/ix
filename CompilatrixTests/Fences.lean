@@ -13,6 +13,7 @@ import CompilatrixTests.Fences.Lir
 import CompilatrixTests.Fences.Xv
 import CompilatrixTests.Fences.Backend
 import CompilatrixTests.Fences.Sem
+import CompilatrixTests.Fences.SemTraced
 import CompilatrixTests.Fences.Validate
 import CompilatrixTests.Fences.Fir
 import CompilatrixTests.Fences.Own
