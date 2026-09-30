@@ -55,6 +55,28 @@ statement is established in two stages:
    `Ix.Kernel`.** A single adequacy theorem relates evaluator results to
    denotations.
 
+**Statement shape (decision D-1).** Per-level and pipeline theorems are
+stated in the traced shape of `Compilatrix.Sem`, so IO can be added without
+restating them:
+- A traced language runs a program on an input under an abstract
+  environment and returns, at every clock, the result with the events
+  performed so far (`TLang`, `Traced`).
+- The traced simulation `TSim` has three clauses: forward, a timeout clause
+  whose target trace is a prefix of the source's, and progress (the target
+  keeps up with the source's events). `TRefines` compares traced behaviours
+  up to resource failure.
+- Phase 1 levels are pure and lift (`TSim.ofPure`, `Refines.ofPure`,
+  `Transform.lift`), with the environment `Unit` and no events. Concrete
+  events, the oracle and refusal are the IO design's choices.
+
+**Evaluator interface.** Simulation proofs reason through each evaluator's
+bind-form unfolding lemmas (one equation per rule, sequencing as
+`Result.bind`), with the combinators of `Compilatrix.Sem` (`Agrees.bind`,
+`Result.Dom.bind`, `ClockMono.bind`, `SimUpTo.bind` and the `Result.bind`
+inversions), never by unfolding the evaluator's `match`. Moving an
+evaluator to a traced, environment-reading monad then changes its unfolding
+lemmas and adds one case, not the per-construct proofs.
+
 ## Pipeline
 
 | IR | Form | Semantics | Main obligation |
