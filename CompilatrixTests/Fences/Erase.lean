@@ -1,9 +1,11 @@
 import Compilatrix.Src.Proof.Mono
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Erase.Proof.Correct
+import Compilatrix.Src.Relevance.Proof.Sound
 
 /-! Required axiom fences for the source-to-Lam theorems (M2.2): clock
-monotonicity of SrcEval and Lam. Expected messages are preserved verbatim. -/
+monotonicity of SrcEval and Lam, erasure's correctness, and the relevance
+checker's soundness. Expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Src.eval_mono' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Src.eval_mono
@@ -87,3 +89,26 @@ monotonicity of SrcEval and Lam. Expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Sem.SimUpTo.sim' does not depend on any axioms -/
 #guard_msgs in #print axioms Compilatrix.Sem.SimUpTo.sim
+
+/-! The relevance checker's soundness (tier S). -/
+
+/-- info: 'Compilatrix.Src.Relevance.Proof.check_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Src.Relevance.Proof.check_sound
+
+/-- info: 'Compilatrix.Src.Relevance.Proof.loop_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Src.Relevance.Proof.loop_spec
+
+/-- info: 'Compilatrix.Src.Relevance.Proof.visit_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Src.Relevance.Proof.visit_spec
+
+/-- info: 'Compilatrix.Src.Relevance.Proof.records_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Src.Relevance.Proof.records_nil
+
+/-- info: 'Compilatrix.Src.Relevance.Proof.term_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Src.Relevance.Proof.term_nil
+
+/-- info: 'Compilatrix.Src.Relevance.Proof.rest_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Src.Relevance.Proof.rest_nil
+
+/-- info: 'Compilatrix.Src.Relevance.Proof.subsingletonFields_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Src.Relevance.Proof.subsingletonFields_nil

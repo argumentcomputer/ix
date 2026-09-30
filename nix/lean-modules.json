@@ -668,7 +668,11 @@
    "imports": ["Compilatrix.Fir.Semantics"]},
   "CompilatrixTests.Fences.Erase":
   {"path": "CompilatrixTests/Fences/Erase.lean",
-   "imports": ["Compilatrix.Src.Proof.Mono", "Compilatrix.Lam.Proof.Mono"]},
+   "imports":
+   ["Compilatrix.Src.Proof.Mono",
+    "Compilatrix.Lam.Proof.Mono",
+    "Compilatrix.Lam.Erase.Proof.Correct",
+    "Compilatrix.Src.Relevance.Proof.Sound"]},
   "CompilatrixTests.Fences.Backend":
   {"path": "CompilatrixTests/Fences/Backend.lean",
    "imports":
@@ -1465,6 +1469,13 @@
   "Compilatrix.Src.Relevance.Syntax":
   {"path": "Compilatrix/Src/Relevance/Syntax.lean",
    "imports": ["Compilatrix.Src.Runtime"]},
+  "Compilatrix.Src.Relevance.Proof.Terms":
+  {"path": "Compilatrix/Src/Relevance/Proof/Terms.lean",
+   "imports": ["Compilatrix.Src.Relevance.Check"]},
+  "Compilatrix.Src.Relevance.Proof.Sound":
+  {"path": "Compilatrix/Src/Relevance/Proof/Sound.lean",
+   "imports":
+   ["Compilatrix.Src.Relevance.Proof.Terms", "Compilatrix.Src.Proof.NatMap"]},
   "Compilatrix.Src.Relevance.Check":
   {"path": "Compilatrix/Src/Relevance/Check.lean",
    "imports": ["Compilatrix.Src.Relevance.Syntax", "Compilatrix.Src.NatMap"]},
@@ -2391,6 +2402,8 @@
     "Compilatrix.Src.Relevance.Annotate",
     "Compilatrix.Src.NatMap",
     "Compilatrix.Src.Relevance.Check",
+    "Compilatrix.Src.Relevance.Proof.Terms",
+    "Compilatrix.Src.Relevance.Proof.Sound",
     "Compilatrix.Src.Lazify",
     "Compilatrix.Src.Table.Validate",
     "Compilatrix.Src.Recheck",

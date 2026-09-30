@@ -83,6 +83,8 @@ import Compilatrix.Src.Relevance.Syntax
 import Compilatrix.Src.Relevance.Annotate
 import Compilatrix.Src.NatMap
 import Compilatrix.Src.Relevance.Check
+import Compilatrix.Src.Relevance.Proof.Terms
+import Compilatrix.Src.Relevance.Proof.Sound
 import Compilatrix.Src.Lazify
 import Compilatrix.Src.Table.Validate
 import Compilatrix.Src.Recheck
