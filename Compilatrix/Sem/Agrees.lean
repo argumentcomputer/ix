@@ -10,7 +10,29 @@ for the IRs' mutual evaluators; M2.2). -/
 
 namespace Compilatrix.Sem
 
+/-- One clock charge: `timeout` at clock 0, else `f` one clock down (δ, β,
+a forced thunk or a tick in the IRs' depth-clocked evaluators). -/
+def later {α : Type} (k : Nat) (f : Nat → Result α) : Result α :=
+  match k with
+  | 0 => .timeout
+  | k + 1 => f k
+
+@[simp] theorem later_zero {α : Type} (f : Nat → Result α) : later 0 f = .timeout := rfl
+@[simp] theorem later_succ {α : Type} (k : Nat) (f : Nat → Result α) :
+    later (k + 1) f = f k := rfl
+
 namespace Result
+
+theorem bind_assoc {α β γ : Type} (r : Result α) (f : α → Result β) (g : β → Result γ) :
+    (r.bind f).bind g = r.bind fun x => (f x).bind g := by
+  cases r <;> rfl
+
+theorem bind_pure {α : Type} (r : Result α) : r.bind (fun x => .ok x) = r := by
+  cases r <;> rfl
+
+theorem bind_congr {α β : Type} (r : Result α) {f g : α → Result β} (h : ∀ x, f x = g x) :
+    r.bind f = r.bind g := by
+  cases r <;> simp [bind, h]
 
 /-- `r'` is `r` wherever `r` does not time out. -/
 def Agrees {α : Type} (r' r : Result α) : Prop := r ≠ .timeout → r' = r

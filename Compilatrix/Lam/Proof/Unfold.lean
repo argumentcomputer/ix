@@ -17,6 +17,10 @@ theorem eval_var (i : Nat) :
     eval P k ρ (.var i) = (match ρ[i]? with | some s => force P k s | none => .stuck) := by
   rw [eval]; rfl
 
+theorem eval_var_of {i : Nat} {s : Slot} (h : ρ[i]? = some s) :
+    eval P k ρ (.var i) = force P k s := by
+  rw [eval_var, h]
+
 theorem eval_glob (g : GlobalId) :
     eval P k ρ (.glob g) = (match P.global? g with
       | some gl => (match k with | 0 => .timeout | k + 1 => eval P k [] gl.body)

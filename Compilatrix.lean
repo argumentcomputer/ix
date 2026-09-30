@@ -7,6 +7,7 @@ import Compilatrix.Sem.Simulation
 import Compilatrix.Sem.Transform
 import Compilatrix.Sem.Smallstep
 import Compilatrix.Sem.Agrees
+import Compilatrix.Sem.SimUpTo
 import Compilatrix.Lir.Syntax
 import Compilatrix.Lir.Semantics
 import Compilatrix.Lir.Graph
@@ -93,6 +94,7 @@ import Compilatrix.Src.Readback
 import Compilatrix.Src.Load
 import Compilatrix.Src.Proof.Unfold
 import Compilatrix.Src.Proof.Mono
+import Compilatrix.Src.Proof.Spine
 import Compilatrix.Key
 import Compilatrix.Lam.Syntax
 import Compilatrix.Lam.Semantics
@@ -142,6 +144,13 @@ import Compilatrix.Rt.Lower
 import Compilatrix.Rt.Readback
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
+import Compilatrix.Lam.Proof.Spine
+import Compilatrix.Lam.Erase.Proof.Spec
+import Compilatrix.Lam.Erase.Proof.Rel
+import Compilatrix.Lam.Erase.Proof.Layout
+import Compilatrix.Lam.Erase.Proof.Values
+import Compilatrix.Lam.Erase.Proof.SimBase
+import Compilatrix.Lam.Erase.Proof.Forms
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing

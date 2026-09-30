@@ -1483,7 +1483,10 @@
    "imports": ["Compilatrix.Src.Value", "Compilatrix.Sem.Result"]},
   "Compilatrix.Src.Proof.Unfold":
   {"path": "Compilatrix/Src/Proof/Unfold.lean",
-   "imports": ["Compilatrix.Src.Semantics"]},
+   "imports": ["Compilatrix.Src.Semantics", "Compilatrix.Sem.Agrees"]},
+  "Compilatrix.Src.Proof.Spine":
+  {"path": "Compilatrix/Src/Proof/Spine.lean",
+   "imports": ["Compilatrix.Src.Proof.Unfold"]},
   "Compilatrix.Src.Proof.Mono":
   {"path": "Compilatrix/Src/Proof/Mono.lean",
    "imports": ["Compilatrix.Src.Proof.Unfold", "Compilatrix.Sem.Agrees"]},
@@ -1532,6 +1535,9 @@
   "Compilatrix.Sem.Simulation":
   {"path": "Compilatrix/Sem/Simulation.lean",
    "imports": ["Compilatrix.Sem.Clocked"]},
+  "Compilatrix.Sem.SimUpTo":
+  {"path": "Compilatrix/Sem/SimUpTo.lean",
+   "imports": ["Compilatrix.Sem.Simulation", "Compilatrix.Sem.Agrees"]},
   "Compilatrix.Sem.Result":
   {"path": "Compilatrix/Sem/Result.lean", "imports": []},
   "Compilatrix.Sem.Clocked":
@@ -1621,6 +1627,9 @@
   "Compilatrix.Lam.Proof.Unfold":
   {"path": "Compilatrix/Lam/Proof/Unfold.lean",
    "imports": ["Compilatrix.Lam.Semantics"]},
+  "Compilatrix.Lam.Proof.Spine":
+  {"path": "Compilatrix/Lam/Proof/Spine.lean",
+   "imports": ["Compilatrix.Lam.Proof.Mono", "Compilatrix.Sem.SimUpTo"]},
   "Compilatrix.Lam.Proof.Mono":
   {"path": "Compilatrix/Lam/Proof/Mono.lean",
    "imports": ["Compilatrix.Lam.Proof.Unfold", "Compilatrix.Sem.Agrees"]},
@@ -1636,6 +1645,33 @@
   "Compilatrix.Lam.Erase.Term":
   {"path": "Compilatrix/Lam/Erase/Term.lean",
    "imports": ["Compilatrix.Lam.Erase.Input"]},
+  "Compilatrix.Lam.Erase.Proof.Values":
+  {"path": "Compilatrix/Lam/Erase/Proof/Values.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.Layout", "Compilatrix.Lam.Erase.Proof.Rel"]},
+  "Compilatrix.Lam.Erase.Proof.Spec":
+  {"path": "Compilatrix/Lam/Erase/Proof/Spec.lean",
+   "imports": ["Compilatrix.Lam.Erase"]},
+  "Compilatrix.Lam.Erase.Proof.SimBase":
+  {"path": "Compilatrix/Lam/Erase/Proof/SimBase.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.Rel",
+    "Compilatrix.Src.Proof.Spine",
+    "Compilatrix.Src.Proof.Mono",
+    "Compilatrix.Lam.Proof.Spine"]},
+  "Compilatrix.Lam.Erase.Proof.Rel":
+  {"path": "Compilatrix/Lam/Erase/Proof/Rel.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.Spec", "Compilatrix.Lam.Semantics"]},
+  "Compilatrix.Lam.Erase.Proof.Layout":
+  {"path": "Compilatrix/Lam/Erase/Proof/Layout.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.Spec", "Compilatrix.Src.Proof.Unfold"]},
+  "Compilatrix.Lam.Erase.Proof.Forms":
+  {"path": "Compilatrix/Lam/Erase/Proof/Forms.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.SimBase",
+    "Compilatrix.Lam.Erase.Proof.Values"]},
   "Compilatrix.Lam.Erase.Input":
   {"path": "Compilatrix/Lam/Erase/Input.lean",
    "imports": ["Compilatrix.Src.Relevance.Check", "Compilatrix.Lam.Syntax"]},
@@ -2218,6 +2254,7 @@
     "Compilatrix.Sem.Transform",
     "Compilatrix.Sem.Smallstep",
     "Compilatrix.Sem.Agrees",
+    "Compilatrix.Sem.SimUpTo",
     "Compilatrix.Lir.Syntax",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Lir.Graph",
@@ -2304,6 +2341,7 @@
     "Compilatrix.Src.Load",
     "Compilatrix.Src.Proof.Unfold",
     "Compilatrix.Src.Proof.Mono",
+    "Compilatrix.Src.Proof.Spine",
     "Compilatrix.Key",
     "Compilatrix.Lam.Syntax",
     "Compilatrix.Lam.Semantics",
@@ -2353,6 +2391,13 @@
     "Compilatrix.Rt.Readback",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
+    "Compilatrix.Lam.Proof.Spine",
+    "Compilatrix.Lam.Erase.Proof.Spec",
+    "Compilatrix.Lam.Erase.Proof.Rel",
+    "Compilatrix.Lam.Erase.Proof.Layout",
+    "Compilatrix.Lam.Erase.Proof.Values",
+    "Compilatrix.Lam.Erase.Proof.SimBase",
+    "Compilatrix.Lam.Erase.Proof.Forms",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

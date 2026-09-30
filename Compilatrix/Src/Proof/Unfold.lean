@@ -1,4 +1,5 @@
 import Compilatrix.Src.Semantics
+import Compilatrix.Sem.Agrees
 
 /-! # SrcEval in `bind` form
 
@@ -10,7 +11,7 @@ simulation reason one bind at a time. -/
 
 namespace Compilatrix.Src
 
-open Compilatrix.Sem (Result)
+open Compilatrix.Sem (Result later later_zero later_succ)
 
 variable (p : Program) (k : Nat) (ls : Levels) (ρ : Env)
 
@@ -19,6 +20,10 @@ variable (p : Program) (k : Nat) (ls : Levels) (ρ : Env)
 theorem eval_var (i : Nat) :
     eval p k ls ρ (.var i) = (match ρ[i]? with | some s => force p k s | none => .stuck) := by
   rw [eval]; rfl
+
+theorem eval_var_of {i : Nat} {s : Slot} (h : ρ[i]? = some s) :
+    eval p k ls ρ (.var i) = force p k s := by
+  rw [eval_var, h]
 
 theorem eval_sort (u : Ixon.Univ) : eval p k ls ρ (.sort u) = .ok (.irr (some (.sort u)) ρ ls) := by
   rw [eval]
@@ -70,16 +75,6 @@ theorem eval_const (c : CId) (us : List Ixon.Univ) :
   rw [eval]
 
 /-! ## Constants and heads -/
-
-/-- δ with a charge: `timeout` at clock 0, else the body one clock down. -/
-def later {α : Type} (k : Nat) (f : Nat → Result α) : Result α :=
-  match k with
-  | 0 => .timeout
-  | k + 1 => f k
-
-@[simp] theorem later_zero {α : Type} (f : Nat → Result α) : later 0 f = .timeout := rfl
-@[simp] theorem later_succ {α : Type} (k : Nat) (f : Nat → Result α) :
-    later (k + 1) f = f k := rfl
 
 theorem evalConst_eq (c : CId) :
     evalConst p k ls c =

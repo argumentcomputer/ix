@@ -17,7 +17,7 @@ terms by structural recursion. Every other call is one clock down. -/
 
 namespace Compilatrix.Src
 
-open Compilatrix.Sem (Result ClockMono)
+open Compilatrix.Sem (Result ClockMono later)
 open Compilatrix.Sem.Result (Agrees)
 
 variable (p : Program)
