@@ -90,25 +90,35 @@ private def acceptInstalled (env : Env β) (d : Decl β)
       d.block.Installed d.address env'.toEnvironment } :=
   .ok ⟨result.val, result.property, source⟩
 
-/-- Install one checked definition. -/
+/-- Claims established against the reduction view hold against the environment. -/
+theorem TypingClaim.ofReductionView (env : Env β) {Γ : Context β} {e A : AExpr β}
+    (h : TypingClaim.{u,v} env.reductionView Γ e A) : TypingClaim.{u,v} env.toEnvironment Γ e A :=
+  fun V _ constants hM => h V constants (Env.realizes_reductionView env hM)
+
+/-- Install one checked definition; a theorem's or an opaque's body (`hidden`)
+is installed but not unfolded by conversion. -/
 private def installDefinition (env : Env β) (r : ConstRef β) (universes : Nat)
-    (type body : AExpr β) (fresh : env.toEnvironment r = none)
+    (type body : AExpr β) (hidden : Bool) (fresh : env.toEnvironment r = none)
     (hTs : type.Scope universes 0) (hBs : body.Scope universes 0)
     (hTr : type.ReferencesIn env.toEnvironment) (hBr : body.ReferencesIn env.toEnvironment)
     {level : VLevel} (hT : TypingClaim.{u,v} env.toEnvironment [] type (.sort level))
     (hB : TypingClaim.{u,v} env.toEnvironment [] body type) :
-    { env' : Env β // AdmissionClaim.{u,v} env env' } :=
+    { env' : Env β // AdmissionClaim.{u,v} env env' ∧
+      env'.toEnvironment = (env.push r ⟨universes, type, some body, [], []⟩).toEnvironment } :=
   let entry : ConstantEntry β := ⟨universes, type, some body, [], []⟩
-  ⟨env.push r entry, ⟨fun V _ m => by
+  ⟨env.pushWith hidden r entry, ⟨⟨fun V _ m => by
     obtain ⟨constants', hM', -⟩ := extend_definition (entry := entry) m.wf fresh rfl rfl rfl hBs hTr hBr
       hT hB m.constants m.realizes
     refine ⟨⟨constants', ?_, ?_⟩⟩
-    · rw [Env.toEnvironment_push]; exact hM'
-    · rw [Env.toEnvironment_push]
+    · rw [Env.toEnvironment_pushWith, Env.toEnvironment_push]; exact hM'
+    · rw [Env.toEnvironment_pushWith, Env.toEnvironment_push]
       exact m.wf.insert hTs (fun b hb => by cases hb; exact hBs) hTr
         (fun b hb => by cases hb; exact hBr) (fun _ h => nomatch h) (fun _ h => nomatch h)
         (fun _ h => nomatch h) (fun _ h => nomatch h),
-    env.preserves_push r entry fresh⟩⟩
+    fun q e hq => by
+      rw [Env.toEnvironment_pushWith]
+      exact env.preserves_push r entry fresh q e hq⟩,
+    Env.toEnvironment_pushWith hidden env r entry⟩⟩
 
 /-- Replacing an installed entry's type by a formed type it converts to keeps
 every model: only the type's validity and the constant's membership mention
@@ -392,20 +402,23 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
   | [.defn universes kind type body .safe] =>
     let r : ConstRef β := .member d.address 0
     let entries := env.toEnvironment
+    -- Inference and conversion read the reduction view: theorem and opaque
+    -- bodies are not unfolded (`TypingClaim.ofReductionView`).
+    let view := env.reductionView
     if fresh : entries r = none then
       if !(type.refs ++ body.refs).all (fun q => (entries q).isSome) then
         .error (.rejected "the declaration references a constant that is not installed")
       else
-      match hTypeReading : annotate.{u,v} cfg.fuel entries [] type,
-          hBodyReading : annotate.{u,v} cfg.fuel entries [] body with
+      match hTypeReading : annotate.{u,v} cfg.fuel view [] type,
+          hBodyReading : annotate.{u,v} cfg.fuel view [] body with
       | .ok type', .ok body' =>
         if hTs : type'.Scope universes 0 then
           if hBs : body'.Scope universes 0 then
             if hTr : type'.ReferencesIn entries then
               if hBr : body'.ReferencesIn entries then
-                match inferA.{u,v} cfg.fuel entries [] type' with
+                match inferA.{u,v} cfg.fuel view [] type' with
                 | .ok ⟨S, hS⟩ =>
-                  match sortOf (whnf.{u,v} cfg.fuel entries [] S) hS with
+                  match sortOf (whnf.{u,v} cfg.fuel view [] S) hS with
                   | .ok ⟨l, hT⟩ =>
                     if kind = .theorem && !levelIsZero l then
                       if zeroCondition l = .never then
@@ -413,16 +426,20 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
                       else
                         .error (.declined "the theorem's type was not established to be a proposition")
                     else
-                      match inferA.{u,v} cfg.fuel entries [] body' with
+                      match inferA.{u,v} cfg.fuel view [] body' with
                       | .ok ⟨B, hb⟩ =>
-                        match isDefEq.{u,v} cfg.fuel entries [] B type' with
+                        match isDefEq.{u,v} cfg.fuel view [] B type' with
                         | .ok ⟨hc⟩ =>
-                          acceptInstalled env d
-                            (installDefinition env r universes type' body' fresh hTs hBs hTr hBr hT
-                              (hb.convF hT.formed hc)) (by
+                          let installed := installDefinition env r universes type' body'
+                            (kind != .definition) fresh hTs hBs hTr hBr
+                            (TypingClaim.ofReductionView env hT)
+                            (TypingClaim.ofReductionView env (hb.convF hT.formed hc))
+                          acceptInstalled env d ⟨installed.val, installed.property.1⟩ (by
                               have hblock : d.block = ⟨[.defn universes kind type body .safe]⟩ :=
                                 congrArg Block.mk hm
                               rw [hblock]
+                              show Block.Installed _ _ installed.val.toEnvironment
+                              rw [installed.property.2]
                               exact Block.installed_singleton_push env d.address _ _
                                 ⟨rfl, annotate_erase hTypeReading,
                                   congrArg some (annotate_erase hBodyReading)⟩ rfl)

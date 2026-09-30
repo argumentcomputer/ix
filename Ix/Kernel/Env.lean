@@ -49,6 +49,9 @@ structure Env (β : Type u) where
   /-- Installed entries by `refHash keyHash` of their reference, newest first
   within a bucket. -/
   index : Std.TreeMap UInt64 (List (ConstRef β × Model.ConstantEntry β)) compare
+  /-- References whose installed bodies conversion does not unfold (theorems
+  and opaques), bucketed like `index`. Lookups never read it. -/
+  noUnfold : Std.TreeMap UInt64 (List (ConstRef β)) compare := ∅
 
 namespace Env
 
@@ -60,7 +63,7 @@ def refHash (keyHash : β → UInt64) : ConstRef β → UInt64
   | .ctor b i c => mixHash (mixHash (keyHash b) (hash i)) (hash (c + 1))
 
 /-- The empty environment with the given key hash. -/
-def emptyWith (keyHash : β → UInt64) : Env β := ⟨[], keyHash, ∅⟩
+def emptyWith (keyHash : β → UInt64) : Env β := ⟨[], keyHash, ∅, ∅⟩
 
 /-- The empty environment, the starting point of the closed check: one bucket. -/
 def empty : Env β := emptyWith fun _ => 0
@@ -121,6 +124,80 @@ theorem toEnvironment_push (env : Env β) (r : ConstRef β) (entry : Model.Const
     (env.push r entry).toEnvironment = env.toEnvironment.insert r entry := by
   funext q
   simp only [toEnvironment, lookup_push, Environment.insert]
+
+/-! ### Bodies that conversion does not unfold
+
+A theorem's or an opaque's body is installed, so the reading of the supplied
+declaration is exact (`Block.Installed`), but conversion does not unfold it,
+as in the official kernel and con-leche. `reductionView` is the environment
+with those bodies hidden; it only drops bodies, so every realization of the
+environment realizes it (`realizes_reductionView`), and claims established
+against it hold against the environment (`TypingClaim.ofReductionView`). -/
+
+/-- Install an entry whose body conversion does not unfold. -/
+def pushOpaque (env : Env β) (r : ConstRef β) (entry : Model.ConstantEntry β) : Env β :=
+  let pushed := env.push r entry
+  let h := refHash env.keyHash r
+  { pushed with noUnfold := env.noUnfold.insert h (r :: env.noUnfold.getD h []) }
+
+theorem toEnvironment_pushOpaque (env : Env β) (r : ConstRef β) (entry : Model.ConstantEntry β) :
+    (env.pushOpaque r entry).toEnvironment = (env.push r entry).toEnvironment := rfl
+
+/-- Install an entry, hiding its body from conversion when `hidden`. -/
+def pushWith (hidden : Bool) (env : Env β) (r : ConstRef β) (entry : Model.ConstantEntry β) : Env β :=
+  if hidden then env.pushOpaque r entry else env.push r entry
+
+theorem toEnvironment_pushWith (hidden : Bool) (env : Env β) (r : ConstRef β)
+    (entry : Model.ConstantEntry β) :
+    (env.pushWith hidden r entry).toEnvironment = (env.push r entry).toEnvironment := by
+  cases hidden <;> rfl
+
+omit [DecidableEq β] in
+theorem entries_pushOpaque (env : Env β) (r : ConstRef β) (entry : Model.ConstantEntry β) :
+    (env.pushOpaque r entry).entries = (env.push r entry).entries := rfl
+
+/-- Whether conversion must not unfold this reference's body. -/
+def isOpaque (env : Env β) (r : ConstRef β) : Bool :=
+  (env.noUnfold.getD (refHash env.keyHash r) []).any (· = r)
+
+/-- The environment conversion reads: theorem and opaque bodies hidden. -/
+def reductionView (env : Env β) : Model.Environment β := fun r =>
+  (env.lookup r).map fun entry => if env.isOpaque r then { entry with body := none } else entry
+
+theorem realizes_reductionView {V : Type v} [Model.SetTheory V] {constants : Assignment β V}
+    (env : Env β) (h : Realizes constants env.toEnvironment) :
+    Realizes constants env.reductionView := by
+  have lift : ∀ r e, env.reductionView r = some e → ∃ e₀, env.toEnvironment r = some e₀ ∧
+      e.universes = e₀.universes ∧ e.type = e₀.type ∧ e.equations = e₀.equations ∧
+        e.facts = e₀.facts ∧ (e.body = none ∨ e.body = e₀.body) := by
+    intro r e he
+    simp only [reductionView, Option.map_eq_some_iff] at he
+    obtain ⟨e₀, h₀, rfl⟩ := he
+    refine ⟨e₀, h₀, ?_⟩
+    split <;> simp
+  constructor
+  · intro r e he levels hl env'
+    obtain ⟨e₀, h₀, hu, ht, -, -, -⟩ := lift r e he
+    rw [ht]; exact h.typeValid r e₀ h₀ levels (hu ▸ hl) env'
+  · intro r e he levels hl env'
+    obtain ⟨e₀, h₀, hu, ht, -, -, -⟩ := lift r e he
+    rw [ht]; exact h.member r e₀ h₀ levels (hu ▸ hl) env'
+  · intro r e he body hb levels hl env'
+    obtain ⟨e₀, h₀, hu, -, -, -, hbody⟩ := lift r e he
+    rcases hbody with hn | hs
+    · rw [hn] at hb; cases hb
+    · exact h.bodyValid r e₀ h₀ body (hs ▸ hb) levels (hu ▸ hl) env'
+  · intro r e he body hb levels hl env'
+    obtain ⟨e₀, h₀, hu, -, -, -, hbody⟩ := lift r e he
+    rcases hbody with hn | hs
+    · rw [hn] at hb; cases hb
+    · exact h.bodyValue r e₀ h₀ body (hs ▸ hb) levels (hu ▸ hl) env'
+  · intro r e he law hlaw levels hl env'
+    obtain ⟨e₀, h₀, hu, -, heq, -, -⟩ := lift r e he
+    exact h.equationValue r e₀ h₀ law (heq ▸ hlaw) levels (hu ▸ hl) env'
+  · intro r e he fact hf levels hl env'
+    obtain ⟨e₀, h₀, hu, -, -, hfacts, -⟩ := lift r e he
+    exact h.factMeaning r e₀ h₀ fact (hfacts ▸ hf) levels (hu ▸ hl) env'
 
 /-- Existing entries, including bodies, equations, and facts, are unchanged. -/
 def Preserves (before after : Env β) : Prop :=

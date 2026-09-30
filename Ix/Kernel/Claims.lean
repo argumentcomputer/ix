@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Model.Judgment
 import Ix.Kernel.Model.LetRules
+import Ix.Kernel.Model.Substitution
 import Ix.Kernel.Model.Inductive.Telescope
 
 /-! # Claims produced by the checker
@@ -56,6 +57,21 @@ def ReductionClaim (entries : Environment β) (Γ : Context β) (e e' : AExpr β
           WellDenoted constants levels env e'
 
 namespace Model.TypingClaim
+
+/-- A `let` is typed by its substituted body: the value is typed at the
+annotation, and the body with the value substituted is typed at `B`. This is
+how the official kernel infers a `let`; the let variable is transparent. -/
+theorem letSubst {t v b B : AExpr β} {l : VLevel}
+    (ht : TypingClaim.{u,v} entries Γ t (.sort l)) (hv : TypingClaim.{u,v} entries Γ v t)
+    (hb : TypingClaim.{u,v} entries Γ (b.inst v) B) :
+    TypingClaim.{u,v} entries Γ (.letE t v b) B := by
+  intro V _ constants hM levels env hΓ
+  obtain ⟨htw, -, -⟩ := ht V constants hM levels env hΓ
+  obtain ⟨hvw, -, -⟩ := hv V constants hM levels env hΓ
+  obtain ⟨hbw, hBw, hbm⟩ := hb V constants hM levels env hΓ
+  have hbw' := (wellDenoted_inst_iff b v constants levels env 0 (by simpa using hvw)).1 hbw
+  refine ⟨⟨htw, hvw, by simpa [Valuation.skip_zero, Valuation.insert_zero] using hbw'⟩, hBw, ?_⟩
+  simpa only [interp, interp_inst, Valuation.skip_zero, Valuation.insert_zero] using hbm
 
 theorem formed {e A : AExpr β} (h : TypingClaim.{u,v} entries Γ e A) :
     FormedClaim.{u,v} entries Γ e :=

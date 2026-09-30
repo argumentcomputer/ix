@@ -26,6 +26,72 @@ universe u v
 
 variable {β : Type u} [DecidableEq β]
 
+/-- Carry the binder annotations of `ann` back onto `raw`, where `ann`
+annotates `raw` with some variables replaced by terms: every non-variable node
+of `raw` has the same constructor in `ann`, and every variable of `raw` is kept
+as it is. -/
+def transferAnnotations : VExpr β → AExpr β → Option (AExpr β)
+  | .bvar i, _ => some (.bvar i)
+  | .sort l, _ => some (.sort l)
+  | .const r ls, _ => some (.const r ls)
+  | .natLit r n, _ => some (.natLit r n)
+  | .app f a, .app f' a' => return .app (← transferAnnotations f f') (← transferAnnotations a a')
+  | .lam D b, .lam p D' b' =>
+    return .lam p (← transferAnnotations D D') (← transferAnnotations b b')
+  | .forallE D B, .forallE p D' B' =>
+    return .forallE p (← transferAnnotations D D') (← transferAnnotations B B')
+  | .letE t v b, .letE t' v' b' =>
+    return .letE (← transferAnnotations t t') (← transferAnnotations v v') (← transferAnnotations b b')
+  | .proj r i x, .proj _ _ x' => return .proj r i (← transferAnnotations x x')
+  | _, _ => none
+
+omit [DecidableEq β] in
+theorem transferAnnotations_erase : ∀ {raw : VExpr β} {ann a : AExpr β},
+    transferAnnotations raw ann = some a → a.erase = raw
+  | .bvar _, _, _, h | .sort _, _, _, h | .const _ _, _, _, h | .natLit _ _, _, _, h => by
+    simp only [transferAnnotations, Option.some.injEq] at h; subst h; rfl
+  | .app f x, .app f' x', a, h => by
+    simp only [transferAnnotations, Option.bind_eq_bind, Option.bind_eq_some_iff,
+      Option.pure_def, Option.some.injEq] at h
+    obtain ⟨f₁, hf, x₁, hx, rfl⟩ := h
+    simp only [AExpr.erase, transferAnnotations_erase hf, transferAnnotations_erase hx]
+  | .lam D b, .lam p D' b', a, h => by
+    simp only [transferAnnotations, Option.bind_eq_bind, Option.bind_eq_some_iff,
+      Option.pure_def, Option.some.injEq] at h
+    obtain ⟨D₁, hD, b₁, hb, rfl⟩ := h
+    simp only [AExpr.erase, transferAnnotations_erase hD, transferAnnotations_erase hb]
+  | .forallE D B, .forallE p D' B', a, h => by
+    simp only [transferAnnotations, Option.bind_eq_bind, Option.bind_eq_some_iff,
+      Option.pure_def, Option.some.injEq] at h
+    obtain ⟨D₁, hD, B₁, hB, rfl⟩ := h
+    simp only [AExpr.erase, transferAnnotations_erase hD, transferAnnotations_erase hB]
+  | .letE t v b, .letE t' v' b', a, h => by
+    simp only [transferAnnotations, Option.bind_eq_bind, Option.bind_eq_some_iff,
+      Option.pure_def, Option.some.injEq] at h
+    obtain ⟨t₁, ht, v₁, hv, b₁, hb, rfl⟩ := h
+    simp only [AExpr.erase, transferAnnotations_erase ht, transferAnnotations_erase hv,
+      transferAnnotations_erase hb]
+  | .proj r i x, .proj _ _ x', a, h => by
+    simp only [transferAnnotations, Option.bind_eq_bind, Option.bind_eq_some_iff,
+      Option.pure_def, Option.some.injEq] at h
+    obtain ⟨x₁, hx, rfl⟩ := h
+    simp only [AExpr.erase, transferAnnotations_erase hx]
+  | .app _ _, .bvar _, _, h | .app _ _, .sort _, _, h | .app _ _, .const _ _, _, h
+  | .app _ _, .lam _ _ _, _, h | .app _ _, .forallE _ _ _, _, h | .app _ _, .letE _ _ _, _, h
+  | .app _ _, .proj _ _ _, _, h | .app _ _, .natLit _ _, _, h => by simp [transferAnnotations] at h
+  | .lam _ _, .bvar _, _, h | .lam _ _, .sort _, _, h | .lam _ _, .const _ _, _, h
+  | .lam _ _, .app _ _, _, h | .lam _ _, .forallE _ _ _, _, h | .lam _ _, .letE _ _ _, _, h
+  | .lam _ _, .proj _ _ _, _, h | .lam _ _, .natLit _ _, _, h => by simp [transferAnnotations] at h
+  | .forallE _ _, .bvar _, _, h | .forallE _ _, .sort _, _, h | .forallE _ _, .const _ _, _, h
+  | .forallE _ _, .app _ _, _, h | .forallE _ _, .lam _ _ _, _, h | .forallE _ _, .letE _ _ _, _, h
+  | .forallE _ _, .proj _ _ _, _, h | .forallE _ _, .natLit _ _, _, h => by simp [transferAnnotations] at h
+  | .letE _ _ _, .bvar _, _, h | .letE _ _ _, .sort _, _, h | .letE _ _ _, .const _ _, _, h
+  | .letE _ _ _, .app _ _, _, h | .letE _ _ _, .lam _ _ _, _, h | .letE _ _ _, .forallE _ _ _, _, h
+  | .letE _ _ _, .proj _ _ _, _, h | .letE _ _ _, .natLit _ _, _, h => by simp [transferAnnotations] at h
+  | .proj _ _ _, .bvar _, _, h | .proj _ _ _, .sort _, _, h | .proj _ _ _, .const _ _, _, h
+  | .proj _ _ _, .app _ _, _, h | .proj _ _ _, .lam _ _ _, _, h | .proj _ _ _, .forallE _ _ _, _, h
+  | .proj _ _ _, .letE _ _ _, _, h | .proj _ _ _, .natLit _ _, _, h => by simp [transferAnnotations] at h
+
 /-- Compute binder annotations. -/
 def annotate : Nat → (entries : Environment β) → (Γ : Context β) → VExpr β →
     Search (AExpr β)
@@ -61,8 +127,23 @@ def annotate : Nat → (entries : Environment β) → (Γ : Context β) → VExp
     | .letE t v b => do
       let t' ← annotate fuel entries Γ t
       let v' ← annotate fuel entries Γ v
-      let b' ← annotate fuel entries (Γ.push t') b
+      -- With the let variable opaque; failing that, annotate the body with the
+      -- value substituted and carry its binder annotations back. Annotations
+      -- are proposals that inference validates, so either route is sound.
+      let b' ← Search.orElse (annotate fuel entries (Γ.push t') b) fun _ => do
+        let substituted ← annotate fuel entries Γ (b.inst v)
+        Search.ofOption (transferAnnotations b substituted)
+          (.unresolved "the let body's annotations did not transfer")
       return .letE t' v' b'
+
+private theorem search_orElse_eq_ok {α : Type u} {x : Search α} {f : Unit → Search α} {b : α}
+    (h : Search.orElse x f = .ok b) : x = .ok b ∨ f () = .ok b := by
+  unfold Search.orElse at h
+  split at h
+  · exact .inl (by simp_all)
+  · split at h
+    · exact .inr (by simp_all)
+    · cases h
 
 private theorem search_bind_eq_ok {α γ : Type u} {x : Search α} {f : α → Search γ} {b : γ}
     (h : (x >>= f) = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
@@ -109,7 +190,15 @@ theorem annotate_erase {fuel : Nat} {entries : Environment β} {Γ : Context β}
       obtain ⟨v', hv, h⟩ := search_bind_eq_ok h
       obtain ⟨b', hb, h⟩ := search_bind_eq_ok h
       cases h
-      simp only [AExpr.erase, ih ht, ih hv, ih hb]
+      have hb' : b'.erase = b := by
+        rcases search_orElse_eq_ok hb with hb | hb
+        · exact ih hb
+        · obtain ⟨_, -, hb⟩ := search_bind_eq_ok hb
+          simp only [Search.ofOption] at hb
+          split at hb
+          · cases hb; exact transferAnnotations_erase ‹_›
+          · cases hb
+      simp only [AExpr.erase, ih ht, ih hv, hb']
 
 /-- Package an exact annotation with its separately checked scope, reusing
 the model's reading interface. Binder-condition scope is included in `hs`. -/

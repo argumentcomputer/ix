@@ -197,6 +197,30 @@ def proofHead (entries : Environment β) (e : AExpr β) : Bool :=
     | none => false
   | _ => false
 
+/-- Whether a type telescope, after `n` arguments, is never a proposition: the
+binder consumed last, or the remaining function type, is annotated `.never`, or
+what remains is a sort. -/
+def telescopeNotProof : AExpr β → Nat → Bool
+  | .forallE p _ _, 0 | .forallE p _ _, 1 => match p with | .never => true | _ => false
+  | .forallE _ _ B, n + 2 => telescopeNotProof B (n + 1)
+  | .sort _, 0 => true
+  | _, _ => false
+
+/-- A cheap syntactic test that a term is not a proof, so proof irrelevance
+need not be tried: sorts, Pi types and literals, lambdas into non-propositions,
+and constants whose type says their value is never a proof. It only orders the
+search. -/
+def notProof (entries : Environment β) (e : AExpr β) : Bool :=
+  match e with
+  | .sort _ | .forallE .. | .natLit .. | .lam .never _ _ => true
+  | _ =>
+    match spine e [] with
+    | (.const r _, args) =>
+      match entries r with
+      | some entry => telescopeNotProof entry.type args.length
+      | none => false
+    | _ => false
+
 /-- Syntactic conversion up to universe equivalence, without any reduction:
 the congruence lazy delta tries before unfolding two equal heads. It never
 searches, so a failed attempt costs one traversal. -/
@@ -812,8 +836,16 @@ def inferCore : Nat → (entries : Environment β) → (Γ : Context β) → (e 
       let ⟨l, ht⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ S) hS)
       let ⟨A', hv⟩ ← inferAC fuel entries Γ v
       let ⟨hc⟩ ← isDefEqC fuel entries Γ A' t
-      let ⟨B, hb⟩ ← KM.inFrame (Γ' := Γ.push t) (inferAC fuel entries (Γ.push t) b)
-      return ⟨B.inst v, TypingClaim.letE (l := l) ht (hv.convF ht.formed hc) hb⟩
+      have hv' := hv.convF ht.formed hc
+      -- The body with the let variable opaque; failing that, the body with the
+      -- value substituted, as the official kernel infers it.
+      KM.orElse
+        (do
+          let ⟨B, hb⟩ ← KM.inFrame (Γ' := Γ.push t) (inferAC fuel entries (Γ.push t) b)
+          return ⟨B.inst v, TypingClaim.letE (l := l) ht hv' hb⟩)
+        fun _ => do
+          let ⟨B, hb⟩ ← inferAC fuel entries Γ (b.inst v)
+          return ⟨B, TypingClaim.letSubst ht hv' hb⟩
     | .proj r i x => do
       let ⟨T, _⟩ ← inferAC fuel entries Γ x
       let normalized ← whnfC fuel entries Γ T
@@ -925,7 +957,8 @@ def isDefEqCoreC : Nat → (entries : Environment β) → (Γ : Context β) → 
       KM.orElse structural fun _ =>
         KM.orElse (etaStructC fuel entries Γ a b) fun _ =>
           KM.orElse (KM.map (fun ⟨c⟩ => ⟨c.symm⟩) (etaStructC fuel entries Γ b a)) fun _ =>
-            proofIrrelevanceC fuel entries Γ a b
+            if notProof entries a || notProof entries b then throw .noMatch
+            else proofIrrelevanceC fuel entries Γ a b
 
 /-- Conversion by lazy delta (`lazyDeltaC`): reduce both sides without
 unfolding their heads, compare, and unfold only as needed. Outcomes that did

@@ -247,7 +247,8 @@ def canonicalCases : List Case := [
   { name := "opaque-transparency", declarations := [
       Fixtures.defn "opaqueType" 0 .opaque Fixtures.type1 Fixtures.type0,
       Fixtures.defn "useOpaque" 0 .definition (.const (.member "opaqueType" 0) []) Fixtures.prop],
-    tc := .reject, difference := "Ix.Kernel unfolds the checked body of an opaque declaration" }
+    kernel := .decline, tc := .reject,
+    difference := "conservative conversion search: like Ix.Tc, conversion does not unfold an opaque body" }
 ]
 
 def cases : List Case :=
