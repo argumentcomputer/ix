@@ -332,7 +332,7 @@ def casesForm (cx : Cx) (key r : CId) (q : Profile) (args : List Src.Term.Arg) :
   let body ← match I.kindAt r q with
     | some .empty => pure (.tick .trap)
     | some (.subsingleton _ srcs) =>
-      let fields := srcs.toList.map fun
+      let fields := srcs.map fun
         | .index i => (refs.getD (np + 1 + i) .box).level?
         | .proof => none
       return wrapLets lets (.tick (← minorApp rec cx' (minor 0) fields))
@@ -341,7 +341,7 @@ def casesForm (cx : Cx) (key r : CId) (q : Profile) (args : List Src.Term.Arg) :
       if major matches .box then
         decline "erase-C4" "an ordinary eliminator with an irrelevant major" r
       let scrut ← refTerm rec cx' major
-      let alts ← (rules.toList.zipIdx).mapM fun (rule, j) => do
+      let alts ← (rules.zipIdx).mapM fun (rule, j) => do
         let (k, arity, fields) ← ruleAlt I r q cx'.depth ind j rule
         let body ← minorApp rec (cx'.extra arity) (minor j) fields
         return Alt.mk k arity body

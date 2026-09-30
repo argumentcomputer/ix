@@ -225,7 +225,7 @@ def constRel (p : Program) (c : CId) : M ConstRel := do
         let (b, _) ← TcM.openBinderAnon dom body
         cur := b
       | _ => break
-    return { result, params }
+    return { result, params := params.toList }
 
 def ctorRel (p : Program) (c : CId) : M CtorRel := do
   let .ctor (params := np) (fields := nf) (ty := ty) .. ← kConst p c
@@ -240,12 +240,12 @@ def ctorRel (p : Program) (c : CId) : M CtorRel := do
       let some (dom, b) ← openPi cur | fail "relevance annotator: constructor fields"
       fields := fields.push (FieldClass.ofRel (← classifyType dom))
       cur := b
-    return { fields }
+    return { fields := fields.toList }
 
 /-- Constructors of an inductive (for recursors and projections). -/
 def ctorsOf (p : Program) (ind : CId) : Array CId :=
   match p.decl? ind with
-  | some (.induct _ _ _ _ _ ctors) => ctors
+  | some (.induct _ _ _ _ _ ctors) => ctors.toArray
   | _ => #[]
 
 def run (p : Program) (via : PropWhenVia := .body) : M Ann := do
@@ -254,7 +254,7 @@ def run (p : Program) (via : PropWhenVia := .body) : M Ann := do
   let mut consts : Array (Option ConstRel) := .replicate n none
   let mut ctors : Array (Option CtorRel) := .replicate n none
   let mut nodes : Array (TermKey × Array Tag) := #[]
-  let mut queue : Array CId := p.roots.map (·.2)
+  let mut queue : Array CId := p.roots.toArray.map (·.2)
   let mut ctorQueue : Array CId := #[]
   let mut qi := 0
   while qi < queue.size do
@@ -277,7 +277,8 @@ def run (p : Program) (via : PropWhenVia := .body) : M Ann := do
     queue := queue ++ (p.runtimeRefs c).toArray.map (·.1)
   for c in ctorQueue do
     if (ctors[c]?).join.isNone then ctors := ctors.set! c (some (← ctorRel p c))
-  return { consts, ctors, nodes }
+  return { consts := NatMap.ofOptions consts.toList, ctors := NatMap.ofOptions ctors.toList
+           nodes := nodes.toList.map fun (key, tags) => (key, tags.toList) }
 
 end Compilatrix.Src.Relevance.Annotate
 

@@ -65,7 +65,7 @@ def unboxAgrees (a : Assert) (e : Erased) (label : String) : IO Nat := do
   for c in List.range e.src.size do
     let some (.induct _ lvls _ _ _ ctors) := e.src.decl? c | continue
     if lvls > 3 then continue
-    let conditional := ctors.toList.any fun k => match e.checked.ctorRel? k with
+    let conditional := ctors.any fun k => match e.checked.ctorRel? k with
       | some r => r.fields.any fun
         | .proof (.allZero (_ :: _)) => true
         | _ => false

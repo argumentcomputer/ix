@@ -70,7 +70,7 @@ def world : World := Id.run do
     | some (.defn ..) => some (TermKey.value c)
     | _ => none
   let keys := keys ++ #[TermKey.eqn viaEqn, .rule b.natRec 0, .rule b.natRec 1]
-  let p := Lazify.run p keys
+  let p := Lazify.run p keys.toList
   return { p, b, loop, ident, thm, ax, opaq, opaqOk, unsafeDef, partialDef, viaEqn, viaCsimp,
            myIte, myOr }
 

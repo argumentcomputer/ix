@@ -56,27 +56,27 @@ program `pI`. -/
 def mutant (pI : Program) (ann : Ann) (g : Gen) : Ann × String × Gen := Id.run do
   let (kind, g) := g.next 10
   if kind < 7 && !ann.nodes.isEmpty then
-    let (ki, g) := g.next ann.nodes.size
+    let (ki, g) := g.next ann.nodes.length
     let (key, tags) := ann.nodes[ki]!
     if tags.isEmpty then return (ann, "none", g)
-    let (ti, g) := g.next tags.size
+    let (ti, g) := g.next tags.length
     let (v, g) := g.next 2
     let some t := pI.termOf key | return (ann, "none", g)
     let t' := mutateNode (v == 1) ti t
-    let nodes := ann.nodes.set! ki (key, t'.tagOrder #[])
+    let nodes := ann.nodes.set ki (key, t'.tagOrder)
     return ({ ann with nodes }, s!"node {repr key} #{ti}{if v == 1 then " propWhen" else ""}", g)
   else if kind < 9 then
-    let cs := (Array.range ann.consts.size).filter fun c => (ann.constRel? c).isSome
+    let cs := (Array.range pI.size).filter fun c => (ann.constRel? c).isSome
     if cs.isEmpty then return (ann, "none", g)
     let (ci, g) := g.next cs.size
     let c := cs[ci]!
     let rel := (ann.constRel? c).get!
-    let (pi, g) := g.next (rel.params.size + 1)
-    let rel := if pi == rel.params.size then { rel with result := flipRel rel.result }
+    let (pi, g) := g.next (rel.params.length + 1)
+    let rel := if pi == rel.params.length then { rel with result := flipRel rel.result }
       else { rel with params := rel.params.modify pi flipRel }
-    return ({ ann with consts := ann.consts.set! c (some rel) }, s!"ConstRel {pI.short c} #{pi}", g)
+    return ({ ann with consts := ann.consts.insert c rel }, s!"ConstRel {pI.short c} #{pi}", g)
   else
-    let cs := (Array.range ann.ctors.size).filter fun c =>
+    let cs := (Array.range pI.size).filter fun c =>
       match ann.ctorRel? c with
       | some r => !r.fields.isEmpty
       | none => false
@@ -84,11 +84,11 @@ def mutant (pI : Program) (ann : Ann) (g : Gen) : Ann × String × Gen := Id.run
     let (ci, g) := g.next cs.size
     let c := cs[ci]!
     let rel := (ann.ctorRel? c).get!
-    let (fi, g) := g.next rel.fields.size
+    let (fi, g) := g.next rel.fields.length
     let fields := rel.fields.modify fi fun
       | .keep => FieldClass.prf
       | _ => .keep
-    return ({ ann with ctors := ann.ctors.set! c (some { fields }) }, s!"CtorRel {pI.short c} #{fi}", g)
+    return ({ ann with ctors := ann.ctors.insert c { fields } }, s!"CtorRel {pI.short c} #{fi}", g)
 
 /-- An outcome as an observation, if it has one. -/
 def observe (p : Program) (keep : CId → Levels → Nat → Bool) : Result Value → Option Obs

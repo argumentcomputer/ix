@@ -124,11 +124,12 @@ def setDecl (b : Builder) (c : CId) (decl : Decl) : Builder :=
   { b with consts := b.consts.modify c fun e => { e with decl } }
 
 def program (b : Builder) (roots : Array CId := #[]) : Program :=
-  { consts := b.consts
-    byAddr := b.consts.zipIdx.foldl (fun m (e, i) => m.insert e.addr i) {}
-    table := { resolve := b.resolve, recKind := b.recKind, lazy := b.lazy
-               inline := .replicate b.consts.size false, opaqueByValue := b.opaqueByValue }
-    roots := roots.map fun c => (fakeAddr c, c)
+  { Program.ofConsts b.consts.toList with
+    table := { resolve := NatMap.ofOptions b.resolve.toList
+               recKind := NatMap.ofOptions b.recKind.toList, lazy := NatMap.ofOptions b.lazy.toList
+               opaqueByValue := NatMap.ofOptions (b.opaqueByValue.toList.map
+                 fun x => if x then some () else none) }
+    roots := roots.toList.map fun c => (fakeAddr c, c)
     known := b.known }
 
 end Builder
@@ -139,8 +140,8 @@ def pushConst (p : Program) (decl : Decl) (salt : Nat) (root : Bool := false) : 
   let c := p.size
   let a := Builder.fakeAddr (c + salt)
   let e : ConstEntry := { ref := .member a 0, addr := a, decl }
-  let p := { p with consts := p.consts.push e, byAddr := p.byAddr.insert a c }
-  (if root then { p with roots := #[(a, c)] } else p, c)
+  let p := p.push e
+  (if root then { p with roots := [(a, c)] } else p, c)
 
 /-- Placeholder type. -/
 def ty : Term := .sort (.succ .zero)
@@ -220,13 +221,13 @@ structure Base where
 quotients and three primitives, with hand-written recursor rules. -/
 def base : Builder × Base := Id.run do
   let mut b : Builder := {}
-  let (b1, nat) := b.add (.induct true 0 0 0 ty #[])
+  let (b1, nat) := b.add (.induct true 0 0 0 ty [])
   b := b1
   let (b1, zeroC) := b.add (.ctor true 0 nat 0 0 0 (.const nat []))
   b := b1
   let (b1, succ) := b.add (.ctor true 0 nat 1 0 1 (.pi {} {} (.const nat []) (.const nat [])))
   b := b1
-  b := b.setDecl nat (.induct true 0 0 0 ty #[zeroC, succ])
+  b := b.setDecl nat (.induct true 0 0 0 ty [zeroC, succ])
   -- Nat.rec: motive, zero minor, succ minor, major.
   let natRecId := b.consts.size
   let rule0 : Rule := { ctor := zeroC, fields := 0, rhs := lams 3 (.var 1) }
@@ -234,19 +235,19 @@ def base : Builder × Base := Id.run do
     [(.var 3, .irr), (.var 2, .byName), (.var 1, .byName), (.var 0, .strict)]
   let rhs1 := lams 4 (appM (.var 1) [(.var 0, .strict), (ih, .byName)])
   let rule1 : Rule := { ctor := succ, fields := 1, rhs := rhs1 }
-  let (b1, natRec) := b.add (.recr true false 1 0 1 2 0 nat #[rule0, rule1] ty)
+  let (b1, natRec) := b.add (.recr true false 1 0 1 2 0 nat [rule0, rule1] ty)
   b := { b1 with recKind := b1.recKind.set! natRec (some .ordinary) }
   let (b1, natCases) := b.add (.defn .defn .safe 1 ty (lams 4 (.natLit 0)))
   b := { b1 with resolve := b1.resolve.set! natCases (some (.case natRec)) }
-  let (b1, bool) := b.add (.induct true 0 0 0 ty #[])
+  let (b1, bool) := b.add (.induct true 0 0 0 ty [])
   b := b1
   let (b1, bfalse) := b.add (.ctor true 0 bool 0 0 0 (.const bool []))
   b := b1
   let (b1, btrue) := b.add (.ctor true 0 bool 1 0 0 (.const bool []))
   b := b1
-  b := b.setDecl bool (.induct true 0 0 0 ty #[bfalse, btrue])
+  b := b.setDecl bool (.induct true 0 0 0 ty [bfalse, btrue])
   let (b1, boolRec) := b.add (.recr true false 1 0 1 2 0 bool
-    #[{ ctor := bfalse, fields := 0, rhs := lams 3 (.var 1) },
+    [{ ctor := bfalse, fields := 0, rhs := lams 3 (.var 1) },
       { ctor := btrue, fields := 0, rhs := lams 3 (.var 0) }] ty)
   b := { b1 with recKind := b1.recKind.set! boolRec (some .ordinary) }
   let (b1, boolCases) := b.add (.defn .defn .safe 1 ty (lams 4 (.natLit 0)))
@@ -257,24 +258,24 @@ def base : Builder × Base := Id.run do
   b := { b1 with resolve := b1.resolve.set! sub (some (.prim .sub)) }
   let (b1, beq) := b.add (.defn .defn .safe 0 ty (lams 2 (.natLit 0)))
   b := { b1 with resolve := b1.resolve.set! beq (some (.prim .beq)) }
-  let (b1, pair) := b.add (.induct true 0 0 0 ty #[])
+  let (b1, pair) := b.add (.induct true 0 0 0 ty [])
   b := b1
   let (b1, pairMk) := b.add (.ctor true 0 pair 0 0 2 ty)
   b := b1
-  b := b.setDecl pair (.induct true 0 0 0 ty #[pairMk])
-  let (b1, empty) := b.add (.induct true 0 0 0 ty #[])
+  b := b.setDecl pair (.induct true 0 0 0 ty [pairMk])
+  let (b1, empty) := b.add (.induct true 0 0 0 ty [])
   b := b1
-  let (b1, emptyRec) := b.add (.recr true false 1 0 1 0 0 empty #[] ty)
+  let (b1, emptyRec) := b.add (.recr true false 1 0 1 0 0 empty [] ty)
   b := { b1 with recKind := b1.recKind.set! emptyRec (some .empty) }
   -- IsNat : Nat → Prop with `mk (n : Nat) : IsNat n`: the field is index 0.
-  let (b1, isNat) := b.add (.induct true 0 0 1 ty #[])
+  let (b1, isNat) := b.add (.induct true 0 0 1 ty [])
   b := b1
   let (b1, isNatMk) := b.add (.ctor true 0 isNat 0 0 1 ty)
   b := b1
-  b := b.setDecl isNat (.induct true 0 0 1 ty #[isNatMk])
+  b := b.setDecl isNat (.induct true 0 0 1 ty [isNatMk])
   let (b1, isNatRec) := b.add (.recr true false 1 0 1 1 1 isNat
-    #[{ ctor := isNatMk, fields := 1, rhs := lams 3 (appM (.var 1) [(.var 0, .strict)]) }] ty)
-  b := { b1 with recKind := b1.recKind.set! isNatRec (some (.subsingleton .always #[.index 0])) }
+    [{ ctor := isNatMk, fields := 1, rhs := lams 3 (appM (.var 1) [(.var 0, .strict)]) }] ty)
+  b := { b1 with recKind := b1.recKind.set! isNatRec (some (.subsingleton .always [.index 0])) }
   let (b1, quot) := b.add (.quot .type 1 ty)
   b := b1
   let (b1, quotMk) := b.add (.quot .ctor 1 ty)
@@ -283,21 +284,21 @@ def base : Builder × Base := Id.run do
   b := b1
   let (b1, quotInd) := b.add (.quot .ind 1 ty)
   b := b1
-  let (b1, unit) := b.add (.induct true 1 0 0 ty #[])
+  let (b1, unit) := b.add (.induct true 1 0 0 ty [])
   b := b1
   let (b1, unitMk) := b.add (.ctor true 1 unit 0 0 0 (.const unit [.var 0]))
   b := b1
-  b := b.setDecl unit (.induct true 1 0 0 ty #[unitMk])
+  b := b.setDecl unit (.induct true 1 0 0 ty [unitMk])
   -- PUnit.rec.{v, u}: the major's type `unit.{u}` names recursor parameter 1.
   let recTy := Term.pi {} {} ty (Term.pi {} {} ty (Term.pi {} {} (.const unit [.var 1]) ty))
   let (b1, unitRec) := b.add (.recr true false 2 0 1 1 0 unit
-    #[{ ctor := unitMk, fields := 0, rhs := lams 2 (.var 0) }] recTy)
-  b := { b1 with recKind := b1.recKind.set! unitRec (some (.subsingleton (.allZero [1]) #[])) }
-  let (b1, ppair) := b.add (.induct true 1 0 0 ty #[])
+    [{ ctor := unitMk, fields := 0, rhs := lams 2 (.var 0) }] recTy)
+  b := { b1 with recKind := b1.recKind.set! unitRec (some (.subsingleton (.allZero [1]) [])) }
+  let (b1, ppair) := b.add (.induct true 1 0 0 ty [])
   b := b1
   let (b1, ppairMk) := b.add (.ctor true 1 ppair 0 0 2 ty)
   b := b1
-  b := b.setDecl ppair (.induct true 1 0 0 ty #[ppairMk])
+  b := b.setDecl ppair (.induct true 1 0 0 ty [ppairMk])
   b := { b with known := { nat := some nat, natZero := some zeroC, natSucc := some succ,
                             natRec := some natRec, bool := some bool, boolTrue := some btrue,
                             boolFalse := some bfalse } }

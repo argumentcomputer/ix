@@ -43,25 +43,25 @@ def world : World := Id.run do
   let natT : Term := .const b.nat []
   -- `Box (p : Nat)` with `mk (x : Nat)`: a relevant parameter and one field
   -- (placeholder type: not unboxed).
-  let (b1, box) := bld.add (.induct true 0 1 0 ty #[])
+  let (b1, box) := bld.add (.induct true 0 1 0 ty [])
   let (b1, boxMk) := b1.add (.ctor true 0 box 0 1 1 ty)
-  bld := b1.setDecl box (.induct true 0 1 0 ty #[boxMk])
+  bld := b1.setDecl box (.induct true 0 1 0 ty [boxMk])
   -- `Wrap` with `mk (x : Nat)`, a real constructor type: unboxed (S3).
-  let (b1, wrap) := bld.add (.induct true 0 0 0 ty #[])
+  let (b1, wrap) := bld.add (.induct true 0 0 0 ty [])
   let (b1, wrapMk) := b1.add (.ctor true 0 wrap 0 0 1 (.pi {} {} natT (.const wrap [])))
-  bld := b1.setDecl wrap (.induct true 0 0 0 ty #[wrapMk])
+  bld := b1.setDecl wrap (.induct true 0 0 0 ty [wrapMk])
   -- `casesOn` keys for the subsingleton `IsNat` and the empty type.
   let (b1, isNatCases) := bld.add (.defn .defn .safe 1 ty (lams 4 (.natLit 0)))
   bld := { b1 with resolve := b1.resolve.set! isNatCases (some (.case b.isNatRec)) }
   let (b1, emptyCases) := bld.add (.defn .defn .safe 1 ty (lams 2 (.natLit 0)))
   bld := { b1 with resolve := b1.resolve.set! emptyCases (some (.case b.emptyRec)) }
   -- `Decidable`-like: one Prop parameter, `isFalse (h)`, `isTrue (h)`.
-  let (b1, dec) := bld.add (.induct true 0 1 0 ty #[])
+  let (b1, dec) := bld.add (.induct true 0 1 0 ty [])
   let (b1, decF) := b1.add (.ctor true 0 dec 0 1 1 ty)
   let (b1, decT) := b1.add (.ctor true 0 dec 1 1 1 ty)
-  bld := b1.setDecl dec (.induct true 0 1 0 ty #[decF, decT])
+  bld := b1.setDecl dec (.induct true 0 1 0 ty [decF, decT])
   let (b1, decRec) := bld.add (.recr true false 1 1 1 2 0 dec
-    #[{ ctor := decF, fields := 1, rhs := lams 5 (appM (.var 2) [(irrArg, .irr)]) },
+    [{ ctor := decF, fields := 1, rhs := lams 5 (appM (.var 2) [(irrArg, .irr)]) },
       { ctor := decT, fields := 1, rhs := lams 5 (appM (.var 1) [(irrArg, .irr)]) }] ty)
   bld := { b1 with recKind := b1.recKind.set! decRec (some .ordinary) }
   let (b1, decCases) := bld.add (.defn .defn .safe 1 ty (lams 5 (.natLit 0)))
@@ -88,9 +88,9 @@ def prepare (w : World) (value : Term) : Except String (Program × Checked) := d
   let (bld, root) := w.bld.add (.defn .defn .safe 0 ty value)
   let p := bld.program #[root]
   let ann := annOf p (rootKeys p)
-  let ann := setCtor ann w.decF #[FieldClass.prf]
-  let ann := setCtor ann w.decT #[FieldClass.prf]
-  let ann := setCtor ann w.b.ppairMk #[.proof (.allZero [0]), .keep]
+  let ann := setCtor ann w.decF [FieldClass.prf]
+  let ann := setCtor ann w.decT [FieldClass.prf]
+  let ann := setCtor ann w.b.ppairMk [.proof (.allZero [0]), .keep]
   match check p ann with
   | .ok ch => return (Lazify.run p ch.keys, ch)
   | .error es => throw s!"checker: {es.toList.map (·.render p)}"
@@ -125,7 +125,7 @@ def declinedUnchecked (a : Assert) (w : World) (label : String) (value : Term) (
   let (bld, root) := w.bld.add (.defn .defn .safe 0 ty value)
   let p := bld.program #[root]
   let ann := annOf p (rootKeys p)
-  let ch : Checked := { keys := #[], reached := #[], instances := #[], consts := ann.consts
+  let ch : Checked := { keys := [], reached := [], instances := [], consts := ann.consts
                         ctors := ann.ctors }
   expect a ((check p ann) matches .error _) s!"{label}: the checker rejects it"
   match Compilatrix.Lam.erase p ch with

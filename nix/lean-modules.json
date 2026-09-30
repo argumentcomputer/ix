@@ -1104,11 +1104,16 @@
    "imports": ["Compilatrix.Src.Pinned"]},
   "Compilatrix.Src.Table.Build":
   {"path": "Compilatrix/Src/Table/Build.lean",
-   "imports": ["Compilatrix.Src.Table.Check", "Compilatrix.Src.Hints"]},
+   "imports":
+   ["Compilatrix.Src.Table.Check",
+    "Compilatrix.Src.Hints",
+    "Std.Data.HashMap"]},
   "Compilatrix.Src.Syntax":
   {"path": "Compilatrix/Src/Syntax.lean",
    "imports":
-   ["Compilatrix.Ixon.V3.Const", "Compilatrix.Src.Level", "Std.Data.HashMap"]},
+   ["Compilatrix.Ixon.V3.Const",
+    "Compilatrix.Src.Level",
+    "Compilatrix.Src.NatMap"]},
   "Compilatrix.Src.Semantics":
   {"path": "Compilatrix/Src/Semantics.lean",
    "imports":
@@ -1154,7 +1159,8 @@
    "imports": ["Compilatrix.Src.Runtime"]},
   "Compilatrix.Src.Ingress":
   {"path": "Compilatrix/Src/Ingress.lean",
-   "imports": ["Compilatrix.Src.Syntax", "Compilatrix.Ixon.V3.Typed"]},
+   "imports":
+   ["Compilatrix.Src.Syntax", "Compilatrix.Ixon.V3.Typed", "Std.Data.HashMap"]},
   "Compilatrix.Src.Hints":
   {"path": "Compilatrix/Src/Hints.lean",
    "imports":
@@ -1164,7 +1170,7 @@
     "Lean.Data.Json.Parser"]},
   "Compilatrix.Src.Admit":
   {"path": "Compilatrix/Src/Admit.lean",
-   "imports": ["Compilatrix.Src.Runtime"]},
+   "imports": ["Compilatrix.Src.Runtime", "Std.Data.HashSet"]},
   "Compilatrix.Sem.Transform":
   {"path": "Compilatrix/Sem/Transform.lean",
    "imports": ["Compilatrix.Sem.Simulation"]},

@@ -11,9 +11,9 @@ are not entered. It never changes a class or a major, and it touches only
 modes, so the erased program is unchanged (`Lazify.erase_eq`). It runs after
 the relevance check, on the checked runtime terms.
 
-Kernel-evaluable style (D17, on the recheck path as a re-run pass): the term
-walk is a mutual structural recursion over `Term`, a spine's by-name
-positions are a list of intervals, and the keys are walked as a list. -/
+Kernel-evaluable (D17, on the recheck path as a re-run pass): the term walk
+is a mutual structural recursion over `Term`, a spine's by-name positions are
+a list of intervals, and the program is read through its `NatMap`s. -/
 
 namespace Compilatrix.Src.Lazify
 
@@ -90,7 +90,7 @@ end
 def ihs (np nmot nmin : Nat) (rule : Rule) : Rule :=
   let total := np + nmot + nmin + rule.fields
   let (binders, body) := rule.rhs.lams
-  if binders.size != total then rule else
+  if binders.length != total then rule else
   let (head, args) := body.spine
   let args := args.mapIdx fun i (a, m, r) =>
     (a, (if i ≥ rule.fields && !r.alwaysIrr then Mode.byName else m), r)
@@ -112,12 +112,9 @@ def step (p : Program) (key : TermKey) : Program :=
     | some t => p.setTerm key (term p t)
     | none => p
 
-/-- Lazify runtime terms, in order (structural on the list). -/
-def runList (p : Program) : List TermKey → Program
+/-- Lazify the given runtime terms, in order (structural on the list). -/
+def run (p : Program) : List TermKey → Program
   | [] => p
-  | key :: keys => runList (step p key) keys
-
-/-- Lazify the given runtime terms. -/
-def run (p : Program) (keys : Array TermKey) : Program := runList p keys.toList
+  | key :: keys => run (step p key) keys
 
 end Compilatrix.Src.Lazify

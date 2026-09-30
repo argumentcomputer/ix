@@ -32,12 +32,12 @@ def relName : Rel → String
 /-- A deterministic JSON line per reached constant (SRC-9). -/
 def report (l : Loaded) : Json :=
   let p := l.program
-  Json.arr (l.checked.reached.map fun c =>
+  Json.arr (l.checked.reached.toArray.map fun c =>
     let rel := l.checked.constRel? c
     Json.mkObj [("address", toJson (toString (p.addr c))),
       ("kind", toJson (((p.decl? c).map Decl.kindName).getD "?")),
       ("result", toJson ((rel.map (relName ·.result)).getD "-")),
-      ("params", toJson ((rel.map fun r => r.params.toList.map relName).getD [])),
+      ("params", toJson ((rel.map fun r => r.params.map relName).getD [])),
       ("verdict", toJson "accepted")])
 
 def run (a : Assert) (reportPath : Option System.FilePath) : IO (Array String) := do
@@ -50,7 +50,7 @@ def run (a : Assert) (reportPath : Option System.FilePath) : IO (Array String) :
     | some c => pure c
     | none => throw (IO.userError s!"census: {n} is not in k1.ixe")
   let mut out := #[]
-  out := out.push s!"k1.ixe closure: {l.checked.reached.size} constants, {l.checked.keys.size} runtime terms"
+  out := out.push s!"k1.ixe closure: {l.checked.reached.length} constants, {l.checked.keys.length} runtime terms"
   if let some path := reportPath then
     IO.FS.writeFile path ((report l).pretty ++ "\n")
     out := out.push s!"census report written to {path}"
@@ -64,10 +64,10 @@ def run (a : Assert) (reportPath : Option System.FilePath) : IO (Array String) :
       expect a (p.table.recKindOf c == some .empty) s!"census: {n} is empty"
   -- Acc.intro's x is read from the index; Exists eliminates only into proofs.
   let accRec ← need "Acc.rec"
-  expect a (p.table.recKindOf accRec == some (.subsingleton .always #[.index 0, .proof]))
+  expect a (p.table.recKindOf accRec == some (.subsingleton .always [.index 0, .proof]))
     s!"census: Acc.rec reads x from its index ({repr (p.table.recKindOf accRec)})"
   if let some c := idOf "Exists.rec" then
-    expect a (p.table.recKindOf c == some (.subsingleton .always #[.proof, .proof]))
+    expect a (p.table.recKindOf c == some (.subsingleton .always [.proof, .proof]))
       s!"census: Exists.rec has only proof fields ({repr (p.table.recKindOf c)})"
   -- unbox? on the one-field structures, from their constructors' classes.
   let structs := ["Fin", "Subtype", "BitVec", "UInt64", "Char", "OfNat", "HAdd"]
@@ -88,19 +88,19 @@ def run (a : Assert) (reportPath : Option System.FilePath) : IO (Array String) :
   let dec ← need "Decidable"
   match p.decl? dec with
   | some (.induct _ _ _ _ _ dctors) =>
-    expectEq a dctors.size 2 "census: Decidable has two constructors"
-    let drels ← IO.ofExcept (ctorRels l.env p dctors)
+    expectEq a dctors.length 2 "census: Decidable has two constructors"
+    let drels ← IO.ofExcept (ctorRels l.env p dctors.toArray)
     for (_, rel) in drels do
       expect a (!rel.fields.contains .keep) "census: Decidable constructors keep no field"
   | _ => expect a false "census: Decidable is not an inductive"
   -- Every propWhen agrees with a re-inference from the λ's own type.
   let viaLam ← IO.ofExcept (annotateVia .lambda l.env p)
   let viaBody ← IO.ofExcept (annotate l.env p)
-  expectEq a viaLam.nodes.size viaBody.nodes.size "census: same annotated terms"
+  expectEq a viaLam.nodes.length viaBody.nodes.length "census: same annotated terms"
   let mut lams := 0
   for ((k1, t1), (k2, t2)) in viaBody.nodes.zip viaLam.nodes do
     expect a (k1 == k2 && t1 == t2) s!"census: propWhen re-inference differs on {repr k1}"
-    lams := lams + (t1.filter fun | .lam .. => true | _ => false).size
+    lams := lams + (t1.filter fun | .lam .. => true | _ => false).length
   out := out.push s!"propWhen agrees on {lams} λs"
   return out
 

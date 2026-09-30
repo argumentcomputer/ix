@@ -119,10 +119,10 @@ def firstOrderArity (p : Program) (t : Term) : Option Nat := do
   let nat ← p.known.nat
   let bool := p.known.bool
   let (binders, result) := t.pis
-  unless binders.size ≥ 1 && binders.size ≤ 3 do none
+  unless binders.length ≥ 1 && binders.length ≤ 3 do none
   unless binders.all (fun (_, d) => d == .const nat []) do none
   match result with
-  | .const r [] => if r == nat || some r == bool then some binders.size else none
+  | .const r [] => if r == nat || some r == bool then some binders.length else none
   | _ => none
 
 /-- Every argument tuple of the given arity over `{0, 1, 2}` (larger values
@@ -170,22 +170,21 @@ def LevelStats.json (s : LevelStats) : Json :=
     ("constants", toJson s.constants), ("profile_split", toJson s.splits)]
 
 def levelStats (p : Program) (ann : Ann) (ch : Checked) : LevelStats :=
-  let tags := ann.nodes.foldl (fun acc (_, ts) => acc ++ ts) #[]
+  let tags := ann.nodes.foldl (fun acc (_, ts) => acc ++ ts) ([] : List Tag)
   let tagCond : Tag → Bool
     | .lam r pw => isCond r.irrWhen || isCond pw
     | .arg r | .letE r => isCond r.irrWhen
   let params := ch.reached.foldl (fun n c => match ann.constRel? c with
-    | some rel => n + (rel.params.filter (isCond ·.irrWhen)).size
+    | some rel => n + (rel.params.filter (isCond ·.irrWhen)).length
     | none => n) 0
-  let fields := ann.ctors.foldl (fun n r => match r with
-    | some rel => n + (rel.fields.filter (isCond ·.dropWhen)).size
-    | none => n) 0
+  let fields := ann.ctors.toList.foldl (fun n (_, rel) =>
+    n + (rel.fields.filter (isCond ·.dropWhen)).length) 0
   let recKinds := ch.reached.foldl (fun n c => match p.table.recKindOf c with
     | some (.subsingleton w _) => if isCond w then n + 1 else n
     | _ => n) 0
-  { condTags := (tags.filter tagCond).size, tags := tags.size, condParams := params
-    condFields := fields, condRecKinds := recKinds, instances := ch.instances.size
-    constants := ch.reached.size, splits := ch.profileSplit.size }
+  { condTags := (tags.filter tagCond).length, tags := tags.length, condParams := params
+    condFields := fields, condRecKinds := recKinds, instances := ch.instances.length
+    constants := ch.reached.length, splits := ch.profileSplit.length }
 
 /-- What happened to one pack's annotation. -/
 structure Verdict where
@@ -235,21 +234,21 @@ def censusPack (a : Assert) (pack : Pack) : IO Verdict := do
     let label := (Loaded.names hints addr).getD (p0.short c)
     let argss := pack.args label
     if argss.isEmpty then continue
-    let (p, verdict) ← IO.ofExcept (prepareRuns env { p0 with roots := #[(addr, c)] })
+    let (p, verdict) ← IO.ofExcept (prepareRuns env { p0 with roots := [(addr, c)] })
     if verdict == "accepted" then accepted := accepted.push (addr, c)
     else verdicts := verdicts.push s!"{label}: {verdict}"
     v := { v with roots := ← runRoot a p c label argss v.roots }
   -- First-order constants of the closure, as extra roots.
   let fo := firstOrderConsts p0
   let extra := fo.map fun (c, _) => (p0.addr c, c)
-  let (p, verdict) ← IO.ofExcept (prepareRuns env { p0 with roots := p0.roots ++ extra })
+  let (p, verdict) ← IO.ofExcept (prepareRuns env { p0 with roots := p0.roots ++ extra.toList })
   unless verdict == "accepted" do verdicts := verdicts.push s!"first-order roots: {verdict}"
   let mut t : Tally := {}
   for (c, arity) in fo do
     t ← runRoot a p c (names hints p c) (smallTuples arity) t
   let checker := if verdicts.isEmpty then "accepted" else String.intercalate "; " verdicts.toList
   -- Level-exact statistics of the closure of the roots the checker accepts.
-  let pa := { p0 with roots := accepted }
+  let pa := { p0 with roots := accepted.toList }
   let ann ← IO.ofExcept (annotate env pa)
   let pI ← IO.ofExcept (install pa ann)
   let level := match check pI ann with

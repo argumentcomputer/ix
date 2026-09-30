@@ -1,4 +1,5 @@
 import Compilatrix.Src.Runtime
+import Std.Data.HashSet
 
 /-! # Src.Admit
 
@@ -9,8 +10,9 @@ recursors, and the recursor under each reached `case` key). Reachability is
 per universe profile (D18): a constant is reached as an instance
 `(constant, profile)`, and a position is followed only where its class is
 relevant at that profile, so a sort-polymorphic body instantiated at
-`Sort 0` never reaches the proofs in its proof positions. Every reached
-reference is classified:
+`Sort 0` never reaches the proofs in its proof positions. `Admit` is not on
+the recheck path (01 §1.2), so it keeps its hash set and queue array. Every
+reached reference is classified:
 
 | Code | Condition | Outcome |
 | --- | --- | --- |
@@ -112,7 +114,8 @@ def admit (p : Program) (names : Address → Option String := fun _ => none)
   let mut nodes := 0
   let mut seen : Std.HashSet Inst := {}
   let mut instances : Array Inst := #[]
-  let mut queue : Array (Inst × Option CId) := p.roots.map fun (_, c) => (p.instOf c [], none)
+  let mut queue : Array (Inst × Option CId) :=
+    p.roots.toArray.map fun (_, c) => (p.instOf c [], none)
   let mut qi := 0
   let pathOf := fun (parent : Array (Option CId)) (c : CId) => Id.run do
     let mut path : List Address := []

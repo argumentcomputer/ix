@@ -25,7 +25,7 @@ def safeDefn? (p : Program) (c : CId) : Option (Nat × Term × Term) :=
 /-- Match `app* (const Eq [l]) [B, lhs, rhs]` over the pinned `Eq`. -/
 def eqApp? (p : Program) (t : Term) : Option (Term × Term × Term) :=
   match t.spine with
-  | (.const c [_], #[(ty, _), (lhs, _), (rhs, _)]) =>
+  | (.const c [_], [(ty, _), (lhs, _), (rhs, _)]) =>
     if some c == p.known.eq then some (ty, lhs, rhs) else none
   | _ => none
 
@@ -57,8 +57,8 @@ wrapper applied to exactly its arity. -/
 def contractWrapper (p : Program) (t : Term) : Term :=
   match t.spine with
   | (.const c _, args) =>
-    match wrapperArity? p c, args[0]? with
-    | some n, some (first, _) => if args.size == n then first else t
+    match wrapperArity? p c, args.head? with
+    | some n, some (first, _) => if args.length == n then first else t
     | _, _ => t
   | _ => t
 
@@ -87,14 +87,14 @@ def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
   let (binders, body) := tθ.pis
   let some (b, lhs, rhs) := eqApp? p body
     | throw "eqn: the theorem is not a Π-telescope over Eq"
-  let k := binders.size
+  let k := binders.length
   let expectedLhs := Term.mkApps (.const f (paramUnivs n))
-    ((boundVars k).toArray.map (·, Mode.strict, Rel.rel))
+    ((boundVars k).map (·, Mode.strict, Rel.rel))
   unless lhs.eqv expectedLhs do
     throw "eqn: the left-hand side is not f applied to the bound variables in order"
   let some (fBinders, fBody) := peelPis k tf
     | throw "eqn: the subject's type has fewer binders than the equation"
-  unless (fBinders.zip binders.toList).all (fun ((_, a), (_, a')) => domainEqv p a a') do
+  unless (fBinders.zip binders).all (fun ((_, a), (_, a')) => domainEqv p a a') do
     throw "eqn: binder domains differ from the subject's type"
   unless domainEqv p fBody b do throw "eqn: the equation's type differs from the subject's result"
   unless vf.leanFragment do
@@ -131,15 +131,38 @@ app* #minor (fields ++ ihs)`. -/
 def ruleIhs (np nmot nmin j : Nat) (rule : Rule) : Option Nat :=
   let (binders, body) := rule.rhs.lams
   let total := np + nmot + nmin + rule.fields
-  if binders.size != total then none else
+  if binders.length != total then none else
   let (head, args) := body.spine
   -- The minor for rule `j` is binder `np + nmot + j`.
   match head with
   | .var i =>
-    if i == total - 1 - (np + nmot + j) && args.size ≥ rule.fields then
-      some (args.size - rule.fields)
+    if i == total - 1 - (np + nmot + j) && args.length ≥ rule.fields then
+      some (args.length - rule.fields)
     else none
   | _ => none
+
+/-- The first position in `is` whose check fails. -/
+def firstFailing (is : List Nat) (ok : Nat → Bool) : Option Nat := is.find? (!ok ·)
+
+/-- One minor wrapper of `case` (rule `j`): `λ fields ihs. #minor fields`. -/
+def checkCaseMinor (np ni m total : Nat) (argAt : Nat → Term) (j : Nat) (rule : Rule) :
+    Except String Unit := do
+  let some ihs := ruleIhs np 1 m j rule | throw s!"case: rule {j} has no minor-application shape"
+  let f := rule.fields
+  let (wBinders, wBody) := (argAt (np + 1 + j)).lams
+  unless wBinders.length == f + ihs do throw s!"case: minor wrapper {j} has the wrong arity"
+  let minorIdx := (total - 1 - (np + 1 + ni + 1 + j)) + f + ihs
+  let expected := Term.mkApps (.var minorIdx)
+    ((List.range f).map fun i => (Term.var (f + ihs - 1 - i), Mode.strict, Rel.rel))
+  unless wBody.eqv expected do throw s!"case: minor wrapper {j} is not the minor on its fields"
+
+/-- The minor wrappers of rules `j, j+1, …` in order (structural on the rules). -/
+def checkCaseMinors (np ni m total : Nat) (argAt : Nat → Term) :
+    Nat → List Rule → Except String Unit
+  | _, [] => pure ()
+  | j, rule :: rules => do
+    checkCaseMinor np ni m total argAt j rule
+    checkCaseMinors np ni m total argAt (j + 1) rules
 
 /-- Check `case T` with key `T.casesOn` (§4.1). Returns the recursor. -/
 def checkCase (p : Program) (key : CId) : Except String Resolve := do
@@ -152,31 +175,22 @@ def checkCase (p : Program) (key : CId) : Except String Resolve := do
     | throw "case: the head is not a recursor"
   unless nmot == 1 do throw "case: mutual casesOn stays on δ"
   unless rl == n && us == paramUnivs n do throw "case: recursor levels are not the key's"
-  unless rules.size == nmin do throw "case: rules and minors differ"
+  unless rules.length == nmin do throw "case: rules and minors differ"
   let m := nmin
   let total := np + 1 + ni + 1 + m
-  unless binders.size == total do throw "case: wrong binder count"
-  unless args.size == total do throw "case: wrong argument count"
+  unless binders.length == total do throw "case: wrong binder count"
+  unless args.length == total do throw "case: wrong argument count"
   let bvar := fun (q : Nat) => Term.var (total - 1 - q)
   let argAt := fun (i : Nat) => (args[i]?.map (·.1)).getD (.natLit 0)
-  for i in [0:np] do
-    unless (argAt i).eqv (bvar i) do throw s!"case: parameter {i} out of place"
+  if let some i := firstFailing (List.range np) fun i => (argAt i).eqv (bvar i) then
+    throw s!"case: parameter {i} out of place"
   unless (argAt np).eqv (bvar np) do throw "case: motive out of place"
-  for i in [0:ni] do
-    unless (argAt (np + 1 + m + i)).eqv (bvar (np + 1 + i)) do
-      throw s!"case: index {i} out of place"
+  if let some i := firstFailing (List.range ni) fun i =>
+      (argAt (np + 1 + m + i)).eqv (bvar (np + 1 + i)) then
+    throw s!"case: index {i} out of place"
   unless (argAt (np + 1 + m + ni)).eqv (bvar (np + 1 + ni)) do
     throw "case: major out of place"
-  for j in [0:m] do
-    let some rule := rules[j]? | throw "case: missing rule"
-    let some ihs := ruleIhs np 1 m j rule | throw s!"case: rule {j} has no minor-application shape"
-    let f := rule.fields
-    let (wBinders, wBody) := (argAt (np + 1 + j)).lams
-    unless wBinders.size == f + ihs do throw s!"case: minor wrapper {j} has the wrong arity"
-    let minorIdx := (total - 1 - (np + 1 + ni + 1 + j)) + f + ihs
-    let expected := Term.mkApps (.var minorIdx)
-      ((List.range f).toArray.map fun i => (Term.var (f + ihs - 1 - i), Mode.strict, Rel.rel))
-    unless wBody.eqv expected do throw s!"case: minor wrapper {j} is not the minor on its fields"
+  checkCaseMinors np ni m total argAt 0 rules
   return .case r
 
 /-! ## `lazy`, `inline`, `prim` -/
@@ -225,13 +239,12 @@ def deriveRecKind (p : Program) (r : CId) : Option RecKind := do
   let .sort u := indTy.pis.2 | return .ordinary
   let some us := p.majorUnivs r | return .ordinary
   let when := ((zeroCond u).inst us).dedup
-  if when == .never || rules.size != 1 then return .ordinary
-  let rule ← rules[0]?
+  if when == .never || rules.length != 1 then return .ordinary
+  let rule ← rules.head?
   let .ctor _ _ _ _ np nf ctorTy ← p.decl? rule.ctor | none
   let (_, result) := ctorTy.pis
-  let resultArgs := result.spine.2.map (·.1)
-  let indices := resultArgs.extract np resultArgs.size
-  let fields := (Array.range nf).map fun j =>
+  let indices := (result.spine.2.map (·.1)).drop np
+  let fields := (List.range nf).map fun j =>
     match indices.findIdx? (·.eqv (.var (nf - 1 - j))) with
     | some i => FieldSrc.index i
     | none => FieldSrc.proof

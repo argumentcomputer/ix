@@ -59,8 +59,8 @@ so the closure walked here is the one SrcEval can reach.
 recurse structurally (the loop on a fuel; the term walk is a mutual
 structural recursion over `Term`, fixed by `termination_by structural`, so
 the kernel never unfolds a well-founded fixpoint), keep their state in lists
-and a persistent `NatMap`, and index no array on the hot path. The `Program` and
-`Ann` tables they consult are still arrays (M1.K1). -/
+and a persistent `NatMap`, and read the program and the annotation through
+their `NatMap`s and lists: no array or hash map on the path (M1.K1). -/
 
 namespace Compilatrix.Src.Relevance
 
@@ -94,13 +94,10 @@ exactly one field kept at `prof`, whose result is not literally `sort 0`
 and whose kept field's type does not mention it. -/
 def unboxOf (p : Program) (ctorRel? : CId → Option CtorRel) (t : CId) (prof : Profile) :
     Option Nat := do
-  let .induct _ _ np _ ty ctors ← p.decl? t | none
-  unless ctors.size == 1 do none
-  let k ← ctors[0]?
+  let .induct _ _ np _ ty [k] ← p.decl? t | none
   let rel ← ctorRel? k
   let kept := (rel.fields.zipIdx).filter fun (c, _) => !c.dropP prof
-  unless kept.size == 1 do none
-  let j := kept[0]!.2
+  let [(_, j)] := kept | none
   let resultProp := match ty.pis.2 with
     | .sort .zero => true
     | _ => false
@@ -110,21 +107,22 @@ def unboxOf (p : Program) (ctorRel? : CId → Option CtorRel) (t : CId) (prof : 
   if fieldTy.mentions t then none
   return j
 
-/-- The checker's verdict: the runtime closure with its records. -/
+/-- The checker's verdict: the runtime closure with its records (lists and
+`NatMap`s, D17). -/
 structure Checked where
-  keys : Array TermKey
+  keys : List TermKey
   /-- Distinct reached constants, in discovery order. -/
-  reached : Array CId
+  reached : List CId
   /-- Every reached instance `(constant, profile)`, in discovery order. -/
-  instances : Array Inst
-  consts : Array (Option ConstRel)
-  ctors : Array (Option CtorRel)
+  instances : List Inst
+  consts : NatMap ConstRel
+  ctors : NatMap CtorRel
   deriving Inhabited
 
 namespace Checked
 
-def ctorRel? (c : Checked) (k : CId) : Option CtorRel := (c.ctors[k]?).join
-def constRel? (c : Checked) (k : CId) : Option ConstRel := (c.consts[k]?).join
+def ctorRel? (c : Checked) (k : CId) : Option CtorRel := c.ctors.get? k
+def constRel? (c : Checked) (k : CId) : Option ConstRel := c.consts.get? k
 
 /-- Whether field `i` of constructor `k` is kept at profile `prof`
 (unannotated: kept). -/
@@ -145,8 +143,8 @@ def unbox? (c : Checked) (p : Program) (t : CId) (prof : Profile) : Option Nat :
   unboxOf p c.ctorRel? t prof
 
 /-- Constants reached at more than one profile (erasure's `profile-split`). -/
-def profileSplit (c : Checked) : Array CId :=
-  c.reached.filter fun k => (c.instances.filter (·.1 == k)).size > 1
+def profileSplit (c : Checked) : List CId :=
+  c.reached.filter fun k => (c.instances.filter (·.1 == k)).length > 1
 
 end Checked
 
@@ -177,7 +175,7 @@ def relName : Rel → String
 /-- The single constructor of a structure-like inductive. -/
 def onlyCtor? (p : Program) (s : CId) : Option CId :=
   match p.decl? s with
-  | some (.induct _ _ _ _ _ ctors) => if ctors.size == 1 then ctors[0]? else none
+  | some (.induct _ _ _ _ _ [k]) => some k
   | _ => none
 
 /-- Positional roles of a saturated eliminator spine: minors with their rule
@@ -208,7 +206,7 @@ def elimShape? (p : Program) (c : CId) : Option ElimShape :=
 
 /-- Field classes of the constructor selected by rule `j` of `r`. -/
 def ruleCtorFields (p : Program) (ann : Ann) (r : CId) (j : Nat) :
-    Option (CId × Array FieldClass) := do
+    Option (CId × List FieldClass) := do
   let .recr _ _ _ _ _ _ _ _ rules _ ← p.decl? r | none
   let rule ← rules[j]?
   let rel ← ann.ctorRel? rule.ctor
@@ -279,10 +277,10 @@ def knownHead (ctx : Ctx) (errs : List RelError) (c : CId) (us : List Ixon.Univ)
   let p := ctx.p
   let q := ctx.prof.inst us
   let errs := match ctx.ann.constRel? c with
-    | some rel => paramArgs ctx c q args rel.params.toList errs
+    | some rel => paramArgs ctx c q args rel.params errs
     | none => errs
   let errs := match p.decl? c, ctx.ann.ctorRel? c with
-    | some (.ctor _ _ _ _ np _ _), some rel => fieldArgs ctx c q 0 (args.drop np) rel.fields.toList errs
+    | some (.ctor _ _ _ _ np _ _), some rel => fieldArgs ctx c q 0 (args.drop np) rel.fields errs
     | some (.ctor ..), none => err ctx "S1" "constructor without a record" (some c) :: errs
     | _, _ => errs
   match elimShape? p c with
@@ -301,7 +299,7 @@ def knownHead (ctx : Ctx) (errs : List RelError) (c : CId) (us : List Ixon.Univ)
       match args[pos]?, ruleCtorFields p ctx.ann shape.recr j with
       | some (minor, _, a), some (k, fields) =>
         if a.irrP ctx.prof then errs
-        else minorBinders ctx k j qc 0 (lamRels minor) fields.toList errs
+        else minorBinders ctx k j qc 0 (lamRels minor) fields errs
       | _, _ => errs
 
 /-- C2 at a β-redex head (`have`/`let_fun` style): each argument against the
@@ -428,12 +426,12 @@ def subsingletonFields (p : Program) (ann : Ann) (r : CId) (q : Profile)
     (errs : List RelError) : List RelError :=
   match p.decl? r, (p.table.recKindOf r).map (fun k => RecKind.atProfile q k) with
   | some (.recr _ _ _ _ _ _ _ _ rules _), some (.subsingleton _ srcs) =>
-    match rules[0]? with
+    match rules.head? with
     | some rule =>
       match ann.ctorRel? rule.ctor with
       | some rel =>
         let qc := ctorProfile p r q
-        (rel.fields.toList.zipIdx).foldl (init := errs) fun errs (cls, j) =>
+        (rel.fields.zipIdx).foldl (init := errs) fun errs (cls, j) =>
           if cls.dropP qc then errs
           else match srcs[j]? with
             | some (.index _) => errs
@@ -460,7 +458,7 @@ def visit (p : Program) (ann : Ann) (annotated : NatMap (List TermKey)) (c : CId
   let s := if first && (ann.constRel? c).isNone then
       { s with errs := RelError.of "S1" "reached constant without a record" (some c) :: s.errs }
     else s
-  let s := (p.runtimeKeys c).toList.foldl (init := s) fun s key =>
+  let s := (p.runtimeKeys c).foldl (init := s) fun s key =>
     if !marked.contains key then
       if first then
         { s with errs := RelError.of "S1" "runtime term not annotated" none (some key) :: s.errs }
@@ -502,17 +500,17 @@ def records (p : Program) (ann : Ann) : List RelError :=
     let lvls := ((p.decl? c).map Decl.lvls).getD 0
     let errs := match ann.constRel? c with
       | some rel =>
-        let telescope := ((p.decl? c).map fun d => d.type.pis.1.size).getD 0
-        let errs := if rel.params.size ≤ telescope then errs
+        let telescope := ((p.decl? c).map fun d => d.type.piCount).getD 0
+        let errs := if rel.params.length ≤ telescope then errs
           else RelError.of "S1" "more parameter classes than binders" (some c) :: errs
-        if (rel.result :: rel.params.toList).all (relOk lvls) then errs
+        if (rel.result :: rel.params).all (relOk lvls) then errs
         else RelError.of "S1" "a parameter class names a level beyond the constant's" (some c) :: errs
       | none => errs
     match ann.ctorRel? c with
     | some rel =>
       match p.decl? c with
       | some (.ctor _ _ _ _ _ nf _) =>
-        let errs := if rel.fields.size == nf then errs
+        let errs := if rel.fields.length == nf then errs
           else RelError.of "S1" "field classes differ from the field count" (some c) :: errs
         if rel.fields.all (fun cls => pwOk lvls cls.dropWhen) then errs
         else RelError.of "S1" "a field class names a level beyond the constructor's" (some c) :: errs
@@ -533,7 +531,7 @@ def check (p : Program) (ann : Ann) : Except (Array RelError) Checked :=
     let c := match key with
       | .value c | .eqn c | .rule c _ => c
     m.insert c (key :: (m.get? c).getD [])
-  let roots := p.roots.toList.map fun (_, c) => p.instOf c []
+  let roots := p.roots.map fun (_, c) => p.instOf c []
   let s := loop p ann annotated fuel {} roots []
   let errs := s.errs.reverse ++ (records p ann).reverse
   if !errs.isEmpty then .error errs.toArray
@@ -541,7 +539,6 @@ def check (p : Program) (ann : Ann) : Except (Array RelError) Checked :=
     let instances := s.order.reverse
     let reached := instances.foldl (init := ([] : List CId)) (fun acc (c, _) =>
       if acc.contains c then acc else c :: acc) |>.reverse
-    .ok { keys := s.keys.reverse.toArray, reached := reached.toArray
-          instances := instances.toArray, consts := ann.consts, ctors := ann.ctors }
+    .ok { keys := s.keys.reverse, reached, instances, consts := ann.consts, ctors := ann.ctors }
 
 end Compilatrix.Src.Relevance

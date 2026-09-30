@@ -103,7 +103,7 @@ def projectField (p : Program) (s : CId) (i : Nat) : Value → Result Value
   | .con c _ _ fs =>
     match p.decl? s with
     | some (.induct _ _ _ _ _ ctors) =>
-      if ctors.size == 1 && ctors[0]? == some c then Result.ofOption fs[i]? else .stuck
+      if ctors.length == 1 && ctors.head? == some c then Result.ofOption fs[i]? else .stuck
     | _ => .stuck
   | _ => .stuck
 
@@ -300,7 +300,7 @@ def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List Slot) : R
             | .stuck => .stuck
           | .subsingleton _ srcs =>
             let indices := (args.drop (np + nmot + nmin)).take ni
-            .ok (0, srcs.toList.map fun
+            .ok (0, srcs.map fun
               | .index i => indices.getD i (Slot.irrNone ls)
               | .proof => Slot.irrNone ls)
         match chosen with
@@ -336,7 +336,7 @@ def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List Slot) : R
               | .trap => .trap
               | .stuck => .stuck
             | .subsingleton _ srcs =>
-              .ok (0, srcs.toList.map fun
+              .ok (0, srcs.map fun
                 | .index i => args.getD (np + 1 + i) (Slot.irrNone ls)
                 | .proof => Slot.irrNone ls)
           match chosen with

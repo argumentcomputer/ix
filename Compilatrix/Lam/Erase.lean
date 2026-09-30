@@ -103,12 +103,12 @@ def recStarBody (r : CId) (q : Profile) : M Term := do
     | some (.subsingleton _ srcs) =>
       let some rule := (I.rulesOf r).head?
         | decline "erase-recursor" "a subsingleton recursor without a rule" r
-      let fields := srcs.toList.map fun
+      let fields := srcs.map fun
         | .index i => some (pre + i)
         | .proof => none
       ruleBody I r q pre arity minors rule fields
     | some .ordinary =>
-      let alts ← (rules.toList.zipIdx).mapM fun (rule, j) => do
+      let alts ← (rules.zipIdx).mapM fun (rule, j) => do
         let (k, n, fields) ← ruleAlt I r q arity ind j rule
         return Alt.mk k n (← ruleBody I r q pre (arity + n) minors rule fields)
       pure (.case (.var 0) alts none)

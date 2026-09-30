@@ -47,28 +47,28 @@ def termOf (p : Program) : TermKey → Option Term
 def setTerm (p : Program) (key : TermKey) (t : Term) : Program :=
   match key with
   | .value c =>
-    match p.consts[c]? with
+    match p.entry? c with
     | some e =>
       match e.decl with
       | .defn kind safety lvls type _ =>
-        { p with consts := p.consts.set! c { e with decl := .defn kind safety lvls type t } }
+        { p with consts := p.consts.insert c { e with decl := .defn kind safety lvls type t } }
       | _ => p
     | none => p
   | .eqn c =>
     match p.table.resolveOf c with
     | some (.eqn thm _) =>
-      { p with table := { p.table with resolve := p.table.resolve.set! c (some (.eqn thm t)) } }
+      { p with table := { p.table with resolve := p.table.resolve.insert c (.eqn thm t) } }
     | _ => p
   | .rule r j =>
-    match p.consts[r]? with
+    match p.entry? r with
     | some e =>
       match e.decl with
       | .recr safe k lvls np nmot nmin ni ind rules type =>
         match rules[j]? with
         | some rule =>
-          let rules := rules.set! j { rule with rhs := t }
+          let rules := rules.set j { rule with rhs := t }
           let e' : ConstEntry := { e with decl := .recr safe k lvls np nmot nmin ni ind rules type }
-          { p with consts := p.consts.set! r e' }
+          { p with consts := p.consts.insert r e' }
         | none => p
       | _ => p
     | none => p
@@ -81,17 +81,17 @@ def isEvaluatedBody (p : Program) (c : CId) : Bool :=
   | _ => false
 
 /-- The runtime terms reached by a relevant reference to `c`. -/
-def runtimeKeys (p : Program) (c : CId) : Array TermKey :=
+def runtimeKeys (p : Program) (c : CId) : List TermKey :=
   match p.table.resolveOf c with
-  | some (.prim _) => #[]
-  | some (.csimp ..) => #[]
-  | some (.eqn ..) => #[.eqn c]
-  | some (.case _) => #[]
+  | some (.prim _) => []
+  | some (.csimp ..) => []
+  | some (.eqn ..) => [.eqn c]
+  | some (.case _) => []
   | none =>
     match p.decl? c with
-    | some (.recr _ _ _ _ _ _ _ _ rules _) => (Array.range rules.size).map (.rule c)
-    | some (.defn ..) => if p.isEvaluatedBody c then #[.value c] else #[]
-    | _ => #[]
+    | some (.recr _ _ _ _ _ _ _ _ rules _) => (List.range rules.length).map (.rule c)
+    | some (.defn ..) => if p.isEvaluatedBody c then [.value c] else []
+    | _ => []
 
 /-- Constants reached through the table rather than a term, with their
 universe arguments over `c`'s parameters: a `csimp` target and the recursor
@@ -150,7 +150,7 @@ namespace Program
 /-- The instances one visit of `(c, prof)` reaches, left to right: the
 relevant references of each runtime term, then the table references. -/
 def instRefs (p : Program) (c : CId) (prof : Profile) : List Inst :=
-  let terms := (p.runtimeKeys c).toList.filterMap p.termOf
+  let terms := (p.runtimeKeys c).filterMap p.termOf
   let fromTerms := terms.foldl (fun acc t => t.relevantRefs prof acc) []
   fromTerms.reverse ++ (p.runtimeRefs c).map fun (d, us) => (d, prof.inst us)
 

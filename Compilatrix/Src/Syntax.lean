@@ -1,6 +1,6 @@
 import Compilatrix.Ixon.V3.Const
 import Compilatrix.Src.Level
-import Std.Data.HashMap
+import Compilatrix.Src.NatMap
 
 /-! # Src syntax
 
@@ -17,7 +17,11 @@ the instances where its position is a proof.
 Constants are numbered densely (`CId`) by ingress; each entry keeps its source
 identity (`CRef`, Ix.Kernel's `ConstRef` shape) and its v3 address. Src is not
 content-addressed. Contracts are carried exactly and never read by the
-semantics (D16). -/
+semantics (D16).
+
+The program, its table and its declarations are kernel-evaluable data (D17,
+note 01 §1.2): persistent `NatMap`s over `CId` and lists, never arrays or
+hash maps, so the recheck path reads them by structural recursion. -/
 
 namespace Compilatrix.Src
 
@@ -108,10 +112,10 @@ structure Rule where
 
 inductive Decl where
   | defn (kind : DefKind) (safety : DefinitionSafety) (lvls : Nat) (type value : Term)
-  | induct (safe : Bool) (lvls params indices : Nat) (type : Term) (ctors : Array CId)
+  | induct (safe : Bool) (lvls params indices : Nat) (type : Term) (ctors : List CId)
   | ctor (safe : Bool) (lvls : Nat) (ind : CId) (cidx params fields : Nat) (type : Term)
   | recr (safe k : Bool) (lvls params motives minors indices : Nat) (ind : CId)
-      (rules : Array Rule) (type : Term)
+      (rules : List Rule) (type : Term)
   | quot (kind : QuotKind) (lvls : Nat) (type : Term)
   | axio (safe : Bool) (lvls : Nat) (type : Term)
   deriving Repr, Inhabited
@@ -192,7 +196,7 @@ inductive Resolve where
   | eqn (thm : CId) (body : Term)
   /-- Key `T.casesOn`; `rec` is `T.rec`. -/
   | case (rec : CId)
-  deriving Repr, Inhabited
+  deriving BEq, Repr, Inhabited
 
 /-- Where a subsingleton recursor field comes from. -/
 inductive FieldSrc where
@@ -206,7 +210,7 @@ inductive FieldSrc where
 `PUnit.{u}.rec` it is `u = 0`, for `Eq.rec` always. -/
 inductive RecKind where
   | ordinary
-  | subsingleton (when : PropWhen) (fields : Array FieldSrc)
+  | subsingleton (when : PropWhen) (fields : List FieldSrc)
   | empty
   deriving BEq, Repr, Inhabited
 
@@ -230,25 +234,25 @@ def allowsIrrMajor : RecKind → Bool
 
 end RecKind
 
-/-- The checked unfolding table, indexed by `CId`. -/
+/-- The checked unfolding table, keyed by `CId` (D17). -/
 structure Table where
-  resolve : Array (Option Resolve) := #[]
-  recKind : Array (Option RecKind) := #[]
+  resolve : NatMap Resolve := .leaf
+  recKind : NatMap RecKind := .leaf
   /-- By-name arity of `lazy` constants, consumed by `Src.Lazify`. -/
-  lazy : Array (Option Nat) := #[]
+  lazy : NatMap Nat := .leaf
   /-- Inliner hints for 02; no semantic effect. -/
-  inline : Array Bool := #[]
+  inline : NatSet := .leaf
   /-- D12 allowlist: opaques evaluated through their value (`Lean.opaqueId`). -/
-  opaqueByValue : Array Bool := #[]
+  opaqueByValue : NatSet := .leaf
   deriving Repr, Inhabited
 
 namespace Table
 
-def resolveOf (t : Table) (c : CId) : Option Resolve := (t.resolve[c]?).join
-def recKindOf (t : Table) (c : CId) : Option RecKind := (t.recKind[c]?).join
-def lazyOf (t : Table) (c : CId) : Option Nat := (t.lazy[c]?).join
-def isInline (t : Table) (c : CId) : Bool := t.inline[c]?.getD false
-def isOpaqueByValue (t : Table) (c : CId) : Bool := t.opaqueByValue[c]?.getD false
+def resolveOf (t : Table) (c : CId) : Option Resolve := t.resolve.get? c
+def recKindOf (t : Table) (c : CId) : Option RecKind := t.recKind.get? c
+def lazyOf (t : Table) (c : CId) : Option Nat := t.lazy.get? c
+def isInline (t : Table) (c : CId) : Bool := t.inline.contains c
+def isOpaqueByValue (t : Table) (c : CId) : Bool := t.opaqueByValue.contains c
 
 end Table
 
@@ -272,25 +276,45 @@ structure Known where
 
 Identity: every constant is keyed by its Ixon source identity (`CRef`: block
 address and member index, and constructor index) and its v3 address. Terms
-refer to constants by a dense `CId`, an index into `consts` fixed by ingress,
-so that SrcEval's δ is an array access; `byAddr` and `byRef` invert it. -/
+refer to constants by a dense `CId`, a key of `consts` fixed by ingress
+(every key below `size` is present). The program is kernel-evaluable data
+(D17): `consts` is a persistent `NatMap`, and the address index that inverts
+it belongs to the producer (`lookup` scans; `Table.build` indexes once). -/
 structure Program where
-  consts : Array ConstEntry
-  byAddr : Std.HashMap Address CId
-  byRef : Std.HashMap CRef CId := {}
+  consts : NatMap ConstEntry := .leaf
+  /-- The number of constants: `consts` holds exactly the keys below it. -/
+  size : Nat := 0
   table : Table := {}
-  roots : Array (Address × CId) := #[]
+  roots : List (Address × CId) := []
   known : Known := {}
   deriving Inhabited
 
 namespace Program
 
-def decl? (p : Program) (c : CId) : Option Decl := p.consts[c]?.map (·.decl)
-def addr (p : Program) (c : CId) : Address := (p.consts[c]?.map (·.addr)).getD default
-def size (p : Program) : Nat := p.consts.size
-def lookup (p : Program) (a : Address) : Option CId := p.byAddr[a]?
-def cref (p : Program) (c : CId) : CRef := (p.consts[c]?.map (·.ref)).getD default
-def ofRef (p : Program) (r : CRef) : Option CId := p.byRef[r]?
+/-- A program whose constants are `consts`, in `CId` order. -/
+def ofConsts (consts : List ConstEntry) : Program :=
+  { consts := NatMap.ofDense consts, size := consts.length }
+
+def entry? (p : Program) (c : CId) : Option ConstEntry := p.consts.get? c
+def decl? (p : Program) (c : CId) : Option Decl := (p.entry? c).map (·.decl)
+def addr (p : Program) (c : CId) : Address := ((p.entry? c).map (·.addr)).getD default
+def cref (p : Program) (c : CId) : CRef := ((p.entry? c).map (·.ref)).getD default
+
+/-- The constants in `CId` order. -/
+def entries (p : Program) : List ConstEntry := (List.range p.size).filterMap p.entry?
+
+/-- Append a constant under the next `CId`. -/
+def push (p : Program) (e : ConstEntry) : Program :=
+  { p with consts := p.consts.insert p.size e, size := p.size + 1 }
+
+/-- Replace the declaration of `c`. -/
+def setDecl (p : Program) (c : CId) (decl : Decl) : Program :=
+  { p with consts := p.consts.modify c fun e => { e with decl } }
+
+/-- The constant at an address: a linear scan (addresses are unique in a
+closure); `Table.addrIndex` indexes a whole program once. -/
+def lookup (p : Program) (a : Address) : Option CId :=
+  (List.range p.size).find? fun c => (p.entry? c).any (·.addr == a)
 
 /-- Short address prefix for diagnostics. -/
 def short (p : Program) (c : CId) : String := ((toString (p.addr c)).take 8).toString
@@ -335,40 +359,34 @@ namespace Term
 abbrev Arg := Term × Mode × Rel
 
 /-- Collect an application spine: head and arguments with their modes and
-classes, left to right. -/
-def spine (t : Term) : Term × Array Arg :=
-  go t #[]
-where
-  go : Term → Array Arg → Term × Array Arg
-    | .app f a m r, acc => go f (acc.push (a, m, r))
-    | t, acc => (t, acc.reverse)
-
-/-- The same, as a list (structural; for the checker). -/
-def spineL (t : Term) : Term × List Arg :=
+classes, left to right (structural). -/
+def spine (t : Term) : Term × List Arg :=
   go t []
 where
   go : Term → List Arg → Term × List Arg
     | .app f a m r, acc => go f ((a, m, r) :: acc)
     | t, acc => (t, acc)
 
-def mkApps (f : Term) (args : Array Arg) : Term :=
+/-- `spine`, under the name the checker and erasure use. -/
+abbrev spineL (t : Term) : Term × List Arg := t.spine
+
+def mkApps (f : Term) (args : List Arg) : Term :=
   args.foldl (fun t (a, m, r) => .app t a m r) f
 
-/-- Split a leading λ-telescope. -/
-def lams : Term → Array (Binder × Term) × Term
-  | t => go t #[]
-where
-  go : Term → Array (Binder × Term) → Array (Binder × Term) × Term
-    | .lam b d t, acc => go t (acc.push (b, d))
-    | t, acc => (acc, t)
+/-- Split a leading λ-telescope (structural). -/
+def lams : Term → List (Binder × Term) × Term
+  | .lam b d t => let (bs, body) := lams t; ((b, d) :: bs, body)
+  | t => ([], t)
 
-/-- Split a leading Π-telescope. -/
-def pis : Term → Array (Binder × Term) × Term
-  | t => go t #[]
-where
-  go : Term → Array (Binder × Term) → Array (Binder × Term) × Term
-    | .pi b _ d t, acc => go t (acc.push (b, d))
-    | t, acc => (acc, t)
+/-- Split a leading Π-telescope (structural). -/
+def pis : Term → List (Binder × Term) × Term
+  | .pi b _ d t => let (bs, body) := pis t; ((b, d) :: bs, body)
+  | t => ([], t)
+
+/-- The number of leading Π binders. -/
+def piCount : Term → Nat
+  | .pi _ _ _ t => t.piCount + 1
+  | _ => 0
 
 def lamCount : Term → Nat
   | .lam _ _ t => t.lamCount + 1

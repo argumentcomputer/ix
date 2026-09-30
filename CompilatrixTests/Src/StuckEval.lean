@@ -93,7 +93,7 @@ def projectField (p : Program) (s : CId) (i : Nat) : Value → Out Value
   | .con c _ _ fs =>
     match p.decl? s with
     | some (.induct _ _ _ _ _ ctors) =>
-      if ctors.size == 1 && ctors[0]? == some c then
+      if ctors.length == 1 && ctors.head? == some c then
         match fs[i]? with
         | some v => .ok v
         | none => stuck (.shape "projection index out of range")
@@ -236,7 +236,7 @@ partial def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List S
             Program.selectRule p ind np (← force p k (args.getD (np + nmot + nmin + ni) default))
           | .subsingleton _ srcs =>
             let indices := (args.drop (np + nmot + nmin)).take ni
-            .ok (0, srcs.toList.map fun
+            .ok (0, srcs.map fun
               | .index i => indices.getD i (Slot.irrNone ls)
               | .proof => Slot.irrNone ls)
         match rules[j]? with
@@ -260,7 +260,7 @@ partial def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List S
             | .ordinary => do
               Program.selectRule p ind np (← force p k (args.getD (np + 1 + ni) default))
             | .subsingleton _ srcs =>
-              .ok (0, srcs.toList.map fun
+              .ok (0, srcs.map fun
                 | .index i => args.getD (np + 1 + i) (Slot.irrNone ls)
                 | .proof => Slot.irrNone ls)
           applyAll p k (← force p k (args.getD (np + 1 + ni + 1 + j) default)) fields

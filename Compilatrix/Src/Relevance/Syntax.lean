@@ -59,14 +59,14 @@ def prf : FieldClass := .proof .always
 end FieldClass
 
 structure CtorRel where
-  fields : Array FieldClass
+  fields : List FieldClass
   deriving BEq, Repr, Inhabited
 
 /-- A constant's own class and its leading Π telescope's binder classes,
 over the constant's universe parameters. -/
 structure ConstRel where
   result : Rel
-  params : Array Rel
+  params : List Rel
   deriving BEq, Repr, Inhabited
 
 inductive Tag where
@@ -75,72 +75,84 @@ inductive Tag where
   | letE (r : Rel)
   deriving BEq, Repr, Inhabited
 
+/-- The annotation, kernel-evaluable (D17): records keyed by `CId`, and each
+runtime term's tags as a list in `tagOrder`. -/
 structure Ann where
-  consts : Array (Option ConstRel) := #[]
-  ctors : Array (Option CtorRel) := #[]
-  nodes : Array (TermKey × Array Tag) := #[]
+  consts : NatMap ConstRel := .leaf
+  ctors : NatMap CtorRel := .leaf
+  nodes : List (TermKey × List Tag) := []
   deriving Inhabited
 
 namespace Ann
 
-def constRel? (a : Ann) (c : CId) : Option ConstRel := (a.consts[c]?).join
-def ctorRel? (a : Ann) (c : CId) : Option CtorRel := (a.ctors[c]?).join
+def constRel? (a : Ann) (c : CId) : Option ConstRel := a.consts.get? c
+def ctorRel? (a : Ann) (c : CId) : Option CtorRel := a.ctors.get? c
 
 end Ann
 
-/-- Install tags into one term, consuming them in `tagOrder`. -/
-def installTerm (tags : Array Tag) : Term → StateT Nat (Except String) Term
-  | .lam b d t => do
-    let i ← get
-    match tags[i]? with
-    | some (.lam r pw) =>
-      set (i + 1)
-      return .lam { b with rel := r, propWhen := pw } d (← installTerm tags t)
+/-- Install tags into one term, consuming them in `tagOrder` from the front
+of `tags`; `i` counts the tags consumed before (for diagnostics). Returns the
+term, the tags left and the new count (structural on the term). -/
+def installTerm : Term → List Tag → Nat → Except String (Term × List Tag × Nat)
+  | .lam b d t, tags, i =>
+    match tags with
+    | .lam r pw :: tags => do
+      let (t, tags, i) ← installTerm t tags (i + 1)
+      return (.lam { b with rel := r, propWhen := pw } d t, tags, i)
     | _ => throw s!"relevance: expected a λ tag at {i}"
-  | .app f a m _ => do
-    let f ← installTerm tags f
-    let i ← get
-    match tags[i]? with
-    | some (.arg r) =>
-      set (i + 1)
-      if r.alwaysIrr then return .app f a m r
-      else return .app f (← installTerm tags a) m r
+  | .app f a m _, tags, i => do
+    let (f, tags, i) ← installTerm f tags i
+    match tags with
+    | .arg r :: tags =>
+      if r.alwaysIrr then return (.app f a m r, tags, i + 1)
+      else
+        let (a, tags, i) ← installTerm a tags (i + 1)
+        return (.app f a m r, tags, i)
     | _ => throw s!"relevance: expected an argument tag at {i}"
-  | .letE c _ ty v body => do
-    let i ← get
-    match tags[i]? with
-    | some (.letE r) =>
-      set (i + 1)
-      let v ← if r.alwaysIrr then pure v else installTerm tags v
-      return .letE c r ty v (← installTerm tags body)
+  | .letE c _ ty v body, tags, i =>
+    match tags with
+    | .letE r :: tags => do
+      let (v, tags, i) ← if r.alwaysIrr then pure (v, tags, i + 1) else installTerm v tags (i + 1)
+      let (body, tags, i) ← installTerm body tags i
+      return (.letE c r ty v body, tags, i)
     | _ => throw s!"relevance: expected a let tag at {i}"
-  | .proj s i e => return .proj s i (← installTerm tags e)
-  | t => return t
+  | .proj s k e, tags, i => do
+    let (e, tags, i) ← installTerm e tags i
+    return (.proj s k e, tags, i)
+  | t, tags, i => return (t, tags, i)
 
-/-- Tags of an installed term, in `tagOrder` (the inverse of `installTerm`). -/
-def _root_.Compilatrix.Src.Term.tagOrder : Term → Array Tag → Array Tag
-  | .lam b _ t, acc => Term.tagOrder t (acc.push (.lam b.rel b.propWhen))
+/-- Tags of an installed term in `tagOrder`, prepended in reverse to `acc`. -/
+def _root_.Compilatrix.Src.Term.tagOrderRev : Term → List Tag → List Tag
+  | .lam b _ t, acc => Term.tagOrderRev t (.lam b.rel b.propWhen :: acc)
   | .app f a _ r, acc =>
-    let acc := Term.tagOrder f acc
-    if r.alwaysIrr then acc.push (.arg r)
-    else Term.tagOrder a (acc.push (.arg r))
+    let acc := Term.tagOrderRev f acc
+    if r.alwaysIrr then .arg r :: acc
+    else Term.tagOrderRev a (.arg r :: acc)
   | .letE _ r _ v b, acc =>
-    let acc := acc.push (.letE r)
-    let acc := if r.alwaysIrr then acc else Term.tagOrder v acc
-    Term.tagOrder b acc
-  | .proj _ _ e, acc => Term.tagOrder e acc
+    let acc := .letE r :: acc
+    let acc := if r.alwaysIrr then acc else Term.tagOrderRev v acc
+    Term.tagOrderRev b acc
+  | .proj _ _ e, acc => Term.tagOrderRev e acc
   | _, acc => acc
+
+/-- `acc` followed by the tags of an installed term, in `tagOrder` (the
+inverse of `installTerm`). -/
+def _root_.Compilatrix.Src.Term.tagOrder (t : Term) (acc : List Tag := []) : List Tag :=
+  acc ++ (t.tagOrderRev []).reverse
+
+/-- Install the tags of each listed runtime term, in order (structural on
+the list). -/
+def installNodes (p : Program) : List (TermKey × List Tag) → Except String Program
+  | [] => pure p
+  | (key, tags) :: nodes => do
+    let some t := p.termOf key | throw s!"relevance: no runtime term for {repr key}"
+    let (t', rest, _) ← installTerm t tags 0
+    unless rest.isEmpty do
+      throw s!"relevance: {rest.length} extra tags for {repr key}"
+    installNodes (p.setTerm key t') nodes
 
 /-- Write every node tag into its term. A tag list that does not cover its
 term exactly is rejected (tier S1). -/
-def install (p : Program) (a : Ann) : Except String Program := do
-  let mut p := p
-  for (key, tags) in a.nodes do
-    let some t := p.termOf key | throw s!"relevance: no runtime term for {repr key}"
-    let (t', used) ← (installTerm tags t).run 0
-    unless used == tags.size do
-      throw s!"relevance: {tags.size - used} extra tags for {repr key}"
-    p := p.setTerm key t'
-  return p
+def install (p : Program) (a : Ann) : Except String Program := installNodes p a.nodes
 
 end Compilatrix.Src.Relevance

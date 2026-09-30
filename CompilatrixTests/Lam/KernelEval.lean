@@ -23,7 +23,7 @@ def erased (value : Term) : Option (Nat × Nat) :=
   let (bld, root) := world.bld.add (.defn .defn .safe 0 ty value)
   let p := bld.program #[root]
   let ann := annOf p (rootKeys p)
-  let ch : Checked := { keys := #[], reached := #[], instances := #[], consts := ann.consts,
+  let ch : Checked := { keys := [], reached := [], instances := [], consts := ann.consts,
                         ctors := ann.ctors }
   match Compilatrix.Lam.erase p ch with
   | .ok (_, s) => some (s.globals, s.nodes)

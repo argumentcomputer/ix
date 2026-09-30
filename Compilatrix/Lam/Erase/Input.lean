@@ -3,10 +3,10 @@ import Compilatrix.Lam.Syntax
 
 /-! # Erasure input
 
-What erasure reads from a checked Src program (design note 02 §2, §5.1),
-built once into persistent `Nat`-keyed maps and lists (D17): the program's
-tables are still arrays and hash maps (M1.K1), so erasure never indexes them
-on its path. Every query decides relevance at a universe profile (D18):
+What erasure reads from a checked Src program (design note 02 §2, §5.1):
+the program's and the check's persistent `Nat`-keyed maps and lists (D17),
+taken as they are (building the input costs nothing), so erasure indexes no
+array on its path. Every query decides relevance at a universe profile (D18):
 recursor kinds at the recursor's profile, parameter classes at the
 callee's. Constructor layouts are the exception: a field whose class
 depends on the profile is kept at every profile (`layoutClass`), so each
@@ -21,58 +21,31 @@ namespace Compilatrix.Lam.Erase
 
 open Compilatrix.Src Compilatrix.Src.Relevance
 
-/-- A constant's relevance record, over lists. -/
-structure ConstRec where
-  result : Rel
-  params : List Rel
-  deriving Inhabited
-
 structure Input where
-  decls : NatMap Decl := .leaf
+  /-- The program's constants, by `CId`. -/
+  decls : NatMap ConstEntry := .leaf
   resolve : NatMap Resolve := .leaf
   recKind : NatMap RecKind := .leaf
   lazy : NatMap Nat := .leaf
-  opaqueByValue : NatMap Unit := .leaf
-  consts : NatMap ConstRec := .leaf
-  ctorFields : NatMap (List FieldClass) := .leaf
-  /-- Recursor rules, by recursor. -/
-  rules : NatMap (List Rule) := .leaf
-  /-- Constructors, by inductive. -/
-  indCtors : NatMap (List CId) := .leaf
+  opaqueByValue : NatSet := .leaf
+  consts : NatMap ConstRel := .leaf
+  ctors : NatMap CtorRel := .leaf
   known : Src.Known := {}
   roots : List CId := []
   deriving Inhabited
 
-/-- `(i, x)` for every `some x` at index `i`. -/
-def indexed {α : Type} (xs : List (Option α)) : List (Nat × α) :=
-  xs.zipIdx.filterMap fun (x, i) => x.map (i, ·)
-
-/-- Build the input once from a program and its checked annotation. -/
+/-- The input of a program and its checked annotation: their maps as they
+are. -/
 def Input.ofProgram (p : Src.Program) (c : Checked) : Input :=
-  let decls := p.consts.toList.map (·.decl)
-  { decls := NatMap.ofList (indexed (decls.map some))
-    resolve := NatMap.ofList (indexed p.table.resolve.toList)
-    recKind := NatMap.ofList (indexed p.table.recKind.toList)
-    lazy := NatMap.ofList (indexed p.table.lazy.toList)
-    opaqueByValue := NatMap.ofList (indexed (p.table.opaqueByValue.toList.map
-      fun b => if b then some () else none))
-    consts := NatMap.ofList (indexed (c.consts.toList.map (·.map fun r =>
-      { result := r.result, params := r.params.toList })))
-    ctorFields := NatMap.ofList (indexed (c.ctors.toList.map (·.map (·.fields.toList))))
-    rules := NatMap.ofList (indexed (decls.map fun
-      | .recr _ _ _ _ _ _ _ _ rules _ => some rules.toList
-      | _ => none))
-    indCtors := NatMap.ofList (indexed (decls.map fun
-      | .induct _ _ _ _ _ ctors => some ctors.toList
-      | _ => none))
-    known := p.known
-    roots := p.roots.toList.map (·.2) }
+  { decls := p.consts, resolve := p.table.resolve, recKind := p.table.recKind
+    lazy := p.table.lazy, opaqueByValue := p.table.opaqueByValue
+    consts := c.consts, ctors := c.ctors, known := p.known, roots := p.roots.map (·.2) }
 
 namespace Input
 
 variable (I : Input)
 
-def decl? (c : CId) : Option Decl := I.decls.get? c
+def decl? (c : CId) : Option Decl := (I.decls.get? c).map (·.decl)
 
 def lvls (c : CId) : Nat := ((I.decl? c).map Decl.lvls).getD 0
 
@@ -98,7 +71,8 @@ def layoutClass : FieldClass → FieldClass
   | c => c
 
 /-- Field classes of constructor `k`, for its layout. -/
-def fields? (k : CId) : Option (List FieldClass) := (I.ctorFields.get? k).map (·.map layoutClass)
+def fields? (k : CId) : Option (List FieldClass) :=
+  (I.ctors.get? k).map (·.fields.map layoutClass)
 
 /-- Field `i` of constructor `k` is kept at profile `q` (unannotated: kept). -/
 def kept (k : CId) (q : Profile) (i : Nat) : Bool :=
@@ -114,9 +88,15 @@ def keptCount (k : CId) (q : Profile) (nf : Nat) : Nat := I.rank k q nf
 
 def kindAt (r : CId) (q : Profile) : Option RecKind := (I.recKind.get? r).map (·.atProfile q)
 
-def rulesOf (r : CId) : List Rule := (I.rules.get? r).getD []
+def rulesOf (r : CId) : List Rule :=
+  match I.decl? r with
+  | some (.recr _ _ _ _ _ _ _ _ rules _) => rules
+  | _ => []
 
-def ctorsOf (t : CId) : List CId := (I.indCtors.get? t).getD []
+def ctorsOf (t : CId) : List CId :=
+  match I.decl? t with
+  | some (.induct _ _ _ _ _ ctors) => ctors
+  | _ => []
 
 def isOpaqueByValue (c : CId) : Bool := I.opaqueByValue.contains c
 

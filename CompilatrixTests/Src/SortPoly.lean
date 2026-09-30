@@ -64,17 +64,17 @@ def blindTag : Tag → Tag
   | .letE r => .letE (blindRel r)
 
 def blindAnn (ann : Ann) : Ann :=
-  { consts := ann.consts.map (·.map fun c =>
-      { result := blindRel c.result, params := c.params.map blindRel })
-    ctors := ann.ctors.map (·.map fun c => { fields := c.fields.map blindField })
+  { consts := ann.consts.map fun c =>
+      { result := blindRel c.result, params := c.params.map blindRel }
+    ctors := ann.ctors.map fun c => { fields := c.fields.map blindField }
     nodes := ann.nodes.map fun (k, tags) => (k, tags.map blindTag) }
 
 /-- The M1.F2 `RecKind`: subsingleton only for a family literally in `Prop`. -/
 def blindProgram (p : Program) : Program :=
-  { p with table := { p.table with recKind := p.table.recKind.map (·.map fun
+  { p with table := { p.table with recKind := p.table.recKind.map fun
       | .subsingleton (.allZero []) fs => .subsingleton .always fs
       | .subsingleton .. => .ordinary
-      | k => k) } }
+      | k => k } }
 
 def run (a : Assert) : IO (Array String) := do
   let mut out := #[]
@@ -118,9 +118,9 @@ def run (a : Assert) : IO (Array String) := do
     | _ => false
   expect a (conditional.size ≥ 1) "its kind is subsingleton only where u = 0"
   let split := l.checked.profileSplit
-  expect a (split.size ≥ 2) s!"constants at two profiles (unitCase and PUnit.casesOn): {split.size}"
-  out := out.push s!"{l.checked.instances.size} instances of {l.checked.reached.size} constants; \
-    at two profiles: {split.toList.map p.short}"
+  expect a (split.length ≥ 2) s!"constants at two profiles (unitCase and PUnit.casesOn): {split.length}"
+  out := out.push s!"{l.checked.instances.length} instances of {l.checked.reached.length} constants; \
+    at two profiles: {split.map p.short}"
   -- The level-blind annotation: rejected by the checker, stuck when unchecked.
   let (p0, _, _) ← IO.ofExcept ((prepare cfg env l.hints).mapError toString)
   let ann ← IO.ofExcept (annotate env p0)
@@ -129,7 +129,7 @@ def run (a : Assert) : IO (Array String) := do
   let mut rejected := #[]
   for (addr, c) in p0.roots do
     let name := (Loaded.names l.hints addr).getD (p0.short c)
-    let pr := { pb with roots := #[(addr, c)] }
+    let pr := { pb with roots := [(addr, c)] }
     match finish cfg l.hints pr blind with
     | .error d => rejected := rejected.push s!"{(name.drop 9).toString} {d.code}"
     | .ok _ => pure ()

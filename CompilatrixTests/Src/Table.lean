@@ -10,14 +10,13 @@ namespace CompilatrixTests.Src.Table
 open Compilatrix Compilatrix.Src Compilatrix.Ixon CompilatrixTests.Src
 
 def withDecl (p : Program) (c : CId) (decl : Decl) : Program :=
-  { p with consts := p.consts.modify c fun e => { e with decl } }
+  p.setDecl c decl
 
 /-- Append a constant with a fresh fake address. -/
 def withConst (p : Program) (decl : Decl) : Program × CId :=
   let c := p.size
   let a := Builder.fakeAddr (c + 1000000)
-  ({ p with consts := p.consts.push { ref := .member a 0, addr := a, decl }
-            byAddr := p.byAddr.insert a c }, c)
+  (p.push { ref := .member a 0, addr := a, decl }, c)
 
 def isOk : Except String α → Bool
   | .ok _ => true
@@ -60,21 +59,21 @@ def mutations (a : Assert) (l : Loaded) : IO Unit := do
   let some (.defn kind safety lvls thmTy thmVal) := p.decl? addThm | throw (IO.userError "thm")
   let mutateThm := fun (ty : Term) => withDecl p addThm (.defn kind safety lvls ty thmVal)
   let (binders, body) := thmTy.pis
-  let rebuild := fun (bs : Array (Binder × Term)) (b : Term) =>
+  let rebuild := fun (bs : List (Binder × Term)) (b : Term) =>
     bs.foldr (fun (bnd, d) acc => Term.pi bnd {} d acc) b
   match body.spine with
-  | (eqHead, #[(ty, m1), (lhs, m2), (rhs, m3)]) =>
+  | (eqHead, [(ty, m1), (lhs, m2), (rhs, m3)]) =>
     -- Swapped lhs arguments.
     let swapped := match lhs.spine with
-      | (f, #[(x, mx), (y, my)]) => Term.mkApps f #[(y, mx), (x, my)]
+      | (f, [(x, mx), (y, my)]) => Term.mkApps f [(y, mx), (x, my)]
       | _ => lhs
-    let p1 := mutateThm (rebuild binders (Term.mkApps eqHead #[(ty, m1), (swapped, m2), (rhs, m3)]))
+    let p1 := mutateThm (rebuild binders (Term.mkApps eqHead [(ty, m1), (swapped, m2), (rhs, m3)]))
     expect a (!isOk (Table.checkEqn p1 add addThm)) "eqn mutation: swapped lhs arguments"
     -- An extra binder.
     let p2 := mutateThm (.pi {} {} (binders[0]!.2) thmTy)
     expect a (!isOk (Table.checkEqn p2 add addThm)) "eqn mutation: extra binder"
     -- A binder type other than the subject's.
-    let bs3 := binders.set! 0 (binders[0]!.1, .sort .zero)
+    let bs3 := binders.set 0 (binders[0]!.1, .sort .zero)
     let p3 := mutateThm (rebuild bs3 body)
     expect a (!isOk (Table.checkEqn p3 add addThm)) "eqn mutation: binder type differs"
   | _ => expect a false "eqn: Nat.add.eq_def is not an equation"
@@ -84,12 +83,12 @@ def mutations (a : Assert) (l : Loaded) : IO Unit := do
   let some (.defn mk ms ml mty mval) := p.decl? mapThm | throw (IO.userError "thm")
   let (mbs, mbody) := mty.pis
   match mbody.spine with
-  | (eqHead, #[(ty, m1), (lhs, m2), (rhs, m3)]) =>
+  | (eqHead, [(ty, m1), (lhs, m2), (rhs, m3)]) =>
     let lhs' := match lhs.spine with
       | (.const f us, args) => Term.mkApps (.const f us.reverse) args
       | _ => lhs
     let ty' := mbs.foldr (fun (bnd, d) acc => Term.pi bnd {} d acc)
-      (Term.mkApps eqHead #[(ty, m1), (lhs', m2), (rhs, m3)])
+      (Term.mkApps eqHead [(ty, m1), (lhs', m2), (rhs, m3)])
     let p4 := withDecl p mapThm (.defn mk ms ml ty' mval)
     expect a (!isOk (Table.checkEqn p4 map mapThm)) "eqn mutation: wrong levels"
   | _ => expect a false "eqn: List.map.eq_def is not an equation"
@@ -106,7 +105,7 @@ def mutations (a : Assert) (l : Loaded) : IO Unit := do
   let some (.defn _ _ _ addTy addVal) := p.decl? add | throw (IO.userError "Nat.add")
   let (pg, g) := withConst p (.defn .defn .safe 0 addTy addVal)
   let csimpTy := fun (x y : CId) => Term.mkApps (.const eq [.succ .zero])
-    #[(addTy, .strict, .rel), (.const x [], .strict, .rel), (.const y [], .strict, .rel)]
+    [(addTy, .strict, .rel), (.const x [], .strict, .rel), (.const y [], .strict, .rel)]
   let (pc, fwd) := withConst pg (.defn .thm .safe 0 (csimpTy add g) (.natLit 0))
   let (pc, rev) := withConst pc (.defn .thm .safe 0 (csimpTy g add) (.natLit 0))
   expect a (isOk (Table.checkCsimp pc add g fwd)) "csimp: @f = @g accepted"

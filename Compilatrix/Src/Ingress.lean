@@ -1,5 +1,6 @@
 import Compilatrix.Src.Syntax
 import Compilatrix.Ixon.V3.Typed
+import Std.Data.HashMap
 
 /-! # Src ingress
 
@@ -189,7 +190,9 @@ def majorInductive (isInductive : CId → Bool) (r : V3.Recursor) (type : Term) 
 /-! ## Entry point -/
 
 /-- Read a decoded v3 environment. Every constant is converted; `roots` are
-resolved by address. The table is left empty (`Table.build` fills it). -/
+resolved by address. The table is left empty (`Table.build` fills it).
+Ingress works on arrays and hash maps (it is not on the recheck path) and
+returns the kernel-evaluable `Program`. -/
 def ofEnv (env : V3.Env) (roots : Array Address) : Except String Program := do
   let addresses := env.consts.keys.toArray.qsort (fun a b => a.cmpBytes b == .lt)
   let mut layout : Layout := {}
@@ -238,11 +241,11 @@ def ofEnv (env : V3.Env) (roots : Array Address) : Except String Program := do
           c1 := c2
           rules := rules.push { ctor, fields := rule.fields.toNat, rhs }
         pure (Decl.recr (!r.isUnsafe) r.k r.lvls.toNat r.params.toNat r.motives.toNat
-          r.minors.toNat r.indices.toNat ind rules ty, c1)
+          r.minors.toNat r.indices.toNat ind rules.toList ty, c1)
       | .indc ind _ ctors => do
         let (ty, c0) ← run ind.typ cache
         pure (Decl.induct (!ind.isUnsafe) ind.lvls.toNat ind.params.toNat ind.indices.toNat
-          ty ctors, c0)
+          ty ctors.toList, c0)
       | .ctor c _ ind => do
         let (ty, c0) ← run c.typ cache
         pure (Decl.ctor (!c.isUnsafe) c.lvls.toNat ind c.cidx.toNat c.params.toNat
@@ -260,8 +263,7 @@ def ofEnv (env : V3.Env) (roots : Array Address) : Except String Program := do
     match byAddr[root]? with
     | some c => rootIds := rootIds.push (root, c)
     | none => throw s!"src ingress: root {root} is not in the closure"
-  let byRef := consts.zipIdx.foldl (fun m (e, i) => m.insert e.ref i) {}
-  return { consts, byAddr, byRef, roots := rootIds }
+  return { Program.ofConsts consts.toList with roots := rootIds.toList }
 
 end Compilatrix.Src.Ingress
 

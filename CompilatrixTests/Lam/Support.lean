@@ -33,7 +33,7 @@ def eraseLoaded (l : Loaded) : IO Erased := IO.ofExcept (erase l.program l.check
 
 /-- The Lam root for a Src root (roots are erased in the Src root order). -/
 def lamRoot (e : Erased) (c : CId) : IO Nat := do
-  match (e.src.roots.toList.map (·.2)).zip e.lam.roots |>.lookup c with
+  match (e.src.roots.map (·.2)).zip e.lam.roots |>.lookup c with
   | some g => pure g
   | none => throw (IO.userError s!"no Lam root for constant {c}")
 
