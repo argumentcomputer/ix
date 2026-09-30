@@ -47,7 +47,7 @@ def Order.check (p : Program) (s : Shape) (o : Order) : Bool :=
 fall through), then its true edge; a jump's target. -/
 def preferred (b : Block) : List Nat :=
   match b.terminator with
-  | .branch _ _ _ yes no => [no.toNat, yes.toNat]
+  | .branch _ _ _ yes no _ => [no.toNat, yes.toNat]
   | .jump t => [t.toNat]
   | _ => []
 

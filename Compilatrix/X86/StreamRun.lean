@@ -109,7 +109,7 @@ theorem control_progress {checked : Checked} {output : Encode.Output} {externals
       · simp [ByteEval.run, jumped]
       · rw [goEqual]
         exact ⟨related.core, related.running, related.returns, _, target_entry targetBound, rfl⟩
-  | branch producer args condition yes no =>
+  | branch producer args condition yes no reach =>
       rw [term] at accepted bound
       have wf := checked_terminator_wf found
       rw [term] at wf
@@ -119,13 +119,22 @@ theorem control_progress {checked : Checked} {output : Encode.Output} {externals
       obtain ⟨core, flags, take, typed, tested, targetBound, goEqual⟩ := branch_running nextRunning
       obtain ⟨byteFlags, produced, sameTest⟩ := Encode.produced_flags free fused typed state.flags
       rw [← related.core] at produced
-      have branched := branch_at accepted linear base state address (by simp only [terminatorSize] at bound; omega)
-        produced (sameTest.trans tested)
-      refine ⟨if take then 2 else 3, _, ?_, ?_, branched, ?_⟩
-      · split <;> decide
-      · split <;> decide
-      · rw [sourceStep, goEqual]
+      have landed : RunningAt checked.program base (step runtime checked machine)
+          { core, flags := byteFlags,
+            rip := base + UInt64.ofNat (blockOffset checked.program (if take then yes else no).toNat) } := by
+        rw [sourceStep, goEqual]
         exact ⟨rfl, related.running, related.returns, _, target_entry targetBound, rfl⟩
+      cases reach with
+      | rel32 =>
+          have branched := branch_at accepted linear base state address
+            (by simp only [terminatorSize] at bound; omega) produced (sameTest.trans tested)
+          refine ⟨if take then 2 else 3, _, ?_, ?_, branched, landed⟩
+          · split <;> decide
+          · split <;> decide
+      | fall =>
+          have branched := branch_fall_at accepted linear base state address
+            (by simp only [terminatorSize] at bound; omega) produced (sameTest.trans tested)
+          exact ⟨2, _, by decide, by decide, branched, landed⟩
 
 theorem running_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
     (valid : Valid checked.program output externals) (free : CallFree checked.program)
@@ -191,9 +200,10 @@ theorem halting_ret {checked : Checked} {output : Encode.Output} {externals : Ex
       | jump target | tailCall target =>
           simp only [sourceStep, term, executeTerminator] at halted
           exact False.elim (gotoStatus _ halted)
-      | branch producer args condition yes no =>
+      | branch producer args condition yes no reach =>
           rw [sourceStep, term] at halted
-          exact False.elim (branch_not_halted checked machine related.running producer args condition yes no result halted)
+          exact False.elim
+            (branch_not_halted checked machine related.running producer args condition yes no reach result halted)
 
 theorem byte_run_add (text : ByteArray) (base : Word) (first second : Nat) (state : ByteEval.State) :
     ByteEval.run text base (first + second) state =

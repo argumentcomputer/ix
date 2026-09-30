@@ -38,7 +38,12 @@ effects, precise modeled memory faults, and PC advancement. `StreamControl`
 composes one-byte-machine-step jumps and the two- or three-step
 producer/Jcc/JMP branch expansion (`branch_at`) for any well-formed producer:
 a `cmp` or `test` in any operand form, including memory, or `add`/`sub`
-deciding carry or borrow. The producer's core and flags carry into the
+deciding carry or borrow. A branch whose false edge is marked `Reach.fall`
+(set by layout when the false target is the next block) has no JMP: the
+checker requires the false target's block to start where the Jcc ends
+(`falls`), and `branch_fall_at` takes two byte steps either way. The
+typed semantics ignores the mark, and `safe_progress` keeps its one to
+three byte steps per typed step. The producer's core and flags carry into the
 target; its condition's flags agree with the typed machine's because the
 producer sets all of them (`FusedOk`). A checked program's terminators are
 well-formed (`checked_terminator_wf`), which also discharges

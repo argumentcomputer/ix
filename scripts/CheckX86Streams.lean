@@ -104,7 +104,18 @@ private def branchCases : Except String Nat := do
           { instructions := #[.mov .w64 .rax (.imm 42)], terminator := .ret },
           { instructions := #[.mov .w64 .rax (.imm 99)], terminator := .ret }] }
       programCase program textBase
-  return conditions.length * pairs.length
+      -- The same branch with its false edge falling through to the next
+      -- block: the object has no `jmp`, and both edges agree.
+      let comparison : Compare := { width := .w64, left := .rax, right := .reg .rcx }
+      let fall : Program := {
+        entry := 0
+        blocks := #[
+          { instructions := #[.mov .w64 .rax (.imm left), .mov .w64 .rcx (.imm right)]
+            terminator := .branch comparison.row.1 comparison.row.2 condition 2 1 .fall },
+          { instructions := #[.mov .w64 .rax (.imm 99)], terminator := .ret },
+          { instructions := #[.mov .w64 .rax (.imm 42)], terminator := .ret }] }
+      programCase fall textBase
+  return 2 * conditions.length * pairs.length
 
 /-- Branches whose producer is not a register `cmp`: a memory operand (the
 prologue's `cmp r, [m]`), a tag `test`, an `add` whose carry decides `jc`
@@ -137,7 +148,13 @@ private def producerCases : Except String Nat := do
             { targets[0]! with instructions := #[.load .w64 .rsi slot] ++ targets[0]!.instructions },
             targets[1]!] }
         programCase program textBase
-        count := count + 1
+        let fall : Program := {
+          entry := 0
+          blocks := #[{ instructions := setup, terminator := .branch producer args condition 2 1 .fall },
+            targets[1]!,
+            { targets[0]! with instructions := #[.load .w64 .rsi slot] ++ targets[0]!.instructions }] }
+        programCase fall textBase
+        count := count + 2
   return count
 
 /-- Fused pairs in complete objects: `xor edx, edx; cmp; setcc dl` (rule
@@ -199,7 +216,29 @@ private def streamCorruptions : Except String Nat := do
     { encoded with relocations := #[{ relocation with addend := 0 }] },
     { encoded with text := encoded.text.set! relocation.offset 1 }]
   for changed in runtimeCorruptions do streamResult runtime.program changed false
-  return corruptions.length + runtimeCorruptions.length
+  -- A fall-through edge must start exactly where the `jcc` ends: the same
+  -- bytes are rejected for a program whose false target is not the next
+  -- block, or whose branch claims a `jmp` that is not there.
+  let comparison : Compare := { width := .w64, left := .rdi, right := .imm 0 }
+  let fallProgram : Program := {
+    entry := 0
+    blocks := #[
+      { instructions := #[], terminator := .branch comparison.row.1 comparison.row.2 .eq 2 1 .fall },
+      { instructions := #[.mov .w64 .rax (.imm 1)], terminator := .ret },
+      { instructions := #[.mov .w64 .rax (.imm 2)], terminator := .ret }] }
+  let (fallTarget, fallInput, _) ← artifact fallProgram
+  let fallText := fallInput.encoded
+  let jccEnd := (Encode.encodeOp comparison.row.1 comparison.row.2).size + 6
+  need (fallText.blockOffsets[1]? == some jccEnd) "fall-through block does not start after the jcc"
+  let retarget (terminator : Terminator) : Program :=
+    { fallTarget.program with blocks := fallTarget.program.blocks.set! 0 { instructions := #[], terminator } }
+  let fallNegatives : List Program := [
+    retarget (.branch comparison.row.1 comparison.row.2 .eq 2 2 .fall),
+    retarget (.branch comparison.row.1 comparison.row.2 .eq 1 2 .fall),
+    retarget (.branch comparison.row.1 comparison.row.2 .eq 2 3 .fall),
+    retarget (.branch comparison.row.1 comparison.row.2 .eq 2 1)]
+  for program in fallNegatives do streamResult program fallText false
+  return corruptions.length + runtimeCorruptions.length + fallNegatives.length
 
 private def indexedLayouts : Except String Nat := do
   let mut cases := 0

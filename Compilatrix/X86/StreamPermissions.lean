@@ -149,7 +149,7 @@ row, and the other terminators leave memory alone. -/
 theorem terminator_permissions (checked : Checked) (machine : Machine) (terminator : Terminator) :
     Permissions machine.core (executeTerminator checked terminator machine).core := by
   cases terminator with
-  | branch producer args condition yes no =>
+  | branch producer args condition yes no reach =>
       simp only [executeTerminator]
       cases hexec : producer.exec args machine.core {} with
       | error fault => cases fault <;> exact Permissions.refl _

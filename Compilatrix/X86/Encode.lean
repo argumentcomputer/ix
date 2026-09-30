@@ -271,10 +271,12 @@ def nearOpcode (condition : Condition) : UInt8 :=
 
 def encodeTerminator : Terminator → Chunk
   | .jump target => rel32 Op.jmpRel32 (.block target)
-  | .branch producer args condition ifTrue ifFalse =>
+  | .branch producer args condition ifTrue ifFalse .rel32 =>
       (Chunk.raw (encodeOp producer args)).append
         ((rel32 (Op.jccRel32 condition) (.block ifTrue)).append
           (rel32 Op.jmpRel32 (.block ifFalse)))
+  | .branch producer args condition ifTrue _ .fall =>
+      (Chunk.raw (encodeOp producer args)).append (rel32 (Op.jccRel32 condition) (.block ifTrue))
   | .tailCall target => rel32 Op.jmpRel32 (.block target)
   | .ret => Chunk.raw (encodeOp Op.retZO [])
 

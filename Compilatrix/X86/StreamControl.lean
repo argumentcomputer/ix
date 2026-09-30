@@ -81,15 +81,64 @@ theorem branch_at {program : Program} {text : ByteArray} {offset : Nat}
   cases take <;>
     simp only [Bool.false_eq_true, ↓reduceIte, ByteEval.run, first, taken, bind, Except.bind, third, middle]
 
+theorem falls_sound {program : Program} {offset : Nat} {target : BlockId}
+    (accepted : falls program offset target = true) :
+    target.toNat < program.blocks.size ∧ blockOffset program target.toNat = offset := by
+  simpa only [falls, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] using accepted
+
+/-- A branch whose false edge falls through (05 §7) runs its producer and
+its `jcc`, two byte steps whether or not it is taken; not taken, the next
+byte is the false target's first. -/
+theorem branch_fall_at {program : Program} {text : ByteArray} {offset : Nat}
+    {producer : Op} {args : List Arg} {condition : Condition} {yes no : BlockId}
+    (accepted : terminatorMatches program text offset (.branch producer args condition yes no .fall) = true)
+    (linear : producer.linear = true)
+    (base : Word) (state : ByteEval.State)
+    (address : state.rip = base + UInt64.ofNat offset)
+    (bound : offset + (Encode.encodeOp producer args).size + 6 < UInt64.size)
+    {core : Core} {flags : ByteEval.Flags}
+    (produced : producer.exec args state.core state.flags = .ok (core, flags)) {take : Bool}
+    (tested : flags.test condition = some take) :
+    ByteEval.run text base 2 state =
+      .ok { core, flags, rip := base + UInt64.ofNat (blockOffset program (if take then yes else no).toNat) } := by
+  simp only [terminatorMatches, Bool.and_eq_true, and_assoc] at accepted
+  obtain ⟨producerAccepted, yesAccepted, noFalls⟩ := accepted
+  have noStart := (falls_sound noFalls).2
+  have producerFetched : Decode.decodeAt text offset = some
+      ⟨.op producer args, (Encode.encodeOp producer args).size⟩ := by
+    simpa [decodes, beq_iff_eq] using producerAccepted
+  let middle : ByteEval.State :=
+    { core, flags, rip := base + UInt64.ofNat (offset + (Encode.encodeOp producer args).size) }
+  have first : ByteEval.step text base state = .ok middle := by
+    rw [step_decoded address (by omega) producerFetched, Encode.producer_step linear _ state produced]
+    simp [middle, address, UInt64.ofNat_add, UInt64.add_assoc]
+  obtain ⟨_, fits, fetched⟩ := targets_sound yesAccepted
+  have second := step_decoded (state := middle) rfl (by omega) fetched
+  have resolved := Encode.relative_resolves_base base (offset + (Encode.encodeOp producer args).size + 6)
+    (blockOffset program yes.toNat) fits
+  have taken : ByteEval.step text base middle =
+      .ok { middle with
+        rip := if take then base + UInt64.ofNat (blockOffset program yes.toNat)
+        else base + UInt64.ofNat (offset + (Encode.encodeOp producer args).size + 6) } := by
+    rw [second, Encode.execute_branch]
+    change (match flags.test condition with | none => _ | some take => _) = _
+    rw [tested]
+    have nextAddress : middle.rip + UInt64.ofNat 6 =
+        base + UInt64.ofNat (offset + (Encode.encodeOp producer args).size + 6) := by
+      simp [middle, UInt64.ofNat_add, UInt64.add_assoc]
+    simp only [nextAddress, displacement, resolved]
+  cases take <;>
+    simp only [Bool.false_eq_true, ↓reduceIte, ByteEval.run, first, taken, bind, Except.bind, middle, noStart]
+
 /-- A branch that keeps the typed machine running ran its producer, found
 its condition's flags defined, and moved to a listed target with the
 producer's core. -/
 theorem branch_running {checked : Checked} {machine : Machine} {producer : Op} {args : List Arg}
-    {condition : Condition} {yes no : BlockId}
-    (running : (executeTerminator checked (.branch producer args condition yes no) machine).status = .running) :
+    {condition : Condition} {yes no : BlockId} {reach : Reach}
+    (running : (executeTerminator checked (.branch producer args condition yes no reach) machine).status = .running) :
     ∃ core flags take, producer.exec args machine.core {} = .ok (core, flags) ∧
       flags.test condition = some take ∧ (if take then yes else no).toNat < checked.program.blocks.size ∧
-      executeTerminator checked (.branch producer args condition yes no) machine =
+      executeTerminator checked (.branch producer args condition yes no reach) machine =
         { machine with core, pc := ⟨if take then yes else no, 0⟩ } := by
   simp only [executeTerminator] at running ⊢
   cases hexec : producer.exec args machine.core {} with
@@ -114,8 +163,8 @@ theorem branch_running {checked : Checked} {machine : Machine} {producer : Op} {
 
 /-- A branch never halts the typed machine. -/
 theorem branch_not_halted (checked : Checked) (machine : Machine) (running : machine.status = .running)
-    (producer : Op) (args : List Arg) (condition : Condition) (yes no : BlockId) (result : Word) :
-    (executeTerminator checked (.branch producer args condition yes no) machine).status ≠ .halted result := by
+    (producer : Op) (args : List Arg) (condition : Condition) (yes no : BlockId) (reach : Reach) (result : Word) :
+    (executeTerminator checked (.branch producer args condition yes no reach) machine).status ≠ .halted result := by
   simp only [executeTerminator]
   cases hexec : producer.exec args machine.core {} with
   | error fault => cases fault <;> simp [Machine.afterRow, Machine.trap]

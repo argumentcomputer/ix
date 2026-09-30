@@ -162,7 +162,7 @@ def withClobbers (p : LProgram) (declared : Nat → List X86.GPR) : Bool :=
 #guard (stacked deep).any fun s =>
   let t := X86.Layout.tunnel s.program
   let targets := t.blocks.toList.flatMap fun b => match b.terminator with
-    | .branch _ _ _ yes no => [yes, no]
+    | .branch _ _ _ yes no _ => [yes, no]
     | _ => []
   [(0 : UInt32), 2].all targets.contains
 
@@ -186,17 +186,31 @@ def perturb (f : X86.Layout.Order → X86.Layout.Order) : Bool :=
   | o => o
 #guard perturb fun o => o.drop 1
 
--- Linearisation inverts a branch whose true target is next.
+-- Linearisation inverts a branch whose true target is next, and a branch
+-- whose false target is next falls through to it (no `jmp`); otherwise
+-- the false edge stays a `jmp rel32`.
 def branchy : X86.Program := { entry := 0, blocks := #[
   { instructions := #[], terminator := .compare { width := .w64, left := .rdi, right := .imm 0 } .eq 1 2 },
+  { instructions := #[], terminator := .ret },
   { instructions := #[], terminator := .ret },
   { instructions := #[], terminator := .ret }] }
 
 #guard match ((X86.Layout.linearize branchy [0, 1, 2]).1.blocks[0]!).terminator with
-  | .branch _ _ .ne 2 1 => true
+  | .branch _ _ .ne 2 1 .fall => true
   | _ => false
 #guard match ((X86.Layout.linearize branchy [0, 2, 1]).1.blocks[0]!).terminator with
-  | .branch _ _ .eq 2 1 => true
+  | .branch _ _ .eq 2 1 .fall => true
   | _ => false
+#guard match ((X86.Layout.linearize branchy [0, 3, 1, 2]).1.blocks[0]!).terminator with
+  | .branch _ _ .eq 2 3 .rel32 => true
+  | _ => false
+
+-- A fall-through branch encodes the producer and the `jcc` only: 5 bytes
+-- fewer than with the `jmp rel32`.
+def cmpRdi0 : X86.Compare := { width := .w64, left := .rdi, right := .imm 0 }
+
+#guard X86.Stream.terminatorSize (.compare cmpRdi0 .eq 1 2) =
+  X86.Stream.terminatorSize (.branch cmpRdi0.row.1 cmpRdi0.row.2 .eq 1 2 .fall) + 5
+#guard (X86.Encode.encodeTerminator (.branch cmpRdi0.row.1 cmpRdi0.row.2 .eq 1 2 .fall)).fixups.size == 1
 
 end CompilatrixTests.Backend.Cases

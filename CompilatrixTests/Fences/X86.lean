@@ -116,6 +116,9 @@ import Compilatrix.X86.StreamTrace
 /-- info: 'Compilatrix.X86.Stream.branch_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Stream.branch_at
 
+/-- info: 'Compilatrix.X86.Stream.branch_fall_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.branch_fall_at
+
 /-- info: 'Compilatrix.X86.Stream.call_progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Stream.call_progress
 

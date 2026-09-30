@@ -42,7 +42,7 @@ def SafeAt (program : Program) (holes : Holes) (machine : Machine) : Prop :=
                   machine.core.readReg .rsp = frame.returnSlot ∧
                   machine.core.memory.read64? frame.returnSlot = .ok frame.continuation.encode ∧
                   machine.core.calleeSavedMatch frame.calleeSaved = true
-          | .branch producer args _ _ _ => OperationSafe holes machine.returns (.op producer args) machine.core
+          | .branch producer args _ _ _ _ => OperationSafe holes machine.returns (.op producer args) machine.core
           | .jump _ | .tailCall _ => True
 
 def SafeTrace (runtime : Runtime) (checked : Checked) : Nat → Holes → Machine → Prop
@@ -152,9 +152,9 @@ theorem halting_shape {checked : Checked} (runtime : Runtime) (machine : Machine
             | jump target | tailCall target =>
                 simp only [one, term, executeTerminator] at halted
                 exact False.elim (gotoStatus _ halted)
-            | branch producer args condition yes no =>
+            | branch producer args condition yes no reach =>
                 rw [one, term] at halted
-                exact False.elim (branch_not_halted checked machine running producer args condition yes no result halted)
+                exact False.elim (branch_not_halted checked machine running producer args condition yes no reach result halted)
             | ret =>
                 cases returns : machine.returns with
                 | nil => exact ⟨block, rfl, position, term, rfl, by simp [one, term, executeTerminator, returns]⟩

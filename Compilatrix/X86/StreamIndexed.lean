@@ -24,6 +24,9 @@ private def targetsIndexed (program : Program) (layout : Index) (text : ByteArra
     Encode.fitsSigned32 ((targetOffset : Int) - (offset + length)) &&
     decodesIndexed text offset (operation (displacement (offset + length) targetOffset)) length
 
+private def fallsIndexed (program : Program) (layout : Index) (offset : Nat) (target : BlockId) : Bool :=
+  decide (target.toNat < program.blocks.size) && layout.starts[target.toNat]?.getD 0 == offset
+
 private def instructionIndexed (program : Program) (layout : Index) (text : ByteArray)
     (externals : ExternalTargets) (offset : Nat) (instruction : Instr) : Bool :=
   match instruction with
@@ -42,11 +45,16 @@ private def instructionIndexed (program : Program) (layout : Index) (text : Byte
 private def terminatorIndexed (program : Program) (layout : Index) (text : ByteArray) (offset : Nat) : Terminator → Bool
   | .jump target | .tailCall target => targetsIndexed program layout text offset .jump 5 target
   | .ret => decodesIndexed text offset .ret 1
-  | .branch producer args condition yes no =>
+  | .branch producer args condition yes no .rel32 =>
       let size := (Encode.encodeOp producer args).size
       decodesIndexed text offset (.op producer args) size &&
         targetsIndexed program layout text (offset + size) (.branch condition) 6 yes &&
         targetsIndexed program layout text (offset + size + 6) .jump 5 no
+  | .branch producer args condition yes no .fall =>
+      let size := (Encode.encodeOp producer args).size
+      decodesIndexed text offset (.op producer args) size &&
+        targetsIndexed program layout text (offset + size) (.branch condition) 6 yes &&
+        fallsIndexed program layout (offset + size + 6) no
 
 private def relocationsIndexed (program : Program) (layout : Index) : Array Encode.Relocation :=
   ((program.blocks.toList.zipIdx).flatMap fun (block, blockIndex) =>
@@ -98,10 +106,20 @@ private theorem instructionIndexed_eq :
       instructionMatches program text externals offset instruction := by
   cases instruction <;> simp [instructionIndexed, instructionMatches, targetsIndexed_eq, decodesIndexed_eq] <;> rfl
 
+private theorem fallsIndexed_eq :
+    fallsIndexed program (buildIndex program) offset target = falls program offset target := by
+  by_cases bound : target.toNat < program.blocks.size
+  · simp [fallsIndexed, falls, buildIndex_start program bound]
+  · simp [fallsIndexed, falls, bound]
+
 private theorem terminatorIndexed_eq :
     terminatorIndexed program (buildIndex program) text offset terminator =
       terminatorMatches program text offset terminator := by
-  cases terminator <;> simp [terminatorIndexed, terminatorMatches, targetsIndexed_eq, decodesIndexed_eq]
+  cases terminator with
+  | branch _ _ _ _ _ reach =>
+      cases reach <;>
+        simp [terminatorIndexed, terminatorMatches, targetsIndexed_eq, decodesIndexed_eq, fallsIndexed_eq]
+  | _ => simp [terminatorIndexed, terminatorMatches, targetsIndexed_eq, decodesIndexed_eq]
 
 private theorem block_position {program : Program} {block : Block} {blockIndex index : Nat}
     (found : program.blocks[blockIndex]? = some block) (bound : index ≤ block.instructions.size) :

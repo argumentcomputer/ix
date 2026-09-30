@@ -233,14 +233,15 @@ theorem _root_.Compilatrix.X86.Compare.row_fused (comparison : Compare) (conditi
 
 def terminatorOperations : Terminator → List Decode.Operation
   | .jump _ | .tailCall _ => [.jump 0]
-  | .branch producer args condition _ _ => [.op producer args, .branch condition 0, .jump 0]
+  | .branch producer args condition _ _ .rel32 => [.op producer args, .branch condition 0, .jump 0]
+  | .branch producer args condition _ _ .fall => [.op producer args, .branch condition 0]
   | .ret => [.ret]
 
 /-- A well-formed branch's producer is a listed row with operands of its
 slot kinds, linear, reading no flags, and setting every flag the condition
 reads. -/
 theorem wellFormed_branch {producer : Op} {args : List Arg} {condition : Condition} {yes no : BlockId}
-    (wf : (Terminator.branch producer args condition yes no).wellFormed = true) :
+    {reach : Reach} (wf : (Terminator.branch producer args condition yes no reach).wellFormed = true) :
     producer ∈ Op.rows ∧ producer.linear = true ∧ (desc producer).flagsIn = [] ∧
       producer.argsOk args = true ∧ FusedOk producer (Op.jccRel32 condition) = true := by
   simp only [Terminator.wellFormed, Bool.and_eq_true, List.contains_iff_mem, List.isEmpty_iff] at wf
@@ -275,10 +276,11 @@ theorem terminator_decode (terminator : Terminator) (wf : terminator.wellFormed 
       simp [terminatorOperations, encodeTerminator, rel32_bytes, encodeOp, Decode.sequence, jump_placeholder]
   | ret =>
       simp [terminatorOperations, encodeTerminator, Chunk.raw, encodeOp, Decode.sequence, ret_row]
-  | branch producer args condition yes no =>
+  | branch producer args condition yes no reach =>
       obtain ⟨row, _, _, ok, _⟩ := wellFormed_branch wf
-      simp [terminatorOperations, encodeTerminator, Chunk.append, Chunk.raw, rel32_bytes, encodeOp,
-        Decode.sequence, row_decode _ _ row ok, branch_placeholder, jump_placeholder]
+      cases reach <;>
+        simp [terminatorOperations, encodeTerminator, Chunk.append, Chunk.raw, rel32_bytes, encodeOp,
+          Decode.sequence, row_decode _ _ row ok, branch_placeholder, jump_placeholder]
 
 end Compilatrix.X86.Encode
 

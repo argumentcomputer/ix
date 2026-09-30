@@ -219,6 +219,15 @@ private def producerBranchMatrix : Except String Nat := do
               need (result.rip == expected && sameRegisters typed.core result.core &&
                   sameBytes typed.core.memory result.core.memory probes)
                 s!"producer branch mismatch: {repr o}, {repr args}, {repr condition}"
+              -- With the false edge falling through: the producer and `jcc`
+              -- only, two byte steps either way.
+              let fallRaw := (Encode.encodeTerminator (.branch o args condition 1 2 .fall)).bytes
+              need (fallRaw.size + 5 == raw.size) s!"fall-through branch size: {repr o}, {repr condition}"
+              let fallBytes ← (Encode.patchSigned32 fallRaw (size + 2) 13).mapError reprStr
+              let fell ← (ByteEval.run fallBytes 0x2000 2 ⟨initial, 0x2000, {}⟩).mapError reprStr
+              need (fell.rip == (if take then 0x2000 + UInt64.ofNat (size + 6) + 13 else 0x2000 + UInt64.ofNat (size + 6)) &&
+                  sameRegisters typed.core fell.core && sameBytes typed.core.memory fell.core.memory probes)
+                s!"fall-through branch mismatch: {repr o}, {repr args}, {repr condition}"
           | .trapped (.memoryFault fault) =>
               let .error (.memory byteFault) := ByteEval.run bytes 0x2000 1 ⟨initial, 0x2000, {}⟩
                 | throw s!"producer fault disagreement: {repr o}, {repr args}"

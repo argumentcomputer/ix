@@ -4,7 +4,9 @@ import Compilatrix.X86.Layout.Linearize
 
 /-! Required axiom fences for stacking and layout (M1.B5): what the frame
 layout check guarantees, that tunnelled targets are reached by executing
-empty jumps, and that an inverted branch goes where the original goes.
+empty jumps, that an inverted branch goes where the original goes, and
+that a branch's `Reach` mark (fall-through) is invisible to the typed
+semantics.
 Expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Xv.Stacking.FrameLayout.check_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -36,3 +38,9 @@ Expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.X86.executeTerminator_negate' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.executeTerminator_negate
+
+/-- info: 'Compilatrix.X86.executeTerminator_reach' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.executeTerminator_reach
+
+/-- info: 'Compilatrix.X86.Terminator.wellFormed_reach' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Terminator.wellFormed_reach

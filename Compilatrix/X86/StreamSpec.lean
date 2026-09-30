@@ -24,6 +24,11 @@ def targets (program : Program) (text : ByteArray) (offset : Nat)
     Encode.fitsSigned32 ((blockOffset program target.toNat : Int) - (offset + length)) &&
     decodes text offset (operation (displacement (offset + length) (blockOffset program target.toNat))) length
 
+/-- A fall-through edge: the target is a block that starts where the
+branch's bytes end. -/
+def falls (program : Program) (offset : Nat) (target : BlockId) : Bool :=
+  decide (target.toNat < program.blocks.size) && blockOffset program target.toNat == offset
+
 def instructionMatches (program : Program) (text : ByteArray) (externals : ExternalTargets)
     (offset : Nat) (instruction : Instr) : Bool :=
   match instruction with
@@ -42,11 +47,16 @@ def instructionMatches (program : Program) (text : ByteArray) (externals : Exter
 def terminatorMatches (program : Program) (text : ByteArray) (offset : Nat) : Terminator → Bool
   | .jump target | .tailCall target => targets program text offset .jump 5 target
   | .ret => decodes text offset .ret 1
-  | .branch producer args condition yes no =>
+  | .branch producer args condition yes no .rel32 =>
       let size := (Encode.encodeOp producer args).size
       decodes text offset (.op producer args) size &&
         targets program text (offset + size) (.branch condition) 6 yes &&
         targets program text (offset + size + 6) .jump 5 no
+  | .branch producer args condition yes no .fall =>
+      let size := (Encode.encodeOp producer args).size
+      decodes text offset (.op producer args) size &&
+        targets program text (offset + size) (.branch condition) 6 yes &&
+        falls program (offset + size + 6) no
 
 def expectedRelocations (program : Program) : Array Encode.Relocation :=
   ((program.blocks.toList.zipIdx).flatMap fun (block, blockIndex) =>

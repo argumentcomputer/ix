@@ -72,14 +72,14 @@ theorem CoreRelated.comparison {program : Program} {base : Word} {holes : Holes}
 bytes it writes, like any row; other terminators write no memory. -/
 def terminatorHoles (holes : Holes) (terminator : Terminator) (core : Core) : Holes :=
   match terminator with
-  | .branch producer args _ _ _ => nextHoles holes (.op producer args) core
+  | .branch producer args _ _ _ _ => nextHoles holes (.op producer args) core
   | .jump _ | .tailCall _ | .ret => holes
 
 /-- The access condition of a non-return terminator: a branch's producer
 reads only ordinary data and writes no active return slot. -/
 def TerminatorSafe (holes : Holes) (frames : List ReturnFrame) (terminator : Terminator) (core : Core) : Prop :=
   match terminator with
-  | .branch producer args _ _ _ => OperationSafe holes frames (.op producer args) core
+  | .branch producer args _ _ _ _ => OperationSafe holes frames (.op producer args) core
   | .jump _ | .tailCall _ | .ret => True
 
 /-- A flag-free producer's typed run is its run on empty flags, with the
@@ -124,7 +124,7 @@ theorem paired_control_progress {checked : Checked} {output : Encode.Output} {ex
         by decide, by decide, by simp [ByteEval.run, jumped], ?_⟩
       rw [goEqual]
       exact ⟨related.core, related.running, _, target_entry targetBound, rfl⟩
-  | branch producer args condition yes no =>
+  | branch producer args condition yes no reach =>
       rw [term] at accepted bound wf safe
       obtain ⟨_, linear, free, _, fused⟩ := Encode.wellFormed_branch wf
       rw [term] at sourceStep
@@ -147,13 +147,23 @@ theorem paired_control_progress {checked : Checked} {output : Encode.Output} {ex
           have byteTest : (state.flags.merge (desc producer).flagsOut out.flags).test condition = some take := by
             rw [ByteEval.test_merge_set (fun flag member => FusedOk.set fused flag (by simpa using member))
               state.flags {} out.flags, ← typedFlags, tested]
-          have branched := branch_at accepted linear base state address
-            (by simp only [terminatorSize] at bound; omega) produced byteTest
-          refine ⟨if take then 2 else 3, _, ?_, ?_, branched, ?_⟩
-          · split <;> decide
-          · split <;> decide
-          · rw [sourceStep, goEqual]
+          have landed : Related checked.program base (terminatorHoles holes (.branch producer args condition yes no reach) machine.core)
+              (step runtime checked machine)
+              { core := physical, flags := state.flags.merge (desc producer).flagsOut out.flags,
+                rip := base + UInt64.ofNat (blockOffset checked.program (if take then yes else no).toNat) } := by
+            rw [sourceStep, goEqual]
             exact ⟨coresRelated, related.running, _, target_entry targetBound, rfl⟩
+          cases reach with
+          | rel32 =>
+              have branched := branch_at accepted linear base state address
+                (by simp only [terminatorSize] at bound; omega) produced byteTest
+              refine ⟨if take then 2 else 3, _, ?_, ?_, branched, landed⟩
+              · split <;> decide
+              · split <;> decide
+          | fall =>
+              have branched := branch_fall_at accepted linear base state address
+                (by simp only [terminatorSize] at bound; omega) produced byteTest
+              exact ⟨2, _, by decide, by decide, branched, landed⟩
 
 /-- A fused pair that keeps the typed machine running ran its producer, then
 its consumer on the producer's flags, and advanced with the consumer's

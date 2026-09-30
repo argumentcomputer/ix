@@ -49,7 +49,7 @@ def _root_.Compilatrix.X86.Block.targets (b : Block) : List BlockId :=
   b.instructions.toList.filterMap (fun | .call t => some t | _ => none) ++
     match b.terminator with
     | .jump t | .tailCall t => [t]
-    | .branch _ _ _ yes no => [yes, no]
+    | .branch _ _ _ yes no _ => [yes, no]
     | .ret => []
 
 /-- Breadth-first reachability, one frontier per unit of fuel. -/

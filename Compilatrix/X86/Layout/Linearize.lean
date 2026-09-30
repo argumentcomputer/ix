@@ -8,15 +8,18 @@ Given a checked order, renumber the blocks by their position in it, map
 every call, jump, branch and tail-call target and the entry through the
 renumbering, and invert a branch whose true target is the next block and
 whose false target is not: `branch c yes no` becomes `branch c.negate no
-yes`, so the false edge is the one that can fall through. A proved-once,
-re-run pass (P, 05 §1.1).
+yes`, so the false edge is the one that falls through. A branch whose false
+target is then the next block is marked `fall`: E2 encodes only its `jcc`
+and checks that the next block starts where the `jcc` ends. A
+proved-once, re-run pass (P, 05 §1.1).
 
 `Condition.negate_holds` and `Flags.test_negate` are what inversion needs:
 the negated condition holds exactly when the original does not, on the
 flags as well as mathematically, and it reads the same flags
 (`negate_reads`), so the producer still defines them
 (`Terminator.wellFormed_negate`). `executeTerminator_negate`: an inverted
-branch goes where the original goes.
+branch goes where the original goes. The `Reach` mark changes neither
+(`executeTerminator_reach`, `Terminator.wellFormed_reach`).
 -/
 
 namespace Compilatrix.X86
@@ -67,6 +70,18 @@ theorem executeTerminator_negate (checked : Checked) (machine : Machine) (produc
   simp only [executeTerminator, produced, ByteEval.Flags.test_negate, tested, Option.map_some]
   cases take <;> rfl
 
+/-- A branch's `Reach` is an encoding annotation: the typed semantics
+ignores it. -/
+theorem executeTerminator_reach (checked : Checked) (machine : Machine) (producer : Op) (args : List Arg)
+    (c : Condition) (yes no : BlockId) (reach : Reach) :
+    executeTerminator checked (.branch producer args c yes no reach) machine =
+      executeTerminator checked (.branch producer args c yes no) machine := rfl
+
+theorem Terminator.wellFormed_reach (producer : Op) (args : List Arg) (c : Condition) (yes no : BlockId)
+    (reach : Reach) :
+    (Terminator.branch producer args c yes no reach).wellFormed =
+      (Terminator.branch producer args c yes no).wellFormed := rfl
+
 namespace Layout
 
 /-- Renumber the blocks by their position in `order` and invert branches
@@ -84,10 +99,11 @@ def linearize (p : Program) (order : List Nat) : Program × NatMap Nat :=
       | .jump t => .jump (rn t)
       | .tailCall t => .tailCall (rn t)
       | .ret => .ret
-      | .branch producer args c yes no =>
+      | .branch producer args c yes no _ =>
           let yes := rn yes
           let no := rn no
-          if yes.toNat == i + 1 && no.toNat != i + 1 then .branch producer args c.negate no yes
+          if yes.toNat == i + 1 && no.toNat != i + 1 then .branch producer args c.negate no yes .fall
+          else if no.toNat == i + 1 then .branch producer args c yes no .fall
           else .branch producer args c yes no
     ({ instructions := instructions.toArray, terminator } : Block)
   ({ blocks := blocks.toArray, entry := rn p.entry }, pos)

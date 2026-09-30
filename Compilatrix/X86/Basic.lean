@@ -41,14 +41,26 @@ inductive Instr where
   | unwind (source : MemAddr)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
+/-- How a branch's false edge is encoded (05 §7): `rel32` is a `jmp rel32`
+after the `jcc`; `fall` is no bytes, since the false target is the next
+block in the text. The typed semantics ignores it; E2's stream check
+(`terminatorMatches`) requires a `fall` target to start where the `jcc`
+ends. -/
+inductive Reach where
+  | fall
+  | rel32
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
+
 /-- Control operations close a target block. A conditional branch owns the
 row that produces its flags (`cmp` or `test` in any operand form, or `add`
 and `sub` for carry and borrow), so no other operation can consume stale
-EFLAGS: flags exist only inside the terminator. -/
+EFLAGS: flags exist only inside the terminator. A branch's `ifFalse` edge
+carries its encoding (`Reach`): `rel32` unless layout sets `fall`. A
+pattern that omits it matches `rel32` only. -/
 inductive Terminator where
   | jump (target : BlockId)
   | branch (producer : Op) (args : List Arg) (condition : Condition)
-      (ifTrue ifFalse : BlockId)
+      (ifTrue ifFalse : BlockId) (falseReach : Reach := .rel32)
   | tailCall (target : BlockId)
   | ret
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
@@ -282,7 +294,7 @@ def Instr.targetsValid (program : Program) : Instr → Bool
 
 def Terminator.targetsValid (program : Program) : Terminator → Bool
   | .jump target | .tailCall target => program.hasBlock target
-  | .branch _ _ _ ifTrue ifFalse =>
+  | .branch _ _ _ ifTrue ifFalse _ =>
       program.hasBlock ifTrue && program.hasBlock ifFalse
   | .ret => true
 
@@ -314,7 +326,7 @@ def Block.instructionsValid (block : Block) : Bool :=
 operands of its slot kinds, and it sets every flag the condition reads
 (`FusedOk` with the `jcc` row). -/
 def Terminator.wellFormed : Terminator → Bool
-  | .branch producer args condition _ _ =>
+  | .branch producer args condition _ _ _ =>
       Op.rows.contains producer && producer.linear && (desc producer).flagsIn.isEmpty &&
         producer.argsOk args && FusedOk producer (Op.jccRel32 condition)
   | .jump _ | .tailCall _ | .ret => true

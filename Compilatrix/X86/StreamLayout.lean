@@ -55,7 +55,8 @@ def instructionSize (instruction : Instr) : Nat := (Encode.encodeInstr instructi
 
 def terminatorSize : Terminator → Nat
   | .jump _ | .tailCall _ => 5
-  | .branch producer args _ _ _ => (Encode.encodeOp producer args).size + 11
+  | .branch producer args _ _ _ .rel32 => (Encode.encodeOp producer args).size + 11
+  | .branch producer args _ _ _ .fall => (Encode.encodeOp producer args).size + 6
   | .ret => 1
 
 def instructionSizes (block : Block) : List Nat := block.instructions.toList.map instructionSize
@@ -78,7 +79,9 @@ theorem instructionSize_pos (instruction : Instr) : 0 < instructionSize instruct
   Encode.instruction_size_pos instruction
 
 theorem terminatorSize_pos (terminator : Terminator) : 0 < terminatorSize terminator := by
-  cases terminator <;> simp [terminatorSize]
+  cases terminator with
+  | branch _ _ _ _ _ reach => cases reach <;> simp [terminatorSize]
+  | _ => simp [terminatorSize]
 
 theorem blockSize_pos (block : Block) : 0 < blockSize block := by
   have := terminatorSize_pos block.terminator

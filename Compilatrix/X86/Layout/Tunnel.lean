@@ -36,10 +36,12 @@ def chase (m : NatMap Block) : Nat → BlockId → BlockId
       | some u => chase m fuel u
       | none => t
 
-/-- Redirect a terminator's jump and branch targets. -/
+/-- Redirect a terminator's jump and branch targets. Tunnelling runs before
+linearisation, which decides fall-through, so a branch leaves it with a
+`rel32` false edge. -/
 def tunnelTerminator (m : NatMap Block) (fuel : Nat) : Terminator → Terminator
   | .jump t => .jump (chase m fuel t)
-  | .branch producer args condition yes no => .branch producer args condition (chase m fuel yes) (chase m fuel no)
+  | .branch producer args condition yes no _ => .branch producer args condition (chase m fuel yes) (chase m fuel no)
   | t => t
 
 /-- Tunnel every block of a program. -/

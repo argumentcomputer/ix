@@ -264,7 +264,7 @@ def executeTerminator (checked : Checked) (terminator : Terminator)
   let core := machine.core
   match terminator with
   | .jump target => machine.goto checked target
-  | .branch producer args condition ifTrue ifFalse =>
+  | .branch producer args condition ifTrue ifFalse _ =>
       match producer.exec args core {} with
       | .error fault => machine.afterRow (.error fault)
       | .ok (core, flags) =>
