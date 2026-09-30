@@ -78,6 +78,75 @@ def twoThree : Decl String := thm "twoThree" (eqNat (.natLit natRef 2) (.natLit 
 #guard declines [natDecl, eqDecl, twoThree]
   "body conversion: conversion search did not establish equality"
 
+/-! ## Operations on literals
+
+A definition whose defining equations check publishes its operation
+(`ConstantFact.natOp`/`natTest`), and applications to literals then evaluate
+directly: `1000000 + 2345678` would take millions of iota steps otherwise. -/
+
+def factsOf (decls : List (Decl String)) (r : ConstRef String) : List (Model.ConstantFact String) :=
+  match run decls with
+  | .ok env => (env.toEnvironment r).elim [] (·.facts)
+  | .error _ => []
+
+def lit (n : Nat) : E := .natLit natRef n
+def app2 (f a b : E) : E := .app (.app f a) b
+def recNat (motive base step major : E) : E := .app (.app (.app (.app natRec1 motive) base) step) major
+
+#guard factsOf [natDecl, addDecl] (.member "add" 0) == [.natOp .add]
+
+def bigSum : Decl String := thm "bigSum" (eqNat (app2 addC (lit 1000000) (lit 2345678)) (lit 3345678))
+  (reflNat (lit 3345678))
+def bigSumWrong : Decl String := thm "bigSumWrong" (eqNat (app2 addC (lit 1000000) (lit 2345678))
+  (lit 3345679)) (reflNat (lit 3345679))
+#guard accepts [natDecl, eqDecl, addDecl, bigSum]
+#guard declines [natDecl, eqDecl, addDecl, bigSumWrong]
+  "body conversion: conversion search did not establish equality"
+
+/-- Keeps its first argument: the step is not a successor, so nothing is published. -/
+def keepDecl : Decl String := ⟨"keep", ⟨[.defn 0 .definition (.forallE natC (.forallE natC natC))
+  (.lam natC (.lam natC (recNat (.lam natC natC) (.bvar 1) (.lam natC (.lam natC (.bvar 0))) (.bvar 0))))
+  .safe]⟩⟩
+#guard factsOf [natDecl, keepDecl] (.member "keep" 0) == []
+
+/-- Multiplication by its recurrence over the certified `add`. -/
+def mulDecl : Decl String := ⟨"mul", ⟨[.defn 0 .definition (.forallE natC (.forallE natC natC))
+  (.lam natC (.lam natC (recNat (.lam natC natC) (lit 0)
+    (.lam natC (.lam natC (app2 addC (.bvar 0) (.bvar 3)))) (.bvar 0)))) .safe]⟩⟩
+def mulC : E := .const (.member "mul" 0) []
+def bigProduct : Decl String := thm "bigProduct" (eqNat (app2 mulC (lit 1234) (lit 5678)) (lit 7006652))
+  (reflNat (lit 7006652))
+#guard factsOf [natDecl, addDecl, mulDecl] (.member "mul" 0) == [.natOp .mul]
+#guard accepts [natDecl, eqDecl, addDecl, mulDecl, bigProduct]
+/-- Multiplication's shape over `keep`, which is not addition: nothing is published. -/
+def mulKeepDecl : Decl String := ⟨"mulKeep", ⟨[.defn 0 .definition (.forallE natC (.forallE natC natC))
+  (.lam natC (.lam natC (recNat (.lam natC natC) (lit 0)
+    (.lam natC (.lam natC (app2 (.const (.member "keep" 0) []) (.bvar 0) (.bvar 3)))) (.bvar 0)))) .safe]⟩⟩
+#guard factsOf [natDecl, addDecl, keepDecl, mulKeepDecl] (.member "mulKeep" 0) == []
+
+def boolShape : Shape String := ⟨0, [], [], .succ .zero, [⟨[], [], []⟩, ⟨[], [], []⟩]⟩
+def boolDecl : Decl String := ⟨"Bool", ⟨[boolShape.source "Bool", boolShape.recursorSource "Bool" .large]⟩⟩
+def boolC : E := .const (.member "Bool" 0) []
+def falseC : E := .const (.ctor "Bool" 0 0) []
+def trueC : E := .const (.ctor "Bool" 0 1) []
+def eqBool (a b : E) : E := .app (.app (.app (.const (.member "Eq" 0) [.succ .zero]) boolC) a) b
+def reflBool (a : E) : E := .app (.app (.const (.ctor "Eq" 0 0) [.succ .zero]) boolC) a
+
+/-- `ble` by recursion on the first argument, generalized over the second. -/
+def bleDecl : Decl String := ⟨"ble", ⟨[.defn 0 .definition (.forallE natC (.forallE natC boolC))
+  (.lam natC (.lam natC (.app
+    (recNat (.lam natC (.forallE natC boolC)) (.lam natC trueC)
+      (.lam natC (.lam (.forallE natC boolC) (.lam natC
+        (recNat (.lam natC boolC) falseC (.lam natC (.lam boolC (.app (.bvar 3) (.bvar 1)))) (.bvar 0)))))
+      (.bvar 1))
+    (.bvar 0)))) .safe]⟩⟩
+def bleC : E := .const (.member "ble" 0) []
+def bleTrue : Decl String := thm "bleTrue" (eqBool (app2 bleC (lit 300000) (lit 500000)) trueC) (reflBool trueC)
+def bleFalse : Decl String := thm "bleFalse" (eqBool (app2 bleC (lit 500001) (lit 500000)) falseC) (reflBool falseC)
+#guard factsOf [natDecl, boolDecl, bleDecl] (.member "ble" 0) ==
+  [.natTest .ble (.ctor "Bool" 0 1) (.ctor "Bool" 0 0)]
+#guard accepts [natDecl, boolDecl, eqDecl, bleDecl, bleTrue, bleFalse]
+
 -- A literal naming a family that is not installed is a missing reference.
 #guard rejects [three] "the declaration references a constant that is not installed"
 -- A literal naming a family that is not the natural numbers is ill-typed.

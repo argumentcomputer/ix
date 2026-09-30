@@ -132,6 +132,23 @@ def findNatural : (facts : List (ConstantFact β)) →
   | .natural zero succ :: _ => some ⟨(zero, succ), List.mem_cons_self ..⟩
   | _ :: rest => (findNatural rest).map fun ⟨p, h⟩ => ⟨p, List.mem_cons_of_mem _ h⟩
 
+/-- The numeric operation an entry computes, with its membership. -/
+def findNatOp : (facts : List (ConstantFact β)) →
+    Option { op : NatOp // ConstantFact.natOp op ∈ facts }
+  | [] => none
+  | .natOp op :: _ => some ⟨op, List.mem_cons_self ..⟩
+  | _ :: rest => (findNatOp rest).map fun ⟨op, h⟩ => ⟨op, List.mem_cons_of_mem _ h⟩
+
+/-- The numeric test an entry computes, with its outcomes and membership. -/
+def findNatTest : (facts : List (ConstantFact β)) →
+    Option { p : NatTest × ConstRef β × ConstRef β // ConstantFact.natTest p.1 p.2.1 p.2.2 ∈ facts }
+  | [] => none
+  | .natTest test yes no :: _ => some ⟨(test, yes, no), List.mem_cons_self ..⟩
+  | _ :: rest => (findNatTest rest).map fun ⟨p, h⟩ => ⟨p, List.mem_cons_of_mem _ h⟩
+
+/-- The largest exponent `pow` is evaluated at, as in the official kernel. -/
+def natPowMaxExponent : Nat := 2 ^ 24
+
 /-- One unfolding of a literal into constructor form, with its conversion and
 the formedness of the result. -/
 structure LitUnfold (entries : Environment β) (Γ : Context β) (f : ConstRef β) (n : Nat) :
@@ -412,6 +429,59 @@ structure TypedBody (entries : Environment β) (Γ : Context β) (b : AExpr β) 
 
 mutual
 
+/-- Evaluate a numeric operation whose arguments normalize to literals
+(`ConstantFact.natOp`). The first argument is normalized first, and the second
+only if the first reached a literal. -/
+def natStepC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)
+  | 0, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, e =>
+    match e with
+    | .app (.const r []) a =>
+      match h : entries r with
+      | some entry =>
+        match findNatOp entry.facts with
+        | some ⟨.pred, hf⟩ =>
+          if hn : entry.universes = 0 then do
+            let ⟨a', ha, _⟩ ← whnfC fuel entries Γ a
+            match a', ha with
+            | .natLit f x, ha => pure ⟨.natLit f (NatOp.pred.eval x 0), ReductionClaim.natPred h hf hn ha⟩
+            | _, _ => throw .noMatch
+          else throw .noMatch
+        | _ => throw .noMatch
+      | none => throw .noMatch
+    | .app (.app (.const r []) a) b =>
+      match h : entries r with
+      | some entry =>
+        if hn : entry.universes = 0 then
+          match findNatOp entry.facts, findNatTest entry.facts with
+          | some ⟨op, hf⟩, _ =>
+            if hbin : op = .pred then throw .noMatch else do
+            let ⟨a', ha, _⟩ ← whnfC fuel entries Γ a
+            match a', ha with
+            | .natLit f x, ha => do
+              let ⟨b', hb, _⟩ ← whnfC fuel entries Γ b
+              match b', hb with
+              | .natLit _ y, hb =>
+                if op = .pow && y > natPowMaxExponent then throw .noMatch
+                else pure ⟨.natLit f (op.eval x y), ReductionClaim.natOp h hf hn hbin ha hb⟩
+              | _, _ => throw .noMatch
+            | _, _ => throw .noMatch
+          | none, some ⟨(test, yes, no), hf⟩ => do
+            let ⟨a', ha, _⟩ ← whnfC fuel entries Γ a
+            match a', ha with
+            | .natLit _ x, ha => do
+              let ⟨b', hb, _⟩ ← whnfC fuel entries Γ b
+              match b', hb with
+              | .natLit _ y, hb =>
+                pure ⟨.const (if test.eval x y then yes else no) [], ReductionClaim.natTest h hf hn ha hb⟩
+              | _, _ => throw .noMatch
+            | _, _ => throw .noMatch
+          | none, none => throw .noMatch
+        else throw .noMatch
+      | none => throw .noMatch
+    | _ => throw .noMatch
+
 /-- One head reduction step through the application spine. -/
 def stepC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
     KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)
@@ -426,6 +496,7 @@ def stepC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AE
         let ⟨hc⟩ ← isDefEqC fuel entries Γ A' D
         return ⟨b.inst a, ReductionClaim.beta (p := p) ha hc⟩
       | f =>
+        KM.orElse (natStepC fuel entries Γ (.app f a)) fun _ =>
         KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ (.app f a))) fun _ =>
           KM.orElse (KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ (.app f a))) fun _ => do
             let ⟨f', hf⟩ ← stepC fuel entries Γ f
@@ -739,6 +810,7 @@ def whnfCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (e 
       if (deltaHead.{u,v} entries Γ e).isSome then
         match e with
         | .app f x =>
+          KM.orElse (natStepC fuel entries Γ (.app f x)) fun _ =>
           KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ (.app f x))) fun _ =>
             KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ (.app f x))
         | _ => throw .noMatch

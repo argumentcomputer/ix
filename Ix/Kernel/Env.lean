@@ -52,6 +52,10 @@ structure Env (β : Type u) where
   /-- References whose installed bodies conversion does not unfold (theorems
   and opaques), bucketed like `index`. Lookups never read it. -/
   noUnfold : Std.TreeMap UInt64 (List (ConstRef β)) compare := ∅
+  /-- The numeric operations certified so far (`ConstantFact.natOp`), newest
+  first. Lookups never read it; the equations of a new operation name a
+  certified one found here, and its fact is checked again at use. -/
+  natOps : List (Model.NatOp × ConstRef β) := []
 
 namespace Env
 
@@ -63,7 +67,7 @@ def refHash (keyHash : β → UInt64) : ConstRef β → UInt64
   | .ctor b i c => mixHash (mixHash (keyHash b) (hash i)) (hash (c + 1))
 
 /-- The empty environment with the given key hash. -/
-def emptyWith (keyHash : β → UInt64) : Env β := ⟨[], keyHash, ∅, ∅⟩
+def emptyWith (keyHash : β → UInt64) : Env β := ⟨[], keyHash, ∅, ∅, []⟩
 
 /-- The empty environment, the starting point of the closed check: one bucket. -/
 def empty : Env β := emptyWith fun _ => 0

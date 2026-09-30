@@ -6,6 +6,7 @@ namespaces, qualified names, and documentation paths; this header added;
 K2: the `ConstantFact.recursor`, `ConstantFact.structure`, and quotient fact cases, and the
 transfer of `NaturalMeaning.succApp` under agreeing assignments.
 R1: the lift fact case binds the equality eliminator it does not use.
+A5: the `natOp` and `natTest` fact cases.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -211,6 +212,15 @@ theorem Assignment.AgreesOn.factMeaning {entries : Environment β}
     simp only [ConstantFact.Meaning] at hm ⊢
     rw [h r entry hr levels, hm]
     exact (Quotient.liftValue_congr (heq eq (by simp [ConstantFact.references]) _)).symm
+  | natOp op =>
+    refine ⟨hm.1, fun a b => ?_⟩
+    rw [h r entry hr []]
+    exact hm.2 a b
+  | natTest test yes no =>
+    refine ⟨hm.1, fun a b => ?_⟩
+    rw [h r entry hr [], heq yes (by simp [ConstantFact.references]) [],
+      heq no (by simp [ConstantFact.references]) []]
+    exact hm.2 a b
 
 omit [DecidableEq β] in
 theorem Realizes.of_agrees {entries : Environment β} {constants constants' : Assignment β V}

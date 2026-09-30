@@ -12,6 +12,7 @@ import Ix.Kernel.Inductive.Natural
 import Ix.Kernel.Certified.Quotient.Install
 import Ix.Kernel.Certified.Standard.Install
 import Ix.Kernel.Certified.Basis.EqualityChecked
+import Ix.Kernel.Arithmetic
 
 /-! # The declaration checker
 
@@ -153,6 +154,84 @@ noncomputable def Model.retype {V : Type v} [SetTheory V] {env : Env β} (m : Mo
     exact hE.insert hs (hE.bodyScope r entry hr) hrefs (hE.bodyReferences r entry hr)
       (hE.equationScope r entry hr) (hE.equationReferences r entry hr)
       (hE.factScope r entry hr) (hE.factReferences r entry hr)
+
+/-- Publishing a fact on an installed entry keeps every model whose assignment
+meets the fact's meaning: nothing else about the entry changes. -/
+noncomputable def Model.withFact {V : Type v} [SetTheory V] {env : Env β} (m : Model V env)
+    {r : ConstRef β} {entry : ConstantEntry β} (hr : env.toEnvironment r = some entry)
+    {fact : ConstantFact β} (hs : fact.Scope entry.universes)
+    (hrefs : fact.ReferencesIn env.toEnvironment)
+    (hmean : ∀ levels, levels.length = entry.universes → ∀ valuation,
+      fact.Meaning m.constants r levels valuation) :
+    Model V (env.push r { entry with facts := fact :: entry.facts }) where
+  constants := m.constants
+  realizes := by
+    rw [Env.toEnvironment_push]
+    have hM := m.realizes
+    exact hM.insert {
+      typeValid := hM.typeValid r entry hr
+      member := hM.member r entry hr
+      bodyValid := hM.bodyValid r entry hr
+      bodyValue := hM.bodyValue r entry hr
+      equationValue := hM.equationValue r entry hr
+      factMeaning := fun f hf => by
+        rcases List.mem_cons.mp hf with rfl | hf
+        · exact hmean
+        · exact hM.factMeaning r entry hr f hf }
+  wf := by
+    rw [Env.toEnvironment_push]
+    have hE := m.wf
+    exact hE.insert (hE.typeScope r entry hr) (hE.bodyScope r entry hr)
+      (hE.typeReferences r entry hr) (hE.bodyReferences r entry hr)
+      (hE.equationScope r entry hr) (hE.equationReferences r entry hr)
+      (fun f hf => by
+        rcases List.mem_cons.mp hf with rfl | hf
+        · exact hs
+        · exact hE.factScope r entry hr f hf)
+      (fun f hf => by
+        rcases List.mem_cons.mp hf with rfl | hf
+        · exact hrefs
+        · exact hE.factReferences r entry hr f hf)
+
+/-- Publish a checked arithmetic fact on a definition just installed at a
+fresh reference, and record a numeric operation for later operations'
+equations. -/
+private def publishArithmetic (env env' : Env β) (r : ConstRef β) (entry : ConstantEntry β)
+    (fresh : env.toEnvironment r = none) (admitted : AdmissionClaim.{u,v} env env')
+    (hinst : env'.toEnvironment = (env.push r entry).toEnvironment) (hu : entry.universes = 0)
+    (checked : Arithmetic.CheckedFact.{u,v} env'.reductionView r)
+    (hrefs : checked.fact.ReferencesIn env'.toEnvironment) :
+    { env'' : Env β // AdmissionClaim.{u,v} env env'' ∧
+      env''.toEnvironment = (env.push r { entry with facts := checked.fact :: entry.facts }).toEnvironment } :=
+  let entry' : ConstantEntry β := { entry with facts := checked.fact :: entry.facts }
+  let natOps := match checked.fact with
+    | .natOp op => (op, r) :: env'.natOps
+    | _ => env'.natOps
+  let env'' : Env β := { env'.push r entry' with natOps }
+  have hr : env'.toEnvironment r = some entry := by
+    rw [hinst, Env.toEnvironment_push]; simp [Environment.insert]
+  have hview : env''.toEnvironment = (env.push r entry').toEnvironment := by
+    show (env'.push r entry').toEnvironment = _
+    rw [Env.toEnvironment_push, hinst, Env.toEnvironment_push, Env.toEnvironment_push]
+    funext q
+    simp only [Environment.insert]
+    split <;> rfl
+  ⟨env'', ⟨fun V _ m => by
+      obtain ⟨m'⟩ := admitted.step V m
+      have hmean : ∀ levels, levels.length = entry.universes → ∀ valuation,
+          checked.fact.Meaning m'.constants r levels valuation := by
+        intro levels hl valuation
+        have hnil : levels = [] := List.eq_nil_of_length_eq_zero (hl.trans hu)
+        subst hnil
+        exact checked.claim V m'.constants (Env.realizes_reductionView env' m'.realizes) valuation
+      let m'' := Model.withFact m' hr (hu ▸ checked.scope) hrefs hmean
+      exact ⟨⟨m''.constants, m''.realizes, m''.wf⟩⟩,
+    fun q e hq => by
+      rw [hview, Env.toEnvironment_push]
+      have hne : q ≠ r := fresh_ne fresh hq
+      simp only [Environment.insert, hne, ite_false]
+      exact hq⟩,
+    hview⟩
 
 omit [DecidableEq β] in
 /-- A family's installed reading survives changes at any other reference. -/
@@ -434,12 +513,29 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
                             (kind != .definition) fresh hTs hBs hTr hBr
                             (TypingClaim.ofReductionView env hT)
                             (TypingClaim.ofReductionView env (hb.convF hT.formed hc))
-                          acceptInstalled env d ⟨installed.val, installed.property.1⟩ (by
+                          let entry : ConstantEntry β := ⟨universes, type', some body', [], []⟩
+                          -- A definition computing a numeric operation publishes it.
+                          let final : { env'' : Env β // AdmissionClaim.{u,v} env env'' ∧
+                              ∃ facts, env''.toEnvironment =
+                                (env.push r { entry with facts }).toEnvironment } :=
+                            if hu : universes = 0 ∧ kind = .definition then
+                              match Arithmetic.certify.{u,v} cfg.fuel env.natOps
+                                  installed.val.reductionView r type' with
+                              | some checked =>
+                                if hrefs : checked.fact.ReferencesIn installed.val.toEnvironment then
+                                  let published := publishArithmetic env installed.val r entry fresh
+                                    installed.property.1 installed.property.2 hu.1 checked hrefs
+                                  ⟨published.val, published.property.1, _, published.property.2⟩
+                                else ⟨installed.val, installed.property.1, [], installed.property.2⟩
+                              | none => ⟨installed.val, installed.property.1, [], installed.property.2⟩
+                            else ⟨installed.val, installed.property.1, [], installed.property.2⟩
+                          acceptInstalled env d ⟨final.val, final.property.1⟩ (by
                               have hblock : d.block = ⟨[.defn universes kind type body .safe]⟩ :=
                                 congrArg Block.mk hm
                               rw [hblock]
-                              show Block.Installed _ _ installed.val.toEnvironment
-                              rw [installed.property.2]
+                              show Block.Installed _ _ final.val.toEnvironment
+                              obtain ⟨facts, hfinal⟩ := final.property.2
+                              rw [hfinal]
                               exact Block.installed_singleton_push env d.address _ _
                                 ⟨rfl, annotate_erase hTypeReading,
                                   congrArg some (annotate_erase hBodyReading)⟩ rfl)

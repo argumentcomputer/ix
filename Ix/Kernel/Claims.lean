@@ -402,4 +402,61 @@ theorem FormedClaim.natSucc {f r zero succ : ConstRef β} {entry : ConstantEntry
   refine ⟨trivial, trivial, ?_⟩
   simpa only [interp, List.map_nil] using hh.2.succApp n
 
+omit [DecidableEq β] in
+/-- A binary operation's constant applied to arguments that reduce to literals
+reduces to the literal of its value. -/
+theorem ReductionClaim.natOp {r f g : ConstRef β} {entry : ConstantEntry β} {op : NatOp}
+    (h : entries r = some entry) (hf : .natOp op ∈ entry.facts) (hn : entry.universes = 0)
+    (hbin : op ≠ .pred) {a b : AExpr β} {x y : Nat}
+    (ha : ReductionClaim.{u,v} entries Γ a (.natLit f x))
+    (hb : ReductionClaim.{u,v} entries Γ b (.natLit g y)) :
+    ReductionClaim.{u,v} entries Γ (.app (.app (.const r []) a) b) (.natLit f (op.eval x y)) := by
+  intro V _ constants hM levels env hΓ hw
+  obtain ⟨⟨-, hwa, -⟩, hwb, -⟩ := hw
+  have hm := hM.factMeaning r entry h (.natOp op) hf [] (by simpa using hn.symm) env
+  have hx := (ha V constants hM levels env hΓ hwa).1
+  have hy := (hb V constants hM levels env hΓ hwb).1
+  refine ⟨?_, trivial⟩
+  simp only [interp, List.map_nil] at hx hy ⊢
+  rw [hx, hy]
+  cases op with
+  | pred => exact absurd rfl hbin
+  | _ => exact hm.2 x y
+
+omit [DecidableEq β] in
+/-- A test's constant applied to arguments that reduce to literals reduces to
+the outcome constant of its value. -/
+theorem ReductionClaim.natTest {r f g yes no : ConstRef β} {entry : ConstantEntry β}
+    {test : NatTest} (h : entries r = some entry) (hf : .natTest test yes no ∈ entry.facts)
+    (hn : entry.universes = 0) {a b : AExpr β} {x y : Nat}
+    (ha : ReductionClaim.{u,v} entries Γ a (.natLit f x))
+    (hb : ReductionClaim.{u,v} entries Γ b (.natLit g y)) :
+    ReductionClaim.{u,v} entries Γ (.app (.app (.const r []) a) b)
+      (.const (if test.eval x y then yes else no) []) := by
+  intro V _ constants hM levels env hΓ hw
+  obtain ⟨⟨-, hwa, -⟩, hwb, -⟩ := hw
+  have hm := hM.factMeaning r entry h (.natTest test yes no) hf [] (by simpa using hn.symm) env
+  have hx := (ha V constants hM levels env hΓ hwa).1
+  have hy := (hb V constants hM levels env hΓ hwb).1
+  refine ⟨?_, trivial⟩
+  simp only [interp, List.map_nil] at hx hy ⊢
+  rw [hx, hy, hm.2 x y]
+  split <;> rfl
+
+omit [DecidableEq β] in
+/-- The predecessor's constant applied to an argument that reduces to a
+literal reduces to the literal of its value. -/
+theorem ReductionClaim.natPred {r f : ConstRef β} {entry : ConstantEntry β}
+    (h : entries r = some entry) (hf : .natOp .pred ∈ entry.facts) (hn : entry.universes = 0)
+    {a : AExpr β} {x : Nat} (ha : ReductionClaim.{u,v} entries Γ a (.natLit f x)) :
+    ReductionClaim.{u,v} entries Γ (.app (.const r []) a) (.natLit f (NatOp.pred.eval x 0)) := by
+  intro V _ constants hM levels env hΓ hw
+  obtain ⟨-, hwa, -⟩ := hw
+  have hm := hM.factMeaning r entry h (.natOp .pred) hf [] (by simpa using hn.symm) env
+  have hx := (ha V constants hM levels env hΓ hwa).1
+  refine ⟨?_, trivial⟩
+  simp only [interp, List.map_nil] at hx ⊢
+  rw [hx]
+  exact hm.2 x 0
+
 end Ix.Kernel

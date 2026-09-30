@@ -7,6 +7,8 @@ K2: the `ConstantFact.recursor`, `ConstantFact.structure`, and quotient fact cas
 carries the reference of its family, which its references list.
 P02: prove exact agreement between raw and annotated reference traversal.
 R1: the lift fact's references include the equality eliminator it names.
+A5: the `natOp` fact, which references nothing, and the `natTest` fact, which
+references its two outcomes.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -51,6 +53,8 @@ def ConstantFact.Scope (n : Nat) : ConstantFact β → Prop
   | .structure .. => True
   | .quotient _ => True
   | .quotientLift _ _ => True
+  | .natOp _ => n = 0
+  | .natTest .. => n = 0
 
 def ConstantFact.references : ConstantFact β → List (ConstRef β)
   | .typed e type => e.references ++ type.references
@@ -59,6 +63,8 @@ def ConstantFact.references : ConstantFact β → List (ConstRef β)
   | .structure .. => []
   | .quotient _ => []
   | .quotientLift eq eliminator => [eq, eliminator]
+  | .natOp _ => []
+  | .natTest _ yes no => [yes, no]
 
 def ConstantFact.ReferencesIn (entries : Environment β) (fact : ConstantFact β) : Prop :=
   ∀ r ∈ fact.references, (entries r).isSome = true
