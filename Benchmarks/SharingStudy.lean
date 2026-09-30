@@ -41,6 +41,9 @@ Loads a serialized `Ixon.Env` (`.ixe`) and, for every stored constant:
    uncertain under a uniform Share width `w ∈ {1, 2, 3}` and measures the
    components of uncertain nodes (see `classify`), and counts the Share
    references of the stored encoding by index width.
+8. Prices the Share references of the MSS encoding under three width
+   schemes (current index tiers; one width per constant from the entry
+   count; the same with a 1-byte class), see `schemeReport`.
 
 ```
 lake exe sharing-study <corpus.ixe> [--md <path>] [--csv <path>]
@@ -206,6 +209,20 @@ def dagStats (res : Ix.Sharing.AnalyzeResult) (roots : Array Expr) (occCheckMax 
     else none
   return ({ st with rootSizes, occCheck }, sizes)
 
+/-- Share references in an unexpanded expression, bucketed by the index width
+they pay: `< 8` (1 byte), `8..255` (2), `≥ 256` (3 below 65536). -/
+partial def countShareRefs (e : Expr) (acc : Nat × Nat × Nat) : Nat × Nat × Nat :=
+  match e with
+  | .share i =>
+    if i < 8 then (acc.1 + 1, acc.2)
+    else if i < 256 then (acc.1, acc.2.1 + 1, acc.2.2)
+    else (acc.1, acc.2.1, acc.2.2 + 1)
+  | .prj _ _ v => countShareRefs v acc
+  | .app f a => countShareRefs a (countShareRefs f acc)
+  | .lam _ t b | .all _ _ t b => countShareRefs b (countShareRefs t acc)
+  | .letE _ t v b => countShareRefs b (countShareRefs v (countShareRefs t acc))
+  | _ => acc
+
 /-! ## Maximal structural sharing (MSS)
 
 The candidate polynomial rule measured for the coordinator's follow-up:
@@ -239,6 +256,11 @@ structure MssResult where
   /-- Continuation-only entries whose unshared payload (`NodeSz.payload`) is at
   most 2 bytes. -/
   contP2u : Nat := 0
+  /-- Share nodes in the MSS table and roots by index width (`< 8`,
+  `8..255`, `≥ 256`), counted on the materialized encoding. -/
+  refs : Nat × Nat × Nat := (0, 0, 0)
+  /-- `Σ deg(t)` over the stored terms (expected to equal the Share count). -/
+  degSum : Nat := 0
   deriving Inhabited
 
 /-- Telescope count `putExpr` writes for an expression. -/
@@ -318,7 +340,10 @@ def mssBuild (res : Ix.Sharing.AnalyzeResult) (sizes : Std.HashMap Address NodeS
   let st := Ix.Sharing.buildSharingEntries order res.infoMap res.ptrToHash
   let newRoots := Ix.Sharing.rewriteExprs roots st.hashToIdx res.ptrToHash
   -- 6. Continuation-only entries.
-  let mut out : MssResult := { table := st.sharingVec, roots := newRoots }
+  let refs := newRoots.foldl (fun acc e => countShareRefs e acc)
+    (st.sharingVec.foldl (fun acc e => countShareRefs e acc) (0, 0, 0))
+  let degSum := stored.foldl (fun a h => a + deg.getD h 0) 0
+  let mut out : MssResult := { table := st.sharingVec, roots := newRoots, refs, degSum }
   for h in stored do
     unless nonCont.contains h do
       let entry := st.sharingVec[st.hashToIdx.getD h 0]!
@@ -607,19 +632,6 @@ def classify (res : Ix.Sharing.AnalyzeResult) (sizes : Std.HashMap Address NodeS
     out := out.push { st with comp, compCheck }
   return out
 
-/-- Share references in a stored (unexpanded) expression, bucketed by the
-index width they currently pay: `< 8` (1 byte), `8..255` (2), `≥ 256` (≥ 3). -/
-partial def countShareRefs (e : Expr) (acc : Nat × Nat × Nat) : Nat × Nat × Nat :=
-  match e with
-  | .share i =>
-    if i < 8 then (acc.1 + 1, acc.2)
-    else if i < 256 then (acc.1, acc.2.1 + 1, acc.2.2)
-    else (acc.1, acc.2.1, acc.2.2 + 1)
-  | .prj _ _ v => countShareRefs v acc
-  | .app f a => countShareRefs a (countShareRefs f acc)
-  | .lam _ t b | .all _ _ t b => countShareRefs b (countShareRefs t acc)
-  | .letE _ t v b => countShareRefs b (countShareRefs v (countShareRefs t acc))
-  | _ => acc
 
 /-! ## Per-constant row -/
 
@@ -674,6 +686,9 @@ structure Row where
   cont : Nat := 0
   contP2 : Nat := 0
   contP2u : Nat := 0
+  /-- Share nodes in the MSS encoding by current index width, and `Σ deg`. -/
+  mssRefs : Nat × Nat × Nat := (0, 0, 0)
+  mssDegSum : Nat := 0
   /-- Uniform-width classification for `w = 1, 2, 3` (empty on failure). -/
   uw : Array WStats := #[]
   uwErr : Option String := none
@@ -717,9 +732,9 @@ def measure (addr : Address) (name : String) (raw : ByteArray) (c : Constant)
       (some (s == unshared), s)
     else (none, 0)
   -- 4. Maximal structural sharing, serialized and checked.
-  let (mss, mssTable, mssErr, mssCounts) :=
+  let (mss, mssTable, mssErr, mssCounts, mssRefs, mssDegSum) :=
     match mssBuild res sizes roots with
-    | .error e => (0, 0, some s!"build: {e}", (0, 0, 0))
+    | .error e => (0, 0, some s!"build: {e}", (0, 0, 0), (0, 0, 0), 0)
     | .ok m =>
       let mc : Constant :=
         { info := replaceRoots c.info m.roots, sharing := m.table, refs := c.refs, univs := c.univs }
@@ -727,7 +742,7 @@ def measure (addr : Address) (name : String) (raw : ByteArray) (c : Constant)
       let err := match mssCheck b roots with
         | .ok () => none
         | .error e => some s!"check: {e}"
-      (b.size, m.table.size, err, (m.cont, m.contP2, m.contP2u))
+      (b.size, m.table.size, err, (m.cont, m.contP2, m.contP2u), m.refs, m.degSum)
   -- 5. Uniform-reference-width classification and stored reference widths.
   let (uw, uwErr) := match classify res sizes roots with
     | .ok s => (s, none)
@@ -736,7 +751,7 @@ def measure (addr : Address) (name : String) (raw : ByteArray) (c : Constant)
     (c.sharing.foldl (fun acc e => countShareRefs e acc) (0, 0, 0))
   return {
     uw, uwErr, refs0 := refCounts.1, refs1 := refCounts.2.1, refs2 := refCounts.2.2
-    mss, mssTable, mssErr
+    mss, mssTable, mssErr, mssRefs, mssDegSum
     cont := mssCounts.1, contP2 := mssCounts.2.1, contP2u := mssCounts.2.2
     addr, name, kind := kindOf c.info, detail := mutsDetail c.info
     roots := roots.size, n := ds.n, occ2 := ds.occ2, cand := ds.cand
@@ -871,7 +886,7 @@ def csvHeader : String :=
   "unshared_bytes,rebuild_ok,roundtrip_ok,unshared_validated,occ_checked,max_app,max_lam,max_all,us," ++
   "mss_bytes,mss_table,mss_ok,mss_cont,mss_cont_p2,mss_cont_p2u," ++
   "w1_cs,w1_ce,w1_unc,w1_comp,w2_cs,w2_ce,w2_unc,w2_comp,w3_cs,w3_ce,w3_unc,w3_comp," ++
-  "refs_lt8,refs_8_255,refs_ge256"
+  "refs_lt8,refs_8_255,refs_ge256,mss_refs_lt8,mss_refs_8_255,mss_refs_ge256,mss_deg_sum"
 
 def uwCsv (r : Row) : String :=
   ",".intercalate <| (List.range 3).map fun k =>
@@ -887,7 +902,8 @@ def csvLine (r : Row) : String :=
   s!"{if r.rebuildOk then 1 else 0},{if r.roundtripOk then 1 else 0},{v},{o}," ++
   s!"{r.maxApp},{r.maxLam},{r.maxAll},{r.ns / 1000}," ++
   s!"{r.mss},{r.mssTable},{if r.mssErr.isNone then 1 else 0},{r.cont},{r.contP2},{r.contP2u}," ++
-  s!"{uwCsv r},{r.refs0},{r.refs1},{r.refs2}"
+  s!"{uwCsv r},{r.refs0},{r.refs1},{r.refs2}," ++
+  s!"{r.mssRefs.1},{r.mssRefs.2.1},{r.mssRefs.2.2},{r.mssDegSum}"
 
 def kindOrder : Array String :=
   #["defn", "recr", "axio", "quot", "muts", "iPrj", "cPrj", "rPrj", "dPrj"]
@@ -1046,6 +1062,77 @@ def uwReport (rows : Array Row) : String := Id.run do
   md := md ++ s!"| 9–255 | {t9.size} | {s0 t9} | {s1 t9} | {s2 t9} | w = 2: **{s0 t9}** bytes |\n"
   md := md ++ s!"| > 255 | {tBig.size} | {s0 tBig} | {s1 tBig} | {s2 tBig} | w = 3: 2·{s0 tBig} + {s1 tBig} = **{2 * s0 tBig + s1 tBig}** bytes |\n\n"
   md := md ++ s!"- Total stored bytes over all constants: {rows.foldl (· + ·.raw) 0}; total Share references: {s0 rows + s1 rows + s2 rows}.\n"
+  return md
+
+/-! ## Share-width schemes on the MSS encoding -/
+
+def mssRefTotal (r : Row) : Nat := r.mssRefs.1 + r.mssRefs.2.1 + r.mssRefs.2.2
+/-- Scheme A: current tiers by index (1 byte `< 8`, 2 `< 256`, 3 `< 65536`). -/
+def mssRefsA (r : Row) : Nat := r.mssRefs.1 + 2 * r.mssRefs.2.1 + 3 * r.mssRefs.2.2
+/-- Scheme B: one width per constant, 2 if the MSS entry count is ≤ 2048, else 3. -/
+def widthB (r : Row) : Nat := if r.mssTable ≤ 2048 then 2 else 3
+/-- Scheme C: as B, with a 1-byte class for at most 8 entries. -/
+def widthC (r : Row) : Nat := if r.mssTable ≤ 8 then 1 else widthB r
+def mssRefsB (r : Row) : Nat := mssRefTotal r * widthB r
+def mssRefsC (r : Row) : Nat := mssRefTotal r * widthC r
+
+def fmtSignedPct2 (num : Int) (den : Nat) : String :=
+  if den == 0 then "0" else
+    let q := (num.natAbs * 10000 + den / 2) / den
+    let frac := q % 100
+    s!"{if num < 0 then "−" else "+"}{q / 100}.{if frac < 10 then "0" else ""}{frac}%"
+
+def schemeReport (rows : Array Row) : String := Id.run do
+  let wr := rows.filter (·.roots > 0)
+  let mut md := "## Share-width schemes on the MSS encoding\n\n"
+  md := md ++ "Every occurrence of an MSS entry is a Share. Scheme A: the current tiers by index in MSS order (1 byte below index 8, 2 below 256, 3 below 65536). Scheme B: one width per constant, 2 bytes if the MSS entry count (= candidate count) is ≤ 2048, else 3. Scheme C: as B, but 1 byte if the count is ≤ 8. Constant bytes under a scheme are MSS bytes − refbytes(A) + refbytes(scheme). Share nodes are counted on the materialized MSS encoding.\n\n"
+  let mismatch := wr.filter fun r => mssRefTotal r != r.mssDegSum
+  md := md ++ s!"- Share nodes in the MSS encoding vs `Σ deg` over MSS entries: {wr.size - mismatch.size} equal, **{mismatch.size}** different.\n"
+  for r in mismatch.extract 0 10 do
+    md := md ++ s!"  - `{r.name}`: {mssRefTotal r} Share nodes, Σ deg {r.mssDegSum}\n"
+  let sum (f : Row → Nat) (xs : Array Row) : Nat := xs.foldl (fun a r => a + f r) 0
+  let refs := sum mssRefTotal wr
+  let sMss := sum (·.mss) wr
+  let sHeur := sum (·.raw) wr
+  let sA := sum mssRefsA wr
+  let sB := sum mssRefsB wr
+  let sC := sum mssRefsC wr
+  let big := wr.filter (·.mssTable > 2048)
+  md := md ++ s!"- Rooted constants: {wr.size}; Share references in their MSS encodings: {refs}; constants with more than 2048 MSS entries (width 3 under B and C): {big.size}; with at most 8 entries (width 1 under C): {(wr.filter (·.mssTable ≤ 8)).size}.\n\n"
+  md := md ++ "| scheme | reference bytes | MSS constant bytes | Δ vs A | Δ / MSS total (A) | Δ / heuristic total |\n|---|---:|---:|---:|---:|---:|\n"
+  for (label, s) in [("A (index tiers)", sA), ("B (2 or 3 per constant)", sB), ("C (1, 2 or 3 per constant)", sC)] do
+    let d : Int := (s : Int) - sA
+    md := md ++ s!"| {label} | {s} | {(sMss : Int) - sA + s} | {d} | {fmtSignedPct2 d sMss} | {fmtSignedPct2 d sHeur} |\n"
+  md := md ++ s!"\nTotals for reference: MSS bytes (scheme A, the real encoding) {sMss}; heuristic stored bytes {sHeur}.\n\n"
+  let delta (f : Row → Nat) (r : Row) : Int := (f r : Int) - mssRefsA r
+  let cmpLine (label : String) (f : Row → Nat) : String :=
+    let better := (wr.filter fun r => delta f r < 0).size
+    let equal := (wr.filter fun r => delta f r == 0).size
+    let worse := (wr.filter fun r => delta f r > 0).size
+    s!"| {label} | {better} | {equal} | {worse} |\n"
+  md := md ++ "| comparison | better (fewer bytes) | equal | worse |\n|---|---:|---:|---:|\n"
+  md := md ++ cmpLine "B vs A" mssRefsB ++ cmpLine "C vs A" mssRefsC ++ "\n"
+  let hdr := "| # | constant | kind | MSS entries | Share refs | refs < 8 / 8–255 / ≥ 256 | A ref bytes | B ref bytes | Δ (B − A) | MSS bytes (A) |\n|---:|---|---|---:|---:|---|---:|---:|---:|---:|\n"
+  let line (j : Nat) (r : Row) : String :=
+    s!"| {j + 1} | `{r.name}` | {r.kind} | {r.mssTable} | {mssRefTotal r} | {r.mssRefs.1} / {r.mssRefs.2.1} / {r.mssRefs.2.2} | {mssRefsA r} | {mssRefsB r} | {delta mssRefsB r} | {r.mss} |\n"
+  md := md ++ "### Ten largest losses under B (B − A)\n\n" ++ hdr
+  let worst := (wr.qsort fun a b =>
+    delta mssRefsB a > delta mssRefsB b ||
+      (delta mssRefsB a == delta mssRefsB b && a.name < b.name)).extract 0 10
+  for h : j in [0:worst.size] do md := md ++ line j worst[j]
+  md := md ++ "\n### Ten largest gains under B (A − B)\n\n" ++ hdr
+  let best := (wr.qsort fun a b =>
+    delta mssRefsB a < delta mssRefsB b ||
+      (delta mssRefsB a == delta mssRefsB b && a.name < b.name)).extract 0 10
+  for h : j in [0:best.size] do md := md ++ line j best[j]
+  let t255 := wr.filter (·.table > 255)
+  let tA := sum mssRefsA t255
+  let tB := sum mssRefsB t255
+  let dB : Int := (tB : Int) - tA
+  md := md ++ s!"\n### B − A restricted to constants whose current heuristic table exceeds 255 entries\n\n"
+  md := md ++ s!"- Constants: {t255.size}; their MSS bytes {sum (·.mss) t255}, heuristic bytes {sum (·.raw) t255}; MSS entries: min {(t255.map (·.mssTable)).foldl min (t255[0]?.map (·.mssTable) |>.getD 0)}, max {(t255.map (·.mssTable)).foldl max 0}; with more than 2048 MSS entries: {(t255.filter (·.mssTable > 2048)).size}.\n"
+  md := md ++ s!"- Reference bytes: A {tA}, B {tB}; Δ (B − A) {dB} ({fmtSignedPct2 dB (sum (·.mss) t255)} of their MSS bytes, {fmtSignedPct2 dB (sum (·.raw) t255)} of their heuristic bytes).\n"
+  md := md ++ s!"- B vs A: better {(t255.filter fun r => delta mssRefsB r < 0).size}, equal {(t255.filter fun r => delta mssRefsB r == 0).size}, worse {(t255.filter fun r => delta mssRefsB r > 0).size}.\n"
   return md
 
 /-! ## Driver -/
@@ -1233,6 +1320,7 @@ def main (args : List String) : IO UInt32 := do
     md := md ++ s!"| `{r.name}` | {r.kind} | {r.ns / 1000000} | {r.n} | {r.raw} |\n"
   md := md ++ "\n" ++ mssReport rows ws
   md := md ++ "\n" ++ uwReport rows
+  md := md ++ "\n" ++ schemeReport rows
   IO.println md
   if let some p := opts.md then
     IO.FS.writeFile p md
@@ -1248,7 +1336,8 @@ def main (args : List String) : IO UInt32 := do
     | .error _ => true) || negativeControls.any (!·.2)
   return (if mismatches == 0 && skipped.isEmpty && valFail.isEmpty && rtFail.isEmpty &&
     occFail.isEmpty && !mssFail && !rows.any (·.uwErr.isSome) &&
-    !rows.any (fun r => r.uw.any (·.compCheck == some false)) then 0 else 1)
+    !rows.any (fun r => r.uw.any (·.compCheck == some false)) &&
+    !rows.any (fun r => mssRefTotal r != r.mssDegSum) then 0 else 1)
 
 end Benchmarks.SharingStudy
 
