@@ -8,6 +8,9 @@ import Compilatrix.Sem.Transform
 import Compilatrix.Sem.Smallstep
 import Compilatrix.Sem.Agrees
 import Compilatrix.Sem.SimUpTo
+import Compilatrix.Sem.Traced
+import Compilatrix.Sem.TracedSim
+import Compilatrix.Sem.TracedTransform
 import Compilatrix.Lir.Syntax
 import Compilatrix.Lir.Semantics
 import Compilatrix.Lir.Graph
@@ -60,6 +63,7 @@ import Compilatrix.Xv.Validate.Proof.Diagram
 import Compilatrix.Xv.Validate.Proof.Sound
 import Compilatrix.Xv.Validate.Proof.Fuel
 import Compilatrix.Xv.Validate.Proof.Program
+import Compilatrix.Xv.Validate.Proof.Traced
 import Compilatrix.Xv.Alloc.Output
 import Compilatrix.Xv.Alloc.Apply
 import Compilatrix.Xv.Alloc.Liveness
@@ -173,6 +177,7 @@ import Compilatrix.Lam.Erase.Proof.BuildBody
 import Compilatrix.Lam.Erase.Proof.Build
 import Compilatrix.Lam.Erase.Proof.ProgWF
 import Compilatrix.Lam.Erase.Proof.Correct
+import Compilatrix.Lam.Erase.Proof.Traced
 import Compilatrix.Lam.Erase.Proof.ModesOk
 import Compilatrix.Lam.Erase.Proof.Reg
 import Compilatrix.Lam.Erase.Proof.RegBuild

@@ -1037,6 +1037,10 @@
   "Compilatrix.Xv.Validate.Proof.XlLoc":
   {"path": "Compilatrix/Xv/Validate/Proof/XlLoc.lean",
    "imports": ["Compilatrix.Xv.XlSemantics"]},
+  "Compilatrix.Xv.Validate.Proof.Traced":
+  {"path": "Compilatrix/Xv/Validate/Proof/Traced.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.Proof.Program", "Compilatrix.Sem.TracedSim"]},
   "Compilatrix.Xv.Validate.Proof.Terms":
   {"path": "Compilatrix/Xv/Validate/Proof/Terms.lean",
    "imports": ["Compilatrix.Xv.Validate.Proof.Calls"]},
@@ -1595,6 +1599,15 @@
   "Compilatrix.Sem.Transform":
   {"path": "Compilatrix/Sem/Transform.lean",
    "imports": ["Compilatrix.Sem.Simulation"]},
+  "Compilatrix.Sem.TracedTransform":
+  {"path": "Compilatrix/Sem/TracedTransform.lean",
+   "imports": ["Compilatrix.Sem.TracedSim", "Compilatrix.Sem.Transform"]},
+  "Compilatrix.Sem.TracedSim":
+  {"path": "Compilatrix/Sem/TracedSim.lean",
+   "imports": ["Compilatrix.Sem.Traced"]},
+  "Compilatrix.Sem.Traced":
+  {"path": "Compilatrix/Sem/Traced.lean",
+   "imports": ["Compilatrix.Sem.Simulation"]},
   "Compilatrix.Sem.Smallstep":
   {"path": "Compilatrix/Sem/Smallstep.lean",
    "imports": ["Compilatrix.Sem.Clock", "Compilatrix.Sem.Simulation"]},
@@ -1806,6 +1819,10 @@
   {"path": "Compilatrix/Lam/Erase/Proof/Values.lean",
    "imports":
    ["Compilatrix.Lam.Erase.Proof.Layout", "Compilatrix.Lam.Erase.Proof.Rel"]},
+  "Compilatrix.Lam.Erase.Proof.Traced":
+  {"path": "Compilatrix/Lam/Erase/Proof/Traced.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.Correct", "Compilatrix.Sem.TracedTransform"]},
   "Compilatrix.Lam.Erase.Proof.Spec":
   {"path": "Compilatrix/Lam/Erase/Proof/Spec.lean",
    "imports": ["Compilatrix.Lam.Erase"]},
@@ -2509,6 +2526,9 @@
     "Compilatrix.Sem.Smallstep",
     "Compilatrix.Sem.Agrees",
     "Compilatrix.Sem.SimUpTo",
+    "Compilatrix.Sem.Traced",
+    "Compilatrix.Sem.TracedSim",
+    "Compilatrix.Sem.TracedTransform",
     "Compilatrix.Lir.Syntax",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Lir.Graph",
@@ -2561,6 +2581,7 @@
     "Compilatrix.Xv.Validate.Proof.Sound",
     "Compilatrix.Xv.Validate.Proof.Fuel",
     "Compilatrix.Xv.Validate.Proof.Program",
+    "Compilatrix.Xv.Validate.Proof.Traced",
     "Compilatrix.Xv.Alloc.Output",
     "Compilatrix.Xv.Alloc.Apply",
     "Compilatrix.Xv.Alloc.Liveness",
@@ -2674,6 +2695,7 @@
     "Compilatrix.Lam.Erase.Proof.Build",
     "Compilatrix.Lam.Erase.Proof.ProgWF",
     "Compilatrix.Lam.Erase.Proof.Correct",
+    "Compilatrix.Lam.Erase.Proof.Traced",
     "Compilatrix.Lam.Erase.Proof.ModesOk",
     "Compilatrix.Lam.Erase.Proof.Reg",
     "Compilatrix.Lam.Erase.Proof.RegBuild",
