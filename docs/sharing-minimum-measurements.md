@@ -42,6 +42,113 @@ For comparison with the P1.5 criterion: candidate counts are small (≤ 8, where
 space is at most 256) for about one constant in six. They are in the hundreds or more for
 about one in five, and in the tens of thousands at the top.
 
+## Maximal structural sharing (MSS) follow-up
+
+This is a candidate linear-time canonical rule, measured on the same corpus through the
+same harness (`mssBuild` in `Benchmarks/SharingStudy.lean`). It is the rule the
+coordinator defined:
+
+1. `deg(t)` is the number of incoming edges of `t` in the compact hash-consed DAG, counted
+   with multiplicity (`App(x,x)` contributes 2), plus the number of roots equal to `t`.
+   This is the compact indegree, not the expanded `occ` used in P1.5.
+2. MSS stores exactly the terms with `deg ≥ 2` and unshared standalone size > 1. Every
+   occurrence of a stored term, in roots and in other entries, becomes a Share.
+3. The table is in priority topological order. Among stored terms whose stored body
+   dependencies (stored terms reachable through unstored nodes) have been emitted, MSS emits
+   the one with the largest `deg`, breaking ties by the smaller blake3 hash bytes. The
+   emitted set is always closed under stored proper subterms (by induction on emission), so
+   this is the same order as the "all stored proper subterms first" formulation.
+4. Entries and roots are built with the production helpers
+   `Ix.Sharing.buildSharingEntries` and `Ix.Sharing.rewriteExprs`, driven by the MSS order.
+   The roots are put back into the ConstantInfo with the production cursor helpers
+   (`updateRecursorRules`, `updateMutConsts`), and the constant is serialized with
+   `serConstant`. All MSS byte counts below are exact serialized lengths.
+
+### Checks
+
+- **Plan §2 witnesses:**
+  - `T2 → T2`: MSS gives **17 bytes**, exactly the plan's minimum
+    `d200009117b0b001921700170000000100`. The heuristic gives 19 bytes, which are the
+    plan's `d200009117b1b10291170000911700b0000100`, and unshared is 20.
+  - `T16 → T16`: MSS gives **46**, the heuristic 81 and unshared 78. These are the three
+    numbers in the plan's table.
+  - The plan's closed `A → A → B → B` fixture: MSS gives 25, the plan's stated minimum, the
+    same as the heuristic. Unshared is 28.
+- **Every MSS constant (56,622) was checked:** decoded, re-encoded byte-for-byte, its table
+  expanded, and its roots compared with the original expanded roots by exact structural
+  equality (memoized on pointer pairs, not on hashes). There were **0 failures**.
+- **Negative controls:** the check rejects the `T2 → T2` bytes against roots that differ in
+  one leaf, and against the `T16 → T16` roots.
+
+### Results over the 55,386 constants with at least one root
+
+| encoding | total bytes | vs heuristic |
+|---|---:|---:|
+| heuristic (stored `rawBytes`) | 80,161,846 | |
+| MSS | 68,547,873 | −11,613,973 (−14.5%) |
+| unshared | 1,069,954,757 | +989,792,911 |
+
+- **Per constant:**
+  - MSS is smaller than the heuristic for 50,173 constants (90.6%), equal for 4,994
+    (9.0%) and larger for 219 (0.4%).
+  - Savings total 11,614,906 bytes; losses total 933 bytes.
+  - The 219 losses have p50 3, p90 8, p99 27, max 50 and mean 4.26 bytes.
+  - The savings have p50 53, p90 384, p99 3,083 and max 65,763 bytes.
+- **Signed Δ = MSS − heuristic per constant:** min −65,763, p10 −348, p50 −45, p90 −1,
+  p99 0, max +50.
+- **MSS vs unshared:** MSS is larger than unshared for **0** constants. For comparison, the
+  heuristic is larger than unshared for 600.
+- **By kind (MSS as a share of heuristic bytes):** defn 85.5%, recr 83.2%, muts 96.6%,
+  axio 99.4%, quot 100.0%.
+- **Table sizes:**
+
+  | table size | median | p90 | p99 | max | mean | total entries |
+  |---|---:|---:|---:|---:|---:|---:|
+  | MSS | 12 | 102 | 437 | 5,146 | 42.35 | 2,345,582 |
+  | heuristic | 26 | 203 | 1,096 | 22,088 | 96.21 | 5,328,504 |
+
+### Where MSS loses
+
+These are derived from the CSV and describe correlations on this corpus. They are not a
+measured decomposition of the losses.
+
+- **Every** one of the 219 constants where MSS is larger has more than 8 MSS entries, so
+  some of its Share references are 2 bytes wide. None of the losers has 8 or fewer MSS
+  entries.
+  - 217 of the 219 have more MSS entries than heuristic entries.
+  - 116 have at most 8 heuristic entries but more than 8 MSS entries.
+- Over all rooted constants, MSS has more entries than the heuristic for 4,484 constants.
+- **Largest losses** (the ten are listed in the harness output below):
+  - `noConfusionType` definitions of structure-like types, led by
+    `Std.Packages.LinearPreorderOfOrdArgs.noConfusionType` (+50 bytes: 2,469 → 2,519, with
+    57 heuristic entries vs 95 MSS entries);
+  - `Float.exactlyRepresentablePowersOfTen` and its `eq_1` (+27 and +31);
+  - `Lean.Grind.CommRing.Mon.revlex*` functions (+13 to +15).
+- **Continuation-only MSS entries:**
+  - *Definition used here:* a stored term that is never a root and whose every DAG
+    occurrence is a same-family telescope continuation. That means the function child of
+    an App for an App term, or the body of a Lam (All) for a Lam (All) term.
+  - *Interpretation:* I read "function child of an App" as applying only when the stored
+    term is itself an App, since only then does the Share cut a telescope. A non-App head
+    under an App is not counted.
+  - *Counts:* there are 567,668 continuation-only entries. Of these, 22,588 have an MSS
+    entry body of ≤ 2 bytes after the Tag4 header, and 781 have an unshared payload of
+    ≤ 2 bytes.
+  - *Spread:* 11,192 rooted constants have at least one entry of the first kind (MSS
+    payload ≤ 2). Only 41 of them are among the 219 losers; 11,112 are MSS wins and 39
+    are ties.
+
+### Caveats for MSS
+
+- Ties in `deg` are broken by blake3 hash bytes, a stand-in for the structural IDs of §3.2.
+  A different ID assignment can change the table order, and so which Shares are 2 bytes
+  wide. It cannot change the stored set.
+- MSS is not claimed to be optimal. It attains the plan's certified minimum on `T2 → T2` and
+  the stated 25-byte minimum on `A → A → B → B`, and matches the 46-byte feasible
+  improvement on `T16 → T16` (for which no minimum is certified). It was never larger than
+  unshared on this corpus. Beyond that, these are plain byte counts compared with the
+  heuristic and with unshared.
+
 ## Verification of the harness
 
 - **Production rebuild: 0 mismatches out of 56,622.** For every constant, the harness
@@ -129,19 +236,23 @@ nix develop --command bash -c 'lake build sharing-study'
 #   -> Build completed successfully (96 jobs).
 S=/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad
 nix develop --command bash -c "lake exe sharing-study $S/init.ixe \
-    --md $S/w3-results.md --csv $S/sharing-minimum-measurements.csv"
+    --md $S/w3-results2.md --csv $S/sharing-minimum-measurements.csv"
 #   -> exit 0; defaults --validate-max 16777216 --occ-check-max 65536
 ```
 
-Wall time for the run:
+There were two full runs. The output below is from the second, which added MSS.
 
-- Harness-internal: 146.8 s in total, of which 0.24 s was loading the `.ixe` through
-  `Ixon.deEnvAnon` and 146.5 s was measuring 56,622 constants.
-- End to end including `nix develop` and `lake exe` startup: about 152 s (started at
-  18:24:07; the log was last written at 18:26:39).
-- The slowest single constant took 0.96 s.
+| run | harness-internal time | end to end |
+|---|---|---|
+| First (P1.5 only, commit `ecdd47ed`) | 146.8 s (0.24 s load + 146.5 s measuring) | about 152 s (18:24:07 → 18:26:39) |
+| Second (P1.5 + MSS) | 185.2 s (0.23 s load + 185.0 s measuring) | 193.3 s measured by the shell, including `nix develop` and `lake exe` startup |
 
-The per-constant CSV is 6,186,320 bytes (56,622 rows plus a header), which is too large to
+- The P1.5 sections of the second run's output are identical to the first run's except
+  for the timing lines and the "slowest constants" table. This was checked with `diff`.
+- The slowest single constant took 1.2 s in the second run, including MSS construction
+  and its check. The harness is single-threaded.
+
+The per-constant CSV is 7,051,432 bytes (56,622 rows plus a header), which is too large to
 track here. It is kept at
 `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/sharing-minimum-measurements.csv`.
 Its columns are:
@@ -149,20 +260,21 @@ Its columns are:
 ```text
 addr (first 16 hex digits), name, kind, members (muts: i/c/r/d counts), roots, N,
 occ_ge2, cand, cand_gt2, cand_gt3, table, raw_bytes, unshared_bytes, rebuild_ok,
-roundtrip_ok, unshared_validated, occ_checked, max_app, max_lam, max_all, us (harness µs)
+roundtrip_ok, unshared_validated, occ_checked, max_app, max_lam, max_all, us (harness µs),
+mss_bytes, mss_table, mss_ok, mss_cont, mss_cont_p2, mss_cont_p2u
 ```
 
 Rerunning the command above regenerates it.
 
 ---
 
-The rest of this document is the harness's `--md` output, unedited.
+The rest of this document is the harness's `--md` output from the second run, unedited.
 
 ## Results
 
 - Corpus: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe` (195387870 bytes), 56622 stored constants (distinct addresses), 66621 names.
 - Constants processed: 56622; skipped: 0; with at least one expression root: 55386.
-- Harness wall time: load 239 ms, measurement 146528 ms, total 146767 ms.
+- Harness wall time: load 229 ms, measurement 185013 ms, total 185242 ms.
 - Production rebuild (`buildConstantWithSharing` on expanded roots, then `serConstant`) differs from `rawBytes`: **0** constants.
 - Decode/encode roundtrip (`serConstant ∘ get`) differs from `rawBytes`: 0 constants.
 - Compositional unshared size checked against `serConstant` of the real unshared Constant: 56615 equal, 0 different, 7 not checked (unshared roots > 16777216 bytes).
@@ -276,8 +388,106 @@ The rest of this document is the harness's `--md` output, unedited.
 
 | constant | kind | ms | `N` | stored B |
 |---|---|---:|---:|---:|
-| `_private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_1` | defn | 960 | 24507 | 141015 |
-| `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1` | defn | 530 | 18802 | 109553 |
-| `_private.Init.Data.Array.Extract.«0».Array.extract_append._proof_1_1` | defn | 439 | 26754 | 156976 |
-| `_private.Init.Data.Array.Extract.«0».Array.extract_extract._proof_1_1` | defn | 439 | 19523 | 104173 |
-| `_private.Init.Data.Array.Extract.«0».Array.extract_add_left._proof_1_2` | defn | 431 | 13362 | 77260 |
+| `_private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_1` | defn | 1202 | 24507 | 141015 |
+| `_private.Init.Data.Array.Extract.«0».Array.extract_append._proof_1_1` | defn | 652 | 26754 | 156976 |
+| `_private.Init.Data.Vector.Extract.«0».Vector.extract_append_extract._proof_1` | defn | 628 | 24658 | 142164 |
+| `_private.Init.Data.Vector.Extract.«0».Vector.extract_extract._proof_1` | defn | 593 | 26494 | 154009 |
+| `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1` | defn | 581 | 18802 | 109553 |
+
+## Maximal structural sharing (MSS)
+
+Rule: store exactly the subterms with compact-DAG indegree `deg ≥ 2` (edges with multiplicity plus root occurrences) and unshared size > 1; every occurrence of a stored term is a Share; order by priority topological order (largest `deg`, then smaller blake3 hash bytes). Built with `Ix.Sharing.buildSharingEntries`/`rewriteExprs`, placed with the production root cursor helpers, serialized with `serConstant`.
+
+### Witnesses from the plan (§2)
+
+| fixture | unshared B | heuristic B | MSS B | expected MSS | MSS decode/expand check | MSS bytes | heuristic bytes |
+|---|---:|---:|---:|---|---|---|---|
+| `T2 → T2` | 20 | 19 | 17 | 17 (plan: exact minimum `d200009117b0b001921700170000000100`) | ok | `d200009117b0b001921700170000000100` | `d200009117b1b10291170000911700b0000100` |
+| `T16 → T16` | 78 | 81 | 46 | 46 (plan: feasible improvement) | ok | `d200009117b0b0019810170017001700170017001700170017001700170017001700170017001700170000000100` | `d200009117b80eb80e0f921700170000911700b0911700b1911700b2911700b3911700b4911700b5911700b6911700b7911700b808911700b809911700b80a911700b80b911700b80c911700b80d000100` |
+| `A → A → B → B`, `A = Prop → Prop`, `B = Prop → Type` | 28 | 25 | 25 | 25 (plan: minimum, two tied orders) | ok | `d200009317b117b117b0b00291170001911700000002000100` | `d200009317b117b117b0b00291170001911700000002000100` |
+
+Negative controls for the MSS decode/expand/equality check:
+
+- `T2 → T2` MSS bytes vs roots `T2 → T2'` (one leaf `Sort 0` replaced by `Sort 1`): behaves as expected
+- `T2 → T2` MSS bytes vs roots `T16 → T16`: behaves as expected
+- `T2 → T2` MSS bytes vs its own roots (must be accepted): behaves as expected
+
+### Corpus verification
+
+- MSS built for 56622 constants; decode, re-encode (byte-identical), table expansion and exact pointer-memoized structural equality of the expanded roots with the original expanded roots: 56622 ok, **0** failed.
+
+### Totals over the 55386 constants with at least one root
+
+| encoding | total bytes | vs heuristic |
+|---|---:|---:|
+| heuristic (stored `rawBytes`) | 80161846 | |
+| MSS | 68547873 | -11613973 (−14.5%) |
+| unshared | 1069954757 | 989792911 |
+
+### MSS − heuristic per constant
+
+| outcome | constants | share | bytes |
+|---|---:|---:|---:|
+| MSS smaller | 50173 | 90.6% | −11614906 |
+| equal | 4994 | 9.0% | 0 |
+| MSS larger | 219 | 0.4% | +933 |
+
+- Losses (MSS − heuristic) over the 219 larger constants: p50 3, p90 8, p99 27, max 50, mean 4.26.
+- Savings (heuristic − MSS) over the 50173 smaller constants: p50 53, p90 384, p99 3083, max 65763, mean 231.50.
+- Signed Δ = MSS − heuristic over all 55386 rooted constants: min -65763, p1 -2886, p10 -348, p50 -45, p90 -1, p99 0, max 50.
+- MSS larger than unshared: 0 constants, total excess 0 bytes, max 0. (Heuristic larger than unshared: 600.)
+
+### Table sizes (rooted constants)
+
+| Metric | min | median | p90 | p99 | max | mean |
+|---|---:|---:|---:|---:|---:|---:|
+| MSS table size | 0 | 12 | 102 | 437 | 5146 | 42.35 |
+| heuristic table size | 0 | 26 | 203 | 1096 | 22088 | 96.21 |
+| MSS continuation-only entries | 0 | 2 | 25 | 132 | 1950 | 10.25 |
+| … with MSS entry payload ≤ 2 | 0 | 0 | 1 | 5 | 16 | 0.41 |
+| … with unshared payload ≤ 2 | 0 | 0 | 0 | 0 | 9 | 0.01 |
+
+- Total MSS entries 2345582; heuristic entries 5328504.
+- Continuation-only entries (never a root; every occurrence is the function child of an App for an App term, or the body of a Lam/All for a Lam/All term): 567668 in total; with MSS entry payload ≤ 2: 22588; with unshared payload ≤ 2: 781.
+- Constants with at least one continuation-only entry of MSS payload ≤ 2: 11192; of these, MSS larger than heuristic: 41, equal: 39, smaller: 11112.
+- Of the 219 constants where MSS is larger, 41 have such an entry; of the 50173 where MSS is smaller, 11112.
+
+### MSS by ConstantInfo kind (rooted constants)
+
+| kind | constants | heuristic B | MSS B | unshared B | MSS/heuristic | MSS smaller | equal | MSS larger |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| defn | 54358 | 79781914 | 68212975 | 1069502355 | 85.5% | 49405 | 4737 | 216 |
+| recr | 500 | 240228 | 199955 | 301965 | 83.2% | 494 | 6 | 0 |
+| axio | 13 | 784 | 779 | 787 | 99.4% | 3 | 10 | 0 |
+| quot | 4 | 311 | 311 | 312 | 100.0% | 0 | 4 | 0 |
+| muts | 511 | 138609 | 133853 | 149338 | 96.6% | 271 | 237 | 3 |
+
+### Ten largest MSS losses (MSS − heuristic)
+
+| # | constant | kind | heuristic B | MSS B | Δ | unshared B | heuristic table | MSS table | cont. p≤2 |
+|---:|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | `Std.Packages.LinearPreorderOfOrdArgs.noConfusionType` | defn | 2469 | 2519 | 50 | 2836 | 57 | 95 | 0 |
+| 2 | `Float.exactlyRepresentablePowersOfTen.eq_1` | defn | 1448 | 1479 | 31 | 1663 | 9 | 26 | 0 |
+| 3 | `Float.exactlyRepresentablePowersOfTen` | defn | 1332 | 1359 | 27 | 1545 | 8 | 23 | 0 |
+| 4 | `Std.Packages.PreorderOfLEArgs.noConfusionType` | defn | 1684 | 1710 | 26 | 1866 | 44 | 72 | 0 |
+| 5 | `Lean.Data.AC.Context.noConfusionType` | defn | 623 | 644 | 21 | 683 | 8 | 22 | 0 |
+| 6 | `Std.PreorderPackage.noConfusionType` | defn | 556 | 573 | 17 | 612 | 8 | 19 | 0 |
+| 7 | `Ix.6f88b4848716a9da0ed22405a07425464335ba158bd5650c013ff4578a796818.Std.Packages.LinearPreorderOfOrdArgs` | muts | 1385 | 1400 | 15 | 1485 | 19 | 33 | 0 |
+| 8 | `Lean.Grind.CommRing.Mon.revlexFuel._sunfold` | defn | 919 | 934 | 15 | 938 | 8 | 17 | 0 |
+| 9 | `Lean.Grind.CommRing.Mon.revlexFuel._unsafe_rec` | defn | 887 | 902 | 15 | 906 | 8 | 17 | 0 |
+| 10 | `Lean.Grind.CommRing.Mon.revlexWF._unsafe_rec` | defn | 760 | 773 | 13 | 777 | 8 | 15 | 0 |
+
+### Ten largest MSS wins (heuristic − MSS)
+
+| # | constant | kind | heuristic B | MSS B | Δ | unshared B | heuristic table | MSS table | cont. p≤2 |
+|---:|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | `_private.Init.Data.String.Lemmas.Pattern.String.ForwardSearcher.«0».String.Slice.Pattern.Model.ForwardSliceSearcher.Invariants.isValidSearchFrom_toList` | defn | 170285 | 104522 | -65763 | 45668977 | 22088 | 4874 | 0 |
+| 2 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_append._proof_1` | defn | 156535 | 104331 | -52204 | 27720363 | 19176 | 5136 | 0 |
+| 3 | `_private.Init.Data.Array.Extract.«0».Array.extract_append._proof_1_1` | defn | 156976 | 105389 | -51587 | 26030750 | 18983 | 5146 | 0 |
+| 4 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_extract._proof_1` | defn | 154009 | 102666 | -51343 | 32655304 | 18915 | 4919 | 0 |
+| 5 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_append_extract._proof_1` | defn | 142164 | 97145 | -45019 | 17519911 | 17184 | 4703 | 0 |
+| 6 | `_private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_1` | defn | 141015 | 96716 | -44299 | 16595260 | 17031 | 4678 | 0 |
+| 7 | `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1` | defn | 109553 | 72208 | -37345 | 14841104 | 13168 | 3236 | 0 |
+| 8 | `_private.Init.Data.Iterators.Lemmas.Combinators.Monadic.FilterMap.«0».Std.IterM.toList_filterMapWithPostcondition_filterMapWithPostcondition'` | defn | 90971 | 53900 | -37071 | 3538954 | 11542 | 2712 | 1 |
+| 9 | `_private.Init.Data.Array.Extract.«0».Array.extract_extract._proof_1_1` | defn | 104173 | 76309 | -27864 | 12235507 | 11349 | 3640 | 0 |
+| 10 | `String.Slice.Pattern.Model.LawfulToBackwardSearcherModel.defaultImplementation` | defn | 70419 | 43015 | -27404 | 4186174 | 9332 | 2407 | 1 |
