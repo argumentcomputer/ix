@@ -101,6 +101,14 @@ re-run by the kernel. -/
 lean_exe «tests-rt» where
   root := `CompilatrixTests.Rt.Main
 
+/- The compiler end to end (M1.I1, M1.I2): the `compilatrix` command line on
+the bench-k1 closures and k1.ixe (with `--cc`, linked with the runtime driver
+and run at test and bench sizes), `produce` + `Recheck.run` against the stage
+suites' pipeline, the certificate's JSON round trip, declines, and
+certificate mutations (rejected, or code that agrees on every tested input). -/
+lean_exe «tests-pipeline» where
+  root := `CompilatrixTests.Pipeline.Main
+
 lean_exe «tests-ixon-v3» where
   root := `CompilatrixTests.IxonV3.Main
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]

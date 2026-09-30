@@ -6,6 +6,8 @@
   "tests-rt": {"roots": ["CompilatrixTests.Rt.Main"], "kind": "lean_exe"},
   "tests-relevance":
   {"roots": ["CompilatrixTests.Src.Relevance.Main"], "kind": "lean_exe"},
+  "tests-pipeline":
+  {"roots": ["CompilatrixTests.Pipeline.Main"], "kind": "lean_exe"},
   "tests-lam": {"roots": ["CompilatrixTests.Lam.Main"], "kind": "lean_exe"},
   "tests-ixon-v3":
   {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
@@ -386,6 +388,35 @@
     "CompilatrixTests.Aiur.RankAIR.Proofs",
     "CompilatrixTests.Sem.Toy.Cases",
     "CompilatrixTests.Fences"]},
+  "CompilatrixTests.Pipeline.Support":
+  {"path": "CompilatrixTests/Pipeline/Support.lean",
+   "imports":
+   ["Compilatrix.Recheck",
+    "Compilatrix.Cli",
+    "CompilatrixTests.Rt.Machine",
+    "CompilatrixTests.Rt.Native",
+    "CompilatrixTests.Rt.Levels",
+    "CompilatrixTests.Src.Bench"]},
+  "CompilatrixTests.Pipeline.Run":
+  {"path": "CompilatrixTests/Pipeline/Run.lean",
+   "imports":
+   ["CompilatrixTests.Pipeline.Compiler", "CompilatrixTests.Pipeline.Mutants"]},
+  "CompilatrixTests.Pipeline.Mutants":
+  {"path": "CompilatrixTests/Pipeline/Mutants.lean",
+   "imports":
+   ["CompilatrixTests.Pipeline.Support",
+    "CompilatrixTests.Lam.Support",
+    "CompilatrixTests.Support.Rng"]},
+  "CompilatrixTests.Pipeline.Main":
+  {"path": "CompilatrixTests/Pipeline/Main.lean",
+   "imports": ["CompilatrixTests.Pipeline.Run"]},
+  "CompilatrixTests.Pipeline.Compiler":
+  {"path": "CompilatrixTests/Pipeline/Compiler.lean",
+   "imports":
+   ["CompilatrixTests.Pipeline.Support",
+    "CompilatrixTests.Rt.Differential",
+    "CompilatrixTests.Rt.Cases",
+    "CompilatrixTests.Lam.Differential"]},
   "CompilatrixTests.Lir.Run":
   {"path": "CompilatrixTests/Lir/Run.lean",
    "imports": ["CompilatrixTests.Lir.Props", "CompilatrixTests.Lir.Cases"]},
@@ -965,7 +996,8 @@
     "CompilatrixTests.Lam.KernelK1",
     "CompilatrixTests.Anf.Run",
     "CompilatrixTests.Fir.Run",
-    "CompilatrixTests.Rt.Run"]},
+    "CompilatrixTests.Rt.Run",
+    "CompilatrixTests.Pipeline.Run"]},
   "Compilatrix.Xv.XlSemantics":
   {"path": "Compilatrix/Xv/XlSemantics.lean",
    "imports": ["Compilatrix.Xv.Semantics", "Compilatrix.Lir.Operands"]},
