@@ -19,6 +19,8 @@
   "check-trusted-externs":
   {"roots": ["CheckTrustedExterns"], "kind": "lean_exe"},
   "check-tools-tests": {"roots": ["CheckToolsTests"], "kind": "lean_exe"},
+  "check-regalloc":
+  {"roots": ["CompilatrixTests.Xv.Alloc.Main"], "kind": "lean_exe"},
   "check-lir": {"roots": ["CompilatrixTests.Lir.Main"], "kind": "lean_exe"},
   "check-ixon-v3-catalog":
   {"roots": ["CheckIxonV3Catalog"], "kind": "lean_exe"},
@@ -119,6 +121,50 @@
   "CompilatrixTests.Xv.Cases":
   {"path": "CompilatrixTests/Xv/Cases.lean",
    "imports": ["CompilatrixTests.Xv.Support", "CompilatrixTests.Lir.Props"]},
+  "CompilatrixTests.Xv.Alloc.Support":
+  {"path": "CompilatrixTests/Xv/Alloc/Support.lean",
+   "imports":
+   ["Compilatrix.Xv.Alloc.Driver",
+    "Compilatrix.Xv.Print",
+    "CompilatrixTests.Xv.Support"]},
+  "CompilatrixTests.Xv.Alloc.Run":
+  {"path": "CompilatrixTests/Xv/Alloc/Run.lean",
+   "imports":
+   ["CompilatrixTests.Xv.Alloc.Diff",
+    "CompilatrixTests.Xv.Alloc.Kernels",
+    "CompilatrixTests.Xv.Alloc.Cases"]},
+  "CompilatrixTests.Xv.Alloc.Probe":
+  {"path": "CompilatrixTests/Xv/Alloc/Probe.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.Check",
+    "Compilatrix.Xv.Select.Driver",
+    "CompilatrixTests.Lir.Kernels"]},
+  "CompilatrixTests.Xv.Alloc.Mutate":
+  {"path": "CompilatrixTests/Xv/Alloc/Mutate.lean",
+   "imports":
+   ["CompilatrixTests.Xv.Alloc.Support", "CompilatrixTests.Support.Rng"]},
+  "CompilatrixTests.Xv.Alloc.Main":
+  {"path": "CompilatrixTests/Xv/Alloc/Main.lean",
+   "imports": ["CompilatrixTests.Xv.Alloc.Run"]},
+  "CompilatrixTests.Xv.Alloc.Kernels":
+  {"path": "CompilatrixTests/Xv/Alloc/Kernels.lean",
+   "imports":
+   ["CompilatrixTests.Xv.Alloc.Support",
+    "CompilatrixTests.Xv.Diff",
+    "CompilatrixTests.Lir.Kernels",
+    "CompilatrixTests.Xv.Alloc.Probe"]},
+  "CompilatrixTests.Xv.Alloc.Diff":
+  {"path": "CompilatrixTests/Xv/Alloc/Diff.lean",
+   "imports":
+   ["CompilatrixTests.Xv.Alloc.Mutate",
+    "CompilatrixTests.Xv.Diff",
+    "CompilatrixTests.Lir.Gen",
+    "Compilatrix.Lir.SplitEdges",
+    "Compilatrix.Lir.WellFormed"]},
+  "CompilatrixTests.Xv.Alloc.Cases":
+  {"path": "CompilatrixTests/Xv/Alloc/Cases.lean",
+   "imports":
+   ["CompilatrixTests.Xv.Alloc.Support", "CompilatrixTests.Support.Rng"]},
   "CompilatrixTests.Support.Rng":
   {"path": "CompilatrixTests/Support/Rng.lean", "imports": []},
   "CompilatrixTests.Src.Table":
@@ -540,6 +586,7 @@
    ["CompilatrixTests.Proofs",
     "CompilatrixTests.Lir.Run",
     "CompilatrixTests.Xv.Run",
+    "CompilatrixTests.Xv.Alloc.Run",
     "CompilatrixTests.Src.Run",
     "CompilatrixTests.Src.Relevance.Run"]},
   "Compilatrix.Xv.XlSemantics":

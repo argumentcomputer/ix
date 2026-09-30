@@ -78,6 +78,12 @@ lock-step (outcome, memory and clock), with per-rule firing counts. -/
 lean_exe «check-xv-select» where
   root := `CompilatrixTests.Xv.Main
 
+/- Allocation (TT-3): linear scan, the validator and the all-slots fallback on
+the kernels and on generated programs, with chaos seeds, validator mutation
+and Xv.eval against Xl.eval on every accepted allocation. -/
+lean_exe «check-regalloc» where
+  root := `CompilatrixTests.Xv.Alloc.Main
+
 lean_exe «check-aiur» where
   srcDir := "scripts"
   root := `CheckAiur
