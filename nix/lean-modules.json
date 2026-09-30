@@ -492,7 +492,8 @@
    "imports":
    ["CompilatrixTests.Fir.Differential",
     "CompilatrixTests.Fir.Rules",
-    "CompilatrixTests.Fir.Gen"]},
+    "CompilatrixTests.Fir.Gen",
+    "CompilatrixTests.Fir.Bench"]},
   "CompilatrixTests.Fir.Rules":
   {"path": "CompilatrixTests/Fir/Rules.lean",
    "imports": ["CompilatrixTests.Fir.Support"]},
@@ -511,6 +512,12 @@
    ["CompilatrixTests.Fir.Support",
     "CompilatrixTests.Anf.Differential",
     "Compilatrix.Anf.Pipeline"]},
+  "CompilatrixTests.Fir.Bench":
+  {"path": "CompilatrixTests/Fir/Bench.lean",
+   "imports":
+   ["CompilatrixTests.Fir.Support",
+    "CompilatrixTests.Fir.Differential",
+    "CompilatrixTests.Src.Bench"]},
   "CompilatrixTests.Fences.Xv":
   {"path": "CompilatrixTests/Fences/Xv.lean",
    "imports": ["Compilatrix.Xv.Select.Lemmas"]},
