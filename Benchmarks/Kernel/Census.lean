@@ -23,8 +23,9 @@ Usage: `kernel-census <input.ixe> <output.jsonl> [limit] [fuel]`. Rows are
 written as they are produced; the summary goes to stderr.
 
 Environment variables: `CENSUS_INLINE` checks on the main thread without a
-timeout (the timing mode: a check on a separate task marks the shared
-environment multi-threaded, which made the census 2.5× slower);
+timeout (the timing mode). Otherwise each check runs on its own task with a
+timeout, and the environment is marked persistent first, so the task does not
+mark it multi-threaded;
 `CENSUS_PROBE=<name or address prefix>` prints why a supplied recursor differs
 from the generated one. -/
 
@@ -320,7 +321,11 @@ def run (args : List String) : IO UInt32 := do
             some (recAddress, family, recursor)
           | _ => none
         let t0 ← IO.monoNanosNow
-        let current := kenv
+        -- A check on a separate task would mark the shared environment
+        -- multi-threaded, making every reference-count update atomic.
+        -- Persistent objects skip reference counting; every object an
+        -- abandoned check can reach was marked before that check started.
+        let current ← if inline then pure kenv else unsafe Runtime.markPersistent kenv
         let check : Unit → Except Error (Env Address) := fun _ => match pair with
           | some (recAddress, family, recursor) =>
             (checkInductiveC.{0,1} cfg current address (.member recAddress 0) family recursor).map Subtype.val

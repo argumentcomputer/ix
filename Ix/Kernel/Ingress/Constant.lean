@@ -16,77 +16,77 @@ def readListC {R : α → β → Prop} (read : (a : α) → Search { b : β // R
     let outputs ← readListC read inputs
     return ⟨output.val :: outputs.val, .cons output.property outputs.property⟩
 
-def readDefinitionC (ctx : Context) (fuel : Nat) (source : Ixon.Definition) :
+def readDefinitionC (ctx : Context) (read : Reader ctx) (source : Ixon.Definition) :
     Search { target : Const Address // DefinitionReads ctx source target } := do
-  let type ← readExprC ctx fuel ctx.source.sharing.size source.typ
-  let value ← readExprC ctx fuel ctx.source.sharing.size source.value
+  let type ← read source.typ
+  let value ← read source.value
   return ⟨.defn source.lvls.toNat (kind source.kind) type.val value.val (safety source.safety),
     .mk type.property value.property⟩
 
-def readConstructorC (ctx : Context) (fuel : Nat) (source : Ixon.Constructor × Nat) :
+def readConstructorC (ctx : Context) (read : Reader ctx) (source : Ixon.Constructor × Nat) :
     Search { target : Ctor Address // ConstructorReads ctx source target } := do
   if position : source.1.cidx.toNat = source.2 then
-    let type ← readExprC ctx fuel ctx.source.sharing.size source.1.typ
+    let type ← read source.1.typ
     return ⟨⟨source.1.lvls.toNat, source.1.params.toNat, source.1.fields.toNat,
       type.val, unsafeFlag source.1.isUnsafe⟩,
       position, rfl, rfl, rfl, rfl, type.property⟩
   else throw (.malformed "constructor index differs from its position in the block")
 
-def readRuleC (ctx : Context) (fuel : Nat) (source : Ixon.RecursorRule) :
+def readRuleC (ctx : Context) (read : Reader ctx) (source : Ixon.RecursorRule) :
     Search { target : RecRule Address // RuleReads ctx source target } := do
-  let rhs ← readExprC ctx fuel ctx.source.sharing.size source.rhs
+  let rhs ← read source.rhs
   return ⟨⟨source.fields.toNat, rhs.val⟩, rfl, rhs.property⟩
 
-def readRecursorC (ctx : Context) (fuel : Nat) (source : Ixon.Recursor) :
+def readRecursorC (ctx : Context) (read : Reader ctx) (source : Ixon.Recursor) :
     Search { target : Const Address // RecursorReads ctx source target } := do
-  let type ← readExprC ctx fuel ctx.source.sharing.size source.typ
-  let rules ← readListC (readRuleC ctx fuel) source.rules.toList
+  let type ← read source.typ
+  let rules ← readListC (readRuleC ctx read) source.rules.toList
   return ⟨.recursor source.lvls.toNat source.params.toNat source.indices.toNat
     source.motives.toNat source.minors.toNat type.val rules.val source.k (unsafeFlag source.isUnsafe),
     .mk type.property rules.property⟩
 
-def readInductiveC (ctx : Context) (fuel : Nat) (source : Ixon.Inductive) :
+def readInductiveC (ctx : Context) (read : Reader ctx) (source : Ixon.Inductive) :
     Search { target : Const Address // InductiveReads ctx source target } := do
-  let type ← readExprC ctx fuel ctx.source.sharing.size source.typ
-  let ctors ← readListC (readConstructorC ctx fuel) source.ctors.toList.zipIdx
+  let type ← read source.typ
+  let ctors ← readListC (readConstructorC ctx read) source.ctors.toList.zipIdx
   return ⟨.induct source.lvls.toNat source.params.toNat source.indices.toNat
     type.val ctors.val (unsafeFlag source.isUnsafe), .mk type.property ctors.property⟩
 
-def readMemberC (ctx : Context) (fuel : Nat) :
+def readMemberC (ctx : Context) (read : Reader ctx) :
     (source : Ixon.MutConst) → Search { target : Const Address // MemberReads ctx source target }
   | .defn source => do
-    let target ← readDefinitionC ctx fuel source
+    let target ← readDefinitionC ctx read source
     return ⟨target.val, .defn target.property⟩
   | .indc source => do
-    let target ← readInductiveC ctx fuel source
+    let target ← readInductiveC ctx read source
     return ⟨target.val, .indc target.property⟩
   | .recr source => do
-    let target ← readRecursorC ctx fuel source
+    let target ← readRecursorC ctx read source
     return ⟨target.val, .recr target.property⟩
 
-private def readInfoC (ctx : Context) (fuel : Nat) : (source : Ixon.ConstantInfo) →
+private def readInfoC (ctx : Context) (read : Reader ctx) : (source : Ixon.ConstantInfo) →
     Search { target : Block Address // InfoReads ctx source target }
   | .defn source => do
-    let target ← readDefinitionC ctx fuel source
+    let target ← readDefinitionC ctx read source
     return ⟨⟨[target.val]⟩, .defn target.property⟩
   | .recr source => do
-    let target ← readRecursorC ctx fuel source
+    let target ← readRecursorC ctx read source
     return ⟨⟨[target.val]⟩, .recr target.property⟩
   | .axio source => do
-    let type ← readExprC ctx fuel ctx.source.sharing.size source.typ
+    let type ← read source.typ
     return ⟨⟨[.axiom source.lvls.toNat type.val (unsafeFlag source.isUnsafe)]⟩, .axio type.property⟩
   | .quot source => do
-    let type ← readExprC ctx fuel ctx.source.sharing.size source.typ
+    let type ← read source.typ
     return ⟨⟨[.quot (quotientKind source.kind) source.lvls.toNat type.val]⟩, .quot type.property⟩
   | .muts members => do
-    let constants ← readListC (readMemberC ctx fuel) members.toList
+    let constants ← readListC (readMemberC ctx read) members.toList
     return ⟨⟨constants.val⟩, .muts constants.property⟩
   | .dPrj _ | .rPrj _ | .iPrj _ | .cPrj _ =>
     .error (.malformed "a projection is a reference to an owning block, not a declaration")
 
 def readBlockC (ctx : Context) (fuel : Nat) :
     Search { target : Block Address // BlockReads ctx target } :=
-  readInfoC ctx fuel ctx.source.info
+  readInfoC ctx (ctx.reader fuel) ctx.source.info
 
 def readBlock (ctx : Context) (fuel : Nat) : Search (Block Address) :=
   (readBlockC ctx fuel).map Subtype.val
