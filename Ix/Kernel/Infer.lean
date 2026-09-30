@@ -977,7 +977,8 @@ congruence before constructing either body, then bounded argument conversion
 unless the head is an abbreviation. Failure retains the delta fallback: a
 function can ignore unequal arguments. Only argument failures enter the
 conversion cache, never failure of the whole congruence attempt. On the first
-round, proof irrelevance is tried before unfolding a proof. -/
+round, proof irrelevance is tried before unfolding a proof. The side to unfold
+is decided from the heads alone, and only that side's body is instantiated. -/
 def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) → Bool →
     KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
   | 0, _, _, _, _, _ => throw .exhausted
@@ -1004,29 +1005,40 @@ def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a
             | _, _ => throw .noMatch
         else throw .noMatch
       KM.orElse congruence fun _ =>
-        match deltaHead.{u,v} entries Γ a', deltaHead.{u,v} entries Γ b' with
-        | none, none => isDefEqCoreC fuel entries Γ a' b'
-        | some ⟨a'', ha'⟩, none =>
-          KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' (ReductionClaim.refl b') hc⟩)
-            (lazyDeltaC fuel entries Γ a'' b' false)
-        | none, some ⟨b'', hb'⟩ =>
-          KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions (ReductionClaim.refl a') hb' hc⟩)
-            (lazyDeltaC fuel entries Γ a' b'' false)
-        | some ⟨a'', ha'⟩, some ⟨b'', hb'⟩ =>
-          let heightA := headHeight entries a'
-          let heightB := headHeight entries b'
-          if heightB < heightA then
+        -- Decision before materialization (con-leche #106, the official
+        -- kernel's `lazy_delta_reduction_step`): the heads and their heights
+        -- choose the side, and only the side that unfolds is instantiated.
+        -- The `none` arms are unreachable (`hasDeltaHead_eq`) and fail soundly.
+        let unfoldLeft : Unit → KM.{u,v} entries Γ (Conv.{u,v} entries Γ a' b') := fun _ =>
+          match deltaHead.{u,v} entries Γ a' with
+          | some ⟨a'', ha'⟩ =>
             KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' (ReductionClaim.refl b') hc⟩)
               (lazyDeltaC fuel entries Γ a'' b' false)
-          else if heightA < heightB then
+          | none => throw .noMatch
+        let unfoldRight : Unit → KM.{u,v} entries Γ (Conv.{u,v} entries Γ a' b') := fun _ =>
+          match deltaHead.{u,v} entries Γ b' with
+          | some ⟨b'', hb'⟩ =>
             KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions (ReductionClaim.refl a') hb' hc⟩)
               (lazyDeltaC fuel entries Γ a' b'' false)
+          | none => throw .noMatch
+        match hasDeltaHead entries a', hasDeltaHead entries b' with
+        | false, false => isDefEqCoreC fuel entries Γ a' b'
+        | true, false => unfoldLeft ()
+        | false, true => unfoldRight ()
+        | true, true =>
+          let heightA := headHeight entries a'
+          let heightB := headHeight entries b'
+          if heightB < heightA then unfoldLeft ()
+          else if heightA < heightB then unfoldRight ()
           else
           match quickConv.{u,v} entries Γ a' b' with
           | some c => pure c
           | none =>
-            KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' hb' hc⟩)
-              (lazyDeltaC fuel entries Γ a'' b'' false)
+            match deltaHead.{u,v} entries Γ a', deltaHead.{u,v} entries Γ b' with
+            | some ⟨a'', ha'⟩, some ⟨b'', hb'⟩ =>
+              KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' hb' hc⟩)
+                (lazyDeltaC fuel entries Γ a'' b'' false)
+            | _, _ => throw .noMatch
     KM.remember stoppedA <| KM.remember stoppedB <|
       KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha hb hc⟩) compared
 
