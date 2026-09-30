@@ -1168,6 +1168,21 @@
   "Compilatrix.Lam.ModesOk":
   {"path": "Compilatrix/Lam/ModesOk.lean",
    "imports": ["Compilatrix.Lam.Syntax"]},
+  "Compilatrix.Lam.Erase.Val":
+  {"path": "Compilatrix/Lam/Erase/Val.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Input",
+    "Compilatrix.Lam.Semantics",
+    "Compilatrix.Src.Value"]},
+  "Compilatrix.Lam.Erase.Term":
+  {"path": "Compilatrix/Lam/Erase/Term.lean",
+   "imports": ["Compilatrix.Lam.Erase.Input"]},
+  "Compilatrix.Lam.Erase.Input":
+  {"path": "Compilatrix/Lam/Erase/Input.lean",
+   "imports": ["Compilatrix.Src.Relevance.Check", "Compilatrix.Lam.Syntax"]},
+  "Compilatrix.Lam.Erase":
+  {"path": "Compilatrix/Lam/Erase.lean",
+   "imports": ["Compilatrix.Lam.Erase.Term"]},
   "Compilatrix.Key":
   {"path": "Compilatrix/Key.lean", "imports": ["Compilatrix.Src.Value"]},
   "Compilatrix.Ixon.V3.Validate":
@@ -1723,6 +1738,10 @@
     "Compilatrix.Lam.Readback",
     "Compilatrix.Lam.WellFormed",
     "Compilatrix.Lam.ModesOk",
+    "Compilatrix.Lam.Erase.Input",
+    "Compilatrix.Lam.Erase.Term",
+    "Compilatrix.Lam.Erase.Val",
+    "Compilatrix.Lam.Erase",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
