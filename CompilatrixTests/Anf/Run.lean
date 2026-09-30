@@ -1,5 +1,6 @@
 import CompilatrixTests.Anf.Differential
 import Compilatrix.Anf.Shrink
+import Compilatrix.Anf.Inline
 
 /-! The `tests-anf` suite (design note 02 §6–8, §13). -/
 
@@ -16,7 +17,16 @@ def part (a : Assert) (label : String) (action : IO Unit) : IO Unit := do
 def stages : Differential.Stages := fun L => do
   let p1 ← Compilatrix.Anf.convert L
   let (_, p2, _) ← Compilatrix.Anf.Shrink.produce {} p1
-  return [("P1", p1), ("P2", p2)]
+  let mut out := [("P1", p1), ("P2", p2)]
+  let mut P := p2
+  for i in [0:8] do
+    let r := Compilatrix.Anf.Inline.produce {} P
+    if r.isEmpty then break
+    let (p3, _) ← Compilatrix.Anf.Inline.round P r
+    let (_, p2', _) ← Compilatrix.Anf.Shrink.produce {} p3
+    out := out ++ [(s!"P3.{i}", p3), (s!"P2.{i}", p2')]
+    P := p2'
+  return out
 
 def main (args : List String) : IO UInt32 := do
   match args with
