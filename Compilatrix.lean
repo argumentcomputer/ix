@@ -151,6 +151,8 @@ import Compilatrix.Lam.Erase.Proof.Layout
 import Compilatrix.Lam.Erase.Proof.Values
 import Compilatrix.Lam.Erase.Proof.SimBase
 import Compilatrix.Lam.Erase.Proof.Forms
+import Compilatrix.Lam.Erase.Proof.Select
+import Compilatrix.Lam.Erase.Proof.Elim
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing

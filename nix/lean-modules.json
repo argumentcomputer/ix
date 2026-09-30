@@ -1659,6 +1659,9 @@
     "Compilatrix.Src.Proof.Spine",
     "Compilatrix.Src.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine"]},
+  "Compilatrix.Lam.Erase.Proof.Select":
+  {"path": "Compilatrix/Lam/Erase/Proof/Select.lean",
+   "imports": ["Compilatrix.Lam.Erase.Proof.Forms"]},
   "Compilatrix.Lam.Erase.Proof.Rel":
   {"path": "Compilatrix/Lam/Erase/Proof/Rel.lean",
    "imports":
@@ -1672,6 +1675,9 @@
    "imports":
    ["Compilatrix.Lam.Erase.Proof.SimBase",
     "Compilatrix.Lam.Erase.Proof.Values"]},
+  "Compilatrix.Lam.Erase.Proof.Elim":
+  {"path": "Compilatrix/Lam/Erase/Proof/Elim.lean",
+   "imports": ["Compilatrix.Lam.Erase.Proof.Select"]},
   "Compilatrix.Lam.Erase.Input":
   {"path": "Compilatrix/Lam/Erase/Input.lean",
    "imports": ["Compilatrix.Src.Relevance.Check", "Compilatrix.Lam.Syntax"]},
@@ -2398,6 +2404,8 @@
     "Compilatrix.Lam.Erase.Proof.Values",
     "Compilatrix.Lam.Erase.Proof.SimBase",
     "Compilatrix.Lam.Erase.Proof.Forms",
+    "Compilatrix.Lam.Erase.Proof.Select",
+    "Compilatrix.Lam.Erase.Proof.Elim",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

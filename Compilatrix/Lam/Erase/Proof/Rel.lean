@@ -32,6 +32,12 @@ namespace Compilatrix.Lam.Erase.Proof
 
 open Compilatrix.Src (CId Head Profile Levels PropWhen Rel RecKind)
 
+/-- Two lists related pointwise. -/
+inductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop
+  | nil : Forall2 R [] []
+  | cons {a : α} {b : β} {as : List α} {bs : List β} :
+      R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)
+
 /-! ## Levels and profiles -/
 
 /-- SrcEval's levels agree with a profile: a parameter is zero in one

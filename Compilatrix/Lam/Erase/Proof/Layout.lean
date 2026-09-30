@@ -236,6 +236,16 @@ structure ProgWF (I : Input) : Prop where
     ∀ {sf lv ind cidx np nf ty sf' lv' ind' cidx' np' nf' ty'},
       I.decl? c = some (.ctor sf lv ind cidx np nf ty) →
       I.decl? d = some (.ctor sf' lv' ind' cidx' np' nf' ty') → ind ≠ ind'
+  /-- A recursor has a rule for each constructor of its inductive. -/
+  recRules : ∀ {r : CId} {sf k : Bool} {lv np nmot nmin ni : Nat} {ind : CId}
+    {rules : List Src.Rule} {ty : Src.Term},
+    I.decl? r = some (.recr sf k lv np nmot nmin ni ind rules ty) →
+    (I.ctorsOf ind).length ≤ rules.length ∧ rules.length ≤ nmin
+  /-- A subsingleton recursor's index fields name indices of its spine. -/
+  recKindIdx : ∀ {r : CId} {sf k : Bool} {lv np nmot nmin ni : Nat} {ind : CId}
+    {rules : List Src.Rule} {ty : Src.Term} {w : Src.PropWhen} {srcs : List Src.FieldSrc},
+    I.decl? r = some (.recr sf k lv np nmot nmin ni ind rules ty) →
+    I.recKind.get? r = some (.subsingleton w srcs) → ∀ i, Src.FieldSrc.index i ∈ srcs → i < ni
   decIsFalse : ∀ {c : CId}, I.known.decIsFalse = some c →
     ∃ sf lv D np nf ty, I.decl? c = some (.ctor sf lv D 0 np nf ty)
   decIsTrue : ∀ {c : CId}, I.known.decIsTrue = some c →
