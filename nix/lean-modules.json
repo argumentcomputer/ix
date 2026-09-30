@@ -1389,7 +1389,22 @@
    "imports": ["Compilatrix.Sem.Result"]},
   "Compilatrix.Sem.Clock":
   {"path": "Compilatrix/Sem/Clock.lean", "imports": ["Compilatrix.Sem.Result"]},
+  "Compilatrix.Own.WellFormed":
+  {"path": "Compilatrix/Own/WellFormed.lean",
+   "imports": ["Compilatrix.Own.Immortal", "Compilatrix.Fir.WellFormed"]},
+  "Compilatrix.Own.Syntax":
+  {"path": "Compilatrix/Own/Syntax.lean",
+   "imports": ["Compilatrix.Fir.Syntax"]},
+  "Compilatrix.Own.Semantics":
+  {"path": "Compilatrix/Own/Semantics.lean",
+   "imports": ["Compilatrix.Own.Syntax", "Compilatrix.Own.Heap"]},
   "Compilatrix.Own.Kind": {"path": "Compilatrix/Own/Kind.lean", "imports": []},
+  "Compilatrix.Own.Immortal":
+  {"path": "Compilatrix/Own/Immortal.lean",
+   "imports": ["Compilatrix.Own.Syntax"]},
+  "Compilatrix.Own.Heap":
+  {"path": "Compilatrix/Own/Heap.lean",
+   "imports": ["Compilatrix.Fir.Semantics"]},
   "Compilatrix.Lir.WellFormed":
   {"path": "Compilatrix/Lir/WellFormed.lean",
    "imports": ["Compilatrix.Lir.Graph", "Std.Data.HashMap"]},
@@ -2117,6 +2132,11 @@
     "Compilatrix.Fir.WellFormed",
     "Compilatrix.Fir.Lower",
     "Compilatrix.Fir.Print",
+    "Compilatrix.Own.Syntax",
+    "Compilatrix.Own.Heap",
+    "Compilatrix.Own.Semantics",
+    "Compilatrix.Own.Immortal",
+    "Compilatrix.Own.WellFormed",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

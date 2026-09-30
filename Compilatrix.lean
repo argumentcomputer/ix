@@ -122,6 +122,11 @@ import Compilatrix.Fir.Semantics
 import Compilatrix.Fir.WellFormed
 import Compilatrix.Fir.Lower
 import Compilatrix.Fir.Print
+import Compilatrix.Own.Syntax
+import Compilatrix.Own.Heap
+import Compilatrix.Own.Semantics
+import Compilatrix.Own.Immortal
+import Compilatrix.Own.WellFormed
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
