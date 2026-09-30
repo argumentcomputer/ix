@@ -1,4 +1,5 @@
 import Compilatrix.Xv.XlSemantics
+import Compilatrix.Xv.Operands
 import Compilatrix.Xv.Select.Basic
 import CompilatrixTests.Lir.Region
 
@@ -138,6 +139,11 @@ def sameAt (n k : Nat) : Bool :=
   | _, _ => false
 
 #guard values (run sumXl [10] (k := 10)) == some [45]
+/- The allocation as a substitution in `operands` order (uses, then definitions). -/
+#guard (sumXv.funcs[0]!.blocks[2]!.body[0]!).substitute [r .rax, r .rcx, r .rax] ==
+  some (sumXl.funcs[0]!.blocks[2]!.body[0]!)
+#guard (sumXv.funcs[0]!.blocks[1]!.term).substitute [r .rcx, r .rdi] [[], []] ==
+  some (sumXl.funcs[0]!.blocks[1]!.term)
 #guard (List.range 12).all fun k => sameAt 10 k
 #guard isStuck (run sumXl [10] (k := 9)) == false
 

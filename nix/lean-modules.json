@@ -69,6 +69,7 @@
   {"path": "CompilatrixTests/Xv/XlCases.lean",
    "imports":
    ["Compilatrix.Xv.XlSemantics",
+    "Compilatrix.Xv.Operands",
     "Compilatrix.Xv.Select.Basic",
     "CompilatrixTests.Lir.Region"]},
   "CompilatrixTests.Xv.Support":

@@ -84,13 +84,16 @@ def select (p : Lir.Program) : Except String (VProgram × Std.HashMap String Nat
   | .ok r => .ok r
   | .error e => .error e.text
 
-/-- The registers an instruction list reads and writes, by its operand
-metadata, agree with its syntax. -/
+/-- The registers each instruction reads and writes, by its operand
+metadata, are its syntactic uses and definitions, and substituting its own
+operands (in `operands` order) gives it back. -/
 def operandsAgree (q : VProgram) : Bool :=
   q.funcs.all fun f => f.blocks.all fun b =>
     b.body.all (fun i =>
-      Lir.operandUses i.operands == i.uses && Lir.operandDefs i.operands == i.defs) &&
-    (Lir.operandUses b.term.operands == b.term.uses && Lir.operandDefs b.term.operands == b.term.defs)
+      Lir.operandUses i.operands == i.uses && Lir.operandDefs i.operands == i.defs &&
+      i.substitute (i.operands.map (·.v)) == some i) &&
+    (Lir.operandUses b.term.operands == b.term.uses && Lir.operandDefs b.term.operands == b.term.defs &&
+      b.term.substitute (b.term.operands.map (·.v)) (b.term.edges.map (·.args)) == some b.term)
 
 /-- Select, check, and compare `Lir.eval` with `Xv.eval` at clock `k` on
 outcome, values and memory. -/

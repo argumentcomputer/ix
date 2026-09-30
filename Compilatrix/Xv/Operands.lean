@@ -95,4 +95,90 @@ def Term.operands : Term ρ → List (Operand ρ)
   | .tail _ args => conUses Lir.Conv.argCon args
   | .jmp _ | .fail _ | .trap => []
 
+/-! ## Substituting operands
+
+`Inst.substitute ls i` gives `i` the operands `ls`, one per entry of
+`i.operands` and in that order: the uses in argument order, then the
+definitions. This is the substitution of the allocator's `apply` (05 §5),
+which never rewrites an instruction otherwise. `check-xv-select` checks
+that substituting an instruction's own operands gives it back. -/
+
+variable {σ : Type}
+
+def takeOne : List σ → Option (σ × List σ)
+  | x :: xs => some (x, xs)
+  | [] => none
+
+def Amode.substitute (a : Amode ρ) (ls : List σ) : Option (Amode σ × List σ) := do
+  let (base, ls) ← match a.base with
+    | none => pure (none, ls)
+    | some .ctx => pure (some .ctx, ls)
+    | some (.r _) => do
+        let (x, ls) ← takeOne ls
+        pure (some (.r x), ls)
+  let (index, ls) ← match a.index with
+    | none => pure (none, ls)
+    | some (_, s) => do
+        let (x, ls) ← takeOne ls
+        pure (some (x, s), ls)
+  pure ({ base, index, disp := a.disp }, ls)
+
+def XArg.substitute (a : XArg ρ) (ls : List σ) : Option (XArg σ × List σ) :=
+  match a with
+  | .r _ => do
+      let (x, ls) ← takeOne ls
+      pure (.r x, ls)
+  | .m am => do
+      let (am, ls) ← am.substitute ls
+      pure (.m am, ls)
+  | .i w => pure (.i w, ls)
+
+def substituteArgs : List (XArg ρ) → List σ → Option (List (XArg σ) × List σ)
+  | [], ls => some ([], ls)
+  | a :: as, ls => do
+      let (a, ls) ← a.substitute ls
+      let (as, ls) ← substituteArgs as ls
+      pure (a :: as, ls)
+
+def Inst.substitute (ls : List σ) : Inst ρ → Option (Inst σ)
+  | .op o defs args => do
+      let (args, rest) ← substituteArgs args ls
+      guard (rest.length == defs.length)
+      pure (.op o rest args)
+  | .fused p pargs c defs cargs => do
+      let (pargs, rest) ← substituteArgs pargs ls
+      let (cargs, rest) ← substituteArgs cargs rest
+      guard (rest.length == defs.length)
+      pure (.fused p pargs c rest cargs)
+  | .move .. =>
+      match ls with
+      | [src, dst] => some (.move dst src)
+      | _ => none
+  | .zero _ =>
+      match ls with
+      | [x] => some (.zero x)
+      | _ => none
+  | .call f args rets =>
+      if ls.length == args.length + rets.length then
+        some (.call f (ls.take args.length) (ls.drop args.length))
+      else none
+
+/-- A terminator with operands `ls` (as `Term.operands` orders them) and
+edge arguments `edgeArgs`, one list per edge. -/
+def Term.substitute (ls : List σ) (edgeArgs : List (List σ)) (t : Term ρ) : Option (Term σ) := do
+  let edges ← if t.edges.length == edgeArgs.length then
+      pure ((t.edges.zip edgeArgs).map fun (e, args) => ({ target := e.target, args } : Edge σ))
+    else none
+  match t, edges with
+  | .jmp _, [e] => guard ls.isEmpty; pure (.jmp e)
+  | .jcc p pargs defs c _ _, [e₁, e₂] => do
+      let (pargs, rest) ← substituteArgs pargs ls
+      guard (rest.length == defs.length)
+      pure (.jcc p pargs rest c e₁ e₂)
+  | .ret vs, [] => do guard (ls.length == vs.length); pure (.ret ls)
+  | .tail f args, [] => do guard (ls.length == args.length); pure (.tail f ls)
+  | .fail r, [] => do guard ls.isEmpty; pure (.fail r)
+  | .trap, [] => do guard ls.isEmpty; pure .trap
+  | _, _ => none
+
 end Compilatrix.Xv
