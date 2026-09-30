@@ -5,6 +5,7 @@
   "tests-src": {"roots": ["CompilatrixTests.Src.Main"], "kind": "lean_exe"},
   "tests-relevance":
   {"roots": ["CompilatrixTests.Src.Relevance.Main"], "kind": "lean_exe"},
+  "tests-lam": {"roots": ["CompilatrixTests.Lam.Main"], "kind": "lean_exe"},
   "tests-ixon-v3":
   {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
@@ -328,6 +329,50 @@
     "Compilatrix.Lir.SplitEdges",
     "Compilatrix.Lir.Operands",
     "CompilatrixTests.Lir.Region"]},
+  "CompilatrixTests.Lam.Support":
+  {"path": "CompilatrixTests/Lam/Support.lean",
+   "imports":
+   ["CompilatrixTests.Src.Support",
+    "Compilatrix.Lam.Erase",
+    "Compilatrix.Lam.Erase.Val",
+    "Compilatrix.Lam.Readback",
+    "Compilatrix.Lam.WellFormed",
+    "Compilatrix.Lam.ModesOk"]},
+  "CompilatrixTests.Lam.Run":
+  {"path": "CompilatrixTests/Lam/Run.lean",
+   "imports":
+   ["CompilatrixTests.Lam.Eval",
+    "CompilatrixTests.Lam.Erase",
+    "CompilatrixTests.Lam.Differential",
+    "CompilatrixTests.Lam.Mutation",
+    "CompilatrixTests.Lam.KernelEval"]},
+  "CompilatrixTests.Lam.Mutation":
+  {"path": "CompilatrixTests/Lam/Mutation.lean",
+   "imports":
+   ["CompilatrixTests.Lam.Support", "CompilatrixTests.Src.Relevance.Mutation"]},
+  "CompilatrixTests.Lam.Main":
+  {"path": "CompilatrixTests/Lam/Main.lean",
+   "imports": ["CompilatrixTests.Lam.Run"]},
+  "CompilatrixTests.Lam.KernelEval":
+  {"path": "CompilatrixTests/Lam/KernelEval.lean",
+   "imports": ["CompilatrixTests.Lam.Erase"]},
+  "CompilatrixTests.Lam.Eval":
+  {"path": "CompilatrixTests/Lam/Eval.lean",
+   "imports": ["CompilatrixTests.Lam.Support", "CompilatrixTests.Src.Rules"]},
+  "CompilatrixTests.Lam.Erase":
+  {"path": "CompilatrixTests/Lam/Erase.lean",
+   "imports":
+   ["CompilatrixTests.Lam.Support", "CompilatrixTests.Src.Relevance.Checker"]},
+  "CompilatrixTests.Lam.Differential":
+  {"path": "CompilatrixTests/Lam/Differential.lean",
+   "imports":
+   ["CompilatrixTests.Lam.Support",
+    "CompilatrixTests.Src.Relevance.Stuck",
+    "CompilatrixTests.Src.Bench",
+    "CompilatrixTests.Src.Rules",
+    "CompilatrixTests.Src.SortPoly",
+    "K1",
+    "SortPoly"]},
   "CompilatrixTests.IxonV3.TypingFixtures":
   {"path": "CompilatrixTests/IxonV3/TypingFixtures.lean",
    "imports": ["Compilatrix.Ixon.V3.Validate"]},
@@ -661,7 +706,8 @@
     "CompilatrixTests.Xv.Alloc.Run",
     "CompilatrixTests.Backend.Run",
     "CompilatrixTests.Src.Run",
-    "CompilatrixTests.Src.Relevance.Run"]},
+    "CompilatrixTests.Src.Relevance.Run",
+    "CompilatrixTests.Lam.Run"]},
   "Compilatrix.Xv.XlSemantics":
   {"path": "Compilatrix/Xv/XlSemantics.lean",
    "imports": ["Compilatrix.Xv.Semantics", "Compilatrix.Lir.Operands"]},

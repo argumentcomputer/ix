@@ -55,6 +55,13 @@ lean_exe «tests-src-slow» where
 lean_exe «tests-relevance» where
   root := `CompilatrixTests.Src.Relevance.Main
 
+/- Lam and erasure (design note 02 §4–5, §13): Lam's rules, erasure on
+synthetic programs, SrcEval against Lam on K1, bench-k1 and src-sortpoly
+(readback, traps, least clocks), the native differential, annotation
+mutation, well-formedness and static modes of every erased program. -/
+lean_exe «tests-lam» where
+  root := `CompilatrixTests.Lam.Main
+
 lean_exe «tests-ixon-v3» where
   root := `CompilatrixTests.IxonV3.Main
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]
