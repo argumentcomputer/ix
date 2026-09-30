@@ -129,23 +129,29 @@ structure Tally where
   tickClause : Nat := 0
   /-- The largest Cfg total clock over Own's depth clock, in percent. -/
   maxCfgRatio : Nat := 100
+  /-- Successful runs of programs with nothing to erase (`N = 1`), where Fir is
+  clock-exact with Anf. -/
+  exact : Nat := 0
   deriving Inhabited
 
 def Tally.render (t : Tally) : String :=
   s!"{t.runs} runs: ok {t.ok}, timeout {t.timeout}, trap {t.trap}, stuck {t.stuck}; " ++
   s!"Fir least clock = Anf's {t.firSame}, below {t.firEarlier} (max Anf/Fir {t.maxRatio}%); " ++
-  s!"{t.tickClause} tick-bound timeouts; max Cfg/Own clock {t.maxCfgRatio}%"
+  s!"{t.tickClause} tick-bound timeouts; {t.exact} clock-exact (N = 1); " ++
+  s!"max Cfg/Own clock {t.maxCfgRatio}%"
 
 def Tally.add (t u : Tally) : Tally :=
   { runs := t.runs + u.runs, ok := t.ok + u.ok, timeout := t.timeout + u.timeout
     trap := t.trap + u.trap, stuck := t.stuck + u.stuck, firSame := t.firSame + u.firSame
     firEarlier := t.firEarlier + u.firEarlier, maxRatio := max t.maxRatio u.maxRatio
-    tickClause := t.tickClause + u.tickClause, maxCfgRatio := max t.maxCfgRatio u.maxCfgRatio }
+    tickClause := t.tickClause + u.tickClause, maxCfgRatio := max t.maxCfgRatio u.maxCfgRatio
+    exact := t.exact + u.exact }
 
 /-- Own against Cfg at one depth clock `k` where Own gives `ro`: a timeout
 is a Cfg timeout at `k` (the identity map), a value or trap is the same
-value and heap, or trap, at some Cfg clock (found upwards from `k`), with
-the step bound never deciding the run. Returns the Cfg clock used. -/
+value and heap, or trap, at Cfg's least clock `k'` (and a timeout below it),
+with the step bound never deciding the run; when `k` is Own's least clock,
+`k' ≥ k` (a total clock is never below a depth clock). Returns `k'`. -/
 def ownCfg (a : Assert) (pol : Own.AllocPol) (L : Levels) (f : Nat) (args : List Nat) (k : Nat)
     (ro : Result (RVal × Heap)) (msg : String → String) (least : Bool := false) : IO Nat := do
   match ro with
@@ -221,6 +227,11 @@ def compareRun (a : Assert) (L : Levels) (lam : Option (LProgram × Nat)) (ar : 
     if lf > 0 then
       let below ← runFir L.fir (lf - 1) ar args
       expect a (isTimeout below) (msg s!"Fir below its least clock gives {firOutcome below}")
+    -- the tick bound read backwards (Fir finishing at `lf` means Anf finishes by
+    -- `N·(lf + 1)`), and clock exactness when nothing is erased (`N = 1`)
+    expect a (la ≤ L.n * (lf + 1)) (msg s!"Anf's least clock {la} exceeds {L.n}·({lf}+1)")
+    if L.n == 1 then
+      expect a (la == lf) (msg s!"no tick or free jump, yet least clocks differ: Anf {la}, Fir {lf}")
     -- Own: the same outcome at Fir's least clock and just below, both policies
     let mut kc := 0
     for pol in [Own.AllocPol.immortal, .rc] do
@@ -240,6 +251,7 @@ def compareRun (a : Assert) (L : Levels) (lam : Option (LProgram × Nat)) (ar : 
     let ratio := if lf == 0 then 100 else la * 100 / lf
     let cratio := if lf == 0 then 100 else kc * 100 / lf
     let t := { t with ok := t.ok + 1, maxRatio := max t.maxRatio ratio
+                      exact := t.exact + (if L.n == 1 then 1 else 0)
                       maxCfgRatio := max t.maxCfgRatio cratio }
     return if la == lf then { t with firSame := t.firSame + 1 }
       else { t with firEarlier := t.firEarlier + 1 }
