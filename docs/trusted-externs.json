@@ -843,7 +843,7 @@
       "CompilatrixTests/IxonV3/Run.lean": "5818fc755b27c8582ff7115c60550c9e27bfe7ce6b58e3811789d3f8b06c1635",
       "CompilatrixTests/IxonV3/TypingFixtures.lean": "820bf819a961003beb76572682bbb85502eb0f3245eefa1321eefe321c86c2cc",
       "CompilatrixTests/IxonV3/Typing.lean": "0a5edf6c4e19ef12efcf9e5a027c4f78828718ba63362c5c76a68fcc7dbddae2",
-      "CompilatrixTests.lean": "813ccdc710081f783f58e443319f59f1aca69af8235edfc19cad290b666710c3",
+      "CompilatrixTests.lean": "b8d13d28202fcb5eb27f80bc76e45297bc9058269cf58b331a3b68f2133b1e6d",
       "CompilatrixTests/Proofs.lean": "e052fc1676bc763171e7b15aa497a1438d01552a4a2d19c681de1fd8e83ca6ad",
       "Compilatrix/Tools/AiurCheck.lean": "3a1ebd631fe1d68582b1427704d5cdd8ba1a8bc3c9bb04bbcce80d9672f28701",
       "Compilatrix/Tools/AiurMemoryCheck.lean": "eee3ddb635309674628fd703fe650ee3a70a44351ae17ee16d59a5ec43c94cf1",

@@ -8,4 +8,4 @@ import CompilatrixTests.Src.Relevance.Run
 separately as `CompilatrixTests.Proofs`; runtime suites are compiled and run
 through their executables (`check-lir` for `CompilatrixTests.Lir`,
 `check-xv-select` for `CompilatrixTests.Xv`, `tests-src` and `tests-src-slow`
-for `CompilatrixTests.Src`). -/
+for `CompilatrixTests.Src`, `tests-relevance` for its relevance suite). -/
