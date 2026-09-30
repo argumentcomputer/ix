@@ -1,4 +1,5 @@
 import CompilatrixTests.Fir.Differential
+import CompilatrixTests.Fir.Rules
 
 /-! The `tests-fir` suite (design note 03 §11, M1.F5): Fir, the Phase 1 Own
 fragment and Cfg on the K1 fixtures, the fallback route's decline,
@@ -19,6 +20,7 @@ def main (_args : List String) : IO UInt32 := do
   let a ← IO.mkRef 0
   try
     IO.println "tests-fir"
+    part a "rules of Fir, Own and Cfg; hand-written Anf; well-formedness" (Rules.run a)
     part a "k1.ixe and bench-k1: Anf → Fir → Own → Cfg" (Differential.packs a)
     part a "the fallback route, declined at Fir" (Differential.fallback a)
     IO.println s!"tests-fir: {← a.get} assertions passed"

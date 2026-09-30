@@ -489,7 +489,11 @@
     "Compilatrix.Cfg.Print"]},
   "CompilatrixTests.Fir.Run":
   {"path": "CompilatrixTests/Fir/Run.lean",
-   "imports": ["CompilatrixTests.Fir.Differential"]},
+   "imports":
+   ["CompilatrixTests.Fir.Differential", "CompilatrixTests.Fir.Rules"]},
+  "CompilatrixTests.Fir.Rules":
+  {"path": "CompilatrixTests/Fir/Rules.lean",
+   "imports": ["CompilatrixTests.Fir.Support"]},
   "CompilatrixTests.Fir.Main":
   {"path": "CompilatrixTests/Fir/Main.lean",
    "imports": ["CompilatrixTests.Fir.Run"]},
