@@ -75,6 +75,12 @@ import Compilatrix.Lam.Erase.Input
 import Compilatrix.Lam.Erase.Term
 import Compilatrix.Lam.Erase.Val
 import Compilatrix.Lam.Erase
+import Compilatrix.Anf.Syntax
+import Compilatrix.Anf.Semantics
+import Compilatrix.Anf.Props
+import Compilatrix.Anf.Readback
+import Compilatrix.Anf.WellFormed
+import Compilatrix.Anf.Print
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
