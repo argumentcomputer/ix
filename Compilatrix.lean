@@ -2,6 +2,7 @@ import Compilatrix.Ixon.V3
 import Compilatrix.Ixon.V3.Typed
 import Compilatrix.Sem.Result
 import Compilatrix.Sem.Clock
+import Compilatrix.Sem.Clocked
 import Compilatrix.Lir.Syntax
 import Compilatrix.Lir.Semantics
 import Compilatrix.Lir.Graph

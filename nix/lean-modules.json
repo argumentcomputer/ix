@@ -1088,6 +1088,9 @@
    "imports": ["Compilatrix.Src.Runtime"]},
   "Compilatrix.Sem.Result":
   {"path": "Compilatrix/Sem/Result.lean", "imports": []},
+  "Compilatrix.Sem.Clocked":
+  {"path": "Compilatrix/Sem/Clocked.lean",
+   "imports": ["Compilatrix.Sem.Result"]},
   "Compilatrix.Sem.Clock":
   {"path": "Compilatrix/Sem/Clock.lean", "imports": ["Compilatrix.Sem.Result"]},
   "Compilatrix.Lir.WellFormed":
@@ -1596,6 +1599,7 @@
     "Compilatrix.Ixon.V3.Typed",
     "Compilatrix.Sem.Result",
     "Compilatrix.Sem.Clock",
+    "Compilatrix.Sem.Clocked",
     "Compilatrix.Lir.Syntax",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Lir.Graph",
