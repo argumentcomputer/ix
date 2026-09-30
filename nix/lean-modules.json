@@ -649,10 +649,14 @@
     "CompilatrixTests.Anf.Differential",
     "CompilatrixTests.Anf.Shapes",
     "CompilatrixTests.Anf.Generated",
-    "CompilatrixTests.Anf.KernelEval"]},
+    "CompilatrixTests.Anf.KernelEval",
+    "CompilatrixTests.Anf.LeanRender"]},
   "CompilatrixTests.Anf.Main":
   {"path": "CompilatrixTests/Anf/Main.lean",
    "imports": ["CompilatrixTests.Anf.Run"]},
+  "CompilatrixTests.Anf.LeanRender":
+  {"path": "CompilatrixTests/Anf/LeanRender.lean",
+   "imports": ["Compilatrix.Anf.Pipeline"]},
   "CompilatrixTests.Anf.KernelEval":
   {"path": "CompilatrixTests/Anf/KernelEval.lean",
    "imports": ["Compilatrix.Anf.Pipeline"]},

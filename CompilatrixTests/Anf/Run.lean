@@ -3,6 +3,7 @@ import CompilatrixTests.Anf.Differential
 import CompilatrixTests.Anf.Shapes
 import CompilatrixTests.Anf.Generated
 import CompilatrixTests.Anf.KernelEval
+import CompilatrixTests.Anf.LeanRender
 
 /-! The `tests-anf` suite (design note 02 §6–8, §13): Anf's rules and clock
 monotonicity; Lam against Anf after every step of the Phase 1 pipeline on
@@ -40,6 +41,14 @@ def main (args : List String) : IO UInt32 := do
     let a ← IO.mkRef 0
     for line in ← Generated.run a n.toNat! do IO.println line
     IO.println s!"tests-anf --generated {n}: {← a.get} assertions passed"
+    return 0
+  | ["--kernel-probe", name] =>
+    -- a module re-running the middle end on a bench entry in the kernel
+    let e ← CompilatrixTests.Lam.eraseLoaded (← loadBench name)
+    let t ← IO.ofExcept (Compilatrix.Anf.Pipeline.produce {} e.lam)
+    let final := ((t.stages.getLast?).map (·.2)).getD default
+    let (g, n) := size final
+    IO.println (LeanRender.module name e.lam t.cert g n)
     return 0
   | ["--dump", name] =>
     let l ← loadBench name
