@@ -299,19 +299,20 @@ costs 3 bytes today.
 ## Share-width schemes on the MSS encoding follow-up
 
 This section prices the Share references of each rooted constant's MSS encoding under
-three width schemes. It is implemented in `schemeReport`.
+four width schemes. It is implemented in `schemeReport`.
 
 - **References.** Every occurrence of an MSS entry is a Share. The harness counts the
   Share nodes in the materialized MSS table and roots, grouped by index. For all 55,386
   rooted constants the count equals `Σ deg(t)` over the MSS entries, which confirms
   `refcount(t) = deg(t)`.
-- **The three schemes:**
+- **The four schemes:**
 
   | scheme | Share width |
   |---|---|
   | A | the current tiers, by index in MSS priority order: 1 byte below 8, 2 below 256, 3 below 65,536. This is the real MSS encoding. |
   | B | one width per constant: 2 bytes (11-bit index) if the MSS entry count, which is the candidate count, is ≤ 2048; otherwise 3 bytes (19-bit index) |
   | C | as B, but 1 byte (3-bit index) when the entry count is ≤ 8 |
+  | D | one width per constant, with the Share tag byte's whole low nibble holding index bits: 1 byte (4-bit index) for ≤ 16 entries, 2 bytes (12-bit) for ≤ 4,096, 3 bytes (20-bit) above |
 
 - **Constant bytes under a scheme** are `MSS bytes − refbytes(A) + refbytes(scheme)`.
   Nothing else in the encoding changes.
@@ -327,10 +328,11 @@ width 1 under C.
 | A (index tiers) | 17,568,850 | 68,547,873 | 0 | | |
 | B (2 or 3 per constant) | 18,990,396 | 69,969,419 | +1,421,546 | +2.07% | +1.77% |
 | C (1, 2 or 3 per constant) | 18,724,875 | 69,703,898 | +1,156,025 | +1.69% | +1.44% |
+| D (1, 2 or 3 per constant, nibble index) | 18,207,733 | 69,186,756 | +638,883 | +0.93% | +0.80% |
 
 The MSS total is 68,547,873 bytes and the heuristic total is 80,161,846 bytes (rooted
-constants). Under B the MSS total is still 12.71% below the heuristic total (derived:
-1 − 69,969,419 / 80,161,846), and under C 13.05% below.
+constants). Derived arithmetic: the MSS total stays below the heuristic total by 12.71% under B
+(1 − 69,969,419 / 80,161,846), 13.05% under C and 13.69% under D.
 
 **Per constant:**
 
@@ -338,6 +340,7 @@ constants). Under B the MSS total is still 12.71% below the heuristic total (der
 |---|---:|---:|---:|
 | B vs A | 829 | 555 | 54,002 |
 | C vs A | 829 | 22,271 | 32,286 |
+| D vs A | 9,773 | 22,271 | 23,342 |
 
 - All 829 constants that improve under B are among the 4,335 below.
 - **Largest losses under B:**
@@ -359,6 +362,43 @@ constants). Under B the MSS total is still 12.71% below the heuristic total (der
 - **Reference bytes:** A 11,525,602 and B 11,441,534, so B − A = **−84,068 bytes**. That is
   −0.33% of their MSS bytes and −0.25% of their heuristic bytes.
 - **Per constant, B vs A:** better 829, equal 1, worse 3,505.
+
+### Scheme D in detail
+
+- **Width classes under D:**
+
+  | width | entries | constants |
+  |---|---|---:|
+  | 1 byte | ≤ 16 | 31,200 |
+  | 2 bytes | 17–4,096 | 24,180 |
+  | 3 bytes | > 4,096 | 6 |
+
+- **Equal constants:** the 22,271 constants equal under D are the same count as under C:
+  the 22,270 constants with at most 8 entries, plus 1. For a constant with 9–16 entries,
+  D is never worse than A.
+- **Largest losses under D** are the six constants with more than 4,096 entries:
+  - `…ForwardSliceSearcher.Invariants.isValidSearchFrom_toList` +13,382 (4,874 entries);
+  - `…Vector.extract_append._proof_1` +7,936;
+  - `…Vector.extract_extract._proof_1` +7,488;
+  - `…Array.extract_append._proof_1_1` +6,363;
+  - two more `extract_append_extract` proofs, at +5,867 and +5,727.
+
+  After them come constants with 160–360 entries and many references to indices below 8,
+  such as `…Nat.digitChar_ne.match_1_1` (+1,072, 199 entries).
+- **Largest gains under D** come from constants with roughly 1,800–3,700 entries, which
+  pay 3 bytes under A for every index ≥ 256:
+  - `…Array.extract_extract._proof_1_1` −17,041 (3,640 entries);
+  - `…Int.add_one_tdiv._proof_1_1` −15,320 (3,236);
+  - `…Vector.extract_add_left._proof_1` −12,595 (2,854).
+- The ten of each are in the harness output below.
+
+**D restricted to the 4,335 constants whose heuristic table exceeds 255 entries:**
+
+- Width classes: 0 at 1 byte, 4,329 at 2 bytes, 6 at 3 bytes.
+- Reference bytes: A 11,525,602 and D 11,226,247, so D − A = **−299,355 bytes**. That is
+  −1.18% of their MSS bytes (25,359,218) and −0.90% of their heuristic bytes
+  (33,341,195).
+- D vs A: better 843, equal 1, worse 3,491.
 
 ## Verification of the harness
 
@@ -447,11 +487,11 @@ nix develop --command bash -c 'lake build sharing-study'
 #   -> Build completed successfully (96 jobs).
 S=/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad
 nix develop --command bash -c "lake exe sharing-study $S/init.ixe \
-    --md $S/w3-results5.md --csv $S/sharing-minimum-measurements.csv"
+    --md $S/w3-results6.md --csv $S/sharing-minimum-measurements.csv"
 #   -> exit 0; defaults --validate-max 16777216 --occ-check-max 65536
 ```
 
-There were five full runs. The output below is from the fifth.
+There were six full runs. The output below is from the sixth.
 
 | run | measured | harness-internal time | end to end |
 |---|---|---|---|
@@ -459,18 +499,19 @@ There were five full runs. The output below is from the fifth.
 | Second (commit `1598a9be`) | P1.5 + MSS | 185.2 s | 193.3 s |
 | Third (commit `97824804`) | P1.5 + MSS + uniform-width classification (first `payloadMin`) | 316.3 s | 335.0 s |
 | Fourth (commit `ccebc800`) | same, with the corrected `payloadMin` | 379.5 s | 397.6 s |
-| Fifth | everything above + Share-width schemes | 199.1 s (0.25 s load + 198.9 s measuring) | 210.0 s, measured by the shell |
+| Fifth (commit `8c73b11a`) | everything above + Share-width schemes A–C | 199.1 s | 210.0 s |
+| Sixth | everything above + scheme D | 210.5 s (0.26 s load + 210.2 s measuring) | 222.0 s, measured by the shell |
 
-- The fifth run did strictly more work than the fourth yet took about half the time. These
+- The fifth and sixth runs did strictly more work than the fourth yet took about half the time. These
   wall times therefore reflect machine load as well as harness work, and should not be
   compared across runs.
 - In each run, the output for the sections that existed before was identical to the
   previous run's, except for the timing lines, the "slowest constants" table and sections
   deliberately changed (the classification in the fourth run). This was checked with
   `diff`.
-- The slowest single constant took 0.8 s in the fifth run. The harness is single-threaded.
+- The slowest single constant took 0.8 s in the sixth run. The harness is single-threaded.
 
-The per-constant CSV is 9,620,870 bytes (56,622 rows plus a header, 46 columns), which is
+The per-constant CSV is 9,621,877 bytes (56,622 rows plus a header, 46 columns), which is
 too large to track here. It is kept at
 `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/sharing-minimum-measurements.csv`.
 Its columns are:
@@ -489,13 +530,13 @@ Rerunning the command above regenerates it.
 
 ---
 
-The rest of this document is the harness's `--md` output from the fifth run, unedited.
+The rest of this document is the harness's `--md` output from the sixth run, unedited.
 
 ## Results
 
 - Corpus: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe` (195387870 bytes), 56622 stored constants (distinct addresses), 66621 names.
 - Constants processed: 56622; skipped: 0; with at least one expression root: 55386.
-- Harness wall time: load 252 ms, measurement 198886 ms, total 199138 ms.
+- Harness wall time: load 260 ms, measurement 210243 ms, total 210503 ms.
 - Production rebuild (`buildConstantWithSharing` on expanded roots, then `serConstant`) differs from `rawBytes`: **0** constants.
 - Decode/encode roundtrip (`serConstant ∘ get`) differs from `rawBytes`: 0 constants.
 - Compositional unshared size checked against `serConstant` of the real unshared Constant: 56615 equal, 0 different, 7 not checked (unshared roots > 16777216 bytes).
@@ -609,11 +650,11 @@ The rest of this document is the harness's `--md` output from the fifth run, une
 
 | constant | kind | ms | `N` | stored B |
 |---|---|---:|---:|---:|
-| `_private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_1` | defn | 805 | 24507 | 141015 |
-| `_private.Init.Data.Array.Extract.«0».Array.extract_add_left._proof_1_2` | defn | 799 | 13362 | 77260 |
-| `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1` | defn | 617 | 18802 | 109553 |
-| `_private.Init.Data.Array.Extract.«0».Array.extract_extract._proof_1_1` | defn | 531 | 19523 | 104173 |
-| `_private.Init.Data.Vector.Extract.«0».Vector.extract_append._proof_1` | defn | 523 | 26943 | 156535 |
+| `_private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_1` | defn | 780 | 24507 | 141015 |
+| `_private.Init.Data.Vector.Extract.«0».Vector.extract_append._proof_1` | defn | 753 | 26943 | 156535 |
+| `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1` | defn | 652 | 18802 | 109553 |
+| `_private.Init.Data.Array.Extract.«0».Array.extract_extract._proof_1_1` | defn | 628 | 19523 | 104173 |
+| `_private.Init.Data.String.Lemmas.Pattern.String.ForwardSearcher.«0».String.Slice.Pattern.Model.ForwardSliceSearcher.Invariants.isValidSearchFrom_toList` | defn | 589 | 27628 | 170285 |
 
 ## Maximal structural sharing (MSS)
 
@@ -849,7 +890,7 @@ Share references counted syntactically in the stored roots and stored table entr
 
 ## Share-width schemes on the MSS encoding
 
-Every occurrence of an MSS entry is a Share. Scheme A: the current tiers by index in MSS order (1 byte below index 8, 2 below 256, 3 below 65536). Scheme B: one width per constant, 2 bytes if the MSS entry count (= candidate count) is ≤ 2048, else 3. Scheme C: as B, but 1 byte if the count is ≤ 8. Constant bytes under a scheme are MSS bytes − refbytes(A) + refbytes(scheme). Share nodes are counted on the materialized MSS encoding.
+Every occurrence of an MSS entry is a Share. Scheme A: the current tiers by index in MSS order (1 byte below index 8, 2 below 256, 3 below 65536). Scheme B: one width per constant, 2 bytes if the MSS entry count (= candidate count) is ≤ 2048, else 3. Scheme C: as B, but 1 byte if the count is ≤ 8. Scheme D: one width per constant using the tag byte's whole low nibble: 1 byte if the count is ≤ 16, 2 if ≤ 4096, else 3. Constant bytes under a scheme are MSS bytes − refbytes(A) + refbytes(scheme). Share nodes are counted on the materialized MSS encoding.
 
 - Share nodes in the MSS encoding vs `Σ deg` over MSS entries: 55386 equal, **0** different.
 - Rooted constants: 55386; Share references in their MSS encodings: 9297007; constants with more than 2048 MSS entries (width 3 under B and C): 20; with at most 8 entries (width 1 under C): 22270.
@@ -859,6 +900,7 @@ Every occurrence of an MSS entry is a Share. Scheme A: the current tiers by inde
 | A (index tiers) | 17568850 | 68547873 | 0 | +0.00% | +0.00% |
 | B (2 or 3 per constant) | 18990396 | 69969419 | 1421546 | +2.07% | +1.77% |
 | C (1, 2 or 3 per constant) | 18724875 | 69703898 | 1156025 | +1.69% | +1.44% |
+| D (nibble: ≤ 16 / ≤ 4096 / more) | 18207733 | 69186756 | 638883 | +0.93% | +0.80% |
 
 Totals for reference: MSS bytes (scheme A, the real encoding) 68547873; heuristic stored bytes 80161846.
 
@@ -866,6 +908,9 @@ Totals for reference: MSS bytes (scheme A, the real encoding) 68547873; heuristi
 |---|---:|---:|---:|
 | B vs A | 829 | 555 | 54002 |
 | C vs A | 829 | 22271 | 32286 |
+| D vs A | 9773 | 22271 | 23342 |
+
+Width classes under D: 1 byte (≤ 16 entries) 31200 constants, 2 bytes (17–4096) 24180, 3 bytes (> 4096) 6.
 
 ### Ten largest losses under B (B − A)
 
@@ -902,3 +947,39 @@ Totals for reference: MSS bytes (scheme A, the real encoding) 68547873; heuristi
 - Constants: 4335; their MSS bytes 25359218, heuristic bytes 33341195; MSS entries: min 44, max 5146; with more than 2048 MSS entries: 20.
 - Reference bytes: A 11525602, B 11441534; Δ (B − A) -84068 (−0.33% of their MSS bytes, −0.25% of their heuristic bytes).
 - B vs A: better 829, equal 1, worse 3505.
+
+### Ten largest losses under D (D − A)
+
+| # | constant | kind | MSS entries | Share refs | refs < 8 / 8–255 / ≥ 256 | A ref bytes | D ref bytes | Δ (D − A) | MSS bytes (A) |
+|---:|---|---|---:|---:|---|---:|---:|---:|---:|
+| 1 | `_private.Init.Data.String.Lemmas.Pattern.String.ForwardSearcher.«0».String.Slice.Pattern.Model.ForwardSliceSearcher.Invariants.isValidSearchFrom_toList` | defn | 4874 | 29452 | 2013 / 9356 / 18083 | 74974 | 88356 | 13382 | 104522 |
+| 2 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_append._proof_1` | defn | 5136 | 31580 | 744 / 6448 / 24388 | 86804 | 94740 | 7936 | 104331 |
+| 3 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_extract._proof_1` | defn | 4919 | 31007 | 660 / 6168 / 24179 | 85533 | 93021 | 7488 | 102666 |
+| 4 | `_private.Init.Data.Array.Extract.«0».Array.extract_append._proof_1_1` | defn | 5146 | 31423 | 750 / 4863 / 25810 | 87906 | 94269 | 6363 | 105389 |
+| 5 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_append_extract._proof_1` | defn | 4703 | 28903 | 640 / 4587 / 23676 | 80842 | 86709 | 5867 | 97145 |
+| 6 | `_private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_1` | defn | 4678 | 28730 | 643 / 4441 / 23646 | 80463 | 86190 | 5727 | 96716 |
+| 7 | `_private.Init.Data.Nat.ToString.«0».Nat.digitChar_ne.match_1_1` | defn | 199 | 3103 | 1072 / 2031 / 0 | 5134 | 6206 | 1072 | 9309 |
+| 8 | `_private.Init.Data.Iterators.Combinators.Monadic.FilterMap.«0».Std.Iterators.Types.Map.instProductivenessRelation._proof_2` | defn | 166 | 1262 | 528 / 734 / 0 | 1996 | 2524 | 528 | 4797 |
+| 9 | `_private.Init.Meta.Defs.«0».Lean.Name.beq.match_1.eq_4` | defn | 163 | 1182 | 517 / 665 / 0 | 1847 | 2364 | 517 | 3772 |
+| 10 | `Std.IterM.step_filterMapM` | defn | 362 | 2232 | 720 / 1279 / 233 | 3977 | 4464 | 487 | 7713 |
+
+### Ten largest gains under D (A − D)
+
+| # | constant | kind | MSS entries | Share refs | refs < 8 / 8–255 / ≥ 256 | A ref bytes | D ref bytes | Δ (D − A) | MSS bytes (A) |
+|---:|---|---|---:|---:|---|---:|---:|---:|---:|
+| 1 | `_private.Init.Data.Array.Extract.«0».Array.extract_extract._proof_1_1` | defn | 3640 | 22811 | 497 / 4776 / 17538 | 62663 | 45622 | -17041 | 76309 |
+| 2 | `_private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1` | defn | 3236 | 21512 | 1001 / 4190 / 16321 | 58344 | 43024 | -15320 | 72208 |
+| 3 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_add_left._proof_1` | defn | 2854 | 16989 | 431 / 3532 / 13026 | 46573 | 33978 | -12595 | 57498 |
+| 4 | `_private.Init.Data.Array.Extract.«0».Array.extract_add_left._proof_1_2` | defn | 2717 | 15681 | 452 / 4450 / 10779 | 41689 | 31362 | -10327 | 52203 |
+| 5 | `_private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_3` | defn | 2477 | 13376 | 397 / 2928 / 10051 | 36406 | 26752 | -9654 | 46372 |
+| 6 | `_private.Init.Data.Array.Extract.«0».Array.extract_append._proof_1_4` | defn | 2294 | 13015 | 373 / 2645 / 9997 | 35654 | 26030 | -9624 | 45467 |
+| 7 | `_private.Init.Data.Vector.Extract.«0».Vector.extract_reverse._proof_1` | defn | 1908 | 10516 | 314 / 2309 / 7893 | 28611 | 21032 | -7579 | 36602 |
+| 8 | `_private.Init.Data.Array.Lemmas.«0».Array.toList_extract._proof_1_1` | defn | 1786 | 9846 | 278 / 2487 / 7081 | 26495 | 19692 | -6803 | 34199 |
+| 9 | `_private.Init.Data.Int.LemmasAux.«0».Int.max_min_distrib_left._proof_1_1` | defn | 1815 | 9731 | 433 / 2122 / 7176 | 26205 | 19462 | -6743 | 33682 |
+| 10 | `_private.Init.Data.Nat.Lemmas.«0».Nat.sub_max_sub_left._proof_1_1` | defn | 1884 | 10582 | 610 / 2725 / 7247 | 27801 | 21164 | -6637 | 35895 |
+
+### D − A restricted to constants whose current heuristic table exceeds 255 entries
+
+- Constants: 4335; width classes under D: 1 byte 0, 2 bytes 4329, 3 bytes 6.
+- Reference bytes: A 11525602, D 11226247; Δ (D − A) -299355 (−1.18% of their MSS bytes, −0.90% of their heuristic bytes).
+- D vs A: better 843, equal 1, worse 3491.
