@@ -1089,6 +1089,9 @@
   "Compilatrix.Sem.Transform":
   {"path": "Compilatrix/Sem/Transform.lean",
    "imports": ["Compilatrix.Sem.Simulation"]},
+  "Compilatrix.Sem.Smallstep":
+  {"path": "Compilatrix/Sem/Smallstep.lean",
+   "imports": ["Compilatrix.Sem.Clock", "Compilatrix.Sem.Simulation"]},
   "Compilatrix.Sem.Simulation":
   {"path": "Compilatrix/Sem/Simulation.lean",
    "imports": ["Compilatrix.Sem.Clocked"]},
@@ -1608,6 +1611,7 @@
     "Compilatrix.Sem.Clocked",
     "Compilatrix.Sem.Simulation",
     "Compilatrix.Sem.Transform",
+    "Compilatrix.Sem.Smallstep",
     "Compilatrix.Lir.Syntax",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Lir.Graph",

@@ -5,6 +5,7 @@ import Compilatrix.Sem.Clock
 import Compilatrix.Sem.Clocked
 import Compilatrix.Sem.Simulation
 import Compilatrix.Sem.Transform
+import Compilatrix.Sem.Smallstep
 import Compilatrix.Lir.Syntax
 import Compilatrix.Lir.Semantics
 import Compilatrix.Lir.Graph
