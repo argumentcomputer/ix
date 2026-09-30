@@ -235,7 +235,7 @@ def reports (a : Assert) : IO (Array String) := do
   let eraseCodes := ["erase-const-kind", "erase-string", "erase-mode", "erase-minor", "erase-lazy",
     "erase-proj", "erase-ctor-layout", "erase-C2", "erase-C4", "erase-S2", "erase-scope", "erase-recursor",
     "erase-root", "erase-record", "erase-fuel", "erase-budget", "erase-univs", "erase-unbox-elim",
-    "erase-pin", "erase-key"]
+    "erase-pin", "erase-key", "erase-progwf", "erase-modes"]
   for code in eraseCodes do
     let e := Err.ofErase { code, const := some 7, message := "why" }
     expect a (e.render == s!"erase: {code}: at constant 7: why") s!"erasure's {code} renders as {e.render}"
