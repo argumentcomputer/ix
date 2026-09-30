@@ -22,9 +22,10 @@ environment of the rows accepted before it.
 Usage: `kernel-census <input.ixe> <output.jsonl> [limit] [fuel]`. Rows are
 written as they are produced; the summary goes to stderr.
 
-Environment variables: `CENSUS_INLINE` checks on the main thread without a
-timeout (the timing mode). Otherwise each check runs on its own task with a
-timeout, and the environment is marked persistent first, so the task does not
+Checks run on the main thread by default: the kernel's work budget bounds
+every check, so no timeout is needed and timings have no polling floor.
+Environment variables: `CENSUS_THREADED` runs each check on its own task with a
+timeout instead, the environment marked persistent first so the task does not
 mark it multi-threaded;
 `CENSUS_PROBE=<name or address prefix>` prints why a supplied recursor differs
 from the generated one. -/
@@ -264,9 +265,9 @@ def run (args : List String) : IO UInt32 := do
   let ordered := order store
   let cfg : Config := { fuel := options.fuel }
   let probe ← IO.getEnv "CENSUS_PROBE"
-  -- Checks on the main thread, without a timeout: nothing is shared with
-  -- another thread, so no object is marked multi-threaded (for profiling).
-  let inline := (← IO.getEnv "CENSUS_INLINE").isSome
+  -- The default: checks on the main thread, bounded by the kernel's work
+  -- budget; `CENSUS_THREADED` opts into tasks with a timeout.
+  let inline := (← IO.getEnv "CENSUS_THREADED").isNone
   IO.eprintln s!"census: {store.size} records, {ordered.size} primary, {env.blobs.size} blobs, \
     Nat family {natFamily.isSome}, string constants {strings.isSome}, loaded in {(← IO.monoMsNow) - started} ms"
   let read (address : Address) : Except SearchFailure (Block Address) :=

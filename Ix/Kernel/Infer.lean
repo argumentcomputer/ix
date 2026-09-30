@@ -998,7 +998,7 @@ def isDefEqC : Nat → (entries : Environment β) → (Γ : Context β) → (a b
 end
 
 /-- The work budget of a top-level call, per unit of fuel. -/
-def workPerFuel : Nat := 100
+def workPerFuel : Nat := 10
 
 /-! ## Uncached entry points
 
