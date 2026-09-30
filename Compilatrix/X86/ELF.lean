@@ -139,10 +139,10 @@ def functionSymbol (name : Nat) (value size : UInt64) : ByteArray :=
 def undefinedFunctionSymbol (name : Nat) : ByteArray :=
   symbol name 0x12 0 0 0
 
-private def runtimeSymbols (encoded : Encode.Output) : List String :=
+def runtimeSymbols (encoded : Encode.Output) : List String :=
   (encoded.relocations.toList.map (fun relocation => relocation.symbol)).eraseDups
 
-private def listIndex? [BEq α] (target : α) : List α → Option Nat
+def listIndex? [BEq α] (target : α) : List α → Option Nat
   | [] => none
   | value :: values =>
       if value == target then some 0
@@ -155,7 +155,7 @@ def relocationEntry (offset symbolIndex : Nat) (addend : Int) : ByteArray :=
   u64 offset ++ word64 (relocationInfo symbolIndex 2) ++
     word64 (Int64.ofInt addend).toUInt64
 
-private def relocationBytes (encoded : Encode.Output) (first : Nat)
+def relocationBytes (encoded : Encode.Output) (first : Nat)
     (symbols : List String) : Except Error ByteArray := do
   let mut output := ByteArray.empty
   for relocation in encoded.relocations do
@@ -171,7 +171,7 @@ private def relocationBytes (encoded : Encode.Output) (first : Nat)
       relocation.addend
   return output
 
-private def symbolBytes (encoded : Encode.Output) (entryOffset : Nat)
+def symbolBytes (encoded : Encode.Output) (entryOffset : Nat)
     (exportName : String) (exports : List (String × Nat)) (symbols : List String)
     (strings : StringTable) : Except Error ByteArray := do
   let some exportOffset := strings.offset? exportName
@@ -223,11 +223,11 @@ def elfHeader (sectionHeadersOffset sectionCount sectionNamesIndex : Nat) :
     u16 0 ++ u16 0 ++     -- no program headers
     u16 64 ++ u16 sectionCount ++ u16 sectionNamesIndex
 
-private def sectionNames : List String :=
+def sectionNames : List String :=
   [".text", ".rela.text", ".note.compilatrix", ".symtab", ".strtab",
     ".note.GNU-stack", ".shstrtab"]
 
-private def requireOffset (table : StringTable) (name : String) :
+def requireOffset (table : StringTable) (name : String) :
     Except Error Nat :=
   match table.offset? name with
   | some offset => .ok offset

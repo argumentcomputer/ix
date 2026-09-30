@@ -207,6 +207,19 @@ structure Expected where
   object : List UInt8
   /-- `Stages.upTo` at every stage, in `Stage.all` order. -/
   stages : List (Option (List Nat))
+  /-- The ELF writer's input: the encoded text, block offsets and
+  relocations, the entry block, the export names and the provenance. -/
+  elf : X86.ELF.Input
+
+/-- The ELF writer's input as a term (the provenance root as its bytes). -/
+def elfText (i : X86.ELF.Input) : String :=
+  let prov := match i.provenance with
+    | .ixir1Policy root l p => s!"(.ixir1Policy (addr {bytes root}) {l} {p})"
+    | .ixir2 root => s!"(.ixir2 (addr {bytes root}))"
+  s!"\{ encoded := X86.Encode.Output.ofLists {i.encoded.text.data.toList} {i.encoded.blockOffsets.toList} \
+    {reprText i.encoded.relocations.toList}, entryBlock := {i.entryBlock}, exportName := {i.exportName.quote}, \
+    exports := {listOf (fun ((n, b) : String × X86.BlockId) => s!"({n.quote}, {b})") i.exports}, \
+    provenance := {prov} }"
 
 /-- One artifact: the input and the native results. -/
 structure Input where
@@ -292,6 +305,11 @@ def object : List UInt8 :=
 def stages : List (Option (List Nat)) :=
   {a.expected.stages}
 
+/-- The ELF writer's input the native run computes (for measuring the
+writer and its validator alone). -/
+noncomputable def elfInput : X86.ELF.Input :=
+  {elfText a.expected.elf}
+
 end CompilatrixTests.Recheck.Artifacts.{a.modName}
 "
   let stats := s!"{a.name}: {p.size} constants, tree {dag.tree}, dag {dag.nodes.size}, hoisted {hoistedCount}, \
@@ -314,9 +332,14 @@ def load (name modName : String) : IO Input := do
   let cert ← CompilatrixTests.Pipeline.ofErr s!"{name}: produce" fun _ => produce cfg inp
   let t ← CompilatrixTests.Pipeline.ofErr s!"{name}: runTyped" fun _ => runTyped cfg inp.program cert
   let a ← CompilatrixTests.Pipeline.ofErr s!"{name}: run" fun _ => run cfg inp.program cert
+  let b := a.backend
+  let elf : X86.ELF.Input :=
+    { encoded := b.encoded, entryBlock := b.program.entry, exportName := b.exportName
+      exports := b.exports.filter (·.1 != b.exportName), provenance := t.provenance }
   pure { name, modName, program := inp.program, cfg, cert
          expected := { typed := t.program, object := a.object.data.toList
-                       stages := Stages.Stage.all.map fun s => Stages.upTo s cfg inp.program cert } }
+                       stages := Stages.Stage.all.map fun s => Stages.upTo s cfg inp.program cert
+                       elf } }
 
 /-- Write the modules, or with `--check` compare them with the committed
 ones (exit 1 on a difference). `--only NAME` restricts to one artifact. -/

@@ -329,7 +329,7 @@ def patchSigned32 (input : ByteArray) (offset : Nat) (value : Int) :
   else
     .error (.invalidPatch offset input.size)
 
-private def layout (chunks : Array Chunk) : Array Nat := Id.run do
+def layout (chunks : Array Chunk) : Array Nat := Id.run do
   let mut offsets := #[]
   let mut cursor := 0
   for chunk in chunks do
@@ -337,10 +337,10 @@ private def layout (chunks : Array Chunk) : Array Nat := Id.run do
     cursor := cursor + chunk.bytes.size
   return offsets
 
-private def concatenate (chunks : Array Chunk) : ByteArray :=
+def concatenate (chunks : Array Chunk) : ByteArray :=
   chunks.foldl (fun output chunk => output ++ chunk.bytes) ByteArray.empty
 
-private def locatedFixups (chunks : Array Chunk)
+def locatedFixups (chunks : Array Chunk)
     (offsets : Array Nat) : Array Fixup := Id.run do
   let mut output := #[]
   for index in List.range chunks.size do

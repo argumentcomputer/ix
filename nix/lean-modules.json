@@ -394,7 +394,31 @@
   {"path": "CompilatrixTests/Recheck/KernelSlow.lean",
    "imports":
    ["CompilatrixTests.Recheck.Kernel.Ackermann",
-    "CompilatrixTests.Recheck.Kernel.SumLoop"]},
+    "CompilatrixTests.Recheck.Kernel.SumLoop",
+    "CompilatrixTests.Recheck.KernelRun.Tak",
+    "CompilatrixTests.Recheck.KernelRun.Gcd",
+    "CompilatrixTests.Recheck.KernelRun.Ackermann",
+    "CompilatrixTests.Recheck.KernelRun.SumLoop"]},
+  "CompilatrixTests.Recheck.KernelRun.Tak":
+  {"path": "CompilatrixTests/Recheck/KernelRun/Tak.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Artifacts.Tak",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Recheck.KernelRun.SumLoop":
+  {"path": "CompilatrixTests/Recheck/KernelRun/SumLoop.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Artifacts.SumLoop",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Recheck.KernelRun.Gcd":
+  {"path": "CompilatrixTests/Recheck/KernelRun/Gcd.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Artifacts.Gcd",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Recheck.KernelRun.Ackermann":
+  {"path": "CompilatrixTests/Recheck/KernelRun/Ackermann.lean",
+   "imports":
+   ["CompilatrixTests.Recheck.Artifacts.Ackermann",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
   "CompilatrixTests.Recheck.Kernel.Tak":
   {"path": "CompilatrixTests/Recheck/Kernel/Tak.lean",
    "imports":
@@ -747,6 +771,12 @@
   "CompilatrixTests.Fences.Xv":
   {"path": "CompilatrixTests/Fences/Xv.lean",
    "imports": ["Compilatrix.Xv.Select.Lemmas"]},
+  "CompilatrixTests.Fences.X86Kernel":
+  {"path": "CompilatrixTests/Fences/X86Kernel.lean",
+   "imports":
+   ["Compilatrix.X86.CheckK",
+    "Compilatrix.X86.StreamK",
+    "Compilatrix.X86.ELFWriteK"]},
   "CompilatrixTests.Fences.X86":
   {"path": "CompilatrixTests/Fences/X86.lean",
    "imports":
@@ -878,6 +908,7 @@
     "CompilatrixTests.Fences.IxonV3Typing",
     "CompilatrixTests.Fences.IxonV3Catalog",
     "CompilatrixTests.Fences.X86",
+    "CompilatrixTests.Fences.X86Kernel",
     "CompilatrixTests.Fences.Lir",
     "CompilatrixTests.Fences.Xv",
     "CompilatrixTests.Fences.Backend",
@@ -1399,6 +1430,9 @@
   "Compilatrix.X86.StreamLayout":
   {"path": "Compilatrix/X86/StreamLayout.lean",
    "imports": ["Compilatrix.X86.ByteBranch", "Compilatrix.X86.ByteCall"]},
+  "Compilatrix.X86.StreamK":
+  {"path": "Compilatrix/X86/StreamK.lean",
+   "imports": ["Compilatrix.X86.StreamValidate", "Compilatrix.X86.EncodeK"]},
   "Compilatrix.X86.StreamIndexed":
   {"path": "Compilatrix/X86/StreamIndexed.lean",
    "imports":
@@ -1487,6 +1521,9 @@
   "Compilatrix.X86.EncodeLength":
   {"path": "Compilatrix/X86/EncodeLength.lean",
    "imports": ["Compilatrix.X86.EncodeControl"]},
+  "Compilatrix.X86.EncodeK":
+  {"path": "Compilatrix/X86/EncodeK.lean",
+   "imports": ["Compilatrix.X86.Encode"]},
   "Compilatrix.X86.EncodeForms":
   {"path": "Compilatrix/X86/EncodeForms.lean",
    "imports": ["Compilatrix.X86.EncodeRegisters"]},
@@ -1513,6 +1550,9 @@
     "Compilatrix.X86.Memory"]},
   "Compilatrix.X86.Encode":
   {"path": "Compilatrix/X86/Encode.lean", "imports": ["Compilatrix.X86.Basic"]},
+  "Compilatrix.X86.ELFWriteK":
+  {"path": "Compilatrix/X86/ELFWriteK.lean",
+   "imports": ["Compilatrix.X86.ELFCheckK"]},
   "Compilatrix.X86.ELFValidate":
   {"path": "Compilatrix/X86/ELFValidate.lean",
    "imports":
@@ -1528,6 +1568,9 @@
   "Compilatrix.X86.ELFExamples":
   {"path": "Compilatrix/X86/ELFExamples.lean",
    "imports": ["Compilatrix.X86.ELF", "Compilatrix.X86.EncodeExamples"]},
+  "Compilatrix.X86.ELFCheckK":
+  {"path": "Compilatrix/X86/ELFCheckK.lean",
+   "imports": ["Compilatrix.X86.ELFValidate", "Compilatrix.X86.EncodeK"]},
   "Compilatrix.X86.ELF":
   {"path": "Compilatrix/X86/ELF.lean",
    "imports": ["Compilatrix.X86.Encode", "Compilatrix.Ixon.Address"]},
@@ -1540,6 +1583,8 @@
   "Compilatrix.X86.Constructors":
   {"path": "Compilatrix/X86/Constructors.lean",
    "imports": ["Compilatrix.X86.Eval", "Compilatrix.X86.Width"]},
+  "Compilatrix.X86.CheckK":
+  {"path": "Compilatrix/X86/CheckK.lean", "imports": ["Compilatrix.X86.Basic"]},
   "Compilatrix.X86.ByteFlags":
   {"path": "Compilatrix/X86/ByteFlags.lean",
    "imports": ["Compilatrix.X86.ByteEval", "Compilatrix.X86.EncodeWord"]},
@@ -2299,7 +2344,10 @@
     "Compilatrix.X86.Layout.Tunnel",
     "Compilatrix.X86.Layout.Linearize",
     "Compilatrix.X86.StreamValidate",
-    "Compilatrix.X86.ELFValidate"]},
+    "Compilatrix.X86.ELFValidate",
+    "Compilatrix.X86.CheckK",
+    "Compilatrix.X86.StreamK",
+    "Compilatrix.X86.ELFWriteK"]},
   "Compilatrix.Anf.WellFormed":
   {"path": "Compilatrix/Anf/WellFormed.lean",
    "imports": ["Compilatrix.Anf.Syntax"]},

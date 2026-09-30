@@ -5,6 +5,9 @@ import Compilatrix.X86.Layout.Tunnel
 import Compilatrix.X86.Layout.Linearize
 import Compilatrix.X86.StreamValidate
 import Compilatrix.X86.ELFValidate
+import Compilatrix.X86.CheckK
+import Compilatrix.X86.StreamK
+import Compilatrix.X86.ELFWriteK
 
 /-!
 # The backend (05 §1, §10)
@@ -89,14 +92,22 @@ def lay (p : LProgram) (cfg : Config) : Except Error (Stacking.Stacked × X86.Pr
 
 /-- The laid-out typed program to a checked ELF object: `Program.check`, E1
 encoding with E2's stream check, and the ELF writer with its validator.
-`main` is the function whose wrapper is the entry symbol. -/
+`main` is the function whose wrapper is the entry symbol.
+
+Each step is its kernel-evaluable twin (M1.K1): `Program.checkK`,
+`Stream.encodeK` (the list encoder `Encode.encodeK` and the one-pass
+`Stream.checkK`) and `ELF.writeCheckedK` (the list writer and the windowed
+validator). They are proved equal to `Program.check`, `Stream.encode` and
+`ELF.writeChecked` (`Program.checkK_eq`, `Stream.encodeK_eq`,
+`ELF.writeCheckedK_eq`), so the object and its certificates are the
+originals'. -/
 def finish (main : Lir.FunId) (stacked : Stacking.Stacked) (program : X86.Program)
     (exports : List (String × X86.BlockId)) (provenance : X86.ELF.Provenance) :
     Except Error Artifact := do
-  let checked ← program.check.mapError .check
-  let stream ← (X86.Stream.encode checked).mapError .stream
+  let checked ← program.checkK.mapError .check
+  let stream ← (X86.Stream.encodeK checked).mapError .stream
   let some entry := stacked.exports.find? (·.fn == main) | throw (.stacking .noEntry)
-  let object ← (X86.ELF.writeChecked
+  let object ← (X86.ELF.writeCheckedK
     { encoded := stream.output, entryBlock := program.entry, exportName := entry.symbol,
       exports := exports.filter (·.1 != entry.symbol), provenance }).mapError .elf
   pure { stacked, program, checked, encoded := stream.output, object := object.bytes,

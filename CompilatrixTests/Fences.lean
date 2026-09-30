@@ -9,6 +9,7 @@ import CompilatrixTests.Fences.IxonV3
 import CompilatrixTests.Fences.IxonV3Typing
 import CompilatrixTests.Fences.IxonV3Catalog
 import CompilatrixTests.Fences.X86
+import CompilatrixTests.Fences.X86Kernel
 import CompilatrixTests.Fences.Lir
 import CompilatrixTests.Fences.Xv
 import CompilatrixTests.Fences.Backend

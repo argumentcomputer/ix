@@ -31,12 +31,14 @@ theorems quantify over the certificate). `Recheck.sound` (M2.8) is stated of
 this function.
 
 **Kernel style.** `runTyped` is `run` up to the laid-out typed x86 program
-(everything before `Backend.finish`); it is written in kernel-evaluable style
-(persistent `NatMap`s, lists, structural recursion or fuel), and
-`decide +kernel` evaluates it on the K1 artifacts
-(`CompilatrixTests.Recheck.Kernel`, M1.K1). `run` adds `Backend.finish`:
-`X86.Program.check`, E1 encoding, E2's stream check and the ELF writer with
-its validator. -/
+(everything before `Backend.finish`); `run` adds `Backend.finish`: the typed
+program's check, E1 encoding, E2's stream check and the ELF writer with its
+validator, each by its kernel-evaluable twin proved equal to the original
+(`Program.checkK`, `Stream.encodeK`, `ELF.writeCheckedK`). The whole path is
+written in kernel-evaluable style (persistent `NatMap`s, lists, structural
+recursion or fuel), and `decide +kernel` evaluates both functions on the K1
+artifacts (`CompilatrixTests.Recheck.Kernel`, M1.K1): `run`'s object bytes
+equal the native run's. -/
 
 namespace Compilatrix.Recheck
 

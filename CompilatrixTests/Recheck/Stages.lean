@@ -36,17 +36,19 @@ inductive Stage where
   | check
   /-- E1 encoding and E2's stream check. -/
   | encode
+  /-- The ELF writer. -/
+  | write
   /-- The ELF writer and its validator: `run`'s object. -/
   | object
   deriving DecidableEq, Repr, Inhabited
 
 def Stage.all : List Stage :=
-  [.front, .erase, .anf, .cfg, .rt, .select, .alloc, .lay, .check, .encode, .object]
+  [.front, .erase, .anf, .cfg, .rt, .select, .alloc, .lay, .check, .encode, .write, .object]
 
 def Stage.name : Stage → String
   | .front => "front" | .erase => "erase" | .anf => "anf" | .cfg => "cfg" | .rt => "rt"
   | .select => "select" | .alloc => "alloc" | .lay => "lay" | .check => "check"
-  | .encode => "encode" | .object => "object"
+  | .encode => "encode" | .write => "write" | .object => "object"
 
 def lamSize (L : Lam.Program) : List Nat :=
   [L.size, L.globalList.foldl (fun n (_, g) => n + g.body.nodes) 0]
@@ -88,14 +90,19 @@ def upToE (s : Stage) (cfg : Config) (P : Src.Program) (c : Cert) : Except (Opti
   let root := (src.roots.head?.map (·.1)).getD default
   let (stacked, program, exports) ← (Compilatrix.Backend.lay xl (backendConfig cfg lowered root c)).mapError fun _ => none
   if s == .lay then throw (some (x86Size program))
-  let checked ← program.check.mapError fun _ => none
+  let checked ← program.checkK.mapError fun _ => none
   if s == .check then throw (some (x86Size checked.program))
-  let stream ← (Compilatrix.X86.Stream.encode checked).mapError fun _ => none
+  let stream ← (Compilatrix.X86.Stream.encodeK checked).mapError fun _ => none
   if s == .encode then
     throw (some [stream.output.text.size, stream.output.blockOffsets.size, stream.output.relocations.size])
-  let a ← (Compilatrix.Backend.finish xl.main stacked program exports (cfg.provenance.getD (defaultProvenance root))).mapError
-    fun _ => none
-  throw (some [a.object.size])
+  let some entry := stacked.exports.find? (·.fn == xl.main) | throw none
+  let input : Compilatrix.X86.ELF.Input :=
+    { encoded := stream.output, entryBlock := program.entry, exportName := entry.symbol,
+      exports := exports.filter (·.1 != entry.symbol), provenance := cfg.provenance.getD (defaultProvenance root) }
+  let bytes ← (Compilatrix.X86.ELF.writeK input).mapError fun _ => none
+  if s == .write then throw (some [bytes.length])
+  let object ← (Compilatrix.X86.ELF.writeCheckedK input).mapError fun _ => none
+  throw (some [object.bytes.size])
 
 /-- The summary of the path up to and including `s`, or `none` if it stops
 earlier. -/
