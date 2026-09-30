@@ -1099,6 +1099,9 @@
    "imports": ["Compilatrix.Tools.Check"]},
   "Compilatrix.Src.Value":
   {"path": "Compilatrix/Src/Value.lean", "imports": ["Compilatrix.Src.Syntax"]},
+  "Compilatrix.Src.Table.Validate":
+  {"path": "Compilatrix/Src/Table/Validate.lean",
+   "imports": ["Compilatrix.Src.Table.Check"]},
   "Compilatrix.Src.Table.Check":
   {"path": "Compilatrix/Src/Table/Check.lean",
    "imports": ["Compilatrix.Src.Pinned"]},
@@ -1131,6 +1134,12 @@
   {"path": "Compilatrix/Src/Relevance/Annotate.lean",
    "imports":
    ["Compilatrix.Src.Relevance.Syntax", "Compilatrix.Ixon.V3.Tc.Driver"]},
+  "Compilatrix.Src.Recheck":
+  {"path": "Compilatrix/Src/Recheck.lean",
+   "imports":
+   ["Compilatrix.Src.Table.Validate",
+    "Compilatrix.Src.Relevance.Check",
+    "Compilatrix.Src.Lazify"]},
   "Compilatrix.Src.Readback":
   {"path": "Compilatrix/Src/Readback.lean",
    "imports": ["Compilatrix.Src.Value", "Compilatrix.Sem.Result"]},
@@ -1147,8 +1156,7 @@
    ["Compilatrix.Src.Ingress",
     "Compilatrix.Src.Table.Build",
     "Compilatrix.Src.Relevance.Annotate",
-    "Compilatrix.Src.Relevance.Check",
-    "Compilatrix.Src.Lazify",
+    "Compilatrix.Src.Recheck",
     "Compilatrix.Src.Admit",
     "Compilatrix.Src.Semantics",
     "Compilatrix.Src.Readback"]},
@@ -1786,6 +1794,8 @@
     "Compilatrix.Src.NatMap",
     "Compilatrix.Src.Relevance.Check",
     "Compilatrix.Src.Lazify",
+    "Compilatrix.Src.Table.Validate",
+    "Compilatrix.Src.Recheck",
     "Compilatrix.Src.Admit",
     "Compilatrix.Src.Value",
     "Compilatrix.Src.Prim",

@@ -1,8 +1,7 @@
 import Compilatrix.Src.Ingress
 import Compilatrix.Src.Table.Build
 import Compilatrix.Src.Relevance.Annotate
-import Compilatrix.Src.Relevance.Check
-import Compilatrix.Src.Lazify
+import Compilatrix.Src.Recheck
 import Compilatrix.Src.Admit
 import Compilatrix.Src.Semantics
 import Compilatrix.Src.Readback
@@ -11,8 +10,10 @@ import Compilatrix.Src.Readback
 
 The front-end pipeline (design note 01 §4.4, 06 S24): strict v3 decoding and
 erased typing (no resource admission, 06 S40) → ingress → pinned identities →
-unfolding table → relevance annotation (an oracle) → installation → the
-relevance check → `Lazify` → `Admit`. A failure names its stage and code. -/
+unfolding table → the table's revalidation → relevance annotation (an
+oracle) → installation → the relevance check → `Lazify` → `Admit`. A failure
+names its stage and code. The revalidation, installation, check and `Lazify`
+are the recheck path's steps (`Src.Recheck`). -/
 
 namespace Compilatrix.Src
 
@@ -71,20 +72,22 @@ def prepare (cfg : LoadConfig) (env : V3.Env) (hints : Hints) :
   let p ← stage "ingress" (Ingress.ofEnv env (hints.roots.map (·.1)))
   let p := { p with known := Pinned.known p }
   let (table, tableDiags, tableStats) := Table.build cfg.table p hints.proposals
-  return ({ p with table }, tableDiags, tableStats)
+  let p := { p with table }
+  stage "table-recheck" (Table.validate cfg.table p)
+  return (p, tableDiags, tableStats)
 
 /-- Installation, the relevance check, `Lazify` and `Admit`, for one
 annotation of a prepared program. -/
 def finish (cfg : LoadConfig) (hints : Hints) (p : Program) (ann : Relevance.Ann) :
     Except Diag (Program × Relevance.Checked × Admitted) := do
-  let p ← stage "relevance-S1" (Relevance.install p ann)
-  let checked ← match Relevance.check p ann with
-    | .ok c => pure c
-    | .error errs =>
+  let (p, checked) ← match Recheck.annotation p ann with
+    | .ok r => pure r
+    | .error (.install msg) => throw (Diag.of "relevance-S1" msg)
+    | .error (.relevance errs) =>
       let first := errs[0]?.map (·.rule) |>.getD "S1"
       throw (Diag.of s!"relevance-{first}"
         (String.intercalate "; " (errs.toList.take 8 |>.map (·.render p))))
-  let p := Lazify.run p checked.keys
+    | .error (.table msg) => throw (Diag.of "table-recheck" msg)
   let admitted ← match admit p (Loaded.names hints) cfg.admit with
     | .ok a => pure a
     | .error diags =>

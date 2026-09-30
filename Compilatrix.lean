@@ -56,6 +56,8 @@ import Compilatrix.Src.Relevance.Annotate
 import Compilatrix.Src.NatMap
 import Compilatrix.Src.Relevance.Check
 import Compilatrix.Src.Lazify
+import Compilatrix.Src.Table.Validate
+import Compilatrix.Src.Recheck
 import Compilatrix.Src.Admit
 import Compilatrix.Src.Value
 import Compilatrix.Src.Prim
