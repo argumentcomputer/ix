@@ -1,0 +1,17 @@
+{"source_sha256":
+ "a6e3cbdb4530056d2969ed3aec2b97da5d0e9c7f8f09c445cd9ede28dd830c59",
+ "producer_version": "4.34.0|0.0.1",
+ "producer_revision": "9c4b9c654f06e88f021cfd9753701e52852e5500",
+ "producer_binary_sha256":
+ "d8ba031a087810c8cbd0ea96a6251c27fcd07b0b161e1cadd67d8647604e580c",
+ "named_env_sha256":
+ "826aaeb92632572ed7888532af59a8e2338e6c84d99d34fd554c5ce303ebc12b",
+ "files":
+ {"diag.ixe":
+  "da41e3bc7bfb674e3a8ac8a7f398ebf5805da2c26e355d0fcb781b4166a4b343",
+  "diag.equations.json":
+  "153b3d76c60fabd116f3845e332e47937ef63091d812202d7aefbb6ad88be8f2"},
+ "commands":
+ ["ix compile --no-build --consts <roots> --anon --out diag.ixe Diag.lean",
+  "ix compile --no-build --consts <roots> --out diag.named.ixe Diag.lean",
+  "ix addr-of --ixe diag.named.ixe NAME, for every root"]}

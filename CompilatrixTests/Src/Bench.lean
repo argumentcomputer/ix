@@ -47,12 +47,22 @@ def runEntry (name : String) : IO Nat := do
     | _ => throw (IO.userError s!"{name}: result {v.shape} has no Nat readback")
   | r => throw (IO.userError s!"{name}: {outcome r}")
 
-def runtimeSet (l : Loaded) : String :=
+/-- Untrusted test names (`src-names.tsv`) for reports. -/
+def testNames : IO (List (String × Ixon.Address)) := do
+  let text ← IO.FS.readFile (fixtures / "src-names.tsv")
+  return (text.splitOn "\n").filterMap fun row =>
+    match row.splitOn "\t" with
+    | [name, hex] => (Ixon.Address.fromString hex).map (name, ·)
+    | _ => none
+
+def runtimeSet (l : Loaded) (tsvNames : List (String × Ixon.Address)) : String :=
   let p := l.program
   let names := fun (cs : Array CId) => cs.toList.map fun c =>
     (Loaded.names l.hints (p.addr c)).getD (p.short c)
   let pinned := fun (c : CId) =>
-    (Pinned.constRows.find? fun (_, hex) => Pinned.addr hex == p.addr c).map (·.1)
+    match (Pinned.constRows.find? fun (_, hex) => Pinned.addr hex == p.addr c).map (·.1) with
+    | some n => some n
+    | none => (tsvNames.find? fun (x : String × Ixon.Address) => x.2 == p.addr c).map fun (x : String × Ixon.Address) => x.1
   let lazyName := fun (c : CId) =>
     ((Pinned.lazyRows.find? fun (_, hex, _) => Pinned.addr hex == p.addr c).map (·.1)).getD (p.short c)
   let recs := l.admitted.recursors.toList.map fun (c, k) =>
@@ -69,7 +79,7 @@ def run (a : Assert) (self : System.FilePath) : IO (Array String) := do
   for name in benchNames do
     let (args, expected) ← testCase name
     let l ← loadBench name
-    report := report.push s!"{name}: {runtimeSet l}"
+    report := report.push s!"{name}: {runtimeSet l (← testNames)}"
     let (got, ms) ← timed do
       if name == "sum-loop" then
         let env := #[("LEAN_STACK_SIZE_KB", some (toString deepStackKb))]

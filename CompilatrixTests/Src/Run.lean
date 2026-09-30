@@ -8,7 +8,7 @@ import CompilatrixTests.Src.Bench
 
 /-! The `tests-src` suite (design note 01 §10): rules, the K1 table, K1 runs
 on the eqn route, the native differential, pins, diagnostics, and the
-bench-k1 entries. `tests-src-slow` adds `ack 3 10` and `fib 30` without
+bench-k1 entries. `tests-src-slow` adds `ack 3 10` and `fib 25` without
 primitives. -/
 
 namespace CompilatrixTests.Src.Run
@@ -41,7 +41,9 @@ def main (args : List String) : IO UInt32 := do
       for line in ← Runs.fallback a do IO.println s!"    {line}"
     part a "differential against native Lean" (Differential.run a)
     part a "pins" (Pins.run a)
-    part a "diagnostics" (Diagnostics.run a)
+    part a "diagnostics" do
+      Diagnostics.run a
+      for line in ← Diagnostics.ixFixture a do IO.println s!"    {line}"
     part a "bench-k1 entries" do
       for line in ← Bench.run a (← IO.appPath) do IO.println s!"    {line}"
     IO.println s!"tests-src: {← a.get} assertions passed"
@@ -51,7 +53,8 @@ def main (args : List String) : IO UInt32 := do
     return 1
 
 /-- Rows over the 60 s budget (01 §10 part 3), recorded as a coverage
-change: `ack 3 10` on the eqn route and `fib 30` with no primitives. -/
+change: `ack 3 10` on the eqn route, and `fib 25` with no primitives (unary
+`Nat.add` makes `fib 30` quadratic in its result). -/
 def slow (_args : List String) : IO UInt32 := do
   let a ← IO.mkRef 0
   try
@@ -60,7 +63,7 @@ def slow (_args : List String) : IO UInt32 := do
     let row ← Runs.runRow a l "K1.ack" [3, 10] v calls
     IO.println s!"  {row.label} = {row.expected} in {row.ms} ms"
     let np ← loadK1 { typecheck := false, table := { prims := [] } }
-    let row ← Runs.runRow a np "K1.fib" [30] 832040 (Runs.fibCalls 30) (budget := 1 <<< 40)
+    let row ← Runs.runRow a np "K1.fib" [25] 75025 (Runs.fibCalls 25) (budget := 1 <<< 40)
     IO.println s!"  noPrims {row.label} = {row.expected} in {row.ms} ms"
     IO.println s!"tests-src-slow: {← a.get} assertions passed"
     return 0

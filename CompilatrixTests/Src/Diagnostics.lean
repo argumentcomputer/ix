@@ -48,4 +48,34 @@ def run (a : Assert) : IO Unit := do
   let (p, _) := rootCalling w w.ident
   expect a (codes (admit p (cfg := { maxConsts := 1 })) == ["budget"]) "admit: budget"
 
+/-- The ix-compiled diagnostics fixture (`fixtures/ixon-v3/src-diag/`): each
+root, loaded alone, gets its expected outcome through the whole pipeline. -/
+def ixFixture (a : Assert) : IO (Array String) := do
+  let dir := fixtures / "src-diag"
+  let bytes ← IO.FS.readBinFile (dir / "diag.ixe")
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / "diag.equations.json")))
+  let hints ← IO.ofExcept (Hints.ofK1Json json)
+  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  let mut out := #[]
+  for (name, expected) in [("SrcDiag.rootPartial", "opaque"), ("SrcDiag.rootMixHash", "opaque"),
+      ("SrcDiag.rootFloat", ""), ("SrcDiag.rootClassical", "relevant-axiom"),
+      ("SrcDiag.rootSorry", "relevant-axiom"), ("SrcDiag.rootOpaqueId", "")] do
+    let roots := hints.roots.filter (·.2 == some name)
+    expect a (roots.size == 1) s!"diag: root {name} recorded"
+    match loadEnv { typecheck := false } env { hints with roots } with
+    | .error d =>
+      expect a (d.code == expected) s!"diag: {name} gave {d.code}, expected {expected}: {d.message}"
+      out := out.push s!"{name}: {d.code} ({d.message.take 120})"
+    | .ok l =>
+      let kinds := l.admitted.reached.toList.map fun c =>
+        s!"{l.program.short c}:{((l.program.decl? c).map Decl.kindName).getD "?"}"
+      expect a expected.isEmpty s!"diag: {name} admitted, expected {expected}; closure {kinds}"
+      if name == "SrcDiag.rootOpaqueId" then
+        let some root := l.root? | throw (IO.userError s!"{name}: no root")
+        let r ← runRoot l.program 1000 root [41]
+        expect a (natOf r == some 42) s!"diag: {name} 41 gave {outcome r}"
+        out := out.push s!"{name}: admitted; 41 ↦ 42"
+      else out := out.push s!"{name}: admitted (closure of {l.admitted.reached.size} constants)"
+  return out
+
 end CompilatrixTests.Src.Diagnostics

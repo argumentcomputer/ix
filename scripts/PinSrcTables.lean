@@ -33,12 +33,14 @@ def extraLazy : List Name := [`Bool.or, `Bool.and]
 
 def opaqueByValue : List Name := [`Lean.opaqueId]
 
-/-- Names resolved for the relevance census test only (`src-names.tsv`, an
-untrusted test oracle: design note 02 §13.1). -/
+/-- Names resolved for tests only (`src-names.tsv`, an untrusted test oracle:
+the relevance census of design note 02 §13.1 and runtime-set reports). -/
 def censusNames : List Name :=
   [`Eq, `Eq.rec, `HEq, `HEq.rec, `And, `And.rec, `Acc, `Acc.rec, `Acc.intro, `True, `True.rec,
    `False, `False.rec, `Empty, `Empty.rec, `Exists, `Exists.rec, `Fin, `Subtype, `BitVec,
-   `UInt64, `Char, `OfNat, `HAdd, `Decidable, `Decidable.isFalse, `Decidable.isTrue]
+   `UInt64, `Char, `OfNat, `HAdd, `Decidable, `Decidable.isFalse, `Decidable.isTrue,
+   `Decidable.rec, `Decidable.casesOn, `Bool.rec, `Bool.casesOn, `ForInStep.rec,
+   `ForInStep.casesOn]
 
 /-- The generated `T.ctorIdx` functions of every inductive are also `macro_inline`;
 they are not source declarations and stay on δ. -/
@@ -58,8 +60,55 @@ def valueOf (env : Environment) (name : Name) : IO Expr := do
   | some _ => throw (IO.userError s!"{name}: not a definition")
   | none => throw (IO.userError s!"{name}: not in the Init environment")
 
+/-- Roots of the admission-diagnostics fixture `fixtures/ixon-v3/src-diag/`. -/
+def diagRoots : List Name :=
+  [`SrcDiag.rootPartial, `SrcDiag.rootMixHash, `SrcDiag.rootFloat, `SrcDiag.rootClassical,
+   `SrcDiag.rootSorry, `SrcDiag.rootOpaqueId]
+
+/-- Compile `Diag.lean` (anonymous and named), resolve its roots and write
+the closure, its `compilatrix/k1-equations/1` sidecar (roots only) and a
+provenance record. -/
+def diagnostics (ix : String) (work dir : System.FilePath) (revision : String) : IO Unit := do
+  IO.FS.createDirAll work
+  let source := dir / "Diag.lean"
+  let closure := dir / "diag.ixe"
+  let named := work / "diag.named.ixe"
+  let consts := String.intercalate "," (diagRoots.map toString)
+  let _ ← run ix #["compile", "--no-build", "--consts", consts, "--anon", "--out", closure.toString,
+    source.toString]
+  let _ ← run ix #["compile", "--no-build", "--consts", consts, "--out", named.toString,
+    source.toString]
+  let mut roots : Array Json := #[]
+  for name in diagRoots do
+    let output ← run ix #["addr-of", "--ixe", named.toString, name.toString]
+    let address := (words output).getLastD ""
+    need (isHex 64 address) s!"{name}: ix addr-of gave {repr output}"
+    roots := roots.push (Json.mkObj [("name", name.toString), ("address", address)])
+  let sidecar := dir / "diag.equations.json"
+  IO.FS.writeFile sidecar ((Json.mkObj [("format", "compilatrix/k1-equations/1"),
+    ("source", "Diag.lean"), ("roots", Json.arr roots), ("equations", Json.arr #[]),
+    ("failures", Json.arr #[])]).pretty ++ "\n")
+  IO.FS.writeFile (dir / "provenance.json") ((Json.mkObj [
+    ("producer_version", String.intercalate " " (words (← run ix #["--version"]))),
+    ("producer_revision", revision),
+    ("producer_binary_sha256", ← sha256 ix),
+    ("commands", toJson [s!"ix compile --no-build --consts <roots> --anon --out diag.ixe Diag.lean",
+      "ix compile --no-build --consts <roots> --out diag.named.ixe Diag.lean",
+      "ix addr-of --ixe diag.named.ixe NAME, for every root"]),
+    ("source_sha256", ← sha256 source),
+    ("named_env_sha256", ← sha256 named),
+    ("files", Json.mkObj [("diag.ixe", toJson (← sha256 closure)),
+      ("diag.equations.json", toJson (← sha256 sidecar))])]).pretty ++ "\n")
+  IO.println s!"wrote {closure} with {diagRoots.length} roots"
+
 def main (args : List String) : IO Unit := do
-  let options ← checked (parseArgs ["--ix", "--work", "--out", "--provenance", "--names", "--revision"] args)
+  let options ← checked (parseArgs ["--ix", "--work", "--out", "--provenance", "--names", "--revision",
+    "--diagnostics"] args)
+  if let some dir := optional options "--diagnostics" then
+    let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
+    diagnostics ix (option options "--work" "plans/src-tables") dir
+      (option options "--revision" "unrecorded")
+    return
   let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
   let work : System.FilePath := option options "--work" "plans/src-tables"
   let out : System.FilePath := option options "--out" "fixtures/ixon-v3/src-tables.tsv"

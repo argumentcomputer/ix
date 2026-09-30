@@ -23,3 +23,15 @@ realized unfolding theorem (`f.eq_def`) of every recursive definition it
 reaches, and `equations.json` names each definition/theorem pair by address.
 The producer is a local ix change on top of the pinned revision; its provenance
 records the exact revision, binary and commands.
+
+## Src tables and diagnostics
+
+`src-tables.tsv` holds the Src front end's pinned `lazy` rows (the 28
+`@[macro_inline]` Init declarations, `Bool.or` and `Bool.and`, with their
+by-name arities) and its opaque-by-value row (`Lean.opaqueId`), transcribed
+in `Compilatrix.Src.Pinned`. `src-names.tsv` resolves a few Init names for
+tests only; it is an untrusted oracle. [`src-diag/`](src-diag/README.md) is
+the admission-diagnostics closure. All three come from `lake exe
+pin-src-tables` (`scripts/PinSrcTables.lean`) with the same ix producer as the
+K1 packs; `src-tables.provenance.json` and `src-diag/provenance.json` record
+it, and `tests-src` compares the TSVs with the Lean tables.

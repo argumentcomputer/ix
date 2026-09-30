@@ -1,0 +1,23 @@
+{"source": "Diag.lean",
+ "roots":
+ [{"name": "SrcDiag.rootPartial",
+   "address":
+   "e73002e1c3b33ddd16b0c2c5b7725a5d6deaba8cd17b4d28cf5af68344a21662"},
+  {"name": "SrcDiag.rootMixHash",
+   "address":
+   "25fd514578d10ebf654fdd599e3d46c7fdb6f6e61d25412e02a0931b42cd1a71"},
+  {"name": "SrcDiag.rootFloat",
+   "address":
+   "918b7ca9f9c9e501a8b099cae6ee4310ff1c2f8e27e0653217ebb16529c888bb"},
+  {"name": "SrcDiag.rootClassical",
+   "address":
+   "8cd0c5c201b4a0cfa98eff35f9f7315161b6ca1085b1baaca207541faf536d4e"},
+  {"name": "SrcDiag.rootSorry",
+   "address":
+   "f1f44392f0db4d2c1ddfa10d6be61774aecaba107dc09a44ffa040b1f3dadf84"},
+  {"name": "SrcDiag.rootOpaqueId",
+   "address":
+   "2cdc7218fd4ad02332e829037ad2f9447a173bcdc3cad30f40f31785d92897f6"}],
+ "format": "compilatrix/k1-equations/1",
+ "failures": [],
+ "equations": []}

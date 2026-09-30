@@ -41,7 +41,7 @@ diagnostics and the bench-k1 entries (design note 01 §10). -/
 lean_exe «tests-src» where
   root := `CompilatrixTests.Src.Main
 
-/- Src rows over the 60 s budget: `ack 3 10`, `fib 30` without primitives. -/
+/- Src rows over the 60 s budget: `ack 3 10`, `fib 25` without primitives. -/
 lean_exe «tests-src-slow» where
   root := `CompilatrixTests.Src.SlowMain
 
