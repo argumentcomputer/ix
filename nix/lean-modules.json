@@ -299,7 +299,13 @@
     "Compilatrix.Lir.Print"]},
   "CompilatrixTests.Rt.Run":
   {"path": "CompilatrixTests/Rt/Run.lean",
-   "imports": ["CompilatrixTests.Rt.Differential"]},
+   "imports":
+   ["CompilatrixTests.Rt.Differential",
+    "CompilatrixTests.Rt.Cases",
+    "CompilatrixTests.Rt.Mutants"]},
+  "CompilatrixTests.Rt.Mutants":
+  {"path": "CompilatrixTests/Rt/Mutants.lean",
+   "imports": ["CompilatrixTests.Rt.Cases"]},
   "CompilatrixTests.Rt.Main":
   {"path": "CompilatrixTests/Rt/Main.lean",
    "imports": ["CompilatrixTests.Rt.Run"]},
@@ -310,6 +316,9 @@
     "CompilatrixTests.Fir.Differential",
     "CompilatrixTests.Fir.Gen",
     "CompilatrixTests.Src.Bench"]},
+  "CompilatrixTests.Rt.Cases":
+  {"path": "CompilatrixTests/Rt/Cases.lean",
+   "imports": ["CompilatrixTests.Rt.Support"]},
   "CompilatrixTests.Proofs":
   {"path": "CompilatrixTests/Proofs.lean",
    "imports":

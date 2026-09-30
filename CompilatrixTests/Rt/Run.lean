@@ -1,4 +1,6 @@
 import CompilatrixTests.Rt.Differential
+import CompilatrixTests.Rt.Cases
+import CompilatrixTests.Rt.Mutants
 
 /-! The `tests-rt` suite (design note 04 §13, M1.F6). -/
 
@@ -36,6 +38,9 @@ def main (args : List String) : IO UInt32 := do
       part a "generated first-order programs" (Differential.generated a n.toNat!)
     | _ =>
       IO.println "tests-rt"
+      part a "primitive sequences at their boundaries" (Cases.prims a)
+      part a "hand-written programs, declines and cx_init" (Cases.handWritten a)
+      part a "planted mutations" (Mutants.run a)
       part a "k1.ixe and bench-k1: Cfg → Lir" (Differential.packs a)
       part a "bench-k1 entries at their test sizes, at Lir" (Differential.entries a)
       part a "generated first-order programs" (Differential.generated a 1000)
