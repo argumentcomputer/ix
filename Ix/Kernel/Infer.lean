@@ -952,9 +952,15 @@ def whnfCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (e 
       if hasDeltaHead entries e then
         match e with
         | .app f x =>
-          KM.orElse (natStepC fuel entries Γ (.app f x)) fun _ =>
-          KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ (.app f x))) fun _ =>
-            KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ (.app f x))
+          -- Literal evaluation inside conversion only on closed terms, as in the
+          -- official kernel and con-leche: an open argument would be normalized
+          -- toward unary arithmetic. The `whnf` loop stays unguarded.
+          let iotas : KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (.app f x)) :=
+            KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ (.app f x))) fun _ =>
+              KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ (.app f x))
+          if (AExpr.app f x).looseBound == 0 then
+            KM.orElse (natStepC fuel entries Γ (.app f x)) fun _ => iotas
+          else iotas
         | _ => throw .noMatch
       else skipNeutralStepC fuel entries Γ e fun _ => stepC fuel entries Γ e
     let next ← KM.attempt attemptStep
@@ -1133,19 +1139,15 @@ def inferCore : Nat → (entries : Environment β) → (Γ : Context β) → (e 
       else throw (.malformed "Pi annotation disagrees with its codomain sort")
     | .letE t v b => do
       let ⟨S, hS⟩ ← inferAC fuel entries Γ t
-      let ⟨l, ht⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ S) hS)
+      let ⟨_, ht⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ S) hS)
       let ⟨A', hv⟩ ← inferAC fuel entries Γ v
       let ⟨hc⟩ ← isDefEqC fuel entries Γ A' t
       have hv' := hv.convF ht.formed hc
-      -- The body with the let variable opaque; failing that, the body with the
-      -- value substituted, as the official kernel infers it.
-      KM.orElse
-        (do
-          let ⟨B, hb⟩ ← KM.inFrame (Γ' := Γ.push t) (inferAC fuel entries (Γ.push t) b)
-          return ⟨B.inst v, TypingClaim.letE (l := l) ht hv' hb⟩)
-        fun _ => do
-          let ⟨B, hb⟩ ← inferAC fuel entries Γ (b.inst v)
-          return ⟨B, TypingClaim.letSubst ht hv' hb⟩
+      -- The body with the value substituted, as the official kernel's
+      -- `infer_let` does: no opaque attempt to back out of, which nested lets
+      -- would make exponential. The substituted value is shared.
+      let ⟨B, hb⟩ ← inferAC fuel entries Γ (b.inst v)
+      return ⟨B, TypingClaim.letSubst ht hv' hb⟩
     | .proj r i x => do
       let ⟨T, _⟩ ← inferAC fuel entries Γ x
       let normalized ← whnfC fuel entries Γ T
