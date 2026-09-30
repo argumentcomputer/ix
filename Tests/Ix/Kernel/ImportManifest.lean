@@ -138,7 +138,7 @@ def ported : Array PortedFile := #[
   ⟨"Ix/Theory/Expr.lean", "Ix/Kernel/Expr.lean", "dd0d0e2cbeac112343e08d08fb4f226b8aaa1c3c8e65b73aa69858e4a71ec034", "fb0b557a963aa3f1e642b6b27149616c5abe412b08b7b96f1eaffd533ea0d435"⟩,
   ⟨"Ix/Theory/ExprSubstitution.lean", "Ix/Kernel/ExprSubstitution.lean", "78f0ee4169464c6f7f2e51fcf95eb8ba73349adbd871a10a3e5ec9007f35c779", "bc9dd8f5f6b58c60d575b645b6be03e247a7f2ff325cbe05271c8172e5e68937"⟩,
   ⟨"Ix/Theory/Inductive/Levels.lean", "Ix/Kernel/Inductive/Levels.lean", "84724e7502dc16a5d32000b32b46bc518c851ab0ce2e4600d56878def665a339", "ee06f871612287b2027bff4450434d5a394143d5a832754425dc804581410280"⟩,
-  ⟨"Ix/Theory/Model/Annotated.lean", "Ix/Kernel/Model/Annotated.lean", "ed32d33dc81c5f1e0154689f322423d8660f8472067bd3bf19a3d875d082cdc1", "57eca844e700c8e4fcc7a3e98d2ec26990825bee2eece3e193e938a38fc7396c"⟩,
+  ⟨"Ix/Theory/Model/Annotated.lean", "Ix/Kernel/Model/Annotated.lean", "ed32d33dc81c5f1e0154689f322423d8660f8472067bd3bf19a3d875d082cdc1", "7d2d80e3edb777650e80c21c685a70791896f6f76b9d27f4acc78d7618052a1d"⟩,
   ⟨"Ix/Theory/Model/BetaSpine.lean", "Ix/Kernel/Model/BetaSpine.lean", "e6105986031ea47df35adfe77feb2f170303e4035027453cfba57a7d47a35838", "3aef2071043bc804e844e66bc2963c97d94a943f1afcdca6b02b524535b0168c"⟩,
   ⟨"Ix/Theory/Model/BetaSubstitution.lean", "Ix/Kernel/Model/BetaSubstitution.lean", "9118fca2803baee20bb18d3154936cf16e61525c55cb640c9a5b35bf2c80ed45", "8aafd69280f26cd6b545538299112757fbc5c3f23849adb0dc33b13915b15731"⟩,
   ⟨"Ix/Theory/Model/Checking.lean", "Ix/Kernel/Model/Checking.lean", "e04fd5d5d2882717055cd309048dc69fabe512c2a73ba1aa331f452a95be9814", "4f1c80f4f966bf014e6c39ccd102dffa2d786b27829fa1b06f96ec84b52fd2dd"⟩,
