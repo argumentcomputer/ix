@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Kernel.Runtime.Stack
+import Ix.Kernel.Runtime.Close
 
 /-! # Runtime terms with free variables as levels (S1, phase 1)
 
@@ -78,5 +78,35 @@ def s2 : Stack Nat := s1.push (.fvar 0)
 #guard s1.stamp.valid (s2.pop.push (.fvar 0))
 #guard !(s1.stamp.valid (s2.pop.pop.push (.sort .zero)))
 #guard s0.stamp.valid s2.pop.pop
+
+/-! ## The commutation lemmas at work
+
+A λ inferred at `s2`: the body opened with `fvar 2`, its type bound back with
+`abstract1`, and every claim read through `close`. -/
+
+-- `λ (x : #fvar 1). f x` with its body at depth 2 under one binder.
+def body : RExpr Nat := .app (.fvar 0) (.bvar 0)
+def opened : RExpr Nat := body.inst1 (.fvar s2.size)
+
+#guard RExpr.close (s2.size + 1) opened = RExpr.closeAt s2.size 1 body
+#guard (s2.push (.fvar 1)).view = s2.view.push (RExpr.close s2.size (.fvar 1))
+-- The body's type at depth 3, bound as a Π body at depth 2.
+#guard RExpr.closeAt 2 1 ((RExpr.app (.fvar 1) (.fvar 2) : RExpr Nat).abstract1 2) =
+  RExpr.close 3 (.app (.fvar 1) (.fvar 2))
+-- Beta at depth 2 is model substitution of the closed argument.
+#guard RExpr.close 2 ((RExpr.app (.bvar 0) (.fvar 0) : RExpr Nat).inst1 (.fvar 1)) =
+  (RExpr.closeAt 2 1 (.app (.bvar 0) (.fvar 0))).inst (RExpr.close 2 (.fvar 1))
+-- A term made at depth 2 read at depth 4 is its lift by 2.
+#guard RExpr.close 4 (.lam .never (.fvar 1) (.app (.fvar 0) (.bvar 0)) : RExpr Nat) =
+  (RExpr.close 2 (.lam .never (.fvar 1) (.app (.fvar 0) (.bvar 0)))).liftN 2
+
+-- The lemmas themselves, instantiated.
+example : RExpr.close (s2.size + 1) opened = RExpr.closeAt s2.size 1 body :=
+  RExpr.close_open
+    (by simp [body, RExpr.fvarBound, s2, s1, s0, Stack.empty, Stack.size, Stack.push])
+    (by simp [body, RExpr.looseBound])
+
+example (s : Stack Nat) (A : RExpr Nat) :
+    (s.push A).view = s.view.push (RExpr.close s.size A) := Stack.view_push s A
 
 end Tests.Ix.Kernel.RuntimeStack
