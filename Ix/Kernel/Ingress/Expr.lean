@@ -45,7 +45,11 @@ def readExprC (ctx : Context) : (fuel limit : Nat) → (input : Ixon.Expr) →
       let bytes ← requireSome (ctx.blob i) (.malformed "natural literal blob is missing")
       let family ← requireSome ctx.natFamily (.unsupported "natural literal family is not configured")
       return ⟨.natLit family.val (natural bytes.val), .nat bytes.property family.property⟩
-    | .str _ => throw (.unsupported "string literals are not supported")
+    | .str i => do
+      let refs ← requireSome ctx.strings (.unsupported "string literal constants are not configured")
+      let bytes ← requireSome (ctx.blob i) (.malformed "string literal blob is missing")
+      let text ← requireSome (String.fromUTF8? bytes.val) (.malformed "string literal is not valid UTF-8")
+      return ⟨refs.val.stringLiteral text.val, .str bytes.property refs.property text.property⟩
     | .app f a => do
       let f' ← readExprC ctx fuel limit f
       let a' ← readExprC ctx fuel limit a
@@ -129,7 +133,11 @@ def readExprT (ctx : Context) (table : Array (Search (VExpr Address)))
       let bytes ← requireSome (ctx.blob i) (.malformed "natural literal blob is missing")
       let family ← requireSome ctx.natFamily (.unsupported "natural literal family is not configured")
       return ⟨.natLit family.val (natural bytes.val), .nat bytes.property family.property⟩
-    | .str _ => throw (.unsupported "string literals are not supported")
+    | .str i => do
+      let refs ← requireSome ctx.strings (.unsupported "string literal constants are not configured")
+      let bytes ← requireSome (ctx.blob i) (.malformed "string literal blob is missing")
+      let text ← requireSome (String.fromUTF8? bytes.val) (.malformed "string literal is not valid UTF-8")
+      return ⟨refs.val.stringLiteral text.val, .str bytes.property refs.property text.property⟩
     | .app f a => do
       let f' ← readExprT ctx table htable fuel limit hl f
       let a' ← readExprT ctx table htable fuel limit hl a

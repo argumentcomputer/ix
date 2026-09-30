@@ -16,9 +16,9 @@ checker. No byte decoding, hashing, or host-checker verdict enters this path.
 
 namespace Ix.Kernel.Ingress
 
-def context (constants : Constants) (blobs : Blobs) (family : Option (ConstRef Address))
+def context (constants : Constants) (blobs : Blobs) (family : Option (ConstRef Address)) (strings : Option (StringRefs Address))
     (pair : Address × Ixon.Constant) : Context :=
-  { constants, blobs, owner := pair.1, source := pair.2, natFamily := family }
+  { constants, blobs, owner := pair.1, source := pair.2, natFamily := family, strings }
 
 /-- Store indexes built once for a whole input, with their agreement proofs. -/
 structure Indexes (constantStore : Constants) (blobStore : Blobs) where
@@ -32,15 +32,15 @@ def Indexes.build (constants : Constants) (blobs : Blobs) : Indexes constants bl
 
 /-- `context`, answering lookups through the indexes. -/
 def Indexes.context {constants : Constants} {blobs : Blobs} (idx : Indexes constants blobs)
-    (family : Option (ConstRef Address)) (pair : Address × Ixon.Constant) : Context :=
-  { constants, blobs, owner := pair.1, source := pair.2, natFamily := family,
+    (family : Option (ConstRef Address)) (strings : Option (StringRefs Address)) (pair : Address × Ixon.Constant) : Context :=
+  { constants, blobs, owner := pair.1, source := pair.2, natFamily := family, strings,
     findConstant := idx.constants.find, findConstant_eq := idx.constants_eq,
     findBlob := idx.blobs.find, findBlob_eq := idx.blobs_eq }
 
 theorem Indexes.context_eq {constants : Constants} {blobs : Blobs} (idx : Indexes constants blobs)
-    (family : Option (ConstRef Address)) (pair : Address × Ixon.Constant) :
-    idx.context family pair = Ingress.context constants blobs family pair :=
-  Context.ext_stores rfl rfl rfl rfl rfl
+    (family : Option (ConstRef Address)) (strings : Option (StringRefs Address)) (pair : Address × Ixon.Constant) :
+    idx.context family strings pair = Ingress.context constants blobs family strings pair :=
+  Context.ext_stores rfl rfl rfl rfl rfl rfl
 
 theorem referenceSourceBy_congr {f g : Address → Option Ixon.Constant} (h : ∀ a, f a = g a)
     (address : Address) (source : Ixon.Constant) :
@@ -50,21 +50,21 @@ theorem referenceSourceBy_congr {f g : Address → Option Ixon.Constant} (h : �
 /-- Projection records contribute names for an existing owner. Primary records
 contribute one declaration each, preserving their relative input order. -/
 inductive DeclarationsRead (constants : Constants) (blobs : Blobs)
-    (family : Option (ConstRef Address)) : Constants → List (Decl Address) → Prop where
-  | nil : DeclarationsRead constants blobs family [] []
-  | declaration : BlockReads (context constants blobs family pair) block →
-      DeclarationsRead constants blobs family rest decls →
-      DeclarationsRead constants blobs family (pair :: rest) (⟨pair.1, block⟩ :: decls)
+    (family : Option (ConstRef Address)) (strings : Option (StringRefs Address)) : Constants → List (Decl Address) → Prop where
+  | nil : DeclarationsRead constants blobs family strings [] []
+  | declaration : BlockReads (context constants blobs family strings pair) block →
+      DeclarationsRead constants blobs family strings rest decls →
+      DeclarationsRead constants blobs family strings (pair :: rest) (⟨pair.1, block⟩ :: decls)
   | projection : isProjection pair.2.info = true → referenceSource constants pair.1 pair.2 = some ref →
-      DeclarationsRead constants blobs family rest decls →
-      DeclarationsRead constants blobs family (pair :: rest) decls
+      DeclarationsRead constants blobs family strings rest decls →
+      DeclarationsRead constants blobs family strings (pair :: rest) decls
 
 theorem DeclarationsRead.primary {constants : Constants} {blobs : Blobs}
-    {family : Option (ConstRef Address)} {inputs : Constants} {decls : List (Decl Address)}
-    (h : DeclarationsRead constants blobs family inputs decls)
+    {family : Option (ConstRef Address)} {strings : Option (StringRefs Address)} {inputs : Constants} {decls : List (Decl Address)}
+    (h : DeclarationsRead constants blobs family strings inputs decls)
     {pair : Address × Ixon.Constant} (member : pair ∈ inputs)
     (primary : isProjection pair.2.info = false) :
-    ∃ block, BlockReads (context constants blobs family pair) block ∧
+    ∃ block, BlockReads (context constants blobs family strings pair) block ∧
       (⟨pair.1, block⟩ : Decl Address) ∈ decls := by
   induction h generalizing pair with
   | nil => simp at member
@@ -82,51 +82,51 @@ theorem DeclarationsRead.primary {constants : Constants} {blobs : Blobs}
 
 /-- The declaration reader over prebuilt store indexes. -/
 def readDeclarationsIdx {constants : Constants} {blobs : Blobs} (idx : Indexes constants blobs)
-    (family : Option (ConstRef Address)) (fuel : Nat) : (inputs : Constants) →
-    Search { decls : List (Decl Address) // DeclarationsRead constants blobs family inputs decls }
+    (family : Option (ConstRef Address)) (strings : Option (StringRefs Address)) (fuel : Nat) : (inputs : Constants) →
+    Search { decls : List (Decl Address) // DeclarationsRead constants blobs family strings inputs decls }
   | [] => .ok ⟨[], .nil⟩
   | pair :: rest => do
     if hp : isProjection pair.2.info = true then
       match hr : referenceSourceBy idx.constants.find pair.1 pair.2 with
       | none => throw (.malformed "projection record has invalid tables, owner, kind, or position")
       | some _ref =>
-        let decls ← readDeclarationsIdx idx family fuel rest
+        let decls ← readDeclarationsIdx idx family strings fuel rest
         have hr' : referenceSource constants pair.1 pair.2 = some _ref := by
           rw [← hr, referenceSource, referenceSourceBy_congr idx.constants_eq]
         return ⟨decls.val, .projection hp hr' decls.property⟩
     else
-      let block ← readBlockC (idx.context family pair) fuel
-      let decls ← readDeclarationsIdx idx family fuel rest
+      let block ← readBlockC (idx.context family strings pair) fuel
+      let decls ← readDeclarationsIdx idx family strings fuel rest
       return ⟨⟨pair.1, block.val⟩ :: decls.val,
-        .declaration (idx.context_eq family pair ▸ block.property) decls.property⟩
+        .declaration (idx.context_eq family strings pair ▸ block.property) decls.property⟩
 
 /-- The declaration reader: store indexes are built once, then each record is
 read against them. -/
 def readDeclarationsC (constants : Constants) (blobs : Blobs)
-    (family : Option (ConstRef Address)) (fuel : Nat) (inputs : Constants) :
-    Search { decls : List (Decl Address) // DeclarationsRead constants blobs family inputs decls } :=
-  readDeclarationsIdx (Indexes.build constants blobs) family fuel inputs
+    (family : Option (ConstRef Address)) (strings : Option (StringRefs Address)) (fuel : Nat) (inputs : Constants) :
+    Search { decls : List (Decl Address) // DeclarationsRead constants blobs family strings inputs decls } :=
+  readDeclarationsIdx (Indexes.build constants blobs) family strings fuel inputs
 
 /-- The executable declaration reader without its proof component. -/
 def readDeclarations (constants : Constants) (blobs : Blobs)
-    (family : Option (ConstRef Address)) (fuel : Nat) (inputs : Constants) :
+    (family : Option (ConstRef Address)) (strings : Option (StringRefs Address)) (fuel : Nat) (inputs : Constants) :
     Search (List (Decl Address)) :=
-  (readDeclarationsC constants blobs family fuel inputs).map Subtype.val
+  (readDeclarationsC constants blobs family strings fuel inputs).map Subtype.val
 
 theorem readDeclarations_reading {constants : Constants} {blobs : Blobs}
-    {family : Option (ConstRef Address)} {fuel : Nat} {inputs : Constants}
+    {family : Option (ConstRef Address)} {strings : Option (StringRefs Address)} {fuel : Nat} {inputs : Constants}
     {decls : List (Decl Address)}
-    (h : readDeclarations constants blobs family fuel inputs = .ok decls) :
-    DeclarationsRead constants blobs family inputs decls := by
+    (h : readDeclarations constants blobs family strings fuel inputs = .ok decls) :
+    DeclarationsRead constants blobs family strings inputs decls := by
   obtain ⟨⟨_, reading⟩, _, rfl⟩ := Except.map_eq_ok h
   exact reading
 
 /-- The declaration reading is a function of the records: the records
 describe at most one declaration list. -/
 theorem DeclarationsRead.deterministic {constants : Constants} {blobs : Blobs}
-    {family : Option (ConstRef Address)} {inputs : Constants} {left right : List (Decl Address)}
-    (h : DeclarationsRead constants blobs family inputs left)
-    (other : DeclarationsRead constants blobs family inputs right) : left = right := by
+    {family : Option (ConstRef Address)} {strings : Option (StringRefs Address)} {inputs : Constants} {left right : List (Decl Address)}
+    (h : DeclarationsRead constants blobs family strings inputs left)
+    (other : DeclarationsRead constants blobs family strings inputs right) : left = right := by
   induction h generalizing right with
   | nil => cases other; rfl
   | declaration hb _ ih =>
@@ -148,18 +148,18 @@ type and body reading is installed in the accepted environment
 (`Block.Installed`, whose scope `Ix.Kernel.Fidelity` states). This is separate
 from the existence of its model. -/
 structure Installed (constants : Constants) (blobs : Blobs)
-    (family : Option (ConstRef Address)) (env : Env Address) : Prop where
+    (family : Option (ConstRef Address)) (strings : Option (StringRefs Address)) (env : Env Address) : Prop where
   constantKeys : (constants.map Prod.fst).Nodup
   blobKeys : (blobs.map Prod.fst).Nodup
-  declarations : ∃ decls, DeclarationsRead constants blobs family constants decls ∧
+  declarations : ∃ decls, DeclarationsRead constants blobs family strings constants decls ∧
     ∀ d ∈ decls, d.block.Installed d.address env.toEnvironment
 
 /-- Every supplied primary record has its own installed type and body reading. -/
 theorem Installed.primary {constants : Constants} {blobs : Blobs}
-    {family : Option (ConstRef Address)} {env : Env Address}
-    (h : Installed constants blobs family env) {pair : Address × Ixon.Constant}
+    {family : Option (ConstRef Address)} {strings : Option (StringRefs Address)} {env : Env Address}
+    (h : Installed constants blobs family strings env) {pair : Address × Ixon.Constant}
     (member : pair ∈ constants) (primary : isProjection pair.2.info = false) :
-    ∃ block, BlockReads (context constants blobs family pair) block ∧
+    ∃ block, BlockReads (context constants blobs family strings pair) block ∧
       block.Installed pair.1 env.toEnvironment := by
   obtain ⟨decls, reading, installed⟩ := h.declarations
   obtain ⟨block, hb, found⟩ := reading.primary member primary
@@ -202,12 +202,12 @@ namespace Ix.Kernel.Ingress
 universe v
 
 def checkEnvC (cfg : Config) (constants : Constants) (blobs : Blobs)
-    (family : Option (ConstRef Address)) : Except Error { env : Env Address //
-      Installed constants blobs family env ∧
+    (family : Option (ConstRef Address)) (strings : Option (StringRefs Address)) : Except Error { env : Env Address //
+      Installed constants blobs family strings env ∧
       ∀ (V : Type v) [Model.SetTheory V], Nonempty (Model V env) } := do
   if hc : nodupKeys constants = true then
     if hb : nodupKeys blobs = true then
-      let declarations ← (readDeclarationsC constants blobs family cfg.fuel constants).mapError
+      let declarations ← (readDeclarationsC constants blobs family strings cfg.fuel constants).mapError
         (Error.ofSearch "Ixon ingress")
       let checked ← checkDeclsC.{0,v} cfg (Env.emptyWith addressKeyHash) declarations.val
       return ⟨checked.val, ⟨(nodupKeys_iff constants).1 hc, (nodupKeys_iff blobs).1 hb,
@@ -223,22 +223,25 @@ namespace Ix.Kernel
 universe v
 
 /-- Check ordered Ixon constant pairs and their literal blobs. The optional
-literal family must acquire the kernel's natural-number fact before use. -/
+literal family must acquire the kernel's natural-number fact before use; the
+optional string constants are what a string literal reads as, and the
+expansion is then type checked like any other term. -/
 def checkEnv (cfg : Config) (constants : Ingress.Constants) (blobs : Ingress.Blobs)
-    (family : Option (ConstRef Address) := none) : Except Error (Env Address) :=
-  (Ingress.checkEnvC.{v} cfg constants blobs family).map Subtype.val
+    (family : Option (ConstRef Address) := none)
+    (strings : Option (StringRefs Address) := none) : Except Error (Env Address) :=
+  (Ingress.checkEnvC.{v} cfg constants blobs family strings).map Subtype.val
 
 theorem checkEnv_reading {cfg : Config} {constants : Ingress.Constants} {blobs : Ingress.Blobs}
-    {family : Option (ConstRef Address)} {env : Env Address}
-    (h : checkEnv.{v} cfg constants blobs family = .ok env) :
-    Ingress.Installed constants blobs family env := by
+    {family : Option (ConstRef Address)} {strings : Option (StringRefs Address)} {env : Env Address}
+    (h : checkEnv.{v} cfg constants blobs family strings = .ok env) :
+    Ingress.Installed constants blobs family strings env := by
   obtain ⟨⟨_, reading, _⟩, _, rfl⟩ := Except.map_eq_ok h
   exact reading
 
 theorem checkEnv_has_model (V : Type v) [Model.SetTheory V] {cfg : Config}
     {constants : Ingress.Constants} {blobs : Ingress.Blobs}
-    {family : Option (ConstRef Address)} {env : Env Address}
-    (h : checkEnv.{v} cfg constants blobs family = .ok env) : Nonempty (Model V env) := by
+    {family : Option (ConstRef Address)} {strings : Option (StringRefs Address)} {env : Env Address}
+    (h : checkEnv.{v} cfg constants blobs family strings = .ok env) : Nonempty (Model V env) := by
   obtain ⟨⟨_, _, model⟩, _, rfl⟩ := Except.map_eq_ok h
   exact model V
 
@@ -248,16 +251,16 @@ configured fuel (`Ingress.readDeclarations_reading`; the reading is
 deterministic), and the closed indexed check (`checkIndexed`) accepts those
 declarations. -/
 theorem checkEnv_ok_iff {cfg : Config} {constants : Ingress.Constants} {blobs : Ingress.Blobs}
-    {family : Option (ConstRef Address)} {env : Env Address} :
-    checkEnv.{v} cfg constants blobs family = .ok env ↔
+    {family : Option (ConstRef Address)} {strings : Option (StringRefs Address)} {env : Env Address} :
+    checkEnv.{v} cfg constants blobs family strings = .ok env ↔
       (constants.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup ∧
-        ∃ decls, Ingress.readDeclarations constants blobs family cfg.fuel constants = .ok decls ∧
+        ∃ decls, Ingress.readDeclarations constants blobs family strings cfg.fuel constants = .ok decls ∧
           checkIndexed.{v} cfg decls = .ok env := by
   unfold checkEnv Ingress.checkEnvC Ingress.readDeclarations checkIndexed checkDecls
   simp only [← Ingress.nodupKeys_iff]
   by_cases hc : Ingress.nodupKeys constants = true
   · by_cases hb : Ingress.nodupKeys blobs = true
-    · cases hr : Ingress.readDeclarationsC constants blobs family cfg.fuel constants with
+    · cases hr : Ingress.readDeclarationsC constants blobs family strings cfg.fuel constants with
       | error failure =>
         simp [hc, hb, Except.mapError, bind, Except.bind, Except.map]
       | ok declarations =>
@@ -273,8 +276,8 @@ theorem checkEnv_ok_iff {cfg : Config} {constants : Ingress.Constants} {blobs : 
 empty set in every model of the checked environment. -/
 theorem checkEnv_no_proof_of_False (V : Type v) [Model.SetTheory V] {cfg : Config}
     {constants : Ingress.Constants} {blobs : Ingress.Blobs}
-    {family : Option (ConstRef Address)} {env : Env Address}
-    (h : checkEnv.{v} cfg constants blobs family = .ok env)
+    {family : Option (ConstRef Address)} {strings : Option (StringRefs Address)} {env : Env Address}
+    (h : checkEnv.{v} cfg constants blobs family strings = .ok env)
     {r : ConstRef Address} {entry : Model.ConstantEntry Address}
     (hr : env.toEnvironment r = some entry)
     (hA : env.EmptyType.{0,v} entry.universes entry.type) : False := by
@@ -288,8 +291,8 @@ theorem checkEnv_no_proof_of_False (V : Type v) [Model.SetTheory V] {cfg : Confi
 eliminator is installed, no accepted record inhabits the family. -/
 theorem checkEnv_no_inhabitant_of_empty (V : Type v) [Model.SetTheory V] {cfg : Config}
     {constants : Ingress.Constants} {blobs : Ingress.Blobs}
-    {family : Option (ConstRef Address)} {env : Env Address}
-    (h : checkEnv.{v} cfg constants blobs family = .ok env) {source : Address}
+    {family : Option (ConstRef Address)} {strings : Option (StringRefs Address)} {env : Env Address}
+    (h : checkEnv.{v} cfg constants blobs family strings = .ok env) {source : Address}
     {recursor : ConstRef Address}
     (hE : Certified.Basis.Empty.Interface env.toEnvironment source recursor)
     {r : ConstRef Address} {entry : Model.ConstantEntry Address}

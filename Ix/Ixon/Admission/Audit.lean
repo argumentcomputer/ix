@@ -46,8 +46,8 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.WorkAdmission] Ix.Ixon.Ad
 kernel and codec primitives only; the set-difference check below enforces
 that adding the adapter introduces no further extern or unsafe primitive. -/
 /-- info: runtime closure of [Ix.Ixon.Admission.preflight,
-Ix.Ixon.Admission.decodeRecords, Ix.Ixon.Admission.checkBytes]: 1338 compiled functions;
-inherited externs 59, implemented_by 0, unsafe 2, csimp 0 -/
+Ix.Ixon.Admission.decodeRecords, Ix.Ixon.Admission.checkBytes]: 1363 compiled functions;
+inherited externs 63, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Admission.Audit.operations #[`Init, `Std]
 
@@ -136,7 +136,7 @@ run_cmd do
     Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
       ∃ constants,
         Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-          Ix.Kernel.Ingress.Installed constants blobs family env -/
+          Ix.Kernel.Ingress.Installed constants blobs family none env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Verify.Admission.checkBytes_reading
 
@@ -155,7 +155,7 @@ run_cmd do
   Ix.Ixon.Admission.checkBytes limits cfg records blobs family = Except.ok env →
     ∃ constants,
       Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-        Ix.Kernel.Ingress.Installed constants blobs family env ∧
+        Ix.Kernel.Ingress.Installed constants blobs family none env ∧
           Ix.Ixon.Verify.Admission.resourceUnits constants ≤
             2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes -/
 #guard_msgs (whitespace := lax) in

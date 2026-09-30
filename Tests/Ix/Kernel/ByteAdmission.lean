@@ -125,7 +125,7 @@ example {constants : Ingress.Constants} {records : Records}
 example {records : Records} {blobs : Ingress.Blobs} {env : Env Address}
     (h : checkBytes.{1} limits {} records blobs = .ok env) :
     ∃ constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-      Ingress.Installed constants blobs none env ∧
+      Ingress.Installed constants blobs none none env ∧
       Ix.Ixon.Verify.Admission.resourceUnits constants ≤
         2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes :=
   Ix.Ixon.Verify.Admission.checkBytes_resources h

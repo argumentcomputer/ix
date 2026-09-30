@@ -227,7 +227,7 @@ theorem checkBytes_reading {limits : Limits} {cfg : Config} {records : Records}
     {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}
     (accepted : checkBytes.{v} limits cfg records blobs family = .ok env) :
     WithinBatch limits records blobs ∧ ∃ constants,
-      RecordsRead limits records constants ∧ Ingress.Installed constants blobs family env := by
+      RecordsRead limits records constants ∧ Ingress.Installed constants blobs family none env := by
   obtain ⟨within, constants, reading, checked⟩ := (checkBytes_ok_iff _ _ _ _ _ _).mp accepted
   exact ⟨within, constants, reading, Kernel.checkEnv_reading checked⟩
 
@@ -245,7 +245,7 @@ reading and installed declarations. No extra runtime traversal is needed. -/
 theorem checkBytes_resources {limits : Limits} {cfg : Config} {records : Records}
     {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}
     (accepted : checkBytes.{v} limits cfg records blobs family = .ok env) :
-    ∃ constants, RecordsRead limits records constants ∧ Ingress.Installed constants blobs family env ∧
+    ∃ constants, RecordsRead limits records constants ∧ Ingress.Installed constants blobs family none env ∧
       resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes := by
   obtain ⟨within, constants, reading, installed⟩ := checkBytes_reading accepted
   have resources := reading.resourceUnits_le

@@ -39,6 +39,7 @@ inductive ExprLayout where
   | ref (index : UInt64) (universes : Array UInt64)
   | recur (index : UInt64) (universes : Array UInt64)
   | nat (index : UInt64)
+  | str (index : UInt64)
   | app (function argument : ExprLayout)
   | lam (contract : Ixon.BinderContract) (type body : ExprLayout)
   | all (contract : Ixon.BinderContract) (result : Ixon.ValueContract) (type body : ExprLayout)
@@ -60,7 +61,7 @@ def ExprLayout.ofExpr : Ixon.Expr → ExprLayout
   | .letE contract type value body => .letE contract (ofExpr type) (ofExpr value) (ofExpr body)
   | .prj i _ value => .prj i (ofExpr value)
   | .share i => .share i
-  | .str _ => .unsupported
+  | .str i => .str i
 
 /-- Rebuild syntax with the retained table/sharing choices. Payload agreement
 with those tables is established by the checked writer, not by this function. -/
@@ -70,6 +71,7 @@ def ExprLayout.rebuild : ExprLayout → VExpr Address → Option Ixon.Expr
   | .ref i us, .const _ _ => some (.ref i us)
   | .recur i us, .const _ _ => some (.recur i us)
   | .nat i, .natLit _ _ => some (.nat i)
+  | .str i, _ => some (.str i)
   | .app fl al, .app f a => return .app (← fl.rebuild f) (← al.rebuild a)
   | .lam contract tl bl, .lam type body =>
     return .lam contract (← tl.rebuild type) (← bl.rebuild body)

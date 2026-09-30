@@ -35,8 +35,8 @@ run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.BlockOrderProofs] Ix.Ix
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.BlockOrder
 
 /-- info: runtime closure of [Ix.Ixon.BlockOrder.checkBytes,
-Ix.Ixon.BlockOrder.canonicalClasses, Ix.Ixon.BlockOrder.compareExpr]: 1597 compiled functions;
-inherited externs 80, implemented_by 0, unsafe 2, csimp 0 -/
+Ix.Ixon.BlockOrder.canonicalClasses, Ix.Ixon.BlockOrder.compareExpr]: 1619 compiled functions;
+inherited externs 81, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.BlockOrder.Audit.operations #[`Init, `Std]
 
@@ -111,8 +111,7 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.BlockOrder.Audit.operations #[`Init
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_has_model
 
-/-- info: Additional block-order externs: [String.ofByteArray,
-ByteArray.validateUTF8, String.compare, UInt64.decLe, UInt64.add, Array.uset, Array.uget]
+/-- info: Additional block-order externs: [String.compare, UInt64.decLe, UInt64.add, Array.uset, Array.uget]
 ---
 info: Additional block-order unsafe: [] -/
 #guard_msgs (whitespace := lax) in

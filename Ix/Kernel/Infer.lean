@@ -16,14 +16,18 @@ erased at run time. Every function is bounded by explicit fuel. Search
 preserves exhaustion and unresolved causes; `whnf` also retains a sound
 partial reduct when it cannot finish.
 
-* `step` performs one head reduction: typed beta (the argument is inferred and
-  its type converted to the lambda's domain), delta on definitions with
-  bodies, and zeta on lets.
+* `step` performs one head reduction: beta (at a binder that may be Prop, the
+  argument is inferred and its type converted to the lambda's domain; at a
+  uniformly non-Prop binder, `ReductionClaim.betaNever` needs neither), delta
+  on definitions with bodies, and zeta on lets.
 * `whnf` iterates `step`.
 * `inferA` infers the type of an annotated term and validates every binder
   annotation against the inferred codomain sort.
-* `isDefEq` searches for conversion by reducing both sides and comparing
-  structurally, with eta for functions and proof irrelevance as fallbacks.
+* `isDefEq` searches for conversion by lazy delta: both sides are reduced
+  without unfolding their heads and compared; a head is unfolded only when
+  needed, with congruence tried first when both heads unfold and proof
+  irrelevance before unfolding a proof. Eta for functions and structures and
+  proof irrelevance are the structural fallbacks.
 
 Annotations never steer reduction: `step` and `whnf` read no `PropWhen`. -/
 
@@ -158,6 +162,57 @@ def quotientRule (facts : List (ConstantFact β)) : Option (Option (ConstRef β 
     | .quotient .ind => some none
     | _ => none
 
+/-- Delta at the head of an application spine: the head constant's body at its
+universe instance, applied to the same arguments. -/
+def deltaHead (entries : Environment β) (Γ : Context β) : (e : AExpr β) →
+    Option (Reduced.{u,v} entries Γ e)
+  | .const r ls =>
+    match h : entries r with
+    | some entry =>
+      match hb : entry.body with
+      | some body =>
+        if hn : ls.length = entry.universes then some ⟨body.instL ls, ReductionClaim.delta h hb hn⟩
+        else none
+      | none => none
+    | none => none
+  | .app f a => (deltaHead entries Γ f).map fun ⟨f', hf⟩ => ⟨.app f' a, hf.appHead⟩
+  | _ => none
+
+/-- Whether the type telescope marks its value after `n` arguments as a proof:
+the binder consumed last is annotated `allZero []`, a codomain that is a
+proposition at every instance. -/
+def telescopeProof : AExpr β → Nat → Bool
+  | .forallE p _ B, n + 1 =>
+    if n = 0 then (match p with | .allZero [] _ => true | _ => false) else telescopeProof B n
+  | _, _ => false
+
+/-- A cheap syntactic test that a term is a proof: its head constant's type
+says so for its number of arguments. It only orders the search. -/
+def proofHead (entries : Environment β) (e : AExpr β) : Bool :=
+  match spine e [] with
+  | (.const r _, args) =>
+    match entries r with
+    | some entry => telescopeProof entry.type args.length
+    | none => false
+  | _ => false
+
+/-- Syntactic conversion up to universe equivalence, without any reduction:
+the congruence lazy delta tries before unfolding two equal heads. It never
+searches, so a failed attempt costs one traversal. -/
+def quickConv (entries : Environment β) (Γ : Context β) : (a b : AExpr β) →
+    Option (Conv.{u,v} entries Γ a b)
+  | .app f x, .app g y => do
+    let ⟨hf⟩ ← quickConv entries Γ f g
+    let ⟨hx⟩ ← quickConv entries Γ x y
+    return ⟨ConvClaim.app hf hx⟩
+  | .const r ls, .const r' ls' =>
+    if hr : r = r' then
+      if hl : levelsEquiv ls ls' then some ⟨hr ▸ ConvClaim.const (levelsEquiv_sound hl)⟩ else none
+    else none
+  | .sort l, .sort l' =>
+    if he : levelEquiv l l' then some ⟨ConvClaim.sort (levelEquiv_sound he)⟩ else none
+  | a, b => if h : a = b then some ⟨h ▸ ConvClaim.refl a⟩ else none
+
 mutual
 
 /-- One head reduction step through the application spine. -/
@@ -168,6 +223,7 @@ def step : Nat → (entries : Environment β) → (Γ : Context β) → (e : AEx
     match e with
     | .app f a =>
       match f with
+      | .lam .never _ b => .ok ⟨b.inst a, ReductionClaim.betaNever⟩
       | .lam p D b => do
         let ⟨A', ha⟩ ← inferA fuel entries Γ a
         let ⟨hc⟩ ← isDefEq fuel entries Γ A' D
@@ -464,6 +520,61 @@ def whnf : Nat → (entries : Environment β) → (Γ : Context β) → (e : AEx
     | .error .noMatch => ⟨e, ReductionClaim.refl e, none⟩
     | .error failure => ⟨e, ReductionClaim.refl e, some failure⟩
 
+/-- Weak head normalization without delta at the head: beta, zeta, iota,
+quotient and projection rules only. -/
+def whnfCore : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    Normalized.{u,v} entries Γ e
+  | 0, _, _, e => ⟨e, ReductionClaim.refl e, some .exhausted⟩
+  | fuel + 1, entries, Γ, e =>
+    let next : Search (Reduced.{u,v} entries Γ e) :=
+      if (deltaHead.{u,v} entries Γ e).isSome then
+        match e with
+        | .app f x =>
+          Search.orElse ((iota fuel entries Γ (.app f x)).mapError SearchFailure.speculative) fun _ =>
+            (quotIota fuel entries Γ (.app f x)).mapError SearchFailure.speculative
+        | _ => .error .noMatch
+      else step fuel entries Γ e
+    match next with
+    | .ok ⟨e', h⟩ =>
+      match whnfCore fuel entries Γ e' with
+      | ⟨e'', h', stopped⟩ => ⟨e'', h.trans h', stopped⟩
+    | .error .noMatch => ⟨e, ReductionClaim.refl e, none⟩
+    | .error failure => ⟨e, ReductionClaim.refl e, some failure⟩
+
+/-- Lazy delta: normalize both sides without head delta and compare; unfold a
+head only when the comparison needs it, trying syntactic congruence first
+when both heads unfold. On the first round only, proof irrelevance is tried
+before unfolding a proof. -/
+def lazyDelta : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) → Bool →
+    Search (Conv.{u,v} entries Γ a b)
+  | 0, _, _, _, _, _ => .error .exhausted
+  | fuel + 1, entries, Γ, a, b, first =>
+    match whnfCore fuel entries Γ a, whnfCore fuel entries Γ b with
+    | ⟨a', ha, stoppedA⟩, ⟨b', hb, stoppedB⟩ =>
+      let compared : Search (Conv.{u,v} entries Γ a' b') :=
+        if h : a' = b' then .ok ⟨h ▸ ConvClaim.refl a'⟩ else
+        let proof : Search (Conv.{u,v} entries Γ a' b') :=
+          if first && (proofHead entries a' || proofHead entries b') then
+            proofIrrelevance fuel entries Γ a' b'
+          else .error .noMatch
+        Search.orElse proof fun _ =>
+          match deltaHead.{u,v} entries Γ a', deltaHead.{u,v} entries Γ b' with
+          | none, none => isDefEqCore fuel entries Γ a' b'
+          | some ⟨a'', ha'⟩, none =>
+            (lazyDelta fuel entries Γ a'' b' false).map fun ⟨hc⟩ =>
+              ⟨ConvClaim.ofReductions ha' (ReductionClaim.refl b') hc⟩
+          | none, some ⟨b'', hb'⟩ =>
+            (lazyDelta fuel entries Γ a' b'' false).map fun ⟨hc⟩ =>
+              ⟨ConvClaim.ofReductions (ReductionClaim.refl a') hb' hc⟩
+          | some ⟨a'', ha'⟩, some ⟨b'', hb'⟩ =>
+            match quickConv.{u,v} entries Γ a' b' with
+            | some c => .ok c
+            | none =>
+              (lazyDelta fuel entries Γ a'' b'' false).map fun ⟨hc⟩ =>
+                ⟨ConvClaim.ofReductions ha' hb' hc⟩
+      Search.remember stoppedA <| Search.remember stoppedB <|
+        compared.map fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha hb hc⟩
+
 /-- Type inference on annotated terms, validating every binder annotation. -/
 def inferA : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
     Search (Typed.{u,v} entries Γ e)
@@ -623,17 +734,14 @@ def isDefEqCore : Nat → (entries : Environment β) → (Γ : Context β) → (
         Search.orElse ((etaStruct fuel entries Γ b a).map fun ⟨c⟩ => ⟨c.symm⟩) fun _ =>
           proofIrrelevance fuel entries Γ a b).mapError SearchFailure.conversion
 
-/-- Conversion: reduce both sides, then compare. -/
+/-- Conversion by lazy delta (`lazyDelta`): reduce both sides without unfolding
+their heads, compare, and unfold only as needed. -/
 def isDefEq : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
     Search (Conv.{u,v} entries Γ a b)
   | 0, _, _, _, _ => .error .exhausted
   | fuel + 1, entries, Γ, a, b =>
     if h : a = b then .ok ⟨h ▸ ConvClaim.refl a⟩ else
-    match whnf fuel entries Γ a, whnf fuel entries Γ b with
-    | ⟨a', ha, stoppedA⟩, ⟨b', hb, stoppedB⟩ =>
-      (Search.remember stoppedA <| Search.remember stoppedB <|
-        (isDefEqCore fuel entries Γ a' b').map fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha hb hc⟩).mapError
-        SearchFailure.conversion
+    (lazyDelta fuel entries Γ a b true).mapError SearchFailure.conversion
 
 end
 

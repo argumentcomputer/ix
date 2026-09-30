@@ -116,10 +116,10 @@ end Ix.Kernel.Audit
 #guard_kernel_axioms Ix.Kernel.check_installed [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDecl_preserves [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDecls_preserves [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.readExpr_reading [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.readBlock_reading [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.ExprReads.deterministic [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.readExpr_agree [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.readExpr_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.readBlock_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.ExprReads.deterministic [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.readExpr_agree [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Ingress.Installed.primary [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkFamilyC [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkEnv_reading [propext, Classical.choice, Quot.sound]
@@ -130,23 +130,23 @@ end Ix.Kernel.Audit
 #guard_kernel_axioms Ix.Kernel.Env.emptyType_of_empty [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.no_inhabitant_of_empty [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkEnv_ok_iff [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.DeclarationsRead.deterministic [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.BlockReads.deterministic [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeExpr_reading [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeExpr_roundtrip [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeBlock_reading [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeBlock_roundtrip [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.DeclarationsRead.deterministic [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.BlockReads.deterministic [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeExpr_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeExpr_roundtrip [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeBlock_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeBlock_roundtrip [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Egress.writeProjection_reading [propext]
 #guard_kernel_axioms Ix.Kernel.Egress.writeProjection_roundtrip [propext]
-#guard_kernel_axioms Ix.Kernel.Egress.readRecord_reading [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeRecord_reading [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeRecord_source [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.record_roundtrip [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.readRecords_reading [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeRecords_reading [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.records_roundtrip [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.readRecords [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeRecords [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.readRecord_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeRecord_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeRecord_source [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.record_roundtrip [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.readRecords_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeRecords_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.records_roundtrip [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.readRecords [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeRecords [propext, Classical.choice, Quot.sound]
 
 /-! ## Import and runtime closures -/
 
@@ -159,20 +159,20 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Aud
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Batteries.Data.RBMap
 
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
-Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 993 compiled functions; inherited externs 20,
+Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 1004 compiled functions; inherited externs 20,
 implemented_by 0, unsafe 1, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
-Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 1041 compiled functions;
-inherited externs 30, implemented_by 0, unsafe 2, csimp 0 -/
+Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 1066 compiled functions;
+inherited externs 34, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.Egress.readRecords, Ix.Kernel.Egress.writeRecords,
-Ix.Kernel.Egress.writeExpr, Ix.Kernel.Egress.writeProjection]: 207 compiled functions;
-inherited externs 22, implemented_by 0, unsafe 2, csimp 0 -/
+Ix.Kernel.Egress.writeExpr, Ix.Kernel.Egress.writeProjection]: 221 compiled functions;
+inherited externs 26, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.egressOperations Ix.Kernel.Audit.runtimeAllowlist
 
@@ -206,22 +206,26 @@ its reading, model, and no-False statements are frozen like the K0 ones, as is
 the syntactic `EmptyType` corollary for constructor-free families. -/
 
 /-- info: @Ix.Kernel.checkEnv_reading : ∀ {cfg : Ix.Kernel.Config} {constants : Ix.Kernel.Ingress.Constants}
-  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
-  Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env → Ix.Kernel.Ingress.Installed constants blobs family env -/
+  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)}
+  {strings : Option (Ix.Kernel.StringRefs Address)} {env : Ix.Kernel.Env Address},
+  Ix.Kernel.checkEnv cfg constants blobs family strings = Except.ok env →
+    Ix.Kernel.Ingress.Installed constants blobs family strings env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.checkEnv_reading
 
 /-- info: Ix.Kernel.checkEnv_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config}
   {constants : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
-  {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
-  Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env → Nonempty (Ix.Kernel.Model V env) -/
+  {family : Option (Ix.Kernel.ConstRef Address)} {strings : Option (Ix.Kernel.StringRefs Address)}
+  {env : Ix.Kernel.Env Address},
+  Ix.Kernel.checkEnv cfg constants blobs family strings = Except.ok env → Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.checkEnv_has_model
 
 /-- info: Ix.Kernel.checkEnv_no_proof_of_False : ∀ (V : Type u_1) [Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config}
   {constants : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
-  {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
-  Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env →
+  {family : Option (Ix.Kernel.ConstRef Address)} {strings : Option (Ix.Kernel.StringRefs Address)}
+  {env : Ix.Kernel.Env Address},
+  Ix.Kernel.checkEnv cfg constants blobs family strings = Except.ok env →
     ∀ {r : Ix.Kernel.ConstRef Address} {entry : Ix.Kernel.Model.ConstantEntry Address},
       env.toEnvironment r = some entry → env.EmptyType entry.universes entry.type → False -/
 #guard_msgs (whitespace := lax) in
@@ -248,8 +252,9 @@ the syntactic `EmptyType` corollary for constructor-free families. -/
 
 /-- info: Ix.Kernel.checkEnv_no_inhabitant_of_empty : ∀ (V : Type u_1) [Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config}
   {constants : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
-  {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
-  Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env →
+  {family : Option (Ix.Kernel.ConstRef Address)} {strings : Option (Ix.Kernel.StringRefs Address)}
+  {env : Ix.Kernel.Env Address},
+  Ix.Kernel.checkEnv cfg constants blobs family strings = Except.ok env →
     ∀ {source : Address} {recursor : Ix.Kernel.ConstRef Address},
       Ix.Kernel.Certified.Basis.Empty.Interface env.toEnvironment source recursor →
         ∀ {r : Ix.Kernel.ConstRef Address} {entry : Ix.Kernel.Model.ConstantEntry Address},
@@ -260,20 +265,22 @@ the syntactic `EmptyType` corollary for constructor-free families. -/
 #check @Ix.Kernel.checkEnv_no_inhabitant_of_empty
 
 /-- info: @Ix.Kernel.checkEnv_ok_iff : ∀ {cfg : Ix.Kernel.Config} {constants : Ix.Kernel.Ingress.Constants}
-  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
-  Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env ↔
+  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)}
+  {strings : Option (Ix.Kernel.StringRefs Address)} {env : Ix.Kernel.Env Address},
+  Ix.Kernel.checkEnv cfg constants blobs family strings = Except.ok env ↔
     (List.map Prod.fst constants).Nodup ∧
       (List.map Prod.fst blobs).Nodup ∧
         ∃ decls,
-          Ix.Kernel.Ingress.readDeclarations constants blobs family cfg.fuel constants = Except.ok decls ∧
+          Ix.Kernel.Ingress.readDeclarations constants blobs family strings cfg.fuel constants = Except.ok decls ∧
             Ix.Kernel.checkIndexed cfg decls = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.checkEnv_ok_iff
 
 /-- info: @Ix.Kernel.Ingress.DeclarationsRead.deterministic : ∀ {constants : Ix.Kernel.Ingress.Constants}
   {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)}
-  {inputs : Ix.Kernel.Ingress.Constants} {left right : List (Ix.Kernel.Decl Address)},
-  Ix.Kernel.Ingress.DeclarationsRead constants blobs family inputs left →
-    Ix.Kernel.Ingress.DeclarationsRead constants blobs family inputs right → left = right -/
+  {strings : Option (Ix.Kernel.StringRefs Address)} {inputs : Ix.Kernel.Ingress.Constants}
+  {left right : List (Ix.Kernel.Decl Address)},
+  Ix.Kernel.Ingress.DeclarationsRead constants blobs family strings inputs left →
+    Ix.Kernel.Ingress.DeclarationsRead constants blobs family strings inputs right → left = right -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Ingress.DeclarationsRead.deterministic

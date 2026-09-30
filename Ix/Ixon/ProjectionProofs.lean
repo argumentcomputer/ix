@@ -295,10 +295,10 @@ theorem Expanded.origin {limit : Nat} {input output : Ingress.Constants}
 
 theorem Expanded.primary {limit : Nat} {input output : Ingress.Constants}
     {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}
-    (h : Expanded limit input output) (installed : Ingress.Installed output blobs family env)
+    (h : Expanded limit input output) (installed : Ingress.Installed output blobs family none env)
     {pair : Address × _root_.Ixon.Constant} (mem : pair ∈ input)
     (primary : Ingress.isProjection pair.2.info = false) :
-    ∃ block, Ingress.BlockReads (Ingress.context output blobs family pair) block ∧
+    ∃ block, Ingress.BlockReads (Ingress.context output blobs family none pair) block ∧
       block.Installed pair.1 env.toEnvironment :=
   installed.primary (h.2.preserves mem) primary
 
@@ -344,7 +344,7 @@ theorem checkBytes_reading {maxProjections : Nat} {limits : Admission.Limits} {c
     {records : Admission.Records} {blobs : Ingress.Blobs} {family : Option (ConstRef Address)}
     {env : Env Address} (h : checkBytes.{v} maxProjections limits cfg records blobs family = .ok env) :
     ∃ input output, Verify.Admission.RecordsRead limits records input ∧
-      Expanded maxProjections input output ∧ Ingress.Installed output blobs family env := by
+      Expanded maxProjections input output ∧ Ingress.Installed output blobs family none env := by
   obtain ⟨_, input, output, reading, expanded, checked⟩ := (checkBytes_ok_iff _ _ _ _ _ _ _).mp h
   exact ⟨input, output, reading, expanded, Kernel.checkEnv_reading checked⟩
 

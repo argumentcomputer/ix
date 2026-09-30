@@ -55,8 +55,8 @@ run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.ProjectionProofs] Ix.Ix
 /- Measured independently before freezing. Added primitives are standard
 array and integer operations used by pure BLAKE3, not hash FFI calls. -/
 /-- info: runtime closure of [Ix.Ixon.Projection.address,
-Ix.Ixon.Projection.reconstruct, Ix.Ixon.Projection.checkBytes]: 1469 compiled functions;
-inherited externs 73, implemented_by 0, unsafe 2, csimp 0 -/
+Ix.Ixon.Projection.reconstruct, Ix.Ixon.Projection.checkBytes]: 1493 compiled functions;
+inherited externs 76, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Projection.Audit.operations #[`Init, `Std]
 
@@ -163,7 +163,7 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
   Ix.Ixon.Projection.checkBytes maxProjections limits cfg records blobs family = Except.ok env →
     ∃ input output,
       Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
-        Ix.Ixon.Projection.Expanded maxProjections input output ∧ Ix.Kernel.Ingress.Installed output blobs family env -/
+        Ix.Ixon.Projection.Expanded maxProjections input output ∧ Ix.Kernel.Ingress.Installed output blobs family none env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_reading
 
@@ -175,9 +175,19 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_has_model
 
-/-- info: Additional projection externs: [ByteArray.mk, Array.emptyWithCapacity,
-UInt32.toNat, Nat.shiftRight, Array.set, UInt32.lor, UInt32.shiftLeft, UInt32.sub,
-UInt32.shiftRight, UInt32.xor, UInt32.add, UInt64.toUInt32, UInt32.ofNat, Nat.log2]
+/-- info: Additional projection externs: [ByteArray.mk,
+ Array.emptyWithCapacity,
+ Nat.shiftRight,
+ Array.set,
+ UInt32.lor,
+ UInt32.shiftLeft,
+ UInt32.sub,
+ UInt32.shiftRight,
+ UInt32.xor,
+ UInt32.add,
+ UInt64.toUInt32,
+ UInt32.ofNat,
+ Nat.log2]
 ---
 info: Additional projection unsafe: [] -/
 #guard_msgs (whitespace := lax) in

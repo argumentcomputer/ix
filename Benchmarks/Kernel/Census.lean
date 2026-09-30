@@ -251,11 +251,16 @@ def run (args : List String) : IO UInt32 := do
       | none => named.addr
     let current := names.getD root #[]
     if current.size < 3 then names := names.insert root (current.push (toString name))
-  let natFamily : Option (ConstRef Address) := do
-    let named ← env.named[Ix.Name.fromLeanName `Nat]?
+  let resolveName (name : Lean.Name) : Option (ConstRef Address) := do
+    let named ← env.named[Ix.Name.fromLeanName name]?
     let source ← store[named.addr]?
     let root := owner named.addr source
     Ingress.reference [(named.addr, source), (root, ← store[root]?)] named.addr
+  let natFamily := resolveName `Nat
+  let strings : Option (StringRefs Address) := do
+    return { char := ← resolveName `Char, charOfNat := ← resolveName `Char.ofNat,
+             natural := ← natFamily, stringOfList := ← resolveName `String.ofList,
+             listNil := ← resolveName `List.nil, listCons := ← resolveName `List.cons }
   let ordered := order store
   let cfg : Config := { fuel := options.fuel }
   let probe ← IO.getEnv "CENSUS_PROBE"
@@ -263,11 +268,11 @@ def run (args : List String) : IO UInt32 := do
   -- another thread, so no object is marked multi-threaded (for profiling).
   let inline := (← IO.getEnv "CENSUS_INLINE").isSome
   IO.eprintln s!"census: {store.size} records, {ordered.size} primary, {env.blobs.size} blobs, \
-    Nat family {natFamily.isSome}, loaded in {(← IO.monoMsNow) - started} ms"
+    Nat family {natFamily.isSome}, string constants {strings.isSome}, loaded in {(← IO.monoMsNow) - started} ms"
   let read (address : Address) : Except SearchFailure (Block Address) :=
     let source := store[address]!
     let context := Ingress.context (localStore store source) (localBlobs env.blobs source)
-      natFamily (address, source)
+      natFamily strings (address, source)
     Ingress.readBlock context cfg.fuel
   -- Separately stored recursors by the family their major premise names.
   let mut recursors : Std.HashMap Address (Array (Address × Const Address)) := {}

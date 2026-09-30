@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Ixon.Types
 import Ix.Kernel.Const
+import Ix.Kernel.StringLiteral
 import Std.Data.TreeMap.Lemmas
 
 /-! # Exact readings of anonymous Ixon input
@@ -238,6 +239,9 @@ structure Context where
   owner : Address
   source : Ixon.Constant
   natFamily : Option (ConstRef Address) := none
+  /-- The constants a string literal expands to; like the natural-number
+  family, an explicit choice whose use the kernel then checks. -/
+  strings : Option (StringRefs Address) := none
   /-- Lookup in `constants`, possibly through an index. -/
   findConstant : Address → Option Ixon.Constant := lookup constants
   findConstant_eq : ∀ address, findConstant address = lookup constants address := by
@@ -250,12 +254,13 @@ namespace Context
 
 /-- A context over the given stores, looked up directly. -/
 def ofStores (constants : Constants) (blobs : Blobs) (owner : Address) (source : Ixon.Constant)
-    (natFamily : Option (ConstRef Address) := none) : Context :=
-  { constants, blobs, owner, source, natFamily }
+    (natFamily : Option (ConstRef Address) := none)
+    (strings : Option (StringRefs Address) := none) : Context :=
+  { constants, blobs, owner, source, natFamily, strings }
 
 /-- Replace a context's blob store. -/
 def withBlobs (ctx : Context) (blobs : Blobs) : Context :=
-  ofStores ctx.constants blobs ctx.owner ctx.source ctx.natFamily
+  ofStores ctx.constants blobs ctx.owner ctx.source ctx.natFamily ctx.strings
 
 def level (ctx : Context) (index : UInt64) : Option VLevel :=
   (ctx.source.univs[index.toNat]?).map levelTree
@@ -303,15 +308,15 @@ theorem blob_eq (ctx : Context) (index : UInt64) :
 /-- Contexts agreeing on their stores and record agree; the lookup functions
 are determined by the stores. -/
 theorem ext_stores {a b : Context} (hc : a.constants = b.constants) (hb : a.blobs = b.blobs)
-    (ho : a.owner = b.owner) (hs : a.source = b.source) (hf : a.natFamily = b.natFamily) :
-    a = b := by
+    (ho : a.owner = b.owner) (hs : a.source = b.source) (hf : a.natFamily = b.natFamily)
+    (hstr : a.strings = b.strings) : a = b := by
   have hfa := a.findConstant_funext
   have hfb := b.findConstant_funext
   have hba := a.findBlob_funext
   have hbb := b.findBlob_funext
   cases a; cases b
-  simp only at hc hb ho hs hf hfa hfb hba hbb
-  subst hc hb ho hs hf hfa hfb hba hbb
+  simp only at hc hb ho hs hf hstr hfa hfb hba hbb
+  subst hc hb ho hs hf hstr hfa hfb hba hbb
   rfl
 
 end Context
@@ -331,6 +336,8 @@ inductive ExprReads (ctx : Context) : Nat → Ixon.Expr → VExpr Address → Pr
       ExprReads ctx limit (.recur i us) (.const ref levels)
   | nat : ctx.blob i = some bytes → ctx.natFamily = some family →
       ExprReads ctx limit (.nat i) (.natLit family (natural bytes))
+  | str : ctx.blob i = some bytes → ctx.strings = some refs → String.fromUTF8? bytes = some text →
+      ExprReads ctx limit (.str i) (refs.stringLiteral text)
   | app : ExprReads ctx limit f f' → ExprReads ctx limit a a' →
       ExprReads ctx limit (.app f a) (.app f' a')
   | lam : ExprReads ctx limit type type' → ExprReads ctx limit body body' →

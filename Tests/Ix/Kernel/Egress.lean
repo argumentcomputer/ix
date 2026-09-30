@@ -121,7 +121,7 @@ def variants : Ingress.Constants :=
 #guard isMalformed (readRecord (Ingress.Context.ofStores falseStore [] (address 4)
   { falseProjection with info := .rPrj ⟨0, address 3⟩ }) 100)
 #guard isMalformed (readRecord (Ingress.Context.ofStores [] [] (address 4) falseProjection) 100)
-#guard isMalformed (Ingress.readDeclarationsC falseStore [] none 100
+#guard isMalformed (Ingress.readDeclarationsC falseStore [] none none 100
   [(address 4, { falseProjection with info := .rPrj ⟨0, address 3⟩ })])
 #guard isMalformed (writeRecord (Ingress.Context.ofStores falseStore [] (address 5) identity) 100
   (.projection .recursor (.member (address 3) 0)))

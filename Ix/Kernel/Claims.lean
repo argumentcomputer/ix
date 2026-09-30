@@ -20,7 +20,9 @@ erased at run time. Besides the ported `TypingClaim` and `ConversionClaim`:
 * `ReductionClaim`: head reduction preserves interpretation and
   well-denotedness. Beta needs the argument's typing at the lambda's own
   domain (`ReductionClaim.beta`), which the checker re-establishes at each
-  redex; delta and zeta need nothing.
+  redex, except at a uniformly non-Prop binder (`ReductionClaim.betaNever`),
+  where the redex's own well-denotedness suffices; delta and zeta need
+  nothing.
 
 Every rule below is proved from the ported model; none is assumed. -/
 
@@ -225,6 +227,37 @@ theorem beta {p : Certified.PropWhen} {D b a A' : AExpr β} (ha : TypingClaim.{u
     hc V constants hM levels env hΓ hA'w hDw ▸ ham
   obtain ⟨hw', eq⟩ := wellDenoted_beta hlw haw ham'
   exact ⟨eq, hw'⟩
+
+/-- Beta at a uniformly non-Prop binder needs no premise about the argument:
+where the redex is well denoted, the function's domain is the lambda's own
+domain (`piR_dom_unique` for a nonzero regime), so the argument is a member of
+it. The argument follows con-leche's graph-regime domain uniqueness proof
+(`ConLeche/Model/Rules/RedSoundKit.lean`, `betaDomPos`, revision
+`ae0c0c4e4ce6a0081648aff03fe9c39d002c4526`, Apache-2.0), first checked as
+`plans/review/BetaNever.lean`. -/
+theorem betaNever {D b a : AExpr β} :
+    ReductionClaim.{u,v} entries Γ (.app (.lam .never D b) a) (b.inst a) := by
+  intro V _ constants _ levels env _ hw
+  obtain ⟨hlw, haw, k, A, B, hf, ham, _⟩ := hw
+  have hk : k ≠ 0 := by
+    intro hk
+    subst k
+    have hpt := eq_pt_of_mem_piR_zero hf
+    change lamR 1 (interp constants levels env D)
+      (fun x => interp constants levels (Valuation.cons x env) b) = pt at hpt
+    exact lamR_ne_pt (by decide : 1 ≠ 0) hpt
+  have hlam := hlw
+  obtain ⟨_, _, _, C, _, hC⟩ := hlam
+  have hown : interp constants levels env (.lam .never D b) ∈ˢ
+      piR 1 (interp constants levels env D) C := by
+    change lamR 1 _ _ ∈ˢ piR 1 _ C
+    exact lamR_mem fun x hx => (hC x hx).1
+  have hdom := piR_dom_unique (by decide : 1 ≠ 0) hk hown hf
+  have haD : interp constants levels env a ∈ˢ interp constants levels env D := by
+    rw [hdom]
+    exact ham
+  obtain ⟨formed, equation⟩ := wellDenoted_beta hlw haw haD
+  exact ⟨equation, formed⟩
 
 theorem delta {r : ConstRef β} {entry : ConstantEntry β} {body : AExpr β} {ls : List VLevel}
     (h : entries r = some entry) (hb : entry.body = some body) (hn : ls.length = entry.universes) :

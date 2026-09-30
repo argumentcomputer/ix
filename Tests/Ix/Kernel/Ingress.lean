@@ -42,7 +42,7 @@ def declined (constants : Constants) : Bool :=
   | _ => false
 
 def ctx (source : Ixon.Constant := identity) : Context :=
-  context [(address 1, identity)] [] none (address 1, source)
+  context [(address 1, identity)] [] none none (address 1, source)
 
 def malformed (context : Context) (input : Ixon.Expr) : Bool :=
   match readExpr context 100 input with
@@ -138,7 +138,7 @@ def separatedFalse (recursor : Ixon.Recursor := falseRecursor) : Constants :=
 
 #guard accepts separatedFalse
 -- `checkEnv_ok_iff`: the entry point agrees with reading then the closed check.
-#guard match readDeclarations separatedFalse [] none ({} : Config).fuel separatedFalse with
+#guard match readDeclarations separatedFalse [] none none ({} : Config).fuel separatedFalse with
   | .ok decls => (check.{0,1} {} decls).isOk && decls.length == 2
   | .error _ => false
 -- Production layout: the separately stored eliminator at its own record
@@ -196,6 +196,23 @@ def literalContext : Context :=
 #guard malformed literalContext (.nat 1)
 #guard malformed (literalContext.withBlobs []) (.nat 0)
 #guard natural ⟨#[]⟩ == 0
+
+/-- String literals read as their constructor expansion once the string
+constants are configured; without them they are unsupported. -/
+def stringRefs : StringRefs Address :=
+  ⟨.member (address 20) 0, .member (address 21) 0, .member (address 3) 0,
+   .member (address 22) 0, .ctor (address 23) 0 0, .ctor (address 23) 0 1⟩
+
+def stringContext : Context :=
+  let base := ctx { identity with refs := #[address 9] }
+  Context.ofStores base.constants [(address 9, "hé".toUTF8)] base.owner base.source
+    (some (.member (address 3) 0)) (some stringRefs)
+
+#guard match readExpr stringContext 10 (.str 0) with
+  | .ok value => value == stringRefs.stringLiteral "hé"
+  | _ => false
+#guard unsupported (Ixon.Expr.str 0)
+#guard malformed (stringContext.withBlobs [(address 9, ⟨#[0xff]⟩)]) (.str 0)
 #guard natural ⟨#[0, 0]⟩ == 0
 #guard levelTree (.max (.var 0) (.imax .zero (.var 1))) ==
   VLevel.max (.param 0) (.imax .zero (.param 1))
@@ -205,6 +222,6 @@ example (V : Type 1) [Model.SetTheory V] {env : Env Address}
   checkEnv_has_model V h
 
 example {env : Env Address} (h : checkEnv.{1} {} falseStore [] = .ok env) :
-    _root_.Ix.Kernel.Ingress.Installed falseStore [] none env := checkEnv_reading h
+    _root_.Ix.Kernel.Ingress.Installed falseStore [] none none env := checkEnv_reading h
 
 end Tests.Ix.Kernel.Ingress
