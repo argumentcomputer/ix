@@ -18,7 +18,7 @@ inductive Head where
   /-- A `case` entry: the key `T.casesOn`. -/
   | cases (c : CId)
   | prim (op : PrimOp)
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 mutual
 inductive Value where

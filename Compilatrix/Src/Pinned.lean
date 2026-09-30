@@ -47,6 +47,8 @@ def constRows : List (String × String) :=
     ("Bool.true", "a29a636176cf1135d077eb074798f9007c78e7801383e9cff363bae5edf05762"),
     ("Bool.false", "dda12bcb330727f6dfb816bc9752aabd0520e6515b79fc8a5a9e713866f4c63e"),
     ("Eq", "c37d6290e00fb865fb5db7bce18fd69e6d1674ad573724b85466ea9f7578a207"),
+    ("Decidable.isFalse", "8cc0e1360c1b29108dab3d6172e7fce8a9aa9640daa4bbe99ba1305d9623624b"),
+    ("Decidable.isTrue", "363d071182be414e1a58599b83f5e19f9b873723054f4287ba69705aafef27da"),
     ("Char", "4c59bc4eac82d31ebed59bb206909dbded65b92fd56de2518fcdadb0a42c11a0"),
     ("Char.ofNat", "caf51b039d71cfce7063e106064f9435f5337bbc42567c8c78b5f66c7f087920"),
     ("String.ofList", "272ea5ce6bab8958165c7f56d71ffe2a5b175ed58110126dfa96e1f8a0c99ad2"),
@@ -106,6 +108,7 @@ def known (p : Program) : Known :=
   let at_ := fun name => p.lookup (constAddr name)
   { nat := at_ "Nat", natZero := at_ "Nat.zero", natSucc := at_ "Nat.succ"
     natRec := at_ "Nat.rec", bool := at_ "Bool", boolTrue := at_ "Bool.true"
-    boolFalse := at_ "Bool.false", eq := at_ "Eq" }
+    boolFalse := at_ "Bool.false", eq := at_ "Eq", decIsFalse := at_ "Decidable.isFalse"
+    decIsTrue := at_ "Decidable.isTrue" }
 
 end Compilatrix.Src.Pinned

@@ -262,6 +262,10 @@ structure Known where
   boolTrue : Option CId := none
   boolFalse : Option CId := none
   eq : Option CId := none
+  /-- `Decidable.isFalse`/`isTrue`: erasure retags them as `Bool.false`/`true`
+  (note 02 §4.1, D19). -/
+  decIsFalse : Option CId := none
+  decIsTrue : Option CId := none
   deriving Repr, Inhabited
 
 /-- A resolved program with its unfolding table and roots.
