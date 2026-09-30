@@ -29,7 +29,12 @@ from the table rows by M1.B3).
 5. Xl's remaining stuck cases: a row's stack cells must fit the scratch
    registers it does not name; calls, returns and tail calls take exactly
    the convention's locations, at most two results, and tail calls at most
-   seven arguments; a move is never cell to cell.
+   seven arguments; a move is never cell to cell;
+6. the row runs the same in any registers (`rowShapeOk`): no stack
+   traffic and no 8- or 16-bit write-only register destination outside a
+   fused consumer (found by the soundness proof, M2.6: such a write keeps
+   the old high bits of its location, which Xv's fresh register does not
+   have; `Xv.WellFormed` already excludes both).
 
 Then each definition forgets its register everywhere and holds its
 location; a call also forgets the callee's clobber set (`Xl.Env.clobbers`)
@@ -223,6 +228,19 @@ def stepOperands (c : Ctx) (a : AState) (ops : List (Operand VReg)) (ls : List L
   unless usesHold a ps do throw .useMissing
   pure (a.define (defsOfPairs ps) [])
 
+/-- A row that runs the same in whatever registers its operands occupy
+(`Validate.sound`): no stack traffic, which reads `rsp` (never an operand),
+and no 8- or 16-bit write-only register destination, slot or implicit,
+whose write keeps bits of whatever the location held before, except a
+fused consumer's slot, which Xl zeroes first (`zeroFirst`). `Xv.WellFormed`
+implies both, so selected code never fails this. -/
+def rowShapeOk (o : X86.Op) (defs : List VReg) (args : List (XArg VReg)) (zeroFirst : Bool) : Bool :=
+  (X86.desc o).stack == .none &&
+    (X86.desc o).implicit.all (fun i => i.role.reads || i.width == .w32 || i.width == .w64) &&
+    match bindRow o defs args with
+    | some bs => zeroFirst || !bs.any Bound.narrowOutput
+    | none => true
+
 def stepInst (c : Ctx) (a : AState) (inst : Inst VReg) (ls : List Loc) : Except Code AState :=
   match inst with
   | .call g args rets => do
@@ -241,11 +259,18 @@ def stepInst (c : Ctx) (a : AState) (inst : Inst VReg) (ls : List Loc) : Except 
       | _ => pure ()
       stepOperands c a inst.operands ls false
   | .zero _ => stepOperands c a inst.operands ls false
-  | .op .. | .fused .. => stepOperands c a inst.operands ls true
+  | .op o defs args => do
+      unless rowShapeOk o defs args false do throw .constraint
+      stepOperands c a inst.operands ls true
+  | .fused p pargs q defs qargs => do
+      unless rowShapeOk p [] pargs false && rowShapeOk q defs qargs true do throw .constraint
+      stepOperands c a inst.operands ls true
 
 def stepTerm (c : Ctx) (a : AState) (t : Term VReg) (ls : List Loc) : Except Code AState :=
   match t with
-  | .jcc .. => stepOperands c a t.operands ls true
+  | .jcc p pargs defs .. => do
+      unless rowShapeOk p defs pargs false do throw .constraint
+      stepOperands c a t.operands ls true
   | .ret vs => do
       unless vs.length ≤ Xl.nResultRegs && ls == resultLocs vs.length do throw .convention
       unless (vs.zip ls).all (fun (v, l) => a.holds l v) do throw .useMissing
