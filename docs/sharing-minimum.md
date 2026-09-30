@@ -685,3 +685,70 @@ not run.
 
 Do not start W4 until the P1.5 gate has been evaluated and the exact cores agree on all
 fixtures.
+
+## 12. Decision record after gate P1.5 (2026-09-30)
+
+Measurements are in `sharing-minimum-measurements.md` (Init corpus, 55,386 rooted constants).
+
+### 12.1 The width-state DP is not a production algorithm
+
+Candidates after R1/R2 have median 34, p90 232, p99 1,187, max 22,458. Only 17% of constants
+have ≤ 8 candidates. The exact search of §6 stays as the **oracle** for small inputs
+(`Ix/Sharing/Exact/*`, suite `exact-sharing`) and is not the canonical construction.
+
+### 12.2 The in-degree rule (MSS) beats the heuristic
+
+“Store every compact-DAG node with in-degree ≥ 2 (edge multiplicity + roots) and standalone
+size > 1; reference every occurrence; priority topological order” is the exact minimum of the
+additive unit-width model. On Init it is 14.5% smaller than the heuristic in total, smaller
+on 90.6% of constants, larger on 0.4% (total loss 933 bytes, max 50), never larger than
+unshared, and reproduces the 17-byte and 46-byte witnesses. Its losses are all in tables
+with > 8 entries, i.e. the index-tier effect.
+
+### 12.3 Uniform reference width makes the exact minimum tractable
+
+In the **uniform width model** (every Share costs `w` bytes, everything else the real Ixon
+cost including telescopes and the Tag0 count prefix) adding a stored term never raises any
+other node's cost, so the exchange argument of §4.1 classifies every candidate with DAG-only
+bounds (`deg`, `headdeg`, `occ`, width-aware `payloadMin`/`payloadMax`):
+
+| w | certain-stored | certain-excluded | uncertain | largest uncertain component p99 / max |
+|---|---:|---:|---:|---|
+| 1 | 80.5% | 0% | 19.5% | 4 / 45 |
+| 2 | 64.1% | 14.9% | 21.0% | 5 / 44 |
+| 3 | 54.4% | 24.3% | 21.3% | 6 / 44 |
+
+Uncertain nodes interact only along DAG paths that avoid certain-stored nodes, so they split
+into components (≤ 8 nodes for 99.7% of constants). The canonical algorithm is therefore:
+classify → exhaustive search with a sound lower bound per component (cost via the §5
+fixed-dictionary DP with all certain-stored terms available) → pinned dependency order
+(in-degree descending, structural ID ascending). Its minimality proof is: exchange lemmas
+for the two certain classes, independence of components, completeness of the finite search.
+This is being implemented as `optimizeSharingUniform` (W1).
+
+### 12.4 Format change: fixed per-constant Share width (proposal)
+
+To make the uniform model the real byte count, the Share width must not depend on the index.
+Proposal **D**: one width per constant chosen by the AST's candidate count `K` (deg ≥ 2 and
+size > 1; an AST property, so the width never depends on the chosen table): 1 byte when
+`K ≤ 16` (4-bit index in the tag's low nibble), 2 bytes when `K ≤ 4096` (12-bit index),
+3 bytes otherwise (20-bit index). Cost measured on the MSS encoding vs today's index tiers:
++0.93% bytes (+638,883 on Init; MSS stays 13.7% below the heuristic). Alternatives measured:
+B (2/3 bytes, cut at 2048) +2.07%, C (B plus 1 byte ≤ 8) +1.69%. Under D, 31,200 Init
+constants use 1-byte references, 24,180 use 2, 6 use 3.
+
+Decoder impact: the Share tag `0xB` changes from Tag4 to “flag nibble + index bits”, and the
+reader must know `w` before the roots. Either write `K` (or `w`) in the constant header
+before `ConstantInfo`, or move the sharing table ahead of the info. Everything else in the
+grammar is unchanged. Backward references remain the feasible class (`SharingWF`).
+**Status: proposed, awaiting decision.** Until decided, the exact uniform algorithm is
+implemented parameterised by `w` and measured under scheme D's width choice.
+
+### 12.5 Revised workstreams
+
+- W1: `optimizeSharingUniform` + differential tests against the width-state oracle.
+- W2: Rust port of the same, plus differential FFI test.
+- W3: rerun the corpus with the exact uniform optimizer (bytes vs MSS/heuristic, class and
+  component statistics, wall time, resource failures).
+- W4 (after the format decision): Share width encoding, header field, `SharingWF`/codec
+  proofs, compiler routes in Lean and Rust, metadata remap, version bump, fixtures.
