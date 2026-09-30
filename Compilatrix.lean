@@ -62,6 +62,13 @@ import Compilatrix.Src.Prim
 import Compilatrix.Src.Semantics
 import Compilatrix.Src.Readback
 import Compilatrix.Src.Load
+import Compilatrix.Key
+import Compilatrix.Lam.Syntax
+import Compilatrix.Lam.Semantics
+import Compilatrix.Lam.Props
+import Compilatrix.Lam.Readback
+import Compilatrix.Lam.WellFormed
+import Compilatrix.Lam.ModesOk
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
@@ -133,7 +140,8 @@ import Compilatrix.Backend
 import Compilatrix.Aiur
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
-front end (ingress, the checked unfolding table, SrcEval, relevance), Lir (the
+front end (ingress, the checked unfolding table, SrcEval, relevance), global and
+constructor keys, Lam (the erased λ calculus and its clocked semantics), Lir (the
 backend's first IR), Xv and Xl (x86 instructions over virtual registers and
 over locations) with rule-based selection from Lir, register allocation
 (linear scan, the all-slots fallback and the kernel-evaluable validator),

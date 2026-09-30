@@ -1146,6 +1146,30 @@
    "imports": ["Compilatrix.Lir.Semantics"]},
   "Compilatrix.Lir.Graph":
   {"path": "Compilatrix/Lir/Graph.lean", "imports": ["Compilatrix.Lir.Syntax"]},
+  "Compilatrix.Lam.WellFormed":
+  {"path": "Compilatrix/Lam/WellFormed.lean",
+   "imports": ["Compilatrix.Lam.Syntax"]},
+  "Compilatrix.Lam.Syntax":
+  {"path": "Compilatrix/Lam/Syntax.lean",
+   "imports":
+   ["Compilatrix.Key",
+    "Compilatrix.Src.Prim",
+    "Compilatrix.Src.NatMap",
+    "Compilatrix.Ixon.V3.Contracts"]},
+  "Compilatrix.Lam.Semantics":
+  {"path": "Compilatrix/Lam/Semantics.lean",
+   "imports": ["Compilatrix.Lam.Syntax", "Compilatrix.Sem.Result"]},
+  "Compilatrix.Lam.Readback":
+  {"path": "Compilatrix/Lam/Readback.lean",
+   "imports": ["Compilatrix.Lam.Semantics"]},
+  "Compilatrix.Lam.Props":
+  {"path": "Compilatrix/Lam/Props.lean",
+   "imports": ["Compilatrix.Lam.Semantics"]},
+  "Compilatrix.Lam.ModesOk":
+  {"path": "Compilatrix/Lam/ModesOk.lean",
+   "imports": ["Compilatrix.Lam.Syntax"]},
+  "Compilatrix.Key":
+  {"path": "Compilatrix/Key.lean", "imports": ["Compilatrix.Src.Value"]},
   "Compilatrix.Ixon.V3.Validate":
   {"path": "Compilatrix/Ixon/V3/Validate.lean",
    "imports": ["Compilatrix.Ixon.V3.Source", "Compilatrix.Ixon.V3.Tc.Driver"]},
@@ -1692,6 +1716,13 @@
     "Compilatrix.Src.Semantics",
     "Compilatrix.Src.Readback",
     "Compilatrix.Src.Load",
+    "Compilatrix.Key",
+    "Compilatrix.Lam.Syntax",
+    "Compilatrix.Lam.Semantics",
+    "Compilatrix.Lam.Props",
+    "Compilatrix.Lam.Readback",
+    "Compilatrix.Lam.WellFormed",
+    "Compilatrix.Lam.ModesOk",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
