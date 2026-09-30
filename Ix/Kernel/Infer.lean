@@ -465,6 +465,42 @@ structure TypedBody (entries : Environment β) (Γ : Context β) (b : AExpr β) 
   level : VLevel
   sorted : TypingClaim.{u,v} entries Γ type (.sort level)
 
+/-- Facts that may enable reduction of an application headed by their owner.
+Natural and structure formers, constructors, and typed facts do not do so. -/
+def headReductionFact : ConstantFact β → Bool
+  | .natOp _ | .natTest .. | .recursor .. | .quotientLift .. | .quotient .ind => true
+  | _ => false
+
+/-- The application depth when the head cannot reduce, inspected in one
+pass. Lambdas, lets, projections, definitions with bodies at the supplied
+universe arity, and constants with any applicable kind of reduction fact
+keep the ordinary reduction path. -/
+def neutralSpineDepth (entries : Environment β) : AExpr β → Nat → Option Nat
+  | .app f _, depth => neutralSpineDepth entries f (depth + 1)
+  | .const r ls, depth =>
+    match entries r with
+    | none => some depth
+    | some entry =>
+      if (entry.body.isSome && ls.length == entry.universes) || entry.facts.any headReductionFact then
+        none
+      else some depth
+  | .bvar _, depth | .sort _, depth | .forallE .., depth | .natLit .., depth => some depth
+  | _, _ => none
+
+/-- Skip repeated prefix probes for a neutral application. The depth test
+preserves the exhaustion that the ordinary recursive step would report if
+fuel ran out before reaching the head. This wraps a top-level step only;
+the fallback's recursive steps do not reclassify the spine. -/
+def skipNeutralStepC (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β)
+    (next : Unit → KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)) :
+    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e) :=
+  match e with
+  | .app f _ =>
+    match neutralSpineDepth entries f 1 with
+    | some depth => if depth < fuel then throw .noMatch else throw .exhausted
+    | none => next ()
+  | _ => next ()
+
 mutual
 
 /-- Evaluate a numeric operation whose arguments normalize to literals
@@ -837,7 +873,7 @@ def whnfC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AE
     | some n => pure n
     | none =>
       let result : Normalized.{u,v} entries Γ e ← do
-        match ← KM.attempt (stepC fuel entries Γ e) with
+        match ← KM.attempt (skipNeutralStepC fuel entries Γ e fun _ => stepC fuel entries Γ e) with
         | .ok ⟨e', h⟩ =>
           let ⟨e'', h', stopped⟩ ← whnfC fuel entries Γ e'
           pure ⟨e'', h.trans h', stopped⟩
@@ -860,7 +896,7 @@ def whnfCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (e 
           KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ (.app f x))) fun _ =>
             KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ (.app f x))
         | _ => throw .noMatch
-      else stepC fuel entries Γ e
+      else skipNeutralStepC fuel entries Γ e fun _ => stepC fuel entries Γ e
     let next ← KM.attempt attemptStep
     match next with
     | .ok ⟨e', h⟩ =>
@@ -1173,7 +1209,8 @@ interface. -/
 
 def step (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
     Search (Reduced.{u,v} entries Γ e) :=
-  KM.run (fun _ => 0) (fuel * workPerFuel) (stepC.{u,v} fuel entries Γ e)
+  KM.run (fun _ => 0) (fuel * workPerFuel)
+    (skipNeutralStepC fuel entries Γ e fun _ => stepC.{u,v} fuel entries Γ e)
 
 def applyTyped (fuel : Nat) (entries : Environment β) (Γ : Context β) (f F : AExpr β)
     (hf : TypingClaim.{u,v} entries Γ f F) (args : List (AExpr β)) :

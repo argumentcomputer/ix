@@ -99,4 +99,63 @@ def functionApp (arg : AExpr Nat) : AExpr Nat := .app (.const (.member 0 0) []) 
   | (.error .exhausted, cache) => cache.budget == 3
   | _ => false
 
+/-- Compare the fast public step with its original recursive implementation,
+including exact low-fuel failures. -/
+def originalStepResult (fuel : Nat) (entries : Environment Nat) (e : AExpr Nat) :
+    Search (AExpr Nat) :=
+  (KM.run (fun _ => 0) (fuel * workPerFuel) (stepC.{0,1} fuel entries [] e)).map (·.result)
+
+def stepAgrees (entries : Environment Nat) (e : AExpr Nat) : Bool :=
+  (List.range 16).all fun fuel =>
+    match (step.{0,1} fuel entries [] e).map (·.result), originalStepResult fuel entries e with
+    | .ok a, .ok b => decide (a = b)
+    | .error a, .error b => decide (a = b)
+    | _, _ => false
+
+def neutralHeads : List (AExpr Nat) := [
+  .bvar 0, prop, .forallE .never type0 type0, .natLit (.member 3 0) 0,
+  .const (.member 0 0) [], .const (.member 1 0) [.zero], .const (.member 2 0) []]
+
+-- Missing constants and wrong universe arities remain reduction failures;
+-- only the existing type checker decides whether those inputs are malformed.
+#guard neutralHeads.all fun head => stepAgrees deltaEnv (AExpr.appN head (List.replicate 8 prop))
+#guard match step.{0,1} 8 deltaEnv [] (applied 8 prop) with
+  | .error .exhausted => true
+  | _ => false
+#guard match step.{0,1} 9 deltaEnv [] (applied 8 prop) with
+  | .error .noMatch => true
+  | _ => false
+
+-- Active heads retain their old beta, zeta, delta and projection paths.
+def identity : AExpr Nat := .lam .never type0 (.bvar 0)
+def letHead : AExpr Nat := .letE type0 prop identity
+#guard stepAgrees (fun _ => none) (.app identity prop)
+#guard stepAgrees (fun _ => none) (.app letHead prop)
+#guard stepAgrees (functionEnv (.bvar 0)) (functionApp prop)
+#guard stepAgrees (fun _ => none) (.app (.proj (.member 0 0) 0 (.bvar 0)) prop)
+#guard (whnf.{0,1} 64 (fun _ => none) [] (.app letHead prop)).result = prop
+#guard (whnf.{0,1} 64 (functionEnv (.bvar 0)) [] (functionApp prop)).result = prop
+
+def factsEnv (facts : List (ConstantFact Nat)) : Environment Nat := fun _ =>
+  some ⟨0, type0, none, [], facts⟩
+
+def reductionFacts : List (ConstantFact Nat) := [
+  .natOp .add, .natTest .beq (.member 1 0) (.member 2 0), .recursor 0 1 0 [],
+  .quotientLift (.member 1 0) (.member 2 0), .quotient .ind]
+
+-- Any potentially active rule keeps the full strategy, regardless of where
+-- its fact occurs. Former/constructor and typed facts alone remain neutral.
+#guard reductionFacts.all fun fact =>
+  (neutralSpineDepth (factsEnv [.typed prop type0, fact]) (functionApp prop) 0).isNone
+#guard neutralSpineDepth (factsEnv [
+    .natural (.member 1 0) (.member 2 0), .«structure» 0 0,
+    .typed prop type0, .quotient .type, .quotient .ctor]) (functionApp prop) 0 = some 1
+
+-- A native literal operation is not mistaken for an inert constant even
+-- when it has no delta body.
+def addApp : AExpr Nat :=
+  .app (.app (.const (.member 0 0) []) (.natLit (.member 3 0) 20)) (.natLit (.member 3 0) 22)
+#guard stepAgrees (factsEnv [.natOp .add]) addApp
+#guard (whnf.{0,1} 64 (factsEnv [.natOp .add]) [] addApp).result = .natLit (.member 3 0) 42
+
 end Tests.Ix.Kernel.ConversionSpines

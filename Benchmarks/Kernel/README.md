@@ -230,3 +230,87 @@ explicitly labelled as row diagnostics: the census repeats the same admission
 timing on family and recursor rows, so summing them does not measure total
 checking time. The common-acceptance comparison preserves this convention and
 reports slow records separately from the paired runner's wall measurements.
+
+## Conversion and annotation work, 2026-09-30
+
+Implementation `c56020f4` (baseline `a22e4d26`) removes repeated work in two
+places. Annotation retains binder-relative local types and applies shifts on
+lookup or inference fallback; proved context-view and lookup equations connect
+this representation to the original model context. Conversion compares
+application spines without normalizing every prefix, checks delta availability
+without instantiating a body, and tries bounded same-head congruence before
+unfolding. Failed congruence retains the delta fallback, including when a
+definition ignores unequal arguments. A model-derived heterogeneous
+proof-irrelevance rule separately certifies both inferred types as propositions.
+
+The public consistency statements and `annotate_erase` retain their signatures.
+No model file or axiom allowlist changed. New fixtures cover dependent contexts,
+transparent lets, inference fallback, long spines, ignored arguments, local
+speculation exhaustion, and proposition/data distinctions.
+
+The native annotation probe, including its erasure check, gave these medians
+over three samples per size on Lean 4.34.0:
+
+| Binders | Eager context (ms) | Deferred context (ms) |
+| --- | ---: | ---: |
+| 500 | 2.255 | 0.065 |
+| 1,000 | 9.354 | 0.121 |
+| 2,000 | 24.535 | 0.228 |
+| 4,000 | 79.815 | 0.558 |
+
+Raw samples are retained locally at
+`plans/review/deferred-annotation/samples.tsv`. The eager binary was built with
+the new probe before replacing annotation; its intervening conversion changes
+are not exercised by this lambda/sort workload. These are separate batches,
+not alternating pairs, and measure annotation alone. Inference still uses
+eager model contexts.
+
+The full `lake run check-kernel --with-model`, `lake lint -- --wfail`, and
+`lake test --wfail` gates passed sequentially under a 24 GiB memory cap,
+before this workspace's census measurements. The certified gate includes
+38 host differential cases,
+33 ingress/egress cases, 1,117 Rust block-order comparisons, 489,657 level-order
+pairs, provenance, and the concrete set-theory model's dependency audit.
+
+Runtime audit expectations were re-recorded from the compiled closures:
+
+| Boundary | Compiled functions before → after | Inherited externs before → after |
+| --- | ---: | ---: |
+| Kernel | 1,235 → 1,260 | 30 → 31 |
+| Ingress | 1,271 → 1,298 | 43 → 44 |
+| Byte admission | 1,565 → 1,592 | 69 → 70 |
+| Projection | 1,694 → 1,720 | 81 → 81 |
+| Block order | 1,819 → 1,845 | 85 → 85 |
+
+The additional kernel primitive is Lean's `Nat.shiftRight`, emitted for the
+speculation budget's division by four. Projection already used it, so its
+additional-extern list shrinks by that entry. The unsafe, `implemented_by`, and
+`csimp` counts and allowlists are unchanged.
+
+Three alternating measured pairs after one warmup per binary on the first
+4,300 primary InitStd records (4,375 emitted rows), fuel 100,000:
+
+| Measure | Baseline `a22e4d26` | Candidate `c56020f4` |
+| --- | ---: | ---: |
+| Wall median (seconds, including corpus loading) | 31.193 | 26.871 |
+| Wall range (seconds) | 28.834–33.462 | 26.673–27.780 |
+| Peak process RSS (KiB) | 3,922,600 | 3,923,324 |
+| Accepted rows | 2,193 | 2,202 |
+| Declined rows | 23 | 20 |
+| Blocked rows | 2,159 | 2,153 |
+
+Every baseline acceptance is retained in all three pairs. The three newly
+accepted roots are `Std.DTreeMap.Internal.Cell.containsKey_inner_toList`,
+`Std.Internal.List.replaceEntry_of_containsKey_eq_false`, and
+`Std.Internal.List.containsKey_of_perm`; six previously blocked declarations
+also accept. Median wall time is 13.9% lower while accepting nine more rows.
+The ratios of summed timings over the 2,193 common accepted rows are 0.784,
+0.697, and 0.894; these retain the paired-admission duplication described above.
+The slow `applyCell_eq_applyPartition` case has a 1.606 → 1.310 second median.
+
+Raw pairs, outcome changes, and source/executable/corpus fingerprints are
+retained locally in `plans/review/certified-perf/paired-c56020f4/`. The corpus
+SHA-256 is `e10f71e76e218e05db36502da3cd803bc5de6a099cbf210f9b67ea9e9bd2b84a`.
+This remains a supported-profile prefix measurement, not full InitStd
+acceptance or a matched Con-Leche comparison. The local Con-Leche reference
+uses Lean 4.33.0 and a different export format; this corpus uses Lean 4.34.0.
