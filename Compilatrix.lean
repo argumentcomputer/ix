@@ -204,8 +204,10 @@ import Compilatrix.Aiur
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), global and
-constructor keys, Lam with level-exact, keyed erasure from Src, Lir (the
-backend's first IR), Xv and Xl (x86 instructions over virtual registers and
+constructor keys, Lam with level-exact, keyed erasure from Src, Anf with the
+Phase 1 middle end (P1–P4), first-order Fir lowered from Anf, the Phase 1
+(immortal) Own fragment with its checker, Cfg with its small-step semantics
+and the lowering from Own, Lir (the backend's first IR), Xv and Xl (x86 instructions over virtual registers and
 over locations) with rule-based selection from Lir, register allocation
 (linear scan, the all-slots fallback and the kernel-evaluable validator),
 stacking (frames, the SysV export wrapper and the exit group) and block layout
