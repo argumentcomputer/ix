@@ -220,6 +220,9 @@ structure ProgWF (I : Input) : Prop where
   natPins : ∀ {N : CId}, I.known.nat = some N → ∃ Z S, I.known.natZero = some Z ∧
     I.known.natSucc = some S ∧ (∃ sf lv ty, I.decl? Z = some (.ctor sf lv N 0 0 0 ty)) ∧
     (∃ sf lv ty, I.decl? S = some (.ctor sf lv N 1 0 1 ty))
+  /-- A pinned `Nat.zero` has neither parameters nor fields. -/
+  zeroPin : ∀ {Z : CId}, I.known.natZero = some Z →
+    ∃ sf lv N cidx ty, I.decl? Z = some (.ctor sf lv N cidx 0 0 ty)
   /-- The pinned `Bool` constructors: `false` at index 0 and `true` at index
   1 of one inductive, without fields. -/
   boolFalse : ∀ {c : CId}, I.known.boolFalse = some c →
@@ -246,6 +249,11 @@ structure ProgWF (I : Input) : Prop where
     {rules : List Src.Rule} {ty : Src.Term} {w : Src.PropWhen} {srcs : List Src.FieldSrc},
     I.decl? r = some (.recr sf k lv np nmot nmin ni ind rules ty) →
     I.recKind.get? r = some (.subsingleton w srcs) → ∀ i, Src.FieldSrc.index i ∈ srcs → i < ni
+  /-- A subsingleton recursor has its (only) minor. -/
+  subMinor : ∀ {r : CId} {sf k : Bool} {lv np nmot nmin ni : Nat} {ind : CId}
+    {rules : List Src.Rule} {ty : Src.Term} {w : Src.PropWhen} {srcs : List Src.FieldSrc},
+    I.decl? r = some (.recr sf k lv np nmot nmin ni ind rules ty) →
+    I.recKind.get? r = some (.subsingleton w srcs) → 0 < nmin
   decIsFalse : ∀ {c : CId}, I.known.decIsFalse = some c →
     ∃ sf lv D np nf ty, I.decl? c = some (.ctor sf lv D 0 np nf ty)
   decIsTrue : ∀ {c : CId}, I.known.decIsTrue = some c →
