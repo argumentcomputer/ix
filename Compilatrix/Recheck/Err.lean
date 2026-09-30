@@ -10,7 +10,12 @@ import Compilatrix.Backend
 Every way the compiler stops (M1.I1) names the stage that stopped it and a
 code, rendered as `stage: code: message`. The codes are the stages' own:
 Src's `Diag` codes (`decode`, `typing`, `relevance-C2`, `admit` codes, …),
-erasure's `erase-*`, `fir.closures`, `Rt.lower`'s `rt.*`, the allocation
+erasure's `EraseError.code` (`erase-const-kind`, `erase-string`,
+`erase-mode`, `erase-minor`, `erase-lazy`, `erase-proj`, `erase-ctor-layout`,
+`erase-C2`, `erase-C4`, `erase-S2`, `erase-scope`, `erase-recursor`,
+`erase-root`, `erase-record`, `erase-fuel`, `erase-budget`, and the forms
+its proof excludes: `erase-univs`, `erase-unbox-elim`, `erase-pin`,
+`erase-key`), `fir.closures`, `Rt.lower`'s `rt.*`, the allocation
 validator's check names and so on; the compiler adds `rt.params` (a root
 with more parameters than the entry wrapper passes), `cli.*` (arguments and
 files) and `cert.*` (a certificate that does not parse). A decline is a
@@ -76,8 +81,12 @@ def splitCode (s : String) : String × String :=
 def Err.ofDiag (stage : Stage) (d : Src.Diag) : Err :=
   { stage, code := d.code, message := (splitCode d.render).2 }
 
+/-- An erasure decline: its code, and its rendering after the bracketed code
+(where it happened, then why). -/
 def Err.ofErase (e : Lam.Erase.EraseError) : Err :=
-  { stage := .erase, code := e.code, message := (splitCode e.render).2 }
+  let rest := (e.render.drop (e.code.length + 2)).toString
+  let rest := if rest.startsWith ": " then (rest.drop 2).toString else rest.trimAsciiStart.toString
+  { stage := .erase, code := e.code, message := rest }
 
 def Err.ofFir (e : Fir.Lower.Error) : Err :=
   let (code, message) := splitCode e.render
