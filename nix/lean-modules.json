@@ -836,6 +836,10 @@
   "Compilatrix.Xv.Validate.Proof.XlLoc":
   {"path": "Compilatrix/Xv/Validate/Proof/XlLoc.lean",
    "imports": ["Compilatrix.Xv.XlSemantics"]},
+  "Compilatrix.Xv.Validate.Proof.Steps":
+  {"path": "Compilatrix/Xv/Validate/Proof/Steps.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.Proof.Lookup", "Compilatrix.Sem.Smallstep"]},
   "Compilatrix.Xv.Validate.Proof.State":
   {"path": "Compilatrix/Xv/Validate/Proof/State.lean",
    "imports":
@@ -867,6 +871,9 @@
   "Compilatrix.Xv.Validate.Proof.Map":
   {"path": "Compilatrix/Xv/Validate/Proof/Map.lean",
    "imports": ["Compilatrix.Xv.Operands"]},
+  "Compilatrix.Xv.Validate.Proof.Lookup":
+  {"path": "Compilatrix/Xv/Validate/Proof/Lookup.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Inst"]},
   "Compilatrix.Xv.Validate.Proof.Inst":
   {"path": "Compilatrix/Xv/Validate/Proof/Inst.lean",
    "imports": ["Compilatrix.Xv.Validate.Proof.RowChecks"]},
@@ -1986,6 +1993,8 @@
     "Compilatrix.Xv.Validate.Proof.Checks",
     "Compilatrix.Xv.Validate.Proof.RowChecks",
     "Compilatrix.Xv.Validate.Proof.Inst",
+    "Compilatrix.Xv.Validate.Proof.Lookup",
+    "Compilatrix.Xv.Validate.Proof.Steps",
     "Compilatrix.Xv.Alloc.Output",
     "Compilatrix.Xv.Alloc.Apply",
     "Compilatrix.Xv.Alloc.Liveness",
