@@ -55,9 +55,9 @@ lake build
     [--variant base=DIR_A,next=DIR_B]
 ./.lake/build/bin/runner check OUT          # every binary against expected.txt and bench_expected
 taskset -c 5 ./.lake/build/bin/runner calibrate OUT --cpu 2              # entry reps per row
-taskset -c 5 ./.lake/build/bin/runner measure OUT --profile entry --cpu 2 --blocks 20
+taskset -c 5 ./.lake/build/bin/runner measure OUT --profile entry --cpu 2 --blocks 30 [--gate 1]
 taskset -c 5 ./.lake/build/bin/runner measure OUT --profile process --cpu 2 --blocks 10
-taskset -c 5 ./.lake/build/bin/runner perf OUT --cpu 2 [--perf PATH] [--runs 3]
+taskset -c 5 ./.lake/build/bin/runner perf OUT --cpu 2 [--perf PATH] [--runs 3] [--gate 1]
 ./.lake/build/bin/runner report OUT         # report.md and entry-report.md (with .json)
 ```
 
@@ -75,7 +75,22 @@ differs (process profile: the rows' outputs; entry profile:
 `bench_expected`). `calibrate` chooses `reps` per row and fixture in a pilot
 so that a timed chunk lasts about `--target-ms` (default 250), and `warmup` as
 a tenth of it. `calibrate`, `measure` and `perf` take `--rows` (names, or a
-prefix ending in `*`, such as `compilatrix,compilatrix@*` for an A/B session). `perf` counts user-space instructions, cycles, branches and
+prefix ending in `*`, such as `compilatrix,compilatrix@*` for an A/B session).
+
+On a shared machine, `--gate MAXBUSY` makes the entry profile's blocks
+quiet: the runner reads per-CPU busy time from `/proc/stat` over each block,
+and a block counts only if the worker's SMT siblings were at most 10% busy
+and at most MAXBUSY other CPUs (not the controller's) were over half busy.
+Before a block it waits for a quiet second (`--gate-wait`, default 1800 s); a
+disturbed block is kept in the samples as invalid, with its reason, and run
+again (`--gate-attempts`, default 5; the last attempt is accepted and
+flagged). The report counts the disturbed attempts and the time spent
+waiting. The gate measures busy time, not the package's power budget: busy
+neighbours still lower the worker's clock, which paired ratios cancel and
+absolute times do not. While builds run for hours the gate cannot be
+satisfied; measure without it and label the result disturbed.
+
+`perf` counts user-space instructions, cycles, branches and
 branch misses per call (a run with `reps` calls minus a run with none, the
 median of `--runs` pairs); an unavailable counter is recorded as unavailable.
 
