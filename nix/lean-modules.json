@@ -606,15 +606,39 @@
   "Compilatrix.Xv.Operands":
   {"path": "Compilatrix/Xv/Operands.lean",
    "imports": ["Compilatrix.Xv.Slots", "Compilatrix.Lir.Operands"]},
+  "Compilatrix.Xv.Alloc.State":
+  {"path": "Compilatrix/Xv/Alloc/State.lean",
+   "imports":
+   ["Compilatrix.Xv.Alloc.Liveness",
+    "Compilatrix.Xv.Alloc.ParMove",
+    "Compilatrix.Xv.XlSemantics"]},
+  "Compilatrix.Xv.Alloc.ParMove":
+  {"path": "Compilatrix/Xv/Alloc/ParMove.lean",
+   "imports": ["Compilatrix.Xv.Alloc.Output"]},
   "Compilatrix.Xv.Alloc.Output":
   {"path": "Compilatrix/Xv/Alloc/Output.lean",
    "imports": ["Compilatrix.Xv.Syntax"]},
+  "Compilatrix.Xv.Alloc.Liveness":
+  {"path": "Compilatrix/Xv/Alloc/Liveness.lean",
+   "imports": ["Compilatrix.Xv.Operands", "Compilatrix.Xv.WellFormed"]},
+  "Compilatrix.Xv.Alloc.LinearScan":
+  {"path": "Compilatrix/Xv/Alloc/LinearScan.lean",
+   "imports": ["Compilatrix.Xv.Alloc.State"]},
+  "Compilatrix.Xv.Alloc.Driver":
+  {"path": "Compilatrix/Xv/Alloc/Driver.lean",
+   "imports":
+   ["Compilatrix.Xv.Alloc.LinearScan",
+    "Compilatrix.Xv.Alloc.AllSlots",
+    "Compilatrix.Xv.Validate.Check"]},
   "Compilatrix.Xv.Alloc.Apply":
   {"path": "Compilatrix/Xv/Alloc/Apply.lean",
    "imports":
    ["Compilatrix.Xv.Alloc.Output",
     "Compilatrix.Xv.Operands",
     "Compilatrix.Xv.XlSemantics"]},
+  "Compilatrix.Xv.Alloc.AllSlots":
+  {"path": "Compilatrix/Xv/Alloc/AllSlots.lean",
+   "imports": ["Compilatrix.Xv.Alloc.State"]},
   "Compilatrix.X86.WordRegionSafeTrace":
   {"path": "Compilatrix/X86/WordRegionSafeTrace.lean",
    "imports":
@@ -1466,6 +1490,12 @@
     "Compilatrix.Xv.Validate.Check",
     "Compilatrix.Xv.Alloc.Output",
     "Compilatrix.Xv.Alloc.Apply",
+    "Compilatrix.Xv.Alloc.Liveness",
+    "Compilatrix.Xv.Alloc.ParMove",
+    "Compilatrix.Xv.Alloc.State",
+    "Compilatrix.Xv.Alloc.LinearScan",
+    "Compilatrix.Xv.Alloc.AllSlots",
+    "Compilatrix.Xv.Alloc.Driver",
     "Compilatrix.Src.Syntax",
     "Compilatrix.Src.Ingress",
     "Compilatrix.Src.Pinned",

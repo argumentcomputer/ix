@@ -30,6 +30,12 @@ import Compilatrix.Xv.Validate.State
 import Compilatrix.Xv.Validate.Check
 import Compilatrix.Xv.Alloc.Output
 import Compilatrix.Xv.Alloc.Apply
+import Compilatrix.Xv.Alloc.Liveness
+import Compilatrix.Xv.Alloc.ParMove
+import Compilatrix.Xv.Alloc.State
+import Compilatrix.Xv.Alloc.LinearScan
+import Compilatrix.Xv.Alloc.AllSlots
+import Compilatrix.Xv.Alloc.Driver
 import Compilatrix.Src.Syntax
 import Compilatrix.Src.Ingress
 import Compilatrix.Src.Pinned
@@ -116,9 +122,10 @@ import Compilatrix.Aiur
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), Lir (the
 backend's first IR), Xv and Xl (x86 instructions over virtual registers and
-over locations) with rule-based selection from Lir and the kernel-evaluable
-validator of register allocations, the x86 target model with its certified
-encoder (E1) and stream/ELF layer (E2), and the Aiur target. The
+over locations) with rule-based selection from Lir and register allocation
+(linear scan, the all-slots fallback and the kernel-evaluable validator), the
+x86 target model with its certified encoder (E1) and stream/ELF layer (E2), and
+the Aiur target. The
 compiler pipeline is being rebuilt; see `docs/roadmap.md`. The complete
 regression and proof collection is built explicitly through
 `CompilatrixTests.Proofs`. -/
