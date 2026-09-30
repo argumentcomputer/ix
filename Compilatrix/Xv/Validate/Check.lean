@@ -23,9 +23,9 @@ from the table rows by M1.B3).
 3. constraints: `reg` a register, `any` a register or cell, `stack` a
    cell, `fixed r` exactly `r`, `reuse i` the location of use `i`, which
    must be an early use;
-4. aliasing (05 §3): definitions at distinct locations, early
-   definitions off every use location (gap 4), late uses off every
-   definition location;
+4. aliasing (05 §3): distinct definitions (as registers and as
+   locations), early definitions off every use location (gap 4), late uses
+   off every definition location;
 5. Xl's remaining stuck cases: a row's stack cells must fit the scratch
    registers it does not name; calls, returns and tail calls take exactly
    the convention's locations, at most two results, and tail calls at most
@@ -160,6 +160,14 @@ def allDistinct : List Loc → Bool
   | [] => true
   | l :: ls => !ls.contains l && allDistinct ls
 
+/-- Registers without repetition. Xv binds a register defined twice by one
+instruction (or passed as a parameter twice) to the last value, so the
+symbolic transfer, which gives each definition its own location, would
+claim a stale value; such code is rejected. -/
+def nodup : List VReg → Bool
+  | [] => true
+  | x :: xs => !xs.contains x && nodup xs
+
 /-! ## Instructions -/
 
 /-- Uses, then definitions, as `(operand, location)` pairs. -/
@@ -188,7 +196,7 @@ def operandCode (c : Ctx) (ps : Pairs) (row : Bool) : Option Code :=
   if !ps.all (tieOk ps) then some .tie else
   let useLocs := (usesOf ps).map (·.2)
   let defs := defsOf ps
-  if !allDistinct (defs.map (·.2)) then some .alias else
+  if !allDistinct (defs.map (·.2)) || !nodup (defs.map (·.1.v)) then some .alias else
   if defs.any (fun (o, l) => o.pos == .early && useLocs.contains l) then some .alias else
   if (usesOf ps).any (fun (o, l) => o.pos == .late && defs.any (·.2 == l)) then some .alias else
   let locs := dedup (ps.map (·.2))
@@ -222,6 +230,7 @@ def stepInst (c : Ctx) (a : AState) (inst : Inst VReg) (ls : List Loc) : Except 
       unless ops.length == ls.length do throw .shape
       let n := args.length
       unless rets.length ≤ Xl.nResultRegs do throw .convention
+      unless nodup rets do throw .alias
       unless ls.take n == argLocs n && ls.drop n == resultLocs rets.length do throw .convention
       unless (args.zip (argLocs n)).all (fun (v, l) => a.holds l v) do throw .useMissing
       let clobbers := (c.env.clobbers g).map Loc.reg
@@ -262,10 +271,6 @@ def stepEdits (c : Ctx) : AState → List Edit → Except Code AState
   | a, e :: es => do stepEdits c (← stepEdit c a e) es
 
 /-! ## Blocks and functions -/
-
-def nodup : List VReg → Bool
-  | [] => true
-  | x :: xs => !xs.contains x && nodup xs
 
 /-- Parameters and certificate of each block, by label. -/
 abbrev BlockInfo := NatMap (List VReg × AState)

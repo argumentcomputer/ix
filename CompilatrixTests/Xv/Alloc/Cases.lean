@@ -146,6 +146,8 @@ def st1 : AState := AState.ofList [(rax, [1]), (rcx, [2]), (.slot 0, [1])]
 #guard codeOf st1 [dfn 3] [.slot 2] == some .cellRange
 #guard codeOf st1 [dfn 3] [.outArg 0] == some .cellRange
 #guard codeOf st1 [dfn 3, dfn 4] [rdx, rdx] == some .alias
+/- One register defined twice: Xv keeps the last value, so this is refused. -/
+#guard codeOf st1 [dfn 3, dfn 3] [rdx, rbx] == some .alias
 #guard codeOf st1 [use 1, dfn 3] [.slot 0, .slot 1] == none
 
 /-! ## Calls, clobbers and whole functions -/
@@ -183,6 +185,13 @@ a clobber set without it (a runtime procedure, 04 §7). -/
 /- The convention: arguments and results exactly where it puts them. -/
 #guard verdict {} { keepIn .rbx with blocks := [{ (keepIn .rbx).blocks[0]! with
     locs := [[.reg .rsi, .reg .rax], [.reg .rax, .reg .rbx, .reg .rax]] }] } == some .convention
+/- A call binding one register to both results. -/
+def dupRets : Func VReg := { params := [0], results := 1, blocks := #[
+  { body := #[.call 1 [0] [1, 1]], term := .ret [1] }] }
+#guard match Validate.func {} 0 dupRets { numSlots := 0, blocks := [
+    { cert := [(.reg .rdi, [0])], locs := [[.reg .rdi, .reg .rax, .reg .rdx]], termLocs := [.reg .rax] }] } with
+  | .error e => e.code == .alias
+  | .ok () => false
 /- Gap 2: block 0's certificate is checked against the entry convention. -/
 #guard verdict {} { keepIn .rbx with blocks := [{ (keepIn .rbx).blocks[0]! with cert := [(.reg .rsi, [0])] }] } ==
   some .entry
