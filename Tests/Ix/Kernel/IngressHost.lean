@@ -88,6 +88,14 @@ def cases : List Case :=
   [ { label := "proof-irrelevance", seeds := [`proofIrrelevance] },
     { label := "K-reduction", seeds := [`ruleK] },
     { label := "natural-literal", seeds := [`natOfNatLit] },
+    -- Production layout stores each recursor as its own record; quotient
+    -- soundness, lift/ind computation, and the standard axioms find their
+    -- family's eliminator by its interface (R1).
+    { label := "propext", seeds := [`Eq, `Eq.rec, `Iff, `Iff.rec, `propext] },
+    { label := "Classical.choice", seeds := [`Nonempty, `Nonempty.rec, `Classical.choice] },
+    { label := "Quot.sound", seeds := [`Eq, `Eq.rec, `Quot.sound] },
+    { label := "Quot.lift-reduction", seeds := [`Eq, `Eq.rec, `quotLiftReduction] },
+    { label := "Quot.ind-reduction", seeds := [`Eq, `Eq.rec, `quotIndReduction] },
     { label := "bad-sort", seeds := [`badDef], expected := "decline" },
     { label := "bad-declared-type", seeds := [`nonTypeType], expected := "decline" },
     { label := "tampered-Nat-rec-rule", seeds := [`Nat, `Nat.rec], expected := "decline",

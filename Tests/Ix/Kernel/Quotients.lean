@@ -106,7 +106,7 @@ def indMk : Decl String :=
 constructor are the admitted ones, the equality is not. -/
 def natRefs : Quotient.Refs String := { refs with eq := .member "Nat" 0 }
 def soundNat : Decl String := ⟨"Quot.sound", ⟨[Quotient.Refs.soundSource natRefs]⟩⟩
-#guard rejects [natDecl, eqDecl, quotDecl, mkDecl, soundNat]
+#guard declines [natDecl, eqDecl, quotDecl, mkDecl, soundNat]
   "the quotient soundness axiom's equality is not the admitted one"
 
 def quotProp : Decl String := ⟨"Quot", ⟨[.quot .type 1 (.sort .zero)]⟩⟩

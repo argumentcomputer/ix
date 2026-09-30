@@ -64,6 +64,7 @@ the same checker; host transport framing and scheduling remain outside it.
 | Equality | Ordinary admission plus K-like reduction through checked constructor synthesis and proof irrelevance |
 | Quotient | Check the four primitive declarations and soundness against the admitted Eq/quotient interfaces; prove lift and eliminator computation |
 | `propext`, `Classical.choice` | Check the generated types against admitted Eq/Iff/Nonempty interfaces and construct their realizations |
+| Interface eliminators | An Eq/Iff/Nonempty eliminator is the installed entry with that family's eliminator interface, found by search: Ixon stores a recursor as its own record. The quotient lift's published fact names the Eq eliminator for its computation rule. A missing or mismatched interface declines |
 | Arbitrary axioms, unsafe/partial declarations, general mutual or nested inductives | Decline outside the supported profile |
 | String literals, full Lean universe conversion, full Mathlib | Not a current coverage guarantee |
 

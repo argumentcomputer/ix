@@ -46,6 +46,12 @@ the first match is the only match. -/
 def lookup (env : Env β) (r : ConstRef β) : Option (Model.ConstantEntry β) :=
   (env.entries.find? fun e => e.1 == r).map (·.2)
 
+/-- The first installed reference satisfying `valid`. Used to find an admitted
+eliminator by its checked interface: Ixon stores a recursor as its own record,
+so its reference is found rather than assumed to follow its family. -/
+def findRef (env : Env β) (valid : ConstRef β → Bool) : Option (ConstRef β) :=
+  (env.entries.find? fun e => valid e.1).map (·.1)
+
 /-- The semantic view of the environment read by the model. -/
 def toEnvironment (env : Env β) : Model.Environment β := env.lookup
 

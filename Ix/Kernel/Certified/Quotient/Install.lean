@@ -123,20 +123,24 @@ def installCtor (env : Env β) (refs : Refs β) (fresh : env.toEnvironment refs.
         simp [ConstantFact.Meaning, c', Assignment.insert_same])
 
 /-- The lift; its computation rule is derived at reduction time from the facts. -/
-def installLift (env : Env β) (refs : Refs β) (fresh : env.toEnvironment refs.lift = none)
+def installLift (env : Env β) (refs : Refs β) (recursor : ConstRef β)
+    (fresh : env.toEnvironment refs.lift = none)
     (hTs : (liftType refs).Scope 2 0)
     (hq : HasFormer env.toEnvironment refs) (hTr : (liftType refs).ReferencesIn env.toEnvironment)
+    (hE : EqInterface env.toEnvironment refs.eq recursor)
     {l : VLevel} (ht : TypingClaim.{u,v} env.toEnvironment [] (liftType refs) (.sort l)) :
     { env' : Env β // AdmissionClaim.{u,v} env env' } :=
-  installEntry env refs.lift ⟨2, liftType refs, none, [], [.quotientLift refs.eq]⟩ fresh
+  installEntry env refs.lift ⟨2, liftType refs, none, [], [.quotientLift refs.eq recursor]⟩ fresh
     (fun hE => wf_insert hE rfl hTs hTr (fun _ h => nomatch h) (fun _ h => nomatch h)
       (fun _ h => by simp at h; subst h; trivial)
       (fun _ h => by
         simp at h; subst h
         intro q hq'
-        simp only [ConstantFact.references, List.mem_singleton] at hq'
-        subst hq'
-        exact hTr refs.eq (by simp [liftType, liftPrefix, invariantType, Basis.Equality.applied, AExpr.forallN, AExpr.appN, relationType, applied, AExpr.references])))
+        simp only [ConstantFact.references, List.mem_cons, List.not_mem_nil, or_false] at hq'
+        rcases hq' with rfl | rfl
+        · exact hTr refs.eq (by simp [liftType, liftPrefix, invariantType, Basis.Equality.applied, AExpr.forallN, AExpr.appN, relationType, applied, AExpr.references])
+        · obtain ⟨-, -, ⟨-, -, entry, he, -, -⟩⟩ := hE
+          simp [he]))
     (fun V _ m => by
       let c' : Assignment β V := m.constants.insert refs.lift
         (fun levels => liftValue m.constants refs.eq (levels.getD 0 0) (levels.getD 1 0))
@@ -210,7 +214,7 @@ def installInd (env : Env β) (refs : Refs β) (fresh : env.toEnvironment refs.i
 def installSound (env : Env β) (refs : Refs β) (sound : ConstRef β) (fresh : env.toEnvironment sound = none)
     (hTs : (soundType refs).Scope 1 0)
     (hq : HasFormer env.toEnvironment refs) (hc : HasCtor env.toEnvironment refs)
-    (hE : EqInterface env.toEnvironment refs.eq)
+    {recursor : ConstRef β} (hE : EqInterface env.toEnvironment refs.eq recursor)
     (hTr : (soundType refs).ReferencesIn env.toEnvironment)
     {l : VLevel} (ht : TypingClaim.{u,v} env.toEnvironment [] (soundType refs) (.sort l)) :
     { env' : Env β // AdmissionClaim.{u,v} env env' } :=

@@ -62,6 +62,18 @@ def Error.ofSearch (context : String) : SearchFailure → Error
   | .malformed reason => .rejected s!"{context}: {reason}"
   | .noMatch => .declined s!"{context}: no applicable supported rule"
 
+/-- The admitted eliminator of an equality family at member 0 of its block: the
+installed entry with the equality eliminator interface over the family's
+reflexivity constructor. Ixon stores a recursor as its own record, so its
+reference is found, not assumed to follow the family; when none is found, the
+paired fixture position is returned and the interface check reports the
+mismatch. -/
+def eqEliminator {β : Type u} [DecidableEq β] (env : Env β) : ConstRef β → Option (ConstRef β)
+  | .member b 0 => some <| (env.findRef fun r =>
+      decide (Basis.Equality.Interface env.toEnvironment (.member b 0) (.ctor b 0 0) r)).getD
+        (.member b 1)
+  | _ => none
+
 /-- An input declaration: a block of constants at its address. -/
 structure Decl (β : Type u) where
   address : β
@@ -314,11 +326,17 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
           if hq : Quotient.HasFormer entries refs then
             if hTs : (Quotient.liftType refs).Scope 2 0 then
               if hTr : (Quotient.liftType refs).ReferencesIn entries then
-                match checkSort.{u,v} cfg.fuel entries [] (Quotient.liftType refs) with
-                | .ok ⟨_, ht⟩ => acceptInstalled env d (Quotient.installLift env refs fresh hTs hq hTr ht) (by
-                    rw [hblock]
-                    exact Block.installed_singleton_push env d.address _ _ ⟨rfl, rfl, rfl⟩ rfl)
-                | .error failure => .error (Error.ofSearch "quotient lift type" failure)
+                match eqEliminator env eq with
+                | some recursor =>
+                  if hE : Quotient.EqInterface entries eq recursor then
+                    match checkSort.{u,v} cfg.fuel entries [] (Quotient.liftType refs) with
+                    | .ok ⟨_, ht⟩ => acceptInstalled env d
+                        (Quotient.installLift env refs recursor fresh hTs hq hTr hE ht) (by
+                          rw [hblock]
+                          exact Block.installed_singleton_push env d.address _ _ ⟨rfl, rfl, rfl⟩ rfl)
+                    | .error failure => .error (Error.ofSearch "quotient lift type" failure)
+                  else .error (.declined "the quotient lift's equality is not the admitted one")
+                | none => .error (.declined "the quotient lift's equality has no admitted eliminator")
               else .error (.rejected "the quotient lift references a constant that is not installed")
             else .error (.rejected "the quotient lift's type is not closed")
           else .error (.rejected "the quotient lift does not follow the admitted former")
@@ -351,7 +369,7 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
       else
       match Standard.occurrences t with
       | [iff, eq] =>
-        match Standard.propextSpec eq iff with
+        match Standard.propextSpec env eq iff with
         | some spec =>
           if hblock : d.block = ⟨[spec.source]⟩ then
             if hp : spec.Prerequisites entries then
@@ -365,7 +383,7 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
                   | .error failure => .error (Error.ofSearch "axiom type" failure)
                 else .error (.rejected "the axiom references a constant that is not installed")
               else .error (.rejected "the axiom's type is not closed")
-            else .error (.rejected "the axiom's prerequisites are not the admitted interfaces")
+            else .error (.declined "the axiom's prerequisites are not the admitted interfaces")
           else .error (.declined "only the standard axioms and quotient soundness are supported")
         | none => .error (.declined "only the standard axioms and quotient soundness are supported")
       | _ => .error (.declined "only the standard axioms and quotient soundness are supported")
@@ -383,7 +401,10 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
         if hblock : d.block = ⟨[Quotient.Refs.soundSource refs]⟩ then
           if hq : Quotient.HasFormer entries refs then
             if hc : Quotient.HasCtor entries refs then
-              if hE : Quotient.EqInterface entries eq then
+              match eqEliminator env eq with
+              | none => .error (.declined "the quotient soundness axiom's equality has no admitted eliminator")
+              | some recursor =>
+              if hE : Quotient.EqInterface entries eq recursor then
                 if hTs : (Quotient.soundType refs).Scope 1 0 then
                   if hTr : (Quotient.soundType refs).ReferencesIn entries then
                     match checkSort.{u,v} cfg.fuel entries [] (Quotient.soundType refs) with
@@ -394,12 +415,12 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
                     | .error failure => .error (Error.ofSearch "quotient soundness type" failure)
                   else .error (.rejected "the quotient soundness axiom references a constant that is not installed")
                 else .error (.rejected "the quotient soundness axiom's type is not closed")
-              else .error (.rejected "the quotient soundness axiom's equality is not the admitted one")
+              else .error (.declined "the quotient soundness axiom's equality is not the admitted one")
             else .error (.rejected "the quotient soundness axiom does not follow the admitted constructor")
           else .error (.rejected "the quotient soundness axiom does not follow the admitted former")
         else .error (.declined "only the standard axioms and quotient soundness are supported")
       | [nonempty] =>
-        match Standard.choiceSpec nonempty with
+        match Standard.choiceSpec env nonempty with
         | some spec =>
           if hblock : d.block = ⟨[spec.source]⟩ then
             if hp : spec.Prerequisites entries then
@@ -413,7 +434,7 @@ def checkDeclC (cfg : Config) (env : Env β) (d : Decl β) :
                   | .error failure => .error (Error.ofSearch "axiom type" failure)
                 else .error (.rejected "the axiom references a constant that is not installed")
               else .error (.rejected "the axiom's type is not closed")
-            else .error (.rejected "the axiom's prerequisites are not the admitted interfaces")
+            else .error (.declined "the axiom's prerequisites are not the admitted interfaces")
           else .error (.declined "only the standard axioms and quotient soundness are supported")
         | none => .error (.declined "only the standard axioms and quotient soundness are supported")
       | _ => .error (.declined "only the standard axioms and quotient soundness are supported")

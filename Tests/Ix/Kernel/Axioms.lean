@@ -67,7 +67,7 @@ def pick : Decl String :=
 
 #guard rejects [eqDecl, propextDecl] "the declaration references a constant that is not installed"
 #guard rejects [choiceDecl] "the declaration references a constant that is not installed"
-#guard rejects [eqDecl, iffSmall, propextDecl] "the axiom's prerequisites are not the admitted interfaces"
+#guard declines [eqDecl, iffSmall, propextDecl] "the axiom's prerequisites are not the admitted interfaces"
 #guard rejects [eqDecl, iffDecl, propextDecl, propextDecl] "duplicate declaration address"
 def axiomProp : Decl String := ⟨"ax", ⟨[.axiom 0 (.sort .zero) .safe]⟩⟩
 #guard declines [axiomProp] "only the standard axioms and quotient soundness are supported"

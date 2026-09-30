@@ -6,6 +6,7 @@ namespaces, qualified names, and documentation paths; this header added;
 K2: the `ConstantFact.recursor`, `ConstantFact.structure`, and quotient fact cases; `natLit`
 carries the reference of its family, which its references list.
 P02: prove exact agreement between raw and annotated reference traversal.
+R1: the lift fact's references include the equality eliminator it names.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -49,7 +50,7 @@ def ConstantFact.Scope (n : Nat) : ConstantFact β → Prop
   | .recursor .. => True
   | .structure .. => True
   | .quotient _ => True
-  | .quotientLift _ => True
+  | .quotientLift _ _ => True
 
 def ConstantFact.references : ConstantFact β → List (ConstRef β)
   | .typed e type => e.references ++ type.references
@@ -57,7 +58,7 @@ def ConstantFact.references : ConstantFact β → List (ConstRef β)
   | .recursor .. => []
   | .structure .. => []
   | .quotient _ => []
-  | .quotientLift eq => [eq]
+  | .quotientLift eq eliminator => [eq, eliminator]
 
 def ConstantFact.ReferencesIn (entries : Environment β) (fact : ConstantFact β) : Prop :=
   ∀ r ∈ fact.references, (entries r).isSome = true

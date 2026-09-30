@@ -5,6 +5,7 @@ Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added;
 K2: the `ConstantFact.recursor`, `ConstantFact.structure`, and quotient fact cases, and the
 transfer of `NaturalMeaning.succApp` under agreeing assignments.
+R1: the lift fact case binds the equality eliminator it does not use.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -206,7 +207,7 @@ theorem Assignment.AgreesOn.factMeaning {entries : Environment β}
     | ctor => simp only [ConstantFact.Meaning] at hm ⊢; rw [h r entry hr levels]; exact hm
     | lift => trivial
     | ind => trivial
-  | quotientLift eq =>
+  | quotientLift eq _ =>
     simp only [ConstantFact.Meaning] at hm ⊢
     rw [h r entry hr levels, hm]
     exact (Quotient.liftValue_congr (heq eq (by simp [ConstantFact.references]) _)).symm

@@ -2271,6 +2271,20 @@ input stores recursors as separate records, which the positional form rejects.
 Failed prerequisites decline. Add production-layout `Quot`, `propext`, and
 `Classical.choice` host cases. R1 lands right after V1.
 
+R1 is complete (2026-09-29, `plans/review/r1-eliminators`):
+- **Eliminator search.** `Env.findRef` finds each eliminator by its checked
+  interface. When none is found, the paired fixture position is used, so the
+  interface check reports the mismatch.
+- **Lift fact.** `ConstantFact.quotientLift` names the Eq eliminator for the
+  lift's computation rule; its meaning is unchanged.
+- **Outcomes.** A failed prerequisite or equality interface declines.
+- **Host cases.** Five compiler cases, all accepted by every route:
+  `propext`, `Classical.choice`, `Quot.sound`, and `Quot.lift`/`Quot.ind`
+  computation.
+- **Records.** Five ported model files carry R1 transformation notes and
+  re-recorded hashes. The kernel runtime closures grew by the search: check
+  920 → 940 and ingress 956 → 974 functions, with externs unchanged.
+
 **R2.** The structure and Nat fallbacks propagate exhaustion instead of
 installing a weaker entry.
 

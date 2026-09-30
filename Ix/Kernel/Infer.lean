@@ -151,10 +151,10 @@ def unfoldLit (entries : Environment β) (Γ : Context β) (f : ConstRef β) (n 
   | none => none
 
 /-- The quotient rule an entry's facts yield: the lift, with its equality
-family, or the eliminator. -/
-def quotientRule (facts : List (ConstantFact β)) : Option (Option (ConstRef β)) :=
+family and that family's eliminator, or the eliminator. -/
+def quotientRule (facts : List (ConstantFact β)) : Option (Option (ConstRef β × ConstRef β)) :=
   facts.findSome? fun
-    | .quotientLift eq => some (some eq)
+    | .quotientLift eq eliminator => some (some (eq, eliminator))
     | .quotient .ind => some none
     | _ => none
 
@@ -324,14 +324,14 @@ def quotIota : Nat → (entries : Environment β) → (Γ : Context β) → (e :
                 | (.const c _, [_, _, a]) =>
                   let bargs := args.take (arity - 1) ++ [a]
                   match role with
-                  | some eq =>
+                  | some (eq, recursor) =>
                     match entry.type.references.eraseDups.filter (· ≠ eq) with
                     | [q] =>
                       let refs : Certified.Quotient.Refs β := ⟨eq, q, c, r, r⟩
-                      if hl : Certified.Quotient.HasLift entries refs then
+                      if hl : Certified.Quotient.HasLift entries refs recursor then
                         if hq : Certified.Quotient.HasFormer entries refs then
                           if hc : Certified.Quotient.HasCtor entries refs then
-                            if hE : Certified.Quotient.EqInterface entries eq then
+                            if hE : Certified.Quotient.EqInterface entries eq recursor then
                               if hn : ls.length = 2 then
                                 reduceByRule fuel entries Γ e
                                   ((Certified.Quotient.liftRuleLhs refs).instL ls)

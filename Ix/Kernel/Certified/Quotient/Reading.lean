@@ -7,6 +7,8 @@ K2: the single `Reading` of all five values is replaced by one reading per
 pinned value (`FormerReading`, `CtorReading`, `LiftReading`), which the
 published `quotient` facts supply, so that each primitive is installed on its
 own; the values live in `Ix.Kernel.Model.Quotient`.
+R1: `EqInterface`, `HasLift`, and `liftRule_claim` take the equality
+eliminator explicitly instead of assuming member 1 of the family's block.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -272,24 +274,27 @@ def HasFormer (entries : Environment β) (refs : Refs β) : Prop :=
   HasFact entries refs.type 1 typeType (.quotient .type)
 def HasCtor (entries : Environment β) (refs : Refs β) : Prop :=
   HasFact entries refs.ctor 1 (ctorType refs) (.quotient .ctor)
-def HasLift (entries : Environment β) (refs : Refs β) : Prop :=
-  HasFact entries refs.lift 2 (liftType refs) (.quotientLift refs.eq)
+def HasLift (entries : Environment β) (refs : Refs β) (recursor : ConstRef β) : Prop :=
+  HasFact entries refs.lift 2 (liftType refs) (.quotientLift refs.eq recursor)
 
 instance (entries : Environment β) (refs : Refs β) : Decidable (HasFormer entries refs) :=
   inferInstanceAs (Decidable (HasFact entries refs.type 1 typeType (.quotient .type)))
 instance (entries : Environment β) (refs : Refs β) : Decidable (HasCtor entries refs) :=
   inferInstanceAs (Decidable (HasFact entries refs.ctor 1 (ctorType refs) (.quotient .ctor)))
-instance (entries : Environment β) (refs : Refs β) : Decidable (HasLift entries refs) :=
-  inferInstanceAs (Decidable (HasFact entries refs.lift 2 (liftType refs) (.quotientLift refs.eq)))
+instance (entries : Environment β) (refs : Refs β) (recursor : ConstRef β) :
+    Decidable (HasLift entries refs recursor) :=
+  inferInstanceAs (Decidable (HasFact entries refs.lift 2 (liftType refs) (.quotientLift refs.eq recursor)))
 
-/-- The equality family sits at member 0 of its block, with the reflexivity
-constructor and the eliminator where the ordinary route puts them. -/
-def EqInterface (entries : Environment β) (eq : ConstRef β) : Prop :=
-  ∃ b, eq = .member b 0 ∧ Basis.Equality.Interface entries eq (.ctor b 0 0) (.member b 1)
+/-- The equality family sits at member 0 of its block with its reflexivity
+constructor, and `recursor` is its admitted eliminator. The eliminator is named:
+Ixon stores it as its own record, not beside the family. -/
+def EqInterface (entries : Environment β) (eq recursor : ConstRef β) : Prop :=
+  ∃ b, eq = .member b 0 ∧ Basis.Equality.Interface entries eq (.ctor b 0 0) recursor
 
-instance (entries : Environment β) : (eq : ConstRef β) → Decidable (EqInterface entries eq)
+instance (entries : Environment β) (recursor : ConstRef β) :
+    (eq : ConstRef β) → Decidable (EqInterface entries eq recursor)
   | .member b 0 =>
-    decidable_of_iff (Basis.Equality.Interface entries (.member b 0) (.ctor b 0 0) (.member b 1))
+    decidable_of_iff (Basis.Equality.Interface entries (.member b 0) (.ctor b 0 0) recursor)
       ⟨fun h => ⟨b, rfl, h⟩, fun ⟨b', hb, h⟩ => by cases hb; exact h⟩
   | .member _ (_ + 1) => .isFalse (by rintro ⟨b, hb, -⟩; cases hb)
   | .ctor .. => .isFalse (by rintro ⟨b, hb, -⟩; cases hb)
@@ -311,7 +316,8 @@ theorem HasCtor.reading {entries : Environment β} {refs : Refs β} (h : HasCtor
   simpa [ConstantFact.Meaning] using hm
 
 omit [DecidableEq β] in
-theorem HasLift.reading {entries : Environment β} {refs : Refs β} (h : HasLift entries refs)
+theorem HasLift.reading {entries : Environment β} {refs : Refs β} {recursor : ConstRef β}
+    (h : HasLift entries refs recursor)
     (hM : Realizes constants entries) : LiftReading constants refs.eq refs.lift := by
   intro u v
   obtain ⟨entry, he, hu, -, hf⟩ := h
@@ -320,9 +326,10 @@ theorem HasLift.reading {entries : Environment β} {refs : Refs β} (h : HasLift
 
 omit [DecidableEq β] in
 /-- The lift's computation rule, derived from the published facts. -/
-theorem liftRule_claim {entries : Environment β} {refs : Refs β} (Γ : Context β)
-    (hq : HasFormer entries refs) (hc : HasCtor entries refs) (hl : HasLift entries refs)
-    (hE : EqInterface entries refs.eq) {ls : List VLevel} (hn : ls.length = 2) :
+theorem liftRule_claim {entries : Environment β} {refs : Refs β} {recursor : ConstRef β}
+    (Γ : Context β) (hq : HasFormer entries refs) (hc : HasCtor entries refs)
+    (hl : HasLift entries refs recursor) (hE : EqInterface entries refs.eq recursor)
+    {ls : List VLevel} (hn : ls.length = 2) :
     ConversionClaim.{u,v} entries Γ ((liftRuleLhs refs).instL ls) ((liftRuleRhs refs).instL ls) := by
   intro V _ constants hM levels env _
   obtain ⟨b, -, hI⟩ := hE

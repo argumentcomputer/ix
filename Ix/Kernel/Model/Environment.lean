@@ -8,6 +8,8 @@ K2: the `ConstantFact.recursor`, `ConstantFact.structure`, `ConstantFact.quotien
 (arities read by the kernel, with trivial meaning) and their cases, and
 `NaturalMeaning.succApp` (the successor is a function whose domain contains
 every numeral).
+R1: `ConstantFact.quotientLift` also names the equality family's admitted
+eliminator, which Ixon stores as its own record; its meaning is unchanged.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -46,8 +48,11 @@ inductive ConstantFact (β : Type u) where
   /-- The entry is one of the quotient primitives; the former and the constructor are pinned
   to their set-theoretic values, the eliminator carries no meaning. -/
   | quotient (kind : QuotKind)
-  /-- The entry is the quotient lift, pinned to its value over the named equality family. -/
-  | quotientLift (eq : ConstRef β)
+  /-- The entry is the quotient lift, pinned to its value over the named equality family.
+  `recursor` names that family's admitted eliminator, which the lift's computation rule
+  uses to read the family as equality; Ixon stores it as its own record, so it is named
+  rather than assumed to follow the family. It carries no meaning of its own. -/
+  | quotientLift (eq recursor : ConstRef β)
 deriving DecidableEq
 
 structure NaturalMeaning {β : Type u} {V : Type v} [SetTheory V]
@@ -73,7 +78,7 @@ def ConstantFact.Meaning {β : Type u} {V : Type v} [SetTheory V]
   | .quotient .type => constants owner levels = Quotient.formerValue (levels.getD 0 0)
   | .quotient .ctor => constants owner levels = Quotient.constructorValue (levels.getD 0 0)
   | .quotient .lift | .quotient .ind => True
-  | .quotientLift eq =>
+  | .quotientLift eq _ =>
     constants owner levels = Quotient.liftValue constants eq (levels.getD 0 0) (levels.getD 1 0)
 
 /-- An entry becomes available to the checker only after admission of its

@@ -7,6 +7,7 @@ K2: `Refs` is the ported `Store.QuotRefs` (the equality reflexivity and
 eliminator follow from the family's block layout, and the soundness axiom is
 its own block), the entries carry the `quotient` facts, and `Kind.sound` is
 gone: the axiom has its own source and entry.
+R1: `Refs.fact` and `Refs.entry` take the equality eliminator.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -142,12 +143,12 @@ def indRuleRhs (refs : Refs β) : AExpr β :=
 
 /-- The fact each primitive publishes: the former and the constructor are
 pinned to their values, the lift to its value over the equality family. -/
-def Refs.fact (refs : Refs β) : Kind → ConstantFact β
-  | .lift => .quotientLift refs.eq
+def Refs.fact (refs : Refs β) (eqRecursor : ConstRef β) : Kind → ConstantFact β
+  | .lift => .quotientLift refs.eq eqRecursor
   | kind => .quotient kind.quotKind
 
-def Refs.entry (refs : Refs β) (kind : Kind) : ConstantEntry β :=
-  ⟨kind.universes, refs.entryType kind, none, [], [refs.fact kind]⟩
+def Refs.entry (refs : Refs β) (eqRecursor : ConstRef β) (kind : Kind) : ConstantEntry β :=
+  ⟨kind.universes, refs.entryType kind, none, [], [refs.fact eqRecursor kind]⟩
 
 /-- The soundness axiom's entry: a constant with no body, equations, or facts. -/
 def Refs.soundEntry (refs : Refs β) : ConstantEntry β := ⟨1, soundType refs, none, [], []⟩
