@@ -1666,6 +1666,9 @@
   {"path": "Compilatrix/Lam/Erase/Proof/Rel.lean",
    "imports":
    ["Compilatrix.Lam.Erase.Proof.Spec", "Compilatrix.Lam.Semantics"]},
+  "Compilatrix.Lam.Erase.Proof.RecStar":
+  {"path": "Compilatrix/Lam/Erase/Proof/RecStar.lean",
+   "imports": ["Compilatrix.Lam.Erase.Proof.Elim"]},
   "Compilatrix.Lam.Erase.Proof.Layout":
   {"path": "Compilatrix/Lam/Erase/Proof/Layout.lean",
    "imports":
@@ -2406,6 +2409,7 @@
     "Compilatrix.Lam.Erase.Proof.Forms",
     "Compilatrix.Lam.Erase.Proof.Select",
     "Compilatrix.Lam.Erase.Proof.Elim",
+    "Compilatrix.Lam.Erase.Proof.RecStar",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

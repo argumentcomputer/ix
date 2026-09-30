@@ -24,6 +24,12 @@ def applyArgs : Val → List (Term × Mode) → Result Val
   | f, [] => .ok f
   | f, a :: as => (argSlot P k ρ a).bind fun s => (apply P k f s).bind fun v => applyArgs v as
 
+theorem applyArgs_nil (f : Val) : applyArgs P k ρ f [] = .ok f := rfl
+
+theorem applyArgs_cons (f : Val) (a : Term × Mode) (as : List (Term × Mode)) :
+    applyArgs P k ρ f (a :: as) =
+      (argSlot P k ρ a).bind fun s => (apply P k f s).bind fun v => applyArgs P k ρ v as := rfl
+
 theorem eval_app_slot (f a : Term) (m : Mode) :
     eval P k ρ (.app f a m) = (eval P k ρ f).bind fun fv => (argSlot P k ρ (a, m)).bind (apply P k fv) := by
   rw [eval_app]
