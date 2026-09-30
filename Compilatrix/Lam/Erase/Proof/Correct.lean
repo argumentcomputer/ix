@@ -1,4 +1,5 @@
 import Compilatrix.Lam.Erase.Proof.Build
+import Compilatrix.Lam.Erase.Proof.ProgWF
 import Compilatrix.Lam.Erase.Val
 import Compilatrix.Lam.Readback
 import Compilatrix.Src.Readback
@@ -6,8 +7,8 @@ import Compilatrix.Sem.Transform
 
 /-! # Erasure is correct
 
-`erase_correct`: a successful erasure of a program with well-formed
-declarations (`ProgWF`) simulates each root at every clock (`Sem.Sim` with
+`erase_correct`: a successful erasure (whose declarations passed `progWF`,
+so `ProgWF` holds) simulates each root at every clock (`Sem.Sim` with
 the identity clock map: a Src result is matched by a related Lam result, a
 trap by a trap, a Src timeout at clock `k` by a Lam timeout at `k`; a stuck
 Src run imposes nothing). On first-order values the relation is erasure
@@ -23,11 +24,10 @@ namespace Compilatrix.Lam.Erase.Proof
 open Compilatrix.Src (CId Head Profile Levels)
 open Compilatrix.Sem (Result ClockMono SimUpTo Sim Obs Lang)
 
-/-- **Erasure is correct**: every root of a successfully erased program with
-well-formed declarations simulates, at every clock, from related
-arguments. -/
+/-- **Erasure is correct**: every root of a successfully erased program
+simulates, at every clock, from related arguments. -/
 theorem erase_correct {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program}
-    {st : Erase.Stats} (h : erase p ch = .ok (L, st)) (wf : ProgWF (Input.ofProgram p ch)) :
+    {st : Erase.Stats} (h : erase p ch = .ok (L, st)) :
     ∃ G : Key.GKey → GlobalId → Prop, Forall2 (fun c g => ∀ (xs : List Src.Value) (xs' : List Val),
         Forall2 (VR (Input.ofProgram p ch) G) xs xs' →
           Sim (VR (Input.ofProgram p ch) G) id (fun k => Src.run p k c xs)
@@ -35,7 +35,8 @@ theorem erase_correct {p : Src.Program} {ch : Src.Relevance.Checked} {L : Progra
       (p.roots.map (·.2)) L.roots := by
   obtain ⟨G, hprog, hknown, hsucc, hroots⟩ := erase_spec h
   let S : Setting := ⟨p, ch, L, G, hprog, hknown, hsucc⟩
-  exact ⟨G, Forall2.imp (fun c g hr xs xs' hx => Setting.run_correct (S := S) wf hr hx) hroots⟩
+  exact ⟨G, Forall2.imp (fun c g hr xs xs' hx =>
+    Setting.run_correct (S := S) (erase_progWF h) hr hx) hroots⟩
 
 /-! ## First-order values -/
 
@@ -324,9 +325,9 @@ theorem Sim.stuck {α β : Type} {R : α → β → Prop} (c₂ : Nat → Result
 arguments, the erased program's behaviour refines SrcEval's up to equal
 first-order observations. -/
 theorem erase_refines {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program}
-    {st : Erase.Stats} (h : erase p ch = .ok (L, st)) (wf : ProgWF (Input.ofProgram p ch)) :
+    {st : Erase.Stats} (h : erase p ch = .ok (L, st)) :
     Sem.Refines (⟨p, ch⟩ : CheckedProgram) L := by
-  obtain ⟨G, hroots⟩ := erase_correct h wf
+  obtain ⟨G, hroots⟩ := erase_correct h
   refine Sem.Refines.of_sim (R := fun x w => x.1 = Input.ofProgram p ch ∧
     VR (Input.ofProgram p ch) G x.2 w) (fun x w ⟨e, hv⟩ => ?_) fun i => ⟨id, ?_⟩
   · show (eraseVal x.1 x.2).bind obsV = obsV w

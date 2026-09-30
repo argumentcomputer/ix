@@ -1,4 +1,5 @@
 import Compilatrix.Lam.Erase.Term
+import Compilatrix.Lam.Erase.ProgWF
 
 /-! # Erasure Src → Lam
 
@@ -217,9 +218,15 @@ end
 end Erase
 
 open Erase in
-/-- Erase a checked Src program. -/
+/-- Erase a checked Src program. Its declarations must be structurally well
+formed (`Input.progWF`, as Tc typing ensures), which the correctness proof
+assumes. -/
 def erase (p : Src.Program) (c : Src.Relevance.Checked) : Except EraseError (Program × Stats) :=
   let I := Input.ofProgram p c
+  if !I.progWF then
+    .error { code := "erase-progwf",
+             message := "the declarations are not structurally well formed (ProgWF)" }
+  else
   match (run I).run {} with
   | .error e => .error e
   | .ok (roots, s) =>

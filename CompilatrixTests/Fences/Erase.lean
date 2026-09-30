@@ -112,3 +112,15 @@ checker's soundness. Expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Src.Relevance.Proof.subsingletonFields_nil' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Src.Relevance.Proof.subsingletonFields_nil
+
+/-! Erasure decides the declarations' well-formedness (`progWF`), so
+`erase_correct` and `erase_refines` need no premise about them. -/
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.progWF_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.progWF_iff
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.erase_progWF' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.erase_progWF
+
+/-- info: 'Compilatrix.Src.NatMap.mem_toList' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Src.NatMap.mem_toList

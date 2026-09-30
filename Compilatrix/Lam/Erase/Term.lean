@@ -38,7 +38,7 @@ structure EraseError where
   /-- `erase-const-kind`, `erase-string`, `erase-mode`, `erase-minor` (S25),
   `erase-lazy`, `erase-proj`, `erase-ctor-layout`,
   `erase-C2`, `erase-C4`, `erase-S2`, `erase-scope`, `erase-recursor`, `erase-root`,
-  `erase-record`, `erase-fuel`, `erase-budget`. -/
+  `erase-record`, `erase-fuel`, `erase-budget`, `erase-progwf`. -/
   code : String
   const : Option CId := none
   key : Option Key.GKey := none

@@ -190,6 +190,8 @@ theorem erase_spec {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program} 
   dsimp only at h
   split at h
   · cases h
+  split at h
+  · cases h
   · next roots s hrun =>
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, -⟩ := h

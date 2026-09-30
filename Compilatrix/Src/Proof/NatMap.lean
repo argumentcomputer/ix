@@ -61,4 +61,63 @@ theorem get?_insert_ne (m : NatMap α) {k k' : Nat} (x : α) (h : k' ≠ k) :
     (m.insert k x).get? k' = m.get? k' := by
   simp [get?_insert, h]
 
+/-! ## Every entry is listed -/
+
+theorem mem_entriesAux_of_acc : ∀ (m : NatMap α) (k w : Nat) (acc : List (Nat × α))
+    (x : Nat × α), x ∈ acc → x ∈ entriesAux m k w acc
+  | .leaf, _, _, _, _, h => h
+  | .node v z o, k, w, acc, x, h => by
+    unfold entriesAux
+    have h' := mem_entriesAux_of_acc z k (2 * w) _ x
+      (mem_entriesAux_of_acc o (k + w) (2 * w) acc x h)
+    cases v with
+    | none => exact h'
+    | some y => exact List.mem_cons_of_mem _ h'
+
+theorem mem_entriesAux : ∀ (m : NatMap α) (j k w : Nat) (acc : List (Nat × α)) (x : α),
+    m.get? j = some x → (k + w * j, x) ∈ entriesAux m k w acc
+  | .leaf, _, _, _, _, _, h => by simp [get?] at h
+  | .node v z o, j, k, w, acc, x, h => by
+    unfold entriesAux
+    simp only [get?] at h
+    by_cases hj : j = 0
+    · subst hj
+      simp only [BEq.rfl, ↓reduceIte] at h
+      subst h
+      simp
+    · have hj' : (j == 0) = false := by simpa using hj
+      simp only [hj', Bool.false_eq_true, ↓reduceIte] at h
+      by_cases he : j % 2 = 0
+      · have he' : (j % 2 == 0) = true := by simpa using he
+        simp only [he', ↓reduceIte] at h
+        have hmem := mem_entriesAux z (j / 2) k (2 * w) (entriesAux o (k + w) (2 * w) acc) x h
+        have hk : k + 2 * w * (j / 2) = k + w * j := by
+          generalize hq : j / 2 = q at *
+          have hjq : j = 2 * q := by omega
+          subst hjq
+          rw [Nat.mul_assoc, Nat.mul_left_comm]
+        rw [hk] at hmem
+        cases v with
+        | none => exact hmem
+        | some y => exact List.mem_cons_of_mem _ hmem
+      · have he' : (j % 2 == 0) = false := by simpa using he
+        simp only [he', Bool.false_eq_true, ↓reduceIte] at h
+        have hmem := mem_entriesAux_of_acc z k (2 * w) _ _
+          (mem_entriesAux o (j / 2) (k + w) (2 * w) acc x h)
+        have hk : k + w + 2 * w * (j / 2) = k + w * j := by
+          generalize hq : j / 2 = q at *
+          have hjq : j = 2 * q + 1 := by omega
+          subst hjq
+          rw [Nat.mul_add, Nat.mul_one, Nat.mul_assoc, Nat.mul_left_comm w 2 q]
+          omega
+        rw [hk] at hmem
+        cases v with
+        | none => exact hmem
+        | some y => exact List.mem_cons_of_mem _ hmem
+
+theorem mem_toList {m : NatMap α} {j : Nat} {x : α} (h : m.get? j = some x) :
+    (j, x) ∈ m.toList := by
+  have := mem_entriesAux m j 0 1 [] x h
+  rwa [Nat.zero_add, Nat.one_mul] at this
+
 end Compilatrix.Src.NatMap

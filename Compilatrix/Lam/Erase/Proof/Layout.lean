@@ -8,7 +8,8 @@ Facts relating erasure's reading of a program (`Erase.Input`) to SrcEval's
 depend on the universe profile (one layout per constructor, S46); special
 heads have the arities SrcEval gives them; δ and special heads are what
 `evalConst` evaluates. Also `ProgWF`, the structural well-formedness of the
-Src program the simulation assumes (ingress guarantees it; it is decidable). -/
+Src program the simulation assumes (ingress guarantees it; erasure decides
+it, `progWF_iff`). -/
 
 set_option autoImplicit false
 
@@ -209,7 +210,7 @@ open Compilatrix.Src (CId)
 /-- What the simulation assumes of the Src program's declarations: every
 constructor is listed by its inductive at its index, and every listed
 constructor declares that inductive and index. Ingress (Tc typing) ensures
-it; it is decidable. -/
+it; erasure decides it (`Input.progWF`, `progWF_iff`). -/
 structure ProgWF (I : Input) : Prop where
   ctorIn : ∀ {c : CId} {sf : Bool} {lv : Nat} {ind : CId} {cidx np nf : Nat} {ty : Src.Term},
     I.decl? c = some (.ctor sf lv ind cidx np nf ty) → (I.ctorsOf ind)[cidx]? = some c

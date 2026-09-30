@@ -107,6 +107,7 @@ import Compilatrix.Lam.ModesOk
 import Compilatrix.Lam.Erase.Input
 import Compilatrix.Lam.Erase.Term
 import Compilatrix.Lam.Erase.Val
+import Compilatrix.Lam.Erase.ProgWF
 import Compilatrix.Lam.Erase
 import Compilatrix.Anf.Syntax
 import Compilatrix.Anf.Semantics
@@ -168,6 +169,7 @@ import Compilatrix.Lam.Erase.Proof.BuildForms
 import Compilatrix.Lam.Erase.Proof.BuildTerm
 import Compilatrix.Lam.Erase.Proof.BuildBody
 import Compilatrix.Lam.Erase.Proof.Build
+import Compilatrix.Lam.Erase.Proof.ProgWF
 import Compilatrix.Lam.Erase.Proof.Correct
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors

@@ -139,6 +139,7 @@
   "Compilatrix.Key",
   "Compilatrix.Lam.Erase",
   "Compilatrix.Lam.Erase.Input",
+  "Compilatrix.Lam.Erase.ProgWF",
   "Compilatrix.Lam.Erase.Proof.Apply",
   "Compilatrix.Lam.Erase.Proof.Bind",
   "Compilatrix.Lam.Erase.Proof.Build",
@@ -151,6 +152,7 @@
   "Compilatrix.Lam.Erase.Proof.Forms",
   "Compilatrix.Lam.Erase.Proof.Layout",
   "Compilatrix.Lam.Erase.Proof.Main",
+  "Compilatrix.Lam.Erase.Proof.ProgWF",
   "Compilatrix.Lam.Erase.Proof.Proj",
   "Compilatrix.Lam.Erase.Proof.RecStar",
   "Compilatrix.Lam.Erase.Proof.Rel",
@@ -360,7 +362,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/x86-phase1: merge M2.2 erasure proofs",
+ "baseline": "jcb/x86-phase1: merge M2.2 remainder",
  "axiom_sha256":
- "313056a4b9a2c8651ebd28eb57ad834bf7984372a70dc90a7813fc4a9ef9e57b",
- "axiom_count": 1059}
+ "0bdf59900a500fdcbd967550e491331997adafbedbad4d6b0ee2b9034b7eafe9",
+ "axiom_count": 1062}

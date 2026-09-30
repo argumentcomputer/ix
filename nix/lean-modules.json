@@ -1808,6 +1808,12 @@
   "Compilatrix.Lam.Erase.Proof.Proj":
   {"path": "Compilatrix/Lam/Erase/Proof/Proj.lean",
    "imports": ["Compilatrix.Lam.Erase.Proof.Bind"]},
+  "Compilatrix.Lam.Erase.Proof.ProgWF":
+  {"path": "Compilatrix/Lam/Erase/Proof/ProgWF.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase",
+    "Compilatrix.Lam.Erase.Proof.Layout",
+    "Compilatrix.Src.Proof.NatMap"]},
   "Compilatrix.Lam.Erase.Proof.Main":
   {"path": "Compilatrix/Lam/Erase/Proof/Main.lean",
    "imports": ["Compilatrix.Lam.Erase.Proof.Apply"]},
@@ -1827,6 +1833,7 @@
   {"path": "Compilatrix/Lam/Erase/Proof/Correct.lean",
    "imports":
    ["Compilatrix.Lam.Erase.Proof.Build",
+    "Compilatrix.Lam.Erase.Proof.ProgWF",
     "Compilatrix.Lam.Erase.Val",
     "Compilatrix.Lam.Readback",
     "Compilatrix.Src.Readback",
@@ -1857,12 +1864,15 @@
   "Compilatrix.Lam.Erase.Proof.Apply":
   {"path": "Compilatrix/Lam/Erase/Proof/Apply.lean",
    "imports": ["Compilatrix.Lam.Erase.Proof.SimTerm"]},
+  "Compilatrix.Lam.Erase.ProgWF":
+  {"path": "Compilatrix/Lam/Erase/ProgWF.lean",
+   "imports": ["Compilatrix.Lam.Erase.Input"]},
   "Compilatrix.Lam.Erase.Input":
   {"path": "Compilatrix/Lam/Erase/Input.lean",
    "imports": ["Compilatrix.Src.Relevance.Check", "Compilatrix.Lam.Syntax"]},
   "Compilatrix.Lam.Erase":
   {"path": "Compilatrix/Lam/Erase.lean",
-   "imports": ["Compilatrix.Lam.Erase.Term"]},
+   "imports": ["Compilatrix.Lam.Erase.Term", "Compilatrix.Lam.Erase.ProgWF"]},
   "Compilatrix.Key":
   {"path": "Compilatrix/Key.lean", "imports": ["Compilatrix.Src.Value"]},
   "Compilatrix.Ixon.V3.Validate":
@@ -2550,6 +2560,7 @@
     "Compilatrix.Lam.Erase.Input",
     "Compilatrix.Lam.Erase.Term",
     "Compilatrix.Lam.Erase.Val",
+    "Compilatrix.Lam.Erase.ProgWF",
     "Compilatrix.Lam.Erase",
     "Compilatrix.Anf.Syntax",
     "Compilatrix.Anf.Semantics",
@@ -2611,6 +2622,7 @@
     "Compilatrix.Lam.Erase.Proof.BuildTerm",
     "Compilatrix.Lam.Erase.Proof.BuildBody",
     "Compilatrix.Lam.Erase.Proof.Build",
+    "Compilatrix.Lam.Erase.Proof.ProgWF",
     "Compilatrix.Lam.Erase.Proof.Correct",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
