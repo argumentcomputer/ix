@@ -6,6 +6,7 @@ import Compilatrix.Sem.Clocked
 import Compilatrix.Sem.Simulation
 import Compilatrix.Sem.Transform
 import Compilatrix.Sem.Smallstep
+import Compilatrix.Sem.Agrees
 import Compilatrix.Lir.Syntax
 import Compilatrix.Lir.Semantics
 import Compilatrix.Lir.Graph
@@ -90,6 +91,8 @@ import Compilatrix.Src.Prim
 import Compilatrix.Src.Semantics
 import Compilatrix.Src.Readback
 import Compilatrix.Src.Load
+import Compilatrix.Src.Proof.Unfold
+import Compilatrix.Src.Proof.Mono
 import Compilatrix.Key
 import Compilatrix.Lam.Syntax
 import Compilatrix.Lam.Semantics
@@ -137,6 +140,8 @@ import Compilatrix.Rt.Procs.Entry
 import Compilatrix.Rt.Procs.Nat
 import Compilatrix.Rt.Lower
 import Compilatrix.Rt.Readback
+import Compilatrix.Lam.Proof.Unfold
+import Compilatrix.Lam.Proof.Mono
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing

@@ -666,6 +666,9 @@
   "CompilatrixTests.Fences.Fir":
   {"path": "CompilatrixTests/Fences/Fir.lean",
    "imports": ["Compilatrix.Fir.Semantics"]},
+  "CompilatrixTests.Fences.Erase":
+  {"path": "CompilatrixTests/Fences/Erase.lean",
+   "imports": ["Compilatrix.Src.Proof.Mono", "Compilatrix.Lam.Proof.Mono"]},
   "CompilatrixTests.Fences.Backend":
   {"path": "CompilatrixTests/Fences/Backend.lean",
    "imports":
@@ -722,7 +725,8 @@
     "CompilatrixTests.Fences.Validate",
     "CompilatrixTests.Fences.Fir",
     "CompilatrixTests.Fences.Own",
-    "CompilatrixTests.Fences.Rt"]},
+    "CompilatrixTests.Fences.Rt",
+    "CompilatrixTests.Fences.Erase"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":
@@ -1477,6 +1481,12 @@
   "Compilatrix.Src.Readback":
   {"path": "Compilatrix/Src/Readback.lean",
    "imports": ["Compilatrix.Src.Value", "Compilatrix.Sem.Result"]},
+  "Compilatrix.Src.Proof.Unfold":
+  {"path": "Compilatrix/Src/Proof/Unfold.lean",
+   "imports": ["Compilatrix.Src.Semantics"]},
+  "Compilatrix.Src.Proof.Mono":
+  {"path": "Compilatrix/Src/Proof/Mono.lean",
+   "imports": ["Compilatrix.Src.Proof.Unfold", "Compilatrix.Sem.Agrees"]},
   "Compilatrix.Src.Prim":
   {"path": "Compilatrix/Src/Prim.lean", "imports": ["Compilatrix.Src.Syntax"]},
   "Compilatrix.Src.Pinned":
@@ -1529,6 +1539,9 @@
    "imports": ["Compilatrix.Sem.Result"]},
   "Compilatrix.Sem.Clock":
   {"path": "Compilatrix/Sem/Clock.lean", "imports": ["Compilatrix.Sem.Result"]},
+  "Compilatrix.Sem.Agrees":
+  {"path": "Compilatrix/Sem/Agrees.lean",
+   "imports": ["Compilatrix.Sem.Clocked"]},
   "Compilatrix.Rt.Readback":
   {"path": "Compilatrix/Rt/Readback.lean",
    "imports": ["Compilatrix.Rt.Layout", "Compilatrix.X86.State"]},
@@ -1605,6 +1618,12 @@
   "Compilatrix.Lam.Props":
   {"path": "Compilatrix/Lam/Props.lean",
    "imports": ["Compilatrix.Lam.Semantics"]},
+  "Compilatrix.Lam.Proof.Unfold":
+  {"path": "Compilatrix/Lam/Proof/Unfold.lean",
+   "imports": ["Compilatrix.Lam.Semantics"]},
+  "Compilatrix.Lam.Proof.Mono":
+  {"path": "Compilatrix/Lam/Proof/Mono.lean",
+   "imports": ["Compilatrix.Lam.Proof.Unfold", "Compilatrix.Sem.Agrees"]},
   "Compilatrix.Lam.ModesOk":
   {"path": "Compilatrix/Lam/ModesOk.lean",
    "imports": ["Compilatrix.Lam.Syntax"]},
@@ -2198,6 +2217,7 @@
     "Compilatrix.Sem.Simulation",
     "Compilatrix.Sem.Transform",
     "Compilatrix.Sem.Smallstep",
+    "Compilatrix.Sem.Agrees",
     "Compilatrix.Lir.Syntax",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Lir.Graph",
@@ -2282,6 +2302,8 @@
     "Compilatrix.Src.Semantics",
     "Compilatrix.Src.Readback",
     "Compilatrix.Src.Load",
+    "Compilatrix.Src.Proof.Unfold",
+    "Compilatrix.Src.Proof.Mono",
     "Compilatrix.Key",
     "Compilatrix.Lam.Syntax",
     "Compilatrix.Lam.Semantics",
@@ -2329,6 +2351,8 @@
     "Compilatrix.Rt.Procs.Nat",
     "Compilatrix.Rt.Lower",
     "Compilatrix.Rt.Readback",
+    "Compilatrix.Lam.Proof.Unfold",
+    "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

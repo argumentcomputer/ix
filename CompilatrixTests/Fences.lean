@@ -17,3 +17,4 @@ import CompilatrixTests.Fences.Validate
 import CompilatrixTests.Fences.Fir
 import CompilatrixTests.Fences.Own
 import CompilatrixTests.Fences.Rt
+import CompilatrixTests.Fences.Erase
