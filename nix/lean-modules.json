@@ -668,7 +668,9 @@
   "CompilatrixTests.Anf.Differential":
   {"path": "CompilatrixTests/Anf/Differential.lean",
    "imports":
-   ["CompilatrixTests.Anf.Support", "CompilatrixTests.Lam.Differential"]},
+   ["CompilatrixTests.Anf.Support",
+    "CompilatrixTests.Lam.Differential",
+    "Compilatrix.Anf.Pipeline"]},
   "CompilatrixTests.Aiur.WireRun":
   {"path": "CompilatrixTests/Aiur/WireRun.lean",
    "imports": ["CompilatrixTests.Aiur.WireFixtures"]},

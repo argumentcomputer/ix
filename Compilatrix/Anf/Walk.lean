@@ -28,16 +28,20 @@ replacing it by a `tick` (tick dominance):
 * projection of a known constructor; literal folding by `Prim.sem`; `case`
   of a known constructor or `Nat` literal (or `y + 1`);
 * known calls: `app` of a function global's closure, or of a partial
-  application of one, becomes `call` when saturated;
-* β: a local function used once, as the head of an application of its
-  arity, is inlined there behind a `tick`; a join point jumped to once is
-  inlined at the jump behind a `tick`;
+  application of one, becomes `call` when saturated (over-saturated: the
+  call, then `app` of the rest);
+* β: a local function whose only occurrence is the head of an application
+  is inlined there behind a `tick` (over-applied: its result is applied to
+  the rest; under-applied: it becomes the function of its remaining
+  parameters, behind a `tick` for the application's charge);
+* a join point jumped to once, or of at most `Cfg.smallJoin` nodes, is
+  inlined at its jumps behind a `tick`;
 * case-of-case: a jump with a known constructor to a join point whose body
   scrutinises its parameter takes the selected alternative, behind a `tick`
-  (bounded by the alternative's size);
+  (bounded by the alternative's size, `Cfg.caseOfCaseBound`);
 * case identity (`case x {cᵢ ⇒ ret cᵢ}` is `ret x`, never on the pinned
-  `Nat` keys, whose literals are not constructors) and a `case` whose
-  field-free arms are all equal.
+  `Nat` keys, whose literals are not constructors; leading ticks kept) and a
+  `case` whose field-free arms are all equal.
 
 **Inlining** (`Cfg.inline`, P3): a `call g as` or a CAF `glob g` of a listed
 callee becomes `tick` and `g`'s body with its parameters bound to the
