@@ -803,6 +803,27 @@ def inferAC : Nat → (entries : Environment β) → (Γ : Context β) → (e : 
       if cacheable then KM.modifyCache (·.addInfer e result)
       pure result
 
+/-- A binder body's type and the sort of that type. A λ body's type is the Π
+its own inference builds, and that inference already has the Π's sort, so a
+tower of λs is inferred in one pass instead of re-inferring each inner Π. -/
+def inferBodyC : Nat → (entries : Environment β) → (Γ : Context β) → (b : AExpr β) →
+    KM.{u,v} entries Γ (TypedBody.{u,v} entries Γ b)
+  | 0, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, .lam p D c => do
+    KM.tick
+    let ⟨S, hS⟩ ← inferAC fuel entries Γ D
+    let ⟨lD, hD⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ S) hS)
+    let ⟨C, hc, lC, hC⟩ ← KM.inFrame (Γ' := Γ.push D) (inferBodyC fuel entries (Γ.push D) c)
+    if hp : p = zeroCondition lC then
+      return ⟨.forallE p D C, TypingClaim.lam hD hC hc hp, .imax lD lC,
+        TypingClaim.forallE hD hC hp⟩
+    else throw (.malformed "lambda annotation disagrees with its codomain sort")
+  | fuel + 1, entries, Γ, b => do
+    let ⟨B, hb⟩ ← inferAC fuel entries Γ b
+    let ⟨SB, hSB⟩ ← inferAC fuel entries Γ B
+    let ⟨lB, hB⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ SB) hSB)
+    return ⟨B, hb, lB, hB⟩
+
 /-- The inference rules, one constructor at a time. -/
 def inferCore : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
     KM.{u,v} entries Γ (Typed.{u,v} entries Γ e)
@@ -830,11 +851,7 @@ def inferCore : Nat → (entries : Environment β) → (Γ : Context β) → (e 
     | .lam p D b => do
       let ⟨S, hS⟩ ← inferAC fuel entries Γ D
       let ⟨_, hD⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ S) hS)
-      let ⟨B, hb, lB, hB⟩ ← KM.inFrame (Γ' := Γ.push D) (do
-        let ⟨B, hb⟩ ← inferAC fuel entries (Γ.push D) b
-        let ⟨SB, hSB⟩ ← inferAC fuel entries (Γ.push D) B
-        let ⟨lB, hB⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries (Γ.push D) SB) hSB)
-        return (⟨B, hb, lB, hB⟩ : TypedBody.{u,v} entries (Γ.push D) b))
+      let ⟨B, hb, lB, hB⟩ ← KM.inFrame (Γ' := Γ.push D) (inferBodyC fuel entries (Γ.push D) b)
       if hp : p = zeroCondition lB then
         return ⟨.forallE p D B, TypingClaim.lam hD hB hb hp⟩
       else throw (.malformed "lambda annotation disagrees with its codomain sort")

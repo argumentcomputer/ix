@@ -92,6 +92,69 @@ theorem transferAnnotations_erase : ∀ {raw : VExpr β} {ann a : AExpr β},
   | .proj _ _ _, .app _ _, _, h | .proj _ _ _, .lam _ _ _, _, h | .proj _ _ _, .forallE _ _ _, _, h
   | .proj _ _ _, .letE _ _ _, _, h | .proj _ _ _, .natLit _ _, _, h => by simp [transferAnnotations] at h
 
+/-! ## Reading binder conditions without inference
+
+A binder's condition is the zero condition of a sort that inference would
+compute. These readers return it where the syntax already determines it
+exactly: a Pi's own (validated) annotation, since `zeroCondition (imax u v) =
+zeroCondition v`; a sort, never a proposition's sort; a constant family whose
+type telescope ends in a sort after its arguments; and a local variable whose
+type is a sort. Anything else is `none` and `annotate` infers. Annotations are
+proposals: `inferA` validates every one against the sort it computes. -/
+
+/-- The rest of a type telescope after `n` Pi binders, if it has that many. -/
+def telescopeAfter : AExpr β → Nat → Option (AExpr β)
+  | e, 0 => some e
+  | .forallE _ _ B, n + 1 => telescopeAfter B n
+  | _, _ + 1 => none
+
+/-- The zero condition of a constant family's sort after `n` arguments. -/
+def familyCondition (entries : Environment β) (d : ConstRef β) (ls : List VLevel) (n : Nat) :
+    Option PropWhen :=
+  match entries d with
+  | some entry =>
+    match telescopeAfter entry.type n with
+    | some (.sort l) => some (zeroCondition (l.inst ls))
+    | _ => none
+  | none => none
+
+/-- The zero condition of the sort of the type `T`. `locals` is the context
+`T`'s variables refer to, when it is known. -/
+def typeCondition (entries : Environment β) (locals : Option (Context β)) (T : AExpr β) :
+    Option PropWhen :=
+  match T with
+  | .forallE p _ _ => some p
+  | .sort _ => some .never
+  | .bvar i =>
+    match locals.bind (·[i]?) with
+    | some (.sort l) => some (zeroCondition l)
+    | _ => none
+  | _ =>
+    match spine T [] with
+    | (.const d ls, args) => familyCondition entries d ls args.length
+    | _ => none
+
+/-- The zero condition of the sort of the type of the term `e`, at `Γ`. -/
+def termCondition (entries : Environment β) (Γ : Context β) (e : AExpr β) : Option PropWhen :=
+  match e with
+  | .lam p _ _ => some p
+  | .forallE .. | .sort _ => some .never
+  | .bvar i =>
+    match Γ[i]? with
+    | some A => typeCondition entries (some Γ) A
+    | none => none
+  | _ =>
+    match spine e [] with
+    | (.const c ls, args) =>
+      match entries c with
+      | some entry =>
+        match telescopeAfter entry.type args.length with
+        -- The rest's variables are the telescope's binders, not `Γ`'s.
+        | some rest => typeCondition entries none (rest.instL ls)
+        | none => none
+      | none => none
+    | _ => none
+
 /-- Compute binder annotations. -/
 def annotate : Nat → (entries : Environment β) → (Γ : Context β) → VExpr β →
     Search (AExpr β)
@@ -113,17 +176,23 @@ def annotate : Nat → (entries : Environment β) → (Γ : Context β) → VExp
       let D' ← annotate fuel entries Γ D
       let Γ' := Γ.push D'
       let b' ← annotate fuel entries Γ' b
-      let ⟨B, _⟩ ← inferA.{u,v} fuel entries Γ' b'
-      let ⟨SB, hSB⟩ ← inferA.{u,v} fuel entries Γ' B
-      let ⟨lB, _⟩ ← sortOf (whnf.{u,v} fuel entries Γ' SB) hSB
-      return .lam (zeroCondition lB) D' b'
+      match termCondition entries Γ' b' with
+      | some p => return .lam p D' b'
+      | none =>
+        let ⟨B, _⟩ ← inferA.{u,v} fuel entries Γ' b'
+        let ⟨SB, hSB⟩ ← inferA.{u,v} fuel entries Γ' B
+        let ⟨lB, _⟩ ← sortOf (whnf.{u,v} fuel entries Γ' SB) hSB
+        return .lam (zeroCondition lB) D' b'
     | .forallE D B => do
       let D' ← annotate fuel entries Γ D
       let Γ' := Γ.push D'
       let B' ← annotate fuel entries Γ' B
-      let ⟨SB, hSB⟩ ← inferA.{u,v} fuel entries Γ' B'
-      let ⟨lB, _⟩ ← sortOf (whnf.{u,v} fuel entries Γ' SB) hSB
-      return .forallE (zeroCondition lB) D' B'
+      match typeCondition entries (some Γ') B' with
+      | some p => return .forallE p D' B'
+      | none =>
+        let ⟨SB, hSB⟩ ← inferA.{u,v} fuel entries Γ' B'
+        let ⟨lB, _⟩ ← sortOf (whnf.{u,v} fuel entries Γ' SB) hSB
+        return .forallE (zeroCondition lB) D' B'
     | .letE t v b => do
       let t' ← annotate fuel entries Γ t
       let v' ← annotate fuel entries Γ v
@@ -173,18 +242,24 @@ theorem annotate_erase {fuel : Nat} {entries : Environment β} {Γ : Context β}
     | lam D b =>
       obtain ⟨D', hD, h⟩ := search_bind_eq_ok h
       obtain ⟨b', hb, h⟩ := search_bind_eq_ok h
-      obtain ⟨⟨B, _⟩, _, h⟩ := search_bind_eq_ok h
-      obtain ⟨⟨SB, _⟩, _, h⟩ := search_bind_eq_ok h
-      obtain ⟨⟨l, _⟩, _, h⟩ := search_bind_eq_ok h
-      cases h
-      simp only [AExpr.erase, ih hD, ih hb]
+      split at h
+      · cases h
+        simp only [AExpr.erase, ih hD, ih hb]
+      · obtain ⟨⟨B, _⟩, _, h⟩ := search_bind_eq_ok h
+        obtain ⟨⟨SB, _⟩, _, h⟩ := search_bind_eq_ok h
+        obtain ⟨⟨l, _⟩, _, h⟩ := search_bind_eq_ok h
+        cases h
+        simp only [AExpr.erase, ih hD, ih hb]
     | forallE D B =>
       obtain ⟨D', hD, h⟩ := search_bind_eq_ok h
       obtain ⟨B', hB, h⟩ := search_bind_eq_ok h
-      obtain ⟨⟨SB, _⟩, _, h⟩ := search_bind_eq_ok h
-      obtain ⟨⟨l, _⟩, _, h⟩ := search_bind_eq_ok h
-      cases h
-      simp only [AExpr.erase, ih hD, ih hB]
+      split at h
+      · cases h
+        simp only [AExpr.erase, ih hD, ih hB]
+      · obtain ⟨⟨SB, _⟩, _, h⟩ := search_bind_eq_ok h
+        obtain ⟨⟨l, _⟩, _, h⟩ := search_bind_eq_ok h
+        cases h
+        simp only [AExpr.erase, ih hD, ih hB]
     | letE t v b =>
       obtain ⟨t', ht, h⟩ := search_bind_eq_ok h
       obtain ⟨v', hv, h⟩ := search_bind_eq_ok h
