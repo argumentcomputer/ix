@@ -34,11 +34,14 @@ def Exp.render (P : Program) (d dj ind : Nat) : Exp → String
   | .join n r b e =>
     let ps := " ".intercalate ((List.range n).map fun i => s!"x{d + i}")
     let jd := if r then dj + 1 else dj
-    s!"{indent ind}join{if r then " rec" else ""} j{dj} {ps} =\n{Exp.render P (d + n) jd (ind + 1) b}\n" ++
-      Exp.render P d (dj + 1) ind e
-  | .jump j as => s!"{indent ind}jump {if j < dj then s!"j{dj - 1 - j}" else s!"#{j}?"} {atoms d as}"
+    s!"{indent ind}join{if r then " rec" else ""} j{dj} {ps} =\n" ++
+      s!"{Exp.render P (d + n) jd (ind + 1) b}\n" ++ Exp.render P d (dj + 1) ind e
+  | .jump j as =>
+    let target := if j < dj then s!"j{dj - 1 - j}" else s!"#{j}?"
+    s!"{indent ind}jump {target} {atoms d as}"
   | .case x alts dflt =>
-    s!"{indent ind}case {x.render d}\n{Exp.renderAlts P d dj ind alts}{Exp.renderOpt P d dj ind dflt}"
+    s!"{indent ind}case {x.render d}\n" ++
+      s!"{Exp.renderAlts P d dj ind alts}{Exp.renderOpt P d dj ind dflt}"
   | .ret a => s!"{indent ind}ret {a.render d}"
   | .tick e => s!"{indent ind}tick\n{Exp.render P d dj ind e}"
   | .trap => s!"{indent ind}trap"

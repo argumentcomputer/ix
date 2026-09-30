@@ -73,14 +73,16 @@ def cert (c : Anf.Pipeline.Cert) : String :=
 /-- A module checking the recheck's result sizes in the kernel. -/
 def module (name : String) (L : Lam.Program) (c : Anf.Pipeline.Cert) (globals nodes : Nat) :
     String :=
-  s!"import Compilatrix.Anf.Pipeline\n\n/-! Kernel probe: the Phase 1 middle end re-run on bench-k1 `{name}`. -/\n\n" ++
+  "import Compilatrix.Anf.Pipeline\n\n" ++
+  s!"/-! Kernel probe: the Phase 1 middle end re-run on bench-k1 `{name}`. -/\n\n" ++
   "open Compilatrix\n\n" ++
   s!"def lam : Lam.Program :=\n{program L}\n\n" ++
   s!"def cert : Anf.Pipeline.Cert :=\n{cert c}\n\n" ++
   "def sizes (P : Anf.Program) : Nat × Nat :=\n" ++
   "  (P.size, P.globalList.foldl (fun n (_, gd) => n + gd.body.nodes) 0)\n\n" ++
   "set_option maxRecDepth 1000000 in\n" ++
-  s!"example : (match Anf.Pipeline.run cert lam with | .ok P => some (sizes P) | .error _ => none) =\n    some ({globals}, {nodes}) := by\n" ++
+  "example : (match Anf.Pipeline.run cert lam with | .ok P => some (sizes P) | .error _ => none) =\n" ++
+  s!"    some ({globals}, {nodes}) := by\n" ++
   "  decide +kernel\n"
 
 end CompilatrixTests.Anf.LeanRender

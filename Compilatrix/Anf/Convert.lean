@@ -153,7 +153,8 @@ def conv (A : Arities) : Nat → Cx → Lam.Term → Kont → M Exp
     | .case s alts dflt =>
       conv A fuel cx s (.bind freshLet fun d dj o => caseOn A fuel { cx with d, dj } o alts dflt k)
     | .proj c i s =>
-      conv A fuel cx s (.bind freshLet fun d dj o => emit { cx with d, dj } (.proj c i (o.atom d)) k)
+      conv A fuel cx s (.bind freshLet fun d dj o =>
+        emit { cx with d, dj } (.proj c i (o.atom d)) k)
     | .lit l => pass cx (.lit l) k
     | .prim p args =>
       convList A fuel cx args fun d dj os => emit { cx with d, dj } (.prim p (os.map (·.atom d))) k
@@ -251,7 +252,8 @@ def spine (A : Arities) : Nat → Cx → Lam.Term → Kont → M Exp
             let b := Bind.call g (os.map (·.atom d))
             match rest with
             | [] => emit cx' b k
-            | _ => emit cx' b (.bind freshLet fun d dj o => groups A fuel { cx with d, dj } o rest k)
+            | _ => emit cx' b (.bind freshLet fun d dj o =>
+                groups A fuel { cx with d, dj } o rest k)
         else
           let impure := match args with
             | a :: _ => !pureArg cx.vars a

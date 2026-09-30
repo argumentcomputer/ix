@@ -404,7 +404,9 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
       | none => throw s!"walk: global {g} out of range"
     | .call g as => do
       let os ← resolveList env as
-      match C.redirect.bind fun r => if r.g == g then (redirectArgs r os).map (r.spec, ·) else none with
+      let redirected := C.redirect.bind fun r =>
+        if r.g == g then (redirectArgs r os).map (r.spec, ·) else none
+      match redirected with
       | some (s, os') => do
         fire fun f => { f with redirect := f.redirect + 1 }
         emit (.call s (atoms here.d os')) none
@@ -585,7 +587,8 @@ def fuel : Nat := 1 <<< 24
 /-- Walk a global's body over its parameters. -/
 def global (C : Cfg) (gd : GDef) : M GDef := do
   let n := gd.ps.length
-  let body ← walk C fuel { σ := entsOf (paramOpds 0 n) } { d := n, dj := 0, facts := .leaf } gd.body .ret
+  let body ← walk C fuel { σ := entsOf (paramOpds 0 n) } { d := n, dj := 0, facts := .leaf }
+    gd.body .ret
   return { gd with body }
 
 end Compilatrix.Anf.Walk

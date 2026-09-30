@@ -67,7 +67,8 @@ def fallback (a : Assert) (stages : Stages) : IO (Array String) := do
       for xs in argss do
         t ← compareRun a e.lam A lr xs 100000 s!"fallback {stage} {root}" t
     let r := Compilatrix.Anf.Pipeline.residual A
-    out := out.push s!"fallback after {stage} ({sizeStr A}): {t.render}; residual fn {r.fns} app {r.apps} glob {r.globs}"
+    out := out.push s!"fallback after {stage} ({sizeStr A}): {t.render}; \
+      residual fn {r.fns} app {r.apps} glob {r.globs}"
   return out
 
 /-- src-sortpoly, one root at a time (sort-polymorphic code at `Sort 0`). -/

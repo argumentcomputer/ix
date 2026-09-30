@@ -215,7 +215,8 @@ def k1 (a : Assert) : IO (Array String) := do
     let c ← rootNamed l name
     let lr ← lamRoot e c
     let some root := anfRoot e.lam final lr | throw (IO.userError s!"{name}: no Anf root")
-    out := out.push s!"  {← check a name final root (if name == "K1.sumLoop" then some 3 else none)}"
+    let line ← check a name final root (if name == "K1.sumLoop" then some 3 else none)
+    out := out.push s!"  {line}"
   -- least clocks of Lam and of the pipeline's output (the tick overhead)
   for (name, args) in [("K1.fib", [15]), ("K1.ack", [2, 3]), ("K1.tak", [8, 6, 4, 2]),
       ("K1.sumLoop", [100]), ("K1.gcd", [832040, 514229])] do

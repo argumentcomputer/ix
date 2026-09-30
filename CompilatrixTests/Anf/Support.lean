@@ -114,7 +114,8 @@ def compareRun (a : Assert) (L : LProgram) (A : AProgram) (lr : Nat) (args : Lis
             | _ => false)
           (msg s!"Anf at clock {k} gives {anfOutcome r}, at its least {la} ok")
     | r => expect a false (msg s!"Lam returns a value, Anf {anfOutcome r}")
-    let t := { t with ok := t.ok + 1, maxRatio := max t.maxRatio (if ll == 0 then 100 else la * 100 / ll) }
+    let ratio := if ll == 0 then 100 else la * 100 / ll
+    let t := { t with ok := t.ok + 1, maxRatio := max t.maxRatio ratio }
     return if la == ll then { t with sameClock := t.sameClock + 1 }
       else { t with laterClock := t.laterClock + 1 }
   | .trap =>

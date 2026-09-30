@@ -55,7 +55,8 @@ def run (P : Program) : Program :=
   let seen := reach P (P.size + total + P.roots.length + 1) P.roots .leaf
   let kept := (List.range P.size).filter seen.contains
   let m : Src.NatMap Nat := Src.NatMap.ofList (kept.zipIdx)
-  let gs := kept.filterMap fun g => (P.global? g).map fun gd => { gd with body := Exp.rename m gd.body }
+  let gs := kept.filterMap fun g =>
+    (P.global? g).map fun gd => { gd with body := Exp.rename m gd.body }
   { P.withGlobals gs with roots := P.roots.map fun r => m.getD r r }
 
 end Compilatrix.Anf.Prune

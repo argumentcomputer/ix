@@ -9,7 +9,7 @@ import Compilatrix.Anf.Prune
 `Anf.Pipeline` (design note 02 §8, Phase 1): P1, then the steps of a
 certificate. `produce` follows the Phase 1 schedule
 
-  P1 → P2 → (P3 → P2)* → P4 → P2 → (P3 → P2)* → prune
+  P1 → P2 → prune → (P3 → P2)* → P4 → P2 → (P3 → P2)* → prune
 
 (02's `P1 → P2 → P3 → P2 → P4 → P2 → P3 → P2`, with each inlining invocation
 iterated as rounds, each round followed by a shrink, until the default
@@ -19,10 +19,11 @@ those choices (D17: P1 has no certificate; P2 reads rounds per global and two
 size bounds; P3 inline rounds; P4 its decisions). `run` never searches, so it
 is the function `Recheck.run` evaluates in the kernel.
 
-The pipeline ends by pruning the globals unreachable from the roots (an
-addition to 02's list: inlining and specialisation leave the originals
-behind). A program that still has an `fn`, an `app` or a function-valued
-`glob` is not `FirstOrder`; the Anf → Fir boundary (M1.F5) declines it in
+Pruning the globals unreachable from the roots (an addition to 02's list)
+runs after the first shrink (erasure's unused helpers) and last (inlining
+and specialisation leave the originals behind). A program that still has an
+`fn`, an `app` or a function-valued `glob` is not `FirstOrder`; the
+Anf → Fir boundary (M1.F5) declines it in
 Phase 1 (`residual` reports what remains). -/
 
 namespace Compilatrix.Anf.Pipeline
@@ -79,29 +80,34 @@ def produce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := do
   let mut steps : Array Step := #[]
   let mut stages : Array (String × Program) := #[("P1", p1)]
   let mut fires : Walk.Fires := {}
-  let shrink := fun (P : Program) => Shrink.produce B.shrink P
-  -- P2
-  let (c, P2, f) ← shrink P
-  P := P2; steps := steps.push (.shrink c); stages := stages.push ("P2", P); fires := fires.add f
+  -- P2, then drop what the roots never reach (erasure's wrappers and helpers)
+  let (c, P2, f) ← Shrink.produce B.shrink P
+  P := P2; fires := fires.add f
+  steps := steps.push (.shrink c); stages := stages.push ("P2", P)
+  P := Prune.run P
+  steps := steps.push .prune; stages := stages.push ("prune", P)
   for phase in [0:2] do
     if phase == 1 then
       -- P4, then P2
       let sc := Specialize.produce B.spec 0 P
       P ← Specialize.run sc P
       steps := steps.push (.specialize sc); stages := stages.push ("P4", P)
-      let (c, P2, f) ← shrink P
-      P := P2; steps := steps.push (.shrink c); stages := stages.push ("P2", P); fires := fires.add f
+      let (c, P2, f) ← Shrink.produce B.shrink P
+      P := P2; fires := fires.add f
+      steps := steps.push (.shrink c); stages := stages.push ("P2", P)
     -- (P3, P2) rounds
     for _ in [0:B.inline.rounds] do
       let r := Inline.produce B.inline P
       if r.isEmpty then break
       let (P3, _) ← Inline.round P r
       steps := steps.push (.inline r); stages := stages.push ("P3", P3)
-      let (c, P2, f) ← shrink P3
-      P := P2; steps := steps.push (.shrink c); stages := stages.push ("P2", P); fires := fires.add f
+      let (c, P2, f) ← Shrink.produce B.shrink P3
+      P := P2; fires := fires.add f
+      steps := steps.push (.shrink c); stages := stages.push ("P2", P)
   P := Prune.run P
   steps := steps.push .prune; stages := stages.push ("prune", P)
-  return { cert := { shrink := B.shrink.params, steps := steps.toList }, stages := stages.toList, fires }
+  return { cert := { shrink := B.shrink.params, steps := steps.toList }
+           stages := stages.toList, fires }
 
 /-! ## What the Anf → Fir boundary will decline -/
 

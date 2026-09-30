@@ -298,7 +298,8 @@ def specialize (src : Program) (inv : Nat) (fkey : Key.GKey) (defs : Src.NatMap 
       | .param i => gd.ps.getD i {}
       | _ => {}
     let spec : GDef := { key, ps, result := gd.result, body := binds pro body }
-    set { st with prog := st.prog.withGlobals (st.prog.globalList.map (fun (p : GlobalId × GDef) => p.2) ++ [spec]),
+    let gs := st.prog.globalList.map (fun (p : GlobalId × GDef) => p.2)
+    set { st with prog := st.prog.withGlobals (gs ++ [spec]),
                   specs := st.specs + 1 }
     return some (s, args)
 where
@@ -329,7 +330,8 @@ def rewrite (src : Program) (inv : Nat) (fkey : Key.GKey) (D : List (GlobalId ×
         | _ => pure 0
       let b' ← match b with
         | .fn ps fb => do
-          pure (Bind.fn ps (← rewrite src inv fkey D fuel (blank defs d ps.length) (d + ps.length) fb))
+          let fb' ← rewrite src inv fkey D fuel (blank defs d ps.length) (d + ps.length) fb
+          pure (Bind.fn ps fb')
         | .call g as =>
           match D.lookup g, src.global? g with
           | some mask, some gd =>

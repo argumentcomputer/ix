@@ -70,7 +70,8 @@ def rules (a : Assert) : IO Unit := do
   expectR a (ev 0 (b (.prim .natAdd [.box, lit 5]) (.ret (x 0)))) "stuck" "a primitive on □"
   expectR a (ev 0 (b (.prim .natAdd [lit 5]) (.ret (x 0)))) "stuck" "an unsaturated primitive"
   -- Case: Nat peeling, the default, stuck.
-  let nat := fun (s : Atom) => Exp.case s [.mk natZ 0 (.ret (lit 100)), .mk natS 1 (.ret (x 0))] none
+  let nat := fun (s : Atom) =>
+    Exp.case s [.mk natZ 0 (.ret (lit 100)), .mk natS 1 (.ret (x 0))] none
   expectR a (ev 0 (nat (lit 0))) "ok lit 100" "case on 0"
   expectR a (ev 0 (nat (lit 5))) "ok lit 4" "case on 5 binds 4"
   expectR a (ev 0 (.case (lit 5) [.mk natZ 0 (.ret (lit 1))] (some (.ret (lit 9))))) "ok lit 9"

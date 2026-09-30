@@ -71,8 +71,8 @@ example : sizeAfter { steps := [.inline [(0, [1])], .shrink [9], .prune] } dict 
 /-- `root n = loop n 0`, `loop n acc = case n | 0 ⇒ acc | m+1 ⇒ loop m (f acc)` with
 the step function `f` passed unchanged (a fixed higher-order parameter). -/
 def loop : Lam.Program := prog
-  [ .lam .strict {} (.app (.app (.app (.glob 1) (.lam .strict {} (.prim .natAdd [v 0, lit 2])) .strict)
-      (v 0) .strict) (lit 0) .strict),
+  [ .lam .strict {} (.app (.app (.app (.glob 1)
+      (.lam .strict {} (.prim .natAdd [v 0, lit 2])) .strict) (v 0) .strict) (lit 0) .strict),
     .lam .strict {} (.lam .strict {} (.lam .strict {} (.case (v 1)
       [.mk natZ 0 (v 0), .mk natS 1 (.app (.app (.app (.glob 1) (v 3) .strict) (v 0) .strict)
         (.app (v 3) (v 1) .strict) .strict)] none))) ]
