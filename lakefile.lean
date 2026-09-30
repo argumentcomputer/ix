@@ -68,6 +68,13 @@ gcd programs with their annotations as Lean terms (M1.K1). -/
 lean_exe «gen-src-artifacts» where
   root := `CompilatrixTests.Src.ArtifactMain
 
+/- Anf and the middle-end passes P1–P4 (design note 02 §6–8, §13): Lam
+against Anf after every pass on k1.ixe and bench-k1, the K1 shape
+expectations, generated Lam programs under random oracles, WellScoped and
+shrink idempotence, and the passes re-run by the kernel. -/
+lean_exe «tests-anf» where
+  root := `CompilatrixTests.Anf.Main
+
 lean_exe «tests-ixon-v3» where
   root := `CompilatrixTests.IxonV3.Main
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]

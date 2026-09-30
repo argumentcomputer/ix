@@ -7,6 +7,7 @@ import CompilatrixTests.Src.Run
 import CompilatrixTests.Src.Relevance.Run
 import CompilatrixTests.Lam.Run
 import CompilatrixTests.Lam.KernelK1
+import CompilatrixTests.Anf.Run
 
 /-! Test and proof collection. The complete proof/fence target is registered
 separately as `CompilatrixTests.Proofs`; runtime suites are compiled and run
@@ -14,4 +15,5 @@ through their executables (`check-lir` for `CompilatrixTests.Lir`,
 `check-xv-select` for `CompilatrixTests.Xv`, `check-regalloc` for
 `CompilatrixTests.Xv.Alloc`, `check-backend` for `CompilatrixTests.Backend`,
 `tests-src` and `tests-src-slow` for `CompilatrixTests.Src`, `tests-relevance`
-for its relevance suite, `tests-lam` for `CompilatrixTests.Lam`). -/
+for its relevance suite, `tests-lam` for `CompilatrixTests.Lam`, `tests-anf`
+for `CompilatrixTests.Anf`). -/

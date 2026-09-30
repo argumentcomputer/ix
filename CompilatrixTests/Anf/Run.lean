@@ -1,0 +1,39 @@
+import CompilatrixTests.Anf.Differential
+
+/-! The `tests-anf` suite (design note 02 §6–8, §13). -/
+
+namespace CompilatrixTests.Anf.Run
+
+open CompilatrixTests.Src
+
+def part (a : Assert) (label : String) (action : IO Unit) : IO Unit := do
+  let before ← a.get
+  let ((), ms) ← timed action
+  IO.println s!"  {label}: {(← a.get) - before} assertions, {ms} ms"
+  (← IO.getStdout).flush
+
+def stages : Differential.Stages := fun L => do
+  let p1 ← Compilatrix.Anf.convert L
+  return [("P1", p1)]
+
+def main (args : List String) : IO UInt32 := do
+  match args with
+  | ["--dump", name] =>
+    let l ← loadBench name
+    let e ← CompilatrixTests.Lam.eraseLoaded l
+    for (stage, A) in ← IO.ofExcept (stages e.lam) do
+      IO.println s!"== {stage}\n{A.render}"
+    return 0
+  | _ => pure ()
+  let a ← IO.mkRef 0
+  try
+    IO.println "tests-anf"
+    part a "Lam against Anf on k1.ixe and bench-k1, after every pass" do
+      for line in ← Differential.packs a stages do IO.println s!"    {line}"
+    IO.println s!"tests-anf: {← a.get} assertions passed"
+    return 0
+  catch e =>
+    IO.eprintln s!"tests-anf: FAILED after {← a.get} assertions: {e}"
+    return 1
+
+end CompilatrixTests.Anf.Run

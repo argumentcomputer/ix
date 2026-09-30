@@ -8,6 +8,7 @@
   "tests-lam": {"roots": ["CompilatrixTests.Lam.Main"], "kind": "lean_exe"},
   "tests-ixon-v3":
   {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
+  "tests-anf": {"roots": ["CompilatrixTests.Anf.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
   "pin-src-tables": {"roots": ["PinSrcTables"], "kind": "lean_exe"},
   "gen-src-artifacts":
@@ -623,6 +624,25 @@
   "CompilatrixTests.Backend.Cases":
   {"path": "CompilatrixTests/Backend/Cases.lean",
    "imports": ["Compilatrix.Backend", "CompilatrixTests.Backend.Programs"]},
+  "CompilatrixTests.Anf.Support":
+  {"path": "CompilatrixTests/Anf/Support.lean",
+   "imports":
+   ["CompilatrixTests.Lam.Support",
+    "Compilatrix.Anf.Convert",
+    "Compilatrix.Anf.Semantics",
+    "Compilatrix.Anf.Readback",
+    "Compilatrix.Anf.WellFormed",
+    "Compilatrix.Anf.Print"]},
+  "CompilatrixTests.Anf.Run":
+  {"path": "CompilatrixTests/Anf/Run.lean",
+   "imports": ["CompilatrixTests.Anf.Differential"]},
+  "CompilatrixTests.Anf.Main":
+  {"path": "CompilatrixTests/Anf/Main.lean",
+   "imports": ["CompilatrixTests.Anf.Run"]},
+  "CompilatrixTests.Anf.Differential":
+  {"path": "CompilatrixTests/Anf/Differential.lean",
+   "imports":
+   ["CompilatrixTests.Anf.Support", "CompilatrixTests.Lam.Differential"]},
   "CompilatrixTests.Aiur.WireRun":
   {"path": "CompilatrixTests/Aiur/WireRun.lean",
    "imports": ["CompilatrixTests.Aiur.WireFixtures"]},
@@ -759,7 +779,8 @@
     "CompilatrixTests.Src.Run",
     "CompilatrixTests.Src.Relevance.Run",
     "CompilatrixTests.Lam.Run",
-    "CompilatrixTests.Lam.KernelK1"]},
+    "CompilatrixTests.Lam.KernelK1",
+    "CompilatrixTests.Anf.Run"]},
   "Compilatrix.Xv.XlSemantics":
   {"path": "Compilatrix/Xv/XlSemantics.lean",
    "imports": ["Compilatrix.Xv.Semantics", "Compilatrix.Lir.Operands"]},
@@ -1512,6 +1533,9 @@
    "imports": ["Compilatrix.Anf.Semantics"]},
   "Compilatrix.Anf.Print":
   {"path": "Compilatrix/Anf/Print.lean", "imports": ["Compilatrix.Anf.Syntax"]},
+  "Compilatrix.Anf.Convert":
+  {"path": "Compilatrix/Anf/Convert.lean",
+   "imports": ["Compilatrix.Anf.Syntax", "Compilatrix.Lam.ModesOk"]},
   "Compilatrix.Aiur.Wire.TreeProofs":
   {"path": "Compilatrix/Aiur/Wire/TreeProofs.lean",
    "imports": ["Compilatrix.Aiur.Wire.Tree", "Compilatrix.Aiur.Wire.OpProofs"]},
@@ -1879,6 +1903,7 @@
     "Compilatrix.Anf.Readback",
     "Compilatrix.Anf.WellFormed",
     "Compilatrix.Anf.Print",
+    "Compilatrix.Anf.Convert",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
