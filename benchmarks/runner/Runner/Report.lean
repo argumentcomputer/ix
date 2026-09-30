@@ -101,12 +101,24 @@ def fmtCount (value : Float) : String :=
 
 def reportEntry (manifest : Manifest) (out : FilePath) : IO Unit := do
   let json ← IO.ofExcept (Json.parse (← IO.FS.readFile (out / "entry-samples.json")))
+  let all ← IO.ofExcept ((json.getObjValD "samples").getArr?)
+  let isValid (s : Json) : Bool := (s.getObjValD "valid").getBool?.toOption.getD true
   let samples ← IO.ofExcept do
-    (← (← json.getObjVal? "samples").getArr?).mapM fun s => do
+    (all.filter isValid).mapM fun s => do
       return (← (← s.getObjVal? "fixture").getStr?, ← (← s.getObjVal? "row").getStr?,
         ← (← s.getObjVal? "block").getNat?, (← (← s.getObjVal? "ns_per_call").getNum?).toFloat,
         (s.getObjValD "heap_bytes").getNat?.toOption, ← (← s.getObjVal? "reps").getNat?,
         ← (← s.getObjVal? "warmup").getNat?)
+  -- the gate's record: invalid attempts, accepted blocks that were not quiet, waits
+  let blockKey (s : Json) := (s.getObjValD "fixture").compress ++ "/" ++ (s.getObjValD "block").compress ++
+    "/" ++ (s.getObjValD "attempt").compress
+  let firstOfBlock := all.foldl (fun (seen : List String × Array Json) s =>
+    if seen.1.contains (blockKey s) then seen else (blockKey s :: seen.1, seen.2.push s)) ([], #[]) |>.2
+  let invalidAttempts := (firstOfBlock.filter (!isValid ·)).size
+  let loud := (firstOfBlock.filter fun s => isValid s &&
+    (s.getObjValD "quiet").getBool?.toOption == some false).size
+  let waited := firstOfBlock.foldl (fun acc s => acc + ((s.getObjValD "waited_s").getNat?.toOption.getD 0)) 0
+  let gated := !(json.getObjValD "gate").isNull
   let env := json.getObjValD "environment"
   let envEnd := json.getObjValD "environment_end"
   let perf ← try some <$> IO.ofExcept (Json.parse (← IO.FS.readFile (out / "entry-perf.json"))) catch _ => pure none
@@ -123,6 +135,8 @@ def reportEntry (manifest : Manifest) (out : FilePath) : IO Unit := do
     s!"Host: {str env "cpu_model"}, worker CPU {env.getObjValD "worker_cpu" |>.compress} (SMT siblings {str env "worker_siblings"}, max {str env "worker_max_khz"} kHz), governor {str env "governor"}, energy preference {str env "energy_preference"}, boost {str env "boost"}, kernel {str env "kernel"}.",
     s!"Load average at the start: {str env "loadavg"}; at the end: {str envEnd "loadavg"}. Mains power online: {str env "ac_online"} at the start, {str envEnd "ac_online"} at the end; platform profile {str env "platform_profile"}; worker frequency {str env "worker_cur_khz"} kHz at the start, {str envEnd "worker_cur_khz"} kHz at the end (snapshots).",
     s!"Blocks per fixture: {json.getObjValD "blocks" |>.compress}; each block runs every row once in a shuffled order, a fresh pinned process each. Target chunk: {(reps.map (·.getObjValD "target_ms" |>.compress)).getD "?"} ms.",
+    if gated then s!"Quiet gate {(json.getObjValD "gate").compress}: {invalidAttempts} block attempts were disturbed (kept in the samples as invalid and run again), {loud} accepted blocks were not quiet (out of attempts), {waited} s spent waiting for quiet."
+    else "No quiet gate: blocks ran whatever else the machine was doing (see the load averages).",
     "Time per call of the fixture's `entry`, in process (the entry profile: startup and runtime initialisation excluded, the entry's guards and result handoff included); medians over blocks. Ratios are row / baseline (above 1 is slower), paired per block, with 95% percentile-bootstrap intervals (2000 rounds). Counters are user-space `perf` events per call (a run with the repetitions minus one without; median of the runs). `clang-tagged` and `lir-kernel` are diagnostic rows that attribute a gap; they are never real-program results.", ""]
   if let some b := build then
     lines := lines.push s!"Toolchains: {(b.getObjValD "versions").compress}."

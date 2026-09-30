@@ -10,7 +10,8 @@ def usage : String :=
    check     [--fixtures a,b]\n\
    calibrate [--cpu N] [--target-ms T] [--fixtures a,b] [--rows r,s,compilatrix@*]\n\
    measure   [--profile process|entry] [--cpu N] [--blocks B] [--fixtures a,b] [--rows ...]\n\
-   perf      [--cpu N] [--perf PATH] [--runs R] [--fixtures a,b] [--rows ...]\n\
+   \x20         [--gate MAXBUSY [--gate-wait S] [--gate-attempts A]]   (entry profile)\n\
+   perf      [--cpu N] [--perf PATH] [--runs R] [--fixtures a,b] [--rows ...] [--gate MAXBUSY]\n\
    report\n\
    \n\
    Run from benchmarks/runner; fixtures come from ../fixtures/manifest.json."
@@ -48,13 +49,18 @@ def main (args : List String) : IO UInt32 := do
       | "build" => ["fixtures", "compilatrix", "closures", "probe", "cc", "variant"]
       | "check" => ["fixtures"]
       | "calibrate" => ["cpu", "target-ms", "fixtures", "rows"]
-      | "measure" => ["profile", "cpu", "blocks", "fixtures", "rows"]
-      | "perf" => ["cpu", "perf", "runs", "fixtures", "rows"]
+      | "measure" => ["profile", "cpu", "blocks", "fixtures", "rows", "gate", "gate-wait", "gate-attempts"]
+      | "perf" => ["cpu", "perf", "runs", "fixtures", "rows", "gate", "gate-wait"]
       | _ => []
     for (name, _) in opts do
       unless known.contains name do throw (IO.userError s!"unknown option --{name}\n{usage}")
     let only := (get "fixtures").map (·.splitOn ",")
     let rows := (get "rows").map (·.splitOn ",")
+    -- --gate MAXBUSY: wait for quiet blocks and rerun disturbed ones
+    let gate : IO (Option Gate) := do
+      if (get "gate").isNone then return none
+      return some { maxBusy := ← nat "gate" 1, maxWaitS := ← nat "gate-wait" 1800,
+                    attempts := ← nat "gate-attempts" 5 }
     match command with
     | "build" =>
       let variants ← ((get "variant").map (·.splitOn ",") |>.getD []).mapM fun spec =>
@@ -77,9 +83,9 @@ def main (args : List String) : IO UInt32 := do
     | "measure" =>
       match (get "profile").getD "process" with
       | "process" => measureProcess manifest out (← nat "cpu" 2) (← nat "blocks" 10) only
-      | "entry" => measureEntry manifest out (← nat "cpu" 2) (← nat "blocks" 10) only rows
+      | "entry" => measureEntry manifest out (← nat "cpu" 2) (← nat "blocks" 10) only rows (← gate)
       | p => throw (IO.userError s!"unknown profile {p}")
-    | "perf" => perfAll manifest out (← nat "cpu" 2) ((get "perf").getD "perf") (← nat "runs" 3) only rows
+    | "perf" => perfAll manifest out (← nat "cpu" 2) ((get "perf").getD "perf") (← nat "runs" 3) only rows (← gate)
     | "report" => report manifest out
     | _ => throw (IO.userError usage)
     return 0

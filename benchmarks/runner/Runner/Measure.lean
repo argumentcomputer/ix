@@ -186,11 +186,89 @@ def plannedRows (out : FilePath) (plans : List (String × String × Plan)) (rows
   return ((← builtRows out true fixture).filter (rowSelected rows)).filterMap fun row =>
     (planFor plans fixture row).map (row, ·)
 
-def measureEntry (manifest : Manifest) (out : FilePath) (cpu blocks : Nat) (only rows : Option (List String)) :
-    IO Unit := do
+/-! ## Quiet blocks
+
+A shared development machine runs builds next to a session. Busy time per
+CPU comes from `/proc/stat`: a block is *quiet* when, over its whole
+duration, the worker's SMT siblings were busy at most 10% of the time and at
+most `maxBusy` other CPUs were busy more than half the time. With a gate,
+`measure` waits (polling every 10 s, up to `maxWaitS` per block) for a quiet
+second before a block, and a block that was not quiet is kept with its
+reason, marked invalid, and run again (up to `attempts` times). -/
+
+structure Gate where
+  maxBusy : Nat := 1
+  maxWaitS : Nat := 1800
+  attempts : Nat := 5
+
+/-- Per-CPU `(busy, total)` jiffies from `/proc/stat`. -/
+def cpuTimes : IO (List (Nat × Nat × Nat)) := do
+  let text ← readProc "/proc/stat"
+  return (text.splitOn "\n").filterMap fun line =>
+    match (line.splitOn " ").filter (!·.isEmpty) with
+    | name :: fields =>
+      if name.startsWith "cpu" && name.length > 3 then
+        match (name.drop 3).toString.toNat?, fields.mapM String.toNat? with
+        | some n, some vs =>
+          let total := vs.take 8 |>.foldl (· + ·) 0
+          let idle := vs.getD 3 0 + vs.getD 4 0
+          some (n, total - idle, total)
+        | _, _ => none
+      else none
+    | [] => none
+
+/-- The worker's SMT siblings (`2,14` or `2-3`), without the worker. -/
+def siblings (cpu : Nat) : IO (List Nat) := do
+  let text ← readProc s!"/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list"
+  let parts := text.splitOn ","
+  let cpus := parts.flatMap fun p => match p.splitOn "-" with
+    | [a, b] => match a.toNat?, b.toNat? with
+      | some x, some y => List.range (y + 1 - x) |>.map (· + x)
+      | _, _ => []
+    | [a] => a.toNat?.toList
+    | _ => []
+  return cpus.filter (· != cpu)
+
+/-- Busy fractions between two snapshots: the siblings' largest, and how many
+other CPUs (not the worker, its siblings or `controller`) were over half busy. -/
+def busyBetween (worker : Nat) (sibs : List Nat) (controller : Option Nat)
+    (before after : List (Nat × Nat × Nat)) : Float × Nat :=
+  let fracs := after.filterMap fun (n, b1, t1) =>
+    (before.find? (·.1 == n)).map fun (_, b0, t0) =>
+      (n, if t1 > t0 then (b1 - b0).toFloat / (t1 - t0).toFloat else 0.0)
+  let sib := (fracs.filter fun (n, _) => sibs.contains n).foldl (fun m (_, f) => max m f) 0.0
+  let others := (fracs.filter fun (n, f) => n != worker && !sibs.contains n && controller != some n && f > 0.5).length
+  (sib, others)
+
+def Gate.quiet (g : Gate) (sibling : Float) (others : Nat) : Bool := sibling ≤ 0.10 && others ≤ g.maxBusy
+
+/-- The controller's own CPU, when it is pinned to one. -/
+def controllerCpu : IO (Option Nat) := do
+  let status ← readProc "/proc/self/status"
+  let line := (status.splitOn "\n").find? (·.startsWith "Cpus_allowed_list:") |>.getD ""
+  return ((line.splitOn ":").getD 1 "").trimAscii.toString.toNat?
+
+/-- Wait for a quiet second; the seconds waited. -/
+def waitQuiet (g : Gate) (cpu : Nat) (sibs : List Nat) (controller : Option Nat) : IO Nat := do
+  let mut waited := 0
+  repeat
+    let t0 ← cpuTimes
+    IO.sleep 1000
+    let t1 ← cpuTimes
+    let (sib, others) := busyBetween cpu sibs controller t0 t1
+    if g.quiet sib others || waited ≥ g.maxWaitS then break
+    IO.sleep 9000
+    waited := waited + 10
+  return waited
+
+def measureEntry (manifest : Manifest) (out : FilePath) (cpu blocks : Nat) (only rows : Option (List String))
+    (gate : Option Gate := none) : IO Unit := do
   let plans ← loadPlans out
   let env ← environment cpu
+  let sibs ← siblings cpu
+  let controller ← controllerCpu
   let mut samples : Array Json := #[]
+  let mut invalid := 0
   for (fixture, index) in (manifest.fixtures.filter fun f => only.all (·.contains f.name)).toList.zipIdx do
     let rows ← plannedRows out plans rows fixture
     if rows.isEmpty then continue
@@ -200,20 +278,47 @@ def measureEntry (manifest : Manifest) (out : FilePath) (cpu blocks : Nat) (only
     for (row, plan) in rows do
       let _ ← runEntry out (some cpu) row fixture 1 (min plan.warmup 1)
     for block in [:blocks] do
-      let load ← readProc "/proc/loadavg"
-      for (row, plan) in shuffle (block * 1000 + index) rows do
-        let (result, ns, heap) ← runEntry out (some cpu) row fixture plan.reps plan.warmup
-        unless result == want do
-          throw (IO.userError s!"{row.name}/{fixture.name}: {result} differs from {want} in block {block}")
-        samples := samples.push (Json.mkObj [("fixture", Json.str fixture.name), ("row", Json.str row.name),
-          ("block", toJson block), ("reps", toJson plan.reps), ("warmup", toJson plan.warmup),
-          ("ns_per_call", toJson ns), ("heap_bytes", match heap with | some h => toJson h | none => Json.null),
-          ("loadavg", Json.str load)])
+      let mut attempt := 0
+      repeat
+        let waited ← match gate with
+          | some g => waitQuiet g cpu sibs controller
+          | none => pure 0
+        let load ← readProc "/proc/loadavg"
+        let t0 ← cpuTimes
+        let mut results : Array (Row × Plan × Float × Option Nat) := #[]
+        for (row, plan) in shuffle (block * 1000 + index) rows do
+          let (result, ns, heap) ← runEntry out (some cpu) row fixture plan.reps plan.warmup
+          unless result == want do
+            throw (IO.userError s!"{row.name}/{fixture.name}: {result} differs from {want} in block {block}")
+          results := results.push (row, plan, ns, heap)
+        let (sib, others) := busyBetween cpu sibs controller t0 (← cpuTimes)
+        let quiet := (gate.getD {}).quiet sib others
+        let valid := gate.isNone || quiet || attempt + 1 ≥ (gate.getD {}).attempts
+        let reason := if quiet then "" else
+          s!"siblings busy {(sib * 1000).round / 10}%, {others} other CPUs over half busy"
+        for (row, plan, ns, heap) in results do
+          samples := samples.push (Json.mkObj [("fixture", Json.str fixture.name), ("row", Json.str row.name),
+            ("block", toJson block), ("attempt", toJson attempt), ("reps", toJson plan.reps),
+            ("warmup", toJson plan.warmup), ("ns_per_call", toJson ns),
+            ("heap_bytes", match heap with | some h => toJson h | none => Json.null),
+            ("loadavg", Json.str load), ("waited_s", toJson waited),
+            ("sibling_busy", toJson sib), ("other_busy_cpus", toJson others), ("quiet", toJson quiet),
+            ("valid", toJson valid), ("reason", Json.str reason)])
+        -- an invalid attempt is kept, and the block runs again
+        if valid then break
+        invalid := invalid + 1
+        attempt := attempt + 1
     IO.println s!"measured {fixture.name}: {blocks} blocks × {rows.length} rows"
   IO.FS.writeFile (out / "entry-samples.json") ((Json.mkObj [
-    ("format", Json.str "compilatrix/benchmark-entry-samples/1"),
+    ("format", Json.str "compilatrix/benchmark-entry-samples/2"),
     ("environment", env), ("environment_end", ← environment cpu), ("blocks", toJson blocks),
+    ("gate", match gate with
+      | some g => Json.mkObj [("max_busy", toJson g.maxBusy), ("max_wait_s", toJson g.maxWaitS),
+          ("attempts", toJson g.attempts), ("sibling_max", toJson 0.10)]
+      | none => Json.null),
+    ("invalid_attempts", toJson invalid),
     ("samples", Json.arr samples)]).pretty ++ "\n")
+  IO.println s!"invalid block attempts: {invalid}"
 
 /-! ## Counters -/
 
@@ -237,13 +342,19 @@ def perfStat (perf : String) (out : FilePath) (cpu : Nat) (row : Row) (fixture :
   return counters output.stderr
 
 def perfAll (manifest : Manifest) (out : FilePath) (cpu : Nat) (perf : String) (runs : Nat)
-    (only rows : Option (List String)) : IO Unit := do
+    (only rows : Option (List String)) (gate : Option Gate := none) : IO Unit := do
   let plans ← loadPlans out
+  let sibs ← siblings cpu
+  let controller ← controllerCpu
   let mut rowsJson : Array Json := #[]
   for fixture in manifest.fixtures.filter fun f => only.all (·.contains f.name) do
-    for (row, plan) in ← plannedRows out plans rows fixture do
+    let planned ← plannedRows out plans rows fixture
+    if planned.isEmpty then continue
+    for (row, plan) in planned do
       let mut perRun : Array (List (String × Option Float)) := #[]
       for _ in [:runs] do
+        if let some g := gate then
+          let _ ← waitQuiet g cpu sibs controller
         let full ← perfStat perf out cpu row fixture plan.reps plan.warmup
         let none' ← perfStat perf out cpu row fixture 0 plan.warmup
         perRun := perRun.push (events.map fun event =>
