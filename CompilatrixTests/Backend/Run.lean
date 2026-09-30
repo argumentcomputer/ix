@@ -161,6 +161,9 @@ def handCases : List Case := [
       ⟨[1000000, 0], 65536, some ⟨2, 0⟩, false⟩,
       -- success after failure on the same region
       ⟨[100, 0], defaultBudget, none, true⟩] },
+  { name := "loop", program := Programs.loop, reps := natReps 1,
+    inputs := [⟨[0], defaultBudget, none, true⟩, ⟨[1], defaultBudget, none, true⟩, ⟨[10], defaultBudget, none, true⟩,
+      ⟨[1000], defaultBudget, none, true⟩] },
   { name := "heap", program := Programs.heap, reps := wordReps 2, inputs := [⟨[40, 2], defaultBudget, none, true⟩] },
   { name := "fused", program := Programs.fused, reps := wordReps 2,
     inputs := [⟨[100, 7], defaultBudget, none, true⟩, ⟨[7, 100], defaultBudget, none, true⟩,

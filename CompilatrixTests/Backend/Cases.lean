@@ -186,6 +186,23 @@ def perturb (f : X86.Layout.Order → X86.Layout.Order) : Bool :=
   | o => o
 #guard perturb fun o => o.drop 1
 
+-- The order oracle is loop-aware: `loop`'s function (blocks 7–10: entry,
+-- header, exit, body) is laid out entry, header, body, exit, after the
+-- wrapper's two blocks, so the header (now block 3) branches out of the
+-- loop to the exit (5) on the inverted condition and falls through to the
+-- body (4).
+def loopOrder : Option X86.Layout.Order := (stacked loop).map fun s =>
+  X86.Layout.Order.produce (X86.Layout.tunnel s.program) s.shape
+
+#guard loopOrder.any fun o => o[1]? == some [7, 8, 10, 9]
+#guard (stacked loop).any fun s =>
+  let t := X86.Layout.tunnel s.program
+  match X86.Layout.run t s.shape (X86.Layout.Order.produce t s.shape) with
+  | .ok (q, _) => match (q.blocks[3]!).terminator with
+      | .branch _ _ .unsignedGe 5 4 .fall => true
+      | _ => false
+  | .error _ => false
+
 -- Linearisation inverts a branch whose true target is next, and a branch
 -- whose false target is next falls through to it (no `jmp`); otherwise
 -- the false edge stays a `jmp rel32`.

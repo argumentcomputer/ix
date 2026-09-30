@@ -39,4 +39,9 @@ example : shape calls = some [13, 11, 1, 11, 9, 1, 1, 9] := by decide +kernel
 set_option maxRecDepth 100000 in
 example : shape deep = some [14, 12, 1, 3, 1, 1, 5, 0, 0, 0, 2, 1, 1, 1, 1, 9] := by decide +kernel
 
+-- The loop-aware order (loop detection included): the body (3
+-- instructions) before the exit (0).
+set_option maxRecDepth 100000 in
+example : shape loop = some [13, 11, 2, 0, 3, 0, 1, 9] := by decide +kernel
+
 end CompilatrixTests.Backend.KernelEval

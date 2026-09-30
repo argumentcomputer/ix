@@ -16,7 +16,7 @@ rdx`), so each exercises one part of stacking:
 | `stackArgs` | nine arguments: two through `outArg` cells into the callee's `inArg` cells |
 | `countdown` | tail calls in a framed, checked function: constant stack at any depth |
 | `deep` | recursion to a given depth, then success or a failure (heap, natOverflow, trap) from the bottom of the call chain; with a small stack budget, status 2 |
-| `heap` | loads and stores through the context's heap pointer |
+| `loop` | a counting loop whose exit precedes its body in label order: the loop-aware block order || `heap` | loads and stores through the context's heap pointer |
 | `fused` | a fused `cmp`/`setcc` (with its zeroing `xor`), a fused `cmp`/`cmovcc`, `div` and a shift by `cl` |
 -/
 
@@ -120,6 +120,18 @@ def down : Func Loc := { name := "down", params := [r .rdi, r .rsi], results := 
 
 def deep : LProgram := exported "t_deep" [{ name := "deep", params := [r .rdi, r .rsi], results := 1, blocks := #[
   { body := #[.call 1 [r .rdi, r .rsi] [r .rax]], term := .ret [r .rax] }] }, down]
+
+/-- `Σ i < n` on tagged `Nat`s as a loop whose exit comes before its body in
+label order (`i` in `rcx`, `s` in `rax`, `n` in `rdi`), so the block order
+must move the body up to keep the loop contiguous. -/
+def loop : LProgram := exported "t_loop" [{ name := "loop", params := [r .rdi], results := 1, blocks := #[
+  { body := #[movImm (r .rcx) 1, movImm (r .rax) 1], term := .jmp (to 1) },
+  -- b1, the header: i < n
+  { term := .jcc cmpMR [.r (r .rcx), .r (r .rdi)] [] .unsignedLt (to 3) (to 2) },
+  -- b2, the exit
+  { term := .ret [r .rax] },
+  -- b3: s := s + i (tagged), i := i + 1; the back edge
+  { body := #[subImm (r .rax) 1, add (r .rax) (.r (r .rcx)), addImm (r .rcx) 2], term := .jmp (to 1) }] }]
 
 /-- Store `a` and `b` into the heap (`regionBase`, `ctx − 24`), load them
 back and add. -/
