@@ -7,6 +7,7 @@ import Ix.Kernel.Claims
 import Ix.Kernel.Search
 import Ix.Kernel.Certified.Quotient.Reading
 import Ix.Kernel.Level
+import Std.Data.HashMap
 
 /-! # Reduction, inference, and conversion
 
@@ -213,25 +214,185 @@ def quickConv (entries : Environment β) (Γ : Context β) : (a b : AExpr β) �
     if he : levelEquiv l l' then some ⟨ConvClaim.sort (levelEquiv_sound he)⟩ else none
   | a, b => if h : a = b then some ⟨h ▸ ConvClaim.refl a⟩ else none
 
+/-! ## Per-frame caches
+
+A cache holds results at one context `Γ`, each with its claim, so a hit is
+exact evidence at that context and nothing about the table needs proof. It
+lives for one frame: a computation under a binder starts with a fresh cache
+for the extended context (`KM.inFrame`). A key is found by a depth-bounded
+shape hash and confirmed by `DecidableEq`. Only complete results are kept: a
+normalization that stopped early, or a conversion search that ran out of fuel,
+is not cached. -/
+
+/-- The hash of a reference: its block key's hash and its positions. -/
+def refKeyHash (keyHash : β → UInt64) : ConstRef β → UInt64
+  | .member b i => mixHash (keyHash b) (hash i)
+  | .ctor b i c => mixHash (mixHash (keyHash b) (hash i)) (hash (c + 1))
+
+/-- A hash of the top `depth` levels of a term. -/
+def shapeHash (keyHash : β → UInt64) : Nat → AExpr β → UInt64
+  | 0, _ => 7
+  | depth + 1, e =>
+    match e with
+    | .bvar i => mixHash 11 (hash i)
+    | .sort l => mixHash 13 (hash l)
+    | .const r ls => mixHash 17 (mixHash (refKeyHash keyHash r) (hash ls))
+    | .app f a => mixHash 19 (mixHash (shapeHash keyHash depth f) (shapeHash keyHash depth a))
+    | .lam _ t b => mixHash 23 (mixHash (shapeHash keyHash depth t) (shapeHash keyHash depth b))
+    | .forallE _ t b => mixHash 29 (mixHash (shapeHash keyHash depth t) (shapeHash keyHash depth b))
+    | .letE t w b =>
+      mixHash 31 (mixHash (shapeHash keyHash depth t)
+        (mixHash (shapeHash keyHash depth w) (shapeHash keyHash depth b)))
+    | .proj _ i x => mixHash 37 (mixHash (hash i) (shapeHash keyHash depth x))
+    | .natLit _ n => mixHash 41 (hash n)
+
+/-- The depth the cache keys hash to. -/
+def cacheHashDepth : Nat := 8
+
+/-- Results at one context, each with its claim. -/
+structure Cache (entries : Environment β) (Γ : Context β) : Type u where
+  keyHash : β → UInt64
+  infer : Std.HashMap UInt64 (List (Σ e : AExpr β, Typed.{u,v} entries Γ e)) := {}
+  whnf : Std.HashMap UInt64 (List (Σ e : AExpr β, Normalized.{u,v} entries Γ e)) := {}
+  conv : Std.HashMap UInt64
+    (List ((a : AExpr β) × (b : AExpr β) × Search (Conv.{u,v} entries Γ a b))) := {}
+
+namespace Cache
+
+variable {entries : Environment β} {Γ : Context β}
+
+def empty (keyHash : β → UInt64) : Cache.{u,v} entries Γ := { keyHash }
+
+def key (c : Cache.{u,v} entries Γ) (e : AExpr β) : UInt64 := shapeHash c.keyHash cacheHashDepth e
+
+def findInfer (c : Cache.{u,v} entries Γ) (e : AExpr β) : Option (Typed.{u,v} entries Γ e) :=
+  (c.infer.getD (c.key e) []).findSome? fun ⟨e', t⟩ => if h : e' = e then some (h ▸ t) else none
+
+def addInfer (c : Cache.{u,v} entries Γ) (e : AExpr β) (t : Typed.{u,v} entries Γ e) :
+    Cache.{u,v} entries Γ :=
+  let k := c.key e
+  { c with infer := c.infer.insert k (⟨e, t⟩ :: c.infer.getD k []) }
+
+def findWhnf (c : Cache.{u,v} entries Γ) (e : AExpr β) : Option (Normalized.{u,v} entries Γ e) :=
+  (c.whnf.getD (c.key e) []).findSome? fun ⟨e', n⟩ => if h : e' = e then some (h ▸ n) else none
+
+def addWhnf (c : Cache.{u,v} entries Γ) (e : AExpr β) (n : Normalized.{u,v} entries Γ e) :
+    Cache.{u,v} entries Γ :=
+  let k := c.key e
+  { c with whnf := c.whnf.insert k (⟨e, n⟩ :: c.whnf.getD k []) }
+
+def convKey (c : Cache.{u,v} entries Γ) (a b : AExpr β) : UInt64 := mixHash (c.key a) (c.key b)
+
+def findConv (c : Cache.{u,v} entries Γ) (a b : AExpr β) :
+    Option (Search (Conv.{u,v} entries Γ a b)) :=
+  (c.conv.getD (c.convKey a b) []).findSome? fun ⟨a', b', r⟩ =>
+    if h : a' = a ∧ b' = b then some (h.1 ▸ h.2 ▸ r) else none
+
+def addConv (c : Cache.{u,v} entries Γ) (a b : AExpr β) (r : Search (Conv.{u,v} entries Γ a b)) :
+    Cache.{u,v} entries Γ :=
+  let k := c.convKey a b
+  { c with conv := c.conv.insert k (⟨a, b, r⟩ :: c.conv.getD k []) }
+
+end Cache
+
+/-- Search with a per-frame cache, kept whether the search succeeds or fails. -/
+def KM (entries : Environment β) (Γ : Context β) (α : Type u) : Type u :=
+  Cache.{u,v} entries Γ → Search α × Cache.{u,v} entries Γ
+
+namespace KM
+
+variable {entries : Environment β} {Γ : Context β} {α γ : Type u}
+
+instance : Monad (KM.{u,v} entries Γ) where
+  pure a := fun c => (.ok a, c)
+  bind m f := fun c =>
+    match m c with
+    | (.ok a, c') => f a c'
+    | (.error e, c') => (.error e, c')
+
+instance : MonadExceptOf SearchFailure (KM.{u,v} entries Γ) where
+  throw e := fun c => (.error e, c)
+  tryCatch m h := fun c =>
+    match m c with
+    | (.ok a, c') => (.ok a, c')
+    | (.error e, c') => h e c'
+
+instance : MonadLift Option (KM.{u,v} entries Γ) where
+  monadLift value := fun c => (Search.ofOption value, c)
+
+def ofSearch (s : Search α) : KM.{u,v} entries Γ α := fun c => (s, c)
+
+def map (f : α → γ) (m : KM.{u,v} entries Γ α) : KM.{u,v} entries Γ γ := fun c =>
+  let (r, c') := m c
+  (r.map f, c')
+
+/-- A failed first attempt keeps what it cached; failures merge as in `Search.orElse`. -/
+def orElse (first : KM.{u,v} entries Γ α) (next : Unit → KM.{u,v} entries Γ α) :
+    KM.{u,v} entries Γ α := fun c =>
+  match first c with
+  | (.ok a, c') => (.ok a, c')
+  | (.error a, c') =>
+    match next () c' with
+    | (.ok b, c'') => (.ok b, c'')
+    | (.error b, c'') => (.error (a.merge b), c'')
+
+def mapError (f : SearchFailure → SearchFailure) (m : KM.{u,v} entries Γ α) :
+    KM.{u,v} entries Γ α := fun c =>
+  let (r, c') := m c
+  (r.mapError f, c')
+
+def remember (cause : Option SearchFailure) (m : KM.{u,v} entries Γ α) : KM.{u,v} entries Γ α :=
+  fun c =>
+    let (r, c') := m c
+    (Search.remember cause r, c')
+
+/-- The outcome of a search, as a value. -/
+def attempt (m : KM.{u,v} entries Γ α) : KM.{u,v} entries Γ (Search α) := fun c =>
+  let (r, c') := m c
+  (.ok r, c')
+
+def cache : KM.{u,v} entries Γ (Cache.{u,v} entries Γ) := fun c => (.ok c, c)
+
+def modifyCache (f : Cache.{u,v} entries Γ → Cache.{u,v} entries Γ) :
+    KM.{u,v} entries Γ PUnit :=
+  fun c => (.ok ⟨⟩, f c)
+
+/-- A computation at another context, with a fresh cache for it. -/
+def inFrame {Γ' : Context β} (m : KM.{u,v} entries Γ' α) : KM.{u,v} entries Γ α := fun c =>
+  ((m (Cache.empty c.keyHash)).1, c)
+
+/-- Run with an empty cache. -/
+def run (keyHash : β → UInt64) (m : KM.{u,v} entries Γ α) : Search α :=
+  (m (Cache.empty keyHash)).1
+
+end KM
+
+/-- A binder body's inferred type and that type's sort, at the body's context. -/
+structure TypedBody (entries : Environment β) (Γ : Context β) (b : AExpr β) : Type u where
+  type : AExpr β
+  typed : TypingClaim.{u,v} entries Γ b type
+  level : VLevel
+  sorted : TypingClaim.{u,v} entries Γ type (.sort level)
+
 mutual
 
 /-- One head reduction step through the application spine. -/
-def step : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
-    Search (Reduced.{u,v} entries Γ e)
-  | 0, _, _, _ => .error .exhausted
+def stepC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)
+  | 0, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, e =>
     match e with
     | .app f a =>
       match f with
-      | .lam .never _ b => .ok ⟨b.inst a, ReductionClaim.betaNever⟩
+      | .lam .never _ b => pure ⟨b.inst a, ReductionClaim.betaNever⟩
       | .lam p D b => do
-        let ⟨A', ha⟩ ← inferA fuel entries Γ a
-        let ⟨hc⟩ ← isDefEq fuel entries Γ A' D
+        let ⟨A', ha⟩ ← inferAC fuel entries Γ a
+        let ⟨hc⟩ ← isDefEqC fuel entries Γ A' D
         return ⟨b.inst a, ReductionClaim.beta (p := p) ha hc⟩
       | f =>
-        Search.orElse ((iota fuel entries Γ (.app f a)).mapError SearchFailure.speculative) fun _ =>
-          Search.orElse ((quotIota fuel entries Γ (.app f a)).mapError SearchFailure.speculative) fun _ => do
-            let ⟨f', hf⟩ ← step fuel entries Γ f
+        KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ (.app f a))) fun _ =>
+          KM.orElse (KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ (.app f a))) fun _ => do
+            let ⟨f', hf⟩ ← stepC fuel entries Γ f
             return ⟨.app f' a, hf.appHead⟩
     | .const r ls =>
       match h : entries r with
@@ -239,36 +400,36 @@ def step : Nat → (entries : Environment β) → (Γ : Context β) → (e : AEx
         match hb : entry.body with
         | some body =>
           if hn : ls.length = entry.universes then
-            .ok ⟨body.instL ls, ReductionClaim.delta h hb hn⟩
-          else .error .noMatch
-        | none => .error .noMatch
-      | none => .error .noMatch
-    | .letE _ v b => .ok ⟨b.inst v, ReductionClaim.zeta⟩
-    | .proj r i x => (projIota fuel entries Γ r i x).mapError SearchFailure.speculative
-    | _ => .error .noMatch
+            pure ⟨body.instL ls, ReductionClaim.delta h hb hn⟩
+          else throw .noMatch
+        | none => throw .noMatch
+      | none => throw .noMatch
+    | .letE _ v b => pure ⟨b.inst v, ReductionClaim.zeta⟩
+    | .proj r i x => KM.mapError SearchFailure.speculative (projIotaC fuel entries Γ r i x)
+    | _ => throw .noMatch
 
 /-- Apply a typed nested lambda to arguments by typed beta steps, reducing
 nothing else. -/
-def applyTyped : Nat → (entries : Environment β) → (Γ : Context β) → (f F : AExpr β) →
+def applyTypedC : Nat → (entries : Environment β) → (Γ : Context β) → (f F : AExpr β) →
     TypingClaim.{u,v} entries Γ f F → (args : List (AExpr β)) →
-      Search (Applied.{u,v} entries Γ f args)
-  | _, _, _, f, F, hf, [] => .ok ⟨f, F, hf, ConversionClaim.refl _⟩
-  | 0, _, _, _, _, _, _ :: _ => .error .exhausted
+      KM.{u,v} entries Γ (Applied.{u,v} entries Γ f args)
+  | _, _, _, f, F, hf, [] => pure ⟨f, F, hf, ConversionClaim.refl _⟩
+  | 0, _, _, _, _, _, _ :: _ => throw .exhausted
   | fuel + 1, entries, Γ, f, F, hf, a :: args =>
     match f, F, hf with
     | .lam p D b, .forallE p' D' B, hf =>
       if h : p = p' ∧ D = D' then do
-        let ⟨A', ha⟩ ← inferA fuel entries Γ a
-        let ⟨hc⟩ ← isDefEq fuel entries Γ A' D
+        let ⟨A', ha⟩ ← inferAC fuel entries Γ a
+        let ⟨hc⟩ ← isDefEqC fuel entries Γ A' D
         have hf' : TypingClaim.{u,v} entries Γ (.lam p D b) (.forallE p D B) := by
           obtain ⟨rfl, rfl⟩ := h
           exact hf
         have haD : TypingClaim.{u,v} entries Γ a D := ha.convF hf'.formedType.domain hc
-        let rest ← applyTyped fuel entries Γ (b.inst a) (B.inst a) (TypingClaim.betaResult hf' haD) args
+        let rest ← applyTypedC fuel entries Γ (b.inst a) (B.inst a) (TypingClaim.betaResult hf' haD) args
         return ⟨rest.result, rest.type, rest.typed,
           (ConversionClaim.appN (ConversionClaim.beta hf' haD) args).trans rest.conv⟩
-      else .error .noMatch
-    | _, _, _ => .error .noMatch
+      else throw .noMatch
+    | _, _, _ => throw .noMatch
 
 /-- Iota: a recursor applied to a constructor reduces through the published
 rule. The target is converted to the typed instance of the rule's left side
@@ -279,9 +440,9 @@ the major is not a constructor application but the recursor has a single rule
 without fields, the constructor is synthesized from the recursor's parameters;
 the conversion of the major to it is then proof irrelevance, which holds
 exactly when the major's type converts to the constructor's. -/
-def iota : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
-    Search (Reduced.{u,v} entries Γ e)
-  | 0, _, _, _ => .error .exhausted
+def iotaC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)
+  | 0, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, e =>
     match spine e [] with
     | (.const r ls, args) =>
@@ -292,9 +453,9 @@ def iota : Nat → (entries : Environment β) → (Γ : Context β) → (e : AEx
           let majorIdx := np + 1 + nm + ni
           if args.length = majorIdx + 1 then
             match args[majorIdx]? with
-            | some major =>
-              let normalized := whnf fuel entries Γ major
-              Search.remember normalized.stopped <| do
+            | some major => do
+              let normalized ← whnfC fuel entries Γ major
+              KM.remember normalized.stopped <| do
                 let major' := normalized.result
                 let major' := match major' with
                   | .natLit f n => match unfoldLit.{u,v} entries Γ f n with
@@ -317,40 +478,40 @@ def iota : Nat → (entries : Environment β) → (Γ : Context β) → (e : AEx
                     | some law, some (.typed lhs T), some (.typed rhs T') =>
                       if hlaw : law.lhs = lhs ∧ law.rhs = rhs then
                         if hn : ls.length = entry.universes then do
-                          let appL ← applyTyped fuel entries Γ (lhs.instL ls) (T.instL ls)
+                          let appL ← applyTypedC fuel entries Γ (lhs.instL ls) (T.instL ls)
                             (TypingClaim.fact h (List.mem_of_getElem? hf1) hn) bargs
-                          let appR ← applyTyped fuel entries Γ (rhs.instL ls) (T'.instL ls)
+                          let appR ← applyTypedC fuel entries Γ (rhs.instL ls) (T'.instL ls)
                             (TypingClaim.fact h (List.mem_of_getElem? hf2) hn) bargs
-                          let ⟨hc⟩ ← isDefEqCore fuel entries Γ e appL.result
+                          let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ e appL.result
                           have heq : ConversionClaim.{u,v} entries Γ (lhs.instL ls) (rhs.instL ls) := by
                             have := ConversionClaim.equation (Γ := Γ) h (List.mem_of_getElem? hj) hn
                             rwa [hlaw.1, hlaw.2] at this
                           return ⟨appR.result, ReductionClaim.iota hc appL.typed.formed
                             (appL.conv.symm.trans ((heq.appN bargs).trans appR.conv)) appR.typed.formed⟩
-                        else .error .noMatch
-                      else .error .noMatch
-                    | _, _, _ => .error .noMatch
-                  else .error .noMatch
-                | none => .error .noMatch
-            | none => .error .noMatch
-          else .error .noMatch
-        | none => .error .noMatch
-      | none => .error .noMatch
-    | _ => .error .noMatch
+                        else throw .noMatch
+                      else throw .noMatch
+                    | _, _, _ => throw .noMatch
+                  else throw .noMatch
+                | none => throw .noMatch
+            | none => throw .noMatch
+          else throw .noMatch
+        | none => throw .noMatch
+      | none => throw .noMatch
+    | _ => throw .noMatch
 
 /-- Reduce through a rule whose endpoints are typed by inference: the target is
 converted to the typed instance of the left side, and the rule's conversion
 takes it to the typed instance of the right side. -/
-def reduceByRule : Nat → (entries : Environment β) → (Γ : Context β) → (e lhs rhs : AExpr β) →
+def reduceByRuleC : Nat → (entries : Environment β) → (Γ : Context β) → (e lhs rhs : AExpr β) →
     ConversionClaim.{u,v} entries Γ lhs rhs → (bargs : List (AExpr β)) →
-      Search (Reduced.{u,v} entries Γ e)
-  | 0, _, _, _, _, _, _, _ => .error .exhausted
+      KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)
+  | 0, _, _, _, _, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, e, lhs, rhs, heq, bargs => do
-    let ⟨TL, hL⟩ ← inferA fuel entries Γ lhs
-    let ⟨TR, hR⟩ ← inferA fuel entries Γ rhs
-    let appL ← applyTyped fuel entries Γ lhs TL hL bargs
-    let appR ← applyTyped fuel entries Γ rhs TR hR bargs
-    let ⟨hc⟩ ← isDefEqCore fuel entries Γ e appL.result
+    let ⟨TL, hL⟩ ← inferAC fuel entries Γ lhs
+    let ⟨TR, hR⟩ ← inferAC fuel entries Γ rhs
+    let appL ← applyTypedC fuel entries Γ lhs TL hL bargs
+    let appR ← applyTypedC fuel entries Γ rhs TR hR bargs
+    let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ e appL.result
     return ⟨appR.result, ReductionClaim.iota hc appL.typed.formed
       (appL.conv.symm.trans ((heq.appN bargs).trans appR.conv)) appR.typed.formed⟩
 
@@ -360,9 +521,9 @@ facts. The lift's rule needs the former, the constructor, the lift itself, and
 the equality family to be the admitted ones; the eliminator's rule holds
 outright, since both sides are proofs. The former is read off the entry's
 type as the reference other than the known ones. -/
-def quotIota : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
-    Search (Reduced.{u,v} entries Γ e)
-  | 0, _, _, _ => .error .exhausted
+def quotIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)
+  | 0, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, e =>
     match spine e [] with
     | (.const r ls, args) =>
@@ -373,9 +534,9 @@ def quotIota : Nat → (entries : Environment β) → (Γ : Context β) → (e :
           let arity := if role.isSome then 6 else 5
           if args.length = arity then
             match args[arity - 1]? with
-            | some major =>
-              let normalized := whnf fuel entries Γ major
-              Search.remember normalized.stopped <| do
+            | some major => do
+              let normalized ← whnfC fuel entries Γ major
+              KM.remember normalized.stopped <| do
                 match spine normalized.result [] with
                 | (.const c _, [_, _, a]) =>
                   let bargs := args.take (arity - 1) ++ [a]
@@ -389,78 +550,77 @@ def quotIota : Nat → (entries : Environment β) → (Γ : Context β) → (e :
                           if hc : Certified.Quotient.HasCtor entries refs then
                             if hE : Certified.Quotient.EqInterface entries eq recursor then
                               if hn : ls.length = 2 then
-                                reduceByRule fuel entries Γ e
+                                reduceByRuleC fuel entries Γ e
                                   ((Certified.Quotient.liftRuleLhs refs).instL ls)
                                   ((Certified.Quotient.liftRuleRhs refs).instL ls)
                                   (Certified.Quotient.liftRule_claim Γ hq hc hl hE hn) bargs
-                              else .error .noMatch
-                            else .error .noMatch
-                          else .error .noMatch
-                        else .error .noMatch
-                      else .error .noMatch
-                    | _ => .error .noMatch
+                              else throw .noMatch
+                            else throw .noMatch
+                          else throw .noMatch
+                        else throw .noMatch
+                      else throw .noMatch
+                    | _ => throw .noMatch
                   | none =>
                     match entry.type.references.eraseDups.filter (· ≠ c) with
                     | [q] =>
                       let refs : Certified.Quotient.Refs β := ⟨q, q, c, c, r⟩
-                      reduceByRule fuel entries Γ e
+                      reduceByRuleC fuel entries Γ e
                         ((Certified.Quotient.indRuleLhs refs).instL ls)
                         ((Certified.Quotient.indRuleRhs refs).instL ls)
                         (Certified.Quotient.indRule_claim refs Γ ls) bargs
-                    | _ => .error .noMatch
-                | _ => .error .noMatch
-            | none => .error .noMatch
-          else .error .noMatch
-        | none => .error .noMatch
-      | none => .error .noMatch
-    | _ => .error .noMatch
+                    | _ => throw .noMatch
+                | _ => throw .noMatch
+            | none => throw .noMatch
+          else throw .noMatch
+        | none => throw .noMatch
+      | none => throw .noMatch
+    | _ => throw .noMatch
 
 /-- Projection iota: a projection of a constructor application reduces
 through the structure's published iota rule, whose endpoints are typed by
 inference. -/
-def projIota : Nat → (entries : Environment β) → (Γ : Context β) → (r : ConstRef β) → (i : Nat) →
-    (x : AExpr β) → Search (Reduced.{u,v} entries Γ (.proj r i x))
-  | 0, _, _, _, _, _ => .error .exhausted
-  | fuel + 1, entries, Γ, r, i, x =>
-    match whnf fuel entries Γ x with
-    | ⟨x', hx, stopped⟩ =>
-      Search.remember stopped <| do
-        match spine x' [] with
-        | (.const (.ctor s 0 0) ls, cargs) =>
-          match h : entries r with
-          | some entry =>
-            match structureInfo entry.facts with
-            | some (np, nf) =>
-              if r = .member s 0 ∧ cargs.length = np + nf ∧ i < nf then
-                match hq : entry.equations[1 + i]? with
-                | some law =>
-                  if hn : ls.length = entry.universes then do
-                    let ⟨TL, hL⟩ ← inferA fuel entries Γ (law.lhs.instL ls)
-                    let ⟨TR, hR⟩ ← inferA fuel entries Γ (law.rhs.instL ls)
-                    let appL ← applyTyped fuel entries Γ (law.lhs.instL ls) TL hL cargs
-                    let appR ← applyTyped fuel entries Γ (law.rhs.instL ls) TR hR cargs
-                    if hl : appL.result = .proj r i x' then
-                      have heq : ConversionClaim.{u,v} entries Γ (law.lhs.instL ls) (law.rhs.instL ls) :=
-                        ConversionClaim.equation h (List.mem_of_getElem? hq) hn
-                      have hc : ConvClaim.{u,v} entries Γ (.proj r i x) appL.result := by
-                        rw [hl]
-                        exact ConvClaim.proj (ConvClaim.ofReduction hx)
-                      return ⟨appR.result, ReductionClaim.iota hc appL.typed.formed
-                        (appL.conv.symm.trans ((heq.appN cargs).trans appR.conv)) appR.typed.formed⟩
-                    else .error .noMatch
-                  else .error .noMatch
-                | none => .error .noMatch
-              else .error .noMatch
-            | none => .error .noMatch
-          | none => .error .noMatch
-        | _ => .error .noMatch
+def projIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r : ConstRef β) → (i : Nat) →
+    (x : AExpr β) → KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (.proj r i x))
+  | 0, _, _, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, r, i, x => do
+    let ⟨x', hx, stopped⟩ ← whnfC fuel entries Γ x
+    KM.remember stopped <| do
+      match spine x' [] with
+      | (.const (.ctor s 0 0) ls, cargs) =>
+        match h : entries r with
+        | some entry =>
+          match structureInfo entry.facts with
+          | some (np, nf) =>
+            if r = .member s 0 ∧ cargs.length = np + nf ∧ i < nf then
+              match hq : entry.equations[1 + i]? with
+              | some law =>
+                if hn : ls.length = entry.universes then do
+                  let ⟨TL, hL⟩ ← inferAC fuel entries Γ (law.lhs.instL ls)
+                  let ⟨TR, hR⟩ ← inferAC fuel entries Γ (law.rhs.instL ls)
+                  let appL ← applyTypedC fuel entries Γ (law.lhs.instL ls) TL hL cargs
+                  let appR ← applyTypedC fuel entries Γ (law.rhs.instL ls) TR hR cargs
+                  if hl : appL.result = .proj r i x' then
+                    have heq : ConversionClaim.{u,v} entries Γ (law.lhs.instL ls) (law.rhs.instL ls) :=
+                      ConversionClaim.equation h (List.mem_of_getElem? hq) hn
+                    have hc : ConvClaim.{u,v} entries Γ (.proj r i x) appL.result := by
+                      rw [hl]
+                      exact ConvClaim.proj (ConvClaim.ofReduction hx)
+                    return ⟨appR.result, ReductionClaim.iota hc appL.typed.formed
+                      (appL.conv.symm.trans ((heq.appN cargs).trans appR.conv)) appR.typed.formed⟩
+                  else throw .noMatch
+                else throw .noMatch
+              | none => throw .noMatch
+            else throw .noMatch
+          | none => throw .noMatch
+        | none => throw .noMatch
+      | _ => throw .noMatch
 
 /-- Structure eta: a constructor application of a structure converts to any
 term of the structure's type whose projections convert to the fields, through
 the published eta rule, whose endpoints are typed by inference. -/
-def etaStruct : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
-    Search (Conv.{u,v} entries Γ a b)
-  | 0, _, _, _, _ => .error .exhausted
+def etaStructC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
+    KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
+  | 0, _, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, a, b =>
     match spine a [] with
     | (.const (.ctor s 0 0) ls, args) =>
@@ -473,12 +633,12 @@ def etaStruct : Nat → (entries : Environment β) → (Γ : Context β) → (a 
             match hq : entry.equations[(0 : Nat)]? with
             | some law =>
               if hn : ls.length = entry.universes then do
-                let ⟨TL, hL⟩ ← inferA fuel entries Γ (law.lhs.instL ls)
-                let ⟨TR, hR⟩ ← inferA fuel entries Γ (law.rhs.instL ls)
-                let appL ← applyTyped fuel entries Γ (law.lhs.instL ls) TL hL bargs
-                let appR ← applyTyped fuel entries Γ (law.rhs.instL ls) TR hR bargs
+                let ⟨TL, hL⟩ ← inferAC fuel entries Γ (law.lhs.instL ls)
+                let ⟨TR, hR⟩ ← inferAC fuel entries Γ (law.rhs.instL ls)
+                let appL ← applyTypedC fuel entries Γ (law.lhs.instL ls) TL hL bargs
+                let appR ← applyTypedC fuel entries Γ (law.rhs.instL ls) TR hR bargs
                 if hb : appR.result = b then do
-                  let ⟨hc⟩ ← isDefEqCore fuel entries Γ a appL.result
+                  let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ a appL.result
                   have heq : ConversionClaim.{u,v} entries Γ (law.lhs.instL ls) (law.rhs.instL ls) :=
                     ConversionClaim.equation h (List.mem_of_getElem? hq) hn
                   have hr : ConversionClaim.{u,v} entries Γ (AExpr.appN (law.rhs.instL ls) bargs) b := by
@@ -486,149 +646,178 @@ def etaStruct : Nat → (entries : Environment β) → (Γ : Context β) → (a 
                     exact appR.conv
                   return ⟨hc.trans appL.typed.formed
                     (ConvClaim.ofConversion (appL.conv.symm.trans ((heq.appN bargs).trans hr)))⟩
-                else .error .noMatch
-              else .error .noMatch
-            | none => .error .noMatch
-          else .error .noMatch
-        | none => .error .noMatch
-      | none => .error .noMatch
-    | _ => .error .noMatch
+                else throw .noMatch
+              else throw .noMatch
+            | none => throw .noMatch
+          else throw .noMatch
+        | none => throw .noMatch
+      | none => throw .noMatch
+    | _ => throw .noMatch
 
 /-- Proof irrelevance: both sides inhabit a proposition. -/
-def proofIrrelevance : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
-    Search (Conv.{u,v} entries Γ a b)
-  | 0, _, _, _, _ => .error .exhausted
+def proofIrrelevanceC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
+    KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
+  | 0, _, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, a, b => do
-    let ⟨A, haA⟩ ← inferA fuel entries Γ a
-    let ⟨SA, hSA⟩ ← inferA fuel entries Γ A
-    let ⟨l, hA⟩ ← sortOf (whnf fuel entries Γ SA) hSA
+    let ⟨A, haA⟩ ← inferAC fuel entries Γ a
+    let ⟨SA, hSA⟩ ← inferAC fuel entries Γ A
+    let ⟨l, hA⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ SA) hSA)
     if hl : levelIsZero l then do
-      let ⟨B, hbB⟩ ← inferA fuel entries Γ b
-      let ⟨hBA⟩ ← isDefEq fuel entries Γ B A
+      let ⟨B, hbB⟩ ← inferAC fuel entries Γ b
+      let ⟨hBA⟩ ← isDefEqC fuel entries Γ B A
       return ⟨ConvClaim.proofIrrel (hA.sortEquiv (levelIsZero_sound hl)) haA (hbB.convF haA.formedType hBA)⟩
-    else .error .noMatch
+    else throw .noMatch
 
-/-- Weak head normalization, retaining the reason a partial reduct stopped. -/
-def whnf : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
-    Normalized.{u,v} entries Γ e
-  | 0, _, _, e => ⟨e, ReductionClaim.refl e, some .exhausted⟩
-  | fuel + 1, entries, Γ, e =>
-    match step fuel entries Γ e with
-    | .ok ⟨e', h⟩ =>
-      match whnf fuel entries Γ e' with
-      | ⟨e'', h', stopped⟩ => ⟨e'', h.trans h', stopped⟩
-    | .error .noMatch => ⟨e, ReductionClaim.refl e, none⟩
-    | .error failure => ⟨e, ReductionClaim.refl e, some failure⟩
+/-- Weak head normalization, retaining the reason a partial reduct stopped.
+Complete normalizations of reducible-looking terms are cached. -/
+def whnfC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    KM.{u,v} entries Γ (Normalized.{u,v} entries Γ e)
+  | 0, _, _, e => pure ⟨e, ReductionClaim.refl e, some .exhausted⟩
+  | fuel + 1, entries, Γ, e => do
+    let cacheable := match e with | .app .. | .const .. | .proj .. | .letE .. => true | _ => false
+    let cache ← KM.cache
+    let cached := if cacheable then cache.findWhnf e else none
+    match cached with
+    | some n => pure n
+    | none =>
+      let result : Normalized.{u,v} entries Γ e ← do
+        match ← KM.attempt (stepC fuel entries Γ e) with
+        | .ok ⟨e', h⟩ =>
+          let ⟨e'', h', stopped⟩ ← whnfC fuel entries Γ e'
+          pure ⟨e'', h.trans h', stopped⟩
+        | .error .noMatch => pure ⟨e, ReductionClaim.refl e, none⟩
+        | .error failure => pure ⟨e, ReductionClaim.refl e, some failure⟩
+      if cacheable && result.stopped.isNone then KM.modifyCache (·.addWhnf e result)
+      pure result
 
 /-- Weak head normalization without delta at the head: beta, zeta, iota,
 quotient and projection rules only. -/
-def whnfCore : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
-    Normalized.{u,v} entries Γ e
-  | 0, _, _, e => ⟨e, ReductionClaim.refl e, some .exhausted⟩
-  | fuel + 1, entries, Γ, e =>
-    let next : Search (Reduced.{u,v} entries Γ e) :=
+def whnfCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    KM.{u,v} entries Γ (Normalized.{u,v} entries Γ e)
+  | 0, _, _, e => pure ⟨e, ReductionClaim.refl e, some .exhausted⟩
+  | fuel + 1, entries, Γ, e => do
+    let attemptStep : KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e) :=
       if (deltaHead.{u,v} entries Γ e).isSome then
         match e with
         | .app f x =>
-          Search.orElse ((iota fuel entries Γ (.app f x)).mapError SearchFailure.speculative) fun _ =>
-            (quotIota fuel entries Γ (.app f x)).mapError SearchFailure.speculative
-        | _ => .error .noMatch
-      else step fuel entries Γ e
+          KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ (.app f x))) fun _ =>
+            KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ (.app f x))
+        | _ => throw .noMatch
+      else stepC fuel entries Γ e
+    let next ← KM.attempt attemptStep
     match next with
     | .ok ⟨e', h⟩ =>
-      match whnfCore fuel entries Γ e' with
-      | ⟨e'', h', stopped⟩ => ⟨e'', h.trans h', stopped⟩
-    | .error .noMatch => ⟨e, ReductionClaim.refl e, none⟩
-    | .error failure => ⟨e, ReductionClaim.refl e, some failure⟩
+      let ⟨e'', h', stopped⟩ ← whnfCoreC fuel entries Γ e'
+      pure ⟨e'', h.trans h', stopped⟩
+    | .error .noMatch => pure ⟨e, ReductionClaim.refl e, none⟩
+    | .error failure => pure ⟨e, ReductionClaim.refl e, some failure⟩
 
 /-- Lazy delta: normalize both sides without head delta and compare; unfold a
 head only when the comparison needs it, trying syntactic congruence first
 when both heads unfold. On the first round only, proof irrelevance is tried
 before unfolding a proof. -/
-def lazyDelta : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) → Bool →
-    Search (Conv.{u,v} entries Γ a b)
-  | 0, _, _, _, _, _ => .error .exhausted
-  | fuel + 1, entries, Γ, a, b, first =>
-    match whnfCore fuel entries Γ a, whnfCore fuel entries Γ b with
-    | ⟨a', ha, stoppedA⟩, ⟨b', hb, stoppedB⟩ =>
-      let compared : Search (Conv.{u,v} entries Γ a' b') :=
-        if h : a' = b' then .ok ⟨h ▸ ConvClaim.refl a'⟩ else
-        let proof : Search (Conv.{u,v} entries Γ a' b') :=
-          if first && (proofHead entries a' || proofHead entries b') then
-            proofIrrelevance fuel entries Γ a' b'
-          else .error .noMatch
-        Search.orElse proof fun _ =>
-          match deltaHead.{u,v} entries Γ a', deltaHead.{u,v} entries Γ b' with
-          | none, none => isDefEqCore fuel entries Γ a' b'
-          | some ⟨a'', ha'⟩, none =>
-            (lazyDelta fuel entries Γ a'' b' false).map fun ⟨hc⟩ =>
-              ⟨ConvClaim.ofReductions ha' (ReductionClaim.refl b') hc⟩
-          | none, some ⟨b'', hb'⟩ =>
-            (lazyDelta fuel entries Γ a' b'' false).map fun ⟨hc⟩ =>
-              ⟨ConvClaim.ofReductions (ReductionClaim.refl a') hb' hc⟩
-          | some ⟨a'', ha'⟩, some ⟨b'', hb'⟩ =>
-            match quickConv.{u,v} entries Γ a' b' with
-            | some c => .ok c
-            | none =>
-              (lazyDelta fuel entries Γ a'' b'' false).map fun ⟨hc⟩ =>
-                ⟨ConvClaim.ofReductions ha' hb' hc⟩
-      Search.remember stoppedA <| Search.remember stoppedB <|
-        compared.map fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha hb hc⟩
+def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) → Bool →
+    KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
+  | 0, _, _, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, a, b, first => do
+    let ⟨a', ha, stoppedA⟩ ← whnfCoreC fuel entries Γ a
+    let ⟨b', hb, stoppedB⟩ ← whnfCoreC fuel entries Γ b
+    let compared : KM.{u,v} entries Γ (Conv.{u,v} entries Γ a' b') :=
+      if h : a' = b' then pure ⟨h ▸ ConvClaim.refl a'⟩ else
+      let proof : KM.{u,v} entries Γ (Conv.{u,v} entries Γ a' b') :=
+        if first && (proofHead entries a' || proofHead entries b') then
+          proofIrrelevanceC fuel entries Γ a' b'
+        else throw .noMatch
+      KM.orElse proof fun _ =>
+        match deltaHead.{u,v} entries Γ a', deltaHead.{u,v} entries Γ b' with
+        | none, none => isDefEqCoreC fuel entries Γ a' b'
+        | some ⟨a'', ha'⟩, none =>
+          KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' (ReductionClaim.refl b') hc⟩)
+            (lazyDeltaC fuel entries Γ a'' b' false)
+        | none, some ⟨b'', hb'⟩ =>
+          KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions (ReductionClaim.refl a') hb' hc⟩)
+            (lazyDeltaC fuel entries Γ a' b'' false)
+        | some ⟨a'', ha'⟩, some ⟨b'', hb'⟩ =>
+          match quickConv.{u,v} entries Γ a' b' with
+          | some c => pure c
+          | none =>
+            KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' hb' hc⟩)
+              (lazyDeltaC fuel entries Γ a'' b'' false)
+    KM.remember stoppedA <| KM.remember stoppedB <|
+      KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha hb hc⟩) compared
 
-/-- Type inference on annotated terms, validating every binder annotation. -/
-def inferA : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
-    Search (Typed.{u,v} entries Γ e)
-  | 0, _, _, _ => .error .exhausted
+/-- Type inference on annotated terms, validating every binder annotation.
+Compound terms' types are cached; a binder's body is inferred in its own
+frame. -/
+def inferAC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    KM.{u,v} entries Γ (Typed.{u,v} entries Γ e)
+  | 0, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, e => do
+    let cacheable := match e with | .bvar .. | .sort .. | .const .. | .natLit .. => false | _ => true
+    let cache ← KM.cache
+    let cached := if cacheable then cache.findInfer e else none
+    match cached with
+    | some t => pure t
+    | none =>
+      let result ← inferCore fuel entries Γ e
+      if cacheable then KM.modifyCache (·.addInfer e result)
+      pure result
+
+/-- The inference rules, one constructor at a time. -/
+def inferCore : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
+    KM.{u,v} entries Γ (Typed.{u,v} entries Γ e)
+  | 0, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, e =>
     match e with
     | .bvar i =>
       match h : Γ[i]? with
-      | some A => .ok ⟨A, TypingClaim.bvar h⟩
-      | none => .error (.malformed "local variable is out of scope")
-    | .sort l => .ok ⟨.sort (.succ l), TypingClaim.sort l⟩
+      | some A => pure ⟨A, TypingClaim.bvar h⟩
+      | none => throw (.malformed "local variable is out of scope")
+    | .sort l => pure ⟨.sort (.succ l), TypingClaim.sort l⟩
     | .const r ls =>
       match h : entries r with
       | some entry =>
         if hn : ls.length = entry.universes then
-          .ok ⟨entry.type.instL ls, TypingClaim.const h hn⟩
-        else .error (.malformed "constant has the wrong number of universe arguments")
-      | none => .error (.malformed "constant is not installed")
+          pure ⟨entry.type.instL ls, TypingClaim.const h hn⟩
+        else throw (.malformed "constant has the wrong number of universe arguments")
+      | none => throw (.malformed "constant is not installed")
     | .app f a => do
-      let ⟨T, hf⟩ ← inferA fuel entries Γ f
-      let ⟨p, D, B, hf'⟩ ← piOf (whnf fuel entries Γ T) hf
-      let ⟨A', ha⟩ ← inferA fuel entries Γ a
-      let ⟨hc⟩ ← isDefEq fuel entries Γ A' D
+      let ⟨T, hf⟩ ← inferAC fuel entries Γ f
+      let ⟨p, D, B, hf'⟩ ← KM.ofSearch (piOf (← whnfC fuel entries Γ T) hf)
+      let ⟨A', ha⟩ ← inferAC fuel entries Γ a
+      let ⟨hc⟩ ← isDefEqC fuel entries Γ A' D
       return ⟨B.inst a, TypingClaim.app (p := p) hf' (ha.convF hf'.formedType.domain hc)⟩
     | .lam p D b => do
-      let ⟨S, hS⟩ ← inferA fuel entries Γ D
-      let ⟨_, hD⟩ ← sortOf (whnf fuel entries Γ S) hS
-      let Γ' := Γ.push D
-      let ⟨B, hb⟩ ← inferA fuel entries Γ' b
-      let ⟨SB, hSB⟩ ← inferA fuel entries Γ' B
-      let ⟨lB, hB⟩ ← sortOf (whnf fuel entries Γ' SB) hSB
+      let ⟨S, hS⟩ ← inferAC fuel entries Γ D
+      let ⟨_, hD⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ S) hS)
+      let ⟨B, hb, lB, hB⟩ ← KM.inFrame (Γ' := Γ.push D) (do
+        let ⟨B, hb⟩ ← inferAC fuel entries (Γ.push D) b
+        let ⟨SB, hSB⟩ ← inferAC fuel entries (Γ.push D) B
+        let ⟨lB, hB⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries (Γ.push D) SB) hSB)
+        return (⟨B, hb, lB, hB⟩ : TypedBody.{u,v} entries (Γ.push D) b))
       if hp : p = zeroCondition lB then
         return ⟨.forallE p D B, TypingClaim.lam hD hB hb hp⟩
-      else .error (.malformed "lambda annotation disagrees with its codomain sort")
+      else throw (.malformed "lambda annotation disagrees with its codomain sort")
     | .forallE p D B => do
-      let ⟨S, hS⟩ ← inferA fuel entries Γ D
-      let ⟨lD, hD⟩ ← sortOf (whnf fuel entries Γ S) hS
-      let Γ' := Γ.push D
-      let ⟨SB, hSB⟩ ← inferA fuel entries Γ' B
-      let ⟨lB, hB⟩ ← sortOf (whnf fuel entries Γ' SB) hSB
+      let ⟨S, hS⟩ ← inferAC fuel entries Γ D
+      let ⟨lD, hD⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ S) hS)
+      let ⟨lB, hB⟩ ← KM.inFrame (Γ' := Γ.push D) (do
+        let ⟨SB, hSB⟩ ← inferAC fuel entries (Γ.push D) B
+        KM.ofSearch (sortOf (← whnfC fuel entries (Γ.push D) SB) hSB))
       if hp : p = zeroCondition lB then
         return ⟨.sort (.imax lD lB), TypingClaim.forallE hD hB hp⟩
-      else .error (.malformed "Pi annotation disagrees with its codomain sort")
+      else throw (.malformed "Pi annotation disagrees with its codomain sort")
     | .letE t v b => do
-      let ⟨S, hS⟩ ← inferA fuel entries Γ t
-      let ⟨l, ht⟩ ← sortOf (whnf fuel entries Γ S) hS
-      let ⟨A', hv⟩ ← inferA fuel entries Γ v
-      let ⟨hc⟩ ← isDefEq fuel entries Γ A' t
-      let ⟨B, hb⟩ ← inferA fuel entries (Γ.push t) b
+      let ⟨S, hS⟩ ← inferAC fuel entries Γ t
+      let ⟨l, ht⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ S) hS)
+      let ⟨A', hv⟩ ← inferAC fuel entries Γ v
+      let ⟨hc⟩ ← isDefEqC fuel entries Γ A' t
+      let ⟨B, hb⟩ ← KM.inFrame (Γ' := Γ.push t) (inferAC fuel entries (Γ.push t) b)
       return ⟨B.inst v, TypingClaim.letE (l := l) ht (hv.convF ht.formed hc) hb⟩
     | .proj r i x => do
-      let ⟨T, _⟩ ← inferA fuel entries Γ x
-      let normalized := whnf fuel entries Γ T
-      Search.remember normalized.stopped <| do
+      let ⟨T, _⟩ ← inferAC fuel entries Γ x
+      let normalized ← whnfC fuel entries Γ T
+      KM.remember normalized.stopped <| do
         match spine normalized.result [] with
         | (.const r' ls, params) =>
           if r' = r then
@@ -640,109 +829,158 @@ def inferA : Nat → (entries : Environment β) → (Γ : Context β) → (e : A
                   match hf : entry.facts[1 + i]? with
                   | some (.typed pj pjT) =>
                     if hn : ls.length = entry.universes then do
-                      let app ← applyTyped fuel entries Γ (pj.instL ls) (pjT.instL ls)
+                      let app ← applyTypedC fuel entries Γ (pj.instL ls) (pjT.instL ls)
                         (TypingClaim.fact h (List.mem_of_getElem? hf) hn) (params ++ [x])
                       if hres : app.result = .proj r i x then
                         return ⟨app.type, hres ▸ app.typed⟩
-                      else .error .noMatch
-                    else .error .noMatch
-                  | _ => .error .noMatch
-                else if i ≥ nf then .error (.malformed "projection field index is out of range")
-                else .error (.unresolved "structure parameter count does not match")
-              | none => .error (.unsupported "projection family has no admitted structure interface")
-            | none => .error (.malformed "projection family is not installed")
-          else .error (.unresolved "projection family does not match the inferred major type")
-        | _ => .error (.unresolved "the projection major type did not reduce to a structure")
+                      else throw .noMatch
+                    else throw .noMatch
+                  | _ => throw .noMatch
+                else if i ≥ nf then throw (.malformed "projection field index is out of range")
+                else throw (.unresolved "structure parameter count does not match")
+              | none => throw (.unsupported "projection family has no admitted structure interface")
+            | none => throw (.malformed "projection family is not installed")
+          else throw (.unresolved "projection family does not match the inferred major type")
+        | _ => throw (.unresolved "the projection major type did not reduce to a structure")
     | .natLit f n =>
       match h : entries f with
       | some entry =>
         match findNatural entry.facts with
         | some ⟨(_, _), hf⟩ =>
-          if hn : entry.universes = 0 then .ok ⟨.const f [], TypingClaim.natLit h hf hn n⟩
-          else .error (.malformed "literal family has universe parameters")
-        | none => .error (.malformed "literal family is not the admitted natural numbers")
-      | none => .error (.malformed "literal family is not installed")
+          if hn : entry.universes = 0 then pure ⟨.const f [], TypingClaim.natLit h hf hn n⟩
+          else throw (.malformed "literal family has universe parameters")
+        | none => throw (.malformed "literal family is not the admitted natural numbers")
+      | none => throw (.malformed "literal family is not installed")
 
 /-- Structural comparison of two reduced terms, with eta and proof irrelevance. -/
-def isDefEqCore : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
-    Search (Conv.{u,v} entries Γ a b)
-  | 0, _, _, _, _ => .error .exhausted
+def isDefEqCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
+    KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
+  | 0, _, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, a, b =>
-    if h : a = b then .ok ⟨h ▸ ConvClaim.refl a⟩ else
-    let structural : Search (Conv.{u,v} entries Γ a b) :=
+    if h : a = b then pure ⟨h ▸ ConvClaim.refl a⟩ else
+    let structural : KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b) :=
       match a, b with
       | .sort l, .sort l' =>
-        if he : levelEquiv l l' then .ok ⟨ConvClaim.sort (levelEquiv_sound he)⟩ else .error .noMatch
+        if he : levelEquiv l l' then pure ⟨ConvClaim.sort (levelEquiv_sound he)⟩ else throw .noMatch
       | .const r ls, .const r' ls' =>
         if hr : r = r' then
           if hl : levelsEquiv ls ls' then
-            .ok ⟨hr ▸ ConvClaim.const (levelsEquiv_sound hl)⟩
-          else .error .noMatch
-        else .error .noMatch
-      | .bvar i, .bvar j => if hij : i = j then .ok ⟨hij ▸ ConvClaim.refl _⟩ else .error .noMatch
-      | .natLit f n, .natLit g m => if hnm : n = m then .ok ⟨hnm ▸ ConvClaim.natLit f g n⟩ else .error .noMatch
+            pure ⟨hr ▸ ConvClaim.const (levelsEquiv_sound hl)⟩
+          else throw .noMatch
+        else throw .noMatch
+      | .bvar i, .bvar j => if hij : i = j then pure ⟨hij ▸ ConvClaim.refl _⟩ else throw .noMatch
+      | .natLit f n, .natLit g m =>
+        if hnm : n = m then pure ⟨hnm ▸ ConvClaim.natLit f g n⟩ else throw .noMatch
       | .natLit f n, b => do
-        let u ← unfoldLit entries Γ f n
-        let ⟨hc⟩ ← isDefEqCore fuel entries Γ u.result b
+        let u ← (unfoldLit entries Γ f n : Option _)
+        let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ u.result b
         return ⟨u.conv.trans u.formed hc⟩
       | a, .natLit f n => do
-        let u ← unfoldLit entries Γ f n
-        let ⟨hc⟩ ← isDefEqCore fuel entries Γ a u.result
+        let u ← (unfoldLit entries Γ f n : Option _)
+        let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ a u.result
         return ⟨hc.trans u.formed u.conv.symm⟩
       | .app f x, .app g y => do
-        let ⟨hf⟩ ← isDefEq fuel entries Γ f g
-        let ⟨hx⟩ ← isDefEq fuel entries Γ x y
+        let ⟨hf⟩ ← isDefEqC fuel entries Γ f g
+        let ⟨hx⟩ ← isDefEqC fuel entries Γ x y
         return ⟨ConvClaim.app hf hx⟩
       | .lam p D e, .lam p' D' e' =>
         if hp : p = p' then do
-          let ⟨hD⟩ ← isDefEq fuel entries Γ D D'
-          let ⟨he⟩ ← isDefEq fuel entries (Γ.push D) e e'
+          let ⟨hD⟩ ← isDefEqC fuel entries Γ D D'
+          let ⟨he⟩ ← KM.inFrame (Γ' := Γ.push D) (isDefEqC fuel entries (Γ.push D) e e')
           return ⟨hp ▸ ConvClaim.lam hD he⟩
-        else .error .noMatch
+        else throw .noMatch
       | .forallE p D B, .forallE p' D' B' =>
         if hp : p = p' then do
-          let ⟨hD⟩ ← isDefEq fuel entries Γ D D'
-          let ⟨hB⟩ ← isDefEq fuel entries (Γ.push D) B B'
+          let ⟨hD⟩ ← isDefEqC fuel entries Γ D D'
+          let ⟨hB⟩ ← KM.inFrame (Γ' := Γ.push D) (isDefEqC fuel entries (Γ.push D) B B')
           return ⟨hp ▸ ConvClaim.forallE hD hB⟩
-        else .error .noMatch
+        else throw .noMatch
       | .proj r i x, .proj r' i' y =>
         if hr : r = r' then
           if hi : i = i' then do
-            let ⟨hx⟩ ← isDefEq fuel entries Γ x y
+            let ⟨hx⟩ ← isDefEqC fuel entries Γ x y
             return ⟨hr ▸ hi ▸ ConvClaim.proj hx⟩
-          else .error .noMatch
-        else .error .noMatch
+          else throw .noMatch
+        else throw .noMatch
       | .lam p D e, g => do
-        let ⟨T, hg⟩ ← inferA fuel entries Γ g
-        let ⟨p'', D'', _, hg'⟩ ← piOf (whnf fuel entries Γ T) hg
+        let ⟨T, hg⟩ ← inferAC fuel entries Γ g
+        let ⟨p'', D'', _, hg'⟩ ← KM.ofSearch (piOf (← whnfC fuel entries Γ T) hg)
         if hp : p'' = p then do
-          let ⟨hD⟩ ← isDefEq fuel entries Γ D'' D
-          let ⟨he⟩ ← isDefEq fuel entries (Γ.push D) e (.app (g.liftN 1) (.bvar 0))
+          let ⟨hD⟩ ← isDefEqC fuel entries Γ D'' D
+          let ⟨he⟩ ← KM.inFrame (Γ' := Γ.push D)
+            (isDefEqC fuel entries (Γ.push D) e (.app (g.liftN 1) (.bvar 0)))
           return ⟨ConvClaim.eta (hp ▸ hg') hD he⟩
-        else .error .noMatch
+        else throw .noMatch
       | g, .lam p D e => do
-        let ⟨T, hg⟩ ← inferA fuel entries Γ g
-        let ⟨p'', D'', _, hg'⟩ ← piOf (whnf fuel entries Γ T) hg
+        let ⟨T, hg⟩ ← inferAC fuel entries Γ g
+        let ⟨p'', D'', _, hg'⟩ ← KM.ofSearch (piOf (← whnfC fuel entries Γ T) hg)
         if hp : p'' = p then do
-          let ⟨hD⟩ ← isDefEq fuel entries Γ D'' D
-          let ⟨he⟩ ← isDefEq fuel entries (Γ.push D) e (.app (g.liftN 1) (.bvar 0))
+          let ⟨hD⟩ ← isDefEqC fuel entries Γ D'' D
+          let ⟨he⟩ ← KM.inFrame (Γ' := Γ.push D)
+            (isDefEqC fuel entries (Γ.push D) e (.app (g.liftN 1) (.bvar 0)))
           return ⟨(ConvClaim.eta (hp ▸ hg') hD he).symm⟩
-        else .error .noMatch
-      | _, _ => .error .noMatch
-    (Search.orElse structural fun _ =>
-      Search.orElse (etaStruct fuel entries Γ a b) fun _ =>
-        Search.orElse ((etaStruct fuel entries Γ b a).map fun ⟨c⟩ => ⟨c.symm⟩) fun _ =>
-          proofIrrelevance fuel entries Γ a b).mapError SearchFailure.conversion
+        else throw .noMatch
+      | _, _ => throw .noMatch
+    KM.mapError SearchFailure.conversion <|
+      KM.orElse structural fun _ =>
+        KM.orElse (etaStructC fuel entries Γ a b) fun _ =>
+          KM.orElse (KM.map (fun ⟨c⟩ => ⟨c.symm⟩) (etaStructC fuel entries Γ b a)) fun _ =>
+            proofIrrelevanceC fuel entries Γ a b
 
-/-- Conversion by lazy delta (`lazyDelta`): reduce both sides without unfolding
-their heads, compare, and unfold only as needed. -/
-def isDefEq : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
-    Search (Conv.{u,v} entries Γ a b)
-  | 0, _, _, _, _ => .error .exhausted
+/-- Conversion by lazy delta (`lazyDeltaC`): reduce both sides without
+unfolding their heads, compare, and unfold only as needed. Outcomes that did
+not run out of fuel are cached. -/
+def isDefEqC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
+    KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
+  | 0, _, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, a, b =>
-    if h : a = b then .ok ⟨h ▸ ConvClaim.refl a⟩ else
-    (lazyDelta fuel entries Γ a b true).mapError SearchFailure.conversion
+    if h : a = b then pure ⟨h ▸ ConvClaim.refl a⟩ else do
+      let cache ← KM.cache
+      match cache.findConv a b with
+      | some r => KM.ofSearch r
+      | none =>
+        let r ← KM.attempt (KM.mapError SearchFailure.conversion (lazyDeltaC fuel entries Γ a b true))
+        match r with
+        | .error .exhausted => pure ⟨⟩
+        | _ => KM.modifyCache (·.addConv a b r)
+        KM.ofSearch r
 
 end
+
+/-! ## Uncached entry points
+
+The functions above run in `KM`; these start each call with an empty cache
+and keep the kernel's original interface. -/
+
+def step (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
+    Search (Reduced.{u,v} entries Γ e) :=
+  KM.run (fun _ => 0) (stepC.{u,v} fuel entries Γ e)
+
+def applyTyped (fuel : Nat) (entries : Environment β) (Γ : Context β) (f F : AExpr β)
+    (hf : TypingClaim.{u,v} entries Γ f F) (args : List (AExpr β)) :
+    Search (Applied.{u,v} entries Γ f args) :=
+  KM.run (fun _ => 0) (applyTypedC.{u,v} fuel entries Γ f F hf args)
+
+def iota (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
+    Search (Reduced.{u,v} entries Γ e) :=
+  KM.run (fun _ => 0) (iotaC.{u,v} fuel entries Γ e)
+
+def proofIrrelevance (fuel : Nat) (entries : Environment β) (Γ : Context β) (a b : AExpr β) :
+    Search (Conv.{u,v} entries Γ a b) :=
+  KM.run (fun _ => 0) (proofIrrelevanceC.{u,v} fuel entries Γ a b)
+
+def whnf (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
+    Normalized.{u,v} entries Γ e :=
+  match KM.run (fun _ => 0) (whnfC.{u,v} fuel entries Γ e) with
+  | .ok n => n
+  | .error failure => ⟨e, ReductionClaim.refl e, some failure⟩
+
+def inferA (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
+    Search (Typed.{u,v} entries Γ e) :=
+  KM.run (fun _ => 0) (inferAC.{u,v} fuel entries Γ e)
+
+def isDefEq (fuel : Nat) (entries : Environment β) (Γ : Context β) (a b : AExpr β) :
+    Search (Conv.{u,v} entries Γ a b) :=
+  KM.run (fun _ => 0) (isDefEqC.{u,v} fuel entries Γ a b)
 
 end Ix.Kernel
