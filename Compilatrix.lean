@@ -159,6 +159,14 @@ import Compilatrix.Lam.Erase.Proof.Proj
 import Compilatrix.Lam.Erase.Proof.SimTerm
 import Compilatrix.Lam.Erase.Proof.Apply
 import Compilatrix.Lam.Erase.Proof.Main
+import Compilatrix.Src.Proof.NatMap
+import Compilatrix.Lam.Erase.Proof.Sound
+import Compilatrix.Lam.Erase.Proof.BuildArgs
+import Compilatrix.Lam.Erase.Proof.BuildForms
+import Compilatrix.Lam.Erase.Proof.BuildTerm
+import Compilatrix.Lam.Erase.Proof.BuildBody
+import Compilatrix.Lam.Erase.Proof.Build
+import Compilatrix.Lam.Erase.Proof.Correct
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing

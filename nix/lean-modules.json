@@ -1487,6 +1487,9 @@
   "Compilatrix.Src.Proof.Spine":
   {"path": "Compilatrix/Src/Proof/Spine.lean",
    "imports": ["Compilatrix.Src.Proof.Unfold"]},
+  "Compilatrix.Src.Proof.NatMap":
+  {"path": "Compilatrix/Src/Proof/NatMap.lean",
+   "imports": ["Compilatrix.Src.NatMap"]},
   "Compilatrix.Src.Proof.Mono":
   {"path": "Compilatrix/Src/Proof/Mono.lean",
    "imports": ["Compilatrix.Src.Proof.Unfold", "Compilatrix.Sem.Agrees"]},
@@ -1652,6 +1655,12 @@
   "Compilatrix.Lam.Erase.Proof.Spec":
   {"path": "Compilatrix/Lam/Erase/Proof/Spec.lean",
    "imports": ["Compilatrix.Lam.Erase"]},
+  "Compilatrix.Lam.Erase.Proof.Sound":
+  {"path": "Compilatrix/Lam/Erase/Proof/Sound.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase",
+    "Compilatrix.Src.Proof.NatMap",
+    "Compilatrix.Lam.Erase.Proof.Rel"]},
   "Compilatrix.Lam.Erase.Proof.SimTerm":
   {"path": "Compilatrix/Lam/Erase/Proof/SimTerm.lean",
    "imports": ["Compilatrix.Lam.Erase.Proof.Proj"]},
@@ -1690,6 +1699,34 @@
   "Compilatrix.Lam.Erase.Proof.Elim":
   {"path": "Compilatrix/Lam/Erase/Proof/Elim.lean",
    "imports": ["Compilatrix.Lam.Erase.Proof.Select"]},
+  "Compilatrix.Lam.Erase.Proof.Correct":
+  {"path": "Compilatrix/Lam/Erase/Proof/Correct.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.Build",
+    "Compilatrix.Lam.Erase.Val",
+    "Compilatrix.Lam.Readback",
+    "Compilatrix.Src.Readback",
+    "Compilatrix.Sem.Transform"]},
+  "Compilatrix.Lam.Erase.Proof.BuildTerm":
+  {"path": "Compilatrix/Lam/Erase/Proof/BuildTerm.lean",
+   "imports": ["Compilatrix.Lam.Erase.Proof.BuildForms"]},
+  "Compilatrix.Lam.Erase.Proof.BuildForms":
+  {"path": "Compilatrix/Lam/Erase/Proof/BuildForms.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.BuildArgs",
+    "Compilatrix.Lam.Erase.Proof.Bind"]},
+  "Compilatrix.Lam.Erase.Proof.BuildBody":
+  {"path": "Compilatrix/Lam/Erase/Proof/BuildBody.lean",
+   "imports": ["Compilatrix.Lam.Erase.Proof.BuildTerm"]},
+  "Compilatrix.Lam.Erase.Proof.BuildArgs":
+  {"path": "Compilatrix/Lam/Erase/Proof/BuildArgs.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.Sound", "Compilatrix.Lam.Erase.Proof.Spec"]},
+  "Compilatrix.Lam.Erase.Proof.Build":
+  {"path": "Compilatrix/Lam/Erase/Proof/Build.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.BuildBody",
+    "Compilatrix.Lam.Erase.Proof.Main"]},
   "Compilatrix.Lam.Erase.Proof.Bind":
   {"path": "Compilatrix/Lam/Erase/Proof/Bind.lean",
    "imports": ["Compilatrix.Lam.Erase.Proof.RecStar"]},
@@ -2430,6 +2467,14 @@
     "Compilatrix.Lam.Erase.Proof.SimTerm",
     "Compilatrix.Lam.Erase.Proof.Apply",
     "Compilatrix.Lam.Erase.Proof.Main",
+    "Compilatrix.Src.Proof.NatMap",
+    "Compilatrix.Lam.Erase.Proof.Sound",
+    "Compilatrix.Lam.Erase.Proof.BuildArgs",
+    "Compilatrix.Lam.Erase.Proof.BuildForms",
+    "Compilatrix.Lam.Erase.Proof.BuildTerm",
+    "Compilatrix.Lam.Erase.Proof.BuildBody",
+    "Compilatrix.Lam.Erase.Proof.Build",
+    "Compilatrix.Lam.Erase.Proof.Correct",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
