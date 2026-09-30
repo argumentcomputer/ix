@@ -174,6 +174,9 @@ import Compilatrix.Lam.Erase.Proof.Build
 import Compilatrix.Lam.Erase.Proof.ProgWF
 import Compilatrix.Lam.Erase.Proof.Correct
 import Compilatrix.Lam.Erase.Proof.ModesOk
+import Compilatrix.Lam.Erase.Proof.Reg
+import Compilatrix.Lam.Erase.Proof.RegBuild
+import Compilatrix.Lam.Erase.Proof.RegBody
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing

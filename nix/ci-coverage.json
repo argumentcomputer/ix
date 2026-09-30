@@ -156,6 +156,9 @@
   "Compilatrix.Lam.Erase.Proof.ProgWF",
   "Compilatrix.Lam.Erase.Proof.Proj",
   "Compilatrix.Lam.Erase.Proof.RecStar",
+  "Compilatrix.Lam.Erase.Proof.Reg",
+  "Compilatrix.Lam.Erase.Proof.RegBody",
+  "Compilatrix.Lam.Erase.Proof.RegBuild",
   "Compilatrix.Lam.Erase.Proof.Rel",
   "Compilatrix.Lam.Erase.Proof.Select",
   "Compilatrix.Lam.Erase.Proof.SimBase",
@@ -368,5 +371,5 @@
   "Ix.Lib"],
  "baseline": "jcb/x86-phase1: merge M2.2 remainder",
  "axiom_sha256":
- "7c42e476a69e6be5e173022b0c173a198d0f50a402f94d72d8a086e599e3ec79",
- "axiom_count": 1066}
+ "c46b746b9d132d52ec1c092029f8c7d1572a0a4355e3c450d7c8c18c1f33bf72",
+ "axiom_count": 1067}

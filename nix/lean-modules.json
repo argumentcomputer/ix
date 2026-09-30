@@ -719,7 +719,8 @@
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Erase.Proof.Correct",
     "Compilatrix.Src.Relevance.Proof.Sound",
-    "Compilatrix.Lam.Erase.Proof.ModesOk"]},
+    "Compilatrix.Lam.Erase.Proof.ModesOk",
+    "Compilatrix.Lam.Erase.Proof.RegBody"]},
   "CompilatrixTests.Fences.Backend":
   {"path": "CompilatrixTests/Fences/Backend.lean",
    "imports":
@@ -1812,6 +1813,18 @@
   {"path": "Compilatrix/Lam/Erase/Proof/Rel.lean",
    "imports":
    ["Compilatrix.Lam.Erase.Proof.Spec", "Compilatrix.Lam.Semantics"]},
+  "Compilatrix.Lam.Erase.Proof.RegBuild":
+  {"path": "Compilatrix/Lam/Erase/Proof/RegBuild.lean",
+   "imports": ["Compilatrix.Lam.Erase.Proof.Reg"]},
+  "Compilatrix.Lam.Erase.Proof.RegBody":
+  {"path": "Compilatrix/Lam/Erase/Proof/RegBody.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.RegBuild",
+    "Compilatrix.Lam.Erase.Proof.ProgWF"]},
+  "Compilatrix.Lam.Erase.Proof.Reg":
+  {"path": "Compilatrix/Lam/Erase/Proof/Reg.lean",
+   "imports":
+   ["Compilatrix.Lam.Erase.Proof.Sound", "Compilatrix.Lam.Erase.Proof.Layout"]},
   "Compilatrix.Lam.Erase.Proof.RecStar":
   {"path": "Compilatrix/Lam/Erase/Proof/RecStar.lean",
    "imports": ["Compilatrix.Lam.Erase.Proof.Elim"]},
@@ -2643,6 +2656,9 @@
     "Compilatrix.Lam.Erase.Proof.ProgWF",
     "Compilatrix.Lam.Erase.Proof.Correct",
     "Compilatrix.Lam.Erase.Proof.ModesOk",
+    "Compilatrix.Lam.Erase.Proof.Reg",
+    "Compilatrix.Lam.Erase.Proof.RegBuild",
+    "Compilatrix.Lam.Erase.Proof.RegBody",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
