@@ -195,18 +195,24 @@ opaque rsEnvExtractFFI :
     IO Unit
 
 /-- FFI: partition a `.ixe` with the STATIC strategy (no out-of-circuit
-    profiling): byte-balanced min-cut over the static walk-edge nets + a
-    predicted-FFT-cost rebalance post-pass (`ix_kernel::shard::shard_static`;
-    model constants documented there). A nonzero `numShards` fixes the count;
-    otherwise `ramGib` selects the static block-shape seed after the `.ixe` has
-    been profiled. Writes a `.ixes` manifest; prints the report to stderr. -/
+    profiling). Layout `mincut`: byte-balanced min-cut over the static
+    walk-edge nets + a predicted-FFT-cost rebalance post-pass
+    (`ix_kernel::shard::shard_static`; model constants documented there).
+    Layout `ordered`: contiguous ranges of a dependency order, shard 0 at
+    the top, so a shard's reference closure lies in its own shard and later
+    ones (`ix_kernel::shard::shard_static_ordered`; what the distributed
+    prover wants). A nonzero `numShards` fixes the count; otherwise `ramGib`
+    selects the static block-shape seed after the `.ixe` has been profiled.
+    Writes a `.ixes` manifest; prints the report to stderr. -/
 @[extern "rs_shard_env_static"]
 opaque rsShardEnvStaticFFI :
     @& String →                          -- .ixe path
-    @& String →                          -- num_shards (N; "0" = score seed)
-    @& String →                          -- max RAM GiB (used when N = 0)
-    @& String →                          -- balance percent
+    USize →                              -- num_shards (N; 0 = score seed)
+    UInt64 →                             -- max RAM GiB (used when N = 0)
+    UInt64 →                             -- balance percent
+    @& String →                          -- layout: "mincut" or "ordered"
     @& String →                          -- .ixes output path ("" = skip)
+    USize →                              -- executions ahead of each prover (trace-shard seed)
     IO Unit
 
 /-- FFI: dump the static block-level reference graph of a `.ixe` as text:
@@ -235,28 +241,28 @@ opaque rsProfileAnonFFI :
     IO Unit
 
 /-- FFI: partition a `.ixprof` into `numShards` shards, writing a `.ixes`
-    manifest. `numShards` and `balancePct` are decimal strings (kept ABI-simple).
-    Empty `outPath` skips the manifest. Prints a what-if report to stderr. -/
+    manifest. Empty `outPath` skips the manifest. Prints a what-if report to
+    stderr. -/
 @[extern "rs_shard_esp"]
 opaque rsShardEspFFI :
     @& String →                          -- .ixprof path
-    @& String →                          -- num_shards (N)
-    @& String →                          -- balance percent
-    @& String →                          -- parallelism (provers for prove-time est)
+    USize →                              -- num_shards (N)
+    UInt64 →                             -- balance percent
+    USize →                              -- parallelism (provers for prove-time est)
     @& String →                          -- .ixes output path ("" = skip)
     IO Unit
 
 /-- FFI: partition a `.ixprof` to a per-shard cycle/RAM budget, writing a
-    `.ixes` manifest. `maxCycles` is a guest-STEP cap; if `ramGb` > 0 it is
+    `.ixes` manifest. `maxCycles` is a guest-STEP cap; if `ramGib` > 0 it is
     converted via the measured prover RAM model and overrides `maxCycles`. Pass
-    "0" for whichever is unused. Decimal strings (ABI-simple). -/
+    0 for whichever is unused. -/
 @[extern "rs_shard_esp_cap"]
 opaque rsShardEspCapFFI :
     @& String →                          -- .ixprof path
-    @& String →                          -- max_cycles ("0" = unset)
-    @& String →                          -- max_ram GiB ("0" = unset)
-    @& String →                          -- balance percent
-    @& String →                          -- parallelism (provers for prove-time est)
+    UInt64 →                             -- max_cycles (0 = unset)
+    UInt64 →                             -- max_ram GiB (0 = unset)
+    UInt64 →                             -- balance percent
+    USize →                              -- parallelism (provers for prove-time est)
     @& String →                          -- .ixes output path ("" = skip)
     IO Unit
 

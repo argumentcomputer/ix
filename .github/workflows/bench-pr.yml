@@ -14,6 +14,10 @@
 #                                  #  — so BENCH_ENVS is never required; a single-env
 #                                  #  BENCH_ENVS still forces placement
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
+#   BENCH_TRACE_SHARDS=<GiB>       # aiur prove: plan each constant's proof as trace shards
+#                                  #  within this per-constant RAM budget (0: detect) and
+#                                  #  report `ixvm-trace-shards`; a base checkout that
+#                                  #  predates the flag proves whole
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #   IX_COMPILE_EAGER=1             # compile-knob passthrough (also IX_COMPILE_DEMOTE /
 #                                  # IX_COMPILE_WORKERS): RAM/speed knobs for the

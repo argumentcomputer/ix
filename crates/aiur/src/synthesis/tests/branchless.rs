@@ -107,9 +107,15 @@ fn empty_branch_cannot_redirect_a_call_to_memory() {
     })
     .collect();
   let witness = SystemWitness::from_stage_1(traces, &system.system);
-  let proof = system.system.prove(&system.key, &claim, witness);
+  let proof = system.prove_witness(&claim, witness);
+  // The forged row satisfies every constraint on its own; what rejects it
+  // is the redirected memory message that no callee row answers.
+  system.verify_shard(&proof, 0).unwrap();
   assert!(
-    system.verify(&claim, &proof).is_err(),
+    matches!(
+      system.verify(&claim, &proof),
+      Err(AiurVerificationError::Stark(VerificationError::UnbalancedBatch))
+    ),
     "an inactive empty branch redirected a call to memory and supplied a false public result"
   );
   assert_eq!(combined, vec![function_channel(), G::ONE, forged]);

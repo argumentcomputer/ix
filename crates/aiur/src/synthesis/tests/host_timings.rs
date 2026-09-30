@@ -33,7 +33,7 @@ fn witness_construction_timings() {
   let mut record = QueryRecord::new(&system.toplevel);
   for value in 0..n {
     let value = G::from_usize(value);
-    record.function_queries[0].insert(&[value], &[value], G::ONE);
+    record.function_queries[0].insert(&[value], &[value], G::ONE).unwrap();
   }
   let start = Instant::now();
   let (trace, lookups) = system.toplevel.witness_data(
