@@ -175,6 +175,9 @@
    ["CompilatrixTests.Xv.Alloc.Support", "CompilatrixTests.Support.Rng"]},
   "CompilatrixTests.Support.Rng":
   {"path": "CompilatrixTests/Support/Rng.lean", "imports": []},
+  "CompilatrixTests.Support.LamGen":
+  {"path": "CompilatrixTests/Support/LamGen.lean",
+   "imports": ["CompilatrixTests.Support.Rng", "Compilatrix.Lam.Syntax"]},
   "CompilatrixTests.Src.Table":
   {"path": "CompilatrixTests/Src/Table.lean",
    "imports": ["CompilatrixTests.Src.Support"]},
@@ -633,11 +636,19 @@
     "Compilatrix.Anf.Readback",
     "Compilatrix.Anf.WellFormed",
     "Compilatrix.Anf.Print"]},
+  "CompilatrixTests.Anf.Shapes":
+  {"path": "CompilatrixTests/Anf/Shapes.lean",
+   "imports":
+   ["CompilatrixTests.Anf.Support",
+    "Compilatrix.Anf.Pipeline",
+    "CompilatrixTests.Src.Bench"]},
   "CompilatrixTests.Anf.Run":
   {"path": "CompilatrixTests/Anf/Run.lean",
    "imports":
-   ["CompilatrixTests.Anf.Differential",
-    "Compilatrix.Anf.Pipeline",
+   ["CompilatrixTests.Anf.Eval",
+    "CompilatrixTests.Anf.Differential",
+    "CompilatrixTests.Anf.Shapes",
+    "CompilatrixTests.Anf.Generated",
     "CompilatrixTests.Anf.KernelEval"]},
   "CompilatrixTests.Anf.Main":
   {"path": "CompilatrixTests/Anf/Main.lean",
@@ -645,6 +656,15 @@
   "CompilatrixTests.Anf.KernelEval":
   {"path": "CompilatrixTests/Anf/KernelEval.lean",
    "imports": ["Compilatrix.Anf.Pipeline"]},
+  "CompilatrixTests.Anf.Generated":
+  {"path": "CompilatrixTests/Anf/Generated.lean",
+   "imports":
+   ["CompilatrixTests.Anf.Support",
+    "CompilatrixTests.Support.LamGen",
+    "Compilatrix.Anf.Pipeline"]},
+  "CompilatrixTests.Anf.Eval":
+  {"path": "CompilatrixTests/Anf/Eval.lean",
+   "imports": ["CompilatrixTests.Anf.Support", "CompilatrixTests.Src.Rules"]},
   "CompilatrixTests.Anf.Differential":
   {"path": "CompilatrixTests/Anf/Differential.lean",
    "imports":

@@ -32,6 +32,17 @@ def anfRoot (L : LProgram) (A : AProgram) (lr : Nat) : Option Nat :=
   | some i => A.roots[i]?
   | none => none
 
+/-- Values agree up to closures: equal literals, □, and constructors with
+the same key and agreeing fields; any two closures agree (they have no
+observation). -/
+partial def agree : LVal → AVal → Bool
+  | .lit a, .lit b => a == b
+  | .box, .box => true
+  | .con c fs, .con c' gs => decide (c = c') && fs.length == gs.length &&
+      (fs.zip gs).all fun (x, y) => agree x y
+  | .clos .., .clos .. => true
+  | _, _ => false
+
 /-- Lam against Anf over many runs. -/
 structure Tally where
   runs : Nat := 0
@@ -94,11 +105,8 @@ def compareRun (a : Assert) (L : LProgram) (A : AProgram) (lr : Nat) (args : Lis
     match ra with
     | .ok w =>
       let got := Compilatrix.Anf.readback A w
-      if want.isNone then
-        expect a (v matches .clos .. && w matches .clos ..)
-          (msg s!"a value without an observation (Lam {v.shape}, Anf {w.shape})")
-      else
-        expect a (want == got) (msg s!"Anf readback {repr got}, Lam {repr want}")
+      expect a (want == got) (msg s!"Anf readback {repr got}, Lam {repr want}")
+      expect a (agree v w) (msg s!"values disagree (Lam {v.shape}, Anf {w.shape})")
       for k in [la + 1, 2 * la + 3] do
         let r ← runAnf A k ar args
         expect a (match r with

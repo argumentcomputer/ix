@@ -1,8 +1,20 @@
+import CompilatrixTests.Anf.Eval
 import CompilatrixTests.Anf.Differential
-import Compilatrix.Anf.Pipeline
+import CompilatrixTests.Anf.Shapes
+import CompilatrixTests.Anf.Generated
 import CompilatrixTests.Anf.KernelEval
 
-/-! The `tests-anf` suite (design note 02 §6–8, §13). -/
+/-! The `tests-anf` suite (design note 02 §6–8, §13): Anf's rules and clock
+monotonicity; Lam against Anf after every step of the Phase 1 pipeline on
+every root and first-order constant of `k1.ixe` and the bench-k1 closures
+(readback, traps, the timeout clause, tick dominance, `WellScoped`); the K1
+shape expectations, certificate replay and shrink idempotence, sizes and
+least clocks; the bench-k1 entries at their test sizes through the
+pipeline's output (`sum-loop` 10⁶ in a child process with a larger stack);
+generated Lam programs under random oracles. `--entry NAME` runs one bench
+entry (the child-process mode); `--dump NAME` prints a bench entry's Anf
+after every step. Building the suite also runs the passes in the kernel
+(`CompilatrixTests.Anf.KernelEval`). -/
 
 namespace CompilatrixTests.Anf.Run
 
@@ -20,6 +32,9 @@ def stages : Differential.Stages := fun L => do
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["--entry", name] =>
+    IO.println (← Shapes.runEntry name)
+    return 0
   | ["--dump", name] =>
     let l ← loadBench name
     let e ← CompilatrixTests.Lam.eraseLoaded l
@@ -30,8 +45,15 @@ def main (args : List String) : IO UInt32 := do
   let a ← IO.mkRef 0
   try
     IO.println "tests-anf"
-    part a "Lam against Anf on k1.ixe and bench-k1, after every pass" do
+    part a "Anf rules and clock monotonicity" (Eval.run a)
+    part a "Lam against Anf on k1.ixe and bench-k1, after every step" do
       for line in ← Differential.packs a stages do IO.println s!"    {line}"
+    part a "K1 shapes after the pipeline (02 §13.4), replay, idempotence, least clocks" do
+      for line in ← Shapes.run a do IO.println s!"    {line}"
+    part a "bench-k1 entries through the pipeline's output" do
+      for line in ← Shapes.entries a (← IO.appPath) do IO.println s!"    {line}"
+    part a "generated Lam programs under random oracles" do
+      for line in ← Generated.run a 400 do IO.println s!"    {line}"
     IO.println s!"tests-anf: {← a.get} assertions passed"
     return 0
   catch e =>
