@@ -464,6 +464,24 @@ theorem ReductionClaim.appHeadN {f f' : AExpr β} (h : ReductionClaim.{u,v} entr
   | a :: args => ReductionClaim.appHeadN (ReductionClaim.appHead (a := a) h) args
 
 omit [DecidableEq β] in
+/-- Pairwise conversion of two argument lists of the same length. -/
+def ConvClaim.Args (entries : Environment β) (Γ : Context β) :
+    List (AExpr β) → List (AExpr β) → Prop
+  | [], [] => True
+  | x :: xs, y :: ys => ConvClaim.{u,v} entries Γ x y ∧ ConvClaim.Args entries Γ xs ys
+  | _, _ => False
+
+omit [DecidableEq β] in
+/-- Application congruence along two spines: `ConvClaim.app` folded over
+pairwise converting argument lists. -/
+theorem ConvClaim.appN {f g : AExpr β} (h : ConvClaim.{u,v} entries Γ f g) :
+    ∀ {xs ys : List (AExpr β)}, ConvClaim.Args.{u,v} entries Γ xs ys →
+      ConvClaim.{u,v} entries Γ (AExpr.appN f xs) (AExpr.appN g ys)
+  | [], [], _ => h
+  | _ :: _, _ :: _, ⟨hxy, hs⟩ => ConvClaim.appN (ConvClaim.app h hxy) hs
+  | [], _ :: _, hs | _ :: _, [], hs => hs.elim
+
+omit [DecidableEq β] in
 /-- Iota: the target converts to the typed instance of a rule's left side,
 which equals the typed instance of its right side. -/
 theorem ReductionClaim.iota {e l r : AExpr β} (hc : ConvClaim.{u,v} entries Γ e l)

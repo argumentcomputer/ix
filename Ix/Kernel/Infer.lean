@@ -554,6 +554,30 @@ def atPrefix (k : Nat) (head : AExpr β) (args : List (AExpr β))
       (rule (args.take k))
   else throw .noMatch
 
+/-- Pairwise conversion of two argument lists. -/
+structure ConvArgs (entries : Environment β) (Γ : Context β) (xs ys : List (AExpr β)) : Type u where
+  down : ConvClaim.Args.{u,v} entries Γ xs ys
+
+/-- Compare two argument lists pairwise by `conv`, each pair spending one unit
+of work. Lists of different lengths do not match. -/
+def congrArgs (conv : (x y : AExpr β) → KM.{u,v} entries Γ (Conv.{u,v} entries Γ x y)) :
+    (xs ys : List (AExpr β)) → KM.{u,v} entries Γ (ConvArgs.{u,v} entries Γ xs ys)
+  | [], [] => pure ⟨trivial⟩
+  | x :: xs, y :: ys => do
+    KM.tick
+    let ⟨hx⟩ ← conv x y
+    let ⟨hs⟩ ← congrArgs conv xs ys
+    return ⟨⟨hx, hs⟩⟩
+  | _, _ => throw .noMatch
+
+omit [DecidableEq β] in
+theorem ConvClaim.ofSpines {a b f g : AExpr β} {xs ys : List (AExpr β)}
+    (ha : AExpr.appN f xs = a) (hb : AExpr.appN g ys = b)
+    (h : ConvClaim.{u,v} entries Γ (AExpr.appN f xs) (AExpr.appN g ys)) :
+    ConvClaim.{u,v} entries Γ a b := by
+  subst ha hb
+  exact h
+
 /-- A binder body's inferred type and that type's sort, at the body's context. -/
 structure TypedBody (entries : Environment β) (Γ : Context β) (b : AExpr β) : Type u where
   type : AExpr β
@@ -1252,21 +1276,24 @@ def inferCore : Nat → (entries : Environment β) → (Γ : Context β) → (e 
         | none => throw (.malformed "literal family is not the admitted natural numbers")
       | none => throw (.malformed "literal family is not installed")
 
-/-- Application congruence along the spine. Only the heads and arguments
-enter full conversion: every partial application has already had its head
-reduced by the surrounding conversion search. Re-entering normalization for
-each prefix repeats a linear spine walk and makes long applications quadratic.
-Each spine node spends one unit of work and contributes the existing certified
-application-congruence rule. -/
+/-- Spine-wise application congruence (the official kernel's
+`is_def_eq_app`, con-leche #106): both spines are collected once and must have
+the same length; the heads are compared once, then the arguments pairwise,
+each by full conversion (`ConvClaim.appN`). No partial application enters
+conversion: re-entering normalization, proof irrelevance and lazy delta for
+each prefix made long applications quadratic. Each argument pair spends one
+unit of work. -/
 def appCongrC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
     KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
   | 0, _, _, _, _ => throw .exhausted
-  | fuel + 1, entries, Γ, .app f x, .app g y => do
-    KM.tick
-    let ⟨hf⟩ ← appCongrC fuel entries Γ f g
-    let ⟨hx⟩ ← isDefEqC fuel entries Γ x y
-    return ⟨ConvClaim.app hf hx⟩
-  | fuel + 1, entries, Γ, a, b => isDefEqC fuel entries Γ a b
+  | fuel + 1, entries, Γ, a, b =>
+    let sa := spine a []
+    let sb := spine b []
+    if sa.2.length = sb.2.length then do
+      let ⟨hh⟩ ← isDefEqC fuel entries Γ sa.1 sb.1
+      let ⟨hs⟩ ← congrArgs (isDefEqC fuel entries Γ) sa.2 sb.2
+      return ⟨ConvClaim.ofSpines (spine_appN a []) (spine_appN b []) (ConvClaim.appN hh hs)⟩
+    else throw .noMatch
 
 /-- Structural comparison of two reduced terms, with eta and proof irrelevance. -/
 def isDefEqCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
@@ -1296,12 +1323,17 @@ def isDefEqCoreC : Nat → (entries : Environment β) → (Γ : Context β) → 
         let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ a u.result
         return ⟨hc.trans u.formed u.conv.symm⟩
       | .app f x, .app g y =>
-        KM.orElse (appCongrC fuel entries Γ (.app f x) (.app g y)) fun _ => do
-          -- Rule matching also calls this function before normalization. Keep
-          -- its old prefix conversion when a direct spine comparison fails.
-          let ⟨hf⟩ ← isDefEqC fuel entries Γ f g
-          let ⟨hx⟩ ← isDefEqC fuel entries Γ x y
-          return ⟨ConvClaim.app hf hx⟩
+        -- Spine-wise congruence only; a failure falls through to the eta and
+        -- proof-irrelevance fallbacks below. No prefix conversion is kept.
+        -- Conversion reaches this case with both sides normalized by
+        -- `whnfCoreC` and lazy delta already decided on the head the prefixes
+        -- share. Rule matching (`iotaC`, `reduceByRuleC`, `etaStructC`) calls
+        -- it on an unnormalized redex, but against an instance of the rule's
+        -- left side with the same head and spine length by construction: the
+        -- recursor's arity, the quotient rule's five or six arguments, the
+        -- structure's parameters and fields; unnormalized arguments are
+        -- compared by full conversion here.
+        appCongrC fuel entries Γ (.app f x) (.app g y)
       | .lam p D e, .lam p' D' e' =>
         if hp : p = p' then do
           let ⟨hD⟩ ← isDefEqC fuel entries Γ D D'

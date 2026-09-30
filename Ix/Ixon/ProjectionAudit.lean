@@ -55,7 +55,7 @@ run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.ProjectionProofs] Ix.Ix
 /- Measured independently before freezing. Added primitives are standard
 array and integer operations used by pure BLAKE3, not hash FFI calls. -/
 /-- info: runtime closure of [Ix.Ixon.Projection.address,
-Ix.Ixon.Projection.reconstruct, Ix.Ixon.Projection.checkBytes]: 1939 compiled functions;
+Ix.Ixon.Projection.reconstruct, Ix.Ixon.Projection.checkBytes]: 1941 compiled functions;
 inherited externs 82, implemented_by 0, unsafe 3, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Projection.Audit.operations #[`Init, `Std]
