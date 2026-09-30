@@ -107,9 +107,16 @@ end FFI
 lean_lib MultiStark where
   moreLinkObjs := #[ix_rs]
 
+/-- `lake build -K profile` compiles with frame pointers, so `perf` can unwind
+call graphs through generated C (LBR and DWARF unwinding are unavailable on
+the census machines). The default build is unaffected. -/
+def profileLeancArgs : Array String :=
+  if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
+
 @[default_target]
 lean_lib Ix where
   moreLinkObjs := #[ix_rs]
+  moreLeancArgs := profileLeancArgs
   -- disabled because it breaks the binary
   --precompileModules := true
 
@@ -314,6 +321,19 @@ lean_exe «kernel-codec» where
 lean_exe «kernel-order» where
   root := `Tests.Ix.Kernel.BlockOrderHost
   moreLinkObjs := #[ix_rs_test]
+
+/-- Coverage census of the certified kernel over a compiled `.ixe` environment. -/
+lean_lib KernelCensus where
+  roots := #[`Benchmarks.Kernel.Census]
+  moreLeancArgs := profileLeancArgs
+
+lean_exe «kernel-census» where
+  root := `Benchmarks.Kernel.CensusMain
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «kernel-census-probe» where
+  root := `Benchmarks.Kernel.CensusProbe
+  moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
 the host-side tests, and provenance. -/
