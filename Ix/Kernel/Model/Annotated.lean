@@ -11,6 +11,9 @@ Zero-shift substitution (2026-09-30): reuse the replacement at depth zero;
 the helper's equality to the original lift and the original `instVar`
 equation are proved below. Interpretations and consistency contracts are
 unchanged.
+B2: two `@[computed_field]`s, `looseBound` and `structHash`, derived per node
+at construction; logically ordinary structural functions. The proved fast
+substitutions and pointer-first equality below read them.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -45,6 +48,34 @@ inductive AExpr (β : Type u) where
   | letE (type value body : AExpr β)
   | proj (ref : ConstRef β) (field : Nat) (major : AExpr β)
   | natLit (family : ConstRef β) (value : Nat)
+with
+  /-- One more than the largest loose de Bruijn index; `0` when closed. -/
+  @[computed_field] looseBound : (β : Type u) → AExpr β → Nat
+    | _, .bvar i => i + 1
+    | _, .sort _ => 0
+    | _, .const _ _ => 0
+    | _, .app f a => max f.looseBound a.looseBound
+    | _, .lam _ a b => max a.looseBound (b.looseBound - 1)
+    | _, .forallE _ a b => max a.looseBound (b.looseBound - 1)
+    | _, .letE t v b => max (max t.looseBound v.looseBound) (b.looseBound - 1)
+    | _, .proj _ _ e => e.looseBound
+    | _, .natLit _ _ => 0
+  /-- A structural hash: node kinds, indices, positions, and each level's head
+  (not block keys, not whole levels: a level's hash would cost its size at
+  every node). Equal terms have equal hashes. -/
+  @[computed_field] structHash : (β : Type u) → AExpr β → UInt64
+    | _, .bvar i => mixHash 11 (hash i)
+    | _, .sort l => mixHash 13 (match l with
+        | .zero => 1 | .succ _ => 2 | .max _ _ => 3 | .imax _ _ => 4 | .param i => mixHash 5 (hash i))
+    | _, .const r ls => mixHash 17 (mixHash (match r with
+        | .member _ i => hash i
+        | .ctor _ i c => mixHash (hash i) (hash (c + 1))) (hash ls.length))
+    | _, .app f a => mixHash 19 (mixHash f.structHash a.structHash)
+    | _, .lam _ a b => mixHash 23 (mixHash a.structHash b.structHash)
+    | _, .forallE _ a b => mixHash 29 (mixHash a.structHash b.structHash)
+    | _, .letE t v b => mixHash 31 (mixHash t.structHash (mixHash v.structHash b.structHash))
+    | _, .proj _ i e => mixHash 37 (mixHash (hash i) e.structHash)
+    | _, .natLit _ n => mixHash 41 (hash n)
 deriving DecidableEq
 
 namespace AExpr
@@ -178,6 +209,181 @@ def inst : AExpr β → AExpr β → (cutoff : Nat := 0) → AExpr β
   | .letE t v b, e, k => .letE (t.inst e k) (v.inst e k) (b.inst e (k + 1))
   | .proj r i e, a, k => .proj r i (e.inst a k)
   | .natLit r v, _, _ => .natLit r v
+
+/-! ### Substitution that skips closed subterms (B2)
+
+`looseBound` bounds the loose indices, so a subterm bounded by the cutoff is
+left unchanged: the runtime substitutions stop there. The compiler uses them
+in place of `liftN` and `inst` by the proved equations (`@[csimp]`). -/
+
+theorem liftN_of_looseBound_le {n : Nat} : ∀ {e : AExpr β} {k : Nat},
+    e.looseBound ≤ k → e.liftN n k = e
+  | .bvar i, k, h => by
+    simp only [looseBound] at h
+    simp [liftN, liftVar, show i < k by omega]
+  | .sort _, _, _ | .const _ _, _, _ | .natLit _ _, _, _ => rfl
+  | .app f a, k, h => by
+    simp only [looseBound, Nat.max_le] at h
+    simp [liftN, liftN_of_looseBound_le h.1, liftN_of_looseBound_le h.2]
+  | .lam p a b, k, h | .forallE p a b, k, h => by
+    simp only [looseBound, Nat.max_le] at h
+    simp [liftN, liftN_of_looseBound_le h.1, liftN_of_looseBound_le (e := b) (k := k + 1) (by omega)]
+  | .letE t v b, k, h => by
+    simp only [looseBound, Nat.max_le] at h
+    simp [liftN, liftN_of_looseBound_le h.1.1, liftN_of_looseBound_le h.1.2,
+      liftN_of_looseBound_le (e := b) (k := k + 1) (by omega)]
+  | .proj r i e, k, h => by
+    simp only [looseBound] at h
+    simp [liftN, liftN_of_looseBound_le h]
+
+/-- `liftN`, stopping at subterms bounded by the cutoff. -/
+def liftNFast (count : Nat) (e : AExpr β) (cutoff : Nat := 0) : AExpr β :=
+  if e.looseBound ≤ cutoff then e else
+  match e with
+  | .bvar i => .bvar (liftVar count i cutoff)
+  | .sort l => .sort l
+  | .const r ls => .const r ls
+  | .app f a => .app (liftNFast count f cutoff) (liftNFast count a cutoff)
+  | .lam p a b => .lam p (liftNFast count a cutoff) (liftNFast count b (cutoff + 1))
+  | .forallE p a b => .forallE p (liftNFast count a cutoff) (liftNFast count b (cutoff + 1))
+  | .letE t v b =>
+    .letE (liftNFast count t cutoff) (liftNFast count v cutoff) (liftNFast count b (cutoff + 1))
+  | .proj r i e => .proj r i (liftNFast count e cutoff)
+  | .natLit r v => .natLit r v
+
+theorem liftNFast_eq (count : Nat) : ∀ (e : AExpr β) (cutoff : Nat),
+    liftNFast count e cutoff = liftN count e cutoff := by
+  intro e
+  induction e with
+  | bvar _ | sort _ | const _ _ | natLit _ _ =>
+    intro k; unfold liftNFast; split
+    · exact (liftN_of_looseBound_le ‹_›).symm
+    · rfl
+  | app f a hf ha =>
+    intro k; unfold liftNFast; split
+    · exact (liftN_of_looseBound_le ‹_›).symm
+    · simp [liftN, hf, ha]
+  | lam p a b ha hb | forallE p a b ha hb =>
+    intro k; unfold liftNFast; split
+    · exact (liftN_of_looseBound_le ‹_›).symm
+    · simp [liftN, ha, hb]
+  | letE t v b ht hv hb =>
+    intro k; unfold liftNFast; split
+    · exact (liftN_of_looseBound_le ‹_›).symm
+    · simp [liftN, ht, hv, hb]
+  | proj r i e he =>
+    intro k; unfold liftNFast; split
+    · exact (liftN_of_looseBound_le ‹_›).symm
+    · simp [liftN, he]
+
+@[csimp] theorem liftN_eq_liftNFast : @liftN = @liftNFast := by
+  funext β n e k; exact (liftNFast_eq n e k).symm
+
+theorem inst_of_looseBound_le {a : AExpr β} : ∀ {e : AExpr β} {k : Nat},
+    e.looseBound ≤ k → e.inst a k = e
+  | .bvar i, k, h => by
+    simp only [looseBound] at h
+    simp [inst, instVar, show i < k by omega]
+  | .sort _, _, _ | .const _ _, _, _ | .natLit _ _, _, _ => rfl
+  | .app f x, k, h => by
+    simp only [looseBound, Nat.max_le] at h
+    simp [inst, inst_of_looseBound_le h.1, inst_of_looseBound_le h.2]
+  | .lam p d b, k, h | .forallE p d b, k, h => by
+    simp only [looseBound, Nat.max_le] at h
+    simp [inst, inst_of_looseBound_le h.1, inst_of_looseBound_le (e := b) (k := k + 1) (by omega)]
+  | .letE t v b, k, h => by
+    simp only [looseBound, Nat.max_le] at h
+    simp [inst, inst_of_looseBound_le h.1.1, inst_of_looseBound_le h.1.2,
+      inst_of_looseBound_le (e := b) (k := k + 1) (by omega)]
+  | .proj r i x, k, h => by
+    simp only [looseBound] at h
+    simp [inst, inst_of_looseBound_le h]
+
+/-- `inst`, stopping at subterms bounded by the cutoff. -/
+def instFast (e a : AExpr β) (cutoff : Nat := 0) : AExpr β :=
+  if e.looseBound ≤ cutoff then e else
+  match e with
+  | .bvar i => instVar i a cutoff
+  | .sort l => .sort l
+  | .const r ls => .const r ls
+  | .app f x => .app (instFast f a cutoff) (instFast x a cutoff)
+  | .lam p d b => .lam p (instFast d a cutoff) (instFast b a (cutoff + 1))
+  | .forallE p d b => .forallE p (instFast d a cutoff) (instFast b a (cutoff + 1))
+  | .letE t v b => .letE (instFast t a cutoff) (instFast v a cutoff) (instFast b a (cutoff + 1))
+  | .proj r i x => .proj r i (instFast x a cutoff)
+  | .natLit r v => .natLit r v
+
+theorem instFast_eq (a : AExpr β) : ∀ (e : AExpr β) (cutoff : Nat),
+    instFast e a cutoff = inst e a cutoff := by
+  intro e
+  induction e with
+  | bvar _ | sort _ | const _ _ | natLit _ _ =>
+    intro k; unfold instFast; split
+    · exact (inst_of_looseBound_le ‹_›).symm
+    · rfl
+  | app f x hf hx =>
+    intro k; unfold instFast; split
+    · exact (inst_of_looseBound_le ‹_›).symm
+    · simp [inst, hf, hx]
+  | lam p d b hd hb | forallE p d b hd hb =>
+    intro k; unfold instFast; split
+    · exact (inst_of_looseBound_le ‹_›).symm
+    · simp [inst, hd, hb]
+  | letE t v b ht hv hb =>
+    intro k; unfold instFast; split
+    · exact (inst_of_looseBound_le ‹_›).symm
+    · simp [inst, ht, hv, hb]
+  | proj r i x hx =>
+    intro k; unfold instFast; split
+    · exact (inst_of_looseBound_le ‹_›).symm
+    · simp [inst, hx]
+
+@[csimp] theorem inst_eq_instFast : @inst = @instFast := by
+  funext β e a k; exact (instFast_eq a e k).symm
+
+/-- Equality decided pointer-first: identical objects are equal, different
+structural hashes are unequal, and otherwise the constructors are compared
+argument by argument, each argument the same way. -/
+def decEqFast [DecidableEq β] (a b : AExpr β) : Decidable (a = b) :=
+  withPtrEqDecEq a b fun _ =>
+    if hh : a.structHash = b.structHash then
+      match a, b with
+      | .app f x, .app g y =>
+        match decEqFast f g, decEqFast x y with
+        | isTrue h1, isTrue h2 => isTrue (h1 ▸ h2 ▸ rfl)
+        | isFalse h, _ => isFalse fun e => h (by cases e; rfl)
+        | _, isFalse h => isFalse fun e => h (by cases e; rfl)
+      | .lam p d body, .lam p' d' body' =>
+        if hp : p = p' then
+          match decEqFast d d', decEqFast body body' with
+          | isTrue h1, isTrue h2 => isTrue (hp ▸ h1 ▸ h2 ▸ rfl)
+          | isFalse h, _ => isFalse fun e => h (by cases e; rfl)
+          | _, isFalse h => isFalse fun e => h (by cases e; rfl)
+        else isFalse fun e => hp (by cases e; rfl)
+      | .forallE p d body, .forallE p' d' body' =>
+        if hp : p = p' then
+          match decEqFast d d', decEqFast body body' with
+          | isTrue h1, isTrue h2 => isTrue (hp ▸ h1 ▸ h2 ▸ rfl)
+          | isFalse h, _ => isFalse fun e => h (by cases e; rfl)
+          | _, isFalse h => isFalse fun e => h (by cases e; rfl)
+        else isFalse fun e => hp (by cases e; rfl)
+      | .letE t v body, .letE t' v' body' =>
+        match decEqFast t t', decEqFast v v', decEqFast body body' with
+        | isTrue h1, isTrue h2, isTrue h3 => isTrue (h1 ▸ h2 ▸ h3 ▸ rfl)
+        | isFalse h, _, _ => isFalse fun e => h (by cases e; rfl)
+        | _, isFalse h, _ => isFalse fun e => h (by cases e; rfl)
+        | _, _, isFalse h => isFalse fun e => h (by cases e; rfl)
+      | .proj r i x, .proj r' i' x' =>
+        if hri : r = r' ∧ i = i' then
+          match decEqFast x x' with
+          | isTrue h => isTrue (hri.1 ▸ hri.2 ▸ h ▸ rfl)
+          | isFalse h => isFalse fun e => h (by cases e; rfl)
+        else isFalse fun e => hri (by cases e; exact ⟨rfl, rfl⟩)
+      | a, b => instDecidableEqAExpr a b
+    else isFalse fun e => hh (e ▸ rfl)
+
+/-- The kernel's equality on terms is `decEqFast`. -/
+instance (priority := high) [DecidableEq β] : DecidableEq (AExpr β) := decEqFast
 
 @[simp] theorem erase_inst (e a : AExpr β) (k : Nat) :
     (e.inst a k).erase = e.erase.inst a.erase k := by
