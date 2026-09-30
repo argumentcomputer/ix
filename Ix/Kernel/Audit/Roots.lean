@@ -159,13 +159,13 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Aud
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Batteries.Data.RBMap
 
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
-Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 1532 compiled functions; inherited externs 32,
+Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 1541 compiled functions; inherited externs 32,
 implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
-Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 1508 compiled functions;
+Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 1517 compiled functions;
 inherited externs 45, implemented_by 0, unsafe 3, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist

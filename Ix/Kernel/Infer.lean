@@ -109,6 +109,19 @@ def spine : AExpr β → List (AExpr β) → AExpr β × List (AExpr β)
   | .app f a, acc => spine f (a :: acc)
   | e, acc => (e, acc)
 
+omit [DecidableEq β] in
+/-- A decomposed spine reassembles to its term. -/
+theorem spine_appN (e : AExpr β) :
+    ∀ acc : List (AExpr β), AExpr.appN (spine e acc).1 (spine e acc).2 = AExpr.appN e acc := by
+  induction e with
+  | app f a ihf _ => intro acc; simp only [spine]; exact ihf (a :: acc)
+  | _ => intro acc; rfl
+
+omit [DecidableEq β] in
+theorem appN_take_drop (head : AExpr β) (args : List (AExpr β)) (k : Nat) :
+    AExpr.appN (AExpr.appN head (args.take k)) (args.drop k) = AExpr.appN head args := by
+  rw [← AExpr.appN_append, List.take_append_drop]
+
 /-- The recursor arities published as a fact, if any. -/
 def recursorInfo : List (ConstantFact β) → Option (Nat × Nat × Nat × List (ConstRef β × Nat))
   | [] => none
@@ -194,21 +207,30 @@ def quotientRule (facts : List (ConstantFact β)) : Option (Option (ConstRef β 
     | .quotient .ind => some none
     | _ => none
 
-/-- Delta at the head of an application spine: the head constant's body at its
-universe instance, applied to the same arguments. -/
-def deltaHead (entries : Environment β) (Γ : Context β) : (e : AExpr β) →
-    Option (Reduced.{u,v} entries Γ e)
+/-- Delta at the head of the spine `appN head args`: the head constant's body at
+its universe instance, applied to the same arguments. The application is built
+once around the body (con-leche's `unfoldDefinition`). -/
+def deltaSpine (entries : Environment β) (Γ : Context β) (head : AExpr β) (args : List (AExpr β)) :
+    Option (Reduced.{u,v} entries Γ (AExpr.appN head args)) :=
+  match head with
   | .const r ls =>
     match h : entries r with
     | some entry =>
       match hb : entry.body with
       | some body =>
-        if hn : ls.length = entry.universes then some ⟨body.instL ls, ReductionClaim.delta h hb hn⟩
+        if hn : ls.length = entry.universes then
+          some ⟨AExpr.appN (body.instL ls) args, (ReductionClaim.delta h hb hn).appHeadN args⟩
         else none
       | none => none
     | none => none
-  | .app f a => (deltaHead entries Γ f).map fun ⟨f', hf⟩ => ⟨.app f' a, hf.appHead⟩
   | _ => none
+
+/-- Delta at the head of an application spine, decomposed once. -/
+def deltaHead (entries : Environment β) (Γ : Context β) (e : AExpr β) :
+    Option (Reduced.{u,v} entries Γ e) :=
+  let sp := spine e []
+  have hsp : AExpr.appN sp.1 sp.2 = e := spine_appN e []
+  (deltaSpine entries Γ sp.1 sp.2).map fun r => ⟨r.result, hsp ▸ r.claim⟩
 
 /-- Whether head delta applies, without instantiating the definition's body
 or rebuilding its application spine. No reduct is needed by no-delta WHNF. -/
@@ -221,17 +243,23 @@ def hasDeltaHead (entries : Environment β) : AExpr β → Bool
   | _ => false
 
 omit [DecidableEq β] in
-theorem hasDeltaHead_eq (entries : Environment β) (Γ : Context β) (e : AExpr β) :
-    hasDeltaHead entries e = (deltaHead.{u,v} entries Γ e).isSome := by
+theorem deltaSpine_isSome (entries : Environment β) (Γ : Context β) (e : AExpr β) :
+    ∀ acc : List (AExpr β),
+      (deltaSpine.{u,v} entries Γ (spine e acc).1 (spine e acc).2).isSome = hasDeltaHead entries e := by
   induction e with
   | const r ls =>
-    simp only [hasDeltaHead, deltaHead]
+    intro acc
+    simp only [hasDeltaHead, deltaSpine, spine]
     split <;> split <;> simp_all
     subst_vars
-    split <;> try simp_all
     split <;> simp_all
-  | app f a ih _ => simpa [hasDeltaHead, deltaHead] using ih
-  | _ => rfl
+  | app f a ihf _ => intro acc; simpa only [spine, hasDeltaHead] using ihf (a :: acc)
+  | _ => intro acc; rfl
+
+omit [DecidableEq β] in
+theorem hasDeltaHead_eq (entries : Environment β) (Γ : Context β) (e : AExpr β) :
+    hasDeltaHead entries e = (deltaHead.{u,v} entries Γ e).isSome := by
+  simp only [deltaHead, Option.isSome_map, deltaSpine_isSome]
 
 /-- Whether the type telescope marks its value after `n` arguments as a proof:
 the binder consumed last is annotated `allZero []`, a codomain that is a
@@ -505,6 +533,27 @@ def run (keyHash : β → UInt64) (budget : Nat) (m : KM.{u,v} entries Γ α) : 
 
 end KM
 
+/-- Decompose a term's application spine once and run a step on it. -/
+def onSpine (e : AExpr β) (step : (head : AExpr β) → (args : List (AExpr β)) →
+      KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (AExpr.appN head args))) :
+    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e) :=
+  let sp := spine e []
+  have hsp : AExpr.appN sp.1 sp.2 = e := spine_appN e []
+  hsp ▸ step sp.1 sp.2
+
+/-- Run a rule on the first `k` arguments of a spine and carry its reduct
+through the remaining ones (`ReductionClaim.appHeadN`). A shorter spine does
+not match. -/
+def atPrefix (k : Nat) (head : AExpr β) (args : List (AExpr β))
+    (rule : (pre : List (AExpr β)) → KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (AExpr.appN head pre))) :
+    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (AExpr.appN head args)) :=
+  if k = args.length then rule args
+  else if k < args.length then
+    KM.map (fun (r : Reduced.{u,v} entries Γ (AExpr.appN head (args.take k))) =>
+        ⟨AExpr.appN r.result (args.drop k), appN_take_drop head args k ▸ r.claim.appHeadN (args.drop k)⟩)
+      (rule (args.take k))
+  else throw .noMatch
+
 /-- A binder body's inferred type and that type's sort, at the body's context. -/
 structure TypedBody (entries : Environment β) (Γ : Context β) (b : AExpr β) : Type u where
   type : AExpr β
@@ -518,35 +567,24 @@ def headReductionFact : ConstantFact β → Bool
   | .natOp _ | .natTest .. | .recursor .. | .quotientLift .. | .quotient .ind => true
   | _ => false
 
+/-- Whether an application headed by the entry's constant, at the supplied
+universe arguments, may reduce: a body at the supplied universe arity, or any
+applicable kind of reduction fact. -/
+def constHeadActive (entry : ConstantEntry β) (ls : List VLevel) : Bool :=
+  (entry.body.isSome && ls.length == entry.universes) || entry.facts.any headReductionFact
+
 /-- The application depth when the head cannot reduce, inspected in one
-pass. Lambdas, lets, projections, definitions with bodies at the supplied
-universe arity, and constants with any applicable kind of reduction fact
-keep the ordinary reduction path. -/
+pass. Lambdas, lets, projections, and constants that are `constHeadActive`
+keep the ordinary reduction path. `stepSpineC`'s head dispatch makes the same
+classification on the decomposed spine: a neutral head tries no rule. -/
 def neutralSpineDepth (entries : Environment β) : AExpr β → Nat → Option Nat
   | .app f _, depth => neutralSpineDepth entries f (depth + 1)
   | .const r ls, depth =>
     match entries r with
     | none => some depth
-    | some entry =>
-      if (entry.body.isSome && ls.length == entry.universes) || entry.facts.any headReductionFact then
-        none
-      else some depth
+    | some entry => if constHeadActive entry ls then none else some depth
   | .bvar _, depth | .sort _, depth | .forallE .., depth | .natLit .., depth => some depth
   | _, _ => none
-
-/-- Skip repeated prefix probes for a neutral application. The depth test
-preserves the exhaustion that the ordinary recursive step would report if
-fuel ran out before reaching the head. This wraps a top-level step only;
-the fallback's recursive steps do not reclassify the spine. -/
-def skipNeutralStepC (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β)
-    (next : Unit → KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)) :
-    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e) :=
-  match e with
-  | .app f _ =>
-    match neutralSpineDepth entries f 1 with
-    | some depth => if depth < fuel then throw .noMatch else throw .exhausted
-    | none => next ()
-  | _ => next ()
 
 mutual
 
@@ -603,38 +641,76 @@ def natStepC : Nat → (entries : Environment β) → (Γ : Context β) → (e :
       | none => throw .noMatch
     | _ => throw .noMatch
 
-/-- One head reduction step through the application spine. -/
-def stepC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
-    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)
-  | 0, _, _, _ => throw .exhausted
-  | fuel + 1, entries, Γ, e =>
-    match e with
-    | .app f a =>
-      match f with
-      | .lam .never _ b => pure ⟨b.inst a, ReductionClaim.betaNever⟩
-      | .lam p D b => do
-        let ⟨A', ha⟩ ← inferAC fuel entries Γ a
-        let ⟨hc⟩ ← isDefEqC fuel entries Γ A' D
-        return ⟨b.inst a, ReductionClaim.beta (p := p) ha hc⟩
-      | f =>
-        KM.orElse (natStepC fuel entries Γ (.app f a)) fun _ =>
-        KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ (.app f a))) fun _ =>
-          KM.orElse (KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ (.app f a))) fun _ => do
-            let ⟨f', hf⟩ ← stepC fuel entries Γ f
-            return ⟨.app f' a, hf.appHead⟩
-    | .const r ls =>
+/-- One head reduction step on the spine `appN head args`, whose head is not
+an application (con-leche's `whnfCoreStepI`/`whnfAppI` shape). The caller
+decomposes the term once per round (`onSpine`); every rule attempt receives
+the spine, and the reduct is rebuilt once around the reduced head or prefix
+(`ReductionClaim.appHeadN`):
+
+* a lambda head takes its first argument by beta, typed at a binder that may
+  be Prop (`ReductionClaim.beta`), untyped at a `.never` one (`betaNever`);
+* a let head reduces by zeta, a projection head by projection iota;
+* a constant head tries the rules its facts enable, each at its own arity
+  (`atPrefix`): literal operations (without `delta`, only on a closed
+  prefix), iota, quotient rules; then, when `delta` is set, delta,
+  `appN (body.instL ls) args`.
+
+A neutral head (`neutralSpineDepth`) tries no rule. A spine with at least as
+many arguments as the fuel is exhausted, as the former recursive step, which
+spent one unit of fuel per application, exhausted it. -/
+def stepSpineC : Nat → (entries : Environment β) → (Γ : Context β) → (delta : Bool) →
+    (head : AExpr β) → (args : List (AExpr β)) →
+      KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (AExpr.appN head args))
+  | 0, _, _, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, delta, head, args =>
+    if fuel < args.length then throw .exhausted else
+    match head, args with
+    | .lam .never _ b, a :: rest =>
+      pure ⟨AExpr.appN (b.inst a) rest, ReductionClaim.betaNever.appHeadN rest⟩
+    | .lam p D b, a :: rest => do
+      let ⟨A', ha⟩ ← inferAC fuel entries Γ a
+      let ⟨hc⟩ ← isDefEqC fuel entries Γ A' D
+      return ⟨AExpr.appN (b.inst a) rest, (ReductionClaim.beta (p := p) ha hc).appHeadN rest⟩
+    | .letE _ v b, args => pure ⟨AExpr.appN (b.inst v) args, ReductionClaim.zeta.appHeadN args⟩
+    | .proj r i x, args => do
+      let ⟨x', hx⟩ ← KM.mapError SearchFailure.speculative (projIotaC fuel entries Γ r i x)
+      return ⟨AExpr.appN x' args, hx.appHeadN args⟩
+    | .const r ls, args =>
       match h : entries r with
-      | some entry =>
-        match hb : entry.body with
-        | some body =>
-          if hn : ls.length = entry.universes then
-            pure ⟨body.instL ls, ReductionClaim.delta h hb hn⟩
-          else throw .noMatch
-        | none => throw .noMatch
       | none => throw .noMatch
-    | .letE _ v b => pure ⟨b.inst v, ReductionClaim.zeta⟩
-    | .proj r i x => KM.mapError SearchFailure.speculative (projIotaC fuel entries Γ r i x)
-    | _ => throw .noMatch
+      | some entry =>
+        if !constHeadActive entry ls then throw .noMatch else
+        let rules : Unit → KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (AExpr.appN (.const r ls) args)) :=
+          fun _ =>
+            if entry.facts.any headReductionFact then
+              let natArity : Nat :=
+                match findNatOp entry.facts, findNatTest entry.facts with
+                | some ⟨.pred, _⟩, _ => 1
+                | some _, _ | none, some _ => 2
+                | none, none => 0
+              -- Literal evaluation inside conversion (`whnfCoreC`, no delta) only
+              -- on closed terms, as in the official kernel and con-leche: an open
+              -- argument would be normalized toward unary arithmetic. The `whnf`
+              -- loop (with delta) stays unguarded.
+              KM.orElse
+                (if natArity = 0 then throw .noMatch
+                 else atPrefix natArity (.const r ls) args fun pre =>
+                  if delta || (AExpr.appN (.const r ls) pre).looseBound == 0 then
+                    natStepC fuel entries Γ (AExpr.appN (.const r ls) pre)
+                  else throw .noMatch) fun _ =>
+              KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ r ls entry h args))
+                fun _ => KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ r ls entry args)
+            else throw .noMatch
+        if delta then
+          KM.orElse (rules ()) fun _ =>
+            match hb : entry.body with
+            | some body =>
+              if hn : ls.length = entry.universes then
+                pure ⟨AExpr.appN (body.instL ls) args, (ReductionClaim.delta h hb hn).appHeadN args⟩
+              else throw .noMatch
+            | none => throw .noMatch
+        else rules ()
+    | _, _ => throw .noMatch
 
 /-- Apply a typed nested lambda to arguments by typed beta steps, reducing
 nothing else. -/
@@ -667,65 +743,62 @@ right side. A literal major is unfolded one step first. K-like reduction: if
 the major is not a constructor application but the recursor has a single rule
 without fields, the constructor is synthesized from the recursor's parameters;
 the conversion of the major to it is then proof irrelevance, which holds
-exactly when the major's type converts to the constructor's. -/
-def iotaC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
-    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)
-  | 0, _, _, _ => throw .exhausted
-  | fuel + 1, entries, Γ, e =>
-    match spine e [] with
-    | (.const r ls, args) =>
-      match h : entries r with
-      | some entry =>
-        match recursorInfo entry.facts with
-        | some (np, nm, ni, rules) =>
-          let majorIdx := np + 1 + nm + ni
-          if args.length = majorIdx + 1 then
-            match args[majorIdx]? with
-            | some major => do
-              let normalized ← whnfC fuel entries Γ major
-              KM.remember normalized.stopped <| do
-                let major' := normalized.result
-                let major' := match major' with
-                  | .natLit f n => match unfoldLit.{u,v} entries Γ f n with
-                    | some u => u.result
-                    | none => major'
-                  | _ => major'
-                let candidate : Option (Nat × Nat × List (AExpr β)) :=
-                  match spine major' [] with
-                  | (.const c _, cargs) => (ruleIndex rules c).map fun (j, nf) => (j, nf, cargs)
-                  | _ =>
-                    match rules with
-                    | [(_, 0)] => some (0, 0, args.take np)
-                    | _ => none
-                match candidate with
-                | some (j, nf, cargs) =>
-                  if cargs.length = np + nf then
-                    let bargs := args.take (np + 1 + nm) ++ cargs.drop np
-                    match hj : entry.equations[j]?, hf1 : entry.facts[1 + 2 * j]?,
-                        hf2 : entry.facts[2 + 2 * j]? with
-                    | some law, some (.typed lhs T), some (.typed rhs T') =>
-                      if hlaw : law.lhs = lhs ∧ law.rhs = rhs then
-                        if hn : ls.length = entry.universes then do
-                          let appL ← applyTypedC fuel entries Γ (lhs.instL ls) (T.instL ls)
-                            (TypingClaim.fact h (List.mem_of_getElem? hf1) hn) bargs
-                          let appR ← applyTypedC fuel entries Γ (rhs.instL ls) (T'.instL ls)
-                            (TypingClaim.fact h (List.mem_of_getElem? hf2) hn) bargs
-                          let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ e appL.result
-                          have heq : ConversionClaim.{u,v} entries Γ (lhs.instL ls) (rhs.instL ls) := by
-                            have := ConversionClaim.equation (Γ := Γ) h (List.mem_of_getElem? hj) hn
-                            rwa [hlaw.1, hlaw.2] at this
-                          return ⟨appR.result, ReductionClaim.iota hc appL.typed.formed
-                            (appL.conv.symm.trans ((heq.appN bargs).trans appR.conv)) appR.typed.formed⟩
-                        else throw .noMatch
-                      else throw .noMatch
-                    | _, _, _ => throw .noMatch
+exactly when the major's type converts to the constructor's. The rule receives
+the spine of the recursor application and fires at the recursor's arity; an
+over-applied spine reduces its prefix (`atPrefix`). -/
+def iotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r : ConstRef β) →
+    (ls : List VLevel) → (entry : ConstantEntry β) → entries r = some entry →
+    (args : List (AExpr β)) →
+      KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (AExpr.appN (.const r ls) args))
+  | 0, _, _, _, _, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, r, ls, entry, h, args =>
+    match recursorInfo entry.facts with
+    | some (np, nm, ni, rules) =>
+      let majorIdx := np + 1 + nm + ni
+      atPrefix (majorIdx + 1) (.const r ls) args fun args =>
+        match args[majorIdx]? with
+        | some major => do
+          let normalized ← whnfC fuel entries Γ major
+          KM.remember normalized.stopped <| do
+            let major' := normalized.result
+            let major' := match major' with
+              | .natLit f n => match unfoldLit.{u,v} entries Γ f n with
+                | some u => u.result
+                | none => major'
+              | _ => major'
+            let candidate : Option (Nat × Nat × List (AExpr β)) :=
+              match spine major' [] with
+              | (.const c _, cargs) => (ruleIndex rules c).map fun (j, nf) => (j, nf, cargs)
+              | _ =>
+                match rules with
+                | [(_, 0)] => some (0, 0, args.take np)
+                | _ => none
+            match candidate with
+            | some (j, nf, cargs) =>
+              if cargs.length = np + nf then
+                let bargs := args.take (np + 1 + nm) ++ cargs.drop np
+                match hj : entry.equations[j]?, hf1 : entry.facts[1 + 2 * j]?,
+                    hf2 : entry.facts[2 + 2 * j]? with
+                | some law, some (.typed lhs T), some (.typed rhs T') =>
+                  if hlaw : law.lhs = lhs ∧ law.rhs = rhs then
+                    if hn : ls.length = entry.universes then do
+                      let appL ← applyTypedC fuel entries Γ (lhs.instL ls) (T.instL ls)
+                        (TypingClaim.fact h (List.mem_of_getElem? hf1) hn) bargs
+                      let appR ← applyTypedC fuel entries Γ (rhs.instL ls) (T'.instL ls)
+                        (TypingClaim.fact h (List.mem_of_getElem? hf2) hn) bargs
+                      let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ (AExpr.appN (.const r ls) args) appL.result
+                      have heq : ConversionClaim.{u,v} entries Γ (lhs.instL ls) (rhs.instL ls) := by
+                        have := ConversionClaim.equation (Γ := Γ) h (List.mem_of_getElem? hj) hn
+                        rwa [hlaw.1, hlaw.2] at this
+                      return ⟨appR.result, ReductionClaim.iota hc appL.typed.formed
+                        (appL.conv.symm.trans ((heq.appN bargs).trans appR.conv)) appR.typed.formed⟩
+                    else throw .noMatch
                   else throw .noMatch
-                | none => throw .noMatch
+                | _, _, _ => throw .noMatch
+              else throw .noMatch
             | none => throw .noMatch
-          else throw .noMatch
         | none => throw .noMatch
-      | none => throw .noMatch
-    | _ => throw .noMatch
+    | none => throw .noMatch
 
 /-- Reduce through a rule whose endpoints are typed by inference: the target is
 converted to the typed instance of the left side, and the rule's conversion
@@ -748,61 +821,56 @@ application reduces through its rule, which is derived from the published
 facts. The lift's rule needs the former, the constructor, the lift itself, and
 the equality family to be the admitted ones; the eliminator's rule holds
 outright, since both sides are proofs. The former is read off the entry's
-type as the reference other than the known ones. -/
-def quotIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
-    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e)
-  | 0, _, _, _ => throw .exhausted
-  | fuel + 1, entries, Γ, e =>
-    match spine e [] with
-    | (.const r ls, args) =>
-      match entries r with
-      | some entry =>
-        match quotientRule entry.facts with
-        | some role =>
-          let arity := if role.isSome then 6 else 5
-          if args.length = arity then
-            match args[arity - 1]? with
-            | some major => do
-              let normalized ← whnfC fuel entries Γ major
-              KM.remember normalized.stopped <| do
-                match spine normalized.result [] with
-                | (.const c _, [_, _, a]) =>
-                  let bargs := args.take (arity - 1) ++ [a]
-                  match role with
-                  | some (eq, recursor) =>
-                    match entry.type.references.eraseDups.filter (· ≠ eq) with
-                    | [q] =>
-                      let refs : Certified.Quotient.Refs β := ⟨eq, q, c, r, r⟩
-                      if hl : Certified.Quotient.HasLift entries refs recursor then
-                        if hq : Certified.Quotient.HasFormer entries refs then
-                          if hc : Certified.Quotient.HasCtor entries refs then
-                            if hE : Certified.Quotient.EqInterface entries eq recursor then
-                              if hn : ls.length = 2 then
-                                reduceByRuleC fuel entries Γ e
-                                  ((Certified.Quotient.liftRuleLhs refs).instL ls)
-                                  ((Certified.Quotient.liftRuleRhs refs).instL ls)
-                                  (Certified.Quotient.liftRule_claim Γ hq hc hl hE hn) bargs
-                              else throw .noMatch
-                            else throw .noMatch
+type as the reference other than the known ones. Like `iotaC`, the rule
+receives the spine and fires at its arity. -/
+def quotIotaC : Nat → (entries : Environment β) → (Γ : Context β) → (r : ConstRef β) →
+    (ls : List VLevel) → (entry : ConstantEntry β) → (args : List (AExpr β)) →
+      KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (AExpr.appN (.const r ls) args))
+  | 0, _, _, _, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, r, ls, entry, args =>
+    match quotientRule entry.facts with
+    | some role =>
+      let arity := if role.isSome then 6 else 5
+      atPrefix arity (.const r ls) args fun args =>
+        match args[arity - 1]? with
+        | some major => do
+          let normalized ← whnfC fuel entries Γ major
+          KM.remember normalized.stopped <| do
+            match spine normalized.result [] with
+            | (.const c _, [_, _, a]) =>
+              let bargs := args.take (arity - 1) ++ [a]
+              match role with
+              | some (eq, recursor) =>
+                match entry.type.references.eraseDups.filter (· ≠ eq) with
+                | [q] =>
+                  let refs : Certified.Quotient.Refs β := ⟨eq, q, c, r, r⟩
+                  if hl : Certified.Quotient.HasLift entries refs recursor then
+                    if hq : Certified.Quotient.HasFormer entries refs then
+                      if hc : Certified.Quotient.HasCtor entries refs then
+                        if hE : Certified.Quotient.EqInterface entries eq recursor then
+                          if hn : ls.length = 2 then
+                            reduceByRuleC fuel entries Γ (AExpr.appN (.const r ls) args)
+                              ((Certified.Quotient.liftRuleLhs refs).instL ls)
+                              ((Certified.Quotient.liftRuleRhs refs).instL ls)
+                              (Certified.Quotient.liftRule_claim Γ hq hc hl hE hn) bargs
                           else throw .noMatch
                         else throw .noMatch
                       else throw .noMatch
-                    | _ => throw .noMatch
-                  | none =>
-                    match entry.type.references.eraseDups.filter (· ≠ c) with
-                    | [q] =>
-                      let refs : Certified.Quotient.Refs β := ⟨q, q, c, c, r⟩
-                      reduceByRuleC fuel entries Γ e
-                        ((Certified.Quotient.indRuleLhs refs).instL ls)
-                        ((Certified.Quotient.indRuleRhs refs).instL ls)
-                        (Certified.Quotient.indRule_claim refs Γ ls) bargs
-                    | _ => throw .noMatch
+                    else throw .noMatch
+                  else throw .noMatch
                 | _ => throw .noMatch
-            | none => throw .noMatch
-          else throw .noMatch
+              | none =>
+                match entry.type.references.eraseDups.filter (· ≠ c) with
+                | [q] =>
+                  let refs : Certified.Quotient.Refs β := ⟨q, q, c, c, r⟩
+                  reduceByRuleC fuel entries Γ (AExpr.appN (.const r ls) args)
+                    ((Certified.Quotient.indRuleLhs refs).instL ls)
+                    ((Certified.Quotient.indRuleRhs refs).instL ls)
+                    (Certified.Quotient.indRule_claim refs Γ ls) bargs
+                | _ => throw .noMatch
+            | _ => throw .noMatch
         | none => throw .noMatch
-      | none => throw .noMatch
-    | _ => throw .noMatch
+    | none => throw .noMatch
 
 /-- Projection iota: a projection of a constructor application reduces
 through the structure's published iota rule, whose endpoints are typed by
@@ -933,7 +1001,7 @@ def whnfC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AE
     | some n => pure n
     | none =>
       let result : Normalized.{u,v} entries Γ e ← do
-        match ← KM.attempt (skipNeutralStepC fuel entries Γ e fun _ => stepC fuel entries Γ e) with
+        match ← KM.attempt (onSpine e (stepSpineC fuel entries Γ true)) with
         | .ok ⟨e', h⟩ =>
           let ⟨e'', h', stopped⟩ ← whnfC fuel entries Γ e'
           pure ⟨e'', h.trans h', stopped⟩
@@ -942,28 +1010,14 @@ def whnfC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AE
       if cacheable && result.stopped.isNone then KM.modifyCache (·.addWhnf e result)
       pure result
 
-/-- Weak head normalization without delta at the head: beta, zeta, iota,
-quotient and projection rules only. -/
+/-- Weak head normalization without delta at the head: beta, zeta, literal
+(closed terms only), iota, quotient and projection rules only. Each round
+decomposes the spine once (`stepSpineC` without delta). -/
 def whnfCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AExpr β) →
     KM.{u,v} entries Γ (Normalized.{u,v} entries Γ e)
   | 0, _, _, e => pure ⟨e, ReductionClaim.refl e, some .exhausted⟩
   | fuel + 1, entries, Γ, e => do
-    let attemptStep : KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e) :=
-      if hasDeltaHead entries e then
-        match e with
-        | .app f x =>
-          -- Literal evaluation inside conversion only on closed terms, as in the
-          -- official kernel and con-leche: an open argument would be normalized
-          -- toward unary arithmetic. The `whnf` loop stays unguarded.
-          let iotas : KM.{u,v} entries Γ (Reduced.{u,v} entries Γ (.app f x)) :=
-            KM.orElse (KM.mapError SearchFailure.speculative (iotaC fuel entries Γ (.app f x))) fun _ =>
-              KM.mapError SearchFailure.speculative (quotIotaC fuel entries Γ (.app f x))
-          if (AExpr.app f x).looseBound == 0 then
-            KM.orElse (natStepC fuel entries Γ (.app f x)) fun _ => iotas
-          else iotas
-        | _ => throw .noMatch
-      else skipNeutralStepC fuel entries Γ e fun _ => stepC fuel entries Γ e
-    let next ← KM.attempt attemptStep
+    let next ← KM.attempt (onSpine e (stepSpineC fuel entries Γ false))
     match next with
     | .ok ⟨e', h⟩ =>
       let ⟨e'', h', stopped⟩ ← whnfCoreC fuel entries Γ e'
@@ -1327,6 +1381,11 @@ def isDefEqC : Nat → (entries : Environment β) → (Γ : Context β) → (a b
 
 end
 
+/-- One head reduction step: `stepSpineC`, with delta, on the term's spine. -/
+def stepC (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
+    KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e) :=
+  onSpine e (stepSpineC fuel entries Γ true)
+
 /-- The work budget of a top-level call, per unit of fuel. -/
 def workPerFuel : Nat := 10
 
@@ -1338,8 +1397,7 @@ interface. -/
 
 def step (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
     Search (Reduced.{u,v} entries Γ e) :=
-  KM.run (fun _ => 0) (fuel * workPerFuel)
-    (skipNeutralStepC fuel entries Γ e fun _ => stepC.{u,v} fuel entries Γ e)
+  KM.run (fun _ => 0) (fuel * workPerFuel) (stepC.{u,v} fuel entries Γ e)
 
 def applyTyped (fuel : Nat) (entries : Environment β) (Γ : Context β) (f F : AExpr β)
     (hf : TypingClaim.{u,v} entries Γ f F) (args : List (AExpr β)) :
@@ -1348,7 +1406,13 @@ def applyTyped (fuel : Nat) (entries : Environment β) (Γ : Context β) (f F : 
 
 def iota (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
     Search (Reduced.{u,v} entries Γ e) :=
-  KM.run (fun _ => 0) (fuel * workPerFuel) (iotaC.{u,v} fuel entries Γ e)
+  KM.run (fun _ => 0) (fuel * workPerFuel) <| onSpine e fun head args =>
+    match head with
+    | .const r ls =>
+      match h : entries r with
+      | some entry => iotaC.{u,v} fuel entries Γ r ls entry h args
+      | none => throw .noMatch
+    | _ => throw .noMatch
 
 def proofIrrelevance (fuel : Nat) (entries : Environment β) (Γ : Context β) (a b : AExpr β) :
     Search (Conv.{u,v} entries Γ a b) :=

@@ -456,6 +456,14 @@ theorem Model.ConversionClaim.appN {f f' : AExpr β} (h : ConversionClaim.{u,v} 
   | a :: args => ConversionClaim.appN (ConversionClaim.app h (ConversionClaim.refl a)) args
 
 omit [DecidableEq β] in
+/-- Reduce the head of an application spine: `ReductionClaim.appHead` folded
+over the arguments, first argument innermost. -/
+theorem ReductionClaim.appHeadN {f f' : AExpr β} (h : ReductionClaim.{u,v} entries Γ f f') :
+    ∀ args : List (AExpr β), ReductionClaim.{u,v} entries Γ (AExpr.appN f args) (AExpr.appN f' args)
+  | [] => h
+  | a :: args => ReductionClaim.appHeadN (ReductionClaim.appHead (a := a) h) args
+
+omit [DecidableEq β] in
 /-- Iota: the target converts to the typed instance of a rule's left side,
 which equals the typed instance of its right side. -/
 theorem ReductionClaim.iota {e l r : AExpr β} (hc : ConvClaim.{u,v} entries Γ e l)

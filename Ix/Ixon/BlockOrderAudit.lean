@@ -35,7 +35,7 @@ run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.BlockOrderProofs] Ix.Ix
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.BlockOrder
 
 /-- info: runtime closure of [Ix.Ixon.BlockOrder.checkBytes,
-Ix.Ixon.BlockOrder.canonicalClasses, Ix.Ixon.BlockOrder.compareExpr]: 2055 compiled functions;
+Ix.Ixon.BlockOrder.canonicalClasses, Ix.Ixon.BlockOrder.compareExpr]: 2064 compiled functions;
 inherited externs 86, implemented_by 0, unsafe 3, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.BlockOrder.Audit.operations #[`Init, `Std]
