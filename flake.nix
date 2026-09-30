@@ -112,6 +112,14 @@
           compilatrix = compilatrixLib;
         };
 
+        # The compiler's command line (`Compilatrix.Cli`), from the shared
+        # program build: `nix run .#compilatrix -- compile ...`.
+        apps.compilatrix = {
+          type = "app";
+          program = "${programs}/bin/compilatrix";
+          meta.description = "Compile an Ixon v3 closure to an x86-64 ELF object";
+        };
+
         # The required check surface was emptied on 2026-09-29 and returns
         # gate by gate (docs/ci.md). Every check reuses one program build.
         checks = {
