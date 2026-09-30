@@ -140,6 +140,8 @@ def wrapperBody (h : Head) (q : Profile) : M Term := do
   | .prim op =>
     return Term.lams modes (.prim (Prim.ofSrc op) ((List.range a).map fun i => cx.lvl i))
   | .ctor c | .quotMk c | .quotLift c | .recr c | .cases c =>
+    unless I.headOf c == some h do
+      decline "erase-key" s!"a wrapper of a head that {c} is not" c
     let args := (List.range a).map fun i =>
       (Src.Term.var (a - 1 - i), Src.Mode.strict,
         if headReads I h i then Rel.rel else (I.params c).getD i .rel)
@@ -151,6 +153,9 @@ def keyBody (key : Key.GKey) : M (Term × Ixon.V3.ValueContract) := do
   | .const c q => return (← constBody I c q, I.resultContract c)
   | .byName c q =>
     let some a := I.lazy.get? c | decline "erase-lazy" "a by-name variant of a non-lazy constant" c
+    -- The by-name binders are the δ body's own leading λs.
+    unless ((I.deltaBody c).map fun b => decide (a ≤ b.lamCount)).getD false do
+      decline "erase-lazy" s!"the δ body has fewer than {a} leading λs" c
     let body ← constBody I c q
     match Term.setModes (lazyModes I c q a) body with
     | some t => return (t, I.resultContract c)

@@ -117,6 +117,36 @@ def alias (c : CId) : CId :=
 
 def ctorKey (c : CId) : Key.CtorKey := .src (I.alias c)
 
+/-- The term SrcEval evaluates for δ on `c` (note 01 §3.2, E8): the `csimp`
+target, the `eqn` body, or the value of a safe definition or an
+allowlisted opaque; `none` for special heads and constants without one. -/
+def deltaBody (c : CId) : Option Src.Term :=
+  match I.resolve.get? c with
+  | some (.csimp g vs _) => some (.const g vs)
+  | some (.eqn _ body) => some body
+  | some _ => none
+  | none =>
+    match I.decl? c with
+    | some (.defn .defn .safe _ _ v) => some v
+    | some (.defn .opaq .safe _ _ v) => if I.isOpaqueByValue c then some v else none
+    | _ => none
+
+/-- The special head a constant is, as SrcEval's δ dispatches (E8): a
+primitive or `case` entry, else a constructor, recursor or quotient
+declaration. -/
+def headOf (c : CId) : Option Head :=
+  match I.resolve.get? c with
+  | some (.prim op) => some (.prim op)
+  | some (.case _) => some (.cases c)
+  | some _ => none
+  | none =>
+    match I.decl? c with
+    | some (.ctor ..) => some (.ctor c)
+    | some (.recr ..) => some (.recr c)
+    | some (.quot .ctor ..) => some (.quotMk c)
+    | some (.quot .lift ..) => some (.quotLift c)
+    | _ => none
+
 /-- The universe arguments of a recursor's major inductive. -/
 def majorUnivs (r : CId) : Option (List Ixon.Univ) :=
   match I.decl? r with
