@@ -120,4 +120,28 @@ theorem mem_toList {m : NatMap α} {j : Nat} {x : α} (h : m.get? j = some x) :
   have := mem_entriesAux m j 0 1 [] x h
   rwa [Nat.zero_add, Nat.one_mul] at this
 
+/-! ## Building from a list -/
+
+theorem get?_foldl_insert {f : NatMap α → Nat × α → NatMap α}
+    (hf : ∀ m p, f m p = m.insert p.1 p.2) :
+    ∀ (xs : List (Nat × α)) (m : NatMap α), (xs.map (·.1)).Nodup →
+      (∀ k, k ∉ xs.map (·.1) → (xs.foldl f m).get? k = m.get? k) ∧
+        ∀ k x, (k, x) ∈ xs → (xs.foldl f m).get? k = some x
+  | [], _, _ => ⟨fun _ _ => rfl, fun _ _ h => by cases h⟩
+  | (k₀, x₀) :: xs, m, hn => by
+    rw [List.map_cons, List.nodup_cons] at hn
+    obtain ⟨h₁, h₂⟩ := get?_foldl_insert hf xs (f m (k₀, x₀)) hn.2
+    rw [List.foldl_cons]
+    refine ⟨fun k hk => ?_, fun k x hk => ?_⟩
+    · rw [List.map_cons, List.mem_cons, not_or] at hk
+      rw [h₁ k hk.2, hf, get?_insert_ne _ _ hk.1]
+    · rcases List.mem_cons.1 hk with e | hk
+      · cases e
+        rw [h₁ _ hn.1, hf, get?_insert_self]
+      · exact h₂ k x hk
+
+theorem get?_ofList {xs : List (Nat × α)} (hn : (xs.map (·.1)).Nodup) {k : Nat} {x : α}
+    (h : (k, x) ∈ xs) : (ofList xs).get? k = some x :=
+  (get?_foldl_insert (fun _ _ => rfl) xs .leaf hn).2 k x h
+
 end Compilatrix.Src.NatMap

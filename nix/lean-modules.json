@@ -718,7 +718,8 @@
    ["Compilatrix.Src.Proof.Mono",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Erase.Proof.Correct",
-    "Compilatrix.Src.Relevance.Proof.Sound"]},
+    "Compilatrix.Src.Relevance.Proof.Sound",
+    "Compilatrix.Lam.Erase.Proof.ModesOk"]},
   "CompilatrixTests.Fences.Backend":
   {"path": "CompilatrixTests/Fences/Backend.lean",
    "imports":
@@ -1757,9 +1758,18 @@
   "Compilatrix.Lam.Proof.Spine":
   {"path": "Compilatrix/Lam/Proof/Spine.lean",
    "imports": ["Compilatrix.Lam.Proof.Mono", "Compilatrix.Sem.SimUpTo"]},
+  "Compilatrix.Lam.Proof.Program":
+  {"path": "Compilatrix/Lam/Proof/Program.lean",
+   "imports": ["Compilatrix.Lam.Syntax"]},
   "Compilatrix.Lam.Proof.Mono":
   {"path": "Compilatrix/Lam/Proof/Mono.lean",
    "imports": ["Compilatrix.Lam.Proof.Unfold", "Compilatrix.Sem.Agrees"]},
+  "Compilatrix.Lam.Proof.ModesOk":
+  {"path": "Compilatrix/Lam/Proof/ModesOk.lean",
+   "imports":
+   ["Compilatrix.Lam.ModesOk",
+    "Compilatrix.Src.Proof.NatMap",
+    "Compilatrix.Lam.Proof.Program"]},
   "Compilatrix.Lam.ModesOk":
   {"path": "Compilatrix/Lam/ModesOk.lean",
    "imports": ["Compilatrix.Lam.Syntax"]},
@@ -1814,6 +1824,9 @@
    ["Compilatrix.Lam.Erase",
     "Compilatrix.Lam.Erase.Proof.Layout",
     "Compilatrix.Src.Proof.NatMap"]},
+  "Compilatrix.Lam.Erase.Proof.ModesOk":
+  {"path": "Compilatrix/Lam/Erase/Proof/ModesOk.lean",
+   "imports": ["Compilatrix.Lam.Erase", "Compilatrix.Lam.Proof.ModesOk"]},
   "Compilatrix.Lam.Erase.Proof.Main":
   {"path": "Compilatrix/Lam/Erase/Proof/Main.lean",
    "imports": ["Compilatrix.Lam.Erase.Proof.Apply"]},
@@ -1872,7 +1885,10 @@
    "imports": ["Compilatrix.Src.Relevance.Check", "Compilatrix.Lam.Syntax"]},
   "Compilatrix.Lam.Erase":
   {"path": "Compilatrix/Lam/Erase.lean",
-   "imports": ["Compilatrix.Lam.Erase.Term", "Compilatrix.Lam.Erase.ProgWF"]},
+   "imports":
+   ["Compilatrix.Lam.Erase.Term",
+    "Compilatrix.Lam.Erase.ProgWF",
+    "Compilatrix.Lam.ModesOk"]},
   "Compilatrix.Key":
   {"path": "Compilatrix/Key.lean", "imports": ["Compilatrix.Src.Value"]},
   "Compilatrix.Ixon.V3.Validate":
@@ -2601,6 +2617,8 @@
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",
+    "Compilatrix.Lam.Proof.Program",
+    "Compilatrix.Lam.Proof.ModesOk",
     "Compilatrix.Lam.Erase.Proof.Spec",
     "Compilatrix.Lam.Erase.Proof.Rel",
     "Compilatrix.Lam.Erase.Proof.Layout",
@@ -2624,6 +2642,7 @@
     "Compilatrix.Lam.Erase.Proof.Build",
     "Compilatrix.Lam.Erase.Proof.ProgWF",
     "Compilatrix.Lam.Erase.Proof.Correct",
+    "Compilatrix.Lam.Erase.Proof.ModesOk",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

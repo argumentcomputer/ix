@@ -1,5 +1,6 @@
 import Compilatrix.Lam.Erase.Term
 import Compilatrix.Lam.Erase.ProgWF
+import Compilatrix.Lam.ModesOk
 
 /-! # Erasure Src → Lam
 
@@ -220,7 +221,7 @@ end Erase
 open Erase in
 /-- Erase a checked Src program. Its declarations must be structurally well
 formed (`Input.progWF`, as Tc typing ensures), which the correctness proof
-assumes. -/
+assumes, and the erased program must be `ModesOk` (ANF's precondition). -/
 def erase (p : Src.Program) (c : Src.Relevance.Checked) : Except EraseError (Program × Stats) :=
   let I := Input.ofProgram p c
   if !I.progWF then
@@ -231,7 +232,13 @@ def erase (p : Src.Program) (c : Src.Relevance.Checked) : Except EraseError (Pro
   | .error e => .error e
   | .ok (roots, s) =>
     let ctors := s.ctorOrder.reverse.filterMap s.ctors.get?
-    .ok ({ globals := s.globals, size := s.next, roots, ctors, known := I.lamKnown },
-         { globals := s.next, nodes := s.nodes, ctors := ctors.length })
+    let L : Program := { globals := s.globals, size := s.next, roots, ctors, known := I.lamKnown }
+    -- A by-name binder's dispatches depend on how the δ body of a `lazy`
+    -- constant applies its parameters, which erasure does not constrain, so
+    -- ANF's precondition is checked here.
+    if !modesOk L then
+      .error { code := "erase-modes", message := "the erased program is not ModesOk" }
+    else
+      .ok (L, { globals := s.next, nodes := s.nodes, ctors := ctors.length })
 
 end Compilatrix.Lam

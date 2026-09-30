@@ -2,6 +2,7 @@ import Compilatrix.Src.Proof.Mono
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Erase.Proof.Correct
 import Compilatrix.Src.Relevance.Proof.Sound
+import Compilatrix.Lam.Erase.Proof.ModesOk
 
 /-! Required axiom fences for the source-to-Lam theorems (M2.2): clock
 monotonicity of SrcEval and Lam, erasure's correctness, and the relevance
@@ -124,3 +125,18 @@ checker's soundness. Expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Src.NatMap.mem_toList' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Src.NatMap.mem_toList
+
+/-! `ModesOk` as a proposition, its checker's soundness, and erasure's output
+checked against it. -/
+
+/-- info: 'Compilatrix.Lam.modesOk_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.modesOk_sound
+
+/-- info: 'Compilatrix.Lam.ModesOk.check_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.ModesOk.check_sound
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.erase_modesOk' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.erase_modesOk
+
+/-- info: 'Compilatrix.Lam.Erase.Proof.erase_modesOkSpec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Lam.Erase.Proof.erase_modesOkSpec

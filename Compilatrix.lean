@@ -148,6 +148,8 @@ import Compilatrix.Rt.Readback
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine
+import Compilatrix.Lam.Proof.Program
+import Compilatrix.Lam.Proof.ModesOk
 import Compilatrix.Lam.Erase.Proof.Spec
 import Compilatrix.Lam.Erase.Proof.Rel
 import Compilatrix.Lam.Erase.Proof.Layout
@@ -171,6 +173,7 @@ import Compilatrix.Lam.Erase.Proof.BuildBody
 import Compilatrix.Lam.Erase.Proof.Build
 import Compilatrix.Lam.Erase.Proof.ProgWF
 import Compilatrix.Lam.Erase.Proof.Correct
+import Compilatrix.Lam.Erase.Proof.ModesOk
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing

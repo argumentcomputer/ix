@@ -193,6 +193,8 @@ theorem erase_spec {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program} 
   split at h
   · cases h
   · next roots s hrun =>
+    split at h
+    · cases h
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, -⟩ := h
     have main : ∀ (s₀ : St) (hk : ∀ s₁, p.known.natSucc = some s₁ →
