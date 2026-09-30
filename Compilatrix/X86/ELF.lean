@@ -5,8 +5,9 @@ import Compilatrix.Ixon.Address
 # Minimal ELF64 relocatable-object writer
 
 The writer packages one encoded x86-64 text world, its named runtime PC32
-relocations, one exported entry symbol, and a mandatory Compilatr.ix
-provenance note.  It emits no program headers, dynamic-linking metadata, debug
+relocations, an exported entry symbol and any further exported function
+symbols (one per export root), and a mandatory Compilatr.ix provenance
+note.  It emits no program headers, dynamic-linking metadata, debug
 surface, or arbitrary sections.
 
 Like the E0 instruction encoder, this executable writer is not yet connected
@@ -89,6 +90,9 @@ structure Input where
   encoded : Encode.Output
   entryBlock : BlockId
   exportName : String := "compilatrix_main"
+  /-- Further exported function symbols, by name and block, after the entry
+  symbol (one per export root beyond the entry). -/
+  exports : List (String × BlockId) := []
   provenance : Provenance
 
 inductive Error where
@@ -151,7 +155,7 @@ def relocationEntry (offset symbolIndex : Nat) (addend : Int) : ByteArray :=
   u64 offset ++ word64 (relocationInfo symbolIndex 2) ++
     word64 (Int64.ofInt addend).toUInt64
 
-private def relocationBytes (encoded : Encode.Output)
+private def relocationBytes (encoded : Encode.Output) (first : Nat)
     (symbols : List String) : Except Error ByteArray := do
   let mut output := ByteArray.empty
   for relocation in encoded.relocations do
@@ -161,19 +165,25 @@ private def relocationBytes (encoded : Encode.Output)
       throw (.invalidRelocationAddend relocation.offset relocation.addend)
     let some index := listIndex? relocation.symbol symbols
       | throw (.missingSymbol relocation.symbol)
-    -- null, .text section, exported entry, then undefined runtime symbols
-    output := output ++ relocationEntry relocation.offset (3 + index)
+    -- null, .text section, exported entry, further exports, then
+    -- undefined runtime symbols from index `first`
+    output := output ++ relocationEntry relocation.offset (first + index)
       relocation.addend
   return output
 
 private def symbolBytes (encoded : Encode.Output) (entryOffset : Nat)
-    (exportName : String) (symbols : List String)
+    (exportName : String) (exports : List (String × Nat)) (symbols : List String)
     (strings : StringTable) : Except Error ByteArray := do
   let some exportOffset := strings.offset? exportName
     | throw (.missingString exportName)
   let mut output := nullSymbol ++ textSectionSymbol ++
     functionSymbol exportOffset (UInt64.ofNat entryOffset)
       (UInt64.ofNat (encoded.text.size - entryOffset))
+  for (name, offset) in exports do
+    let some nameOffset := strings.offset? name
+      | throw (.missingString name)
+    output := output ++ functionSymbol nameOffset (UInt64.ofNat offset)
+      (UInt64.ofNat (encoded.text.size - offset))
   for name in symbols do
     let some nameOffset := strings.offset? name
       | throw (.missingString name)
@@ -236,10 +246,22 @@ def write (input : Input) : Except Error ByteArray := do
     throw .invalidExportName
   if symbols.contains input.exportName then
     throw (.duplicateSymbol input.exportName)
-  let strings := buildStringTable (input.exportName :: symbols)
+  let names := input.exportName :: input.exports.map (·.1)
+  let mut exports : List (String × Nat) := []
+  for (name, block) in input.exports do
+    if !validName name then
+      throw .invalidExportName
+    if symbols.contains name || names.count name != 1 then
+      throw (.duplicateSymbol name)
+    let some offset := input.encoded.blockOffsets[block.toNat]?
+      | throw (.missingEntryBlock block)
+    if input.encoded.text.size ≤ offset then
+      throw (.invalidEntryOffset offset input.encoded.text.size)
+    exports := exports ++ [(name, offset)]
+  let strings := buildStringTable (names ++ symbols)
   let symbolTable ← symbolBytes input.encoded entryOffset input.exportName
-    symbols strings
-  let relocations ← relocationBytes input.encoded symbols
+    exports symbols strings
+  let relocations ← relocationBytes input.encoded (3 + exports.length) symbols
   let note := provenanceNote input.provenance
   let sectionStrings := buildStringTable sectionNames
 

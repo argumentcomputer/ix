@@ -16,7 +16,9 @@ rdx`), so each exercises one part of stacking:
 | `stackArgs` | nine arguments: two through `outArg` cells into the callee's `inArg` cells |
 | `countdown` | tail calls in a framed, checked function: constant stack at any depth |
 | `deep` | recursion to a given depth, then success or a failure (heap, natOverflow, trap) from the bottom of the call chain; with a small stack budget, status 2 |
-| `loop` | a counting loop whose exit precedes its body in label order: the loop-aware block order || `heap` | loads and stores through the context's heap pointer |
+| `loop` | a counting loop whose exit precedes its body in label order: the loop-aware block order |
+| `twoExports` | two exported functions, each called through its own wrapper and symbol |
+| `heap` | loads and stores through the context's heap pointer |
 | `fused` | a fused `cmp`/`setcc` (with its zeroing `xor`), a fused `cmp`/`cmovcc`, `div` and a shift by `cl` |
 -/
 
@@ -132,6 +134,14 @@ def loop : LProgram := exported "t_loop" [{ name := "loop", params := [r .rdi], 
   { term := .ret [r .rax] },
   -- b3: s := s + i (tagged), i := i + 1; the back edge
   { body := #[subImm (r .rax) 1, add (r .rax) (.r (r .rcx)), addImm (r .rcx) 2], term := .jmp (to 1) }] }]
+
+/-- Two exports, `t_add a b = a + b` (`main`) and `t_twice a = a + a`, which
+nothing calls: each gets a wrapper and a symbol of its own. -/
+def twoExports : LProgram := { main := 0, funcs := #[
+  { name := "add", params := [r .rdi, r .rsi], results := 1, conv := .sysvExport "t_add", blocks := #[
+    { body := #[.move (r .rax) (r .rdi), add (r .rax) (.r (r .rsi))], term := .ret [r .rax] }] },
+  { name := "twice", params := [r .rdi], results := 1, conv := .sysvExport "t_twice", blocks := #[
+    { body := #[.move (r .rax) (r .rdi), add (r .rax) (.r (r .rdi))], term := .ret [r .rax] }] }] }
 
 /-- Store `a` and `b` into the heap (`regionBase`, `ctx − 24`), load them
 back and add. -/

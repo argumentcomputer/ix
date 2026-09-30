@@ -334,6 +334,35 @@ private def objectCorruptions : Except String Nat := do
   need (!ELF.check otherInput bytes && !ELF.check input otherBytes) "cross-object substitution accepted"
   return fieldMutations.length + bytes.size + 4
 
+/-- A further export: `symbol?` resolves each exported name to its block,
+and the validator pins the further symbol's name, binding, section, value
+and size, and the input's list of exports. -/
+private def exportCases : Except String Nat := do
+  let target ← Examples.callProgram.check.mapError reprStr
+  let stream ← (Stream.encode target).mapError reprStr
+  let input : ELF.Input :=
+    { encoded := stream.output, entryBlock := 0, exportName := "export_main", exports := [("export_forty", 1)],
+      provenance }
+  let object ← (ELF.writeChecked input).mapError reprStr
+  let bytes := object.bytes
+  need (ELF.symbol? bytes "export_forty" == stream.output.blockOffsets[1]? &&
+      ELF.symbol? bytes "export_main" == stream.output.blockOffsets[0]? && (ELF.symbol? bytes "missing").isNone)
+    "exported names do not resolve to their blocks"
+  let some view := ELFRead.parse bytes | throw "exports object did not parse"
+  let further := view.sections[4]!.header.offset + 3 * 24
+  let mutations : List (String × Nat × Nat × Nat) := [("export name", further, 4, 0),
+    ("export binding", further + 4, 1, 2), ("export section", further + 6, 2, 0),
+    ("export value", further + 8, 8, 0), ("export size", further + 16, 8, 0)]
+  for (name, offset, count, value) in mutations do
+    let changed := putNatural bytes offset count value
+    need (changed != bytes) s!"ineffective corruption: {name}"
+    need (!ELF.check input changed) s!"object accepted {name}"
+  let inputs : List ELF.Input := [{ input with exports := [] }, { input with exports := [("export_forty", 0)] },
+    { input with exports := [("export_other", 1)] },
+    { input with exports := [("export_forty", 1), ("export_forty", 1)] }]
+  for other in inputs do need (!ELF.check other bytes) "object accepted for a different list of exports"
+  return mutations.length + inputs.length
+
 private def relocationCases : Except String Nat := do
   let target ← Examples.runtimeProgram.check.mapError reprStr
   let stream ← (Stream.encode target).mapError reprStr
@@ -484,8 +513,9 @@ def main : IO UInt32 := cli "x86 stream/object check failed" do
   let streamNegatives ← checked streamCorruptions
   let layouts ← checked indexedLayouts
   let objectNegatives ← checked objectCorruptions
+  let exportNegatives ← checked exportCases
   let relocations ← checked relocationCases
   checked returnFault
   let unwinds ← checked unwindCases
   let contracts ← checked contractCases
-  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {producers} producer branch objects, {fused} fused-pair objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, {unwinds} failure-exit cases, caller-slot fault"
+  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {producers} producer branch objects, {fused} fused-pair objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {exportNegatives} further-export corruptions, {relocations} relocation cases, {contracts} stack contracts, {unwinds} failure-exit cases, caller-slot fault"

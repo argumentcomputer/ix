@@ -23,10 +23,9 @@ block order (05 §1.1); when a configuration leaves them out, their
 untrusted oracles supply them, and the checks run either way. (The
 allocation's certificate is `Alloc.run`'s own.)
 
-The ELF writer exports one symbol, so an object exports `main`'s wrapper;
-other exports keep their wrappers in the text, unnamed (a divergence from
-05 §6.1's wrapper per root in the object, until the writer grows a symbol
-table of exports).
+The object exports a symbol per export's wrapper (05 §6.1): `main`'s is
+the ELF entry symbol, and the others follow it in the symbol table
+(`ELF.Input.exports`, certified by `ELF.Valid.exported`).
 -/
 
 namespace Compilatrix.Backend
@@ -88,7 +87,8 @@ def lay (p : LProgram) (cfg : Config) : Except Error (Stacking.Stacked × X86.Pr
   let exports := stacked.exports.map fun e => (e.symbol, UInt32.ofNat ((pos.get? e.block).getD e.block))
   pure (stacked, program, exports)
 
-/-- Xl to a checked ELF object exporting `main`'s wrapper. -/
+/-- Xl to a checked ELF object exporting every export's wrapper, `main`'s
+as the entry symbol. -/
 def emit (p : LProgram) (cfg : Config) : Except Error Artifact := do
   let (stacked, program, exports) ← lay p cfg
   let checked ← program.check.mapError .check
@@ -96,7 +96,7 @@ def emit (p : LProgram) (cfg : Config) : Except Error Artifact := do
   let some main := stacked.exports.find? (·.fn == p.main) | throw (.stacking .noEntry)
   let object ← (X86.ELF.writeChecked
     { encoded := stream.output, entryBlock := program.entry, exportName := main.symbol,
-      provenance := cfg.provenance }).mapError .elf
+      exports := exports.filter (·.1 != main.symbol), provenance := cfg.provenance }).mapError .elf
   pure { stacked, program, checked, encoded := stream.output, object := object.bytes,
          exportName := main.symbol, exports }
 

@@ -156,7 +156,11 @@ executable text and non-executable-stack policy, export placement, full
 symbol/relocation inventory, and exact semantic provenance. `ELF.writeChecked`
 returns a certificate over the serialized bytes. `ELF.Valid.text` and
 `ELF.Valid.entry` prove that independent extraction and entry selection yield
-the certified text and selected block offset.
+the certified text and selected block offset. An object may export further
+symbols (`ELF.Input.exports`, one per export wrapper): each is a global
+function in `.text` after the entry symbol, the names are distinct, and
+`ELF.Valid.exported` proves that looking a name up among the defined
+function symbols (`ELF.symbol?`) yields its block's offset.
 
 Field layouts follow the reviewed [System V ELF specification](https://gabi.xinuos.com/elf.pdf)
 and [x86-64 psABI](https://refspecs.linuxfoundation.org/elf/x86_64-SysV-psABI.pdf).

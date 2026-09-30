@@ -4,7 +4,9 @@ import Compilatrix.X86.StreamTrace
 
 /-! Fail-closed validation of actual serialized objects against independent
 ELF interpretation. Successful emission certifies the text, exported entry,
-symbol/relocation inventory, provenance and concrete section-layout policy. -/
+the further exports (`Valid.exported`: each is the defined function symbol
+of its name, at its block's offset), symbol/relocation inventory,
+provenance and concrete section-layout policy. -/
 
 namespace Compilatrix.X86.ELF
 
@@ -68,9 +70,28 @@ def symbolMeaning (symbol : ELFRead.Symbol) : SymbolMeaning :=
 def entryMeaning (input : Input) (entryOffset : Nat) : SymbolMeaning :=
   ⟨input.exportName.toUTF8, 0x12, 0, 1, entryOffset, input.encoded.text.size - entryOffset⟩
 
+/-- A further export's symbol: a global function in `.text` at its block's
+offset, running to the end of the text as the entry symbol does. -/
+def exportMeaning (input : Input) (name : String) (block : BlockId) : SymbolMeaning :=
+  let offset := (input.encoded.blockOffsets[block.toNat]?).getD 0
+  ⟨name.toUTF8, 0x12, 0, 1, offset, input.encoded.text.size - offset⟩
+
+/-- Every exported name is valid and used once, and every further export's
+block starts inside the text. -/
+def exportsOk (input : Input) : Bool :=
+  let names := input.exportName :: input.exports.map (·.1)
+  decide names.Nodup && names.all validName &&
+    input.exports.all fun (_, block) =>
+      match input.encoded.blockOffsets[block.toNat]? with
+      | some offset => decide (offset < input.encoded.text.size)
+      | none => false
+
+/-- The symbol table: null, the `.text` section, the entry export, the
+further exports in order, then the undefined runtime symbols. -/
 def expectedSymbols (input : Input) (entryOffset : Nat) : Array SymbolMeaning :=
   (⟨ByteArray.empty, 0, 0, 0, 0, 0⟩ :: ⟨ByteArray.empty, 3, 0, 1, 0, 0⟩ :: entryMeaning input entryOffset ::
-    ((input.encoded.relocations.toList.map (·.symbol)).eraseDups.map fun name => ⟨name.toUTF8, 0x12, 0, 0, 0, 0⟩)).toArray
+    (input.exports.map (fun p => exportMeaning input p.1 p.2) ++
+    ((input.encoded.relocations.toList.map (·.symbol)).eraseDups.map fun name => ⟨name.toUTF8, 0x12, 0, 0, 0, 0⟩))).toArray
 
 structure RelocationMeaning where
   offset : Nat
@@ -104,7 +125,7 @@ def checkView (input : Input) (bytes : ByteArray) (view : ELFRead.View) : Bool :
       view.text == input.encoded.text && symbolMeaning entrySymbol == entryMeaning input entryOffset &&
       view.symbols.map symbolMeaning == expectedSymbols input entryOffset &&
       view.relocations.map relocationMeaning == expectedRelocations input && relocationBounds view &&
-      view.provenance == expectedProvenance input.provenance
+      view.provenance == expectedProvenance input.provenance && exportsOk input
   | _, _ => false
 
 structure Fields (input : Input) (bytes : ByteArray) (view : ELFRead.View) : Prop where
@@ -117,6 +138,7 @@ structure Fields (input : Input) (bytes : ByteArray) (view : ELFRead.View) : Pro
   relocations : view.relocations.map relocationMeaning = expectedRelocations input
   relocationBounds : relocationBounds view = true
   provenance : view.provenance = expectedProvenance input.provenance
+  exports : exportsOk input = true
 
 theorem checkView_sound {input : Input} {bytes : ByteArray} {view : ELFRead.View}
     (accepted : checkView input bytes view = true) : Fields input bytes view := by
@@ -127,9 +149,10 @@ theorem checkView_sound {input : Input} {bytes : ByteArray} {view : ELFRead.View
       | none => simp [checkView, entry, symbol] at accepted
       | some symbolValue =>
           simp only [checkView, entry, symbol, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq, and_assoc] at accepted
-          obtain ⟨shape, name, bound, text, meaning, symbols, relocations, relocationBounds, provenance⟩ := accepted
+          obtain ⟨shape, name, bound, text, meaning, symbols, relocations, relocationBounds, provenance, exports⟩ :=
+            accepted
           exact ⟨shape, name, text, ⟨offset, symbolValue, entry, bound, symbol, meaning, symbols⟩,
-            relocations, relocationBounds, provenance⟩
+            relocations, relocationBounds, provenance, exports⟩
 
 def check (input : Input) (bytes : ByteArray) : Bool :=
   match ELFRead.parse bytes with
@@ -166,6 +189,71 @@ theorem Valid.entry {input : Input} {bytes : ByteArray} (valid : Valid input byt
   have value := congrArg SymbolMeaning.value meaning
   simp only [symbolMeaning, entryMeaning] at name info other sectionIndex value
   simp [entry?, parsed, atEntry, name, info, other, sectionIndex, value, ELFRead.require, found]
+
+/-- A symbol meaning that defines `name` as a global function in `.text`. -/
+def definesName (name : String) (m : SymbolMeaning) : Bool :=
+  m.name == name.toUTF8 && m.info == 0x12 && m.other == 0 && m.sectionIndex == 1
+
+/-- The value of the first global function symbol named `name` that is
+defined in `.text`. -/
+def symbol? (bytes : ByteArray) (name : String) : Option Nat := do
+  let view ← ELFRead.parse bytes
+  let symbol ← view.symbols.find? fun s => definesName name (symbolMeaning s)
+  return symbol.value
+
+private theorem find_export (input : Input) {name : String} {block : BlockId} :
+    ∀ (exports : List (String × BlockId)) (rest : List SymbolMeaning),
+      (exports.map (·.1)).Nodup → (name, block) ∈ exports →
+      (exports.map (fun p => exportMeaning input p.1 p.2) ++ rest).find? (definesName name) =
+        some (exportMeaning input name block)
+  | [], _, _, member => absurd member (List.not_mem_nil)
+  | (n, b) :: exports, rest, nodup, member => by
+      simp only [List.map_cons, List.nodup_cons] at nodup
+      by_cases same : n = name
+      · subst same
+        rcases List.mem_cons.mp member with equal | later
+        · cases equal
+          simp [definesName, exportMeaning]
+        · exact absurd (List.mem_map.mpr ⟨_, later, rfl⟩) nodup.1
+      · have later : (name, block) ∈ exports := by
+          rcases List.mem_cons.mp member with equal | later
+          · cases equal; exact absurd rfl same
+          · exact later
+        have skip : definesName name (exportMeaning input n b) = false := by
+          simp [definesName, exportMeaning, String.toByteArray_inj, same]
+        simp only [List.map_cons, List.cons_append, List.find?_cons, skip]
+        exact find_export input exports rest nodup.2 later
+
+/-- Every further export is a defined global function symbol at its
+block's offset. -/
+theorem Valid.exported {input : Input} {bytes : ByteArray} (valid : Valid input bytes) {name : String}
+    {block : BlockId} (member : (name, block) ∈ input.exports) :
+    symbol? bytes name = input.encoded.blockOffsets[block.toNat]? := by
+  obtain ⟨view, parsed, fields⟩ := valid
+  obtain ⟨offset, _, _, _, _, _, symbols⟩ := fields.entry
+  have ok := fields.exports
+  simp only [exportsOk, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ok
+  obtain ⟨⟨nodup, _⟩, inText⟩ := ok
+  rw [List.nodup_cons] at nodup
+  have distinct : input.exportName ≠ name := fun equal =>
+    nodup.1 (equal ▸ List.mem_map.mpr ⟨(name, block), member, rfl⟩)
+  have found : (view.symbols.map symbolMeaning).find? (definesName name) =
+      some (exportMeaning input name block) := by
+    rw [symbols, expectedSymbols, List.find?_toArray,
+      List.find?_cons_of_neg (by simp [definesName]), List.find?_cons_of_neg (by simp [definesName]),
+      List.find?_cons_of_neg (by simp [definesName, entryMeaning, String.toByteArray_inj, distinct])]
+    exact find_export input _ _ nodup.2 member
+  rw [Array.find?_map] at found
+  obtain ⟨symbol, lookup, meaning⟩ := Option.map_eq_some_iff.mp found
+  have value := congrArg SymbolMeaning.value meaning
+  have offsetFound := inText (name, block) member
+  cases blockOffset : input.encoded.blockOffsets[block.toNat]? with
+  | none => simp [blockOffset] at offsetFound
+  | some offset =>
+      simp only [symbolMeaning, exportMeaning, blockOffset, Option.getD_some] at value
+      have same : (fun s => definesName name (symbolMeaning s)) = definesName name ∘ symbolMeaning := rfl
+      simp only [symbol?, parsed, Option.bind_eq_bind, Option.bind_some, same, lookup]
+      simp [value]
 
 structure Certified (input : Input) where
   bytes : ByteArray

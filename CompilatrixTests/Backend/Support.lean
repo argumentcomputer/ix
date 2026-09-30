@@ -104,15 +104,23 @@ structure Run where
   byteSteps : Nat
 
 /-- Compare the three levels on one input; an error names the first
-disagreement. -/
+disagreement. With `root` (an export's symbol and wrapper block), the
+typed machine starts at that wrapper and the byte machine at that symbol;
+`p`'s `main` is then that export's function. -/
 def runOne (p : LProgram) (a : Backend.Artifact) (reps : List Stacking.ArgRep) (env : Xl.Env) (clock : Nat)
-    (seed : UInt64) (budget : Word) (args : List Word) (override : Option Exit := none) (fuel : Nat := 20000000) : Except String Run := do
+    (seed : UInt64) (budget : Word) (args : List Word) (override : Option Exit := none) (fuel : Nat := 20000000)
+    (root : Option (String × X86.BlockId) := none) : Except String Run := do
   let xl := Xl.eval p env clock ((reps.zip args).map fun (r, v) => internalArg r v) (refMemory seed budget) Region.ctx
   let exit := override <|> expected xl
   let mem := machineMemory seed budget
   let core := entryCore mem args
-  -- typed x86, from the laid-out program's entry (main's wrapper)
-  let typed := runTyped a.checked core { base := mem } fuel
+  -- typed x86, from the laid-out program's entry (main's wrapper) or the root's wrapper
+  let checked ← match root with
+    | none => pure a.checked
+    | some (_, block) =>
+        (X86.Program.check { a.checked.program with entry := block }).mapError
+          (fun e => s!"typed: the root does not check: {repr e}")
+  let typed := runTyped checked core { base := mem } fuel
   let m := typed.machine
   let savedOk (read : X86.GPR → Word) := sentinels.all fun (r, v) => read r == v
   match exit with
@@ -125,7 +133,10 @@ def runOne (p : LProgram) (a : Backend.Artifact) (reps : List Stacking.ArgRep) (
   | none => pure ()
   -- the byte machine, on the object's text from the exported symbol
   let some text := X86.ELFRead.text? a.object | throw "the object has no text"
-  let some offset := X86.ELF.entry? a.object a.exportName | throw "the object has no entry"
+  let symbolOffset := match root with
+    | none => X86.ELF.entry? a.object a.exportName
+    | some (name, _) => X86.ELF.symbol? a.object name
+  let some offset := symbolOffset | throw "the object has no symbol for the export"
   let base : Word := 0x400000
   let bytes := runBytes text base ⟨core, base + UInt64.ofNat offset, {}⟩ { base := mem } retSentinel fuel
   match exit, bytes.result with

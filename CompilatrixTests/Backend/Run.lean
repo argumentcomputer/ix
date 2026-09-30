@@ -67,6 +67,8 @@ structure Case where
   /-- Map the native region at the Lean region's address, filled with its
   pattern. -/
   fixed : Bool := false
+  /-- The export to call (by function), when it is not `main`. -/
+  root : Option Lir.FunId := none
 
 structure Options where
   cc : Option String := none
@@ -94,14 +96,24 @@ def inputLine (i : Input) : String := " ".intercalate ((i.budget :: i.args).map 
 /-- Emit, run the models, and (with `tools`) run natively. -/
 def checkCase (tools : Option Native.Tools) (c : Case) : ExceptT String IO CaseReport := do
   let a ← match Backend.emit c.program
-      { provenance := testProvenance, reps := fun fn => if fn == c.program.main then some c.reps else none } with
+      { provenance := testProvenance, reps := fun fn => if fn == c.root.getD c.program.main then some c.reps else none } with
     | .ok a => pure a
     | .error e => throw s!"{c.name}: {e}"
+  -- The export to call: its function (as Xl's `main`), symbol and wrapper block.
+  let (program, root, entry) ← match c.root with
+    | none => pure (c.program, none, a.exportName)
+    | some fn =>
+        match a.stacked.exports.find? (·.fn == fn) with
+        | none => throw s!"{c.name}: function {fn} is not an export"
+        | some e =>
+            match a.exports.find? (·.1 == e.symbol) with
+            | none => throw s!"{c.name}: no laid-out wrapper for {e.symbol}"
+            | some (symbol, block) => pure ({ c.program with main := fn }, some (symbol, block), symbol)
   let mut runs := []
   let mut expects : List (Input × Exit) := []
   for i in c.inputs do
     if i.models then
-      match runOne c.program a c.reps {} c.clock c.seed i.budget i.args i.expect with
+      match runOne program a c.reps {} c.clock c.seed i.budget i.args i.expect (root := root) with
       | .ok r =>
           runs := runs ++ [r]
           match r.exit with
@@ -114,7 +126,7 @@ def checkCase (tools : Option Native.Tools) (c : Case) : ExceptT String IO CaseR
       | none => throw s!"{c.name} {i.args}: a native-only input needs an expected result"
   let mut native := 0
   if let some t := tools then
-    let exe ← Native.link t c.name a.object a.exportName c.fixed
+    let exe ← Native.link t c.name a.object entry c.fixed
     let lines := (if c.fixed then [s!"seed {c.seed}"] else []) ++ expects.map (inputLine ·.1)
     let got ← Native.run exe lines
     unless got.length == expects.length do throw s!"{c.name}: {got.length} native results for {expects.length} inputs"
@@ -164,6 +176,11 @@ def handCases : List Case := [
   { name := "loop", program := Programs.loop, reps := natReps 1,
     inputs := [⟨[0], defaultBudget, none, true⟩, ⟨[1], defaultBudget, none, true⟩, ⟨[10], defaultBudget, none, true⟩,
       ⟨[1000], defaultBudget, none, true⟩] },
+  -- One object, two exports: each is called through its own symbol.
+  { name := "exports_add", program := Programs.twoExports, reps := natReps 2,
+    inputs := [⟨[3, 4], defaultBudget, none, true⟩] },
+  { name := "exports_twice", program := Programs.twoExports, reps := natReps 1, root := some 1,
+    inputs := [⟨[5], defaultBudget, none, true⟩, ⟨[2 ^ 63], defaultBudget, some ⟨3, 0⟩, true⟩] },
   { name := "heap", program := Programs.heap, reps := wordReps 2, inputs := [⟨[40, 2], defaultBudget, none, true⟩] },
   { name := "fused", program := Programs.fused, reps := wordReps 2,
     inputs := [⟨[100, 7], defaultBudget, none, true⟩, ⟨[7, 100], defaultBudget, none, true⟩,

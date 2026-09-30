@@ -149,6 +149,9 @@ import Compilatrix.X86.StreamTrace
 /-- info: 'Compilatrix.X86.ELF.Valid.entry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.ELF.Valid.entry
 
+/-- info: 'Compilatrix.X86.ELF.Valid.exported' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ELF.Valid.exported
+
 /-- info: 'Compilatrix.X86.ELFLink.pc32_call' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.ELFLink.pc32_call
 

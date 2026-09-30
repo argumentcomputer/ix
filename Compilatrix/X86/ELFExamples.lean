@@ -153,4 +153,56 @@ def duplicateSymbolRejected : Bool :=
 
 #guard duplicateSymbolRejected
 
+/-! Further exports: one global function symbol each, after the entry
+symbol; runtime symbols and relocation indices move up past them. -/
+
+def writeExports (program : Program) (exports : List (String × BlockId)) : Except Error ByteArray :=
+  match Encode.Program.encode program with
+  | .error _ => .error (.missingString "encode")
+  | .ok encoded => ELF.write { encoded, entryBlock := program.entry, exports, provenance := fixtureProvenance }
+
+/-- The `.symtab` entry count of an object. -/
+def symbolCount (object : ByteArray) : Nat :=
+  let symbolHeader := readNatural object 40 8 + 4 * 64
+  readNatural object (symbolHeader + 32) 8 / 24
+
+def twoExportsAccepted : Bool :=
+  match writeExports Compilatrix.X86.Examples.callProgram [("compilatrix_forty", 1)] with
+  | .error _ => false
+  | .ok object =>
+      symbolCount object == 4 && containsBytes object "compilatrix_forty".toUTF8 &&
+        containsBytes object "compilatrix_main".toUTF8
+
+#guard twoExportsAccepted
+
+def exportRelocationIndex : Bool :=
+  match writeExports Compilatrix.X86.Examples.runtimeProgram [("runtime_alias", 0)] with
+  | .error _ => false
+  | .ok object =>
+      let sectionHeadersOffset := readNatural object 40 8
+      let relocationOffset := readNatural object (sectionHeadersOffset + 2 * 64 + 24) 8
+      symbolCount object == 5 &&
+        object.extract relocationOffset (relocationOffset + 24) ==
+          (u64 12 ++ word64 (relocationInfo 4 2) ++ word64 (Int64.ofInt (-4)).toUInt64)
+
+#guard exportRelocationIndex
+
+-- A repeated name, the entry's name, a runtime symbol's name, an empty
+-- name and a missing block are rejected.
+#guard match writeExports Compilatrix.X86.Examples.callProgram [("f", 1), ("f", 0)] with
+  | .error (.duplicateSymbol "f") => true
+  | _ => false
+#guard match writeExports Compilatrix.X86.Examples.callProgram [("compilatrix_main", 1)] with
+  | .error (.duplicateSymbol "compilatrix_main") => true
+  | _ => false
+#guard match writeExports Compilatrix.X86.Examples.runtimeProgram [("compilatrix_rt_allocate", 0)] with
+  | .error (.duplicateSymbol "compilatrix_rt_allocate") => true
+  | _ => false
+#guard match writeExports Compilatrix.X86.Examples.callProgram [("", 1)] with
+  | .error .invalidExportName => true
+  | _ => false
+#guard match writeExports Compilatrix.X86.Examples.callProgram [("g", 7)] with
+  | .error (.missingEntryBlock 7) => true
+  | _ => false
+
 end Compilatrix.X86.ELF.Examples

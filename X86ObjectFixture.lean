@@ -8,7 +8,7 @@ open Compilatrix.X86
 open Compilatrix.Ixon
 
 private def usage : String :=
-  "usage: lake exe x86-object-fixture (arithmetic|direct-call|runtime|unwind) <output.o>"
+  "usage: lake exe x86-object-fixture (arithmetic|direct-call|runtime|unwind|exports) <output.o>"
 
 /-- Provenance for the hand-written target fixtures. -/
 private def fixtureProvenance : X86.ELF.Provenance :=
@@ -22,6 +22,8 @@ private structure Fixture where
   provenance : X86.ELF.Provenance := fixtureProvenance
   /-- The typed run's initial core (its `rsp` is 0x1008). -/
   core : Core := Core.empty 0x1008
+  /-- Further exported symbols (name and block). -/
+  exports : List (String × BlockId) := []
 
 private def fixture? : String → Except String Fixture
   | "arithmetic" =>
@@ -37,6 +39,11 @@ private def fixture? : String → Except String Fixture
       pure { program := X86.Examples.unwindProgram
              runtime := Runtime.rejecting
              core := X86.Examples.unwindCore 3 1 }
+  -- The direct-call program with its callee (returning 40) exported too.
+  | "exports" =>
+      pure { program := X86.Examples.callProgram
+             runtime := Runtime.rejecting
+             exports := [("compilatrix_forty", 1)] }
   | _ => .error usage
 
 def main (args : List String) : IO UInt32 := do
@@ -69,11 +76,17 @@ def main (args : List String) : IO UInt32 := do
   let object ← match X86.ELF.writeChecked
       { encoded
         entryBlock := program.entry
+        exports := selectedFixture.exports
         provenance := selectedFixture.provenance } with
     | .ok object => pure object.bytes
     | .error error =>
         IO.eprintln s!"x86-object-fixture: ELF write failed: {repr error}"
         return 1
+  -- Each further export resolves, by name, to its block's offset.
+  for (name, block) in selectedFixture.exports do
+    unless X86.ELF.symbol? object name == encoded.blockOffsets[block.toNat]? do
+      IO.eprintln s!"x86-object-fixture: export {name} does not resolve to block {block}"
+      return 1
   IO.FS.writeBinFile outputPath object
   let sourceResult := match selectedFixture.sourceResult with
     | none => "-"
