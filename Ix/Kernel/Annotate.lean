@@ -14,6 +14,10 @@ proves that its output erases to the exact supplied term (`annotate_erase`).
 Its binder regimes are validated by `inferA` when the declaration is
 checked; structural fidelity does not establish their semantic correctness.
 
+Binder pushes retain each type at its introduction depth. Local reads lift
+only the requested type; inference fallbacks materialize the exact model
+context. This keeps structural annotation linear on binder towers.
+
 Nested inference and normalization failures retain their causes. In
 particular, running out of fuel below a binder remains exhaustion, and
 unsuccessful conversion remains an unresolved search. -/
@@ -92,6 +96,99 @@ theorem transferAnnotations_erase : ∀ {raw : VExpr β} {ann a : AExpr β},
   | .proj _ _ _, .app _ _, _, h | .proj _ _ _, .lam _ _ _, _, h | .proj _ _ _, .forallE _ _ _, _, h
   | .proj _ _ _, .letE _ _ _, _, h | .proj _ _ _, .natLit _ _, _, h => by simp [transferAnnotations] at h
 
+/-- Annotation keeps new binder types in the context in which they were
+written. A push is constant time; reading a variable lifts just its type. -/
+structure AnnotationContext (β : Type u) where
+  base : Context β
+  pending : List (AExpr β) := []
+
+namespace AnnotationContext
+
+omit [DecidableEq β] in
+private theorem liftN_zero (A : AExpr β) (cutoff : Nat) : A.liftN 0 cutoff = A := by
+  induction A generalizing cutoff <;> simp_all [AExpr.liftN, liftVar]
+
+omit [DecidableEq β] in
+private theorem liftN_one (A : AExpr β) (depth cutoff : Nat) :
+    (A.liftN depth cutoff).liftN 1 cutoff = A.liftN (depth + 1) cutoff := by
+  induction A generalizing cutoff with
+  | bvar index =>
+    simp only [AExpr.liftN, liftVar, AExpr.bvar.injEq]
+    split <;> (try split) <;> omega
+  | _ => simp_all [AExpr.liftN]
+
+def push (A : AExpr β) (Γ : AnnotationContext β) : AnnotationContext β :=
+  { Γ with pending := A :: Γ.pending }
+
+private def liftBase (base : Context β) : Nat → Context β
+  | 0 => base
+  | n + 1 => base.map (AExpr.liftN (n + 1) ·)
+
+omit [DecidableEq β] in
+private theorem liftBase_eq_map (base : Context β) (n : Nat) :
+    liftBase base n = base.map (AExpr.liftN n ·) := by
+  cases n <;> simp [liftBase, liftN_zero]
+
+private def materialize (base : Context β) : List (AExpr β) → Nat → Context β
+  | [], depth => liftBase base depth
+  | A :: rest, depth => A.liftN (depth + 1) :: materialize base rest (depth + 1)
+
+/-- The exact model context, with every pending shift applied once. -/
+def toContext (Γ : AnnotationContext β) : Context β :=
+  materialize Γ.base Γ.pending 0
+
+private def lookupAt (base : Context β) : List (AExpr β) → Nat → Nat → Option (AExpr β)
+  | [], 0, index => base[index]?
+  | [], depth + 1, index => (base[index]?).map (AExpr.liftN (depth + 1) ·)
+  | A :: _, depth, 0 => some (A.liftN (depth + 1))
+  | _ :: rest, depth, index + 1 => lookupAt base rest (depth + 1) index
+
+def lookup (Γ : AnnotationContext β) (index : Nat) : Option (AExpr β) :=
+  lookupAt Γ.base Γ.pending 0 index
+
+omit [DecidableEq β] in
+private theorem materialize_succ (base : Context β) (pending : List (AExpr β)) (depth : Nat) :
+    materialize base pending (depth + 1) =
+      (materialize base pending depth).map (AExpr.liftN 1 ·) := by
+  induction pending generalizing depth with
+  | nil =>
+    simp only [materialize, liftBase_eq_map, List.map_map, Function.comp_def]
+    congr 1
+    funext A
+    exact (liftN_one A depth 0).symm
+  | cons A rest ih =>
+    simp only [materialize, List.map_cons, ih, List.cons.injEq]
+    constructor
+    · exact (liftN_one A (depth + 1) 0).symm
+    · trivial
+
+omit [DecidableEq β] in
+@[simp] theorem toContext_base (Γ : Context β) : (⟨Γ, []⟩ : AnnotationContext β).toContext = Γ := rfl
+
+omit [DecidableEq β] in
+/-- Delaying binder shifts preserves the context used by certified inference. -/
+@[simp] theorem toContext_push (Γ : AnnotationContext β) (A : AExpr β) :
+    (Γ.push A).toContext = Γ.toContext.push A := by
+  simp only [push, toContext, materialize, Context.push]
+  rw [materialize_succ]
+
+omit [DecidableEq β] in
+private theorem lookupAt_eq_getElem? (base : Context β) (pending : List (AExpr β))
+    (depth index : Nat) :
+    lookupAt base pending depth index = (materialize base pending depth)[index]? := by
+  induction pending generalizing depth index with
+  | nil => cases depth <;> simp [lookupAt, materialize, liftBase, List.getElem?_map]
+  | cons A rest ih => cases index <;> simp [lookupAt, materialize, ih]
+
+omit [DecidableEq β] in
+/-- A variable read agrees with the full model context at every index,
+including out-of-scope indices. -/
+@[simp] theorem lookup_eq_getElem? (Γ : AnnotationContext β) (index : Nat) :
+    Γ.lookup index = Γ.toContext[index]? :=
+  lookupAt_eq_getElem? Γ.base Γ.pending 0 index
+
+end AnnotationContext
+
 /-! ## Reading binder conditions without inference
 
 A binder's condition is the zero condition of a sort that inference would
@@ -118,15 +215,14 @@ def familyCondition (entries : Environment β) (d : ConstRef β) (ls : List VLev
     | _ => none
   | none => none
 
-/-- The zero condition of the sort of the type `T`. `locals` is the context
-`T`'s variables refer to, when it is known. -/
-def typeCondition (entries : Environment β) (locals : Option (Context β)) (T : AExpr β) :
-    Option PropWhen :=
+/-- The zero condition of the sort of the type `T`, using a local-type reader. -/
+private def typeConditionWith (entries : Environment β) (lookup : Nat → Option (AExpr β))
+    (T : AExpr β) : Option PropWhen :=
   match T with
   | .forallE p _ _ => some p
   | .sort _ => some .never
   | .bvar i =>
-    match locals.bind (·[i]?) with
+    match lookup i with
     | some (.sort l) => some (zeroCondition l)
     | _ => none
   | _ =>
@@ -134,14 +230,20 @@ def typeCondition (entries : Environment β) (locals : Option (Context β)) (T :
     | (.const d ls, args) => familyCondition entries d ls args.length
     | _ => none
 
-/-- The zero condition of the sort of the type of the term `e`, at `Γ`. -/
-def termCondition (entries : Environment β) (Γ : Context β) (e : AExpr β) : Option PropWhen :=
+/-- Read a type's condition using an optional full model context. -/
+def typeCondition (entries : Environment β) (locals : Option (Context β)) (T : AExpr β) :
+    Option PropWhen :=
+  typeConditionWith entries (fun i => locals.bind (·[i]?)) T
+
+/-- The zero condition of the sort of the type of the term `e`, using a local-type reader. -/
+private def termConditionWith (entries : Environment β) (lookup : Nat → Option (AExpr β))
+    (e : AExpr β) : Option PropWhen :=
   match e with
   | .lam p _ _ => some p
   | .forallE .. | .sort _ => some .never
   | .bvar i =>
-    match Γ[i]? with
-    | some A => typeCondition entries (some Γ) A
+    match lookup i with
+    | some A => typeConditionWith entries lookup A
     | none => none
   | _ =>
     match spine e [] with
@@ -149,14 +251,19 @@ def termCondition (entries : Environment β) (Γ : Context β) (e : AExpr β) : 
       match entries c with
       | some entry =>
         match telescopeAfter entry.type args.length with
-        -- The rest's variables are the telescope's binders, not `Γ`'s.
-        | some rest => typeCondition entries none (rest.instL ls)
+        -- The rest's variables are the telescope's binders, not the caller's locals.
+        | some rest => typeConditionWith entries (fun _ => none) (rest.instL ls)
         | none => none
       | none => none
     | _ => none
 
-/-- Compute binder annotations. -/
-def annotate : Nat → (entries : Environment β) → (Γ : Context β) → VExpr β →
+/-- Read a term's condition in a full model context. -/
+def termCondition (entries : Environment β) (Γ : Context β) (e : AExpr β) : Option PropWhen :=
+  termConditionWith entries (fun i => Γ[i]?) e
+
+/-- Compute binder annotations, delaying context shifts until a local is
+read or the certified inference fallback needs the full model context. -/
+private def annotateCore : Nat → (entries : Environment β) → (Γ : AnnotationContext β) → VExpr β →
     Search (AExpr β)
   | 0, _, _, _ => .error .exhausted
   | fuel + 1, entries, Γ, e =>
@@ -166,44 +273,51 @@ def annotate : Nat → (entries : Environment β) → (Γ : Context β) → VExp
     | .const r ls => .ok (.const r ls)
     | .natLit r n => .ok (.natLit r n)
     | .app f a => do
-      let f' ← annotate fuel entries Γ f
-      let a' ← annotate fuel entries Γ a
+      let f' ← annotateCore fuel entries Γ f
+      let a' ← annotateCore fuel entries Γ a
       return .app f' a'
     | .proj r i x => do
-      let x' ← annotate fuel entries Γ x
+      let x' ← annotateCore fuel entries Γ x
       return .proj r i x'
     | .lam D b => do
-      let D' ← annotate fuel entries Γ D
+      let D' ← annotateCore fuel entries Γ D
       let Γ' := Γ.push D'
-      let b' ← annotate fuel entries Γ' b
-      match termCondition entries Γ' b' with
+      let b' ← annotateCore fuel entries Γ' b
+      match termConditionWith entries Γ'.lookup b' with
       | some p => return .lam p D' b'
       | none =>
+        let Γ' := Γ'.toContext
         let ⟨B, _⟩ ← inferA.{u,v} fuel entries Γ' b'
         let ⟨SB, hSB⟩ ← inferA.{u,v} fuel entries Γ' B
         let ⟨lB, _⟩ ← sortOf (whnf.{u,v} fuel entries Γ' SB) hSB
         return .lam (zeroCondition lB) D' b'
     | .forallE D B => do
-      let D' ← annotate fuel entries Γ D
+      let D' ← annotateCore fuel entries Γ D
       let Γ' := Γ.push D'
-      let B' ← annotate fuel entries Γ' B
-      match typeCondition entries (some Γ') B' with
+      let B' ← annotateCore fuel entries Γ' B
+      match typeConditionWith entries Γ'.lookup B' with
       | some p => return .forallE p D' B'
       | none =>
+        let Γ' := Γ'.toContext
         let ⟨SB, hSB⟩ ← inferA.{u,v} fuel entries Γ' B'
         let ⟨lB, _⟩ ← sortOf (whnf.{u,v} fuel entries Γ' SB) hSB
         return .forallE (zeroCondition lB) D' B'
     | .letE t v b => do
-      let t' ← annotate fuel entries Γ t
-      let v' ← annotate fuel entries Γ v
+      let t' ← annotateCore fuel entries Γ t
+      let v' ← annotateCore fuel entries Γ v
       -- With the let variable opaque; failing that, annotate the body with the
       -- value substituted and carry its binder annotations back. Annotations
       -- are proposals that inference validates, so either route is sound.
-      let b' ← Search.orElse (annotate fuel entries (Γ.push t') b) fun _ => do
-        let substituted ← annotate fuel entries Γ (b.inst v)
+      let b' ← Search.orElse (annotateCore fuel entries (Γ.push t') b) fun _ => do
+        let substituted ← annotateCore fuel entries Γ (b.inst v)
         Search.ofOption (transferAnnotations b substituted)
           (.unresolved "the let body's annotations did not transfer")
       return .letE t' v' b'
+
+/-- Compute binder annotations, preserving the supplied model context. -/
+def annotate (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : VExpr β) :
+    Search (AExpr β) :=
+  annotateCore.{u,v} fuel entries ⟨Γ, []⟩ e
 
 private theorem search_orElse_eq_ok {α : Type u} {x : Search α} {f : Unit → Search α} {b : α}
     (h : Search.orElse x f = .ok b) : x = .ok b ∨ f () = .ok b := by
@@ -222,8 +336,8 @@ private theorem search_bind_eq_ok {α γ : Type u} {x : Search α} {f : α → S
 
 /-- Every successful annotation preserves the exact raw expression. This
 does not assert scope or the validity of its binder conditions. -/
-theorem annotate_erase {fuel : Nat} {entries : Environment β} {Γ : Context β}
-    {raw : VExpr β} {a : AExpr β} (h : annotate.{u,v} fuel entries Γ raw = .ok a) :
+private theorem annotateCore_erase {fuel : Nat} {entries : Environment β} {Γ : AnnotationContext β}
+    {raw : VExpr β} {a : AExpr β} (h : annotateCore.{u,v} fuel entries Γ raw = .ok a) :
     a.erase = raw := by
   induction fuel generalizing Γ raw a with
   | zero => cases h
@@ -274,6 +388,12 @@ theorem annotate_erase {fuel : Nat} {entries : Environment β} {Γ : Context β}
           · cases hb; exact transferAnnotations_erase ‹_›
           · cases hb
       simp only [AExpr.erase, ih ht, ih hv, hb']
+
+/-- Every successful annotation erases to the exact supplied raw expression. -/
+theorem annotate_erase {fuel : Nat} {entries : Environment β} {Γ : Context β}
+    {raw : VExpr β} {a : AExpr β} (h : annotate.{u,v} fuel entries Γ raw = .ok a) :
+    a.erase = raw :=
+  annotateCore_erase h
 
 /-- Package an exact annotation with its separately checked scope, reusing
 the model's reading interface. Binder-condition scope is included in `hs`. -/

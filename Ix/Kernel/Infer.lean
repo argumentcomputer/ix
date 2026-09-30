@@ -196,6 +196,29 @@ def deltaHead (entries : Environment β) (Γ : Context β) : (e : AExpr β) →
   | .app f a => (deltaHead entries Γ f).map fun ⟨f', hf⟩ => ⟨.app f' a, hf.appHead⟩
   | _ => none
 
+/-- Whether head delta applies, without instantiating the definition's body
+or rebuilding its application spine. No reduct is needed by no-delta WHNF. -/
+def hasDeltaHead (entries : Environment β) : AExpr β → Bool
+  | .const r ls =>
+    match entries r with
+    | some entry => entry.body.isSome && ls.length == entry.universes
+    | none => false
+  | .app f _ => hasDeltaHead entries f
+  | _ => false
+
+omit [DecidableEq β] in
+theorem hasDeltaHead_eq (entries : Environment β) (Γ : Context β) (e : AExpr β) :
+    hasDeltaHead entries e = (deltaHead.{u,v} entries Γ e).isSome := by
+  induction e with
+  | const r ls =>
+    simp only [hasDeltaHead, deltaHead]
+    split <;> split <;> simp_all
+    subst_vars
+    split <;> try simp_all
+    split <;> simp_all
+  | app f a ih _ => simpa [hasDeltaHead, deltaHead] using ih
+  | _ => rfl
+
 /-- Whether the type telescope marks its value after `n` arguments as a proof:
 the binder consumed last is annotated `allZero []`, a codomain that is a
 proposition at every instance. -/
@@ -254,6 +277,13 @@ def quickConv (entries : Environment β) (Γ : Context β) : (a b : AExpr β) �
   | .sort l, .sort l' =>
     if he : levelEquiv l l' then some ⟨ConvClaim.sort (levelEquiv_sound he)⟩ else none
   | a, b => if h : a = b then some ⟨h ▸ ConvClaim.refl a⟩ else none
+
+/-- Equal-length spines with the same constant head. Universe arguments are
+checked by the conversion attempt; this predicate only schedules it. -/
+def sameConstHead : AExpr β → AExpr β → Bool
+  | .app f _, .app g _ => sameConstHead f g
+  | .const r _, .const s _ => decide (r = s)
+  | _, _ => false
 
 /-! ## Per-frame caches
 
@@ -413,6 +443,14 @@ spends is spent here too. -/
 def inFrame {Γ' : Context β} (m : KM.{u,v} entries Γ' α) : KM.{u,v} entries Γ α := fun c =>
   let (r, c') := m (Cache.empty c.keyHash c.budget)
   (r, { c with budget := c'.budget })
+
+/-- Bound optional speculation, reserving at least three quarters of the
+remaining work for its fallback. Results and caches are retained, and every
+unit actually spent is still charged to the enclosing search. -/
+def speculate (limit : Nat) (m : KM.{u,v} entries Γ α) : KM.{u,v} entries Γ α := fun c =>
+  let allowance := min limit (c.budget / 4)
+  let (r, c') := m { c with budget := allowance }
+  (r, { c' with budget := c.budget - allowance + c'.budget })
 
 /-- Run with an empty cache and the given work budget. -/
 def run (keyHash : β → UInt64) (budget : Nat) (m : KM.{u,v} entries Γ α) : Search α :=
@@ -761,7 +799,8 @@ def etaStructC : Nat → (entries : Environment β) → (Γ : Context β) → (a
       | none => throw .noMatch
     | _ => throw .noMatch
 
-/-- Proof irrelevance: both sides inhabit a proposition. -/
+/-- Proof irrelevance: both sides inhabit propositions, whose proofs have
+the same interpretation even when the propositions differ. -/
 def proofIrrelevanceC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
     KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
   | 0, _, _, _, _ => throw .exhausted
@@ -771,8 +810,15 @@ def proofIrrelevanceC : Nat → (entries : Environment β) → (Γ : Context β)
     let ⟨l, hA⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ SA) hSA)
     if hl : levelIsZero l then do
       let ⟨B, hbB⟩ ← inferAC fuel entries Γ b
-      let ⟨hBA⟩ ← isDefEqC fuel entries Γ B A
-      return ⟨ConvClaim.proofIrrel (hA.sortEquiv (levelIsZero_sound hl)) haA (hbB.convF haA.formedType hBA)⟩
+      if hBA : B = A then
+        return ⟨ConvClaim.proofIrrel (hA.sortEquiv (levelIsZero_sound hl)) haA (hBA ▸ hbB)⟩
+      else
+        let ⟨SB, hSB⟩ ← inferAC fuel entries Γ B
+        let ⟨lB, hB⟩ ← KM.ofSearch (sortOf (← whnfC fuel entries Γ SB) hSB)
+        if hlB : levelIsZero lB then
+          return ⟨ConvClaim.proofIrrelHet (hA.sortEquiv (levelIsZero_sound hl))
+            (hB.sortEquiv (levelIsZero_sound hlB)) haA hbB⟩
+        else throw .noMatch
     else throw .noMatch
 
 /-- Weak head normalization, retaining the reason a partial reduct stopped.
@@ -807,7 +853,7 @@ def whnfCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (e 
   | 0, _, _, e => pure ⟨e, ReductionClaim.refl e, some .exhausted⟩
   | fuel + 1, entries, Γ, e => do
     let attemptStep : KM.{u,v} entries Γ (Reduced.{u,v} entries Γ e) :=
-      if (deltaHead.{u,v} entries Γ e).isSome then
+      if hasDeltaHead entries e then
         match e with
         | .app f x =>
           KM.orElse (natStepC fuel entries Γ (.app f x)) fun _ =>
@@ -823,10 +869,13 @@ def whnfCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (e 
     | .error .noMatch => pure ⟨e, ReductionClaim.refl e, none⟩
     | .error failure => pure ⟨e, ReductionClaim.refl e, some failure⟩
 
-/-- Lazy delta: normalize both sides without head delta and compare; unfold a
-head only when the comparison needs it, trying syntactic congruence first
-when both heads unfold. On the first round only, proof irrelevance is tried
-before unfolding a proof. -/
+/-- Lazy delta: normalize both sides without head delta and compare; before
+constructing unfolded bodies, try congruence for equal constant heads. Full
+argument conversion is a bounded optional attempt: if a function ignores
+different arguments, unfolding can still establish equality after congruence
+fails. Argument failures use the ordinary conversion cache; failure of the
+congruence attempt itself is never cached as failure of the whole conversion.
+On the first round only, proof irrelevance is tried before unfolding a proof. -/
 def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) → Bool →
     KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
   | 0, _, _, _, _, _ => throw .exhausted
@@ -840,6 +889,17 @@ def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a
           proofIrrelevanceC fuel entries Γ a' b'
         else throw .noMatch
       KM.orElse proof fun _ =>
+      let congruence : KM.{u,v} entries Γ (Conv.{u,v} entries Γ a' b') :=
+        if sameConstHead a' b' && hasDeltaHead entries a' && hasDeltaHead entries b' then
+          match quickConv.{u,v} entries Γ a' b' with
+          | some c => pure c
+          | none =>
+            match a', b' with
+            | .app f x, .app g y =>
+              KM.speculate 256 (appCongrC fuel entries Γ (.app f x) (.app g y))
+            | _, _ => throw .noMatch
+        else throw .noMatch
+      KM.orElse congruence fun _ =>
         match deltaHead.{u,v} entries Γ a', deltaHead.{u,v} entries Γ b' with
         | none, none => isDefEqCoreC fuel entries Γ a' b'
         | some ⟨a'', ha'⟩, none =>
@@ -849,11 +909,8 @@ def lazyDeltaC : Nat → (entries : Environment β) → (Γ : Context β) → (a
           KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions (ReductionClaim.refl a') hb' hc⟩)
             (lazyDeltaC fuel entries Γ a' b'' false)
         | some ⟨a'', ha'⟩, some ⟨b'', hb'⟩ =>
-          match quickConv.{u,v} entries Γ a' b' with
-          | some c => pure c
-          | none =>
-            KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' hb' hc⟩)
-              (lazyDeltaC fuel entries Γ a'' b'' false)
+          KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha' hb' hc⟩)
+            (lazyDeltaC fuel entries Γ a'' b'' false)
     KM.remember stoppedA <| KM.remember stoppedB <|
       KM.map (fun ⟨hc⟩ => ⟨ConvClaim.ofReductions ha hb hc⟩) compared
 
@@ -989,6 +1046,22 @@ def inferCore : Nat → (entries : Environment β) → (Γ : Context β) → (e 
         | none => throw (.malformed "literal family is not the admitted natural numbers")
       | none => throw (.malformed "literal family is not installed")
 
+/-- Application congruence along the spine. Only the heads and arguments
+enter full conversion: every partial application has already had its head
+reduced by the surrounding conversion search. Re-entering normalization for
+each prefix repeats a linear spine walk and makes long applications quadratic.
+Each spine node spends one unit of work and contributes the existing certified
+application-congruence rule. -/
+def appCongrC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
+    KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
+  | 0, _, _, _, _ => throw .exhausted
+  | fuel + 1, entries, Γ, .app f x, .app g y => do
+    KM.tick
+    let ⟨hf⟩ ← appCongrC fuel entries Γ f g
+    let ⟨hx⟩ ← isDefEqC fuel entries Γ x y
+    return ⟨ConvClaim.app hf hx⟩
+  | fuel + 1, entries, Γ, a, b => isDefEqC fuel entries Γ a b
+
 /-- Structural comparison of two reduced terms, with eta and proof irrelevance. -/
 def isDefEqCoreC : Nat → (entries : Environment β) → (Γ : Context β) → (a b : AExpr β) →
     KM.{u,v} entries Γ (Conv.{u,v} entries Γ a b)
@@ -1016,10 +1089,13 @@ def isDefEqCoreC : Nat → (entries : Environment β) → (Γ : Context β) → 
         let u ← (unfoldLit entries Γ f n : Option _)
         let ⟨hc⟩ ← isDefEqCoreC fuel entries Γ a u.result
         return ⟨hc.trans u.formed u.conv.symm⟩
-      | .app f x, .app g y => do
-        let ⟨hf⟩ ← isDefEqC fuel entries Γ f g
-        let ⟨hx⟩ ← isDefEqC fuel entries Γ x y
-        return ⟨ConvClaim.app hf hx⟩
+      | .app f x, .app g y =>
+        KM.orElse (appCongrC fuel entries Γ (.app f x) (.app g y)) fun _ => do
+          -- Rule matching also calls this function before normalization. Keep
+          -- its old prefix conversion when a direct spine comparison fails.
+          let ⟨hf⟩ ← isDefEqC fuel entries Γ f g
+          let ⟨hx⟩ ← isDefEqC fuel entries Γ x y
+          return ⟨ConvClaim.app hf hx⟩
       | .lam p D e, .lam p' D' e' =>
         if hp : p = p' then do
           let ⟨hD⟩ ← isDefEqC fuel entries Γ D D'

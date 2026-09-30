@@ -41,17 +41,18 @@ def main() -> None:
                      key=lambda row: -row["micros"])[:10]
 
     total = len(rows)
-    print(f"# Census of {args.jsonl.name}: {total} primary records\n")
+    print(f"# Census of {args.jsonl.name}: {total} declaration rows\n")
     print("| Outcome | Records | Share |\n| --- | ---: | ---: |")
     for outcome, count in outcomes.most_common():
         print(f"| {outcome} | {count} | {100 * count / total:.1f}% |")
-    print(f"\nChecking time (accepted and failed checks): {micros / 1e6:.1f} s; "
-          f"reading time: {read_micros / 1e6:.1f} s")
+    print(f"\nSum of row timings: checking {micros / 1e6:.1f} s; "
+          f"reading {read_micros / 1e6:.1f} s. "
+          "Family/recursor rows repeat admission timings; these are not wall times.")
     if accepted:
         top = sum(row["micros"] for row in slowest)
-        print(f"Accepted check time: median {quantile(0.5):.2f} ms, p90 {quantile(0.9):.2f} ms, "
-              f"p99 {quantile(0.99):.1f} ms; the 10 slowest checks take "
-              f"{100 * top / max(micros, 1):.0f}% of checking time\n")
+        print(f"Accepted row time: median {quantile(0.5):.2f} ms, p90 {quantile(0.9):.2f} ms, "
+              f"p99 {quantile(0.99):.1f} ms; the 10 slowest rows account for "
+              f"{100 * top / max(micros, 1):.0f}% of summed checking time\n")
     else:
         print()
     print("| Kind | accept | decline | reject | blocked |\n| --- | ---: | ---: | ---: | ---: |")
@@ -70,7 +71,7 @@ def main() -> None:
         print(f"| {count} | {name} | {root.get('kind', '?')} | {root.get('outcome', '?')} | "
               f"{root.get('reason', '?')} |")
         top_blockers.append({"address": address, "blocked": count, **root})
-    print("\n## Slowest checks\n")
+    print("\n## Slowest row timings\n")
     print("| Seconds | Outcome | Kind | Name |\n| ---: | --- | --- | --- |")
     for row in slowest:
         name = ", ".join(row.get("names", [])[:1]) or row["address"][:16]
@@ -81,6 +82,7 @@ def main() -> None:
             "byKind": {k: dict(v) for k, v in by_kind.items()},
             "reasons": reasons.most_common(), "rootBlockers": top_blockers,
             "checkingSeconds": micros / 1e6, "readingSeconds": read_micros / 1e6,
+            "timingScope": "sum of row timings; paired admissions counted twice; not wall time",
             "acceptedMillis": {"median": quantile(0.5), "p90": quantile(0.9), "p99": quantile(0.99)},
             "slowest": [{"seconds": row["micros"] / 1e6, "names": row.get("names", [])[:1],
                          "outcome": row["outcome"]} for row in slowest]}, indent=1) + "\n")

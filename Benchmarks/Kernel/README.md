@@ -26,6 +26,7 @@ median/range, and maximum process RSS. Measurements do not change CI verdicts.
 | `address` | The same workload with deterministic 32-byte Address keys |
 | `references` | Admit definitions repeatedly referring to the oldest entry |
 | `binders` | Annotate and check a declaration with nested lambdas |
+| `annotation` | Annotate nested lambdas and verify exact erasure, without the subsequent typing check |
 | `beta` | Annotate and check nested identity applications |
 | `context` | Push constant-size domains into the local context |
 | `spine` | Weak-head reduce a typed, stuck variable-headed application |
@@ -172,3 +173,60 @@ with overlapping ranges (P02 4.126–6.836 ms, P03 6.116–7.273 ms).
 The unchanged beta probe also varies by about 9%, at sub-millisecond scale.
 These measurements support removing repeated formation work, not a blanket
 speedup or a demonstrated memory reduction. No cache or entry schema changed.
+
+## InitStd census comparisons
+
+`kernel-census` reads an Ixon environment and attempts certified admissions in
+dependency order, retaining accepted declarations and reporting declines,
+rejections, and declarations blocked by earlier failures. This is a coverage
+diagnostic; its successful process exit is not a `checkEnv` acceptance verdict.
+The optional positional limit counts primary records visited. A family and its
+separate recursor emit two rows, so the output can contain more rows than the
+limit.
+
+Build a baseline in a separate workspace and preserve its native binary before
+editing, then build the candidate with `lake build kernel-census`. The paired
+runner alternates fresh processes over the same `.ixe`, with one warmup and
+three measured samples per binary by default:
+
+```sh
+systemd-run --user --scope -p MemoryMax=24G -p MemorySwapMax=0 \
+  python3 scripts/bench-kernel-census.py run \
+  --baseline-binary /tmp/kernel-base/.lake/build/bin/kernel-census \
+  --baseline-revision <baseline-commit> \
+  --binary .lake/build/bin/kernel-census \
+  --revision <candidate-commit> \
+  --input /path/to/InitStd.ixe --limit 4300 --fuel 100000 \
+  --output-dir .lake/census-paired
+```
+
+The output directory must be new. GNU time supplies each process's peak RSS;
+an independent monotonic timer records whole-process wall time, including
+loading the corpus. The runner records executable, corpus, and local source
+fingerprints without invoking jj. The source fingerprint describes the tree at
+invocation; build the candidate from that tree before measuring. An archived
+baseline source fingerprint can be supplied with `--baseline-source-sha256`.
+`--timeout` bounds each process (180 seconds by default), kills the entire
+process group, and retains partial rows and logs in an incomplete summary.
+Run without concurrent builds or benchmarks. `CENSUS_*` diagnostic environment
+variables are removed for each child.
+
+Outcome and diagnostic consistency is required across repeated samples of a
+binary. Every baseline acceptance lost by the candidate, including missing
+rows, is listed and makes the runner exit nonzero. Gained acceptances, other
+outcome transitions, and missing records are reported separately. Different
+coverage is flagged alongside the wall-time ratio: a faster run that checks a
+smaller population is not an equivalent-work speedup.
+
+Existing rows can also be compared, including incomplete diagnostic runs:
+
+```sh
+python3 scripts/bench-kernel-census.py compare before.jsonl after.jsonl \
+  --output comparison.json
+```
+
+Row files alone cannot establish process completion. Their timing totals are
+explicitly labelled as row diagnostics: the census repeats the same admission
+timing on family and recursor rows, so summing them does not measure total
+checking time. The common-acceptance comparison preserves this convention and
+reports slow records separately from the paired runner's wall measurements.

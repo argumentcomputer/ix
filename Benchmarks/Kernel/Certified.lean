@@ -70,6 +70,17 @@ def prepare (kind : String) (size fuel : Nat) : IO (IO Nat) := do
     checkAction fuel (simpleDecl 0 :: ds)
   | "binders" =>
     checkAction fuel [⟨0, ⟨[.defn 0 .definition (nestedType size) (nestedLambda size) .safe]⟩⟩]
+  | "annotation" =>
+    let input ← IO.mkRef (nestedLambda size)
+    return do
+      let raw ← input.get
+      match annotate.{0,1} fuel (fun _ => none) [] raw with
+      | .ok annotated =>
+        let sink ← IO.mkRef annotated
+        unless decide ((← sink.get).erase = raw) do
+          throw (IO.userError "annotation changed its input")
+        return size
+      | .error failure => throw (IO.userError s!"annotation failed: {repr failure}")
   | "beta" => checkAction fuel [⟨0, ⟨[.defn 0 .definition type0 (betaTerm size) .safe]⟩⟩]
   | "context" =>
     let input ← IO.mkRef (List.range size)
@@ -124,4 +135,4 @@ def main (args : List String) : IO Unit := do
     let some fuel := fuel.toNat? | throw (IO.userError "fuel must be a natural number")
     Benchmarks.Kernel.Certified.run kind size fuel
   | _ => throw (IO.userError
-    "usage: bench-certified-kernel env|address|references|binders|beta|context|spine|ordinary|structure|quotient SIZE [FUEL]")
+    "usage: bench-certified-kernel env|address|references|binders|annotation|beta|context|spine|ordinary|structure|quotient SIZE [FUEL]")

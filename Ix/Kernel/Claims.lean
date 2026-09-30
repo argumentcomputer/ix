@@ -205,6 +205,25 @@ theorem proofIrrel {A a b : AExpr β} (hA : TypingClaim.{u,v} entries Γ A (.sor
     ConvClaim.{u,v} entries Γ a b :=
   ofConversion (ConversionClaim.proofIrrel hA ha hb)
 
+/-- Proofs of proposition-valued types have the same interpretation even
+when establishing conversion of their types would require further search.
+Both types must independently be proved to inhabit `Prop`. -/
+theorem proofIrrelHet {A B a b : AExpr β}
+    (hA : TypingClaim.{u,v} entries Γ A (.sort .zero))
+    (hB : TypingClaim.{u,v} entries Γ B (.sort .zero))
+    (ha : TypingClaim.{u,v} entries Γ a A) (hb : TypingClaim.{u,v} entries Γ b B) :
+    ConvClaim.{u,v} entries Γ a b := by
+  intro V _ constants hM levels env hΓ _ _
+  have hAm := (hA V constants hM levels env hΓ).2.2
+  have hBm := (hB V constants hM levels env hΓ).2.2
+  have ham := (ha V constants hM levels env hΓ).2.2
+  have hbm := (hb V constants hM levels env hΓ).2.2
+  have hA0 : interp constants levels env A ∈ˢ (univZero : V) := by
+    simpa only [interp, VLevel.eval, univ_zero] using hAm
+  have hB0 : interp constants levels env B ∈ˢ (univZero : V) := by
+    simpa only [interp, VLevel.eval, univ_zero] using hBm
+  exact (eq_pt_of_mem_univZero hA0 ham).trans (eq_pt_of_mem_univZero hB0 hbm).symm
+
 end ConvClaim
 
 namespace ReductionClaim
