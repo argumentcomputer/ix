@@ -578,6 +578,9 @@
    ["Compilatrix.Sem.Smallstep",
     "Compilatrix.Sem.Transform",
     "CompilatrixTests.Sem.Toy.Cases"]},
+  "CompilatrixTests.Fences.Own":
+  {"path": "CompilatrixTests/Fences/Own.lean",
+   "imports": ["Compilatrix.Own.Immortal", "Compilatrix.Own.Semantics"]},
   "CompilatrixTests.Fences.Lir":
   {"path": "CompilatrixTests/Fences/Lir.lean",
    "imports": ["Compilatrix.Lir.Operands"]},
@@ -591,6 +594,9 @@
   {"path": "CompilatrixTests/Fences/IxonV3.lean",
    "imports":
    ["Compilatrix.Ixon.V3.Resource.StateProofs", "Compilatrix.Ixon.V3.Source"]},
+  "CompilatrixTests.Fences.Fir":
+  {"path": "CompilatrixTests/Fences/Fir.lean",
+   "imports": ["Compilatrix.Fir.Semantics"]},
   "CompilatrixTests.Fences.Backend":
   {"path": "CompilatrixTests/Fences/Backend.lean",
    "imports":
@@ -644,7 +650,9 @@
     "CompilatrixTests.Fences.Xv",
     "CompilatrixTests.Fences.Backend",
     "CompilatrixTests.Fences.Sem",
-    "CompilatrixTests.Fences.Validate"]},
+    "CompilatrixTests.Fences.Validate",
+    "CompilatrixTests.Fences.Fir",
+    "CompilatrixTests.Fences.Own"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":
