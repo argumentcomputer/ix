@@ -75,6 +75,15 @@ shrink idempotence, and the passes re-run by the kernel. -/
 lean_exe «tests-anf» where
   root := `CompilatrixTests.Anf.Main
 
+/- Fir, the Phase 1 Own fragment and Cfg (design note 03, M1.F5): every
+root and first-order constant of k1.ixe and bench-k1 through Anf → Fir →
+Own → Cfg against Anf and Lam (readback, traps, each level's clock map and
+timeout clause), the fallback route declined at Fir, generated first-order
+programs, the bench entries at test sizes, well-formedness at every level,
+and the lowerings re-run by the kernel. -/
+lean_exe «tests-fir» where
+  root := `CompilatrixTests.Fir.Main
+
 lean_exe «tests-ixon-v3» where
   root := `CompilatrixTests.IxonV3.Main
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]

@@ -8,6 +8,7 @@
   "tests-lam": {"roots": ["CompilatrixTests.Lam.Main"], "kind": "lean_exe"},
   "tests-ixon-v3":
   {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
+  "tests-fir": {"roots": ["CompilatrixTests.Fir.Main"], "kind": "lean_exe"},
   "tests-anf": {"roots": ["CompilatrixTests.Anf.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
   "pin-src-tables": {"roots": ["PinSrcTables"], "kind": "lean_exe"},
@@ -472,6 +473,32 @@
   "CompilatrixTests.IxonV3.Catalog.Admission":
   {"path": "CompilatrixTests/IxonV3/Catalog/Admission.lean",
    "imports": ["CompilatrixTests.IxonV3.Catalog.Fixtures"]},
+  "CompilatrixTests.Fir.Support":
+  {"path": "CompilatrixTests/Fir/Support.lean",
+   "imports":
+   ["CompilatrixTests.Anf.Support",
+    "Compilatrix.Fir.Lower",
+    "Compilatrix.Fir.Semantics",
+    "Compilatrix.Fir.WellFormed",
+    "Compilatrix.Fir.Print",
+    "Compilatrix.Own.Semantics",
+    "Compilatrix.Own.WellFormed",
+    "Compilatrix.Cfg.Lower",
+    "Compilatrix.Cfg.Semantics",
+    "Compilatrix.Cfg.WellFormed",
+    "Compilatrix.Cfg.Print"]},
+  "CompilatrixTests.Fir.Run":
+  {"path": "CompilatrixTests/Fir/Run.lean",
+   "imports": ["CompilatrixTests.Fir.Differential"]},
+  "CompilatrixTests.Fir.Main":
+  {"path": "CompilatrixTests/Fir/Main.lean",
+   "imports": ["CompilatrixTests.Fir.Run"]},
+  "CompilatrixTests.Fir.Differential":
+  {"path": "CompilatrixTests/Fir/Differential.lean",
+   "imports":
+   ["CompilatrixTests.Fir.Support",
+    "CompilatrixTests.Anf.Differential",
+    "Compilatrix.Anf.Pipeline"]},
   "CompilatrixTests.Fences.Xv":
   {"path": "CompilatrixTests/Fences/Xv.lean",
    "imports": ["Compilatrix.Xv.Select.Lemmas"]},
@@ -816,7 +843,8 @@
     "CompilatrixTests.Src.Relevance.Run",
     "CompilatrixTests.Lam.Run",
     "CompilatrixTests.Lam.KernelK1",
-    "CompilatrixTests.Anf.Run"]},
+    "CompilatrixTests.Anf.Run",
+    "CompilatrixTests.Fir.Run"]},
   "Compilatrix.Xv.XlSemantics":
   {"path": "Compilatrix/Xv/XlSemantics.lean",
    "imports": ["Compilatrix.Xv.Semantics", "Compilatrix.Lir.Operands"]},
