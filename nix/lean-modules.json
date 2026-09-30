@@ -1086,6 +1086,9 @@
   "Compilatrix.Src.Admit":
   {"path": "Compilatrix/Src/Admit.lean",
    "imports": ["Compilatrix.Src.Runtime"]},
+  "Compilatrix.Sem.Simulation":
+  {"path": "Compilatrix/Sem/Simulation.lean",
+   "imports": ["Compilatrix.Sem.Clocked"]},
   "Compilatrix.Sem.Result":
   {"path": "Compilatrix/Sem/Result.lean", "imports": []},
   "Compilatrix.Sem.Clocked":
@@ -1600,6 +1603,7 @@
     "Compilatrix.Sem.Result",
     "Compilatrix.Sem.Clock",
     "Compilatrix.Sem.Clocked",
+    "Compilatrix.Sem.Simulation",
     "Compilatrix.Lir.Syntax",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Lir.Graph",
