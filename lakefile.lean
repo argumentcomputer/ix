@@ -228,6 +228,12 @@ lean_exe «bench-lean4lean» where
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 
+/-- Corpus measurement for the exact-sharing plan (gate P1.5 of
+`docs/sharing-minimum.md`): expands every stored sharing table in an `.ixe`,
+checks the production rebuild and reports subterm/candidate statistics. -/
+lean_exe «sharing-study» where
+  root := `Benchmarks.SharingStudy
+
 /- Typed TruthMines corpus records: the package catalog, the frozen admission
 spec, fail-closed validation (elaboration-time `run_cmd` gate), and workspace
 projections consumed by the `truthmines` driver and the `truthmines-spec`
