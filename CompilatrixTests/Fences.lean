@@ -13,3 +13,4 @@ import CompilatrixTests.Fences.Lir
 import CompilatrixTests.Fences.Xv
 import CompilatrixTests.Fences.Backend
 import CompilatrixTests.Fences.Sem
+import CompilatrixTests.Fences.Validate
