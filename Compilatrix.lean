@@ -46,6 +46,8 @@ import Compilatrix.Xv.Validate.Proof.Rows
 import Compilatrix.Xv.Validate.Proof.Row
 import Compilatrix.Xv.Validate.Proof.RowSim
 import Compilatrix.Xv.Validate.Proof.Checks
+import Compilatrix.Xv.Validate.Proof.RowChecks
+import Compilatrix.Xv.Validate.Proof.Inst
 import Compilatrix.Xv.Alloc.Output
 import Compilatrix.Xv.Alloc.Apply
 import Compilatrix.Xv.Alloc.Liveness

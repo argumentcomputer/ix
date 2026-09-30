@@ -848,6 +848,9 @@
   "Compilatrix.Xv.Validate.Proof.RowSim":
   {"path": "Compilatrix/Xv/Validate/Proof/RowSim.lean",
    "imports": ["Compilatrix.Xv.Validate.Proof.Row"]},
+  "Compilatrix.Xv.Validate.Proof.RowChecks":
+  {"path": "Compilatrix/Xv/Validate/Proof/RowChecks.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Checks"]},
   "Compilatrix.Xv.Validate.Proof.Row":
   {"path": "Compilatrix/Xv/Validate/Proof/Row.lean",
    "imports": ["Compilatrix.Xv.Validate.Proof.Rows"]},
@@ -864,6 +867,9 @@
   "Compilatrix.Xv.Validate.Proof.Map":
   {"path": "Compilatrix/Xv/Validate/Proof/Map.lean",
    "imports": ["Compilatrix.Xv.Operands"]},
+  "Compilatrix.Xv.Validate.Proof.Inst":
+  {"path": "Compilatrix/Xv/Validate/Proof/Inst.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.RowChecks"]},
   "Compilatrix.Xv.Validate.Proof.Exec":
   {"path": "Compilatrix/Xv/Validate/Proof/Exec.lean",
    "imports": ["Compilatrix.X86.Table.Exec"]},
@@ -1978,6 +1984,8 @@
     "Compilatrix.Xv.Validate.Proof.Row",
     "Compilatrix.Xv.Validate.Proof.RowSim",
     "Compilatrix.Xv.Validate.Proof.Checks",
+    "Compilatrix.Xv.Validate.Proof.RowChecks",
+    "Compilatrix.Xv.Validate.Proof.Inst",
     "Compilatrix.Xv.Alloc.Output",
     "Compilatrix.Xv.Alloc.Apply",
     "Compilatrix.Xv.Alloc.Liveness",
