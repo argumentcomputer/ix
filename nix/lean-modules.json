@@ -638,7 +638,8 @@
    "imports":
    ["CompilatrixTests.Anf.Differential",
     "Compilatrix.Anf.Shrink",
-    "Compilatrix.Anf.Inline"]},
+    "Compilatrix.Anf.Inline",
+    "Compilatrix.Anf.Specialize"]},
   "CompilatrixTests.Anf.Main":
   {"path": "CompilatrixTests/Anf/Main.lean",
    "imports": ["CompilatrixTests.Anf.Run"]},
@@ -1528,6 +1529,9 @@
   "Compilatrix.Anf.Syntax":
   {"path": "Compilatrix/Anf/Syntax.lean",
    "imports": ["Compilatrix.Lam.Syntax"]},
+  "Compilatrix.Anf.Specialize":
+  {"path": "Compilatrix/Anf/Specialize.lean",
+   "imports": ["Compilatrix.Anf.Walk"]},
   "Compilatrix.Anf.Shrink":
   {"path": "Compilatrix/Anf/Shrink.lean", "imports": ["Compilatrix.Anf.Walk"]},
   "Compilatrix.Anf.Semantics":
@@ -1924,6 +1928,7 @@
     "Compilatrix.Anf.Walk",
     "Compilatrix.Anf.Shrink",
     "Compilatrix.Anf.Inline",
+    "Compilatrix.Anf.Specialize",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

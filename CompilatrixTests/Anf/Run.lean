@@ -1,6 +1,7 @@
 import CompilatrixTests.Anf.Differential
 import Compilatrix.Anf.Shrink
 import Compilatrix.Anf.Inline
+import Compilatrix.Anf.Specialize
 
 /-! The `tests-anf` suite (design note 02 §6–8, §13). -/
 
@@ -19,13 +20,19 @@ def stages : Differential.Stages := fun L => do
   let (_, p2, _) ← Compilatrix.Anf.Shrink.produce {} p1
   let mut out := [("P1", p1), ("P2", p2)]
   let mut P := p2
-  for i in [0:8] do
-    let r := Compilatrix.Anf.Inline.produce {} P
-    if r.isEmpty then break
-    let (p3, _) ← Compilatrix.Anf.Inline.round P r
-    let (_, p2', _) ← Compilatrix.Anf.Shrink.produce {} p3
-    out := out ++ [(s!"P3.{i}", p3), (s!"P2.{i}", p2')]
-    P := p2'
+  for phase in [0:2] do
+    if phase == 1 then
+      let p4 ← Compilatrix.Anf.Specialize.run (Compilatrix.Anf.Specialize.produce {} 0 P) P
+      let (_, p2', _) ← Compilatrix.Anf.Shrink.produce {} p4
+      out := out ++ [("P4", p4), ("P2", p2')]
+      P := p2'
+    for i in [0:8] do
+      let r := Compilatrix.Anf.Inline.produce {} P
+      if r.isEmpty then break
+      let (p3, _) ← Compilatrix.Anf.Inline.round P r
+      let (_, p2', _) ← Compilatrix.Anf.Shrink.produce {} p3
+      out := out ++ [(s!"P3.{i}", p3), (s!"P2.{i}", p2')]
+      P := p2'
   return out
 
 def main (args : List String) : IO UInt32 := do

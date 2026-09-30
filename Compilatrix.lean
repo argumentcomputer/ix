@@ -87,6 +87,7 @@ import Compilatrix.Anf.Census
 import Compilatrix.Anf.Walk
 import Compilatrix.Anf.Shrink
 import Compilatrix.Anf.Inline
+import Compilatrix.Anf.Specialize
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing

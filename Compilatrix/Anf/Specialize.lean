@@ -1,0 +1,388 @@
+import Compilatrix.Anf.Walk
+
+/-! # P4: bounded specialisation
+
+`Anf.Specialize` (design note 02 §8, P4). A **decision** asks for the calls
+of a global `g` from a caller `f` to be specialised on the parameters of a
+mask. At each such call site the pass
+
+1. checks the mask with the **fixed-parameter checker** (`fixedIn`): every
+   call of `g` in `g`'s own body passes each masked parameter unchanged
+   (else the site is left alone);
+2. builds each masked argument's **value tree** from the caller's
+   definitions in scope: constructors (never one whose contract is
+   `unique`, 06 S37), literals, function globals and local functions (whose
+   free variables are followed in turn); an unknown value is a **hole**,
+   i.e. an extra parameter (Lean's abstraction);
+3. keys the specialisation `GKey.spec (key g) args` (D19), with `args` one
+   `ArgKey` per parameter: the masked argument's tree over constructor keys,
+   literals and global keys (a local function is named by its origin,
+   `glob (lam f [inv, i])`, the `i`-th λ of `f`'s body in invocation `inv`,
+   which determines its body and free variables), and `hole k` for an
+   unmasked parameter or an abstracted value. Equal keys share one global;
+3. creates the specialisation when the key is new: parameters are the holes;
+   a prologue rebuilds the known definitions (a copy of each needed
+   binding, in their original order), then `g`'s body follows with each
+   masked parameter bound to its tree and every call of `g` whose masked
+   arguments are exactly those values redirected to the specialisation;
+4. calls it with the holes' values. The generic `g` is kept.
+
+The pass is correct for every decision list (a decision that fails the
+checker, or a site where no masked argument is known, changes nothing).
+Recursion is structural or on fuel, maps are `NatMap`s (kernel-evaluable,
+D17). Mutually recursive groups are not copied (Phase 1): calls from other
+members of `g`'s group keep calling the generic `g`. -/
+
+namespace Compilatrix.Anf.Specialize
+
+open Compilatrix.Ixon
+open Walk (Ent)
+
+/-- In caller `caller`, specialise the calls of `callee` on the parameters
+marked `true`. -/
+structure Decision where
+  caller : GlobalId
+  callee : GlobalId
+  mask : List Bool
+  deriving Repr, Inhabited
+
+structure Cert where
+  /-- The invocation number (names local functions in keys). -/
+  inv : Nat := 0
+  decisions : List Decision := []
+  deriving Repr, Inhabited
+
+/-- What a caller level holds, when known. -/
+inductive Def where
+  | con (c : Key.CtorKey) (fs : List Opd)
+  | lit (n : Nat)
+  /-- A function global's closure. -/
+  | glob (g : GlobalId)
+  /-- A local function: its definition depth, parameters, body and pre-order
+  index in the caller. -/
+  | fn (d : Nat) (ps : List V3.BinderContract) (body : Exp) (idx : Nat)
+  | blank
+
+/-! ## The fixed-parameter checker -/
+
+/-- Every masked argument of every call of `g` in `e` is the parameter
+itself (parameter `i` is level `i`; `e` is under `d` binders). -/
+def fixedArgs (mask : List Bool) (d : Nat) (as : List Atom) : Bool :=
+  as.length == mask.length &&
+  (as.zipIdx.zip mask).all fun ((a, i), m) => !m || a == .var (d - 1 - i)
+
+mutual
+
+def fixedIn (g : GlobalId) (mask : List Bool) (d : Nat) : Exp → Bool
+  | .bind _ b e => fixedInBind g mask d b && fixedIn g mask (d + 1) e
+  | .join n _ b e => fixedIn g mask (d + n) b && fixedIn g mask d e
+  | .case _ alts dflt => fixedInAlts g mask d alts && fixedInOpt g mask d dflt
+  | .tick e => fixedIn g mask d e
+  | .jump .. | .ret _ | .trap => true
+
+def fixedInBind (g : GlobalId) (mask : List Bool) (d : Nat) : Bind → Bool
+  | .call g' as => g' != g || fixedArgs mask d as
+  | .fn ps b => fixedIn g mask (d + ps.length) b
+  | _ => true
+
+def fixedInAlts (g : GlobalId) (mask : List Bool) (d : Nat) : List Alt → Bool
+  | [] => true
+  | .mk _ n b :: as => fixedIn g mask (d + n) b && fixedInAlts g mask d as
+
+def fixedInOpt (g : GlobalId) (mask : List Bool) (d : Nat) : Option Exp → Bool
+  | none => true
+  | some e => fixedIn g mask d e
+
+end
+
+/-- The checker on a global: `mask` has its arity and holds. -/
+def fixedOk (gd : GDef) (g : GlobalId) (mask : List Bool) : Bool :=
+  mask.length == gd.ps.length && fixedIn g mask gd.ps.length gd.body
+
+/-! ## Value trees, holes and keys -/
+
+/-- Where a hole's value comes from at the call site. -/
+inductive HoleSrc where
+  /-- An unmasked parameter's argument. -/
+  | param (i : Nat)
+  /-- A caller variable (by level) whose value is not known. -/
+  | level (l : Nat)
+  /-- A constant operand without a key (□, a string). -/
+  | atom (o : Opd)
+  deriving Inhabited
+
+/-- The state of the tree walk at one site. -/
+structure Trees where
+  holes : List HoleSrc := []
+  /-- Levels that are holes, with their hole index. -/
+  levelHoles : List (Nat × Nat) := []
+  /-- Levels to rebuild in the prologue. -/
+  needed : List Nat := []
+
+def Trees.hole (t : Trees) (s : HoleSrc) : Trees × Nat :=
+  ({ t with holes := t.holes ++ [s] }, t.holes.length)
+
+def Trees.levelHole (t : Trees) (l : Nat) : Trees × Nat :=
+  match t.levelHoles.lookup l with
+  | some h => (t, h)
+  | none =>
+    let (t, h) := t.hole (.level l)
+    ({ t with levelHoles := t.levelHoles ++ [(l, h)] }, h)
+
+/-- Key of a global. -/
+def gkey (P : Program) (g : GlobalId) : Key.GKey := ((P.global? g).map (·.key)).getD (.dispatch 0)
+
+/-- A shared level's key (its definition's head, without holes). -/
+def keyOf (P : Program) (defs : Src.NatMap Def) (fkey : Key.GKey) (inv : Nat) (l : Nat) :
+    Key.ArgKey :=
+  match defs.get? l with
+  | some (.glob g) => .glob (gkey P g)
+  | some (.fn _ _ _ idx) => .glob (.lam fkey [inv, idx])
+  | some (.con c _) => .con c []
+  | _ => .hole 0
+
+mutual
+
+/-- The key of an operand's value tree, collecting holes and needed
+levels. -/
+def tree (P : Program) (defs : Src.NatMap Def) (fkey : Key.GKey) (inv : Nat) :
+    Nat → Trees → Opd → Trees × Key.ArgKey
+  | 0, t, _ => let (t, h) := t.hole (.atom .box); (t, .hole h)
+  | fuel + 1, t, o =>
+    match o with
+    | .lit (.nat n) => (t, .lit n)
+    | .lit l => let (t, h) := t.hole (.atom (.lit l)); (t, .hole h)
+    | .box => let (t, h) := t.hole (.atom .box); (t, .hole h)
+    | .lvl l =>
+      if t.needed.contains l then
+        -- shared: already rebuilt; name it again
+        (t, keyOf P defs fkey inv l)
+      else
+        match defs.get? l with
+        | some (.con c fs) =>
+          let t := { t with needed := t.needed ++ [l] }
+          let (t, ks) := trees P defs fkey inv fuel t fs
+          (t, .con c ks)
+        | some (.lit n) => (t, .lit n)
+        | some (.glob g) => ({ t with needed := t.needed ++ [l] }, .glob (gkey P g))
+        | some (.fn df ps b idx) =>
+          let t := { t with needed := t.needed ++ [l] }
+          let frees := ((b.free ps.length).eraseDups.map fun j => Opd.lvl (df - 1 - j))
+          let (t, _) := trees P defs fkey inv fuel t frees
+          (t, .glob (.lam fkey [inv, idx]))
+        | _ => let (t, h) := t.levelHole l; (t, .hole h)
+
+def trees (P : Program) (defs : Src.NatMap Def) (fkey : Key.GKey) (inv : Nat) :
+    Nat → Trees → List Opd → Trees × List Key.ArgKey
+  | 0, t, _ => (t, [])
+  | _, t, [] => (t, [])
+  | fuel + 1, t, o :: os =>
+    let (t, k) := tree P defs fkey inv fuel t o
+    let (t, ks) := trees P defs fkey inv fuel t os
+    (t, k :: ks)
+
+end
+
+/-! ## Building a specialisation -/
+
+/-- The operand of a caller operand inside the specialisation. -/
+def mapOpd (m : List (Nat × Opd)) : Opd → Opd
+  | .lvl l => (m.lookup l).getD .box
+  | o => o
+
+/-- The prologue: rebuild the needed levels (ascending) from target level
+`t`, returning the binders (outermost first) and the level map. -/
+def prologue (P : Program) (defs : Src.NatMap Def) (m : List (Nat × Opd)) (t : Nat) :
+    List Nat → Except String (List Bind × List (Nat × Opd))
+  | [] => pure ([], m)
+  | l :: ls => do
+    let b ← match defs.get? l with
+      | some (.con c fs) => pure (Bind.con c (fs.map fun o => (mapOpd m o).atom t))
+      | some (.glob g) => pure (Bind.glob g)
+      | some (.fn df ps body _) => do
+        let n := ps.length
+        let captured := (List.range df).map fun j => Ent.opd (mapOpd m (.lvl (df - 1 - j)))
+        let (body', _) ← (Walk.walk { prog := P } Walk.fuel
+          { σ := Walk.entsOf (paramOpds t n) ++ captured }
+          { d := t + n, dj := 0, facts := .leaf } body .ret).run {}
+        pure (Bind.fn ps body')
+      | _ => throw s!"specialize: level {l} has no definition"
+    let (bs, m) ← prologue P defs ((l, .lvl t) :: m) (t + 1) ls
+    return (b :: bs, m)
+
+/-- Wrap binders around a body. -/
+def binds : List Bind → Exp → Exp
+  | [], e => e
+  | b :: bs, e => .bind freshLet b (binds bs e)
+
+/-- The state of the pass. -/
+structure St where
+  /-- The program so far: the input's globals (callers rewritten) and the
+  specialisations created. -/
+  prog : Program
+  /-- The next local function's pre-order index in the current caller. -/
+  fns : Nat := 0
+  specs : Nat := 0
+
+abbrev M := StateT St (Except String)
+
+/-- The specialisation for a site, created if its key is new; `none` when no
+masked argument is known. -/
+def specialize (src : Program) (inv : Nat) (fkey : Key.GKey) (defs : Src.NatMap Def) (d : Nat)
+    (g : GlobalId) (gd : GDef) (mask : List Bool) (as : List Atom) :
+    M (Option (GlobalId × List Atom)) := do
+  let os := as.map (·.opd d)
+  -- keys, parameter by parameter
+  let step := fun (acc : Trees × List Key.ArgKey × List (Nat × Opd)) (x : (Opd × Nat) × Bool) =>
+    let (t, ks, roots) := acc
+    let ((o, i), masked) := x
+    if masked then
+      let (t, k) := tree src defs fkey inv (4 * src.size + 1024) t o
+      (t, ks ++ [k], roots ++ [(i, o)])
+    else
+      let (t, h) := t.hole (.param i)
+      (t, ks ++ [.hole h], roots)
+  let (t, keys, roots) := (os.zipIdx.zip mask).foldl step (({} : Trees), [], [])
+  if roots.all (fun (_, o) => match o with
+      | .lvl l => (t.levelHoles.lookup l).isSome
+      | .lit (.nat _) => false
+      | _ => true) then
+    return none
+  let key := Key.GKey.spec gd.key keys
+  let st ← get
+  let args := t.holes.map fun
+    | .param i => as.getD i .box
+    | .level l => Opd.atom d (.lvl l)
+    | .atom o => o.atom d
+  match st.prog.globalList.find? (fun (_, gd') => decide (gd'.key = key)) with
+  | some (s, _) => return some (s, args)
+  | none =>
+    let s := st.prog.size
+    let H := t.holes.length
+    -- the specialisation's frame: holes are its parameters
+    let m0 : List (Nat × Opd) := t.levelHoles.map fun (l, h) => (l, .lvl h)
+    let (pro, m) ← liftM (prologue src defs m0 H (t.needed.mergeSort (· ≤ ·)))
+    let fixedOf := fun (i : Nat) => (roots.lookup i).map fun o => mapOpd m o
+    let holeOf := fun (i : Nat) =>
+      ((t.holes.zipIdx.find? fun (s, _) => match s with
+        | .param j => j == i
+        | _ => false) : Option (HoleSrc × Nat)).map (·.2)
+    let paramOpd := fun (i : Nat) => match fixedOf i with
+      | some o => o
+      | none => .lvl ((holeOf i).getD 0)
+    let n := gd.ps.length
+    let σ := (List.range n).reverse.map fun i => Ent.opd (paramOpd i)
+    let r : Walk.Redirect :=
+      { g, spec := s, fixedArgs := (List.range n).map fixedOf
+        holes := t.holes.zipIdx.map fun (h, k) => match h with
+          | .param i => .param i
+          | _ => .fixed (.lvl k) }
+    let d0 := H + pro.length
+    let (body, _) ← liftM ((Walk.walk { prog := src, redirect := some r } Walk.fuel { σ }
+      { d := d0, dj := 0, facts := .leaf } gd.body .ret).run {})
+    let ps := t.holes.map fun
+      | .param i => gd.ps.getD i {}
+      | _ => {}
+    let spec : GDef := { key, ps, result := gd.result, body := binds pro body }
+    set { st with prog := st.prog.withGlobals (st.prog.globalList.map (fun (p : GlobalId × GDef) => p.2) ++ [spec]),
+                  specs := st.specs + 1 }
+    return some (s, args)
+where
+  liftM {α : Type} (x : Except String α) : M α := StateT.lift x
+
+/-- The definition a binding gives its level. -/
+def defOf (d : Nat) (defs : Src.NatMap Def) (c : V3.LetContract) (b : Bind) (idx : Nat) : Def :=
+  match b with
+  | .con cc as =>
+    if c.binder.value.owned == .unique then .blank else .con cc (as.map (·.opd d))
+  | .atom (.lit (.nat n)) => .lit n
+  | .atom (.var i) => (defs.get? (d - 1 - i)).getD .blank
+  | .glob g => .glob g   -- only recorded for function globals (checked by the caller)
+  | .fn ps body => .fn d ps body idx
+  | _ => .blank
+
+/-- Rewrite a caller body (in place; levels are depths). -/
+def rewrite (src : Program) (inv : Nat) (fkey : Key.GKey) (D : List (GlobalId × List Bool)) :
+    Nat → Src.NatMap Def → Nat → Exp → M Exp
+  | 0, _, _, _ => throw "specialize: fuel"
+  | fuel + 1, defs, d, e =>
+    let blank := fun (defs : Src.NatMap Def) (base n : Nat) =>
+      (List.range n).foldl (fun m i => m.insert (base + i) Def.blank) defs
+    match e with
+    | .bind c b body => do
+      let idx ← match b with
+        | .fn .. => modifyGet fun s => (s.fns, { s with fns := s.fns + 1 })
+        | _ => pure 0
+      let b' ← match b with
+        | .fn ps fb => do
+          pure (Bind.fn ps (← rewrite src inv fkey D fuel (blank defs d ps.length) (d + ps.length) fb))
+        | .call g as =>
+          match D.lookup g, src.global? g with
+          | some mask, some gd =>
+            if fixedOk gd g mask then do
+              match ← specialize src inv fkey defs d g gd mask as with
+              | some (s, args) => pure (Bind.call s args)
+              | none => pure b
+            else pure b
+          | _, _ => pure b
+        | _ => pure b
+      let df := match b with
+        | .glob g => if ((src.arity? g).getD 0) > 0 then Def.glob g else Def.blank
+        | _ => defOf d defs c b idx
+      return .bind c b' (← rewrite src inv fkey D fuel (defs.insert d df) (d + 1) body)
+    | .join n r jb body =>
+      return .join n r (← rewrite src inv fkey D fuel (blank defs d n) (d + n) jb)
+        (← rewrite src inv fkey D fuel defs d body)
+    | .case x alts dflt => do
+      let alts' ← alts.mapM fun a =>
+        match a with
+        | .mk key n b => return .mk key n (← rewrite src inv fkey D fuel (blank defs d n) (d + n) b)
+      let dflt' ← match dflt with
+        | some e => some <$> rewrite src inv fkey D fuel defs d e
+        | none => pure none
+      return .case x alts' dflt'
+    | .tick b => return .tick (← rewrite src inv fkey D fuel defs d b)
+    | e => pure e
+
+/-- P4 re-run on its certificate. -/
+def run (cert : Cert) (P : Program) : Except String Program := do
+  let step := fun (st : St) ((f, gd) : GlobalId × GDef) => do
+    let D := (cert.decisions.filter (·.caller == f)).map fun d => (d.callee, d.mask)
+    if D.isEmpty then pure st else
+    let n := gd.ps.length
+    let (body, st) ← (rewrite P cert.inv gd.key D (4 * gd.body.nodes + 64)
+      (Src.NatMap.ofList ((List.range n).map (·, Def.blank))) n gd.body).run { st with fns := 0 }
+    let gs := st.prog.globalList.map fun (g, gd') => if g == f then { gd' with body } else gd'
+    pure { st with prog := st.prog.withGlobals gs }
+  let st ← P.globalList.foldlM step { prog := P }
+  return st.prog
+
+/-! ## The default oracle (`produce`; not on the recheck path) -/
+
+/-- The parameters a self-recursive global passes unchanged to every call of
+itself (none if it never calls itself). -/
+def fixedMask (g : GlobalId) (gd : GDef) : List Bool :=
+  if (gd.body.sites.contains g) then
+    (List.range gd.ps.length).map fun i =>
+      fixedIn g ((List.range gd.ps.length).map (· == i)) gd.ps.length gd.body
+  else []
+
+structure Budgets where
+  /-- Specialisations per invocation (Lean's `maxRecSpecialize` is 64). -/
+  maxSpecs : Nat := 64
+  deriving Repr, Inhabited
+
+/-- Lean's `@[specialize]` default for fixed instance and higher-order
+arguments: in every caller, specialise each self-recursive callee on the
+parameters it passes unchanged to itself (sites whose masked arguments are
+all unknown are left alone by the pass). -/
+def produce (_B : Budgets) (inv : Nat) (P : Program) : Cert :=
+  let masks := P.globalList.map fun (g, gd) => (g, fixedMask g gd)
+  let ds := P.globalList.flatMap fun (f, gd) =>
+    gd.body.sites.eraseDups.filterMap fun g =>
+      match masks.lookup g with
+      | some mask => if g != f && mask.any id then some { caller := f, callee := g, mask } else none
+      | none => none
+  { inv, decisions := ds }
+
+end Compilatrix.Anf.Specialize
