@@ -50,16 +50,14 @@ def readExprC (ctx : Context) : (fuel limit : Nat) → (input : Ixon.Expr) →
       let f' ← readExprC ctx fuel limit f
       let a' ← readExprC ctx fuel limit a
       return ⟨.app f'.val a'.val, .app f'.property a'.property⟩
-    | .lam .many type body => do
+    | .lam _ type body => do
       let type' ← readExprC ctx fuel limit type
       let body' ← readExprC ctx fuel limit body
       return ⟨.lam type'.val body'.val, .lam type'.property body'.property⟩
-    | .lam _ _ _ => throw (.unsupported "lambda usage mode is not many")
-    | .all .many .shared type body => do
+    | .all _ _ type body => do
       let type' ← readExprC ctx fuel limit type
       let body' ← readExprC ctx fuel limit body
       return ⟨.forallE type'.val body'.val, .all type'.property body'.property⟩
-    | .all _ _ _ _ => throw (.unsupported "forall mode is not many/shared")
     | .letE _ type value body => do
       let type' ← readExprC ctx fuel limit type
       let value' ← readExprC ctx fuel limit value

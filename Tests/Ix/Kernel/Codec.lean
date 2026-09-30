@@ -348,3 +348,24 @@ example (bytes : ByteArray) (value : Ixon.Constant)
   Ix.Ixon.Verify.ConstantBounds.deConstantExact_resource_bound bytes value read
 
 end Tests.Ix.Kernel.Codec
+
+/-- Independently specified Ixon v3 expression bytes from upstream
+`Tests/Fixtures/ixon-v3/expressions.txt` (the binder, result, and let contract
+cases). The flag records whether the reading needs only the identity context;
+`ordinary_let` names a Nat blob and `borrow` a projection family. -/
+def upstreamV3Expressions : List (String × Bool × List UInt8) := [
+  ("app", true, [0x73, 0x13, 0x12, 0x11, 0x10]),
+  ("lam", true, [0x83, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x10]),
+  ("lam_local_unique", true, [0x81, 0x09, 0x00, 0x10]),
+  ("lam_affine_local", true, [0x81, 0x0e, 0x00, 0x10]),
+  ("all", true, [0x92, 0x29, 0x00, 0x17, 0x00, 0x10]),
+  ("ordinary_let", false, [0xa1, 0x00, 0x00, 0x61, 0x10]),
+  ("local_unique_let", true, [0xa0, 0x0a, 0x00, 0x11, 0x10]),
+  ("borrow", false, [0xa2, 0x0e, 0x00, 0x41, 0x02, 0x11, 0x10]),
+  ("borrow_nondep", true, [0xa3, 0x0f, 0x00, 0x11, 0x10])]
+
+#guard upstreamV3Expressions.all fun (_, standalone, bytes) =>
+  match Ixon.deExpr ⟨bytes.toArray⟩ with
+  | .ok source =>
+    Ixon.serExpr source == ⟨bytes.toArray⟩ && (!standalone || exprRoundtrips (ctx) source)
+  | .error _ => false

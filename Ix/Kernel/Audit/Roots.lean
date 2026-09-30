@@ -148,13 +148,13 @@ implemented_by 0, unsafe 1, csimp 0 -/
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
-Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 962 compiled functions;
+Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 956 compiled functions;
 inherited externs 23, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.Egress.readRecords, Ix.Kernel.Egress.writeRecords,
-Ix.Kernel.Egress.writeExpr, Ix.Kernel.Egress.writeProjection]: 206 compiled functions;
+Ix.Kernel.Egress.writeExpr, Ix.Kernel.Egress.writeProjection]: 194 compiled functions;
 inherited externs 21, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.egressOperations Ix.Kernel.Audit.runtimeAllowlist

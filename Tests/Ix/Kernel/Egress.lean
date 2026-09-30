@@ -71,6 +71,13 @@ def variants : Ingress.Constants :=
 #guard exprRoundtrips (ctx) (.letE (.borrow true .linear) (.sort 0) (.var 0) (.var 1))
 #guard exprRoundtrips (ctx) (.letE { nonDep := false, binder := .affine } (.sort 0) (.var 0) (.var 1))
 #guard exprRoundtrips (ctx sharedIdentity) (.share 2)
+
+-- Every lambda binder and forall input/result contract spelling round-trips
+-- through the erasing reading and the retaining layout.
+#guard binderContracts.all fun binder =>
+  exprRoundtrips (ctx) (.lam binder (.sort 0) (.var 0)) &&
+  valueContracts.all fun result => exprRoundtrips (ctx) (.all binder result (.sort 0) (.var 0))
+
 #guard exprRoundtrips (ctx aliasIdentity) (.prj 0 18446744073709551615 (.var 0))
 #guard exprRoundtrips literalContext (.nat 0)
 #guard exprRoundtrips { literalContext with blobs := [(address 9, ⟨#[0, 0]⟩)] } (.nat 0)

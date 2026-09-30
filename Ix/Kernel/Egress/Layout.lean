@@ -7,7 +7,7 @@ import Ix.Kernel.Ingress.Reading
 
 /-! # Layout retained for exact Ixon egress
 
-Ingress expands sharing and table indexes and erases the let contract.
+Ingress expands sharing and table indexes and erases every Ixon v3 contract.
 Those choices cannot be recovered from a raw kernel term. This layout keeps
 only the choices needed to reconstruct that spelling; variable indexes and
 projection field positions are rebuilt from the kernel payload. `rebuild`
@@ -40,8 +40,8 @@ inductive ExprLayout where
   | recur (index : UInt64) (universes : Array UInt64)
   | nat (index : UInt64)
   | app (function argument : ExprLayout)
-  | lam (type body : ExprLayout)
-  | all (type body : ExprLayout)
+  | lam (contract : Ixon.BinderContract) (type body : ExprLayout)
+  | all (contract : Ixon.BinderContract) (result : Ixon.ValueContract) (type body : ExprLayout)
   | letE (contract : Ixon.LetContract) (type value body : ExprLayout)
   | prj (index : UInt64) (value : ExprLayout)
   | share (index : UInt64)
@@ -55,12 +55,12 @@ def ExprLayout.ofExpr : Ixon.Expr → ExprLayout
   | .recur i us => .recur i us
   | .nat i => .nat i
   | .app f a => .app (ofExpr f) (ofExpr a)
-  | .lam .many type body => .lam (ofExpr type) (ofExpr body)
-  | .all .many .shared type body => .all (ofExpr type) (ofExpr body)
+  | .lam contract type body => .lam contract (ofExpr type) (ofExpr body)
+  | .all contract result type body => .all contract result (ofExpr type) (ofExpr body)
   | .letE contract type value body => .letE contract (ofExpr type) (ofExpr value) (ofExpr body)
   | .prj i _ value => .prj i (ofExpr value)
   | .share i => .share i
-  | .str _ | .lam _ _ _ | .all _ _ _ _ => .unsupported
+  | .str _ => .unsupported
 
 /-- Rebuild syntax with the retained table/sharing choices. Payload agreement
 with those tables is established by the checked writer, not by this function. -/
@@ -71,8 +71,10 @@ def ExprLayout.rebuild : ExprLayout → VExpr Address → Option Ixon.Expr
   | .recur i us, .const _ _ => some (.recur i us)
   | .nat i, .natLit _ _ => some (.nat i)
   | .app fl al, .app f a => return .app (← fl.rebuild f) (← al.rebuild a)
-  | .lam tl bl, .lam type body => return .leanLam (← tl.rebuild type) (← bl.rebuild body)
-  | .all tl bl, .forallE type body => return .leanAll (← tl.rebuild type) (← bl.rebuild body)
+  | .lam contract tl bl, .lam type body =>
+    return .lam contract (← tl.rebuild type) (← bl.rebuild body)
+  | .all contract result tl bl, .forallE type body =>
+    return .all contract result (← tl.rebuild type) (← bl.rebuild body)
   | .letE contract tl vl bl, .letE type value body =>
     return .letE contract (← tl.rebuild type) (← vl.rebuild value) (← bl.rebuild body)
   | .prj i vl, .proj _ field value => return .prj i (← word field) (← vl.rebuild value)
@@ -80,12 +82,11 @@ def ExprLayout.rebuild : ExprLayout → VExpr Address → Option Ixon.Expr
   | _, _ => none
 
 /-- Rebuilding from an exact reading recovers the original expression,
-including repeated table slots, sharing choices, and the let contract. -/
+including repeated table slots, sharing choices, and every contract. -/
 theorem ExprLayout.rebuild_reading {ctx : Ingress.Context} {limit : Nat}
     {source : Ixon.Expr} {target : VExpr Address}
     (h : Ingress.ExprReads ctx limit source target) :
     (ofExpr source).rebuild target = some source := by
-  induction h <;> simp_all [ofExpr, rebuild, Ixon.Expr.leanLam, Ixon.Expr.leanAll,
-    Ixon.BinderContract.many, Ixon.ValueContract.shared]
+  induction h <;> simp_all [ofExpr, rebuild]
 
 end Ix.Kernel.Egress

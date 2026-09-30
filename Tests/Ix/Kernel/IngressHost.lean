@@ -151,6 +151,7 @@ def referenceJson : ConstRef Address → Lean.Json
     ("kind", Lean.toJson "ctor"), ("block", Lean.toJson (toString address)),
     ("member", Lean.toJson index), ("constructor", Lean.toJson ctor)]
 
+mutual
 def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   let (input, blobs, family) ← prepare leanEnv test
   let input ← match test.mutateRecursor with
@@ -167,6 +168,12 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
       unless changed == 1 do
         throw (IO.userError s!"{test.label}: mutation requires exactly one standalone recursor; found {changed}")
       pure output.toList
+  evaluate test input blobs family
+
+/-- Every route (in-memory, byte admission, projection reconstruction, block
+order, egress) must agree on one supplied input. -/
+def evaluate (test : Case) (input : Ingress.Constants) (blobs : Ingress.Blobs)
+    (family : Option (ConstRef Address)) : IO Bool := do
   let cfg : Config := {}
   let result := checkEnv.{1} cfg input blobs family
   let (outcome, reason) := match result with
@@ -249,13 +256,39 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
     IO.eprintln s!"{test.label}: projection reconstruction disagrees: {projectionOutcome}: {projectionReason}; exact store: {reconstructionExact}"
   if !orderAgrees then IO.eprintln s!"{test.label}: canonical block order disagrees: {orderOutcome}: {orderReason}"
   return passed
+end
+
+/-- Upstream's frozen Ixon v3 handoff environments. The rejected file fails
+native resource admission (a local result escapes) but has the same erased
+typing, so certified kernel acceptance must not depend on its contracts. -/
+def handoffCases : List (String × System.FilePath) := [
+  ("v3-handoff-accepted", "Tests/Fixtures/ixon-v3/handoff/accepted.ixe"),
+  ("v3-handoff-resource-rejected", "Tests/Fixtures/ixon-v3/handoff/rejected-local-escape.ixe")]
+
+/-- Primary blocks first, then projections, then the remaining primaries: the
+handoff environments are small and their only dependency is on the block. -/
+def handoffInput (path : System.FilePath) : IO (Ingress.Constants × Ingress.Blobs) := do
+  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+  let mut constants := #[]
+  for (address, lazy) in env.consts.toList do
+    constants := constants.push (address, ← IO.ofExcept lazy.get)
+  let rank : Ixon.Constant → Nat := fun c => match c.info with
+    | .muts _ => 0
+    | info => if Ingress.isProjection info then 1 else 2
+  let sorted := constants.qsort fun (a, x) (b, y) =>
+    rank x < rank y || (rank x == rank y && a.cmpBytes b == .lt)
+  return (sorted.toList, env.blobs.toList)
 
 def main : IO UInt32 := do
   let leanEnv ← getCompileEnv #[`Tests.Ix.Kernel.TutorialDefs]
   let mut failed := 0
   for test in cases do
     unless ← run leanEnv test do failed := failed + 1
-  IO.eprintln s!"Certified Ixon ingress, byte admission, and exact egress: {cases.length - failed}/{cases.length} host cases passed."
+  for (label, path) in handoffCases do
+    let (input, blobs) ← handoffInput path
+    unless ← evaluate { label, seeds := [] } input blobs none do failed := failed + 1
+  let total := cases.length + handoffCases.length
+  IO.eprintln s!"Certified Ixon ingress, byte admission, and exact egress: {total - failed}/{total} host cases passed."
   return if failed == 0 then 0 else 1
 
 end Tests.Ix.Kernel.IngressHost

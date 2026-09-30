@@ -96,10 +96,15 @@ keys, exact source readings, and each primary record installed at its own
 reference. Projection records must name the proper owner, member kind, and
 position and have empty tables. Sharing edges must decrease; indexes resolve
 without narrowing. `checkEnv_has_model` applies to this executed Ixon entry
-point. Nat payloads are little-endian; strings and non-default lambda/forall
-contracts decline. A let's Ixon v3 contract (dependency bit, value or shared
-borrow, binder contract) is erased by the reading, as at upstream `Ix.Tc`'s
-erased typing boundary, and retained by the egress layout. Address authentication, wire canonicality, and unused table entries
+point. Nat payloads are little-endian; strings decline. Every Ixon v3
+contract is erased by the reading, as at upstream `Ix.Tc`'s erased typing
+boundary: lambda binder contracts, forall input and result contracts, and let
+contracts (dependency bit, value or shared borrow, binder contract). Typing,
+conversion, and the model do not observe them, and the egress layout retains
+them, so records reproduce exactly. Kernel acceptance therefore says nothing
+about resource validity: upstream's frozen handoff environment whose local
+result escapes (`rejected-local-escape.ixe`) fails native resource admission
+and is accepted here, like its resource-valid twin. Address authentication, wire canonicality, and unused table entries
 are outside this reading contract.
 
 `Egress.readRecords` retains the layout choices that expanded raw terms lose.

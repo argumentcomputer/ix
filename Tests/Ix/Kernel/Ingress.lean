@@ -74,13 +74,31 @@ def unsupported (input : Ixon.Expr) : Bool :=
   | _ => false
 
 #guard unsupported (.str 0)
-#guard unsupported (.lam .erased (.sort 0) (.var 0))
-#guard unsupported (.lam .linear (.sort 0) (.var 0))
-#guard unsupported (.lam .affine (.sort 0) (.var 0))
-#guard unsupported (.all .many .unique (.sort 0) (.var 0))
-#guard unsupported (.all .affine .shared (.sort 0) (.var 0))
-#guard declined [(address 1, { identity with info := .defn ⟨.defn, .safe, 1, idType,
-  .lam .linear (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })]
+-- Ixon v3 contracts are erased by the reading: every binder, result, and let
+-- contract reads as the same kernel term.
+def binderContracts : List Ixon.BinderContract :=
+  (List.range 16).filterMap fun bits => Ixon.BinderContract.ofBits? bits.toUInt8
+def valueContracts : List Ixon.ValueContract :=
+  (List.range 4).filterMap fun bits => Ixon.ValueContract.ofBits? bits.toUInt8
+#guard binderContracts.length == 16 && valueContracts.length == 4
+def readsLike (input default : Ixon.Expr) : Bool :=
+  match readExpr (ctx) 100 input, readExpr (ctx) 100 default with
+  | .ok value, .ok expected => value == expected
+  | _, _ => false
+#guard binderContracts.all fun binder =>
+  readsLike (.lam binder (.sort 0) (.var 0)) (.leanLam (.sort 0) (.var 0)) &&
+  valueContracts.all fun result =>
+    readsLike (.all binder result (.sort 0) (.var 0)) (.leanAll (.sort 0) (.var 0))
+#guard (List.range 4).all fun flags => binderContracts.all fun binder =>
+  match Ixon.LetContract.ofFlags? flags.toUInt64 binder with
+  | none => false
+  | some contract =>
+    readsLike (.letE contract (.sort 0) (.sort 0) (.var 0))
+      (.leanLet false (.sort 0) (.sort 0) (.var 0))
+-- A definition whose body binds with a linear, unique, local contract is
+-- checked by its erased typing, as upstream `Ix.Tc` does.
+#guard accepts [(address 1, { identity with info := .defn ⟨.defn, .safe, 1, idType,
+  .lam ⟨.linear, .localUnique⟩ (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })]
 
 /-- A no-constructor inductive and its large eliminator, encoded independently
 of the kernel's shape generator. -/

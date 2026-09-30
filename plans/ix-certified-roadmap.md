@@ -2163,7 +2163,7 @@ Result (`plans/review/v1-merge`):
   integers and non-Boolean flags. Canonical decoding still rejects
   noncanonical universe spellings.
 
-### V2 — carry every v3 contract
+### V2 — carry every v3 contract (complete, 2026-09-29)
 
 Changes:
 - `ExprLayout` retains binder, forall-result, and let contracts.
@@ -2179,6 +2179,22 @@ Tests:
 - the Compilatr.ix v3 fixtures.
 
 Exit: every contract spelling is accepted and round-trips byte-exactly.
+
+Result (`plans/review/v2-contracts`):
+- **Semantics.** `ExprReads` erases every contract, and `ExprLayout` retains
+  them. Upstream `Ix.Tc` confirms the erased-typing semantics, including that
+  a `let borrow` types as an ordinary let.
+- **Contract spellings.** Every binder, result, and let spelling reads as the
+  default-contract term and round-trips.
+- **Upstream fixtures.**
+  - Upstream's `expressions.txt` bytes decode and re-encode exactly.
+  - Both frozen handoff environments pass every route, including the one that
+    native resource admission rejects. Kernel acceptance is erased typing,
+    not resource validity.
+- **Host cases.** 28 host cases passed.
+- **Runtime closures.** They shrank, and externs are unchanged.
+- **Deferred.** The Compilatr.ix `k1` closures come from the Lean 4.34
+  producer and follow L1.
 
 ### V3 — the byte ladder against the v3 decoder
 

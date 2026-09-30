@@ -125,11 +125,12 @@ def blob (ctx : Context) (index : UInt64) : Option ByteArray := do
 
 end Context
 
-/-- A constructor-by-constructor reading, including all table resolutions and
-the exact accepted binder contracts. A let's contract (its dependency bit,
-value or shared-borrow kind, and binder contract) is erased, as at upstream
-`Ix.Tc`'s erased typing boundary: the dependent kernel let syntax checks the
-type regardless, and the egress layout retains the contract. -/
+/-- A constructor-by-constructor reading, including all table resolutions.
+Ixon v3 contracts are erased, as at upstream `Ix.Tc`'s erased typing
+boundary: a lambda's binder contract, a forall's binder and result contracts,
+and a let's dependency bit, value or shared-borrow kind, and binder contract.
+Typing, conversion, and the set model do not observe them; the egress layout
+retains them, so records reproduce exactly. -/
 inductive ExprReads (ctx : Context) : Nat → Ixon.Expr → VExpr Address → Prop where
   | var : ExprReads ctx limit (.var i) (.bvar i.toNat)
   | sort : ctx.level i = some level → ExprReads ctx limit (.sort i) (.sort level)
@@ -142,9 +143,9 @@ inductive ExprReads (ctx : Context) : Nat → Ixon.Expr → VExpr Address → Pr
   | app : ExprReads ctx limit f f' → ExprReads ctx limit a a' →
       ExprReads ctx limit (.app f a) (.app f' a')
   | lam : ExprReads ctx limit type type' → ExprReads ctx limit body body' →
-      ExprReads ctx limit (.lam .many type body) (.lam type' body')
+      ExprReads ctx limit (.lam contract type body) (.lam type' body')
   | all : ExprReads ctx limit type type' → ExprReads ctx limit body body' →
-      ExprReads ctx limit (.all .many .shared type body) (.forallE type' body')
+      ExprReads ctx limit (.all contract result type body) (.forallE type' body')
   | letE : ExprReads ctx limit type type' → ExprReads ctx limit value value' →
       ExprReads ctx limit body body' →
       ExprReads ctx limit (.letE contract type value body) (.letE type' value' body')

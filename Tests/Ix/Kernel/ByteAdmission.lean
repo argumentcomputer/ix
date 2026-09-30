@@ -60,9 +60,10 @@ def decodeFailureAt (records : Records) (position : Nat) (address : Address)
 #guard match failure (encode [(address 1, identity)]) (cfg := ⟨0⟩) with
   | some (.kernel (.declined _)) => true
   | _ => false
+-- Ixon v3 contracts are erased by the reading; a linear binder is accepted.
 #guard match failure (encode [(address 1, { identity with info := .defn ⟨.defn, .safe, 1, idType,
     .lam .linear (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })]) with
-  | some (.kernel (.declined _)) => true
+  | none => true
   | _ => false
 
 -- Preflight rejects oversized batches before it reaches even the first
