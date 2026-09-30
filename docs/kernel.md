@@ -59,8 +59,8 @@ the same checker; host transport framing and scheduling remain outside it.
 | Variables, universes, constants, applications, lambdas, Pi types, lets | Check scope, universe arity, typing, and binder conditions |
 | Ordinary inductive family | Check the family and constructors independently; validate positivity, universe constraints, and the complete supplied declarations |
 | Supplied ordinary recursor | Associate by the major premise; check its complete type, metadata, rules, elimination, and freshness at its own reference |
-| Structure-shaped ordinary block | Publish projection typing, iota, and eta when the field and Prop restrictions hold; otherwise try ordinary admission |
-| Natural numbers | Recognize the natural-number interface; literals name their admitted family; literal/constructor conversion and recursor iota are supported |
+| Structure-shaped ordinary block | Publish projection typing, iota, and eta when the field and Prop restrictions hold; otherwise try ordinary admission. Running out of fuel in the structure description or check declines rather than installing a plain inductive, so fuel never changes installed content |
+| Natural numbers | Recognize the natural-number interface (fuel-free; a block with the natural shape that fails it is admitted as ordinary); literals name their admitted family; literal/constructor conversion and recursor iota are supported |
 | Equality | Ordinary admission plus K-like reduction through checked constructor synthesis and proof irrelevance |
 | Quotient | Check the four primitive declarations and soundness against the admitted Eq/quotient interfaces; prove lift and eliminator computation |
 | `propext`, `Classical.choice` | Check the generated types against admitted Eq/Iff/Nonempty interfaces and construct their realizations |

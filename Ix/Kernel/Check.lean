@@ -156,6 +156,7 @@ def checkInductiveC (cfg : Config) (env : Env β) (source : β) (recursor : Cons
                   let installed := installStructure env source description mode hs
                   .ok ⟨installed.val, installed.property, by
                     simpa only [hf, hr, ← hd] using installStructure_members env source description mode hs k⟩
+                | .error .exhausted => .error (Error.ofSearch "structure check" .exhausted)
                 | .error _ =>
                   let installed := installOrdinary env source shape mode hb
                   .ok ⟨installed.val, installed.property, by
@@ -164,6 +165,7 @@ def checkInductiveC (cfg : Config) (env : Env β) (source : β) (recursor : Cons
                 let installed := installOrdinary env source shape mode hb
                 .ok ⟨installed.val, installed.property, by
                   simpa only [hf, hr] using installOrdinary_members env source shape mode hb k⟩
+            | .error .exhausted => .error (Error.ofSearch "structure description" .exhausted)
             | .error _ =>
               let installed := installOrdinary env source shape mode hb
               .ok ⟨installed.val, installed.property, by
@@ -208,8 +210,10 @@ def checkFamilyC (cfg : Config) (env : Env β) (source : β) (family : Const β)
             let installed := installStructureStage env source description .family hs
             return ⟨installed.val, installed.property, by
               simpa only [hf, ← hd] using installStructureStage_family env source description .family hs⟩
+          | .error .exhausted => throw (Error.ofSearch "structure check" .exhausted)
           | .error _ => fallback
         else fallback
+      | .error .exhausted => throw (Error.ofSearch "structure description" .exhausted)
       | .error _ => fallback
   else throw (.declined "the supplied inductive differs from the generated ordinary family")
 

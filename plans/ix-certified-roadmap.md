@@ -2288,6 +2288,16 @@ R1 is complete (2026-09-29, `plans/review/r1-eliminators`):
 **R2.** The structure and Nat fallbacks propagate exhaustion instead of
 installing a weaker entry.
 
+R2 is complete (2026-09-29, `plans/review/r2-exhaustion`):
+- **Structure fallback.** Exhaustion in `readDescription` or
+  `Structure.check` now declines. Other structure-restriction failures keep
+  the documented fallback to ordinary admission.
+- **Test.** `Prod` checked at every fuel below 40 either declines or installs
+  its three structure facts. At fuel 12 the structure check runs out, which
+  previously installed a plain inductive.
+- **Nat fallback.** Natural-number recognition is fuel-free, so its fallback
+  to ordinary admission is a documented coverage choice.
+
 **R3.** One admission fold over physical records:
 - Freeze the `checkEnv` statements.
 - Add a no-False theorem for `checkEnv`.

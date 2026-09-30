@@ -84,6 +84,20 @@ def familyFacts (decls : List (Decl String)) (source : String) : Nat :=
 #guard familyFacts accepted "Sub" == 3
 #guard familyFacts accepted "Ex" == 0
 
+/-- Fuel never changes what is installed (R2): at every fuel, `Prod` either
+declines for lack of fuel or is installed as a structure with its three
+facts. Exhaustion in the structure check is not a reason to install a plain
+ordinary inductive. -/
+def prodAtFuel (fuel : Nat) : Option Nat :=
+  match check.{0,1} ⟨fuel⟩ [prodDecl] with
+  | .ok env => some ((env.toEnvironment (.member "Prod" 0)).map (·.facts.length) |>.getD 0)
+  | .error (.declined _) => none
+  | .error (.rejected _) => some 0
+#guard (List.range 40).all fun fuel => match prodAtFuel fuel with
+  | none => true
+  | some facts => facts == 3
+#guard prodAtFuel 100000 == some 3
+
 /-! ## Projections -/
 
 def natT : E := type0.erase
