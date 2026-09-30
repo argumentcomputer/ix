@@ -80,7 +80,7 @@ def variants : Ingress.Constants :=
 
 #guard exprRoundtrips (ctx aliasIdentity) (.prj 0 18446744073709551615 (.var 0))
 #guard exprRoundtrips literalContext (.nat 0)
-#guard exprRoundtrips { literalContext with blobs := [(address 9, ⟨#[0, 0]⟩)] } (.nat 0)
+#guard exprRoundtrips (literalContext.withBlobs [(address 9, ⟨#[0, 0]⟩)]) (.nat 0)
 
 -- A retained table slot or sharing node must not hide changed raw payloads.
 #guard isMalformed (writeExpr (ctx) 100 (.sort 0) (.sort .zero))
@@ -118,12 +118,12 @@ def variants : Ingress.Constants :=
 
 -- Projections must have empty tables and identify a matching stored member.
 #guard isMalformed (readProjection { falseProjection with refs := #[address 3] })
-#guard isMalformed (readRecord ⟨falseStore, [], address 4,
-  { falseProjection with info := .rPrj ⟨0, address 3⟩ }, none⟩ 100)
-#guard isMalformed (readRecord ⟨[], [], address 4, falseProjection, none⟩ 100)
+#guard isMalformed (readRecord (Ingress.Context.ofStores falseStore [] (address 4)
+  { falseProjection with info := .rPrj ⟨0, address 3⟩ }) 100)
+#guard isMalformed (readRecord (Ingress.Context.ofStores [] [] (address 4) falseProjection) 100)
 #guard isMalformed (Ingress.readDeclarationsC falseStore [] none 100
   [(address 4, { falseProjection with info := .rPrj ⟨0, address 3⟩ })])
-#guard isMalformed (writeRecord ⟨falseStore, [], address 5, identity, none⟩ 100
+#guard isMalformed (writeRecord (Ingress.Context.ofStores falseStore [] (address 5) identity) 100
   (.projection .recursor (.member (address 3) 0)))
 
 -- The proof applies to the actual public list operations, at the same fuel.

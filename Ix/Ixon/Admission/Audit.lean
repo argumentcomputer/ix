@@ -17,8 +17,10 @@ def operations : Array Lean.Name :=
   #[``Ix.Ixon.Admission.preflight, ``Ix.Ixon.Admission.decodeRecords,
     ``Ix.Ixon.Admission.checkBytes]
 
+/-- Admission runs the certified kernel, whose closure admits `Std`
+(`Ix.Kernel.Audit.importAllowlist`, 2026-09-30). -/
 def dataImports : Array Lean.Name :=
-  Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Ix.Ixon.Admission]
+  Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Ixon.Admission]
 
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `Ix.Ixon.Verify]
 
@@ -35,7 +37,8 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.WorkAdmission] Ix.Ixon.Ad
 
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.Verify.Admission
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Lean
-#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Std
+#guard Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Std.Data.TreeMap
+#guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Batteries
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Admission
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Audit.dataImports `Ix.Ixon.Admission
 
@@ -43,8 +46,8 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.WorkAdmission] Ix.Ixon.Ad
 kernel and codec primitives only; the set-difference check below enforces
 that adding the adapter introduces no further extern or unsafe primitive. -/
 /-- info: runtime closure of [Ix.Ixon.Admission.preflight,
-Ix.Ixon.Admission.decodeRecords, Ix.Ixon.Admission.checkBytes]: 1289 compiled functions;
-inherited externs 57, implemented_by 0, unsafe 2, csimp 0 -/
+Ix.Ixon.Admission.decodeRecords, Ix.Ixon.Admission.checkBytes]: 1310 compiled functions;
+inherited externs 59, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Admission.Audit.operations #[`Init, `Std]
 

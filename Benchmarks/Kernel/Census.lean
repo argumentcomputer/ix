@@ -270,7 +270,7 @@ def run (args : List String) : IO UInt32 := do
             recursors := recursors.insert family ((recursors.getD family #[]).push (address, recursor))
   IO.eprintln s!"census: recursors indexed after {(← IO.monoMsNow) - started} ms"
   let handle ← IO.FS.Handle.mk options.output .write
-  let mut kenv : Env Address := Env.empty
+  let mut kenv : Env Address := Env.emptyWith Ingress.addressKeyHash
   let mut failed : Std.HashMap Address Address := {}
   let mut consumed : Std.HashSet Address := {}
   let mut counts : Std.HashMap String Nat := {}

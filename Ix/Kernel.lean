@@ -35,12 +35,20 @@ speak about (`check.{u,v}`). The computation does not depend on `v`; a use
 site that is not a theorem instantiates it. `checkAddressed` fixes `v := 1`,
 the universe of the `ZFSet.{0}` model supplied by `Models/SetTheory`.
 
+`checkAddressed` is `checkIndexed`: the same fold as `check`, started from an
+environment whose lookup index hashes addresses (`Env.emptyWith`), so a lookup
+scans one bucket instead of every installed entry. Its theorems
+(`checkIndexed_has_model`, `checkIndexed_installed`) are the generic ones
+instantiated at that starting environment, and `checkEnv_ok_iff` is stated
+against it.
+
 Roadmap: `plans/ix-certified-roadmap.md`. -/
 
 namespace Ix.Kernel
 
-/-- The public instantiation of the closed check at content addresses. -/
+/-- The public instantiation of the closed check at content addresses, with
+the address-hashed environment index. -/
 abbrev checkAddressed (cfg : Config) (decls : List (Decl Address)) : Except Error (Env Address) :=
-  check.{0,1} cfg decls
+  checkIndexed.{1} cfg decls
 
 end Ix.Kernel

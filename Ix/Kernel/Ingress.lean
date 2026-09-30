@@ -18,7 +18,34 @@ namespace Ix.Kernel.Ingress
 
 def context (constants : Constants) (blobs : Blobs) (family : Option (ConstRef Address))
     (pair : Address × Ixon.Constant) : Context :=
-  ⟨constants, blobs, pair.1, pair.2, family⟩
+  { constants, blobs, owner := pair.1, source := pair.2, natFamily := family }
+
+/-- Store indexes built once for a whole input, with their agreement proofs. -/
+structure Indexes (constantStore : Constants) (blobStore : Blobs) where
+  constants : StoreIndex Ixon.Constant
+  constants_eq : ∀ address, constants.find address = lookup constantStore address
+  blobs : StoreIndex ByteArray
+  blobs_eq : ∀ address, blobs.find address = lookup blobStore address
+
+def Indexes.build (constants : Constants) (blobs : Blobs) : Indexes constants blobs :=
+  ⟨.build constants, StoreIndex.find_build constants, .build blobs, StoreIndex.find_build blobs⟩
+
+/-- `context`, answering lookups through the indexes. -/
+def Indexes.context {constants : Constants} {blobs : Blobs} (idx : Indexes constants blobs)
+    (family : Option (ConstRef Address)) (pair : Address × Ixon.Constant) : Context :=
+  { constants, blobs, owner := pair.1, source := pair.2, natFamily := family,
+    findConstant := idx.constants.find, findConstant_eq := idx.constants_eq,
+    findBlob := idx.blobs.find, findBlob_eq := idx.blobs_eq }
+
+theorem Indexes.context_eq {constants : Constants} {blobs : Blobs} (idx : Indexes constants blobs)
+    (family : Option (ConstRef Address)) (pair : Address × Ixon.Constant) :
+    idx.context family pair = Ingress.context constants blobs family pair :=
+  Context.ext_stores rfl rfl rfl rfl rfl
+
+theorem referenceSourceBy_congr {f g : Address → Option Ixon.Constant} (h : ∀ a, f a = g a)
+    (address : Address) (source : Ixon.Constant) :
+    referenceSourceBy f address source = referenceSourceBy g address source := by
+  rw [funext h]
 
 /-- Projection records contribute names for an existing owner. Primary records
 contribute one declaration each, preserving their relative input order. -/
@@ -53,21 +80,32 @@ theorem DeclarationsRead.primary {constants : Constants} {blobs : Blobs}
       simp [primary] at projection
     · exact ih member primary
 
-def readDeclarationsC (constants : Constants) (blobs : Blobs)
+/-- The declaration reader over prebuilt store indexes. -/
+def readDeclarationsIdx {constants : Constants} {blobs : Blobs} (idx : Indexes constants blobs)
     (family : Option (ConstRef Address)) (fuel : Nat) : (inputs : Constants) →
     Search { decls : List (Decl Address) // DeclarationsRead constants blobs family inputs decls }
   | [] => .ok ⟨[], .nil⟩
   | pair :: rest => do
     if hp : isProjection pair.2.info = true then
-      match hr : referenceSource constants pair.1 pair.2 with
+      match hr : referenceSourceBy idx.constants.find pair.1 pair.2 with
       | none => throw (.malformed "projection record has invalid tables, owner, kind, or position")
       | some _ref =>
-        let decls ← readDeclarationsC constants blobs family fuel rest
-        return ⟨decls.val, .projection hp hr decls.property⟩
+        let decls ← readDeclarationsIdx idx family fuel rest
+        have hr' : referenceSource constants pair.1 pair.2 = some _ref := by
+          rw [← hr, referenceSource, referenceSourceBy_congr idx.constants_eq]
+        return ⟨decls.val, .projection hp hr' decls.property⟩
     else
-      let block ← readBlockC (context constants blobs family pair) fuel
-      let decls ← readDeclarationsC constants blobs family fuel rest
-      return ⟨⟨pair.1, block.val⟩ :: decls.val, .declaration block.property decls.property⟩
+      let block ← readBlockC (idx.context family pair) fuel
+      let decls ← readDeclarationsIdx idx family fuel rest
+      return ⟨⟨pair.1, block.val⟩ :: decls.val,
+        .declaration (idx.context_eq family pair ▸ block.property) decls.property⟩
+
+/-- The declaration reader: store indexes are built once, then each record is
+read against them. -/
+def readDeclarationsC (constants : Constants) (blobs : Blobs)
+    (family : Option (ConstRef Address)) (fuel : Nat) (inputs : Constants) :
+    Search { decls : List (Decl Address) // DeclarationsRead constants blobs family inputs decls } :=
+  readDeclarationsIdx (Indexes.build constants blobs) family fuel inputs
 
 /-- The executable declaration reader without its proof component. -/
 def readDeclarations (constants : Constants) (blobs : Blobs)
@@ -129,17 +167,52 @@ theorem Installed.primary {constants : Constants} {blobs : Blobs}
 
 universe v
 
+/-- The key hash of the addressed environment index: an address's leading
+eight bytes (`Hashable Address`). It selects buckets only. -/
+def addressKeyHash (a : Address) : UInt64 := hash a
+
+end Ix.Kernel.Ingress
+
+namespace Ix.Kernel
+
+universe v
+
+/-- The closed check over addressed declarations: the fold of `check` from an
+empty environment whose index hashes addresses. The generic `check` keeps a
+single bucket; the two differ only in the index, never in a lookup
+(`Env.toEnvironment_push`). `checkAddressed` is its public instance. -/
+def checkIndexed (cfg : Config) (decls : List (Decl Address)) : Except Error (Env Address) :=
+  checkDecls.{0,v} cfg (Env.emptyWith Ingress.addressKeyHash) decls
+
+theorem checkIndexed_installed {cfg : Config} {env : Env Address} {decls : List (Decl Address)}
+    (h : checkIndexed.{v} cfg decls = .ok env) :
+    ∀ d ∈ decls, d.block.Installed d.address env.toEnvironment :=
+  checkDecls_installed h
+
+/-- The indexed check constructs a model of everything it accepts. -/
+theorem checkIndexed_has_model (V : Type v) [Model.SetTheory V] {cfg : Config}
+    {decls : List (Decl Address)} {env : Env Address} (h : checkIndexed.{v} cfg decls = .ok env) :
+    Nonempty (Model V env) :=
+  checkDecls_has_model V (Model.emptyEnvWith V _) h
+
+end Ix.Kernel
+
+namespace Ix.Kernel.Ingress
+
+universe v
+
 def checkEnvC (cfg : Config) (constants : Constants) (blobs : Blobs)
     (family : Option (ConstRef Address)) : Except Error { env : Env Address //
       Installed constants blobs family env ∧
       ∀ (V : Type v) [Model.SetTheory V], Nonempty (Model V env) } := do
-  if hc : (constants.map Prod.fst).Nodup then
-    if hb : (blobs.map Prod.fst).Nodup then
+  if hc : nodupKeys constants = true then
+    if hb : nodupKeys blobs = true then
       let declarations ← (readDeclarationsC constants blobs family cfg.fuel constants).mapError
         (Error.ofSearch "Ixon ingress")
-      let checked ← checkDeclsC.{0,v} cfg Env.empty declarations.val
-      return ⟨checked.val, ⟨hc, hb, declarations.val, declarations.property, checked.property.2⟩,
-        fun V _ => checked.property.1.step V (Model.emptyEnv V)⟩
+      let checked ← checkDeclsC.{0,v} cfg (Env.emptyWith addressKeyHash) declarations.val
+      return ⟨checked.val, ⟨(nodupKeys_iff constants).1 hc, (nodupKeys_iff blobs).1 hb,
+        declarations.val, declarations.property, checked.property.2⟩,
+        fun V _ => checked.property.1.step V (Model.emptyEnvWith V addressKeyHash)⟩
     else throw (.rejected "duplicate blob address")
   else throw (.rejected "duplicate constant address")
 
@@ -172,21 +245,23 @@ theorem checkEnv_has_model (V : Type v) [Model.SetTheory V] {cfg : Config}
 /-- The exact acceptance domain of the Ixon entry point, as two stages: the
 record and blob keys are distinct, the records read as declarations at the
 configured fuel (`Ingress.readDeclarations_reading`; the reading is
-deterministic), and the closed `check` accepts those declarations. -/
+deterministic), and the closed indexed check (`checkIndexed`) accepts those
+declarations. -/
 theorem checkEnv_ok_iff {cfg : Config} {constants : Ingress.Constants} {blobs : Ingress.Blobs}
     {family : Option (ConstRef Address)} {env : Env Address} :
     checkEnv.{v} cfg constants blobs family = .ok env ↔
       (constants.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup ∧
         ∃ decls, Ingress.readDeclarations constants blobs family cfg.fuel constants = .ok decls ∧
-          check.{0,v} cfg decls = .ok env := by
-  unfold checkEnv Ingress.checkEnvC Ingress.readDeclarations check checkDecls
-  by_cases hc : (constants.map Prod.fst).Nodup
-  · by_cases hb : (blobs.map Prod.fst).Nodup
+          checkIndexed.{v} cfg decls = .ok env := by
+  unfold checkEnv Ingress.checkEnvC Ingress.readDeclarations checkIndexed checkDecls
+  simp only [← Ingress.nodupKeys_iff]
+  by_cases hc : Ingress.nodupKeys constants = true
+  · by_cases hb : Ingress.nodupKeys blobs = true
     · cases hr : Ingress.readDeclarationsC constants blobs family cfg.fuel constants with
       | error failure =>
         simp [hc, hb, Except.mapError, bind, Except.bind, Except.map]
       | ok declarations =>
-        cases hk : checkDeclsC.{0,v} cfg Env.empty declarations.val with
+        cases hk : checkDeclsC.{0,v} cfg (Env.emptyWith Ingress.addressKeyHash) declarations.val with
         | error failure =>
           simp [hc, hb, hk, Except.mapError, bind, Except.bind, Except.map]
         | ok checked =>

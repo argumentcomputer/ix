@@ -106,7 +106,7 @@ def readRecords (constants : Ingress.Constants) (blobs : Ingress.Blobs)
     Ingress.Constants → Search (List (Address × Record))
   | [] => .ok []
   | (address, source) :: inputs => do
-    let record ← readRecord ⟨constants, blobs, address, source, natFamily⟩ fuel
+    let record ← readRecord (Ingress.Context.ofStores constants blobs address source natFamily) fuel
     let records ← readRecords constants blobs natFamily fuel inputs
     return (address, record) :: records
 
@@ -118,7 +118,7 @@ def writeRecords (constants : Ingress.Constants) (blobs : Ingress.Blobs)
   | [] => .ok []
   | (address, record) :: records => do
     let source ← writeRecord
-      ⟨constants, blobs, address, ⟨.muts #[], #[], #[], #[]⟩, natFamily⟩ fuel record
+      (Ingress.Context.ofStores constants blobs address ⟨.muts #[], #[], #[], #[]⟩ natFamily) fuel record
     let sources ← writeRecords constants blobs natFamily fuel records
     return (address, source) :: sources
 
@@ -126,7 +126,7 @@ def RecordsRead (constants : Ingress.Constants) (blobs : Ingress.Blobs)
     (natFamily : Option (ConstRef Address))
     (inputs : Ingress.Constants) (records : List (Address × Record)) : Prop :=
   Forall₂ (fun input record => record.1 = input.1 ∧
-    record.2.Reads ⟨constants, blobs, input.1, input.2, natFamily⟩) inputs records
+    record.2.Reads (Ingress.Context.ofStores constants blobs input.1 input.2 natFamily)) inputs records
 
 theorem readRecords_reading {constants inputs : Ingress.Constants} {blobs : Ingress.Blobs}
     {natFamily : Option (ConstRef Address)} {fuel : Nat} {records : List (Address × Record)}
@@ -139,7 +139,7 @@ theorem readRecords_reading {constants inputs : Ingress.Constants} {blobs : Ingr
     exact .nil
   | cons input inputs ih =>
     obtain ⟨address, source⟩ := input
-    cases head : readRecord ⟨constants, blobs, address, source, natFamily⟩ fuel with
+    cases head : readRecord (Ingress.Context.ofStores constants blobs address source natFamily) fuel with
     | error failure => simp [readRecords, head, bind, Except.bind] at h
     | ok record =>
       cases tail : readRecords constants blobs natFamily fuel inputs with
@@ -161,7 +161,7 @@ theorem writeRecords_reading {constants inputs : Ingress.Constants} {blobs : Ing
   | cons entry records ih =>
     obtain ⟨address, record⟩ := entry
     cases head : writeRecord
-        ⟨constants, blobs, address, ⟨.muts #[], #[], #[], #[]⟩, natFamily⟩ fuel record with
+        (Ingress.Context.ofStores constants blobs address ⟨.muts #[], #[], #[], #[]⟩ natFamily) fuel record with
     | error failure => simp [writeRecords, head, bind, Except.bind] at h
     | ok source =>
       cases tail : writeRecords constants blobs natFamily fuel records with
@@ -185,7 +185,7 @@ theorem records_roundtrip {constants inputs : Ingress.Constants} {blobs : Ingres
     rfl
   | cons input inputs ih =>
     obtain ⟨address, source⟩ := input
-    cases head : readRecord ⟨constants, blobs, address, source, natFamily⟩ fuel with
+    cases head : readRecord (Ingress.Context.ofStores constants blobs address source natFamily) fuel with
     | error failure => simp [readRecords, head, bind, Except.bind] at h
     | ok record =>
       cases tail : readRecords constants blobs natFamily fuel inputs with
@@ -195,6 +195,8 @@ theorem records_roundtrip {constants inputs : Ingress.Constants} {blobs : Ingres
         subst records
         have rebuilt := record_roundtrip head
         rw [← writeRecord_source _ ⟨.muts #[], #[], #[], #[]⟩] at rebuilt
+        change writeRecord (Ingress.Context.ofStores constants blobs address
+          ⟨.muts #[], #[], #[], #[]⟩ natFamily) fuel record = .ok source at rebuilt
         simp only [writeRecords, rebuilt, ih tail, bind, pure, Except.bind, Except.pure]
 
 end Ix.Kernel.Egress

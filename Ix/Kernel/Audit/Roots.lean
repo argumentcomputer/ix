@@ -109,7 +109,7 @@ end Ix.Kernel.Audit
 #guard_kernel_axioms Ix.Kernel.no_proof_of_False [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.check [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDecls [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Env.toEnvironment []
+#guard_kernel_axioms Ix.Kernel.Env.toEnvironment [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.annotate_erase [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDecl_installed [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDecls_installed [propext, Classical.choice, Quot.sound]
@@ -120,7 +120,7 @@ end Ix.Kernel.Audit
 #guard_kernel_axioms Ix.Kernel.Ingress.readBlock_reading [propext, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Ingress.ExprReads.deterministic [propext, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Ingress.readExpr_agree [propext, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.Installed.primary [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Ingress.Installed.primary [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkFamilyC [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkEnv_reading [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkEnv_has_model [propext, Classical.choice, Quot.sound]
@@ -159,19 +159,19 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Aud
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Batteries.Data.RBMap
 
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
-Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 952 compiled functions; inherited externs 16,
+Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 969 compiled functions; inherited externs 20,
 implemented_by 0, unsafe 1, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
-Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 981 compiled functions;
-inherited externs 23, implemented_by 0, unsafe 2, csimp 0 -/
+Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 1010 compiled functions;
+inherited externs 30, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.Egress.readRecords, Ix.Kernel.Egress.writeRecords,
-Ix.Kernel.Egress.writeExpr, Ix.Kernel.Egress.writeProjection]: 194 compiled functions;
+Ix.Kernel.Egress.writeExpr, Ix.Kernel.Egress.writeProjection]: 198 compiled functions;
 inherited externs 21, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.egressOperations Ix.Kernel.Audit.runtimeAllowlist
@@ -266,7 +266,7 @@ the syntactic `EmptyType` corollary for constructor-free families. -/
       (List.map Prod.fst blobs).Nodup ∧
         ∃ decls,
           Ix.Kernel.Ingress.readDeclarations constants blobs family cfg.fuel constants = Except.ok decls ∧
-            Ix.Kernel.check cfg decls = Except.ok env -/
+            Ix.Kernel.checkIndexed cfg decls = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.checkEnv_ok_iff
 

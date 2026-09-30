@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Model.Environment
 import Ix.Kernel.Model.Extension
+import Std.Data.TreeMap.Lemmas
 
 /-! # The checked environment and its models
 
@@ -12,7 +13,16 @@ import Ix.Kernel.Model.Extension
 installation order, keyed by `ConstRef β`. The semantic model reads it through
 `Env.toEnvironment`, the `Model.Environment β` view (a partial function from
 references to entries). `β` is the reference type; the public API fixes it to
-`Address`, where an address is an opaque key: the kernel never hashes.
+`Address`, where an address is an opaque key: the kernel never hashes content.
+
+Lookups go through an index: entries are bucketed by a 64-bit hash of their
+reference in a persistent ordered map, newest first within a bucket, and a
+lookup scans only its bucket. The hash of a block key is fixed when the
+environment is created (`emptyWith`). It selects a bucket and nothing else:
+`toEnvironment_push` and `toEnvironment_pushList` characterize lookups without
+it, so no statement depends on the hash or on its collisions. `Env.empty` puts
+every entry in one bucket, the generic reference behaviour; the addressed entry
+point `checkAddressed` (`checkIndexed`) hashes addresses by their leading bytes.
 
 Installation order is the host-supplied dependency order. The checker rejects
 a reference to an entry that is not yet installed and rejects a duplicate
@@ -30,21 +40,39 @@ open Model Model.SetTheory
 
 universe u v
 
-/-- The checked environment: entries in installation order, newest first. -/
+/-- The checked environment: entries in installation order, newest first, and
+their index. -/
 structure Env (β : Type u) where
   entries : List (ConstRef β × Model.ConstantEntry β)
+  /-- Hash of a block key; it only selects an index bucket. -/
+  keyHash : β → UInt64
+  /-- Installed entries by `refHash keyHash` of their reference, newest first
+  within a bucket. -/
+  index : Std.TreeMap UInt64 (List (ConstRef β × Model.ConstantEntry β)) compare
 
 namespace Env
 
 variable {β : Type u} [DecidableEq β]
 
-/-- The empty environment, the starting point of the closed check. -/
-def empty : Env β := ⟨[]⟩
+/-- The bucket hash of a reference. -/
+def refHash (keyHash : β → UInt64) : ConstRef β → UInt64
+  | .member b i => mixHash (keyHash b) (hash i)
+  | .ctor b i c => mixHash (mixHash (keyHash b) (hash i)) (hash (c + 1))
+
+/-- The empty environment with the given key hash. -/
+def emptyWith (keyHash : β → UInt64) : Env β := ⟨[], keyHash, ∅⟩
+
+/-- The empty environment, the starting point of the closed check: one bucket. -/
+def empty : Env β := emptyWith fun _ => 0
+
+/-- The index bucket a reference belongs to. -/
+def bucket (env : Env β) (r : ConstRef β) : List (ConstRef β × Model.ConstantEntry β) :=
+  env.index.getD (refHash env.keyHash r) []
 
 /-- Look up an installed entry. Installation rejects duplicate references, so
 the first match is the only match. -/
 def lookup (env : Env β) (r : ConstRef β) : Option (Model.ConstantEntry β) :=
-  (env.entries.find? fun e => e.1 == r).map (·.2)
+  ((env.bucket r).find? fun e => e.1 == r).map (·.2)
 
 /-- The first installed reference satisfying `valid`. Used to find an admitted
 eliminator by its checked interface: Ixon stores a recursor as its own record,
@@ -57,21 +85,42 @@ def toEnvironment (env : Env β) : Model.Environment β := env.lookup
 
 /-- Install an entry. -/
 def push (env : Env β) (r : ConstRef β) (entry : Model.ConstantEntry β) : Env β :=
-  { env with entries := (r, entry) :: env.entries }
+  let h := refHash env.keyHash r
+  { env with
+    entries := (r, entry) :: env.entries
+    index := env.index.insert h ((r, entry) :: env.index.getD h []) }
 
-@[simp] theorem lookup_empty (r : ConstRef β) : (empty : Env β).lookup r = none := rfl
+@[simp] theorem lookup_emptyWith (keyHash : β → UInt64) (r : ConstRef β) :
+    (emptyWith keyHash).lookup r = none := by
+  simp [lookup, bucket, emptyWith, Std.TreeMap.getD_emptyc]
+
+@[simp] theorem toEnvironment_emptyWith (keyHash : β → UInt64) (r : ConstRef β) :
+    (emptyWith keyHash).toEnvironment r = none := lookup_emptyWith keyHash r
+
+@[simp] theorem lookup_empty (r : ConstRef β) : (empty : Env β).lookup r = none :=
+  lookup_emptyWith _ r
 
 @[simp] theorem toEnvironment_empty (r : ConstRef β) :
-    (empty : Env β).toEnvironment r = none := rfl
+    (empty : Env β).toEnvironment r = none := lookup_empty r
+
+theorem lookup_push (env : Env β) (r : ConstRef β) (entry : Model.ConstantEntry β)
+    (q : ConstRef β) :
+    (env.push r entry).lookup q = if q = r then some entry else env.lookup q := by
+  simp only [lookup, bucket, push, Std.TreeMap.getD_insert]
+  by_cases hq : q = r
+  · subst hq; simp
+  · have hne : (r == q) = false := beq_eq_false_iff_ne.mpr (Ne.symm hq)
+    rw [ite_eq_right hq]
+    split
+    · rename_i hh
+      have hh : refHash env.keyHash r = refHash env.keyHash q := Std.LawfulEqCmp.eq_of_compare hh
+      simp [hne, hh]
+    · rfl
 
 theorem toEnvironment_push (env : Env β) (r : ConstRef β) (entry : Model.ConstantEntry β) :
     (env.push r entry).toEnvironment = env.toEnvironment.insert r entry := by
   funext q
-  by_cases h : q = r
-  · subst h
-    simp [toEnvironment, lookup, push, Environment.insert]
-  · have : (r == q) = false := beq_eq_false_iff_ne.mpr (Ne.symm h)
-    simp [toEnvironment, lookup, push, Environment.insert, this, h]
+  simp only [toEnvironment, lookup_push, Environment.insert]
 
 /-- Existing entries, including bodies, equations, and facts, are unchanged. -/
 def Preserves (before after : Env β) : Prop :=
@@ -108,25 +157,30 @@ structure Model (V : Type v) [SetTheory V] (env : Env β) where
   realizes : Realizes constants env.toEnvironment
   wf : env.toEnvironment.WF
 
-/-- The empty environment has a model in every set theory. -/
-noncomputable def Model.emptyEnv (V : Type v) [SetTheory V] : Model V (Env.empty : Env β) where
+/-- An empty environment has a model in every set theory. -/
+noncomputable def Model.emptyEnvWith (V : Type v) [SetTheory V] (keyHash : β → UInt64) :
+    Model V (Env.emptyWith keyHash) where
   constants := fun _ _ => SetTheory.empty
   realizes :=
-    { typeValid := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      member := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      bodyValid := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      bodyValue := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      equationValue := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      factMeaning := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h }
+    { typeValid := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      member := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      bodyValid := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      bodyValue := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      equationValue := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      factMeaning := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h }
   wf :=
-    { typeScope := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      bodyScope := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      typeReferences := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      bodyReferences := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      equationScope := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      equationReferences := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      factScope := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h
-      factReferences := fun _ _ h => by rw [Env.toEnvironment_empty] at h; cases h }
+    { typeScope := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      bodyScope := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      typeReferences := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      bodyReferences := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      equationScope := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      equationReferences := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      factScope := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h
+      factReferences := fun _ _ h => by rw [Env.toEnvironment_emptyWith] at h; cases h }
+
+/-- The empty environment has a model in every set theory. -/
+noncomputable def Model.emptyEnv (V : Type v) [SetTheory V] : Model V (Env.empty : Env β) :=
+  Model.emptyEnvWith V _
 
 /-- One accepted step extends every model of the input environment. -/
 def StepClaim (env env' : Env β) : Prop :=
@@ -158,7 +212,17 @@ variable {β : Type u} [DecidableEq β]
 
 /-- Install several entries at once; the list is newest first. -/
 def pushList (env : Env β) (rs : List (ConstRef β × Model.ConstantEntry β)) : Env β :=
-  { env with entries := rs ++ env.entries }
+  rs.foldr (fun e acc => acc.push e.1 e.2) env
+
+omit [DecidableEq β] in
+theorem entries_pushList (env : Env β) (rs : List (ConstRef β × Model.ConstantEntry β)) :
+    (env.pushList rs).entries = rs ++ env.entries := by
+  induction rs with
+  | nil => rfl
+  | cons e rs ih =>
+    simp only [pushList, List.foldr_cons] at *
+    show (e.1, e.2) :: _ = _
+    rw [ih]; rfl
 
 theorem lookup_pushList (env : Env β) (rs : List (ConstRef β × Model.ConstantEntry β))
     (q : ConstRef β) :
@@ -166,8 +230,15 @@ theorem lookup_pushList (env : Env β) (rs : List (ConstRef β × Model.Constant
       match rs.find? (fun e => e.1 == q) with
       | some e => some e.2
       | none => env.lookup q := by
-  simp only [lookup, pushList, List.find?_append]
-  cases rs.find? (fun e => e.1 == q) <;> simp [Option.or]
+  induction rs with
+  | nil => rfl
+  | cons e rs ih =>
+    simp only [pushList, List.foldr_cons] at *
+    rw [lookup_push, ih, List.find?_cons]
+    by_cases hq : q = e.1
+    · subst hq; simp
+    · have : (e.1 == q) = false := beq_eq_false_iff_ne.mpr (Ne.symm hq)
+      simp [hq, this]
 
 theorem toEnvironment_pushList (env : Env β) (rs : List (ConstRef β × Model.ConstantEntry β))
     (q : ConstRef β) :

@@ -186,15 +186,15 @@ def interveningFalseId : Ixon.Constant :=
   info := .cPrj ⟨0, 0, address 3⟩ })]
 
 def literalContext : Context :=
-  { ctx { identity with refs := #[address 9] } with
-    blobs := [(address 9, ⟨#[3, 2, 1]⟩)]
-    natFamily := some (.member (address 3) 0) }
+  let base := ctx { identity with refs := #[address 9] }
+  Context.ofStores base.constants [(address 9, ⟨#[3, 2, 1]⟩)] base.owner base.source
+    (some (.member (address 3) 0))
 
 #guard match readExpr literalContext 10 (.nat 0) with
   | .ok value => value == .natLit (.member (address 3) 0) 66051
   | _ => false
 #guard malformed literalContext (.nat 1)
-#guard malformed { literalContext with blobs := [] } (.nat 0)
+#guard malformed (literalContext.withBlobs []) (.nat 0)
 #guard natural ⟨#[]⟩ == 0
 #guard natural ⟨#[0, 0]⟩ == 0
 #guard levelTree (.max (.var 0) (.imax .zero (.var 1))) ==

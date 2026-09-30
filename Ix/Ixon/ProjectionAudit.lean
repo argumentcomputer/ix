@@ -55,8 +55,8 @@ run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.ProjectionProofs] Ix.Ix
 /- Measured independently before freezing. Added primitives are standard
 array and integer operations used by pure BLAKE3, not hash FFI calls. -/
 /-- info: runtime closure of [Ix.Ixon.Projection.address,
-Ix.Ixon.Projection.reconstruct, Ix.Ixon.Projection.checkBytes]: 1420 compiled functions;
-inherited externs 71, implemented_by 0, unsafe 2, csimp 0 -/
+Ix.Ixon.Projection.reconstruct, Ix.Ixon.Projection.checkBytes]: 1441 compiled functions;
+inherited externs 73, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Projection.Audit.operations #[`Init, `Std]
 
@@ -69,7 +69,7 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Projection.Audit.operations #[`Init
 #guard_kernel_axioms Ix.Ixon.Projection.Added.primaries [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.Expanded.complete [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.Expanded.origin [propext, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Projection.Expanded.primary [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Projection.Expanded.primary [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.Expanded.length [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.checkBytes_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.checkBytes_of_expansion [propext, Classical.choice, Quot.sound]
