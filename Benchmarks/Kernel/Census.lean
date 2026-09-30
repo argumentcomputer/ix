@@ -217,7 +217,16 @@ structure Options where
   /-- A check running longer than this is reported as a timeout and abandoned. -/
   timeoutMs : UInt32 := 20000
   /-- Abandoned checks keep running; at most this many may be alive. -/
-  maxOrphans : Nat := 12
+  maxOrphans : Nat := 4
+  /-- Above this resident size (kB), wait for abandoned checks to finish. -/
+  maxResidentKb : Nat := 16000000
+
+/-- A field of `/proc/self/status` in kB (Linux only; 0 elsewhere). -/
+def statusKb (field : String) : IO Nat := do
+  let status ← (IO.FS.readFile "/proc/self/status" |>.toBaseIO)
+  let some line := status.toOption.bind fun text => text.splitOn "\n" |>.find? (·.startsWith field)
+    | return 0
+  return ((line.drop field.length).trimAscii.toString.takeWhile Char.isDigit).toNat!
 
 def parseArgs : List String → Option Options
   | [input, output] => some { input, output }
@@ -285,7 +294,8 @@ def run (args : List String) : IO UInt32 := do
   for address in ordered.extract 0 total do
     index := index + 1
     if index % 1000 == 0 then
-      IO.eprintln s!"census: {index}/{total} after {(← IO.monoMsNow) - started} ms; {counts.toList}"
+      IO.eprintln s!"census: {index}/{total} after {(← IO.monoMsNow) - started} ms; {counts.toList}; \
+        RSS {(← statusKb "VmRSS:") / 1024} MB; {orphans.size} abandoned checks running"
     if consumed.contains address then continue
     let label := names.getD address #[]
     let size := expandedSize store[address]!
@@ -349,7 +359,8 @@ def run (args : List String) : IO UInt32 := do
             pure (.error (.declined s!"census: check exceeded {options.timeoutMs} ms"))
         -- Bound the CPU spent by abandoned checks.
         orphans ← orphans.filterM fun t => return !(← IO.hasFinished t)
-        while orphans.size ≥ options.maxOrphans do
+        while orphans.size ≥ options.maxOrphans ||
+            (!orphans.isEmpty && (← statusKb "VmRSS:") > options.maxResidentKb) do
           IO.sleep 1000
           orphans ← orphans.filterM fun t => return !(← IO.hasFinished t)
         if let some target := probe then
@@ -381,10 +392,7 @@ def run (args : List String) : IO UInt32 := do
           reasons := reasons.insert reason (reasons.getD reason 0 + 1)
   let ranked := reasons.toArray.qsort (fun a b => a.2 > b.2)
   IO.eprintln s!"census: done in {(← IO.monoMsNow) - started} ms; {counts.toList}"
-  -- Peak resident set size, from the kernel's accounting (Linux only).
-  if let some line := (← (IO.FS.readFile "/proc/self/status" |>.toBaseIO)).toOption.bind
-      fun status => status.splitOn "\n" |>.find? (·.startsWith "VmHWM:") then
-    IO.eprintln s!"census: peak RSS {(line.drop 6).trimAscii}"
+  IO.eprintln s!"census: peak RSS {(← statusKb "VmHWM:") / 1024} MB"
   IO.eprintln "census: first-cause reasons by frequency:"
   for (reason, count) in ranked.extract 0 25 do
     IO.eprintln s!"  {count}\t{reason}"

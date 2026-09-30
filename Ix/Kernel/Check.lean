@@ -110,15 +110,212 @@ private def installDefinition (env : Env β) (r : ConstRef β) (universes : Nat)
         (fun _ h => nomatch h) (fun _ h => nomatch h),
     env.preserves_push r entry fresh⟩⟩
 
+/-- Replacing an installed entry's type by a formed type it converts to keeps
+every model: only the type's validity and the constant's membership mention
+the type, and conversion gives both types the same denotation. -/
+noncomputable def Model.retype {V : Type v} [SetTheory V] {env : Env β} (m : Model V env)
+    {r : ConstRef β} {entry : ConstantEntry β} (hr : env.toEnvironment r = some entry)
+    {T : AExpr β} (hT : FormedClaim.{u,v} env.toEnvironment [] T)
+    (hc : ConvClaim.{u,v} env.toEnvironment [] entry.type T)
+    (hs : T.Scope entry.universes 0) (hrefs : T.ReferencesIn env.toEnvironment) :
+    Model V (env.push r { entry with type := T }) where
+  constants := m.constants
+  realizes := by
+    rw [Env.toEnvironment_push]
+    have hM := m.realizes
+    exact hM.insert {
+      typeValid := fun levels _ valuation =>
+        hT V m.constants hM levels valuation (Context.valid_nil m.constants levels valuation)
+      member := fun levels hl valuation => by
+        have hmem := hM.member r entry hr levels hl valuation
+        rw [hc V m.constants hM levels valuation (Context.valid_nil m.constants levels valuation)
+          (hM.typeValid r entry hr levels hl valuation)
+          (hT V m.constants hM levels valuation (Context.valid_nil m.constants levels valuation))]
+          at hmem
+        exact hmem
+      bodyValid := hM.bodyValid r entry hr
+      bodyValue := hM.bodyValue r entry hr
+      equationValue := hM.equationValue r entry hr
+      factMeaning := hM.factMeaning r entry hr }
+  wf := by
+    rw [Env.toEnvironment_push]
+    have hE := m.wf
+    exact hE.insert hs (hE.bodyScope r entry hr) hrefs (hE.bodyReferences r entry hr)
+      (hE.equationScope r entry hr) (hE.equationReferences r entry hr)
+      (hE.factScope r entry hr) (hE.factReferences r entry hr)
+
+omit [DecidableEq β] in
+/-- A family's installed reading survives changes at any other reference. -/
+theorem Const.Installed.mono_except {c : Const β} {source : β} {index : Nat}
+    {before after : Environment β} {r : ConstRef β} (h : c.Installed source index before)
+    (hmember : r ≠ .member source index) (hctor : ∀ j, r ≠ .ctor source index j)
+    (preserves : ∀ q entry, q ≠ r → before q = some entry → after q = some entry) :
+    c.Installed source index after := by
+  refine ⟨?_, ?_⟩
+  · obtain ⟨entry, he, hr⟩ := h.1
+    exact ⟨entry, preserves _ _ (Ne.symm hmember) he, hr⟩
+  · cases c <;> try trivial
+    intro j ctor hc
+    obtain ⟨entry, he, hr⟩ := h.2 j ctor hc
+    exact ⟨entry, preserves _ _ (Ne.symm (hctor j)) he, hr⟩
+
+/-- Whether a recursor reference is distinct from every reference of the
+family at member 0 of `source`. -/
+def recursorApart (source : β) : ConstRef β → Bool
+  | .member b i => !(b == source && i == 0)
+  | .ctor _ _ _ => false
+
+theorem recursorApart_spec {source : β} {r : ConstRef β} (h : recursorApart source r = true) :
+    r ≠ .member source 0 ∧ ∀ j, r ≠ .ctor source 0 j := by
+  cases r with
+  | member b i =>
+    refine ⟨fun he => ?_, fun j he => by cases he⟩
+    cases he
+    simp [recursorApart] at h
+  | ctor _ _ _ => simp [recursorApart] at h
+
+/-- Install a read ordinary block: the generated family and recursor. -/
+private def installReadingC (cfg : Config) (env : Env β) (source : β) (recursor : ConstRef β)
+    (shape : Shape β) (mode : ElimMode) (k : Bool) : Except Error { env' : Env β //
+      AdmissionClaim.{u,v} env env' ∧ (shape.source source).Installed source 0 env'.toEnvironment ∧
+        ∃ entry, env'.toEnvironment recursor = some entry ∧
+          (shape.recursorSource source mode k recursor).TypeBodyReads entry } :=
+  let entries := env.toEnvironment
+  if k && !decide shape.SupportsK then
+    .error (.rejected "K-like reduction is declared for an inductive that does not support it")
+  else
+    match checkBlock.{u,v} cfg.fuel entries source shape mode recursor with
+    | .ok ⟨hb⟩ =>
+      if hnat : shape = Natural.shape then
+        match Natural.check.{u,v} entries source (.recursor mode recursor) (hnat ▸ hb) with
+        | some ⟨hn⟩ =>
+          let installed := installNatural env source mode hn
+          .ok ⟨installed.val, installed.property, by
+            simpa only [hnat] using installNatural_members env source mode hn k⟩
+        | none =>
+          let installed := installOrdinary env source shape mode hb
+          .ok ⟨installed.val, installed.property, installOrdinary_members env source shape mode hb k⟩
+      else
+      match readDescription.{u,v} cfg.fuel entries shape with
+      | .ok description =>
+        if hd : description.ordinary = shape then
+          match Structure.check.{u,v} cfg.fuel entries description source (.recursor mode recursor) (hd ▸ hb) with
+          | .ok ⟨hs⟩ =>
+            let installed := installStructure env source description mode hs
+            .ok ⟨installed.val, installed.property, by
+              simpa only [← hd] using installStructure_members env source description mode hs k⟩
+          | .error .exhausted => .error (Error.ofSearch "structure check" .exhausted)
+          | .error _ =>
+            let installed := installOrdinary env source shape mode hb
+            .ok ⟨installed.val, installed.property, installOrdinary_members env source shape mode hb k⟩
+        else
+          let installed := installOrdinary env source shape mode hb
+          .ok ⟨installed.val, installed.property, installOrdinary_members env source shape mode hb k⟩
+      | .error .exhausted => .error (Error.ofSearch "structure description" .exhausted)
+      | .error _ =>
+        let installed := installOrdinary env source shape mode hb
+        .ok ⟨installed.val, installed.property, installOrdinary_members env source shape mode hb k⟩
+    | .error failure => .error (Error.ofSearch "inductive block" failure)
+
+/-- Supplied recursor rules convert to the generated ones, pairwise. The
+generated rules are the installed ones; this validates the supplied record. -/
+private def rulesConvert (cfg : Config) (entries : Environment β) :
+    List (RecRule β) → List (RecRule β) → Except Error Unit
+  | [], [] => .ok ()
+  | a :: as, b :: bs =>
+    match annotate.{u,v} cfg.fuel entries [] a.rhs, annotate.{u,v} cfg.fuel entries [] b.rhs with
+    | .ok a', .ok b' =>
+      match isDefEq.{u,v} cfg.fuel entries [] a' b' with
+      | .ok _ => rulesConvert cfg entries as bs
+      | .error failure => .error (Error.ofSearch "supplied recursor rule conversion" failure)
+    | .error failure, _ => .error (Error.ofSearch "supplied recursor rule" failure)
+    | _, .error failure => .error (Error.ofSearch "generated recursor rule" failure)
+  | _, _ => .error (.declined "the supplied recursor differs from the generated ordinary recursor")
+
+/-- A supplied recursor that agrees with the generated one except for its type
+and rule right-hand sides up to conversion, as when Lean's recursor drops the
+`outParam`/`optParam`/`autoParam` annotations its family's parameters carry.
+The generated block is installed; the recursor's entry is then shadowed with
+the supplied type, which must be formed and convert to the generated type
+(`Model.retype`). Its rules stay the generated ones. -/
+private def retypedRecursorC (cfg : Config) (env : Env β) (source : β) (recursor : ConstRef β)
+    (family rec : Const β) (shape : Shape β) (mode : ElimMode) (k : Bool)
+    (hf : family = shape.source source) (fresh : env.toEnvironment recursor = none) :
+    Except Error { env' : Env β //
+      AdmissionClaim.{u,v} env env' ∧ family.Installed source 0 env'.toEnvironment ∧
+        ∃ entry, env'.toEnvironment recursor = some entry ∧ rec.TypeBodyReads entry } :=
+  match rec, hgen : shape.recursorSource source mode k recursor with
+  | .recursor ru rp ri rm rn rt rr rk rs, .recursor gu gp gi gm gn _ gr gk gs =>
+    if hu : ru = gu then
+    if !(rp == gp && ri == gi && rm == gm && rn == gn && rk == gk && rs == gs &&
+        rr.length == gr.length && (rr.zip gr).all fun (a, b) => a.nfields == b.nfields) then
+      .error (.declined "the supplied recursor differs from the generated ordinary recursor")
+    else if hapart : recursorApart source recursor = true then
+      match installReadingC.{u,v} cfg env source recursor shape mode k with
+      | .error e => .error e
+      | .ok ⟨env', step, hfam, hgenReads⟩ =>
+        let entries' := env'.toEnvironment
+        match he : entries' recursor with
+        | none => .error (.declined "the installed recursor is missing")
+        | some entry =>
+          match hT : annotate.{u,v} cfg.fuel entries' [] rt with
+          | .error failure => .error (Error.ofSearch "supplied recursor type" failure)
+          | .ok T =>
+            if hs : T.Scope entry.universes 0 then
+              if hrefs : T.ReferencesIn entries' then
+                match inferA.{u,v} cfg.fuel entries' [] T with
+                | .error failure => .error (Error.ofSearch "supplied recursor type" failure)
+                | .ok ⟨_, hTyped⟩ =>
+                  match isDefEq.{u,v} cfg.fuel entries' [] entry.type T with
+                  | .error failure => .error (Error.ofSearch "supplied recursor type conversion" failure)
+                  | .ok ⟨hc⟩ =>
+                    match rulesConvert.{u,v} cfg entries' rr gr with
+                    | .error e => .error e
+                    | .ok () =>
+                      let entry' : ConstantEntry β := { entry with type := T }
+                      have hstep : StepClaim.{u,v} env (env'.push recursor entry') := fun V _ m => by
+                        obtain ⟨m'⟩ := step.step V m
+                        exact ⟨Model.retype m' he hTyped.formed hc hs hrefs⟩
+                      have hpres : env.Preserves (env'.push recursor entry') := fun q e hq => by
+                        rw [Env.toEnvironment_push]
+                        have hne : q ≠ recursor := fresh_ne fresh hq
+                        simp only [Environment.insert, hne, ite_false]
+                        exact step.preserves q e hq
+                      have hfam' : family.Installed source 0 (env'.push recursor entry').toEnvironment := by
+                        rw [hf]
+                        obtain ⟨hmember, hctor⟩ := recursorApart_spec hapart
+                        refine hfam.mono_except hmember hctor fun q e hq hqe => ?_
+                        rw [Env.toEnvironment_push]
+                        simp only [Environment.insert, hq, ite_false]
+                        exact hqe
+                      have hlook : (env'.push recursor entry').toEnvironment recursor = some entry' := by
+                        rw [Env.toEnvironment_push]
+                        exact Environment.insert_same _ _ _
+                      have hreads : (Const.recursor ru rp ri rm rn rt rr rk rs).TypeBodyReads entry' := by
+                        obtain ⟨e, hl, hr⟩ := hgenReads
+                        rw [hgen] at hr
+                        have : e = entry := Option.some.inj (hl.symm.trans he)
+                        subst this
+                        obtain ⟨hun, -, hbody⟩ := hr
+                        exact ⟨hun.trans hu.symm, annotate_erase hT, hbody⟩
+                      .ok ⟨env'.push recursor entry', ⟨hstep, hpres⟩, hfam', entry', hlook, hreads⟩
+              else .error (.rejected "the supplied recursor type references a constant that is not installed")
+            else .error (.rejected "the supplied recursor type is not closed in its universe parameters and variables")
+    else .error (.declined "the supplied recursor differs from the generated ordinary recursor")
+    else .error (.declined "the supplied recursor differs from the generated ordinary recursor")
+  | _, _ => .error (.declined "the supplied recursor differs from the generated ordinary recursor")
+
 /-- The family and its recursor retain their original, independent references.
 The reader only proposes a shape; acceptance compares both complete source
-records with that shape before using its semantic construction. -/
+records with that shape before using its semantic construction. A supplied
+recursor may differ from the generated one in its type and rules up to
+conversion (`retypedRecursorC`). -/
 def checkInductiveC (cfg : Config) (env : Env β) (source : β) (recursor : ConstRef β)
     (family rec : Const β) : Except Error { env' : Env β //
       AdmissionClaim.{u,v} env env' ∧ family.Installed source 0 env'.toEnvironment ∧
         ∃ entry, env'.toEnvironment recursor = some entry ∧ rec.TypeBodyReads entry } :=
   let entries := env.toEnvironment
-  if (entries (.member source 0)).isSome || (entries recursor).isSome then
+  if hdup : (entries (.member source 0)).isSome || (entries recursor).isSome then
     .error (.rejected "duplicate inductive or recursor reference")
   else if !(family.refs ++ rec.refs).all (fun q => q.block == source || q == recursor || (entries q).isSome) then
     .error (.rejected "the declaration references a constant that is not installed")
@@ -131,47 +328,16 @@ def checkInductiveC (cfg : Config) (env : Env β) (source : β) (recursor : Cons
       let mode := reading.mode
       let k := reading.k
       if hf : family = shape.source source then
-      if hr : rec = shape.recursorSource source mode k recursor then
-        if k && !decide shape.SupportsK then
-          .error (.rejected "K-like reduction is declared for an inductive that does not support it")
+        if hr : rec = shape.recursorSource source mode k recursor then
+          match installReadingC.{u,v} cfg env source recursor shape mode k with
+          | .ok ⟨env', step, hfam, hrec⟩ => .ok ⟨env', step, hf ▸ hfam, hr ▸ hrec⟩
+          | .error e => .error e
         else
-          match checkBlock.{u,v} cfg.fuel entries source shape mode recursor with
-          | .ok ⟨hb⟩ =>
-            if hnat : shape = Natural.shape then
-              match Natural.check.{u,v} entries source (.recursor mode recursor) (hnat ▸ hb) with
-              | some ⟨hn⟩ =>
-                let installed := installNatural env source mode hn
-                .ok ⟨installed.val, installed.property, by
-                  simpa only [hf, hr, hnat] using installNatural_members env source mode hn k⟩
-              | none =>
-                let installed := installOrdinary env source shape mode hb
-                .ok ⟨installed.val, installed.property, by
-                  simpa only [hf, hr] using installOrdinary_members env source shape mode hb k⟩
-            else
-            match readDescription.{u,v} cfg.fuel entries shape with
-            | .ok description =>
-              if hd : description.ordinary = shape then
-                match Structure.check.{u,v} cfg.fuel entries description source (.recursor mode recursor) (hd ▸ hb) with
-                | .ok ⟨hs⟩ =>
-                  let installed := installStructure env source description mode hs
-                  .ok ⟨installed.val, installed.property, by
-                    simpa only [hf, hr, ← hd] using installStructure_members env source description mode hs k⟩
-                | .error .exhausted => .error (Error.ofSearch "structure check" .exhausted)
-                | .error _ =>
-                  let installed := installOrdinary env source shape mode hb
-                  .ok ⟨installed.val, installed.property, by
-                    simpa only [hf, hr] using installOrdinary_members env source shape mode hb k⟩
-              else
-                let installed := installOrdinary env source shape mode hb
-                .ok ⟨installed.val, installed.property, by
-                  simpa only [hf, hr] using installOrdinary_members env source shape mode hb k⟩
-            | .error .exhausted => .error (Error.ofSearch "structure description" .exhausted)
-            | .error _ =>
-              let installed := installOrdinary env source shape mode hb
-              .ok ⟨installed.val, installed.property, by
-                simpa only [hf, hr] using installOrdinary_members env source shape mode hb k⟩
-          | .error failure => .error (Error.ofSearch "inductive block" failure)
-      else .error (.declined "the supplied recursor differs from the generated ordinary recursor")
+          have fresh : entries recursor = none := by
+            cases h : entries recursor with
+            | none => rfl
+            | some _ => simp [h] at hdup
+          retypedRecursorC.{u,v} cfg env source recursor family rec shape mode k hf fresh
       else .error (.declined "the supplied inductive differs from the generated ordinary family")
 
 /-- Check a supplied family and its constructors without an absent recursor.

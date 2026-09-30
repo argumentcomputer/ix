@@ -12,7 +12,8 @@ Ordinary inductive blocks through the public entry point: `False`, `True`,
 `Nat` block encoded by hand in Lean's own recursor layout, which must equal
 the generated one. Rejections cover a non-positive occurrence, a universe
 violation, a duplicate address, and large elimination from a two-constructor
-proposition; a tampered recursor declines. -/
+proposition; a tampered recursor declines. A supplied recursor that differs
+from the generated one only up to conversion is accepted with its own type. -/
 
 open Ix.Kernel Ix.Kernel.Certified Ix.Kernel.Certified.Ordinary Ix.Kernel.Inductive
 
@@ -175,7 +176,65 @@ def bigShape : Shape String := ⟨0, [], [], .succ .zero, [⟨[type0], [], []⟩
 def tamperedRule : E := .lam motiveT (.lam zeroMinorT (.lam succMinorT (.bvar 0)))
 def natTampered : Decl String :=
   ⟨"Nat", ⟨[natInduct, .recursor 1 0 0 1 2 natRecT [⟨0, tamperedRule⟩, ⟨1, succRule⟩] false .safe]⟩⟩
-#guard declines [natTampered] "the supplied recursor differs from the generated ordinary recursor"
+#guard declines [natTampered]
+  "supplied recursor rule conversion: conversion search did not establish equality"
+
+/-! ## A supplied recursor that differs up to conversion
+
+Lean's recursors drop `outParam`-style annotations that the family's
+parameters carry. Here `ann (α : Type 1) : Type 1 := α` wraps the parameter
+type of `Box (α : ann Type) : Type`, `mk (x : α)`. The generated recursor keeps
+`ann Type`; the supplied one says `Type`. It is accepted, and the installed
+recursor has the supplied type. -/
+
+def type1 : E := .sort (.succ (.succ .zero))
+def annDecl : Decl String :=
+  ⟨"ann", ⟨[.defn 0 .definition (.forallE type1 type1) (.lam type1 (.bvar 0)) .safe]⟩⟩
+def annType : A := .app (.const (.member "ann" 0) []) type0
+def boxShape : Shape String := ⟨0, [annType], [], .succ .zero, [⟨[.bvar 0], [], []⟩]⟩
+def boxDecl : Decl String := block "Box" boxShape .large
+
+/-- Drop the `ann` wrapper everywhere, as Lean's recursor does. -/
+def stripAnn : E → E
+  | .app (.const (.member "ann" 0) []) x => stripAnn x
+  | .app f a => .app (stripAnn f) (stripAnn a)
+  | .lam t b => .lam (stripAnn t) (stripAnn b)
+  | .forallE t b => .forallE (stripAnn t) (stripAnn b)
+  | .letE t v b => .letE (stripAnn t) (stripAnn v) (stripAnn b)
+  | .proj r i e => .proj r i (stripAnn e)
+  | e => e
+
+def stripRecursor : Const String → Const String
+  | .recursor u p i m n t rules k s =>
+    .recursor u p i m n (stripAnn t) (rules.map fun r => ⟨r.nfields, stripAnn r.rhs⟩) k s
+  | c => c
+
+def boxStripped : Decl String :=
+  match boxDecl.block.members with
+  | [family, recursor] => ⟨"Box", ⟨[family, stripRecursor recursor]⟩⟩
+  | _ => boxDecl
+
+-- The supplied recursor differs syntactically from the generated one.
+#guard boxStripped.block != boxDecl.block
+#guard accepts [annDecl, boxDecl]
+#guard accepts [annDecl, boxStripped]
+-- The installed recursor carries the supplied type.
+#guard match run [annDecl, boxStripped], boxStripped.block.members with
+  | .ok env, [_, recursor] =>
+    (env.toEnvironment (.member "Box" 1)).any fun entry => entry.type.erase == recursor.type
+  | _, _ => false
+
+/-- The supplied type must still convert: a motive at `Prop` only is not the
+generated large eliminator's type. -/
+def boxWrongMotive : Decl String :=
+  match boxStripped.block.members with
+  | [family, .recursor u p i m n (.forallE a (.forallE _ rest)) rules k s] =>
+    ⟨"Box", ⟨[family, .recursor u p i m n
+      (.forallE a (.forallE (.forallE (.app (.const (.member "Box" 0) []) (.bvar 0)) (.sort .zero)) rest))
+      rules k s]⟩⟩
+  | _ => boxStripped
+#guard boxWrongMotive.block != boxStripped.block
+#guard !accepts [annDecl, boxWrongMotive]
 
 -- A block whose recursor is unsafe.
 #guard declines [⟨"Nat", ⟨[natInduct, .recursor 1 0 0 1 2 natRecT [⟨0, zeroRule⟩, ⟨1, succRule⟩] false .unsafe]⟩⟩]
