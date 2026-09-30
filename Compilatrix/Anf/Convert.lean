@@ -1,4 +1,4 @@
-import Compilatrix.Anf.Syntax
+import Compilatrix.Anf.Opd
 import Compilatrix.Lam.ModesOk
 
 /-! # P1: ANF conversion (Lam → Anf)
@@ -46,19 +46,6 @@ certificate. -/
 namespace Compilatrix.Anf.Convert
 
 open Compilatrix.Ixon
-
-/-- A target operand, by level. -/
-inductive Opd where
-  | lvl (l : Nat)
-  | lit (l : Lam.Lit)
-  | box
-  deriving DecidableEq, Repr, Inhabited
-
-/-- The atom of an operand at target depth `d`. -/
-def Opd.atom (d : Nat) : Opd → Atom
-  | .lvl l => .var (d - 1 - l)
-  | .lit l => .lit l
-  | .box => .box
 
 /-- What a Lam variable is in the target. -/
 structure VarInfo where

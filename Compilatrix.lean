@@ -82,6 +82,10 @@ import Compilatrix.Anf.Readback
 import Compilatrix.Anf.WellFormed
 import Compilatrix.Anf.Print
 import Compilatrix.Anf.Convert
+import Compilatrix.Anf.Opd
+import Compilatrix.Anf.Census
+import Compilatrix.Anf.Walk
+import Compilatrix.Anf.Shrink
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing

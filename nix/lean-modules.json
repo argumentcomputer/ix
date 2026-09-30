@@ -635,7 +635,7 @@
     "Compilatrix.Anf.Print"]},
   "CompilatrixTests.Anf.Run":
   {"path": "CompilatrixTests/Anf/Run.lean",
-   "imports": ["CompilatrixTests.Anf.Differential"]},
+   "imports": ["CompilatrixTests.Anf.Differential", "Compilatrix.Anf.Shrink"]},
   "CompilatrixTests.Anf.Main":
   {"path": "CompilatrixTests/Anf/Main.lean",
    "imports": ["CompilatrixTests.Anf.Run"]},
@@ -1519,9 +1519,14 @@
   "Compilatrix.Anf.WellFormed":
   {"path": "Compilatrix/Anf/WellFormed.lean",
    "imports": ["Compilatrix.Anf.Syntax"]},
+  "Compilatrix.Anf.Walk":
+  {"path": "Compilatrix/Anf/Walk.lean",
+   "imports": ["Compilatrix.Anf.Opd", "Compilatrix.Anf.Census"]},
   "Compilatrix.Anf.Syntax":
   {"path": "Compilatrix/Anf/Syntax.lean",
    "imports": ["Compilatrix.Lam.Syntax"]},
+  "Compilatrix.Anf.Shrink":
+  {"path": "Compilatrix/Anf/Shrink.lean", "imports": ["Compilatrix.Anf.Walk"]},
   "Compilatrix.Anf.Semantics":
   {"path": "Compilatrix/Anf/Semantics.lean",
    "imports": ["Compilatrix.Anf.Syntax", "Compilatrix.Sem.Result"]},
@@ -1533,9 +1538,14 @@
    "imports": ["Compilatrix.Anf.Semantics"]},
   "Compilatrix.Anf.Print":
   {"path": "Compilatrix/Anf/Print.lean", "imports": ["Compilatrix.Anf.Syntax"]},
+  "Compilatrix.Anf.Opd":
+  {"path": "Compilatrix/Anf/Opd.lean", "imports": ["Compilatrix.Anf.Syntax"]},
   "Compilatrix.Anf.Convert":
   {"path": "Compilatrix/Anf/Convert.lean",
-   "imports": ["Compilatrix.Anf.Syntax", "Compilatrix.Lam.ModesOk"]},
+   "imports": ["Compilatrix.Anf.Opd", "Compilatrix.Lam.ModesOk"]},
+  "Compilatrix.Anf.Census":
+  {"path": "Compilatrix/Anf/Census.lean",
+   "imports": ["Compilatrix.Anf.Syntax"]},
   "Compilatrix.Aiur.Wire.TreeProofs":
   {"path": "Compilatrix/Aiur/Wire/TreeProofs.lean",
    "imports": ["Compilatrix.Aiur.Wire.Tree", "Compilatrix.Aiur.Wire.OpProofs"]},
@@ -1904,6 +1914,10 @@
     "Compilatrix.Anf.WellFormed",
     "Compilatrix.Anf.Print",
     "Compilatrix.Anf.Convert",
+    "Compilatrix.Anf.Opd",
+    "Compilatrix.Anf.Census",
+    "Compilatrix.Anf.Walk",
+    "Compilatrix.Anf.Shrink",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

@@ -1,4 +1,5 @@
 import CompilatrixTests.Anf.Differential
+import Compilatrix.Anf.Shrink
 
 /-! The `tests-anf` suite (design note 02 §6–8, §13). -/
 
@@ -14,7 +15,8 @@ def part (a : Assert) (label : String) (action : IO Unit) : IO Unit := do
 
 def stages : Differential.Stages := fun L => do
   let p1 ← Compilatrix.Anf.convert L
-  return [("P1", p1)]
+  let (_, p2, _) ← Compilatrix.Anf.Shrink.produce {} p1
+  return [("P1", p1), ("P2", p2)]
 
 def main (args : List String) : IO UInt32 := do
   match args with
