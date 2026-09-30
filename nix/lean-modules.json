@@ -303,7 +303,9 @@
    ["CompilatrixTests.Rt.Differential",
     "CompilatrixTests.Rt.Cases",
     "CompilatrixTests.Rt.Mutants",
-    "CompilatrixTests.Rt.Levels"]},
+    "CompilatrixTests.Rt.Levels",
+    "CompilatrixTests.Rt.Kernel",
+    "CompilatrixTests.Rt.KernelEval"]},
   "CompilatrixTests.Rt.Native":
   {"path": "CompilatrixTests/Rt/Native.lean",
    "imports": ["CompilatrixTests.Rt.Support"]},
@@ -331,6 +333,16 @@
     "CompilatrixTests.Rt.Differential",
     "CompilatrixTests.Rt.Cases",
     "Compilatrix.Tools.Check"]},
+  "CompilatrixTests.Rt.KernelEval":
+  {"path": "CompilatrixTests/Rt/KernelEval.lean",
+   "imports": ["CompilatrixTests.Rt.Kernel"]},
+  "CompilatrixTests.Rt.Kernel":
+  {"path": "CompilatrixTests/Rt/Kernel.lean",
+   "imports":
+   ["CompilatrixTests.Fir.Artifacts",
+    "CompilatrixTests.Rt.Cases",
+    "Compilatrix.Cfg.Lower",
+    "Compilatrix.Rt.Lower"]},
   "CompilatrixTests.Rt.Differential":
   {"path": "CompilatrixTests/Rt/Differential.lean",
    "imports":

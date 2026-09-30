@@ -2,6 +2,8 @@ import CompilatrixTests.Rt.Differential
 import CompilatrixTests.Rt.Cases
 import CompilatrixTests.Rt.Mutants
 import CompilatrixTests.Rt.Levels
+import CompilatrixTests.Rt.Kernel
+import CompilatrixTests.Rt.KernelEval
 
 /-! The `tests-rt` suite (design note 04 §13, M1.F6): the primitive
 sequences at their boundaries; hand-written programs, declines and
@@ -69,6 +71,24 @@ def listPrims : IO Unit := do
     for n in names do
       IO.println s!"  {n}: functions {((ps.filter (·.2 == n)).map (·.1)).eraseDups}"
 
+/-- The summaries `KernelEval` checks in the kernel, computed natively, and
+the artifacts current. -/
+def kernelSummaries (a : Assert) : IO (Array String) := do
+  let mut out := #[]
+  let mut wrong := #[]
+  for (name, A, e) in Kernel.expected do
+    let (S, _) ← Differential.entry name
+    expect a (A.beq S.levels.anf) s!"{name}: CompilatrixTests/Fir/Artifacts.lean is stale"
+    let got := Kernel.summary A
+    if got != some e then wrong := wrong.push s!"{name}: expected {e}, natively {got}"
+    out := out.push s!"{name}: {e}"
+  for (name, C, e) in Kernel.expectedCfg do
+    let got := Kernel.cfgSummary C
+    if got != some e then wrong := wrong.push s!"{name}: expected {e}, natively {got}"
+    out := out.push s!"{name}: {e}"
+  expect a wrong.isEmpty s!"the kernel's expected summaries differ natively:\n{"\n".intercalate wrong.toList}"
+  return out
+
 def suite (a : Assert) (o : Options) (tools : Option Native.Tools) : IO Unit := do
   IO.println "tests-rt"
   unless o.levelsOnly do
@@ -78,6 +98,7 @@ def suite (a : Assert) (o : Options) (tools : Option Native.Tools) : IO Unit := 
     part a "k1.ixe and bench-k1: Cfg → Lir" (Differential.packs a)
     part a "bench-k1 entries at their test sizes, at Lir" (Differential.entries a)
     part a "generated first-order programs" (Differential.generated a o.generated)
+    part a "kernel summaries (the values KernelEval checks), computed natively" (kernelSummaries a)
   let where_ := if tools.isSome then " and natively" else ""
   part a s!"bench-k1 entries at Xv, Xl, typed x86, the byte machine{where_}" (Levels.benches a tools)
   part a s!"hand-written values at every level{where_}" (Levels.values a tools)
