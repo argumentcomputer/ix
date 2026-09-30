@@ -37,6 +37,10 @@ Loads a serialized `Ixon.Env` (`.ixe`) and, for every stored constant:
    serializes it with `serConstant`, decodes and expands it again and checks
    the expanded roots equal the original ones exactly. The plan §2 witnesses
    are run through the same path at startup.
+7. Classifies the MSS candidates as certain-stored, certain-excluded or
+   uncertain under a uniform Share width `w ∈ {1, 2, 3}` and measures the
+   components of uncertain nodes (see `classify`), and counts the Share
+   references of the stored encoding by index width.
 
 ```
 lake exe sharing-study <corpus.ixe> [--md <path>] [--csv <path>]
@@ -372,6 +376,216 @@ def mssCheck (bytes : ByteArray) (roots : Array Expr) : Except String Unit := do
   let ok : Bool := Id.run (cmp.run' {})
   unless ok do throw "expanded MSS roots differ from the original roots"
 
+/-! ## Uniform-reference-width classification
+
+For a fixed Share width `w` (every reference costs `w`; the table-count prefix
+is ignored), each candidate `t` (`deg ≥ 2`, unshared size > 1) is classified
+with the gain `g(n, H, b) = (n−1)·b + (H−1)·hdr(t) − n·w`:
+
+* CERTAIN-STORED if `g(deg, headdeg, payloadMin) > 0`;
+* CERTAIN-EXCLUDED if `g(occ, occ, payloadMax) < 0`, or `t` is a leaf with
+  `(occ−1)·size < occ·w`;
+* UNCERTAIN otherwise.
+
+`headdeg` counts the `deg` occurrences that pay `t`'s own header: an App that
+is the function child of an App, and a Lam (All) that is the body of a Lam
+(All), are continuations, not heads; roots are heads. `payloadMin` is the
+scalar bytes (Lam/All/Let contract byte, Prj `Tag0` type index; 0 for App)
+plus one byte per child; `payloadMax` is the unshared size minus the node's
+own Tag4 header; leaves use their full size for both and `hdr = 0`, internal
+nodes `hdr = 1`. All arithmetic is exact (`Nat`/`Int`, no capping of `occ`).
+
+Two uncertain nodes are related when a directed DAG path joins them whose
+intermediate nodes are not certain-stored; components are the transitive
+closure. Computed by union-find: call a node that is neither certain-stored
+nor uncertain "transparent"; it is "activated" when an uncertain node or an
+activated transparent node is its parent, and has `below` when an uncertain
+node is reachable under it through transparent nodes. Uncertain nodes and
+activated transparent nodes with `below` are united with every child that is
+uncertain or transparent with `below`. (A transparent node without `below`,
+such as a shared leaf, must not join its parents.) For DAGs with at most
+`bruteMaxN` nodes the largest component is recomputed by a literal walk from
+every uncertain node through all non-certain-stored nodes. -/
+
+structure WStats where
+  cand : Nat := 0
+  cs : Nat := 0
+  ce : Nat := 0
+  unc : Nat := 0
+  /-- Uncertain nodes in the largest component. -/
+  comp : Nat := 0
+  /-- Candidates satisfying both certain conditions (counted as stored). -/
+  conflicts : Nat := 0
+  /-- Candidates whose class changes when every function-child occurrence
+  (not only an App inside an App spine) is treated as a non-head. -/
+  litDiff : Nat := 0
+  /-- Largest component recomputed by the literal brute force (`none` when
+  the DAG exceeds the brute-force bound). -/
+  compCheck : Option Bool := none
+  deriving Inhabited
+
+def gain (n h b hdr w : Nat) : Int :=
+  ((n : Int) - 1) * b + ((h : Int) - 1) * hdr - (n : Int) * w
+
+def ufFind (parent : Array Nat) (i : Nat) : Nat := Id.run do
+  let mut x := i
+  while parent[x]! != x do
+    x := parent[x]!
+  return x
+
+def classify (res : Ix.Sharing.AnalyzeResult) (sizes : Std.HashMap Address NodeSz)
+    (roots : Array Expr) (bruteMaxN : Nat := 1000) : Except String (Array WStats) := do
+  let order := res.topoOrder
+  let n := order.size
+  let mut idxOf : Std.HashMap Address Nat := Std.HashMap.emptyWithCapacity n
+  for i in [0:n] do
+    idxOf := idxOf.insert order[i]! i
+  -- Per-node data; kinds: 0 leaf, 1 App, 2 Lam, 3 All, 4 Let, 5 Prj.
+  let mut kids : Array (Array Nat) := Array.mkEmpty n
+  let mut kind : Array UInt8 := Array.mkEmpty n
+  let mut occ : Array Nat := Array.mkEmpty n
+  let mut sz : Array Nat := Array.mkEmpty n
+  let mut pMin : Array Nat := Array.mkEmpty n
+  let mut pMax : Array Nat := Array.mkEmpty n
+  let mut hdr : Array Nat := Array.mkEmpty n
+  for i in [0:n] do
+    let some info := res.infoMap.get? order[i]! | throw "node not analyzed"
+    let ks ← info.children.mapM fun c =>
+      match idxOf.get? c with | some j => pure j | none => throw "child not analyzed"
+    let ns := sizes.getD order[i]! default
+    let (k, lo, hi, hd) : UInt8 × Nat × Nat × Nat := match info.expr with
+      | .app .. => (1, 2, ns.payload, 1)
+      | .lam .. => (2, 3, ns.payload, 1)
+      | .all .. => (3, 3, ns.payload, 1)
+      | .letE c .. => (4, 4, ns.sz - tag4Size c.flags.toNat, 1)
+      | .prj t f _ => (5, tag0Size t.toNat + 1, ns.sz - tag4Size f.toNat, 1)
+      | _ => (0, ns.sz, ns.sz, 0)
+    kids := kids.push ks; kind := kind.push k; occ := occ.push info.usageCount
+    sz := sz.push ns.sz; pMin := pMin.push lo; pMax := pMax.push hi; hdr := hdr.push hd
+  let mut deg : Array Nat := Array.replicate n 0
+  let mut head : Array Nat := Array.replicate n 0
+  let mut headLit : Array Nat := Array.replicate n 0
+  for p in [0:n] do
+    let pk := kind[p]!
+    let ks := kids[p]!
+    for pos in [0:ks.size] do
+      let c := ks[pos]!
+      let ck := kind[c]!
+      deg := deg.modify c (· + 1)
+      let appFn := pk == 1 && pos == 0
+      let sameBody := (pk == 2 && pos == 1 && ck == 2) || (pk == 3 && pos == 1 && ck == 3)
+      unless (appFn && ck == 1) || sameBody do head := head.modify c (· + 1)
+      unless appFn || sameBody do headLit := headLit.modify c (· + 1)
+  for r in roots do
+    let some h := res.ptrToHash.get? (Ix.Sharing.exprPtr r) | throw "root not analyzed"
+    let some i := idxOf.get? h | throw "root not indexed"
+    deg := deg.modify i (· + 1)
+    head := head.modify i (· + 1)
+    headLit := headLit.modify i (· + 1)
+  let mut out : Array WStats := #[]
+  for w in [1, 2, 3] do
+    -- 0 non-candidate, 1 certain-stored, 2 certain-excluded, 3 uncertain
+    let mut cls : Array UInt8 := Array.replicate n 0
+    let mut st : WStats := {}
+    for i in [0:n] do
+      if deg[i]! ≥ 2 && sz[i]! > 1 then
+        let stored := gain deg[i]! head[i]! pMin[i]! hdr[i]! w > 0
+        let leafEx := hdr[i]! == 0 &&
+          ((occ[i]! : Int) - 1) * sz[i]! < (occ[i]! : Int) * w
+        let excluded := gain occ[i]! occ[i]! pMax[i]! hdr[i]! w < 0 || leafEx
+        let c : UInt8 := if stored then 1 else if excluded then 2 else 3
+        let storedLit := gain deg[i]! headLit[i]! pMin[i]! hdr[i]! w > 0
+        let cLit : UInt8 := if storedLit then 1 else if excluded then 2 else 3
+        cls := cls.set! i c
+        st := { st with
+          cand := st.cand + 1
+          cs := st.cs + (if c == 1 then 1 else 0)
+          ce := st.ce + (if c == 2 then 1 else 0)
+          unc := st.unc + (if c == 3 then 1 else 0)
+          conflicts := st.conflicts + (if stored && excluded then 1 else 0)
+          litDiff := st.litDiff + (if c != cLit then 1 else 0) }
+    -- Activation, parents before children (reverse topological order).
+    let mut act : Array Bool := Array.replicate n false
+    for j in [0:n] do
+      let p := n - 1 - j
+      let cp := cls[p]!
+      if cp == 3 || (cp != 1 && act[p]!) then
+        for c in kids[p]! do
+          if cls[c]! == 0 || cls[c]! == 2 then act := act.set! c true
+    -- `below[x]`: an uncertain node is reachable from the non-stored,
+    -- non-uncertain node `x` through such nodes (children first).
+    let mut below : Array Bool := Array.replicate n false
+    for p in [0:n] do
+      if cls[p]! == 0 || cls[p]! == 2 then
+        let hit := kids[p]!.any fun c =>
+          cls[c]! == 3 || ((cls[c]! == 0 || cls[c]! == 2) && below[c]!)
+        below := below.set! p hit
+    -- Union-find (union by size) along edges out of uncertain/activated nodes
+    -- into uncertain children or into non-stored children with `below`.
+    let mut parent : Array Nat := Array.range n
+    let mut usz : Array Nat := Array.replicate n 1
+    for p in [0:n] do
+      let cp := cls[p]!
+      if cp == 3 || (cp != 1 && act[p]! && below[p]!) then
+        for c in kids[p]! do
+          if cls[c]! == 3 || ((cls[c]! == 0 || cls[c]! == 2) && below[c]!) then
+            let a := ufFind parent p
+            let b := ufFind parent c
+            if a != b then
+              if usz[a]! < usz[b]! then
+                parent := parent.set! a b
+                usz := usz.set! b (usz[a]! + usz[b]!)
+              else
+                parent := parent.set! b a
+                usz := usz.set! a (usz[a]! + usz[b]!)
+    let mut compSize : Std.HashMap Nat Nat := {}
+    for i in [0:n] do
+      if cls[i]! == 3 then
+        let r := ufFind parent i
+        compSize := compSize.insert r (compSize.getD r 0 + 1)
+    let comp := compSize.fold (init := 0) fun m _ v => max m v
+    -- Literal brute force on small DAGs: from every uncertain node, walk
+    -- down through every node that is not certain-stored and relate it to
+    -- each uncertain node reached; components by a separate union-find.
+    let compCheck : Option Bool := if n > bruteMaxN then none else Id.run do
+      let mut par : Array Nat := Array.range n
+      for u in [0:n] do
+        if cls[u]! == 3 then
+          let mut seen : Array Bool := Array.replicate n false
+          let mut stack : Array Nat := kids[u]!
+          while !stack.isEmpty do
+            let c := stack.back!
+            stack := stack.pop
+            if seen[c]! || cls[c]! == 1 then continue
+            seen := seen.set! c true
+            if cls[c]! == 3 then
+              let a := ufFind par u
+              let b := ufFind par c
+              if a != b then par := par.set! a b
+            stack := stack ++ kids[c]!
+      let mut cnt : Std.HashMap Nat Nat := {}
+      for i in [0:n] do
+        if cls[i]! == 3 then
+          let r := ufFind par i
+          cnt := cnt.insert r (cnt.getD r 0 + 1)
+      return some (cnt.fold (init := 0) (fun m _ v => max m v) == comp)
+    out := out.push { st with comp, compCheck }
+  return out
+
+/-- Share references in a stored (unexpanded) expression, bucketed by the
+index width they currently pay: `< 8` (1 byte), `8..255` (2), `≥ 256` (≥ 3). -/
+partial def countShareRefs (e : Expr) (acc : Nat × Nat × Nat) : Nat × Nat × Nat :=
+  match e with
+  | .share i =>
+    if i < 8 then (acc.1 + 1, acc.2)
+    else if i < 256 then (acc.1, acc.2.1 + 1, acc.2.2)
+    else (acc.1, acc.2.1, acc.2.2 + 1)
+  | .prj _ _ v => countShareRefs v acc
+  | .app f a => countShareRefs a (countShareRefs f acc)
+  | .lam _ t b | .all _ _ t b => countShareRefs b (countShareRefs t acc)
+  | .letE _ t v b => countShareRefs b (countShareRefs v (countShareRefs t acc))
+  | _ => acc
+
 /-! ## Per-constant row -/
 
 def kindOf : ConstantInfo → String
@@ -425,6 +639,14 @@ structure Row where
   cont : Nat := 0
   contP2 : Nat := 0
   contP2u : Nat := 0
+  /-- Uniform-width classification for `w = 1, 2, 3` (empty on failure). -/
+  uw : Array WStats := #[]
+  uwErr : Option String := none
+  /-- Share references in the stored encoding with index `< 8`, `8..255`,
+  `≥ 256`. -/
+  refs0 : Nat := 0
+  refs1 : Nat := 0
+  refs2 : Nat := 0
   ns : Nat := 0
   deriving Inhabited
 
@@ -471,7 +693,14 @@ def measure (addr : Address) (name : String) (raw : ByteArray) (c : Constant)
         | .ok () => none
         | .error e => some s!"check: {e}"
       (b.size, m.table.size, err, (m.cont, m.contP2, m.contP2u))
+  -- 5. Uniform-reference-width classification and stored reference widths.
+  let (uw, uwErr) := match classify res sizes roots with
+    | .ok s => (s, none)
+    | .error e => (#[], some e)
+  let refCounts := stored.foldl (fun acc e => countShareRefs e acc)
+    (c.sharing.foldl (fun acc e => countShareRefs e acc) (0, 0, 0))
   return {
+    uw, uwErr, refs0 := refCounts.1, refs1 := refCounts.2.1, refs2 := refCounts.2.2
     mss, mssTable, mssErr
     cont := mssCounts.1, contP2 := mssCounts.2.1, contP2u := mssCounts.2.2
     addr, name, kind := kindOf c.info, detail := mutsDetail c.info
@@ -605,7 +834,15 @@ def csvEscape (s : String) : String := "\"" ++ s.replace "\"" "\"\"" ++ "\""
 def csvHeader : String :=
   "addr,name,kind,members,roots,N,occ_ge2,cand,cand_gt2,cand_gt3,table,raw_bytes," ++
   "unshared_bytes,rebuild_ok,roundtrip_ok,unshared_validated,occ_checked,max_app,max_lam,max_all,us," ++
-  "mss_bytes,mss_table,mss_ok,mss_cont,mss_cont_p2,mss_cont_p2u"
+  "mss_bytes,mss_table,mss_ok,mss_cont,mss_cont_p2,mss_cont_p2u," ++
+  "w1_cs,w1_ce,w1_unc,w1_comp,w2_cs,w2_ce,w2_unc,w2_comp,w3_cs,w3_ce,w3_unc,w3_comp," ++
+  "refs_lt8,refs_8_255,refs_ge256"
+
+def uwCsv (r : Row) : String :=
+  ",".intercalate <| (List.range 3).map fun k =>
+    match r.uw[k]? with
+    | some s => s!"{s.cs},{s.ce},{s.unc},{s.comp}"
+    | none => ",,,"
 
 def csvLine (r : Row) : String :=
   let v := match r.validated with | some true => "1" | some false => "0" | none => ""
@@ -614,7 +851,8 @@ def csvLine (r : Row) : String :=
   s!"{r.occ2},{r.cand},{r.cand2},{r.cand3},{r.table},{r.raw},{r.unshared}," ++
   s!"{if r.rebuildOk then 1 else 0},{if r.roundtripOk then 1 else 0},{v},{o}," ++
   s!"{r.maxApp},{r.maxLam},{r.maxAll},{r.ns / 1000}," ++
-  s!"{r.mss},{r.mssTable},{if r.mssErr.isNone then 1 else 0},{r.cont},{r.contP2},{r.contP2u}"
+  s!"{r.mss},{r.mssTable},{if r.mssErr.isNone then 1 else 0},{r.cont},{r.contP2},{r.contP2u}," ++
+  s!"{uwCsv r},{r.refs0},{r.refs1},{r.refs2}"
 
 def kindOrder : Array String :=
   #["defn", "recr", "axio", "quot", "muts", "iPrj", "cPrj", "rPrj", "dPrj"]
@@ -703,6 +941,76 @@ def mssReport (rows : Array Row) (ws : Array (Except String Witness)) : String :
     let da := a.raw - a.mss; let db := b.raw - b.mss
     da > db || (da == db && a.name < b.name)).extract 0 10
   for h : j in [0:bw.size] do md := md ++ line j bw[j]
+  return md
+
+/-- The uniform-reference-width section of the generated report. -/
+def uwReport (rows : Array Row) : String := Id.run do
+  let wr := rows.filter (·.roots > 0)
+  let errs := rows.filter (·.uwErr.isSome)
+  let mut md := "## Uniform-reference-width classification\n\n"
+  md := md ++ "Candidates are the subterms with compact `deg ≥ 2` and unshared size > 1 (the MSS stored set). For `w ∈ {1, 2, 3}` each candidate is CERTAIN-STORED if `g(deg, headdeg, payloadMin) > 0`, CERTAIN-EXCLUDED if `g(occ, occ, payloadMax) < 0` or it is a leaf with `(occ−1)·size < occ·w`, and UNCERTAIN otherwise, where `g(n, H, b) = (n−1)·b + (H−1)·hdr − n·w`. Uncertain nodes are in one component when a directed DAG path whose intermediate nodes are not certain-stored joins them (transitively). Arithmetic is exact; `occ` is not capped.\n\n"
+  md := md ++ s!"- Classification errors: {errs.size}.\n"
+  for r in errs.extract 0 10 do
+    md := md ++ s!"  - `{r.name}`: {r.uwErr.getD ""}\n"
+  let get (k : Nat) (r : Row) : WStats := r.uw[k]?.getD {}
+  md := md ++ "- Witnesses (cs/ce/unc/largest component for w = 1 | 2 | 3):\n"
+  let p : Expr := .sort 0
+  let a : Expr := .all .many .shared p p
+  let b : Expr := .all .many .shared p (.sort 1)
+  let wit : Array (String × Expr) := #[
+    ("`T2 → T2`", .all .many .shared (witnessT 2) (witnessT 2)),
+    ("`T16 → T16`", .all .many .shared (witnessT 16) (witnessT 16)),
+    ("`A → A → B → B`", .all .many .shared a (.all .many .shared a (.all .many .shared b b)))]
+  for (label, root) in wit do
+    let res := Ix.Sharing.analyzeBlock #[root]
+    let (_, sizes) := dagStats res #[root] 0
+    match classify res sizes #[root] with
+    | .ok ss =>
+      let cells := ss.toList.map fun s => s!"{s.cs}/{s.ce}/{s.unc}/{s.comp}"
+      md := md ++ s!"  - {label}: {" | ".intercalate cells} (candidates {(ss[0]?.map (·.cand)).getD 0})\n"
+    | .error e => md := md ++ s!"  - {label}: error {e}\n"
+  md := md ++ s!"- Candidates over the {wr.size} rooted constants: {wr.foldl (fun a r => a + (get 0 r).cand) 0} (MSS table entries: {wr.foldl (· + ·.mssTable) 0}).\n\n"
+  for k in [0:3] do
+    let w := k + 1
+    let sum (f : WStats → Nat) : Nat := wr.foldl (fun a r => a + f (get k r)) 0
+    md := md ++ s!"### w = {w}\n\n"
+    md := md ++ s!"- Totals: certain-stored {sum (·.cs)}, certain-excluded {sum (·.ce)}, uncertain {sum (·.unc)}; nodes meeting both certain conditions {sum (·.conflicts)}; candidates whose class changes when every function-child occurrence counts as a non-head {sum (·.litDiff)}.\n"
+    let chk := wr.map fun r => (get k r).compCheck
+    md := md ++ s!"- Largest component recomputed by the literal brute force (DAGs with ≤ 1000 nodes): {(chk.filter (· == some true)).size} equal, **{(chk.filter (· == some false)).size}** different, {(chk.filter (·.isNone)).size} not checked.\n\n"
+    md := md ++ "| Metric | min | median | p90 | p99 | max | mean |\n|---|---:|---:|---:|---:|---:|---:|\n"
+    md := md ++ distRow "certain-stored" (wr.map fun r => (get k r).cs) ++ "\n"
+    md := md ++ distRow "certain-excluded" (wr.map fun r => (get k r).ce) ++ "\n"
+    md := md ++ distRow "uncertain" (wr.map fun r => (get k r).unc) ++ "\n"
+    md := md ++ distRow "largest uncertain component" (wr.map fun r => (get k r).comp) ++ "\n\n"
+    md := md ++ "| bucket | constants by `uncertain` | share | constants by largest component | share |\n|---|---:|---:|---:|---:|\n"
+    let bucket (label : String) (p : Nat → Bool) : String :=
+      let a := (wr.filter fun r => p (get k r).unc).size
+      let b := (wr.filter fun r => p (get k r).comp).size
+      s!"| {label} | {a} | {fmtPct a wr.size} | {b} | {fmtPct b wr.size} |\n"
+    md := md ++ bucket "= 0" (· == 0) ++ bucket "≤ 8" (· ≤ 8) ++ bucket "≤ 16" (· ≤ 16) ++
+      bucket "≤ 32" (· ≤ 32) ++ bucket "> 32" (· > 32) ++ bucket "> 128" (· > 128) ++
+      bucket "> 1024" (· > 1024)
+    md := md ++ s!"\nTen constants with the largest uncertain component (w = {w}):\n\n| # | constant | kind | `N` | candidates | certain-stored | certain-excluded | uncertain | largest component |\n|---:|---|---|---:|---:|---:|---:|---:|---:|\n"
+    let top := (wr.qsort fun a b =>
+      (get k a).comp > (get k b).comp || ((get k a).comp == (get k b).comp && a.name < b.name)).extract 0 10
+    for h : j in [0:top.size] do
+      let r := top[j]
+      let s := get k r
+      md := md ++ s!"| {j + 1} | `{r.name}` | {r.kind} | {r.n} | {s.cand} | {s.cs} | {s.ce} | {s.unc} | {s.comp} |\n"
+    md := md ++ "\n"
+  let s0 (xs : Array Row) : Nat := xs.foldl (· + ·.refs0) 0
+  let s1 (xs : Array Row) : Nat := xs.foldl (· + ·.refs1) 0
+  let s2 (xs : Array Row) : Nat := xs.foldl (· + ·.refs2) 0
+  let t8 := rows.filter fun r => r.table ≥ 1 && r.table ≤ 8
+  let t9 := rows.filter fun r => r.table ≥ 9 && r.table ≤ 255
+  let tBig := rows.filter fun r => r.table > 255
+  md := md ++ "### Reference-width loss in the current stored encoding\n\n"
+  md := md ++ s!"Share references counted syntactically in the stored roots and stored table entries of every constant (current heuristic encoding). The largest stored table has {rows.foldl (fun m r => max m r.table) 0} entries, so every index ≥ 256 is 3 bytes.\n\n"
+  md := md ++ "| stored table entries | constants | refs to 0–7 (1 B) | refs to 8–255 (2 B) | refs to ≥ 256 (3 B) | loss under the uniform width |\n|---|---:|---:|---:|---:|---|\n"
+  md := md ++ s!"| 1–8 | {t8.size} | {s0 t8} | {s1 t8} | {s2 t8} | (not requested; {s0 t8} if these cost 2 B) |\n"
+  md := md ++ s!"| 9–255 | {t9.size} | {s0 t9} | {s1 t9} | {s2 t9} | w = 2: **{s0 t9}** bytes |\n"
+  md := md ++ s!"| > 255 | {tBig.size} | {s0 tBig} | {s1 tBig} | {s2 tBig} | w = 3: 2·{s0 tBig} + {s1 tBig} = **{2 * s0 tBig + s1 tBig}** bytes |\n\n"
+  md := md ++ s!"- Total stored bytes over all constants: {rows.foldl (· + ·.raw) 0}; total Share references: {s0 rows + s1 rows + s2 rows}.\n"
   return md
 
 /-! ## Driver -/
@@ -889,6 +1197,7 @@ def main (args : List String) : IO UInt32 := do
   for r in (rows.qsort fun a b => a.ns > b.ns).extract 0 5 do
     md := md ++ s!"| `{r.name}` | {r.kind} | {r.ns / 1000000} | {r.n} | {r.raw} |\n"
   md := md ++ "\n" ++ mssReport rows ws
+  md := md ++ "\n" ++ uwReport rows
   IO.println md
   if let some p := opts.md then
     IO.FS.writeFile p md
@@ -903,7 +1212,8 @@ def main (args : List String) : IO UInt32 := do
     | .ok w => w.check.isSome
     | .error _ => true) || negativeControls.any (!·.2)
   return (if mismatches == 0 && skipped.isEmpty && valFail.isEmpty && rtFail.isEmpty &&
-    occFail.isEmpty && !mssFail then 0 else 1)
+    occFail.isEmpty && !mssFail && !rows.any (·.uwErr.isSome) &&
+    !rows.any (fun r => r.uw.any (·.compCheck == some false)) then 0 else 1)
 
 end Benchmarks.SharingStudy
 
