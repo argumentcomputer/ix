@@ -509,6 +509,9 @@
     "Compilatrix.X86.StreamRun",
     "Compilatrix.X86.StreamSpec",
     "Compilatrix.X86.StreamTrace"]},
+  "CompilatrixTests.Fences.Validate":
+  {"path": "CompilatrixTests/Fences/Validate.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Program"]},
   "CompilatrixTests.Fences.Sem":
   {"path": "CompilatrixTests/Fences/Sem.lean",
    "imports":
@@ -580,7 +583,8 @@
     "CompilatrixTests.Fences.Lir",
     "CompilatrixTests.Fences.Xv",
     "CompilatrixTests.Fences.Backend",
-    "CompilatrixTests.Fences.Sem"]},
+    "CompilatrixTests.Fences.Sem",
+    "CompilatrixTests.Fences.Validate"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":
@@ -836,6 +840,9 @@
   "Compilatrix.Xv.Validate.Proof.XlLoc":
   {"path": "Compilatrix/Xv/Validate/Proof/XlLoc.lean",
    "imports": ["Compilatrix.Xv.XlSemantics"]},
+  "Compilatrix.Xv.Validate.Proof.Terms":
+  {"path": "Compilatrix/Xv/Validate/Proof/Terms.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Calls"]},
   "Compilatrix.Xv.Validate.Proof.Steps":
   {"path": "Compilatrix/Xv/Validate/Proof/Steps.lean",
    "imports":
@@ -846,6 +853,11 @@
    ["Compilatrix.Xv.Validate.State",
     "Compilatrix.Xv.Validate.Proof.NatMap",
     "Compilatrix.Lir.Semantics"]},
+  "Compilatrix.Xv.Validate.Proof.Sound":
+  {"path": "Compilatrix/Xv/Validate/Proof/Sound.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.Proof.Frames",
+    "Compilatrix.Xv.Validate.Proof.Diagram"]},
   "Compilatrix.Xv.Validate.Proof.Rows":
   {"path": "Compilatrix/Xv/Validate/Proof/Rows.lean",
    "imports": ["Compilatrix.Xv.Validate.Proof.XlPlace"]},
@@ -858,6 +870,11 @@
   "Compilatrix.Xv.Validate.Proof.Row":
   {"path": "Compilatrix/Xv/Validate/Proof/Row.lean",
    "imports": ["Compilatrix.Xv.Validate.Proof.Rows"]},
+  "Compilatrix.Xv.Validate.Proof.Program":
+  {"path": "Compilatrix/Xv/Validate/Proof/Program.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.Proof.Sound",
+    "Compilatrix.Xv.Validate.Proof.Fuel"]},
   "Compilatrix.Xv.Validate.Proof.Place":
   {"path": "Compilatrix/Xv/Validate/Proof/Place.lean",
    "imports":
@@ -868,6 +885,9 @@
   "Compilatrix.Xv.Validate.Proof.NatMap":
   {"path": "Compilatrix/Xv/Validate/Proof/NatMap.lean",
    "imports": ["Compilatrix.Xv.Validate.NatMap"]},
+  "Compilatrix.Xv.Validate.Proof.Match":
+  {"path": "Compilatrix/Xv/Validate/Proof/Match.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Steps"]},
   "Compilatrix.Xv.Validate.Proof.Map":
   {"path": "Compilatrix/Xv/Validate/Proof/Map.lean",
    "imports": ["Compilatrix.Xv.Operands"]},
@@ -877,15 +897,27 @@
   "Compilatrix.Xv.Validate.Proof.Inst":
   {"path": "Compilatrix/Xv/Validate/Proof/Inst.lean",
    "imports": ["Compilatrix.Xv.Validate.Proof.RowChecks"]},
+  "Compilatrix.Xv.Validate.Proof.Fuel":
+  {"path": "Compilatrix/Xv/Validate/Proof/Fuel.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Frames"]},
+  "Compilatrix.Xv.Validate.Proof.Frames":
+  {"path": "Compilatrix/Xv/Validate/Proof/Frames.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Terms"]},
   "Compilatrix.Xv.Validate.Proof.Exec":
   {"path": "Compilatrix/Xv/Validate/Proof/Exec.lean",
    "imports": ["Compilatrix.X86.Table.Exec"]},
+  "Compilatrix.Xv.Validate.Proof.Diagram":
+  {"path": "Compilatrix/Xv/Validate/Proof/Diagram.lean",
+   "imports": ["Compilatrix.Sem.Smallstep"]},
   "Compilatrix.Xv.Validate.Proof.Checks":
   {"path": "Compilatrix/Xv/Validate/Proof/Checks.lean",
    "imports":
    ["Compilatrix.Xv.Validate.Check",
     "Compilatrix.Xv.Validate.Proof.RowSim",
     "Compilatrix.Xv.Validate.Proof.State"]},
+  "Compilatrix.Xv.Validate.Proof.Calls":
+  {"path": "Compilatrix/Xv/Validate/Proof/Calls.lean",
+   "imports": ["Compilatrix.Xv.Validate.Proof.Match"]},
   "Compilatrix.Xv.Validate.Proof.Assign":
   {"path": "Compilatrix/Xv/Validate/Proof/Assign.lean",
    "imports":
@@ -1995,6 +2027,14 @@
     "Compilatrix.Xv.Validate.Proof.Inst",
     "Compilatrix.Xv.Validate.Proof.Lookup",
     "Compilatrix.Xv.Validate.Proof.Steps",
+    "Compilatrix.Xv.Validate.Proof.Match",
+    "Compilatrix.Xv.Validate.Proof.Calls",
+    "Compilatrix.Xv.Validate.Proof.Terms",
+    "Compilatrix.Xv.Validate.Proof.Frames",
+    "Compilatrix.Xv.Validate.Proof.Diagram",
+    "Compilatrix.Xv.Validate.Proof.Sound",
+    "Compilatrix.Xv.Validate.Proof.Fuel",
+    "Compilatrix.Xv.Validate.Proof.Program",
     "Compilatrix.Xv.Alloc.Output",
     "Compilatrix.Xv.Alloc.Apply",
     "Compilatrix.Xv.Alloc.Liveness",
