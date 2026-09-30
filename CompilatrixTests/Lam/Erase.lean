@@ -118,6 +118,20 @@ def declined (a : Assert) (w : World) (label : String) (value : Term) (code : St
   | .ok _ => expect a false s!"{label}: erased, expected the decline {code}"
   | .error e => expect a (e.code == code) s!"{label}: declined with {e.code}, expected {code}: {e}"
 
+/-- A declined case the checker would already reject (tier C): erased from
+the annotation's records without the checker. -/
+def declinedUnchecked (a : Assert) (w : World) (label : String) (value : Term) (code : String) :
+    IO Unit := do
+  let (bld, root) := w.bld.add (.defn .defn .safe 0 ty value)
+  let p := bld.program #[root]
+  let ann := annOf p (rootKeys p)
+  let ch : Checked := { keys := #[], reached := #[], instances := #[], consts := ann.consts
+                        ctors := ann.ctors }
+  expect a ((check p ann) matches .error _) s!"{label}: the checker rejects it"
+  match Compilatrix.Lam.erase p ch with
+  | .ok _ => expect a false s!"{label}: erased, expected the decline {code}"
+  | .error e => expect a (e.code == code) s!"{label}: declined with {e.code}, expected {code}: {e}"
+
 def motive : Term × A := (irrArg, .irr)
 
 def natArgs : List (List Nat) := [[0], [1], [2], [5]]
@@ -245,6 +259,12 @@ def run (a : Assert) : IO (Array String) := do
   declined a w "a sort-polymorphic projection"
     (lam (.proj b.ppair 1 (app (.const b.ppairMk [.succ .zero]) [n0, n0]))) "erase-proj-sortpoly"
   declined a w "a string" (lam (.strLit "s")) "erase-string"
+  declinedUnchecked a w "casesOn with an irrelevant major (C4)"
+    (lam (appM (.const b.natCases [.zero]) [motive, (irrArg, .irr), (lit 1, .byName),
+      (lam n0, .byName)])) "erase-C4"
+  declinedUnchecked a w "a recursor with an irrelevant major (C4)"
+    (lam (appM (.const b.natRec [.zero]) [motive, (lit 0, .byName),
+      (lams 2 n0, .byName), (irrArg, .irr)])) "erase-C4"
   out := out.push s!"synthetic: {t.render}"
   return out
 

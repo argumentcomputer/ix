@@ -37,7 +37,7 @@ open Compilatrix.Src Compilatrix.Src.Relevance
 structure EraseError where
   /-- `erase-const-kind`, `erase-string`, `erase-mode`, `erase-minor` (S25),
   `erase-lazy`, `erase-proj`, `erase-proj-sortpoly`, `erase-ctor-layout`,
-  `erase-C2`, `erase-S2`, `erase-scope`, `erase-recursor`, `erase-root`,
+  `erase-C2`, `erase-C4`, `erase-S2`, `erase-scope`, `erase-recursor`, `erase-root`,
   `erase-record`, `erase-fuel`, `erase-budget`. -/
   code : String
   const : Option CId := none
@@ -337,7 +337,10 @@ def casesForm (cx : Cx) (key r : CId) (q : Profile) (args : List Src.Term.Arg) :
         | .proof => none
       return wrapLets lets (.tick (← minorApp rec cx' (minor 0) fields))
     | some .ordinary =>
-      let scrut ← refTerm rec cx' (refs.getD (np + 1 + ni) .box)
+      let major := refs.getD (np + 1 + ni) .box
+      if major matches .box then
+        decline "erase-C4" "an ordinary eliminator with an irrelevant major" r
+      let scrut ← refTerm rec cx' major
       let alts ← (rules.toList.zipIdx).mapM fun (rule, j) => do
         let (k, arity, fields) ← ruleAlt I r q cx'.depth ind j rule
         let body ← minorApp rec (cx'.extra arity) (minor j) fields
@@ -352,10 +355,12 @@ with a `name` IH must be a λ-telescope (its leading binder modes are set to
 the dispatch) or a forwarded minor binder with the same dispatch;
 otherwise the spine is declined (S25). -/
 def recForm (cx : Cx) (r : CId) (q : Profile) (args : List Src.Term.Arg) : M Term := do
-  let some (.recr _ _ _ np nmot nmin _ _ _ _) := I.decl? r
+  let some (.recr _ _ _ np nmot nmin ni _ _ _) := I.decl? r
     | decline "erase-recursor" "not a recursor" r
   let isMinor := fun i => decide (np + nmot ≤ i ∧ i < np + nmot + nmin)
   let (lets, refs, cx') ← bindArgs rec cx (args.zipIdx.map fun (a, i) => (a, isMinor i))
+  if I.kindAt r q matches some .ordinary && refs.getD (np + nmot + nmin + ni) .box matches .box then
+    decline "erase-C4" "an ordinary eliminator with an irrelevant major" r
   let argTerms ← (refs.zipIdx).mapM fun (ref, i) => do
     if !isMinor i then return (← refTerm rec cx' ref, Mode.strict)
     let j := i - (np + nmot)
