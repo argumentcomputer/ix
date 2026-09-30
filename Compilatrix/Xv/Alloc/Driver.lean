@@ -32,6 +32,10 @@ structure Result where
   outs : List Output
   outcomes : List Outcome
 
+/-- The all-slots fallback under 05 §5's name (`Alloc.allSlots_valid`, M2.6,
+is stated of it). -/
+def allSlots (f : Func Lir.VReg) : Except String Output := AllSlots.run f
+
 /-- Allocate and validate one function, with the fallback. -/
 def allocFunc (env : Xl.Env) (fi : Nat) (f : Func Lir.VReg) (chaos : Chaos) :
     Except String (Output × Outcome) := do

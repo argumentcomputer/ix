@@ -25,10 +25,14 @@ lifetimes where it must:
   edge reconciles with a parallel move (`ParMove.resolve`), at the target's
   head when it has one predecessor and at the source's tail otherwise.
 
-**Hints**: a tie reuses its dying operand's register; a definition prefers
-the register of its first fixed use (unless it lives across a call, which
-prefers callee-saved registers), and a value flowing into a block parameter
-prefers that parameter's register once the target's entry is fixed.
+**Hints**: a tie reuses its dying operand's register, unless its result is
+bound for a free fixed register (a dividend for `rax`), which it takes with
+the copy its fixed use would need anyway; a definition prefers the register
+of its first fixed use (unless it lives across a call, which prefers
+callee-saved registers), and when a value occupying that register must leave
+it before the next call anyway, it moves to a callee-saved register now
+(`vacate`); a value flowing into a block parameter prefers that parameter's
+register once the target's entry is fixed.
 
 **Operand placement** per instruction: the moves before it form one
 parallel move (reads, then writes), after which every use's register holds
