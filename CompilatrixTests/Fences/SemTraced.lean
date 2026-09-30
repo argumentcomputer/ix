@@ -1,10 +1,12 @@
+import Compilatrix.Sem.Bind
 import Compilatrix.Sem.TracedTransform
 import Compilatrix.Lam.Erase.Proof.Traced
 import Compilatrix.Xv.Validate.Proof.Traced
 import CompilatrixTests.Sem.Toy.IO.Cases
 
 /-! Required axiom fences for the traced statement shapes (decision D-1):
-traced outcomes, trace monotonicity and traced behaviours
+the bind-form kit for clocked results (`Compilatrix.Sem.Bind`), traced
+outcomes, trace monotonicity and traced behaviours
 (`Compilatrix.Sem.Traced`), the traced simulation with its forward,
 timeout-prefix and progress clauses and its divergence lemma, backward
 reading, safety and composition (`Compilatrix.Sem.TracedSim`), traced
@@ -14,6 +16,42 @@ erasure's and the allocation validator's theorems through the lifts; then
 the IO toy that checks the clause shapes (`CompilatrixTests.Sem.Toy.IO`).
 Generated from the modules' public theorems; expected messages are
 preserved verbatim. -/
+
+/-- info: 'Compilatrix.Sem.ClockMono.dom' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.ClockMono.dom
+
+/-- info: 'Compilatrix.Sem.Result.Agrees.dom' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.Agrees.dom
+
+/-- info: 'Compilatrix.Sem.Result.Dom.bind' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.Dom.bind
+
+/-- info: 'Compilatrix.Sem.Result.Dom.eq_timeout' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.Dom.eq_timeout
+
+/-- info: 'Compilatrix.Sem.Result.Dom.refl' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.Dom.refl
+
+/-- info: 'Compilatrix.Sem.Result.Dom.timeout' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.Dom.timeout
+
+/-- info: 'Compilatrix.Sem.Result.Dom.trans' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.Dom.trans
+
+/-- info: 'Compilatrix.Sem.Result.bind_eq_ok_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.bind_eq_ok_iff
+
+/-- info: 'Compilatrix.Sem.Result.bind_eq_resource_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.bind_eq_resource_iff
+
+/-- info: 'Compilatrix.Sem.Result.bind_eq_stuck_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.bind_eq_stuck_iff
+
+/-- info: 'Compilatrix.Sem.Result.bind_eq_timeout_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.bind_eq_timeout_iff
+
+/-- info: 'Compilatrix.Sem.Result.bind_eq_trap_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Result.bind_eq_trap_iff
 
 /-- info: 'Compilatrix.Sem.Result.Refines.ofBehaviour' does not depend on any axioms -/
 #guard_msgs in #print axioms Compilatrix.Sem.Result.Refines.ofBehaviour

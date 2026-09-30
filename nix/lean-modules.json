@@ -708,7 +708,8 @@
   "CompilatrixTests.Fences.SemTraced":
   {"path": "CompilatrixTests/Fences/SemTraced.lean",
    "imports":
-   ["Compilatrix.Sem.TracedTransform",
+   ["Compilatrix.Sem.Bind",
+    "Compilatrix.Sem.TracedTransform",
     "Compilatrix.Lam.Erase.Proof.Traced",
     "Compilatrix.Xv.Validate.Proof.Traced",
     "CompilatrixTests.Sem.Toy.IO.Cases"]},
@@ -1653,6 +1654,8 @@
    "imports": ["Compilatrix.Sem.Result"]},
   "Compilatrix.Sem.Clock":
   {"path": "Compilatrix/Sem/Clock.lean", "imports": ["Compilatrix.Sem.Result"]},
+  "Compilatrix.Sem.Bind":
+  {"path": "Compilatrix/Sem/Bind.lean", "imports": ["Compilatrix.Sem.Agrees"]},
   "Compilatrix.Sem.Agrees":
   {"path": "Compilatrix/Sem/Agrees.lean",
    "imports": ["Compilatrix.Sem.Clocked"]},
@@ -2555,6 +2558,7 @@
     "Compilatrix.Sem.Smallstep",
     "Compilatrix.Sem.Agrees",
     "Compilatrix.Sem.SimUpTo",
+    "Compilatrix.Sem.Bind",
     "Compilatrix.Sem.Traced",
     "Compilatrix.Sem.TracedSim",
     "Compilatrix.Sem.TracedTransform",

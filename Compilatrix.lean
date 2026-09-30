@@ -8,6 +8,7 @@ import Compilatrix.Sem.Transform
 import Compilatrix.Sem.Smallstep
 import Compilatrix.Sem.Agrees
 import Compilatrix.Sem.SimUpTo
+import Compilatrix.Sem.Bind
 import Compilatrix.Sem.Traced
 import Compilatrix.Sem.TracedSim
 import Compilatrix.Sem.TracedTransform
