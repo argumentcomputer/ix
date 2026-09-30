@@ -1389,6 +1389,7 @@
    "imports": ["Compilatrix.Sem.Result"]},
   "Compilatrix.Sem.Clock":
   {"path": "Compilatrix/Sem/Clock.lean", "imports": ["Compilatrix.Sem.Result"]},
+  "Compilatrix.Own.Kind": {"path": "Compilatrix/Own/Kind.lean", "imports": []},
   "Compilatrix.Lir.WellFormed":
   {"path": "Compilatrix/Lir/WellFormed.lean",
    "imports": ["Compilatrix.Lir.Graph", "Std.Data.HashMap"]},
@@ -1636,6 +1637,23 @@
   "Compilatrix.IxIR.Bounded":
   {"path": "Compilatrix/IxIR/Bounded.lean",
    "imports": ["Compilatrix.IxIR.Decode"]},
+  "Compilatrix.Fir.WellFormed":
+  {"path": "Compilatrix/Fir/WellFormed.lean",
+   "imports": ["Compilatrix.Fir.Syntax"]},
+  "Compilatrix.Fir.Syntax":
+  {"path": "Compilatrix/Fir/Syntax.lean",
+   "imports": ["Compilatrix.Lam.Syntax", "Compilatrix.Own.Kind"]},
+  "Compilatrix.Fir.Semantics":
+  {"path": "Compilatrix/Fir/Semantics.lean",
+   "imports": ["Compilatrix.Fir.Syntax", "Compilatrix.Sem.Result"]},
+  "Compilatrix.Fir.Print":
+  {"path": "Compilatrix/Fir/Print.lean", "imports": ["Compilatrix.Fir.Syntax"]},
+  "Compilatrix.Fir.Lower":
+  {"path": "Compilatrix/Fir/Lower.lean",
+   "imports":
+   ["Compilatrix.Fir.Syntax",
+    "Compilatrix.Anf.WellFormed",
+    "Compilatrix.Anf.Census"]},
   "Compilatrix.Backend":
   {"path": "Compilatrix/Backend.lean",
    "imports":
@@ -2093,6 +2111,12 @@
     "Compilatrix.Anf.Specialize",
     "Compilatrix.Anf.Prune",
     "Compilatrix.Anf.Pipeline",
+    "Compilatrix.Own.Kind",
+    "Compilatrix.Fir.Syntax",
+    "Compilatrix.Fir.Semantics",
+    "Compilatrix.Fir.WellFormed",
+    "Compilatrix.Fir.Lower",
+    "Compilatrix.Fir.Print",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",

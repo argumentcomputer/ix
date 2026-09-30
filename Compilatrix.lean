@@ -116,6 +116,12 @@ import Compilatrix.Anf.Inline
 import Compilatrix.Anf.Specialize
 import Compilatrix.Anf.Prune
 import Compilatrix.Anf.Pipeline
+import Compilatrix.Own.Kind
+import Compilatrix.Fir.Syntax
+import Compilatrix.Fir.Semantics
+import Compilatrix.Fir.WellFormed
+import Compilatrix.Fir.Lower
+import Compilatrix.Fir.Print
 import Compilatrix.X86.Basic
 import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
