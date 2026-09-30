@@ -56,6 +56,8 @@ import Compilatrix.Xv.Validate.Proof.Terms
 import Compilatrix.Xv.Validate.Proof.Frames
 import Compilatrix.Xv.Validate.Proof.Diagram
 import Compilatrix.Xv.Validate.Proof.Sound
+import Compilatrix.Xv.Validate.Proof.Fuel
+import Compilatrix.Xv.Validate.Proof.Program
 import Compilatrix.Xv.Alloc.Output
 import Compilatrix.Xv.Alloc.Apply
 import Compilatrix.Xv.Alloc.Liveness
