@@ -78,19 +78,26 @@ def Fixture.natArity? (f : Fixture) : Option Nat :=
   with the `compilatrix` executable.
 * Diagnostic rows, entry profile only, which attribute a gap and are never
   real-program results: `clang-tagged`, the K1 algorithms on compilatrix's
-  value representation (tagged words, carry-checked `+ 1`) at `-O2`; and
+  value representation (tagged words, carry-checked `+ 1`) at `-O2`;
   `lir-kernel`, MEAS-4's hand-written Lir kernels (fib, sum-loop, gcd)
-  through the current backend. -/
+  through the current backend; and `compilatrix@NAME`, objects with the
+  compilatrix row's interface from elsewhere (`build --variant NAME=DIR`,
+  `DIR/<fixture>.o`): another commit's compiler, or a hand-edited
+  what-if, measured against `compilatrix` in the same blocks. -/
 inductive Row | leanClang | clangO2 | clangO3 | compilatrix | clangTagged | lirKernel
+  | variant (name : String)
   deriving BEq, Repr, Inhabited
 
 /-- The process profile's rows (each fixture's own program, whole-process time). -/
 def Row.process : List Row := [.leanClang, .clangO2, .clangO3, .compilatrix]
 
-/-- The entry profile's rows (in-process repetitions). -/
+/-- The entry profile's fixed rows (in-process repetitions); variants join
+them where built. -/
 def Row.entry : List Row := [.compilatrix, .lirKernel, .clangTagged, .leanClang, .clangO2, .clangO3]
 
 def Row.all : List Row := [.leanClang, .clangO2, .clangO3, .compilatrix, .clangTagged, .lirKernel]
+
+def variantPrefix : String := "compilatrix@"
 
 def Row.name : Row → String
   | .leanClang => "lean-clang"
@@ -99,11 +106,18 @@ def Row.name : Row → String
   | .compilatrix => "compilatrix"
   | .clangTagged => "clang-tagged"
   | .lirKernel => "lir-kernel"
+  | .variant n => variantPrefix ++ n
 
-def Row.ofName? (name : String) : Option Row := Row.all.find? (·.name == name)
+def Row.ofName? (name : String) : Option Row :=
+  match Row.all.find? (·.name == name) with
+  | some r => some r
+  | none =>
+    if name.startsWith variantPrefix && name.length > variantPrefix.length then
+      some (.variant (name.drop variantPrefix.length).toString)
+    else none
 
 def Row.diagnostic : Row → Bool
-  | .clangTagged | .lirKernel => true
+  | .clangTagged | .lirKernel | .variant _ => true
   | _ => false
 
 /-- K1 fixtures whose natural twin the entry adapter calls, and which have a

@@ -15,6 +15,7 @@ implements.
 | `clang-O2`, `clang-O3` | The fixture's natural C or C++ twin at `-O2` and `-O3` |
 | `clang-tagged` | Diagnostic, entry profile only: the K1 algorithms on compilatrix's value representation (tagged words, carry-checked `+ 1`; [`../meas4/twins.c`](../meas4/twins.c) and [`entry/tagged.c`](entry/tagged.c)) at `-O2` |
 | `lir-kernel` | Diagnostic, entry profile only: MEAS-4's hand-written Lir kernels (fib, sum-loop, gcd) through the current backend, from `backend-probe` |
+| `compilatrix@NAME` | Diagnostic, entry profile only (`build --variant NAME=DIR`): objects `DIR/<fixture>.o` with the compilatrix row's interface (`cx_init`, `cx_entry`), such as another commit's compiler output (an A/B pair) or a hand-edited what-if; reports then add a ratio to `compilatrix` |
 
 The `compilatrix` row exists where a frozen closure exists (the five K1
 fixtures). A compiler decline or rejection is recorded in `build.json` with
@@ -50,7 +51,8 @@ absolute path, conventionally under `plans/`.
 ```sh
 lake build
 ./.lake/build/bin/runner build OUT --fixtures fib,sum-loop,ackermann,tak,gcd \
-    [--compilatrix CMD] [--closures DIR] [--probe ../../.lake/build/bin/backend-probe]
+    [--compilatrix CMD] [--closures DIR] [--probe ../../.lake/build/bin/backend-probe] \
+    [--variant base=DIR_A,next=DIR_B]
 ./.lake/build/bin/runner check OUT          # every binary against expected.txt and bench_expected
 taskset -c 5 ./.lake/build/bin/runner calibrate OUT --cpu 2              # entry reps per row
 taskset -c 5 ./.lake/build/bin/runner measure OUT --profile entry --cpu 2 --blocks 20
@@ -72,7 +74,8 @@ once in a shuffled order, a fresh process each, and fails if a row's result
 differs (process profile: the rows' outputs; entry profile:
 `bench_expected`). `calibrate` chooses `reps` per row and fixture in a pilot
 so that a timed chunk lasts about `--target-ms` (default 250), and `warmup` as
-a tenth of it. `perf` counts user-space instructions, cycles, branches and
+a tenth of it. `calibrate`, `measure` and `perf` take `--rows` (names, or a
+prefix ending in `*`, such as `compilatrix,compilatrix@*` for an A/B session). `perf` counts user-space instructions, cycles, branches and
 branch misses per call (a run with `reps` calls minus a run with none, the
 median of `--runs` pairs); an unavailable counter is recorded as unavailable.
 
@@ -87,8 +90,16 @@ median of `--runs` pairs); an unavailable counter is recorded as unavailable.
 Per rung it gives the geometric mean of those ratios; the entry report adds
 a hierarchical-bootstrap interval, the largest per-fixture ratio and the
 mean without it. `samples.json` and `entry-samples.json` record the host (CPU
-model, worker core, its SMT siblings and maximum frequency, governor, boost,
-load at the start and end, kernel) and the load average per block.
+model, worker core, its SMT siblings, maximum and current frequency,
+governor, energy preference, platform profile, whether mains power is
+online, boost, load at the start and end, kernel) and the load average per
+block.
+
+Code placement matters at this scale: in the first K1 session, moving the
+unchanged compiled object by 8–56 bytes changed `ackermann` by up to 16% and
+`tak` by up to 18%. An A/B or what-if comparison should compare the two
+objects at several placements (for example a variant per start offset,
+`.p2align 6` plus `.skip N`) and report the spread, not one link.
 
 Local results guide development only. They set no thresholds and are not
 reference results.

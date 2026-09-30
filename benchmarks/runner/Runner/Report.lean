@@ -121,7 +121,7 @@ def reportEntry (manifest : Manifest) (out : FilePath) : IO Unit := do
   let mut lines : Array String := #[
     "# Local benchmark report: entry profile", "",
     s!"Host: {str env "cpu_model"}, worker CPU {env.getObjValD "worker_cpu" |>.compress} (SMT siblings {str env "worker_siblings"}, max {str env "worker_max_khz"} kHz), governor {str env "governor"}, energy preference {str env "energy_preference"}, boost {str env "boost"}, kernel {str env "kernel"}.",
-    s!"Load average at the start: {str env "loadavg"}; at the end: {str envEnd "loadavg"}.",
+    s!"Load average at the start: {str env "loadavg"}; at the end: {str envEnd "loadavg"}. Mains power online: {str env "ac_online"} at the start, {str envEnd "ac_online"} at the end; platform profile {str env "platform_profile"}; worker frequency {str env "worker_cur_khz"} kHz at the start, {str envEnd "worker_cur_khz"} kHz at the end (snapshots).",
     s!"Blocks per fixture: {json.getObjValD "blocks" |>.compress}; each block runs every row once in a shuffled order, a fresh pinned process each. Target chunk: {(reps.map (·.getObjValD "target_ms" |>.compress)).getD "?"} ms.",
     "Time per call of the fixture's `entry`, in process (the entry profile: startup and runtime initialisation excluded, the entry's guards and result handoff included); medians over blocks. Ratios are row / baseline (above 1 is slower), paired per block, with 95% percentile-bootstrap intervals (2000 rounds). Counters are user-space `perf` events per call (a run with the repetitions minus one without; median of the runs). `clang-tagged` and `lir-kernel` are diagnostic rows that attribute a gap; they are never real-program results.", ""]
   if let some b := build then
@@ -129,14 +129,18 @@ def reportEntry (manifest : Manifest) (out : FilePath) : IO Unit := do
     lines := lines.push ""
   let mut ratioSets : Array RatioSet := #[]
   let mut rowsJson : Array Json := #[]
+  -- variant rows (A/B and what-if objects), in name order
+  let variants : List Row := (samples.map (·.2.1)).toList.eraseDups.mergeSort (· ≤ ·) |>.filterMap fun n =>
+    match Row.ofName? n with | some (.variant v) => some (Row.variant v) | _ => none
+  let baselinesAll := if variants.isEmpty then entryBaselines else .compilatrix :: entryBaselines
   for fixture in manifest.fixtures do
     let of (row : String) := samples.filter fun (f, r, _) => f == fixture.name && r == row
-    let rows := Row.entry.filter fun r => !(of r.name).isEmpty
+    let rows := (Row.entry ++ variants).filter fun r => !(of r.name).isEmpty
     if rows.isEmpty then continue
     let ns (row : String) := median ((of row).map (·.2.2.2.1))
     let paired (row base : String) : Array Float := (of row).filterMap fun (_, _, block, t, _) =>
       ((of base).find? fun (_, _, b, _) => b == block).map fun (_, _, _, bt, _) => t / bt
-    let baselines := entryBaselines.filter rows.contains
+    let baselines := baselinesAll.filter rows.contains
     lines := lines ++ #[s!"## {fixture.name} ({fixture.rung}): entry {" ".intercalate fixture.benchArgs} = {(fixture.benchExpected.map trimmed).getD "?"}", "",
       "| Row | time/call | " ++ " | ".intercalate (baselines.map (s!"/ {·.name}")) ++
         " | instructions/call | cycles/call | IPC | branches/call | branch misses/call | heap B/call | reps |",
@@ -178,8 +182,8 @@ def reportEntry (manifest : Manifest) (out : FilePath) : IO Unit := do
   let mut geoJson : Array Json := #[]
   for rung in ["K1", "K2", "K3"] do
     let rungFixtures := manifest.fixtures.filter (·.rung == rung) |>.map (·.name)
-    for row in geomeanRows do
-      for base in entryBaselines do
+    for row in geomeanRows ++ variants do
+      for base in baselinesAll do
         if row == base then continue
         let groups := ratioSets.filter fun s =>
           s.rung == rung && s.row == row.name && s.base == base.name && !s.ratios.isEmpty

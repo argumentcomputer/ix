@@ -53,6 +53,9 @@ structure Options where
   probe : Option FilePath := none
   /-- The C compiler of the entry profile. -/
   cc : String := "cc"
+  /-- Diagnostic `compilatrix@NAME` rows: objects `DIR/<fixture>.o` with the
+  compilatrix row's interface (`cx_init`, `cx_entry`). -/
+  variants : List (String × FilePath) := []
 
 def Options.selects (o : Options) (f : Fixture) : Bool := o.fixtures.all (·.contains f.name)
 
@@ -222,6 +225,18 @@ def buildEntryRow (o : Options) (root out : FilePath) (row : Row) (fixture : Fix
     cc o "-O2" ["-o", target.toString, driver, (obj / "row.o").toString, object.toString]
     objdump object (out / "asm" / row.name / s!"{fixture.name}.txt")
     return some "built"
+  | .variant name =>
+    let some (_, dir) := o.variants.find? (·.1 == name) | return none
+    let object := dir / s!"{fixture.name}.o"
+    unless ← object.pathExists do return none
+    -- keep the measured object with the session
+    let kept := out / "variants" / name / s!"{fixture.name}.o"
+    IO.FS.createDirAll (out / "variants" / name)
+    IO.FS.writeBinFile kept (← IO.FS.readBinFile object)
+    cc o "-O2" ["-c", (here / "row_compilatrix.c").toString, "-o", (obj / "row.o").toString]
+    cc o "-O2" ["-o", target.toString, driver, (obj / "row.o").toString, kept.toString]
+    objdump kept (out / "asm" / row.name / s!"{fixture.name}.txt")
+    return some "built"
 
 /-! ## Build -/
 
@@ -255,7 +270,7 @@ def buildProcessRow (o : Options) (manifest : Manifest) (root out : FilePath) (r
     cc o "-O2" ["-o", target.toString, (out / "entry-obj" / "driver-process.o").toString,
       rowObj.toString, object.toString]
     return some "built"
-  | .clangTagged | .lirKernel => return none
+  | .clangTagged | .lirKernel | .variant _ => return none
 
 def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit := do
   IO.FS.createDirAll out
@@ -291,7 +306,7 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
           { profile := "both", row := "compilatrix", fixture := fixture.name,
             status := "declined or unavailable", detail := why }
         IO.eprintln s!"compilatrix/{fixture.name}: {why}"
-      for row in Row.entry do
+      for row in Row.entry ++ o.variants.map (Row.variant ·.1) do
         match ← buildEntryRow o root out row fixture k with
         | some s => statuses := statuses.push { profile := "entry", row := row.name, fixture := fixture.name, status := s }
         | none => pure ()
@@ -303,7 +318,8 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
   IO.FS.writeFile (out / "build.json") ((Json.mkObj [
     ("format", Json.str "compilatrix/benchmark-build/3"),
     ("process_rows", Json.arr (Row.process.map (Json.str ·.name)).toArray),
-    ("entry_rows", Json.arr (Row.entry.map (Json.str ·.name)).toArray),
+    ("entry_rows", Json.arr ((Row.entry ++ o.variants.map (Row.variant ·.1)).map (Json.str ·.name)).toArray),
+    ("variants", Json.mkObj (o.variants.map fun (n, d) => (n, Json.str d.toString))),
     ("fixtures", Json.arr (fixtures.map (Json.str ·.name))),
     ("statuses", Json.arr (statuses.map Status.json)),
     ("compilatrix_compiles", Json.arr compiles),
@@ -315,8 +331,15 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
 /-! ## Check -/
 
 /-- The rows of a profile whose binary exists for `fixture`. -/
-def builtRows (out : FilePath) (entry : Bool) (fixture : Fixture) : IO (List Row) :=
-  (if entry then Row.entry else Row.process).filterM fun row =>
+def builtRows (out : FilePath) (entry : Bool) (fixture : Fixture) : IO (List Row) := do
+  let variants ← if entry && (← (out / "entry").pathExists) then do
+      let dirs ← (out / "entry").readDir
+      let names := (dirs.map (·.fileName)).qsort (· < ·) |>.toList
+      pure (names.filterMap fun n => match Row.ofName? n with
+        | some (.variant v) => some (Row.variant v)
+        | _ => none)
+    else pure []
+  (if entry then Row.entry ++ variants else Row.process).filterM fun row =>
     (if entry then entryBinary out row fixture else binary out row fixture).pathExists
 
 def trimmed (s : String) : String := s.trimAscii.toString

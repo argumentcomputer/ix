@@ -51,6 +51,16 @@ def shuffle (seed : Nat) (items : List α) : List α := Id.run do
 def readProc (path : String) : IO String := do
   try return (← IO.FS.readFile path).trimAscii.toString catch _ => return "unavailable"
 
+/-- Whether mains power is online (`1`, `0`), from the power-supply class. -/
+def acOnline : IO String := do
+  let root : FilePath := "/sys/class/power_supply"
+  try
+    for entry in ← root.readDir do
+      if (← readProc (entry.path / "type").toString) == "Mains" then
+        return ← readProc (entry.path / "online").toString
+    return "no mains supply listed"
+  catch _ => return "unavailable"
+
 /-- Host observations recorded with every session. -/
 def environment (cpu : Nat) : IO Json := do
   let model := ((← readProc "/proc/cpuinfo").splitOn "\n").find? (·.startsWith "model name") |>.getD ""
@@ -59,12 +69,20 @@ def environment (cpu : Nat) : IO Json := do
     ("cpu_model", Json.str ((model.splitOn ":").getD 1 "").trimAscii.toString),
     ("worker_cpu", toJson cpu),
     ("worker_max_khz", Json.str (← readProc s!"/sys/devices/system/cpu/cpu{cpu}/cpufreq/cpuinfo_max_freq")),
+    ("worker_cur_khz", Json.str (← readProc s!"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_cur_freq")),
     ("worker_siblings", Json.str (← readProc s!"/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list")),
     ("governor", Json.str (← readProc s!"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")),
     ("energy_preference", Json.str (← readProc s!"/sys/devices/system/cpu/cpu{cpu}/cpufreq/energy_performance_preference")),
+    ("platform_profile", Json.str (← readProc "/sys/firmware/acpi/platform_profile")),
+    ("ac_online", Json.str (← acOnline)),
     ("boost", Json.str (← readProc "/sys/devices/system/cpu/cpufreq/boost")),
     ("loadavg", Json.str (← readProc "/proc/loadavg")),
     ("kernel", Json.str uname.stdout.trimAscii.toString)]
+
+/-- `--rows`: row names, or a prefix ending in `*` (`compilatrix@*`). -/
+def rowSelected (spec : Option (List String)) (row : Row) : Bool :=
+  spec.all fun names => names.any fun s =>
+    s == row.name || (s.endsWith "*" && row.name.startsWith (s.dropEnd 1).toString)
 
 def measureProcess (manifest : Manifest) (out : FilePath) (cpu blocks : Nat)
     (only : Option (List String)) : IO Unit := do
@@ -119,13 +137,27 @@ structure Plan where
 
 def repsFile (out : FilePath) : FilePath := out / "entry-reps.json"
 
+def loadPlans (out : FilePath) : IO (List (String × String × Plan)) := do
+  unless ← (repsFile out).pathExists do return []
+  let json ← IO.ofExcept (Json.parse (← IO.FS.readFile (repsFile out)))
+  let plans ← IO.ofExcept ((json.getObjValD "plans").getArr?)
+  plans.toList.mapM fun p => IO.ofExcept do
+    return (← (p.getObjValD "fixture").getStr?, ← (p.getObjValD "row").getStr?,
+      { reps := ← (p.getObjValD "reps").getNat?, warmup := ← (p.getObjValD "warmup").getNat?,
+        pilotNs := (← (p.getObjValD "pilot_ns_per_call").getNum?).toFloat })
+
+def fmtPilot (ns : Float) : String :=
+  if ns ≥ 1e6 then s!"{(ns / 1e4).round / 100} ms" else if ns ≥ 1e3 then s!"{(ns / 10).round / 100} µs"
+  else s!"{(ns * 100).round / 100} ns"
+
 /-- Choose repetitions per row and fixture: the pilot grows `reps` tenfold
-until a chunk lasts 20 ms, then scales it to `targetMs`. -/
-def calibrate (manifest : Manifest) (out : FilePath) (cpu targetMs : Nat) (only : Option (List String)) :
+until a chunk lasts 20 ms, then scales it to `targetMs`. Plans for rows
+outside the selection are kept. -/
+def calibrate (manifest : Manifest) (out : FilePath) (cpu targetMs : Nat) (only rows : Option (List String)) :
     IO Unit := do
-  let mut plans : Array Json := #[]
+  let mut plans := (← loadPlans out).toArray
   for fixture in manifest.fixtures.filter fun f => only.all (·.contains f.name) do
-    for row in ← builtRows out true fixture do
+    for row in (← builtRows out true fixture).filter (rowSelected rows) do
       let mut reps := 1
       let mut per := 0.0
       repeat
@@ -137,40 +169,30 @@ def calibrate (manifest : Manifest) (out : FilePath) (cpu targetMs : Nat) (only 
         if per * reps.toFloat ≥ 2e7 || reps ≥ 1000000000 then break
         reps := reps * 10
       let chosen := max 1 ((targetMs.toFloat * 1e6 / per).ceil.toUInt64.toNat)
-      let warmup := max 1 (chosen / 10)
-      plans := plans.push (Json.mkObj [("fixture", Json.str fixture.name), ("row", Json.str row.name),
-        ("reps", toJson chosen), ("warmup", toJson warmup), ("pilot_ns_per_call", toJson per)])
-      IO.println s!"{fixture.name} {row.name}: {fmtNs per} per call, reps {chosen}"
+      plans := (plans.filter fun (f, r, _) => !(f == fixture.name && r == row.name)).push
+        (fixture.name, row.name, { reps := chosen, warmup := max 1 (chosen / 10), pilotNs := per })
+      IO.println s!"{fixture.name} {row.name}: {fmtPilot per} per call, reps {chosen}"
+  let json := plans.map fun (f, r, p) => Json.mkObj [("fixture", Json.str f), ("row", Json.str r),
+    ("reps", toJson p.reps), ("warmup", toJson p.warmup), ("pilot_ns_per_call", toJson p.pilotNs)]
   IO.FS.writeFile (repsFile out) ((Json.mkObj [("format", Json.str "compilatrix/benchmark-entry-reps/1"),
-    ("target_ms", toJson targetMs), ("worker_cpu", toJson cpu), ("plans", Json.arr plans)]).pretty ++ "\n")
-where
-  fmtNs (ns : Float) : String :=
-    if ns ≥ 1e6 then s!"{(ns / 1e4).round / 100} ms" else if ns ≥ 1e3 then s!"{(ns / 10).round / 100} µs"
-    else s!"{(ns * 100).round / 100} ns"
-
-def loadPlans (out : FilePath) : IO (List (String × String × Plan)) := do
-  let json ← IO.ofExcept (Json.parse (← IO.FS.readFile (repsFile out)))
-  let plans ← IO.ofExcept ((json.getObjValD "plans").getArr?)
-  plans.toList.mapM fun p => IO.ofExcept do
-    return (← (p.getObjValD "fixture").getStr?, ← (p.getObjValD "row").getStr?,
-      { reps := ← (p.getObjValD "reps").getNat?, warmup := ← (p.getObjValD "warmup").getNat?,
-        pilotNs := (← (p.getObjValD "pilot_ns_per_call").getNum?).toFloat })
+    ("target_ms", toJson targetMs), ("worker_cpu", toJson cpu), ("plans", Json.arr json)]).pretty ++ "\n")
 
 def planFor (plans : List (String × String × Plan)) (fixture : Fixture) (row : Row) : Option Plan :=
   (plans.find? fun (f, r, _) => f == fixture.name && r == row.name).map (·.2.2)
 
-/-- The rows of a fixture with a binary and a plan. -/
-def plannedRows (out : FilePath) (plans : List (String × String × Plan)) (fixture : Fixture) :
-    IO (List (Row × Plan)) := do
-  return (← builtRows out true fixture).filterMap fun row => (planFor plans fixture row).map (row, ·)
+/-- The selected rows of a fixture with a binary and a plan. -/
+def plannedRows (out : FilePath) (plans : List (String × String × Plan)) (rows : Option (List String))
+    (fixture : Fixture) : IO (List (Row × Plan)) := do
+  return ((← builtRows out true fixture).filter (rowSelected rows)).filterMap fun row =>
+    (planFor plans fixture row).map (row, ·)
 
-def measureEntry (manifest : Manifest) (out : FilePath) (cpu blocks : Nat) (only : Option (List String)) :
+def measureEntry (manifest : Manifest) (out : FilePath) (cpu blocks : Nat) (only rows : Option (List String)) :
     IO Unit := do
   let plans ← loadPlans out
   let env ← environment cpu
   let mut samples : Array Json := #[]
   for (fixture, index) in (manifest.fixtures.filter fun f => only.all (·.contains f.name)).toList.zipIdx do
-    let rows ← plannedRows out plans fixture
+    let rows ← plannedRows out plans rows fixture
     if rows.isEmpty then continue
     let some want := fixture.benchExpected.map trimmed
       | throw (IO.userError s!"{fixture.name}: no bench_expected")
@@ -215,11 +237,11 @@ def perfStat (perf : String) (out : FilePath) (cpu : Nat) (row : Row) (fixture :
   return counters output.stderr
 
 def perfAll (manifest : Manifest) (out : FilePath) (cpu : Nat) (perf : String) (runs : Nat)
-    (only : Option (List String)) : IO Unit := do
+    (only rows : Option (List String)) : IO Unit := do
   let plans ← loadPlans out
   let mut rowsJson : Array Json := #[]
   for fixture in manifest.fixtures.filter fun f => only.all (·.contains f.name) do
-    for (row, plan) in ← plannedRows out plans fixture do
+    for (row, plan) in ← plannedRows out plans rows fixture do
       let mut perRun : Array (List (String × Option Float)) := #[]
       for _ in [:runs] do
         let full ← perfStat perf out cpu row fixture plan.reps plan.warmup

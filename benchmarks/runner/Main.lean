@@ -6,10 +6,11 @@ def usage : String :=
   "usage: runner COMMAND [OPTIONS] OUT\n\
    \n\
    build     [--fixtures a,b] [--compilatrix CMD] [--closures DIR] [--probe PATH] [--cc CC]\n\
+   \x20         [--variant NAME=DIR[,NAME=DIR...]]\n\
    check     [--fixtures a,b]\n\
-   calibrate [--cpu N] [--target-ms T] [--fixtures a,b]\n\
-   measure   [--profile process|entry] [--cpu N] [--blocks B] [--fixtures a,b]\n\
-   perf      [--cpu N] [--perf PATH] [--runs R] [--fixtures a,b]\n\
+   calibrate [--cpu N] [--target-ms T] [--fixtures a,b] [--rows r,s,compilatrix@*]\n\
+   measure   [--profile process|entry] [--cpu N] [--blocks B] [--fixtures a,b] [--rows ...]\n\
+   perf      [--cpu N] [--perf PATH] [--runs R] [--fixtures a,b] [--rows ...]\n\
    report\n\
    \n\
    Run from benchmarks/runner; fixtures come from ../fixtures/manifest.json."
@@ -44,18 +45,27 @@ def main (args : List String) : IO UInt32 := do
         | some n => pure n
         | none => throw (IO.userError s!"--{name} expects a number, got {v}")
     let known := match command with
-      | "build" => ["fixtures", "compilatrix", "closures", "probe", "cc"]
+      | "build" => ["fixtures", "compilatrix", "closures", "probe", "cc", "variant"]
       | "check" => ["fixtures"]
-      | "calibrate" => ["cpu", "target-ms", "fixtures"]
-      | "measure" => ["profile", "cpu", "blocks", "fixtures"]
-      | "perf" => ["cpu", "perf", "runs", "fixtures"]
+      | "calibrate" => ["cpu", "target-ms", "fixtures", "rows"]
+      | "measure" => ["profile", "cpu", "blocks", "fixtures", "rows"]
+      | "perf" => ["cpu", "perf", "runs", "fixtures", "rows"]
       | _ => []
     for (name, _) in opts do
       unless known.contains name do throw (IO.userError s!"unknown option --{name}\n{usage}")
     let only := (get "fixtures").map (·.splitOn ",")
+    let rows := (get "rows").map (·.splitOn ",")
     match command with
     | "build" =>
+      let variants ← ((get "variant").map (·.splitOn ",") |>.getD []).mapM fun spec =>
+        match spec.splitOn "=" with
+        | [name, dir] =>
+          if name.isEmpty || !name.all (fun c => c.isAlphanum || c == '-' || c == '_') then
+            throw (IO.userError s!"bad variant name in {spec}")
+          else do pure (name, ← IO.FS.realPath dir)
+        | _ => throw (IO.userError s!"--variant expects NAME=DIR, got {spec}")
       build manifest root out {
+        variants
         fixtures := only
         compilatrix := ((get "compilatrix").map (·.splitOn " " |>.filter (!·.isEmpty))).getD
           ["../../.lake/build/bin/compilatrix"]
@@ -63,13 +73,13 @@ def main (args : List String) : IO UInt32 := do
         probe := (get "probe").map FilePath.mk
         cc := (get "cc").getD "cc" }
     | "check" => check manifest root out only
-    | "calibrate" => calibrate manifest out (← nat "cpu" 2) (← nat "target-ms" 250) only
+    | "calibrate" => calibrate manifest out (← nat "cpu" 2) (← nat "target-ms" 250) only rows
     | "measure" =>
       match (get "profile").getD "process" with
       | "process" => measureProcess manifest out (← nat "cpu" 2) (← nat "blocks" 10) only
-      | "entry" => measureEntry manifest out (← nat "cpu" 2) (← nat "blocks" 10) only
+      | "entry" => measureEntry manifest out (← nat "cpu" 2) (← nat "blocks" 10) only rows
       | p => throw (IO.userError s!"unknown profile {p}")
-    | "perf" => perfAll manifest out (← nat "cpu" 2) ((get "perf").getD "perf") (← nat "runs" 3) only
+    | "perf" => perfAll manifest out (← nat "cpu" 2) ((get "perf").getD "perf") (← nat "runs" 3) only rows
     | "report" => report manifest out
     | _ => throw (IO.userError usage)
     return 0
