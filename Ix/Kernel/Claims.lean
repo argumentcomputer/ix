@@ -594,3 +594,265 @@ theorem ReductionClaim.natPred {r f : ConstRef β} {entry : ConstantEntry β}
   exact hm.2 x 0
 
 end Ix.Kernel
+
+/-! ## Infer-only claims for rule steps (review M3)
+
+A rule step (ι, projection, structure η, quotient) fires on a target whose
+well-denotedness is the premise of the claim it produces (`ReductionClaim`,
+`ConvClaim`). Its arguments are read off that target's spine, so where the
+function they are applied to has a uniformly non-Prop binder, domain
+determination (`piR_dom_unique`) recovers each argument's membership from the
+target's own application nodes and no inference is needed. At any other
+binder the argument is inferred and its type converted to the domain: this is
+the possibly-Prop residue, which cannot be removed (con-leche task #73).
+
+The rule's endpoints are applied to those same arguments, so their
+applications are not themselves known to be well denoted; every claim below is
+therefore relative to a witness `w`, the target, whose well-denotedness is the
+premise. With `w = e`, `IOClaim w e A` is typing conditional on the term's
+own well-denotedness. The spine form follows con-leche's gated iota
+certificates (`iotaCertsG`, `certsG_fit`, tasks #49 and #71). -/
+
+namespace Ix.Kernel
+
+open Model Model.SetTheory Model.SetModel
+
+universe u v
+
+variable {β : Type u} {entries : Environment β} {Γ : Context β}
+
+theorem Model.wellDenoted_appN_head {V : Type v} [SetTheory V] {constants : Assignment β V}
+    {levels : List Nat} {env : Nat → V} :
+    ∀ {f : AExpr β} {args : List (AExpr β)},
+      WellDenoted constants levels env (f.appN args) → WellDenoted constants levels env f
+  | _, [], h => h
+  | f, a :: args, h => (wellDenoted_appN_head (f := .app f a) (args := args) h).1
+
+theorem Model.interp_appN_congr {V : Type v} [SetTheory V] {constants : Assignment β V}
+    {levels : List Nat} {env : Nat → V} :
+    ∀ {f f' : AExpr β} (args : List (AExpr β)),
+      interp constants levels env f = interp constants levels env f' →
+        interp constants levels env (f.appN args) = interp constants levels env (f'.appN args)
+  | _, _, [], h => h
+  | f, f', a :: args, h =>
+    interp_appN_congr (f := .app f a) (f' := .app f' a) args (by simp only [interp, h])
+
+/-- Wherever `w` is well denoted, so is `e`. -/
+def SupportClaim (entries : Environment β) (Γ : Context β) (w e : AExpr β) : Prop :=
+  ∀ (V : Type v) [SetTheory V] (constants : Assignment β V), Realizes constants entries →
+    ∀ (levels : List Nat) (env : Nat → V), Γ.Valid constants levels env →
+      WellDenoted constants levels env w → WellDenoted constants levels env e
+
+/-- Infer-only typing: wherever the witness `w` is well denoted, `e` and `A`
+are well denoted and `e` denotes a member of `A`. -/
+def IOClaim (entries : Environment β) (Γ : Context β) (w e A : AExpr β) : Prop :=
+  ∀ (V : Type v) [SetTheory V] (constants : Assignment β V), Realizes constants entries →
+    ∀ (levels : List Nat) (env : Nat → V), Γ.Valid constants levels env →
+      WellDenoted constants levels env w →
+        WellDenoted constants levels env e ∧ WellDenoted constants levels env A ∧
+          interp constants levels env e ∈ˢ interp constants levels env A
+
+/-- Reduction under a witness: wherever `w` is well denoted, `e` denotes what
+`e'` denotes and `e'` is well denoted. -/
+def IOReductionClaim (entries : Environment β) (Γ : Context β) (w e e' : AExpr β) : Prop :=
+  ∀ (V : Type v) [SetTheory V] (constants : Assignment β V), Realizes constants entries →
+    ∀ (levels : List Nat) (env : Nat → V), Γ.Valid constants levels env →
+      WellDenoted constants levels env w →
+        interp constants levels env e = interp constants levels env e' ∧
+          WellDenoted constants levels env e'
+
+namespace SupportClaim
+
+theorem refl (w : AExpr β) : SupportClaim.{u,v} entries Γ w w := fun _ _ _ _ _ _ _ h => h
+
+theorem ofFormed {w e : AExpr β} (h : FormedClaim.{u,v} entries Γ e) :
+    SupportClaim.{u,v} entries Γ w e :=
+  fun V _ constants hM levels env hΓ _ => h V constants hM levels env hΓ
+
+theorem ofReduction {w e e' : AExpr β} (hs : SupportClaim.{u,v} entries Γ w e)
+    (h : ReductionClaim.{u,v} entries Γ e e') : SupportClaim.{u,v} entries Γ w e' :=
+  fun V _ constants hM levels env hΓ hw =>
+    (h V constants hM levels env hΓ (hs V constants hM levels env hΓ hw)).2
+
+theorem appFn {w f a : AExpr β} (h : SupportClaim.{u,v} entries Γ w (.app f a)) :
+    SupportClaim.{u,v} entries Γ w f :=
+  fun V _ constants hM levels env hΓ hw => (h V constants hM levels env hΓ hw).1
+
+theorem appArg {w f a : AExpr β} (h : SupportClaim.{u,v} entries Γ w (.app f a)) :
+    SupportClaim.{u,v} entries Γ w a :=
+  fun V _ constants hM levels env hΓ hw => (h V constants hM levels env hΓ hw).2.1
+
+theorem appNHead {w f : AExpr β} {args : List (AExpr β)}
+    (h : SupportClaim.{u,v} entries Γ w (f.appN args)) : SupportClaim.{u,v} entries Γ w f :=
+  fun V _ constants hM levels env hΓ hw => wellDenoted_appN_head (h V constants hM levels env hΓ hw)
+
+theorem appNPrefix {w f : AExpr β} {xs ys : List (AExpr β)}
+    (h : SupportClaim.{u,v} entries Γ w (f.appN (xs ++ ys))) :
+    SupportClaim.{u,v} entries Γ w (f.appN xs) := by
+  rw [AExpr.appN_append] at h
+  exact h.appNHead
+
+theorem proj {w x : AExpr β} {r : ConstRef β} {i : Nat}
+    (h : SupportClaim.{u,v} entries Γ w (.proj r i x)) : SupportClaim.{u,v} entries Γ w x :=
+  fun V _ constants hM levels env hΓ hw => h V constants hM levels env hΓ hw
+
+theorem lamDomain {w D b : AExpr β} {p : Certified.PropWhen}
+    (h : SupportClaim.{u,v} entries Γ w (.lam p D b)) : SupportClaim.{u,v} entries Γ w D :=
+  fun V _ constants hM levels env hΓ hw => (h V constants hM levels env hΓ hw).1
+
+end SupportClaim
+
+namespace IOClaim
+
+theorem ofTyping {w e A : AExpr β} (h : TypingClaim.{u,v} entries Γ e A) :
+    IOClaim.{u,v} entries Γ w e A :=
+  fun V _ constants hM levels env hΓ _ => h V constants hM levels env hΓ
+
+theorem support {w e A : AExpr β} (h : IOClaim.{u,v} entries Γ w e A) :
+    SupportClaim.{u,v} entries Γ w e :=
+  fun V _ constants hM levels env hΓ hw => (h V constants hM levels env hΓ hw).1
+
+/-- A witness that is well denoted everywhere makes infer-only typing ordinary typing. -/
+theorem typing {w e A : AExpr β} (h : IOClaim.{u,v} entries Γ w e A)
+    (hw : FormedClaim.{u,v} entries Γ w) : TypingClaim.{u,v} entries Γ e A :=
+  fun V _ constants hM levels env hΓ => h V constants hM levels env hΓ (hw V constants hM levels env hΓ)
+
+theorem domain {w f D B : AExpr β} {p : Certified.PropWhen}
+    (h : IOClaim.{u,v} entries Γ w f (.forallE p D B)) : SupportClaim.{u,v} entries Γ w D :=
+  fun V _ constants hM levels env hΓ hw => (h V constants hM levels env hΓ hw).2.1.1
+
+/-- Application, as `TypingClaim.app`, under the witness. -/
+theorem app {w f a D B : AExpr β} {p : Certified.PropWhen}
+    (hf : IOClaim.{u,v} entries Γ w f (.forallE p D B)) (ha : IOClaim.{u,v} entries Γ w a D) :
+    IOClaim.{u,v} entries Γ w (.app f a) (B.inst a) := by
+  intro V _ constants hM levels env hΓ hw
+  obtain ⟨hfw, hpw, hfm⟩ := hf V constants hM levels env hΓ hw
+  obtain ⟨haw, _, ham⟩ := ha V constants hM levels env hΓ hw
+  obtain ⟨_, hBw, bv, hz, hBm⟩ := hpw
+  have hfm' : interp constants levels env f ∈ˢ
+      piR bv (interp constants levels env D)
+        (fun x => interp constants levels (Valuation.cons x env) B) := by
+    simpa only [interp, piR_zero_agree hz (fun _ _ => rfl)] using hfm
+  refine ⟨⟨hfw, haw, bv, interp constants levels env D,
+    (fun x => interp constants levels (Valuation.cons x env) B), hfm', ham, hBm⟩, ?_, ?_⟩
+  · apply wellDenoted_inst
+    · simpa using haw
+    · simpa using hBw _ ham
+  · simp only [interp_inst, Valuation.skip_zero, Valuation.insert_zero]
+    apply app_mem_piR hfm' ham
+    intro hzero x hx
+    simpa only [hzero, univ_zero] using hBm x hx
+
+/-- Domain determination at a uniformly non-Prop binder: where the application
+node is well denoted, its argument lies in the function's own domain, because
+the function is a graph over that domain (`piR_dom_unique`); a zero-regime
+slot would make the function the proof point, which no positive-regime
+product contains. This is `TypingClaim.appFormedNever` under a witness. -/
+theorem argNever {w f a D B : AExpr β}
+    (hf : IOClaim.{u,v} entries Γ w f (.forallE .never D B))
+    (hs : SupportClaim.{u,v} entries Γ w (.app f a)) : IOClaim.{u,v} entries Γ w a D := by
+  intro V _ constants hM levels env hΓ hw
+  obtain ⟨_, hPi, hfm⟩ := hf V constants hM levels env hΓ hw
+  obtain ⟨_, haw, k, A, C, hfk, ham, _⟩ := hs V constants hM levels env hΓ hw
+  change interp constants levels env f ∈ˢ
+    piR 1 (interp constants levels env D)
+      (fun x => interp constants levels (Valuation.cons x env) B) at hfm
+  have hk : k ≠ 0 := by
+    intro hk
+    subst k
+    have hpt := eq_pt_of_mem_piR_zero hfk
+    exact not_pt_mem_piR_pos (by decide : 1 ≠ 0) (hpt ▸ hfm)
+  have hdom := piR_dom_unique (by decide : 1 ≠ 0) hk hfm hfk
+  exact ⟨haw, hPi.1, hdom ▸ ham⟩
+
+/-- An application at a uniformly non-Prop binder, typed without inferring
+its argument. -/
+theorem appNever {w f a D B : AExpr β}
+    (hf : IOClaim.{u,v} entries Γ w f (.forallE .never D B))
+    (hs : SupportClaim.{u,v} entries Γ w (.app f a)) :
+    IOClaim.{u,v} entries Γ w (.app f a) (B.inst a) :=
+  hf.app (hf.argNever hs)
+
+/-- The residue: an inferred argument whose type converts to a domain that is
+well denoted wherever the witness is. -/
+theorem checked {w a A' D : AExpr β} (ha : TypingClaim.{u,v} entries Γ a A')
+    (hc : ConvClaim.{u,v} entries Γ A' D) (hD : SupportClaim.{u,v} entries Γ w D) :
+    IOClaim.{u,v} entries Γ w a D := by
+  intro V _ constants hM levels env hΓ hw
+  obtain ⟨haw, hA'w, ham⟩ := ha V constants hM levels env hΓ
+  have hDw := hD V constants hM levels env hΓ hw
+  exact ⟨haw, hDw, hc V constants hM levels env hΓ hA'w hDw ▸ ham⟩
+
+/-- An application at any other binder: the argument is inferred and its type
+converted to the domain. -/
+theorem appChecked {w f a A' D B : AExpr β} {p : Certified.PropWhen}
+    (hf : IOClaim.{u,v} entries Γ w f (.forallE p D B)) (ha : TypingClaim.{u,v} entries Γ a A')
+    (hc : ConvClaim.{u,v} entries Γ A' D) : IOClaim.{u,v} entries Γ w (.app f a) (B.inst a) :=
+  hf.app (checked ha hc hf.domain)
+
+end IOClaim
+
+namespace IOReductionClaim
+
+theorem refl {w e : AExpr β} (h : SupportClaim.{u,v} entries Γ w e) :
+    IOReductionClaim.{u,v} entries Γ w e e :=
+  fun V _ constants hM levels env hΓ hw => ⟨rfl, h V constants hM levels env hΓ hw⟩
+
+theorem support {w e e' : AExpr β} (h : IOReductionClaim.{u,v} entries Γ w e e') :
+    SupportClaim.{u,v} entries Γ w e' :=
+  fun V _ constants hM levels env hΓ hw => (h V constants hM levels env hΓ hw).2
+
+/-- Beta at an argument that fits the lambda's own domain under the witness. -/
+theorem beta {w D b a : AExpr β} {p : Certified.PropWhen}
+    (hl : SupportClaim.{u,v} entries Γ w (.lam p D b)) (ha : IOClaim.{u,v} entries Γ w a D) :
+    IOReductionClaim.{u,v} entries Γ w (.app (.lam p D b) a) (b.inst a) := by
+  intro V _ constants hM levels env hΓ hw
+  obtain ⟨haw, -, ham⟩ := ha V constants hM levels env hΓ hw
+  obtain ⟨hw', eq⟩ := wellDenoted_beta (hl V constants hM levels env hΓ hw) haw ham
+  exact ⟨eq, hw'⟩
+
+/-- Reduce the head of an application spine, then the spine it leaves. -/
+theorem appN {w f f' r : AExpr β} (args : List (AExpr β))
+    (h₁ : IOReductionClaim.{u,v} entries Γ w f f')
+    (h₂ : IOReductionClaim.{u,v} entries Γ w (f'.appN args) r) :
+    IOReductionClaim.{u,v} entries Γ w (f.appN args) r := by
+  intro V _ constants hM levels env hΓ hw
+  obtain ⟨e₁, -⟩ := h₁ V constants hM levels env hΓ hw
+  obtain ⟨e₂, hr⟩ := h₂ V constants hM levels env hΓ hw
+  exact ⟨(interp_appN_congr args e₁).trans e₂, hr⟩
+
+theorem append {w f f' r : AExpr β} {xs ys : List (AExpr β)}
+    (h₁ : IOReductionClaim.{u,v} entries Γ w (f.appN xs) f')
+    (h₂ : IOReductionClaim.{u,v} entries Γ w (f'.appN ys) r) :
+    IOReductionClaim.{u,v} entries Γ w (f.appN (xs ++ ys)) r := by
+  rw [AExpr.appN_append]
+  exact appN ys h₁ h₂
+
+end IOReductionClaim
+
+/-- Iota under the target's own well-denotedness: the target converts to the
+left instance, the rule's equation relates the unreduced applications of its
+endpoints, and both endpoint applications reduce, wherever the target is well
+denoted, to their instances. Same conclusion as `ReductionClaim.iota`, whose
+formedness premises are unconditional. -/
+theorem ReductionClaim.iotaIO {e l L R r : AExpr β} (hc : ConvClaim.{u,v} entries Γ e l)
+    (hl : IOReductionClaim.{u,v} entries Γ e L l) (heq : ConversionClaim.{u,v} entries Γ L R)
+    (hr : IOReductionClaim.{u,v} entries Γ e R r) : ReductionClaim.{u,v} entries Γ e r := by
+  intro V _ constants hM levels env hΓ hwe
+  obtain ⟨eL, hlw⟩ := hl V constants hM levels env hΓ hwe
+  obtain ⟨eR, hrw⟩ := hr V constants hM levels env hΓ hwe
+  exact ⟨(hc V constants hM levels env hΓ hwe hlw).trans
+    (eL.symm.trans ((heq V constants hM levels env hΓ).trans eR)), hrw⟩
+
+/-- A conversion through a rule whose right instance is the other side, under
+the well-denotedness of the side whose spine supplied the arguments. -/
+theorem ConvClaim.ofRuleIO {a b l L R : AExpr β} (hc : ConvClaim.{u,v} entries Γ a l)
+    (hl : IOReductionClaim.{u,v} entries Γ a L l) (heq : ConversionClaim.{u,v} entries Γ L R)
+    (hr : IOReductionClaim.{u,v} entries Γ a R b) : ConvClaim.{u,v} entries Γ a b := by
+  intro V _ constants hM levels env hΓ hwa _
+  obtain ⟨eL, hlw⟩ := hl V constants hM levels env hΓ hwa
+  obtain ⟨eR, -⟩ := hr V constants hM levels env hΓ hwa
+  exact (hc V constants hM levels env hΓ hwa hlw).trans
+    (eL.symm.trans ((heq V constants hM levels env hΓ).trans eR))
+
+end Ix.Kernel
