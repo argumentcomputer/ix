@@ -276,6 +276,10 @@ def cacheHashDepth : Nat := 8
 /-- Results at one context, each with its claim. -/
 structure Cache (entries : Environment β) (Γ : Context β) : Type u where
   keyHash : β → UInt64
+  /-- Remaining work: every reduction, inference, or conversion call spends one
+  unit, across frames, and none is left means exhaustion. It bounds total work,
+  where fuel bounds depth. -/
+  budget : Nat := 0
   infer : Std.HashMap UInt64 (List (Σ e : AExpr β, Typed.{u,v} entries Γ e)) := {}
   whnf : Std.HashMap UInt64 (List (Σ e : AExpr β, Normalized.{u,v} entries Γ e)) := {}
   conv : Std.HashMap UInt64
@@ -285,7 +289,7 @@ namespace Cache
 
 variable {entries : Environment β} {Γ : Context β}
 
-def empty (keyHash : β → UInt64) : Cache.{u,v} entries Γ := { keyHash }
+def empty (keyHash : β → UInt64) (budget : Nat) : Cache.{u,v} entries Γ := { keyHash, budget }
 
 def key (c : Cache.{u,v} entries Γ) (e : AExpr β) : UInt64 := shapeHash c.keyHash cacheHashDepth e
 
@@ -381,13 +385,21 @@ def modifyCache (f : Cache.{u,v} entries Γ → Cache.{u,v} entries Γ) :
     KM.{u,v} entries Γ PUnit :=
   fun c => (.ok ⟨⟩, f c)
 
-/-- A computation at another context, with a fresh cache for it. -/
-def inFrame {Γ' : Context β} (m : KM.{u,v} entries Γ' α) : KM.{u,v} entries Γ α := fun c =>
-  ((m (Cache.empty c.keyHash)).1, c)
+/-- Spend one unit of work. -/
+def tick : KM.{u,v} entries Γ PUnit := fun c =>
+  match c.budget with
+  | 0 => (.error .exhausted, c)
+  | n + 1 => (.ok ⟨⟩, { c with budget := n })
 
-/-- Run with an empty cache. -/
-def run (keyHash : β → UInt64) (m : KM.{u,v} entries Γ α) : Search α :=
-  (m (Cache.empty keyHash)).1
+/-- A computation at another context, with a fresh cache for it; the work it
+spends is spent here too. -/
+def inFrame {Γ' : Context β} (m : KM.{u,v} entries Γ' α) : KM.{u,v} entries Γ α := fun c =>
+  let (r, c') := m (Cache.empty c.keyHash c.budget)
+  (r, { c with budget := c'.budget })
+
+/-- Run with an empty cache and the given work budget. -/
+def run (keyHash : β → UInt64) (budget : Nat) (m : KM.{u,v} entries Γ α) : Search α :=
+  (m (Cache.empty keyHash budget)).1
 
 end KM
 
@@ -698,6 +710,9 @@ def whnfC : Nat → (entries : Environment β) → (Γ : Context β) → (e : AE
     KM.{u,v} entries Γ (Normalized.{u,v} entries Γ e)
   | 0, _, _, e => pure ⟨e, ReductionClaim.refl e, some .exhausted⟩
   | fuel + 1, entries, Γ, e => do
+    let n ← KM.attempt KM.tick
+    if let .error failure := n then
+      return ⟨e, ReductionClaim.refl e, some failure⟩
     let cacheable := match e with | .app .. | .const .. | .proj .. | .letE .. => true | _ => false
     let cache ← KM.cache
     let cached := if cacheable then cache.findWhnf e else none
@@ -777,6 +792,7 @@ def inferAC : Nat → (entries : Environment β) → (Γ : Context β) → (e : 
     KM.{u,v} entries Γ (Typed.{u,v} entries Γ e)
   | 0, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, e => do
+    KM.tick
     let cacheable := match e with | .bvar .. | .sort .. | .const .. | .natLit .. => false | _ => true
     let cache ← KM.cache
     let cached := if cacheable then cache.findInfer e else none
@@ -968,6 +984,7 @@ def isDefEqC : Nat → (entries : Environment β) → (Γ : Context β) → (a b
   | 0, _, _, _, _ => throw .exhausted
   | fuel + 1, entries, Γ, a, b =>
     if h : a = b then pure ⟨h ▸ ConvClaim.refl a⟩ else do
+      KM.tick
       let cache ← KM.cache
       match cache.findConv a b with
       | some r => KM.ofSearch r
@@ -980,40 +997,44 @@ def isDefEqC : Nat → (entries : Environment β) → (Γ : Context β) → (a b
 
 end
 
+/-- The work budget of a top-level call, per unit of fuel. -/
+def workPerFuel : Nat := 100
+
 /-! ## Uncached entry points
 
 The functions above run in `KM`; these start each call with an empty cache
-and keep the kernel's original interface. -/
+and a work budget of `fuel * workPerFuel`, and keep the kernel's original
+interface. -/
 
 def step (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
     Search (Reduced.{u,v} entries Γ e) :=
-  KM.run (fun _ => 0) (stepC.{u,v} fuel entries Γ e)
+  KM.run (fun _ => 0) (fuel * workPerFuel) (stepC.{u,v} fuel entries Γ e)
 
 def applyTyped (fuel : Nat) (entries : Environment β) (Γ : Context β) (f F : AExpr β)
     (hf : TypingClaim.{u,v} entries Γ f F) (args : List (AExpr β)) :
     Search (Applied.{u,v} entries Γ f args) :=
-  KM.run (fun _ => 0) (applyTypedC.{u,v} fuel entries Γ f F hf args)
+  KM.run (fun _ => 0) (fuel * workPerFuel) (applyTypedC.{u,v} fuel entries Γ f F hf args)
 
 def iota (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
     Search (Reduced.{u,v} entries Γ e) :=
-  KM.run (fun _ => 0) (iotaC.{u,v} fuel entries Γ e)
+  KM.run (fun _ => 0) (fuel * workPerFuel) (iotaC.{u,v} fuel entries Γ e)
 
 def proofIrrelevance (fuel : Nat) (entries : Environment β) (Γ : Context β) (a b : AExpr β) :
     Search (Conv.{u,v} entries Γ a b) :=
-  KM.run (fun _ => 0) (proofIrrelevanceC.{u,v} fuel entries Γ a b)
+  KM.run (fun _ => 0) (fuel * workPerFuel) (proofIrrelevanceC.{u,v} fuel entries Γ a b)
 
 def whnf (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
     Normalized.{u,v} entries Γ e :=
-  match KM.run (fun _ => 0) (whnfC.{u,v} fuel entries Γ e) with
+  match KM.run (fun _ => 0) (fuel * workPerFuel) (whnfC.{u,v} fuel entries Γ e) with
   | .ok n => n
   | .error failure => ⟨e, ReductionClaim.refl e, some failure⟩
 
 def inferA (fuel : Nat) (entries : Environment β) (Γ : Context β) (e : AExpr β) :
     Search (Typed.{u,v} entries Γ e) :=
-  KM.run (fun _ => 0) (inferAC.{u,v} fuel entries Γ e)
+  KM.run (fun _ => 0) (fuel * workPerFuel) (inferAC.{u,v} fuel entries Γ e)
 
 def isDefEq (fuel : Nat) (entries : Environment β) (Γ : Context β) (a b : AExpr β) :
     Search (Conv.{u,v} entries Γ a b) :=
-  KM.run (fun _ => 0) (isDefEqC.{u,v} fuel entries Γ a b)
+  KM.run (fun _ => 0) (fuel * workPerFuel) (isDefEqC.{u,v} fuel entries Γ a b)
 
 end Ix.Kernel
