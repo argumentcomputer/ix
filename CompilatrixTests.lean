@@ -6,6 +6,7 @@ import CompilatrixTests.Backend.Run
 import CompilatrixTests.Src.Run
 import CompilatrixTests.Src.Relevance.Run
 import CompilatrixTests.Lam.Run
+import CompilatrixTests.Lam.KernelK1
 
 /-! Test and proof collection. The complete proof/fence target is registered
 separately as `CompilatrixTests.Proofs`; runtime suites are compiled and run

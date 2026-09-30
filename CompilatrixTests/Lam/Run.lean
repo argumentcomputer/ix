@@ -3,6 +3,7 @@ import CompilatrixTests.Lam.Erase
 import CompilatrixTests.Lam.Differential
 import CompilatrixTests.Lam.Mutation
 import CompilatrixTests.Lam.KernelEval
+import CompilatrixTests.Lam.KernelK1.Fib
 
 /-! The `tests-lam` suite (design note 02 §4–5, §13): Lam's rules and clock
 monotonicity; erasure on synthetic programs; SrcEval against Lam on
@@ -11,7 +12,9 @@ monotonicity; erasure on synthetic programs; SrcEval against Lam on
 test sizes; annotation mutation through erasure; erased sizes. `--entry
 NAME` runs one bench entry through Lam (the child process of the deep
 `sum-loop` run). Building the suite also evaluates erasure in the kernel
-(`CompilatrixTests.Lam.KernelEval`). -/
+(`CompilatrixTests.Lam.KernelEval`) and the front end's recheck path with
+erasure on the fib bench-k1 artifact (`CompilatrixTests.Lam.KernelK1.Fib`;
+`CompilatrixTests.Lam.KernelK1` adds tak and gcd). -/
 
 namespace CompilatrixTests.Lam.Run
 
