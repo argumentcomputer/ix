@@ -36,7 +36,7 @@ def kernelFixtureRoots : Array Lean.Name := #[
   `Tests.Ix.Kernel.Quotients, `Tests.Ix.Kernel.Axioms,
   `Tests.Ix.Kernel.SearchOutcomes, `Tests.Ix.Kernel.ConversionSpines,
   `Tests.Ix.Kernel.ProofIrrelevance, `Tests.Ix.Kernel.AnnotationContexts,
-  `Tests.Ix.Kernel.SubstitutionSharing,
+  `Tests.Ix.Kernel.SubstitutionSharing, `Tests.Ix.Kernel.RuntimeStack,
   `Tests.Ix.Kernel.Fidelity,
   `Tests.Ix.Kernel.Ingress, `Tests.Ix.Kernel.Egress, `Tests.Ix.Kernel.Codec,
   `Tests.Ix.Kernel.ByteAdmission, `Tests.Ix.Kernel.ParserWork]

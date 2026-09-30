@@ -89,7 +89,8 @@ def authored : Array String := #[
   "Ix/Kernel/Inductive/Ordinary.lean", "Ix/Kernel/Certified/Structure/Read.lean",
   "Ix/Kernel/Inductive/Structure.lean", "Ix/Kernel/Inductive/Natural.lean", "Ix/Kernel/Fidelity.lean",
   "Ix/Kernel/Model/QuotientValues.lean", "Ix/Kernel/Certified/Quotient/Install.lean",
-  "Ix/Kernel/Certified/Standard/Install.lean", "Ix/Kernel/Certified/Basis/Empty.lean"
+  "Ix/Kernel/Certified/Standard/Install.lean", "Ix/Kernel/Certified/Basis/Empty.lean",
+  "Ix/Kernel/Runtime/Expr.lean"
 ]
 
 /-- Ported Lean modules. -/
