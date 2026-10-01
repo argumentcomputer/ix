@@ -279,7 +279,7 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge env fuel)
     have hR : Red env d (.proj sn i pe) (.proj sn i e₃) :=
       .trans (.projArg (hw hwh)) (.projArg (projLitToCtor_bridge hw hlit))
     rcases hcase with rfl | ⟨us, entry, hfn, hfp, hi, hlen, hus, hfire, hcont, hcert⟩
-    · exact hR
+    · exact .refl
     · obtain ⟨cvC, nP, nF, hc, hcerts⟩ := projCertAt_bridge hd hio hcert
       exact .trans hR (.trans (.proj hfp hfn hi hlen hus hfire hc hcerts) (hwc hcont))
 

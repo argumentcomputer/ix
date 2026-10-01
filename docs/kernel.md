@@ -339,11 +339,16 @@ origin and licence:
   `ae0c0c4e4ce6a0081648aff03fe9c39d002c4526`: the import closure of
   `ConLeche.model_exists` plus what the reader and theorems use (452
   modules), the licence, and the two fence scripts with the lexer fixture.
+  Seven of the verbatim modules, the ones upstream task #323 (KEEPPROJ)
+  changed, are at `3ca9e2fe749a51cba4c6e3527aeecba074c29316` instead and
+  form their own set (int-5).
   Verbatim files are byte-identical and carry no header. Adapted files start
-  with a port header (revision, source path, transformations): four modules
+  with a port header (revision, source path, transformations): five modules
   (`ConLeche/Kernel/CheckerBase.lean`, which imports `NatOpPinSet` in place
   of the unported JSON `NatOpPins`; `ConLeche/Verify/Cached/{AgreeFloor,
   PushChain}.lean`, which add `import all Init.LetFun` for Lean 4.34.0;
+  `ConLeche/Frontend/InModel/Nested.lean`, whose container groups do not
+  depend on the auxiliary motives' order, cl-m1;
   `ConLeche/MainTheorem.lean`, cut to `model_exists`) and
   `Tests/ConLeche/Axioms.lean`. The last two carry Argument's modification
   notice and are licensed `Apache-2.0 AND (MIT OR Apache-2.0)`; the rest is

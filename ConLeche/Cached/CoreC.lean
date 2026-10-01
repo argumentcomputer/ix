@@ -961,6 +961,7 @@ def whnfCoreStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
       let v ← r.whnfCore depth h
       whnfAppI mode r fe depth k v args
     | .proj sn i pe => do
+      -- stuck: the input itself, scrutinee as it was (see `whnfCoreBody`)
       let e' ← r.whnf depth pe
       let e' ← projLitToCtorI r fe depth e'
       let snn ← pure sn
@@ -983,10 +984,10 @@ def whnfCoreStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
             -- trusted mode runs none (`projCertAt`).
             if ← projCertAtI r fe depth mode.verifiedChecks mode.betaGate c us args then
               k arg
-            else pure (Expr.proj sn i e')
-          else pure (Expr.proj sn i e')
-        | _ => pure (Expr.proj sn i e')
-      | none => pure (Expr.proj sn i e')
+            else pure e
+          else pure e
+        | _ => pure e
+      | none => pure e
     | .letE _ _ _ =>
       -- unreachable by construction, as in the spec body (task #241):
       -- the annotate pass returns the ζ reduct, so no `letE` node

@@ -537,8 +537,7 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
         simp only [fvarLeaves]
         rcases hcase with rfl |
           ⟨us, entry, hfn, hf, hi, hlen, hus, -, hred, -⟩
-        · simp only [fvarLeaves] at hl
-          exact ihLoop he l (hsub₃ l hl)
+        · simpa only [fvarLeaves] using hl
         · have hl2 := ihCore hred l hl
           exact ihLoop he l (hsub₃ l
             (fvarLeaves_getAppArgs (getD_mem (by omega)) l hl2))
@@ -667,7 +666,7 @@ theorem whnfPres_looseBVars {env : Env} (henv : EnvWF env) :
           · exact ihLoop hred (strLitToConstructor_looseBVars s 0)
         rcases hcase with rfl |
           ⟨us, entry, hfn, hf, hi, hlen, hus, -, hred, -⟩
-        · simpa [looseBVarsBounded] using hbe₃
+        · simpa [looseBVarsBounded] using hb
         · exact ihCore hred
             (looseBVarsBounded_getAppArgs hbe₃ _ (getD_mem (by omega)))
     · -- whnf loop: induction on the loop's own step budget (task #106)

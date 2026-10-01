@@ -1011,7 +1011,13 @@ def whnfCoreBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
       -- The structural rule `proj_i (ctor p⃗ x⃗) ↦ x_i`, driven by the
       -- projection table (never by basis names): the table entry for
       -- (structName, i) supplies the constructor, the counts, and the
-      -- possibly-Prop level guard.
+      -- possibly-Prop level guard.  When it does not fire, the INPUT is
+      -- returned — its scrutinee as it was, not the WHNF computed here
+      -- (official `whnf_core`: `reduce_proj` fails, `r = e`).  The WHNF
+      -- has lost the scrutinee's head constant, and with it the defeq
+      -- check's arguments-first comparison of `a.i =?= b.i`
+      -- (lane KEEPPROJ: exponential on the self-check's
+      -- `nestRoot_datF._f`, `tests/e2e/src/proj_stuck_struct.lean`).
       match env.findProj? sn i with
       | some entry =>
         match e'.getAppFn with
@@ -1032,10 +1038,10 @@ def whnfCoreBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
             -- nothing).
             if ← projCertAt r env depth mode.verifiedChecks mode.betaGate c us args then
               r.whnfCore depth arg
-            else pure (.proj sn i e')
-          else pure (.proj sn i e')
-        | _ => pure (.proj sn i e')
-      | none => pure (.proj sn i e')
+            else pure (.proj sn i pe)
+          else pure (.proj sn i pe)
+        | _ => pure (.proj sn i pe)
+      | none => pure (.proj sn i pe)
     | .letE _ _ _ =>
       -- **Unreachable by construction** (task #241).  The former ζ step
       -- (official kernel `whnf_core`, `case expr_kind::Let`; nanoda

@@ -269,10 +269,10 @@ the loop's continuation `k` abstracted. -/
           let arg := args.getD (entry.numParams + i) (.bvar 0)
           if ← projCertAt r env depth mode.verifiedChecks mode.betaGate c us args then
             k arg
-          else pure (.proj sn i e')
-        else pure (.proj sn i e')
-      | _ => pure (.proj sn i e')
-    | none => pure (.proj sn i e')
+          else pure (.proj sn i pe)
+        else pure (.proj sn i pe)
+      | _ => pure (.proj sn i pe)
+    | none => pure (.proj sn i pe)
   | .letE _ _ _ =>
     -- unreachable by construction, as in `whnfCoreStepI` (task #241)
     throw (.internal "whnfCore: `let` in an annotated expression")

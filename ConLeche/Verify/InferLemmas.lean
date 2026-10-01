@@ -673,13 +673,15 @@ theorem Expr.getAppArgs_mkAppN : ∀ (args : List Expr) (f : Expr),
     simp [Expr.getAppArgs]
 
 /-- Inversion for `whnfCore` on projections: the scrutinee whnf, then
-the string-literal expansion step (`projLitToCtorFueled`), then either a
-stuck projection of the converted scrutinee or a firing table entry. -/
+the string-literal expansion step (`projLitToCtorFueled`), then either the
+input itself (a stuck projection keeps its scrutinee as it was, official
+`whnf_core`: `reduce_proj` fails and the input is returned) or a firing
+table entry. -/
 theorem whnf_proj_inv {env : Env} {fuel d : Nat} {sn : Name} {i : Nat} {e e' : Expr}
     (h : whnfCore mode env (fuel + 1) d (.proj sn i e) = .ok e') :
     ∃ e₂ e₃, whnf mode env fuel d e = .ok e₂ ∧
       projLitToCtorFueled mode env fuel d e₂ = .ok e₃ ∧
-      (e' = .proj sn i e₃ ∨
+      (e' = .proj sn i e ∨
         ∃ us entry, e₃.getAppFn = .const entry.ctor us ∧
           env.findProj? sn i = some entry ∧
           i < entry.numFields ∧
@@ -3175,7 +3177,7 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
           · exact ihLoop hred (strLitToConstructor_WScoped s d)
         rcases hcase with rfl |
           ⟨us, entry, hfn, hf, hi, hlen, hus, -, hred, -⟩
-        · simpa [WScoped] using hwe₃
+        · simpa [WScoped] using hw
         · exact ihCore hred (hwe₃.getAppArgs _ (getD_mem (by omega)))
     · -- whnf loop: the reduction chain is iteration on the loop's own
       -- step budget (task #106), so this is an induction on that

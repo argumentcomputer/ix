@@ -118,10 +118,10 @@ private theorem whnfCoreStepM_unfold (env : Env) (d : Nat)
               fun b =>
             if b then
               kM (e'.getAppArgs.getD (entry.numParams + i) (.bvar 0))
-            else pure (.proj sn i e')
-          else pure (.proj sn i e')
-        | _ => pure (.proj sn i e')
-      | none => pure (.proj sn i e')
+            else pure (.proj sn i pe)
+          else pure (.proj sn i pe)
+        | _ => pure (.proj sn i pe)
+      | none => pure (.proj sn i pe)
     | .letE _ _ _ =>
       throw (.internal "whnfCore: `let` in an annotated expression")
     | .bvar _ =>
@@ -567,8 +567,7 @@ theorem whnfCoreStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
       (fun s₁ e' e'x hs₁ hP => ?_)
     obtain ⟨rfl, hwe'⟩ := hP
     have he'd : RelC e' e' := rfl
-    have hwproj : Expr.WScoped d (Expr.proj sn ip e') := by
-      simpa only [Expr.WScoped] using hwe'
+    have hwproj : Expr.WScoped d (Expr.proj sn ip pe) := hw
     refine SimC.bind_left (pureEq_eff hs₁ sn)
       (fun s₁' snw hs₁ hsnw => ?_)
     subst snw
@@ -577,7 +576,7 @@ theorem whnfCoreStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
     | none =>
       dsimp only
       exact SimC.of_eff
-        (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+        (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
         (fun pr hQ => ⟨hQ, hwproj⟩)
     | some entry =>
       dsimp only
@@ -615,46 +614,46 @@ theorem whnfCoreStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
           | false =>
             simp only [Bool.false_eq_true, ↓reduceIte]
             exact SimC.of_eff
-              (pureC_eff hs₃ (x := Expr.proj sn ip e')) _
+              (pureC_eff hs₃ (x := Expr.proj sn ip pe)) _
               (fun pr hQ => ⟨hQ, hwproj⟩)
         · exact SimC.of_eff
-            (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+            (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
             (fun pr hQ => ⟨hQ, hwproj⟩)
       | bvar k =>
         exact SimC.of_eff
-          (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+          (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
       | sort u =>
         exact SimC.of_eff
-          (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+          (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
       | lit l =>
         exact SimC.of_eff
-          (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+          (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
       | fvar idx t =>
         exact SimC.of_eff
-          (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+          (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
       | app f₂ a₂ =>
         exact SimC.of_eff
-          (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+          (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
       | lam t b m =>
         exact SimC.of_eff
-          (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+          (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
       | forallE t b m =>
         exact SimC.of_eff
-          (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+          (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
       | letE t v b =>
         exact SimC.of_eff
-          (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+          (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
       | proj s' j' e'' =>
         exact SimC.of_eff
-          (pureC_eff hs₁ (x := Expr.proj sn ip e')) _
+          (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
 
 /-- The head-normalization *loop* simulates its mirror, by induction on

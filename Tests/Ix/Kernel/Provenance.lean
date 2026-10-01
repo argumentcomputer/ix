@@ -24,7 +24,8 @@ Checks, against `Tests.Ix.Kernel.ImportManifest`:
   file at its revision in that jj workspace (`jj file show`);
 * with `--source-git <checkout>`, every git-origin row's source hash matches
   the file at its revision in that git checkout (`git show <rev>:<path>`),
-  and the checkout has the revision.
+  and the checkout has every git origin's revision (con-leche has two since
+  int-5; `plans/refs/con-leche` holds both).
 
 Both source checks stay optional: the ordinary build must not depend on an
 untracked reference. Hashing shells out to `sha256sum`. Exit code 0 on
@@ -137,7 +138,9 @@ def main (args : List String) : IO UInt32 := do
     sameFiles "Ix/Kernel, pure Ixon and ConLeche source" files (targets.filter inInventory ++ authored)
     for set in portSets do
       for row in set.rows do checkRow set row
-    if let some checkout := options.git then checkGitRevision checkout conLeche.revision
+    if let some checkout := options.git then
+      for revision in ((portSets.filter (·.origin.vcs == .git)).map (·.origin.revision)).toList.eraseDups do
+        checkGitRevision checkout revision
     let mut verified := #[]
     for set in portSets do
       let checkout? := match set.origin.vcs with
@@ -145,8 +148,10 @@ def main (args : List String) : IO UInt32 := do
         | .git => options.git
       if let some checkout := checkout? then
         for row in set.rows do checkSource set.origin checkout row
-        verified := verified.push s!"{set.origin.label} {set.license} ({set.rows.size})"
-    let modules (origin : Origin) := (portSets.filter (·.origin == origin)).foldl
+        verified := verified.push
+          s!"{set.origin.label} {String.ofList (set.origin.revision.toList.take 8)} {set.license} ({set.rows.size})"
+    -- every revision of an origin's repository counts as that origin (con-leche has two, int-5)
+    let modules (origin : Origin) := (portSets.filter (·.origin.repository == origin.repository)).foldl
       (fun n set => n + (set.rows.filter (inInventory ·.target)).size) 0
     let others := (rows.filter (!inInventory ·.target)).size
     let sources := if verified.isEmpty then "" else

@@ -783,7 +783,7 @@ From the port the tree also holds con-leche's subtree, with its paths and
 namespace kept (D4):
 
 ```text
-ConLeche/                      con-leche at ae0c0c4e; provenance rows per file
+ConLeche/                      con-leche at ae0c0c4e (#323's 7 files at 3ca9e2fe); provenance rows per file
   SetTheory/ SetModel/ Term/   set theory, set model, terms (L1)
   Kernel/ Cached/ Rules/ PinGen/   the checker and the Nat-op certificates (L2)
   Verify/ Semantics/ Model/    soundness and the model (L3)

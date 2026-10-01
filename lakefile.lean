@@ -287,7 +287,8 @@ section ConLeche
 
 /- Con-leche's verified checker core, imported in place and verbatim from
 `https://github.com/leanprover/con-leche.git` at
-`ae0c0c4e4ce6a0081648aff03fe9c39d002c4526` (Apache-2.0): the import closure
+`ae0c0c4e4ce6a0081648aff03fe9c39d002c4526` (Apache-2.0; the seven files of
+upstream task #323 at `3ca9e2fe`, int-5): the import closure
 of `ConLeche.model_exists` under its upstream `ConLeche/**` paths, plus the
 adapted `ConLeche/MainTheorem.lean`. See `plans/ix-kernel-con-leche-port-v4.md`.
 `linter.deprecated` is off so the upstream bytes, written for Lean 4.33.0,
