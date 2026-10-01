@@ -186,7 +186,7 @@ theorem addAll_hasAt (tb comb : CTable) {e : Entry} (he : some e ∈ comb.toList
   exact foldl_hasAt _ addAll_step_improves he (fun acc => add_hasAt acc e) tb
 
 theorem addAll_entries {tb comb : CTable} {P : Entry → Prop} (h1 : Entries tb P)
-    (h2 : Entries comb P) : Entries (addAll tb comb) P := by
+    (h2 : ∀ e, some e ∈ comb.toList → P e) : Entries (addAll tb comb) P := by
   unfold addAll
   rw [← Array.foldl_toList]
   refine foldl_entries _ (Q := fun o => ∀ e, o = some e → P e) ?_ comb.toList tb ?_ h1
@@ -196,7 +196,7 @@ theorem addAll_entries {tb comb : CTable} {P : Entry → Prop} (h1 : Entries tb 
     | some e => exact add_entries hacc (hq e rfl)
   · intro o ho e he
     subst he
-    exact h2.mem ho
+    exact h2 _ ho
 
 /-! ## The best entry -/
 

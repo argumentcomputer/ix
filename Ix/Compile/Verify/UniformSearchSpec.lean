@@ -675,4 +675,399 @@ theorem Env.splitP_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
     simp only [List.flatMap_cons, List.append_assoc] at h1 h2 ⊢
     exact ⟨h1, h2, h3⟩
 
+/-! ## Search nodes -/
+
+theorem Env.nodeP_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
+    (hnode : E.NodePSpec limits fuel) (hsplit : E.SplitPSpec limits fuel) :
+    E.NodePSpec limits (fuel + 1) := by
+  intro g I O phi0 outAll nOut localIn und tb st tb' st' h pre
+  rw [SCtx.nodeP] at h
+  obtain ⟨F, hLperm, hUperm, hF⟩ := reclassify_spec E.cx outAll localIn und
+  generalize hrc : E.cx.reclassify outAll localIn und = rc at h hLperm hUperm
+  obtain ⟨localIn', open_, b⟩ := rc
+  simp only at h hLperm hUperm
+  obtain ⟨hgf, hgn, hIn, hOn⟩ := pre.ctx.facts hE
+  obtain ⟨_, _, _, _, hIm, hOm, hIO⟩ := id pre.ctx
+  -- the node after reclassification
+  generalize hUn : open_.toList.map (·.1) = Un at hUperm
+  have hUnA : (open_.map (·.1)).toList = Un := by rw [← hUn, Array.toList_map]
+  have hFund : ∀ t ∈ F, t ∈ und.toList := fun t ht => hUperm.mem_iff.mpr (List.mem_append_left _ ht)
+  have hUnund : ∀ t ∈ Un, t ∈ und.toList := fun t ht => hUperm.mem_iff.mpr (List.mem_append_right _ ht)
+  have hpermLU : (localIn'.toList ++ Un).Perm (localIn.toList ++ und.toList) := by
+    refine (hLperm.append_right Un).trans ?_
+    rw [List.append_assoc]
+    exact (hUperm.symm).append_left _
+  have hLUn : (localIn'.toList ++ Un).Nodup := hpermLU.nodup_iff.mpr pre.nodup
+  have hL'n : localIn'.toList.Nodup := (List.nodup_append.mp hLUn).1
+  have hUnn : Un.Nodup := (List.nodup_append.mp hLUn).2.1
+  have hL'g : ∀ t ∈ localIn'.toList, t ∈ g.toList := by
+    intro t ht
+    rcases List.mem_append.mp (hLperm.mem_iff.mp ht) with h | h
+    · exact pre.locG t h
+    · exact pre.undG t (hFund t h)
+  have hUng : ∀ t ∈ Un, t ∈ g.toList := fun t ht => pre.undG t (hUnund t ht)
+  have hout' : ∀ t ∈ outAll.toList, t ∉ localIn'.toList ∧ t ∉ Un := by
+    intro t ht
+    obtain ⟨h1, h2⟩ := pre.outLU t ht
+    refine ⟨fun h => ?_, fun h => h2 (hUnund t h)⟩
+    rcases List.mem_append.mp (hLperm.mem_iff.mp h) with h | h
+    · exact h1 h
+    · exact h2 (hFund t h)
+  have hcov' : ∀ x ∈ g.toList, x ∈ localIn'.toList ∨ x ∈ Un ∨ x ∈ outAll.toList := by
+    intro x hx
+    rcases pre.cover x hx with h | h | h
+    · exact Or.inl (hLperm.mem_iff.mpr (List.mem_append_left _ h))
+    · rcases List.mem_append.mp (hUperm.mem_iff.mp h) with h | h
+      · exact Or.inl (hLperm.mem_iff.mpr (List.mem_append_right _ h))
+      · exact Or.inr (Or.inl h)
+    · exact Or.inr (Or.inr h)
+  -- forced members are in every minimum respecting the node
+  have hforce : ∀ Y, E.Cons Y (I.toList ++ localIn.toList) outAll.toList →
+      E.Cons Y (I.toList ++ localIn'.toList) outAll.toList := by
+    intro Y hY
+    refine ⟨hY.1, fun t ht => ?_, hY.2.2⟩
+    rcases List.mem_append.mp ht with h | h
+    · exact hY.2.1 t (List.mem_append_left _ h)
+    · rcases List.mem_append.mp (hLperm.mem_iff.mp h) with h | h
+      · exact hY.2.1 t (List.mem_append_right _ h)
+      · obtain ⟨h1, h2, h3⟩ := hF t h
+        exact forced_mem hE.G hE.cx hE.area hY.1 hY.2.2 (hgf t (pre.undG t (hFund t h))).1 h1 h2 h3
+  -- a minimum's part of the group
+  have hpart : ∀ Y, E.Cons Y (I.toList ++ localIn'.toList) outAll.toList →
+      (partOf Y g.toList).Perm (localIn'.toList ++ partOf Y Un) := by
+    intro Y hY
+    apply (List.perm_ext_iff_of_nodup (List.Nodup.sublist List.filter_sublist hgn)
+      (List.Nodup.sublist (List.Sublist.append_left List.filter_sublist _) hLUn)).mpr
+    intro x
+    simp only [partOf, List.mem_append, List.mem_filter, decide_eq_true_eq]
+    constructor
+    · rintro ⟨hxg, hxY⟩
+      rcases hcov' x hxg with h | h | h
+      · exact Or.inl h
+      · exact Or.inr ⟨h, hxY⟩
+      · exact absurd hxY (hY.2.2 x h)
+    · rintro (h | ⟨h, hxY⟩)
+      · exact ⟨hL'g x h, hY.2.1 x (List.mem_append_right _ h)⟩
+      · exact ⟨hUng x h, hxY⟩
+  -- the node's lower bound
+  have hinAll : (I ++ localIn').toList = I.toList ++ localIn'.toList := Array.toList_append
+  have hinM : ∀ t ∈ (I ++ localIn').toList, t ∈ E.cx.members.toList := by
+    intro t ht
+    rw [hinAll, List.mem_append] at ht
+    rcases ht with h | h
+    · exact hIm t h
+    · exact (hgf t (hL'g t h)).1
+  have havail : ∀ t, (((I ++ localIn').foldl (·.insert ·) (∅ : Std.HashSet Nat)).contains t ||
+      ((open_.map (·.1)).foldl (·.insert ·) (∅ : Std.HashSet Nat)).contains t) =
+        decide (t ∈ (I ++ localIn').toList ∨ t ∈ Un) := by
+    intro t
+    rw [hashSet_ofArray_contains, hashSet_ofArray_contains, hUnA]
+    simp
+  have hlow := fun (X : List Nat) (hX : ∀ t ∈ X, t ∈ Un) => phiE_lower hE.G.wf hE.cx
+    (I ++ localIn') Un hinM (fun t ht => (hgf t (hUng t ht)).1) _ havail (X := X) hX
+  generalize hphi : E.cx.phiE (fun t =>
+      ((I ++ localIn').foldl (·.insert ·) (∅ : Std.HashSet Nat)).contains t ||
+      ((open_.map (·.1)).foldl (·.insert ·) (∅ : Std.HashSet Nat)).contains t) (I ++ localIn')
+    = pw at h hlow
+  obtain ⟨phi, work⟩ := pw
+  simp only at h hlow
+  have hbound : ∀ Y, E.Cons Y (I.toList ++ localIn'.toList) outAll.toList →
+      (phi : _root_.Int) - phi0 ≤ E.delta I.toList (partOf Y g.toList) := by
+    intro Y hY
+    have h1 := hlow (partOf Y Un) (fun t ht => (partOf_sub t ht).1)
+    rw [hinAll, List.append_assoc, ← scost_perm (List.Perm.append_left _ (hpart Y hY))] at h1
+    unfold Env.delta
+    rw [pre.phi0]
+    omega
+  have hYcons : ∀ Y, E.Cons Y (I.toList ++ localIn.toList) outAll.toList →
+      E.Cons Y I.toList O.toList := fun Y hY =>
+    ⟨hY.1, fun t ht => hY.2.1 t (List.mem_append_left _ ht), fun t ht => hY.2.2 t (pre.outO t ht)⟩
+  obtain ⟨st1, hst1, h⟩ := bind_eq_ok h
+  have hm1 : st1.memo = st.memo := chargeP_memo hst1
+  by_cases hemp : (open_.map (·.1)).isEmpty = true
+  · rw [if_pos hemp] at h
+    -- every undecided member is decided: one entry
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    have hUnnil : Un = [] := by
+      rw [← hUnA]; have := Array.isEmpty_iff.mp hemp; rw [this]
+    subst hUnnil
+    have hexact : phi = scost E.cx E.dag (I.toList ++ localIn'.toList) := by
+      have := phiE_cost hE.G.wf hE.cx (I ++ localIn') hinM (fun t =>
+        ((I ++ localIn').foldl (·.insert ·) (∅ : Std.HashSet Nat)).contains t ||
+        ((open_.map (·.1)).foldl (·.insert ·) (∅ : Std.HashSet Nat)).contains t)
+        (fun t => by rw [havail t]; simp)
+      rw [hphi] at this
+      rw [← hinAll]; exact this
+    have hval : (phi : _root_.Int) - phi0 = E.delta I.toList localIn'.toList := by
+      unfold Env.delta; rw [hexact, pre.phi0]
+    refine ⟨add_entries pre.tab ⟨hL'n, hL'g, hval⟩, add_improves _ _, ?_, by rw [hm1]; exact pre.memo⟩
+    intro Y hY
+    have hp := hpart Y (hforce Y hY)
+    have hnil : partOf Y ([] : List Nat) = [] := rfl
+    rw [hnil, List.append_nil] at hp
+    rw [hp.length_eq, E.delta_perm hp, ← hval]
+    exact add_hasAt tb ((phi : _root_.Int) - phi0, localIn')
+  rw [if_neg hemp] at h
+  by_cases hpr : tb.prunes ((phi : _root_.Int) - phi0) E.cx.slack = true
+  · rw [if_pos hpr] at h
+    -- pruned: no minimum respects the node
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    refine ⟨pre.tab, improves_refl _, ?_, by rw [hm1]; exact pre.memo⟩
+    intro Y hY
+    exfalso
+    have hb := hbound Y (hforce Y hY)
+    unfold CTable.prunes at hpr
+    split at hpr
+    · rename_i bd hbd
+      have := E.prune_ok hE pre.ctx pre.tab hbd (hYcons Y hY)
+      simp only [decide_eq_true_eq] at hpr
+      omega
+    · cases hpr
+  rw [if_neg hpr] at h
+  split at h
+  next hpc =>
+    generalize hgr : E.cx.groups _ _ (Array.map (fun x => x.fst) open_) = groups at h hpc
+    have hgperm : (groups.toList.flatMap (·.toList)).Perm Un := by
+      rw [← hUnA]; exact partitionCheck_perm hpc
+    generalize hrt : (if groups.size > 1 then true else _ : Bool) = route at h
+    cases route
+    case true =>
+      rw [if_pos rfl] at h
+      -- split into groups
+      have hphiN := phiE_cost hE.G.wf hE.cx (I ++ localIn') hinM
+        (fun t => ((I ++ localIn').foldl (·.insert ·) (∅ : Std.HashSet Nat)).contains t)
+        (fun t => by rw [hashSet_ofArray_contains])
+      generalize hpn : E.cx.phiE (fun t =>
+        ((I ++ localIn').foldl (·.insert ·) (∅ : Std.HashSet Nat)).contains t) (I ++ localIn') = pn
+        at h hphiN
+      obtain ⟨phiN, workN⟩ := pn
+      simp only at h hphiN
+      obtain ⟨st2, hst2, h⟩ := bind_eq_ok h
+      obtain ⟨⟨comb, st3⟩, hsp, h⟩ := bind_eq_ok h
+      simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      have hbase : (phiN : _root_.Int) - phi0 = E.delta I.toList localIn'.toList := by
+        unfold Env.delta; rw [hphiN, pre.phi0, hinAll]
+      have hflat : ∀ t ∈ groups.toList.flatMap (·.toList), t ∈ Un := fun t ht => hgperm.mem_iff.mp ht
+      have hspre : E.SplitPre g I O localIn'.toList [] outAll groups.toList
+          #[some ((phiN : _root_.Int) - phi0, localIn')] st2.memo :=
+        { ctx := pre.ctx, outO := pre.outO, outM := pre.outM, outI := pre.outI
+          sub := by
+            intro t ht
+            simp only [List.append_nil, List.mem_append] at ht
+            rcases ht with h | h
+            · exact ⟨hL'g t h, fun ho => (hout' t ho).1 h⟩
+            · exact ⟨hUng t (hflat t h), fun ho => (hout' t ho).2 (hflat t h)⟩
+          nodup := by
+            rw [List.append_nil]
+            exact (List.Perm.append_left _ hgperm).nodup_iff.mpr hLUn
+          combOK := by
+            intro e he
+            simp at he
+            subst he
+            refine ⟨hL'n, fun x hx => hx, fun x hx => Or.inl hx, hbase⟩
+          combCov := by
+            intro Y _
+            refine ⟨((phiN : _root_.Int) - phi0, localIn'), by simp, ?_, ?_⟩
+            · simp [partOf, Array.length_toList]
+            · simp only [partOf, List.filter_nil, List.append_nil]; rw [hbase]; exact Int.le_refl _
+          memo := by rw [chargeP_memo hst2, hm1]; exact pre.memo }
+      obtain ⟨hcok, hccov, hmemo3⟩ := hsplit g I O localIn'.toList [] (I ++ localIn') outAll
+        groups.toList _ st2 comb st3 hsp hinAll hspre
+      simp only [List.nil_append] at hcok hccov
+      show E.NodePost g I outAll localIn tb (addAll tb comb) st3.memo
+      refine ⟨addAll_entries pre.tab (fun e he => ?_), addAll_improves _ _, ?_, hmemo3⟩
+      · obtain ⟨hn, _, hsub, hv⟩ := hcok e he
+        refine ⟨hn, fun x hx => ?_, hv⟩
+        rcases hsub x hx with h | h
+        · exact hL'g x h
+        · exact hUng x (hflat x h)
+      · intro Y hY
+        have hY' := hforce Y hY
+        obtain ⟨e, he, hesz, hev⟩ := hccov Y hY'
+        have hpp : (localIn'.toList ++ partOf Y (groups.toList.flatMap (·.toList))).Perm
+            (partOf Y g.toList) :=
+          ((List.Perm.append_left _ (hgperm.filter _))).trans (hpart Y hY').symm
+        have := addAll_hasAt tb comb he
+        rw [hesz, hpp.length_eq] at this
+        exact this.weaken (by rw [← E.delta_perm hpp]; exact hev)
+    case false =>
+      rw [if_neg (by decide)] at h
+      split at h
+      · rename_i t gt hpick
+        have htU : t ∈ Un := by
+          rw [← hUn]; exact List.mem_map.mpr ⟨(t, gt), pickBranch_mem hpick, rfl⟩
+        have hund2 : ((open_.map (·.1)).erase t).toList = Un.erase t := by
+          rw [toList_erase, hUnA]
+        have htg := hUng t htU
+        have htout : t ∉ outAll.toList := fun h => (hout' t h).2 htU
+        have htL : t ∉ localIn'.toList := fun h =>
+          (List.nodup_append.mp hLUn).2.2 t h t htU rfl
+        have hmerge : (mergeSorted localIn' #[t]).toList.Perm (localIn'.toList ++ [t]) :=
+          mergeSorted_perm _ _
+        have hUe : ∀ x ∈ Un.erase t, x ∈ Un := fun x hx => List.erase_subset hx
+        have preA : ∀ (tbX : CTable) memoX, E.TabOK g.toList I.toList tbX → E.MemoOK memoX →
+            E.NodePre g I O phi0 outAll (mergeSorted localIn' #[t]) ((open_.map (·.1)).erase t)
+              tbX memoX := by
+          intro tbX memoX htX hmX
+          refine { ctx := pre.ctx, phi0 := pre.phi0, outO := pre.outO, outM := pre.outM,
+                   outI := pre.outI, locG := ?_, undG := ?_, nodup := ?_, outLU := ?_,
+                   cover := ?_, tab := htX, memo := hmX }
+          · intro x hx
+            rcases List.mem_append.mp (hmerge.mem_iff.mp hx) with h | h
+            · exact hL'g x h
+            · rw [List.mem_singleton] at h; rw [h]; exact htg
+          · intro x hx; rw [hund2] at hx; exact hUng x (hUe x hx)
+          · rw [hund2]
+            refine ((hmerge.append_right _).trans ?_).nodup_iff.mpr hLUn
+            rw [List.append_assoc]
+            exact List.Perm.append_left _ (List.perm_cons_erase htU).symm
+          · intro x hx
+            refine ⟨fun h => ?_, fun h => ?_⟩
+            · rcases List.mem_append.mp (hmerge.mem_iff.mp h) with h | h
+              · exact (hout' x hx).1 h
+              · rw [List.mem_singleton] at h; rw [h] at hx; exact htout hx
+            · rw [hund2] at h; exact (hout' x hx).2 (hUe x h)
+          · intro x hx
+            rcases hcov' x hx with h | h | h
+            · exact Or.inl (hmerge.mem_iff.mpr (List.mem_append_left _ h))
+            · by_cases hxt : x = t
+              · exact Or.inl (hmerge.mem_iff.mpr (List.mem_append_right _ (by simp [hxt])))
+              · exact Or.inr (Or.inl (by rw [hund2]; exact (List.mem_erase_of_ne hxt).mpr h))
+            · exact Or.inr (Or.inr h)
+        have preB : ∀ (tbX : CTable) memoX, E.TabOK g.toList I.toList tbX → E.MemoOK memoX →
+            E.NodePre g I O phi0 (outAll.push t) localIn' ((open_.map (·.1)).erase t)
+              tbX memoX := by
+          intro tbX memoX htX hmX
+          have hpush : (outAll.push t).toList = outAll.toList ++ [t] := Array.toList_push
+          refine { ctx := pre.ctx, phi0 := pre.phi0, outO := ?_, outM := ?_, outI := ?_,
+                   locG := hL'g, undG := ?_, nodup := ?_, outLU := ?_, cover := ?_,
+                   tab := htX, memo := hmX }
+          · intro x hx; rw [hpush]; exact List.mem_append_left _ (pre.outO x hx)
+          · intro x hx
+            rw [hpush, List.mem_append, List.mem_singleton] at hx
+            rcases hx with h | h
+            · exact pre.outM x h
+            · rw [h]; exact (hgf t htg).1
+          · intro x hx
+            rw [hpush, List.mem_append, List.mem_singleton] at hx
+            rcases hx with h | h
+            · exact pre.outI x h
+            · rw [h]; exact (hgf t htg).2.2.1
+          · intro x hx; rw [hund2] at hx; exact hUng x (hUe x hx)
+          · rw [hund2]
+            exact List.Nodup.sublist (List.Sublist.append_left List.erase_sublist _) hLUn
+          · intro x hx
+            rw [hpush, List.mem_append, List.mem_singleton] at hx
+            rw [hund2]
+            rcases hx with h | h
+            · exact ⟨(hout' x h).1, fun h' => (hout' x h).2 (hUe x h')⟩
+            · rw [h]; exact ⟨htL, hUnn.not_mem_erase⟩
+          · intro x hx
+            rw [hpush, hund2]
+            rcases hcov' x hx with h | h | h
+            · exact Or.inl h
+            · by_cases hxt : x = t
+              · exact Or.inr (Or.inr (by simp [hxt]))
+              · exact Or.inr (Or.inl ((List.mem_erase_of_ne hxt).mpr h))
+            · exact Or.inr (Or.inr (List.mem_append_left _ h))
+        have hcase : ∀ Y, E.Cons Y (I.toList ++ localIn.toList) outAll.toList →
+            E.Cons Y (I.toList ++ (mergeSorted localIn' #[t]).toList) outAll.toList ∨
+            E.Cons Y (I.toList ++ localIn'.toList) (outAll.push t).toList := by
+          intro Y hY
+          have hY' := hforce Y hY
+          by_cases htY : t ∈ Y
+          · left
+            refine ⟨hY'.1, fun x hx => ?_, hY'.2.2⟩
+            rcases List.mem_append.mp hx with h | h
+            · exact hY'.2.1 x (List.mem_append_left _ h)
+            · rcases List.mem_append.mp (hmerge.mem_iff.mp h) with h | h
+              · exact hY'.2.1 x (List.mem_append_right _ h)
+              · rw [List.mem_singleton] at h; rw [h]; exact htY
+          · right
+            refine ⟨hY'.1, hY'.2.1, fun x hx => ?_⟩
+            rw [Array.toList_push, List.mem_append, List.mem_singleton] at hx
+            rcases hx with h | h
+            · exact hY'.2.2 x h
+            · rw [h]; exact htY
+        have hpre0 := pre.memo
+        rw [← hm1] at hpre0
+        split at h
+        · -- stored first
+          obtain ⟨⟨tb1, st4⟩, h1, h⟩ := bind_eq_ok h
+          obtain ⟨tA, iA, cA, mA⟩ := hnode g I O phi0 outAll nOut _ _ tb st1 tb1 st4 h1
+            (preA tb st1.memo pre.tab hpre0)
+          obtain ⟨tB, iB, cB, mB⟩ := hnode g I O phi0 (outAll.push t) nOut localIn' _ tb1 st4 tb' st'
+            h (preB tb1 st4.memo tA mA)
+          refine ⟨tB, improves_trans iA iB, fun Y hY => ?_, mB⟩
+          rcases hcase Y hY with hA | hB
+          · exact (cA Y hA).mono iB
+          · exact cB Y hB
+        · -- unstored first
+          obtain ⟨⟨tb1, st4⟩, h1, h⟩ := bind_eq_ok h
+          obtain ⟨tB, iB, cB, mB⟩ := hnode g I O phi0 (outAll.push t) nOut localIn' _ tb st1 tb1 st4
+            h1 (preB tb st1.memo pre.tab hpre0)
+          obtain ⟨tA, iA, cA, mA⟩ := hnode g I O phi0 outAll nOut _ _ tb1 st4 tb' st' h
+            (preA tb1 st4.memo tB mB)
+          refine ⟨tA, improves_trans iB iA, fun Y hY => ?_, mA⟩
+          rcases hcase Y hY with hA | hB
+          · exact cA Y hA
+          · exact (cB Y hB).mono iA
+      · rename_i x hx
+        exfalso
+        have hne : open_.toList ≠ [] := by
+          intro hnil
+          apply hemp
+          rw [Array.isEmpty_iff]
+          apply Array.ext'
+          simp [hnil]
+        obtain ⟨⟨t, gt⟩, hpb⟩ := Option.ne_none_iff_exists'.mp (pickBranch_isSome hne)
+        exact hx t gt hpb
+  next => cases h
+
+/-! ## The search invariant -/
+
+/-- **The search invariant** (all four functions, every fuel). -/
+theorem Env.search_spec {E : Env} (hE : E.WF) (limits : Limits) :
+    ∀ fuel, E.SolvePSpec limits fuel ∧ E.SolveBodySpec limits fuel ∧ E.NodePSpec limits fuel ∧
+      E.SplitPSpec limits fuel := by
+  intro fuel
+  induction fuel with
+  | zero => exact E.specs_zero limits
+  | succ fuel ih =>
+    obtain ⟨hs, hb, hn, hp⟩ := ih
+    exact ⟨E.solveP_step hE hb, E.solveBody_step hE hn, E.nodeP_step hE hn hp,
+      E.splitP_step hE hs hp⟩
+
+theorem Env.memoOK_empty (E : Env) : E.MemoOK {} := by
+  intro g ent tb h
+  simp at h
+
+theorem toList_eq_nil_of_sub_empty {a : Array Nat} (h : ∀ t ∈ a.toList, t ∈ (#[] : Array Nat).toList) :
+    a.toList = [] := by
+  apply List.eq_nil_iff_forall_not_mem.mpr
+  intro t ht
+  simpa using h t ht
+
+/-- **The component's table.** The table the search returns for a component
+is valid (every entry a duplicate-free set of members with its exact `Δ` from
+nothing stored), and for every minimum it has an entry at the minimum's count
+of the component, at most the minimum's `Δ`. -/
+theorem Env.component_table {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat} {st0 : SState}
+    {tb : CTable} {st : SState}
+    (h : E.cx.solveP limits fuel E.cx.members #[] #[] st0 = .ok (tb, st)) (hm0 : st0.memo = {}) :
+    E.TabOK E.cx.members.toList [] tb ∧
+      ∀ Y, IsMinimum E.dag E.w E.roots Y →
+        HasAt tb (partOf Y E.cx.members.toList).length (E.delta [] (partOf Y E.cx.members.toList)) := by
+  obtain ⟨_, I, O, hI, hO, _, htab, hcov⟩ := (E.search_spec hE limits fuel).1 E.cx.members #[] #[] st0
+    tb st h (fun t ht => by simp at ht) (fun t ht => by simp at ht) (fun t ht => by simp at ht)
+    (by rw [hm0]; exact E.memoOK_empty)
+  have hIn := toList_eq_nil_of_sub_empty hI
+  have hOn := toList_eq_nil_of_sub_empty hO
+  rw [hIn] at htab hcov
+  rw [hOn] at hcov
+  refine ⟨htab, fun Y hY => hcov Y ⟨hY, fun t ht => by simp at ht, fun t ht => by simp at ht⟩⟩
+
 end Ix.Compile.Verify.UniformModel

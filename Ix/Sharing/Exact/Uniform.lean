@@ -628,6 +628,12 @@ def CTable.add (tb : CTable) (e : _root_.Int × Array Nat) : CTable :=
   let tb := if tb.size ≤ k then tb ++ Array.replicate (k + 1 - tb.size) none else tb
   if betterEntry e tb[k]! then tb.set! k (some e) else tb
 
+/-- Whether a lower bound exceeds the table's best by more than `slack`. -/
+def CTable.prunes (tb : CTable) (delta : _root_.Int) (slack : Nat) : Bool :=
+  match tb.best with
+  | some bd => decide (delta > bd + (slack : _root_.Int))
+  | none => false
+
 /-- Drop the entries more than `slack` above the best. -/
 def CTable.trim (tb : CTable) (slack : Nat) : CTable :=
   match tb.best with
@@ -951,8 +957,7 @@ def SCtx.nodeP (cx : SCtx) (limits : Limits) :
     let st ← chargeP limits (work + 2 * cx.area.size) st
     let delta : _root_.Int := (phi : _root_.Int) - (phi0 : _root_.Int)
     if und.isEmpty then return (tb.add (delta, localIn), st)
-    if let some bd := tb.best then
-      if delta > bd + (cx.slack : _root_.Int) then return (tb, st)
+    if tb.prunes delta cx.slack then return (tb, st)
     -- Split into independent groups.
     let opq := fun t => cx.up.opaq[t]! || (inSet.contains t && cx.opaqueUnder b t)
     let availFixed := fun t => inSet.contains t && !opq t
