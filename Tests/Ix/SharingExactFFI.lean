@@ -94,12 +94,15 @@ def rustCategory (s : String) : String :=
   else if s.startsWith "decode:" then "decode"
   else "unknown"
 
+/-- The Lean construction under explicit limits. -/
+def leanNormalize (m : Mode) (c : Constant) (limits : Limits) : Except SharingError Constant :=
+  match m with
+  | .exact => normalizeConstantSharing c limits
+  | .uniform w => normalizeConstantSharingUniform w c limits
+  | .tiered l => normalizeConstantSharingTiered l c limits
+
 @[noinline] def leanSide (m : Mode) (c : Constant) : Outcome :=
-  let r := match m with
-    | .exact => normalizeConstantSharing c
-    | .uniform w => normalizeConstantSharingUniform w c
-    | .tiered l => normalizeConstantSharingTiered l c
-  match r with
+  match leanNormalize m c {} with
   | .ok n => .ok (serConstant n)
   | .error e => .err (leanCategory e) (reprStr e)
 
@@ -171,6 +174,57 @@ def compareOne (m : Mode) (c : Constant) (bytes : ByteArray) : IO (Verdict × Na
   let r ← IO.lazyPure fun _ => rustSide m bytes
   let t2 ← IO.monoNanosNow
   return (compareOutcomes l r, t1 - t0, t2 - t1)
+
+/-- A limit's name and value. -/
+def limitOf (l : Limits) : Resource → String × Nat
+  | .exprVisits => ("maxExprVisits", l.maxExprVisits)
+  | .depth => ("maxDepth", l.maxDepth)
+  | .nodes => ("maxNodes", l.maxNodes)
+  | .states => ("maxStates", l.maxStates)
+  | .transitions => ("maxTransitions", l.maxTransitions)
+  | .costEvals => ("maxCostEvals", l.maxCostEvals)
+  | .outputBytes => ("maxOutputBytes", l.maxOutputBytes)
+  | .materialize => ("maxMaterialize", l.maxMaterialize)
+  | .oracleTables => ("maxOracleTables", l.maxOracleTables)
+  | .oracleVariants => ("maxOracleVariants", l.maxOracleVariants)
+
+/-- Double one limit. -/
+def doubleLimit (l : Limits) : Resource → Limits
+  | .exprVisits => { l with maxExprVisits := 2 * l.maxExprVisits }
+  | .depth => { l with maxDepth := 2 * l.maxDepth }
+  | .nodes => { l with maxNodes := 2 * l.maxNodes }
+  | .states => { l with maxStates := 2 * l.maxStates }
+  | .transitions => { l with maxTransitions := 2 * l.maxTransitions }
+  | .costEvals => { l with maxCostEvals := 2 * l.maxCostEvals }
+  | .outputBytes => { l with maxOutputBytes := 2 * l.maxOutputBytes }
+  | .materialize => { l with maxMaterialize := 2 * l.maxMaterialize }
+  | .oracleTables => { l with maxOracleTables := 2 * l.maxOracleTables }
+  | .oracleVariants => { l with maxOracleVariants := 2 * l.maxOracleVariants }
+
+/-- For a Lean-only resource exhaustion: rerun Lean, doubling whichever
+limit fires (at most 12 doublings in total), and report the limits that
+fired, the values that sufficed, and whether the bytes then equal Rust's. -/
+def diagnose (m : Mode) (c : Constant) (rust : Outcome) : String := Id.run do
+  let mut limits : Limits := {}
+  let mut fired : Array String := #[]
+  let mut raised : Array Resource := #[]
+  for _ in [0:13] do
+    match leanNormalize m c limits with
+    | .ok n =>
+      let same := match rust with
+        | .ok b => if serConstant n == b then "equal to Rust" else "DIFFERENT from Rust"
+        | .err .. => "Rust failed"
+      let final := raised.toList.map fun r =>
+        let (name, v) := limitOf limits r
+        s!"{name}={v}"
+      return s!"Lean exhausted {fired.toList}; succeeded with {final}; bytes {same}"
+    | .error (.resourceExhausted r lim) =>
+      let (name, _) := limitOf limits r
+      fired := fired.push s!"{name}={lim}"
+      unless raised.contains r do raised := raised.push r
+      limits := doubleLimit limits r
+    | .error e => return s!"Lean exhausted {fired.toList}; then error {reprStr e}"
+  return s!"Lean fired {fired.toList}; still exhausted after 12 doublings"
 
 def compareMany (cases : Array (String × Constant)) (modes : Constant → List Mode) : IO Tally := do
   let mut t : Tally := {}
@@ -265,6 +319,15 @@ def corpusTests (_ : Unit) : TestSeq :=
     let bytes ← IO.FS.readBinFile path
     let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
     let entries := env.consts.toArray.qsort fun a b => Address.cmpBytes a.1 b.1 == .lt
+    -- Optional selection: a file of hex addresses, one per line.
+    let select ← match ← IO.getEnv "IX_SHARING_CORPUS_SELECT" with
+      | some p => do
+        let lines := (← IO.FS.readFile p).splitOn "\n" |>.map String.trim |>.filter (· != "")
+        pure (some (lines.foldl (fun (s : Std.HashSet String) l => s.insert l) {}))
+      | none => pure none
+    let entries := match select with
+      | some s => entries.filter fun (e : Address × Ixon.LazyConstant) => s.contains (toString e.1)
+      | none => entries
     let entries := match limit with
       | some n => entries.extract 0 n
       | none => entries
@@ -285,6 +348,13 @@ def corpusTests (_ : Unit) : TestSeq :=
       for h : k in [0:modes.length] do
         let m := modes[k]
         let (v, ln, rn) ← compareOne m c raw
+        -- Lean-only exhaustion: find the limit that fires and the value that suffices.
+        let v ← match v with
+          | .resourceOnly true => do
+            let d := diagnose m c (rustSide m raw)
+            IO.println s!"      DIAGNOSIS {label} [{m.name}]: {d}"
+            pure v
+          | _ => pure v
         let t := tallies[k]!
         tallies := tallies.set! k
           { t.add label v with leanNs := t.leanNs + ln, rustNs := t.rustNs + rn }
