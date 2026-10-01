@@ -14,7 +14,7 @@ import Ix.Ixon.Verify.RecursorConstant
 
 This final constant-codec slice verifies constructors, inductive declarations,
 the three `MutConst` member tags, and the counted `.muts` block.  Together with
-the preceding standalone codecs, `ConstantInfoWireWF` now covers every
+the preceding standalone codecs, `ConstantInfoWireWF` covers every
 production variant.  The top-level theorem composes that complete payload
 domain with arbitrary well-formed sharing, reference, and universe tables.
 -/

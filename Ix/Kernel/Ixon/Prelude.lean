@@ -9,9 +9,9 @@ import Ix.Ixon.Canonical
 import Ix.Kernel.Ixon.NatOpPinData
 import Ix.Kernel.NatOpPinSet
 
-/-! # The Ixon prelude and the pin table (decision D5)
+/-! # The Ixon prelude and the pin table
 
-Con-leche's built-in prelude (`Frontend/Prelude.lean`, not ported) is a
+Upstream con-leche's built-in prelude (`Frontend/Prelude.lean`, not vendored) is a
 committed lean4export stream of twelve declarations, parsed at start-up and
 put in front of every fold by `Frontend.preparePrelude`: the six pinned basis
 blocks `Eq`, `Nat`, `PUnit`, `Empty`, `False` and the quotient package (the
@@ -64,9 +64,9 @@ def levelTable : Except String (Std.HashMap (ConstRef Address) (List CName)) :=
 def defaultPins : Except String Pins := do
   pure { names := ← pinMap (← pinTable), levels := ← levelTable }
 
-/-! ## The Nat-operation pins, from Ixon (plan v4 §2 "Pins")
+/-! ## The Nat-operation pins, from Ixon
 
-Con-leche's pin-certified `Nat` operations (`div`, `mod`, `gcd`, `land`,
+The checker's pin-certified `Nat` operations (`div`, `mod`, `gcd`, `land`,
 `lor`, `xor`, `shiftLeft`, `shiftRight`) take a pin variant
 (`Ix.Kernel.NatOpPinSet`): per operation, the pinned defining expression the
 stored value is compared with, and the certificate proofs of its pinned
@@ -241,10 +241,10 @@ instance : Inhabited Prelude := ⟨{}⟩
 /-- The reader context of `records` with the fallback store `fallback`.
 
 The store is `storeOf records (storeOf fallback)` with both maps built here,
-once: `storeOf` partially applied rebuilds its map at every lookup (it is
-compiled at its full arity), which made reading quadratic in the number of
-records (the 99,346 records of Init+Std did not finish reading in ten
-minutes; they now read in 14 s). -/
+once: `storeOf` partially applied would rebuild its map at every lookup (it
+is compiled at its full arity), which makes reading quadratic in the number
+of records (the 99,346 records of Init+Std do not finish reading in ten
+minutes that way; built once, they read in 14 s). -/
 def contextOf (pins : Pins) (records : Array (Address × Ixon.Constant))
     (blobs : List (Address × ByteArray)) (fallback : Array (Address × Ixon.Constant) := #[])
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) : Ctx :=

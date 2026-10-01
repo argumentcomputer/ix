@@ -9,15 +9,16 @@ import Ix.Address.Core
 import Ix.Ixon.Types
 import Ix.Kernel.Ref
 
-/-! # Ixon records as con-leche declarations (plan v4, L4)
+/-! # Ixon records as kernel declarations
 
 This reader turns decoded Ixon records into the `Array Ix.Kernel.Declaration`
-that con-leche's verified fold `Ix.Kernel.Cached.checkDecls` consumes. It is
-the Ixon counterpart of con-leche's NDJSON decoder (`Frontend/ExportC.lean`,
-not ported): the same record shapes, the same projection rewrite
-(`Frontend/ProjRec.lean`) and the same in-process modeller for nested and
-mutual blocks (`Frontend/InModel.lean`), both imported verbatim. Its output
-then goes through `Frontend.preparePrelude` (imported verbatim) and the fold.
+that the verified fold `Ix.Kernel.Cached.checkDecls` consumes. It is the
+Ixon counterpart of upstream con-leche's NDJSON decoder
+(`Frontend/ExportC.lean`, not vendored): the same record shapes, the same
+projection rewrite (`Ix.Kernel.Frontend.ProjRec`) and the same in-process
+modeller for nested and mutual blocks (`Ix.Kernel.Frontend.InModel`), both
+vendored. Its output then goes through `Frontend.preparePrelude` and the
+fold.
 
 ## Soundness: nothing here is trusted
 
@@ -28,9 +29,10 @@ name, a wrong grouping, a wrong rule order or a wrong level parameter can
 only make the fold reject or decline, or make it accept a different
 environment than the records describe, which is still a modelled one. What
 the reader does decide is coverage, and the faithfulness of the accepted
-environment to the Ixon records; the latter is L5's fidelity theorem.
+environment to the Ixon records; the latter is the fidelity theorem
+(`Ix.Kernel.Ixon.ReaderSpec`, `Ix.Ixon.KernelConsistency`).
 
-## Keys (decision D1 (b))
+## Keys
 
 The kernel key stays `Ix.Kernel.Name`. A constant reference `ConstRef Address`
 is encoded injectively under the reserved root `ix`:
@@ -54,7 +56,7 @@ Three kinds of names are not of this form:
   auxiliary (nested) motive is `T_0.rec_j` (1-based), exactly Lean's own
   convention. The motive is read off the recursor's type (the head of its
   result), the member off that motive's major carrier.
-* **Pinned names** (`Pins.names`): con-leche's own pinned names and no
+* **Pinned names** (`Pins.names`): the checker's own pinned names and no
   others: the basis (`Eq`, `Nat`, `PUnit`, `Empty`, `False`, the `Quot`
   package), the prelude's `And` and `Bool`, the literal support (`String`,
   `String.ofList`, `List`, `Char`, `Char.ofNat`), the structural and
@@ -62,20 +64,20 @@ Three kinds of names are not of this form:
   `Nonempty`, the compiler-trust family with `True`, and `sorryAx`. The table
   maps a `ConstRef Address` to its pinned name; it is generated from the
   compiled Init records (`Benchmarks/Kernel/PinGen.lean`, which
-  checks every entry through con-leche) and committed
+  checks every entry through the verified fold) and committed
   (`Ix/Kernel/Ixon/PinData.lean`); the reader never reads Ixon metadata.
   `pinMap` refuses a table that is not a partial injection or that uses the
-  reserved root or a derived shape. Con-leche itself compares every pinned
+  reserved root or a derived shape. The checker itself compares every pinned
   name's declaration with its pinned shape (basis blocks up to `canon`, with
   a reserved-name reject otherwise; literal support and Nat operations by
   exact type shapes and certified recurrences; the standard and trust axioms
   by `matchesPin`), so a table entry on a constant of another shape is
   rejected or declined, never accepted under the pinned name.
-* **Level parameters** are positional except in two places where con-leche
-  reads them by name. The standard-axiom pins (`matchesPin`) compare level
+* **Level parameters** are positional except in two places where the
+  checker reads them by name. The standard-axiom pins (`matchesPin`) compare level
   parameter names, so the pinned constants and their recursors carry Lean's
   own level names (`Pins.levels`, from the same generator; a block's
-  constructors take its members' names). And con-leche recognises a large
+  constructors take its members' names). And the checker recognises a large
   eliminator by the spelling `elim :: lps` of its level parameters, so a
   recursor with one level more than its block names its parameter `0` with
   a fresh name and its parameter `k + 1` as the block's `k`. Both rename a
@@ -103,11 +105,11 @@ Three kinds of names are not of this form:
   mutual group, the members calling each other). Safe mutual recursion
   reaches Lean's kernel as definitions added one at a time (through
   `brecOn` or a `_mutual` fixpoint), so a safe block orders; one that does
-  not is declined as a mutually recursive definition block (con-leche, like
-  Lean's kernel, has no safe mutual definitions).
+  not is declined as a mutually recursive definition block (the checker,
+  like Lean's kernel, has no safe mutual definitions).
 * `defn`/`axio`/`quot` singletons become one declaration each; projection
   records emit nothing (they are only checked to resolve).
-* Every binder carries `pw := .never` (con-leche's annotation pass computes
+* Every binder carries `pw := .never` (the checker's annotation pass computes
   the datum); Ixon v3 binder contracts are erased, as by Ix's own reader.
 * Definitions get the kernel's height rule `regular (1 + max height)` unless
   the host supplies a hint (the environment check supplies the compiler's own).
@@ -116,6 +118,9 @@ Three kinds of names are not of this form:
 namespace Ix.Kernel.IxonReader
 
 open Ix.Kernel (ConstRef)
+
+/-! The checker's syntax (`Ix.Kernel`), abbreviated so that the reader's
+signatures tell it apart from Ixon's and Lean's. -/
 
 abbrev CName := Ix.Kernel.Name
 abbrev CExpr := Ix.Kernel.Expr
@@ -231,7 +236,7 @@ theorem addressHex_injective {a b : Address} (h : addressHex a = addressHex b) :
   rw [hexOfBytes_injective h]
 
 /-- **`keyName` is injective**: distinct constant references get distinct
-names (decision D1 (b)). -/
+names. -/
 theorem keyName_injective {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := by
   cases r with
   | member b i =>
@@ -323,8 +328,7 @@ def emptyTables (c : Ixon.Constant) : Bool :=
 
 /-- The reference a record address denotes: a singleton is member 0 of
 itself, a projection the member (or constructor) of its owning block, a
-`muts` block nothing. The same resolution as the intrinsic kernel's reader
-(`Ix.Kernel.Ingress.referenceSourceBy`, retired at L6). -/
+`muts` block nothing. -/
 def resolveSource (store : Store) (address : Address) (c : Ixon.Constant) :
     Option (ConstRef Address) :=
   match c.info with
@@ -532,11 +536,11 @@ def buildIndex (store : Store) (pins : Std.HashMap (ConstRef Address) CName)
 
 /-- Address encodings computed ahead of reading: every entry is `keyName` of
 its key. The reader names a reference at every occurrence (3.7 million
-`ref`/`prj` nodes in Init+Std); `keyName` spells the address in hexadecimal
-each time, which was most of the reading time, and gave every occurrence its
-own name object. Looked up here, each reference is spelled once and every
+`ref`/`prj` nodes in Init+Std); calling `keyName` there would spell the
+address in hexadecimal each time, which dominates the reading time, and give
+every occurrence its own name object. Looked up here, each reference is spelled once and every
 occurrence reads the same object, as a lean4export stream's name table
-gives con-leche's parser one name per index. -/
+gives upstream con-leche's parser one name per index. -/
 structure KeyNames where
   map : Std.HashMap (ConstRef Address) CName := {}
   sound : ∀ r n, map[r]? = some n → n = keyName r := by simp
@@ -600,7 +604,7 @@ def Ctx.lpsOf (cx : Ctx) (r : ConstRef Address) (lvls : Nat) : List CName :=
 
 /-- A recursor's level-parameter names: the table's, or the block's
 behind a fresh elimination level for a large eliminator (Lean's
-`elim :: lps`, which con-leche recognises by name). -/
+`elim :: lps`, which the checker recognises by name). -/
 def Ctx.recLps (cx : Ctx) (r : ConstRef Address) (large : Bool) (lvls : Nat)
     (blockLps : List CName) : List CName :=
   match cx.pins.levels[r]? with
@@ -706,8 +710,8 @@ def MemberReader.read (m : MemberReader) (e : Ixon.Expr) : ReadM CExpr :=
 /-! ## The reader's state
 
 What the in-process modeller and the projection rewrite read about the
-declarations before the current one (con-leche's `StateD`, minus the
-NDJSON tables). -/
+declarations before the current one (upstream con-leche's `StateD`, minus
+the NDJSON tables). -/
 
 structure State where
   constTypes : Std.HashMap CName (List CName × CExpr) := {}
@@ -847,7 +851,7 @@ where
     | _ => acc
 
 /-- A definition block's members in an order where each follows the members
-it references; `none` on a cycle. A member may name itself: con-leche then
+it references; `none` on a cycle. A member may name itself: the checker then
 checks its value in the environment before the member is added
 (`checkDefnVal`), where the reference does not resolve. -/
 def defOrder (deps : Array (Std.HashSet Nat)) : Option (Array Nat) := Id.run do
@@ -1092,8 +1096,8 @@ the checker declines a string literal while those are not installed. An
 Ixon record that only uses a literal names none of them (its `nat`/`str`
 nodes point at blobs), so a dependency order over table references alone can
 put a literal user before the support: `String.instInhabited`, whose value
-is `⟨""⟩`, came before `String.ofList` and `Char.ofNat` in the L4a environment check
-and blocked 760 records. `literalEdges` adds those implicit references as
+is `⟨""⟩`, comes before `String.ofList` and `Char.ofNat` in such an order of
+Init, and without these edges blocks 760 records. `literalEdges` adds those implicit references as
 dependency edges, as the environment check adds a pinned `Nat` operation's certificate
 ground (`natOpDeps`). The `Nat` trio is the prelude's `Nat` block, which
 every order here puts first, so only the string edges change an order; the

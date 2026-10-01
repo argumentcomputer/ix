@@ -9,7 +9,7 @@ public import Ix.Kernel.LevelGeran
 @[expose] public section
 
 /-!
-# `Level.Geran.leq` decides the pointwise order (cl-level)
+# `Level.Geran.leq` decides the pointwise order
 
 The sublevels of `l + k` evaluate to `l + k` (`decompose_eval`), so a
 sublevel-wise domination is a pointwise inequality (`leq_sound`). Conversely,
@@ -18,8 +18,8 @@ two separating valuations show that a missing dominator is a counterexample
 to 1 and the others to 0. For a variable sublevel `V(p, x, k)`, also set `x`
 to one more than any value the other side's sublevels can take at
 parameters worth at most 1. The argument is that of the retired intrinsic
-kernel (`Ix/Kernel/Certified/LevelNorm.lean` at `8eb77018`), with valuations
-as functions on names.
+kernel's level normalizer (`docs/kernel.md`, "The retired intrinsic
+kernel"), with valuations as functions on names.
 
 Level evaluation is restated here as `levelEval`, because
 `Ix.Kernel.Level.eval` is defined in `Ix/Kernel/Verify/Level.lean`, which

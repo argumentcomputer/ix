@@ -7,11 +7,11 @@ import Ix.Kernel.Ixon.Reader
 import Ix.Kernel.Ingress.Records
 import Std.Data.HashSet.Lemmas
 
-/-! # What the Ixon reader produces (plan v4, L5)
+/-! # What the Ixon reader produces
 
 Facts about the executed reader (`Ix.Kernel.IxonReader`), proved about
 its definitions as they stand. They are the reader half of the fidelity
-theorem of the con-leche entry (`Ix.Ixon.KernelConsistency`): the
+theorem of the kernel entry (`Ix.Ixon.KernelConsistency`): the
 declarations the fold checks are the ones the records describe.
 
 * `readRecords_spec`: an accepted stream reading is a record-by-record
@@ -26,12 +26,11 @@ declarations the fold checks are the ones the records describe.
   (`Ctx.nameOf (.member owner 0)`), with the record's level-parameter names,
   the reading of its type (`MemberReader.read`), and for a definition or
   theorem the reading of its value, or that value's projection rewrite
-  (`projRewrite`, con-leche's `ExportC.projRewriteD`) where it applies
+  (`projRewrite`, upstream con-leche's `ExportC.projRewriteD`) where it applies
   (`SingletonRead`).
 * `Ctx.nameOf_of_pin`, `Ctx.nameOf_of_unpinned`: when a reference takes its
   pinned name and when its address encoding. The encoding is injective
-  (`keyName_injective`, decision D1 (b)); that proof is L4b-D's, in
-  `Ix.Kernel.IxonReader` itself.
+  (`keyName_injective`, proved in `Ix.Kernel.IxonReader` itself).
 
 None of this is needed for consistency: `Ix.Kernel.model_exists` holds for
 every declaration array. -/

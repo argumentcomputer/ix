@@ -9,7 +9,7 @@ public import Ix.Kernel.Expr
 @[expose] public section
 
 /-!
-# Géran's sublevels: a complete decision of `l ≤ r + diff` (cl-level)
+# Géran's sublevels: a complete decision of `l ≤ r + diff`
 
 Yoan Géran, "A Canonical Form for Universe Levels in Impredicative Type
 Theory", decomposes a level into *sublevels*. `C(p, c)` is `c` when every
@@ -24,11 +24,11 @@ is the one where nanoda's algorithm is incomplete. It tries each branch of
 the `max` on its own, but `x + k` is two sublevels (`x + k` once `x` is
 nonzero, `k` otherwise), and they may be dominated in different branches.
 An example is `v + 1 ≤ max (imax (max (u+2) (v+1)) v) 1`, Ixon's canonical
-form of a level in `RatFunc.liftOn_def` (`plans/review/cl-m1`).
+form of a level in Mathlib's `RatFunc.liftOn_def`.
 
-The algorithm is the retired intrinsic kernel's
-(`Ix/Kernel/Certified/LevelNorm.lean` at `8eb77018`), on con-leche's
-`Level`, with named parameters, and structurally recursive. An `imax u v`
+The algorithm is the one of the retired intrinsic kernel's level normalizer
+(`docs/kernel.md`, "The retired intrinsic kernel"), on the vendored `Level`,
+with named parameters, and structurally recursive. An `imax u v`
 is decomposed through the condition sets under which `v` is nonzero
 (`nzConds`), not by the distributing rewrites, so no termination measure
 is needed. `Ix/Kernel/Verify/LevelGeran.lean` proves `leq` sound and

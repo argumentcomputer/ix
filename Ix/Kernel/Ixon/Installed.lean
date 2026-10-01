@@ -5,10 +5,10 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Verify.Cached.AgreeFloor
 
-/-! # What con-leche's fold installs (plan v4, L5)
+/-! # What the verified fold installs
 
-The kernel half of the fidelity theorem of the con-leche entry
-(`Ix.Ixon.KernelConsistency`). Con-leche proves that the environment an
+The kernel half of the fidelity theorem of the kernel entry
+(`Ix.Ixon.KernelConsistency`). The vendored kernel proves that the environment an
 accepted `Cached.checkDecls` returns has exactly the install skeletons its
 input declares (`Cached.checkDecls_skels`, `Ix/Kernel/Verify/Cached/AgreeFloor.lean`):
 the same constants, in the same order, with the same names, kinds,
@@ -19,7 +19,7 @@ rule right-hand sides).
 This module reads that equation per declaration: a definition, theorem,
 opaque or axiom declaration of an accepted array is installed under its
 name with its kind (`checkDecls_installs`). Two declared axioms install
-nothing of their own, as con-leche specifies (`declCSkels`): `sorryAx`
+nothing of their own, as the kernel specifies (`declCSkels`): `sorryAx`
 (tolerated, never modelled) and `Quot.sound` (a member of the pinned
 quotient block). -/
 

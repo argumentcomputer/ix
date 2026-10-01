@@ -15,15 +15,15 @@ together with `NatOpPinData.lean`; do not edit. To regenerate:
       Ix/Kernel/Ixon/PinData.lean Ix/Kernel/Ixon/NatOpPinData.lean
 
 Every pinned constant's record, and the literal capabilities, were checked by
-con-leche's verified fold through the Ixon reader when this file was
+the verified fold through the Ixon reader when this file was
 generated; see `Ix/Kernel/Ixon/Reader.lean` for what the table may affect
 (coverage, never soundness). Source: sha256 e10f71e76e218e05db36502da3cd803bc5de6a099cbf210f9b67ea9e9bd2b84a.
 
 `pins`: (name components, block address, member, constructor + 1 or 0).
 `levels`: (block address, member, constructor + 1 or 0, level-parameter
 names), for the pinned constants and their recursors.
-`prelude`: (record address, canonical record bytes), in con-leche's prelude
-order. -/
+`prelude`: (record address, canonical record bytes), in the checker's
+prelude order. -/
 
 namespace Ix.Kernel.IxonReader.PinData
 

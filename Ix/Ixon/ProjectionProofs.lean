@@ -301,7 +301,7 @@ theorem Reads.decode {request : Request} {record : _root_.Ixon.Constant}
 
 universe v
 
-/-! ## The certified entry (L5) -/
+/-! ## The certified entry -/
 
 open Ix.Kernel.IxonReader (defaultPins builtinPrelude builtinNatOpPins)
 

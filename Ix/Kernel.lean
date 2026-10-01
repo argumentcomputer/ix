@@ -16,9 +16,9 @@ import Ix.Kernel.Ixon.Values
 /-! # Ix.Kernel
 
 The kernel-side boundary of the certified Ixon checker. The checker
-is con-leche's, ported in place under `Ix/Kernel/**` (`Ix.Kernel.Cached.checkDecls`
-at `.verified`, with `Ix.Kernel.model_exists`); Ix contributes only the
-boundary:
+(`Ix.Kernel.Cached.checkDecls` at `.verified`, with `Ix.Kernel.model_exists`)
+is vendored from con-leche under `Ix/Kernel/**` (`docs/kernel.md`, "Vendored
+con-leche"); Ix contributes only the boundary:
 
 * `Ix.Kernel.IxonReader` (`Ix/Kernel/Ixon/Reader.lean`, with
   `ReaderSpec`): the Ixon reader from decoded records to
@@ -39,5 +39,4 @@ The certified API is `Ix.Ixon.Admission.checkBytes`; its public theorems
 (model existence over `Ix.Kernel.Model`, no proof of the pinned `False`,
 fidelity, resources) are in `Ix.Ixon.Consistency` and
 `Ix.Ixon.KernelConsistency`. The contract, trust surface, audits and
-provenance are described in `docs/kernel.md`, which also records the
-intrinsic kernel this module exported before the port. -/
+provenance are described in `docs/kernel.md`. -/

@@ -15,8 +15,8 @@ checker is proved in `Ix.Ixon.Consistency` (the public theorems) and
 prelude).
 
 * `checkBytes` is the certified entry: batch limits, key uniqueness and
-  canonical decoding (`Ix.Ixon.Admission.Bytes`), then con-leche's verified
-  checker behind the Ixon reader under the committed pin table and Ixon
+  canonical decoding (`Ix.Ixon.Admission.Bytes`), then the verified checker
+  `Ix.Kernel.Cached.checkDecls` behind the Ixon reader under the committed pin table and Ixon
   prelude (`Ix.Ixon.KernelAdmission.checkBytes`).
 
 The host supplies record order, address keys, and literal blobs. Addresses
@@ -30,7 +30,7 @@ namespace Ix.Ixon.Admission
 open Kernel
 
 /-- **The certified Ixon entry**: check exactly the declarations described by
-the supplied canonical record bytes with con-leche's verified checker, after
+the supplied canonical record bytes with the verified checker, after
 the batch limits, key uniqueness and canonical per-record decoding. `hint`
 is the host's optional (untrusted) reducibility hint per constant. -/
 def checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
@@ -38,12 +38,12 @@ def checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
     Except KernelAdmission.Error Ix.Kernel.Env :=
   KernelAdmission.checkBytes limits records blobs hint
 
-/-- How an Ix caller classifies a failure of the certified entry (D-trust,
-inventory section 3.7, rows 21-22; `docs/kernel.md`, "Outcomes"):
+/-- How an Ix caller classifies a failure of the certified entry
+(`docs/kernel.md`, "Outcomes"):
 `reject` only where an independent check establishes that the
 input is wrong (the batch limits are a coverage bound and decline; a key
 used twice in one table, a non-canonical record and a record the reader
-finds malformed reject); every checker verdict declines, because con-leche
+finds malformed reject); every checker verdict declines, because the checker
 reports fuel exhaustion as `internal` and a failed conversion search as
 `invalid`, and neither is evidence that the input is wrong. -/
 inductive Outcome where

@@ -7,9 +7,10 @@ import Ix.Ixon.Admission.Bytes
 import Ix.Kernel.Ixon.Prelude
 import Ix.Kernel.MainTheorem
 
-/-! # Admission from ordered Ixon record bytes through con-leche
+/-! # Admission from ordered Ixon record bytes through the vendored checker
 
-The `checkBytes`-shaped entry of con-leche's verified checker, which the
+The `checkBytes`-shaped entry of the verified checker vendored from
+con-leche (`Ix.Kernel`, `docs/kernel.md`, "Vendored con-leche"), which the
 certified API `Ix.Ixon.Admission.checkBytes` runs:
 
     preflight → uniqueKeys → decodeRecords → Ixon reader → preparePrelude
@@ -19,13 +20,13 @@ certified API `Ix.Ixon.Admission.checkBytes` runs:
   the same batch limits, key uniqueness (no two records and no two blobs
   under one address), the same canonical per-record decoding, the same
   error positions.
-* The reader is `Ix.Kernel.IxonReader` (keys per D1 (b), regrouping of
+* The reader is `Ix.Kernel.IxonReader` (address keys as reserved names, regrouping of
   `muts` blocks and projection records, the in-process modeller and the
   projection rewrite), against the supplied records with the Ixon prelude's
   records as a fallback store.
-* `preparePrelude` is con-leche's (`Ix/Kernel/Frontend/Prepare.lean`,
-  verbatim), with the Ixon prelude (`Ix.Kernel.IxonReader.builtinPrelude`).
-* The fold is con-leche's `checkDecls` at `.verified`, at the committed
+* `preparePrelude` is the vendored `Ix.Kernel.Frontend.preparePrelude`
+  (`Ix/Kernel/Frontend/Prepare.lean`), with the Ixon prelude (`Ix.Kernel.IxonReader.builtinPrelude`).
+* The fold is `Ix.Kernel.Cached.checkDecls` at `.verified`, at the committed
   Nat-operation pin variant generated from Ixon records
   (`Ix.Kernel.IxonReader.builtinNatOpPins`, decoded from
   `Ix/Kernel/Ixon/NatOpPinData.lean`; the theorem holds at every pin
@@ -38,7 +39,7 @@ and literal blobs; addresses are keys, not authenticated content hashes. The
 entry does not reorder beyond `preparePrelude`: a host order is a dependency
 order in which each record follows its references, a pinned `Nat` operation's
 certificate ground, and the constants its literals reference
-(`IxonReader.literalEdges`; con-leche declines a string literal before the
+(`IxonReader.literalEdges`; the checker declines a string literal before the
 string-support declarations), as the environment-check driver's order is.
 -/
 
@@ -107,7 +108,7 @@ def checkBytesWith (pins : Pins) (pre : Prelude) (natPins : List Ix.Kernel.NatOp
     fun (e, i) => .kernel e i
 
 /-- Check exactly the declarations described by the supplied canonical record
-bytes with con-leche's verified checker, under the committed pin table, Ixon
+bytes with the verified checker, under the committed pin table, Ixon
 prelude and Nat-operation pin variant. -/
 def checkBytes (limits : Limits) (records : Records) (blobs : List (Address × ByteArray))
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
@@ -125,7 +126,7 @@ def streamContext (pins : Pins) (pre : Prelude) (constants : List (Address × Ix
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) : Ctx :=
   contextOf pins constants.toArray blobs pre.records hint
 
-/-- Con-leche's verified fold over decoded records: the reader, the prelude,
+/-- The verified fold over decoded records: the reader, the prelude,
 the fold. `checkBytesWith` is byte admission followed by this
 (`checkBytesWith_eq`). -/
 def checkConstantsWith (pins : Pins) (pre : Prelude) (natPins : List Ix.Kernel.NatOpPinSet)
@@ -149,7 +150,7 @@ def checkConstants (constants : List (Address × Ixon.Constant)) (blobs : List (
 universe u
 
 /-- Every accept of the entry, at any pin table and prelude, is an accept
-of con-leche's fold on the prepared declarations. -/
+of the verified fold on the prepared declarations. -/
 theorem checkBytesWith_checkDecls {pins : Pins} {pre : Prelude}
     {natPins : List Ix.Kernel.NatOpPinSet}
     {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}

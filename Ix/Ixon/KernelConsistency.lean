@@ -11,19 +11,18 @@ import Ix.Kernel.Ixon.Values
 import Ix.Kernel.Verify.Cached.StreamThm
 import Ix.Kernel.Verify.Frontend.Prepare
 
-/-! # The public theorems of the con-leche entry (plan v4, L5)
+/-! # The public theorems of the kernel entry
 
-The certified contract of Ix's Ixon checker from L5 on (`docs/kernel.md`;
-decisions D2 (iii) and D3): con-leche's verified fold
-(`Ix.Kernel.Cached.checkDecls .verified`) behind the Ixon reader, stated for
-the executed functions.
+The certified contract of Ix's Ixon checker (`docs/kernel.md`): the vendored
+verified fold (`Ix.Kernel.Cached.checkDecls .verified`) behind the Ixon
+reader, stated for the executed functions.
 
 * **Model existence** (`checkConstantsWith_has_model`,
   `checkBytesWith_has_model`, `checkBytes_has_model`): every accepted input
-  has a model in con-leche's sense (`Ix.Kernel.Model`, which states types)
+  has a model (`Ix.Kernel.Model`, which states types)
   in every set theory. This is `Ix.Kernel.model_exists` at the prepared
   declarations; the reader owes nothing.
-* **No proof of `False`, in con-leche's pinned form** (D3).
+* **No proof of `False`, in the pinned form.**
   `checkBytesWith_no_proof_of_False`: no constant of an accepted environment
   has the pinned `False` (`Ix.Kernel.falseName`) as its type.
   `checkBytesWith_no_False_theorem`: no theorem record of an accepted input
@@ -44,9 +43,8 @@ the executed functions.
   names, its type's reading and (for a definition or theorem) its value's
   reading or projection rewrite, is in the array the fold accepted, and is
   installed under that name with its kind.
-* **Definition values** (`checkBytesWith_has_model_values`, D2 (ii)): the
-  model can be chosen so that every stored definition's value denotes the
-  constant, the counterpart of Ix's `Realizes.bodyValue` for definitions
+* **Definition values** (`checkBytesWith_has_model_values`): the model can
+  be chosen so that every stored definition's value denotes the constant
   (`Ix.Kernel.IxonFold.checkDecls_model_defn_values`).
 * **Resources** (`checkBytesWith_resources`): the byte limits checked
   before decoding bound the whole decoded representation.
@@ -262,7 +260,7 @@ theorem Installed.has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {pins : 
   exact Ix.Kernel.IxonFold.checkDecls_model_defn_values V natPins _ env hc
 
 /-- No constant of an accepted environment has the pinned `False` as its
-type (con-leche's `no_proof_of_False_cached`). -/
+type (`Ix.Kernel.Cached.no_proof_of_False_cached`). -/
 theorem Installed.no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins} {pre : Prelude}
     {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
     {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
@@ -272,7 +270,7 @@ theorem Installed.no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {pins :
   exact Ix.Kernel.Cached.no_proof_of_False_cached V rfl hc
 
 /-- No theorem record of an accepted input has a type that reads as the
-pinned `False`: con-leche's `no_False_theorem_accepted` at the record's
+pinned `False`: `Ix.Kernel.no_False_theorem_accepted` at the record's
 reading. -/
 theorem Installed.no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins} {pre : Prelude}
     {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
@@ -358,8 +356,8 @@ theorem checkBytesWith_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {p
   obtain ⟨_, _, _, _, installed⟩ := checkBytesWith_reading h
   exact installed.no_proof_of_False V
 
-/-- **No accepted theorem of `False`, at the records** (D3, con-leche's
-pinned form): no theorem record of accepted bytes has a type that reads as
+/-- **No accepted theorem of `False`, at the records** (in the pinned
+form): no theorem record of accepted bytes has a type that reads as
 the pinned `False`. -/
 theorem checkBytesWith_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
     {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {limits : Limits} {records : Records}

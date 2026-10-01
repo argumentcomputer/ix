@@ -11,7 +11,7 @@ import Std.Data.HashSet.Basic
 
 Batch limits (`preflight`), key uniqueness (`uniqueKeys`) and canonical
 per-record decoding (`decodeRecords`) of the certified entry
-(`Ix.Ixon.Admission.checkBytes`, con-leche behind the Ixon reader), in that
+(`Ix.Ixon.Admission.checkBytes`, the verified checker behind the Ixon reader), in that
 order. Their composition is proved in `Ix.Ixon.Verify.Admission`.
 
 The host supplies record order, address keys, and literal blobs. Addresses

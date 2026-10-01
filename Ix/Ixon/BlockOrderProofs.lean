@@ -239,7 +239,7 @@ theorem checkConstants_ok_iff (limits : Limits) (blobs : Ingress.Blobs) (input :
 
 universe v
 
-/-! ## The certified entry (L5) -/
+/-! ## The certified entry -/
 
 open Ix.Kernel.IxonReader (defaultPins builtinPrelude builtinNatOpPins)
 

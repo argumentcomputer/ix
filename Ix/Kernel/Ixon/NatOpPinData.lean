@@ -15,7 +15,7 @@ together with `PinData.lean`; do not edit. To regenerate:
       Ix/Kernel/Ixon/PinData.lean Ix/Kernel/Ixon/NatOpPinData.lean
 
 One pin variant (`Ix.Kernel.NatOpPinSet`) of the eight pin-certified `Nat`
-operations, from Ixon records only (plan v4 §2, "Pins"):
+operations, from Ixon records only:
 
 * the pins are the operations' stored values in the compiled Init (sha256
   e10f71e76e218e05db36502da3cd803bc5de6a099cbf210f9b67ea9e9bd2b84a), as the Ixon reader reads them;
@@ -25,7 +25,7 @@ operations, from Ixon records only (plan v4 §2, "Pins"):
   certificate ground and the statements' machinery inlined, and beta, `let`
   and projection-of-constructor redexes reduced (upstream's pinner's rule).
 
-Every operation was certified by con-leche's verified fold through the Ixon
+Every operation was certified by the verified fold through the Ixon
 reader, with this variant, when this file was generated. The fold takes its
 pin list as a parameter and `Ix.Kernel.model_exists` holds at every list, so
 the data carries no trust. `table` is a share table and `ops` its roots per

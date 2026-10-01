@@ -7,22 +7,21 @@ import Ix.Kernel.MainTheorem
 import Ix.Kernel.Model.Denotes
 import Ix.Kernel.Verify.Cached.MainC
 
-/-! # Stored definitions denote their constants (plan v4, L5, D2 (ii))
+/-! # Stored definitions denote their constants
 
-Con-leche's public `Model` states types only. Its internal invariant
+The kernel's public `Model` states types only. Its internal invariant
 `EnvModelM` also keeps `defn_reads` (`Model/Annot/EnvModelM.lean`,
 `AcvalDefnInst` in `Model/Annot/Laws.lean`): the reading of every stored
-definition's value is that constant's own leaf. Read through con-leche's
+definition's value is that constant's own leaf. Read through the kernel's
 bridge from the internal reading to the public denotation
-(`Model.Denotes_of_denoteMeta`), this is the counterpart of Ix's
-`Realizes.bodyValue` for definitions: there is a model of the accepted
+(`Model.Denotes_of_denoteMeta`), this gives a model of the accepted
 environment in which every stored definition's value denotes the constant
 (`checkDecls_model_defn_values`).
 
 The value is the stored one, i.e. the checker's annotation of the declared
 value (binder regimes computed, `let` reduced). Theorems and opaques keep
 no such equation: their values are opaque to reduction and the invariant
-records none (con-leche's design, `AcvalDefnInst`'s docstring). -/
+records none (upstream's design, `AcvalDefnInst`'s docstring). -/
 
 namespace Ix.Kernel.IxonFold
 

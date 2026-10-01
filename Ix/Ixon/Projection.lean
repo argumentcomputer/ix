@@ -94,7 +94,7 @@ inductive CheckError where
   | checker (error : KernelAdmission.Error)
 
 /-- **The certified entry with optional omission of projection records**:
-canonical byte admission, projection reconstruction, then con-leche's
+canonical byte admission, projection reconstruction, then the
 verified checker behind the Ixon reader (`KernelAdmission.checkConstants`)
 on the expanded records. Input byte limits and key uniqueness apply before
 reconstruction; the separate projection limit bounds generated requests. Owner keys remain

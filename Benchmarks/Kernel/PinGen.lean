@@ -15,7 +15,7 @@ by the Ix compiler (`regenerate` below gives the commands). No JSON is read,
 and none is generated: the optional closure rows are the environment check's JSONL
 report rows.
 
-1. **The names.** Con-leche's pinned names, and only those: the basis
+1. **The names.** The checker's pinned names, and only those: the basis
    (`reservedBasisNames`), the prelude's `And` and `Bool`, the structural and
    pin-certified Nat operations, the string-literal support, the standard and
    compiler-trust axioms (with `Iff`, `Nonempty`, `True`), `sorryAx`.
@@ -25,8 +25,8 @@ report rows.
    metadata (this host tool is the only place metadata is read), and its
    address resolved to a `ConstRef Address` exactly as the reader resolves
    references.
-3. **The Nat-operation pins** (plan v4 §2 "Pins"; upstream's
-   `Ix/Kernel/PinGen.lean`, over Ixon):
+3. **The Nat-operation pins** (upstream con-leche's generator
+   `PinGen.lean`, not vendored, over Ixon):
    - **the pins** are the operations' stored values, as the reader reads them
      from the compiled Init (in the dependency order the environment check uses). Ixon
      names a constant by its content, so the pin table's address for
@@ -47,7 +47,7 @@ report rows.
      whole reference closure, so nothing is forced here;
    - the two compiles must agree: each operation's address in the
      certificates' `.ixe` is its address in the Init `.ixe`.
-4. **Verification by con-leche.** The prelude records are read under the
+4. **Verification by the verified fold.** The prelude records are read under the
    candidate table, and the dependency closure of every pinned constant is
    read and checked record by record (`CheckIxeStep.checkLoop`, the environment check's
    own step) with the generated pin variant. The run fails unless every
@@ -58,7 +58,7 @@ report rows.
    capabilities hold in the final environment, and every recursor the
    prelude names gets its derived name.
 5. **Output.** `PinData.lean`: the table, sorted by name, the level names,
-   and the prelude's records (the twelve declarations of con-leche's
+   and the prelude's records (the twelve declarations of the checker's
    prelude, with their projection and recursor records) as canonical bytes.
    `NatOpPinData.lean`: the pin variant as a share table (the format is in
    `Ix/Kernel/Ixon/Prelude.lean`), decoded by the committed decoder and
@@ -85,8 +85,8 @@ def fixedNames : List CName :=
    Ix.Kernel.reduceNatName, Ix.Kernel.reduceBoolName, Ix.Kernel.ofReduceNatName,
    Ix.Kernel.ofReduceBoolName, Ix.Kernel.sorryAxName]
 
-/-- The prelude's declarations, in con-leche's prelude order
-(`pins/<toolchain>.prelude.ndjson`): each group's names. -/
+/-- The prelude's declarations, in upstream con-leche's prelude order
+(its `pins/<toolchain>.prelude.ndjson`): each group's names. -/
 def preludeGroups : List (List CName) :=
   [[Ix.Kernel.eqName, Ix.Kernel.eqReflName, Ix.Kernel.eqName.str "rec"],
    [Ix.Kernel.natName, Ix.Kernel.natZeroName, Ix.Kernel.natSuccName, Ix.Kernel.natName.str "rec"],
@@ -681,7 +681,7 @@ def run (args : List String) : IO UInt32 := do
     IO.eprintln "pin-gen: the share table does not decode to the generated variant"
     return 1
   IO.eprintln s!"pin-gen: Nat-op pin variant: {tableLines.size} share-table nodes, decoded back equal"
-  -- 4: verification by con-leche over the pinned constants' closure
+  -- 4: verification by the verified fold over the pinned constants' closure
   let roots := (preRecords.map (·.1)) ++ (kept.map (·.ref.block))
   let ordered := closure s.store s.extra roots
   IO.eprintln s!"pin-gen: checking the closure, {ordered.size} records"
@@ -743,15 +743,15 @@ together with `NatOpPinData.lean`; do not edit. To regenerate:
 {recipe}
 
 Every pinned constant's record, and the literal capabilities, were checked by
-con-leche's verified fold through the Ixon reader when this file was
+the verified fold through the Ixon reader when this file was
 generated; see `Ix/Kernel/Ixon/Reader.lean` for what the table may affect
 (coverage, never soundness). Source: sha256 {digest}.
 
 `pins`: (name components, block address, member, constructor + 1 or 0).
 `levels`: (block address, member, constructor + 1 or 0, level-parameter
 names), for the pinned constants and their recursors.
-`prelude`: (record address, canonical record bytes), in con-leche's prelude
-order. -/
+`prelude`: (record address, canonical record bytes), in the checker's
+prelude order. -/
 
 namespace Ix.Kernel.IxonReader.PinData
 
@@ -785,7 +785,7 @@ together with `PinData.lean`; do not edit. To regenerate:
 {recipe}
 
 One pin variant (`Ix.Kernel.NatOpPinSet`) of the eight pin-certified `Nat`
-operations, from Ixon records only (plan v4 §2, \"Pins\"):
+operations, from Ixon records only:
 
 * the pins are the operations' stored values in the compiled Init (sha256
   {digest}), as the Ixon reader reads them;
@@ -795,7 +795,7 @@ operations, from Ixon records only (plan v4 §2, \"Pins\"):
   certificate ground and the statements' machinery inlined, and beta, `let`
   and projection-of-constructor redexes reduced (upstream's pinner's rule).
 
-Every operation was certified by con-leche's verified fold through the Ixon
+Every operation was certified by the verified fold through the Ixon
 reader, with this variant, when this file was generated. The fold takes its
 pin list as a parameter and `Ix.Kernel.model_exists` holds at every list, so
 the data carries no trust. `table` is a share table and `ops` its roots per

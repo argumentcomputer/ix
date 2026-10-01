@@ -12,13 +12,7 @@ them, keyed by address and in order, with the lookups the certified entries
 use: first-match `lookup`, the projection test, the empty-table test of a
 projection record, and the little-endian value of a natural-number blob;
 and `LawfulBEq Address`, for the proofs of the duplicate-key checks (first
-match is then the only match: the entries reject a key used twice).
-
-These definitions were part of the intrinsic kernel's ingress
-(`Ix/Kernel/Ingress/Reading.lean`), which L6 (plan v4) retired with that
-kernel. They are kept unchanged, under their names, so that the certified
-statements that mention them (`Ix.Ixon.Admission.checkBytes_*`,
-`Ix.Ixon.Projection.*`, `Ix.Ixon.BlockOrder.*`) did not change. -/
+match is then the only match: the entries reject a key used twice). -/
 
 namespace Ix.Kernel.Ingress
 

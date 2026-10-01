@@ -19,4 +19,5 @@ legacy `deConstant` remains a prefix decoder; `deConstantExact` checks the
 whole buffer. Byte-consumption bounds cover arbitrary successful production
 reads; universe expansion uses its separate budget. The accounting interpreter
 additionally bounds complete record-parser work on success and failure, with
-exact erasure to production. Canonical decoding has a separate K4 contract. -/
+exact erasure to production. Canonical decoding has its own contract
+(`Ix.Ixon.Verify.Canonical`). -/

@@ -427,7 +427,7 @@ inductive CheckError where
 
 /-- **The certified entry with canonical block order**: byte spelling,
 computed projections, canonical block order (recursor blocks in motive
-order), and con-leche's verified
+order), and the verified
 checker behind the Ixon reader are all executed here. No host ordering
 verdict is input. -/
 def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)

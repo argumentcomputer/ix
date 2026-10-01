@@ -9,18 +9,17 @@ import Ix.Ixon.KernelConsistency
 /-! # The public theorems of the certified Ixon API
 
 The contract of `Ix.Ixon.Admission.checkBytes` (`docs/kernel.md`), stated
-for the executed function. Each theorem is the con-leche entry's
+for the executed function. Each theorem is the kernel entry's
 (`Ix.Ixon.KernelConsistency`, where the same statements hold at every pin
 table, prelude and Nat-operation pin list) at the committed tables.
 
-* `checkBytes_has_model`: every accepted input has a model in con-leche's
-  sense (`Ix.Kernel.Model`) in every set theory (D2 (iii));
-  `checkBytes_has_model_values`: one in which every stored definition's
-  value denotes the constant (D2 (ii)).
+* `checkBytes_has_model`: every accepted input has a model
+  (`Ix.Kernel.Model`) in every set theory; `checkBytes_has_model_values`:
+  one in which every stored definition's value denotes the constant.
 * `checkBytes_no_proof_of_False`: no accepted constant has the pinned
   `False` as its type; `checkBytes_no_False_theorem`: no theorem record of
-  accepted bytes has a type that reads as the pinned `False` (D3, con-leche's
-  pinned form).
+  accepted bytes has a type that reads as the pinned `False`
+  (`Ix.Kernel.falseName`).
 * `checkBytes_reading`: fidelity: the batch limits, key uniqueness
   (`UniqueKeys`), the exact canonical reading of every record, and
   installation of what the records describe.
@@ -37,7 +36,7 @@ open Ix.Ixon.Verify.Admission (WithinBatch UniqueKeys RecordsRead resourceUnits)
 
 universe u
 
-/-- The certified entry is the con-leche entry at the committed tables. -/
+/-- The certified entry is the kernel entry at the committed tables. -/
 theorem checkBytes_eq (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
     checkBytes limits records blobs hint = KernelAdmission.checkBytes limits records blobs hint := rfl
