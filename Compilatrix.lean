@@ -208,6 +208,7 @@ import Compilatrix.Rt.Procs.Entry
 import Compilatrix.Rt.Procs.Nat
 import Compilatrix.Rt.Lower
 import Compilatrix.Rt.Readback
+import Compilatrix.Rt.Proof.Words
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine

@@ -1809,6 +1809,12 @@
   "Compilatrix.Rt.Readback":
   {"path": "Compilatrix/Rt/Readback.lean",
    "imports": ["Compilatrix.Rt.Layout", "Compilatrix.X86.State"]},
+  "Compilatrix.Rt.Proof.Words":
+  {"path": "Compilatrix/Rt/Proof/Words.lean",
+   "imports":
+   ["Compilatrix.Rt.Layout",
+    "Compilatrix.Lir.Semantics",
+    "Compilatrix.Src.Prim"]},
   "Compilatrix.Rt.Procs.Nat":
   {"path": "Compilatrix/Rt/Procs/Nat.lean",
    "imports": ["Compilatrix.Rt.Layout"]},
@@ -3137,6 +3143,7 @@
     "Compilatrix.Rt.Procs.Nat",
     "Compilatrix.Rt.Lower",
     "Compilatrix.Rt.Readback",
+    "Compilatrix.Rt.Proof.Words",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",

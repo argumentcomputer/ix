@@ -90,6 +90,9 @@ inductive Error where
   | edgeOrder (f : FunId) (b : Nat)
   /-- A chunk label left unfilled (a bug in the lowering). -/
   | internal (f : FunId) (what : String)
+  /-- A function numbered at or beyond the program's size (Lir numbers the
+  runtime procedures from there). -/
+  | funRange (f : FunId)
   deriving Repr, Inhabited
 
 def Error.render : Error → String
@@ -104,6 +107,7 @@ def Error.render : Error → String
   | .switch f b what => s!"rt.switch: function {f} block {b}: {what}"
   | .edgeOrder f b => s!"rt.edge: function {f} block {b}: a back flag disagrees with the label order"
   | .internal f what => s!"rt.internal: function {f}: {what}"
+  | .funRange f => s!"rt.funs: function {f} is numbered beyond the program's size"
 
 instance : ToString Error := ⟨Error.render⟩
 
@@ -138,8 +142,13 @@ structure Tables where
   natGcd : FunId
 
 def tables (P : Cfg.Program) : Tables :=
+  -- a `Bool` word only for a key outside `Nat`'s, within the tag limit (the
+  -- value relation of `Rt.lower_correct` needs both)
   let word := fun (k : Option Key.CtorKey) =>
-    k.bind fun k => (Fir.CtorInfo.ofKey P.ctors k).map fun c => ctor0Word c.tag
+    k.bind fun k =>
+      if P.known.natZero == some k || P.known.natSucc == some k then none
+      else (Fir.CtorInfo.ofKey P.ctors k).bind fun c =>
+        if c.tag ≤ maxTag then some (ctor0Word c.tag) else none
   { ctors := P.ctors, known := P.known
     bools := match word P.known.boolTrue, word P.known.boolFalse with
       | some t, some f => some (t, f)
@@ -375,6 +384,10 @@ def alloc (f : FunId) (T : Tables) (x : VReg) (c : Fir.CtorInfo) (as : List Lir.
   if isNatKey T c.key then throw (.layout f "a Nat constructor cell (Nat values are literals)")
   if c.nscalar != 0 then throw (.layout f "scalar fields are Phase 2")
   if as.length != c.arity then throw (.form f s!"an allocation of {as.length} fields for {c.arity}")
+  -- the switch lowering reads tags from the table (`Cfg.WellFormed` checks this too)
+  if Fir.CtorInfo.ofKey T.ctors c.key != some c then throw (.form f "allocation info is not the table's")
+  -- the bump pointer is written to `x` before the fields are stored
+  if as.any (· == .v x) then throw (.form f "an allocation reads the variable it defines")
   if c.tag > maxTag then throw (.layout f s!"constructor tag {c.tag} above {maxTag}")
   if c.fieldless then assign x (.arg (.imm (ctor0Word c.tag)))
   else
@@ -652,8 +665,14 @@ def prune (blocks : List Lir.Block) : List Lir.Block :=
 /-- The largest variable a function defines. -/
 def maxVar (fd : Cfg.Fun) : Nat := (fd.blocks.flatMap Cfg.Check.blockDefs).foldl max 0
 
+/-- The first block with an edge whose back flag disagrees with the label
+order (every block, lowered or not: Cfg's step bound needs them all). -/
+def misordered (fd : Cfg.Fun) : Option Nat :=
+  (fd.blocks.zipIdx.find? fun (b, i) => !(b.term.edges.all fun e => e.back == decide (e.target ≤ i))).map (·.2)
+
 def function (T : Tables) (f : FunId) (fd : Cfg.Fun) (conv : Lir.Conv) : Except Error Lir.Func := do
   let some b0 := fd.blocks.head? | throw (.missingBlock f 0)
+  if let some b := misordered fd then throw (.edgeOrder f b)
   -- no edge enters block 0: it is the Lir entry itself
   let merged := !(fd.blocks.any fun b => b.term.edges.any (·.target == 0))
   let supply := max fd.vars (maxVar fd + 1)
@@ -694,6 +713,7 @@ open Lower in
 functions (04 §8.1). -/
 def lower (cfg : Config) (P : Cfg.Program) : Except Error Lowered := do
   let some main := P.exports.head? | throw .noExports
+  if let some (f, _) := P.funs.toList.find? (P.size ≤ ·.1) then throw (.funRange f)
   let named := P.exports.zipIdx.map fun (f, i) => (f, symbolOf ((cfg.names[i]?).getD s!"root{i}"))
   -- a function exported twice keeps its first name (one wrapper per function)
   let roots := named.map fun (f, s) => (f, (named.lookup f).getD s)
