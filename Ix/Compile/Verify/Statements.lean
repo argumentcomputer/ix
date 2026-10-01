@@ -32,6 +32,7 @@ import Ix.Compile.Verify.UniformDecomp
 import Ix.Compile.Verify.UniformChecks
 import Ix.Compile.Verify.UniformFinal
 import Ix.Compile.Verify.UniformSearch
+import Ix.Compile.Verify.UniformOptimality
 
 /-!
 # Public compiler-verification frontier
