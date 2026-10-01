@@ -15,6 +15,7 @@ import Compilatrix.Sem.Traced
 import Compilatrix.Sem.TracedSim
 import Compilatrix.Sem.TracedTransform
 import Compilatrix.Sem.View
+import Compilatrix.Sem.SimConst
 import Compilatrix.Lir.Syntax
 import Compilatrix.Lir.Semantics
 import Compilatrix.Lir.Graph
@@ -28,6 +29,7 @@ import Compilatrix.Lir.Proof.EvalAttr
 import Compilatrix.Lir.Proof.Eval
 import Compilatrix.Lir.Proof.Relabel
 import Compilatrix.Lir.Proof.Split
+import Compilatrix.Lir.Proof.Perms
 import Compilatrix.Xv.Syntax
 import Compilatrix.Xv.Slots
 import Compilatrix.Xv.Semantics
@@ -297,6 +299,8 @@ import Compilatrix.Rt.Proof.Readback
 import Compilatrix.Rt.Proof.CxInit
 import Compilatrix.Rt.Proof.Publish
 import Compilatrix.Rt.Proof.Lang
+import Compilatrix.Rt.Proof.ReadbackCongr
+import Compilatrix.Rt.Proof.Roots
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine
@@ -371,6 +375,10 @@ import Compilatrix.X86.SafeSteps
 import Compilatrix.X86.SafeStepsObject
 import Compilatrix.X86.ObjectRun
 import Compilatrix.X86.ObjectRunSafe
+import Compilatrix.X86.ObjectCall
+import Compilatrix.X86.ObjectCallSafe
+import Compilatrix.X86.Driver
+import Compilatrix.X86.Linked
 import Compilatrix.X86.StreamCalls
 import Compilatrix.X86.StreamControl
 import Compilatrix.X86.StreamDecidable
@@ -408,6 +416,7 @@ import Compilatrix.X86.Layout.Proof.Order
 import Compilatrix.X86.Layout.Proof.Rows
 import Compilatrix.X86.Layout.Proof.Linearize
 import Compilatrix.X86.Layout.Proof.Transport
+import Compilatrix.X86.Layout.Proof.Retarget
 import Compilatrix.Xv.Stacking.Proof.Shape
 import Compilatrix.Xv.Stacking.Proof.Steps
 import Compilatrix.Xv.Stacking.Proof.Exit
@@ -444,16 +453,26 @@ import Compilatrix.Xv.Stacking.Proof.WrapperHead
 import Compilatrix.Xv.Stacking.Proof.WrapperCall
 import Compilatrix.Xv.Stacking.Proof.WrapperEntry
 import Compilatrix.Xv.Stacking.Proof.Ends
+import Compilatrix.Xv.Stacking.Proof.Retarget
 import Compilatrix.Backend
 import Compilatrix.Backend.Proof.Xl
 import Compilatrix.Backend.Proof.Emit
 import Compilatrix.Backend.Proof.Object
 import Compilatrix.Backend.Proof.Ends
+import Compilatrix.Backend.Proof.Retarget
+import Compilatrix.Backend.Proof.Exports
+import Compilatrix.Backend.Proof.Funcs
+import Compilatrix.Backend.Proof.Driver
 import Compilatrix.Rt.Backend
 import Compilatrix.Src.Table.Cert
 import Compilatrix.Recheck
 import Compilatrix.Recheck.Proof.Front
 import Compilatrix.Recheck.Proof.Sound
+import Compilatrix.Recheck.Linked
+import Compilatrix.Recheck.Proof.Parts
+import Compilatrix.Recheck.Proof.Back
+import Compilatrix.Recheck.Proof.Object
+import Compilatrix.Recheck.Proof.Soundness
 import Compilatrix.Cli
 import Compilatrix.Aiur
 
@@ -472,8 +491,9 @@ down to typed x86 (`Backend.emit`), the x86 target model with its certified
 encoder (E1) and stream/ELF layer (E2), the compiler itself (`Recheck`: the
 certificate, `produce`, the recheck path `Recheck.run` and `compile`, and the
 front half's refinement from the checked source to the loaded Lir program,
-`Recheck.front_refines`, with `compile_sound` and `compile_safe` from the backend
-half's refinement; `Cli`: the `compilatrix` command line), and the Aiur target. The
+`Recheck.front_refines`, the backend half's (`Recheck.back_refines`: the object
+run by the runtime driver, `X86.Linked`, refines the loaded Lir program), and
+roadmap §1.1 at stage S for every object `Recheck.run` makes (`Recheck.sound`); `Cli`: the `compilatrix` command line), and the Aiur target. The
 compiler pipeline is being rebuilt; see `docs/roadmap.md`. The complete
 regression and proof collection is built explicitly through
 `CompilatrixTests.Proofs`. -/
