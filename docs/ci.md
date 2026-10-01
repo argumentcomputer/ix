@@ -23,7 +23,7 @@ from claiming another job's matching runner. Matrix jobs use
 Every RunsOn label uses the `ubuntu26-full-x64` image and sets `volume=`
 explicitly so the root volume has room for toolchains, apt packages, and
 container images; sticky disks hold only the declared cache paths. Jobs use
-`volume=100gb`, and the Nix job `volume=150gb`.
+`volume=100gb`.
 Sticky disks restore with provisioned snapshot initialization; `lazy-init`
 makes first reads of cached binaries and oleans slow enough to dominate jobs
 that only run them.
