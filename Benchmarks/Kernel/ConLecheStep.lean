@@ -414,7 +414,8 @@ def setup (store : RecordStore) (blobs : Address → Option ByteArray)
     unless store.contains a do store := store.insert a c
   let records := store.toArray
   let index := buildIndex (store[·]?) pins.names records
-  let cx : Ctx := { store := (store[·]?), blob := blobs, pins, index, hint }
+  let cx : Ctx := { store := (store[·]?), blob := blobs, pins, index, hint,
+                    keys := keyNamesOf (store[·]?) pins.names records }
   let extra := mergeEdges (groundEdges pins.names) (literalEdges pins.names records)
   let first := pre.records.foldl (fun acc (a, c) =>
     let o := owner a c

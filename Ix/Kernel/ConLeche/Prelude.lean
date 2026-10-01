@@ -255,7 +255,8 @@ def contextOf (pins : Pins) (records : Array (Address × Ixon.Constant))
     blobs.foldl (fun m (a, b) => if m.contains a then m else m.insert a b) {}
   let known : Std.HashSet Address := records.foldl (fun s (a, _) => s.insert a) {}
   let all := records ++ fallback.filter (fun (a, _) => !known.contains a)
-  { store, blob := (blobMap[·]?), pins, index := buildIndex store pins.names all, hint }
+  { store, blob := (blobMap[·]?), pins, index := buildIndex store pins.names all, hint,
+    keys := keyNamesOf store pins.names all }
 
 /-- Read prelude records under a pin table. -/
 def readPrelude (pins : Pins)

@@ -133,7 +133,9 @@ where
 /-- What the reader's per-reference work costs. The reader resolves and names
 a reference at every `ref`/`prj` node it converts; this reports the node and
 reference counts of the kept records, and the time of `resolve`, of
-`Ctx.nameOf` and of `keyName` over every reference-table entry once. -/
+`Ctx.nameOf` (a lookup in `Ctx.keys` since T1-4) and of `keyName` (what
+`nameOf` spelled at every occurrence before) over every reference-table
+entry once. -/
 def readStats (s : Setup) (records : Array (Address × Ixon.Constant)) : IO Unit := do
   let mut nodes := 0
   let mut refNodes := 0

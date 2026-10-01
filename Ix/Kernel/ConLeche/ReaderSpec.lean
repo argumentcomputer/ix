@@ -345,14 +345,14 @@ theorem StreamRead.singleton {cx : Ctx} {st st' : State} {records : List (Addres
 the table has one. -/
 theorem Ctx.nameOf_of_pin {cx : Ctx} {r : ConstRef Address} {n : CName}
     (hrec : cx.index.recs[r]? = none) (hpin : cx.pins.names[r]? = some n) : cx.nameOf r = n := by
-  simp [Ctx.nameOf, hrec, Std.HashMap.getD_eq_getD_getElem?, hpin]
+  simp [Ctx.nameOf, hrec, hpin]
 
 /-- A reference that is neither an indexed recursor nor pinned takes its
 address encoding. -/
 theorem Ctx.nameOf_of_unpinned {cx : Ctx} {r : ConstRef Address}
     (hrec : cx.index.recs[r]? = none) (hpin : cx.pins.names[r]? = none) :
     cx.nameOf r = keyName r := by
-  simp [Ctx.nameOf, hrec, Std.HashMap.getD_eq_getD_getElem?, hpin]
+  simp [Ctx.nameOf, hrec, hpin, KeyNames.get_eq]
 
 /-- The reading of a bare reference with no universe arguments: the
 constant the reference resolves to, under its name. -/

@@ -45,10 +45,11 @@ spliced as one closed term (27,096 compiled functions), as in
 same 10 functions as there: 5524 to 5534. cl-m1 adapts the in-process modeller's `genNested` (container groups
 largest family first): 6 functions, the same as in `Ix.Kernel.Audit.Roots`:
 5534 to 5540. T1's record maps (as there)
-remove 2: 5538 (5532 on T1's own base; int-5). -/
+remove 2: 5538; its address encodings add 4: 5542 (5532 and 5536 on T1's own
+base; int-5). -/
 /-- info: runtime closure of [Ix.Ixon.BlockOrder.checkBytes,
  Ix.Ixon.BlockOrder.canonicalClasses,
- Ix.Ixon.BlockOrder.compareExpr]: 5538 compiled functions; inherited externs 132, implemented_by 0,
+ Ix.Ixon.BlockOrder.compareExpr]: 5542 compiled functions; inherited externs 132, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings

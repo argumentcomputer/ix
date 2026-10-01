@@ -765,6 +765,16 @@ def natBlockRecord : Ixon.Constant := Id.run do
   toString (cx.nameOf (.member (address 92) 0)) == keyString (.member (address 92) 0) &&
     toString (cx.nameOf (.member (address 92) 0)) != "Nat"
 
+-- The address encodings are computed ahead (`Ctx.keys`, T1): an unpinned
+-- record's reference is in the table, under `keyName`'s spelling, and a
+-- pinned one is not.
+#guard
+  let cx := contextOf builtinPins #[(address 93, idNat)] [] builtinPre.records
+  let natRef := (builtinPins.names.toList.find? (toString ·.2 == "Nat")).map (·.1)
+  cx.keys.map.contains (.member (address 93) 0) &&
+    toString (cx.nameOf (.member (address 93) 0)) == keyString (.member (address 93) 0) &&
+    natRef.isSome && natRef.all (!cx.keys.map.contains ·)
+
 /-! ## Negative: malformed and unsupported records -/
 
 -- the same address twice: the byte stage rejects it (`uniqueKeys`, L6b),

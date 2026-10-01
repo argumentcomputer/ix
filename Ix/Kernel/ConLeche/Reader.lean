@@ -530,19 +530,66 @@ def buildIndex (store : Store) (pins : Std.HashMap (ConstRef Address) CName)
 
 /-! ## The reader's context -/
 
+/-- Address encodings computed ahead of reading: every entry is `keyName` of
+its key. The reader names a reference at every occurrence (3.7 million
+`ref`/`prj` nodes in Init+Std); `keyName` spells the address in hexadecimal
+each time, which was most of the reading time, and gave every occurrence its
+own name object. Looked up here, each reference is spelled once and every
+occurrence reads the same object, as a lean4export stream's name table
+gives con-leche's parser one name per index. -/
+structure KeyNames where
+  map : Std.HashMap (ConstRef Address) CName := {}
+  sound : ∀ r n, map[r]? = some n → n = keyName r := by simp
+
+/-- `keyName r`, from the table where it has an entry. -/
+def KeyNames.get (k : KeyNames) (r : ConstRef Address) : CName :=
+  match k.map[r]? with
+  | some n => n
+  | none => keyName r
+
+theorem KeyNames.get_eq (k : KeyNames) (r : ConstRef Address) : k.get r = keyName r := by
+  unfold KeyNames.get
+  cases h : k.map[r]? with
+  | none => rfl
+  | some n => exact k.sound r n h
+
+/-- The table with `r`'s encoding added. -/
+def KeyNames.insert (k : KeyNames) (r : ConstRef Address) : KeyNames :=
+  ⟨k.map.insert r (keyName r), fun r' n h => by
+    rw [Std.HashMap.getElem?_insert] at h
+    split at h
+    · next hr =>
+      cases h
+      rw [beq_iff_eq.mp hr]
+    · exact k.sound r' n h⟩
+
+/-- The address encodings of the unpinned references `records` denote (each
+record's `resolveSource`), for `Ctx.keys`. -/
+def keyNamesOf (store : Store) (pins : Std.HashMap (ConstRef Address) CName)
+    (records : Array (Address × Ixon.Constant)) : KeyNames :=
+  records.foldl (init := {}) fun k (a, c) =>
+    match resolveSource store a c with
+    | some r => if pins.contains r || k.map.contains r then k else k.insert r
+    | none => k
+
 /-- Everything a record is read against: the stores, the pins, the
-recursor index and the host's (optional, untrusted) reducibility hints. -/
+recursor index, the host's (optional, untrusted) reducibility hints, and the
+address encodings computed ahead (`keyNamesOf`; an empty table only costs
+time). -/
 structure Ctx where
   store : Store
   blob : Address → Option ByteArray
   pins : Pins
   index : RecIndex
   hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none
+  keys : KeyNames := {}
 
 def Ctx.nameOf (cx : Ctx) (r : ConstRef Address) : CName :=
   match cx.index.recs[r]? with
   | some e => e.name
-  | none => cx.pins.names.getD r (keyName r)
+  | none => match cx.pins.names[r]? with
+    | some n => n
+    | none => cx.keys.get r
 
 /-- A constant's level-parameter names: the table's where it has a list of
 the right length, positional otherwise. -/
