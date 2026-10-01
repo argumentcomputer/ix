@@ -39,6 +39,7 @@ import Ix.Compile.Verify.TieredModel
 import Ix.Compile.Verify.TieredPhase3
 import Ix.Compile.Verify.TieredIdem
 import Ix.Compile.Verify.TieredWire
+import Ix.Compile.Verify.TieredGuard
 
 /-!
 # Public compiler-verification frontier

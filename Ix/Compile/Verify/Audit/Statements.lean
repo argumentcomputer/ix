@@ -502,6 +502,12 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.Tiered.canonicalSharingTiered_format,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.Tiered.canonicalSharingTieredTable_format,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.PrepWF.gBuild_tree,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.WTree.gcost_eq,
+    standardAxioms := noChoice },
+  { root := ``Ix.Compile.Verify.Tiered.phase3_le_phase1,
     standardAxioms := standard }
 ]
 
