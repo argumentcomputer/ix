@@ -21,6 +21,16 @@ are rebuilt once through the same simplifying constructors as host ingress.
 Sharing is followed only to earlier entries, without constructing another
 expanded expression tree. Literal comparison uses values, not blob addresses.
 
+A block whose members are all recursors is checked in motive order instead
+(`checkMotives`): member `j` eliminates motive `j` and declares one motive per
+member. That is the order the compiler stores a recursor block in (`T.rec`,
+`T.rec_1`, …; for a mutual block, its members' order) and the order in which
+the Ixon reader regroups a block's recursors (`ConLecheReader.buildIndex`
+reads each recursor's motive off its type), and it is not always the
+structural order (a nested block's auxiliary recursors, or a mutual block's
+recursors whose types compare otherwise). Inductive, definition and mixed
+blocks keep the structural check.
+
 This is an ordering check, not a second typechecker or a complete validator
 of unused tables: the final kernel admission still checks the entire input.
 -/
@@ -42,6 +52,10 @@ inductive Error where
   | exhausted (resource : Resource)
   | malformed (reason : String)
   | nonCanonical (owner : Address) (classes : Classes)
+  /-- a recursor block's member `position` does not eliminate motive
+  `position` of a block with one motive per member (`motive`: the motive its
+  type eliminates, if it has the recursor shape) -/
+  | motiveOrder (owner : Address) (position : Nat) (motive : Option Nat)
   | projection (reason : Projection.Error)
   | admission (reason : Admission.Error)
   deriving Repr, DecidableEq
@@ -354,11 +368,55 @@ def checkBlock (limits : Limits) (owner : Address) (source : _root_.Ixon.Constan
   if classes = orderedSingletons block.entries.size then return ()
   throw (.nonCanonical owner classes)
 
+/-! ## Recursor blocks: motive order -/
+
+def isRecursor : MutConst → Bool
+  | .recr _ => true
+  | _ => false
+
+/-- The motive a recursor eliminates, read off its type exactly as the Ixon
+reader does (the first component of `ConLecheReader.analyseRecursor`): after
+the parameters, motives, minors, indices and the major premise, the head of
+the result is the bound variable of one of the motives. -/
+def recursorMotive (source : _root_.Ixon.Constant) (r : _root_.Ixon.Recursor) : Option Nat := do
+  let nP := r.params.toNat
+  let nM := r.motives.toNat
+  let depth := nP + nM + r.minors.toNat + r.indices.toNat + 1
+  let (_, body) ← ConLecheReader.stripAll source depth r.typ
+  let .var k := ConLecheReader.appHead source ConLecheReader.spineFuel body | none
+  let pos := depth - 1 - k.toNat
+  guard (k.toNat < depth && nP ≤ pos && pos < nP + nM)
+  pure (pos - nP)
+
+/-- The members from `position` on are recursors in motive order: the one at
+`position` eliminates motive `position`, of `size` motives. -/
+def checkMotives (owner : Address) (source : _root_.Ixon.Constant) (size : Nat) :
+    Nat → List MutConst → Except Error Unit
+  | _, [] => .ok ()
+  | position, member :: rest => do
+    match member with
+    | .recr r =>
+      let motive := recursorMotive source r
+      unless r.motives.toNat == size && motive == some position do
+        throw (.motiveOrder owner position motive)
+    | _ => throw (.malformed "expected a recursor")
+    checkMotives owner source size (position + 1) rest
+
+/-- One record's order check: a recursor block in motive order, any other
+`muts` block in canonical structural order (`checkBlock`), nothing else. -/
+def checkRecord (limits : Limits) (blobs : Ingress.Blobs) (owner : Address)
+    (source : _root_.Ixon.Constant) : Except Error Unit :=
+  match source.info with
+  | .muts members =>
+    if members.all isRecursor then checkMotives owner source members.size 0 members.toList
+    else checkBlock limits owner source blobs
+  | _ => .ok ()
+
 def checkConstants (limits : Limits) (blobs : Ingress.Blobs) :
     Ingress.Constants → Except Error Unit
   | [] => .ok ()
   | (owner, source) :: rest => do
-    if source.info matches .muts _ then checkBlock limits owner source blobs
+    checkRecord limits blobs owner source
     checkConstants limits blobs rest
 
 /-- Failures of the certified entry: byte admission, reconstruction and
@@ -368,7 +426,8 @@ inductive CheckError where
   | checker (error : ConLecheAdmission.Error)
 
 /-- **The certified entry with canonical block order**: byte spelling,
-computed projections, canonical block order, and con-leche's verified
+computed projections, canonical block order (recursor blocks in motive
+order), and con-leche's verified
 checker behind the Ixon reader are all executed here. No host ordering
 verdict is input. -/
 def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)

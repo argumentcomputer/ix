@@ -49,10 +49,19 @@ remove 2: 5538; its address encodings add 4: 5542 (5532 and 5536 on T1's own
 base; int-5). cl-level adapts con-leche's level comparison (the Géran
 fallback of `Level.rest`): 12 functions, the same as in
 `Ix.Kernel.Audit.Roots`: 5542 to 5554 (5540 to 5552 on cl-level's own base,
-before T1; rebased at mergeability). -/
+before T1; rebased at mergeability). On 2026-10-01 recursor blocks are
+checked in motive order instead of structurally (`checkRecord`, the
+orchestrator's ruling on cl-fidelity's finding that the structural check
+refused 2 of the 7 compiled recursor blocks of the fidelity fixture): 9
+functions, 5554 to 5563, exactly `checkRecord`, `isRecursor`, its
+`Array.any` specialization, `checkMotives` with its three closed terms,
+`recursorMotive`, and a shared `Option Nat` equality specialization; the
+reader's `stripAll` and `appHead`, which `recursorMotive` calls, were already
+in the closure (`ConLecheReader.analyseRecursor`). No extern, unsafe or
+ruled entry changed. -/
 /-- info: runtime closure of [Ix.Ixon.BlockOrder.checkBytes,
  Ix.Ixon.BlockOrder.canonicalClasses,
- Ix.Ixon.BlockOrder.compareExpr]: 5554 compiled functions; inherited externs 132, implemented_by 0,
+ Ix.Ixon.BlockOrder.compareExpr]: 5563 compiled functions; inherited externs 132, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
@@ -64,6 +73,11 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.BlockOrder.Audit.operations #[`
 #guard_kernel_axioms Ix.Ixon.BlockOrder.refine_mono [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.BlockOrder.canonicalClasses_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.BlockOrder.checkBlock_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.BlockOrder.recursorMotive_of_analyse [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.BlockOrder.motivesFrom_cons [propext, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.BlockOrder.checkMotives_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.BlockOrder.checkMotiveOrder_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.BlockOrder.checkRecord_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.BlockOrder.checkConstants_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.BlockOrder.checkBytes [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.BlockOrder.checkBytes_ok_iff [propext, Classical.choice, Quot.sound]
@@ -92,6 +106,40 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.BlockOrder.Audit.operations #[`
     Ix.Ixon.BlockOrder.Canonical limits owner source blobs -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBlock_ok_iff
+
+/- Recursor blocks in motive order (2026-10-01). `Ordered`, which every entry
+theorem below states, is `OrderedRecord` at each record: since this change a
+block of recursors must be `MotiveOrdered` (member `j` eliminates motive `j`,
+read off its type as the reader reads it, `recursorMotive_of_analyse`, and
+declares one motive per member) instead of `Canonical`; every other `muts`
+block is still `Canonical`. The statements of the entry theorems are
+unchanged; these freeze what `Ordered` now means. -/
+/-- info: def Ix.Ixon.BlockOrder.OrderedRecord : Ix.Ixon.BlockOrder.Limits →
+  Ix.Kernel.Ingress.Blobs → Address × Ixon.Constant → Prop :=
+fun limits blobs pair =>
+  match pair.snd.info with
+  | Ixon.ConstantInfo.muts members =>
+    if members.all Ix.Ixon.BlockOrder.isRecursor = true then Ix.Ixon.BlockOrder.MotiveOrdered pair.snd members
+    else Ix.Ixon.BlockOrder.Canonical limits pair.fst pair.snd blobs
+  | x => True -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Ixon.BlockOrder.OrderedRecord
+
+/-- info: def Ix.Ixon.BlockOrder.MotivesFrom : Ixon.Constant → Nat → Nat → List Ixon.MutConst → Prop :=
+fun source size start members =>
+  ∀ (j : Nat) (h : j < members.length),
+    ∃ r,
+      members[j] = Ixon.MutConst.recr r ∧
+        r.motives.toNat = size ∧ Ix.Ixon.BlockOrder.recursorMotive source r = some (start + j) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Ixon.BlockOrder.MotivesFrom
+
+/-- info: Ix.Ixon.BlockOrder.checkRecord_ok_iff : ∀ (limits : Ix.Ixon.BlockOrder.Limits) (blobs : Ix.Kernel.Ingress.Blobs)
+  (owner : Address) (source : Ixon.Constant),
+  Ix.Ixon.BlockOrder.checkRecord limits blobs owner source = Except.ok () ↔
+    Ix.Ixon.BlockOrder.OrderedRecord limits blobs (owner, source) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.BlockOrder.checkRecord_ok_iff
 
 /-! ### The certified entry's theorems (L5) -/
 

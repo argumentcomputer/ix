@@ -130,6 +130,56 @@ def ctorContext : Except Error (List (Option Nat)) := do
 #guard groupSorted (fun x y => pure (compare (x / 10) (y / 10))) [0, 10, 11, 21, 22] ==
   .ok [[0], [10, 11], [21, 22]]
 
+-- A block of recursors is checked in motive order, not structurally: member
+-- `j` must eliminate motive `j` (the head of its result, as the reader reads
+-- it) and declare one motive per member. `motive j` is a recursor of a block
+-- with `motives` motives (no parameters, minors or indices) whose type ends in
+-- motive `j`; its structural order is the reverse of its motive order, as for
+-- the compiler's `Rose.rec`/`Rose.rec_1` block.
+def motive (j : Nat) (motives : UInt64 := 2) : Ixon.MutConst :=
+  let binder (body : Ixon.Expr) : Ixon.Expr := .all .many .shared (.sort 0) body
+  let depth := motives.toNat + 1
+  .recr ⟨false, false, 0, 0, 0, motives, 0,
+    (List.range depth).foldl (fun body _ => binder body) (.var (UInt64.ofNat (depth - 1 - j))), #[]⟩
+
+def recordCheck (source : Ixon.Constant) : Except Error Unit := checkRecord {} [] owner source
+
+def motiveOrdered : Ixon.Constant := record #[motive 0, motive 1]
+def motiveSwapped : Ixon.Constant := record #[motive 1, motive 0]
+
+#guard recursorMotive motiveOrdered (match motive 1 with | .recr r => r | _ => default) == some 1
+-- structurally the motive-ordered block is out of order, and the swapped one in order
+#guard !accepts motiveOrdered
+#guard accepts motiveSwapped
+#guard recordCheck motiveOrdered == .ok ()
+#guard recordCheck motiveSwapped == .error (.motiveOrder owner 0 (some 1))
+#guard recordCheck (record #[motive 0 3, motive 1 3, motive 2 3]) == .ok ()
+#guard recordCheck (record #[motive 0 3, motive 2 3, motive 1 3]) == .error (.motiveOrder owner 1 (some 2))
+-- a repeated motive, a missing recursor, a motive count that is not the block's
+#guard recordCheck (record #[motive 0, motive 0]) == .error (.motiveOrder owner 1 (some 0))
+#guard recordCheck (record #[motive 0]) == .error (.motiveOrder owner 0 (some 0))
+#guard recordCheck (record #[motive 0 1]) == .ok ()
+-- a type whose result is not a motive
+#guard recordCheck (record #[.recr ⟨false, false, 0, 0, 0, 1, 0, .sort 0, #[]⟩]) ==
+  .error (.motiveOrder owner 0 none)
+-- inductive, definition and mixed blocks keep the structural order
+#guard recordCheck simple == .ok ()
+#guard recordCheck reversed == .error (.nonCanonical owner [[2], [1], [0]])
+#guard (recordCheck (record #[motive 0, indc 0])).isOk == accepts (record #[motive 0, indc 0])
+#guard (recordCheck (record #[indc 0, motive 0])).isOk == accepts (record #[indc 0, motive 0])
+#guard checkConstants {} [] [(owner, motiveOrdered), (owner, simple)] == .ok ()
+#guard checkConstants {} [] [(owner, simple), (owner, motiveSwapped)] ==
+  .error (.motiveOrder owner 0 (some 1))
+-- through the bytes: the motive-ordered block passes the order stage (and the
+-- checker then declines recursors without their inductive block); the swapped
+-- one stops at the order stage
+#guard match checkBytes 16 ByteAdmission.limits {} (Projection.encode [(owner, motiveOrdered)]) [] with
+  | .error (.checker _) => true
+  | _ => false
+#guard match checkBytes 16 ByteAdmission.limits {} (Projection.encode [(owner, motiveSwapped)]) [] with
+  | .error (.order (.motiveOrder _ 0 (some 1))) => true
+  | _ => false
+
 -- The certified entry with canonical block order admits the separately
 -- stored family/recursor fixture and derives its model through the same
 -- checker success.

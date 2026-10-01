@@ -43,7 +43,13 @@ takes the pin table, prelude and Nat-operation pin list as parameters, and
 byte stage and the checker: `Ix.Ixon.Projection.checkBytes` reconstructs
 omitted projection records (addresses by pure BLAKE3 of their canonical
 bytes) before checking, and `Ix.Ixon.BlockOrder.checkBytes` also checks the
-canonical order of mutual blocks.
+order of mutual blocks: an inductive, definition or mixed block in canonical
+structural order (`canonicalClasses`, as Rust's `canonical_check.rs`), a block
+of recursors in motive order (member `j` eliminates motive `j`, read off its
+type as the reader reads it, `recursorMotive_of_analyse`), which is the order
+the compiler stores it in and not always the structural one (2026-10-01:
+the structural check refused 2 of the 7 compiled recursor blocks of the
+fidelity fixture, `Rose.rec`/`Rose.rec_1` and `Args.rec`/`Tm.rec`).
 
 **Outcomes.** `Admission.outcome` classifies every failure as a reject (the
 input is wrong) or a decline (the checker does not certify it):
@@ -284,14 +290,15 @@ Frozen runtime closures (compiled functions; inherited externs):
 | entry: the API, `ConLecheAdmission.checkBytes{,With}`, `checkConstants{,With}` | 5310 | 123 |
 | byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5308 | 123 |
 | projection: `address`, `reconstruct`, `Projection.checkBytes` | 5430 | 132 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5554 | 132 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5563 | 132 |
 
 A frozen value changes only in a commit that explains the change in the
 audit's comment (the closures above include L6b's `uniqueKeys`, 10
 functions, cl-m1's adapted modeller grouping: 6, and 15 in the reader,
 which also reaches `List.mergeSort`, T1's record maps: −2, and its address
 encodings: +4, and cl-level's Géran fallback of the level comparison: 12, and
-13 in the reader, with `Int.natAbs`). Statements are re-recorded the same way.
+13 in the reader, with `Int.natAbs`; the block-order entry's motive order for
+recursor blocks: 9). Statements are re-recorded the same way.
 
 `lake run check-kernel [--with-model]` is the gate. In order:
 

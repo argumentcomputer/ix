@@ -22,9 +22,9 @@ that output against real compiled environments:
    that block alone are exactly the compiler's projection records of that
    block, with the same keys (pure BLAKE3 against the compiler's hash) and the
    same canonical bytes, and every compiler projection record is written this
-   way. Every inductive and definition block also passes `BlockOrder.checkBlock`:
-   the compiler's member order is the canonical one the certified order entry
-   accepts (recursor blocks: "Block order" below).
+   way. Every block also passes the certified order entry's check
+   (`BlockOrder.checkRecord`): the compiler's member order is the one it
+   accepts ("Block order" below).
 2. **Records written are re-read to the same declarations, and agree with the
    installed environment** (`entries`, the fixture): over a set of records the
    checker accepts,
@@ -41,21 +41,22 @@ that output against real compiled environments:
 
 ## Block order
 
-The block-order entry checks every `muts` block against the canonical classes
-of `BlockOrder.canonicalClasses`. The compiler stores inductive and
-definition blocks in that order (every such block of the fixture closure and
-of `Init` and `Std` passes), but a block of recursors in the order of their
-motives (`T.rec`, `T.rec_1`, …; the members' own order for a mutual block),
-which is not always the structural order: `checkBlock` refuses 2 of the 7
-recursor blocks of two or more members in the fixture closure (`Rose.rec` with
-`Rose.rec_1`, `Args.rec` with `Tm.rec`), none of the 3 in `Init` and `Std`.
-So `BlockOrder.checkBytes` refuses a compiled batch that contains such a block.
-The Rust kernel this entry follows (`crates/kernel/src/canonical_check.rs`)
-validates only inductive blocks at ingress (`crates/kernel/src/ingress.rs`:
-"Skip Recr blocks (they contain primary + aux recursors, with the aux portion in
-kernel-computed canonical order, not stored sort_consts)"). The finding is
-reported (`ProjectionReport.refused`), not required: aligning the entry is a
-change of the certified entry's acceptance, outside this test.
+The block-order entry checks inductive, definition and mixed `muts` blocks
+against the canonical classes of `BlockOrder.canonicalClasses`, and a block of
+recursors in motive order (`BlockOrder.checkMotives`): the compiler stores it
+in the order of its motives (`T.rec`, `T.rec_1`, …; the members' own order for
+a mutual block), which is not always the structural order (2 of the 7
+recursor blocks of two or more members in the fixture closure, `Rose.rec` with
+`Rose.rec_1` and `Args.rec` with `Tm.rec`, are not; none of the 3 in `Init`
+and `Std`). Until 2026-10-01 the entry checked recursor blocks structurally
+and refused compiled batches that contained those two; the Rust kernel checks
+only inductive blocks at ingress (`crates/kernel/src/ingress.rs`: "Skip Recr
+blocks (they contain primary + aux recursors, with the aux portion in
+kernel-computed canonical order, not stored sort_consts)"). Every block of
+every corpus must now pass (`ProjectionReport.refused` is a problem), the two
+named fixture blocks are required among the accepted recursor blocks
+(`Tests.Ix.Kernel.ConLecheRoundtrip`), and every accepted recursor block with
+its first two members swapped must be refused for its motive order.
 
 **No environment egress exists.** Nothing writes con-leche's `Env` back to
 Ixon records; the intrinsic kernel's record writer over its own syntax was
@@ -87,10 +88,14 @@ structure ProjectionReport where
   /-- written with the compiler's key and bytes -/
   matched : Nat := 0
   problems : Array String := #[]
-  /-- blocks of two or more members, by kind, and those `BlockOrder.checkBlock`
-  refuses, by kind (the compiler's order is not the order it computes) -/
+  /-- blocks of two or more members, by kind, and those the order check
+  (`BlockOrder.checkRecord`) refuses, by kind -/
   ordered : Std.HashMap String Nat := {}
   refused : Std.HashMap String (Array Address) := {}
+  /-- recursor blocks of two or more members in motive order, and how many of
+  them the check refuses with their first two members swapped -/
+  motiveOrdered : Array Address := #[]
+  swapsRefused : Nat := 0
 
 def ProjectionReport.summary (r : ProjectionReport) : String :=
   let kinds := (r.ordered.toArray.qsort (fun a b => a.1 < b.1)).toList.map fun (k, n) =>
@@ -98,14 +103,18 @@ def ProjectionReport.summary (r : ProjectionReport) : String :=
   s!"projections: {r.blocks} blocks, {r.compiled} compiler records, {r.written} written, \
     {r.matched} identical; {r.problems.size} problems" ++
     String.join (r.problems.toList.take 20 |>.map ("\n  " ++ ·)) ++
-    s!"\nblock order (blocks of two or more members): {", ".intercalate kinds}"
+    s!"\nblock order (blocks of two or more members): {", ".intercalate kinds}; \
+    {r.motiveOrdered.size} recursor blocks in motive order, {r.swapsRefused} refused with two \
+    members swapped"
 
-/-- The order findings that are not the known one: `BlockOrder` may refuse a
-recursor block of two or more members (see "Block order" in the module
-docstring); an inductive, definition or mixed block it refuses is a problem. -/
+/-- The order findings: any block the order check refuses (the compiler's
+order is the one the certified order entry accepts), and any accepted
+recursor block it does not refuse with two members swapped. -/
 def ProjectionReport.orderProblems (r : ProjectionReport) : List String :=
-  r.refused.toList.filterMap fun (k, as) =>
-    if k == "recursor" || as.isEmpty then none else some s!"{as.size} {k} blocks refused"
+  (r.refused.toList.filterMap fun (k, as) =>
+    if as.isEmpty then none else some s!"{as.size} {k} blocks refused") ++
+  (if r.swapsRefused == r.motiveOrdered.size then [] else
+    [s!"{r.motiveOrdered.size - r.swapsRefused} recursor blocks accepted with two members swapped"])
 
 /-- The Lean names of a block's members, through its projection records'
 metadata (for reports). -/
@@ -158,8 +167,14 @@ def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : Pr
     if ms.size ≥ 2 then
       let kind := blockKind ms
       report := { report with ordered := report.ordered.insert kind (report.ordered.getD kind 0 + 1) }
-      match Ix.Ixon.BlockOrder.checkBlock {} a c blobs with
-      | .ok () => pure ()
+      match Ix.Ixon.BlockOrder.checkRecord {} blobs a c with
+      | .ok () =>
+        if kind == "recursor" then
+          report := { report with motiveOrdered := report.motiveOrdered.push a }
+          -- the wrong order: the first two members swapped
+          let swapped := { c with info := .muts (ms.swapIfInBounds 0 1) }
+          if let .error (.motiveOrder ..) := Ix.Ixon.BlockOrder.checkRecord {} blobs a swapped then
+            report := { report with swapsRefused := report.swapsRefused + 1 }
       | .error _ =>
         report := { report with refused := report.refused.insert kind ((report.refused.getD kind #[]).push a) }
   for (_, ps) in byOwner.toList do
@@ -210,17 +225,12 @@ structure EntryReport where
   constants : Nat := 0
   /-- projection records whose constant is installed with a matching kind -/
   projectionsInstalled : Nat := 0
-  /-- the block-order entry's refusal of a recursor block, if it refused one -/
-  blockOrderRefusal : Option String := none
   problems : Array String := #[]
 
 def EntryReport.summary (r : EntryReport) : String :=
   s!"entries: {r.records} primary records, {r.projectionRecords} projection records, \
     {r.constants} installed constants, {r.projectionsInstalled} projections installed; \
-    {r.problems.size} problems" ++ String.join (r.problems.toList.take 20 |>.map ("\n  " ++ ·)) ++
-    match r.blockOrderRefusal with
-    | some b => s!"\n  block-order entry: refuses the recursor block {b}"
-    | none => "\n  block-order entry: accepts"
+    {r.problems.size} problems" ++ String.join (r.problems.toList.take 20 |>.map ("\n  " ++ ·))
 
 def limits : Ix.Ixon.Admission.Limits := ⟨1 <<< 16, 1 <<< 16, 1 <<< 28, 1 <<< 22, 1 <<< 20⟩
 
@@ -260,20 +270,11 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   report := { report with constants := env₁.consts.length }
   if let some d := envDiff env₁ env₂ then
     report := { report with problems := report.problems.push s!"projection entry: {d}" }
-  -- the block-order entry refuses a batch with a recursor block of two or more
-  -- members (the known finding); anything else it refuses is a problem
+  -- the block-order entry accepts the same batch with the same environment
   match Ix.Ixon.BlockOrder.checkBytes maxProjections limits {} bytes blobs hints.lookup with
   | .ok env₃ =>
     if let some d := envDiff env₁ env₃ then
       report := { report with problems := report.problems.push s!"block-order entry: {d}" }
-  | .error (.order (.nonCanonical owner classes)) =>
-    let kind := match input.store[owner]? with
-      | some c => match c.info with | .muts ms => blockKind ms | _ => "not a block"
-      | none => "missing"
-    if kind == "recursor" then
-      report := { report with blockOrderRefusal := some s!"{owner} {reprStr classes}" }
-    else report := { report with problems := report.problems.push (
-      s!"block-order entry refuses the {kind} block {owner}: {reprStr classes}") }
   | .error (.order e) =>
     report := { report with problems := report.problems.push s!"block-order entry: {reprStr e}" }
   | .error (.checker e) =>

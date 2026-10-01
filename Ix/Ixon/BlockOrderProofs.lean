@@ -115,10 +115,110 @@ theorem checkBlock_ok_iff (limits : Limits) (owner : Address) (source : _root_.I
     rw [run, canonicalClasses_ok_iff]
     simp [Canonical, prepared]
 
+/-! ## Recursor blocks in motive order -/
+
+open Ix.Kernel.ConLecheReader in
+/-- `recursorMotive` is the motive the Ixon reader indexes a recursor under:
+whenever the reader's analysis (`ConLecheReader.analyseRecursor`) succeeds,
+it reads the same motive, so a recursor block in motive order is a block the
+reader regroups without permuting it. -/
+theorem recursorMotive_of_analyse {store owner c r m carriers major}
+    (h : analyseRecursor store owner c r = some (m, carriers, major)) :
+    recursorMotive c r = some m := by
+  unfold analyseRecursor at h
+  unfold recursorMotive
+  cases hs : stripAll c
+      (r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat + 1) r.typ with
+  | none => simp [hs] at h
+  | some p =>
+    obtain ⟨doms, body⟩ := p
+    cases hd : appHead c spineFuel body with
+    | var k =>
+      simp only [hs, hd, Option.bind_eq_bind, Option.bind_some, Option.pure_def] at h ⊢
+      obtain ⟨u, hu, rest⟩ := Option.bind_eq_some_iff.mp h
+      rw [Option.bind_eq_some_iff]
+      refine ⟨u, hu, ?_⟩
+      simp only [Option.bind_eq_some_iff, Option.some.injEq, Prod.mk.injEq] at rest
+      obtain ⟨_, _, _, _, _, _, hm, _⟩ := rest
+      exact congrArg some hm
+    | _ => simp [hs, hd] at h
+
+/-- The members, from `start` on, are recursors in motive order: the one at
+position `start + j` eliminates motive `start + j` (`recursorMotive`, as the
+reader reads it) and declares `size` motives. -/
+def MotivesFrom (source : _root_.Ixon.Constant) (size start : Nat)
+    (members : List _root_.Ixon.MutConst) : Prop :=
+  ∀ j (h : j < members.length), ∃ r, members[j] = .recr r ∧ r.motives.toNat = size ∧
+    recursorMotive source r = some (start + j)
+
+/-- A recursor block in motive order: member `j` eliminates motive `j`, and
+every member declares one motive per member of the block. -/
+def MotiveOrdered (source : _root_.Ixon.Constant) (members : Array _root_.Ixon.MutConst) : Prop :=
+  MotivesFrom source members.size 0 members.toList
+
+theorem motivesFrom_cons (source : _root_.Ixon.Constant) (size start : Nat)
+    (member : _root_.Ixon.MutConst) (rest : List _root_.Ixon.MutConst) :
+    MotivesFrom source size start (member :: rest) ↔
+      (∃ r, member = .recr r ∧ r.motives.toNat = size ∧ recursorMotive source r = some start) ∧
+        MotivesFrom source size (start + 1) rest := by
+  constructor
+  · intro h
+    obtain ⟨r, hr, hm, hmot⟩ := h 0 (by simp)
+    refine ⟨⟨r, by simpa using hr, hm, by simpa using hmot⟩, fun j hj => ?_⟩
+    obtain ⟨r, hr, hm, hmot⟩ := h (j + 1) (by simp; omega)
+    exact ⟨r, by simpa using hr, hm, by rw [hmot]; congr 1; omega⟩
+  · rintro ⟨⟨r, rfl, hm, hmot⟩, h⟩ j hj
+    cases j with
+    | zero => exact ⟨r, rfl, hm, by simpa using hmot⟩
+    | succ j =>
+      obtain ⟨r', hr', hm', hmot'⟩ := h j (by simp at hj; omega)
+      exact ⟨r', by simpa using hr', hm', by rw [hmot']; congr 1; omega⟩
+
+theorem checkMotives_ok_iff (owner : Address) (source : _root_.Ixon.Constant) (size : Nat) :
+    ∀ (start : Nat) (members : List _root_.Ixon.MutConst),
+      checkMotives owner source size start members = .ok () ↔ MotivesFrom source size start members
+  | start, [] => by simp [checkMotives, MotivesFrom]
+  | start, member :: rest => by
+    rw [motivesFrom_cons, ← checkMotives_ok_iff owner source size (start + 1) rest]
+    cases member with
+    | recr r =>
+      by_cases ok : r.motives.toNat = size ∧ recursorMotive source r = some start
+      · simp [checkMotives, ok]
+      · have bad : (r.motives.toNat == size && recursorMotive source r == some start) = false := by
+          simpa [Bool.and_eq_true, beq_iff_eq] using ok
+        simp only [checkMotives, bad]
+        simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind]
+        intro hm hmot
+        exact absurd ⟨hm, hmot⟩ ok
+    | defn _ | indc _ =>
+      simp [checkMotives, bind, Except.bind, throw, throwThe, MonadExceptOf.throw]
+
+theorem checkMotiveOrder_ok_iff (owner : Address) (source : _root_.Ixon.Constant)
+    (members : Array _root_.Ixon.MutConst) :
+    checkMotives owner source members.size 0 members.toList = .ok () ↔
+      MotiveOrdered source members :=
+  checkMotives_ok_iff owner source members.size 0 members.toList
+
+/-- A record's order: a recursor block in motive order, any other `muts`
+block in canonical structural order, any other record unconstrained. -/
 def OrderedRecord (limits : Limits) (blobs : Ingress.Blobs) (pair : Address × _root_.Ixon.Constant) : Prop :=
   match pair.2.info with
-  | .muts _ => Canonical limits pair.1 pair.2 blobs
+  | .muts members =>
+    if members.all isRecursor then MotiveOrdered pair.2 members else Canonical limits pair.1 pair.2 blobs
   | _ => True
+
+theorem checkRecord_ok_iff (limits : Limits) (blobs : Ingress.Blobs) (owner : Address)
+    (source : _root_.Ixon.Constant) :
+    checkRecord limits blobs owner source = .ok () ↔ OrderedRecord limits blobs (owner, source) := by
+  rcases source with ⟨info, sharing, refs, univs⟩
+  cases info with
+  | muts members =>
+    by_cases recursors : members.all isRecursor
+    · simp only [checkRecord, OrderedRecord, recursors, ite_true]
+      exact checkMotiveOrder_ok_iff owner _ members
+    · simp only [checkRecord, OrderedRecord, recursors, Bool.false_eq_true, ite_false]
+      exact checkBlock_ok_iff limits owner _ blobs
+  | _ => simp [checkRecord, OrderedRecord]
 
 def Ordered (limits : Limits) (blobs : Ingress.Blobs) (input : Ingress.Constants) : Prop :=
   ∀ pair ∈ input, OrderedRecord limits blobs pair
@@ -132,13 +232,10 @@ theorem checkConstants_ok_iff (limits : Limits) (blobs : Ingress.Blobs) (input :
     have orderedCons : Ordered limits blobs ((owner, source) :: rest) ↔
         OrderedRecord limits blobs (owner, source) ∧ Ordered limits blobs rest := by
       simp only [Ordered, List.mem_cons, forall_eq_or_imp]
-    rw [orderedCons, ← ih]
-    cases info : source.info <;>
-      simp only [checkConstants, info, OrderedRecord, Bool.false_eq_true,
-        ite_false, ite_true, bind, Except.bind, true_and]
-    cases checked : checkBlock limits owner source blobs with
-    | error error => simp [checked, ← checkBlock_ok_iff]
-    | ok value => cases value; simp [checked, ← checkBlock_ok_iff]
+    rw [orderedCons, ← ih, ← checkRecord_ok_iff]
+    cases checked : checkRecord limits blobs owner source with
+    | error error => simp [checkConstants, checked, bind, Except.bind]
+    | ok value => cases value; simp [checkConstants, checked, bind, Except.bind]
 
 universe v
 

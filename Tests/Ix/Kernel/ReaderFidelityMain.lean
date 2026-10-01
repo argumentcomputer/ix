@@ -29,6 +29,9 @@ from this toolchain's `.olean` files.
   at `checkKernelLimit` records.
 * `kernel-reader-fidelity --fixture`: the `lake test` suite's check of the fixture closure
   (`Tests.Ix.Kernel.ConLecheRoundtrip.evaluate`: expected verdicts and tampers).
+* `kernel-reader-fidelity --egress <input.ixe>`: the output side only, with no
+  Lean side, for an environment of any size (Mathlib): every block's
+  projection records and its order (`Tests.Ix.Kernel.EgressFidelity.projections`).
 
 `FIDELITY_ROOTS` (comma-separated Lean names) restricts a run to the prelude
 and the closure of those constants. Every mode also checks the kernel's
@@ -72,6 +75,19 @@ def main (args : List String) : IO UInt32 := do
     for e in errors do IO.eprintln s!"reader-fidelity: fixture: {e}"
     return if errors.isEmpty then 0 else 1
   let started ← IO.monoMsNow
+  if let ["--egress", path] := args then
+    let ixon ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+    let mut store : Benchmarks.Kernel.ConLecheStep.RecordStore := {}
+    for (address, lazy) in ixon.consts.toList do
+      store := store.insert address (← IO.ofExcept lazy.get)
+    IO.eprintln s!"reader-fidelity: {path}: {store.size} constants decoded in \
+      {(← IO.monoMsNow) - started} ms"
+    let proj := Tests.Ix.Kernel.EgressFidelity.projections store ixon.blobs.toList
+    IO.println proj.summary
+    for p in proj.orderProblems do IO.println s!"block order: {p}"
+    IO.eprintln s!"reader-fidelity: done in {(← IO.monoMsNow) - started} ms"
+    let ok := proj.problems.isEmpty && proj.matched == proj.compiled && proj.orderProblems.isEmpty
+    IO.Process.exit (if ok then 0 else 1)
   let leanEnv ← getCompileEnv #[`Init, `Std]
   let (ixon, limit, source) ← match args with
     | ["--check-kernel"] =>
@@ -85,7 +101,7 @@ def main (args : List String) : IO UInt32 := do
       pure (← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path)), args[1]?.bind String.toNat?, path)
     | _ =>
       IO.eprintln "usage: kernel-reader-fidelity <input.ixe> [limit] | --compile [limit] | \
-        --check-kernel | --fixture"
+        --check-kernel | --fixture | --egress <input.ixe>"
       return 2
   let loaded ← IO.monoMsNow
   let input ← Input.ofEnv leanEnv ixon

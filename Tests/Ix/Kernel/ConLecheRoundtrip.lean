@@ -29,8 +29,10 @@ constructor or a constructor count is never judged equal.
 
 The same compiled closure checks the kernel's output side
 (`Tests.Ix.Kernel.EgressFidelity`): every block's projection records as the
-certified writer writes them against the compiler's, every inductive and
-definition block's order, and over two accepted batches the reader's
+certified writer writes them against the compiler's, every block's order
+(recursor blocks in motive order, among them `Rose.rec`/`Rose.rec_1` and
+`Args.rec`/`Tm.rec`, which are not in structural order; every one refused
+with two members swapped), and over two accepted batches the reader's
 declarations with written projections and the installed environments of
 `ConLecheAdmission.checkConstants`, `Projection.checkBytes` and
 `BlockOrder.checkBytes`, with every projection record naming an installed
@@ -192,10 +194,10 @@ def evaluateReader (inp : Input) : IO (Report × Array String) := do
   return (report, errors)
 
 /-- The two batches of the entry checks: blocks nested through containers,
-mutual blocks and a nested structure (some of whose recursor blocks the
-block-order entry refuses: `Tests.Ix.Kernel.EgressFidelity`, "Block order"),
-and declarations without such blocks, which all three certified entries must
-accept with the same environment. -/
+mutual blocks and a nested structure (whose recursor blocks are in motive
+order but not in structural order: `Tests.Ix.Kernel.EgressFidelity`, "Block
+order"), and declarations without such blocks. All three certified entries
+must accept both with the same environment. -/
 def nestedSeeds : Array Lean.Name :=
   #[defs "Node", defs "Rose.size", defs "Tm.size", defs "ATree"]
 
@@ -221,11 +223,15 @@ def evaluateEgress (inp : Input) : IO (Array String × Array String) := do
     unless ent.problems.isEmpty do errors := errors.push s!"{label}: {ent.problems.size} entry problems"
     unless ent.projectionRecords > 0 && ent.projectionsInstalled == ent.projectionRecords do
       errors := errors.push s!"{label}: {ent.projectionsInstalled} of {ent.projectionRecords} projections installed"
-  if plain.blockOrderRefusal.isSome then
-    errors := errors.push "plain: the block-order entry refused the batch"
-  let refused := (proj.refused.getD "recursor" #[]).toList.map fun a =>
-    s!"{a} {EgressFidelity.memberNames inp.ixon inp.store a}"
-  return (#[proj.summary, s!"refused recursor blocks: {refused}", s!"nested {nested.summary}",
+  -- the two recursor blocks that are in motive order but not in structural
+  -- order are among those the order check accepts
+  let accepted := proj.motiveOrdered.toList.map fun a =>
+    (EgressFidelity.memberNames inp.ixon inp.store a).map (·.splitOn "." |>.reverse |>.take 2 |>.reverse
+      |> ".".intercalate)
+  for block in [["Rose.rec", "Rose.rec_1"], ["Args.rec", "Tm.rec"]] do
+    unless accepted.contains block do
+      errors := errors.push s!"block order: the recursor block {block} is not accepted in motive order"
+  return (#[proj.summary, s!"recursor blocks in motive order: {accepted}", s!"nested {nested.summary}",
     s!"plain {plain.summary}"], errors)
 
 /-- Compile the fixture closure once and run both evaluations. -/
