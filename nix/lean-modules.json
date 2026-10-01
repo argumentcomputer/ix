@@ -1456,6 +1456,9 @@
   "Compilatrix.Xv.Stacking.Proof.Return":
   {"path": "Compilatrix/Xv/Stacking/Proof/Return.lean",
    "imports": ["Compilatrix.Xv.Stacking.Proof.CallStep"]},
+  "Compilatrix.Xv.Stacking.Proof.RetStep":
+  {"path": "Compilatrix/Xv/Stacking/Proof/RetStep.lean",
+   "imports": ["Compilatrix.Xv.Stacking.Proof.Return"]},
   "Compilatrix.Xv.Stacking.Proof.Match":
   {"path": "Compilatrix/Xv/Stacking/Proof/Match.lean",
    "imports":
@@ -3962,6 +3965,7 @@
     "Compilatrix.Xv.Stacking.Proof.CallRun",
     "Compilatrix.Xv.Stacking.Proof.CallStep",
     "Compilatrix.Xv.Stacking.Proof.Return",
+    "Compilatrix.Xv.Stacking.Proof.RetStep",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",
