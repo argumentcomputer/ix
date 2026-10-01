@@ -113,6 +113,12 @@ fn usize_u64(n: usize) -> Option<u64> {
 /// Iterative, memoized by pointer, so an `Arc` DAG is measured without
 /// walking its occurrence tree. Returns `None` if the length overflows.
 pub fn expr_len(e: &Expr) -> Option<u64> {
+  expr_len_with(e, &tag4_len)
+}
+
+/// [`expr_len`] with every `Share(i)` priced `share(i)` bytes instead of its
+/// Tag4 width (a Share-width layout or model).
+pub fn expr_len_with(e: &Expr, share: &dyn Fn(u64) -> u64) -> Option<u64> {
   #[derive(Clone, Copy)]
   struct Info {
     /// Standalone length.
@@ -144,11 +150,10 @@ pub fn expr_len(e: &Expr) -> Option<u64> {
     }
     let get = |c: &Arc<Expr>| memo[&Arc::as_ptr(c)];
     let info = match node {
-      Expr::Sort(n)
-      | Expr::Var(n)
-      | Expr::Str(n)
-      | Expr::Nat(n)
-      | Expr::Share(n) => leaf(tag4_len(*n)),
+      Expr::Sort(n) | Expr::Var(n) | Expr::Str(n) | Expr::Nat(n) => {
+        leaf(tag4_len(*n))
+      },
+      Expr::Share(n) => leaf(share(*n)),
       Expr::Ref(n, us) | Expr::Rec(n, us) => {
         let mut len =
           tag4_len(usize_u64(us.len())?).checked_add(tag0_len(*n))?;

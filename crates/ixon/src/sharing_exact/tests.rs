@@ -6,6 +6,8 @@
 #![allow(clippy::cast_possible_truncation)]
 
 use std::collections::HashMap;
+
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
 use ix_common::address::Address;
@@ -2306,4 +2308,237 @@ fn uniform_byte_level() {
     normalize_constant_bytes_uniform(0, &put(&c), &limits()),
     Err(NormalizeBytesError::Sharing(SharingError::FormatBound(_)))
   ));
+}
+
+// ===========================================================================
+// Tiered construction (port of W1's Tests/Ix/SharingTiered.lean)
+// ===========================================================================
+
+const LAYOUTS: [ShareLayout; 2] = [ShareLayout::Tag4, ShareLayout::TagN];
+
+#[test]
+fn tiered_layout_widths() {
+  let at = [
+    7u64,
+    8,
+    1031,
+    1032,
+    66567,
+    66568,
+    66568 + (1 << 32) - 1,
+    66568 + (1 << 32),
+  ];
+  let got: Vec<u64> =
+    at.iter().map(|&i| ShareLayout::TagN.width_at(i)).collect();
+  assert_eq!(got, vec![1, 2, 2, 3, 3, 5, 5, 9]);
+  assert_eq!(
+    (TAGN_RUNG2_END, TAGN_RUNG3_END, TAGN_RUNG4_END),
+    (1032, 66568, 66568 + (1 << 32))
+  );
+  assert_eq!(ShareLayout::TagN.width_at(u64::MAX), 9);
+  let t4 = ShareLayout::Tag4;
+  assert_eq!(
+    (t4.uniform_width(8), t4.uniform_width(256), t4.uniform_width(257)),
+    (1, 2, 3)
+  );
+  let tn = ShareLayout::TagN;
+  assert_eq!((tn.uniform_width(1032), tn.uniform_width(1033)), (2, 3));
+}
+
+#[test]
+fn tiered_fixtures() {
+  let t2 = chain(2);
+  let w2 = axiom(Expr::all(t2.clone(), t2), 1);
+  let t16 = chain(16);
+  let w16 = axiom(Expr::all(t16.clone(), t16), 1);
+  let (nine, hot) = nine_ref_fixture();
+  for l in LAYOUTS {
+    let (n, _) = normalize_constant_sharing_tiered(l, &w2, &limits()).unwrap();
+    assert_eq!(
+      hex(&roundtrip(&n)),
+      "d200009117b0b001921700170000000100",
+      "{l:?}"
+    );
+    let (n, _) = normalize_constant_sharing_tiered(l, &w16, &limits()).unwrap();
+    assert_eq!(roundtrip(&n).len(), 46, "{l:?}");
+    let (n, r) =
+      normalize_constant_sharing_tiered(l, &nine, &limits()).unwrap();
+    let pos = n.sharing.iter().position(|e| e == &hot).unwrap();
+    eprintln!(
+      "tiered nine refs {l:?}: {} bytes, w={}, first tier {:?}, phase-1 layout {}, final {}, kept phase-1 order {}",
+      roundtrip(&n).len(),
+      r.stats.w,
+      r.stats.first_tier,
+      r.stats.phase1_layout_bytes,
+      r.stats.phase3_layout_bytes,
+      r.stats.kept_phase1_order
+    );
+    assert_eq!(roundtrip(&n).len(), 578);
+    assert_eq!(r.stats.w, 2);
+    assert!(r.stats.first_tier.contains(&2) && pos < 8);
+  }
+}
+
+/// A heavy parent over two lighter children next to more than eight atoms
+/// used a few times each (W1's `genHeavyParent`).
+fn gen_heavy_parent(rng: &mut Rng) -> Vec<E> {
+  let n_atoms = 9 + rng.below(4);
+  let atoms: Vec<E> = (0..n_atoms)
+    .map(|j| Expr::reference(j + 10, vec![0; (1 + j % 3) as usize]))
+    .collect();
+  let c1 = Expr::reference(1, vec![0, 0, 0]);
+  let c2 = Expr::reference(2, vec![0, 0, 1]);
+  let parent = if rng.pct(50) {
+    Expr::app(c1.clone(), c2.clone())
+  } else {
+    Expr::all(c1.clone(), c2.clone())
+  };
+  let mut roots = Vec::new();
+  for a in &atoms {
+    for _ in 0..2 + rng.below(3) {
+      roots.push(a.clone());
+    }
+  }
+  for _ in 0..8 + rng.below(15) {
+    roots.push(Expr::app(Expr::var(1), parent.clone()));
+  }
+  roots.push(c1);
+  roots.push(c2);
+  roots
+}
+
+#[test]
+fn tiered_allocation_properties() {
+  let mut rng = Rng(71);
+  let (mut checked, mut changed, mut saved, mut kept) = (0, 0, 0, 0);
+  for i in 0..120u64 {
+    let c = if i % 2 == 0 {
+      let roots = gen_heavy_parent(&mut rng);
+      wrap(&mut rng, roots)
+    } else {
+      gen_constant(i + 80_000, 6, 30, 5)
+    };
+    for l in LAYOUTS {
+      let (n, r) = normalize_constant_sharing_tiered(l, &c, &limits()).unwrap();
+      let s = &r.stats;
+      assert!(s.phase3_layout_bytes <= s.phase1_layout_bytes, "case {i} {l:?}");
+      assert!(s.final_ref_cost <= s.phase1_ref_cost, "case {i} {l:?}");
+      assert_eq!(
+        roundtrip(&n).len() as u64,
+        constant_fixed_len(&c).unwrap() + r.variable_len
+      );
+      if l == ShareLayout::Tag4 {
+        assert_eq!(r.model_len, r.variable_len);
+      }
+      let (again, _) =
+        normalize_constant_sharing_tiered(l, &n, &limits()).unwrap();
+      assert_eq!(put(&again), put(&n), "case {i} {l:?} not idempotent");
+      checked += 1;
+      if s.final_ref_cost < s.phase1_ref_cost {
+        changed += 1;
+      }
+      if s.savings > 0 {
+        saved += 1;
+      }
+      if s.kept_phase1_order {
+        kept += 1;
+      }
+    }
+  }
+  eprintln!(
+    "tiered: {checked} runs; allocation lowered the reference cost in {changed}, \
+     positive savings in {saved}, phase-1 order kept in {kept}"
+  );
+  assert!(checked == 240 && changed > 0);
+}
+
+/// Brute force over all subsets: dependency-closed, at most `cap` terms,
+/// maximum weight, ties by the greatest indicator vector in the order
+/// (weight descending, ID ascending).
+fn brute_tier(
+  n: usize,
+  weight: &[u64],
+  deps: &[Vec<u32>],
+  cap: usize,
+) -> Vec<u32> {
+  let mut items: Vec<u32> = (0..n as u32).collect();
+  items.sort_by(|&a, &b| {
+    weight[b as usize].cmp(&weight[a as usize]).then(a.cmp(&b))
+  });
+  let mut best: Option<(u64, Vec<bool>)> = None;
+  for mask in 0u32..(1 << n) {
+    let ins = |t: u32| mask >> t & 1 == 1;
+    let members: Vec<u32> = (0..n as u32).filter(|&t| ins(t)).collect();
+    if members.len() > cap
+      || !members.iter().all(|&t| deps[t as usize].iter().all(|&d| ins(d)))
+    {
+      continue;
+    }
+    let wsum: u64 = members.iter().map(|&t| weight[t as usize]).sum();
+    let vec: Vec<bool> = items.iter().map(|&t| ins(t)).collect();
+    let better = match &best {
+      None => true,
+      Some((bw, bv)) => {
+        wsum > *bw
+          || (wsum == *bw
+            && vec
+              .iter()
+              .zip(bv)
+              .find(|(a, b)| a != b)
+              .is_some_and(|(a, _)| *a))
+      },
+    };
+    if better {
+      best = Some((wsum, vec));
+    }
+  }
+  let (_, vec) = best.unwrap();
+  let mut out: Vec<u32> =
+    items.iter().zip(&vec).filter(|(_, b)| **b).map(|(t, _)| *t).collect();
+  out.sort_unstable();
+  out
+}
+
+#[test]
+fn tiered_first_tier_matches_brute_force() {
+  let mut rng = Rng(73);
+  for case in 0..300 {
+    let n = 1 + rng.below(12) as usize;
+    let mut weight = Vec::new();
+    let mut deps: Vec<Vec<u32>> = Vec::new();
+    for t in 0..n {
+      weight.push(1 + rng.below(4));
+      deps.push((0..t as u32).filter(|_| rng.below(4) == 0).collect());
+    }
+    let cap = 8.min(1 + rng.below(n as u64) as usize);
+    let wmap: FxHashMap<u32, u64> =
+      (0..n).map(|t| (t as u32, weight[t])).collect();
+    let dmap: FxHashMap<u32, Vec<u32>> =
+      (0..n).map(|t| (t as u32, deps[t].clone())).collect();
+    let stored: Vec<u32> = (0..n as u32).collect();
+    let (s, _) = first_tier(&stored, &wmap, &dmap, cap, &limits()).unwrap();
+    assert_eq!(
+      s,
+      brute_tier(n, &weight, &deps, cap),
+      "case {case}: n={n} cap={cap} w={weight:?} deps={deps:?}"
+    );
+  }
+}
+
+#[test]
+fn tiered_byte_level() {
+  let t2 = chain(2);
+  let c = axiom(Expr::all(t2.clone(), t2), 1);
+  for l in LAYOUTS {
+    let out = normalize_constant_bytes_tiered(l, &put(&c), &limits()).unwrap();
+    assert_eq!(hex(&out), "d200009117b0b001921700170000000100");
+  }
+  assert_eq!(
+    (
+      ShareLayout::from_code(0),
+      ShareLayout::from_code(1),
+      ShareLayout::from_code(2)
+    ),
+    (Some(ShareLayout::Tag4), Some(ShareLayout::TagN), None)
+  );
 }
