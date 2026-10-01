@@ -121,22 +121,31 @@ structure GraphFacts where
   parents : Array (Array Nat)
   deriving Inhabited
 
-def graphFacts (dag : Dag) (roots : Array Nat) : GraphFacts := Id.run do
+/-- Edge counts per target: the root occurrences plus, over every node and
+child index, one per child edge (only non-continuation edges if `headOnly`). -/
+def edgeCounts (dag : Dag) (roots : Array Nat) (headOnly : Bool) : Array Nat :=
+  let base := roots.foldl (fun acc r => acc.modify r (· + 1)) (Array.replicate dag.size 0)
+  foldRange (fun acc t =>
+      let node := dag.node t
+      (List.range node.children.size).foldl (fun acc i =>
+        let c := node.child i
+        if headOnly && continuationEdge node i (dag.node c) then acc
+        else acc.modify c (· + 1)) acc)
+    0 dag.size base
+
+/-- Distinct parents of every term. -/
+def parentLists (dag : Dag) : Array (Array Nat) := Id.run do
   let n := dag.size
-  let mut deg : Array Nat := Array.replicate n 0
-  let mut hd : Array Nat := Array.replicate n 0
   let mut parents : Array (Array Nat) := Array.replicate n #[]
-  for r in roots do
-    deg := deg.modify r (· + 1)
-    hd := hd.modify r (· + 1)
   for t in [0:n] do
     let node := dag.node t
-    for h : i in [0:node.children.size] do
-      let c := node.children[i]
-      deg := deg.modify c (· + 1)
-      unless continuationEdge node i (dag.node c) do hd := hd.modify c (· + 1)
+    for c in node.children do
       unless (parents[c]!).contains t do parents := parents.modify c (·.push t)
-  return { deg, headDeg := hd, occ := occurrences dag roots, parents }
+  return parents
+
+def graphFacts (dag : Dag) (roots : Array Nat) : GraphFacts :=
+  { deg := edgeCounts dag roots false, headDeg := edgeCounts dag roots true,
+    occ := occurrences dag roots, parents := parentLists dag }
 
 /-! ## Classes -/
 
@@ -160,29 +169,30 @@ structure UBounds where
   contLB : Array Nat
   deriving Inhabited
 
-def uniformBounds (p : Prep) (w : Nat) (maybeStored : Array Bool) : UBounds := Id.run do
+/-- One step of `uniformBounds`: the bounds of `t` from those of its
+children. -/
+def boundsStep (p : Prep) (w : Nat) (maybeStored : Array Bool) (b : UBounds) (t : Nat) :
+    UBounds :=
+  let node := p.dag.node t
+  let fam := p.family[t]!
+  let (i, m) :=
+    if fam == .none then
+      let i := node.children.foldl (fun acc c => acc + b.headLB[c]!) node.head.ownBytes
+      (i, i)
+    else
+      let nxt := node.spineNext
+      let rest := if p.family[nxt]! == fam then b.contLB[nxt]! else b.headLB[nxt]!
+      let m := node.sideExtra + b.headLB[node.sideChild]! + rest
+      (1 + m, m)
+  { inlineLB := b.inlineLB.set! t i, mergedLB := b.mergedLB.set! t m,
+    headLB := b.headLB.set! t (if maybeStored[t]! then min w i else i),
+    contLB := b.contLB.set! t (if maybeStored[t]! then min w m else m) }
+
+def uniformBounds (p : Prep) (w : Nat) (maybeStored : Array Bool) : UBounds :=
   let n := p.dag.size
-  let mut inl : Array Nat := Array.replicate n 0
-  let mut merged : Array Nat := Array.replicate n 0
-  let mut headLB : Array Nat := Array.replicate n 0
-  let mut contLB : Array Nat := Array.replicate n 0
-  for t in [0:n] do
-    let node := p.dag.node t
-    let fam := p.family[t]!
-    let (i, m) :=
-      if fam == .none then
-        let i := node.children.foldl (fun acc c => acc + headLB[c]!) node.head.ownBytes
-        (i, i)
-      else
-        let nxt := node.spineNext
-        let rest := if p.family[nxt]! == fam then contLB[nxt]! else headLB[nxt]!
-        let m := node.sideExtra + headLB[node.sideChild]! + rest
-        (1 + m, m)
-    inl := inl.set! t i
-    merged := merged.set! t m
-    headLB := headLB.set! t (if maybeStored[t]! then min w i else i)
-    contLB := contLB.set! t (if maybeStored[t]! then min w m else m)
-  return { inlineLB := inl, mergedLB := merged, headLB, contLB }
+  foldRange (boundsStep p w maybeStored) 0 n
+    { inlineLB := Array.replicate n 0, mergedLB := Array.replicate n 0,
+      headLB := Array.replicate n 0, contLB := Array.replicate n 0 }
 
 /-- The certain-stored gain bound `g` of a term (see the module doc). -/
 def storedGain (p : Prep) (f : GraphFacts) (b : UBounds) (w t : Nat) : _root_.Int :=
