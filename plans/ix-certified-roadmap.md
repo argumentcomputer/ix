@@ -355,8 +355,9 @@ con-leche's `NatOpPins` elaboration-time JSON dump (verbatim from L2, so
 that `model_exists` was green first), was removed at L4: the Nat-operation
 pin variant is generated from Ixon records by the Ixon pinner
 (`conleche-pin-gen`, committed as `Ix/Kernel/ConLeche/NatOpPinData.lean`),
-`pins/*.json` and `ConLeche/PinGen/Dump.lean` are deleted, and
-`ConLeche/Kernel/NatOpPins.lean` is kept verbatim but is not built.
+`pins/*.json` and `ConLeche/PinGen/Dump.lean` are deleted, and upstream's
+`ConLeche/Kernel/NatOpPins.lean` is not ported (L4b kept it verbatim and
+unbuilt; int-4 deleted it, so the `ConLeche` globs are directory globs).
 
 Where a certified operation outside the kernel needs BLAKE3 (address
 reconstruction after K4, authentication and subject roots in K5), it calls

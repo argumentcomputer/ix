@@ -234,7 +234,7 @@ annotated basis and pins, and the `PinGen` generators meta-import
 `ConLeche/Kernel/NatOpPins.lean` meta-importing `ConLeche.PinGen.Dump` for
 the committed Nat-op pin dumps, is gone since L4b: the pins come from Ixon
 (`Ix/Kernel/ConLeche/NatOpPinData.lean`), `Dump` is deleted, and `NatOpPins`
-is kept verbatim but not built. -/
+is not ported (kept verbatim and unbuilt at L4b, deleted at int-4). -/
 def elaborationImports : ElaborationImports where
   importers := #[`ConLeche.Kernel.BasisGen, `ConLeche.PinGen]
   allowed := #[`Init, `Std, `Lean, `ConLeche]

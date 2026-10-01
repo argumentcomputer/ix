@@ -6,8 +6,8 @@ replaced by `public import ConLeche.Kernel.NatOpPinSet`, the structure it
 re-exported and the only part of it this closure uses (Ix reads Ixon only:
 the Nat-operation pin variant is generated from Ixon records,
 `Ix/Kernel/ConLeche/NatOpPinData.lean`, and upstream's `NatOpPins`, which
-splices the JSON pin dumps at elaboration time, is kept verbatim but not
-built); this header added. No statement, proof or tactic text changes.
+splices the JSON pin dumps at elaboration time, is not ported); this header
+added. No statement, proof or tactic text changes.
 -/
 module
 
