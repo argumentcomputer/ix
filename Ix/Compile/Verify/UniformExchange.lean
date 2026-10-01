@@ -1165,4 +1165,230 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
         simp only [WTree.occC, hxt, if_false, occCs_eq, WTree.written, List.map_append,
           List.sum_append, writtens_sum]
         rw [hT, List.map_congr_left (fun T hT => (hside T hT).2.1), ht2]
+/-! ## Every reachable term is written -/
+
+open Ix.Compile.Verify.SharingExact (Desc)
+
+mutual
+/-- The Shares a writing uses. -/
+def WTree.shares : WTree → List Nat
+  | .share x => [x]
+  | .node _ kids => WTree.sharess kids
+  | .tele _ _ sides tail => WTree.sharess sides ++ WTree.shares tail
+def WTree.sharess : List WTree → List Nat
+  | [] => []
+  | k :: ks => WTree.shares k ++ WTree.sharess ks
+end
+
+theorem sharess_mem {y : Nat} {l : List WTree} (h : y ∈ WTree.sharess l) :
+    ∃ T ∈ l, y ∈ T.shares := by
+  induction l with
+  | nil => simp [WTree.sharess] at h
+  | cons k ks ih =>
+    simp only [WTree.sharess, List.mem_append] at h
+    rcases h with h | h
+    · exact ⟨k, List.mem_cons_self, h⟩
+    · obtain ⟨T, hT, hy⟩ := ih h
+      exact ⟨T, List.mem_cons_of_mem _ hT, hy⟩
+
+theorem mem_sharess {y : Nat} {l : List WTree} {T : WTree} (hT : T ∈ l) (h : y ∈ T.shares) :
+    y ∈ WTree.sharess l := by
+  induction l with
+  | nil => cases hT
+  | cons k ks ih =>
+    simp only [WTree.sharess, List.mem_append]
+    rcases List.mem_cons.mp hT with rfl | hT
+    · exact Or.inl h
+    · exact Or.inr (ih hT)
+
+theorem mem_writtens {p : Prep} {y : Nat} {l : List WTree} {T : WTree} (hT : T ∈ l)
+    (h : y ∈ T.written p) : y ∈ WTree.writtens p l := by
+  induction l with
+  | nil => cases hT
+  | cons k ks ih =>
+    simp only [WTree.writtens, List.mem_append]
+    rcases List.mem_cons.mp hT with rfl | hT
+    · exact Or.inl h
+    · exact Or.inr (ih hT)
+
+/-- The Shares of a writing of `x` are stored terms below `x` (strictly, for
+an inline writing). -/
+theorem PrepWF.shares_lt {p : Prep} (hp : PrepWF p) {S : Nat → Bool} :
+    ∀ {x : Nat} {T : WTree}, Valid p S x T → x < p.dag.size →
+      ∀ s ∈ T.shares, S s = true ∧ (s ≤ x) ∧ (T.isShare = false → s < x) := by
+  intro x T h
+  induction h with
+  | share hS =>
+    intro _ s hs
+    simp only [WTree.shares, List.mem_singleton] at hs
+    subst hs
+    exact ⟨hS, Nat.le_refl _, fun h => by simp [WTree.isShare] at h⟩
+  | @node x kids hf hlen _ ih =>
+    intro hx s hs
+    simp only [WTree.shares] at hs
+    obtain ⟨T, hT, hsT⟩ := sharess_mem hs
+    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hT
+    have hc := hp.dag.childAt_lt hx (k := i) (by omega)
+    obtain ⟨h1, h2, _⟩ := ih i hi (by omega) s hsT
+    exact ⟨h1, by omega, fun _ => by omega⟩
+  | @teleCut x j sides hf hj1 hj hlen _ hS ih =>
+    intro hx s hs
+    simp only [WTree.shares, List.mem_append, List.mem_singleton] at hs
+    rcases hs with hs | rfl
+    · obtain ⟨T, hT, hsT⟩ := sharess_mem hs
+      obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hT
+      have hsl := hp.sideAt_lt hx hf (k := i) (by omega)
+      obtain ⟨h1, h2, _⟩ := ih i hi (by omega) s hsT
+      exact ⟨h1, by omega, fun _ => by omega⟩
+    · have := hp.spineAt_lt hx hf hj1 hj
+      exact ⟨hS, by omega, fun _ => this⟩
+  | @teleFull x sides tail hf hlen _ _ ih iht =>
+    intro hx s hs
+    obtain ⟨_, _, _, htl, _⟩ := hp.spine x hx hf
+    simp only [WTree.shares, List.mem_append] at hs
+    rcases hs with hs | hs
+    · obtain ⟨T, hT, hsT⟩ := sharess_mem hs
+      obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hT
+      have hsl := hp.sideAt_lt hx hf (k := i) (by omega)
+      obtain ⟨h1, h2, _⟩ := ih i hi (by omega) s hsT
+      exact ⟨h1, by omega, fun _ => by omega⟩
+    · obtain ⟨h1, h2, _⟩ := iht (by omega) s hs
+      exact ⟨h1, by omega, fun _ => by omega⟩
+
+theorem PrepWF.tele_child {p : Prep} (hp : PrepWF p) {y k : Nat} (hy : y < p.dag.size)
+    (hf : p.family[y]! ≠ .none) (hk : k < (p.dag.node y).children.size) :
+    (p.dag.node y).child k = (p.dag.node y).sideChild ∨ (p.dag.node y).child k = snext p y := by
+  have ha := hp.dag.arity y hy
+  rw [← dag_node_eq hy] at ha
+  have hfy : (p.dag.node y).head.family ≠ .none := by rw [← hp.family y hy]; exact hf
+  unfold Node.sideChild snext Node.spineNext
+  cases hh : (p.dag.node y).head <;> simp only [hh, Head.family, ne_eq, not_true_eq_false] at hfy <;>
+    simp only [hh, Head.arity] at ha <;> rw [ha] at hk <;>
+    (rcases k with _ | _ | k) <;> simp_all <;> omega
+
+/-- **Coverage.** Every term below `x` is written by a writing of `x` or lies
+below one of its Shares. -/
+theorem PrepWF.cover {p : Prep} (hp : PrepWF p) {S : Nat → Bool} :
+    ∀ {x : Nat} {T : WTree}, Valid p S x T → x < p.dag.size →
+      ∀ y, Desc p.dag x y → y ∈ T.written p ∨ ∃ s ∈ T.shares, Desc p.dag s y := by
+  intro x T h
+  induction h with
+  | @share x _ =>
+    intro _ y hd
+    exact Or.inr ⟨x, by simp [WTree.shares], hd⟩
+  | @node x kids hf hlen _ ih =>
+    intro hx y hd
+    cases hd with
+    | refl => exact Or.inl (by simp [WTree.written])
+    | @child _ _ k hk hd' =>
+      have ha := hp.dag.arity x hx
+      rw [← dag_node_eq hx] at ha
+      have hkl : k < kids.length := by omega
+      have hc := hp.dag.childAt_lt hx (k := k) (by omega)
+      rcases ih k hkl (by omega) y hd' with hw | ⟨s, hs, hds⟩
+      · exact Or.inl (by
+          simp only [WTree.written, List.mem_cons]
+          exact Or.inr (mem_writtens (List.getElem_mem hkl) hw))
+      · exact Or.inr ⟨s, by simp only [WTree.shares]; exact mem_sharess (List.getElem_mem hkl) hs,
+          hds⟩
+  | @teleCut x j sides hf hj1 hj hlen hsides hS ih =>
+    intro hx y hd
+    have hside : ∀ m, m < j → Desc p.dag (sideAt p x m) y →
+        y ∈ (WTree.tele x j sides (.share (spineAt p x j))).written p ∨
+          ∃ s ∈ (WTree.tele x j sides (.share (spineAt p x j))).shares, Desc p.dag s y := by
+      intro m hm hd'
+      have hsl := hp.sideAt_lt hx hf (k := m) (by omega)
+      rcases ih m (by omega) (by omega) y hd' with hw | ⟨s, hs, hds⟩
+      · exact Or.inl (by
+          simp only [WTree.written, List.mem_append]
+          exact Or.inl (Or.inr (mem_writtens (List.getElem_mem (by omega)) hw)))
+      · exact Or.inr ⟨s, by
+          simp only [WTree.shares, List.mem_append]
+          exact Or.inl (mem_sharess (List.getElem_mem (by omega)) hs), hds⟩
+    have key : ∀ i m, m + i = j - 1 → Desc p.dag (spineAt p x m) y →
+        y ∈ (WTree.tele x j sides (.share (spineAt p x j))).written p ∨
+          ∃ s ∈ (WTree.tele x j sides (.share (spineAt p x j))).shares, Desc p.dag s y := by
+      intro i
+      induction i with
+      | zero =>
+        intro m hm hd'
+        obtain ⟨hms, hmf, _⟩ := hp.spine_shift hx hf (k := m) (by omega)
+        have hmf' : p.family[spineAt p x m]! ≠ .none := by rw [hmf]; exact hf
+        cases hd' with
+        | refl =>
+          exact Or.inl (by
+            simp only [WTree.written, List.mem_append]
+            exact Or.inl (Or.inl (List.mem_map.mpr ⟨m, List.mem_range.mpr (by omega), rfl⟩)))
+        | @child _ _ k hk hd'' =>
+          rcases hp.tele_child hms hmf' hk with hc | hc
+          · rw [hc] at hd''; exact hside m (by omega) hd''
+          · rw [hc, snext_spineAt, show m + 1 = j by omega] at hd''
+            exact Or.inr ⟨spineAt p x j, by simp [WTree.shares], hd''⟩
+      | succ i ihi =>
+        intro m hm hd'
+        obtain ⟨hms, hmf, _⟩ := hp.spine_shift hx hf (k := m) (by omega)
+        have hmf' : p.family[spineAt p x m]! ≠ .none := by rw [hmf]; exact hf
+        cases hd' with
+        | refl =>
+          exact Or.inl (by
+            simp only [WTree.written, List.mem_append]
+            exact Or.inl (Or.inl (List.mem_map.mpr ⟨m, List.mem_range.mpr (by omega), rfl⟩)))
+        | @child _ _ k hk hd'' =>
+          rcases hp.tele_child hms hmf' hk with hc | hc
+          · rw [hc] at hd''; exact hside m (by omega) hd''
+          · rw [hc, snext_spineAt] at hd''
+            exact ihi (m + 1) (by omega) hd''
+    exact key (j - 1) 0 (by omega) hd
+  | @teleFull x sides tail hf hlen hsides htail ih iht =>
+    intro hx y hd
+    obtain ⟨hl1, _, hend, htl, _⟩ := hp.spine x hx hf
+    have hside : ∀ m, m < p.spineLen[x]! → Desc p.dag (sideAt p x m) y →
+        y ∈ (WTree.tele x p.spineLen[x]! sides tail).written p ∨
+          ∃ s ∈ (WTree.tele x p.spineLen[x]! sides tail).shares, Desc p.dag s y := by
+      intro m hm hd'
+      have hsl := hp.sideAt_lt hx hf (k := m) (by omega)
+      rcases ih m (by omega) (by omega) y hd' with hw | ⟨s, hs, hds⟩
+      · exact Or.inl (by
+          simp only [WTree.written, List.mem_append]
+          exact Or.inl (Or.inr (mem_writtens (List.getElem_mem (by omega)) hw)))
+      · exact Or.inr ⟨s, by
+          simp only [WTree.shares, List.mem_append]
+          exact Or.inl (mem_sharess (List.getElem_mem (by omega)) hs), hds⟩
+    have key : ∀ i m, m + i = p.spineLen[x]! - 1 → Desc p.dag (spineAt p x m) y →
+        y ∈ (WTree.tele x p.spineLen[x]! sides tail).written p ∨
+          ∃ s ∈ (WTree.tele x p.spineLen[x]! sides tail).shares, Desc p.dag s y := by
+      intro i
+      induction i with
+      | zero =>
+        intro m hm hd'
+        obtain ⟨hms, hmf, _⟩ := hp.spine_shift hx hf (k := m) (by omega)
+        have hmf' : p.family[spineAt p x m]! ≠ .none := by rw [hmf]; exact hf
+        cases hd' with
+        | refl =>
+          exact Or.inl (by
+            simp only [WTree.written, List.mem_append]
+            exact Or.inl (Or.inl (List.mem_map.mpr ⟨m, List.mem_range.mpr (by omega), rfl⟩)))
+        | @child _ _ k hk hd'' =>
+          rcases hp.tele_child hms hmf' hk with hc | hc
+          · rw [hc] at hd''; exact hside m (by omega) hd''
+          · rw [hc, snext_spineAt, show m + 1 = p.spineLen[x]! by omega, hend] at hd''
+            rcases iht (by omega) y hd'' with hw | ⟨s, hs, hds⟩
+            · exact Or.inl (by simp only [WTree.written, List.mem_append]; exact Or.inr hw)
+            · exact Or.inr ⟨s, by simp only [WTree.shares, List.mem_append]; exact Or.inr hs, hds⟩
+      | succ i ihi =>
+        intro m hm hd'
+        obtain ⟨hms, hmf, _⟩ := hp.spine_shift hx hf (k := m) (by omega)
+        have hmf' : p.family[spineAt p x m]! ≠ .none := by rw [hmf]; exact hf
+        cases hd' with
+        | refl =>
+          exact Or.inl (by
+            simp only [WTree.written, List.mem_append]
+            exact Or.inl (Or.inl (List.mem_map.mpr ⟨m, List.mem_range.mpr (by omega), rfl⟩)))
+        | @child _ _ k hk hd'' =>
+          rcases hp.tele_child hms hmf' hk with hc | hc
+          · rw [hc] at hd''; exact hside m (by omega) hd''
+          · rw [hc, snext_spineAt] at hd''
+            exact ihi (m + 1) (by omega) hd''
+    exact key (p.spineLen[x]! - 1) 0 (by omega) hd
+
 end Ix.Compile.Verify.UniformModel
