@@ -64,6 +64,7 @@
 mod cost;
 mod dag;
 mod dict;
+mod mss;
 mod par;
 mod roots;
 mod search;
@@ -84,6 +85,9 @@ pub use cost::{
 };
 pub use dag::{Children, Node, NodeKey, SharingDag, TermId};
 pub use dict::{FixedDictionary, dictionary_cost, materialize_with_dictionary};
+pub use mss::{
+  EncodingInfo, MssEncoding, MssTies, inspect_encoding, mss_constant, mss_dag,
+};
 pub use roots::{
   constant_info_root_count, constant_info_root_exprs, rebuild_constant_info,
 };
