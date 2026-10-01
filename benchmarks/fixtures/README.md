@@ -12,6 +12,10 @@ twin that prints the same output. The data is in
 | [`ackermann`](ackermann) | K1 | upstream | same | `ackermann.c` (original) | `3 6` | `3 10` |
 | [`tak`](tak) | K1 | upstream | same | `tak.c` (original) | `18 18 12 6` | `24 24 16 8` |
 | [`gcd`](gcd) | K1 | upstream | same | `gcd.c` (original) | `1071 462` | `F(91) F(90)` |
+| [`collatz`](collatz) | K1 | corpus | Compilatr.ix `fixtures/corpus/phase1-scalar/src/Scalar.lean` | `collatz.c` (original) | `10000` | `1000000` |
+| [`prime-count`](prime-count) | K1 | corpus | same | `prime_count.c` (original) | `10000` | `2000000` |
+| [`even-odd`](even-odd) | K1 | corpus | same | `even_odd.c` (original) | `100001` | `200000` |
+| [`sfib`](sfib) | K1 | corpus | same | `sfib.c` (original) | `1000` | `100000000` |
 | [`nqueens`](nqueens) | K2 | port | Koka `test/bench/koka/nqueens.kk` | Koka `cpp/nqueens.cpp` (unchanged) | `8` | `13` |
 | [`queue`](queue) | K2 | port | CakeML `cakeml_benchmarks/cakeml/queue.cml` | `queue.c` (original) | `1000` | `5000000` |
 | [`reverse`](reverse) | K2 | port | CakeML `reverse.cml` | `reverse.c` (original) | `1000` | `50000` |
@@ -50,6 +54,11 @@ chosen here, and the manifest records where each value comes from.
   `VARIANT.md` maps upstream functions to Lean definitions and lists every
   deviation. Ports are reviewed like total variants. This class is not in the
   roadmap's list; it covers the K2 sources, which have no Lean original.
+- **corpus**: definitions verbatim from the MT.2 scalar corpus
+  (`fixtures/corpus/phase1-scalar/src/Scalar.lean`, a `namespace Scalar`
+  block the checker finds there), with `entry` and `main` added. These four
+  K1 rows (MT.2) use `div`, `mod` and `mul` and have twins clang cannot fold
+  to a closed form, unlike `sum-loop`'s.
 - **annotated**: an ix contract-syntax variant, for later comparison
   (`rbmap_fbip` is kept for this). None exist yet.
 - **synthetic**: Lir or Ixon programs, for backend work only and never
