@@ -48,8 +48,6 @@ anonymous expressions (§6.7). So the property also holds modulo:
 - the order in which the compiler built it;
 - which compiler ran, Lean or Rust.
 
-<!-- PENDING: [route] both compilers emit canonical sharing (plan §3). At 9611c3b6 they still use the heuristic sharing. -->
-
 <!-- PENDING: [parity] Lean and Rust agree byte for byte on the final rules (plan §1 gate). -->
 
 
@@ -823,7 +821,10 @@ compile error for that block. There is no fallback, because a fallback
 would make the address depend on resource limits rather than on the
 expressions.
 
-<!-- PENDING: [route] the compilers route every block, including aux-gen blocks, kernel egress and decompile recompile, through this construction (plan §3). The recompile invariant `Named.original` (§9.2) then relies on recompile using exactly this route (integration map risk 6). -->
+Both compilers route every block through this construction, including
+aux-gen blocks, and in Rust also kernel egress and the decompiler's
+recompile. The recompile invariant `Named.original` (§9.2) relies on
+recompile using exactly this route.
 
 <!-- PENDING: [parity] the final Lean/Rust byte-identity gate on Init and the Mathlib sample (plan §1). -->
 
@@ -931,8 +932,6 @@ written:
    `Share` occurrences are the output of the canonical construction (§6.7)
    on its expanded roots. They do not depend on how the compiler built or
    shared the expression DAG.
-
-<!-- PENDING: [route] invariant 6 holds once both compilers route through the canonical construction (plan §3). -->
 
 ## 8. Call-Site Surgery
 
@@ -2298,8 +2297,6 @@ Landed with the §17.9 stages:
 - Roundtrip (§16.5) adds the end-to-end check: a recompiled block must
   reproduce its address, so decompile's recompile and the compiler must
   produce the same canonical sharing.
-
-<!-- PENDING: [tests] the `sharing` (heuristic) suite is removed (plan §7). The exact-sharing suites run on the TagN wire codec only since 93e2895c. -->
 
 ## 17. Open Work
 

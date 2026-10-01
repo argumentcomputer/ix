@@ -545,7 +545,7 @@ fn main() -> Result<(), String> {
   let raw_known: u64 = un_known.iter().map(|r| r.raw).sum();
   let real_known: u64 = un_known.iter().map(|r| r.real).sum();
   println!(
-    "- certified constants: stored (heuristic) {raw} B; serialized output {real} B ({:+.2}%); under TagN {tagn} B ({:+.2}%)",
+    "- certified constants: stored {raw} B; serialized output {real} B ({:+.2}%); under TagN {tagn} B ({:+.2}%)",
     (real as f64 - raw as f64) / raw as f64 * 100.0,
     (tagn as f64 - raw as f64) / raw as f64 * 100.0
   );

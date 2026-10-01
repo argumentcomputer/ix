@@ -3396,7 +3396,7 @@ mod tests {
   }
 
   #[test]
-  fn v3_exhaustive_mode_bytes_and_hashes() {
+  fn exhaustive_mode_bytes_are_distinct() {
     use crate::contract::LetKind;
     use crate::expr::Uses;
     let values = [
@@ -3416,7 +3416,7 @@ mod tests {
         put_expr(&lam, &mut bytes);
         assert_eq!(bytes, [0x81, input_code, 0x00, 0x10]);
         assert_eq!(get_expr(&mut bytes.as_slice()).unwrap(), lam);
-        assert!(hashes.insert(crate::sharing::hash_expr(&lam)));
+        assert!(hashes.insert(bytes.clone()));
         for (result_code, result) in values.into_iter().enumerate() {
           let all =
             Expr::all_contract(input, result, Expr::sort(0), Expr::var(0));
@@ -3427,7 +3427,7 @@ mod tests {
             [0x91, input_code + 16 * result_code as u8, 0x00, 0x10]
           );
           assert_eq!(get_expr(&mut bytes.as_slice()).unwrap(), all);
-          assert!(hashes.insert(crate::sharing::hash_expr(&all)));
+          assert!(hashes.insert(bytes.clone()));
         }
         for non_dep in [false, true] {
           for kind in [LetKind::Value, LetKind::BorrowShared] {
@@ -3452,7 +3452,7 @@ mod tests {
               ]
             );
             assert_eq!(get_expr(&mut bytes.as_slice()).unwrap(), let_expr);
-            assert!(hashes.insert(crate::sharing::hash_expr(&let_expr)));
+            assert!(hashes.insert(bytes.clone()));
           }
         }
       }

@@ -28,7 +28,6 @@ use crate::constant::{
 use crate::contract::{BinderContract, LetContract, ValueContract};
 use crate::expr::Expr;
 use crate::serialize::put_expr;
-use crate::sharing::{analyze_block, build_sharing_vec, decide_sharing};
 use crate::tag::{TagN, u64_byte_count};
 use crate::univ::Univ;
 
@@ -96,20 +95,23 @@ fn unshared(c: &Constant) -> Constant {
   }
 }
 
-/// The historical heuristic applied to the expanded roots.
-fn heuristic(c: &Constant) -> Constant {
-  let dag = SharingDag::from_constant(c, &limits()).unwrap();
-  let roots = dag.root_exprs();
-  let (info, ptrs, topo) = analyze_block(&roots, false);
-  let shared = decide_sharing(&info, &topo);
-  let (rewritten, table) =
-    build_sharing_vec(&roots, &shared, &ptrs, &info, &topo);
-  Constant {
-    info: rebuild_constant_info(&c.info, &rewritten).unwrap(),
-    sharing: table,
-    refs: c.refs.clone(),
-    univs: c.univs.clone(),
-  }
+/// Bytes of a hex string.
+fn unhex(s: &str) -> Vec<u8> {
+  (0..s.len())
+    .step_by(2)
+    .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+    .collect()
+}
+
+/// The 19-byte encoding of the T2 -> T2 witness written by the former
+/// production heuristic (`docs/sharing-minimum.md` §2): a valid, longer
+/// incoming encoding.
+fn former_heuristic_t2() -> Constant {
+  let bytes = unhex("d200009117b1b10291170000911700b0000100");
+  let mut slice = bytes.as_slice();
+  let c = Constant::get(&mut slice).unwrap();
+  assert!(slice.is_empty());
+  c
 }
 
 fn normalize(c: &Constant) -> Constant {
@@ -784,7 +786,7 @@ fn expansion_ignores_unreachable_entries_and_incoming_order() {
     typ: Expr::all(Expr::share(2), Expr::all(Expr::share(0), Expr::share(1))),
   });
   let dag = SharingDag::from_constant(&base, &limits()).unwrap();
-  for c in [&a, &b, &heuristic(&base)] {
+  for c in [&a, &b, &former_heuristic_t2()] {
     roundtrip(c);
     assert_eq!(SharingDag::from_constant(c, &limits()).unwrap(), dag);
     assert_eq!(put(&normalize(c)), put(&normalize(&base)));
@@ -878,13 +880,17 @@ fn fixture_t2_witness_is_17_bytes() {
   let c = axiom(Expr::all(t2.clone(), t2), 1);
   let unshared_bytes = roundtrip(&c);
   assert_eq!(hex(&unshared_bytes), "d200009317921700170000170017000000000100");
-  let h = roundtrip(&heuristic(&c));
+  let h = roundtrip(&former_heuristic_t2());
   assert_eq!(hex(&h), "d200009117b1b10291170000911700b0000100");
+  assert_eq!(
+    SharingDag::from_constant(&former_heuristic_t2(), &limits()).unwrap(),
+    SharingDag::from_constant(&c, &limits()).unwrap()
+  );
   let (exact, res) =
     normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
   let bytes = roundtrip(&exact);
   eprintln!(
-    "T2->T2: heuristic {} unshared {} exact {} {} Q={:?} stats={:?}",
+    "T2->T2: former heuristic {} unshared {} exact {} {} Q={:?} stats={:?}",
     h.len(),
     unshared_bytes.len(),
     bytes.len(),
@@ -907,7 +913,6 @@ fn fixture_t16_improves_on_store_only_t16() {
   let t16 = chain(16);
   let c = axiom(Expr::all(t16.clone(), t16.clone()), 1);
   let unshared_len = roundtrip(&c).len();
-  let heuristic_len = roundtrip(&heuristic(&c)).len();
   let mut store_only = c.clone();
   store_only.sharing = vec![t16];
   store_only.info = ConstantInfo::Axio(Axiom {
@@ -916,22 +921,22 @@ fn fixture_t16_improves_on_store_only_t16() {
     typ: Expr::all(Expr::share(0), Expr::share(0)),
   });
   let store_only_len = roundtrip(&store_only).len();
-  assert_eq!((heuristic_len, unshared_len, store_only_len), (81, 78, 46));
+  assert_eq!((unshared_len, store_only_len), (78, 46));
   let (exact, res) =
     normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
   let bytes = roundtrip(&exact);
   eprintln!(
-    "T16->T16: heuristic {heuristic_len} unshared {unshared_len} store-only {store_only_len} exact {} {} Q={:?} stats={:?}",
+    "T16->T16: unshared {unshared_len} store-only {store_only_len} exact {} {} Q={:?} stats={:?}",
     bytes.len(),
     hex(&bytes),
     res.table_terms,
     res.stats
   );
   assert!(bytes.len() <= 46);
-  // Certification is independent of the heuristic seed and of limits.
-  let mut no_h = limits();
-  no_h.heuristic_upper_bound = false;
-  assert_eq!(put(&normalize_constant_sharing(&c, &no_h).unwrap()), bytes);
+  // Certification is independent of the greedy seed and of limits.
+  let mut no_g = limits();
+  no_g.greedy_upper_bound = false;
+  assert_eq!(put(&normalize_constant_sharing(&c, &no_g).unwrap()), bytes);
   let exact_q_len = sequence_len(
     &SharingDag::from_constant(&c, &limits()).unwrap(),
     &res.table_terms,
@@ -943,12 +948,12 @@ fn fixture_t16_improves_on_store_only_t16() {
   );
 }
 
-/// Nine independent 5-byte Ref atoms; the one with the greatest heuristic
-/// hash is used 100 times, the others twice (the production probe fixture).
+/// Nine independent 5-byte Ref atoms; the one with the greatest structural
+/// hash (the former heuristic's node hash) is used 100 times, the others twice (the production probe fixture).
 fn nine_ref_fixture() -> (Constant, E) {
   let mut atoms: Vec<E> =
     (0..9).map(|i| Expr::reference(i, vec![0, 0, 0])).collect();
-  atoms.sort_by_key(|e| *crate::sharing::hash_expr(e).as_bytes());
+  atoms.sort_by_key(|e| *mss::structural_hash(e).as_bytes());
   let hot = atoms.last().unwrap().clone();
   let mut roots: Vec<E> =
     atoms.iter().flat_map(|a| [a.clone(), a.clone()]).collect();
@@ -978,30 +983,16 @@ fn nine_ref_fixture() -> (Constant, E) {
 }
 
 #[test]
-fn fixture_nine_refs_reorders_676_to_578() {
+fn fixture_nine_refs_minimum_is_578() {
+  // The former heuristic wrote 676 bytes in its order and 578 reordered by
+  // frequency (docs/sharing-minimum.md §2).
   let (c, hot) = nine_ref_fixture();
   assert_eq!(hot.as_ref(), &Expr::Ref(2, vec![0, 0, 0]));
-  let roots = constant_info_root_exprs(&c.info);
-  let (info, ptrs, topo) = analyze_block(&roots, false);
-  let shared = decide_sharing(&info, &topo);
-  let mut frequency = topo.clone();
-  frequency.sort_by_key(|h| std::cmp::Reverse(info[h].usage_count));
-  let mut lens = Vec::new();
-  for order in [&topo, &frequency] {
-    let (rw, table) = build_sharing_vec(&roots, &shared, &ptrs, &info, order);
-    let mut h = c.clone();
-    h.info = rebuild_constant_info(&c.info, &rw).unwrap();
-    h.sharing = table;
-    lens.push(roundtrip(&h).len());
-  }
-  assert_eq!(lens, vec![676, 578]);
   let (exact, res) =
     normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
   let bytes = roundtrip(&exact);
   eprintln!(
-    "nine refs: heuristic {} reordered {} exact {} Q={:?} stats={:?}",
-    lens[0],
-    lens[1],
+    "nine refs: exact {} Q={:?} stats={:?}",
     bytes.len(),
     res.table_terms,
     res.stats
@@ -1070,22 +1061,21 @@ fn fixture_two_minima_pins_the_tie() {
 
 #[test]
 fn prop_chains_match_probe_and_oracle() {
-  // Production-probe measurements: (n, heuristic, unshared, store-only-Tn).
+  // Production-probe measurements: (n, unshared, store-only-Tn).
   let probe = [
-    (1usize, 15usize, 16usize, 15usize),
-    (2, 19, 20, 17),
-    (3, 23, 24, 19),
-    (4, 27, 28, 21),
-    (7, 39, 41, 27),
-    (8, 43, 46, 30),
-    (9, 45, 50, 32),
-    (16, 81, 78, 46),
-    (32, 161, 142, 78),
+    (1usize, 16usize, 15usize),
+    (2, 20, 17),
+    (3, 24, 19),
+    (4, 28, 21),
+    (7, 41, 27),
+    (8, 46, 30),
+    (9, 50, 32),
+    (16, 78, 46),
+    (32, 142, 78),
   ];
-  for (n, h, u, s) in probe {
+  for (n, u, s) in probe {
     let t = chain(n);
     let c = axiom(Expr::all(t.clone(), t), 1);
-    assert_eq!(roundtrip(&heuristic(&c)).len(), h, "heuristic n={n}");
     assert_eq!(roundtrip(&c).len(), u, "unshared n={n}");
     let bytes = roundtrip(&normalize(&c));
     eprintln!("chain {n}: exact {} ({})", bytes.len(), hex(&bytes));
@@ -1252,7 +1242,7 @@ fn exact_is_idempotent_and_never_worse() {
   l.max_layer_states = 100_000;
   for seed in 0..150 {
     let c = gen_constant(seed + 20_000, 4, 45, 6);
-    let h = heuristic(&c);
+    let (h, _, _) = mss_constant(&c, &limits(), MssTies::StructuralId).unwrap();
     let u = unshared(&c);
     let exact = match normalize_constant_sharing_with_stats(&c, &l) {
       Ok((x, r)) => {
@@ -1289,7 +1279,7 @@ fn exact_is_idempotent_and_never_worse() {
     }
   }
   eprintln!(
-    "never-worse: {} solved, saved {} bytes vs heuristic and {} vs unshared, \
+    "never-worse: {} solved, saved {} bytes vs MSS and {} vs unshared, \
      {} resource errors, most states in a solved case {most_states}",
     stats.0, stats.1, stats.2, stats.3
   );
@@ -1318,7 +1308,6 @@ fn resource_limits_fail_closed() {
   ];
   for (resource, set) in cases {
     let mut l = limits();
-    l.heuristic_upper_bound = false;
     l.greedy_upper_bound = false;
     set(&mut l);
     match normalize_constant_sharing(&c, &l) {
@@ -1337,7 +1326,6 @@ fn resource_limits_fail_closed() {
   tight.max_output_bytes = want.len() as u64;
   assert_eq!(put(&normalize_constant_sharing(&c, &tight).unwrap()), want);
   let mut unbounded = ExactSharingLimits::unbounded();
-  unbounded.heuristic_upper_bound = false;
   unbounded.greedy_upper_bound = false;
   assert_eq!(put(&normalize_constant_sharing(&c, &unbounded).unwrap()), want);
   // Counters are deterministic.
@@ -1454,15 +1442,13 @@ fn projections_and_empty_roots() {
 
 #[test]
 fn pruning_never_changes_the_result() {
-  // (lower-bound pruning, materialization bound, heuristic seed, greedy seed)
-  const MODES: [(bool, bool, bool, bool); 7] = [
-    (false, false, false, false),
-    (true, false, false, false),
-    (true, false, true, false),
-    (true, false, false, true),
-    (true, true, false, false),
-    (true, true, true, false),
-    (true, true, true, true),
+  // (lower-bound pruning, materialization bound, greedy seed)
+  const MODES: [(bool, bool, bool); 5] = [
+    (false, false, false),
+    (true, false, false),
+    (true, false, true),
+    (true, true, false),
+    (true, true, true),
   ];
   let mut compared = 0u64;
   let mut states = [0u64; MODES.len()];
@@ -1471,11 +1457,10 @@ fn pruning_never_changes_the_result() {
     let mut results: Vec<(Vec<u8>, Vec<u32>)> = Vec::new();
     let mut seen = [0u64; MODES.len()];
     let mut complete = true;
-    for (i, (p, m, h, g)) in MODES.into_iter().enumerate() {
+    for (i, (p, m, g)) in MODES.into_iter().enumerate() {
       let mut l = limits();
       l.lower_bound_pruning = p;
       l.materialization_bound = m;
-      l.heuristic_upper_bound = h;
       l.greedy_upper_bound = g;
       l.max_states = 300_000;
       match normalize_constant_sharing_with_stats(&c, &l) {
@@ -1571,8 +1556,9 @@ fn ordering_parent_stored_before_its_inlined_descendant() {
 fn byte_level_normalization() {
   let t2 = chain(2);
   let c = axiom(Expr::all(t2.clone(), t2), 1);
-  let heuristic_bytes = put(&heuristic(&c));
-  let out = normalize_constant_bytes(&heuristic_bytes, &limits()).unwrap();
+  let incoming = put(&former_heuristic_t2());
+  assert_eq!(put(&normalize(&former_heuristic_t2())), put(&normalize(&c)));
+  let out = normalize_constant_bytes(&incoming, &limits()).unwrap();
   assert_eq!(hex(&out), "d200009117b0b001921700170000000100");
   assert_eq!(normalize_constant_bytes(&out, &limits()).unwrap(), out);
   let mut trailing = out.clone();
@@ -1890,7 +1876,6 @@ fn t16_without_pruning() {
   let mut full = ExactSharingLimits::unbounded();
   full.lower_bound_pruning = false;
   full.materialization_bound = false;
-  full.heuristic_upper_bound = false;
   full.greedy_upper_bound = false;
   let (a, ra) = normalize_constant_sharing_with_stats(&c, &full).unwrap();
   let (b, rb) = normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
@@ -1917,8 +1902,7 @@ fn oracle_tractable(c: &Constant, cap: u128) -> bool {
 
 #[test]
 fn deep_inputs_are_handled_iteratively() {
-  // A 3000-binder telescope whose repeated domain is worth sharing. Its
-  // height exceeds the heuristic seed's recursion guard.
+  // A 3000-binder telescope whose repeated domain is worth sharing.
   let dom = Expr::app(Expr::var(0), Expr::var(1));
   let mut e = Expr::var(0);
   for i in 0..3000 {
@@ -1929,7 +1913,6 @@ fn deep_inputs_are_handled_iteratively() {
   let (exact, res) =
     normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
   let bytes = roundtrip(&exact);
-  assert_eq!(res.stats.heuristic_len, None);
   // The innermost binder has height 2 (its domain is an App).
   assert_eq!(res.stats.height, 3001);
   assert_eq!(exact.sharing.len(), 1);

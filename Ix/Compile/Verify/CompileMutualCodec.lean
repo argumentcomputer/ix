@@ -1108,75 +1108,126 @@ theorem standaloneMutConstInfo?_wireWF
   next hsize =>
     simp at hinfo
 
-/-- Both the standalone-collapse and general mutual-wrapper branches produce
-an exactly decodable main block. Projection construction is deliberately
-irrelevant to this codec postcondition. -/
-theorem buildCompiledMutualBlock_codecWF
-    (classes : List (List Ix.MutConst))
-    (payloads : Array Ixon.MutConst) (roots : Array Ixon.Expr)
-    (metas : Array (Ix.Name × Ixon.ConstantMeta))
-    (cache : Ix.CompileM.BlockState)
+/-- Both the standalone-collapse and general mutual-wrapper branches build
+their main block with `buildConstantWithSharing` on a wire-safe payload, so a
+successful assembly is exactly decodable. Projection construction is
+deliberately irrelevant to this codec postcondition. -/
+theorem buildCompiledMutualBlock_codecWF {limits : Ix.Sharing.Exact.Limits}
+    {classes : List (List Ix.MutConst)}
+    {payloads : Array Ixon.MutConst}
+    {metas : Array (Ix.Name × Ixon.ConstantMeta)}
+    {cache : Ix.CompileM.BlockState} {result : Ix.CompileM.BlockResult}
     (hpayloadCount : payloads.size < UInt64.size)
     (hpayloads : ∀ payload ∈ payloads, payload.wireWF)
-    (hroots : ExprArrayWireWF roots)
-    (htables : BlockWireTablesWF cache) :
-    BlockResultCodecWF
-      (Ix.CompileM.buildCompiledMutualBlock classes payloads roots metas
-        cache) := by
-  generalize hstandalone :
-    Ix.CompileM.standaloneMutConstInfo? payloads = standalone
-  cases standalone with
-  | none =>
-      let info : Ixon.ConstantInfo := .muts payloads
-      have hinfo : info.wireWF := ⟨hpayloadCount, hpayloads⟩
-      let block := Ix.CompileM.buildConstantWithSharing info roots
-        cache.refs cache.univs
-      have hblock : block.wireWF :=
-        buildConstantWithSharing_wireWF info roots hinfo hroots htables
-      simpa [Ix.CompileM.buildCompiledMutualBlock, hstandalone, info,
-        block] using
-        (BlockResult.mk'_codecWF block .empty
-          (Ix.CompileM.buildMutualProjections classes
-            (Address.blake3 (Ixon.ser block)) metas) hblock)
-  | some info =>
-      have hinfo : info.wireWF :=
-        standaloneMutConstInfo?_wireWF payloads hpayloads hstandalone
-      let block := Ix.CompileM.buildConstantWithSharing info roots
-        cache.refs cache.univs
-      have hblock : block.wireWF :=
-        buildConstantWithSharing_wireWF info roots hinfo hroots htables
-      simpa [Ix.CompileM.buildCompiledMutualBlock, hstandalone, block] using
-        (BlockResult.mk'_codecWF block .empty
-          (Ix.CompileM.buildStandaloneMutualProjections classes block metas)
-          hblock)
+    (htables : BlockWireTablesWF cache)
+    (h : Ix.CompileM.buildCompiledMutualBlock limits classes payloads metas
+      cache = .ok result) :
+    BlockResultCodecWF result := by
+  unfold Ix.CompileM.buildCompiledMutualBlock at h
+  split at h
+  next info hstandalone =>
+    have hinfo : info.wireWF :=
+      standaloneMutConstInfo?_wireWF payloads hpayloads hstandalone
+    cases hbuild : Ix.CompileM.buildConstantWithSharing limits info
+        cache.refs cache.univs with
+    | error err => simp [hbuild, bind, Except.bind] at h
+    | ok block =>
+      simp only [hbuild, bind, Except.bind, pure, Except.pure,
+        Except.ok.injEq] at h
+      subst h
+      exact BlockResult.mk'_codecWF block .empty _
+        (buildConstantWithSharing_wireWF hinfo htables hbuild)
+  next =>
+    have hinfo : (Ixon.ConstantInfo.muts payloads).wireWF :=
+      ⟨hpayloadCount, hpayloads⟩
+    cases hbuild : Ix.CompileM.buildConstantWithSharing limits
+        (.muts payloads) cache.refs cache.univs with
+    | error err => simp [hbuild, bind, Except.bind] at h
+    | ok block =>
+      simp only [hbuild, bind, Except.bind, pure, Except.pure,
+        Except.ok.injEq] at h
+      subst h
+      exact BlockResult.mk'_codecWF block .empty _
+        (buildConstantWithSharing_wireWF hinfo htables hbuild)
 
-/-- The state-reading finalizer is total, leaves the compiler state unchanged,
-and inherits the pure assembler's codec postcondition. -/
+/-- The mutual assembler fails only with the error of its sharing builder. -/
+theorem buildCompiledMutualBlock_error {limits : Ix.Sharing.Exact.Limits}
+    {classes : List (List Ix.MutConst)}
+    {payloads : Array Ixon.MutConst}
+    {metas : Array (Ix.Name × Ixon.ConstantMeta)}
+    {cache : Ix.CompileM.BlockState} {err : Ix.CompileM.CompileError}
+    (h : Ix.CompileM.buildCompiledMutualBlock limits classes payloads metas
+      cache = .error err) :
+    ∃ info, Ix.CompileM.buildConstantWithSharing limits info
+      cache.refs cache.univs = .error err := by
+  unfold Ix.CompileM.buildCompiledMutualBlock at h
+  split at h
+  next info _ =>
+    cases hbuild : Ix.CompileM.buildConstantWithSharing limits info
+        cache.refs cache.univs with
+    | error e =>
+      simp only [hbuild, bind, Except.bind, Except.error.injEq] at h
+      subst h
+      exact ⟨info, hbuild⟩
+    | ok block => simp [hbuild, bind, Except.bind, pure, Except.pure] at h
+  next =>
+    cases hbuild : Ix.CompileM.buildConstantWithSharing limits
+        (.muts payloads) cache.refs cache.univs with
+    | error e =>
+      simp only [hbuild, bind, Except.bind, Except.error.injEq] at h
+      subst h
+      exact ⟨_, hbuild⟩
+    | ok block => simp [hbuild, bind, Except.bind, pure, Except.pure] at h
+
+/-- The state-reading finalizer runs the assembler under
+`CompileEnv.sharingLimits`, leaves the compiler state unchanged, and fails
+exactly when the assembler does. -/
+theorem finishMutualCompilation_run
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv)
+    (state : Ix.CompileM.BlockState)
+    (classes : List (List Ix.MutConst))
+    (payloads : Array Ixon.MutConst)
+    (metas : Array (Ix.Name × Ixon.ConstantMeta)) :
+    Ix.CompileM.CompileM.run compileEnv blockEnv state
+        (Ix.CompileM.finishMutualCompilation classes payloads metas) =
+      match Ix.CompileM.buildCompiledMutualBlock compileEnv.sharingLimits
+          classes payloads metas state with
+      | .ok result => .ok (result, state)
+      | .error err => .error err := by
+  simp only [Ix.CompileM.finishMutualCompilation, run_bind,
+    run_getBlockState_eq, run_read_eq]
+  cases Ix.CompileM.buildCompiledMutualBlock compileEnv.sharingLimits
+    classes payloads metas state <;> rfl
+
+/-- The finalizer inherits the assembler's codec postcondition; its only
+failure is the sharing builder's. -/
 theorem finishMutualCompilation_run_codecWF
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
     (state : Ix.CompileM.BlockState)
     (classes : List (List Ix.MutConst))
-    (payloads : Array Ixon.MutConst) (roots : Array Ixon.Expr)
+    (payloads : Array Ixon.MutConst)
     (metas : Array (Ix.Name × Ixon.ConstantMeta))
     (hpayloadCount : payloads.size < UInt64.size)
     (hpayloads : ∀ payload ∈ payloads, payload.wireWF)
-    (hroots : ExprArrayWireWF roots)
     (htables : BlockWireTablesWF state) :
-    ∃ result,
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.finishMutualCompilation classes payloads roots metas) =
-        .ok (result, state) ∧
-      BlockResultCodecWF result := by
-  let result := Ix.CompileM.buildCompiledMutualBlock classes payloads roots
-    metas state
-  refine ⟨result, rfl, ?_⟩
-  exact buildCompiledMutualBlock_codecWF classes payloads roots metas state
-    hpayloadCount hpayloads hroots htables
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+        (Ix.CompileM.finishMutualCompilation classes payloads metas)) := by
+  rw [finishMutualCompilation_run]
+  cases hbuild : Ix.CompileM.buildCompiledMutualBlock compileEnv.sharingLimits
+      classes payloads metas state with
+  | ok result =>
+    exact .inl ⟨result, state, rfl,
+      buildCompiledMutualBlock_codecWF hpayloadCount hpayloads htables hbuild⟩
+  | error err =>
+    obtain ⟨info, hinfo⟩ := buildCompiledMutualBlock_error hbuild
+    exact .inr ⟨info, state, err, hinfo, rfl⟩
 
 /-- The complete post-preseed mutual payload phase compiles all class members,
 retains one representative per nonempty class, and returns a codec-safe main
-block through either assembler branch. -/
+block through either assembler branch, or fails only in the sharing builder. -/
 theorem compileMutualPayload_run_ordinary_codecWF
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
@@ -1192,14 +1243,11 @@ theorem compileMutualPayload_run_ordinary_codecWF
     (hcount : nonemptyMutConstClassCount classes < UInt64.size)
     (state : Ix.CompileM.BlockState)
     (hstate : MutualMemberStateWF snapshot state) :
-    ∃ result finalState,
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileMutualPayload classes) =
-        .ok (result, finalState) ∧
-      MutualMemberStateWF snapshot finalState ∧
-      BlockResultCodecWF result := by
-  obtain ⟨payloads, roots, metas, compiledState, hcompile,
-      hcompiledState, hpayloads, hroots, hsize⟩ :=
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+        (Ix.CompileM.compileMutualPayload classes)) := by
+  obtain ⟨payloads, _roots, metas, compiledState, hcompile,
+      hcompiledState, hpayloads, _hroots, hsize⟩ :=
     compileMutConsts_run_ordinary_wireWF compileEnv blockEnv snapshot hfree
       hclosed hlevelFaithful hexprFaithful htables classes hmembers state
       hstate
@@ -1208,11 +1256,9 @@ theorem compileMutualPayload_run_ordinary_codecWF
     exact hcount
   have hcompiledTables : BlockWireTablesWF compiledState :=
     htables.of_exprTableView_eq hcompiledState.tables
-  obtain ⟨result, hfinish, hcodec⟩ :=
+  have hfinish :=
     finishMutualCompilation_run_codecWF compileEnv blockEnv compiledState
-      classes payloads roots metas hpayloadCount hpayloads hroots
-      hcompiledTables
-  refine ⟨result, compiledState, ?_, hcompiledState, hcodec⟩
+      classes payloads metas hpayloadCount hpayloads hcompiledTables
   unfold Ix.CompileM.compileMutualPayload
   rw [run_bind, hcompile]
   exact hfinish
@@ -1340,29 +1386,26 @@ theorem compileMutualBlock_run_of_preseed_ordinary_codecWF
       MutConstOrdinaryReady compileEnv
         (mutualCompileBlockEnv blockEnv classes) snapshot levelSupport source)
     (hcount : nonemptyMutConstClassCount classes < UInt64.size) :
-    ∃ result finalState,
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileMutualBlock classes) =
-        .ok (result, finalState) ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileMutualBlock classes)) := by
   have hstart : MutualMemberStateWF snapshot snapshot :=
     ⟨rfl, hexprCache, hcanonCache⟩
-  obtain ⟨result, finalState, hpayload, hfinalState, hcodec⟩ :=
+  have hpayload :=
     compileMutualPayload_run_ordinary_codecWF compileEnv
       (mutualCompileBlockEnv blockEnv classes) snapshot hfree hclosed
       hlevelFaithful hexprFaithful htables classes hmembers hcount snapshot
       hstart
-  refine ⟨result, finalState, ?_, hcodec⟩
   unfold Ix.CompileM.compileMutualBlock
   rw [run_bind,
     auditMutConstClassesPlanHeads_run_surgeryFree compileEnv blockEnv state
       classes hfree]
   simp only
   rw [run_withMutCtx]
-  change Ix.CompileM.CompileM.run compileEnv
+  change SharingRunOK compileEnv.sharingLimits (Ix.CompileM.CompileM.run compileEnv
     (mutualCompileBlockEnv blockEnv classes) state (do
       Ix.CompileM.preseedExprTables (Ix.CompileM.mutualPreseedExprs classes)
-      Ix.CompileM.compileMutualPayload classes) = _
+      Ix.CompileM.compileMutualPayload classes))
   rw [run_bind, hpreseed]
   exact hpayload
 
@@ -1400,11 +1443,9 @@ theorem compileMutualBlock_run_ready_codecWF
     (hmembers : ∀ constClass ∈ classes, ∀ source ∈ constClass,
       MutConstOrdinaryBounds source)
     (hcount : nonemptyMutConstClassCount classes < UInt64.size) :
-    ∃ result finalState,
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileMutualBlock classes) =
-        .ok (result, finalState) ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileMutualBlock classes)) := by
   let mutualEnv := mutualCompileBlockEnv blockEnv classes
   let inputs := Ix.CompileM.mutualPreseedInputs classes
   obtain ⟨snapshot, hpreseed, htables, htargets, hsnapshotExpr,
@@ -1466,11 +1507,9 @@ theorem compileMutualBlock_run_uniform_ready_codecWF
     (hmembers : ∀ constClass ∈ classes, ∀ source ∈ constClass,
       MutConstOrdinaryBounds source)
     (hcount : nonemptyMutConstClassCount classes < UInt64.size) :
-    ∃ result finalState,
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileMutualBlock classes) =
-        .ok (result, finalState) ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileMutualBlock classes)) := by
   have hseen := heterogeneousPreseedSeenSafe_of_uniform compileEnv
     (mutualCompileBlockEnv blockEnv classes) state params hclosed
     hlevelFaithful hexprFaithful
@@ -1508,11 +1547,9 @@ theorem compileMutualBlock_run_member_uniform_ready_codecWF
     (hmembers : ∀ constClass ∈ classes, ∀ source ∈ constClass,
       MutConstOrdinaryBounds source)
     (hcount : nonemptyMutConstClassCount classes < UInt64.size) :
-    ∃ result finalState,
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileMutualBlock classes) =
-        .ok (result, finalState) ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileMutualBlock classes)) := by
   apply compileMutualBlock_run_uniform_ready_codecWF compileEnv blockEnv
     state hfree hclosed hlevelFaithful hexprFaithful classes params
     hexprCache hcanonCache hrefTable hunivTable
@@ -3799,17 +3836,14 @@ theorem compileMutualConstants_run_of_collected_sorted_codecWF
     (hmembers : ∀ constClass ∈ classes, ∀ source ∈ constClass,
       MutConstOrdinaryBounds source)
     (hcount : nonemptyMutConstClassCount classes < UInt64.size) :
-    ∃ result finalState,
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileMutualConstants all) =
-        .ok (result, finalState) ∧
-      BlockResultCodecWF result := by
-  obtain ⟨result, finalState, hblock, hcodec⟩ :=
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileMutualConstants all)) := by
+  have hblock :=
     compileMutualBlock_run_member_uniform_ready_codecWF compileEnv blockEnv
       collectState hfree hclosed hlevelFaithful hexprFaithful classes params
       hexprCache hcanonCache hrefTable hunivTable huniform hready htableBound
       hmembers hcount
-  refine ⟨result, finalState, ?_, hcodec⟩
   unfold Ix.CompileM.compileMutualConstants
   rw [run_bind, hcollect]
   simp only
@@ -3855,18 +3889,15 @@ theorem compileConstant_run_mutual_of_collected_sorted_codecWF
     (hmembers : ∀ constClass ∈ classes, ∀ source ∈ constClass,
       MutConstOrdinaryBounds source)
     (hcount : nonemptyMutConstClassCount classes < UInt64.size) :
-    ∃ result finalState,
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileConstant name) =
-        .ok (result, finalState) ∧
-      BlockResultCodecWF result := by
-  obtain ⟨result, finalState, hmutual, hcodec⟩ :=
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileConstant name)) := by
+  have hmutual :=
     compileMutualConstants_run_of_collected_sorted_codecWF compileEnv
       blockEnv state collectState sortState hfree hclosed hlevelFaithful
       hexprFaithful blockEnv.all sources classes params hcollect hsort
       hexprCache hcanonCache hrefTable hunivTable huniform hready htableBound
       hmembers hcount
-  refine ⟨result, finalState, ?_, hcodec⟩
   unfold Ix.CompileM.compileConstant
   rw [run_bind, findConst_run_of_get_entry compileEnv blockEnv state name
     constInfo hlookup]
@@ -3921,11 +3952,9 @@ theorem compileConstant_run_mutual_of_lookup_sorted_codecWF
         (Ix.CompileM.mutualPreseedInputs classes))
     (hmembers : ∀ source ∈ resolved.filterMap id,
       MutConstOrdinaryBounds source) :
-    ∃ result finalState,
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileConstant name) =
-        .ok (result, finalState) ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileConstant name)) := by
   have hsourceCount : (resolved.filterMap id).length < UInt64.size :=
     collectedMutConstSourceCount_lt compileEnv blockEnv.all resolved
       hlookups hallCount

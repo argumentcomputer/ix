@@ -34,7 +34,6 @@ import Tests.Ix.Kernel.Arena
 import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
-import Tests.Ix.Sharing
 import Tests.Ix.SharingExact
 import Tests.Ix.SharingUniform
 import Tests.Ix.SharingTiered
@@ -105,7 +104,6 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("commit", Tests.Commit.suite),
   ("canon", [Tests.CanonM.suite]),
   ("keccak", Tests.Keccak.suite),
-  ("sharing", Tests.Sharing.suite),
   ("exact-sharing", Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
   ("exact-sharing-ffi", Tests.SharingExactFFI.suite),
   ("source-contract", Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),

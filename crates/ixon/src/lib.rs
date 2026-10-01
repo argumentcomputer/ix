@@ -25,7 +25,6 @@ pub mod proof;
 pub mod resource;
 pub mod serialize;
 pub mod shard_claim;
-pub mod sharing;
 pub mod sharing_exact;
 pub mod syntax;
 pub mod tag;

@@ -14,7 +14,7 @@ import Ix.Compile.Verify.TieredPhase3
   and root IDs as expanding the input. That proviso is the statement that
   canonical expansion depends only on the denoted terms; `canonicalize_det`
   proves it for the canonicalization step, while the interner's pointer
-  cache (`Ix.Sharing.exprPtr`, an opaque pointer comparison) is outside what
+  cache (`Ix.Sharing.Exact.exprPtr`, an opaque pointer comparison) is outside what
   can be proved here, so the proviso is stated, not proved.
 -/
 

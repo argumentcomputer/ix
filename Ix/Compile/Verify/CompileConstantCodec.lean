@@ -6,8 +6,8 @@ import Ix.Compile.Verify.MutualConstantCodec
 
 This module closes the unshared axiom and definition assembly core against the
 production constant codec. The production declaration driver subsequently
-runs `Sharing.applySharing`; preservation by that rewrite remains a separate,
-explicit proof obligation.
+runs the canonical sharing builder, whose output is closed against the codec
+in `CompileSharingCodec`.
 -/
 
 namespace Ix.Compile.Verify

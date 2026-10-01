@@ -1,6 +1,5 @@
 module
 public import Ix.Ixon
-public import Ix.Sharing
 
 public section
 

@@ -196,18 +196,9 @@ theorem compileQuotientBlock_run_ordinary_codecWF
       (frozenRefCompileCtx compileEnv
         (quotientCompileBlockEnv blockEnv quotientVal) snapshot)
       quotientVal.cnst.type = some target) :
-    ∃ constMeta state',
-      let info : Ixon.ConstantInfo :=
-        .quot (compiledQuotientPayload quotientVal target)
-      let result := Ix.CompileM.BlockResult.mk'
-        (Ix.CompileM.buildConstantWithSharing info
-          (Ix.CompileM.constantInfoRootExprs info)
-          state'.refs state'.univs)
-        constMeta
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileQuotientBlock quotientVal) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileQuotientBlock quotientVal)) := by
   obtain ⟨constMeta, state', hquotient, htables', hinfo⟩ :=
     compileQuotient_run_ordinary_wireWF compileEnv blockEnv snapshot hfree
       hclosed hlevelFaithful hexprFaithful htables quotientVal hsource
@@ -216,9 +207,6 @@ theorem compileQuotientBlock_run_ordinary_codecWF
     compileEnv blockEnv state'
     (.quot (compiledQuotientPayload quotientVal target))
     constMeta hinfo htables'
-  refine ⟨constMeta, state', ?_⟩
-  dsimp only
-  dsimp only at hfinish
   unfold Ix.CompileM.compileQuotientBlock
   rw [run_bind, hquotient]
   exact hfinish
@@ -248,23 +236,13 @@ theorem compileQuotientInfo_run_ordinary_codecWF
       (frozenRefCompileCtx compileEnv
         (quotientCompileBlockEnv blockEnv quotientVal) snapshot)
       quotientVal.cnst.type = some target) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileQuotientInfo quotientVal) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
-  obtain ⟨constMeta, state', hrun, hcodec⟩ :=
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileQuotientInfo quotientVal)) := by
+  have hrun :=
     compileQuotientBlock_run_ordinary_codecWF compileEnv blockEnv snapshot
       hfree hclosed hlevelFaithful hexprFaithful htables quotientVal hsource
       hbound hstate href
-  let info : Ixon.ConstantInfo :=
-    .quot (compiledQuotientPayload quotientVal target)
-  let result := Ix.CompileM.BlockResult.mk'
-    (Ix.CompileM.buildConstantWithSharing info
-      (Ix.CompileM.constantInfoRootExprs info)
-      state'.refs state'.univs)
-    constMeta
-  refine ⟨result, state', ?_, hcodec⟩
   unfold Ix.CompileM.compileQuotientInfo
   rw [run_bind, hpreseed]
   exact hrun
@@ -338,11 +316,9 @@ theorem compileConstantInfo_quotient_run_ready_codecWF
       (singletonQuotientBlockEnv blockEnv quotientVal) state
       quotientVal.cnst.type)
     (hbound : ExprWireBound quotientVal.cnst.type) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileConstantInfo (.quotInfo quotientVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileConstantInfo (.quotInfo quotientVal))) := by
   let singletonEnv := singletonQuotientBlockEnv blockEnv quotientVal
   obtain ⟨preseedState, target, hpreseed, htables, href,
       hpreseedExpr, hpreseedCanon, hpreseedArena, hpreseedFinal⟩ :=
@@ -357,12 +333,11 @@ theorem compileConstantInfo_quotient_run_ready_codecWF
     axiomCompileStartState_frozen compileEnv
       (quotientCompileBlockEnv singletonEnv quotientVal) levelSupport
       preseedState hexprPreseed hpreseedCanon
-  obtain ⟨result, state', hrun, hcodec⟩ :=
+  have hrun :=
     compileQuotientInfo_run_ordinary_codecWF compileEnv singletonEnv
       preseedState hfree hclosed hlevelFaithful hexprFaithful htables
       quotientVal state preseedState hpreseed hready.supported hbound hstate
       href
-  refine ⟨result, state', ?_, hcodec⟩
   rw [compileConstantInfo_quotient_run_surgeryFree_eq
     compileEnv blockEnv state quotientVal hfree]
   exact hrun
@@ -387,12 +362,10 @@ theorem compileConstantInfo_quotient_default_run_ready_codecWF
       (singletonQuotientBlockEnv blockEnv quotientVal)
       (default : Ix.CompileM.BlockState) quotientVal.cnst.type)
     (hbound : ExprWireBound quotientVal.cnst.type) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv
           (default : Ix.CompileM.BlockState)
-          (Ix.CompileM.compileConstantInfo (.quotInfo quotientVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+          (Ix.CompileM.compileConstantInfo (.quotInfo quotientVal))) := by
   apply compileConstantInfo_quotient_run_ready_codecWF compileEnv blockEnv
     hfree hclosed hlevelFaithful hexprFaithful quotientVal
     (default : Ix.CompileM.BlockState) rfl CanonUnivCacheWF.empty

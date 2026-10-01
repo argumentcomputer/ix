@@ -3118,7 +3118,6 @@ fn roundtrip_block(
 
   let block_refs: Vec<Address> = cache.refs.iter().cloned().collect();
   let block_univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-  let name_str = consts[0].name().pretty();
 
   // Precompute (debug-gated) component-level summaries of the compiled
   // class representatives BEFORE `ixon_mutuals` is moved into the block
@@ -3143,7 +3142,6 @@ fn roundtrip_block(
           def.clone(),
           block_refs,
           block_univs,
-          Some(&name_str),
         )
         .map_err(recompile_sharing_error)?
       },
@@ -3163,13 +3161,8 @@ fn roundtrip_block(
     (result.constant, addr)
   } else {
     // Multi-class or inductive: compile as mutual block (Muts wrapper).
-    let compiled = compile_mutual_block(
-      ixon_mutuals,
-      block_refs,
-      block_univs,
-      Some(&name_str),
-    )
-    .map_err(recompile_sharing_error)?;
+    let compiled = compile_mutual_block(ixon_mutuals, block_refs, block_univs)
+      .map_err(recompile_sharing_error)?;
     let addr = compiled.addr.clone();
     (compiled.constant, addr)
   };
@@ -3361,7 +3354,6 @@ fn roundtrip_block(
                     def.clone(),
                     prefs,
                     punivs,
-                    Some(&name_str),
                   )
                 },
                 MutConst::Recr(rec) => {

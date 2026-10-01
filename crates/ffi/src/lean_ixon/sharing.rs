@@ -1,162 +1,6 @@
-//! Ixon sharing analysis FFI.
+//! Exact and canonical sharing FFI (test hooks).
 
-use std::sync::Arc;
-
-use crate::lean::LeanIxonExpr;
-use ixon::expr::Expr as IxonExpr;
-use ixon::serialize::put_expr;
-use ixon::sharing::{analyze_block, build_sharing_vec, decide_sharing};
-use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned,
-};
-
-/// FFI: Debug sharing analysis - print usage counts for subterms with usage >= 2.
-/// This helps diagnose why Lean and Rust make different sharing decisions.
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_debug_sharing_analysis(
-  exprs_obj: LeanArray<LeanBorrowed<'_>>,
-) {
-  let exprs: Vec<Arc<IxonExpr>> =
-    exprs_obj.map(|x| Arc::new(LeanIxonExpr(x).decode()));
-
-  println!("[Rust] Analyzing {} input expressions", exprs.len());
-
-  let (info_map, _ptr_to_hash, topo_order) = analyze_block(&exprs, false);
-  let effective_sizes =
-    ixon::sharing::compute_effective_sizes(&info_map, &topo_order);
-
-  println!("[Rust] Found {} unique subterms", info_map.len());
-
-  // Collect subterms with usage >= 2
-  let mut candidates: Vec<_> = info_map
-    .iter()
-    .filter(|(_, info)| info.usage_count >= 2)
-    .filter_map(|(hash, info)| {
-      let eff_size = *effective_sizes.get(hash)?;
-      Some((hash, info, eff_size))
-    })
-    .collect();
-
-  // Sort by usage count descending
-  candidates.sort_by_key(|entry| std::cmp::Reverse(entry.1.usage_count));
-
-  println!("[Rust] Subterms with usage >= 2:");
-  for (hash, info, eff_size) in candidates {
-    let n = info.usage_count;
-    let n_i = n.cast_signed();
-    let eff_size_i = eff_size.cast_signed();
-    let potential = (n_i - 1) * eff_size_i - (n_i + eff_size_i);
-    println!(
-      "  usage={} eff_size={} potential={} hash={:.8}",
-      n, eff_size, potential, hash
-    );
-    println!("    expr={:?}", info.expr);
-  }
-}
-
-/// FFI: Run Rust's sharing analysis on Lean-provided Ixon.Expr array.
-/// Returns the number of shared items Rust would produce.
-#[unsafe(no_mangle)]
-extern "C" fn rs_analyze_sharing_count(
-  exprs_obj: LeanArray<LeanBorrowed<'_>>,
-) -> u64 {
-  let exprs = LeanIxonExpr::decode_array(&exprs_obj);
-
-  let (info_map, _ptr_to_hash, topo_order) = analyze_block(&exprs, false);
-  let shared_hashes = decide_sharing(&info_map, &topo_order);
-
-  shared_hashes.len() as u64
-}
-
-/// FFI: Run Rust's full sharing pipeline on Lean-provided Ixon.Expr array.
-/// Writes the sharing vector and rewritten exprs to output arrays.
-/// Returns number of shared items.
-#[unsafe(no_mangle)]
-extern "C" fn rs_run_sharing_analysis(
-  exprs_obj: LeanArray<LeanBorrowed<'_>>,
-  out_sharing_vec: LeanByteArray<LeanOwned>,
-  out_rewritten: LeanByteArray<LeanOwned>,
-) -> u64 {
-  let exprs = LeanIxonExpr::decode_array(&exprs_obj);
-
-  let (info_map, ptr_to_hash, topo_order) = analyze_block(&exprs, false);
-  let shared_hashes = decide_sharing(&info_map, &topo_order);
-  let (rewritten_exprs, sharing_vec) = build_sharing_vec(
-    &exprs,
-    &shared_hashes,
-    &ptr_to_hash,
-    &info_map,
-    &topo_order,
-  );
-
-  // Serialize sharing vector to bytes
-  let mut sharing_bytes: Vec<u8> = Vec::new();
-  for expr in &sharing_vec {
-    put_expr(expr, &mut sharing_bytes);
-  }
-
-  // Serialize rewritten exprs to bytes
-  let mut rewritten_bytes: Vec<u8> = Vec::new();
-  for expr in &rewritten_exprs {
-    put_expr(expr, &mut rewritten_bytes);
-  }
-
-  // Write to output arrays
-  unsafe { out_sharing_vec.set_data(&sharing_bytes) };
-  unsafe { out_rewritten.set_data(&rewritten_bytes) };
-
-  shared_hashes.len() as u64
-}
-
-/// FFI: Compare Lean's sharing analysis with Rust's on the same input.
-/// Takes: exprs (Array Expr), lean_sharing (Array Expr), lean_rewritten (Array Expr)
-/// Returns packed u64:
-///   - bits 0-31: 1 if sharing vectors match, 0 otherwise
-///   - bits 32-47: Lean sharing count
-///   - bits 48-63: Rust sharing count
-#[unsafe(no_mangle)]
-extern "C" fn rs_compare_sharing_analysis(
-  exprs_obj: LeanArray<LeanBorrowed<'_>>,
-  lean_sharing_obj: LeanArray<LeanBorrowed<'_>>,
-  _lean_rewritten_obj: LeanArray<LeanBorrowed<'_>>,
-) -> u64 {
-  // Decode input expressions
-  let exprs = LeanIxonExpr::decode_array(&exprs_obj);
-
-  // Decode Lean's sharing vector
-  let lean_sharing = LeanIxonExpr::decode_array(&lean_sharing_obj);
-
-  // Run Rust's sharing analysis
-  let (info_map, ptr_to_hash, topo_order) = analyze_block(&exprs, false);
-  let shared_hashes = decide_sharing(&info_map, &topo_order);
-  let (_rewritten_exprs, rust_sharing) = build_sharing_vec(
-    &exprs,
-    &shared_hashes,
-    &ptr_to_hash,
-    &info_map,
-    &topo_order,
-  );
-
-  // Compare sharing vectors
-  let lean_count = lean_sharing.len() as u64;
-  let rust_count = rust_sharing.len() as u64;
-
-  // Serialize both to bytes for comparison
-  let mut lean_bytes: Vec<u8> = Vec::new();
-  for expr in &lean_sharing {
-    put_expr(expr, &mut lean_bytes);
-  }
-
-  let mut rust_bytes: Vec<u8> = Vec::new();
-  for expr in &rust_sharing {
-    put_expr(expr, &mut rust_bytes);
-  }
-
-  let matches = if lean_bytes == rust_bytes { 1u64 } else { 0u64 };
-
-  // Pack result: matches | (lean_count << 32) | (rust_count << 48)
-  matches | (lean_count << 32) | (rust_count << 48)
-}
+use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned};
 
 /// FFI: canonical exact-minimum sharing of one serialized Constant.
 ///
@@ -243,41 +87,30 @@ extern "C" fn rs_tiered_sharing_normalize(
   }
 }
 
-/// FFI: build one block Constant through the compiler's sharing routes.
+/// FFI: build one block Constant through the compiler's sharing route.
 ///
 /// Lean signature:
 /// `@[extern "rs_compiler_sharing_build"]
-///  opaque compilerSharingBuild : UInt8 → @& ByteArray → Except String ByteArray`
+///  opaque compilerSharingBuild : @& ByteArray → Except String ByteArray`
 ///
 /// Decodes exactly one Constant whose roots carry no sharing table, and
 /// rebuilds it with `ix_compile::compile::apply_sharing_to_*_via` (the
 /// functions every compile, aux-gen, kernel-egress and decompile-recompile
-/// route calls) along the route `code`: 0 = heuristic, 2 = tiered with the
-/// TagN layout (1, the former Tag4 pricing layout, is invalid), each under
-/// `compiler_sharing_limits()`. Projections are returned unchanged. Errors
-/// are the compile error's text, prefixed `decode:` for input errors.
+/// path calls; the canonical construction) under
+/// `ExactSharingLimits::default()`. Projections are returned unchanged.
+/// Errors are the compile error's text, prefixed `decode:` for input errors.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compiler_sharing_build(
-  code: u8,
   bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   use ix_compile::compile::{
-    SharingConstruction, SharingRoute, apply_sharing_to_axiom_via,
-    apply_sharing_to_definition_via, apply_sharing_to_mutual_block_via,
-    apply_sharing_to_quotient_via, apply_sharing_to_recursor_via,
+    apply_sharing_to_axiom_via, apply_sharing_to_definition_via,
+    apply_sharing_to_mutual_block_via, apply_sharing_to_quotient_via,
+    apply_sharing_to_recursor_via,
   };
   use ixon::constant::{Constant, ConstantInfo};
-  use ixon::sharing_exact::ShareLayout;
-  let construction = match code {
-    0 => SharingConstruction::Heuristic,
-    2 => SharingConstruction::Tiered(ShareLayout::TagN),
-    _ => {
-      return LeanExcept::error_string(&format!(
-        "decode: unknown sharing route code {code}"
-      ));
-    },
-  };
-  let route = SharingRoute::new(construction);
+  use ixon::sharing_exact::ExactSharingLimits;
+  let limits = ExactSharingLimits::default();
   let mut input = bytes_obj.as_bytes();
   let c = match Constant::get(&mut input) {
     Ok(c) => c,
@@ -291,20 +124,20 @@ extern "C" fn rs_compiler_sharing_build(
   let (refs, univs) = (c.refs.clone(), c.univs.clone());
   let built = match c.info.clone() {
     ConstantInfo::Defn(d) => {
-      apply_sharing_to_definition_via(&route, d, refs, univs, None)
+      apply_sharing_to_definition_via(&limits, d, refs, univs)
         .map(|r| r.constant)
     },
     ConstantInfo::Recr(r) => {
-      apply_sharing_to_recursor_via(&route, r, refs, univs).map(|r| r.constant)
+      apply_sharing_to_recursor_via(&limits, r, refs, univs).map(|r| r.constant)
     },
     ConstantInfo::Axio(a) => {
-      apply_sharing_to_axiom_via(&route, a, refs, univs).map(|r| r.constant)
+      apply_sharing_to_axiom_via(&limits, a, refs, univs).map(|r| r.constant)
     },
     ConstantInfo::Quot(q) => {
-      apply_sharing_to_quotient_via(&route, q, refs, univs).map(|r| r.constant)
+      apply_sharing_to_quotient_via(&limits, q, refs, univs).map(|r| r.constant)
     },
     ConstantInfo::Muts(ms) => {
-      apply_sharing_to_mutual_block_via(&route, ms, refs, univs, None)
+      apply_sharing_to_mutual_block_via(&limits, ms, refs, univs)
         .map(|r| r.constant)
     },
     _ => Ok(c),

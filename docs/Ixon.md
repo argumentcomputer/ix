@@ -646,7 +646,11 @@ and format get identical bytes. In-memory pointer sharing, construction
 history, the compiler (Lean or Rust) and any table the input already had
 make no difference. Metadata never influences it.
 
-<!-- PENDING: [route] both compilers build every block's table with `canonicalSharingTiered .tagN` / `canonical_sharing_tiered(ShareLayout::TagN, ..)`, including mutual, aux-gen, kernel-egress and decompile-recompile paths, and the heuristic (`Ix/Sharing.lean`, `crates/ixon/src/sharing.rs`) is removed (plan §3). At 9611c3b6 `Ix.CompileM.compilerSharing` and Rust `COMPILER_SHARING` are still `heuristic`. -->
+Both compilers build every table with this construction
+(`Ix.Sharing.Exact.canonicalSharingTiered .tagN`, Rust
+`canonical_sharing_tiered(ShareLayout::TagN, ..)`): single constants,
+mutual blocks and aux-gen blocks, and in Rust also kernel egress and the
+decompiler's recompile check. It is the only sharing construction.
 
 ### Table rules
 
@@ -728,8 +732,6 @@ states=N`. Every other construction failure is
 `CompileError.sharingConstruction`. There is no fallback to another
 construction, and a partial or best-so-far table is never emitted.
 
-<!-- PENDING: [route] the compilers route every block through this construction (plan §3). At f63f717f the limits and their override are in place, but the compiler route is still the heuristic. -->
-
 ### What is proved, and what is not
 
 The following theorems are machine-checked in Lean. They are roots of
@@ -777,17 +779,21 @@ Not claimed:
   constants, and on a sample of 20,263 Mathlib constants (every 50th, plus
   every constant with more than 2,000 candidates; `docs/sharing-minimum.md`
   §12.10).
-- **Model versus wire.** The theorems are stated about the model length.
-  Two further facts are not yet proved:
-  - that the model length equals the serialized TagN length;
-  - that the output is wire-valid (`wireWF`, table-count capacity,
-    `DecodeCtx.SharingWF`).
+- **Model versus wire.** The theorems above are stated about the model
+  length. That it equals the serialized TagN length is not proved; the
+  construction serializes its output, compares the two and fails closed on
+  a mismatch. Wire validity is proved:
+  `Tiered.canonicalSharingTiered_format` (`TieredWire.lean`) gives every
+  output entry and root `wireWF`, a table count below `2^64` and backward
+  Shares (entry `k` references only entries below `k`), and the compiler
+  endpoint theorems (`buildConstantWithSharing_wireWF` and the `*_codecWF`
+  theorems of `Ix/Compile/Verify/Compile*Codec.lean`) are stated over it:
+  a compiler run either returns an exactly decodable block or fails with
+  the construction's error (`SharingRunOK`).
 - **Failure.** The theorems describe successful runs. A run that exceeds a
   limit returns an error.
 
 <!-- PENDING: [parity] the Lean/Rust 0-disagreement gate on all of Init and the Mathlib sample is rerun at the PR commit with the final rules; the §12.10 figures were measured at earlier heads (plan §1 gate, §7). -->
-
-<!-- PENDING: [proof] the codec theorems are restated with tagNBytes, and the tiered wireWF / capacity / SharingWF endpoint theorem lands before the flip (plan §0b-3, §4). -->
 
 ### Example
 
@@ -817,10 +823,11 @@ D2 00 00                    -- N4(0xD, 2) Axiom, not unsafe, lvls = 0
 ```
 
 The bytes were produced by `normalizeConstantSharingTiered .tagN`, and the
-`exact-sharing` suite checks them. The table has one entry and the Share
-index is 0, so these bytes are the same under Tag4 and TagN.
-
-<!-- PENDING: [route] once the compilers route through the construction, an axiom compiled from source with this type gets these bytes. -->
+`exact-sharing` suite checks them. The compilers' sharing builders
+(`Ix.CompileM.buildConstantWithSharing`, Rust `apply_sharing_to_axiom_via`)
+build the same bytes from the unshared constant (`exact-sharing-ffi`). The
+table has one entry and the Share index is 0, so these bytes are the same
+under Tag4 and TagN.
 
 ### Sharing in metadata expressions
 
@@ -1696,8 +1703,6 @@ expression tree, and a `Share` is transparent to it. Re-sharing a constant
 therefore leaves its metadata valid. A construction failure is a compile
 error for that block.
 
-<!-- PENDING: [route] Lean `buildConstantWithSharing` and the mutual/aux-gen paths (`Ix/CompileM.lean`, `Ix/AuxGen/CompileAux.lean`), and Rust `apply_sharing_*`, kernel egress and decompile recompile, all call the canonical construction (plan §3). -->
-
 ---
 
 ## Decompilation (Ixon → Lean)
@@ -1785,7 +1790,7 @@ The canonical table is therefore `[Ref(0, [])]`, and the constant is 84
 bytes instead of the 85 it would take unshared. These bytes were produced
 by `normalizeConstantSharingTiered .tagN`, with placeholder addresses.
 
-<!-- PENDING: [route] `ix compile` emits exactly these bytes for `double` once both compilers use the canonical construction (plan §3). -->
+<!-- PENDING: [route] check that `ix compile` emits these bytes for `double`, with its real addresses in place of the placeholders; both compilers use the canonical construction since the route switch (plan §3). -->
 
 **Build Constant**:
 ```rust

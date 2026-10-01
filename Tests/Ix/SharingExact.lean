@@ -12,7 +12,7 @@
   * the full optimizer vs the exhaustive oracle (full key), vs a unit-width
     relaxation oracle, vs a brute force over independent atoms;
   * the §2 fixtures byte for byte;
-  * size ≤ unshared / heuristic, idempotence, and resource limits.
+  * size ≤ unshared / another encoding, idempotence, and resource limits.
 
   Generated inputs use a fixed-seed splitmix64 generator, so every failure
   is reproducible from the printed seed and case index.
@@ -20,7 +20,6 @@
 module
 
 public import Ix.Sharing.Exact
-public import Ix.Sharing
 public import Ix.Ixon
 public import Ix.CompileM
 public import LSpec
@@ -55,10 +54,14 @@ def chain : Nat → Ixon.Expr
 def axiomOf (typ : Ixon.Expr) (univs : Array Univ := #[.zero]) : Constant :=
   { info := .axio { isUnsafe := false, lvls := 0, typ }, sharing := #[], refs := #[], univs }
 
-/-- The existing heuristic, exactly as the compiler applies it. -/
-def heuristicOf (c : Constant) : Constant :=
-  Ix.CompileM.buildConstantWithSharing c.info (Ix.CompileM.constantInfoRootExprs c.info)
-    c.refs c.univs
+/-- Another valid shared encoding of `c` (the uniform-width construction at
+`w = 1`): an input representation that differs from the canonical one. -/
+def alternateOf (c : Constant) : Constant :=
+  (normalizeConstantSharingUniform 1 c).toOption.getD c
+
+/-- Little-endian bytes of a `UInt64`. -/
+def u64LE (x : UInt64) : ByteArray :=
+  ByteArray.mk ((Array.range 8).map fun i => (x >>> (8 * i).toUInt64).toUInt8)
 
 def cbytes (c : Constant) : Nat := (serConstant c).size
 
@@ -418,13 +421,13 @@ def representationTests (_ : Unit) : TestSeq :=
       let dagShared := match expandConstantSharing c with
         | .ok c' => c'
         | .error _ => c
-      let heur := heuristicOf c
-      let outs := [c, fresh, dagShared, heur].map fun x =>
+      let alt := alternateOf c
+      let outs := [c, fresh, dagShared, alt].map fun x =>
         (normalizeConstantSharing x).toOption.map serConstant
       ok := ok && outs.all (· == outs.head!) && outs.head!.isSome
     return ok
   group "representation independence" <|
-    test "pool-shared, deserialized, DAG-shared and heuristic-encoded inputs normalize to identical bytes (120 inputs)" ok
+    test "pool-shared, deserialized, DAG-shared and uniform-w1-encoded inputs normalize to identical bytes (120 inputs)" ok
 
 def expansionTests (_ : Unit) : TestSeq :=
   let chainTable (k : Nat) : Array Ixon.Expr :=
@@ -800,18 +803,23 @@ def atomsTests (_ : Unit) : TestSeq :=
 def witness2 : Constant := axiomOf (arr (chain 2) (chain 2))
 
 def witnessTests (_ : Unit) : TestSeq :=
-  let heur := heuristicOf witness2
+  -- The 19-byte encoding of the former heuristic construction.
+  let heurBytes := ByteArray.mk #[0xd2, 0x00, 0x00, 0x91, 0x17, 0xb1, 0xb1, 0x02, 0x91, 0x17,
+    0x00, 0x00, 0x91, 0x17, 0x00, 0xb0, 0x00, 0x01, 0x00]
+  let heur := (deConstant heurBytes).toOption.getD witness2
   group "fixture T2 → T2 (19 → 17)" <|
-    test "heuristic bytes d200009117b1b10291170000911700b0000100 (19)"
-      (hexOf (serConstant heur) == "d200009117b1b10291170000911700b0000100") ++
+    test "the former heuristic's 19 bytes decode to T2 → T2"
+      (hexOf (serConstant heur) == "d200009117b1b10291170000911700b0000100" &&
+        (expandConstantSharing heur).toOption.map (constantInfoRoots ·.info) ==
+          some (constantInfoRoots witness2.info)) ++
     test "unshared is 20 bytes" (cbytes witness2 == 20) ++
     withOk "exact" (optimizeSharingTable #[] (constantInfoRoots witness2.info)) (fun r =>
       test "exact table term IDs = [T2] = [2]" (r.tableTerms == #[2])) ++
     withOk "exact" (normalizeConstantSharing witness2) (fun n =>
       test "exact bytes d200009117b0b001921700170000000100 (17)"
         (hexOf (serConstant n) == "d200009117b0b001921700170000000100")) ++
-    withOk "exact from heuristic encoding" (normalizeConstantSharing heur) (fun n =>
-      test "normalizing the heuristic encoding gives the same 17 bytes"
+    withOk "exact from the 19-byte encoding" (normalizeConstantSharing heur) (fun n =>
+      test "normalizing the 19-byte encoding gives the same 17 bytes"
         (hexOf (serConstant n) == "d200009117b0b001921700170000000100")) ++
     withOk "oracle" (oracleConstant witness2) (fun (oc, o) =>
       test s!"per-part oracle: 17-byte unique minimum over {o.work.tables} ordered tables"
@@ -828,49 +836,49 @@ def t16Tests (_ : Unit) : TestSeq :=
   let only16 : Constant := { witness16 with
     info := .axio ⟨false, 0, arr (.share 0) (.share 0)⟩, sharing := #[chain 16] }
   group "fixture T16 → T16" <|
-    test "heuristic is 81 bytes" (cbytes (heuristicOf witness16) == 81) ++
     test "unshared is 78 bytes" (cbytes witness16 == 78) ++
     test "storing only T16 is 46 bytes" (cbytes only16 == 46) ++
     withOk "exact" (optimizeSharingTable #[] (constantInfoRoots witness16.info)) (fun r =>
       withOk "exact" (normalizeConstantSharing witness16) fun n =>
         test s!"exact certified minimum = {cbytes n} bytes ≤ 46 (candidates {r.stats.candidates}, states reached {r.stats.statesReached}, expanded {r.stats.statesExpanded}, pruned {r.stats.statesPruned}, transitions {r.stats.transitions})"
-          (cbytes n ≤ 46 && cbytes n == r.variableBytes + 6)) ++
-    withOk "exact without heuristic bound" (normalizeConstantSharing witness16 { useHeuristicBound := false }) (fun n =>
-      withOk "exact" (normalizeConstantSharing witness16) fun m =>
-        test "the heuristic upper bound does not change the result" (serConstant n == serConstant m))
+          (cbytes n ≤ 46 && cbytes n == r.variableBytes + 6))
 
 /-- The nine-Ref fixture, built as in the production probe: atoms sorted by
-structural hash, each twice, then 98 more uses of the last (hot) atom; one
+the blake3 hash of their encoding, each twice, then 98 more uses of the last (hot) atom; one
 recursor with the first root as type and the rest as rule bodies. -/
 def nineRef : Constant × Ixon.Expr :=
   let atoms0 : Array Ixon.Expr := (Array.range 9).map fun i => .ref i.toUInt64 #[0, 0, 0]
   let atoms := atoms0.qsort fun a b =>
-    compareBytes (Ix.Sharing.computeExprHash a).hash (Ix.Sharing.computeExprHash b).hash == .lt
+    compareBytes (Address.blake3 (serExpr a)).hash (Address.blake3 (serExpr b)).hash == .lt
   let hot := atoms[8]!
   let roots := atoms.foldl (fun acc a => acc ++ #[a, a]) #[] ++ Array.replicate 98 hot
   let c : Constant := {
     info := .recr ⟨false, false, 0, 0, 0, 0, 0, roots[0]!,
       (roots.extract 1 roots.size).map fun rhs => ⟨0, rhs⟩⟩,
     sharing := #[],
-    refs := (Array.range 9).map fun i => Address.blake3 (Ix.Sharing.uint64ToBytes i.toUInt64),
+    refs := (Array.range 9).map fun i => Address.blake3 (u64LE i.toUInt64),
     univs := #[.zero] }
   (c, hot)
 
 def nineRefTests (_ : Unit) : TestSeq :=
   let (c, hot) := nineRef
-  let heur := heuristicOf c
-  -- Same nine entries, most-used first (the probe's frequency order).
-  let freqTable := #[hot] ++ (heur.sharing.filter (· != hot))
-  let idxOf (a : Ixon.Expr) : Nat := (freqTable.findIdx? (· == a)).getD 0
-  let freqRoots := (constantInfoRoots c.info).map fun a => Ixon.Expr.share (idxOf a).toUInt64
-  let freq : Constant := match withRoots c.info freqRoots with
-    | .ok info => { c with info, sharing := freqTable }
+  -- The nine atoms in hash order (the hot atom last, in the 2-byte slot 8),
+  -- as the former heuristic stored them, and most-used first.
+  let atoms := (constantInfoRoots c.info).foldl
+    (fun acc a => if acc.contains a then acc else acc.push a) #[]
+  let tableWith (table : Array Ixon.Expr) : Constant :=
+    let idxOf (a : Ixon.Expr) : Nat := (table.findIdx? (· == a)).getD 0
+    let roots := (constantInfoRoots c.info).map fun a => Ixon.Expr.share (idxOf a).toUInt64
+    match withRoots c.info roots with
+    | .ok info => { c with info, sharing := table }
     | .error _ => c
+  let hashOrder := tableWith atoms
+  let freqTable := #[hot] ++ (atoms.filter (· != hot))
   group "fixture nine independent Refs (676 → 578)" <|
     test "hot atom is Ref(2,[0,0,0])" (hot == .ref 2 #[0, 0, 0]) ++
-    test "heuristic: 676 bytes, hot atom in slot 8"
-      (cbytes heur == 676 && heur.sharing.size == 9 && heur.sharing[8]? == some hot) ++
-    test "same entries, frequency order: 578 bytes" (cbytes freq == 578) ++
+    test "hash order: 676 bytes, hot atom in slot 8"
+      (cbytes hashOrder == 676 && atoms.size == 9 && atoms[8]? == some hot) ++
+    test "same entries, frequency order: 578 bytes" (cbytes (tableWith freqTable) == 578) ++
     withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) (fun r =>
       withOk "exact" (normalizeConstantSharing c) fun n =>
         test s!"exact: {cbytes n} bytes, table IDs {r.tableTerms}, hot atom at a width-1 slot"
@@ -917,7 +925,7 @@ def propertyTests (_ : Unit) : TestSeq :=
       if err.isSome then break
       let roots ← genRoots 5 12 4
       let c := wrapRoots roots i
-      let heur := heuristicOf c
+      let heur := alternateOf c
       match normalizeConstantSharing c, optimizeSharingTable #[] (constantInfoRoots c.info) with
       | .ok n, .ok r =>
         checked := checked + 1
@@ -938,14 +946,14 @@ def propertyTests (_ : Unit) : TestSeq :=
           some (constantInfoRoots c.info)
         unless cbytes n ≤ cbytes c && cbytes n ≤ cbytes heur && idem && fromHeur &&
             fromExpanded && canonical && heurNoncanonical && fixedOk && expandsBack do
-          err := some s!"case {i}: exact={cbytes n} unshared={cbytes c} heuristic={cbytes heur} idem={idem} fromHeur={fromHeur} fromExpanded={fromExpanded} canonical={canonical} heurCheck={heurNoncanonical} fixed={fixedOk} expands={expandsBack} roots={reprStr roots}"
+          err := some s!"case {i}: exact={cbytes n} unshared={cbytes c} uniform-w1={cbytes heur} idem={idem} fromHeur={fromHeur} fromExpanded={fromExpanded} canonical={canonical} heurCheck={heurNoncanonical} fixed={fixedOk} expands={expandsBack} roots={reprStr roots}"
       | .error e, _ | _, .error e => err := some s!"case {i}: error {reprStr e}"
     return (checked, err)
   group "properties on generated inputs" <|
-    test s!"{checked} constants: exact ≤ unshared, exact ≤ heuristic, idempotent, normalize(heuristic) = normalize(expanded) = exact, check=canonical, decomposition, expansion preserved" (err.isNone && checked == 250) ++
+    test s!"{checked} constants: exact ≤ unshared, exact ≤ uniform-w1, idempotent, normalize(uniform-w1) = normalize(expanded) = exact, check=canonical, decomposition, expansion preserved" (err.isNone && checked == 250) ++
     (match err with | some m => test m false | none => .done)
 
-/-- LB pruning and the heuristic upper bound never change a result: compare
+/-- LB pruning never changes a result: compare
 with the search with pruning disabled, on inputs with 9–11 candidates
 (beyond the oracle's reach; tables can cross the 8-slot width boundary). -/
 def pruningTests (_ : Unit) : TestSeq :=
@@ -961,7 +969,7 @@ def pruningTests (_ : Unit) : TestSeq :=
         | .error _ => 0
       if cands < 9 || cands > 11 then continue
       match optimizeSharing roots,
-          optimizeSharing roots { prune := false, useHeuristicBound := false } with
+          optimizeSharing roots { prune := false } with
       | .ok a, .ok b =>
         checked := checked + 1
         if a.sharing.size > 8 then wide := wide + 1
@@ -997,7 +1005,7 @@ def pruningTests (_ : Unit) : TestSeq :=
         | .error _ => 0
       if cands > 12 then continue
       match optimizeSharing roots,
-          optimizeSharing roots { prune := false, useHeuristicBound := false } with
+          optimizeSharing roots { prune := false } with
       | .ok a, .ok b =>
         checked := checked + 1
         if a.sharing.size > 8 then wide := wide + 1
@@ -1007,7 +1015,7 @@ def pruningTests (_ : Unit) : TestSeq :=
       | .error e, _ | _, .error e => err := some s!"wide case {i}: error {reprStr e}"
     return (checked, wide, err)
   group "pruning never changes the result" <|
-    test s!"{checked} inputs with 9–11 candidates ({wide} with more than 8 table entries): pruned search = unpruned search without heuristic bound"
+    test s!"{checked} inputs with 9–11 candidates ({wide} with more than 8 table entries): pruned search = unpruned search"
       (err.isNone && checked == 25) ++
     (match err with | some m => test m false | none => .done) ++
     test s!"{wChecked} atom-heavy inputs with ≤ 12 candidates ({wWide} with more than 8 table entries): pruned = unpruned"
@@ -1017,13 +1025,12 @@ def pruningTests (_ : Unit) : TestSeq :=
 def profileTests (_ : Unit) : TestSeq :=
   group "sharing profile" <|
     withOk "T2 → T2" (sharingProfile witness2) (fun p =>
-      test "T2→T2: N=4, 3 repeated, 2 candidates (T1,T2), height 3, unshared 14, heuristic 13 variable bytes"
+      test "T2→T2: N=4, 3 repeated, 2 candidates (T1,T2), height 3, unshared 14 variable bytes"
         (p.distinctSubterms == 4 && p.repeated == 3 && p.candidates == 2 && p.height == 3 &&
-          p.unsharedBytes == 14 && p.inputBytes == 14 && p.heuristicBytes == some 13)) ++
+          p.unsharedBytes == 14 && p.inputBytes == 14)) ++
     withOk "T16 → T16" (sharingProfile witness16) (fun p =>
-      test "T16→T16: N=18, 16 candidates, unshared 72, heuristic 75 variable bytes"
-        (p.distinctSubterms == 18 && p.candidates == 16 && p.unsharedBytes == 72 &&
-          p.heuristicBytes == some 75))
+      test "T16→T16: N=18, 16 candidates, unshared 72 variable bytes"
+        (p.distinctSubterms == 18 && p.candidates == 16 && p.unsharedBytes == 72))
 
 /-! ## Safety, limits, empty input -/
 
@@ -1035,7 +1042,7 @@ def safetyTests (_ : Unit) : TestSeq :=
   let roots := constantInfoRoots witness16.info
   group "resource limits and edge cases" <|
     test "state limit → resourceExhausted, no result"
-      (isErr (optimizeSharing roots { maxStates := 5, useHeuristicBound := false }) (exhausted .states)) ++
+      (isErr (optimizeSharing roots { maxStates := 5 }) (exhausted .states)) ++
     test "transition limit → resourceExhausted"
       (isErr (optimizeSharing roots { maxTransitions := 5 }) (exhausted .transitions)) ++
     test "cost-evaluation limit → resourceExhausted"

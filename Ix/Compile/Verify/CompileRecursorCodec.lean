@@ -341,17 +341,9 @@ theorem compileRecursorBlock_run_ordinary_codecWF
         (frozenRefCompileCtx compileEnv
           (recursorCompileBlockEnv blockEnv recursorVal) snapshot)
         rule.rhs = some target) :
-    ∃ recursor constMeta state',
-      let info : Ixon.ConstantInfo := .recr recursor
-      let result := Ix.CompileM.BlockResult.mk'
-        (Ix.CompileM.buildConstantWithSharing info
-          (Ix.CompileM.constantInfoRootExprs info)
-          state'.refs state'.univs)
-        constMeta
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileRecursorBlock recursorVal) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileRecursorBlock recursorVal)) := by
   obtain ⟨recursor, constMeta, state', hrecursor, htables', _, hwire,
       _, _⟩ :=
     compileRecursor_run_ordinary_wireWF compileEnv blockEnv snapshot hfree
@@ -360,9 +352,6 @@ theorem compileRecursorBlock_run_ordinary_codecWF
       hruleRefs
   have hfinish := finishConstantInfoWithSharing_run_codecWF
     compileEnv blockEnv state' (.recr recursor) constMeta hwire htables'
-  refine ⟨recursor, constMeta, state', ?_⟩
-  dsimp only
-  dsimp only at hfinish
   unfold Ix.CompileM.compileRecursorBlock
   rw [run_bind, hrecursor]
   exact hfinish
@@ -401,23 +390,14 @@ theorem compileRecursorInfo_run_ordinary_codecWF
         (frozenRefCompileCtx compileEnv
           (recursorCompileBlockEnv blockEnv recursorVal) snapshot)
         rule.rhs = some target) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileRecursorInfo recursorVal) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
-  obtain ⟨recursor, constMeta, state', hrun, hcodec⟩ :=
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileRecursorInfo recursorVal)) := by
+  have hrun :=
     compileRecursorBlock_run_ordinary_codecWF compileEnv blockEnv snapshot
       hfree hclosed hlevelFaithful hexprFaithful htables recursorVal
       htypeSource hruleSources htypeBound hruleBounds hruleCount hstate
       htypeRef hruleRefs
-  let info : Ixon.ConstantInfo := .recr recursor
-  let result := Ix.CompileM.BlockResult.mk'
-    (Ix.CompileM.buildConstantWithSharing info
-      (Ix.CompileM.constantInfoRootExprs info)
-      state'.refs state'.univs)
-    constMeta
-  refine ⟨result, state', ?_, hcodec⟩
   unfold Ix.CompileM.compileRecursorInfo
   rw [run_bind, hpreseed]
   exact hrun
@@ -452,11 +432,9 @@ theorem compileRecursorInfo_run_ready_codecWF
     (hexprBounds : ∀ source ∈
       Ix.CompileM.recursorSourceExprs recursorVal, ExprWireBound source)
     (hruleCount : recursorVal.rules.size < UInt64.size) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileRecursorInfo recursorVal) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileRecursorInfo recursorVal)) := by
   let params := recursorVal.cnst.levelParams.toList
   let rest := recursorVal.rules.toList.map (·.rhs)
   have htypeMem : recursorVal.cnst.type ∈
@@ -623,18 +601,15 @@ theorem compileConstantInfo_recursor_run_ready_codecWF
     (hexprBounds : ∀ source ∈
       Ix.CompileM.recursorSourceExprs recursorVal, ExprWireBound source)
     (hruleCount : recursorVal.rules.size < UInt64.size) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileConstantInfo (.recInfo recursorVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileConstantInfo (.recInfo recursorVal))) := by
   let singletonEnv := singletonRecursorBlockEnv blockEnv recursorVal
-  obtain ⟨result, state', hrun, hcodec⟩ :=
+  have hrun :=
     compileRecursorInfo_run_ready_codecWF compileEnv singletonEnv hfree
       hclosed hlevelFaithful hexprFaithful recursorVal state hexprCache
       hcanonCache hrefTable hunivTable hready htableBound hexprBounds
       hruleCount
-  refine ⟨result, state', ?_, hcodec⟩
   rw [compileConstantInfo_recursor_run_surgeryFree_eq
     compileEnv blockEnv state recursorVal hfree]
   exact hrun
@@ -664,12 +639,10 @@ theorem compileConstantInfo_recursor_default_run_ready_codecWF
     (hexprBounds : ∀ source ∈
       Ix.CompileM.recursorSourceExprs recursorVal, ExprWireBound source)
     (hruleCount : recursorVal.rules.size < UInt64.size) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv
           (default : Ix.CompileM.BlockState)
-          (Ix.CompileM.compileConstantInfo (.recInfo recursorVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+          (Ix.CompileM.compileConstantInfo (.recInfo recursorVal))) := by
   apply compileConstantInfo_recursor_run_ready_codecWF compileEnv blockEnv
     hfree hclosed hlevelFaithful hexprFaithful recursorVal
     (default : Ix.CompileM.BlockState) rfl CanonUnivCacheWF.empty

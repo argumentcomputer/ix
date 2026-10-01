@@ -1,69 +1,43 @@
 import Ix.Compile.Verify.CompileConstantCodec
-import Ix.Compile.Verify.Sharing
+import Ix.Compile.Verify.TieredWire
 
 /-!
 # Production sharing/constant-codec bridge
 
-This bridge connects the real `buildConstantWithSharing` and `BlockResult.mk'`
-functions to the axiom and definition compiler theorems. The original exact
-no-sharing equalities remain useful, while the complete results now cover
-nonempty production sharing through the verified analysis/rewrite pipeline
-and its explicit `UInt64` overflow fallback.
+This bridge connects the compiler's canonical sharing builder
+`Ix.CompileM.buildConstantWithSharing` and `BlockResult.mk'` to the declaration
+compiler theorems. The builder shares the payload's roots
+(`constantInfoRootExprs`) with `canonicalSharingTiered .tagN` and writes the
+result back with `withRootExprs`; its output facts come from
+`Tiered.canonicalSharingTiered_format` (`FormatOK`: every table entry and root
+is wire-safe, the table count fits a `UInt64`, and Shares point backwards).
+The builder fails when the construction does (a resource limit or an
+internal error), so the theorems here describe successful builds, and
+`SharingSucceeds` is the hypothesis under which a compile step succeeds.
 -/
 
 namespace Ix.Compile.Verify
 
-/-- When sharing analysis leaves a singleton axiom root unchanged, the actual
-production builder is exactly the unshared axiom assembly. -/
-theorem buildConstantWithSharing_axiom_eq_unshared
-    (isUnsafe : Bool) (lvls : UInt64) (typ : Ixon.Expr)
-    (state : Ix.CompileM.BlockState)
-    (hsharing : Ix.Sharing.applySharing #[typ] = (#[typ], #[])) :
-    Ix.CompileM.buildConstantWithSharing
-        (.axio { isUnsafe, lvls, typ }) #[typ] state.refs state.univs =
-      unsharedAxiomConstant isUnsafe lvls typ state := by
-  simp [Ix.CompileM.buildConstantWithSharing, hsharing,
-    unsharedAxiomConstant]
+/-- Every member of an expression array is in the expression codec's public
+wire domain. -/
+def ExprArrayWireWF (exprs : Array Ixon.Expr) : Prop :=
+  ∀ expr ∈ exprs, expr.wireWF
 
-/-- When sharing analysis leaves both definition roots unchanged, the actual
-production builder is exactly the unshared definition assembly. -/
-theorem buildConstantWithSharing_definition_eq_unshared
-    (kind : Ix.DefKind) (safety : Ix.DefinitionSafety) (lvls : UInt64)
-    (typ value : Ixon.Expr) (state : Ix.CompileM.BlockState)
-    (hsharing : Ix.Sharing.applySharing #[typ, value] =
-      (#[typ, value], #[])) :
-    Ix.CompileM.buildConstantWithSharing
-        (.defn { kind, safety, lvls, typ, value }) #[typ, value]
-        state.refs state.univs =
-      unsharedDefinitionConstant kind safety lvls typ value state := by
-  simp [Ix.CompileM.buildConstantWithSharing, hsharing,
-    unsharedDefinitionConstant]
+/-- A safe array lookup remains safe when it falls back to a separately safe
+expression. -/
+theorem ExprArrayWireWF.getElem?_getD {exprs : Array Ixon.Expr}
+    (hexprs : ExprArrayWireWF exprs) (idx : Nat) {fallback : Ixon.Expr}
+    (hfallback : fallback.wireWF) :
+    (exprs[idx]?.getD fallback).wireWF := by
+  by_cases hidx : idx < exprs.size
+  · rw [Array.getElem?_eq_getElem hidx, Option.getD_some]
+    exact hexprs _ (Array.getElem_mem hidx)
+  · rw [Array.getElem?_eq_none (Nat.le_of_not_gt hidx), Option.getD_none]
+    exact hfallback
 
-theorem buildConstantWithSharing_axiom_noSharing_wireWF
-    {isUnsafe : Bool} {lvls : UInt64} {typ : Ixon.Expr}
-    {state : Ix.CompileM.BlockState}
-    (hsharing : Ix.Sharing.applySharing #[typ] = (#[typ], #[]))
-    (htyp : typ.wireWF) (htables : BlockWireTablesWF state) :
-    (Ix.CompileM.buildConstantWithSharing
-      (.axio { isUnsafe, lvls, typ }) #[typ]
-      state.refs state.univs).wireWF := by
-  rw [buildConstantWithSharing_axiom_eq_unshared
-    isUnsafe lvls typ state hsharing]
-  exact unsharedAxiomConstant_wireWF htyp htables
-
-theorem buildConstantWithSharing_definition_noSharing_wireWF
-    {kind : Ix.DefKind} {safety : Ix.DefinitionSafety} {lvls : UInt64}
-    {typ value : Ixon.Expr} {state : Ix.CompileM.BlockState}
-    (hsharing : Ix.Sharing.applySharing #[typ, value] =
-      (#[typ, value], #[]))
-    (htyp : typ.wireWF) (hvalue : value.wireWF)
-    (htables : BlockWireTablesWF state) :
-    (Ix.CompileM.buildConstantWithSharing
-      (.defn { kind, safety, lvls, typ, value }) #[typ, value]
-      state.refs state.univs).wireWF := by
-  rw [buildConstantWithSharing_definition_eq_unshared
-    kind safety lvls typ value state hsharing]
-  exact unsharedDefinitionConstant_wireWF htyp hvalue htables
+theorem ExprArrayWireWF.empty : ExprArrayWireWF #[] := by
+  intro expr hmem
+  simp at hmem
 
 theorem updateRecursorRules_size (rules : Array Ixon.RecursorRule)
     (rewrittenExprs : Array Ixon.Expr) (startIdx : Nat) :
@@ -297,205 +271,149 @@ theorem constantInfoRootExprs_wireWF (info : Ixon.ConstantInfo)
     exact mutConstRootExprs_wireWF member
       (hinfo.2 member (by simpa using hmember)) expr hexpr
 
-/-- For every `ConstantInfo` variant, the production sharing builder preserves
-the complete public constant wire domain.  The root array may be arbitrary:
-present rewritten slots are safe by `applySharing_wireWF`, while absent slots
-fall back to the wire-safe expressions already stored in `info`. -/
-theorem buildConstantWithSharing_wireWF
-    (info : Ixon.ConstantInfo) (rootExprs : Array Ixon.Expr)
-    {state : Ix.CompileM.BlockState} (hinfo : info.wireWF)
-    (hroots : ExprArrayWireWF rootExprs)
-    (htables : BlockWireTablesWF state) :
-    (Ix.CompileM.buildConstantWithSharing info rootExprs
-      state.refs state.univs).wireWF := by
-  let output := Ix.Sharing.applySharing rootExprs
-  have houtput : Ix.Sharing.applySharing rootExprs = output := rfl
-  rcases output with ⟨rewritten, sharing⟩
-  have hwire := applySharing_wireWF rootExprs hroots
-  have hcapacity := applySharing_capacity rootExprs
-  rw [houtput] at hwire hcapacity
+/-! ## The canonical sharing builder -/
+
+/-- The canonical sharing construction succeeds on the payload's roots under
+`limits` and returns one root per input root: exactly when
+`buildConstantWithSharing` succeeds (`buildConstantWithSharing_of_succeeds`). -/
+def SharingSucceeds (limits : Ix.Sharing.Exact.Limits) (info : Ixon.ConstantInfo) :
+    Prop :=
+  ∃ r, Ix.Sharing.Exact.canonicalSharingTiered .tagN
+      (Ix.CompileM.constantInfoRootExprs info) limits = .ok r ∧
+    r.result.roots.size = (Ix.CompileM.constantInfoRootExprs info).size
+
+/-- A successful build is the canonical construction of the payload's roots,
+written back into the payload. -/
+theorem buildConstantWithSharing_eq_ok {limits : Ix.Sharing.Exact.Limits}
+    {info : Ixon.ConstantInfo} {refs : Array Address} {univs : Array Ixon.Univ}
+    {block : Ixon.Constant}
+    (h : Ix.CompileM.buildConstantWithSharing limits info refs univs = .ok block) :
+    ∃ r, Ix.Sharing.Exact.canonicalSharingTiered .tagN
+        (Ix.CompileM.constantInfoRootExprs info) limits = .ok r ∧
+      r.result.roots.size = (Ix.CompileM.constantInfoRootExprs info).size ∧
+      block = { info := Ix.CompileM.withRootExprs info r.result.roots,
+                sharing := r.result.sharing, refs, univs } := by
+  simp only [Ix.CompileM.buildConstantWithSharing] at h
+  cases hr : Ix.Sharing.Exact.canonicalSharingTiered .tagN
+      (Ix.CompileM.constantInfoRootExprs info) limits with
+  | error e =>
+    simp [hr, Except.mapError, bind, Except.bind] at h
+  | ok r =>
+    simp only [hr, Except.mapError] at h
+    by_cases hs : r.result.roots.size = (Ix.CompileM.constantInfoRootExprs info).size
+    · refine ⟨r, rfl, hs, ?_⟩
+      simp [hs, bind, Except.bind, pure, Except.pure] at h
+      exact h.symm
+    · simp [hs, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+
+/-- The builder's result when the canonical construction succeeds with one
+root per input root. -/
+theorem buildConstantWithSharing_of_canonical {limits : Ix.Sharing.Exact.Limits}
+    {info : Ixon.ConstantInfo} {r : Ix.Sharing.Exact.TieredSharingResult}
+    (hr : Ix.Sharing.Exact.canonicalSharingTiered .tagN
+      (Ix.CompileM.constantInfoRootExprs info) limits = .ok r)
+    (hs : r.result.roots.size = (Ix.CompileM.constantInfoRootExprs info).size)
+    (refs : Array Address) (univs : Array Ixon.Univ) :
+    Ix.CompileM.buildConstantWithSharing limits info refs univs =
+      .ok { info := Ix.CompileM.withRootExprs info r.result.roots,
+            sharing := r.result.sharing, refs, univs } := by
+  simp [Ix.CompileM.buildConstantWithSharing, hr, Except.mapError, hs, bind, Except.bind,
+    pure, Except.pure]
+
+/-- Under `SharingSucceeds` the builder succeeds, whatever the tables. -/
+theorem buildConstantWithSharing_of_succeeds {limits : Ix.Sharing.Exact.Limits}
+    {info : Ixon.ConstantInfo} (h : SharingSucceeds limits info)
+    (refs : Array Address) (univs : Array Ixon.Univ) :
+    ∃ block, Ix.CompileM.buildConstantWithSharing limits info refs univs = .ok block := by
+  obtain ⟨r, hr, hs⟩ := h
+  exact ⟨_, buildConstantWithSharing_of_canonical hr hs refs univs⟩
+
+/-- Writing wire-safe roots back preserves the payload's wire domain. -/
+theorem withRootExprs_wireWF (info : Ixon.ConstantInfo) (rewritten : Array Ixon.Expr)
+    (hinfo : info.wireWF) (hwire : ExprArrayWireWF rewritten) :
+    (Ix.CompileM.withRootExprs info rewritten).wireWF := by
   cases info with
   | defn definition =>
-    rw [show Ix.CompileM.buildConstantWithSharing (.defn definition)
-        rootExprs state.refs state.univs =
-        Ixon.Constant.mk
-          (.defn { definition with
-            typ := rewritten[0]?.getD definition.typ
-            value := rewritten[1]?.getD definition.value })
-          sharing state.refs state.univs by
-      simp [Ix.CompileM.buildConstantWithSharing, houtput]]
-    refine ⟨⟨?_, ?_⟩, hcapacity, hwire.2, htables.refsCount,
-      htables.refs, htables.univsCount, htables.univs⟩
-    · exact hwire.1.getElem?_getD 0 hinfo.1
-    · exact hwire.1.getElem?_getD 1 hinfo.2
+    exact ⟨hwire.getElem?_getD 0 hinfo.1, hwire.getElem?_getD 1 hinfo.2⟩
   | recr recursor =>
-    rw [show Ix.CompileM.buildConstantWithSharing (.recr recursor)
-        rootExprs state.refs state.univs =
-        Ixon.Constant.mk
-          (.recr { recursor with
-            typ := rewritten[0]?.getD recursor.typ
-            rules := (Ix.CompileM.updateRecursorRules
-              recursor.rules rewritten 1).1 })
-          sharing state.refs state.univs by
-      simp [Ix.CompileM.buildConstantWithSharing, houtput]]
-    refine ⟨⟨?_, ?_, ?_⟩, hcapacity, hwire.2, htables.refsCount,
-      htables.refs, htables.univsCount, htables.univs⟩
-    · exact hwire.1.getElem?_getD 0 hinfo.1
+    rw [show Ix.CompileM.withRootExprs (.recr recursor) rewritten =
+        .recr { recursor with
+          typ := rewritten[0]?.getD recursor.typ
+          rules := (Ix.CompileM.updateRecursorRules recursor.rules rewritten 1).1 } by
+      simp [Ix.CompileM.withRootExprs]]
+    refine ⟨?_, ?_, ?_⟩
+    · exact hwire.getElem?_getD 0 hinfo.1
     · rw [updateRecursorRules_size]
       exact hinfo.2.1
-    · exact updateRecursorRules_wireWF _ _ _ hinfo.2.2 hwire.1
-  | axio axiomInfo =>
-    rw [show Ix.CompileM.buildConstantWithSharing (.axio axiomInfo)
-        rootExprs state.refs state.univs =
-        Ixon.Constant.mk
-          (.axio { axiomInfo with
-            typ := rewritten[0]?.getD axiomInfo.typ })
-          sharing state.refs state.univs by
-      simp [Ix.CompileM.buildConstantWithSharing, houtput]]
-    refine ⟨?_, hcapacity, hwire.2, htables.refsCount, htables.refs,
-      htables.univsCount, htables.univs⟩
-    exact hwire.1.getElem?_getD 0 hinfo
-  | quot quotient =>
-    rw [show Ix.CompileM.buildConstantWithSharing (.quot quotient)
-        rootExprs state.refs state.univs =
-        Ixon.Constant.mk
-          (.quot { quotient with
-            typ := rewritten[0]?.getD quotient.typ })
-          sharing state.refs state.univs by
-      simp [Ix.CompileM.buildConstantWithSharing, houtput]]
-    refine ⟨?_, hcapacity, hwire.2, htables.refsCount, htables.refs,
-      htables.univsCount, htables.univs⟩
-    exact hwire.1.getElem?_getD 0 hinfo
-  | cPrj projection =>
-    rw [show Ix.CompileM.buildConstantWithSharing (.cPrj projection)
-        rootExprs state.refs state.univs =
-        Ixon.Constant.mk (.cPrj projection) sharing state.refs state.univs by
-      simp [Ix.CompileM.buildConstantWithSharing, houtput]]
-    exact ⟨hinfo, hcapacity, hwire.2, htables.refsCount, htables.refs,
-      htables.univsCount, htables.univs⟩
-  | rPrj projection =>
-    rw [show Ix.CompileM.buildConstantWithSharing (.rPrj projection)
-        rootExprs state.refs state.univs =
-        Ixon.Constant.mk (.rPrj projection) sharing state.refs state.univs by
-      simp [Ix.CompileM.buildConstantWithSharing, houtput]]
-    exact ⟨hinfo, hcapacity, hwire.2, htables.refsCount, htables.refs,
-      htables.univsCount, htables.univs⟩
-  | iPrj projection =>
-    rw [show Ix.CompileM.buildConstantWithSharing (.iPrj projection)
-        rootExprs state.refs state.univs =
-        Ixon.Constant.mk (.iPrj projection) sharing state.refs state.univs by
-      simp [Ix.CompileM.buildConstantWithSharing, houtput]]
-    exact ⟨hinfo, hcapacity, hwire.2, htables.refsCount, htables.refs,
-      htables.univsCount, htables.univs⟩
-  | dPrj projection =>
-    rw [show Ix.CompileM.buildConstantWithSharing (.dPrj projection)
-        rootExprs state.refs state.univs =
-        Ixon.Constant.mk (.dPrj projection) sharing state.refs state.univs by
-      simp [Ix.CompileM.buildConstantWithSharing, houtput]]
-    exact ⟨hinfo, hcapacity, hwire.2, htables.refsCount, htables.refs,
-      htables.univsCount, htables.univs⟩
+    · exact updateRecursorRules_wireWF _ _ _ hinfo.2.2 hwire
+  | axio axiomInfo => exact hwire.getElem?_getD 0 hinfo
+  | quot quotient => exact hwire.getElem?_getD 0 hinfo
+  | cPrj projection => exact hinfo
+  | rPrj projection => exact hinfo
+  | iPrj projection => exact hinfo
+  | dPrj projection => exact hinfo
   | muts members =>
-    rw [show Ix.CompileM.buildConstantWithSharing (.muts members)
-        rootExprs state.refs state.univs =
-        Ixon.Constant.mk
-          (.muts (Ix.CompileM.updateMutConsts members rewritten))
-          sharing state.refs state.univs by
-      simp [Ix.CompileM.buildConstantWithSharing, houtput]]
-    refine ⟨⟨?_, ?_⟩, hcapacity, hwire.2, htables.refsCount,
-      htables.refs, htables.univsCount, htables.univs⟩
-    · rw [updateMutConsts_size]
+    refine ⟨?_, ?_⟩
+    · show (Ix.CompileM.updateMutConsts members rewritten).size < UInt64.size
+      rw [updateMutConsts_size]
       exact hinfo.1
-    · exact updateMutConsts_wireWF _ _ hinfo.2 hwire.1
+    · exact updateMutConsts_wireWF _ _ hinfo.2 hwire
 
-/-- With the canonical production root extractor, payload wire safety alone
-discharges every expression-root obligation of the sharing builder. -/
-theorem buildConstantWithSharing_canonical_wireWF
-    (info : Ixon.ConstantInfo) {state : Ix.CompileM.BlockState}
-    (hinfo : info.wireWF) (htables : BlockWireTablesWF state) :
-    (Ix.CompileM.buildConstantWithSharing info
-      (Ix.CompileM.constantInfoRootExprs info)
-      state.refs state.univs).wireWF :=
-  buildConstantWithSharing_wireWF info _ hinfo
-    (constantInfoRootExprs_wireWF info hinfo) htables
-
-/-- The production axiom builder lies in the constant codec's wire domain for
-both empty and nonempty sharing results. -/
-theorem buildConstantWithSharing_axiom_wireWF
-    {isUnsafe : Bool} {lvls : UInt64} {typ : Ixon.Expr}
-    {state : Ix.CompileM.BlockState}
-    (htyp : typ.wireWF) (htables : BlockWireTablesWF state) :
-    (Ix.CompileM.buildConstantWithSharing
-      (.axio { isUnsafe, lvls, typ }) #[typ]
-      state.refs state.univs).wireWF := by
-  apply buildConstantWithSharing_wireWF
-  · exact htyp
+/-- **Every block the compiler's sharing builds is in the constant codec's wire
+domain**, for every `ConstantInfo` variant: the payload's fields are kept,
+its roots and the table come from the canonical construction, and
+`Tiered.canonicalSharingTiered_format` makes them wire-safe with a table count
+below `2^64`. -/
+theorem buildConstantWithSharing_wireWF {limits : Ix.Sharing.Exact.Limits}
+    {info : Ixon.ConstantInfo} {state : Ix.CompileM.BlockState}
+    {block : Ixon.Constant} (hinfo : info.wireWF)
+    (htables : BlockWireTablesWF state)
+    (h : Ix.CompileM.buildConstantWithSharing limits info
+      state.refs state.univs = .ok block) :
+    block.wireWF := by
+  obtain ⟨r, hr, -, rfl⟩ := buildConstantWithSharing_eq_ok h
+  obtain ⟨hentries, hroots, hcapacity, -, -⟩ := Tiered.canonicalSharingTiered_format hr
+  refine ⟨withRootExprs_wireWF info _ hinfo ?_, hcapacity, ?_, htables.refsCount,
+    htables.refs, htables.univsCount, htables.univs⟩
   · intro expr hmem
-    simp at hmem
-    subst expr
-    exact htyp
-  · exact htables
-
-/-- The production quotient builder lies in the constant codec's wire domain
-for both empty and nonempty sharing results. -/
-theorem buildConstantWithSharing_quotient_wireWF
-    {kind : Ix.QuotKind} {lvls : UInt64} {typ : Ixon.Expr}
-    {state : Ix.CompileM.BlockState}
-    (htyp : typ.wireWF) (htables : BlockWireTablesWF state) :
-    (Ix.CompileM.buildConstantWithSharing
-      (.quot { kind, lvls, typ }) #[typ]
-      state.refs state.univs).wireWF := by
-  apply buildConstantWithSharing_wireWF
-  · exact htyp
+    exact hroots expr (by simpa using hmem)
   · intro expr hmem
-    simp at hmem
-    subst expr
-    exact htyp
-  · exact htables
+    exact hentries expr (by simpa using hmem)
 
-/-- The production definition builder lies in the constant codec's wire
-domain for both empty and nonempty sharing results. -/
-theorem buildConstantWithSharing_definition_wireWF
-    {kind : Ix.DefKind} {safety : Ix.DefinitionSafety} {lvls : UInt64}
-    {typ value : Ixon.Expr} {state : Ix.CompileM.BlockState}
-    (htyp : typ.wireWF) (hvalue : value.wireWF)
-    (htables : BlockWireTablesWF state) :
-    (Ix.CompileM.buildConstantWithSharing
-      (.defn { kind, safety, lvls, typ, value }) #[typ, value]
-      state.refs state.univs).wireWF := by
-  apply buildConstantWithSharing_wireWF
-  · exact ⟨htyp, hvalue⟩
-  · intro expr hmem
-    simp at hmem
-    rcases hmem with rfl | rfl
-    · exact htyp
-    · exact hvalue
-  · exact htables
+/-- When the canonical construction keeps a singleton axiom root and builds no
+table, the builder yields exactly the unshared axiom assembly. -/
+theorem buildConstantWithSharing_axiom_eq_unshared
+    (limits : Ix.Sharing.Exact.Limits) (isUnsafe : Bool) (lvls : UInt64)
+    (typ : Ixon.Expr) (state : Ix.CompileM.BlockState)
+    {r : Ix.Sharing.Exact.TieredSharingResult}
+    (hsharing : Ix.Sharing.Exact.canonicalSharingTiered .tagN #[typ] limits = .ok r)
+    (hroots : r.result.roots = #[typ]) (htable : r.result.sharing = #[]) :
+    Ix.CompileM.buildConstantWithSharing limits
+        (.axio { isUnsafe, lvls, typ }) state.refs state.univs =
+      .ok (unsharedAxiomConstant isUnsafe lvls typ state) := by
+  have hr : Ix.Sharing.Exact.canonicalSharingTiered .tagN
+      (Ix.CompileM.constantInfoRootExprs (.axio { isUnsafe, lvls, typ })) limits = .ok r :=
+    hsharing
+  rw [buildConstantWithSharing_of_canonical hr (by rw [hroots]; rfl)]
+  simp [hroots, htable, Ix.CompileM.withRootExprs, unsharedAxiomConstant]
 
-/-- The production recursor builder preserves its counted rule array and lies
-in the constant codec's wire domain for empty or nonempty sharing. -/
-theorem buildConstantWithSharing_recursor_wireWF
-    (recursor : Ixon.Recursor) (rootExprs : Array Ixon.Expr)
-    {state : Ix.CompileM.BlockState} (hrecursor : recursor.wireWF)
-    (hroots : ExprArrayWireWF rootExprs)
-    (htables : BlockWireTablesWF state) :
-    (Ix.CompileM.buildConstantWithSharing (.recr recursor) rootExprs
-      state.refs state.univs).wireWF := by
-  exact buildConstantWithSharing_wireWF
-    (.recr recursor) rootExprs hrecursor hroots htables
+/-- When the canonical construction keeps both definition roots and builds no
+table, the builder yields exactly the unshared definition assembly. -/
+theorem buildConstantWithSharing_definition_eq_unshared
+    (limits : Ix.Sharing.Exact.Limits) (kind : Ix.DefKind)
+    (safety : Ix.DefinitionSafety) (lvls : UInt64) (typ value : Ixon.Expr)
+    (state : Ix.CompileM.BlockState) {r : Ix.Sharing.Exact.TieredSharingResult}
+    (hsharing : Ix.Sharing.Exact.canonicalSharingTiered .tagN #[typ, value] limits = .ok r)
+    (hroots : r.result.roots = #[typ, value]) (htable : r.result.sharing = #[]) :
+    Ix.CompileM.buildConstantWithSharing limits
+        (.defn { kind, safety, lvls, typ, value }) state.refs state.univs =
+      .ok (unsharedDefinitionConstant kind safety lvls typ value state) := by
+  have hr : Ix.Sharing.Exact.canonicalSharingTiered .tagN
+      (Ix.CompileM.constantInfoRootExprs (.defn { kind, safety, lvls, typ, value })) limits =
+        .ok r := hsharing
+  rw [buildConstantWithSharing_of_canonical hr (by rw [hroots]; rfl)]
+  simp [hroots, htable, Ix.CompileM.withRootExprs, unsharedDefinitionConstant]
 
-/-- The production mutual-block builder preserves the member count and every
-nested definition, inductive, constructor, recursor, and rule wire condition. -/
-theorem buildConstantWithSharing_mutual_wireWF
-    (members : Array Ixon.MutConst) (rootExprs : Array Ixon.Expr)
-    {state : Ix.CompileM.BlockState}
-    (hmembersCount : members.size < UInt64.size)
-    (hmembers : ∀ member ∈ members, member.wireWF)
-    (hroots : ExprArrayWireWF rootExprs)
-    (htables : BlockWireTablesWF state) :
-    (Ix.CompileM.buildConstantWithSharing (.muts members) rootExprs
-      state.refs state.univs).wireWF := by
-  exact buildConstantWithSharing_wireWF
-    (.muts members) rootExprs ⟨hmembersCount, hmembers⟩ hroots htables
 
 /-- `BlockResult.mk'` stores exactly the production constant serialization,
 so every wire-well-formed block is recovered from its stored bytes. Metadata
@@ -528,71 +446,100 @@ theorem BlockResult.mk'_codecWF
   exact ⟨hblock,
     BlockResult.mk'_codec_roundtrip block blockMeta projections hblock⟩
 
-/-- Building any wire-safe `ConstantInfo` with any wire-safe sharing roots and
-then wrapping it in the production `BlockResult` yields stored bytes that
-decode exactly to the built block.  This includes all projection variants and
-both empty and nonempty sharing results. -/
+private theorem run_bind (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
+    (action : Ix.CompileM.CompileM α)
+    (next : α → Ix.CompileM.CompileM β) :
+    Ix.CompileM.CompileM.run compileEnv blockEnv state (action >>= next) =
+      match Ix.CompileM.CompileM.run compileEnv blockEnv state action with
+      | .error err => .error err
+      | .ok (value, state') =>
+        Ix.CompileM.CompileM.run compileEnv blockEnv state' (next value) := by
+  simp [Ix.CompileM.CompileM.run, ReaderT.run_bind, ExceptT.run_bind,
+    StateT.run_bind]
+  generalize
+    (ReaderT.run action (compileEnv, blockEnv)).run.run state = result
+  rcases result with ⟨result, state'⟩
+  cases result <;> rfl
+
+theorem run_getBlockState_eq (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState) :
+    Ix.CompileM.CompileM.run compileEnv blockEnv state Ix.CompileM.getBlockState =
+      .ok (state, state) := rfl
+
+theorem run_read_eq (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState) :
+    Ix.CompileM.CompileM.run compileEnv blockEnv state read =
+      .ok ((compileEnv, blockEnv), state) := rfl
+
+theorem run_liftSharing_eq (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
+    (x : Except Ix.CompileM.CompileError Ixon.Constant) :
+    Ix.CompileM.CompileM.run compileEnv blockEnv state (Ix.CompileM.liftSharing x) =
+      match x with
+      | .ok c => .ok (c, state)
+      | .error e => .error e := by
+  cases x <;> rfl
+
+/-- A successful build of any wire-safe payload, wrapped in the production
+`BlockResult`, stores bytes that decode exactly to the built block. This
+includes all projection variants and both empty and nonempty sharing. -/
 theorem BlockResult.constantInfo_codec_roundtrip
-    (info : Ixon.ConstantInfo) (rootExprs : Array Ixon.Expr)
-    {state : Ix.CompileM.BlockState} (blockMeta : Ixon.ConstantMeta)
-    (hinfo : info.wireWF) (hroots : ExprArrayWireWF rootExprs)
+    {limits : Ix.Sharing.Exact.Limits} (info : Ixon.ConstantInfo)
+    {state : Ix.CompileM.BlockState} {block : Ixon.Constant}
+    (blockMeta : Ixon.ConstantMeta) (hinfo : info.wireWF)
     (htables : BlockWireTablesWF state)
+    (h : Ix.CompileM.buildConstantWithSharing limits info
+      state.refs state.univs = .ok block)
     (projections : Array
       (Ix.Name × Ixon.Constant × Ixon.ConstantMeta) := #[]) :
-    let block := Ix.CompileM.buildConstantWithSharing
-      info rootExprs state.refs state.univs
     Ixon.deConstant
-        (Ix.CompileM.BlockResult.mk'
-          block blockMeta projections).blockBytes = .ok block := by
-  dsimp only
+        (Ix.CompileM.BlockResult.mk' block blockMeta projections).blockBytes =
+      .ok block := by
   apply BlockResult.mk'_codec_roundtrip
-  exact buildConstantWithSharing_wireWF
-    info rootExprs hinfo hroots htables
+  exact buildConstantWithSharing_wireWF hinfo htables h
 
-/-- The production singleton-driver tail is observationally a read of the
-current block state followed by the pure sharing builder and canonical
-`BlockResult` constructor; it leaves the state unchanged. -/
+/-- The production singleton-driver tail reads the current block state, runs
+the canonical sharing builder under `CompileEnv.sharingLimits` and wraps its
+result in the canonical `BlockResult`; it leaves the state unchanged, and it
+fails exactly when the builder does. -/
 theorem finishConstantWithSharing_run
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
-    (info : Ixon.ConstantInfo) (rootExprs : Array Ixon.Expr)
-    (blockMeta : Ixon.ConstantMeta := .empty) :
+    (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta := .empty) :
     Ix.CompileM.CompileM.run compileEnv blockEnv state
-        (Ix.CompileM.finishConstantWithSharing info rootExprs blockMeta) =
-      .ok (Ix.CompileM.BlockResult.mk'
-        (Ix.CompileM.buildConstantWithSharing
-          info rootExprs state.refs state.univs)
-        blockMeta, state) := by
-  rfl
+        (Ix.CompileM.finishConstantWithSharing info blockMeta) =
+      match Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
+          state.refs state.univs with
+      | .ok block => .ok (Ix.CompileM.BlockResult.mk' block blockMeta, state)
+      | .error e => .error e := by
+  simp only [Ix.CompileM.finishConstantWithSharing, Ix.CompileM.buildBlockConstant,
+    run_bind, run_getBlockState_eq, run_read_eq, run_liftSharing_eq]
+  cases Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
+    state.refs state.univs <;> rfl
 
-/-- The exact production tail used by singleton declaration branches returns
-a wire-safe, exactly decodable block whenever compilation has established the
-wire conditions for its payload, roots, and final tables. -/
+/-- When the builder succeeds, the singleton-driver tail returns that block in
+a wire-safe, exactly decodable `BlockResult` and leaves the state unchanged. -/
 theorem finishConstantWithSharing_run_codecWF
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
-    (info : Ixon.ConstantInfo) (rootExprs : Array Ixon.Expr)
-    (blockMeta : Ixon.ConstantMeta) (hinfo : info.wireWF)
-    (hroots : ExprArrayWireWF rootExprs)
-    (htables : BlockWireTablesWF state) :
-    let result := Ix.CompileM.BlockResult.mk'
-      (Ix.CompileM.buildConstantWithSharing
-        info rootExprs state.refs state.univs)
-      blockMeta
+    (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta)
+    {block : Ixon.Constant} (hinfo : info.wireWF)
+    (htables : BlockWireTablesWF state)
+    (hbuild : Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
+      state.refs state.univs = .ok block) :
+    let result := Ix.CompileM.BlockResult.mk' block blockMeta
     Ix.CompileM.CompileM.run compileEnv blockEnv state
-        (Ix.CompileM.finishConstantWithSharing info rootExprs blockMeta) =
+        (Ix.CompileM.finishConstantWithSharing info blockMeta) =
         .ok (result, state) ∧
       BlockResultCodecWF result := by
   dsimp only
   constructor
-  · exact finishConstantWithSharing_run
-      compileEnv blockEnv state info rootExprs blockMeta
+  · rw [finishConstantWithSharing_run compileEnv blockEnv state info blockMeta, hbuild]
   · apply BlockResult.mk'_codecWF
-    exact buildConstantWithSharing_wireWF
-      info rootExprs hinfo hroots htables
+    exact buildConstantWithSharing_wireWF hinfo htables hbuild
 
-/-- The canonical singleton-driver tail has the same exact run equation as
-the arbitrary-root helper, specialized to roots derived from its payload. -/
+/-- `finishConstantInfoWithSharing` is `finishConstantWithSharing`. -/
 theorem finishConstantInfoWithSharing_run
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
@@ -600,152 +547,85 @@ theorem finishConstantInfoWithSharing_run
     (blockMeta : Ixon.ConstantMeta := .empty) :
     Ix.CompileM.CompileM.run compileEnv blockEnv state
         (Ix.CompileM.finishConstantInfoWithSharing info blockMeta) =
-      .ok (Ix.CompileM.BlockResult.mk'
-        (Ix.CompileM.buildConstantWithSharing info
-          (Ix.CompileM.constantInfoRootExprs info)
-          state.refs state.univs)
-        blockMeta, state) := by
-  exact finishConstantWithSharing_run compileEnv blockEnv state info
-    (Ix.CompileM.constantInfoRootExprs info) blockMeta
+      match Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
+          state.refs state.univs with
+      | .ok block => .ok (Ix.CompileM.BlockResult.mk' block blockMeta, state)
+      | .error e => .error e :=
+  finishConstantWithSharing_run compileEnv blockEnv state info blockMeta
 
-/-- Every wire-safe payload reaching the exact tail used by the six singleton
-`compileConstantInfo` branches returns a wire-safe and exactly decodable main
-block; no separate root-array hypothesis remains. -/
+
+/-- The outcome of a declaration run whose only possible failure is the
+canonical sharing builder: either the run succeeds with a wire-safe, exactly
+decodable `BlockResult`, or it fails with exactly the error the builder
+returns on some payload and tables. This is the conclusion of the compiler
+endpoint theorems; with the builder total (`SharingSucceeds`) only the first
+case remains. -/
+def SharingRunOK (limits : Ix.Sharing.Exact.Limits)
+    (run : Except Ix.CompileM.CompileError
+      (Ix.CompileM.BlockResult × Ix.CompileM.BlockState)) : Prop :=
+  (∃ result state', run = .ok (result, state') ∧ BlockResultCodecWF result) ∨
+  ∃ (info : Ixon.ConstantInfo) (state' : Ix.CompileM.BlockState)
+    (err : Ix.CompileM.CompileError),
+    Ix.CompileM.buildConstantWithSharing limits info state'.refs state'.univs =
+      .error err ∧ run = .error err
+
+/-- Every successful run covered by `SharingRunOK` returns a wire-safe, exactly
+decodable block. -/
+theorem SharingRunOK.codecWF {limits : Ix.Sharing.Exact.Limits}
+    {run : Except Ix.CompileM.CompileError
+      (Ix.CompileM.BlockResult × Ix.CompileM.BlockState)}
+    (h : SharingRunOK limits run) {result : Ix.CompileM.BlockResult}
+    {state' : Ix.CompileM.BlockState} (hrun : run = .ok (result, state')) :
+    BlockResultCodecWF result := by
+  rcases h with ⟨result', state'', hok, hcodec⟩ | ⟨_, _, err, _, herr⟩
+  · rw [hrun] at hok
+    cases hok
+    exact hcodec
+  · rw [hrun] at herr
+    cases herr
+
+/-- The singleton-driver tail on a wire-safe payload: it fails only when the
+canonical sharing builder does, and otherwise returns a wire-safe, exactly
+decodable block. -/
 theorem finishConstantInfoWithSharing_run_codecWF
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
     (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta)
     (hinfo : info.wireWF) (htables : BlockWireTablesWF state) :
-    let result := Ix.CompileM.BlockResult.mk'
-      (Ix.CompileM.buildConstantWithSharing info
-        (Ix.CompileM.constantInfoRootExprs info)
-        state.refs state.univs)
-      blockMeta
-    Ix.CompileM.CompileM.run compileEnv blockEnv state
-        (Ix.CompileM.finishConstantInfoWithSharing info blockMeta) =
-        .ok (result, state) ∧
-      BlockResultCodecWF result := by
-  simpa [Ix.CompileM.finishConstantInfoWithSharing] using
-    finishConstantWithSharing_run_codecWF compileEnv blockEnv state info
-      (Ix.CompileM.constantInfoRootExprs info) blockMeta hinfo
-      (constantInfoRootExprs_wireWF info hinfo) htables
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+        (Ix.CompileM.finishConstantInfoWithSharing info blockMeta)) := by
+  rw [finishConstantInfoWithSharing_run compileEnv blockEnv state info blockMeta]
+  cases hbuild : Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
+      state.refs state.univs with
+  | ok block =>
+    exact .inl ⟨_, _, rfl, BlockResult.mk'_codecWF block blockMeta #[]
+      (buildConstantWithSharing_wireWF hinfo htables hbuild)⟩
+  | error err => exact .inr ⟨info, state, err, hbuild, rfl⟩
 
-/-- The actual axiom builder, including nonempty sharing, stores bytes that
-decode to its block. -/
-theorem BlockResult.axiom_codec_roundtrip
-    {isUnsafe : Bool} {lvls : UInt64} {typ : Ixon.Expr}
-    {state : Ix.CompileM.BlockState} (blockMeta : Ixon.ConstantMeta)
-    (htyp : typ.wireWF) (htables : BlockWireTablesWF state) :
-    let block := Ix.CompileM.buildConstantWithSharing
-      (.axio { isUnsafe, lvls, typ }) #[typ] state.refs state.univs
-    Ixon.deConstant
-        (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes = .ok block := by
-  dsimp only
-  apply BlockResult.mk'_codec_roundtrip
-  exact buildConstantWithSharing_axiom_wireWF htyp htables
+/-- When the canonical sharing of the payload succeeds, so does the
+singleton-driver tail, with a wire-safe, exactly decodable block. -/
+theorem finishConstantInfoWithSharing_run_codecWF_of_succeeds
+    (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
+    (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta)
+    (hinfo : info.wireWF) (htables : BlockWireTablesWF state)
+    (hshare : SharingSucceeds compileEnv.sharingLimits info) :
+    ∃ block,
+      Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
+          state.refs state.univs = .ok block ∧
+      Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.finishConstantInfoWithSharing info blockMeta) =
+        .ok (Ix.CompileM.BlockResult.mk' block blockMeta, state) ∧
+      BlockResultCodecWF (Ix.CompileM.BlockResult.mk' block blockMeta) := by
+  obtain ⟨block, hbuild⟩ := buildConstantWithSharing_of_succeeds hshare state.refs state.univs
+  obtain ⟨hrun, hcodec⟩ := finishConstantWithSharing_run_codecWF compileEnv blockEnv state
+    info blockMeta hinfo htables hbuild
+  exact ⟨block, hbuild, hrun, hcodec⟩
 
-/-- The actual quotient builder, including nonempty sharing, stores bytes that
-decode to its block. -/
-theorem BlockResult.quotient_codec_roundtrip
-    {kind : Ix.QuotKind} {lvls : UInt64} {typ : Ixon.Expr}
-    {state : Ix.CompileM.BlockState} (blockMeta : Ixon.ConstantMeta)
-    (htyp : typ.wireWF) (htables : BlockWireTablesWF state) :
-    let block := Ix.CompileM.buildConstantWithSharing
-      (.quot { kind, lvls, typ }) #[typ] state.refs state.univs
-    Ixon.deConstant
-        (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes = .ok block := by
-  dsimp only
-  apply BlockResult.mk'_codec_roundtrip
-  exact buildConstantWithSharing_quotient_wireWF htyp htables
-
-/-- The actual definition builder, including nonempty sharing, stores bytes
-that decode to its block. -/
-theorem BlockResult.definition_codec_roundtrip
-    {kind : Ix.DefKind} {safety : Ix.DefinitionSafety} {lvls : UInt64}
-    {typ value : Ixon.Expr} {state : Ix.CompileM.BlockState}
-    (blockMeta : Ixon.ConstantMeta) (htyp : typ.wireWF)
-    (hvalue : value.wireWF) (htables : BlockWireTablesWF state) :
-    let block := Ix.CompileM.buildConstantWithSharing
-      (.defn { kind, safety, lvls, typ, value }) #[typ, value]
-      state.refs state.univs
-    Ixon.deConstant
-        (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes = .ok block := by
-  dsimp only
-  apply BlockResult.mk'_codec_roundtrip
-  exact buildConstantWithSharing_definition_wireWF htyp hvalue htables
-
-/-- The actual recursor builder, including nonempty sharing, stores bytes that
-decode to its block. -/
-theorem BlockResult.recursor_codec_roundtrip
-    (recursor : Ixon.Recursor) (rootExprs : Array Ixon.Expr)
-    {state : Ix.CompileM.BlockState} (blockMeta : Ixon.ConstantMeta)
-    (hrecursor : recursor.wireWF) (hroots : ExprArrayWireWF rootExprs)
-    (htables : BlockWireTablesWF state) :
-    let block := Ix.CompileM.buildConstantWithSharing
-      (.recr recursor) rootExprs state.refs state.univs
-    Ixon.deConstant
-        (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes = .ok block := by
-  dsimp only
-  apply BlockResult.mk'_codec_roundtrip
-  exact buildConstantWithSharing_recursor_wireWF
-    recursor rootExprs hrecursor hroots htables
-
-/-- The actual mutual-block builder, including nonempty sharing, stores bytes
-that decode to its block. -/
-theorem BlockResult.mutual_codec_roundtrip
-    (members : Array Ixon.MutConst) (rootExprs : Array Ixon.Expr)
-    {state : Ix.CompileM.BlockState} (blockMeta : Ixon.ConstantMeta)
-    (hmembersCount : members.size < UInt64.size)
-    (hmembers : ∀ member ∈ members, member.wireWF)
-    (hroots : ExprArrayWireWF rootExprs)
-    (htables : BlockWireTablesWF state) :
-    let block := Ix.CompileM.buildConstantWithSharing
-      (.muts members) rootExprs state.refs state.univs
-    Ixon.deConstant
-        (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes = .ok block := by
-  dsimp only
-  apply BlockResult.mk'_codec_roundtrip
-  exact buildConstantWithSharing_mutual_wireWF members rootExprs
-    hmembersCount hmembers hroots htables
-
-/-- The actual no-sharing axiom builder, wrapped in the production block
-result, stores bytes that decode to its block. -/
-theorem BlockResult.axiom_noSharing_codec_roundtrip
-    {isUnsafe : Bool} {lvls : UInt64} {typ : Ixon.Expr}
-    {state : Ix.CompileM.BlockState} (blockMeta : Ixon.ConstantMeta)
-    (hsharing : Ix.Sharing.applySharing #[typ] = (#[typ], #[]))
-    (htyp : typ.wireWF) (htables : BlockWireTablesWF state) :
-    let block := Ix.CompileM.buildConstantWithSharing
-      (.axio { isUnsafe, lvls, typ }) #[typ] state.refs state.univs
-    Ixon.deConstant
-        (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes = .ok block := by
-  dsimp only
-  apply BlockResult.mk'_codec_roundtrip
-  exact buildConstantWithSharing_axiom_noSharing_wireWF
-    hsharing htyp htables
-
-/-- The actual no-sharing definition builder, wrapped in the production block
-result, stores bytes that decode to its block. -/
-theorem BlockResult.definition_noSharing_codec_roundtrip
-    {kind : Ix.DefKind} {safety : Ix.DefinitionSafety} {lvls : UInt64}
-    {typ value : Ixon.Expr} {state : Ix.CompileM.BlockState}
-    (blockMeta : Ixon.ConstantMeta)
-    (hsharing : Ix.Sharing.applySharing #[typ, value] =
-      (#[typ, value], #[]))
-    (htyp : typ.wireWF) (hvalue : value.wireWF)
-    (htables : BlockWireTablesWF state) :
-    let block := Ix.CompileM.buildConstantWithSharing
-      (.defn { kind, safety, lvls, typ, value }) #[typ, value]
-      state.refs state.univs
-    Ixon.deConstant
-        (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes = .ok block := by
-  dsimp only
-  apply BlockResult.mk'_codec_roundtrip
-  exact buildConstantWithSharing_definition_noSharing_wireWF
-    hsharing htyp hvalue htables
-
-/-- The ordinary axiom expression phase followed by the actual no-sharing
-production block builder yields stored bytes that decode to the built block. -/
+/-- The ordinary axiom expression phase followed by a no-sharing canonical
+build (the construction keeps the root and builds no table) yields stored
+bytes that decode to the built block. -/
 theorem compileExpr_run_ordinary_axiomBlock_noSharing_roundtrip
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
@@ -755,23 +635,26 @@ theorem compileExpr_run_ordinary_axiomBlock_noSharing_roundtrip
     (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
     (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
     (htables : BlockWireTablesWF snapshot)
+    (limits : Ix.Sharing.Exact.Limits)
     (isUnsafe : Bool) (lvls : UInt64) (blockMeta : Ixon.ConstantMeta)
     {state : Ix.CompileM.BlockState} {source : Ix.Expr}
-    {target : Ixon.Expr}
+    {target : Ixon.Expr} {r : Ix.Sharing.Exact.TieredSharingResult}
     (hsource : SupportedOrdinaryExpr levelSupport source)
     (hbound : ExprWireBound source)
     (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
     (href : compileExprRef
       (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target)
-    (hsharing : Ix.Sharing.applySharing #[target] = (#[target], #[])) :
+    (hsharing : Ix.Sharing.Exact.canonicalSharingTiered .tagN #[target] limits = .ok r)
+    (hroots : r.result.roots = #[target]) (htable : r.result.sharing = #[]) :
     ∃ root state',
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.compileExpr source) =
         .ok ((target, root), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
-      (let block := Ix.CompileM.buildConstantWithSharing
-          (.axio { isUnsafe, lvls, typ := target }) #[target]
-          state'.refs state'.univs
+      (let block := unsharedAxiomConstant isUnsafe lvls target state'
+       Ix.CompileM.buildConstantWithSharing limits
+           (.axio { isUnsafe, lvls, typ := target }) state'.refs state'.univs =
+         .ok block ∧
        block.wireWF ∧
          Ixon.deConstant
             (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes =
@@ -782,18 +665,12 @@ theorem compileExpr_run_ordinary_axiomBlock_noSharing_roundtrip
       isUnsafe lvls hsource hbound hstate href
   refine ⟨root, state', hrun, hstate', ?_⟩
   dsimp only
-  have hblock :
-      (Ix.CompileM.buildConstantWithSharing
-        (.axio { isUnsafe, lvls, typ := target }) #[target]
-        state'.refs state'.univs).wireWF := by
-    rw [buildConstantWithSharing_axiom_eq_unshared
-      isUnsafe lvls target state' hsharing]
-    exact hunshared
-  exact ⟨hblock, BlockResult.mk'_codec_roundtrip _ blockMeta #[] hblock⟩
+  exact ⟨buildConstantWithSharing_axiom_eq_unshared limits isUnsafe lvls target state'
+      hsharing hroots htable, hunshared,
+    BlockResult.mk'_codec_roundtrip _ blockMeta #[] hunshared⟩
 
-/-- The sequential definition expression phase followed by the actual
-no-sharing production block builder yields stored bytes that decode to the
-built block. -/
+/-- The sequential definition expression phase followed by a no-sharing
+canonical build yields stored bytes that decode to the built block. -/
 theorem compileExpr_run_ordinary_definitionBlock_noSharing_roundtrip
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
@@ -803,11 +680,13 @@ theorem compileExpr_run_ordinary_definitionBlock_noSharing_roundtrip
     (hlevelFaithful : LevelKeyFaithfulOn levelSupport)
     (hexprFaithful : ExprKeyFaithfulOn OrdinaryExpr)
     (htables : BlockWireTablesWF snapshot)
+    (limits : Ix.Sharing.Exact.Limits)
     (kind : Ix.DefKind) (safety : Ix.DefinitionSafety) (lvls : UInt64)
     (blockMeta : Ixon.ConstantMeta)
     {state : Ix.CompileM.BlockState}
     {sourceType sourceValue : Ix.Expr}
     {targetType targetValue : Ixon.Expr}
+    {r : Ix.Sharing.Exact.TieredSharingResult}
     (hsourceType : SupportedOrdinaryExpr levelSupport sourceType)
     (hsourceValue : SupportedOrdinaryExpr levelSupport sourceValue)
     (hboundType : ExprWireBound sourceType)
@@ -819,8 +698,10 @@ theorem compileExpr_run_ordinary_definitionBlock_noSharing_roundtrip
     (hrefValue : compileExprRef
       (frozenRefCompileCtx compileEnv blockEnv snapshot) sourceValue =
         some targetValue)
-    (hsharing : Ix.Sharing.applySharing #[targetType, targetValue] =
-      (#[targetType, targetValue], #[])) :
+    (hsharing : Ix.Sharing.Exact.canonicalSharingTiered .tagN
+      #[targetType, targetValue] limits = .ok r)
+    (hroots : r.result.roots = #[targetType, targetValue])
+    (htable : r.result.sharing = #[]) :
     ∃ typeRoot middle valueRoot state',
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.compileExpr sourceType) =
@@ -830,10 +711,11 @@ theorem compileExpr_run_ordinary_definitionBlock_noSharing_roundtrip
           (Ix.CompileM.compileExpr sourceValue) =
         .ok ((targetValue, valueRoot), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
-      (let block := Ix.CompileM.buildConstantWithSharing
-          (.defn ⟨kind, safety, lvls, targetType, targetValue⟩)
-          #[targetType, targetValue]
-          state'.refs state'.univs
+      (let block := unsharedDefinitionConstant kind safety lvls targetType
+          targetValue state'
+       Ix.CompileM.buildConstantWithSharing limits
+           (.defn ⟨kind, safety, lvls, targetType, targetValue⟩)
+           state'.refs state'.univs = .ok block ∧
        block.wireWF ∧
          Ixon.deConstant
             (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes =
@@ -847,18 +729,13 @@ theorem compileExpr_run_ordinary_definitionBlock_noSharing_roundtrip
   refine ⟨typeRoot, middle, valueRoot, state', htypeRun, hmiddle,
     hvalueRun, hstate', ?_⟩
   dsimp only
-  have hblock :
-      (Ix.CompileM.buildConstantWithSharing
-        (.defn ⟨kind, safety, lvls, targetType, targetValue⟩)
-        #[targetType, targetValue]
-        state'.refs state'.univs).wireWF := by
-    rw [buildConstantWithSharing_definition_eq_unshared
-      kind safety lvls targetType targetValue state' hsharing]
-    exact hunshared
-  exact ⟨hblock, BlockResult.mk'_codec_roundtrip _ blockMeta #[] hblock⟩
+  exact ⟨buildConstantWithSharing_definition_eq_unshared limits kind safety lvls
+      targetType targetValue state' hsharing hroots htable, hunshared,
+    BlockResult.mk'_codec_roundtrip _ blockMeta #[] hunshared⟩
 
-/-- The ordinary axiom expression phase followed by the complete production
-sharing builder yields a wire-safe block whose stored bytes decode exactly. -/
+/-- The ordinary axiom expression phase followed by the canonical sharing
+builder: every successful build is a wire-safe block whose stored bytes
+decode exactly. -/
 theorem compileExpr_run_ordinary_axiomBlock_roundtrip
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
@@ -881,13 +758,14 @@ theorem compileExpr_run_ordinary_axiomBlock_roundtrip
           (Ix.CompileM.compileExpr source) =
         .ok ((target, root), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
-      (let block := Ix.CompileM.buildConstantWithSharing
-          (.axio { isUnsafe, lvls, typ := target }) #[target]
-          state'.refs state'.univs
-       block.wireWF ∧
-         Ixon.deConstant
-            (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes =
-          .ok block) := by
+      ∀ (limits : Ix.Sharing.Exact.Limits) (block : Ixon.Constant),
+        Ix.CompileM.buildConstantWithSharing limits
+            (.axio { isUnsafe, lvls, typ := target }) state'.refs state'.univs =
+          .ok block →
+        block.wireWF ∧
+          Ixon.deConstant
+              (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes =
+            .ok block := by
   obtain ⟨root, state', hrun, hstate', hunshared, _⟩ :=
     compileExpr_run_ordinary_axiomConstant_roundtrip compileEnv blockEnv
       snapshot hfree hclosed hlevelFaithful hexprFaithful htables
@@ -895,13 +773,14 @@ theorem compileExpr_run_ordinary_axiomBlock_roundtrip
   have htables' : BlockWireTablesWF state' :=
     htables.of_exprTableView_eq hstate'.tables
   refine ⟨root, state', hrun, hstate', ?_⟩
-  dsimp only
-  have hblock := buildConstantWithSharing_axiom_wireWF
-    (isUnsafe := isUnsafe) (lvls := lvls) hunshared.1 htables'
+  intro limits block hbuild
+  have hblock := buildConstantWithSharing_wireWF
+    (info := .axio { isUnsafe, lvls, typ := target }) hunshared.1 htables' hbuild
   exact ⟨hblock, BlockResult.mk'_codec_roundtrip _ blockMeta #[] hblock⟩
 
 /-- Sequential ordinary compilation of a definition's type and value followed
-by complete production sharing yields a wire-safe, exactly decodable block. -/
+by the canonical sharing builder: every successful build is a wire-safe,
+exactly decodable block. -/
 theorem compileExpr_run_ordinary_definitionBlock_roundtrip
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
@@ -936,13 +815,14 @@ theorem compileExpr_run_ordinary_definitionBlock_roundtrip
           (Ix.CompileM.compileExpr sourceValue) =
         .ok ((targetValue, valueRoot), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
-      (let block := Ix.CompileM.buildConstantWithSharing
-          (.defn ⟨kind, safety, lvls, targetType, targetValue⟩)
-          #[targetType, targetValue] state'.refs state'.univs
-       block.wireWF ∧
-         Ixon.deConstant
-            (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes =
-          .ok block) := by
+      ∀ (limits : Ix.Sharing.Exact.Limits) (block : Ixon.Constant),
+        Ix.CompileM.buildConstantWithSharing limits
+            (.defn ⟨kind, safety, lvls, targetType, targetValue⟩)
+            state'.refs state'.univs = .ok block →
+        block.wireWF ∧
+          Ixon.deConstant
+              (Ix.CompileM.BlockResult.mk' block blockMeta).blockBytes =
+            .ok block := by
   obtain ⟨typeRoot, middle, valueRoot, state', htypeRun, hmiddle,
       hvalueRun, hstate', hunshared, _⟩ :=
     compileExpr_run_ordinary_definitionConstant_roundtrip compileEnv blockEnv
@@ -953,10 +833,9 @@ theorem compileExpr_run_ordinary_definitionBlock_roundtrip
     htables.of_exprTableView_eq hstate'.tables
   refine ⟨typeRoot, middle, valueRoot, state', htypeRun, hmiddle,
     hvalueRun, hstate', ?_⟩
-  dsimp only
-  have hblock := buildConstantWithSharing_definition_wireWF
-    (kind := kind) (safety := safety) (lvls := lvls)
-    hunshared.1.1 hunshared.1.2 htables'
+  intro limits block hbuild
+  have hblock := buildConstantWithSharing_wireWF
+    (info := .defn ⟨kind, safety, lvls, targetType, targetValue⟩) hunshared.1 htables' hbuild
   exact ⟨hblock, BlockResult.mk'_codec_roundtrip _ blockMeta #[] hblock⟩
 
 end Ix.Compile.Verify

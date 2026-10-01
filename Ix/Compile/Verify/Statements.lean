@@ -12,7 +12,6 @@ import Ix.Compile.Verify.CompileExpr
 import Ix.Compile.Verify.CompileExprCodec
 import Ix.Compile.Verify.CompileConstantCodec
 import Ix.Compile.Verify.CompilePreseed
-import Ix.Compile.Verify.Sharing
 import Ix.Compile.Verify.CompileSharingCodec
 import Ix.Compile.Verify.CompileAxiomCodec
 import Ix.Compile.Verify.CompileDefinitionCodec
@@ -62,17 +61,13 @@ reference-address and universe-table conditions required by the constant
 wire. Frozen table views transport it across compilation, and the one-root
 axiom and sequential two-root definition phases now assemble unshared
 constants that round-trip through `serConstant`/`deConstant`. Production
-`buildConstantWithSharing` is connected on its exact no-sharing branch: for
-both axiom and definition roots, the actual builder equals the verified
-unshared assembly, and `BlockResult.mk'` stores bytes that decode back to its
-block. The production sharing pipeline is now proof-visible from recursive
-Merkle analysis through usage propagation and nonempty table construction.
-Analysis retains only wire-safe representatives, rewriting cannot increase
-application, lambda, or forall spine counts, and `applySharing` preserves the
-expression wire domain for every rewritten root and emitted sharing entry.
-An explicit overflow fallback makes its sharing count unconditionally
-representable by `UInt64`, closing the complete axiom and definition builders
-against the constant codec. Pointwise recursor-rule and constructor updaters,
+`buildConstantWithSharing` is the canonical construction
+`canonicalSharingTiered .tagN` of the payload's roots: every successful build
+is wire-safe, because `Tiered.canonicalSharingTiered_format` (`FormatOK`) makes
+every table entry and root wire-safe and the table count representable by
+`UInt64`; on the no-sharing outcome (roots kept, empty table) the builder
+equals the verified unshared assembly, and `BlockResult.mk'` stores bytes that
+decode back to its block. A compile step succeeds under `SharingSucceeds`. Pointwise recursor-rule and constructor updaters,
 together with a verified heterogeneous mutual-member fold, preserve all
 nested wire conditions and counted child arrays. Quotient, standalone
 recursor, mutual-block, and all four projection variants are consolidated by

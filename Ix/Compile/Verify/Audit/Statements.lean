@@ -220,7 +220,7 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.BlockResult.mk'_codec_roundtrip,
     standardAxioms := standard, nativeAxioms := blake3Native },
   { root := ``Ix.Compile.Verify.buildConstantWithSharing_wireWF,
-    standardAxioms := standard, nativeAxioms := blake3Native },
+    standardAxioms := standard },
   { root := ``Ix.Compile.Verify.BlockResult.constantInfo_codec_roundtrip,
     standardAxioms := standard, nativeAxioms := blake3Native },
   { root := ``Ix.Compile.Verify.constantInfoRootExprs_toList,
@@ -324,10 +324,6 @@ private def roots : Array RootAllowance := #[
   { root :=
       ``Ix.Compile.Verify.compileConstantInfo_constructor_default_run_ready_codecWF,
     standardAxioms := standard, nativeAxioms := singletonDriverNative },
-  { root := ``Ix.Compile.Verify.rewriteWithSharing_wireWF,
-    standardAxioms := standard },
-  { root := ``Ix.Compile.Verify.applySharing_wireWF,
-    standardAxioms := standard, nativeAxioms := blake3Native },
   { root :=
       ``Ix.Compile.Verify.compileExpr_run_ordinary_axiomBlock_noSharing_roundtrip,
     standardAxioms := standard, nativeAxioms := blake3Native },
