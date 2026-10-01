@@ -874,7 +874,10 @@
     "Compilatrix.X86.Layout.Linearize"]},
   "CompilatrixTests.Fences.Anf":
   {"path": "CompilatrixTests/Fences/Anf.lean",
-   "imports": ["Compilatrix.Anf.Proof.Mono"]},
+   "imports":
+   ["Compilatrix.Anf.Proof.Mono",
+    "Compilatrix.Sem.Dominance",
+    "Compilatrix.Anf.Proof.Convert.Correct"]},
   "CompilatrixTests.Fences.AiurWire":
   {"path": "CompilatrixTests/Fences/AiurWire.lean",
    "imports": ["CompilatrixTests.Aiur.WireProofs"]},
@@ -1786,6 +1789,9 @@
    "imports": ["Compilatrix.Sem.Simulation", "Compilatrix.Sem.Agrees"]},
   "Compilatrix.Sem.Result":
   {"path": "Compilatrix/Sem/Result.lean", "imports": []},
+  "Compilatrix.Sem.Dominance":
+  {"path": "Compilatrix/Sem/Dominance.lean",
+   "imports": ["Compilatrix.Sem.SimUpTo"]},
   "Compilatrix.Sem.Clocked":
   {"path": "Compilatrix/Sem/Clocked.lean",
    "imports": ["Compilatrix.Sem.Result"]},
@@ -2390,6 +2396,78 @@
   "Compilatrix.Anf.Proof.Mono":
   {"path": "Compilatrix/Anf/Proof/Mono.lean",
    "imports": ["Compilatrix.Anf.Proof.Unfold", "Compilatrix.Sem.SimUpTo"]},
+  "Compilatrix.Anf.Proof.Lang":
+  {"path": "Compilatrix/Anf/Proof/Lang.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Mono", "Compilatrix.Sem.TracedTransform"]},
+  "Compilatrix.Anf.Proof.Convert.Term":
+  {"path": "Compilatrix/Anf/Proof/Convert/Term.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Spine"]},
+  "Compilatrix.Anf.Proof.Convert.Step":
+  {"path": "Compilatrix/Anf/Proof/Convert/Step.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Force"]},
+  "Compilatrix.Anf.Proof.Convert.SpineVar":
+  {"path": "Compilatrix/Anf/Proof/Convert/SpineVar.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.SpineBase"]},
+  "Compilatrix.Anf.Proof.Convert.SpineGlob":
+  {"path": "Compilatrix/Anf/Proof/Convert/SpineGlob.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.SpineVar"]},
+  "Compilatrix.Anf.Proof.Convert.SpineBase":
+  {"path": "Compilatrix/Anf/Proof/Convert/SpineBase.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Groups"]},
+  "Compilatrix.Anf.Proof.Convert.Spine":
+  {"path": "Compilatrix/Anf/Proof/Convert/Spine.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.SpineGlob"]},
+  "Compilatrix.Anf.Proof.Convert.Rel":
+  {"path": "Compilatrix/Anf/Proof/Convert/Rel.lean",
+   "imports":
+   ["Compilatrix.Anf.Convert",
+    "Compilatrix.Anf.Proof.Mono",
+    "Compilatrix.Lam.Proof.ModesOk",
+    "Compilatrix.Lam.Proof.Spine",
+    "Compilatrix.Sem.Dominance"]},
+  "Compilatrix.Anf.Proof.Convert.Prog":
+  {"path": "Compilatrix/Anf/Proof/Convert/Prog.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Convert.App",
+    "Compilatrix.Src.Proof.NatMap",
+    "Compilatrix.Lam.Proof.Program"]},
+  "Compilatrix.Anf.Proof.Convert.Lists":
+  {"path": "Compilatrix/Anf/Proof/Convert/Lists.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Step"]},
+  "Compilatrix.Anf.Proof.Convert.Level":
+  {"path": "Compilatrix/Anf/Proof/Convert/Level.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Term"]},
+  "Compilatrix.Anf.Proof.Convert.Kont":
+  {"path": "Compilatrix/Anf/Proof/Convert/Kont.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Prog"]},
+  "Compilatrix.Anf.Proof.Convert.Head":
+  {"path": "Compilatrix/Anf/Proof/Convert/Head.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Kont"]},
+  "Compilatrix.Anf.Proof.Convert.Groups":
+  {"path": "Compilatrix/Anf/Proof/Convert/Groups.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Cases"]},
+  "Compilatrix.Anf.Proof.Convert.Force":
+  {"path": "Compilatrix/Anf/Proof/Convert/Force.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Head"]},
+  "Compilatrix.Anf.Proof.Convert.Env":
+  {"path": "Compilatrix/Anf/Proof/Convert/Env.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Base"]},
+  "Compilatrix.Anf.Proof.Convert.Correct":
+  {"path": "Compilatrix/Anf/Proof/Convert/Correct.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Convert.Level",
+    "Compilatrix.Anf.Proof.Lang",
+    "Compilatrix.Lam.Erase.Proof.Correct"]},
+  "Compilatrix.Anf.Proof.Convert.Cases":
+  {"path": "Compilatrix/Anf/Proof/Convert/Cases.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Lists"]},
+  "Compilatrix.Anf.Proof.Convert.Base":
+  {"path": "Compilatrix/Anf/Proof/Convert/Base.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Rel"]},
+  "Compilatrix.Anf.Proof.Convert.App":
+  {"path": "Compilatrix/Anf/Proof/Convert/App.lean",
+   "imports": ["Compilatrix.Anf.Proof.Convert.Env"]},
   "Compilatrix.Anf.Print":
   {"path": "Compilatrix/Anf/Print.lean", "imports": ["Compilatrix.Anf.Syntax"]},
   "Compilatrix.Anf.Pipeline":
@@ -2705,6 +2783,7 @@
     "Compilatrix.Sem.Agrees",
     "Compilatrix.Sem.SimUpTo",
     "Compilatrix.Sem.Bind",
+    "Compilatrix.Sem.Dominance",
     "Compilatrix.Sem.Traced",
     "Compilatrix.Sem.TracedSim",
     "Compilatrix.Sem.TracedTransform",
@@ -2827,6 +2906,26 @@
     "Compilatrix.Anf.Pipeline",
     "Compilatrix.Anf.Proof.Unfold",
     "Compilatrix.Anf.Proof.Mono",
+    "Compilatrix.Anf.Proof.Lang",
+    "Compilatrix.Anf.Proof.Convert.Rel",
+    "Compilatrix.Anf.Proof.Convert.Base",
+    "Compilatrix.Anf.Proof.Convert.Env",
+    "Compilatrix.Anf.Proof.Convert.App",
+    "Compilatrix.Anf.Proof.Convert.Prog",
+    "Compilatrix.Anf.Proof.Convert.Kont",
+    "Compilatrix.Anf.Proof.Convert.Head",
+    "Compilatrix.Anf.Proof.Convert.Force",
+    "Compilatrix.Anf.Proof.Convert.Step",
+    "Compilatrix.Anf.Proof.Convert.Lists",
+    "Compilatrix.Anf.Proof.Convert.Cases",
+    "Compilatrix.Anf.Proof.Convert.Groups",
+    "Compilatrix.Anf.Proof.Convert.SpineBase",
+    "Compilatrix.Anf.Proof.Convert.SpineVar",
+    "Compilatrix.Anf.Proof.Convert.SpineGlob",
+    "Compilatrix.Anf.Proof.Convert.Spine",
+    "Compilatrix.Anf.Proof.Convert.Term",
+    "Compilatrix.Anf.Proof.Convert.Level",
+    "Compilatrix.Anf.Proof.Convert.Correct",
     "Compilatrix.Own.Kind",
     "Compilatrix.Fir.Syntax",
     "Compilatrix.Fir.Semantics",
