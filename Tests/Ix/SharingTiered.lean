@@ -161,9 +161,7 @@ def tierBruteTests (_ : Unit) : TestSeq :=
           if (← rand 4) == 0 then ds := ds.push u
         deps := deps.push ds
       let cap := min 8 (1 + (← rand n))
-      let wmap : Std.HashMap Nat Nat := (Array.range n).foldl (fun m t => m.insert t weight[t]!) {}
-      let dmap : Std.HashMap Nat (Array Nat) := (Array.range n).foldl (fun m t => m.insert t deps[t]!) {}
-      match firstTier (Array.range n) wmap dmap cap {} with
+      match firstTier (Array.range n) (weight[·]!) (fun t => deps[t]!.toList) cap {} with
       | .ok (s, _) =>
         checked := checked + 1
         let expected := bruteTier n weight deps cap
