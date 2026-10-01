@@ -17,8 +17,8 @@ import Ix.Kernel.Ixon.Values
 
 The kernel-side boundary of the certified Ixon checker. The checker
 (`Ix.Kernel.Cached.checkDecls` at `.verified`, with `Ix.Kernel.model_exists`)
-is vendored from con-leche under `Ix/Kernel/**` (`docs/kernel.md`, "Vendored
-con-leche"); Ix contributes only the boundary:
+is derived from con-leche (`Ix/Kernel/NOTICE`); Ix contributes only the
+boundary:
 
 * `Ix.Kernel.IxonReader` (`Ix/Kernel/Ixon/Reader.lean`, with
   `ReaderSpec`): the Ixon reader from decoded records to

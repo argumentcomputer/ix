@@ -26,7 +26,7 @@ report rows.
    address resolved to a `ConstRef Address` exactly as the reader resolves
    references.
 3. **The Nat-operation pins** (upstream con-leche's generator
-   `PinGen.lean`, not vendored, over Ixon):
+   `PinGen.lean`, which Ix does not carry, over Ixon):
    - **the pins** are the operations' stored values, as the reader reads them
      from the compiled Init (in the dependency order the environment check uses). Ixon
      names a constant by its content, so the pin table's address for

@@ -27,7 +27,7 @@ An example is `v + 1 ≤ max (imax (max (u+2) (v+1)) v) 1`, Ixon's canonical
 form of a level in Mathlib's `RatFunc.liftOn_def`.
 
 The algorithm is the one of the retired intrinsic kernel's level normalizer
-(`docs/kernel.md`, "The retired intrinsic kernel"), on the vendored `Level`,
+(`docs/kernel.md`, "The retired intrinsic kernel"), on the kernel's `Level`,
 with named parameters, and structurally recursive. An `imax u v`
 is decomposed through the condition sets under which `v` is nonzero
 (`nzConds`), not by the distributing rewrites, so no termination measure

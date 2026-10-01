@@ -37,7 +37,7 @@ of unused tables: the final kernel admission still checks the entire input.
 
 namespace Ix.Ixon.BlockOrder
 
-open Kernel hiding Expr  -- `Expr` is Ixon's here (the vendored checker's is `Ix.Kernel.Expr`)
+open Kernel hiding Expr  -- `Expr` is Ixon's here (the kernel's is `Ix.Kernel.Expr`)
 open _root_.Ixon (Univ Expr MutConst)
 
 abbrev Classes := List (List Nat)

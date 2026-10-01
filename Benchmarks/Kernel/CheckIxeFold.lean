@@ -8,7 +8,7 @@ import Ix.Ixon.KernelAdmission
 
 /-! # The batch fold over an environment check's accepted records (untrusted harness)
 
-`kernel-check-ixe --fold <input.ixe> <output.jsonl>` measures the vendored
+`kernel-check-ixe --fold <input.ixe> <output.jsonl>` measures the
 declaration fold `Ix.Kernel.Cached.checkDecls` run ONCE over every record the
 per-constant check would accept, as upstream con-leche's own driver (`Main.lean`,
 `checkDeclsIO`) runs it over a lean4export stream: phase A

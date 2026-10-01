@@ -28,7 +28,7 @@ def allowedProof (name : Lean.Name) : Bool :=
 
 /-- The import closure of `roots` stays inside `allowed`, below the kernel's
 ruled elaboration-time imports inside `Kernel.Audit.elaborationImports`
-(the vendored checker's `BasisGen` uses `Lean` at elaboration time
+(the kernel's `BasisGen` uses `Lean` at elaboration time
 only). -/
 def checkImports (roots : Array Lean.Name) (allowed : Lean.Name → Bool) : Lean.Elab.Command.CommandElabM Unit := do
   let graph := Kernel.Audit.importEdges (← Lean.getEnv)

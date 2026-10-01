@@ -646,7 +646,7 @@ x)`. Ixon stores each level as the canonical form of its semantic class
 `Sort (max (imax (max (w+2) (x+1)) x) 1)`, where the `Eq` expects
 `Sort (max (x+1) (imax (w+2) x))`. The two levels are equal at every
 valuation. Nanoda's comparison (the official kernel's `leq`, which the
-vendored `Level.leqCore` implements) establishes only `≤`: the converse
+kernel's `Level.leqCore` implements) establishes only `≤`: the converse
 `x+1 ≤ max (imax … x) 1` splits the `max`, and each branch fails on its own
 (at `x = 0` and at `x = 1`); without a fallback the theorem is refused with
 `application type mismatch`, as Mathlib's `RatFunc.liftOn_def` and

@@ -13,7 +13,7 @@ import Ix.Kernel.Verify.Frontend.Prepare
 
 /-! # The public theorems of the kernel entry
 
-The certified contract of Ix's Ixon checker (`docs/kernel.md`): the vendored
+The certified contract of Ix's Ixon checker (`docs/kernel.md`): the
 verified fold (`Ix.Kernel.Cached.checkDecls .verified`) behind the Ixon
 reader, stated for the executed functions.
 

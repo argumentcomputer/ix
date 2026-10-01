@@ -11,7 +11,7 @@ import Ix.Kernel.NatOpPinSet
 
 /-! # The Ixon prelude and the pin table
 
-Upstream con-leche's built-in prelude (`Frontend/Prelude.lean`, not vendored) is a
+Upstream con-leche's built-in prelude (`Frontend/Prelude.lean`, not carried here) is a
 committed lean4export stream of twelve declarations, parsed at start-up and
 put in front of every fold by `Frontend.preparePrelude`: the six pinned basis
 blocks `Eq`, `Nat`, `PUnit`, `Empty`, `False` and the quotient package (the

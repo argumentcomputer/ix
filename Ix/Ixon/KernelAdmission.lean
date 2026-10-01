@@ -7,10 +7,10 @@ import Ix.Ixon.Admission.Bytes
 import Ix.Kernel.Ixon.Prelude
 import Ix.Kernel.MainTheorem
 
-/-! # Admission from ordered Ixon record bytes through the vendored checker
+/-! # Admission from ordered Ixon record bytes through the kernel
 
-The `checkBytes`-shaped entry of the verified checker vendored from
-con-leche (`Ix.Kernel`, `docs/kernel.md`, "Vendored con-leche"), which the
+The `checkBytes`-shaped entry of the verified checker `Ix.Kernel` (derived
+from con-leche, `Ix/Kernel/NOTICE`), which the
 certified API `Ix.Ixon.Admission.checkBytes` runs:
 
     preflight → uniqueKeys → decodeRecords → Ixon reader → preparePrelude
@@ -24,7 +24,7 @@ certified API `Ix.Ixon.Admission.checkBytes` runs:
   `muts` blocks and projection records, the in-process modeller and the
   projection rewrite), against the supplied records with the Ixon prelude's
   records as a fallback store.
-* `preparePrelude` is the vendored `Ix.Kernel.Frontend.preparePrelude`
+* `preparePrelude` is `Ix.Kernel.Frontend.preparePrelude`
   (`Ix/Kernel/Frontend/Prepare.lean`), with the Ixon prelude (`Ix.Kernel.IxonReader.builtinPrelude`).
 * The fold is `Ix.Kernel.Cached.checkDecls` at `.verified`, at the committed
   Nat-operation pin variant generated from Ixon records

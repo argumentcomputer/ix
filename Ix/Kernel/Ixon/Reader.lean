@@ -14,10 +14,10 @@ import Ix.Kernel.Ref
 This reader turns decoded Ixon records into the `Array Ix.Kernel.Declaration`
 that the verified fold `Ix.Kernel.Cached.checkDecls` consumes. It is the
 Ixon counterpart of upstream con-leche's NDJSON decoder
-(`Frontend/ExportC.lean`, not vendored): the same record shapes, the same
+(`Frontend/ExportC.lean`, not carried here): the same record shapes, the same
 projection rewrite (`Ix.Kernel.Frontend.ProjRec`) and the same in-process
 modeller for nested and mutual blocks (`Ix.Kernel.Frontend.InModel`), both
-vendored. Its output then goes through `Frontend.preparePrelude` and the
+derived from upstream's. Its output then goes through `Frontend.preparePrelude` and the
 fold.
 
 ## Soundness: nothing here is trusted

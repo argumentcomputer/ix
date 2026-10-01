@@ -24,9 +24,9 @@ def operations : Array Lean.Name :=
   #[``Ix.Ixon.Admission.preflight, ``Ix.Ixon.Admission.uniqueKeys, ``Ix.Ixon.Admission.decodeRecords,
     ``Ix.Ixon.Admission.checkBytes]
 
-/-- Admission runs the vendored checker behind the Ixon reader
-(`Ix.Ixon.KernelAdmission`, and the kernel `Ix.Kernel`: the vendored checker
-with the reader beside it; `Lean` only below the kernel's ruled
+/-- Admission runs the kernel's checker behind the Ixon reader
+(`Ix.Ixon.KernelAdmission`, and the kernel `Ix.Kernel`: the checker with the
+reader beside it; `Lean` only below the kernel's ruled
 elaboration-time imports), whose closure admits `Std`
 (`Ix.Kernel.Audit.importAllowlist`). -/
 def dataImports : Array Lean.Name :=

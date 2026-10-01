@@ -11,10 +11,10 @@ documentation were adapted for Ix; the mathematical construction is retained.
 Con-leche's Apache-2.0 license is preserved in LICENSE-CON-LECHE.
 
 The file carries the source's instance of con-leche's class
-(`ConLeche.SetTheory` upstream, vendored as `Ix.Kernel.SetTheory`) under
+(`ConLeche.SetTheory` upstream, `Ix.Kernel.SetTheory` here) under
 other names: the source's `setTheoryOfChain`, `setTheoryOfCarneiro` and
 `carneiro_implies_conleche` are `zfSetTheoryOfChain`,
 `zfSetTheoryOfCarneiro` and `carneiro_implies_setTheory` here. Its lemmas
-are stated over con-leche's `IsTGUniverse` and `Equinumerous` (vendored as
+are stated over con-leche's `IsTGUniverse` and `Equinumerous` (in Ix,
 `Ix.Kernel.IsTGUniverse` and `Ix.Kernel.Equinumerous`), as the source's
 are. IxSetTheoryModel/Consistency.lean is authored in this repository.

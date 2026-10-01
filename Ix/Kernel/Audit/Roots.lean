@@ -65,7 +65,7 @@ namespace Ix.Kernel.Audit
 /-- The public theorems (`docs/kernel.md`, "The theorems"): model
 existence, no proof of the pinned `False`, and resources for the kernel entry,
 at the committed tables and at every pin table, prelude and Nat-operation pin
-list, and the two vendored theorems they rest on (`model_exists`,
+list, and the two con-leche-derived theorems they rest on (`model_exists`,
 `no_False_theorem_accepted`). -/
 def publicRoots : Array Lean.Name :=
   #[``Ix.Ixon.Admission.checkBytes_has_model, ``Ix.Ixon.Admission.checkBytes_has_model_values,
@@ -115,11 +115,11 @@ def readerOperations : Array Lean.Name :=
 def publicModules : Array Lean.Name := #[`Ix.Ixon.Admission]
 
 /-- Module prefixes the kernel-side modules may use: Lean core (`Init` and
-`Std`, which ships with the toolchain), the kernel `Ix.Kernel` (the vendored
-checker and Ix's boundary beside it), the pure address key and the pure Ixon
+`Std`, which ships with the toolchain), the kernel `Ix.Kernel` (the checker
+and Ix's Ixon boundary beside it), the pure address key and the pure Ixon
 types. It fences the Ixon reader, the record store, the projection writer
 and the pure Ixon types (below), and is the base of `importAllowlist`. `Std`
-is admitted for its maps and their lemmas, which the vendored kernel uses;
+is admitted for its maps and their lemmas, which the kernel uses;
 `Classical.choice` reaching kernel definitions through it is accepted, and
 the axiom guards below record where. No `Lean` or `Batteries` module,
 nothing else under `Ix`, and no `Blake3`, `LSpec`, `Cli`, or `lean4lean`
@@ -155,11 +155,11 @@ def proofImportAllowlist : Array Lean.Name :=
   importAllowlist ++ #[`Ix.Ixon.Bounded.Size, `Ix.Ixon.Verify, `Ix.Ixon.KernelConsistency,
     `Ix.Ixon.Consistency, `Lean]
 
-/-- The vendored kernel's elaboration-time imports:
+/-- The kernel's elaboration-time imports:
 `Ix/Kernel/BasisGen.lean` (`public meta import Lean`) splices the
 annotated basis and pins. Below these edges only Lean core, `Lean`, and
 `Ix.Kernel` may appear. Upstream's pin generators and JSON pin dumps
-(`PinGen*.lean`, `NatOpPins.lean`) are not vendored: the Nat-operation pins
+(`PinGen*.lean`, `NatOpPins.lean`) are not carried here: the Nat-operation pins
 come from Ixon (`Ix/Kernel/Ixon/NatOpPinData.lean`). -/
 def elaborationImports : ElaborationImports where
   importers := #[`Ix.Kernel.BasisGen]
