@@ -410,6 +410,8 @@ import Compilatrix.X86.Layout.Proof.Linearize
 import Compilatrix.X86.Layout.Proof.Transport
 import Compilatrix.Backend
 import Compilatrix.Backend.Proof.Xl
+import Compilatrix.Backend.Proof.Emit
+import Compilatrix.Backend.Proof.Object
 import Compilatrix.Rt.Backend
 import Compilatrix.Src.Table.Cert
 import Compilatrix.Recheck

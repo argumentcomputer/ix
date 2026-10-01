@@ -156,6 +156,8 @@
   "Compilatrix.Anf.Walk",
   "Compilatrix.Anf.WellFormed",
   "Compilatrix.Backend",
+  "Compilatrix.Backend.Proof.Emit",
+  "Compilatrix.Backend.Proof.Object",
   "Compilatrix.Backend.Proof.Xl",
   "Compilatrix.Cfg.Lower",
   "Compilatrix.Cfg.Proof.Correct",
@@ -621,5 +623,5 @@
   "Ix.Lib"],
  "baseline": "jcb/x86: merge M2.6b backend",
  "axiom_sha256":
- "19343c0ab009157dbeea48579e5875ddfbee544e3b548ec0093529c5f903c212",
- "axiom_count": 3549}
+ "628b1c3ef81b68173e2abb334a63254075900fde9314b18e8678a78639cb8fe6",
+ "axiom_count": 3555}

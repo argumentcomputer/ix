@@ -1,6 +1,8 @@
 import Compilatrix.X86.ObjectRun
 import Compilatrix.X86.ObjectRunSafe
 import Compilatrix.Backend.Proof.Xl
+import Compilatrix.Backend.Proof.Emit
+import Compilatrix.Backend.Proof.Object
 
 /-! Required axiom fences for the backend composition (M2.6b item 5): the
 object's clocked execution (`ObjectEval.exec`, `exec_mono`), the bridge
@@ -54,6 +56,9 @@ theorems; expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.X86.ObjectEval.sim_of_ends' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.ObjectEval.sim_of_ends
 
+/-- info: 'Compilatrix.X86.ObjectEval.sim_of_ends_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.ObjectEval.sim_of_ends_succ
+
 /-- info: 'Compilatrix.Backend.alloc_validated' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Backend.alloc_validated
 
@@ -71,3 +76,18 @@ theorems; expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Backend.xl_tsim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Backend.xl_tsim
+
+/-- info: 'Compilatrix.Backend.emit_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Backend.emit_parts
+
+/-- info: 'Compilatrix.Backend.object_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Backend.object_sim
+
+/-- info: 'Compilatrix.Backend.compile_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Backend.compile_sim
+
+/-- info: 'Compilatrix.Backend.object_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Backend.object_refines
+
+/-- info: 'Compilatrix.Backend.object_tsim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Backend.object_tsim

@@ -970,7 +970,9 @@
    "imports":
    ["Compilatrix.X86.ObjectRun",
     "Compilatrix.X86.ObjectRunSafe",
-    "Compilatrix.Backend.Proof.Xl"]},
+    "Compilatrix.Backend.Proof.Xl",
+    "Compilatrix.Backend.Proof.Emit",
+    "Compilatrix.Backend.Proof.Object"]},
   "CompilatrixTests.Fences.Backend":
   {"path": "CompilatrixTests/Fences/Backend.lean",
    "imports":
@@ -2866,6 +2868,16 @@
    ["Compilatrix.Backend",
     "Compilatrix.Xv.Select.Proof.Correct",
     "Compilatrix.Xv.Validate.Proof.Traced"]},
+  "Compilatrix.Backend.Proof.Object":
+  {"path": "Compilatrix/Backend/Proof/Object.lean",
+   "imports":
+   ["Compilatrix.Backend.Proof.Xl",
+    "Compilatrix.Backend.Proof.Emit",
+    "Compilatrix.X86.ObjectRunSafe",
+    "Compilatrix.Sem.TracedSim"]},
+  "Compilatrix.Backend.Proof.Emit":
+  {"path": "Compilatrix/Backend/Proof/Emit.lean",
+   "imports": ["Compilatrix.Backend"]},
   "Compilatrix.Backend":
   {"path": "Compilatrix/Backend.lean",
    "imports":
@@ -3843,6 +3855,8 @@
     "Compilatrix.X86.Layout.Proof.Transport",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
+    "Compilatrix.Backend.Proof.Emit",
+    "Compilatrix.Backend.Proof.Object",
     "Compilatrix.Rt.Backend",
     "Compilatrix.Src.Table.Cert",
     "Compilatrix.Recheck",

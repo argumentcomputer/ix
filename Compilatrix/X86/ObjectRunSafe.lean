@@ -17,8 +17,10 @@ The bridge from typed `X86.Eval` runs to the object's clocked semantics
   the object running at clock `n − 1` (every typed step is at least one
   byte step, `Stream.safe_progress`);
 - `sim_of_ends`: hence, from 05 §6.2's conclusion for every outcome of a
-  clocked source (`Ends`, the shape of `Backend.safeSteps`), a `Sem.Sim`
-  from the source to the object with clock map `k ↦ k + 1`.
+  clocked source (`Ends`, the shape of `Backend.safeSteps`, whose timeout
+  clause asks for at least `b k` steps at clock `k`), a `Sem.Sim` from the
+  source to the object with any clock map `f` with `k < b (f k)`
+  (`sim_of_ends_succ`: `b = id`, `f k = k + 1`).
 -/
 
 namespace Compilatrix.X86.ObjectEval
@@ -172,19 +174,19 @@ theorem exec_running (hout : input.encoded.text.size ≤ (retAddr - base).toNat)
 end Object
 
 /-- 05 §6.2's conclusion (`Backend.safeSteps`) for an outcome `r` of a
-clocked source at clock `k`: checked steps from the entry that end as the
-outcome says, or in the target's own stack failure (status 2). A value
-ends with status 0, its word in `rdx` and `Final` of the final memory; a
-resource failure with its code, a trap with 4; a timeout running, after
-at least `k` steps. -/
+clocked source: checked steps from the entry that end as the outcome
+says, or in the target's own stack failure (status 2). A value ends with
+status 0, its word in `rdx` and `Final` of the final memory; a resource
+failure with its code, a trap with 4; a timeout running, after at least
+`bound` steps. -/
 def Ends (checked : Checked) (core₀ : Core) (retAddr : Word) {α : Type}
-    (Final : α → Word → Memory → Stream.Holes → Prop) (k : Nat) (r : Result α) : Prop :=
+    (Final : α → Word → Memory → Stream.Holes → Prop) (bound : Nat) (r : Result α) : Prop :=
   ∃ n holes after, Stream.SafeSteps Runtime.rejecting checked n (fun _ => False) (Machine.initial checked core₀)
       holes after ∧
     ((∃ val, Exit core₀ retAddr 2 val after) ∨
       match r with
       | .ok v => ∃ val, Exit core₀ retAddr 0 val after ∧ Final v val after.core.memory holes
-      | .timeout => k ≤ n ∧ after.status = .running
+      | .timeout => bound ≤ n ∧ after.status = .running
       | .resource failure => ∃ val, Exit core₀ retAddr (Resource.code failure) val after
       | .trap => ∃ val, Exit core₀ retAddr 4 val after
       | .stuck => True)
@@ -217,11 +219,13 @@ variable {checked : Checked} {input : ELF.Input} {bytes : ByteArray}
   (hout : input.encoded.text.size ≤ (retAddr - base).toNat)
 
 include stream object entry hret hout in
-/-- 05 §6.2's conclusion at every clock gives a simulation of the source by
-the object, with clock map `k ↦ k + 1`. -/
+/-- 05 §6.2's conclusion at every clock, with step bound `b k` at clock
+`k`, gives a simulation of the source by the object, with any clock map
+`f` such that the bound at `f k` exceeds `k`. -/
 theorem sim_of_ends {α : Type} {Final : α → Word → Memory → Stream.Holes → Prop} {c : Nat → Result α}
-    (hends : ∀ k, c k ≠ .stuck → Ends checked core₀ retAddr Final k (c k)) :
-    Sim (Lifted Final) (fun k => k + 1) c (exec bytes input.exportName base core₀ flags) where
+    {b f : Nat → Nat} (hb : ∀ k, k + 1 ≤ b (f k))
+    (hends : ∀ k, c k ≠ .stuck → Ends checked core₀ retAddr Final (b k) (c k)) :
+    Sim (Lifted Final) f c (exec bytes input.exportName base core₀ flags) where
   forward k hk := by
     cases hc : c k with
     | stuck => exact ⟨0, .stuck⟩
@@ -251,8 +255,9 @@ theorem sim_of_ends {α : Type} {Final : α → Word → Memory → Stream.Holes
       · obtain ⟨k', mem, he, _⟩ := exec_exit stream object entry hret hout steps ex
         exact ⟨k', by rw [he, statusResult_four]; exact .trap⟩
   timeout k hk := by
-    obtain ⟨n, holes, after, steps, h⟩ := hends (k + 1) (by simp [hk])
+    obtain ⟨n, holes, after, steps, h⟩ := hends (f k) (by simp [hk])
     rw [hk] at h
+    have hbk := hb k
     rcases h with ⟨val, ex⟩ | ⟨le, running⟩
     · obtain ⟨k', mem, he, _⟩ := exec_exit stream object entry hret hout (flags := flags) steps ex
       rw [statusResult_two] at he
@@ -262,6 +267,13 @@ theorem sim_of_ends {α : Type} {Final : α → Word → Memory → Stream.Holes
         rw [(exec_mono bytes input.exportName base core₀ flags).eq_of_ne_timeout (k' := k') ht (by rw [he]; simp), he]
     · have := exec_running stream object entry hret hout (flags := flags) steps running (by omega)
       exact .inl ((exec_mono bytes input.exportName base core₀ flags).timeout_of_le (by omega) this)
+
+include stream object entry hret hout in
+/-- With step bound `k` at clock `k`, the clock map is `k ↦ k + 1`. -/
+theorem sim_of_ends_succ {α : Type} {Final : α → Word → Memory → Stream.Holes → Prop} {c : Nat → Result α}
+    (hends : ∀ k, c k ≠ .stuck → Ends checked core₀ retAddr Final k (c k)) :
+    Sim (Lifted Final) (fun k => k + 1) c (exec bytes input.exportName base core₀ flags) :=
+  sim_of_ends stream object entry flags hret hout (b := id) (fun _ => Nat.le_refl _) hends
 
 end Sim
 
