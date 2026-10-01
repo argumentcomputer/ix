@@ -10,12 +10,19 @@ import Mathlib.SetTheory.Cardinal.Regular
 import Mathlib.SetTheory.ZFC.VonNeumann
 import Mathlib.SetTheory.ZFC.Cardinal
 import Ix.Kernel.Model.SetTheory.Core
+import ConLeche.SetTheory.Core
 
 /-!
-# A concrete model of Ix's set-theory interface
+# A concrete model of the set-theory interface
 
 A strictly increasing countable sequence of inaccessible cardinals gives
-`Ix.Kernel.Model.SetTheory ZFSet.{u}`, with `univChain n := V_ (κ n).ord`.
+`ConLeche.SetTheory ZFSet.{u}`, the interface of the certified checker's
+theorems from port step L5 (plan v4), and Ix's own
+`Ix.Kernel.Model.SetTheory ZFSet.{u}`, the interface of the intrinsic
+reference kernel until L6. Both use `univChain n := V_ (κ n).ord`; the two
+classes are textually identical up to namespace, so one construction serves
+both (`IsTGUniverse` and `Equinumerous` are definitions with the same
+bodies, so a proof of either is a proof of the other).
 Mathlib supplies the set operations, including images of arbitrary Lean
 functions via `Classical.allZFSetDefinable`. The proof below establishes
 Tarski's universe clauses for each inaccessible stage of the von Neumann
@@ -177,5 +184,50 @@ theorem carneiro_implies_ix :
     OmegaInaccessibles.{u} → Nonempty (Σ V : Type (u + 1), Ix.Kernel.Model.SetTheory V) :=
   fun h => ⟨⟨ZFSet.{u}, setTheoryOfCarneiro h⟩⟩
 
+
+/-! ### The `ConLeche.SetTheory` instance on `ZFSet` (plan v4, L5)
+
+The same construction as `setTheoryOfChain`, for con-leche's class. This is
+con-leche's own bridge (`bridge/lean4lean-model/ConLecheBridge/Carneiro.lean`
+at `86cd20a6`, the source of this file), whose instance `setTheoryOfChain`
+targets `ConLeche.SetTheory` directly. -/
+
+set_option warn.classDefReducibility false in
+/-- Con-leche's set theory on Mathlib's `ZFSet.{u}`, from any strictly
+increasing sequence of inaccessibles; the fields are `setTheoryOfChain`'s. -/
+noncomputable def conLecheSetTheoryOfChain (κ : ℕ → Cardinal.{u}) (hmono : StrictMono κ)
+    (hinacc : ∀ n, (κ n).IsInaccessible) : ConLeche.SetTheory ZFSet.{u} where
+  Mem := (· ∈ ·)
+  ext h := ZFSet.ext h
+  upair a b := {a, b}
+  mem_upair := mem_pair
+  sUnion := ZFSet.sUnion
+  mem_sUnion := mem_sUnion
+  power := powerset
+  mem_power := mem_powerset
+  regularity x h := by
+    obtain ⟨y, hy, hmin⟩ := mem_wf.has_min {y | y ∈ x} h
+    exact ⟨y, hy, fun ⟨z, hzy, hzx⟩ => hmin z hzx hzy⟩
+  image f := @ZFSet.image f (Classical.allZFSetDefinable _)
+  mem_image := by
+    intro f a z
+    rw [@mem_image f (Classical.allZFSetDefinable _)]
+    exact exists_congr fun w => and_congr_right fun _ => eq_comm
+  univChain n := V_ (κ n).ord
+  univChain_mem n := vonNeumann_mem_of_lt (ord_lt_ord.mpr (hmono (Nat.lt_succ_self n)))
+  univChain_tg n := isTGUniverse_vonNeumann (hinacc n)
+
+set_option warn.classDefReducibility false in
+/-- Con-leche's set theory on `ZFSet.{u}` under Carneiro's hypothesis. -/
+noncomputable def conLecheSetTheoryOfCarneiro (h : OmegaInaccessibles.{u}) :
+    ConLeche.SetTheory ZFSet.{u} :=
+  conLecheSetTheoryOfChain (Classical.choose h) (Classical.choose_spec h).1 (Classical.choose_spec h).2
+
+/-- **Carneiro's hypothesis implies con-leche's.** `ω` strongly inaccessible
+cardinals give a model of `ConLeche.SetTheory`, the interface the certified
+checker's theorems are stated over, on Mathlib's `ZFSet.{u}`. -/
+theorem carneiro_implies_conleche :
+    OmegaInaccessibles.{u} → Nonempty (Σ V : Type (u + 1), ConLeche.SetTheory V) :=
+  fun h => ⟨⟨ZFSet.{u}, conLecheSetTheoryOfCarneiro h⟩⟩
 
 end IxSetTheoryModel

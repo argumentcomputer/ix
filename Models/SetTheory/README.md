@@ -1,27 +1,41 @@
 # Set-theory model
 
-This separate Lake package constructs `Ix.Kernel.Model.SetTheory` on Mathlib's
-`ZFSet`, assuming a strictly increasing countable sequence of strongly
-inaccessible cardinals. Its universe chain is `V_ (κ n).ord`.
+This separate Lake package constructs the certified checker's set-theory
+interface on Mathlib's `ZFSet`, assuming a strictly increasing countable
+sequence of strongly inaccessible cardinals. Its universe chain is
+`V_ (κ n).ord`.
 
-`IxSetTheoryModel.setTheoryOfChain` assembles the instance from a given chain.
-`setTheoryOfCarneiro` selects a chain from `OmegaInaccessibles`, and
-`carneiro_implies_ix` proves:
+From port step L5 (plan v4) the checker's theorems are stated over
+con-leche's class `ConLeche.SetTheory`. `IxSetTheoryModel.conLecheSetTheoryOfChain`
+assembles that instance from a given chain, `conLecheSetTheoryOfCarneiro`
+selects a chain from `OmegaInaccessibles`, and `carneiro_implies_conleche`
+proves:
 
 ```lean
 OmegaInaccessibles.{u} →
-  Nonempty (Σ V : Type (u + 1), Ix.Kernel.Model.SetTheory V)
+  Nonempty (Σ V : Type (u + 1), ConLeche.SetTheory V)
 ```
+
+`IxSetTheoryModel/Consistency.lean` instantiates the certified Ixon entry's
+theorems there: `checkBytes_has_ZFSet_model` (every input the entry accepts
+has a model in `ZFSet`) and `checkBytes_no_proof_of_False`.
+
+The same construction still provides Ix's own class
+`Ix.Kernel.Model.SetTheory`, the interface of the intrinsic reference
+kernel until L6 (`setTheoryOfChain`, `setTheoryOfCarneiro`,
+`carneiro_implies_ix`). The two classes are textually identical up to
+namespace, so one set of lemmas serves both.
 
 The construction includes the interface's Lean-level replacement scheme:
 Mathlib's `Classical.allZFSetDefinable` supplies images of arbitrary functions
-`ZFSet → ZFSet`. The audit traverses the theorem's checked types, bodies, and
-constructor fields and permits exactly `propext`, `Classical.choice`, and
-`Quot.sound`. Inaccessible cardinals remain an explicit theorem hypothesis.
+`ZFSet → ZFSet`. The audit traverses the checked types, bodies, and
+constructor fields of each of the four theorems above and permits exactly
+`propext`, `Classical.choice`, and `Quot.sound`. Inaccessible cardinals
+remain an explicit theorem hypothesis.
 
-The package imports the actual Ix interface by a path dependency on the
-`IxKernel` package, which builds `Ix.Kernel` from the repository sources with
-no other dependencies. Mathlib is confined to this package; ordinary Ix and
+The package imports the actual interfaces by a path dependency on the
+`IxKernel` package, which builds `Ix.Kernel`, the `ConLeche` subtree and the
+certified Ixon entry from the repository sources with no other dependencies. Mathlib is confined to this package; ordinary Ix and
 `Ix.Kernel` builds do not depend on it. This construction supplies the
 set-theoretic assumption used by the [certified kernel roadmap](../../plans/ix-certified-roadmap.md).
 A converse from the interface to inaccessible cardinals is a separate proof
@@ -36,7 +50,7 @@ lake exe cache get Mathlib.SetTheory.Cardinal.Regular Mathlib.SetTheory.ZFC.VonN
 lake build --wfail
 ```
 
-Lean and Mathlib use release `v4.33.1`; `lake-manifest.json` pins all resolved
+Lean and Mathlib use release `v4.34.0`; `lake-manifest.json` pins all resolved
 dependencies. The cache command retrieves the three imported Mathlib modules
 and their dependencies. The build checks the axiom guard. The separate
 `set-theory-model.yml` workflow runs these commands when the model, its interface,

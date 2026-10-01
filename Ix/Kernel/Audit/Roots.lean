@@ -5,13 +5,27 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel
 import Ix.Ixon.Types
+import Ix.Ixon.ConLecheConsistency
 import Ix.Kernel.Audit.Axioms
 import Ix.Kernel.Audit.Imports
 import Ix.Kernel.Audit.Runtime
 
 /-! # The required roots and their frozen boundaries
 
-This module is the certified gate's manifest. It fails elaboration when
+This module is the certified gate's manifest. From port step L5 (plan v4,
+2026-09-30) its public roots are con-leche's verified checker behind the
+Ixon reader: the entry `Ix.Ixon.ConLecheAdmission.checkBytes` (and its
+pin-parametric form `checkBytesWith`, and `checkConstants`/`checkConstantsWith`
+over decoded records) and the restated public theorems of
+`Ix.Ixon.ConLecheConsistency` (model existence, no proof of the pinned
+`False`, fidelity, resources). L0's rulings (`runtimeRulings`,
+`elaborationImports`) are active on them. The intrinsic kernel's roots
+(`Ix.Kernel.check`, `checkEnv`) stay audited below as the reference kernel:
+they remain reachable through the renamed intrinsic entries
+(`Ix.Ixon.Admission.checkBytesIntrinsic` and its projection and block-order
+variants) until L6 retires them.
+
+It fails elaboration when
 
 * a public root is missing or its exact axiom set differs from the standard
   logical axioms (`propext`, `Classical.choice`, `Quot.sound`);
@@ -59,23 +73,86 @@ fields without endpoint inference (`applyNever`; 1560 → 1563, ingress
 `elaborationImports`, `ConLeche` in `importAllowlist`) and makes the runtime
 audit see `partial` definitions and `csimp` replacements by their compiled
 form; no `ConLeche` module is in this tree yet, and no frozen count
-changed. -/
+changed. L5 (2026-09-30) roots the gate at the con-leche entry: the fold
+`ConLeche.Cached.checkDecls` (3010 compiled functions), the Ixon reader
+and the entry are frozen with the rulings they use (18 computed-field
+overrides, up to 21 proved csimps, the 10 `partial` definitions of the
+in-model generator); `importAllowlist` gains the eight modules of the
+entry's byte stage; the intrinsic kernel's audits are kept unchanged under
+`intrinsicRoots`, `intrinsicFidelityRoots` and `intrinsicOperations`. Rebased
+onto L4b/L4c at integration (int-4, 2026-10-01), the reader is 1856 (L5
+alone: 1853; L4c's `safetyDecline` and its message constants, which replace
+the inline checks of `readDefinition`) and the entry 5289 with 123 externs
+(L5 alone: 33,408 with 115). The entry's committed Nat-operation pins were
+upstream's JSON dumps spliced as one closed term, `ConLeche.natOpPinSets`,
+whose compiled closure is 27,096 functions, 26,957 of them extracted closed
+subterms; L4b's `builtinNatOpPins` decodes a string table at first use
+(235 functions, and the eight string-scanning externs `String.decodeChar`,
+`String.Pos.next`, `UInt32.decLe`, `String.toUTF8` and
+`String.Pos.Raw.{extract, next, get, atEnd}`). -/
 
 open Lean
 
 namespace Ix.Kernel.Audit
 
-/-- The public theorems. -/
+/-- The public theorems (L5; roadmap section 2): model existence, no proof
+of the pinned `False`, and resources for the con-leche entry, at the
+committed tables and at every pin table, prelude and Nat-operation pin list,
+and con-leche's own two letters they rest on. -/
 def publicRoots : Array Name :=
+  #[``Ix.Ixon.ConLecheAdmission.checkBytes_has_model, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_has_model,
+    ``Ix.Ixon.ConLecheAdmission.checkConstants_has_model,
+    ``Ix.Ixon.ConLecheAdmission.checkConstantsWith_has_model,
+    ``Ix.Ixon.ConLecheAdmission.checkBytes_has_model_values,
+    ``Ix.Ixon.ConLecheAdmission.checkBytesWith_has_model_values,
+    ``Ix.Ixon.ConLecheAdmission.checkBytes_no_proof_of_False,
+    ``Ix.Ixon.ConLecheAdmission.checkBytesWith_no_proof_of_False,
+    ``Ix.Ixon.ConLecheAdmission.checkBytes_no_False_theorem,
+    ``Ix.Ixon.ConLecheAdmission.checkBytesWith_no_False_theorem,
+    ``Ix.Ixon.ConLecheAdmission.checkBytesWith_no_False_reference,
+    ``Ix.Ixon.ConLecheAdmission.checkBytes_resources, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_resources,
+    ``ConLeche.model_exists, ``ConLeche.no_False_theorem_accepted]
+
+/-- Fidelity (the role of `Ingress.Installed`) and the facts it is built
+from: the reading of accepted bytes, the record-by-record reading of the
+reader, per-record installation, and the address encoding's injectivity. -/
+def fidelityRoots : Array Name :=
+  #[``Ix.Ixon.ConLecheAdmission.checkBytes_reading, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_reading,
+    ``Ix.Ixon.ConLecheAdmission.checkConstantsWith_installed, ``Ix.Ixon.ConLecheAdmission.Installed.skels,
+    ``Ix.Ixon.ConLecheAdmission.Installed.singleton, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_eq,
+    ``Ix.Ixon.ConLecheAdmission.checkBytes_with, ``Ix.Ixon.ConLecheAdmission.checkConstants_with,
+    ``Ix.Kernel.ConLecheReader.readRecords_spec, ``Ix.Kernel.ConLecheReader.readRecord_singleton,
+    ``Ix.Kernel.ConLecheReader.StreamRead.singleton, ``Ix.Kernel.ConLecheReader.keyName_injective,
+    ``Ix.Kernel.ConLecheFold.checkDecls_installs, ``Ix.Kernel.ConLecheFold.checkDecls_model_defn_values]
+
+/-- The executable entry whose runtime closure is audited: con-leche's fold
+behind the Ixon reader, over bytes and over decoded records. -/
+def publicOperations : Array Name :=
+  #[``Ix.Ixon.ConLecheAdmission.checkBytes, ``Ix.Ixon.ConLecheAdmission.checkBytesWith,
+    ``Ix.Ixon.ConLecheAdmission.checkConstantsWith, ``Ix.Ixon.ConLecheAdmission.checkConstants]
+
+/-- Con-leche's verified fold, the kernel of the entry. -/
+def kernelOperations : Array Name := #[``ConLeche.Cached.checkDecls]
+
+/-- The Ixon reader of the entry (the counterpart of `ingressOperations`). -/
+def readerOperations : Array Name :=
+  #[``Ix.Kernel.ConLecheReader.readRecords, ``Ix.Ixon.ConLecheAdmission.readStream]
+
+/-- The entry's module, whose import closure is audited. -/
+def publicModules : Array Name := #[`Ix.Ixon.ConLecheAdmission]
+
+/-- The intrinsic kernel's public theorems (K0 to L4), kept as the
+reference kernel's until L6. -/
+def intrinsicRoots : Array Name :=
   #[``Ix.Kernel.check_has_model, ``Ix.Kernel.checkDecls_has_model, ``Ix.Kernel.no_proof_of_False]
 
-/-- Fidelity complements the frozen model-existence roots. -/
-def fidelityRoots : Array Name :=
+/-- The intrinsic kernel's fidelity roots. -/
+def intrinsicFidelityRoots : Array Name :=
   #[``Ix.Kernel.annotate_erase, ``Ix.Kernel.checkDecl_installed, ``Ix.Kernel.checkDecls_installed,
     ``Ix.Kernel.check_installed, ``Ix.Kernel.checkDecl_preserves, ``Ix.Kernel.checkDecls_preserves]
 
-/-- The executable operations whose runtime closure is audited. -/
-def publicOperations : Array Name :=
+/-- The intrinsic kernel's executable operations. -/
+def intrinsicOperations : Array Name :=
   #[``Ix.Kernel.check, ``Ix.Kernel.checkDecls, ``Ix.Kernel.checkDecl,
     ``Ix.Kernel.Env.lookup, ``Ix.Kernel.Env.toEnvironment]
 
@@ -97,20 +174,47 @@ def egressOperations : Array Name :=
   #[``Ix.Kernel.Egress.readRecords, ``Ix.Kernel.Egress.writeRecords,
     ``Ix.Kernel.Egress.writeExpr, ``Ix.Kernel.Egress.writeProjection]
 
-/-- Module prefixes the certified import closure may use: Lean core (`Init`
-and `Std`, which ships with the toolchain), the kernel itself, the pure address
-key, and the pure Ixon types. `Std` was admitted by the user's decision of
-2026-09-30 (`plans/ix-kernel-competitive.md`) for its maps and their lemmas, as
-con-leche's kernel uses them; `Classical.choice` reaching kernel definitions
-through it is accepted, and the axiom guards below record where. Measured after
-the K0 import trim, the closure of `Ix.Kernel` had 690 modules, all under `Init`
-except the kernel's own and `Ix.Address.Core`. K3 also checks the pure Ixon
-types independently. No `Lean` or `Batteries` module, nothing else under `Ix`,
-and no `Blake3`, `LSpec`, `Cli`, or `lean4lean` module may enter. `ConLeche`
-is the ported con-leche subtree (plan v4, D4), which the Ix boundary imports
-from L5; `Lean` enters it only at elaboration time (`elaborationImports`). -/
-def importAllowlist : Array Name :=
+/-- Module prefixes the intrinsic kernel's import closure may use: Lean core
+(`Init` and `Std`, which ships with the toolchain), the kernel itself, the
+pure address key, and the pure Ixon types. `Std` was admitted by the user's
+decision of 2026-09-30 (`plans/ix-kernel-competitive.md`) for its maps and
+their lemmas, as con-leche's kernel uses them; `Classical.choice` reaching
+kernel definitions through it is accepted, and the axiom guards below record
+where. Measured after the K0 import trim, the closure of `Ix.Kernel` had 690
+modules, all under `Init` except the kernel's own and `Ix.Address.Core`. K3
+also checks the pure Ixon types independently. No `Lean` or `Batteries`
+module, nothing else under `Ix`, and no `Blake3`, `LSpec`, `Cli`, or
+`lean4lean` module may enter. `ConLeche` is the ported con-leche subtree
+(plan v4, D4); `Lean` enters it only at elaboration time
+(`elaborationImports`). -/
+def kernelImportAllowlist : Array Name :=
   #[`Init, `Std, `Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types, `ConLeche]
+
+/-- Module prefixes the certified import closure may use (L5): the
+intrinsic kernel's list, plus exactly the modules of the con-leche entry's
+byte stage, as the int-3 probe of `Ix.Ixon.ConLecheAdmission` found them.
+Each is pure Lean core and is audited on its own terms elsewhere:
+* `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.WireCheck`,
+  `Ix.Ixon.Bounded.Constant`, `Ix.Ixon.Bounded.Universe`, `Ix.Ixon.Canonical`:
+  the canonical per-record decoder and its readers (`Ix.Ixon.Audit`, whose
+  `dataImports` is `Init` and these);
+* `Ix.Ixon.Admission`: batch limits (`preflight`) and the decoding loop
+  (`decodeRecords`), shared with the intrinsic entry
+  (`Ix.Ixon.Admission.Audit`);
+* `Ix.Ixon.ConLecheAdmission`: the entry itself.
+Nothing else under `Ix.Ixon` (in particular no projection hashing,
+`Ix.Address.Pure`, block order or proof module) and still no `Lean` outside
+the ruled elaboration-time edges. -/
+def importAllowlist : Array Name :=
+  kernelImportAllowlist ++ #[`Ix.Ixon.Codec, `Ix.Ixon.Wire, `Ix.Ixon.WireCheck,
+    `Ix.Ixon.Bounded.Constant, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Canonical, `Ix.Ixon.Admission,
+    `Ix.Ixon.ConLecheAdmission]
+
+/-- The proofs of the public theorems may additionally use the Ixon codec's
+proof modules (`Ix.Ixon.Verify`, `Ix.Ixon.Bounded.Size`, with their Lean
+proof tooling) and the theorem module itself. -/
+def proofImportAllowlist : Array Name :=
+  importAllowlist ++ #[`Ix.Ixon.Bounded.Size, `Ix.Ixon.Verify, `Ix.Ixon.ConLecheConsistency, `Lean]
 
 /-- Con-leche's elaboration-time imports (plan v4, "Audits"):
 `ConLeche/Kernel/BasisGen.lean` (`public meta import Lean`) splices the
@@ -157,7 +261,244 @@ def runtimeRulings : RuntimeRulings where
 
 end Ix.Kernel.Audit
 
-/-! ## Axiom boundaries -/
+/-! ## The certified entry (L5): con-leche behind the Ixon reader
+
+### Axiom boundaries
+
+Every public, fidelity and executable root depends on exactly the three
+standard axioms. The list guards below and `publicRoots`/`fidelityRoots`
+name the same roots, so a missing root fails here. -/
+
+run_cmd do
+  let env ← Lean.getEnv
+  for root in Ix.Kernel.Audit.publicRoots ++ Ix.Kernel.Audit.fidelityRoots ++
+      Ix.Kernel.Audit.publicOperations ++ Ix.Kernel.Audit.kernelOperations ++
+      Ix.Kernel.Audit.readerOperations do
+    unless env.contains root do throwError m!"required root is missing: {root}"
+
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytes_has_model [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytesWith_has_model [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkConstants_has_model [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkConstantsWith_has_model [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytes_has_model_values [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytesWith_has_model_values [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytes_no_proof_of_False [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytesWith_no_proof_of_False [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytes_no_False_theorem [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytesWith_no_False_theorem [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytesWith_no_False_reference [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytes_resources [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytesWith_resources [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms ConLeche.model_exists [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms ConLeche.no_False_theorem_accepted [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytes_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytesWith_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkConstantsWith_installed [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.Installed.skels [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.Installed.singleton [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytesWith_eq [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytes_with [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkConstants_with [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.ConLecheReader.readRecords_spec [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.ConLecheReader.readRecord_singleton [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.ConLecheReader.StreamRead.singleton [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.ConLecheReader.keyName_injective [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.ConLecheFold.checkDecls_installs [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.ConLecheFold.checkDecls_model_defn_values [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytes [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytesWith [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkConstantsWith [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkConstants [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms ConLeche.Cached.checkDecls [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.ConLecheReader.readRecords [propext, Classical.choice, Quot.sound]
+
+/-! ### Import and runtime closures
+
+The entry's import closure stays inside `importAllowlist`, below the ruled
+elaboration-time edges inside `elaborationImports.allowed`; the theorems'
+closure inside `proofImportAllowlist`. The runtime closures are frozen with
+the rulings they use, measured before freezing (int-3 probe, re-measured at
+L5 and at int-4): the fold reaches con-leche's computed-field overrides of
+`Level`, `Expr` and `Name` (18) and 20 project csimps; the reader adds the
+in-model generator's 10 `partial` definitions; the entry adds the byte stage
+and the committed tables. The pin-parametric forms (`checkBytesWith`,
+`checkConstantsWith`) reach 4519 functions; the committed pin table, prelude
+and Nat-operation pin decoder add the rest. -/
+
+#guard_msgs (drop info) in
+run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports
+
+#guard_msgs (drop info) in
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Ixon.ConLecheConsistency] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
+
+-- The entry's byte stage is admitted; projection hashing, block order, the
+-- codec proofs and the intrinsic kernel's own boundary are not widened.
+#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Canonical
+#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Admission
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Projection
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.BlockOrder
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Verify
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.ConLecheConsistency
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Address.Pure
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Lean.Data.Json
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `Ix.Ixon.Canonical
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `Ix.Ixon.Admission
+
+/-- info: runtime closure of [ConLeche.Cached.checkDecls]: 3010 compiled functions; inherited externs 83,
+implemented_by 0, unsafe 22, csimp 4; ruled computed_field 18, csimp 20 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
+
+/-- info: runtime closure of [Ix.Kernel.ConLecheReader.readRecords,
+ Ix.Ixon.ConLecheAdmission.readStream]: 1856 compiled functions; inherited externs 81, implemented_by 0,
+unsafe 23, csimp 0; ruled computed_field 18, csimp 7, partial 10 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
+
+/-- info: runtime closure of [Ix.Ixon.ConLecheAdmission.checkBytes,
+ Ix.Ixon.ConLecheAdmission.checkBytesWith,
+ Ix.Ixon.ConLecheAdmission.checkConstantsWith,
+ Ix.Ixon.ConLecheAdmission.checkConstants]: 5289 compiled functions; inherited externs 123, implemented_by 0,
+unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
+
+-- Without the rulings the entry's closure fails: they are what admits it.
+/-- error: project-level execution replacements reached from [ConLeche.Cached.checkDecls] -/
+#guard_msgs (substring := true) in
+run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist
+
+/-! ### Frozen statements -/
+
+/-- info: Ix.Ixon.ConLecheAdmission.checkBytes_has_model : ∀ (V : Type u_1) [inst : ConLeche.SetTheory V]
+  {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)}
+  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  Ix.Ixon.ConLecheAdmission.checkBytes limits records blobs hint = Except.ok env → Nonempty (ConLeche.Model V env) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.ConLecheAdmission.checkBytes_has_model
+
+/-- info: Ix.Ixon.ConLecheAdmission.checkBytesWith_has_model : ∀ (V : Type u_1) [inst : ConLeche.SetTheory V]
+  {pins : Ix.Kernel.ConLecheReader.Pins} {pre : Ix.Kernel.ConLecheReader.Prelude} {natPins : List ConLeche.NatOpPinSet}
+  {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)}
+  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  Ix.Ixon.ConLecheAdmission.checkBytesWith pins pre natPins limits records blobs hint = Except.ok env →
+    Nonempty (ConLeche.Model V env) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.ConLecheAdmission.checkBytesWith_has_model
+
+/-- info: Ix.Ixon.ConLecheAdmission.checkBytes_has_model_values : ∀ (V : Type u_1) [inst : ConLeche.SetTheory V]
+  {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)}
+  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  Ix.Ixon.ConLecheAdmission.checkBytes limits records blobs hint = Except.ok env →
+    ∃ M,
+      ∀ (cv : ConLeche.ConstantVal) (value : ConLeche.Expr) (hint' : ConLeche.ReducibilityHint),
+        ConLeche.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
+          ∀ (φ : ConLeche.LevelParam → Nat) (ρ : ConLeche.BVarIdx → V),
+            ConLeche.Denotes M.cval env φ ρ value (M.cval cv.name φ) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.ConLecheAdmission.checkBytes_has_model_values
+
+/-- info: Ix.Ixon.ConLecheAdmission.checkBytes_no_proof_of_False : ∀ (V : Type u_1) [ConLeche.SetTheory V]
+  {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)}
+  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  Ix.Ixon.ConLecheAdmission.checkBytes limits records blobs hint = Except.ok env →
+    ∀ (ci : ConLeche.ConstantInfo),
+      ci ∈ env.consts → ci.toConstantVal.type = ConLeche.Expr.const ConLeche.falseName [] → False -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.ConLecheAdmission.checkBytes_no_proof_of_False
+
+/-- info: Ix.Ixon.ConLecheAdmission.checkBytesWith_no_False_theorem : ∀ (V : Type u_1) [ConLeche.SetTheory V]
+  {pins : Ix.Kernel.ConLecheReader.Pins} {pre : Ix.Kernel.ConLecheReader.Prelude} {natPins : List ConLeche.NatOpPinSet}
+  {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)}
+  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  Ix.Ixon.ConLecheAdmission.checkBytesWith pins pre natPins limits records blobs hint = Except.ok env →
+    ∀ {constants : List (Address × Ixon.Constant)},
+      Ix.Ixon.Verify.Admission.RecordsRead limits records constants →
+        ∀ {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition},
+          (owner, c) ∈ constants →
+            c.info = Ixon.ConstantInfo.defn d →
+              d.kind = Ix.DefKind.thm →
+                (Ix.Kernel.ConLecheReader.definitionReader
+                          (Ix.Ixon.ConLecheAdmission.streamContext pins pre constants blobs hint) owner c d).read
+                      d.typ =
+                    Except.ok (ConLeche.Expr.const ConLeche.falseName []) →
+                  False -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.ConLecheAdmission.checkBytesWith_no_False_theorem
+
+/-- info: @Ix.Ixon.ConLecheAdmission.checkBytes_reading : ∀ {limits : Ix.Ixon.Admission.Limits}
+  {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)}
+  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  Ix.Ixon.ConLecheAdmission.checkBytes limits records blobs hint = Except.ok env →
+    ∃ pins pre natPins,
+      Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins ∧
+        Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre ∧
+          Ix.Kernel.ConLecheReader.builtinNatOpPins = Except.ok natPins ∧
+            Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
+              ∃ constants,
+                Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
+                  Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs hint env -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.ConLecheAdmission.checkBytes_reading
+
+/-- info: @Ix.Ixon.ConLecheAdmission.checkBytesWith_reading : ∀ {pins : Ix.Kernel.ConLecheReader.Pins}
+  {pre : Ix.Kernel.ConLecheReader.Prelude} {natPins : List ConLeche.NatOpPinSet} {limits : Ix.Ixon.Admission.Limits}
+  {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)}
+  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  Ix.Ixon.ConLecheAdmission.checkBytesWith pins pre natPins limits records blobs hint = Except.ok env →
+    Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
+      ∃ constants,
+        Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
+          Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs hint env -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.ConLecheAdmission.checkBytesWith_reading
+
+/-- info: @Ix.Ixon.ConLecheAdmission.Installed.singleton : ∀ {pins : Ix.Kernel.ConLecheReader.Pins}
+  {pre : Ix.Kernel.ConLecheReader.Prelude} {natPins : List ConLeche.NatOpPinSet}
+  {constants : List (Address × Ixon.Constant)} {blobs : List (Address × ByteArray)}
+  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs hint env →
+    ∀ {owner : Address} {c : Ixon.Constant},
+      (owner, c) ∈ constants →
+        Ix.Kernel.ConLecheReader.isSingleton c.info = true →
+          ∃ st decl ds,
+            Ix.Kernel.ConLecheReader.SingletonRead
+                (Ix.Ixon.ConLecheAdmission.streamContext pins pre constants blobs hint) st owner c decl ∧
+              decl ∈ ds ∧
+                ConLeche.Cached.checkDecls ConLeche.CheckMode.verified natPins ds = Except.ok env ∧
+                  ∀ (s : ConLeche.Cached.InstallSkel),
+                    Ix.Kernel.ConLecheFold.declSkel decl = some s →
+                      ∃ ci, ci ∈ env.consts ∧ ConLeche.Cached.ciSkel ci = s -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.ConLecheAdmission.Installed.singleton
+
+/-- info: @Ix.Ixon.ConLecheAdmission.checkBytes_resources : ∀ {limits : Ix.Ixon.Admission.Limits}
+  {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)}
+  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  Ix.Ixon.ConLecheAdmission.checkBytes limits records blobs hint = Except.ok env →
+    ∃ constants,
+      Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
+        Ix.Ixon.Verify.Admission.resourceUnits constants ≤
+          2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.ConLecheAdmission.checkBytes_resources
+
+/-- info: @Ix.Kernel.ConLecheReader.keyName_injective : ∀ {r s : Ix.Kernel.ConstRef Address},
+  Ix.Kernel.ConLecheReader.keyName r = Ix.Kernel.ConLecheReader.keyName s → r = s -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.ConLecheReader.keyName_injective
+
+/-- info: ConLeche.model_exists : ∀ (V : Type u_1) [inst : ConLeche.SetTheory V] (pins : List ConLeche.NatOpPinSet)
+  (ds : Array ConLeche.Declaration) (env : ConLeche.Env),
+  ConLeche.Cached.checkDecls ConLeche.CheckMode.verified pins ds = Except.ok env → Nonempty (ConLeche.Model V env) -/
+#guard_msgs (whitespace := lax) in
+#check @ConLeche.model_exists
+
+/-! ## The intrinsic reference kernel (until L6)
+
+The intrinsic kernel's boundaries, unchanged from L0: its axiom guards,
+import closure (under `kernelImportAllowlist`), runtime closures and frozen
+statements. -/
 
 #guard_kernel_axioms Ix.Kernel.check_has_model [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDecls_has_model [propext, Classical.choice, Quot.sound]
@@ -203,10 +544,10 @@ end Ix.Kernel.Audit
 #guard_kernel_axioms Ix.Kernel.Egress.readRecords [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Egress.writeRecords [propext, Classical.choice, Quot.sound]
 
-/-! ## Import and runtime closures -/
+/-! ### Import and runtime closures -/
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Audit.kernelImportAllowlist Ix.Kernel.Audit.elaborationImports
 
 -- `Std` is admitted; the compiler frontend and third-party libraries are not.
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Std.Data.TreeMap
@@ -223,7 +564,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel
 Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 1563 compiled functions; inherited externs 32,
 implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.intrinsicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
 Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 1540 compiled functions;
@@ -237,7 +578,7 @@ inherited externs 26, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.egressOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
-/-! ## Frozen statements -/
+/-! ### Frozen statements -/
 
 /-- info: @Ix.Kernel.check_has_model : ∀ {β : Type u_1} [inst : DecidableEq β] (V : Type u_2)
   [inst_1 : Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config} {decls : List (Ix.Kernel.Decl β)}
@@ -260,7 +601,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.egressOperations Ix.Ker
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.no_proof_of_False
 
-/-! ## Frozen statements added with the Ixon v3 takeover (R3)
+/-! ### Frozen statements added with the Ixon v3 takeover (R3)
 
 `checkEnv` is the Ixon entry point over the same admission fold as `check`;
 its reading, model, and no-False statements are frozen like the K0 ones, as is

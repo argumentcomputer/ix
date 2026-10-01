@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Lean.Elab.Command
 import Lean.Util.FoldConsts
 import IxSetTheoryModel.Carneiro
+import IxSetTheoryModel.Consistency
 
 /-!
 # Checked dependency boundary of the concrete set model
@@ -36,17 +37,24 @@ private partial def closure (env : Environment) (pending : List Name)
     | some info => closure env ((directConstants info).toList ++ rest) (seen.insert name)
     | none => closure env rest (seen.insert name)
 
+/-- The audited roots: the instances' existence theorems for both
+interfaces, and the certified checker's consistency in `ZFSet`. -/
+def roots : List Name :=
+  [``carneiro_implies_ix, ``carneiro_implies_conleche, ``checkBytes_has_ZFSet_model,
+    ``checkBytes_no_proof_of_False]
+
 run_cmd do
   let env ← getEnv
-  let root := ``carneiro_implies_ix
-  let dependencies := closure env [root]
-  let actual := dependencies.toList.toArray.filter fun name =>
-    match env.checked.get.find? name with
-    | some (.axiomInfo _) => true
-    | _ => false
-  let expected := #[``propext, ``Classical.choice, ``Quot.sound]
-  unless actual.qsort Name.lt == expected.qsort Name.lt do
-    throwError m!"set-theory model axiom boundary changed:\n{actual.qsort Name.lt}"
+  for root in roots do
+    unless env.contains root do throwError m!"required root is missing: {root}"
+    let dependencies := closure env [root]
+    let actual := dependencies.toList.toArray.filter fun name =>
+      match env.checked.get.find? name with
+      | some (.axiomInfo _) => true
+      | _ => false
+    let expected := #[``propext, ``Classical.choice, ``Quot.sound]
+    unless actual.qsort Name.lt == expected.qsort Name.lt do
+      throwError m!"set-theory model axiom boundary changed at {root}:\n{actual.qsort Name.lt}"
   logInfo "Set-theory model full dependency audit passed: standard Lean axioms only"
 
 end IxSetTheoryModel.Audit
