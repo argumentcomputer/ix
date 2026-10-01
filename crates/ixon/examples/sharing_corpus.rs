@@ -74,6 +74,7 @@ struct Args {
   mss_diff: bool,
   mss_compare: bool,
   mss_ties: MssTies,
+  serial_constants: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -94,6 +95,7 @@ fn parse_args() -> Result<Args, String> {
     mss_diff: false,
     mss_compare: false,
     mss_ties: MssTies::StructuralId,
+    serial_constants: false,
   };
   let num = |v: Option<String>| -> Result<usize, String> {
     v.ok_or("missing value")?.parse::<usize>().map_err(|e| e.to_string())
@@ -121,6 +123,7 @@ fn parse_args() -> Result<Args, String> {
       "--only" => a.only.push(it.next().ok_or("missing value")?),
       "--mss-diff" => a.mss_diff = true,
       "--mss-compare" => a.mss_compare = true,
+      "--serial-constants" => a.serial_constants = true,
       "--mss-ties" => {
         a.mss_ties = match it.next().as_deref() {
           Some("id") => MssTies::StructuralId,
@@ -387,29 +390,32 @@ fn main() -> Result<(), String> {
   let done = AtomicUsize::new(0);
   let t1 = Instant::now();
   let total = consts.len();
-  let rows: Vec<Row> = consts
-    .par_iter()
-    .enumerate()
-    .map(|(i, c)| {
-      let row = process(
-        i,
-        &c.addr,
-        &mmap[c.offset..c.offset + c.len],
-        args.layout,
-        &limits,
-        args.parallel,
-        args.check_sequential,
+  let one = |(i, c): (usize, &ixon::env::LazyConstSlice)| {
+    let row = process(
+      i,
+      &c.addr,
+      &mmap[c.offset..c.offset + c.len],
+      args.layout,
+      &limits,
+      args.parallel,
+      args.check_sequential,
+    );
+    let d = done.fetch_add(1, Ordering::Relaxed) + 1;
+    if d.is_multiple_of(50_000) {
+      eprintln!(
+        "[sharing_corpus] {d}/{total} in {:.1} s",
+        t1.elapsed().as_secs_f64()
       );
-      let d = done.fetch_add(1, Ordering::Relaxed) + 1;
-      if d.is_multiple_of(50_000) {
-        eprintln!(
-          "[sharing_corpus] {d}/{total} in {:.1} s",
-          t1.elapsed().as_secs_f64()
-        );
-      }
-      row
-    })
-    .collect();
+    }
+    row
+  };
+  // `--serial-constants`: one constant at a time, so the pool serves only the
+  // parallelism inside a constant (per-constant latency).
+  let rows: Vec<Row> = if args.serial_constants {
+    consts.iter().enumerate().map(one).collect()
+  } else {
+    consts.par_iter().enumerate().map(one).collect()
+  };
   let run_s = t1.elapsed().as_secs_f64();
   // CSV.
   if let Some(path) = &args.csv {
