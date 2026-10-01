@@ -185,6 +185,7 @@ def limitOf (l : Limits) : Resource → String × Nat
   | .costEvals => ("maxCostEvals", l.maxCostEvals)
   | .outputBytes => ("maxOutputBytes", l.maxOutputBytes)
   | .materialize => ("maxMaterialize", l.maxMaterialize)
+  | .materializeWork => ("maxMaterializeWork", l.maxMaterializeWork)
   | .oracleTables => ("maxOracleTables", l.maxOracleTables)
   | .oracleVariants => ("maxOracleVariants", l.maxOracleVariants)
 
@@ -198,6 +199,7 @@ def doubleLimit (l : Limits) : Resource → Limits
   | .costEvals => { l with maxCostEvals := 2 * l.maxCostEvals }
   | .outputBytes => { l with maxOutputBytes := 2 * l.maxOutputBytes }
   | .materialize => { l with maxMaterialize := 2 * l.maxMaterialize }
+  | .materializeWork => { l with maxMaterializeWork := 2 * l.maxMaterializeWork }
   | .oracleTables => { l with maxOracleTables := 2 * l.maxOracleTables }
   | .oracleVariants => { l with maxOracleVariants := 2 * l.maxOracleVariants }
 
