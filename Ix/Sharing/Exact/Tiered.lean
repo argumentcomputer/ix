@@ -5,13 +5,15 @@
   Layouts (`ShareLayout.widthAt`, monotone, at least 1):
   * `tag4`: the Ixon Tag4 Share: 1 byte below index 8, 2 below 256, 3 below
     65536, … (the serialized width).
-  * `f64`: 1 below 8; 2 below 8+1024; 3 below 1032+65536; 5 below
-    1032+65536+2^32; 9 beyond. (A cost layout: the output is still
-    serialized with Tag4 Shares; `modelBytes` reports the F64 price.)
+  * `tagN` (TagN): the nibble-bootstrapped Share code whose widths
+    climb in rungs of 1, 2, 3, 5 and 9 bytes (`tagNWidth`, which also
+    documents the bit layout). No serializer uses it yet: the output is
+    still written with Tag4 Shares and `modelBytes` reports the TagN
+    price.
 
   ## Phase 1: selection (exact for the uniform model)
   `K` = number of terms with compact in-degree ≥ 2 and unshared length ≥ 2.
-  `w = 1` if `K ≤ 8`, `2` if `K ≤ tier2End` (256 for tag4, 1032 for f64),
+  `w = 1` if `K ≤ 8`, `2` if `K ≤ tier2End` (256 for tag4, 1032 for tagN),
   else `3`. `S` and its bodies are `optimizeSharingUniform w`: a minimum of
   the uniform-`w` model length (exact, with the pinned tie order).
 
@@ -59,28 +61,64 @@ namespace Ix.Sharing.Exact
 
 open Ixon
 
+/-! ## TagN Share code
+
+A Share is one header byte `[flag:4][L][M][c1][c0]` (flag `0xB`) followed by
+0, 1, 2, 4 or 8 little-endian bytes. The low nibble selects a rung:
+
+* `L = 0`: no following byte; the 3 bits `M c1 c0` are the index, `0..7`.
+* `L = 1, M = 0`: 1 following byte; `value = c1 c0 · 2^8 + byte` (10 bits)
+  and `index = 8 + value`, so indices `8 .. 8 + 2^10 - 1`.
+* `L = 1, M = 1, c = c1 c0 ∈ {0, 1, 2}`: `2`, `4` or `8` following bytes
+  holding `value`, and `index = (end of the previous rung) + value`.
+* `L = 1, M = 1, c = 3`: invalid.
+
+Every rung starts where the previous one ends, so each index has exactly
+one encoding and every valid encoding is the encoding of its index (the code
+is bijective). Rung ends: `8`, `8 + 2^10`, `+ 2^16`, `+ 2^32`, `+ 2^64`; byte
+widths: 1, 2, 3, 5, 9. `tagNWidth` is the single width-by-index function
+for this code; a serializer must use these definitions. -/
+
+/-- End (exclusive) of the 1-byte rung. -/
+def tagNRung1End : Nat := 8
+/-- End of the 2-byte rung (2 + 8 value bits). -/
+def tagNRung2End : Nat := tagNRung1End + 2 ^ 10
+/-- End of the 3-byte rung (2 following bytes). -/
+def tagNRung3End : Nat := tagNRung2End + 2 ^ 16
+/-- End of the 5-byte rung (4 following bytes). -/
+def tagNRung4End : Nat := tagNRung3End + 2 ^ 32
+/-- End of the 9-byte rung (8 following bytes); larger indices have no
+encoding. -/
+def tagNRung5End : Nat := tagNRung4End + 2 ^ 64
+
+/-- Byte width of the TagN Share at index `i` (`i < tagNRung5End`;
+larger indices are not encodable and are priced at the top rung). -/
+def tagNWidth (i : Nat) : Nat :=
+  if i < tagNRung1End then 1
+  else if i < tagNRung2End then 2
+  else if i < tagNRung3End then 3
+  else if i < tagNRung4End then 5
+  else 9
+
 /-! ## Layouts -/
 
 /-- A Share width layout. -/
 inductive ShareLayout where
+  /-- The Ixon Tag4 Share (the serialized width). -/
   | tag4
-  | f64
+  /-- The TagN Share code (`tagNWidth`). -/
+  | tagN
   deriving BEq, Repr, Inhabited
 
 /-- Width of the Share at table index `i`. -/
 def ShareLayout.widthAt : ShareLayout → Nat → Nat
   | .tag4, i => shareWidth i
-  | .f64, i =>
-    if i < 8 then 1
-    else if i < 8 + 1024 then 2
-    else if i < 1032 + 65536 then 3
-    else if i < 1032 + 65536 + 2 ^ 32 then 5
-    else 9
+  | .tagN, i => tagNWidth i
 
 /-- First index whose width exceeds 2. -/
 def ShareLayout.tier2End : ShareLayout → Nat
   | .tag4 => 256
-  | .f64 => 1032
+  | .tagN => tagNRung2End
 
 /-- Phase-1 uniform width for `k` candidates. -/
 def ShareLayout.uniformWidth (l : ShareLayout) (k : Nat) : Nat :=

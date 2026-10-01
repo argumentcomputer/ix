@@ -17,7 +17,7 @@ set_option compiler.extract_closed false
 
 namespace Tests.SharingTiered
 
-def layouts : List ShareLayout := [.tag4, .f64]
+def layouts : List ShareLayout := [.tag4, .tagN]
 
 def fixtureTests (_ : Unit) : TestSeq :=
   let (nine, hot) := nineRef
@@ -146,13 +146,14 @@ def tierBruteTests (_ : Unit) : TestSeq :=
     (match err with | some m => test m false | none => .done)
 
 def layoutTests (_ : Unit) : TestSeq :=
-  test "F64 widths: 1 below 8, 2 below 1032, 3 below 66568, 5 below 66568+2^32, then 9"
-    ([7, 8, 1031, 1032, 66567, 66568, 66568 + 2 ^ 32 - 1, 66568 + 2 ^ 32].map ShareLayout.f64.widthAt ==
-      [1, 2, 2, 3, 3, 5, 5, 9]) ++
-  test "uniform width by candidate count: tag4 1/2/3 at 8/256/257, f64 2 up to 1032"
+  test "TagN widths: 1 below 8, 2 below 1032, 3 below 66568, 5 below 66568+2^32, then 9"
+    ([7, 8, 1031, 1032, 66567, 66568, 66568 + 2 ^ 32 - 1, 66568 + 2 ^ 32].map ShareLayout.tagN.widthAt ==
+      [1, 2, 2, 3, 3, 5, 5, 9] &&
+      tagNRung2End == 1032 && tagNRung3End == 66568 && tagNRung4End == 66568 + 2 ^ 32) ++
+  test "uniform width by candidate count: tag4 1/2/3 at 8/256/257, tagN 2 up to 1032"
     (ShareLayout.tag4.uniformWidth 8 == 1 && ShareLayout.tag4.uniformWidth 256 == 2 &&
-      ShareLayout.tag4.uniformWidth 257 == 3 && ShareLayout.f64.uniformWidth 1032 == 2 &&
-      ShareLayout.f64.uniformWidth 1033 == 3)
+      ShareLayout.tag4.uniformWidth 257 == 3 && ShareLayout.tagN.uniformWidth 1032 == 2 &&
+      ShareLayout.tagN.uniformWidth 1033 == 3)
 
 public def suite : List TestSeq := [
   deferred "tiered layouts" layoutTests,

@@ -26,6 +26,7 @@
   * `Exact.Oracle`     tiny exhaustive reference search (tests only)
   * `Exact.Uniform`    exact optimizer for a uniform Share width (cost model)
   * `Exact.Tiered`     uniform selection, slot allocation, re-materialization
+                       (layouts: Tag4 and TagN)
 -/
 module
 
