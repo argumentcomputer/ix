@@ -24,12 +24,42 @@
 //! - `dict`: the fixed-dictionary recurrence `C_M` (§5) with explicit
 //!   telescope cuts, and byte-least materialization.
 //! - `search`: the sparse width-state dynamic program (§6) with the proved
-//!   reductions R1/R2 and the optimistic-dictionary lower bound (§4.1).
+//!   reductions R1/R2, the optimistic-dictionary lower bound (§4.1) and a
+//!   materialization lower bound.
 //!
 //! Every limit in [`ExactSharingLimits`] is enforced with deterministic
 //! counters; exhausting one returns [`SharingError::ResourceExhausted`] and
 //! never a best-so-far encoding. Lengths use checked arithmetic or the exact
 //! overflow sentinel [`Len`].
+//!
+//! # Pinned interpretations
+//!
+//! These choices are part of the canonical result and must match any other
+//! implementation of the rule:
+//!
+//! - **ID domain.** Structural IDs number exactly the distinct subterms
+//!   reachable from the ordered roots after expansion. Entries of an
+//!   incoming table that no root reaches are validated but do not receive
+//!   IDs, so they cannot influence `Q`.
+//! - **Admission.** Expansion accepts only the backward-reference class:
+//!   a Share in entry `i` must name an entry `< i`, a Share in a root must
+//!   name an entry `< len`. Out-of-range, forward and cyclic references are
+//!   [`MalformedSharing`] errors, including in unreachable entries.
+//!   [`optimize_sharing`] rejects any Share leaf in its input.
+//! - **Byte tie.** For a fixed table sequence each entry and root is
+//!   materialized as its byte-least minimum-length representation. This
+//!   equals the rule: an inline constructor precedes a Share of the same
+//!   length (flags `0x0..=0xA` < `0xB`); among telescope prefixes of one
+//!   node the least Tag4 header bytes win (distinct prefix lengths always
+//!   differ inside the header); then children independently.
+//! - **Variable length.** [`ExactSharingResult::variable_len`] is the sum of
+//!   the root encodings, the table's Tag0 count and the entry encodings; the
+//!   rest of the Constant is fixed and checked against `Constant::put`.
+//!
+//! Pruning (the §4.1 bound strengthened with `share_width(k)` for future
+//! entries, the materialization bound, and the heuristic and greedy upper
+//! bound seeds) never changes a successful result, only which inputs finish
+//! within the limits; `search` documents the proofs.
 
 mod cost;
 mod dag;
@@ -54,7 +84,7 @@ pub use dict::{FixedDictionary, dictionary_cost, materialize_with_dictionary};
 pub use roots::{
   constant_info_root_count, constant_info_root_exprs, rebuild_constant_info,
 };
-pub use search::sequence_len;
+pub use search::{candidate_terms, sequence_len};
 
 use crate::constant::Constant;
 use crate::expr::Expr;

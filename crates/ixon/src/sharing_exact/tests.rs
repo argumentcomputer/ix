@@ -1621,3 +1621,300 @@ fn telescope_cuts_at_header_boundaries_match_enumeration() {
   }
   eprintln!("telescope boundary cases compared with enumeration: {checked}");
 }
+
+#[test]
+fn every_valid_incoming_encoding_normalizes_identically() {
+  let lim = limits();
+  let mut encodings = 0u64;
+  for seed in 0..80 {
+    let c = gen_constant(seed + 60_000, 3, 25, 5);
+    let want = put(&normalize(&c));
+    let dag = SharingDag::from_constant(&c, &lim).unwrap();
+    let own: Vec<Len> = dag.nodes().iter().map(Node::own_len).collect();
+    let mut rng = Rng(seed);
+    for _ in 0..8 {
+      // Any distinct subterms in any order, including non-candidates and
+      // entries nothing will reference.
+      let mut q: Vec<u32> =
+        (0..dag.len() as u32).filter(|_| rng.pct(35)).collect();
+      for i in (1..q.len()).rev() {
+        q.swap(i, rng.below(i as u64 + 1) as usize);
+      }
+      let mut meter = Meter::new(&lim);
+      let (roots, table) =
+        materialize_sequence(&dag, &own, &q, &mut meter).unwrap();
+      let mut x = c.clone();
+      x.info = rebuild_constant_info(&c.info, &roots).unwrap();
+      x.sharing = table;
+      let b = roundtrip(&x);
+      assert_eq!(
+        constant_fixed_len(&c).unwrap()
+          + sequence_len(&dag, &q).unwrap().exact().unwrap(),
+        b.len() as u64
+      );
+      assert_eq!(SharingDag::from_constant(&x, &lim).unwrap(), dag);
+      assert!(want.len() <= b.len());
+      assert_eq!(put(&normalize(&x)), want, "seed {seed} q {q:?}");
+      encodings += 1;
+    }
+  }
+  eprintln!("incoming encodings normalized identically: {encodings}");
+}
+
+/// Extended oracle agreement; run with
+/// `cargo test --release -p ixon oracle_extended -- --ignored --nocapture`.
+#[test]
+#[ignore = "long-running; run explicitly in release mode"]
+fn oracle_extended() {
+  let mut tags = [0u64; 11];
+  let mut contracts = std::collections::BTreeSet::new();
+  let mut cases = 0u64;
+  let mut seven = 0u64;
+  let mut skipped = 0u64;
+  for seed in 0..1500u64 {
+    let max_n = if seed % 25 == 0 { 7 } else { 6 };
+    let c = gen_constant(seed + 100_000, 2, max_n, 4);
+    if !oracle_tractable(&c, 5_000) {
+      skipped += 1;
+      continue;
+    }
+    let dag = SharingDag::from_constant(&c, &limits()).unwrap();
+    for node in dag.nodes() {
+      tags[node.tag() as usize] += 1;
+      match node {
+        Node::Lam(bc, ..) => {
+          contracts.insert((8u8, u64::from(bc.to_bits())));
+        },
+        Node::All(bc, vc, ..) => {
+          contracts.insert((
+            9,
+            u64::from(crate::contract::pack_all_contract(*bc, *vc)),
+          ));
+        },
+        Node::Let(lc, ..) => {
+          contracts
+            .insert((10, lc.flags() * 16 + u64::from(lc.binder.to_bits())));
+        },
+        _ => {},
+      }
+    }
+    let (exact, res) =
+      normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
+    let bytes = roundtrip(&exact);
+    let o = oracle_optimum(&c);
+    assert_eq!(
+      (o.len, &o.q, &o.bytes),
+      (bytes.len() as u64, &res.table_terms, &bytes),
+      "seed {seed}"
+    );
+    cases += 1;
+    if dag.len() == 7 {
+      seven += 1;
+    }
+    if seed % 100 == 99 {
+      eprintln!("oracle_extended: {} seeds, {cases} compared", seed + 1);
+    }
+  }
+  eprintln!(
+    "extended oracle agreement: {cases} constants ({seven} with N = 7, \
+     {skipped} skipped as intractable for the oracle), \
+     node tags {tags:?}, distinct binder/let contract codes {}",
+    contracts.len()
+  );
+}
+
+/// Independent exhaustive table-order search: every ordered sequence of
+/// distinct terms from `pool`, each evaluated exactly, without state
+/// merging or pruning. Returns the least `(variable length, Q)`.
+fn brute_force_tables(dag: &SharingDag, pool: &[u32]) -> (Len, Vec<u32>, u64) {
+  use super::dict::{DenseIndex, all_costs};
+  fn go(
+    dag: &SharingDag,
+    own: &[Len],
+    pool: &[u32],
+    dict: &mut DenseIndex,
+    q: &mut Vec<u32>,
+    f: Len,
+    best: &mut (Len, Vec<u32>),
+    visited: &mut u64,
+  ) {
+    *visited += 1;
+    let mut work = 0;
+    let costs = all_costs(dag.nodes(), own, &*dict, &mut work);
+    let mut total = f.plus(Len::new(tag0_len(q.len() as u64)));
+    for &r in dag.roots() {
+      total = total.plus(costs[r as usize]);
+    }
+    if (total, &*q) < (best.0, &best.1) {
+      *best = (total, q.clone());
+    }
+    for &t in pool {
+      if q.contains(&t) {
+        continue;
+      }
+      let nf = f.plus(costs[t as usize]);
+      dict.set(t, q.len() as u64);
+      q.push(t);
+      go(dag, own, pool, dict, q, nf, best, visited);
+      q.pop();
+      dict.set(t, u64::MAX);
+    }
+  }
+  let own: Vec<Len> = dag.nodes().iter().map(Node::own_len).collect();
+  let mut dict = DenseIndex::new(dag.len());
+  let mut best = (Len::OVERFLOW, Vec::new());
+  let mut visited = 0;
+  go(
+    dag,
+    &own,
+    pool,
+    &mut dict,
+    &mut Vec::new(),
+    Len::ZERO,
+    &mut best,
+    &mut visited,
+  );
+  (best.0, best.1, visited)
+}
+
+fn check_against_brute_force(c: &Constant) -> u64 {
+  let dag = SharingDag::from_constant(c, &limits()).unwrap();
+  let pool: Vec<u32> = (0..dag.len() as u32).collect();
+  let (len, q, visited) = brute_force_tables(&dag, &pool);
+  let (exact, res) =
+    normalize_constant_sharing_with_stats(c, &limits()).unwrap();
+  assert_eq!((Len::new(res.variable_len), &res.table_terms), (len, &q));
+  let lim = limits();
+  let mut meter = Meter::new(&lim);
+  let own: Vec<Len> = dag.nodes().iter().map(Node::own_len).collect();
+  let (roots, table) =
+    materialize_sequence(&dag, &own, &q, &mut meter).unwrap();
+  let mut x = c.clone();
+  x.info = rebuild_constant_info(&c.info, &roots).unwrap();
+  x.sharing = table;
+  assert_eq!(put(&x), put(&exact));
+  visited
+}
+
+#[test]
+fn width_classes_match_exhaustive_table_orders() {
+  // Nine independent atoms: every table of 9 entries puts one in slot 8.
+  let (c, _) = nine_ref_fixture();
+  let visited = check_against_brute_force(&c);
+  eprintln!("nine refs: brute force visited {visited} table sequences");
+  assert_eq!(visited, 986_410);
+}
+
+/// Multi-width agreement on random instances; run with
+/// `cargo test --release -p ixon width_classes_extended -- --ignored`.
+#[test]
+#[ignore = "long-running; run explicitly in release mode"]
+fn width_classes_extended() {
+  let mut total = 0u64;
+  let mut wide = 0u64;
+  for seed in 0..60u64 {
+    let mut rng = Rng(seed + 7_000);
+    // Up to ten distinct terms, all of which may be stored, with skewed
+    // use counts so the choice of the one-byte slots matters.
+    let n_atoms = 8 + rng.below(2);
+    let atoms: Vec<E> = (0..n_atoms)
+      .map(|i| Expr::reference(i, vec![0; 1 + rng.below(4) as usize]))
+      .collect();
+    let mut roots: Vec<E> = Vec::new();
+    for a in &atoms {
+      for _ in 0..2 + rng.below(12) {
+        roots.push(a.clone());
+      }
+    }
+    if n_atoms == 8 {
+      let pair = Expr::app(atoms[0].clone(), atoms[1].clone());
+      for _ in 0..1 + rng.below(6) {
+        roots.push(pair.clone());
+      }
+    }
+    let c = wrap(&mut rng, roots);
+    let dag = SharingDag::from_constant(&c, &limits()).unwrap();
+    assert!(dag.len() <= 10);
+    total += check_against_brute_force(&c);
+    let (_, res) =
+      normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
+    if res.table_terms.len() > 8 {
+      wide += 1;
+    }
+  }
+  eprintln!(
+    "width classes: 60 instances agree with exhaustive table orders \
+     ({wide} optima with more than 8 entries, {total} sequences visited)"
+  );
+  assert!(wide >= 10);
+}
+
+/// T16 -> T16 with every pruning rule and seed disabled: the full
+/// width-state space (about 3.3M states) must give the same result. Run with
+/// `cargo test --release -p ixon t16_without_pruning -- --ignored`.
+#[test]
+#[ignore = "long-running; run explicitly in release mode"]
+fn t16_without_pruning() {
+  let t16 = chain(16);
+  let c = axiom(Expr::all(t16.clone(), t16), 1);
+  let mut full = ExactSharingLimits::unbounded();
+  full.lower_bound_pruning = false;
+  full.materialization_bound = false;
+  full.heuristic_upper_bound = false;
+  full.greedy_upper_bound = false;
+  let (a, ra) = normalize_constant_sharing_with_stats(&c, &full).unwrap();
+  let (b, rb) = normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
+  eprintln!(
+    "T16 unpruned: {} bytes, Q={:?}, states {} (pruned search: {} states)",
+    put(&a).len(),
+    ra.table_terms,
+    ra.stats.states_created,
+    rb.stats.states_created
+  );
+  assert_eq!(put(&a), put(&b));
+  assert_eq!(ra.table_terms, rb.table_terms);
+}
+
+/// Whether the exhaustive oracle stays tractable on `c`: the number of
+/// occurrence variants of every root with every subterm available.
+fn oracle_tractable(c: &Constant, cap: u128) -> bool {
+  let roots = constant_info_root_exprs(&c.info);
+  let (_, terms) = oracle_ids(&roots);
+  let avail: Vec<(E, u64)> =
+    terms.iter().enumerate().map(|(i, t)| (t.clone(), i as u64)).collect();
+  roots.iter().all(|r| variant_count(r, &avail) <= cap)
+}
+
+#[test]
+fn deep_inputs_are_handled_iteratively() {
+  // A 3000-binder telescope whose repeated domain is worth sharing. Its
+  // height exceeds the heuristic seed's recursion guard.
+  let dom = Expr::app(Expr::var(0), Expr::var(1));
+  let mut e = Expr::var(0);
+  for i in 0..3000 {
+    let ty = if i % 2 == 0 { dom.clone() } else { Expr::sort(0) };
+    e = Expr::lam(ty, e);
+  }
+  let c = axiom(e, 1);
+  let (exact, res) =
+    normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
+  let bytes = roundtrip(&exact);
+  assert_eq!(res.stats.heuristic_len, None);
+  // The innermost binder has height 2 (its domain is an App).
+  assert_eq!(res.stats.height, 3001);
+  assert_eq!(exact.sharing.len(), 1);
+  assert_eq!(exact.sharing[0].as_ref(), dom.as_ref());
+  assert_eq!(constant_len(&exact), Some(bytes.len() as u64));
+  assert!(bytes.len() < put(&c).len());
+}
+
+#[test]
+fn candidate_terms_apply_r1_and_r2() {
+  // T2 -> T2: Prop is one byte (R2), the root occurs once (R1).
+  let t2 = chain(2);
+  let c = axiom(Expr::all(t2.clone(), t2), 1);
+  let dag = SharingDag::from_constant(&c, &limits()).unwrap();
+  assert_eq!(candidate_terms(&dag), vec![1, 2]);
+  let (_, res) = normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
+  assert_eq!(res.stats.candidates, 2);
+}

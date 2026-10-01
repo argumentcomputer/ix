@@ -124,6 +124,43 @@ impl Widths for Candidates<'_> {
   }
 }
 
+/// Expanded occurrence counts (saturating) of every term.
+fn occurrences(dag: &SharingDag) -> Vec<u64> {
+  let nodes = dag.nodes();
+  let mut occ = vec![0u64; nodes.len()];
+  for &r in dag.roots() {
+    occ[ix(r)] = occ[ix(r)].saturating_add(1);
+  }
+  // Parents have larger IDs than children: a descending sweep sees each
+  // node's final count before propagating it along every child edge.
+  for t in (0..nodes.len()).rev() {
+    let o = occ[t];
+    if o == 0 {
+      continue;
+    }
+    for &c in nodes[t].children().as_slice() {
+      occ[ix(c)] = occ[ix(c)].saturating_add(o);
+    }
+  }
+  occ
+}
+
+fn candidates_of(occ: &[u64], base: &[Len]) -> Vec<TermId> {
+  (0..occ.len())
+    .filter(|&t| occ[t] >= 2 && base[t] > Len::new(1))
+    .map(tid)
+    .collect()
+}
+
+/// The terms some minimum may store after reductions R1 (at least two
+/// expanded occurrences) and R2 (inline encoding longer than one byte), in
+/// term-ID order. Its length is the search's candidate count.
+pub fn candidate_terms(dag: &SharingDag) -> Vec<TermId> {
+  let own: Vec<Len> = dag.nodes().iter().map(Node::own_len).collect();
+  let base = all_costs(dag.nodes(), &own, &NoWidths, &mut 0);
+  candidates_of(&occurrences(dag), &base)
+}
+
 pub(crate) fn prepare(
   dag: &SharingDag,
   meter: &mut Meter<'_>,
@@ -133,23 +170,8 @@ pub(crate) fn prepare(
   let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
   let mut work = 0u64;
   let base = all_costs(nodes, &own, &NoWidths, &mut work);
-  let mut occ = vec![0u64; n];
-  for &r in dag.roots() {
-    occ[ix(r)] = occ[ix(r)].saturating_add(1);
-  }
-  // Parents have larger IDs than children: a descending sweep sees each
-  // node's final count before propagating it along every child edge.
-  for t in (0..n).rev() {
-    let o = occ[t];
-    if o == 0 {
-      continue;
-    }
-    for &c in nodes[t].children().as_slice() {
-      occ[ix(c)] = occ[ix(c)].saturating_add(o);
-    }
-  }
-  let cands: Vec<TermId> =
-    (0..n).filter(|&t| occ[t] >= 2 && base[t] > Len::new(1)).map(tid).collect();
+  let occ = occurrences(dag);
+  let cands = candidates_of(&occ, &base);
   meter.candidates(u64::try_from(cands.len()).unwrap_or(u64::MAX))?;
   let mut is_cand = vec![false; n];
   for &t in &cands {
@@ -649,18 +671,27 @@ pub(crate) fn width_state_search(
   best.ok_or_else(|| internal("every width state was pruned"))
 }
 
+/// Largest DAG height for which the historical heuristic (recursive
+/// topological sort) is run as an upper-bound seed.
+const HEURISTIC_MAX_HEIGHT: u32 = 2048;
+
 /// Variable length of the historical heuristic on the same AST, if it is
 /// safely representable and provably encodes exactly this DAG.
 ///
 /// The heuristic uses `usize` occurrence counts and `isize` benefits; it is
 /// only run when `(sum occ)^2 * (max node header + 1)` stays below
-/// `2^(usize::BITS - 2)`, which bounds every such quantity.
+/// `2^(usize::BITS - 2)`, which bounds every such quantity. Its topological
+/// sort recurses once per level, so it is also skipped above
+/// [`HEURISTIC_MAX_HEIGHT`]. Skipping it only weakens pruning.
 fn heuristic_len(
   dag: &SharingDag,
   prep: &Prepared,
   limits: &ExactSharingLimits,
 ) -> Option<u64> {
   use crate::sharing::{analyze_block, build_sharing_vec, decide_sharing};
+  if dag.heights().iter().any(|&h| h > HEURISTIC_MAX_HEIGHT) {
+    return None;
+  }
   let total_occ: u128 =
     prep.occ.iter().fold(0u128, |acc, &o| acc.saturating_add(u128::from(o)));
   let max_head: u128 = prep
