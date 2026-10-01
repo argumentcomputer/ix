@@ -2023,8 +2023,10 @@ fn uniform_witness_t2() {
     (vec![2], vec![2], 11, 11)
   );
   let u2 = uni(2, &roots);
+  // T2 has gain 1 at w = 2; no count bracket is within reach, so the
+  // threshold is 1 and T2 is certain-stored.
   assert_eq!(
-    (u2.uncertain.clone(), u2.stored.clone(), u2.model_len),
+    (u2.certain_stored.clone(), u2.stored.clone(), u2.model_len),
     (vec![2], vec![2], 13)
   );
   let u3 = uni(3, &roots);

@@ -138,6 +138,10 @@ pub struct ExactSharingLimits {
   /// Also prune by the materialization bound (see `search`), in addition to
   /// the §4.1 dictionary bound.
   pub materialization_bound: bool,
+  /// Uniform-width search: use the plain subset enumeration of each
+  /// component (the reference) instead of the reclassifying branch and
+  /// bound. The result must not change.
+  pub uniform_subset_search: bool,
 }
 
 impl Default for ExactSharingLimits {
@@ -156,6 +160,7 @@ impl Default for ExactSharingLimits {
       greedy_upper_bound: true,
       lower_bound_pruning: true,
       materialization_bound: true,
+      uniform_subset_search: false,
     }
   }
 }
