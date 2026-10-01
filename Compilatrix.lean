@@ -21,6 +21,9 @@ import Compilatrix.Lir.Operands
 import Compilatrix.Lir.SplitEdges
 import Compilatrix.Lir.Print
 import Compilatrix.Lir.Proof.Run
+import Compilatrix.Lir.Proof.Steps
+import Compilatrix.Lir.Proof.EvalAttr
+import Compilatrix.Lir.Proof.Eval
 import Compilatrix.Xv.Syntax
 import Compilatrix.Xv.Slots
 import Compilatrix.Xv.Semantics
@@ -209,6 +212,8 @@ import Compilatrix.Rt.Procs.Nat
 import Compilatrix.Rt.Lower
 import Compilatrix.Rt.Readback
 import Compilatrix.Rt.Proof.Words
+import Compilatrix.Rt.Proof.Procs
+import Compilatrix.Rt.Proof.Pow
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine

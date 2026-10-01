@@ -1815,6 +1815,15 @@
    ["Compilatrix.Rt.Layout",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Src.Prim"]},
+  "Compilatrix.Rt.Proof.Procs":
+  {"path": "Compilatrix/Rt/Proof/Procs.lean",
+   "imports":
+   ["Compilatrix.Rt.Procs.Nat",
+    "Compilatrix.Rt.Proof.Words",
+    "Compilatrix.Lir.Proof.Eval"]},
+  "Compilatrix.Rt.Proof.Pow":
+  {"path": "Compilatrix/Rt/Proof/Pow.lean",
+   "imports": ["Compilatrix.Rt.Proof.Procs"]},
   "Compilatrix.Rt.Procs.Nat":
   {"path": "Compilatrix/Rt/Procs/Nat.lean",
    "imports": ["Compilatrix.Rt.Layout"]},
@@ -1925,9 +1934,19 @@
   {"path": "Compilatrix/Lir/Semantics.lean",
    "imports":
    ["Compilatrix.Lir.Syntax", "Compilatrix.X86.State", "Std.Data.HashMap"]},
+  "Compilatrix.Lir.Proof.Steps":
+  {"path": "Compilatrix/Lir/Proof/Steps.lean",
+   "imports": ["Compilatrix.Lir.Proof.Run", "Std.Data.HashMap.Lemmas"]},
   "Compilatrix.Lir.Proof.Run":
   {"path": "Compilatrix/Lir/Proof/Run.lean",
    "imports": ["Compilatrix.Lir.Semantics", "Compilatrix.Sem.Smallstep"]},
+  "Compilatrix.Lir.Proof.EvalAttr":
+  {"path": "Compilatrix/Lir/Proof/EvalAttr.lean",
+   "imports": ["Lean.Meta.Tactic.Simp.RegisterCommand"]},
+  "Compilatrix.Lir.Proof.Eval":
+  {"path": "Compilatrix/Lir/Proof/Eval.lean",
+   "imports":
+   ["Compilatrix.Lir.Proof.Steps", "Compilatrix.Lir.Proof.EvalAttr"]},
   "Compilatrix.Lir.Print":
   {"path": "Compilatrix/Lir/Print.lean", "imports": ["Compilatrix.Lir.Syntax"]},
   "Compilatrix.Lir.Operands":
@@ -2956,6 +2975,9 @@
     "Compilatrix.Lir.SplitEdges",
     "Compilatrix.Lir.Print",
     "Compilatrix.Lir.Proof.Run",
+    "Compilatrix.Lir.Proof.Steps",
+    "Compilatrix.Lir.Proof.EvalAttr",
+    "Compilatrix.Lir.Proof.Eval",
     "Compilatrix.Xv.Syntax",
     "Compilatrix.Xv.Slots",
     "Compilatrix.Xv.Semantics",
@@ -3144,6 +3166,8 @@
     "Compilatrix.Rt.Lower",
     "Compilatrix.Rt.Readback",
     "Compilatrix.Rt.Proof.Words",
+    "Compilatrix.Rt.Proof.Procs",
+    "Compilatrix.Rt.Proof.Pow",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",
