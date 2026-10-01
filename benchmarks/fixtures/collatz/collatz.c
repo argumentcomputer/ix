@@ -16,10 +16,14 @@ static uint64_t collatz(uint64_t n) {
   return s;
 }
 
+static uint64_t collatz_sum(uint64_t limit) {
+  uint64_t s = 0;
+  for (uint64_t n = 1; n < limit; n++) s += collatz(n);
+  return s;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) { fprintf(stderr, "usage: collatz LIMIT\n"); return 1; }
-  uint64_t limit = strtoull(argv[1], NULL, 10), s = 0;
-  for (uint64_t n = 1; n < limit; n++) s += collatz(n);
-  printf("%" PRIu64 "\n", s);
+  printf("%" PRIu64 "\n", collatz_sum(strtoull(argv[1], NULL, 10)));
   return 0;
 }

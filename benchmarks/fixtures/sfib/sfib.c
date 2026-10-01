@@ -5,10 +5,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static uint64_t sfib(uint64_t n) {
+  uint64_t x = 1;
+  for (; n > 0; n--) x = x > 1000000000 ? 1 : x * x + x + 2;
+  return x;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) { fprintf(stderr, "usage: sfib N\n"); return 1; }
-  uint64_t n = strtoull(argv[1], NULL, 10), x = 1;
-  for (; n > 0; n--) x = x > 1000000000 ? 1 : x * x + x + 2;
-  printf("%" PRIu64 "\n", x);
+  printf("%" PRIu64 "\n", sfib(strtoull(argv[1], NULL, 10)));
   return 0;
 }
