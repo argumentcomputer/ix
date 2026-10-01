@@ -36,6 +36,7 @@ import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
 import Tests.Ix.SharingExact
+import Tests.Ix.SharingUniform
 import Tests.Ix.SourceContract
 import Tests.Ix.SourceContract.ImportCheck
 import Tests.Ix.SourceContract.SyntaxCheck
@@ -103,7 +104,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("canon", [Tests.CanonM.suite]),
   ("keccak", Tests.Keccak.suite),
   ("sharing", Tests.Sharing.suite),
-  ("sharing-exact", Tests.SharingExact.suite),
+  ("exact-sharing", Tests.SharingExact.suite ++ Tests.SharingUniform.suite),
   ("source-contract", Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
