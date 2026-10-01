@@ -273,6 +273,7 @@ inductive Resource where
   | costEvals
   | outputBytes
   | materialize
+  | materializeWork
   | oracleTables
   | oracleVariants
   deriving BEq, Repr, Inhabited
@@ -322,7 +323,11 @@ structure Limits where
   maxOutputBytes : Nat := 1 <<< 28
   /-- Predicted size of the materialized output (an upper bound on the
   expression nodes built), checked before materializing. -/
-  maxMaterialize : Nat := 1 <<< 30
+  maxMaterialize : Nat := 1 <<< 26
+  /-- Cumulative evaluation work of materializing a table entry by entry (the
+  tiered phase re-evaluates the DAG once per entry, about `2·k·N`); matches
+  the Rust `max_work`. -/
+  maxMaterializeWork : Nat := 1 <<< 36
   /-- Tables enumerated by the exhaustive oracle. -/
   maxOracleTables : Nat := 1 <<< 20
   /-- Representations enumerated by the exhaustive oracle. -/
