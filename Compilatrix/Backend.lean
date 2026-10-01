@@ -55,6 +55,8 @@ inductive Error where
   | check (e : X86.ValidationError)
   | stream (e : X86.Stream.Error)
   | elf (e : X86.ELF.CheckedError)
+  /-- Two exports share this symbol (`sharedSymbol?`). -/
+  | symbols (symbol : String)
   deriving Repr, Inhabited
 
 def Error.toString : Error → String
@@ -65,6 +67,7 @@ def Error.toString : Error → String
   | .check e => s!"x86 validation: {repr e}"
   | .stream e => s!"stream: {repr e}"
   | .elf e => s!"ELF: {repr e}"
+  | .symbols s => s!"stacking: two exports share the symbol {s}"
 
 instance : ToString Error := ⟨Error.toString⟩
 
@@ -113,10 +116,26 @@ def finish (main : Lir.FunId) (stacked : Stacking.Stacked) (program : X86.Progra
   pure { stacked, program, checked, encoded := stream.output, object := object.bytes,
          exportName := entry.symbol, exports }
 
+/-- A symbol two exports share, if any (the first export's, in order). -/
+def sharedSymbol? : List Stacking.Export → Option String
+  | [] => none
+  | e :: rest => if rest.any (·.symbol == e.symbol) then some e.symbol else sharedSymbol? rest
+
+/-- Every export has its own symbol. `finish` lists the further exports
+without the entry symbol, so an export sharing the entry's symbol would be
+dropped and its symbol would run `main`'s wrapper; `Rt.symbolOf` replaces
+characters, so distinct root names can share a symbol. The recheck path
+runs the same check (`Recheck.checkSymbols`, `stacking.symbols`). -/
+def checkSymbols (exports : List Stacking.Export) : Except Error Unit :=
+  match sharedSymbol? exports with
+  | none => pure ()
+  | some s => .error (.symbols s)
+
 /-- Xl to a checked ELF object exporting every export's wrapper, `main`'s
-as the entry symbol. -/
+as the entry symbol; declined if two exports share a symbol. -/
 def emit (p : LProgram) (cfg : Config) : Except Error Artifact := do
   let (stacked, program, exports) ← lay p cfg
+  checkSymbols stacked.exports
   finish p.main stacked program exports cfg.provenance
 
 /-- Lir to an ELF object: selection, the given allocator, then `emit`. -/

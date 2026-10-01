@@ -47,6 +47,11 @@ theorem emit_parts {l : LProgram} {cfg : Config} {art : Artifact} (h : emit l cf
     | ok pp =>
       obtain ⟨program, pos⟩ := pp
       simp only [hl, pure, Except.pure] at h
+      obtain ⟨u, hsym⟩ : ∃ u, checkSymbols stacked.exports = .ok u := by
+        cases hsym : checkSymbols stacked.exports with
+        | error e => simp [hsym] at h
+        | ok u => exact ⟨u, rfl⟩
+      simp only [hsym] at h
       cases hc : program.checkK with
       | error e => simp [hc] at h
       | ok checked =>

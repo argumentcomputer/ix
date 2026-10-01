@@ -130,5 +130,6 @@ def Err.ofBackend : Backend.Error → Err
   | .check e => { stage := .x86, code := "x86.check", message := s!"{repr e}" }
   | .stream e => { stage := .x86, code := "x86.stream", message := s!"{repr e}" }
   | .elf e => { stage := .elf, code := "elf.check", message := s!"{repr e}" }
+  | .symbols s => { stage := .stacking, code := "stacking.symbols", message := s!"two exports share the symbol {s}" }
 
 end Compilatrix.Recheck

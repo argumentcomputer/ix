@@ -27,7 +27,7 @@ namespace Compilatrix.Recheck
 theorem sharedSymbol?_nodup : ∀ {es : List Xv.Stacking.Export}, sharedSymbol? es = none → (es.map (·.symbol)).Nodup
   | [], _ => List.nodup_nil
   | e :: rest, h => by
-    simp only [sharedSymbol?] at h
+    simp only [sharedSymbol?, Backend.sharedSymbol?] at h
     split at h
     · cases h
     · rename_i hany
@@ -131,9 +131,19 @@ theorem run_parts {cfg : Config} {P : Src.Program} {c : Cert} {a : Artifact} (h 
             subst ht
             obtain ⟨hs, hv, hl⟩ := backTyped_parts hbt
             refine ⟨rfl, xv, hs, hv, ?_, ?_⟩
-            · unfold Backend.emit
+            · have hsym : Backend.checkSymbols stacked.exports = .ok () := by
+                unfold checkSymbols at hc
+                unfold Backend.checkSymbols
+                split at hc
+                · rename_i hs
+                  simp only [sharedSymbol?] at hs
+                  rw [hs]
+                  rfl
+                · cases hc
+              unfold Backend.emit
               simp only [bind, Except.bind]
               rw [hl]
+              simp only [hsym]
               exact hb
             · have := checkSymbols_ok hc
               have hst : b.stacked = stacked := finish_stacked hb

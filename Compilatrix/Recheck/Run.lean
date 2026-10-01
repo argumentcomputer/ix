@@ -148,16 +148,16 @@ def checkParams (cfg : Config) (C : Cfg.Program) : List (Nat × Fir.FunId) → E
                  the entry wrapper passes at most {maxParams}" }
     else checkParams cfg C rest
 
-/-- A symbol two exports share, if any (the first export's, in order). -/
-def sharedSymbol? : List Xv.Stacking.Export → Option String
-  | [] => none
-  | e :: rest => if rest.any (·.symbol == e.symbol) then some e.symbol else sharedSymbol? rest
+/-- A symbol two exports share, if any (the first export's, in order):
+`Backend.sharedSymbol?`, the check `Backend.emit` runs. -/
+def sharedSymbol? (es : List Xv.Stacking.Export) : Option String := Backend.sharedSymbol? es
 
 /-- Every export has its own symbol (M2.8). `Backend.finish` lists the
 further exports without the entry symbol, so an export sharing the entry's
 symbol would be dropped and its symbol would run `main`'s wrapper;
 `Rt.symbolOf` replaces characters, so distinct root names can share a
-symbol. Declined with `stacking.symbols`. -/
+symbol. Declined with `stacking.symbols`, as `Backend.emit` declines with
+`Backend.Error.symbols`. -/
 def checkSymbols (exports : List Xv.Stacking.Export) : Except Err Unit :=
   match sharedSymbol? exports with
   | none => pure ()

@@ -144,6 +144,23 @@ def sixParams : Func Loc := { params := (List.range 6).map Xl.paramLoc, results 
 
 #guard rejects (exported "t" [sixParams])
 
+-- Two exports sharing a symbol: `Backend.emit` (and so `Backend.compile`)
+-- declines rather than dropping the second (the recheck path's
+-- `stacking.symbols`); with symbols of their own both are exported.
+def sharedSymbol : LProgram :=
+  { twoExports with funcs := twoExports.funcs.modify 1 fun f => { f with conv := .sysvExport "t_add" } }
+
+def emitted (p : LProgram) : Except Backend.Error Backend.Artifact :=
+  Backend.emit p { provenance := .ixir1Policy (Ixon.Address.replicate 0x42) 1 1 }
+
+#guard (Stacking.run sharedSymbol (Stacking.produce sharedSymbol)).toOption.isSome
+#guard match emitted sharedSymbol with | .error (.symbols "t_add") => true | _ => false
+#guard match emitted twoExports with
+  | .ok a => a.exports.map (·.1) == ["t_add", "t_twice"]
+  | .error _ => false
+#guard Backend.sharedSymbol? [⟨0, "a", 0⟩, ⟨1, "b", 1⟩, ⟨2, "a", 2⟩] == some "a"
+#guard Backend.sharedSymbol? [⟨0, "a", 0⟩, ⟨1, "b", 1⟩] == none
+
 -- Declared clobber sets (06 S15): `inc` changes `rcx` and `r11` besides its
 -- result (its saved `rbx` does not count), so declaring `rax` alone is
 -- rejected; a caller's declaration must cover its own stack check's `r11`
