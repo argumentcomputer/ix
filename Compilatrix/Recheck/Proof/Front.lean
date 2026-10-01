@@ -214,6 +214,16 @@ theorem front_refines {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h
   obtain ⟨-, -, -, -, -, -, hsw, hlow⟩ := runLir_spec h
   exact (Sem.Viewed.refines (front_cfg h) f.view).trans (Rt.lower_refines hlow hsw f.tys hok hreg)
 
+/-- **The front half refines** on a model region `cx_init` accepts whose part
+Lir uses is readable and writable (`LirRegion`, from `ctx − 48`): what the
+backend's entry invariant allows (the wrapper's 16 context bytes are not
+Lir's). -/
+theorem front_refines_lir {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f)
+    {M : Rt.Model} (hok : Rt.Proof.RegionOk M.ctx M.size) (hreg : Rt.Proof.LirRegion M.mem M.ctx M.size) :
+    Sem.Refines f.source (f.loaded M) := by
+  obtain ⟨-, -, -, -, -, -, hsw, hlow⟩ := runLir_spec h
+  exact (Sem.Viewed.refines (front_cfg h) f.view).trans (Rt.lower_refines_lir hlow hsw f.tys hok hreg)
+
 /-- `front_refines` in the traced shape (decision D-1). -/
 theorem front_refines_traced {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     (h : runLir cfg P c = .ok f) {M : Rt.Model} (hok : Rt.Proof.RegionOk M.ctx M.size)

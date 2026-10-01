@@ -2615,6 +2615,9 @@
   "Compilatrix.Lir.Proof.Relabel":
   {"path": "Compilatrix/Lir/Proof/Relabel.lean",
    "imports": ["Compilatrix.Lir.Proof.Steps", "Compilatrix.Sem.Forward"]},
+  "Compilatrix.Lir.Proof.Perms":
+  {"path": "Compilatrix/Lir/Proof/Perms.lean",
+   "imports": ["Compilatrix.Lir.Proof.Run", "Compilatrix.X86.StreamMemory"]},
   "Compilatrix.Lir.Proof.EvalAttr":
   {"path": "Compilatrix/Lir/Proof/EvalAttr.lean",
    "imports": ["Lean.Meta.Tactic.Simp.RegisterCommand"]},

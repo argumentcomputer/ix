@@ -120,4 +120,18 @@ theorem init_correct_checked {cfg : Config} {P : Cfg.Program} {L : Lowered} (h :
   obtain ⟨left, mem', hrun, hpost⟩ := cxInit_ok (lower_cxInit h) (budget := budget) hok hreg
   exact ⟨left, mem', hrun, hpost, fun hargs => lower_correct_checked h hsw hargs (hpost.heap _)⟩
 
+/-- `init_correct_checked` when the part of the region Lir uses is readable
+and writable (`LirRegion`, from `ctx − 48`): what the backend's entry
+invariant allows, the wrapper's 16 context bytes being outside Lir's memory. -/
+theorem init_correct_checked_lir {cfg : Config} {P : Cfg.Program} {L : Lowered} (h : lower cfg P = .ok L)
+    (hsw : switchesOk P = true) {size budget ctx : Word} {mem : X86.Memory} (hok : RegionOk ctx size)
+    (hreg : LirRegion mem ctx size) :
+    ∃ left mem', (∀ k, Lir.eval { L.program with main := P.size } k [size, budget] mem ctx = .ok ([left], mem')) ∧
+      InitPost ctx budget mem mem' ∧
+      ∀ {g : Nat} {args : List Own.RVal} {ws : List Word}, ListRel (ValRel (Lower.tables P) []) args ws →
+        Sem.Sim (Res P ctx) (· + 1) (fun k => Cfg.run .immortal P k g args { cells := #[] })
+          (fun k => Lir.eval { L.program with main := g } k ws mem' ctx) := by
+  obtain ⟨left, mem', hrun, hpost⟩ := cxInit_ok_lir (lower_cxInit h) (budget := budget) hok hreg
+  exact ⟨left, mem', hrun, hpost, fun hargs => lower_correct_checked h hsw hargs (hpost.heap _)⟩
+
 end Compilatrix.Rt

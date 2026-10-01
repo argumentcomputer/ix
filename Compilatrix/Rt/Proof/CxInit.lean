@@ -219,6 +219,28 @@ theorem region_at {mem : Memory} {ctx size : Word} (hreg : Region mem ctx size) 
   rw [this]
   exact hreg _ hlo hhi
 
+/-- The part of the region Lir uses: from `ctx − 48` (the context words
+`cx_init` and the allocator use, then the objects) to its end. The first 16
+bytes (`entrySp`, `stackLimit`, 04 §6) are the export wrapper's: the
+machine writes them and Lir never does, so the backend's entry invariant
+keeps them out of Lir's memory (`Stacking.Proof.EntryBase.ctxCells`). -/
+def LirRegion (mem : Memory) (ctx size : Word) : Prop :=
+  ∀ k : Nat, (ctx - 64).toNat + 16 ≤ k → k < (ctx - 64).toNat + size.toNat →
+    mem.readable (UInt64.ofNat k) = true ∧ mem.writable (UInt64.ofNat k) = true
+
+/-- The whole region includes the part Lir uses. -/
+theorem Region.lir {mem : Memory} {ctx size : Word} (h : Region mem ctx size) : LirRegion mem ctx size :=
+  fun k h1 h2 => h k (by omega) h2
+
+theorem lirRegion_at {mem : Memory} {ctx size : Word} (hreg : LirRegion mem ctx size) {a : Word} {i : Nat}
+    (hlo : (ctx - 64).toNat + 16 ≤ a.toNat + i) (hhi : a.toNat + i < (ctx - 64).toNat + size.toNat)
+    (hfit : a.toNat + i < 2 ^ 64) :
+    mem.readable (a + UInt64.ofNat i) = true ∧ mem.writable (a + UInt64.ofNat i) = true := by
+  have : a + UInt64.ofNat i = UInt64.ofNat (a.toNat + i) :=
+    UInt64.toNat_inj.mp (by rw [addr_toNat hfit, UInt64.toNat_ofNat', Nat.mod_eq_of_lt hfit])
+  rw [this]
+  exact hreg _ hlo hhi
+
 /-- The last byte of the context block, from the region base (`v5`). -/
 def blockEnd (base : Word) : Word := base + 0 + dispWord ((ctxBlockBytes + objectAlign - 1 : Nat) : Int)
 
@@ -232,13 +254,14 @@ theorem bumpOf_toNat {base : Word} (h : base.toNat + 703 < 2 ^ 64) :
   rw [show objectAlign = 64 from rfl, word_alignDown, addr_toNat h]
 
 /-- **`cx_init` from its entry.** Where its checks reject the region
-(`¬ RegionOk`), it fails with `heap`; otherwise, on a readable and writable
-region, it returns the bytes left for objects with `InitPost`. The outcome
-does not depend on the clock: no step charges it. -/
-theorem cxInit_cases {q : Program} {g : FunId} (hq : q.funcs[g]? = some cxInit) (hmain : q.main = g)
+(`¬ RegionOk`), it fails with `heap`; otherwise, when the part of the region
+Lir uses is readable and writable (`LirRegion`), it returns the bytes left
+for objects with `InitPost`. The outcome does not depend on the clock: no
+step charges it. -/
+theorem cxInit_cases_lir {q : Program} {g : FunId} (hq : q.funcs[g]? = some cxInit) (hmain : q.main = g)
     (size budget ctx : Word) (mem : Memory) :
     ((∀ k, eval q k [size, budget] mem ctx = .resource .heap) ∧ ¬ RegionOk ctx size) ∨
-      (RegionOk ctx size ∧ (Region mem ctx size → ∃ left mem',
+      (RegionOk ctx size ∧ (LirRegion mem ctx size → ∃ left mem',
         (∀ k, eval q k [size, budget] mem ctx = .ok ([left], mem')) ∧ InitPost ctx budget mem mem')) := by
   let ρ₀ : Env := (({} : Env).insert 0 size).insert 1 budget
   have hinit : State.initial q [size, budget] mem ctx = some (atState mem ctx g 0 0 ρ₀ []) := by
@@ -334,9 +357,9 @@ theorem cxInit_cases {q : Program} {g : FunId} (hq : q.funcs[g]? = some cxInit) 
   right
   refine ⟨⟨h7', by rw [show minRegion = 4096 from rfl]; omega, by omega⟩, fun hreg => ?_⟩
   -- block 8
-  have hW : ∀ (a : Word) (i : Nat), ctx.toNat - 64 ≤ a.toNat + i → a.toNat + i < ctx.toNat - 64 + size.toNat →
+  have hW : ∀ (a : Word) (i : Nat), ctx.toNat - 48 ≤ a.toNat + i → a.toNat + i < ctx.toNat - 64 + size.toNat →
       mem.readable (a + UInt64.ofNat i) = true ∧ mem.writable (a + UInt64.ofNat i) = true :=
-    fun a i h1 h2 => region_at hreg (by omega) (by omega) (by omega)
+    fun a i h1 h2 => lirRegion_at hreg (by omega) (by omega) (by omega)
   have h48 : (ctx - 48).toNat = ctx.toNat - 48 := ctx_sub_toNat (k := 48) hc64 (by omega)
   have h40 : (ctx - 40).toNat = ctx.toNat - 40 := ctx40_toNat hc64
   have h32 : (ctx - 32).toNat = ctx.toNat - 32 := ctx32_toNat hc64
@@ -402,7 +425,7 @@ theorem cxInit_cases {q : Program} {g : FunId} (hq : q.funcs[g]? = some cxInit) 
       (by simp) rfl (by simp [ρ₈])
   refine ⟨limit - bump, zeros m₄ ctx ds, eval_done_of hinit (hstar5.trans hstar8) rfl hdone, ?_⟩
   -- the words the context block holds
-  have hR : ∀ (a : Word) (i : Nat), ctx.toNat - 64 ≤ a.toNat + i → a.toNat + i < ctx.toNat - 64 + size.toNat →
+  have hR : ∀ (a : Word) (i : Nat), ctx.toNat - 48 ≤ a.toNat + i → a.toNat + i < ctx.toNat - 64 + size.toNat →
       mem.readable (a + UInt64.ofNat i) = true := fun a i h1 h2 => (hW a i h1 h2).1
   have w8 : 8 = X86.Width.bytes .w64 := rfl
   have wB₁ : WordAt m₁ (ctx - 48) budget := wordAt_write64 fun i hi => hR _ i (by omega) (by omega)
@@ -435,10 +458,20 @@ theorem cxInit_cases {q : Program} {g : FunId} (hq : q.funcs[g]? = some cxInit) 
     bumpAligned := by show (bumpOf (ctx - 64)).toNat % 8 = 0; omega
     free := fun k hk hk' => by
       rw [hp'.1, hp'.2]
-      exact hreg k (by show (ctx - 64).toNat ≤ k; change (bumpOf (ctx - 64)).toNat ≤ k at hk; omega)
+      exact hreg k (by show (ctx - 64).toNat + 16 ≤ k; change (bumpOf (ctx - 64)).toNat ≤ k at hk; omega)
         (by change k < (ctx - 64 + size).toNat at hk'; omega)
     cells := fun ℓ h => absurd h (Nat.not_lt_zero ℓ)
     ordered := fun ℓ ℓ' a a' rc b _ hP => by simp at hP }
+
+/-- **`cx_init` from its entry**, on a region given whole (`Region`). -/
+theorem cxInit_cases {q : Program} {g : FunId} (hq : q.funcs[g]? = some cxInit) (hmain : q.main = g)
+    (size budget ctx : Word) (mem : Memory) :
+    ((∀ k, eval q k [size, budget] mem ctx = .resource .heap) ∧ ¬ RegionOk ctx size) ∨
+      (RegionOk ctx size ∧ (Region mem ctx size → ∃ left mem',
+        (∀ k, eval q k [size, budget] mem ctx = .ok ([left], mem')) ∧ InitPost ctx budget mem mem')) := by
+  rcases cxInit_cases_lir hq hmain size budget ctx mem with h | ⟨hok, hs⟩
+  · exact .inl h
+  · exact .inr ⟨hok, fun hreg => hs hreg.lir⟩
 
 /-- `cx_init` fails with `heap` on a region its checks reject. -/
 theorem cxInit_fail {p : Program} {g : FunId} (hg : p.funcs[g]? = some cxInit) {size budget ctx : Word}
@@ -455,6 +488,17 @@ theorem cxInit_ok {p : Program} {g : FunId} (hg : p.funcs[g]? = some cxInit) {si
     ∃ left mem', (∀ k, eval { p with main := g } k [size, budget] mem ctx = .ok ([left], mem')) ∧
       InitPost ctx budget mem mem' := by
   rcases cxInit_cases (q := { p with main := g }) hg rfl size budget ctx mem with ⟨-, hn⟩ | ⟨-, hs⟩
+  · exact absurd hok hn
+  · exact hs hreg
+
+/-- **`cx_init` establishes the heap invariant** when the part of the region
+Lir uses is readable and writable and its checks accept the region, at
+every clock. -/
+theorem cxInit_ok_lir {p : Program} {g : FunId} (hg : p.funcs[g]? = some cxInit) {size budget ctx : Word}
+    {mem : Memory} (hok : RegionOk ctx size) (hreg : LirRegion mem ctx size) :
+    ∃ left mem', (∀ k, eval { p with main := g } k [size, budget] mem ctx = .ok ([left], mem')) ∧
+      InitPost ctx budget mem mem' := by
+  rcases cxInit_cases_lir (q := { p with main := g }) hg rfl size budget ctx mem with ⟨-, hn⟩ | ⟨-, hs⟩
   · exact absurd hok hn
   · exact hs hreg
 

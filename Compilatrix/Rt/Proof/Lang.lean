@@ -392,10 +392,11 @@ def CallRel (C : Cfg.Program) (tys : Nat → Option (Sig × FoTy)) (r : Nat) (v 
   Sem.viewResult (viewOf C.ctors tys) r (Own.obsV v) = .ok o ∨
     Sem.viewResult (viewOf C.ctors tys) r (Own.obsV v) = .stuck
 
-/-- An exact-arity call simulates Cfg's run of the root. -/
-theorem call_sim {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower cfg C = .ok L)
+/-- An exact-arity call simulates Cfg's run of the root, when the part of the
+region Lir uses is readable and writable (`LirRegion`). -/
+theorem call_sim_lir {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower cfg C = .ok L)
     (hsw : switchesOk C = true) (tys : Nat → Option (Sig × FoTy)) {M : Model}
-    (hok : RegionOk M.ctx M.size) (hreg : Region M.mem M.ctx M.size) (r f p : Nat) (ns : List Nat) :
+    (hok : RegionOk M.ctx M.size) (hreg : LirRegion M.mem M.ctx M.size) (r f p : Nat) (ns : List Nat) :
     Sim (CallRel C tys r) (· + 1) (fun k => Cfg.run .immortal C k f (Own.litArgs ns) {})
       (fun k => (Loaded.ofLowered C L tys M).call { fn := f, params := p, ty := tys r } ns k) := by
   cases hws : natWords ns with
@@ -403,7 +404,7 @@ theorem call_sim {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower cfg C
     refine Sim.ofEq (Sim.to_resource .natOverflow) (fun _ => rfl) fun k => ?_
     simp [Loaded.call, hws]
   | some ws =>
-    obtain ⟨left, mem', hinit, -, hsim⟩ := init_correct_checked h hsw (budget := M.budget) hok hreg
+    obtain ⟨left, mem', hinit, -, hsim⟩ := init_correct_checked_lir h hsw (budget := M.budget) hok hreg
     have hs := (hsim (g := f) (natWords_rel (T := tables C) (Pw := []) hws)).map_right
       fun r' => ({ fn := f, params := p, ty := tys r } : Entry).observe M.fuel r'.1 r'.2
     refine Sim.ofEq (hs.mono ?_) (fun _ => rfl) fun k => ?_
@@ -416,12 +417,21 @@ theorem call_sim {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower cfg C
     · simp only [Loaded.call, hws, Loaded.ofLowered]
       rw [(lower_shape h).1, hinit k, Sem.Result.bind_ok]
 
-/-- **Cfg → Lir refines** (M2.7): on a model region `cx_init` accepts, the
-loaded program refines Cfg viewed at the roots' readback types, for a
-program `Rt.lower` and the pipeline's switch check accept. -/
-theorem lower_refines {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower cfg C = .ok L)
+/-- An exact-arity call simulates Cfg's run of the root. -/
+theorem call_sim {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower cfg C = .ok L)
     (hsw : switchesOk C = true) (tys : Nat → Option (Sig × FoTy)) {M : Model}
-    (hok : RegionOk M.ctx M.size) (hreg : Region M.mem M.ctx M.size) :
+    (hok : RegionOk M.ctx M.size) (hreg : Region M.mem M.ctx M.size) (r f p : Nat) (ns : List Nat) :
+    Sim (CallRel C tys r) (· + 1) (fun k => Cfg.run .immortal C k f (Own.litArgs ns) {})
+      (fun k => (Loaded.ofLowered C L tys M).call { fn := f, params := p, ty := tys r } ns k) :=
+  call_sim_lir h hsw tys hok hreg.lir r f p ns
+
+/-- **Cfg → Lir refines** on a model region `cx_init` accepts whose part Lir
+uses is readable and writable (`LirRegion`): the loaded program refines
+Cfg viewed at the roots' readback types, for a program `Rt.lower` and the
+pipeline's switch check accept. -/
+theorem lower_refines_lir {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower cfg C = .ok L)
+    (hsw : switchesOk C = true) (tys : Nat → Option (Sig × FoTy)) {M : Model}
+    (hok : RegionOk M.ctx M.size) (hreg : LirRegion M.mem M.ctx M.size) :
     Sem.Refines (⟨C, viewOf C.ctors tys⟩ : Sem.Viewed Cfg.Program) (Loaded.ofLowered C L tys M) := by
   refine Sem.Refines.of_sim (R := Eq) (fun _ _ h => h) fun i => ?_
   obtain ⟨r, ns⟩ := i
@@ -448,7 +458,7 @@ theorem lower_refines {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower 
     | some fd =>
       simp only [Option.map_some, Option.getD_some]
       refine ⟨(· + 1), ?_⟩
-      have hcs := call_sim h hsw tys hok hreg r f fd.params.length
+      have hcs := call_sim_lir h hsw tys hok hreg r f fd.params.length
       by_cases he : ns.length = fd.params.length
       · simp only [Sem.entryRun, he, ↓reduceIte]
         refine (hcs ns).bind_left (fun v o hvo => ?_) fun _ => Sem.viewResult_ne_timeout _ _ _
@@ -473,6 +483,15 @@ theorem lower_refines {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower 
         · simp only [Sem.entryRun, he, hlt, ↓reduceIte]
           refine Sim.ofEq (Sim.bindStuck (R' := Eq) (g := fun _ _ => .stuck) (hcs (ns.take fd.params.length))
             fun _ _ _ => rfl) (fun k => Sem.bind_stuck_bind _ _) fun _ => rfl
+
+/-- **Cfg → Lir refines** (M2.7): on a model region `cx_init` accepts, the
+loaded program refines Cfg viewed at the roots' readback types, for a
+program `Rt.lower` and the pipeline's switch check accept. -/
+theorem lower_refines {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower cfg C = .ok L)
+    (hsw : switchesOk C = true) (tys : Nat → Option (Sig × FoTy)) {M : Model}
+    (hok : RegionOk M.ctx M.size) (hreg : Region M.mem M.ctx M.size) :
+    Sem.Refines (⟨C, viewOf C.ctors tys⟩ : Sem.Viewed Cfg.Program) (Loaded.ofLowered C L tys M) :=
+  lower_refines_lir h hsw tys hok hreg.lir
 
 /-- `lower_refines` in the traced shape (decision D-1). -/
 theorem lower_refines_traced {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower cfg C = .ok L)
