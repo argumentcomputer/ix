@@ -55,6 +55,46 @@ statement is established in two stages:
    `Ix.Kernel`.** A single adequacy theorem relates evaluator results to
    denotations.
 
+**What is proved (Phase 1, stage 1).** `Recheck.sound`
+(`Compilatrix/Recheck/Proof/Soundness.lean`) states the correctness
+statement at stage 1 for the object the checked compiler path writes. Its
+two hypotheses:
+- `Recheck.run cfg P c = .ok a`: the recheck path accepted source `P`
+  with certificate `c` and produced artifact `a`;
+- `D.Ok n`: a driver `D` meets the driver contract, plain arithmetic on
+  the region, stack and return address for an object with `n` bytes of
+  text. `Recheck.driver_exists` shows that one exists for every artifact.
+
+For every such `D` and every input (a root and its arguments), the object
+linked under `D` (`X86.Linked`: `cx_init`, then the root's export found by
+its ELF symbol, run on the byte machine) satisfies three clauses:
+1. If it returns an observation `w`, then either the checked source
+   returns a value whose view is `w`, or the source goes wrong.
+2. If the source does not go wrong, the object never goes wrong.
+3. If the source times out at every clock, the object times out at every
+   clock or ends in a resource failure.
+
+"Goes wrong" (`Front.GoesWrong`) has three cases: the source gets stuck,
+it traps, or it returns a value that the root's view does not accept at
+the root's result type. Lean's typing excludes the third case, but the
+recheck path does no type checking and readback goes by tag, so stage 1
+keeps it.
+
+Only the root's result is observed, read back at its first-order type;
+Phase 1 programs are scalar and pure. The theorem uses only the three
+standard axioms. Reading it as a fact about the native executable rests
+on three specification assumptions in the
+[trust ledger](trusted-extern-ledger.md):
+- `X86.Driver`/`X86.Linked` model `runtime_driver.c` and the linker's
+  symbol lookup (`x86-phase1-runtime-driver-model`);
+- the byte machine is the processor (`x86-v0-local-semantics`), and the
+  system loader maps the object as `ELFRead` parses it
+  (`x86-v0-elf-writer`);
+- SrcEval is the source's meaning (stage 2 is not proved).
+
+No theorem is stated of `Recheck.compile` itself. Ingress and `produce`
+reach BLAKE3's native-decided lemmas, so its statements are made of `run`.
+
 **Statement shape (decision D-1).** Per-level and pipeline theorems are
 stated in the traced shape of `Compilatrix.Sem`, so IO can be added without
 restating them:
