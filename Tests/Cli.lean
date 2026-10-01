@@ -113,10 +113,38 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
   finally
     IO.FS.removeDirAll dir
 
+/-- `ix compile --sharing-limits`: a malformed override is rejected before
+    compiling (nothing written), and a valid one (Lean and Rust keys mixed)
+    compiles. -/
+private def Tests.Cli.testCompileSharingLimits : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  let dir ← IO.FS.createTempDir
+  let source := dir / "SharingLimits.lean"
+  let output := dir / "sharing-limits.ixe"
+  try
+    IO.FS.writeFile source
+      "def limitsMarker : Nat := 7\ntheorem limitsProof : limitsMarker = 7 := rfl\n"
+    let run := fun (spec : String) => IO.Process.output {
+      cmd := ix.toString,
+      args := #["compile", source.toString, "--no-build", "--consts", "limitsProof",
+        "--out", output.toString, "--sharing-limits", spec] }
+    let bad ← run "bogus=1"
+    if bad.exitCode == 0 || (← output.pathExists) then
+      throw <| IO.userError s!"compile accepted --sharing-limits bogus=1:\n{bad.stdout}\n{bad.stderr}"
+    unless (bad.stderr.splitOn "unknown sharing limit bogus").length > 1 do
+      throw <| IO.userError s!"--sharing-limits bogus=1: unexpected error:\n{bad.stderr}"
+    let good ← run "states=2^44, depth=2^22, work=max"
+    unless good.exitCode == 0 && (← output.pathExists) do
+      throw <| IO.userError s!"compile --sharing-limits failed:\n{good.stdout}\n{good.stderr}"
+    IO.println "compile --sharing-limits: malformed override rejected, valid override compiled"
+  finally
+    IO.FS.removeDirAll dir
+
 public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   Tests.Cli.testCompileNoBuild
   Tests.Cli.testCompileContracts
+  Tests.Cli.testCompileSharingLimits
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0

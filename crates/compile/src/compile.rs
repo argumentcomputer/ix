@@ -2539,28 +2539,35 @@ pub enum SharingConstruction {
 pub const COMPILER_SHARING: SharingConstruction =
   SharingConstruction::Heuristic;
 
-/// Explicit resource limits of the tiered construction in the compiler. The
-/// values are the [`ExactSharingLimits`] defaults, spelled out so that a
-/// change of the library defaults cannot silently change which constants
-/// compile. Mirrors `Ix.CompileM.compilerSharingLimits` (the two languages
-/// meter work differently; the limits are each language's defaults).
-pub fn compiler_sharing_limits() -> ExactSharingLimits {
-  ExactSharingLimits {
-    max_input_nodes: 1 << 26,
-    max_distinct_nodes: 1 << 24,
-    max_height: 1 << 24,
-    max_candidates: 1 << 16,
-    max_states: 1 << 20,
-    max_layer_states: 1 << 18,
-    max_transitions: 1 << 28,
-    max_work: 1 << 36,
-    max_output_bytes: 1 << 32,
-    heuristic_upper_bound: true,
-    greedy_upper_bound: true,
-    lower_bound_pruning: true,
-    materialization_bound: true,
-    uniform_subset_search: false,
+/// Environment variable carrying a sharing-limit override in the format of
+/// [`ExactSharingLimits::with_overrides`] (for example
+/// `states=2^44,height=2^34` or `unbounded`). `ix compile --sharing-limits`
+/// and `ix compile-lean --sharing-limits` set it. Mirrors Lean
+/// `Ix.CompileM.sharingLimitsEnvVar`.
+pub const SHARING_LIMITS_ENV: &str = "IX_SHARING_LIMITS";
+
+/// The [`ExactSharingLimits`] defaults with the override `spec` applied.
+pub fn compiler_sharing_limits_with(
+  spec: Option<&str>,
+) -> Result<ExactSharingLimits, String> {
+  let limits = ExactSharingLimits::default();
+  match spec {
+    None => Ok(limits),
+    Some(spec) => limits
+      .with_overrides(spec)
+      .map_err(|e| format!("{SHARING_LIMITS_ENV}: {e}")),
   }
+}
+
+/// Resource limits of the compiler's canonical sharing construction: the
+/// [`ExactSharingLimits`] defaults (a safety net far above every corpus
+/// maximum) with the [`SHARING_LIMITS_ENV`] override, read at every call. An
+/// invalid override is the error of every block that shares (fail closed).
+/// Mirrors `Ix.CompileM.compilerSharingLimitsFromEnv`.
+pub fn compiler_sharing_limits() -> Result<ExactSharingLimits, String> {
+  compiler_sharing_limits_with(
+    std::env::var(SHARING_LIMITS_ENV).ok().as_deref(),
+  )
 }
 
 /// A sharing construction together with its limits.
@@ -2573,26 +2580,29 @@ pub struct SharingRoute {
 impl SharingRoute {
   /// The compiler's route: [`COMPILER_SHARING`] under
   /// [`compiler_sharing_limits`].
-  pub fn compiler() -> Self {
-    SharingRoute {
-      construction: COMPILER_SHARING,
-      limits: compiler_sharing_limits(),
-    }
+  pub fn compiler() -> Result<Self, CompileError> {
+    let limits = compiler_sharing_limits()
+      .map_err(|reason| CompileError::SharingConstruction { reason })?;
+    Ok(SharingRoute { construction: COMPILER_SHARING, limits })
   }
 
-  /// A route with the default limits.
+  /// A route with the default limits (no override).
   pub fn new(construction: SharingConstruction) -> Self {
-    SharingRoute { construction, limits: compiler_sharing_limits() }
+    SharingRoute { construction, limits: ExactSharingLimits::default() }
   }
 }
 
 /// A sharing-construction failure as a compile error: resource exhaustion is
-/// `ResourceLimit`, every other kind `SharingConstruction`. Mirrors
-/// `Ix.CompileM.sharingCompileError`.
+/// `ResourceLimit` (naming the limit and how to raise it), every other kind
+/// `SharingConstruction`. Mirrors `Ix.CompileM.sharingCompileError`.
 fn sharing_compile_error(e: SharingError) -> CompileError {
   match e {
-    SharingError::ResourceExhausted(_) => {
-      CompileError::ResourceLimit { reason: format!("canonical sharing: {e}") }
+    SharingError::ResourceExhausted(r) => CompileError::ResourceLimit {
+      reason: format!(
+        "canonical sharing: {e}; raise it with --sharing-limits {}=N \
+         ({SHARING_LIMITS_ENV})",
+        r.resource.key()
+      ),
     },
     other => CompileError::SharingConstruction {
       reason: format!("canonical sharing: {other}"),
@@ -2654,7 +2664,7 @@ pub fn apply_sharing_to_definition_with_stats(
   block_name: Option<&str>,
 ) -> Result<SingletonSharingResult, CompileError> {
   apply_sharing_to_definition_via(
-    &SharingRoute::compiler(),
+    &SharingRoute::compiler()?,
     def,
     refs,
     univs,
@@ -2695,7 +2705,7 @@ pub fn apply_sharing_to_axiom_with_stats(
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
 ) -> Result<SingletonSharingResult, CompileError> {
-  apply_sharing_to_axiom_via(&SharingRoute::compiler(), ax, refs, univs)
+  apply_sharing_to_axiom_via(&SharingRoute::compiler()?, ax, refs, univs)
 }
 
 /// [`apply_sharing_to_axiom_with_stats`] along an explicit sharing route.
@@ -2727,7 +2737,7 @@ pub fn apply_sharing_to_quotient_with_stats(
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
 ) -> Result<SingletonSharingResult, CompileError> {
-  apply_sharing_to_quotient_via(&SharingRoute::compiler(), quot, refs, univs)
+  apply_sharing_to_quotient_via(&SharingRoute::compiler()?, quot, refs, univs)
 }
 
 /// [`apply_sharing_to_quotient_with_stats`] along an explicit sharing route.
@@ -2763,7 +2773,7 @@ pub fn apply_sharing_to_recursor_with_stats(
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
 ) -> Result<SingletonSharingResult, CompileError> {
-  apply_sharing_to_recursor_via(&SharingRoute::compiler(), rec, refs, univs)
+  apply_sharing_to_recursor_via(&SharingRoute::compiler()?, rec, refs, univs)
 }
 
 /// [`apply_sharing_to_recursor_with_stats`] along an explicit sharing route.
@@ -2824,7 +2834,7 @@ pub fn apply_sharing_to_mutual_block(
   block_name: Option<&str>,
 ) -> Result<MutualBlockSharingResult, CompileError> {
   apply_sharing_to_mutual_block_via(
-    &SharingRoute::compiler(),
+    &SharingRoute::compiler()?,
     mut_consts,
     refs,
     univs,
@@ -7806,7 +7816,7 @@ mod tests {
         let (normalized, _) = normalize_constant_sharing_tiered(
           layout,
           &unshared,
-          &compiler_sharing_limits(),
+          &ExactSharingLimits::default(),
         )
         .unwrap();
         assert_eq!(routed, normalized, "{layout:?}");
@@ -7822,7 +7832,7 @@ mod tests {
       construction: SharingConstruction::Tiered(ShareLayout::TagN),
       limits: ExactSharingLimits {
         max_distinct_nodes: 2,
-        ..compiler_sharing_limits()
+        ..ExactSharingLimits::default()
       },
     };
     let err = apply_sharing_to_axiom_via(
@@ -7834,5 +7844,29 @@ mod tests {
     .err()
     .expect("the tiered route must fail under these limits");
     assert!(matches!(err, CompileError::ResourceLimit { .. }), "{err}");
+    // The error names the limit and how to raise it.
+    let msg = format!("{err}");
+    assert!(
+      msg.contains("resource exhausted: distinct_nodes (limit 2)")
+        && msg.contains("--sharing-limits distinct_nodes=N")
+        && msg.contains(SHARING_LIMITS_ENV),
+      "{msg}"
+    );
+  }
+
+  /// The compiler limits are the library defaults plus the override, and an
+  /// invalid override is an error that names the variable.
+  #[test]
+  fn compiler_sharing_limits_override() {
+    assert_eq!(
+      compiler_sharing_limits_with(None).unwrap(),
+      ExactSharingLimits::default()
+    );
+    let l = compiler_sharing_limits_with(Some("states=2^10, work=7,depth=3"))
+      .unwrap();
+    assert_eq!((l.max_states, l.max_work), (1024, 7));
+    assert_eq!(l.max_height, ExactSharingLimits::default().max_height);
+    let err = compiler_sharing_limits_with(Some("bogus=1")).unwrap_err();
+    assert!(err.starts_with("IX_SHARING_LIMITS: unknown sharing limit bogus"));
   }
 }

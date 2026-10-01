@@ -714,12 +714,21 @@ existing `Share` expanded, so normalizing a canonical constant reproduces it.
    (one per `w`) with the fewest real bytes, ties going to the lower `w`.
    An error at any width fails the whole construction.
 
-The construction runs under explicit resource limits. Exceeding one is a
-compile error (`CompileError.resourceLimit`). Every other construction
-failure is `CompileError.sharingConstruction`. There is no fallback to
-another construction, and a partial or best-so-far table is never emitted.
+The construction runs under explicit resource limits. They are a safety net:
+the defaults (Lean `Ix.Sharing.Exact.Limits`, Rust `ExactSharingLimits`) are
+at least 2^6 (Lean) and 2^8 (Rust) times the limits under which the corpora
+were built without exhaustion. `ix compile --sharing-limits` (and
+`ix compile-lean --sharing-limits`, or the `IX_SHARING_LIMITS` environment
+variable that both compilers read) overrides them: comma-separated
+`key=value` items, with values as digits, `2^k` or `max`, or `unbounded`.
+Exceeding a limit is a compile error (`CompileError.resourceLimit`) that names
+the limit's key and the override, for example `canonical sharing: resource
+exhausted: states (limit 1099511627776); raise it with --sharing-limits
+states=N`. Every other construction failure is
+`CompileError.sharingConstruction`. There is no fallback to another
+construction, and a partial or best-so-far table is never emitted.
 
-<!-- PENDING: [route][limits] compiler limits set far above every corpus maximum, with a CLI override (plan §0b-4, §3). At 9611c3b6 the error constructors exist, but `compilerSharingLimits` are the library defaults and the compiler route is the heuristic. -->
+<!-- PENDING: [route] the compilers route every block through this construction (plan §3). At f63f717f the limits and their override are in place, but the compiler route is still the heuristic. -->
 
 ### What is proved, and what is not
 

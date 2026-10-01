@@ -114,6 +114,13 @@ use crate::expr::Expr;
 /// Deterministic resource limits and search options. Exhausting a limit is
 /// an error. Limits and the pruning options can change success into failure
 /// but never the bytes of a success.
+///
+/// The defaults are a safety net, not a budget (PR plan §0b-4): each
+/// production limit is at least 2^8 times the previous default, under which
+/// every Mathlib constant built. `max_candidates` bounds only the exhaustive
+/// width-state search (not the production route) and stays at 2^16. A run
+/// that reaches a limit fails closed and names it ([`Resource::key`]);
+/// [`ExactSharingLimits::with_overrides`] raises it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExactSharingLimits {
   /// Pointer-distinct input expression nodes visited during expansion.
@@ -197,15 +204,15 @@ impl Default for Parallelism {
 impl Default for ExactSharingLimits {
   fn default() -> Self {
     ExactSharingLimits {
-      max_input_nodes: 1 << 26,
-      max_distinct_nodes: 1 << 24,
-      max_height: 1 << 24,
+      max_input_nodes: 1 << 40,
+      max_distinct_nodes: 1 << 32,
+      max_height: 1 << 32,
       max_candidates: 1 << 16,
-      max_states: 1 << 20,
-      max_layer_states: 1 << 18,
-      max_transitions: 1 << 28,
-      max_work: 1 << 36,
-      max_output_bytes: 1 << 32,
+      max_states: 1 << 40,
+      max_layer_states: 1 << 40,
+      max_transitions: 1 << 40,
+      max_work: 1 << 56,
+      max_output_bytes: 1 << 40,
       heuristic_upper_bound: true,
       greedy_upper_bound: true,
       lower_bound_pruning: true,
@@ -231,6 +238,109 @@ impl ExactSharingLimits {
       ..Self::default()
     }
   }
+
+  /// Limit keys of the Lean implementation (`Ix.Sharing.Exact.Limits`) that
+  /// the Rust limits do not have. [`Self::with_overrides`] accepts and
+  /// ignores them, so one override string serves both compilers; `states`,
+  /// `transitions` and `output_bytes` name a limit in both.
+  pub const LEAN_ONLY_KEYS: [&'static str; 6] = [
+    "expr_visits",
+    "depth",
+    "nodes",
+    "cost_evals",
+    "materialize",
+    "materialize_work",
+  ];
+
+  /// Set the limit named `key` ([`Resource::key`]); `false` if the key names
+  /// no Rust limit.
+  pub fn set_limit(&mut self, key: &str, value: u64) -> bool {
+    let slot = match key {
+      "input_nodes" => &mut self.max_input_nodes,
+      "distinct_nodes" => &mut self.max_distinct_nodes,
+      "height" => &mut self.max_height,
+      "candidates" => &mut self.max_candidates,
+      "states" => &mut self.max_states,
+      "layer_states" => &mut self.max_layer_states,
+      "transitions" => &mut self.max_transitions,
+      "work" => &mut self.max_work,
+      "output_bytes" => &mut self.max_output_bytes,
+      _ => return false,
+    };
+    *slot = value;
+    true
+  }
+
+  /// Apply a limit override: comma-separated items, each `key=value`
+  /// ([`Resource::key`] names; values decimal, `2^k` with `k <= 63`, or
+  /// `max`) or `unbounded` (every limit at `u64::MAX`), applied left to
+  /// right. Lean-only keys ([`Self::LEAN_ONLY_KEYS`]) are accepted and
+  /// ignored; any other key is an error. This is the grammar of Lean
+  /// `Ix.Sharing.Exact.Limits.withOverrides`, of `ix compile
+  /// --sharing-limits` and of `IX_SHARING_LIMITS`.
+  pub fn with_overrides(mut self, spec: &str) -> Result<Self, String> {
+    for raw in spec.split(',') {
+      let item = raw.trim();
+      if item.is_empty() {
+        continue;
+      }
+      if item == "unbounded" {
+        for key in [
+          "input_nodes",
+          "distinct_nodes",
+          "height",
+          "candidates",
+          "states",
+          "layer_states",
+          "transitions",
+          "work",
+          "output_bytes",
+        ] {
+          self.set_limit(key, u64::MAX);
+        }
+        continue;
+      }
+      let Some((key, value)) = item.split_once('=') else {
+        return Err(format!(
+          "sharing limit item {item}: expected key=value or unbounded"
+        ));
+      };
+      let key = key.trim();
+      let value = parse_limit_value(value)?;
+      if !self.set_limit(key, value) && !Self::LEAN_ONLY_KEYS.contains(&key) {
+        return Err(format!(
+          "unknown sharing limit {key} (expected input_nodes, distinct_nodes, \
+           height, candidates, states, layer_states, transitions, work, \
+           output_bytes, or a Lean key: {})",
+          Self::LEAN_ONLY_KEYS.join(", ")
+        ));
+      }
+    }
+    Ok(self)
+  }
+}
+
+/// A limit value: decimal digits, `2^k` (`k <= 63`) or `max` (`u64::MAX`).
+fn parse_limit_value(raw: &str) -> Result<u64, String> {
+  let s = raw.trim();
+  if s == "max" {
+    return Ok(u64::MAX);
+  }
+  if let Some(k) = s.strip_prefix("2^") {
+    return match k.parse::<u32>() {
+      Ok(k) if k <= 63 => Ok(1u64 << k),
+      Ok(_) => Err(format!("sharing limit value {s}: exponent above 63")),
+      Err(e) => Err(format!(
+        "sharing limit value {s}: expected digits, 2^k or max: {e}"
+      )),
+    };
+  }
+  s.parse::<u64>().map_err(|e| {
+    format!(
+      "sharing limit value {s}: expected digits, 2^k or max (at most 2^64 - \
+       1): {e}"
+    )
+  })
 }
 
 /// Non-semantic statistics of one invocation.
@@ -302,6 +412,24 @@ pub enum Resource {
   OutputBytes,
 }
 
+impl Resource {
+  /// The name of the resource in error messages and limit overrides
+  /// ([`ExactSharingLimits::with_overrides`], `--sharing-limits`).
+  pub fn key(self) -> &'static str {
+    match self {
+      Resource::InputNodes => "input_nodes",
+      Resource::DistinctNodes => "distinct_nodes",
+      Resource::Height => "height",
+      Resource::Candidates => "candidates",
+      Resource::States => "states",
+      Resource::LayerStates => "layer_states",
+      Resource::Transitions => "transitions",
+      Resource::Work => "work",
+      Resource::OutputBytes => "output_bytes",
+    }
+  }
+}
+
 /// A deterministic resource limit was reached before certification.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ResourceExhausted {
@@ -327,7 +455,12 @@ impl fmt::Display for SharingError {
       SharingError::Malformed(m) => write!(f, "malformed sharing: {m:?}"),
       SharingError::FormatBound(b) => write!(f, "format bound: {b:?}"),
       SharingError::ResourceExhausted(r) => {
-        write!(f, "resource exhausted: {:?} (limit {})", r.resource, r.limit)
+        write!(
+          f,
+          "resource exhausted: {} (limit {})",
+          r.resource.key(),
+          r.limit
+        )
       },
       SharingError::Internal(s) => write!(f, "internal error: {s}"),
     }

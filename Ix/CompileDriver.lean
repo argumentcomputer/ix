@@ -480,8 +480,9 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
 def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (dbg : Bool := false)
     (nameByHash : Std.HashMap Address Name := {})
+    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
-  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash } }
+  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
   | .ok a => acc := a
@@ -840,8 +841,12 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (nameByHash : Std.HashMap Address Name := {})
     : IO (Except String (Ixon.Env × Nat × CompileEnv)) := do
   let totalBlocks := blocks.blocks.size
+  -- The `IX_SHARING_LIMITS` override (`ix compile-lean --sharing-limits`).
+  let sharingLimits ← match ← compilerSharingLimitsFromEnv with
+    | .ok l => pure l
+    | .error e => return .error e
 
-  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash } }
+  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
   | .ok a => acc := a

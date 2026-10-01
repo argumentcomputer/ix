@@ -110,6 +110,12 @@ structure CompileEnv where
       keys sees nothing there). Materialized-env callers leave this
       empty and keep the scan. -/
   nameByHash : Std.HashMap Address Name := {}
+  /-- Resource limits of the canonical sharing construction
+      (`buildBlockConstant`, `finishMutualCompilation`): `compilerSharingLimits`
+      unless a driver sets the `IX_SHARING_LIMITS` override
+      (`compilerSharingLimitsFromEnv`). Limits decide only whether a block
+      compiles, never its bytes. -/
+  sharingLimits : Ix.Sharing.Exact.Limits := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -2481,32 +2487,33 @@ inductive SharingConstruction where
     `COMPILER_SHARING`. -/
 def compilerSharing : SharingConstruction := .heuristic
 
-/-- Explicit resource limits of the tiered construction in the compiler. The
-    values are the `Ix.Sharing.Exact.Limits` defaults, spelled out so that a
-    change of the library defaults cannot silently change which constants
-    compile. -/
-def compilerSharingLimits : Ix.Sharing.Exact.Limits where
-  maxExprVisits := 1 <<< 26
-  maxDepth := 1 <<< 14
-  maxNodes := 1 <<< 20
-  maxStates := 1 <<< 20
-  maxTransitions := 1 <<< 24
-  maxCostEvals := 1 <<< 30
-  maxOutputBytes := 1 <<< 28
-  maxMaterialize := 1 <<< 26
-  maxMaterializeWork := 1 <<< 36
-  maxOracleTables := 1 <<< 20
-  maxOracleVariants := 1 <<< 24
-  useHeuristicBound := true
-  heuristicMaxUnsharedBytes := 1 <<< 20
-  prune := true
-  uniformSubsetSearch := false
+/-- Resource limits of the compiler's canonical sharing construction: the
+    library defaults (`Ix.Sharing.Exact.Limits`), a safety net far above every
+    corpus maximum (PR plan §0b-4). `CompileEnv.sharingLimits` carries the
+    limits a compile runs under. Mirrors Rust `compiler_sharing_limits`. -/
+def compilerSharingLimits : Ix.Sharing.Exact.Limits := {}
+
+/-- Environment variable carrying a sharing-limit override in the format of
+    `Ix.Sharing.Exact.Limits.withOverrides` (for example `states=2^44,depth=2^22`
+    or `unbounded`). `ix compile --sharing-limits` and `ix compile-lean
+    --sharing-limits` set it; the Lean drivers and Rust's
+    `compiler_sharing_limits` read it. -/
+def sharingLimitsEnvVar : String := "IX_SHARING_LIMITS"
+
+/-- `compilerSharingLimits` with the `IX_SHARING_LIMITS` override applied, or
+    the parse error. -/
+def compilerSharingLimitsFromEnv : IO (Except String Ix.Sharing.Exact.Limits) := do
+  match ← IO.getEnv sharingLimitsEnvVar with
+  | none => pure (.ok compilerSharingLimits)
+  | some spec =>
+    pure ((compilerSharingLimits.withOverrides spec).mapError (s!"{sharingLimitsEnvVar}: " ++ ·))
 
 /-- A sharing-construction failure as a compile error: resource exhaustion is
     `resourceLimit`, every other kind `sharingConstruction`. -/
 def sharingCompileError : Ix.Sharing.Exact.SharingError → CompileError
   | .resourceExhausted r limit =>
-    .resourceLimit s!"canonical sharing: {reprStr r} limit {limit} exhausted"
+    .resourceLimit s!"canonical sharing: resource exhausted: {r.key} (limit {limit}); \
+      raise it with --sharing-limits {r.key}=N ({sharingLimitsEnvVar})"
   | e => .sharingConstruction s!"canonical sharing: {e}"
 
 /-- Build a block Constant with the tiered canonical sharing. The roots are
@@ -2543,13 +2550,14 @@ def liftSharing (r : Except CompileError Ixon.Constant) : CompileM Ixon.Constant
   | .error e => throw e
 
 /-- Build a block Constant with the compiler's sharing construction
-    (`compilerSharing` under `compilerSharingLimits`). Every block the
+    (`compilerSharing` under `CompileEnv.sharingLimits`). Every block the
     compiler emits goes through here. -/
 def buildBlockConstant (info : Ixon.ConstantInfo) (rootExprs : Array Ixon.Expr)
     (refs : Array Address) (univs : Array Ixon.Univ) : CompileM Ixon.Constant :=
   match compilerSharing with
   | .heuristic => pure (buildConstantWithSharing info rootExprs refs univs)
-  | sc => liftSharing (buildConstantWithSharingVia sc compilerSharingLimits info rootExprs refs univs)
+  | sc => do
+    liftSharing (buildConstantWithSharingVia sc (← read).1.sharingLimits info rootExprs refs univs)
 
 /-! ## Individual Constant Compilation -/
 
@@ -3262,7 +3270,7 @@ def finishMutualCompilation (classes : List (List MutConst))
   match compilerSharing with
   | .heuristic => pure (buildCompiledMutualBlock classes payloads roots metas cache)
   | sc =>
-    match buildCompiledMutualBlockVia sc compilerSharingLimits classes payloads roots
+    match buildCompiledMutualBlockVia sc (← read).1.sharingLimits classes payloads roots
         metas cache with
     | .ok result => pure result
     | .error e => throw e

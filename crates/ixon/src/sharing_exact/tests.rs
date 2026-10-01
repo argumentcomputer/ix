@@ -3047,3 +3047,100 @@ fn mss_hook_and_inspector() {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Limits: defaults and overrides
+// ---------------------------------------------------------------------------
+
+/// The production defaults are the safety-net values (PR plan §0b-4).
+#[test]
+fn limit_defaults_are_the_safety_net() {
+  let d = ExactSharingLimits::default();
+  assert_eq!(
+    (
+      d.max_input_nodes,
+      d.max_distinct_nodes,
+      d.max_height,
+      d.max_candidates,
+      d.max_states,
+      d.max_layer_states,
+      d.max_transitions,
+      d.max_work,
+      d.max_output_bytes
+    ),
+    (
+      1 << 40,
+      1 << 32,
+      1 << 32,
+      1 << 16,
+      1 << 40,
+      1 << 40,
+      1 << 40,
+      1 << 56,
+      1 << 40
+    )
+  );
+}
+
+/// `with_overrides`: values, `unbounded`, Lean-only keys and errors.
+#[test]
+fn limit_overrides_parse() {
+  let d = ExactSharingLimits::default();
+  let l = d
+    .clone()
+    .with_overrides(" states = 2^10 ,work=12345, output_bytes=max,,")
+    .unwrap();
+  assert_eq!(
+    (l.max_states, l.max_work, l.max_output_bytes),
+    (1024, 12345, u64::MAX)
+  );
+  assert_eq!(l.max_height, d.max_height);
+  // Lean-only keys are accepted and ignored.
+  assert_eq!(
+    d.clone()
+      .with_overrides("depth=5,cost_evals=2^3,materialize_work=9")
+      .unwrap(),
+    d
+  );
+  // `unbounded`, then a later item still applies.
+  let u = d.clone().with_overrides("unbounded,states=2").unwrap();
+  assert_eq!(
+    (u.max_work, u.max_height, u.max_candidates, u.max_states),
+    (u64::MAX, u64::MAX, u64::MAX, 2)
+  );
+  assert_eq!(u.lower_bound_pruning, d.lower_bound_pruning);
+  for bad in
+    ["bogus=1", "states", "states=2^64", "states=-1", "states=1e3", "=3"]
+  {
+    assert!(d.clone().with_overrides(bad).is_err(), "accepted {bad}");
+  }
+  assert!(d.clone().with_overrides("states=18446744073709551616").is_err());
+  assert_eq!(
+    d.clone().with_overrides("states=18446744073709551615").unwrap().max_states,
+    u64::MAX
+  );
+}
+
+/// The error of an exhausted limit names the override key.
+#[test]
+fn exhausted_limit_names_its_key() {
+  let c = axiom(Expr::all(chain(2), chain(2)), 1);
+  let tiny = ExactSharingLimits { max_distinct_nodes: 2, ..limits() };
+  let err = normalize_constant_sharing_tiered(ShareLayout::TagN, &c, &tiny)
+    .expect_err("two distinct nodes cannot hold this input");
+  assert_eq!(err.to_string(), "resource exhausted: distinct_nodes (limit 2)");
+  for r in [
+    Resource::InputNodes,
+    Resource::DistinctNodes,
+    Resource::Height,
+    Resource::Candidates,
+    Resource::States,
+    Resource::LayerStates,
+    Resource::Transitions,
+    Resource::Work,
+    Resource::OutputBytes,
+  ] {
+    let mut l = ExactSharingLimits::default();
+    assert!(l.set_limit(r.key(), 3), "{r:?}");
+  }
+}

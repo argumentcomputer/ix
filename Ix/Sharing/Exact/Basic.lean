@@ -307,6 +307,21 @@ inductive Resource where
   | oracleVariants
   deriving BEq, Repr, Inhabited
 
+/-- The name of a resource in error messages and in limit overrides
+(`Limits.withOverrides`, `ix compile --sharing-limits`). -/
+def Resource.key : Resource → String
+  | .exprVisits => "expr_visits"
+  | .depth => "depth"
+  | .nodes => "nodes"
+  | .states => "states"
+  | .transitions => "transitions"
+  | .costEvals => "cost_evals"
+  | .outputBytes => "output_bytes"
+  | .materialize => "materialize"
+  | .materializeWork => "materialize_work"
+  | .oracleTables => "oracle_tables"
+  | .oracleVariants => "oracle_variants"
+
 /-- Why an exact sharing operation did not produce a certified result. -/
 inductive SharingError where
   /-- A `Share` leaf where an expanded (Share-free) AST was required. -/
@@ -333,30 +348,38 @@ instance : ToString SharingError where
   toString e := reprStr e
 
 /-- Deterministic resource limits. Exceeding any limit returns
-`SharingError.resourceExhausted`; limits never change a successful result. -/
+`SharingError.resourceExhausted`; limits never change a successful result.
+
+The defaults are a safety net, not a budget (owner decision, PR plan §0b-4):
+each is at least 2^6 times the previous default, under which every Init
+constant and the Mathlib sample (every constant with more than 2,000
+candidates among them) built without exhaustion. A run that reaches a limit
+fails closed and names the resource (`Resource.key`); `Limits.withOverrides`
+raises it. `maxDepth` also bounds the native recursion of the expression
+walks: expansion and serialization ran at depth 2^20 without exhausting the
+stack. -/
 structure Limits where
   /-- Expression nodes walked while expanding input (tables, roots, and the
   self-check of the output). -/
-  maxExprVisits : Nat := 1 <<< 26
-  /-- Recursion depth of expression walks. -/
-  maxDepth : Nat := 1 <<< 14
+  maxExprVisits : Nat := 1 <<< 40
+  /-- Recursion depth of expression walks (the DAG height). -/
+  maxDepth : Nat := 1 <<< 20
   /-- Distinct structural subterms. -/
-  maxNodes : Nat := 1 <<< 20
+  maxNodes : Nat := 1 <<< 32
   /-- Width states inserted into the search frontier. -/
-  maxStates : Nat := 1 <<< 20
+  maxStates : Nat := 1 <<< 40
   /-- Transitions (state, appended term) examined. -/
-  maxTransitions : Nat := 1 <<< 24
+  maxTransitions : Nat := 1 <<< 40
   /-- Term cost evaluations plus telescope spine steps. -/
-  maxCostEvals : Nat := 1 <<< 30
+  maxCostEvals : Nat := 1 <<< 50
   /-- Variable bytes (roots, table count, table bodies) of the result. -/
-  maxOutputBytes : Nat := 1 <<< 28
+  maxOutputBytes : Nat := 1 <<< 40
   /-- Predicted size of the materialized output (an upper bound on the
   expression nodes built), checked before materializing. -/
-  maxMaterialize : Nat := 1 <<< 26
+  maxMaterialize : Nat := 1 <<< 40
   /-- Cumulative evaluation work of materializing a table entry by entry (the
-  tiered phase re-evaluates the DAG once per entry, about `2·k·N`); matches
-  the Rust `max_work`. -/
-  maxMaterializeWork : Nat := 1 <<< 36
+  tiered phase re-evaluates the DAG once per entry, about `2·k·N`). -/
+  maxMaterializeWork : Nat := 1 <<< 56
   /-- Tables enumerated by the exhaustive oracle. -/
   maxOracleTables : Nat := 1 <<< 20
   /-- Representations enumerated by the exhaustive oracle. -/
@@ -375,6 +398,79 @@ structure Limits where
   not change. -/
   uniformSubsetSearch : Bool := false
   deriving Repr, Inhabited
+
+/-- The value `max` in a limit override: `2^64 − 1`, the largest value Rust's
+`u64` limits hold. -/
+def limitMax : Nat := 2 ^ 64 - 1
+
+/-- Limit keys of the Rust implementation (`ExactSharingLimits`) that the Lean
+limits do not have. `Limits.withOverrides` accepts and ignores them, so one
+override string serves both compilers; `states`, `transitions` and
+`output_bytes` name a limit in both. -/
+def rustOnlyLimitKeys : List String :=
+  ["input_nodes", "distinct_nodes", "height", "candidates", "layer_states", "work"]
+
+/-- Set the limit named `key` (`Resource.key`, oracle limits excluded). -/
+def Limits.set? (l : Limits) (key : String) (v : Nat) : Option Limits :=
+  match key with
+  | "expr_visits" => some { l with maxExprVisits := v }
+  | "depth" => some { l with maxDepth := v }
+  | "nodes" => some { l with maxNodes := v }
+  | "states" => some { l with maxStates := v }
+  | "transitions" => some { l with maxTransitions := v }
+  | "cost_evals" => some { l with maxCostEvals := v }
+  | "output_bytes" => some { l with maxOutputBytes := v }
+  | "materialize" => some { l with maxMaterialize := v }
+  | "materialize_work" => some { l with maxMaterializeWork := v }
+  | _ => none
+
+/-- Every production limit set to `v` (the oracle limits are unchanged). -/
+def Limits.setAll (l : Limits) (v : Nat) : Limits :=
+  { l with maxExprVisits := v, maxDepth := v, maxNodes := v, maxStates := v,
+           maxTransitions := v, maxCostEvals := v, maxOutputBytes := v,
+           maxMaterialize := v, maxMaterializeWork := v }
+
+/-- A limit value: decimal digits, `2^k` (`k ≤ 63`) or `max`. -/
+def parseLimitValue (raw : String) : Except String Nat :=
+  let s := raw.trimAscii.toString
+  if s == "max" then .ok limitMax
+  else if s.startsWith "2^" then
+    match (s.drop 2).toString.toNat? with
+    | some k => if k ≤ 63 then .ok (2 ^ k) else .error s!"sharing limit value {s}: exponent above 63"
+    | none => .error s!"sharing limit value {s}: expected digits, 2^k or max"
+  else
+    match s.toNat? with
+    | some n => if n ≤ limitMax then .ok n else .error s!"sharing limit value {s}: above 2^64 - 1"
+    | none => .error s!"sharing limit value {s}: expected digits, 2^k or max"
+
+/-- Apply a limit override: comma-separated items, each `key=value`
+(`Resource.key` names; values as `parseLimitValue`) or `unbounded` (every
+production limit at `max`), applied left to right. Rust-only keys
+(`rustOnlyLimitKeys`) are accepted and ignored; any other key is an error.
+This is the format of `ix compile --sharing-limits` and of the
+`IX_SHARING_LIMITS` environment variable, which Rust's
+`compiler_sharing_limits` parses the same way. -/
+def Limits.withOverrides (l : Limits) (spec : String) : Except String Limits := do
+  let mut l := l
+  for raw in spec.splitOn "," do
+    let item := raw.trimAscii.toString
+    if item.isEmpty then continue
+    if item == "unbounded" then
+      l := l.setAll limitMax
+      continue
+    match item.splitOn "=" with
+    | [k, v] =>
+      let key := k.trimAscii.toString
+      let v ← parseLimitValue v
+      match l.set? key v with
+      | some l' => l := l'
+      | none =>
+        unless rustOnlyLimitKeys.contains key do
+          throw s!"unknown sharing limit {key} (expected expr_visits, depth, nodes, states, \
+            transitions, cost_evals, output_bytes, materialize, materialize_work, or a Rust key: \
+            {", ".intercalate rustOnlyLimitKeys})"
+    | _ => throw s!"sharing limit item {item}: expected key=value or unbounded"
+  return l
 
 /-- Nonsemantic work statistics. -/
 structure Stats where

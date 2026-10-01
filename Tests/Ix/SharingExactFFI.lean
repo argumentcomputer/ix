@@ -409,10 +409,12 @@ def routeUnits : TestSeq :=
     (match leanRoute (.tiered .tagN) witness2 with
      | .ok c => hexOf (serConstant c) == "d200009117b0b001921700170000000100"
      | .error _ => false : Bool) ++
-  test "tiered route fails closed on its limits (resourceLimit, no heuristic fallback)"
+  test "tiered route fails closed on its limits (resourceLimit naming the limit and its override, no heuristic fallback)"
     (match Ix.CompileM.buildConstantWithSharingVia (.tiered .tagN) tiny witness2.info roots
         witness2.refs witness2.univs with
-     | .error (.resourceLimit _) => true
+     | .error (.resourceLimit msg) =>
+       (msg.splitOn "resource exhausted: nodes (limit 2)").length > 1 &&
+         (msg.splitOn "--sharing-limits nodes=N (IX_SHARING_LIMITS)").length > 1
      | _ => false : Bool) ++
   test "tiered route rejects a root array of the wrong length"
     (match Ix.CompileM.buildConstantWithSharingVia (.tiered .tagN)

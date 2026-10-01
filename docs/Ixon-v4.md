@@ -305,9 +305,9 @@ construction is deferred.
 <!-- PENDING: [meta] readers resolve the extended index space (plan §11). At 9611c3b6 both decompilers resolve against the primary table only. -->
 
 **Compilation failures.** The construction runs under explicit resource
-limits. Exceeding one is a compile error. There is no fallback construction.
-
-<!-- PENDING: [limits] defaults far above every corpus maximum and a CLI override (plan §0b-4). -->
+limits, a safety net far above every corpus maximum that
+`ix compile --sharing-limits` overrides. Exceeding one is a compile error
+that names the limit. There is no fallback construction.
 
 These changes do not affect the contract model: §1–§3 and the admission
 rules of §6 are the same as in v3.

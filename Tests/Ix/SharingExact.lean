@@ -1079,8 +1079,46 @@ def deferred (descr : String) (mk : Unit → TestSeq) : TestSeq :=
     IO.println s!"    [{descr}: {stop - start} ms]"
     return (ok, 0, 0, if ok then none else some s!"a check in '{descr}' failed; see above")) .done
 
+/-! ## Limits: defaults and overrides -/
+
+def overrideFails (e : Except String Limits) : Bool :=
+  match e with
+  | .ok _ => false
+  | .error _ => true
+
+def limitTests (_ : Unit) : TestSeq :=
+  let d : Limits := {}
+  let resources : List Resource := [.exprVisits, .depth, .nodes, .states, .transitions,
+    .costEvals, .outputBytes, .materialize, .materializeWork]
+  group "limits" <|
+    test "the defaults are the safety net (PR plan §0b-4)"
+      (d.maxExprVisits == 2 ^ 40 && d.maxDepth == 2 ^ 20 && d.maxNodes == 2 ^ 32 &&
+        d.maxStates == 2 ^ 40 && d.maxTransitions == 2 ^ 40 && d.maxCostEvals == 2 ^ 50 &&
+        d.maxOutputBytes == 2 ^ 40 && d.maxMaterialize == 2 ^ 40 &&
+        d.maxMaterializeWork == 2 ^ 56) ++
+    test "overrides set the named limits, left to right"
+      (match d.withOverrides " states = 2^10 ,cost_evals=12345, output_bytes=max,, states=2^11" with
+       | .ok l => l.maxStates == 2048 && l.maxCostEvals == 12345 &&
+           l.maxOutputBytes == limitMax && l.maxDepth == d.maxDepth
+       | .error _ => false : Bool) ++
+    test "Rust-only keys are accepted and ignored"
+      (match d.withOverrides "height=5,work=2^3,layer_states=9,input_nodes=1,distinct_nodes=1,candidates=1" with
+       | .ok l => reprStr l == reprStr d
+       | .error _ => false : Bool) ++
+    test "unbounded sets every production limit to max; a later item still applies"
+      (match d.withOverrides "unbounded,states=2" with
+       | .ok l => l.maxDepth == limitMax && l.maxMaterializeWork == limitMax &&
+           l.maxStates == 2 && l.maxOracleTables == d.maxOracleTables
+       | .error _ => false : Bool) ++
+    test "malformed overrides are errors"
+      (["bogus=1", "states", "states=2^64", "states=-1", "states=1e3", "=3",
+        "states=18446744073709551616"].all fun s => overrideFails (d.withOverrides s)) ++
+    test "every production resource key names a limit"
+      (resources.all fun r => (d.set? r.key 3).isSome)
+
 public def suite : List TestSeq := [
   deferred "integer widths" widthTests,
+  deferred "limits" limitTests,
   deferred "exact expression length" exprSizeTests,
   deferred "Constant length decomposition" decompositionTests,
   deferred "structural IDs" structuralIdTests,
