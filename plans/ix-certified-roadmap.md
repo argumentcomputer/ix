@@ -240,6 +240,19 @@ con-leche's `model_exists` joins them at L3. The restated theorems are:
 
 The statements are recorded before and after the switch (section 5).
 
+As landed at L5 (`plans/review/cl-l5/`): the certified API is
+`Ix.Ixon.Admission.checkBytes`, with `Ix.Ixon.Projection.checkBytes` and
+`Ix.Ixon.BlockOrder.checkBytes` as its projection-reconstructing and
+block-ordering variants. The public theorems are in `Ix/Ixon/Consistency.lean`:
+`checkBytes_has_model`, `checkBytes_has_model_values` (stored definitions'
+values denote their constants, from `defn_reads`), `checkBytes_no_proof_of_False`
+(no accepted constant of the pinned `False`), `checkBytes_no_False_theorem` (no
+accepted theorem record whose type reads as the pinned `False`),
+`checkBytes_reading` (fidelity) and `checkBytes_resources`. The same theorems
+hold at every pin table and prelude (`Ix/Ixon/ConLecheConsistency.lean`,
+over `checkBytesWith`). The intrinsic entries stay as `checkBytesIntrinsic`
+until L6.
+
 The K0 shapes, which stay the public statements until L5. They were fixed
 at K0 on a kernel that rejects everything and preserved by every later
 milestone:

@@ -1,0 +1,175 @@
+/-
+Copyright (c) 2026 Argument Computer Corporation.
+SPDX-License-Identifier: MIT OR Apache-2.0
+-/
+
+import Ix.Ixon.Consistency
+import Ix.Ixon.BlockOrderProofs
+import Tests.Ix.Kernel.ConLecheReader
+
+/-! # The certified Ixon API (plan v4, L5)
+
+The public entries from L5 — `Ix.Ixon.Admission.checkBytes`, and its
+projection-reconstructing and block-ordering variants
+`Ix.Ixon.Projection.checkBytes` and `Ix.Ixon.BlockOrder.checkBytes` — run
+con-leche's verified checker behind the Ixon reader. These fixtures are the
+L4 reader fixtures (`Tests.Ix.Kernel.ConLecheReader`) through the public
+names, the failure classification at the Ix API (`Admission.outcome`), a
+theorem of the pinned `False` that is not accepted, and the public theorems
+applied. The intrinsic reference kernel's byte admission is tested in
+`Tests.Ix.Kernel.ByteAdmission`. -/
+
+open Ix.Kernel (ConstRef)
+open Ix.Kernel.ConLecheReader (isSingleton SingletonRead keyName keyName_injective)
+open Tests.Ix.Kernel.ConLecheReader
+
+namespace Tests.Ix.Kernel.CertifiedEntry
+
+def check (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) :
+    Except Ix.Ixon.ConLecheAdmission.Error ConLeche.Env :=
+  Ix.Ixon.Admission.checkBytes limits (encode cs) blobs
+
+def accepted (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Bool :=
+  (check cs blobs).isOk
+
+def outcomeOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) :
+    Option Ix.Ixon.Admission.Outcome :=
+  match check cs blobs with
+  | .ok _ => none
+  | .error e => some (Ix.Ixon.Admission.outcome e)
+
+/-! ## The certified entry is the con-leche entry -/
+
+#guard accepted definitions
+#guard accepted twoFixture
+#guard accepted pFixture
+#guard accepted [(address 40, quotIota)]
+#guard accepted [(address 42, litEq)] [(address 41, ⟨#[2]⟩)]
+-- the empty stream installs the prelude
+#guard match check [] with
+  | .ok env => env.consts.length == 27
+  | .error _ => false
+
+/-! ## The Ix taxonomy of failures (D-trust rows 21-22)
+
+A record the reader finds malformed and non-canonical bytes reject; every
+checker verdict declines (a false equation is `invalid` to con-leche, a
+failed conversion search, which is not independent evidence of a wrong
+input); a block whose recursor is missing declines at the reader; batch
+limits decline. -/
+
+-- a false equation
+#guard outcomeOf [(address 10, idNat), (address 11, twoDef),
+  (address 12, defn .thm (apps (ref 0 [0]) [ref 1, ref 2, ref 4]) (apps (ref 5 [0]) [ref 1, ref 4])
+    [eq, nat, address 11, natSucc, natZero, eqRefl] [one])] == some .declined
+-- a block without its recursor
+#guard outcomeOf (twoFixture.take 4) == some .declined
+-- a literal blob that is not supplied
+#guard outcomeOf [(address 42, litEq)] == some .rejected
+-- a non-canonical record
+#guard match Ix.Ixon.Admission.checkBytes limits [(address 10, ⟨#[0xff]⟩)] [] with
+  | .error e => Ix.Ixon.Admission.outcome e == .rejected
+  | .ok _ => false
+-- batch limits
+#guard match Ix.Ixon.Admission.checkBytes { limits with maxRecords := 0 } (encode definitions) [] with
+  | .error e => Ix.Ixon.Admission.outcome e == .declined
+  | .ok _ => false
+
+/-! ## No theorem of the pinned `False`
+
+`theorem bad : False := bad'` for any value: the record's type is a bare
+reference to the prelude's `False`, which the reader names `False`
+(`checkBytes_no_False_theorem`'s syntactic case,
+`checkBytesWith_no_False_reference`). It is never accepted, whatever the
+value. -/
+
+def false_ := pinned "False"
+
+#guard false_ != address 0
+#guard !accepted [(address 50, defn .thm (ref 0) (ref 0) [false_])]
+#guard !accepted [(address 50, defn .thm (ref 0) (lam (ref 0) (var 0)) [false_])]
+
+/-! ## Projection reconstruction
+
+The `Two` fixture with its projection records omitted: the recursor and the
+ι theorem name the projections by their reconstructed addresses (the pure
+BLAKE3 of their canonical encodings). The intrinsic variant is
+`Ix.Ixon.Projection.checkBytesIntrinsic` (`Tests.Ix.Kernel.Projection`). -/
+
+def twoI : Address := Ix.Ixon.Projection.address (iPrj (address 20))
+def twoA : Address := Ix.Ixon.Projection.address (cPrj (address 20) 0)
+def twoB : Address := Ix.Ixon.Projection.address (cPrj (address 20) 1)
+
+def twoRecR : Ixon.Constant := { twoRec with refs := #[twoI, twoA, twoB] }
+def twoIotaR : Ixon.Constant :=
+  { twoIota with refs := #[eq, nat, address 24, natZero, natSucc, twoB, twoI, eqRefl] }
+
+def omitted : List (Address × Ixon.Constant) :=
+  [(address 20, twoBlock), (address 24, twoRecR), (address 25, twoIotaR)]
+
+#guard (Ix.Ixon.Projection.checkBytes 16 limits (encode omitted) []).isOk
+-- without reconstruction the projections are missing
+#guard !accepted omitted
+-- the projection request bound applies
+#guard match Ix.Ixon.Projection.checkBytes 0 limits (encode omitted) [] with
+  | .error (.reconstruction .limit) => true
+  | _ => false
+
+/-! ## Block order -/
+
+#guard (Ix.Ixon.BlockOrder.checkBytes 16 limits {} (encode omitted) []).isOk
+#guard match Ix.Ixon.BlockOrder.checkBytes 16 limits ⟨0, 0⟩ (encode omitted) [] with
+  | .error (.order _) => true
+  | _ => false
+
+/-! ## The public theorems, applied -/
+
+example (V : Type) [ConLeche.SetTheory V] {env : ConLeche.Env}
+    (h : Ix.Ixon.Admission.checkBytes limits (encode definitions) [] = .ok env) :
+    Nonempty (ConLeche.Model V env) :=
+  Ix.Ixon.Admission.checkBytes_has_model V h
+
+example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
+    {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+    (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
+    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const ConLeche.falseName [] → False :=
+  Ix.Ixon.Admission.checkBytes_no_proof_of_False V h
+
+example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
+    {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+    (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
+    ∃ M : ConLeche.Model V env, ∀ cv value hint, ConLeche.ConstantInfo.defnInfo cv value hint ∈ env.consts →
+      ∀ φ ρ, ConLeche.Denotes M.cval env φ ρ value (M.cval cv.name φ) :=
+  Ix.Ixon.Admission.checkBytes_has_model_values V h
+
+/-- Fidelity at a record: each accepted singleton record's declaration is
+installed under its name with its kind. -/
+example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+    (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
+    ∃ pins pre constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
+      ∀ owner c, (owner, c) ∈ constants → isSingleton c.info = true →
+        ∃ st decl, SingletonRead (Ix.Ixon.ConLecheAdmission.streamContext pins pre constants blobs
+          (fun _ => none)) st owner c decl ∧
+          ∀ s, Ix.Kernel.ConLecheFold.declSkel decl = some s →
+            ∃ ci ∈ env.consts, ConLeche.Cached.ciSkel ci = s := by
+  obtain ⟨pins, pre, _, _, _, _, _, constants, reading, installed⟩ :=
+    Ix.Ixon.Admission.checkBytes_reading h
+  refine ⟨pins, pre, constants, reading, fun owner c hmem hs => ?_⟩
+  obtain ⟨st, decl, _, hread, _, _, hinst⟩ := installed.singleton hmem hs
+  exact ⟨st, decl, hread, hinst⟩
+
+example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
+    {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+    (h : Ix.Ixon.Projection.checkBytes 16 limits records blobs = .ok env) :
+    Nonempty (ConLeche.Model V env) :=
+  Ix.Ixon.Projection.checkBytes_has_model V h
+
+example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
+    {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+    (h : Ix.Ixon.BlockOrder.checkBytes 16 limits {} records blobs = .ok env) :
+    Nonempty (ConLeche.Model V env) :=
+  Ix.Ixon.BlockOrder.checkBytes_has_model V h
+
+example : Function.Injective keyName := fun _ _ h => keyName_injective h
+
+end Tests.Ix.Kernel.CertifiedEntry

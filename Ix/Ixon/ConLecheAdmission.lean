@@ -3,14 +3,15 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Ixon.Admission
+import Ix.Ixon.Admission.Bytes
 import Ix.Kernel.ConLeche.Prelude
 import ConLeche.MainTheorem
 
 /-! # Admission from ordered Ixon record bytes through con-leche (plan v4, L4)
 
-The `checkBytes`-shaped entry of con-leche's verified checker, beside the
-existing `Ix.Ixon.Admission.checkBytes` (which it does not change):
+The `checkBytes`-shaped entry of con-leche's verified checker, which the
+certified API's `Ix.Ixon.Admission.checkBytes` runs from L5 (the intrinsic
+kernel's entry is `Ix.Ixon.Admission.checkBytesIntrinsic` until L6):
 
     preflight → decodeRecords → Ixon reader → preparePrelude
               → ConLeche.Cached.checkDecls .verified natPins
@@ -111,6 +112,35 @@ def checkBytes (limits : Limits) (records : Records) (blobs : List (Address × B
   let pre ← builtinPrelude.mapError Error.prelude
   let natPins ← builtinNatOpPins.mapError Error.prelude
   checkBytesWith pins pre natPins limits records blobs hint
+
+/-- The reader's context for decoded records under a pin table and a
+prelude, as `readStream` builds it: the records' store backed by the
+prelude's records, and the recursor index of both. -/
+def streamContext (pins : Pins) (pre : Prelude) (constants : List (Address × Ixon.Constant))
+    (blobs : List (Address × ByteArray))
+    (hint : ConstRef Address → Option ConLeche.ReducibilityHint) : Ctx :=
+  contextOf pins constants.toArray blobs pre.records hint
+
+/-- Con-leche's verified fold over decoded records: the reader, the prelude,
+the fold. `checkBytesWith` is byte admission followed by this
+(`checkBytesWith_eq`). -/
+def checkConstantsWith (pins : Pins) (pre : Prelude) (natPins : List ConLeche.NatOpPinSet)
+    (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray))
+    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
+    Except Error ConLeche.Env := do
+  let decls ← readStream pins pre constants blobs hint
+  (ConLeche.Cached.checkDecls .verified natPins (ConLeche.Frontend.preparePrelude pre.ix decls)).mapError
+    fun (e, i) => .kernel e i
+
+/-- `checkConstantsWith` under the committed pin table, Ixon prelude and
+Nat-operation pin variant (as `checkBytes`). -/
+def checkConstants (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray))
+    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
+    Except Error ConLeche.Env := do
+  let pins ← defaultPins.mapError Error.prelude
+  let pre ← builtinPrelude.mapError Error.prelude
+  let natPins ← builtinNatOpPins.mapError Error.prelude
+  checkConstantsWith pins pre natPins constants blobs hint
 
 universe u
 

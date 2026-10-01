@@ -67,36 +67,10 @@ open Ix.Ixon.Verify.Admission (WithinBatch RecordsRead resourceUnits)
 
 universe u
 
-/-! ## Checking decoded records -/
+/-! ## Checking decoded records
 
-/-- The reader's context for decoded records under a pin table and a
-prelude, as `readStream` builds it: the records' store backed by the
-prelude's records, and the recursor index of both. -/
-def streamContext (pins : Pins) (pre : Prelude) (constants : List (Address × Ixon.Constant))
-    (blobs : List (Address × ByteArray))
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint) : Ctx :=
-  contextOf pins constants.toArray blobs pre.records hint
-
-/-- Con-leche's verified fold over decoded records: the reader, the prelude,
-the fold. `checkBytesWith` is byte admission followed by this
-(`checkBytesWith_eq`). -/
-def checkConstantsWith (pins : Pins) (pre : Prelude) (natPins : List ConLeche.NatOpPinSet)
-    (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray))
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
-    Except Error ConLeche.Env := do
-  let decls ← readStream pins pre constants blobs hint
-  (ConLeche.Cached.checkDecls .verified natPins (ConLeche.Frontend.preparePrelude pre.ix decls)).mapError
-    fun (e, i) => .kernel e i
-
-/-- `checkConstantsWith` under the committed pin table, Ixon prelude and
-Nat-operation pin variant (as `checkBytes`). -/
-def checkConstants (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray))
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
-    Except Error ConLeche.Env := do
-  let pins ← defaultPins.mapError Error.prelude
-  let pre ← builtinPrelude.mapError Error.prelude
-  let natPins ← builtinNatOpPins.mapError Error.prelude
-  checkConstantsWith pins pre natPins constants blobs hint
+`streamContext`, `checkConstantsWith` and `checkConstants` are defined with
+the entry (`Ix.Ixon.ConLecheAdmission`). -/
 
 /-- The bytes entry is byte admission (`preflight`, `decodeRecords`)
 followed by the check of the decoded records. -/

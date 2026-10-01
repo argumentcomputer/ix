@@ -6,6 +6,12 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Ixon.Verify.Admission
 import Tests.Ix.Kernel.Codec
 
+/-! Byte admission: the shared byte stage (batch limits, canonical decoding)
+and, on top of it, the intrinsic reference kernel's entry
+`checkBytesIntrinsic` (the certified entry through L4, kept until L6). The
+certified entry `Ix.Ixon.Admission.checkBytes` is tested in
+`Tests.Ix.Kernel.CertifiedEntry`. -/
+
 open Ix.Kernel Tests.Ix.Kernel.Ingress Tests.Ix.Kernel.Egress Tests.Ix.Kernel.Codec
 
 namespace Tests.Ix.Kernel.ByteAdmission
@@ -23,11 +29,11 @@ def roundtrip (constants : Ingress.Constants) : Bool :=
   | .error _ => false
 
 def accepts (constants : Ingress.Constants) (blobs : Ingress.Blobs := []) : Bool :=
-  (checkBytes.{1} limits {} (encode constants) blobs).isOk
+  (checkBytesIntrinsic.{1} limits {} (encode constants) blobs).isOk
 
 def failure (records : Records) (blobs : Ingress.Blobs := []) (bounds : Limits := limits)
     (cfg : Config := {}) : Option Ix.Ixon.Admission.Error :=
-  match checkBytes.{1} bounds cfg records blobs with
+  match checkBytesIntrinsic.{1} bounds cfg records blobs with
   | .ok _ => none
   | .error error => some error
 
@@ -110,24 +116,24 @@ def blob : Ingress.Blobs := [(address 9, ⟨#[1, 2, 3]⟩)]
 #guard decodeFailureAt [(address 1, recordUnivsPayload 1 successorBomb)] 0 (address 1)
 
 example (V : Type 1) [Model.SetTheory V] {env : Env Address}
-    (h : checkBytes.{1} limits {} (encode separatedFalse) [] = .ok env) : Nonempty (Model V env) :=
-  Ix.Ixon.Verify.Admission.checkBytes_has_model V h
+    (h : checkBytesIntrinsic.{1} limits {} (encode separatedFalse) [] = .ok env) : Nonempty (Model V env) :=
+  Ix.Ixon.Verify.Admission.checkBytesIntrinsic_has_model V h
 
 example {records : Records} {blobs : Ingress.Blobs} {env : Env Address}
-    (h : checkBytes.{1} limits {} records blobs = .ok env) :
+    (h : checkBytesIntrinsic.{1} limits {} records blobs = .ok env) :
     (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup :=
-  Ix.Ixon.Verify.Admission.checkBytes_unique_keys h
+  Ix.Ixon.Verify.Admission.checkBytesIntrinsic_unique_keys h
 
 example {constants : Ingress.Constants} {records : Records}
     (h : Ix.Ixon.Verify.Admission.RecordsRead limits records constants) : records = encode constants :=
   h.encode
 
 example {records : Records} {blobs : Ingress.Blobs} {env : Env Address}
-    (h : checkBytes.{1} limits {} records blobs = .ok env) :
+    (h : checkBytesIntrinsic.{1} limits {} records blobs = .ok env) :
     ∃ constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
       Ingress.Installed constants blobs none none env ∧
       Ix.Ixon.Verify.Admission.resourceUnits constants ≤
         2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes :=
-  Ix.Ixon.Verify.Admission.checkBytes_resources h
+  Ix.Ixon.Verify.Admission.checkBytesIntrinsic_resources h
 
 end Tests.Ix.Kernel.ByteAdmission

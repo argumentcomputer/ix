@@ -132,26 +132,26 @@ def ctorContext : Except Error (List (Option Nat)) := do
 
 -- The executed byte route still admits the separately stored family/recursor
 -- fixture and derives its model through the same kernel success.
-def byteAccepts : Bool := (checkBytes.{1} 16 ByteAdmission.limits {} {}
+def byteAccepts : Bool := (checkBytesIntrinsic.{1} 16 ByteAdmission.limits {} {}
   (Projection.encode Projection.separatedInput) []).isOk
 #guard byteAccepts
 
-#guard match checkBytes.{1} 16 ByteAdmission.limits {} {}
+#guard match checkBytesIntrinsic.{1} 16 ByteAdmission.limits {} {}
     (Projection.encode [(owner, reversed)]) [] with
   | .error (.nonCanonical _ _) => true
   | _ => false
-#guard match checkBytes.{1} 16 ByteAdmission.limits ⟨32, 2⟩ {}
+#guard match checkBytesIntrinsic.{1} 16 ByteAdmission.limits ⟨32, 2⟩ {}
     (Projection.encode [(owner, weak)]) [] with
   | .error (.exhausted .refinement) => true
   | _ => false
-#guard match checkBytes.{1} 16 ByteAdmission.limits {} ⟨0⟩
+#guard match checkBytesIntrinsic.{1} 16 ByteAdmission.limits {} ⟨0⟩
     (Projection.encode Projection.separatedInput) [] with
   | .error (.admission (.kernel (.declined _))) => true
   | _ => false
 
 example (V : Type 1) [Model.SetTheory V] {env : Env Address}
-    (h : checkBytes.{1} 16 ByteAdmission.limits {} {}
+    (h : checkBytesIntrinsic.{1} 16 ByteAdmission.limits {} {}
       (Projection.encode Projection.separatedInput) [] = .ok env) : Nonempty (Model V env) :=
-  checkBytes_has_model V h
+  checkBytesIntrinsic_has_model V h
 
 end Tests.Ix.Kernel.BlockOrder

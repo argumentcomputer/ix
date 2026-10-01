@@ -82,20 +82,20 @@ def encode (input : Ingress.Constants) : Ix.Ixon.Admission.Records :=
   input.map fun (key, record) => (key, Ixon.serConstant record)
 
 def accepts (input : Ingress.Constants) (limit : Nat := 16) : Bool :=
-  (Ix.Ixon.Projection.checkBytes.{1} limit ByteAdmission.limits {} (encode input) []).isOk
+  (Ix.Ixon.Projection.checkBytesIntrinsic.{1} limit ByteAdmission.limits {} (encode input) []).isOk
 
 #guard accepts separatedInput
-#guard !(Ix.Ixon.Admission.checkBytes.{1} ByteAdmission.limits {} (encode separatedInput) []).isOk
+#guard !(Ix.Ixon.Admission.checkBytesIntrinsic.{1} ByteAdmission.limits {} (encode separatedInput) []).isOk
 #guard accepts [(address 3, falseBlock)]
 #guard accepts [(address 3, falseFamily)]
 #guard accepts [(address 1, identity), (address 2, aliasIdentity)] 0
 #guard accepts (entry falseProjection :: separatedInput)
 #guard !(accepts separatedInput 0)
-#guard match Ix.Ixon.Projection.checkBytes.{1} 16 ByteAdmission.limits ⟨0⟩
+#guard match Ix.Ixon.Projection.checkBytesIntrinsic.{1} 16 ByteAdmission.limits ⟨0⟩
     (encode separatedInput) [] with
   | .error (.admission (.kernel (.declined _))) => true
   | _ => false
-#guard match Ix.Ixon.Projection.checkBytes.{1} 0
+#guard match Ix.Ixon.Projection.checkBytesIntrinsic.{1} 0
     { ByteAdmission.limits with maxRecords := 0 } {} [(address 1, ⟨#[]⟩)] [] with
   | .error (.admission (.limit .records)) => true
   | _ => false
@@ -104,14 +104,14 @@ def wrongConstructorIndex : Ixon.Constant :=
   ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0,
     #[⟨false, 0, 1, 0, 0, .recur 0 #[]⟩]⟩], #[], #[], #[.zero]⟩
 
-#guard match Ix.Ixon.Projection.checkBytes.{1} 16 ByteAdmission.limits {}
+#guard match Ix.Ixon.Projection.checkBytesIntrinsic.{1} 16 ByteAdmission.limits {}
     (encode [(address 20, wrongConstructorIndex)]) [] with
   | .error (.admission (.kernel (.rejected _))) => true
   | _ => false
 
 example (V : Type 1) [Model.SetTheory V] {env : Env Address}
-    (h : Ix.Ixon.Projection.checkBytes.{1} 16 ByteAdmission.limits {}
+    (h : Ix.Ixon.Projection.checkBytesIntrinsic.{1} 16 ByteAdmission.limits {}
       (encode separatedInput) [] = .ok env) : Nonempty (Model V env) :=
-  Ix.Ixon.Projection.checkBytes_has_model V h
+  Ix.Ixon.Projection.checkBytesIntrinsic_has_model V h
 
 end Tests.Ix.Kernel.Projection

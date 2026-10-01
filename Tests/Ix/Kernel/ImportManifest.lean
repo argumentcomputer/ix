@@ -188,7 +188,8 @@ def authored : Array String := #[
   "Ix/Kernel/ConLeche/PinData.lean", "Ix/Kernel/ConLeche/NatOpPinData.lean",
   "Ix/Ixon/ConLecheAdmission.lean",
   "Ix/Kernel/ConLeche/ReaderSpec.lean", "Ix/Kernel/ConLeche/Installed.lean",
-  "Ix/Kernel/ConLeche/Values.lean", "Ix/Ixon/ConLecheConsistency.lean"
+  "Ix/Kernel/ConLeche/Values.lean", "Ix/Ixon/ConLecheConsistency.lean",
+  "Ix/Ixon/Admission/Bytes.lean", "Ix/Ixon/Consistency.lean"
 ]
 
 /-- Lean modules ported from the old branch. -/

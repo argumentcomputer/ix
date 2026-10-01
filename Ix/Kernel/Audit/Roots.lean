@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel
 import Ix.Ixon.Types
 import Ix.Ixon.ConLecheConsistency
+import Ix.Ixon.Consistency
 import Ix.Kernel.Audit.Axioms
 import Ix.Kernel.Audit.Imports
 import Ix.Kernel.Audit.Runtime
@@ -14,11 +15,12 @@ import Ix.Kernel.Audit.Runtime
 
 This module is the certified gate's manifest. From port step L5 (plan v4,
 2026-09-30) its public roots are con-leche's verified checker behind the
-Ixon reader: the entry `Ix.Ixon.ConLecheAdmission.checkBytes` (and its
+Ixon reader: the certified API `Ix.Ixon.Admission.checkBytes`, which runs
+the entry `Ix.Ixon.ConLecheAdmission.checkBytes` (and its
 pin-parametric form `checkBytesWith`, and `checkConstants`/`checkConstantsWith`
 over decoded records) and the restated public theorems of
-`Ix.Ixon.ConLecheConsistency` (model existence, no proof of the pinned
-`False`, fidelity, resources). L0's rulings (`runtimeRulings`,
+`Ix.Ixon.Consistency` and `Ix.Ixon.ConLecheConsistency` (model existence,
+no proof of the pinned `False`, fidelity, resources). L0's rulings (`runtimeRulings`,
 `elaborationImports`) are active on them. The intrinsic kernel's roots
 (`Ix.Kernel.check`, `checkEnv`) stay audited below as the reference kernel:
 they remain reachable through the renamed intrinsic entries
@@ -82,14 +84,15 @@ entry's byte stage; the intrinsic kernel's audits are kept unchanged under
 `intrinsicRoots`, `intrinsicFidelityRoots` and `intrinsicOperations`. Rebased
 onto L4b/L4c at integration (int-4, 2026-10-01), the reader is 1856 (L5
 alone: 1853; L4c's `safetyDecline` and its message constants, which replace
-the inline checks of `readDefinition`) and the entry 5289 with 123 externs
-(L5 alone: 33,408 with 115). The entry's committed Nat-operation pins were
-upstream's JSON dumps spliced as one closed term, `ConLeche.natOpPinSets`,
-whose compiled closure is 27,096 functions, 26,957 of them extracted closed
-subterms; L4b's `builtinNatOpPins` decodes a string table at first use
-(235 functions, and the eight string-scanning externs `String.decodeChar`,
-`String.Pos.next`, `UInt32.decLe`, `String.toUTF8` and
-`String.Pos.Raw.{extract, next, get, atEnd}`). -/
+the inline checks of `readDefinition`) and the entry, with the certified API
+`Ix.Ixon.Admission.checkBytes`, 5290 with 123 externs (L5 alone: 33,409 with
+115). The entry's committed Nat-operation pins were upstream's JSON dumps
+spliced as one closed term, `ConLeche.natOpPinSets`, whose compiled closure
+is 27,096 functions, 26,957 of them extracted closed subterms; L4b's
+`builtinNatOpPins` decodes a string table at first use (235 functions, and
+the eight string-scanning externs `String.decodeChar`, `String.Pos.next`,
+`UInt32.decLe`, `String.toUTF8` and `String.Pos.Raw.{extract, next, get,
+atEnd}`). -/
 
 open Lean
 
@@ -100,7 +103,10 @@ of the pinned `False`, and resources for the con-leche entry, at the
 committed tables and at every pin table, prelude and Nat-operation pin list,
 and con-leche's own two letters they rest on. -/
 def publicRoots : Array Name :=
-  #[``Ix.Ixon.ConLecheAdmission.checkBytes_has_model, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_has_model,
+  #[``Ix.Ixon.Admission.checkBytes_has_model, ``Ix.Ixon.Admission.checkBytes_has_model_values,
+    ``Ix.Ixon.Admission.checkBytes_no_proof_of_False, ``Ix.Ixon.Admission.checkBytes_no_False_theorem,
+    ``Ix.Ixon.Admission.checkBytes_resources,
+    ``Ix.Ixon.ConLecheAdmission.checkBytes_has_model, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_has_model,
     ``Ix.Ixon.ConLecheAdmission.checkConstants_has_model,
     ``Ix.Ixon.ConLecheAdmission.checkConstantsWith_has_model,
     ``Ix.Ixon.ConLecheAdmission.checkBytes_has_model_values,
@@ -117,7 +123,7 @@ def publicRoots : Array Name :=
 from: the reading of accepted bytes, the record-by-record reading of the
 reader, per-record installation, and the address encoding's injectivity. -/
 def fidelityRoots : Array Name :=
-  #[``Ix.Ixon.ConLecheAdmission.checkBytes_reading, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_reading,
+  #[``Ix.Ixon.Admission.checkBytes_reading, ``Ix.Ixon.ConLecheAdmission.checkBytes_reading, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_reading,
     ``Ix.Ixon.ConLecheAdmission.checkConstantsWith_installed, ``Ix.Ixon.ConLecheAdmission.Installed.skels,
     ``Ix.Ixon.ConLecheAdmission.Installed.singleton, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_eq,
     ``Ix.Ixon.ConLecheAdmission.checkBytes_with, ``Ix.Ixon.ConLecheAdmission.checkConstants_with,
@@ -125,10 +131,12 @@ def fidelityRoots : Array Name :=
     ``Ix.Kernel.ConLecheReader.StreamRead.singleton, ``Ix.Kernel.ConLecheReader.keyName_injective,
     ``Ix.Kernel.ConLecheFold.checkDecls_installs, ``Ix.Kernel.ConLecheFold.checkDecls_model_defn_values]
 
-/-- The executable entry whose runtime closure is audited: con-leche's fold
-behind the Ixon reader, over bytes and over decoded records. -/
+/-- The executable entry whose runtime closure is audited: the certified API
+`Ix.Ixon.Admission.checkBytes`, which runs con-leche's fold behind the Ixon
+reader, and that entry over bytes and over decoded records. -/
 def publicOperations : Array Name :=
-  #[``Ix.Ixon.ConLecheAdmission.checkBytes, ``Ix.Ixon.ConLecheAdmission.checkBytesWith,
+  #[``Ix.Ixon.Admission.checkBytes, ``Ix.Ixon.ConLecheAdmission.checkBytes,
+    ``Ix.Ixon.ConLecheAdmission.checkBytesWith,
     ``Ix.Ixon.ConLecheAdmission.checkConstantsWith, ``Ix.Ixon.ConLecheAdmission.checkConstants]
 
 /-- Con-leche's verified fold, the kernel of the entry. -/
@@ -138,8 +146,8 @@ def kernelOperations : Array Name := #[``ConLeche.Cached.checkDecls]
 def readerOperations : Array Name :=
   #[``Ix.Kernel.ConLecheReader.readRecords, ``Ix.Ixon.ConLecheAdmission.readStream]
 
-/-- The entry's module, whose import closure is audited. -/
-def publicModules : Array Name := #[`Ix.Ixon.ConLecheAdmission]
+/-- The certified API's module, whose import closure is audited. -/
+def publicModules : Array Name := #[`Ix.Ixon.Admission]
 
 /-- The intrinsic kernel's public theorems (K0 to L4), kept as the
 reference kernel's until L6. -/
@@ -198,10 +206,11 @@ Each is pure Lean core and is audited on its own terms elsewhere:
   `Ix.Ixon.Bounded.Constant`, `Ix.Ixon.Bounded.Universe`, `Ix.Ixon.Canonical`:
   the canonical per-record decoder and its readers (`Ix.Ixon.Audit`, whose
   `dataImports` is `Init` and these);
-* `Ix.Ixon.Admission`: batch limits (`preflight`) and the decoding loop
-  (`decodeRecords`), shared with the intrinsic entry
+* `Ix.Ixon.Admission`: the certified API module, and
+  `Ix.Ixon.Admission.Bytes`, the batch limits (`preflight`) and the decoding
+  loop (`decodeRecords`) it shares with the intrinsic entry
   (`Ix.Ixon.Admission.Audit`);
-* `Ix.Ixon.ConLecheAdmission`: the entry itself.
+* `Ix.Ixon.ConLecheAdmission`: the con-leche entry the API runs.
 Nothing else under `Ix.Ixon` (in particular no projection hashing,
 `Ix.Address.Pure`, block order or proof module) and still no `Lean` outside
 the ruled elaboration-time edges. -/
@@ -214,7 +223,8 @@ def importAllowlist : Array Name :=
 proof modules (`Ix.Ixon.Verify`, `Ix.Ixon.Bounded.Size`, with their Lean
 proof tooling) and the theorem module itself. -/
 def proofImportAllowlist : Array Name :=
-  importAllowlist ++ #[`Ix.Ixon.Bounded.Size, `Ix.Ixon.Verify, `Ix.Ixon.ConLecheConsistency, `Lean]
+  importAllowlist ++ #[`Ix.Ixon.Bounded.Size, `Ix.Ixon.Verify, `Ix.Ixon.ConLecheConsistency,
+    `Ix.Ixon.Consistency, `Lean]
 
 /-- Con-leche's elaboration-time imports (plan v4, "Audits"):
 `ConLeche/Kernel/BasisGen.lean` (`public meta import Lean`) splices the
@@ -276,6 +286,13 @@ run_cmd do
       Ix.Kernel.Audit.readerOperations do
     unless env.contains root do throwError m!"required root is missing: {root}"
 
+#guard_kernel_axioms Ix.Ixon.Admission.checkBytes_has_model [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Admission.checkBytes_has_model_values [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Admission.checkBytes_no_proof_of_False [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Admission.checkBytes_no_False_theorem [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Admission.checkBytes_resources [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Admission.checkBytes_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Admission.checkBytes [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytes_has_model [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytesWith_has_model [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkConstants_has_model [propext, Classical.choice, Quot.sound]
@@ -329,7 +346,7 @@ and Nat-operation pin decoder add the rest. -/
 run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Ixon.ConLecheConsistency] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Ixon.ConLecheConsistency, `Ix.Ixon.Consistency] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
 
 -- The entry's byte stage is admitted; projection hashing, block order, the
 -- codec proofs and the intrinsic kernel's own boundary are not widened.
@@ -355,10 +372,11 @@ unsafe 23, csimp 0; ruled computed_field 18, csimp 7, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
-/-- info: runtime closure of [Ix.Ixon.ConLecheAdmission.checkBytes,
+/-- info: runtime closure of [Ix.Ixon.Admission.checkBytes,
+ Ix.Ixon.ConLecheAdmission.checkBytes,
  Ix.Ixon.ConLecheAdmission.checkBytesWith,
  Ix.Ixon.ConLecheAdmission.checkConstantsWith,
- Ix.Ixon.ConLecheAdmission.checkConstants]: 5289 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.ConLecheAdmission.checkConstants]: 5290 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings

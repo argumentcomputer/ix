@@ -10,10 +10,14 @@ import Ix.Ixon.Verify.ConstantBounds
 /-! # Exact byte admission
 
 The reading relation names every supplied address and canonical payload in
-order, independently of any decoder. It composes with K3's installed reading
-and the model theorem for the actual `checkBytes` implementation. The reverse
-direction preserves the in-memory checker's successful domain at the same
-configuration; its rejected and declined outcomes are also preserved.
+order, independently of any decoder. It is the byte half of the certified
+entry's theorems (`Ix.Ixon.Consistency`, `Ix.Ixon.ConLecheConsistency`).
+
+The `checkBytesIntrinsic_*` theorems compose it with K3's installed reading
+and the model theorem of the intrinsic kernel, for `checkBytesIntrinsic`,
+the reference kernel's entry until L6. The reverse direction preserves the
+in-memory checker's successful domain at the same configuration; its
+rejected and declined outcomes are also preserved.
 -/
 
 namespace Ix.Ixon.Verify.Admission
@@ -184,79 +188,79 @@ theorem RecordsRead.deterministic {limits : Limits} {records : Records}
 
 universe v
 
-theorem checkBytes_run_iff (limits : Limits) (cfg : Config) (records : Records)
+theorem checkBytesIntrinsic_run_iff (limits : Limits) (cfg : Config) (records : Records)
     (blobs : Ingress.Blobs) (family : Option (ConstRef Address)) (env : Env Address) :
-    checkBytes.{v} limits cfg records blobs family = .ok env ↔
+    checkBytesIntrinsic.{v} limits cfg records blobs family = .ok env ↔
       preflight limits records blobs = .ok () ∧ ∃ constants,
         decodeRecords limits records = .ok constants ∧
         Kernel.checkEnv.{v} cfg constants blobs family = .ok env := by
   cases flight : preflight limits records blobs with
-  | error reason => simp [checkBytes, flight, bind, Except.bind]
+  | error reason => simp [checkBytesIntrinsic, flight, bind, Except.bind]
   | ok value =>
     cases value
     cases decoded : decodeRecords limits records with
-    | error reason => simp [checkBytes, flight, decoded, bind, Except.bind]
+    | error reason => simp [checkBytesIntrinsic, flight, decoded, bind, Except.bind]
     | ok constants =>
       cases checked : Kernel.checkEnv.{v} cfg constants blobs family <;>
-        simp [checkBytes, flight, decoded, checked, Except.mapError, bind, Except.bind]
+        simp [checkBytesIntrinsic, flight, decoded, checked, Except.mapError, bind, Except.bind]
 
 /-- Exact acceptance domain: canonical, bounded byte reading followed by the
 same certified in-memory checker, at the same fuel and literal family. -/
-theorem checkBytes_ok_iff (limits : Limits) (cfg : Config) (records : Records)
+theorem checkBytesIntrinsic_ok_iff (limits : Limits) (cfg : Config) (records : Records)
     (blobs : Ingress.Blobs) (family : Option (ConstRef Address)) (env : Env Address) :
-    checkBytes.{v} limits cfg records blobs family = .ok env ↔
+    checkBytesIntrinsic.{v} limits cfg records blobs family = .ok env ↔
       WithinBatch limits records blobs ∧ ∃ constants,
         RecordsRead limits records constants ∧
         Kernel.checkEnv.{v} cfg constants blobs family = .ok env := by
-  simp only [checkBytes_run_iff, preflight_ok_iff, decodeRecords_ok_iff]
+  simp only [checkBytesIntrinsic_run_iff, preflight_ok_iff, decodeRecords_ok_iff]
 
 /-- Bounded, canonically encoded input preserves every kernel outcome,
 including its distinction between rejection and decline. -/
-theorem checkBytes_of_reading {limits : Limits} {cfg : Config} {records : Records}
+theorem checkBytesIntrinsic_of_reading {limits : Limits} {cfg : Config} {records : Records}
     {constants : Ingress.Constants} {blobs : Ingress.Blobs} {family : Option (ConstRef Address)}
     (within : WithinBatch limits records blobs) (reading : RecordsRead limits records constants) :
-    checkBytes.{v} limits cfg records blobs family =
+    checkBytesIntrinsic.{v} limits cfg records blobs family =
       (Kernel.checkEnv.{v} cfg constants blobs family).mapError Error.kernel := by
   have flight := (preflight_ok_iff _ _ _).mpr within
   have decoded := (decodeRecords_ok_iff _ _ _).mpr reading
-  simp [checkBytes, flight, decoded, bind, Except.bind]
+  simp [checkBytesIntrinsic, flight, decoded, bind, Except.bind]
 
 /-- The exact byte reading and installed declaration reading use the same
 constants, addresses, order, blobs, and literal family as the executed check. -/
-theorem checkBytes_reading {limits : Limits} {cfg : Config} {records : Records}
+theorem checkBytesIntrinsic_reading {limits : Limits} {cfg : Config} {records : Records}
     {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}
-    (accepted : checkBytes.{v} limits cfg records blobs family = .ok env) :
+    (accepted : checkBytesIntrinsic.{v} limits cfg records blobs family = .ok env) :
     WithinBatch limits records blobs ∧ ∃ constants,
       RecordsRead limits records constants ∧ Ingress.Installed constants blobs family none env := by
-  obtain ⟨within, constants, reading, checked⟩ := (checkBytes_ok_iff _ _ _ _ _ _).mp accepted
+  obtain ⟨within, constants, reading, checked⟩ := (checkBytesIntrinsic_ok_iff _ _ _ _ _ _).mp accepted
   exact ⟨within, constants, reading, Kernel.checkEnv_reading checked⟩
 
-theorem checkBytes_unique_keys {limits : Limits} {cfg : Config} {records : Records}
+theorem checkBytesIntrinsic_unique_keys {limits : Limits} {cfg : Config} {records : Records}
     {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}
-    (accepted : checkBytes.{v} limits cfg records blobs family = .ok env) :
+    (accepted : checkBytesIntrinsic.{v} limits cfg records blobs family = .ok env) :
     (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup := by
-  obtain ⟨_, constants, reading, installed⟩ := checkBytes_reading accepted
+  obtain ⟨_, constants, reading, installed⟩ := checkBytesIntrinsic_reading accepted
   rw [reading.keys]
   exact ⟨installed.constantKeys, installed.blobKeys⟩
 
 /-- The executed byte-admission limits bound the whole decoded constant
 representation, including expanded universes, while retaining the exact
 reading and installed declarations. No extra runtime traversal is needed. -/
-theorem checkBytes_resources {limits : Limits} {cfg : Config} {records : Records}
+theorem checkBytesIntrinsic_resources {limits : Limits} {cfg : Config} {records : Records}
     {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}
-    (accepted : checkBytes.{v} limits cfg records blobs family = .ok env) :
+    (accepted : checkBytesIntrinsic.{v} limits cfg records blobs family = .ok env) :
     ∃ constants, RecordsRead limits records constants ∧ Ingress.Installed constants blobs family none env ∧
       resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes := by
-  obtain ⟨within, constants, reading, installed⟩ := checkBytes_reading accepted
+  obtain ⟨within, constants, reading, installed⟩ := checkBytesIntrinsic_reading accepted
   have resources := reading.resourceUnits_le
   obtain ⟨recordCount, _, totalBytes⟩ := within
   have countProduct := Nat.mul_le_mul_right limits.maxRecordUnivNodes recordCount
   exact ⟨constants, reading, installed, by omega⟩
 
-theorem checkBytes_has_model (V : Type v) [Model.SetTheory V] {limits : Limits} {cfg : Config}
+theorem checkBytesIntrinsic_has_model (V : Type v) [Model.SetTheory V] {limits : Limits} {cfg : Config}
     {records : Records} {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}
-    (accepted : checkBytes.{v} limits cfg records blobs family = .ok env) : Nonempty (Model V env) := by
-  obtain ⟨_, constants, _, checked⟩ := (checkBytes_ok_iff _ _ _ _ _ _).mp accepted
+    (accepted : checkBytesIntrinsic.{v} limits cfg records blobs family = .ok env) : Nonempty (Model V env) := by
+  obtain ⟨_, constants, _, checked⟩ := (checkBytesIntrinsic_ok_iff _ _ _ _ _ _).mp accepted
   exact Kernel.checkEnv_has_model V checked
 
 end Ix.Ixon.Verify.Admission

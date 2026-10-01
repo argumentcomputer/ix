@@ -361,12 +361,13 @@ lean_exe «kernel-order» where
   root := `Tests.Ix.Kernel.BlockOrderHost
   moreLinkObjs := #[ix_rs_test]
 
-/-- Coverage census of the certified kernel over a compiled `.ixe` environment. -/
+/-- Coverage census of the intrinsic reference kernel over a compiled `.ixe`
+environment (the certified kernel's census through L4; L6 retires it). -/
 lean_lib KernelCensus where
   roots := #[`Benchmarks.Kernel.Census]
   moreLeancArgs := profileLeancArgs
 
-lean_exe «kernel-census» where
+lean_exe «kernel-census-intrinsic» where
   root := `Benchmarks.Kernel.CensusMain
   moreLinkObjs := #[ix_rs]
 
@@ -377,9 +378,18 @@ lean_exe «kernel-census-probe» where
 /-- Con-leche's verified checker through the Ixon reader (plan v4, L4): the
 `checkBytes`-shaped entry and its per-record census (untrusted). -/
 lean_lib KernelConLeche where
-  roots := #[`Ix.Ixon.ConLecheAdmission, `Ix.Ixon.ConLecheConsistency, `Benchmarks.Kernel.ConLecheStep,
+  roots := #[`Ix.Ixon.ConLecheAdmission, `Ix.Ixon.ConLecheConsistency, `Ix.Ixon.Consistency,
+    `Benchmarks.Kernel.ConLecheStep,
     `Benchmarks.Kernel.ConLecheCensus]
 
+/-- The certified checker's census (L5: the default census target):
+con-leche through the Ixon reader, one row per record (untrusted step). -/
+lean_exe «kernel-census» where
+  root := `Benchmarks.Kernel.CensusCertifiedMain
+  moreLinkObjs := #[ix_rs]
+
+/-- The same driver under its L4 name, for existing scripts (Lake needs a
+distinct root module per executable). -/
 lean_exe «kernel-census-cl» where
   root := `Benchmarks.Kernel.ConLecheCensusMain
   moreLinkObjs := #[ix_rs]
@@ -404,7 +414,7 @@ script "check-kernel" (args) := do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "python3" #["scripts/check-kernel-retirement.py"]
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Interleaved", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.ConversionSpines", "Tests.Ix.Kernel.ProofIrrelevance", "Tests.Ix.Kernel.AnnotationContexts", "Tests.Ix.Kernel.SubstitutionSharing", "Tests.Ix.Kernel.RuntimeStack", "Tests.Ix.Kernel.Fidelity", "Tests.Ix.Kernel.Ingress", "Tests.Ix.Kernel.Egress", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.ConLecheReader"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Interleaved", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.ConversionSpines", "Tests.Ix.Kernel.ProofIrrelevance", "Tests.Ix.Kernel.AnnotationContexts", "Tests.Ix.Kernel.SubstitutionSharing", "Tests.Ix.Kernel.RuntimeStack", "Tests.Ix.Kernel.Fidelity", "Tests.Ix.Kernel.Ingress", "Tests.Ix.Kernel.Egress", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.ConLecheReader", "Tests.Ix.Kernel.CertifiedEntry"]
   run ".lake/build/bin/kernel-provenance" #[]
   run "lake" #["build", "--wfail", "kernel-differential", "kernel-ingress", "kernel-codec", "kernel-order",
     "kernel-level-differential"]

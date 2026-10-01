@@ -176,7 +176,14 @@ speedup or a demonstrated memory reduction. No cache or entry schema changed.
 
 ## InitStd census comparisons
 
-`kernel-census` reads an Ixon environment and attempts certified admissions in
+From L5 (plan v4) `kernel-census` is the certified checker's census
+(con-leche through the Ixon reader, `Benchmarks/Kernel/ConLecheCensus.lean`;
+also built as `kernel-census-cl`). The intrinsic reference kernel's census
+described in this section is `kernel-census-intrinsic` until L6 retires it;
+read `kernel-census` below as `kernel-census-intrinsic` for the comparisons
+recorded here.
+
+`kernel-census-intrinsic` reads an Ixon environment and attempts certified admissions in
 dependency order, retaining accepted declarations and reporting declines,
 rejections, and declarations blocked by earlier failures. This is a coverage
 diagnostic; its successful process exit is not a `checkEnv` acceptance verdict.

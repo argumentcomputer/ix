@@ -19,7 +19,9 @@ The outcome of this driver is not a certified verdict about the environment;
 `checkEnv` is. Each accepted row is a certified admission against the
 environment of the rows accepted before it.
 
-Usage: `kernel-census <input.ixe> <output.jsonl> [limit] [fuel]`. Rows are
+Usage: `kernel-census-intrinsic <input.ixe> <output.jsonl> [limit] [fuel]` (the
+intrinsic reference kernel's census; from L5 `kernel-census` is the certified
+checker's, `Benchmarks.Kernel.ConLecheCensus`). Rows are
 written as they are produced; the summary goes to stderr.
 
 Checks run on the main thread by default, so timings have no polling floor.
@@ -253,7 +255,7 @@ def parseArgs : List String → Option Options
 
 def run (args : List String) : IO UInt32 := do
   let some options := parseArgs args
-    | IO.eprintln "usage: kernel-census <input.ixe> <output.jsonl> [limit] [fuel]"; return 2
+    | IO.eprintln "usage: kernel-census-intrinsic <input.ixe> <output.jsonl> [limit] [fuel]"; return 2
   let started ← IO.monoMsNow
   let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile options.input))
   let mut store : Store := {}

@@ -7,12 +7,22 @@ import Ix.Kernel.Check
 import Ix.Kernel.Model.Interpret
 import Ix.Kernel.Certified.Basis.Empty
 
-/-! # The public theorems
+/-! # The intrinsic kernel's public theorems
 
-Every environment the kernel accepts has a model in every set theory, and no
-accepted constant inhabits a type that denotes the empty set. The statements
-were fixed at milestone K0 and are preserved by every later milestone: no
-theorem below is removed, weakened, or given a new hypothesis.
+Every environment the intrinsic kernel accepts has a model in every set
+theory, and no accepted constant inhabits a type that denotes the empty set.
+These were the certified API's theorems from milestone K0 through port step
+L4.
+
+From L5 (plan v4, 2026-09-30) the certified API is
+`Ix.Ixon.Admission.checkBytes`, con-leche's verified checker behind the Ixon
+reader, and its public theorems are in `Ix.Ixon.Consistency` (model
+existence over `ConLeche.Model`, no proof of the pinned `False`, fidelity,
+resources). The theorems below stay as the intrinsic reference kernel's, as
+stated, until L6 retires it. The promise that no public theorem is removed,
+weakened, or given a new hypothesis is replaced by the roadmap's
+statement-recording rule (section 5): at L5 the public statements changed
+once, and they were recorded before and after the change.
 
 * `checkDecls_has_model`: the conditional form. Checking declarations against
   an environment that already has a model yields an environment with a model.

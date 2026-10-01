@@ -16,9 +16,12 @@ import Tests.Ix.Kernel.TutorialDefs
 `Ix.CompileM`, serialize and load them with the ordinary host codec, then
 submit their dependency-ordered records to `Ix.Kernel.checkEnv`. The loader,
 ordering, compiler, and names are untrusted producers of in-memory input.
-Every case also submits canonical record bytes to `Ix.Ixon.Admission.checkBytes`
+Every case also submits canonical record bytes to `Ix.Ixon.Admission.checkBytesIntrinsic`
 and checks exact decoding plus the same verdict and reason as in-memory
-admission. Both verdicts come from the certified checker. Each case separately
+admission. Both verdicts come from the intrinsic reference kernel, the
+certified checker through L4 (from L5 the certified entry is
+`Ix.Ixon.Admission.checkBytes`, con-leche behind the Ixon reader, tested in
+`Tests.Ix.Kernel.CertifiedEntry`); L6 retires this differential with it. Each case separately
 round-trips through the certified reader/writer and the production encoder.
 -/
 
@@ -192,7 +195,7 @@ def evaluate (test : Case) (input : Ingress.Constants) (blobs : Ingress.Blobs)
   let byteDecodeExact := match Ix.Ixon.Admission.decodeRecords byteLimits records with
     | .ok decoded => decoded == input
     | .error _ => false
-  let (byteOutcome, byteReason) := match Ix.Ixon.Admission.checkBytes.{1} byteLimits cfg records blobs family with
+  let (byteOutcome, byteReason) := match Ix.Ixon.Admission.checkBytesIntrinsic.{1} byteLimits cfg records blobs family with
     | .ok _ => ("accept", "")
     | .error (.kernel (.rejected reason)) => ("reject", reason)
     | .error (.kernel (.declined reason)) => ("decline", reason)
@@ -209,7 +212,7 @@ def evaluate (test : Case) (input : Ingress.Constants) (blobs : Ingress.Blobs)
     | .error _ => false
     | .ok reconstructed => sameStore reconstructed input &&
       Ix.Ixon.Projection.primaries reconstructed == primaryInput
-  let (projectionOutcome, projectionReason) := match Ix.Ixon.Projection.checkBytes.{1}
+  let (projectionOutcome, projectionReason) := match Ix.Ixon.Projection.checkBytesIntrinsic.{1}
       maxProjections byteLimits cfg primaryRecords blobs family with
     | .ok _ => ("accept", "")
     | .error (.admission (.kernel (.rejected reason))) => ("reject", reason)
@@ -217,7 +220,7 @@ def evaluate (test : Case) (input : Ingress.Constants) (blobs : Ingress.Blobs)
     | .error reason => ("projection-error", reprStr reason)
   let projectionsAgree := reconstructionExact && projectionOutcome == outcome && projectionReason == reason
   let orderLimits : Ix.Ixon.BlockOrder.Limits := {}
-  let (orderOutcome, orderReason) := match Ix.Ixon.BlockOrder.checkBytes.{1}
+  let (orderOutcome, orderReason) := match Ix.Ixon.BlockOrder.checkBytesIntrinsic.{1}
       maxProjections byteLimits orderLimits cfg primaryRecords blobs family with
     | .ok _ => ("accept", "")
     | .error (.admission (.kernel (.rejected reason))) => ("reject", reason)

@@ -361,11 +361,33 @@ def checkConstants (limits : Limits) (blobs : Ingress.Blobs) :
     if source.info matches .muts _ then checkBlock limits owner source blobs
     checkConstants limits blobs rest
 
+/-- Failures of the certified entry: byte admission, reconstruction and
+order (`Error`), or the checker (`ConLecheAdmission.Error`). -/
+inductive CheckError where
+  | order (error : Error)
+  | checker (error : ConLecheAdmission.Error)
+
+/-- **The certified entry with canonical block order**: byte spelling,
+computed projections, canonical block order, and con-leche's verified
+checker behind the Ixon reader are all executed here. No host ordering
+verdict is input. -/
+def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
+    (records : Admission.Records) (blobs : Ingress.Blobs)
+    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
+    Except CheckError ConLeche.Env := do
+  (Admission.preflight limits records blobs).mapError (fun error => .order (.admission error))
+  let constants ← (Admission.decodeRecords limits records).mapError (fun error => .order (.admission error))
+  let expanded ← (Projection.reconstruct maxProjections constants).mapError
+    (fun error => .order (.projection error))
+  (checkConstants orderLimits blobs constants).mapError .order
+  (ConLecheAdmission.checkConstants expanded blobs hint).mapError .checker
+
 universe v
 
-/-- Byte spelling, computed projections, canonical block order, and the
-certified checker are all executed here. No host ordering verdict is input. -/
-def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
+/-- The intrinsic kernel's variant (the certified entry through L4, the
+reference kernel's until L6): byte spelling, computed projections, canonical
+block order, and the intrinsic kernel. -/
+def checkBytesIntrinsic (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
     (cfg : Config) (records : Admission.Records) (blobs : Ingress.Blobs)
     (family : Option (ConstRef Address) := none) : Except Error (Env Address) := do
   (Admission.preflight limits records blobs).mapError .admission
