@@ -118,6 +118,54 @@ theorem runLir_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h :
                   obtain ⟨rfl, rfl, rfl, rfl⟩ := hm
                   exact ⟨rfl, ⟨st, her⟩, rfl, hf, rfl, rfl, Rt.checkSwitches_ok hs, hl⟩
 
+theorem checkParams_ok {cfg : Config} {C : Cfg.Program} :
+    ∀ {l : List (Nat × Fir.FunId)}, checkParams cfg C l = .ok () → ∀ p ∈ l, cfgParams C p.2 ≤ maxParams
+  | [], _, p, hp => nomatch hp
+  | (i, g) :: rest, h, p, hp => by
+    simp only [checkParams] at h
+    split at h
+    · cases h
+    · rename_i hn
+      rcases List.mem_cons.1 hp with rfl | hp'
+      · exact Nat.le_of_not_lt hn
+      · exact checkParams_ok h p hp'
+
+/-- **Every root takes at most the wrapper's parameters** (`checkParams`,
+what the entry wrapper needs: at most `maxParams` arguments). -/
+theorem runLir_params {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f)
+    {i : Nat} {g : Fir.FunId} (hg : f.cfg.exports[i]? = some g) : cfgParams f.cfg g ≤ maxParams := by
+  unfold runLir at h
+  cases hfr : front cfg P c with
+  | error e => rw [hfr] at h; cases h
+  | ok sc =>
+    rw [hfr] at h
+    simp only [bind, Except.bind] at h
+    cases her : Lam.erase sc.1 sc.2 with
+    | error e => rw [her] at h; cases h
+    | ok ls =>
+      simp only [her, Except.mapError] at h
+      cases hm : middle c ls.1 with
+      | error e => rw [hm] at h; cases h
+      | ok m =>
+        simp only [hm] at h
+        cases hp : checkParams cfg m.2.2.2 (List.zipIdx m.2.2.2.exports |>.map fun (f, i) => (i, f)) with
+        | error e => rw [hp] at h; cases h
+        | ok u =>
+          simp only [hp] at h
+          cases hs : Rt.checkSwitches m.2.2.2 with
+          | error e => rw [hs] at h; cases h
+          | ok u' =>
+            simp only [hs] at h
+            cases hl : Rt.lower { names := cfg.names } m.2.2.2 with
+            | error e => rw [hl] at h; cases h
+            | ok L =>
+              simp only [hl, pure, Except.pure, Except.ok.injEq] at h
+              subst h
+              refine checkParams_ok hp (i, g) (List.mem_map.2 ⟨(g, i), ?_, rfl⟩)
+              have := List.getElem?_zipIdx (l := m.2.2.2.exports) (i := 0) (j := i)
+              rw [hg, Option.map_some, Nat.zero_add] at this
+              exact List.mem_of_getElem? this
+
 /-! ## The view at K1's result types -/
 
 /-- At a `Nat` root the view reports a `Nat` result as itself. -/

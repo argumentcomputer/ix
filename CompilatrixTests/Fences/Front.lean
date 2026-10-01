@@ -42,6 +42,12 @@ preserved verbatim. -/
 /-- info: 'Compilatrix.Recheck.rootsOf_entry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Recheck.rootsOf_entry
 
+/-- info: 'Compilatrix.Recheck.runLir_params' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Recheck.runLir_params
+
+/-- info: 'Compilatrix.Recheck.checkParams_ok' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Recheck.checkParams_ok
+
 /-- info: 'Compilatrix.Recheck.view_nat' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Recheck.view_nat
 
