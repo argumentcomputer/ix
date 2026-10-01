@@ -2276,6 +2276,9 @@
   "Compilatrix.Sem.SimUpTo":
   {"path": "Compilatrix/Sem/SimUpTo.lean",
    "imports": ["Compilatrix.Sem.Simulation", "Compilatrix.Sem.Agrees"]},
+  "Compilatrix.Sem.SimConst":
+  {"path": "Compilatrix/Sem/SimConst.lean",
+   "imports": ["Compilatrix.Sem.Entry"]},
   "Compilatrix.Sem.Result":
   {"path": "Compilatrix/Sem/Result.lean", "imports": []},
   "Compilatrix.Sem.Forward":
@@ -2514,6 +2517,10 @@
     "Compilatrix.Backend.Proof.Exports",
     "Compilatrix.Backend.Proof.Funcs",
     "Compilatrix.Rt.Proof.Roots"]},
+  "Compilatrix.Recheck.Proof.Object":
+  {"path": "Compilatrix/Recheck/Proof/Object.lean",
+   "imports":
+   ["Compilatrix.Recheck.Proof.Back", "Compilatrix.Recheck.Proof.Sound"]},
   "Compilatrix.Recheck.Proof.Front":
   {"path": "Compilatrix/Recheck/Proof/Front.lean",
    "imports":
@@ -2522,6 +2529,14 @@
     "Compilatrix.Anf.Proof.Pass.Pipeline",
     "Compilatrix.Cfg.Proof.OfAnf",
     "Compilatrix.Rt.Proof.Lang"]},
+  "Compilatrix.Recheck.Proof.Back":
+  {"path": "Compilatrix/Recheck/Proof/Back.lean",
+   "imports":
+   ["Compilatrix.Recheck.Proof.Parts",
+    "Compilatrix.Backend.Proof.Driver",
+    "Compilatrix.Rt.Proof.ReadbackCongr",
+    "Compilatrix.Lir.Proof.Perms",
+    "Compilatrix.Sem.SimConst"]},
   "Compilatrix.Recheck.Produce":
   {"path": "Compilatrix/Recheck/Produce.lean",
    "imports":

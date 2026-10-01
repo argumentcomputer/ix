@@ -217,7 +217,7 @@ theorem entryBase (hD : D.Ok n) (args : List Word) {bytes : Word → UInt8} {mem
 
 /-! ## The first call -/
 
-theorem initBytes_budget (hD : D.Ok n) :
+theorem initBytes_budget (D : Driver) :
     ∀ i < 8, D.initBytes (D.ctx - 48 + UInt64.ofNat i) = (D.budget >>> UInt64.ofNat (8 * i)).toUInt8 :=
   (wordAt_write64 (m := ⟨D.init, fun _ => true, fun _ => true⟩) (b := D.ctx - 48) (v := D.budget)
     fun _ _ => rfl).bytes
@@ -225,6 +225,83 @@ theorem initBytes_budget (hD : D.Ok n) :
 /-- The first call (`cx_init`'s) satisfies the entry invariant. -/
 theorem entryBase_init (hD : D.Ok n) (args : List Word) :
     EntryBase (D.core args D.initBytes) D.ret D.lirMem D.ctx :=
-  entryBase hD args (initBytes_budget hD) rfl rfl fun _ _ => rfl
+  entryBase hD args (initBytes_budget D) rfl rfl fun _ _ => rfl
+
+end Compilatrix.X86.Driver
+
+namespace Compilatrix.X86.Driver
+
+open Compilatrix.Xv.Stacking (ArgRep sysvArgs)
+open Compilatrix.Xv.Stacking.Proof (wrapperArgs ArgsFit tagged)
+
+variable {D : Driver}
+
+/-! ## The arguments the wrapper computes -/
+
+/-- `cx_init`'s wrapper passes its two word arguments as they are. -/
+theorem wrapperArgs_words (a b : Word) (bytes : Word → UInt8) :
+    wrapperArgs [.word, .word] (D.core [a, b] bytes) = [a, b] := rfl
+
+/-- Word arguments are never out of range. -/
+theorem argsFit_words (core : Core) : ArgsFit [.word, .word] core := by
+  intro r rep h hn
+  simp only [sysvArgs, List.zip_cons_cons, List.zip_nil_right, List.mem_cons, Prod.mk.injEq,
+    List.not_mem_nil, or_false] at h
+  rcases h with ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> cases hn
+
+/-- A root's wrapper tags its `Nat` arguments, read from `rsi`…`r9`. -/
+theorem wrapperArgs_nat {ns : List Nat} (hlen : ns.length ≤ 5) (bytes : Word → UInt8) :
+    wrapperArgs (List.replicate ns.length .nat) (D.core (ns.map UInt64.ofNat) bytes) =
+      ns.map fun n => UInt64.ofNat n + UInt64.ofNat n + 1 := by
+  match ns, hlen with
+  | [], _ => rfl
+  | [_], _ => rfl
+  | [_, _], _ => rfl
+  | [_, _, _], _ => rfl
+  | [_, _, _, _], _ => rfl
+  | [_, _, _, _, _], _ => rfl
+
+/-- A root's `Nat` arguments fit the wrapper's check exactly when each is
+below 2^63. -/
+theorem argsFit_nat {ns : List Nat} (hlen : ns.length ≤ 5) (h64 : ∀ n ∈ ns, n < 2 ^ 64) (bytes : Word → UInt8) :
+    ArgsFit (List.replicate ns.length .nat) (D.core (ns.map UInt64.ofNat) bytes) ↔ ∀ n ∈ ns, n < 2 ^ 63 := by
+  have hv : ∀ n ∈ ns, (UInt64.ofNat n : Word).toNat = n := fun n hn => by
+    rw [UInt64.toNat_ofNat', Nat.mod_eq_of_lt (h64 n hn)]
+  unfold ArgsFit
+  match ns, hlen with
+  | [], _ => simp [sysvArgs]
+  | [a], _ =>
+    simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq] at hv ⊢
+    simp [sysvArgs, Driver.core, Driver.regs, Core.readReg, hv, or_imp, forall_and]
+  | [a, b], _ =>
+    simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hv ⊢
+    simp [sysvArgs, Driver.core, Driver.regs, Core.readReg, hv, or_imp, forall_and]
+  | [a, b, c], _ =>
+    simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hv ⊢
+    simp [sysvArgs, Driver.core, Driver.regs, Core.readReg, hv, or_imp, forall_and]
+  | [a, b, c, d], _ =>
+    simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hv ⊢
+    simp [sysvArgs, Driver.core, Driver.regs, Core.readReg, hv, or_imp, forall_and]
+  | [a, b, c, d, e], _ =>
+    simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hv ⊢
+    simp [sysvArgs, Driver.core, Driver.regs, Core.readReg, hv, or_imp, forall_and]
+
+end Compilatrix.X86.Driver
+
+namespace Compilatrix.X86.Driver
+
+/-- **The contract can be kept**: for any text of fewer than 2^64 bytes, a
+driver with a 64 MiB region at 2^32, an 8 MiB stack budget, `rsp = 2^40 + 8`
+and the caller's return address at the last address (the text at 0) keeps
+it. So the entry invariant the backend's theorems assume
+(`Driver.entryBase`) is satisfiable. -/
+theorem exists_ok {n : Nat} (hn : n < 2 ^ 64) : ∃ D : Driver, D.Ok n := by
+  refine ⟨{ base := 0, region := 2 ^ 32, size := 2 ^ 26, budget := 2 ^ 23, sp := 2 ^ 40 + 8,
+            ret := UInt64.ofNat (2 ^ 64 - 1),
+            init := fun _ => 0, flags := {} }, ?_⟩
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, .inr (by decide), ?_⟩
+  show n ≤ (UInt64.ofNat (2 ^ 64 - 1) - 0 : Word).toNat
+  have : (UInt64.ofNat (2 ^ 64 - 1) - 0 : Word).toNat = 2 ^ 64 - 1 := by decide
+  omega
 
 end Compilatrix.X86.Driver

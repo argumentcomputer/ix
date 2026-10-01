@@ -1012,7 +1012,7 @@
       "nix/build.nix": "19144af14c10247515becb1de7cfc87c27b1ed1f916ce5f60f67a2466ea4e2b0",
       "nix/checks.nix": "0d649c88869de611cd7506c2261c0612652bb2b45716556cc0c50a7d41bc51b9",
       "nix/ci-coverage.json": "c6d2cccbf94415d8818335f40b946deb9cacdf25fbbd0ebe43d9d213be8592d3",
-      "nix/lean-modules.json": "755f5be30dc2a8de165e33756d714de0d6ba557307226c7144dd3d0bed04a00f",
+      "nix/lean-modules.json": "efd81bc39b1d2883b209533fe14b596bbd70cbb9e94c358af5118eb91b233d29",
       "nix/sources.nix": "247a3ff3bd7588e528005a48aebb53f97aea440181218082462967b3846edb2b",
       "scripts/CheckAiur.lean": "f7d14b79813a3c0702067aa1470e2d706907480a2d236854ee8fdaedd03f353d",
       "scripts/CheckBuildGraph.lean": "1db60bc2996ca295780aaba0078e631f526204f57fa419df50b84aedde1dc5c4",
