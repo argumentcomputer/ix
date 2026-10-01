@@ -874,6 +874,25 @@ def SCtx.sepCheck (cx : SCtx) (g inRed outRed : Array Nat) : Bool :=
   g.all (fun t => isMem[t]! && lab[t]! == some 1) &&
     cx.members.all fun v => isOut[v]! || opqR[v]! || rl[v]! != some none
 
+/-- Reclassification at a search node: the undecided members whose gain under
+the node's bounds (with the decided-out members no longer maybe-stored) and
+recomputed counts reaches the threshold are merged into `localIn`; returns
+the new `localIn`, the open members with their gains, and the node's bounds. -/
+def SCtx.reclassify (cx : SCtx) (outAll localIn und : Array Nat) :
+    Array Nat × Array (Nat × _root_.Int) × UBounds :=
+  let ms := outAll.foldl (fun acc t => acc.set! t false) cx.cand
+  let b := cx.rebound ms
+  let vis := cx.revisible ms
+  let gains := und.map fun t =>
+    let d := vis.1[t]!
+    let h := vis.2[t]!
+    (t, storedGainC cx.up.prep b cx.up.w t d h, 1 ≤ d && h ≤ d)
+  let isForced := fun (e : Nat × _root_.Int × Bool) => e.2.2 && e.2.1 ≥ cx.theta
+  let forced := (gains.filter isForced).map (·.1)
+  let localIn := if forced.isEmpty then localIn else mergeSorted localIn forced
+  let open_ := (gains.filter (!isForced ·)).map fun e => (e.1, e.2.1)
+  (localIn, open_, b)
+
 mutual
 /-- Exact table of a group under the decided sets `inAll`/`outAll` (members
 of the component decided stored / not stored outside the group): for each
@@ -922,17 +941,7 @@ def SCtx.nodeP (cx : SCtx) (limits : Limits) :
     -- Reclassify: an undecided member whose gain under this partial
     -- assignment reaches the threshold is stored in every minimum that
     -- respects it.
-    let ms := outAll.foldl (fun acc t => acc.set! t false) cx.cand
-    let b := cx.rebound ms
-    let vis := cx.revisible ms
-    let gains := und.map fun t =>
-      let d := vis.1[t]!
-      let h := vis.2[t]!
-      (t, storedGainC cx.up.prep b cx.up.w t d h, 1 ≤ d && h ≤ d)
-    let isForced := fun (e : Nat × _root_.Int × Bool) => e.2.2 && e.2.1 ≥ cx.theta
-    let forced := (gains.filter isForced).map (·.1)
-    let localIn := if forced.isEmpty then localIn else mergeSorted localIn forced
-    let open_ := (gains.filter (!isForced ·)).map fun e => (e.1, e.2.1)
+    let (localIn, open_, b) := cx.reclassify outAll localIn und
     let und := open_.map (·.1)
     let inAll := inCtx ++ localIn
     let inSet : Std.HashSet Nat := inAll.foldl (·.insert ·) {}
