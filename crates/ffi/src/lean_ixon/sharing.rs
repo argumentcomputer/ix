@@ -6,7 +6,9 @@ use crate::lean::LeanIxonExpr;
 use ixon::expr::Expr as IxonExpr;
 use ixon::serialize::put_expr;
 use ixon::sharing::{analyze_block, build_sharing_vec, decide_sharing};
-use lean_ffi::object::{LeanArray, LeanBorrowed, LeanByteArray, LeanOwned};
+use lean_ffi::object::{
+  LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned,
+};
 
 /// FFI: Debug sharing analysis - print usage counts for subterms with usage >= 2.
 /// This helps diagnose why Lean and Rust make different sharing decisions.
@@ -154,4 +156,30 @@ extern "C" fn rs_compare_sharing_analysis(
 
   // Pack result: matches | (lean_count << 32) | (rust_count << 48)
   matches | (lean_count << 32) | (rust_count << 48)
+}
+
+/// FFI: canonical exact-minimum sharing of one serialized Constant.
+///
+/// Lean signature:
+/// `@[extern "rs_exact_sharing_normalize"]
+///  opaque exactSharingNormalize : @& ByteArray → Except String ByteArray`
+///
+/// Decodes exactly one Constant (trailing bytes are rejected), expands and
+/// validates its sharing table under the backward-reference rule, and
+/// returns the serialized canonical encoding computed with
+/// `ExactSharingLimits::default()`. Error strings start with `decode:`,
+/// `malformed sharing:`, `format bound:`, `resource exhausted:` or
+/// `internal error:`; no error carries a partial encoding.
+#[unsafe(no_mangle)]
+extern "C" fn rs_exact_sharing_normalize(
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use ixon::sharing_exact::{ExactSharingLimits, normalize_constant_bytes};
+  match normalize_constant_bytes(
+    bytes_obj.as_bytes(),
+    &ExactSharingLimits::default(),
+  ) {
+    Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
+    Err(err) => LeanExcept::error_string(&err.to_string()),
+  }
 }
