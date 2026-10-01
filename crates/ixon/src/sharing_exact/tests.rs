@@ -2830,7 +2830,9 @@ fn par_cases() -> Vec<Constant> {
     nine,
   ];
   let mut rng = Rng(83);
-  for i in 0..90u64 {
+  // One layout since the TagN-only wire (`LAYOUTS`), so twice the cases of
+  // the two-layout version keep more than 20 multi-component runs.
+  for i in 0..180u64 {
     let c = match i % 3 {
       0 => {
         let roots = gen_heavy_parent(&mut rng);
