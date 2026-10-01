@@ -19,9 +19,9 @@ Such a driver exists for every object (`driver_exists`). Its three clauses
 are `compile_sound_linked`, `compile_safe_linked` and
 `compile_diverges_linked`; an object the kernel gate evaluates is such an
 artifact's (`sound_bytes`). (Theorems about `Recheck.compile` or
-`compileInput` are not stated: their definitions reach Blake3's
-`native_decide`, through ingress and `produce`, which are not on the
-recheck path.)
+`compileInput` are not stated: their definitions reach Blake3 lemmas
+proved by native evaluation, through ingress and `produce`, which are not
+on the recheck path, so their axiom sets are not the standard three.)
 -/
 
 set_option autoImplicit false
