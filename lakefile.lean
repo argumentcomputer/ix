@@ -283,59 +283,22 @@ script "build-all" (args) := do
 
 end Scripts
 
-section IxKernelVendored
+section IxKernelTree
 
-/-- The vendored con-leche modules under `Ix/Kernel`: every module there except
-Ix's boundary (`Ref`, `Search`, `Audit`, `Ingress`, `Egress`, `Ixon`), one glob
-per top-level entry (`scripts/vendor-conleche.py lake-globs`). -/
-def vendoredKernelGlobs : Array Glob := #[
-  -- BEGIN vendored kernel modules (scripts/vendor-conleche.py check-lake)
-  .andSubmodules `Ix.Kernel.Basis, .one `Ix.Kernel.BasisA, .one `Ix.Kernel.BasisGen,
-  .submodules `Ix.Kernel.Cached, .one `Ix.Kernel.Canon, .one `Ix.Kernel.Checker,
-  .one `Ix.Kernel.CheckerBase, .one `Ix.Kernel.CheckerSplit, .one `Ix.Kernel.Core,
-  .one `Ix.Kernel.CoreDefs, .one `Ix.Kernel.CoreIO, .one `Ix.Kernel.DeclCheck,
-  .one `Ix.Kernel.Denotes, .one `Ix.Kernel.Env, .one `Ix.Kernel.Exclusive, .one `Ix.Kernel.Expr,
-  .one `Ix.Kernel.ExprOps, .one `Ix.Kernel.FEnv, .submodules `Ix.Kernel.Frontend,
-  .submodules `Ix.Kernel.Inductives, .one `Ix.Kernel.Level, .one `Ix.Kernel.LevelGeran,
-  .one `Ix.Kernel.MainTheorem, .submodules `Ix.Kernel.Model, .one `Ix.Kernel.Name,
-  .one `Ix.Kernel.NatOpPinSet, .submodules `Ix.Kernel.PinGen, .one `Ix.Kernel.PropRead,
-  .one `Ix.Kernel.PropWhen, .submodules `Ix.Kernel.Rules, .submodules `Ix.Kernel.Semantics,
-  .submodules `Ix.Kernel.SetModel, .submodules `Ix.Kernel.SetTheory, .one `Ix.Kernel.StdAxioms,
-  .submodules `Ix.Kernel.Term, .one `Ix.Kernel.TrustAxioms, .one `Ix.Kernel.TrustPins,
-  .one `Ix.Kernel.TypeChecker, .submodules `Ix.Kernel.Verify
-  -- END vendored kernel modules
-]
-
-/- Con-leche's verified checker, vendored in place under `Ix/Kernel/**` with
-namespace `Ix.Kernel` (`docs/kernel.md`, "Vendored con-leche"): the import
-closure of `Ix.Kernel.model_exists` from
-`https://github.com/leanprover/con-leche.git` at
-`ae0c0c4e4ce6a0081648aff03fe9c39d002c4526` (Apache-2.0; the seven files of
-upstream task #323 at `3ca9e2fe`). Every file is upstream's, rewritten by
-`scripts/vendor-conleche.py` (paths and namespace `ConLeche` → `Ix.Kernel`),
-except seven adapted ones and two Ix-authored modules
-(`Ix/Kernel/{,Verify/}LevelGeran.lean`); `Tests/Ix/Kernel/ImportManifest.lean`
-records each (`docs/kernel.md`, "Provenance"). Upstream's
-`ConLeche/Kernel/NatOpPins.lean`, which splices upstream's JSON pin dumps, is
-not vendored: Ix's Nat-operation pins are the Ixon-generated
-`Ix/Kernel/Ixon/NatOpPinData.lean`.
-
-The vendored modules are a library of their own for one option:
-`linter.deprecated` is off, so the upstream sources, written for Lean 4.33.0,
-build under `--wfail` on 4.34.0 without renaming deprecated lemmas. Lake
-options are per library, and Ix's own modules under `Ix/Kernel` stay in `Ix`
-with the default linters. Lake gives a module to the last-declared library
-that can build it, and `Ix` (above) can build every `Ix.*` module, so this
-library must stay below `Ix`, and its globs must be exactly the vendored tree
-(a module they miss would be built by `Ix`): `scripts/vendor-conleche.py
-check-lake`, in `check-kernel`, compares them with the tree. Not a default
-target; `IxKernel/lakefile.lean` declares the same library. -/
-lean_lib IxKernelVendored where
-  roots := #[`Ix.Kernel.MainTheorem]
-  globs := vendoredKernelGlobs
+/- `Ix.Kernel` and every module under `Ix/Kernel/`, as a library of its own for
+one option: `linter.deprecated` is off, so the con-leche-derived sources,
+written for Lean 4.33.0, build under `--wfail` on 4.34.0 without renaming the
+deprecated `if_pos`/`if_neg`/`dif_pos`/`dif_neg` lemmas they use (Lake options
+are per library). Lake gives a module to the last-declared library that can
+build it, and `Ix` (above) can build every `Ix.*` module, so this library stays
+below `Ix`. Not a default target; `IxKernel/lakefile.lean` declares the same
+library. -/
+lean_lib IxKernelTree where
+  roots := #[`Ix.Kernel]
+  globs := #[.andSubmodules `Ix.Kernel]
   leanOptions := #[⟨`linter.deprecated, false⟩]
 
-end IxKernelVendored
+end IxKernelTree
 
 section IxKernel
 

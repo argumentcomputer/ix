@@ -22,15 +22,27 @@ kernel only. See `docs/kernel.md`. -/
 package «ix-kernel» where
   version := v!"0.1.0"
 
+/-- `Ix.Kernel` and every module under `Ix/Kernel/` (as `IxKernelTree` in the
+root `lakefile.lean`), with `linter.deprecated` off for the con-leche-derived
+sources written for Lean 4.33.0. -/
+@[default_target]
+lean_lib IxKernelTree where
+  srcDir := ".."
+  roots := #[`Ix.Kernel]
+  globs := #[.andSubmodules `Ix.Kernel]
+  leanOptions := #[⟨`linter.deprecated, false⟩]
+
+/-- The pure Ixon types, codecs and proofs with the certified API, and the
+address key. -/
 @[default_target]
 lean_lib IxKernel where
   srcDir := ".."
-  roots := #[`Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
+  roots := #[`Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
     `Ix.Ixon.WireCheck, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant, `Ix.Ixon.Bounded.Size,
     `Ix.Ixon.Canonical, `Ix.Ixon.Verify, `Ix.Ixon.Audit,
     `Ix.Ixon.Admission, `Ix.Ixon.Admission.Audit, `Ix.Ixon.KernelAdmission,
     `Ix.Ixon.KernelConsistency, `Ix.Ixon.Consistency]
-  globs := #[.andSubmodules `Ix.Kernel, .one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types,
+  globs := #[.one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types,
     .one `Ix.Ixon.Codec, .one `Ix.Ixon.Wire, .one `Ix.Ixon.WireCheck, .submodules `Ix.Ixon.Bounded,
     .one `Ix.Ixon.Canonical, .andSubmodules `Ix.Ixon.Verify, .one `Ix.Ixon.Audit,
     .andSubmodules `Ix.Ixon.Admission, .one `Ix.Ixon.KernelAdmission,
@@ -47,38 +59,3 @@ lean_lib KernelFixtures where
   srcDir := ".."
   roots := kernelFixtureRoots
   globs := kernelFixtureRoots.map (fun root => .one root)
-
-/-- The vendored con-leche modules under `Ix/Kernel`: every module there except
-Ix's boundary (`Ref`, `Search`, `Audit`, `Ingress`, `Egress`, `Ixon`), one glob
-per top-level entry (`scripts/vendor-conleche.py lake-globs`). -/
-def vendoredKernelGlobs : Array Glob := #[
-  -- BEGIN vendored kernel modules (scripts/vendor-conleche.py check-lake)
-  .andSubmodules `Ix.Kernel.Basis, .one `Ix.Kernel.BasisA, .one `Ix.Kernel.BasisGen,
-  .submodules `Ix.Kernel.Cached, .one `Ix.Kernel.Canon, .one `Ix.Kernel.Checker,
-  .one `Ix.Kernel.CheckerBase, .one `Ix.Kernel.CheckerSplit, .one `Ix.Kernel.Core,
-  .one `Ix.Kernel.CoreDefs, .one `Ix.Kernel.CoreIO, .one `Ix.Kernel.DeclCheck,
-  .one `Ix.Kernel.Denotes, .one `Ix.Kernel.Env, .one `Ix.Kernel.Exclusive, .one `Ix.Kernel.Expr,
-  .one `Ix.Kernel.ExprOps, .one `Ix.Kernel.FEnv, .submodules `Ix.Kernel.Frontend,
-  .submodules `Ix.Kernel.Inductives, .one `Ix.Kernel.Level, .one `Ix.Kernel.LevelGeran,
-  .one `Ix.Kernel.MainTheorem, .submodules `Ix.Kernel.Model, .one `Ix.Kernel.Name,
-  .one `Ix.Kernel.NatOpPinSet, .submodules `Ix.Kernel.PinGen, .one `Ix.Kernel.PropRead,
-  .one `Ix.Kernel.PropWhen, .submodules `Ix.Kernel.Rules, .submodules `Ix.Kernel.Semantics,
-  .submodules `Ix.Kernel.SetModel, .submodules `Ix.Kernel.SetTheory, .one `Ix.Kernel.StdAxioms,
-  .submodules `Ix.Kernel.Term, .one `Ix.Kernel.TrustAxioms, .one `Ix.Kernel.TrustPins,
-  .one `Ix.Kernel.TypeChecker, .submodules `Ix.Kernel.Verify
-  -- END vendored kernel modules
-]
-
-/-- Con-leche's verified checker, vendored under `Ix/Kernel/**` (see the root
-`lakefile.lean`, which declares the same library, and
-`Tests/Ix/Kernel/ImportManifest.lean` for the rewritten, adapted and
-Ix-authored files). Lean core only; `linter.deprecated` is off so the
-4.33.0-era sources build under `--wfail` on 4.34.0 unchanged. Declared after
-`IxKernel`, whose root `Ix.Kernel` can build every `Ix.Kernel.*` module: Lake
-gives a module to the last-declared library that can build it. Not a default
-target (`IxKernel` builds every module under `Ix/Kernel`). -/
-lean_lib IxKernelVendored where
-  srcDir := ".."
-  roots := #[`Ix.Kernel.MainTheorem]
-  globs := vendoredKernelGlobs
-  leanOptions := #[⟨`linter.deprecated, false⟩]
