@@ -836,3 +836,13 @@ Measured (W2, Rust, all constants certified at every w): Mathlib −0.82% vs MSS
 405,832, equal 256,519, larger 903, max +1,485, p99.9 +1); Init −1.41% (larger on 5, max +6).
 Width 1 wins for 505,671 Mathlib constants, width 2 for 156,170, width 3 for 1,413. Cost: three
 phase-1 runs instead of one (about 3× the time; still minutes for all of Mathlib in Rust).
+
+### 12.12 Decision (2026-10-01): TagN replaces all three integer codes
+
+Owner decision: TagN (flag widths 0, 2, 4) replaces Tag0, Tag2 and Tag4 everywhere in the Ixon
+grammar, for uniformity and to simplify the serialization. Measured byte effect is the Share
+savings only (other fields change by ≈0), and no integer gets longer. Consequences: one integer
+code with one proof of roundtrip/bijectivity (`Ix/Compile/Verify/TagN.lean`); the three
+"noncanonical … integer" reader checks are removed; every codec theorem that mentions
+`tag0Bytes`/`tag4Bytes` sizes is restated with `tagNBytes`; the format version bumps once for
+sharing + integers together.
