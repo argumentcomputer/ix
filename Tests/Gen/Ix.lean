@@ -641,7 +641,9 @@ def genDecompileError : Gen Ix.DecompileM.DecompileError := do
     (1, pure (.blobNotFound addr)),
     (1, do let expected ← genIxString; pure (.badBlobFormat addr expected)),
     (1, pure (.badConstantFormat s)),
-    (1, pure (.serializeError se))
+    (1, pure (.serializeError se)),
+    (1, do let entry ← Gen.choose Nat 0 100; let q ← Gen.choose Nat 0 100
+           pure (.invalidMetaShareIndex idx.toUInt64 entry.toUInt64 len q s))
   ] (pure default)
 
 instance : Shrinkable Ix.DecompileM.DecompileError where

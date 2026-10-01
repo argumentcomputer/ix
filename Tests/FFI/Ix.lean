@@ -275,7 +275,8 @@ def decompileErrorTests : TestSeq :=
   test "DecompileError.blobNotFound" (roundtripDecompileError (.blobNotFound addr) == .blobNotFound addr) ++
   test "DecompileError.badBlobFormat" (roundtripDecompileError (.badBlobFormat addr "UTF-8") == .badBlobFormat addr "UTF-8") ++
   test "DecompileError.badConstantFormat" (roundtripDecompileError (.badConstantFormat "bad") == .badConstantFormat "bad") ++
-  test "DecompileError.serializeError" (roundtripDecompileError (.serializeError se) == .serializeError se)
+  test "DecompileError.serializeError" (roundtripDecompileError (.serializeError se) == .serializeError se) ++
+  test "DecompileError.invalidMetaShareIndex" (roundtripDecompileError (.invalidMetaShareIndex 9 2 4 3 "meta") == .invalidMetaShareIndex 9 2 4 3 "meta")
 
 def compileErrorTests : TestSeq :=
   let addr := Address.blake3 (ByteArray.mk #[4, 5, 6])

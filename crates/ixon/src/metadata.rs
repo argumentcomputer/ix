@@ -34,7 +34,8 @@ pub enum CallSiteEntry {
   /// Argument exists in canonical form at App-spine position `canon_idx`.
   /// `meta` is the arena index for this argument's metadata subtree.
   Kept { canon_idx: u64, meta: u64 },
-  /// Argument was collapsed. Expression stored in `ConstantMeta.meta_sharing[sharing_idx]`.
+  /// Argument was collapsed. Expression stored in `ConstantMeta.meta_sharing[sharing_idx]`
+  /// (a direct index, not offset by the primary sharing table's length).
   /// `meta` is the arena index for this argument's metadata subtree
   /// (may differ from the representative's metadata — different names, refs, etc.).
   Collapsed { sharing_idx: u64, meta: u64 },
@@ -234,20 +235,39 @@ pub struct UnivPatch {
 
 /// Per-constant metadata wrapper: variant payload + extension tables.
 ///
-/// Extension tables (`meta_sharing`, `meta_refs`, `meta_univs`) form a
-/// virtual address space extending the primary `Constant` tables. They are
-/// used by `CallSite` nodes in the metadata arena for call-site surgery
-/// roundtrip: collapsed argument expressions reference these tables via
-/// `Share(idx)`, `Ref(idx)`, and universe indices — and by `univ_patches`
+/// Extension tables (`meta_sharing`, `meta_refs`, `meta_univs`) extend the
+/// index spaces of the primary `Constant` tables (for a projection, the
+/// tables of its `Muts` block). They are used by `CallSite` nodes in the
+/// metadata arena for call-site surgery roundtrip — collapsed argument
+/// expressions use `Ref(idx)` and universe indices in the extended spaces,
+/// and `Share(idx)` as specified on `meta_sharing` — and by `univ_patches`
 /// for original level spellings (canonicity §10.6).
 ///
-/// At decompile time, extension tables are appended to the block cache,
-/// creating a contiguous address space.
+/// At decompile time `meta_refs`/`meta_univs` are appended to the block
+/// cache's primary tables, creating contiguous index spaces; `meta_sharing`
+/// is kept in its own table and read by the rule on that field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstantMeta {
   pub info: ConstantMetaInfo,
-  /// Compiled Ixon expressions for collapsed call-site arguments.
-  /// May contain `Share(idx)` references into the extended sharing table.
+  /// Compiled Ixon expressions for collapsed call-site arguments and
+  /// rewritten call-site heads, indexed DIRECTLY (no offset) by
+  /// `CallSiteEntry::Collapsed.sharing_idx` and
+  /// `orig_head = Some((sharing_idx, _))`.
+  ///
+  /// Extended index space for `Share` (a reader rule; the bytes are
+  /// unchanged). Let the primary table `sharing` have `p` entries and this
+  /// table `q`. A `Share(i)` occurring inside an expression of
+  /// `meta_sharing[j]` denotes primary entry `i` when `i < p` (expanded
+  /// against the primary table only: shares nested in a primary entry stay
+  /// primary) and `meta_sharing[i - p]` when `p <= i < p + j`. Entry `j`
+  /// may reference every primary entry and only the metadata entries
+  /// before it; `i >= p + q` (out of range) and `p + j <= i < p + q` (a
+  /// forward or self reference) are reader errors, so expansion is well
+  /// founded. A `Share` in a primary expression always denotes a primary
+  /// entry: metadata never changes how primary bytes decode. Readers: the
+  /// Rust and Lean decompilers (`ix_compile::decompile::ShareScope`, Lean
+  /// `Ix.DecompileM.ShareScope`); kernel ingress never reads this table.
+  /// The compilers emit no `Share` here today.
   pub meta_sharing: Vec<Arc<Expr>>,
   /// Extension refs table (addresses referenced by collapsed arg expressions).
   pub meta_refs: Vec<Address>,

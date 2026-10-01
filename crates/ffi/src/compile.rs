@@ -1379,6 +1379,21 @@ impl LeanIxDecompileError<LeanOwned> {
         ctor.set_obj(0, LeanIxSerializeError::build(se));
         ctor
       },
+      DecompileError::InvalidMetaShareIndex {
+        idx,
+        entry,
+        primary_len,
+        meta_len,
+        constant,
+      } => {
+        let ctor = LeanIxDecompileError::alloc(11);
+        ctor.set_obj(0, build_lean_nat_usize(*primary_len));
+        ctor.set_obj(1, build_lean_nat_usize(*meta_len));
+        ctor.set_obj(2, build_lean_string(constant));
+        ctor.set_num_64(0, *idx);
+        ctor.set_num_64(1, *entry);
+        ctor
+      },
     }
   }
 }
@@ -1455,6 +1470,26 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
       10 => DecompileError::Serialize(
         LeanIxSerializeError(self.get_obj(0)).decode(),
       ),
+      11 => {
+        let primary_len = LeanNat::to_nat(&self.get_obj(0))
+          .to_u64()
+          .and_then(|x| usize::try_from(x).ok())
+          .unwrap_or(0);
+        let meta_len = LeanNat::to_nat(&self.get_obj(1))
+          .to_u64()
+          .and_then(|x| usize::try_from(x).ok())
+          .unwrap_or(0);
+        let constant = self.get_obj(2).as_string().to_string();
+        let idx = self.get_num_64(0);
+        let entry = self.get_num_64(1);
+        DecompileError::InvalidMetaShareIndex {
+          idx,
+          entry,
+          primary_len,
+          meta_len,
+          constant,
+        }
+      },
       tag => unreachable!("Invalid DecompileError tag: {tag}"),
     }
   }

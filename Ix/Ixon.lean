@@ -555,7 +555,8 @@ inductive CallSiteEntry where
       (Rust field name: `meta` — a reserved keyword here). -/
   | kept (canonIdx : UInt64) (metaIdx : UInt64)
   /-- Argument was collapsed. Expression stored in
-      `ConstantMeta.metaSharing[sharingIdx]`. `metaIdx` is the arena index
+      `ConstantMeta.metaSharing[sharingIdx]` (a direct index, not offset by
+      the primary sharing table's length). `metaIdx` is the arena index
       for this argument's metadata subtree. -/
   | collapsed (sharingIdx : UInt64) (metaIdx : UInt64)
   deriving BEq, Repr, Inhabited
@@ -686,15 +687,32 @@ structure UnivPatch where
   deriving Inhabited, BEq, Repr
 
 /-- Per-constant metadata wrapper: variant payload + extension tables.
-    The extension tables (`metaSharing`/`metaRefs`/`metaUnivs`) form a
-    virtual address space extending the primary `Constant` tables, used by
-    `callSite` nodes in the metadata arena for call-site surgery roundtrip
-    and by `univPatches` for original level spellings (canonicity §10.6).
-    Mirrors Rust `ixon::metadata::ConstantMeta`. -/
+    The extension tables (`metaSharing`/`metaRefs`/`metaUnivs`) extend the
+    index spaces of the primary `Constant` tables (for a projection, the
+    tables of its `muts` block), used by `callSite` nodes in the metadata
+    arena for call-site surgery roundtrip and by `univPatches` for original
+    level spellings (canonicity §10.6). Mirrors Rust
+    `ixon::metadata::ConstantMeta`. -/
 structure ConstantMeta where
   info : ConstantMetaInfo := .empty
-  /-- Compiled Ixon expressions for collapsed call-site arguments. May
-      contain `Share(idx)` references into the extended sharing table. -/
+  /-- Compiled Ixon expressions for collapsed call-site arguments and
+      rewritten call-site heads, indexed DIRECTLY (no offset) by
+      `CallSiteEntry.collapsed sharingIdx` and `origHead = some (sharingIdx, _)`.
+
+      Extended index space for `share` (a reader rule; the bytes are
+      unchanged). Let the primary table `sharing` have `p` entries and this
+      table `q`. A `share i` occurring inside an expression of
+      `metaSharing[j]` denotes primary entry `i` when `i < p` (expanded
+      against the primary table only: shares nested in a primary entry stay
+      primary) and `metaSharing[i - p]` when `p ≤ i < p + j`. Entry `j` may
+      reference every primary entry and only the metadata entries before
+      it; `i ≥ p + q` (out of range) and `p + j ≤ i < p + q` (a forward or
+      self reference) are reader errors, so expansion is well founded. A
+      `share` in a primary expression always denotes a primary entry:
+      metadata never changes how primary bytes decode. Readers: the Lean
+      and Rust decompilers (`Ix.DecompileM.ShareScope`, Rust
+      `decompile::ShareScope`); kernel ingress never reads this table.
+      The compilers emit no `share` here today. -/
   metaSharing : Array Expr := #[]
   /-- Extension refs table (addresses referenced by collapsed arg
       expressions), serialized as raw 32-byte addresses (not name-indexed). -/

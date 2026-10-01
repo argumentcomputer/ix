@@ -318,6 +318,8 @@ pub struct BlockCache {
   /// metadata arena nodes. Populated by `load_meta_extensions` from
   /// `ConstantMeta.meta_sharing`. Empty for constants without surgery
   /// (non-aux_gen singleton defs and all `roundtrip_block` callers).
+  /// `Share` nodes inside these expressions are read in the extended
+  /// index space (`ShareScope::Meta`).
   pub meta_sharing: Vec<Arc<Expr>>,
   /// Reference table for resolving Ref indices to addresses
   pub refs: Vec<Address>,
@@ -342,10 +344,13 @@ pub struct BlockCache {
   pub primary_univ_len: Option<usize>,
   /// Cache for decompiled universes
   pub univ_cache: FxHashMap<*const Univ, Level>,
-  /// Cache for decompiled expressions keyed by (Ixon pointer, arena index).
+  /// Cache for decompiled expressions keyed by (Ixon pointer, arena index,
+  /// share scope).
   /// Same Ixon expression at same arena index → same metadata → same result.
   /// Same Ixon expression at different arena index → different metadata → different cache key.
-  pub expr_cache: FxHashMap<(*const Expr, u64), LeanExpr>,
+  /// The scope is part of the key because an expression valid in a
+  /// metadata scope may be invalid in the primary scope.
+  pub expr_cache: FxHashMap<(*const Expr, u64, ShareScope), LeanExpr>,
   /// Current constant being decompiled (for error messages)
   pub current_const: String,
 }
@@ -368,8 +373,19 @@ impl BlockCache {
   ///   indices map (overwrite semantics, like `meta_sharing`).
   ///
   /// Call at most once per cache, immediately after the primary tables
-  /// are installed — `primary_univ_len` is captured here.
-  pub fn load_meta_extensions(&mut self, meta: &ConstantMeta) {
+  /// are installed — `primary_univ_len` is captured here, and
+  /// `meta_sharing` is checked against the primary `sharing` length
+  /// (`validate_meta_sharing`): a malformed table is rejected here even
+  /// where decompilation never reads it.
+  pub fn load_meta_extensions(
+    &mut self,
+    meta: &ConstantMeta,
+  ) -> Result<(), DecompileError> {
+    validate_meta_sharing(
+      self.sharing.len(),
+      &meta.meta_sharing,
+      &self.current_const,
+    )?;
     self.meta_sharing = meta.meta_sharing.clone();
     self.refs.extend(meta.meta_refs.iter().cloned());
     self.primary_univ_len = Some(self.univ_table.len());
@@ -379,7 +395,110 @@ impl BlockCache {
       .iter()
       .map(|p| (p.arena_idx, p.univ_idxs.clone()))
       .collect();
+    Ok(())
   }
+
+  /// Resolve `Share(idx)` read in `scope` (see [`ShareScope`]): the target
+  /// expression and the scope its own `Share` nodes are read in. Mirrors
+  /// Lean `Ix.DecompileM.resolveShareIn`.
+  pub fn resolve_share(
+    &self,
+    scope: ShareScope,
+    idx: u64,
+  ) -> Result<(Arc<Expr>, ShareScope), DecompileError> {
+    let p = self.sharing.len();
+    let i = usize::try_from(idx).ok();
+    if let Some(e) = i.and_then(|i| self.sharing.get(i)) {
+      // `i < p`: a primary entry in either scope; its own shares are
+      // primary again.
+      return Ok((e.clone(), ShareScope::Primary));
+    }
+    match scope {
+      ShareScope::Primary => Err(DecompileError::InvalidShareIndex {
+        idx,
+        max: p,
+        constant: self.current_const.clone(),
+      }),
+      ShareScope::Meta { entry } => {
+        // `i >= p` here; only `p <= i < p + entry` (an EARLIER metadata
+        // entry) is valid.
+        let target = i
+          .map(|i| i - p)
+          .filter(|m| *m < entry)
+          .and_then(|m| self.meta_sharing.get(m).map(|e| (m, e)));
+        match target {
+          Some((m, e)) => Ok((e.clone(), ShareScope::Meta { entry: m })),
+          None => Err(DecompileError::InvalidMetaShareIndex {
+            idx,
+            entry: entry as u64,
+            primary_len: p,
+            meta_len: self.meta_sharing.len(),
+            constant: self.current_const.clone(),
+          }),
+        }
+      },
+    }
+  }
+}
+
+/// The index space a `Share(i)` node is read in: the extended index space
+/// of `ConstantMeta::meta_sharing`. With `p = sharing.len()` primary and
+/// `q = meta_sharing.len()` metadata entries:
+///
+/// - `Primary`: a primary expression (a root or a primary table entry).
+///   `Share(i)` is `sharing[i]`; `i >= p` is `InvalidShareIndex`. Metadata
+///   never changes how a primary expression decodes.
+/// - `Meta { entry: j }`: an expression of `meta_sharing[j]`. `Share(i)` is
+///   primary entry `i` when `i < p` (read in `Primary`: shares nested in a
+///   primary entry stay primary) and `meta_sharing[i - p]` when
+///   `p <= i < p + j` (read in `Meta { entry: i - p }`). Any other index is
+///   `InvalidMetaShareIndex`: `i >= p + q` is out of range,
+///   `p + j <= i < p + q` a forward or self reference. The entry strictly
+///   decreases along metadata-to-metadata resolution, so expansion is well
+///   founded.
+///
+/// Call-site references (`CallSiteEntry::Collapsed.sharing_idx`,
+/// `orig_head = Some((sharing_idx, _))`) index `meta_sharing` directly (no
+/// offset by `p`) and read the entry in `Meta { entry: sharing_idx }`.
+/// Mirrors Lean `Ix.DecompileM.ShareScope`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ShareScope {
+  Primary,
+  Meta { entry: usize },
+}
+
+/// Well-foundedness of a `meta_sharing` table against `primary_len`
+/// primary entries: every `Share(i)` occurring in `meta_sharing[j]` must
+/// have `i < primary_len + j` (a primary entry, or a metadata entry BEFORE
+/// `j`). Reports the first violation in entry order, then in left-to-right
+/// pre-order, as `InvalidMetaShareIndex` (Lean `validateMetaSharing` walks
+/// in the same order). Iterative; `Share` nodes are not expanded.
+pub fn validate_meta_sharing(
+  primary_len: usize,
+  meta_sharing: &[Arc<Expr>],
+  constant: &str,
+) -> Result<(), DecompileError> {
+  let mut stack: Vec<&Arc<Expr>> = Vec::new();
+  for (j, root) in meta_sharing.iter().enumerate() {
+    let bound = primary_len.saturating_add(j);
+    stack.push(root);
+    while let Some(e) = stack.pop() {
+      if let Expr::Share(i) = e.as_ref() {
+        if !matches!(usize::try_from(*i), Ok(i) if i < bound) {
+          return Err(DecompileError::InvalidMetaShareIndex {
+            idx: *i,
+            entry: j as u64,
+            primary_len,
+            meta_len: meta_sharing.len(),
+            constant: constant.to_string(),
+          });
+        }
+      } else {
+        stack.extend(e.children().into_iter().rev());
+      }
+    }
+  }
+  Ok(())
 }
 
 // ===========================================================================
@@ -802,27 +921,26 @@ pub fn decompile_expr(
     })
   }
 
+  /// Collect the canonical App telescope of `expr` (read in `scope`),
+  /// expanding `Share` nodes along the spine. Each argument carries the
+  /// scope it is read in: a spine `Share` can lead from a metadata
+  /// expression into a primary entry.
+  #[allow(clippy::type_complexity)]
   fn collect_ixon_telescope_expanding_shares(
     expr: &Arc<Expr>,
+    scope: ShareScope,
     cache: &BlockCache,
-  ) -> Result<(Arc<Expr>, Vec<Arc<Expr>>), DecompileError> {
-    let mut args: Vec<Arc<Expr>> = Vec::new();
+  ) -> Result<(Arc<Expr>, Vec<(Arc<Expr>, ShareScope)>), DecompileError> {
+    let mut args: Vec<(Arc<Expr>, ShareScope)> = Vec::new();
     let mut cur = expr.clone();
+    let mut scope = scope;
     loop {
       while let Expr::Share(share_idx) = cur.as_ref() {
-        cur = cache
-          .sharing
-          .get(*share_idx as usize)
-          .ok_or_else(|| DecompileError::InvalidShareIndex {
-            idx: *share_idx,
-            max: cache.sharing.len(),
-            constant: cache.current_const.clone(),
-          })?
-          .clone();
+        (cur, scope) = cache.resolve_share(scope, *share_idx)?;
       }
       match cur.as_ref() {
         Expr::App(f, a) => {
-          args.push(a.clone());
+          args.push((a.clone(), scope));
           cur = f.clone();
         },
         _ => break,
@@ -833,7 +951,8 @@ pub fn decompile_expr(
   }
 
   enum Frame {
-    Decompile(Arc<Expr>, u64),
+    /// Decompile an Ixon expression read in a share scope at an arena index.
+    Decompile(Arc<Expr>, u64, ShareScope),
     BuildApp(LeanMdata),
     BuildLam(Name, BinderInfo, LeanMdata),
     BuildAll(Name, BinderInfo, LeanMdata),
@@ -842,7 +961,7 @@ pub fn decompile_expr(
     /// Undo the BVar lift applied when an existing source argument was moved
     /// underneath a synthesized eta telescope.
     LowerVars(usize),
-    CacheResult(*const Expr, u64),
+    CacheResult(*const Expr, u64, ShareScope),
     /// Assemble a source-order App spine from head + N decompiled args.
     BuildTelescope {
       n_args: usize,
@@ -850,29 +969,26 @@ pub fn decompile_expr(
     },
   }
 
-  let mut stack: Vec<Frame> = vec![Frame::Decompile(expr.clone(), arena_idx)];
+  // The root is a primary expression; metadata scopes are entered only
+  // through call-site references into `meta_sharing`.
+  let mut stack: Vec<Frame> =
+    vec![Frame::Decompile(expr.clone(), arena_idx, ShareScope::Primary)];
   let mut results: Vec<LeanExpr> = Vec::new();
 
   while let Some(frame) = stack.pop() {
     match frame {
-      Frame::Decompile(e, idx) => {
-        // Expand Share transparently with the SAME arena_idx
+      Frame::Decompile(e, idx, scope) => {
+        // Expand Share transparently with the SAME arena_idx, in the
+        // target's scope.
         if let Expr::Share(share_idx) = e.as_ref() {
-          let shared_expr = cache
-            .sharing
-            .get(*share_idx as usize)
-            .ok_or_else(|| DecompileError::InvalidShareIndex {
-              idx: *share_idx,
-              max: cache.sharing.len(),
-              constant: cache.current_const.clone(),
-            })?
-            .clone();
-          stack.push(Frame::Decompile(shared_expr, idx));
+          let (shared_expr, shared_scope) =
+            cache.resolve_share(scope, *share_idx)?;
+          stack.push(Frame::Decompile(shared_expr, idx, shared_scope));
           continue;
         }
 
-        // Cache check: (Ixon pointer, arena index)
-        let cache_key = (Arc::as_ptr(&e), idx);
+        // Cache check: (Ixon pointer, arena index, share scope)
+        let cache_key = (Arc::as_ptr(&e), idx, scope);
         if let Some(cached) = cache.expr_cache.get(&cache_key) {
           results.push(cached.clone());
           continue;
@@ -900,14 +1016,14 @@ pub fn decompile_expr(
         let node = arena_lookup(arena, current_idx, &cache.current_const)?;
 
         // Push CacheResult frame
-        stack.push(Frame::CacheResult(Arc::as_ptr(&e), idx));
+        stack.push(Frame::CacheResult(Arc::as_ptr(&e), idx, scope));
 
         if matches!(
           node,
           ExprMetaData::CallSite { .. } | ExprMetaData::EtaCallSite { .. }
-        ) && crate::semantic_contract::contains_ixon(&e, &cache.sharing)
-          .map_err(|msg| DecompileError::BadConstantFormat { msg })?
-        {
+        ) && crate::semantic_contract::contains_ixon(&e, scope, |s, i| {
+          cache.resolve_share(s, i)
+        })? {
           return Err(DecompileError::BadConstantFormat {
             msg: "optional call-site replay would rewrite a semantic contract"
               .into(),
@@ -1099,17 +1215,11 @@ pub fn decompile_expr(
               }
             })?;
             let mut body = e.clone();
+            let mut body_scope = scope;
             for _ in 0..n_synth {
               while let Expr::Share(share_idx) = body.as_ref() {
-                body = cache
-                  .sharing
-                  .get(*share_idx as usize)
-                  .ok_or_else(|| DecompileError::InvalidShareIndex {
-                    idx: *share_idx,
-                    max: cache.sharing.len(),
-                    constant: cache.current_const.clone(),
-                  })?
-                  .clone();
+                (body, body_scope) =
+                  cache.resolve_share(body_scope, *share_idx)?;
               }
               match body.as_ref() {
                 Expr::Lam(_, _, b) => body = b.clone(),
@@ -1125,7 +1235,9 @@ pub fn decompile_expr(
             }
 
             let (head_ixon, canonical_args) =
-              collect_ixon_telescope_expanding_shares(&body, cache)?;
+              collect_ixon_telescope_expanding_shares(
+                &body, body_scope, cache,
+              )?;
             if canon_meta.len() != canonical_args.len() {
               return Err(DecompileError::BadConstantFormat {
                 msg: format!(
@@ -1166,7 +1278,7 @@ pub fn decompile_expr(
               stack.push(Frame::LowerVars(n_synth));
               match entry {
                 CallSiteEntry::Kept { canon_idx, meta } => {
-                  let arg_ixon = canonical_args
+                  let (arg_ixon, arg_scope) = canonical_args
                     .get(*canon_idx as usize)
                     .ok_or_else(|| DecompileError::BadConstantFormat {
                       msg: format!(
@@ -1177,9 +1289,16 @@ pub fn decompile_expr(
                         canonical_args.len()
                       ),
                     })?;
-                  stack.push(Frame::Decompile(arg_ixon.clone(), *meta));
+                  stack.push(Frame::Decompile(
+                    arg_ixon.clone(),
+                    *meta,
+                    *arg_scope,
+                  ));
                 },
                 CallSiteEntry::Collapsed { sharing_idx, meta } => {
+                  // Direct `meta_sharing` index (no offset by the primary
+                  // length); the entry's own shares are read in its
+                  // metadata scope.
                   let arg_ixon = cache
                     .meta_sharing
                     .get(*sharing_idx as usize)
@@ -1189,7 +1308,11 @@ pub fn decompile_expr(
                       constant: cache.current_const.clone(),
                     })?
                     .clone();
-                  stack.push(Frame::Decompile(arg_ixon, *meta));
+                  stack.push(Frame::Decompile(
+                    arg_ixon,
+                    *meta,
+                    ShareScope::Meta { entry: *sharing_idx as usize },
+                  ));
                 },
               }
             }
@@ -1202,7 +1325,7 @@ pub fn decompile_expr(
           ) => {
             // Collect the canonical Ixon App telescope
             let (head_ixon, canonical_args) =
-              collect_ixon_telescope_expanding_shares(&e, cache)?;
+              collect_ixon_telescope_expanding_shares(&e, scope, cache)?;
 
             // Most CallSites have one Kept entry per canonical arg. Split-SCC
             // minor adaptation is the exception: the canonical arg is a
@@ -1242,7 +1365,11 @@ pub fn decompile_expr(
                   constant: cache.current_const.clone(),
                 })?
                 .clone();
-              Some(Frame::Decompile(head_share, *meta))
+              Some(Frame::Decompile(
+                head_share,
+                *meta,
+                ShareScope::Meta { entry: *sharing_idx as usize },
+              ))
             } else {
               // Decompile head: resolve name from CallSite. This must
               // succeed — a CallSite metadata node without a resolvable
@@ -1306,7 +1433,7 @@ pub fn decompile_expr(
             for entry in entries.iter().rev() {
               match entry {
                 CallSiteEntry::Kept { canon_idx, meta } => {
-                  let arg_ixon = canonical_args
+                  let (arg_ixon, arg_scope) = canonical_args
                     .get(*canon_idx as usize)
                     .ok_or_else(|| DecompileError::BadConstantFormat {
                       msg: format!(
@@ -1317,16 +1444,22 @@ pub fn decompile_expr(
                         canonical_args.len()
                       ),
                     })?;
-                  stack.push(Frame::Decompile(arg_ixon.clone(), *meta));
+                  stack.push(Frame::Decompile(
+                    arg_ixon.clone(),
+                    *meta,
+                    *arg_scope,
+                  ));
                 },
                 CallSiteEntry::Collapsed { sharing_idx, meta } => {
                   // `sharing_idx` addresses `ConstantMeta.meta_sharing`
-                  // (per-constant, 0-based), NOT the block's primary
-                  // sharing table — see `BlockCache` docs. Reading it
-                  // from `cache.sharing` silently returned the wrong
-                  // subtree whenever the block had any `apply_sharing`
-                  // output, producing the "Binder arena vs Expr::Ref"
-                  // mismatch on surgered `_sizeOf_N` constants.
+                  // (per-constant, 0-based, no offset by the primary
+                  // length), NOT the block's primary sharing table — see
+                  // `BlockCache` docs. Reading it from `cache.sharing`
+                  // silently returned the wrong subtree whenever the block
+                  // had any `apply_sharing` output, producing the "Binder
+                  // arena vs Expr::Ref" mismatch on surgered `_sizeOf_N`
+                  // constants. The entry's own shares are read in its
+                  // metadata scope.
                   let arg_ixon = cache
                     .meta_sharing
                     .get(*sharing_idx as usize)
@@ -1336,7 +1469,11 @@ pub fn decompile_expr(
                       constant: cache.current_const.clone(),
                     })?
                     .clone();
-                  stack.push(Frame::Decompile(arg_ixon, *meta));
+                  stack.push(Frame::Decompile(
+                    arg_ixon,
+                    *meta,
+                    ShareScope::Meta { entry: *sharing_idx as usize },
+                  ));
                 },
               }
             }
@@ -1355,15 +1492,15 @@ pub fn decompile_expr(
           // App: follow arena children
           (ExprMetaData::App { children }, Expr::App(f, a)) => {
             stack.push(Frame::BuildApp(mdata_layers));
-            stack.push(Frame::Decompile(a.clone(), children[1]));
-            stack.push(Frame::Decompile(f.clone(), children[0]));
+            stack.push(Frame::Decompile(a.clone(), children[1], scope));
+            stack.push(Frame::Decompile(f.clone(), children[0], scope));
           },
 
           (_, Expr::App(f, a)) => {
             // No App metadata — use dummy indices (Leaf fallback)
             stack.push(Frame::BuildApp(mdata_layers));
-            stack.push(Frame::Decompile(a.clone(), u64::MAX));
-            stack.push(Frame::Decompile(f.clone(), u64::MAX));
+            stack.push(Frame::Decompile(a.clone(), u64::MAX, scope));
+            stack.push(Frame::Decompile(f.clone(), u64::MAX, scope));
           },
 
           // Lam: extract binder name/info from arena
@@ -1382,8 +1519,8 @@ pub fn decompile_expr(
               info.clone(),
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), children[1]));
-            stack.push(Frame::Decompile(ty.clone(), children[0]));
+            stack.push(Frame::Decompile(body.clone(), children[1], scope));
+            stack.push(Frame::Decompile(ty.clone(), children[0], scope));
           },
 
           (_, Expr::Lam(_, ty, body)) => {
@@ -1392,8 +1529,8 @@ pub fn decompile_expr(
               BinderInfo::Default,
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), u64::MAX));
-            stack.push(Frame::Decompile(ty.clone(), u64::MAX));
+            stack.push(Frame::Decompile(body.clone(), u64::MAX, scope));
+            stack.push(Frame::Decompile(ty.clone(), u64::MAX, scope));
           },
 
           // All: extract binder name/info from arena
@@ -1408,8 +1545,8 @@ pub fn decompile_expr(
               info.clone(),
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), children[1]));
-            stack.push(Frame::Decompile(ty.clone(), children[0]));
+            stack.push(Frame::Decompile(body.clone(), children[1], scope));
+            stack.push(Frame::Decompile(ty.clone(), children[0], scope));
           },
 
           (_, Expr::All(_, _, ty, body)) => {
@@ -1418,8 +1555,8 @@ pub fn decompile_expr(
               BinderInfo::Default,
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), u64::MAX));
-            stack.push(Frame::Decompile(ty.clone(), u64::MAX));
+            stack.push(Frame::Decompile(body.clone(), u64::MAX, scope));
+            stack.push(Frame::Decompile(ty.clone(), u64::MAX, scope));
           },
 
           // Let: extract name from arena
@@ -1434,9 +1571,9 @@ pub fn decompile_expr(
               non_dep.non_dep,
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), children[2]));
-            stack.push(Frame::Decompile(val.clone(), children[1]));
-            stack.push(Frame::Decompile(ty.clone(), children[0]));
+            stack.push(Frame::Decompile(body.clone(), children[2], scope));
+            stack.push(Frame::Decompile(val.clone(), children[1], scope));
+            stack.push(Frame::Decompile(ty.clone(), children[0], scope));
           },
 
           (_, Expr::Let(non_dep, ty, val, body)) => {
@@ -1445,9 +1582,9 @@ pub fn decompile_expr(
               non_dep.non_dep,
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), u64::MAX));
-            stack.push(Frame::Decompile(val.clone(), u64::MAX));
-            stack.push(Frame::Decompile(ty.clone(), u64::MAX));
+            stack.push(Frame::Decompile(body.clone(), u64::MAX, scope));
+            stack.push(Frame::Decompile(val.clone(), u64::MAX, scope));
+            stack.push(Frame::Decompile(ty.clone(), u64::MAX, scope));
           },
 
           // Prj: extract struct name from arena
@@ -1461,7 +1598,7 @@ pub fn decompile_expr(
               Nat::from(*field_idx),
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(struct_val.clone(), *child));
+            stack.push(Frame::Decompile(struct_val.clone(), *child, scope));
           },
 
           (_, Expr::Prj(type_ref_idx, _field_idx, _struct_val)) => {
@@ -1608,9 +1745,9 @@ pub fn decompile_expr(
         results.push(apply_mdata(expr, mdata));
       },
 
-      Frame::CacheResult(e_ptr, arena_idx) => {
+      Frame::CacheResult(e_ptr, arena_idx, scope) => {
         if let Some(result) = results.last() {
-          cache.expr_cache.insert((e_ptr, arena_idx), result.clone());
+          cache.expr_cache.insert((e_ptr, arena_idx, scope), result.clone());
         }
       },
     }
@@ -2083,7 +2220,13 @@ fn decompile_inductive(
     // own `meta_sharing` table, and any constructor can carry its own
     // `univ_patches` (canonicity §10.6). Install those extensions only while
     // walking this constructor so they do not leak across sibling
-    // constructor arenas.
+    // constructor arenas. The constructor's `meta_sharing` is checked
+    // against the block's primary table, as `load_meta_extensions` does.
+    validate_meta_sharing(
+      cache.sharing.len(),
+      &ctor_meta.meta_sharing,
+      &cache.current_const,
+    )?;
     let saved_meta_sharing = std::mem::replace(
       &mut cache.meta_sharing,
       ctor_meta.meta_sharing.clone(),
@@ -2203,7 +2346,7 @@ fn decompile_projection(
   // every `_sizeOf_N` — which is a DPrj into its mutual block and
   // whose body's `.rec` surgery produces `Collapsed` entries under
   // alpha-collapse — would fail with shape mismatches on decompile.
-  cache.load_meta_extensions(&named_meta);
+  cache.load_meta_extensions(&named_meta)?;
 
   // Each projection variant must land on the matching `MutConst` kind
   // at its block index. A silent fall-through would leave `name`
@@ -2329,7 +2472,7 @@ fn decompile_const(
         current_const: current_const.clone(),
         ..Default::default()
       };
-      cache.load_meta_extensions(&named_meta);
+      cache.load_meta_extensions(&named_meta)?;
       let info = decompile_definition(def, &named_meta, &mut cache, stt, dstt)?;
       dstt.insert_interned(name.clone(), info);
     },
@@ -2348,7 +2491,7 @@ fn decompile_const(
       // Defn branch above — omitting this desyncs
       // `CallSiteEntry::Collapsed.sharing_idx` from the intended
       // `meta_sharing` slot.
-      cache.load_meta_extensions(&named_meta);
+      cache.load_meta_extensions(&named_meta)?;
       let info = decompile_recursor(rec, &named_meta, &mut cache, stt, dstt)?;
       dstt.insert_interned(name.clone(), info);
     },
@@ -2364,7 +2507,7 @@ fn decompile_const(
       };
       // Axioms have only a type (no body), so no surgery today — but
       // load extensions for consistency with the other branches.
-      cache.load_meta_extensions(&named_meta);
+      cache.load_meta_extensions(&named_meta)?;
       let info = decompile_axiom(ax, &named_meta, &mut cache, stt, dstt)?;
       dstt.insert_interned(name.clone(), info);
     },
@@ -2380,7 +2523,7 @@ fn decompile_const(
       };
       // Quotient types have only a type signature — same story as
       // axioms. Load extensions for consistency.
-      cache.load_meta_extensions(&named_meta);
+      cache.load_meta_extensions(&named_meta)?;
       let info = decompile_quotient(quot, &named_meta, &mut cache, stt, dstt)?;
       dstt.insert_interned(name.clone(), info);
     },
@@ -3474,7 +3617,7 @@ fn roundtrip_block(
       // surgery of `.below`/`.brecOn` calls. Load the per-constant metadata
       // extensions so Collapsed entries have their source-order arguments
       // available during binder-name restoration.
-      dec_cache.load_meta_extensions(&orig_meta);
+      dec_cache.load_meta_extensions(&orig_meta)?;
 
       // Find the Ixon data for this constant.
       let class_idx = name_to_class.get(&name).copied().unwrap_or(0);
