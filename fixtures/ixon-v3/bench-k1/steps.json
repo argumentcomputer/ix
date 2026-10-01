@@ -1,0 +1,15 @@
+{
+  "format": "compilatrix/x86-steps/1",
+  "regenerate": "lake exe check-steps --write",
+  "rows": [
+    {"name": "fib", "args": [13], "typed": 11406, "bytes": 14274, "initTyped": 115, "initBytes": 119, "status": 0, "value": 467, "obs": "233"},
+    {"name": "sum-loop", "args": [5000], "typed": 55041, "bytes": 75044, "initTyped": 115, "initBytes": 119, "status": 0, "value": 24995001, "obs": "12497500"},
+    {"name": "ackermann", "args": [3,3], "typed": 27626, "bytes": 34866, "initTyped": 115, "initBytes": 119, "status": 0, "value": 123, "obs": "61"},
+    {"name": "tak", "args": [12,12,8,4], "typed": 43353, "bytes": 51152, "initTyped": 115, "initBytes": 119, "status": 0, "value": 11, "obs": "5"},
+    {"name": "gcd", "args": [1071,462], "typed": 75, "bytes": 86, "initTyped": 115, "initBytes": 119, "status": 0, "value": 43, "obs": "21"},
+    {"name": "collatz", "args": [27], "typed": 7614, "bytes": 9233, "initTyped": 115, "initBytes": 119, "status": 0, "value": 553, "obs": "276"},
+    {"name": "prime-count", "args": [100], "typed": 12716, "bytes": 15938, "initTyped": 115, "initBytes": 119, "status": 0, "value": 51, "obs": "25"},
+    {"name": "even-odd", "args": [1001], "typed": 3040, "bytes": 4045, "initTyped": 115, "initBytes": 119, "status": 0, "value": 1, "obs": "0"},
+    {"name": "sfib", "args": [1000], "typed": 25048, "bytes": 32054, "initTyped": 115, "initBytes": 119, "status": 0, "value": 517149, "obs": "258574"}
+  ]
+}

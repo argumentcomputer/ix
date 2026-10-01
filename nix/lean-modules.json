@@ -35,6 +35,8 @@
   "check-trusted-externs":
   {"roots": ["CheckTrustedExterns"], "kind": "lean_exe"},
   "check-tools-tests": {"roots": ["CheckToolsTests"], "kind": "lean_exe"},
+  "check-steps":
+  {"roots": ["CompilatrixTests.Pipeline.StepsMain"], "kind": "lean_exe"},
   "check-regalloc":
   {"roots": ["CompilatrixTests.Xv.Alloc.Main"], "kind": "lean_exe"},
   "check-lir": {"roots": ["CompilatrixTests.Lir.Main"], "kind": "lean_exe"},
@@ -535,6 +537,12 @@
     "CompilatrixTests.Rt.Native",
     "CompilatrixTests.Rt.Levels",
     "CompilatrixTests.Src.Bench"]},
+  "CompilatrixTests.Pipeline.StepsMain":
+  {"path": "CompilatrixTests/Pipeline/StepsMain.lean",
+   "imports": ["CompilatrixTests.Pipeline.Steps"]},
+  "CompilatrixTests.Pipeline.Steps":
+  {"path": "CompilatrixTests/Pipeline/Steps.lean",
+   "imports": ["CompilatrixTests.Pipeline.Support", "Compilatrix.Tools.Check"]},
   "CompilatrixTests.Pipeline.Run":
   {"path": "CompilatrixTests/Pipeline/Run.lean",
    "imports":

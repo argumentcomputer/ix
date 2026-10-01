@@ -109,6 +109,13 @@ certificate mutations (rejected, or code that agrees on every tested input). -/
 lean_exe «tests-pipeline» where
   root := `CompilatrixTests.Pipeline.Main
 
+/- Deterministic x86 step counts (M3.2, MEAS-3): each bench-k1 program's
+`cx_init` and root on the typed x86 machine and on `ByteEval`, compared
+exactly with the reviewed baseline `fixtures/ixon-v3/bench-k1/steps.json`
+(`--write` regenerates it). -/
+lean_exe «check-steps» where
+  root := `CompilatrixTests.Pipeline.StepsMain
+
 /- The corpus builder (MT.1, `docs/corpus.md`): `corpus check` verifies the
 frozen fixture families against their `compilatrix/corpus/1` manifests
 without ix; `corpus rebuild MANIFEST --ix IX` recompiles a family with the

@@ -33,7 +33,12 @@ Files per fixture:
   against the named twin of the same closure (not retained; its SHA-256 is in
   the provenance);
 - `<name>.census.json`: the reviewed admission census. Every constant of
-  every closure passes decoding, erased typing and the D12 policy stage.
+  every closure passes decoding, erased typing and the D12 policy stage;
+- `steps.json` (`compilatrix/x86-steps/1`): the reviewed typed-x86 and
+  `ByteEval` step counts of each program's `cx_init` and root on its
+  machine-level test arguments, which `check-steps` (the `x86-steps` check)
+  must reproduce exactly. A change is a reviewed, performance-relevant
+  change; regenerate with `lake exe check-steps --write`.
 
 [`corpus.json`](corpus.json) is the family's manifest
 (`compilatrix/corpus/1`, [`docs/corpus.md`](../../../docs/corpus.md)): sources,
