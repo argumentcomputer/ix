@@ -8,9 +8,9 @@ import Benchmarks.Kernel.CheckIxe
 /-! # Driver-side optimizations of the environment check, measured (untrusted prototype)
 
 `kernel-check-ixe-opt` is `kernel-check-ixe` (`Benchmarks.Kernel.CheckIxe`)
-with switches for four driver-side ports, none of which touches the verified
-core or the reader. It exists to measure them (`plans/review/cl-opt/`), and it
-is not a certified verdict.
+with switches for four driver-side optimizations, most of them taken from
+upstream con-leche's driver, none of which touches the verified core or the
+reader. It exists to measure them, and it is not a certified verdict.
 
 * `CHECK_IXE_LOAD=stream`: the metadata-light lazy load Ix.Tc uses
   (`Ixon.deEnvAnon`: the `.ixe` stays one buffer, names map to addresses, no
@@ -28,7 +28,7 @@ is not a certified verdict.
 * `CHECK_IXE_MARK=1`: the store, the reader context and the order are marked
   persistent before the loop (con-leche task #265), so their reference counts
   are never touched again.
-* `CHECK_IXE_PAR=n1,n2,…`: instead of the per-constant check, con-leche's two
+* `CHECK_IXE_PAR=n1,n2,…`: instead of the per-constant check, the fold's two
   phases (`Cached.checkDecls`): phase A installs every record in order
   (`annotDeclStep`; a record whose reading or install fails, and every record
   that depends on it, is left out, as the environment check blocks it), then phase B

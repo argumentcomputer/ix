@@ -7,10 +7,10 @@ import Benchmarks.Kernel.CheckIxeReadCache
 
 /-! # Environment check of a compiled Ixon environment (untrusted)
 
-The certified checker's environment check: con-leche's verified checker, read through
+The certified checker's environment check: the verified checker, read through
 the Ixon reader
 (`Ix.Kernel.IxonReader`): every primary record of an `.ixe`, in
-dependency order (the Ixon prelude's records first), read into con-leche
+dependency order (the Ixon prelude's records first), read into kernel
 declarations and installed and checked one record at a time by the
 incremental step of `Benchmarks.Kernel.CheckIxeStep` (`annotDeclStep`, then
 `checkPendingList` on what it left pending), continuing past failures and
@@ -34,9 +34,8 @@ private name).
 
 The loop (reading, stepping, rows) runs on a dedicated thread with a fresh
 allocator heap, after the decoded inputs are marked persistent, as
-con-leche's driver runs its check phase (`Main.lean`, `checkDeclsIO`);
-`CHECK_IXE_THREAD=0` runs it on the main thread, behind the decode, as before
-T1.
+upstream con-leche's driver runs its check phase (`Main.lean`, `checkDeclsIO`);
+`CHECK_IXE_THREAD=0` runs it on the main thread, behind the decode.
 
 `CHECK_IXE_READ_CACHE=<dir>` keeps a persistent read cache
 (`Benchmarks.Kernel.CheckIxeReadCache`): a full-order run (no `CHECK_IXE_ROOTS`,
@@ -173,7 +172,7 @@ def run (args : List String) : IO UInt32 := do
           CheckIxeReadCache.save path (CheckIxeReadCache.ofRun s ixe header names (← readings.get))
           IO.eprintln s!"check-ixe: read cache {path} written in {(← IO.monoMsNow) - t0} ms"
       pure out
-  -- The loop runs as con-leche's driver runs its check phase at `--jobs=1`
+  -- The loop runs as upstream con-leche's driver runs its check phase at `--jobs=1`
   -- (`Main.lean`, `checkDeclsIO`): on a dedicated thread, whose allocator
   -- heap is fresh (this thread's holds the decoded environment and the
   -- temporaries of decoding it), with the read-only inputs marked

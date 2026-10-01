@@ -8,12 +8,12 @@ import Ix.Kernel.Ixon.Prelude
 import Ix.Kernel.Cached.Installed
 import Ix.Kernel.NatOpPinSet
 
-/-! # Con-leche's fold one record at a time (untrusted harness)
+/-! # The verified fold one record at a time (untrusted harness)
 
 The per-record step shared by the environment check (`Benchmarks.Kernel.CheckIxe`)
 and the pin generator (`Benchmarks.Kernel.PinGen`): the dependency
 order of an environment's primary records, the Ixon reader's declarations of
-each record, and an incremental con-leche state that installs and checks
+each record, and an incremental checker state that installs and checks
 them one record at a time, continuing past failures.
 
 **The order.** The prelude's records first, then a depth-first postorder
@@ -204,12 +204,10 @@ def mergeEdges (a b : Std.HashMap Address (Array Address)) : Std.HashMap Address
 
 /-- The host's reducibility hints, at the address the compiler registers
 them under (a projection's for a block member): the projection map is built
-once, from the whole store, and every lookup is two probes.
-
-(The L4a version returned the lookup as a closure from a function of the
-store; the compiler compiled it at its full arity, so every lookup rebuilt
-the projection map over all ~100k records, about 55 ms per definition
-record: 50.6 s of the 4,300-record prefix environment check's "reading".) -/
+once, from the whole store, and every lookup is two probes. (A lookup
+returned as a closure from a function of the store is compiled at the
+function's full arity, so every call would rebuild the projection map over
+all records.) -/
 structure Hints where
   projAt : Std.HashMap (ConstRef Address) Address := {}
   hints : Std.HashMap Address Lean.ReducibilityHints := {}

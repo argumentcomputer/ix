@@ -8,9 +8,9 @@ import Ix.Ixon.KernelAdmission
 
 /-! # The batch fold over an environment check's accepted records (untrusted harness)
 
-`kernel-check-ixe --fold <input.ixe> <output.jsonl>` measures con-leche's
+`kernel-check-ixe --fold <input.ixe> <output.jsonl>` measures the vendored
 declaration fold `Ix.Kernel.Cached.checkDecls` run ONCE over every record the
-per-constant check would accept, as con-leche's own driver (`Main.lean`,
+per-constant check would accept, as upstream con-leche's own driver (`Main.lean`,
 `checkDeclsIO`) runs it over a lean4export stream: phase A
 (`annotDeclStep` over all declarations), then phase B (`checkPending` of
 every recorded declaration against its prefix view, each from a fresh memo
@@ -133,9 +133,8 @@ where
 /-- What the reader's per-reference work costs. The reader resolves and names
 a reference at every `ref`/`prj` node it converts; this reports the node and
 reference counts of the kept records, and the time of `resolve`, of
-`Ctx.nameOf` (a lookup in `Ctx.keys` since T1-4) and of `keyName` (what
-`nameOf` spelled at every occurrence before) over every reference-table
-entry once. -/
+`Ctx.nameOf` (a lookup in `Ctx.keys`) and of `keyName` (the spelling that
+lookup saves at every occurrence) over every reference-table entry once. -/
 def readStats (s : Setup) (records : Array (Address × Ixon.Constant)) : IO Unit := do
   let mut nodes := 0
   let mut refNodes := 0

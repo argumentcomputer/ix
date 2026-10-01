@@ -23,7 +23,7 @@ memory-mapped by later runs, which then decode and read nothing.
 **Keys.** A plan file is named by the BLAKE3 hash of the `.ixe`'s bytes and by
 `version`: the cache format, Lean's githash and a digest of the sources a
 reading or the plan's layout depends on (the reader, the prelude and pin
-data, the imported frontend passes it runs, con-leche's syntax, the Ixon
+data, the imported frontend passes it runs, the kernel's syntax, the Ixon
 decoder, the check order, this module), embedded at compile time
 (`sourceDigest`). A file is only ever read under the key it was written
 under, so a plan of another reader, layout or toolchain is never

@@ -3,7 +3,7 @@
 The certified checker's measurements are its environment check:
 `kernel-check-ixe` (`Benchmarks/Kernel/CheckIxe.lean`, entry
 `CheckIxeMain.lean`) checks a compiled environment (an `.ixe`) constant by
-constant with con-leche's checker behind the Ixon reader and writes one JSON
+constant with the verified checker behind the Ixon reader and writes one JSON
 row per constant. It measures coverage and time; it is not a certified
 verdict (`Ix.Ixon.Admission.checkBytes` is). Its inputs, options and
 watchdog are described in `docs/kernel.md` ("Environment check").
@@ -45,7 +45,7 @@ python3 scripts/bench-check-ixe.py compare before.jsonl after.jsonl --output com
 
 ## Other drivers (untrusted, measurement only)
 
-- `kernel-check-ixe --fold` (`Benchmarks/Kernel/CheckIxeFold.lean`): con-leche's
+- `kernel-check-ixe --fold` (`Benchmarks/Kernel/CheckIxeFold.lean`): the
   batch fold over the constants the environment check accepts, for
   comparison with the per-constant step.
 - `kernel-check-ixe-opt` (`Benchmarks/Kernel/CheckIxeOpt.lean`): the environment check with
@@ -95,8 +95,3 @@ checks the 659,344 recorded checks in phase B, with 0 failures:
 | 32 | 34.0 s | 29.4× | 5 min 45 s | 22.3 GB |
 
 The certified entry `Ix.Ixon.Admission.checkBytes` is sequential.
-
-The intrinsic kernel's native benchmark runner (`bench-certified-kernel`)
-and its environment check (`kernel-census-intrinsic`) were retired with that kernel
-(`docs/kernel.md`, "The retired intrinsic kernel"); their measurements are
-in this file's history.
