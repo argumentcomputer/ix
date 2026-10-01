@@ -15,7 +15,7 @@ Mathlib `.ixe`) be made substantially smaller by a change small enough for the v
   changes the producers, both compilers and the metadata finalizer proofs. It is designed
   in §5 and kept separable.
 
-All figures below are exact byte counts from the `arena_study` tool (§7). Its v3 pricing
+All figures below are exact byte counts from the `arena_study` tool (§8). Its v3 pricing
 equals the production writer on every node and every arena of both corpora.
 
 ## 1. Where the arena bytes are (v3 files)
@@ -186,7 +186,7 @@ From `git diff --numstat` against `ad2a583a`:
   (934 lines).
 - No consumer, producer, proof or FFI file changes.
 
-### Measured with the production writer
+### Measured with the production writer (before the W4 merge)
 
 The v3 files were read with a temporary, uncommitted legacy arena reader (the v3
 `ExprMeta::get_with`, switched on only while the cursor parses the file). Each arena and
@@ -230,7 +230,27 @@ TagN replacement had not landed.
 - **Rust:** `cargo test -p ixon`: 412 passed, 0 failed.
 - **Related Lean suites:** `ffi meta-env catalog import-ixe decompile-unit tc-unit` (run
   under `lake env`): 692 passed, exit 0.
-- **Lint:** `cargo clippy -p ixon --all-targets -D warnings` and `cargo fmt` are clean.
+- **Before the W4 merge.** The results above are from before the merge.
+
+**After merging `ix-sharing` c5cd2078** (W4: TagN is the only integer code):
+
+- **Lean `ixon` suite: 331 passed, 0 failed.** The share-codec tests were removed by W4.
+- **The `ixon-corpus` gate passed** (242 s).
+- **Rust:** `cargo test --release -p ixon --lib --tests`: 387 passed, 4 failed. The four
+  failures also occur on a clean c5cd2078 checkout (382 passed, the same 4 failed), so
+  they are not caused by the merge:
+  - `proof::tests::catalog_claim_wire_bytes_pinned`;
+  - `proof::tests::v3_claim_fixtures_and_strict_scope`;
+  - `resource::addressed::tests::canonical_cross_language_fixtures`;
+  - `sharing_exact::tests::parallel_tiered_matches_sequential`.
+- **Lint:** clippy (`--lib --tests --example arena_study`, `-D warnings`) is clean.
+- **Known breaks on c5cd2078 itself:**
+  - The `sharing_corpus` example does not compile: it imports the removed
+    `put_expr_with`.
+  - The `sharing-study` harness does not compile: it has 35 uses of `Ixon.getTag0` and
+    `getTag4`, including its own arena-length read.
+
+  W6 changes only the harness's node-reader call.
 
 ## 5. Stacked PR: within-arena hash-consing
 
@@ -297,25 +317,85 @@ TagN replacement had not landed.
 That is too large for "serializer only", hence a stacked PR. It needs no format change:
 the §4 encoding already handles DAG arenas.
 
-## 6. Finding for W4: TagN makes metadata name indices longer
+## 6. TagN and integers in [82,048, 2^24): census and the 4-byte rung
 
-- **The size change.** For values in [82,048, 2^24), TagN (`f = 0`) takes 5 bytes where
-  `Tag0` takes 4.
-- **Who hits it.** Mathlib's name index has 4,811,656 entries, so most metadata name
-  references fall in that range. Arena node names alone (binder, let, ref, prj,
-  call-site; 42,193,364 references) grow from 151,886,371 to 174,024,163 bytes:
-  **+22,137,792 bytes, +0.66% of the Mathlib file**. On Init (344,786 names) the growth is
-  +702,553 bytes (+0.36%).
-- **Not measured:** the other metadata name indices (`ConstantMetaInfo` names, levels,
-  `all`/`ctx`, mdata keys, §5 keys).
-- **The earlier finding.** The "no integer gets longer" result of the TagN repricing
-  covered the anonymous constants of Init only.
-- **Implication.** The "abs" baseline in §3 already includes this growth; the delta and
-  implicit rows are priced the same way.
-- **A per-arena local name table does not fix it.** Measured: −2.9 MB on Mathlib, +0.4 MB
-  on Init. There are 28.8M distinct names per arena out of 42.2M references.
+Measured on the v4 files of §7 with `arena_study --int-census`.
 
-## 7. Reproduction
+**The gap.** For values in [82,048, 2^24), TagN (`f = 0`) takes 5 bytes where `Tag0`
+took 4. The census walks every `f = 0` integer outside constant bodies:
+
+- §1–§4 counts and lengths;
+- §3 hints;
+- every §5 integer: name keys, constant ranks, fused hints, window lengths, all
+  `ConstantMeta` fields, arena integers and table counts.
+
+It prices each integer three ways: `Tag0`, TagN as specified, and TagN with one more
+rung.
+
+**Self-check.** For every §5 window (66,621 Init, 778,344 Mathlib; 0 mismatches), the
+TagN-priced census integers plus the non-integer bytes equal the production writer's
+window.
+
+**Constant bodies** cannot reach the gap for `f = 0`. The largest refs/univs tables are
+1,350/129 entries (Mathlib) and 441/22 (Init), and indices are bounded by them.
+
+**Integers in [82,048, 2^24), each one byte longer than in `Tag0`:**
+
+| field class | Init | Mathlib |
+|---|---:|---:|
+| arena node name indices (binder, let, ref, prj, call-site, mdata keys, `OfName`) | 1,379,100 | 29,774,488 |
+| `ConstantMetaInfo` name indices (name, levels, all, ctx, ctors, rules, induct) | 222,383 | 3,349,298 |
+| §5 name keys | 59,222 | 773,149 |
+| §5 constant ranks | 0 | 683,556 |
+| arena explicit child deltas | 0 | 242,432 |
+| everything else (lengths, counts, roots) | 24 | 366 |
+| **total = bytes a 4-byte rung would save** | **1,660,729 (1.06% of the file)** | **34,823,289 (1.31%)** |
+
+- **Name-class growth over `Tag0`, net of the values that got shorter:**
+  - Mathlib: arena names +22,243,839, `ConstantMetaInfo` names +3,052,196, §5 keys
+    +771,058, §5 ranks +645,449.
+  - Init: arena names +712,195, `ConstantMetaInfo` names +209,601, §5 keys +56,370.
+- **A 4-byte rung is free in code space for every flag width.** TagN's last selector
+  `c = 3` is currently invalid. Codes `c = 0, 1, 2, 3` could select 2, 3, 4 and 8
+  following bytes (widths 1, 2, 3, 4, 5, 9).
+  - For `f = 0` the rung would cover [82,048, 16,859,264).
+  - TagN would then never be longer than `Tag0` below 2^32.
+  - The rung also covers `f = 4` Share indices in [66,568, …). The current Mathlib
+    compile still has one sharing table of 81,464 entries, so some Share references there
+    pay the same extra byte. Constant bodies are outside this census, so they are not
+    counted.
+  - Whether to adopt the rung is the owner's call. The figures above are its exact
+    savings.
+- **A per-arena local name table is no fix.** On the v3 files it saves 2.9 MB on Mathlib
+  and costs 0.4 MB on Init: there are 28.8M distinct names per arena out of 42.2M
+  references.
+
+## 7. Final v4 file sizes (after merging W4's TagN-only codec)
+
+Init and Mathlib were recompiled with the merged branch (`ix compile`, same inputs as the
+v3 corpora):
+
+| | v3 file | v4 file | change |
+|---|---:|---:|---:|
+| Init (`Benchmarks/CompileInit.lean`) | 195,387,870 | 156,922,814 | −38,465,056 (−19.69%) |
+| Mathlib (`Benchmarks/Compile/CompileMathlib.lean`, 771,129 constants requested) | 3,343,271,273 | 2,654,926,848 | −688,344,425 (−20.59%) |
+
+- **Writer check on the v4 files** (`--check-writer --other-tagn`): every arena equals its
+  predicted implicit TagN size, and every arena round-trips through the production
+  reader. 0 / 0 mismatches over 67,995 (Init) and 793,394 (Mathlib) arenas.
+  - Arena bytes: 46,429,863 (29.59% of the v4 Init file) and 791,674,724 (29.82% of
+    Mathlib).
+  - Priced with absolute TagN indices instead, the arenas would be 25,155,038 and
+    441,243,705 bytes larger. That is this PR's share of the v4 reduction.
+- **The rest of the file barely moves.** Outside the arenas it shrinks by 1.8 MB (Init) and
+  43.4 MB (Mathlib).
+- **Same metadata, fresh compile.** The arenas are the same as in the v3 corpora apart
+  from a fresh compile: Init 16,335,501 nodes in both; Mathlib 272,299,589 v4 vs
+  272,299,746 v3.
+- **The header byte is still `0xE3`.** The version bump to 4 (`0xE4`, plan §0b-7) has not
+  landed on `ix-sharing` yet.
+
+## 8. Reproduction
 
 `S` is the scratchpad holding the corpora.
 
@@ -340,6 +420,15 @@ nix develop --command bash -c '.lake/build/bin/IxTests ixon'
 nix develop --command bash -c 'lake env .lake/build/bin/IxTests --ignored ixon-corpus'
 ```
 
-On a v4 file (after this branch), `arena_study <file> --check-writer` checks the
-production writer against the predicted implicit pricing directly. Add `--other-tagn`
-once W4's TagN replacement has landed.
+After the W4 merge (§6, §7):
+
+```text
+nix develop --command bash -c 'lake build ix'
+lake exe ix compile Benchmarks/CompileInit.lean --out $S/w6/init_v4.ixe              # 27 s
+lake exe ix compile Benchmarks/Compile/CompileMathlib.lean --out $S/w6/mathlib_v4.ixe # 261 s
+#   (Benchmarks/Compile/.lake copied from a worktree with the Mathlib build)
+arena_study $S/w6/init_v4.ixe --check-writer --other-tagn      # 0 / 0 mismatches
+arena_study $S/w6/mathlib_v4.ixe --check-writer --other-tagn   # 0 / 0 mismatches, 231 s
+arena_study $S/w6/init_v4.ixe --int-census                      # 66,621 / 66,621 windows
+arena_study $S/w6/mathlib_v4.ixe --int-census                   # 778,344 / 778,344 windows
+```

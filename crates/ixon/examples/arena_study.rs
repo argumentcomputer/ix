@@ -37,6 +37,9 @@
 //!                      implicit)
 //!   [--other-tagn]     the production writer writes every integer other
 //!                      than child references as TagN (default Tag0)
+//!   [--int-census]     instead: price every f = 0 integer outside constant
+//!                      bodies under Tag0, TagN and TagN with a 4-byte rung,
+//!                      self-checked against every §5 window
 //! ```
 
 #![allow(clippy::cast_precision_loss)]
@@ -50,13 +53,16 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use ix_common::address::Address;
+use ix_common::env::ReducibilityHints;
 use ixon::Env;
 use ixon::TagN;
+use ixon::constant::Constant;
 use ixon::metadata::{
   CallSiteEntry, ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta,
   ExprMetaData, NameGet, NameIndex, NamePut,
 };
-use ixon::serialize::{NamedMetaCursor, put_named_indexed};
+use ixon::serialize::{NamedMetaCursor, put_expr, put_named_indexed};
+use ixon::univ::put_univ;
 
 // ---------------------------------------------------------------------------
 // Integer prices
@@ -689,10 +695,12 @@ fn main() -> Result<(), String> {
   )?;
   let mut opts =
     Opts { check_writer: false, writer: Writer::Implicit, other_tagn: false };
+  let mut census = false;
   while let Some(a) = args.next() {
     match a.as_str() {
       "--check-writer" => opts.check_writer = true,
       "--other-tagn" => opts.other_tagn = true,
+      "--int-census" => census = true,
       "--writer" => {
         opts.writer = match args.next().as_deref() {
           Some("v3") => Writer::V3,
@@ -708,6 +716,10 @@ fn main() -> Result<(), String> {
   // SAFETY: the corpus file is not modified while it is mapped.
   let mmap =
     Arc::new(unsafe { memmap2::Mmap::map(&file) }.map_err(|e| e.to_string())?);
+  if census {
+    println!("{}", int_census(&path, &mmap)?);
+    return Ok(());
+  }
   let index = Env::parse_lazy_index(&mmap)?;
   let ix: NameIndex = index
     .name_reverse_index
@@ -931,4 +943,431 @@ fn main() -> Result<(), String> {
   );
   println!("{md}");
   Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Integer census (`--int-census`): every f = 0 integer outside constant
+// bodies, priced under Tag0, TagN and TagN with a 4-byte rung
+// ---------------------------------------------------------------------------
+
+/// TagN (`f = 0`) with one more rung: 1, 2, 3, 4, 5, 9 bytes (codes
+/// `c = 0, 1, 2, 3` select 2, 3, 4, 8 following bytes).
+fn tagn4_w(v: u64) -> usize {
+  const R3: u64 = 82_048;
+  const R4: u64 = R3 + (1 << 24);
+  const R5: u64 = R4 + (1 << 32);
+  if v < 128 {
+    1
+  } else if v < 16_512 {
+    2
+  } else if v < R3 {
+    3
+  } else if v < R4 {
+    4
+  } else if v < R5 {
+    5
+  } else {
+    9
+  }
+}
+
+const CENSUS_CLASSES: [&str; 17] = [
+  "§1 blob count and lengths",
+  "§2 constant count and lengths",
+  "§3 hint count, rank deltas, fused hints",
+  "§4 name count and component lengths",
+  "§5 entry count and name keys",
+  "§5 constant ranks",
+  "§5 fused hints",
+  "§5 metadata window lengths",
+  "ConstantMetaInfo name indices",
+  "ConstantMetaInfo counts and aux layout",
+  "arena roots (type/value/rule)",
+  "arena lengths",
+  "arena node name indices (incl. mdata keys, OfName)",
+  "arena explicit child deltas",
+  "arena counts and call-site scalars",
+  "ConstantMeta table counts and patches",
+  "(unused)",
+];
+
+#[derive(Default, Clone, Copy)]
+struct CensusRow {
+  ints: u64,
+  /// Integers in [82,048, 2^24): TagN 5 bytes, Tag0 4 bytes.
+  in_gap: u64,
+  tag0: u64,
+  tagn: u64,
+  tagn4: u64,
+}
+
+#[derive(Default)]
+struct Census {
+  rows: [CensusRow; 17],
+  const_max_refs: usize,
+  const_max_univs: usize,
+  const_max_sharing: usize,
+  consts_decoded: u64,
+  windows: u64,
+  window_mismatch: u64,
+}
+
+impl Census {
+  fn add(&mut self, class: usize, v: u64) {
+    let r = &mut self.rows[class];
+    r.ints += 1;
+    if (82_048..(1 << 24)).contains(&v) {
+      r.in_gap += 1;
+    }
+    r.tag0 += tag0_w(v) as u64;
+    r.tagn += tagn_w(v) as u64;
+    r.tagn4 += tagn4_w(v) as u64;
+  }
+
+  fn idx_vec(&mut self, ix: &NameIndex, v: &[Address]) {
+    self.add(9, v.len() as u64);
+    for a in v {
+      self.add(8, ix[a]);
+    }
+  }
+
+  fn arena(&mut self, ix: &NameIndex, nodes: &[ExprMetaData]) {
+    self.add(11, nodes.len() as u64);
+    let masks = implicit_masks(nodes);
+    for (i, n) in nodes.iter().enumerate() {
+      if let Some(a) = node_name(n) {
+        self.add(12, ix[a]);
+      }
+      let delta = |c: u64| (i as u64).wrapping_sub(1).wrapping_sub(c);
+      for (s, (_, c)) in slots(n).into_iter().enumerate() {
+        if masks[i] & (1 << s) == 0 {
+          self.add(13, delta(c));
+        }
+      }
+      for c in callsite_refs(n) {
+        self.add(13, delta(c));
+      }
+      match n {
+        ExprMetaData::Mdata { mdata, .. } => {
+          self.add(14, mdata.len() as u64);
+          for kv in mdata {
+            self.add(14, kv.len() as u64);
+            for (k, d) in kv {
+              self.add(12, ix[k]);
+              if let DataValue::OfName(a) = d {
+                self.add(12, ix[a]);
+              }
+            }
+          }
+        },
+        ExprMetaData::CallSite { entries, canon_meta, orig_head, .. } => {
+          self.add(14, entries.len() as u64);
+          for e in entries {
+            match e {
+              CallSiteEntry::Kept { canon_idx: x, .. }
+              | CallSiteEntry::Collapsed { sharing_idx: x, .. } => {
+                self.add(14, *x);
+              },
+            }
+          }
+          self.add(14, canon_meta.len() as u64);
+          if let Some((s, _)) = orig_head {
+            self.add(14, *s);
+          }
+        },
+        ExprMetaData::EtaCallSite { n_synth, entries, canon_meta, .. } => {
+          self.add(14, *n_synth);
+          self.add(14, entries.len() as u64);
+          for e in entries {
+            match e {
+              CallSiteEntry::Kept { canon_idx: x, .. }
+              | CallSiteEntry::Collapsed { sharing_idx: x, .. } => {
+                self.add(14, *x);
+              },
+            }
+          }
+          self.add(14, canon_meta.len() as u64);
+        },
+        _ => {},
+      }
+    }
+  }
+
+  fn meta(&mut self, ix: &NameIndex, cm: &ConstantMeta) {
+    match &cm.info {
+      ConstantMetaInfo::Empty => {},
+      ConstantMetaInfo::Def { name, lvls, all, ctx, arena, .. } => {
+        self.add(8, ix[name]);
+        self.idx_vec(ix, lvls);
+        self.idx_vec(ix, all);
+        self.idx_vec(ix, ctx);
+        self.arena(ix, &arena.nodes);
+      },
+      ConstantMetaInfo::Axio { name, lvls, arena, .. }
+      | ConstantMetaInfo::Quot { name, lvls, arena, .. } => {
+        self.add(8, ix[name]);
+        self.idx_vec(ix, lvls);
+        self.arena(ix, &arena.nodes);
+      },
+      ConstantMetaInfo::Indc { name, lvls, ctors, all, ctx, arena, .. } => {
+        self.add(8, ix[name]);
+        self.idx_vec(ix, lvls);
+        self.idx_vec(ix, ctors);
+        self.idx_vec(ix, all);
+        self.idx_vec(ix, ctx);
+        self.arena(ix, &arena.nodes);
+      },
+      ConstantMetaInfo::Ctor { name, lvls, induct, arena, .. } => {
+        self.add(8, ix[name]);
+        self.idx_vec(ix, lvls);
+        self.add(8, ix[induct]);
+        self.arena(ix, &arena.nodes);
+      },
+      ConstantMetaInfo::Rec {
+        name,
+        lvls,
+        rules,
+        all,
+        ctx,
+        arena,
+        rule_roots,
+        ..
+      } => {
+        self.add(8, ix[name]);
+        self.idx_vec(ix, lvls);
+        self.idx_vec(ix, rules);
+        self.idx_vec(ix, all);
+        self.idx_vec(ix, ctx);
+        self.arena(ix, &arena.nodes);
+        self.add(9, rule_roots.len() as u64);
+      },
+      ConstantMetaInfo::Muts { all, aux_layout } => {
+        self.add(9, all.len() as u64);
+        for cls in all {
+          self.idx_vec(ix, cls);
+        }
+        if let Some(l) = aux_layout {
+          self.add(9, l.perm.len() as u64);
+          for &p in &l.perm {
+            self.add(9, p as u64);
+          }
+          self.add(9, l.source_ctor_counts.len() as u64);
+          for &c in &l.source_ctor_counts {
+            self.add(9, c as u64);
+          }
+          self.add(9, l.evaporated.len() as u64);
+        }
+      },
+    }
+    for r in roots_of(&cm.info) {
+      self.add(10, r);
+    }
+    self.add(15, cm.meta_sharing.len() as u64);
+    self.add(15, cm.meta_refs.len() as u64);
+    self.add(15, cm.meta_univs.len() as u64);
+    self.add(15, cm.univ_patches.len() as u64);
+    for p in &cm.univ_patches {
+      self.add(15, p.arena_idx);
+      self.add(15, p.univ_idxs.len() as u64);
+      for &u in &p.univ_idxs {
+        self.add(15, u);
+      }
+    }
+  }
+}
+
+fn fused_opt_hint(h: Option<ReducibilityHints>) -> u64 {
+  match h {
+    None => 0,
+    Some(ReducibilityHints::Opaque) => 1,
+    Some(ReducibilityHints::Abbrev) => 2,
+    Some(ReducibilityHints::Regular(x)) => u64::from(x) + 3,
+  }
+}
+
+fn fused_hint(h: &ReducibilityHints) -> u64 {
+  fused_opt_hint(Some(*h)) - 1
+}
+
+/// Run the census over a parsed file and render it.
+fn int_census(path: &str, mmap: &[u8]) -> Result<String, String> {
+  let (index, names) = Env::parse_lazy_index_with_names(mmap)?;
+  let ix: NameIndex = index
+    .name_reverse_index
+    .iter()
+    .enumerate()
+    .map(|(i, a)| (a.clone(), i as u64))
+    .collect();
+  let const_addrs: Vec<Address> =
+    index.consts.iter().map(|c| c.addr.clone()).collect();
+  let mut c = Census::default();
+  // §1-§4.
+  c.add(0, index.blobs.len() as u64);
+  for (_, b) in &index.blobs {
+    c.add(0, b.len() as u64);
+  }
+  c.add(1, index.consts.len() as u64);
+  for s in &index.consts {
+    c.add(1, s.len as u64);
+    if let Ok(k) = Constant::get(&mut &mmap[s.offset..s.offset + s.len]) {
+      c.consts_decoded += 1;
+      c.const_max_refs = c.const_max_refs.max(k.refs.len());
+      c.const_max_univs = c.const_max_univs.max(k.univs.len());
+      c.const_max_sharing = c.const_max_sharing.max(k.sharing.len());
+    }
+  }
+  c.add(2, index.hints.len() as u64);
+  let mut ranked: Vec<(u64, u64)> = index
+    .hints
+    .iter()
+    .map(|(a, h)| {
+      (
+        const_addrs.binary_search(a).map_or(u64::MAX, |r| r as u64),
+        fused_hint(h),
+      )
+    })
+    .collect();
+  ranked.sort_unstable();
+  let mut prev = 0u64;
+  for (rank, h) in ranked {
+    c.add(2, rank + 1 - prev);
+    c.add(2, h);
+    prev = rank + 1;
+  }
+  c.add(3, index.name_reverse_index.len() as u64);
+  for a in &index.name_reverse_index {
+    if let Some(n) = names.get(a) {
+      match n.as_data() {
+        ix_common::env::NameData::Str(_, s, _) => c.add(3, s.len() as u64),
+        ix_common::env::NameData::Num(_, n, _) => {
+          c.add(3, n.to_le_bytes().len() as u64);
+        },
+        ix_common::env::NameData::Anonymous(_) => {},
+      }
+    }
+  }
+  // §5.
+  c.add(4, index.named.len() as u64);
+  let (mut scratch, mut entry_buf) = (Vec::new(), Vec::new());
+  let mut cursor = NamedMetaCursor::open(mmap, &index)?;
+  while let Some((name_addr, named)) = cursor.next_entry()? {
+    c.add(4, ix[&name_addr]);
+    c.add(
+      5,
+      const_addrs.binary_search(&named.addr).map_or(u64::MAX, |r| r as u64),
+    );
+    c.add(6, fused_opt_hint(named.hints()));
+    entry_buf.clear();
+    put_named_indexed(&named, &ix, &const_addrs, &mut scratch, &mut entry_buf)?;
+    c.add(7, scratch.len() as u64);
+    // Self-check: the window is exactly the census integers (TagN) plus
+    // the non-integer bytes.
+    let before: u64 = c.rows[8..16].iter().map(|r| r.tagn).sum();
+    let meta = named.meta();
+    c.meta(&ix, &meta);
+    let mut nonint = meta_nonint_bytes(&meta) + 1;
+    if let Some((_, o)) = named.original() {
+      c.meta(&ix, &o);
+      nonint += 32 + meta_nonint_bytes(&o);
+    }
+    let after: u64 = c.rows[8..16].iter().map(|r| r.tagn).sum();
+    c.windows += 1;
+    if after - before + nonint != scratch.len() as u64 {
+      c.window_mismatch += 1;
+    }
+  }
+  let file = mmap.len() as u64;
+  let mut md = format!(
+    "## Integer census (f = 0, outside constant bodies): `{path}`\n\n- File {file} bytes; {} names; {} constants ({} decoded: max refs table {}, max univs table {}, max sharing table {}).\n- Self-check: {} of {} §5 windows equal TagN-priced census integers plus non-integer bytes ({} mismatches).\n- Widths: Tag0 (v3); TagN as specified (1, 2, 3, 5, 9 bytes; 5 bytes from 82,048); TagN with a 4-byte rung (1, 2, 3, 4, 5, 9; 4 bytes for [82,048, 16,859,264)). \"In [82,048, 2^24)\" are the integers TagN writes one byte longer than Tag0.\n\n| field class | integers | in [82,048, 2^24) | Tag0 bytes | TagN bytes | TagN − Tag0 | TagN with 4-byte rung | rung saves |\n|---|---:|---:|---:|---:|---:|---:|---:|\n",
+    index.name_reverse_index.len(),
+    index.consts.len(),
+    c.consts_decoded,
+    c.const_max_refs,
+    c.const_max_univs,
+    c.const_max_sharing,
+    c.windows - c.window_mismatch,
+    c.windows,
+    c.window_mismatch
+  );
+  let mut t = CensusRow::default();
+  for (k, r) in c.rows.iter().enumerate().take(16) {
+    t.ints += r.ints;
+    t.in_gap += r.in_gap;
+    t.tag0 += r.tag0;
+    t.tagn += r.tagn;
+    t.tagn4 += r.tagn4;
+    md += &format!(
+      "| {} | {} | {} | {} | {} | {:+} | {} | {} |\n",
+      CENSUS_CLASSES[k],
+      r.ints,
+      r.in_gap,
+      r.tag0,
+      r.tagn,
+      r.tagn as i64 - r.tag0 as i64,
+      r.tagn4,
+      r.tagn - r.tagn4
+    );
+  }
+  md += &format!(
+    "| **all** | {} | {} | {} | {} | {:+} ({}) | {} | {} ({}) |\n",
+    t.ints,
+    t.in_gap,
+    t.tag0,
+    t.tagn,
+    t.tagn as i64 - t.tag0 as i64,
+    spct(t.tagn as i64 - t.tag0 as i64, file),
+    t.tagn4,
+    t.tagn - t.tagn4,
+    pct(t.tagn - t.tagn4, file)
+  );
+  Ok(md)
+}
+
+/// Non-integer bytes of a `ConstantMeta` (tags, raw addresses, booleans,
+/// expression and universe payloads): with the census integers priced in
+/// TagN this must add up to the production writer's bytes.
+fn meta_nonint_bytes(cm: &ConstantMeta) -> u64 {
+  let arena = |nodes: &[ExprMetaData]| -> u64 {
+    let mut b = nodes.len() as u64;
+    for n in nodes {
+      match n {
+        ExprMetaData::Mdata { mdata, .. } => {
+          for kv in mdata {
+            for (_, d) in kv {
+              b += 1
+                + match d {
+                  DataValue::OfBool(_) => 1,
+                  DataValue::OfName(_) => 0,
+                  _ => 32,
+                };
+            }
+          }
+        },
+        ExprMetaData::CallSite { entries, .. } => {
+          b += entries.len() as u64 + 1;
+        },
+        ExprMetaData::EtaCallSite { entries, .. } => {
+          b += entries.len() as u64;
+        },
+        _ => {},
+      }
+    }
+    b
+  };
+  let mut b = 1 + arena_of(&cm.info).map_or(0, |a| arena(&a.nodes));
+  if let ConstantMetaInfo::Muts { aux_layout, .. } = &cm.info {
+    b += 1 + aux_layout.as_ref().map_or(0, |l| l.evaporated.len() as u64);
+  }
+  for e in &cm.meta_sharing {
+    let mut buf = Vec::new();
+    put_expr(e, &mut buf);
+    b += buf.len() as u64;
+  }
+  b += 32 * cm.meta_refs.len() as u64;
+  for u in &cm.meta_univs {
+    let mut buf = Vec::new();
+    put_univ(u, &mut buf);
+    b += buf.len() as u64;
+  }
+  b
 }
