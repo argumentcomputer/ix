@@ -752,3 +752,39 @@ implemented parameterised by `w` and measured under scheme D's width choice.
   component statistics, wall time, resource failures).
 - W4 (after the format decision): Share width encoding, header field, `SharingWF`/codec
   proofs, compiler routes in Lean and Rust, metadata remap, version bump, fixtures.
+
+### 12.6 Corrections from the W1 implementation (pinned rules)
+
+- **R1 is an exchange, not an exclusion.** An in-degree-1 term `t` can be referenced once
+  per inline write of its unstored parent `p`. Storing `p` instead (or turning extra writes of
+  `p` into `Share(p)`) never increases length, so *some* minimum uses only in-degree ≥ 2 terms
+  and the minimum length is unchanged, but ties exist. The canonical construction is defined as
+  the minimum over tables whose entries have in-degree ≥ 2; "certain-stored" means "in every
+  minimum of that class".
+- **Continuation-only terms (`headdeg = 0`)** subtract the full `tag4Size(spine length)` of the
+  entry's own telescope in the gain, not 1.
+- **Certain-stored** requires gain ≥ 2 at the lower bounds (absorbs a Tag0 count boundary);
+  **certain-excluded** is `(occ − 1) · size < occ · w` with exact `occ` and unshared size.
+- **Count brackets:** when the stored count reaches a Tag0 boundary a knapsack over components
+  decides which entries to drop.
+- **Tie-break among minimum-length stored sets:** compare indicator vectors over structural IDs
+  ascending, preferring "not stored" at the first difference (the smaller ID in the symmetric
+  difference is left out). Decomposes over components. **Table order:** stored descendants
+  first, then larger in-degree, then smaller ID.
+- Lean (`Ix/Sharing/Exact/Uniform.lean`) agrees with the width-state reference on 400 generated
+  inputs at w ∈ {1,2,3,5}; corpus measurement is W3's next task.
+
+### 12.7 Tier layouts measured (MSS encoding, Init)
+
+| Layout | 1-byte | 2-byte | Δ vs Tag4 tiers | worse constants |
+|---|---|---|---:|---:|
+| Tag4 (A) | 8 | 256 | — | — |
+| F: two marker bits | 8 | 1,024 | −1.45% | 0 |
+| G: nibble escapes 14/15 | 14 | 256 | −1.21% | 0 |
+| D: fixed per constant | 16 | 4,096 | +0.93% | 23,342 |
+
+Recommended layout **F64**: nibble `[L][M][c1][c0]`; `L=0` → 3-bit index; `L=1,M=0` → 2 bits +
+1 byte (8..1031); `L=1,M=1,c∈{0,1,2}` → 2/4/8 following bytes (offsets continue; `c=3` invalid).
+Bijective (each index has one encoding), capped only at 2^64 like every other count.
+Two-phase construction (uniform-model selection → exact 8-slot allocation + pinned order →
+re-materialisation under real widths) is being implemented parameterised by the layout.
