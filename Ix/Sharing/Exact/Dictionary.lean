@@ -231,13 +231,15 @@ def widthsOfIndex (index : Array (Option Nat)) : Array (Option Nat) :=
 def tag4Bytes (flag : UInt8) (n : Nat) : ByteArray := runPut (putTag4 ⟨flag, n.toUInt64⟩)
 
 /-- Every legal option at `t` with its exact cost and header bytes, given the
-evaluation `ev` of the dictionary `index`. -/
-def Prep.options (p : Prep) (ev : DictEval) (index : Array (Option Nat)) (t : Nat) :
+evaluation `ev` of the dictionary with Share widths `width`; headers use the
+actual table indices `index`. -/
+def Prep.options (p : Prep) (ev : DictEval) (index : Array (Option Nat))
+    (width : Array (Option Nat)) (t : Nat) :
     Array (Choice × Nat × ByteArray) := Id.run do
   let node := p.dag.node t
   let mut opts : Array (Choice × Nat × ByteArray) := #[]
   if let some i := index[t]?.getD none then
-    opts := opts.push (.share, shareWidth i, tag4Bytes Ixon.Expr.FLAG_SHARE i)
+    opts := opts.push (.share, (widthOf width t).getD 0, tag4Bytes Ixon.Expr.FLAG_SHARE i)
   if p.family[t]! == .none then
     let c := node.children.foldl (fun acc c => acc + ev.cost[c]!) node.head.ownBytes
     opts := opts.push (.inline, c, runPut (putTag4 ⟨node.head.flag, node.head.tag4Field⟩))
@@ -251,11 +253,9 @@ def Prep.options (p : Prep) (ev : DictEval) (index : Array (Option Nat)) (t : Na
       | none => break
       | some u =>
         let j := l - p.spineLen[u]!
-        match index[u]?.getD none with
-        | some i =>
-          opts := opts.push (.cut j, tag4Size j + (s - ev.sides[u]!) + shareWidth i,
+        if (index[u]?.getD none).isSome then
+          opts := opts.push (.cut j, tag4Size j + (s - ev.sides[u]!) + (widthOf width u).getD 0,
             tag4Bytes node.head.flag j)
-        | none => pure ()
         cur := ev.below[u]!
   return opts
 
@@ -278,17 +278,21 @@ structure MatState where
 
 abbrev MatM := StateT MatState (Except SharingError)
 
-/-- Build the chosen encoding of `t`. `fuel` bounds the recursion depth; every
-recursive call descends to a strictly smaller term ID, so `dag.size + 1`
-suffices. -/
-def Prep.build (p : Prep) (ev : DictEval) (index : Array (Option Nat))
-    (limits : Limits) : Nat → Nat → MatM Ixon.Expr
-  | 0, _ => throw (.internal "materialization fuel exhausted")
-  | fuel + 1, t => do
-    if let some e := (← get).memo.get? t then return e
-    let some (choice, c) := pickOption (p.options ev index t)
+/-- Build the chosen encoding of `t`. With `entry = true` the top may not be
+`Share(t)` (the body of `t`'s own table entry); nested terms always use
+their standalone choice. `fuel` bounds the recursion depth; every recursive
+call descends to a strictly smaller term ID, so `dag.size + 1` suffices. -/
+def Prep.build (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (limits : Limits) : Bool → Nat → Nat → MatM Ixon.Expr
+  | _, 0, _ => throw (.internal "materialization fuel exhausted")
+  | entry, fuel + 1, t => do
+    if !entry then
+      if let some e := (← get).memo.get? t then return e
+    let opts := p.options ev index width t
+    let opts := if entry then opts.filter (·.1 != .share) else opts
+    let some (choice, c) := pickOption opts
       | throw (.internal s!"no option for term {t}")
-    unless c == ev.cost[t]! do
+    unless entry || c == ev.cost[t]! do
       throw (.internal s!"option cost {c} differs from C_M = {ev.cost[t]!} at term {t}")
     let node := p.dag.node t
     let e ← match choice with
@@ -299,12 +303,12 @@ def Prep.build (p : Prep) (ev : DictEval) (index : Array (Option Nat))
       | .inline =>
         match node.head with
         | .prj ti f => do
-          let v ← p.build ev index limits fuel (node.child 0)
+          let v ← p.build ev index width limits false fuel (node.child 0)
           pure (Ixon.Expr.prj ti f v)
         | .letE lc => do
-          let ty ← p.build ev index limits fuel (node.child 0)
-          let v ← p.build ev index limits fuel (node.child 1)
-          let b ← p.build ev index limits fuel (node.child 2)
+          let ty ← p.build ev index width limits false fuel (node.child 0)
+          let v ← p.build ev index width limits false fuel (node.child 1)
+          let b ← p.build ev index width limits false fuel (node.child 2)
           pure (Ixon.Expr.letE lc ty v b)
         | _ => pure (node.toExpr fun _ => default)
       | .cut j => do
@@ -319,10 +323,10 @@ def Prep.build (p : Prep) (ev : DictEval) (index : Array (Option Nat))
             match index[cur]?.getD none with
             | some i => pure (Ixon.Expr.share i.toUInt64)
             | none => throw (.internal "telescope cut at unavailable term")
-          else p.build ev index limits fuel cur
+          else p.build ev index width limits false fuel cur
         for k in [0:j] do
           let sn := spine[j - 1 - k]!
-          let side ← p.build ev index limits fuel sn.sideChild
+          let side ← p.build ev index width limits false fuel sn.sideChild
           acc := match sn.head with
             | .app => .app acc side
             | .lam bc => .lam bc side acc
@@ -333,20 +337,29 @@ def Prep.build (p : Prep) (ev : DictEval) (index : Array (Option Nat))
     let nodes := s.nodes + 1
     if nodes > limits.maxMaterialize then
       throw (.resourceExhausted .materialize limits.maxMaterialize)
-    set { s with memo := s.memo.insert t e, nodes }
+    set { s with memo := if entry then s.memo else s.memo.insert t e, nodes }
     return e
 
-/-- Materialize the byte-least minimum-length standalone encodings of
-`targets` under the dictionary `index` (term ID ↦ table index). Returns the
-expressions, the costs `C_M` used, and the work performed. -/
-def Prep.materialize (p : Prep) (index : Array (Option Nat)) (targets : Array Nat)
+/-- Materialize the byte-least minimum-cost standalone encodings of `targets`
+under the dictionary `index` (term ID ↦ table index), pricing each Share by
+`width` (which must be `some` exactly where `index` is). Returns the
+expressions, the costs used, and the work performed. -/
+def Prep.materializeWith (p : Prep) (index width : Array (Option Nat)) (targets : Array Nat)
     (limits : Limits) : Except SharingError (Array Ixon.Expr × Array Nat × Nat) := do
   for i in index do
     if let some i := i then
       if i ≥ wordBound then throw (.formatBound "share index" i)
-  let ev := p.evalAll (widthsOfIndex index)
-  let (out, st) ← (targets.mapM fun t => p.build ev index limits (p.dag.size + 1) t).run {}
+  let ev := p.evalAll width
+  let (out, st) ← (targets.mapM fun t => p.build ev index width limits false (p.dag.size + 1) t).run {}
   return (out, ev.cost, ev.work + st.nodes)
+
+/-- Materialize the byte-least minimum-length standalone encodings of
+`targets` under the dictionary `index` (term ID ↦ table index), with the
+real Share widths. Returns the expressions, the costs `C_M` used, and the
+work performed. -/
+def Prep.materialize (p : Prep) (index : Array (Option Nat)) (targets : Array Nat)
+    (limits : Limits) : Except SharingError (Array Ixon.Expr × Array Nat × Nat) :=
+  p.materializeWith index (widthsOfIndex index) targets limits
 
 /-- A dictionary index from `(term, table index)` pairs. -/
 def indexOfPairs (size : Nat) (pairs : List (Nat × Nat)) : Array (Option Nat) :=
@@ -355,6 +368,36 @@ def indexOfPairs (size : Nat) (pairs : List (Nat × Nat)) : Array (Option Nat) :
 /-- The dictionary of the first `k` entries of a table sequence. -/
 def indexOfPrefix (size : Nat) (table : Array Nat) (k : Nat) : Array (Option Nat) :=
   indexOfPairs size ((table.toList.take k).zipIdx)
+
+/-- Minimum cost of `t` written with an inline top (the body of its own table
+entry) under the evaluation `ev`. -/
+def Prep.inlineCost (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) (t : Nat) :
+    Nat :=
+  ((pickOption ((p.options ev index width t).filter (·.1 != .share))).map (·.2)).getD 0
+
+/-- Materialize a table given in dependency order (every stored descendant of
+an entry precedes it) and the roots, from one evaluation of the whole
+dictionary. In such an order the entry for `t` can use every stored term
+that can occur inside `t`, and no other stored term can occur there, so the
+full dictionary prices and builds its body exactly. Shares are priced by
+`width` (`some` exactly on the table's terms). Returns entries, roots, the
+total variable cost (table count, entry bodies, roots) and the work. The
+caller must re-expand the output: a table that is not in dependency order
+is rejected there as a non-backward reference. -/
+def Prep.materializeDependent (p : Prep) (table roots : Array Nat)
+    (width : Array (Option Nat)) (limits : Limits) :
+    Except SharingError (Array Ixon.Expr × Array Ixon.Expr × Nat × Nat) := do
+  if table.size ≥ wordBound then throw (.formatBound "share index" table.size)
+  let index := indexOfPairs p.dag.size table.toList.zipIdx
+  let ev := p.evalAll width
+  let run : MatM (Array Ixon.Expr × Array Ixon.Expr) := do
+    let es ← table.mapM fun t => p.build ev index width limits true (p.dag.size + 1) t
+    let rs ← roots.mapM fun r => p.build ev index width limits false (p.dag.size + 1) r
+    return (es, rs)
+  let ((es, rs), st) ← run.run {}
+  let entryCost := table.foldl (fun acc t => acc + p.inlineCost ev index width t) 0
+  let rootCost := roots.foldl (fun acc r => acc + ev.cost[r]!) 0
+  return (es, rs, tag0Size table.size + entryCost + rootCost, ev.work + st.nodes)
 
 end Ix.Sharing.Exact
 

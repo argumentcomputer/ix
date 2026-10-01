@@ -127,7 +127,8 @@ structure Best where
 /-- Exact width-state search. `upper` must be the variable length of some
 feasible encoding (it is only used for pruning). Returns the least
 `(variable length, table term-ID vector)` over all stopping states. -/
-def search (inp : SearchInput) (limits : Limits) (upper : Nat) : SearchM Best := do
+def search (inp : SearchInput) (limits : Limits) (upper : Nat)
+    (widthAt : Nat → Nat := shareWidth) : SearchM Best := do
   let n := inp.prep.dag.size
   let cands := inp.candidates
   let (optCost, w0) := inp.prep.costs (optimisticWidths n cands #[]) inp.affected
@@ -159,7 +160,7 @@ def search (inp : SearchInput) (limits : Limits) (upper : Nat) : SearchM Best :=
         | some b => lexLess total pre b.total b.table
       if improves then best := some ⟨total, pre⟩
       if total < incumbent then incumbent := total
-      let nw := shareWidth k
+      let nw := widthAt k
       let quickRest := tag0Size (k + 1) + rootLB
       for t in cands do
         if (width[t]!).isSome then continue
@@ -186,8 +187,10 @@ def search (inp : SearchInput) (limits : Limits) (upper : Nat) : SearchM Best :=
 
 /-- Materialize a table sequence and the roots with the byte-least
 minimum-length encodings. Returns entries, roots, and the variable length
-predicted by `C_M`. -/
-def materializeTable (p : Prep) (table roots : Array Nat) (limits : Limits) :
+predicted by `C_M`. The Share at index `i` is priced `widthAt i` (the real
+width by default, or a model width). -/
+def materializeTable (p : Prep) (table roots : Array Nat) (limits : Limits)
+    (widthAt : Nat → Nat := shareWidth) :
     Except SharingError (Array Ixon.Expr × Array Ixon.Expr × Nat × Nat) := do
   let n := p.dag.size
   let mut entries : Array Ixon.Expr := #[]
@@ -195,14 +198,16 @@ def materializeTable (p : Prep) (table roots : Array Nat) (limits : Limits) :
   let mut work := 0
   for h : i in [0:table.size] do
     let t := table[i]
-    let (es, cost, w) ← p.materialize (indexOfPrefix n table i) #[t] limits
+    let index := indexOfPrefix n table i
+    let (es, cost, w) ← p.materializeWith index (index.map (·.map widthAt)) #[t] limits
     let some e := es[0]? | throw (.internal "missing materialized entry")
     entries := entries.push e
     predicted := predicted + cost[t]!
     work := work + w
     if work > limits.maxMaterialize then
       throw (.resourceExhausted .materialize limits.maxMaterialize)
-  let (rs, cost, w) ← p.materialize (indexOfPrefix n table table.size) roots limits
+  let index := indexOfPrefix n table table.size
+  let (rs, cost, w) ← p.materializeWith index (index.map (·.map widthAt)) roots limits
   predicted := predicted + rootsCost cost roots
   work := work + w
   if work > limits.maxMaterialize then
@@ -219,6 +224,9 @@ structure ExactSharingResult where
   tableTerms : Array Nat
   /-- Exact variable bytes: roots, table count, and table bodies. -/
   variableBytes : Nat
+  /-- The optimized objective: `variableBytes` with the real Share widths,
+  or the variable length in a uniform-width cost model. -/
+  modelBytes : Nat
   /-- Variable bytes of the unshared encoding. -/
   unsharedBytes : Nat
   stats : Stats
@@ -241,18 +249,39 @@ def heuristicVariableBytes (limits : Limits) (dag : Dag) (rootIds : Array Nat) :
 /-- Optimize an expanded input. The result minimizes
 `(variable length, table term IDs, bytes)`; since the fixed Constant bytes
 are the same for every candidate, this is the §3.3 key of the complete
-Constant. -/
-def optimizeExpanded (limits : Limits) (ex : Expanded) :
-    Except SharingError ExactSharingResult := do
+Constant.
+
+With `minInDegree2` only terms of compact in-degree at least 2 are
+candidates. With `uniform := some w` every Share is priced `w` bytes regardless of its
+index (a cost model, used as the reference for the uniform-width
+optimizer): the search minimizes the model length, the heuristic bound is
+not used (its bytes are real lengths), and `modelBytes` reports the model
+length while `variableBytes` reports the real serialized length of the
+same output. -/
+def optimizeExpanded (limits : Limits) (ex : Expanded) (uniform : Option Nat := none)
+    (minInDegree2 : Bool := false) : Except SharingError ExactSharingResult := do
+  if uniform == some 0 then throw (.formatBound "uniform Share width" 0)
+  let widthAt : Nat → Nat := match uniform with
+    | some w => fun _ => w
+    | none => shareWidth
   let p := Prep.ofDag ex.dag
   let n := ex.dag.size
   let occ := occurrences ex.dag ex.roots
   let cands := candidateTerms p occ
+  -- Optionally restrict to terms of compact in-degree ≥ 2 (the uniform
+  -- optimizer's candidate space), for differential tests.
+  let cands := if !minInDegree2 then cands else Id.run do
+    let mut deg : Array Nat := Array.replicate n 0
+    for r in ex.roots do deg := deg.modify r (· + 1)
+    for node in ex.dag.nodes do
+      for c in node.children do deg := deg.modify c (· + 1)
+    return cands.filter (deg[·]! ≥ 2)
   let isCand := cands.foldl (fun acc t => acc.set! t true) (Array.replicate n false)
   let affected := affectedTerms ex.dag isCand
   let unshared := tag0Size 0 + rootsCost p.base ex.roots
   let heuristic :=
-    if limits.useHeuristicBound && unshared ≤ limits.heuristicMaxUnsharedBytes then
+    if uniform.isNone && limits.useHeuristicBound &&
+        unshared ≤ limits.heuristicMaxUnsharedBytes then
       heuristicVariableBytes limits ex.dag ex.roots
     else none
   let upper := match heuristic with
@@ -262,14 +291,14 @@ def optimizeExpanded (limits : Limits) (ex : Expanded) :
     { exprVisits := ex.visits, internedNodes := ex.internedNodes,
       distinctSubterms := n, candidates := cands.size, heuristicBytes := heuristic }
   let inp : SearchInput := { prep := p, roots := ex.roots, candidates := cands, affected }
-  let (best, stats) ← (search inp limits upper).run stats0
+  let (best, stats) ← (search inp limits upper widthAt).run stats0
   if best.total > limits.maxOutputBytes then
     throw (.resourceExhausted .outputBytes limits.maxOutputBytes)
-  let (entries, roots, predicted, work) ← materializeTable p best.table ex.roots limits
+  let (entries, roots, predicted, work) ← materializeTable p best.table ex.roots limits widthAt
   unless predicted == best.total do
     throw (.internal s!"materialized cost {predicted} differs from search cost {best.total}")
   let measured := tag0Size entries.size + exprsSize entries + exprsSize roots
-  unless measured == best.total do
+  unless uniform.isSome || measured == best.total do
     throw (.internal s!"measured length {measured} differs from search cost {best.total}")
   let (entryIds, rootIds, _) ← reexpand limits ex.dag entries roots
   unless entryIds == best.table do
@@ -277,7 +306,7 @@ def optimizeExpanded (limits : Limits) (ex : Expanded) :
   unless rootIds == ex.roots do
     throw (.internal "materialized roots do not expand to the input roots")
   return { roots, sharing := entries, tableTerms := best.table,
-           variableBytes := best.total, unsharedBytes := unshared,
+           variableBytes := measured, modelBytes := best.total, unsharedBytes := unshared,
            stats := { stats with materializedNodes := work, outputBytes := measured } }
 
 end Ix.Sharing.Exact
