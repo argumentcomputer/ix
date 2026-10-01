@@ -187,7 +187,7 @@ theorem sum_filter_split (f : Nat → Nat) (q : Nat → Bool) :
   | [] => rfl
   | x :: xs => by
     have := sum_filter_split f q xs
-    cases hx : q x <;> simp [List.filter_cons, hx] <;> omega
+    cases hx : q x <;> simp [hx] <;> omega
 
 theorem availOf_eq_mem {opaq : Array Bool} {cs : List Nat} (hcs : ∀ u, opaq[u]! = decide (u ∈ cs))
     (V : List Nat) : availOf opaq V = fun u => decide (u ∈ cs ++ V) := by
@@ -482,7 +482,7 @@ theorem msOf_spec (cand : Array Bool) (O : Array Nat) (v : Nat) :
   · by_cases hs : v < cand.size
     · simp [hv, hs]
     · simp only [hv, hs, and_false, if_false, not_true_eq_false, and_false, iff_false]
-      simp [getElem!_def, hs]
+      simp [hs]
   · simp [hv]
 
 theorem opaqueArr_spec (cx : SCtx) (I O : Array Nat) (t : Nat) :
@@ -810,7 +810,7 @@ theorem GlobalWF.min_class {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root
 
 theorem nodup_app {a b : List Nat} (ha : a.Nodup) (hb : b.Nodup) (hd : ∀ x ∈ a, x ∉ b) :
     (a ++ b).Nodup :=
-  List.nodup_append.mpr ⟨ha, hb, fun x hx y hy hxy => hd x hx (hxy ▸ hy)⟩
+  List.nodup_append.mpr ⟨ha, hb, fun x hx _y hy hxy => hd x hx (hxy ▸ hy)⟩
 
 theorem strictInc_spec {a : Array Nat} (h : strictInc a = true) : a.toList.Pairwise (· < ·) := by
   unfold strictInc at h

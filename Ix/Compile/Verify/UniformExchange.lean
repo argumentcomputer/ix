@@ -471,16 +471,16 @@ theorem PrepWF.subst_spec {p : Prep} (hp : PrepWF p) (w : Nat) {S : Nat → Bool
         cases rc with
         | false =>
           simp only [WTree.subst, hxt, if_false, hhit, WTree.occH, WTree.occC, WTree.cost,
-            substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Bool.false_eq_true, Nat.add_zero,
-            Nat.zero_add]
+            substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Bool.false_eq_true,
+            Nat.add_zero]
           refine ⟨.teleCut hf hj1 hj (by simp [hlen]) hvalid (addT_le S t _ hS), ?_⟩
           simp only [List.map_map, Function.comp_def] at hsum ⊢
           simp only [Bool.false_eq_true, if_false, Nat.mul_zero] at hsum ⊢
           omega
         | true =>
           simp only [WTree.subst, hxt, if_false, hhit, if_true, WTree.occH, WTree.occC, WTree.cost,
-            substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Option.isSome_some, Nat.add_zero,
-            Nat.zero_add]
+            substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Option.isSome_some,
+            Nat.add_zero]
           have hM := hp.merged_le_rest w S hx hf hlen hsides
             (Or.inl ⟨hj, hS, rfl⟩) (k := k) hkj (by omega)
           rw [hkt] at hM
@@ -563,7 +563,7 @@ theorem PrepWF.subst_spec {p : Prep} (hp : PrepWF p) (w : Nat) {S : Nat → Bool
       | none =>
         simp only [WTree.subst, hxt, if_false, hhit, WTree.occH, WTree.occC, WTree.cost,
           substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Option.isSome_none, Bool.false_eq_true,
-          if_false, Nat.add_zero, Nat.zero_add]
+          if_false, Nat.zero_add]
         refine ⟨.teleFull hf (by simp [hlen]) hvalid htv, ?_⟩
         simp only [List.map_map, Function.comp_def, Nat.add_mul] at hsum htc ⊢
         omega
@@ -572,16 +572,14 @@ theorem PrepWF.subst_spec {p : Prep} (hp : PrepWF p) (w : Nat) {S : Nat → Bool
         cases rc with
         | false =>
           simp only [WTree.subst, hxt, if_false, hhit, WTree.occH, WTree.occC, WTree.cost,
-            substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Bool.false_eq_true, Nat.add_zero,
-            Nat.zero_add]
+            substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Bool.false_eq_true]
           refine ⟨.teleFull hf (by simp [hlen]) hvalid htv, ?_⟩
           simp only [List.map_map, Function.comp_def, Nat.add_mul] at hsum htc ⊢
           simp only [Bool.false_eq_true, if_false, Nat.mul_zero, Nat.add_zero] at hsum htc ⊢
           omega
         | true =>
           simp only [WTree.subst, hxt, if_false, hhit, if_true, WTree.occH, WTree.occC, WTree.cost,
-            substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Option.isSome_some, Nat.add_zero,
-            Nat.zero_add]
+            substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Option.isSome_some]
           obtain ⟨hts, htf, hlen', httail, _, hsideat, _⟩ :=
             hp.spine_shift hx hf (k := k) (by omega)
 
@@ -629,12 +627,12 @@ theorem PrepWF.subst_spec {p : Prep} (hp : PrepWF p) (w : Nat) {S : Nat → Bool
             simp only [List.getElem_take, List.getElem_map]
             exact (hk i (by simp at hi; omega)).1
           · rw [hH, hC, hcost, ← List.map_take, hto1, hto2]
-            simp only [List.map_map, Function.comp_def, WTree.cost] at hsumk hM ⊢
+            simp only [List.map_map, Function.comp_def] at hsumk hM ⊢
             have hjk : k * (p.dag.node x).sideExtra +
                 (p.spineLen[x]! - k) * (p.dag.node x).sideExtra =
                 p.spineLen[x]! * (p.dag.node x).sideExtra := by
               rw [← Nat.add_mul]; congr 1; omega
-            simp only [Nat.zero_mul, Nat.add_zero, Nat.add_mul, Nat.one_mul]
+            simp only [Nat.add_zero, Nat.add_mul, Nat.one_mul]
             omega
 
 /-! ## Edges into `t` -/
@@ -676,7 +674,7 @@ theorem PrepWF.edgeMult_tele {p : Prep} (hp : PrepWF p) {y t : Nat} (hy : y < p.
   unfold edgeMult snext Node.spineNext Node.sideChild continuationEdge
   cases hh : (p.dag.node y).head <;> simp only [hh, Head.family, ne_eq, not_true_eq_false] at hfy
   all_goals cases ht' : (p.dag.node t).head <;>
-    simp [hh, ht', Head.arity, Head.family, List.range_succ, List.filter_cons]
+    simp [Head.arity, Head.family, List.range_succ, List.filter_cons]
   all_goals (repeat' split) <;> simp_all
 
 theorem edgeMult_zero_of_le {p : Prep} (hp : PrepWF p) {y t : Nat} (hyt : y ≤ t) (c : Bool) :
@@ -1060,7 +1058,7 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
           · rw [if_neg (fun h => hct ((top_iff hSt (hsides i (by omega))).mp (by simpa using h))),
               if_neg hct]
         rw [hind, if_neg (fun h => by omega)]
-        simp [WTree.occH]
+        simp
     · by_cases hxt : x = t
       · subst hxt
         rw [hzero true _ hwle]
@@ -1070,7 +1068,7 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
         simp only [WTree.occC, hxt, if_false, occCs_eq, WTree.written, List.map_append,
           List.sum_append, writtens_sum, List.append_nil]
         rw [hT, List.map_congr_left (fun T hT => (hside T hT).2.1)]
-        simp [WTree.occC]
+        simp
   | @teleFull x sides tail hf hlen hsides htail ih iht =>
     intro hx
     obtain ⟨_, _, _, htl, _⟩ := hp.spine x hx hf

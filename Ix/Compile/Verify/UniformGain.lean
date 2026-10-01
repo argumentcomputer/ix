@@ -23,8 +23,8 @@ theorem modify_add_getElem! (acc : Array Nat) (c t : Nat) :
   by_cases hct : c = t
   · subst hct
     by_cases hc : c < acc.size
-    · simp [hc, Array.getElem?_eq_getElem hc]
-    · simp [hc, Array.getElem?_eq_none (by omega : acc.size ≤ c)]
+    · simp [hc]
+    · simp [hc]
   · simp [hct]
 
 theorem foldl_modify_count :
@@ -44,7 +44,7 @@ theorem foldl_modify_count :
     rw [h1, modify_add_getElem!, List.count_cons]
     by_cases hct : c = t
     · subst hct; simp [hc]; omega
-    · simp [hct, Ne.symm hct]
+    · simp [hct]
 
 theorem foldl_if_modify {α : Type} (P : α → Bool) (g : α → Nat) :
     ∀ (l : List α) (acc : Array Nat),
@@ -56,7 +56,7 @@ theorem foldl_if_modify {α : Type} (P : α → Bool) (g : α → Nat) :
   | cons x xs ih =>
     intro acc
     rw [List.foldl_cons, List.filter_cons]
-    cases hP : P x <;> simp [hP, ih]
+    cases hP : P x <;> simp [ih]
 
 theorem count_map_filter (g : Nat → Nat) (Q : Nat → Bool) (l : List Nat) (t : Nat) :
     ((l.filter Q).map g).count t = (l.filter fun i => Q i && g i == t).length := by
@@ -64,7 +64,7 @@ theorem count_map_filter (g : Nat → Nat) (Q : Nat → Bool) (l : List Nat) (t 
   | nil => rfl
   | cons x xs ih =>
     simp only [List.filter_cons]
-    cases hQ : Q x <;> by_cases hg : g x = t <;> simp [hQ, hg, ih, List.count_cons]
+    cases hQ : Q x <;> by_cases hg : g x = t <;> simp [hg, ih]
 
 theorem filter_length_split {α : Type} (a b : α → Bool) (l : List α) :
     (l.filter a).length = (l.filter fun i => a i && b i == false).length +
@@ -73,7 +73,7 @@ theorem filter_length_split {α : Type} (a b : α → Bool) (l : List α) :
   | nil => rfl
   | cons x xs ih =>
     simp only [List.filter_cons]
-    cases ha : a x <;> cases hb : b x <;> simp [ha, hb, ih] <;> omega
+    cases ha : a x <;> cases hb : b x <;> simp [ih] <;> omega
 
 /-- **In-degrees.** `edgeCounts` (`graphFacts.deg` / `.headDeg`) counts the
 root occurrences plus every edge (every non-continuation edge) into `t`. -/
@@ -417,7 +417,7 @@ roots reach every term. -/
 theorem PrepWF.encoding_covers {p : Prep} (hp : PrepWF p) {S : List Nat} {entry : Nat → WTree}
     {roots : List Nat} {rootsW : List WTree}
     (h : EncodingWF p (fun y => decide (y ∈ S)) S entry roots rootsW)
-    (hSin : ∀ s ∈ S, s < p.dag.size) (hroots : ∀ r ∈ roots, r < p.dag.size)
+    (_hSin : ∀ s ∈ S, s < p.dag.size) (hroots : ∀ r ∈ roots, r < p.dag.size)
     (hreach : ∀ y, y < p.dag.size → ∃ r ∈ roots, Ix.Compile.Verify.SharingExact.Desc p.dag r y) :
     ∀ y, y < p.dag.size →
       y ∈ (rootsW.map (WTree.written p)).flatten ++ (S.map fun s => (entry s).written p).flatten := by
@@ -792,7 +792,7 @@ theorem uniformCost_insert_le {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
       have f4 := prod_nonneg_expand ((Hc + Cc : Nat) : _root_.Int) 1 M
         (uniformBounds (Prep.ofDag dag) w ms).mergedLB[t]! (by omega) (by omega)
       simp only [_root_.Int.one_mul, _root_.Int.mul_add, _root_.Int.mul_one,
-        _root_.Int.natCast_add, _root_.Int.add_mul, _root_.Int.sub_mul, _root_.Int.mul_sub] at f3 f4 ⊢
+        _root_.Int.natCast_add, _root_.Int.add_mul, _root_.Int.sub_mul] at f3 f4 ⊢
       omega
     · rw [if_neg (by omega)]
       have hH0 : Hc = 0 := by omega
@@ -800,8 +800,7 @@ theorem uniformCost_insert_le {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
       have f5 := prod_nonneg_expand (Cc : _root_.Int) 1 M
         (uniformBounds (Prep.ofDag dag) w ms).mergedLB[t]! (by omega) (by omega)
       simp only [_root_.Int.one_mul, _root_.Int.natCast_zero, _root_.Int.zero_mul,
-        Nat.zero_add, Nat.zero_mul, _root_.Int.zero_add, _root_.Int.sub_mul,
-        _root_.Int.natCast_add] at f5 hAh hexI hdeg ⊢
+        Nat.zero_add, _root_.Int.sub_mul] at f5 hAh hexI hdeg ⊢
       omega
 
 end Ix.Compile.Verify.UniformModel

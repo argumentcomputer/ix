@@ -376,14 +376,14 @@ theorem sizeInfo_spec (e : Ixon.Expr) (h : e.wireWF) : Spec (sizeInfoWith tag4Si
   | prj t f v ih =>
     have hv : (sizeInfoWith tag4Size v).full = (spineWireEncode v).size := (ih h).1
     exact spec_plain _ _ (by
-      simp only [sizeInfoWith, hv, S, spineWireEncode, ByteArray.size_append,
+      simp only [hv, S, spineWireEncode, ByteArray.size_append,
         tag4Bytes_size, tag0Bytes_size]) rfl rfl rfl
   | letE c ty v body iht ihv ihb =>
     have h1 : (sizeInfoWith tag4Size ty).full = (spineWireEncode ty).size := (iht h.1).1
     have h2 : (sizeInfoWith tag4Size v).full = (spineWireEncode v).size := (ihv h.2.1).1
     have h3 : (sizeInfoWith tag4Size body).full = (spineWireEncode body).size := (ihb h.2.2).1
     exact spec_plain _ _ (by
-      simp only [sizeInfoWith, h1, h2, h3, S, spineWireEncode, ByteArray.size_append,
+      simp only [h1, h2, h3, S, spineWireEncode, ByteArray.size_append,
         tag4Bytes_size, List.size_toByteArray, List.length_singleton]
       omega) rfl rfl rfl
   | app f a ihf iha =>
@@ -804,7 +804,7 @@ theorem serConstant_size_decomposition (c : Ixon.Constant) (h : c.wireWF) :
   rw [hfixed, hroots, hshare, hc, hc', constantBytes_size, constantBytes_size]
   have hz : (Nat.toUInt64 0).toNat = 0 := rfl
   simp only [c', toNat_toUInt64_of_lt hsharingSize, List.map_nil, List.sum_nil,
-    Array.size_empty, Array.toList_empty, hmap, hbase, hz]
+    Array.size_empty, hmap, hbase, hz]
   omega
 
 
@@ -886,7 +886,7 @@ theorem Head.eq_of_tag_scalars {h₁ h₂ : Head} (ht : h₁.tag = h₂.tag)
   cases h₁ <;> cases h₂ <;> simp only [Head.tag] at ht <;>
     first
     | exact absurd ht (by decide)
-    | simp only [Head.scalars, List.cons.injEq, List.nil_eq, and_true] at hs
+    | simp only [Head.scalars, List.cons.injEq, and_true] at hs
   case sort.sort i j => rw [UInt64.toNat_inj.mp hs]
   case var.var i j => rw [UInt64.toNat_inj.mp hs]
   case str.str i j => rw [UInt64.toNat_inj.mp hs]

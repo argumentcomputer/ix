@@ -154,9 +154,9 @@ theorem knapStep_hasAt {cap : Nat} {dp bySize : CTable} {c k : Nat} {e ek : Entr
     HasAt (knapStep cap dp bySize) (c + k) (e.1 + ek.1) := by
   rw [knapStep_eq]
   have hcl : c < dp.size := Classical.byContradiction fun h => by
-    simp [getElem!_def, show ¬ c < dp.size from h] at hc
+    simp [show ¬ c < dp.size from h] at hc
   have hkl : k < bySize.size := Classical.byContradiction fun h => by
-    simp [getElem!_def, show ¬ k < bySize.size from h] at hk
+    simp [show ¬ k < bySize.size from h] at hk
   have hsizes : ∀ (l : List Nat) (ndp : CTable), (l.foldl (knapOut cap dp bySize) ndp).size = ndp.size := by
     intro l; induction l with
     | nil => intro _; rfl
@@ -210,7 +210,7 @@ theorem knapStep_indexed {cap : Nat} {dp bySize : CTable} (hd : Indexed dp) (hb 
       Indexed (l.foldl (knapOut cap dp bySize) ndp) from h _ _ (fun k e he => by
         by_cases hk : k < cap + 1
         · rw [getElem!_pos _ k (by simpa using hk)] at he; simp at he
-        · simp [getElem!_def, hk] at he)
+        · simp [hk] at he)
   intro l
   induction l with
   | nil => intro _ h; exact h
@@ -331,7 +331,7 @@ theorem knapChoose_le (kCS : Nat) {dp : CTable} (hd : Indexed dp) (init : _root_
   obtain ⟨h1, h2⟩ := key (List.range dp.size) init
   refine ⟨h1, fun c e he => ?_⟩
   have hc : c < dp.size := Classical.byContradiction fun h => by
-    simp [getElem!_def, show ¬ c < dp.size from h] at he
+    simp [show ¬ c < dp.size from h] at he
   exact h2 c (List.mem_range.mpr hc) e he
 
 /-! ## The knapsack with the tie order -/
@@ -397,7 +397,7 @@ theorem knapStep_tie {cap : Nat} {dp bySize : CTable} (hdp : SortedT dp) (hb : S
   have hsorted0 : SortedT (Array.replicate (cap + 1) (none : Option Entry)) := fun k e he => by
     by_cases hk : k < cap + 1
     · rw [getElem!_pos _ k (by simpa using hk)] at he; simp at he
-    · simp [getElem!_def, hk] at he
+    · simp [hk] at he
   -- the outer step
   have hout : ∀ acc (c : Nat), SortedT acc → SortedT (knapOut cap dp bySize acc c) ∧
       ImprovesT acc (knapOut cap dp bySize acc c) := by
@@ -435,9 +435,9 @@ theorem knapStep_tie {cap : Nat} {dp bySize : CTable} (hdp : SortedT dp) (hb : S
       exact ⟨h3, improvesT_trans h2 h4⟩
   refine ⟨(houter _ _ hsorted0).1, fun {c k e ek} hc hk hck => ?_⟩
   have hcl : c < dp.size := Classical.byContradiction fun h => by
-    simp [getElem!_def, show ¬ c < dp.size from h] at hc
+    simp [show ¬ c < dp.size from h] at hc
   have hkl : k < bySize.size := Classical.byContradiction fun h => by
-    simp [getElem!_def, show ¬ k < bySize.size from h] at hk
+    simp [show ¬ k < bySize.size from h] at hk
   refine foldl_hasAtT_inv _ (fun t => cap < t.size ∧ SortedT t)
     (fun acc c' h => ⟨by rw [knapOut_size]; exact h.1, (hout acc c' h.2).1⟩)
     (fun acc c' h => (hout acc c' h.2).2) (List.mem_range.mpr hcl) (c + k) (e.1 + ek.1) _ _
@@ -469,7 +469,7 @@ theorem knapStep_origin {cap : Nat} {dp bySize : CTable} :
   have h0 : P (Array.replicate (cap + 1) none) := fun j e he => by
     by_cases hk : j < cap + 1
     · rw [getElem!_pos _ j (by simpa using hk)] at he; simp at he
-    · simp [getElem!_def, hk] at he
+    · simp [hk] at he
   have hin : ∀ (c : Nat) (d : _root_.Int) (s : Array Nat), dp[c]! = some (d, s) → ∀ acc k,
       P acc → P (knapIn cap c d s bySize acc k) := by
     intro c d s hdc acc k hacc
@@ -690,7 +690,7 @@ theorem knapChoose_tie (kCS : Nat) {dp : CTable} (hd : Indexed dp) (hs : SortedT
   obtain ⟨h1, h2⟩ := key (List.range dp.size) init hinit
   refine ⟨h1, fun c e he => ?_⟩
   have hc : c < dp.size := Classical.byContradiction fun h => by
-    simp [getElem!_def, show ¬ c < dp.size from h] at he
+    simp [show ¬ c < dp.size from h] at he
   exact h2 c (List.mem_range.mpr hc) e he
 
 /-- The knapsack keeps strictly increasing sets in the processed universes. -/

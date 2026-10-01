@@ -50,7 +50,7 @@ theorem getElem!_mem_toList {tb : CTable} {k : Nat} {e : Entry} (h : tb[k]! = so
   · rw [getElem!_pos tb k hk] at h
     rw [← h]
     exact Array.mem_toList_iff.mpr (Array.getElem_mem hk)
-  · simp [getElem!_def, hk] at h
+  · simp [hk] at h
 
 theorem mem_toList_getElem! {tb : CTable} {e : Entry} (h : some e ∈ tb.toList) :
     ∃ k : Nat, tb[k]! = some e := by
@@ -76,9 +76,9 @@ theorem ext_getElem! (tb : CTable) (m j : Nat) :
   · rw [getElem!_pos _ j (by simp; omega), getElem!_pos tb j hj, Array.getElem_append_left hj]
   · by_cases hj' : j < tb.size + m
     · rw [getElem!_pos _ j (by simp; omega), Array.getElem_append_right (by omega)]
-      simp [getElem!_def, hj]
+      simp [hj]
       rfl
-    · simp [getElem!_def, hj, hj']
+    · simp [hj, hj']
 
 theorem add_getElem! (tb : CTable) (e : Entry) (j : Nat) :
     (tb.add e)[j]! = if j = e.2.size ∧ betterEntry e tb[e.2.size]! = true then some e else tb[j]! := by
@@ -298,7 +298,7 @@ theorem trim_getElem! (tb : CTable) (s : Nat) (k : Nat) :
       cases tb[k] with
       | none => rfl
       | some e => obtain ⟨d, s'⟩ := e; rfl
-    · simp [getElem!_def, hk]
+    · simp [hk]
       rfl
 
 theorem trim_entries {tb : CTable} {P : Entry → Prop} (h : Entries tb P) (s : Nat) :
@@ -423,7 +423,7 @@ theorem conv_entries {a b : CTable} {Pa Pb : Entry → Prop} (ha : ∀ e, some e
     subst he
     exact ha _ hoa
   · intro k e he
-    simp [getElem!_def] at he
+    simp at he
 
 /-! ## Tables with the tie order -/
 
@@ -720,7 +720,7 @@ theorem conv_tie {a b : CTable} (ha : ∀ e, some e ∈ a.toList → e.2.toList.
       obtain ⟨h1, h2⟩ := hout acc o (hl o List.mem_cons_self) h
       obtain ⟨h3, h4⟩ := ih (fun o' ho' => hl o' (List.mem_cons_of_mem _ ho')) _ h1
       exact ⟨h3, improvesT_trans h2 h4⟩
-  have hsorted0 : SortedT (#[] : CTable) := fun k e he => by simp [getElem!_def] at he
+  have hsorted0 : SortedT (#[] : CTable) := fun k e he => by simp at he
   refine ⟨(houter a.toList (fun o ho => ho) #[] hsorted0).1, fun ea hea eb heb => ?_⟩
   -- the pair's entry, then improvement by the rest
   have key : ∀ (l : List (Option Entry)), (∀ o ∈ l, o ∈ a.toList) → some ea ∈ l → ∀ acc, SortedT acc →

@@ -89,7 +89,7 @@ theorem stage_opaq (u : Nat) : (stg w ex).opaq[u]! = decide (u ∈ (stg w ex).cs
   · simp only [hu, false_and, if_false, decide_false]
     by_cases hn : u < ex.dag.size
     · rw [getElem!_pos _ u (by simpa using hn)]; simp
-    · simp [getElem!_def, hn]
+    · simp [hn]
 
 theorem stage_widthCs_size : (stg w ex).widthCs.size = ex.dag.size := by
   show ((stg w ex).cs.foldl (fun acc t => acc.set! t (some w)) (Array.replicate ex.dag.size none)).size = _
@@ -137,10 +137,10 @@ theorem edgeCount_fold (dag : Dag) (q y : Nat) (node : Node) :
     rw [List.foldl_cons]
     by_cases hi : (node.child i == y) = true
     · rw [if_pos hi, edgeCount_fold dag q y node l]
-      cases hc : continuationEdge node i (dag.node y) <;> simp [List.filter_cons, hi, hc] <;> omega
+      cases hc : continuationEdge node i (dag.node y) <;> simp [hi, hc] <;> omega
     · rw [if_neg hi, edgeCount_fold dag q y node l]
       simp only [Bool.not_eq_true] at hi
-      simp [List.filter_cons, hi]
+      simp [hi]
 
 /-- The edge counts of `edgeCount` are the model's edge multiplicities. -/
 theorem edgeCount_le {dag : Dag} (hwf : DagWF dag) (q y : Nat) :
@@ -206,7 +206,7 @@ theorem rootCount_le (ex : Expanded) (hroots : ∀ r ∈ ex.roots.toList, r < ex
   have : (Array.replicate ex.dag.size (0 : Nat))[t]! = 0 := by
     by_cases ht : t < ex.dag.size
     · rw [getElem!_pos _ t (by simpa using ht)]; simp
-    · simp [getElem!_def, ht]
+    · simp [ht]
   omega
 
 /-- **The search environment of every component is well formed.** -/
@@ -583,13 +583,13 @@ theorem indexed_dp0 (cap : Nat) : Indexed (#[some (0, #[])] ++ Array.replicate c
   · by_cases hk' : k < 1 + cap
     · rw [getElem!_pos _ k (by simp; omega), Array.getElem_append_right (by simp; omega)] at he
       simp at he
-    · simp [getElem!_def, show ¬ k < 1 + cap by omega] at he
+    · simp [show ¬ k < 1 + cap by omega] at he
 
 theorem indexed_fold {cap : Nat} :
     ∀ (ts : List CTable) (dp : CTable), (∀ t ∈ ts, Indexed t) → Indexed dp →
       Indexed (ts.foldl (knapStep cap) dp)
   | [], _, _, h => h
-  | t :: ts, dp, ht, h => indexed_fold ts _ (fun t' h' => ht t' (List.mem_cons_of_mem _ h'))
+  | t :: ts, _dp, ht, h => indexed_fold ts _ (fun t' h' => ht t' (List.mem_cons_of_mem _ h'))
       (knapStep_indexed h (ht t List.mem_cons_self))
 
 /-- **The knapsack bound.** For any choice of one entry per component table
@@ -1204,7 +1204,7 @@ theorem uniformKnapsack_tie {limits : Limits} {kCS : Nat} {results : Array CompR
         · by_cases hk' : k < 1 + cap
           · rw [getElem!_pos _ k (by simp; omega), Array.getElem_append_right (by simp; omega)] at he
             simp at he
-          · simp [getElem!_def, show ¬ k < 1 + cap by omega] at he
+          · simp [show ¬ k < 1 + cap by omega] at he
       have hsets0 : SetsIn (#[some (0, #[])] ++ Array.replicate cap none) (fun x => ∃ i, i < 0 ∧ Uf i x) := by
         intro k e he x hx
         by_cases hk : k = 0
@@ -1214,7 +1214,7 @@ theorem uniformKnapsack_tie {limits : Limits} {kCS : Nat} {results : Array CompR
         · by_cases hk' : k < 1 + cap
           · rw [getElem!_pos _ k (by simp; omega), Array.getElem_append_right (by simp; omega)] at he
             simp at he
-          · simp [getElem!_def, show ¬ k < 1 + cap by omega] at he
+          · simp [show ¬ k < 1 + cap by omega] at he
       have hdpS := knapFold_sorted (cap := cap) Uf hU (results.toList.map (·.bySize)) 0 _
         (fun j hj => by rw [hts j hj, Nat.zero_add]
                         simp only [List.length_map, Array.length_toList] at hj

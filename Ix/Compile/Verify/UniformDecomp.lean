@@ -188,7 +188,7 @@ theorem foldl_min_add (a : Nat) : ∀ (l : List Nat) (x : Nat),
 
 /-- With no available cut before position `k ≥ 1`, the inline cost of a
 telescope is its first `k` sides plus its cheapest ending from `k`. -/
-theorem PrepWF.inl_split {p : Prep} (hp : PrepWF p) (w : Nat) (A : Nat → Bool)
+theorem PrepWF.inl_split {p : Prep} (_hp : PrepWF p) (w : Nat) (A : Nat → Bool)
     (cost : Nat → Nat) {y k : Nat} (hf : p.family[y]! ≠ .none) (hk1 : 1 ≤ k)
     (hkl : k ≤ p.spineLen[y]!) (hnone : ∀ j, 1 ≤ j → j < k → A (spineAt p y j) = false) :
     inlOf p w A cost y = prefixSides p cost y k + teleFrom p w A cost y k := by
@@ -717,7 +717,7 @@ theorem uniformCost_modular {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hin : ∀ t ∈ cs ++ z1 ++ z2, t < dag.size)
     (hop : ∀ (A : List Nat), (A = cs ∨ A = cs ++ z1 ∨ A = cs ++ z2 ∨ A = cs ++ z1 ++ z2) →
       OpaqueOn (Prep.ofDag dag) w (fun y => decide (y ∈ cs)) (fun y => decide (y ∈ A)))
-    (hz : ∀ t ∈ z1 ++ z2, t ∉ cs)
+    (_hz : ∀ t ∈ z1 ++ z2, t ∉ cs)
     (hsep : ∀ v, v < dag.size → v ∈ z1 ++ z2 →
       Unreached (Prep.ofDag dag) (fun y => decide (y ∈ cs)) (fun y => decide (y ∈ z1)) v ∨
         Unreached (Prep.ofDag dag) (fun y => decide (y ∈ cs)) (fun y => decide (y ∈ z2)) v) :
@@ -810,7 +810,7 @@ theorem gain_opaque_bounds {p : Prep} {b : UBounds} {w t d h : Nat} (hhd : h ≤
     · exfalso
       have e := int_mul_le_mul_left' (show ((b.inlineLB[t]! : Nat) : _root_.Int) ≤ (w : _root_.Int) by omega)
         (show (0 : _root_.Int) ≤ (d : _root_.Int) - 1 by omega)
-      simp only [_root_.Int.sub_mul, _root_.Int.mul_sub, _root_.Int.one_mul] at e hg
+      simp only [_root_.Int.sub_mul, _root_.Int.one_mul] at e hg
       omega
   · have hfb : (p.family[t]! == Family.none) = false := by simpa using hf
     rw [if_neg (by simp [hfb])] at hg
