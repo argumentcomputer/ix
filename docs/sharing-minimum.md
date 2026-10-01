@@ -783,8 +783,20 @@ implemented parameterised by `w` and measured under scheme D's width choice.
 | G: nibble escapes 14/15 | 14 | 256 | −1.21% | 0 |
 | D: fixed per constant | 16 | 4,096 | +0.93% | 23,342 |
 
-Recommended layout **F64**: nibble `[L][M][c1][c0]`; `L=0` → 3-bit index; `L=1,M=0` → 2 bits +
+Recommended layout **Ladder4** (formerly "Ladder4"): nibble `[L][M][c1][c0]`; `L=0` → 3-bit index; `L=1,M=0` → 2 bits +
 1 byte (8..1031); `L=1,M=1,c∈{0,1,2}` → 2/4/8 following bytes (offsets continue; `c=3` invalid).
 Bijective (each index has one encoding), capped only at 2^64 like every other count.
 Two-phase construction (uniform-model selection → exact 8-slot allocation + pinned order →
 re-materialisation under real widths) is being implemented parameterised by the layout.
+
+### 12.8 Decision (2026-09-30): two-phase canonical construction with the Ladder4 Share layout
+
+Chosen over fixed-width D. Canonical sharing of a constant is `canonicalSharingTiered ladder`
+(`Ix/Sharing/Exact/Tiered.lean`): phase 1 exact uniform-model selection at the nominal width
+from the candidate count; phase 2 exact first-tier (8-slot) allocation, pinned priority order
+beyond; phase 3 per-part re-materialisation under real widths. Each phase's optimality claim is
+stated in its docstring; the width-1 model length is a provable lower bound on any encoding and
+is used to report the gap. The Share tag `0xB` adopts the Ladder4 nibble layout (no header
+change, backward references unchanged, bijective so no canonical-integer check is needed).
+Open: whether to adopt the ladder code for all Tag0/Tag4 integers (W3 measuring). W4
+integration starts once the Rust uniform/tiered port agrees with Lean on fixtures.
