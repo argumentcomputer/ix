@@ -95,6 +95,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::cost::{Len, expr_len, tag0_len, tag4_len};
 use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{UniformIndex, all_costs, materialize_dependent};
+use super::prof::{self, Phase};
 use super::{
   ExactSharingLimits, ExactSharingStats, FormatBound, Meter, SharingError,
   constant_fixed_len, constant_info_root_exprs, rebuild_constant_info,
@@ -1411,6 +1412,7 @@ pub(crate) fn optimize_uniform(
   let wu = u(w);
   let nodes = dag.nodes();
   let n = nodes.len();
+  let p = prof::scope(Phase::Classify);
   let facts = graph_facts(dag);
   // Fail closed on a telescope spine of `TELE_SUBADD_END` or more steps,
   // before the search (Lean's `optimizeUniformExpanded`).
@@ -1593,6 +1595,8 @@ pub(crate) fn optimize_uniform(
       .ok_or_else(|| internal("component search found no choice"))?;
     Ok(((bd, bs), tb))
   };
+  drop(p);
+  let p = prof::scope(Phase::Search);
   let budget = meter.parallel.components;
   let mut results: Vec<(Choice, CTable)> = Vec::with_capacity(comps.len());
   if budget <= 1 {
@@ -1617,6 +1621,8 @@ pub(crate) fn optimize_uniform(
       results.push(res?);
     }
   }
+  drop(p);
+  let p = prof::scope(Phase::Knapsack);
   let states_visited = meter.stats.states_created;
   // Combine: per-component optima, unless a lower count bracket is shorter.
   let mut chosen_x: Vec<TermId> = Vec::new();
@@ -1671,6 +1677,8 @@ pub(crate) fn optimize_uniform(
       }
     }
   }
+  drop(p);
+  let p = prof::scope(Phase::UniformMaterialize);
   // Model length from the truncated evaluation.
   let mut base_total = 0u128;
   for &r in dag.roots() {
@@ -1719,6 +1727,8 @@ pub(crate) fn optimize_uniform(
       "uniform model length {model} differs from the full evaluation {predicted:?}"
     )));
   }
+  drop(p);
+  let _p = prof::scope(Phase::UniformCheck);
   let mut check_meter = Meter::new(meter.limits());
   let (check, entry_ids) =
     SharingDag::build_full(&roots, Some(&entries), &mut check_meter)?;

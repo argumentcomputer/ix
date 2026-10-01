@@ -45,6 +45,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::cost::{Len, expr_len_with, tag0_len};
 use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{Indices, Widths, all_costs, materialize};
+use super::prof::{self, Phase};
 use super::uniform::{
   UniformSharingResult, graph_facts, optimize_uniform, pinned_order, set_prec,
 };
@@ -474,6 +475,7 @@ fn tiered_at(
 ) -> Result<TieredSharingResult, SharingError> {
   let nodes = dag.nodes();
   let n = nodes.len();
+  let p = prof::scope(Phase::Prep);
   let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
   let mut work = 0u64;
   let base = all_costs(nodes, &own, &super::dict::NoWidths, &mut work);
@@ -481,8 +483,10 @@ fn tiered_at(
   let k = len64(
     (0..n).filter(|&t| facts.deg[t] >= 2 && base[t] >= Len::new(2)).count(),
   );
+  drop(p);
   // Phase 1.
   let u = optimize_uniform(w, dag, meter)?;
+  let p = prof::scope(Phase::Allocate);
   let order1 = u.table_terms.clone();
   let entries1 = &u.sharing;
   let roots1 = &u.roots;
@@ -540,6 +544,7 @@ fn tiered_at(
       "the allocated order places a body reference after its user",
     ));
   }
+  drop(p);
   // Phase 3: each entry under the entries before it, priced by the layout,
   // then the roots under all entries. Task `j < k` is entry `j`, task `k`
   // the roots; each depends only on the prefix `order[..j]`, so the tasks
@@ -555,7 +560,10 @@ fn tiered_at(
       Vec::with_capacity(range.len());
     for j in range {
       let mut w = 0u64;
+      let p = prof::scope(Phase::RematerializeCosts);
       let costs = all_costs(nodes, &own, &dict, &mut w);
+      drop(p);
+      let _p = prof::scope(Phase::RematerializeBuild);
       if let Some(&t) = order.get(j) {
         let r = materialize(nodes, &own, &dict, &costs, &[t], &mut w);
         out.push(r.map(|e| (e, costs[ix(t)], w)));
@@ -590,6 +598,7 @@ fn tiered_at(
     meter.work(carried.saturating_add(w))?;
     carried = 0;
   }
+  let _p = prof::scope(Phase::RematerializeCheck);
   let predicted = predicted.exact().ok_or_else(overflow)?;
   let priced = layout_bytes(layout, &entries, &roots).ok_or_else(overflow)?;
   if priced != predicted {
@@ -674,7 +683,10 @@ pub fn canonical_sharing_tiered(
   limits: &ExactSharingLimits,
 ) -> Result<TieredSharingResult, SharingError> {
   let mut meter = Meter::new(limits);
+  let p = prof::scope(Phase::Dag);
   let dag = SharingDag::build(roots, None, &mut meter)?;
+  drop(p);
+  let _p = prof::scope(Phase::Total);
   tiered(layout, &dag, limits, Parallelism::SEQUENTIAL)
 }
 
@@ -724,10 +736,15 @@ fn normalize_tiered_with(
   run: impl FnOnce(&SharingDag) -> Result<TieredSharingResult, SharingError>,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
   let mut meter = Meter::new(limits);
+  let p = prof::scope(Phase::Dag);
   let roots = constant_info_root_exprs(&c.info);
   let dag = SharingDag::build(&roots, Some(&c.sharing), &mut meter)?;
+  drop(p);
   let fixed = constant_fixed_len(c).ok_or_else(overflow)?;
+  let p = prof::scope(Phase::Total);
   let result = run(&dag)?;
+  drop(p);
+  let _p = prof::scope(Phase::Output);
   let info = rebuild_constant_info(&c.info, &result.roots)?;
   let out = Constant {
     info,

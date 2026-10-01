@@ -617,6 +617,14 @@ fn main() -> Result<(), String> {
       r.slot_states
     );
   }
+  // Phase timers (only with the `sharing-profile` feature of ixon).
+  let profile = ixon::sharing_exact::profile_report();
+  if !profile.is_empty() {
+    println!("- phase timers (summed over threads):");
+    for (name, ns, calls) in profile {
+      println!("  - {name}: {:.3} s in {calls} scopes", ns as f64 / 1e9);
+    }
+  }
   println!("- total wall {:.1} s", t0.elapsed().as_secs_f64());
   Ok(())
 }
