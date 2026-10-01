@@ -320,6 +320,7 @@ inductive Resource where
   | materializeWork
   | oracleTables
   | oracleVariants
+  | knapsackCells
   deriving BEq, Repr, Inhabited
 
 /-- Why an exact sharing operation did not produce a certified result. -/
@@ -359,6 +360,9 @@ structure Limits where
   maxNodes : Nat := 1 <<< 20
   /-- Width states inserted into the search frontier. -/
   maxStates : Nat := 1 <<< 20
+  /-- Cells (components × capacity) of the uniform optimizer's count-bracket
+  knapsack table; matches the Rust `max_knapsack_cells`. -/
+  maxKnapsackCells : Nat := 1 <<< 28
   /-- Transitions (state, appended term) examined. -/
   maxTransitions : Nat := 1 <<< 24
   /-- Term cost evaluations plus telescope spine steps. -/

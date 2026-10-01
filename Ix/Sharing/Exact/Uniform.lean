@@ -1312,8 +1312,8 @@ def uniformKnapsack (limits : Limits) (kCS : Nat) (results : Array CompResult) :
   let start := tag0BracketStart (kCS + bestX.size)
   if start > kCS then
     let cap := start - 1 - kCS
-    if (results.size + 1) * (cap + 1) > limits.maxStates then
-      throw (.resourceExhausted .states limits.maxStates)
+    if (results.size + 1) * (cap + 1) > limits.maxKnapsackCells then
+      throw (.resourceExhausted .knapsackCells limits.maxKnapsackCells)
     -- dp[c]: best (Δ, set) with c chosen terms, over the components so far.
     let dp := results.foldl (fun dp r => knapStep cap dp r.bySize)
       (#[some (0, #[])] ++ Array.replicate cap none)

@@ -2490,6 +2490,7 @@ def compilerSharingLimits : Ix.Sharing.Exact.Limits where
   maxDepth := 1 <<< 14
   maxNodes := 1 <<< 20
   maxStates := 1 <<< 20
+  maxKnapsackCells := 1 <<< 28
   maxTransitions := 1 <<< 24
   maxCostEvals := 1 <<< 30
   maxOutputBytes := 1 <<< 28
