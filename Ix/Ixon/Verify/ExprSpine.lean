@@ -1,7 +1,4 @@
 /-
-Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: MIT OR Apache-2.0
-
 Extracted from Ix/Compile/Verify/ExprSpineCodec.lean at Ix revision
 b067697b9d97552c6f52b2f72c892f84e4c7170f, with the Ixon v3 changes to that
 file at Ix revision b413cd93a43d75a37c358491ca65cd79f1a2a42c.

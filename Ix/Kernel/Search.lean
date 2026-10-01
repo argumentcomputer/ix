@@ -1,8 +1,3 @@
-/-
-Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: MIT OR Apache-2.0
--/
-
 /-! # Bounded search outcomes
 
 Only success carries semantic evidence. A candidate that does not apply is

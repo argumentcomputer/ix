@@ -1,8 +1,3 @@
-/-
-Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: MIT OR Apache-2.0
--/
-
 import Ix.Ixon.Verify.WorkExpr
 import Ix.Ixon.Verify.WorkArray
 import Ix.Ixon.Verify.WorkUniverse

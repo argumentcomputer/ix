@@ -1,7 +1,4 @@
 /-
-Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: MIT OR Apache-2.0
-
 Canonical comparison and refinement follow crates/kernel/src/canonical_check.rs
 and crates/common/src/strong_ordering.rs at Ix revision
 11aa5649700b371e1c65dcb86157999839fe7e5e. This adapter compares physical Ixon

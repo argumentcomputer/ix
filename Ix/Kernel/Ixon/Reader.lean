@@ -1,8 +1,3 @@
-/-
-Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: MIT OR Apache-2.0
--/
-
 import Ix.Kernel.Frontend.InModel
 import Ix.Kernel.Frontend.Prepare
 import Ix.Address.Core

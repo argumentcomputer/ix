@@ -1,7 +1,4 @@
 /-
-Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: MIT OR Apache-2.0
-
 Extracted unchanged from Ix/IxonUniv.lean at Ix revision
 11aa5649700b371e1c65dcb86157999839fe7e5e. The frozen ingress smart-constructor
 rules are shared by host normalization and canonical block comparison.

@@ -1,11 +1,3 @@
-/-
-Ported from con-leche (86cd20a65660d757cedc81561a44579099b565d0).
-Source attribution and original path: Models/SetTheory/NOTICE.
-Modifications Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: Apache-2.0 AND (MIT OR Apache-2.0)
-Changes: namespaces and imports adapted to Ix; documentation updated.
--/
-
 import Mathlib.SetTheory.Cardinal.Regular
 import Mathlib.SetTheory.ZFC.VonNeumann
 import Mathlib.SetTheory.ZFC.Cardinal
