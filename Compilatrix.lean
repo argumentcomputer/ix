@@ -180,6 +180,11 @@ import Compilatrix.Anf.Proof.Walk.Prog
 import Compilatrix.Anf.Proof.Pass.Basic
 import Compilatrix.Anf.Proof.Pass.Shrink
 import Compilatrix.Anf.Proof.Pass.Inline
+import Compilatrix.Anf.Proof.Pass.Reach
+import Compilatrix.Anf.Proof.Pass.Ren
+import Compilatrix.Anf.Proof.Pass.RenLevel
+import Compilatrix.Anf.Proof.Pass.Prune
+import Compilatrix.Anf.Proof.Pass.Pipeline
 import Compilatrix.Own.Kind
 import Compilatrix.Fir.Syntax
 import Compilatrix.Fir.Semantics

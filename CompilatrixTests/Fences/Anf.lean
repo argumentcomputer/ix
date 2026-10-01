@@ -4,6 +4,7 @@ import Compilatrix.Anf.Proof.Convert.Correct
 import Compilatrix.Anf.Proof.Rel.Ident
 import Compilatrix.Anf.Proof.Pass.Shrink
 import Compilatrix.Anf.Proof.Pass.Inline
+import Compilatrix.Anf.Proof.Pass.Pipeline
 
 /-! Required axiom fences for the Anf proofs (M2.3): clock monotonicity of
 Anf evaluation; ANF conversion (P1, Lam → Anf); the Anf-to-Anf relation, its
@@ -324,3 +325,82 @@ verbatim. -/
 
 /-- info: 'Compilatrix.Anf.Inline.Proof.round_refines_traced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Inline.Proof.round_refines_traced
+
+/-- info: 'Compilatrix.Anf.PassProof.wf_of_mapped' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Anf.PassProof.wf_of_mapped
+
+/-! Pruning (`Anf.Proof.Pass.Reach`, `Ren`, `RenLevel`, `Prune`): `reach` is complete with the fuel `run` gives it; renamed code simulates (fundamental lemma, application, calls and global values through the renumbering, adequacy with renamed roots); the pruned program refines its input; the traced shape. -/
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.unseen_insert' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.unseen_insert
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.reach_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.reach_spec
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.unseen_leaf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.unseen_leaf
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.run_seen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.run_seen
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.base' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.base
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.obs' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.obs
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.fund_exp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.fund_exp
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.fund_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.fund_step
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.app_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.app_at
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.call_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.call_at
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.glob_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.glob_at
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.levels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.levels
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.refines
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.withGlobals_global' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.withGlobals_global
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.run_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.run_refines
+
+/-- info: 'Compilatrix.Anf.Prune.Proof.run_refines_traced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Prune.Proof.run_refines_traced
+
+/-! The middle end (`Anf.Proof.Pass.Pipeline`): P1's output has ids `0 … size - 1`; every P2, P3 and prune step keeps that shape and refines its input; `Pipeline.run` refines the Lam program for every certificate it accepts, given P4's correctness (`SpecCorrect`, not yet proved), and unconditionally for certificates without P4 steps; the traced shape. -/
+
+/-- info: 'Compilatrix.Anf.Pipeline.Proof.convert_unfold' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Pipeline.Proof.convert_unfold
+
+/-- info: 'Compilatrix.Anf.Pipeline.Proof.convert_wf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Pipeline.Proof.convert_wf
+
+/-- info: 'Compilatrix.Anf.Pipeline.Proof.step_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Pipeline.Proof.step_correct
+
+/-- info: 'Compilatrix.Anf.Pipeline.Proof.steps_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Pipeline.Proof.steps_correct
+
+/-- info: 'Compilatrix.Anf.Pipeline.Proof.run_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Pipeline.Proof.run_correct
+
+/-- info: 'Compilatrix.Anf.Pipeline.Proof.run_correct_noSpec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Pipeline.Proof.run_correct_noSpec
+
+/-- info: 'Compilatrix.Anf.Pipeline.Proof.run_correct_traced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Pipeline.Proof.run_correct_traced
+
+/-- info: 'Compilatrix.Anf.Pipeline.Proof.run_correct_noSpec_traced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Pipeline.Proof.run_correct_noSpec_traced

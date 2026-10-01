@@ -84,6 +84,7 @@
   "Compilatrix.Anf.Convert",
   "Compilatrix.Anf.Inline",
   "Compilatrix.Anf.Opd",
+  "Compilatrix.Anf.Pipeline",
   "Compilatrix.Anf.Proof.Convert.App",
   "Compilatrix.Anf.Proof.Convert.Base",
   "Compilatrix.Anf.Proof.Convert.Cases",
@@ -107,6 +108,11 @@
   "Compilatrix.Anf.Proof.Mono",
   "Compilatrix.Anf.Proof.Pass.Basic",
   "Compilatrix.Anf.Proof.Pass.Inline",
+  "Compilatrix.Anf.Proof.Pass.Pipeline",
+  "Compilatrix.Anf.Proof.Pass.Prune",
+  "Compilatrix.Anf.Proof.Pass.Reach",
+  "Compilatrix.Anf.Proof.Pass.Ren",
+  "Compilatrix.Anf.Proof.Pass.RenLevel",
   "Compilatrix.Anf.Proof.Pass.Shrink",
   "Compilatrix.Anf.Proof.Rel.Basic",
   "Compilatrix.Anf.Proof.Rel.Fund",
@@ -134,8 +140,10 @@
   "Compilatrix.Anf.Proof.Walk.Step",
   "Compilatrix.Anf.Proof.Walk.StepA",
   "Compilatrix.Anf.Proof.Walk.StepB",
+  "Compilatrix.Anf.Prune",
   "Compilatrix.Anf.Semantics",
   "Compilatrix.Anf.Shrink",
+  "Compilatrix.Anf.Specialize",
   "Compilatrix.Anf.Syntax",
   "Compilatrix.Anf.Walk",
   "Compilatrix.Fir.Semantics",
@@ -455,5 +463,5 @@
   "Ix.Lib"],
  "baseline": "jcb/x86: merge M2.3",
  "axiom_sha256":
- "c2c3a8842ca01de45c23f7a39b68107c120bd4dc8becde2dec173e9985d75300",
- "axiom_count": 1289}
+ "903dcc14e98195e8014cb71c7c31fce8e2ddae354c12be7e0b5c37a2bbd94279",
+ "axiom_count": 1314}

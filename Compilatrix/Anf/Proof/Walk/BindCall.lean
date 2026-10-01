@@ -68,7 +68,7 @@ theorem walkBind_glob (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
           (fun k => eval Q k ρ' J' (.bind c (.glob g) e)) := by
       intro e s0 s0' facts' he hfacts
       exact emit_sim hctx hW he hV henv hJ hd hdj hnd hk
-        ((Rel.compat_glob structural hctx.glob ρ ρ' g).strengthen hfacts)
+        ((Rel.compat_glob structural.toBase hctx.glob ρ ρ' g).strengthen hfacts)
     split at h
     · next hps =>
       have hpsP : gdP.ps = [] := List.eq_nil_of_length_eq_zero (by rw [hlenP, hps]; rfl)

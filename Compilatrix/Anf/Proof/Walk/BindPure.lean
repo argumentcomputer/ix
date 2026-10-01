@@ -193,7 +193,7 @@ theorem walkBind_proj (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
     · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
       obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
       refine emit_sim hctx hW h3 hV henv hJ hd hdj hnd hk ?_
-      refine ((Rel.proj_rel structural cc i hvw).strengthen (S := fun w => FactsOk Q Valid here.facts (w :: ρ'))
+      refine ((Rel.proj_rel structural.toBase cc i hvw).strengthen (S := fun w => FactsOk Q Valid here.facts (w :: ρ'))
         fun _ w _ => hf.push w).congr hsrc (fun k => ?_)
       rw [evalBind_proj, hd, Opd.val_atom hw]; rfl
 

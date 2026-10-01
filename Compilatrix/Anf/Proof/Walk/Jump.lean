@@ -136,7 +136,7 @@ theorem caseOfCase_sim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {
     rfl
   refine (sim_ticks (eval_mono P _ Jj _) (eval_mono Q ρ' J' o') (m + 1) ?_).congr hsrc
     (fun k => eval_ticks k ρ' J' (m + 1) o')
-  rcases Rel.asCtor_rel structural P.known hvw with hnone | ⟨c', vfs, wfs', hvc, hwc', hfs⟩
+  rcases Rel.asCtor_rel structural.toBase P.known hvw with hnone | ⟨c', vfs, wfs', hvc, hwc', hfs⟩
   · refine (SimUpTo.stuck (fun k => eval Q k ρ' J' o')).congr (fun k => ?_) (fun _ => rfl)
     rw [eval_case]
     simp [Atom.eval, Result.ofOption, hnone]

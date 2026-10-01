@@ -17,6 +17,12 @@ namespace Compilatrix.Anf
 them all). -/
 def Program.GlobalsBelow (P : Program) : Prop := ∀ g gd, P.global? g = some gd → g < P.size
 
+/-- Every id below the size has a global. -/
+def Program.Dense (P : Program) : Prop := ∀ g, g < P.size → ∃ gd, P.global? g = some gd
+
+/-- The global ids are exactly `0 … size - 1`. -/
+def Program.WF (P : Program) : Prop := P.GlobalsBelow ∧ P.Dense
+
 namespace PassProof
 
 open Compilatrix.Sem (Result)
@@ -58,3 +64,20 @@ theorem refines_of_globals {P Q : Program} (hroots : Q.roots = P.roots) (hknown 
 end PassProof
 
 end Compilatrix.Anf
+
+namespace Compilatrix.Anf.PassProof
+
+/-- A program whose globals are its source's, mapped, keeps the shape of
+its ids. -/
+theorem wf_of_mapped {P Q : Program} {F : GlobalId → GDef → GDef} (hsize : Q.size = P.size)
+    (hQ : ∀ g, Q.global? g = if g < P.size then (P.global? g).map (F g) else none) (h : P.WF) : Q.WF := by
+  refine ⟨fun g gd hg => ?_, fun g hg => ?_⟩
+  · rw [hQ] at hg
+    split at hg
+    · next hlt => rw [hsize]; exact hlt
+    · cases hg
+  · rw [hsize] at hg
+    obtain ⟨gd, hgd⟩ := h.2 g hg
+    exact ⟨F g gd, by rw [hQ, if_pos hg, hgd]; rfl⟩
+
+end Compilatrix.Anf.PassProof

@@ -42,7 +42,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
   have hK : C.prog.known = P.known := hctx.cknown C ρ' hV
   have hsrc : ∀ k, evalBind P k ρ (.prim p as) = primResult P.known p vs := fun k => by
     rw [evalBind_prim, hvs]; rfl
-  have hnat : natArgs ws = natArgs vs := Rel.natArgs_rel structural (pw_of hvws)
+  have hnat : natArgs ws = natArgs vs := Rel.natArgs_rel structural.toBase (pw_of hvws)
   have htgt : ∀ k, evalBind Q k ρ' (.prim p (Walk.atoms here.d os)) = primResult P.known p vs := by
     intro k
     rw [evalBind_prim, hd, Walk.atoms, opds_eval hws]

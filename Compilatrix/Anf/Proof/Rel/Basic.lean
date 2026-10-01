@@ -82,19 +82,24 @@ end Pw
 
 variable (P Q : Program) (R : Val → Val → Prop)
 
-/-- A value relation every Anf-to-Anf pass's relation extends: literals and
-□ relate to themselves, constructors pointwise, closures with the same code
-under related environments; and a literal, □ or constructor relates only
-to a value of the same shape (`inv`). -/
-structure Structural : Prop where
+/-- The shape every Anf-to-Anf pass's value relation has: literals and □
+relate to themselves, constructors pointwise; and a literal, □, constructor
+or closure relates only to a value of the same shape (`inv`). -/
+structure Base : Prop where
   lit : ∀ l, R (.lit l) (.lit l)
   box : R .box .box
   con : ∀ c vs ws, Pw R vs ws → R (.con c vs) (.con c ws)
-  idc : ∀ ρ ρ' n b got got', Pw R ρ ρ' → Pw R got got' → R (.clos ρ n b got) (.clos ρ' n b got')
   invLit : ∀ l w, R (.lit l) w → w = .lit l
   invBox : ∀ w, R .box w → w = .box
   invCon : ∀ c vs w, R (.con c vs) w → ∃ ws, w = .con c ws ∧ Pw R vs ws
   invClos : ∀ ρ n b got w, R (.clos ρ n b got) w → ∃ ρ' n' b' got', w = .clos ρ' n' b' got'
+
+/-- `Base`, and closures of the same code under related environments are
+related. -/
+structure Structural : Prop extends Base R where
+  idc : ∀ ρ ρ' n b got got', Pw R ρ ρ' → Pw R got got' → R (.clos ρ n b got) (.clos ρ' n b got')
+
+instance {R : Val → Val → Prop} : CoeOut (Structural R) (Base R) := ⟨Structural.toBase⟩
 
 /-- Join closures with the same code over related environments. -/
 inductive JR : List JClo → List JClo → Prop
@@ -122,14 +127,14 @@ variable {P Q R}
 
 /-! ## Values -/
 
-theorem atom_eval_rel (hS : Structural R) {ρ : List Val} {ρ' : List Val} (hρ : Pw R ρ ρ') :
+theorem atom_eval_rel (hS : Base R) {ρ : List Val} {ρ' : List Val} (hρ : Pw R ρ ρ') :
     ∀ a : Atom, (a.eval ρ = none ∧ a.eval ρ' = none) ∨
       ∃ v w, a.eval ρ = some v ∧ a.eval ρ' = some w ∧ R v w
   | .var i => by simpa [Atom.eval] using hρ.get i
   | .lit l => .inr ⟨_, _, rfl, rfl, hS.lit l⟩
   | .box => .inr ⟨_, _, rfl, rfl, hS.box⟩
 
-theorem atoms_eval_rel (hS : Structural R) {ρ : List Val} {ρ' : List Val} (hρ : Pw R ρ ρ') :
+theorem atoms_eval_rel (hS : Base R) {ρ : List Val} {ρ' : List Val} (hρ : Pw R ρ ρ') :
     ∀ as : List Atom, (evalAtoms ρ as = none ∧ evalAtoms ρ' as = none) ∨
       ∃ vs ws, evalAtoms ρ as = some vs ∧ evalAtoms ρ' as = some ws ∧ Pw R vs ws
   | [] => .inr ⟨[], [], rfl, rfl, .nil⟩
@@ -149,7 +154,7 @@ theorem sim_ofOption {n : Nat} {o : Option Val} {o' : Option Val}
   · exact SimUpTo.stuck _
   · exact SimUpTo.ok hvw
 
-theorem natArgs_rel (hS : Structural R) : ∀ {vs ws : List Val}, Pw R vs ws → natArgs ws = natArgs vs
+theorem natArgs_rel (hS : Base R) : ∀ {vs ws : List Val}, Pw R vs ws → natArgs ws = natArgs vs
   | [], [], .nil => rfl
   | v :: vs, w :: ws, .cons hvw hvs => by
     cases v with
@@ -162,7 +167,7 @@ theorem natArgs_rel (hS : Structural R) : ∀ {vs ws : List Val}, Pw R vs ws →
     | con c fs => obtain ⟨ws', rfl, _⟩ := hS.invCon c fs w hvw; simp [natArgs]
     | clos ρ n b got => obtain ⟨_, _, _, _, rfl⟩ := hS.invClos ρ n b got w hvw; simp [natArgs]
 
-theorem prim_rel (hS : Structural R) {n : Nat} (K : Lam.Known) (p : Lam.Prim) {vs ws : List Val}
+theorem prim_rel (hS : Base R) {n : Nat} (K : Lam.Known) (p : Lam.Prim) {vs ws : List Val}
     (h : Pw R vs ws) : SimUpTo R n (fun _ => primResult K p vs) (fun _ => primResult K p ws) := by
   unfold primResult
   rw [natArgs_rel hS h]
@@ -181,7 +186,7 @@ theorem prim_rel (hS : Structural R) {n : Nat} (K : Lam.Known) (p : Lam.Prim) {v
         | none => exact SimUpTo.stuck _
         | some c => exact SimUpTo.ok (hS.con c [] [] .nil)
 
-theorem proj_rel (hS : Structural R) {n : Nat} (c : Key.CtorKey) (i : Nat) {v w : Val} (h : R v w) :
+theorem proj_rel (hS : Base R) {n : Nat} (c : Key.CtorKey) (i : Nat) {v w : Val} (h : R v w) :
     SimUpTo R n (fun _ => projVal c i v) (fun _ => projVal c i w) := by
   cases v with
   | con c' vs =>
@@ -194,7 +199,7 @@ theorem proj_rel (hS : Structural R) {n : Nat} (c : Key.CtorKey) (i : Nat) {v w 
   | box => exact SimUpTo.stuck _
   | clos ρ n b got => exact SimUpTo.stuck _
 
-theorem asCtor_rel (hS : Structural R) (K : Lam.Known) {v w : Val} (h : R v w) :
+theorem asCtor_rel (hS : Base R) (K : Lam.Known) {v w : Val} (h : R v w) :
     (v.asCtor K = none) ∨ ∃ c fs fs', v.asCtor K = some (c, fs) ∧ w.asCtor K = some (c, fs') ∧ Pw R fs fs' := by
   cases v with
   | lit l =>
@@ -224,7 +229,7 @@ theorem asCtor_rel (hS : Structural R) (K : Lam.Known) {v w : Val} (h : R v w) :
 
 section
 
-variable {n : Nat} (hS : Structural R)
+variable {n : Nat} (hS : Base R)
 include hS
 
 theorem compat_atom {ρ ρ' : List Val} (hρ : Pw R ρ ρ') (a : Atom) :
@@ -281,7 +286,10 @@ theorem compat_app (ha : AppSim P Q R n) {ρ ρ' : List Val} (hρ : Pw R ρ ρ')
     · rw [h3]; exact SimUpTo.stuck _
     · rw [h3, h4]; exact ha hvw hvs
 
-theorem compat_fn {ρ ρ' : List Val} (hρ : Pw R ρ ρ') (ps : List Ixon.V3.BinderContract) (b : Exp) :
+end
+
+theorem compat_fn {n : Nat} (hS : Structural R) {ρ ρ' : List Val} (hρ : Pw R ρ ρ')
+    (ps : List Ixon.V3.BinderContract) (b : Exp) :
     SimUpTo R n (fun k => evalBind P k ρ (.fn ps b)) (fun k => evalBind Q k ρ' (.fn ps b)) := by
   cases ps with
   | nil => exact (SimUpTo.stuck _).congr (fun k => evalBind_fn_nil P k ρ b) (fun _ => rfl)
@@ -290,7 +298,6 @@ theorem compat_fn {ρ ρ' : List Val} (hρ : Pw R ρ ρ') (ps : List Ixon.V3.Bin
       (fun k => evalBind_fn P k ρ _ b (List.cons_ne_nil _ _))
       (fun k => evalBind_fn Q k ρ' _ b (List.cons_ne_nil _ _))
 
-end
 
 /-! ## Compatibility: expressions -/
 
@@ -320,7 +327,7 @@ theorem compat_trap {ρ ρ' : List Val} {J J' : List JClo} :
     SimUpTo R n (fun k => eval P k ρ J .trap) (fun k => eval Q k ρ' J' .trap) :=
   SimUpTo.trap.congr (fun k => eval_trap' P k ρ J) (fun k => eval_trap' Q k ρ' J')
 
-theorem compat_ret (hS : Structural R) {ρ ρ' : List Val} {J J' : List JClo} (hρ : Pw R ρ ρ')
+theorem compat_ret (hS : Base R) {ρ ρ' : List Val} {J J' : List JClo} (hρ : Pw R ρ ρ')
     (a : Atom) :
     SimUpTo R n (fun k => eval P k ρ J (.ret a)) (fun k => eval Q k ρ' J' (.ret a)) :=
   (sim_ofOption (atom_eval_rel hS hρ a)).congr (fun k => eval_ret' P k ρ J a)

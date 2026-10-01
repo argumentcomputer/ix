@@ -81,33 +81,29 @@ theorem round_global {Q : Program} {f : Walk.Fires} (h : round P r = .ok (Q, f))
   exact get?_ofList_globalList P (after P r) g
 
 /-- **P3 is correct**: every round the oracle asks for refines its input,
-and keeps the globals below the size. -/
-theorem round_refines (h0 : P.GlobalsBelow) {Q : Program} {f : Walk.Fires} (h : round P r = .ok (Q, f)) :
-    Q.GlobalsBelow ∧ Sem.Refines P Q := by
+and keeps its ids `0 … size - 1`. -/
+theorem round_refines (h0 : P.WF) {Q : Program} {f : Walk.Fires} (h : round P r = .ok (Q, f)) :
+    Q.WF ∧ Sem.Refines P Q := by
   obtain ⟨hroots, hknown, hsize, hQ⟩ := round_global h
-  refine ⟨fun g gd hg => ?_, WalkProof.WalkProg.refines (Valid := V P)
+  refine ⟨wf_of_mapped hsize hQ h0, WalkProof.WalkProg.refines (Valid := V P)
     { roots := hroots, known := hknown
-      globals := fun g gd hg => ⟨after P r g gd, by rw [hQ, if_pos (h0 g gd hg), hg]; rfl, after_walked g gd⟩
+      globals := fun g gd hg => ⟨after P r g gd, by rw [hQ, if_pos (h0.1 g gd hg), hg]; rfl, after_walked g gd⟩
       suffix := fun _ _ _ hV _ => hV
       cknown := fun C _ hV => by rw [hV.1]
       cglob := fun C _ hV g => by rw [hV.1]
       cbody := fun C _ hV g _ => by rw [hV.1]
       inl := fun C _ hV => ⟨hV.1, rfl⟩
       noRed := fun C _ hV => hV.2 }⟩
-  rw [hQ] at hg
-  split at hg
-  · next hlt => rw [hsize]; exact hlt
-  · cases hg
 
 
 /-- P3 as a pass: the certificate is the round (the oracle's choice); the
-globals lie below the size before and after. -/
+ids are `0 … size - 1` before and after. -/
 def inlinePass : Sem.Transform Program Program where
   name := "P3 inline"
   Cert := Round
-  pre P := P.GlobalsBelow
+  pre P := P.WF
   run P r := (round P r).map (·.1)
-  post Q := Q.GlobalsBelow
+  post Q := Q.WF
   correct P r Q h0 h := by
     cases hr : round P r with
     | error e => rw [hr] at h; cases h
@@ -118,7 +114,7 @@ def inlinePass : Sem.Transform Program Program where
 
 /-! ## The traced shape (decision D-1) -/
 
-theorem round_refines_traced (h0 : P.GlobalsBelow) {Q : Program} {f : Walk.Fires}
+theorem round_refines_traced (h0 : P.WF) {Q : Program} {f : Walk.Fires}
     (h : round P r = .ok (Q, f)) : Sem.TRefines P Q :=
   Sem.Refines.ofPure (round_refines h0 h).2
 

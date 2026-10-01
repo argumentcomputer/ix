@@ -191,33 +191,29 @@ theorem run_global {cert : Cert} {Q : Program} (h : run p cert P0 = .ok Q) :
   exact get?_ofList_globalList P0 (fun g gd => iter P0 p gd (cert.getD g 0)) g
 
 /-- **P2 is correct**: for every certificate the re-run accepts, the
-output refines the input, and keeps its globals below its size. -/
-theorem run_refines (h0 : P0.GlobalsBelow) {cert : Cert} {Q : Program} (h : run p cert P0 = .ok Q) :
-    Q.GlobalsBelow ∧ Sem.Refines P0 Q := by
+output refines the input, and keeps its ids `0 … size - 1`. -/
+theorem run_refines (h0 : P0.WF) {cert : Cert} {Q : Program} (h : run p cert P0 = .ok Q) :
+    Q.WF ∧ Sem.Refines P0 Q := by
   obtain ⟨hroots, hknown, hsize, hQ⟩ := run_global h
-  refine ⟨fun g gd hg => ?_, (stage_refines h0 (cert.foldr max 0)).trans
-    (refines_of_globals (P := stage P0 p cert (cert.foldr max 0)) (by rw [hroots, (stage_agree h0 _).roots])
-      (by rw [hknown, (stage_agree h0 _).known]) fun g => ?_)⟩
-  · rw [hQ] at hg
-    split at hg
-    · next hlt => rw [hsize]; exact hlt
-    · cases hg
-  · rw [hQ, stage_global h0, Nat.min_eq_right (getD_le_foldr cert g)]
+  refine ⟨wf_of_mapped hsize hQ h0, (stage_refines h0.1 (cert.foldr max 0)).trans
+    (refines_of_globals (P := stage P0 p cert (cert.foldr max 0)) (by rw [hroots, (stage_agree h0.1 _).roots])
+      (by rw [hknown, (stage_agree h0.1 _).known]) fun g => ?_)⟩
+  rw [hQ, stage_global h0.1, Nat.min_eq_right (getD_le_foldr cert g)]
 
 
-/-- P2 as a pass: the certificate is the rounds per global; the globals lie
-below the size before and after. -/
+/-- P2 as a pass: the certificate is the rounds per global; the ids are
+`0 … size - 1` before and after. -/
 def shrinkPass (p : Params) : Sem.Transform Program Program where
   name := "P2 shrink"
   Cert := Cert
-  pre P := P.GlobalsBelow
+  pre P := P.WF
   run P c := run p c P
-  post Q := Q.GlobalsBelow
+  post Q := Q.WF
   correct _ _ _ h0 h := run_refines h0 h
 
 /-! ## The traced shape (decision D-1) -/
 
-theorem run_refines_traced (h0 : P0.GlobalsBelow) {cert : Cert} {Q : Program} (h : run p cert P0 = .ok Q) :
+theorem run_refines_traced (h0 : P0.WF) {cert : Cert} {Q : Program} (h : run p cert P0 = .ok Q) :
     Sem.TRefines P0 Q :=
   Sem.Refines.ofPure (run_refines h0 h).2
 

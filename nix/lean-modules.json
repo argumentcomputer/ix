@@ -880,7 +880,8 @@
     "Compilatrix.Anf.Proof.Convert.Correct",
     "Compilatrix.Anf.Proof.Rel.Ident",
     "Compilatrix.Anf.Proof.Pass.Shrink",
-    "Compilatrix.Anf.Proof.Pass.Inline"]},
+    "Compilatrix.Anf.Proof.Pass.Inline",
+    "Compilatrix.Anf.Proof.Pass.Pipeline"]},
   "CompilatrixTests.Fences.AiurWire":
   {"path": "CompilatrixTests/Fences/AiurWire.lean",
    "imports": ["CompilatrixTests.Aiur.WireProofs"]},
@@ -2484,6 +2485,26 @@
    ["Compilatrix.Anf.Proof.Pass.Basic",
     "Compilatrix.Anf.Shrink",
     "Compilatrix.Anf.Proof.Lang"]},
+  "Compilatrix.Anf.Proof.Pass.RenLevel":
+  {"path": "Compilatrix/Anf/Proof/Pass/RenLevel.lean",
+   "imports": ["Compilatrix.Anf.Proof.Pass.Ren", "Compilatrix.Anf.Proof.Lang"]},
+  "Compilatrix.Anf.Proof.Pass.Ren":
+  {"path": "Compilatrix/Anf/Proof/Pass/Ren.lean",
+   "imports": ["Compilatrix.Anf.Proof.Pass.Reach"]},
+  "Compilatrix.Anf.Proof.Pass.Reach":
+  {"path": "Compilatrix/Anf/Proof/Pass/Reach.lean",
+   "imports": ["Compilatrix.Anf.Proof.Pass.Basic", "Compilatrix.Anf.Prune"]},
+  "Compilatrix.Anf.Proof.Pass.Prune":
+  {"path": "Compilatrix/Anf/Proof/Pass/Prune.lean",
+   "imports": ["Compilatrix.Anf.Proof.Pass.RenLevel"]},
+  "Compilatrix.Anf.Proof.Pass.Pipeline":
+  {"path": "Compilatrix/Anf/Proof/Pass/Pipeline.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Pass.Shrink",
+    "Compilatrix.Anf.Proof.Pass.Inline",
+    "Compilatrix.Anf.Proof.Pass.Prune",
+    "Compilatrix.Anf.Proof.Convert.Correct",
+    "Compilatrix.Anf.Pipeline"]},
   "Compilatrix.Anf.Proof.Pass.Inline":
   {"path": "Compilatrix/Anf/Proof/Pass/Inline.lean",
    "imports":
@@ -3055,6 +3076,11 @@
     "Compilatrix.Anf.Proof.Pass.Basic",
     "Compilatrix.Anf.Proof.Pass.Shrink",
     "Compilatrix.Anf.Proof.Pass.Inline",
+    "Compilatrix.Anf.Proof.Pass.Reach",
+    "Compilatrix.Anf.Proof.Pass.Ren",
+    "Compilatrix.Anf.Proof.Pass.RenLevel",
+    "Compilatrix.Anf.Proof.Pass.Prune",
+    "Compilatrix.Anf.Proof.Pass.Pipeline",
     "Compilatrix.Own.Kind",
     "Compilatrix.Fir.Syntax",
     "Compilatrix.Fir.Semantics",

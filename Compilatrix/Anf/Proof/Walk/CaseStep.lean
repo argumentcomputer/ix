@@ -35,7 +35,7 @@ theorem case_general (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C 
       (Walk.walk C fuel env here0 e k0).run s2 = .ok (e', s3)) :
     SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J (.case x alts d)).bind (SK · k))
       (fun k => eval Q k ρ' J'0 (.case (xo.atom here0.d) alts' dflt')) := by
-  rcases Rel.asCtor_rel structural P.known hvw with hnone | ⟨c, vfs, wfs, hvc, hwc, hfs⟩
+  rcases Rel.asCtor_rel structural.toBase P.known hvw with hnone | ⟨c, vfs, wfs, hvc, hwc, hfs⟩
   · refine (SimUpTo.stuck _).congr (fun k => ?_) (fun _ => rfl)
     rw [eval_case, hv]
     simp [Result.ofOption, hnone]
@@ -82,7 +82,7 @@ theorem walkCase_step (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
         obtain ⟨rfl, rfl⟩ := he
         obtain ⟨wfs, hwfs, hwc⟩ := known_sound hK hf hkn hw
         have hwc' : w.asCtor P.known = some (c, wfs) := by rw [← hctx.known]; exact hwc
-        rcases Rel.asCtor_rel structural P.known hvw with hnone | ⟨c', vfs, wfs', hvc, hwc2, hfs⟩
+        rcases Rel.asCtor_rel structural.toBase P.known hvw with hnone | ⟨c', vfs, wfs', hvc, hwc2, hfs⟩
         · exact (SimUpTo.stuck _).congr (fun k => by rw [hsrc, hnone]; rfl) (fun _ => rfl)
         · rw [hwc'] at hwc2
           simp only [Option.some.injEq, Prod.mk.injEq] at hwc2
@@ -118,7 +118,7 @@ theorem walkCase_step (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
         simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hc
         obtain ⟨_, rfl⟩ := hc
         obtain ⟨hne, harms⟩ := identityTail_spec hid
-        rcases Rel.asCtor_rel structural P.known hvw with hnone | ⟨c, vfs, wfs, hvc, hwc, hfs⟩
+        rcases Rel.asCtor_rel structural.toBase P.known hvw with hnone | ⟨c, vfs, wfs, hvc, hwc, hfs⟩
         · exact (SimUpTo.stuck _).congr (fun k => by rw [hsrc, hnone]; rfl) (fun _ => rfl)
         rcases evalAlts_identity (P := P) (ρ := ρ) (J := J) (c := c) (fs := vfs) harms with
           hst | ⟨rfl, hz, c0, heq⟩
@@ -185,7 +185,7 @@ theorem walkCase_step (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
           have hnde := hnd.case_alts a ha
           rw [ha0, hab] at hnde
           simp only [List.replicate_zero, List.nil_append] at hnde
-          rcases Rel.asCtor_rel structural P.known hvw with hnone | ⟨c, vfs, wfs, hvc, hwc, hfs⟩
+          rcases Rel.asCtor_rel structural.toBase P.known hvw with hnone | ⟨c, vfs, wfs, hvc, hwc, hfs⟩
           · exact (SimUpTo.stuck _).congr (fun k => by rw [hsrc, hnone]; rfl) (fun _ => rfl)
           rcases evalAlts_same (P := P) (ρ := ρ) (J := J) (c := c) (fs := vfs) hdflt hall with heq | hst
           · exact (hW.walk h' ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnde hk).congr
