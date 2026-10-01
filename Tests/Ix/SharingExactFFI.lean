@@ -47,7 +47,7 @@ opaque rsExactNormalize : @& ByteArray → Except String ByteArray
 @[extern "rs_uniform_sharing_normalize"]
 opaque rsUniformNormalize : UInt64 → @& ByteArray → Except String ByteArray
 
-/-- Layout code: 0 = Tag4, 1 = TagN. -/
+/-- Layout code: 1 = TagN (the only layout). -/
 @[extern "rs_tiered_sharing_normalize"]
 opaque rsTieredNormalize : UInt8 → @& ByteArray → Except String ByteArray
 
@@ -63,7 +63,6 @@ inductive Mode where
 def Mode.name : Mode → String
   | .exact => "exact"
   | .uniform w => s!"uniform-w{w}"
-  | .tiered .tag4 => "tiered-tag4"
   | .tiered .tagN => "tiered-tagN"
 
 def Mode.parse (s : String) : Option Mode :=
@@ -72,8 +71,9 @@ def Mode.parse (s : String) : Option Mode :=
   else if s.startsWith "uniform-w" then (String.ofList (s.toList.drop 9)).toNat?.map .uniform
   else none
 
+/-- Rust `ShareLayout::from_code`: TagN is code 1 (code 0, the former Tag4
+layout, is gone). -/
 def layoutCode : ShareLayout → UInt8
-  | .tag4 => 0
   | .tagN => 1
 
 /-- One side's result: the serialized Constant, or an error category with
@@ -379,13 +379,12 @@ unshared Constant, and the tiered route must build exactly what the library
 normalizer builds. -/
 
 /-- Rust `apply_sharing_to_*_via` on one unshared Constant; route code 0 =
-heuristic, 1 = tiered Tag4, 2 = tiered TagN. -/
+heuristic, 2 = tiered TagN (1, the former tiered Tag4, is gone). -/
 @[extern "rs_compiler_sharing_build"]
 opaque rsCompilerSharingBuild : UInt8 → @& ByteArray → Except String ByteArray
 
 def routeCode : Ix.CompileM.SharingConstruction → UInt8
   | .heuristic => 0
-  | .tiered .tag4 => 1
   | .tiered .tagN => 2
 
 def compilerRoutes : List Ix.CompileM.SharingConstruction :=

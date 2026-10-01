@@ -995,20 +995,14 @@ theorem phase3_le_phase1 {layout : ShareLayout} {limits : Limits} {ex : Expanded
 /-! ## Optimality of the allocation in the 2-byte tier -/
 
 open Ix.Compile.Verify.SharingExact (tagNWidth_rung1 tagNRung1End_eq) in
-/-- Both layouts price a Share by the TagN (`f = 4`) width (`shareWidth = tag4Size =
-Ixon.tagNByteWidth 4 = tagNWidth`). -/
 theorem widthAt_lt8 (layout : ShareLayout) {k : Nat} (hk : k < 8) : layout.widthAt k = 1 := by
   cases layout with
-  | tag4 => exact tagNWidth_rung1 (by rw [tagNRung1End_eq]; exact hk)
   | tagN => exact tagNWidth_rung1 (by rw [tagNRung1End_eq]; exact hk)
 
-open Ix.Compile.Verify.SharingExact (tagNWidth_rung2 tagNRung1End_eq tagNRung2End_eq) in
+open Ix.Compile.Verify.SharingExact (tagNWidth_rung2 tagNRung1End_eq) in
 theorem widthAt_tier2 (layout : ShareLayout) {k : Nat} (h1 : 8 ≤ k) (h2 : k < layout.tier2End) :
     layout.widthAt k = 2 := by
   cases layout with
-  | tag4 =>
-    simp only [ShareLayout.tier2End] at h2
-    exact tagNWidth_rung2 (by rw [tagNRung1End_eq]; exact h1) (by rw [tagNRung2End_eq]; omega)
   | tagN => exact tagNWidth_rung2 (by rw [tagNRung1End_eq]; exact h1) h2
 
 /-- The reference cost of an order of at most `tier2End` terms: the first

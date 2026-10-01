@@ -2,16 +2,12 @@
   Tiered canonical sharing: uniform-width selection, slot allocation, and
   re-materialization under a Share layout `widthAt : index → width`.
 
-  Layouts (`ShareLayout.widthAt`, monotone, at least 1):
-  * `tag4`: a pricing layout only: Shares priced by `shareWidth` (the TagN
-    width, `Ixon.tagNByteWidth 4`) with the 2-byte tier ending at index 256.
-    It goes away together with the `Ixon.ShareCodec` shim in `Basic.lean`.
-  * `tagN` (TagN): the wire Share code (`putTagN 4 0xB idx`), whose widths
-    climb in rungs of 1, 2, 3, 4, 5 and 9 bytes (`tagNWidth`, which also
-    documents the bit layout); `Ixon.ShareCodec.current` is `.tagN`.
-  The output is written with the current wire codec; `modelBytes` is the
-  layout price, and the two agree whenever the layout is the wire layout
-  (`ShareLayout.wire`), which is checked.
+  Layout (`ShareLayout.widthAt`, monotone, at least 1): the single layout
+  `tagN` is the wire Share code (`putTagN 4 0xB idx`), whose widths climb in
+  rungs of 1, 2, 3, 4, 5 and 9 bytes (`tagNWidth`, which also documents the bit
+  layout). The output is written with the wire codec; `modelBytes` is the
+  layout price, and the two agree for the wire layout (`ShareLayout.wire`),
+  which is checked.
 
   ## Width selection
   Phase 1 runs at each uniform width `w ∈ {1, 2, 3}`, each result is carried
@@ -127,31 +123,23 @@ def tagNWidth (i : Nat) : Nat := Ixon.tagNByteWidth 4 i
 
 /-! ## Layouts -/
 
-/-- A Share width layout. -/
+/-- A Share width layout. TagN is the only Share code, so this is the only
+layout; the type is kept so that layouts stay explicit in the API (and match
+the Rust `ShareLayout::TagN`). -/
 inductive ShareLayout where
-  /-- Shares priced by `shareWidth` (the TagN width) with the 2-byte tier ending
-  at 256; a pricing layout only. -/
-  | tag4
   /-- The TagN Share code (`tagNWidth`). -/
   | tagN
   deriving BEq, Repr, Inhabited
 
-/-- The layout of a wire Share codec. -/
-def ShareLayout.ofCodec : Ixon.ShareCodec → ShareLayout
-  | .tag4 => .tag4
-  | .tagN => .tagN
-
-/-- The layout of the current wire codec `Ixon.ShareCodec.current`. -/
-def ShareLayout.wire : ShareLayout := .ofCodec Ixon.ShareCodec.current
+/-- The layout of the wire Share code. -/
+def ShareLayout.wire : ShareLayout := .tagN
 
 /-- Width of the Share at table index `i`. -/
 def ShareLayout.widthAt : ShareLayout → Nat → Nat
-  | .tag4, i => shareWidth i
   | .tagN, i => tagNWidth i
 
 /-- First index whose width exceeds 2. -/
 def ShareLayout.tier2End : ShareLayout → Nat
-  | .tag4 => 256
   | .tagN => tagNRung2End
 
 /-- Nominal uniform width for `k` candidates (`k` up to 8 fit the 1-byte
@@ -428,7 +416,7 @@ structure TieredStats where
   deriving Repr, Inhabited
 
 /-- Tiered result: the usual result (`modelBytes` = layout price,
-`variableBytes` = length serialized with `Ixon.ShareCodec.current`), the phase-1
+`variableBytes` = serialized length), the phase-1
 result, statistics. -/
 structure TieredSharingResult where
   result : ExactSharingResult

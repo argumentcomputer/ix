@@ -14,7 +14,7 @@ wall time, the search states and the largest component.
 lake exe uniform-hard <corpus.ixe> [name ...]
 lake exe uniform-hard <corpus.ixe> --compare      # every constant, vs the enumeration
 lake exe uniform-hard <corpus.ixe> --dump w name  # the largest component
-lake exe uniform-hard <corpus.ixe> --tiered [name ...]  # tiered construction, both layouts
+lake exe uniform-hard <corpus.ixe> --tiered [name ...]  # tiered construction, TagN layout
 ```
 Limits can be overridden with `UNIFORM_STATES` / `UNIFORM_EVALS`.
 -/
@@ -56,7 +56,7 @@ def headName : Ix.Sharing.Exact.Head → String
   | .all .. => "all"
   | .letE _ => "let"
 
-/-- The tiered construction on the named constants under both layouts: the
+/-- The tiered construction on the named constants under the TagN layout: the
 three candidate lengths, the winning width and the nominal-width length. -/
 def tieredAll (corpus : String) (names : List String) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile corpus
@@ -69,7 +69,7 @@ def tieredAll (corpus : String) (names : List String) : IO UInt32 := do
       | none => false
     let some (_, lc) := found | IO.println s!"{name}: not found"
     let .ok c := lc.get | IO.println s!"{name}: decode error"
-    for l in [Ix.Sharing.Exact.ShareLayout.tag4, .tagN] do
+    for l in [Ix.Sharing.Exact.ShareLayout.tagN] do
       let t0 ← IO.monoNanosNow
       let r ← IO.lazyPure fun _ => Ix.Sharing.Exact.canonicalSharingTieredTable l c.sharing
         (Ix.Sharing.Exact.constantInfoRoots c.info) limits
@@ -83,8 +83,8 @@ def tieredAll (corpus : String) (names : List String) : IO UInt32 := do
       (← IO.getStdout).flush
   return 0
 
-/-- Phase-3 materialization work of every candidate (w = 1, 2, 3) under both
-layouts, with the final bytes and the time of the candidate. -/
+/-- Phase-3 materialization work of every candidate (w = 1, 2, 3) under the TagN
+layout, with the final bytes and the time of the candidate. -/
 def workAll (corpus : String) (names : List String) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile corpus
   let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
@@ -96,7 +96,7 @@ def workAll (corpus : String) (names : List String) : IO UInt32 := do
       | none => false
     let some (_, lc) := found | IO.println s!"{name}: not found"
     let .ok c := lc.get | IO.println s!"{name}: decode error"
-    for l in [Ix.Sharing.Exact.ShareLayout.tag4, .tagN] do
+    for l in [Ix.Sharing.Exact.ShareLayout.tagN] do
       for w in [1, 2, 3] do
         let t0 ← IO.monoNanosNow
         let r ← IO.lazyPure fun _ => Ix.Sharing.Exact.canonicalSharingTieredTable l c.sharing
