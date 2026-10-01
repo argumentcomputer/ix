@@ -112,6 +112,7 @@ replaces `plans/x86-phase1/bench-k1/build.sh`.
 ```sh
 lake exe tests-corpus [MANIFEST…] [--cc CC] [--work DIR] [--only FIXTURE]… [--root ROOT]…
                       [--no-machines] [--progress] [--survey [--dump]]
+lake exe corpus kernel-artifacts [--check]
 ```
 
 Without a manifest it runs every registered family. For each root, the
@@ -139,3 +140,15 @@ Lir and Xv of a root declined at allocation or later.
    value is a compiler bug: keep the minimised program as a fixture.
 6. Pin the new files in the trust ledger and regenerate
    `nix/lean-modules.json` if a Lake target changed.
+
+## The kernel-recheck sample
+
+`lake exe corpus kernel-artifacts` prints the recheck input of four small
+corpus roots (`bench-k1/even-odd`, `phase1-scalar/tuple`, `natShiftr` and
+`strictAndOr`'s `entryStrictAnd`) with the recheck artifact printer into
+`CompilatrixTests/Corpus/Artifacts/`; with `--check` it compares them with a
+fresh ingress, `produce` and native run. The manual target
+`lake build CompilatrixTests.Corpus.KernelSample` states, for each, that
+`Recheck.run` gives the object's bytes, by `decide +kernel` (20–24 s and
+about 4 GB each on 2026-10-01). Like `CompilatrixTests.Recheck.KernelSlow`,
+nothing in the default build or the programs derivation imports it.
