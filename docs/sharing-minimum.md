@@ -879,3 +879,18 @@ the "stored descendants first" order places high-reference entries late, whereas
 priority order (largest in-degree among available entries) keeps them in the 2-byte tier.
 Fix under way: phase 2's order beyond the first tier becomes the Kahn priority order by
 reference count (ties by structural ID), which is also what MSS measured with.
+
+### 12.15 Outlier resolved (2026-10-01): a tie-break artifact, no rule change
+
+The +3,588-byte loss of the construction vs "MSS" on `Affine.Triangle.dist_orthogonalProjectionSpan…`
+is entirely the tie rule inside the Kahn priority order: the measured MSS broke ties between
+equal-in-degree entries by blake3 hash, the construction by structural ID. With 2,230 entries
+straddling the TagN 1,032 boundary, the tie order moves thousands of references between the 2- and
+3-byte rungs (widths [1101, 13699, 4149] vs [1101, 10111, 7737]). Rust re-implementation of MSS with
+both tie rules on all 679,499 Mathlib constants: the construction's "store-all" candidate is **never
+larger than MSS under the same tie rule** (0 larger, 157,438 smaller, −1,227,943 B); structural-ID
+ties beat blake3 ties in aggregate by 374,383 B; choosing the better rule per constant would gain
+only 0.011%. Phase 2's exact allocation covers the first tier; beyond it the order is the greedy
+Kahn rule, whose tie-break is pinned (structural ID). A possible refinement, not adopted: exact
+maximum-weight closed set for the ≤ 1,032-entry second rung (same problem as the first tier with a
+larger cap), relevant only to tables that straddle the boundary.
