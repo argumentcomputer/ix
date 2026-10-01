@@ -1212,10 +1212,30 @@ def knapChoose (kCS : Nat) (dp : Array (Option (_root_.Int × Array Nat)))
       let l0 : _root_.Int := acc.1 + (tag0Size (kCS + acc.2.1.size) : _root_.Int)
       if l < l0 || (l == l0 && setPrec s acc.2.1) then (d, s, true) else acc) init
 
-/-- Classify, search every component and combine: the stored set and its
-model length. -/
-def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
-    Except SharingError UniformChoice := do
+/-- The classification stage of the uniform optimizer: the classes, the
+certain-stored evaluation, the components and the shared search tables. -/
+structure UStage where
+  f : GraphFacts
+  cand : Array Bool
+  b0 : UBounds
+  vis0 : Array Nat × Array Nat
+  theta : _root_.Int
+  cls : Array UClass
+  cs : Array Nat
+  ce : Array Nat
+  unc : Array Nat
+  low : Array Nat
+  opaq : Array Bool
+  up : UPrep
+  widthCs : Array (Option Nat)
+  allTrue : Array Bool
+  baseEv : DictEval
+  comps : Array (Array Nat)
+  slack : Nat
+  rootCount : Array Nat
+
+/-- Classify the terms and prepare the component searches. -/
+def uniformStage (w : Nat) (ex : Expanded) (p : Prep) : UStage :=
   let n := ex.dag.size
   let f := graphFacts ex.dag ex.roots
   let cand := searchCandidates p f w
@@ -1231,62 +1251,77 @@ def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
   let cls := if theta == 1 then classifyWith p f w b0 vis0 1 else cls2
   let pick (c : UClass) := (Array.range n).filter (cls[·]! == c)
   let cs := pick .certainStored
-  let ce := pick .certainExcluded
   let unc := pick .uncertain
-  let low := pick .lowDegree
   let opaq := cs.foldl (fun acc t => acc.set! t true) (Array.replicate n false)
-  let up := UPrep.mk' p w opaq
-  let widthCs : Array (Option Nat) := cs.foldl (fun acc t => acc.set! t (some w)) (Array.replicate n none)
+  let widthCs : Array (Option Nat) :=
+    cs.foldl (fun acc t => acc.set! t (some w)) (Array.replicate n none)
   let allTrue := Array.replicate n true
-  let baseEv := p.eval widthCs allTrue
-  let comps := uncertainComponents ex.dag cls
-  unless componentsChecked ex.dag cls opaq comps (componentLabels n comps) do
-    throw (.internal "uncertain components are not a separated partition")
-  -- Largest table-count difference between two sets that contain the
-  -- certain-stored terms and only candidates.
-  let slack := tag0Size (cs.size + unc.size) - tag0Size cs.size
-  -- Search each component.
-  let rootCount := ex.roots.foldl (fun acc r => acc.modify r (· + 1)) (Array.replicate n 0)
-  let (results, states, costEvals) ← comps.foldlM (init := ((#[] : Array CompResult), 0, 0))
+  { f, cand, b0, vis0, theta, cls, cs, ce := pick .certainExcluded, unc,
+    low := pick .lowDegree, opaq, up := UPrep.mk' p w opaq, widthCs, allTrue,
+    baseEv := p.eval widthCs allTrue, comps := uncertainComponents ex.dag cls,
+    -- Largest table-count difference between two sets that contain the
+    -- certain-stored terms and only candidates.
+    slack := tag0Size (cs.size + unc.size) - tag0Size cs.size,
+    rootCount := ex.roots.foldl (fun acc r => acc.modify r (· + 1)) (Array.replicate n 0) }
+
+/-- Search every component. -/
+def searchComponents (limits : Limits) (ex : Expanded) (sg : UStage) :
+    Except SharingError (Array CompResult × Nat × Nat) :=
+  sg.comps.foldlM (init := ((#[] : Array CompResult), 0, 0))
     fun (acc : Array CompResult × Nat × Nat) members => do
       let (results, states, costEvals) := acc
       if limits.uniformSubsetSearch then
-        let (r, states, costEvals) ← searchComponentRef up f opaq ex.roots slack limits members
-          states costEvals
+        let (r, states, costEvals) ← searchComponentRef sg.up sg.f sg.opaq ex.roots sg.slack
+          limits members states costEvals
         pure (results.push r, states, costEvals)
       else
-        let cx := mkSCtx ex f up cand b0 vis0 rootCount slack theta baseEv widthCs allTrue unc
-          members
+        let cx := mkSCtx ex sg.f sg.up sg.cand sg.b0 sg.vis0 sg.rootCount sg.slack sg.theta
+          sg.baseEv sg.widthCs sg.allTrue sg.unc members
         let (r, states, costEvals) ← searchComponent cx limits states costEvals
         pure (results.push r, states, costEvals)
-  -- Combine: per-component optima, unless a lower count bracket is shorter.
-  let kCS := cs.size
+
+/-- The chosen `Δ` and set: the per-component optima, unless a lower count
+bracket is shorter (and whether one was). -/
+def uniformKnapsack (limits : Limits) (kCS : Nat) (results : Array CompResult) :
+    Except SharingError (_root_.Int × Array Nat × Bool) := do
   let bestX := results.foldl (fun acc r => mergeSorted acc r.bestSet) #[]
   let bestDelta := results.foldl (fun acc r => acc + r.bestDelta) (0 : _root_.Int)
-  let k0 := kCS + bestX.size
-  let start := tag0BracketStart k0
-  let (chosenDelta, chosenX, lowerBracket) ← (do
-    if start > kCS then
-      let cap := start - 1 - kCS
-      if (results.size + 1) * (cap + 1) > limits.maxStates then
-        throw (.resourceExhausted .states limits.maxStates)
-      -- dp[c]: best (Δ, set) with c chosen terms, over the components so far.
-      let dp := results.foldl (fun dp r => knapStep cap dp r.bySize)
-        (#[some (0, #[])] ++ Array.replicate cap none)
-      pure (knapChoose kCS dp (bestDelta, bestX, false))
-    else pure (bestDelta, bestX, false) : Except SharingError (_root_.Int × Array Nat × Bool))
-  -- Model length from the truncated evaluation.
-  let baseRoots := ex.roots.foldl (fun acc r => acc + baseEv.cost[r]!) 0
-  let baseStored := cs.foldl (fun acc c => acc +
-    (evalStep p.dag p.family p.spineLen p.tail (widthCs.set! c none) allTrue baseEv c).cost[c]!) 0
-  let modelInt : _root_.Int := (baseRoots + baseStored : Nat) + chosenDelta +
-    (tag0Size (kCS + chosenX.size) : _root_.Int)
+  let start := tag0BracketStart (kCS + bestX.size)
+  if start > kCS then
+    let cap := start - 1 - kCS
+    if (results.size + 1) * (cap + 1) > limits.maxStates then
+      throw (.resourceExhausted .states limits.maxStates)
+    -- dp[c]: best (Δ, set) with c chosen terms, over the components so far.
+    let dp := results.foldl (fun dp r => knapStep cap dp r.bySize)
+      (#[some (0, #[])] ++ Array.replicate cap none)
+    pure (knapChoose kCS dp (bestDelta, bestX, false))
+  else pure (bestDelta, bestX, false)
+
+/-- The uniform-model length of the certain-stored terms without the count's
+`Tag0`: the roots and the certain-stored entries, by the full evaluation. -/
+def csBase (ex : Expanded) (p : Prep) (sg : UStage) : Nat :=
+  ex.roots.foldl (fun acc r => acc + sg.baseEv.cost[r]!) 0 +
+    sg.cs.foldl (fun acc c => acc +
+      (evalStep p.dag p.family p.spineLen p.tail (sg.widthCs.set! c none) sg.allTrue sg.baseEv
+        c).cost[c]!) 0
+
+/-- Classify, search every component and combine: the stored set and its
+model length. -/
+def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
+    Except SharingError UniformChoice := do
+  let sg := uniformStage w ex p
+  unless componentsChecked ex.dag sg.cls sg.opaq sg.comps (componentLabels ex.dag.size sg.comps) do
+    throw (.internal "uncertain components are not a separated partition")
+  let (results, states, costEvals) ← searchComponents limits ex sg
+  let (chosenDelta, chosenX, lowerBracket) ← uniformKnapsack limits sg.cs.size results
+  let modelInt : _root_.Int := (csBase ex p sg : Nat) + chosenDelta +
+    (tag0Size (sg.cs.size + chosenX.size) : _root_.Int)
   if modelInt < 0 then throw (.internal "negative model length")
   let model := modelInt.toNat
   if model > limits.maxOutputBytes then
     throw (.resourceExhausted .outputBytes limits.maxOutputBytes)
-  return { facts := f, certainStored := cs, certainExcluded := ce, uncertain := unc,
-           lowDegree := low, components := comps, stored := mergeSorted cs chosenX, model,
+  return { facts := sg.f, certainStored := sg.cs, certainExcluded := sg.ce, uncertain := sg.unc,
+           lowDegree := sg.low, components := sg.comps, stored := mergeSorted sg.cs chosenX, model,
            states, costEvals, lowerBracket }
 
 /-- The stored set is strictly increasing and every term has in-degree at
