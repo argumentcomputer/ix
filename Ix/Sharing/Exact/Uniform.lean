@@ -1104,6 +1104,114 @@ structure UniformChoice where
   costEvals : Nat
   lowerBracket : Bool
 
+/-- The edge counts from `q` into `y`: all edges and head (non-continuation)
+edges. -/
+def edgeCount (dag : Dag) (q y : Nat) : Nat × Nat × Nat :=
+  let node := dag.node q
+  (List.range node.children.size).foldl (fun (acc : Nat × Nat × Nat) i =>
+    if node.child i == y then
+      (q, acc.2.1 + 1, acc.2.2 + (if continuationEdge node i (dag.node y) then 0 else 1))
+    else acc) (q, 0, 0)
+
+/-- The search context of a component. -/
+def mkSCtx (ex : Expanded) (f : GraphFacts) (up : UPrep) (cand : Array Bool) (b0 : UBounds)
+    (vis0 : Array Nat × Array Nat) (rootCount : Array Nat) (slack : Nat) (theta : _root_.Int)
+    (baseEv : DictEval) (widthCs : Array (Option Nat)) (allTrue : Array Bool) (unc : Array Nat)
+    (members : Array Nat) : SCtx :=
+  let n := ex.dag.size
+  let area := componentArea up f members
+  let areaIdx : Std.HashMap Nat Nat :=
+    (Array.range area.size).foldl (fun acc j => acc.insert area[j]! j) {}
+  let memberIdx : Std.HashMap Nat Nat :=
+    (Array.range members.size).foldl (fun acc j => acc.insert members[j]! j) {}
+  let inEdges := area.map fun y => f.parents[y]!.map fun q => edgeCount ex.dag q y
+  let rootOcc := area.map (rootCount[·]!)
+  let isMem := markTable n members
+  let closure := upClosure ex.dag (isMem[·]!)
+  let inClosure := markTable n closure
+  let rootsC := ex.roots.filter (inClosure[·]!)
+  let storedInC := closure.filter (up.opaq[·]!)
+  { up, facts := f, cand, bounds0 := b0, vis0, members, memberIdx, area, areaIdx,
+    inEdges, rootOcc, slack, theta, baseEv, widthCs, allTrue, closure, rootsC, storedInC,
+    allUnc := unc }
+
+/-- The recorded parents of every area node are strictly increasing terms. -/
+def areaParentsOK (n : Nat) (cx : SCtx) : Bool :=
+  (List.range cx.area.size).all fun j =>
+    strictInc ((cx.inEdges[j]!).map (·.1)) && (cx.inEdges[j]!).all (·.1 < n)
+
+/-- The entry of a table with value `bd` whose set comes first in `setPrec`. -/
+def bestSetOf (tb : CTable) (bd : _root_.Int) : Option (Array Nat) :=
+  tb.foldl (init := (none : Option (Array Nat))) fun acc o =>
+    match o with
+    | some (d, s) =>
+      if d == bd then
+        match acc with
+        | none => some s
+        | some a => if setPrec s a then some s else acc
+      else acc
+    | none => acc
+
+/-- Search one component and pick its best entry. -/
+def searchComponent (cx : SCtx) (limits : Limits) (states costEvals : Nat) :
+    Except SharingError (CompResult × Nat × Nat) := do
+  unless areaParentsOK cx.up.prep.dag.size cx do
+    throw (.internal "component parents are not duplicate-free terms")
+  let st0 : SState := { states, costEvals }
+  let (tb, st) ← cx.solveP limits (8 * cx.members.size + 8) cx.members #[] #[] st0
+  let some bd := tb.best | throw (.internal "component search found no choice")
+  let some bs := bestSetOf tb bd | throw (.internal "component search found no choice")
+  pure ({ members := cx.members, bestDelta := bd, bestSet := bs, bySize := tb },
+    st.states, st.costEvals)
+
+/-- Search one component with the reference subset enumeration. -/
+def searchComponentRef (up : UPrep) (f : GraphFacts) (opaq : Array Bool) (roots : Array Nat)
+    (slack : Nat) (limits : Limits) (members : Array Nat) (states costEvals : Nat) :
+    Except SharingError (CompResult × Nat × Nat) := do
+  let area := componentArea up f members
+  let areaSet : Std.HashSet Nat := area.foldl (·.insert ·) {}
+  let rootMult : Std.HashMap Nat Nat := roots.foldl (fun acc r =>
+    if areaSet.contains r then acc.insert r (acc.getD r 0 + 1) else acc) {}
+  let rootArr := rootMult.toArray.qsort (fun a b => a.1 < b.1)
+  let storedIn := area.filter (opaq[·]!)
+  let cx0 : CompCtx :=
+    { up := up, members := members, area := area, rootMult := rootArr,
+      storedIn, phi0 := 0, slack := slack }
+  let (phi0, _) := cx0.phi (fun _ => false) #[]
+  let cx := { cx0 with phi0 }
+  let st0 : CompState := { states, costEvals }
+  let ((), st) ← (cx.dfs limits (members.size + 2) 0 #[]).run st0
+  let some (bd, bs) := st.best | throw (.internal "component search found no choice")
+  pure ({ members, bestDelta := bd, bestSet := bs, bySize := st.bySize }, st.states, st.costEvals)
+
+/-- One knapsack step: the best `(Δ, set)` per count up to `cap`, combining the
+counts so far with a component's table. -/
+def knapStep (cap : Nat) (dp : Array (Option (_root_.Int × Array Nat))) (bySize : CTable) :
+    Array (Option (_root_.Int × Array Nat)) :=
+  (List.range dp.size).foldl (fun ndp c =>
+    match dp[c]! with
+    | none => ndp
+    | some (d, s) => (List.range bySize.size).foldl (fun ndp k =>
+      match bySize[k]! with
+      | none => ndp
+      | some (dk, sk) =>
+        if c + k > cap then ndp
+        else
+          let cand : _root_.Int × Array Nat := (d + dk, mergeSorted s sk)
+          if betterEntry cand ndp[c + k]! then ndp.set! (c + k) (some cand) else ndp) ndp)
+    (Array.replicate (cap + 1) none)
+
+/-- Pick the shortest count bracket candidate (ties by `setPrec`). -/
+def knapChoose (kCS : Nat) (dp : Array (Option (_root_.Int × Array Nat)))
+    (init : _root_.Int × Array Nat × Bool) : _root_.Int × Array Nat × Bool :=
+  (List.range dp.size).foldl (fun (acc : _root_.Int × Array Nat × Bool) c =>
+    match dp[c]! with
+    | none => acc
+    | some (d, s) =>
+      let l : _root_.Int := d + (tag0Size (kCS + c) : _root_.Int)
+      let l0 : _root_.Int := acc.1 + (tag0Size (kCS + acc.2.1.size) : _root_.Int)
+      if l < l0 || (l == l0 && setPrec s acc.2.1) then (d, s, true) else acc) init
+
 /-- Classify, search every component and combine: the stored set and its
 model length. -/
 def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
@@ -1139,105 +1247,34 @@ def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
   let slack := tag0Size (cs.size + unc.size) - tag0Size cs.size
   -- Search each component.
   let rootCount := ex.roots.foldl (fun acc r => acc.modify r (· + 1)) (Array.replicate n 0)
-  let mut results : Array CompResult := #[]
-  let mut states := 0
-  let mut costEvals := 0
-  for members in comps do
-    let area := componentArea up f members
-    let areaSet : Std.HashSet Nat := area.foldl (·.insert ·) {}
-    let mut rootMult : Std.HashMap Nat Nat := {}
-    for r in ex.roots do
-      if areaSet.contains r then rootMult := rootMult.insert r (rootMult.getD r 0 + 1)
-    let rootArr := rootMult.toArray.qsort (fun a b => a.1 < b.1)
-    let storedIn := area.filter (opaq[·]!)
-    if limits.uniformSubsetSearch then
-      let cx0 : CompCtx :=
-        { up := up, members := members, area := area, rootMult := rootArr,
-          storedIn, phi0 := 0, slack := slack }
-      let (phi0, _) := cx0.phi (fun _ => false) #[]
-      let cx := { cx0 with phi0 }
-      let st0 : CompState := { states, costEvals }
-      let ((), st) ← (cx.dfs limits (members.size + 2) 0 #[]).run st0
-      states := st.states
-      costEvals := st.costEvals
-      let some (bd, bs) := st.best | throw (.internal "component search found no choice")
-      results := results.push { members, bestDelta := bd, bestSet := bs, bySize := st.bySize }
-    else
-      let areaIdx : Std.HashMap Nat Nat :=
-        (Array.range area.size).foldl (fun acc j => acc.insert area[j]! j) {}
-      let memberIdx : Std.HashMap Nat Nat :=
-        (Array.range members.size).foldl (fun acc j => acc.insert members[j]! j) {}
-      let inEdges := area.map fun y =>
-        f.parents[y]!.map fun q =>
-          let node := ex.dag.node q
-          (List.range node.children.size).foldl (fun (acc : Nat × Nat × Nat) i =>
-            if node.child i == y then
-              (q, acc.2.1 + 1,
-               acc.2.2 + (if continuationEdge node i (ex.dag.node y) then 0 else 1))
-            else acc) (q, 0, 0)
-      let rootOcc := area.map (rootCount[·]!)
-      let isMem := markTable n members
-      let closure := upClosure ex.dag (isMem[·]!)
-      let inClosure := markTable n closure
-      let rootsC := ex.roots.filter (inClosure[·]!)
-      let storedInC := closure.filter (opaq[·]!)
-      let cx : SCtx :=
-        { up, facts := f, cand, bounds0 := b0, vis0, members, memberIdx, area, areaIdx,
-          inEdges, rootOcc, slack, theta,
-          baseEv, widthCs, allTrue, closure, rootsC, storedInC, allUnc := unc }
-      let st0 : SState := { states, costEvals }
-      let (tb, st) ← cx.solveP limits (8 * members.size + 8) members #[] #[] st0
-      states := st.states
-      costEvals := st.costEvals
-      let some bd := tb.best | throw (.internal "component search found no choice")
-      let bestSet := tb.foldl (init := (none : Option (Array Nat))) fun acc o =>
-        match o with
-        | some (d, s) =>
-          if d == bd then
-            match acc with
-            | none => some s
-            | some a => if setPrec s a then some s else acc
-          else acc
-        | none => acc
-      let some bs := bestSet | throw (.internal "component search found no choice")
-      results := results.push { members, bestDelta := bd, bestSet := bs, bySize := tb }
+  let (results, states, costEvals) ← comps.foldlM (init := ((#[] : Array CompResult), 0, 0))
+    fun (acc : Array CompResult × Nat × Nat) members => do
+      let (results, states, costEvals) := acc
+      if limits.uniformSubsetSearch then
+        let (r, states, costEvals) ← searchComponentRef up f opaq ex.roots slack limits members
+          states costEvals
+        pure (results.push r, states, costEvals)
+      else
+        let cx := mkSCtx ex f up cand b0 vis0 rootCount slack theta baseEv widthCs allTrue unc
+          members
+        let (r, states, costEvals) ← searchComponent cx limits states costEvals
+        pure (results.push r, states, costEvals)
   -- Combine: per-component optima, unless a lower count bracket is shorter.
   let kCS := cs.size
   let bestX := results.foldl (fun acc r => mergeSorted acc r.bestSet) #[]
   let bestDelta := results.foldl (fun acc r => acc + r.bestDelta) (0 : _root_.Int)
   let k0 := kCS + bestX.size
-  let mut chosenX := bestX
-  let mut chosenDelta := bestDelta
-  let mut lowerBracket := false
   let start := tag0BracketStart k0
-  if start > kCS then
-    let cap := start - 1 - kCS
-    if (results.size + 1) * (cap + 1) > limits.maxStates then
-      throw (.resourceExhausted .states limits.maxStates)
-    -- dp[c]: best (Δ, set) with c chosen terms, over the components so far.
-    let mut dp : Array (Option (_root_.Int × Array Nat)) :=
-      #[some (0, #[])] ++ Array.replicate cap none
-    for r in results do
-      let mut ndp : Array (Option (_root_.Int × Array Nat)) := Array.replicate (cap + 1) none
-      for h : c in [0:dp.size] do
-        let some (d, s) := dp[c] | continue
-        for h2 : k in [0:r.bySize.size] do
-          let some (dk, sk) := r.bySize[k] | continue
-          if c + k > cap then continue
-          let cand : _root_.Int × Array Nat := (d + dk, mergeSorted s sk)
-          let better := match ndp[c + k]! with
-            | none => true
-            | some (d0, s0) => cand.1 < d0 || (cand.1 == d0 && setPrec cand.2 s0)
-          if better then ndp := ndp.set! (c + k) (some cand)
-      dp := ndp
-    for h : c in [0:dp.size] do
-      let some (d, s) := dp[c] | continue
-      let l : _root_.Int := d + (tag0Size (kCS + c) : _root_.Int)
-      let l0 : _root_.Int := chosenDelta + (tag0Size (kCS + chosenX.size) : _root_.Int)
-      if l < l0 || (l == l0 && setPrec s chosenX) then
-        chosenX := s
-        chosenDelta := d
-        lowerBracket := true
+  let (chosenDelta, chosenX, lowerBracket) ← (do
+    if start > kCS then
+      let cap := start - 1 - kCS
+      if (results.size + 1) * (cap + 1) > limits.maxStates then
+        throw (.resourceExhausted .states limits.maxStates)
+      -- dp[c]: best (Δ, set) with c chosen terms, over the components so far.
+      let dp := results.foldl (fun dp r => knapStep cap dp r.bySize)
+        (#[some (0, #[])] ++ Array.replicate cap none)
+      pure (knapChoose kCS dp (bestDelta, bestX, false))
+    else pure (bestDelta, bestX, false) : Except SharingError (_root_.Int × Array Nat × Bool))
   -- Model length from the truncated evaluation.
   let baseRoots := ex.roots.foldl (fun acc r => acc + baseEv.cost[r]!) 0
   let baseStored := cs.foldl (fun acc c => acc +
