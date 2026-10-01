@@ -1,0 +1,19 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "lean-compile/Tuple.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "292cf3ba9181221611fb7f3ddb3cc4f3bd47386e6fe6f26889f0352a87eaaf70"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+    }
+  ],
+  "failures": []
+}

@@ -1,0 +1,12 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "lean-compile/BigCtor.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "78c3f49605da5a79618ab9770ba9a42ba138e5092d4eb8ae02c0c659c7a6a744"
+    }
+  ],
+  "equations": [],
+  "failures": []
+}

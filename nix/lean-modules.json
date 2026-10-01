@@ -1108,7 +1108,11 @@
   "CompilatrixTests.Corpus.Run":
   {"path": "CompilatrixTests/Corpus/Run.lean",
    "imports":
-   ["CompilatrixTests.Corpus.Manifest", "CompilatrixTests.Pipeline.Levels"]},
+   ["CompilatrixTests.Corpus.Manifest",
+    "CompilatrixTests.Pipeline.Levels",
+    "Compilatrix.Anf.Print",
+    "Compilatrix.Lir.Print",
+    "Compilatrix.Xv.Print"]},
   "CompilatrixTests.Corpus.Manifest":
   {"path": "CompilatrixTests/Corpus/Manifest.lean",
    "imports": ["CompilatrixTests.Corpus.Json", "Compilatrix.Tools.Check"]},

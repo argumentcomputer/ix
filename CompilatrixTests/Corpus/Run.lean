@@ -1,5 +1,8 @@
 import CompilatrixTests.Corpus.Manifest
 import CompilatrixTests.Pipeline.Levels
+import Compilatrix.Anf.Print
+import Compilatrix.Lir.Print
+import Compilatrix.Xv.Print
 
 /-! The corpus suite (MT.2): every root of every registered corpus family,
 against its frozen cases (`compilatrix/corpus/1`).
@@ -25,10 +28,13 @@ manifest by `corpus rebuild`) and, where given, an independent constant:
   `ok` and the interpreter's value;
 * the word levels (Lir onwards, and native code) must give that value when
   the arguments and the result are below `2⁶³`, and `natOverflow` (status 3)
-  when the result is not; a case marked `allow_overflow` may also give
-  status 3 (an intermediate value reaches `2⁶³`), which is counted;
+  when the result is not; a case may `allow` reviewed resource failures
+  (`natOverflow` when an intermediate value reaches `2⁶³`, `heap` when its
+  immortal allocations outgrow the word levels' 64 KiB region), which are
+  counted;
 * a case with an argument of at least `2⁶³` has no word: only the entry
-  wrapper runs (typed x86, ByteEval, native) and must return status 3.
+  wrapper runs (typed x86 and ByteEval when the argument fits a register,
+  native code always) and must return status 3.
 
 The big-step evaluators nest native frames per recursive call, so the
 suite re-runs itself once with a large Lean stack (`LEAN_STACK_SIZE_KB`, as
@@ -47,9 +53,19 @@ def wordLevel (level : String) : Bool := ["lir", "xv", "xl"].contains level
 
 def machineLevel (level : String) : Bool := level == "x86" || level == "bytes"
 
+/-- The resource failure an outcome is, by the driver's status codes
+(1 heap, 2 stack, 3 natOverflow, 4 trap) or the word levels' `resource`. -/
+def failure (outcome : String) : Option String :=
+  match outcome with
+  | "status 1" => some "heap" | "status 2" => some "stack" | "status 3" => some "natOverflow"
+  | "status 4" | "trap" => some "trap"
+  | _ =>
+    if outcome.startsWith "resource" then
+      ["heap", "stack", "natOverflow"].find? fun r => (outcome.splitOn r).length > 1
+    else none
+
 /-- An outcome that is the `natOverflow` failure (status 3). -/
-def overflow (outcome : String) : Bool :=
-  outcome == "status 3" || (outcome.startsWith "resource" && (outcome.splitOn "natOverflow").length > 1)
+def overflow (outcome : String) : Bool := failure outcome == some "natOverflow"
 
 structure Options where
   cc : Option String := none
@@ -59,6 +75,8 @@ structure Options where
   roots : List String := []
   machines : Bool := true
   progress : Bool := false
+  survey : Bool := false
+  dump : Bool := false
 
 structure Tally where
   compiled : Nat := 0
@@ -69,12 +87,12 @@ structure Tally where
   allowed : Nat := 0
 
 /-- Judge one word-level or native outcome against the case. -/
-def judge (a : Assert) (label : String) (want : Bool × String) (allow : Bool) (outcome : String)
+def judge (a : Assert) (label : String) (want : Bool × String) (allow : List String) (outcome : String)
     (obs : String) : IO Bool := do
   match want with
   | (true, _) => expect a (overflow outcome) s!"{label}: {outcome} {obs}, expected status 3 (no word)"; pure false
   | (false, v) =>
-    if allow && overflow outcome then expect a true ""; pure true
+    if (failure outcome).any allow.contains then expect a true ""; pure true
     else
       expect a (outcome == "ok") s!"{label}: {outcome}, expected ok {v}"
       expect a (obs == v) s!"{label}: reads back {obs}, expected {v}"
@@ -94,7 +112,7 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label 
     for (level, i) in levels.zipIdx do
       let run := if sourceLevel level then !noWord && src.isSome
         else if wordLevel level then !noWord
-        else o.machines && (cs.machine || noWord)
+        else o.machines && (cs.machine || noWord) && cs.args.all (· < 2 ^ 64)
       if !run then continue
       let ((outcome, obs), ms) ← timed (Levels.runLevel c level cs.args)
       let obs := (obs.map Rt.renderObs).getD "-"
@@ -102,7 +120,7 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label 
       if sourceLevel level then
         expect a (outcome == "ok") s!"{l}: {outcome}, expected ok {src.getD ""}"
         expect a (some obs == src) s!"{l}: reads back {obs}, expected {src.getD ""}"
-      else if ← judge a l want cs.allowOverflow outcome obs then
+      else if ← judge a l want cs.allow outcome obs then
         t.modify fun t => { t with allowed := t.allowed + 1 }
       times := times.modify i fun (n, ms') => (n, ms' + ms)
       t.modify fun t => { t with runs := t.runs + 1 }
@@ -117,7 +135,7 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label 
       let some want := cs.expect r | continue
       expect a ln.ok s!"{label} {cs.args} natively: registers not restored"
       let outcome := if ln.status == 0 then "ok" else s!"status {ln.status}"
-      if ← judge a s!"{label} {cs.args} natively" want cs.allowOverflow outcome (ln.obs.getD "-") then
+      if ← judge a s!"{label} {cs.args} natively" want cs.allow outcome (ln.obs.getD "-") then
         t.modify fun t => { t with allowed := t.allowed + 1 }
     t.modify fun t => { t with native := t.native + lines.length }
     out := out.push s!"  natively: {lines.length} cases agree ({ms} ms)"
@@ -166,7 +184,59 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
   let t ← t.get
   IO.println s!"  {t.compiled} roots compiled, {t.declined} declined as expected; {t.cases} cases, \
     {t.runs} level runs{if native.isSome then s!", {t.native} native runs" else ""}; \
-    {t.allowed} allowed intermediate overflows"
+    {t.allowed} allowed resource failures"
+
+/-- The middle end's and the backend's input for a root `produce` declines:
+Anf after the middle end, Lir and Xv (as `compilatrix --dump-ir` prints them),
+recomputed by `produce`'s own steps up to selection. For diagnosing a decline
+at allocation or later. -/
+def dumpIR (inp : Input) : Except String String := do
+  let cfg := ({} : Config).forInput inp
+  let P := inp.program
+  let (table, _, _) := Compilatrix.Src.Table.build cfg.table P inp.hints.proposals
+  let p0 := { P with table }
+  let ann ← Compilatrix.Src.Relevance.annotate inp.env p0
+  let (src, checked) ← match Compilatrix.Src.Recheck.annotation p0 ann with
+    | .ok r => pure r
+    | .error _ => throw "relevance rejects it"
+  let (lam, _) ← match (Compilatrix.Lam.erase src checked).mapError Err.ofErase with
+    | .ok r => pure r
+    | .error e => throw e.render
+  let trace ← Compilatrix.Anf.Pipeline.produce cfg.budgets lam
+  let anf := ((trace.stages.getLast?).map (·.2)).getD default
+  let fir ← (Compilatrix.Fir.lower anf).mapError fun e => (Err.ofFir e).render
+  let C := Compilatrix.Cfg.lower (Compilatrix.Own.immortal fir)
+  let lowered ← (Compilatrix.Rt.lower { names := cfg.names } C).mapError fun e => (Err.ofRt e).render
+  let (xv, _) ← (Compilatrix.Xv.Select.run lowered.program).mapError fun e => (Err.ofSelect e).render
+  return s!"== anf\n{anf.render}\n== lir\n{lowered.program.text}\n== xv\n{xv.text}"
+
+/-- Survey mode: compile every root and print `compiled` or its
+`stage: code`, with what the manifest expects (no assertions; for
+reviewing a new family before recording its declines). -/
+def survey (o : Options) : IO Unit := do
+  let manifests := if o.manifests.isEmpty then families else o.manifests
+  for path in manifests do
+    let m ← Family.read path
+    for f in m.fixtures do
+      if !o.only.isEmpty && !o.only.contains f.name then continue
+      let dir : FilePath := m.directory
+      for r in f.roots do
+        if !o.roots.isEmpty && !o.roots.contains r.name then continue
+        let inp ← ingressFile (dir / f.closure.path) (dir / f.equations.path) [r.name]
+        let ((result : Except Err (Cert × Artifact)), ms) ← timed (IO.lazyPure fun _ => compileInput {} inp)
+        let got := match result with
+          | .ok _ => "compiled"
+          | .error e => s!"{e.stage.name}: {e.code}"
+        let want := match r.decline with
+          | some d => s!"{d.stage}: {d.code}"
+          | none => "compiled"
+        IO.println s!"{m.family}/{f.name}/{r.name}\t{got}\t(manifest: {want}{if got == want then "" else ", DIFFERS"})\t{ms} ms"
+        if let .error e := result then
+          IO.println s!"  {(e.render.take 300).toString}"
+          if o.dump && [Stage.alloc, .stacking, .layout, .x86, .elf].contains e.stage then
+            match dumpIR inp with
+            | .ok text => IO.println text
+            | .error m => IO.println s!"  (no dump: {m})"
 
 def parseOptions : List String → Except String Options
   | [] => pure {}
@@ -176,6 +246,8 @@ def parseOptions : List String → Except String Options
   | "--root" :: n :: rest => do let o ← parseOptions rest; return { o with roots := n :: o.roots }
   | "--no-machines" :: rest => do return { (← parseOptions rest) with machines := false }
   | "--progress" :: rest => do return { (← parseOptions rest) with progress := true }
+  | "--survey" :: rest => do return { (← parseOptions rest) with survey := true }
+  | "--dump" :: rest => do return { (← parseOptions rest) with dump := true }
   | arg :: rest =>
     if arg.startsWith "--" then throw s!"unknown argument {arg}"
     else do let o ← parseOptions rest; return { o with manifests := arg :: o.manifests }
@@ -184,7 +256,7 @@ def parseOptions : List String → Except String Options
 def stackKb : Nat := CompilatrixTests.Src.Bench.deepStackKb
 
 /-- Usage: `tests-corpus [MANIFEST…] [--cc CC] [--work DIR] [--only FIXTURE]…
-[--root ROOT]… [--no-machines] [--progress]`. Without a manifest, every
+[--root ROOT]… [--no-machines] [--progress] [--survey [--dump]]`. Without a manifest, every
 registered family (`Corpus.families`). -/
 def main (args : List String) : IO UInt32 := do
   -- re-run once with a large stack for the big-step evaluators
@@ -197,6 +269,9 @@ def main (args : List String) : IO UInt32 := do
   let o ← match parseOptions args with
     | .ok o => pure o
     | .error e => IO.eprintln s!"tests-corpus: {e}"; return 2
+  if o.survey then
+    survey o
+    return 0
   let a ← IO.mkRef 0
   try
     match o.work with

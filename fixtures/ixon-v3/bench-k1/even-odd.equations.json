@@ -1,0 +1,25 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "even-odd/EvenOdd.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "ee54ae8c2fb43c4fef2315c8292d8cf6b885f225ead3bc1aad42d216a6a0de21"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Scalar.isEven",
+      "definition_address": "4a5bab97797f786b74a317f447770cca4ace0dbec661198fb81856d0e9d70c30",
+      "equation": "Scalar.isEven.eq_def",
+      "equation_address": "63e33005e446474ff9a98edc812ff954b8f0316e03a234ab9a040dc298f1f211"
+    },
+    {
+      "definition": "Scalar.isOdd",
+      "definition_address": "c469da42bb3b6b290be30d5eeeaa67e8d850e5bba8f1e33c83e2629fd4e796dd",
+      "equation": "Scalar.isOdd.eq_def",
+      "equation_address": "3037e38b4f90cf83fc997d61983a2f619d73871a4a06321e457e923418846050"
+    }
+  ],
+  "failures": []
+}

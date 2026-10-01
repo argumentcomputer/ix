@@ -14,6 +14,14 @@ compile the same Lean source.
 | `ackermann` | `Nat → Nat → Nat` | 1,405 | 34 | 992,719 |
 | `tak` | `Nat → Nat → Nat → Nat → Nat` | 149 | 5 | 52,623 |
 | `gcd` | `Nat → Nat → Nat` | 265 | 7 | 119,929 |
+| `collatz` | `Nat → Nat` | 1,545 | 35 | 1,143,952 |
+| `prime-count` | `Nat → Nat` | 1,546 | 35 | 1,144,816 |
+| `even-odd` | `Nat → Nat` | 64 | 2 | 18,906 |
+| `sfib` | `Nat → Nat` | 149 | 5 | 51,949 |
+
+The last four are the MT.2 benchmark rows (definitions from the scalar
+corpus, `fixtures/corpus/phase1-scalar`), added on 2026-10-01; `tests-ixon-v3`,
+the `census` check and `tests-pipeline` still cover the first five.
 
 Files per fixture:
 - `<name>.ixe`: the closure, from `ix compile --consts entry --equations
@@ -27,9 +35,18 @@ Files per fixture:
 - `<name>.census.json`: the reviewed admission census. Every constant of
   every closure passes decoding, erased typing and the D12 policy stage.
 
-[`provenance.json`](provenance.json) records the producer revision and binary
-hash, the commands, and every file hash. The closures are reproducible: a
-second build gave byte-identical files.
+[`corpus.json`](corpus.json) is the family's manifest
+(`compilatrix/corpus/1`, [`docs/corpus.md`](../../../docs/corpus.md)): sources,
+licences, the ix revision, binary hash and commands, every file hash, the
+roots' addresses, and per root its cases with the outputs Lean's interpreter
+printed and independent constants. `lake exe corpus rebuild` remakes the
+pack with the pinned ix and replaces `plans/x86-phase1/bench-k1/build.sh`: on
+2026-10-01 it rebuilt the five K1 closures, sidecars and censuses byte for
+byte, with the named-twin hashes [`provenance.json`](provenance.json)
+records. `lake exe corpus check` verifies the files offline, and
+`lake exe tests-corpus` runs every root at every level and natively.
+[`provenance.json`](provenance.json) is the original record of the first
+five (producer revision and binary hash, commands, file hashes).
 
 **Gates.** `tests-ixon-v3` decodes each closure through strict v3 ingress,
 checks that every recorded address is present and the equation count is

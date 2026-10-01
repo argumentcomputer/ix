@@ -1,7 +1,7 @@
 {
   "format": "compilatrix/corpus/1",
   "family": "bench-k1",
-  "description": "The K1 benchmark closures (phase1.md M0.4): the anonymous closure of each benchmark fixture's pure entry, with unfolding equations.",
+  "description": "The benchmark fixtures' pure entry closures (phase1.md M0.4, MT.2): the five K1 programs, and the four MT.2 rows (collatz, prime-count, even-odd, sfib), with unfolding equations.",
   "tier": "required",
   "phase": 1,
   "directory": "fixtures/ixon-v3/bench-k1",
@@ -750,6 +750,404 @@
                 2521712920250132284
               ],
               "value": "1",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "collatz",
+      "source": {
+        "path": "collatz/Collatz.lean",
+        "sha256": "05e97897fe27ccf0d993dc8d32eafea329b5bc9fec2e1b439da472330ae79398",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "corpus",
+        "origins": [
+          {
+            "declaration": "collatz",
+            "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
+            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "collatz.ixe",
+        "sha256": "fd3e18e0a5b7451e3cdcedcaa8829e694f0b4e48d55cd2d53ade9e04697b44f0",
+        "bytes": 1143952
+      },
+      "equations": {
+        "path": "collatz.equations.json",
+        "sha256": "31d6f8d4f4dc5c9ff75e77066ef68400d94f93562d44800e21ef2303a87be7de",
+        "equations": 35,
+        "failures": 0
+      },
+      "named_env_sha256": "81d729ab1ba01da72d70884c7bc9950eca47d09ce3bfa0728a042b18803df2e1",
+      "census": {
+        "path": "collatz.census.json",
+        "sha256": "78fc294ff852e9f01814e80acd8d9820e778ca560e6a5281327c9f18c0686b5c"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "f949f42927d8eb872a422e2c64c5a2b8135648a3e7646903a88d68fabffb9176",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 6,
+            "count": 3,
+            "ranges": [
+              [
+                0,
+                200
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                30
+              ],
+              "value": "423",
+              "machine": true
+            },
+            {
+              "args": [
+                300
+              ],
+              "value": "14151"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                77
+              ],
+              "value": "2116",
+              "generated": true
+            },
+            {
+              "args": [
+                155
+              ],
+              "value": "5839",
+              "generated": true
+            },
+            {
+              "args": [
+                132
+              ],
+              "value": "4788",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "prime-count",
+      "source": {
+        "path": "prime-count/PrimeCount.lean",
+        "sha256": "ba421604e9ffe557afba630d14d783b138a45694f25bd0c3770f227cec6db513",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "corpus",
+        "origins": [
+          {
+            "declaration": "prime-count",
+            "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
+            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "prime-count.ixe",
+        "sha256": "3f626adf86aee401ef4a557ce07f3c0956434e67db7154713ac046470c23164e",
+        "bytes": 1144816
+      },
+      "equations": {
+        "path": "prime-count.equations.json",
+        "sha256": "ea7f1167998a81758ceaceddfb69450c888afa202ef4799528b4337ce095c5a6",
+        "equations": 35,
+        "failures": 0
+      },
+      "named_env_sha256": "c8c82e74f5c84133c4321585c118a477359c1299cc0e85b023c0bc2814447a0a",
+      "census": {
+        "path": "prime-count.census.json",
+        "sha256": "3cee0a52b907000c09c35b30671b07c425e99d77b39598451af004913aec0020"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "efc0c56c519a99ca219446a1d6d16fb642605ead12e429279fd27ea9c2579aff",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 7,
+            "count": 3,
+            "ranges": [
+              [
+                0,
+                500
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                30
+              ],
+              "value": "10",
+              "constant": "10",
+              "machine": true
+            },
+            {
+              "args": [
+                1000
+              ],
+              "value": "168",
+              "constant": "168"
+            },
+            {
+              "args": [
+                279
+              ],
+              "value": "59",
+              "generated": true
+            },
+            {
+              "args": [
+                432
+              ],
+              "value": "83",
+              "generated": true
+            },
+            {
+              "args": [
+                390
+              ],
+              "value": "77",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "even-odd",
+      "source": {
+        "path": "even-odd/EvenOdd.lean",
+        "sha256": "0266bb38590a645440f255c9d9ab6b2e15e3cf6bab476961c6364f2afb0e759a",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "corpus",
+        "origins": [
+          {
+            "declaration": "even-odd",
+            "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
+            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "even-odd.ixe",
+        "sha256": "8f7ae120ac34bd65557b7c00d90c2decbe77f1de9d14abc0cf922a86b9b2bc5c",
+        "bytes": 18906
+      },
+      "equations": {
+        "path": "even-odd.equations.json",
+        "sha256": "378571092f798e7247081cb1c1e27bfdbf1f525bf5083552459a46bcb8d71ae4",
+        "equations": 2,
+        "failures": 0
+      },
+      "named_env_sha256": "560293eb645ee9dda2bafc3f22b6312b196acf834d2f32af6767fcc7013f8964",
+      "census": {
+        "path": "even-odd.census.json",
+        "sha256": "37ce232f11388568497989e1dd6b397524cf13ee17a4072b9d7b1dc8c4c355f8"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "ee54ae8c2fb43c4fef2315c8292d8cf6b885f225ead3bc1aad42d216a6a0de21",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 8,
+            "count": 3,
+            "ranges": [
+              [
+                0,
+                20000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                7
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                100001
+              ],
+              "value": "0",
+              "constant": "0"
+            },
+            {
+              "args": [
+                100000
+              ],
+              "value": "1",
+              "constant": "1"
+            },
+            {
+              "args": [
+                4567
+              ],
+              "value": "0",
+              "generated": true
+            },
+            {
+              "args": [
+                5009
+              ],
+              "value": "0",
+              "generated": true
+            },
+            {
+              "args": [
+                1396
+              ],
+              "value": "1",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sfib",
+      "source": {
+        "path": "sfib/Sfib.lean",
+        "sha256": "7c729b7c41c2eb7bd1705971674b2a4e612c362fda9daba6fde4d1e8f25a6de0",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "corpus",
+        "origins": [
+          {
+            "declaration": "sfib",
+            "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
+            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "sfib.ixe",
+        "sha256": "187a6669bf1173746dadb7900e1ae5adec2816d458d05baf2dc2d68f6dc167b2",
+        "bytes": 51949
+      },
+      "equations": {
+        "path": "sfib.equations.json",
+        "sha256": "1842380026b6d24dab10e54dd625292c889e84dd93468f4dcb7798a29cacb64b",
+        "equations": 5,
+        "failures": 0
+      },
+      "named_env_sha256": "945ad696cb5a314fa905cb349deab3c13c16c260744f59c6e322807b2be39be3",
+      "census": {
+        "path": "sfib.census.json",
+        "sha256": "dc4953d7e163105956c5e90192b6e9e644152319f3af36fa9aa0489425d03b70"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "adbbba1d16c40b552b1561198db1f61b7d67c796ce8d2cbbcbf63adfaffe2a4f",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 9,
+            "count": 3,
+            "ranges": [
+              [
+                0,
+                3000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                10
+              ],
+              "value": "258574",
+              "machine": true
+            },
+            {
+              "args": [
+                1000
+              ],
+              "value": "258574",
+              "constant": "258574"
+            },
+            {
+              "args": [
+                604
+              ],
+              "value": "258574",
+              "generated": true
+            },
+            {
+              "args": [
+                1291
+              ],
+              "value": "4",
+              "generated": true
+            },
+            {
+              "args": [
+                2962
+              ],
+              "value": "258574",
               "generated": true
             }
           ]

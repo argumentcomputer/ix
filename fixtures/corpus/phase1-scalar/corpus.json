@@ -1,0 +1,3745 @@
+{
+  "format": "compilatrix/corpus/1",
+  "family": "phase1-scalar",
+  "description": "The Phase 1 scalar corpus (phase1.md MT.2): first-order, total programs over Nat and Bool, compiled by ix with unfolding equations; expected outputs from Lean 4.34's interpreter and independent constants.",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/corpus/phase1-scalar",
+  "source_root": "fixtures/corpus/phase1-scalar/src",
+  "lean": {
+    "version": "4.34.0",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "9c4b9c654f06e88f021cfd9753701e52852e5500",
+    "ix_binary_sha256": "d8ba031a087810c8cbd0ea96a6251c27fcd07b0b161e1cadd67d8647604e580c",
+    "ix_version": "4.34.0|0.0.1",
+    "ix_build": "Built with Lake (lake build Ix ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix 0a31c8dbc63755924c645bf1afedc563e395e88a; not a Nix build.",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "scalar",
+      "source": {
+        "path": "Scalar.lean",
+        "sha256": "544ce4f4c49387de05e2952299a962165f11704a7ee58d9405f2e75edb115c8d",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": [
+          {
+            "commit": "aa2fd1ad9b91375903a4253cfcf1ea5ef2754f37",
+            "license": "HPND",
+            "name": "tailfib",
+            "path": "benchmark/tests/tailfib.sml",
+            "repository": "https://github.com/MLton/mlton",
+            "variant": "re-derived"
+          },
+          {
+            "commit": "aa2fd1ad9b91375903a4253cfcf1ea5ef2754f37",
+            "license": "HPND",
+            "name": "isEven, isOdd",
+            "path": "benchmark/tests/even-odd.sml",
+            "repository": "https://github.com/MLton/mlton",
+            "variant": "re-derived"
+          },
+          {
+            "commit": "aa2fd1ad9b91375903a4253cfcf1ea5ef2754f37",
+            "license": "HPND",
+            "name": "impFor",
+            "path": "benchmark/tests/imp-for.sml",
+            "repository": "https://github.com/MLton/mlton",
+            "variant": "re-derived (three levels, k parameter)"
+          },
+          {
+            "commit": "8b803da69d3941ce1e03173578093aefc41ee548",
+            "license": "Apache-2.0",
+            "name": "pyth",
+            "path": "test/bench/koka/pyth.kk",
+            "repository": "https://github.com/koka-lang/koka",
+            "variant": "re-derived"
+          },
+          {
+            "commit": "8b803da69d3941ce1e03173578093aefc41ee548",
+            "license": "Apache-2.0",
+            "name": "sfib",
+            "path": "test/bench/koka/sfib-int.kk",
+            "repository": "https://github.com/koka-lang/koka",
+            "variant": "re-derived (sfibx)"
+          },
+          {
+            "commit": "8b803da69d3941ce1e03173578093aefc41ee548",
+            "license": "Apache-2.0",
+            "name": "gcdSub",
+            "path": "test/bench/koka/hamming.kk",
+            "repository": "https://github.com/koka-lang/koka",
+            "variant": "re-derived (gcd by subtraction)"
+          },
+          {
+            "license": "none (re-derive only)",
+            "name": "nfib",
+            "path": "spectral/rfib",
+            "repository": "https://gitlab.haskell.org/ghc/nofib",
+            "variant": "re-derived over Nat"
+          },
+          {
+            "commit": "293d5d0c0c3f3dded4688b3ccd6a33939ac5102b",
+            "license": "Apache-2.0",
+            "name": "f91",
+            "path": "tests/elab/partial_fixpoint_f91.lean",
+            "repository": "https://github.com/leanprover/lean4",
+            "variant": "re-derived with fuel"
+          },
+          {
+            "license": "Apache-2.0 OR MIT",
+            "name": "collatz, collatzBest, isPrime, primeCount, sigma, isPerfect, perfectCount, chooseMul, choosePascal, lcmUpTo, factorial, isqrt, powMod, digitSum",
+            "variant": "original (classic algorithms)"
+          }
+        ]
+      },
+      "consts": [
+        "Scalar.tailfib",
+        "Scalar.nfib",
+        "Scalar.isEven",
+        "Scalar.isOdd",
+        "Scalar.f91",
+        "Scalar.factorial",
+        "Scalar.impFor",
+        "Scalar.pyth",
+        "Scalar.sfib",
+        "Scalar.collatz",
+        "Scalar.collatzBest",
+        "Scalar.isPrime",
+        "Scalar.primeCount",
+        "Scalar.sigma",
+        "Scalar.isPerfect",
+        "Scalar.perfectCount",
+        "Scalar.chooseMul",
+        "Scalar.lcmUpTo",
+        "Scalar.choosePascal",
+        "Scalar.isqrt",
+        "Scalar.powMod",
+        "Scalar.digitSum",
+        "Scalar.gcdSub"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "scalar.ixe",
+        "sha256": "20c83de25e2108bf64d7b7b01867039f91824f394d72537fb80a64c2df8b0698",
+        "bytes": 1237334
+      },
+      "equations": {
+        "path": "scalar.equations.json",
+        "sha256": "d0a78ae328df802fea5f2eee675ca7bc0161feb7630f6813bddf37edfe6031cd",
+        "equations": 50,
+        "failures": 0
+      },
+      "named_env_sha256": "cabd317795cbac212b744bfcbdcdf90ddaeb0ac6cec3a6c97583cc9a586e1a01",
+      "census": {
+        "path": "scalar.census.json",
+        "sha256": "804447481af539ff3a288ac4c3a35926330a9db23038ce126b60354b4a178916"
+      },
+      "roots": [
+        {
+          "name": "Scalar.tailfib",
+          "address": "f94f3efb422dcbc3ae1bbc99cf591ddb179041c03dbd051c075d7222207658df",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants: F(n); F(93) is the first without a word",
+          "generate": {
+            "seed": 11,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                100
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                10
+              ],
+              "value": "55",
+              "constant": "55",
+              "machine": true
+            },
+            {
+              "args": [
+                44
+              ],
+              "value": "701408733",
+              "constant": "701408733"
+            },
+            {
+              "args": [
+                92
+              ],
+              "value": "7540113804746346429",
+              "constant": "7540113804746346429"
+            },
+            {
+              "args": [
+                93
+              ],
+              "value": "12200160415121876738",
+              "constant": "12200160415121876738"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                23
+              ],
+              "value": "28657",
+              "generated": true
+            },
+            {
+              "args": [
+                14
+              ],
+              "value": "377",
+              "generated": true
+            },
+            {
+              "args": [
+                24
+              ],
+              "value": "46368",
+              "generated": true
+            },
+            {
+              "args": [
+                25
+              ],
+              "value": "75025",
+              "generated": true
+            },
+            {
+              "args": [
+                36
+              ],
+              "value": "14930352",
+              "generated": true
+            },
+            {
+              "args": [
+                93
+              ],
+              "value": "12200160415121876738",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.nfib",
+          "address": "0c99b1aee1cfe7f831e01d0f3ce1100a2bfd40663b00ecf8796dc05dd57e196c",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants: 2 F(n+1) - 1",
+          "generate": {
+            "seed": 12,
+            "count": 4,
+            "ranges": [
+              [
+                0,
+                18
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                10
+              ],
+              "value": "177",
+              "constant": "177",
+              "machine": true
+            },
+            {
+              "args": [
+                20
+              ],
+              "value": "21891",
+              "constant": "21891"
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "constant": "1"
+            },
+            {
+              "args": [
+                11
+              ],
+              "value": "287",
+              "generated": true
+            },
+            {
+              "args": [
+                2
+              ],
+              "value": "3",
+              "generated": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1",
+              "generated": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.isEven",
+          "address": "4a5bab97797f786b74a317f447770cca4ace0dbec661198fb81856d0e9d70c30",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants: n % 2 == 0",
+          "generate": {
+            "seed": 13,
+            "count": 4,
+            "ranges": [
+              [
+                0,
+                20000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                7
+              ],
+              "value": "false",
+              "constant": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "true",
+              "constant": "true"
+            },
+            {
+              "args": [
+                100000
+              ],
+              "value": "true",
+              "constant": "true"
+            },
+            {
+              "args": [
+                100001
+              ],
+              "value": "false",
+              "constant": "false"
+            },
+            {
+              "args": [
+                19354
+              ],
+              "value": "true",
+              "generated": true
+            },
+            {
+              "args": [
+                8448
+              ],
+              "value": "true",
+              "generated": true
+            },
+            {
+              "args": [
+                6708
+              ],
+              "value": "true",
+              "generated": true
+            },
+            {
+              "args": [
+                15640
+              ],
+              "value": "true",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.isOdd",
+          "address": "c469da42bb3b6b290be30d5eeeaa67e8d850e5bba8f1e33c83e2629fd4e796dd",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants: n % 2 == 1",
+          "cases": [
+            {
+              "args": [
+                8
+              ],
+              "value": "false",
+              "constant": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                99999
+              ],
+              "value": "true",
+              "constant": "true"
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "false",
+              "constant": "false"
+            }
+          ]
+        },
+        {
+          "name": "Scalar.f91",
+          "address": "46a961afe2fcf1a5eb67366e440dbed55098bedfabee8e8415dad466e1103d42",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants: 91 for n <= 100, n - 10 above",
+          "generate": {
+            "seed": 14,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                300
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                87
+              ],
+              "value": "91",
+              "constant": "91",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "91",
+              "constant": "91"
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "91",
+              "constant": "91"
+            },
+            {
+              "args": [
+                101
+              ],
+              "value": "91",
+              "constant": "91"
+            },
+            {
+              "args": [
+                200
+              ],
+              "value": "190",
+              "constant": "190"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775797",
+              "constant": "9223372036854775797"
+            },
+            {
+              "args": [
+                19
+              ],
+              "value": "91",
+              "generated": true
+            },
+            {
+              "args": [
+                132
+              ],
+              "value": "122",
+              "generated": true
+            },
+            {
+              "args": [
+                192
+              ],
+              "value": "182",
+              "generated": true
+            },
+            {
+              "args": [
+                112
+              ],
+              "value": "102",
+              "generated": true
+            },
+            {
+              "args": [
+                161
+              ],
+              "value": "151",
+              "generated": true
+            },
+            {
+              "args": [
+                44
+              ],
+              "value": "91",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.factorial",
+          "address": "4c2c9cb26dd73b90ea06e47f2e262ebb0fdaf25e3a554a84247f095d72b1aaa9",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 15,
+            "count": 4,
+            "ranges": [
+              [
+                0,
+                25
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "120",
+              "constant": "120",
+              "machine": true
+            },
+            {
+              "args": [
+                20
+              ],
+              "value": "2432902008176640000",
+              "constant": "2432902008176640000"
+            },
+            {
+              "args": [
+                21
+              ],
+              "value": "51090942171709440000",
+              "constant": "51090942171709440000"
+            },
+            {
+              "args": [
+                9
+              ],
+              "value": "362880",
+              "generated": true
+            },
+            {
+              "args": [
+                18
+              ],
+              "value": "6402373705728000",
+              "generated": true
+            },
+            {
+              "args": [
+                15
+              ],
+              "value": "1307674368000",
+              "generated": true
+            },
+            {
+              "args": [
+                9
+              ],
+              "value": "362880",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.impFor",
+          "address": "ecfdffd4c736848d1fa563c622298a4cb1748a8dada16ea8bb22b244a4efc026",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": {
+            "stage": "fir",
+            "code": "fir.closures"
+          },
+          "note": "constants: k^3",
+          "cases": [
+            {
+              "args": [
+                3
+              ],
+              "value": "27",
+              "constant": "27",
+              "machine": true
+            },
+            {
+              "args": [
+                10
+              ],
+              "value": "1000",
+              "constant": "1000"
+            },
+            {
+              "args": [
+                30
+              ],
+              "value": "27000",
+              "constant": "27000"
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "constant": "0"
+            }
+          ]
+        },
+        {
+          "name": "Scalar.pyth",
+          "address": "48d344c191bacc69a0e6e4762af096d9f02088cbfa4630075084a40b9ab1abdf",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "fir",
+            "code": "fir.closures"
+          },
+          "cases": [
+            {
+              "args": [
+                30
+              ],
+              "value": "3",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "17"
+            },
+            {
+              "args": [
+                300
+              ],
+              "value": "74"
+            }
+          ]
+        },
+        {
+          "name": "Scalar.sfib",
+          "address": "37e7341e837b4ae9bd30ab010fcc80eabf4384d7e69c1130f64756de7d89aaf4",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 16,
+            "count": 4,
+            "ranges": [
+              [
+                0,
+                3000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                10
+              ],
+              "value": "258574",
+              "machine": true
+            },
+            {
+              "args": [
+                1000
+              ],
+              "value": "258574"
+            },
+            {
+              "args": [
+                20000
+              ],
+              "value": "22"
+            },
+            {
+              "args": [
+                2233
+              ],
+              "value": "4",
+              "generated": true
+            },
+            {
+              "args": [
+                884
+              ],
+              "value": "22",
+              "generated": true
+            },
+            {
+              "args": [
+                2310
+              ],
+              "value": "1",
+              "generated": true
+            },
+            {
+              "args": [
+                1814
+              ],
+              "value": "22",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.collatz",
+          "address": "4ff226d891a74d0528b90386d3e496e60a63005a6571966b921893c2c5e930b2",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants: OEIS A006577",
+          "generate": {
+            "seed": 17,
+            "count": 6,
+            "ranges": [
+              [
+                1,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                27
+              ],
+              "value": "111",
+              "constant": "111",
+              "machine": true
+            },
+            {
+              "args": [
+                97
+              ],
+              "value": "118",
+              "constant": "118"
+            },
+            {
+              "args": [
+                837799
+              ],
+              "value": "524",
+              "constant": "524"
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "0",
+              "constant": "0"
+            },
+            {
+              "args": [
+                841380
+              ],
+              "value": "206",
+              "generated": true
+            },
+            {
+              "args": [
+                789714
+              ],
+              "value": "162",
+              "generated": true
+            },
+            {
+              "args": [
+                641357
+              ],
+              "value": "216",
+              "generated": true
+            },
+            {
+              "args": [
+                92612
+              ],
+              "value": "53",
+              "generated": true
+            },
+            {
+              "args": [
+                199967
+              ],
+              "value": "54",
+              "generated": true
+            },
+            {
+              "args": [
+                400619
+              ],
+              "value": "298",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.collatzBest",
+          "address": "6e507b3d334cc6bccdf42ab712382a13ea70a7ae32df6104b729f0546337ac7f",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants: OEIS A006877 (record setters); the loop state (best, most) is an immortal pair per iteration, so a run allocates in proportion to its limit (10000 outgrew the word levels' 64 KiB region on 2026-10-01: status 1 there, ok natively)",
+          "cases": [
+            {
+              "args": [
+                30
+              ],
+              "value": "27",
+              "constant": "27",
+              "machine": true
+            },
+            {
+              "args": [
+                300
+              ],
+              "value": "231",
+              "constant": "231"
+            }
+          ]
+        },
+        {
+          "name": "Scalar.isPrime",
+          "address": "24b8b5f46866858100c1bea573de07f97151136256922a83597a11fb695bfe38",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 18,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                100000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                97
+              ],
+              "value": "true",
+              "constant": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "false",
+              "constant": "false"
+            },
+            {
+              "args": [
+                2
+              ],
+              "value": "true",
+              "constant": "true"
+            },
+            {
+              "args": [
+                1000003
+              ],
+              "value": "true",
+              "constant": "true"
+            },
+            {
+              "args": [
+                1000001
+              ],
+              "value": "false",
+              "constant": "false"
+            },
+            {
+              "args": [
+                89630
+              ],
+              "value": "false",
+              "generated": true
+            },
+            {
+              "args": [
+                66535
+              ],
+              "value": "false",
+              "generated": true
+            },
+            {
+              "args": [
+                70666
+              ],
+              "value": "false",
+              "generated": true
+            },
+            {
+              "args": [
+                30097
+              ],
+              "value": "true",
+              "generated": true
+            },
+            {
+              "args": [
+                76583
+              ],
+              "value": "false",
+              "generated": true
+            },
+            {
+              "args": [
+                2659
+              ],
+              "value": "true",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.primeCount",
+          "address": "ab9ef65e38d2eaf65f96b997fc7bcbdefcb961878c0b7ddc5c91b28a4f058a0e",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants: pi(n)",
+          "cases": [
+            {
+              "args": [
+                30
+              ],
+              "value": "10",
+              "constant": "10",
+              "machine": true
+            },
+            {
+              "args": [
+                1000
+              ],
+              "value": "168",
+              "constant": "168"
+            }
+          ]
+        },
+        {
+          "name": "Scalar.sigma",
+          "address": "8e84fe0789e1e053e7fe51cb77d0c982807fe7fbc7cb347e4db64b495e568b6f",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 19,
+            "count": 4,
+            "ranges": [
+              [
+                0,
+                1000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                28
+              ],
+              "value": "28",
+              "constant": "28",
+              "machine": true
+            },
+            {
+              "args": [
+                496
+              ],
+              "value": "496",
+              "constant": "496"
+            },
+            {
+              "args": [
+                8128
+              ],
+              "value": "8128",
+              "constant": "8128"
+            },
+            {
+              "args": [
+                12
+              ],
+              "value": "16",
+              "constant": "16"
+            },
+            {
+              "args": [
+                568
+              ],
+              "value": "512",
+              "generated": true
+            },
+            {
+              "args": [
+                169
+              ],
+              "value": "14",
+              "generated": true
+            },
+            {
+              "args": [
+                963
+              ],
+              "value": "441",
+              "generated": true
+            },
+            {
+              "args": [
+                415
+              ],
+              "value": "89",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.isPerfect",
+          "address": "cb0f699f8f8d690ae7d08ab235be80c891c818ea0b97916982895c6b5525897f",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                6
+              ],
+              "value": "true",
+              "constant": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                8128
+              ],
+              "value": "true",
+              "constant": "true"
+            },
+            {
+              "args": [
+                8127
+              ],
+              "value": "false",
+              "constant": "false"
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "false",
+              "constant": "false"
+            }
+          ]
+        },
+        {
+          "name": "Scalar.perfectCount",
+          "address": "8e7565d327f62cfd62dbdc3d0a19e9893c06eca59bc5009ab4aed7601c5def8f",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants: 6, 28, 496 below 500",
+          "cases": [
+            {
+              "args": [
+                30
+              ],
+              "value": "2",
+              "constant": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "2",
+              "constant": "2"
+            }
+          ]
+        },
+        {
+          "name": "Scalar.chooseMul",
+          "address": "18047e874d04197ad33cd96e0378db53211b7e0e58d92b416c2c183bc9a06905",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": {
+            "stage": "alloc",
+            "code": "alloc.fallback"
+          },
+          "note": "C(66, 33) has a word but c (n - i) does not before the division: status 3 is allowed",
+          "generate": {
+            "seed": 20,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                40
+              ],
+              [
+                0,
+                40
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                10,
+                3
+              ],
+              "value": "120",
+              "constant": "120",
+              "machine": true
+            },
+            {
+              "args": [
+                60,
+                30
+              ],
+              "value": "118264581564861424",
+              "constant": "118264581564861424"
+            },
+            {
+              "args": [
+                66,
+                33
+              ],
+              "value": "7219428434016265740",
+              "constant": "7219428434016265740",
+              "allow": [
+                "natOverflow"
+              ]
+            },
+            {
+              "args": [
+                67,
+                33
+              ],
+              "value": "14226520737620288370",
+              "constant": "14226520737620288370"
+            },
+            {
+              "args": [
+                31,
+                32
+              ],
+              "value": "0",
+              "generated": true
+            },
+            {
+              "args": [
+                30,
+                24
+              ],
+              "value": "593775",
+              "generated": true
+            },
+            {
+              "args": [
+                30,
+                38
+              ],
+              "value": "0",
+              "generated": true
+            },
+            {
+              "args": [
+                3,
+                16
+              ],
+              "value": "0",
+              "generated": true
+            },
+            {
+              "args": [
+                32,
+                26
+              ],
+              "value": "906192",
+              "generated": true
+            },
+            {
+              "args": [
+                19,
+                40
+              ],
+              "value": "0",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.lcmUpTo",
+          "address": "046d61414b0d08dd2ff5c779fa6df7f2b502345e31db46aac3e32a9101222f7f",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "lcm(1..42) has a word but Nat.lcm's m * n does not: status 3 is allowed",
+          "cases": [
+            {
+              "args": [
+                10
+              ],
+              "value": "2520",
+              "constant": "2520",
+              "machine": true
+            },
+            {
+              "args": [
+                20
+              ],
+              "value": "232792560",
+              "constant": "232792560"
+            },
+            {
+              "args": [
+                42
+              ],
+              "value": "219060189739591200",
+              "constant": "219060189739591200",
+              "allow": [
+                "natOverflow"
+              ]
+            },
+            {
+              "args": [
+                43
+              ],
+              "value": "9419588158802421600",
+              "constant": "9419588158802421600"
+            }
+          ]
+        },
+        {
+          "name": "Scalar.choosePascal",
+          "address": "3120d4377fc097a3f9a6066f9528db96b966ab573115d8b7dd0ad8158cbae0bb",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                5,
+                2
+              ],
+              "value": "10",
+              "constant": "10",
+              "machine": true
+            },
+            {
+              "args": [
+                12,
+                6
+              ],
+              "value": "924",
+              "constant": "924"
+            },
+            {
+              "args": [
+                3,
+                7
+              ],
+              "value": "0",
+              "constant": "0"
+            }
+          ]
+        },
+        {
+          "name": "Scalar.isqrt",
+          "address": "3e6550f627722fceef81226c8ae9fff59accab9b5147694eb740833fd4291e94",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "independent check: r^2 <= n < (r+1)^2. At n = 2^63 - 1 the guard n < 2 is Nat.decLt, which computes n + 1 <= 2: status 3 is allowed at the word levels",
+          "generate": {
+            "seed": 21,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                9223372036854775807
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                17
+              ],
+              "value": "4",
+              "constant": "4",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "3037000499",
+              "constant": "3037000499",
+              "allow": [
+                "natOverflow"
+              ]
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "constant": "0"
+            },
+            {
+              "args": [
+                1000000000000000000
+              ],
+              "value": "1000000000",
+              "constant": "1000000000"
+            },
+            {
+              "args": [
+                489215147674969543
+              ],
+              "value": "699439166",
+              "generated": true
+            },
+            {
+              "args": [
+                7660622043376702911
+              ],
+              "value": "2767782875",
+              "generated": true
+            },
+            {
+              "args": [
+                460685469863036607
+              ],
+              "value": "678738145",
+              "generated": true
+            },
+            {
+              "args": [
+                2786889285116851649
+              ],
+              "value": "1669397881",
+              "generated": true
+            },
+            {
+              "args": [
+                1662108200087797481
+              ],
+              "value": "1289227753",
+              "generated": true
+            },
+            {
+              "args": [
+                8416259369615328911
+              ],
+              "value": "2901079000",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.powMod",
+          "address": "327e01396e72605a51ddadd6dd6afecb605c5a99a436f1bbbeefd4d4382e53ce",
+          "params": 3,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants: Fermat, 5^(p-1) mod p = 1 for p = 10^9 + 7",
+          "generate": {
+            "seed": 22,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                4294967296
+              ],
+              [
+                0,
+                1099511627776
+              ],
+              [
+                1,
+                3037000499
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                3,
+                10,
+                1000
+              ],
+              "value": "49",
+              "constant": "49",
+              "machine": true
+            },
+            {
+              "args": [
+                5,
+                1000000006,
+                1000000007
+              ],
+              "value": "1",
+              "constant": "1"
+            },
+            {
+              "args": [
+                2,
+                1000,
+                1000000007
+              ],
+              "value": "688423210",
+              "constant": "688423210"
+            },
+            {
+              "args": [
+                7,
+                0,
+                1
+              ],
+              "value": "0",
+              "constant": "0"
+            },
+            {
+              "args": [
+                214445329,
+                1078935268555,
+                1747196064
+              ],
+              "value": "1243739761",
+              "generated": true
+            },
+            {
+              "args": [
+                981508163,
+                196246836175,
+                2192019586
+              ],
+              "value": "1943810619",
+              "generated": true
+            },
+            {
+              "args": [
+                101632406,
+                469680421196,
+                661285837
+              ],
+              "value": "616153298",
+              "generated": true
+            },
+            {
+              "args": [
+                3276920892,
+                394721117496,
+                1056833183
+              ],
+              "value": "705194952",
+              "generated": true
+            },
+            {
+              "args": [
+                1399342555,
+                823432019987,
+                935007765
+              ],
+              "value": "365405065",
+              "generated": true
+            },
+            {
+              "args": [
+                1146837561,
+                944539451764,
+                235756405
+              ],
+              "value": "165841331",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.digitSum",
+          "address": "c0aa057be8877219318a4c040d347b2f3db3b001e43ab9c98e76c82ea074a2c2",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "At n = 2^63 - 1 the guard n < 10 computes n + 1 <= 10 (Nat.decLt): status 3 is allowed at the word levels",
+          "generate": {
+            "seed": 23,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                9223372036854775807
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                1234
+              ],
+              "value": "10",
+              "constant": "10",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "88",
+              "constant": "88",
+              "allow": [
+                "natOverflow"
+              ]
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "constant": "0"
+            },
+            {
+              "args": [
+                7554746593925235158
+              ],
+              "value": "95",
+              "generated": true
+            },
+            {
+              "args": [
+                1817221009195066871
+              ],
+              "value": "74",
+              "generated": true
+            },
+            {
+              "args": [
+                308019456712964910
+              ],
+              "value": "75",
+              "generated": true
+            },
+            {
+              "args": [
+                7815705800446491139
+              ],
+              "value": "82",
+              "generated": true
+            },
+            {
+              "args": [
+                4789163570395093368
+              ],
+              "value": "96",
+              "generated": true
+            },
+            {
+              "args": [
+                577258677193620726
+              ],
+              "value": "90",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "Scalar.gcdSub",
+          "address": "a97e95750547a34ec6e46508238fd0a1e24d4d52c5ed7a00c8563f60770c8d93",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 24,
+            "count": 6,
+            "ranges": [
+              [
+                1,
+                2000
+              ],
+              [
+                1,
+                2000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                12,
+                18
+              ],
+              "value": "6",
+              "constant": "6",
+              "machine": true
+            },
+            {
+              "args": [
+                300000,
+                12345
+              ],
+              "value": "15",
+              "constant": "15"
+            },
+            {
+              "args": [
+                0,
+                5
+              ],
+              "value": "5",
+              "constant": "5"
+            },
+            {
+              "args": [
+                1109,
+                1276
+              ],
+              "value": "1",
+              "generated": true
+            },
+            {
+              "args": [
+                1119,
+                1176
+              ],
+              "value": "3",
+              "generated": true
+            },
+            {
+              "args": [
+                1077,
+                235
+              ],
+              "value": "1",
+              "generated": true
+            },
+            {
+              "args": [
+                459,
+                486
+              ],
+              "value": "27",
+              "generated": true
+            },
+            {
+              "args": [
+                682,
+                1077
+              ],
+              "value": "1",
+              "generated": true
+            },
+            {
+              "args": [
+                1607,
+                1729
+              ],
+              "value": "1",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "strictAndOr",
+      "source": {
+        "path": "lean-compile/StrictAndOr.lean",
+        "sha256": "fe5938ff83f6eb6f2eb76e25f4b15c476a2a1ce813c014a7abc05da09c3167b9",
+        "license": "Apache-2.0",
+        "variant": "port",
+        "origins": [
+          {
+            "commit": "293d5d0c0c3f3dded4688b3ccd6a33939ac5102b",
+            "license": "Apache-2.0",
+            "license_file": "LICENSES/lean4-LICENSE",
+            "path": "tests/compile/strictAndOr.lean",
+            "repository": "https://github.com/leanprover/lean4",
+            "tag": "v4.34.0",
+            "vendored": "lean-compile/upstream/strictAndOr.lean"
+          }
+        ]
+      },
+      "consts": [
+        "entryStrictOr",
+        "entryStrictAnd"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "strictAndOr.ixe",
+        "sha256": "0f9d21967db3852ad347776285be47d35555b0f85a058a4bc3da074d14a07015",
+        "bytes": 24266
+      },
+      "equations": {
+        "path": "strictAndOr.equations.json",
+        "sha256": "57d1480040cad9cfc58722ffee2309d50c2293dac0241ca8df07161450ed3700",
+        "equations": 1,
+        "failures": 0
+      },
+      "named_env_sha256": "645ce97fe69e405e3aaf17810f5845d284286eec6765dfaa0c3d9576686da95a",
+      "census": {
+        "path": "strictAndOr.census.json",
+        "sha256": "0ae5f6718a5309e187462f91438a2670088e8b46cf22de9d26cef0a11e128025"
+      },
+      "roots": [
+        {
+          "name": "entryStrictOr",
+          "address": "e033c1c279b1d94120d8707ead21e1611854572af54a4e73ba760897c23f840f",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run",
+            "upstream"
+          ],
+          "decline": null,
+          "note": "constants: upstream .out.expected lines 1-4",
+          "cases": [
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "false",
+              "constant": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                1
+              ],
+              "value": "true",
+              "constant": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                0
+              ],
+              "value": "true",
+              "constant": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1
+              ],
+              "value": "true",
+              "constant": "true",
+              "machine": true
+            }
+          ]
+        },
+        {
+          "name": "entryStrictAnd",
+          "address": "2d7cdf9a603daf039d9da1f70a581ae7e1e5606d325054075dd7e4e7d8c2a379",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run",
+            "upstream"
+          ],
+          "decline": null,
+          "note": "constants: upstream .out.expected lines 5-8",
+          "cases": [
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "false",
+              "constant": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                1
+              ],
+              "value": "false",
+              "constant": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                0
+              ],
+              "value": "false",
+              "constant": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1
+              ],
+              "value": "true",
+              "constant": "true",
+              "machine": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tuple",
+      "source": {
+        "path": "lean-compile/Tuple.lean",
+        "sha256": "a828c7442ea2a6fa74ce264019b81d569989fb92a834dc026f59724aef8330c5",
+        "license": "Apache-2.0",
+        "variant": "upstream",
+        "origins": [
+          {
+            "commit": "293d5d0c0c3f3dded4688b3ccd6a33939ac5102b",
+            "license": "Apache-2.0",
+            "license_file": "LICENSES/lean4-LICENSE",
+            "path": "tests/compile/tuple.lean",
+            "repository": "https://github.com/leanprover/lean4",
+            "tag": "v4.34.0",
+            "vendored": "lean-compile/upstream/tuple.lean"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "tuple.ixe",
+        "sha256": "2880dbe86f61031a72f8452daa9e55d14bbd5437a44d1647433dfdae93e4648d",
+        "bytes": 12087
+      },
+      "equations": {
+        "path": "tuple.equations.json",
+        "sha256": "b2a1b753b170e447fd77d6c0f97e824540e6cde5d43881ec840e9af2a87973ad",
+        "equations": 1,
+        "failures": 0
+      },
+      "named_env_sha256": "47ab9119cd243beb64f2b65274b94d06c47d70d93ec8ee878df29c4909e1830e",
+      "census": {
+        "path": "tuple.census.json",
+        "sha256": "23a12b58a5e21e069c9290ad755cb514d3941089a3ab77b3fb12786e1b532484"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "292cf3ba9181221611fb7f3ddb3cc4f3bd47386e6fe6f26889f0352a87eaaf70",
+          "params": 3,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "upstream"
+          ],
+          "decline": null,
+          "note": "constant: upstream .out.expected",
+          "generate": {
+            "seed": 25,
+            "count": 4,
+            "ranges": [
+              [
+                0,
+                1000000
+              ],
+              [
+                0,
+                1000000
+              ],
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                1,
+                2,
+                3
+              ],
+              "value": "6",
+              "constant": "6",
+              "machine": true
+            },
+            {
+              "args": [
+                3074457345618258602,
+                3074457345618258602,
+                3074457345618258603
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                596096,
+                806907,
+                318569
+              ],
+              "value": "1721572",
+              "generated": true
+            },
+            {
+              "args": [
+                50226,
+                682634,
+                304015
+              ],
+              "value": "1036875",
+              "generated": true
+            },
+            {
+              "args": [
+                832868,
+                910821,
+                382313
+              ],
+              "value": "2126002",
+              "generated": true
+            },
+            {
+              "args": [
+                501530,
+                359640,
+                92900
+              ],
+              "value": "954070",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bigctor",
+      "source": {
+        "path": "lean-compile/BigCtor.lean",
+        "sha256": "8b542107c4196929128d5f06b27e40a418ed1dab2f88232949be1344bfc16f72",
+        "license": "Apache-2.0",
+        "variant": "upstream",
+        "origins": [
+          {
+            "commit": "293d5d0c0c3f3dded4688b3ccd6a33939ac5102b",
+            "license": "Apache-2.0",
+            "license_file": "LICENSES/lean4-LICENSE",
+            "path": "tests/compile/bigctor.lean",
+            "repository": "https://github.com/leanprover/lean4",
+            "tag": "v4.34.0",
+            "vendored": "lean-compile/upstream/bigctor.lean"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "bigctor.ixe",
+        "sha256": "787652be26bff81fc4c20da139aabbfde4a1de1c89f1407d8df356f3f8252f89",
+        "bytes": 5458
+      },
+      "equations": {
+        "path": "bigctor.equations.json",
+        "sha256": "5650e924753a3ec530e815c5b81534796e30979357729edbff51da3a1f816251",
+        "equations": 0,
+        "failures": 0
+      },
+      "named_env_sha256": "a0a7c52d219d8b27d7286381e126d82c8c6c574aa220e82f668a80007e51709d",
+      "census": {
+        "path": "bigctor.census.json",
+        "sha256": "c0b18f8035bfff38796710c6919fe33f326a3041edd9944a0ae9aeeabb9d1513"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "78c3f49605da5a79618ab9770ba9a42ba138e5092d4eb8ae02c0c659c7a6a744",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "upstream"
+          ],
+          "decline": null,
+          "note": "constant: upstream .out.expected",
+          "cases": [
+            {
+              "args": [
+                10
+              ],
+              "value": "10",
+              "constant": "10",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "constant": "9223372036854775807"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "typeFormerPolymorphism",
+      "source": {
+        "path": "lean-compile/TypeFormerPolymorphism.lean",
+        "sha256": "25e9fe994bb6d8ea477129cd815f3cdda19175ff58bbe4bc9d36b28157272817",
+        "license": "Apache-2.0",
+        "variant": "upstream",
+        "origins": [
+          {
+            "commit": "293d5d0c0c3f3dded4688b3ccd6a33939ac5102b",
+            "license": "Apache-2.0",
+            "license_file": "LICENSES/lean4-LICENSE",
+            "path": "tests/compile/typeFormerPolymorphism.lean",
+            "repository": "https://github.com/leanprover/lean4",
+            "tag": "v4.34.0",
+            "vendored": "lean-compile/upstream/typeFormerPolymorphism.lean"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "typeFormerPolymorphism.ixe",
+        "sha256": "d96f583f5369f5ef8bdeb538844979727c34aaa133ad4a2e35e00313b36e11a4",
+        "bytes": 2255
+      },
+      "equations": {
+        "path": "typeFormerPolymorphism.equations.json",
+        "sha256": "b74a8056c4b034dd209a264cdb8f7294b2ec58ab26974ee61778e63adfd679a0",
+        "equations": 0,
+        "failures": 0
+      },
+      "named_env_sha256": "3f6ecd011638be25716b80e118a3da4461c157d80fb7d14591be8d4a288e62e8",
+      "census": {
+        "path": "typeFormerPolymorphism.census.json",
+        "sha256": "7764122c26e57290f27ab28aa6b2d8847f5f3fb9a122b4a7f03cd0997cc21545"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "eed97b028c3f97377c944612816ff9e0914ddca96d664bfaad7520d207ac8933",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "upstream"
+          ],
+          "decline": {
+            "stage": "relevance",
+            "code": "relevance-C2"
+          },
+          "note": "constant: upstream .out.expected",
+          "cases": [
+            {
+              "args": [
+                42
+              ],
+              "value": "42",
+              "constant": "42",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "constant": "0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "natShiftr",
+      "source": {
+        "path": "lean-compile/NatShiftr.lean",
+        "sha256": "cec9226d206a4857d9be1d76a21708a79f7c701fe72d24156f885745768103bf",
+        "license": "Apache-2.0",
+        "variant": "upstream",
+        "origins": [
+          {
+            "commit": "293d5d0c0c3f3dded4688b3ccd6a33939ac5102b",
+            "license": "Apache-2.0",
+            "license_file": "LICENSES/lean4-LICENSE",
+            "path": "tests/compile/nat_shiftr.lean",
+            "repository": "https://github.com/leanprover/lean4",
+            "tag": "v4.34.0",
+            "vendored": "lean-compile/upstream/nat_shiftr.lean"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "natShiftr.ixe",
+        "sha256": "1fd22548ec96bf7c7eb6d17a5883e6e4b65ade3d1f119488b601cc81c3d11acb",
+        "bytes": 75857
+      },
+      "equations": {
+        "path": "natShiftr.equations.json",
+        "sha256": "bb189c617b2b1b2926fb35dbe071f27489fe94413c1c42b606fcfac8c14cfca8",
+        "equations": 6,
+        "failures": 0
+      },
+      "named_env_sha256": "fb99bd1b8431be0fc493ddcc40eed9d3b712ae8c575470b31a7de9dbe5d6eda3",
+      "census": {
+        "path": "natShiftr.census.json",
+        "sha256": "1fffe70bb3e2163b459568deaf11e81354000a6bae7389d5d07cb63f7f11ec6c"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "f1319b52744ae93c1d1c019b1ee219522f145861376ea626f6ff1fa2a881822c",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "upstream"
+          ],
+          "decline": null,
+          "note": "constants: upstream .out.expected, line by line (the three values of a without a word return status 3)",
+          "cases": [
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                1
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                14
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                15
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                16
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                17
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                31
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                32
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                0
+              ],
+              "value": "1",
+              "constant": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                14
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                15
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                16
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                17
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                31
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                32
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                0
+              ],
+              "value": "255",
+              "constant": "255",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                1
+              ],
+              "value": "127",
+              "constant": "127",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                14
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                15
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                16
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                17
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                31
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                32
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                255,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                0
+              ],
+              "value": "256",
+              "constant": "256",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                1
+              ],
+              "value": "128",
+              "constant": "128",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                14
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                15
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                16
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                17
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                31
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                32
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                256,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                0
+              ],
+              "value": "257",
+              "constant": "257",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                1
+              ],
+              "value": "128",
+              "constant": "128",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                14
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                15
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                16
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                17
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                31
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                32
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                257,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                0
+              ],
+              "value": "65535",
+              "constant": "65535",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                1
+              ],
+              "value": "32767",
+              "constant": "32767",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                14
+              ],
+              "value": "3",
+              "constant": "3",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                15
+              ],
+              "value": "1",
+              "constant": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                16
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                17
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                31
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                32
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65535,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                0
+              ],
+              "value": "65536",
+              "constant": "65536",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                1
+              ],
+              "value": "32768",
+              "constant": "32768",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                14
+              ],
+              "value": "4",
+              "constant": "4",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                15
+              ],
+              "value": "2",
+              "constant": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                16
+              ],
+              "value": "1",
+              "constant": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                17
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                31
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                32
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65536,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                0
+              ],
+              "value": "65537",
+              "constant": "65537",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                1
+              ],
+              "value": "32768",
+              "constant": "32768",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                14
+              ],
+              "value": "4",
+              "constant": "4",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                15
+              ],
+              "value": "2",
+              "constant": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                16
+              ],
+              "value": "1",
+              "constant": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                17
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                31
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                32
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                65537,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                0
+              ],
+              "value": "4294967295",
+              "constant": "4294967295",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                1
+              ],
+              "value": "2147483647",
+              "constant": "2147483647",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                14
+              ],
+              "value": "262143",
+              "constant": "262143",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                15
+              ],
+              "value": "131071",
+              "constant": "131071",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                16
+              ],
+              "value": "65535",
+              "constant": "65535",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                17
+              ],
+              "value": "32767",
+              "constant": "32767",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                31
+              ],
+              "value": "1",
+              "constant": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                32
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967295,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                0
+              ],
+              "value": "4294967296",
+              "constant": "4294967296",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                1
+              ],
+              "value": "2147483648",
+              "constant": "2147483648",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                14
+              ],
+              "value": "262144",
+              "constant": "262144",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                15
+              ],
+              "value": "131072",
+              "constant": "131072",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                16
+              ],
+              "value": "65536",
+              "constant": "65536",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                17
+              ],
+              "value": "32768",
+              "constant": "32768",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                31
+              ],
+              "value": "2",
+              "constant": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                32
+              ],
+              "value": "1",
+              "constant": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                0
+              ],
+              "value": "4294967297",
+              "constant": "4294967297",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                1
+              ],
+              "value": "2147483648",
+              "constant": "2147483648",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                14
+              ],
+              "value": "262144",
+              "constant": "262144",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                15
+              ],
+              "value": "131072",
+              "constant": "131072",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                16
+              ],
+              "value": "65536",
+              "constant": "65536",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                17
+              ],
+              "value": "32768",
+              "constant": "32768",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                31
+              ],
+              "value": "2",
+              "constant": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                32
+              ],
+              "value": "1",
+              "constant": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                33
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                63
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                64
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967297,
+                65
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                0
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                14
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                15
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                16
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                17
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                31
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                32
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                33
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                63
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                64
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551615,
+                65
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                0
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                14
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                15
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                16
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                17
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                31
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                32
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                33
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                63
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                64
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551616,
+                65
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                0
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                14
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                15
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                16
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                17
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                31
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                32
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                33
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                63
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                64
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                18446744073709551617,
+                65
+              ],
+              "value": "-"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

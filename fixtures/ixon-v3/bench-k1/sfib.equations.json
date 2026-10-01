@@ -1,0 +1,43 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "sfib/Sfib.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "adbbba1d16c40b552b1561198db1f61b7d67c796ce8d2cbbcbf63adfaffe2a4f"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+    },
+    {
+      "definition": "Nat.beq",
+      "definition_address": "ffd3f02a19fda649aa5608ed818db382e160231b76d5b09176d7dd1a8d5b1ec5",
+      "equation": "Nat.beq.eq_def",
+      "equation_address": "e73554caa775dedc1ccfbbc71d99f6d55a13ac99a4c201f2d258fe60bf3be65a"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "68a3643ec69816aec107302ddbfa054cebcd3ec173cd5f7e6d883638631afe65",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "656121c2851fa53d6c8a8d453641667ff9e2f6c42b3ad0650d5acb9dce3b8e13"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "566a3c2249bc2076543d9bc561a841f6fd35ffb5bdbbc5c991a9c64feccbd5d4",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "25fab8b9f1e5e9f65c5bfd39ecf7d58236e2fd478758db70ef063a966bec4a36"
+    },
+    {
+      "definition": "Scalar.sfibGo",
+      "definition_address": "0b288a2d374b807a4173c328063d262a61bb8ffb9cedf387d24f68ad67ded056",
+      "equation": "Scalar.sfibGo.eq_def",
+      "equation_address": "f0d9810dd643b3a0ad62f9d2de58b121ec1a07e512337d4237e71162ff972e43"
+    }
+  ],
+  "failures": []
+}
