@@ -528,10 +528,10 @@ Usage: `kernel-check-ixe <input.ixe> <output.jsonl> [limit]`. Environment:
   a watchdog ends the run with exit code 3 when one constant's check exceeds
   the time or the process's resident memory exceeds the size, and appends
   the constant's address to `<output>.runaway`. The resident size includes
-  the decoded environment, which the driver holds in memory: about 4 GB for
-  Init and about 38 GB for Mathlib. `CHECK_IXE_WATCH_MB` must exceed it, or
-  the watchdog fires before the first check (for Mathlib, for example,
-  `CHECK_IXE_WATCH_MB=46000` under a `MemoryMax` above that);
+  the decoded environment, which the driver holds in memory: the peak is
+  about 4.6 GB for Init+Std and about 47 GB for Mathlib. `CHECK_IXE_WATCH_MB`
+  must exceed it, or the watchdog fires before the first check (for Mathlib,
+  for example, `CHECK_IXE_WATCH_MB=60000` under a `MemoryMax` above that);
 - `CHECK_IXE_SKIP` (comma-separated addresses) declines those constants
   unchecked; `scripts/check-ixe-guarded.sh` reruns with every recorded runaway
   skipped until the run completes;

@@ -63,17 +63,19 @@ AWS Xeon 6975P, one core per run:
 | declined: 813 `partial` and 75 `unsafe` definitions, 8 unsafe opaques, 6 unsafe axioms | 902 |
 | rejected, blocked | 0 |
 
-Check time summed over accepted constants is 76.3 s and reading 3.7 s; the
-process takes 101.6 s wall with a 3.9 GB peak RSS. On the same machine,
+Check time summed over accepted constants is 75.1 s and reading 3.5 s; the
+process takes 101.0 s wall with a 4.55 GB peak RSS. On the same machine,
 upstream con-leche (`ae0c0c4e`, Lean 4.33.0) takes 88.0 s of install plus
 check at one worker (90.2 s wall) on a lean4export of the same Init+Std.
 
-Mathlib (`mathlib.ixe`, 672,938 constants): 668,628 accepted, 3,906
-`partial`/`unsafe` declines and 0 rejects before the level comparison's
-Géran fallback. The 404 constants that depended on that comparison
-(`RatFunc.liftOn_def`, `RatFunc.liftOn'_def` and 402 dependents) are
-accepted with it, checked on their closure. The driver holds the decoded
-environment, about 38 GB for Mathlib.
+Mathlib (`mathlib.ixe`, 672,938 constants): 669,032 accepted, 3,906
+declined (3,314 `partial` and 561 `unsafe` definitions, 15 unsafe opaques,
+6 unsafe axioms, 5 unsafe inductive blocks with their recursors), 0
+rejected, 0 blocked. Load 147.8 s, check 875.0 s summed over accepted
+constants, reading 41.5 s; 19 min 38 s wall at one core. The driver holds
+the decoded environment, so the peak RSS is 47.3 GB. On the same machine,
+upstream con-leche (`3ca9e2fe`, `--verified --jobs=1`) takes 17.8 min and
+9.6 GB on a lean4export of Mathlib.
 
 The intrinsic kernel's native benchmark runner (`bench-certified-kernel`)
 and its environment check (`kernel-census-intrinsic`) were retired with that kernel
