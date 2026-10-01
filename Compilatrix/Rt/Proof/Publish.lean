@@ -1,5 +1,6 @@
 import Compilatrix.Rt.Proof.Correct
 import Compilatrix.Rt.Proof.Readback
+import Compilatrix.Rt.Proof.CxInit
 import Compilatrix.Sem.TracedSim
 
 /-!
@@ -11,7 +12,9 @@ semantics, clock map `k ↦ k + 1` at the level of `Cfg.run` and `Lir.eval`.
 D-1, for every environment and event type (`TSim.ofPure`).
 `Rt.readback_sound`: the runtime readback of a related result word is
 Own's readback of the value. `Rt.result_readback`: what the two together
-give for a final result.
+give for a final result. `Rt.init_correct`: the lowered program's
+`cx_init` (`Rt.Proof.cxInit_ok`) establishes the heap invariant
+`Rt.lower_correct` starts from, for the empty heap.
 
 A `Transform.lift` corollary needs `Lang` instances for Cfg and Lir (an
 input type both programs run on and the observation of their values); the
@@ -58,5 +61,28 @@ theorem result_readback {P : Cfg.Program} {ctx : Word} {v : Own.RVal} {H : Own.H
     ∃ w, vals = [w] ∧ readback sig (H.size + 1) m ty w = H.readback v := by
   obtain ⟨Pw, w, hw, hrel, hheap⟩ := hres
   exact ⟨w, hw, readback_sound hheap hty hrel⟩
+
+/-- `Rt.lower` places `cx_init` right after the program's functions. -/
+theorem lower_cxInit {cfg : Config} {P : Cfg.Program} {L : Lowered} (h : lower cfg P = .ok L) :
+    L.program.funcs[P.size]? = some Procs.cxInit := by
+  obtain ⟨funcs, hfs, hprog, -⟩ := Proof.lower_spec h
+  obtain ⟨hlen, -⟩ := Proof.functions_spec hfs
+  rw [hprog, List.getElem?_toArray, List.getElem?_append_right (by simp [hlen])]
+  simp [hlen]
+
+/-- **`cx_init`, then `Rt.lower_correct` from the empty heap**: on a
+readable and writable region its checks accept, the lowered program's
+`cx_init` returns at every clock with memory over which every function runs
+as Cfg's from the empty heap, on arguments related without cells. -/
+theorem init_correct {cfg : Config} {P : Cfg.Program} {L : Lowered} (h : lower cfg P = .ok L)
+    {size budget ctx : Word} {mem : X86.Memory} (hok : RegionOk ctx size) (hreg : Region mem ctx size) :
+    ∃ left mem', (∀ k, Lir.eval { L.program with main := P.size } k [size, budget] mem ctx = .ok ([left], mem')) ∧
+      InitPost ctx budget mem mem' ∧
+      ∀ {g : Nat} {args : List Own.RVal} {ws : List Word}, ListRel (ValRel (Lower.tables P) []) args ws →
+        (∀ s, Reach P (.call g args [] { cells := #[] }) s → SwitchOk P s) →
+        Sem.Sim (Res P ctx) (· + 1) (fun k => Cfg.run .immortal P k g args { cells := #[] })
+          (fun k => Lir.eval { L.program with main := g } k ws mem' ctx) := by
+  obtain ⟨left, mem', hrun, hpost⟩ := cxInit_ok (lower_cxInit h) (budget := budget) hok hreg
+  exact ⟨left, mem', hrun, hpost, fun hargs hsafe => lower_correct h hargs (hpost.heap _) hsafe⟩
 
 end Compilatrix.Rt

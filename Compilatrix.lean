@@ -251,6 +251,7 @@ import Compilatrix.Rt.Proof.Prune
 import Compilatrix.Rt.Proof.Program
 import Compilatrix.Rt.Proof.Correct
 import Compilatrix.Rt.Proof.Readback
+import Compilatrix.Rt.Proof.CxInit
 import Compilatrix.Rt.Proof.Publish
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
