@@ -1,14 +1,14 @@
 /-
-Ported from con-leche (ae0c0c4e4ce6a0081648aff03fe9c39d002c4526).
+Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
 Source: ConLeche/MainTheorem.lean
-Modifications Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: Apache-2.0 AND (MIT OR Apache-2.0)
-Changes: only `model_exists` is kept; the NDJSON corollary
+Transformations: only `model_exists` is kept; the NDJSON corollary
 `no_False_declaration` and the imports it needs (`ConLeche.Accepts`,
 `ConLeche.Frontend.Prelude`, `ConLeche.Verify.Cached.StreamThm`,
 `ConLeche.Verify.Frontend.{Prepare,FileFalse}`) are dropped, the module
 docstring is cut to match, and this header is added. The statement and
 proof of `model_exists` are upstream's, token for token.
+Modifications Copyright (c) 2026 Argument Computer Corporation.
+SPDX-License-Identifier: Apache-2.0 AND (MIT OR Apache-2.0)
 -/
 module
 

@@ -1,15 +1,15 @@
 /-
-Ported from con-leche (ae0c0c4e4ce6a0081648aff03fe9c39d002c4526).
+Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
 Source: tests/ConLecheTests/Axioms.lean
-Modifications Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: Apache-2.0 AND (MIT OR Apache-2.0)
-Changes: namespace `ConLecheTests.Axioms` renamed to
+Transformations: namespace `ConLecheTests.Axioms` renamed to
 `Tests.ConLeche.Axioms`; the imports of `ConLeche.Verify.Cached.StreamConsts`
 and `ConLeche.Verify.Cached.StreamThm` and the guards on
 `ConLeche.no_False_declaration`, `ConLeche.no_False_theorem_accepted` and
 `ConLeche.Cached.checkDecls_consts` are dropped (their modules are outside
 the imported closure of `model_exists`); the docstrings are cut to match;
 this header is added. The other seventeen guards are upstream's, verbatim.
+Modifications Copyright (c) 2026 Argument Computer Corporation.
+SPDX-License-Identifier: Apache-2.0 AND (MIT OR Apache-2.0)
 -/
 module
 

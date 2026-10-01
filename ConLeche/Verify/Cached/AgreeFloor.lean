@@ -1,3 +1,12 @@
+/-
+Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
+Source: ConLeche/Verify/Cached/AgreeFloor.lean
+Transformations: Lean 4.34.0 fix, the line `import all Init.LetFun` added
+after `import ConLeche.Verify.EnvBound` (4.34.0 moved `letFun` to
+`Init.LetFun` without exposing its body, which `Yields.letFun` and the
+join-point walkers unfold); this header added. No statement, proof or
+tactic text changes.
+-/
 module
 
 public import ConLeche.Cached.Installed

@@ -12,8 +12,10 @@ Checks, against `Tests.Ix.Kernel.ImportManifest`:
 * the inventory of `Ix/Kernel/**/*.lean`, the pure `Ix/Ixon/**/*.lean`
   boundary, and `ConLeche/**/*.lean` (with `ConLeche.lean`) is exactly the
   ported Lean targets under those roots plus the authored modules (a file
-  added or removed without a manifest update fails); rows outside the roots
-  (the ported fences under `scripts/`) are checked row by row;
+  added or removed without a manifest update fails); other rows (the
+  ported fences under `scripts/`, the `pins/` dumps, the con-leche axiom
+  pin under `Tests/`, and the licence and notice files) are checked row by
+  row;
 * every row's target exists with its recorded SHA-256, and no target is
   recorded twice;
 * a verbatim row records equal source and target hashes; an adapted Lean
@@ -144,7 +146,7 @@ def main (args : List String) : IO UInt32 := do
         | .git => options.git
       if let some checkout := checkout? then
         for row in set.rows do checkSource set.origin checkout row
-        verified := verified.push s!"{set.origin.label} ({set.rows.size})"
+        verified := verified.push s!"{set.origin.label} {set.license} ({set.rows.size})"
     let modules (origin : Origin) := (portSets.filter (·.origin == origin)).foldl
       (fun n set => n + (set.rows.filter (inInventory ·.target)).size) 0
     let others := (rows.filter (!inInventory ·.target)).size
@@ -152,7 +154,7 @@ def main (args : List String) : IO UInt32 := do
       s!"; source hashes verified for {", ".intercalate verified.toList}"
     IO.println s!"Kernel provenance OK: {modules oldBranch} ported modules from the old branch, \
       {modules conLeche} from con-leche, {authored.size} authored modules, \
-      {others} other files (licences, notice, fences){sources}."
+      {others} other files (licences, notice, fences, pin dumps, tests){sources}."
     return 0
   catch e =>
     IO.eprintln s!"kernel-provenance: {e}"
