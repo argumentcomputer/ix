@@ -1833,6 +1833,530 @@ def uniformReport (rows : Array Row) (maxStates : Nat) : String := Id.run do
   md := md ++ uniformSlowSection wr ++ uniformGapSection wr ++ uniformClassSection wr
   return md
 
+/-! ## Metadata study (`--meta`)
+
+Streams a whole `.ixe` section by section with the production readers
+(`getExprMetaDataIndexed`, `getExpr`, `getUniv`, `getFusedHint`, …), recording the
+exact bytes of every component, and analyses each `ConstantMeta.metaSharing`
+against its constant's primary sharing table. Constants are parsed only when a
+`Named` entry needs them, so the file is never materialized as a whole `Env`.
+The byte categories must sum to the file size. -/
+
+/-- Run a reader at a byte offset of a shared buffer. -/
+def runAt (buf : ByteArray) (off : Nat) (m : Ixon.GetM α) : Except String (α × Nat) :=
+  match m.run { idx := off, bytes := buf } with
+  | .ok a st => .ok (a, st.idx)
+  | .error e _ => .error e
+
+def getPos : Ixon.GetM Nat := do return (← get).idx
+
+def arenaKindNames : Array String :=
+  #["leaf", "app", "binder", "letBinder", "ref", "prj", "mdata", "callSite", "etaCallSite"]
+
+def arenaKind : Ixon.ExprMetaData → Nat
+  | .leaf => 0 | .app .. => 1 | .binder .. => 2 | .letBinder .. => 3 | .ref .. => 4
+  | .prj .. => 5 | .mdata .. => 6 | .callSite .. => 7 | .etaCallSite .. => 8
+
+/-- Byte breakdown of one `ConstantMeta`. -/
+structure MetaBreak where
+  info : Nat := 0
+  arena : Nat := 0
+  kindBytes : Array Nat := Array.replicate 9 0
+  kindCount : Array Nat := Array.replicate 9 0
+  sharingBytes : Nat := 0
+  sharing : Array (Expr × Nat) := #[]
+  refs : Nat := 0
+  nRefs : Nat := 0
+  univs : Nat := 0
+  nUnivs : Nat := 0
+  patches : Nat := 0
+  deriving Inhabited
+
+/-- The arena, node by node, mirroring `getExprMetaArenaIndexed`. -/
+def getArenaBreak (rev : Ixon.NameReverseIndex) (mb : MetaBreak) : Ixon.GetM MetaBreak := do
+  let p0 ← getPos
+  let len := (← Ixon.getTag0).size.toNat
+  let mut kb := mb.kindBytes
+  let mut kc := mb.kindCount
+  for _ in [0:len] do
+    let a ← getPos
+    let node ← Ixon.getExprMetaDataIndexed rev
+    let b ← getPos
+    let k := arenaKind node
+    kb := kb.modify k (· + (b - a))
+    kc := kc.modify k (· + 1)
+  let p1 ← getPos
+  return { mb with arena := mb.arena + (p1 - p0), kindBytes := kb, kindCount := kc }
+
+/-- The variant payload, mirroring `getConstantMetaInfoIndexed`; the arena is
+measured separately. -/
+def getInfoBreak (rev : Ixon.NameReverseIndex) : Ixon.GetM MetaBreak := do
+  let p0 ← getPos
+  let mut mb : MetaBreak := {}
+  match ← Ixon.getU8 with
+  | 255 => pure ()
+  | 0 =>
+    let _ ← Ixon.getIdx rev
+    for _ in [0:3] do let _ ← Ixon.getIdxVec rev
+    mb ← getArenaBreak rev mb
+    let _ ← Ixon.getTag0
+    let _ ← Ixon.getTag0
+  | 1 | 2 =>
+    let _ ← Ixon.getIdx rev
+    let _ ← Ixon.getIdxVec rev
+    mb ← getArenaBreak rev mb
+    let _ ← Ixon.getTag0
+  | 3 =>
+    let _ ← Ixon.getIdx rev
+    for _ in [0:4] do let _ ← Ixon.getIdxVec rev
+    mb ← getArenaBreak rev mb
+    let _ ← Ixon.getTag0
+  | 4 =>
+    let _ ← Ixon.getIdx rev
+    let _ ← Ixon.getIdxVec rev
+    let _ ← Ixon.getIdx rev
+    mb ← getArenaBreak rev mb
+    let _ ← Ixon.getTag0
+  | 5 =>
+    let _ ← Ixon.getIdx rev
+    for _ in [0:4] do let _ ← Ixon.getIdxVec rev
+    mb ← getArenaBreak rev mb
+    let _ ← Ixon.getTag0
+    let n := (← Ixon.getTag0).size.toNat
+    for _ in [0:n] do let _ ← Ixon.getTag0
+  | 6 =>
+    let n := (← Ixon.getTag0).size.toNat
+    for _ in [0:n] do let _ ← Ixon.getIdxVec rev
+    match ← Ixon.getU8 with
+    | 0 => pure ()
+    | 1 =>
+      for _ in [0:2] do
+        let k := (← Ixon.getTag0).size.toNat
+        for _ in [0:k] do let _ ← Ixon.getTag0
+      let k := (← Ixon.getTag0).size.toNat
+      for _ in [0:k] do let _ ← Ixon.getU8
+    | x => throw s!"invalid aux_layout tag {x}"
+  | x => throw s!"invalid ConstantMeta tag {x}"
+  let p1 ← getPos
+  return { mb with info := (p1 - p0) - mb.arena }
+
+/-- One `ConstantMeta`, mirroring `getConstantMetaIndexed`. -/
+def getMetaBreak (rev : Ixon.NameReverseIndex) : Ixon.GetM MetaBreak := do
+  let mb ← getInfoBreak rev
+  let a ← getPos
+  let n := (← Ixon.getTag0).size.toNat
+  let mut sh : Array (Expr × Nat) := #[]
+  for _ in [0:n] do
+    let s ← getPos
+    let e ← Ixon.getExpr
+    let t ← getPos
+    sh := sh.push (e, t - s)
+  let b ← getPos
+  let nr := (← Ixon.getTag0).size.toNat
+  for _ in [0:nr] do let _ ← Ixon.Serialize.get (α := Address)
+  let c ← getPos
+  let nu := (← Ixon.getTag0).size.toNat
+  for _ in [0:nu] do let _ ← Ixon.getUniv
+  let d ← getPos
+  let np := (← Ixon.getTag0).size.toNat
+  for _ in [0:np] do
+    let _ ← Ixon.getTag0
+    let k := (← Ixon.getTag0).size.toNat
+    for _ in [0:k] do let _ ← Ixon.getTag0
+  let e ← getPos
+  return { mb with sharingBytes := b - a, sharing := sh, refs := c - b, nRefs := nr,
+                   univs := d - c, nUnivs := nu, patches := e - d }
+
+/-- `metaSharing` of one constant against its primary table. -/
+structure MSAnalysis where
+  constants : Nat := 0
+  entries : Nat := 0
+  bytes : Nat := 0
+  shareNodes : Nat := 0
+  unshared : Nat := 0
+  reenc : Nat := 0
+  distinct : Nat := 0
+  bytesDedup : Nat := 0
+  reencDedup : Nat := 0
+  matched : Nat := 0
+  matchedBytes : Nat := 0
+  matchedTable : Nat := 0
+  deriving Inhabited
+
+def MSAnalysis.add (a b : MSAnalysis) : MSAnalysis :=
+  { constants := a.constants + b.constants, entries := a.entries + b.entries,
+    bytes := a.bytes + b.bytes, shareNodes := a.shareNodes + b.shareNodes,
+    unshared := a.unshared + b.unshared, reenc := a.reenc + b.reenc,
+    distinct := a.distinct + b.distinct, bytesDedup := a.bytesDedup + b.bytesDedup,
+    reencDedup := a.reencDedup + b.reencDedup, matched := a.matched + b.matched,
+    matchedBytes := a.matchedBytes + b.matchedBytes, matchedTable := a.matchedTable + b.matchedTable }
+
+/-- Expand the primary table, the primary roots and the `metaSharing` entries
+into one canonical DAG (Share nodes in entries resolve against the primary table,
+as in decompilation), then:
+* count entries equal to a subterm of the primary roots, or to a table entry;
+* re-encode every entry optimally with the primary table as a fixed dictionary
+  at its current index widths (`Prep.materializeWith`), checking that the output
+  re-expands to the same terms and that its bytes equal the predicted `C_M`;
+* deduplicate equal entries. -/
+def metaSharingAnalysis (c : Constant) (entries : Array (Expr × Nat)) :
+    Except String MSAnalysis := do
+  let limits : Ix.Sharing.Exact.Limits :=
+    { maxNodes := 1 <<< 24, maxExprVisits := 1 <<< 28, maxMaterialize := 1 <<< 28,
+      maxDepth := 1 <<< 16 }
+  let es := entries.map (·.1)
+  let primRoots := Ix.Sharing.Exact.constantInfoRoots c.info
+  let ex ← (Ix.Sharing.Exact.expand limits c.sharing (primRoots ++ es) true).mapError toString
+  let k := primRoots.size
+  let metaIds := ex.roots.extract k ex.roots.size
+  let n := ex.dag.size
+  let mut reach : Array Bool := Array.replicate n false
+  let mut stack : Array Nat := ex.roots.extract 0 k
+  while !stack.isEmpty do
+    let t := stack.back!
+    stack := stack.pop
+    if reach[t]! then continue
+    reach := reach.set! t true
+    stack := stack ++ (ex.dag.node t).children
+  let (entryIds, _, _) ← (Ix.Sharing.Exact.reexpand limits ex.dag c.sharing #[]).mapError toString
+  let mut index : Array (Option Nat) := Array.replicate n none
+  for i in [0:entryIds.size] do
+    let t := entryIds[i]!
+    if (index[t]!).isNone then index := index.set! t (some i)
+  let width := Ix.Sharing.Exact.widthsOfIndex index
+  let p := Ix.Sharing.Exact.Prep.ofDag ex.dag
+  let (out, cost, _) ← (p.materializeWith index width metaIds limits).mapError toString
+  let (_, outIds, _) ← (Ix.Sharing.Exact.reexpand limits ex.dag c.sharing out).mapError toString
+  unless outIds == metaIds do throw "re-encoded entries do not expand to the original entries"
+  let outBytes := out.foldl (fun a e => a + (Ixon.serExpr e).size) 0
+  let reenc := metaIds.foldl (fun a t => a + cost[t]!) 0
+  unless outBytes == reenc do throw s!"re-encoded bytes {outBytes} differ from C_M {reenc}"
+  let mut seen : Std.HashSet Nat := {}
+  let mut r : MSAnalysis := { constants := 1, entries := entries.size, reenc }
+  for i in [0:metaIds.size] do
+    let t := metaIds[i]!
+    let b := entries[i]!.2
+    let refs := countShareRefs entries[i]!.1 (0, 0, 0)
+    r := { r with
+      bytes := r.bytes + b, unshared := r.unshared + p.base[t]!
+      shareNodes := r.shareNodes + refs.1 + refs.2.1 + refs.2.2
+      matched := r.matched + (if reach[t]! then 1 else 0)
+      matchedBytes := r.matchedBytes + (if reach[t]! then b else 0)
+      matchedTable := r.matchedTable + (if (index[t]!).isSome then 1 else 0) }
+    unless seen.contains t do
+      seen := seen.insert t
+      r := { r with distinct := r.distinct + 1, bytesDedup := r.bytesDedup + b,
+                    reencDedup := r.reencDedup + cost[t]! }
+  return r
+
+/-- Byte categories of the whole file. -/
+def metaCatNames : Array String := #[
+  "header: version, consts Merkle root, main, assumptions",
+  "§1 blobs: count, addresses, length prefixes",
+  "§1 blobs: payload",
+  "§2 constants: count, addresses, length prefixes",
+  "§2 constants: bodies (the anonymous constants)",
+  "§3 anonymous hints",
+  "§4 names: count and addresses",
+  "§4 names: components (tag, parent address, string/number bytes)",
+  "§5 Named: count, name and constant keys",
+  "§5 Named: per-name hints",
+  "§5 Named: metadata blob length prefixes",
+  "§5 ConstantMeta info (variant fields, name indices, root indices)",
+  "§5 ExprMeta arena",
+  "§5 metaSharing expressions (with count)",
+  "§5 metaRefs (with count)",
+  "§5 metaUnivs (with count)",
+  "§5 univPatches (with count)",
+  "§5 original: tag and address",
+  "§5 original ConstantMeta info",
+  "§5 original ExprMeta arena",
+  "§5 original metaSharing expressions",
+  "§5 original metaRefs",
+  "§5 original metaUnivs",
+  "§5 original univPatches",
+  "§6 comms"]
+
+structure MetaStudy where
+  fileSize : Nat := 0
+  cats : Array Nat := Array.replicate 25 0
+  blobs : Nat := 0
+  consts : Nat := 0
+  names : Nat := 0
+  named : Nat := 0
+  withOriginal : Nat := 0
+  comms : Nat := 0
+  kindBytes : Array Nat := Array.replicate 9 0
+  kindCount : Array Nat := Array.replicate 9 0
+  okindBytes : Array Nat := Array.replicate 9 0
+  okindCount : Array Nat := Array.replicate 9 0
+  nonEmpty : Nat := 0
+  nonEmptyOrig : Nat := 0
+  entryCounts : Array Nat := #[]
+  ms : MSAnalysis := {}
+  msOrig : MSAnalysis := {}
+  nRefs : Nat := 0
+  nUnivs : Nat := 0
+  errors : Array String := #[]
+  msEntries : Nat := 0
+  msBytes : Nat := 0
+  msOrigEntries : Nat := 0
+  /-- Non-empty metaSharing tables: (§4 name index, §2 rank, entries, bytes). -/
+  nonEmptyList : Array (Nat × Nat × Nat × Nat) := #[]
+  nonEmptyNameAddrs : Array Address := #[]
+  deriving Inhabited
+
+def MetaStudy.bump (st : MetaStudy) (cat n : Nat) : MetaStudy :=
+  { st with cats := st.cats.modify cat (· + n) }
+
+/-- Add one `ConstantMeta` breakdown to the totals (`orig` for `Named.original`). -/
+def MetaStudy.addMeta (st : MetaStudy) (mb : MetaBreak) (orig : Bool) : MetaStudy :=
+  let base := if orig then 18 else 11
+  let st := st.bump base mb.info |>.bump (base + 1) mb.arena |>.bump (base + 2) mb.sharingBytes
+    |>.bump (base + 3) mb.refs |>.bump (base + 4) mb.univs |>.bump (base + 5) mb.patches
+  let z (x y : Array Nat) := (x.zip y).map fun (p, q) => p + q
+  if orig then
+    { st with okindBytes := z st.okindBytes mb.kindBytes, okindCount := z st.okindCount mb.kindCount }
+  else
+    { st with kindBytes := z st.kindBytes mb.kindBytes, kindCount := z st.kindCount mb.kindCount,
+              nRefs := st.nRefs + mb.nRefs, nUnivs := st.nUnivs + mb.nUnivs }
+
+/-- Binary search for an address in the ascending §2 address array. -/
+def findRank (addrs : Array Address) (a : Address) : Option Nat := Id.run do
+  let mut lo := 0
+  let mut hi := addrs.size
+  while lo < hi do
+    let mid := (lo + hi) / 2
+    match Address.cmpBytes addrs[mid]! a with
+    | .lt => lo := mid + 1
+    | .gt => hi := mid
+    | .eq => return some mid
+  return none
+
+def liftExcept (e : Except String α) : IO α :=
+  match e with | .ok a => pure a | .error err => throw (IO.userError err)
+
+def metaStudy (path : String) (progress : Nat) : IO MetaStudy := do
+  let buf ← IO.FS.readBinFile path
+  let mut st : MetaStudy := { fileSize := buf.size }
+  -- Header.
+  let (_, off) ← liftExcept <| runAt buf 0 do
+    let _ ← Ixon.getTag4
+    let _ ← Ixon.Serialize.get (α := Address)
+    if (← Ixon.getU8) == 1 then let _ ← Ixon.Serialize.get (α := Address)
+    let n := (← Ixon.getTag0).size.toNat
+    for _ in [0:n] do let _ ← Ixon.Serialize.get (α := Address)
+  st := st.bump 0 off
+  -- §1 blobs.
+  let (nb, o2) ← liftExcept <| runAt buf off do return (← Ixon.getTag0).size.toNat
+  let mut cur := o2
+  let mut ovh := o2 - off
+  let mut payload := 0
+  for _ in [0:nb] do
+    let (len, o) ← liftExcept <| runAt buf cur do
+      let _ ← Ixon.Serialize.get (α := Address)
+      return (← Ixon.getTag0).size.toNat
+    ovh := ovh + (o - cur)
+    payload := payload + len
+    cur := o + len
+  st := { (st.bump 1 ovh |>.bump 2 payload) with blobs := nb }
+  IO.println s!"[meta] blobs {nb}, {payload} payload bytes"
+  -- §2 constants.
+  let s2 := cur
+  let (nc, o3) ← liftExcept <| runAt buf cur do return (← Ixon.getTag0).size.toNat
+  cur := o3
+  let mut addrs : Array Address := Array.mkEmpty nc
+  let mut offs : Array Nat := Array.mkEmpty nc
+  let mut bodies := 0
+  for _ in [0:nc] do
+    let ((a, len), o) ← liftExcept <| runAt buf cur do
+      let a ← Ixon.Serialize.get (α := Address)
+      return (a, (← Ixon.getTag0).size.toNat)
+    addrs := addrs.push a
+    offs := offs.push o
+    bodies := bodies + len
+    cur := o + len
+  st := { (st.bump 3 (cur - s2 - bodies) |>.bump 4 bodies) with consts := nc }
+  IO.println s!"[meta] constants {nc}, {bodies} body bytes"
+  -- §3 anonymous hints.
+  let s3 := cur
+  let (_, o4) ← liftExcept <| runAt buf cur do
+    let n := (← Ixon.getTag0).size.toNat
+    for _ in [0:n] do
+      let _ ← Ixon.getTag0
+      let _ ← Ixon.getFusedHint
+  cur := o4
+  st := st.bump 5 (cur - s3)
+  -- §4 names: keep the reverse index for name-indexed metadata.
+  let s4 := cur
+  let (nn, o5) ← liftExcept <| runAt buf cur do return (← Ixon.getTag0).size.toNat
+  cur := o5
+  let mut rev : Ixon.NameReverseIndex := Array.mkEmpty nn
+  let mut comp := 0
+  for _ in [0:nn] do
+    let (a, o) ← liftExcept <| runAt buf cur do Ixon.Serialize.get (α := Address)
+    rev := rev.push a
+    let (_, o') ← liftExcept <| runAt buf o do
+      match ← Ixon.getU8 with
+      | 0 => pure ()
+      | 1 | 2 =>
+        let _ ← Ixon.Serialize.get (α := Address)
+        let len := (← Ixon.getTag0).size.toNat
+        let _ ← Ixon.getBytes len
+      | t => throw s!"invalid name component tag {t}"
+    comp := comp + (o' - o)
+    cur := o'
+  st := { (st.bump 6 (cur - s4 - comp) |>.bump 7 comp) with names := nn }
+  IO.println s!"[meta] names {nn}"
+  -- §5 Named.
+  let (nm, o6) ← liftExcept <| runAt buf cur do return (← Ixon.getTag0).size.toNat
+  st := st.bump 8 (o6 - cur)
+  cur := o6
+  -- Primary constant of a named entry: its constant, or the block of a projection.
+  let primary (rank : Nat) : Except String Constant := do
+    let c ← Ixon.deConstantAt buf offs[rank]!
+    let blk? : Option Address := match c.info with
+      | .iPrj p => some p.block | .rPrj p => some p.block
+      | .dPrj p => some p.block | .cPrj p => some p.block
+      | _ => none
+    match blk? with
+    | none => pure c
+    | some blk =>
+      match findRank addrs blk with
+      | some r => Ixon.deConstantAt buf offs[r]!
+      | none => throw "projection block not stored"
+  let t0 ← IO.monoMsNow
+  for i in [0:nm] do
+    let ((nameIdx, rank), o) ← liftExcept <| runAt buf cur do
+      let ni := (← Ixon.getTag0).size.toNat
+      return (ni, (← Ixon.getTag0).size.toNat)
+    st := st.bump 8 (o - cur)
+    let (_, oh) ← liftExcept <| runAt buf o Ixon.getFusedOptHint
+    st := st.bump 9 (oh - o)
+    let (len, ob) ← liftExcept <| runAt buf oh do return (← Ixon.getTag0).size.toNat
+    st := st.bump 10 (ob - oh)
+    let (mb, om) ← liftExcept <| runAt buf ob (getMetaBreak rev)
+    st := { st.addMeta mb false with
+      named := st.named + 1, msEntries := st.msEntries + mb.sharing.size
+      msBytes := st.msBytes + mb.sharing.foldl (fun a x => a + x.2) 0 }
+    let (tag, ot) ← liftExcept <| runAt buf om Ixon.getU8
+    let mut endOff := ot
+    let mut origMb : Option (MetaBreak × Address) := none
+    if tag == 1 then
+      let (oa, oo) ← liftExcept <| runAt buf ot (Ixon.Serialize.get (α := Address))
+      let (omb, oe) ← liftExcept <| runAt buf oo (getMetaBreak rev)
+      st := { (st.bump 17 (oo - om)).addMeta omb true with
+        withOriginal := st.withOriginal + 1, msOrigEntries := st.msOrigEntries + omb.sharing.size }
+      origMb := some (omb, oa)
+      endOff := oe
+    else if tag == 0 then
+      st := st.bump 17 (ot - om)
+    else throw (IO.userError s!"invalid Named.original tag {tag}")
+    unless endOff - ob == len do
+      throw (IO.userError s!"§5 entry {i}: blob length {len}, parsed {endOff - ob}")
+    cur := endOff
+    -- metaSharing analysis.
+    if !mb.sharing.isEmpty then
+      st := { st with
+        nonEmpty := st.nonEmpty + 1
+        entryCounts := st.entryCounts.push mb.sharing.size
+        nonEmptyList := st.nonEmptyList.push
+          (nameIdx, rank, mb.sharing.size, mb.sharing.foldl (fun a x => a + x.2) 0)
+        nonEmptyNameAddrs := st.nonEmptyNameAddrs.push (rev[nameIdx]?.getD default) }
+      match primary rank >>= fun c => metaSharingAnalysis c mb.sharing with
+      | .ok r => st := { st with ms := st.ms.add r }
+      | .error e => st := { st with errors := st.errors.push s!"named entry {i} (rank {rank}): {e}" }
+    if let some (omb, oa) := origMb then
+      if !omb.sharing.isEmpty then
+        st := { st with nonEmptyOrig := st.nonEmptyOrig + 1 }
+        match findRank addrs oa with
+        | none => st := { st with errors := st.errors.push s!"named entry {i}: original constant not stored" }
+        | some r =>
+          match primary r >>= fun c => metaSharingAnalysis c omb.sharing with
+          | .ok res => st := { st with msOrig := st.msOrig.add res }
+          | .error e => st := { st with errors := st.errors.push s!"named entry {i} original: {e}" }
+    if progress > 0 && (i + 1) % progress == 0 then
+      IO.println s!"[meta] named {i + 1}/{nm}, {(← IO.monoMsNow) - t0} ms, metaSharing constants {st.nonEmpty}"
+      (← IO.getStdout).flush
+  -- §6 comms.
+  let s6 := cur
+  let (nco, o7) ← liftExcept <| runAt buf cur do
+    let n := (← Ixon.getTag0).size.toNat
+    for _ in [0:n] do
+      let _ ← Ixon.Serialize.get (α := Address)
+      let _ ← Ixon.getComm
+    return n
+  cur := o7
+  st := { st.bump 24 (cur - s6) with comms := nco }
+  unless cur == buf.size do
+    throw (IO.userError s!"scanner stopped at {cur}, file has {buf.size} bytes")
+  return st
+
+/-- Cross-check of the scanner against a full `deEnv` load (small files only). -/
+def metaCrossCheck (path : String) (st : MetaStudy) : IO String := do
+  let buf ← IO.FS.readBinFile path
+  let env ← IO.ofExcept (Ixon.deEnv buf)
+  let mut nonEmpty := 0
+  let mut entries := 0
+  let mut bytes := 0
+  let mut nRefs := 0
+  let mut nUnivs := 0
+  let mut withOrig := 0
+  let mut origEntries := 0
+  for (_, nmd) in env.named do
+    let m := nmd.constMeta
+    if !m.metaSharing.isEmpty then nonEmpty := nonEmpty + 1
+    entries := entries + m.metaSharing.size
+    bytes := bytes + m.metaSharing.foldl (fun a e => a + (Ixon.serExpr e).size) 0
+    nRefs := nRefs + m.metaRefs.size
+    nUnivs := nUnivs + m.metaUnivs.size
+    if let some (_, om) := nmd.original then
+      withOrig := withOrig + 1
+      origEntries := origEntries + om.metaSharing.size
+  let scanEntries := st.msEntries
+  let sharingExprBytes := st.msBytes
+  let ok := env.named.size == st.named && env.blobs.size == st.blobs &&
+    env.consts.size == st.consts && nonEmpty == st.nonEmpty && entries == scanEntries &&
+    bytes == sharingExprBytes && nRefs == st.nRefs && nUnivs == st.nUnivs &&
+    withOrig == st.withOriginal && origEntries == st.msOrigEntries
+  return s!"- Cross-check against a full `Ixon.deEnv` load: named {env.named.size} vs {st.named}, blobs {env.blobs.size} vs {st.blobs}, constants {env.consts.size} vs {st.consts}, non-empty metaSharing {nonEmpty} vs {st.nonEmpty}, metaSharing entries {entries} vs {scanEntries}, metaSharing expression bytes (`serExpr`) {bytes} vs {sharingExprBytes}, metaRefs {nRefs} vs {st.nRefs}, metaUnivs {nUnivs} vs {st.nUnivs}, entries with `original` {withOrig} vs {st.withOriginal}, original metaSharing entries {origEntries} vs {st.msOrigEntries}: **{if ok then "all equal" else "DIFFERENT"}**.\n"
+
+def msRow (label : String) (m : MSAnalysis) (file : Nat) : String :=
+  s!"| {label} | {m.constants} | {m.entries} | {m.bytes} ({fmtSignedPct2 m.bytes file |>.drop 1} of file) | {m.unshared} | {m.reenc} | {m.distinct} | {m.bytesDedup} | {m.reencDedup} | {m.matched} ({m.matchedBytes} B) | {m.matchedTable} | {m.shareNodes} |\n"
+
+def metaReport (path : String) (st : MetaStudy) (cross : String) (ms : Nat)
+    (names : Array String := #[]) : String := Id.run do
+  let file := st.fileSize
+  let mut md := s!"## Metadata study: `{path}`\n\n"
+  md := md ++ s!"- File: {file} bytes; blobs {st.blobs}; anonymous constants {st.consts}; names {st.names}; Named entries {st.named} ({st.withOriginal} with `original`); comms {st.comms}. Scan time {ms} ms.\n"
+  let total := st.cats.foldl (· + ·) 0
+  md := md ++ s!"- Byte categories sum to {total} bytes: **{if total == file then "equal to the file size" else "DIFFERENT from the file size"}**.\n"
+  md := md ++ cross
+  md := md ++ "\n| component | bytes | % of file |\n|---|---:|---:|\n"
+  for h : i in [0:metaCatNames.size] do
+    md := md ++ s!"| {metaCatNames[i]} | {st.cats[i]!} | {fmtSignedPct2 st.cats[i]! file |>.drop 1} |\n"
+  let named := (List.range 17).foldl (fun a i => if i ≥ 8 then a + st.cats[i]! else a) 0 +
+    (List.range 25).foldl (fun a i => if i ≥ 17 && i ≤ 23 then a + st.cats[i]! else a) 0
+  md := md ++ s!"\n- Section totals: §2 constants {st.cats[3]! + st.cats[4]!} ({fmtSignedPct2 (st.cats[3]! + st.cats[4]!) file |>.drop 1}); §5 Named {named} ({fmtSignedPct2 named file |>.drop 1}); §4 names {st.cats[6]! + st.cats[7]!} ({fmtSignedPct2 (st.cats[6]! + st.cats[7]!) file |>.drop 1}); §1 blobs {st.cats[1]! + st.cats[2]!} ({fmtSignedPct2 (st.cats[1]! + st.cats[2]!) file |>.drop 1}).\n"
+  md := md ++ "\nExprMeta arena by node kind (primary metadata; `original` metadata in the last two columns):\n\n| node kind | nodes | bytes | % of file | original nodes | original bytes |\n|---|---:|---:|---:|---:|---:|\n"
+  for h : k in [0:arenaKindNames.size] do
+    md := md ++ s!"| {arenaKindNames[k]} | {st.kindCount[k]!} | {st.kindBytes[k]!} | {fmtSignedPct2 st.kindBytes[k]! file |>.drop 1} | {st.okindCount[k]!} | {st.okindBytes[k]!} |\n"
+  let ec := st.entryCounts.qsort (· < ·)
+  md := md ++ s!"\n### metaSharing\n\n- Named entries with non-empty `metaSharing`: {st.nonEmpty} of {st.named}; with non-empty `original` metaSharing: {st.nonEmptyOrig}. Entries per non-empty table: min {ec[0]?.getD 0}, median {pct ec 50}, p90 {pct ec 90}, p99 {pct ec 99}, max {ec.back?.getD 0}.\n"
+  md := md ++ s!"- metaRefs entries: {st.nRefs}; metaUnivs entries: {st.nUnivs}.\n"
+  unless st.nonEmptyList.isEmpty do
+    md := md ++ "\n| Named entry | §2 rank | metaSharing entries | bytes |\n|---|---:|---:|---:|\n"
+    for h : i in [0:st.nonEmptyList.size] do
+      let (_, rank, n, b) := st.nonEmptyList[i]
+      md := md ++ s!"| `{names[i]?.getD "?"}` | {rank} | {n} | {b} |\n"
+    md := md ++ "\n"
+  md := md ++ s!"- Analysis errors (constants not analysed): {st.errors.size}.\n"
+  for e in st.errors.extract 0 10 do md := md ++ s!"  - {e}\n"
+  md := md ++ "\n| metadata | constants | entries | current bytes | unshared bytes | re-encoded against the primary table | distinct entries | current, deduplicated | re-encoded, deduplicated | entries equal to a primary subterm | equal to a primary table entry | Share nodes in entries |\n|---|---:|---:|---|---:|---:|---:|---:|---:|---|---:|---:|\n"
+  md := md ++ msRow "primary `ConstantMeta`" st.ms file
+  md := md ++ msRow "`Named.original`" st.msOrig file
+  return md
+
 /-! ## Driver -/
 
 structure Opts where
@@ -1847,10 +2371,16 @@ structure Opts where
   uniform : Bool := true
   /-- `maxStates` for the uniform optimizer (other limits: W1 defaults). -/
   uniMaxStates : Nat := ({} : Ix.Sharing.Exact.Limits).maxStates
+  /-- Run the metadata study instead of the per-constant study. -/
+  metaMode : Bool := false
+  /-- Cross-check the metadata scanner against a full `deEnv` load. -/
+  metaCross : Bool := false
 
 def parseArgs : List String → Opts → Except String Opts
   | [], o => if o.corpus.isEmpty then .error "missing corpus path" else .ok o
   | "--no-uniform" :: rest, o => parseArgs rest { o with uniform := false }
+  | "--meta" :: rest, o => parseArgs rest { o with metaMode := true }
+  | "--meta-crosscheck" :: rest, o => parseArgs rest { o with metaCross := true }
   | "--uni-max-states" :: n :: rest, o =>
     parseArgs rest { o with uniMaxStates := n.toNat?.getD o.uniMaxStates }
   | "--md" :: p :: rest, o => parseArgs rest { o with md := some p }
@@ -1875,8 +2405,29 @@ def main (args : List String) : IO UInt32 := do
   let opts ← match parseArgs args {} with
     | .ok o => pure o
     | .error e =>
-      IO.eprintln s!"sharing-study: {e}\nusage: sharing-study <corpus.ixe> [--md p] [--csv p] [--limit n] [--validate-max bytes] [--occ-check-max bytes] [--progress n] [--no-uniform] [--uni-max-states n]"
+      IO.eprintln s!"sharing-study: {e}\nusage: sharing-study <corpus.ixe> [--md p] [--csv p] [--limit n] [--validate-max bytes] [--occ-check-max bytes] [--progress n] [--no-uniform] [--uni-max-states n] [--meta] [--meta-crosscheck]"
       return 2
+  if opts.metaMode then
+    let t0 ← IO.monoMsNow
+    let st ← metaStudy opts.corpus opts.progress
+    let t1 ← IO.monoMsNow
+    let cross ← if opts.metaCross then metaCrossCheck opts.corpus st else pure ""
+    -- Names of the entries with non-empty metaSharing (lazy anonymous loader).
+    let names ← if st.nonEmptyNameAddrs.isEmpty then pure #[] else do
+      let buf ← IO.FS.readBinFile opts.corpus
+      let env ← IO.ofExcept (Ixon.deEnvAnon buf)
+      let want : Std.HashSet Address := st.nonEmptyNameAddrs.foldl (·.insert ·) {}
+      let mut m : Std.HashMap Address String := {}
+      for (nm, _) in env.named do
+        if want.contains nm.getHash then m := m.insert nm.getHash (toString nm)
+      pure (st.nonEmptyNameAddrs.map fun a => m.getD a "?")
+    let md := metaReport opts.corpus st cross (t1 - t0) names
+    IO.println md
+    if let some p := opts.md then
+      IO.FS.writeFile p md
+      IO.println s!"[sharing-study] wrote {p}"
+    let total := st.cats.foldl (· + ·) 0
+    return (if total == st.fileSize && st.errors.isEmpty then 0 else 1)
   let ws := witnesses
   for w in ws do
     match w with
