@@ -364,6 +364,13 @@ lean_exe «kernel-census-cl» where
   root := `Benchmarks.Kernel.ConLecheCensusMain
   moreLinkObjs := #[ix_rs]
 
+/-- `kernel-census` with driver-side optimization switches (load mode,
+worker-thread lane, persistent mark, two-phase pool), for measurement only
+(`Benchmarks.Kernel.ConLecheOpt`, untrusted; `plans/review/cl-opt/`). -/
+lean_exe «kernel-census-opt» where
+  root := `Benchmarks.Kernel.ConLecheOpt
+  moreLinkObjs := #[ix_rs]
+
 /-- Regenerates `Ix/Kernel/ConLeche/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/census/initstd.ixe`), verified by con-leche. -/
 lean_exe «conleche-pin-gen» where
