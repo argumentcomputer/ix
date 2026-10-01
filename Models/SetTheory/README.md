@@ -5,8 +5,8 @@ interface on Mathlib's `ZFSet`, assuming a strictly increasing countable
 sequence of strongly inaccessible cardinals. Its universe chain is
 `V_ (κ n).ord`.
 
-From port step L5 (plan v4) the checker's theorems are stated over
-con-leche's class `Ix.Kernel.SetTheory`. `IxSetTheoryModel.zfSetTheoryOfChain`
+The checker's theorems are stated over the class `Ix.Kernel.SetTheory`
+(vendored from con-leche). `IxSetTheoryModel.zfSetTheoryOfChain`
 assembles that instance from a given chain, `zfSetTheoryOfCarneiro`
 selects a chain from `OmegaInaccessibles`, and `carneiro_implies_setTheory`
 proves:
@@ -20,9 +20,8 @@ OmegaInaccessibles.{u} →
 theorems there: `checkBytes_has_ZFSet_model` (every input the entry accepts
 has a model in `ZFSet`) and `checkBytes_no_proof_of_False`.
 
-The construction's lemmas are stated over con-leche's `IsTGUniverse` and
-`Equinumerous`. (Until 2026-10-01 it also instantiated the retired intrinsic
-kernel's own class; see `docs/kernel.md`.)
+The construction's lemmas are stated over the kernel's `IsTGUniverse` and
+`Equinumerous`.
 
 The construction includes the interface's Lean-level replacement scheme:
 Mathlib's `Classical.allZFSetDefinable` supplies images of arbitrary functions
@@ -51,9 +50,9 @@ lake build --wfail
 
 Lean and Mathlib use release `v4.34.0`; `lake-manifest.json` pins all resolved
 dependencies. The cache command retrieves the three imported Mathlib modules
-and their dependencies. The build checks the axiom guard. The separate
-`set-theory-model.yml` workflow runs these commands when the model, its interface,
-or package configuration changes.
+and their dependencies. The build checks the axiom guard. CI's
+`certified-kernel` job (`.github/workflows/ci.yml`) runs these commands
+through `lake run check-kernel --with-model`.
 
 From the repository root, `lake run check-kernel --with-model` includes this
 build alongside the kernel proofs, foundation audits, and host regressions.

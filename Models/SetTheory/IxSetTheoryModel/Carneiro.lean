@@ -16,12 +16,7 @@ import Ix.Kernel.SetTheory.Core
 
 A strictly increasing countable sequence of inaccessible cardinals gives
 `Ix.Kernel.SetTheory ZFSet.{u}`, the interface of the certified checker's
-theorems from port step L5 (plan v4), with `univChain n := V_ (κ n).ord`.
-Until L6 the same construction also served Ix's own copy of the class
-(`Ix.Kernel.Model.SetTheory`, textually identical up to namespace), the
-interface of the intrinsic kernel; L6 retired that kernel, its class and
-this package's instance of it (`setTheoryOfChain`, `setTheoryOfCarneiro`,
-`carneiro_implies_ix`).
+theorems, with `univChain n := V_ (κ n).ord`.
 Mathlib supplies the set operations, including images of arbitrary Lean
 functions via `Classical.allZFSetDefinable`. The proof below establishes
 Tarski's universe clauses for each inaccessible stage of the von Neumann
@@ -141,7 +136,7 @@ theorem isTGUniverse_vonNeumann (hκ : κ.IsInaccessible) :
     · exact Or.inr (mem_vonNeumann.mpr hr)
     · exact Or.inl (equinumerous_of_card_eq (card_eq_of_not_rank_lt hκ hy' hr))
 
-/-! ### The `Ix.Kernel.SetTheory` instance on `ZFSet` (plan v4, L5)
+/-! ### The `Ix.Kernel.SetTheory` instance on `ZFSet`
 
 This is con-leche's own bridge (`bridge/lean4lean-model/ConLecheBridge/Carneiro.lean`
 at `86cd20a6`, the source of this file), whose instance `setTheoryOfChain`

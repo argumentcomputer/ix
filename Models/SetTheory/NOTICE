@@ -10,15 +10,11 @@ Mario Carneiro's Lean4LeanModel/Consistency.lean. Namespaces, imports, and
 documentation were adapted for Ix; the mathematical construction is retained.
 Con-leche's Apache-2.0 license is preserved in LICENSE-CON-LECHE.
 
-From port step L5 (2026-09-30) the file also carries the source's own
-instance of con-leche's class (`ConLeche.SetTheory` upstream, vendored as
-`Ix.Kernel.SetTheory` since 2026-10-01) (`zfSetTheoryOfChain`,
-`zfSetTheoryOfCarneiro`, `carneiro_implies_setTheory`, the source's
-`setTheoryOfChain`, `setTheoryOfCarneiro` and `carneiro_implies_conleche`
-under other names: until 2026-10-02 `conLecheSetTheoryOfChain`,
-`conLecheSetTheoryOfCarneiro` and the source's theorem name), reusing the
-shared lemmas. IxSetTheoryModel/Consistency.lean
-is authored in this repository. At L6 (2026-10-01) the instance of Ix's own
-class (`setTheoryOfChain`, `setTheoryOfCarneiro`, `carneiro_implies_ix`) was
-removed with the intrinsic kernel, and the shared lemmas now state
-con-leche's `IsTGUniverse` and `Equinumerous`, as the source does.
+The file carries the source's instance of con-leche's class
+(`ConLeche.SetTheory` upstream, vendored as `Ix.Kernel.SetTheory`) under
+other names: the source's `setTheoryOfChain`, `setTheoryOfCarneiro` and
+`carneiro_implies_conleche` are `zfSetTheoryOfChain`,
+`zfSetTheoryOfCarneiro` and `carneiro_implies_setTheory` here. Its lemmas
+are stated over con-leche's `IsTGUniverse` and `Equinumerous` (vendored as
+`Ix.Kernel.IsTGUniverse` and `Ix.Kernel.Equinumerous`), as the source's
+are. IxSetTheoryModel/Consistency.lean is authored in this repository.
