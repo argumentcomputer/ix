@@ -13,7 +13,7 @@ import Ix.Ixon.Verify.ConstantBounds
 import Ix.Ixon.Verify.WorkRecord
 import Ix.Ixon.Verify.Canonical
 
-/-! Preserved production codec contracts, independent of Lean4Lean.
+/-! The production codec contracts.
 The universe/expression entry points consume the whole buffer. The
 legacy `deConstant` remains a prefix decoder; `deConstantExact` checks the
 whole buffer. Byte-consumption bounds cover arbitrary successful production

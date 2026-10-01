@@ -74,7 +74,9 @@ the generated primitive closure at `/tmp/ixon-v3-primitives.ixe`.
 `--export-handoff` writes the deterministic handoff files under
 `/tmp/ixon-v3-handoff`; copy them into the fixture directory only after validation.
 
-The formal gates are `lake build IxCompileVerify IxTcVerify Ix.Resource.Audit`.
+The formal gates are `lake build Ix.Resource.Audit` (the resource-state
+invariants) and `lake -d IxKernel build --wfail` (the Ixon codec contracts
+under `Ix/Ixon/Verify`, with their audit `Ix/Ixon/Audit.lean`).
 Resource theorems cover the executed quantitative and state-transition
 invariants. They do not constitute a verified allocation backend or a proof of
 the entire resource checker against a machine operational semantics.

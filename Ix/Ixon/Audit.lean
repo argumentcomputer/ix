@@ -10,7 +10,7 @@ import Ix.Kernel.Audit.Runtime
 
 /-! The production codec and structural wire domain depend on Lean core only.
 The retained proofs additionally use Lean/Std proof tooling, including checked
-bit-vector decision proofs. Neither boundary imports the host or Lean4Lean. -/
+bit-vector decision proofs. Neither boundary imports the host. -/
 
 namespace Ix.Ixon.Audit
 

@@ -29,7 +29,7 @@ Commands run from the repository root:
 
 | Gate | Result |
 | --- | --- |
-| `lake build IxCompileVerify IxTcVerify Ix.Resource.Audit` | Passed; exact trust manifests and local sorry-frontier audits |
+| `lake build IxCompileVerify IxTcVerify Ix.Resource.Audit` | Passed; exact trust manifests and local sorry-frontier audits. The `IxCompileVerify` and `IxTcVerify` libraries have since been removed ([kernel.md](kernel.md), "Removal ledger"); the codec contracts are audited by `lake -d IxKernel build --wfail`, and the resource manifest is `lake build Ix.Resource.Audit` |
 | `lake build IxTests ixon-v3-tests ix` | Passed |
 | `lake lint -- --wfail` | Passed for every target included by the CI lint driver |
 | `lake env .lake/build/bin/IxTests` | Entire primary suite passed, including recursive proof and aggregate consumers |
