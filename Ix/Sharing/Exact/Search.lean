@@ -185,47 +185,60 @@ def search (inp : SearchInput) (limits : Limits) (upper : Nat)
 
 /-! ## Materialization and verification -/
 
-/-- Materialize table entry `i` of `table` against the dictionary of the
-entries before it. Returns the body, its cost and the work. -/
-def materializeEntry (p : Prep) (table : Array Nat) (limits : Limits)
-    (widthAt : Nat → Nat) (i : Nat) : Except SharingError (Ixon.Expr × Nat × Nat) := do
-  let t := table[i]!
-  let index := indexOfPrefix p.dag.size table i
-  let (es, cost, w) ← p.materializeWith index (index.map (·.map widthAt)) #[t] limits
-  let some e := es[0]? | throw (.internal "missing materialized entry")
-  return (e, cost[t]!, w)
+/-- State of the table materialization: the entries so far, the dictionary
+of those entries (table indices and Share widths), its evaluation, the
+predicted length and the work. -/
+structure TableState where
+  entries : Array Ixon.Expr
+  index : Array (Option Nat)
+  width : Array (Option Nat)
+  ev : DictEval
+  predicted : Nat
+  work : Nat
+  deriving Inhabited
 
-/-- Materialize the entries `is` in order onto `entries`, accumulating the
-predicted size and the work; the work is checked against
-`maxMaterializeWork` after every entry. -/
-def materializeEntries (p : Prep) (table : Array Nat) (limits : Limits)
-    (widthAt : Nat → Nat) :
-    List Nat → Array Ixon.Expr → Nat → Nat →
-      Except SharingError (Array Ixon.Expr × Nat × Nat)
-  | [], entries, predicted, work => pure (entries, predicted, work)
-  | i :: is, entries, predicted, work => do
-    let (e, c, w) ← materializeEntry p table limits widthAt i
-    let work := work + w
-    if work > limits.maxMaterializeWork then
-      throw (.resourceExhausted .materializeWork limits.maxMaterializeWork)
-    materializeEntries p table limits widthAt is (entries.push e) (predicted + c) work
+/-- Materialize table entry `i` against the dictionary of the entries before
+it, then add it to the dictionary, re-evaluating only the entry and the
+terms above it. The work (the evaluation that priced the entry plus its
+size) is checked against `maxMaterializeWork` after every entry. -/
+def materializeStep (p : Prep) (table : Array Nat) (limits : Limits) (widthAt : Nat → Nat)
+    (st : TableState) (i : Nat) : Except SharingError TableState := do
+  let t := table[i]!
+  let c := st.ev.cost[t]!
+  if c > limits.maxMaterialize then
+    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  let e ← p.build st.ev st.index st.width false (p.dag.size + 1) t
+  let work := st.work + st.ev.work + c
+  if work > limits.maxMaterializeWork then
+    throw (.resourceExhausted .materializeWork limits.maxMaterializeWork)
+  let index := st.index.set! t (some i)
+  let width := st.width.set! t (some (widthAt i))
+  return { entries := st.entries.push e, index, width, ev := p.evalUp st.ev width t,
+           predicted := st.predicted + c, work }
 
 /-- Materialize a table sequence and the roots with the byte-least
-minimum-length encodings. Returns entries, roots, and the variable length
-predicted by `C_M`. The Share at index `i` is priced `widthAt i` (the real
-width by default, or a model width). -/
+minimum-length encodings: entry `i` against the dictionary of the entries
+before it, the roots against the whole table. Returns entries, roots, and
+the variable length predicted by `C_M`. The Share at index `i` is priced
+`widthAt i` (the real width by default, or a model width). The dictionary
+is evaluated once and then updated incrementally (`Prep.evalUp`). -/
 def materializeTable (p : Prep) (table roots : Array Nat) (limits : Limits)
     (widthAt : Nat → Nat := shareWidth) :
     Except SharingError (Array Ixon.Expr × Array Ixon.Expr × Nat × Nat) := do
-  let (entries, predicted, work) ← materializeEntries p table limits widthAt
-    (List.range table.size) #[] (tag0Size table.size) 0
-  let index := indexOfPrefix p.dag.size table table.size
-  let (rs, cost, w) ← p.materializeWith index (index.map (·.map widthAt)) roots limits
-  let predicted := predicted + rootsCost cost roots
-  let work := work + w
+  if table.size ≥ wordBound then throw (.formatBound "share index" table.size)
+  let none0 : Array (Option Nat) := Array.replicate p.dag.size none
+  let st0 : TableState :=
+    { entries := #[], index := none0, width := none0, ev := p.evalAll none0,
+      predicted := tag0Size table.size, work := 0 }
+  let st ← (List.range table.size).foldlM (materializeStep p table limits widthAt) st0
+  let total := roots.foldl (fun acc r => acc + st.ev.cost[r]!) 0
+  if total > limits.maxMaterialize then
+    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  let rs ← roots.mapM fun r => p.build st.ev st.index st.width false (p.dag.size + 1) r
+  let work := st.work + st.ev.work + total
   if work > limits.maxMaterializeWork then
     throw (.resourceExhausted .materializeWork limits.maxMaterializeWork)
-  return (entries, rs, predicted, work)
+  return (st.entries, rs, st.predicted + rootsCost st.ev.cost roots, work)
 
 /-- Result of an exact optimization. -/
 structure ExactSharingResult where

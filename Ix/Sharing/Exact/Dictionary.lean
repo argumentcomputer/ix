@@ -204,6 +204,20 @@ def Prep.eval (p : Prep) (width : Array (Option Nat)) (affected : Array Bool) : 
 def Prep.evalAll (p : Prep) (width : Array (Option Nat)) : DictEval :=
   p.eval width (Array.replicate p.dag.size true)
 
+/-- Marks of `t` and of the terms above it (those with `t` among their
+descendants). Only terms from `t` on can lie above it. -/
+def ancestorMarks (dag : Dag) (t : Nat) : Array Bool :=
+  foldRange (fun (acc : Array Bool) u =>
+      acc.set! u (u == t || (dag.node u).children.any (acc[·]!))) t (dag.size - t)
+    (Array.replicate dag.size false)
+
+/-- Re-evaluate after the dictionary changed only at `t` (now `width`): only
+`t` and the terms above it are recomputed, starting from the evaluation `ev`
+of the previous dictionary. -/
+def Prep.evalUp (p : Prep) (ev : DictEval) (width : Array (Option Nat)) (t : Nat) : DictEval :=
+  foldRange (evalStep p.dag p.family p.spineLen p.tail width (ancestorMarks p.dag t)) t
+    (p.dag.size - t) { ev with work := 0 }
+
 /-- `C_M` for every term under `width` (recomputing `affected` terms) and the
 work performed. -/
 def Prep.costs (p : Prep) (width : Array (Option Nat)) (affected : Array Bool) :

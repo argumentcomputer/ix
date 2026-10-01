@@ -467,79 +467,132 @@ theorem materializeWith_forall₂ (p : Prep) (index width : Array (Option Nat))
     cases hret
     exact array_mapM_forall₂ _ _ _ hout
 
-/-- A materialized entry is the standalone build of `table[i]` against the
-dictionary of the entries before it. -/
-theorem materializeEntry_build (p : Prep) (table : Array Nat) (limits : Limits)
-    (widthAt : Nat → Nat) (i : Nat) {e : Ixon.Expr} {c w : Nat}
-    (h : materializeEntry p table limits widthAt i = .ok (e, c, w)) :
-    ∃ ev width, p.build ev (indexOfPrefix p.dag.size table i) width false
-      (p.dag.size + 1) table[i]! = .ok e := by
-  unfold materializeEntry at h
-  obtain ⟨⟨es, cost, w'⟩, hm, h⟩ := bind_eq_ok h
-  simp only at h
-  split at h
-  · rename_i e' he'
-    cases h
-    have hf := forall₂_getElem (materializeWith_forall₂ p _ _ _ limits hm)
-    have h0 : 0 < es.toList.length := by
-      rw [Array.length_toList]
-      exact (Array.getElem?_eq_some_iff.mp he').1
-    have := hf.2 0 (by simp) h0
-    have he0 : es.toList[0] = e := by
-      rw [Array.getElem_toList]
-      simpa using (Array.getElem?_eq_some_iff.mp he').2
-    change p.build _ _ _ false _ table[i]! = .ok es.toList[0] at this
-    rw [he0] at this
-    exact ⟨_, _, this⟩
-  · cases h
+/-- An invariant of a counted `foldlM` loop over `0, …, m − 1`. -/
+theorem foldlM_range_inv {σ ε : Type} (f : σ → Nat → Except ε σ) (I : Nat → σ → Prop)
+    (hstep : ∀ i s s', I i s → f s i = .ok s' → I (i + 1) s') :
+    ∀ (m : Nat) (s0 s : σ), I 0 s0 → (List.range m).foldlM f s0 = .ok s → I m s := by
+  intro m
+  induction m with
+  | zero => intro s0 s h0 h; simp only [List.range_zero, List.foldlM_nil] at h; cases h; exact h0
+  | succ m ih =>
+    intro s0 s h0 h
+    rw [List.range_succ, List.foldlM_append] at h
+    obtain ⟨s1, h1, h⟩ := bind_eq_ok h
+    simp only [List.foldlM_cons, List.foldlM_nil] at h
+    obtain ⟨s2, h2, h⟩ := bind_eq_ok h
+    simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    exact hstep m s1 _ (ih s0 s1 h0 h1) h2
 
-/-- The entry pass builds each listed entry in order. -/
-theorem materializeEntries_spec (p : Prep) (table : Array Nat) (limits : Limits)
-    (widthAt : Nat → Nat) :
-    ∀ (is : List Nat) (entries : Array Ixon.Expr) (pr wk : Nat) {out : Array Ixon.Expr}
-      {pr' wk' : Nat},
-      materializeEntries p table limits widthAt is entries pr wk = .ok (out, pr', wk') →
-      ∃ es : List Ixon.Expr, out = entries ++ es.toArray ∧
-        List.Forall₂ (fun i e => ∃ c w, materializeEntry p table limits widthAt i = .ok (e, c, w))
-          is es := by
-  intro is
-  induction is with
-  | nil =>
-    intro entries pr wk out pr' wk' h
-    simp only [materializeEntries] at h
-    cases h
-    exact ⟨[], by simp, .nil⟩
-  | cons i is ih =>
-    intro entries pr wk out pr' wk' h
-    simp only [materializeEntries] at h
-    obtain ⟨⟨e, c, w⟩, he, h⟩ := bind_eq_ok h
-    simp only at h
+/-- One table step: the entry is built against the current dictionary, which
+then gains the entry. -/
+theorem materializeStep_spec {p : Prep} {table : Array Nat} {limits : Limits}
+    {widthAt : Nat → Nat} {st st' : TableState} {i : Nat}
+    (h : materializeStep p table limits widthAt st i = .ok st') :
+    ∃ e, p.build st.ev st.index st.width false (p.dag.size + 1) table[i]! = .ok e ∧
+      st'.entries = st.entries.push e ∧
+      st'.index = st.index.set! table[i]! (some i) ∧
+      st'.width = st.width.set! table[i]! (some (widthAt i)) ∧
+      st'.ev = p.evalUp st.ev (st.width.set! table[i]! (some (widthAt i))) table[i]! ∧
+      st'.predicted = st.predicted + st.ev.cost[table[i]!]! ∧
+      st.ev.cost[table[i]!]! ≤ limits.maxMaterialize := by
+  unfold materializeStep at h
+  dsimp only at h
+  split at h
+  · cases h
+  · rename_i hc
+    obtain ⟨e, he, h⟩ := bind_eq_ok h
+    try simp only at h
     split at h
     · cases h
-    · obtain ⟨es, rfl, hes⟩ := ih _ _ _ h
-      exact ⟨e :: es, by simp, .cons ⟨c, w, he⟩ hes⟩
+    · simp only [pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      exact ⟨e, he, rfl, rfl, rfl, rfl, rfl, by omega⟩
 
-/-- The parts of a successful `materializeTable`: the entry pass over
-`0, …, size − 1` and the roots built against the whole table. -/
+/-- The parts of a successful `materializeTable`: the table fits the Share
+word, the entry loop, and the roots built against its final dictionary. -/
 theorem materializeTable_parts (p : Prep) (table roots : Array Nat) (limits : Limits)
     (widthAt : Nat → Nat) {entries rs : Array Ixon.Expr} {predicted work : Nat}
     (h : materializeTable p table roots limits widthAt = .ok (entries, rs, predicted, work)) :
-    (∃ es : List Ixon.Expr, entries = es.toArray ∧
-      List.Forall₂ (fun i e => ∃ c w, materializeEntry p table limits widthAt i = .ok (e, c, w))
-        (List.range table.size) es) ∧
-    ∃ cost w, p.materializeWith (indexOfPrefix p.dag.size table table.size)
-      ((indexOfPrefix p.dag.size table table.size).map (·.map widthAt)) roots limits =
-        .ok (rs, cost, w) := by
+    table.size < UInt64.size ∧ ∃ st,
+      (List.range table.size).foldlM (materializeStep p table limits widthAt)
+        { entries := #[], index := Array.replicate p.dag.size none,
+          width := Array.replicate p.dag.size none,
+          ev := p.evalAll (Array.replicate p.dag.size none),
+          predicted := tag0Size table.size, work := 0 } = .ok st ∧
+      entries = st.entries ∧
+      roots.mapM (fun r => p.build st.ev st.index st.width false (p.dag.size + 1) r) = .ok rs ∧
+      predicted = st.predicted + rootsCost st.ev.cost roots := by
   unfold materializeTable at h
-  obtain ⟨⟨entries', pr, wk⟩, hE, h⟩ := bind_eq_ok h
-  simp only at h
-  obtain ⟨⟨rs', cost, w⟩, hR, h⟩ := bind_eq_ok h
-  simp only at h
   split at h
   · cases h
-  · cases h
-    obtain ⟨es, hes, hfor⟩ := materializeEntries_spec p table limits widthAt _ _ _ _ hE
-    exact ⟨⟨es, by simpa using hes, hfor⟩, cost, w, hR⟩
+  · rename_i hsz
+    obtain ⟨st, hst, h⟩ := bind_eq_ok h
+    try simp only at h
+    split at h
+    · cases h
+    · obtain ⟨rs', hrs, h⟩ := bind_eq_ok h
+      try simp only at h
+      split at h
+      · cases h
+      · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl, rfl, -⟩ := h
+        exact ⟨by unfold wordBound at hsz; omega, st, hst, rfl, hrs, rfl⟩
+
+theorem indexOfPrefix_zero (size : Nat) (table : Array Nat) :
+    indexOfPrefix size table 0 = Array.replicate size none := by
+  simp [indexOfPrefix, indexOfPairs]
+
+theorem indexOfPrefix_succ (size : Nat) (table : Array Nat) {k : Nat} (hk : k < table.size) :
+    indexOfPrefix size table (k + 1) = (indexOfPrefix size table k).set! table[k]! (some k) := by
+  unfold indexOfPrefix indexOfPairs
+  have htake : table.toList.take (k + 1) = table.toList.take k ++ [table[k]!] := by
+    rw [List.take_succ_eq_append_getElem (by simpa using hk)]
+    simp [getElem!_pos table k hk]
+  rw [htake, List.zipIdx_append, List.foldl_append]
+  simp [List.length_take, Nat.min_eq_left (Nat.le_of_lt hk : k ≤ table.size)]
+
+/-- The dictionary of the table loop after `k` entries is the prefix
+dictionary of the first `k` entries, with the layout widths. -/
+def TableInv (p : Prep) (table : Array Nat) (widthAt : Nat → Nat) (k : Nat) (st : TableState) :
+    Prop :=
+  k ≤ table.size ∧ st.index = indexOfPrefix p.dag.size table k ∧
+    st.width = (indexOfPrefix p.dag.size table k).map (·.map widthAt) ∧
+    st.entries.size = k ∧
+    ∀ j (hj : j < st.entries.size), ∃ ev, p.build ev (indexOfPrefix p.dag.size table j)
+      ((indexOfPrefix p.dag.size table j).map (·.map widthAt)) false (p.dag.size + 1)
+      table[j]! = .ok st.entries[j]
+
+theorem tableInv_loop (p : Prep) (table : Array Nat) (limits : Limits) (widthAt : Nat → Nat)
+    {st : TableState}
+    (h : (List.range table.size).foldlM (materializeStep p table limits widthAt)
+        { entries := #[], index := Array.replicate p.dag.size none,
+          width := Array.replicate p.dag.size none,
+          ev := p.evalAll (Array.replicate p.dag.size none),
+          predicted := tag0Size table.size, work := 0 } = .ok st) :
+    TableInv p table widthAt table.size st := by
+  refine foldlM_range_inv _ (fun k st => k ≤ table.size → TableInv p table widthAt k st)
+    (fun i s s' hI hs hle => ?_) table.size _ st (fun _ => ?_) h (Nat.le_refl _)
+  · obtain ⟨_, hidx, hwid, hsz, hent⟩ := hI (by omega)
+    obtain ⟨e, he, hent', hidx', hwid', -, -, -⟩ := materializeStep_spec hs
+    have hsucc := indexOfPrefix_succ p.dag.size table (k := i) (by omega)
+    refine ⟨hle, by rw [hidx', hidx, hsucc], ?_, by rw [hent']; simp [hsz], fun j hj => ?_⟩
+    · rw [hwid', hwid, hsucc]
+      simp [Array.set!, Array.map_setIfInBounds]
+    · have hj2 : j < (s.entries.push e).size := hent' ▸ hj
+      have heq : s'.entries[j] = (s.entries.push e)[j] := by simp only [hent']
+      rw [heq]
+      by_cases hji : j < s.entries.size
+      · rw [Array.getElem_push_lt hji]
+        exact hent j hji
+      · have hj' : j = i := by simp at hj2; omega
+        subst hj'
+        have : j = s.entries.size := by omega
+        simp only [this, Array.getElem_push_eq]
+        rw [hsz, ← hwid, ← hidx]
+        exact ⟨_, he⟩
+  · exact ⟨Nat.zero_le _, by rw [indexOfPrefix_zero], by rw [indexOfPrefix_zero]; simp,
+      rfl, fun j hj => absurd hj (by simp)⟩
 
 theorem getElem!_of_getElem? {table : Array Nat} {i u : Nat} (h : table[i]? = some u) :
     table[i]! = u := by
@@ -563,17 +616,22 @@ theorem materializeTable_backward (p : Prep) (table roots : Array Nat) (limits :
     entries.size = table.size ∧
       (∀ (k : Nat) (hk : k < entries.size), SharesIn (· < k) entries[k]) ∧
       ∀ r ∈ rs.toList, SharesIn (· < table.size) r := by
-  obtain ⟨⟨es, rfl, hes⟩, cost, w, hroots⟩ := materializeTable_parts p table roots limits widthAt h
-  obtain ⟨hlen, hget⟩ := forall₂_getElem hes
-  simp only [List.length_range] at hlen
-  refine ⟨by simp [hlen], fun k hk => ?_, fun r hr => ?_⟩
-  · have hk' : k < es.length := by simpa using hk
-    obtain ⟨c, w, he⟩ := hget k (by simp; omega) hk'
-    simp only [List.getElem_range] at he
-    obtain ⟨ev, width, hb⟩ := materializeEntry_build p table limits widthAt k he
-    simpa using build_prefix_backward p ev table k (by omega) width _ false _ _ hb
-  · obtain ⟨t, ht⟩ := forall₂_mem_right (materializeWith_forall₂ p _ _ roots limits hroots) r hr
-    exact build_prefix_backward p _ table table.size hsize _ _ false _ _ ht
+  obtain ⟨_, st, hst, rfl, hroots, -⟩ := materializeTable_parts p table roots limits widthAt h
+  obtain ⟨-, hidx, -, hsz, hent⟩ := tableInv_loop p table limits widthAt hst
+  refine ⟨hsz, fun k hk => ?_, fun r hr => ?_⟩
+  · obtain ⟨ev, hb⟩ := hent k hk
+    exact build_prefix_backward p ev table k (by omega) _ _ false _ _ hb
+  · rw [Array.mapM_eq_mapM_toList] at hroots
+    cases hm : List.mapM (fun r => p.build st.ev st.index st.width false (p.dag.size + 1) r)
+        roots.toList with
+    | error err => rw [hm] at hroots; cases hroots
+    | ok l =>
+      rw [hm] at hroots
+      have : rs = l.toArray := by cases hroots; rfl
+      subst this
+      obtain ⟨t, ht⟩ := forall₂_mem_right (mapM_ok_forall₂ _ _ _ hm) r (by simpa using hr)
+      rw [hidx] at ht
+      exact build_prefix_backward p _ table table.size hsize _ _ false _ _ ht
 
 /-- Expansion correctness of `materializeTable`: with every `Share(i)`
 replaced by the term of entry `i`, entry `k` is the term `table[k]` and each
@@ -587,18 +645,24 @@ theorem materializeTable_correct (p : Prep) (table roots : Array Nat) (limits : 
         substShares (fun i => E table[i]!) entries[k] = E table[k]!) ∧
       List.Forall₂ (fun r e => substShares (fun i => E table[i]!) e = E r)
         roots.toList rs.toList := by
-  obtain ⟨⟨es, rfl, hes⟩, cost, w, hroots⟩ := materializeTable_parts p table roots limits widthAt h
-  obtain ⟨hlen, hget⟩ := forall₂_getElem hes
-  simp only [List.length_range] at hlen
+  obtain ⟨_, st, hst, rfl, hroots, -⟩ := materializeTable_parts p table roots limits widthAt h
+  obtain ⟨-, hidx, -, hsz, hent⟩ := tableInv_loop p table limits widthAt hst
   refine ⟨fun k hk => ?_, ?_⟩
-  · have hk' : k < es.length := by simpa using hk
-    obtain ⟨c, w, he⟩ := hget k (by simp; omega) hk'
-    simp only [List.getElem_range] at he
-    obtain ⟨ev, width, hb⟩ := materializeEntry_build p table limits widthAt k he
-    simpa using build_correct p ev _ width E _ hE
+  · obtain ⟨ev, hb⟩ := hent k hk
+    exact build_correct p ev _ _ E _ hE
       (indexModel_prefix p.dag.size table k (by omega) E) _ false _ _ hb
-  · exact materializeWith_correct p _ _ roots limits rs cost w hroots E _ hE
-      (indexModel_prefix p.dag.size table table.size hsize E)
+  · rw [Array.mapM_eq_mapM_toList] at hroots
+    cases hm : List.mapM (fun r => p.build st.ev st.index st.width false (p.dag.size + 1) r)
+        roots.toList with
+    | error err => rw [hm] at hroots; cases hroots
+    | ok l =>
+      rw [hm] at hroots
+      have : rs = l.toArray := by cases hroots; rfl
+      subst this
+      rw [hidx] at hm
+      exact forall₂_imp (fun t e he => build_correct p _ _ _ E _ hE
+        (indexModel_prefix p.dag.size table table.size hsize E) _ false t e he)
+        (mapM_ok_forall₂ _ _ _ hm)
 
 /-- The parts of a successful `materializeDependent`: the table fits the
 Share word, entries are built as entry bodies and roots standalone, all
