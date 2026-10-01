@@ -14,6 +14,7 @@ wall time, the search states and the largest component.
 lake exe uniform-hard <corpus.ixe> [name ...]
 lake exe uniform-hard <corpus.ixe> --compare      # every constant, vs the enumeration
 lake exe uniform-hard <corpus.ixe> --dump w name  # the largest component
+lake exe uniform-hard <corpus.ixe> --tiered [name ...]  # tiered construction, both layouts
 ```
 Limits can be overridden with `UNIFORM_STATES` / `UNIFORM_EVALS`.
 -/
@@ -54,6 +55,33 @@ def headName : Ix.Sharing.Exact.Head → String
   | .lam _ => "lam"
   | .all .. => "all"
   | .letE _ => "let"
+
+/-- The tiered construction on the named constants under both layouts: the
+three candidate lengths, the winning width and the nominal-width length. -/
+def tieredAll (corpus : String) (names : List String) : IO UInt32 := do
+  let bytes ← IO.FS.readBinFile corpus
+  let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
+  let limits : Ix.Sharing.Exact.Limits := { maxStates := 1048576 }
+  for name in names do
+    let found := env.consts.toList.find? fun (addr, _) =>
+      match env.addrToName.get? addr with
+      | some n => toString n == name
+      | none => false
+    let some (_, lc) := found | IO.println s!"{name}: not found"
+    let .ok c := lc.get | IO.println s!"{name}: decode error"
+    for l in [Ix.Sharing.Exact.ShareLayout.tag4, .tagN] do
+      let t0 ← IO.monoNanosNow
+      let r ← IO.lazyPure fun _ => Ix.Sharing.Exact.canonicalSharingTieredTable l c.sharing
+        (Ix.Sharing.Exact.constantInfoRoots c.info) limits
+      let t1 ← IO.monoNanosNow
+      let ms := (t1 - t0) / 1000000
+      match r with
+      | .ok r =>
+        let nominal := (r.stats.candidateLengths.find? (·.1 == r.stats.nominalW)).map (·.2)
+        IO.println s!"{name} {reprStr l}: final={r.stats.phase3LayoutBytes} w={r.stats.w} nominalW={r.stats.nominalW} nominal={nominal.getD 0} candidates={r.stats.candidateLengths} serialized={r.result.variableBytes} stored={hash r.phase1.stored} {ms} ms"
+      | .error e => IO.println s!"{name} {reprStr l}: FAILED {repr e} {ms} ms"
+      (← IO.getStdout).flush
+  return 0
 
 open Ix.Sharing.Exact in
 /-- Print the largest uncertain component of a constant at width `w`. -/
@@ -132,6 +160,8 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln "usage: uniform-hard <corpus.ixe> [name ...]"
     return 2
   if let [_, "--compare"] := args then return (← compareAll corpus)
+  if let _ :: "--tiered" :: ns := args then
+    return (← tieredAll corpus (if ns.isEmpty then defaultNames else ns))
   if let [_, "--dump", ws, name] := args then
     let bytes ← IO.FS.readBinFile corpus
     let env ← IO.ofExcept (Ixon.deEnvAnon bytes)

@@ -836,3 +836,25 @@ Measured (W2, Rust, all constants certified at every w): Mathlib −0.82% vs MSS
 405,832, equal 256,519, larger 903, max +1,485, p99.9 +1); Init −1.41% (larger on 5, max +6).
 Width 1 wins for 505,671 Mathlib constants, width 2 for 156,170, width 3 for 1,413. Cost: three
 phase-1 runs instead of one (about 3× the time; still minutes for all of Mathlib in Rust).
+
+### 12.12 Decision (2026-10-01): TagN replaces all three integer codes
+
+Owner decision: TagN (flag widths 0, 2, 4) replaces Tag0, Tag2 and Tag4 everywhere in the Ixon
+grammar, for uniformity and to simplify the serialization. Measured byte effect is the Share
+savings only (other fields change by ≈0), and no integer gets longer. Consequences: one integer
+code with one proof of roundtrip/bijectivity (`Ix/Compile/Verify/TagN.lean`); the three
+"noncanonical … integer" reader checks are removed; every codec theorem that mentions
+`tag0Bytes`/`tag4Bytes` sizes is restated with `tagNBytes`; the format version bumps once for
+sharing + integers together.
+
+### 12.13 Certified minimality of phase 1 (2026-10-01, W1 HEAD 3eb09b9c)
+
+`Ix/Compile/Verify/UniformOptimality.lean`: `optimizeUniform_minimum` (a successful
+`optimizeUniformExpanded w limits ex` returns a stored set that is a minimum of the uniform
+model `ulen` over the restricted class, with `modelBytes` equal to it) and `optimizeUniform_least`
+(it is the `setPrec`-least such minimum), both under `limits.uniformSubsetSearch = false`, no
+`sorry`, no new axioms, all `Uniform*` modules registered in the sorry-frontier audit (196 roots).
+Reachability of every term from a root is a runtime check plus `optimizeUniform_reach`. Phases 2
+and 3 and the best-of-three width selection are tested, not proved. The reference enumeration
+path (`uniformSubsetSearch = true`) is excluded from the theorems. Failure semantics: an error at
+any width fails the whole call (no fallback to other widths); Rust must match.

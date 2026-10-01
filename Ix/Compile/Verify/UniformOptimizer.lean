@@ -192,7 +192,8 @@ theorem materializeDependent_total {p : Prep} {table roots : Array Nat}
 theorem uniformFinish_spec {w : Nat} {limits : Limits} {ex : Expanded} {p : Prep}
     {c : UniformChoice} {res : UniformSharingResult}
     (h : uniformFinish w limits ex p c = .ok res) :
-    (∀ t ∈ c.stored.toList, t < ex.dag.size) ∧ res.stored = c.stored ∧
+    (∀ t ∈ c.stored.toList, t < ex.dag.size) ∧ inClassCheck ex.dag ex.roots c.stored = true ∧
+      res.stored = c.stored ∧
       res.result.tableTerms = pinnedOrder ex.dag c.facts.deg c.stored ∧
       res.result.modelBytes = c.model ∧
       ∃ work, p.materializeDependent (pinnedOrder ex.dag c.facts.deg c.stored) ex.roots
@@ -204,6 +205,10 @@ theorem uniformFinish_spec {w : Nat} {limits : Limits} {ex : Expanded} {p : Prep
   simp only at h
   split at h
   · rename_i hall
+    split at h
+    case isFalse => cases h
+    rename_i hcls
+    have hcls' : inClassCheck ex.dag ex.roots c.stored = true := by simpa using hcls
     obtain ⟨⟨entries, roots, predicted, work⟩, hmat, h⟩ := bind_eq_ok h
     simp only at h
     split at h
@@ -215,7 +220,7 @@ theorem uniformFinish_spec {w : Nat} {limits : Limits} {ex : Expanded} {p : Prep
         · cases h
           have hpm : predicted = c.model := by simpa using hpred
           subst hpm
-          refine ⟨fun t ht => ?_, rfl, rfl, rfl, work, hmat, rfl⟩
+          refine ⟨fun t ht => ?_, hcls', rfl, rfl, rfl, work, hmat, rfl⟩
           rw [Array.all_eq_true] at hall
           obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp ht
           simpa using hall i (by simpa using hi)
@@ -281,7 +286,7 @@ theorem optimizeUniform_modelBytes {w : Nat} {limits : Limits} {ex : Expanded}
       res.result.modelBytes = uniformCost (Prep.ofDag ex.dag) w
         (fun t => decide (t ∈ res.stored.toList)) res.stored.toList ex.roots.toList := by
   obtain ⟨_, hwf, _, _, c, _, hfin⟩ := optimizeUniform_parts h
-  obtain ⟨hin, hstored, htable, hmodel, work, hmat, _⟩ := uniformFinish_spec hfin
+  obtain ⟨hin, _, hstored, htable, hmodel, work, hmat, _⟩ := uniformFinish_spec hfin
   have hp := prepWF_ofDag hwf
   have hempty := ofDag_empty_size ex.dag
   let p := Prep.ofDag ex.dag
