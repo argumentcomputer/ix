@@ -1919,6 +1919,9 @@
   {"path": "Compilatrix/Lir/Semantics.lean",
    "imports":
    ["Compilatrix.Lir.Syntax", "Compilatrix.X86.State", "Std.Data.HashMap"]},
+  "Compilatrix.Lir.Proof.Run":
+  {"path": "Compilatrix/Lir/Proof/Run.lean",
+   "imports": ["Compilatrix.Lir.Semantics", "Compilatrix.Sem.Smallstep"]},
   "Compilatrix.Lir.Print":
   {"path": "Compilatrix/Lir/Print.lean", "imports": ["Compilatrix.Lir.Syntax"]},
   "Compilatrix.Lir.Operands":
@@ -2347,6 +2350,9 @@
    ["Compilatrix.Cfg.Syntax",
     "Compilatrix.Own.Semantics",
     "Compilatrix.Sem.Clock"]},
+  "Compilatrix.Cfg.Proof.Fuel":
+  {"path": "Compilatrix/Cfg/Proof/Fuel.lean",
+   "imports": ["Compilatrix.Cfg.Semantics", "Compilatrix.Sem.Smallstep"]},
   "Compilatrix.Cfg.Print":
   {"path": "Compilatrix/Cfg/Print.lean",
    "imports": ["Compilatrix.Cfg.Syntax", "Compilatrix.Fir.Print"]},
@@ -2943,6 +2949,7 @@
     "Compilatrix.Lir.Operands",
     "Compilatrix.Lir.SplitEdges",
     "Compilatrix.Lir.Print",
+    "Compilatrix.Lir.Proof.Run",
     "Compilatrix.Xv.Syntax",
     "Compilatrix.Xv.Slots",
     "Compilatrix.Xv.Semantics",
@@ -3124,6 +3131,7 @@
     "Compilatrix.Cfg.WellFormed",
     "Compilatrix.Cfg.Lower",
     "Compilatrix.Cfg.Print",
+    "Compilatrix.Cfg.Proof.Fuel",
     "Compilatrix.Rt.Layout",
     "Compilatrix.Rt.Procs.Entry",
     "Compilatrix.Rt.Procs.Nat",

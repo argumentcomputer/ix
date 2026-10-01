@@ -20,6 +20,7 @@ import Compilatrix.Lir.WellFormed
 import Compilatrix.Lir.Operands
 import Compilatrix.Lir.SplitEdges
 import Compilatrix.Lir.Print
+import Compilatrix.Lir.Proof.Run
 import Compilatrix.Xv.Syntax
 import Compilatrix.Xv.Slots
 import Compilatrix.Xv.Semantics
@@ -201,6 +202,7 @@ import Compilatrix.Cfg.Semantics
 import Compilatrix.Cfg.WellFormed
 import Compilatrix.Cfg.Lower
 import Compilatrix.Cfg.Print
+import Compilatrix.Cfg.Proof.Fuel
 import Compilatrix.Rt.Layout
 import Compilatrix.Rt.Procs.Entry
 import Compilatrix.Rt.Procs.Nat

@@ -469,7 +469,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/p2-anf-spec: P4 specialise proved",
+ "baseline": "jcb/x86: merge M2.5",
  "axiom_sha256":
  "f237b721942b49564d4e45838ce6813ac6dea623c0b2b9666343905f97a2528e",
  "axiom_count": 1955}
