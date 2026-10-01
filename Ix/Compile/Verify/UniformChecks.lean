@@ -309,4 +309,176 @@ theorem componentsChecked_spec {dag : Dag} (hwf : DagWF dag) {cls : Array UClass
     have := hreach b hab i hlb
     rw [hℓ, hlb, this]
 
+/-! ## Reclassification bounds (B3a) -/
+
+/-- Pointwise order of bound tables. -/
+def BLe (b b' : UBounds) : Prop :=
+  ∀ t : Nat, b.inlineLB[t]! ≤ b'.inlineLB[t]! ∧ b.mergedLB[t]! ≤ b'.mergedLB[t]! ∧
+    b.headLB[t]! ≤ b'.headLB[t]! ∧ b.contLB[t]! ≤ b'.contLB[t]!
+
+theorem arr_foldl_add_mono {f g : Nat → Nat} (a : Nat) (arr : Array Nat) (h : ∀ c, f c ≤ g c) :
+    arr.foldl (fun acc c => acc + f c) a ≤ arr.foldl (fun acc c => acc + g c) a := by
+  rw [arr_foldl_add_eq_sum, arr_foldl_add_eq_sum]
+  have := sum_le_sum_of_le arr.toList fun c _ => h c
+  omega
+
+theorem setBang_getElem!_le {a a' : Array Nat} {t v v' : Nat} (u : Nat)
+    (hs : a.size = a'.size) (hle : a[u]! ≤ a'[u]!) (hv : v ≤ v') :
+    (a.set! t v)[u]! ≤ (a'.set! t v')[u]! := by
+  rw [Ix.Compile.Verify.SharingExact.setBang_getElem!, Ix.Compile.Verify.SharingExact.setBang_getElem!]
+  by_cases h : t = u ∧ t < a.size
+  · rw [if_pos h, if_pos ⟨h.1, hs ▸ h.2⟩]; exact hv
+  · rw [if_neg h, if_neg (fun h' => h ⟨h'.1, hs ▸ h'.2⟩)]; exact hle
+
+/-- Fields of equal sizes. -/
+def BSize (b : UBounds) (n : Nat) : Prop :=
+  b.inlineLB.size = n ∧ b.mergedLB.size = n ∧ b.headLB.size = n ∧ b.contLB.size = n
+
+theorem boundsStep_size {p : Prep} {w : Nat} {ms : Array Bool} {b : UBounds} {n : Nat}
+    (h : BSize b n) (t : Nat) : BSize (boundsStep p w ms b t) n := by
+  unfold boundsStep; simp only; split <;> simp [BSize] at h ⊢ <;> exact h
+
+/-- `boundsStep` is monotone in the bounds and antitone in the maybe-stored
+set. -/
+theorem boundsStep_mono {p : Prep} {w : Nat} {ms ms' : Array Bool} {b b' : UBounds} {n : Nat}
+    (hle : BLe b b') (hms : ∀ v : Nat, ms'[v]! = true → ms[v]! = true) (hb : BSize b n)
+    (hb' : BSize b' n) (t : Nat) : BLe (boundsStep p w ms b t) (boundsStep p w ms' b' t) := by
+  intro u
+  obtain ⟨s1, s2, s3, s4⟩ := hb
+  obtain ⟨s1', s2', s3', s4'⟩ := hb'
+  have hhead : ∀ c, b.headLB[c]! ≤ b'.headLB[c]! := fun c => (hle c).2.2.1
+  have hcont : ∀ c, b.contLB[c]! ≤ b'.contLB[c]! := fun c => (hle c).2.2.2
+  have hcap : ∀ (x x' : Nat), x ≤ x' →
+      (if ms[t]! then min w x else x) ≤ (if ms'[t]! then min w x' else x') := by
+    intro x x' hx
+    cases h' : ms'[t]!
+    · cases ms[t]! <;> simp <;> omega
+    · rw [hms t h']; simp; omega
+  unfold boundsStep
+  simp only
+  split
+  · have hi := arr_foldl_add_mono (p.dag.node t).head.ownBytes (p.dag.node t).children hhead
+    exact ⟨setBang_getElem!_le u (by omega) (hle u).1 hi,
+      setBang_getElem!_le u (by omega) (hle u).2.1 hi,
+      setBang_getElem!_le u (by omega) (hle u).2.2.1 (hcap _ _ hi),
+      setBang_getElem!_le u (by omega) (hle u).2.2.2 (hcap _ _ hi)⟩
+  · have hrest : (if p.family[(p.dag.node t).spineNext]! == p.family[t]! then
+          b.contLB[(p.dag.node t).spineNext]! else b.headLB[(p.dag.node t).spineNext]!) ≤
+        (if p.family[(p.dag.node t).spineNext]! == p.family[t]! then
+          b'.contLB[(p.dag.node t).spineNext]! else b'.headLB[(p.dag.node t).spineNext]!) := by
+      split
+      · exact hcont _
+      · exact hhead _
+    have hm := Nat.add_le_add (Nat.add_le_add_left (hhead (p.dag.node t).sideChild)
+      (p.dag.node t).sideExtra) hrest
+    exact ⟨setBang_getElem!_le u (by omega) (hle u).1 (Nat.add_le_add_left hm 1),
+      setBang_getElem!_le u (by omega) (hle u).2.1 hm,
+      setBang_getElem!_le u (by omega) (hle u).2.2.1 (hcap _ _ (Nat.add_le_add_left hm 1)),
+      setBang_getElem!_le u (by omega) (hle u).2.2.2 (hcap _ _ hm)⟩
+
+/-- **The bounds are antitone in the maybe-stored set.** -/
+theorem uniformBounds_antitone (p : Prep) (w : Nat) {ms ms' : Array Bool}
+    (hms : ∀ v : Nat, ms'[v]! = true → ms[v]! = true) :
+    BLe (uniformBounds p w ms) (uniformBounds p w ms') := by
+  let init : UBounds :=
+    { inlineLB := Array.replicate p.dag.size 0, mergedLB := Array.replicate p.dag.size 0,
+      headLB := Array.replicate p.dag.size 0, contLB := Array.replicate p.dag.size 0 }
+  have hinit : BSize init p.dag.size := by simp [BSize, init]
+  have key : ∀ (l : List Nat) (b b' : UBounds), BLe b b' → BSize b p.dag.size →
+      BSize b' p.dag.size →
+      BLe (l.foldl (boundsStep p w ms) b) (l.foldl (boundsStep p w ms') b') := by
+    intro l
+    induction l with
+    | nil => intro b b' h _ _; exact h
+    | cons t ts ih =>
+      intro b b' h hb hb'
+      exact ih _ _ (boundsStep_mono h hms hb hb' t) (boundsStep_size hb t) (boundsStep_size hb' t)
+  unfold uniformBounds
+  rw [foldRange_zero, foldRange_zero]
+  exact key _ init init (fun _ => ⟨Nat.le_refl _, Nat.le_refl _, Nat.le_refl _, Nat.le_refl _⟩)
+    hinit hinit
+
+theorem setBang_self {α : Type} [Inhabited α] (a : Array α) {t : Nat} (ht : t < a.size) :
+    a.set! t a[t]! = a := by
+  rw [Array.set!_eq_setIfInBounds, Array.setIfInBounds_def, dif_pos ht, getElem!_pos a t ht]
+  exact Array.set_getElem_self ht
+
+theorem uniformBounds_size (p : Prep) (w : Nat) (ms : Array Bool) :
+    BSize (uniformBounds p w ms) p.dag.size := by
+  have key : ∀ (l : List Nat) (b : UBounds), BSize b p.dag.size →
+      BSize (l.foldl (boundsStep p w ms) b) p.dag.size := by
+    intro l
+    induction l with
+    | nil => intro b h; exact h
+    | cons t ts ih => intro b h; exact ih _ (boundsStep_size h t)
+  unfold uniformBounds
+  rw [foldRange_zero]
+  exact key _ _ (by simp [BSize])
+
+/-- `uniformBounds` is a fixed point of every step. -/
+theorem PrepWF.boundsStep_fix {p : Prep} (hp : PrepWF p) (w : Nat) (ms : Array Bool) {t : Nat}
+    (ht : t < p.dag.size) :
+    boundsStep p w ms (uniformBounds p w ms) t = uniformBounds p w ms := by
+  obtain ⟨h1, h2, h3, h4⟩ := hp.uniformBounds_spec w ms t ht
+  obtain ⟨s1, s2, s3, s4⟩ := uniformBounds_size p w ms
+  generalize uniformBounds p w ms = U at h1 h2 h3 h4 s1 s2 s3 s4 ⊢
+  rcases U with ⟨I, M, H, C⟩
+  simp only at h1 h2 h3 h4 s1 s2 s3 s4
+  unfold boundsStep
+  simp only
+  split
+  · rename_i hf
+    have hf' : p.family[t]! = .none := by simpa using hf
+    obtain ⟨a, b⟩ := h1 hf'
+    simp only [UBounds.mk.injEq]
+    rw [← a]
+    refine ⟨setBang_self I (by omega), ?_, ?_, ?_⟩
+    · rw [← b]; exact setBang_self M (by omega)
+    · rw [← h3]; exact setBang_self H (by omega)
+    · rw [← b, ← h4]; exact setBang_self C (by omega)
+  · rename_i hf
+    have hf' : p.family[t]! ≠ .none := by simpa using hf
+    obtain ⟨a, b⟩ := h2 hf'
+    have hrest : (if p.family[(p.dag.node t).spineNext]! == p.family[t]! then
+        C[(p.dag.node t).spineNext]! else H[(p.dag.node t).spineNext]!) =
+        (if p.family[snext p t]! = p.family[t]! then C[snext p t]! else H[snext p t]!) := by
+      unfold snext
+      by_cases hs : p.family[(p.dag.node t).spineNext]! = p.family[t]!
+      · simp [hs]
+      · simp [hs]
+    simp only [UBounds.mk.injEq]
+    rw [hrest, ← a, ← b]
+    refine ⟨setBang_self I (by omega), setBang_self M (by omega), ?_, ?_⟩
+    · rw [← h3]; exact setBang_self H (by omega)
+    · rw [← h4]; exact setBang_self C (by omega)
+
+/-- **Reclassification bounds are below the bounds of the reduced maybe-stored
+set.** Steps over any terms, from tables below, stay below. -/
+theorem PrepWF.boundsFold_le {p : Prep} (hp : PrepWF p) (w : Nat) {ms : Array Bool} :
+    ∀ (l : List Nat) (b : UBounds), BLe b (uniformBounds p w ms) → BSize b p.dag.size →
+      BLe (l.foldl (boundsStep p w ms) b) (uniformBounds p w ms) := by
+  intro l
+  induction l with
+  | nil => intro b h _; exact h
+  | cons t ts ih =>
+    intro b h hb
+    apply ih _ _ (boundsStep_size hb t)
+    by_cases ht : t < p.dag.size
+    · have := boundsStep_mono (p := p) (w := w) (ms := ms) (ms' := ms) h (fun _ h => h) hb
+        (uniformBounds_size p w ms) t
+      rw [hp.boundsStep_fix w ms ht] at this
+      exact this
+    · -- out of range: nothing changes
+      intro u
+      obtain ⟨s1, s2, s3, s4⟩ := hb
+      unfold boundsStep
+      simp only
+      split <;>
+      · simp only [Array.set!_eq_setIfInBounds,
+          Array.setIfInBounds_eq_of_size_le (show b.inlineLB.size ≤ t by omega),
+          Array.setIfInBounds_eq_of_size_le (show b.mergedLB.size ≤ t by omega),
+          Array.setIfInBounds_eq_of_size_le (show b.headLB.size ≤ t by omega),
+          Array.setIfInBounds_eq_of_size_le (show b.contLB.size ≤ t by omega)]
+        exact h u
+
 end Ix.Compile.Verify.UniformModel
