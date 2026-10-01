@@ -51,6 +51,7 @@ name = "aiur"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "blake3",
  "hashbrown 0.15.5",
  "indexmap",
  "libc",
@@ -61,6 +62,7 @@ dependencies = [
  "p3-symmetric",
  "rayon",
  "rustc-hash",
+ "serde_json",
  "tracing",
  "tracing-texray",
 ]
@@ -1253,6 +1255,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "home"
+version = "0.5.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "http"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1973,6 +1984,12 @@ dependencies = [
 
 [[package]]
 name = "linux-raw-sys"
+version = "0.4.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
+
+[[package]]
+name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
@@ -2107,7 +2124,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=a155ee47687e3a9b7e94f158eeff9d710a8262d5#a155ee47687e3a9b7e94f158eeff9d710a8262d5"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=7b3699b6baf6e68a418c74dba4f0c64197899c7b#7b3699b6baf6e68a418c74dba4f0c64197899c7b"
 dependencies = [
  "bincode",
  "itertools 0.14.0",
@@ -2127,6 +2144,7 @@ dependencies = [
  "p3-util",
  "rayon",
  "serde",
+ "sppark",
  "tracing",
 ]
 
@@ -3351,6 +3369,19 @@ dependencies = [
 
 [[package]]
 name = "rustix"
+version = "0.38.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
+dependencies = [
+ "bitflags",
+ "errno",
+ "libc",
+ "linux-raw-sys 0.4.15",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rustix"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
@@ -3358,7 +3389,7 @@ dependencies = [
  "bitflags",
  "errno",
  "libc",
- "linux-raw-sys",
+ "linux-raw-sys 0.12.1",
  "windows-sys 0.61.2",
 ]
 
@@ -3663,6 +3694,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sppark"
+version = "0.1.15"
+source = "git+https://github.com/argumentcomputer/sppark?rev=e10e107673aa22861f0f8b9758fc62169ab919ae#e10e107673aa22861f0f8b9758fc62169ab919ae"
+dependencies = [
+ "cc",
+ "which",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3757,7 +3797,7 @@ version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
- "rustix",
+ "rustix 1.1.4",
  "windows-sys 0.61.2",
 ]
 
@@ -4402,6 +4442,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52f5ee44c96cf55f1b349600768e3ece3a8f26010c05265ab73f945bb1a2eb9d"
 dependencies = [
  "rustls-pki-types",
+]
+
+[[package]]
+name = "which"
+version = "4.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87ba24419a2078cd2b0f2ede2691b6c66d8e47836da3b6db8265ebad47afbfc7"
+dependencies = [
+ "either",
+ "home",
+ "once_cell",
+ "rustix 0.38.44",
 ]
 
 [[package]]

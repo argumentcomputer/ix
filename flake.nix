@@ -109,11 +109,20 @@
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
-          # Rust tests embed the shared golden and binary handoff fixtures.
+          # The zkVM guest workspaces `Cargo.toml` excludes; neither Cargo nor
+          # Lake reads them from here.
+          otherWorkspaces = pkgs.lib.fileset.unions [ ./sp1 ./zisk ];
+          # The Cargo files the root workspace builds from.
+          cargoSource = pkgs.lib.fileset.difference
+            (pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.))
+            otherWorkspaces;
+          # The Rust tests `include_bytes!` the `.ixe` files under
+          # `Tests/Fixtures`: environments serialized by Lean, read back to check
+          # both sides agree on the format.
           src = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
-              (pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.))
+              cargoSource
               ./Tests/Fixtures/ixon-v3
             ];
           };
@@ -189,15 +198,12 @@
           # dependency trace before copying the prebuilt static library.
           leanSrc = pkgs.lib.fileset.toSource {
             root = ./.;
-            fileset = pkgs.lib.fileset.unions [
-              ./lakefile.lean
-              ./lake-manifest.json
-              ./lean-toolchain
-              ./Cargo.toml
-              ./Cargo.lock
-              (pkgs.lib.fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "toml") ./crates)
-              (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./.)
-            ];
+            fileset = pkgs.lib.fileset.difference (pkgs.lib.fileset.unions [
+              # What `lake build` reads: Lean sources, manifests, FFI shims.
+              (pkgs.lib.fileset.fromSource (lake2nix.cleanLakeSource ./.))
+              # What its Rust archive target traces, as Crane sees it.
+              cargoSource
+            ]) otherWorkspaces;
           };
           lakeDeps = lake2nix.buildDeps {
             src = leanSrc;
