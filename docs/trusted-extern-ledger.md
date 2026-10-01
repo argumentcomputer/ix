@@ -339,6 +339,37 @@ decoder against `Rt.readback` of the dump. `native_harness.c` stays only as
 still needs its `compilatrix_rt_allocate` stub) until `Instr.callRuntime`
 retires.
 
+**The driver model (specification assumption
+`x86-phase1-runtime-driver-model`).** `Recheck.sound` is a theorem about
+`X86.Linked` ([`Linked.lean`](../Compilatrix/X86/Linked.lean)): the
+object's execution from a `X86.Driver`
+([`Driver.lean`](../Compilatrix/X86/Driver.lean)) that calls `cx_init` and
+then the root's export, each at the address `ELF.symbol?` finds for its
+symbol in the parsed object, and observes the root's result by
+`Rt.readback`. Reading it as a statement about the native executable
+assumes that `runtime_driver.c` and the system linker set up those calls
+as the model does:
+- the text at `base`; one region of `size` bytes at `region`, its bytes
+  before the first call arbitrary except the stack budget at
+  `region + 16` (`ctx − 48`), which the driver stores before `cx_init`;
+- the call stack (`budget + 56` bytes below `sp`, and the return slot)
+  apart from the region;
+- each call entered at its symbol's address with `rsp = sp`, the same
+  return address outside the text, `rdi = region` and the arguments in
+  `rsi`…`r9`, any other registers and flags, the root's call starting from
+  the bytes `cx_init` left;
+- the observation: status 0 and the value read back at the root's type
+  over the region from `region + 16` with fuel `size / 8` (the C decoder
+  reads only that part), other statuses the wrapper's resource failures;
+  arguments of 2⁶⁴ or more cannot be passed.
+
+The model maps only the region and the call stack. A real process maps
+more, so the assumption includes that a run the model shows non-faulting
+touches only modelled memory. `Driver.Ok`, the numeric contract, is a
+hypothesis of the theorem, satisfiable for every accepted artifact
+(`Recheck.driver_exists`), not part of this assumption. The reading also
+rests on `x86-v0-local-semantics` and `x86-v0-elf-writer`.
+
 The benchmark runner's entry profile
 ([`benchmarks/runner/entry/`](../benchmarks/runner/entry/): the timing
 driver, one adapter per row, and tagged C twins of `ackermann`, `tak`,
@@ -362,6 +393,7 @@ Four additional public fences retain the ordinary logical axiom basis.
 | --- | --- | --- |
 | Local ISA semantics | Agreement of the local byte machine with actual x86-64, including canonical addresses, unified code fetch, memory permissions, flags, faults, and the caller ABI. Compiler-contract traps must be proved unreachable; they are not hardware exceptions. | E1 and E2 prove local-to-local agreement. The [S0 readiness decision](x86-reference-model.md) pins the Sail snapshot; reference execution comparison, the Lean adapter, and S2 agreement remain pending. |
 | Encoder stream/layout | Discharged for successful certified production emission. Raw `Encode.encode`/`Program.encode` clients must validate their output or prove the same facts. | `Stream.check_sound` checks every boundary, canonical position, target and relocation. Complete-stream proofs cover call-free execution and internal calls under concrete `SafeTrace` conditions, including residual return-slot bytes. `ELFLink` proves checked PC32 application and runtime CALL transfer. External procedure bodies still require their semantic/ABI contracts. |
+| Runtime driver model | `X86.Driver`/`X86.Linked` model how `runtime_driver.c` and the linker call an accepted object (`cx_init`, then the root's export by symbol) and observe its result; the premise under which `Recheck.sound` speaks of the native executable. | The driver stores the budget and decodes as modelled; `tests-rt`, `tests-pipeline` and `tests-corpus` run every level and the native executable on the same inputs. A model of process start and the linker's resolution, and memory outside the region shown untouched, remain. |
 | ELF serialization and system loading | Independent interpretation is discharged for successful `ELF.writeChecked` output. Raw `ELF.write` clients lack that certificate. Actual system linker/loader behavior remains assumed. | `ELFRead` independently parses actual fields; `ELF.check_sound` certifies text, bounded/aligned/nonoverlapping sections, export placement, symbols, relocations, non-executable stack and exact provenance. `ObjectEval` begins from the parsed export and text. A real loader must implement the proved PC32 rule, map immutable executable text, resolve named procedures and enter with the stated ABI. |
 
 The reviewed format references are the [generic ABI ELF specification](https://gabi.xinuos.com/elf.pdf)

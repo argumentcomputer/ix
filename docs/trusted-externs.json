@@ -662,6 +662,36 @@
         "independently decoded provenance domain/kind/root/lowering/role-policy fields equal the actual selected input provenance",
         "actual parsed text and entry feed whole-object execution, and parsed PC32 relocations feed the checked application trace"
       ]
+    },
+    {
+      "id": "x86-phase1-runtime-driver-model",
+      "status": "active-specification",
+      "owner": "Compilatr.ix maintainers",
+      "scope": "Recheck.sound's model of how a compiled object is linked and called: Compilatrix.X86.Driver (Compilatrix/X86/Driver.lean), Compilatrix.X86.Linked (Compilatrix/X86/Linked.lean), ObjectEval.call with ELF.symbol? (Compilatrix/X86/ObjectCall.lean) and Recheck.Artifact.linked (Compilatrix/Recheck/Linked.lean), against fixtures/x86/runtime_driver.c and the system linker's symbol resolution",
+      "assumption": "Running the native executable that links an object Recheck.run accepted with fixtures/x86/runtime_driver.c (cc -DENTRY=cx_<root>) behaves, at its printed observation, as X86.Linked.call does on the Driver that describes the process: the object's text loaded at base; one private region of size bytes at region (8-aligned, at least 4 KiB, below 2^63) whose bytes before the first call are arbitrary except for the stack budget stored at region + 16 (ctx - 48); the call stack (the budget + 56 bytes below sp and the return slot) apart from the region; and for each input, cx_init(region, size, budget) and then the root's export, each entered at the address the linker resolves for its symbol (modelled by ELF.symbol? on the parsed object), with rsp = sp, the same return address ret outside the text in the word at sp, rdi = region and the arguments in rsi, rdx, rcx, r8, r9 (zero beyond), any values in the other registers and flags, and the second call starting from the bytes the first left. The observation is the root call's rax:rdx: status 0 with the value read back at the root's first-order type by Rt.readback over the region from region + 16 with fuel size / 8 (the C decoder mirrors Rt.readback and reads only that part), other statuses as the wrapper's resource failures. Arguments of 2^64 or more cannot be passed and are a resource failure in the model. The model maps only the region and the call stack; a real process maps more, so the assumption includes that a run the model shows non-faulting touches only modelled memory, and that the process's other mappings (text, data, the C stack, libc) are not written by the object and do not alias the region or the modelled stack. Driver.Ok, the numeric contract, is a hypothesis of Recheck.sound, not part of this assumption; the driver's choices (64 MiB region, 8 MiB stack above a guard page, budget = stack - 4 KiB) satisfy it.",
+      "proof_effect": "Recheck.sound, object_refines, back_refines and compile_sound_linked/compile_safe_linked/compile_diverges_linked are theorems about X86.Linked (ObjectEval over the parsed object bytes and the byte machine), using only propext, Classical.choice and Quot.sound. Their reading as statements about the native executable is conditional on this assumption, on x86-v0-local-semantics (the byte machine is the processor) and on x86-v0-elf-writer (the system linker/loader maps and resolves the certified object as parsed). No Lean axiom or native symbol is introduced; runtime_driver.c is untrusted test code that this entry describes, and production artifacts do not depend on it.",
+      "trust_basis": [
+        "runtime_driver.c stores the stack budget at region + 16 before cx_init and decodes results only from region + 16, as X86.Driver.initBytes and lirView model; both calls go through one call_on_stack with the same stack top, so sp and the return address are the same for both, as the model has them",
+        "X86.Driver.exists_ok and Recheck.driver_exists: the numeric contract Driver.Ok is satisfiable for every accepted artifact",
+        "the driver, its C readback mirror and this ledger entry are integrity-pinned, so a change to how objects are called or observed is reviewed with the model"
+      ],
+      "tests": [
+        "tests-rt --cc (Rt.lower's output linked with fixtures/x86/runtime_driver.c: Lir, Xv, Xl, typed x86, the byte machine and native runs agree on rax:rdx, callee-saved registers, rsp, the object area and readback; the C decoder agrees with Rt.readback of the dumped object area)",
+        "tests-pipeline --cc and tests-corpus --cc (the compilatrix command line's objects linked with runtime_driver.c agree with every level and with Lean on the K1 programs and the corpus)",
+        "Compilatrix.Recheck.sound",
+        "Compilatrix.X86.Driver.entryBase",
+        "Compilatrix.X86.Driver.exists_ok",
+        "fixtures/x86/runtime_driver.c"
+      ],
+      "retirement": {
+        "milestone": "A verified entry driver, or a proved process-level loader model",
+        "replacement": "The driver's calls emitted by Compilatr.ix (or proved in a model of process start and the dynamic linker), so that the native process's initial state is derived rather than assumed",
+        "exit_criteria": [
+          "the process's initial register, memory and mapping state for each call is derived from a model of process start, mmap and the linker's symbol resolution",
+          "the C readback mirror is replaced by Rt.readback run on the process's memory, or proved equal to it",
+          "memory outside the region and the call stack is shown untouched by every call the model proves non-faulting"
+        ]
+      }
     }
   ],
   "modeled_oracles": [],
