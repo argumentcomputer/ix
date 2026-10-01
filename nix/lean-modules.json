@@ -1012,6 +1012,9 @@
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",
     "Compilatrix.Backend.Proof.Object"]},
+  "CompilatrixTests.Fences.BackendEnds":
+  {"path": "CompilatrixTests/Fences/BackendEnds.lean",
+   "imports": ["Compilatrix.Backend.Proof.Ends"]},
   "CompilatrixTests.Fences.Backend":
   {"path": "CompilatrixTests/Fences/Backend.lean",
    "imports":
@@ -1094,7 +1097,8 @@
     "CompilatrixTests.Fences.LayoutProof",
     "CompilatrixTests.Fences.SelectProof",
     "CompilatrixTests.Fences.BackendProof",
-    "CompilatrixTests.Fences.StackingProof"]},
+    "CompilatrixTests.Fences.StackingProof",
+    "CompilatrixTests.Fences.BackendEnds"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":

@@ -157,6 +157,7 @@
   "Compilatrix.Anf.WellFormed",
   "Compilatrix.Backend",
   "Compilatrix.Backend.Proof.Emit",
+  "Compilatrix.Backend.Proof.Ends",
   "Compilatrix.Backend.Proof.Object",
   "Compilatrix.Backend.Proof.Xl",
   "Compilatrix.Cfg.Lower",
@@ -610,6 +611,7 @@
   "CompilatrixTests.Fences.AiurWire",
   "CompilatrixTests.Fences.Anf",
   "CompilatrixTests.Fences.Backend",
+  "CompilatrixTests.Fences.BackendEnds",
   "CompilatrixTests.Fences.BackendProof",
   "CompilatrixTests.Fences.CfgLower",
   "CompilatrixTests.Fences.CfgProof",
@@ -660,5 +662,5 @@
   "Ix.Lib"],
  "baseline": "jcb/x86: merge M2.6b stacking",
  "axiom_sha256":
- "c05ed71397ebc88682233bed5a11c4300f8389ed824555c086801938774311ac",
- "axiom_count": 3972}
+ "3473045a684d69bd5cf3672f06768a256fe62a61cd62f56e5f62dafd8eb7c536",
+ "axiom_count": 3977}
