@@ -1089,13 +1089,13 @@ def overrideFails (e : Except String Limits) : Bool :=
 def limitTests (_ : Unit) : TestSeq :=
   let d : Limits := {}
   let resources : List Resource := [.exprVisits, .depth, .nodes, .states, .transitions,
-    .costEvals, .outputBytes, .materialize, .materializeWork]
+    .costEvals, .outputBytes, .materialize, .materializeWork, .knapsackCells]
   group "limits" <|
     test "the defaults are the safety net (PR plan §0b-4)"
       (d.maxExprVisits == 2 ^ 40 && d.maxDepth == 2 ^ 20 && d.maxNodes == 2 ^ 32 &&
         d.maxStates == 2 ^ 40 && d.maxTransitions == 2 ^ 40 && d.maxCostEvals == 2 ^ 50 &&
         d.maxOutputBytes == 2 ^ 40 && d.maxMaterialize == 2 ^ 40 &&
-        d.maxMaterializeWork == 2 ^ 56) ++
+        d.maxMaterializeWork == 2 ^ 56 && d.maxKnapsackCells == 2 ^ 28) ++
     test "overrides set the named limits, left to right"
       (match d.withOverrides " states = 2^10 ,cost_evals=12345, output_bytes=max,, states=2^11" with
        | .ok l => l.maxStates == 2048 && l.maxCostEvals == 12345 &&

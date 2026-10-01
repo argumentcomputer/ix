@@ -3066,7 +3066,8 @@ fn limit_defaults_are_the_safety_net() {
       d.max_layer_states,
       d.max_transitions,
       d.max_work,
-      d.max_output_bytes
+      d.max_output_bytes,
+      d.max_knapsack_cells
     ),
     (
       1 << 40,
@@ -3077,7 +3078,8 @@ fn limit_defaults_are_the_safety_net() {
       1 << 40,
       1 << 40,
       1 << 56,
-      1 << 40
+      1 << 40,
+      1 << 28
     )
   );
 }
@@ -3139,8 +3141,77 @@ fn exhausted_limit_names_its_key() {
     Resource::Transitions,
     Resource::Work,
     Resource::OutputBytes,
+    Resource::KnapsackCells,
   ] {
     let mut l = ExactSharingLimits::default();
     assert!(l.set_limit(r.key(), 3), "{r:?}");
   }
+}
+
+/// The telescope-spine guard of the uniform optimizer (Lean's
+/// `teleSubaddEnd` check): the bound, the predicate at the bound, and the
+/// Share-flag width's subadditivity just below it at the rung ends.
+#[test]
+fn telescope_spine_guard() {
+  use super::uniform::{TELE_SUBADD_END, spines_within_bound};
+  assert_eq!(TELE_SUBADD_END, 4_311_811_080);
+  assert_eq!(TELE_SUBADD_END, TagN::end5(4));
+  assert!(spines_within_bound(&[]));
+  assert!(spines_within_bound(&[0, 1, TELE_SUBADD_END - 1]));
+  assert!(!spines_within_bound(&[0, TELE_SUBADD_END]));
+  assert!(!spines_within_bound(&[u64::MAX]));
+  let ends = [
+    TAGN_RUNG1_END,
+    TAGN_RUNG2_END,
+    TAGN_RUNG3_END,
+    TAGN_RUNG4_END,
+    TAGN_RUNG5_END,
+  ];
+  let mut xs: Vec<u64> = vec![0, 1, 2];
+  for e in ends {
+    xs.extend([e - 2, e - 1, e, e + 1]);
+  }
+  for &a in &xs {
+    for &b in &xs {
+      if a.checked_add(b).is_some_and(|s| s < TELE_SUBADD_END) {
+        assert!(tag4_len(a + b) <= tag4_len(a) + tag4_len(b), "{a} {b}");
+      }
+    }
+  }
+}
+
+/// The table-count knapsack has its own limit (`max_knapsack_cells`,
+/// resource `KnapsackCells`), separate from `max_states`: the bracket input
+/// of `uniform_branch_and_bound_across_a_bracket` runs the knapsack, fails
+/// closed under a one-cell limit, and certifies at the defaults even with a
+/// `max_states` below the knapsack's cell count.
+#[test]
+fn knapsack_cells_limit() {
+  let mut roots = Vec::new();
+  for i in 0..120 {
+    let a = Expr::reference(i, vec![0]);
+    roots.push(a.clone());
+    roots.push(a);
+  }
+  roots.extend(gen_prefix_chain(&mut Rng(5)));
+  let mut knapsack_failures = 0;
+  for w in 1..=3 {
+    let ok = optimize_sharing_uniform(w, &roots, &limits()).unwrap();
+    let tight = ExactSharingLimits { max_knapsack_cells: 1, ..limits() };
+    match optimize_sharing_uniform(w, &roots, &tight) {
+      Ok(r) => {
+        assert_eq!((&r.stored, r.model_len), (&ok.stored, ok.model_len));
+      },
+      Err(SharingError::ResourceExhausted(e)) => {
+        assert_eq!((e.resource, e.limit), (Resource::KnapsackCells, 1));
+        knapsack_failures += 1;
+      },
+      Err(e) => panic!("w={w}: {e:?}"),
+    }
+    let few_states =
+      ExactSharingLimits { max_states: ok.states_visited.max(1), ..limits() };
+    let r = optimize_sharing_uniform(w, &roots, &few_states).unwrap();
+    assert_eq!((r.stored, r.model_len), (ok.stored, ok.model_len), "w={w}");
+  }
+  assert!(knapsack_failures > 0);
 }

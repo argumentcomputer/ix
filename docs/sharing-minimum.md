@@ -968,3 +968,15 @@ invalid). Widths become 1/2/3/4/5/9 for every flag width f ∈ {0, 2, 4}; rung e
 Tag0 cost 4; Mathlib's 4.8M name indices lose 22.1 MB (+0.66% of the file). With it TagN is never
 longer than the old codes on any field measured. Still bijective; `Ix/Ixon.lean`'s TagN docstring is
 the normative layout.
+
+### 12.17 Proof-library status after the TagN switch (2026-10-01, head 6b9f7767)
+
+The whole verification library is restated against the TagN-only codec and the six-rung table
+(`IxCompileVerify` 227 audit roots, `IxTcVerify` 2034+7+1, sorry frontier clean, no new axioms).
+Changes to earlier statements in this section: the certain-stored threshold is now
+θ = `tag0StepBound n + 1` (exact Tag0 growth, replacing the fixed "gain ≥ 2"); header-width
+subadditivity (`tag4Size_add_le`) holds only below `teleSubaddEnd = Ixon.tagNEnd5 4`
+(4,311,811,080), so `optimizeUniformExpanded` fails closed (`formatBound "telescope spine length"`)
+on any longer telescope spine and the optimality theorems derive the bound from that guard;
+`ShareLayout` has the single constructor `tagN`. Lean/Rust parity re-checked: 0 disagreements on
+fixtures, 350 generated inputs, 124 Share-bearing constants and 306 compiler-route cases.

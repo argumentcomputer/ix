@@ -192,6 +192,7 @@ def limitOf (l : Limits) : Resource → String × Nat
   | .materializeWork => ("maxMaterializeWork", l.maxMaterializeWork)
   | .oracleTables => ("maxOracleTables", l.maxOracleTables)
   | .oracleVariants => ("maxOracleVariants", l.maxOracleVariants)
+  | .knapsackCells => ("maxKnapsackCells", l.maxKnapsackCells)
 
 /-- Double one limit. -/
 def doubleLimit (l : Limits) : Resource → Limits
@@ -206,6 +207,7 @@ def doubleLimit (l : Limits) : Resource → Limits
   | .materializeWork => { l with maxMaterializeWork := 2 * l.maxMaterializeWork }
   | .oracleTables => { l with maxOracleTables := 2 * l.maxOracleTables }
   | .oracleVariants => { l with maxOracleVariants := 2 * l.maxOracleVariants }
+  | .knapsackCells => { l with maxKnapsackCells := 2 * l.maxKnapsackCells }
 
 /-- For a Lean-only resource exhaustion: rerun Lean, doubling whichever
 limit fires (at most 12 doublings in total), and report the limits that

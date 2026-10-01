@@ -305,6 +305,7 @@ inductive Resource where
   | materializeWork
   | oracleTables
   | oracleVariants
+  | knapsackCells
   deriving BEq, Repr, Inhabited
 
 /-- The name of a resource in error messages and in limit overrides
@@ -321,6 +322,7 @@ def Resource.key : Resource → String
   | .materializeWork => "materialize_work"
   | .oracleTables => "oracle_tables"
   | .oracleVariants => "oracle_variants"
+  | .knapsackCells => "knapsack_cells"
 
 /-- Why an exact sharing operation did not produce a certified result. -/
 inductive SharingError where
@@ -368,6 +370,9 @@ structure Limits where
   maxNodes : Nat := 1 <<< 32
   /-- Width states inserted into the search frontier. -/
   maxStates : Nat := 1 <<< 40
+  /-- Cells (components × capacity) of the uniform optimizer's count-bracket
+  knapsack table; matches the Rust `max_knapsack_cells`. -/
+  maxKnapsackCells : Nat := 1 <<< 28
   /-- Transitions (state, appended term) examined. -/
   maxTransitions : Nat := 1 <<< 40
   /-- Term cost evaluations plus telescope spine steps. -/
@@ -422,13 +427,14 @@ def Limits.set? (l : Limits) (key : String) (v : Nat) : Option Limits :=
   | "output_bytes" => some { l with maxOutputBytes := v }
   | "materialize" => some { l with maxMaterialize := v }
   | "materialize_work" => some { l with maxMaterializeWork := v }
+  | "knapsack_cells" => some { l with maxKnapsackCells := v }
   | _ => none
 
 /-- Every production limit set to `v` (the oracle limits are unchanged). -/
 def Limits.setAll (l : Limits) (v : Nat) : Limits :=
   { l with maxExprVisits := v, maxDepth := v, maxNodes := v, maxStates := v,
            maxTransitions := v, maxCostEvals := v, maxOutputBytes := v,
-           maxMaterialize := v, maxMaterializeWork := v }
+           maxMaterialize := v, maxMaterializeWork := v, maxKnapsackCells := v }
 
 /-- A limit value: decimal digits, `2^k` (`k ≤ 63`) or `max`. -/
 def parseLimitValue (raw : String) : Except String Nat :=
@@ -467,7 +473,7 @@ def Limits.withOverrides (l : Limits) (spec : String) : Except String Limits := 
       | none =>
         unless rustOnlyLimitKeys.contains key do
           throw s!"unknown sharing limit {key} (expected expr_visits, depth, nodes, states, \
-            transitions, cost_evals, output_bytes, materialize, materialize_work, or a Rust key: \
+            transitions, cost_evals, output_bytes, materialize, materialize_work, knapsack_cells, or a Rust key: \
             {", ".intercalate rustOnlyLimitKeys})"
     | _ => throw s!"sharing limit item {item}: expected key=value or unbounded"
   return l
