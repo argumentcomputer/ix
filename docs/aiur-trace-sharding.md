@@ -29,10 +29,9 @@ downstream consumer of this design's verifier contract, not part of it.
   forks from that common state. Shard proofs are therefore dependent — as
   the colleague's notes anticipate — but the dependency is a single
   exchange of K ~100-byte headers, after which all shards finish
-  independently and in parallel. This is Zisk's two-round
-  global-challenge protocol; SP1's challenge-free elliptic-curve digest
+  independently and in parallel. A challenge-free elliptic-curve digest
   is rejected in §4.2 because Aiur's cross-shard message volume makes it
-  ruinous.
+  prohibitively expensive.
 - **Residuals, not zero.** multi-stark's verifier already materializes the
   per-proof lookup residual (`intermediate_accumulators.last()`) as a
   transcript-bound public field and merely asserts it is zero. The shard
@@ -42,9 +41,8 @@ downstream consumer of this design's verifier contract, not part of it.
   contiguous pointer range; two `sel`-gated lookups on every memory row
   (push `ptr`, pull `ptr + 1`) telescope to one push of the first pointer
   and one pull of one past the last, and two terms contributed by the
-  vector verifier force the K ranges to tile `[0, N_w)` exactly — Zisk's
-  continuation-record idiom, with a flow-conservation proof over the
-  finite field in §5.
+  vector verifier force the K ranges to tile `[0, N_w)` exactly, with a
+  flow-conservation proof over the finite field in §5.
 - **One verifier contract.** Because the boundary lookups are part of the
   memory AIR and the transcript prefix changes, a single unsharded proof
   is the `K = 1` vector and `verify_vector` is the verification routine
@@ -62,8 +60,7 @@ downstream consumer of this design's verifier contract, not part of it.
 - **Recursion.** `ix_aggr` gains a vector-child verifier; recursion proofs
   are themselves trace-sharded by the same machinery (natural boundary:
   one child verification per shard); direct joins become the default
-  because RAM no longer bounds recursion. Using SP1's recursion for the
-  tree is rejected on measured cost (§8.4).
+  because RAM no longer bounds recursion.
 - **Sizing.** Shards are cut to a VRAM budget with the existing peak
   model, in committed-cell units: fully-resident CUDA proving needs about
   `8·(1 + 2^log_blowup)` bytes per committed cell plus 25 % headroom,
@@ -158,34 +155,6 @@ downstream consumer of this design's verifier contract, not part of it.
 
 ### 2.3 Precedents
 
-- **SP1 (Hypercube 6.6.0).** Shards are cut by trace area
-  (`ELEMENT_THRESHOLD = 1.5·2^28 ≈ 4.0·10^8` main-trace cells;
-  ~2.85·10^8 on ≤30 GB GPUs) and per-chip height (2^22), with worst-case
-  headroom reserved. Each shard's LogUp is balanced *internally*, with
-  the public values acting as a virtual chip (state send/receive, memory
-  init/finalize controls). Cross-shard facts (memory, syscalls) go
-  through the `Global` chip: hash-to-curve on a septic extension plus
-  elliptic-curve point addition, no verifier challenge; the recursion
-  checks the total is the identity. Cost: 241 cells per global
-  interaction plus a Poseidon2 permutation, two rows per newly touched
-  address per shard. Each shard gets a fresh challenger seeded only by
-  the vk — shards are embarrassingly parallel. One shard is proven per
-  GPU at a time; multi-GPU is independent shard tasks plus an arity-4
-  compress tree.
-- **Zisk / pil2-proofman.** Instances have PIL-fixed heights (Main 2^22,
-  Mem 2^22, precompiles 2^17–2^20) and are planned deterministically on
-  every worker from replayed minimal traces. Cross-instance lookups use
-  one global stage-2 challenge derived in two rounds: every instance
-  commits stage 1 and emits a contribution digest; digests are combined
-  homomorphically (EC point add or lattice add, so worker order is
-  irrelevant), all-gathered over MPI, and the challenge is a transcript
-  over publics ‖ stage-1 proof values ‖ aggregate. The final recursive
-  circuit re-derives the challenge and evaluates the global
-  sum-to-zero. Memory is split by address range and row budget; segment
-  `i` "proves" a continuation record keyed by `(region, i+1, tail_state)`
-  and segment `i+1` "assumes" `(region, i+1, head_state)`; they cancel in
-  the global sum iff equal, so boundary state is recomputed locally and
-  never transmitted. Instance size is bounded by one GPU stream buffer.
 - **Plonky3 (rev `3152b14a`).** `p3-lookup` distinguishes `Kind::Local`
   and `Kind::Global` buses; `batch-stark` exposes per-AIR
   `lookup_terminals` as a proof field and `verify_terminal_sum` sums an
@@ -328,24 +297,20 @@ common digest *after* per-shard observations leaves the K challenger
 states different, so β, γ differ and honest cross-shard messages do not
 cancel. The common prefix must end at the sample.
 
-Zisk's homomorphic contribution aggregation buys order-independence for
-workers that do not share a plan; Aiur's plan is deterministic and
-ordered, so a plain ordered digest is simpler and cheaper to re-derive
-in circuit.
+Aiur's plan is deterministic and ordered, so an ordered digest binds
+all shard contributions without homomorphic aggregation.
 
-### 4.2 Why not challenge-free cross-shard messages (SP1)
+### 4.2 Why not challenge-free cross-shard messages
 
-SP1 keeps shards fully independent by routing cross-shard facts through
-a hash-to-curve accumulator: no challenge, but roughly 250 cells plus a
-Poseidon2 permutation per crossing message, and SP1 keeps crossings rare
-(memory boundaries, syscalls). In Aiur every function-call message,
+A hash-to-curve accumulator can authenticate cross-shard facts without a
+shared challenge, but adds curve arithmetic and hashing for each crossing.
+In Aiur every function-call message,
 every memory push and every byte-op push is a potential crossing: the
 callee's memoized row lives in exactly one shard while callers of that
 query are wherever execution put them, memory rows live in one shard
 while loads come from all, and byte tables live in one shard while byte
 ops come from all. Crossings are the common case, not the exception;
-paying ~5× a function row's width per crossing would multiply the trace
-several times over. PR #55's message-level chaining has the same
+adding substantial work per crossing would multiply the trace. PR #55's message-level chaining has the same
 problem: it exposes each unmatched message as a claim. The shared
 challenge makes crossings free; its cost is one exchange of K ~100-byte
 headers per batch.
@@ -564,9 +529,8 @@ budget         ≈ 0.75 · device memory        (25 % default headroom)
 
 so a 96 GB card admits about `72 GB / 40 B ≈ 1.8·10⁹` committed cells
 before FRI workspace; a 24 GB card about 4.5·10⁸. In main-trace cells
-(the unit SP1's `ELEMENT_THRESHOLD` counts) that is roughly 0.7–1.2·10⁹
-on 96 GB and 2–3·10⁸ on 24 GB, given the 1.5–2.5 committed-to-main
-ratio — the same order as SP1's 4.0·10⁸ (2.85·10⁸ on ≤30 GB cards). The
+that is roughly 0.7–1.2·10⁹ on 96 GB and 2–3·10⁸ on 24 GB, given the
+1.5–2.5 committed-to-main ratio. The
 planner reads the budget from device memory and
 `MULTI_STARK_CUDA_MIN_FREE_BYTES` and the circuit shapes; the
 calibration constant is measured once per GPU model, the way
@@ -689,20 +653,6 @@ aggregated. The only requirement this design places on such a consumer
 is that its embedded Aiur verifier implement the §4.4 contract: the
 batch-transcript prefix and the boundary terms.
 
-### 8.4 Why not SP1's recursion for the tree
-
-PR #602's synthetic smoke measured 4.27 M RISC-V instructions and 891
-Blake3 syscalls to verify a 28 KB Aiur proof in the SP1 guest. Production
-shard proofs are 2–20 MB and verification cost is dominated by hashing
-opened rows and FRI folding, so a shard proof costs on the order of 10⁹
-guest cycles. Published SP1 GPU throughput is ~1–3 MHz per GPU including
-recursion, i.e. several hundred GPU-seconds per Aiur shard proof, versus
-seconds to tens of seconds for the same verification as an Aiur circuit
-on the CUDA backend (PR #597 measured 8.2× over CPU on recursive
-workloads). Across thousands of shard proofs that is two orders of
-magnitude; SP1 stays where PR #602 puts it — the terminal compression of
-one root.
-
 ## 9. Interaction with env sharding and PR #619
 
 - **Env shards can grow.** Today N ≈ 239 Mathlib env shards is forced by
@@ -750,10 +700,9 @@ Status as of the `sb/aiur-trace-sharding-design` branch (ix) and
 | 2. Aiur `memseg` lookups, selector-gated pull multiplicities, row-range witnesses, planner, `AiurProof = BatchProof`, batch policy | landed; 21 tests incl. the audits' counterexamples as rejections |
 | 3. Lean verifier: `read_batch`, batch/shard Fiat–Shamir, header agreement, residual sum, policy, `verify_batch_at` | landed; `multi-stark`, `recursive-verifier` suites |
 | 4. `ix_aggr` and legacy join circuits verify children as batches | landed; `aggregate-first`, `ix-aggr` suites; codegen regenerated |
-| 5. Downstream verifiers adopt the contract | landed: the SP1 terminal (`sp1-compress/`, from PR #602) verifies the root as a batch through `AiurVerifyingKey::verify`, the same `verify_against` the native verifier runs; the FLT and Mathlib GPU roots execute at 691 M cycles on upstream SP1 (`bench/root-sp1-compress-2026-09-18`) |
-| 6. CLI / pipeline (`ix prove --trace-shards`, budget-to-plan search, per-shard spans; sharded aggregate wraps on GPU) | leaf path landed: `plan_shards_within` sizes the batch from `--max-ram` and `ix prove --trace-shards` proves it under Regenerate (§14); the aggregate wrap still proves unsharded |
-| 7. Tests | landed for 1–4 as listed |
-| 8. Benchmarks (`--trace-shards K`, VRAM calibration, recompute overhead) | open |
+| 5. CLI / pipeline (`ix prove --trace-shards`, budget-to-plan search, per-shard spans; sharded aggregate wraps on GPU) | leaf path landed: `plan_shards_within` sizes the batch from `--max-ram` and `ix prove --trace-shards` proves it under Regenerate (§14); the aggregate wrap still proves unsharded |
+| 6. Tests | landed for 1–4 as listed |
+| 7. Benchmarks (`--trace-shards K`, VRAM calibration, recompute overhead) | open |
 
 Two deliberate deviations from the design as first written: byte tables
 stay active in every shard (zero multiplicities outside shard 0) because
@@ -846,7 +795,7 @@ seams.
 - **Byte-table multiplicities on the GPU.** The designated shard's
   Bytes2 table needs global counts; today they come from the record, so
   nothing changes, but if execution is ever distributed the counts need
-  the same gather Zisk does for shared tables.
+  a gather across workers before committing the shared table.
 - **Piece padding.** A circuit cut into the fewest fitting pieces pads
   each piece to a power of two, up to one doubling; cutting into one more
   piece can pad less at the price of one more activation. Whether the

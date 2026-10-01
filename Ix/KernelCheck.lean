@@ -143,15 +143,12 @@ opaque rsCheckAnonFFI :
     IO (Array (String × Option CheckError))
 
 /-- FFI: anon-mode type-check of named constants with (by default) their full
-    dependency closures — the same mode and scope as the zkVM hosts' `--consts`
-    execute path, so an out-of-circuit run is directly comparable to the
-    in-circuit one. The `Bool` after the names is `skip-deps`: `true` checks
-    only each name's own work item (subject-only; deps trusted), mirroring
-    `zisk-host --skip-deps`.
+    dependency closures. The `Bool` after the names is `skip-deps`: `true`
+    checks only each name's own work item (subject-only; deps trusted).
 
     Names are the constants' displayed forms (e.g. `"Nat.add_comm"`,
     `"_private.Init.….instRxcHasSize_eq"`), resolved through the env's `named`
-    metadata by string match — the same resolution the zkVM hosts use — after
+    metadata by string match, after
     which the check runs on the anon view (the kernel never sees names). A
     member of a mutual block selects the whole block's work item. Multiple
     names union their closures into one check set.

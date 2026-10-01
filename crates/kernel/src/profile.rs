@@ -36,8 +36,8 @@ use ix_common::address::Address;
 // Per-constant operation counters (richer cost features than `heartbeats`).
 //
 // Heartbeats count kernel reduction *steps* but not the SIZE of the term each
-// step touches, so they mispredict in-circuit Zisk cycles ~3× for def-eq-dense
-// constants. These thread-local counters record the actual work volume —
+// step touches, so they underrepresent work on def-eq-dense constants.
+// These thread-local counters record the actual work volume —
 // substitution-node visits, whnf/def-eq calls — which tracks guest cycles far
 // more tightly, and `subst` feeds the planner's per-shard cost model. The
 // profiler runs one constant per worker thread, so a thread-local accumulator

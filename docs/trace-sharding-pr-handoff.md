@@ -88,7 +88,7 @@ by this work; leave it or commit it deliberately.
 ## PR 2 (`sb/aiur-gpu-lanes`)
 
 The branch is the GPU half (lanes, GPU trace runtime, CUDA trace codegen,
-sppark pin, SP1 terminal, docs and bench scripts) as five commits on the
+sppark pin, docs and bench scripts) as five commits on the
 old PR 1 tip. It must be rebuilt on the new PR 1 tip, and it will collide
 with #642 in its own files, since `lanes.rs` and the subtree plan use
 aggregate internals that now live in `aggregate/plan.rs`,
@@ -130,9 +130,8 @@ Things PR 2 already fixed that must not be lost in the recut:
   `HANDOFF-recursion-fri-params.md` moved to
   `docs/recursion-fri-params-handoff.md`.
 
-Not verifiable locally: the `cuda`, `cuda-trace-codegen` and SP1 guest
-builds; there is no GPU or Succinct toolchain on this host. CI's
-`cuda-compile` job covers the `cuda` feature.
+Not verifiable locally: the `cuda` and `cuda-trace-codegen` builds;
+there is no GPU on this host. CI's `cuda-compile` job covers the `cuda` feature.
 
 ## multi-stark
 

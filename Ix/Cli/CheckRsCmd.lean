@@ -17,11 +17,9 @@
 
     Without a filter, every kernel-checkable address is checked (whole
     env). With `--consts` / `--consts-file`, the named constants are
-    checked together with their FULL dependency closures — the same mode
-    and scope as the zkVM hosts' `--consts` execute path, so an
-    out-of-circuit run is directly comparable to the in-circuit one. Add
-    `--skip-deps` for a subject-only check (deps trusted), mirroring
-    `zisk-host --skip-deps`. `--ns` prefix filtering stays meta-only.
+    checked together with their full dependency closures. Add
+    `--skip-deps` for a subject-only check (deps trusted).
+    `--ns` prefix filtering stays meta-only.
 
   Direct Lean → kernel typechecking (compile-and-check from source) is
   available via the `rsCheckConstsFFI` API for tests
@@ -414,9 +412,9 @@ def checkRsCmd : Cli.Cmd := `[Cli|
     ns            : String; "Comma-separated Lean.Name prefixes to filter on (meta mode only)"
     consts        : String; "Comma-separated EXACT constant names. Meta mode: subject-only seed check. Anon mode: full-closure check of each name (the zkVM hosts' semantics; --skip-deps for subject-only)."
     "consts-file" : String; "Path to a file with one constant name per line (`#` comments); unions with --consts."
-    "skip-deps";            "With --anon --consts: check each named constant subject-only, trusting its deps (same flag as zisk-host/sp1-host/bench-typecheck)."
+    "skip-deps";            "With --anon --consts: check each named constant subject-only, trusting its deps (same flag as bench-typecheck)."
     "fail-out"    : String; "Write failing constants to this path (consumable by --consts-file)"
-    "per-const"   : String; "Anon whole-env mode: write a per-work-item attribution CSV (name, addr, wall nanos, op counters, predicted Zisk cost) to this path. Each entry is ONE constant's (or Muts block's) own check — deps are lazily ingressed and trusted, not re-checked — plus the ingress of the closure slice that check consults; entries sum to the env total. NOT the full-closure scope of --consts measurements. Feeds the `ix bench compare` top-movers drill-down."
+    "per-const"   : String; "Anon whole-env mode: write a per-work-item attribution CSV (name, addr, wall nanos, op counters, estimated cost) to this path. Each entry is ONE constant's (or Muts block's) own check — deps are lazily ingressed and trusted, not re-checked — plus the ingress of the closure slice that check consults; entries sum to the env total. NOT the full-closure scope of --consts measurements. Feeds the `ix bench compare` top-movers drill-down."
     json          : String; "Write benchmark results rows to this path (anon mode). Whole-env: one row keyed by --json-name. With --consts: each name runs as its OWN closure check (the zkVM hosts' per-constant scope) and records its own timed row, env loaded once."
     "json-name"   : String; "Row key for the whole-env --json row (default: `env`)"
     workers       : Nat;    "Number of parallel kernel-check workers; 1 disables parallelism (default: available_parallelism). Plumbs via IX_KERNEL_CHECK_WORKERS env var."

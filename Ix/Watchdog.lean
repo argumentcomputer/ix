@@ -16,19 +16,10 @@
     allocator reservations don't count. Swap stays off so a breach
     kills the scope instead of thrashing the box.
   * `memory.oom.group=1`: on breach the kernel kills the WHOLE scope,
-    not just its biggest process. Without it, Zisk's ASM service gets
-    singled out and the surviving host converts the memory kill into a
-    clean exit 1 — which an orchestrator must treat as a deterministic
-    failure. The scope's cgroup is user-delegated, so the write needs no
+    not just its biggest process. Killing only a child may let the
+    surviving parent report a non-signal exit, hiding the memory kill. The scope's cgroup is user-delegated, so the write needs no
     sudo; if it fails, the wrapper exits 2 rather than run with wrong
     kill semantics.
-  * empty `OMPI_MCA_opal_signal`: Open MPI (linked into zisk-host via
-    proofman) registers a stacktrace-printing handler on fatal signals;
-    when the fault originates inside malloc, that handler allocates
-    while the corrupted arena lock is held and wedges at flat memory
-    forever — the cap never fires. An empty list skips handler
-    registration so fatal signals keep their default disposition.
-    Harmless for tools that don't link Open MPI.
   * a user systemd instance must exist: reuse a reachable manager or
     bootstrap the effective UID's manager on CI (passwordless sudo).
     Wait for startup and report bootstrap errors. `available` probes
@@ -90,17 +81,15 @@ private def ensureUserManager (uid : Nat) : IO Unit := do
     environment on headless runners using the effective UID's runtime directory.
     Check connectivity before sudo so normal desktop runs need no bootstrap. -/
 private def scopeEnv : IO (Array (String × Option String)) := do
-  let base : Array (String × Option String) :=
-    #[("OMPI_MCA_opal_signal", some "")]
   let out ← commandOutput "id" #["-u"]
-  let some uid := out.stdout.trimAscii.toString.toNat? | return base
-  if out.exitCode != 0 then return base
+  let some uid := out.stdout.trimAscii.toString.toNat? | return #[]
+  if out.exitCode != 0 then return #[]
   let runtime := s!"/run/user/{uid}"
   let inherited := (← IO.getEnv "XDG_RUNTIME_DIR").getD runtime
-  let session := base.push ("XDG_RUNTIME_DIR", some inherited)
+  let session := #[("XDG_RUNTIME_DIR", some inherited)]
   if (← commandOutput "systemctl" #["--user", "show-environment"] session).exitCode == 0 then
     return session
-  let env := base ++ #[("XDG_RUNTIME_DIR", some runtime),
+  let env := #[("XDG_RUNTIME_DIR", some runtime),
     ("DBUS_SESSION_BUS_ADDRESS", none)]
   if inherited != runtime then
     if (← commandOutput "systemctl" #["--user", "show-environment"] env).exitCode == 0 then

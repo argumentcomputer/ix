@@ -17,9 +17,9 @@ The intended dashboard answers:
 - How do these quantities change across commits?
 
 “Every benchmark” applies to every Aiur **proof-producing stage**, including
-recursive verifiers and aggregation. Compile, decompile, out-of-circuit checks,
-and the currently scheduled ZisK execution benchmarks do not produce Aiur
-proofs. Their existing behavior and metrics remain applicable.
+recursive verifiers and aggregation. Compile, decompile, and out-of-circuit
+checks do not produce Aiur proofs. Their existing behavior and metrics remain
+applicable.
 
 ## Existing behavior
 
