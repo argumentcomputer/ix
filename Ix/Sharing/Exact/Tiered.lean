@@ -452,6 +452,8 @@ def rematerialize (layout : ShareLayout) (limits : Limits) (ex : Expanded) (orde
     (entries ++ roots).foldl (fun acc e => acc + (serExpr e).size) 0
   checkInternal (layout != ShareLayout.wire || measured == predicted)
     s!"serialized length {measured} differs from the wire-layout price {predicted}"
+  checkInternal ((entries ++ roots).all fun e => (wireCounts e).isSome)
+    "a re-materialized expression has a count outside the wire domain"
   return { entries, roots, bytes := predicted, work, measured }
 
 /-- Assemble one candidate from its three phases. -/
@@ -494,20 +496,41 @@ def tieredBetter (a b : TieredSharingResult) : Bool :=
       (a.stats.w < b.stats.w ||
         (a.stats.w == b.stats.w && setPrec a.phase1.stored b.phase1.stored)))
 
-/-- The tiered canonical construction on an expanded input: the candidate
-with the fewest final layout bytes over the phase-1 widths 1, 2 and 3
-(module doc), or the single candidate at `fixedWidth`. -/
-def canonicalTieredExpanded (layout : ShareLayout) (limits : Limits) (ex : Expanded)
-    (fixedWidth : Option Nat := none) : Except SharingError TieredSharingResult := do
+/-- The tiered construction on the canonical DAG `dag` and root IDs
+`roots` alone: the candidate with the fewest final layout bytes over the
+phase-1 widths 1, 2 and 3 (module doc), or the single candidate at
+`fixedWidth`. -/
+def canonicalTieredCore (layout : ShareLayout) (limits : Limits) (dag : Dag)
+    (roots : Array Nat) (fixedWidth : Option Nat := none) :
+    Except SharingError TieredSharingResult :=
+  let ex : Expanded := { dag, roots, visits := 0, internedNodes := 0 }
   match fixedWidth with
   | some w => tieredAtWidth layout limits ex w
-  | none =>
+  | none => do
     let c1 ← tieredAtWidth layout limits ex 1
     let c2 ← tieredAtWidth layout limits ex 2
     let c3 ← tieredAtWidth layout limits ex 3
     let best := #[c2, c3].foldl (fun b c => if tieredBetter c b then c else b) c1
     let lengths := #[c1, c2, c3].map fun c => (c.stats.w, c.stats.phase3LayoutBytes)
     return { best with stats := { best.stats with candidateLengths := lengths } }
+
+/-- Record the expansion statistics of `ex` in a result. -/
+def withExpansionStats (ex : Expanded) (r : TieredSharingResult) : TieredSharingResult :=
+  { r with
+    result := { r.result with
+      stats := { r.result.stats with exprVisits := ex.visits, internedNodes := ex.internedNodes } }
+    phase1 := { r.phase1 with
+      result := { r.phase1.result with
+        stats := { r.phase1.result.stats with
+          exprVisits := ex.visits, internedNodes := ex.internedNodes } } } }
+
+/-- The tiered canonical construction on an expanded input: a function of
+its DAG and root IDs (`canonicalTieredCore`), with the expansion statistics
+recorded. -/
+def canonicalTieredExpanded (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (fixedWidth : Option Nat := none) : Except SharingError TieredSharingResult := do
+  let r ← canonicalTieredCore layout limits ex.dag ex.roots fixedWidth
+  return withExpansionStats ex r
 
 end Ix.Sharing.Exact
 

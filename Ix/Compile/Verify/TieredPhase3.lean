@@ -292,7 +292,8 @@ theorem rematerialize_parts {layout : ShareLayout} {limits : Limits} {ex : Expan
     ∃ work, materializeTable (Prep.ofDag ex.dag) order ex.roots limits layout.widthAt =
         .ok (m.entries, m.roots, m.bytes, work) ∧
       m.bytes ≤ phase1Layout ∧
-      (∃ k, reexpand limits ex.dag m.entries m.roots = .ok (order, ex.roots, k)) := by
+      (∃ k, reexpand limits ex.dag m.entries m.roots = .ok (order, ex.roots, k)) ∧
+      (m.entries ++ m.roots).all (fun e => (wireCounts e).isSome) = true := by
   unfold rematerialize at h
   obtain ⟨⟨entries, roots, predicted, work⟩, hmat, h⟩ := bind_eq_ok h
   dsimp only at h
@@ -303,14 +304,16 @@ theorem rematerialize_parts {layout : ShareLayout} {limits : Limits} {ex : Expan
   obtain ⟨_, hc3, h⟩ := bind_eq_ok h
   obtain ⟨_, hc4, h⟩ := bind_eq_ok h
   obtain ⟨_, _, h⟩ := bind_eq_ok h
+  obtain ⟨_, hc6, h⟩ := bind_eq_ok h
   simp only [pure, Except.pure, Except.ok.injEq] at h
   subst h
+  have h6 := checkInternal_ok hc6
   have h2 := checkInternal_ok hc2
   have h3 := checkInternal_ok hc3
   have h4 := checkInternal_ok hc4
   simp only [decide_eq_true_eq, beq_iff_eq] at h2 h3 h4
   subst h3 h4
-  exact ⟨work, hmat, h2, k, hre⟩
+  exact ⟨work, hmat, h2, ⟨k, hre⟩, h6⟩
 
 /-- **Phase 3.** A successful re-materialization of the allocated order
 `order` (on an input whose DAG and roots passed the phase-1 checks):
@@ -356,7 +359,7 @@ theorem rematerialize_spec {layout : ShareLayout} {limits : Limits} {ex : Expand
         Ix.Compile.Verify.SharingExact.substShares (fun i => E order[i]!) e = E r)
         ex.roots.toList m.roots.toList) ∧
     ∃ k, reexpand limits ex.dag m.entries m.roots = .ok (order, ex.roots, k) := by
-  obtain ⟨work, hmat, hle, hre⟩ := rematerialize_parts h
+  obtain ⟨work, hmat, hle, hre, -⟩ := rematerialize_parts h
   obtain ⟨hsz, -, -, hpred⟩ := materializeTable_spec hwf hroots hmat
   obtain ⟨hmin, hrmin⟩ := materializeTable_min hwf hroots hmat
   obtain ⟨hsize, -, -⟩ := materializeTable_parts _ _ _ _ _ hmat

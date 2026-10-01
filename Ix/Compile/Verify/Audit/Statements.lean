@@ -20,6 +20,8 @@ private def standard : Array Lean.Name :=
 
 private def noChoice : Array Lean.Name := #[``propext, ``Quot.sound]
 
+private def propextOnly : Array Lean.Name := #[``propext]
+
 private def blake3Native : Array Lean.Name := #[
   nativeAxiom `Blake3
     `Blake3.HasherOps.hash._native.native_decide.ax_1
@@ -453,7 +455,7 @@ private def roots : Array RootAllowance := #[
     standardAxioms := noChoice },
   { root := ``Ix.Compile.Verify.UniformModel.bestSetOf_spec,
     standardAxioms := standard },
-  { root := ``Ix.Compile.Verify.Tiered.canonicalTiered_select,
+  { root := ``Ix.Compile.Verify.Tiered.canonicalTieredCore_select,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.Tiered.tieredAtWidth_parts,
     standardAxioms := standard },
@@ -484,6 +486,22 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.Tiered.materializeTable_min,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.Tiered.rematerialize_spec,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.canonicalTiered_core,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.canonicalTiered_det,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.canonicalTiered_reexpand,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.canonicalSharingTieredTable_idem,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.wireCounts_spec,
+    standardAxioms := propextOnly },
+  { root := ``Ix.Compile.Verify.Tiered.canonicalTiered_format,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.canonicalSharingTiered_format,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.canonicalSharingTieredTable_format,
     standardAxioms := standard }
 ]
 
