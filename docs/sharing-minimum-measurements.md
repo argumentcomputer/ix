@@ -681,6 +681,113 @@ The corpus stores 80,208,288 bytes:
   **No integer in Init currently uses a 4-, 5-, 6-, 7-, 8- or 9-byte form, in any tag
   family.**
 
+## Metadata and sharing follow-up (Init and Mathlib)
+
+The owner asked whether metadata expressions should participate in sharing. This
+section measures where the bytes of a whole `.ixe` go, and what `metaSharing`
+contains, on Init (`init.ixe`, 195,387,870 bytes) and on Mathlib (`mathlib.ixe`,
+3,343,271,273 bytes; the corpus of `sharing-minimum-measurements-mathlib.md`). It is
+implemented as the harness's `--meta` mode.
+
+### Method
+
+- **Streaming scanner.** The harness reads the file section by section with the
+  production readers (`getExprMetaDataIndexed`, `getExpr`, `getUniv`,
+  `getFusedHint`, …). It mirrors `getEnv` and `getConstantMetaIndexed` exactly and
+  records the byte range of every component. A constant is parsed only when a `Named`
+  entry needs it.
+- **Why not `deEnv` on Mathlib.** `deEnv` was used on Init but **not** on Mathlib. It
+  materializes the whole environment, and the scanner already reads the full `Named`
+  section without doing so.
+- **Checks:**
+  - On both files the byte categories sum **exactly** to the file size.
+  - Every `Named` entry's metadata blob parses to exactly its length prefix.
+  - On Init, every total the scanner reports equals a full `Ixon.deEnv` load: named
+    entries, blobs, constants, non-empty `metaSharing`, its entries and their
+    `serExpr` bytes, `metaRefs`, `metaUnivs`, entries with `original`, and `original`
+    `metaSharing` entries.
+- **`metaSharing` analysis.** The constant's primary sharing table, its primary roots
+  and the `metaSharing` entries are expanded into one canonical DAG with W1's
+  `Ix.Sharing.Exact.expand`.
+  - **Which table is "primary".** A `Share` in an entry would index the primary table,
+    as in `DecompileM.mkBlockCtx`. For a projection, the primary table is the block's,
+    as in `DecompileM.decompileOne`.
+  - **"Structurally equal"** is exact here, because W1's interner keys on the full node.
+    Index-level equality is what a dictionary can exploit.
+  - **Re-encoding.** Each entry is re-encoded optimally with the primary table as a fixed
+    dictionary at its current index widths (`Prep.materializeWith`). The harness
+    checks that the output re-expands (`reexpand`) to the same terms and that its
+    `serExpr` bytes equal the predicted `C_M`.
+  - **Deduplication.** "Deduplicated" counts each distinct entry of a constant's table
+    once.
+- **Names** of the constants with non-empty `metaSharing` come from the lazy
+  `deEnvAnon` loader.
+
+### Where the bytes go
+
+| component | Init bytes | Init % | Mathlib bytes | Mathlib % |
+|---|---:|---:|---:|---:|
+| §2 anonymous constants (bodies, addresses, length prefixes) | 82,179,806 | 42.06% | 1,492,588,407 | 44.64% |
+| §5 ExprMeta arenas (primary + `original`) | 83,050,319 | 42.51% | 1,436,611,288 | 42.97% |
+| §5 everything else (keys, hints, ConstantMeta info, metaSharing, metaRefs, metaUnivs, univPatches, `original` header) | 2,559,387 | 1.31% | 41,384,722 | 1.24% |
+| §4 names | 24,654,949 | 12.62% | 344,172,899 | 10.29% |
+| §1 blobs | 2,834,610 | 1.45% | 27,209,569 | 0.81% |
+| §3 anonymous hints, header, §6 comms | 108,799 | 0.06% | 1,304,388 | 0.04% |
+
+- **Mathlib's non-constant bytes are 1,850,682,866 (55.36% of the file):**
+  - 77.6% of them are ExprMeta arenas;
+  - 18.6% are names.
+- **The arena's App nodes are the largest single item.** An arena App node stores only
+  its two child arena indices.
+
+  | | App nodes | bytes | % of file | avg bytes per node |
+  |---|---:|---:|---:|---:|
+  | Mathlib | 219,151,448 | 1,153,185,700 | 34.49% | 5.26 |
+  | Init | 13,111,962 | 66,602,568 | 34.09% | |
+
+  The next largest arena node kinds in Mathlib are binder nodes (138.9 MB, 4.15%) and
+  ref nodes (112.6 MB, 3.37%).
+- **Full category tables.** The full per-category and per-node-kind tables for both
+  files are in the generated fragments at the end of this document.
+
+### `metaSharing`
+
+- **Init:** no `Named` entry has a non-empty `metaSharing`, in either the primary or the
+  `original` metadata, so there is nothing to share. Init has 2,363 `metaUnivs` entries
+  and 0 `metaRefs`.
+- **Mathlib:** 7 of 778,344 `Named` entries have a non-empty `metaSharing`, all
+  `Lean.Meta.Grind.Arith.Linear.EqCnstr._sizeOf_1` … `_7`. None of the 22,265
+  `original` metadata has one. Mathlib has 413,181 `metaUnivs` entries and 0 `metaRefs`.
+
+| Mathlib `metaSharing` | value |
+|---|---:|
+| tables / entries | 7 / 524 (30 to 114 per table) |
+| serialized bytes of the entries | 42,929 (0.0013% of the file) |
+| entries equal to a subterm of the primary term | 412 (34,613 bytes) |
+| entries equal to a primary table entry | 288 |
+| re-encoded optimally against the primary table | **5,495 bytes** (saves 37,434 = 0.0011% of the file) |
+| deduplicated within each table (203 distinct entries) | 14,599 bytes |
+| re-encoded and deduplicated | **2,586 bytes** (saves 40,343 = 0.0012% of the file) |
+| `Share` nodes inside metadata expressions | **0** |
+
+The current entries are stored fully unshared: their unshared size equals their stored
+size.
+
+### Not measured
+
+- **Duplication inside ExprMeta arenas** was not measured, for example identical nodes
+  or subtrees within a constant's arena. The arenas are not Ixon expressions, and the
+  question was about `metaSharing`.
+- **Not counted in the deduplication figure:**
+  - sharing of subterms *between* `metaSharing` entries;
+  - sharing across constants;
+  - any change to the call-site entries' `sharingIdx` widths that deduplication would
+    require.
+- **The primary table was held fixed.** The re-encoding never adds entries for the
+  metadata or reorders the primary table.
+- **The `deEnv` cross-check was run on Init only.** On Mathlib the scanner is checked by
+  the byte-sum and per-entry framing checks.
+
 ## Verification of the harness
 
 - **Production rebuild: 0 mismatches out of 56,622.** For every constant, the harness
@@ -823,6 +930,17 @@ There were ten full runs.
   ```
 
 Rerunning the commands above regenerates both CSVs.
+
+Metadata study (`--meta` mode, `ix-sharing` merged at `4cf8ba2e`):
+
+```text
+nix develop --command bash -c "lake exe sharing-study $S/init.ixe --meta --meta-crosscheck \
+    --progress 0 --md $S/w3-meta-init.md"
+#   -> exit 0; 57 s end to end, peak RSS 2.25 GB (including the deEnv cross-check)
+nix develop --command bash -c "lake exe sharing-study $S/mathlib.ixe --meta \
+    --progress 200000 --md $S/w3-meta-mathlib.md"
+#   -> exit 0; 203 s end to end, peak RSS 4.75 GB; an earlier identical run gave the same output
+```
 
 ---
 
@@ -1652,3 +1770,143 @@ Totals over the constants certified at all three widths. The definitions differ 
 | 1 | 1842180 | 1437377 | 0 | 5748024 | 444030 | 848833 | 16 | 21 |
 | 2 | 1460911 | 1189917 | 344992 | 6340304 | 480307 | 751301 | 14 | 20 |
 | 3 | 1235457 | 1063687 | 563890 | 6827490 | 486863 | 658633 | 19 | 20 |
+
+---
+
+Metadata study output (`--meta`) for Init, unedited:
+
+## Metadata study: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe`
+
+- File: 195387870 bytes; blobs 26836; anonymous constants 56622; names 344786; Named entries 66621 (2000 with `original`); comms 0. Scan time 18290 ms.
+- Byte categories sum to 195387870 bytes: **equal to the file size**.
+- Cross-check against a full `Ixon.deEnv` load: named 66621 vs 66621, blobs 26836 vs 26836, constants 56622 vs 56622, non-empty metaSharing 0 vs 0, metaSharing entries 0 vs 0, metaSharing expression bytes (`serExpr`) 0 vs 0, metaRefs 0 vs 0, metaUnivs 2363 vs 2363, entries with `original` 2000 vs 2000, original metaSharing entries 0 vs 0: **all equal**.
+
+| component | bytes | % of file |
+|---|---:|---:|
+| header: version, consts Merkle root, main, assumptions | 35 | 0.00% |
+| §1 blobs: count, addresses, length prefixes | 885986 | 0.45% |
+| §1 blobs: payload | 1948624 | 1.00% |
+| §2 constants: count, addresses, length prefixes | 1971518 | 1.01% |
+| §2 constants: bodies (the anonymous constants) | 80208288 | 41.05% |
+| §3 anonymous hints | 108763 | 0.06% |
+| §4 names: count and addresses | 11033156 | 5.65% |
+| §4 names: components (tag, parent address, string/number bytes) | 13621793 | 6.97% |
+| §5 Named: count, name and constant keys | 460240 | 0.24% |
+| §5 Named: per-name hints | 66621 | 0.03% |
+| §5 Named: metadata blob length prefixes | 161358 | 0.08% |
+| §5 ConstantMeta info (variant fields, name indices, root indices) | 1379169 | 0.71% |
+| §5 ExprMeta arena | 82418893 | 42.18% |
+| §5 metaSharing expressions (with count) | 66621 | 0.03% |
+| §5 metaRefs (with count) | 66621 | 0.03% |
+| §5 metaUnivs (with count) | 80359 | 0.04% |
+| §5 univPatches (with count) | 84608 | 0.04% |
+| §5 original: tag and address | 130621 | 0.07% |
+| §5 original ConstantMeta info | 54031 | 0.03% |
+| §5 original ExprMeta arena | 631426 | 0.32% |
+| §5 original metaSharing expressions | 2000 | 0.00% |
+| §5 original metaRefs | 2000 | 0.00% |
+| §5 original metaUnivs | 2324 | 0.00% |
+| §5 original univPatches | 2814 | 0.00% |
+| §6 comms | 1 | 0.00% |
+
+- Section totals: §2 constants 82179806 (42.06%); §5 Named 85609706 (43.82%); §4 names 24654949 (12.62%); §1 blobs 2834610 (1.45%).
+
+ExprMeta arena by node kind (primary metadata; `original` metadata in the last two columns):
+
+| node kind | nodes | bytes | % of file | original nodes | original bytes |
+|---|---:|---:|---:|---:|---:|
+| leaf | 505548 | 505548 | 0.26% | 18649 | 18649 |
+| app | 13111962 | 66602568 | 34.09% | 81026 | 270371 |
+| binder | 1184509 | 8547545 | 4.37% | 41186 | 272337 |
+| letBinder | 18979 | 199890 | 0.10% | 480 | 4055 |
+| ref | 1340653 | 6265979 | 3.21% | 14117 | 63294 |
+| prj | 5879 | 35254 | 0.02% | 63 | 315 |
+| mdata | 12445 | 159222 | 0.08% | 5 | 52 |
+| callSite | 0 | 0 | 0.00% | 0 | 0 |
+| etaCallSite | 0 | 0 | 0.00% | 0 | 0 |
+
+### metaSharing
+
+- Named entries with non-empty `metaSharing`: 0 of 66621; with non-empty `original` metaSharing: 0. Entries per non-empty table: min 0, median 0, p90 0, p99 0, max 0.
+- metaRefs entries: 0; metaUnivs entries: 2363.
+- Analysis errors (constants not analysed): 0.
+
+| metadata | constants | entries | current bytes | unshared bytes | re-encoded against the primary table | distinct entries | current, deduplicated | re-encoded, deduplicated | entries equal to a primary subterm | equal to a primary table entry | Share nodes in entries |
+|---|---:|---:|---|---:|---:|---:|---:|---:|---|---:|---:|
+| primary `ConstantMeta` | 0 | 0 | 0 (0.00% of file) | 0 | 0 | 0 | 0 | 0 | 0 (0 B) | 0 | 0 |
+| `Named.original` | 0 | 0 | 0 (0.00% of file) | 0 | 0 | 0 | 0 | 0 | 0 (0 B) | 0 | 0 |
+
+---
+
+Metadata study output (`--meta`) for Mathlib, unedited:
+
+## Metadata study: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe`
+
+- File: 3343271273 bytes; blobs 341233; anonymous constants 679499; names 4811656; Named entries 778344 (22265 with `original`); comms 0. Scan time 181501 ms.
+- Byte categories sum to 3343271273 bytes: **equal to the file size**.
+
+| component | bytes | % of file |
+|---|---:|---:|
+| header: version, consts Merkle root, main, assumptions | 35 | 0.00% |
+| §1 blobs: count, addresses, length prefixes | 11264011 | 0.34% |
+| §1 blobs: payload | 15945558 | 0.48% |
+| §2 constants: count, addresses, length prefixes | 23697505 | 0.71% |
+| §2 constants: bodies (the anonymous constants) | 1468890902 | 43.94% |
+| §3 anonymous hints | 1304352 | 0.04% |
+| §4 names: count and addresses | 153972996 | 4.61% |
+| §4 names: components (tag, parent address, string/number bytes) | 190199903 | 5.69% |
+| §5 Named: count, name and constant keys | 6146192 | 0.18% |
+| §5 Named: per-name hints | 778344 | 0.02% |
+| §5 Named: metadata blob length prefixes | 2063780 | 0.06% |
+| §5 ConstantMeta info (variant fields, name indices, root indices) | 19467468 | 0.58% |
+| §5 ExprMeta arena | 1419908472 | 42.47% |
+| §5 metaSharing expressions (with count) | 821273 | 0.02% |
+| §5 metaRefs (with count) | 778344 | 0.02% |
+| §5 metaUnivs (with count) | 3185897 | 0.10% |
+| §5 univPatches (with count) | 5842782 | 0.17% |
+| §5 original: tag and address | 1490824 | 0.04% |
+| §5 original ConstantMeta info | 649300 | 0.02% |
+| §5 original ExprMeta arena | 16702816 | 0.50% |
+| §5 original metaSharing expressions | 22265 | 0.00% |
+| §5 original metaRefs | 22265 | 0.00% |
+| §5 original metaUnivs | 49569 | 0.00% |
+| §5 original univPatches | 66419 | 0.00% |
+| §6 comms | 1 | 0.00% |
+
+- Section totals: §2 constants 1492588407 (44.64%); §5 Named 1477996010 (44.21%); §4 names 344172899 (10.29%); §1 blobs 27209569 (0.81%).
+
+ExprMeta arena by node kind (primary metadata; `original` metadata in the last two columns):
+
+| node kind | nodes | bytes | % of file | original nodes | original bytes |
+|---|---:|---:|---:|---:|---:|
+| leaf | 8211930 | 8211930 | 0.25% | 252288 | 252288 |
+| app | 219151448 | 1153185700 | 34.49% | 2376746 | 10230751 |
+| binder | 17838297 | 138855710 | 4.15% | 621887 | 4679226 |
+| letBinder | 313517 | 3757214 | 0.11% | 643 | 5488 |
+| ref | 23053693 | 112639845 | 3.37% | 308953 | 1493213 |
+| prj | 54934 | 358710 | 0.01% | 1120 | 7556 |
+| mdata | 113930 | 1465345 | 0.04% | 40 | 1059 |
+| callSite | 320 | 45304 | 0.00% | 0 | 0 |
+| etaCallSite | 0 | 0 | 0.00% | 0 | 0 |
+
+### metaSharing
+
+- Named entries with non-empty `metaSharing`: 7 of 778344; with non-empty `original` metaSharing: 0. Entries per non-empty table: min 30, median 61, p90 114, p99 114, max 114.
+- metaRefs entries: 0; metaUnivs entries: 413181.
+
+| Named entry | §2 rank | metaSharing entries | bytes |
+|---|---:|---:|---:|
+| `Lean.Meta.Grind.Arith.Linear.EqCnstr._sizeOf_6` | 240625 | 61 | 4970 |
+| `Lean.Meta.Grind.Arith.Linear.EqCnstr._sizeOf_5` | 225718 | 61 | 4970 |
+| `Lean.Meta.Grind.Arith.Linear.EqCnstr._sizeOf_1` | 36564 | 30 | 2342 |
+| `Lean.Meta.Grind.Arith.Linear.EqCnstr._sizeOf_4` | 299841 | 114 | 9435 |
+| `Lean.Meta.Grind.Arith.Linear.EqCnstr._sizeOf_3` | 212626 | 114 | 9435 |
+| `Lean.Meta.Grind.Arith.Linear.EqCnstr._sizeOf_2` | 563607 | 30 | 2342 |
+| `Lean.Meta.Grind.Arith.Linear.EqCnstr._sizeOf_7` | 195384 | 114 | 9435 |
+
+- Analysis errors (constants not analysed): 0.
+
+| metadata | constants | entries | current bytes | unshared bytes | re-encoded against the primary table | distinct entries | current, deduplicated | re-encoded, deduplicated | entries equal to a primary subterm | equal to a primary table entry | Share nodes in entries |
+|---|---:|---:|---|---:|---:|---:|---:|---:|---|---:|---:|
+| primary `ConstantMeta` | 7 | 524 | 42929 (0.00% of file) | 42929 | 5495 | 203 | 14599 | 2586 | 412 (34613 B) | 288 | 0 |
+| `Named.original` | 0 | 0 | 0 (0.00% of file) | 0 | 0 | 0 | 0 | 0 | 0 (0 B) | 0 | 0 |
