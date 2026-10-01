@@ -58,9 +58,12 @@ jobs:
       - name: Check codegen'd IxVM kernel is up to date
         if: github.event_name != 'push'
         run: lake exe ix codegen --check
-      - name: Check Lean versions match for Ix and compiler bench
+      - name: Check Lean versions match for Ix, compiler bench, certified kernel and its model
         if: github.event_name != 'push'
-        run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
+        run: |
+          diff lean-toolchain Benchmarks/Compile/lean-toolchain
+          diff lean-toolchain IxKernel/lean-toolchain
+          diff lean-toolchain Models/SetTheory/lean-toolchain
       - name: Test Ix CLI
         if: github.event_name != 'push'
         run: lake test --wfail -- cli
@@ -229,7 +232,7 @@ jobs:
 
   ci-gate:
     if: ${{ always() }}
-    needs: [lean-test, rust-test, cuda-compile, lints]
+    needs: [lean-test, certified-kernel, rust-test, cuda-compile, lints]
     permissions:
       actions: read
       checks: read
