@@ -40,7 +40,7 @@
 
 use std::sync::Arc;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use super::cost::{Len, exprs_len_with, tag0_len};
 use super::dag::{SharingDag, TermId, ix};
@@ -197,12 +197,14 @@ pub(crate) fn kahn_order(
     sorted.iter().enumerate().map(|(i, &t)| (t, i)).collect();
   let mut pend = vec![0usize; m];
   let mut users: Vec<Vec<usize>> = vec![Vec::new(); m];
+  let mut seen: Vec<usize> = Vec::new();
   for (i, t) in sorted.iter().enumerate() {
-    let mut seen = FxHashSet::default();
+    seen.clear();
     for d in deps.get(t).into_iter().flatten() {
       if let Some(&r) = rank.get(d)
-        && seen.insert(r)
+        && !seen.contains(&r)
       {
+        seen.push(r);
         pend[i] += 1;
         users[r].push(i);
       }
@@ -243,15 +245,21 @@ pub fn first_tier(
   // the reference (`4 * |stored| + 4` pops).
   let mut closure: FxHashMap<TermId, Vec<TermId>> = FxHashMap::default();
   let fuel = stored.len().saturating_mul(4).saturating_add(4);
+  // The visited set never exceeds `cap + 1` terms (the search stops there),
+  // so it is a short vector.
+  let mut seen: Vec<TermId> = Vec::new();
+  let mut stack: Vec<TermId> = Vec::new();
   for &t in stored {
-    let mut seen: FxHashSet<TermId> = FxHashSet::default();
-    let mut stack: Vec<TermId> = vec![t];
+    seen.clear();
+    stack.clear();
+    stack.push(t);
     let mut ok = true;
     for _ in 0..fuel {
       let Some(u) = stack.pop() else { break };
-      if !seen.insert(u) {
+      if seen.contains(&u) {
         continue;
       }
+      seen.push(u);
       if seen.len() > cap {
         ok = false;
         break;
@@ -261,7 +269,7 @@ pub fn first_tier(
       }
     }
     if ok {
-      let mut cl: Vec<TermId> = seen.into_iter().collect();
+      let mut cl: Vec<TermId> = seen.clone();
       cl.sort_unstable();
       closure.insert(t, cl);
     }
@@ -269,20 +277,25 @@ pub fn first_tier(
   // Depth-first branch and bound, "include" before "exclude"; the first
   // maximum found wins ties, so later subtrees are pruned when their bound
   // does not exceed the best weight.
+  // `excluded` holds the item positions decided "exclude" on the path, as a
+  // bit set (a term is excluded exactly when its item position is).
   struct Frame {
     pos: usize,
     cur: u64,
     in_f: Vec<TermId>,
-    excluded: FxHashSet<TermId>,
+    excluded: Vec<u64>,
   }
+  let item_pos: FxHashMap<TermId, usize> =
+    items.iter().enumerate().map(|(i, &t)| (t, i)).collect();
+  let is_excluded = |excluded: &[u64], u: &TermId| {
+    item_pos.get(u).is_some_and(|&i| {
+      excluded.get(i / 64).is_some_and(|w| w >> (i % 64) & 1 == 1)
+    })
+  };
   let mut best: Option<(u64, Vec<TermId>)> = None;
   let mut states: u64 = 0;
-  let mut stack = vec![Frame {
-    pos: 0,
-    cur: 0,
-    in_f: Vec::new(),
-    excluded: FxHashSet::default(),
-  }];
+  let mut stack =
+    vec![Frame { pos: 0, cur: 0, in_f: Vec::new(), excluded: Vec::new() }];
   while let Some(Frame { pos, cur, in_f, excluded }) = stack.pop() {
     states += 1;
     if states > limits.max_states {
@@ -321,12 +334,15 @@ pub fn first_tier(
       continue;
     }
     let mut exclude = excluded.clone();
-    exclude.insert(t);
+    if exclude.len() <= pos / 64 {
+      exclude.resize(pos / 64 + 1, 0);
+    }
+    exclude[pos / 64] |= 1 << (pos % 64);
     let mut include: Option<Frame> = None;
     if let Some(cl) = closure.get(&t) {
       let new: Vec<TermId> =
         cl.iter().copied().filter(|u| !in_f.contains(u)).collect();
-      if !cl.iter().any(|u| excluded.contains(u))
+      if !cl.iter().any(|u| is_excluded(&excluded, u))
         && in_f.len() + new.len() <= cap
       {
         let add = new.iter().fold(0u64, |acc, &u| acc.saturating_add(w(u)));
