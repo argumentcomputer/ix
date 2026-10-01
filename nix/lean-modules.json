@@ -1848,6 +1848,15 @@
   "Compilatrix.Rt.Proof.Rel":
   {"path": "Compilatrix/Rt/Proof/Rel.lean",
    "imports": ["Compilatrix.Rt.Proof.LayoutFun", "Compilatrix.Cfg.Semantics"]},
+  "Compilatrix.Rt.Proof.Readback":
+  {"path": "Compilatrix/Rt/Proof/Readback.lean",
+   "imports": ["Compilatrix.Rt.Proof.Heap", "Compilatrix.Rt.Readback"]},
+  "Compilatrix.Rt.Proof.Publish":
+  {"path": "Compilatrix/Rt/Proof/Publish.lean",
+   "imports":
+   ["Compilatrix.Rt.Proof.Correct",
+    "Compilatrix.Rt.Proof.Readback",
+    "Compilatrix.Sem.TracedSim"]},
   "Compilatrix.Rt.Proof.Prune":
   {"path": "Compilatrix/Rt/Proof/Prune.lean",
    "imports":
@@ -3331,6 +3340,8 @@
     "Compilatrix.Rt.Proof.Prune",
     "Compilatrix.Rt.Proof.Program",
     "Compilatrix.Rt.Proof.Correct",
+    "Compilatrix.Rt.Proof.Readback",
+    "Compilatrix.Rt.Proof.Publish",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",
