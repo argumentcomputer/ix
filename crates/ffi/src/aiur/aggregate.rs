@@ -17,7 +17,7 @@ use ix_kernel::shard::ShardManifest;
 use ixvm_codegen::env_handle::EnvHandle;
 use plan::{
   FoldPolicy, PlanIdentity, PlanOp, SlotSpec, build_specs,
-  build_statement_specs, plan_replay,
+  build_statement_specs, plan_replay, subtree_plan,
 };
 use prepare::{PreparedShard, prepare_run, validate_root_statement};
 use protocol::{ChildKind, allowed_blob, inner_claim};
@@ -35,6 +35,7 @@ pub(crate) use store::write_store;
 use store::{load_input_proofs, persist_wrapper, wrapper_address};
 
 mod ffi;
+pub mod lanes;
 mod plan;
 mod prepare;
 mod protocol;
@@ -155,6 +156,7 @@ fn print_plan(
 }
 
 fn run(config: RunConfig<'_>) -> Result<String, String> {
+  crate::profile::init();
   if config.cache_fri_bytes.len() != 40 {
     return Err(format!(
       "aggregate cache FRI serialization is {} bytes, expected 40",

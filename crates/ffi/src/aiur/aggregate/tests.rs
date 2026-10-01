@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use ixon::{Axiom, Expr};
 
+mod plan;
 mod prepare;
 mod scheduler;
 mod store;

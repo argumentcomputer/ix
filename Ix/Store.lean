@@ -61,10 +61,21 @@ def storePath (addr: Address): StoreIO FilePath := do
     IO.toEIO .ioError (IO.FS.createDirAll path)
   return path / file
 
+/-- Write `bytes` to `path` through a temporary name unique to this
+    process and moment, then rename: a reader never sees a partial object,
+    and concurrent writers of one object each move a complete copy into
+    place. -/
+private def publish (path : System.FilePath) (bytes : ByteArray) : IO Unit := do
+  let pid ← IO.Process.getPID
+  let stamp ← IO.monoNanosNow
+  let tmp := System.FilePath.mk s!"{path}.tmp.{pid}.{stamp}"
+  IO.FS.writeBinFile tmp bytes
+  IO.FS.rename tmp path
+
 def write (bytes: ByteArray) : StoreIO Address := do
   let addr  := Address.blake3 bytes
   let path <- storePath addr
-  let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
+  let _ <- IO.toEIO .ioError (publish path bytes)
   return addr
 
 /-- Persist `bytes` keyed by an explicit caller-supplied address. Used
@@ -73,7 +84,7 @@ def write (bytes: ByteArray) : StoreIO Address := do
     byte-serialization hash. -/
 def writeAt (addr: Address) (bytes: ByteArray) : StoreIO Unit := do
   let path <- storePath addr
-  IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
+  IO.toEIO .ioError (publish path bytes)
 
 def read (a: Address) : StoreIO ByteArray := do
   let path <- storePath a

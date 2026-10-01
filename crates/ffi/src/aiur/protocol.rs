@@ -1121,6 +1121,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   retention: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveWithEnv", || {
+    crate::profile::init();
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
     let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
     let retention = match lean_unbox_nat_as_usize(retention.inner()) {
@@ -2304,6 +2305,7 @@ pub(super) fn ffi_catch_unwind(
   context: &str,
   f: impl FnOnce() -> LeanOwned,
 ) -> LeanExcept<LeanOwned> {
+  crate::profile::init();
   match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
     Ok(value) => LeanExcept::ok(value),
     Err(payload) => {
@@ -2321,6 +2323,7 @@ fn ffi_catch_unwind_except(
   context: &str,
   f: impl FnOnce() -> LeanExcept<LeanOwned>,
 ) -> LeanExcept<LeanOwned> {
+  crate::profile::init();
   match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
     Ok(result) => result,
     Err(payload) => {
@@ -2436,7 +2439,3 @@ fn decode_io_buffer_map(
   }
   map
 }
-
-// =============================================================================
-// SP1 aggregate-root terminal (feature `sp1`)
-// =============================================================================
