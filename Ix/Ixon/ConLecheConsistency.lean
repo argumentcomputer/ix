@@ -34,8 +34,9 @@ the executed functions.
   record's type is a bare reference to the constant the reader names
   `False`.
 * **Fidelity** (`Installed`, `checkBytesWith_reading`), in the role of the
-  intrinsic kernel's `Ingress.Installed` (retired at L6): the records are read exactly and canonically
-  (`RecordsRead`), the reader's output is a record-by-record reading of them
+  intrinsic kernel's `Ingress.Installed` (retired at L6): no two records and
+  no two blobs share an address (`UniqueKeys`), the records are read exactly
+  and canonically (`RecordsRead`), the reader's output is a record-by-record reading of them
   (`StreamRead`), the fold accepted exactly that output behind the prelude,
   and the installed environment has exactly the install skeletons it
   declares (`Installed.skels`). Per record
@@ -62,8 +63,8 @@ namespace Ix.Ixon.ConLecheAdmission
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.ConLecheReader
 open Ix.Kernel.ConLecheFold (declSkel checkDecls_installs)
-open Ix.Ixon.Admission (Limits Records preflight decodeRecords)
-open Ix.Ixon.Verify.Admission (WithinBatch RecordsRead resourceUnits)
+open Ix.Ixon.Admission (Limits Records preflight uniqueKeys decodeRecords)
+open Ix.Ixon.Verify.Admission (WithinBatch UniqueKeys RecordsRead resourceUnits)
 
 universe u
 
@@ -72,25 +73,29 @@ universe u
 `streamContext`, `checkConstantsWith` and `checkConstants` are defined with
 the entry (`Ix.Ixon.ConLecheAdmission`). -/
 
-/-- The bytes entry is byte admission (`preflight`, `decodeRecords`)
-followed by the check of the decoded records. -/
+/-- The bytes entry is byte admission (`preflight`, `uniqueKeys`,
+`decodeRecords`) followed by the check of the decoded records. -/
 theorem checkBytesWith_eq (pins : Pins) (pre : Prelude) (natPins : List ConLeche.NatOpPinSet)
     (limits : Limits) (records : Records) (blobs : List (Address × ByteArray))
     (hint : ConstRef Address → Option ConLeche.ReducibilityHint) :
     checkBytesWith pins pre natPins limits records blobs hint = (do
       (preflight limits records blobs).mapError Error.ofAdmission
+      (uniqueKeys records blobs).mapError Error.ofAdmission
       let constants ← (decodeRecords limits records).mapError Error.ofAdmission
       checkConstantsWith pins pre natPins constants blobs hint) := by
   unfold checkBytesWith prepareWith checkConstantsWith
   cases preflight limits records blobs with
   | error e => rfl
   | ok u =>
-    cases decodeRecords limits records with
+    cases uniqueKeys records blobs with
     | error e => rfl
-    | ok constants =>
-      show (Except.bind (Except.bind (readStream pins pre constants blobs hint) _) _) =
-        Except.bind (readStream pins pre constants blobs hint) _
-      cases readStream pins pre constants blobs hint <;> rfl
+    | ok v =>
+      cases decodeRecords limits records with
+      | error e => rfl
+      | ok constants =>
+        show (Except.bind (Except.bind (readStream pins pre constants blobs hint) _) _) =
+          Except.bind (readStream pins pre constants blobs hint) _
+        cases readStream pins pre constants blobs hint <;> rfl
 
 /-- The committed tables load, and the bytes entry is `checkBytesWith` at
 them. -/
@@ -152,6 +157,20 @@ theorem readStream_spec {pins : Pins} {pre : Prelude} {constants : List (Address
     exact ⟨st', hs⟩
   · simp [throw, throwThe, MonadExceptOf.throw] at h
 
+/-- An accepted reading of decoded records has no two records under one
+address (the reader's own check, `readRecords_nodup`). -/
+theorem readStream_nodup {pins : Pins} {pre : Prelude} {constants : List (Address × Ixon.Constant)}
+    {blobs : List (Address × ByteArray)}
+    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {decls : Array ConLeche.Declaration}
+    (h : readStream pins pre constants blobs hint = .ok decls) :
+    (constants.map Prod.fst).Nodup := by
+  unfold readStream at h
+  dsimp only at h
+  split at h
+  · rename_i st' out hr
+    simpa using readRecords_nodup hr
+  · simp [throw, throwThe, MonadExceptOf.throw] at h
+
 /-! ## Fidelity -/
 
 /-- **What an accepted check of decoded records installs**, in the role of
@@ -160,6 +179,7 @@ reading of `constants` (`StreamRead`, each record read by `readRecord`
 against the state the records before it left), and the fold accepted
 exactly `decls` behind the prelude (`preparePrelude`, which only adds the
 prelude's records and moves the stream's own copies of them to the front).
+No two of the records share an address (`keys`, the reader's check).
 `Installed.skels`: the environment has exactly the install skeletons of
 that array. -/
 structure Installed (pins : Pins) (pre : Prelude) (natPins : List ConLeche.NatOpPinSet)
@@ -167,6 +187,7 @@ structure Installed (pins : Pins) (pre : Prelude) (natPins : List ConLeche.NatOp
     (hint : ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env) : Prop where
   reading : ∃ decls st', StreamRead (streamContext pins pre constants blobs hint) pre.state constants st' decls ∧
     ConLeche.Cached.checkDecls .verified natPins (ConLeche.Frontend.preparePrelude pre.ix decls) = .ok env
+  keys : (constants.map Prod.fst).Nodup
 
 theorem checkConstantsWith_installed {pins : Pins} {pre : Prelude}
     {natPins : List ConLeche.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
@@ -184,7 +205,7 @@ theorem checkConstantsWith_installed {pins : Pins} {pre : Prelude}
       simp only [hc, Except.mapError, Except.ok.injEq] at h
       subst h
       obtain ⟨st', hs⟩ := readStream_spec hr
-      exact ⟨decls, st', hs, hc⟩
+      exact ⟨⟨decls, st', hs, hc⟩, readStream_nodup hr⟩
 
 /-- The installed environment has exactly the install skeletons of the
 accepted array (`ConLeche.Cached.checkDecls_skels`): the same constants,
@@ -281,25 +302,31 @@ theorem Installed.no_False_theorem (V : Type u) [ConLeche.SetTheory V] {pins : P
 /-! ## The bytes entry -/
 
 /-- **The reading of accepted bytes** (fidelity): within the batch limits,
-the records read exactly and canonically as `constants` (`RecordsRead`,
-unique by `RecordsRead.deterministic`), and the check of those records
-installed what they describe (`Installed`). -/
+with no two records and no two blobs under one address (`UniqueKeys`), the
+records read exactly and canonically as `constants` (`RecordsRead`, unique
+by `RecordsRead.deterministic`), and the check of those records installed
+what they describe (`Installed`). -/
 theorem checkBytesWith_reading {pins : Pins} {pre : Prelude} {natPins : List ConLeche.NatOpPinSet}
     {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
     {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
     (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
-    WithinBatch limits records blobs ∧ ∃ constants, RecordsRead limits records constants ∧
-      Installed pins pre natPins constants blobs hint env := by
+    WithinBatch limits records blobs ∧ UniqueKeys records blobs ∧
+      ∃ constants, RecordsRead limits records constants ∧
+        Installed pins pre natPins constants blobs hint env := by
   rw [checkBytesWith_eq] at h
   cases hf : preflight limits records blobs with
   | error e => simp [hf, Except.mapError, bind, Except.bind] at h
   | ok u =>
-    cases hd : decodeRecords limits records with
-    | error e => simp [hf, hd, Except.mapError, bind, Except.bind] at h
-    | ok constants =>
-      simp only [hf, hd, Except.mapError, bind, Except.bind] at h
-      exact ⟨(Ix.Ixon.Verify.Admission.preflight_ok_iff _ _ _).mp hf, constants,
-        (Ix.Ixon.Verify.Admission.decodeRecords_ok_iff _ _ _).mp hd, checkConstantsWith_installed h⟩
+    cases hu : uniqueKeys records blobs with
+    | error e => simp [hf, hu, Except.mapError, bind, Except.bind] at h
+    | ok v =>
+      cases hd : decodeRecords limits records with
+      | error e => simp [hf, hu, hd, Except.mapError, bind, Except.bind] at h
+      | ok constants =>
+        simp only [hf, hu, hd, Except.mapError, bind, Except.bind] at h
+        exact ⟨(Ix.Ixon.Verify.Admission.preflight_ok_iff _ _ _).mp hf,
+          (Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff _ _).mp hu, constants,
+          (Ix.Ixon.Verify.Admission.decodeRecords_ok_iff _ _ _).mp hd, checkConstantsWith_installed h⟩
 
 /-- The byte limits bound the whole decoded representation, including
 expanded universes, while retaining the exact reading and installation. -/
@@ -310,7 +337,7 @@ theorem checkBytesWith_resources {pins : Pins} {pre : Prelude} {natPins : List C
     ∃ constants, RecordsRead limits records constants ∧
       Installed pins pre natPins constants blobs hint env ∧
       resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes := by
-  obtain ⟨within, constants, reading, installed⟩ := checkBytesWith_reading h
+  obtain ⟨within, _, constants, reading, installed⟩ := checkBytesWith_reading h
   have resources := reading.resourceUnits_le
   obtain ⟨recordCount, _, totalBytes⟩ := within
   have countProduct := Nat.mul_le_mul_right limits.maxRecordUnivNodes recordCount
@@ -322,7 +349,7 @@ theorem checkBytesWith_has_model_values (V : Type u) [ConLeche.SetTheory V] {pin
     {env : ConLeche.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
     ∃ M : ConLeche.Model V env, ∀ cv value hint', ConLeche.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
       ∀ φ ρ, ConLeche.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
-  obtain ⟨_, _, _, installed⟩ := checkBytesWith_reading h
+  obtain ⟨_, _, _, _, installed⟩ := checkBytesWith_reading h
   exact installed.has_model_values V
 
 theorem checkBytesWith_no_proof_of_False (V : Type u) [ConLeche.SetTheory V] {pins : Pins}
@@ -330,7 +357,7 @@ theorem checkBytesWith_no_proof_of_False (V : Type u) [ConLeche.SetTheory V] {pi
     {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
     {env : ConLeche.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const ConLeche.falseName [] → False := by
-  obtain ⟨_, _, _, installed⟩ := checkBytesWith_reading h
+  obtain ⟨_, _, _, _, installed⟩ := checkBytesWith_reading h
   exact installed.no_proof_of_False V
 
 /-- **No accepted theorem of `False`, at the records** (D3, con-leche's
@@ -345,7 +372,7 @@ theorem checkBytesWith_no_False_theorem (V : Type u) [ConLeche.SetTheory V] {pin
     (hmem : (owner, c) ∈ constants) (hc : c.info = .defn d) (hk : d.kind = .thm)
     (hty : (definitionReader (streamContext pins pre constants blobs hint) owner c d).read d.typ =
       .ok (.const ConLeche.falseName [])) : False := by
-  obtain ⟨_, constants', reading', installed⟩ := checkBytesWith_reading h
+  obtain ⟨_, _, constants', reading', installed⟩ := checkBytesWith_reading h
   obtain rfl := reading.deterministic reading'
   exact installed.no_False_theorem V hmem hc hk hty
 
@@ -377,8 +404,9 @@ theorem checkBytes_reading {limits : Limits} {records : Records} {blobs : List (
     (h : checkBytes limits records blobs hint = .ok env) :
     ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
       builtinNatOpPins = .ok natPins ∧
-      WithinBatch limits records blobs ∧ ∃ constants, RecordsRead limits records constants ∧
-        Installed pins pre natPins constants blobs hint env := by
+      WithinBatch limits records blobs ∧ UniqueKeys records blobs ∧
+        ∃ constants, RecordsRead limits records constants ∧
+          Installed pins pre natPins constants blobs hint env := by
   obtain ⟨pins, pre, natPins, hp, hq, hn, hw⟩ := checkBytes_with h
   exact ⟨pins, pre, natPins, hp, hq, hn, checkBytesWith_reading hw⟩
 

@@ -76,6 +76,35 @@ limits decline. -/
   | .error e => Ix.Ixon.Admission.outcome e == .declined
   | .ok _ => false
 
+/-! ## Duplicate keys (L6b)
+
+Two records, or two blobs, under one address are malformed input: the byte
+stage rejects them (`Ix.Ixon.Admission.uniqueKeys`) at the second
+occurrence, before decoding, in all three byte entries, and the API
+classifies that as a reject. The intrinsic entry rejected both; from L5 to
+L6 the certified entry rejected duplicate records (at the reader) but
+accepted a duplicate blob and read the first copy. The controls are the
+same inputs with distinct keys. -/
+
+-- a duplicate blob that a literal uses, the copies disagreeing
+#guard match check [(address 42, litEq)] [(address 41, ⟨#[2]⟩), (address 41, ⟨#[3]⟩)] with
+  | .error (.duplicate .blobs 1 a) => a == address 41
+  | _ => false
+#guard outcomeOf [(address 42, litEq)] [(address 41, ⟨#[2]⟩), (address 41, ⟨#[2]⟩)] == some .rejected
+-- a duplicate blob that nothing uses (accepted at L6)
+#guard match check definitions [(address 43, ⟨#[2]⟩), (address 43, ⟨#[2]⟩)] with
+  | .error (.duplicate .blobs 1 a) => a == address 43
+  | _ => false
+-- a duplicate constant: the same record again, or another record under its key
+#guard match check (definitions ++ [(address 10, idNat)]) with
+  | .error (.duplicate .records 3 a) => a == address 10
+  | _ => false
+#guard outcomeOf [(address 10, idNat), (address 10, twoDef)] == some .rejected
+-- controls
+#guard accepted [(address 42, litEq)] [(address 41, ⟨#[2]⟩), (address 43, ⟨#[3]⟩)]
+#guard accepted definitions [(address 43, ⟨#[2]⟩)]
+#guard accepted [(address 10, idNat)] [(address 10, ⟨#[2]⟩)]
+
 /-! ## No theorem of the pinned `False`
 
 `theorem bad : False := bad'` for any value: the record's type is a bare
@@ -115,9 +144,25 @@ def omitted : List (Address × Ixon.Constant) :=
   | .error (.reconstruction .limit) => true
   | _ => false
 
+-- duplicate keys reject before reconstruction
+#guard match Ix.Ixon.Projection.checkBytes 16 limits (encode omitted)
+    [(address 43, ⟨#[2]⟩), (address 43, ⟨#[2]⟩)] with
+  | .error (.reconstruction (.admission (.duplicate .blobs 1 _))) => true
+  | _ => false
+#guard match Ix.Ixon.Projection.checkBytes 16 limits (encode (omitted ++ [(address 20, twoBlock)])) [] with
+  | .error (.reconstruction (.admission (.duplicate .records 3 _))) => true
+  | _ => false
+
 /-! ## Block order -/
 
 #guard (Ix.Ixon.BlockOrder.checkBytes 16 limits {} (encode omitted) []).isOk
+#guard match Ix.Ixon.BlockOrder.checkBytes 16 limits {} (encode omitted)
+    [(address 43, ⟨#[2]⟩), (address 43, ⟨#[2]⟩)] with
+  | .error (.order (.admission (.duplicate .blobs 1 _))) => true
+  | _ => false
+#guard match Ix.Ixon.BlockOrder.checkBytes 16 limits {} (encode (omitted ++ [(address 20, twoBlock)])) [] with
+  | .error (.order (.admission (.duplicate .records 3 _))) => true
+  | _ => false
 #guard match Ix.Ixon.BlockOrder.checkBytes 16 limits ⟨0, 0⟩ (encode omitted) [] with
   | .error (.order _) => true
   | _ => false
@@ -152,11 +197,24 @@ example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArra
           (fun _ => none)) st owner c decl ∧
           ∀ s, Ix.Kernel.ConLecheFold.declSkel decl = some s →
             ∃ ci ∈ env.consts, ConLeche.Cached.ciSkel ci = s := by
-  obtain ⟨pins, pre, _, _, _, _, _, constants, reading, installed⟩ :=
+  obtain ⟨pins, pre, _, _, _, _, _, _, constants, reading, installed⟩ :=
     Ix.Ixon.Admission.checkBytes_reading h
   refine ⟨pins, pre, constants, reading, fun owner c hmem hs => ?_⟩
   obtain ⟨st, decl, _, hread, _, _, hinst⟩ := installed.singleton hmem hs
   exact ⟨st, decl, hread, hinst⟩
+
+/-- Key uniqueness at the API: no two records and no two blobs of accepted
+bytes share an address, and no two of the decoded records the reader read
+(`Installed.keys`). -/
+example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+    (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
+    (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup ∧
+      ∃ pins pre natPins constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
+        Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs (fun _ => none) env ∧
+        (constants.map Prod.fst).Nodup := by
+  obtain ⟨pins, pre, natPins, _, _, _, _, keys, constants, reading, installed⟩ :=
+    Ix.Ixon.Admission.checkBytes_reading h
+  exact ⟨keys.1, keys.2, pins, pre, natPins, constants, reading, installed, installed.keys⟩
 
 example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
     {blobs : List (Address × ByteArray)} {env : ConLeche.Env}

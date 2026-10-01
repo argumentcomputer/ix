@@ -68,10 +68,12 @@ certified entry adds projection reconstruction (pure BLAKE3) to the
 certified byte admission. L5 alone froze 33519 functions and 124 externs;
 rebased onto L4b, the committed Nat-operation pins are decoded from a string
 table instead of upstream's JSON dumps spliced as one closed term (27,096
-compiled functions), as in `Ix.Ixon.Admission.Audit`. -/
+compiled functions), as in `Ix.Ixon.Admission.Audit`. L6b's byte-stage key
+check (`Ix.Ixon.Admission.uniqueKeys`, also run here before decoding) adds
+the same 10 functions as there: 5400 to 5410. -/
 /-- info: runtime closure of [Ix.Ixon.Projection.address,
  Ix.Ixon.Projection.reconstruct,
- Ix.Ixon.Projection.checkBytes]: 5400 compiled functions; inherited externs 132, implemented_by 0,
+ Ix.Ixon.Projection.checkBytes]: 5410 compiled functions; inherited externs 132, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
@@ -162,10 +164,11 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
   (hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env),
   Ix.Ixon.Projection.checkBytes maxProjections limits records blobs hint = Except.ok env ↔
     Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
-      ∃ input output,
-        Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
-          Ix.Ixon.Projection.Expanded maxProjections input output ∧
-            Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint = Except.ok env -/
+      Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
+        ∃ input output,
+          Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
+            Ix.Ixon.Projection.Expanded maxProjections input output ∧
+              Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_ok_iff
 
@@ -173,11 +176,12 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
   {records : Ix.Ixon.Admission.Records} {input output : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
   {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint},
   Ix.Ixon.Verify.Admission.WithinBatch limits records blobs →
-    Ix.Ixon.Verify.Admission.RecordsRead limits records input →
-      Ix.Ixon.Projection.Expanded maxProjections input output →
-        Ix.Ixon.Projection.checkBytes maxProjections limits records blobs hint =
-          Except.mapError Ix.Ixon.Projection.CheckError.checker
-            (Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint) -/
+    Ix.Ixon.Verify.Admission.UniqueKeys records blobs →
+      Ix.Ixon.Verify.Admission.RecordsRead limits records input →
+        Ix.Ixon.Projection.Expanded maxProjections input output →
+          Ix.Ixon.Projection.checkBytes maxProjections limits records blobs hint =
+            Except.mapError Ix.Ixon.Projection.CheckError.checker
+              (Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_of_expansion
 
@@ -185,14 +189,15 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
   {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
   {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
   Ix.Ixon.Projection.checkBytes maxProjections limits records blobs hint = Except.ok env →
-    ∃ input output,
-      Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
-        Ix.Ixon.Projection.Expanded maxProjections input output ∧
-          ∃ pins pre natPins,
-            Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins ∧
-              Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre ∧
-                Ix.Kernel.ConLecheReader.builtinNatOpPins = Except.ok natPins ∧
-                  Ix.Ixon.ConLecheAdmission.Installed pins pre natPins output blobs hint env -/
+    Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
+      ∃ input output,
+        Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
+          Ix.Ixon.Projection.Expanded maxProjections input output ∧
+            ∃ pins pre natPins,
+              Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins ∧
+                Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre ∧
+                  Ix.Kernel.ConLecheReader.builtinNatOpPins = Except.ok natPins ∧
+                    Ix.Ixon.ConLecheAdmission.Installed pins pre natPins output blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_reading
 

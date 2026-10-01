@@ -309,7 +309,8 @@ theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env) :
     checkBytes maxProjections limits records blobs hint = .ok env ↔
-      Admission.preflight limits records blobs = .ok () ∧ ∃ input output,
+      Admission.preflight limits records blobs = .ok () ∧
+      Admission.uniqueKeys records blobs = .ok () ∧ ∃ input output,
         Admission.decodeRecords limits records = .ok input ∧
         reconstruct maxProjections input = .ok output ∧
         ConLecheAdmission.checkConstants output blobs hint = .ok env := by
@@ -317,14 +318,20 @@ theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits)
   | error reason => simp [checkBytes, flight, Except.mapError, bind, Except.bind]
   | ok value =>
     cases value
-    cases decoded : Admission.decodeRecords limits records with
-    | error reason => simp [checkBytes, flight, decoded, Except.mapError, bind, Except.bind]
-    | ok input =>
-      cases expanded : reconstruct maxProjections input with
-      | error reason => simp [checkBytes, flight, decoded, expanded, Except.mapError, bind, Except.bind]
-      | ok output =>
-        cases checked : ConLecheAdmission.checkConstants output blobs hint <;>
-          simp [checkBytes, flight, decoded, expanded, checked, Except.mapError, bind, Except.bind]
+    cases unique : Admission.uniqueKeys records blobs with
+    | error reason => simp [checkBytes, flight, unique, Except.mapError, bind, Except.bind]
+    | ok value =>
+      cases value
+      cases decoded : Admission.decodeRecords limits records with
+      | error reason => simp [checkBytes, flight, unique, decoded, Except.mapError, bind, Except.bind]
+      | ok input =>
+        cases expanded : reconstruct maxProjections input with
+        | error reason =>
+          simp [checkBytes, flight, unique, decoded, expanded, Except.mapError, bind, Except.bind]
+        | ok output =>
+          cases checked : ConLecheAdmission.checkConstants output blobs hint <;>
+            simp [checkBytes, flight, unique, decoded, expanded, checked, Except.mapError, bind,
+              Except.bind]
 
 /-- Exact byte reading, bounded projection extension, and the certified
 checker on the expanded records. -/
@@ -332,10 +339,11 @@ theorem checkBytes_ok_iff (maxProjections : Nat) (limits : Admission.Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env) :
     checkBytes maxProjections limits records blobs hint = .ok env ↔
-      Verify.Admission.WithinBatch limits records blobs ∧ ∃ input output,
+      Verify.Admission.WithinBatch limits records blobs ∧
+      Verify.Admission.UniqueKeys records blobs ∧ ∃ input output,
         Verify.Admission.RecordsRead limits records input ∧ Expanded maxProjections input output ∧
         ConLecheAdmission.checkConstants output blobs hint = .ok env := by
-  simp only [checkBytes_run_iff, Verify.Admission.preflight_ok_iff,
+  simp only [checkBytes_run_iff, Verify.Admission.preflight_ok_iff, Verify.Admission.uniqueKeys_ok_iff,
     Verify.Admission.decodeRecords_ok_iff, reconstruct_ok_iff]
 
 /-- Every checker outcome is preserved after a bounded canonical reading and
@@ -344,29 +352,32 @@ theorem checkBytes_of_expansion {maxProjections : Nat} {limits : Admission.Limit
     {records : Admission.Records} {input output : Ingress.Constants} {blobs : Ingress.Blobs}
     {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
     (within : Verify.Admission.WithinBatch limits records blobs)
+    (keys : Verify.Admission.UniqueKeys records blobs)
     (reading : Verify.Admission.RecordsRead limits records input)
     (expanded : Expanded maxProjections input output) :
     checkBytes maxProjections limits records blobs hint =
       (ConLecheAdmission.checkConstants output blobs hint).mapError .checker := by
   have flight := (Verify.Admission.preflight_ok_iff _ _ _).mpr within
+  have unique := (Verify.Admission.uniqueKeys_ok_iff _ _).mpr keys
   have decoded := (Verify.Admission.decodeRecords_ok_iff _ _ _).mpr reading
   have reconstructed := (reconstruct_ok_iff _ _ _).mpr expanded
-  simp [checkBytes, flight, decoded, reconstructed, Except.mapError, bind, Except.bind]
+  simp [checkBytes, flight, unique, decoded, reconstructed, Except.mapError, bind, Except.bind]
 
-/-- **Fidelity**: the supplied records read exactly, their projection
-extension is the computed one, and the checker installed what the expanded
-records describe. -/
+/-- **Fidelity**: the supplied records and blobs use each address once, the
+records read exactly, their projection extension is the computed one, and
+the checker installed what the expanded records describe. -/
 theorem checkBytes_reading {maxProjections : Nat} {limits : Admission.Limits}
     {records : Admission.Records} {blobs : Ingress.Blobs}
     {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
     (h : checkBytes maxProjections limits records blobs hint = .ok env) :
+    Verify.Admission.UniqueKeys records blobs ∧
     ∃ input output, Verify.Admission.RecordsRead limits records input ∧
       Expanded maxProjections input output ∧ ∃ pins pre natPins, defaultPins = .ok pins ∧
         builtinPrelude = .ok pre ∧ builtinNatOpPins = .ok natPins ∧
         ConLecheAdmission.Installed pins pre natPins output blobs hint env := by
-  obtain ⟨_, input, output, reading, expanded, checked⟩ := (checkBytes_ok_iff _ _ _ _ _ _).mp h
+  obtain ⟨_, keys, input, output, reading, expanded, checked⟩ := (checkBytes_ok_iff _ _ _ _ _ _).mp h
   obtain ⟨pins, pre, natPins, hp, hq, hn, hw⟩ := ConLecheAdmission.checkConstants_with checked
-  exact ⟨input, output, reading, expanded, pins, pre, natPins, hp, hq, hn,
+  exact ⟨keys, input, output, reading, expanded, pins, pre, natPins, hp, hq, hn,
     ConLecheAdmission.checkConstantsWith_installed hw⟩
 
 /-- **Model existence** for the certified projection-omitting entry. -/
@@ -375,7 +386,7 @@ theorem checkBytes_has_model (V : Type v) [ConLeche.SetTheory V] {maxProjections
     {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
     (h : checkBytes maxProjections limits records blobs hint = .ok env) :
     Nonempty (ConLeche.Model V env) := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.has_model V
 
 /-- **No proof of `False`** for the certified projection-omitting entry. -/
@@ -384,7 +395,7 @@ theorem checkBytes_no_proof_of_False (V : Type v) [ConLeche.SetTheory V] {maxPro
     {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
     (h : checkBytes maxProjections limits records blobs hint = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const ConLeche.falseName [] → False := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.no_proof_of_False V
 
 end Ix.Ixon.Projection

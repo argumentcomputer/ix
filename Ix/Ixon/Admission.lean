@@ -14,10 +14,10 @@ checker is proved in `Ix.Ixon.Consistency` (the public theorems) and
 `Ix.Ixon.ConLecheConsistency` (the same theorems at every pin table and
 prelude).
 
-* `checkBytes` is the certified entry: batch limits and canonical decoding
-  (`Ix.Ixon.Admission.Bytes`), then con-leche's verified checker behind the
-  Ixon reader under the committed pin table and Ixon prelude
-  (`Ix.Ixon.ConLecheAdmission.checkBytes`).
+* `checkBytes` is the certified entry: batch limits, key uniqueness and
+  canonical decoding (`Ix.Ixon.Admission.Bytes`), then con-leche's verified
+  checker behind the Ixon reader under the committed pin table and Ixon
+  prelude (`Ix.Ixon.ConLecheAdmission.checkBytes`).
 * The intrinsic kernel's byte admission (`checkBytesIntrinsic`, the
   certified entry through L4) was retired at L6 (plan v4) with the
   intrinsic kernel.
@@ -34,8 +34,8 @@ open Kernel
 
 /-- **The certified Ixon entry**: check exactly the declarations described by
 the supplied canonical record bytes with con-leche's verified checker, after
-the batch limits and canonical per-record decoding. `hint` is the host's
-optional (untrusted) reducibility hint per constant. -/
+the batch limits, key uniqueness and canonical per-record decoding. `hint`
+is the host's optional (untrusted) reducibility hint per constant. -/
 def checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
     Except ConLecheAdmission.Error ConLeche.Env :=
@@ -44,11 +44,11 @@ def checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
 /-- How an Ix caller classifies a failure of the certified entry (D-trust,
 inventory section 3.7, rows 21-22; roadmap section 2, "Coverage and
 rejection"): `reject` only where an independent check establishes that the
-input is wrong (the batch limits are a coverage bound and decline; a
-non-canonical record and a record the reader finds malformed reject); every
-checker verdict declines, because con-leche reports fuel exhaustion as
-`internal` and a failed conversion search as `invalid`, and neither is
-evidence that the input is wrong. -/
+input is wrong (the batch limits are a coverage bound and decline; a key
+used twice in one table, a non-canonical record and a record the reader
+finds malformed reject); every checker verdict declines, because con-leche
+reports fuel exhaustion as `internal` and a failed conversion search as
+`invalid`, and neither is evidence that the input is wrong. -/
 inductive Outcome where
   | rejected
   | declined
@@ -56,6 +56,7 @@ inductive Outcome where
 
 def outcome : ConLecheAdmission.Error → Outcome
   | .limit _ => .declined
+  | .duplicate .. => .rejected
   | .decode .. => .rejected
   | .prelude _ => .declined
   | .read _ (.malformed _) => .rejected

@@ -13,11 +13,13 @@ The `checkBytes`-shaped entry of con-leche's verified checker, which the
 certified API's `Ix.Ixon.Admission.checkBytes` runs from L5 (the intrinsic
 kernel's entry was retired at L6):
 
-    preflight → decodeRecords → Ixon reader → preparePrelude
+    preflight → uniqueKeys → decodeRecords → Ixon reader → preparePrelude
               → ConLeche.Cached.checkDecls .verified natPins
 
-* `preflight` and `decodeRecords` are `Ix.Ixon.Admission`'s: the same batch
-  limits, the same canonical per-record decoding, the same error positions.
+* `preflight`, `uniqueKeys` and `decodeRecords` are `Ix.Ixon.Admission`'s:
+  the same batch limits, key uniqueness (no two records and no two blobs
+  under one address), the same canonical per-record decoding, the same
+  error positions.
 * The reader is `Ix.Kernel.ConLecheReader` (keys per D1 (b), regrouping of
   `muts` blocks and projection records, the in-process modeller and the
   projection rewrite), against the supplied records with the Ixon prelude's
@@ -45,12 +47,13 @@ namespace Ix.Ixon.ConLecheAdmission
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.ConLecheReader
-open Ix.Ixon.Admission (Limits Records Resource preflight decodeRecords)
+open Ix.Ixon.Admission (Limits Records Resource Table preflight uniqueKeys decodeRecords)
 
 /-- Byte, reader and checker failures, kept apart. Positions are the
 supplied records' (decoding, reading) or the fold's (checking). -/
 inductive Error where
   | limit (resource : Resource)
+  | duplicate (table : Table) (position : Nat) (address : Address)
   | decode (position : Nat) (address : Address) (reason : String)
   /-- the committed prelude or pin table does not load (a corrupted file) -/
   | prelude (reason : String)
@@ -60,6 +63,7 @@ inductive Error where
 instance : ToString Error where
   toString
     | .limit r => s!"limit: {repr r}"
+    | .duplicate t p a => s!"duplicate {repr t} address at {p} ({a})"
     | .decode p a r => s!"decode at {p} ({a}): {r}"
     | .prelude r => s!"prelude: {r}"
     | .read p e => s!"read at {p}: {e}"
@@ -67,6 +71,7 @@ instance : ToString Error where
 
 def Error.ofAdmission : Ix.Ixon.Admission.Error → Error
   | .limit r => .limit r
+  | .duplicate t p a => .duplicate t p a
   | .decode p a r => .decode p a r
 
 /-- The reading of decoded records: the prelude's state continues into the
@@ -87,6 +92,7 @@ def prepareWith (pins : Pins) (pre : Prelude)
     (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
     Except Error (Array ConLeche.Declaration) := do
   (preflight limits records blobs).mapError Error.ofAdmission
+  (uniqueKeys records blobs).mapError Error.ofAdmission
   let constants ← (decodeRecords limits records).mapError Error.ofAdmission
   let decls ← readStream pins pre constants blobs hint
   pure (ConLeche.Frontend.preparePrelude pre.ix decls)

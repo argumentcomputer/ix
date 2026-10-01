@@ -40,10 +40,12 @@ adds the order check to the certified projection entry. L5 alone froze 33643
 functions and 124 externs; rebased onto L4b, the committed Nat-operation
 pins are decoded from a string table instead of upstream's JSON dumps
 spliced as one closed term (27,096 compiled functions), as in
-`Ix.Ixon.Admission.Audit`. -/
+`Ix.Ixon.Admission.Audit`. L6b's byte-stage key check
+(`Ix.Ixon.Admission.uniqueKeys`, also run here before decoding) adds the
+same 10 functions as there: 5524 to 5534. -/
 /-- info: runtime closure of [Ix.Ixon.BlockOrder.checkBytes,
  Ix.Ixon.BlockOrder.canonicalClasses,
- Ix.Ixon.BlockOrder.compareExpr]: 5524 compiled functions; inherited externs 132, implemented_by 0,
+ Ix.Ixon.BlockOrder.compareExpr]: 5534 compiled functions; inherited externs 132, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
@@ -94,11 +96,12 @@ functions at L4) was retired at L6 with the intrinsic kernel. -/
   (hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env),
   Ix.Ixon.BlockOrder.checkBytes maxProjections limits orderLimits records blobs hint = Except.ok env ↔
     Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
-      ∃ input output,
-        Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
-          Ix.Ixon.Projection.Expanded maxProjections input output ∧
-            Ix.Ixon.BlockOrder.Ordered orderLimits blobs input ∧
-              Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint = Except.ok env -/
+      Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
+        ∃ input output,
+          Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
+            Ix.Ixon.Projection.Expanded maxProjections input output ∧
+              Ix.Ixon.BlockOrder.Ordered orderLimits blobs input ∧
+                Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_ok_iff
 
@@ -106,15 +109,16 @@ functions at L4) was retired at L6 with the intrinsic kernel. -/
   {orderLimits : Ix.Ixon.BlockOrder.Limits} {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
   {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
   Ix.Ixon.BlockOrder.checkBytes maxProjections limits orderLimits records blobs hint = Except.ok env →
-    ∃ input output,
-      Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
-        Ix.Ixon.Projection.Expanded maxProjections input output ∧
-          Ix.Ixon.BlockOrder.Ordered orderLimits blobs input ∧
-            ∃ pins pre natPins,
-              Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins ∧
-                Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre ∧
-                  Ix.Kernel.ConLecheReader.builtinNatOpPins = Except.ok natPins ∧
-                    Ix.Ixon.ConLecheAdmission.Installed pins pre natPins output blobs hint env -/
+    Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
+      ∃ input output,
+        Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
+          Ix.Ixon.Projection.Expanded maxProjections input output ∧
+            Ix.Ixon.BlockOrder.Ordered orderLimits blobs input ∧
+              ∃ pins pre natPins,
+                Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins ∧
+                  Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre ∧
+                    Ix.Kernel.ConLecheReader.builtinNatOpPins = Except.ok natPins ∧
+                      Ix.Ixon.ConLecheAdmission.Installed pins pre natPins output blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_reading
 
@@ -142,12 +146,13 @@ functions at L4) was retired at L6 with the intrinsic kernel. -/
   {input output : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
   {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint},
   Ix.Ixon.Verify.Admission.WithinBatch limits records blobs →
-    Ix.Ixon.Verify.Admission.RecordsRead limits records input →
-      Ix.Ixon.Projection.Expanded maxProjections input output →
-        Ix.Ixon.BlockOrder.Ordered orderLimits blobs input →
-          Ix.Ixon.BlockOrder.checkBytes maxProjections limits orderLimits records blobs hint =
-            Except.mapError Ix.Ixon.BlockOrder.CheckError.checker
-              (Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint) -/
+    Ix.Ixon.Verify.Admission.UniqueKeys records blobs →
+      Ix.Ixon.Verify.Admission.RecordsRead limits records input →
+        Ix.Ixon.Projection.Expanded maxProjections input output →
+          Ix.Ixon.BlockOrder.Ordered orderLimits blobs input →
+            Ix.Ixon.BlockOrder.checkBytes maxProjections limits orderLimits records blobs hint =
+              Except.mapError Ix.Ixon.BlockOrder.CheckError.checker
+                (Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_of_ordered
 

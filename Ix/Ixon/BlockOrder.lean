@@ -376,6 +376,7 @@ def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits :
     (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
     Except CheckError ConLeche.Env := do
   (Admission.preflight limits records blobs).mapError (fun error => .order (.admission error))
+  (Admission.uniqueKeys records blobs).mapError (fun error => .order (.admission error))
   let constants ← (Admission.decodeRecords limits records).mapError (fun error => .order (.admission error))
   let expanded ← (Projection.reconstruct maxProjections constants).mapError
     (fun error => .order (.projection error))

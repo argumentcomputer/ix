@@ -4,6 +4,8 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.ConLeche.Reader
+import Ix.Kernel.Ingress.Records
+import Std.Data.HashSet.Lemmas
 
 /-! # What the Ixon reader produces (plan v4, L5)
 
@@ -16,6 +18,9 @@ declarations the fold checks are the ones the records describe.
   reading (`StreamRead`): every record is read by `readRecord` against the
   state the records before it left, and the output is the concatenation of
   the records' declarations, in order.
+* `readRecords_nodup`: an accepted stream has no two records under one
+  address (the loop's `Std.HashSet` check, through `LawfulBEq Address` in
+  `Ix.Kernel.Ingress.Records`).
 * `readRecord_singleton`: a singleton definition, axiom or quotient record
   contributes exactly one declaration, under the record's name
   (`Ctx.nameOf (.member owner 0)`), with the record's level-parameter names,
@@ -123,6 +128,60 @@ theorem readRecords_spec {cx : Ctx} {st st' : State} {records : Array (Address �
       · rename_i r hr
         simp only [pure, Except.pure, Except.ok.injEq] at h
         exact ⟨r, hr, h.symm⟩
+      · simp [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+
+/-- The loop of `readRecords`, over any body that refuses a key it has seen
+and records every key it accepts: the keys it ran over are distinct and new. -/
+theorem forIn_nodup {β : Type}
+    {f : (Address × Ixon.Constant) × Nat → Std.HashSet Address × β →
+      Except (ReadError × Nat) (ForInStep (Std.HashSet Address × β))}
+    (hf : ∀ x s res, f x s = .ok res →
+      s.1.contains x.1.1 = false ∧ ∃ b, res = .yield (s.1.insert x.1.1, b)) :
+    ∀ (l : List ((Address × Ixon.Constant) × Nat)) (s res), forIn l s f = .ok res →
+      (l.map (·.1.1)).Nodup ∧ ∀ y ∈ l, s.1.contains y.1.1 = false := by
+  intro l
+  induction l with
+  | nil => intro s res _; simp
+  | cons x l ih =>
+    intro s res h
+    rw [List.forIn_cons] at h
+    cases hx : f x s with
+    | error e => simp [hx, bind, Except.bind] at h
+    | ok step =>
+      obtain ⟨hfresh, b, rfl⟩ := hf x s step hx
+      simp only [hx, bind, Except.bind] at h
+      obtain ⟨hnd, hall⟩ := ih _ _ h
+      simp only [Std.HashSet.contains_insert, Bool.or_eq_false_iff, beq_eq_false_iff_ne] at hall
+      refine ⟨List.nodup_cons.mpr ⟨fun hm => ?_, hnd⟩, fun y hy => ?_⟩
+      · obtain ⟨y, hy, he⟩ := List.mem_map.mp hm
+        exact (hall y hy).1 he.symm
+      · rcases List.mem_cons.mp hy with rfl | hy
+        · exact hfresh
+        · exact (hall y hy).2
+
+/-- **No duplicate records.** An accepted `readRecords` ran over records
+with pairwise distinct addresses. -/
+theorem readRecords_nodup {cx : Ctx} {st st' : State} {records : Array (Address × Ixon.Constant)}
+    {out : Array CDecl} (h : readRecords cx st records = .ok (st', out)) :
+    (records.toList.map Prod.fst).Nodup := by
+  unfold readRecords at h
+  dsimp only at h
+  rw [← Array.forIn_toList, Array.toList_zipIdx] at h
+  obtain ⟨res, hfor, _⟩ := bind_ok_pure h
+  have key := forIn_nodup ?_ _ _ res hfor
+  · have hm : records.toList.zipIdx.map (·.1.1) = records.toList.map Prod.fst := by
+      rw [show (fun y : (Address × Ixon.Constant) × Nat => y.1.1) = Prod.fst ∘ Prod.fst from rfl,
+        ← List.map_map]
+      simp
+    rw [← hm]
+    exact key.1
+  · intro x s res h
+    split at h
+    · simp [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+    · rename_i hc
+      split at h
+      · simp only [pure, Except.pure, Except.ok.injEq] at h
+        exact ⟨by simpa using hc, _, h.symm⟩
       · simp [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
 
 /-! ## Singleton records -/

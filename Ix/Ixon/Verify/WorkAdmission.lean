@@ -16,7 +16,9 @@ open Ix.Ixon.Admission
 
 Canonical validation and re-encoding retain their production results and
 short-circuit behavior, but their work is outside this decoder metric, as are
-preflight/list administration, projection reconstruction, ordering, literal
+preflight/list administration, the key-uniqueness check (`uniqueKeys`, which
+the entries run between preflight and decoding; `parserStage` models the
+parser portion only), projection reconstruction, ordering, literal
 interpretation, ingress, and kernel checking. Each attempted bounded record
 contributes its entire parse work, including failures inside elements; later
 records are not charged after an earlier error. No counter executes in the

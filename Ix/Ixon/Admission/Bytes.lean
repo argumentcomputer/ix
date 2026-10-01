@@ -5,17 +5,21 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Ixon.Canonical
 import Ix.Kernel.Ingress.Records
+import Std.Data.HashSet.Basic
 
 /-! # The byte stage of admission
 
-Batch limits (`preflight`) and canonical per-record decoding
-(`decodeRecords`) of the certified entry (`Ix.Ixon.Admission.checkBytes`,
-con-leche behind the Ixon reader). Their composition is proved in
-`Ix.Ixon.Verify.Admission`.
+Batch limits (`preflight`), key uniqueness (`uniqueKeys`) and canonical
+per-record decoding (`decodeRecords`) of the certified entry
+(`Ix.Ixon.Admission.checkBytes`, con-leche behind the Ixon reader), in that
+order. Their composition is proved in `Ix.Ixon.Verify.Admission`.
 
 The host supplies record order, address keys, and literal blobs. Addresses
-are keys, not authenticated content hashes. Blobs retain their exact supplied
-bytes. No host decoder or verdict participates in this path.
+are keys, not authenticated content hashes, but a batch may use each key
+once per table: two records, or two blobs, under one address are malformed
+input (a reject at the Ix API, `Ix.Ixon.Admission.outcome`), not a choice
+for the reader to make. Blobs retain their exact supplied bytes. No host
+decoder or verdict participates in this path.
 -/
 
 namespace Ix.Ixon.Admission
@@ -43,12 +47,19 @@ inductive Resource where
   | totalBytes
   deriving Repr, DecidableEq
 
-/-- Byte failures: a batch limit, or a record that does not decode
-canonically. The decoder position is zero-based and identifies the original
-input record. Checker failures are the entry's own
-(`Ix.Ixon.ConLecheAdmission.Error`). -/
+/-- The two keyed tables of a batch. -/
+inductive Table where
+  | records
+  | blobs
+  deriving Repr, DecidableEq
+
+/-- Byte failures: a batch limit, a key used twice in one table, or a record
+that does not decode canonically. Positions are zero-based and identify the
+original input record or blob; a duplicate's is its second occurrence.
+Checker failures are the entry's own (`Ix.Ixon.ConLecheAdmission.Error`). -/
 inductive Error where
   | limit (resource : Resource)
+  | duplicate (table : Table) (position : Nat) (address : Address)
   | decode (position : Nat) (address : Address) (reason : String)
   deriving Repr, DecidableEq
 
@@ -73,6 +84,27 @@ def preflight (limits : Limits) (records : Records) (blobs : Ingress.Blobs) :
   let remaining ← consume .records limits.maxRecords limits.maxTotalBytes records
   let _ ← consume .blobs limits.maxBlobs remaining blobs
   return ()
+
+/-- The first key of a table that repeats an earlier one (or one of `seen`),
+with its position. -/
+def firstDuplicate {α : Type} : Nat → Std.HashSet Address → List (Address × α) →
+    Option (Nat × Address)
+  | _, _, [] => none
+  | position, seen, (address, _) :: rest =>
+    if seen.contains address then some (position, address)
+    else firstDuplicate (position + 1) (seen.insert address) rest
+
+/-- Each record address and each blob address occurs once
+(`Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff`). The entries run it after
+`preflight`, so its work is bounded by the batch limits, and before
+decoding. -/
+def uniqueKeys (records : Records) (blobs : Ingress.Blobs) : Except Error Unit :=
+  match firstDuplicate 0 {} records with
+  | some (position, address) => .error (.duplicate .records position address)
+  | none =>
+    match firstDuplicate 0 {} blobs with
+    | some (position, address) => .error (.duplicate .blobs position address)
+    | none => .ok ()
 
 /-- Tail-recursive decoding retains all records, keys, and their order,
 including projections and unused side tables. -/

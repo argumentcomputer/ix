@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Ixon.Admission.Bytes
 import Ix.Ixon.Verify.Canonical
 import Ix.Ixon.Verify.ConstantBounds
+import Std.Data.HashSet.Lemmas
 
 /-! # Exact byte admission
 
@@ -74,6 +75,62 @@ theorem preflight_ok_iff (limits : Limits) (records : Records) (blobs : Ingress.
       (limits.maxTotalBytes - payloadBytes records - payloadBytes blobs)).mpr
       ⟨blobCount, blobBytes, by omega⟩
     simp [preflight, recordsRead, blobsRead, bind, Except.bind, pure, Except.pure]
+
+/-- Each record address and each blob address of a batch occurs once. -/
+def UniqueKeys (records : Records) (blobs : Ingress.Blobs) : Prop :=
+  (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup
+
+/-- `firstDuplicate` finds nothing exactly when the table's keys are
+distinct and none of them is in `seen` (`Std.HashSet` membership, through
+`LawfulBEq Address`). -/
+theorem firstDuplicate_eq_none_iff {α : Type} (position : Nat) (seen : Std.HashSet Address)
+    (store : List (Address × α)) :
+    firstDuplicate position seen store = none ↔
+      (store.map Prod.fst).Nodup ∧ ∀ entry ∈ store, seen.contains entry.1 = false := by
+  induction store generalizing position seen with
+  | nil => simp [firstDuplicate]
+  | cons entry rest ih =>
+    obtain ⟨key, value⟩ := entry
+    by_cases hin : seen.contains key = true
+    · simp only [firstDuplicate, hin, ite_true, reduceCtorEq, false_iff, not_and]
+      intro _ hall
+      simpa [hin] using hall (key, value) List.mem_cons_self
+    · simp only [firstDuplicate, hin, Bool.false_eq_true, ite_false, ih, Std.HashSet.contains_insert,
+        Bool.or_eq_false_iff, beq_eq_false_iff_ne, ne_eq, List.map_cons, List.nodup_cons,
+        List.mem_cons, forall_eq_or_imp]
+      constructor
+      · rintro ⟨hnd, hall⟩
+        refine ⟨⟨fun hmem => ?_, hnd⟩, by simp, fun e he => (hall e he).2⟩
+        obtain ⟨e, he, rfl⟩ := List.mem_map.mp hmem
+        exact (hall e he).1 rfl
+      · rintro ⟨⟨hnot, hnd⟩, _, hall⟩
+        refine ⟨hnd, fun e he => ⟨fun same => hnot ?_, hall e he⟩⟩
+        exact List.mem_map.mpr ⟨e, he, same.symm⟩
+
+theorem firstDuplicate_empty_eq_none_iff {α : Type} (store : List (Address × α)) :
+    firstDuplicate 0 {} store = none ↔ (store.map Prod.fst).Nodup := by
+  rw [firstDuplicate_eq_none_iff]
+  simp
+
+/-- **Key uniqueness**: the byte stage's duplicate check passes exactly when
+no two records and no two blobs share an address, so each of its rejections
+names a key that is used twice. -/
+theorem uniqueKeys_ok_iff (records : Records) (blobs : Ingress.Blobs) :
+    uniqueKeys records blobs = .ok () ↔ UniqueKeys records blobs := by
+  unfold uniqueKeys UniqueKeys
+  cases hr : firstDuplicate 0 {} records with
+  | some found =>
+    have := mt (firstDuplicate_empty_eq_none_iff records).mpr (by simp [hr])
+    simp only [reduceCtorEq, false_iff]
+    exact fun h => this h.1
+  | none =>
+    have hrn := (firstDuplicate_empty_eq_none_iff records).mp hr
+    cases hb : firstDuplicate 0 {} blobs with
+    | some found =>
+      have := mt (firstDuplicate_empty_eq_none_iff blobs).mpr (by simp [hb])
+      simp only [reduceCtorEq, false_iff]
+      exact fun h => this h.2
+    | none => simp [hrn, (firstDuplicate_empty_eq_none_iff blobs).mp hb]
 
 /-- An exact ordered reading of record bytes. Keys are unchanged; each
 payload satisfies the per-record canonical contract `Canonical.Reads`: it is

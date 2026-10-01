@@ -23,7 +23,7 @@ namespace Ix.Ixon.Admission.Audit
 
 /-- The certified entry's byte admission (L5). -/
 def operations : Array Lean.Name :=
-  #[``Ix.Ixon.Admission.preflight, ``Ix.Ixon.Admission.decodeRecords,
+  #[``Ix.Ixon.Admission.preflight, ``Ix.Ixon.Admission.uniqueKeys, ``Ix.Ixon.Admission.decodeRecords,
     ``Ix.Ixon.Admission.checkBytes]
 
 /-- Admission runs con-leche's checker behind the Ixon reader (L5: `ConLeche`,
@@ -69,16 +69,21 @@ extracted closed subterms). Rebased onto L4b they are decoded from a string
 table at first use (`Ix.Kernel.ConLecheReader.builtinNatOpPins`, 235
 functions), which adds eight string-scanning externs (below). L6 removed the
 byte stage's intrinsic `kernel` error, whose message printed a `Kernel.Error`
-(10 functions; `Ix.Kernel.Audit.Roots`): 5288 at int-4. -/
+(10 functions; `Ix.Kernel.Audit.Roots`): 5288 at int-4, 5278 at L6. L6b adds
+the key check `uniqueKeys` (now also an operation here, already reached
+through `checkBytes`) with `firstDuplicate` and its `Std.HashSet Address`
+specializations: 10 functions, the same as in `Ix.Kernel.Audit.Roots`. -/
 /-- info: runtime closure of [Ix.Ixon.Admission.preflight,
+ Ix.Ixon.Admission.uniqueKeys,
  Ix.Ixon.Admission.decodeRecords,
- Ix.Ixon.Admission.checkBytes]: 5278 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.Admission.checkBytes]: 5288 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.consume_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.preflight_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.RecordsRead.encode [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.RecordsRead.univNodes_le [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.RecordsRead.resourceUnits_le [propext, Classical.choice, Quot.sound]
@@ -119,6 +124,12 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
     Ix.Ixon.Verify.Admission.WithinBatch limits records blobs -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Verify.Admission.preflight_ok_iff
+
+/-- info: Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff : ∀ (records : Ix.Ixon.Admission.Records)
+  (blobs : Ix.Kernel.Ingress.Blobs),
+  Ix.Ixon.Admission.uniqueKeys records blobs = Except.ok () ↔ Ix.Ixon.Verify.Admission.UniqueKeys records blobs -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff
 
 /-- info: Ix.Ixon.Verify.Admission.decodeRecords_ok_iff : ∀ (limits : Ix.Ixon.Admission.Limits)
   (records : Ix.Ixon.Admission.Records) (constants : Ix.Kernel.Ingress.Constants),
@@ -194,9 +205,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
         Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre ∧
           Ix.Kernel.ConLecheReader.builtinNatOpPins = Except.ok natPins ∧
             Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
-              ∃ constants,
-                Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-                  Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs hint env -/
+              Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
+                ∃ constants,
+                  Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
+                    Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Admission.checkBytes_reading
 

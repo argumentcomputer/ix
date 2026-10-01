@@ -30,7 +30,8 @@ declines with its safety, as a partial singleton does, and the same block
 marked safe declines as mutually recursive; a definition of
 the wrong shape pinned as `Nat.add` is not accepted under that name (and is
 accepted unpinned); a copy of `Nat`'s contents at another address is not
-named `Nat`; malformed tables, duplicate records and unsafe declarations;
+named `Nat`; malformed tables, duplicate records (byte stage and reader)
+and unsafe declarations;
 `pinMap`'s refusals. -/
 
 open Ix.Kernel (ConstRef)
@@ -492,8 +493,13 @@ def natBlockRecord : Ixon.Constant := Id.run do
 
 /-! ## Negative: malformed and unsupported records -/
 
--- the same address twice
+-- the same address twice: the byte stage rejects it (`uniqueKeys`, L6b),
+-- and the reader rejects it in decoded records (`readRecords_nodup`)
 #guard match run [(address 10, idNat), (address 10, idNat)] with
+  | .error (.duplicate .records 1 a) => a == address 10
+  | _ => false
+#guard match checkConstantsWith builtinPins builtinPre builtinNatPins
+    [(address 10, idNat), (address 10, idNat)] [] with
   | .error (.read 1 (.malformed _)) => true
   | _ => false
 -- a projection to a block that is not there

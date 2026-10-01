@@ -22,7 +22,9 @@ table, prelude and Nat-operation pin list) at the committed tables.
   accepted bytes has a type that reads as the pinned `False` (D3, con-leche's
   pinned form).
 * `checkBytes_reading`: fidelity, in the role of the intrinsic kernel's
-  `Ingress.Installed` (retired at L6).
+  `Ingress.Installed` (retired at L6), with key uniqueness (`UniqueKeys`,
+  L6b: the role of the intrinsic entry's `unique_keys` theorem, dropped at
+  L5).
 * `checkBytes_resources`: the byte limits bound the decoded representation.
 
 The set theory is the standing hypothesis; `Models/SetTheory` provides an
@@ -32,7 +34,7 @@ namespace Ix.Ixon.Admission
 
 open Kernel
 open Ix.Kernel.ConLecheReader (Pins Prelude defaultPins builtinPrelude builtinNatOpPins definitionReader)
-open Ix.Ixon.Verify.Admission (WithinBatch RecordsRead resourceUnits)
+open Ix.Ixon.Verify.Admission (WithinBatch UniqueKeys RecordsRead resourceUnits)
 
 universe u
 
@@ -82,16 +84,18 @@ theorem checkBytes_no_False_theorem (V : Type u) [ConLeche.SetTheory V] {limits 
       d.typ = .ok (.const ConLeche.falseName [])) : False :=
   ConLecheAdmission.checkBytes_no_False_theorem V h hpins hpre reading hmem hc hk hty
 
-/-- **Fidelity.** Accepted bytes are within the batch limits, read exactly
-and canonically, and the checker installed what the records describe
+/-- **Fidelity.** Accepted bytes are within the batch limits, use each
+record address and each blob address once, read exactly and canonically,
+and the checker installed what the records describe
 (`ConLecheAdmission.Installed`). -/
 theorem checkBytes_reading {limits : Limits} {records : Records} {blobs : Ingress.Blobs}
     {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
     ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
       builtinNatOpPins = .ok natPins ∧
-      WithinBatch limits records blobs ∧ ∃ constants, RecordsRead limits records constants ∧
-        ConLecheAdmission.Installed pins pre natPins constants blobs hint env :=
+      WithinBatch limits records blobs ∧ UniqueKeys records blobs ∧
+        ∃ constants, RecordsRead limits records constants ∧
+          ConLecheAdmission.Installed pins pre natPins constants blobs hint env :=
   ConLecheAdmission.checkBytes_reading h
 
 /-- **Resources.** The byte limits bound the whole decoded representation. -/

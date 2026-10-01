@@ -6,7 +6,8 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Ixon.Consistency
 import Tests.Ix.Kernel.Codec
 
-/-! Byte admission: the byte stage (batch limits, canonical decoding) of the
+/-! Byte admission: the byte stage (batch limits, key uniqueness, canonical
+decoding) of the
 certified entry `Ix.Ixon.Admission.checkBytes`, and that entry's verdicts on
 the shared Ixon record fixtures. The entry's reader and checker are tested
 in `Tests.Ix.Kernel.ConLecheReader` and `Tests.Ix.Kernel.CertifiedEntry`.
@@ -42,22 +43,25 @@ def outcomeOf (constants : List (Address × Ixon.Constant)) (blobs : List (Addre
   | .ok _ => none
   | .error error => some (outcome error)
 
-/-- The byte stage's verdict alone: `none` when the batch limits hold and
-every record decodes canonically. -/
+/-- The byte stage's verdict alone: `none` when the batch limits hold, no
+key repeats in its table, and every record decodes canonically. -/
 def failure (records : Records) (blobs : List (Address × ByteArray) := []) (bounds : Limits := limits) :
     Option Ix.Ixon.Admission.Error :=
-  match preflight bounds records blobs, decodeRecords bounds records with
-  | .error error, _ => some error
-  | .ok _, .error error => some error
-  | .ok _, .ok _ => none
+  match preflight bounds records blobs, uniqueKeys records blobs, decodeRecords bounds records with
+  | .error error, _, _ => some error
+  | .ok _, .error error, _ => some error
+  | .ok _, .ok _, .error error => some error
+  | .ok _, .ok _, .ok _ => none
 
 /-- The certified entry reports the byte stage's failures unchanged. -/
 def entryAgrees (records : Records) (blobs : List (Address × ByteArray) := []) (bounds : Limits := limits) : Bool :=
   match failure records blobs bounds, check records blobs bounds with
   | some (.limit resource), .error (.limit resource') => resource == resource'
+  | some (.duplicate table position address), .error (.duplicate table' position' address') =>
+    table == table' && position == position' && address == address'
   | some (.decode position address _), .error (.decode position' address' _) =>
     position == position' && address == address'
-  | none, .error (.limit _) | none, .error (.decode ..) => false
+  | none, .error (.limit _) | none, .error (.duplicate ..) | none, .error (.decode ..) => false
   | none, _ => true
   | some _, _ => false
 
@@ -83,11 +87,13 @@ def decodeFailureAt (records : Records) (position : Nat) (address : Address)
 #guard accepts [(address 1, { identity with info := .defn ⟨.defn, .safe, 1, idType,
     .lam .linear (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })]
 
--- A duplicate record address is malformed (the reader rejects it); a
--- reference to a later record and a family stored without its recursor are
--- checker or reader verdicts, which decline at the Ix API (D-trust rows
--- 21-22; the intrinsic kernel rejected the first and admitted the second).
+-- A duplicate record or blob address is malformed (the byte stage rejects
+-- it, L6b); a reference to a later record and a family stored without its
+-- recursor are checker or reader verdicts, which decline at the Ix API
+-- (D-trust rows 21-22; the intrinsic kernel rejected the first and admitted
+-- the second).
 #guard outcomeOf [(address 1, identity), (address 1, identity)] = some .rejected
+#guard outcomeOf [(address 1, identity)] [(address 9, ⟨#[1]⟩), (address 9, ⟨#[1]⟩)] = some .rejected
 #guard outcomeOf [(address 2, aliasIdentity), (address 1, identity)] = some .declined
 #guard outcomeOf [(address 3, falseFamily), (address 4, falseProjection)] = some .declined
 
@@ -110,6 +116,24 @@ def malformed : Records := [(address 1, ⟨#[]⟩)]
 #guard entryAgrees malformed [(address 9, ⟨#[1]⟩)] (bounds := { limits with maxTotalBytes := 0 })
 #guard entryAgrees (encode falseStore) (bounds := { limits with maxRecords := 2 })
 #guard entryAgrees [] [(address 9, ⟨#[]⟩), (address 10, ⟨#[]⟩)] (bounds := { limits with maxBlobs := 1 })
+
+-- Key uniqueness runs after the batch limits and before decoding; the
+-- position is the second occurrence's, and the payloads do not matter.
+def twice : Records := encode [(address 1, identity), (address 1, identity)]
+def blobTwice : List (Address × ByteArray) := [(address 9, ⟨#[1]⟩), (address 9, ⟨#[2]⟩)]
+#guard failure twice = some (.duplicate .records 1 (address 1))
+#guard failure (encode [(address 1, identity)]) blobTwice = some (.duplicate .blobs 1 (address 9))
+#guard failure [(address 1, ⟨#[]⟩), (address 1, ⟨#[0xff]⟩)] = some (.duplicate .records 1 (address 1))
+#guard failure twice blobTwice = some (.duplicate .records 1 (address 1))
+#guard failure twice (bounds := { limits with maxRecords := 1 }) = some (.limit .records)
+#guard entryAgrees twice
+#guard entryAgrees (encode [(address 1, identity)]) blobTwice
+#guard entryAgrees [(address 1, ⟨#[]⟩), (address 1, ⟨#[0xff]⟩)]
+-- controls: distinct keys pass the stage, and a record key may also be a blob key
+#guard failure (encode [(address 1, identity), (address 2, aliasIdentity)])
+    [(address 9, ⟨#[1]⟩), (address 10, ⟨#[1]⟩)] = none
+#guard accepts [(address 1, identity)] [(address 1, ⟨#[1]⟩)]
+#guard (uniqueKeys [] []).isOk
 
 def one : Records := encode [(address 1, identity)]
 def two : Records := encode [(address 1, identity), (address 2, aliasIdentity)]
@@ -152,6 +176,12 @@ example (V : Type) [ConLeche.SetTheory V] {env : ConLeche.Env}
 example {constants : List (Address × Ixon.Constant)} {records : Records}
     (h : Ix.Ixon.Verify.Admission.RecordsRead limits records constants) : records = encode constants :=
   h.encode
+
+example {records : Records} {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+    (h : checkBytes limits records blobs = .ok env) :
+    (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup := by
+  obtain ⟨_, _, _, _, _, _, _, keys, _⟩ := checkBytes_reading h
+  exact keys
 
 example {records : Records} {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
     (h : checkBytes limits records blobs = .ok env) :

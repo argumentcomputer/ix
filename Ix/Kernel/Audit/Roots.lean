@@ -98,7 +98,15 @@ guarded in `Ix.Ixon.ProjectionAudit`. The entry falls from 5290 to 5280
 functions: the byte stage's error lost its intrinsic `kernel` case, so
 `ConLecheAdmission.Error.ofAdmission` no longer prints a `Kernel.Error`
 (`Ix.Kernel.instReprError.repr` and its eight extracted closed terms, and the
-closed message prefix). -/
+closed message prefix). L6b (2026-10-01) adds the byte stage's key check
+(`Ix.Ixon.Admission.uniqueKeys`: no two records and no two blobs under one
+address, a reject): the entry grows from 5280 to 5290 functions with
+`uniqueKeys`, its two closed empty-set terms, `firstDuplicate`, and six
+`Std.HashSet Address` lookup and insertion specializations at
+`firstDuplicate`; externs, unsafe and rulings are unchanged. The fidelity
+statements gain `UniqueKeys`, and the reader's own duplicate-record check
+is proved (`readRecords_nodup`, through `LawfulBEq Address` in
+`Ix.Kernel.Ingress.Records`). -/
 
 open Lean
 
@@ -134,7 +142,8 @@ def fidelityRoots : Array Name :=
     ``Ix.Ixon.ConLecheAdmission.checkConstantsWith_installed, ``Ix.Ixon.ConLecheAdmission.Installed.skels,
     ``Ix.Ixon.ConLecheAdmission.Installed.singleton, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_eq,
     ``Ix.Ixon.ConLecheAdmission.checkBytes_with, ``Ix.Ixon.ConLecheAdmission.checkConstants_with,
-    ``Ix.Kernel.ConLecheReader.readRecords_spec, ``Ix.Kernel.ConLecheReader.readRecord_singleton,
+    ``Ix.Kernel.ConLecheReader.readRecords_spec, ``Ix.Kernel.ConLecheReader.readRecords_nodup,
+    ``Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff, ``Ix.Kernel.ConLecheReader.readRecord_singleton,
     ``Ix.Kernel.ConLecheReader.StreamRead.singleton, ``Ix.Kernel.ConLecheReader.keyName_injective,
     ``Ix.Kernel.ConLecheFold.checkDecls_installs, ``Ix.Kernel.ConLecheFold.checkDecls_model_defn_values]
 
@@ -294,6 +303,8 @@ run_cmd do
 #guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkBytes_with [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.ConLecheAdmission.checkConstants_with [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.ConLecheReader.readRecords_spec [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.ConLecheReader.readRecords_nodup [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.ConLecheReader.readRecord_singleton [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.ConLecheReader.StreamRead.singleton [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.ConLecheReader.keyName_injective [propext, Classical.choice, Quot.sound]
@@ -316,8 +327,9 @@ L5 and at int-4): the fold reaches con-leche's computed-field overrides of
 `Level`, `Expr` and `Name` (18) and 20 project csimps; the reader adds the
 in-model generator's 10 `partial` definitions; the entry adds the byte stage
 and the committed tables. The pin-parametric forms (`checkBytesWith`,
-`checkConstantsWith`) reach 4519 functions; the committed pin table, prelude
-and Nat-operation pin decoder add the rest. -/
+`checkConstantsWith`) reach 4519 functions (4509 from L6, which did not
+update this sentence, to L6b's `uniqueKeys`); the committed pin table,
+prelude and Nat-operation pin decoder add the rest. -/
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports
@@ -353,7 +365,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
  Ix.Ixon.ConLecheAdmission.checkBytes,
  Ix.Ixon.ConLecheAdmission.checkBytesWith,
  Ix.Ixon.ConLecheAdmission.checkConstantsWith,
- Ix.Ixon.ConLecheAdmission.checkConstants]: 5280 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.ConLecheAdmission.checkConstants]: 5290 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
@@ -430,9 +442,10 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.kernelOperations Ix.Kernel.
         Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre ∧
           Ix.Kernel.ConLecheReader.builtinNatOpPins = Except.ok natPins ∧
             Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
-              ∃ constants,
-                Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-                  Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs hint env -/
+              Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
+                ∃ constants,
+                  Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
+                    Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.ConLecheAdmission.checkBytes_reading
 
@@ -442,11 +455,26 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.kernelOperations Ix.Kernel.
   {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
   Ix.Ixon.ConLecheAdmission.checkBytesWith pins pre natPins limits records blobs hint = Except.ok env →
     Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
-      ∃ constants,
-        Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-          Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs hint env -/
+      Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
+        ∃ constants,
+          Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
+            Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.ConLecheAdmission.checkBytesWith_reading
+
+/-- info: Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff : ∀ (records : Ix.Ixon.Admission.Records)
+  (blobs : Ix.Kernel.Ingress.Blobs),
+  Ix.Ixon.Admission.uniqueKeys records blobs = Except.ok () ↔ Ix.Ixon.Verify.Admission.UniqueKeys records blobs -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff
+
+/-- info: @Ix.Kernel.ConLecheReader.readRecords_nodup : ∀ {cx : Ix.Kernel.ConLecheReader.Ctx}
+  {st st' : Ix.Kernel.ConLecheReader.State} {records : Array (Address × Ixon.Constant)}
+  {out : Array Ix.Kernel.ConLecheReader.CDecl},
+  Ix.Kernel.ConLecheReader.readRecords cx st records = Except.ok (st', out) →
+    (List.map Prod.fst records.toList).Nodup -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.ConLecheReader.readRecords_nodup
 
 /-- info: @Ix.Ixon.ConLecheAdmission.Installed.singleton : ∀ {pins : Ix.Kernel.ConLecheReader.Pins}
   {pre : Ix.Kernel.ConLecheReader.Prelude} {natPins : List ConLeche.NatOpPinSet}

@@ -96,14 +96,15 @@ inductive CheckError where
 /-- **The certified entry with optional omission of projection records**:
 canonical byte admission, projection reconstruction, then con-leche's
 verified checker behind the Ixon reader (`ConLecheAdmission.checkConstants`)
-on the expanded records. Input byte limits apply before reconstruction; the
-separate projection limit bounds generated requests. Owner keys remain
+on the expanded records. Input byte limits and key uniqueness apply before
+reconstruction; the separate projection limit bounds generated requests. Owner keys remain
 supplied keys: only derived projection addresses are authenticated here. -/
 def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (records : Admission.Records)
     (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
     Except CheckError ConLeche.Env := do
   (Admission.preflight limits records blobs).mapError (fun error => .reconstruction (.admission error))
+  (Admission.uniqueKeys records blobs).mapError (fun error => .reconstruction (.admission error))
   let constants ← (Admission.decodeRecords limits records).mapError
     (fun error => .reconstruction (.admission error))
   let expanded ← (reconstruct maxProjections constants).mapError .reconstruction
