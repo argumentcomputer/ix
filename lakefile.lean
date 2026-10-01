@@ -346,6 +346,16 @@ same sources with no dependencies beyond the Lean toolchain:
 same modules for its host consumers through the `Ix` library. See
 `docs/kernel.md`. -/
 
+/-- The kernel's fences, derived from con-leche's (`Tests/Ix/Kernel/{Layering,
+TrustSurface}.lean`, over the layout of `Tests/Ix/Kernel/KernelLayout.lean`):
+import layering, and the per-file escape allowlist with the lexer's self-test
+on `Tests/Fixtures/trust-surface/lexer.lean`. Run from the repository root. -/
+lean_exe «kernel-layering» where
+  root := `Tests.Ix.Kernel.Layering
+
+lean_exe «kernel-trust-surface» where
+  root := `Tests.Ix.Kernel.TrustSurface
+
 lean_exe «kernel-codec» where
   root := `Tests.Ix.Kernel.CodecHost
   moreLinkObjs := #[ix_rs_test]
