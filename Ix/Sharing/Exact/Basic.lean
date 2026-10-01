@@ -322,7 +322,7 @@ structure Limits where
   maxOutputBytes : Nat := 1 <<< 28
   /-- Predicted size of the materialized output (an upper bound on the
   expression nodes built), checked before materializing. -/
-  maxMaterialize : Nat := 1 <<< 26
+  maxMaterialize : Nat := 1 <<< 30
   /-- Tables enumerated by the exhaustive oracle. -/
   maxOracleTables : Nat := 1 <<< 20
   /-- Representations enumerated by the exhaustive oracle. -/
