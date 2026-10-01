@@ -1516,7 +1516,7 @@ mod tests {
       assumptions: Some(asm.clone()),
     };
     let (addr, bytes) = claim.commit();
-    let mut expected = vec![0xE8, 0x00, 3, 1];
+    let mut expected = vec![0xE8, 0x00, 4, 1];
     expected.extend_from_slice(members.as_bytes());
     expected.extend_from_slice(content.as_bytes());
     expected.push(0x01);
@@ -1528,7 +1528,7 @@ mod tests {
     // two serializers cannot drift on the large-tag path unnoticed.
     assert_eq!(
       addr.hex(),
-      "1ae7fec8efde892b6b540888df70d53977a264bbc84be300d4335ce04c916072",
+      "8c4fa4fa2e88fc73c72fbb624696485ec252c6685247541b40a59b221f83dbf4",
       "catalog claim digest drifted"
     );
     // Unconditional form: trailing 0x00, same 2-byte tag.
@@ -1536,7 +1536,7 @@ mod tests {
     let mut buf = Vec::new();
     claim_none.put(&mut buf);
     assert_eq!(buf.len(), 2 + 2 + 32 + 32 + 1);
-    assert_eq!(&buf[0..2], &[0xE8, 0x08]);
+    assert_eq!(&buf[0..2], &[0xE8, 0x00]);
     assert_eq!(*buf.last().unwrap(), 0x00);
     // The proof wrapper stays a single-byte tag: 0xF5.
     let proof = Proof::new(claim_none, Vec::new());

@@ -4452,10 +4452,10 @@ mod tests {
 
     let prims = Primitives::from_env(&KEnv::<Anon>::new());
     let string_to_list_id = canonical_id(
-      "8cece559b9901256cce90e9bf1fa09fce136ff433a24fed990e6734a9c0bdba4",
+      "85bfb457e4487849a08e03ec1d7288888726463caf9768c06a12bf4451e2a7db",
     );
     let list_length_id = canonical_id(
-      "040eac73ee2bdc17f6f276c3660f7e8cf84cb82df9259591d6a808a39571bf25",
+      "a9f286f64c677e133822d2fd2167ca5c5ab29ae6a78fe1ac1f4eec8a452f56b2",
     );
     let list_id = mk_id("Test.List");
     let list_nil_id = mk_id("Test.List.nil");

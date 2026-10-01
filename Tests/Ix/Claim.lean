@@ -68,8 +68,9 @@ def claimUnits : TestSeq :=
 
 /-! ## Byte-level encoding tests
 
-  All claim variants are at Tag4 sizes 3..=7 (single-byte tags
-  `0xE3`..`0xE7`). Each claim has an opt byte (`0x00` for `none`,
+  Claim variants 3..=7 are single-byte TagN (`f = 4`) headers
+  `0xE3`..`0xE7`, followed by the scope bytes (object format 4, then the
+  validator). Each claim has an opt byte (`0x00` for `none`,
   `0x01`+32-byte address for `some`).
 -/
 
@@ -86,6 +87,8 @@ def claimEncodingTests : TestSeq :=
     (.defn (some .defn) (some .safe) (some 3) (some addr2) (some addr3)))
   -- Two scope bytes follow each claim tag. Eval = 68 bytes; with asm = 100
   test "Eval tag byte is 0xE3" (evalBytes.data[0]! == 0xE3)
+  ++ test "Eval scope is object format 4, erased-lean-v1"
+       (evalBytes.data[1]! == 4 && evalBytes.data[2]! == 1)
   ++ test "Eval no-asm size is 68" (evalBytes.size == 68)
   ++ test "Eval with-asm size is 100" (evalWithAsm.size == 100)
   -- Check: tag + scope + 32 + option = 36 bytes; with asm = 68
@@ -107,8 +110,8 @@ def claimEncodingTests : TestSeq :=
 
 /-! ## Catalog claim: wire pin + Rust digest parity
 
-  The catalog claim is the first multi-byte claim tag (`0xE8 0x08` —
-  claim variants 0–7 are full). Its exact wire form is a
+  The catalog claim is the first multi-byte claim tag (`0xE8 0x00`:
+  TagN rung 2, since claim variants 0–7 fill rung 1). Its exact wire form is a
   cross-serializer commitment: `catalog_claim_wire_bytes_pinned` in
   `crates/ixon/src/proof.rs` asserts the SAME digest hex over the same
   fixture, so the two serializers cannot drift on the large-tag path
@@ -121,7 +124,7 @@ private def catAsm : Address := Address.blake3 "assumptions".toUTF8
 
 /-- Must equal the Rust pin in `proof.rs::catalog_claim_wire_bytes_pinned`. -/
 private def catalogDigestPin : String :=
-  "1ae7fec8efde892b6b540888df70d53977a264bbc84be300d4335ce04c916072"
+  "8c4fa4fa2e88fc73c72fbb624696485ec252c6685247541b40a59b221f83dbf4"
 
 def catalogClaimTests : TestSeq :=
   let someBytes := Claim.ser (.catalog catMembers catContent (some catAsm))
@@ -134,6 +137,8 @@ def catalogClaimTests : TestSeq :=
     | .error _ => false
   test "Catalog tag is 2 bytes 0xE8 0x00 (TagN 4 0xE 8)"
     (someBytes.data[0]! == 0xE8 && someBytes.data[1]! == 0x00)
+  ++ test "Catalog scope is object format 4, erased-lean-v1"
+       (someBytes.data[2]! == 4 && someBytes.data[3]! == 1)
   ++ test "Catalog no-asm size is 69" (noneBytes.size == 4 + 64 + 1)
   ++ test "Catalog with-asm size is 101" (someBytes.size == 4 + 64 + 33)
   ++ test "Catalog digest parity with Rust pin"
