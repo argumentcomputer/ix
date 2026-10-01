@@ -179,8 +179,11 @@ def program (extra : Nat) : RngM Lam.Program := do
   return { globals := Src.NatMap.ofList (gs.zipIdx.map fun (gl, i) => (i, gl)), size := gs.length
            roots := [gRoot], ctors, known }
 
+/-- The generator: the templates and up to two random globals. -/
+def gen : RngM Lam.Program := do program (← below 3)
+
 /-- The program of a seed. -/
 def ofSeed (seed : Nat) : Lam.Program :=
-  (do program (← below 3)).run' (Rng.ofSeed (UInt64.ofNat seed)) |>.run
+  gen.run' (Rng.ofSeed (UInt64.ofNat seed)) |>.run
 
 end CompilatrixTests.Support.LamGen

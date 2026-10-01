@@ -538,9 +538,10 @@ def genFunc (fi : FunId) (budget : Nat) : G Func := do
     return relabel f (← shuffle f.blocks.size)
   return f
 
-/-- The raw program for `seed` (it may contain critical edges), with the
-generator's counts. -/
-def program (cfg : Config) (seed : UInt64) : Program × Stats := Id.run do
+/-- The raw program drawn from `rng` (it may contain critical edges), with
+the generator's counts and the final `Rng` (whose tape, when it has one,
+holds the choices drawn: MT.5's shrinking replays them). -/
+def programWith (cfg : Config) (rng : Rng) : (Program × Stats) × Rng := Id.run do
   let gen : G Program := do
     let target ← match ← weighted [5, 3, 2] with
       | 0 => range 1 16
@@ -562,7 +563,7 @@ def program (cfg : Config) (seed : UInt64) : Program × Stats := Id.run do
       let budget := (if i == 0 then target - share * (nf - 1) else share) - 1
       funcs := funcs.push (← genFunc i budget)
     return { funcs, main := 0 }
-  let (p, s) := gen.run { rng := Rng.ofSeed seed, cfg, sigs := #[] }
+  let (p, s) := gen.run { rng := rng, cfg, sigs := #[] }
   let blocks := p.funcs.foldl (fun n f => n + f.blocks.size) 0
   let bucket := if blocks ≤ 1 then 0 else if blocks ≤ 16 then 1 else if blocks ≤ 64 then 2 else 3
   let stats := { s.stats with
@@ -571,13 +572,23 @@ def program (cfg : Config) (seed : UInt64) : Program × Stats := Id.run do
     minBlocks := blocks
     maxBlocks := blocks
     sizes := s.stats.sizes.modify bucket (· + 1) }
-  return (p, stats)
+  return ((p, stats), s.rng)
+
+/-- The raw program for `seed` (it may contain critical edges), with the
+generator's counts. -/
+def program (cfg : Config) (seed : UInt64) : Program × Stats :=
+  (programWith cfg (Rng.ofSeed seed)).1
+
+/-- Arguments for `main` drawn from `rng`, with the final `Rng`. -/
+def mainArgsWith (p : Program) (rng : Rng) : List Word × Rng :=
+  let count := (p.funcs[p.main]?.map (·.params.length)).getD 0
+  let gen : G (List Word) := (List.range count).mapM fun _ => immWord
+  let (args, s) := gen.run { rng, cfg := {}, sigs := #[] }
+  (args, s.rng)
 
 /-- Arguments for `main`, derived from the seed. -/
 def mainArgs (p : Program) (seed : UInt64) : List Word :=
-  let count := (p.funcs[p.main]?.map (·.params.length)).getD 0
-  let gen : G (List Word) := (List.range count).mapM fun _ => immWord
-  (gen.run { rng := Rng.ofSeed (Rng.derive seed 1), cfg := {}, sigs := #[] }).1
+  (mainArgsWith p (Rng.ofSeed (Rng.derive seed 1))).1
 
 def Stats.add (a b : Stats) : Stats :=
   { programs := a.programs + b.programs, funcs := a.funcs + b.funcs, blocks := a.blocks + b.blocks
