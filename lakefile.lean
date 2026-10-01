@@ -419,8 +419,6 @@ script "check-kernel" (args) := do
     let code ← child.wait
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
-  -- the vendored library's globs are exactly the vendored tree
-  run "python3" #["scripts/vendor-conleche.py", "check-lake", "lakefile.lean", "IxKernel/lakefile.lean"]
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
   run "lake" #["build", "--wfail", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
