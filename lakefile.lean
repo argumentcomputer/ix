@@ -168,6 +168,13 @@ lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
   supportInterpreter := true
 
+/-- Regenerates, or with `--check` verifies, the trace-codegen test fixtures:
+the Rust writers, CUDA units and manifest the `aiur` parity tests compile
+against. -/
+lean_exe «trace-fixtures» where
+  root := `Tests.Aiur.TraceFixtures
+  supportInterpreter := true
+
 /-- Focused source-contract checks, including fresh-module registration export. -/
 lean_exe «source-contract-tests» where
   root := `Tests.SourceContractMain
