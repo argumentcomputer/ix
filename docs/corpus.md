@@ -11,6 +11,7 @@ ix.
 | `bench-k1` | [`fixtures/ixon-v3/bench-k1/corpus.json`](../fixtures/ixon-v3/bench-k1/corpus.json) | [`benchmarks/fixtures`](../benchmarks/fixtures/README.md) | the benchmark fixtures' pure `entry` closures: the five K1 programs, and the four added by MT.2 |
 | `phase1-scalar` | [`fixtures/corpus/phase1-scalar/corpus.json`](../fixtures/corpus/phase1-scalar/corpus.json) | [`fixtures/corpus/phase1-scalar/src`](../fixtures/corpus/phase1-scalar/README.md) | the Phase 1 scalar corpus: 23 roots of first-order total programs, and five programs of Lean's `tests/compile` |
 | `phase1-boundary` | [`fixtures/corpus/phase1-boundary/corpus.json`](../fixtures/corpus/phase1-boundary/corpus.json) | [`fixtures/corpus/phase1-boundary/src`](../fixtures/corpus/phase1-boundary/README.md) | MT.3: every `Nat` primitive and operand shape at the `2⁶³` edge, literals of at least `2⁶³` in live and dead code, and the field-count and constructor-count limits |
+| `phase1-resource` | [`fixtures/corpus/phase1-resource/corpus.json`](../fixtures/corpus/phase1-resource/corpus.json) | [`fixtures/corpus/phase1-resource/src`](../fixtures/corpus/phase1-resource/README.md) | MT.3: heap, stack and trap failures (statuses 1, 2, 4) under per-case regions and stacks |
 
 ## The manifest
 

@@ -28,7 +28,8 @@ def format : String := "compilatrix/corpus/1"
 manifest take all of them). -/
 def families : List System.FilePath :=
   ["fixtures/ixon-v3/bench-k1/corpus.json", "fixtures/corpus/phase1-scalar/corpus.json",
-   "fixtures/corpus/phase1-boundary/corpus.json"]
+   "fixtures/corpus/phase1-boundary/corpus.json",
+   "fixtures/corpus/phase1-resource/corpus.json"]
 
 /-- A file of the pack and its hash (`bytes` for closures). -/
 structure FileRec where
