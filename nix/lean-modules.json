@@ -1842,6 +1842,9 @@
   "Compilatrix.Src.Admit":
   {"path": "Compilatrix/Src/Admit.lean",
    "imports": ["Compilatrix.Src.Runtime", "Std.Data.HashSet"]},
+  "Compilatrix.Sem.View":
+  {"path": "Compilatrix/Sem/View.lean",
+   "imports": ["Compilatrix.Sem.TracedTransform", "Compilatrix.Sem.SimUpTo"]},
   "Compilatrix.Sem.Transform":
   {"path": "Compilatrix/Sem/Transform.lean",
    "imports": ["Compilatrix.Sem.Simulation"]},
@@ -1997,6 +2000,12 @@
   "Compilatrix.Rt.Proof.Layout":
   {"path": "Compilatrix/Rt/Proof/Layout.lean",
    "imports": ["Compilatrix.Rt.Proof.Block"]},
+  "Compilatrix.Rt.Proof.Lang":
+  {"path": "Compilatrix/Rt/Proof/Lang.lean",
+   "imports":
+   ["Compilatrix.Rt.Proof.Publish",
+    "Compilatrix.Cfg.Proof.Lang",
+    "Compilatrix.Sem.View"]},
   "Compilatrix.Rt.Proof.Instr":
   {"path": "Compilatrix/Rt/Proof/Instr.lean",
    "imports":
@@ -3284,6 +3293,7 @@
     "Compilatrix.Sem.Traced",
     "Compilatrix.Sem.TracedSim",
     "Compilatrix.Sem.TracedTransform",
+    "Compilatrix.Sem.View",
     "Compilatrix.Lir.Syntax",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Lir.Graph",
@@ -3548,6 +3558,7 @@
     "Compilatrix.Rt.Proof.Readback",
     "Compilatrix.Rt.Proof.CxInit",
     "Compilatrix.Rt.Proof.Publish",
+    "Compilatrix.Rt.Proof.Lang",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",

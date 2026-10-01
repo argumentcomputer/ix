@@ -14,6 +14,7 @@ import Compilatrix.Sem.Dominance
 import Compilatrix.Sem.Traced
 import Compilatrix.Sem.TracedSim
 import Compilatrix.Sem.TracedTransform
+import Compilatrix.Sem.View
 import Compilatrix.Lir.Syntax
 import Compilatrix.Lir.Semantics
 import Compilatrix.Lir.Graph
@@ -278,6 +279,7 @@ import Compilatrix.Rt.Proof.Correct
 import Compilatrix.Rt.Proof.Readback
 import Compilatrix.Rt.Proof.CxInit
 import Compilatrix.Rt.Proof.Publish
+import Compilatrix.Rt.Proof.Lang
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine
