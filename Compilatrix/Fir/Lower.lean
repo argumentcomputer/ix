@@ -14,6 +14,16 @@ recursion over Anf terms, a threaded name supply, lists and `Src.NatMap`.
   parameters) is declined with `Error.closures`, naming the globals, until
   P8 (closed-world defunctionalisation, Phase 2) removes them (02 §8, 06
   S45). Nothing else is declined.
+* **Rejects what the correctness proof excludes** (`Fir.Proof`, M2.4), with
+  `fir.malformed`, `fir.missing` or `fir.pins`: a root, call or CAF
+  reference to a global id beyond the program's size, a constructor or
+  `case` alternative whose
+  field count is not the table's (an alternative's key must be in the
+  table), and pinned keys the semantics would read differently (where the
+  table lists them, `Nat.zero` and the `Bool` constructors have no fields
+  and `Nat.succ` one; a Boolean primitive needs the `Bool` pins listed). A
+  well-scoped Anf program (`Anf.WellScoped`) passes these checks if its
+  Boolean primitives' `Bool` pins are listed.
 * **One to one otherwise.** Every Anf global becomes the function with the
   same id, key, contracts and result contract; a CAF (no parameters) becomes
   a zero-argument function called at each use (06 S36), so `glob g` of a CAF
@@ -47,6 +57,10 @@ inductive Error where
   | malformed (g : Anf.GlobalId) (what : String)
   /-- A global `0 … size - 1` is missing. -/
   | missing (g : Anf.GlobalId)
+  /-- A pinned key the semantics reads differently at Anf and Fir: a pin
+  listed with the wrong field count, or a Boolean primitive whose `Bool`
+  pins are not listed. -/
+  | pins
   deriving Repr, Inhabited
 
 def Error.render : Error → String
@@ -55,6 +69,9 @@ def Error.render : Error → String
     s!"fn in globals {fns}, app in {apps}, function-valued glob in {globs}"
   | .malformed g what => s!"fir.malformed: global {g}: {what}"
   | .missing g => s!"fir.missing: global {g} is absent"
+  | .pins =>
+    "fir.pins: a pinned constructor has the wrong field count in the table, " ++
+    "or a Boolean primitive's pinned Bool constructors are not in the table"
 
 /-! ## The decline set -/
 
@@ -176,6 +193,32 @@ def projections (x : Var) (key : Key.CtorKey) (body : Anf.Exp) : List Var → Na
     let rest := projections x key body fs (i + 1) k
     if body.occ (n - 1 - i) > 0 then .bind f (.proj x key i) rest else rest
 
+/-- A pinned key's field count in the table is `n`; `must`: the key must be
+listed. -/
+def pinOk (A : Anf.Program) (n : Nat) (must : Bool) : Option Key.CtorKey → Bool
+  | some c =>
+    match CtorInfo.ofKey A.ctors c with
+    | some info => info.arity == n
+    | none => !must
+  | none => true
+
+/-- The pinned keys, where the table lists them, have the field counts both
+levels read them with: `Nat.zero` 0, `Nat.succ` 1 (literals peel into
+them), the `Bool` constructors 0 (`Anf.knownConsistent`). -/
+def pinsOk (A : Anf.Program) : Bool :=
+  pinOk A 0 false A.known.natZero && pinOk A 1 false A.known.natSucc &&
+    pinOk A 0 false A.known.boolFalse && pinOk A 0 false A.known.boolTrue
+
+/-- The `Bool` pins are listed: Anf's Boolean primitives return `con c []`
+whatever the table says, and Fir builds the value from the table. -/
+def boolPinsOk (A : Anf.Program) : Bool :=
+  pinOk A 0 true A.known.boolFalse && pinOk A 0 true A.known.boolTrue
+
+/-- The primitives with a Boolean result. -/
+def boolPrim : Lam.Prim → Bool
+  | .natBeq | .natBle | .natBlt => true
+  | _ => false
+
 mutual
 
 def exp (A : Anf.Program) (g : Anf.GlobalId) (ρ : List Var) (J : List JoinId) (st : St) :
@@ -184,12 +227,14 @@ def exp (A : Anf.Program) (g : Anf.GlobalId) (ρ : List Var) (J : List JoinId) (
     match b with
     | .call h as =>
       let args ← atoms g ρ as
+      unless h < A.size do throw (.malformed g s!"call of global {h} beyond the size {A.size}")
       if returnsTop e then pure (.tcall h args, st)
       else
         let (x, st) := st.bindFresh c
         let (k, st) ← exp A g (x :: ρ) J st e
         pure (.bind x (.call h args) k, st)
     | .glob h =>
+      unless h < A.size do throw (.malformed g s!"glob of global {h} beyond the size {A.size}")
       match A.global? h with
       | some hd =>
         if hd.ps.isEmpty then
@@ -209,6 +254,8 @@ def exp (A : Anf.Program) (g : Anf.GlobalId) (ρ : List Var) (J : List JoinId) (
       let args ← atoms g ρ as
       match CtorInfo.ofKey A.ctors key with
       | some info =>
+        unless as.length = info.arity do
+          throw (.malformed g s!"constructor {reprStr key} with {as.length} fields, the table has {info.arity}")
         let (x, st) := st.bindFresh c
         let (k, st) ← exp A g (x :: ρ) J st e
         pure (.bind x (.ctor info args) k, st)
@@ -220,6 +267,7 @@ def exp (A : Anf.Program) (g : Anf.GlobalId) (ρ : List Var) (J : List JoinId) (
       pure (pre (.bind x (.proj y key i) k), st)
     | .prim p as =>
       let args ← atoms g ρ as
+      if boolPrim p && !boolPinsOk A then throw .pins
       let (x, st) := st.bindFresh c
       let (k, st) ← exp A g (x :: ρ) J st e
       pure (.bind x (.prim p args) k, st)
@@ -252,6 +300,8 @@ def exps (A : Anf.Program) (g : Anf.GlobalId) (ρ : List Var) (J : List JoinId) 
     (st : St) : List Anf.Alt → Except Error (List Alt × St)
   | [] => pure ([], st)
   | .mk key n body :: as => do
+    unless (CtorInfo.ofKey A.ctors key).map (·.arity) = some n do
+      throw (.malformed g s!"alternative {reprStr key} binds {n} fields, not the table's")
     let (fs, st) := st.freshN n
     let (b, st) ← exp A g (fs.reverse ++ ρ) J st body
     let (rest, st) ← exps A g ρ J y st as
@@ -286,11 +336,13 @@ def functions (A : Anf.Program) : List Anf.GlobalId → Except Error (List (FunI
 
 end Lower
 
-/-- Anf → Fir (03 §2.2): declines residual closures, else converts every
-global. -/
+/-- Anf → Fir (03 §2.2): declines residual closures, rejects inconsistent
+pinned keys, else converts every global. -/
 def lower (A : Anf.Program) : Except Lower.Error Program := do
   let r := Lower.residual A
   unless r.isEmpty do throw (.closures r.fns r.apps r.globs)
+  unless Lower.pinsOk A do throw .pins
+  if let some r := A.roots.find? (A.size ≤ ·) then throw (.missing r)
   let fs ← Lower.functions A (List.range A.size)
   pure { funs := Src.NatMap.ofList fs, size := A.size, exports := A.roots, ctors := A.ctors
          known := A.known }
