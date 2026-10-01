@@ -231,9 +231,9 @@ lean_exe «bench-lean4lean» where
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 
-/-- Corpus measurement for the exact-sharing plan (gate P1.5 of
-`docs/sharing-minimum.md`): expands every stored sharing table in an `.ixe`,
-checks the production rebuild and reports subterm/candidate statistics. -/
+/-- Corpus measurement for canonical sharing (`docs/sharing-minimum.md`):
+expands every stored sharing table in an `.ixe`, checks the production
+rebuild and reports subterm, candidate and MSS statistics. -/
 lean_exe «sharing-study» where
   root := `Benchmarks.SharingStudy
 
