@@ -1112,7 +1112,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       | k =>
         if ["BENCH_PHASES", "RUST_LOG", "WITHOUT_VK_VERIFICATION",
             "RUSTFLAGS", "IX_COMPILE_EAGER", "IX_COMPILE_DEMOTE",
-            "IX_COMPILE_WORKERS",
+            "IX_COMPILE_WORKERS", "BENCH_TRACE_SHARDS",
             "IX_DECOMPILE_KENV_CLEAR_ENTRIES"].contains k then
           passthrough := passthrough.push s!"{k}={val}"
         else if strict then
@@ -1121,7 +1121,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
             or passthrough: BENCH_PHASES, \
             RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS, \
             IX_COMPILE_EAGER, IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS, \
-            IX_DECOMPILE_KENV_CLEAR_ENTRIES)"
+            BENCH_TRACE_SHARDS, IX_DECOMPILE_KENV_CLEAR_ENTRIES)"
     | [] => continue
 
   -- BENCH_CONSTS: bench exactly these constants on the per-constant

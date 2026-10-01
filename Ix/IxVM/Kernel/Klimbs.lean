@@ -203,16 +203,27 @@ def klimbs := ⟦
   -- Lean answers `true`. `u8_range_check` takes a pair per lookup row,
   -- so eight bytes cost four.
   fn glimbs_to_klimbs(n: List‹[G; 8]›) -> KLimbs {
+    let (limbs, _) = glimbs_to_klimbs_with_depth(n);
+    limbs
+  }
+
+  -- Quotient/remainder advice can contain arbitrary pointers, including
+  -- cycles. Range-checking digits and checking q*b+r=a do not establish
+  -- termination of their recursive walks. Return a non-wrapping u32 depth
+  -- while checking the digits, before normalization or arithmetic sees them.
+  fn glimbs_to_klimbs_with_depth(n: List‹[G; 8]›) -> (KLimbs, G) {
     match load(n) {
-      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Nil => (store(ListNode.Nil), 0),
       ListNode.Cons(limb, rest) =>
         let [b0, b1, b2, b3, b4, b5, b6, b7] = limb;
         let (c0, c1) = u8_range_check(b0, b1);
         let (c2, c3) = u8_range_check(b2, b3);
         let (c4, c5) = u8_range_check(b4, b5);
         let (c6, c7) = u8_range_check(b6, b7);
-        store(ListNode.Cons([c0, c1, c2, c3, c4, c5, c6, c7],
-          glimbs_to_klimbs(rest))),
+        let (tail, depth) = glimbs_to_klimbs_with_depth(rest);
+        let next_depth = checked_depth_succ(depth);
+        (store(ListNode.Cons([c0, c1, c2, c3, c4, c5, c6, c7], tail)),
+          next_depth),
     }
   }
 

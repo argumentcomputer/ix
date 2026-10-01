@@ -73,33 +73,33 @@ fn public_verify_checks_lookup_metadata() {
   assert!(
     lookup_query_bound(
       system.slot_widths.iter().map(Vec::len),
-      &proof.active,
-      &proof.log_degrees
+      &proof.preamble.headers[0].active,
+      &proof.preamble.headers[0].log_degrees
     )
     .is_some()
   );
-  let degrees = proof.log_degrees.clone();
+  let degrees = proof.preamble.headers[0].log_degrees.clone();
   for malformed in
     [vec![], vec![0; degrees.len() + 1], vec![255; degrees.len()]]
   {
-    proof.log_degrees = malformed;
+    proof.preamble.headers[0].log_degrees = malformed;
     assert!(matches!(
       system.verify(&claim, &proof),
-      Err(VerificationError::InvalidProofShape)
+      Err(AiurVerificationError::Stark(VerificationError::InvalidProofShape))
     ));
   }
-  proof.log_degrees = degrees;
-  let active = proof.active.clone();
+  proof.preamble.headers[0].log_degrees = degrees;
+  let active = proof.preamble.headers[0].active.clone();
   for malformed in
     [vec![], vec![false; active.len()], vec![true; active.len() + 1]]
   {
-    proof.active = malformed;
+    proof.preamble.headers[0].active = malformed;
     assert!(matches!(
       system.verify(&claim, &proof),
-      Err(VerificationError::InvalidProofShape)
+      Err(AiurVerificationError::Stark(VerificationError::InvalidProofShape))
     ));
   }
-  proof.active = active;
+  proof.preamble.headers[0].active = active;
   system.verify(&claim, &proof).unwrap();
 }
 

@@ -10,7 +10,7 @@ def blake3 := ⟦
 
   pub fn blake3_test() -> [[U8; 4]; 8] {
     let (idx, len) = io_get_info(0, [0]);
-    let byte_stream = #read_byte_stream(0, idx, len);
+    let byte_stream = read_finite_byte_stream(0, idx, len);
     @blake3(byte_stream)
   }
 
@@ -20,7 +20,7 @@ def blake3 := ⟦
     let num_hashes_pred = num_hashes - 1;
     let key = [num_hashes_pred];
     let (idx, len) = io_get_info(0, key);
-    let byte_stream = #read_byte_stream(0, idx, len);
+    let byte_stream = read_finite_byte_stream(0, idx, len);
     @blake3(byte_stream);
     match num_hashes_pred {
       0 => 0,
@@ -55,6 +55,11 @@ def blake3 := ⟦
      @b3_pack_w(h[4]), @b3_pack_w(h[5]), @b3_pack_w(h[6]), @b3_pack_w(h[7])]
   }
 
+  -- `input` must be finite: constructed by constrained terminating code, or
+  -- admitted through read_finite_byte_stream. Hash equality alone cannot
+  -- establish this for an arbitrary hinted pointer (cyclic lookups can forge
+  -- a traversal's return). Keep the check at ingress, not on every hash of
+  -- an internally constructed buffer.
   fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
     blake3_compress_layer(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))

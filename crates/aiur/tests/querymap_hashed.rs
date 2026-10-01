@@ -10,9 +10,9 @@ fn retained_hash_survives_nested_insertions_and_table_growth() {
   assert_eq!(hit, None);
   for i in 0..4096 {
     let child = [G::from_usize(i)];
-    map.insert(&child, &child, G::ONE);
+    map.insert(&child, &child, G::ONE).unwrap();
   }
-  map.finish_hashed(&key, &output, true, hash);
+  map.finish_hashed(&key, &output, true, hash).unwrap();
   assert_eq!(map.len(), 4097);
   assert_eq!(map.get_index_of(&key), Some(4096));
   assert_eq!(map.output_at(4096), output);
@@ -30,14 +30,14 @@ fn finish_rechecks_a_key_inserted_since_the_initial_miss() {
   let (hash, hit) = map.lookup(&key);
   assert_eq!(hit, None);
   // A nested hint populated the key before its constrained caller finished.
-  map.insert(&key, &output, G::ZERO);
-  map.finish_hashed(&key, &output, true, hash);
+  map.insert(&key, &output, G::ZERO).unwrap();
+  map.finish_hashed(&key, &output, true, hash).unwrap();
   assert_eq!(map.len(), 1);
   assert_eq!(map.mult_at(0), G::ONE);
   assert_eq!(map.output_at(0), output);
-  map.finish_hashed(&key, &output, false, hash);
+  map.finish_hashed(&key, &output, false, hash).unwrap();
   assert_eq!(map.mult_at(0), G::ONE);
-  map.finish_hashed(&key, &output, true, hash);
+  map.finish_hashed(&key, &output, true, hash).unwrap();
   assert_eq!(map.mult_at(0), G::TWO);
 }
 
@@ -46,9 +46,9 @@ fn empty_keys_and_outputs_can_be_promoted() {
   let mut map = QueryMap::new(0);
   let (hash, hit) = map.lookup(&[]);
   assert_eq!(hit, None);
-  map.insert_hashed(&[], &[], G::ZERO, hash);
+  map.insert_hashed(&[], &[], G::ZERO, hash).unwrap();
   assert_eq!(map.lookup(&[]), (hash, Some(0)));
-  map.finish_hashed(&[], &[], true, hash);
+  map.finish_hashed(&[], &[], true, hash).unwrap();
   assert_eq!(map.len(), 1);
   assert!(map.output_at(0).is_empty());
   assert_eq!(map.mult_at(0), G::ONE);
@@ -64,8 +64,8 @@ fn hashed_and_regular_registration_preserve_the_same_records() {
       let output = [G::from_usize(i * 2)];
       let (hash, hit) = hashed.lookup(&key);
       assert_eq!(hit, regular.get_index_of(&key));
-      regular.finish(&key, &output, round != 0);
-      hashed.finish_hashed(&key, &output, round != 0, hash);
+      regular.finish(&key, &output, round != 0).unwrap();
+      hashed.finish_hashed(&key, &output, round != 0, hash).unwrap();
     }
   }
   assert_eq!(regular.len(), hashed.len());

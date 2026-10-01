@@ -38,10 +38,13 @@ flat base-field node graph, so this reader parses that compiled form:
   per circuit for the preprocessed index (`0xFFFF` = None).
 
 The vk stream (IO channel 1) is fetched once as unconstrained advice, then
-both hashed and deserialized from that same `ByteStream`. The hash and all
-deserializer calls are constrained, so the public `system_digest` binds every
-value reconstructed below. Per-node degrees are neither serialized nor needed
-(the node sweep just evaluates the graph).
+both hashed and deserialized from that same `ByteStream`. The constrained
+countdown readers terminate, and the caller requires an empty remainder;
+together these establish finiteness even for an adversarial stream pointer.
+The hash then binds every reconstructed value to `system_digest`. Hashing alone
+would not establish finiteness. Expression children must also precede their
+parents, as in the native compiled graph: a finite node list can still encode
+a cyclic graph. Per-node degrees are neither serialized nor needed.
 
 The Fiat-Shamir shape limbs (`observe_shape`): the circuit count then,
 per circuit, the seven words constraint_count, max_constraint_degree,
@@ -82,7 +85,10 @@ def systemDeserialize := ⟦
   -- A compiled lookup: multiplicity node id + argument node ids (all into
   -- the graph's lookup prefix). Drives the direct logUp evaluation.
   enum SysLookup { Mk(G, List‹G›) }
-  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G, List‹SysLookup›, G) }   -- nodes, node_count, zeros, max_constraint_degree, lookups, lookup_group_size
+  -- nodes, node_count, zeros, max_constraint_degree, lookups,
+  -- lookup_group_size, main_width, preprocessed_width, stage_2_width: the
+  -- three widths pin every opened row of the circuit to the verifying key.
+  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G, List‹SysLookup›, G, G, G, G) }
 
   -- log_blowup, cap_height, log_final_poly_len, max_log_arity, num_queries,
   -- commit_proof_of_work_bits, query_proof_of_work_bits — the commitment + FRI
@@ -229,7 +235,10 @@ def systemDeserialize := ⟦
   -- `read_node` circuit (49 wide) disappears. (An `@read_node` splice is not
   -- possible: its lets + tail match building the multi-variant SysNode trips
   -- the inliner — scratchpad InlineRepro case G3.)
-  fn read_nodes_n(i: ByteStream, n: G) -> (List‹SysNode›, ByteStream) {
+  -- `node_idx` starts at zero. Checking every child against its parent index
+  -- gives eval_at a strictly decreasing rank without adding depth to each
+  -- evaluation. The native graph compiler emits this topological order.
+  fn read_nodes_n(i: ByteStream, n: G, node_idx: G) -> (List‹SysNode›, ByteStream) {
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
@@ -237,67 +246,81 @@ def systemDeserialize := ⟦
         match tag {
           0 =>
             let (c, i2) = read_vk_u16(i1);
-            let (rest, i3) = read_nodes_n(i2, n - 1);
+            let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Const(c), rest)), i3),
           1 =>
             let (c, i2) = read_field(i1);
-            let (rest, i3) = read_nodes_n(i2, n - 1);
+            let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Const(c), rest)), i3),
           2 =>
             let (idx, i2) = read_vk_tag(i1);
-            let (rest, i3) = read_nodes_n(i2, n - 1);
+            let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Public(idx), rest)), i3),
           3 =>
-            let (rest, i3) = read_nodes_n(i1, n - 1);
+            let (rest, i3) = read_nodes_n(i1, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.IsFirstRow, rest)), i3),
           4 =>
-            let (rest, i3) = read_nodes_n(i1, n - 1);
+            let (rest, i3) = read_nodes_n(i1, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.IsLastRow, rest)), i3),
           5 =>
-            let (rest, i3) = read_nodes_n(i1, n - 1);
+            let (rest, i3) = read_nodes_n(i1, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.IsTransition, rest)), i3),
           6 =>
             let (a, i2) = read_vk_u16(i1);
             let (b, i3) = read_vk_u16(i2);
-            let (rest, i4) = read_nodes_n(i3, n - 1);
+            assert_eq!(memo_u32_less_than(a, node_idx), 1,
+              "vk: expression child must precede its parent");
+            assert_eq!(memo_u32_less_than(b, node_idx), 1,
+              "vk: expression child must precede its parent");
+            let (rest, i4) = read_nodes_n(i3, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Add(a, b), rest)), i4),
           7 =>
             let (a, i2) = read_vk_u16(i1);
             let (b, i3) = read_vk_u16(i2);
-            let (rest, i4) = read_nodes_n(i3, n - 1);
+            assert_eq!(memo_u32_less_than(a, node_idx), 1,
+              "vk: expression child must precede its parent");
+            assert_eq!(memo_u32_less_than(b, node_idx), 1,
+              "vk: expression child must precede its parent");
+            let (rest, i4) = read_nodes_n(i3, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Sub(a, b), rest)), i4),
           8 =>
             let (a, i2) = read_vk_u16(i1);
             let (b, i3) = read_vk_u16(i2);
-            let (rest, i4) = read_nodes_n(i3, n - 1);
+            assert_eq!(memo_u32_less_than(a, node_idx), 1,
+              "vk: expression child must precede its parent");
+            assert_eq!(memo_u32_less_than(b, node_idx), 1,
+              "vk: expression child must precede its parent");
+            let (rest, i4) = read_nodes_n(i3, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Mul(a, b), rest)), i4),
           9 =>
             let (a, i2) = read_vk_u16(i1);
-            let (rest, i3) = read_nodes_n(i2, n - 1);
+            assert_eq!(memo_u32_less_than(a, node_idx), 1,
+              "vk: expression child must precede its parent");
+            let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Neg(a), rest)), i3),
           10 =>
             let (idx, i2) = read_vk_u16(i1);
-            let (rest, i3) = read_nodes_n(i2, n - 1);
+            let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Var(0, 0, idx), rest)), i3),
           11 =>
             let (idx, i2) = read_vk_u16(i1);
-            let (rest, i3) = read_nodes_n(i2, n - 1);
+            let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Var(0, 1, idx), rest)), i3),
           12 =>
             let (idx, i2) = read_vk_u16(i1);
-            let (rest, i3) = read_nodes_n(i2, n - 1);
+            let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Var(1, 0, idx), rest)), i3),
           13 =>
             let (idx, i2) = read_vk_u16(i1);
-            let (rest, i3) = read_nodes_n(i2, n - 1);
+            let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Var(1, 1, idx), rest)), i3),
           14 =>
             let (idx, i2) = read_vk_u16(i1);
-            let (rest, i3) = read_nodes_n(i2, n - 1);
+            let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Var(2, 0, idx), rest)), i3),
           _ =>
             let (idx, i2) = read_vk_u16(i1);
-            let (rest, i3) = read_nodes_n(i2, n - 1);
+            let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
             (store(ListNode.Cons(SysNode.Var(2, 1, idx), rest)), i3),
         },
     }
@@ -357,7 +380,7 @@ def systemDeserialize := ⟦
     let (md, mdl, c4) = read_vk_u16_limb(c3);
     let (k, c4b) = read_vk_tag(c4);
     let (ncount, c5) = read_vk_u16(c4b);
-    let (nodes, c6) = read_nodes_n(c5, ncount);
+    let (nodes, c6) = read_nodes_n(c5, ncount, 0);
     let (zcount, c7) = read_vk_u16(c6);
     let (zeros, c8) = read_node_ids_n(c7, zcount);
     let (lcount, c9) = read_vk_u16(c8);
@@ -374,10 +397,11 @@ def systemDeserialize := ⟦
     -- `read_sys_circuits_n` (a let-bound match here tripped the inliner).
     let groups = lookup_groups_count(lcount, 0, k);
     let gslots = groups + eq_zero(groups);
-    let ccl = @gl_to_bytes(zcount + gslots + gslots);
-    let s2wl = @gl_to_bytes(gslots + gslots);
+    let s2w = gslots + gslots;
+    let ccl = @gl_to_bytes(zcount + s2w);
+    let s2wl = @gl_to_bytes(s2w);
     let kl = @gl_to_bytes(k);
-    (SysCircuit.Mk(nodes, ncount, zeros, md, lks, k),
+    (SysCircuit.Mk(nodes, ncount, zeros, md, lks, k, mw, pw, s2w),
      [ccl, mdl, phl, pwl, mwl, s2wl, kl], c10)
   }
   fn cons_shape7(l: [U64; 7], tail: List‹U64›) -> List‹U64› {
