@@ -144,6 +144,19 @@ binder spelling. Expected arrow domains copied into alpha-renamed lambdas
 must match the original validated marker. Source snapshots themselves still
 compare exactly, so renaming invalidates a previously captured snapshot.
 
+A marker annotates only the binder it was written on: its own domain, under
+its original name, or the alpha-renamed lambda at the same body-telescope
+position as a marked arrow of the declaration type. Lean copies marked domains
+elsewhere during elaboration: numerals and instances elaborated against a
+marked parameter type, matcher motives that generalize a marked index or let,
+and the packed domain of a well-founded `_unary`. Such copies annotate
+nothing. A copy must agree with its original when both are in one declaration;
+a copy of another declaration's marker is ignored, and transport strips every
+copy. Proof bodies of theorems contain only copies. So that ignoring copies
+cannot drop a written contract, the declaration command fails with
+`lostAnnotation` when a marker written in it keeps no binder site in the
+declaration or the auxiliary definitions it generates.
+
 Default inputs are many/shared/unrestricted. Default arrow results are
 shared/unrestricted. An implicit or instance binder is not automatically erased.
 

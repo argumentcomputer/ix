@@ -220,6 +220,13 @@ meta def elabDeclaration : CommandElab := fun stx => do
   elabCommand ordinary
   let name ← resolveGlobalConstNoOverload definition[1][0]
   let source ← getConstInfo name
+  -- Copies of markers are ignored downstream; the originals written in this
+  -- command must keep a binder site in the declaration or its auxiliaries.
+  let generated := (← getEnv).constants.map₂.foldl (init := #[]) fun acc auxName info =>
+    if name.isPrefixOf auxName then acc.push info else acc
+  if let (some start, some stop) := (stx.getPos?, stx.getTailPos?) then
+    if let .error error := checkAnnotationsSurvive name generated start.byteIdx stop.byteIdx then
+      throwErrorAt stx "{error}"
   if sourceHasAnnotations source then
     let contract ← match SourceContract.fromAnnotations source with
       | .ok contract => pure contract

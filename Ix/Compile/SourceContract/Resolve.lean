@@ -134,79 +134,128 @@ def ResolvedSourceContract.valueAt (contract : ResolvedSourceContract)
     (site : BinderSite) : Ixon.ValueContract :=
   ((contract.binders.find? fun binder => binder.site == site).map (·.value)).getD .shared
 
-private structure CollectedAnnotations where
-  binders : Array (BinderSite × BinderAnnotation) := #[]
-  markers : Array (BinderSite × BinderAnnotation) := #[]
+/-- One elaborated copy of a source marker. `binder` is set when the marker is
+on the outer metadata chain of a lambda, forall, or let domain. -/
+structure MarkerOccurrence where
+  site : BinderSite
+  annotation : BinderAnnotation
+  binder : Option Lean.Name := none
+  isLambda : Bool := false
+  deriving Inhabited
 
-private def collectAnnotations (declaration : Lean.Name) (root : SourceRoot)
-    (expr : Lean.Expr) (path : List SourceStep) (acc : CollectedAnnotations) :
-    Except SourceContractError CollectedAnnotations := do
+/-- Identity of an original source marker: its source offset and the binder
+name it was written on. Copies keep both fields. -/
+def BinderAnnotation.key (annotation : BinderAnnotation) : Nat × Lean.Name :=
+  (annotation.origin, annotation.binder)
+
+private def collectMarkers (declaration : Lean.Name) (root : SourceRoot)
+    (expr : Lean.Expr) (path : List SourceStep) (acc : Array MarkerOccurrence) :
+    Except SourceContractError (Array MarkerOccurrence) := do
   let site : BinderSite := ⟨root, path⟩
   let mut acc := acc
   match expr with
   | .lam name type _ _ | .forallE name type _ _ | .letE name type _ _ _ =>
     let annotation ← (binderAnnotation? type).mapError (.malformedAnnotation declaration site)
     if let some annotation := annotation then
-      if annotation.binder != name then
-        -- Expected arrow domains can be copied into an alpha-renamed lambda.
-        -- The original marker must already have been validated in the type.
-        let isLambda := match expr with | .lam .. => true | _ => false
-        unless isLambda && root == .body && acc.binders.any (fun (site, original) =>
-            site.root == .type && original == annotation) do
-          throw (.annotationBinderMismatch declaration site annotation.binder name)
-      acc := { acc with binders := acc.binders.push (site, annotation) }
+      let isLambda := match expr with | .lam .. => true | _ => false
+      acc := acc.push { site, annotation, binder := some name, isLambda }
   | .mdata data _ =>
     let annotation ← (BinderAnnotation.ofMetadata? data).mapError (.malformedAnnotation declaration site)
     if let some annotation := annotation then
-      acc := { acc with markers := acc.markers.push (site, annotation) }
+      acc := acc.push { site, annotation }
   | _ => pure ()
   match expr with
   | .app fn arg =>
-    let next ← collectAnnotations declaration root fn (path ++ [.appFn]) acc
-    collectAnnotations declaration root arg (path ++ [.appArg]) next
+    let next ← collectMarkers declaration root fn (path ++ [.appFn]) acc
+    collectMarkers declaration root arg (path ++ [.appArg]) next
   | .lam _ type body _ | .forallE _ type body _ =>
-    let next ← collectAnnotations declaration root type (path ++ [.binderType]) acc
-    collectAnnotations declaration root body (path ++ [.binderBody]) next
+    let next ← collectMarkers declaration root type (path ++ [.binderType]) acc
+    collectMarkers declaration root body (path ++ [.binderBody]) next
   | .letE _ type value body _ =>
-    let next ← collectAnnotations declaration root type (path ++ [.letType]) acc
-    let final ← collectAnnotations declaration root value (path ++ [.letValue]) next
-    collectAnnotations declaration root body (path ++ [.letBody]) final
-  | .mdata _ inner => collectAnnotations declaration root inner (path ++ [.metadata]) acc
-  | .proj _ _ value => collectAnnotations declaration root value (path ++ [.projection]) acc
+    let next ← collectMarkers declaration root type (path ++ [.letType]) acc
+    let final ← collectMarkers declaration root value (path ++ [.letValue]) next
+    collectMarkers declaration root body (path ++ [.letBody]) final
+  | .mdata _ inner => collectMarkers declaration root inner (path ++ [.metadata]) acc
+  | .proj _ _ value => collectMarkers declaration root value (path ++ [.projection]) acc
   | _ => return acc
 
+/-- Every source-marker occurrence of a declaration, in both roots. -/
+def sourceMarkerOccurrences (source : Lean.ConstantInfo) :
+    Except SourceContractError (Array MarkerOccurrence) := do
+  let acc ← collectMarkers source.name .type source.type [] #[]
+  match sourceBody? source with
+  | some body => collectMarkers source.name .body body [] acc
+  | none => pure acc
+
+/-- Split marker occurrences into binder sites and copies.
+
+A marker annotates a binder only on that binder's own domain, under the name it
+was written with. The one exception is an alpha-renamed lambda at the same
+position of the body telescope as an annotated arrow of the declaration type:
+Lean elaborates such a lambda against that arrow, and it is the arrow's body
+counterpart. A theorem's proof is never a binder site, since contracts have no
+meaning inside an erased proof.
+
+Every other occurrence is a copy that Lean's elaborator made of some binder
+domain: a numeral or instance argument elaborated against a marked expected
+type, a matcher motive, the packed domain of a well-founded `_unary`, or a
+matcher binder that generalizes a marked let. A copy annotates nothing. When
+the same declaration contains the original, the copy must agree with it. A
+copy of another declaration's marker is foreign; it is ignored here, and the
+transport strips it. -/
+def classifyMarkers (source : Lean.ConstantInfo) (occurrences : Array MarkerOccurrence) :
+    Except SourceContractError (Array MarkerOccurrence × Array MarkerOccurrence) := do
+  let isTheorem := match source with | .thmInfo _ => true | _ => false
+  let types := sourceTelescope source .type
+  let bodies := sourceTelescope source .body
+  let ownBinder := fun (occurrence : MarkerOccurrence) =>
+    !(isTheorem && occurrence.site.root == .body) &&
+    occurrence.binder == some occurrence.annotation.binder
+  let named := occurrences.filter ownBinder
+  let mut genuine := #[]
+  let mut copies := #[]
+  for occurrence in occurrences do
+    let counterpart := Id.run do
+      unless occurrence.binder.isSome && occurrence.isLambda && occurrence.site.root == .body &&
+          !isTheorem do
+        return false
+      let some index := bodies.findIdx? (·.1 == occurrence.site) | return false
+      let some (typeSite, _) := types[index]? | return false
+      return named.any fun original =>
+        original.site == typeSite && original.annotation == occurrence.annotation
+    if ownBinder occurrence || counterpart then genuine := genuine.push occurrence
+    else copies := copies.push occurrence
+  for copy in copies do
+    if let some original := genuine.find? (·.annotation.key == copy.annotation.key) then
+      if copy.annotation != original.annotation then
+        throw (.conflictingAnnotation source.name copy.site)
+  return (genuine, copies)
+
 /-- Recover the explicit source records from elaborated binder-domain markers.
-Repeated copies of a marker outside binder domains can arise during type
-inference. They must agree with the original annotation; they do not annotate
-another binder. A duplicated or renamed binder origin is unsupported. -/
+Copies of a marker, inside or outside binder domains, arise during
+elaboration; see `classifyMarkers`. A duplicated binder origin is unsupported. -/
 def SourceContract.fromAnnotations (source : Lean.ConstantInfo) :
     Except SourceContractError SourceContract := do
   if let .recInfo info := source then
     if info.rules.any (exprHasSourceAnnotations ·.rhs) then
       throw (.annotatedRecursorRule source.name)
-  let acc ← collectAnnotations source.name .type source.type [] {}
-  let acc ← match sourceBody? source with
-    | some body => collectAnnotations source.name .body body [] acc
-    | none => pure acc
+  let (genuine, _) ← classifyMarkers source (← sourceMarkerOccurrences source)
   let mut origins : Std.HashSet (SourceRoot × Nat) := {}
   let mut binders := #[]
-  for (site, annotation) in acc.binders do
+  for occurrence in genuine do
+    let site := occurrence.site
+    let annotation := occurrence.annotation
     let key := (site.root, annotation.origin)
     if origins.contains key then throw (.duplicateAnnotation source.name site.root annotation.origin)
     origins := origins.insert key
     let isArrow := match sourceAtSite? source site with | some (.forallE ..) => true | _ => false
     if !isArrow && annotation.result.isSome then
-      let copiedFromType := site.root == .body && acc.binders.any fun (other, original) =>
-        other.root == .type && original == annotation
+      let copiedFromType := site.root == .body && genuine.any fun original =>
+        original.site.root == .type && original.annotation == annotation
       unless copiedFromType do throw (.resultOnNonArrow source.name site)
     binders := binders.push {
       site, uses := annotation.uses, value := annotation.value
       result := if isArrow then annotation.result else none, letKind := annotation.letKind }
-  for (site, marker) in acc.markers do
-    let some (_, annotation) := acc.binders.find? fun (binderSite, annotation) =>
-        binderSite.root == site.root && annotation.origin == marker.origin
-      | throw (.misplacedAnnotation source.name site)
-    if marker != annotation then throw (.conflictingAnnotation source.name site)
   -- Lean retains binder-domain metadata in the declaration type while erasing
   -- it from generated lambdas. Expand that one header to both occurrences,
   -- requiring an unchanged direct telescope; do not infer a rewrite mapping.
@@ -228,6 +277,25 @@ def SourceContract.fromAnnotations (source : Lean.ConstantInfo) :
         if !binders.any (·.site == bodySite) then
           binders := binders.push { annotation with site := bodySite, result := none }
   return { source, binders }
+
+/-- Copies are ignored only because some declaration keeps the original. A
+declaration command and the auxiliary definitions it generates must therefore
+keep a binder site for every marker written in that command (source offsets in
+`[start, stop)`); otherwise a contract the user wrote would disappear. -/
+def checkAnnotationsSurvive (declaration : Lean.Name) (sources : Array Lean.ConstantInfo)
+    (start stop : Nat) : Except SourceContractError Unit := do
+  let mut written : Array (Nat × Lean.Name) := #[]
+  let mut kept : Std.HashSet (Nat × Lean.Name) := {}
+  for source in sources do
+    let occurrences ← sourceMarkerOccurrences source
+    let (genuine, _) ← classifyMarkers source occurrences
+    for occurrence in genuine do kept := kept.insert occurrence.annotation.key
+    for occurrence in occurrences do
+      let key := occurrence.annotation.key
+      if start ≤ key.1 && key.1 < stop && !written.contains key then written := written.push key
+  for (origin, binder) in written do
+    unless kept.contains (origin, binder) do
+      throw (.lostAnnotation declaration origin binder)
 
 /-- Check direct declaration telescope correspondence. This is a structural
 preflight, not inference of nested function types or proof of resource validity.

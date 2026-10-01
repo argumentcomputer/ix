@@ -189,6 +189,9 @@ inductive SourceContractError where
   | missingAnnotation (declaration : Lean.Name) (site : BinderSite)
   | conflictingAnnotation (declaration : Lean.Name) (site : BinderSite)
   | missingContract (declaration : Lean.Name)
+  /-- A marker written in a declaration survives only as copies, with no
+  binder site in the declaration or its auxiliary definitions. -/
+  | lostAnnotation (declaration : Lean.Name) (origin : Nat) (binder : Lean.Name)
   | duplicateMeasure (name : Lean.Name)
   | zeroFixedStep (name : Lean.Name)
   deriving BEq, Repr
