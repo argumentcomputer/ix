@@ -350,7 +350,7 @@ structure Allocation where
 /-- Phase 2 on the phase-1 table `order1` with entries `entries1` and roots
 `roots1`: the first tier, then the pinned order, unless the guard keeps the
 phase-1 order. The final order is checked to place every body reference
-before its user. -/
+before its user and to be a permutation of the phase-1 table. -/
 def allocate (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array Nat)
     (order1 : Array Nat) (entries1 roots1 : Array Ixon.Expr) :
     Except SharingError Allocation := do
@@ -362,9 +362,11 @@ def allocate (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array N
   let (tier, slotStates) ← firstTier order1 weight deps (min 8 order1.size) limits
   let rest := stored.filter (!tier.contains ·)
   let order2 := pinnedOrder dag deg tier ++ kahnOrder weight deps rest
-  let kept := refCost layout weight order2 > refCost layout weight order1
+  let kept : Bool := refCost layout weight order2 > refCost layout weight order1
   let order := if kept then order1 else order2
   checkInternal (respectsDeps order deps) "the allocated order places a body reference after its user"
+  checkInternal ((order.toList.mergeSort (· ≤ ·)).toArray == stored)
+    "the allocated order is not a permutation of the phase-1 table"
   return { tier, slotStates, order, kept, refCost1 := refCost layout weight order1,
            refCostFinal := refCost layout weight order }
 

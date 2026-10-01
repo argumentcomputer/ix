@@ -33,6 +33,8 @@ import Ix.Compile.Verify.UniformChecks
 import Ix.Compile.Verify.UniformFinal
 import Ix.Compile.Verify.UniformSearch
 import Ix.Compile.Verify.UniformOptimality
+import Ix.Compile.Verify.TieredSelect
+import Ix.Compile.Verify.TieredTier
 
 /-!
 # Public compiler-verification frontier

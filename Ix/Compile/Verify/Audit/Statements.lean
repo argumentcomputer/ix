@@ -452,6 +452,22 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.UniformModel.precL_union,
     standardAxioms := noChoice },
   { root := ``Ix.Compile.Verify.UniformModel.bestSetOf_spec,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.canonicalTiered_select,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.tieredAtWidth_parts,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.tierClosures_spec,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.tierDfs_spec,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.firstTier_spec,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.allocate_spec,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.tierWeights_spec,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.tierDeps_spec,
     standardAxioms := standard }
 ]
 
