@@ -64,6 +64,7 @@
 mod cost;
 mod dag;
 mod dict;
+mod par;
 mod roots;
 mod search;
 mod tiered;
@@ -95,6 +96,7 @@ pub use tiered::{
   first_tier, layout_bytes, normalize_constant_bytes_tiered,
   normalize_constant_sharing_tiered,
   normalize_constant_sharing_tiered_at_width,
+  normalize_constant_sharing_tiered_par,
   normalize_constant_sharing_tiered_with, tagn_width,
 };
 pub use uniform::{
@@ -144,6 +146,48 @@ pub struct ExactSharingLimits {
   /// component (the reference) instead of the reclassifying branch and
   /// bound. The result must not change.
   pub uniform_subset_search: bool,
+}
+
+/// Thread budgets for the tiered construction inside one constant (Rust
+/// only; [`normalize_constant_sharing_tiered_par`]). A budget is the number of
+/// tasks a level is split into on the current rayon pool; 0 and 1 run that
+/// level sequentially, and [`Parallelism::SEQUENTIAL`] is the reference path
+/// of every other entry point. Every budget gives byte-identical output.
+///
+/// * `widths`: the three phase-1 widths of the best of three run as separate
+///   tasks, each under its own meter (as in the sequential path), and are
+///   compared afterwards by the same rule. An error at any width fails the
+///   call with the error of the lowest failing width, as sequentially.
+/// * `components`: the uncertain components of phase 1 are searched as
+///   separate tasks and their tables combined in component order. Each
+///   component counts its `states_created` and `work` on a meter of its own;
+///   the counts are then added to the call's meter in component order,
+///   checking `states_created` and then `work` after each component. The
+///   totals equal the sequential ones and a call fails if and only if the
+///   sequential call fails, but when both counters reach their limits within
+///   the same component the reported resource can differ from the sequential
+///   path's (which reports whichever was reached first).
+/// * `materialize`: phase 3 materializes the entries (each under the entries
+///   before it) and the roots as separate tasks; their work is charged in
+///   entry order afterwards, so counters, errors and output equal the
+///   sequential path's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Parallelism {
+  pub widths: usize,
+  pub components: usize,
+  pub materialize: usize,
+}
+
+impl Parallelism {
+  /// Every level sequential (the reference).
+  pub const SEQUENTIAL: Parallelism =
+    Parallelism { widths: 1, components: 1, materialize: 1 };
+}
+
+impl Default for Parallelism {
+  fn default() -> Self {
+    Self::SEQUENTIAL
+  }
 }
 
 impl Default for ExactSharingLimits {
@@ -292,11 +336,24 @@ impl std::error::Error for SharingError {}
 pub(crate) struct Meter<'l> {
   limits: &'l ExactSharingLimits,
   pub(crate) stats: ExactSharingStats,
+  /// Thread budgets of the tiered construction (sequential by default).
+  pub(crate) parallel: Parallelism,
 }
 
 impl<'l> Meter<'l> {
   pub(crate) fn new(limits: &'l ExactSharingLimits) -> Self {
-    Meter { limits, stats: ExactSharingStats::default() }
+    Meter {
+      limits,
+      stats: ExactSharingStats::default(),
+      parallel: Parallelism::SEQUENTIAL,
+    }
+  }
+
+  pub(crate) fn with_parallelism(
+    limits: &'l ExactSharingLimits,
+    parallel: Parallelism,
+  ) -> Self {
+    Meter { parallel, ..Meter::new(limits) }
   }
 
   pub(crate) fn limits(&self) -> &'l ExactSharingLimits {
@@ -384,6 +441,20 @@ impl<'l> Meter<'l> {
       ));
     }
     Ok(())
+  }
+
+  /// Add the `states_created` and `work` counted on another meter (one
+  /// parallel task), checking `states_created` and then `work`.
+  pub(crate) fn absorb(
+    &mut self,
+    other: &ExactSharingStats,
+  ) -> Result<(), SharingError> {
+    self.stats.states_created =
+      self.stats.states_created.saturating_add(other.states_created);
+    if self.stats.states_created > self.limits.max_states {
+      return Err(Self::exhausted(Resource::States, self.limits.max_states));
+    }
+    self.work(other.work)
   }
 
   pub(crate) fn output(&mut self, len: u64) -> Result<(), SharingError> {

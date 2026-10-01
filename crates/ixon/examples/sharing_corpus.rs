@@ -42,9 +42,11 @@ use ix_common::address::Address;
 use ixon::Env;
 use ixon::constant::{Constant, ConstantInfo};
 use ixon::sharing_exact::{
-  ExactSharingLimits, Phase1Choice, ShareLayout, SharingDag, SharingError,
-  candidate_terms, constant_fixed_len, constant_len, layout_bytes,
-  normalize_constant_sharing_tiered, normalize_constant_sharing_tiered_with,
+  ExactSharingLimits, Parallelism, Phase1Choice, ShareLayout, SharingDag,
+  SharingError, TieredSharingResult, candidate_terms, constant_fixed_len,
+  constant_len, layout_bytes, normalize_constant_sharing_tiered,
+  normalize_constant_sharing_tiered_par,
+  normalize_constant_sharing_tiered_with,
 };
 use rayon::prelude::*;
 
@@ -58,6 +60,8 @@ struct Args {
   select_stride: usize,
   select_min_cand: usize,
   width_experiment: bool,
+  parallel: Parallelism,
+  check_sequential: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -72,6 +76,8 @@ fn parse_args() -> Result<Args, String> {
     select_stride: 50,
     select_min_cand: 2000,
     width_experiment: false,
+    parallel: Parallelism::SEQUENTIAL,
+    check_sequential: false,
   };
   let num = |v: Option<String>| -> Result<usize, String> {
     v.ok_or("missing value")?.parse::<usize>().map_err(|e| e.to_string())
@@ -92,6 +98,10 @@ fn parse_args() -> Result<Args, String> {
       "--select-stride" => a.select_stride = num(it.next())?,
       "--select-min-cand" => a.select_min_cand = num(it.next())?,
       "--width-experiment" => a.width_experiment = true,
+      "--par-widths" => a.parallel.widths = num(it.next())?,
+      "--par-components" => a.parallel.components = num(it.next())?,
+      "--par-materialize" => a.parallel.materialize = num(it.next())?,
+      "--check-sequential" => a.check_sequential = true,
       p if !p.starts_with("--") && a.path.is_empty() => a.path = p.to_string(),
       other => return Err(format!("unknown argument {other}")),
     }
@@ -123,6 +133,8 @@ struct Row {
   max_comp: u64,
   comps: u64,
   slot_states: u64,
+  /// `--check-sequential`: how the sequential reference compares.
+  seq_check: &'static str,
   uniform_states: u64,
   ms: f64,
 }
@@ -157,6 +169,8 @@ fn process(
   mut bytes: &[u8],
   layout: ShareLayout,
   limits: &ExactSharingLimits,
+  par: Parallelism,
+  check_sequential: bool,
 ) -> Row {
   let mut row =
     Row { idx, addr: addr.hex(), raw: bytes.len() as u64, ..Row::default() };
@@ -175,8 +189,16 @@ fn process(
     row.cand = candidate_terms(&dag).len() as u64;
   }
   let start = Instant::now();
-  let r = normalize_constant_sharing_tiered(layout, &c, limits);
+  let r = normalize_constant_sharing_tiered_par(layout, &c, limits, par);
   row.ms = start.elapsed().as_secs_f64() * 1e3;
+  if check_sequential {
+    let s = normalize_constant_sharing_tiered(
+      layout,
+      &c,
+      &ExactSharingLimits::default(),
+    );
+    row.seq_check = compare_sequential(&r, &s);
+  }
   match r {
     Ok((out, res)) => {
       row.status = "ok".into();
@@ -202,6 +224,33 @@ fn process(
     Err(e) => row.status = format!("error: {e}"),
   }
   row
+}
+
+type Normalized = Result<(Constant, TieredSharingResult), SharingError>;
+
+/// How a run compares with the sequential reference (`--check-sequential`).
+fn compare_sequential(p: &Normalized, s: &Normalized) -> &'static str {
+  match (p, s) {
+    (Ok((pc, pr)), Ok((sc, sr))) => {
+      let (mut a, mut b) = (Vec::new(), Vec::new());
+      pc.put(&mut a);
+      sc.put(&mut b);
+      if a != b {
+        "bytes differ"
+      } else if pr != sr {
+        "result differs"
+      } else {
+        "same"
+      }
+    },
+    (Err(e), Err(f)) if e == f => "same error",
+    (
+      Err(SharingError::ResourceExhausted(_)),
+      Err(SharingError::ResourceExhausted(_)),
+    ) => "both exhausted, other resource",
+    (Err(_), Err(_)) => "errors differ",
+    _ => "outcome differs",
+  }
 }
 
 fn signed(x: u64) -> i64 {
@@ -310,6 +359,8 @@ fn main() -> Result<(), String> {
         &mmap[c.offset..c.offset + c.len],
         args.layout,
         &limits,
+        args.parallel,
+        args.check_sequential,
       );
       let d = done.fetch_add(1, Ordering::Relaxed) + 1;
       if d.is_multiple_of(50_000) {
@@ -403,6 +454,26 @@ fn main() -> Result<(), String> {
     *by_status.entry(r.status.as_str()).or_default() += 1;
   }
   println!("- failures by status: {by_status:?}");
+  if args.check_sequential {
+    let mut by_check: BTreeMap<&str, usize> = BTreeMap::new();
+    for r in &rows {
+      *by_check.entry(r.seq_check).or_default() += 1;
+    }
+    println!(
+      "- sequential check (parallel {:?} vs the sequential reference): {by_check:?}",
+      args.parallel
+    );
+    for (r, a) in rows.iter().zip(&consts) {
+      if r.seq_check != "same" && r.seq_check != "same error" {
+        println!(
+          "  - {}: {} ({})",
+          r.seq_check,
+          name_of(&r.addr, &a.addr),
+          &r.addr[..16]
+        );
+      }
+    }
+  }
   for (r, a) in &failed {
     println!(
       "  - FAILED {} ({}): {}; N {}, cand {}, raw {} B, {:.0} ms",

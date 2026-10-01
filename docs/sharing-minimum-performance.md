@@ -79,7 +79,8 @@ join, cites both.
   - The machine was shared, so these timings are indicative.
 - **Lean/Rust parity:**
   - Best of three: identical bytes for all 56,622 Init constants under both layouts [D7].
-    The Mathlib sample under the best of three [D8] was still running when this was committed.
+    The Mathlib-sample run under the best of three [D8] was aborted without a result: it used the
+    phase-2 order that §12.14 replaces.
   - K-based (superseded): 0 byte disagreements on all of Init, on a 20,263-constant Mathlib sample, and
     on half of Mathlib (339,749 constants) [D1]–[D6].
   - Every one-sided exhaustion was Lean's, and every one gave Rust's bytes once its limit was raised.
@@ -132,7 +133,7 @@ Terms used in the table:
 | [D5] | differential, the Lean-only constants of [D2]/[D4] | `3ddda798` | new | `$S/w2/lo_s{0..3}.log`, `lo_init.log` |
 | [D6] | differential, K-based, Mathlib, all constants in 6 address shards; 3 shards (339,749 constants) completed | `3ddda798` | new | `$S/w2/p4/lf_s{0,3,4}.log` (and the empty `lf_s{1,2,5}.log`) |
 | [D7] | differential, **best of three**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `a80c16cf` | new | `$S/w2/p4/b3_init_s{0..5}.log` |
-| [D8] | differential, **best of three**, Mathlib sample, tiered-TagN and tiered-Tag4, 4 processes | `a80c16cf` | new | `$S/w2/p4/b3_ml_s{0..3}.log` |
+| [D8] | differential, **best of three**, Mathlib sample, tiered-TagN and tiered-Tag4, 4 processes; aborted, no tallies | `a80c16cf` | new | `$S/w2/p4/b3_ml_s{0..3}.log` |
 
 Notes on the sources:
 
@@ -394,7 +395,8 @@ limit types).
   - 200 exhaustions on both sides (101 tiered-TagN, 99 uniform-w2).
 - **K-based, half of Mathlib at `3ddda798`:** no exhaustion on either side in 339,749 constants [D6].
 - **Best of three** (Lean `3eb09b9c`, Rust `a80c16cf`, default limits): no exhaustion on either side
-  for any of the 56,622 Init constants under either layout [D7]. The Mathlib sample run [D8] had not finished when this was committed.
+  for any of the 56,622 Init constants under either layout [D7]. The Mathlib sample run [D8] was stopped after 2 h 5 min, before it had written any tally (its output is
+  buffered); see [Lean/Rust parity](#leanrust-parity).
 
 ## Wall time and memory
 
@@ -608,7 +610,7 @@ How the differential counts:
 | 350 generated inputs × modes | `a80c16cf` | | 2,398 | 0 | 0 | 0 | 0 | [D7] |
 | Init, all | `a80c16cf` | tiered-TagN | **56,622** | 0 | 0 | 0 | **0** | [D7] |
 | | | tiered-Tag4 | **56,622** | 0 | 0 | 0 | **0** | [D7] |
-| Mathlib sample | `a80c16cf` | tiered-TagN, tiered-Tag4 | still running when this was committed | | | | | [D8] |
+| Mathlib sample | `a80c16cf` | tiered-TagN, tiered-Tag4 | aborted, no tallies | | | | | [D8] |
 
 **K-based (superseded):**
 
@@ -631,6 +633,11 @@ How the differential counts:
 - **One-sided exhaustions.** After `diagnose` raised the limit that fired, every Lean-only exhaustion in
   every run gave bytes equal to Rust's [D0] [D3] [D4]. With `maxMaterializeWork` (`3ddda798` onwards)
   there were none in [D5]–[D7].
+- **The aborted run [D8].** The best-of-three Mathlib-sample differential was stopped at the coordinator's
+  request after 2 h 5 min, at 07:23 on 2026-10-01. It used the phase-2 order that §12.14 replaces, so the
+  Kahn-order rerun would supersede it, and the CPU was needed by other worktrees' builds. Each
+  process buffers its output until the end, so no tally was written. Each log ends with GNU `time`'s "Command terminated by signal 15", an
+  elapsed time of 2:04:51–2:04:57 and the wrapper's `exit=143`.
 - **The half-corpus run [D6].** The constants were split round-robin into 6 address shards, one process
   each. Three processes ended without writing anything beyond the build warnings and without the
   wrapper's exit line; the cause is unexplained. The other three covered 113,249 + 113,250 + 113,250
@@ -845,8 +852,8 @@ on any constant of either corpus under either layout.
 - **Best of three, beyond the byte totals.**
   - The Rust byte figures come from the experiment hook, which runs the same three candidates that the
     canonical path (`a80c16cf`) compares. No full-corpus run of the canonical runner mode was repeated.
-  - Lean/Rust parity under the best of three covers Init [D7] and the Mathlib sample [D8], not all of
-    Mathlib.
+  - Lean/Rust parity under the best of three covers Init only [D7]; the Mathlib-sample run [D8] was
+    aborted.
   - The phase statistics above are for one phase-1 run (the K-based width). Per-width search statistics
     (states, components) were not recorded.
 - **The coming phase-2 order change** [P §12.14] is not measured here. The outlier will be re-measured
@@ -3032,6 +3039,46 @@ exit=0
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 22:45.38
 	Maximum resident set size (kbytes): 824832
 exit=0
+```
+
+</details>
+
+<details><summary>[D8] Mathlib sample, best of three, tiered-TagN and tiered-Tag4 (a80c16cf), aborted</summary>
+
+`p4/b3_ml_s0.log`
+
+```text
+Command terminated by signal 15
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:04:57
+	Maximum resident set size (kbytes): 4731672
+exit=143
+```
+
+`p4/b3_ml_s1.log`
+
+```text
+Command terminated by signal 15
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:04:55
+	Maximum resident set size (kbytes): 4722932
+exit=143
+```
+
+`p4/b3_ml_s2.log`
+
+```text
+Command terminated by signal 15
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:04:53
+	Maximum resident set size (kbytes): 4730560
+exit=143
+```
+
+`p4/b3_ml_s3.log`
+
+```text
+Command terminated by signal 15
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:04:51
+	Maximum resident set size (kbytes): 4723700
+exit=143
 ```
 
 </details>
