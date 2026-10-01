@@ -20,10 +20,13 @@ This module is the certified gate's manifest. It fails elaboration when
   extension of each accepted declaration); Lean's compiler separately
   guarantees that no axiom sits in a computational position, since the
   entry points compile;
-* the import closure of `Ix.Kernel` leaves the allowlisted module prefixes;
+* the import closure of `Ix.Kernel` leaves the allowlisted module prefixes,
+  or the elaboration-time closure below the ruled `meta import`s leaves
+  `elaborationImports.allowed`;
 * the compiled code of the public operations reaches an `@[extern]`,
-  `implemented_by`, `unsafe`, or `csimp` replacement outside Lean's own
-  runtime modules;
+  `implemented_by`, `unsafe`, or `csimp` replacement, or a `partial`
+  definition, outside Lean's own runtime modules, unless `runtimeRulings`
+  names it;
 * the statement of a public theorem changes, since the expected `#check`
   output is frozen below.
 
@@ -51,7 +54,12 @@ structure facts (900 → 920 functions), with the same replacements. B1
 `applyTypedWC`, `fitArg`, `Witness.advance`; 1543 → 1560 functions, ingress
 1519 → 1536, on the spine-form reduction) and projection iota at non-Prop
 fields without endpoint inference (`applyNever`; 1560 → 1563, ingress
-1536 → 1540), with the same replacements. -/
+1536 → 1540), with the same replacements. L0 of the con-leche port
+(2026-09-30) adds the ruled allowlists below as data (`runtimeRulings`,
+`elaborationImports`, `ConLeche` in `importAllowlist`) and makes the runtime
+audit see `partial` definitions and `csimp` replacements by their compiled
+form; no `ConLeche` module is in this tree yet, and no frozen count
+changed. -/
 
 open Lean
 
@@ -98,12 +106,52 @@ through it is accepted, and the axiom guards below record where. Measured after
 the K0 import trim, the closure of `Ix.Kernel` had 690 modules, all under `Init`
 except the kernel's own and `Ix.Address.Core`. K3 also checks the pure Ixon
 types independently. No `Lean` or `Batteries` module, nothing else under `Ix`,
-and no `Blake3`, `LSpec`, `Cli`, or `lean4lean` module may enter. -/
+and no `Blake3`, `LSpec`, `Cli`, or `lean4lean` module may enter. `ConLeche`
+is the ported con-leche subtree (plan v4, D4), which the Ix boundary imports
+from L5; `Lean` enters it only at elaboration time (`elaborationImports`). -/
 def importAllowlist : Array Name :=
-  #[`Init, `Std, `Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types]
+  #[`Init, `Std, `Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types, `ConLeche]
+
+/-- Con-leche's elaboration-time imports (plan v4, "Audits"):
+`ConLeche/Kernel/BasisGen.lean` (`public meta import Lean`) splices the
+annotated basis and pins; `ConLeche/Kernel/NatOpPins.lean` meta-imports
+`ConLeche.PinGen.Dump` (which imports `Lean`) for the committed Nat-op pin
+dump, the transitional JSON exception that L4 removes; and the `PinGen`
+generators meta-import `ConLeche.Kernel.Expr` and each other. Below these
+edges only Lean core, `Lean`, and `ConLeche` may appear. -/
+def elaborationImports : ElaborationImports where
+  importers := #[`ConLeche.Kernel.BasisGen, `ConLeche.Kernel.NatOpPins, `ConLeche.PinGen]
+  allowed := #[`Init, `Std, `Lean, `ConLeche]
 
 /-- Modules whose execution replacements are inherited Lean runtime. -/
 def runtimeAllowlist : Array Name := #[`Init, `Std]
+
+/-- The ruled exceptions to the runtime audit (plan v4, "Audits"; roadmap
+section 2, "Execution boundary"). Each names exactly what it admits:
+* R-meta: the `@[computed_field]` overrides of con-leche's `Level`
+  (`hashData`), `Expr` (`data`) and `Name` (`hashData`), and of Ix's `AExpr`
+  (B2: `looseBound`, `structHash`);
+* project `@[csimp]` replacements in `ConLeche` and `Ix.Kernel`, each only
+  with a theorem on the standard axioms;
+* R-ptr: `withPtrEq`, `withPtrAddr`, their `unsafe` implementations, and
+  the pointer reads under them; and `isExclusiveUnsafe`, the reference-count
+  read behind `withExclusive` (all `Init`, so already inherited);
+* `ConLeche.withExclusive`, `implemented_by` `ConLeche.withExclusiveUnsafe`,
+  whose type carries the obligation `k true = k false`;
+* elaboration-time `meta` code in `BasisGen`, `NatOpPins`, and `PinGen`
+  (`unsafe evalTerm` wrappers paired by `implemented_by`), which compiled
+  non-`meta` code cannot call;
+* `partial` definitions of the in-model generator,
+  `ConLeche/Frontend/InModel*` (L4). -/
+def runtimeRulings : RuntimeRulings where
+  computedFieldTypes := #[`ConLeche.Level, `ConLeche.Expr, `ConLeche.Name, ``Ix.Kernel.Model.AExpr]
+  csimpModules := #[`ConLeche, `Ix.Kernel]
+  primitives := #[``withPtrEq, ``withPtrEqUnsafe, ``withPtrEqDecEq, ``withPtrAddr,
+    ``withPtrAddrUnsafe, ``ptrEq, ``ptrAddrUnsafe, ``isExclusiveUnsafe]
+  implementations := #[(`ConLeche.withExclusive, `ConLeche.withExclusiveUnsafe)]
+  elaborationModules := #[`ConLeche.Kernel.BasisGen, `ConLeche.Kernel.NatOpPins,
+    `ConLeche.PinGen, `ConLeche.PinGen.Certs, `ConLeche.PinGen.Dump, `ConLeche.PinGen.Prelude]
+  partialModules := #[`ConLeche.Frontend.InModel, `ConLeche.Frontend.InModelDump]
 
 end Ix.Kernel.Audit
 
@@ -156,30 +204,36 @@ end Ix.Kernel.Audit
 /-! ## Import and runtime closures -/
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Audit.importAllowlist
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports
 
 -- `Std` is admitted; the compiler frontend and third-party libraries are not.
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Std.Data.TreeMap
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Lean.Elab.Command
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Batteries.Data.RBMap
+-- `ConLeche` is admitted; `Lean` only below the ruled elaboration-time imports.
+#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `ConLeche.Kernel.Core
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Lean.Elab.Term
+#guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.elaborationImports.allowed `Lean.Elab.Term
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.elaborationImports.importers `ConLeche.Kernel.Core
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.elaborationImports.allowed `Ix.Tc
 
 /-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
 Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 1563 compiled functions; inherited externs 32,
 implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
 Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 1540 compiled functions;
 inherited externs 45, implemented_by 0, unsafe 3, csimp 0 -/
 #guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Egress.readRecords, Ix.Kernel.Egress.writeRecords,
 Ix.Kernel.Egress.writeExpr, Ix.Kernel.Egress.writeProjection]: 221 compiled functions;
 inherited externs 26, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.egressOperations Ix.Kernel.Audit.runtimeAllowlist
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.egressOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-! ## Frozen statements -/
 
