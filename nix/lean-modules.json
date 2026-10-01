@@ -1815,6 +1815,21 @@
    ["Compilatrix.Rt.Layout",
     "Compilatrix.Lir.Semantics",
     "Compilatrix.Src.Prim"]},
+  "Compilatrix.Rt.Proof.Term":
+  {"path": "Compilatrix/Rt/Proof/Term.lean",
+   "imports": ["Compilatrix.Rt.Proof.SwitchSim"]},
+  "Compilatrix.Rt.Proof.SwitchTag":
+  {"path": "Compilatrix/Rt/Proof/SwitchTag.lean",
+   "imports": ["Compilatrix.Rt.Proof.Switch"]},
+  "Compilatrix.Rt.Proof.SwitchSim":
+  {"path": "Compilatrix/Rt/Proof/SwitchSim.lean",
+   "imports": ["Compilatrix.Rt.Proof.SwitchLink"]},
+  "Compilatrix.Rt.Proof.SwitchLink":
+  {"path": "Compilatrix/Rt/Proof/SwitchLink.lean",
+   "imports": ["Compilatrix.Rt.Proof.SwitchTag"]},
+  "Compilatrix.Rt.Proof.Switch":
+  {"path": "Compilatrix/Rt/Proof/Switch.lean",
+   "imports": ["Compilatrix.Rt.Proof.Chain"]},
   "Compilatrix.Rt.Proof.Procs":
   {"path": "Compilatrix/Rt/Proof/Procs.lean",
    "imports":
@@ -1865,6 +1880,9 @@
   "Compilatrix.Rt.Proof.Env":
   {"path": "Compilatrix/Rt/Proof/Env.lean",
    "imports": ["Compilatrix.Rt.Proof.Heap", "Compilatrix.Rt.Proof.Chunk"]},
+  "Compilatrix.Rt.Proof.Edge":
+  {"path": "Compilatrix/Rt/Proof/Edge.lean",
+   "imports": ["Compilatrix.Rt.Proof.Instr"]},
   "Compilatrix.Rt.Proof.Chunk":
   {"path": "Compilatrix/Rt/Proof/Chunk.lean",
    "imports":
@@ -1874,6 +1892,9 @@
   "Compilatrix.Rt.Proof.Check":
   {"path": "Compilatrix/Rt/Proof/Check.lean",
    "imports": ["Compilatrix.Rt.Proof.Ops"]},
+  "Compilatrix.Rt.Proof.Chain":
+  {"path": "Compilatrix/Rt/Proof/Chain.lean",
+   "imports": ["Compilatrix.Rt.Proof.Edge"]},
   "Compilatrix.Rt.Proof.Alloc":
   {"path": "Compilatrix/Rt/Proof/Alloc.lean",
    "imports": ["Compilatrix.Rt.Proof.Heap"]},
@@ -3234,6 +3255,13 @@
     "Compilatrix.Rt.Proof.OpsProj",
     "Compilatrix.Rt.Proof.OpsCall",
     "Compilatrix.Rt.Proof.Instr",
+    "Compilatrix.Rt.Proof.Edge",
+    "Compilatrix.Rt.Proof.Chain",
+    "Compilatrix.Rt.Proof.Switch",
+    "Compilatrix.Rt.Proof.SwitchTag",
+    "Compilatrix.Rt.Proof.SwitchLink",
+    "Compilatrix.Rt.Proof.SwitchSim",
+    "Compilatrix.Rt.Proof.Term",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",

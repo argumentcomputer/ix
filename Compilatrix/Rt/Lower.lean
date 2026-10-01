@@ -483,57 +483,103 @@ def KeyKind.isNat : KeyKind → Bool
   | .zero | .succ => true
   | _ => false
 
+/-- An alternative's key kind and lowered edge. -/
+def switchAlt (f : FunId) (T : Tables) (src : Nat) (ke : Key.CtorKey × Cfg.Edge) : M (KeyKind × PEdge) := do
+  let some kind := keyKind T ke.1 | throw (.switch f src "a key outside the constructor table")
+  pure (kind, ← edge f src ke.2)
+
+/-- Whether a lowered alternative has the zero key. -/
+def isZero : KeyKind × PEdge → Bool
+  | (.zero, _) => true
+  | _ => false
+
+/-- The first alternative of a `Nat` switch with the zero key. -/
+def zeroEdge (es : List (KeyKind × PEdge)) : Option PEdge := (es.find? isZero).map (·.2)
+
+/-- Whether a lowered alternative has the successor key. -/
+def isSucc : KeyKind × PEdge → Bool
+  | (.succ, _) => true
+  | _ => false
+
+/-- The first alternative of a `Nat` switch with the successor key. -/
+def succEdge (es : List (KeyKind × PEdge)) : Option PEdge := (es.find? isSucc).map (·.2)
+
+/-- A switch on `Nat` keys: one zero test. -/
+def natSwitch (x : VReg) (es : List (KeyKind × PEdge)) (dd : Option PEdge) : M Unit :=
+  match zeroEdge es, succEdge es, dd with
+  | some ez, some es, _ => close (.br .eq (.v x) (.imm 1) ez es)
+  | some ez, none, some ed => close (.br .eq (.v x) (.imm 1) ez ed)
+  | none, some es, some ed => close (.br .eq (.v x) (.imm 1) ed es)
+  | some e, none, none | none, some e, none | none, none, some e => close (.jump e)
+  | none, none, none => close .trap
+
+/-- The test on a field-less constructor's word. -/
+def immTest : KeyKind × PEdge → Option (Lir.Arg × PEdge)
+  | (.imm w, e) => some (Lir.Arg.imm w, e)
+  | _ => none
+
+/-- The tests on field-less constructors' words. -/
+def immTests (es : List (KeyKind × PEdge)) : List (Lir.Arg × PEdge) := es.filterMap immTest
+
+/-- The test on a cell's tag. -/
+def cellTest : KeyKind × PEdge → Option (Lir.Arg × PEdge)
+  | (.cell t, e) => some (Lir.Arg.imm (UInt64.ofNat t), e)
+  | _ => none
+
+/-- The tests on cells' tags. -/
+def cellTests (es : List (KeyKind × PEdge)) : List (Lir.Arg × PEdge) := es.filterMap cellTest
+
+/-- A cell's tag, loaded into a fresh register. -/
+def loadTag (x : VReg) : M Lir.Arg := temp (.load .w16 .zero (mem x tagOffset))
+
+/-- A switch on other keys: a chain on words, a chain on loaded tags, or
+the low bit first and both. -/
+def tagSwitch (x : VReg) (es : List (KeyKind × PEdge)) (dd : Option PEdge) : M Unit :=
+  match cellTests es, immTests es, dd with
+  | [], imms, dd => chainOr (.v x) imms dd
+  | cells, [], none => do chainOr (← loadTag x) cells none
+  | cells, imms, dd => do
+    -- the low bit first: an even word is a cell
+    let p ← newLabel
+    let i ← newLabel
+    close (.br .tz (.v x) (.imm 1) (loc p) (loc i))
+    openAt p
+    chainOr (← loadTag x) cells dd
+    openAt i
+    chainOr (.v x) imms dd
+
 def switch (f : FunId) (T : Tables) (src : Nat) (x : VReg) (alts : List (Key.CtorKey × Cfg.Edge))
     (d : Option Cfg.Edge) : M Unit := do
-  let es ← alts.mapM fun (k, e) => do
-    let some kind := keyKind T k | throw (.switch f src "a key outside the constructor table")
-    pure (kind, ← edge f src e)
+  let es ← alts.mapM (switchAlt f T src)
   let dd ← d.mapM (edge f src)
   let nats := es.filter (·.1.isNat)
   if !nats.isEmpty then
     unless nats.length == es.length do throw (.switch f src "Nat keys mixed with other keys")
-    let z := (es.find? fun (k, _) => match k with | .zero => true | _ => false).map (·.2)
-    let s := (es.find? fun (k, _) => match k with | .succ => true | _ => false).map (·.2)
-    match z, s, dd with
-    | some ez, some es, _ => close (.br .eq (.v x) (.imm 1) ez es)
-    | some ez, none, some ed => close (.br .eq (.v x) (.imm 1) ez ed)
-    | none, some es, some ed => close (.br .eq (.v x) (.imm 1) ed es)
-    | some e, none, none | none, some e, none | none, none, some e => close (.jump e)
-    | none, none, none => close .trap
-  else
-    let imms := es.filterMap fun (k, e) => match k with
-      | .imm w => some (Lir.Arg.imm w, e)
-      | _ => none
-    let cells := es.filterMap fun (k, e) => match k with
-      | .cell t => some (Lir.Arg.imm (UInt64.ofNat t), e)
-      | _ => none
-    let loadTag : M Lir.Arg := temp (.load .w16 .zero (mem x tagOffset))
-    match cells, imms, dd with
-    | [], _, _ => chainOr (.v x) imms dd
-    | _, [], none => do chainOr (← loadTag) cells none
-    | _, _, _ =>
-      -- the low bit first: an even word is a cell
-      let p ← newLabel
-      let i ← newLabel
-      close (.br .tz (.v x) (.imm 1) (loc p) (loc i))
-      openAt p
-      chainOr (← loadTag) cells dd
-      openAt i
-      chainOr (.v x) imms dd
+    natSwitch x es dd
+  else tagSwitch x es dd
 
-/-- A switch on the `Bool` a comparison just produced, as the branch. -/
-def fusedSwitch (f : FunId) (T : Tables) (src : Nat) (c : Lir.Cond) (a b : Lir.Arg)
-    (alts : List (Key.CtorKey × Cfg.Edge)) (d : Option Cfg.Edge) : M Unit := do
-  let pick := fun (k : Option Key.CtorKey) =>
-    match (alts.find? fun (k', _) => k == some k').map (·.2) with
-    | some e => some e
-    | none => d
-  let te ← (pick T.known.boolTrue).mapM (edge f src)
-  let fe ← (pick T.known.boolFalse).mapM (edge f src)
+/-- The edge a `switch` on `Bool` takes for the key `k`: its first
+alternative, else the default. -/
+def boolEdge (alts : List (Key.CtorKey × Cfg.Edge)) (d : Option Cfg.Edge) (k : Option Key.CtorKey) :
+    Option Cfg.Edge :=
+  match (alts.find? fun (k', _) => k == some k').map (·.2) with
+  | some e => some e
+  | none => d
+
+/-- Close a fused switch's block with its branch on the two lowered
+edges. -/
+def fusedClose (c : Lir.Cond) (a b : Lir.Arg) (te fe : Option PEdge) : M Unit :=
   match te, fe with
   | some t, some e => close (.br c a b t e)
   | some t, none | none, some t => close (.jump t)
   | none, none => close .trap
+
+/-- A switch on the `Bool` a comparison just produced, as the branch. -/
+def fusedSwitch (f : FunId) (T : Tables) (src : Nat) (c : Lir.Cond) (a b : Lir.Arg)
+    (alts : List (Key.CtorKey × Cfg.Edge)) (d : Option Cfg.Edge) : M Unit := do
+  let te ← (boolEdge alts d T.known.boolTrue).mapM (edge f src)
+  let fe ← (boolEdge alts d T.known.boolFalse).mapM (edge f src)
+  fusedClose c a b te fe
 
 def term (f : FunId) (T : Tables) (src : Nat) : Cfg.Term → M Unit
   | .jump e => do close (.jump (← edge f src e))
@@ -567,21 +613,27 @@ def fusable (T : Tables) (uses : Src.NatMap Nat) (b : Cfg.Block) :
     | none => none
   | _, _ => none
 
+/-- A fused block's end: the comparison's operands, then the branch. -/
+def fusedEnd (f : FunId) (T : Tables) (src : Nat) (b : Cfg.Block) (c : Lir.Cond) (a a' : Fir.Arg) : M Unit := do
+  match ← operands f [a, a'] with
+  | some [a, a'] =>
+    match b.term with
+    | .switch _ alts d => fusedSwitch f T src c a a' alts d
+    | t => term f T src t
+  | _ => close (.fail .natOverflow)
+
+/-- A Cfg block's code, in the open block. -/
+def blockCode (f : FunId) (T : Tables) (uses : Src.NatMap Nat) (src : Nat) (b : Cfg.Block) : M Unit :=
+  match fusable T uses b with
+  | some (init, c, a, a') => do if ← instrs f T init then fusedEnd f T src b c a a'
+  | none => do if ← instrs f T b.body then term f T src b.term
+
 /-- A Cfg block's chunk (from label 0; `entry`: it is the function's entry,
 whose parameters are the function's). -/
 def block (f : FunId) (T : Tables) (uses : Src.NatMap Nat) (src : Nat) (entry : Bool)
     (b : Cfg.Block) : M Unit := do
   openAt 0 (if entry then [] else b.params.map (·.1))
-  match fusable T uses b with
-  | some (init, c, a, a') =>
-    if ← instrs f T init then
-      match ← operands f [a, a'] with
-      | some [a, a'] =>
-        match b.term with
-        | .switch _ alts d => fusedSwitch f T src c a a' alts d
-        | t => term f T src t
-      | _ => close (.fail .natOverflow)
-  | none => if ← instrs f T b.body then term f T src b.term
+  blockCode f T uses src b
 
 /-- The chunk's blocks in label order. -/
 def chunkBlocks (f : FunId) (st : St) : Except Error (List PBlock) :=
@@ -649,16 +701,27 @@ def reach (succ : Src.NatMap (List Label)) : Nat → List Label → Src.NatSet �
       (fun (s, acc) t => if s.contains t then (s, acc) else (s.insert t, t :: acc)) (seen, [])
     reach succ fuel (new ++ ls) seen
 
-/-- Drop the blocks no path from the entry reaches, keeping the order of the
-rest (so forward edges stay forward and back edges backward). -/
-def prune (blocks : List Lir.Block) : List Lir.Block :=
-  let n := blocks.length
+/-- The labels reached from label 0. -/
+def reachable (blocks : List Lir.Block) : Src.NatSet :=
   let succ : Src.NatMap (List Label) := Src.NatMap.ofDense (blocks.map (·.term.succs))
-  let seen := reach succ (n + 1) [0] (Src.NatSet.ofList [0])
+  reach succ (blocks.length + 1) [0] (Src.NatSet.ofList [0])
+
+/-- Every successor of a reached block is reached: what `prune` needs of
+`seen` (`function` checks it rather than relying on `reach`'s step
+bound). -/
+def reachClosed (blocks : List Lir.Block) (seen : Src.NatSet) : Bool :=
+  blocks.zipIdx.all fun (b, l) => !seen.contains l || b.term.succs.all seen.contains
+
+/-- Keep the blocks in `seen`, in order, renumbering the edges. -/
+def pruneWith (seen : Src.NatSet) (blocks : List Lir.Block) : List Lir.Block :=
   let kept := blocks.zipIdx.filter fun (_, l) => seen.contains l
   let rank : Src.NatMap Label := Src.NatMap.ofList (kept.zipIdx.map fun ((_, l), r) => (l, r))
   kept.map fun (b, _) =>
     { b with term := b.term.setEdges (b.term.edges.map fun e => { e with target := rank.getD e.target 0 }) }
+
+/-- Drop the blocks no path from the entry reaches, keeping the order of the
+rest (so forward edges stay forward and back edges backward). -/
+def prune (blocks : List Lir.Block) : List Lir.Block := pruneWith (reachable blocks) blocks
 
 /-! ## Functions -/
 
@@ -670,7 +733,9 @@ order (every block, lowered or not: Cfg's step bound needs them all). -/
 def misordered (fd : Cfg.Fun) : Option Nat :=
   (fd.blocks.zipIdx.find? fun (b, i) => !(b.term.edges.all fun e => e.back == decide (e.target ≤ i))).map (·.2)
 
-def function (T : Tables) (f : FunId) (fd : Cfg.Fun) (conv : Lir.Conv) : Except Error Lir.Func := do
+/-- A function's parameters and its blocks before pruning: the fresh entry
+block (if block 0 has predecessors), then each Cfg block's chunk. -/
+def functionRaw (T : Tables) (f : FunId) (fd : Cfg.Fun) : Except Error (List VReg × List Lir.Block) := do
   let some b0 := fd.blocks.head? | throw (.missingBlock f 0)
   if let some b := misordered fd then throw (.edgeOrder f b)
   -- no edge enters block 0: it is the Lir entry itself
@@ -686,9 +751,14 @@ def function (T : Tables) (f : FunId) (fd : Cfg.Fun) (conv : Lir.Conv) : Except 
   let body ← resolveChunks f starts cs.zipIdx
   let entry : List Lir.Block :=
     if merged then [] else [{ term := .jump { target := starts.getD 0 1, args := params.map .v } }]
-  let blocks := prune (entry ++ body)
+  pure (params, entry ++ body)
+
+def function (T : Tables) (f : FunId) (fd : Cfg.Fun) (conv : Lir.Conv) : Except Error Lir.Func := do
+  let (params, raw) ← functionRaw T f fd
+  let seen := reachable raw
+  unless reachClosed raw seen do throw (.internal f "a reached block has an unreached successor")
   pure (Lir.Func.splitCriticalEdges
-    { name := s!"f{f}", params, results := 1, blocks := blocks.toArray, conv })
+    { name := s!"f{f}", params, results := 1, blocks := (pruneWith seen raw).toArray, conv })
 
 /-- A root's symbol: `cx_` and its name, with characters outside
 `[A-Za-z0-9_]` replaced by `_` (and `init`, `cx_init`'s, renamed). -/

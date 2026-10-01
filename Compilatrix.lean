@@ -227,6 +227,13 @@ import Compilatrix.Rt.Proof.OpsAlloc
 import Compilatrix.Rt.Proof.OpsProj
 import Compilatrix.Rt.Proof.OpsCall
 import Compilatrix.Rt.Proof.Instr
+import Compilatrix.Rt.Proof.Edge
+import Compilatrix.Rt.Proof.Chain
+import Compilatrix.Rt.Proof.Switch
+import Compilatrix.Rt.Proof.SwitchTag
+import Compilatrix.Rt.Proof.SwitchLink
+import Compilatrix.Rt.Proof.SwitchSim
+import Compilatrix.Rt.Proof.Term
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine
