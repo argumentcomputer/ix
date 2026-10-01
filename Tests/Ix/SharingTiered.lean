@@ -174,6 +174,55 @@ def tierBruteTests (_ : Unit) : TestSeq :=
       (err.isNone && checked == 300) ++
     (match err with | some m => test m false | none => .done)
 
+/-- Reference Kahn priority order: repeatedly the remaining term whose
+dependencies in `rest` are all placed, of the largest weight, then the
+smallest ID. -/
+def kahnRef (weight : Nat → Nat) (deps : Nat → List Nat) (rest : Array Nat) : Array Nat :=
+  Id.run do
+  let mut out : Array Nat := #[]
+  let mut remaining := rest.toList
+  for _ in [0:rest.size] do
+    let ready := remaining.filter fun t =>
+      (deps t).all fun d => !rest.contains d || out.contains d
+    match ready.foldl (fun acc t => match acc with
+        | none => some t
+        | some a => if tierOrder weight t a && t != a then some t else acc) none with
+    | none => break
+    | some t =>
+      out := out.push t
+      remaining := remaining.erase t
+  return out
+
+def kahnTests (_ : Unit) : TestSeq :=
+  let (checked, err) := runGen 91 do
+    let mut checked := 0
+    let mut err : Option String := none
+    for i in [0:300] do
+      if err.isSome then break
+      let n := 1 + (← rand 30)
+      let mut weight : Array Nat := #[]
+      let mut deps : Array (List Nat) := #[]
+      let mut rest : Array Nat := #[]
+      for t in [0:n] do
+        weight := weight.push (1 + (← rand 5))
+        let mut ds : List Nat := []
+        for u in [0:t] do
+          if (← rand 5) == 0 then ds := u :: ds
+        -- occasional repeated references
+        if (← rand 4) == 0 then if let some d := ds.head? then ds := d :: ds
+        deps := deps.push ds
+        if (← rand 4) != 0 then rest := rest.push t
+      let got := kahnOrder (weight[·]!) (deps[·]!) rest
+      let want := kahnRef (weight[·]!) (deps[·]!) rest
+      checked := checked + 1
+      unless got == want do
+        err := some s!"case {i}: weights={weight} deps={deps} rest={rest} kahn={got} reference={want}"
+    return (checked, err)
+  group "Kahn priority order" <|
+    test s!"{checked} random dependency DAGs (≤ 30 terms, weights 1–5, repeated references, dependencies outside the set): kahnOrder = the reference order"
+      (err.isNone && checked == 300) ++
+    (match err with | some m => test m false | none => .done)
+
 def layoutTests (_ : Unit) : TestSeq :=
   test "TagN widths: 1 below 8, 2 below 1032, 3 below 66568, 5 below 66568+2^32, then 9"
     ([7, 8, 1031, 1032, 66567, 66568, 66568 + 2 ^ 32 - 1, 66568 + 2 ^ 32].map ShareLayout.tagN.widthAt ==
@@ -189,6 +238,7 @@ public def suite : List TestSeq := [
   deferred "tiered fixtures" fixtureTests,
   deferred "tiered allocation" allocationTests,
   deferred "first-tier brute force" tierBruteTests,
+  deferred "Kahn priority order" kahnTests,
 ]
 
 end Tests.SharingTiered
