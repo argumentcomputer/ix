@@ -788,6 +788,78 @@ size.
 - **The `deEnv` cross-check was run on Init only.** On Mathlib the scanner is checked by
   the byte-sum and per-entry framing checks.
 
+## ExprMeta arena structure follow-up (for a later PR)
+
+This section measures the ExprMeta arenas, the largest non-constant part of the file:
+how far child references reach, and how much repeats within an arena. It covers every
+arena, primary and `original`, of Init and Mathlib, with the `--meta` scanner (code in
+`arenaStudy` / `arenaReport`). An arena stores its nodes bottom-up, and a child field is
+the `Tag0` of the child's absolute index within the arena.
+
+### Method
+
+- **(1) Child deltas.** For every child slot of App, Binder, LetBinder, Prj and Mdata
+  nodes, the harness histograms `parent index − child index`. It also prices each child
+  field two ways:
+  - today: `Tag0` of the absolute index;
+  - as a backward delta with TagN-byte widths: 1 byte below 128, 2 below 16,512, 3 below
+    82,048, 5 below that + 2^32, 9 beyond.
+
+  Call-site metadata references are excluded, as requested.
+- **(2) Duplication.** Each arena is hash-consed bottom-up on (kind, payload, canonical
+  child IDs):
+  - payload is the name address and binder info, the `mdata` stack, or the call-site
+    shape;
+  - a node is a *duplicate* when its canonical ID already occurred in the same arena;
+  - a *maximal duplicate subtree* is rooted at a duplicate node that no duplicate node
+    references, and contains the duplicate nodes reachable from it through duplicates.
+- **(3) App-only figures:** the App slots of (1); the App nodes of (2); and maximal
+  duplicate subtrees rooted at an App.
+- **Checks:**
+  - no child points forward or to itself, in either corpus;
+  - arena node bytes equal the per-kind arena bytes reported above;
+  - the maximal duplicate subtrees cover exactly the duplicate nodes;
+  - an independent recount, comparing full subtree strings on every arena of at most
+    256 nodes, agrees with the hash-consing count on **52,699 / 52,699** Init arenas and
+    **539,729 / 539,729** Mathlib arenas checked (15,296 and 253,665 larger arenas were
+    not recounted).
+
+### Results
+
+| | Init | Mathlib |
+|---|---:|---:|
+| arenas / nodes | 67,995 / 16,335,501 | 793,394 / 272,299,746 |
+| node bytes (% of file) | 82,945,079 (42.45%) | 1,435,189,339 (42.93%) |
+| child references studied | 28,914,135 | 481,089,260 |
+| … to the immediately preceding node (Δ = 1) | 12,044,879 (41.66%) | 206,104,585 (42.84%) |
+| child-field bytes today | 57,823,309 | 1,009,893,689 |
+| as TagN-byte backward deltas | 36,922,863 | 618,324,166 |
+| **change (% of file)** | **−20,900,446 (−10.70%)** | **−391,569,523 (−11.71%)** |
+| … App slots only | −19,784,967 (−10.13%) | −371,878,062 (−11.12%) |
+| duplicate nodes (within an arena) | 7,348,183 (45.0% of nodes) | 133,235,031 (48.9% of nodes) |
+| **bytes in duplicate nodes (% of file)** | **37,063,057 (18.97%)** | **708,442,761 (21.19%)** |
+| maximal duplicate subtrees | 1,490,676 | 17,821,128 |
+| App nodes / App duplicates | 13,192,988 / 6,610,293 | 221,528,194 / 119,976,692 |
+| bytes in duplicate App nodes | 34,390,613 (17.60%) | 662,307,925 (19.81%) |
+| maximal duplicate subtrees rooted at an App (bytes) | 1,293,632 (31,940,216; 16.35%) | 14,629,275 (633,508,953; 18.95%) |
+
+- **Slot details:**
+  - The App function slot has the most Δ = 1 children: 125,476,650 of 221,528,194 in
+    Mathlib. It also has the largest delta saving: −251.7 MB, 7.53% of the file.
+  - The Binder type slot is the only one where deltas cost more than today: +474,077
+    bytes in Mathlib.
+  - Per-slot histograms and the subtree-size histogram are in the generated fragments.
+
+### Not measured
+
+- **Combined effect.** The two measures are not additive. Removing duplicates renumbers
+  the arena, which changes every delta. Neither measure includes the cost of
+  redirecting references (roots, call-site entries) to a surviving duplicate.
+- **Other arena fields:** `Tag0` child fields of call-site nodes, name indices and node
+  tags were not repriced.
+- **Duplication across arenas** (between constants) and between primary and `original`
+  arenas of the same constant.
+
 ## Verification of the harness
 
 - **Production rebuild: 0 mismatches out of 56,622.** For every constant, the harness
@@ -940,6 +1012,18 @@ nix develop --command bash -c "lake exe sharing-study $S/init.ixe --meta --meta-
 nix develop --command bash -c "lake exe sharing-study $S/mathlib.ixe --meta \
     --progress 200000 --md $S/w3-meta-mathlib.md"
 #   -> exit 0; 203 s end to end, peak RSS 4.75 GB; an earlier identical run gave the same output
+```
+
+With the arena measurements (rerun after commit `f95bea09`; these are the outputs below):
+
+```text
+nix develop --command bash -c "lake exe sharing-study $S/init.ixe --meta --meta-crosscheck \
+    --progress 0 --md $S/w3-meta2-init.md"
+#   -> exit 0; 43 s end to end, peak RSS 2.26 GB
+nix develop --command bash -c "lake exe sharing-study $S/mathlib.ixe --meta \
+    --progress 200000 --md $S/w3-meta2-mathlib.md"
+#   -> exit 0; 529 s end to end, peak RSS 4.74 GB; identical to a run without the
+#      independent recount apart from the scan time and the recount line
 ```
 
 ---
@@ -1778,7 +1862,7 @@ Metadata study output (`--meta`) for Init, unedited:
 
 ## Metadata study: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe`
 
-- File: 195387870 bytes; blobs 26836; anonymous constants 56622; names 344786; Named entries 66621 (2000 with `original`); comms 0. Scan time 18290 ms.
+- File: 195387870 bytes; blobs 26836; anonymous constants 56622; names 344786; Named entries 66621 (2000 with `original`); comms 0. Scan time 32875 ms.
 - Byte categories sum to 195387870 bytes: **equal to the file size**.
 - Cross-check against a full `Ixon.deEnv` load: named 66621 vs 66621, blobs 26836 vs 26836, constants 56622 vs 56622, non-empty metaSharing 0 vs 0, metaSharing entries 0 vs 0, metaSharing expression bytes (`serExpr`) 0 vs 0, metaRefs 0 vs 0, metaUnivs 2363 vs 2363, entries with `original` 2000 vs 2000, original metaSharing entries 0 vs 0: **all equal**.
 
@@ -1837,13 +1921,48 @@ ExprMeta arena by node kind (primary metadata; `original` metadata in the last t
 | primary `ConstantMeta` | 0 | 0 | 0 (0.00% of file) | 0 | 0 | 0 | 0 | 0 | 0 (0 B) | 0 | 0 |
 | `Named.original` | 0 | 0 | 0 (0.00% of file) | 0 | 0 | 0 | 0 | 0 | 0 (0 B) | 0 | 0 |
 
+### ExprMeta arena structure: child deltas and duplication
+
+- Arenas: 67995 (2000 of them in `original` metadata); nodes 16335501; node bytes 82945079 (42.45% of the file; the per-arena count prefixes are not included). Children that do not point strictly backward (any slot): 0.
+- Node bytes equal the per-kind arena bytes above (82945079): **yes**.
+
+Child deltas (parent index − child index) per child slot, and the child-field bytes today (`Tag0` of the absolute index) and as backward deltas with TagN-byte widths:
+
+| slot | children | Δ = 1 | 2–7 | 8–127 | 128–1023 | 1024–16383 | ≥ 16384 | not backward | bytes today | delta bytes | change | change, % of file |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| App function | 13192988 | 6716161 | 2198301 | 2233893 | 1297239 | 692238 | 55156 | 0 | 28639979 | 15292289 | -13347690 | −6.83% |
+| App argument | 13192988 | 4137489 | 505150 | 3261280 | 3520080 | 1647312 | 121677 | 0 | 25039972 | 18602695 | -6437277 | −3.29% |
+| Binder type | 1225695 | 30202 | 111850 | 654997 | 328127 | 98743 | 1776 | 0 | 1739233 | 1656053 | -83180 | −0.04% |
+| Binder body | 1225695 | 1128360 | 8574 | 43903 | 32571 | 12223 | 64 | 0 | 2245843 | 1270616 | -975227 | −0.50% |
+| Let type | 19459 | 45 | 857 | 6473 | 9437 | 2423 | 224 | 0 | 33938 | 31766 | -2172 | −0.00% |
+| Let value | 19459 | 504 | 654 | 8468 | 8396 | 1354 | 83 | 0 | 38599 | 29374 | -9225 | −0.00% |
+| Let body | 19459 | 18276 | 128 | 465 | 430 | 160 | 0 | 0 | 48176 | 20049 | -28127 | −0.01% |
+| Prj child | 5942 | 3182 | 347 | 1287 | 1002 | 124 | 0 | 0 | 10907 | 7068 | -3839 | −0.00% |
+| Mdata child | 12450 | 10660 | 343 | 944 | 451 | 52 | 0 | 0 | 26662 | 12953 | -13709 | −0.01% |
+| **all slots** | 28914135 | 12044879 | 2826204 | 6211710 | 5197733 | 2454629 | 178980 | 0 | 57823309 | 36922863 | -20900446 | −10.70% |
+| App slots only | 26385976 | 10853650 | 2703451 | 5495173 | 4817319 | 2339550 | 176833 | 0 | 53679951 | 33894984 | -19784967 | −10.13% |
+
+- Children that are exactly the immediately preceding node (Δ = 1): 12044879 of 28914135 (41.66%); App children: 10853650 of 26385976.
+
+Duplication within each arena (bottom-up hash-consing on kind, payload and canonical child IDs; a duplicate is a node whose canonical ID occurred earlier in the same arena):
+
+| nodes | total | duplicates | duplicate bytes | % of file | maximal duplicate subtrees | duplicate nodes in them | bytes in them | % of file |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| all kinds | 16335501 | 7348183 | 37063057 | 18.97% | 1490676 | 7348183 | 37063057 | 18.97% |
+| App nodes (subtrees rooted at an App) | 13192988 | 6610293 | 34390613 | 17.60% | 1293632 | 6319823 | 31940216 | 16.35% |
+
+- Distinct nodes per arena summed: 8987318 of 16335501 (55.02%); distinct App nodes: 6582695 of 13192988.
+- Maximal duplicate subtree sizes (duplicate nodes): 1: 570319, 2–7: 751744, 8–63: 158973, 64–1023: 9590, ≥ 1024: 50.
+- Independent check on arenas of at most 256 nodes (duplicates recounted by comparing full subtree strings): agree for 52699 arenas, **differ for 0**; 15296 arenas not checked (more than 256 nodes, or a subtree string over 100,000 characters).
+- Split: primary arenas 16179975 nodes, 7294537 duplicates (36903588 B); `original` arenas 155526 nodes, 53646 duplicates (159469 B).
+
 ---
 
 Metadata study output (`--meta`) for Mathlib, unedited:
 
 ## Metadata study: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe`
 
-- File: 3343271273 bytes; blobs 341233; anonymous constants 679499; names 4811656; Named entries 778344 (22265 with `original`); comms 0. Scan time 181501 ms.
+- File: 3343271273 bytes; blobs 341233; anonymous constants 679499; names 4811656; Named entries 778344 (22265 with `original`); comms 0. Scan time 520978 ms.
 - Byte categories sum to 3343271273 bytes: **equal to the file size**.
 
 | component | bytes | % of file |
@@ -1911,3 +2030,38 @@ ExprMeta arena by node kind (primary metadata; `original` metadata in the last t
 |---|---:|---:|---|---:|---:|---:|---:|---:|---|---:|---:|
 | primary `ConstantMeta` | 7 | 524 | 42929 (0.00% of file) | 42929 | 5495 | 203 | 14599 | 2586 | 412 (34613 B) | 288 | 0 |
 | `Named.original` | 0 | 0 | 0 (0.00% of file) | 0 | 0 | 0 | 0 | 0 | 0 (0 B) | 0 | 0 |
+
+### ExprMeta arena structure: child deltas and duplication
+
+- Arenas: 793394 (22265 of them in `original` metadata); nodes 272299746; node bytes 1435189339 (42.93% of the file; the per-arena count prefixes are not included). Children that do not point strictly backward (any slot): 0.
+- Node bytes equal the per-kind arena bytes above (1435189339): **yes**.
+
+Child deltas (parent index − child index) per child slot, and the child-field bytes today (`Tag0` of the absolute index) and as backward deltas with TagN-byte widths:
+
+| slot | children | Δ = 1 | 2–7 | 8–127 | 128–1023 | 1024–16383 | ≥ 16384 | not backward | bytes today | delta bytes | change | change, % of file |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| App function | 221528194 | 125476650 | 32455208 | 33541131 | 18672878 | 10680790 | 701537 | 0 | 504120517 | 252407009 | -251713508 | −7.53% |
+| App argument | 221528194 | 62949362 | 9202542 | 55524334 | 61885626 | 30072227 | 1894103 | 0 | 437767740 | 317603186 | -120164554 | −3.59% |
+| Binder type | 18460184 | 307946 | 1064520 | 8141823 | 7195535 | 1700678 | 49682 | 0 | 26989432 | 27463509 | 474077 | +0.01% |
+| Binder body | 18460184 | 16933583 | 124523 | 655804 | 537254 | 201706 | 7314 | 0 | 38310222 | 19214547 | -19095675 | −0.57% |
+| Let type | 314160 | 315 | 2942 | 45287 | 164730 | 95088 | 5798 | 0 | 684256 | 585939 | -98317 | −0.00% |
+| Let value | 314160 | 8016 | 6416 | 75713 | 148902 | 71919 | 3194 | 0 | 762502 | 541527 | -220975 | −0.01% |
+| Let body | 314160 | 299268 | 1244 | 5213 | 5065 | 3285 | 85 | 0 | 869164 | 322680 | -546484 | −0.02% |
+| Prj child | 56054 | 27687 | 3901 | 14249 | 8206 | 1984 | 27 | 0 | 103251 | 66298 | -36953 | −0.00% |
+| Mdata child | 113970 | 101758 | 937 | 5843 | 4104 | 1276 | 52 | 0 | 286605 | 119471 | -167134 | −0.00% |
+| **all slots** | 481089260 | 206104585 | 42862233 | 98009397 | 88622300 | 42828953 | 2661792 | 0 | 1009893689 | 618324166 | -391569523 | −11.71% |
+| App slots only | 443056388 | 188426012 | 41657750 | 89065465 | 80558504 | 40753017 | 2595640 | 0 | 941888257 | 570010195 | -371878062 | −11.12% |
+
+- Children that are exactly the immediately preceding node (Δ = 1): 206104585 of 481089260 (42.84%); App children: 188426012 of 443056388.
+
+Duplication within each arena (bottom-up hash-consing on kind, payload and canonical child IDs; a duplicate is a node whose canonical ID occurred earlier in the same arena):
+
+| nodes | total | duplicates | duplicate bytes | % of file | maximal duplicate subtrees | duplicate nodes in them | bytes in them | % of file |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| all kinds | 272299746 | 133235031 | 708442761 | 21.19% | 17821128 | 133235031 | 708442761 | 21.19% |
+| App nodes (subtrees rooted at an App) | 221528194 | 119976692 | 662307925 | 19.81% | 14629275 | 118532355 | 633508953 | 18.95% |
+
+- Distinct nodes per arena summed: 139064715 of 272299746 (51.07%); distinct App nodes: 101551502 of 221528194.
+- Maximal duplicate subtree sizes (duplicate nodes): 1: 5968305, 2–7: 8635747, 8–63: 2931610, 64–1023: 283802, ≥ 1024: 1664.
+- Independent check on arenas of at most 256 nodes (duplicates recounted by comparing full subtree strings): agree for 539729 arenas, **differ for 0**; 253665 arenas not checked (more than 256 nodes, or a subtree string over 100,000 characters).
+- Split: primary arenas 268738069 nodes, 131681330 duplicates (701777859 B); `original` arenas 3561677 nodes, 1553701 duplicates (6664902 B).
