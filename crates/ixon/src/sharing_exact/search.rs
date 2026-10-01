@@ -512,7 +512,7 @@ type StateKey = Vec<(TermId, u8)>;
 /// How a Share at table index `k` is priced.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum WidthModel {
-  /// The real Tag4 width of index `k`.
+  /// The real TagN width of index `k`.
   Ixon,
   /// Every Share costs `w` bytes (the uniform-width cost model).
   Uniform(u8),

@@ -234,7 +234,7 @@ def widthsOfIndex (index : Array (Option Nat)) : Array (Option Nat) :=
   index.map (·.map shareWidth)
 
 /-- Tag4 header bytes from the production encoder. -/
-def tag4Bytes (flag : UInt8) (n : Nat) : ByteArray := runPut (putTag4 ⟨flag, n.toUInt64⟩)
+def tag4Bytes (flag : UInt8) (n : Nat) : ByteArray := runPut (putTagN 4 flag n.toUInt64)
 
 /-- The internal-cut options of a telescope node: follow the `below` links
 through the available spine descendants (at most `fuel`), adding a cut for
@@ -265,7 +265,7 @@ def Prep.options (p : Prep) (ev : DictEval) (index : Array (Option Nat))
     | none => #[]
   if p.family[t]! == .none then
     let c := node.children.foldl (fun acc c => acc + ev.cost[c]!) node.head.ownBytes
-    opts.push (.inline, c, runPut (putTag4 ⟨node.head.flag, node.head.tag4Field⟩))
+    opts.push (.inline, c, runPut (putTagN 4 node.head.flag node.head.tag4Field))
   else
     let l := p.spineLen[t]!
     let s := ev.sides[t]!

@@ -1,6 +1,6 @@
 /-
   Tests for the tiered canonical construction (`Ix.Sharing.Exact.Tiered`):
-  §2 fixtures under both layouts, inputs where slot allocation changes the
+  §2 fixtures under the wire layout (TagN), inputs where slot allocation changes the
   order, the "never longer than phase 1" guarantee, idempotence, and a brute
   force for the first-tier allocation.
 -/
@@ -17,7 +17,7 @@ set_option compiler.extract_closed false
 
 namespace Tests.SharingTiered
 
-def layouts : List ShareLayout := [.tag4, .tagN]
+def layouts : List ShareLayout := [.tagN]
 
 /-- The pinned width selection: three candidates (w = 1, 2, 3), the result is
 the first one with the fewest final layout bytes. -/
@@ -109,13 +109,13 @@ def allocationTests (_ : Unit) : TestSeq :=
           unless r.stats.phase3LayoutBytes ≤ r.stats.phase1LayoutBytes &&
               r.stats.finalRefCost ≤ r.stats.phase1RefCost && fixedOk && idem &&
               selectionOk r && nominalOk &&
-              (l != .tag4 || r.result.modelBytes == r.result.variableBytes) do
+              (l != ShareLayout.wire || r.result.modelBytes == r.result.variableBytes) do
             err := some s!"case {i} {reprStr l}: phase1={r.stats.phase1LayoutBytes} final={r.stats.phase3LayoutBytes} refcost {r.stats.phase1RefCost}->{r.stats.finalRefCost} fixed={fixedOk} idem={idem} selection={selectionOk r} {r.stats.candidateLengths} nominal={nominalOk}"
         | .error e, _ | _, .error e => err := some s!"case {i} {reprStr l}: error {reprStr e}"
     return (checked, changed, saved, beatNominal, err)
   group "slot allocation and re-materialization" <|
-    test s!"{checked} runs (120 inputs × 2 layouts): final ≤ phase 1 in layout bytes and in reference cost; serialized = fixed + variable; Tag4 price = serialized; idempotent; the fewest bytes over w = 1, 2, 3 (lower w at a tie), never longer than the nominal-width candidate ({changed} runs where allocation lowered the reference cost, {saved} with positive savings, {beatNominal} shorter than the nominal width)"
-      (err.isNone && checked == 240 && changed > 0) ++
+    test s!"{checked} runs (120 inputs, TagN layout): final ≤ phase 1 in layout bytes and in reference cost; serialized = fixed + variable; wire price = serialized; idempotent; the fewest bytes over w = 1, 2, 3 (lower w at a tie), never longer than the nominal-width candidate ({changed} runs where allocation lowered the reference cost, {saved} with positive savings, {beatNominal} shorter than the nominal width)"
+      (err.isNone && checked == 120 && changed > 0) ++
     (match err with | some m => test m false | none => .done)
 
 /-- Brute force over all subsets: dependency-closed, at most `cap` terms,
@@ -179,10 +179,10 @@ def layoutTests (_ : Unit) : TestSeq :=
     ([7, 8, 1031, 1032, 66567, 66568, 66568 + 2 ^ 32 - 1, 66568 + 2 ^ 32].map ShareLayout.tagN.widthAt ==
       [1, 2, 2, 3, 3, 5, 5, 9] &&
       tagNRung2End == 1032 && tagNRung3End == 66568 && tagNRung4End == 66568 + 2 ^ 32) ++
-  test "uniform width by candidate count: tag4 1/2/3 at 8/256/257, tagN 2 up to 1032"
-    (ShareLayout.tag4.uniformWidth 8 == 1 && ShareLayout.tag4.uniformWidth 256 == 2 &&
-      ShareLayout.tag4.uniformWidth 257 == 3 && ShareLayout.tagN.uniformWidth 1032 == 2 &&
-      ShareLayout.tagN.uniformWidth 1033 == 3)
+  test "uniform width by candidate count: 1 up to 8, 2 up to 1032, then 3"
+    (ShareLayout.tagN.uniformWidth 8 == 1 && ShareLayout.tagN.uniformWidth 9 == 2 &&
+      ShareLayout.tagN.uniformWidth 1032 == 2 && ShareLayout.tagN.uniformWidth 1033 == 3) ++
+  test "the wire layout is TagN" (ShareLayout.wire == .tagN)
 
 public def suite : List TestSeq := [
   deferred "tiered layouts" layoutTests,

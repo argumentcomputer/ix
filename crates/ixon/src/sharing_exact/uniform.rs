@@ -4,7 +4,7 @@
 //! the rules below are pinned by that implementation.
 //!
 //! Cost model: every `Share` costs exactly `w >= 1` bytes regardless of its
-//! index; the table count is an exact Tag0; telescopes and every other byte
+//! index; the table count is an exact TagN; telescopes and every other byte
 //! are as written by `put_expr`. The model length of a stored set `S` is
 //! `tag0(|S|) + sum_{t in S} inl_S(t) + sum_roots C_S(r)`, where `inl_S(t)`
 //! is `t`'s cost with an inline top. Order does not affect it: in any order
@@ -38,8 +38,9 @@
 //!   Visible counts `(d, h)` for a maybe-stored set `M` (the candidates):
 //!   one per root occurrence plus, per edge from `z` (head edges only for
 //!   `h`), 1 if `z` is in `M`, else `min(d(z), 2^20)`.
-//!   Threshold: `theta = 1` when `tag0(#candidates) = tag0(#terms with
-//!   g >= 2)`, else `theta = 2`.
+//!   Threshold: with `theta_max = 1 + tag0_step_bound(#candidates)` (2 below
+//!   82048 candidates), `theta = 1` when `tag0(#candidates) = tag0(#terms
+//!   with g >= theta_max)`, else `theta = theta_max`.
 //! * UNCERTAIN: the other candidates; LOW-DEGREE: the other terms.
 //!
 //! Certain-stored terms cost exactly `w` wherever they occur (`g >= 1`
@@ -53,7 +54,7 @@
 //! search returns, per chosen count, its best change within `slack =
 //! tag0(|certain-stored| + |uncertain|) - tag0(|certain-stored|)` of its
 //! optimum. The table-count prefix is the only coupling: when the combined
-//! choice reaches a Tag0 bracket of 128 or more entries, a knapsack over
+//! choice reaches a TagN bracket of 128 or more entries, a knapsack over
 //! components checks the lower brackets.
 //!
 //! The component search is W1's reclassifying branch and bound. At each node
@@ -98,6 +99,7 @@ use super::{
 };
 use crate::constant::Constant;
 use crate::expr::Expr;
+use crate::tag::TagN;
 
 fn internal(msg: impl Into<String>) -> SharingError {
   SharingError::Internal(msg.into())
@@ -155,7 +157,7 @@ pub struct UniformSharingResult {
   pub components: Vec<Vec<TermId>>,
   /// Component subsets evaluated.
   pub states_visited: u64,
-  /// Whether the table-count knapsack chose a lower Tag0 bracket.
+  /// Whether the table-count knapsack chose a lower TagN bracket.
   pub lower_bracket: bool,
   pub stats: ExactSharingStats,
 }
@@ -1302,14 +1304,32 @@ impl SCtx<'_, '_> {
 // Order and driver
 // ---------------------------------------------------------------------------
 
-/// First count with the same Tag0 width as `k`.
+/// First count with the same TagN (f = 0) width as `k` (`tag0_len`): the
+/// start of `k`'s rung. Mirrors Lean `tag0BracketStart`.
 fn tag0_bracket_start(k: u64) -> u64 {
-  if k < 128 {
+  if k < TagN::end1(0) {
     0
-  } else if k < 256 {
-    128
+  } else if k < TagN::end2(0) {
+    TagN::end1(0)
+  } else if k < TagN::end3(0) {
+    TagN::end2(0)
+  } else if k < TagN::end4(0) {
+    TagN::end3(0)
   } else {
-    1u64 << (8 * (super::cost::byte_count(k) - 1))
+    TagN::end4(0)
+  }
+}
+
+/// An upper bound on `tag0_len(k + 1) - tag0_len(k)` for every `k < n`: the
+/// TagN (f = 0) width grows by one byte at 128 and 16512, by two at 82048
+/// and by four at 4295049344. Mirrors Lean `tag0StepBound`.
+fn tag0_step_bound(n: u64) -> u64 {
+  if n < TagN::end3(0) {
+    1
+  } else if n < TagN::end4(0) {
+    2
+  } else {
+    4
   }
 }
 
@@ -1418,13 +1438,18 @@ pub(crate) fn optimize_uniform(
     }
     Ok(cls)
   };
-  // theta = 2 always holds; 1 when every minimum lies in one count bracket.
-  let cls2 = classify(2)?;
-  let n_cs2 =
-    len64(cls2.iter().filter(|&&c| c == UniformClass::CertainStored).count());
+  // theta = 1 + tag0_step_bound(#candidates) always holds (one more entry
+  // grows the table count by at most that many bytes; 2 below 82048
+  // candidates); 1 when every minimum lies in one count bracket.
   let n_cand = len64(cand.iter().filter(|&&c| c).count());
-  let theta: i128 = if tag0_len(n_cand) == tag0_len(n_cs2) { 1 } else { 2 };
-  let cls = if theta == 1 { classify(1)? } else { cls2 };
+  let theta_max = i128::from(tag0_step_bound(n_cand)) + 1;
+  let cls_max = classify(theta_max)?;
+  let n_cs_max = len64(
+    cls_max.iter().filter(|&&c| c == UniformClass::CertainStored).count(),
+  );
+  let theta: i128 =
+    if tag0_len(n_cand) == tag0_len(n_cs_max) { 1 } else { theta_max };
+  let cls = if theta == 1 { classify(1)? } else { cls_max };
   let pick = |c: UniformClass| -> Vec<TermId> {
     (0..n).filter(|&t| cls[t] == c).map(tid).collect()
   };
@@ -1825,4 +1850,35 @@ pub fn normalize_constant_sharing_uniform(
     return Err(internal("uniform output length differs from its accounting"));
   }
   Ok((out, result))
+}
+
+#[cfg(test)]
+mod count_bracket_tests {
+  use super::{tag0_bracket_start, tag0_len, tag0_step_bound};
+  use crate::tag::TagN;
+
+  fn counts() -> Vec<u64> {
+    let mut v = vec![0u64, 1, 2, 255, 256, u64::MAX - 1, u64::MAX];
+    for e in [TagN::end1(0), TagN::end2(0), TagN::end3(0), TagN::end4(0)] {
+      v.extend([e - 1, e, e + 1]);
+    }
+    v
+  }
+
+  /// Same checks as the Lean `widthTests` for `tag0BracketStart` and
+  /// `tag0StepBound`.
+  #[test]
+  fn bracket_start_and_step_bound() {
+    for k in counts() {
+      let s = tag0_bracket_start(k);
+      assert_eq!(tag0_len(s), tag0_len(k), "bracket start of {k}");
+      assert!(s == 0 || tag0_len(s - 1) < tag0_len(k), "least start of {k}");
+      if k > 0 {
+        assert!(tag0_len(k) - tag0_len(k - 1) <= tag0_step_bound(k), "{k}");
+      }
+    }
+    assert_eq!(tag0_step_bound(82047), 1);
+    assert_eq!(tag0_step_bound(82048), 2);
+    assert_eq!(tag0_step_bound(TagN::end4(0)), 4);
+  }
 }

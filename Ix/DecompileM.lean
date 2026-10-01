@@ -217,20 +217,11 @@ def BlobCursor.readByte (c : BlobCursor) : DecompileM (UInt8 × BlobCursor) :=
     pure (c.bytes.get! c.pos, { c with pos := c.pos + 1 })
   else throw (.badConstantFormat "BlobCursor: unexpected EOF")
 
-def BlobCursor.readTag0 (c : BlobCursor) : DecompileM (UInt64 × BlobCursor) := do
-  let (head, c) ← c.readByte
-  if head < 128 then pure (head.toUInt64, c)
-  else
-    let extraBytes := (head % 128).toNat + 1
-    if c.pos + extraBytes > c.bytes.size then
-      throw (.badConstantFormat "BlobCursor.readTag0: need more bytes")
-    let mut val : UInt64 := 0
-    let mut cur := c
-    for i in [:extraBytes] do
-      let (b, c') ← cur.readByte
-      val := val ||| (b.toUInt64 <<< (i * 8).toUInt64)
-      cur := c'
-    pure (val, cur)
+/-- A TagN (`f = 0`) integer, read by `Ixon.getTagN 0`. -/
+def BlobCursor.readTagN0 (c : BlobCursor) : DecompileM (UInt64 × BlobCursor) :=
+  match (Ixon.getTagN 0).run { idx := c.pos, bytes := c.bytes } with
+  | .ok t s => pure (t.value, { c with pos := s.idx })
+  | .error e _ => throw (.badConstantFormat s!"BlobCursor.readTagN0: {e}")
 
 def BlobCursor.readAddr (c : BlobCursor) : DecompileM (Address × BlobCursor) :=
   if c.pos + 32 ≤ c.bytes.size then
@@ -248,8 +239,8 @@ def resolveStringFromBlob (addr : Address) : DecompileM String := do
 def deserializeSubstring (c : BlobCursor) : DecompileM (Ix.Substring × BlobCursor) := do
   let (strAddr, c) ← c.readAddr
   let s ← resolveStringFromBlob strAddr
-  let (startPos, c) ← c.readTag0
-  let (stopPos, c) ← c.readTag0
+  let (startPos, c) ← c.readTagN0
+  let (stopPos, c) ← c.readTagN0
   pure (⟨s, startPos.toNat, stopPos.toNat⟩, c)
 
 def deserializeSourceInfo (c : BlobCursor) : DecompileM (Ix.SourceInfo × BlobCursor) := do
@@ -257,13 +248,13 @@ def deserializeSourceInfo (c : BlobCursor) : DecompileM (Ix.SourceInfo × BlobCu
   match tag with
   | 0 =>
     let (leading, c) ← deserializeSubstring c
-    let (leadingPos, c) ← c.readTag0
+    let (leadingPos, c) ← c.readTagN0
     let (trailing, c) ← deserializeSubstring c
-    let (trailingPos, c) ← c.readTag0
+    let (trailingPos, c) ← c.readTagN0
     pure (.original leading leadingPos.toNat trailing trailingPos.toNat, c)
   | 1 =>
-    let (start, c) ← c.readTag0
-    let (stop, c) ← c.readTag0
+    let (start, c) ← c.readTagN0
+    let (stop, c) ← c.readTagN0
     let (canonical, c) ← c.readByte
     pure (.synthetic start.toNat stop.toNat (canonical != 0), c)
   | 2 => pure (.none, c)
@@ -279,7 +270,7 @@ def deserializePreresolved (c : BlobCursor) : DecompileM (Ix.SyntaxPreresolved �
   | 1 =>
     let (nameAddr, c) ← c.readAddr
     let name ← resolveNameFromBlob nameAddr
-    let (count, c) ← c.readTag0
+    let (count, c) ← c.readTagN0
     let mut fields : Array String := #[]
     let mut cur := c
     for _ in [:count.toNat] do
@@ -298,7 +289,7 @@ partial def deserializeSyntax (c : BlobCursor) : DecompileM (Ix.Syntax × BlobCu
     let (info, c) ← deserializeSourceInfo c
     let (kindAddr, c) ← c.readAddr
     let kind ← resolveNameFromBlob kindAddr
-    let (argCount, c) ← c.readTag0
+    let (argCount, c) ← c.readTagN0
     let mut args : Array Ix.Syntax := #[]
     let mut cur := c
     for _ in [:argCount.toNat] do
@@ -316,7 +307,7 @@ partial def deserializeSyntax (c : BlobCursor) : DecompileM (Ix.Syntax × BlobCu
     let (rawVal, c) ← deserializeSubstring c
     let (valAddr, c) ← c.readAddr
     let val ← resolveNameFromBlob valAddr
-    let (prCount, c) ← c.readTag0
+    let (prCount, c) ← c.readTagN0
     let mut preresolved : Array Ix.SyntaxPreresolved := #[]
     let mut cur := c
     for _ in [:prCount.toNat] do

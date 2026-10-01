@@ -50,10 +50,10 @@
 //!   materialized as its byte-least minimum-length representation. This
 //!   equals the rule: an inline constructor precedes a Share of the same
 //!   length (flags `0x0..=0xA` < `0xB`); among telescope prefixes of one
-//!   node the least Tag4 header bytes win (distinct prefix lengths always
+//!   node the least TagN header bytes win (distinct prefix lengths always
 //!   differ inside the header); then children independently.
 //! - **Variable length.** [`ExactSharingResult::variable_len`] is the sum of
-//!   the root encodings, the table's Tag0 count and the entry encodings; the
+//!   the root encodings, the table's TagN count and the entry encodings; the
 //!   rest of the Constant is fixed and checked against `Constant::put`.
 //!
 //! Pruning (the §4.1 bound strengthened with `share_width(k)` for future
@@ -406,7 +406,7 @@ pub struct ExactSharingResult {
   pub sharing: Vec<Arc<Expr>>,
   /// `Q`: structural term ID of each table entry, in stored order.
   pub table_terms: Vec<TermId>,
-  /// Exact variable bytes: roots + table Tag0 count + table entries.
+  /// Exact variable bytes: roots + table TagN count + table entries.
   pub variable_len: u64,
   /// Nonsemantic statistics.
   pub stats: ExactSharingStats,
