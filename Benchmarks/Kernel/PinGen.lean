@@ -10,7 +10,7 @@ import Benchmarks.Kernel.CheckIxeStep
 Generates `Ix/Kernel/Ixon/PinData.lean` (the pin table and the prelude)
 and `Ix/Kernel/Ixon/NatOpPinData.lean` (the pin variant of the eight
 pin-certified `Nat` operations) from two compiled `.ixe` files: the compiled
-Init (`.lake/census/initstd.ixe`) and `Ix/Kernel/PinGen/Certs.lean` compiled
+Init (`.lake/envs/initstd.ixe`) and `Ix/Kernel/PinGen/Certs.lean` compiled
 by the Ix compiler (`regenerate` below gives the commands). No JSON is read,
 and none is generated: the optional closure rows are the census's JSONL
 report rows.
@@ -124,10 +124,10 @@ def stmtNames : List CName :=
 
 /-- The commands that regenerate both files, written into their headers. -/
 def regenerate : List String :=
-  ["lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe",
-   s!"lake exe ix compile Ix/Kernel/PinGen/Certs.lean --out .lake/census/certs.ixe --consts \\\n      \
+  ["lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe",
+   s!"lake exe ix compile Ix/Kernel/PinGen/Certs.lean --out .lake/envs/certs.ixe --consts \\\n      \
     {",".intercalate (certSpecs.flatMap (·.2) |>.map toString)}",
-   "lake exe kernel-pin-gen .lake/census/initstd.ixe .lake/census/certs.ixe \\\n      \
+   "lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \\\n      \
     Ix/Kernel/Ixon/PinData.lean Ix/Kernel/Ixon/NatOpPinData.lean"]
 
 def toLeanName : CName → Lean.Name

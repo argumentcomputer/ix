@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Summarize a kernel census (`kernel-check-ixe` JSONL output).
 
-Usage: census-report.py <census.jsonl> [top]
+Usage: check-ixe-report.py <census.jsonl> [top]
 
 Prints outcome counts, check time, decline reasons, and the root causes
 ranked by how many records they block. A blocked row names the root record
@@ -31,7 +31,7 @@ def name(r):
 
 def group(reason):
     """Decline reasons with an instance-specific suffix, grouped."""
-    for prefix in ("census: expanded term size exceeds",):
+    for prefix in ("check-ixe: expanded term size exceeds",):
         if reason.startswith(prefix):
             return prefix
     return reason

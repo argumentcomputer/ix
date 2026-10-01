@@ -353,7 +353,7 @@ def checkLoopWith {σ : Type} (view : Address → Option RecordView)
           emit row
       | none =>
         if skip.contains (toString address) then
-          let reason := "census: skipped: exceeded the watchdog's limits on an earlier run"
+          let reason := "check-ixe: skipped: exceeded the watchdog's limits on an earlier run"
           for row in rowsFor "decline" reason 0 readMicros do
             out := { out with failed := out.failed.insert row.address row.address,
                               counts := out.counts.insert "decline" (out.counts.getD "decline" 0 + 1) }

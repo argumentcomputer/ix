@@ -215,9 +215,9 @@ constant's record and the literal capabilities through con-leche's fold
 before writing:
 
 ```sh
-lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe
-lake exe ix compile Ix/Kernel/PinGen/Certs.lean --out .lake/census/certs.ixe --consts <the certificate theorems>
-lake exe kernel-pin-gen .lake/census/initstd.ixe .lake/census/certs.ixe \
+lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe
+lake exe ix compile Ix/Kernel/PinGen/Certs.lean --out .lake/envs/certs.ixe --consts <the certificate theorems>
+lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \
   Ix/Kernel/Ixon/PinData.lean Ix/Kernel/Ixon/NatOpPinData.lean
 ```
 
@@ -490,31 +490,31 @@ reason, micros, readMicros`).
 
 ```sh
 lake build --wfail kernel-check-ixe
-lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe
+lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe
 systemd-run --user --scope -p MemoryMax=24G -p MemorySwapMax=0 \
-  env CENSUS_WATCH_MB=12000 scripts/census-guarded.sh \
-  .lake/build/bin/kernel-check-ixe .lake/census/initstd.ixe .lake/census/initstd.jsonl
-python3 scripts/census-report.py .lake/census/initstd.jsonl
+  env CHECK_IXE_WATCH_MB=12000 scripts/check-ixe-guarded.sh \
+  .lake/build/bin/kernel-check-ixe .lake/envs/initstd.ixe .lake/envs/initstd.jsonl
+python3 scripts/check-ixe-report.py .lake/envs/initstd.jsonl
 ```
 
 Usage: `kernel-check-ixe <input.ixe> <output.jsonl> [limit]`. Environment:
 
-- `CENSUS_WATCH_MS` (default 60000) and `CENSUS_WATCH_MB` (default 20000):
+- `CHECK_IXE_WATCH_MS` (default 60000) and `CHECK_IXE_WATCH_MB` (default 20000):
   a watchdog ends the run with exit code 3 when one record's check exceeds
   the time or the process's resident memory exceeds the size, and appends
   the record's address to `<output>.runaway`. The resident size includes
   the decoded corpus, which the driver holds in memory: about 4 GB for
-  Init and about 38 GB for Mathlib. `CENSUS_WATCH_MB` must exceed it, or
+  Init and about 38 GB for Mathlib. `CHECK_IXE_WATCH_MB` must exceed it, or
   the watchdog fires before the first check (for Mathlib, for example,
-  `CENSUS_WATCH_MB=46000` under a `MemoryMax` above that);
-- `CENSUS_SKIP` (comma-separated addresses) declines those records
-  unchecked; `scripts/census-guarded.sh` reruns with every recorded runaway
+  `CHECK_IXE_WATCH_MB=46000` under a `MemoryMax` above that);
+- `CHECK_IXE_SKIP` (comma-separated addresses) declines those records
+  unchecked; `scripts/check-ixe-guarded.sh` reruns with every recorded runaway
   skipped until the run completes;
-- `CENSUS_ROOTS` (comma-separated Lean names) restricts the run to the
+- `CHECK_IXE_ROOTS` (comma-separated Lean names) restricts the run to the
   prelude and the dependency closure of those constants.
 
 Run one census at a time, under a memory cap, with no concurrent build.
-`scripts/kernel-census-report.py` and `scripts/bench-kernel-census.py`
+`scripts/check-ixe-summary.py` and `scripts/bench-check-ixe.py`
 summarize and compare runs. Mathlib's `.ixe` comes from
 `Benchmarks/Compile/CompileMathlib.lean` (`Benchmarks/Compile/README.md`).
 

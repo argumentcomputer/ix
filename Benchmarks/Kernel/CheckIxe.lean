@@ -20,13 +20,13 @@ compiler's (`Env.anonHints`). Not a certified verdict:
 
 Rows are JSONL with the fields of `kernel-check-ixe` (`address, names, kind,
 outcome, reason, micros, readMicros`; a blocked row's reason is its root's
-address), so `scripts/census-report.py` reads them unchanged.
+address), so `scripts/check-ixe-report.py` reads them unchanged.
 
 Usage: `kernel-check-ixe <input.ixe> <output.jsonl> [limit]`. The watchdog
-(`CENSUS_WATCH_MS`, default 60000; `CENSUS_WATCH_MB`, default 20000) appends a
+(`CHECK_IXE_WATCH_MS`, default 60000; `CHECK_IXE_WATCH_MB`, default 20000) appends a
 runaway record's address to `<output>.runaway` and exits with code 3;
-`CENSUS_SKIP` (comma-separated addresses) declines those records unchecked,
-as for `kernel-check-ixe` and `scripts/census-guarded.sh`. `CENSUS_ROOTS`
+`CHECK_IXE_SKIP` (comma-separated addresses) declines those records unchecked,
+as for `kernel-check-ixe` and `scripts/check-ixe-guarded.sh`. `CHECK_IXE_ROOTS`
 (comma-separated Lean names, resolved through the environment's metadata)
 restricts the run to the prelude and the dependency closure of those
 constants; a `«n»` component is numeric, as the rows print it (the `0` of a
@@ -35,11 +35,11 @@ private name).
 The loop (reading, stepping, rows) runs on a dedicated thread with a fresh
 allocator heap, after the decoded inputs are marked persistent, as
 con-leche's driver runs its check phase (`Main.lean`, `checkDeclsIO`);
-`CENSUS_THREAD=0` runs it on the main thread, behind the decode, as before
+`CHECK_IXE_THREAD=0` runs it on the main thread, behind the decode, as before
 T1.
 
-`CENSUS_READ_CACHE=<dir>` keeps a persistent read cache
-(`Benchmarks.Kernel.CheckIxeReadCache`): a full-order run (no `CENSUS_ROOTS`,
+`CHECK_IXE_READ_CACHE=<dir>` keeps a persistent read cache
+(`Benchmarks.Kernel.CheckIxeReadCache`): a full-order run (no `CHECK_IXE_ROOTS`,
 no limit) writes the run's plan (every record's view and reading, keyed by
 the `.ixe`'s BLAKE3 hash and the reader version), and a later run over the
 same bytes maps it instead of decoding the `.ixe`, building the setup and
@@ -83,9 +83,9 @@ def run (args : List String) : IO UInt32 := do
   let started ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile options.input
   let natPins ← IO.ofExcept builtinNatOpPins
-  let rootsEnv ← IO.getEnv "CENSUS_ROOTS"
+  let rootsEnv ← IO.getEnv "CHECK_IXE_ROOTS"
   -- the persistent read cache (`CheckIxeReadCache`): full-order runs only
-  let cacheDir ← IO.getEnv "CENSUS_READ_CACHE"
+  let cacheDir ← IO.getEnv "CHECK_IXE_READ_CACHE"
   let cache : Option (System.FilePath × String) := do
     let dir ← cacheDir
     guard rootsEnv.isNone
@@ -108,7 +108,7 @@ def run (args : List String) : IO UInt32 := do
       let pre ← IO.ofExcept builtinPrelude
       let hints := Hints.ofStore store env.anonHints
       let s := setup store (env.blobs[·]?) pins pre hints.lookup
-      let header := s!"census-cl: {s.store.size} records, {s.ordered.size} primary, {env.blobs.size} blobs, \
+      let header := s!"check-ixe: {s.store.size} records, {s.ordered.size} primary, {env.blobs.size} blobs, \
         {pins.names.size} pins, {s.cx.index.recs.size} recursors indexed, prelude {pre.ix.decls.size} declarations, \
         {hints.hints.size} hints ({hints.projAt.size} at projections)"
       IO.eprintln s!"{header}, loaded in {(← IO.monoMsNow) - started} ms"
@@ -119,14 +119,14 @@ def run (args : List String) : IO UInt32 := do
           for n in (list.splitOn ",").filter (!·.isEmpty) do
             match env.named[Ix.Name.fromLeanName (rootName n)]? with
             | some named => roots := roots.push named.addr
-            | none => IO.eprintln s!"census-cl: CENSUS_ROOTS: no constant {n}"
+            | none => IO.eprintln s!"check-ixe: CHECK_IXE_ROOTS: no constant {n}"
           pure (closure s.store s.extra roots)
       pure (Source.live env s names ordered)
-  let skip : Std.HashSet String := match ← IO.getEnv "CENSUS_SKIP" with
+  let skip : Std.HashSet String := match ← IO.getEnv "CHECK_IXE_SKIP" with
     | some list => (list.splitOn ",").foldl (fun set a => if a.isEmpty then set else set.insert a) {}
     | none => {}
-  let watchMs := ((← IO.getEnv "CENSUS_WATCH_MS").bind String.toNat?).getD 60000
-  let watchKb := ((← IO.getEnv "CENSUS_WATCH_MB").bind String.toNat?).getD 20000 * 1024
+  let watchMs := ((← IO.getEnv "CHECK_IXE_WATCH_MS").bind String.toNat?).getD 60000
+  let watchKb := ((← IO.getEnv "CHECK_IXE_WATCH_MB").bind String.toNat?).getD 20000 * 1024
   let checking : IO.Ref (Option (Address × Nat)) ← IO.mkRef none
   let running ← IO.mkRef true
   let runaway := options.output.toString ++ ".runaway"
@@ -137,7 +137,7 @@ def run (args : List String) : IO UInt32 := do
         let elapsed := (← IO.monoMsNow) - since
         let rss ← statusKb "VmRSS:"
         if elapsed > watchMs || rss > watchKb then
-          IO.eprintln s!"census-cl: watchdog: {address} ran {elapsed} ms, RSS {rss / 1024} MB; exiting"
+          IO.eprintln s!"check-ixe: watchdog: {address} ran {elapsed} ms, RSS {rss / 1024} MB; exiting"
           let file ← IO.FS.Handle.mk runaway .append
           file.putStrLn (toString address)
           file.flush
@@ -148,7 +148,7 @@ def run (args : List String) : IO UInt32 := do
   let after := checking.set none
   let progressAt (total : Nat) := fun (i : Nat) (o : Outcome) => do
     if i % 1000 == 0 then
-      IO.eprintln s!"census-cl: {i}/{total} after {(← IO.monoMsNow) - started} ms; {o.counts.toList}; \
+      IO.eprintln s!"check-ixe: {i}/{total} after {(← IO.monoMsNow) - started} ms; {o.counts.toList}; \
         RSS {(← statusKb "VmRSS:") / 1024} MB"
   -- a full-order live run records its readings and writes its plan, on the
   -- loop's own thread: readings handed to another thread would be marked
@@ -169,9 +169,9 @@ def run (args : List String) : IO UInt32 := do
       if let some (path, ixe) := cache then
         if record then
           let t0 ← IO.monoMsNow
-          let header := s!"census-cl: {s.store.size} records, {s.ordered.size} primary"
+          let header := s!"check-ixe: {s.store.size} records, {s.ordered.size} primary"
           CheckIxeReadCache.save path (CheckIxeReadCache.ofRun s ixe header names (← readings.get))
-          IO.eprintln s!"census-cl: read cache {path} written in {(← IO.monoMsNow) - t0} ms"
+          IO.eprintln s!"check-ixe: read cache {path} written in {(← IO.monoMsNow) - t0} ms"
       pure out
   -- The loop runs as con-leche's driver runs its check phase at `--jobs=1`
   -- (`Main.lean`, `checkDeclsIO`): on a dedicated thread, whose allocator
@@ -179,19 +179,19 @@ def run (args : List String) : IO UInt32 := do
   -- temporaries of decoding it), with the read-only inputs marked
   -- persistent first, so that handing them to the thread does not mark
   -- the whole corpus multi-threaded (atomic reference counts) and the
-  -- loop pays no reference counting on them at all. `CENSUS_THREAD=0`
+  -- loop pays no reference counting on them at all. `CHECK_IXE_THREAD=0`
   -- runs the loop on this thread instead. A plan's objects are persistent
   -- already: they live in the mapped region.
-  let out ← if (← IO.getEnv "CENSUS_THREAD") == some "0" then loop else do
+  let out ← if (← IO.getEnv "CHECK_IXE_THREAD") == some "0" then loop else do
     if let .live _ s names _ := source then
       let _ ← unsafe Runtime.markPersistent s
       let _ ← unsafe Runtime.markPersistent names
     IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) loop))
   running.set false
   let ranked := out.reasons.toArray.qsort (fun a b => a.2 > b.2)
-  IO.eprintln s!"census-cl: done in {(← IO.monoMsNow) - started} ms; {out.counts.toList}"
-  IO.eprintln s!"census-cl: peak RSS {(← statusKb "VmHWM:") / 1024} MB"
-  IO.eprintln "census-cl: first-cause reasons by frequency:"
+  IO.eprintln s!"check-ixe: done in {(← IO.monoMsNow) - started} ms; {out.counts.toList}"
+  IO.eprintln s!"check-ixe: peak RSS {(← statusKb "VmHWM:") / 1024} MB"
+  IO.eprintln "check-ixe: first-cause reasons by frequency:"
   for (reason, count) in ranked.extract 0 25 do
     IO.eprintln s!"  {count}\t{reason}"
   return 0

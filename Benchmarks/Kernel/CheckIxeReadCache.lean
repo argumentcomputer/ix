@@ -31,7 +31,7 @@ reinterpreted. Corrupt or foreign files are refused by the region reader's
 header check.
 
 **What may use it.** The census drivers (`kernel-check-ixe`:
-`CENSUS_READ_CACHE=<dir>`) and other host tools. Never the certified entry
+`CHECK_IXE_READ_CACHE=<dir>`) and other host tools. Never the certified entry
 (`Ix.Ixon.Admission.checkBytes`): its theorems are about the bytes it is
 given, so it decodes and reads them itself every time. Nothing here is
 imported by the `IxKernel` package.
@@ -135,7 +135,7 @@ def load (path : System.FilePath) (ixe : String) : IO (Option Plan) := do
   unless ← path.pathExists do return none
   let (plan, _) ← unsafe Lean.CompactedRegion.read (α := Plan) path #[]
   if plan.version == version && plan.ixe == ixe then return some plan
-  IO.eprintln s!"census: read cache {path}: version or key mismatch; ignored"
+  IO.eprintln s!"check-ixe: read cache {path}: version or key mismatch; ignored"
   return none
 
 /-! ## Running from a plan -/

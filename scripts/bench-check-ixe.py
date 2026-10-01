@@ -140,7 +140,7 @@ def sample(binary: Path, timer: str, args: argparse.Namespace, stem: Path) -> di
     command = [timer, "-q", "-f", "%M %U %S", "-o", str(metrics_path),
                str(binary), str(args.input), str(rows_path), str(args.limit), str(args.fuel)]
     # These diagnostic modes alter the checked population or timing behavior.
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("CENSUS_")}
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("CHECK_IXE_")}
     started = time.monotonic_ns()
     timed_out = False
     with log_path.open("w") as log:

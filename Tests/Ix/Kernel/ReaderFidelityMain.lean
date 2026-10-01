@@ -17,7 +17,7 @@ reference translation of the Lean environment it was compiled from
 from this toolchain's `.olean` files.
 
 * `kernel-reader-fidelity <input.ixe> [limit]`: the compiled side is an
-  `.ixe`, normally the census corpus `.lake/census/initstd.ixe` (compiled by
+  `.ixe`, normally the census corpus `.lake/envs/initstd.ixe` (compiled by
   `ix compile` from `Benchmarks/Compile/CompileInitStd.lean`, which imports
   exactly `Init` and `Std`); `limit` bounds the records read, in the census
   order.
@@ -50,7 +50,7 @@ fifth of Init and Std: the prelude, `Init.Prelude`'s closure and well past
 it, which covers the nested `Lean.Syntax` block). -/
 def checkKernelLimit : Nat := 20000
 
-def corpus : System.FilePath := ".lake/census/initstd.ixe"
+def corpus : System.FilePath := ".lake/envs/initstd.ixe"
 
 /-- `Init` and `Std` compiled in process by Ix's Rust compiler. -/
 def compileInitStd (leanEnv : Lean.Environment) : IO Ixon.Env := do

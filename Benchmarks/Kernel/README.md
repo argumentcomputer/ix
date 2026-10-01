@@ -10,11 +10,11 @@ options and watchdog are described in `docs/kernel.md` ("Census").
 
 ```sh
 lake build --wfail kernel-check-ixe
-lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe
+lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe
 systemd-run --user --scope -p MemoryMax=24G -p MemorySwapMax=0 \
-  env CENSUS_WATCH_MB=12000 scripts/census-guarded.sh \
-  .lake/build/bin/kernel-check-ixe .lake/census/initstd.ixe .lake/census/initstd.jsonl
-python3 scripts/census-report.py .lake/census/initstd.jsonl
+  env CHECK_IXE_WATCH_MB=12000 scripts/check-ixe-guarded.sh \
+  .lake/build/bin/kernel-check-ixe .lake/envs/initstd.ixe .lake/envs/initstd.jsonl
+python3 scripts/check-ixe-report.py .lake/envs/initstd.jsonl
 ```
 
 Run one census at a time, with no concurrent build. A row's `micros` is the
@@ -24,7 +24,7 @@ diagnostics, not process times.
 
 ## Paired runs
 
-`scripts/bench-kernel-census.py run` alternates fresh processes of a
+`scripts/bench-check-ixe.py run` alternates fresh processes of a
 baseline and a candidate binary over the same `.ixe` (one warmup and three
 measured samples each by default) and records GNU time's peak RSS, whole
 process wall time, and executable, corpus and source fingerprints. The
@@ -34,12 +34,12 @@ acceptances and other outcome changes are reported separately, and different
 coverage is flagged next to the wall-time ratio.
 
 ```sh
-python3 scripts/bench-kernel-census.py run \
+python3 scripts/bench-check-ixe.py run \
   --baseline-binary /tmp/kernel-base/.lake/build/bin/kernel-check-ixe \
   --baseline-revision <baseline-commit> \
   --binary .lake/build/bin/kernel-check-ixe --revision <candidate-commit> \
-  --input .lake/census/initstd.ixe --output-dir .lake/census-paired
-python3 scripts/bench-kernel-census.py compare before.jsonl after.jsonl --output comparison.json
+  --input .lake/envs/initstd.ixe --output-dir .lake/check-ixe-paired
+python3 scripts/bench-check-ixe.py compare before.jsonl after.jsonl --output comparison.json
 ```
 
 ## Other drivers (untrusted, measurement only)

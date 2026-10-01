@@ -12,23 +12,23 @@ with switches for four driver-side ports, none of which touches the verified
 core or the reader. It exists to measure them (`plans/review/cl-opt/`), and it
 is not a certified verdict.
 
-* `CENSUS_LOAD=stream`: the metadata-light lazy load Ix.Tc uses
+* `CHECK_IXE_LOAD=stream`: the metadata-light lazy load Ix.Tc uses
   (`Ixon.deEnvAnon`: the `.ixe` stays one buffer, names map to addresses, no
   metadata is decoded). Every record is decoded once up front for its
   skeleton (`skeleton`: the tables and expressions the census and the reader
   read of a record *other* than the one being read: info tags, references,
   recursors in full, constructor counts) and decoded again, in full, only
   when its turn comes; nothing decoded is kept but the skeletons. The default
-  `CENSUS_LOAD=full` is `kernel-check-ixe`'s eager `Ixon.deEnv` with every
+  `CHECK_IXE_LOAD=full` is `kernel-check-ixe`'s eager `Ixon.deEnv` with every
   record decoded and kept.
-* `CENSUS_THREAD=1`: the census loop runs on one dedicated worker thread, so
+* `CHECK_IXE_THREAD=1`: the census loop runs on one dedicated worker thread, so
   the checker allocates out of a fresh heap instead of the main thread's, which
   holds the decoded corpus (con-leche task #269: 2.06x on a 2 GB Mathlib
   prefix at the same instruction count).
-* `CENSUS_MARK=1`: the store, the reader context and the order are marked
+* `CHECK_IXE_MARK=1`: the store, the reader context and the order are marked
   persistent before the loop (con-leche task #265), so their reference counts
   are never touched again.
-* `CENSUS_PAR=n1,n2,…`: instead of the per-record census, con-leche's two
+* `CHECK_IXE_PAR=n1,n2,…`: instead of the per-record census, con-leche's two
   phases (`Cached.checkDecls`): phase A installs every record in order
   (`annotDeclStep`; a record whose reading or install fails, and every record
   that depends on it, is left out, as the census blocks it), then phase B
@@ -55,7 +55,7 @@ def rssMb : IO Nat := return (← statusKb "VmRSS:") / 1024
 def hwmMb : IO Nat := return (← statusKb "VmHWM:") / 1024
 
 def stage (started : Nat) (what : String) : IO Unit := do
-  IO.eprintln s!"census-opt: {what} at {(← IO.monoMsNow) - started} ms; rss {← rssMb} MB, hwm {← hwmMb} MB"
+  IO.eprintln s!"check-ixe-opt: {what} at {(← IO.monoMsNow) - started} ms; rss {← rssMb} MB, hwm {← hwmMb} MB"
 
 /-! ## Skeletons -/
 
@@ -178,14 +178,14 @@ def loadStream (started : Nat) (bytes : ByteArray) (pins : Pins) (pre : Prelude)
     | none => s.store[a]?
   return { env, setup := s, fetchPure }
 
-/-! ## Cross-record interning (`CENSUS_INTERN`)
+/-! ## Cross-record interning (`CHECK_IXE_INTERN`)
 
 The Ixon reader builds every record's terms afresh: a constant's name
 (`ix.<hex>.i`) is a new object at every occurrence, and nothing is shared
 across records, where con-leche's NDJSON parser shares names, levels and
-terms stream-wide (its task #78). `CENSUS_INTERN=names` replaces every name
+terms stream-wide (its task #78). `CHECK_IXE_INTERN=names` replaces every name
 and level in a record's declarations by one canonical object per value;
-`CENSUS_INTERN=all` also hash-conses the expressions (one object per
+`CHECK_IXE_INTERN=all` also hash-conses the expressions (one object per
 structurally equal subterm across the run). Values are unchanged, only
 sharing, so no verdict can move; the tables are host state. -/
 
@@ -260,7 +260,7 @@ unsafe def internDeclsImpl (t : Interner) (ds : Array Ix.Kernel.Declaration) :
 opaque internDecls (t : Interner) (ds : Array Ix.Kernel.Declaration) :
     Array Ix.Kernel.Declaration × Interner
 
-/-! ## What the environment holds (`CENSUS_SIZE`)
+/-! ## What the environment holds (`CHECK_IXE_SIZE`)
 
 A walk over the expression DAGs reachable from the installed constants and
 the reader's state, counting each node once (by address) with an estimate
@@ -319,7 +319,7 @@ unsafe def envLayersImpl (consts : List Ix.Kernel.ConstantInfo)
 opaque envLayers (consts : List Ix.Kernel.ConstantInfo) (stateTypes : Array Ix.Kernel.Expr) :
     List (String × Sized)
 
-/-! ## Term statistics (`CENSUS_STATS`) -/
+/-! ## Term statistics (`CHECK_IXE_STATS`) -/
 
 structure Stats where
   nodes : Nat := 0
@@ -365,7 +365,7 @@ def constantStats (blobs : Address → Option ByteArray) (c : Ixon.Constant) : S
     | _ => #[]
   (c.sharing ++ roots).foldl (exprStats blobSize) {}
 
-/-- `CENSUS_STATS=<file>`: for every address listed in the file (one per
+/-- `CHECK_IXE_STATS=<file>`: for every address listed in the file (one per
 line), its record's term statistics and the names of the constants it
 references, one JSON row each. -/
 def runStats (bytes : ByteArray) (list output : System.FilePath) : IO UInt32 := do
@@ -378,8 +378,8 @@ def runStats (bytes : ByteArray) (list output : System.FilePath) : IO UInt32 := 
   for line in (← IO.FS.readFile list).splitOn "\n" do
     let line := line.trimAscii.toString
     if line.isEmpty then continue
-    let some a := Address.fromString line | IO.eprintln s!"census-opt: bad address {line}"
-    let some lc := env.consts[a]? | IO.eprintln s!"census-opt: no record {line}"
+    let some a := Address.fromString line | IO.eprintln s!"check-ixe-opt: bad address {line}"
+    let some lc := env.consts[a]? | IO.eprintln s!"check-ixe-opt: no record {line}"
     let c ← IO.ofExcept lc.get
     let st := constantStats (env.blobs[·]?) c
     let refNames := c.refs.toList.flatMap fun r => ((namesOf[r]?).getD #[]).toList
@@ -451,7 +451,7 @@ def checkLoopWith (s : Setup) (fetch : Address → IO (Option Ixon.Constant))
           emit row
       | none =>
         if skip.contains (toString address) then
-          let reason := "census: skipped: exceeded the watchdog's limits on an earlier run"
+          let reason := "check-ixe: skipped: exceeded the watchdog's limits on an earlier run"
           for row in rowsFor "decline" reason 0 readMicros do
             out := { out with failed := out.failed.insert row.address row.address,
                               counts := out.counts.insert "decline" (out.counts.getD "decline" 0 + 1) }
@@ -480,7 +480,7 @@ def checkLoopWith (s : Setup) (fetch : Address → IO (Option Ixon.Constant))
           out := { out with reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
   return (out, internMicros, interner, st)
 
-/-! ## Two phases and a pool (`CENSUS_PAR`) -/
+/-! ## Two phases and a pool (`CHECK_IXE_PAR`) -/
 
 /-- Phase A's result: the installed environment, the recorded checks with
 the record each belongs to, and what was left out. -/
@@ -634,20 +634,20 @@ def run (args : List String) : IO UInt32 := do
   let some options := CheckIxe.parseArgs args
     | IO.eprintln "usage: kernel-check-ixe-opt <input.ixe> <output.jsonl> [limit]"; return 2
   let started ← IO.monoMsNow
-  let load := (← IO.getEnv "CENSUS_LOAD").getD "full"
+  let load := (← IO.getEnv "CHECK_IXE_LOAD").getD "full"
   let stream := load == "stream" || load == "stream-free"
-  let thread := (← IO.getEnv "CENSUS_THREAD") == some "1"
-  let mark := (← IO.getEnv "CENSUS_MARK") == some "1"
-  let par : List Nat := match ← IO.getEnv "CENSUS_PAR" with
+  let thread := (← IO.getEnv "CHECK_IXE_THREAD") == some "1"
+  let mark := (← IO.getEnv "CHECK_IXE_MARK") == some "1"
+  let par : List Nat := match ← IO.getEnv "CHECK_IXE_PAR" with
     | some list => (list.splitOn ",").filterMap String.toNat?
     | none => []
-  IO.eprintln s!"census-opt: load {load}, thread {thread}, mark {mark}, \
+  IO.eprintln s!"check-ixe-opt: load {load}, thread {thread}, mark {mark}, \
     par {par}"
   let bytes ← IO.FS.readBinFile options.input
   stage started s!"read {bytes.size} bytes"
-  if let some list := ← IO.getEnv "CENSUS_STATS" then
+  if let some list := ← IO.getEnv "CHECK_IXE_STATS" then
     return ← runStats bytes list options.output
-  let intern : Option Bool := match ← IO.getEnv "CENSUS_INTERN" with
+  let intern : Option Bool := match ← IO.getEnv "CHECK_IXE_INTERN" with
     | some "names" => some false
     | some "all" => some true
     | _ => none
@@ -658,16 +658,16 @@ def run (args : List String) : IO UInt32 := do
     else loadFull started bytes pins pre
   let s := l.setup
   let names := reportNames l.env s.store
-  IO.eprintln s!"census-opt: {s.store.size} records, {s.ordered.size} primary, {l.env.blobs.size} blobs, \
+  IO.eprintln s!"check-ixe-opt: {s.store.size} records, {s.ordered.size} primary, {l.env.blobs.size} blobs, \
     {s.cx.index.recs.size} recursors indexed"
-  let ordered ← match ← IO.getEnv "CENSUS_ROOTS" with
+  let ordered ← match ← IO.getEnv "CHECK_IXE_ROOTS" with
     | none => pure s.ordered
     | some list => do
       let mut roots : Array Address := pre.records.map (·.1)
       for n in (list.splitOn ",").filter (!·.isEmpty) do
         match l.env.named[Ix.Name.fromLeanName (CheckIxe.rootName n)]? with
         | some named => roots := roots.push named.addr
-        | none => IO.eprintln s!"census-opt: CENSUS_ROOTS: no constant {n}"
+        | none => IO.eprintln s!"check-ixe-opt: CHECK_IXE_ROOTS: no constant {n}"
       pure (closure s.store s.extra roots)
   let total := match options.limit with | some n => min n ordered.size | none => ordered.size
   let ordered := ordered.extract 0 total
@@ -696,7 +696,7 @@ def run (args : List String) : IO UInt32 := do
       (emit := fun row => do handle.putStrLn row.json.compress; handle.flush)
       (progress := fun i o => do
         if i % 20000 == 0 then
-          IO.eprintln s!"census-opt: {i}/{total} after {(← IO.monoMsNow) - started} ms; \
+          IO.eprintln s!"check-ixe-opt: {i}/{total} after {(← IO.monoMsNow) - started} ms; \
             {o.counts.toList}; rss {← rssMb} MB")
   let tLoop ← IO.monoMsNow
   let (out, internMicros, interner, st) ←
@@ -705,12 +705,12 @@ def run (args : List String) : IO UInt32 := do
   stage started s!"census loop done in {tEnd - tLoop} ms; {out.counts.toList}; \
     {out.checker.fe.env.consts.length} constants installed; interning {internMicros / 1000} ms \
     ({interner.names.size} names, {interner.levels.size} levels, {interner.exprs.size} terms)"
-  if (← IO.getEnv "CENSUS_SIZE") == some "1" then
+  if (← IO.getEnv "CHECK_IXE_SIZE") == some "1" then
     let consts := out.checker.fe.env.consts
     let stateTypes := st.constTypes.toArray.map (·.2.2)
     let layers ← IO.lazyPure fun _ => envLayers consts stateTypes
     for (what, z) in layers do
-      IO.eprintln s!"census-opt: size: {what}: {z.nodes} nodes, ~{z.bytes / 1048576} MB"
+      IO.eprintln s!"check-ixe-opt: size: {what}: {z.nodes} nodes, ~{z.bytes / 1048576} MB"
     stage started s!"size walk done ({consts.length} constants, {st.constTypes.size} reader types, \
       {st.indBlocks.size} blocks, {st.projOwners.size} owners)"
   return 0

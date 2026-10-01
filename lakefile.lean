@@ -379,7 +379,7 @@ lean_exe «kernel-level-comparison» where
 
 /-- The Ixon reader against a direct translation of Lean's constants over
 `Init` and `Std` (`Tests/Ix/Kernel/ReaderFidelity.lean`): the census corpus
-(`kernel-reader-fidelity .lake/census/initstd.ixe [limit]`), `Init` and `Std`
+(`kernel-reader-fidelity .lake/envs/initstd.ixe [limit]`), `Init` and `Std`
 compiled in process (`--compile [limit]`), `check-kernel`'s run
 (`--check-kernel`) or the `lake test` fixture (`--fixture`). -/
 lean_exe «kernel-reader-fidelity» where
@@ -408,7 +408,7 @@ lean_exe «kernel-check-ixe-opt» where
   moreLinkObjs := #[ix_rs]
 
 /-- Regenerates `Ix/Kernel/Ixon/PinData.lean` (pins and prelude) from a
-compiled Init (`.lake/census/initstd.ixe`), verified by con-leche. -/
+compiled Init (`.lake/envs/initstd.ixe`), verified by con-leche. -/
 lean_exe «kernel-pin-gen» where
   root := `Benchmarks.Kernel.PinGen
   moreLinkObjs := #[ix_rs]
