@@ -78,9 +78,30 @@ def tieredAll (corpus : String) (names : List String) : IO UInt32 := do
       match r with
       | .ok r =>
         let nominal := (r.stats.candidateLengths.find? (·.1 == r.stats.nominalW)).map (·.2)
-        IO.println s!"{name} {reprStr l}: final={r.stats.phase3LayoutBytes} w={r.stats.w} nominalW={r.stats.nominalW} nominal={nominal.getD 0} candidates={r.stats.candidateLengths} serialized={r.result.variableBytes} stored={hash r.phase1.stored} {ms} ms"
+        IO.println s!"{name} {reprStr l}: final={r.stats.phase3LayoutBytes} w={r.stats.w} nominalW={r.stats.nominalW} nominal={nominal.getD 0} candidates={r.stats.candidateLengths} serialized={r.result.variableBytes} entries={r.result.sharing.size} stored={hash r.phase1.stored} {ms} ms"
       | .error e => IO.println s!"{name} {reprStr l}: FAILED {repr e} {ms} ms"
       (← IO.getStdout).flush
+  return 0
+
+open Ix.Sharing.Exact in
+/-- The constants with more than `bound` sharing candidates (terms of
+in-degree ≥ 2 and unshared length ≥ 2), the only ones whose stored set can
+exceed `bound` entries. -/
+def scanCandidates (corpus : String) (bound : Nat) : IO UInt32 := do
+  let bytes ← IO.FS.readBinFile corpus
+  let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
+  let mut total := 0
+  for (addr, lc) in env.consts.toList do
+    let .ok c := lc.get | continue
+    total := total + 1
+    let .ok ex := expand {} c.sharing (constantInfoRoots c.info) true | continue
+    let p := Prep.ofDag ex.dag
+    let f := graphFacts ex.dag ex.roots
+    let k := ((Array.range ex.dag.size).filter fun t => f.deg[t]! ≥ 2 && p.base[t]! ≥ 2).size
+    if k > bound then
+      IO.println s!"{(env.addrToName.get? addr).map toString |>.getD "?"} candidates={k}"
+      (← IO.getStdout).flush
+  IO.println s!"scanned {total}"
   return 0
 
 open Ix.Sharing.Exact in
@@ -160,6 +181,7 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln "usage: uniform-hard <corpus.ixe> [name ...]"
     return 2
   if let [_, "--compare"] := args then return (← compareAll corpus)
+  if let [_, "--scan-k", b] := args then return (← scanCandidates corpus b.toNat!)
   if let _ :: "--tiered" :: ns := args then
     return (← tieredAll corpus (if ns.isEmpty then defaultNames else ns))
   if let [_, "--dump", ws, name] := args then
