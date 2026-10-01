@@ -21,3 +21,7 @@ import CompilatrixTests.Fences.Own
 import CompilatrixTests.Fences.Rt
 import CompilatrixTests.Fences.Erase
 import CompilatrixTests.Fences.Anf
+import CompilatrixTests.Fences.SemForward
+import CompilatrixTests.Fences.CfgProof
+import CompilatrixTests.Fences.LirProof
+import CompilatrixTests.Fences.RtProof
