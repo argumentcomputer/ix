@@ -51,14 +51,21 @@ def anfStages (c : Cert) (lam : Lam.Program) : Except String (List (String × An
     pure (P, acc ++ [(s.name, P)])
   pure stages
 
-def compileBench (name : String) : IO Compiled := do
-  let inp ← benchInput name
-  let (cert, art) ← compileIn name inp
+/-- A compiled program with its middle end replayed from the certificate. -/
+def assemble (name : String) (cert : Cert) (art : Artifact) : IO Compiled := do
   let anf ← IO.ofExcept (anfStages cert art.lam)
   -- the replay ends where `run` ended
   let some (_, last) := anf.getLast? | throw (IO.userError s!"{name}: no Anf stage")
   unless last.beq art.anf do throw (IO.userError s!"{name}: the replayed middle end differs from run's")
   pure { name, cert, art, anf }
+
+/-- A program as the compiler made it from an ingressed input. -/
+def compileFrom (name : String) (inp : Input) : IO Compiled := do
+  let (cert, art) ← compileIn name inp
+  assemble name cert art
+
+def compileBench (name : String) : IO Compiled := do
+  compileFrom name (← benchInput name)
 
 /-- The levels, in pipeline order. -/
 def levelNames (c : Compiled) : List String :=

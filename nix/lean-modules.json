@@ -14,6 +14,8 @@
   "tests-ixon-v3":
   {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
   "tests-fir": {"roots": ["CompilatrixTests.Fir.Main"], "kind": "lean_exe"},
+  "tests-corpus":
+  {"roots": ["CompilatrixTests.Corpus.Main"], "kind": "lean_exe"},
   "tests-anf": {"roots": ["CompilatrixTests.Anf.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
   "pin-src-tables": {"roots": ["PinSrcTables"], "kind": "lean_exe"},
@@ -21,6 +23,7 @@
   {"roots": ["CompilatrixTests.Src.ArtifactMain"], "kind": "lean_exe"},
   "gen-recheck-artifacts":
   {"roots": ["CompilatrixTests.Recheck.ArtifactMain"], "kind": "lean_exe"},
+  "corpus": {"roots": ["CompilatrixTests.Corpus.ToolMain"], "kind": "lean_exe"},
   "compilatrix": {"roots": ["Compilatrix.Cli.Main"], "kind": "lean_exe"},
   "check-xv-select":
   {"roots": ["CompilatrixTests.Xv.Main"], "kind": "lean_exe"},
@@ -1099,6 +1102,29 @@
     "CompilatrixTests.Fences.BackendProof",
     "CompilatrixTests.Fences.StackingProof",
     "CompilatrixTests.Fences.BackendEnds"]},
+  "CompilatrixTests.Corpus.ToolMain":
+  {"path": "CompilatrixTests/Corpus/ToolMain.lean",
+   "imports": ["CompilatrixTests.Corpus.Build"]},
+  "CompilatrixTests.Corpus.Run":
+  {"path": "CompilatrixTests/Corpus/Run.lean",
+   "imports":
+   ["CompilatrixTests.Corpus.Manifest", "CompilatrixTests.Pipeline.Levels"]},
+  "CompilatrixTests.Corpus.Manifest":
+  {"path": "CompilatrixTests/Corpus/Manifest.lean",
+   "imports": ["CompilatrixTests.Corpus.Json", "Compilatrix.Tools.Check"]},
+  "CompilatrixTests.Corpus.Main":
+  {"path": "CompilatrixTests/Corpus/Main.lean",
+   "imports": ["CompilatrixTests.Corpus.Run"]},
+  "CompilatrixTests.Corpus.Json":
+  {"path": "CompilatrixTests/Corpus/Json.lean", "imports": ["Lean.Data.Json"]},
+  "CompilatrixTests.Corpus.Build":
+  {"path": "CompilatrixTests/Corpus/Build.lean",
+   "imports":
+   ["CompilatrixTests.Corpus.Manifest",
+    "CompilatrixTests.Support.Rng",
+    "Compilatrix.Tools.Census",
+    "Compilatrix.Tools.SourceScan",
+    "Compilatrix.Recheck.Produce"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":

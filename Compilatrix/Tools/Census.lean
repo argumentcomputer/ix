@@ -182,4 +182,21 @@ def report (raw : ByteArray) (names : Std.HashMap Address String) : Json :=
       ("rejected_at", counts (all.filterMap (·.rejected.map (·.1)))),
       ("entries", Json.arr (all.map Entry.json))]
 
+/-- Addresses named by a K1-style `equations.json` (roots, definitions and
+their unfolding equations), for readable reports. Names are diagnostic only. -/
+def names (pack : Json) : IO (Std.HashMap Address String) := do
+  let mut map : Std.HashMap Address String := {}
+  let decode (hex : String) : IO Address := do
+    Compilatrix.Tools.Check.present (Address.ofBytes? (← Compilatrix.Tools.Check.checked
+      (Compilatrix.Tools.Check.unhex hex))) s!"invalid address {hex}"
+  for root in ← Compilatrix.Tools.Check.arrField pack "roots" do
+    map := map.insert (← decode (← Compilatrix.Tools.Check.strField root "address"))
+      (← Compilatrix.Tools.Check.strField root "name")
+  for pair in ← Compilatrix.Tools.Check.arrField pack "equations" do
+    map := map.insert (← decode (← Compilatrix.Tools.Check.strField pair "definition_address"))
+      (← Compilatrix.Tools.Check.strField pair "definition")
+    map := map.insert (← decode (← Compilatrix.Tools.Check.strField pair "equation_address"))
+      (← Compilatrix.Tools.Check.strField pair "equation")
+  return map
+
 end Compilatrix.Tools.Census

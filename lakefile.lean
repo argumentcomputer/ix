@@ -109,6 +109,20 @@ certificate mutations (rejected, or code that agrees on every tested input). -/
 lean_exe «tests-pipeline» where
   root := `CompilatrixTests.Pipeline.Main
 
+/- The corpus builder (MT.1, `docs/corpus.md`): `corpus check` verifies the
+frozen fixture families against their `compilatrix/corpus/1` manifests
+without ix; `corpus rebuild MANIFEST --ix IX` recompiles a family with the
+pinned ix and recomputes the expected outputs with Lean's interpreter. -/
+lean_exe corpus where
+  root := `CompilatrixTests.Corpus.ToolMain
+
+/- The corpus suite (MT.2): every root of every registered corpus family
+compiled, declined with its expected code, or run at every level (SrcEval
+… Cfg, Lir, Xv, Xl, typed x86, ByteEval) and natively (with `--cc`) on its
+frozen cases against Lean's interpreter. -/
+lean_exe «tests-corpus» where
+  root := `CompilatrixTests.Corpus.Main
+
 /- Regenerates (or with `--check` compares) the recheck artifacts the kernel
 evaluates (M1.K1): `CompilatrixTests/Recheck/Artifacts/*.lean`, each bench-k1
 closure's `Src.Program`, configuration and certificate as shared Lean terms,
