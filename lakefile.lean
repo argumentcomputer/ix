@@ -359,9 +359,14 @@ lean_exe «kernel-census-probe» where
   moreLinkObjs := #[ix_rs]
 
 /-- Con-leche's verified checker through the Ixon reader (plan v4, L4): the
-`checkBytes`-shaped entry and the per-record step (untrusted). -/
+`checkBytes`-shaped entry and its per-record census (untrusted). -/
 lean_lib KernelConLeche where
-  roots := #[`Ix.Ixon.ConLecheAdmission, `Benchmarks.Kernel.ConLecheStep]
+  roots := #[`Ix.Ixon.ConLecheAdmission, `Benchmarks.Kernel.ConLecheStep,
+    `Benchmarks.Kernel.ConLecheCensus]
+
+lean_exe «kernel-census-cl» where
+  root := `Benchmarks.Kernel.ConLecheCensusMain
+  moreLinkObjs := #[ix_rs]
 
 /-- Regenerates `Ix/Kernel/ConLeche/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/census/initstd.ixe`), verified by con-leche. -/
