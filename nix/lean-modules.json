@@ -1459,6 +1459,12 @@
   "Compilatrix.Xv.Stacking.Proof.RetStep":
   {"path": "Compilatrix/Xv/Stacking/Proof/RetStep.lean",
    "imports": ["Compilatrix.Xv.Stacking.Proof.Return"]},
+  "Compilatrix.Xv.Stacking.Proof.RetMatch":
+  {"path": "Compilatrix/Xv/Stacking/Proof/RetMatch.lean",
+   "imports": ["Compilatrix.Xv.Stacking.Proof.RetFacts"]},
+  "Compilatrix.Xv.Stacking.Proof.RetFacts":
+  {"path": "Compilatrix/Xv/Stacking/Proof/RetFacts.lean",
+   "imports": ["Compilatrix.Xv.Stacking.Proof.RetStep"]},
   "Compilatrix.Xv.Stacking.Proof.Match":
   {"path": "Compilatrix/Xv/Stacking/Proof/Match.lean",
    "imports":
@@ -3966,6 +3972,8 @@
     "Compilatrix.Xv.Stacking.Proof.CallStep",
     "Compilatrix.Xv.Stacking.Proof.Return",
     "Compilatrix.Xv.Stacking.Proof.RetStep",
+    "Compilatrix.Xv.Stacking.Proof.RetFacts",
+    "Compilatrix.Xv.Stacking.Proof.RetMatch",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",
