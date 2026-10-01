@@ -172,6 +172,22 @@ Ix consists of the following core components:
 - Integration with the [iroh p2p network](https://www.iroh.computer/) so that
   different ix users can easily share `ixon` data between themselves.
 
+### Certified Ixon checker
+
+`Ix/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
+consistency. It is Ix's own kernel, derived from the verified checker of
+[con-leche](https://github.com/leanprover/con-leche). Its entry,
+`Ix.Ixon.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
+environment it accepts the theorems give a set-theoretic model and no proof of
+`False`, on the standard axioms only. It does not certify the compiler, the
+Rust kernel, `Ix.Tc` or IxVM. [docs/kernel.md](docs/kernel.md) states what is
+proved, what is trusted and what the gate checks; `--with-model` also builds
+the Mathlib-based model package `Models/SetTheory`:
+
+```sh
+lake run check-kernel --with-model
+```
+
 ## Benchmarks
 
 Benchmarks (compiler, kernel, and zk-prover backends) are tracked at
