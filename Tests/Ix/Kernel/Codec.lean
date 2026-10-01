@@ -383,4 +383,3 @@ def singleUseSharing : Ixon.Constant :=
 #guard match Ixon.Canonical.deConstant 256 64 (Ixon.serConstant singleUseSharing) with
   | .ok value => value == singleUseSharing
   | .error _ => false
-

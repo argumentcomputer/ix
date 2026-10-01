@@ -120,4 +120,3 @@ def decodeLoop (limits : Limits) : Nat → Records → Ingress.Constants →
 preflight is part of `checkBytes`, not this independently useful operation. -/
 def decodeRecords (limits : Limits) (records : Records) : Except Error Ingress.Constants :=
   decodeLoop limits 0 records []
-
