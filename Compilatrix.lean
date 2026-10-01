@@ -426,6 +426,8 @@ import Compilatrix.Xv.Stacking.Proof.StepBody
 import Compilatrix.Xv.Stacking.Proof.StepTerm
 import Compilatrix.Xv.Stacking.Proof.Call
 import Compilatrix.Xv.Stacking.Proof.CallFacts
+import Compilatrix.Xv.Stacking.Proof.StepCall
+import Compilatrix.Xv.Stacking.Proof.CallMatch
 import Compilatrix.Backend
 import Compilatrix.Backend.Proof.Xl
 import Compilatrix.Backend.Proof.Emit
