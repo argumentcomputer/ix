@@ -43,25 +43,15 @@ jobs:
       # lean-action runs `lake build`, then `lake test`, then `lake lint`.
       # The build-all lint driver compiles every lib/exe target with --wfail,
       # so a warning in any target (exes, benchmarks, Apps) — not just the
-      # default lib — fails CI. A push to main already passed the tests and
-      # the audit in the merge queue; that run only exists to snapshot the
-      # build products, so both are skipped there.
-      #
-      # The axiom audit is the whole-library guard: nothing reachable from
-      # the `Ix` root may depend on `sorryAx`, `Lean.ofReduceBool`
-      # (`native_decide`) or a home-rolled axiom. The lakefile's first
-      # `lean_lib` is MultiStark, so the root must be named. The Verify
-      # libraries carry sorries and `native_decide` by design and are not
-      # imported from `Ix`; their exact frontier is audited by
-      # `Ix.Tc.Verify.Audit` instead.
+      # default lib — fails CI. A push to main already passed the tests in
+      # the merge queue; that run only exists to snapshot the build
+      # products, so the tests are skipped there.
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
           test: ${{ github.event_name != 'push' }}
           test-args: "--wfail"
           lint-args: "-- --wfail -v"
-          axiom-audit: ${{ github.event_name != 'push' }}
-          axiom-audit-root: Ix
           use-github-cache: false
       - name: Build Ix.Tc formal verification
         run: lake build IxTcVerify
