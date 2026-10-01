@@ -59,3 +59,13 @@ lean_lib KernelProvenance where
 lean_exe «kernel-provenance» where
   srcDir := ".."
   root := `Tests.Ix.Kernel.Provenance
+
+/-- Con-leche's verified checker core, imported verbatim at `ae0c0c4e` (see
+the root `lakefile.lean`, which declares the same library). Lean core only;
+`linter.deprecated` is off so the 4.33.0-era sources build under `--wfail`
+on 4.34.0 unchanged. Not a default target. -/
+lean_lib ConLeche where
+  srcDir := ".."
+  roots := #[`ConLeche]
+  globs := #[.submodules `ConLeche]
+  leanOptions := #[⟨`linter.deprecated, false⟩]
