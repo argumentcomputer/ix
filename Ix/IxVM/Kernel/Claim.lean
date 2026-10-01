@@ -328,10 +328,10 @@ def claim := ⟦
     let raw = load(root);
     let (idx, len) = io_get_info(1, raw);
     let bytes = #read_byte_stream(1, idx, len);
-    let (tag, s) = get_tag4(bytes);
-    let (flag, size) = tag;
-    assert_eq!(flag, 0xE, "assumption tree: wrong tag4 flag");
-    assert_eq!(to_field(size[0]), 2, "assumption tree: wrong tag4 variant");
+    -- The header is TagN4(0xE, 2), a rung-1 value: exactly the byte 0xE2,
+    -- as the hosts and the aggregator read it.
+    let (tag, s) = read_byte(bytes);
+    assert_eq!(tag, 0xE2u8, "assumption tree: wrong TagN header");
     let (computed_root, leaves, rest) = parse_atree_body(s);
     assert_eq!(load(rest), ListNode.Nil,
       "assumption tree: trailing bytes after tree body");
@@ -543,7 +543,7 @@ def claim := ⟦
     match mb {
       0 => (Option.None, stream),
       _ =>
-        let (n, s) = get_tag0(stream);
+        let (n, s) = get_tagn0(stream);
         (Option.Some(n), s),
     }
   }
@@ -612,10 +612,10 @@ def claim := ⟦
   }
 
   -- RevealRecursorRule list parser.
-  -- Wire: `Tag0(count) + count × (Tag0(idx) + Tag0(fields) + Address)`.
+  -- Wire: `TagN0(count) + count × (TagN0(idx) + TagN0(fields) + Address)`.
   fn get_reveal_rule(stream: ByteStream) -> (RevealRecursorRule, ByteStream) {
-    let (rule_idx, s) = get_tag0(stream);
-    let (fields, s) = get_tag0(s);
+    let (rule_idx, s) = get_tagn0(stream);
+    let (fields, s) = get_tagn0(s);
     let (rhs, s) = get_address(s);
     (RevealRecursorRule.Mk(rule_idx, fields, rhs), s)
   }
@@ -636,7 +636,7 @@ def claim := ⟦
     match mb {
       0 => (Option.None, stream),
       _ =>
-        let (count, s) = get_tag0(stream);
+        let (count, s) = get_tagn0(stream);
         let (rules, s2) = get_reveal_rule_list_inner(s, count);
         (Option.Some(rules), s2),
     }
@@ -645,7 +645,7 @@ def claim := ⟦
   -- RevealConstructorInfo parser. 6 optional fields, mask bits 0..5.
   fn get_reveal_ctor_info(stream: ByteStream)
       -> (RevealConstructorInfo, ByteStream) {
-    let (mask, s) = get_tag0(stream);
+    let (mask, s) = get_tagn0(stream);
     let mask_lo = u8_bit_decomposition(mask[0]);
     let [b0, b1, b2, b3, b4, b5, _, _] = mask_lo;
     let (is_unsafe, s) = get_opt_bool_masked(b0, s);
@@ -659,7 +659,7 @@ def claim := ⟦
 
   fn get_ctor_entry(stream: ByteStream)
       -> ((U64, RevealConstructorInfo), ByteStream) {
-    let (idx, s) = get_tag0(stream);
+    let (idx, s) = get_tagn0(stream);
     let (info, s) = get_reveal_ctor_info(s);
     ((idx, info), s)
   }
@@ -680,7 +680,7 @@ def claim := ⟦
     match mb {
       0 => (Option.None, stream),
       _ =>
-        let (count, s) = get_tag0(stream);
+        let (count, s) = get_tagn0(stream);
         let (list, s2) = get_ctor_entry_list_inner(s, count);
         (Option.Some(list), s2),
     }
@@ -690,7 +690,7 @@ def claim := ⟦
   fn get_reveal_mut_const_info(stream: ByteStream)
       -> (RevealMutConstInfo, ByteStream) {
     let (variant, s) = read_byte(stream);
-    let (mask, s) = get_tag0(s);
+    let (mask, s) = get_tagn0(s);
     let mask_lo = u8_bit_decomposition(mask[0]);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = mask_lo;
     let mask_hi = u8_bit_decomposition(mask[1]);
@@ -729,7 +729,7 @@ def claim := ⟦
 
   fn get_mut_entry(stream: ByteStream)
       -> ((U64, RevealMutConstInfo), ByteStream) {
-    let (idx, s) = get_tag0(stream);
+    let (idx, s) = get_tagn0(stream);
     let (info, s) = get_reveal_mut_const_info(s);
     ((idx, info), s)
   }
@@ -745,10 +745,10 @@ def claim := ⟦
     }
   }
 
-  -- RevealConstantInfo parser. `variant + mask:Tag0 + per-bit fields`.
+  -- RevealConstantInfo parser. `variant + mask:TagN0 + per-bit fields`.
   fn get_reveal_info(stream: ByteStream) -> (RevealConstantInfo, ByteStream) {
     let (variant, s) = read_byte(stream);
-    let (mask, s) = get_tag0(s);
+    let (mask, s) = get_tagn0(s);
     let mask_lo = u8_bit_decomposition(mask[0]);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = mask_lo;
     let mask_hi = u8_bit_decomposition(mask[1]);
@@ -804,7 +804,7 @@ def claim := ⟦
         let (components, s) = match b0 {
           0 => (store(ListNode.Nil), s),
           1 =>
-            let (count, s2) = get_tag0(s);
+            let (count, s2) = get_tagn0(s);
             get_mut_entry_list_inner(s2, count),
         };
         (RevealConstantInfo.Muts(components), s),
@@ -1209,22 +1209,25 @@ def claim := ⟦
     let h = @blake3(bytes);
     assert_eq!(@b3_pack(h), digest,
       "claim: bytes do not hash to the public claim digest");
-    let (tag, s) = get_tag4(bytes);
+    -- The claim header is TagN4(0xE, variant): variants 4-7 are the one
+    -- byte 0xE4-0xE7, and Resource (9) is rung 2, `E8 01`.
+    let (tag, s) = get_tagn4(bytes);
     let (flag, size) = tag;
-    assert_eq!(flag, 0xE, "claim: wrong tag4 flag");
-    -- Dispatch on the FULL tag4 size, matching Rust `Claim::get` which
-    -- matches `tag.size: u64`. The variant is only ever 4-7, so the high 7
-    -- bytes must be zero; a size >= 256 whose low byte is 4/5/6/7 would
+    assert_eq!(flag, 0xE, "claim: wrong TagN flag");
+    -- Dispatch on the FULL TagN size, matching Rust `Claim::get` which
+    -- matches `tag.size: u64`. The variant is only ever 4-9, so the high 7
+    -- bytes must be zero; a size >= 256 whose low byte is a variant would
     -- otherwise dispatch here while Rust rejects it as an unknown variant.
     -- Sum is 0 iff every high byte is 0 (7 bytes, max sum 1785, no wrap).
     let [_, sz1, sz2, sz3, sz4, sz5, sz6, sz7] = size;
     assert_eq!(((((((to_field(sz1) + to_field(sz2)) + to_field(sz3))
                   + to_field(sz4)) + to_field(sz5)) + to_field(sz6))
                   + to_field(sz7)), 0,
-      "claim: tag4 size exceeds a single byte");
+      "claim: TagN size exceeds a single byte");
     let variant = size[0];
+    -- Object format 4 is Ixon v4, the wire format this circuit reads.
     let (format, s) = read_byte(s);
-    assert_eq!(format, 3u8, "claim: unsupported object format");
+    assert_eq!(format, 4u8, "claim: unsupported object format");
     let (validator, s) = read_byte(s);
     match variant {
       4 =>

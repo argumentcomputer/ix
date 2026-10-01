@@ -134,8 +134,8 @@ def functionGroups : Array (String × Array String) := #[
     "rbtree_map_insert.G"
   ]),
   ("ixvm_group_11", #[
-    "put_tag0",
-    "put_tag4",
+    "put_tagn0",
+    "put_tagn4",
     "put_definition_proj",
     "convert_definition",
     "level_reduce",
@@ -147,7 +147,7 @@ def functionGroups : Array (String × Array String) := #[
     "list_reverse.G"
   ]),
   ("ixvm_group_12", #[
-    "put_tag2",
+    "put_tagn2",
     "univ_succ_base",
     "put_recursor_rule",
     "put_mut_const",
@@ -339,7 +339,7 @@ def functionGroups : Array (String × Array String) := #[
     "peel_n_foralls"
   ]),
   ("ixvm_group_25", #[
-    "get_tag2",
+    "get_tagn2",
     "get_constructor_proj",
     "level_max",
     "whnf_iota_major",
