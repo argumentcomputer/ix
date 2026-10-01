@@ -287,13 +287,24 @@ def global (A : Arities) (gl : Lam.Global) : M GDef := do
 def arities (P : Lam.Program) : Arities :=
   Src.NatMap.ofList (P.globalList.map fun (g, gl) => (g, (telescope gl.body).1.length))
 
+/-- A root is a global below the program's size whose leading telescope has
+no `name` binder: a run applies a root to value arguments, which a by-name
+parameter would read as thunks (M2.3). -/
+def rootStrict (P : Lam.Program) (r : Lam.GlobalId) : Bool :=
+  match P.global? r with
+  | some gl => decide (r < P.size) && !Lam.ModesOk.hasName (Lam.Term.telescope gl.body).1
+  | none => true
+
 end Convert
 
 open Convert in
-/-- P1: convert a `ModesOk` Lam program; global ids, roots, the constructor
+/-- P1: convert a `ModesOk` Lam program whose roots take value arguments
+(decline `convert-root-name` otherwise); global ids, roots, the constructor
 table and the pinned keys are unchanged. -/
 def convert (P : Lam.Program) : Except String Program := do
   unless Lam.modesOk P do throw "convert: the Lam program is not ModesOk"
+  unless P.roots.all (rootStrict P) do
+    throw "convert-root-name: a root has by-name parameters"
   let A := arities P
   let gs ← P.globalList.mapM fun (g, gl) => do
     let gd ← (Convert.global A gl).mapError (s!"global {g}: " ++ ·)
