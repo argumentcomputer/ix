@@ -134,6 +134,10 @@ pub struct ExactSharingLimits {
   pub max_work: u64,
   /// Length of the complete serialized output.
   pub max_output_bytes: u64,
+  /// Cells `(components + 1) * (cap + 1)` of the uniform optimizer's
+  /// table-count knapsack (Lean `maxKnapsackCells`), checked before it runs
+  /// and counted separately from `max_states`.
+  pub max_knapsack_cells: u64,
   /// Seed the upper bound with the historical heuristic when it is safely
   /// representable. Affects pruning only.
   pub heuristic_upper_bound: bool,
@@ -206,6 +210,7 @@ impl Default for ExactSharingLimits {
       max_transitions: 1 << 28,
       max_work: 1 << 36,
       max_output_bytes: 1 << 32,
+      max_knapsack_cells: 1 << 28,
       heuristic_upper_bound: true,
       greedy_upper_bound: true,
       lower_bound_pruning: true,
@@ -228,6 +233,7 @@ impl ExactSharingLimits {
       max_transitions: u64::MAX,
       max_work: u64::MAX,
       max_output_bytes: u64::MAX,
+      max_knapsack_cells: u64::MAX,
       ..Self::default()
     }
   }
@@ -286,6 +292,10 @@ pub enum FormatBound {
   LengthOverflow,
   /// A uniform Share width outside `1..=255`.
   UniformWidth { w: u64 },
+  /// A telescope spine of length at least `bound` (Lean's `formatBound
+  /// "telescope spine length" teleSubaddEnd`): below it the TagN Share-flag
+  /// width is subadditive, which the uniform classes rely on.
+  TelescopeSpine { bound: u64 },
 }
 
 /// Which deterministic limit was exhausted.
@@ -300,6 +310,8 @@ pub enum Resource {
   Transitions,
   Work,
   OutputBytes,
+  /// The uniform optimizer's table-count knapsack (`max_knapsack_cells`).
+  KnapsackCells,
 }
 
 /// A deterministic resource limit was reached before certification.
