@@ -956,7 +956,7 @@
       "lean-toolchain": "8733782dc070a99b312039cda424f601b80f3be6f6f512627da5ba25adc27632",
       "nix/build.nix": "19144af14c10247515becb1de7cfc87c27b1ed1f916ce5f60f67a2466ea4e2b0",
       "nix/checks.nix": "0d649c88869de611cd7506c2261c0612652bb2b45716556cc0c50a7d41bc51b9",
-      "nix/ci-coverage.json": "20322b933414d64c65ad269b78b5455d919c7d530905dfbf8e0104d4d3f577b7",
+      "nix/ci-coverage.json": "3e91326703255a4209c443dcf8135565760801cce5dc9365d60d6841db0ee496",
       "nix/lean-modules.json": "9288ed7a65b7dfbaa06fff0a02664fe120e018704c1ebc08f26fb3bcc4b6394d",
       "nix/sources.nix": "247a3ff3bd7588e528005a48aebb53f97aea440181218082462967b3846edb2b",
       "scripts/CheckAiur.lean": "f7d14b79813a3c0702067aa1470e2d706907480a2d236854ee8fdaedd03f353d",

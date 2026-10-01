@@ -176,10 +176,10 @@ expected messages are preserved verbatim. -/
 
 /-! The rewriting walk (`Anf.Proof.Walk`, shared by P2, P3 and P4's bodies): the walk relation is structural and keeps observations; one fuel level per walk function (returns, continuations, join points by Löb induction, jumps, case-of-case, case tests and alternatives, kept and skipped bindings, globals, calls, applications and β); application of walked closures; the simulation at every bound and adequacy. -/
 
-/-- info: 'Compilatrix.Anf.WalkProof.structural' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.structural' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.structural
 
-/-- info: 'Compilatrix.Anf.WalkProof.obs' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.obs' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.obs
 
 /-- info: 'Compilatrix.Sem.SimUpTo.strengthen' does not depend on any axioms -/
@@ -1243,16 +1243,16 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.WalkProof.JEnv.brecOn' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.JEnv.brecOn
 
-/-- info: 'Compilatrix.Anf.WalkProof.WEnt.brecOn' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WEnt.brecOn' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WEnt.brecOn
 
-/-- info: 'Compilatrix.Anf.WalkProof.WEnv.brecOn' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WEnv.brecOn' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WEnv.brecOn
 
-/-- info: 'Compilatrix.Anf.WalkProof.WV.brecOn' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WV.brecOn' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WV.brecOn
 
-/-- info: 'Compilatrix.Anf.WalkProof.WVs.brecOn' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WVs.brecOn' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WVs.brecOn
 
 /-! Every other public theorem of `Compilatrix.Anf.Proof.Walk.Basic`. -/
@@ -1266,28 +1266,28 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.WalkProof.WEnt.suffix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WEnt.suffix
 
-/-- info: 'Compilatrix.Anf.WalkProof.WEnv.get' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WEnv.get' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WEnv.get
 
-/-- info: 'Compilatrix.Anf.WalkProof.WEnv.length' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WEnv.length' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WEnv.length
 
 /-- info: 'Compilatrix.Anf.WalkProof.WEnv.suffix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WEnv.suffix
 
-/-- info: 'Compilatrix.Anf.WalkProof.WVs.append' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WVs.append' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WVs.append
 
 /-- info: 'Compilatrix.Anf.WalkProof.WVs.get' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WVs.get
 
-/-- info: 'Compilatrix.Anf.WalkProof.WVs.length' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WVs.length' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WVs.length
 
-/-- info: 'Compilatrix.Anf.WalkProof.obsList_eq' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.obsList_eq' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.obsList_eq
 
-/-- info: 'Compilatrix.Anf.WalkProof.of_pw' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.of_pw' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.of_pw
 
 /-- info: 'Compilatrix.Anf.WalkProof.opds_eval' depends on axioms: [propext, Quot.sound] -/
@@ -1296,13 +1296,13 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.WalkProof.opds_suffix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.opds_suffix
 
-/-- info: 'Compilatrix.Anf.WalkProof.pw_of' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.pw_of' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.pw_of
 
 /-- info: 'Compilatrix.Anf.WalkProof.resolveList_rel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.resolveList_rel
 
-/-- info: 'Compilatrix.Anf.WalkProof.resolve_rel' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.resolve_rel' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.resolve_rel
 
 /-! Every other public theorem of `Compilatrix.Anf.Proof.Walk.Step`. -/
@@ -1460,13 +1460,13 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.WalkProof.WEnv.pushOpds' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WEnv.pushOpds
 
-/-- info: 'Compilatrix.Anf.WalkProof.WVs.drop' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WVs.drop' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WVs.drop
 
-/-- info: 'Compilatrix.Anf.WalkProof.WVs.reverse' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WVs.reverse' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WVs.reverse
 
-/-- info: 'Compilatrix.Anf.WalkProof.WVs.take' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WVs.take' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WVs.take
 
 /-- info: 'Compilatrix.Anf.WalkProof.eval_ticks' depends on axioms: [propext, Quot.sound] -/
@@ -1622,7 +1622,7 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.WalkProof.FactsOk.insert'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.FactsOk.insert'
 
-/-- info: 'Compilatrix.Anf.WalkProof.WV.lit_or_con' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WV.lit_or_con' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WV.lit_or_con
 
 /-- info: 'Compilatrix.Anf.WalkProof.fold_lits' depends on axioms: [propext, Quot.sound] -/
@@ -1720,31 +1720,31 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.Program.mem_globalList' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Program.mem_globalList
 
-/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.cbody' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.cbody' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.cbody
 
-/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.cglob' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.cglob' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.cglob
 
-/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.cknown' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.cknown' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.cknown
 
-/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.globals' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.globals' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.globals
 
-/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.inl' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.inl' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.inl
 
-/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.known' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.known' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.known
 
-/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.noRed' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.noRed' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.noRed
 
-/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.roots' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.roots' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.roots
 
-/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.suffix' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.suffix' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.suffix
 
 /-- info: 'Compilatrix.Anf.WalkProof.factsOk_leaf' depends on axioms: [propext] -/
@@ -1753,7 +1753,7 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.WalkProof.walked_body' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walked_body
 
-/-- info: 'Compilatrix.Anf.WalkProof.walked_global' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.WalkProof.walked_global' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walked_global
 
 /-! Every other public theorem of `Compilatrix.Anf.Proof.Pass.Shrink`. -/
@@ -1779,7 +1779,7 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.Shrink.Proof.getD_le_foldr' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.getD_le_foldr
 
-/-- info: 'Compilatrix.Anf.Shrink.Proof.iter_succ'' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.Shrink.Proof.iter_succ'' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.iter_succ'
 
 /-- info: 'Compilatrix.Anf.Shrink.Proof.roundOn_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -1788,13 +1788,13 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.Shrink.Proof.roundOn_global' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.roundOn_global
 
-/-- info: 'Compilatrix.Anf.Shrink.Proof.roundOr_ps' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.Shrink.Proof.roundOr_ps' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.roundOr_ps
 
-/-- info: 'Compilatrix.Anf.Shrink.Proof.roundOr_walked' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.Shrink.Proof.roundOr_walked' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.roundOr_walked
 
-/-- info: 'Compilatrix.Anf.Shrink.Proof.rounds_iter' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.Shrink.Proof.rounds_iter' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.rounds_iter
 
 /-- info: 'Compilatrix.Anf.Shrink.Proof.stage_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -1802,7 +1802,7 @@ expected messages are preserved verbatim. -/
 
 /-! Every other public theorem of `Compilatrix.Anf.Proof.Pass.Inline`. -/
 
-/-- info: 'Compilatrix.Anf.Inline.Proof.after_walked' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Compilatrix.Anf.Inline.Proof.after_walked' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Inline.Proof.after_walked
 
 /-! Every other public theorem of `Compilatrix.Anf.Proof.Pass.Reach`. -/
