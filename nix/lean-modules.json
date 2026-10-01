@@ -2084,6 +2084,9 @@
     "Compilatrix.Cfg.Lower",
     "Compilatrix.Rt.Backend",
     "Compilatrix.Rt.Readback"]},
+  "Compilatrix.Recheck.Proof.Sound":
+  {"path": "Compilatrix/Recheck/Proof/Sound.lean",
+   "imports": ["Compilatrix.Recheck.Proof.Front"]},
   "Compilatrix.Recheck.Proof.Front":
   {"path": "Compilatrix/Recheck/Proof/Front.lean",
    "imports":
@@ -3676,6 +3679,7 @@
     "Compilatrix.Src.Table.Cert",
     "Compilatrix.Recheck",
     "Compilatrix.Recheck.Proof.Front",
+    "Compilatrix.Recheck.Proof.Sound",
     "Compilatrix.Cli",
     "Compilatrix.Aiur"]},
   "CheckX86Streams":

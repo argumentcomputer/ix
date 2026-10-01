@@ -389,6 +389,7 @@ import Compilatrix.Rt.Backend
 import Compilatrix.Src.Table.Cert
 import Compilatrix.Recheck
 import Compilatrix.Recheck.Proof.Front
+import Compilatrix.Recheck.Proof.Sound
 import Compilatrix.Cli
 import Compilatrix.Aiur
 
@@ -407,7 +408,8 @@ down to typed x86 (`Backend.emit`), the x86 target model with its certified
 encoder (E1) and stream/ELF layer (E2), the compiler itself (`Recheck`: the
 certificate, `produce`, the recheck path `Recheck.run` and `compile`, and the
 front half's refinement from the checked source to the loaded Lir program,
-`Recheck.front_refines`; `Cli`: the `compilatrix` command line), and the Aiur target. The
+`Recheck.front_refines`, with `compile_sound` and `compile_safe` from the backend
+half's refinement; `Cli`: the `compilatrix` command line), and the Aiur target. The
 compiler pipeline is being rebuilt; see `docs/roadmap.md`. The complete
 regression and proof collection is built explicitly through
 `CompilatrixTests.Proofs`. -/
