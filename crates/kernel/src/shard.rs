@@ -15,16 +15,10 @@
 //!   pre-partition for a **cut-coherent order** so dependency overlap packs into
 //!   the same shard (overlap paid once, not re-ingressed per shard).
 //!
-//! **Why the order comes from min-cut.** Lean typecheck is reduction-dominated:
-//! across Init/Std/Mathlib (mathlib's 631k blocks included) own-bytes is only
-//! 2.6–7% of member cost, so on Zisk alone cross-ingress is a ≤3% cost term and a
-//! plain block-id order packs within ~2% of min-cut. min-cut still earns the
-//! default because the same `.ixprof`/`.ixes` also drives Aiur, where ingress is
-//! a first-order cost; because it stays robust if an ingress-heavy env flips that
-//! balance; and because it keeps each shard's injected closure small, which the
-//! 512 MB guest heap requires. A cheaper id/dfs order trades those properties for
-//! ~2% on Zisk only. The cap planner ([`partition_for_cycle_cap`]) is
-//! order-agnostic, so the order is a pluggable choice.
+//! Min-cut keeps dependency-overlapping blocks together, reducing repeated
+//! ingress and bounding each shard's injected closure. The cap planner
+//! ([`partition_for_cycle_cap`]) is order-agnostic, so the ordering remains a
+//! pluggable choice.
 //!
 //! ## Model
 //!
@@ -152,7 +146,7 @@ const PACK_PIECES_PER_CAP: u128 = 32;
 /// A weighted hypergraph derived from a [`BlockProfile`]. Vertex ids are block
 /// ids (identical to the profile's). Nets are stored with global pins.
 pub struct Hypergraph {
-  /// Vertex (block) weights = predicted Zisk guest STEPS ([`block_step_cost`]:
+  /// Vertex (block) weights = estimated guest cost ([`block_step_cost`]:
   /// reduction `heartbeats` + own ingress bytes), so the balanced partition
   /// equalizes predicted per-shard *cycles* (the prover-RAM driver) rather than
   /// heartbeats alone — which underweighted ingress-heavy shards.
@@ -2531,7 +2525,7 @@ pub fn shard_manifest_refine(
   Ok((manifest.summary(), part_ids))
 }
 
-/// Like [`shard_esp`] but sized to a per-shard Zisk **cycle** budget
+/// Like [`shard_esp`] but sized to a per-shard estimated **cycle** budget
 /// (`max_cycles`) rather than a fixed shard count: grows `N` until the heaviest
 /// splittable shard fits the budget (see [`partition_for_cycle_cap`]). Use
 /// [`cycle_cap_for_ram`] to derive `max_cycles` from a host-RAM target.
@@ -2572,10 +2566,8 @@ pub fn shard_esp_cap(
   ))
 }
 
-/// Calibrated Zisk guest-COST model — the **single source of truth** for
-/// predicting a block's in-circuit cost contribution, in **ziskemu cost
-/// units** (`ziskemu -X` TOTAL: MAIN + OPCODES + MEMORY + PRECOMPILES +
-/// BASE). Cost, not raw steps, is the packing denomination: it prices the
+/// Legacy guest-cost estimate for the profiled partitioner. Cost, rather
+/// than raw steps, is the packing denomination: it prices the
 /// axes that don't ride the main trace — DMA/blake3 precompile area and
 /// memory ops — though on the uid-identity kernel the mix is stable
 /// (~92.5 units per guest step ± 7% across the calibration corpus, blake3
@@ -2583,7 +2575,7 @@ pub fn shard_esp_cap(
 /// (`.ixprof` v2): substitution-node visits, whnf/def-eq entries, and
 /// intern-table visits (term-construction volume — the proxy for the
 /// memory-traffic/DMA axis reduction counters can't see). **Best-fit**
-/// coefficients over 118 `ziskemu -X`-measured InitStd shards across 13
+/// coefficients over 118 measured InitStd shards across 13
 /// constants (weighted least squares on relative error, MAPE 10.9%, worst
 /// under-prediction −33%). One definition, used everywhere: the
 /// `ix profile` breakdown, per-shard prediction, and the packer's cap test.
@@ -2605,7 +2597,7 @@ pub const SHARD_COST_FLOOR: u64 = 293_600_000;
 /// per-block features).
 pub const COST_MODEL_HEADROOM: f64 = 1.5;
 
-/// Predicted Zisk guest cost units for a bag of raw op counters — the same
+/// Estimated guest cost units for a bag of raw op counters — the same
 /// linear model as [`block_step_cost`], for callers that hold an
 /// [`OpCounts`] rather than a profile block (e.g. the per-constant
 /// attribution CSV `ix check-rs --per-const` emits).
@@ -2617,7 +2609,7 @@ pub fn op_counts_cost(ops: &crate::profile::OpCounts) -> u64 {
     .saturating_add(COST_PER_INTERN.saturating_mul(ops.intern_nodes))
 }
 
-/// Predicted Zisk guest cost units contributed by a single block. The
+/// Estimated guest cost units contributed by a single block. The
 /// per-shard floor and any cross-shard re-ingress are added at the shard
 /// level, not here. Producer-only blocks (never directly checked) carry no
 /// op counts and predict zero — their load cost is priced through the
@@ -2770,8 +2762,8 @@ fn prove_report(
   )
 }
 
-/// A partition sized to a per-shard Zisk **cycle** budget (rather than a fixed
-/// shard count). See [`partition_for_cycle_cap`].
+/// A partition sized to a per-shard estimated **cycle** budget rather than a
+/// fixed shard count. See [`partition_for_cycle_cap`].
 pub struct BudgetPlan {
   /// Chosen shard count.
   pub num_shards: usize,
@@ -2800,7 +2792,7 @@ pub struct BudgetPlan {
 /// Size a partition to a per-shard **cycle** (guest-STEP) budget by **bin-packing
 /// to the cap**, not by balancing into a fixed shard count.
 ///
-/// `max_cycles` is the ceiling on a single shard's in-circuit Zisk guest steps
+/// `max_cycles` is the ceiling on a single shard's estimated guest steps
 /// — the leaf prover's trace size, which is what sets peak prover RAM. Get it
 /// from a host-RAM budget with [`cycle_cap_for_ram`] (the measured prover model
 /// `peak_RAM_GiB ≈ 50 + 33 × steps_billions`).

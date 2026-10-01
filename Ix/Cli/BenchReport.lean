@@ -126,8 +126,7 @@ def human (v : Option Float) (metric : String) : String :=
 /-- Metrics where a LARGER value is the improvement; everything else is
     lower-is-better (times, RAM, cycles, sizes). `throughput` means
     constants checked per second on EVERY backend (`ix_bench::throughput`
-    is the one calculator; a zkVM's cycle rate stays derivable from its
-    cycles / execute-time fields). -/
+    is the one calculator). -/
 def higherIsBetter (metric : String) : Bool :=
   dropStagePrefix metric == "throughput"
 
@@ -360,8 +359,8 @@ def renderCompare (a : CompareArgs) : String := Id.run do
         ++ lines
   -- Per-phase drill-down (only under `a.phases`): the tables above
   -- carry every constant's high-level row; below it, each constant with
-  -- `phase-<span>` fields (aiur witness/commit/quotient breakdowns, zkVM
-  -- coarse phases) gets its own collapsed mini-table
+  -- `phase-<span>` fields (aiur witness/commit/quotient breakdowns)
+  -- gets its own collapsed mini-table
   -- (`phase | base | PR | Δ%`), opened as desired.
   let mut detail : Array String := #[]
   if a.phases then
@@ -509,7 +508,7 @@ private def moverDriver (m pr : PerConstEntry) : String :=
     no double counting, and a change to a shared dependency surfaces in
     every consumer entry it affects. This is NOT the full-closure scope of
     the headline table's curated `--consts` measurements (which re-check
-    the whole closure, the zkVM hosts' semantics) — the same name can be
+    the whole closure) — the same name can be
     seconds there and milliseconds here.
 
     Movers split into two classes with different evidence quality:
@@ -588,7 +587,7 @@ def renderPerConstMovers (mainCsv prCsv : String) (baseLabel : String := "main")
     if rows.isEmpty then ""
     else Id.run do
       let mut s := s!"**{title}**\n\n\
-        | constant | {baseLabel} | PR | Δtime | Δcost (Zisk) | driver |\n\
+        | constant | {baseLabel} | PR | Δtime | Δcost | driver |\n\
         |---|---|---|---|---|---|\n"
       for (name, m, p, _) in rows do
         let dcost := fmtDeltaCell m.cost p.cost "cycles"
@@ -969,10 +968,9 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] | all)
+      !benchmark ([aiur] [ooc] [compile] [decompile] | all)
                  [execute] [fresh] [KEY=VALUE …]
-      (`all` covers the scheduled backends; zisk and sp1 are on demand
-       and run only when named)
+      (`all` covers the scheduled backends)
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive, any registry env;
                                     defaults to every env for the
                                     env-keyed backends (compile,
@@ -987,7 +985,7 @@ def parseError (msg : String) : IO UInt32 := do
                                     for FLT.* names — so BENCH_ENVS is
                                     never required. A single-env
                                     BENCH_ENVS still forces placement.)
-      BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
+      BENCH_PHASES=1 / RUST_LOG=… /
       RUSTFLAGS=… / IX_COMPILE_EAGER=… / IX_COMPILE_DEMOTE=… /
       IX_COMPILE_WORKERS=… / IX_DECOMPILE_KENV_CLEAR_ENTRIES=…
                                     (passthrough; BENCH_PHASES=1 adds the
@@ -1044,8 +1042,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     if t == "fresh" then
       freshFlag := true
       continue
-    -- `all` is the scheduled surface; a backend whose default mode is
-    -- unscheduled (zisk, sp1) runs only when named.
+    -- `all` includes the scheduled backends.
     let requested := if t == "all"
       then Ix.Cli.BenchCmd.backendSpecs.filter fun b =>
         b.disabled.isNone && b.scheduledModes.contains b.defaultMode
@@ -1110,7 +1107,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
         for tok in Ix.Cli.ConstsFile.parseCommaList val do
           if !consts.contains tok then consts := consts.push tok
       | k =>
-        if ["BENCH_PHASES", "RUST_LOG", "WITHOUT_VK_VERIFICATION",
+        if ["BENCH_PHASES", "RUST_LOG",
             "RUSTFLAGS", "IX_COMPILE_EAGER", "IX_COMPILE_DEMOTE",
             "IX_COMPILE_WORKERS", "BENCH_TRACE_SHARDS",
             "IX_DECOMPILE_KENV_CLEAR_ENTRIES"].contains k then
@@ -1119,7 +1116,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
           return ← parseError s!"unknown config key `{k}` in the \
             benchmark command (expected BENCH_ENVS / BENCH_CONSTS, \
             or passthrough: BENCH_PHASES, \
-            RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS, \
+            RUST_LOG, RUSTFLAGS, \
             IX_COMPILE_EAGER, IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS, \
             BENCH_TRACE_SHARDS, IX_DECOMPILE_KENV_CLEAR_ENTRIES)"
     | [] => continue
@@ -1354,7 +1351,6 @@ def benchCmd : Cli.Cmd := `[Cli|
 
   SUBCOMMANDS:
     benchRunCmd;
-    benchShardCmd;
     benchCompareCmd;
     benchReportCmd;
     benchBmfCmd;

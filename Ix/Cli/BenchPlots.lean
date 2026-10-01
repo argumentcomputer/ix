@@ -75,11 +75,6 @@ def plotTitle (workload measure : String) : String :=
   | "aiur", "join-verify-time"         => "Aiur Aggregate Join Verify Time"
   | "aiur", "join-peak-rss"            => "Aiur Aggregate Join Peak RAM Usage"
   | "aiur", "join-proof-size"          => "Aiur Aggregate Join Proof Size"
-  | "zisk-check-execute", "execute-time" => "Zisk Execute Time"
-  | "zisk-check-execute", "throughput"   => "Zisk Execute Throughput"
-  | "zisk-check-execute", "peak-rss"     => "Zisk Execute Peak RAM Usage"
-  | "zisk-check-execute", "cycles"       => "Zisk Cycles"
-  | "zisk-check-execute", "shards"       => "Zisk Shards"
   | "ooc-check", "check-time"            => "OOC Check Time"
   | "ooc-check", "throughput"            => "OOC Check Throughput"
   | "ooc-check", "peak-rss"              => "OOC Check Peak RAM Usage"
@@ -90,9 +85,7 @@ def plotTitle (workload measure : String) : String :=
   | "aiur-sharded-env-check", "shards"     => "Aiur Env Shards"
   | w, m => s!"{w}: {m}"
 
-/-- Tracked but not plotted solo. Zisk
-    `constants` charts on the input-constants plot below instead of alone.
-    `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
+/-- Tracked but not plotted solo. `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
     `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
     exactly — the decompile run tracks only its own decompile-time /
     throughput / peak-rss trends. The aiur run's per-stage headline is
@@ -112,8 +105,7 @@ def plotTitle (workload measure : String) : String :=
     end-to-end `pipeline-throughput` gets the backend's one throughput
     plot, comparable with the other backends'. -/
 def plotSkips : List (String × String) :=
-  [("zisk-check-execute", "constants"),
-   ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
+  [("ix-decompile", "file-size"), ("ix-decompile", "constants"),
    ("aiur", "ixvm-peak-rss"), ("aiur", "ixvm-verify-time"),
    ("aiur", "ixvm-execute-time"), ("aiur", "fri-verifier-execute-time"),
    ("aiur", "join-execute-time"),
@@ -147,10 +139,10 @@ def unitsFor (slug : String) : Option String :=
    ("throughput", "constants / second")].lookup
      (BenchCmd.dropStagePrefix slug)
 
-/-- Dashboard group order (compile first, then the aiur pipeline, zisk,
+/-- Dashboard group order (compile first, then the aiur pipeline,
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
-  ["ix-compile", "ix-decompile", "aiur", "zisk-check-execute", "ooc-check"]
+  ["ix-compile", "ix-decompile", "aiur", "ooc-check"]
 
 structure PlotSpec where
   testbed : String
@@ -240,16 +232,6 @@ def testbedsForPlot (testbeds : Array Json) (workload : String) : Array String :
   slugs.filterMap (findUuid testbeds "slug" ·)
 
 /-! ## Sync -/
-
-/-- History window (seconds) for a plot, overriding the global `--window`
-    default by display title. A listed title renders a tighter rolling span so
-    its recent trend isn't compressed by older history; every other title uses
-    the default. Keyed by title — the same identity the sync keeps/replaces
-    on. -/
-def windowFor (title : String) (dflt : Nat) : Nat :=
-  match title with
-  | "Zisk Execute Throughput" => 4 * 7 * 24 * 3600  -- 4 weeks
-  | _ => dflt
 
 /-- A plot as the sync wants it: everything already resolved to UUIDs. -/
 structure DesiredPlot where
@@ -366,27 +348,19 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
       let title := plotTitle workload measure
       desired := desired.push
         { title, testbeds := testbedUuids, benchmarks := benchUuids,
-          measure := measureUuid, window := windowFor title window }
+          measure := measureUuid, window }
 
-  -- Input-constants trend over the shared constant set. The kernel
-  -- backends (aiur, zisk, ooc) report the SAME named-constant count for
-  -- each checked closure (the pre-shard input set, unaffected by
-  -- anon-work dedup or shard partitioning), so the count is shared:
-  -- sourcing it from more than one testbed would draw every constant
-  -- multiple times. The zisk run is the single source: its sharded
-  -- execution keeps every closure feasible, so its rows (and their
-  -- `constants`) upload even where the aiur prove OOMs and the row is
-  -- dropped; only zisk's excluded names lack a line, and those have no
-  -- completed upload from any backend.
+  -- The native checker supplies closure counts independently of proving
+  -- capacity. Select only the shared constants, excluding whole-env rows.
   let overlay : Option DesiredPlot := do
-    let ziskTb ← BenchCmd.benchmarkMachines.findSome? fun machine =>
-      findUuid testbeds "slug" (BenchCmd.testbedOnMachine "zisk-check-execute" machine)
+    let oocTb ← BenchCmd.benchmarkMachines.findSome? fun machine =>
+      findUuid testbeds "slug" (BenchCmd.testbedOnMachine "ooc-check" machine)
     let consts ← findUuid measures "slug" "constants"
-    let names ← (specs.find? (·.testbed == "zisk-check-execute")).map
-      (·.benchmarks.filterMap (findUuid benchmarks "name" ·))
+    let names := Ix.BenchConstants.benchConstants.filterMap fun c =>
+      findUuid benchmarks "name" c.name
     return { title := "Kernel Input Constants",
-             testbeds := #[ziskTb], benchmarks := names,
-             measure := consts, window := windowFor "Kernel Input Constants" window }
+             testbeds := #[oocTb], benchmarks := names,
+             measure := consts, window }
   match overlay with
   | some d => desired := desired.push d
   | none => do

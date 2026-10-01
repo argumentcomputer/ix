@@ -64,11 +64,6 @@ jobs:
       - run: nix flake check --print-build-logs --accept-flake-config
       # Run the real build and test commands inside the development environment.
       - run: nix develop --accept-flake-config --command bash -c "lake build && lake test"
-      # Realize the zkVM shells so they're verified and pushed to the cache,
-      # and smoke-test each shell's toolchain entrypoint.
-      # TODO: Re-enable once the zkVM shells build in CI.
-      # - run: nix develop --print-build-logs --accept-flake-config .#zisk --command cargo-zisk --version
-      # - run: nix develop --print-build-logs --accept-flake-config .#sp1 --command cargo prove --version
 
   nix-gate:
     if: ${{ always() }}

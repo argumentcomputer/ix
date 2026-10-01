@@ -18,11 +18,10 @@ this language:
 - `Constant.refs` point at constant and blob `Address`es.
 - `KId.addr` — the identity the typechecker certifies — is the Ixon
   `Address`.
-- The Zisk guest's committed claim is built from `Address`es:
-  `subject_root` / `assumptions_root` are `merkle_root_canonical` over
-  the certified / assumed constant addresses (`crates/kernel/src/claim.rs`,
-  `zisk/guest/src/main.rs`), and `env_hash` is blake3 over the exact env
-  payload.
+- Kernel claim roots are built from `Address`es:
+  `subject_root` / `assumptions_root` use `merkle_root_canonical` over
+  the certified / assumed constant addresses
+  (`crates/kernel/src/claim.rs`).
 - Aggregation (`Claim::CheckEnv`, the `Contains` discharge) resolves
   assumption leaves against subject roots **by address**, and the
   cross-run proof store is keyed by address (content-addressed: the same
@@ -81,8 +80,8 @@ addresses, and are torn down when the `KEnv` clears.
 Historically this layer ALSO used blake3: every constructed node hashed
 `(variant tag ‖ child hashes)`. That was a *separate scheme* from Ixon
 addressing (a Merkle-DAG over node tags, not blake3-of-serialization) —
-the two were never interchangeable — and it cost ~20% of all guest
-cycles on reduction-heavy constants in the Zisk prover.
+the two were never interchangeable — and repeated hashing added work
+for every constructed node.
 
 Since `1e3029d`, layer-2 identity is an **intern-assigned `u64` uid**
 (`crates/kernel/src/env.rs::Addr`):
