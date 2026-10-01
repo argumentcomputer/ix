@@ -205,6 +205,12 @@ import Compilatrix.Own.Immortal
 import Compilatrix.Own.WellFormed
 import Compilatrix.Fir.Proof.Unfold
 import Compilatrix.Fir.Proof.Mono
+import Compilatrix.Fir.Proof.Rel
+import Compilatrix.Fir.Proof.Lowering
+import Compilatrix.Fir.Proof.Env
+import Compilatrix.Fir.Proof.Corr
+import Compilatrix.Fir.Proof.Sim
+import Compilatrix.Fir.Proof.Correct
 import Compilatrix.Own.Proof.Unfold
 import Compilatrix.Own.Proof.Mono
 import Compilatrix.Cfg.Syntax

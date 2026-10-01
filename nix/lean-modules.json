@@ -912,7 +912,7 @@
    ["Compilatrix.Ixon.V3.Resource.StateProofs", "Compilatrix.Ixon.V3.Source"]},
   "CompilatrixTests.Fences.FirProof":
   {"path": "CompilatrixTests/Fences/FirProof.lean",
-   "imports": ["Compilatrix.Fir.Proof.Mono"]},
+   "imports": ["Compilatrix.Fir.Proof.Mono", "Compilatrix.Fir.Proof.Correct"]},
   "CompilatrixTests.Fences.Fir":
   {"path": "CompilatrixTests/Fences/Fir.lean",
    "imports": ["Compilatrix.Fir.Semantics"]},
@@ -2564,9 +2564,33 @@
   "Compilatrix.Fir.Proof.Unfold":
   {"path": "Compilatrix/Fir/Proof/Unfold.lean",
    "imports": ["Compilatrix.Fir.Semantics", "Compilatrix.Sem.Agrees"]},
+  "Compilatrix.Fir.Proof.Sim":
+  {"path": "Compilatrix/Fir/Proof/Sim.lean",
+   "imports": ["Compilatrix.Fir.Proof.Corr"]},
+  "Compilatrix.Fir.Proof.Rel":
+  {"path": "Compilatrix/Fir/Proof/Rel.lean",
+   "imports":
+   ["Compilatrix.Fir.Proof.Mono",
+    "Compilatrix.Fir.Lower",
+    "Compilatrix.Anf.Proof.Mono"]},
   "Compilatrix.Fir.Proof.Mono":
   {"path": "Compilatrix/Fir/Proof/Mono.lean",
    "imports": ["Compilatrix.Fir.Proof.Unfold", "Compilatrix.Sem.SimUpTo"]},
+  "Compilatrix.Fir.Proof.Lowering":
+  {"path": "Compilatrix/Fir/Proof/Lowering.lean",
+   "imports": ["Compilatrix.Fir.Lower", "Compilatrix.Src.Proof.NatMap"]},
+  "Compilatrix.Fir.Proof.Env":
+  {"path": "Compilatrix/Fir/Proof/Env.lean",
+   "imports": ["Compilatrix.Fir.Proof.Rel", "Compilatrix.Fir.Proof.Lowering"]},
+  "Compilatrix.Fir.Proof.Correct":
+  {"path": "Compilatrix/Fir/Proof/Correct.lean",
+   "imports":
+   ["Compilatrix.Fir.Proof.Sim",
+    "Compilatrix.Anf.Proof.Lang",
+    "Compilatrix.Sem.TracedSim"]},
+  "Compilatrix.Fir.Proof.Corr":
+  {"path": "Compilatrix/Fir/Proof/Corr.lean",
+   "imports": ["Compilatrix.Fir.Proof.Env", "Compilatrix.Sem.Bind"]},
   "Compilatrix.Fir.Print":
   {"path": "Compilatrix/Fir/Print.lean", "imports": ["Compilatrix.Fir.Syntax"]},
   "Compilatrix.Fir.Lower":
@@ -3382,6 +3406,12 @@
     "Compilatrix.Own.WellFormed",
     "Compilatrix.Fir.Proof.Unfold",
     "Compilatrix.Fir.Proof.Mono",
+    "Compilatrix.Fir.Proof.Rel",
+    "Compilatrix.Fir.Proof.Lowering",
+    "Compilatrix.Fir.Proof.Env",
+    "Compilatrix.Fir.Proof.Corr",
+    "Compilatrix.Fir.Proof.Sim",
+    "Compilatrix.Fir.Proof.Correct",
     "Compilatrix.Own.Proof.Unfold",
     "Compilatrix.Own.Proof.Mono",
     "Compilatrix.Cfg.Syntax",
