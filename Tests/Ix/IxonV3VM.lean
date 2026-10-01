@@ -122,10 +122,8 @@ def runCountTruncations (env : AiurTestEnv) : IO Nat := do
   for count in [1, 2, (2 ^ 64 - 1 : Nat)] do
     let large := count > 2
     let accept := count == 1
-    let suffix : Array UInt8 := if large then Array.replicate 8 0xff else #[]
-    let tag0 : ByteArray := .mk ((if large then #[0x87] else #[count.toUInt8]) ++ suffix)
-    let tag4 (flag : UInt8) : ByteArray :=
-      .mk (#[flag * 16 + (if large then 15 else count.toUInt8)] ++ suffix)
+    let tag0 : ByteArray := Ixon.runPut (Ixon.putTagN 0 0 count.toUInt64)
+    let tag4 (flag : UInt8) : ByteArray := Ixon.runPut (Ixon.putTagN 4 flag count.toUInt64)
     let finish (bytes tail : ByteArray) := if accept then bytes ++ tail else bytes
     let countLabel := if large then "max-u64" else toString count
     for (label, bytes) in [

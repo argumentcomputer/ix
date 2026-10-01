@@ -29,84 +29,102 @@ def ixonDeserialize := ⟦
   }
 
   -- ============================================================================
-  -- Tag parsing
+  -- TagN integers (`Ixon.getTagN`)
   -- ============================================================================
 
-  -- Tag0: [large:1][size:7]
-  fn get_tag0(stream: ByteStream) -> (U64, ByteStream) {
-    let ListNode.Cons(byte, s) = load(stream);
-    let bits = u8_bit_decomposition(byte);
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
-    let small_size = b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6;
-    match b7 {
-      0 =>
-        ([u8_from_field_unsafe(small_size), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], s),
-      _ =>
-        let num_bytes = small_size + 1;
-        -- A u64 payload is at most 8 bytes. `small` is 7 bits here, so
-        -- `num_bytes` reaches 128 and `get_u64_le` would consume the
-        -- surplus and DISCARD it, silently accepting bytes no host will:
-        -- Rust rejects `len > 8`, and the Lean host folds the extra bytes
-        -- back in (its shift is mod 64), reading a different value from
-        -- the same address. Reject instead, so the accepted language
-        -- matches the format.
-        assert_eq!(u8_less_than(u8_from_field_unsafe(num_bytes), 9u8), 1,
-          "tag0: payload width exceeds 8 bytes");
-        let (size, s2) = get_u64_le(s, num_bytes);
-        assert_eq!(to_field(u64_byte_count(size)), num_bytes, "nonminimal tag0 width");
-        match num_bytes {
-          1 => assert_eq!(u8_less_than(size[0], 128u8), 0, "nonminimal tag0 value"); (); (),
-          _ => (),
-        };
-        (size, s2),
-    }
-  }
+  -- Every integer of the wire format is a TagN integer: one header byte
+  -- `[flag : f bits][payload : r = 8 - f bits]` (f = 4 for expression,
+  -- constant and claim headers, 2 for universes, 0 for counts and indices)
+  -- followed by 0, 1, 2, 3, 4 or 8 little-endian bytes. With L the top
+  -- payload bit, M the next one, c the low r - 2 bits and h = 2^(r - 2):
+  --   L = 0         rung 1: the low r - 1 payload bits,   [0, R1),  R1 = 2h
+  --   L = 1, M = 0  rung 2: R1 + 256 c + one byte,        [R1, R2), R2 = 258h
+  --   L = 1, M = 1  code c = 0, 1, 2, 3 selects 2, 3, 4, 8 bytes x, and the
+  --                 value is R(c + 2) + x, with R3 = R2 + 2^16,
+  --                 R4 = R3 + 2^24, R5 = R4 + 2^32.
+  -- Each rung starts where the previous one ends, so every value has exactly
+  -- one encoding and there is no non-canonical form to reject. A reader
+  -- rejects only invalid codes (c >= 4, possible for f = 0 and 2), values
+  -- reaching 2^64 on the 8-byte rung, and truncation.
+  --
+  -- The three readers keep rung 1, the common case, on one narrow row; the
+  -- other rungs share `get_tagn_tail`, parameterised by h. R2's bytes are
+  -- [2h, h], so the readers need no other constant.
 
-  -- Tag2: [flag:2][large:1][size:5]
-  fn get_tag2(stream: ByteStream) -> ((G, U64), ByteStream) {
+  -- TagN, f = 4: [flag:4][L][M][c:2].
+  fn get_tagn4(stream: ByteStream) -> ((G, U64), ByteStream) {
     let ListNode.Cons(byte, s) = load(stream);
-    let bits = u8_bit_decomposition(byte);
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
-    let flag = b6 + 2 * b7;
-    let small_size = b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4;
-    match b5 {
-      0 =>
-        ((flag, [u8_from_field_unsafe(small_size), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), s),
-      _ =>
-        let num_bytes = small_size + 1;
-        -- Same bound as `get_tag0`; `small` is 5 bits here, so
-        -- `num_bytes` reaches 32.
-        assert_eq!(u8_less_than(u8_from_field_unsafe(num_bytes), 9u8), 1,
-          "tag2: payload width exceeds 8 bytes");
-        let (size, s2) = get_u64_le(s, num_bytes);
-        assert_eq!(to_field(u64_byte_count(size)), num_bytes, "nonminimal tag2 width");
-        match num_bytes {
-          1 => assert_eq!(u8_less_than(size[0], 32u8), 0, "nonminimal tag2 value"); (); (),
-          _ => (),
-        };
-        ((flag, size), s2),
-    }
-  }
-
-  -- Tag4: [flag:4][large:1][size:3]
-  fn get_tag4(stream: ByteStream) -> ((G, U64), ByteStream) {
-    let ListNode.Cons(byte, s) = load(stream);
-    let bits = u8_bit_decomposition(byte);
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = u8_bit_decomposition(byte);
     let flag = b4 + 2 * b5 + 4 * b6 + 8 * b7;
-    let small_size = b0 + 2 * b1 + 4 * b2;
+    let low = b0 + 2 * b1 + 4 * b2;
     match b3 {
+      0 => ((flag, [u8_from_field_unsafe(low), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), s),
+      1 =>
+        let (value, rest) = get_tagn_tail(low, 4, s);
+        ((flag, value), rest),
+    }
+  }
+
+  -- TagN, f = 2: [flag:2][L][M][c:4].
+  fn get_tagn2(stream: ByteStream) -> ((G, U64), ByteStream) {
+    let ListNode.Cons(byte, s) = load(stream);
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = u8_bit_decomposition(byte);
+    let flag = b6 + 2 * b7;
+    let low = b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4;
+    match b5 {
+      0 => ((flag, [u8_from_field_unsafe(low), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), s),
+      1 =>
+        let (value, rest) = get_tagn_tail(low, 16, s);
+        ((flag, value), rest),
+    }
+  }
+
+  -- TagN, f = 0: [L][M][c:6]. No flag, so one comparison replaces the bit
+  -- decomposition, and a rung-1 value is the header byte itself.
+  fn get_tagn0(stream: ByteStream) -> (U64, ByteStream) {
+    let ListNode.Cons(byte, s) = load(stream);
+    match u8_less_than(byte, 128u8) {
+      1 => ([byte, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], s),
+      0 => get_tagn_tail(to_field(byte) - 128, 64, s),
+    }
+  }
+
+  -- Rungs 2 to 6. `q` is the payload below L (M then c) and `h` the weight
+  -- of M, so `q < h` is rung 2 and `q - h` is the code otherwise.
+  fn get_tagn_tail(q: G, h: G, stream: ByteStream) -> (U64, ByteStream) {
+    match u8_less_than(u8_from_field_unsafe(q), u8_from_field_unsafe(h)) {
+      -- R1 + 256 q + lo, with q < h <= 64: the high byte absorbs the carry.
+      1 =>
+        let ListNode.Cons(lo, s) = load(stream);
+        let (v0, carry) = u8_add(lo, u8_from_field_unsafe(2 * h));
+        ([v0, u8_from_field_unsafe(q + to_field(carry)), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], s),
+      0 => get_tagn_wide(q - h, h, stream),
+    }
+  }
+
+  -- Rungs 3 to 6: code c reads 2, 3, 4 or 8 bytes and adds R(c + 2). Codes
+  -- 4 and up (f = 0 and 2) have no arm, so the match rejects them.
+  fn get_tagn_wide(c: G, h: G, stream: ByteStream) -> (U64, ByteStream) {
+    let r0 = u8_from_field_unsafe(2 * h);
+    let r1 = u8_from_field_unsafe(h);
+    match c {
       0 =>
-        ((flag, [u8_from_field_unsafe(small_size), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), s),
-      _ =>
-        let num_bytes = small_size + 1;
-        let (size, s2) = get_u64_le(s, num_bytes);
-        assert_eq!(to_field(u64_byte_count(size)), num_bytes, "nonminimal tag4 width");
-        match num_bytes {
-          1 => assert_eq!(u8_less_than(size[0], 8u8), 0, "nonminimal tag4 value"); (); (),
-          _ => (),
-        };
-        ((flag, size), s2),
+        let (x, s) = get_u64_le(stream, 2);
+        let (value, _) = u64_add(x, [r0, r1, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+        (value, s),
+      1 =>
+        let (x, s) = get_u64_le(stream, 3);
+        let (value, _) = u64_add(x, [r0, r1, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+        (value, s),
+      2 =>
+        let (x, s) = get_u64_le(stream, 4);
+        let (value, _) = u64_add(x, [r0, r1, 1u8, 1u8, 0u8, 0u8, 0u8, 0u8]);
+        (value, s),
+      3 =>
+        let (x, s) = get_u64_le(stream, 8);
+        let (value, carry) = u64_add(x, [r0, r1, 1u8, 1u8, 1u8, 0u8, 0u8, 0u8]);
+        assert_eq!(to_field(carry), 0, "TagN value exceeds UInt64");
+        (value, s),
     }
   }
 
@@ -119,7 +137,7 @@ def ixonDeserialize := ⟦
     match is_zero {
       1 => (store(ListNode.Nil), stream),
       0 =>
-        let (val, s) = get_tag0(stream);
+        let (val, s) = get_tagn0(stream);
         let (rest, s2) = get_u64_list(s, relaxed_u64_pred(count));
         (store(ListNode.Cons(val, rest)), s2),
     }
@@ -218,40 +236,40 @@ def ixonDeserialize := ⟦
   }
 
   fn get_expr(stream: ByteStream) -> (&Expr, ByteStream) {
-    let (tag, s) = get_tag4(stream);
+    let (tag, s) = get_tagn4(stream);
     let (flag, size) = tag;
     match flag {
-      -- Srt: Tag4(0x0, univ_idx)
+      -- Srt: TagN4(0x0, univ_idx)
       0x0 => (store(Expr.Srt(size)), s),
 
-      -- Var: Tag4(0x1, idx)
+      -- Var: TagN4(0x1, idx)
       0x1 => (store(Expr.Var(size)), s),
 
-      -- Ref: Tag4(0x2, len) + Tag0(ref_idx) + univ_list
+      -- Ref: TagN4(0x2, len) + TagN0(ref_idx) + univ_list
       0x2 =>
-        let (ref_idx, s2) = get_tag0(s);
+        let (ref_idx, s2) = get_tagn0(s);
         let (univ_list, s3) = get_u64_list(s2, size);
         (store(Expr.Ref(ref_idx, univ_list)), s3),
 
-      -- Rec: Tag4(0x3, len) + Tag0(rec_idx) + univ_list
+      -- Rec: TagN4(0x3, len) + TagN0(rec_idx) + univ_list
       0x3 =>
-        let (rec_idx, s2) = get_tag0(s);
+        let (rec_idx, s2) = get_tagn0(s);
         let (univ_list, s3) = get_u64_list(s2, size);
         (store(Expr.Rec(rec_idx, univ_list)), s3),
 
-      -- Prj: Tag4(0x4, field_idx) + Tag0(type_ref_idx) + expr(val)
+      -- Prj: TagN4(0x4, field_idx) + TagN0(type_ref_idx) + expr(val)
       0x4 =>
-        let (type_ref_idx, s2) = get_tag0(s);
+        let (type_ref_idx, s2) = get_tagn0(s);
         let (val, s3) = get_expr(s2);
         (store(Expr.Prj(type_ref_idx, size, val)), s3),
 
-      -- Str: Tag4(0x5, ref_idx)
+      -- Str: TagN4(0x5, ref_idx)
       0x5 => (store(Expr.Str(size)), s),
 
-      -- Nat: Tag4(0x6, ref_idx)
+      -- Nat: TagN4(0x6, ref_idx)
       0x6 => (store(Expr.Nat(size)), s),
 
-      -- App: Tag4(0x7, count) + func + args...
+      -- App: TagN4(0x7, count) + func + args...
       --
       -- A zero count is not a legal encoding — an `App` with no
       -- arguments, or a binder telescope with no binders, is not an
@@ -277,20 +295,20 @@ def ixonDeserialize := ⟦
           _ => get_app_telescope(func, s2, size),
         },
 
-      -- Lam: Tag4(0x8, count) + (contract, type)... + body
+      -- Lam: TagN4(0x8, count) + (contract, type)... + body
       0x8 =>
         assert_eq!(u64_is_zero(size), 0, "Lam with zero binders");
         get_lam_telescope(s, size),
 
-      -- All: Tag4(0x9, count) + (input|result<<4, type)... + body
+      -- All: TagN4(0x9, count) + (input|result<<4, type)... + body
       0x9 =>
         assert_eq!(u64_is_zero(size), 0, "All with zero binders");
         get_all_telescope(s, size),
 
-      -- Let: Tag4(0xA, flags) + binder + expr(ty) + expr(val) + expr(body)
+      -- Let: TagN4(0xA, flags) + binder + expr(ty) + expr(val) + expr(body)
       0xA => get_expr_let(s, size),
 
-      -- Share: Tag4(0xB, idx)
+      -- Share: TagN4(0xB, idx)
       0xB => (store(Expr.Share(size)), s),
     }
   }
@@ -328,10 +346,10 @@ def ixonDeserialize := ⟦
   }
 
   fn get_univ(stream: ByteStream) -> (Univ, ByteStream) {
-    let (tag, s) = get_tag2(stream);
+    let (tag, s) = get_tagn2(stream);
     let (flag, size) = tag;
     match flag {
-      -- Zero/Succ: Tag2(0, count)
+      -- Zero/Succ: TagN2(0, count)
       0 =>
         let is_zero = u64_is_zero(size);
         match is_zero {
@@ -341,19 +359,19 @@ def ixonDeserialize := ⟦
             (build_succ_chain(base, size), s2),
         },
 
-      -- Max: Tag2(1, 0) + univ(a) + univ(b)
+      -- Max: TagN2(1, 0) + univ(a) + univ(b)
       1 =>
         let (a, s2) = get_univ(s);
         let (b, s3) = get_univ(s2);
         (Univ.Max(store(a), store(b)), s3),
 
-      -- IMax: Tag2(2, 0) + univ(a) + univ(b)
+      -- IMax: TagN2(2, 0) + univ(a) + univ(b)
       2 =>
         let (a, s2) = get_univ(s);
         let (b, s3) = get_univ(s2);
         (Univ.IMax(store(a), store(b)), s3),
 
-      -- Var: Tag2(3, idx)
+      -- Var: TagN2(3, idx)
       3 => (Univ.Var(size), s),
     }
   }
@@ -450,17 +468,17 @@ def ixonDeserialize := ⟦
   -- ============================================================================
 
   fn get_sharing(stream: ByteStream) -> (List‹&Expr›, ByteStream) {
-    let (len, s) = get_tag0(stream);
+    let (len, s) = get_tagn0(stream);
     get_expr_list(s, len)
   }
 
   fn get_refs(stream: ByteStream) -> (List‹Addr›, ByteStream) {
-    let (len, s) = get_tag0(stream);
+    let (len, s) = get_tagn0(stream);
     get_address_list(s, len)
   }
 
   fn get_univs(stream: ByteStream) -> (List‹&Univ›, ByteStream) {
-    let (len, s) = get_tag0(stream);
+    let (len, s) = get_tagn0(stream);
     get_univ_list(s, len)
   }
 
@@ -486,19 +504,19 @@ def ixonDeserialize := ⟦
     }
   }
 
-  -- Definition: byte(packed_kind_safety) + Tag0(lvls) + expr(typ) + expr(value)
+  -- Definition: byte(packed_kind_safety) + TagN0(lvls) + expr(typ) + expr(value)
   fn get_definition(stream: ByteStream) -> (Definition, ByteStream) {
     let (packed, s) = read_byte(stream);
     let (kind, safety) = unpack_def_kind_safety(packed);
-    let (lvls, s2) = get_tag0(s);
+    let (lvls, s2) = get_tagn0(s);
     let (typ, s3) = get_expr(s2);
     let (value, s4) = get_expr(s3);
     (Definition.Mk(kind, safety, lvls, typ, value), s4)
   }
 
-  -- RecursorRule: Tag0(fields) + expr(rhs)
+  -- RecursorRule: TagN0(fields) + expr(rhs)
   fn get_recursor_rule(stream: ByteStream) -> (RecursorRule, ByteStream) {
-    let (fields, s) = get_tag0(stream);
+    let (fields, s) = get_tagn0(stream);
     let (rhs, s2) = get_expr(s);
     (RecursorRule.Mk(fields, rhs), s2)
   }
@@ -514,26 +532,26 @@ def ixonDeserialize := ⟦
     }
   }
 
-  -- Recursor: byte(bools) + Tag0(lvls) + Tag0(params) + Tag0(indices) +
-  --           Tag0(motives) + Tag0(minors) + expr(typ) + Tag0(rules_len) + rules...
+  -- Recursor: byte(bools) + TagN0(lvls) + TagN0(params) + TagN0(indices) +
+  --           TagN0(motives) + TagN0(minors) + expr(typ) + TagN0(rules_len) + rules...
   fn get_recursor(stream: ByteStream) -> (Recursor, ByteStream) {
     let (bools_byte, s) = read_byte(stream);
     assert_eq!(u8_less_than(bools_byte, 4u8), 1, "invalid recursor flags");
     let bits = u8_bit_decomposition(bools_byte);
     let k = bits[0];
     let is_unsafe = bits[1];
-    let (lvls, s2) = get_tag0(s);
-    let (params, s3) = get_tag0(s2);
-    let (indices, s4) = get_tag0(s3);
-    let (motives, s5) = get_tag0(s4);
-    let (minors, s6) = get_tag0(s5);
+    let (lvls, s2) = get_tagn0(s);
+    let (params, s3) = get_tagn0(s2);
+    let (indices, s4) = get_tagn0(s3);
+    let (motives, s5) = get_tagn0(s4);
+    let (minors, s6) = get_tagn0(s5);
     let (typ, s7) = get_expr(s6);
-    let (rules_len, s8) = get_tag0(s7);
+    let (rules_len, s8) = get_tagn0(s7);
     let (rules, s9) = get_recursor_rule_list(s8, rules_len);
     (Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, typ, rules), s9)
   }
 
-  -- Axiom: byte(is_unsafe) + Tag0(lvls) + expr(typ)
+  -- Axiom: byte(is_unsafe) + TagN0(lvls) + expr(typ)
   -- A wire byte standing for a Bool must be 0 or 1, as Rust's `get_bool`
   -- requires (`crates/ixon/src/serialize.rs:55-61`).
   --
@@ -551,7 +569,7 @@ def ixonDeserialize := ⟦
   fn get_axiom(stream: ByteStream) -> (Axiom, ByteStream) {
     let (is_unsafe, s) = read_byte(stream);
     assert_wire_bool(is_unsafe);
-    let (lvls, s2) = get_tag0(s);
+    let (lvls, s2) = get_tagn0(s);
     let (typ, s3) = get_expr(s2);
     (Axiom.Mk(to_field(is_unsafe), lvls, typ), s3)
   }
@@ -566,24 +584,24 @@ def ixonDeserialize := ⟦
     }
   }
 
-  -- Quotient: byte(kind) + Tag0(lvls) + expr(typ)
+  -- Quotient: byte(kind) + TagN0(lvls) + expr(typ)
   fn get_quotient(stream: ByteStream) -> (Quotient, ByteStream) {
     let (kind_byte, s) = read_byte(stream);
     let kind = get_quot_kind(kind_byte);
-    let (lvls, s2) = get_tag0(s);
+    let (lvls, s2) = get_tagn0(s);
     let (typ, s3) = get_expr(s2);
     (Quotient.Mk(kind, lvls, typ), s3)
   }
 
-  -- Constructor: byte(is_unsafe) + Tag0(lvls) + Tag0(cidx) + Tag0(params) +
-  --              Tag0(fields) + expr(typ)
+  -- Constructor: byte(is_unsafe) + TagN0(lvls) + TagN0(cidx) + TagN0(params) +
+  --              TagN0(fields) + expr(typ)
   fn get_constructor(stream: ByteStream) -> (Constructor, ByteStream) {
     let (is_unsafe, s) = read_byte(stream);
     assert_wire_bool(is_unsafe);
-    let (lvls, s2) = get_tag0(s);
-    let (cidx, s3) = get_tag0(s2);
-    let (params, s4) = get_tag0(s3);
-    let (fields, s5) = get_tag0(s4);
+    let (lvls, s2) = get_tagn0(s);
+    let (cidx, s3) = get_tagn0(s2);
+    let (params, s4) = get_tagn0(s3);
+    let (fields, s5) = get_tagn0(s4);
     let (typ, s6) = get_expr(s5);
     (Constructor.Mk(to_field(is_unsafe), lvls, cidx, params, fields, typ), s6)
   }
@@ -599,18 +617,18 @@ def ixonDeserialize := ⟦
     }
   }
 
-  -- Inductive: byte(bools) + Tag0(lvls) + Tag0(params) + Tag0(indices) +
-  --            expr(typ) + Tag0(ctors_len) + ctors...
+  -- Inductive: byte(bools) + TagN0(lvls) + TagN0(params) + TagN0(indices) +
+  --            expr(typ) + TagN0(ctors_len) + ctors...
   fn get_inductive(stream: ByteStream) -> (Inductive, ByteStream) {
     let (bools_byte, s) = read_byte(stream);
     assert_wire_bool(bools_byte);
     let bits = u8_bit_decomposition(bools_byte);
     let is_unsafe = bits[0];
-    let (lvls, s2) = get_tag0(s);
-    let (params, s3) = get_tag0(s2);
-    let (indices, s4) = get_tag0(s3);
+    let (lvls, s2) = get_tagn0(s);
+    let (params, s3) = get_tagn0(s2);
+    let (indices, s4) = get_tagn0(s3);
     let (typ, s5) = get_expr(s4);
-    let (ctors_len, s6) = get_tag0(s5);
+    let (ctors_len, s6) = get_tagn0(s5);
     let (ctors, s7) = get_constructor_list(s6, ctors_len);
     (Inductive.Mk(is_unsafe, lvls, params, indices, typ, ctors), s7)
   }
@@ -619,31 +637,31 @@ def ixonDeserialize := ⟦
   -- Projection deserialization
   -- ============================================================================
 
-  -- InductiveProj: Tag0(idx) + address(block)
+  -- InductiveProj: TagN0(idx) + address(block)
   fn get_inductive_proj(stream: ByteStream) -> (InductiveProj, ByteStream) {
-    let (idx, s) = get_tag0(stream);
+    let (idx, s) = get_tagn0(stream);
     let (block, s2) = get_address(s);
     (InductiveProj.Mk(idx, block), s2)
   }
 
-  -- ConstructorProj: Tag0(idx) + Tag0(cidx) + address(block)
+  -- ConstructorProj: TagN0(idx) + TagN0(cidx) + address(block)
   fn get_constructor_proj(stream: ByteStream) -> (ConstructorProj, ByteStream) {
-    let (idx, s) = get_tag0(stream);
-    let (cidx, s2) = get_tag0(s);
+    let (idx, s) = get_tagn0(stream);
+    let (cidx, s2) = get_tagn0(s);
     let (block, s3) = get_address(s2);
     (ConstructorProj.Mk(idx, cidx, block), s3)
   }
 
-  -- RecursorProj: Tag0(idx) + address(block)
+  -- RecursorProj: TagN0(idx) + address(block)
   fn get_recursor_proj(stream: ByteStream) -> (RecursorProj, ByteStream) {
-    let (idx, s) = get_tag0(stream);
+    let (idx, s) = get_tagn0(stream);
     let (block, s2) = get_address(s);
     (RecursorProj.Mk(idx, block), s2)
   }
 
-  -- DefinitionProj: Tag0(idx) + address(block)
+  -- DefinitionProj: TagN0(idx) + address(block)
   fn get_definition_proj(stream: ByteStream) -> (DefinitionProj, ByteStream) {
-    let (idx, s) = get_tag0(stream);
+    let (idx, s) = get_tagn0(stream);
     let (block, s2) = get_address(s);
     (DefinitionProj.Mk(idx, block), s2)
   }
@@ -722,12 +740,11 @@ def ixonDeserialize := ⟦
         (ConstantInfo.Muts(mutuals), s),
       -- Non-Muts: flag=0xD, size[0] is the variant number.
       --
-      -- Dispatch on the FULL tag4 size, matching Rust `ConstantInfo::get`
+      -- Dispatch on the FULL TagN size, matching Rust `ConstantInfo::get`
       -- which matches `tag.size: u64` and errors on anything outside
-      -- 0-7 (`crates/ixon/src/serialize.rs:968-980`). The variant is only
-      -- ever 0-7, so the high 7 bytes must be zero; without this
-      -- `0xD9 0x00 0x01 …` is size 0x100, whose low byte is 0, and the
-      -- circuit parses a `Defn` from a buffer Rust rejects outright.
+      -- 0-7. The variant is only ever 0-7, so the high 7 bytes must be
+      -- zero; without this `0xD8 0xF8` (size 0x100) has low byte 0, and
+      -- the circuit parses a `Defn` from a buffer Rust rejects outright.
       -- Same guard, same reasoning as `run_claim`'s (Kernel/Claim.lean).
       -- Sum is 0 iff every high byte is 0 (7 bytes, max sum 1785, no wrap).
       0xD =>
@@ -735,7 +752,7 @@ def ixonDeserialize := ⟦
         assert_eq!(((((((to_field(sz1) + to_field(sz2)) + to_field(sz3))
                       + to_field(sz4)) + to_field(sz5)) + to_field(sz6))
                       + to_field(sz7)), 0,
-          "constant info: tag4 size exceeds a single byte");
+          "constant info: TagN size exceeds a single byte");
         get_constant_info_by_variant(to_field(size[0]), stream),
     }
   }
@@ -745,7 +762,7 @@ def ixonDeserialize := ⟦
   -- ============================================================================
 
   fn get_constant(stream: ByteStream) -> (Constant, ByteStream) {
-    let (tag, s) = get_tag4(stream);
+    let (tag, s) = get_tagn4(stream);
     let (flag, size) = tag;
     let (info, s2) = @get_constant_info(flag, size, s);
     let (sharing, s3) = @get_sharing(s2);

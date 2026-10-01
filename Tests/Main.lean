@@ -6,6 +6,7 @@ import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Exploits
 import Tests.Ix.IxVM.DefinitionDependencies
+import Tests.Ix.IxVM.TagN
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
 import Tests.Ix.AssumptionTree
@@ -175,6 +176,8 @@ seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
 each). -/
 def primaryRunners : List (String × IO UInt32) := [
   ("aiur-rust-syntax", AiurTests.RustSyntax.run),
+  -- The circuit TagN codec against the host codec (about 20 s).
+  ("ixvm-tagn", Tests.Ix.IxVM.TagN.runSuite),
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
