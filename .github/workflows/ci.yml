@@ -97,7 +97,7 @@ jobs:
             Mathlib.SetTheory.Cardinal.Regular \
             Mathlib.SetTheory.ZFC.VonNeumann \
             Mathlib.SetTheory.ZFC.Cardinal
-      - name: Check certified kernel, provenance, codec and order differentials, model, entry cases and reader fidelity
+      - name: Check certified kernel, codec and order differentials, model, entry cases and reader fidelity
         run: lake run check-kernel --with-model
       - name: Retain codec, block-order, entry-case and reader-fidelity results
         if: ${{ always() }}

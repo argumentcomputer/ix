@@ -7,10 +7,10 @@ and `ConLeche.Verify.Cached.StreamThm` and the guards on
 `ConLeche.no_False_declaration`, `ConLeche.no_False_theorem_accepted` and
 `ConLeche.Cached.checkDecls_consts` are dropped (their modules are outside
 the imported closure of `model_exists`); the docstrings are cut to match;
-the names of the remaining guards go through the vendoring rewrite of
-`scripts/vendor-conleche.py` (`ConLeche` → `Ix.Kernel`), as do the modules
-they import; this header is added. The other seventeen guards are
-upstream's, verbatim up to the rewrite.
+the names of the remaining guards go through the namespace mapping
+(`ConLeche` → `Ix.Kernel`), as do the modules they import; this header is
+added. The other seventeen guards are upstream's, verbatim up to the
+mapping.
 Modifications Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: Apache-2.0 AND (MIT OR Apache-2.0)
 -/
@@ -28,16 +28,16 @@ public section
 Con-leche's headline is that its consistency theorems stand on nothing but
 Lean's three standard axioms, `[propext, Classical.choice, Quot.sound]`.
 This module pins that on the roots of the closure Ix imports (the closure
-of `Ix.Kernel.model_exists`, plan v4 L1-L3): if a `sorry`, a new axiom or a
+of `Ix.Kernel.model_exists`): if a `sorry`, a new axiom or a
 stray `Classical`-adjacent import ever enters one of these proof terms, the
 message changes and the build fails.
 
 `#print axioms` is blind to compiler escapes (`@[implemented_by]`,
-`@[computed_field]`); upstream pairs this module with
-`tests/trust-surface.sh`, which Ix ports later (plan v4, D-trust row 25).
+`@[computed_field]`); `scripts/trust-surface.sh`, ported from upstream's
+`tests/trust-surface.sh`, scans `Ix/Kernel` for those.
 
 Of upstream's twenty roots, three are not here: the NDJSON corollary
-`no_False_declaration` (the frontend is not imported, plan v4 D6), and
+`no_False_declaration` (the NDJSON frontend is not imported), and
 `no_False_theorem_accepted` and `Cached.checkDecls_consts`, whose modules
 (`Verify/Cached/StreamThm`, `Verify/Cached/StreamConsts`) are outside the
 closure of `model_exists`.

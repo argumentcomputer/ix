@@ -381,7 +381,7 @@ lean_exe «kernel-pin-gen» where
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
-the host-side tests, provenance, the vendored tree's layering and
+the host-side tests, the layering and
 trust-surface fences, the certified entry's host-compiled cases, and the
 reader's fidelity against Lean (the fixture closure and the first records of Init
 and Std). -/
