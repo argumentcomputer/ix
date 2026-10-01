@@ -500,7 +500,12 @@ def setPrec (a b : Array Nat) : Bool :=
 
 /-- Union of two sorted arrays (sorted). -/
 def mergeSorted (a b : Array Nat) : Array Nat :=
-  (a ++ b).qsort (· < ·)
+  ((a.toList ++ b.toList).mergeSort fun x y => decide (x ≤ y)).toArray
+
+/-- The groups partition `und`: their terms, sorted, are `und`'s, sorted. -/
+def partitionCheck (und : Array Nat) (groups : Array (Array Nat)) : Bool :=
+  (groups.toList.flatMap (·.toList)).mergeSort (fun x y => decide (x ≤ y)) ==
+    und.toList.mergeSort (fun x y => decide (x ≤ y))
 
 /-- Search state of one component. -/
 structure CompState where
@@ -656,9 +661,6 @@ structure SCtx where
   and its root occurrences. -/
   inEdges : Array (Array (Nat × Nat × Nat))
   rootOcc : Array Nat
-  /-- Roots in the area with multiplicities, certain-stored terms in it. -/
-  rootMult : Array (Nat × Nat)
-  storedIn : Array Nat
   slack : Nat
   theta : _root_.Int
   /-- Full evaluation with the certain-stored terms available, their widths,
@@ -701,22 +703,6 @@ def SCtx.phiE (cx : SCtx) (avail : Nat → Bool) (stored : Array Nat) : Nat × N
   let entries := stored.foldl (fun acc x => acc + inl x) 0
   (roots + base + entries, cx.closure.size + stored.size)
 
-/-- The component's cost with `avail` available and the entries of `stored`
-(beyond the certain-stored ones), and the evaluation work. -/
-def SCtx.phi (cx : SCtx) (avail : Nat → Bool) (stored : Array Nat) : Nat × Nat := Id.run do
-  let mut vals : Std.HashMap Nat UVal := {}
-  let mut work := 0
-  for t in cx.area do
-    let get := fun c => (vals.get? c).getD cx.up.base[c]!
-    let (v, s) := cx.up.node get avail t
-    vals := vals.insert t v
-    work := work + 1 + s
-  let get := fun c => (vals.get? c).getD cx.up.base[c]!
-  let roots := cx.rootMult.foldl (fun acc (r, m) => acc + m * (get r).cost) 0
-  let base := cx.storedIn.foldl (fun acc c => acc + (get c).inl) 0
-  let entries := stored.foldl (fun acc x => acc + (get x).inl) 0
-  return (roots + base + entries, work)
-
 /-- Bounds under a decided-out set: the root-level bounds recomputed over the
 area (ascending) with the decided-out members no longer maybe-stored. Every
 value is at most the bounds of exactly that maybe-stored set (`boundsStep` is
@@ -724,24 +710,19 @@ monotone and the start is pointwise below). -/
 def SCtx.rebound (cx : SCtx) (ms : Array Bool) : UBounds :=
   cx.area.foldl (boundsStep cx.up.prep cx.up.w ms) cx.bounds0
 
-/-- Visible counts of the area nodes under a maybe-stored set, recomputed
-from their parents (descending); other terms keep their root-level counts. -/
-def SCtx.revisible (cx : SCtx) (ms : Array Bool) : Std.HashMap Nat (Nat × Nat) := Id.run do
-  let mut vis : Std.HashMap Nat (Nat × Nat) := {}
-  for k in [0:cx.area.size] do
-    let j := cx.area.size - 1 - k
-    let y := cx.area[j]!
-    let r := cx.rootOcc[j]!
-    let mut d := r
-    let mut h := r
-    for (q, mA, mH) in cx.inEdges[j]! do
-      let wq :=
-        if ms[q]! then 1
-        else min ((vis.get? q).map (·.1) |>.getD cx.vis0.1[q]!) visibleCap
-      d := d + mA * wq
-      h := h + mH * wq
-    vis := vis.insert y (d, h)
-  return vis
+/-- Visible counts under a maybe-stored set: the area nodes recomputed from
+their parents (descending), every other term at its root-level count. -/
+def SCtx.revisible (cx : SCtx) (ms : Array Bool) : Array Nat × Array Nat :=
+  (List.range cx.area.size).foldl (fun (acc : Array Nat × Array Nat) k =>
+    match acc with
+    | (ds, hs) =>
+      let j := cx.area.size - 1 - k
+      let y := cx.area[j]!
+      let r := cx.rootOcc[j]!
+      let dh := cx.inEdges[j]!.foldl (fun (dh : Nat × Nat) (e : Nat × Nat × Nat) =>
+        let wq := if ms[e.1]! then 1 else min ds[e.1]! visibleCap
+        (dh.1 + e.2.1 * wq, dh.2 + e.2.2 * wq)) (r, r)
+      (ds.set! y dh.1, hs.set! y dh.2)) cx.vis0
 
 /-- Whether a decided-stored term costs exactly `w` wherever it occurs and
 ends every telescope running into it, under bounds `b`. -/
@@ -906,10 +887,12 @@ def SCtx.solveP (cx : SCtx) (limits : Limits) :
     let inSet : Std.HashSet Nat := inAll.foldl (·.insert ·) {}
     let outSet : Std.HashSet Nat := outAll.foldl (·.insert ·) {}
     let (entries, _) := cx.memoKey (opqA[·]!) inSet outSet g
+    let (inRed, outRed) := keyContext entries
+    unless inRed.all inSet.contains && outRed.all outSet.contains do
+      throw (.internal "memo key context is not part of the decided context")
     match st.memo.get? (g, entries) with
     | some tb => pure (tb, { st with memoHits := st.memoHits + 1 })
     | none =>
-      let (inRed, outRed) := keyContext entries
       unless cx.sepCheck g inRed outRed do
         throw (.internal "search group is not separated")
       let (tb, st) ← cx.solveBody limits fuel g inRed outRed st
@@ -940,11 +923,13 @@ def SCtx.nodeP (cx : SCtx) (limits : Limits) :
     let b := cx.rebound ms
     let vis := cx.revisible ms
     let gains := und.map fun t =>
-      let (d, h) := vis.getD t (cx.vis0.1[t]!, cx.vis0.2[t]!)
-      (t, storedGainC cx.up.prep b cx.up.w t d h)
-    let forced := (gains.filter (·.2 ≥ cx.theta)).map (·.1)
+      let d := vis.1[t]!
+      let h := vis.2[t]!
+      (t, storedGainC cx.up.prep b cx.up.w t d h, 1 ≤ d && h ≤ d)
+    let isForced := fun (e : Nat × _root_.Int × Bool) => e.2.2 && e.2.1 ≥ cx.theta
+    let forced := (gains.filter isForced).map (·.1)
     let localIn := if forced.isEmpty then localIn else mergeSorted localIn forced
-    let open_ := gains.filter (·.2 < cx.theta)
+    let open_ := (gains.filter (!isForced ·)).map fun e => (e.1, e.2.1)
     let und := open_.map (·.1)
     let inAll := inCtx ++ localIn
     let inSet : Std.HashSet Nat := inAll.foldl (·.insert ·) {}
@@ -960,6 +945,8 @@ def SCtx.nodeP (cx : SCtx) (limits : Limits) :
     let opq := fun t => cx.up.opaq[t]! || (inSet.contains t && cx.opaqueUnder b t)
     let availFixed := fun t => inSet.contains t && !opq t
     let groups := cx.groups opq availFixed und
+    unless partitionCheck und groups do
+      throw (.internal "search groups do not partition the undecided members")
     -- Hand a single group to the memoized solver when a decision of this
     -- search no longer reaches it.
     let route :=
@@ -1134,6 +1121,7 @@ def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
   -- certain-stored terms and only candidates.
   let slack := tag0Size (cs.size + unc.size) - tag0Size cs.size
   -- Search each component.
+  let rootCount := ex.roots.foldl (fun acc r => acc.modify r (· + 1)) (Array.replicate n 0)
   let mut results : Array CompResult := #[]
   let mut states := 0
   let mut costEvals := 0
@@ -1170,7 +1158,7 @@ def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
               (q, acc.2.1 + 1,
                acc.2.2 + (if continuationEdge node i (ex.dag.node y) then 0 else 1))
             else acc) (q, 0, 0)
-      let rootOcc := area.map fun y => rootMult.getD y 0
+      let rootOcc := area.map (rootCount[·]!)
       let isMem := markTable n members
       let closure := upClosure ex.dag (isMem[·]!)
       let inClosure := markTable n closure
@@ -1178,7 +1166,7 @@ def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
       let storedInC := closure.filter (opaq[·]!)
       let cx : SCtx :=
         { up, facts := f, cand, bounds0 := b0, vis0, members, memberIdx, area, areaIdx,
-          inEdges, rootOcc, rootMult := rootArr, storedIn, slack, theta,
+          inEdges, rootOcc, slack, theta,
           baseEv, widthCs, allTrue, closure, rootsC, storedInC, allUnc := unc }
       let st0 : SState := { states, costEvals }
       let (tb, st) ← cx.solveP limits (8 * members.size + 8) members #[] #[] st0
@@ -1234,8 +1222,9 @@ def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
         chosenDelta := d
         lowerBracket := true
   -- Model length from the truncated evaluation.
-  let baseRoots := ex.roots.foldl (fun acc r => acc + up.base[r]!.cost) 0
-  let baseStored := cs.foldl (fun acc c => acc + up.base[c]!.inl) 0
+  let baseRoots := ex.roots.foldl (fun acc r => acc + baseEv.cost[r]!) 0
+  let baseStored := cs.foldl (fun acc c => acc +
+    (evalStep p.dag p.family p.spineLen p.tail (widthCs.set! c none) allTrue baseEv c).cost[c]!) 0
   let modelInt : _root_.Int := (baseRoots + baseStored : Nat) + chosenDelta +
     (tag0Size (kCS + chosenX.size) : _root_.Int)
   if modelInt < 0 then throw (.internal "negative model length")
@@ -1246,6 +1235,13 @@ def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
            lowDegree := low, components := comps, stored := mergeSorted cs chosenX, model,
            states, costEvals, lowerBracket }
 
+/-- The stored set is strictly increasing and every term has in-degree at
+least 2. -/
+def inClassCheck (dag : Dag) (roots : Array Nat) (stored : Array Nat) : Bool :=
+  let deg := edgeCounts dag roots false
+  (List.range stored.size).all (fun i => decide (i + 1 < stored.size → stored[i]! < stored[i + 1]!)) &&
+    stored.all (fun t => decide (2 ≤ deg[t]!))
+
 /-- Materialize a chosen set in the pinned order with the real evaluation, and
 check it against the model length and the input. -/
 def uniformFinish (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (c : UniformChoice) :
@@ -1255,6 +1251,8 @@ def uniformFinish (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (c : Un
   let model := c.model
   unless stored.all (· < n) do
     throw (.internal "stored term out of range")
+  unless inClassCheck ex.dag ex.roots stored do
+    throw (.internal "stored terms are not increasing terms of in-degree at least 2")
   let order := pinnedOrder ex.dag c.facts.deg stored
   let width := stored.foldl (fun acc t => acc.set! t (some w)) (Array.replicate n none)
   let (entries, roots, predicted, work) ← p.materializeDependent order ex.roots width limits
