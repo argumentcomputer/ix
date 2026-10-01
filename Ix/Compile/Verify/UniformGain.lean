@@ -732,7 +732,7 @@ theorem uniformCost_insert_le {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
   have hAc := mul_pos_part Cc M w
   have hexI := _root_.Int.ofNat_le.mpr hex
   simp only [_root_.Int.natCast_add, _root_.Int.natCast_mul] at hexI
-  unfold storedGain
+  unfold storedGain storedGainC
   rw [hdeg', hhead']
   rw [hdeg'] at hdeg
   simp only [_root_.Int.ofNat_eq_natCast]

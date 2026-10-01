@@ -336,6 +336,10 @@ structure Limits where
   /-- Lower-bound pruning. Disabling it (for testing) explores every
   reachable width state; the result must not change. -/
   prune : Bool := true
+  /-- Uniform width: search each component by plain subset enumeration (the
+  reference) instead of the reclassifying branch and bound. The result must
+  not change. -/
+  uniformSubsetSearch : Bool := false
   deriving Repr, Inhabited
 
 /-- Nonsemantic work statistics. -/
