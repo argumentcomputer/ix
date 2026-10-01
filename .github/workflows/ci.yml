@@ -24,19 +24,21 @@ jobs:
   lean-test:
     runs-on: runs-on=${{ github.run_id }}-lean-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # sccache keys rustc outputs by content, so the workspace crates, which
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits. RunsOn configures it before anything can
       # start an sccache server.
-      - uses: runs-on/action@v2
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
         with:
           sccache: s3
           sticky_cache: |
             rust
             custom,path=.lake,path=target
-      - uses: mozilla-actions/sccache-action@v0.0.11
-      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: portable
           use-github-cache: "false"
@@ -46,7 +48,7 @@ jobs:
       # default lib — fails CI. A push to main already passed the tests in
       # the merge queue; that run only exists to snapshot the build
       # products, so the tests are skipped there.
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           build-args: "--wfail -v"
           test: ${{ github.event_name != 'push' }}
@@ -73,25 +75,29 @@ jobs:
   rust-test:
     runs-on: runs-on=${{ github.run_id }}-rust-test-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-rust-test-x86-64-v4:50gb/extras=s3-cache
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # sccache keys rustc outputs by content, so the workspace crates, which
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits. RunsOn configures it before anything can
       # start an sccache server.
-      - uses: runs-on/action@v2
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
         with:
           sccache: s3
           sticky_cache: |
             rust
             custom,path=.lake,path=target
-      - uses: mozilla-actions/sccache-action@v0.0.11
-      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: portable
           use-github-cache: "false"
-      - uses: taiki-e/install-action@nextest
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: nextest
       # Install Lean for rust-bindgen step
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           use-github-cache: false
@@ -100,7 +106,7 @@ jobs:
       # clippy and test-binary artifacts the next PR run will fingerprint.
       - name: Check Rustfmt code style
         if: github.event_name != 'push'
-        uses: actions-rust-lang/rustfmt@v1
+        uses: actions-rust-lang/rustfmt@4066006ec54a31931b9b1fddfd38f2fdf2d27143 # v1.1.2
       - name: Check clippy warnings
         run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi -- -D warnings
       - name: Check *everything* compiles
@@ -116,7 +122,7 @@ jobs:
       # reads metadata, and cargo treats an empty wrapper as none.
       - name: Cargo-deny
         if: github.event_name != 'push'
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         env:
           RUSTC_WRAPPER: ""
         with:
@@ -141,24 +147,26 @@ jobs:
       # instance role need checking first), and an `NVCC` wrapper running
       # `sccache nvcc` for the kernels, which multi-stark's build script
       # must compile with `-c` per source for sccache to cache them.
-      - uses: runs-on/action@v2
-      - uses: actions/checkout@v7
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install toolchain bootstrap dependencies
         run: |
           apt-get update
           apt-get install --yes --no-install-recommends \
             build-essential ca-certificates curl git libclang-dev sudo
-      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: portable
           cache-key: cuda-13.3.1-ubuntu26
       # S3 caching keeps the container independent of host bind mounts.
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .lake
           key: lake-cuda-13.3.1-ubuntu26-x86-64-v4-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: lake-cuda-13.3.1-ubuntu26-x86-64-v4-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           use-github-cache: false
@@ -167,12 +175,25 @@ jobs:
       - name: Link a CUDA-enabled Lean executable
         run: IX_CUDA=1 lake build bench-typecheck
 
+  lints:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # actionlint, shellcheck over composite action scripts, pinact (actions
+      # must be SHA-pinned with a matching version comment) and zizmor
+      - uses: argumentcomputer/ci-workflows/.github/actions/lint-workflows@main
+
   ci-gate:
     if: ${{ always() }}
-    needs: [lean-test, rust-test, cuda-compile]
+    needs: [lean-test, rust-test, cuda-compile, lints]
     permissions:
       actions: read
       checks: read
-    uses: runs-on/spot-retry-gate/.github/workflows/merge-queue.yml@v1
+    uses: runs-on/spot-retry-gate/.github/workflows/merge-queue.yml@451eea7c3d2c58d14a1f80f0bbb99eaa347b9471 # v1.0.0
     with:
       job_results: ${{ toJSON(needs) }}

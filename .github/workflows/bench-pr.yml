@@ -122,7 +122,7 @@ jobs:
     steps:
       # issue_comment doesn't carry the PR's base/head; this action looks
       # them up.
-      - uses: xt0rted/pull-request-comment-branch@v3
+      - uses: xt0rted/pull-request-comment-branch@e8b8daa837e8ea7331c0003c9c316a64c6d8b0b1 # v3.0.0
         id: comment-branch
       # Dispatched on the PR's branch, not the default branch: RunsOn files
       # each run's sticky-disk snapshot under its ref, so the build lands on
@@ -134,6 +134,9 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
           PR_NUMBER: ${{ github.event.issue.number }}
           HEAD_REF: ${{ steps.comment-branch.outputs.head_ref }}
+          BASE_SHA: ${{ steps.comment-branch.outputs.base_sha }}
+          BASE_REF: ${{ steps.comment-branch.outputs.base_ref }}
+          HEAD_SHA: ${{ steps.comment-branch.outputs.head_sha }}
         run: |
           head_repo=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.repo.full_name')
           if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
@@ -145,9 +148,9 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --ref "$HEAD_REF" \
             -f pr="$PR_NUMBER" \
-            -f base-sha="${{ steps.comment-branch.outputs.base_sha }}" \
-            -f base-ref="${{ steps.comment-branch.outputs.base_ref }}" \
-            -f head-sha="${{ steps.comment-branch.outputs.head_sha }}" \
+            -f base-sha="$BASE_SHA" \
+            -f base-ref="$BASE_REF" \
+            -f head-sha="$HEAD_SHA" \
             -f comment-body="$COMMENT_BODY"
 
   # Select or build the PR's `ix` and `bench-typecheck` once, then
@@ -188,7 +191,7 @@ jobs:
           [[ "$BASE" =~ ^[0-9a-f]{40}$ && "$HEAD" =~ ^[0-9a-f]{40}$ ]] \
             || { echo "base-sha/head-sha must be full 40-hex SHAs" >&2; exit 1; }
           echo "revision=$HEAD" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.target.outputs.revision }}
           # The job builds and runs PR code; never leave the token in .git.
@@ -196,26 +199,26 @@ jobs:
       # Lake and cargo artifacts live on the sticky disk; sccache serves the
       # workspace crates cargo rebuilds after every fresh checkout (see
       # ci.yml), under entries the native codegen flags keep apart from CI's.
-      - uses: runs-on/action@v2
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
         with:
           sccache: s3
           sticky_cache: |
             rust
             custom,path=.lake,path=target
-      - uses: mozilla-actions/sccache-action@v0.0.11
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - id: bins
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ steps.target.outputs.revision }}
       # A cache miss needs an `ix` before the command can be parsed. The
       # remaining binaries are built after parsing, when `fresh` is known.
       - if: steps.bins.outputs.cache-hit != 'true'
-        uses: ./.github/actions/setup-rust-toolchain
+        uses: $/.github/actions/setup-rust-toolchain
         with:
           use-github-cache: "false"
       # A persistent hit still needs the matching toolchain for libleanshared.
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           build: ${{ steps.bins.outputs.cache-hit != 'true' }}
@@ -237,11 +240,11 @@ jobs:
       # On a cache hit, `ix` above is a control-plane bootstrap only. A fresh
       # run replaces it before the bundle can reach any measured job.
       - if: steps.parse.outputs.fresh == '1' && steps.bins.outputs.cache-hit == 'true'
-        uses: ./.github/actions/setup-rust-toolchain
+        uses: $/.github/actions/setup-rust-toolchain
         with:
           use-github-cache: "false"
       - name: Log build CPU
-        uses: ./.github/actions/log-cpu
+        uses: $/.github/actions/log-cpu
         with:
           label: Benchmark binary build CPU
       - name: Build benchmark binaries
@@ -251,7 +254,7 @@ jobs:
           cp .lake/build/bin/ix .lake/build/bin/bench-typecheck ~/.local/bin/
           chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck
       - if: steps.parse.outputs.fresh != '1' && steps.bins.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ steps.target.outputs.revision }}
@@ -260,7 +263,7 @@ jobs:
           tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
           ix bench-typecheck
       - name: Upload run binaries
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: benchmark-binaries
           path: benchmark-binaries.tar
@@ -322,7 +325,7 @@ jobs:
           fi
       - name: Post initial comment
         id: post
-        uses: peter-evans/create-or-update-comment@v5
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           token: ${{ github.token }}
           issue-number: ${{ inputs.pr }}
@@ -347,17 +350,17 @@ jobs:
         env: ${{ fromJSON(needs.build.outputs.envs) }}
     steps:
       - name: Checkout PR
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.build.outputs.revision }}
           # The job runs PR code; never leave the token in .git.
           persist-credentials: false
-      - uses: runs-on/action@v2
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
         with:
           sticky_cache: |
             custom,path=Benchmarks/Compile/.lake
       # `lake build` below clones this package's Lake dependencies.
-      - uses: ./.github/actions/authenticate-github-fetches
+      - uses: $/.github/actions/authenticate-github-fetches
       # Apply the allowlisted KEY=VALUE lines from the !benchmark comment,
       # so IX_COMPILE_* knobs reach the measured compile. Delivered via an
       # env var, not inline `${{ }}` — inlining would risk shell injection.
@@ -370,7 +373,7 @@ jobs:
       - name: Restore published .ixe
         if: needs.build.outputs.fresh != '1'
         id: pr-ixe
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # The cache derives an entry's version from its path list, so
           # the list is effectively part of the key: this one path matches
@@ -381,7 +384,7 @@ jobs:
       - name: Restore published compile row
         if: needs.build.outputs.fresh != '1'
         id: pr-row
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             compile.json
@@ -389,16 +392,19 @@ jobs:
           key: ${{ env.BENCH_CACHE }}-bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Select compile source
         id: compile-source
+        env:
+          PR_IXE_HIT: ${{ steps.pr-ixe.outputs.cache-hit }}
+          PR_ROW_HIT: ${{ steps.pr-row.outputs.cache-hit }}
         run: |
-          if [ "${{ steps.pr-ixe.outputs.cache-hit }}" = true ] \
-             && [ "${{ steps.pr-row.outputs.cache-hit }}" = true ]; then
+          if [ "$PR_IXE_HIT" = true ] \
+             && [ "$PR_ROW_HIT" = true ]; then
             echo "rebuild=false" >> "$GITHUB_OUTPUT"
           else
             echo "rebuild=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Download run binaries
         if: steps.compile-source.outputs.rebuild == 'true'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: benchmark-binaries
       - name: Unpack run binaries
@@ -410,7 +416,7 @@ jobs:
       - name: Log compile CPU
         if: steps.compile-source.outputs.rebuild == 'true'
         id: cpu
-        uses: ./.github/actions/log-cpu
+        uses: $/.github/actions/log-cpu
         with:
           label: Compile measurement CPU
       # Pointed at the Benchmarks/Compile subpackage (same toolchain as
@@ -418,7 +424,7 @@ jobs:
       # cache fetch has to run from that directory.
       - name: Provision Lean toolchain
         if: steps.compile-source.outputs.rebuild == 'true'
-        uses: leanprover/lean-action@v1
+        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           lake-package-directory: Benchmarks/Compile
           auto-config: false
@@ -431,10 +437,14 @@ jobs:
       - name: Build env oleans
         if: steps.compile-source.outputs.rebuild == 'true'
         working-directory: Benchmarks/Compile
-        run: lake build Compile${{ matrix.env }}
+        env:
+          COMPILE_ENV: ${{ matrix.env }}
+        run: lake build "Compile$COMPILE_ENV"
       - name: Compile ${{ matrix.env }}.ixe
         if: steps.compile-source.outputs.rebuild == 'true'
-        run: ix bench run --backend compile --env ${{ matrix.env }} --out compile.json
+        env:
+          COMPILE_ENV: ${{ matrix.env }}
+        run: ix bench run --backend compile --env "$COMPILE_ENV" --out compile.json
       # The compile row is measured here, not in the benchmark job that
       # renders it, so its host travels with the row: same cache entry and
       # run artifact below.
@@ -445,7 +455,7 @@ jobs:
         run: printf '%s\n' "$HARDWARE" > compile-hardware.txt
       - name: Publish .ixe
         if: needs.build.outputs.fresh != '1' && steps.pr-ixe.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Path lists are version-significant — keep this identical to the
           # restore above and to bench-main's save.
@@ -455,14 +465,14 @@ jobs:
       # reuses it as its PR side (same runner class, binaries, command).
       - name: Publish compile row
         if: needs.build.outputs.fresh != '1' && steps.pr-row.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             compile.json
             compile-hardware.txt
           key: ${{ env.BENCH_CACHE }}-bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Upload run environment
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: benchmark-env-${{ matrix.env }}
           path: |
@@ -503,15 +513,15 @@ jobs:
     steps:
       # sccache for the from-scratch base build below: its workspace crates
       # are what the base's own bench-main run compiled (see ci.yml).
-      - uses: runs-on/action@v2
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
         with:
           sccache: s3
-      - uses: mozilla-actions/sccache-action@v0.0.11
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       # The PR is checked out at the workspace root (the local composite
       # actions resolve from there); the base checkout, when needed, goes
       # under base/.
       - name: Checkout PR
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.HEAD_SHA }}
           # The job runs PR code; never leave the token in .git.
@@ -530,7 +540,7 @@ jobs:
       # cache restore reuses ~/.local/bin). The PR's `ix bench` drives BOTH
       # sides; `--repo` picks whose tools get measured.
       - name: Download run binaries
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: benchmark-binaries
       - name: Place PR binaries
@@ -540,7 +550,7 @@ jobs:
           echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
       - name: Log run CPU
         id: cpu
-        uses: ./.github/actions/log-cpu
+        uses: $/.github/actions/log-cpu
         with:
           label: Benchmark job CPU
       # Toolchain only (no package build, no mathlib cache): the restored
@@ -548,14 +558,14 @@ jobs:
       # compiles an env — the `.ixe` and compile row come from the compile
       # job's run-scoped artifact.
       - name: Provision Lean toolchain
-        uses: leanprover/lean-action@v1
+        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           lake-package-directory: .
           auto-config: false
           build: false
           use-github-cache: false
       - name: Download run environment
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: benchmark-env-${{ matrix.params.env }}
       # ---------- PR side ----------
@@ -563,16 +573,16 @@ jobs:
       # toolchain plus the backend's own toolchain and system deps.
       - name: Set up zkVM Rust toolchain
         if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
-        uses: ./.github/actions/setup-rust-toolchain
+        uses: $/.github/actions/setup-rust-toolchain
         with:
           cache-workspaces: ${{ matrix.params.backend }}
           cache-key: ${{ matrix.params.backend }}
       - name: Install SP1
         if: matrix.params.backend == 'sp1'
-        uses: ./.github/actions/install-sp1
+        uses: $/.github/actions/install-sp1
       - name: Install Zisk
         if: matrix.params.backend == 'zisk'
-        uses: ./.github/actions/install-zisk
+        uses: $/.github/actions/install-zisk
         with:
           proving-key: false
 
@@ -669,7 +679,7 @@ jobs:
         id: perconst
         if: matrix.params.backend == 'ooc' && env.FRESH != '1'
         continue-on-error: true
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bench.json.perconst.csv
           key: ${{ env.BENCH_CACHE }}-bench-perconst-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
@@ -679,7 +689,7 @@ jobs:
       - name: Restore base-side measurement hardware
         if: env.FRESH != '1'
         continue-on-error: true
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bench-hardware.txt
           key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
@@ -689,11 +699,15 @@ jobs:
       # rerun whose rows take priority over bencher's.
       - name: Decide base run
         id: decide
+        env:
+          BENCHER_RUN_BASE: ${{ steps.bencher.outputs.run-base }}
+          BENCHER_SOURCE: ${{ steps.bencher.outputs.source }}
+          PERCONST_HIT: ${{ steps.perconst.outputs.cache-hit }}
         run: |
-          rb="${{ steps.bencher.outputs.run-base }}"
-          src="${{ steps.bencher.outputs.source }}"
+          rb="$BENCHER_RUN_BASE"
+          src="$BENCHER_SOURCE"
           if [ "$BACKEND" = ooc ] \
-            && [ "${{ steps.perconst.outputs.cache-hit }}" != "true" ] \
+            && [ "$PERCONST_HIT" != "true" ] \
             && [ "$rb" != true ]; then
             echo "ooc attribution CSV not cached — full fresh base run"
             rb=true
@@ -703,7 +717,7 @@ jobs:
           echo "source=$src" >> "$GITHUB_OUTPUT"
       - name: Checkout base (bencher data missing or partial)
         if: steps.decide.outputs.run-base == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
@@ -716,7 +730,7 @@ jobs:
       - name: Restore base binaries (bench-bins cache)
         if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
         id: base-bins
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ env.BASE_SHA }}
@@ -729,7 +743,7 @@ jobs:
       - name: Restore base .ixe (bench-main or bench-pr compile cache)
         if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
         id: base-ixe
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.params.env }}.ixe
           key: ${{ env.BENCH_CACHE }}-bench-ixe-${{ env.BASE_SHA }}-${{ matrix.params.env }}
@@ -744,16 +758,19 @@ jobs:
       - name: Resolve base binaries
         if: steps.decide.outputs.run-base == 'true'
         id: base-src
+        env:
+          BASE_IXE_KEY: ${{ steps.base-ixe.outputs.cache-matched-key }}
+          BASE_BINS_HIT: ${{ steps.base-bins.outputs.cache-hit }}
         run: |
           # `cache-hit` is true only for the primary key; a stacked-base
           # entry arrives via restore-keys. `cache-matched-key` covers both.
           ixe=false
-          if [ -n "${{ steps.base-ixe.outputs.cache-matched-key }}" ]; then
+          if [ -n "$BASE_IXE_KEY" ]; then
             ixe=true
           fi
           echo "ixe=$ixe" >> "$GITHUB_OUTPUT"
           cached=false
-          if [ "${{ steps.base-bins.outputs.cache-hit }}" = true ] \
+          if [ "$BASE_BINS_HIT" = true ] \
              && cmp -s lean-toolchain base/lean-toolchain; then
             if [ "$BENV" != Mathlib ] || [ "$ixe" = true ]; then
               mkdir -p base/.lake/build/bin
@@ -770,7 +787,7 @@ jobs:
       # the base tree may pin a different channel, so install its own too.
       - name: Set up Rust for the base build
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
-        uses: ./.github/actions/setup-rust-toolchain
+        uses: $/.github/actions/setup-rust-toolchain
         with:
           cache-key: ${{ env.BENCH_CACHE }}
           cache-workspaces: base
@@ -780,12 +797,12 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
       - name: Log base build CPU
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
-        uses: ./.github/actions/log-cpu
+        uses: $/.github/actions/log-cpu
         with:
           label: Base benchmark binary build CPU
       - name: Build base (ix, bench-typecheck)
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
-        uses: leanprover/lean-action@v1
+        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           lake-package-directory: base
           auto-config: false
@@ -820,9 +837,11 @@ jobs:
       # Full miss: run the normal selection (or the BENCH_CONSTS override).
       - name: Run backend on base → merge into main.json
         if: steps.decide.outputs.run-base == 'true'
+        env:
+          BASE_HAS_IXE: ${{ steps.base-src.outputs.ixe }}
         run: |
-          if [ "${{ steps.base-src.outputs.ixe }}" = true ]; then
-            mv "${{ matrix.params.env }}.ixe" "base/${{ matrix.params.env }}.ixe"
+          if [ "$BASE_HAS_IXE" = true ]; then
+            mv "$BENV.ixe" "base/$BENV.ixe"
           fi
           flags=""
           if [ -n "$CONSTS" ]; then
@@ -879,12 +898,14 @@ jobs:
       - name: Build comparison table
         env:
           RUN_HARDWARE: ${{ steps.cpu.outputs.summary }}
+          BASE_SOURCE: ${{ steps.decide.outputs.source }}
+          RUN_BASE: ${{ steps.decide.outputs.run-base }}
         run: |
           mkdir -p out
           ix bench compare \
             --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --base "$GITHUB_WORKSPACE/main.json" --pr "$GITHUB_WORKSPACE/pr.json" \
-            --base-source "${{ steps.decide.outputs.source }}" \
+            --base-source "$BASE_SOURCE" \
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \
             --out "out/table-$LABEL.md"
           # Label each side with the host that measured it. The PR compile
@@ -895,21 +916,21 @@ jobs:
           else
             pr_hw="$RUN_HARDWARE"
           fi
-          if [ "${{ steps.decide.outputs.run-base }}" = true ]; then
+          if [ "$RUN_BASE" = true ]; then
             base_hw="$RUN_HARDWARE"
           else
             base_hw=$(cat bench-hardware.txt 2>/dev/null || true)
           fi
           {
             echo
-            echo "- Base hardware (${{ steps.decide.outputs.source }}): ${base_hw:-not recorded}"
+            echo "- Base hardware ($BASE_SOURCE): ${base_hw:-not recorded}"
             echo "- PR hardware: ${pr_hw:-not recorded}"
           } >> "out/table-$LABEL.md"
           cat "out/table-$LABEL.md"
 
       - name: Upload table
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: table-${{ env.LABEL }}
           path: out/table-${{ env.LABEL }}.md
@@ -938,13 +959,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: runs-on/action@v2
-      - uses: actions/checkout@v7
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.build.outputs.revision }}
           persist-credentials: false
       - name: Download run binaries
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: benchmark-binaries
       - name: Unpack run binaries
@@ -953,13 +974,13 @@ jobs:
           tar -C "$HOME/.local/bin" -xf benchmark-binaries.tar
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Provision the toolchain so `ix` finds libleanshared (no package build).
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           build: false
           use-github-cache: false
       - name: Download tables
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: tables
           pattern: table-*
@@ -978,7 +999,7 @@ jobs:
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \
             --run-id "${{ github.run_id }}" --out comment-body.md
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: comment-body
           path: comment-body.md
@@ -1000,7 +1021,7 @@ jobs:
       - name: Download comment body
         if: needs.assemble.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: comment-body
       # A failed stage prepends a warning header to the report (quoting
@@ -1037,7 +1058,7 @@ jobs:
       # posted one (empty id), `issue-number` makes this create a fresh
       # comment instead. `replace` overwrites the "running…" placeholder.
       - name: Post / update comment
-        uses: peter-evans/create-or-update-comment@v5
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           token: ${{ github.token }}
           issue-number: ${{ inputs.pr }}
