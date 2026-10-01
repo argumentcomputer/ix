@@ -120,6 +120,8 @@ Terms used in the table:
 | [X4] | best of four (w = 1, 2, 3 and all candidates), both layouts, Init and Mathlib, 12 threads | `94882265` | new | `$S/w2/p4/wx4_{init,ml}_{tagN,tag4}.{md,err,csv}`, `wx4_*_{join,best}.txt` |
 | [X5] | MSS (ties by structural ID and by blake3) against "all", all of Mathlib; entry-level diffs | `7b083108` | new | `$S/w2/p6/cmp_{id,blake3}.{md,err,csv}`, `outlier_diff2.md`, `diff_up7_blake3.md`, `diff_sample13_id.md` |
 | [X6] | the outlier with the Kahn order, per width and "all", both layouts | `0ef72793` | new | `$S/w2/p5/outlier_kahn_{tagN,tag4}.csv` |
+| [X7] | parallelism timings on Mathlib: whole corpus (a), (b), (c) at 20 threads, and per-constant latency (`--serial-constants`) | `7b083108`, `dcf3b318` | new | `$S/w2/p7/ml_{a,b,c}.{md,err,csv,load,loadlog}`, `serial_{a,b,c}.{md,err,csv,loadlog}` |
+| [X8] | parallel against sequential, all of Init, four budgets (`--check-sequential`) | `dee8604e` | new | `$S/w2/p5/init_check_*.{md,err}` |
 | [R1] | K-based, runner, Init, TagN layout, 16 threads | `2072a9bf` | old | `$S/w2/init_tiered.{md,err,csv}` |
 | [R2] | K-based, runner, Mathlib, TagN layout, 20 threads | `2072a9bf` | old | `$S/w2/mathlib_tiered.{md,err,csv}` |
 | [R3] | K-based, runner, Mathlib, TagN layout, 20 threads | `e4c0dead` | new | `$S/w2/mathlib_tiered_bb.{md,err,csv}` |
@@ -138,6 +140,7 @@ Terms used in the table:
 | [D6] | differential, K-based, Mathlib, all constants in 6 address shards; 3 shards (339,749 constants) completed | `3ddda798` | new | `$S/w2/p4/lf_s{0,3,4}.log` (and the empty `lf_s{1,2,5}.log`) |
 | [D7] | differential, **best of three**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `a80c16cf` | new | `$S/w2/p4/b3_init_s{0..5}.log` |
 | [D8] | differential, **best of three**, Mathlib sample, tiered-TagN and tiered-Tag4, 4 processes; aborted, no tallies | `a80c16cf` | new | `$S/w2/p4/b3_ml_s{0..3}.log` |
+| [D9] | differential, **best of three with the Kahn order**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `d19f21c0` | new | `$S/w2/p8/init_s{0..5}.log` |
 
 Notes on the sources:
 
@@ -469,6 +472,8 @@ times are therefore not directly comparable with the K-based rows below.
 |---|---:|---|---:|---:|---|---:|---|
 | Init | 56,622 | tiered-TagN | 5,415.2 s | 381.5 s | 6, 22:45–38:41 for both modes | 824,832–829,636 kB | [D7] |
 | Init | 56,622 | tiered-Tag4 | 4,757.4 s | 384.6 s | (same processes) | | [D7] |
+| Init, Kahn order | 56,622 | tiered-TagN | 3,045.6 s | 360.2 s | 6, 14:06–26:00 for both modes | 838,816–839,728 kB | [D9] |
+| Init, Kahn order | 56,622 | tiered-Tag4 | 2,907.5 s | 360.9 s | (same processes) | | [D9] |
 
 **K-based (superseded):**
 
@@ -493,6 +498,73 @@ times are therefore not directly comparable with the K-based rows below.
     over 166,158 calls, a median of 179–249 µs per call and a maximum of 108 s [W3 §Wall time].
   - W5's single-threaded `sharing-study` harness, which runs no optimizer, measured Mathlib in 4,101.8 s
     with 4,709,872 kB peak RSS [W5 §Reproduction].
+
+### Parallelism inside one constant (Rust) [X7] [X8]
+
+`normalize_constant_sharing_tiered_par` (`dee8604e`) runs the canonical construction with thread budgets
+`Parallelism { widths, components, materialize }` on the current rayon pool. Budgets of 1 give the
+sequential reference path, which every other entry point uses.
+
+- **Widths.** The three phase-1 widths run as separate tasks, each under its own meter, and are compared
+  by the same rule. An error fails the call with the error of the lowest failing width.
+- **Components.** Phase 1's uncertain components are searched as separate tasks, each on its own meter,
+  and their counts are added in component order.
+  - The totals equal the sequential ones, and the call fails exactly when the sequential call fails.
+  - The documented exception: if both `states_created` and `work` reach their limits within one
+    component, the reported resource can differ.
+- **Phase 3.** Entry `j` depends only on `order[..j]`, so entries and roots run as contiguous-range
+  tasks. Work is charged in entry order afterwards, so counters, errors and output equal the sequential
+  loop's.
+
+**Identical output.**
+
+- Tests `parallel_tiered_matches_sequential` and `parallel_tiered_limits_fail_closed` (180 generated
+  constants plus the §2 fixtures, 6 budgets) compare bytes and the full result, counters included.
+- All 56,622 Init constants under budgets (3, 20, 20), (3, 1, 1), (1, 20, 1) and (1, 1, 20): 56,622 /
+  56,622 identical bytes and results in each (`--check-sequential`) [X8].
+- On Mathlib, the three runs below produce the same totals, and the eleven constants of the latency
+  runs give identical bytes under all three budgets [X7].
+
+**Whole-corpus throughput, Mathlib, 20 threads, best of three with the Kahn order** [X7]:
+
+| run | budgets (widths, components, materialize) | processing | GNU `time` elapsed | peak RSS | 1-min load average during the run (min / median / max) |
+|---|---|---:|---:|---:|---|
+| (a) constant-level only | 1, 1, 1 | 658.8 s | 13:29 | 5,599,052 kB | 12.7 / 34.6 / 44.6 |
+| (b) + widths | 3, 1, 1 | 697.3 s | 56:53 (the runner's own total was 956.0 s; not explained) | 5,560,880 kB | 26.7 / 39.4 / 59.0 |
+| (c) + components and phase 3 | 3, 20, 20 | 691.2 s | 14:58 | 5,643,528 kB | 20.1 / 41.9 / 52.8 |
+
+- All three certify all 679,499 constants. The total is 1,121,762,443 bytes under TagN prices; it was
+  1,121,777,032 before the Kahn order.
+- **With the pool saturated by constant-level work, the extra levels do not raise throughput** on this
+  shared machine. The load average was 35–42 on 24 cores, so these runs cannot resolve differences of
+  this size.
+- **Per-constant times in corpus mode are not meaningful under (c).** `SimplexCategory.δ₀Iter_δ'`
+  (N 865) shows 648,944 ms in (c). A thread waiting on a nested join executes other constants' tasks in
+  the meantime, and the wait is counted against this constant.
+
+**Per-constant latency** (`--serial-constants`: one constant at a time on a 20-thread pool), for the ten
+slowest constants of (a) plus `SimplexCategory.δ₀Iter_δ'` [X7]:
+
+| constant | N | cand | (a) 1, 1, 1 | (b) 3, 1, 1 | (c) 3, 20, 20 |
+|---|---:|---:|---:|---:|---:|
+| `CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite` | 95,110 | 81,833 | 128.4 s | 30.1 s | 20.7 s |
+| `Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux` | 64,047 | 41,872 | 59.2 s | 8.4 s | 6.4 s |
+| `AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective` | 66,025 | 52,066 | 50.2 s | 14.2 s | 6.8 s |
+| `…WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three` | 50,027 | 26,233 | 48.5 s | 9.2 s | 5.8 s |
+| `Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual` | 78,913 | 59,202 | 47.8 s | 24.7 s | 6.3 s |
+| `WeierstrassCurve.variableChange_Δ` | 63,501 | 18,995 | 44.4 s | 17.7 s | 4.1 s |
+| `…RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1` | 70,414 | 61,641 | 40.2 s | 14.0 s | 4.8 s |
+| `AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq` | 53,511 | 44,632 | 39.7 s | 13.1 s | 4.5 s |
+| `…Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq'` | 53,222 | 38,483 | 28.1 s | 8.1 s | 2.6 s |
+| `WeierstrassCurve.isHomogeneous_addSubMapCoeff` | 60,092 | 31,902 | 25.2 s | 7.1 s | 4.7 s |
+| `SimplexCategory.δ₀Iter_δ'` | 865 | 450 | 81 ms | 40 ms | 9 ms |
+| **sum** | | | **511.8 s** | **146.6 s** | **66.8 s** |
+| median 1-min load average during the run | | | 30.7 | 26.9 | 16.9 |
+
+- (b) runs the three widths together, so its speedup over (a) is about 3.5× for the sum. (c) adds about
+  2.2× on top of (b).
+- The load average fell between the runs, so the ratios mix the speedup with the change in load.
+- Peak RSS was 4.49, 4.51 and 4.64 GB (most of it the loaded corpus).
 
 ## Phase statistics
 
@@ -616,6 +688,8 @@ How the differential counts:
 | 350 generated inputs × modes | `a80c16cf` | | 2,398 | 0 | 0 | 0 | 0 | [D7] |
 | Init, all | `a80c16cf` | tiered-TagN | **56,622** | 0 | 0 | 0 | **0** | [D7] |
 | | | tiered-Tag4 | **56,622** | 0 | 0 | 0 | **0** | [D7] |
+| Init, all, **Kahn order** | `d19f21c0` | tiered-TagN | **56,622** | 0 | 0 | 0 | **0** | [D9] |
+| | | tiered-Tag4 | **56,622** | 0 | 0 | 0 | **0** | [D9] |
 | Mathlib sample | `a80c16cf` | tiered-TagN, tiered-Tag4 | aborted, no tallies | | | | | [D8] |
 
 **K-based (superseded):**
@@ -1828,6 +1902,297 @@ exit=0
 
 </details>
 
+<details><summary>[X7] whole corpus (a), Mathlib, 20 threads (<code>p7/ml_a.md</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 679499 processed); layout TagN
+- wall: index 3995 ms, processing 658.8 s with 20 threads; peak RSS 5596088 KiB
+- certified: 679499 / 679499; failed: 0
+- failures by status: {}
+- certified constants: stored (heuristic) 1468890902 B; output under Tag4 1136105745 B (-22.66%); under TagN 1121762443 B (-23.63%)
+- unshared (where it fits u64, 679499 constants): 214351802561585 B; stored 1468890902 B; Tag4 output 1136105745 B
+- Tag4 output - stored per constant: 627129 smaller, 51867 equal, 503 larger; min -262507 p1 -6326 p10 -1002 p50 -118 p90 -2 p99 0 p99.9 0 max 36
+- TagN price - stored per constant: min -270947 p1 -6916 p10 -1002 p50 -118 p90 -2 p99 0 p99.9 0 max 36
+- phase-1 width w: {1: 521918, 2: 156170, 3: 1411}
+- uncertain terms per constant: min 0 p1 0 p10 0 p50 2 p90 20 p99 104 p99.9 269 max 2741
+- largest component per constant: min 0 p1 0 p10 0 p50 1 p90 3 p99 7 p99.9 13 max 57
+- uniform search states per constant: min 0 p1 0 p10 0 p50 8 p90 81 p99 452 p99.9 1153 max 18471
+- first-tier search states per constant: min 1 p1 1 p10 5 p50 23 p90 136 p99 656 p99.9 2132 max 42797
+- R1/R2 candidates per constant (all): min 0 p1 0 p10 6 p50 66 p90 424 p99 2004 p99.9 6370 max 81833
+- milliseconds per constant (certified): min 0 p1 0 p10 0 p50 3 p90 22 p99 187 p99.9 1369 max 208145
+- slowest 10:
+  - 208145 ms CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite (bd34cbe632ec9a56): defn ok, N 95110, cand 81833, k 21461, w 2, uncertain 2741, components 2548 (largest 3), states uniform 11006 first-tier 18886
+  - 121647 ms Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual (2b0491741df2ce98): defn ok, N 78913, cand 59202, k 13054, w 1, uncertain 2610, components 2293 (largest 5), states uniform 11091 first-tier 42797
+  - 88041 ms AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq (2d33bfe7c13b87fd): defn ok, N 53511, cand 44632, k 12056, w 2, uncertain 1969, components 1752 (largest 5), states uniform 7601 first-tier 20450
+  - 87478 ms AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective (4ece542b15e7b7a1): defn ok, N 66025, cand 52066, k 10555, w 3, uncertain 1707, components 1541 (largest 3), states uniform 6586 first-tier 8986
+  - 73315 ms WeierstrassCurve.variableChange_Δ (0473473f736e639b): defn ok, N 63501, cand 18995, k 9233, w 3, uncertain 651, components 640 (largest 3), states uniform 2590 first-tier 25590
+  - 69310 ms WeierstrassCurve.isHomogeneous_addSubMapCoeff (f2ce788af955876c): defn ok, N 60092, cand 31902, k 10150, w 2, uncertain 1945, components 1879 (largest 3), states uniform 7672 first-tier 16311
+  - 67969 ms _private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three (67e377956e9a5e65): defn ok, N 50027, cand 26233, k 10413, w 2, uncertain 1431, components 1407 (largest 3), states uniform 5685 first-tier 9035
+  - 63467 ms _private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.0.RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1 (159e2b0d36d95a7f): defn ok, N 70414, cand 61641, k 11700, w 3, uncertain 1627, components 1537 (largest 4), states uniform 6464 first-tier 10045
+  - 53247 ms Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux (83b417c6e46f08e2): defn ok, N 64047, cand 41872, k 8745, w 1, uncertain 1863, components 1562 (largest 8), states uniform 7860 first-tier 7174
+  - 49810 ms _private.Mathlib.RingTheory.Etale.QuasiFinite.0.Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq' (3d79d639858e7cc1): defn ok, N 53222, cand 38483, k 7317, w 1, uncertain 1224, components 1037 (largest 3), states uniform 4856 first-tier 6300
+- total wall 807.1 s
+
+	Command being timed: "/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/sharing_corpus_par /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/ml_a.csv --par-widths 1 --par-components 1 --par-materialize 1"
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 13:29.27
+	Maximum resident set size (kbytes): 5599052
+	Exit status: 0
+exit=0
+```
+
+</details>
+
+<details><summary>[X7] whole corpus (b), Mathlib, 20 threads (<code>p7/ml_b.md</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 679499 processed); layout TagN
+- wall: index 4732 ms, processing 697.3 s with 20 threads; peak RSS 5555120 KiB
+- certified: 679499 / 679499; failed: 0
+- failures by status: {}
+- certified constants: stored (heuristic) 1468890902 B; output under Tag4 1136105745 B (-22.66%); under TagN 1121762443 B (-23.63%)
+- unshared (where it fits u64, 679499 constants): 214351802561585 B; stored 1468890902 B; Tag4 output 1136105745 B
+- Tag4 output - stored per constant: 627129 smaller, 51867 equal, 503 larger; min -262507 p1 -6326 p10 -1002 p50 -118 p90 -2 p99 0 p99.9 0 max 36
+- TagN price - stored per constant: min -270947 p1 -6916 p10 -1002 p50 -118 p90 -2 p99 0 p99.9 0 max 36
+- phase-1 width w: {1: 521918, 2: 156170, 3: 1411}
+- uncertain terms per constant: min 0 p1 0 p10 0 p50 2 p90 20 p99 104 p99.9 269 max 2741
+- largest component per constant: min 0 p1 0 p10 0 p50 1 p90 3 p99 7 p99.9 13 max 57
+- uniform search states per constant: min 0 p1 0 p10 0 p50 8 p90 81 p99 452 p99.9 1153 max 18471
+- first-tier search states per constant: min 1 p1 1 p10 5 p50 23 p90 136 p99 656 p99.9 2132 max 42797
+- R1/R2 candidates per constant (all): min 0 p1 0 p10 6 p50 66 p90 424 p99 2004 p99.9 6370 max 81833
+- milliseconds per constant (certified): min 0 p1 0 p10 0 p50 3 p90 23 p99 199 p99.9 1467 max 196121
+- slowest 10:
+  - 196121 ms CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite (bd34cbe632ec9a56): defn ok, N 95110, cand 81833, k 21461, w 2, uncertain 2741, components 2548 (largest 3), states uniform 11006 first-tier 18886
+  - 168596 ms CategoryTheory.Bicategory.mateEquiv_vcomp (9b20bc429f4cd038): defn ok, N 50497, cand 32338, k 8940, w 3, uncertain 1899, components 1431 (largest 14), states uniform 7942 first-tier 15083
+  - 155605 ms AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective (4ece542b15e7b7a1): defn ok, N 66025, cand 52066, k 10555, w 3, uncertain 1707, components 1541 (largest 3), states uniform 6586 first-tier 8986
+  - 105515 ms _private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.0.RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1 (159e2b0d36d95a7f): defn ok, N 70414, cand 61641, k 11700, w 3, uncertain 1627, components 1537 (largest 4), states uniform 6464 first-tier 10045
+  - 84138 ms Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux (83b417c6e46f08e2): defn ok, N 64047, cand 41872, k 8745, w 1, uncertain 1863, components 1562 (largest 8), states uniform 7860 first-tier 7174
+  - 74225 ms Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual (2b0491741df2ce98): defn ok, N 78913, cand 59202, k 13054, w 1, uncertain 2610, components 2293 (largest 5), states uniform 11091 first-tier 42797
+  - 73547 ms AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq (2d33bfe7c13b87fd): defn ok, N 53511, cand 44632, k 12056, w 2, uncertain 1969, components 1752 (largest 5), states uniform 7601 first-tier 20450
+  - 69439 ms WeierstrassCurve.variableChange_Δ (0473473f736e639b): defn ok, N 63501, cand 18995, k 9233, w 3, uncertain 651, components 640 (largest 3), states uniform 2590 first-tier 25590
+  - 51712 ms _private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three (67e377956e9a5e65): defn ok, N 50027, cand 26233, k 10413, w 2, uncertain 1431, components 1407 (largest 3), states uniform 5685 first-tier 9035
+  - 51256 ms _private.Mathlib.RingTheory.Etale.QuasiFinite.0.Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq' (3d79d639858e7cc1): defn ok, N 53222, cand 38483, k 7317, w 1, uncertain 1224, components 1037 (largest 3), states uniform 4856 first-tier 6300
+- total wall 956.0 s
+
+	Command being timed: "/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/sharing_corpus_par /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/ml_b.csv --par-widths 3 --par-components 1 --par-materialize 1"
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 56:53.50
+	Maximum resident set size (kbytes): 5560880
+	Exit status: 0
+exit=0
+```
+
+</details>
+
+<details><summary>[X7] whole corpus (c), Mathlib, 20 threads (<code>p7/ml_c.md</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 679499 processed); layout TagN
+- wall: index 7560 ms, processing 691.2 s with 20 threads; peak RSS 5629852 KiB
+- certified: 679499 / 679499; failed: 0
+- failures by status: {}
+- certified constants: stored (heuristic) 1468890902 B; output under Tag4 1136105745 B (-22.66%); under TagN 1121762443 B (-23.63%)
+- unshared (where it fits u64, 679499 constants): 214351802561585 B; stored 1468890902 B; Tag4 output 1136105745 B
+- Tag4 output - stored per constant: 627129 smaller, 51867 equal, 503 larger; min -262507 p1 -6326 p10 -1002 p50 -118 p90 -2 p99 0 p99.9 0 max 36
+- TagN price - stored per constant: min -270947 p1 -6916 p10 -1002 p50 -118 p90 -2 p99 0 p99.9 0 max 36
+- phase-1 width w: {1: 521918, 2: 156170, 3: 1411}
+- uncertain terms per constant: min 0 p1 0 p10 0 p50 2 p90 20 p99 104 p99.9 269 max 2741
+- largest component per constant: min 0 p1 0 p10 0 p50 1 p90 3 p99 7 p99.9 13 max 57
+- uniform search states per constant: min 0 p1 0 p10 0 p50 8 p90 81 p99 452 p99.9 1153 max 18471
+- first-tier search states per constant: min 1 p1 1 p10 5 p50 23 p90 136 p99 656 p99.9 2132 max 42797
+- R1/R2 candidates per constant (all): min 0 p1 0 p10 6 p50 66 p90 424 p99 2004 p99.9 6370 max 81833
+- milliseconds per constant (certified): min 0 p1 0 p10 0 p50 3 p90 24 p99 203 p99.9 1492 max 648944
+- slowest 10:
+  - 648944 ms SimplexCategory.δ₀Iter_δ' (00fe7a1095b01adb): defn ok, N 865, cand 450, k 209, w 2, uncertain 85, components 45 (largest 10), states uniform 586 first-tier 292
+  - 247995 ms CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite (bd34cbe632ec9a56): defn ok, N 95110, cand 81833, k 21461, w 2, uncertain 2741, components 2548 (largest 3), states uniform 11006 first-tier 18886
+  - 141875 ms CategoryTheory.Bicategory.mateEquiv_vcomp (9b20bc429f4cd038): defn ok, N 50497, cand 32338, k 8940, w 3, uncertain 1899, components 1431 (largest 14), states uniform 7942 first-tier 15083
+  - 92227 ms _private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.0.RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1 (159e2b0d36d95a7f): defn ok, N 70414, cand 61641, k 11700, w 3, uncertain 1627, components 1537 (largest 4), states uniform 6464 first-tier 10045
+  - 88750 ms Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual (2b0491741df2ce98): defn ok, N 78913, cand 59202, k 13054, w 1, uncertain 2610, components 2293 (largest 5), states uniform 11091 first-tier 42797
+  - 76338 ms TensorProduct.gradedComm_gradedMul (f4093f3288e828f1): defn ok, N 12408, cand 9721, k 1837, w 1, uncertain 223, components 209 (largest 3), states uniform 878 first-tier 1677
+  - 74880 ms WeierstrassCurve.variableChange_Δ (0473473f736e639b): defn ok, N 63501, cand 18995, k 9233, w 3, uncertain 651, components 640 (largest 3), states uniform 2590 first-tier 25590
+  - 67660 ms Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux (83b417c6e46f08e2): defn ok, N 64047, cand 41872, k 8745, w 1, uncertain 1863, components 1562 (largest 8), states uniform 7860 first-tier 7174
+  - 61954 ms AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective (4ece542b15e7b7a1): defn ok, N 66025, cand 52066, k 10555, w 3, uncertain 1707, components 1541 (largest 3), states uniform 6586 first-tier 8986
+  - 55227 ms _private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three (67e377956e9a5e65): defn ok, N 50027, cand 26233, k 10413, w 2, uncertain 1431, components 1407 (largest 3), states uniform 5685 first-tier 9035
+- total wall 897.3 s
+
+	Command being timed: "/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/sharing_corpus_par /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/ml_c.csv --par-widths 3 --par-components 20 --par-materialize 20"
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 14:58.19
+	Maximum resident set size (kbytes): 5643528
+	Exit status: 0
+exit=0
+```
+
+</details>
+
+<details><summary>[X8] Init, parallel 3,20,20 against sequential (<code>p5/init_check_3_20_20.md</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- wall: index 451 ms, processing 62.3 s with 20 threads; peak RSS 873372 KiB
+- certified: 56622 / 56622; failed: 0
+- failures by status: {}
+- sequential check (parallel Parallelism { widths: 3, components: 20, materialize: 20 } vs the sequential reference): {"same": 56622}
+- certified constants: stored (heuristic) 80208288 B; output under Tag4 67329705 B (-16.06%); under TagN 66648677 B (-16.91%)
+- unshared (where it fits u64, 56622 constants): 1070001199 B; stored 80208288 B; Tag4 output 67329705 B
+- Tag4 output - stored per constant: 50406 smaller, 6169 equal, 47 larger; min -69549 p1 -3228 p10 -374 p50 -49 p90 0 p99 0 p99.9 0 max 7
+- TagN price - stored per constant: min -74928 p1 -3495 p10 -374 p50 -49 p90 0 p99 0 p99.9 0 max 7
+- phase-1 width w: {1: 45282, 2: 11156, 3: 184}
+- uncertain terms per constant: min 0 p1 0 p10 0 p50 2 p90 20 p99 113 p99.9 245 max 736
+- largest component per constant: min 0 p1 0 p10 0 p50 1 p90 3 p99 7 p99.9 15 max 57
+- uniform search states per constant: min 0 p1 0 p10 0 p50 8 p90 84 p99 498 p99.9 1067 max 16293
+- first-tier search states per constant: min 1 p1 1 p10 3 p50 17 p90 101 p99 625 p99.9 1955 max 16280
+- R1/R2 candidates per constant (all): min 0 p1 0 p10 3 p50 33 p90 227 p99 1168 p99.9 4843 max 22458
+- milliseconds per constant (certified): min 0 p1 0 p10 0 p50 1 p90 13 p99 113 p99.9 923 max 48355
+- slowest 10:
+  - 48355 ms _private.Init.Data.Array.QSort.Basic.0.Array.qpartition.loop._unary.eq_def (033b6a88d11750dc): defn ok, N 7419, cand 6669, k 1367, w 1, uncertain 212, components 163 (largest 5), states uniform 910 first-tier 1184
+  - 13006 ms _private.Init.Data.Vector.Extract.0.Vector.extract_append._proof_1 (d126ef57b21ab268): defn ok, N 26943, cand 19283, k 5136, w 2, uncertain 606, components 582 (largest 3), states uniform 2398 first-tier 8970
+  - 12070 ms _private.Init.Data.String.Lemmas.Pattern.String.ForwardSearcher.0.String.Slice.Pattern.Model.ForwardSliceSearcher.Invariants.isValidSearchFrom_toList (a400ea3f99ba806a): defn ok, N 27628, cand 22458, k 4874, w 2, uncertain 736, components 666 (largest 4), states uniform 2845 first-tier 16280
+  - 10445 ms Vector.zipWith_eq_append_iff (eda3bace2fc09771): defn ok, N 6096, cand 3273, k 1307, w 2, uncertain 315, components 271 (largest 5), states uniform 1269 first-tier 977
+  - 9671 ms _private.Init.Data.Array.Extract.0.Array.extract_append_extract._proof_1_1 (e07ec5807ddd2514): defn ok, N 24507, cand 17140, k 4678, w 3, uncertain 571, components 530 (largest 4), states uniform 2247 first-tier 4066
+  - 9197 ms _private.Init.Data.Vector.Extract.0.Vector.extract_extract._proof_1 (89ed0e9889141575): defn ok, N 26494, cand 19017, k 4919, w 3, uncertain 587, components 555 (largest 3), states uniform 2351 first-tier 8577
+  - 8528 ms Lean.Grind.Config.mk.injEq (79a818e3bc347ced): defn ok, N 3512, cand 551, k 360, w 1, uncertain 187, components 14 (largest 45), states uniform 16293 first-tier 290
+  - 8248 ms _private.Init.Data.Range.Polymorphic.IntLemmas.0.Int.getElem!_toArray_roc_eq_zero_iff._proof_1_2 (b6cb5981b8a92230): defn ok, N 2549, cand 1673, k 569, w 3, uncertain 93, components 83 (largest 4), states uniform 376 first-tier 445
+  - 6058 ms _private.Init.Data.Array.Extract.0.Array.extract_extract._proof_1_1 (b6be5c1a4db8c149): defn ok, N 19523, cand 11454, k 3640, w 3, uncertain 454, components 435 (largest 4), states uniform 1816 first-tier 3143
+  - 4165 ms _private.Init.Data.Nat.ToString.0.Nat.digitChar_iff_aux (0691b3f1e8c36b6b): defn ok, N 17671, cand 5848, k 2763, w 1, uncertain 577, components 577 (largest 1), states uniform 2308 first-tier 4383
+- total wall 72.5 s
+
+	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --threads 20 --par-widths 3 --par-components 20 --par-materialize 20 --check-sequential"
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:12.66
+	Maximum resident set size (kbytes): 873496
+	Exit status: 0
+exit=0
+```
+
+</details>
+
+<details><summary>[X8] Init, parallel 3,1,1 against sequential (<code>p5/init_check_3_1_1.md</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- wall: index 319 ms, processing 57.6 s with 20 threads; peak RSS 865016 KiB
+- certified: 56622 / 56622; failed: 0
+- failures by status: {}
+- sequential check (parallel Parallelism { widths: 3, components: 1, materialize: 1 } vs the sequential reference): {"same": 56622}
+- certified constants: stored (heuristic) 80208288 B; output under Tag4 67329705 B (-16.06%); under TagN 66648677 B (-16.91%)
+- unshared (where it fits u64, 56622 constants): 1070001199 B; stored 80208288 B; Tag4 output 67329705 B
+- Tag4 output - stored per constant: 50406 smaller, 6169 equal, 47 larger; min -69549 p1 -3228 p10 -374 p50 -49 p90 0 p99 0 p99.9 0 max 7
+- TagN price - stored per constant: min -74928 p1 -3495 p10 -374 p50 -49 p90 0 p99 0 p99.9 0 max 7
+- phase-1 width w: {1: 45282, 2: 11156, 3: 184}
+- uncertain terms per constant: min 0 p1 0 p10 0 p50 2 p90 20 p99 113 p99.9 245 max 736
+- largest component per constant: min 0 p1 0 p10 0 p50 1 p90 3 p99 7 p99.9 15 max 57
+- uniform search states per constant: min 0 p1 0 p10 0 p50 8 p90 84 p99 498 p99.9 1067 max 16293
+- first-tier search states per constant: min 1 p1 1 p10 3 p50 17 p90 101 p99 625 p99.9 1955 max 16280
+- R1/R2 candidates per constant (all): min 0 p1 0 p10 3 p50 33 p90 227 p99 1168 p99.9 4843 max 22458
+- milliseconds per constant (certified): min 0 p1 0 p10 0 p50 1 p90 11 p99 100 p99.9 741 max 13222
+- slowest 10:
+  - 13222 ms _private.Init.Data.Vector.Extract.0.Vector.extract_append._proof_1 (d126ef57b21ab268): defn ok, N 26943, cand 19283, k 5136, w 2, uncertain 606, components 582 (largest 3), states uniform 2398 first-tier 8970
+  - 10701 ms _private.Init.Data.Vector.Extract.0.Vector.extract_extract._proof_1 (89ed0e9889141575): defn ok, N 26494, cand 19017, k 4919, w 3, uncertain 587, components 555 (largest 3), states uniform 2351 first-tier 8577
+  - 10415 ms _private.Init.Data.Vector.Extract.0.Vector.extract_append_extract._proof_1 (eed90987192d5160): defn ok, N 24658, cand 17290, k 4703, w 3, uncertain 557, components 517 (largest 4), states uniform 2193 first-tier 4104
+  - 10066 ms _private.Init.Data.Array.Extract.0.Array.extract_append_extract._proof_1_1 (e07ec5807ddd2514): defn ok, N 24507, cand 17140, k 4678, w 3, uncertain 571, components 530 (largest 4), states uniform 2247 first-tier 4066
+  - 9803 ms _private.Init.Data.String.Lemmas.Pattern.String.ForwardSearcher.0.String.Slice.Pattern.Model.ForwardSliceSearcher.Invariants.isValidSearchFrom_toList (a400ea3f99ba806a): defn ok, N 27628, cand 22458, k 4874, w 2, uncertain 736, components 666 (largest 4), states uniform 2845 first-tier 16280
+  - 7875 ms _private.Init.Data.Array.Extract.0.Array.extract_append._proof_1_1 (e852d49c2b3a2ea7): defn ok, N 26754, cand 19091, k 5146, w 2, uncertain 646, components 612 (largest 4), states uniform 2553 first-tier 8926
+  - 6495 ms Lean.Grind.Config.mk.injEq (79a818e3bc347ced): defn ok, N 3512, cand 551, k 360, w 1, uncertain 187, components 14 (largest 45), states uniform 16293 first-tier 290
+  - 5007 ms _private.Init.Data.Array.Extract.0.Array.extract_extract._proof_1_1 (b6be5c1a4db8c149): defn ok, N 19523, cand 11454, k 3640, w 3, uncertain 454, components 435 (largest 4), states uniform 1816 first-tier 3143
+  - 4154 ms _private.Init.Data.Iterators.Lemmas.Combinators.Monadic.FilterMap.0.Std.IterM.toList_filterMapWithPostcondition_filterMapWithPostcondition' (f22512c397919b72): defn ok, N 16156, cand 11692, k 2712, w 1, uncertain 338, components 308 (largest 3), states uniform 1304 first-tier 2412
+  - 3486 ms _private.Init.Data.Int.DivMod.Lemmas.0.Int.add_one_tdiv._proof_1_1 (194bacb9fee23ecb): defn ok, N 18802, cand 13281, k 3236, w 3, uncertain 424, components 406 (largest 4), states uniform 1696 first-tier 2748
+- total wall 63.1 s
+
+	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --threads 20 --par-widths 3 --par-components 1 --par-materialize 1 --check-sequential"
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:03.33
+	Maximum resident set size (kbytes): 864624
+	Exit status: 0
+exit=0
+```
+
+</details>
+
+<details><summary>[X8] Init, parallel 1,20,1 against sequential (<code>p5/init_check_1_20_1.md</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- wall: index 391 ms, processing 59.7 s with 20 threads; peak RSS 852536 KiB
+- certified: 56622 / 56622; failed: 0
+- failures by status: {}
+- sequential check (parallel Parallelism { widths: 1, components: 20, materialize: 1 } vs the sequential reference): {"same": 56622}
+- certified constants: stored (heuristic) 80208288 B; output under Tag4 67329705 B (-16.06%); under TagN 66648677 B (-16.91%)
+- unshared (where it fits u64, 56622 constants): 1070001199 B; stored 80208288 B; Tag4 output 67329705 B
+- Tag4 output - stored per constant: 50406 smaller, 6169 equal, 47 larger; min -69549 p1 -3228 p10 -374 p50 -49 p90 0 p99 0 p99.9 0 max 7
+- TagN price - stored per constant: min -74928 p1 -3495 p10 -374 p50 -49 p90 0 p99 0 p99.9 0 max 7
+- phase-1 width w: {1: 45282, 2: 11156, 3: 184}
+- uncertain terms per constant: min 0 p1 0 p10 0 p50 2 p90 20 p99 113 p99.9 245 max 736
+- largest component per constant: min 0 p1 0 p10 0 p50 1 p90 3 p99 7 p99.9 15 max 57
+- uniform search states per constant: min 0 p1 0 p10 0 p50 8 p90 84 p99 498 p99.9 1067 max 16293
+- first-tier search states per constant: min 1 p1 1 p10 3 p50 17 p90 101 p99 625 p99.9 1955 max 16280
+- R1/R2 candidates per constant (all): min 0 p1 0 p10 3 p50 33 p90 227 p99 1168 p99.9 4843 max 22458
+- milliseconds per constant (certified): min 0 p1 0 p10 0 p50 1 p90 12 p99 107 p99.9 859 max 14577
+- slowest 10:
+  - 14577 ms _private.Init.Data.String.Lemmas.Pattern.String.ForwardSearcher.0.String.Slice.Pattern.Model.ForwardSliceSearcher.Invariants.isValidSearchFrom_toList (a400ea3f99ba806a): defn ok, N 27628, cand 22458, k 4874, w 2, uncertain 736, components 666 (largest 4), states uniform 2845 first-tier 16280
+  - 13272 ms _private.Init.Data.Vector.Extract.0.Vector.extract_append._proof_1 (d126ef57b21ab268): defn ok, N 26943, cand 19283, k 5136, w 2, uncertain 606, components 582 (largest 3), states uniform 2398 first-tier 8970
+  - 11247 ms _private.Init.Data.Array.Extract.0.Array.extract_append._proof_1_1 (e852d49c2b3a2ea7): defn ok, N 26754, cand 19091, k 5146, w 2, uncertain 646, components 612 (largest 4), states uniform 2553 first-tier 8926
+  - 10292 ms _private.Init.Data.Array.Extract.0.Array.extract_append_extract._proof_1_1 (e07ec5807ddd2514): defn ok, N 24507, cand 17140, k 4678, w 3, uncertain 571, components 530 (largest 4), states uniform 2247 first-tier 4066
+  - 8187 ms _private.Init.Data.Vector.Extract.0.Vector.extract_extract._proof_1 (89ed0e9889141575): defn ok, N 26494, cand 19017, k 4919, w 3, uncertain 587, components 555 (largest 3), states uniform 2351 first-tier 8577
+  - 7889 ms _private.Init.Data.Vector.Extract.0.Vector.extract_append_extract._proof_1 (eed90987192d5160): defn ok, N 24658, cand 17290, k 4703, w 3, uncertain 557, components 517 (largest 4), states uniform 2193 first-tier 4104
+  - 5822 ms Lean.Grind.Config.mk.injEq (79a818e3bc347ced): defn ok, N 3512, cand 551, k 360, w 1, uncertain 187, components 14 (largest 45), states uniform 16293 first-tier 290
+  - 5428 ms _private.Init.Data.Array.Extract.0.Array.extract_extract._proof_1_1 (b6be5c1a4db8c149): defn ok, N 19523, cand 11454, k 3640, w 3, uncertain 454, components 435 (largest 4), states uniform 1816 first-tier 3143
+  - 4378 ms _private.Init.Data.Nat.ToString.0.Nat.digitChar_iff_aux (0691b3f1e8c36b6b): defn ok, N 17671, cand 5848, k 2763, w 1, uncertain 577, components 577 (largest 1), states uniform 2308 first-tier 4383
+  - 4228 ms _private.Init.Data.Range.Polymorphic.RangeIterator.0.Std.Rxo.Iterator.instIteratorLoop.loopWf_eq._unary (d97528760a895bf6): defn ok, N 11860, cand 8596, k 2398, w 1, uncertain 471, components 447 (largest 3), states uniform 1852 first-tier 1955
+- total wall 62.8 s
+
+	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --threads 20 --par-widths 1 --par-components 20 --par-materialize 1 --check-sequential"
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:02.93
+	Maximum resident set size (kbytes): 852852
+	Exit status: 0
+exit=0
+```
+
+</details>
+
+<details><summary>[X8] Init, parallel 1,1,20 against sequential (<code>p5/init_check_1_1_20.md</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- wall: index 434 ms, processing 56.2 s with 20 threads; peak RSS 814096 KiB
+- certified: 56622 / 56622; failed: 0
+- failures by status: {}
+- sequential check (parallel Parallelism { widths: 1, components: 1, materialize: 20 } vs the sequential reference): {"same": 56622}
+- certified constants: stored (heuristic) 80208288 B; output under Tag4 67329705 B (-16.06%); under TagN 66648677 B (-16.91%)
+- unshared (where it fits u64, 56622 constants): 1070001199 B; stored 80208288 B; Tag4 output 67329705 B
+- Tag4 output - stored per constant: 50406 smaller, 6169 equal, 47 larger; min -69549 p1 -3228 p10 -374 p50 -49 p90 0 p99 0 p99.9 0 max 7
+- TagN price - stored per constant: min -74928 p1 -3495 p10 -374 p50 -49 p90 0 p99 0 p99.9 0 max 7
+- phase-1 width w: {1: 45282, 2: 11156, 3: 184}
+- uncertain terms per constant: min 0 p1 0 p10 0 p50 2 p90 20 p99 113 p99.9 245 max 736
+- largest component per constant: min 0 p1 0 p10 0 p50 1 p90 3 p99 7 p99.9 15 max 57
+- uniform search states per constant: min 0 p1 0 p10 0 p50 8 p90 84 p99 498 p99.9 1067 max 16293
+- first-tier search states per constant: min 1 p1 1 p10 3 p50 17 p90 101 p99 625 p99.9 1955 max 16280
+- R1/R2 candidates per constant (all): min 0 p1 0 p10 3 p50 33 p90 227 p99 1168 p99.9 4843 max 22458
+- milliseconds per constant (certified): min 0 p1 0 p10 0 p50 1 p90 11 p99 101 p99.9 827 max 18240
+- slowest 10:
+  - 18240 ms _private.Init.Data.Vector.Extract.0.Vector.extract_extract._proof_1 (89ed0e9889141575): defn ok, N 26494, cand 19017, k 4919, w 3, uncertain 587, components 555 (largest 3), states uniform 2351 first-tier 8577
+  - 12455 ms _private.Init.Data.String.Lemmas.Pattern.String.ForwardSearcher.0.String.Slice.Pattern.Model.ForwardSliceSearcher.Invariants.isValidSearchFrom_toList (a400ea3f99ba806a): defn ok, N 27628, cand 22458, k 4874, w 2, uncertain 736, components 666 (largest 4), states uniform 2845 first-tier 16280
+  - 10792 ms _private.Init.Data.Vector.Extract.0.Vector.extract_append._proof_1 (d126ef57b21ab268): defn ok, N 26943, cand 19283, k 5136, w 2, uncertain 606, components 582 (largest 3), states uniform 2398 first-tier 8970
+  - 9042 ms _private.Init.Data.Vector.Extract.0.Vector.extract_append_extract._proof_1 (eed90987192d5160): defn ok, N 24658, cand 17290, k 4703, w 3, uncertain 557, components 517 (largest 4), states uniform 2193 first-tier 4104
+  - 7673 ms _private.Init.Data.Array.Extract.0.Array.extract_append_extract._proof_1_1 (e07ec5807ddd2514): defn ok, N 24507, cand 17140, k 4678, w 3, uncertain 571, components 530 (largest 4), states uniform 2247 first-tier 4066
+  - 6328 ms Lean.Grind.Config.mk.injEq (79a818e3bc347ced): defn ok, N 3512, cand 551, k 360, w 1, uncertain 187, components 14 (largest 45), states uniform 16293 first-tier 290
+  - 6275 ms _private.Init.Data.Array.Extract.0.Array.extract_append._proof_1_1 (e852d49c2b3a2ea7): defn ok, N 26754, cand 19091, k 5146, w 2, uncertain 646, components 612 (largest 4), states uniform 2553 first-tier 8926
+  - 5601 ms _private.Init.Data.Int.DivMod.Lemmas.0.Int.add_one_tdiv._proof_1_1 (194bacb9fee23ecb): defn ok, N 18802, cand 13281, k 3236, w 3, uncertain 424, components 406 (largest 4), states uniform 1696 first-tier 2748
+  - 4978 ms _private.Init.Data.Array.Extract.0.Array.extract_extract._proof_1_1 (b6be5c1a4db8c149): defn ok, N 19523, cand 11454, k 3640, w 3, uncertain 454, components 435 (largest 4), states uniform 1816 first-tier 3143
+  - 4449 ms _private.Init.Data.Iterators.Lemmas.Combinators.Monadic.FilterMap.0.Std.IterM.toList_filterMapWithPostcondition_filterMapWithPostcondition' (f22512c397919b72): defn ok, N 16156, cand 11692, k 2712, w 1, uncertain 338, components 308 (largest 3), states uniform 1304 first-tier 2412
+- total wall 60.0 s
+
+	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --threads 20 --par-widths 1 --par-components 1 --par-materialize 20 --check-sequential"
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:00.13
+	Maximum resident set size (kbytes): 813660
+	Exit status: 0
+exit=0
+```
+
+</details>
+
 <details><summary>[J1] join output (<code>p4/init_join.txt</code>)</summary>
 
 ```text
@@ -2882,6 +3247,159 @@ idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,byte
 
 </details>
 
+<details><summary>[X7] join output (<code>p7/serial_a_report.txt</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 11 processed); layout TagN
+- wall: index 11664 ms, processing 515.9 s with 20 threads; peak RSS 4493864 KiB
+- certified: 11 / 11; failed: 0
+- failures by status: {}
+- certified constants: stored (heuristic) 3766317 B; output under Tag4 2360626 B (-37.32%); under TagN 2269586 B (-39.74%)
+- unshared (where it fits u64, 11 constants): 7784704407 B; stored 3766317 B; Tag4 output 2360626 B
+- Tag4 output - stored per constant: 11 smaller, 0 equal, 0 larger; min -262507 p1 -262507 p10 -189740 p50 -135224 p90 -48493 p99 -48493 p99.9 -48493 max -1005
+- TagN price - stored per constant: min -270947 p1 -270947 p10 -196799 p50 -141547 p90 -64209 p99 -64209 p99.9 -64209 max -1005
+- phase-1 width w: {1: 3, 2: 5, 3: 3}
+- uncertain terms per constant: min 85 p1 85 p10 651 p50 1707 p90 2610 p99 2610 p99.9 2610 max 2741
+- largest component per constant: min 3 p1 3 p10 3 p50 3 p90 8 p99 8 p99.9 8 max 10
+- uniform search states per constant: min 586 p1 586 p10 2590 p50 6586 p90 11006 p99 11006 p99.9 11006 max 11091
+- first-tier search states per constant: min 292 p1 292 p10 6300 p50 10045 p90 25590 p99 25590 p99.9 25590 max 42797
+- R1/R2 candidates per constant (all): min 450 p1 450 p10 18995 p50 41872 p90 61641 p99 61641 p99.9 61641 max 81833
+- milliseconds per constant (certified): min 81 p1 81 p10 25163 p50 44367 p90 59185 p99 59185 p99.9 59185 max 128445
+- slowest 10:
+  - 128445 ms CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite (bd34cbe632ec9a56): defn ok, N 95110, cand 81833, k 21461, w 2, uncertain 2741, components 2548 (largest 3), states uniform 11006 first-tier 18886
+  - 59185 ms Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux (83b417c6e46f08e2): defn ok, N 64047, cand 41872, k 8745, w 1, uncertain 1863, components 1562 (largest 8), states uniform 7860 first-tier 7174
+  - 50237 ms AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective (4ece542b15e7b7a1): defn ok, N 66025, cand 52066, k 10555, w 3, uncertain 1707, components 1541 (largest 3), states uniform 6586 first-tier 8986
+  - 48458 ms _private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three (67e377956e9a5e65): defn ok, N 50027, cand 26233, k 10413, w 2, uncertain 1431, components 1407 (largest 3), states uniform 5685 first-tier 9035
+  - 47832 ms Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual (2b0491741df2ce98): defn ok, N 78913, cand 59202, k 13054, w 1, uncertain 2610, components 2293 (largest 5), states uniform 11091 first-tier 42797
+  - 44367 ms WeierstrassCurve.variableChange_Δ (0473473f736e639b): defn ok, N 63501, cand 18995, k 9233, w 3, uncertain 651, components 640 (largest 3), states uniform 2590 first-tier 25590
+  - 40183 ms _private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.0.RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1 (159e2b0d36d95a7f): defn ok, N 70414, cand 61641, k 11700, w 3, uncertain 1627, components 1537 (largest 4), states uniform 6464 first-tier 10045
+  - 39726 ms AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq (2d33bfe7c13b87fd): defn ok, N 53511, cand 44632, k 12056, w 2, uncertain 1969, components 1752 (largest 5), states uniform 7601 first-tier 20450
+  - 28101 ms _private.Mathlib.RingTheory.Etale.QuasiFinite.0.Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq' (3d79d639858e7cc1): defn ok, N 53222, cand 38483, k 7317, w 1, uncertain 1224, components 1037 (largest 3), states uniform 4856 first-tier 6300
+  - 25163 ms WeierstrassCurve.isHomogeneous_addSubMapCoeff (f2ce788af955876c): defn ok, N 60092, cand 31902, k 10150, w 2, uncertain 1945, components 1879 (largest 3), states uniform 7672 first-tier 16311
+- total wall 750.9 s
+
+per-constant (addr, name, status, ms, N, cand, w):
+00fe7a1095b01adb "SimplexCategory.δ₀Iter_δ'" ok 81.328 865 450 2
+0473473f736e639b "WeierstrassCurve.variableChange_Δ" ok 44366.662 63501 18995 3
+159e2b0d36d95a7f "_private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.0.RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1" ok 40182.686 70414 61641 3
+2b0491741df2ce98 "Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual" ok 47831.645 78913 59202 1
+2d33bfe7c13b87fd "AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq" ok 39725.999 53511 44632 2
+3d79d639858e7cc1 "_private.Mathlib.RingTheory.Etale.QuasiFinite.0.Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq'" ok 28100.699 53222 38483 1
+4ece542b15e7b7a1 "AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective" ok 50237.020 66025 52066 3
+67e377956e9a5e65 "_private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three" ok 48457.751 50027 26233 2
+83b417c6e46f08e2 "Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux" ok 59184.604 64047 41872 1
+bd34cbe632ec9a56 "CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite" ok 128444.697 95110 81833 2
+f2ce788af955876c "WeierstrassCurve.isHomogeneous_addSubMapCoeff" ok 25163.150 60092 31902 2
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 12:31.96
+	Maximum resident set size (kbytes): 4493864
+exit=0
+```
+
+</details>
+
+<details><summary>[X7] join output (<code>p7/serial_b_report.txt</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 11 processed); layout TagN
+- wall: index 7646 ms, processing 149.3 s with 20 threads; peak RSS 4506028 KiB
+- certified: 11 / 11; failed: 0
+- failures by status: {}
+- certified constants: stored (heuristic) 3766317 B; output under Tag4 2360626 B (-37.32%); under TagN 2269586 B (-39.74%)
+- unshared (where it fits u64, 11 constants): 7784704407 B; stored 3766317 B; Tag4 output 2360626 B
+- Tag4 output - stored per constant: 11 smaller, 0 equal, 0 larger; min -262507 p1 -262507 p10 -189740 p50 -135224 p90 -48493 p99 -48493 p99.9 -48493 max -1005
+- TagN price - stored per constant: min -270947 p1 -270947 p10 -196799 p50 -141547 p90 -64209 p99 -64209 p99.9 -64209 max -1005
+- phase-1 width w: {1: 3, 2: 5, 3: 3}
+- uncertain terms per constant: min 85 p1 85 p10 651 p50 1707 p90 2610 p99 2610 p99.9 2610 max 2741
+- largest component per constant: min 3 p1 3 p10 3 p50 3 p90 8 p99 8 p99.9 8 max 10
+- uniform search states per constant: min 586 p1 586 p10 2590 p50 6586 p90 11006 p99 11006 p99.9 11006 max 11091
+- first-tier search states per constant: min 292 p1 292 p10 6300 p50 10045 p90 25590 p99 25590 p99.9 25590 max 42797
+- R1/R2 candidates per constant (all): min 450 p1 450 p10 18995 p50 41872 p90 61641 p99 61641 p99.9 61641 max 81833
+- milliseconds per constant (certified): min 40 p1 40 p10 7115 p50 13056 p90 24732 p99 24732 p99.9 24732 max 30072
+- slowest 10:
+  - 30072 ms CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite (bd34cbe632ec9a56): defn ok, N 95110, cand 81833, k 21461, w 2, uncertain 2741, components 2548 (largest 3), states uniform 11006 first-tier 18886
+  - 24732 ms Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual (2b0491741df2ce98): defn ok, N 78913, cand 59202, k 13054, w 1, uncertain 2610, components 2293 (largest 5), states uniform 11091 first-tier 42797
+  - 17663 ms WeierstrassCurve.variableChange_Δ (0473473f736e639b): defn ok, N 63501, cand 18995, k 9233, w 3, uncertain 651, components 640 (largest 3), states uniform 2590 first-tier 25590
+  - 14218 ms AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective (4ece542b15e7b7a1): defn ok, N 66025, cand 52066, k 10555, w 3, uncertain 1707, components 1541 (largest 3), states uniform 6586 first-tier 8986
+  - 13980 ms _private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.0.RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1 (159e2b0d36d95a7f): defn ok, N 70414, cand 61641, k 11700, w 3, uncertain 1627, components 1537 (largest 4), states uniform 6464 first-tier 10045
+  - 13056 ms AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq (2d33bfe7c13b87fd): defn ok, N 53511, cand 44632, k 12056, w 2, uncertain 1969, components 1752 (largest 5), states uniform 7601 first-tier 20450
+  - 9230 ms _private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three (67e377956e9a5e65): defn ok, N 50027, cand 26233, k 10413, w 2, uncertain 1431, components 1407 (largest 3), states uniform 5685 first-tier 9035
+  - 8390 ms Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux (83b417c6e46f08e2): defn ok, N 64047, cand 41872, k 8745, w 1, uncertain 1863, components 1562 (largest 8), states uniform 7860 first-tier 7174
+  - 8146 ms _private.Mathlib.RingTheory.Etale.QuasiFinite.0.Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq' (3d79d639858e7cc1): defn ok, N 53222, cand 38483, k 7317, w 1, uncertain 1224, components 1037 (largest 3), states uniform 4856 first-tier 6300
+  - 7115 ms WeierstrassCurve.isHomogeneous_addSubMapCoeff (f2ce788af955876c): defn ok, N 60092, cand 31902, k 10150, w 2, uncertain 1945, components 1879 (largest 3), states uniform 7672 first-tier 16311
+- total wall 423.7 s
+
+per-constant (addr, name, status, ms, N, cand, w):
+00fe7a1095b01adb "SimplexCategory.δ₀Iter_δ'" ok 40.144 865 450 2
+0473473f736e639b "WeierstrassCurve.variableChange_Δ" ok 17662.892 63501 18995 3
+159e2b0d36d95a7f "_private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.0.RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1" ok 13980.043 70414 61641 3
+2b0491741df2ce98 "Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual" ok 24731.996 78913 59202 1
+2d33bfe7c13b87fd "AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq" ok 13055.659 53511 44632 2
+3d79d639858e7cc1 "_private.Mathlib.RingTheory.Etale.QuasiFinite.0.Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq'" ok 8145.573 53222 38483 1
+4ece542b15e7b7a1 "AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective" ok 14218.098 66025 52066 3
+67e377956e9a5e65 "_private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three" ok 9229.587 50027 26233 2
+83b417c6e46f08e2 "Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux" ok 8389.657 64047 41872 1
+bd34cbe632ec9a56 "CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite" ok 30072.401 95110 81833 2
+f2ce788af955876c "WeierstrassCurve.isHomogeneous_addSubMapCoeff" ok 7114.862 60092 31902 2
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 7:04.50
+	Maximum resident set size (kbytes): 4506028
+exit=0
+```
+
+</details>
+
+<details><summary>[X7] join output (<code>p7/serial_c_report.txt</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 11 processed); layout TagN
+- wall: index 4902 ms, processing 69.8 s with 20 threads; peak RSS 4643556 KiB
+- certified: 11 / 11; failed: 0
+- failures by status: {}
+- certified constants: stored (heuristic) 3766317 B; output under Tag4 2360626 B (-37.32%); under TagN 2269586 B (-39.74%)
+- unshared (where it fits u64, 11 constants): 7784704407 B; stored 3766317 B; Tag4 output 2360626 B
+- Tag4 output - stored per constant: 11 smaller, 0 equal, 0 larger; min -262507 p1 -262507 p10 -189740 p50 -135224 p90 -48493 p99 -48493 p99.9 -48493 max -1005
+- TagN price - stored per constant: min -270947 p1 -270947 p10 -196799 p50 -141547 p90 -64209 p99 -64209 p99.9 -64209 max -1005
+- phase-1 width w: {1: 3, 2: 5, 3: 3}
+- uncertain terms per constant: min 85 p1 85 p10 651 p50 1707 p90 2610 p99 2610 p99.9 2610 max 2741
+- largest component per constant: min 3 p1 3 p10 3 p50 3 p90 8 p99 8 p99.9 8 max 10
+- uniform search states per constant: min 586 p1 586 p10 2590 p50 6586 p90 11006 p99 11006 p99.9 11006 max 11091
+- first-tier search states per constant: min 292 p1 292 p10 6300 p50 10045 p90 25590 p99 25590 p99.9 25590 max 42797
+- R1/R2 candidates per constant (all): min 450 p1 450 p10 18995 p50 41872 p90 61641 p99 61641 p99.9 61641 max 81833
+- milliseconds per constant (certified): min 9 p1 9 p10 2622 p50 4795 p90 6783 p99 6783 p99.9 6783 max 20723
+- slowest 10:
+  - 20723 ms CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite (bd34cbe632ec9a56): defn ok, N 95110, cand 81833, k 21461, w 2, uncertain 2741, components 2548 (largest 3), states uniform 11006 first-tier 18886
+  - 6783 ms AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective (4ece542b15e7b7a1): defn ok, N 66025, cand 52066, k 10555, w 3, uncertain 1707, components 1541 (largest 3), states uniform 6586 first-tier 8986
+  - 6422 ms Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux (83b417c6e46f08e2): defn ok, N 64047, cand 41872, k 8745, w 1, uncertain 1863, components 1562 (largest 8), states uniform 7860 first-tier 7174
+  - 6337 ms Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual (2b0491741df2ce98): defn ok, N 78913, cand 59202, k 13054, w 1, uncertain 2610, components 2293 (largest 5), states uniform 11091 first-tier 42797
+  - 5831 ms _private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three (67e377956e9a5e65): defn ok, N 50027, cand 26233, k 10413, w 2, uncertain 1431, components 1407 (largest 3), states uniform 5685 first-tier 9035
+  - 4795 ms _private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.0.RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1 (159e2b0d36d95a7f): defn ok, N 70414, cand 61641, k 11700, w 3, uncertain 1627, components 1537 (largest 4), states uniform 6464 first-tier 10045
+  - 4708 ms WeierstrassCurve.isHomogeneous_addSubMapCoeff (f2ce788af955876c): defn ok, N 60092, cand 31902, k 10150, w 2, uncertain 1945, components 1879 (largest 3), states uniform 7672 first-tier 16311
+  - 4512 ms AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq (2d33bfe7c13b87fd): defn ok, N 53511, cand 44632, k 12056, w 2, uncertain 1969, components 1752 (largest 5), states uniform 7601 first-tier 20450
+  - 4098 ms WeierstrassCurve.variableChange_Δ (0473473f736e639b): defn ok, N 63501, cand 18995, k 9233, w 3, uncertain 651, components 640 (largest 3), states uniform 2590 first-tier 25590
+  - 2622 ms _private.Mathlib.RingTheory.Etale.QuasiFinite.0.Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq' (3d79d639858e7cc1): defn ok, N 53222, cand 38483, k 7317, w 1, uncertain 1224, components 1037 (largest 3), states uniform 4856 first-tier 6300
+- total wall 221.6 s
+
+per-constant (addr, name, status, ms, N, cand, w):
+00fe7a1095b01adb "SimplexCategory.δ₀Iter_δ'" ok 8.786 865 450 2
+0473473f736e639b "WeierstrassCurve.variableChange_Δ" ok 4098.233 63501 18995 3
+159e2b0d36d95a7f "_private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.0.RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1" ok 4795.154 70414 61641 3
+2b0491741df2ce98 "Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual" ok 6337.003 78913 59202 1
+2d33bfe7c13b87fd "AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq" ok 4512.205 53511 44632 2
+3d79d639858e7cc1 "_private.Mathlib.RingTheory.Etale.QuasiFinite.0.Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq'" ok 2622.169 53222 38483 1
+4ece542b15e7b7a1 "AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective" ok 6782.737 66025 52066 3
+67e377956e9a5e65 "_private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three" ok 5830.569 50027 26233 2
+83b417c6e46f08e2 "Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux" ok 6422.273 64047 41872 1
+bd34cbe632ec9a56 "CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite" ok 20722.772 95110 81833 2
+f2ce788af955876c "WeierstrassCurve.isHomogeneous_addSubMapCoeff" ok 4707.564 60092 31902 2
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:42.69
+	Maximum resident set size (kbytes): 4643556
+exit=0
+```
+
+</details>
+
 
 ## Appendix B: differential tallies
 
@@ -3798,6 +4316,100 @@ Command terminated by signal 15
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:04:51
 	Maximum resident set size (kbytes): 4723700
 exit=143
+```
+
+</details>
+
+<details><summary>[D9] Init, all constants, best of three with the Kahn order, tiered-TagN and tiered-Tag4 (d19f21c0)</summary>
+
+`p8/init_s0.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 51 ms, Rust 4 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1337 ms, Rust 380 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1154 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 726305 ms, Rust 72934 ms]
+    [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 677491 ms, Rust 74282 ms]
+    [corpus: decode failures 0; total 1554083 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 25:59.56
+	Maximum resident set size (kbytes): 839284
+exit=0
+```
+
+`p8/init_s1.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 154 ms, Rust 23 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1708 ms, Rust 532 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1651 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 608095 ms, Rust 70073 ms]
+    [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 561240 ms, Rust 69960 ms]
+    [corpus: decode failures 0; total 1312886 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 22:00.12
+	Maximum resident set size (kbytes): 839524
+exit=0
+```
+
+`p8/init_s2.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 149 ms, Rust 15 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1683 ms, Rust 578 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1385 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 414956 ms, Rust 54172 ms]
+    [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 411295 ms, Rust 50736 ms]
+    [corpus: decode failures 0; total 934376 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 15:40.65
+	Maximum resident set size (kbytes): 839728
+exit=0
+```
+
+`p8/init_s3.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 92 ms, Rust 7 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1566 ms, Rust 504 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1765 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 500682 ms, Rust 56514 ms]
+    [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 475709 ms, Rust 58928 ms]
+    [corpus: decode failures 0; total 1095511 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 18:21.04
+	Maximum resident set size (kbytes): 839008
+exit=0
+```
+
+`p8/init_s4.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 252 ms, Rust 25 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1803 ms, Rust 568 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1248 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 423984 ms, Rust 55817 ms]
+    [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 421238 ms, Rust 53568 ms]
+    [corpus: decode failures 0; total 957750 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 16:03.75
+	Maximum resident set size (kbytes): 839684
+exit=0
+```
+
+`p8/init_s5.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 80 ms, Rust 6 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1689 ms, Rust 530 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1334 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 371574 ms, Rust 50714 ms]
+    [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 360497 ms, Rust 53412 ms]
+    [corpus: decode failures 0; total 839322 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 14:05.79
+	Maximum resident set size (kbytes): 838816
+exit=0
 ```
 
 </details>
