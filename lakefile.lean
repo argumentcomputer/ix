@@ -18,10 +18,10 @@ require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @ "78f5bc4b22de1172af8a5d91e7039128084fad3a"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
+  "https://github.com/leanprover/lean4-cli" @ "v4.34.0"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "v4.33.0"
+  "https://github.com/leanprover-community/batteries" @ "v4.34.0"
 
 /- Reference Lean4-in-Lean4 theory and checker. `IxTcVerify` imports its
 Theory/Verify specification surface, while `bench-lean4lean` and the ignored
