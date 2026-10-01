@@ -41,10 +41,10 @@ Loads a serialized `Ixon.Env` (`.ixe`) and, for every stored constant:
    uncertain under a uniform Share width `w ∈ {1, 2, 3}` and measures the
    components of uncertain nodes (see `classify`), and counts the Share
    references of the stored encoding by index width.
-8. Prices the Share references of the MSS encoding under five width
+8. Prices the Share references of the MSS encoding under seven width
    schemes (current index tiers; one width per constant from the entry
    count; the same with a 1-byte class; one width per constant with a
-   nibble-sized index in the tag byte; index tiers with a nibble escape),
+   nibble-sized index in the tag byte; three alternative index tiers),
    see `schemeReport`.
 
 ```
@@ -268,6 +268,10 @@ structure MssResult where
   refs : Nat × Nat × Nat := (0, 0, 0)
   /-- Share nodes by index `< 15`, `15..4110`, `≥ 4111` (scheme E tiers). -/
   refsE : Nat × Nat × Nat := (0, 0, 0)
+  /-- Share nodes by index `< 8`, `8..1031`, `≥ 1032` (scheme F tiers). -/
+  refsF : Nat × Nat × Nat := (0, 0, 0)
+  /-- Share nodes by index `< 14`, `14..269`, `≥ 270` (scheme G tiers). -/
+  refsG : Nat × Nat × Nat := (0, 0, 0)
   /-- `Σ deg(t)` over the stored terms (expected to equal the Share count). -/
   degSum : Nat := 0
   deriving Inhabited
@@ -355,7 +359,11 @@ def mssBuild (res : Ix.Sharing.AnalyzeResult) (sizes : Std.HashMap Address NodeS
   let refsE := newRoots.foldl (fun acc e => countShareRefsBy 15 4111 e acc)
     (st.sharingVec.foldl (fun acc e => countShareRefsBy 15 4111 e acc) (0, 0, 0))
   let mut out : MssResult :=
-    { table := st.sharingVec, roots := newRoots, refs, refsE, degSum }
+    { table := st.sharingVec, roots := newRoots, refs, refsE, degSum,
+      refsF := newRoots.foldl (fun acc e => countShareRefsBy 8 1032 e acc)
+        (st.sharingVec.foldl (fun acc e => countShareRefsBy 8 1032 e acc) (0, 0, 0)),
+      refsG := newRoots.foldl (fun acc e => countShareRefsBy 14 270 e acc)
+        (st.sharingVec.foldl (fun acc e => countShareRefsBy 14 270 e acc) (0, 0, 0)) }
   for h in stored do
     unless nonCont.contains h do
       let entry := st.sharingVec[st.hashToIdx.getD h 0]!
@@ -702,6 +710,9 @@ structure Row where
   mssRefs : Nat × Nat × Nat := (0, 0, 0)
   /-- Share nodes of the MSS encoding by index `< 15`, `15..4110`, `≥ 4111`. -/
   mssRefsE : Nat × Nat × Nat := (0, 0, 0)
+  /-- Share nodes of the MSS encoding in the scheme F and G index buckets. -/
+  mssRefsF : Nat × Nat × Nat := (0, 0, 0)
+  mssRefsG : Nat × Nat × Nat := (0, 0, 0)
   mssDegSum : Nat := 0
   /-- Uniform-width classification for `w = 1, 2, 3` (empty on failure). -/
   uw : Array WStats := #[]
@@ -746,9 +757,10 @@ def measure (addr : Address) (name : String) (raw : ByteArray) (c : Constant)
       (some (s == unshared), s)
     else (none, 0)
   -- 4. Maximal structural sharing, serialized and checked.
-  let (mss, mssTable, mssErr, mssCounts, mssRefs, mssRefsE, mssDegSum) :=
+  let (mss, mssTable, mssErr, mssCounts, mssRefs, mssRefsE, mssDegSum, mssRefsF, mssRefsG) :=
     match mssBuild res sizes roots with
-    | .error e => (0, 0, some s!"build: {e}", (0, 0, 0), (0, 0, 0), (0, 0, 0), 0)
+    | .error e =>
+      (0, 0, some s!"build: {e}", (0, 0, 0), (0, 0, 0), (0, 0, 0), 0, (0, 0, 0), (0, 0, 0))
     | .ok m =>
       let mc : Constant :=
         { info := replaceRoots c.info m.roots, sharing := m.table, refs := c.refs, univs := c.univs }
@@ -756,7 +768,8 @@ def measure (addr : Address) (name : String) (raw : ByteArray) (c : Constant)
       let err := match mssCheck b roots with
         | .ok () => none
         | .error e => some s!"check: {e}"
-      (b.size, m.table.size, err, (m.cont, m.contP2, m.contP2u), m.refs, m.refsE, m.degSum)
+      (b.size, m.table.size, err, (m.cont, m.contP2, m.contP2u), m.refs, m.refsE, m.degSum,
+        m.refsF, m.refsG)
   -- 5. Uniform-reference-width classification and stored reference widths.
   let (uw, uwErr) := match classify res sizes roots with
     | .ok s => (s, none)
@@ -765,7 +778,7 @@ def measure (addr : Address) (name : String) (raw : ByteArray) (c : Constant)
     (c.sharing.foldl (fun acc e => countShareRefs e acc) (0, 0, 0))
   return {
     uw, uwErr, refs0 := refCounts.1, refs1 := refCounts.2.1, refs2 := refCounts.2.2
-    mss, mssTable, mssErr, mssRefs, mssRefsE, mssDegSum
+    mss, mssTable, mssErr, mssRefs, mssRefsE, mssDegSum, mssRefsF, mssRefsG
     cont := mssCounts.1, contP2 := mssCounts.2.1, contP2u := mssCounts.2.2
     addr, name, kind := kindOf c.info, detail := mutsDetail c.info
     roots := roots.size, n := ds.n, occ2 := ds.occ2, cand := ds.cand
@@ -901,7 +914,8 @@ def csvHeader : String :=
   "mss_bytes,mss_table,mss_ok,mss_cont,mss_cont_p2,mss_cont_p2u," ++
   "w1_cs,w1_ce,w1_unc,w1_comp,w2_cs,w2_ce,w2_unc,w2_comp,w3_cs,w3_ce,w3_unc,w3_comp," ++
   "refs_lt8,refs_8_255,refs_ge256,mss_refs_lt8,mss_refs_8_255,mss_refs_ge256,mss_deg_sum," ++
-  "mss_refs_lt15,mss_refs_15_4110,mss_refs_ge4111"
+  "mss_refs_lt15,mss_refs_15_4110,mss_refs_ge4111," ++
+  "mss_refs_lt8f,mss_refs_8_1031,mss_refs_ge1032,mss_refs_lt14,mss_refs_14_269,mss_refs_ge270"
 
 def uwCsv (r : Row) : String :=
   ",".intercalate <| (List.range 3).map fun k =>
@@ -919,7 +933,9 @@ def csvLine (r : Row) : String :=
   s!"{r.mss},{r.mssTable},{if r.mssErr.isNone then 1 else 0},{r.cont},{r.contP2},{r.contP2u}," ++
   s!"{uwCsv r},{r.refs0},{r.refs1},{r.refs2}," ++
   s!"{r.mssRefs.1},{r.mssRefs.2.1},{r.mssRefs.2.2},{r.mssDegSum}," ++
-  s!"{r.mssRefsE.1},{r.mssRefsE.2.1},{r.mssRefsE.2.2}"
+  s!"{r.mssRefsE.1},{r.mssRefsE.2.1},{r.mssRefsE.2.2}," ++
+  s!"{r.mssRefsF.1},{r.mssRefsF.2.1},{r.mssRefsF.2.2}," ++
+  s!"{r.mssRefsG.1},{r.mssRefsG.2.1},{r.mssRefsG.2.2}"
 
 def kindOrder : Array String :=
   #["defn", "recr", "axio", "quot", "muts", "iPrj", "cPrj", "rPrj", "dPrj"]
@@ -1101,6 +1117,12 @@ def mssRefsD (r : Row) : Nat := mssRefTotal r * widthD r
 1 byte below 15, 2 below 15 + 4096, else 3. -/
 def refBytesE (r : Row) : Nat := r.mssRefsE.1 + 2 * r.mssRefsE.2.1 + 3 * r.mssRefsE.2.2
 def mssRefTotalE (r : Row) : Nat := r.mssRefsE.1 + r.mssRefsE.2.1 + r.mssRefsE.2.2
+/-- Scheme F: two marker bits (1 byte below index 8, 2 below 8 + 1024, else 3). -/
+def refBytesF (r : Row) : Nat := r.mssRefsF.1 + 2 * r.mssRefsF.2.1 + 3 * r.mssRefsF.2.2
+/-- Scheme G: nibble values 14 and 15 as escapes (1 byte below 14, 2 below
+14 + 256, else 3). -/
+def refBytesG (r : Row) : Nat := r.mssRefsG.1 + 2 * r.mssRefsG.2.1 + 3 * r.mssRefsG.2.2
+def bucketTotal (t : Nat × Nat × Nat) : Nat := t.1 + t.2.1 + t.2.2
 
 def fmtSignedPct2 (num : Int) (den : Nat) : String :=
   if den == 0 then "0" else
@@ -1111,7 +1133,7 @@ def fmtSignedPct2 (num : Int) (den : Nat) : String :=
 def schemeReport (rows : Array Row) : String := Id.run do
   let wr := rows.filter (·.roots > 0)
   let mut md := "## Share-width schemes on the MSS encoding\n\n"
-  md := md ++ "Every occurrence of an MSS entry is a Share. Scheme A: the current tiers by index in MSS order (1 byte below index 8, 2 below 256, 3 below 65536). Scheme B: one width per constant, 2 bytes if the MSS entry count (= candidate count) is ≤ 2048, else 3. Scheme C: as B, but 1 byte if the count is ≤ 8. Scheme D: one width per constant using the tag byte's whole low nibble: 1 byte if the count is ≤ 16, 2 if ≤ 4096, else 3. Scheme E: position tiers with a nibble escape, by index in MSS order: 1 byte below index 15, 2 below 15 + 4096, else 3. Constant bytes under a scheme are MSS bytes − refbytes(A) + refbytes(scheme). Share nodes are counted on the materialized MSS encoding.\n\n"
+  md := md ++ "Every occurrence of an MSS entry is a Share. Scheme A: the current tiers by index in MSS order (1 byte below index 8, 2 below 256, 3 below 65536). Scheme B: one width per constant, 2 bytes if the MSS entry count (= candidate count) is ≤ 2048, else 3. Scheme C: as B, but 1 byte if the count is ≤ 8. Scheme D: one width per constant using the tag byte's whole low nibble: 1 byte if the count is ≤ 16, 2 if ≤ 4096, else 3. Scheme E: position tiers with a nibble escape, by index in MSS order: 1 byte below index 15, 2 below 15 + 4096, else 3 (as specified; not realizable with a 4-bit Share flag). Scheme F: realizable position tiers with two marker bits: 1 byte below index 8, 2 below 8 + 1024, else 3. Scheme G: realizable position tiers with nibble values 14 and 15 as escapes: 1 byte below index 14, 2 below 14 + 256, else 3. Constant bytes under a scheme are MSS bytes − refbytes(A) + refbytes(scheme). Share nodes are counted on the materialized MSS encoding.\n\n"
   let mismatch := wr.filter fun r => mssRefTotal r != r.mssDegSum
   md := md ++ s!"- Share nodes in the MSS encoding vs `Σ deg` over MSS entries: {wr.size - mismatch.size} equal, **{mismatch.size}** different.\n"
   for r in mismatch.extract 0 10 do
@@ -1125,12 +1147,17 @@ def schemeReport (rows : Array Row) : String := Id.run do
   let sC := sum mssRefsC wr
   let sD := sum mssRefsD wr
   let sE := sum refBytesE wr
+  let sF := sum refBytesF wr
+  let sG := sum refBytesG wr
+  let mismatchFG := wr.filter fun r =>
+    bucketTotal r.mssRefsF != mssRefTotal r || bucketTotal r.mssRefsG != mssRefTotal r
+  md := md ++ s!"- Share nodes counted in the scheme-F and scheme-G index buckets vs the scheme-A buckets: {wr.size - mismatchFG.size} equal totals, **{mismatchFG.size}** different.\n"
   let mismatchE := wr.filter fun r => mssRefTotalE r != mssRefTotal r
   md := md ++ s!"- Share nodes counted in the scheme-E index buckets vs the scheme-A buckets: {wr.size - mismatchE.size} equal totals, **{mismatchE.size}** different.\n"
   let big := wr.filter (·.mssTable > 2048)
   md := md ++ s!"- Rooted constants: {wr.size}; Share references in their MSS encodings: {refs}; constants with more than 2048 MSS entries (width 3 under B and C): {big.size}; with at most 8 entries (width 1 under C): {(wr.filter (·.mssTable ≤ 8)).size}.\n\n"
   md := md ++ "| scheme | reference bytes | MSS constant bytes | Δ vs A | Δ / MSS total (A) | Δ / heuristic total |\n|---|---:|---:|---:|---:|---:|\n"
-  for (label, s) in [("A (index tiers)", sA), ("B (2 or 3 per constant)", sB), ("C (1, 2 or 3 per constant)", sC), ("D (nibble: ≤ 16 / ≤ 4096 / more)", sD), ("E (index tiers < 15 / < 4111 / more)", sE)] do
+  for (label, s) in [("A (index tiers)", sA), ("B (2 or 3 per constant)", sB), ("C (1, 2 or 3 per constant)", sC), ("D (nibble: ≤ 16 / ≤ 4096 / more)", sD), ("E (index tiers < 15 / < 4111 / more)", sE), ("F (index tiers < 8 / < 1032 / more)", sF), ("G (index tiers < 14 / < 270 / more)", sG)] do
     let d : Int := (s : Int) - sA
     md := md ++ s!"| {label} | {s} | {(sMss : Int) - sA + s} | {d} | {fmtSignedPct2 d sMss} | {fmtSignedPct2 d sHeur} |\n"
   md := md ++ s!"\nTotals for reference: MSS bytes (scheme A, the real encoding) {sMss}; heuristic stored bytes {sHeur}.\n\n"
@@ -1142,7 +1169,8 @@ def schemeReport (rows : Array Row) : String := Id.run do
     s!"| {label} | {better} | {equal} | {worse} |\n"
   md := md ++ "| comparison | better (fewer bytes) | equal | worse |\n|---|---:|---:|---:|\n"
   md := md ++ cmpLine "B vs A" mssRefsB ++ cmpLine "C vs A" mssRefsC ++
-    cmpLine "D vs A" mssRefsD ++ cmpLine "E vs A" refBytesE ++ "\n"
+    cmpLine "D vs A" mssRefsD ++ cmpLine "E vs A" refBytesE ++
+    cmpLine "F vs A" refBytesF ++ cmpLine "G vs A" refBytesG ++ "\n"
   let d1 := (wr.filter fun r => r.mssTable ≤ 16).size
   let d2 := (wr.filter fun r => r.mssTable > 16 && r.mssTable ≤ 4096).size
   let d3 := (wr.filter fun r => r.mssTable > 4096).size
@@ -1196,6 +1224,25 @@ def schemeReport (rows : Array Row) : String := Id.run do
     delta refBytesE a < delta refBytesE b ||
       (delta refBytesE a == delta refBytesE b && a.name < b.name)).extract 0 10
   for h : j in [0:bestE.size] do md := md ++ lineE j bestE[j]
+  -- Schemes F and G in detail.
+  let tierDetail (name bucketLabel : String) (f : Row → Nat)
+      (buckets : Row → Nat × Nat × Nat) : String := Id.run do
+    let hdrX := s!"| # | constant | kind | MSS entries | Share refs | refs {bucketLabel} | A ref bytes | {name} ref bytes | Δ ({name} − A) | MSS bytes (A) |\n|---:|---|---|---:|---:|---|---:|---:|---:|---:|\n"
+    let lineX (j : Nat) (r : Row) : String :=
+      let b := buckets r
+      s!"| {j + 1} | `{r.name}` | {r.kind} | {r.mssTable} | {mssRefTotal r} | {b.1} / {b.2.1} / {b.2.2} | {mssRefsA r} | {f r} | {delta f r} | {r.mss} |\n"
+    let worse := wr.filter fun r => delta f r > 0
+    let maxDelta := wr.foldl (fun m r => max m (delta f r)) (0 : Int)
+    let mut out := s!"\n### Scheme {name} vs A\n\n- Constants worse than A under {name}: **{worse.size}**; largest per-constant Δ ({name} − A): {maxDelta}.\n"
+    for r in worse.extract 0 10 do
+      out := out ++ s!"  - `{r.name}`: Δ {delta f r}\n"
+    out := out ++ s!"\nTen largest gains under {name} (A − {name}):\n\n" ++ hdrX
+    let bestX := (wr.qsort fun a b =>
+      delta f a < delta f b || (delta f a == delta f b && a.name < b.name)).extract 0 10
+    for h : j in [0:bestX.size] do out := out ++ lineX j bestX[j]
+    return out
+  md := md ++ tierDetail "F" "< 8 / 8–1031 / ≥ 1032" refBytesF (·.mssRefsF)
+  md := md ++ tierDetail "G" "< 14 / 14–269 / ≥ 270" refBytesG (·.mssRefsG)
   let tD := sum mssRefsD t255
   let dD : Int := (tD : Int) - tA
   md := md ++ s!"\n### D − A restricted to constants whose current heuristic table exceeds 255 entries\n\n"
@@ -1407,7 +1454,9 @@ def main (args : List String) : IO UInt32 := do
     occFail.isEmpty && !mssFail && !rows.any (·.uwErr.isSome) &&
     !rows.any (fun r => r.uw.any (·.compCheck == some false)) &&
     !rows.any (fun r => mssRefTotal r != r.mssDegSum) &&
-    !rows.any (fun r => mssRefTotalE r != mssRefTotal r) then 0 else 1)
+    !rows.any (fun r => mssRefTotalE r != mssRefTotal r) &&
+    !rows.any (fun r => bucketTotal r.mssRefsF != mssRefTotal r ||
+      bucketTotal r.mssRefsG != mssRefTotal r) then 0 else 1)
 
 end Benchmarks.SharingStudy
 
