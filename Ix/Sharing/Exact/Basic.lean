@@ -232,9 +232,9 @@ structure Node where
 ordered child-ID vector, each compared numerically/lexicographically with a
 proper prefix first. -/
 def Node.compareKey (x y : Node) : Ordering :=
-  compareLex (compareOn fun n : Node => n.head.tag)
-    (compareLex (compareOn fun n : Node => n.head.scalars)
-      (compareOn fun n : Node => n.children.toList)) x y
+  (compare x.head.tag y.head.tag).then
+    ((lexCompare x.head.scalars y.head.scalars).then
+      (lexCompare x.children.toList y.children.toList))
 
 /-- The `i`-th child ID (the arity invariant makes the default unreachable). -/
 @[inline] def Node.child (n : Node) (i : Nat) : Nat := n.children.getD i 0

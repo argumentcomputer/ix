@@ -835,4 +835,175 @@ theorem serConstant_size_decomposition (c : Ixon.Constant) (h : c.wireWF) :
 end ConstantLength
 
 
+/-! ## Key orders (§3.2, §3.3) -/
+
+section Orders
+
+instance lexCompare_trans : Std.TransCmp lexCompare :=
+  inferInstanceAs (Std.TransCmp (List.compareLex (compare : Nat → Nat → Ordering)))
+
+instance lexCompare_lawfulEq : Std.LawfulEqCmp lexCompare :=
+  inferInstanceAs (Std.LawfulEqCmp (List.compareLex (compare : Nat → Nat → Ordering)))
+
+/-- `lexCompare` is `eq` exactly on equal vectors. -/
+theorem lexCompare_eq_iff (a b : List Nat) : lexCompare a b = .eq ↔ a = b :=
+  ⟨Std.LawfulEqCmp.eq_of_compare, fun h => h ▸ Std.ReflCmp.compare_self⟩
+
+/-- Swapping the arguments of `lexCompare` swaps the outcome. -/
+theorem lexCompare_swap (a b : List Nat) : lexCompare a b = (lexCompare b a).swap :=
+  Std.OrientedCmp.eq_swap
+
+/-- `lexCompare` is transitive. -/
+theorem lexCompare_lt_trans {a b c : List Nat} (h₁ : lexCompare a b = .lt)
+    (h₂ : lexCompare b c = .lt) : lexCompare a c = .lt :=
+  Std.TransCmp.lt_trans h₁ h₂
+
+/-- Comparing by a projection under a transitive comparison is transitive. -/
+theorem transCmp_on {α β : Type} (cmp : β → β → Ordering) [Std.TransCmp cmp] (f : α → β) :
+    Std.TransCmp (fun a b => cmp (f a) (f b)) where
+  eq_swap := Std.OrientedCmp.eq_swap (cmp := cmp)
+  isLE_trans h₁ h₂ := Std.TransCmp.isLE_trans (cmp := cmp) h₁ h₂
+
+instance compareBytes_trans : Std.TransCmp compareBytes :=
+  transCmp_on (List.compareLex (compare : UInt8 → UInt8 → Ordering)) (fun b : ByteArray => b.data.toList)
+
+instance compareBytes_lawfulEq : Std.LawfulEqCmp compareBytes where
+  compare_self {a} := Std.ReflCmp.compare_self (cmp := List.compareLex (compare : UInt8 → UInt8 → Ordering))
+  eq_of_compare {a b} h := by
+    have hl : a.data.toList = b.data.toList :=
+      Std.LawfulEqCmp.eq_of_compare (cmp := List.compareLex (compare : UInt8 → UInt8 → Ordering)) h
+    cases a; cases b
+    simp only [ByteArray.mk.injEq]
+    exact Array.toList_inj.mp hl
+
+/-! ### Structural keys -/
+
+theorem BinderContract.toBits_inj {a b : Ixon.BinderContract} (h : a.toBits = b.toBits) :
+    a = b := by
+  have := congrArg Ixon.BinderContract.ofBits? h
+  simpa using this
+
+theorem packAllContract_inj {c c' : Ixon.BinderContract} {r r' : Ixon.ValueContract}
+    (h : Ixon.packAllContract c r = Ixon.packAllContract c' r') : c = c' ∧ r = r' := by
+  have := congrArg Ixon.unpackAllContract? h
+  simpa using this
+
+theorem LetContract.eq_of_flags {c c' : Ixon.LetContract} (hf : c.flags = c'.flags)
+    (hb : c.binder = c'.binder) : c = c' := by
+  have h1 := Ixon.LetContract.ofFlags?_flags c
+  have h2 := Ixon.LetContract.ofFlags?_flags c'
+  rw [hf, hb, h2] at h1
+  exact (Option.some.inj h1).symm
+
+theorem map_toNat_inj : ∀ {xs ys : List UInt64},
+    xs.map UInt64.toNat = ys.map UInt64.toNat → xs = ys
+  | [], [], _ => rfl
+  | [], _ :: _, h => by simp at h
+  | _ :: _, [], h => by simp at h
+  | x :: xs, y :: ys, h => by
+    simp only [List.map_cons, List.cons.injEq] at h
+    rw [UInt64.toNat_inj.mp h.1, map_toNat_inj h.2]
+
+/-- Heads with equal §3.2 tag and scalar vector are equal. -/
+theorem Head.eq_of_tag_scalars {h₁ h₂ : Head} (ht : h₁.tag = h₂.tag)
+    (hs : h₁.scalars = h₂.scalars) : h₁ = h₂ := by
+  cases h₁ <;> cases h₂ <;> simp only [Head.tag] at ht <;>
+    first
+    | exact absurd ht (by decide)
+    | simp only [Head.scalars, List.cons.injEq, List.nil_eq, and_true] at hs
+  case sort.sort i j => rw [UInt64.toNat_inj.mp hs]
+  case var.var i j => rw [UInt64.toNat_inj.mp hs]
+  case str.str i j => rw [UInt64.toNat_inj.mp hs]
+  case nat.nat i j => rw [UInt64.toNat_inj.mp hs]
+  case ref.ref r us r' vs =>
+    obtain ⟨hr, _, hu⟩ := hs
+    rw [UInt64.toNat_inj.mp hr, Array.toList_inj.mp (map_toNat_inj hu)]
+  case recur.recur r us r' vs =>
+    obtain ⟨hr, _, hu⟩ := hs
+    rw [UInt64.toNat_inj.mp hr, Array.toList_inj.mp (map_toNat_inj hu)]
+  case prj.prj t f t' f' =>
+    obtain ⟨h1, h2⟩ := hs
+    rw [UInt64.toNat_inj.mp h1, UInt64.toNat_inj.mp h2]
+  case app.app => rfl
+  case lam.lam c c' => rw [BinderContract.toBits_inj (UInt8.toNat_inj.mp hs)]
+  case all.all c r c' r' =>
+    obtain ⟨h1, h2⟩ := packAllContract_inj (UInt8.toNat_inj.mp hs)
+    rw [h1, h2]
+  case letE.letE c c' =>
+    obtain ⟨h1, h2⟩ := hs
+    rw [LetContract.eq_of_flags (UInt64.toNat_inj.mp h1)
+      (BinderContract.toBits_inj (UInt8.toNat_inj.mp h2))]
+
+/-- Structural keys determine nodes: `compareKey` is `eq` exactly on equal
+nodes (collision-free identity). -/
+theorem compareKey_eq_iff (x y : Node) : Node.compareKey x y = .eq ↔ x = y := by
+  constructor
+  · intro h
+    simp only [Node.compareKey, Ordering.then_eq_eq] at h
+    obtain ⟨ht, hs, hc⟩ := h
+    have ht' : x.head.tag = y.head.tag := Std.LawfulEqOrd.eq_of_compare ht
+    have hs' : x.head.scalars = y.head.scalars := (lexCompare_eq_iff _ _).mp hs
+    have hc' : x.children.toList = y.children.toList := (lexCompare_eq_iff _ _).mp hc
+    cases x; cases y
+    simp only [Node.mk.injEq]
+    exact ⟨Head.eq_of_tag_scalars ht' hs', Array.toList_inj.mp hc'⟩
+  · intro h; subst h
+    simp only [Node.compareKey, Ordering.then_eq_eq]
+    exact ⟨Std.ReflOrd.compare_self, (lexCompare_eq_iff _ _).mpr rfl,
+      (lexCompare_eq_iff _ _).mpr rfl⟩
+
+instance compareKey_trans : Std.TransCmp Node.compareKey :=
+  have : Std.TransCmp (fun x y : Node => compare x.head.tag y.head.tag) :=
+    transCmp_on (compare : Nat → Nat → Ordering) (fun n : Node => n.head.tag)
+  have : Std.TransCmp (fun x y : Node => lexCompare x.head.scalars y.head.scalars) :=
+    transCmp_on lexCompare (fun n : Node => n.head.scalars)
+  have : Std.TransCmp (fun x y : Node => lexCompare x.children.toList y.children.toList) :=
+    transCmp_on lexCompare (fun n : Node => n.children.toList)
+  inferInstanceAs (Std.TransCmp (_root_.compareLex
+    (fun x y : Node => compare x.head.tag y.head.tag)
+    (_root_.compareLex (fun x y : Node => lexCompare x.head.scalars y.head.scalars)
+      (fun x y : Node => lexCompare x.children.toList y.children.toList))))
+
+instance compareKey_lawfulEq : Std.LawfulEqCmp Node.compareKey where
+  compare_self {a} := (compareKey_eq_iff a a).mpr rfl
+  eq_of_compare {a b} h := (compareKey_eq_iff a b).mp h
+
+/-! ### Canonical order of a height bucket -/
+
+/-- The bucket comparison of `canonicalize` (`compareKey x y != .gt`). -/
+def keyLe (x y : Node) : Bool := (Node.compareKey x y).isLE
+
+theorem keyLe_eq (x y : Node) : (Node.compareKey x y != .gt) = keyLe x y := by
+  unfold keyLe; cases Node.compareKey x y <;> rfl
+
+theorem keyLe_trans (a b c : Node) (h₁ : keyLe a b) (h₂ : keyLe b c) : keyLe a c :=
+  Std.TransCmp.isLE_trans h₁ h₂
+
+theorem keyLe_total (a b : Node) : keyLe a b || keyLe b a := by
+  unfold keyLe
+  rw [Std.OrientedCmp.eq_swap (cmp := Node.compareKey) (a := b) (b := a)]
+  cases Node.compareKey a b <;> rfl
+
+theorem keyLe_antisymm (a b : Node) (h₁ : keyLe a b) (h₂ : keyLe b a) : a = b := by
+  unfold keyLe at h₁ h₂
+  rw [Std.OrientedCmp.eq_swap (cmp := Node.compareKey) (a := b) (b := a)] at h₂
+  apply (compareKey_eq_iff a b).mp
+  revert h₁ h₂
+  cases Node.compareKey a b <;> simp [Ordering.isLE, Ordering.swap]
+
+/-- Sorting by the §3.2 key order gives the same list for any two
+arrangements of the same nodes: the order of a height bucket, and hence the
+IDs assigned to it, depend only on the bucket's keys. -/
+theorem keySort_eq_of_perm {l₁ l₂ : List Node} (hp : l₁.Perm l₂) :
+    l₁.mergeSort keyLe = l₂.mergeSort keyLe := by
+  apply List.Perm.eq_of_pairwise (le := fun a b => keyLe a b = true)
+  · intro a b _ _ h₁ h₂; exact keyLe_antisymm a b h₁ h₂
+  · exact List.pairwise_mergeSort keyLe_trans keyLe_total l₁
+  · exact List.pairwise_mergeSort keyLe_trans keyLe_total l₂
+  · exact (List.mergeSort_perm l₁ keyLe).trans (hp.trans (List.mergeSort_perm l₂ keyLe).symm)
+
+end Orders
+
+
+
 end Ix.Compile.Verify.SharingExact
