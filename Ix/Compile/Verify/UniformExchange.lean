@@ -64,7 +64,8 @@ theorem tag0Size_succ_le {k n : Nat} (h : k < n) :
     tag0Size (k + 1) ≤ tag0Size k + tag0StepBound n := by
   unfold tag0Size tag0StepBound Ixon.tagNByteWidth
   simp only [Ix.Compile.Verify.TagN.tagNEnd1_eq_0, Ix.Compile.Verify.TagN.tagNEnd2_eq_0,
-    Ix.Compile.Verify.TagN.tagNEnd3_eq_0, Ix.Compile.Verify.TagN.tagNEnd4_eq_0]
+    Ix.Compile.Verify.TagN.tagNEnd3_eq_0, Ix.Compile.Verify.TagN.tagNEnd4_eq_0,
+    Ix.Compile.Verify.TagN.tagNEnd5_eq_0]
   repeat' split
   all_goals omega
 

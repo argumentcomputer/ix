@@ -7,7 +7,7 @@
     width, `Ixon.tagNByteWidth 4`) with the 2-byte tier ending at index 256.
     It goes away together with the `Ixon.ShareCodec` shim in `Basic.lean`.
   * `tagN` (TagN): the wire Share code (`putTagN 4 0xB idx`), whose widths
-    climb in rungs of 1, 2, 3, 5 and 9 bytes (`tagNWidth`, which also
+    climb in rungs of 1, 2, 3, 4, 5 and 9 bytes (`tagNWidth`, which also
     documents the bit layout); `Ixon.ShareCodec.current` is `.tagN`.
   The output is written with the current wire codec; `modelBytes` is the
   layout price, and the two agree whenever the layout is the wire layout
@@ -90,20 +90,20 @@ open Ixon
 
 A Share is the `f = 4` instance of the Ixon TagN integer code
 (`Ixon.putTagN 4`, see `Ix/Ixon.lean`): one header byte
-`[flag:4][L][M][c1][c0]` (flag `0xB`) followed by 0, 1, 2, 4 or 8
+`[flag:4][L][M][c1][c0]` (flag `0xB`) followed by 0, 1, 2, 3, 4 or 8
 little-endian bytes. The low nibble selects a rung:
 
 * `L = 0`: no following byte; the 3 bits `M c1 c0` are the index, `0..7`.
 * `L = 1, M = 0`: 1 following byte; `value = c1 c0 · 2^8 + byte` (10 bits)
   and `index = 8 + value`, so indices `8 .. 8 + 2^10 - 1`.
-* `L = 1, M = 1, c = c1 c0 ∈ {0, 1, 2}`: `2`, `4` or `8` following bytes
-  holding `value`, and `index = (end of the previous rung) + value`.
-* `L = 1, M = 1, c = 3`: invalid.
+* `L = 1, M = 1, c = c1 c0 ∈ {0, 1, 2, 3}`: `2`, `3`, `4` or `8` following
+  bytes holding `value`, and `index = (end of the previous rung) + value`.
+  Every code is valid.
 
 Every rung starts where the previous one ends, so each index has exactly
 one encoding and every valid encoding is the encoding of its index (the code
-is bijective). Rung ends: `8`, `8 + 2^10`, `+ 2^16`, `+ 2^32`, `+ 2^64`; byte
-widths: 1, 2, 3, 5, 9. The rung ends and `tagNWidth` below are by definition
+is bijective). Rung ends: `8`, `8 + 2^10`, `+ 2^16`, `+ 2^24`, `+ 2^32`,
+`+ 2^64`; byte widths: 1, 2, 3, 4, 5, 9. The rung ends and `tagNWidth` below are by definition
 `Ixon.tagNEnd* 4` and `Ixon.tagNByteWidth 4`, the single width-by-index
 function for this code. -/
 
@@ -113,13 +113,15 @@ def tagNRung1End : Nat := Ixon.tagNEnd1 4
 def tagNRung2End : Nat := Ixon.tagNEnd2 4
 /-- End of the 3-byte rung (2 following bytes). -/
 def tagNRung3End : Nat := Ixon.tagNEnd3 4
-/-- End of the 5-byte rung (4 following bytes). -/
+/-- End of the 4-byte rung (3 following bytes). -/
 def tagNRung4End : Nat := Ixon.tagNEnd4 4
+/-- End of the 5-byte rung (4 following bytes). -/
+def tagNRung5End : Nat := Ixon.tagNEnd5 4
 /-- End of the 9-byte rung (8 following bytes); larger indices have no
 encoding. -/
-def tagNRung5End : Nat := Ixon.tagNEnd5 4
+def tagNRung6End : Nat := Ixon.tagNEnd6 4
 
-/-- Byte width of the TagN Share at index `i` (`i < tagNRung5End`;
+/-- Byte width of the TagN Share at index `i` (`i < tagNRung6End`;
 larger indices are not encodable and are priced at the top rung). -/
 def tagNWidth (i : Nat) : Nat := Ixon.tagNByteWidth 4 i
 

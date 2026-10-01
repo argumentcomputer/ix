@@ -545,7 +545,7 @@ theorem phase1_trees {w : Nat} {limits : Limits} {ex : Expanded} {u : UniformSha
         (fun t => decide (t ∈ u.result.tableTerms.toList))
         (indexOfPairs ex.dag.size u.result.tableTerms.toList.zipIdx) false r e T)
       ex.roots.toList u.result.roots.toList := by
-  obtain ⟨_, hwf, hroots, _, c, _, hfin⟩ := optimizeUniform_parts hu
+  obtain ⟨_, hwf, hroots, _, _, c, _, hfin⟩ := optimizeUniform_parts hu
   obtain ⟨hin, _, _, htable, _, work, hmat, _⟩ := uniformFinish_spec hfin
   have hp := prepWF_ofDag hwf
   have hperm : u.result.tableTerms.toList.Perm c.stored.toList := by

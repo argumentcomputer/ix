@@ -247,6 +247,7 @@ theorem optimizeUniform_parts {w : Nat} {limits : Limits} {ex : Expanded}
     {res : UniformSharingResult} (h : optimizeUniformExpanded w limits ex = .ok res) :
     w ≠ 0 ∧ DagWF ex.dag ∧ (∀ r ∈ ex.roots.toList, r < ex.dag.size) ∧
       (reachMarks ex.dag.nodes ex.roots).all id = true ∧
+      (∀ t, t < ex.dag.size → (Prep.ofDag ex.dag).spineLen[t]! < teleSubaddEnd) ∧
       ∃ c, uniformChoose w limits ex (Prep.ofDag ex.dag) = .ok c ∧
         uniformFinish w limits ex (Prep.ofDag ex.dag) c = .ok res := by
   unfold optimizeUniformExpanded at h
@@ -269,11 +270,21 @@ theorem optimizeUniform_parts {w : Nat} {limits : Limits} {ex : Expanded}
             cases h
           | true =>
             simp only [hw, hcp, har, hr, hm, Bool.false_eq_true, if_false, if_true] at h
-            obtain ⟨c, hc, h⟩ := bind_eq_ok h
-            refine ⟨by simpa using hw, dagWF_of_checks hcp har, fun r hrm => ?_, rfl, c, hc, h⟩
-            rw [Array.all_eq_true] at hr
-            obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hrm
-            simpa using hr i (by simpa using hi)
+            cases hs : (List.range ex.dag.size).all
+                (fun t => (Prep.ofDag ex.dag).spineLen[t]! < teleSubaddEnd) with
+            | false =>
+              simp only [hs, Bool.false_eq_true, Bool.not_false, ↓reduceIte] at h
+              cases h
+            | true =>
+              simp only [hs, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+              obtain ⟨c, hc, h⟩ := bind_eq_ok h
+              refine ⟨by simpa using hw, dagWF_of_checks hcp har, fun r hrm => ?_, rfl,
+                fun t ht => ?_, c, hc, h⟩
+              · rw [Array.all_eq_true] at hr
+                obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hrm
+                simpa using hr i (by simpa using hi)
+              · rw [List.all_eq_true] at hs
+                simpa using hs t (List.mem_range.mpr ht)
 
 /-- **`modelBytes` soundness.** The model length reported by the uniform
 optimizer is `uniformCost` of the stored set it returns (every stored term
@@ -285,7 +296,7 @@ theorem optimizeUniform_modelBytes {w : Nat} {limits : Limits} {ex : Expanded}
     res.result.tableTerms.toList.Perm res.stored.toList ∧
       res.result.modelBytes = uniformCost (Prep.ofDag ex.dag) w
         (fun t => decide (t ∈ res.stored.toList)) res.stored.toList ex.roots.toList := by
-  obtain ⟨_, hwf, _, _, c, _, hfin⟩ := optimizeUniform_parts h
+  obtain ⟨_, hwf, _, _, _, c, _, hfin⟩ := optimizeUniform_parts h
   obtain ⟨hin, _, hstored, htable, hmodel, work, hmat, _⟩ := uniformFinish_spec hfin
   have hp := prepWF_ofDag hwf
   have hempty := ofDag_empty_size ex.dag

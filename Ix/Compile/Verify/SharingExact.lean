@@ -148,19 +148,22 @@ theorem tag4EncodedSize_eq (x : UInt64) :
 theorem tagNRung1End_eq : tagNRung1End = 8 := TagN.tagNEnd1_eq_4
 theorem tagNRung2End_eq : tagNRung2End = 1032 := TagN.tagNEnd2_eq_4
 theorem tagNRung3End_eq : tagNRung3End = 66568 := TagN.tagNEnd3_eq_4
-/-- `66568 + 2^32`. -/
-theorem tagNRung4End_eq : tagNRung4End = 4295033864 := TagN.tagNEnd4_eq_4
-/-- `66568 + 2^32 + 2^64`. -/
-theorem tagNRung5End_eq : tagNRung5End = 18446744078004585480 := by
-  unfold tagNRung5End Ixon.tagNEnd5; rw [TagN.tagNEnd4_eq_4]
+/-- `66568 + 2^24`. -/
+theorem tagNRung4End_eq : tagNRung4End = 16843784 := TagN.tagNEnd4_eq_4
+/-- `66568 + 2^24 + 2^32`. -/
+theorem tagNRung5End_eq : tagNRung5End = 4311811080 := TagN.tagNEnd5_eq_4
+/-- `66568 + 2^24 + 2^32 + 2^64`. -/
+theorem tagNRung6End_eq : tagNRung6End = 18446744078021362696 := by
+  unfold tagNRung6End Ixon.tagNEnd6; rw [TagN.tagNEnd5_eq_4]
 
 /-- `tagNWidth` with the rung ends evaluated. -/
 theorem tagNWidth_eq (i : Nat) :
     tagNWidth i =
       if i < 8 then 1 else if i < 1032 then 2 else if i < 66568 then 3
-      else if i < 4295033864 then 5 else 9 := by
+      else if i < 16843784 then 4 else if i < 4311811080 then 5 else 9 := by
   unfold tagNWidth Ixon.tagNByteWidth
-  rw [TagN.tagNEnd1_eq_4, TagN.tagNEnd2_eq_4, TagN.tagNEnd3_eq_4, TagN.tagNEnd4_eq_4]
+  rw [TagN.tagNEnd1_eq_4, TagN.tagNEnd2_eq_4, TagN.tagNEnd3_eq_4, TagN.tagNEnd4_eq_4,
+    TagN.tagNEnd5_eq_4]
 
 theorem tagNWidth_pos (i : Nat) : 1 ≤ tagNWidth i := by
   rw [tagNWidth_eq]
@@ -190,15 +193,22 @@ theorem tagNWidth_rung3 {i : Nat} (h1 : tagNRung2End ≤ i) (h2 : i < tagNRung3E
   rw [tagNWidth_eq, if_neg (by omega), if_neg (by omega), if_pos h2]
 
 theorem tagNWidth_rung4 {i : Nat} (h1 : tagNRung3End ≤ i) (h2 : i < tagNRung4End) :
-    tagNWidth i = 5 := by
+    tagNWidth i = 4 := by
   rw [tagNRung3End_eq] at h1
   rw [tagNRung4End_eq] at h2
   rw [tagNWidth_eq, if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos h2]
 
-theorem tagNWidth_rung5 {i : Nat} (h1 : tagNRung4End ≤ i) : tagNWidth i = 9 := by
+theorem tagNWidth_rung5 {i : Nat} (h1 : tagNRung4End ≤ i) (h2 : i < tagNRung5End) :
+    tagNWidth i = 5 := by
   rw [tagNRung4End_eq] at h1
+  rw [tagNRung5End_eq] at h2
   rw [tagNWidth_eq, if_neg (by omega), if_neg (by omega), if_neg (by omega),
-    if_neg (by omega)]
+    if_neg (by omega), if_pos h2]
+
+theorem tagNWidth_rung6 {i : Nat} (h1 : tagNRung5End ≤ i) : tagNWidth i = 9 := by
+  rw [tagNRung5End_eq] at h1
+  rw [tagNWidth_eq, if_neg (by omega), if_neg (by omega), if_neg (by omega),
+    if_neg (by omega), if_neg (by omega)]
 
 /-- The Share width is the `f = 4` instance of the TagN width function. -/
 theorem tagNWidth_eq_byteWidth : tagNWidth = Ixon.tagNByteWidth 4 := rfl
