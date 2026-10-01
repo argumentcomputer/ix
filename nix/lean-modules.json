@@ -885,7 +885,7 @@
    "imports": ["Compilatrix.Rt.Readback"]},
   "CompilatrixTests.Fences.OwnProof":
   {"path": "CompilatrixTests/Fences/OwnProof.lean",
-   "imports": ["Compilatrix.Own.Proof.Mono", "Compilatrix.Own.Proof.Refines"]},
+   "imports": ["Compilatrix.Own.Proof.Mono", "Compilatrix.Own.Proof.Lang"]},
   "CompilatrixTests.Fences.Own":
   {"path": "CompilatrixTests/Fences/Own.lean",
    "imports": ["Compilatrix.Own.Immortal", "Compilatrix.Own.Semantics"]},
@@ -912,7 +912,7 @@
    ["Compilatrix.Ixon.V3.Resource.StateProofs", "Compilatrix.Ixon.V3.Source"]},
   "CompilatrixTests.Fences.FirProof":
   {"path": "CompilatrixTests/Fences/FirProof.lean",
-   "imports": ["Compilatrix.Fir.Proof.Mono", "Compilatrix.Fir.Proof.Correct"]},
+   "imports": ["Compilatrix.Fir.Proof.Mono", "Compilatrix.Fir.Proof.Lang"]},
   "CompilatrixTests.Fences.Fir":
   {"path": "CompilatrixTests/Fences/Fir.lean",
    "imports": ["Compilatrix.Fir.Semantics"]},
@@ -930,7 +930,7 @@
    "imports": ["Compilatrix.Cfg.Proof.Fuel"]},
   "CompilatrixTests.Fences.CfgLower":
   {"path": "CompilatrixTests/Fences/CfgLower.lean",
-   "imports": ["Compilatrix.Cfg.Proof.Correct"]},
+   "imports": ["Compilatrix.Cfg.Proof.OfAnf"]},
   "CompilatrixTests.Fences.Backend":
   {"path": "CompilatrixTests/Fences/Backend.lean",
    "imports":
@@ -1870,6 +1870,12 @@
    "imports": ["Compilatrix.Sem.Smallstep"]},
   "Compilatrix.Sem.Forall2":
   {"path": "Compilatrix/Sem/Forall2.lean", "imports": []},
+  "Compilatrix.Sem.Entry":
+  {"path": "Compilatrix/Sem/Entry.lean",
+   "imports":
+   ["Compilatrix.Sem.Simulation",
+    "Compilatrix.Sem.SimUpTo",
+    "Compilatrix.Sem.Clock"]},
   "Compilatrix.Sem.Dominance":
   {"path": "Compilatrix/Sem/Dominance.lean",
    "imports": ["Compilatrix.Sem.SimUpTo"]},
@@ -2134,6 +2140,9 @@
   "Compilatrix.Own.Proof.Mono":
   {"path": "Compilatrix/Own/Proof/Mono.lean",
    "imports": ["Compilatrix.Own.Proof.Unfold", "Compilatrix.Sem.SimUpTo"]},
+  "Compilatrix.Own.Proof.Lang":
+  {"path": "Compilatrix/Own/Proof/Lang.lean",
+   "imports": ["Compilatrix.Own.Proof.Refines", "Compilatrix.Fir.Proof.Lang"]},
   "Compilatrix.Own.Proof.Immortal":
   {"path": "Compilatrix/Own/Proof/Immortal.lean",
    "imports":
@@ -2602,6 +2611,12 @@
   "Compilatrix.Fir.Proof.Lowering":
   {"path": "Compilatrix/Fir/Proof/Lowering.lean",
    "imports": ["Compilatrix.Fir.Lower", "Compilatrix.Src.Proof.NatMap"]},
+  "Compilatrix.Fir.Proof.Lang":
+  {"path": "Compilatrix/Fir/Proof/Lang.lean",
+   "imports":
+   ["Compilatrix.Fir.Proof.Correct",
+    "Compilatrix.Sem.Entry",
+    "Compilatrix.Sem.TracedTransform"]},
   "Compilatrix.Fir.Proof.Env":
   {"path": "Compilatrix/Fir/Proof/Env.lean",
    "imports": ["Compilatrix.Fir.Proof.Rel", "Compilatrix.Fir.Proof.Lowering"]},
@@ -2651,12 +2666,21 @@
   "Compilatrix.Cfg.Proof.Sim":
   {"path": "Compilatrix/Cfg/Proof/Sim.lean",
    "imports": ["Compilatrix.Cfg.Proof.Step", "Compilatrix.Own.Proof.Mono"]},
+  "Compilatrix.Cfg.Proof.OfAnf":
+  {"path": "Compilatrix/Cfg/Proof/OfAnf.lean",
+   "imports": ["Compilatrix.Cfg.Proof.Lang", "Compilatrix.Fir.Proof.Lowering"]},
   "Compilatrix.Cfg.Proof.Layout":
   {"path": "Compilatrix/Cfg/Proof/Layout.lean",
    "imports":
    ["Compilatrix.Cfg.Lower",
     "Compilatrix.Cfg.Proof.Fuel",
     "Compilatrix.Src.Proof.NatMap"]},
+  "Compilatrix.Cfg.Proof.Lang":
+  {"path": "Compilatrix/Cfg/Proof/Lang.lean",
+   "imports":
+   ["Compilatrix.Cfg.Proof.Correct",
+    "Compilatrix.Own.Proof.Lang",
+    "Compilatrix.Sem.Entry"]},
   "Compilatrix.Cfg.Proof.Fuel":
   {"path": "Compilatrix/Cfg/Proof/Fuel.lean",
    "imports": ["Compilatrix.Cfg.Semantics", "Compilatrix.Sem.Smallstep"]},
@@ -3451,11 +3475,14 @@
     "Compilatrix.Fir.Proof.Corr",
     "Compilatrix.Fir.Proof.Sim",
     "Compilatrix.Fir.Proof.Correct",
+    "Compilatrix.Sem.Entry",
+    "Compilatrix.Fir.Proof.Lang",
     "Compilatrix.Own.Proof.Unfold",
     "Compilatrix.Own.Proof.Mono",
     "Compilatrix.Own.Proof.Heap",
     "Compilatrix.Own.Proof.Immortal",
     "Compilatrix.Own.Proof.Refines",
+    "Compilatrix.Own.Proof.Lang",
     "Compilatrix.Cfg.Syntax",
     "Compilatrix.Cfg.Semantics",
     "Compilatrix.Cfg.WellFormed",
@@ -3466,6 +3493,8 @@
     "Compilatrix.Cfg.Proof.Step",
     "Compilatrix.Cfg.Proof.Sim",
     "Compilatrix.Cfg.Proof.Correct",
+    "Compilatrix.Cfg.Proof.Lang",
+    "Compilatrix.Cfg.Proof.OfAnf",
     "Compilatrix.Rt.Layout",
     "Compilatrix.Rt.Procs.Entry",
     "Compilatrix.Rt.Procs.Nat",

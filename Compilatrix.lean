@@ -212,11 +212,14 @@ import Compilatrix.Fir.Proof.Env
 import Compilatrix.Fir.Proof.Corr
 import Compilatrix.Fir.Proof.Sim
 import Compilatrix.Fir.Proof.Correct
+import Compilatrix.Sem.Entry
+import Compilatrix.Fir.Proof.Lang
 import Compilatrix.Own.Proof.Unfold
 import Compilatrix.Own.Proof.Mono
 import Compilatrix.Own.Proof.Heap
 import Compilatrix.Own.Proof.Immortal
 import Compilatrix.Own.Proof.Refines
+import Compilatrix.Own.Proof.Lang
 import Compilatrix.Cfg.Syntax
 import Compilatrix.Cfg.Semantics
 import Compilatrix.Cfg.WellFormed
@@ -227,6 +230,8 @@ import Compilatrix.Cfg.Proof.Layout
 import Compilatrix.Cfg.Proof.Step
 import Compilatrix.Cfg.Proof.Sim
 import Compilatrix.Cfg.Proof.Correct
+import Compilatrix.Cfg.Proof.Lang
+import Compilatrix.Cfg.Proof.OfAnf
 import Compilatrix.Rt.Layout
 import Compilatrix.Rt.Procs.Entry
 import Compilatrix.Rt.Procs.Nat
