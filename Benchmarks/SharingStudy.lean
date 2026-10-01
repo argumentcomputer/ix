@@ -1,4 +1,5 @@
 import Ix.CompileM
+import Ix.Sharing.Exact
 
 /-!
 # Sharing corpus study (gate P1.5 of `docs/sharing-minimum.md`)
@@ -46,11 +47,18 @@ Loads a serialized `Ixon.Env` (`.ixe`) and, for every stored constant:
    count; the same with a 1-byte class; one width per constant with a
    nibble-sized index in the tag byte; three alternative index tiers),
    see `schemeReport`.
+9. Runs W1's exact uniform-width optimizer (`Ix.Sharing.Exact`) for
+   `w ∈ {1, 2, 3}` under explicit limits, serializes and checks its output, and
+   compares its classes with a reimplementation of its definitions
+   (`classifyW1Mode`), see `uniformReport`.
+10. Reprices every `Tag4`, `Tag0` and `Tag2` integer of the stored encoding under
+   TagN, TagN-byte and the Tag2 variant, see `ladConstant` and `tagNReport`.
 
 ```
 lake exe sharing-study <corpus.ixe> [--md <path>] [--csv <path>]
                        [--limit <n>] [--validate-max <bytes>]
                        [--occ-check-max <bytes>] [--progress <n>]
+                       [--no-uniform] [--uni-max-states <n>]
 ```
 -/
 
@@ -652,6 +660,377 @@ def classify (res : Ix.Sharing.AnalyzeResult) (sizes : Std.HashMap Address NodeS
     out := out.push { st with comp, compCheck }
   return out
 
+/-! ## W1's uniform-width classification, reimplemented on this harness's DAG
+
+An independent reimplementation of the definitions in `Ix/Sharing/Exact/Uniform.lean`
+(module doc and `classify`), on the blake3 hash-consed DAG of this harness, to compare
+per constant with the classes the W1 optimizer reports:
+
+* CERTAIN-EXCLUDED: `(occ−1)·size < occ·w`, for every term;
+* low degree: not certain-excluded and `deg < 2`;
+* candidates (may be stored): `deg ≥ 2` and not certain-excluded;
+* bounds bottom-up: a non-telescope node has `inl⁻ = own header bytes + Σ headLB`;
+  a telescope node has `merged = sideExtra + headLB(side) + (contLB(next) if next
+  continues the telescope else headLB(next))` and `inl⁻ = 1 + merged`; a candidate's
+  `headLB`/`contLB` are `min(w, ·)` of these;
+* CERTAIN-STORED when `g ≥ 2`: non-telescope `(deg−1)·inl⁻ − deg·w`; telescope with
+  `headDeg ≥ 1` `(deg−1)·merged + (headDeg−1) − deg·w`; telescope with `headDeg = 0`
+  `(deg−1)·merged − tag4Size(spine length) − deg·w`;
+* components as in `classify` above. -/
+
+structure ClassCounts where
+  cs : Nat := 0
+  ce : Nat := 0
+  unc : Nat := 0
+  low : Nat := 0
+  comp : Nat := 0
+  ncomps : Nat := 0
+  deriving Inhabited, BEq, Repr
+
+/-- Largest component and number of components of the uncertain nodes (class
+3), joined by directed DAG paths through nodes that are not certain-stored
+(class 1). Classes 0 and 2 are transparent. -/
+def uncertainComponentsOf (n : Nat) (kids : Array (Array Nat)) (cls : Array UInt8) :
+    Nat × Nat := Id.run do
+  let transparent (i : Nat) : Bool := cls[i]! == 0 || cls[i]! == 2
+  let mut act : Array Bool := Array.replicate n false
+  for j in [0:n] do
+    let p := n - 1 - j
+    if cls[p]! == 3 || (transparent p && act[p]!) then
+      for c in kids[p]! do
+        if transparent c then act := act.set! c true
+  let mut below : Array Bool := Array.replicate n false
+  for p in [0:n] do
+    if transparent p then
+      below := below.set! p (kids[p]!.any fun c => cls[c]! == 3 || (transparent c && below[c]!))
+  let mut parent : Array Nat := Array.range n
+  let mut usz : Array Nat := Array.replicate n 1
+  for p in [0:n] do
+    if cls[p]! == 3 || (transparent p && act[p]! && below[p]!) then
+      for c in kids[p]! do
+        if cls[c]! == 3 || (transparent c && below[c]!) then
+          let a := ufFind parent p
+          let b := ufFind parent c
+          if a != b then
+            if usz[a]! < usz[b]! then
+              parent := parent.set! a b
+              usz := usz.set! b (usz[a]! + usz[b]!)
+            else
+              parent := parent.set! b a
+              usz := usz.set! a (usz[a]! + usz[b]!)
+  let mut compSize : Std.HashMap Nat Nat := {}
+  for i in [0:n] do
+    if cls[i]! == 3 then
+      let r := ufFind parent i
+      compSize := compSize.insert r (compSize.getD r 0 + 1)
+  return (compSize.fold (init := 0) fun m _ v => max m v, compSize.size)
+
+def classifyW1Mode (res : Ix.Sharing.AnalyzeResult) (sizes : Std.HashMap Address NodeSz)
+    (roots : Array Expr) : Except String (Array ClassCounts) := do
+  let order := res.topoOrder
+  let n := order.size
+  let mut idxOf : Std.HashMap Address Nat := Std.HashMap.emptyWithCapacity n
+  for i in [0:n] do
+    idxOf := idxOf.insert order[i]! i
+  -- kinds: 0 non-telescope, 1 App, 2 Lam, 3 All
+  let mut kids : Array (Array Nat) := Array.mkEmpty n
+  let mut kind : Array UInt8 := Array.mkEmpty n
+  let mut occ : Array Nat := Array.mkEmpty n
+  let mut sz : Array Nat := Array.mkEmpty n
+  let mut own : Array Nat := Array.mkEmpty n
+  let mut tele : Array Nat := Array.mkEmpty n
+  for i in [0:n] do
+    let some info := res.infoMap.get? order[i]! | throw "node not analyzed"
+    let ks ← info.children.mapM fun c =>
+      match idxOf.get? c with | some j => pure j | none => throw "child not analyzed"
+    let ns := sizes.getD order[i]! default
+    let k : UInt8 := match info.expr with
+      | .app .. => 1 | .lam .. => 2 | .all .. => 3 | _ => 0
+    kids := kids.push ks; kind := kind.push k; occ := occ.push info.usageCount
+    sz := sz.push ns.sz; own := own.push info.baseSize; tele := tele.push ns.tele
+  let mut deg : Array Nat := Array.replicate n 0
+  let mut head : Array Nat := Array.replicate n 0
+  for p in [0:n] do
+    let pk := kind[p]!
+    let ks := kids[p]!
+    for pos in [0:ks.size] do
+      let c := ks[pos]!
+      let ck := kind[c]!
+      deg := deg.modify c (· + 1)
+      let cont := pk != 0 && ck == pk && pos == (if pk == 1 then 0 else 1)
+      unless cont do head := head.modify c (· + 1)
+  for r in roots do
+    let some h := res.ptrToHash.get? (Ix.Sharing.exprPtr r) | throw "root not analyzed"
+    let some i := idxOf.get? h | throw "root not indexed"
+    deg := deg.modify i (· + 1)
+    head := head.modify i (· + 1)
+  let mut out : Array ClassCounts := #[]
+  for w in [1, 2, 3] do
+    let ce : Array Bool := (Array.range n).map fun t => (occ[t]! - 1) * sz[t]! < occ[t]! * w
+    let cand : Array Bool := (Array.range n).map fun t => !ce[t]! && deg[t]! ≥ 2
+    let mut inl : Array Nat := Array.replicate n 0
+    let mut merged : Array Nat := Array.replicate n 0
+    let mut headLB : Array Nat := Array.replicate n 0
+    let mut contLB : Array Nat := Array.replicate n 0
+    for t in [0:n] do
+      let k := kind[t]!
+      let ks := kids[t]!
+      let (i, m) :=
+        if k == 0 then
+          let i := ks.foldl (fun acc c => acc + headLB[c]!) own[t]!
+          (i, i)
+        else
+          let (nxt, side, extra) := if k == 1 then (ks[0]!, ks[1]!, 0) else (ks[1]!, ks[0]!, 1)
+          let rest := if kind[nxt]! == k then contLB[nxt]! else headLB[nxt]!
+          let m := extra + headLB[side]! + rest
+          (1 + m, m)
+      inl := inl.set! t i
+      merged := merged.set! t m
+      headLB := headLB.set! t (if cand[t]! then min w i else i)
+      contLB := contLB.set! t (if cand[t]! then min w m else m)
+    let mut cls : Array UInt8 := Array.replicate n 0
+    let mut cc : ClassCounts := {}
+    for t in [0:n] do
+      let d : Int := deg[t]!
+      let g : Int :=
+        if kind[t]! == 0 then (d - 1) * inl[t]! - d * w
+        else if head[t]! ≥ 1 then (d - 1) * merged[t]! + ((head[t]! : Int) - 1) - d * w
+        else (d - 1) * merged[t]! - tag4Size tele[t]! - d * w
+      let c : UInt8 :=
+        if ce[t]! then 2 else if deg[t]! < 2 then 0 else if g ≥ 2 then 1 else 3
+      cls := cls.set! t c
+      cc := match c with
+        | 1 => { cc with cs := cc.cs + 1 }
+        | 2 => { cc with ce := cc.ce + 1 }
+        | 3 => { cc with unc := cc.unc + 1 }
+        | _ => { cc with low := cc.low + 1 }
+    let (comp, ncomps) := uncertainComponentsOf n kids cls
+    out := out.push { cc with comp, ncomps }
+  return out
+
+/-! ## Running the W1 uniform optimizer -/
+
+/-- One uniform-width optimizer run on one constant. -/
+structure UniStats where
+  ok : Bool := false
+  err : String := ""
+  /-- Wall time of the optimizer call. -/
+  ns : Nat := 0
+  counts : ClassCounts := {}
+  /-- W1's distinct subterms. -/
+  n : Nat := 0
+  states : Nat := 0
+  lowerBracket : Bool := false
+  /-- Complete-Constant model length: fixed bytes + `modelBytes`. -/
+  model : Nat := 0
+  /-- Real serialized length of the produced Constant (current Tag4 tiers). -/
+  real : Nat := 0
+  /-- The same table under scheme F widths. -/
+  realF : Nat := 0
+  table : Nat := 0
+  /-- `real = fixed + variableBytes`. -/
+  variableOk : Bool := false
+  /-- Decode / re-encode / expand / exact-equality check of the output. -/
+  checkErr : Option String := none
+  deriving Inhabited
+
+def uniStats (c : Constant) (roots : Array Expr) (fixed : Nat)
+    (u : Ix.Sharing.Exact.UniformSharingResult) (ns : Nat) : UniStats :=
+  let mc : Constant :=
+    { info := replaceRoots c.info u.result.roots, sharing := u.result.sharing,
+      refs := c.refs, univs := c.univs }
+  let b := Ixon.serConstant mc
+  let count (lo hi : UInt64) :=
+    u.result.roots.foldl (fun acc e => countShareRefsBy lo hi e acc)
+      (u.result.sharing.foldl (fun acc e => countShareRefsBy lo hi e acc) (0, 0, 0))
+  let a := count 8 256
+  let f := count 8 1032
+  let aBytes := a.1 + 2 * a.2.1 + 3 * a.2.2
+  let fBytes := f.1 + 2 * f.2.1 + 3 * f.2.2
+  { ok := true, ns
+    counts := { cs := u.certainStored.size, ce := u.certainExcluded.size,
+                unc := u.uncertain.size, low := u.lowDegree.size,
+                comp := u.components.foldl (fun m x => max m x.size) 0,
+                ncomps := u.components.size }
+    n := u.result.stats.distinctSubterms, states := u.statesVisited
+    lowerBracket := u.lowerBracket
+    model := fixed + u.result.modelBytes, real := b.size, realF := b.size - aBytes + fBytes
+    table := u.result.sharing.size
+    variableOk := b.size == fixed + u.result.variableBytes
+    checkErr := match mssCheck b roots with | .ok () => none | .error e => some e }
+
+/-! ## Integer repricing: TagN, TagN-byte and the Tag2 variant
+
+Walks the stored (heuristic) encoding of a Constant exactly as `putConstant` /
+`putExpr` / `putUniv` write it (telescope counts as written by `collectAppArgs` and
+the binder collectors; successor chains as one `Tag2`), classifies every `Tag4`,
+`Tag0` and `Tag2` integer, and prices it under the current codes
+(`tag4EncodedSize`, `tag0EncodedSize`, `putTag2`) and under:
+
+* TagN (replaces every `Tag4`): 1 byte below 8, 2 below 8 + 1024, 3 below
+  1032 + 65536, 5 below that + 2^32, 9 beyond;
+* TagN-byte (replaces every `Tag0`): 1 byte below 128, 2 below 128 + 16384, 3 below
+  16512 + 65536, 5 below that + 2^32, 9 beyond;
+* the Tag2 variant of TagN (replaces every `Tag2`): 1 byte below 32, 2 below
+  32 + 4096, 3 below 4128 + 65536, 5 below that + 2^32, 9 beyond.
+
+All other bytes (flag and contract bytes, addresses) are counted as `other`. The sum
+of every part must equal the stored byte length. -/
+
+def tagNSize (v : Nat) : Nat :=
+  if v < 8 then 1 else if v < 1032 then 2 else if v < 66568 then 3
+  else if v < 66568 + 4294967296 then 5 else 9
+
+def tagNByteSize (v : Nat) : Nat :=
+  if v < 128 then 1 else if v < 16512 then 2 else if v < 82048 then 3
+  else if v < 82048 + 4294967296 then 5 else 9
+
+def tagN2Size (v : Nat) : Nat :=
+  if v < 32 then 1 else if v < 4128 then 2 else if v < 69664 then 3
+  else if v < 69664 + 4294967296 then 5 else 9
+
+/-- Integer classes. `Tag4` classes: 0 Share index, 1 Var index, 2 Sort level,
+3 App argument count, 4 Lam/All binder count, 5 Ref/Recur universe-list length,
+6 Prj field, 7 Str/Nat index, 8 Let flags, 9 ConstantInfo header. `Tag0` classes:
+10 Ref/Recur index, 11 Ref/Recur universe index, 12 Prj type index, 13 table counts
+(sharing, refs, univs), 14 ConstantInfo scalar fields. `Tag2`: 15 universe terms. -/
+def intClassNames : Array String := #[
+  "Share indices (Tag4)", "Var indices (Tag4)", "Sort levels (Tag4)",
+  "App argument counts (Tag4)", "Lam/All binder counts (Tag4)",
+  "Ref/Recur universe-list lengths (Tag4)", "Prj fields (Tag4)", "Str/Nat indices (Tag4)",
+  "Let flags (Tag4)", "ConstantInfo header: variant / mutual member count (Tag4)",
+  "Ref/Recur indices (Tag0)", "Ref/Recur universe indices (Tag0)", "Prj type indices (Tag0)",
+  "table counts: sharing, refs, univs (Tag0)",
+  "ConstantInfo scalar fields: lvls, params, indices, motives, minors, rule fields and counts, constructor counts and fields, cidx, projection idx (Tag0)",
+  "universe terms: zero/succ-chain, max, imax, var headers (Tag2)"]
+
+structure LadAcc where
+  cnt : Array Nat := Array.replicate 16 0
+  cur : Array Nat := Array.replicate 16 0
+  new : Array Nat := Array.replicate 16 0
+  gain : Array Nat := Array.replicate 16 0
+  loss : Array Nat := Array.replicate 16 0
+  /-- Histograms by width (index = bytes, 0..9). -/
+  h4cur : Array Nat := Array.replicate 10 0
+  h4new : Array Nat := Array.replicate 10 0
+  h0cur : Array Nat := Array.replicate 10 0
+  h0new : Array Nat := Array.replicate 10 0
+  h2cur : Array Nat := Array.replicate 10 0
+  h2new : Array Nat := Array.replicate 10 0
+  other : Nat := 0
+  deriving Inhabited
+
+def LadAcc.addInt (a : LadAcc) (cls cur new : Nat) : LadAcc :=
+  { a with
+    cnt := a.cnt.modify cls (· + 1)
+    cur := a.cur.modify cls (· + cur)
+    new := a.new.modify cls (· + new)
+    gain := a.gain.modify cls (· + (cur - new))
+    loss := a.loss.modify cls (· + (new - cur)) }
+
+def LadAcc.add4 (a : LadAcc) (cls : Nat) (v : UInt64) : LadAcc :=
+  let cur := Ix.Sharing.tag4EncodedSize v
+  let new := tagNSize v.toNat
+  let a := a.addInt cls cur new
+  { a with h4cur := a.h4cur.modify cur (· + 1), h4new := a.h4new.modify new (· + 1) }
+
+def LadAcc.add0 (a : LadAcc) (cls : Nat) (v : UInt64) : LadAcc :=
+  let cur := Ix.Sharing.tag0EncodedSize v
+  let new := tagNByteSize v.toNat
+  let a := a.addInt cls cur new
+  { a with h0cur := a.h0cur.modify cur (· + 1), h0new := a.h0new.modify new (· + 1) }
+
+/-- `Tag2` size as written by `putTag2`. -/
+def tag2Size (v : UInt64) : Nat := if v < 32 then 1 else 1 + (Ixon.u64ByteCount v).toNat
+
+def LadAcc.add2 (a : LadAcc) (v : UInt64) : LadAcc :=
+  let cur := tag2Size v
+  let new := tagN2Size v.toNat
+  let a := a.addInt 15 cur new
+  { a with h2cur := a.h2cur.modify cur (· + 1), h2new := a.h2new.modify new (· + 1) }
+
+def LadAcc.addOther (a : LadAcc) (n : Nat) : LadAcc := { a with other := a.other + n }
+
+def LadAcc.merge (a b : LadAcc) : LadAcc :=
+  let z (x y : Array Nat) := (x.zip y).map fun (p, q) => p + q
+  { cnt := z a.cnt b.cnt, cur := z a.cur b.cur, new := z a.new b.new,
+    gain := z a.gain b.gain, loss := z a.loss b.loss,
+    h4cur := z a.h4cur b.h4cur, h4new := z a.h4new b.h4new,
+    h0cur := z a.h0cur b.h0cur, h0new := z a.h0new b.h0new,
+    h2cur := z a.h2cur b.h2cur, h2new := z a.h2new b.h2new, other := a.other + b.other }
+
+def LadAcc.total (a : LadAcc) : Nat := a.cur.foldl (· + ·) 0 + a.other
+
+/-- Universe term, mirroring `putUniv` (successor chains as one `Tag2`). -/
+partial def ladUniv (a : LadAcc) : Ixon.Univ → LadAcc
+  | .zero => a.add2 0
+  | u@(.succ _) => ladUniv (a.add2 u.succCount) u.succBase
+  | .max x y => ladUniv (ladUniv (a.add2 0) x) y
+  | .imax x y => ladUniv (ladUniv (a.add2 0) x) y
+  | .var i => a.add2 i
+
+/-- Expression, mirroring `putExpr`. -/
+partial def ladExpr (a : LadAcc) : Expr → LadAcc
+  | .sort i => a.add4 2 i
+  | .var i => a.add4 1 i
+  | .ref r us | .recur r us =>
+    us.foldl (fun a u => a.add0 11 u) ((a.add4 5 us.size.toUInt64).add0 10 r)
+  | .prj t f v => ladExpr ((a.add4 6 f).add0 12 t) v
+  | .str i | .nat i => a.add4 7 i
+  | e@(.app ..) =>
+    let (args, head) := e.collectAppArgs
+    args.foldl ladExpr (ladExpr (a.add4 3 args.length.toUInt64) head)
+  | e@(.lam ..) =>
+    let (bs, body) := e.collectLamBinders
+    let a := (a.add4 4 bs.length.toUInt64).addOther bs.length
+    ladExpr (bs.foldl (fun a b => ladExpr a b.2) a) body
+  | e@(.all ..) =>
+    let (bs, body) := e.collectAllBinders
+    let a := (a.add4 4 bs.length.toUInt64).addOther bs.length
+    ladExpr (bs.foldl (fun a b => ladExpr a b.2.2) a) body
+  | .letE c t v b => ladExpr (ladExpr (ladExpr ((a.add4 8 c.flags).addOther 1) t) v) b
+  | .share i => a.add4 0 i
+
+def ladDefinition (a : LadAcc) (d : Ixon.Definition) : LadAcc :=
+  ladExpr (ladExpr ((a.addOther 1).add0 14 d.lvls) d.typ) d.value
+
+def ladRecursor (a : LadAcc) (r : Ixon.Recursor) : LadAcc :=
+  let a := (a.addOther 1).add0 14 r.lvls |>.add0 14 r.params |>.add0 14 r.indices
+    |>.add0 14 r.motives |>.add0 14 r.minors
+  let a := (ladExpr a r.typ).add0 14 r.rules.size.toUInt64
+  r.rules.foldl (fun a rule => ladExpr (a.add0 14 rule.fields) rule.rhs) a
+
+def ladInductive (a : LadAcc) (i : Ixon.Inductive) : LadAcc :=
+  let a := (a.addOther 1).add0 14 i.lvls |>.add0 14 i.params |>.add0 14 i.indices
+  let a := (ladExpr a i.typ).add0 14 i.ctors.size.toUInt64
+  i.ctors.foldl (fun a c =>
+    ladExpr ((a.addOther 1).add0 14 c.lvls |>.add0 14 c.cidx |>.add0 14 c.params
+      |>.add0 14 c.fields) c.typ) a
+
+/-- Constant, mirroring `putConstant`. -/
+def ladConstant (c : Constant) : LadAcc := Id.run do
+  let mut a : LadAcc := {}
+  a := match c.info with
+    | .defn d => ladDefinition (a.add4 9 0) d
+    | .recr r => ladRecursor (a.add4 9 1) r
+    | .axio x => ladExpr (((a.add4 9 2).addOther 1).add0 14 x.lvls) x.typ
+    | .quot q => ladExpr (((a.add4 9 3).addOther 1).add0 14 q.lvls) q.typ
+    | .cPrj p => (((a.add4 9 4).add0 14 p.idx).add0 14 p.cidx).addOther 32
+    | .rPrj p => ((a.add4 9 5).add0 14 p.idx).addOther 32
+    | .iPrj p => ((a.add4 9 6).add0 14 p.idx).addOther 32
+    | .dPrj p => ((a.add4 9 7).add0 14 p.idx).addOther 32
+    | .muts ms => ms.foldl (fun a m =>
+        let a := a.addOther 1
+        match m with
+        | .defn d => ladDefinition a d
+        | .indc i => ladInductive a i
+        | .recr r => ladRecursor a r) (a.add4 9 ms.size.toUInt64)
+  a := a.add0 13 c.sharing.size.toUInt64
+  a := c.sharing.foldl ladExpr a
+  a := (a.add0 13 c.refs.size.toUInt64).addOther (32 * c.refs.size)
+  a := a.add0 13 c.univs.size.toUInt64
+  a := c.univs.foldl ladUniv a
+  return a
 
 /-! ## Per-constant row -/
 
@@ -722,6 +1101,15 @@ structure Row where
   refs0 : Nat := 0
   refs1 : Nat := 0
   refs2 : Nat := 0
+  /-- Bytes outside the expressions (root/table-independent). -/
+  fixed : Nat := 0
+  /-- W1's uniform classification reimplemented here, for `w = 1, 2, 3`. -/
+  w1mode : Array ClassCounts := #[]
+  w1modeErr : Option String := none
+  /-- W1 uniform optimizer runs for `w = 1, 2, 3` (empty when not run). -/
+  uni : Array UniStats := #[]
+  /-- TagN / TagN-byte repricing of the stored encoding. -/
+  lad : LadAcc := {}
   ns : Nat := 0
   deriving Inhabited
 
@@ -776,7 +1164,12 @@ def measure (addr : Address) (name : String) (raw : ByteArray) (c : Constant)
     | .error e => (#[], some e)
   let refCounts := stored.foldl (fun acc e => countShareRefs e acc)
     (c.sharing.foldl (fun acc e => countShareRefs e acc) (0, 0, 0))
+  let (w1mode, w1modeErr) := match classifyW1Mode res sizes roots with
+    | .ok s => (s, none)
+    | .error e => (#[], some e)
   return {
+    lad := ladConstant c
+    fixed, w1mode, w1modeErr
     uw, uwErr, refs0 := refCounts.1, refs1 := refCounts.2.1, refs2 := refCounts.2.2
     mss, mssTable, mssErr, mssRefs, mssRefsE, mssDegSum, mssRefsF, mssRefsG
     cont := mssCounts.1, contP2 := mssCounts.2.1, contP2u := mssCounts.2.2
@@ -906,6 +1299,10 @@ def bucketTable (rows : Array Row) (field : Row → Nat) : String := Id.run do
   out := out ++ s!"\n| > 128 | {k} | {fmtPct k total} |"
   return out
 
+/-- Repriced minus current bytes over integer classes `lo..hi-1`. -/
+def ladChange (a : LadAcc) (lo hi : Nat) : Int :=
+  (List.range (hi - lo)).foldl (fun s i => s + ((a.new[lo + i]! : Int) - a.cur[lo + i]!)) 0
+
 def csvEscape (s : String) : String := "\"" ++ s.replace "\"" "\"\"" ++ "\""
 
 def csvHeader : String :=
@@ -915,7 +1312,11 @@ def csvHeader : String :=
   "w1_cs,w1_ce,w1_unc,w1_comp,w2_cs,w2_ce,w2_unc,w2_comp,w3_cs,w3_ce,w3_unc,w3_comp," ++
   "refs_lt8,refs_8_255,refs_ge256,mss_refs_lt8,mss_refs_8_255,mss_refs_ge256,mss_deg_sum," ++
   "mss_refs_lt15,mss_refs_15_4110,mss_refs_ge4111," ++
-  "mss_refs_lt8f,mss_refs_8_1031,mss_refs_ge1032,mss_refs_lt14,mss_refs_14_269,mss_refs_ge270"
+  "mss_refs_lt8f,mss_refs_8_1031,mss_refs_ge1032,mss_refs_lt14,mss_refs_14_269,mss_refs_ge270," ++
+  ",".intercalate ((List.range 3).map fun k =>
+    let w := k + 1
+    s!"u{w}_ok,u{w}_us,u{w}_cs,u{w}_ce,u{w}_unc,u{w}_comp,u{w}_states,u{w}_model,u{w}_real,u{w}_realF,u{w}_table") ++
+  ",w1m1_comp,w1m2_comp,w1m3_comp,tagn_change,tagnbyte_change,tagn2_change"
 
 def uwCsv (r : Row) : String :=
   ",".intercalate <| (List.range 3).map fun k =>
@@ -935,7 +1336,17 @@ def csvLine (r : Row) : String :=
   s!"{r.mssRefs.1},{r.mssRefs.2.1},{r.mssRefs.2.2},{r.mssDegSum}," ++
   s!"{r.mssRefsE.1},{r.mssRefsE.2.1},{r.mssRefsE.2.2}," ++
   s!"{r.mssRefsF.1},{r.mssRefsF.2.1},{r.mssRefsF.2.2}," ++
-  s!"{r.mssRefsG.1},{r.mssRefsG.2.1},{r.mssRefsG.2.2}"
+  s!"{r.mssRefsG.1},{r.mssRefsG.2.1},{r.mssRefsG.2.2}," ++
+  ",".intercalate ((List.range 3).map fun k =>
+    match r.uni[k]? with
+    | some u =>
+      if u.ok then
+        s!"1,{u.ns / 1000},{u.counts.cs},{u.counts.ce},{u.counts.unc},{u.counts.comp},{u.states}," ++
+        s!"{u.model},{u.real},{u.realF},{u.table}"
+      else s!"0,{u.ns / 1000},,,,,,,,,"
+    | none => ",,,,,,,,,,") ++
+  s!",{(r.w1mode[0]?.map (·.comp)).getD 0},{(r.w1mode[1]?.map (·.comp)).getD 0},{(r.w1mode[2]?.map (·.comp)).getD 0}," ++
+  s!"{ladChange r.lad 0 10},{ladChange r.lad 10 15},{ladChange r.lad 15 16}"
 
 def kindOrder : Array String :=
   #["defn", "recr", "axio", "quot", "muts", "iPrj", "cPrj", "rPrj", "dPrj"]
@@ -1251,6 +1662,177 @@ def schemeReport (rows : Array Row) : String := Id.run do
   md := md ++ s!"- D vs A: better {(t255.filter fun r => delta mssRefsD r < 0).size}, equal {(t255.filter fun r => delta mssRefsD r == 0).size}, worse {(t255.filter fun r => delta mssRefsD r > 0).size}.\n"
   return md
 
+/-! ## TagN / TagN-byte report -/
+
+def tagNReport (rows : Array Row) : String := Id.run do
+  let acc := rows.foldl (fun a r => a.merge r.lad) ({} : LadAcc)
+  let stored := rows.foldl (· + ·.raw) 0
+  let bad := rows.filter fun r => r.lad.total != r.raw
+  let range (lo hi : Nat) (f : Nat → Nat) : Nat :=
+    (List.range (hi - lo)).foldl (fun s i => s + f (lo + i)) 0
+  let cnt4 := range 0 10 (acc.cnt[·]!)
+  let cur4 := range 0 10 (acc.cur[·]!)
+  let new4 := range 0 10 (acc.new[·]!)
+  let cnt0 := range 10 15 (acc.cnt[·]!)
+  let cur0 := range 10 15 (acc.cur[·]!)
+  let new0 := range 10 15 (acc.new[·]!)
+  let d4 : Int := (new4 : Int) - cur4
+  let d0 : Int := (new0 : Int) - cur0
+  let d2 : Int := (acc.new[15]! : Int) - acc.cur[15]!
+  let mut md := "## Integer repricing: TagN, TagN-byte and the Tag2 variant\n\n"
+  md := md ++ "The stored (heuristic) encoding of every constant is walked exactly as `putConstant`/`putExpr`/`putUniv` write it, and every integer is priced under the current codes (`tag4EncodedSize`, `tag0EncodedSize`, `putTag2`) and under TagN (replacing every `Tag4`: 1 byte below 8, 2 below 8 + 1024, 3 below 1032 + 65536, 5 below that + 2^32, 9 beyond), TagN-byte (replacing every `Tag0`: 1 byte below 128, 2 below 128 + 16384, 3 below 16512 + 65536, 5 below that + 2^32, 9 beyond) and the Tag2 variant of TagN (replacing every `Tag2`: 1 byte below 32, 2 below 32 + 4096, 3 below 4128 + 65536, 5 below that + 2^32, 9 beyond).\n\n"
+  md := md ++ s!"- Walker check: integer bytes + other bytes = `rawBytes.size` for {rows.size - bad.size} of {rows.size} constants (**{bad.size}** different).\n"
+  for r in bad.extract 0 10 do
+    md := md ++ s!"  - `{r.name}`: walker {r.lad.total}, stored {r.raw}\n"
+  md := md ++ s!"- Stored bytes: {stored}. `Tag4` integers: {cnt4} ({cur4} bytes). `Tag0` integers: {cnt0} ({cur0} bytes). `Tag2` integers: {acc.cnt[15]!} ({acc.cur[15]!} bytes). Other bytes: {acc.other}.\n"
+  md := md ++ s!"- TagN alone: {new4} bytes for the `Tag4` integers, change {d4} ({fmtSignedPct2 d4 stored} of stored bytes; gained {range 0 10 (acc.gain[·]!)}, lost {range 0 10 (acc.loss[·]!)}).\n"
+  md := md ++ s!"- TagN-byte alone: {new0} bytes for the `Tag0` integers, change {d0} ({fmtSignedPct2 d0 stored}; gained {range 10 15 (acc.gain[·]!)}, lost {range 10 15 (acc.loss[·]!)}).\n"
+  md := md ++ s!"- Tag2 variant alone: {acc.new[15]!} bytes for the `Tag2` integers, change {d2} ({fmtSignedPct2 d2 stored}; gained {acc.gain[15]!}, lost {acc.loss[15]!}).\n"
+  md := md ++ s!"- TagN and TagN-byte together: change {d4 + d0} ({fmtSignedPct2 (d4 + d0) stored}). All three: change {d4 + d0 + d2} ({fmtSignedPct2 (d4 + d0 + d2) stored} of stored bytes).\n\n"
+  md := md ++ "| field class | integers | current bytes | repriced bytes | change | bytes gained | bytes lost |\n|---|---:|---:|---:|---:|---:|---:|\n"
+  for h : i in [0:intClassNames.size] do
+    let d : Int := (acc.new[i]! : Int) - acc.cur[i]!
+    md := md ++ s!"| {intClassNames[i]} | {acc.cnt[i]!} | {acc.cur[i]!} | {acc.new[i]!} | {d} | {acc.gain[i]!} | {acc.loss[i]!} |\n"
+  md := md ++ "\nIntegers by width (bytes), per tag family, now and repriced:\n\n| width | `Tag4` now | TagN | `Tag0` now | TagN-byte | `Tag2` now | Tag2 variant |\n|---:|---:|---:|---:|---:|---:|---:|\n"
+  for wd in [1:10] do
+    md := md ++ s!"| {wd} | {acc.h4cur[wd]!} | {acc.h4new[wd]!} | {acc.h0cur[wd]!} | {acc.h0new[wd]!} | {acc.h2cur[wd]!} | {acc.h2new[wd]!} |\n"
+  return md
+
+/-! ## W1 uniform optimizer report -/
+
+/-- Ten largest gains and losses of the uniform output against MSS. -/
+def uniformTopTables (ok : Array Row) (k : Nat) : String := Id.run do
+  let w := k + 1
+  let get (r : Row) : UniStats := r.uni[k]?.getD {}
+  let d (r : Row) : Int := ((get r).real : Int) - r.mss
+  let better := ok.filter fun r => d r < 0
+  let worse := ok.filter fun r => d r > 0
+  let hdr := "| # | constant | kind | heuristic B | MSS B | uniform real B | Δ (uniform − MSS) | uniform table | MSS table | largest comp. |\n|---:|---|---|---:|---:|---:|---:|---:|---:|---:|\n"
+  let line (j : Nat) (r : Row) : String :=
+    s!"| {j + 1} | `{r.name}` | {r.kind} | {r.raw} | {r.mss} | {(get r).real} | {d r} | {(get r).table} | {r.mssTable} | {(get r).counts.comp} |\n"
+  let mut md := s!"Ten largest gains of uniform w = {w} over MSS:\n\n" ++ hdr
+  let bg := (better.qsort fun a b => d a < d b || (d a == d b && a.name < b.name)).extract 0 10
+  for j in [0:bg.size] do
+    md := md ++ line j bg[j]!
+  md := md ++ s!"\nTen largest losses of uniform w = {w} against MSS:\n\n" ++ hdr
+  let bl := (worse.qsort fun a b => d a > d b || (d a == d b && a.name < b.name)).extract 0 10
+  for j in [0:bl.size] do
+    md := md ++ line j bl[j]!
+  return md
+
+def sumRows (f : Row → Nat) (xs : Array Row) : Nat := xs.foldl (fun a r => a + f r) 0
+
+/-- One width's part of the uniform report. -/
+def uniformSectionW (wr : Array Row) (k : Nat) : String := Id.run do
+  let sum := sumRows
+  let mut md := ""
+  let w := k + 1
+  let get (r : Row) : UniStats := r.uni[k]?.getD {}
+  let ran := wr.filter fun r => r.uni.size > k
+  let ok := ran.filter fun r => (get r).ok
+  let fail := ran.filter fun r => !(get r).ok
+  md := md ++ s!"### w = {w}\n\n- Certified: **{ok.size}** of {ran.size}; failures: **{fail.size}**.\n"
+  let mut errs : Std.HashMap String Nat := {}
+  for r in fail do
+    errs := errs.insert (get r).err (errs.getD (get r).err 0 + 1)
+  for (e, cnt) in errs.toArray.qsort (fun a b => a.2 > b.2) do
+    md := md ++ s!"  - `{e}`: {cnt}\n"
+  for r in fail.extract 0 10 do
+    md := md ++ s!"    - `{r.name}` (N {r.n}, {(get r).ns / 1000000} ms): `{(get r).err}`\n"
+  let varOk := (ok.filter fun r => (get r).variableOk).size
+  let chkBad := ok.filter fun r => (get r).checkErr.isSome
+  let nOk := (ok.filter fun r => (get r).n == r.n).size
+  let clsBad := ok.filter fun r => r.w1mode[k]? != some (get r).counts
+  md := md ++ s!"- Output checks on certified constants: real length = fixed + `variableBytes` for {varOk}; decode/re-encode/expand/exact equality ok for {ok.size - chkBad.size}, **{chkBad.size}** failed; W1 distinct subterms = this harness's `N` for {nOk}; class counts and components equal to this harness's reimplementation of W1's definitions for {ok.size - clsBad.size}, **{clsBad.size}** different.\n"
+  for r in chkBad.extract 0 10 do
+    md := md ++ s!"  - check failure `{r.name}`: {(get r).checkErr.getD ""}\n"
+  for r in clsBad.extract 0 10 do
+    md := md ++ s!"  - class difference `{r.name}`: W1 {reprStr (get r).counts}; reimplementation {reprStr r.w1mode[k]?}\n"
+  md := md ++ s!"- Classes (W1, certified): certain-stored {sum (fun r => (get r).counts.cs) ok}, certain-excluded {sum (fun r => (get r).counts.ce) ok}, uncertain {sum (fun r => (get r).counts.unc) ok}, low degree {sum (fun r => (get r).counts.low) ok}; components {sum (fun r => (get r).counts.ncomps) ok}; lower count bracket chosen in {(ok.filter fun r => (get r).lowerBracket).size} constants.\n\n"
+  md := md ++ "| Metric | min | median | p90 | p99 | max | mean |\n|---|---:|---:|---:|---:|---:|---:|\n"
+  md := md ++ distRow "largest uncertain component (W1)" (ok.map fun r => (get r).counts.comp) ++ "\n"
+  md := md ++ distRow "search states" (ok.map fun r => (get r).states) ++ "\n"
+  md := md ++ distRow "uniform table size" (ok.map fun r => (get r).table) ++ "\n"
+  md := md ++ distRow "optimizer wall time (µs), all runs" (ran.map fun r => (get r).ns / 1000) ++ "\n\n"
+  let sRaw := sum (·.raw) ok
+  let sMss := sum (·.mss) ok
+  let sUn := sum (·.unshared) ok
+  let sReal := sum (fun r => (get r).real) ok
+  let sF := sum (fun r => (get r).realF) ok
+  let sModel := sum (fun r => (get r).model) ok
+  md := md ++ s!"Totals over the {ok.size} certified constants:\n\n| encoding | total bytes | vs heuristic | vs MSS |\n|---|---:|---:|---:|\n"
+  for (label, s) in [("heuristic (stored)", sRaw), ("MSS (current tiers)", sMss),
+      (s!"uniform w = {w}, real (current tiers)", sReal), (s!"uniform w = {w}, scheme F widths", sF),
+      (s!"uniform w = {w}, model length", sModel), ("unshared", sUn)] do
+    let dh : Int := (s : Int) - sRaw
+    let dm : Int := (s : Int) - sMss
+    md := md ++ s!"| {label} | {s} | {dh} ({fmtSignedPct2 dh sRaw}) | {dm} ({fmtSignedPct2 dm sMss}) |\n"
+  let d (r : Row) : Int := ((get r).real : Int) - r.mss
+  let better := ok.filter fun r => d r < 0
+  let equal := ok.filter fun r => d r == 0
+  let worse := ok.filter fun r => d r > 0
+  let gains := (better.map fun r => (r.mss - (get r).real)).qsort (· < ·)
+  let losses := (worse.map fun r => ((get r).real - r.mss)).qsort (· < ·)
+  md := md ++ s!"\nUniform w = {w} (real) vs MSS per constant: better {better.size}, equal {equal.size}, worse {worse.size}. Gains p50 {pct gains 50}, p90 {pct gains 90}, max {gains.back?.getD 0}; losses p50 {pct losses 50}, p90 {pct losses 90}, max {losses.back?.getD 0}. Versus the heuristic: better {(ok.filter fun r => (get r).real < r.raw).size}, equal {(ok.filter fun r => (get r).real == r.raw).size}, worse {(ok.filter fun r => (get r).real > r.raw).size}.\n\n"
+  md := md ++ uniformTopTables ok k
+  md := md ++ "\n"
+  return md
+
+/-- The ten slowest optimizer runs. -/
+def uniformSlowSection (wr : Array Row) : String := Id.run do
+  let mut md := ""
+  let runs : Array (Row × Nat × UniStats) := wr.foldl (init := #[]) fun acc r =>
+    (List.range r.uni.size).foldl (fun acc k => acc.push (r, k + 1, r.uni[k]!)) acc
+  md := md ++ s!"### Ten slowest optimizer runs (of {runs.size})\n\n| # | constant | w | ms | certified | `N` | largest comp. | states | error |\n|---:|---|---:|---:|---|---:|---:|---:|---|\n"
+  let slow := (runs.qsort fun a b => a.2.2.ns > b.2.2.ns).extract 0 10
+  for h : j in [0:slow.size] do
+    let (r, w, u) := slow[j]
+    md := md ++ s!"| {j + 1} | `{r.name}` | {w} | {u.ns / 1000000} | {u.ok} | {r.n} | {u.counts.comp} | {u.states} | {u.err} |\n"
+  md := md ++ s!"\nTotal optimizer wall time over all runs: {runs.foldl (fun a x => a + x.2.2.ns) 0 / 1000000} ms.\n\n"
+  return md
+
+/-- Real lengths against the w = 1 model optimum. -/
+def uniformGapSection (wr : Array Row) : String := Id.run do
+  let sum := sumRows
+  let mut md := ""
+  let all3 := wr.filter fun r => r.uni.size == 3 && r.uni.all (·.ok)
+  let m1 (r : Row) : Nat := r.uni[0]!.model
+  let best (r : Row) : Nat := r.uni.foldl (fun m u => min m u.real) (min r.raw r.mss)
+  md := md ++ s!"### Lower-bound gap: real lengths minus the w = 1 model optimum\n\nOver the {all3.size} rooted constants certified at w = 1, 2 and 3. Σ model(w = 1) = {sum m1 all3}.\n\n| encoding (current tiers) | Σ bytes | Σ (bytes − model w=1) | % of Σ model | constants below the model |\n|---|---:|---:|---:|---:|\n"
+  let encs : List (String × (Row → Nat)) := [("heuristic (stored)", (·.raw)), ("MSS", (·.mss)),
+    ("uniform w = 1 output", fun r => r.uni[0]!.real), ("uniform w = 2 output", fun r => r.uni[1]!.real),
+    ("uniform w = 3 output", fun r => r.uni[2]!.real),
+    ("best of the above, per constant", best)]
+  for (label, f) in encs do
+    let s := sum f all3
+    let gap : Int := (s : Int) - sum m1 all3
+    let below := (all3.filter fun r => f r < m1 r).size
+    md := md ++ s!"| {label} | {s} | {gap} | {fmtSignedPct2 gap (sum m1 all3)} | {below} |\n"
+  return md
+
+/-- W1's classes against this harness's own classification. -/
+def uniformClassSection (wr : Array Row) : String := Id.run do
+  let all3 := wr.filter fun r => r.uni.size == 3 && r.uni.all (·.ok)
+  let mut md := ""
+  md := md ++ "\n### W1 classes vs this harness's own classification (corrected `payloadMin`)\n\nTotals over the constants certified at all three widths. The definitions differ (see the hand-written section), so equality is not expected.\n\n| w | own certain-stored | W1 certain-stored | own certain-excluded (candidates) | W1 certain-excluded (all terms) | own uncertain | W1 uncertain | own max component | W1 max component |\n|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n"
+  for k in [0:3] do
+    let own (f : WStats → Nat) : Nat := all3.foldl (fun a r => a + f (r.uw[k]?.getD {})) 0
+    let w1 (f : ClassCounts → Nat) : Nat := all3.foldl (fun a r => a + f r.uni[k]!.counts) 0
+    let ownMax := all3.foldl (fun m r => max m (r.uw[k]?.getD {}).comp) 0
+    let w1Max := all3.foldl (fun m r => max m r.uni[k]!.counts.comp) 0
+    md := md ++ s!"| {k + 1} | {own (·.cs)} | {w1 (·.cs)} | {own (·.ce)} | {w1 (·.ce)} | {own (·.unc)} | {w1 (·.unc)} | {ownMax} | {w1Max} |\n"
+  return md
+
+def uniformReport (rows : Array Row) (maxStates : Nat) : String := Id.run do
+  let wr := rows.filter (·.roots > 0)
+  let lim : Ix.Sharing.Exact.Limits := { maxStates }
+  let mut md := "## Exact uniform-width optimizer (W1) on the corpus\n\n"
+  md := md ++ s!"Every rooted constant, w = 1, 2, 3: `Ix.Sharing.Exact.optimizeSharingUniformTable w c.sharing (constantInfoRoots c.info) limits` with maxStates {lim.maxStates}, maxCostEvals {lim.maxCostEvals}, maxNodes {lim.maxNodes}, maxDepth {lim.maxDepth}, maxExprVisits {lim.maxExprVisits}, maxMaterialize {lim.maxMaterialize}, maxOutputBytes {lim.maxOutputBytes} (W1 defaults except maxStates). Output roots are placed with the production cursor helpers and serialized with `serConstant` (current Tag4 tiers); the bytes are decoded, re-encoded, expanded and compared exactly with the original expanded roots. Model length = fixed bytes + `modelBytes`; real = serialized size; F = the same table and roots with scheme F Share widths. Wall time is the optimizer call only.\n\n"
+  for k in [0:3] do
+    md := md ++ uniformSectionW wr k
+  md := md ++ uniformSlowSection wr ++ uniformGapSection wr ++ uniformClassSection wr
+  return md
+
 /-! ## Driver -/
 
 structure Opts where
@@ -1261,9 +1843,16 @@ structure Opts where
   validateMax : Nat := 16777216
   occCheckMax : Nat := 65536
   progress : Nat := 5000
+  /-- Run the W1 uniform-width optimizer for `w = 1, 2, 3`. -/
+  uniform : Bool := true
+  /-- `maxStates` for the uniform optimizer (other limits: W1 defaults). -/
+  uniMaxStates : Nat := ({} : Ix.Sharing.Exact.Limits).maxStates
 
 def parseArgs : List String → Opts → Except String Opts
   | [], o => if o.corpus.isEmpty then .error "missing corpus path" else .ok o
+  | "--no-uniform" :: rest, o => parseArgs rest { o with uniform := false }
+  | "--uni-max-states" :: n :: rest, o =>
+    parseArgs rest { o with uniMaxStates := n.toNat?.getD o.uniMaxStates }
   | "--md" :: p :: rest, o => parseArgs rest { o with md := some p }
   | "--csv" :: p :: rest, o => parseArgs rest { o with csv := some p }
   | "--limit" :: n :: rest, o => parseArgs rest { o with limit := n.toNat? }
@@ -1286,7 +1875,7 @@ def main (args : List String) : IO UInt32 := do
   let opts ← match parseArgs args {} with
     | .ok o => pure o
     | .error e =>
-      IO.eprintln s!"sharing-study: {e}\nusage: sharing-study <corpus.ixe> [--md p] [--csv p] [--limit n] [--validate-max bytes] [--occ-check-max bytes] [--progress n]"
+      IO.eprintln s!"sharing-study: {e}\nusage: sharing-study <corpus.ixe> [--md p] [--csv p] [--limit n] [--validate-max bytes] [--occ-check-max bytes] [--progress n] [--no-uniform] [--uni-max-states n]"
       return 2
   let ws := witnesses
   for w in ws do
@@ -1349,6 +1938,32 @@ def main (args : List String) : IO UInt32 := do
         IO.println s!"[sharing-study] MSS FAILURE {name} ({row.kind}): {e}"
       if row.ns > 2000000000 then
         IO.println s!"[sharing-study] slow: {name} ({row.kind}) {row.ns / 1000000} ms, N={row.n}"
+      -- W1 uniform-width optimizer, timed per call.
+      let mut row := row
+      if opts.uniform && row.roots > 0 then
+        let rootsE := (do
+          let tbl ← expandTable c.sharing
+          (Ix.CompileM.constantInfoRootExprs c.info).mapM (expandExpr tbl tbl.size))
+        let rootsE := match rootsE with | .ok r => r | .error _ => #[]
+        let limits : Ix.Sharing.Exact.Limits := { maxStates := opts.uniMaxStates }
+        let sharingIn := c.sharing
+        let rootsIn := Ix.Sharing.Exact.constantInfoRoots c.info
+        let mut uni : Array UniStats := #[]
+        for w in [1, 2, 3] do
+          let t0 ← IO.monoNanosNow
+          match Ix.Sharing.Exact.optimizeSharingUniformTable w sharingIn rootsIn limits with
+          | .error err =>
+            let t1 ← IO.monoNanosNow
+            uni := uni.push { err := toString err, ns := t1 - t0 }
+          | .ok u =>
+            let t1 ← IO.monoNanosNow
+            let st := uniStats c rootsE row.fixed u (t1 - t0)
+            if st.checkErr.isSome || !st.variableOk then
+              IO.println s!"[sharing-study] UNIFORM CHECK FAILURE {name} w={w}: {st.checkErr}, variableOk={st.variableOk}"
+            if t1 - t0 > 2000000000 then
+              IO.println s!"[sharing-study] slow uniform: {name} w={w} {(t1 - t0) / 1000000} ms, largest component {st.counts.comp}, states {st.states}"
+            uni := uni.push st
+        row := { row with uni }
       rows := rows.push row
     if opts.progress > 0 && i % opts.progress == 0 then
       let now ← IO.monoMsNow
@@ -1437,6 +2052,9 @@ def main (args : List String) : IO UInt32 := do
   md := md ++ "\n" ++ mssReport rows ws
   md := md ++ "\n" ++ uwReport rows
   md := md ++ "\n" ++ schemeReport rows
+  if opts.uniform then
+    md := md ++ "\n" ++ uniformReport rows opts.uniMaxStates
+  md := md ++ "\n" ++ tagNReport rows
   IO.println md
   if let some p := opts.md then
     IO.FS.writeFile p md
@@ -1456,7 +2074,9 @@ def main (args : List String) : IO UInt32 := do
     !rows.any (fun r => mssRefTotal r != r.mssDegSum) &&
     !rows.any (fun r => mssRefTotalE r != mssRefTotal r) &&
     !rows.any (fun r => bucketTotal r.mssRefsF != mssRefTotal r ||
-      bucketTotal r.mssRefsG != mssRefTotal r) then 0 else 1)
+      bucketTotal r.mssRefsG != mssRefTotal r) &&
+    !rows.any (fun r => r.lad.total != r.raw) &&
+    !rows.any (fun r => r.uni.any fun u => u.ok && (u.checkErr.isSome || !u.variableOk)) then 0 else 1)
 
 end Benchmarks.SharingStudy
 
