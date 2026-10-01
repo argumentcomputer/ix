@@ -1576,6 +1576,26 @@
   "Compilatrix.X86.Layout.Tunnel":
   {"path": "Compilatrix/X86/Layout/Tunnel.lean",
    "imports": ["Compilatrix.X86.Layout.Basic", "Compilatrix.X86.Eval"]},
+  "Compilatrix.X86.Layout.Proof.Tunnel":
+  {"path": "Compilatrix/X86/Layout/Proof/Tunnel.lean",
+   "imports":
+   ["Compilatrix.X86.Layout.Tunnel", "Compilatrix.X86.SafeStepsObject"]},
+  "Compilatrix.X86.Layout.Proof.Transport":
+  {"path": "Compilatrix/X86/Layout/Proof/Transport.lean",
+   "imports": ["Compilatrix.X86.Layout.Proof.Linearize"]},
+  "Compilatrix.X86.Layout.Proof.Rows":
+  {"path": "Compilatrix/X86/Layout/Proof/Rows.lean",
+   "imports": ["Compilatrix.X86.StreamEffects"]},
+  "Compilatrix.X86.Layout.Proof.Order":
+  {"path": "Compilatrix/X86/Layout/Proof/Order.lean",
+   "imports": ["Compilatrix.X86.Layout.Order"]},
+  "Compilatrix.X86.Layout.Proof.Linearize":
+  {"path": "Compilatrix/X86/Layout/Proof/Linearize.lean",
+   "imports":
+   ["Compilatrix.X86.Layout.Linearize",
+    "Compilatrix.X86.Layout.Proof.Order",
+    "Compilatrix.X86.Layout.Proof.Rows",
+    "Compilatrix.X86.Layout.Proof.Tunnel"]},
   "Compilatrix.X86.Layout.Order":
   {"path": "Compilatrix/X86/Layout/Order.lean",
    "imports": ["Compilatrix.X86.Layout.Basic"]},
@@ -3681,6 +3701,11 @@
     "Compilatrix.X86.Layout.Tunnel",
     "Compilatrix.X86.Layout.Order",
     "Compilatrix.X86.Layout.Linearize",
+    "Compilatrix.X86.Layout.Proof.Tunnel",
+    "Compilatrix.X86.Layout.Proof.Order",
+    "Compilatrix.X86.Layout.Proof.Rows",
+    "Compilatrix.X86.Layout.Proof.Linearize",
+    "Compilatrix.X86.Layout.Proof.Transport",
     "Compilatrix.Backend",
     "Compilatrix.Rt.Backend",
     "Compilatrix.Src.Table.Cert",

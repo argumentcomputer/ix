@@ -591,7 +591,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/p2-compose: Recheck.front_refines",
+ "baseline": "jcb/x86: merge layout proofs",
  "axiom_sha256":
  "546079253a941d11985ceaadb15807928778834dbff4a8a58169fbd056d90c46",
  "axiom_count": 2989}

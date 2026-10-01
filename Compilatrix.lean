@@ -384,6 +384,11 @@ import Compilatrix.X86.Layout.Basic
 import Compilatrix.X86.Layout.Tunnel
 import Compilatrix.X86.Layout.Order
 import Compilatrix.X86.Layout.Linearize
+import Compilatrix.X86.Layout.Proof.Tunnel
+import Compilatrix.X86.Layout.Proof.Order
+import Compilatrix.X86.Layout.Proof.Rows
+import Compilatrix.X86.Layout.Proof.Linearize
+import Compilatrix.X86.Layout.Proof.Transport
 import Compilatrix.Backend
 import Compilatrix.Rt.Backend
 import Compilatrix.Src.Table.Cert
