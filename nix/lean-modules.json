@@ -1479,6 +1479,9 @@
   "Compilatrix.Xv.Stacking.Proof.Cells":
   {"path": "Compilatrix/Xv/Stacking/Proof/Cells.lean",
    "imports": ["Compilatrix.Xv.Stacking.Proof.Match"]},
+  "Compilatrix.Xv.Stacking.Proof.CallFacts":
+  {"path": "Compilatrix/Xv/Stacking/Proof/CallFacts.lean",
+   "imports": ["Compilatrix.Xv.Stacking.Proof.Call"]},
   "Compilatrix.Xv.Stacking.Proof.Call":
   {"path": "Compilatrix/Xv/Stacking/Proof/Call.lean",
    "imports": ["Compilatrix.Xv.Stacking.Proof.StepTerm"]},
@@ -3938,6 +3941,7 @@
     "Compilatrix.Xv.Stacking.Proof.StepBody",
     "Compilatrix.Xv.Stacking.Proof.StepTerm",
     "Compilatrix.Xv.Stacking.Proof.Call",
+    "Compilatrix.Xv.Stacking.Proof.CallFacts",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",
