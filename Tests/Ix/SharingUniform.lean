@@ -230,7 +230,54 @@ def propertyTests (_ : Unit) : TestSeq :=
     test s!"{checked} constants: normalize is idempotent and independent of pointer layout" (err.isNone && checked == 200) ++
     (match err with | some m => test m false | none => .done)
 
+/-- The imperative tie order that `setPrec` replaced (kept as a reference). -/
+def setPrecLoop (a b : Array Nat) : Bool := Id.run do
+  let mut i := 0
+  let mut j := 0
+  for _ in [0:a.size + b.size + 1] do
+    match a[i]?, b[j]? with
+    | some x, some y =>
+      if x == y then
+        i := i + 1
+        j := j + 1
+      else return y < x
+    | some _, none => return false
+    | none, some _ => return true
+    | none, none => return false
+  return false
+
+/-- All arrays of length at most 3 over `0..3`, sorted or not. -/
+def smallArrays : List (Array Nat) :=
+  let step (acc : List (Array Nat)) : List (Array Nat) :=
+    acc.flatMap fun a => (List.range 4).map a.push
+  let l1 := step [#[]]
+  let l2 := step l1
+  [#[]] ++ l1 ++ l2 ++ step l2
+
+/-- All subsets of `0..4` as sorted arrays. -/
+def smallSets : List (Array Nat) :=
+  (List.range 32).map fun m => ((Array.range 5).filter fun i => (m >>> i) % 2 == 1)
+
+/-- Smallest element of the symmetric difference lies in `b`. -/
+def symmDiffMinIn (a b : Array Nat) : Bool :=
+  let d := (a.filter (!b.contains ·)) ++ (b.filter (!a.contains ·))
+  match d.toList.min? with
+  | some m => b.contains m
+  | none => false
+
+def tieOrderTests (_ : Unit) : TestSeq :=
+  group "uniform tie order" <|
+    test "setPrec agrees with the imperative loop on all arrays of length ≤ 3 over 0..3"
+      (smallArrays.all fun a => smallArrays.all fun b => setPrec a b == setPrecLoop a b) ++
+    test "on sets, setPrec a b iff the least element of the symmetric difference is in b"
+      (smallSets.all fun a => smallSets.all fun b => setPrec a b == symmDiffMinIn a b) ++
+    test "setPrec is a strict total order on the subsets of 0..4"
+      (smallSets.all fun a => !setPrec a a && smallSets.all fun b =>
+        (a == b || setPrec a b != setPrec b a) &&
+          smallSets.all fun c => !(setPrec a b && setPrec b c) || setPrec a c)
+
 public def suite : List TestSeq := [
+  deferred "uniform tie order" tieOrderTests,
   deferred "uniform witness" witnessTests,
   deferred "uniform vs reference" agreementTests,
   deferred "uniform T16" t16Tests,

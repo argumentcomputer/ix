@@ -349,22 +349,16 @@ structure CompCtx where
   /-- Keep subsets within this much of the best (table-count coupling). -/
   slack : Nat
 
+/-- Numeric order reversed: the element order under which `setPrec` is a
+lexicographic order. -/
+def compareDesc (x y : Nat) : Ordering := compare y x
+
 /-- Tie order on sorted sets: `a` precedes `b` when the smallest term of their
-symmetric difference is in `b` (so `a` leaves it out). -/
-def setPrec (a b : Array Nat) : Bool := Id.run do
-  let mut i := 0
-  let mut j := 0
-  for _ in [0:a.size + b.size + 1] do
-    match a[i]?, b[j]? with
-    | some x, some y =>
-      if x == y then
-        i := i + 1
-        j := j + 1
-      else return y < x
-    | some _, none => return false
-    | none, some _ => return true
-    | none, none => return false
-  return false
+symmetric difference is in `b` (so `a` leaves it out). On sorted arrays this
+is the lexicographic order under `compareDesc`, a proper prefix first: at the
+first position where they differ, the smaller term belongs to one set only. -/
+def setPrec (a b : Array Nat) : Bool :=
+  Array.compareLex compareDesc a b == .lt
 
 /-- Union of two sorted arrays (sorted). -/
 def mergeSorted (a b : Array Nat) : Array Nat :=

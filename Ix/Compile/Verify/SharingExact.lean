@@ -1138,6 +1138,8 @@ theorem build_correct (p : Prep) (ev : DictEval) (index width : Array (Option Na
             | cases h
         · -- telescope cut
           split at h
+          · cases h
+          split at h
           · split at h
             · rename_i i hi
               simp only [pure_bind] at h
@@ -1222,6 +1224,8 @@ theorem build_shares (p : Prep) (ev : DictEval) (index width : Array (Option Nat
             | (cases h; simp only [SharesIn, Node.toExpr, hh])
             | cases h
         · split at h
+          · cases h
+          split at h
           · split at h
             · rename_i i hi
               simp only [pure_bind] at h
