@@ -76,23 +76,23 @@ def formatTag : String := "conleche-read-cache-1"
 
 /-- The sources a reading or the plan's layout depends on. -/
 def sourceDigest : UInt64 := hash [
-  include_str "../../Ix/Kernel/ConLeche/Reader.lean",
-  include_str "../../Ix/Kernel/ConLeche/Prelude.lean",
-  include_str "../../Ix/Kernel/ConLeche/PinData.lean",
+  include_str "../../Ix/Kernel/Ixon/Reader.lean",
+  include_str "../../Ix/Kernel/Ixon/Prelude.lean",
+  include_str "../../Ix/Kernel/Ixon/PinData.lean",
   include_str "../../Ix/Kernel/Ref.lean",
-  include_str "../../ConLeche/Frontend/InModel.lean",
-  include_str "../../ConLeche/Frontend/InModel/Kit.lean",
-  include_str "../../ConLeche/Frontend/InModel/Mutual.lean",
-  include_str "../../ConLeche/Frontend/InModel/Nested.lean",
-  include_str "../../ConLeche/Frontend/ProjRec.lean",
-  include_str "../../ConLeche/Frontend/NatOpGround.lean",
-  include_str "../../ConLeche/Kernel/Expr.lean",
-  include_str "../../ConLeche/Kernel/ExprOps.lean",
-  include_str "../../ConLeche/Kernel/Level.lean",
-  include_str "../../ConLeche/Kernel/CoreDefs.lean",
-  include_str "../../ConLeche/Kernel/Name.lean",
-  include_str "../../ConLeche/Kernel/Env.lean",
-  include_str "../../ConLeche/Kernel/PropWhen.lean",
+  include_str "../../Ix/Kernel/Frontend/InModel.lean",
+  include_str "../../Ix/Kernel/Frontend/InModel/Kit.lean",
+  include_str "../../Ix/Kernel/Frontend/InModel/Mutual.lean",
+  include_str "../../Ix/Kernel/Frontend/InModel/Nested.lean",
+  include_str "../../Ix/Kernel/Frontend/ProjRec.lean",
+  include_str "../../Ix/Kernel/Frontend/NatOpGround.lean",
+  include_str "../../Ix/Kernel/Expr.lean",
+  include_str "../../Ix/Kernel/ExprOps.lean",
+  include_str "../../Ix/Kernel/Level.lean",
+  include_str "../../Ix/Kernel/CoreDefs.lean",
+  include_str "../../Ix/Kernel/Name.lean",
+  include_str "../../Ix/Kernel/Env.lean",
+  include_str "../../Ix/Kernel/PropWhen.lean",
   include_str "../../Ix/Ixon.lean",
   include_str "../../Ix/Ixon/Types.lean",
   include_str "ConLecheStep.lean",
@@ -143,7 +143,7 @@ def load (path : System.FilePath) (ixe : String) : IO (Option Plan) := do
 /-- The census loop over a plan: every view and reading is the plan's, and
 the reading state is not threaded (no record is read). `limit` bounds the
 records, as for a live run. -/
-def censusLoopPlan (plan : Plan) (pins : List ConLeche.NatOpPinSet) (limit : Option Nat)
+def censusLoopPlan (plan : Plan) (pins : List Ix.Kernel.NatOpPinSet) (limit : Option Nat)
     (skip : Std.HashSet String) (emit : Row → IO Unit)
     (before : Address → IO Unit := fun _ => pure ()) (after : IO Unit := pure ())
     (progress : Nat → Outcome → IO Unit := fun _ _ => pure ()) : IO Outcome := do

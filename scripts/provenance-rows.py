@@ -7,10 +7,12 @@ Input: a TSV with the columns
 
 one row per imported file. A header line whose first field is `source_path`
 and lines starting with `#` are skipped. `transformation` is `verbatim` for a
-byte-identical copy; any other text is the summary of an adapted file.
+byte-identical copy, `rewritten` for the output of `scripts/vendor-conleche.py`
+(the vendoring rewrite, `vendor-conleche.py rows` prints such rows); any
+other text is the summary of an adapted file.
 
 Output: `PortRow` literals (`⟨source, target, sourceSha, targetSha,
-.verbatim⟩` or `.adapted "…"`), sorted by destination, one per line. With
+.verbatim⟩`, `.rewritten` or `.adapted "…"`), sorted by destination, one per line. With
 `--splice MANIFEST` they replace the generated region of `conLecheRows`
 (between the `-- BEGIN con-leche rows` and `-- END con-leche rows` markers);
 otherwise they are printed.
@@ -21,7 +23,8 @@ Checks, before writing anything:
 - a verbatim row has equal source and destination hashes;
 - `--check-dest ROOT` recomputes each destination hash from the tree at ROOT;
 - `--check-source CHECKOUT --rev REV` recomputes each source hash with
-  `git -C CHECKOUT show REV:PATH`.
+  `git -C CHECKOUT show REV:PATH`, and each rewritten row's destination hash
+  by `scripts/vendor-conleche.py` from that source.
 
 Stdlib only; run from the repository root. `kernel-provenance` remains the
 gate, and this tool only writes its input.
@@ -97,7 +100,7 @@ def check_dest(rows, root: Path) -> None:
 
 
 def check_source(rows, checkout: Path, rev: str) -> None:
-    for source, source_sha, _, _, _ in rows:
+    for source, source_sha, dest, dest_sha, transformation in rows:
         shown = subprocess.run(["git", "-C", str(checkout), "show", f"{rev}:{source}"],
                                capture_output=True, check=False)
         if shown.returncode != 0:
@@ -105,12 +108,20 @@ def check_source(rows, checkout: Path, rev: str) -> None:
         actual = hashlib.sha256(shown.stdout).hexdigest()
         if actual != source_sha:
             raise SystemExit(f"source hash mismatch: {source}: recorded {source_sha}, {rev} {actual}")
+        if transformation == "rewritten":
+            hashed = subprocess.run(["python3", "scripts/vendor-conleche.py", "hash", str(checkout),
+                                     f"{rev}:{source}"], capture_output=True, text=True, check=True)
+            _, rewritten, mapped, _ = hashed.stdout.split()
+            if (rewritten, mapped) != (dest_sha, dest):
+                raise SystemExit(f"rewrite mismatch: {source}: the script gives {mapped} {rewritten}, "
+                                 f"recorded {dest} {dest_sha}")
 
 
 def render(rows) -> list[str]:
     lines = []
     for index, (source, source_sha, dest, dest_sha, transformation) in enumerate(rows):
-        kind = ".verbatim" if transformation == "verbatim" else f".adapted {lean_string(transformation)}"
+        kind = (".verbatim" if transformation == "verbatim" else ".rewritten"
+                if transformation == "rewritten" else f".adapted {lean_string(transformation)}")
         comma = "," if index + 1 < len(rows) else ""
         lines.append(f"  ⟨{lean_string(source)}, {lean_string(dest)}, {lean_string(source_sha)}, "
                      f"{lean_string(dest_sha)}, {kind}⟩{comma}")

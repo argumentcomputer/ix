@@ -9,7 +9,7 @@ import Ix.Ixon.ConLecheAdmission
 /-! # The batch fold over a census's accepted records (untrusted harness)
 
 `kernel-census --fold <input.ixe> <output.jsonl>` measures con-leche's
-declaration fold `ConLeche.Cached.checkDecls` run ONCE over every record the
+declaration fold `Ix.Kernel.Cached.checkDecls` run ONCE over every record the
 per-record census would accept, as con-leche's own driver (`Main.lean`,
 `checkDeclsIO`) runs it over a lean4export stream: phase A
 (`annotDeclStep` over all declarations), then phase B (`checkPending` of
@@ -82,7 +82,7 @@ def acceptedRecords (s : Setup) : Array (Address × Ixon.Constant) × Nat := Id.
   projs := projs.qsort (fun x y => x.1.cmpBytes y.1 == .lt)
   return (out ++ projs, dropped)
 
-def kindWord : ConLeche.Cached.PendingCheck → String
+def kindWord : Ix.Kernel.Cached.PendingCheck → String
   | pc => pc.vg.kind.word
 
 def percentile (xs : Array Nat) (p : Nat) : Nat :=
@@ -92,12 +92,12 @@ def percentile (xs : Array Nat) (p : Nat) : Nat :=
 
 /-- Phase B over `pend`, one record at a time, each timed with the release
 of its memo state. -/
-def phaseB (fe : ConLeche.FEnv) (pend : Array ConLeche.Cached.PendingCheck) :
-    IO (Array Nat × Option (ConLeche.CheckError × Nat)) := do
+def phaseB (fe : Ix.Kernel.FEnv) (pend : Array Ix.Kernel.Cached.PendingCheck) :
+    IO (Array Nat × Option (Ix.Kernel.CheckError × Nat)) := do
   let mut times : Array Nat := Array.mkEmpty pend.size
   for pc in pend do
     let t0 ← IO.monoNanosNow
-    let r ← IO.lazyPure fun _ => match ConLeche.Cached.checkPending .verified fe pc {} with
+    let r ← IO.lazyPure fun _ => match Ix.Kernel.Cached.checkPending .verified fe pc {} with
       | .ok _ => none
       | .error e => some e
     let t1 ← IO.monoNanosNow
@@ -189,7 +189,7 @@ def run (args : List String) : IO UInt32 := do
   let decls ← match decls with
     | .ok ds => pure ds
     | .error e => IO.eprintln s!"fold: read failed: {e}"; return 1
-  let prepared ← IO.lazyPure fun _ => ConLeche.Frontend.preparePrelude pre.ix decls
+  let prepared ← IO.lazyPure fun _ => Ix.Kernel.Frontend.preparePrelude pre.ix decls
   let r1 ← IO.monoNanosNow
   IO.eprintln s!"fold: read {decls.size} declarations ({prepared.size} prepared) in {(r1 - r0) / 1000000} ms"
   let prepared ← if (← IO.getEnv "FOLD_SHARE") == some "1" then do
@@ -200,8 +200,8 @@ def run (args : List String) : IO UInt32 := do
     else pure prepared
   let a0 ← IO.monoNanosNow
   let phaseA ← IO.lazyPure fun _ =>
-    (prepared.foldlM (ConLeche.Cached.annotDeclStep .verified natPins)
-      (0, ConLeche.mkFEnv ConLeche.Env.empty, #[])) {}
+    (prepared.foldlM (Ix.Kernel.Cached.annotDeclStep .verified natPins)
+      (0, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty, #[])) {}
   let a1 ← IO.monoNanosNow
   let ((_, fe, pend), _) ← match phaseA with
     | .ok r => pure r

@@ -3,6 +3,39 @@ Ix.Kernel notices
 
 Copyright (c) 2026 Argument Computer Corporation
 
+Vendored con-leche
+------------------
+
+Most of Ix/Kernel is a modified copy of con-leche, the verified Lean kernel
+checker at https://github.com/leanprover/con-leche, vendored in place:
+
+  * the files of con-leche's ConLeche/ tree that the certified checker uses,
+    at revision ae0c0c4e4ce6a0081648aff03fe9c39d002c4526, and seven of them
+    at revision 3ca9e2fe749a51cba4c6e3527aeecba074c29316 (upstream task
+    #323), received under the Apache License, Version 2.0; con-leche's
+    licence is LICENSE-CON-LECHE in this directory;
+  * every such file was changed: scripts/vendor-conleche.py moves it from
+    ConLeche/Kernel/X or ConLeche/X to Ix/Kernel/X, renames the namespace
+    and module prefix ConLeche to Ix.Kernel, and adds a first line naming
+    its source file and this notice. A file with that line has no other
+    change;
+  * seven files carry further changes, each listed in its own header
+    ("Ported from con-leche at ..."): CheckerBase.lean, Level.lean,
+    MainTheorem.lean, Frontend/InModel/Nested.lean, Verify/Level.lean and
+    Verify/Cached/{AgreeFloor,PushChain}.lean;
+  * LevelGeran.lean and Verify/LevelGeran.lean, inside the vendored tree,
+    and Ref.lean, Search.lean and the Audit, Ingress, Egress and Ixon
+    directories, beside it, are this repository's (Ref.lean as below).
+
+Each file's source path, revision and SHA-256, and its own SHA-256, are
+recorded in Tests/Ix/Kernel/ImportManifest.lean; lake exe kernel-provenance
+checks them, and with --source-git re-derives every rewritten file from
+upstream. Upstream holds the copyright of the con-leche files; the changes
+are Argument Computer Corporation's, under the same licence.
+
+The old Ix branch
+-----------------
+
 Ix/Kernel/Ref.lean was ported from the jcb/ix-kernel-consistency branch of
 the Ix repository (revision ad60e5f6dd23655da79cf9898d2b6b3fefbe8658,
 directory Ix/Theory). There it was authored in the Lean4Ix working tree,
@@ -24,8 +57,7 @@ foundation received under the Apache License, Version 2.0, from
 https://github.com/leanprover/con-leche at revision
 86cd20a65660d757cedc81561a44579099b565d0. The repository history retains
 those files and their notices. The certified checker now uses con-leche's
-own set theory under ConLeche/, which carries con-leche's licence
-(ConLeche/LICENSE).
+own set theory, vendored as above (Ix/Kernel/SetTheory, Ix/Kernel/SetModel).
 
 In the Lean4Ix tree, certain files also identify more specific Apache-2.0
 sources in their headers; none of these files is part of this repository:
@@ -57,4 +89,5 @@ marked as such, and the paragraph on Lean4Ix's lake-manifest.json and
 lean-toolchain files, which this directory does not contain, was removed.
 On 2026-10-01 (L6) the paragraphs on the model and on the con-leche set
 theory were rewritten to record their retirement, since only Ref.lean
-remains from the port.
+remains from the port, and the section on the vendored con-leche tree was
+added when that tree moved under Ix/Kernel.

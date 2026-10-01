@@ -5,31 +5,31 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Ixon.ConLecheAdmission
 import Ix.Ixon.Verify.Admission
-import Ix.Kernel.ConLeche.ReaderSpec
-import Ix.Kernel.ConLeche.Installed
-import Ix.Kernel.ConLeche.Values
-import ConLeche.Verify.Cached.StreamThm
-import ConLeche.Verify.Frontend.Prepare
+import Ix.Kernel.Ixon.ReaderSpec
+import Ix.Kernel.Ixon.Installed
+import Ix.Kernel.Ixon.Values
+import Ix.Kernel.Verify.Cached.StreamThm
+import Ix.Kernel.Verify.Frontend.Prepare
 
 /-! # The public theorems of the con-leche entry (plan v4, L5)
 
 The certified contract of Ix's Ixon checker from L5 on (roadmap section 2,
 decisions D2 (iii) and D3): con-leche's verified fold
-(`ConLeche.Cached.checkDecls .verified`) behind the Ixon reader, stated for
+(`Ix.Kernel.Cached.checkDecls .verified`) behind the Ixon reader, stated for
 the executed functions.
 
 * **Model existence** (`checkConstantsWith_has_model`,
   `checkBytesWith_has_model`, `checkBytes_has_model`): every accepted input
-  has a model in con-leche's sense (`ConLeche.Model`, which states types)
-  in every set theory. This is `ConLeche.model_exists` at the prepared
+  has a model in con-leche's sense (`Ix.Kernel.Model`, which states types)
+  in every set theory. This is `Ix.Kernel.model_exists` at the prepared
   declarations; the reader owes nothing.
 * **No proof of `False`, in con-leche's pinned form** (D3).
   `checkBytesWith_no_proof_of_False`: no constant of an accepted environment
-  has the pinned `False` (`ConLeche.falseName`) as its type.
+  has the pinned `False` (`Ix.Kernel.falseName`) as its type.
   `checkBytesWith_no_False_theorem`: no theorem record of an accepted input
   has a type that reads as the pinned `False`; this is
-  `ConLeche.no_False_theorem_accepted`
-  (`ConLeche/Verify/Cached/StreamThm.lean`) at the reader's reading of the
+  `Ix.Kernel.no_False_theorem_accepted`
+  (`Ix/Kernel/Verify/Cached/StreamThm.lean`) at the reader's reading of the
   record. `checkBytesWith_no_False_reference` is the syntactic case: the
   record's type is a bare reference to the constant the reader names
   `False`.
@@ -73,9 +73,9 @@ the entry (`Ix.Ixon.ConLecheAdmission`). -/
 
 /-- The bytes entry is byte admission (`preflight`, `uniqueKeys`,
 `decodeRecords`) followed by the check of the decoded records. -/
-theorem checkBytesWith_eq (pins : Pins) (pre : Prelude) (natPins : List ConLeche.NatOpPinSet)
+theorem checkBytesWith_eq (pins : Pins) (pre : Prelude) (natPins : List Ix.Kernel.NatOpPinSet)
     (limits : Limits) (records : Records) (blobs : List (Address × ByteArray))
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
     checkBytesWith pins pre natPins limits records blobs hint = (do
       (preflight limits records blobs).mapError Error.ofAdmission
       (uniqueKeys records blobs).mapError Error.ofAdmission
@@ -98,7 +98,7 @@ theorem checkBytesWith_eq (pins : Pins) (pre : Prelude) (natPins : List ConLeche
 /-- The committed tables load, and the bytes entry is `checkBytesWith` at
 them. -/
 theorem checkBytes_with {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
     ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
       builtinNatOpPins = .ok natPins ∧
@@ -119,7 +119,7 @@ theorem checkBytes_with {limits : Limits} {records : Records} {blobs : List (Add
 /-- `checkConstants` is `checkConstantsWith` at the committed tables. -/
 theorem checkConstants_with {constants : List (Address × Ixon.Constant)}
     {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkConstants constants blobs hint = .ok env) :
     ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
       builtinNatOpPins = .ok natPins ∧
@@ -141,7 +141,7 @@ theorem checkConstants_with {constants : List (Address × Ixon.Constant)}
 from the prelude's state. -/
 theorem readStream_spec {pins : Pins} {pre : Prelude} {constants : List (Address × Ixon.Constant)}
     {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {decls : Array ConLeche.Declaration}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {decls : Array Ix.Kernel.Declaration}
     (h : readStream pins pre constants blobs hint = .ok decls) :
     ∃ st', StreamRead (streamContext pins pre constants blobs hint) pre.state constants st' decls := by
   unfold readStream at h
@@ -159,7 +159,7 @@ theorem readStream_spec {pins : Pins} {pre : Prelude} {constants : List (Address
 address (the reader's own check, `readRecords_nodup`). -/
 theorem readStream_nodup {pins : Pins} {pre : Prelude} {constants : List (Address × Ixon.Constant)}
     {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {decls : Array ConLeche.Declaration}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {decls : Array Ix.Kernel.Declaration}
     (h : readStream pins pre constants blobs hint = .ok decls) :
     (constants.map Prod.fst).Nodup := by
   unfold readStream at h
@@ -180,24 +180,24 @@ prelude's records and moves the stream's own copies of them to the front).
 No two of the records share an address (`keys`, the reader's check).
 `Installed.skels`: the environment has exactly the install skeletons of
 that array. -/
-structure Installed (pins : Pins) (pre : Prelude) (natPins : List ConLeche.NatOpPinSet)
+structure Installed (pins : Pins) (pre : Prelude) (natPins : List Ix.Kernel.NatOpPinSet)
     (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray))
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env) : Prop where
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) : Prop where
   reading : ∃ decls st', StreamRead (streamContext pins pre constants blobs hint) pre.state constants st' decls ∧
-    ConLeche.Cached.checkDecls .verified natPins (ConLeche.Frontend.preparePrelude pre.ix decls) = .ok env
+    Ix.Kernel.Cached.checkDecls .verified natPins (Ix.Kernel.Frontend.preparePrelude pre.ix decls) = .ok env
   keys : (constants.map Prod.fst).Nodup
 
 theorem checkConstantsWith_installed {pins : Pins} {pre : Prelude}
-    {natPins : List ConLeche.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : checkConstantsWith pins pre natPins constants blobs hint = .ok env) :
+    {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
+    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : checkConstantsWith pins pre natPins constants blobs hint = .ok env) :
     Installed pins pre natPins constants blobs hint env := by
   unfold checkConstantsWith at h
   cases hr : readStream pins pre constants blobs hint with
   | error e => simp [hr, bind, Except.bind] at h
   | ok decls =>
     simp only [hr, bind, Except.bind] at h
-    cases hc : ConLeche.Cached.checkDecls .verified natPins (ConLeche.Frontend.preparePrelude pre.ix decls) with
+    cases hc : Ix.Kernel.Cached.checkDecls .verified natPins (Ix.Kernel.Frontend.preparePrelude pre.ix decls) with
     | error e => simp [hc, Except.mapError] at h
     | ok env' =>
       simp only [hc, Except.mapError, Except.ok.injEq] at h
@@ -206,18 +206,18 @@ theorem checkConstantsWith_installed {pins : Pins} {pre : Prelude}
       exact ⟨⟨decls, st', hs, hc⟩, readStream_nodup hr⟩
 
 /-- The installed environment has exactly the install skeletons of the
-accepted array (`ConLeche.Cached.checkDecls_skels`): the same constants,
+accepted array (`Ix.Kernel.Cached.checkDecls_skels`): the same constants,
 in the same order, with the same names, kinds, constructor arities and
 recursor rule constructors. -/
-theorem Installed.skels {pins : Pins} {pre : Prelude} {natPins : List ConLeche.NatOpPinSet}
+theorem Installed.skels {pins : Pins} {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet}
     {constants : List (Address × Ixon.Constant)} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : Installed pins pre natPins constants blobs hint env) :
     ∃ decls st', StreamRead (streamContext pins pre constants blobs hint) pre.state constants st' decls ∧
-      ConLeche.Cached.envSkels env =
-        ConLeche.Cached.streamSkels (ConLeche.Frontend.preparePrelude pre.ix decls).toList := by
+      Ix.Kernel.Cached.envSkels env =
+        Ix.Kernel.Cached.streamSkels (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList := by
   obtain ⟨decls, st', hs, hc⟩ := h.reading
-  exact ⟨decls, st', hs, ConLeche.Cached.checkDecls_skels hc⟩
+  exact ⟨decls, st', hs, Ix.Kernel.Cached.checkDecls_skels hc⟩
 
 /-- **Per-record fidelity.** Every definition, theorem, opaque, axiom or
 quotient record of an accepted input is read (`SingletonRead`: the record's
@@ -226,62 +226,62 @@ reading or projection rewrite), its declaration is in the array the fold
 accepted, and the declaration is installed under its name with its kind
 (for every declaration but a quotient record's, `sorryAx` and
 `Quot.sound`, whose skeletons are the pinned blocks'; `declSkel`). -/
-theorem Installed.singleton {pins : Pins} {pre : Prelude} {natPins : List ConLeche.NatOpPinSet}
+theorem Installed.singleton {pins : Pins} {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet}
     {constants : List (Address × Ixon.Constant)} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : Installed pins pre natPins constants blobs hint env) {owner : Address} {c : Ixon.Constant}
     (hmem : (owner, c) ∈ constants) (hs : isSingleton c.info = true) :
     ∃ st decl ds, SingletonRead (streamContext pins pre constants blobs hint) st owner c decl ∧
-      decl ∈ ds ∧ ConLeche.Cached.checkDecls .verified natPins ds = .ok env ∧
-      ∀ s, declSkel decl = some s → ∃ ci ∈ env.consts, ConLeche.Cached.ciSkel ci = s := by
+      decl ∈ ds ∧ Ix.Kernel.Cached.checkDecls .verified natPins ds = .ok env ∧
+      ∀ s, declSkel decl = some s → ∃ ci ∈ env.consts, Ix.Kernel.Cached.ciSkel ci = s := by
   obtain ⟨decls, st', hstream, hc⟩ := h.reading
   obtain ⟨st, decl, hread, hd⟩ := hstream.singleton hmem hs
-  have hd' := ConLeche.Frontend.mem_preparePrelude (pre := pre.ix) hd
+  have hd' := Ix.Kernel.Frontend.mem_preparePrelude (pre := pre.ix) hd
   exact ⟨st, decl, _, hread, hd', hc, fun s hsk => checkDecls_installs hc hd' hsk⟩
 
 /-! ## Model existence and no proof of `False` -/
 
-theorem Installed.has_model (V : Type u) [ConLeche.SetTheory V] {pins : Pins} {pre : Prelude}
-    {natPins : List ConLeche.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : Installed pins pre natPins constants blobs hint env) :
-    Nonempty (ConLeche.Model V env) := by
+theorem Installed.has_model (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins} {pre : Prelude}
+    {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
+    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : Installed pins pre natPins constants blobs hint env) :
+    Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨decls, _, _, hc⟩ := h.reading
-  exact ConLeche.model_exists V natPins _ env hc
+  exact Ix.Kernel.model_exists V natPins _ env hc
 
 /-- The model can be chosen so that every stored definition's value denotes
 the constant (the counterpart of Ix's `Realizes.bodyValue` for
 definitions). -/
-theorem Installed.has_model_values (V : Type u) [ConLeche.SetTheory V] {pins : Pins} {pre : Prelude}
-    {natPins : List ConLeche.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : Installed pins pre natPins constants blobs hint env) :
-    ∃ M : ConLeche.Model V env, ∀ cv value hint', ConLeche.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
-      ∀ φ ρ, ConLeche.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
+theorem Installed.has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins} {pre : Prelude}
+    {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
+    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : Installed pins pre natPins constants blobs hint env) :
+    ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
+      ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
   obtain ⟨decls, _, _, hc⟩ := h.reading
   exact Ix.Kernel.ConLecheFold.checkDecls_model_defn_values V natPins _ env hc
 
 /-- No constant of an accepted environment has the pinned `False` as its
 type (con-leche's `no_proof_of_False_cached`). -/
-theorem Installed.no_proof_of_False (V : Type u) [ConLeche.SetTheory V] {pins : Pins} {pre : Prelude}
-    {natPins : List ConLeche.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : Installed pins pre natPins constants blobs hint env) :
-    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const ConLeche.falseName [] → False := by
+theorem Installed.no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins} {pre : Prelude}
+    {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
+    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : Installed pins pre natPins constants blobs hint env) :
+    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False := by
   obtain ⟨decls, _, _, hc⟩ := h.reading
-  exact ConLeche.Cached.no_proof_of_False_cached V rfl hc
+  exact Ix.Kernel.Cached.no_proof_of_False_cached V rfl hc
 
 /-- No theorem record of an accepted input has a type that reads as the
 pinned `False`: con-leche's `no_False_theorem_accepted` at the record's
 reading. -/
-theorem Installed.no_False_theorem (V : Type u) [ConLeche.SetTheory V] {pins : Pins} {pre : Prelude}
-    {natPins : List ConLeche.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : Installed pins pre natPins constants blobs hint env)
+theorem Installed.no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins} {pre : Prelude}
+    {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
+    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : Installed pins pre natPins constants blobs hint env)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
     (hmem : (owner, c) ∈ constants) (hc : c.info = .defn d) (hk : d.kind = .thm)
     (hty : (definitionReader (streamContext pins pre constants blobs hint) owner c d).read d.typ =
-      .ok (.const ConLeche.falseName [])) : False := by
+      .ok (.const Ix.Kernel.falseName [])) : False := by
   obtain ⟨decls, st', hstream, hcheck⟩ := h.reading
   obtain ⟨st, decl, hread, hd⟩ := hstream.singleton hmem (by simp [isSingleton, hc])
   cases hread with
@@ -292,7 +292,7 @@ theorem Installed.no_False_theorem (V : Type u) [ConLeche.SetTheory V] {pins : P
     cases type
     rw [hk] at kind
     cases kind
-    exact ConLeche.no_False_theorem_accepted V _ _ _ (ConLeche.Frontend.mem_preparePrelude hd) rfl
+    exact Ix.Kernel.no_False_theorem_accepted V _ _ _ (Ix.Kernel.Frontend.mem_preparePrelude hd) rfl
       env hcheck
   | axio info => rw [hc] at info; cases info
   | quot info => rw [hc] at info; cases info
@@ -304,9 +304,9 @@ with no two records and no two blobs under one address (`UniqueKeys`), the
 records read exactly and canonically as `constants` (`RecordsRead`, unique
 by `RecordsRead.deterministic`), and the check of those records installed
 what they describe (`Installed`). -/
-theorem checkBytesWith_reading {pins : Pins} {pre : Prelude} {natPins : List ConLeche.NatOpPinSet}
+theorem checkBytesWith_reading {pins : Pins} {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet}
     {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
     WithinBatch limits records blobs ∧ UniqueKeys records blobs ∧
       ∃ constants, RecordsRead limits records constants ∧
@@ -328,9 +328,9 @@ theorem checkBytesWith_reading {pins : Pins} {pre : Prelude} {natPins : List Con
 
 /-- The byte limits bound the whole decoded representation, including
 expanded universes, while retaining the exact reading and installation. -/
-theorem checkBytesWith_resources {pins : Pins} {pre : Prelude} {natPins : List ConLeche.NatOpPinSet}
+theorem checkBytesWith_resources {pins : Pins} {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet}
     {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
     ∃ constants, RecordsRead limits records constants ∧
       Installed pins pre natPins constants blobs hint env ∧
@@ -341,35 +341,35 @@ theorem checkBytesWith_resources {pins : Pins} {pre : Prelude} {natPins : List C
   have countProduct := Nat.mul_le_mul_right limits.maxRecordUnivNodes recordCount
   exact ⟨constants, reading, installed, by omega⟩
 
-theorem checkBytesWith_has_model_values (V : Type u) [ConLeche.SetTheory V] {pins : Pins}
-    {pre : Prelude} {natPins : List ConLeche.NatOpPinSet} {limits : Limits} {records : Records}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
-    ∃ M : ConLeche.Model V env, ∀ cv value hint', ConLeche.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
-      ∀ φ ρ, ConLeche.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
+theorem checkBytesWith_has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
+    {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {limits : Limits} {records : Records}
+    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
+    ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
+      ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
   obtain ⟨_, _, _, _, installed⟩ := checkBytesWith_reading h
   exact installed.has_model_values V
 
-theorem checkBytesWith_no_proof_of_False (V : Type u) [ConLeche.SetTheory V] {pins : Pins}
-    {pre : Prelude} {natPins : List ConLeche.NatOpPinSet} {limits : Limits} {records : Records}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
-    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const ConLeche.falseName [] → False := by
+theorem checkBytesWith_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
+    {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {limits : Limits} {records : Records}
+    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
+    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False := by
   obtain ⟨_, _, _, _, installed⟩ := checkBytesWith_reading h
   exact installed.no_proof_of_False V
 
 /-- **No accepted theorem of `False`, at the records** (D3, con-leche's
 pinned form): no theorem record of accepted bytes has a type that reads as
 the pinned `False`. -/
-theorem checkBytesWith_no_False_theorem (V : Type u) [ConLeche.SetTheory V] {pins : Pins}
-    {pre : Prelude} {natPins : List ConLeche.NatOpPinSet} {limits : Limits} {records : Records}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env)
+theorem checkBytesWith_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
+    {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {limits : Limits} {records : Records}
+    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env)
     {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
     (hmem : (owner, c) ∈ constants) (hc : c.info = .defn d) (hk : d.kind = .thm)
     (hty : (definitionReader (streamContext pins pre constants blobs hint) owner c d).read d.typ =
-      .ok (.const ConLeche.falseName [])) : False := by
+      .ok (.const Ix.Kernel.falseName [])) : False := by
   obtain ⟨_, _, constants', reading', installed⟩ := checkBytesWith_reading h
   obtain rfl := reading.deterministic reading'
   exact installed.no_False_theorem V hmem hc hk hty
@@ -378,17 +378,17 @@ theorem checkBytesWith_no_False_theorem (V : Type u) [ConLeche.SetTheory V] {pin
 (no universe arguments) to the constant the reader names `False` is never
 accepted. Under the committed pin table that is Init's `False` block
 (`Ctx.nameOf_of_pin`). -/
-theorem checkBytesWith_no_False_reference (V : Type u) [ConLeche.SetTheory V] {pins : Pins}
-    {pre : Prelude} {natPins : List ConLeche.NatOpPinSet} {limits : Limits} {records : Records}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env)
+theorem checkBytesWith_no_False_reference (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
+    {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {limits : Limits} {records : Records}
+    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env)
     {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
     (hmem : (owner, c) ∈ constants) (hc : c.info = .defn d) (hk : d.kind = .thm)
     {i : UInt64} {a : Address} {r : ConstRef Address}
     (hty : d.typ = .ref i #[]) (href : c.refs[i.toNat]? = some a)
     (hres : resolve (streamContext pins pre constants blobs hint).store a = some r)
-    (hfalse : (streamContext pins pre constants blobs hint).nameOf r = ConLeche.falseName) : False := by
+    (hfalse : (streamContext pins pre constants blobs hint).nameOf r = Ix.Kernel.falseName) : False := by
   refine checkBytesWith_no_False_theorem V h reading hmem hc hk ?_
   rw [hty, ← hfalse]
   exact MemberReader.read_ref (by simpa [definitionReader] using href)
@@ -398,7 +398,7 @@ theorem checkBytesWith_no_False_reference (V : Type u) [ConLeche.SetTheory V] {p
 
 /-- The reading of bytes accepted under the committed tables. -/
 theorem checkBytes_reading {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
     ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
       builtinNatOpPins = .ok natPins ∧
@@ -409,7 +409,7 @@ theorem checkBytes_reading {limits : Limits} {records : Records} {blobs : List (
   exact ⟨pins, pre, natPins, hp, hq, hn, checkBytesWith_reading hw⟩
 
 theorem checkBytes_resources {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
     ∃ constants, RecordsRead limits records constants ∧
       resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes := by
@@ -417,33 +417,33 @@ theorem checkBytes_resources {limits : Limits} {records : Records} {blobs : List
   obtain ⟨constants, reading, _, bound⟩ := checkBytesWith_resources hw
   exact ⟨constants, reading, bound⟩
 
-theorem checkBytes_has_model_values (V : Type u) [ConLeche.SetTheory V] {limits : Limits}
+theorem checkBytes_has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {limits : Limits}
     {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
-    ∃ M : ConLeche.Model V env, ∀ cv value hint', ConLeche.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
-      ∀ φ ρ, ConLeche.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
+    ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
+      ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
   obtain ⟨_, _, _, _, _, _, hw⟩ := checkBytes_with h
   exact checkBytesWith_has_model_values V hw
 
-theorem checkBytes_no_proof_of_False (V : Type u) [ConLeche.SetTheory V] {limits : Limits}
+theorem checkBytes_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {limits : Limits}
     {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
-    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const ConLeche.falseName [] → False := by
+    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False := by
   obtain ⟨_, _, _, _, _, _, hw⟩ := checkBytes_with h
   exact checkBytesWith_no_proof_of_False V hw
 
-theorem checkBytes_no_False_theorem (V : Type u) [ConLeche.SetTheory V] {limits : Limits}
+theorem checkBytes_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {limits : Limits}
     {records : Records} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) {pins : Pins} {pre : Prelude}
     (hpins : defaultPins = .ok pins) (hpre : builtinPrelude = .ok pre)
     {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
     (hmem : (owner, c) ∈ constants) (hc : c.info = .defn d) (hk : d.kind = .thm)
     (hty : (definitionReader (streamContext pins pre constants blobs hint) owner c d).read d.typ =
-      .ok (.const ConLeche.falseName [])) : False := by
+      .ok (.const Ix.Kernel.falseName [])) : False := by
   obtain ⟨pins', pre', _, hp, hq, _, hw⟩ := checkBytes_with h
   rw [hpins] at hp; cases hp
   rw [hpre] at hq; cases hq
@@ -451,17 +451,17 @@ theorem checkBytes_no_False_theorem (V : Type u) [ConLeche.SetTheory V] {limits 
 
 /-! ## Decoded records -/
 
-theorem checkConstantsWith_has_model (V : Type u) [ConLeche.SetTheory V] {pins : Pins}
-    {pre : Prelude} {natPins : List ConLeche.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : checkConstantsWith pins pre natPins constants blobs hint = .ok env) :
-    Nonempty (ConLeche.Model V env) :=
+theorem checkConstantsWith_has_model (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
+    {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
+    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : checkConstantsWith pins pre natPins constants blobs hint = .ok env) :
+    Nonempty (Ix.Kernel.Model V env) :=
   (checkConstantsWith_installed h).has_model V
 
-theorem checkConstants_has_model (V : Type u) [ConLeche.SetTheory V]
+theorem checkConstants_has_model (V : Type u) [Ix.Kernel.SetTheory V]
     {constants : List (Address × Ixon.Constant)} {blobs : List (Address × ByteArray)}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
-    (h : checkConstants constants blobs hint = .ok env) : Nonempty (ConLeche.Model V env) := by
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    (h : checkConstants constants blobs hint = .ok env) : Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, _, _, _, _, hw⟩ := checkConstants_with h
   exact checkConstantsWith_has_model V hw
 

@@ -9,13 +9,13 @@ Changes: namespaces and imports adapted to Ix; documentation updated.
 import Mathlib.SetTheory.Cardinal.Regular
 import Mathlib.SetTheory.ZFC.VonNeumann
 import Mathlib.SetTheory.ZFC.Cardinal
-import ConLeche.SetTheory.Core
+import Ix.Kernel.SetTheory.Core
 
 /-!
 # A concrete model of the set-theory interface
 
 A strictly increasing countable sequence of inaccessible cardinals gives
-`ConLeche.SetTheory ZFSet.{u}`, the interface of the certified checker's
+`Ix.Kernel.SetTheory ZFSet.{u}`, the interface of the certified checker's
 theorems from port step L5 (plan v4), with `univChain n := V_ (κ n).ord`.
 Until L6 the same construction also served Ix's own copy of the class
 (`Ix.Kernel.Model.SetTheory`, textually identical up to namespace), the
@@ -100,7 +100,7 @@ theorem card_eq_of_not_rank_lt (hκ : κ.IsInaccessible) {y : ZFSet.{u}}
 /-- Equal cardinality gives the interface's meta-level equinumerosity: a
 global function `ZFSet → ZFSet` that restricts to a bijection. -/
 theorem equinumerous_of_card_eq {y s : ZFSet.{u}} (h : card y = card s) :
-    ConLeche.Equinumerous (· ∈ ·) y s := by
+    Ix.Kernel.Equinumerous (· ∈ ·) y s := by
   obtain ⟨e'⟩ := Cardinal.eq.mp h
   let e : y ≃ s := (equivShrink _).trans (e'.trans (equivShrink _).symm)
   classical
@@ -117,9 +117,9 @@ theorem equinumerous_of_card_eq {y s : ZFSet.{u}} (h : card y = card s) :
     simp only [(e.symm ⟨w, hw⟩).2, ↓reduceDIte, Subtype.coe_eta, Equiv.apply_symm_apply]
 
 /-- **`V_ κ` is a Grothendieck universe in Tarski's form**
-(`ConLeche.IsTGUniverse`) for every inaccessible `κ`. -/
+(`Ix.Kernel.IsTGUniverse`) for every inaccessible `κ`. -/
 theorem isTGUniverse_vonNeumann (hκ : κ.IsInaccessible) :
-    ConLeche.IsTGUniverse (· ∈ ·) (V_ κ.ord) := by
+    Ix.Kernel.IsTGUniverse (· ∈ ·) (V_ κ.ord) := by
   have hlim : IsSuccLimit κ.ord := isSuccLimit_ord hκ.aleph0_lt.le
   refine ⟨?_, ?_, ?_, ?_⟩
   · -- transitivity
@@ -141,11 +141,11 @@ theorem isTGUniverse_vonNeumann (hκ : κ.IsInaccessible) :
     · exact Or.inr (mem_vonNeumann.mpr hr)
     · exact Or.inl (equinumerous_of_card_eq (card_eq_of_not_rank_lt hκ hy' hr))
 
-/-! ### The `ConLeche.SetTheory` instance on `ZFSet` (plan v4, L5)
+/-! ### The `Ix.Kernel.SetTheory` instance on `ZFSet` (plan v4, L5)
 
 This is con-leche's own bridge (`bridge/lean4lean-model/ConLecheBridge/Carneiro.lean`
 at `86cd20a6`, the source of this file), whose instance `setTheoryOfChain`
-targets `ConLeche.SetTheory` directly. -/
+targets `Ix.Kernel.SetTheory` directly. -/
 
 set_option warn.classDefReducibility false in
 /-- Con-leche's set theory on Mathlib's `ZFSet.{u}`, from any strictly
@@ -153,7 +153,7 @@ increasing sequence of inaccessibles: the ZF⁻ fields are Mathlib's
 (`ZFSet.ext`, pairs, `⋃₀`, `powerset`, `mem_wf`, `image` under
 `Classical.allZFSetDefinable`), and `univChain n := V_ (κ n).ord`. -/
 noncomputable def conLecheSetTheoryOfChain (κ : ℕ → Cardinal.{u}) (hmono : StrictMono κ)
-    (hinacc : ∀ n, (κ n).IsInaccessible) : ConLeche.SetTheory ZFSet.{u} where
+    (hinacc : ∀ n, (κ n).IsInaccessible) : Ix.Kernel.SetTheory ZFSet.{u} where
   Mem := (· ∈ ·)
   ext h := ZFSet.ext h
   upair a b := {a, b}
@@ -177,14 +177,14 @@ noncomputable def conLecheSetTheoryOfChain (κ : ℕ → Cardinal.{u}) (hmono : 
 set_option warn.classDefReducibility false in
 /-- Con-leche's set theory on `ZFSet.{u}` under Carneiro's hypothesis. -/
 noncomputable def conLecheSetTheoryOfCarneiro (h : OmegaInaccessibles.{u}) :
-    ConLeche.SetTheory ZFSet.{u} :=
+    Ix.Kernel.SetTheory ZFSet.{u} :=
   conLecheSetTheoryOfChain (Classical.choose h) (Classical.choose_spec h).1 (Classical.choose_spec h).2
 
 /-- **Carneiro's hypothesis implies con-leche's.** `ω` strongly inaccessible
-cardinals give a model of `ConLeche.SetTheory`, the interface the certified
+cardinals give a model of `Ix.Kernel.SetTheory`, the interface the certified
 checker's theorems are stated over, on Mathlib's `ZFSet.{u}`. -/
 theorem carneiro_implies_conleche :
-    OmegaInaccessibles.{u} → Nonempty (Σ V : Type (u + 1), ConLeche.SetTheory V) :=
+    OmegaInaccessibles.{u} → Nonempty (Σ V : Type (u + 1), Ix.Kernel.SetTheory V) :=
   fun h => ⟨⟨ZFSet.{u}, conLecheSetTheoryOfCarneiro h⟩⟩
 
 end IxSetTheoryModel

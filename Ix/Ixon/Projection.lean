@@ -101,8 +101,8 @@ reconstruction; the separate projection limit bounds generated requests. Owner k
 supplied keys: only derived projection addresses are authenticated here. -/
 def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (records : Admission.Records)
     (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
-    Except CheckError ConLeche.Env := do
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except CheckError Ix.Kernel.Env := do
   (Admission.preflight limits records blobs).mapError (fun error => .reconstruction (.admission error))
   (Admission.uniqueKeys records blobs).mapError (fun error => .reconstruction (.admission error))
   let constants ← (Admission.decodeRecords limits records).mapError

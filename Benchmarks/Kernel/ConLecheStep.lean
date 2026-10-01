@@ -4,9 +4,9 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Ixon
-import Ix.Kernel.ConLeche.Prelude
-import ConLeche.Cached.Installed
-import ConLeche.Kernel.NatOpPinSet
+import Ix.Kernel.Ixon.Prelude
+import Ix.Kernel.Cached.Installed
+import Ix.Kernel.NatOpPinSet
 
 /-! # Con-leche's fold one record at a time (untrusted harness)
 
@@ -24,7 +24,7 @@ that contains a literal depends on the constants the literal references
 (`ConLecheReader.literalEdges`: the `Nat` trio, and for a string literal the
 string-support constants).
 
-**The step.** `Checker.step` is phase A of `ConLeche.Cached.checkDecls`
+**The step.** `Checker.step` is phase A of `Ix.Kernel.Cached.checkDecls`
 (`annotDeclStep`) on one declaration, then phase B (`checkPendingList`) on
 the records that step left pending; phase B checks each record against the
 prefix view at its install, so the verdict is the one the fold would give on
@@ -45,27 +45,27 @@ open Ix.Kernel.ConLecheReader
 /-- The incremental checker state: the indexed environment, the memo
 state, and the fold position. -/
 structure Checker where
-  fe : ConLeche.FEnv := ConLeche.mkFEnv ConLeche.Env.empty
-  cs : ConLeche.Cached.CState := {}
+  fe : Ix.Kernel.FEnv := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
+  cs : Ix.Kernel.Cached.CState := {}
   pos : Nat := 0
 
 instance : Inhabited Checker := ⟨{}⟩
 
 /-- Install and check one declaration; on failure, the state before it. -/
-def Checker.step (pins : List ConLeche.NatOpPinSet) (c : Checker) (d : ConLeche.Declaration) :
-    Checker × Option ConLeche.CheckError :=
+def Checker.step (pins : List Ix.Kernel.NatOpPinSet) (c : Checker) (d : Ix.Kernel.Declaration) :
+    Checker × Option Ix.Kernel.CheckError :=
   let ⟨fe, cs, pos⟩ := c
   let before := fe.env
-  match ConLeche.Cached.annotDeclStep .verified pins (pos, fe, #[]) d cs with
-  | .error (e, _) => (⟨ConLeche.mkFEnv before, {}, pos + 1⟩, some e)
+  match Ix.Kernel.Cached.annotDeclStep .verified pins (pos, fe, #[]) d cs with
+  | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, {}, pos + 1⟩, some e)
   | .ok ((pos', fe', pend), cs') =>
-    match ConLeche.Cached.checkPendingList .verified fe' pend.toList with
+    match Ix.Kernel.Cached.checkPendingList .verified fe' pend.toList with
     | .ok () => (⟨fe', cs', pos'⟩, none)
-    | .error (e, _) => (⟨ConLeche.mkFEnv before, {}, pos'⟩, some e)
+    | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, {}, pos'⟩, some e)
 
 /-- One record's declarations, in order; the first failure ends it. -/
-def Checker.steps (pins : List ConLeche.NatOpPinSet) (c : Checker)
-    (ds : Array ConLeche.Declaration) : Checker × Option ConLeche.CheckError := Id.run do
+def Checker.steps (pins : List Ix.Kernel.NatOpPinSet) (c : Checker)
+    (ds : Array Ix.Kernel.Declaration) : Checker × Option Ix.Kernel.CheckError := Id.run do
   let mut c := c
   for d in ds do
     let (c', e) := c.step pins d
@@ -73,7 +73,7 @@ def Checker.steps (pins : List ConLeche.NatOpPinSet) (c : Checker)
     if e.isSome then return (c, e)
   return (c, none)
 
-def checkOutcome : ConLeche.CheckError → String × String
+def checkOutcome : Ix.Kernel.CheckError → String × String
   | .invalid m => ("reject", m)
   | .notImplemented m => ("decline", m)
   | .internal m => ("decline", s!"internal: {m}")
@@ -191,8 +191,8 @@ def groundEdges (pins : Std.HashMap (ConstRef Address) CName) : Std.HashMap Addr
   let byName : Std.HashMap CName (ConstRef Address) := pins.fold (fun m r n => m.insert n r) {}
   let mut out : Std.HashMap Address (Array Address) := {}
   for (r, n) in pins.toList do
-    if ConLeche.natOpNames.contains n || ConLeche.natDivModNames.contains n then
-      for g in ConLeche.natOpDeps n do
+    if Ix.Kernel.natOpNames.contains n || Ix.Kernel.natDivModNames.contains n then
+      for g in Ix.Kernel.natOpDeps n do
         if let some gr := byName[g]? then
           if gr.block != r.block then
             out := out.insert r.block ((out.getD r.block #[]).push gr.block)
@@ -221,8 +221,8 @@ def Hints.ofStore (store : RecordStore) (hints : Std.HashMap Address Lean.Reduci
     if let .dPrj p := c.info then projAt := projAt.insert (.member p.block p.idx.toNat) a
   return { projAt, hints }
 
-def Hints.lookup (h : Hints) (r : ConstRef Address) : Option ConLeche.ReducibilityHint := do
-  let conv : Lean.ReducibilityHints → ConLeche.ReducibilityHint
+def Hints.lookup (h : Hints) (r : ConstRef Address) : Option Ix.Kernel.ReducibilityHint := do
+  let conv : Lean.ReducibilityHints → Ix.Kernel.ReducibilityHint
     | .opaque => .opaque
     | .abbrev => .abbrev
     | .regular h => .regular h.toNat
@@ -265,7 +265,7 @@ structure Setup where
 order (the prelude's owners first). -/
 def setup (store : RecordStore) (blobs : Address → Option ByteArray)
     (pins : Pins) (pre : Prelude)
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint) : Setup := Id.run do
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) : Setup := Id.run do
   let mut store := store
   for (a, c) in pre.records do
     unless store.contains a do store := store.insert a c
@@ -307,7 +307,7 @@ state `σ` is threaded through `commit` after every reading that succeeds.
 `onRead` sees every reading (the persistent read cache records them). -/
 def censusLoopWith {σ : Type} (view : Address → Option RecordView)
     (read : σ → Address → Except ReadError Read) (commit : σ → Read → σ) (init : σ)
-    (pins : List ConLeche.NatOpPinSet) (names : Address → Array String)
+    (pins : List Ix.Kernel.NatOpPinSet) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
     (after : IO Unit := pure ()) (progress : Nat → Outcome → IO Unit := fun _ _ => pure ())
@@ -384,7 +384,7 @@ def censusLoopWith {σ : Type} (view : Address → Option RecordView)
 
 /-- `censusLoopWith` over a census setup: each record is read by the reader
 at the state the records before it left. -/
-def censusLoop (s : Setup) (pins : List ConLeche.NatOpPinSet) (names : Address → Array String)
+def censusLoop (s : Setup) (pins : List Ix.Kernel.NatOpPinSet) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
     (after : IO Unit := pure ()) (progress : Nat → Outcome → IO Unit := fun _ _ => pure ())

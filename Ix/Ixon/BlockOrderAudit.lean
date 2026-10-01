@@ -145,7 +145,7 @@ fun source size start members =>
 
 /-- info: Ix.Ixon.BlockOrder.checkBytes_ok_iff : ∀ (maxProjections : Nat) (limits : Ix.Ixon.Admission.Limits)
   (orderLimits : Ix.Ixon.BlockOrder.Limits) (records : Ix.Ixon.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
-  (hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env),
+  (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env),
   Ix.Ixon.BlockOrder.checkBytes maxProjections limits orderLimits records blobs hint = Except.ok env ↔
     Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
       Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
@@ -159,7 +159,7 @@ fun source size start members =>
 
 /-- info: @Ix.Ixon.BlockOrder.checkBytes_reading : ∀ {maxProjections : Nat} {limits : Ix.Ixon.Admission.Limits}
   {orderLimits : Ix.Ixon.BlockOrder.Limits} {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
   Ix.Ixon.BlockOrder.checkBytes maxProjections limits orderLimits records blobs hint = Except.ok env →
     Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
       ∃ input output,
@@ -174,29 +174,29 @@ fun source size start members =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_reading
 
-/-- info: Ix.Ixon.BlockOrder.checkBytes_has_model : ∀ (V : Type u_1) [inst : ConLeche.SetTheory V] {maxProjections : Nat}
+/-- info: Ix.Ixon.BlockOrder.checkBytes_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V] {maxProjections : Nat}
   {limits : Ix.Ixon.Admission.Limits} {orderLimits : Ix.Ixon.BlockOrder.Limits} {records : Ix.Ixon.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint}
-  {env : ConLeche.Env},
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env},
   Ix.Ixon.BlockOrder.checkBytes maxProjections limits orderLimits records blobs hint = Except.ok env →
-    Nonempty (ConLeche.Model V env) -/
+    Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_has_model
 
-/-- info: Ix.Ixon.BlockOrder.checkBytes_no_proof_of_False : ∀ (V : Type u_1) [ConLeche.SetTheory V] {maxProjections : Nat}
+/-- info: Ix.Ixon.BlockOrder.checkBytes_no_proof_of_False : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] {maxProjections : Nat}
   {limits : Ix.Ixon.Admission.Limits} {orderLimits : Ix.Ixon.BlockOrder.Limits} {records : Ix.Ixon.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint}
-  {env : ConLeche.Env},
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env},
   Ix.Ixon.BlockOrder.checkBytes maxProjections limits orderLimits records blobs hint = Except.ok env →
-    ∀ (ci : ConLeche.ConstantInfo),
-      ci ∈ env.consts → ci.toConstantVal.type = ConLeche.Expr.const ConLeche.falseName [] → False -/
+    ∀ (ci : Ix.Kernel.ConstantInfo),
+      ci ∈ env.consts → ci.toConstantVal.type = Ix.Kernel.Expr.const Ix.Kernel.falseName [] → False -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_no_proof_of_False
 
 /-- info: @Ix.Ixon.BlockOrder.checkBytes_of_ordered : ∀ {maxProjections : Nat} {limits : Ix.Ixon.Admission.Limits}
   {orderLimits : Ix.Ixon.BlockOrder.Limits} {records : Ix.Ixon.Admission.Records}
   {input output : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint},
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint},
   Ix.Ixon.Verify.Admission.WithinBatch limits records blobs →
     Ix.Ixon.Verify.Admission.UniqueKeys records blobs →
       Ix.Ixon.Verify.Admission.RecordsRead limits records input →

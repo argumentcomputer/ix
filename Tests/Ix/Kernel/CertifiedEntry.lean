@@ -27,7 +27,7 @@ open Tests.Ix.Kernel.ConLecheReader
 namespace Tests.Ix.Kernel.CertifiedEntry
 
 def check (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) :
-    Except Ix.Ixon.ConLecheAdmission.Error ConLeche.Env :=
+    Except Ix.Ixon.ConLecheAdmission.Error Ix.Kernel.Env :=
   Ix.Ixon.Admission.checkBytes limits (encode cs) blobs
 
 def accepted (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Bool :=
@@ -173,34 +173,34 @@ def omitted : List (Address × Ixon.Constant) :=
 
 /-! ## The public theorems, applied -/
 
-example (V : Type) [ConLeche.SetTheory V] {env : ConLeche.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
     (h : Ix.Ixon.Admission.checkBytes limits (encode definitions) [] = .ok env) :
-    Nonempty (ConLeche.Model V env) :=
+    Nonempty (Ix.Kernel.Model V env) :=
   Ix.Ixon.Admission.checkBytes_has_model V h
 
-example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Ixon.Admission.Records}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
     (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
-    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const ConLeche.falseName [] → False :=
+    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False :=
   Ix.Ixon.Admission.checkBytes_no_proof_of_False V h
 
-example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Ixon.Admission.Records}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
     (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
-    ∃ M : ConLeche.Model V env, ∀ cv value hint, ConLeche.ConstantInfo.defnInfo cv value hint ∈ env.consts →
-      ∀ φ ρ, ConLeche.Denotes M.cval env φ ρ value (M.cval cv.name φ) :=
+    ∃ M : Ix.Kernel.Model V env, ∀ cv value hint, Ix.Kernel.ConstantInfo.defnInfo cv value hint ∈ env.consts →
+      ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) :=
   Ix.Ixon.Admission.checkBytes_has_model_values V h
 
 /-- Fidelity at a record: each accepted singleton record's declaration is
 installed under its name with its kind. -/
-example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
     (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
     ∃ pins pre constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
       ∀ owner c, (owner, c) ∈ constants → isSingleton c.info = true →
         ∃ st decl, SingletonRead (Ix.Ixon.ConLecheAdmission.streamContext pins pre constants blobs
           (fun _ => none)) st owner c decl ∧
           ∀ s, Ix.Kernel.ConLecheFold.declSkel decl = some s →
-            ∃ ci ∈ env.consts, ConLeche.Cached.ciSkel ci = s := by
+            ∃ ci ∈ env.consts, Ix.Kernel.Cached.ciSkel ci = s := by
   obtain ⟨pins, pre, _, _, _, _, _, _, constants, reading, installed⟩ :=
     Ix.Ixon.Admission.checkBytes_reading h
   refine ⟨pins, pre, constants, reading, fun owner c hmem hs => ?_⟩
@@ -210,7 +210,7 @@ example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArra
 /-- Key uniqueness at the API: no two records and no two blobs of accepted
 bytes share an address, and no two of the decoded records the reader read
 (`Installed.keys`). -/
-example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
     (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
     (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup ∧
       ∃ pins pre natPins constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
@@ -220,16 +220,16 @@ example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArra
     Ix.Ixon.Admission.checkBytes_reading h
   exact ⟨keys.1, keys.2, pins, pre, natPins, constants, reading, installed, installed.keys⟩
 
-example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Ixon.Admission.Records}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
     (h : Ix.Ixon.Projection.checkBytes 16 limits records blobs = .ok env) :
-    Nonempty (ConLeche.Model V env) :=
+    Nonempty (Ix.Kernel.Model V env) :=
   Ix.Ixon.Projection.checkBytes_has_model V h
 
-example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Ixon.Admission.Records}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
     (h : Ix.Ixon.BlockOrder.checkBytes 16 limits {} records blobs = .ok env) :
-    Nonempty (ConLeche.Model V env) :=
+    Nonempty (Ix.Kernel.Model V env) :=
   Ix.Ixon.BlockOrder.checkBytes_has_model V h
 
 example : Function.Injective keyName := fun _ _ h => keyName_injective h

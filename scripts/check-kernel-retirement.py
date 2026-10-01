@@ -35,16 +35,35 @@ RETIRED = re.compile(
 # runtime, consistency), its entry points, the executables and scripts that
 # ran it, and its test and benchmark modules. Case-sensitive. Kept names are
 # not matched: `Ix.Kernel.Ref`, `Ix.Kernel.Search`, `Ix.Kernel.Audit`,
-# `Ix.Kernel.ConLeche`, the record store `Ix.Kernel.Ingress.Records` and the
-# projection writer `Ix.Kernel.Egress.Projection` (with their namespaces),
-# and `certified-kernel-differential` (a CI artifact name).
+# `Ix.Kernel.Ixon` (until 2026-10-01 `Ix.Kernel.ConLeche`), the record store
+# `Ix.Kernel.Ingress.Records` and the projection writer
+# `Ix.Kernel.Egress.Projection` (with their namespaces), and
+# `certified-kernel-differential` (a CI artifact name).
+#
+# Names reused since 2026-10-01: con-leche's checker, vendored under
+# `Ix/Kernel/**`, has modules named as four of the intrinsic kernel's
+# (`Ix.Kernel.Env`, `Ix.Kernel.Expr`, `Ix.Kernel.Level`, and the directory
+# `Ix.Kernel.Model`), and its axiom pin is `Tests/Ix/Kernel/Axioms.lean`, the
+# intrinsic kernel's axiom test's path. Those names are no longer rejected
+# here; the intrinsic `Model` modules still are, by their own names. The
+# reused paths are guarded by provenance instead: `kernel-provenance` admits
+# a Lean file under `Ix/Kernel` only as a hash-pinned vendored row or a
+# listed Ix-authored module, and the axiom pin is an adapted row.
 INTRINSIC_MODULES = (
-    "Annotate|Arithmetic|Check|Claims|Consistency|Const|Env|Expr|"
-    "ExprSubstitution|Fidelity|Infer|Level|Model|Quot|Rename|Revalue|Store|"
+    "Annotate|Arithmetic|Check|Claims|Consistency|Const|"
+    "ExprSubstitution|Fidelity|Infer|Quot|Rename|Revalue|Store|"
     "StringLiteral|VLevel|VLevelLemmas|Certified|Inductive|Runtime|Std"
 )
+# The intrinsic kernel's `Ix/Kernel/Model/**` modules (none of whose names
+# con-leche's `Model` directory uses).
+INTRINSIC_MODEL = (
+    "Annotated|BetaSpine|BetaSubstitution|Checking|Context|ContextTransport|"
+    "Environment|Extension|Inductive|Instantiation|Interpret|Judgment|LetRules|"
+    "LevelCongruence|PrimitiveValues|QuotientValues|ReferenceMap|SetModel|SetTheory|"
+    "Signature|Substitution|Support|TelescopeSemantics|UniverseBounds|Value|WellDenoted"
+)
 INTRINSIC_TESTS = (
-    "AnnotationContexts|Axioms|ConversionSpines|Differential|Egress|Fidelity|"
+    "AnnotationContexts|ConversionSpines|Differential|Egress|Fidelity|"
     "Fixtures|Inductives|Ingress|IngressHost|Interleaved|LevelDifferential|"
     "Literals|ProofIrrelevance|Quotients|RuntimeStack|SearchOutcomes|"
     "Structures|SubstitutionSharing"
@@ -56,14 +75,17 @@ INTRINSIC = re.compile(
     r"Tests[./]Ix[./]Kernel[./](?:" + INTRINSIC_TESTS + r")\b|"
     r"Benchmarks[./]Kernel[./](?:Census|CensusMain|CensusProbe|Certified)\b|"
     r"Ix[./]Kernel[./](?:" + INTRINSIC_MODULES + r")\b|"
+    r"Ix[./]Kernel[./]Model[./](?:" + INTRINSIC_MODEL + r")\b|"
     r"Ix[./]Kernel[./](?:Ingress[./](?:Reading|Expr|Constant)|Egress[./](?:Layout|Expr|Constant))\b|"
     r"Ix/Kernel/(?:Ingress|Egress)\.lean|"
     r"\bimport\s+(?:all\s+)?Ix\.Kernel\.(?:Ingress|Egress)(?![\w.])"
 )
 RETIRED_TREES = (
     "Ix/Tc/Verify/", "Ix/Compile/Verify/", "crates/ffi-dyn/",
-    # The intrinsic kernel's wholly retired directories.
-    "Ix/Kernel/Certified/", "Ix/Kernel/Inductive/", "Ix/Kernel/Model/",
+    # The intrinsic kernel's wholly retired directories (its `Model/` is
+    # retired module by module below: con-leche's is vendored there).
+    "Ix/Kernel/Certified/", "Ix/Kernel/Inductive/", "Ix/Kernel/Model/Inductive/",
+    "Ix/Kernel/Model/SetModel/", "Ix/Kernel/Model/SetTheory/",
     "Ix/Kernel/Runtime/", "Ix/Kernel/Std/",
 )
 RETIRED_FILES = {
@@ -82,6 +104,9 @@ RETIRED_FILES = {
 } | {f"Tests/Ix/Kernel/{name}.lean" for name in INTRINSIC_TESTS.split("|")} | {
     f"Ix/Kernel/{name}.lean" for name in INTRINSIC_MODULES.split("|")
     if name not in ("Certified", "Inductive", "Runtime", "Std")
+} | {"Ix/Kernel/Model.lean"} | {
+    f"Ix/Kernel/Model/{name}.lean" for name in INTRINSIC_MODEL.split("|")
+    if name not in ("Inductive", "SetModel", "SetTheory")
 } | {
     "Ix/Kernel/Ingress.lean", "Ix/Kernel/Ingress/Reading.lean", "Ix/Kernel/Ingress/Expr.lean",
     "Ix/Kernel/Ingress/Constant.lean", "Ix/Kernel/Egress.lean", "Ix/Kernel/Egress/Layout.lean",
@@ -249,6 +274,10 @@ def controls() -> None:
         ("Ix/Kernel/Certified/Checker.lean", ""),
         ("Ix/Kernel/Check.lean", ""),
         ("Ix/Kernel/Egress/Layout.lean", ""),
+        ("Ix/Kernel/Model/Judgment.lean", ""),
+        ("Ix/Kernel/Model/SetTheory/Core.lean", ""),
+        ("Fixture.lean", "import Ix.Kernel.Model.Interpret"),
+        ("Fixture.lean", "import Tests.Ix.Kernel.Ingress"),
     ):
         if not inspect(path, source):
             raise RuntimeError(f"intrinsic negative control escaped: {path}: {source}")
@@ -258,10 +287,14 @@ def controls() -> None:
         "import Benchmarks.Kernel.CensusIx\nimport Tests.Ix.Kernel.IngressFixturesNew",
         'def artifact := "certified-kernel-differential"',
         "import Ix.Kernel.Ingress.Records\nimport Ix.Kernel.Egress.Projection\nimport Ix.Kernel.Ref",
-        "import Ix.KernelCheck\nimport Ix.Kernel.ConLeche.Reader\nimport Ix.Kernel.Search",
+        "import Ix.KernelCheck\nimport Ix.Kernel.Ixon.Reader\nimport Ix.Kernel.Search",
         "namespace Ix.Kernel.Ingress\nend Ix.Kernel.Ingress\nopen Ix.Kernel.Egress",
         "def r : Ix.Kernel.ConstRef Address := x\n#check Ix.Kernel.Ingress.Constants",
         "/- retired at L6: Ix.Kernel.Check, Ix/Kernel/Model/SetTheory -/\nimport Init",
+        # con-leche's vendored modules that reuse intrinsic names (2026-10-01)
+        "import Ix.Kernel.Expr\nimport Ix.Kernel.Env\nimport Ix.Kernel.Level",
+        "import Ix.Kernel.Model.Fold\nimport Ix.Kernel.Model.Claims\nimport Ix.Kernel.SetTheory.Core",
+        "import Tests.Ix.Kernel.Axioms\nimport Ix.Kernel.Checker\nimport Ix.Kernel.Inductives.StructParts",
     ):
         if inspect("Fixture.lean", source):
             raise RuntimeError(f"kept name or comment rejected: {source}")

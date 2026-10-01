@@ -37,7 +37,7 @@ of unused tables: the final kernel admission still checks the entire input.
 
 namespace Ix.Ixon.BlockOrder
 
-open Kernel
+open Kernel hiding Expr  -- `Expr` is Ixon's here (the vendored checker's is `Ix.Kernel.Expr`)
 open _root_.Ixon (Univ Expr MutConst)
 
 abbrev Classes := List (List Nat)
@@ -432,8 +432,8 @@ checker behind the Ixon reader are all executed here. No host ordering
 verdict is input. -/
 def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
-    Except CheckError ConLeche.Env := do
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except CheckError Ix.Kernel.Env := do
   (Admission.preflight limits records blobs).mapError (fun error => .order (.admission error))
   (Admission.uniqueKeys records blobs).mapError (fun error => .order (.admission error))
   let constants ← (Admission.decodeRecords limits records).mapError (fun error => .order (.admission error))

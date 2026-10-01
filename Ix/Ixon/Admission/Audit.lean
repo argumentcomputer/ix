@@ -24,12 +24,13 @@ def operations : Array Lean.Name :=
   #[``Ix.Ixon.Admission.preflight, ``Ix.Ixon.Admission.uniqueKeys, ``Ix.Ixon.Admission.decodeRecords,
     ``Ix.Ixon.Admission.checkBytes]
 
-/-- Admission runs con-leche's checker behind the Ixon reader (L5: `ConLeche`,
-`Ix.Ixon.ConLecheAdmission`, and the reader under `Ix.Kernel`; `Lean` only
-below con-leche's ruled elaboration-time imports), whose closure admits
+/-- Admission runs con-leche's checker behind the Ixon reader (L5:
+`Ix.Ixon.ConLecheAdmission`, and the kernel `Ix.Kernel`, con-leche's vendored
+checker with the reader beside it; `Lean` only below con-leche's ruled
+elaboration-time imports), whose closure admits
 `Std` (`Ix.Kernel.Audit.importAllowlist`, 2026-09-30). -/
 def dataImports : Array Lean.Name :=
-  Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Ixon.Admission, `ConLeche,
+  Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Ixon.Admission,
     `Ix.Ixon.ConLecheAdmission]
 
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `Ix.Ixon.Verify,
@@ -152,43 +153,43 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
 /-! ### The certified entry's public theorems (L5) -/
 
 /-- info: Ix.Ixon.Admission.checkBytes_eq : ∀ (limits : Ix.Ixon.Admission.Limits) (records : Ix.Ixon.Admission.Records)
-  (blobs : Ix.Kernel.Ingress.Blobs) (hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint),
+  (blobs : Ix.Kernel.Ingress.Blobs) (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint),
   Ix.Ixon.Admission.checkBytes limits records blobs hint =
     Ix.Ixon.ConLecheAdmission.checkBytes limits records blobs hint -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Admission.checkBytes_eq
 
-/-- info: Ix.Ixon.Admission.checkBytes_has_model : ∀ (V : Type u_1) [inst : ConLeche.SetTheory V]
+/-- info: Ix.Ixon.Admission.checkBytes_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
   {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
-  Ix.Ixon.Admission.checkBytes limits records blobs hint = Except.ok env → Nonempty (ConLeche.Model V env) -/
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
+  Ix.Ixon.Admission.checkBytes limits records blobs hint = Except.ok env → Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Admission.checkBytes_has_model
 
-/-- info: Ix.Ixon.Admission.checkBytes_has_model_values : ∀ (V : Type u_1) [inst : ConLeche.SetTheory V]
+/-- info: Ix.Ixon.Admission.checkBytes_has_model_values : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
   {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
   Ix.Ixon.Admission.checkBytes limits records blobs hint = Except.ok env →
     ∃ M,
-      ∀ (cv : ConLeche.ConstantVal) (value : ConLeche.Expr) (hint' : ConLeche.ReducibilityHint),
-        ConLeche.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
-          ∀ (φ : ConLeche.LevelParam → Nat) (ρ : ConLeche.BVarIdx → V),
-            ConLeche.Denotes M.cval env φ ρ value (M.cval cv.name φ) -/
+      ∀ (cv : Ix.Kernel.ConstantVal) (value : Ix.Kernel.Expr) (hint' : Ix.Kernel.ReducibilityHint),
+        Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
+          ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
+            Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Admission.checkBytes_has_model_values
 
-/-- info: Ix.Ixon.Admission.checkBytes_no_proof_of_False : ∀ (V : Type u_1) [ConLeche.SetTheory V]
+/-- info: Ix.Ixon.Admission.checkBytes_no_proof_of_False : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
   {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
   Ix.Ixon.Admission.checkBytes limits records blobs hint = Except.ok env →
-    ∀ (ci : ConLeche.ConstantInfo),
-      ci ∈ env.consts → ci.toConstantVal.type = ConLeche.Expr.const ConLeche.falseName [] → False -/
+    ∀ (ci : Ix.Kernel.ConstantInfo),
+      ci ∈ env.consts → ci.toConstantVal.type = Ix.Kernel.Expr.const Ix.Kernel.falseName [] → False -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Admission.checkBytes_no_proof_of_False
 
-/-- info: Ix.Ixon.Admission.checkBytes_no_False_theorem : ∀ (V : Type u_1) [ConLeche.SetTheory V]
+/-- info: Ix.Ixon.Admission.checkBytes_no_False_theorem : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
   {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env},
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
   Ix.Ixon.Admission.checkBytes limits records blobs hint = Except.ok env →
     ∀ {pins : Ix.Kernel.ConLecheReader.Pins} {pre : Ix.Kernel.ConLecheReader.Prelude},
       Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins →
@@ -202,14 +203,14 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
                       (Ix.Kernel.ConLecheReader.definitionReader
                                 (Ix.Ixon.ConLecheAdmission.streamContext pins pre constants blobs hint) owner c d).read
                             d.typ =
-                          Except.ok (ConLeche.Expr.const ConLeche.falseName []) →
+                          Except.ok (Ix.Kernel.Expr.const Ix.Kernel.falseName []) →
                         False -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Admission.checkBytes_no_False_theorem
 
 /-- info: @Ix.Ixon.Admission.checkBytes_reading : ∀ {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint}
-  {env : ConLeche.Env},
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env},
   Ix.Ixon.Admission.checkBytes limits records blobs hint = Except.ok env →
     ∃ pins pre natPins,
       Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins ∧
@@ -224,8 +225,8 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
 #check @Ix.Ixon.Admission.checkBytes_reading
 
 /-- info: @Ix.Ixon.Admission.checkBytes_resources : ∀ {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option ConLeche.ReducibilityHint}
-  {env : ConLeche.Env},
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env},
   Ix.Ixon.Admission.checkBytes limits records blobs hint = Except.ok env →
     ∃ constants,
       Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧

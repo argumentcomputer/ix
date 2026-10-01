@@ -283,31 +283,59 @@ script "build-all" (args) := do
 
 end Scripts
 
-section ConLeche
+section IxKernelVendored
 
-/- Con-leche's verified checker core, imported in place from
+/-- The vendored con-leche modules under `Ix/Kernel`: every module there except
+Ix's boundary (`Ref`, `Search`, `Audit`, `Ingress`, `Egress`, `Ixon`), one glob
+per top-level entry (`scripts/vendor-conleche.py lake-globs`). -/
+def vendoredKernelGlobs : Array Glob := #[
+  -- BEGIN vendored kernel modules (scripts/vendor-conleche.py check-lake)
+  .andSubmodules `Ix.Kernel.Basis, .one `Ix.Kernel.BasisA, .one `Ix.Kernel.BasisGen,
+  .submodules `Ix.Kernel.Cached, .one `Ix.Kernel.Canon, .one `Ix.Kernel.Checker,
+  .one `Ix.Kernel.CheckerBase, .one `Ix.Kernel.CheckerSplit, .one `Ix.Kernel.Core,
+  .one `Ix.Kernel.CoreDefs, .one `Ix.Kernel.CoreIO, .one `Ix.Kernel.DeclCheck,
+  .one `Ix.Kernel.Denotes, .one `Ix.Kernel.Env, .one `Ix.Kernel.Exclusive, .one `Ix.Kernel.Expr,
+  .one `Ix.Kernel.ExprOps, .one `Ix.Kernel.FEnv, .submodules `Ix.Kernel.Frontend,
+  .submodules `Ix.Kernel.Inductives, .one `Ix.Kernel.Level, .one `Ix.Kernel.LevelGeran,
+  .one `Ix.Kernel.MainTheorem, .submodules `Ix.Kernel.Model, .one `Ix.Kernel.Name,
+  .one `Ix.Kernel.NatOpPinSet, .submodules `Ix.Kernel.PinGen, .one `Ix.Kernel.PropRead,
+  .one `Ix.Kernel.PropWhen, .submodules `Ix.Kernel.Rules, .submodules `Ix.Kernel.Semantics,
+  .submodules `Ix.Kernel.SetModel, .submodules `Ix.Kernel.SetTheory, .one `Ix.Kernel.StdAxioms,
+  .submodules `Ix.Kernel.Term, .one `Ix.Kernel.TrustAxioms, .one `Ix.Kernel.TrustPins,
+  .one `Ix.Kernel.TypeChecker, .submodules `Ix.Kernel.Verify
+  -- END vendored kernel modules
+]
+
+/- Con-leche's verified checker, vendored in place under `Ix/Kernel/**` with
+namespace `Ix.Kernel` (`docs/kernel.md`, "Vendored con-leche"): the import
+closure of `Ix.Kernel.model_exists` from
 `https://github.com/leanprover/con-leche.git` at
 `ae0c0c4e4ce6a0081648aff03fe9c39d002c4526` (Apache-2.0; the seven files of
-upstream task #323 at `3ca9e2fe`): the import closure of
-`ConLeche.model_exists` under its upstream `ConLeche/**` paths. Files are
-byte-identical except the adapted ones and two Ix-authored modules
-(`ConLeche/{Kernel,Verify}/LevelGeran.lean`), each listed with its change in
-`Tests/Ix/Kernel/ImportManifest.lean` (`docs/kernel.md`, "Provenance").
-`linter.deprecated` is off so the upstream bytes, written for Lean 4.33.0,
-build under `--wfail` on 4.34.0 without renaming deprecated lemmas. Not a
-default target; `IxKernel/lakefile.lean` declares the same library.
-The glob is the whole subtree: a module the globs miss is not compiled to
-native code, and an executable that imports it fails to link. Upstream's
+upstream task #323 at `3ca9e2fe`). Every file is upstream's, rewritten by
+`scripts/vendor-conleche.py` (paths and namespace `ConLeche` → `Ix.Kernel`),
+except seven adapted ones and two Ix-authored modules
+(`Ix/Kernel/{,Verify/}LevelGeran.lean`); `Tests/Ix/Kernel/ImportManifest.lean`
+records each (`docs/kernel.md`, "Provenance"). Upstream's
 `ConLeche/Kernel/NatOpPins.lean`, which splices upstream's JSON pin dumps, is
-not ported: Ix's Nat-operation pins are the Ixon-generated
-`Ix/Kernel/ConLeche/NatOpPinData.lean`, and the unbuilt verbatim copy is
-not kept, so that this glob needs no per-file list. -/
-lean_lib ConLeche where
-  roots := #[`ConLeche]
-  globs := #[.submodules `ConLeche]
+not vendored: Ix's Nat-operation pins are the Ixon-generated
+`Ix/Kernel/Ixon/NatOpPinData.lean`.
+
+The vendored modules are a library of their own for one option:
+`linter.deprecated` is off, so the upstream sources, written for Lean 4.33.0,
+build under `--wfail` on 4.34.0 without renaming deprecated lemmas. Lake
+options are per library, and Ix's own modules under `Ix/Kernel` stay in `Ix`
+with the default linters. Lake gives a module to the last-declared library
+that can build it, and `Ix` (above) can build every `Ix.*` module, so this
+library must stay below `Ix`, and its globs must be exactly the vendored tree
+(a module they miss would be built by `Ix`): `scripts/vendor-conleche.py
+check-lake`, in `check-kernel`, compares them with the tree. Not a default
+target; `IxKernel/lakefile.lean` declares the same library. -/
+lean_lib IxKernelVendored where
+  roots := #[`Ix.Kernel.MainTheorem]
+  globs := vendoredKernelGlobs
   leanOptions := #[⟨`linter.deprecated, false⟩]
 
-end ConLeche
+end IxKernelVendored
 
 section IxKernel
 
@@ -318,11 +346,12 @@ same sources with no dependencies beyond the Lean toolchain:
 same modules for its host consumers through the `Ix` library. See
 `plans/ix-certified-roadmap.md`. -/
 
-/- Provenance check for the ported model and the `ConLeche` subtree: file
-inventory, exact content hashes, port headers, licences, and license files,
-against `Tests/Ix/Kernel/ImportManifest.lean`. Pass `--source <old-ix-workspace>`
-(jj) and `--source-git plans/refs/con-leche` (git) to also verify the recorded
-source hashes. -/
+/- Provenance check for the kernel, the vendored con-leche tree among it: file
+inventory, exact content hashes, vendor and port headers, licences, and
+license files, against `Tests/Ix/Kernel/ImportManifest.lean`. Pass
+`--source <old-ix-workspace>` (jj) and `--source-git plans/refs/con-leche`
+(git) to also verify the recorded source hashes and re-derive every vendored
+file from upstream through `scripts/vendor-conleche.py`. -/
 lean_exe «kernel-provenance» where
   root := `Tests.Ix.Kernel.Provenance
 
@@ -384,14 +413,14 @@ lean_exe «kernel-census-opt» where
   root := `Benchmarks.Kernel.ConLecheOpt
   moreLinkObjs := #[ix_rs]
 
-/-- Regenerates `Ix/Kernel/ConLeche/PinData.lean` (pins and prelude) from a
+/-- Regenerates `Ix/Kernel/Ixon/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/census/initstd.ixe`), verified by con-leche. -/
 lean_exe «conleche-pin-gen» where
   root := `Benchmarks.Kernel.ConLechePinGen
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
-the host-side tests, provenance, the `ConLeche/**` layering and
+the host-side tests, provenance, the vendored tree's layering and
 trust-surface fences, the certified entry's host-compiled cases, and the
 reader's fidelity against Lean (the fixture closure and the first records of Init
 and Std). -/
@@ -405,8 +434,10 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "python3" #["scripts/check-kernel-retirement.py"]
+  -- the vendored library's globs are exactly the vendored tree
+  run "python3" #["scripts/vendor-conleche.py", "check-lake", "lakefile.lean", "IxKernel/lakefile.lean"]
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.ConLecheReader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ConLecheRoundtrip"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.ConLecheReader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ConLecheRoundtrip", "Tests.Ix.Kernel.Axioms"]
   run ".lake/build/bin/kernel-provenance" #[]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
@@ -422,9 +453,9 @@ script "check-kernel" (args) := do
     throw <| IO.userError "kernel-order failed; see .lake/build/kernel-order.jsonl"
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
-  -- Con-leche's fences for the ported `ConLeche/**` subtree: import layering
-  -- and the per-file escape allowlist, with the trust-surface lexer's
-  -- self-test.
+  -- Con-leche's fences for the vendored tree (`scripts/vendor-conleche.py
+  -- list`): import layering and the per-file escape allowlist, with the
+  -- trust-surface lexer's self-test.
   run "bash" #["scripts/layering.sh"]
   run "bash" #["scripts/trust-surface.sh"]
   -- Host-compiled Lean declarations through the certified entry, each with

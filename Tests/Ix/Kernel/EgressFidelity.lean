@@ -187,7 +187,7 @@ def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : Pr
 /-! ## 2. Re-reading and the installed environment -/
 
 /-- A constant's kind as installed. -/
-def infoKind : ConLeche.ConstantInfo → String
+def infoKind : Ix.Kernel.ConstantInfo → String
   | .axiomInfo .. => "axiom" | .defnInfo .. => "definition" | .thmInfo .. => "theorem"
   | .indInfo .. => "inductive" | .ctorInfo .. => "constructor" | .recInfo .. => "recursor"
   | .projInfo .. => "projection table"
@@ -201,7 +201,7 @@ def layoutKinds : Ix.Kernel.Egress.ProjectionLayout → List String
 
 /-- Two installed environments agree: the same constants in the same order,
 of the same kinds, with equal types (con-leche's executed equality). -/
-def envDiff (a b : ConLeche.Env) : Option String :=
+def envDiff (a b : Ix.Kernel.Env) : Option String :=
   if a.consts.length != b.consts.length then
     some s!"{a.consts.length} constants vs {b.consts.length}"
   else (a.consts.zip b.consts).zipIdx.findSome? fun ((x, y), i) =>
@@ -213,7 +213,7 @@ def envDiff (a b : ConLeche.Env) : Option String :=
     else none
 
 /-- The reader's declarations, as entries, compared one by one. -/
-def declsDiff (a b : Array ConLeche.Declaration) : Option String :=
+def declsDiff (a b : Array Ix.Kernel.Declaration) : Option String :=
   let xs := a.flatMap entriesOf
   let ys := b.flatMap entriesOf
   if a.size != b.size || xs.size != ys.size then some s!"{a.size} declarations vs {b.size}"

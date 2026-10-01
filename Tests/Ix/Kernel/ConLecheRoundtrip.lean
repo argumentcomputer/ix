@@ -120,16 +120,16 @@ def expected : List (Lean.Name × Verdict) := [
 
 /-! ## Tampering: the comparison has teeth -/
 
-def always : ConLeche.BinderMeta := ⟨.ifAllZero []⟩
+def always : Ix.Kernel.BinderMeta := ⟨.ifAllZero []⟩
 
 /-- The first binder's annotation set to `always`. -/
-def tamperPw : ConLeche.Expr → Option ConLeche.Expr
+def tamperPw : Ix.Kernel.Expr → Option Ix.Kernel.Expr
   | .lam t b _ => some (.lam t b always)
   | .forallE t b _ => some (.forallE t b always)
   | _ => none
 
 /-- A natural-number literal bumped. -/
-partial def tamperLit : ConLeche.Expr → Option ConLeche.Expr
+partial def tamperLit : Ix.Kernel.Expr → Option Ix.Kernel.Expr
   | .lit (.natVal n) => some (.lit (.natVal (n + 1)))
   | .app f a => ((tamperLit a).map (.app f ·)).orElse fun _ => (tamperLit f).map (.app · a)
   | .lam t b m => (tamperLit b).map (.lam t · m)

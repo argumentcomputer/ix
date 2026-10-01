@@ -3,15 +3,15 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import ConLeche.Verify.Level
-import ConLeche.Verify.LevelGeran
+import Ix.Kernel.Verify.Level
+import Ix.Kernel.Verify.LevelGeran
 import Ix.IxonUniv
 
 /-! # Con-leche's level comparison against brute-force evaluation (cl-level)
 
-`ConLeche.Level.leq` is nanoda's comparison with Géran's sublevels as the
-fallback of its `(param, max)` case (`ConLeche/Kernel/Level.lean`,
-`ConLeche/Kernel/LevelGeran.lean`). `leqCore_sound` proves a `true` verdict
+`Ix.Kernel.Level.leq` is nanoda's comparison with Géran's sublevels as the
+fallback of its `(param, max)` case (`Ix/Kernel/Level.lean`,
+`Ix/Kernel/LevelGeran.lean`). `leqCore_sound` proves a `true` verdict
 pointwise; `Geran.leq_iff` proves the fallback a decision. This host-only
 gate checks that the whole comparison is complete in practice too. For every
 pair below it compares `Level.leq`, `Level.isEquiv` and `Level.Geran.leq`
@@ -50,7 +50,7 @@ summary line; the exit code is nonzero on any failure. -/
 
 namespace Tests.Ix.Kernel.ConLecheLevels
 
-open ConLeche (Level Name)
+open _root_.Ix.Kernel (Level Name)
 
 def param (i : Nat) : Level := .param (.str .anonymous s!"u{i}")
 

@@ -1,11 +1,13 @@
 # Certified Lean kernel
 
-Ix's certified checker is con-leche's verified checker
-(`ConLeche.Cached.checkDecls` at `.verified`), ported in place under
-`ConLeche/**`, run on Ixon records by a reader in `Ix/Kernel/ConLeche/`. The
-certified API is `Ix.Ixon.Admission.checkBytes`. This page states what that
-entry does, what is proved about it, what is trusted, how the gate checks
-the trust boundary, how the port tracks upstream, and how to run the census.
+Ix's certified checker is [con-leche](https://github.com/leanprover/con-leche)'s
+verified checker (`Ix.Kernel.Cached.checkDecls` at `.verified`), **vendored
+in place under `Ix/Kernel/**` as a modified copy** (namespace `Ix.Kernel`;
+see "Vendored con-leche" below), run on Ixon records by Ix's reader in
+`Ix/Kernel/Ixon/`. The certified API is `Ix.Ixon.Admission.checkBytes`. This
+page states what that entry does, what is proved about it, what is trusted,
+how the gate checks the trust boundary, how the vendored copy tracks
+upstream, and how to run the census.
 The roadmap's section 2 (`plans/ix-certified-roadmap.md`) is the contract
 this page implements; plan v4 (`plans/ix-kernel-con-leche-port-v4.md`, not
 versioned) records the port's steps L0 to L6.
@@ -18,8 +20,8 @@ the original Lean source meant is outside the claim.
 
 ```lean
 def Ix.Ixon.Admission.checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
-    Except ConLecheAdmission.Error ConLeche.Env
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except ConLecheAdmission.Error Ix.Kernel.Env
 ```
 
 `records` is an ordered list of `(Address, ByteArray)` pairs, one canonical
@@ -33,9 +35,9 @@ reducibility hint per constant. The entry runs, in order:
 | batch limits: record and blob counts, total payload bytes | `Admission.preflight` | `.limit resource` |
 | key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
 | canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
-| the Ixon reader: records to `Array ConLeche.Declaration` | `ConLecheReader.readRecords` | `.read position (.malformed _ / .declined _)` |
-| the prelude is put in front (`ConLeche.Frontend.preparePrelude`) | | |
-| con-leche's fold | `ConLeche.Cached.checkDecls .verified natPins` | `.kernel error position` |
+| the Ixon reader: records to `Array Ix.Kernel.Declaration` | `ConLecheReader.readRecords` | `.read position (.malformed _ / .declined _)` |
+| the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
+| con-leche's fold | `Ix.Kernel.Cached.checkDecls .verified natPins` | `.kernel error position` |
 
 The pipeline is `Ix.Ixon.ConLecheAdmission.checkBytes`; `checkBytesWith`
 takes the pin table, prelude and Nat-operation pin list as parameters, and
@@ -89,25 +91,25 @@ generated. Every public and fidelity root depends on exactly `propext`,
 | Theorem (`Ix.Ixon.Admission.`) | Statement, for `h : checkBytes limits records blobs hint = .ok env` |
 | --- | --- |
 | `checkBytes_eq` | `checkBytes = ConLecheAdmission.checkBytes` (definitional) |
-| `checkBytes_has_model` | `∀ V [ConLeche.SetTheory V], Nonempty (ConLeche.Model V env)` |
+| `checkBytes_has_model` | `∀ V [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V env)` |
 | `checkBytes_has_model_values` | there is a model `M` in which every stored `defnInfo cv value _` satisfies `Denotes M.cval env φ ρ value (M.cval cv.name φ)` for all `φ ρ` |
-| `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const ConLeche.falseName []` |
-| `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader reads as `.const ConLeche.falseName []` |
+| `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const Ix.Kernel.falseName []` |
+| `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader reads as `.const Ix.Kernel.falseName []` |
 | `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `RecordsRead limits records constants` for some `constants`; and `ConLecheAdmission.Installed pins pre natPins constants blobs hint env` |
 | `checkBytes_resources` | `resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
 
-`ConLeche.Model V env` (`ConLeche/Denotes.lean`) assigns a set
+`Ix.Kernel.Model V env` (`Ix/Kernel/Denotes.lean`) assigns a set
 `cval c φ` to every constant at every level assignment such that every
 stored constant is a member of what its type denotes (`mem`), what the
 built-in `False` denotes is empty (`false_empty`), and what the built-in `Eq`
 denotes is set equality (`eq_equality`). Definitional equalities need no
 clause: an accepted `rfl` theorem's two sides denote the same set. The
-model theorem is `ConLeche.model_exists` (`ConLeche/MainTheorem.lean`,
+model theorem is `Ix.Kernel.model_exists` (`Ix/Kernel/MainTheorem.lean`,
 upstream's statement and proof) at the prepared declarations: it holds for
 every declaration array the fold accepts, so the reader owes nothing for
 consistency. Definition values come from con-leche's `defn_reads` through
 `Ix.Kernel.ConLecheFold.checkDecls_model_defn_values`
-(`Ix/Kernel/ConLeche/Values.lean`). Theorem and opaque bodies have no value
+(`Ix/Kernel/Ixon/Values.lean`). Theorem and opaque bodies have no value
 equation, by con-leche's design.
 
 **Fidelity** is what `checkBytes_reading` adds to consistency:
@@ -130,7 +132,7 @@ equation, by con-leche's design.
   is installed under that name with its kind (a quotient record,
   `sorryAx` and `Quot.sound` install as the pinned blocks do).
 - `keyName_injective` and `Ctx.nameOf_of_pin`/`Ctx.nameOf_of_unpinned`
-  (`Ix/Kernel/ConLeche/{Reader,ReaderSpec}.lean`): which name a reference
+  (`Ix/Kernel/Ixon/{Reader,ReaderSpec}.lean`): which name a reference
   is read under.
 
 Not proved:
@@ -154,14 +156,14 @@ has_model, no_proof_of_False}` and `Ix.Ixon.BlockOrder.checkBytes_{run_iff,
 ok_iff, of_ordered, reading, has_model, no_proof_of_False}`, each with
 `UniqueKeys` in its reading. The separate package `Models/SetTheory`
 (Mathlib) provides `IxSetTheoryModel.conLecheSetTheoryOfCarneiro`, a
-`ConLeche.SetTheory ZFSet` instance under `OmegaInaccessibles`, and the
+`Ix.Kernel.SetTheory ZFSet` instance under `OmegaInaccessibles`, and the
 corollaries `IxSetTheoryModel.checkBytes_has_ZFSet_model` and
 `IxSetTheoryModel.checkBytes_no_proof_of_False`.
 
 ## Keys, pins and the prelude
 
-**Keys** (`Ix/Kernel/ConLeche/Reader.lean`). Con-leche's environment is keyed
-by `ConLeche.Name`. A reference `ConstRef Address` is encoded under the
+**Keys** (`Ix/Kernel/Ixon/Reader.lean`). Con-leche's environment is keyed
+by `Ix.Kernel.Name`. A reference `ConstRef Address` is encoded under the
 reserved root `ix`: `.member b i` is `ix.<hex b>.i` and `.ctor b i c` is
 `ix.<hex b>.i.c`, with numeric components (`keyName`, injective). Level
 parameters are positional. Three kinds of names differ:
@@ -175,7 +177,7 @@ parameters are positional. Three kinds of names differ:
   compares them, and a large eliminator names its extra level parameter
   so that con-leche recognises it.
 
-**Pins** (`Ix/Kernel/ConLeche/PinData.lean`, generated). The table maps 55
+**Pins** (`Ix/Kernel/Ixon/PinData.lean`, generated). The table maps 55
 references to con-leche's pinned names and no others: the basis (`Eq`,
 `Nat`, `PUnit`, `Empty`, `False`, the `Quot` package), `And` and `Bool`, the
 literal support (`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`),
@@ -190,14 +192,14 @@ recurrences; standard and trust axioms by `matchesPin`), so a pin on a
 constant of another shape is refused, never accepted under the pinned
 name.
 
-**Nat-operation pins** (`Ix/Kernel/ConLeche/NatOpPinData.lean`, generated).
-One `ConLeche.NatOpPinSet` for the eight pin-certified operations (`div`,
+**Nat-operation pins** (`Ix/Kernel/Ixon/NatOpPinData.lean`, generated).
+One `Ix.Kernel.NatOpPinSet` for the eight pin-certified operations (`div`,
 `mod`, `gcd`, `land`, `lor`, `xor`, `shiftLeft`, `shiftRight`): the pins are
 the operations' stored values in the compiled Init, the certificates are the
-theorems of `ConLeche/PinGen/Certs.lean` compiled by Ix. `model_exists`
+theorems of `Ix/Kernel/PinGen/Certs.lean` compiled by Ix. `model_exists`
 holds at every pin list, so the list is untrusted.
 
-**Prelude** (`Ix/Kernel/ConLeche/Prelude.lean`). Con-leche puts twelve
+**Prelude** (`Ix/Kernel/Ixon/Prelude.lean`). Con-leche puts twelve
 declarations in front of every fold: the basis blocks `Eq`, `Nat`, `PUnit`,
 `Empty`, `False`, the quotient package (four `Quot` constants and
 `Quot.sound`), `And` and `Bool`. Here they are the compiled Init's own Ixon
@@ -214,9 +216,9 @@ before writing:
 
 ```sh
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe
-lake exe ix compile ConLeche/PinGen/Certs.lean --out .lake/census/certs.ixe --consts <the certificate theorems>
+lake exe ix compile Ix/Kernel/PinGen/Certs.lean --out .lake/census/certs.ixe --consts <the certificate theorems>
 lake exe conleche-pin-gen .lake/census/initstd.ixe .lake/census/certs.ixe \
-  Ix/Kernel/ConLeche/PinData.lean Ix/Kernel/ConLeche/NatOpPinData.lean
+  Ix/Kernel/Ixon/PinData.lean Ix/Kernel/Ixon/NatOpPinData.lean
 ```
 
 The full `--consts` list and the source hashes are in the generated files'
@@ -242,18 +244,19 @@ Project-level execution constructs are admitted only as named by
 
 | Construct | Where | Why admitted |
 | --- | --- | --- |
-| `@[computed_field]` overrides | `ConLeche.Level`, `ConLeche.Expr`, `ConLeche.Name` | cached hashes and packed data; a compiler feature, trusted with the compiler |
-| project `@[csimp]` | `ConLeche` | each replacement theorem depends on the standard axioms only |
+| `@[computed_field]` overrides | `Ix.Kernel.Level`, `Ix.Kernel.Expr`, `Ix.Kernel.Name` | cached hashes and packed data; a compiler feature, trusted with the compiler |
+| project `@[csimp]` | `Ix.Kernel` | each replacement theorem depends on the standard axioms only |
 | `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
-| `ConLeche.withExclusive` `implemented_by` `withExclusiveUnsafe` | `ConLeche/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
-| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `ConLeche.Kernel.BasisGen`, `ConLeche.PinGen*` | elaboration only; compiled code cannot reach them |
-| `partial` | `ConLeche.Frontend.InModel`, `InModelDump` | con-leche's in-process modeller, ported as upstream has it |
+| `Ix.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `Ix/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
+| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `Ix.Kernel.BasisGen`, `Ix.Kernel.PinGen*` | elaboration only; compiled code cannot reach them |
+| `partial` | `Ix.Kernel.Frontend.InModel`, `InModelDump` | con-leche's in-process modeller, vendored as upstream has it |
 
 Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
 
-- `kernelImportAllowlist`: `Init`, `Std`, `Ix.Kernel`, `Ix.Address.Core`,
-  `Ix.Ixon.Types`, `ConLeche`. It fences the reader, the record store, the
-  projection writer and the pure Ixon types.
+- `kernelImportAllowlist`: `Init`, `Std`, `Ix.Kernel` (the vendored
+  checker and Ix's boundary), `Ix.Address.Core`, `Ix.Ixon.Types`. It fences
+  the reader, the record store, the projection writer and the pure Ixon
+  types.
 - `importAllowlist` (the certified API's closure, rooted at
   `Ix.Ixon.Admission`): the above plus exactly `Ix.Ixon.{Codec, Wire,
   WireCheck, Bounded.Constant, Bounded.Universe, Canonical, Admission,
@@ -262,8 +265,8 @@ Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
 - `proofImportAllowlist` (the theorem modules): `importAllowlist` plus
   `Ix.Ixon.Bounded.Size`, `Ix.Ixon.Verify`, the two theorem modules and
   `Lean`.
-- `elaborationImports`: below `ConLeche.Kernel.BasisGen` and
-  `ConLeche.PinGen` only `Init`, `Std`, `Lean` and `ConLeche`.
+- `elaborationImports`: below `Ix.Kernel.BasisGen` and
+  `Ix.Kernel.PinGen` only `Init`, `Std`, `Lean` and `Ix.Kernel`.
 
 `Std` is admitted for its maps and their lemmas, as con-leche uses them.
 
@@ -285,7 +288,7 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `ConLeche.Cached.checkDecls` | 3022 | 83 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3022 | 83 |
 | reader `readRecords`, `readStream` | 1886 | 82 |
 | entry: the API, `ConLecheAdmission.checkBytes{,With}`, `checkConstants{,With}` | 5310 | 123 |
 | byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5308 | 123 |
@@ -304,7 +307,8 @@ recursor blocks: 9). Statements are re-recorded the same way.
 
 1. `scripts/check-kernel-retirement.py`: no active reference to a retired
    intrinsic module, entry point, executable or script (with negative and
-   positive controls);
+   positive controls), and `scripts/vendor-conleche.py check-lake`: the
+   vendored library's globs are exactly the vendored tree;
 2. the strict `IxKernel` build with every audit;
 3. the host build of the kernel tests (`Tests/Ix/Kernel/{ByteAdmission,
    ConLecheReader, CertifiedEntry, Projection, BlockOrder, Codec, ...}`),
@@ -313,14 +317,15 @@ recursor blocks: 9). Statements are re-recorded the same way.
 5. `kernel-codec` (production codec against Rust) and `kernel-order`
    (canonical block order against Rust);
 6. with `--with-model`, the `Models/SetTheory` build and its audit;
-7. `scripts/layering.sh`: the `ConLeche/**` import layering (implementation
-   never imports theory, base never imports the model lane, the rules fence
-   and its five recorded doors, and the boundary: `ConLeche/**` imports
-   only `ConLeche`, `Init`, `Std` and, at elaboration time, `Lean`);
-8. `scripts/trust-surface.sh`: a lexer-based scan of `ConLeche/**` for
+7. `scripts/layering.sh`: the vendored tree's import layering, by upstream
+   path (implementation never imports theory, base never imports the model
+   lane, the rules fence and its five recorded doors, and the boundary: a
+   vendored module imports only the vendored tree, `Init`, `Std` and, at
+   elaboration time, `Lean`);
+8. `scripts/trust-surface.sh`: a lexer-based scan of the vendored tree for
    compiler escapes (`unsafe`, `implemented_by`, `computed_field`,
    `native_decide`, `extern`, `sorry`, `axiom`, ...); 11 escapes in four
-   allowlisted files (`ConLeche/Kernel/{Expr,Name,Exclusive,BasisGen}.lean`)
+   allowlisted files (`Ix/Kernel/{Expr,Name,Exclusive,BasisGen}.lean`)
    are permitted, each with its justification in the script;
 9. `kernel-entry-cases`: Lean declarations of
    `Tests/Ix/Kernel/EntryCaseDefs.lean` compiled by Ix's compiler and
@@ -337,70 +342,138 @@ recursor blocks: 9). Statements are re-recorded the same way.
 The CI job runs the same gate and keeps the codec, order and entry-case
 logs.
 
+## Vendored con-leche
+
+[Con-leche](https://github.com/leanprover/con-leche) is a Lean kernel
+checker written in Lean whose acceptance is proved to imply consistency:
+`ConLeche.model_exists` gives every environment its fold accepts a model in
+any set theory implementing its `SetTheory` interface, on the three standard
+axioms. Ix uses it as its certified checker, vendored in place: `Ix/Kernel/**`
+holds a modified copy of the files of con-leche's `ConLeche/` tree that the
+checker, the reader and the theorems use, and Ix's own boundary beside them.
+
+**What is vendored, from where.** 452 Lean modules from
+`https://github.com/leanprover/con-leche.git` at
+`ae0c0c4e4ce6a0081648aff03fe9c39d002c4526`, seven of them (the files
+upstream task #323, KEEPPROJ, changed) at
+`3ca9e2fe749a51cba4c6e3527aeecba074c29316`, under Apache-2.0
+(`Ix/Kernel/LICENSE-CON-LECHE`, upstream's `LICENSE` verbatim;
+`Ix/Kernel/NOTICE` states the modifications). They are the import closure
+of `model_exists`, the eight frontend modules the reader calls, and
+`Verify/Cached/StreamThm.lean`.
+
+**The rewrite.** Every vendored file is upstream's file passed through one
+deterministic script, `scripts/vendor-conleche.py`:
+
+- paths: `ConLeche/Kernel/X` becomes `Ix/Kernel/X` (the kernel directory is
+  flattened), any other `ConLeche/X` becomes `Ix/Kernel/X`;
+- names: the namespace and module prefix `ConLeche` (and `ConLeche.Kernel`)
+  become `Ix.Kernel`, as whole words, so `import ConLeche.Kernel.Core` is
+  `import Ix.Kernel.Core` and `ConLeche.Expr` is `Ix.Kernel.Expr`;
+- one first line, `-- con-leche's <upstream path>, vendored by
+  scripts/vendor-conleche.py (paths and namespace ConLeche → Ix.Kernel); see
+  Ix/Kernel/NOTICE.`
+
+445 of the 452 modules are exactly that (`Transformation.rewritten` in the
+manifest), so they stay "verbatim up to the rewrite", and checkably so:
+`kernel-provenance --source-git <checkout>` re-derives each from upstream
+through the script and compares hashes. The script refuses an upstream path
+that would land in Ix's boundary or collide after the flattening, and its
+`upstream` command inverts the path map (the fences classify modules by
+upstream path).
+
+**What is adapted, and why.** Seven vendored modules carry further changes,
+each listed in its port header (`Ported from con-leche at <revision>.
+Source: <upstream path>. Transformations: ...`) and its manifest row, and
+then the same rewrite:
+
+| File | Change | Why |
+| --- | --- | --- |
+| `Ix/Kernel/CheckerBase.lean` | imports `NatOpPinSet` instead of `NatOpPins` | upstream's `NatOpPins` splices JSON pin dumps; Ix's Nat-operation pins are generated from Ixon records (`Ix/Kernel/Ixon/NatOpPinData.lean`) |
+| `Ix/Kernel/Verify/Cached/{AgreeFloor,PushChain}.lean` | `import all Init.LetFun` | Lean 4.34.0 no longer exposes `letFun`'s body, which these proofs unfold |
+| `Ix/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Ix's compiler orders a nested block's auxiliary motives canonically (cl-m1) |
+| `Ix/Kernel/Level.lean`, `Ix/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`, cl-level) |
+| `Ix/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
+
+The axiom pin `Tests/Ix/Kernel/Axioms.lean` (upstream's
+`tests/ConLecheTests/Axioms.lean`, cut to the vendored closure) is the
+eighth adapted row. Two modules inside the vendored tree are Ix's,
+`Ix/Kernel/LevelGeran.lean` and `Ix/Kernel/Verify/LevelGeran.lean`
+(Géran's sublevels and their soundness and completeness), because the
+adapted `Level` files import them and a vendored module imports only the
+vendored tree. Upstream's `ConLeche/Kernel/NatOpPins.lean` is not vendored.
+
+**Ix's boundary beside it** (`Ix/Kernel/{Ref,Search}.lean`,
+`Ix/Kernel/{Audit,Ingress,Egress,Ixon}/`, the umbrella `Ix/Kernel.lean`) is
+Ix-authored: the Ixon reader and its specification, the committed pins and
+prelude, the record store, the projection writer and the audits. It was
+`Ix/Kernel/ConLeche/` until 2026-10-01; the vendored tree was `ConLeche/**`
+with namespace `ConLeche`, byte-identical to upstream, from the port (plan
+v4, 2026-09-30) until the user's ruling of 2026-10-01 moved it under
+`Ix.Kernel`.
+
+**Builds.** The vendored modules are the library `IxKernelVendored` in both
+`lakefile.lean` and `IxKernel/lakefile.lean`, for one option:
+`linter.deprecated` is off, so upstream's 4.33.0-era sources build under
+`--wfail` on 4.34.0 unchanged. Its globs are exactly the vendored tree
+(`vendor-conleche.py check-lake`, run by `check-kernel`).
+
+**Syncing with upstream.** Upstream drifts (master has uniform inductives,
+FEnv linearity, csimp openers); a sync is a separate change:
+
+1. Fetch the new revision into a con-leche checkout (`plans/refs/con-leche`).
+2. `python3 scripts/vendor-conleche.py sync <checkout> <revision>`: it
+   rewrites every vendored file from the new revision, leaves the adapted
+   and Ix-authored files alone (and lists them), and lists upstream files
+   that are not vendored. Review `jj diff`; vendor any new module the
+   closure now imports (`sync <checkout> <revision> <path>...`, then
+   `check-lake` for the lakefile globs).
+3. Re-apply each adaptation to its new upstream source, keeping its port
+   header (`Source:` is the upstream path).
+4. `python3 scripts/vendor-conleche.py rows <checkout> <revision> <paths>...`
+   prints the rewritten rows; add the adapted ones by hand, then
+   `python3 scripts/provenance-rows.py rows.tsv --check-dest . --splice
+   Tests/Ix/Kernel/ImportManifest.lean`; set `conLeche.revision` (or add an
+   origin, as `conLecheKeepProj` for #323) and the revisions in
+   `Ix/Kernel/NOTICE` and the lakefile docstrings.
+5. `lake exe kernel-provenance --source-git <checkout>` and the full gate.
+   A changed closure moves the frozen counts; re-record each with its
+   explanation, and re-record changed statements.
+
 ## Provenance
 
 `Tests/Ix/Kernel/ImportManifest.lean` records every imported file: source
 path and SHA-256 at the origin's revision, destination path and SHA-256, and
-transformation (`verbatim`, or `adapted` with a summary). Rows are grouped by
-origin and licence:
+transformation (`verbatim`, `rewritten` by `scripts/vendor-conleche.py`, or
+`adapted` with a summary). Rows are grouped by origin and licence:
 
 - con-leche, `https://github.com/leanprover/con-leche.git` at
-  `ae0c0c4e4ce6a0081648aff03fe9c39d002c4526`: the import closure of
-  `ConLeche.model_exists` plus what the reader and theorems use (452
-  modules), the licence, and the two fence scripts with the lexer fixture.
-  Seven of the verbatim modules, the ones upstream task #323 (KEEPPROJ)
-  changed, are at `3ca9e2fe749a51cba4c6e3527aeecba074c29316` instead and
-  form their own set (int-5).
-  Verbatim files are byte-identical and carry no header. Adapted files start
-  with a port header (revision, source path, transformations): seven modules
-  (`ConLeche/Kernel/CheckerBase.lean`, which imports `NatOpPinSet` in place
-  of the unported JSON `NatOpPins`; `ConLeche/Verify/Cached/{AgreeFloor,
-  PushChain}.lean`, which add `import all Init.LetFun` for Lean 4.34.0;
-  `ConLeche/Frontend/InModel/Nested.lean`, whose container groups do not
-  depend on the auxiliary motives' order, cl-m1;
-  `ConLeche/Kernel/Level.lean` and `ConLeche/Verify/Level.lean`, whose
-  `(param, max)` case falls back on Géran's sublevels, with its soundness
-  case, cl-level; `ConLeche/MainTheorem.lean`, cut to `model_exists`) and
-  `Tests/ConLeche/Axioms.lean`. The last two carry Argument's modification
-  notice and are licensed `Apache-2.0 AND (MIT OR Apache-2.0)`; the rest is
-  `Apache-2.0`;
+  `ae0c0c4e4ce6a0081648aff03fe9c39d002c4526`: the 452 vendored modules (445
+  rewritten, seven adapted; above), the axiom pin `Tests/Ix/Kernel/Axioms.lean`,
+  the licence, and the two fence scripts with the lexer fixture. The seven
+  modules upstream task #323 (KEEPPROJ) changed are at
+  `3ca9e2fe749a51cba4c6e3527aeecba074c29316` instead and form their own set
+  (int-5). `MainTheorem.lean` and the axiom pin carry Argument's
+  modification notice and are licensed `Apache-2.0 AND (MIT OR Apache-2.0)`;
+  the rest is `Apache-2.0`;
 - the old Ix branch `jcb/ix-kernel-consistency` at `ad60e5f6`: only
   `Ix/Kernel/Ref.lean` and its licence and notice files remain since L6;
-- `authored`: the 68 Ix-authored modules under the inventoried trees,
-  among them `ConLeche/Kernel/LevelGeran.lean` and
-  `ConLeche/Verify/LevelGeran.lean` (cl-level), the only Ix modules inside
-  `ConLeche/`: the adapted `Level.lean` files import them, and a
-  `ConLeche/**` module imports only `ConLeche`, `Init`, `Std` and `Lean`.
+- `authored`: the 68 Ix-authored modules under the inventoried trees, among
+  them the boundary `Ix/Kernel/{Ixon,Ingress,Egress,Audit}/**`,
+  `Ix/Kernel/Search.lean`, the umbrella, the pure Ixon boundary, and
+  `Ix/Kernel/LevelGeran.lean` and `Ix/Kernel/Verify/LevelGeran.lean`
+  (cl-level), the only Ix modules inside the vendored tree.
 
-`lake exe kernel-provenance` checks that every Lean file under `Ix/Kernel`,
-`Ix/Ixon` and `ConLeche` (and `Ix/Kernel.lean`, `Ix/Address/Core.lean`,
-`ConLeche.lean`) is recorded, every destination hash and port header,
-licences and licence files. `--source-git <con-leche checkout>` also
-verifies every source hash against the recorded revision; `--source
-<jj workspace>` does so for the old branch, which needs a workspace holding
-`ad60e5f6`.
-
-To sync with a newer con-leche revision:
-
-1. In a con-leche checkout at the new revision, copy the changed files of
-   the closure into `ConLeche/` at the same paths (and any new file the
-   closure now imports). Keep verbatim files byte-identical; re-apply each
-   adaptation to its new source and update its port header.
-2. Write a TSV with one row per imported file (`source_path`,
-   `source_sha256`, `dest_path`, `dest_sha256`, `transformation`) and run
-   `python3 scripts/provenance-rows.py rows.tsv --check-dest . --check-source
-   <checkout> --rev <revision> --splice Tests/Ix/Kernel/ImportManifest.lean`.
-   It checks the hashes and splices `conLecheRows` between its markers.
-3. Set `conLeche.revision` in the manifest, and the revision in the
-   `ConLeche` library docstrings of `lakefile.lean` and
-   `IxKernel/lakefile.lean` and in the two fence scripts' headers.
-4. Keep ``leanOptions := #[⟨`linter.deprecated, false⟩]`` on both
-   `ConLeche` library declarations: upstream writes for Lean 4.33.0 and
-   uses lemma names that 4.34.0 deprecates, and the files must build under
-   `--wfail` without edits.
-5. Run `lake exe kernel-provenance --source-git <checkout>` and the full
-   gate. A changed closure moves the frozen counts; re-record each with its
-   explanation, and re-record changed statements.
+`lake exe kernel-provenance` checks that every Lean file under `Ix/Kernel`
+and `Ix/Ixon` (and `Ix/Kernel.lean`, `Ix/Address/Core.lean`) is recorded;
+every destination hash; the vendoring header of every rewritten file and
+that its path is the script's destination of its source; the port header of
+every adapted file; licences and licence files. `--source-git <con-leche
+checkout>` also verifies every source hash at the recorded revision and
+re-derives every rewritten file from upstream through the script
+(`plans/refs/con-leche` and `plans/refs/con-leche-upstream` hold both
+revisions); `--source <jj workspace>` does so for the old branch, which
+needs a workspace holding `ad60e5f6`. The upstream-sync recipe is above.
 
 ## Census
 
@@ -470,7 +543,13 @@ retirement's file-by-file
 inventory is in `plans/review/cl-l6/` (not versioned). Its design notes
 went with it: the roadmap's sections 3.1 to 3.7, and the UID and
 performance plan for that kernel (`docs/certified-kernel-uids-plan.md`,
-2026-09-30, never implemented), both removed on 2026-10-01.
+2026-09-30, never implemented), both removed on 2026-10-01. Since the vendored
+con-leche tree moved under `Ix/Kernel/**` (2026-10-01), four of its module
+names are reused (`Ix.Kernel.Env`, `Ix.Kernel.Expr`, `Ix.Kernel.Level` and
+the directory `Ix/Kernel/Model/`, with different contents), as is the axiom
+test's path `Tests/Ix/Kernel/Axioms.lean`; `scripts/check-kernel-retirement.py`
+rejects the intrinsic names that are not reused, and the reused paths are
+guarded by provenance (every Lean file there is a hash-pinned row).
 
 ## Removal ledger: lean4ix and Ix.Tc
 

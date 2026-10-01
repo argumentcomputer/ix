@@ -121,13 +121,13 @@ namespace Tests.Ix.Kernel.ReaderFidelity
 and as the reference translates it. -/
 inductive Entry where
   | axiom (cv : CVal)
-  | defn (cv : CVal) (value : CExpr) (hint : ConLeche.ReducibilityHint)
+  | defn (cv : CVal) (value : CExpr) (hint : Ix.Kernel.ReducibilityHint)
   | thm (cv : CVal) (value : CExpr)
   | opaque (cv : CVal) (value : CExpr)
-  | quot (kind : ConLeche.QuotKind) (cv : CVal)
+  | quot (kind : Ix.Kernel.QuotKind) (cv : CVal)
   | induct (cv : CVal) (numParams : Nat)
   | ctor (cv : CVal) (numParams numFields : Nat)
-  | recr (cv : CVal) (majorIdx rulePrefix : Nat) (rules : List ConLeche.RecRule)
+  | recr (cv : CVal) (majorIdx rulePrefix : Nat) (rules : List Ix.Kernel.RecRule)
   deriving Inhabited
 
 /-! Equality is decided field by field with con-leche's executed equalities
@@ -138,12 +138,12 @@ not see sharing and is exponential on the DAGs that both sides build. -/
 def CVal.beq (a b : CVal) : Bool :=
   a.name == b.name && a.levelParams == b.levelParams && a.type == b.type
 
-def RecRule.beq (a b : ConLeche.RecRule) : Bool :=
+def RecRule.beq (a b : Ix.Kernel.RecRule) : Bool :=
   a.ctor == b.ctor && a.nfields == b.nfields && a.ctorParams == b.ctorParams &&
     decide (a.fire = b.fire) && a.rhs == b.rhs && a.k == b.k && a.eta == b.eta &&
     a.paramsBlind == b.paramsBlind
 
-def RecRule.listBeq : List ConLeche.RecRule → List ConLeche.RecRule → Bool
+def RecRule.listBeq : List Ix.Kernel.RecRule → List Ix.Kernel.RecRule → Bool
   | [], [] => true
   | a :: as, b :: bs => RecRule.beq a b && RecRule.listBeq as bs
   | _, _ => false
@@ -218,7 +218,7 @@ def cvDiff (a b : CVal) : Option String :=
     some s!"level parameters {a.levelParams} vs {b.levelParams}"
   else exprDiff "type" a.type b.type
 
-def ruleDiff (i : Nat) (a b : ConLeche.RecRule) : Option String :=
+def ruleDiff (i : Nat) (a b : Ix.Kernel.RecRule) : Option String :=
   if a.ctor != b.ctor then some s!"rule {i}: constructor {a.ctor} vs {b.ctor}"
   else if a.nfields != b.nfields then some s!"rule {i}: {a.nfields} fields vs {b.nfields}"
   else if a.rhs != b.rhs then exprDiff s!"rule {i} rhs" a.rhs b.rhs
@@ -382,13 +382,13 @@ def trLevel (cx : TrCx) (l : Lean.Level) : TrM CLevel := do
   modify fun s => { s with levels := s.levels.insert l c }
   return c
 
-def never : ConLeche.BinderMeta := ⟨.never⟩
+def never : Ix.Kernel.BinderMeta := ⟨.never⟩
 
 partial def trExpr (cx : TrCx) (e : Lean.Expr) : TrM CExpr := do
   let p := _root_.Ix.CanonM.leanExprPtr e
   if let some c ← modifyGet (fun s => (s.exprs[p]?, s)) then return c
   let c ← match e with
-    | .bvar i => pure (ConLeche.Expr.mkBvar i)
+    | .bvar i => pure (Ix.Kernel.Expr.mkBvar i)
     | .sort u => do pure (.sort (← trLevel cx u))
     | .const n us => do pure (.const (← trName cx n) (← us.mapM (trLevel cx)))
     | .app f a => do pure (.app (← trExpr cx f) (← trExpr cx a))
@@ -404,12 +404,12 @@ partial def trExpr (cx : TrCx) (e : Lean.Expr) : TrM CExpr := do
   modify fun s => { s with exprs := s.exprs.insert p c }
   return c
 
-def hintOf : Lean.ReducibilityHints → ConLeche.ReducibilityHint
+def hintOf : Lean.ReducibilityHints → Ix.Kernel.ReducibilityHint
   | .opaque => .opaque
   | .abbrev => .abbrev
   | .regular h => .regular h.toNat
 
-def quotKind : Lean.QuotKind → ConLeche.QuotKind
+def quotKind : Lean.QuotKind → Ix.Kernel.QuotKind
   | .type => .type | .ctor => .ctor | .lift => .lift | .ind => .ind
 
 /-- Why the reader is expected to decline a constant, if it is. -/
@@ -445,7 +445,7 @@ def reference (rcx : RefCx) (n : Lean.Name) (ci : Lean.ConstantInfo) : TrM Entry
   | .ctorInfo v => pure (.ctor cv v.numParams v.numFields)
   | .recInfo v =>
     let rules ← v.rules.mapM fun r => do
-      pure (ConLeche.RecRule.mk (← trName cx r.ctor) r.nfields 0 .inert (← trExpr cx r.rhs)
+      pure (Ix.Kernel.RecRule.mk (← trName cx r.ctor) r.nfields 0 .inert (← trExpr cx r.rhs)
         false false false)
     pure (.recr cv (v.numParams + v.numMotives + v.numMinors + v.numIndices)
       (v.numParams + v.numMotives + v.numMinors) rules)
@@ -646,7 +646,7 @@ structure Cx where
   foreign : Std.HashSet Address
   keep : Lean.Name → Bool
   /-- the host hint the census supplies at a Lean constant's reference -/
-  advisory : Lean.Name → Option ConLeche.ReducibilityHint
+  advisory : Lean.Name → Option Ix.Kernel.ReducibilityHint
   /-- how many Lean constants share a Lean constant's reference -/
   aliases : Lean.Name → Nat
 
@@ -818,7 +818,7 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
     match store[a]? with
     | some c => acc.insert (owner a c)
     | none => acc) {}
-  let advisory (n : Lean.Name) : Option ConLeche.ReducibilityHint := (refs[n]?).bind s.cx.hint
+  let advisory (n : Lean.Name) : Option Ix.Kernel.ReducibilityHint := (refs[n]?).bind s.cx.hint
   let aliases (n : Lean.Name) : Nat := ((refs[n]?).map fun r => (byRef.getD r #[]).size).getD 0
   let cx : Cx := { input, rcx, named, byName, foreign, keep, advisory, aliases }
   -- read in the census order, comparing each record's constants at the

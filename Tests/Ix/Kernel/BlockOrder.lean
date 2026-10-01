@@ -196,9 +196,9 @@ def byteAccepts : Bool := (checkBytes 16 ByteAdmission.limits {}
   | .error (.order (.exhausted .refinement)) => true
   | _ => false
 
-example (V : Type) [ConLeche.SetTheory V] {env : ConLeche.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
     (h : checkBytes 16 ByteAdmission.limits {}
-      (Projection.encode Projection.separatedInput) [] = .ok env) : Nonempty (ConLeche.Model V env) :=
+      (Projection.encode Projection.separatedInput) [] = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytes_has_model V h
 
 end Tests.Ix.Kernel.BlockOrder

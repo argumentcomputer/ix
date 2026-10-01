@@ -245,7 +245,7 @@ open Ix.Kernel.ConLecheReader (defaultPins builtinPrelude builtinNatOpPins)
 
 theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
     checkBytes maxProjections limits orderLimits records blobs hint = .ok env ↔
       Admission.preflight limits records blobs = .ok () ∧
       Admission.uniqueKeys records blobs = .ok () ∧ ∃ input output,
@@ -280,7 +280,7 @@ theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits) (o
 
 theorem checkBytes_ok_iff (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
     checkBytes maxProjections limits orderLimits records blobs hint = .ok env ↔
       Verify.Admission.WithinBatch limits records blobs ∧
       Verify.Admission.UniqueKeys records blobs ∧ ∃ input output,
@@ -295,7 +295,7 @@ canonical order, and the checker installed what the expanded records
 describe. -/
 theorem checkBytes_reading {maxProjections : Nat} {limits : Admission.Limits} {orderLimits : Limits}
     {records : Admission.Records} {blobs : Ingress.Blobs}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes maxProjections limits orderLimits records blobs hint = .ok env) :
     Verify.Admission.UniqueKeys records blobs ∧ ∃ input output, Verify.Admission.RecordsRead limits records input ∧
       Projection.Expanded maxProjections input output ∧ Ordered orderLimits blobs input ∧
@@ -309,20 +309,20 @@ theorem checkBytes_reading {maxProjections : Nat} {limits : Admission.Limits} {o
     ConLecheAdmission.checkConstantsWith_installed hw⟩
 
 /-- **Model existence** for the certified ordered entry. -/
-theorem checkBytes_has_model (V : Type v) [ConLeche.SetTheory V] {maxProjections : Nat}
+theorem checkBytes_has_model (V : Type v) [Ix.Kernel.SetTheory V] {maxProjections : Nat}
     {limits : Admission.Limits} {orderLimits : Limits} {records : Admission.Records}
-    {blobs : Ingress.Blobs} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : checkBytes maxProjections limits orderLimits records blobs hint = .ok env) :
-    Nonempty (ConLeche.Model V env) := by
+    {blobs : Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : checkBytes maxProjections limits orderLimits records blobs hint = .ok env) :
+    Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.has_model V
 
 /-- **No proof of `False`** for the certified ordered entry. -/
-theorem checkBytes_no_proof_of_False (V : Type v) [ConLeche.SetTheory V] {maxProjections : Nat}
+theorem checkBytes_no_proof_of_False (V : Type v) [Ix.Kernel.SetTheory V] {maxProjections : Nat}
     {limits : Admission.Limits} {orderLimits : Limits} {records : Admission.Records}
-    {blobs : Ingress.Blobs} {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
-    {env : ConLeche.Env} (h : checkBytes maxProjections limits orderLimits records blobs hint = .ok env) :
-    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const ConLeche.falseName [] → False := by
+    {blobs : Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env} (h : checkBytes maxProjections limits orderLimits records blobs hint = .ok env) :
+    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.no_proof_of_False V
 

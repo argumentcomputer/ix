@@ -11,7 +11,7 @@ End-to-end fixtures for `Ix.Ixon.ConLecheAdmission.checkBytes`: canonical
 record bytes are preflighted, decoded, read by `Ix.Kernel.ConLecheReader`,
 prepared with the Ixon prelude (`Eq`, `Nat`, `PUnit`, `Empty`, `False`, the
 quotient package, `And`, `Bool`, from the compiled Init's own records) and
-checked by `ConLeche.Cached.checkDecls .verified`.
+checked by `Ix.Kernel.Cached.checkDecls .verified`.
 
 Positive: a definition and a definition over it with a theorem by delta, a
 definition block stored out of dependency order with a theorem by delta
@@ -79,10 +79,10 @@ def encode (cs : List (Address × Ixon.Constant)) : Ix.Ixon.Admission.Records :=
 
 def builtinPins : Pins := match defaultPins with | .ok p => p | .error _ => {}
 def builtinPre : Prelude := match builtinPrelude with | .ok p => p | .error _ => default
-def builtinNatPins : List ConLeche.NatOpPinSet := match builtinNatOpPins with | .ok ps => ps | .error _ => []
+def builtinNatPins : List Ix.Kernel.NatOpPinSet := match builtinNatOpPins with | .ok ps => ps | .error _ => []
 
 def run (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
-    (pins : Pins := builtinPins) : Except Error ConLeche.Env :=
+    (pins : Pins := builtinPins) : Except Error Ix.Kernel.Env :=
   checkBytesWith pins builtinPre builtinNatPins limits (encode cs) blobs
 
 def accepts (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
@@ -130,7 +130,7 @@ def quotLift := pinned "Quot.lift"
     | _, _ => false
   | .error _ => false
 #guard builtinPins.names.size == 55
-#guard (builtinPre.ix.decls.toList.map (toString ∘ ConLeche.Frontend.preludeKey)) ==
+#guard (builtinPre.ix.decls.toList.map (toString ∘ Ix.Kernel.Frontend.preludeKey)) ==
   ["Eq", "Nat", "PUnit", "Empty", "False", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Quot.sound",
    "And", "Bool"]
 #guard [eq, eqRefl, nat, natZero, natSucc, quotMk, quotLift].all (· != address 0)
@@ -477,7 +477,7 @@ groups in motive order, so `List`'s singleton group and `LNode`'s family both
 claimed motive 1, and the block was rejected with `duplicate declaration
 ix.<LTree>.0._model._impl.pack_0`, as `Lean.Elab.InfoTree` was (with `pack_1`)
 in the first Mathlib census. The modeller now forms the groups largest family
-first (`ConLeche/Frontend/InModel/Nested.lean`, an adapted row). -/
+first (`Ix/Kernel/Frontend/InModel/Nested.lean`, an adapted row). -/
 
 /-- (address, canonical record bytes) -/
 def lTreeRecords : List (String × String) := [
@@ -586,7 +586,7 @@ def lTreeBlock : Address := (addressOfHex "697b5ac9c6a84d59c3031db23bdf61fcc97fe
 def lNodeBlock : Address := (addressOfHex "8f2c84a1f74bacc1ba80610719e487949eefc2518be0681faff3f6d21f72aef1").getD (address 0)
 
 /-- The reader's state and declarations after the stream. -/
-def lTreeRead : Option (State × Array ConLeche.Declaration) := do
+def lTreeRead : Option (State × Array Ix.Kernel.Declaration) := do
   let constants ← (Ix.Ixon.Admission.decodeRecords limits lTreeStream).toOption
   let cx := streamContext builtinPins builtinPre constants [] (fun _ => none)
   (readRecords cx builtinPre.state constants.toArray).toOption
@@ -600,7 +600,7 @@ def lTreeMotiveHeads : Option (List String) := do
   let r0 ← b.recs.find? (·.cv.name == t0.cv.name.str "rec")
   let (_, afterP) ← r0.cv.type.stripPis t0.nP
   let (motives, _) ← afterP.stripPis r0.nM
-  let mems ← (ConLeche.Frontend.InModel.readMems t0.cv.levelParams t0.nP b.types
+  let mems ← (Ix.Kernel.Frontend.InModel.readMems t0.cv.levelParams t0.nP b.types
     (motives.map (·.1))).toOption
   pure (mems.map (toString ·.I))
 
@@ -651,8 +651,8 @@ the `max`, and each branch fails on its own (at `x = 0` and at `x = 1`).
 Until cl-level the theorem was refused with `application type mismatch`, as
 `RatFunc.liftOn_def` and `RatFunc.liftOn'_def` (unfolding lemmas of
 `irreducible_def`) were in the Mathlib census. That case of the comparison
-now falls back on Géran's sublevels (`ConLeche/Kernel/LevelGeran.lean`, a
-decision procedure, `ConLeche.Level.Geran.leq_iff`), and the theorem is
+now falls back on Géran's sublevels (`Ix/Kernel/LevelGeran.lean`, a
+decision procedure, `Ix.Kernel.Level.Geran.leq_iff`), and the theorem is
 accepted. The reader converts levels as stored. -/
 
 /-- (address, canonical record bytes) -/
@@ -698,31 +698,31 @@ def levelStream : Ix.Ixon.Admission.Records :=
   levelRecords.filterMap fun (a, b) => do pure (← addressOfHex a, ← bytesOfHex b)
 
 /-- The theorem's level parameters as the reader names them. -/
-def lw : ConLeche.Level := .param (levelName 0)
-def lx : ConLeche.Level := .param (levelName 1)
-def lsucc (l : ConLeche.Level) : Nat → ConLeche.Level
+def lw : Ix.Kernel.Level := .param (levelName 0)
+def lx : Ix.Kernel.Level := .param (levelName 1)
+def lsucc (l : Ix.Kernel.Level) : Nat → Ix.Kernel.Level
   | 0 => l
   | k + 1 => .succ (lsucc l k)
 
 /-- The `Subtype`'s inferred type level and the `Eq`'s domain level. -/
-def subtypeLevel : ConLeche.Level :=
+def subtypeLevel : Ix.Kernel.Level :=
   .max (.imax (.max (lsucc lw 2) (lsucc lx 1)) lx) (lsucc .zero 1)
-def eqLevel : ConLeche.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
+def eqLevel : Ix.Kernel.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
 
 #guard levelStream.length == levelRecords.length && levelRecords.length == 9
 -- equal at every valuation of `w, x` in `0‥5` (both are `1` at `x = 0`, and
 -- `max (w+2) (x+1)` otherwise)
 #guard (List.range 6).all fun i => (List.range 6).all fun j =>
-  let φ : ConLeche.Name → Nat := fun n => if n == levelName 0 then i else if n == levelName 1 then j else 0
-  ConLeche.Level.eval φ subtypeLevel == ConLeche.Level.eval φ eqLevel
+  let φ : Ix.Kernel.Name → Nat := fun n => if n == levelName 0 then i else if n == levelName 1 then j else 0
+  Ix.Kernel.Level.eval φ subtypeLevel == Ix.Kernel.Level.eval φ eqLevel
 -- the comparison establishes both directions, and so the equivalence
-#guard ConLeche.Level.leq subtypeLevel eqLevel == some true
-#guard ConLeche.Level.leq eqLevel subtypeLevel == some true
-#guard ConLeche.Level.isEquiv subtypeLevel eqLevel == some true
+#guard Ix.Kernel.Level.leq subtypeLevel eqLevel == some true
+#guard Ix.Kernel.Level.leq eqLevel subtypeLevel == some true
+#guard Ix.Kernel.Level.isEquiv subtypeLevel eqLevel == some true
 -- the case nanoda's split misses, `x + 1 ≤ max (imax … x) 1`, by sublevels:
 -- `x + 1` is dominated by the `imax`'s `x + 1` where `x` is nonzero and by
 -- the `1` where it is zero
-#guard ConLeche.Level.Geran.leq lx (subtypeLevel) (-1)
+#guard Ix.Kernel.Level.Geran.leq lx (subtypeLevel) (-1)
 -- and the theorem is accepted
 #guard match checkBytesWith builtinPins builtinPre builtinNatPins limits levelStream [] with
   | .ok env => (env.consts.map (toString ·.name)).contains
@@ -828,13 +828,13 @@ example {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := keyName_
 
 /-! ## Model existence -/
 
-example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
-    (h : checkBytes limits records blobs = .ok env) : Nonempty (ConLeche.Model V env) :=
+example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Ixon.Admission.Records}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    (h : checkBytes limits records blobs = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytes_has_model V h
 
-example (V : Type) [ConLeche.SetTheory V] {env : ConLeche.Env}
-    (h : run strings strBlobs stringPins = .ok env) : Nonempty (ConLeche.Model V env) :=
+example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
+    (h : run strings strBlobs stringPins = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytesWith_has_model V h
 
 end Tests.Ix.Kernel.ConLecheReader

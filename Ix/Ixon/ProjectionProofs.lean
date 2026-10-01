@@ -307,7 +307,7 @@ open Ix.Kernel.ConLecheReader (defaultPins builtinPrelude builtinNatOpPins)
 
 theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
     checkBytes maxProjections limits records blobs hint = .ok env ↔
       Admission.preflight limits records blobs = .ok () ∧
       Admission.uniqueKeys records blobs = .ok () ∧ ∃ input output,
@@ -337,7 +337,7 @@ theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits)
 checker on the expanded records. -/
 theorem checkBytes_ok_iff (maxProjections : Nat) (limits : Admission.Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint) (env : ConLeche.Env) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
     checkBytes maxProjections limits records blobs hint = .ok env ↔
       Verify.Admission.WithinBatch limits records blobs ∧
       Verify.Admission.UniqueKeys records blobs ∧ ∃ input output,
@@ -350,7 +350,7 @@ theorem checkBytes_ok_iff (maxProjections : Nat) (limits : Admission.Limits)
 projection extension. -/
 theorem checkBytes_of_expansion {maxProjections : Nat} {limits : Admission.Limits}
     {records : Admission.Records} {input output : Ingress.Constants} {blobs : Ingress.Blobs}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     (within : Verify.Admission.WithinBatch limits records blobs)
     (keys : Verify.Admission.UniqueKeys records blobs)
     (reading : Verify.Admission.RecordsRead limits records input)
@@ -368,7 +368,7 @@ records read exactly, their projection extension is the computed one, and
 the checker installed what the expanded records describe. -/
 theorem checkBytes_reading {maxProjections : Nat} {limits : Admission.Limits}
     {records : Admission.Records} {blobs : Ingress.Blobs}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes maxProjections limits records blobs hint = .ok env) :
     Verify.Admission.UniqueKeys records blobs ∧
     ∃ input output, Verify.Admission.RecordsRead limits records input ∧
@@ -381,20 +381,20 @@ theorem checkBytes_reading {maxProjections : Nat} {limits : Admission.Limits}
     ConLecheAdmission.checkConstantsWith_installed hw⟩
 
 /-- **Model existence** for the certified projection-omitting entry. -/
-theorem checkBytes_has_model (V : Type v) [ConLeche.SetTheory V] {maxProjections : Nat}
+theorem checkBytes_has_model (V : Type v) [Ix.Kernel.SetTheory V] {maxProjections : Nat}
     {limits : Admission.Limits} {records : Admission.Records} {blobs : Ingress.Blobs}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes maxProjections limits records blobs hint = .ok env) :
-    Nonempty (ConLeche.Model V env) := by
+    Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.has_model V
 
 /-- **No proof of `False`** for the certified projection-omitting entry. -/
-theorem checkBytes_no_proof_of_False (V : Type v) [ConLeche.SetTheory V] {maxProjections : Nat}
+theorem checkBytes_no_proof_of_False (V : Type v) [Ix.Kernel.SetTheory V] {maxProjections : Nat}
     {limits : Admission.Limits} {records : Admission.Records} {blobs : Ingress.Blobs}
-    {hint : ConstRef Address → Option ConLeche.ReducibilityHint} {env : ConLeche.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes maxProjections limits records blobs hint = .ok env) :
-    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const ConLeche.falseName [] → False := by
+    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.no_proof_of_False V
 

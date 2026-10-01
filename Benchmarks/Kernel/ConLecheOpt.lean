@@ -106,7 +106,7 @@ structure Loaded where
 
 /-- `ConLecheStep.setup` with the literal edges supplied. -/
 def setupWith (store : RecordStore) (blobs : Address → Option ByteArray) (pins : Pins) (pre : Prelude)
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint)
     (lits : Array (Address × Ixon.Constant)) : Setup := Id.run do
   let mut store := store
   for (a, c) in pre.records do
@@ -190,21 +190,21 @@ structurally equal subterm across the run). Values are unchanged, only
 sharing, so no verdict can move; the tables are host state. -/
 
 structure Interner where
-  names : Std.HashMap ConLeche.Name ConLeche.Name := {}
-  levels : Std.HashMap ConLeche.Level ConLeche.Level := {}
-  exprs : Std.HashMap ConLeche.Expr ConLeche.Expr := {}
+  names : Std.HashMap Ix.Kernel.Name Ix.Kernel.Name := {}
+  levels : Std.HashMap Ix.Kernel.Level Ix.Kernel.Level := {}
+  exprs : Std.HashMap Ix.Kernel.Expr Ix.Kernel.Expr := {}
   terms : Bool := false
   deriving Inhabited
 
 /-- The interning walk's state: the tables and the record's pointer memo. -/
-abbrev InternM := StateM (Interner × Std.HashMap USize ConLeche.Expr)
+abbrev InternM := StateM (Interner × Std.HashMap USize Ix.Kernel.Expr)
 
-def internN (n : ConLeche.Name) : InternM ConLeche.Name := do
+def internN (n : Ix.Kernel.Name) : InternM Ix.Kernel.Name := do
   match (← get).1.names[n]? with
   | some n' => pure n'
   | none => modify (fun (t, m) => ({ t with names := t.names.insert n n }, m)); pure n
 
-partial def internL (u : ConLeche.Level) : InternM ConLeche.Level := do
+partial def internL (u : Ix.Kernel.Level) : InternM Ix.Kernel.Level := do
   match (← get).1.levels[u]? with
   | some u' => pure u'
   | none =>
@@ -217,7 +217,7 @@ partial def internL (u : ConLeche.Level) : InternM ConLeche.Level := do
     modify (fun (t, m) => ({ t with levels := t.levels.insert u' u' }, m))
     pure u'
 
-unsafe def internE (e : ConLeche.Expr) : InternM ConLeche.Expr := do
+unsafe def internE (e : Ix.Kernel.Expr) : InternM Ix.Kernel.Expr := do
   let p := ptrAddrUnsafe e
   if let some r := (← get).2[p]? then return r
   let r ← match e with
@@ -239,11 +239,11 @@ unsafe def internE (e : ConLeche.Expr) : InternM ConLeche.Expr := do
   modify fun (t, m) => (t, m.insert p r)
   return r
 
-unsafe def internCV (cv : ConLeche.ConstantVal) : InternM ConLeche.ConstantVal := do
+unsafe def internCV (cv : Ix.Kernel.ConstantVal) : InternM Ix.Kernel.ConstantVal := do
   pure { cv with name := ← internN cv.name, levelParams := ← cv.levelParams.mapM internN,
                  type := ← internE cv.type }
 
-unsafe def internDecl : ConLeche.Declaration → InternM ConLeche.Declaration
+unsafe def internDecl : Ix.Kernel.Declaration → InternM Ix.Kernel.Declaration
   | .axiomDecl cv => do pure (.axiomDecl (← internCV cv))
   | .defnDecl cv v h => do pure (.defnDecl (← internCV cv) (← internE v) h)
   | .thmDecl cv v => do pure (.thmDecl (← internCV cv) (← internE v))
@@ -251,14 +251,14 @@ unsafe def internDecl : ConLeche.Declaration → InternM ConLeche.Declaration
   | d => pure d
 
 /-- A record's declarations, interned; the record's pointer memo is dropped. -/
-unsafe def internDeclsImpl (t : Interner) (ds : Array ConLeche.Declaration) :
-    Array ConLeche.Declaration × Interner :=
+unsafe def internDeclsImpl (t : Interner) (ds : Array Ix.Kernel.Declaration) :
+    Array Ix.Kernel.Declaration × Interner :=
   let (ds', (t', _)) := (ds.mapM internDecl).run (t, {})
   (ds', t')
 
 @[implemented_by internDeclsImpl]
-opaque internDecls (t : Interner) (ds : Array ConLeche.Declaration) :
-    Array ConLeche.Declaration × Interner
+opaque internDecls (t : Interner) (ds : Array Ix.Kernel.Declaration) :
+    Array Ix.Kernel.Declaration × Interner
 
 /-! ## What the environment holds (`CENSUS_SIZE`)
 
@@ -272,16 +272,16 @@ structure Sized where
   nodes : Nat := 0
   bytes : Nat := 0
 
-def nodeBytes : ConLeche.Expr → Nat
+def nodeBytes : Ix.Kernel.Expr → Nat
   | .bvar _ | .sort _ | .lit _ => 24
   | .fvar _ _ | .const _ _ | .app _ _ => 32
   | .lam _ _ _ | .forallE _ _ _ | .letE _ _ _ | .proj _ _ _ => 48
 
-unsafe def sizeWalk (seen : Std.HashSet USize) (acc : Sized) (e : ConLeche.Expr) :
+unsafe def sizeWalk (seen : Std.HashSet USize) (acc : Sized) (e : Ix.Kernel.Expr) :
     Std.HashSet USize × Sized := Id.run do
   let mut seen := seen
   let mut acc := acc
-  let mut todo : Array ConLeche.Expr := #[e]
+  let mut todo : Array Ix.Kernel.Expr := #[e]
   while h : todo.size > 0 do
     let e := todo[todo.size - 1]
     todo := todo.pop
@@ -298,9 +298,9 @@ unsafe def sizeWalk (seen : Std.HashSet USize) (acc : Sized) (e : ConLeche.Expr)
     | _ => pure ()
   return (seen, acc)
 
-unsafe def envLayersImpl (consts : List ConLeche.ConstantInfo)
-    (stateTypes : Array ConLeche.Expr) : List (String × Sized) := Id.run do
-  let layer (seen : Std.HashSet USize) (es : Array ConLeche.Expr) : Std.HashSet USize × Sized :=
+unsafe def envLayersImpl (consts : List Ix.Kernel.ConstantInfo)
+    (stateTypes : Array Ix.Kernel.Expr) : List (String × Sized) := Id.run do
+  let layer (seen : Std.HashSet USize) (es : Array Ix.Kernel.Expr) : Std.HashSet USize × Sized :=
     es.foldl (fun (seen, acc) e => sizeWalk seen acc e) (seen, {})
   let types := consts.toArray.map (·.toConstantVal.type)
   let defnValues := consts.toArray.filterMap fun | .defnInfo _ v _ => some v | _ => none
@@ -316,7 +316,7 @@ unsafe def envLayersImpl (consts : List ConLeche.ConstantInfo)
           ("theorem values", d), ("reader state types beyond the environment", e)]
 
 @[implemented_by envLayersImpl]
-opaque envLayers (consts : List ConLeche.ConstantInfo) (stateTypes : Array ConLeche.Expr) :
+opaque envLayers (consts : List Ix.Kernel.ConstantInfo) (stateTypes : Array Ix.Kernel.Expr) :
     List (String × Sized)
 
 /-! ## Term statistics (`CENSUS_STATS`) -/
@@ -399,7 +399,7 @@ def runStats (bytes : ByteArray) (list output : System.FilePath) : IO UInt32 := 
 /-- `ConLecheStep.censusLoop`, except that the record being read is
 `fetch`ed (decoded in full) while the store holds skeletons. -/
 def censusLoopWith (s : Setup) (fetch : Address → IO (Option Ixon.Constant))
-    (pins : List ConLeche.NatOpPinSet) (names : Address → Array String)
+    (pins : List Ix.Kernel.NatOpPinSet) (names : Address → Array String)
     (intern : Option Bool)
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
@@ -485,8 +485,8 @@ def censusLoopWith (s : Setup) (fetch : Address → IO (Option Ixon.Constant))
 /-- Phase A's result: the installed environment, the recorded checks with
 the record each belongs to, and what was left out. -/
 structure Installed where
-  fe : ConLeche.FEnv
-  pend : Array ConLeche.Cached.PendingCheck
+  fe : Ix.Kernel.FEnv
+  pend : Array Ix.Kernel.Cached.PendingCheck
   owners : Array Address
   installedRecords : Nat := 0
   leftOut : Nat := 0
@@ -494,13 +494,13 @@ structure Installed where
 /-- One record's declarations installed in order (`annotDeclStep`), from a
 fresh accumulator of recorded checks; `none` at the first failure. Every
 argument is consumed, so the index and the array are updated in place. -/
-def installRecord (pins : List ConLeche.NatOpPinSet) :
-    Nat → ConLeche.FEnv → Array ConLeche.Cached.PendingCheck → ConLeche.Cached.CState →
-      List ConLeche.Declaration →
-      Option (Nat × ConLeche.FEnv × Array ConLeche.Cached.PendingCheck × ConLeche.Cached.CState)
+def installRecord (pins : List Ix.Kernel.NatOpPinSet) :
+    Nat → Ix.Kernel.FEnv → Array Ix.Kernel.Cached.PendingCheck → Ix.Kernel.Cached.CState →
+      List Ix.Kernel.Declaration →
+      Option (Nat × Ix.Kernel.FEnv × Array Ix.Kernel.Cached.PendingCheck × Ix.Kernel.Cached.CState)
   | pos, fe, pend, cs, [] => some (pos, fe, pend, cs)
   | pos, fe, pend, cs, d :: rest =>
-    match ConLeche.Cached.annotDeclStep .verified pins (pos, fe, pend) d cs with
+    match Ix.Kernel.Cached.annotDeclStep .verified pins (pos, fe, pend) d cs with
     | .ok ((pos', fe', pend'), cs') => installRecord pins pos' fe' pend' cs' rest
     | .error _ => none
 
@@ -508,12 +508,12 @@ def installRecord (pins : List ConLeche.NatOpPinSet) :
 value checks; a record whose reading or install fails, or that depends on one
 left out, is left out (an install is rolled back as `Checker.step` rolls
 back: the index rebuilt from the constants before it, the memo state reset). -/
-def phaseA (s : Setup) (fetch : Address → Option Ixon.Constant) (pins : List ConLeche.NatOpPinSet)
+def phaseA (s : Setup) (fetch : Address → Option Ixon.Constant) (pins : List Ix.Kernel.NatOpPinSet)
     (addresses : Array Address) : Installed := Id.run do
-  let mut fe := ConLeche.mkFEnv ConLeche.Env.empty
-  let mut cs : ConLeche.Cached.CState := {}
+  let mut fe := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
+  let mut cs : Ix.Kernel.Cached.CState := {}
   let mut pos := 0
-  let mut pend : Array ConLeche.Cached.PendingCheck := #[]
+  let mut pend : Array Ix.Kernel.Cached.PendingCheck := #[]
   let mut owners : Array Address := #[]
   let mut st : State := {}
   let mut failed : Std.HashSet Address := {}
@@ -548,7 +548,7 @@ def phaseA (s : Setup) (fetch : Address → Option Ixon.Constant) (pins : List C
         pend := pend ++ recPend
         installedRecords := installedRecords + 1
       | none =>
-        fe := ConLeche.mkFEnv before
+        fe := Ix.Kernel.mkFEnv before
         cs := {}
         pos := pos + 1
         failed := failed.insert address
@@ -560,7 +560,7 @@ def phaseA (s : Setup) (fetch : Address → Option Ixon.Constant) (pins : List C
 def checkOne (inst : Installed) (k : Nat) : IO (Nat × Bool × Nat) := do
   let t0 ← IO.monoNanosNow
   let ok ← IO.lazyPure fun _ => match inst.pend[k]? with
-    | some pc => (ConLeche.Cached.checkPending .verified inst.fe pc {}).isOk
+    | some pc => (Ix.Kernel.Cached.checkPending .verified inst.fe pc {}).isOk
     | none => false
   return (k, ok, ((← IO.monoNanosNow) - t0) / 1000)
 
@@ -595,7 +595,7 @@ def inThread (inst : Installed) : IO (Array (Nat × Bool × Nat)) := do
     out := out.push (← checkOne inst k)
   return out
 
-def runPar (started : Nat) (l : Loaded) (natPins : List ConLeche.NatOpPinSet)
+def runPar (started : Nat) (l : Loaded) (natPins : List Ix.Kernel.NatOpPinSet)
     (ordered : Array Address) (counts : List Nat) : IO UInt32 := do
   let tA ← IO.monoMsNow
   let inst ← IO.lazyPure fun _ => phaseA l.setup l.fetchPure natPins ordered

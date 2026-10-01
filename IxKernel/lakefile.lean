@@ -4,14 +4,14 @@ open Lake DSL
 /-! # The certified kernel as its own package
 
 `ix-kernel` builds the certified Ixon checker from the repository sources
-(`srcDir := ".."`) with no dependencies beyond the Lean toolchain:
-con-leche's checker ported under `ConLeche/**`, the kernel-side boundary
-`Ix.Kernel` (the Ixon reader, pins and prelude, record store, projection
-writer, audits), `Ix.Address.Core`, and the pure Ixon types/codecs/proofs
-with the certified API `Ix.Ixon.Admission` and its theorems. Data import
-closures use Lean core and `ConLeche` only (`Lean` only at elaboration time,
-in con-leche's ruled generators); proofs additionally use Lean/Std proof
-tooling.
+(`srcDir := ".."`) with no dependencies beyond the Lean toolchain: the kernel
+`Ix.Kernel` (con-leche's checker, vendored under `Ix/Kernel/**`, and Ix's
+boundary beside it: the Ixon reader, pins and prelude, record store,
+projection writer, audits), `Ix.Address.Core`, and the pure Ixon
+types/codecs/proofs with the certified API `Ix.Ixon.Admission` and its
+theorems. Data import closures use Lean core and the kernel only (`Lean` only
+at elaboration time, in con-leche's ruled generators); proofs additionally
+use Lean/Std proof tooling.
 The root `ix` package builds the same modules for its host consumers; this
 package is what the certified gate builds (`lake -d IxKernel build --wfail`),
 so a kernel module that imports anything outside the kernel fails here even
@@ -57,16 +57,37 @@ lean_exe «kernel-provenance» where
   srcDir := ".."
   root := `Tests.Ix.Kernel.Provenance
 
-/-- Con-leche's verified checker core, imported in place at `ae0c0c4e`
-(task #323's seven files at `3ca9e2fe`; see the root `lakefile.lean`, which
-declares the same library, and `Tests/Ix/Kernel/ImportManifest.lean` for
-the adapted and Ix-authored files). Lean core only; `linter.deprecated` is
-off so the 4.33.0-era sources build under `--wfail` on 4.34.0 unchanged.
-Not a default target. The glob is the whole subtree, as in the root
-`lakefile.lean` (upstream's `ConLeche/Kernel/NatOpPins.lean` is not
-ported). -/
-lean_lib ConLeche where
+/-- The vendored con-leche modules under `Ix/Kernel`: every module there except
+Ix's boundary (`Ref`, `Search`, `Audit`, `Ingress`, `Egress`, `Ixon`), one glob
+per top-level entry (`scripts/vendor-conleche.py lake-globs`). -/
+def vendoredKernelGlobs : Array Glob := #[
+  -- BEGIN vendored kernel modules (scripts/vendor-conleche.py check-lake)
+  .andSubmodules `Ix.Kernel.Basis, .one `Ix.Kernel.BasisA, .one `Ix.Kernel.BasisGen,
+  .submodules `Ix.Kernel.Cached, .one `Ix.Kernel.Canon, .one `Ix.Kernel.Checker,
+  .one `Ix.Kernel.CheckerBase, .one `Ix.Kernel.CheckerSplit, .one `Ix.Kernel.Core,
+  .one `Ix.Kernel.CoreDefs, .one `Ix.Kernel.CoreIO, .one `Ix.Kernel.DeclCheck,
+  .one `Ix.Kernel.Denotes, .one `Ix.Kernel.Env, .one `Ix.Kernel.Exclusive, .one `Ix.Kernel.Expr,
+  .one `Ix.Kernel.ExprOps, .one `Ix.Kernel.FEnv, .submodules `Ix.Kernel.Frontend,
+  .submodules `Ix.Kernel.Inductives, .one `Ix.Kernel.Level, .one `Ix.Kernel.LevelGeran,
+  .one `Ix.Kernel.MainTheorem, .submodules `Ix.Kernel.Model, .one `Ix.Kernel.Name,
+  .one `Ix.Kernel.NatOpPinSet, .submodules `Ix.Kernel.PinGen, .one `Ix.Kernel.PropRead,
+  .one `Ix.Kernel.PropWhen, .submodules `Ix.Kernel.Rules, .submodules `Ix.Kernel.Semantics,
+  .submodules `Ix.Kernel.SetModel, .submodules `Ix.Kernel.SetTheory, .one `Ix.Kernel.StdAxioms,
+  .submodules `Ix.Kernel.Term, .one `Ix.Kernel.TrustAxioms, .one `Ix.Kernel.TrustPins,
+  .one `Ix.Kernel.TypeChecker, .submodules `Ix.Kernel.Verify
+  -- END vendored kernel modules
+]
+
+/-- Con-leche's verified checker, vendored under `Ix/Kernel/**` (see the root
+`lakefile.lean`, which declares the same library, and
+`Tests/Ix/Kernel/ImportManifest.lean` for the rewritten, adapted and
+Ix-authored files). Lean core only; `linter.deprecated` is off so the
+4.33.0-era sources build under `--wfail` on 4.34.0 unchanged. Declared after
+`IxKernel`, whose root `Ix.Kernel` can build every `Ix.Kernel.*` module: Lake
+gives a module to the last-declared library that can build it. Not a default
+target (`IxKernel` builds every module under `Ix/Kernel`). -/
+lean_lib IxKernelVendored where
   srcDir := ".."
-  roots := #[`ConLeche]
-  globs := #[.submodules `ConLeche]
+  roots := #[`Ix.Kernel.MainTheorem]
+  globs := vendoredKernelGlobs
   leanOptions := #[⟨`linter.deprecated, false⟩]

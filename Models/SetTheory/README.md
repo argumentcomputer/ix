@@ -6,14 +6,14 @@ sequence of strongly inaccessible cardinals. Its universe chain is
 `V_ (κ n).ord`.
 
 From port step L5 (plan v4) the checker's theorems are stated over
-con-leche's class `ConLeche.SetTheory`. `IxSetTheoryModel.conLecheSetTheoryOfChain`
+con-leche's class `Ix.Kernel.SetTheory`. `IxSetTheoryModel.conLecheSetTheoryOfChain`
 assembles that instance from a given chain, `conLecheSetTheoryOfCarneiro`
 selects a chain from `OmegaInaccessibles`, and `carneiro_implies_conleche`
 proves:
 
 ```lean
 OmegaInaccessibles.{u} →
-  Nonempty (Σ V : Type (u + 1), ConLeche.SetTheory V)
+  Nonempty (Σ V : Type (u + 1), Ix.Kernel.SetTheory V)
 ```
 
 `IxSetTheoryModel/Consistency.lean` instantiates the certified Ixon entry's
@@ -32,7 +32,7 @@ constructor fields of each of the three theorems above and permits exactly
 remain an explicit theorem hypothesis.
 
 The package imports the actual interfaces by a path dependency on the
-`IxKernel` package, which builds `Ix.Kernel`, the `ConLeche` subtree and the
+`IxKernel` package, which builds `Ix.Kernel`, the `Ix.Kernel` subtree and the
 certified Ixon entry from the repository sources with no other dependencies. Mathlib is confined to this package; ordinary Ix and
 `Ix.Kernel` builds do not depend on it. This construction supplies the
 set-theoretic assumption used by the [certified kernel roadmap](../../plans/ix-certified-roadmap.md).

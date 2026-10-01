@@ -34,8 +34,8 @@ the supplied canonical record bytes with con-leche's verified checker, after
 the batch limits, key uniqueness and canonical per-record decoding. `hint`
 is the host's optional (untrusted) reducibility hint per constant. -/
 def checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
-    Except ConLecheAdmission.Error ConLeche.Env :=
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except ConLecheAdmission.Error Ix.Kernel.Env :=
   ConLecheAdmission.checkBytes limits records blobs hint
 
 /-- How an Ix caller classifies a failure of the certified entry (D-trust,

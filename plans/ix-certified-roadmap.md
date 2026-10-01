@@ -1,8 +1,10 @@
 # Ix.Kernel: certified kernel roadmap
 
 Status, 2026-10-01: the certified checker is con-leche's verified checker,
-ported in place under `ConLeche/**` and run on Ixon records by the reader in
-`Ix/Kernel/ConLeche/`; the certified API is `Ix.Ixon.Admission.checkBytes`.
+vendored in place under `Ix/Kernel/**` (namespace `Ix.Kernel`, a modified
+copy: `scripts/vendor-conleche.py` rewrites upstream's `ConLeche` paths and
+namespace; seventh pass below) and run on Ixon records by the reader in
+`Ix/Kernel/Ixon/`; the certified API is `Ix.Ixon.Admission.checkBytes`.
 `docs/kernel.md` describes the entry, its theorems, the trust surface, the
 audits, provenance and the census, and section 2 below is its contract.
 Con-leche's design is its `DESIGN.md` (with `OVERVIEW.md` and `PERF.md`) at
@@ -151,6 +153,21 @@ performance plan for the intrinsic kernel (`docs/certified-kernel-uids-plan.md`)
 is removed. Section 2, the ledger, the source policy and these notes are
 kept; the milestone sections stay as dated history.
 
+Seventh pass, 2026-10-01 (the user's ruling: "keep the kernel under
+Ix.Kernel, with a note that this is a modified/vendored in-place version of
+con-leche"): the con-leche tree moves from `ConLeche/**` (namespace
+`ConLeche`) to `Ix/Kernel/**` (namespace `Ix.Kernel`); `ConLeche/Kernel/X`
+and `ConLeche/X` become `Ix/Kernel/X`, and Ix's boundary modules move from
+`Ix/Kernel/ConLeche/` to `Ix/Kernel/Ixon/`. Every vendored file is upstream's
+through one mechanical rewrite (`scripts/vendor-conleche.py`), recorded as
+the transformation `rewritten` and re-derived from upstream by
+`kernel-provenance --source-git`; the seven adapted files keep their port
+headers. This replaces D4's "paths and namespace kept" (fifth pass): an
+upstream sync is still a diff, now after the script. Text before this pass
+names the tree `ConLeche/**`; the current-structure passages (sections 2,
+3.0, 4, 5 and 9) are updated. `docs/kernel.md`, "Vendored con-leche",
+describes the vendoring and the sync.
+
 ## 1. Thesis and scope
 
 `Ix.Kernel` is a reference type checker for Ixon-shaped declarations,
@@ -231,14 +248,14 @@ con-leche's model. Through L4 the K0 statements below are untouched, and
 con-leche's `model_exists` joins them at L3. The restated theorems are:
 
 - **Model existence for `check` on Ixon declarations.** The Ix entry reads
-  Ixon records into `Array ConLeche.Declaration` and runs
+  Ixon records into `Array Ix.Kernel.Declaration` and runs
   `Cached.checkDecls .verified pins`. The L4 reader does `preflight`,
   `decodeRecords`, the regrouping of mutual and projection records into one
   record per block, the address-to-name encoding (D1) and
   `preparePrelude`.
   - Every accepted input has a model in con-leche's sense (`Model`, which
     states types). This is derived from `model_exists`
-    (`ConLeche/MainTheorem.lean`), which holds for every declaration array
+    (`Ix/Kernel/MainTheorem.lean`), which holds for every declaration array
     that check accepts.
   - A fidelity theorem takes the role of `Ingress.Installed`: the
     declarations checked are the ones the bytes encode.
@@ -349,12 +366,12 @@ fails.
 
 | Construct | Where | Why admitted |
 | --- | --- | --- |
-| `@[computed_field]` overrides | `ConLeche.Level`, `ConLeche.Expr`, `ConLeche.Name`; Ix's `AExpr` (B2) | R-meta: a compiler feature, trusted with the compiler |
-| project `@[csimp]` | `ConLeche/**`, `Ix/Kernel/**` | only when the replacement theorem depends on the standard axioms alone |
+| `@[computed_field]` overrides | `Ix.Kernel.Level`, `Ix.Kernel.Expr`, `Ix.Kernel.Name` (con-leche's, vendored); until L6 Ix's `AExpr` (B2) | R-meta: a compiler feature, trusted with the compiler |
+| project `@[csimp]` | `Ix/Kernel/**` (the vendored tree and Ix's boundary) | only when the replacement theorem depends on the standard axioms alone |
 | `withPtrEq`, `withPtrAddr` | Lean's `Init` primitives | R-ptr: the continuation carries the obligation that it does not observe the answer |
-| `withExclusive` | `ConLeche/Kernel/Exclusive.lean` | the obligation `k true = k false`, discharged by `Subsingleton.elim` |
-| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `ConLeche/Kernel/BasisGen.lean`, `ConLeche/PinGen/**` | elaboration only: `meta` declarations cannot reach compiled code, and `Lean` modules are admitted only below these modules' meta imports |
-| `partial` | `ConLeche/Frontend/InModel*` | the in-model generator, ported at L4 as con-leche has it |
+| `withExclusive` | `Ix/Kernel/Exclusive.lean` | the obligation `k true = k false`, discharged by `Subsingleton.elim` |
+| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `Ix/Kernel/BasisGen.lean`, `Ix/Kernel/PinGen/**` | elaboration only: `meta` declarations cannot reach compiled code, and `Lean` modules are admitted only below these modules' meta imports |
+| `partial` | `Ix/Kernel/Frontend/InModel*` | the in-model generator, ported at L4 as con-leche has it |
 
 For the runtime audit's detection, "reached" means reached in the compiled
 code: a `partial` definition executes as an opaque constant with compiled
@@ -366,10 +383,10 @@ the compiled Init records (`.ixe`). The one transitional exception,
 con-leche's `NatOpPins` elaboration-time JSON dump (verbatim from L2, so
 that `model_exists` was green first), was removed at L4: the Nat-operation
 pin variant is generated from Ixon records by the Ixon pinner
-(`conleche-pin-gen`, committed as `Ix/Kernel/ConLeche/NatOpPinData.lean`),
-`pins/*.json` and `ConLeche/PinGen/Dump.lean` are deleted, and upstream's
-`ConLeche/Kernel/NatOpPins.lean` is not ported (L4b kept it verbatim and
-unbuilt; int-4 deleted it, so the `ConLeche` globs are directory globs).
+(`conleche-pin-gen`, committed as `Ix/Kernel/Ixon/NatOpPinData.lean` since
+the seventh pass), `pins/*.json` and `ConLeche/PinGen/Dump.lean` are
+deleted, and upstream's `ConLeche/Kernel/NatOpPins.lean` is not ported (L4b
+kept it verbatim and unbuilt; int-4 deleted it).
 
 Where a certified operation outside the kernel needs BLAKE3 (address
 reconstruction after K4, authentication and subject roots in K5), it calls
@@ -429,8 +446,8 @@ with `OVERVIEW.md` and `PERF.md`, at the pinned revision (reviewable in
 
 | Boundary module | Role | Step |
 | --- | --- | --- |
-| Ixon reader, `Ix/Kernel/ConLeche/Reader.lean` (its reference, the intrinsic `Ix/Kernel/Ingress*.lean`, was retired at L6) | Ixon records to `Array ConLeche.Declaration`: one record per block (regrouping `muts` and projection records), keys per D1, `pw := .never` | L4 |
-| Address-to-name encoding | each `ConstRef Address` as a reserved `ConLeche.Name`, injectively. The pinned basis, Nat-op and trust names go to the addresses whose declarations match the pinned shapes, from a table generated from the compiled Init | L4 |
+| Ixon reader, `Ix/Kernel/Ixon/Reader.lean` (its reference, the intrinsic `Ix/Kernel/Ingress*.lean`, was retired at L6) | Ixon records to `Array ConLeche.Declaration`: one record per block (regrouping `muts` and projection records), keys per D1, `pw := .never` | L4 |
+| Address-to-name encoding | each `ConstRef Address` as a reserved con-leche `Name` (`Ix.Kernel.Name`), injectively. The pinned basis, Nat-op and trust names go to the addresses whose declarations match the pinned shapes, from a table generated from the compiled Init | L4 |
 | Ixon prelude and pins | the prelude records of the compiled Init; Nat-op, trust and standard-axiom pins from an Ixon pinner (a host tool), committed as Lean literals | L4 |
 | Restated public theorems | model existence and no-False at the Ix entry (section 2), with the fidelity theorem | L5 |
 | `Ix/Ixon/Admission.lean`, `Audit.lean`, `Projection.lean` | byte admission and its audits, retargeted to the new entry | L5 |
@@ -452,8 +469,9 @@ checker is con-leche's `DESIGN.md`; the Ix boundary is the table above and
 
 ```text
 Ix/Kernel.lean                 The kernel-side boundary's umbrella
-Ix/Kernel/
-  ConLeche/                    Ixon reader (Reader, ReaderSpec), committed pins
+Ix/Kernel/                     The kernel: con-leche's vendored checker (below)
+                               and Ix's boundary beside it:
+  Ixon/                        Ixon reader (Reader, ReaderSpec), committed pins
                                (PinData, NatOpPinData), Ixon prelude,
                                installation and definition values of the fold
   Ref.lean                     ConstRef
@@ -477,16 +495,19 @@ Models/SetTheory/              Mathlib instance of con-leche's SetTheory
 docs/kernel.md                 Contract, trust surface, audits, provenance, census
 ```
 
-From the port the tree also holds con-leche's subtree, with its paths and
-namespace kept (D4):
+From the port the tree also holds con-leche's checker, vendored under
+`Ix/Kernel/` since the seventh pass (until then `ConLeche/**`, paths and
+namespace kept, D4); upstream's `ConLeche/Kernel/X` is `Ix/Kernel/X`:
 
 ```text
-ConLeche/                      con-leche at ae0c0c4e (#323's 7 files at 3ca9e2fe); provenance rows per file
+Ix/Kernel/                     con-leche at ae0c0c4e (#323's 7 files at 3ca9e2fe),
+                               rewritten by scripts/vendor-conleche.py; provenance rows per file
   SetTheory/ SetModel/ Term/   set theory, set model, terms (L1)
-  Kernel/ Cached/ Rules/ PinGen/   the checker and the Nat-op certificates (L2)
+  *.lean Basis/ Inductives/    the checker (upstream ConLeche/Kernel/) (L2)
+  Cached/ Rules/ PinGen/       the cached fold, rules, the Nat-op certificates (L2)
   Verify/ Semantics/ Model/    soundness and the model (L3)
   Frontend/                    InModel, ProjRec, Prepare, NatOpGround only (L4)
-  MainTheorem.lean             model_exists (L3)
+  Denotes.lean MainTheorem.lean   Denotes, model_exists (L3)
 ```
 
 `Tests/Ix/Kernel/` already holds the Rust kernel's FFI harnesses
@@ -516,16 +537,19 @@ Both are mechanical, reviewed separately, and change no behavior.
 
 - `Ix.Kernel.*` imports Lean core (`Init`, and `Std`, which the user
   admitted on 2026-09-30 for its maps and their lemmas) and
-  `Ix.Address.Core`, from K3 `Ix.Ixon.Types`, and from L5 `ConLeche`.
+  `Ix.Address.Core`, from K3 `Ix.Ixon.Types`, and from L5 con-leche (since
+  the seventh pass under `Ix.Kernel` itself).
   Nothing else: no `Lean` or `Batteries` module, nothing else under `Ix`,
   no `Blake3`, no `lean4lean`, no `Ix.Tc`. The standalone package build
   enforces this structurally; the import audit records the exact closure.
   Since L6 (see plan v4) this list fences the Ixon reader, the record store,
   the projection writer, `Search` and `Ref`; the committed pin table and
-  prelude (`Ix.Kernel.ConLeche.{PinData,Prelude}`) also read records through
+  prelude (`Ix.Kernel.Ixon.{PinData,Prelude}`) also read records through
   the canonical decoder, so the `Ix.Kernel` umbrella is audited against the
   certified `importAllowlist`.
-- `ConLeche/**` is a ported subtree with con-leche's own layering:
+- The vendored con-leche tree (every module under `Ix/Kernel/` but Ix's
+  boundary, `scripts/vendor-conleche.py list`) keeps con-leche's own
+  layering, by upstream path:
   - the implementation (`Kernel`, `Cached`, `Frontend`) never imports the
     theory (`SetTheory`, `SetModel`, `Semantics`, `Model`, `Verify`,
     `Term`);
@@ -536,10 +560,10 @@ Both are mechanical, reviewed separately, and change no behavior.
   The fence is con-leche's `tests/layering.sh`, ported as
   `scripts/layering.sh` with its dead base-to-model clause repaired. Its
   companion is `scripts/trust-surface.sh`, the per-file allowlist of
-  compiler escapes. Both run in `check-kernel` and pass vacuously while
-  `ConLeche/` is absent.
-- `ConLeche/**` imports only `Init`, `Std` and `ConLeche`, plus `Lean` at
-  elaboration time below the meta imports of `BasisGen` and `PinGen`. Ix imports `ConLeche`; `ConLeche` never imports `Ix`.
+  compiler escapes. Both run in `check-kernel`.
+- The vendored tree imports only `Init`, `Std` and itself, plus `Lean` at
+  elaboration time below the meta imports of `BasisGen` and `PinGen`. Ix's
+  boundary imports the vendored tree; the vendored tree never imports Ix.
 - K4's `Ix.Ixon.Codec` and `Wire` likewise import only Lean core and the
   pure address/types. Their proof modules additionally use Lean/Std proof
   tooling, without host code, Lean4Lean, or foreign execution replacements.
@@ -552,8 +576,8 @@ Both are mechanical, reviewed separately, and change no behavior.
   `Admission.Audit` checks its own closure without widening the kernel or
   codec allowlists.
 - Implementation modules do not import `Model` or `Verify` (the intrinsic
-  kernel's rule, retired with it at L6, see plan v4; `ConLeche/**` has its
-  own fence above). Proofs import the
+  kernel's rule, retired with it at L6, see plan v4; the vendored tree has
+  its own fence above). Proofs import the
   implementation. Audits and tests import the library; the library never
   imports them.
 - Everything else in `Ix` may import `Ix.Kernel`.
@@ -579,10 +603,11 @@ even if it would build inside the root workspace. `Models/SetTheory`
 depends on the kernel package only, so its workspace holds Mathlib and the
 kernel. The root `check-kernel` script runs the standalone build, the
 host-side tests, and provenance, with `--with-model` adding the Mathlib
-package. Con-leche has no dependencies either. Its `ConLeche` library joins
-`IxKernel/lakefile.lean` and the root `lakefile.lean` and builds with
-`linter.deprecated false`: 4.34 deprecations are not renamed until upstream
-removes a lemma.
+package. Con-leche has no dependencies either. Its vendored modules are the
+library `IxKernelVendored` in `IxKernel/lakefile.lean` and the root
+`lakefile.lean` (until the seventh pass the `ConLeche` library) and build
+with `linter.deprecated false`: 4.34 deprecations are not renamed until
+upstream removes a lemma.
 
 ### The Ix certification ledger
 
@@ -593,7 +618,7 @@ checkpoint. Initial entries:
 
 | Component | Modules | Status now | Route |
 | --- | --- | --- | --- |
-| Certified kernel | `Ix.Kernel.*` | K1: definitions, theorems, and opaques certified; inductives at K2 (retired at L6, see plan v4: the certified checker is con-leche's, `ConLeche/**`, behind `Ix.Ixon.Admission.checkBytes`) | K0 to K2 |
+| Certified kernel | `Ix.Kernel.*` | K1: definitions, theorems, and opaques certified; inductives at K2 (retired at L6, see plan v4: the certified checker is con-leche's, vendored under `Ix/Kernel/**`, behind `Ix.Ixon.Admission.checkBytes`) | K0 to K2 |
 | Address key | `Ix.Address.Core` | pure data | K0 |
 | BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
 | Ixon data types | `Ix.Ixon.Types` | pure production data in the standalone audited closure | K3 split complete |
@@ -654,12 +679,15 @@ each recorded with its origin:
 - Regression fixtures from the lean kernel arena tutorial set, re-encoded
   through the Ix compiler.
 
-Con-leche's Lean modules are ported in place (plan v4). Every imported file
-keeps its `ConLeche/**` path and enters through the provenance record: its
-repository, revision, source path and SHA-256, destination SHA-256,
-licence, and transformation. A verbatim file stays byte-identical and gets
-no header. A transformed file starts with the con-leche port header naming
-its source and changes. Through K2 no con-leche module was copied; the old
+Con-leche's Lean modules are vendored in place (plan v4; under
+`Ix/Kernel/**` since the seventh pass). Every imported file enters through
+the provenance record: its repository, revision, source path and SHA-256,
+destination path and SHA-256, licence, and transformation. A rewritten file
+is exactly `scripts/vendor-conleche.py`'s output on its source (paths and
+namespace `ConLeche` → `Ix.Kernel`, one comment line naming the source);
+until the seventh pass such files kept their `ConLeche/**` paths and were
+byte-identical. A further transformed file starts with the con-leche port
+header naming its source and changes. Through K2 no con-leche module was copied; the old
 branch's set theory and set model were ported from it at `86cd20a6`.
 
 ### From `main`
@@ -694,12 +722,13 @@ The record is `Tests/Ix/Kernel/ImportManifest.lean`, enforced by
 - each row set carries its own origin, so the old branch's 97 rows
   (`jcb/ix-kernel-consistency` at `ad60e5f6`) and con-leche's rows (at
   `ae0c0c4e`) coexist;
-- the inventory covers `Ix/Kernel/**`, the pure `Ix/Ixon/**` boundary, and
-  `ConLeche/**`;
+- the inventory covers `Ix/Kernel/**` (with the vendored tree) and the pure
+  `Ix/Ixon/**` boundary;
 - `scripts/provenance-rows.py` turns a TSV of imported files into rows;
 - `--source <workspace>` checks the old rows' source hashes with
   `jj file show`, and `--source-git plans/refs/con-leche` checks con-leche
-  rows with `git show <rev>:<path>`. Both stay optional, because the
+  rows with `git show <rev>:<path>` and re-derives each rewritten file
+  through `scripts/vendor-conleche.py`. Both stay optional, because the
   ordinary build must not depend on an untracked reference.
 
 Separate mechanical namespace and import changes from semantic changes into
@@ -1257,7 +1286,8 @@ strategy.
 - The certified checker lives at `Ix.Kernel`; no `IxCertified` namespace or
   library exists.
 - The checker is con-leche's, ported in place with minimum divergence from
-  upstream (fifth pass). Its key is `ConLeche.Name`: the Ixon reader encodes
+  upstream (fifth pass; vendored under `Ix.Kernel` since the seventh). Its key
+  is con-leche's `Name` (`Ix.Kernel.Name`): the Ixon reader encodes
   each `ConstRef Address` injectively as a reserved name (D1).
   `ConstRef Address` as the kernel key is optional and later (L7). Ixon is
   the only input format. Until L6 the intrinsic kernel's Ix-native data

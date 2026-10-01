@@ -87,7 +87,7 @@ def encode (input : List (Address × Ixon.Constant)) : Ix.Ixon.Admission.Records
 
 def check (input : List (Address × Ixon.Constant)) (limit : Nat := 16)
     (bounds : Ix.Ixon.Admission.Limits := ByteAdmission.limits) :
-    Except Ix.Ixon.Projection.CheckError ConLeche.Env :=
+    Except Ix.Ixon.Projection.CheckError Ix.Kernel.Env :=
   Ix.Ixon.Projection.checkBytes limit bounds (encode input) []
 
 def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool :=
@@ -125,9 +125,9 @@ def wrongConstructorIndex : Ixon.Constant :=
   | .error (.checker error) => Ix.Ixon.Admission.outcome error == .rejected
   | _ => false
 
-example (V : Type) [ConLeche.SetTheory V] {env : ConLeche.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
     (h : Ix.Ixon.Projection.checkBytes 16 ByteAdmission.limits (encode separatedInput) [] = .ok env) :
-    Nonempty (ConLeche.Model V env) :=
+    Nonempty (Ix.Kernel.Model V env) :=
   Ix.Ixon.Projection.checkBytes_has_model V h
 
 end Tests.Ix.Kernel.Projection

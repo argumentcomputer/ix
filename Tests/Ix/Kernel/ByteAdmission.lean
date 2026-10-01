@@ -29,7 +29,7 @@ def roundtrip (constants : List (Address × Ixon.Constant)) : Bool :=
   | .error _ => false
 
 def check (records : Records) (blobs : List (Address × ByteArray) := []) (bounds : Limits := limits) :
-    Except Ix.Ixon.ConLecheAdmission.Error ConLeche.Env :=
+    Except Ix.Ixon.ConLecheAdmission.Error Ix.Kernel.Env :=
   checkBytes bounds records blobs
 
 def accepts (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Bool :=
@@ -167,21 +167,21 @@ def blob : List (Address × ByteArray) := [(address 9, ⟨#[1, 2, 3]⟩)]
 #guard decodeFailureAt (one ++ [(address 2, nonminimalSharingCount)]) 1 (address 2)
 #guard decodeFailureAt [(address 1, recordUnivsPayload 1 successorBomb)] 0 (address 1)
 
-example (V : Type) [ConLeche.SetTheory V] {env : ConLeche.Env}
-    (h : checkBytes limits (encode separatedFalse) [] = .ok env) : Nonempty (ConLeche.Model V env) :=
+example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
+    (h : checkBytes limits (encode separatedFalse) [] = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytes_has_model V h
 
 example {constants : List (Address × Ixon.Constant)} {records : Records}
     (h : Ix.Ixon.Verify.Admission.RecordsRead limits records constants) : records = encode constants :=
   h.encode
 
-example {records : Records} {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+example {records : Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs = .ok env) :
     (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup := by
   obtain ⟨_, _, _, _, _, _, _, keys, _⟩ := checkBytes_reading h
   exact keys
 
-example {records : Records} {blobs : List (Address × ByteArray)} {env : ConLeche.Env}
+example {records : Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs = .ok env) :
     ∃ constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
       Ix.Ixon.Verify.Admission.resourceUnits constants ≤

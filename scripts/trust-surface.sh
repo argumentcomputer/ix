@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
-# scripts/trust-surface.sh — the trust-surface fence for the ported
-# `ConLeche/**` subtree.
+# scripts/trust-surface.sh — the trust-surface fence for the vendored
+# con-leche tree under `Ix/Kernel/**` (`scripts/vendor-conleche.py list`).
 #
 # PORTED from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526,
 # `tests/trust-surface.sh` (Apache-2.0; the checkout for review is
 # `plans/refs/con-leche`), with its lexer fixture copied verbatim to
 # `scripts/trust-surface/lexer.lean`.  Adaptations for this repository
-# (plans/ix-kernel-con-leche-port-v4.md, L0):
-#   * the scan covers `ConLeche/**/*.lean` and `ConLeche.lean`.  Ix's own
-#     sources are fenced by the Lean audits in `Ix/Kernel/Audit/*` (which
-#     see compiled code, not tokens), and Ix's tests deliberately hold the
-#     audits' negative controls;
+# (plans/ix-kernel-con-leche-port-v4.md, L0; the move under `Ix/Kernel`,
+# 2026-10-01):
+#   * the scan covers the vendored tree: every `Ix/Kernel/**/*.lean` except
+#     Ix's boundary (`Ref`, `Search`, `Audit`, `Ingress`, `Egress`, `Ixon`)
+#     and Ix's umbrella `Ix/Kernel.lean`.  Ix's own sources are fenced by the
+#     Lean audits in `Ix/Kernel/Audit/*` (which see compiled code, not
+#     tokens), and Ix's tests deliberately hold the audits' negative
+#     controls;
 #   * the allowlist drops `Main.lean` (con-leche's driver and its
 #     `markPersistent` calls are not ported) and `ConLeche/Challenge.lean`
 #     (the Comparator pair is not ported; inventory section 3.7, row 2);
-#   * an absent `ConLeche/` scans nothing and passes once the lexer
-#     self-test passes, so the gate can run while the subtree is imported.
+#   * the allowlist names files by their vendored paths
+#     (`ConLeche/Kernel/X` is `Ix/Kernel/X`);
+#   * an absent tree scans nothing and passes once the lexer self-test
+#     passes.
 #   * ruled entries are recorded once more in the Lean runtime audit
 #     (`Ix.Kernel.Audit.runtimeRulings`), which checks the compiled closure.
 #
@@ -41,19 +46,19 @@
 # tolerated there).  A token in an allowlisted file that is not on its own
 # list fails just as loudly as one in a bare file.
 #
-#   ConLeche/Kernel/Expr.lean          computed_field
+#   Ix/Kernel/Expr.lean          computed_field
 #       The packed `@[computed_field] data` and `Level.hashData`: the
 #       user's ruling R-meta ("we trust the compiler"), the same escape
 #       class `Lean.Expr` lives on.  Expression equality is not an escape:
 #       it goes through `@[csimp]` + `withPtrEq`/`withPtrAddr` with the
 #       memoised descent proved equal to `decide (a = b)`.
 #
-#   ConLeche/Kernel/Name.lean          computed_field
+#   Ix/Kernel/Name.lean          computed_field
 #       A cached hash only (`Name.hashData`), as `Lean.Name`'s.  Pointer
 #       equality goes through `@[csimp]` + `withPtrEq` with the redundancy
 #       proved (`Name.beqPtr_eq`).
 #
-#   ConLeche/Kernel/Exclusive.lean     unsafe, implemented_by
+#   Ix/Kernel/Exclusive.lean     unsafe, implemented_by
 #       `withExclusive`: defined as `k false` and `@[implemented_by]` the
 #       compiled `k (isExclusiveUnsafe a)`, the reference-count read the
 #       substitution memo keys on.  The obligation `h : k true = k false`
@@ -61,7 +66,7 @@
 #       whose continuation returns a `Subsingleton`, so `h` is
 #       `Subsingleton.elim`.  The file's docstring is the justification.
 #
-#   ConLeche/Kernel/BasisGen.lean      unsafe, implemented_by
+#   Ix/Kernel/BasisGen.lean      unsafe, implemented_by
 #       ELABORATION ONLY.  `#annotate_basis` / `#annotate_pins` run the
 #       annotation pass at elaboration time through `unsafe evalTerm`
 #       (a `meta section`) and splice the resulting literals.  Nothing here
@@ -69,7 +74,7 @@
 #
 # Not policed, as upstream: `partial`, `@[csimp]`, `withPtrEq`/`withPtrAddr`,
 # `opaque`, `noncomputable`.  The Lean runtime audit polices the compiled
-# form of the first two (`partial` only in `ConLeche/Frontend/InModel*`,
+# form of the first two (`partial` only in `Ix/Kernel/Frontend/InModel*`,
 # `csimp` only with a theorem on the standard axioms).
 #
 # Usage: scripts/trust-surface.sh [--list|--selftest]
@@ -100,31 +105,24 @@ TOKENS = {
 }
 
 ALLOW = {
-    'ConLeche/Kernel/Expr.lean':     {'computed_field'},
-    'ConLeche/Kernel/Name.lean':     {'computed_field'},
-    'ConLeche/Kernel/BasisGen.lean': {'unsafe', 'implemented_by'},
-    'ConLeche/Kernel/Exclusive.lean': {'unsafe', 'implemented_by'},
+    'Ix/Kernel/Expr.lean':     {'computed_field'},
+    'Ix/Kernel/Name.lean':     {'computed_field'},
+    'Ix/Kernel/BasisGen.lean': {'unsafe', 'implemented_by'},
+    'Ix/Kernel/Exclusive.lean': {'unsafe', 'implemented_by'},
 }
 
 # NOT SCANNED: the lexer's own fixture lives outside the scanned tree.
 SKIP_DIRS = ()
 
-ROOTS = ('ConLeche.lean',)
-
 LEXER_FIXTURE = 'scripts/trust-surface/lexer.lean'
 
 def sources():
-    out = []
-    for top in ('ConLeche',):
-        for dp, dirs, fs in os.walk(top):
-            dirs[:] = [d for d in dirs if d != '.lake']
-            for f in sorted(fs):
-                if f.endswith('.lean'):
-                    rel = os.path.join(dp, f)
-                    if not SKIP_DIRS or not rel.startswith(SKIP_DIRS):
-                        out.append(rel)
-    out += [r for r in ROOTS if os.path.exists(r)]
-    return sorted(out)
+    import importlib.util
+    sys.dont_write_bytecode = True   # no __pycache__ in the tree
+    spec = importlib.util.spec_from_file_location('vendor', 'scripts/vendor-conleche.py')
+    vendor = importlib.util.module_from_spec(spec); spec.loader.exec_module(vendor)
+    return sorted(rel for rel in vendor.vendored_tree()
+                  if not SKIP_DIRS or not rel.startswith(SKIP_DIRS))
 
 # ------------------------------------------------------- the LEXER.
 # `code_only` blanks every comment and every string literal, in one

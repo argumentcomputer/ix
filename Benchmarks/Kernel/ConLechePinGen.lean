@@ -7,10 +7,10 @@ import Benchmarks.Kernel.ConLecheStep
 
 /-! # The pin table, the Ixon prelude and the Nat-operation pins, from Ixon (untrusted)
 
-Generates `Ix/Kernel/ConLeche/PinData.lean` (the pin table and the prelude)
-and `Ix/Kernel/ConLeche/NatOpPinData.lean` (the pin variant of the eight
+Generates `Ix/Kernel/Ixon/PinData.lean` (the pin table and the prelude)
+and `Ix/Kernel/Ixon/NatOpPinData.lean` (the pin variant of the eight
 pin-certified `Nat` operations) from two compiled `.ixe` files: the compiled
-Init (`.lake/census/initstd.ixe`) and `ConLeche/PinGen/Certs.lean` compiled
+Init (`.lake/census/initstd.ixe`) and `Ix/Kernel/PinGen/Certs.lean` compiled
 by the Ix compiler (`regenerate` below gives the commands). No JSON is read,
 and none is generated: the optional closure rows are the census's JSONL
 report rows.
@@ -26,7 +26,7 @@ report rows.
    address resolved to a `ConstRef Address` exactly as the reader resolves
    references.
 3. **The Nat-operation pins** (plan v4 §2 "Pins"; upstream's
-   `ConLeche/PinGen.lean`, over Ixon):
+   `Ix/Kernel/PinGen.lean`, over Ixon):
    - **the pins** are the operations' stored values, as the reader reads them
      from the compiled Init (in the dependency order the census uses). Ixon
      names a constant by its content, so the pin table's address for
@@ -34,7 +34,7 @@ report rows.
      unfolding, which keeps a pin stable when an export renames a helper,
      has nothing to do here;
    - **the certificate proofs** are the values of the theorems of
-     `ConLeche/PinGen/Certs.lean` (`certSpecs`), compiled by the Ix compiler
+     `Ix/Kernel/PinGen/Certs.lean` (`certSpecs`), compiled by the Ix compiler
      and read by the same reader, closed by upstream's rule
      (`inlineCertClosure`): every constant outside the operation's dependency
      cone (the declarations of the records its record reaches), its
@@ -61,7 +61,7 @@ report rows.
    and the prelude's records (the twelve declarations of con-leche's
    prelude, with their projection and recursor records) as canonical bytes.
    `NatOpPinData.lean`: the pin variant as a share table (the format is in
-   `Ix/Kernel/ConLeche/Prelude.lean`), decoded by the committed decoder and
+   `Ix/Kernel/Ixon/Prelude.lean`), decoded by the committed decoder and
    compared with the generated variant before it is written.
 
 Usage: `conleche-pin-gen <init.ixe> <certs.ixe> <PinData.lean> <NatOpPinData.lean> [closure.jsonl]`. -/
@@ -73,62 +73,62 @@ open Ix.Kernel.ConLecheReader
 open Benchmarks.Kernel.ConLecheStep
 
 def fixedNames : List CName :=
-  ConLeche.reservedBasisNames ++
-  [ConLeche.andName, ConLeche.andIntroName, ConLeche.boolName, ConLeche.boolFalseName,
-   ConLeche.boolTrueName] ++
-  ConLeche.natOpNames ++ ConLeche.natDivModNames ++
-  [ConLeche.stringName, ConLeche.stringOfListName, ConLeche.listName, ConLeche.listNilName,
-   ConLeche.listConsName, ConLeche.charName, ConLeche.charOfNatName] ++
-  [ConLeche.propextName, ConLeche.choiceName, ConLeche.iffName, ConLeche.iffIntroName,
-   ConLeche.nonemptyName, ConLeche.nonemptyIntroName] ++
-  [ConLeche.trueName, ConLeche.trueIntroName, ConLeche.trustCompilerName,
-   ConLeche.reduceNatName, ConLeche.reduceBoolName, ConLeche.ofReduceNatName,
-   ConLeche.ofReduceBoolName, ConLeche.sorryAxName]
+  Ix.Kernel.reservedBasisNames ++
+  [Ix.Kernel.andName, Ix.Kernel.andIntroName, Ix.Kernel.boolName, Ix.Kernel.boolFalseName,
+   Ix.Kernel.boolTrueName] ++
+  Ix.Kernel.natOpNames ++ Ix.Kernel.natDivModNames ++
+  [Ix.Kernel.stringName, Ix.Kernel.stringOfListName, Ix.Kernel.listName, Ix.Kernel.listNilName,
+   Ix.Kernel.listConsName, Ix.Kernel.charName, Ix.Kernel.charOfNatName] ++
+  [Ix.Kernel.propextName, Ix.Kernel.choiceName, Ix.Kernel.iffName, Ix.Kernel.iffIntroName,
+   Ix.Kernel.nonemptyName, Ix.Kernel.nonemptyIntroName] ++
+  [Ix.Kernel.trueName, Ix.Kernel.trueIntroName, Ix.Kernel.trustCompilerName,
+   Ix.Kernel.reduceNatName, Ix.Kernel.reduceBoolName, Ix.Kernel.ofReduceNatName,
+   Ix.Kernel.ofReduceBoolName, Ix.Kernel.sorryAxName]
 
 /-- The prelude's declarations, in con-leche's prelude order
 (`pins/<toolchain>.prelude.ndjson`): each group's names. -/
 def preludeGroups : List (List CName) :=
-  [[ConLeche.eqName, ConLeche.eqReflName, ConLeche.eqName.str "rec"],
-   [ConLeche.natName, ConLeche.natZeroName, ConLeche.natSuccName, ConLeche.natName.str "rec"],
-   [ConLeche.punitName, ConLeche.punitUnitName, ConLeche.punitRecName],
-   [ConLeche.emptyName, ConLeche.emptyName.str "rec"],
-   [ConLeche.falseName, ConLeche.falseName.str "rec"],
-   [ConLeche.quotName], [ConLeche.quotMkName], [ConLeche.quotLiftName], [ConLeche.quotIndName],
-   [ConLeche.quotSoundName],
-   [ConLeche.andName, ConLeche.andIntroName, ConLeche.andName.str "rec"],
-   [ConLeche.boolName, ConLeche.boolFalseName, ConLeche.boolTrueName, ConLeche.boolName.str "rec"]]
+  [[Ix.Kernel.eqName, Ix.Kernel.eqReflName, Ix.Kernel.eqName.str "rec"],
+   [Ix.Kernel.natName, Ix.Kernel.natZeroName, Ix.Kernel.natSuccName, Ix.Kernel.natName.str "rec"],
+   [Ix.Kernel.punitName, Ix.Kernel.punitUnitName, Ix.Kernel.punitRecName],
+   [Ix.Kernel.emptyName, Ix.Kernel.emptyName.str "rec"],
+   [Ix.Kernel.falseName, Ix.Kernel.falseName.str "rec"],
+   [Ix.Kernel.quotName], [Ix.Kernel.quotMkName], [Ix.Kernel.quotLiftName], [Ix.Kernel.quotIndName],
+   [Ix.Kernel.quotSoundName],
+   [Ix.Kernel.andName, Ix.Kernel.andIntroName, Ix.Kernel.andName.str "rec"],
+   [Ix.Kernel.boolName, Ix.Kernel.boolFalseName, Ix.Kernel.boolTrueName, Ix.Kernel.boolName.str "rec"]]
 
 /-- Per pin-certified operation, in `NatOpPinSet` field order, the theorems
-of `ConLeche/PinGen/Certs.lean` that certify it, in the order of its pinned
-statements (`ConLeche.divModCertStmts`), as in upstream's `opSpecs`. -/
+of `Ix/Kernel/PinGen/Certs.lean` that certify it, in the order of its pinned
+statements (`Ix.Kernel.divModCertStmts`), as in upstream's `opSpecs`. -/
 def certSpecs : List (CName × List Lean.Name) :=
-  [(ConLeche.natDivName, [`ConLeche.PinGen.divRecCert, `ConLeche.PinGen.divBaseGtCert,
-     `ConLeche.PinGen.divBaseZeroCert]),
-   (ConLeche.natModName, [`ConLeche.PinGen.modRecCert, `ConLeche.PinGen.modBaseGtCert,
-     `ConLeche.PinGen.modBaseZeroCert]),
-   (ConLeche.natGcdName, [`ConLeche.PinGen.gcdRecCert, `ConLeche.PinGen.gcdBaseCert]),
-   (ConLeche.natLandName, [`ConLeche.PinGen.landRecCert, `ConLeche.PinGen.landBaseCert]),
-   (ConLeche.natLorName, [`ConLeche.PinGen.lorRecCert, `ConLeche.PinGen.lorBaseCert]),
-   (ConLeche.natXorName, [`ConLeche.PinGen.xorRecCert, `ConLeche.PinGen.xorBaseCert]),
-   (ConLeche.natShiftLeftName, [`ConLeche.PinGen.shiftLeftRecCert,
-     `ConLeche.PinGen.shiftLeftBaseCert]),
-   (ConLeche.natShiftRightName, [`ConLeche.PinGen.shiftRightRecCert,
-     `ConLeche.PinGen.shiftRightBaseCert])]
+  [(Ix.Kernel.natDivName, [`Ix.Kernel.PinGen.divRecCert, `Ix.Kernel.PinGen.divBaseGtCert,
+     `Ix.Kernel.PinGen.divBaseZeroCert]),
+   (Ix.Kernel.natModName, [`Ix.Kernel.PinGen.modRecCert, `Ix.Kernel.PinGen.modBaseGtCert,
+     `Ix.Kernel.PinGen.modBaseZeroCert]),
+   (Ix.Kernel.natGcdName, [`Ix.Kernel.PinGen.gcdRecCert, `Ix.Kernel.PinGen.gcdBaseCert]),
+   (Ix.Kernel.natLandName, [`Ix.Kernel.PinGen.landRecCert, `Ix.Kernel.PinGen.landBaseCert]),
+   (Ix.Kernel.natLorName, [`Ix.Kernel.PinGen.lorRecCert, `Ix.Kernel.PinGen.lorBaseCert]),
+   (Ix.Kernel.natXorName, [`Ix.Kernel.PinGen.xorRecCert, `Ix.Kernel.PinGen.xorBaseCert]),
+   (Ix.Kernel.natShiftLeftName, [`Ix.Kernel.PinGen.shiftLeftRecCert,
+     `Ix.Kernel.PinGen.shiftLeftBaseCert]),
+   (Ix.Kernel.natShiftRightName, [`Ix.Kernel.PinGen.shiftRightRecCert,
+     `Ix.Kernel.PinGen.shiftRightBaseCert])]
 
 /-- The certificate statements' machinery (upstream's `stmtMachineryNames`):
 every certificate install requires these stored, so a proof may keep them. -/
 def stmtNames : List CName :=
-  [ConLeche.natName, ConLeche.natZeroName, ConLeche.natSuccName, ConLeche.natName.str "rec",
-   ConLeche.boolName, ConLeche.boolTrueName, ConLeche.boolFalseName, ConLeche.boolName.str "rec",
-   ConLeche.eqName, ConLeche.eqReflName, ConLeche.eqName.str "rec"]
+  [Ix.Kernel.natName, Ix.Kernel.natZeroName, Ix.Kernel.natSuccName, Ix.Kernel.natName.str "rec",
+   Ix.Kernel.boolName, Ix.Kernel.boolTrueName, Ix.Kernel.boolFalseName, Ix.Kernel.boolName.str "rec",
+   Ix.Kernel.eqName, Ix.Kernel.eqReflName, Ix.Kernel.eqName.str "rec"]
 
 /-- The commands that regenerate both files, written into their headers. -/
 def regenerate : List String :=
   ["lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe",
-   s!"lake exe ix compile ConLeche/PinGen/Certs.lean --out .lake/census/certs.ixe --consts \\\n      \
+   s!"lake exe ix compile Ix/Kernel/PinGen/Certs.lean --out .lake/census/certs.ixe --consts \\\n      \
     {",".intercalate (certSpecs.flatMap (·.2) |>.map toString)}",
    "lake exe conleche-pin-gen .lake/census/initstd.ixe .lake/census/certs.ixe \\\n      \
-    Ix/Kernel/ConLeche/PinData.lean Ix/Kernel/ConLeche/NatOpPinData.lean"]
+    Ix/Kernel/Ixon/PinData.lean Ix/Kernel/Ixon/NatOpPinData.lean"]
 
 def toLeanName : CName → Lean.Name
   | .anonymous => .anonymous
@@ -236,8 +236,8 @@ partial def instLevelsGo (ks : List CName) (us : List CLevel) (e : CExpr) : Stat
   if !e.hasLP then return e
   if let some r := (← get)[e]? then return r
   let r ← match e with
-    | .sort u => pure (.sort (ConLeche.Level.subst ks us u))
-    | .const n ls => pure (.const n (ls.map (ConLeche.Level.subst ks us)))
+    | .sort u => pure (.sort (Ix.Kernel.Level.subst ks us u))
+    | .const n ls => pure (.const n (ls.map (Ix.Kernel.Level.subst ks us)))
     | .app f a => return .app (← instLevelsGo ks us f) (← instLevelsGo ks us a)
     | .lam t b m => return .lam (← instLevelsGo ks us t) (← instLevelsGo ks us b) m
     | .forallE t b m => return .forallE (← instLevelsGo ks us t) (← instLevelsGo ks us b) m
@@ -254,7 +254,7 @@ def instLevels (ks : List CName) (us : List CLevel) (e : CExpr) : CExpr :=
 
 /-- No loose `bvar` at or above `d`. -/
 def closedAbove (e : CExpr) (d : Nat) : Bool :=
-  e.bvarBRaw < ConLeche.satRange && e.bvarBRaw ≤ d
+  e.bvarBRaw < Ix.Kernel.satRange && e.bvarBRaw ≤ d
 
 /-- `e` with loose `bvar (d + k)` replaced by `vs[n - 1 - k]` (lifted past the
 `d` binders crossed) for `k < n = vs.size`, and the loose `bvar`s above
@@ -270,8 +270,8 @@ partial def instGo (vs : Array CExpr) (d : Nat) (e : CExpr) :
       if i < d then pure (.bvar i)
       else if i - d < n then
         let v := vs[n - 1 - (i - d)]!
-        pure (if d == 0 || closedAbove v 0 then v else ConLeche.Expr.liftLooseBVars d 0 v)
-      else pure (ConLeche.Expr.mkBvar (i - n))
+        pure (if d == 0 || closedAbove v 0 then v else Ix.Kernel.Expr.liftLooseBVars d 0 v)
+      else pure (Ix.Kernel.Expr.mkBvar (i - n))
     | .app f a => return .app (← instGo vs d f) (← instGo vs d a)
     | .lam t b m => return .lam (← instGo vs d t) (← instGo vs (d + 1) b) m
     | .forallE t b m => return .forallE (← instGo vs d t) (← instGo vs (d + 1) b) m
@@ -392,7 +392,7 @@ def inlineCertClosure (u : Universe) (allowed : CName → Bool) (e : CExpr) :
       (name, has a value): {bad.map fun n => (n, (u.values[n]?).isSome)}"
   return e
 
-/-! ## The share table (the format of `Ix/Kernel/ConLeche/Prelude.lean`) -/
+/-! ## The share table (the format of `Ix/Kernel/Ixon/Prelude.lean`) -/
 
 def hexByte (b : UInt8) : String :=
   let d := "0123456789ABCDEF".toList.toArray
@@ -440,7 +440,7 @@ partial def encLevel (l : CLevel) : EncM Nat := do
   modify fun s => { s with levels := s.levels.insert l i }
   return i
 
-def requireNever (m : ConLeche.BinderMeta) : EncM Unit :=
+def requireNever (m : Ix.Kernel.BinderMeta) : EncM Unit :=
   unless m.pw.toList?.isNone do throw "a binder with a prop-ness annotation other than `never`"
 
 partial def encExpr (e : CExpr) : EncM Nat := do
@@ -467,7 +467,7 @@ partial def encExpr (e : CExpr) : EncM Nat := do
   return i
 
 /-- The variant as a share table and its per-operation roots. -/
-def encodePins (ps : ConLeche.NatOpPinSet) :
+def encodePins (ps : Ix.Kernel.NatOpPinSet) :
     Except String (Array String × Array (String × Nat × List Nat)) := do
   let ops : List (String × CExpr × List CExpr) :=
     [("Nat.div", ps.divPin, ps.divProofs), ("Nat.mod", ps.modPin, ps.modProofs),
@@ -482,7 +482,7 @@ def encodePins (ps : ConLeche.NatOpPinSet) :
   let (roots, enc) ← act.run {}
   return (enc.lines, roots.toArray)
 
-def natOpPinSetBeq (a b : ConLeche.NatOpPinSet) : Bool :=
+def natOpPinSetBeq (a b : Ix.Kernel.NatOpPinSet) : Bool :=
   a.toolchain == b.toolchain && a.divPin == b.divPin && a.modPin == b.modPin &&
   a.gcdPin == b.gcdPin && a.landPin == b.landPin && a.lorPin == b.lorPin && a.xorPin == b.xorPin &&
   a.shiftLeftPin == b.shiftLeftPin && a.shiftRightPin == b.shiftRightPin &&
@@ -496,7 +496,7 @@ def natOpPinSetBeq (a b : ConLeche.NatOpPinSet) : Bool :=
 certificates' reading, closed by upstream's rule. -/
 def natOpPins (env : Ixon.Env) (s : Setup) (pre : Prelude) (pinned : Pins)
     (byName : Std.HashMap CName (ConstRef Address)) (certPath : System.FilePath)
-    (toolchain : String) : IO ConLeche.NatOpPinSet := do
+    (toolchain : String) : IO Ix.Kernel.NatOpPinSet := do
   let fail {α : Type} (msg : String) : IO α := throw (IO.userError s!"pin-gen: {msg}")
   let opRefs ← certSpecs.mapM fun (op, _) => do
     let some r := byName[op]? | fail s!"{op} is not pinned"
@@ -555,7 +555,7 @@ def natOpPins (env : Ixon.Env) (s : Setup) (pre : Prelude) (pinned : Pins)
     -- the cone: the declarations of every record the operation's record reaches
     let cone : Std.HashSet CName := (reachable s.store #[r.block]).fold (fun acc a =>
       (initDecls.getD a #[]).foldl (fun acc d => d.names.foldl (·.insert ·) acc) acc) {}
-    let ground : List CName := ConLeche.natOpDeps op ++ stmtNames
+    let ground : List CName := Ix.Kernel.natOpDeps op ++ stmtNames
     let allowed : CName → Bool := fun c => c == op || ground.contains c || cone.contains c
     let thms := ((certSpecs.find? (·.1 == op)).map (·.2)).getD []
     let mut proofs : List CExpr := []
@@ -660,7 +660,7 @@ def run (args : List String) : IO UInt32 := do
     | .ok p => pure p
     | .error e => IO.eprintln s!"pin-gen: prelude: {e}"; return 1
   IO.eprintln s!"pin-gen: prelude: {preRecords.size} records, {pre.ix.decls.size} declarations: \
-    {pre.ix.decls.toList.map ConLeche.Frontend.preludeKey}"
+    {pre.ix.decls.toList.map Ix.Kernel.Frontend.preludeKey}"
   let s := setup store (env.blobs[·]?) pinned pre (Hints.ofStore store env.anonHints).lookup
   for n in recNames do
     let a := addrOf.getD n default
@@ -708,8 +708,8 @@ def run (args : List String) : IO UInt32 := do
       IO.eprintln s!"pin-gen: pinned {p.name}: {o}: {reason}"
       bad := bad + 1
   let fe := out.checker.fe
-  let nat := ConLeche.natLitSupportedF fe
-  let str := ConLeche.strLitSupportedF fe
+  let nat := Ix.Kernel.natLitSupportedF fe
+  let str := Ix.Kernel.strLitSupportedF fe
   IO.eprintln s!"pin-gen: Nat literals {nat}, String literals {str}"
   unless bad == 0 && nat && str do return 1
   for (op, _) in certSpecs do
@@ -744,7 +744,7 @@ together with `NatOpPinData.lean`; do not edit. To regenerate:
 
 Every pinned constant's record, and the literal capabilities, were checked by
 con-leche's verified fold through the Ixon reader when this file was
-generated; see `Ix/Kernel/ConLeche/Reader.lean` for what the table may affect
+generated; see `Ix/Kernel/Ixon/Reader.lean` for what the table may affect
 (coverage, never soundness). Source: sha256 {digest}.
 
 `pins`: (name components, block address, member, constructor + 1 or 0).
@@ -784,12 +784,12 @@ together with `PinData.lean`; do not edit. To regenerate:
 
 {recipe}
 
-One pin variant (`ConLeche.NatOpPinSet`) of the eight pin-certified `Nat`
+One pin variant (`Ix.Kernel.NatOpPinSet`) of the eight pin-certified `Nat`
 operations, from Ixon records only (plan v4 §2, \"Pins\"):
 
 * the pins are the operations' stored values in the compiled Init (sha256
   {digest}), as the Ixon reader reads them;
-* the certificate proofs are the theorems of `ConLeche/PinGen/Certs.lean`,
+* the certificate proofs are the theorems of `Ix/Kernel/PinGen/Certs.lean`,
   compiled by the Ix compiler (sha256 {certDigest}) and read by the same
   reader, with every constant outside the operation's dependency cone, its
   certificate ground and the statements' machinery inlined, and beta, `let`
@@ -797,10 +797,10 @@ operations, from Ixon records only (plan v4 §2, \"Pins\"):
 
 Every operation was certified by con-leche's verified fold through the Ixon
 reader, with this variant, when this file was generated. The fold takes its
-pin list as a parameter and `ConLeche.model_exists` holds at every list, so
+pin list as a parameter and `Ix.Kernel.model_exists` holds at every list, so
 the data carries no trust. `table` is a share table and `ops` its roots per
 operation, in `NatOpPinSet` field order; the format and the decoder are in
-`Ix/Kernel/ConLeche/Prelude.lean`. -/
+`Ix/Kernel/Ixon/Prelude.lean`. -/
 
 namespace Ix.Kernel.ConLecheReader.NatOpPinData
 

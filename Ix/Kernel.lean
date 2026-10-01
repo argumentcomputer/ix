@@ -8,23 +8,23 @@ import Ix.Kernel.Ref
 import Ix.Kernel.Search
 import Ix.Kernel.Ingress.Records
 import Ix.Kernel.Egress.Projection
-import Ix.Kernel.ConLeche.Prelude
-import Ix.Kernel.ConLeche.ReaderSpec
-import Ix.Kernel.ConLeche.Installed
-import Ix.Kernel.ConLeche.Values
+import Ix.Kernel.Ixon.Prelude
+import Ix.Kernel.Ixon.ReaderSpec
+import Ix.Kernel.Ixon.Installed
+import Ix.Kernel.Ixon.Values
 
 /-! # Ix.Kernel
 
 The kernel-side boundary of the certified Ixon checker. The checker
-is con-leche's, ported in place under `ConLeche/**` (`ConLeche.Cached.checkDecls`
-at `.verified`, with `ConLeche.model_exists`); Ix contributes only the
+is con-leche's, ported in place under `Ix/Kernel/**` (`Ix.Kernel.Cached.checkDecls`
+at `.verified`, with `Ix.Kernel.model_exists`); Ix contributes only the
 boundary:
 
-* `Ix.Kernel.ConLecheReader` (`Ix/Kernel/ConLeche/Reader.lean`, with
+* `Ix.Kernel.ConLecheReader` (`Ix/Kernel/Ixon/Reader.lean`, with
   `ReaderSpec`): the Ixon reader from decoded records to
-  `Array ConLeche.Declaration`, its address-to-name encoding (`keyName`,
+  `Array Ix.Kernel.Declaration`, its address-to-name encoding (`keyName`,
   injective) and its record-by-record specification;
-* `Ix/Kernel/ConLeche/{PinData,NatOpPinData,Prelude}.lean`: the committed pin
+* `Ix/Kernel/Ixon/{PinData,NatOpPinData,Prelude}.lean`: the committed pin
   table, Nat-operation pins and Ixon prelude, generated from the compiled
   Init's records;
 * `Ix.Kernel.ConLecheFold` (`Installed`, `Values`): installation and
@@ -36,7 +36,7 @@ boundary:
 * `Ix.Kernel.Audit`: the certified gate's manifest and audits.
 
 The certified API is `Ix.Ixon.Admission.checkBytes`; its public theorems
-(model existence over `ConLeche.Model`, no proof of the pinned `False`,
+(model existence over `Ix.Kernel.Model`, no proof of the pinned `False`,
 fidelity, resources) are in `Ix.Ixon.Consistency` and
 `Ix.Ixon.ConLecheConsistency`. The contract, trust surface, audits and
 provenance are described in `docs/kernel.md`, which also records the
