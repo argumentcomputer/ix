@@ -137,6 +137,13 @@ CX-1, and ix's recorded verdicts (`fixtures/ownership`). -/
 lean_exe «tests-own» where
   root := `CompilatrixTests.Own.Main
 
+/- Shrinking and first-divergence reports for the generators (MT.5): recorded
+choice sequences replay to the seeded cases, and a planted bug per generator
+(LamGen, FoGen, the Lir generator, the allocation mutants) is found, named at
+its level, shrunk and written out as a replayable record. -/
+lean_exe «tests-shrink» where
+  root := `CompilatrixTests.Pipeline.ShrinkMain
+
 /- Regenerates (or with `--check` compares) the recheck artifacts the kernel
 evaluates (M1.K1): `CompilatrixTests/Recheck/Artifacts/*.lean`, each bench-k1
 closure's `Src.Program`, configuration and certificate as shared Lean terms,

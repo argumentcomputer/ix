@@ -3,6 +3,8 @@
   "tests-src-slow":
   {"roots": ["CompilatrixTests.Src.SlowMain"], "kind": "lean_exe"},
   "tests-src": {"roots": ["CompilatrixTests.Src.Main"], "kind": "lean_exe"},
+  "tests-shrink":
+  {"roots": ["CompilatrixTests.Pipeline.ShrinkMain"], "kind": "lean_exe"},
   "tests-rt": {"roots": ["CompilatrixTests.Rt.Main"], "kind": "lean_exe"},
   "tests-relevance":
   {"roots": ["CompilatrixTests.Src.Relevance.Main"], "kind": "lean_exe"},
@@ -150,6 +152,10 @@
    ["Compilatrix.Xv.Alloc.Driver",
     "Compilatrix.Xv.Print",
     "CompilatrixTests.Xv.Support"]},
+  "CompilatrixTests.Xv.Alloc.Shrink":
+  {"path": "CompilatrixTests/Xv/Alloc/Shrink.lean",
+   "imports":
+   ["CompilatrixTests.Xv.Alloc.Diff", "CompilatrixTests.Support.Repro"]},
   "CompilatrixTests.Xv.Alloc.Run":
   {"path": "CompilatrixTests/Xv/Alloc/Run.lean",
    "imports":
@@ -188,8 +194,14 @@
   {"path": "CompilatrixTests/Xv/Alloc/Cases.lean",
    "imports":
    ["CompilatrixTests.Xv.Alloc.Support", "CompilatrixTests.Support.Rng"]},
+  "CompilatrixTests.Support.Shrink":
+  {"path": "CompilatrixTests/Support/Shrink.lean",
+   "imports": ["CompilatrixTests.Support.Rng", "Lean.Data.Json"]},
   "CompilatrixTests.Support.Rng":
   {"path": "CompilatrixTests/Support/Rng.lean", "imports": []},
+  "CompilatrixTests.Support.Repro":
+  {"path": "CompilatrixTests/Support/Repro.lean",
+   "imports": ["CompilatrixTests.Support.Shrink", "Compilatrix.Sem.Result"]},
   "CompilatrixTests.Support.LamGen":
   {"path": "CompilatrixTests/Support/LamGen.lean",
    "imports": ["CompilatrixTests.Support.Rng", "Compilatrix.Lam.Syntax"]},
@@ -544,6 +556,13 @@
   "CompilatrixTests.Pipeline.Steps":
   {"path": "CompilatrixTests/Pipeline/Steps.lean",
    "imports": ["CompilatrixTests.Pipeline.Support", "Compilatrix.Tools.Check"]},
+  "CompilatrixTests.Pipeline.ShrinkSuite":
+  {"path": "CompilatrixTests/Pipeline/ShrinkSuite.lean",
+   "imports":
+   ["CompilatrixTests.Fir.Shrink", "CompilatrixTests.Xv.Alloc.Shrink"]},
+  "CompilatrixTests.Pipeline.ShrinkMain":
+  {"path": "CompilatrixTests/Pipeline/ShrinkMain.lean",
+   "imports": ["CompilatrixTests.Pipeline.ShrinkSuite"]},
   "CompilatrixTests.Pipeline.Run":
   {"path": "CompilatrixTests/Pipeline/Run.lean",
    "imports":
@@ -762,6 +781,9 @@
     "Compilatrix.Cfg.Semantics",
     "Compilatrix.Cfg.WellFormed",
     "Compilatrix.Cfg.Print"]},
+  "CompilatrixTests.Fir.Shrink":
+  {"path": "CompilatrixTests/Fir/Shrink.lean",
+   "imports": ["CompilatrixTests.Fir.Gen", "CompilatrixTests.Support.Repro"]},
   "CompilatrixTests.Fir.Run":
   {"path": "CompilatrixTests/Fir/Run.lean",
    "imports":
@@ -1466,6 +1488,7 @@
     "CompilatrixTests.Corpus.Build",
     "CompilatrixTests.Corpus.KernelGen",
     "CompilatrixTests.Own.Suite",
+    "CompilatrixTests.Pipeline.ShrinkSuite",
     "CompilatrixTests.Recheck.Run",
     "CompilatrixTests.Recheck.KernelSlow"]},
   "Compilatrix.Xv.XlSemantics":

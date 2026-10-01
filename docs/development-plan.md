@@ -65,7 +65,7 @@ coverage inventory and the coverage-change record. During development:
   `tests-fir`, `tests-rt --cc cc`, `tests-pipeline --cc cc`,
   `tests-recheck`, `check-lir`, `check-xv-select`, `check-regalloc`,
   `check-backend --cc cc`, `corpus check`, `tests-corpus --cc cc`,
-  `tests-own --cc cc` and
+  `tests-own --cc cc`, `tests-shrink` and
   `check-steps` (the required checks that run each are in the CI guide).
 - After a reviewed change to emitted code, regenerate the step-count
   baseline with `lake exe check-steps --write` and review its diff; it is
@@ -99,6 +99,33 @@ coverage accurately. Ordinary CI checks compiler correctness and artifacts.
 Changes to the optional comparison package also require its explicit
 correctness, smoke, analysis, and replay commands. Timing thresholds require a
 controlled performance host.
+
+### Shrinking a generated failure
+
+The generators (LamGen, FoGen, the Lir generator and the allocation
+mutants) draw every choice through `RngM`, whose tape can record a run's
+choice sequence or replay an edited one (`CompilatrixTests.Support.Rng`).
+`lake exe tests-shrink` checks that recorded sequences regenerate their
+seeded cases, and that a planted bug per generator is found, named at the
+first level of its ladder that diverges from the generator's reference
+level, shrunk, and written out (MT.5). For a real failure at some seed:
+
+```sh
+lake exe tests-shrink campaign GEN --from SEED --count 1 [--out DIR]
+lake exe tests-shrink replay DIR/GEN-SEED.json
+```
+
+`GEN` is `lamgen`, `fogen`, `lirgen` or `regalloc-mutants`. The campaign
+runs the generator's ladder (`lamgen`: Lam, Anf after each middle-end step,
+Fir, Own, Cfg; `fogen`: Anf, Fir, Own, Cfg; `lirgen`: Lir, Lir with critical
+edges split, Xv, Xl; `regalloc-mutants`: Lir, Xv, Xl, the validator-accepted
+mutant) on each seed's case, shrinks every failing one by its choice
+sequences until the same first level still diverges, and writes a
+`compilatrix/repro/1` record: the sequences that regenerate the shrunk
+case, its input, the level and both observations, the sizes before and
+after, and the program as text. `replay` regenerates the case from the
+sequences (not the seed, which stops reproducing once a generator changes)
+and runs the ladder again; it exits 1 while the failure reproduces.
 
 ## Documentation maintenance
 
