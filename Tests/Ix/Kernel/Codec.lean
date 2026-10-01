@@ -7,6 +7,9 @@ import Ix.Ixon.Verify
 import Ix.Ixon.Canonical
 import Tests.Ix.Kernel.IxonFixtures
 
+/-! The production Ixon codec: exact round trips, the bounded and canonical
+decoders' refusals and budgets, checked at elaboration. -/
+
 open Tests.Ix.Kernel.IxonFixtures
 
 namespace Tests.Ix.Kernel.Codec
@@ -352,22 +355,19 @@ end Tests.Ix.Kernel.Codec
 
 /-- Independently specified Ixon v3 expression bytes from upstream
 `Tests/Fixtures/ixon-v3/expressions.txt` (the binder, result, and let contract
-cases). The flag recorded whether the intrinsic kernel's reading needed only
-the identity context (`ordinary_let` names a Nat blob and `borrow` a
-projection family); that reading's round trip was retired at L6 with the
-intrinsic kernel, so only the codec's exact round trip is checked here. -/
-def upstreamV3Expressions : List (String × Bool × List UInt8) := [
-  ("app", true, [0x73, 0x13, 0x12, 0x11, 0x10]),
-  ("lam", true, [0x83, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x10]),
-  ("lam_local_unique", true, [0x81, 0x09, 0x00, 0x10]),
-  ("lam_affine_local", true, [0x81, 0x0e, 0x00, 0x10]),
-  ("all", true, [0x92, 0x29, 0x00, 0x17, 0x00, 0x10]),
-  ("ordinary_let", false, [0xa1, 0x00, 0x00, 0x61, 0x10]),
-  ("local_unique_let", true, [0xa0, 0x0a, 0x00, 0x11, 0x10]),
-  ("borrow", false, [0xa2, 0x0e, 0x00, 0x41, 0x02, 0x11, 0x10]),
-  ("borrow_nondep", true, [0xa3, 0x0f, 0x00, 0x11, 0x10])]
+cases), checked for the codec's exact round trip. -/
+def upstreamV3Expressions : List (String × List UInt8) := [
+  ("app", [0x73, 0x13, 0x12, 0x11, 0x10]),
+  ("lam", [0x83, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x10]),
+  ("lam_local_unique", [0x81, 0x09, 0x00, 0x10]),
+  ("lam_affine_local", [0x81, 0x0e, 0x00, 0x10]),
+  ("all", [0x92, 0x29, 0x00, 0x17, 0x00, 0x10]),
+  ("ordinary_let", [0xa1, 0x00, 0x00, 0x61, 0x10]),
+  ("local_unique_let", [0xa0, 0x0a, 0x00, 0x11, 0x10]),
+  ("borrow", [0xa2, 0x0e, 0x00, 0x41, 0x02, 0x11, 0x10]),
+  ("borrow_nondep", [0xa3, 0x0f, 0x00, 0x11, 0x10])]
 
-#guard upstreamV3Expressions.all fun (_, _, bytes) =>
+#guard upstreamV3Expressions.all fun (_, bytes) =>
   match Ixon.deExpr ⟨bytes.toArray⟩ with
   | .ok source => Ixon.serExpr source == ⟨bytes.toArray⟩
   | .error _ => false

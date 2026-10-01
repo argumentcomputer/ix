@@ -12,11 +12,7 @@ and block-order tests: a polymorphic identity (plain, with sharing, and an
 alias referring to it), a constructor-free `False` family with its large
 eliminator (as one block and as separately stored family and recursor
 records, with their projections), and a mutual block exercising every
-member kind, table and contract.
-
-They were the intrinsic kernel's ingress and egress fixtures
-(`Tests/Ix/Kernel/{Ingress,Egress}.lean`), which L6 (plan v4) retired with
-that kernel; the records themselves are kernel-independent. -/
+member kind, table and contract. -/
 
 namespace Tests.Ix.Kernel.IxonFixtures
 
@@ -67,11 +63,6 @@ def falseRecursorRecord (recursor : Ixon.Recursor := falseRecursor) : Ixon.Const
 
 def separatedFalse (recursor : Ixon.Recursor := falseRecursor) : List (Address × Ixon.Constant) :=
   [(address 3, falseFamily), (address 6, falseRecursorRecord recursor), (address 4, falseProjection)]
-
-/-- A record between the family and recursor. -/
-def interveningFalseId : Ixon.Constant :=
-  ⟨.defn ⟨.defn, .safe, 0, .leanAll (.ref 0 #[]) (.ref 0 #[]),
-    .leanLam (.ref 0 #[]) (.var 0)⟩, #[], #[address 4], #[]⟩
 
 /-- Every member kind, unused and repeated table slots, sharing, and
 non-default contracts (serialization fixture; not well typed). -/
