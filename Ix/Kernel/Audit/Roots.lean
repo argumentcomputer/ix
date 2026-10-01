@@ -157,13 +157,12 @@ def proofImportAllowlist : Array Lean.Name :=
 
 /-- The vendored kernel's elaboration-time imports:
 `Ix/Kernel/BasisGen.lean` (`public meta import Lean`) splices the
-annotated basis and pins, and the `PinGen` generators meta-import
-`Ix.Kernel.Expr` and each other. Below these edges only Lean core,
-`Lean`, and `Ix.Kernel` may appear. Upstream's JSON pin dumps
-(`NatOpPins.lean` and `PinGen/Dump.lean`) are not vendored: the
-Nat-operation pins come from Ixon (`Ix/Kernel/Ixon/NatOpPinData.lean`). -/
+annotated basis and pins. Below these edges only Lean core, `Lean`, and
+`Ix.Kernel` may appear. Upstream's pin generators and JSON pin dumps
+(`PinGen*.lean`, `NatOpPins.lean`) are not vendored: the Nat-operation pins
+come from Ixon (`Ix/Kernel/Ixon/NatOpPinData.lean`). -/
 def elaborationImports : ElaborationImports where
-  importers := #[`Ix.Kernel.BasisGen, `Ix.Kernel.PinGen]
+  importers := #[`Ix.Kernel.BasisGen]
   allowed := #[`Init, `Std, `Lean, `Ix.Kernel]
 
 /-- Modules whose execution replacements are inherited Lean runtime. -/
@@ -180,7 +179,7 @@ surface"). Each names exactly what it admits:
   read behind `withExclusive` (all `Init`, so already inherited);
 * `Ix.Kernel.withExclusive`, `implemented_by` `Ix.Kernel.withExclusiveUnsafe`,
   whose type carries the obligation `k true = k false`;
-* elaboration-time `meta` code in `BasisGen` and `PinGen`
+* elaboration-time `meta` code in `BasisGen`
   (`unsafe evalTerm` wrappers paired by `implemented_by`), which compiled
   non-`meta` code cannot call;
 * `partial` definitions of the in-model generator,
@@ -191,9 +190,8 @@ def runtimeRulings : RuntimeRulings where
   primitives := #[``withPtrEq, ``withPtrEqUnsafe, ``withPtrEqDecEq, ``withPtrAddr,
     ``withPtrAddrUnsafe, ``ptrEq, ``ptrAddrUnsafe, ``isExclusiveUnsafe]
   implementations := #[(`Ix.Kernel.withExclusive, `Ix.Kernel.withExclusiveUnsafe)]
-  elaborationModules := #[`Ix.Kernel.BasisGen,
-    `Ix.Kernel.PinGen, `Ix.Kernel.PinGen.Certs, `Ix.Kernel.PinGen.Prelude]
-  partialModules := #[`Ix.Kernel.Frontend.InModel, `Ix.Kernel.Frontend.InModelDump]
+  elaborationModules := #[`Ix.Kernel.BasisGen]
+  partialModules := #[`Ix.Kernel.Frontend.InModel]
 
 end Ix.Kernel.Audit
 

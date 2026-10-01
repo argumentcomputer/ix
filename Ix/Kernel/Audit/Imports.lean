@@ -18,7 +18,7 @@ One ruling refines the closure: a `meta import` made by
 a module under `ElaborationImports.importers` is elaboration-time only. The
 modules reached only through such edges form the elaboration closure, which
 is checked against `ElaborationImports.allowed` instead. This is how
-the vendored `Ix.Kernel.BasisGen` and `Ix.Kernel.PinGen` use `Lean`: everywhere
+the vendored `Ix.Kernel.BasisGen` uses `Lean`: everywhere
 else `Lean` stays forbidden. -/
 
 open Lean Elab Command

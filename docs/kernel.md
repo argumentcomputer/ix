@@ -272,8 +272,8 @@ Project-level execution constructs are admitted only as named by
 | project `@[csimp]` | `Ix.Kernel` | each replacement theorem depends on the standard axioms only |
 | `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
 | `Ix.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `Ix/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
-| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `Ix.Kernel.BasisGen`, `Ix.Kernel.PinGen*` | elaboration only; compiled code cannot reach them |
-| `partial` | `Ix.Kernel.Frontend.InModel`, `InModelDump` | the in-process modeller, vendored as upstream has it |
+| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `Ix.Kernel.BasisGen` | elaboration only; compiled code cannot reach them |
+| `partial` | `Ix.Kernel.Frontend.InModel*` | the in-process modeller, vendored as upstream has it |
 
 Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
 
@@ -289,8 +289,8 @@ Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
 - `proofImportAllowlist` (the theorem modules): `importAllowlist` plus
   `Ix.Ixon.Bounded.Size`, `Ix.Ixon.Verify`, the two theorem modules and
   `Lean`.
-- `elaborationImports`: below `Ix.Kernel.BasisGen` and
-  `Ix.Kernel.PinGen` only `Init`, `Std`, `Lean` and `Ix.Kernel`.
+- `elaborationImports`: below `Ix.Kernel.BasisGen` only `Init`, `Std`,
+  `Lean` and `Ix.Kernel`.
 
 `Std` is admitted for its maps and their lemmas, as the vendored kernel uses them.
 
