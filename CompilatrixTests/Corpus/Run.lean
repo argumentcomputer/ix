@@ -77,6 +77,7 @@ structure Options where
   progress : Bool := false
   survey : Bool := false
   dump : Bool := false
+  observe : Bool := false
 
 structure Tally where
   compiled : Nat := 0
@@ -86,23 +87,55 @@ structure Tally where
   native : Nat := 0
   allowed : Nat := 0
 
-/-- Judge one word-level or native outcome against the case. -/
-def judge (a : Assert) (label : String) (want : Bool × String) (allow : List String) (outcome : String)
+/-- Judge one word-level, machine or native outcome against the case: the
+required failure where the level models it, else the value or an allowed
+failure. Whether it was an allowed failure. -/
+def judge (a : Assert) (label level : String) (want : Want) (allow : List String) (outcome : String)
     (obs : String) : IO Bool := do
-  match want with
-  | (true, _) => expect a (overflow outcome) s!"{label}: {outcome} {obs}, expected status 3 (no word)"; pure false
-  | (false, v) =>
+  match want.value, want.fail with
+  | none, f =>
+    let f := f.getD "natOverflow"
+    expect a (failure outcome == some f) s!"{label}: {outcome} {obs}, expected {f} (no word)"; pure false
+  | some v, some f =>
+    if models level f then
+      expect a (failure outcome == some f) s!"{label}: {outcome} {obs}, expected the failure {f}"; pure false
+    else
+      expect a (outcome == "ok") s!"{label}: {outcome}, expected ok {v} (the level has no {f})"
+      expect a (obs == v) s!"{label}: reads back {obs}, expected {v}"
+      pure false
+  | some v, none =>
     if (failure outcome).any allow.contains then expect a true ""; pure true
     else
       expect a (outcome == "ok") s!"{label}: {outcome}, expected ok {v}"
       expect a (obs == v) s!"{label}: reads back {obs}, expected {v}"
       pure false
 
+/-- The readback type the suite reads a root's result at: the compiler's
+(`Nat`, `Bool`), or for an `enum` result one inductive of field-less
+constructors (Phase 1's `rootTy` reads enums back as nothing). -/
+def resultTy (r : Root) (ty : Option (Rt.Sig × Rt.FoTy)) : Option (Rt.Sig × Rt.FoTy) :=
+  match r.result, r.ctors with
+  | "enum", some n => some ({ inds := [List.replicate n []] }, .ind 0)
+  | _, _ => ty
+
+/-- The word levels' region and the machines' stack budget for a case. -/
+def caseRegion (cs : Case) : Nat := cs.region.getD CompilatrixTests.Rt.defaultSize
+def caseBudget (cs : Case) : Lir.Word :=
+  match cs.stack with
+  | some s => UInt64.ofNat (s - 4096)
+  | none => CompilatrixTests.Rt.defaultBudget
+
+/-- The driver's region and stack for a case. -/
+def nativeRegion (cs : Case) : Nat := cs.region.getD (1 <<< 24)
+def nativeStack (cs : Case) : Nat := cs.stack.getD (1 <<< 28)
+
 /-- Every case of one compiled root at every level, and natively. -/
 def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label : String) (r : Root)
     (c : Levels.Compiled) (t : IO.Ref Tally) : IO (Array String) := do
   let levels := Levels.levelNames c
-  let some root := c.art.roots.head? | throw (IO.userError s!"{label}: no root")
+  let some root0 := c.art.roots.head? | throw (IO.userError s!"{label}: no root")
+  let root := { root0 with ty := resultTy r root0.ty }
+  let c := { c with art := { c.art with roots := root :: c.art.roots.drop 1 } }
   expectEq a root.params r.params s!"{label}: parameters"
   let mut times : Array (String × Nat) := levels.toArray.map (·, 0)
   for cs in r.cases do
@@ -110,17 +143,18 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label 
     let src := cs.sourceObs r
     let noWord := cs.args.any (· ≥ limit)
     for (level, i) in levels.zipIdx do
-      let run := if sourceLevel level then !noWord && src.isSome
+      -- the source levels run on Lean's runtime `Nat`, which fails where its interpreter does
+      let run := if sourceLevel level then !noWord && src.isSome && !cs.leanFails
         else if wordLevel level then !noWord
         else o.machines && (cs.machine || noWord) && cs.args.all (· < 2 ^ 64)
       if !run then continue
-      let ((outcome, obs), ms) ← timed (Levels.runLevel c level cs.args)
+      let ((outcome, obs), ms) ← timed (Levels.runLevel c level cs.args (caseRegion cs) (caseBudget cs))
       let obs := (obs.map Rt.renderObs).getD "-"
       let l := s!"{label} {cs.args} at {level}"
       if sourceLevel level then
         expect a (outcome == "ok") s!"{l}: {outcome}, expected ok {src.getD ""}"
         expect a (some obs == src) s!"{l}: reads back {obs}, expected {src.getD ""}"
-      else if ← judge a l want cs.allow outcome obs then
+      else if ← judge a l level want cs.allow outcome obs then
         t.modify fun t => { t with allowed := t.allowed + 1 }
       times := times.modify i fun (n, ms') => (n, ms' + ms)
       t.modify fun t => { t with runs := t.runs + 1 }
@@ -130,24 +164,54 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label 
     {", ".intercalate (times.toList.filter (·.2 > 0) |>.map fun (l, ms) => s!"{l} {ms}")})"]
   if let some nt := native then
     let exe ← link nt s!"corpus_{label.replace "/" "_"}" c.art.object root.symbol
-    let ((lines, ms)) ← timed (Rt.Native.run exe { stack := 1 <<< 28, ty := root.ty } (r.cases.map (·.args)))
-    for (cs, ln) in r.cases.zip lines do
-      let some want := cs.expect r | continue
-      expect a ln.ok s!"{label} {cs.args} natively: registers not restored"
-      let outcome := if ln.status == 0 then "ok" else s!"status {ln.status}"
-      if ← judge a s!"{label} {cs.args} natively" want cs.allow outcome (ln.obs.getD "-") then
-        t.modify fun t => { t with allowed := t.allowed + 1 }
-    t.modify fun t => { t with native := t.native + lines.length }
-    out := out.push s!"  natively: {lines.length} cases agree ({ms} ms)"
+    -- one driver run per region and stack; a non-`Nat` result's object area
+    -- is dumped, so Lean's `Rt.readback` reads it back as the C decoder did
+    let groups := r.cases.foldl (init := ([] : List (Nat × Nat))) fun gs cs =>
+      let g := (nativeRegion cs, nativeStack cs)
+      if gs.contains g then gs else gs ++ [g]
+    let mut ms := 0
+    let mut n := 0
+    for (region, stack) in groups do
+      let css := r.cases.filter fun cs => (nativeRegion cs, nativeStack cs) == (region, stack)
+      let dump := r.result != "nat"
+      let (lines, ms') ← timed (Rt.Native.run exe { region, stack, ty := root.ty, dump } (css.map (·.args)))
+      ms := ms + ms'
+      n := n + lines.length
+      for (cs, ln) in css.zip lines do
+        let some want := cs.expect r | continue
+        let l := s!"{label} {cs.args} natively{if (region, stack) == (1 <<< 24, 1 <<< 28) then "" else s!" (--region {region} --stack {stack})"}"
+        expect a ln.ok s!"{l}: registers not restored"
+        let outcome := if ln.status == 0 then "ok" else s!"status {ln.status}"
+        if ← judge a l "native" want cs.allow outcome (ln.obs.getD "-") then
+          t.modify fun t => { t with allowed := t.allowed + 1 }
+        -- Lean's readback of the native word (and object area) is the C decoder's
+        if ln.status == 0 && !ln.init then
+          if let some (sig, ty) := root.ty then
+            let mem : X86.Memory := match ln.dump with
+              | some d => d.memory region
+              | none => { bytes := fun _ => 0, readable := fun _ => false, writable := fun _ => false }
+            let lean := (Rt.readback sig (region / 8) mem ty ln.value).map Rt.renderObs
+            expect a (lean == ln.obs) s!"{l}: Rt.readback gives {lean}, the C decoder {ln.obs}"
+    t.modify fun t => { t with native := t.native + n }
+    out := out.push s!"  natively: {n} cases agree ({ms} ms{if groups.length > 1 then s!", {groups.length} driver runs" else ""})"
   return out
+
+/-- Ingress (without typing: the census covers it) and compile one root,
+with the roots it is compiled `together` with; an ingress failure is a
+decline at `ingress`. -/
+def compileRoot (m : Family) (f : Fixture) (r : Root) : IO (Except Err (Cert × Artifact)) := do
+  let dir : FilePath := m.directory
+  let bytes ← IO.FS.readBinFile (dir / f.closure.path)
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / f.equations.path)))
+  IO.lazyPure fun _ => do
+    let inp ← ingress bytes json (r.name :: r.together) (typecheck := false)
+    compileInput {} inp
 
 /-- One root: declined as the manifest expects, or compiled and run. -/
 def root (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (m : Family) (f : Fixture) (r : Root)
     (t : IO.Ref Tally) : IO (Array String) := do
-  let dir : FilePath := m.directory
   let label := s!"{f.name}/{r.name}"
-  let inp ← ingressFile (dir / f.closure.path) (dir / f.equations.path) [r.name]
-  let result ← IO.lazyPure fun _ => compileInput {} inp
+  let result ← compileRoot m f r
   match result, r.decline with
   | .error e, some d =>
     expect a (e.stage.name == d.stage && e.code == d.code)
@@ -222,8 +286,7 @@ def survey (o : Options) : IO Unit := do
       let dir : FilePath := m.directory
       for r in f.roots do
         if !o.roots.isEmpty && !o.roots.contains r.name then continue
-        let inp ← ingressFile (dir / f.closure.path) (dir / f.equations.path) [r.name]
-        let ((result : Except Err (Cert × Artifact)), ms) ← timed (IO.lazyPure fun _ => compileInput {} inp)
+        let ((result : Except Err (Cert × Artifact)), ms) ← timed (compileRoot m f r)
         let got := match result with
           | .ok _ => "compiled"
           | .error e => s!"{e.stage.name}: {e.code}"
@@ -234,9 +297,52 @@ def survey (o : Options) : IO Unit := do
         if let .error e := result then
           IO.println s!"  {(e.render.take 300).toString}"
           if o.dump && [Stage.alloc, .stacking, .layout, .x86, .elf].contains e.stage then
+            let inp ← ingressFile (dir / f.closure.path) (dir / f.equations.path) (r.name :: r.together)
             match dumpIR inp with
             | .ok text => IO.println text
             | .error m => IO.println s!"  (no dump: {m})"
+
+/-- Observe mode: every case of every compiled root at Cfg, Lir, Xv, Xl and
+(with `--cc`) natively, as tab-separated rows, with the manifest's
+expectation and no assertion (for reviewing a new family's `fail`, `allow`
+and `spurious` marks, and for tabulating a boundary family). -/
+def observe (o : Options) (work : FilePath) : IO Unit := do
+  let native : Option Rt.Native.Tools := o.cc.map fun cc => { cc, work }
+  let manifests := if o.manifests.isEmpty then families else o.manifests
+  IO.println "root\targs\tvalue\tfail\tspurious\tcfg\tlir\txv\txl\tnative"
+  for path in manifests do
+    let m ← Family.read path
+    for f in m.fixtures do
+      if !o.only.isEmpty && !o.only.contains f.name then continue
+      for r in f.roots do
+        if !o.roots.isEmpty && !o.roots.contains r.name then continue
+        match ← compileRoot m f r with
+        | .error e => IO.println s!"{r.name}\t-\t-\t-\t-\tdeclined {e.stage.name}: {e.code}"
+        | .ok (cert, art) =>
+          let c ← Levels.assemble r.name cert art
+          let some root0 := c.art.roots.head? | continue
+          let root := { root0 with ty := resultTy r root0.ty }
+          let c := { c with art := { c.art with roots := root :: c.art.roots.drop 1 } }
+          let exe ← native.mapM fun nt => link nt s!"observe_{r.name.replace "." "_"}" c.art.object root.symbol
+          for cs in r.cases do
+            let noWord := cs.args.any (· ≥ limit)
+            let mut cols : Array String := #[]
+            for level in ["cfg", "lir", "xv", "xl"] do
+              if noWord || (level == "cfg" && cs.leanFails) then cols := cols.push "·"
+              else
+                let (out, obs) ← Levels.runLevel c level cs.args (caseRegion cs) (caseBudget cs)
+                let out := if out == "ok" then "" else ((failure out).getD out) ++ " "
+                cols := cols.push s!"{out}{(obs.map Rt.renderObs).getD ""}".trimAscii.toString
+            let n ← match exe with
+              | none => pure "·"
+              | some exe =>
+                match ← Rt.Native.run exe { region := nativeRegion cs, stack := nativeStack cs, ty := root.ty } [cs.args] with
+                | [l] => pure (if l.status == 0 then l.obs.getD s!"w{l.value}"
+                    else s!"status {l.status}{if l.init then " (cx_init)" else ""}")
+                | _ => pure "?"
+            IO.println s!"{r.name}\t{cs.args}\t{cs.value}\t{cs.fail.getD ""}\t{if cs.spurious then "spurious" else ""}\t\
+              {"\t".intercalate cols.toList}\t{n}"
+            (← IO.getStdout).flush
 
 def parseOptions : List String → Except String Options
   | [] => pure {}
@@ -248,6 +354,7 @@ def parseOptions : List String → Except String Options
   | "--progress" :: rest => do return { (← parseOptions rest) with progress := true }
   | "--survey" :: rest => do return { (← parseOptions rest) with survey := true }
   | "--dump" :: rest => do return { (← parseOptions rest) with dump := true }
+  | "--observe" :: rest => do return { (← parseOptions rest) with observe := true }
   | arg :: rest =>
     if arg.startsWith "--" then throw s!"unknown argument {arg}"
     else do let o ← parseOptions rest; return { o with manifests := arg :: o.manifests }
@@ -256,7 +363,7 @@ def parseOptions : List String → Except String Options
 def stackKb : Nat := CompilatrixTests.Src.Bench.deepStackKb
 
 /-- Usage: `tests-corpus [MANIFEST…] [--cc CC] [--work DIR] [--only FIXTURE]…
-[--root ROOT]… [--no-machines] [--progress] [--survey [--dump]]`. Without a manifest, every
+[--root ROOT]… [--no-machines] [--progress] [--survey [--dump] | --observe]`. Without a manifest, every
 registered family (`Corpus.families`). -/
 def suiteMain (args : List String) : IO UInt32 := do
   -- re-run once with a large stack for the big-step evaluators
@@ -271,6 +378,11 @@ def suiteMain (args : List String) : IO UInt32 := do
     | .error e => IO.eprintln s!"tests-corpus: {e}"; return 2
   if o.survey then
     survey o
+    return 0
+  if o.observe then
+    match o.work with
+    | some work => IO.FS.createDirAll work; observe o work
+    | none => IO.FS.withTempDir fun work => observe o work
     return 0
   let a ← IO.mkRef 0
   try

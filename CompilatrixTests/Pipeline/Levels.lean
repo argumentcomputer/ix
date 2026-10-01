@@ -92,8 +92,12 @@ def lirShape : Lir.Outcome → String
 
 def clock : Nat := 1 <<< 40
 
-/-- One level on the root (position 0) and `args`: its outcome and readback. -/
-def runLevel (c : Compiled) (level : String) (args : List Nat) : IO (String × Option Obs) := do
+/-- One level on the root (position 0) and `args`: its outcome and readback.
+The word levels and the machines run in a region of `size` bytes, the
+machines with the stack budget `budget`; a region `cx_init` refuses gives its
+failure as the outcome. -/
+def runLevel (c : Compiled) (level : String) (args : List Nat) (size : Nat := CompilatrixTests.Rt.defaultSize)
+    (budget : Lir.Word := CompilatrixTests.Rt.defaultBudget) : IO (String × Option Obs) := do
   let a := c.art
   let some root := a.roots.head? | throw (IO.userError s!"{c.name}: no root")
   match level with
@@ -127,7 +131,11 @@ def runLevel (c : Compiled) (level : String) (args : List Nat) : IO (String × O
       | .ok (v, H) => H.readback v
       | _ => none)
   | "lir" | "xv" | "xl" =>
-    let mem ← IO.ofExcept (CompilatrixTests.Rt.initRegion a.lowered)
+    let mem ← match CompilatrixTests.Rt.initRegion a.lowered size budget with
+      | .ok m => pure m
+      | .error e =>
+        if e.startsWith "cx_init failed: " then return (s!"resource {(e.drop 16).toString}", none)
+        else throw (IO.userError e)
     let words := args.map CompilatrixTests.Rt.tag
     let r ← IO.lazyPure fun _ => match level with
       | "lir" => Lir.eval { a.lowered.program with main := root.fn } clock words mem CompilatrixTests.Rt.ctx
@@ -138,7 +146,11 @@ def runLevel (c : Compiled) (level : String) (args : List Nat) : IO (String × O
       | _ => none)
   | "x86" | "bytes" =>
     let cc := compiledOf a
-    let ms ← IO.ofExcept (CompilatrixTests.Rt.Machine.initMachines cc)
+    let (e0, ms) ← IO.ofExcept (CompilatrixTests.Rt.Machine.runExport cc Compilatrix.Rt.Procs.initSymbol
+      [UInt64.ofNat size, budget] (CompilatrixTests.Rt.Machine.Machines.initial size))
+    if e0.status != 0 then return (s!"status {e0.status}", none)
+    unless e0.value == CompilatrixTests.Rt.limitOf size - CompilatrixTests.Rt.start do
+      throw (IO.userError s!"cx_init returned {e0.status}:{e0.value}")
     let words := args.map UInt64.ofNat
     let (e, s, _) ← IO.ofExcept <| ← IO.lazyPure fun _ =>
       if level == "x86" then CompilatrixTests.Rt.Machine.runExportTyped cc root.symbol words ms.typed (1 <<< 34)

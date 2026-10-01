@@ -49,6 +49,8 @@ structure Line where
   obs : Option String := none
   ns : Option Nat := none
   dump : Option Dump := none
+  /-- `cx_init` failed with `status`, so the root did not run. -/
+  init : Bool := false
   deriving Inhabited
 
 def hexByte (s : String) : Option UInt8 := do
@@ -77,6 +79,9 @@ def parse (out : String) (typed timed : Bool) : Option (List Line) := do
   let lines ← rows.foldlM (init := ([] : List Line)) fun acc row =>
     match row, acc with
     | "dump" :: fs, l :: ls => do pure ({ l with dump := some (← parseDump fs) } :: ls)
+    -- `cx_init` failed (the root did not run): its status, as the line's
+    | ["init", s, v, ok], _ => do
+      pure ({ status := UInt64.ofNat (← s.toNat?), value := UInt64.ofNat (← v.toNat?), ok := ok == "1", init := true } :: acc)
     | s :: v :: ok :: rest, _ => do
       let (obs, rest) := if typed then (rest.head?, rest.drop 1) else (none, rest)
       let ns := if timed then (rest.head?.bind String.toNat?) else none

@@ -83,8 +83,10 @@ def Root.withGenerated (r : Root) : Root :=
 
 /-- Whether the interpreter runs a case: not when an argument has no word
 (the compiled root must return status 3 before it runs, and the source
-program may not terminate in reasonable time on such an argument). -/
-def Case.interpreted (c : Case) : Bool := !c.args.any (· ≥ limit)
+program may not terminate in reasonable time on such an argument), and not
+on a `trap` case (no well-typed argument reaches a trap; the driver passes
+a word where the source has no value). -/
+def Case.interpreted (c : Case) : Bool := !c.args.any (· ≥ limit) && c.fail != some "trap" && !c.leanFails
 
 /-- The value recorded for a case the interpreter does not run. -/
 def noWord : String := "-"
@@ -104,6 +106,9 @@ def interpret (t : Tools) (m : Family) (f : Fixture) (work : FilePath) : IO (Lis
   else
     let lines := f.roots.flatMap fun r => (r.cases.filter (·.interpreted)).map fun c =>
       " ".intercalate (r.name :: c.args.map toString)
+    -- a fixture with no case to interpret (its roots declined, or Lean cannot
+    -- run them) needs no interpreter run
+    if lines.isEmpty then return f.roots.map fun r => r.cases.map fun _ => noWord
     let input := String.join (lines.map (· ++ "\n"))
     IO.FS.writeFile (work / s!"{f.name}.cases.txt") input
     let out ← mustRun s!"{f.name}: lean --run" t.lean #["-Dlinter.all=false", "--run", f.source.path] (some cwd) (stdin := some input)
@@ -127,6 +132,9 @@ def interpret (t : Tools) (m : Family) (f : Fixture) (work : FilePath) : IO (Lis
 def fillValues (f : Fixture) (outs : List (List String)) : IO Fixture := do
   let roots ← (f.roots.zip outs).mapM fun (r, vs) => do
     let cases ← (r.cases.zip vs).mapM fun (c, v) => do
+      if c.leanFails then
+        let some k := c.constant | throw (IO.userError s!"{f.name} {r.name} {c.args}: `lean_fails` needs a constant")
+        return { c with value := k }
       if let some k := c.constant then
         need (k == v) s!"{f.name} {r.name} {c.args}: the interpreter printed {v}, the constant is {k}"
       return { c with value := v }
@@ -256,7 +264,8 @@ where
 /-- Words the Phase 1 sources must not use (as `benchmarks/fixtures/Check.lean`). -/
 def forbidden : List String := ["partial", "unsafe", "implemented_by", "extrinsicFix", "Task"]
 
-def scanSource (path : FilePath) : IO Unit := do
+def scanSource (path : FilePath) (allowed : List String := []) : IO Unit := do
+  let forbidden := forbidden.filter (!allowed.contains ·)
   let tokens ← checked ((Compilatrix.Tools.SourceScan.scan (← IO.FS.readFile path)).mapError (s!"{path}: " ++ ·))
   for tok in tokens do
     if tok.kind == .name && (forbidden.contains tok.text || (tok.text.splitOn ".").any forbidden.contains) then
@@ -275,7 +284,9 @@ def checkFixture (t : Tools) (interpretToo : Bool) (m : Family) (f : Fixture) (s
   let label := s!"{m.family}/{f.name}"
   let src : FilePath := (m.sourceRoot : FilePath) / f.source.path
   need ((← sha256 src) == f.source.sha256) s!"{label}: {src} changed since the closure was built"
-  scanSource src
+  need (f.allowConstructs.isEmpty || f.roots.all (·.decline.isSome))
+    s!"{label}: `allow_constructs` is for fixtures whose roots are all declined"
+  scanSource src f.allowConstructs
   need (!f.source.license.isEmpty && !f.source.variant.isEmpty) s!"{label}: no licence or variant"
   let ixe ← IO.FS.readBinFile (dir / f.closure.path)
   need ((← sha256 (dir / f.closure.path)) == f.closure.sha256 && some ixe.size == f.closure.bytes)
@@ -298,11 +309,20 @@ def checkFixture (t : Tools) (interpretToo : Bool) (m : Family) (f : Fixture) (s
   for r in f.roots do
     need ((sideRoots.find? (·.1 == r.name)).map (·.2) == some r.address)
       s!"{label} {r.name}: address {r.address} is not the sidecar's"
-    need (["nat", "bool"].contains r.result) s!"{label} {r.name}: result {r.result}"
-    -- ingress finds the root (no typing: the census covers it)
-    match Compilatrix.Recheck.ingress ixe eqsParsed [r.name] (typecheck := false) with
+    need (["nat", "bool", "enum", "other"].contains r.result) s!"{label} {r.name}: result {r.result}"
+    need ((r.result == "enum") == r.ctors.isSome) s!"{label} {r.name}: `ctors` goes with an enum result"
+    need (r.result != "other" || (r.decline.isSome && r.cases.isEmpty))
+      s!"{label} {r.name}: an `other` result is a declined root without cases"
+    need (r.together.all fun n => f.consts.contains n && n != r.name)
+      s!"{label} {r.name}: `together` names other roots of the fixture"
+    -- ingress finds the roots (no typing: the census covers it), or declines
+    -- them as the manifest expects
+    match Compilatrix.Recheck.ingress ixe eqsParsed (r.name :: r.together) (typecheck := false) with
     | .ok _ => pure ()
-    | .error e => throw (IO.userError s!"{label} {r.name}: ingress: {e.render}")
+    | .error e =>
+      -- a root the manifest expects declined at ingress
+      unless r.decline == some { stage := e.stage.name, code := e.code } do
+        throw (IO.userError s!"{label} {r.name}: ingress: {e.render}")
     if let some g := r.gen then
       need (g.ranges.length == r.params) s!"{label} {r.name}: generator ranges"
       need ((r.cases.filter (·.generated)).map (·.args) == g.draw)
@@ -311,6 +331,13 @@ def checkFixture (t : Tools) (interpretToo : Bool) (m : Family) (f : Fixture) (s
       need (c.args.length == r.params) s!"{label} {r.name} {c.args}: {r.params} parameters"
       need (!c.value.isEmpty) s!"{label} {r.name} {c.args}: no interpreter value"
       need ((c.expect r).isSome) s!"{label} {r.name} {c.args}: value {c.value} is not a {r.result}"
+      need ((c.fail.toList ++ c.allow).all failures.contains) s!"{label} {r.name} {c.args}: unknown failure"
+      need (!c.spurious || c.fail.isSome || !c.allow.isEmpty)
+        s!"{label} {r.name} {c.args}: `spurious` qualifies a `fail` or an `allow`"
+      need (c.stack.all fun s => s % 16 == 0 && s ≥ 8192)
+        s!"{label} {r.name} {c.args}: the driver's stack is a multiple of 16 of at least 8 KiB"
+      need (c.region.all (· > 0)) s!"{label} {r.name} {c.args}: an empty region"
+      need (!c.leanFails || c.constant.isSome) s!"{label} {r.name} {c.args}: `lean_fails` needs a constant"
       if let some k := c.constant then
         need (k == c.value) s!"{label} {r.name} {c.args}: value {c.value}, constant {k}"
     st := { st with roots := st.roots + 1, cases := st.cases + r.cases.length
@@ -320,7 +347,7 @@ def checkFixture (t : Tools) (interpretToo : Bool) (m : Family) (f : Fixture) (s
     let outs ← interpret t m f work
     for (r, vs) in f.roots.zip outs do
       for (c, v) in r.cases.zip vs do
-        need (c.value == v) s!"{label} {r.name} {c.args}: recorded {c.value}, the interpreter prints {v}"
+        need (!c.interpreted || c.value == v) s!"{label} {r.name} {c.args}: recorded {c.value}, the interpreter prints {v}"
   return st
 
 def check (t : Tools) (manifests : List FilePath) (interpretToo : Bool) : IO Unit := do

@@ -35,7 +35,8 @@ Per fixture:
 | `name` | reviewed | the fixture's name |
 | `source` | reviewed, derived | `path`, `sha256` (derived), `license`, `variant` (`original`, `upstream`, `port`, …) and `origins` (upstream repository, commit, path, licence) |
 | `consts` | reviewed | the `--consts` seeds: the closure's roots |
-| `protocol` | reviewed | how the interpreter is run: `args` (one `lean --run SRC ARG…` per case, as the benchmark sources' `main`) or `stdin` (one run; a line `ROOT ARG…` per case) |
+| `protocol` | reviewed | how the interpreter is run: `args` (one `lean --run SRC ARG…` per case, as the benchmark sources' `main`) or `stdin` (one run; a line `ROOT ARG…` per case; no run when no case is interpreted) |
+| `allow_constructs` | reviewed | forbidden constructs (`partial`, `unsafe`, …) the source uses on purpose; only for fixtures whose roots are all declined (absent: none) |
 | `closure` | derived | the anonymous closure: `path`, `sha256`, `bytes` |
 | `equations` | derived | the sidecar (`compilatrix/k1-equations/1`): `path`, `sha256`, and the `equations` and `failures` counts |
 | `named_env_sha256` | derived | the named twin the addresses were resolved against (not retained) |
@@ -46,32 +47,57 @@ Per root:
 
 | Field | Kind | Meaning |
 | --- | --- | --- |
-| `name`, `params`, `result` | reviewed | the root's Lean name, its `Nat` parameters, and its result type (`nat` or `bool`) |
+| `name`, `params`, `result` | reviewed | the root's Lean name (as the sidecar writes it, with `«»` where Lean needs them), its parameters (as the entry wrapper receives them: an erased type or proof parameter counts), and its result type: `nat`, `bool`, `enum` (a field-less inductive; the interpreter prints the constructor's index), or `other` (a declined root without cases) |
+| `ctors` | reviewed | an `enum` result's constructor count (absent otherwise) |
+| `together` | reviewed | further roots of the fixture compiled into the same object; the decline or the cases are that object's (absent: none) |
 | `address` | derived | its content address, from the sidecar |
 | `oracles` | reviewed | `lean-run` (Lean 4.34's interpreter), `constant` (an independent value), `upstream` (an upstream `.out.expected`) |
-| `decline` | reviewed | `null`, or the `stage` and `code` the compiler must decline the root with |
+| `decline` | reviewed | `null`, or the `stage` and `code` the compiler must decline the root with (`ingress` included: `corpus check` then accepts that ingress decline) |
 | `note` | reviewed | where the constants come from, and why a resource failure is allowed |
 | `generate` | reviewed | a generator: `seed`, `count` and per parameter an inclusive range |
 | `cases[]` | | the cases |
 
-Per case: `args`; `value`, what the interpreter printed (derived; `-` for a
-case with an argument of at least `2⁶³`, which has no word and which the
-interpreter does not run); `constant`, an independent value it must equal
-(reviewed); `machine`, also run on the typed x86 machine and ByteEval
-(reviewed); `allow`, resource failures allowed at the word levels and natively
-(reviewed: `natOverflow` when an intermediate value reaches `2⁶³`, `heap` when
-the run's immortal allocations outgrow the word levels' 64 KiB region); and
-`generated`, drawn from the root's generator (derived).
+Per case:
+
+| Field | Kind | Meaning |
+| --- | --- | --- |
+| `args` | reviewed | the arguments |
+| `value` | derived | what the interpreter printed; `-` for a case with an argument of at least `2⁶³` (no word; the interpreter does not run it) and for a `trap` case; the `constant` for a `lean_fails` case |
+| `constant` | reviewed | an independent value the interpreter's must equal |
+| `machine` | reviewed | also run on the typed x86 machine and ByteEval |
+| `allow` | reviewed | resource failures allowed at the word levels and natively: `natOverflow` when an intermediate value reaches `2⁶³`, `heap` when the run's immortal allocations outgrow the region, `stack` |
+| `fail` | reviewed | the failure the word levels and native code must give: `natOverflow`, `heap`, `stack` or `trap` (statuses 3, 1, 2, 4) |
+| `spurious` | reviewed | the `fail` or `allow`ed failure is a completeness gap: nothing the source program computes reaches the limit |
+| `region` | reviewed | the region's bytes: the word levels' region (default 64 KiB) and the driver's `--region` (default 16 MiB) |
+| `stack` | reviewed | the stack's bytes: the driver's `--stack` (default 256 MiB), and `stack − 4096` as the typed x86 machine's and ByteEval's stack budget, as the driver passes `cx_init` (default 896 KiB) |
+| `note` | reviewed | why the case is there, and where its expectation comes from |
+| `lean_fails` | reviewed | Lean's runtime fails on the case (its `Nat.pow` and `Nat.shiftLeft` refuse exponents of `2³²` or more), so neither the interpreter nor the source levels, which run on the same runtime, run it; the `constant` is its value |
+| `generated` | derived | drawn from the root's generator |
+
+Absent optional fields are not written, so manifests without them keep their
+canonical form.
 
 The expected behaviour of a compiled root on a case follows from these:
 - the source levels (SrcEval, Lam, Anf, Fir, Own, Cfg; unbounded `Nat`) give
-  `ok` and the interpreter's value;
+  `ok` and the interpreter's value (not run on `trap` and `lean_fails`
+  cases);
 - the word levels (Lir, Xv, Xl, typed x86, ByteEval) and native code give that
   value when the arguments and the result are below `2⁶³`, and status 3
   (`natOverflow`) when the result is not, or one of the case's `allow`ed
   failures;
+- a case's `fail` replaces the value at every level that models it (`stack`:
+  the typed x86 machine, ByteEval and native code; the others: Lir onwards);
+  a level that does not model it gives the value (Lir, Xv and Xl have no
+  stack);
+- a region `cx_init` refuses (below 4 KiB) fails with `heap` before the root
+  runs, at the word levels (`cx_init` at Lir), on the machines and natively
+  (the driver's `init` line);
 - with an argument of at least `2⁶³`, the entry wrapper returns status 3
   before the root runs.
+
+Natively, Lean's `Rt.readback` of the returned word (and, for a result other
+than `nat`, of the object area the driver dumps) must equal the driver's C
+decoder.
 
 ## The builder: `lake exe corpus`
 
@@ -111,7 +137,7 @@ replaces `plans/x86-phase1/bench-k1/build.sh`.
 
 ```sh
 lake exe tests-corpus [MANIFEST…] [--cc CC] [--work DIR] [--only FIXTURE]… [--root ROOT]…
-                      [--no-machines] [--progress] [--survey [--dump]]
+                      [--no-machines] [--progress] [--survey [--dump] | --observe]
 ```
 
 Without a manifest it runs every registered family. For each root, the
@@ -123,7 +149,12 @@ and, for `machine` cases, the typed x86 machine and ByteEval) and, with
 above. A failure names the root, the case, the level and both observations.
 `--survey` only compiles each root and prints `compiled` or its `stage: code`
 against the manifest's (for reviewing a new family); `--dump` adds the Anf,
-Lir and Xv of a root declined at allocation or later.
+Lir and Xv of a root declined at allocation or later. `--observe` prints, as
+tab-separated rows and without assertions, every case of every compiled root
+at Cfg, Lir, Xv, Xl and (with `--cc`) natively, beside the manifest's `fail`
+and `spurious` marks (for reviewing a new family's expectations and for
+tabulating a boundary family). A native run is one driver process per
+distinct region and stack of a root's cases.
 
 ## Adding a fixture
 
@@ -135,6 +166,9 @@ Lir and Xv of a root declined at allocation or later.
    closure's census and the interpreter's values.
 4. `lake exe tests-corpus MANIFEST --survey`; record every decline as the
    root's expected `decline` (a decline is a completeness finding: list it).
+   For a boundary or resource fixture, `--observe --cc cc` shows each case's
+   outcome at every word level and natively: mark each status 3 the source
+   explains as `fail` (or `allow`), and one it does not as `spurious` too.
 5. `lake exe tests-corpus MANIFEST --cc cc`; a level disagreement or a wrong
    value is a compiler bug: keep the minimised program as a fixture.
 6. Pin the new files in the trust ledger and regenerate
