@@ -38,7 +38,7 @@ theorem finish {c : FnCtx} {LB : List (Bound Loc)} {defs : List Loc} (hnd : defs
     (hI : Inside X.memory core'.memory) (hp₁ : X.memory.readable = mem.readable)
     (hp₂ : X.memory.writable = mem.writable) (hp₃ : core'.memory.readable = core.memory.readable)
     (hp₄ : core'.memory.writable = core.memory.writable) :
-    After c defs fr mem core rf.1 rf.2 X.memory ctx core' := by
+    After c defs regs fr mem core rf.1 rf.2 X.memory ctx core' := by
   obtain ⟨hsize', hctl, hdefR, hother⟩ :=
     writeBacks_of ha.size (by simpa [List.map_map, Function.comp_def] using hnd) hrf
   have hrsp : core'.readReg .rsp = core.readReg .rsp := hK _ fun hm => by
@@ -50,7 +50,7 @@ theorem finish {c : FnCtx} {LB : List (Bound Loc)} {defs : List Loc} (hnd : defs
   have hdefR' : ∀ l ∈ defs, Xl.read rf.1 rf.2 l = some (X.readReg (placeL LB l)) :=
     fun l hl => hdefR (l, placeL LB l) (List.mem_map_of_mem hl)
   refine ⟨⟨hsize', fun r hr v hv => ?_, by rw [h15', ha.ctxReg], hI, fun l hl v hv => ?_,
-    ha.frame.keep hrsp hp₁ hp₂ hp₃ hp₄⟩, hctl, hrsp, hp₁, hp₂, hp₃, hp₄, hK, hB⟩
+    ha.frame.keep hrsp hp₁ hp₂ hp₃ hp₄⟩, hctl, hrsp, hp₁, hp₂, hp₃, hp₄, hK, hB, hother'⟩
   · by_cases hd : Loc.reg r ∈ defs
     · have := hdefR' _ hd
       rw [Xl.read_reg hr, Xl.placeL_reg] at this
@@ -151,7 +151,7 @@ theorem fused_sim {c : FnCtx} {p q : Op} {pargs cargs : List (XArg Loc)} {defs :
     {regs' : Xl.Regs} {fr' : Xl.Frame} {mem' : Memory} {flags : ByteEval.Flags}
     (h : Xl.execBound [(p, pb), (q, qb)] regs fr mem ctx true = some (regs', fr', mem', flags)) :
     ∃ core₁ fl₁ core', p.exec pxs core_z {} = .ok (core₁, fl₁) ∧ q.exec qxs core₁ fl₁ = .ok (core', flags) ∧
-      After c (qb.flatMap Bound.defs) fr mem core regs' fr' mem' ctx core' ∧
+      After c (qb.flatMap Bound.defs) regs fr mem core regs' fr' mem' ctx core' ∧
       Foot c p pxs mem core_z (pb.flatMap Bound.uses) [] ∧
       Foot c q qxs mem core_z (qb.flatMap Bound.uses) (qb.flatMap Bound.defs) ∧ (desc p).stack = .none ∧ (desc q).stack = .none := by
   rw [Xl.execBound_eq] at h
@@ -333,7 +333,7 @@ theorem jccTaken_eq (cond : Condition) (flags : ByteEval.Flags) : jccTaken cond 
 theorem after_reg {c : FnCtx} {regs : Xl.Regs} {fr : Xl.Frame} {mem : Memory} {ctx : Word} {core : Core}
     (ha : Agree c regs fr mem ctx core) {d : GPR} {v : Word} {regs' : Xl.Regs} {fr' : Xl.Frame}
     (hw : Xl.write regs fr (.reg d) v = some (regs', fr')) :
-    After c [.reg d] fr mem core regs' fr' mem ctx (core.setReg d v) := by
+    After c [.reg d] regs fr mem core regs' fr' mem ctx (core.setReg d v) := by
   obtain ⟨hread, hother, hctl, hsize⟩ := Xl.write_spec ha.size hw
   have hd : Xl.reserved d = false := by
     cases h : Xl.reserved d
@@ -346,7 +346,7 @@ theorem after_reg {c : FnCtx} {regs : Xl.Regs} {fr : Xl.Frame} {mem : Memory} {c
   have hp₃ : (core.setReg d v).memory = core.memory := rfl
   refine ⟨⟨hsize, fun r hr v' hv' => ?_, by rw [hkeep _ (hne .r15 rfl), ha.ctxReg], ha.inside,
     fun l hl v' hv' => ?_, ha.frame.keep hrsp rfl rfl rfl rfl⟩, hctl, hrsp, rfl, rfl, rfl, rfl,
-    fun r hr => hkeep r (fun e => hr (by simp [e])), fun x _ _ => rfl⟩
+    fun r hr => hkeep r (fun e => hr (by simp [e])), fun x _ _ => rfl, fun y hy => hother y (by simpa using hy)⟩
   · by_cases e : r = d
     · subst e
       rw [Xl.read_reg hr] at hread
@@ -366,14 +366,14 @@ theorem after_reg {c : FnCtx} {regs : Xl.Regs} {fr : Xl.Frame} {mem : Memory} {c
 theorem after_cell {c : FnCtx} {regs : Xl.Regs} {fr : Xl.Frame} {mem : Memory} {ctx : Word} {core : Core}
     (ha : Agree c regs fr mem ctx core) {l : Loc} (hl : l.isCell = true) {m : MemAddr} (hm : c.cell l = .ok m)
     {v : Word} {regs' : Xl.Regs} {fr' : Xl.Frame} (hw : Xl.write regs fr l v = some (regs', fr')) :
-    After c [l] fr mem core regs' fr' mem ctx { core with memory := core.memory.write .w64 (m.eval core) v } := by
+    After c [l] regs fr mem core regs' fr' mem ctx { core with memory := core.memory.write .w64 (m.eval core) v } := by
   obtain ⟨hread, hother, hctl, hsize⟩ := Xl.write_spec ha.size hw
   have hc := ha.frame.cell l m hm
   have hrsp : ({ core with memory := core.memory.write .w64 (m.eval core) v } : Core).readReg .rsp =
       core.readReg .rsp := rfl
   refine ⟨⟨hsize, fun r hr v' hv' => ?_, ha.ctxReg, ha.inside.write_cell hc v,
     fun l' hl' v' hv' => ?_, ha.frame.keep hrsp rfl rfl (by simp) (by simp)⟩, hctl, hrsp, rfl, rfl,
-    by simp, by simp, fun r _ => rfl, fun x hx hout => ?_⟩
+    by simp, by simp, fun r _ => rfl, fun x hx hout => ?_, fun y hy => hother y (by simpa using hy)⟩
   · have := hother (.reg r) (fun h => by subst h; simp [Loc.isCell] at hl)
     rw [Xl.read_reg hr, Xl.read_reg hr, hv'] at this
     exact ha.regsRel r hr v' this.symm
@@ -396,14 +396,14 @@ theorem after_cell {c : FnCtx} {regs : Xl.Regs} {fr : Xl.Frame} {mem : Memory} {
 theorem after_same {c : FnCtx} {regs : Xl.Regs} {fr : Xl.Frame} {mem : Memory} {ctx : Word} {core : Core}
     (ha : Agree c regs fr mem ctx core) {l : Loc} {v : Word} (hv : Xl.read regs fr l = some v)
     {regs' : Xl.Regs} {fr' : Xl.Frame} (hw : Xl.write regs fr l v = some (regs', fr')) :
-    After c [l] fr mem core regs' fr' mem ctx core := by
+    After c [l] regs fr mem core regs' fr' mem ctx core := by
   obtain ⟨hread, hother, hctl, hsize⟩ := Xl.write_spec ha.size hw
   have hsame : ∀ l', Xl.read regs' fr' l' = Xl.read regs fr l' := fun l' => by
     by_cases e : l' = l
     · subst e; rw [hread, hv]
     · exact hother l' e
   refine ⟨⟨hsize, fun r hr v' hv' => ?_, ha.ctxReg, ha.inside, fun l' hl' v' hv' => ?_, ha.frame⟩, hctl, rfl,
-    rfl, rfl, rfl, rfl, fun _ _ => rfl, fun _ _ _ => rfl⟩
+    rfl, rfl, rfl, rfl, fun _ _ => rfl, fun _ _ _ => rfl, fun y _ => hsame y⟩
   · rw [← Xl.read_reg hr, hsame, Xl.read_reg hr] at hv'
     exact ha.regsRel r hr v' hv'
   · rw [hsame] at hv'
@@ -534,9 +534,9 @@ theorem move_sim {c : FnCtx} {dst src : Loc} {ins : List Instr} (hm : c.move dst
     {regs : Xl.Regs} {fr : Xl.Frame} {mem : Memory} {ctx : Word} {core : Core} (ha : Agree c regs fr mem ctx core)
     {v : Word} (hv : Xl.read regs fr src = some v) {regs' : Xl.Regs} {fr' : Xl.Frame}
     (hw : Xl.write regs fr dst v = some (regs', fr')) :
-    (ins = [] ∧ After c [dst] fr mem core regs' fr' mem ctx core) ∨
+    (ins = [] ∧ After c [dst] regs fr mem core regs' fr' mem ctx core) ∨
     (∃ o xs core' fl, ins = [.op o xs] ∧ o.exec xs core {} = .ok (core', fl) ∧ (desc o).stack = .none ∧
-      Foot c o xs mem core [src] [dst] ∧ After c [dst] fr mem core regs' fr' mem ctx core') := by
+      Foot c o xs mem core [src] [dst] ∧ After c [dst] regs fr mem core regs' fr' mem ctx core') := by
   rcases move_cases hm with ⟨rfl, rfl⟩ | ⟨d, s, rfl, rfl, hd, hs, rfl⟩ | ⟨d, m, rfl, hsc, hcm, hd, rfl⟩ |
       ⟨s, m, hdc, rfl, hcm, hs, rfl⟩
   · exact .inl ⟨rfl, after_same ha hv hw⟩

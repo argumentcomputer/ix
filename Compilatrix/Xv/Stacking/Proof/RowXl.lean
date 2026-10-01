@@ -752,7 +752,7 @@ structure Agree (c : FnCtx) (regs : Xl.Regs) (fr : Xl.Frame) (mem : Memory) (ctx
 /-- What an instruction defining `defs` leaves: agreement again, the frame's
 control fields, `rsp`, permissions, every register outside the definitions,
 and every machine byte outside the defined cells that Xl cannot write. -/
-structure After (c : FnCtx) (defs : List Loc) (fr : Xl.Frame) (mem : Memory) (core : Core)
+structure After (c : FnCtx) (defs : List Loc) (regs : Xl.Regs) (fr : Xl.Frame) (mem : Memory) (core : Core)
     (regs' : Xl.Regs) (fr' : Xl.Frame) (mem' : Memory) (ctx : Word) (core' : Core) : Prop where
   agree : Agree c regs' fr' mem' ctx core'
   ctl : Xl.Frame.SameCtl fr fr'
@@ -765,6 +765,7 @@ structure After (c : FnCtx) (defs : List Loc) (fr : Xl.Frame) (mem : Memory) (co
   bytes : ∀ x, mem.writable x = false →
     (∀ l ∈ defs, l.isCell = true → ∀ m, c.cell l = .ok m → ∀ i < 8, x ≠ m.eval core + UInt64.ofNat i) →
     core'.memory.bytes x = core.memory.bytes x
+  locs : ∀ y, y ∉ defs → Xl.read regs' fr' y = Xl.read regs fr y
 
 /-- The memory a stacked row touches: what Xl may touch, or a cell of the
 frame. -/
@@ -988,7 +989,7 @@ theorem op_sim {c : FnCtx} {o : Op} {defs : List Loc} {args : List (XArg Loc)} {
     {regs' : Xl.Regs} {fr' : Xl.Frame} {mem' : Memory} {flags : ByteEval.Flags}
     (h : Xl.execBound [(o, bs)] regs fr mem ctx false = some (regs', fr', mem', flags)) :
     ∃ core', o.exec xs core {} = .ok (core', flags) ∧
-      After c (bs.flatMap Bound.defs) fr mem core regs' fr' mem' ctx core' ∧ Foot c o xs mem core (bs.flatMap Bound.uses) (bs.flatMap Bound.defs) ∧
+      After c (bs.flatMap Bound.defs) regs fr mem core regs' fr' mem' ctx core' ∧ Foot c o xs mem core (bs.flatMap Bound.uses) (bs.flatMap Bound.defs) ∧
       (desc o).stack = .none := by
   rw [Xl.execBound_eq] at h
   simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil, Option.bind_eq_some_iff] at h
@@ -1058,7 +1059,7 @@ theorem op_sim {c : FnCtx} {o : Op} {defs : List Loc} {args : List (XArg Loc)} {
       fun l hl => hdefR (l, placeL bs l) (List.mem_map_of_mem hl)
     refine ⟨core', h₂, ⟨⟨hsize', fun r hr v hv => ?_, by rw [h15', ha.ctxReg], out.inside, fun l hl v hv => ?_,
       ha.frame.keep hrsp out.readable₁ out.writable₁ out.readable₂ out.writable₂⟩, hctl, hrsp,
-      out.readable₁, out.writable₁, out.readable₂, out.writable₂, hkept, fun x hx hout => ?_⟩, ⟨?_, ?_, hWD⟩, hstack⟩
+      out.readable₁, out.writable₁, out.readable₂, out.writable₂, hkept, fun x hx hout => ?_, hother'⟩, ⟨?_, ?_, hWD⟩, hstack⟩
     · by_cases hd : Loc.reg r ∈ bs.flatMap Bound.defs
       · have := hdefR' _ hd
         rw [Xl.read_reg hr, Xl.placeL_reg] at this

@@ -121,6 +121,7 @@ structure ActFacts (S : Stk) (W : Wrap) (mem : Memory) (holes : Holes) (fr : Xl.
   align : (a.sp.toNat + l.size) % 16 = 8
   low : W.limit.toNat ≤ a.sp.toNat
   high : a.sp.toNat + l.size + 8 + 8 * f.facts.inArgs ≤ W.entrySp.toNat
+  inBound : 8 * f.facts.inArgs ≤ maxFrame
 
 /-- A suspended activation: Xl's frame waits on a call; its saved registers
 are the machine's at the call; its cells hold its values. -/
@@ -140,7 +141,7 @@ structure SuspFacts (S : Stk) (W : Wrap) (mem : Memory) (holes : Holes) (fr : Xl
   inArgs : fr.inArgs.size = f.facts.inArgs
 
 /-- Callee `fr₀` (activation `a₀`, return frame `ret₀`) of caller `fr₁`. -/
-structure Link (S : Stk) (fr₀ : Xl.Frame) (a₀ : Act) (ret₀ : ReturnFrame) (f₀ : Func Loc) (l₀ : FrameLayout)
+structure Link (S : Stk) (a₀ : Act) (ret₀ : ReturnFrame) (f₀ : Func Loc) (l₀ : FrameLayout)
     (fr₁ : Xl.Frame) (a₁ : Act) (f₁ : Func Loc) (l₁ : FrameLayout) (pl₁ : Placed) : Prop where
   cont : ∃ b codes post t, XlPos S fr₁ f₁ l₁ pl₁ b codes post t ∧
     ret₀.continuation = pcOf S pl₁ fr₁.label (offsetOf l₁ fr₁.label fr₁.pos codes)
@@ -169,7 +170,7 @@ def Chain (S : Stk) (W : Wrap) (mem : Memory) (holes : Holes) :
   | fr, a, ret, (fr₁, a₁, ret₁) :: rest =>
       (∃ f₁ l₁ pl₁, FnAt S fr₁.fn f₁ l₁ pl₁) ∧
       (∀ f l pl, FnAt S fr.fn f l pl → ∀ f₁ l₁ pl₁, FnAt S fr₁.fn f₁ l₁ pl₁ →
-        Link S fr a ret f l fr₁ a₁ f₁ l₁ pl₁ ∧ ActFacts S W mem holes fr₁ a₁ ret₁ f₁ l₁ ∧
+        Link S a ret f l fr₁ a₁ f₁ l₁ pl₁ ∧ ActFacts S W mem holes fr₁ a₁ ret₁ f₁ l₁ ∧
           SuspFacts S W mem holes fr₁ a₁ f₁ l₁ pl₁) ∧
       Chain S W mem holes fr₁ a₁ ret₁ rest
 

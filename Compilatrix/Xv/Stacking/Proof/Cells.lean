@@ -180,4 +180,69 @@ theorem CellAt.apart_save {l : FrameLayout} {a : Facts} (hs : l.Sound a) {inArgs
   | outArg hi => omega
   | inArg hi => omega
 
+/-! ## An activation's frame on the stack -/
+
+/-- Where an activation's frame lies: from its stack pointer, its frame,
+return slot and incoming arguments, inside the stack. -/
+structure FrameSpan (W : Wrap) (sp : Word) (l : FrameLayout) (inArgs : Nat) : Prop where
+  low : W.limit.toNat ≤ sp.toNat
+  high : sp.toNat + l.size + 8 + 8 * inArgs ≤ W.entrySp.toNat
+  inBound : 8 * inArgs ≤ maxFrame
+  top : W.entrySp.toNat + 64 ≤ 2 ^ 64
+
+theorem ActFacts.span {S : Stk} {W : Wrap} {mem : Memory} {holes : Holes} {fr : Xl.Frame} {a : Act}
+    {ret : ReturnFrame} {f : Func Loc} {l : FrameLayout} (h : ActFacts S W mem holes fr a ret f l)
+    (htop : W.entrySp.toNat + 64 ≤ 2 ^ 64) : FrameSpan W a.sp l f.facts.inArgs :=
+  ⟨h.low, h.high, h.inBound, htop⟩
+
+/-- A byte at offset `o` of a frame. -/
+theorem FrameSpan.byte {W : Wrap} {sp : Word} {l : FrameLayout} {inArgs : Nat} (h : FrameSpan W sp l inArgs)
+    {o : Nat} (ho : o < l.size + 8 + 8 * inArgs) :
+    (sp + UInt64.ofNat o).toNat = sp.toNat + o ∧ W.InStack (sp + UInt64.ofNat o) := by
+  have := h.high; have := h.low; have := h.top
+  have e := addr_toNat (a := sp) (k := o) (by omega)
+  exact ⟨e, by rw [Wrap.InStack, e]; omega⟩
+
+/-- A cell of a frame at `sp`: its address and its bytes. -/
+theorem FrameSpan.cell {W : Wrap} {sp : Word} {l : FrameLayout} {f : Func Loc} (hs : l.Sound f.facts)
+    (h : FrameSpan W sp l f.facts.inArgs) {placed : List Placed} {pl : Placed} (hl : pl.layout = l)
+    (hfa : pl.facts = f.facts) {x : Loc} {m : MemAddr} (hm : (ctxOf placed pl).cell x = .ok m) {core : Core}
+    (hrsp : core.readReg .rsp = sp) :
+    ∃ o, CellAt l f.facts.inArgs x o ∧ m.eval core = sp + UInt64.ofNat o ∧ o + 8 ≤ l.size + 8 + 8 * f.facts.inArgs ∧
+      ∀ i < 8, (m.eval core + UInt64.ofNat i).toNat = sp.toNat + o + i ∧ W.InStack (m.eval core + UInt64.ofNat i) := by
+  obtain ⟨o, hc, rfl⟩ := cell_off hm
+  rw [hl, hfa] at hc
+  obtain ⟨-, hr, -⟩ := hc.range hs
+  have hb := hs.bounded
+  have hib := h.inBound
+  have heval : (rspAt o).eval core = sp + UInt64.ofNat o := by
+    rw [rspAt_eval (by simp only [maxFrame, slack] at hb hib; omega), hrsp]
+  refine ⟨o, hc, heval, hr, fun i hi => ?_⟩
+  rw [heval, word_add_assoc_ofNat]
+  have := h.byte (o := o + i) (by omega)
+  rwa [← Nat.add_assoc] at this
+where
+  word_add_assoc_ofNat {a : Word} {o i : Nat} : a + UInt64.ofNat o + UInt64.ofNat i = a + UInt64.ofNat (o + i) := by
+    rw [UInt64.add_assoc, ← UInt64.ofNat_add]
+
+/-- The running frame's cells are cells. -/
+theorem frameCells_of {W : Wrap} {xm : Memory} {m : Machine} {holes : Holes} (hg : Global W xm m holes)
+    {sp : Word} {l : FrameLayout} {f : Func Loc} (hs : l.Sound f.facts) (h : FrameSpan W sp l f.facts.inArgs)
+    {placed : List Placed} {pl : Placed} (hl : pl.layout = l) (hfa : pl.facts = f.facts)
+    (hrsp : m.core.readReg .rsp = sp) : FrameCells (ctxOf placed pl) xm m.core := by
+  refine ⟨fun x mm hm => ?_, fun x x' mm mm' hm hm' hne i hi j hj => ?_⟩
+  · obtain ⟨o, -, -, -, hbytes⟩ := h.cell hs hl hfa hm hrsp
+    refine ⟨fun i hi => ?_, fun i hi => ?_, fun i hi => ?_, fun i hi => ?_⟩
+    · exact (hg.stack _ (hbytes i hi).2).2.2.1
+    · exact (hg.stack _ (hbytes i hi).2).2.2.2
+    · exact (hg.stack _ (hbytes i hi).2).1
+    · exact (hg.stack _ (hbytes i hi).2).2.1
+  · obtain ⟨o, hc, -, -, hb⟩ := h.cell hs hl hfa hm hrsp
+    obtain ⟨o', hc', -, -, hb'⟩ := h.cell hs hl hfa hm' hrsp
+    have hsep := hc.apart hs hc' hne
+    intro e
+    have := congrArg UInt64.toNat e
+    rw [(hb i hi).1, (hb' j hj).1] at this
+    omega
+
 end Compilatrix.Xv.Stacking.Proof

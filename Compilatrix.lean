@@ -418,6 +418,9 @@ import Compilatrix.Xv.Stacking.Proof.InstXl
 import Compilatrix.Xv.Stacking.Proof.Code
 import Compilatrix.Xv.Stacking.Proof.Match
 import Compilatrix.Xv.Stacking.Proof.Cells
+import Compilatrix.Xv.Stacking.Proof.Chain
+import Compilatrix.Xv.Stacking.Proof.Writes
+import Compilatrix.Xv.Stacking.Proof.Body
 import Compilatrix.Backend
 import Compilatrix.Backend.Proof.Xl
 import Compilatrix.Backend.Proof.Emit
