@@ -743,9 +743,268 @@ mod tests {
     norm_eq_semantic(&normalize(&canon_univ(&u.0)), &normalize(&u.0))
   }
 
+  // ---- P0: value preservation ----
+
+  /// The value of a level at a valuation of its params (`u_i ↦ vals[i]`).
+  fn eval(u: &Univ, vals: &[u64]) -> u64 {
+    match u {
+      Univ::Zero => 0,
+      Univ::Succ(i) => eval(i, vals) + 1,
+      Univ::Max(a, b) => eval(a, vals).max(eval(b, vals)),
+      Univ::IMax(a, b) => {
+        let vb = eval(b, vals);
+        if vb == 0 { 0 } else { eval(a, vals).max(vb) }
+      },
+      Univ::Var(i) => vals[usize::try_from(*i).unwrap()],
+    }
+  }
+
+  /// The largest `succ` nesting.
+  fn max_offset(u: &Univ) -> u64 {
+    match u {
+      Univ::Zero | Univ::Var(_) => 0,
+      Univ::Succ(i) => max_offset(i) + 1,
+      Univ::Max(a, b) | Univ::IMax(a, b) => max_offset(a).max(max_offset(b)),
+    }
+  }
+
+  /// The first valuation of params `0..params` at which `a` and `b`
+  /// differ, over values `{0, 1, 2, M-1, M}` with `M` four above the
+  /// largest offset. Exact: by Géran's decomposition, a sublevel of one
+  /// side not dominated by a single sublevel of the other is exposed by
+  /// setting its condition params to 1, its variable to `M` and every
+  /// other param to 0, so two levels that differ anywhere differ here.
+  fn differ_at(a: &Univ, b: &Univ, params: usize) -> Option<Vec<u64>> {
+    let m = max_offset(a).max(max_offset(b)) + 4;
+    let values = [0, 1, 2, m - 1, m];
+    let mut vals = vec![0u64; params];
+    let total = values.len().pow(u32::try_from(params).unwrap());
+    for code in 0..total {
+      let mut c = code;
+      for x in &mut vals {
+        *x = values[c % values.len()];
+        c /= values.len();
+      }
+      if eval(a, &vals) != eval(b, &vals) {
+        return Some(vals);
+      }
+    }
+    None
+  }
+
+  /// Does `subsumption` leave a sublevel that a single other sublevel
+  /// dominates? A constant `c@P` is dominated by a constant `≥ c` at a
+  /// strict sub-path, or by an atom `(y, k)` with `k + 1 ≥ c` at a
+  /// sub-path; an atom `(x, k)@P` by an atom `(x, ≥ k)` at a strict
+  /// sub-path. `subsumption` mirrors the kernels' normalizers, which
+  /// test a constant against the vars of its own node instead of the
+  /// dominator's (`plans/review/g-levels`: `max (v+1) (imax (imax 2 u) v)`
+  /// keeps the constant `2` at `[u, v]`, dominated by `v + 1`). Only
+  /// such leftovers make two equal levels' normal forms differ, so a
+  /// slip-free normal form is the unique one of its class.
+  fn has_slip(n: &NormLevel) -> bool {
+    n.iter().any(|(p, node)| {
+      let c = node.constant;
+      let const_dominated = c > 0
+        && n.iter().any(|(q, m)| {
+          is_subset(q, p)
+            && ((q.len() < p.len() && m.constant >= c)
+              || m.vars.iter().any(|(_, k)| k + 1 >= c))
+        });
+      let var_dominated = node.vars.iter().any(|(x, k)| {
+        n.iter().any(|(q, m)| {
+          q.len() < p.len()
+            && is_subset(q, p)
+            && m.vars.iter().any(|(y, k2)| y == x && k2 >= k)
+        })
+      });
+      const_dominated || var_dominated
+    })
+  }
+
+  /// P0–P3, P6 and class stability of one level over params
+  /// `0..params`; failures are appended to `out`. P0 and P3 are checked
+  /// unconditionally. With `strict`, so are the rest; otherwise P1, P2
+  /// and class stability are checked when neither `u`'s nor its
+  /// canonical form's normal form has a subsumption leftover
+  /// ([`has_slip`]), and P6 when neither `u`'s nor `reduce_univ u`'s
+  /// has; the skipped draws are counted in `slips`.
+  fn check_canon(
+    u: &Arc<Univ>,
+    params: usize,
+    strict: bool,
+    out: &mut Vec<String>,
+    slips: &mut usize,
+  ) {
+    let n = normalize(u);
+    let c = canon_univ(u);
+    if let Some(vals) = differ_at(u, &c, params) {
+      out.push(format!(
+        "P0 {u:?} → {c:?}: {} vs {} at {vals:?}",
+        eval(u, &vals),
+        eval(&c, &vals)
+      ));
+    }
+    if reduce_univ(&c) != c {
+      out.push(format!("P3 {u:?} → {c:?} (reduces to {:?})", reduce_univ(&c)));
+    }
+    let nc = normalize(&c);
+    if strict || !(has_slip(&n) || has_slip(&nc)) {
+      if canon_univ(&c) != c {
+        out.push(format!("P1 {u:?} → {c:?} → {:?}", canon_univ(&c)));
+      }
+      if !norm_eq_semantic(&normalize(&linearize(&n)), &n) {
+        out.push(format!("P2 {u:?} → {c:?}"));
+      }
+      if !norm_eq_semantic(&nc, &n) {
+        out.push(format!("CLASS {u:?} → {c:?}"));
+      }
+    } else {
+      *slips += 1;
+    }
+    let r = reduce_univ(u);
+    if (strict || !(has_slip(&n) || has_slip(&normalize(&r))))
+      && canon_univ(&r) != c
+    {
+      out.push(format!("P6 {u:?} → {c:?}"));
+    }
+  }
+
+  /// The smallest level found whose canonical form changed its value
+  /// (`imax (imax (imax u w + 1) u) v`, cl-level differential): the
+  /// self-strip of `u + 1` from `[u, v, w]` to `[v, w]` left gate `w`
+  /// without an absorber, leaking `w` at `u = 0`.
+  #[test]
+  fn p0_witness() {
+    let (u, vv, w) = (v(0), v(1), v(2));
+    let l = im(im(s(im(u.clone(), w.clone())), u.clone()), vv.clone());
+    let c = canon_univ(&l);
+    assert_eq!(eval(&l, &[0, 1, 2]), 1);
+    assert_eq!(eval(&c, &[0, 1, 2]), 1, "canon {c:?}");
+    // The representative itself, pinned (the Lean mirror pins the same).
+    assert_eq!(
+      c,
+      m(
+        im(im(s(w.clone()), u.clone()), vv.clone()),
+        im(im(im(s(u.clone()), w.clone()), u.clone()), vv.clone())
+      )
+    );
+    let (mut failures, mut slips) = (Vec::new(), 0);
+    for x in witness_family() {
+      check_canon(&x, 4, true, &mut failures, &mut slips);
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+  }
+
+  /// The witness under every renaming of its params (and a fourth),
+  /// with deeper offsets, under `max 1`, `succ` and a further gate,
+  /// plus the cl-level shrink log's other counterexample.
+  fn witness_family() -> Vec<Arc<Univ>> {
+    let mut out = Vec::new();
+    let perms: [[u64; 3]; 8] = [
+      [0, 1, 2],
+      [0, 2, 1],
+      [1, 0, 2],
+      [1, 2, 0],
+      [2, 0, 1],
+      [2, 1, 0],
+      [3, 1, 0],
+      [0, 3, 2],
+    ];
+    for [a, b, c] in perms {
+      let (u, vv, w) = (v(a), v(b), v(c));
+      for k in 1..=3 {
+        let inner = succs(im(u.clone(), w.clone()), k);
+        let l = im(im(inner, u.clone()), vv.clone());
+        out.push(l.clone());
+        out.push(m(s(z()), l.clone()));
+        out.push(s(l.clone()));
+        out.push(im(l.clone(), w.clone()));
+        out.push(m(l.clone(), im(vv.clone(), u.clone())));
+      }
+    }
+    // `imax(imax(imax(imax(0,u0),u2)+1,u0),u1)+1` (canon-shrink kind 0).
+    out.push(s(im(im(s(im(im(z(), v(0)), v(2))), v(0)), v(1))));
+    out
+  }
+
+  /// The pseudo-random generator of the cl-level differential
+  /// (`biasedLevel`): levels biased towards `imax` by a parameter,
+  /// offsets and `max`. Mirrored by `Tests.Gen.Ixon.biasedUniv`.
+  fn lcg_next(seed: u64) -> u64 {
+    seed
+      .wrapping_mul(6_364_136_223_846_793_005)
+      .wrapping_add(1_442_695_040_888_963_407)
+  }
+
+  fn biased(params: u64, size: usize, seed: u64) -> (Arc<Univ>, u64) {
+    let seed = lcg_next(seed);
+    let pick = (seed >> 33) % 10;
+    let p = v((seed >> 40) % params);
+    if size <= 1 || pick < 2 {
+      (if pick == 0 { z() } else { p }, seed)
+    } else if pick < 4 {
+      let (a, seed) = biased(params, size - 1, seed);
+      (s(a), seed)
+    } else if pick < 6 {
+      let (a, seed) = biased(params, size / 2, seed);
+      let (b, seed) = biased(params, size / 2, seed);
+      (m(a, b), seed)
+    } else if pick < 9 {
+      let (a, seed) = biased(params, size - 1, seed);
+      (im(a, p), seed)
+    } else {
+      let (a, seed) = biased(params, size / 2, seed);
+      let (b, seed) = biased(params, size / 2, seed);
+      (im(a, b), seed)
+    }
+  }
+
+  /// P0–P3/P6/class over biased random levels and the levels type
+  /// inference builds from them (`max 1 a`, `max a b`, `imax a b`,
+  /// `succ a`): 20,000 draws over three params at size 10 (the
+  /// differential's family; before the gate check, 109 of its levels and
+  /// 2,128 of all 125,000 changed value) and 5,000 over four at size 12.
+  /// P1/P2/class/P6 are conditional on slip-free normal forms
+  /// ([`check_canon`]): 239 of the 125,000 draws have a normal form
+  /// with a subsumption leftover, and 173 of those are not idempotent.
+  #[test]
+  fn p0_biased_random() {
+    let (mut failures, mut slips) = (Vec::new(), 0);
+    let mut total = 0;
+    for (params, size, count, mut seed) in
+      [(3u64, 10usize, 20_000usize, 41u64), (4, 12, 5_000, 43)]
+    {
+      let count = if cfg!(debug_assertions) { count / 10 } else { count };
+      let ps = usize::try_from(params).unwrap();
+      for _ in 0..count {
+        let (a, s1) = biased(params, size, seed);
+        let (b, s2) = biased(params, size, s1);
+        seed = s2;
+        for x in [
+          a.clone(),
+          m(s(z()), a.clone()),
+          m(a.clone(), b.clone()),
+          im(a.clone(), b.clone()),
+          s(a.clone()),
+        ] {
+          total += 1;
+          check_canon(&x, ps, false, &mut failures, &mut slips);
+        }
+      }
+    }
+    assert!(
+      failures.is_empty(),
+      "{}",
+      failures[..failures.len().min(12)].join("\n")
+    );
+    // The slip is rare; a jump here means the normal forms changed.
+    assert!(slips * 200 < total, "{slips} of {total} draws hit the slip");
+  }
+
   /// Exhaustive enumeration of every level term up to `size` constructor
-  /// nodes over two params — deterministic minimal counterexamples where
-  /// quickcheck only reports failure.
+  /// nodes over three params — deterministic minimal counterexamples
+  /// where quickcheck only reports failure.
   fn enumerate(size: usize) -> Vec<Arc<Univ>> {
     let mut by_size: Vec<Vec<Arc<Univ>>> = vec![Vec::new(); size + 1];
     if size >= 1 {
@@ -769,25 +1028,13 @@ mod tests {
     by_size.into_iter().flatten().collect()
   }
 
+  /// Every term of up to 8 nodes in release (112,000 terms; the witness
+  /// has 8), 6 in debug.
   #[test]
   fn exhaustive_small_terms() {
-    let mut failures: Vec<String> = Vec::new();
-    for u in enumerate(if cfg!(debug_assertions) { 6 } else { 7 }) {
-      let n = normalize(&u);
-      let c = canon_univ(&u);
-      if !norm_eq_semantic(&normalize(&linearize(&n)), &n) {
-        failures.push(format!("P2 {u:?} → {c:?}"));
-      }
-      if reduce_univ(&c) != c {
-        failures
-          .push(format!("P3 {u:?} → {c:?} (reduces to {:?})", reduce_univ(&c)));
-      }
-      if canon_univ(&c) != c {
-        failures.push(format!("P1 {u:?} → {c:?} → {:?}", canon_univ(&c)));
-      }
-      if !norm_eq_semantic(&normalize(&c), &n) {
-        failures.push(format!("CLASS {u:?} → {c:?}"));
-      }
+    let (mut failures, mut slips) = (Vec::new(), 0);
+    for u in enumerate(if cfg!(debug_assertions) { 6 } else { 8 }) {
+      check_canon(&u, 3, true, &mut failures, &mut slips);
       if failures.len() >= 12 {
         break;
       }

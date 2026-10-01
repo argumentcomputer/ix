@@ -83,6 +83,102 @@ def enumerateUniv (size : Nat) : List Univ := Id.run do
     bySize := bySize.set! n out.reverse
   return bySize.toList.flatten
 
+/-- The value of a level at a valuation of its params (`var i ↦ σ i`). -/
+def univEval (σ : Nat → Nat) : Univ → Nat
+  | .zero => 0
+  | .succ u => univEval σ u + 1
+  | .max a b => Max.max (univEval σ a) (univEval σ b)
+  | .imax a b =>
+    let vb := univEval σ b
+    if vb == 0 then 0 else Max.max (univEval σ a) vb
+  | .var i => σ i.toNat
+
+/-- The largest `succ` nesting. -/
+def univMaxOffset : Univ → Nat
+  | .zero | .var _ => 0
+  | .succ u => univMaxOffset u + 1
+  | .max a b | .imax a b => Max.max (univMaxOffset a) (univMaxOffset b)
+
+/-- The first valuation of params `0..params` at which `a` and `b`
+    differ, over values `{0, 1, 2, M-1, M}` with `M` four above the
+    largest offset (mirrors `canon_univ.rs::tests::differ_at`). Exact: by
+    Géran's decomposition, a sublevel of one side not dominated by a
+    single sublevel of the other is exposed by setting its condition
+    params to 1, its variable to `M` and every other param to 0. -/
+def univDifferAt? (params : Nat) (a b : Univ) : Option (List Nat) := Id.run do
+  let m := Max.max (univMaxOffset a) (univMaxOffset b) + 4
+  let values := #[0, 1, 2, m - 1, m]
+  for code in [0:values.size ^ params] do
+    let vals := (List.range params).map fun i => values[(code / values.size ^ i) % values.size]!
+    let σ := fun i => vals.getD i 0
+    if univEval σ a != univEval σ b then
+      return some vals
+  return none
+
+/-- The cl-level differential's LCG (`ConLecheLevels.next`), mirrored by
+    `canon_univ.rs::tests::lcg_next`. -/
+def lcgNext (seed : UInt64) : UInt64 :=
+  seed * 6364136223846793005 + 1442695040888963407
+
+/-- A pseudo-random level biased towards the shapes of canonical forms:
+    `imax` by a parameter, offsets and `max` (the cl-level differential's
+    `biasedLevel`; mirrored by `canon_univ.rs::tests::biased`, so both
+    languages draw the same levels). -/
+def biasedUniv (params : Nat) (size : Nat) (seed : UInt64) : Univ × UInt64 :=
+  let seed := lcgNext seed
+  let pick := ((seed >>> 33) % 10).toNat
+  let p : Univ := .var ((seed >>> 40) % params.toUInt64)
+  if _h : size ≤ 1 ∨ pick < 2 then (if pick = 0 then .zero else p, seed)
+  else if pick < 4 then
+    let (a, seed) := biasedUniv params (size - 1) seed
+    (.succ a, seed)
+  else if pick < 6 then
+    let (a, seed) := biasedUniv params (size / 2) seed
+    let (b, seed) := biasedUniv params (size / 2) seed
+    (.max a b, seed)
+  else if pick < 9 then
+    let (a, seed) := biasedUniv params (size - 1) seed
+    (.imax a p, seed)
+  else
+    let (a, seed) := biasedUniv params (size / 2) seed
+    let (b, seed) := biasedUniv params (size / 2) seed
+    (.imax a b, seed)
+termination_by size
+decreasing_by all_goals omega
+
+/-- `count` draws of `biasedUniv`, each with the levels type inference
+    builds from it and the next draw (`max 1 a`, `max a b`, `imax a b`,
+    `succ a`), in `canon_univ.rs::tests::p0_biased_random`'s order. -/
+def biasedUnivFamily (params size count : Nat) (seed : UInt64) : Array Univ := Id.run do
+  let mut out : Array Univ := #[]
+  let mut seed := seed
+  for _ in [0:count] do
+    let (a, s1) := biasedUniv params size seed
+    let (b, s2) := biasedUniv params size s1
+    seed := s2
+    out := out ++ #[a, .max (.succ .zero) a, .max a b, .imax a b, .succ a]
+  return out
+
+/-- The smallest level whose canonical form changed its value before the
+    2026-10-01 linearization fix, `imax (imax (imax u w + 1) u) v`, under
+    every renaming of its params (and a fourth), with deeper offsets,
+    under `max 1`, `succ` and a further gate, plus the cl-level shrink
+    log's other counterexample (mirrors
+    `canon_univ.rs::tests::witness_family`). -/
+def univWitnessFamily : Array Univ := Id.run do
+  let succs (u : Univ) (k : Nat) : Univ := k.fold (fun _ _ acc => .succ acc) u
+  let perms : List (UInt64 × UInt64 × UInt64) :=
+    [(0, 1, 2), (0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0), (3, 1, 0), (0, 3, 2)]
+  let mut out : Array Univ := #[]
+  for (a, b, c) in perms do
+    let (u, v, w) : Univ × Univ × Univ := (.var a, .var b, .var c)
+    for k in [1:4] do
+      let l : Univ := .imax (.imax (succs (.imax u w) k) u) v
+      out := out ++ #[l, .max (.succ .zero) l, .succ l, .imax l w, .max l (.imax v u)]
+  -- `imax(imax(imax(imax(0,u0),u2)+1,u0),u1)+1` (canon-shrink kind 0).
+  out := out.push (.succ (.imax (.imax (.succ (.imax (.imax .zero (.var 0)) (.var 2))) (.var 0)) (.var 1)))
+  return out
+
 /-- Generate a universe level (new format) - non-recursive base cases heavily weighted -/
 partial def genUniv : Gen Univ :=
   resize (fun s => if s > 2 then 2 else s / 2) <|
