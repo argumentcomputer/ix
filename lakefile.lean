@@ -350,7 +350,7 @@ that kernel. -/
 lean_lib KernelConLeche where
   roots := #[`Ix.Ixon.ConLecheAdmission, `Ix.Ixon.ConLecheConsistency, `Ix.Ixon.Consistency,
     `Benchmarks.Kernel.ConLecheStep,
-    `Benchmarks.Kernel.ConLecheCensus]
+    `Benchmarks.Kernel.ConLecheCensus, `Benchmarks.Kernel.ConLecheFold]
 
 /-- The certified checker's census (L5: the default census target):
 con-leche through the Ixon reader, one row per record (untrusted step). -/
