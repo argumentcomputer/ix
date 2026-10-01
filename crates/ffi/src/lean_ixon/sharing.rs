@@ -183,3 +183,30 @@ extern "C" fn rs_exact_sharing_normalize(
     Err(err) => LeanExcept::error_string(&err.to_string()),
   }
 }
+
+/// FFI: uniform-width exact sharing of one serialized Constant.
+///
+/// Lean signature:
+/// `@[extern "rs_uniform_sharing_normalize"]
+///  opaque uniformSharingNormalize : UInt64 → @& ByteArray → Except String ByteArray`
+///
+/// Every Share is priced `w` bytes (the uniform-width model of
+/// `Ix.Sharing.Exact.Uniform`); the output uses real table indices. Uses
+/// `ExactSharingLimits::default()`; `w = 0` is a `format bound:` error.
+#[unsafe(no_mangle)]
+extern "C" fn rs_uniform_sharing_normalize(
+  w: u64,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use ixon::sharing_exact::{
+    ExactSharingLimits, normalize_constant_bytes_uniform,
+  };
+  match normalize_constant_bytes_uniform(
+    w,
+    bytes_obj.as_bytes(),
+    &ExactSharingLimits::default(),
+  ) {
+    Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
+    Err(err) => LeanExcept::error_string(&err.to_string()),
+  }
+}
