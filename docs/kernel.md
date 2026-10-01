@@ -353,7 +353,9 @@ re-records it states why the closure or the statement moved.
    verdict (accepts: a definition, a theorem, an inductive with its
    recursor, a structure with a projection, a quotient reduction, `Nat`
    literals and a pinned `Nat` operation, a `String` literal, a nested
-   inductive, the opaque face of a `partial` definition; rejects: truncated
+   inductive, a mutual inductive with definitions by structural recursion
+   over it, a mutual and nested inductive, the opaque face of a `partial`
+   definition; rejects: truncated
    bytes, a duplicate constant, a duplicate blob, `Nat.rec` with a wrong K
    flag; declines: `Nat.add` with another value, a `partial` definition's
    `_unsafe_rec` body, a non-standard axiom, a theorem of `False`). Rows go

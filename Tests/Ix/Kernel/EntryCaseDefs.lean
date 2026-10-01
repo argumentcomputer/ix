@@ -95,6 +95,39 @@ inductive ITree where
   | node : Nat → PArr ITree → ITree
   | hole : Nat → ITree
 
+-- A mutual inductive block: terms and their argument lists.
+mutual
+inductive Tm where
+  | var : Nat → Tm
+  | app : Nat → Args → Tm
+inductive Args where
+  | nil : Args
+  | cons : Tm → Args → Args
+end
+
+-- Definitions by structural recursion over the mutual block (through
+-- `Tm.brecOn` and `Args.brecOn`), and a reduction through them.
+mutual
+def Tm.size : Tm → Nat
+  | .var _ => 1
+  | .app _ as => as.size + 1
+def Args.size : Args → Nat
+  | .nil => 0
+  | .cons t as => t.size + as.size
+end
+
+theorem Tm.sizeApp : (Tm.app 0 (.cons (.var 0) .nil)).size = 2 := rfl
+
+-- A block both mutual and nested: argument lists through `List`.
+mutual
+inductive MTm where
+  | var : Nat → MTm
+  | app : Nat → List MArg → MTm
+inductive MArg where
+  | pos : MTm → MArg
+  | named : Nat → MTm → MArg
+end
+
 /-- The face of a `partial` definition: an opaque constant whose value is an
 inhabitant of its type. The recursive body is the `partial` companion
 `loop._unsafe_rec`. -/

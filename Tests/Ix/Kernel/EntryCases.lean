@@ -191,6 +191,12 @@ def cases : List Case := [
   -- `Lean.Elab.InfoTree`'s shape and auxiliary order (the modeller must not
   -- declare its `pack_1` twice)
   { label := "nested-through-nested-structure", seeds := [seed "ITree"], expected := .accept },
+  { label := "mutual-inductive", seeds := [seed "Tm", seed "Args"], expected := .accept },
+  -- structural recursion over the mutual block, through its `brecOn`s, and
+  -- a reduction through it
+  { label := "mutual-structural-recursion",
+    seeds := [seed "Tm.size", seed "Args.size", seed "Tm.sizeApp"], expected := .accept },
+  { label := "mutual-nested-inductive", seeds := [seed "MTm", seed "MArg"], expected := .accept },
   { label := "partial-definition-face", seeds := [seed "loop"], expected := .accept },
   -- an equation over a `Subtype` whose levels Ix's compiler stores in
   -- canonical form, equal at every valuation (only the Géran fallback of the
