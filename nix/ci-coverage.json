@@ -155,7 +155,12 @@
   "Compilatrix.Anf.Syntax",
   "Compilatrix.Anf.Walk",
   "Compilatrix.Anf.WellFormed",
+  "Compilatrix.Cfg.Lower",
+  "Compilatrix.Cfg.Proof.Correct",
   "Compilatrix.Cfg.Proof.Fuel",
+  "Compilatrix.Cfg.Proof.Layout",
+  "Compilatrix.Cfg.Proof.Sim",
+  "Compilatrix.Cfg.Proof.Step",
   "Compilatrix.Cfg.Semantics",
   "Compilatrix.Cfg.Syntax",
   "Compilatrix.Cfg.WellFormed",
@@ -504,6 +509,7 @@
   "CompilatrixTests.Fences.AiurWire",
   "CompilatrixTests.Fences.Anf",
   "CompilatrixTests.Fences.Backend",
+  "CompilatrixTests.Fences.CfgLower",
   "CompilatrixTests.Fences.CfgProof",
   "CompilatrixTests.Fences.Erase",
   "CompilatrixTests.Fences.Fir",
@@ -546,7 +552,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/p2-fir: Own.immortal_refines",
+ "baseline": "jcb/p2-fir: Cfg.lower_correct",
  "axiom_sha256":
- "2417bb49d8389a25373e0578768e1f98d81226aed0161041b576a995f567f037",
- "axiom_count": 2811}
+ "e663a4aee9c9aa4a45dfd7def5d49cfaba449ccd743a2d41579f2be248048b79",
+ "axiom_count": 2875}

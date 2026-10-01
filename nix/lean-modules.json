@@ -928,6 +928,9 @@
   "CompilatrixTests.Fences.CfgProof":
   {"path": "CompilatrixTests/Fences/CfgProof.lean",
    "imports": ["Compilatrix.Cfg.Proof.Fuel"]},
+  "CompilatrixTests.Fences.CfgLower":
+  {"path": "CompilatrixTests/Fences/CfgLower.lean",
+   "imports": ["Compilatrix.Cfg.Proof.Correct"]},
   "CompilatrixTests.Fences.Backend":
   {"path": "CompilatrixTests/Fences/Backend.lean",
    "imports":
@@ -1004,7 +1007,8 @@
     "CompilatrixTests.Fences.LirProof",
     "CompilatrixTests.Fences.RtProof",
     "CompilatrixTests.Fences.FirProof",
-    "CompilatrixTests.Fences.OwnProof"]},
+    "CompilatrixTests.Fences.OwnProof",
+    "CompilatrixTests.Fences.CfgLower"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":
@@ -2641,9 +2645,24 @@
    ["Compilatrix.Cfg.Syntax",
     "Compilatrix.Own.Semantics",
     "Compilatrix.Sem.Clock"]},
+  "Compilatrix.Cfg.Proof.Step":
+  {"path": "Compilatrix/Cfg/Proof/Step.lean",
+   "imports": ["Compilatrix.Cfg.Proof.Layout", "Compilatrix.Own.Proof.Unfold"]},
+  "Compilatrix.Cfg.Proof.Sim":
+  {"path": "Compilatrix/Cfg/Proof/Sim.lean",
+   "imports": ["Compilatrix.Cfg.Proof.Step", "Compilatrix.Own.Proof.Mono"]},
+  "Compilatrix.Cfg.Proof.Layout":
+  {"path": "Compilatrix/Cfg/Proof/Layout.lean",
+   "imports":
+   ["Compilatrix.Cfg.Lower",
+    "Compilatrix.Cfg.Proof.Fuel",
+    "Compilatrix.Src.Proof.NatMap"]},
   "Compilatrix.Cfg.Proof.Fuel":
   {"path": "Compilatrix/Cfg/Proof/Fuel.lean",
    "imports": ["Compilatrix.Cfg.Semantics", "Compilatrix.Sem.Smallstep"]},
+  "Compilatrix.Cfg.Proof.Correct":
+  {"path": "Compilatrix/Cfg/Proof/Correct.lean",
+   "imports": ["Compilatrix.Cfg.Proof.Sim", "Compilatrix.Sem.TracedSim"]},
   "Compilatrix.Cfg.Print":
   {"path": "Compilatrix/Cfg/Print.lean",
    "imports": ["Compilatrix.Cfg.Syntax", "Compilatrix.Fir.Print"]},
@@ -3443,6 +3462,10 @@
     "Compilatrix.Cfg.Lower",
     "Compilatrix.Cfg.Print",
     "Compilatrix.Cfg.Proof.Fuel",
+    "Compilatrix.Cfg.Proof.Layout",
+    "Compilatrix.Cfg.Proof.Step",
+    "Compilatrix.Cfg.Proof.Sim",
+    "Compilatrix.Cfg.Proof.Correct",
     "Compilatrix.Rt.Layout",
     "Compilatrix.Rt.Procs.Entry",
     "Compilatrix.Rt.Procs.Nat",

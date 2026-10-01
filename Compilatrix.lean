@@ -223,6 +223,10 @@ import Compilatrix.Cfg.WellFormed
 import Compilatrix.Cfg.Lower
 import Compilatrix.Cfg.Print
 import Compilatrix.Cfg.Proof.Fuel
+import Compilatrix.Cfg.Proof.Layout
+import Compilatrix.Cfg.Proof.Step
+import Compilatrix.Cfg.Proof.Sim
+import Compilatrix.Cfg.Proof.Correct
 import Compilatrix.Rt.Layout
 import Compilatrix.Rt.Procs.Entry
 import Compilatrix.Rt.Procs.Nat
