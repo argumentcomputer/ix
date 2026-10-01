@@ -64,7 +64,7 @@ namespace Ix.AuxGen
 
 open Ix.CompileM (CompileM CompileError getBlockState modifyBlockState
   getCompileEnv compileName withMutCtx preseedExprTables
-  mutConstPreseedExprs compileMutConsts sortConsts buildConstantWithSharing)
+  mutConstPreseedExprs compileMutConsts sortConsts buildBlockConstant)
 
 /-! ## State-model helpers (Rust `CompileState` mutations) -/
 
@@ -210,10 +210,11 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
       | .recr r => .recr r
       | .indc _ => unreachable!
     -- `apply_sharing_to_{definition,recursor}_with_stats`
-    -- (mutual.rs:208-218): `buildConstantWithSharing` dispatches on the
+    -- (mutual.rs:208-218): `buildBlockConstant` dispatches on the
     -- info variant; `allExprs` holds exactly the single representative's
     -- root exprs ([typ, value] / [typ, rule rhss…]).
-    let constant := buildConstantWithSharing info allExprs blockRefs blockUnivs
+    let constant ←
+      liftM (buildBlockConstant info allExprs blockRefs blockUnivs : CompileM _)
     let standaloneAddr := contentAddress constant
     liftM <| show CompileM Unit from do
       auxStoreConst standaloneAddr constant
@@ -235,8 +236,8 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
     return ()
 
   -- Compile the mutual block (mutual.rs:249-256).
-  let block := buildConstantWithSharing (.muts mutConsts) allExprs
-    blockRefs blockUnivs
+  let block ← liftM
+    (buildBlockConstant (.muts mutConsts) allExprs blockRefs blockUnivs : CompileM _)
   let blockBytes := Ixon.ser block
   let blockAddr := Address.blake3 blockBytes
   liftM (auxStoreConst blockAddr block : CompileM _)

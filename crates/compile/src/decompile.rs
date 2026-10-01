@@ -30,7 +30,7 @@ use ix_common::env::{
 };
 
 use ixon::{
-  DecompileError, Tag0,
+  CompileError, DecompileError, Tag0,
   constant::{
     Axiom, Constant, ConstantInfo, Constructor, DefKind, Definition,
     DefinitionProj, Inductive, InductiveProj, MutConst, Quotient, Recursor,
@@ -2984,6 +2984,13 @@ fn ixon_mut_const_summary(
   }
 }
 
+/// A recompile sharing failure as a decompile error. Recompile must reproduce
+/// `Named.original`, so it cannot fall back to another sharing construction.
+#[allow(clippy::needless_pass_by_value)]
+fn recompile_sharing_error(e: CompileError) -> DecompileError {
+  DecompileError::BadConstantFormat { msg: format!("recompile sharing: {e}") }
+}
+
 fn roundtrip_block(
   consts: &[LeanMutConst],
   generated_consts: &FxHashMap<Name, LeanConstantInfo>,
@@ -3140,6 +3147,7 @@ fn roundtrip_block(
           block_univs,
           Some(&name_str),
         )
+        .map_err(recompile_sharing_error)?
       },
       MutConst::Recr(rec) => {
         crate::compile::apply_sharing_to_recursor_with_stats(
@@ -3147,6 +3155,7 @@ fn roundtrip_block(
           block_refs,
           block_univs,
         )
+        .map_err(recompile_sharing_error)?
       },
       MutConst::Indc(_) => unreachable!("singleton guard excludes inductives"),
     };
@@ -3161,7 +3170,8 @@ fn roundtrip_block(
       block_refs,
       block_univs,
       Some(&name_str),
-    );
+    )
+    .map_err(recompile_sharing_error)?;
     let addr = compiled.addr.clone();
     (compiled.constant, addr)
   };
@@ -3343,29 +3353,32 @@ fn roundtrip_block(
               },
               LeanMutConst::Indc(_) => unreachable!("probe is Defn/Recr only"),
             });
+            let compiled = compiled.and_then(|data| {
+              let prefs: Vec<Address> = pcache.refs.iter().cloned().collect();
+              let punivs: Vec<Arc<Univ>> =
+                pcache.univs.iter().cloned().collect();
+              let result = match &data {
+                MutConst::Defn(def) => {
+                  crate::compile::apply_sharing_to_definition_with_stats(
+                    def.clone(),
+                    prefs,
+                    punivs,
+                    Some(&name_str),
+                  )
+                },
+                MutConst::Recr(rec) => {
+                  crate::compile::apply_sharing_to_recursor_with_stats(
+                    rec.clone(),
+                    prefs,
+                    punivs,
+                  )
+                },
+                MutConst::Indc(_) => unreachable!(),
+              }?;
+              Ok((data, result))
+            });
             match compiled {
-              Ok(data) => {
-                let prefs: Vec<Address> = pcache.refs.iter().cloned().collect();
-                let punivs: Vec<Arc<Univ>> =
-                  pcache.univs.iter().cloned().collect();
-                let result = match &data {
-                  MutConst::Defn(def) => {
-                    crate::compile::apply_sharing_to_definition_with_stats(
-                      def.clone(),
-                      prefs,
-                      punivs,
-                      Some(&name_str),
-                    )
-                  },
-                  MutConst::Recr(rec) => {
-                    crate::compile::apply_sharing_to_recursor_with_stats(
-                      rec.clone(),
-                      prefs,
-                      punivs,
-                    )
-                  },
-                  MutConst::Indc(_) => unreachable!(),
-                };
+              Ok((data, result)) => {
                 let mut pbytes = Vec::new();
                 result.constant.put(&mut pbytes);
                 let paddr = Address::hash(&pbytes);

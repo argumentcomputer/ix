@@ -58,7 +58,8 @@ pub use proof::{
   Claim, Proof, RevealConstantInfo, RevealConstructorInfo, RevealMutConstInfo,
   RevealRecursorRule,
 };
-pub use tag::{Tag0, Tag2, Tag4};
+pub use serialize::ShareCodec;
+pub use tag::{Tag0, Tag2, Tag4, TagN};
 pub use univ::Univ;
 
 /// Shared test utilities for ixon modules.

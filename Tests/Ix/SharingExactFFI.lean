@@ -12,6 +12,11 @@
   separately: the two implementations count work differently, and limits
   may change success but never the bytes of a success.
 
+  A third group checks the Share codec: Lean and Rust serialize Share-bearing
+  Constants (tiered TagN outputs and synthetic tables up to 66,600 entries)
+  to the same bytes under both Share codecs, and Rust recodes between them
+  (`rs_eq_constant_serialization_with`, `rs_share_codec_recode`).
+
   Inputs: every §2 fixture, the generated families of the uniform and tiered
   tests, and, when `IX_SHARING_CORPUS` names an `.ixe` file, every constant of
   that corpus (expanded from its stored table). Corpus mode compares the
@@ -24,6 +29,7 @@ module
 public import Tests.Ix.SharingExact
 public import Tests.Ix.SharingUniform
 public import Tests.Ix.SharingTiered
+public import Tests.FFI.Ixon
 
 public section
 
@@ -305,6 +311,164 @@ def generatedTests : TestSeq :=
     let t ← compareMany (generatedCases 350) generatedModes
     return judge "350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes" t false
 
+/-! ## Share codec parity
+
+Lean and Rust serialize Share-bearing Constants to the same bytes under both
+Share codecs, and Rust re-encodes Lean's bytes between the codecs exactly.
+Inputs: the tiered (TagN layout) canonical sharing of every §2 fixture and of
+generated inputs, plus synthetic tables whose roots reference the indices at
+every TagN rung end (and indices beyond any table, which the codec does not
+bound). -/
+
+/-- A Constant with an `n`-entry table (`sharing[i] = app (var i) (Share (i-1))`)
+whose root references the Share indices at the Tag4 and TagN width
+boundaries below `n`, then `n - 1`. -/
+def wideTable (n : Nat) : Constant :=
+  let sharing := (Array.range n).map fun i =>
+    if i == 0 then Ixon.Expr.var 0 else .app (.var i.toUInt64) (.share (i - 1).toUInt64)
+  let idxs := ([0, 7, 8, 255, 256, 1031, 1032, 65535, 65536, 66567, 66568].filter (· < n))
+    ++ [n - 1]
+  let root := idxs.foldl (fun acc i => Ixon.Expr.app acc (.share i.toUInt64)) (.var 0)
+  { info := .axio ⟨false, 0, root⟩, sharing, refs := #[], univs := #[] }
+
+/-- Share indices in the 5- and 9-byte TagN rungs (no table backs them; the
+codec does not bound Share indices). -/
+def farShares : Constant :=
+  let root := [4294967295, 4294967296, 4295033863, 4295033864, 0xFFFFFFFFFFFFFFFF].foldl
+    (fun acc (i : UInt64) => Ixon.Expr.app acc (.share i)) (.var 0)
+  { info := .axio ⟨false, 0, root⟩, sharing := #[], refs := #[], univs := #[] }
+
+/-- Check one Constant: Lean bytes under both codecs equal Rust's, Rust
+recodes between them, and Lean decodes its TagN bytes back. -/
+def codecCheck (label : String) (c : Constant) : Array String := Id.run do
+  let b4 := serConstant c .tag4
+  let bN := serConstant c .tagN
+  let mut errs : Array String := #[]
+  unless Tests.FFI.Ixon.rsEqConstantSerializationWith 0 c b4 do
+    errs := errs.push s!"{label}: Rust Tag4 bytes differ"
+  unless Tests.FFI.Ixon.rsEqConstantSerializationWith 1 c bN do
+    errs := errs.push s!"{label}: Rust TagN bytes differ"
+  match Tests.FFI.Ixon.rsShareCodecRecode 0 1 b4 with
+  | .ok b => unless b == bN do errs := errs.push s!"{label}: Rust Tag4→TagN recode differs"
+  | .error e => errs := errs.push s!"{label}: Rust Tag4→TagN recode failed: {e}"
+  match Tests.FFI.Ixon.rsShareCodecRecode 1 0 bN with
+  | .ok b => unless b == b4 do errs := errs.push s!"{label}: Rust TagN→Tag4 recode differs"
+  | .error e => errs := errs.push s!"{label}: Rust TagN→Tag4 recode failed: {e}"
+  match deConstant bN .tagN with
+  | .ok c' => unless c' == c do errs := errs.push s!"{label}: Lean TagN decode differs"
+  | .error e => errs := errs.push s!"{label}: Lean TagN decode failed: {e}"
+  return errs
+
+/-- The highest Share index of a Constant's table entries and roots. -/
+def maxShare (c : Constant) : Nat :=
+  (c.sharing ++ constantInfoRoots c.info).foldl
+    (fun acc e => (shareIndices e #[]).foldl max acc) 0
+
+def codecTests : TestSeq :=
+  ioGroup "Lean/Rust: Share codec parity on Share-bearing Constants" do
+    let normalized := (fixtures ++ generatedCases 120).filterMap fun (label, c) =>
+      match normalizeConstantSharingTiered .tagN c with
+      | .ok n => if n.sharing.isEmpty then none else some (s!"{label} [tiered-tagN]", n)
+      | .error _ => none
+    let synthetic := #[("wide table 9", wideTable 9), ("wide table 300", wideTable 300),
+      ("wide table 1100", wideTable 1100), ("wide table 66600", wideTable 66600),
+      ("far Shares", farShares)]
+    let cases := normalized ++ synthetic
+    let mut errs : Array String := #[]
+    let mut differ := 0
+    for (label, c) in cases do
+      errs := errs ++ codecCheck label c
+      if serConstant c .tag4 != serConstant c .tagN then differ := differ + 1
+    let ok := errs.isEmpty && normalized.size > 0 && differ ≥ synthetic.size
+    let lines := (errs.toList.take 50).map (s!"      DISAGREEMENT {·}")
+    return (ok, String.intercalate "\n"
+      (s!"    {cases.size} Share-bearing Constants ({normalized.size} tiered-tagN outputs, max Share index {normalized.foldl (fun acc (_, c) => max acc (maxShare c)) 0}; {synthetic.size} synthetic); {differ} encode differently under the two codecs; {errs.size} disagreements" :: lines))
+
+/-! ## Compiler sharing routes
+
+The compiler builds every block through `Ix.CompileM.buildConstantWithSharingVia
+compilerSharing compilerSharingLimits` (Lean) and `apply_sharing_to_*_via`
+(Rust). For each route, both languages must build the same bytes from the same
+unshared Constant, and the tiered route must build exactly what the library
+normalizer builds. -/
+
+/-- Rust `apply_sharing_to_*_via` on one unshared Constant; route code 0 =
+heuristic, 1 = tiered Tag4, 2 = tiered TagN. -/
+@[extern "rs_compiler_sharing_build"]
+opaque rsCompilerSharingBuild : UInt8 → @& ByteArray → Except String ByteArray
+
+def routeCode : Ix.CompileM.SharingConstruction → UInt8
+  | .heuristic => 0
+  | .tiered .tag4 => 1
+  | .tiered .tagN => 2
+
+def compilerRoutes : List Ix.CompileM.SharingConstruction :=
+  [.heuristic, .tiered .tag4, .tiered .tagN]
+
+/-- The Lean compiler route on an unshared Constant. -/
+def leanRoute (sc : Ix.CompileM.SharingConstruction) (c : Constant) :
+    Except Ix.CompileM.CompileError Constant :=
+  Ix.CompileM.buildConstantWithSharingVia sc Ix.CompileM.compilerSharingLimits c.info
+    (Ix.CompileM.constantInfoRootExprs c.info) c.refs c.univs
+
+def routeUnits : TestSeq :=
+  let roots := Ix.CompileM.constantInfoRootExprs witness2.info
+  let tiny : Limits := { Ix.CompileM.compilerSharingLimits with maxNodes := 2 }
+  test "the compiler sharing switch is the heuristic"
+    (Ix.CompileM.compilerSharing == .heuristic) ++
+  test "heuristic route: T2 → T2 in the 19-byte heuristic encoding"
+    (match leanRoute .heuristic witness2 with
+     | .ok c => hexOf (serConstant c) == "d200009117b1b10291170000911700b0000100"
+     | .error _ => false : Bool) ++
+  test "tiered TagN route: T2 → T2 in the 17-byte minimum"
+    (match leanRoute (.tiered .tagN) witness2 with
+     | .ok c => hexOf (serConstant c) == "d200009117b0b001921700170000000100"
+     | .error _ => false : Bool) ++
+  test "tiered route fails closed on its limits (resourceLimit, no heuristic fallback)"
+    (match Ix.CompileM.buildConstantWithSharingVia (.tiered .tagN) tiny witness2.info roots
+        witness2.refs witness2.univs with
+     | .error (.resourceLimit _) => true
+     | _ => false : Bool) ++
+  test "tiered route rejects a root array of the wrong length"
+    (match Ix.CompileM.buildConstantWithSharingVia (.tiered .tagN)
+        Ix.CompileM.compilerSharingLimits witness2.info (roots.push (.var 0))
+        witness2.refs witness2.univs with
+     | .error (.sharingConstruction _) => true
+     | _ => false : Bool)
+
+def routeTests : TestSeq :=
+  ioGroup "Lean/Rust: compiler sharing routes" do
+    let cases := (fixtures ++ generatedCases 140).filterMap fun (label, c) =>
+      match expandConstantSharing c with
+      | .ok e => some (label, e)
+      | .error _ => none
+    let mut errs : Array String := #[]
+    let mut same := 0
+    let mut kinds : Array String := #[]
+    for (label, c) in cases do
+      let kind := match c.info with
+        | .defn _ => "defn" | .recr _ => "recr" | .axio _ => "axio" | .quot _ => "quot"
+        | .muts _ => "muts" | _ => "prj"
+      unless kinds.contains kind do kinds := kinds.push kind
+      for sc in compilerRoutes do
+        let tag := s!"{label} [{reprStr sc}]"
+        match leanRoute sc c, rsCompilerSharingBuild (routeCode sc) (serConstant c) with
+        | .ok l, .ok r =>
+          if serConstant l == r then same := same + 1
+          else errs := errs.push s!"{tag}: Lean and Rust bytes differ"
+          if let .tiered layout := sc then
+            match normalizeConstantSharingTiered layout c with
+            | .ok n =>
+              unless serConstant n == serConstant l do
+                errs := errs.push s!"{tag}: route differs from normalizeConstantSharingTiered"
+            | .error e => errs := errs.push s!"{tag}: normalizer failed: {reprStr e}"
+        | .error e, _ => errs := errs.push s!"{tag}: Lean route failed: {e}"
+        | _, .error e => errs := errs.push s!"{tag}: Rust route failed: {e}"
+    let ok := errs.isEmpty && same == cases.size * compilerRoutes.length
+    let lines := (errs.toList.take 50).map (s!"      DISAGREEMENT {·}")
+    return (ok, String.intercalate "\n"
+      (s!"    {cases.size} unshared Constants (kinds {kinds.toList}) × {compilerRoutes.length} routes: {same} same bytes; {errs.size} disagreements" :: lines))
+
 /-! ## Corpus mode -/
 
 def corpusTests (_ : Unit) : TestSeq :=
@@ -378,6 +542,9 @@ def corpusTests (_ : Unit) : TestSeq :=
 public def suite : List TestSeq := [
   fixtureTests,
   generatedTests,
+  codecTests,
+  routeUnits,
+  routeTests,
   corpusTests (),
 ]
 

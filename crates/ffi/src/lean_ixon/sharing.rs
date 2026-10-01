@@ -242,3 +242,80 @@ extern "C" fn rs_tiered_sharing_normalize(
     Err(err) => LeanExcept::error_string(&err.to_string()),
   }
 }
+
+/// FFI: build one block Constant through the compiler's sharing routes.
+///
+/// Lean signature:
+/// `@[extern "rs_compiler_sharing_build"]
+///  opaque compilerSharingBuild : UInt8 → @& ByteArray → Except String ByteArray`
+///
+/// Decodes exactly one Constant whose roots carry no sharing table, and
+/// rebuilds it with `ix_compile::compile::apply_sharing_to_*_via` (the
+/// functions every compile, aux-gen, kernel-egress and decompile-recompile
+/// route calls) along the route `code`: 0 = heuristic, 1 = tiered with the
+/// Tag4 layout, 2 = tiered with the TagN layout, each under
+/// `compiler_sharing_limits()`. Projections are returned unchanged. Errors
+/// are the compile error's text, prefixed `decode:` for input errors.
+#[unsafe(no_mangle)]
+extern "C" fn rs_compiler_sharing_build(
+  code: u8,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use ix_compile::compile::{
+    SharingConstruction, SharingRoute, apply_sharing_to_axiom_via,
+    apply_sharing_to_definition_via, apply_sharing_to_mutual_block_via,
+    apply_sharing_to_quotient_via, apply_sharing_to_recursor_via,
+  };
+  use ixon::constant::{Constant, ConstantInfo};
+  use ixon::sharing_exact::ShareLayout;
+  let construction = match code {
+    0 => SharingConstruction::Heuristic,
+    1 => SharingConstruction::Tiered(ShareLayout::Tag4),
+    2 => SharingConstruction::Tiered(ShareLayout::TagN),
+    _ => {
+      return LeanExcept::error_string(&format!(
+        "decode: unknown sharing route code {code}"
+      ));
+    },
+  };
+  let route = SharingRoute::new(construction);
+  let mut input = bytes_obj.as_bytes();
+  let c = match Constant::get(&mut input) {
+    Ok(c) => c,
+    Err(e) => return LeanExcept::error_string(&format!("decode: {e}")),
+  };
+  if !input.is_empty() || !c.sharing.is_empty() {
+    return LeanExcept::error_string(
+      "decode: expected one Constant with an empty sharing table",
+    );
+  }
+  let (refs, univs) = (c.refs.clone(), c.univs.clone());
+  let built = match c.info.clone() {
+    ConstantInfo::Defn(d) => {
+      apply_sharing_to_definition_via(&route, d, refs, univs, None)
+        .map(|r| r.constant)
+    },
+    ConstantInfo::Recr(r) => {
+      apply_sharing_to_recursor_via(&route, r, refs, univs).map(|r| r.constant)
+    },
+    ConstantInfo::Axio(a) => {
+      apply_sharing_to_axiom_via(&route, a, refs, univs).map(|r| r.constant)
+    },
+    ConstantInfo::Quot(q) => {
+      apply_sharing_to_quotient_via(&route, q, refs, univs).map(|r| r.constant)
+    },
+    ConstantInfo::Muts(ms) => {
+      apply_sharing_to_mutual_block_via(&route, ms, refs, univs, None)
+        .map(|r| r.constant)
+    },
+    _ => Ok(c),
+  };
+  match built {
+    Ok(out) => {
+      let mut buf = Vec::new();
+      out.put(&mut buf);
+      LeanExcept::ok(LeanByteArray::from_bytes(&buf))
+    },
+    Err(e) => LeanExcept::error_string(&e.to_string()),
+  }
+}

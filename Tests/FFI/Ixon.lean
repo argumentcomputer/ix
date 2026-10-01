@@ -244,6 +244,26 @@ opaque rsEqExprSerialization : @& Expr → @& ByteArray → Bool
 @[extern "rs_eq_constant_serialization"]
 opaque rsEqConstantSerialization : @& Constant → @& ByteArray → Bool
 
+/-- Share codec code at the FFI boundary: 0 = Tag4, 1 = TagN. -/
+def shareCodecCode : ShareCodec → UInt8
+  | .tag4 => 0
+  | .tagN => 1
+
+/-- Rust `put_expr_with` for the Share codec with code `codec` produces
+exactly the given bytes. -/
+@[extern "rs_eq_expr_serialization_with"]
+opaque rsEqExprSerializationWith : UInt8 → @& Expr → @& ByteArray → Bool
+
+/-- Rust `Constant::put_with` for the Share codec with code `codec` produces
+exactly the given bytes. -/
+@[extern "rs_eq_constant_serialization_with"]
+opaque rsEqConstantSerializationWith : UInt8 → @& Constant → @& ByteArray → Bool
+
+/-- Rust decodes exactly one Constant with Share codec `from` and re-encodes
+it with `to`. -/
+@[extern "rs_share_codec_recode"]
+opaque rsShareCodecRecode : UInt8 → UInt8 → @& ByteArray → Except String ByteArray
+
 @[extern "rs_eq_env_serialization"]
 opaque rsEqEnvSerialization : @& RawEnv → @& ByteArray → Bool
 

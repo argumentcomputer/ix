@@ -1059,7 +1059,8 @@ fn egress_muts_block(
     refs,
     univs,
     Some(&block_name_str),
-  );
+  )
+  .map_err(|e| e.to_string())?;
   let block_addr = content_address_of(&result.constant);
   out.store_const(block_addr.clone(), result.constant);
 
@@ -1191,28 +1192,32 @@ fn egress_standalone(
         refs,
         univs,
         Some(&name.pretty()),
-      );
+      )
+      .map_err(|e| e.to_string())?;
       let addr = content_address_of(&result.constant);
       (result.constant, addr)
     },
     KConst::Recr { .. } => {
       let rec = krecr_to_ixon(kc, &mut ctx)?;
       let (refs, univs) = ctx.into_vecs();
-      let result = apply_sharing_to_recursor_with_stats(rec, refs, univs);
+      let result = apply_sharing_to_recursor_with_stats(rec, refs, univs)
+        .map_err(|e| e.to_string())?;
       let addr = content_address_of(&result.constant);
       (result.constant, addr)
     },
     KConst::Axio { .. } => {
       let ax = kaxio_to_ixon(kc, &mut ctx)?;
       let (refs, univs) = ctx.into_vecs();
-      let result = apply_sharing_to_axiom_with_stats(ax, refs, univs);
+      let result = apply_sharing_to_axiom_with_stats(ax, refs, univs)
+        .map_err(|e| e.to_string())?;
       let addr = content_address_of(&result.constant);
       (result.constant, addr)
     },
     KConst::Quot { .. } => {
       let q = kquot_to_ixon(kc, &mut ctx)?;
       let (refs, univs) = ctx.into_vecs();
-      let result = apply_sharing_to_quotient_with_stats(q, refs, univs);
+      let result = apply_sharing_to_quotient_with_stats(q, refs, univs)
+        .map_err(|e| e.to_string())?;
       let addr = content_address_of(&result.constant);
       (result.constant, addr)
     },

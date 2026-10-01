@@ -23,7 +23,7 @@ use super::contract::{
 };
 use super::expr::Expr;
 use super::metadata::IxonByteSerde;
-use super::tag::{Tag0, Tag4};
+use super::tag::{Tag0, Tag4, TagN};
 use super::univ::{Univ, get_univ, put_univ};
 
 // ============================================================================
@@ -342,11 +342,91 @@ pub fn unpack_bools(n: usize, b: u8) -> Vec<bool> {
 }
 
 // ============================================================================
+// Share index codec
+// ============================================================================
+
+/// How a `Share(idx)` (flag `0xB`) index is written on the wire. Mirrors
+/// `Ixon.ShareCodec` in `Ix/Ixon.lean`.
+///
+/// Both codecs put the Share flag in the high nibble of the first byte, so a
+/// reader can tell a Share header from every other expression header before
+/// decoding its payload. They agree byte for byte on indices `0..8`.
+///
+/// Every serializer that reaches an expression has a `*_with` form taking the
+/// codec; the plain form uses [`ShareCodec::CURRENT`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ShareCodec {
+  /// `Tag4(0xB, idx)` (format version 3): widths 1 below 8, then one header
+  /// byte plus the minimal little-endian bytes of `idx`.
+  Tag4,
+  /// `TagN` with a 4-bit flag (`TagN::put(4, 0xB, idx)`): widths 1, 2, 3, 5
+  /// and 9 with rung ends 8, 1032, 66568 and 4295033864.
+  TagN,
+}
+
+impl ShareCodec {
+  /// The Share codec of the current format version [`Env::VERSION`].
+  ///
+  /// It flips to [`ShareCodec::TagN`] together with
+  /// `Env::VERSION = Env::NEXT_VERSION`; see [`Env::NEXT_VERSION`] for
+  /// everything that flips with it. Mirrors `Ixon.ShareCodec.current`.
+  pub const CURRENT: ShareCodec = ShareCodec::Tag4;
+
+  /// The codec code used at the FFI boundary: 0 = Tag4, 1 = TagN.
+  pub fn from_code(code: u8) -> Option<ShareCodec> {
+    match code {
+      0 => Some(ShareCodec::Tag4),
+      1 => Some(ShareCodec::TagN),
+      _ => None,
+    }
+  }
+
+  /// Write `Share(idx)`.
+  pub fn put(self, idx: u64, buf: &mut Vec<u8>) {
+    match self {
+      ShareCodec::Tag4 => Tag4::new(Expr::FLAG_SHARE, idx).put(buf),
+      ShareCodec::TagN => TagN::put(4, Expr::FLAG_SHARE, idx, buf),
+    }
+  }
+
+  /// Byte width of `Share(idx)`.
+  pub fn width(self, idx: u64) -> usize {
+    match self {
+      ShareCodec::Tag4 => Tag4::new(Expr::FLAG_SHARE, idx).encoded_size(),
+      ShareCodec::TagN => TagN::byte_width(4, idx),
+    }
+  }
+
+  /// Read one expression header as a `Tag4` value. With `Tag4` every header
+  /// is a `Tag4`. With `TagN` a header whose high nibble is the Share flag
+  /// is a TagN (`f = 4`) integer and every other header is a `Tag4`
+  /// (`Ixon.getExprHeader`).
+  pub fn get_expr_header(self, buf: &mut &[u8]) -> Result<Tag4, String> {
+    match self {
+      ShareCodec::Tag4 => Tag4::get(buf),
+      ShareCodec::TagN => match buf.first() {
+        Some(&head) if head >> 4 == Expr::FLAG_SHARE => {
+          let t = TagN::get(4, buf)?;
+          Ok(Tag4 { flag: t.flag, size: t.value })
+        },
+        _ => Tag4::get(buf),
+      },
+    }
+  }
+}
+
+// ============================================================================
 // Expression serialization
 // ============================================================================
 
-/// Serialize maximal ordinary telescopes without recursive host-stack calls.
+/// Serialize maximal ordinary telescopes without recursive host-stack calls,
+/// with the current Share codec.
 pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
+  put_expr_with(e, ShareCodec::CURRENT, buf)
+}
+
+/// [`put_expr`] with an explicit Share codec.
+pub fn put_expr_with(e: &Expr, codec: ShareCodec, buf: &mut Vec<u8>) {
   enum Work<'a> {
     Expr(&'a Expr),
     Byte(u8),
@@ -365,7 +445,7 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
       Expr::Var(n) => Tag4::new(Expr::FLAG_VAR, *n).put(buf),
       Expr::Str(n) => Tag4::new(Expr::FLAG_STR, *n).put(buf),
       Expr::Nat(n) => Tag4::new(Expr::FLAG_NAT, *n).put(buf),
-      Expr::Share(n) => Tag4::new(Expr::FLAG_SHARE, *n).put(buf),
+      Expr::Share(n) => codec.put(*n, buf),
       Expr::Ref(n, levels) | Expr::Rec(n, levels) => {
         Tag4::new(
           if matches!(e, Expr::Ref(..)) {
@@ -459,15 +539,24 @@ enum GetExprFrame {
   Let(LetContract),
 }
 
-/// Bounded iterative decoding with canonical telescope and contract checks.
-/// Type, scope, and resource validity are separate admission obligations.
+/// Bounded iterative decoding with canonical telescope and contract checks,
+/// with the current Share codec. Type, scope, and resource validity are
+/// separate admission obligations.
 pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
+  get_expr_with(buf, ShareCodec::CURRENT)
+}
+
+/// [`get_expr`] with an explicit Share codec.
+pub fn get_expr_with(
+  buf: &mut &[u8],
+  codec: ShareCodec,
+) -> Result<Arc<Expr>, String> {
   let mut work = vec![GetExprFrame::Parse];
   let mut results: Vec<Arc<Expr>> = vec![];
   while let Some(next) = work.pop() {
     match next {
       GetExprFrame::Parse => {
-        let tag = Tag4::get(buf)?;
+        let tag = codec.get_expr_header(buf)?;
         match tag.flag {
           Expr::FLAG_SORT => results.push(Expr::sort(tag.size)),
           Expr::FLAG_VAR => results.push(Expr::var(tag.size)),
@@ -705,69 +794,102 @@ impl IxonByteSerde for QuotKind {
   }
 }
 
-fn put_sharing(sharing: &[Arc<Expr>], buf: &mut Vec<u8>) {
+fn put_sharing(sharing: &[Arc<Expr>], codec: ShareCodec, buf: &mut Vec<u8>) {
   put_u64(sharing.len() as u64, buf);
   for s in sharing {
-    put_expr(s, buf);
+    put_expr_with(s, codec, buf);
   }
 }
 
-fn get_sharing(buf: &mut &[u8]) -> Result<Vec<Arc<Expr>>, String> {
+fn get_sharing(
+  buf: &mut &[u8],
+  codec: ShareCodec,
+) -> Result<Vec<Arc<Expr>>, String> {
   let num = get_u64(buf)?;
   let mut sharing = Vec::with_capacity(capped_capacity(num, buf));
   for _ in 0..num {
-    sharing.push(get_expr(buf)?);
+    sharing.push(get_expr_with(buf, codec)?);
   }
   Ok(sharing)
 }
 
 impl Definition {
   pub fn put(&self, buf: &mut Vec<u8>) {
+    self.put_with(ShareCodec::CURRENT, buf);
+  }
+
+  /// `put` with an explicit Share codec.
+  pub fn put_with(&self, codec: ShareCodec, buf: &mut Vec<u8>) {
     // Pack DefKind + DefinitionSafety into single byte
     put_u8(pack_def_kind_safety(self.kind, self.safety), buf);
     put_u64(self.lvls, buf);
-    put_expr(&self.typ, buf);
-    put_expr(&self.value, buf);
+    put_expr_with(&self.typ, codec, buf);
+    put_expr_with(&self.value, codec, buf);
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(buf, ShareCodec::CURRENT)
+  }
+
+  /// `get` with an explicit Share codec.
+  pub fn get_with(buf: &mut &[u8], codec: ShareCodec) -> Result<Self, String> {
     let (kind, safety) = unpack_def_kind_safety(get_u8(buf)?)?;
     let lvls = get_u64(buf)?;
-    let typ = get_expr(buf)?;
-    let value = get_expr(buf)?;
+    let typ = get_expr_with(buf, codec)?;
+    let value = get_expr_with(buf, codec)?;
     Ok(Definition { kind, safety, lvls, typ, value })
   }
 }
 
 impl RecursorRule {
   pub fn put(&self, buf: &mut Vec<u8>) {
+    self.put_with(ShareCodec::CURRENT, buf);
+  }
+
+  /// `put` with an explicit Share codec.
+  pub fn put_with(&self, codec: ShareCodec, buf: &mut Vec<u8>) {
     put_u64(self.fields, buf);
-    put_expr(&self.rhs, buf);
+    put_expr_with(&self.rhs, codec, buf);
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(buf, ShareCodec::CURRENT)
+  }
+
+  /// `get` with an explicit Share codec.
+  pub fn get_with(buf: &mut &[u8], codec: ShareCodec) -> Result<Self, String> {
     let fields = get_u64(buf)?;
-    let rhs = get_expr(buf)?;
+    let rhs = get_expr_with(buf, codec)?;
     Ok(RecursorRule { fields, rhs })
   }
 }
 
 impl Recursor {
   pub fn put(&self, buf: &mut Vec<u8>) {
+    self.put_with(ShareCodec::CURRENT, buf);
+  }
+
+  /// `put` with an explicit Share codec.
+  pub fn put_with(&self, codec: ShareCodec, buf: &mut Vec<u8>) {
     put_u8(pack_bools([self.k, self.is_unsafe]), buf);
     put_u64(self.lvls, buf);
     put_u64(self.params, buf);
     put_u64(self.indices, buf);
     put_u64(self.motives, buf);
     put_u64(self.minors, buf);
-    put_expr(&self.typ, buf);
+    put_expr_with(&self.typ, codec, buf);
     put_u64(self.rules.len() as u64, buf);
     for rule in &self.rules {
-      rule.put(buf);
+      rule.put_with(codec, buf);
     }
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(buf, ShareCodec::CURRENT)
+  }
+
+  /// `get` with an explicit Share codec.
+  pub fn get_with(buf: &mut &[u8], codec: ShareCodec) -> Result<Self, String> {
     let flags = get_u8(buf)?;
     if flags > 3 {
       return Err("invalid recursor flags".into());
@@ -778,11 +900,11 @@ impl Recursor {
     let indices = get_u64(buf)?;
     let motives = get_u64(buf)?;
     let minors = get_u64(buf)?;
-    let typ = get_expr(buf)?;
+    let typ = get_expr_with(buf, codec)?;
     let num_rules = get_u64(buf)?;
     let mut rules = Vec::with_capacity(capped_capacity(num_rules, buf));
     for _ in 0..num_rules {
-      rules.push(RecursorRule::get(buf)?);
+      rules.push(RecursorRule::get_with(buf, codec)?);
     }
     Ok(Recursor {
       k: bools[0],
@@ -800,78 +922,118 @@ impl Recursor {
 
 impl Axiom {
   pub fn put(&self, buf: &mut Vec<u8>) {
+    self.put_with(ShareCodec::CURRENT, buf);
+  }
+
+  /// `put` with an explicit Share codec.
+  pub fn put_with(&self, codec: ShareCodec, buf: &mut Vec<u8>) {
     put_bool(self.is_unsafe, buf);
     put_u64(self.lvls, buf);
-    put_expr(&self.typ, buf);
+    put_expr_with(&self.typ, codec, buf);
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(buf, ShareCodec::CURRENT)
+  }
+
+  /// `get` with an explicit Share codec.
+  pub fn get_with(buf: &mut &[u8], codec: ShareCodec) -> Result<Self, String> {
     let is_unsafe = get_bool(buf)?;
     let lvls = get_u64(buf)?;
-    let typ = get_expr(buf)?;
+    let typ = get_expr_with(buf, codec)?;
     Ok(Axiom { is_unsafe, lvls, typ })
   }
 }
 
 impl Quotient {
   pub fn put(&self, buf: &mut Vec<u8>) {
+    self.put_with(ShareCodec::CURRENT, buf);
+  }
+
+  /// `put` with an explicit Share codec.
+  pub fn put_with(&self, codec: ShareCodec, buf: &mut Vec<u8>) {
     self.kind.put_ser(buf);
     put_u64(self.lvls, buf);
-    put_expr(&self.typ, buf);
+    put_expr_with(&self.typ, codec, buf);
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(buf, ShareCodec::CURRENT)
+  }
+
+  /// `get` with an explicit Share codec.
+  pub fn get_with(buf: &mut &[u8], codec: ShareCodec) -> Result<Self, String> {
     let kind = QuotKind::get_ser(buf)?;
     let lvls = get_u64(buf)?;
-    let typ = get_expr(buf)?;
+    let typ = get_expr_with(buf, codec)?;
     Ok(Quotient { kind, lvls, typ })
   }
 }
 
 impl Constructor {
   pub fn put(&self, buf: &mut Vec<u8>) {
+    self.put_with(ShareCodec::CURRENT, buf);
+  }
+
+  /// `put` with an explicit Share codec.
+  pub fn put_with(&self, codec: ShareCodec, buf: &mut Vec<u8>) {
     put_bool(self.is_unsafe, buf);
     put_u64(self.lvls, buf);
     put_u64(self.cidx, buf);
     put_u64(self.params, buf);
     put_u64(self.fields, buf);
-    put_expr(&self.typ, buf);
+    put_expr_with(&self.typ, codec, buf);
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(buf, ShareCodec::CURRENT)
+  }
+
+  /// `get` with an explicit Share codec.
+  pub fn get_with(buf: &mut &[u8], codec: ShareCodec) -> Result<Self, String> {
     let is_unsafe = get_bool(buf)?;
     let lvls = get_u64(buf)?;
     let cidx = get_u64(buf)?;
     let params = get_u64(buf)?;
     let fields = get_u64(buf)?;
-    let typ = get_expr(buf)?;
+    let typ = get_expr_with(buf, codec)?;
     Ok(Constructor { is_unsafe, lvls, cidx, params, fields, typ })
   }
 }
 
 impl Inductive {
   pub fn put(&self, buf: &mut Vec<u8>) {
+    self.put_with(ShareCodec::CURRENT, buf);
+  }
+
+  /// `put` with an explicit Share codec.
+  pub fn put_with(&self, codec: ShareCodec, buf: &mut Vec<u8>) {
     put_u8(pack_bools([self.is_unsafe]), buf);
     put_u64(self.lvls, buf);
     put_u64(self.params, buf);
     put_u64(self.indices, buf);
-    put_expr(&self.typ, buf);
+    put_expr_with(&self.typ, codec, buf);
     put_u64(self.ctors.len() as u64, buf);
     for ctor in &self.ctors {
-      ctor.put(buf);
+      ctor.put_with(codec, buf);
     }
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(buf, ShareCodec::CURRENT)
+  }
+
+  /// `get` with an explicit Share codec.
+  pub fn get_with(buf: &mut &[u8], codec: ShareCodec) -> Result<Self, String> {
     let bools = [get_bool(buf)?];
     let lvls = get_u64(buf)?;
     let params = get_u64(buf)?;
     let indices = get_u64(buf)?;
-    let typ = get_expr(buf)?;
+    let typ = get_expr_with(buf, codec)?;
     let num_ctors = get_u64(buf)?;
     let mut ctors = Vec::with_capacity(capped_capacity(num_ctors, buf));
     for _ in 0..num_ctors {
-      ctors.push(Constructor::get(buf)?);
+      ctors.push(Constructor::get_with(buf, codec)?);
     }
     Ok(Inductive { is_unsafe: bools[0], lvls, params, indices, typ, ctors })
   }
@@ -933,27 +1095,37 @@ impl DefinitionProj {
 
 impl MutConst {
   pub fn put(&self, buf: &mut Vec<u8>) {
+    self.put_with(ShareCodec::CURRENT, buf);
+  }
+
+  /// `put` with an explicit Share codec.
+  pub fn put_with(&self, codec: ShareCodec, buf: &mut Vec<u8>) {
     match self {
       Self::Defn(d) => {
         put_u8(0, buf);
-        d.put(buf);
+        d.put_with(codec, buf);
       },
       Self::Indc(i) => {
         put_u8(1, buf);
-        i.put(buf);
+        i.put_with(codec, buf);
       },
       Self::Recr(r) => {
         put_u8(2, buf);
-        r.put(buf);
+        r.put_with(codec, buf);
       },
     }
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(buf, ShareCodec::CURRENT)
+  }
+
+  /// `get` with an explicit Share codec.
+  pub fn get_with(buf: &mut &[u8], codec: ShareCodec) -> Result<Self, String> {
     match get_u8(buf)? {
-      0 => Ok(Self::Defn(Definition::get(buf)?)),
-      1 => Ok(Self::Indc(Inductive::get(buf)?)),
-      2 => Ok(Self::Recr(Recursor::get(buf)?)),
+      0 => Ok(Self::Defn(Definition::get_with(buf, codec)?)),
+      1 => Ok(Self::Indc(Inductive::get_with(buf, codec)?)),
+      2 => Ok(Self::Recr(Recursor::get_with(buf, codec)?)),
       x => Err(format!("MutConst::get: invalid tag {x}")),
     }
   }
@@ -962,11 +1134,16 @@ impl MutConst {
 impl ConstantInfo {
   /// Serialize a non-Muts ConstantInfo (Muts is handled separately in Constant::put)
   pub fn put(&self, buf: &mut Vec<u8>) {
+    self.put_with(ShareCodec::CURRENT, buf);
+  }
+
+  /// `put` with an explicit Share codec.
+  pub fn put_with(&self, codec: ShareCodec, buf: &mut Vec<u8>) {
     match self {
-      Self::Defn(d) => d.put(buf),
-      Self::Recr(r) => r.put(buf),
-      Self::Axio(a) => a.put(buf),
-      Self::Quot(q) => q.put(buf),
+      Self::Defn(d) => d.put_with(codec, buf),
+      Self::Recr(r) => r.put_with(codec, buf),
+      Self::Axio(a) => a.put_with(codec, buf),
+      Self::Quot(q) => q.put_with(codec, buf),
       Self::CPrj(c) => c.put(buf),
       Self::RPrj(r) => r.put(buf),
       Self::IPrj(i) => i.put(buf),
@@ -977,11 +1154,20 @@ impl ConstantInfo {
 
   /// Deserialize a non-Muts ConstantInfo (Muts is handled separately with FLAG_MUTS)
   pub fn get(variant: u64, buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(variant, buf, ShareCodec::CURRENT)
+  }
+
+  /// `get` with an explicit Share codec.
+  pub fn get_with(
+    variant: u64,
+    buf: &mut &[u8],
+    codec: ShareCodec,
+  ) -> Result<Self, String> {
     match variant {
-      Self::CONST_DEFN => Ok(Self::Defn(Definition::get(buf)?)),
-      Self::CONST_RECR => Ok(Self::Recr(Recursor::get(buf)?)),
-      Self::CONST_AXIO => Ok(Self::Axio(Axiom::get(buf)?)),
-      Self::CONST_QUOT => Ok(Self::Quot(Quotient::get(buf)?)),
+      Self::CONST_DEFN => Ok(Self::Defn(Definition::get_with(buf, codec)?)),
+      Self::CONST_RECR => Ok(Self::Recr(Recursor::get_with(buf, codec)?)),
+      Self::CONST_AXIO => Ok(Self::Axio(Axiom::get_with(buf, codec)?)),
+      Self::CONST_QUOT => Ok(Self::Quot(Quotient::get_with(buf, codec)?)),
       Self::CONST_CPRJ => Ok(Self::CPrj(ConstructorProj::get(buf)?)),
       Self::CONST_RPRJ => Ok(Self::RPrj(RecursorProj::get(buf)?)),
       Self::CONST_IPRJ => Ok(Self::IPrj(InductiveProj::get(buf)?)),
@@ -1025,40 +1211,50 @@ fn get_univs(buf: &mut &[u8]) -> Result<Vec<Arc<Univ>>, String> {
 
 impl Constant {
   pub fn put(&self, buf: &mut Vec<u8>) {
+    self.put_with(ShareCodec::CURRENT, buf);
+  }
+
+  /// `put` with an explicit Share codec.
+  pub fn put_with(&self, codec: ShareCodec, buf: &mut Vec<u8>) {
     match &self.info {
       ConstantInfo::Muts(mutuals) => {
         // Use FLAG_MUTS (0xC) with entry count in size field
         Tag4::new(Self::FLAG_MUTS, mutuals.len() as u64).put(buf);
         // Entries directly (no length prefix - it's in the tag)
         for m in mutuals {
-          m.put(buf);
+          m.put_with(codec, buf);
         }
       },
       _ => {
         // Use FLAG (0xD) with variant in size field (always 0-7, fits in 1 byte)
         Tag4::new(Self::FLAG, self.info.variant().unwrap()).put(buf);
-        self.info.put(buf);
+        self.info.put_with(codec, buf);
       },
     }
-    put_sharing(&self.sharing, buf);
+    put_sharing(&self.sharing, codec, buf);
     put_refs(&self.refs, buf);
     put_univs(&self.univs, buf);
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(buf, ShareCodec::CURRENT)
+  }
+
+  /// `get` with an explicit Share codec.
+  pub fn get_with(buf: &mut &[u8], codec: ShareCodec) -> Result<Self, String> {
     let tag = Tag4::get(buf)?;
     let info = match tag.flag {
       Self::FLAG_MUTS => {
         // Muts: size field is entry count
         let mut mutuals = Vec::with_capacity(capped_capacity(tag.size, buf));
         for _ in 0..tag.size {
-          mutuals.push(MutConst::get(buf)?);
+          mutuals.push(MutConst::get_with(buf, codec)?);
         }
         ConstantInfo::Muts(mutuals)
       },
       Self::FLAG => {
         // Non-Muts: size field is variant
-        ConstantInfo::get(tag.size, buf)?
+        ConstantInfo::get_with(tag.size, buf, codec)?
       },
       _ => {
         return Err(format!(
@@ -1069,7 +1265,7 @@ impl Constant {
         ));
       },
     };
-    let sharing = get_sharing(buf)?;
+    let sharing = get_sharing(buf, codec)?;
     let refs = get_refs(buf)?;
     let univs = get_univs(buf)?;
     Ok(Constant { info, sharing, refs, univs })
@@ -1547,6 +1743,25 @@ impl Env {
   /// regenerated artifacts. Mirrors `Ixon.Env.VERSION` in
   /// `Ix/Ixon.lean`.
   pub const VERSION: u64 = 3;
+
+  /// The next `.ixe` format version: the one in which the tiered canonical
+  /// sharing construction (`sharing_exact::canonical_sharing_tiered` with
+  /// `ShareLayout::TagN`) and the TagN Share codec (`ShareCodec::TagN`)
+  /// become canonical. Nothing writes or accepts it yet. Mirrors
+  /// `Ixon.Env.NEXT_VERSION`.
+  ///
+  /// TODO(format v4): flip these together, in one change, with the Lean
+  /// mirrors (`docs/sharing-minimum-integration.md` §6 has the full list):
+  /// * `VERSION = NEXT_VERSION` here and `Ixon.Env.VERSION` in Lean;
+  /// * `ShareCodec::CURRENT = ShareCodec::TagN` (Lean
+  ///   `Ixon.ShareCodec.current`);
+  /// * the exact-sharing price of a Share (`sharing_exact::cost::share_width`,
+  ///   Lean `Ix.Sharing.Exact.shareWidth`) and its width pins;
+  /// * the compiler sharing switch (`COMPILER_SHARING`, Lean
+  ///   `Ix.CompileM.compilerSharing`);
+  /// * the IxVM codec and the regenerated `crates/ixvm-codegen`;
+  /// * regenerated fixtures, primitive addresses and manifest pins.
+  pub const NEXT_VERSION: u64 = 4;
 
   /// Serialize an Env to bytes.
   ///
@@ -4920,5 +5135,187 @@ mod tests {
     let err =
       Env::parse_lazy_index(&bad).expect_err("parse_lazy_index accepted");
     assert!(err.contains("needs"), "got: {err}");
+  }
+
+  // ==========================================================================
+  // Share codec (the selectable Share index encoding)
+  // ==========================================================================
+
+  /// Share indices at every Tag4 and TagN (f = 4) width boundary.
+  const SHARE_BOUNDARIES: &[u64] = &[
+    0,
+    1,
+    7,
+    8,
+    9,
+    255,
+    256,
+    1031,
+    1032,
+    1033,
+    65535,
+    65536,
+    66567,
+    66568,
+    66569,
+    (1 << 32) - 1,
+    1 << 32,
+    4_295_033_863,
+    4_295_033_864,
+    4_295_033_865,
+    u64::MAX,
+  ];
+
+  fn expr_bytes(e: &Expr, codec: ShareCodec) -> Vec<u8> {
+    let mut buf = Vec::new();
+    put_expr_with(e, codec, &mut buf);
+    buf
+  }
+
+  fn expr_exact(bytes: &[u8], codec: ShareCodec) -> Result<Arc<Expr>, String> {
+    let mut cur = bytes;
+    let e = get_expr_with(&mut cur, codec)?;
+    if cur.is_empty() { Ok(e) } else { Err("trailing bytes".into()) }
+  }
+
+  #[test]
+  fn share_codec_current_is_tag4() {
+    assert_eq!(ShareCodec::CURRENT, ShareCodec::Tag4);
+    assert_eq!(Env::VERSION, 3);
+    assert_eq!(Env::NEXT_VERSION, 4);
+    for &i in SHARE_BOUNDARIES {
+      let e = Expr::share(i);
+      let mut plain = Vec::new();
+      put_expr(&e, &mut plain);
+      assert_eq!(plain, expr_bytes(&e, ShareCodec::Tag4), "Share({i})");
+    }
+  }
+
+  #[test]
+  fn share_codec_boundaries_roundtrip() {
+    for &i in SHARE_BOUNDARIES {
+      let e = Expr::share(i);
+      for codec in [ShareCodec::Tag4, ShareCodec::TagN] {
+        let bytes = expr_bytes(&e, codec);
+        assert_eq!(bytes.len(), codec.width(i), "{codec:?} Share({i}) width");
+        assert_eq!(bytes[0] >> 4, Expr::FLAG_SHARE, "{codec:?} Share({i})");
+        assert_eq!(expr_exact(&bytes, codec), Ok(e.clone()), "{codec:?} {i}");
+      }
+      let mut tagn = Vec::new();
+      TagN::put(4, Expr::FLAG_SHARE, i, &mut tagn);
+      assert_eq!(expr_bytes(&e, ShareCodec::TagN), tagn, "TagN Share({i})");
+      // The two codecs agree exactly on the one-byte indices.
+      assert_eq!(
+        i < 8,
+        expr_bytes(&e, ShareCodec::Tag4) == expr_bytes(&e, ShareCodec::TagN),
+        "Share({i})"
+      );
+    }
+  }
+
+  #[test]
+  fn share_codec_expected_bytes() {
+    let cases: &[(u64, &[u8], &[u8])] = &[
+      (7, &[0xB7], &[0xB7]),
+      (8, &[0xB8, 0x08], &[0xB8, 0x00]),
+      (255, &[0xB8, 0xFF], &[0xB8, 0xF7]),
+      (256, &[0xB9, 0x00, 0x01], &[0xB8, 0xF8]),
+      (1031, &[0xB9, 0x07, 0x04], &[0xBB, 0xFF]),
+      (1032, &[0xB9, 0x08, 0x04], &[0xBC, 0x00, 0x00]),
+      (66568, &[0xBA, 0x08, 0x04, 0x01], &[0xBD, 0, 0, 0, 0]),
+      (
+        4_295_033_864,
+        &[0xBC, 0x08, 0x04, 0x01, 0x00, 0x01],
+        &[0xBE, 0, 0, 0, 0, 0, 0, 0, 0],
+      ),
+    ];
+    for &(i, tag4, tagn) in cases {
+      let e = Expr::share(i);
+      assert_eq!(expr_bytes(&e, ShareCodec::Tag4), tag4, "Tag4 Share({i})");
+      assert_eq!(expr_bytes(&e, ShareCodec::TagN), tagn, "TagN Share({i})");
+    }
+    // Tag4 bytes of Share(8) read as TagN are a different index.
+    assert_eq!(
+      expr_exact(&[0xB8, 0x08], ShareCodec::TagN),
+      Ok(Expr::share(16))
+    );
+  }
+
+  #[test]
+  fn share_codec_tagn_rejects() {
+    let cases: &[(&[u8], &str)] = &[
+      (&[0xBF, 0, 0, 0, 0, 0, 0, 0, 0], "code 3"),
+      (&[0xBE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF], "overflow"),
+      (&[0xB8], "truncated rung 2"),
+      (&[0xBC, 0x00], "truncated rung 3"),
+      (&[0xB0, 0x00], "trailing byte"),
+    ];
+    for &(bytes, what) in cases {
+      assert!(
+        expr_exact(bytes, ShareCodec::TagN).is_err(),
+        "accepted {what}: {bytes:02x?}"
+      );
+    }
+  }
+
+  /// Non-Share headers are Tag4 under both codecs, including large Tag4
+  /// payloads whose header nibble pattern would be a TagN code.
+  #[test]
+  fn share_codec_leaves_other_headers_tag4() {
+    let exprs = [
+      Expr::var(300),
+      Expr::sort(1 << 40),
+      Expr::str(70_000),
+      Expr::app(Expr::share(1032), Expr::var(9)),
+      Expr::app(Expr::var(1032), Expr::share(66568)),
+    ];
+    for e in exprs {
+      let t4 = expr_bytes(&e, ShareCodec::Tag4);
+      let tn = expr_bytes(&e, ShareCodec::TagN);
+      assert_eq!(expr_exact(&t4, ShareCodec::Tag4), Ok(e.clone()));
+      assert_eq!(expr_exact(&tn, ShareCodec::TagN), Ok(e.clone()));
+    }
+    let v = Expr::var(300);
+    assert_eq!(
+      expr_bytes(&v, ShareCodec::Tag4),
+      expr_bytes(&v, ShareCodec::TagN)
+    );
+  }
+
+  /// Scale every Share index of an expression so the generated indices hit
+  /// the multi-byte TagN rungs.
+  fn scale_shares(e: &Arc<Expr>, k: u64) -> Arc<Expr> {
+    match e.as_ref() {
+      Expr::Share(i) => Expr::share(i.wrapping_mul(k)),
+      _ => {
+        let kids: Vec<Arc<Expr>> =
+          e.children().into_iter().map(|c| scale_shares(c, k)).collect();
+        if kids.is_empty() {
+          e.clone()
+        } else {
+          Arc::new(e.with_children(&kids).expect("same arity"))
+        }
+      },
+    }
+  }
+
+  #[quickcheck]
+  fn prop_share_codec_constant_roundtrip(seed: u64) -> bool {
+    let mut g = Gen::new(20);
+    let c = gen_constant(&mut g);
+    let k = [1u64, 131, 9_973, 1 << 20, 1 << 33][(seed % 5) as usize];
+    let c = Constant {
+      info: c.info.clone(),
+      sharing: c.sharing.iter().map(|e| scale_shares(e, k)).collect(),
+      refs: c.refs.clone(),
+      univs: c.univs.clone(),
+    };
+    [ShareCodec::Tag4, ShareCodec::TagN].into_iter().all(|codec| {
+      let mut buf = Vec::new();
+      c.put_with(codec, &mut buf);
+      let mut cur = buf.as_slice();
+      Constant::get_with(&mut cur, codec)
+        .is_ok_and(|d| d == c && cur.is_empty())
+    })
   }
 }

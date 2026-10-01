@@ -214,9 +214,9 @@ pub fn compile_aux_block_with_rename(
         block_refs,
         block_univs,
         Some(&name_str),
-      ),
+      )?,
       IxonMutConst::Recr(rec) => {
-        apply_sharing_to_recursor_with_stats(rec, block_refs, block_univs)
+        apply_sharing_to_recursor_with_stats(rec, block_refs, block_univs)?
       },
       IxonMutConst::Indc(_) => unreachable!(),
     };
@@ -255,7 +255,7 @@ pub fn compile_aux_block_with_rename(
     block_refs,
     block_univs,
     Some(&name_str),
-  );
+  )?;
   let block_addr = compiled.addr.clone();
   stt.env.store_const(block_addr.clone(), compiled.constant);
 
