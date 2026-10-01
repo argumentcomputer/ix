@@ -442,6 +442,8 @@ import Compilatrix.Xv.Stacking.Proof.WrapperSteps
 import Compilatrix.Xv.Stacking.Proof.WrapperProof
 import Compilatrix.Xv.Stacking.Proof.WrapperHead
 import Compilatrix.Xv.Stacking.Proof.WrapperCall
+import Compilatrix.Xv.Stacking.Proof.WrapperEntry
+import Compilatrix.Xv.Stacking.Proof.Ends
 import Compilatrix.Backend
 import Compilatrix.Backend.Proof.Xl
 import Compilatrix.Backend.Proof.Emit
