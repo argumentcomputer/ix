@@ -1,5 +1,5 @@
 /-
-  Exact minimum sharing (W1): shared vocabulary.
+  Exact minimum sharing: shared vocabulary.
 
   This file fixes the pieces every other part of the exact optimizer uses:
 
@@ -357,14 +357,13 @@ instance : ToString SharingError where
 /-- Deterministic resource limits. Exceeding any limit returns
 `SharingError.resourceExhausted`; limits never change a successful result.
 
-The defaults are a safety net, not a budget (owner decision, PR plan §0b-4):
-each is at least 2^6 times the previous default, under which every Init
-constant and the Mathlib sample (every constant with more than 2,000
-candidates among them) built without exhaustion. A run that reaches a limit
-fails closed and names the resource (`Resource.key`); `Limits.withOverrides`
-raises it. `maxDepth` also bounds the native recursion of the expression
-walks: expansion and serialization ran at depth 2^20 without exhausting the
-stack. -/
+The defaults are a safety net, not a budget: each is at least 2^6 times the
+previous default, under which every Init constant and the Mathlib sample
+(every constant with more than 2,000 candidates among them) built without
+exhaustion. A run that reaches a limit fails closed and names the resource
+(`Resource.key`); `Limits.withOverrides` raises it. `maxDepth` also bounds
+the native recursion of the expression walks: expansion and serialization
+ran at depth 2^20 without exhausting the stack. -/
 structure Limits where
   /-- Expression nodes walked while expanding input (tables, roots, and the
   self-check of the output). -/
@@ -397,8 +396,10 @@ structure Limits where
   /-- Lower-bound pruning. Disabling it (for testing) explores every
   reachable width state; the result must not change. -/
   prune : Bool := true
-  /-- Uniform width: search each component by plain subset enumeration (the
-  reference) instead of the reclassifying branch and bound. The result must
+  /-- Uniform width: search each component by plain subset enumeration
+  instead of the reclassifying branch and bound. A test oracle, not the
+  compiler path (off by default; the optimality theorems of
+  `Ix.Compile.Verify.UniformOptimality` assume it is off). The result must
   not change. -/
   uniformSubsetSearch : Bool := false
   deriving Repr, Inhabited

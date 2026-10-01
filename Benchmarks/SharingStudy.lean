@@ -37,8 +37,8 @@ Loads a serialized `Ixon.Env` (`.ixe`) and, for every stored constant:
 6. Builds the "maximal structural sharing" (MSS) encoding (see `mssBuild`),
    serializes it with `serConstant`, decodes and expands it again and checks
    the expanded roots equal the original ones exactly, and compares it with
-   the canonical encoding. The plan §2 witnesses are run through the same path
-   at startup.
+   the canonical encoding. The `docs/sharing-minimum.md` §2 witnesses are run
+   through the same path at startup.
 
 With `--meta` it instead runs the metadata study (see `metaStudy`).
 
@@ -374,7 +374,7 @@ def countShareRefs (e : Expr) (acc : Nat × Nat × Nat) : Nat × Nat × Nat :=
 
 /-! ## Maximal structural sharing (MSS)
 
-The candidate polynomial rule measured for the coordinator's follow-up:
+The in-degree rule measured against the canonical encoding:
 
 1. `deg(t)`: incoming edges of `t` in the compact hash-consed DAG, counted with
    multiplicity (`App(x,x)` contributes 2 to `x`), plus the number of roots

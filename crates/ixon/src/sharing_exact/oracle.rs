@@ -1,4 +1,5 @@
-//! A deliberately simple exact reference search for tiny inputs (§6.3).
+//! A deliberately simple exact reference search for tiny inputs (§6.3): a
+//! test oracle (compiled for tests only), not on the compiler path.
 //!
 //! It shares no search code with the optimizer: IDs are recomputed from
 //! expression values, every ordered sequence of distinct expanded subterms is
