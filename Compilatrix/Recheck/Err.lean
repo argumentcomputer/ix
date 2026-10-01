@@ -119,6 +119,7 @@ def stackingCode : Xv.Stacking.Error → String
   | .tooLarge _ => "stacking.tooLarge"
   | .clobbers .. => "stacking.clobbers"
   | .malformed => "stacking.malformed"
+  | .arity _ => "stacking.arity"
 
 def Err.ofBackend : Backend.Error → Err
   | .select why => { stage := .select, code := "select", message := why }

@@ -175,6 +175,29 @@ def bind (o : X86.Op) (defs : List Loc) (args : List (XArg Loc)) : Except String
   | some bs => pure bs
   | none => throw s!"operands do not bind to {repr o}"
 
+end FnCtx
+
+/-- The memory operands of a row. -/
+def memArgs (xs : List X86.Arg) : Nat := (xs.filter fun | .mem _ => true | _ => false).length
+
+def distinctLocs : List Loc → Bool
+  | [] => true
+  | l :: ls => !ls.contains l && distinctLocs ls
+
+/-- A row whose stacked form computes what Xl's does: no stack traffic, no
+8- or 16-bit write-only implicit register (its write keeps bits of what the
+register held), at most one memory operand, distinct definitions, and,
+unless `narrowOk` (a fused consumer, whose destination is zeroed first), no
+8- or 16-bit write-only register destination. The validator's row checks
+(`Validate.rowShapeOk`) imply all of them for allocated code. -/
+def rowShape (o : X86.Op) (bs : List (Bound Loc)) (xs : List X86.Arg) (narrowOk : Bool) : Bool :=
+  (X86.desc o).stack == .none &&
+    (X86.desc o).implicit.all (fun i => i.role.reads || i.width == .w32 || i.width == .w64) &&
+    decide (memArgs xs ≤ 1) && distinctLocs (bs.flatMap Bound.defs) &&
+    (narrowOk || !bs.any Bound.narrowOutput)
+
+namespace FnCtx
+
 /-- A `mov` between locations; never cell to cell. -/
 def move (c : FnCtx) (dst src : Loc) : Except String (List X86.Instr) :=
   if dst == src then pure []
@@ -186,8 +209,9 @@ def move (c : FnCtx) (dst src : Loc) : Except String (List X86.Instr) :=
 
 def inst (c : FnCtx) : Inst Loc → Except String (List X86.Instr)
   | .op o defs args => do
-      let xs ← c.rowArgs (← bind o defs args)
-      unless o.linear && (X86.desc o).stack == .none && o.argsOk xs do
+      let bs ← bind o defs args
+      let xs ← c.rowArgs bs
+      unless o.linear && (X86.desc o).stack == .none && o.argsOk xs && rowShape o bs xs false do
         throw s!"{repr o} is not a stack-free linear row on these operands"
       pure [.op o xs]
   | .fused p pargs q defs cargs => do
@@ -195,7 +219,8 @@ def inst (c : FnCtx) : Inst Loc → Except String (List X86.Instr)
       let qb ← bind q defs cargs
       let pxs ← c.rowArgs pb
       let qxs ← c.rowArgs qb
-      unless p.argsOk pxs && q.argsOk qxs do throw "fused operands do not fit their rows"
+      unless p.argsOk pxs && q.argsOk qxs && rowShape p pb pxs false && rowShape q qb qxs true do
+        throw "fused operands do not fit their rows"
       let uses := (pb ++ qb).flatMap Bound.uses
       let zeroes ← ((qb.filter Bound.narrowOutput).flatMap Bound.defs).mapM fun l => do
         if uses.contains l then throw "a zeroed destination is also a use"
@@ -217,8 +242,9 @@ def edge (c : FnCtx) (e : Edge Loc) : Except String X86.BlockId := do
 def term (c : FnCtx) : Term Loc → Except String (List X86.Instr × X86.Terminator)
   | .jmp e => do pure ([], .jump (← c.edge e))
   | .jcc p pargs defs cond t f => do
-      let xs ← c.rowArgs (← bind p defs pargs)
-      unless p.argsOk xs do throw "branch operands do not fit the producer"
+      let bs ← bind p defs pargs
+      let xs ← c.rowArgs bs
+      unless p.argsOk xs && rowShape p bs xs false do throw "branch operands do not fit the producer"
       pure ([], .branch p xs cond (← c.edge t) (← c.edge f))
   | .ret vs => do
       unless Xl.conventionResults vs do throw "results are off the convention"

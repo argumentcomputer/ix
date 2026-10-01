@@ -1419,12 +1419,28 @@
    ["Compilatrix.Xv.Stacking.Wrapper",
     "Compilatrix.X86.Layout.Basic",
     "Compilatrix.X86.CheckK"]},
+  "Compilatrix.Xv.Stacking.Proof.Trunc":
+  {"path": "Compilatrix/Xv/Stacking/Proof/Trunc.lean",
+   "imports": ["Compilatrix.X86.Width"]},
   "Compilatrix.Xv.Stacking.Proof.Steps":
   {"path": "Compilatrix/Xv/Stacking/Proof/Steps.lean",
    "imports": ["Compilatrix.X86.SafeControl", "Compilatrix.X86.Constructors"]},
   "Compilatrix.Xv.Stacking.Proof.Shape":
   {"path": "Compilatrix/Xv/Stacking/Proof/Shape.lean",
    "imports": ["Compilatrix.Xv.Stacking.Run"]},
+  "Compilatrix.Xv.Stacking.Proof.RowXl":
+  {"path": "Compilatrix/Xv/Stacking/Proof/RowXl.lean",
+   "imports":
+   ["Compilatrix.Xv.Stacking.Proof.RowRel",
+    "Compilatrix.Xv.Stacking.Emit",
+    "Compilatrix.Xv.Validate.Proof.RowSim",
+    "Compilatrix.Xv.Validate.Proof.Assign"]},
+  "Compilatrix.Xv.Stacking.Proof.RowRel":
+  {"path": "Compilatrix/Xv/Stacking/Proof/RowRel.lean",
+   "imports":
+   ["Compilatrix.Xv.Stacking.Proof.Trunc",
+    "Compilatrix.Xv.Validate.Proof.Exec",
+    "Compilatrix.X86.Memory"]},
   "Compilatrix.Xv.Stacking.Proof.Exit":
   {"path": "Compilatrix/Xv/Stacking/Proof/Exit.lean",
    "imports":
@@ -3870,6 +3886,9 @@
     "Compilatrix.Xv.Stacking.Proof.Shape",
     "Compilatrix.Xv.Stacking.Proof.Steps",
     "Compilatrix.Xv.Stacking.Proof.Exit",
+    "Compilatrix.Xv.Stacking.Proof.Trunc",
+    "Compilatrix.Xv.Stacking.Proof.RowRel",
+    "Compilatrix.Xv.Stacking.Proof.RowXl",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",

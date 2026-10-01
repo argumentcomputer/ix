@@ -125,6 +125,7 @@ theorem run_ok {p : LProgram} {layouts : List FrameLayout} {reps : FunId → Opt
     layouts.length = p.funcs.size ∧
     (∀ x ∈ withLayouts p layouts, x.2.2.1.check x.2.2.2 = true) ∧
     (∀ x ∈ withLayouts p layouts, extraChanges p env x.1 x.2.1 x.2.2.1 x.2.2.2 = []) ∧
+    (∀ x ∈ withLayouts p layouts, aritiesOk p x.1 = true) ∧
     (placeFuncs (withLayouts p layouts) (placeExports (exportsOf reps (withLayouts p layouts))).2).2 < 2 ^ 32 ∧
     ∃ (wrapperCode funcCode : List (List X86.Block)) (main : PlacedExport),
       ((runWrappers p layouts reps).zip (exportsOf reps (withLayouts p layouts))).mapM
@@ -148,31 +149,37 @@ theorem run_ok {p : LProgram} {layouts : List FrameLayout} {reps : FunId → Opt
       · cases h
       · rename_i hclob
         split at h
-        · rename_i htotal
+        · cases h
+        · rename_i harity
           split at h
-          · cases h
-          · rename_i wrapperCode hwc
+          · rename_i htotal
             split at h
             · cases h
-            · rename_i funcCode hfc
+            · rename_i wrapperCode hwc
               split at h
-              · rename_i main hmain
-                split at h
-                · rename_i hwf
-                  simp only [Except.ok.injEq] at h
-                  subst h
-                  refine ⟨hlen, ?_, ?_, by simpa using htotal, wrapperCode, funcCode, main, hwc, hfc, hmain,
-                    rfl, ?_⟩
-                  · intro x hx
-                    have := List.find?_eq_none.1 hcheck x hx
-                    simpa using this
-                  · intro x hx
-                    have := List.find?_eq_none.1 hclob x hx
-                    simpa using this
-                  · rw [← X86.Program.wellFormedK_eq]; simpa using hwf
-                · cases h
               · cases h
-        · cases h
+              · rename_i funcCode hfc
+                split at h
+                · rename_i main hmain
+                  split at h
+                  · rename_i hwf
+                    simp only [Except.ok.injEq] at h
+                    subst h
+                    refine ⟨hlen, ?_, ?_, ?_, by simpa using htotal, wrapperCode, funcCode, main, hwc, hfc, hmain,
+                      rfl, ?_⟩
+                    · intro x hx
+                      have := List.find?_eq_none.1 hcheck x hx
+                      simpa using this
+                    · intro x hx
+                      have := List.find?_eq_none.1 hclob x hx
+                      simpa using this
+                    · intro x hx
+                      have := List.find?_eq_none.1 harity x hx
+                      simpa using this
+                    · rw [← X86.Program.wellFormedK_eq]; simpa using hwf
+                  · cases h
+                · cases h
+          · cases h
   · cases h
 
 /-! ## Lists of blocks -/
@@ -401,7 +408,7 @@ theorem func_at {p : LProgram} {layouts : List FrameLayout} {reps : FunId → Op
       pl.facts = f.facts ∧
       emitFunc (entriesOf (runPlaced p layouts reps)) 0 f l f.facts pl.start = .ok blks ∧
       ∀ j, j < blks.length → st.program.blocks[pl.start + j]? = blks[j]? := by
-  obtain ⟨hlen, -, -, -, wrapperCode, funcCode, main, hwc, hfc, -, hprog, -⟩ := run_ok h
+  obtain ⟨hlen, -, -, -, -, wrapperCode, funcCode, main, hwc, hfc, -, hprog, -⟩ := run_ok h
   have hpl := placed_get (reps := reps) hf hl
   obtain ⟨-, hget⟩ := mapM_ok hfc
   obtain ⟨blks, hblks, hemit⟩ := hget k _ hpl
@@ -459,7 +466,7 @@ theorem func_at {p : LProgram} {layouts : List FrameLayout} {reps : FunId → Op
 theorem exit_at {p : LProgram} {layouts : List FrameLayout} {reps : FunId → Option (List ArgRep)} {env : Xl.Env}
     {st : Stacked} (h : run p layouts reps env = .ok st) {j : Nat} (hj : j < exitBlocks) :
     st.program.blocks[j]? = (exitGroup 0)[j]? := by
-  obtain ⟨-, -, -, -, wrapperCode, funcCode, main, -, -, -, hprog, -⟩ := run_ok h
+  obtain ⟨-, -, -, -, -, wrapperCode, funcCode, main, -, -, -, hprog, -⟩ := run_ok h
   simp only [hprog, List.getElem?_toArray, List.append_assoc]
   exact List.getElem?_append_left (by simpa [exitGroup, exitBlocks] using hj)
 
@@ -487,7 +494,7 @@ theorem main_at {p : LProgram} {layouts : List FrameLayout} {reps : FunId → Op
       w.reps = exportReps reps p.main f ∧ st.program.entry = UInt32.ofNat w.start ∧
       wrapperOf (entriesOf (runPlaced p layouts reps)) w f = .ok blks ∧
       ∀ j, j < blks.length → st.program.blocks[w.start + j]? = blks[j]? := by
-  obtain ⟨hlen, -, -, -, wrapperCode, funcCode, main, hwc, hfc, hmain, hprog, -⟩ := run_ok h
+  obtain ⟨hlen, -, -, -, -, wrapperCode, funcCode, main, hwc, hfc, hmain, hprog, -⟩ := run_ok h
   have hmem := List.mem_of_find?_eq_some hmain
   have hfn : main.fn = p.main := by simpa using List.find?_some hmain
   obtain ⟨i, hi, hmi⟩ := List.getElem_of_mem hmem

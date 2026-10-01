@@ -51,6 +51,9 @@ inductive Error where
   /-- The emitted program is not a well-formed typed program
   (`X86.Program.wellFormed`). -/
   | malformed
+  /-- A call, a return or a tail call disagrees with a function's declared
+  result count. -/
+  | arity (fn : FunId)
   deriving DecidableEq, Repr, Inhabited
 
 def Error.toString : Error → String
@@ -62,6 +65,7 @@ def Error.toString : Error → String
   | .tooLarge n => s!"stacking: {n} blocks"
   | .clobbers fn extra => s!"stacking: function {fn} changes {repr extra} beyond its declared clobbers"
   | .malformed => "stacking: the emitted program is not well formed"
+  | .arity fn => s!"stacking: function {fn} calls, returns or tail-calls with a result count its callee or itself does not declare"
 
 instance : ToString Error := ⟨Error.toString⟩
 
@@ -150,6 +154,20 @@ def extraChanges (p : LProgram) (env : Xl.Env) (f : Func Loc) (fn : FunId) (l : 
   (mayChange env f a l ++ tailResults p f).filter (!(allowedChanges env fn f).contains ·) ++
     (env.clobbers fn).filter (fun r => !X86.SysV.callerSaved.toList.contains r)
 
+/-- A function's declared result count. -/
+def resultsOf (p : LProgram) (g : FunId) : Option Nat := (p.funcs.toList[g]?).map (·.results)
+
+/-- Every call binds, every return returns, and every tail callee declares,
+as many results as expected: `allowedChanges` counts a callee's result
+registers by its declaration, Xl by the values it returns. -/
+def aritiesOk (p : LProgram) (f : Func Loc) : Bool :=
+  f.blocks.toList.all fun b =>
+    b.body.toList.all (fun | .call g _ rets => resultsOf p g == some rets.length | _ => true) &&
+      match b.term with
+      | .ret vs => vs.length == f.results
+      | .tail g _ => resultsOf p g == some f.results
+      | _ => true
+
 /-- The exports, with their argument passing. -/
 def exportsOf (reps : FunId → Option (List ArgRep)) (fns : List (Func Loc × FunId × FrameLayout × Facts)) :
     List (FunId × String × List ArgRep × Func Loc) :=
@@ -201,6 +219,9 @@ def run (p : LProgram) (layouts : List FrameLayout) (reps : FunId → Option (Li
   -- no register its callers assume it keeps.
   match checkedFns.find? (fun (f, fn, l, a) => !(extraChanges p env f fn l a).isEmpty) with
   | some (f, fn, l, a) => throw (.clobbers fn (extraChanges p env f fn l a))
+  | none => pure ()
+  match checkedFns.find? (fun (f, _, _, _) => !aritiesOk p f) with
+  | some (_, fn, _, _) => throw (.arity fn)
   | none => pure ()
   let exports := exportsOf reps checkedFns
   let (wrappers, next) := placeExports exports
