@@ -286,7 +286,8 @@ run step while the clean rows still upload.
 
 **Dashboard plots**: `ix bench plots` pins one plot per (workload, measure)
 to <https://bencher.dev/console/projects/ix/plots> — main-branch trend
-lines on the native r8i testbed, one per benchmark row the cell uploads,
+lines on the historical Warp and native r8i testbeds, with a separate line
+per benchmark row and testbed so hardware changes preserve the visible history,
 plus the cross-kernel input-constants overlay. Registry-derived like the job matrices (titles,
 ordering, and skips live in `Ix/Cli/BenchPlots.lean`), so rerun the sync
 after changing the registry or the constant set — either locally
