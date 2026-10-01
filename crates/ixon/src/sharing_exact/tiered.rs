@@ -364,6 +364,17 @@ pub(crate) fn tiered(
   dag: &SharingDag,
   meter: &mut Meter<'_>,
 ) -> Result<TieredSharingResult, SharingError> {
+  tiered_at(layout, dag, meter, None)
+}
+
+/// The tiered construction with the phase-1 width `width`, or the
+/// `K`-based width when `None` (the canonical construction).
+fn tiered_at(
+  layout: ShareLayout,
+  dag: &SharingDag,
+  meter: &mut Meter<'_>,
+  width: Option<u64>,
+) -> Result<TieredSharingResult, SharingError> {
   let nodes = dag.nodes();
   let n = nodes.len();
   let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
@@ -373,7 +384,7 @@ pub(crate) fn tiered(
   let k = len64(
     (0..n).filter(|&t| facts.deg[t] >= 2 && base[t] >= Len::new(2)).count(),
   );
-  let w = layout.uniform_width(k);
+  let w = width.unwrap_or_else(|| layout.uniform_width(k));
   // Phase 1.
   let u = optimize_uniform(w, dag, meter)?;
   let order1 = u.table_terms.clone();
@@ -528,11 +539,34 @@ pub fn normalize_constant_sharing_tiered(
   c: &Constant,
   limits: &ExactSharingLimits,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
+  normalize_tiered_at(layout, c, limits, None)
+}
+
+/// Experiment hook, not the canonical construction: the tiered construction
+/// of `c` with the phase-1 uniform width forced to `w` instead of the
+/// `K`-based choice. Phases 2 and 3 are unchanged. With
+/// `w = layout.uniform_width(K)` it equals
+/// [`normalize_constant_sharing_tiered`].
+pub fn normalize_constant_sharing_tiered_at_width(
+  layout: ShareLayout,
+  c: &Constant,
+  limits: &ExactSharingLimits,
+  w: u64,
+) -> Result<(Constant, TieredSharingResult), SharingError> {
+  normalize_tiered_at(layout, c, limits, Some(w))
+}
+
+fn normalize_tiered_at(
+  layout: ShareLayout,
+  c: &Constant,
+  limits: &ExactSharingLimits,
+  width: Option<u64>,
+) -> Result<(Constant, TieredSharingResult), SharingError> {
   let mut meter = Meter::new(limits);
   let roots = constant_info_root_exprs(&c.info);
   let dag = SharingDag::build(&roots, Some(&c.sharing), &mut meter)?;
   let fixed = constant_fixed_len(c).ok_or_else(overflow)?;
-  let result = tiered(layout, &dag, &mut meter)?;
+  let result = tiered_at(layout, &dag, &mut meter, width)?;
   let info = rebuild_constant_info(&c.info, &result.roots)?;
   let out = Constant {
     info,

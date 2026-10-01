@@ -2703,3 +2703,45 @@ fn uniform_branch_and_bound_across_a_bracket() {
     assert_eq!((&u.stored, u.model_len), (&r.stored, r.model_len), "w={w}");
   }
 }
+
+// ---------------------------------------------------------------------------
+// Forced phase-1 width (experiment hook)
+// ---------------------------------------------------------------------------
+
+/// The experiment hook at the `K`-based width is the canonical
+/// construction; at any other width it is a valid encoding of the same
+/// constant, priced and serialized consistently.
+#[test]
+fn tiered_at_width_hook() {
+  let mut rng = Rng(73);
+  for i in 0..60u64 {
+    let c = if i % 2 == 0 {
+      let roots = gen_heavy_parent(&mut rng);
+      wrap(&mut rng, roots)
+    } else {
+      gen_constant(i + 90_000, 6, 30, 5)
+    };
+    for l in LAYOUTS {
+      let (n, r) = normalize_constant_sharing_tiered(l, &c, &limits()).unwrap();
+      let wk = l.uniform_width(r.stats.candidate_count);
+      for w in 1..=3 {
+        let (m, s) =
+          normalize_constant_sharing_tiered_at_width(l, &c, &limits(), w)
+            .unwrap();
+        assert_eq!(s.stats.w, w);
+        assert_eq!(
+          roundtrip(&m).len() as u64,
+          constant_fixed_len(&c).unwrap() + s.variable_len
+        );
+        assert_eq!(
+          put(&unshared(&m)),
+          put(&unshared(&c)),
+          "case {i} {l:?} w={w}: different constant"
+        );
+        if w == wk {
+          assert_eq!((put(&m), s.model_len), (put(&n), r.model_len));
+        }
+      }
+    }
+  }
+}

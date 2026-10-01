@@ -18,6 +18,10 @@
 //!                             --select-min-cand R1/R2 candidates
 //!   [--select-stride N]       (default 50)
 //!   [--select-min-cand N]     (default 2000)
+//!   [--width-experiment]      experiment, not the canonical construction:
+//!                             run phases 1-3 at each phase-1 width
+//!                             w in 1, 2, 3 and report the best of the
+//!                             three against the K-based choice
 //! ```
 //!
 //! Candidate counts are reported two ways: `cand`, the R1/R2 search
@@ -41,6 +45,7 @@ use ixon::sharing_exact::{
   ExactSharingLimits, ShareLayout, SharingDag, SharingError, candidate_terms,
   constant_fixed_len, constant_len, layout_bytes,
   normalize_constant_sharing_tiered,
+  normalize_constant_sharing_tiered_at_width,
 };
 use rayon::prelude::*;
 
@@ -53,6 +58,7 @@ struct Args {
   select_out: Option<String>,
   select_stride: usize,
   select_min_cand: usize,
+  width_experiment: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -66,6 +72,7 @@ fn parse_args() -> Result<Args, String> {
     select_out: None,
     select_stride: 50,
     select_min_cand: 2000,
+    width_experiment: false,
   };
   let num = |v: Option<String>| -> Result<usize, String> {
     v.ok_or("missing value")?.parse::<usize>().map_err(|e| e.to_string())
@@ -85,6 +92,7 @@ fn parse_args() -> Result<Args, String> {
       "--select-out" => a.select_out = it.next(),
       "--select-stride" => a.select_stride = num(it.next())?,
       "--select-min-cand" => a.select_min_cand = num(it.next())?,
+      "--width-experiment" => a.width_experiment = true,
       p if !p.starts_with("--") && a.path.is_empty() => a.path = p.to_string(),
       other => return Err(format!("unknown argument {other}")),
     }
@@ -287,6 +295,9 @@ fn main() -> Result<(), String> {
       .unwrap_or_else(|| format!("<{}>", &hex[..16]))
   };
   let limits = ExactSharingLimits::default();
+  if args.width_experiment {
+    return width_experiment(&args, &consts, &mmap, &limits, &name_of, t0);
+  }
   let done = AtomicUsize::new(0);
   let t1 = Instant::now();
   let total = consts.len();
@@ -490,6 +501,250 @@ fn main() -> Result<(), String> {
       r.slot_states
     );
   }
+  println!("- total wall {:.1} s", t0.elapsed().as_secs_f64());
+  Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Width experiment (not the canonical construction)
+// ---------------------------------------------------------------------------
+
+/// One constant under the width experiment: phases 1-3 at each phase-1
+/// width `w` in 1, 2, 3. `bytes[i]` is the complete constant priced by the
+/// layout (for Tag4, the serialized length) at `w = i + 1`.
+#[derive(Default, Clone)]
+struct WRow {
+  idx: usize,
+  addr: String,
+  kind: &'static str,
+  raw: u64,
+  k: u64,
+  status: [String; 3],
+  stored: [u64; 3],
+  bytes: [Option<u64>; 3],
+  ms: [f64; 3],
+}
+
+impl WRow {
+  /// Phase-1 width of the canonical (`K`-based) construction.
+  fn wk(&self, layout: ShareLayout) -> usize {
+    usize::try_from(layout.uniform_width(self.k)).unwrap_or(3)
+  }
+  /// Fewest layout bytes over the three widths; ties to the lower width.
+  fn best(&self) -> Option<(usize, u64)> {
+    let mut best: Option<(usize, u64)> = None;
+    for (i, b) in self.bytes.iter().enumerate() {
+      if let Some(b) = *b
+        && best.is_none_or(|(_, x)| b < x)
+      {
+        best = Some((i + 1, b));
+      }
+    }
+    best
+  }
+  /// The width chosen from the stored count of the `K`-based run.
+  fn rewidth(&self, layout: ShareLayout) -> usize {
+    let wk = self.wk(layout);
+    usize::try_from(layout.uniform_width(self.stored[wk - 1])).unwrap_or(3)
+  }
+}
+
+fn process_widths(
+  idx: usize,
+  addr: &Address,
+  mut bytes: &[u8],
+  layout: ShareLayout,
+  limits: &ExactSharingLimits,
+) -> WRow {
+  let mut row =
+    WRow { idx, addr: addr.hex(), raw: bytes.len() as u64, ..WRow::default() };
+  let c = match Constant::get(&mut bytes) {
+    Ok(c) => c,
+    Err(e) => {
+      row.status = std::array::from_fn(|_| format!("decode: {e}"));
+      return row;
+    },
+  };
+  row.kind = kind_of(&c);
+  let fixed = constant_fixed_len(&c).unwrap_or(0);
+  for i in 0..3 {
+    let start = Instant::now();
+    let r = normalize_constant_sharing_tiered_at_width(
+      layout,
+      &c,
+      limits,
+      i as u64 + 1,
+    );
+    row.ms[i] = start.elapsed().as_secs_f64() * 1e3;
+    match r {
+      Ok((_, res)) => {
+        row.status[i] = "ok".into();
+        row.k = res.stats.candidate_count;
+        row.stored[i] = res.table_terms.len() as u64;
+        row.bytes[i] = Some(fixed + res.model_len);
+      },
+      Err(SharingError::ResourceExhausted(e)) => {
+        row.status[i] = format!("resource:{:?}", e.resource);
+      },
+      Err(e) => row.status[i] = format!("error: {e}"),
+    }
+  }
+  row
+}
+
+fn width_experiment(
+  args: &Args,
+  consts: &[ixon::env::LazyConstSlice],
+  mmap: &[u8],
+  limits: &ExactSharingLimits,
+  name_of: &dyn Fn(&str, &Address) -> String,
+  t0: Instant,
+) -> Result<(), String> {
+  let layout = args.layout;
+  let done = AtomicUsize::new(0);
+  let t1 = Instant::now();
+  let total = consts.len();
+  let rows: Vec<WRow> = consts
+    .par_iter()
+    .enumerate()
+    .map(|(i, c)| {
+      let row = process_widths(
+        i,
+        &c.addr,
+        &mmap[c.offset..c.offset + c.len],
+        layout,
+        limits,
+      );
+      let d = done.fetch_add(1, Ordering::Relaxed) + 1;
+      if d.is_multiple_of(50_000) {
+        eprintln!(
+          "[sharing_corpus] {d}/{total} in {:.1} s",
+          t1.elapsed().as_secs_f64()
+        );
+      }
+      row
+    })
+    .collect();
+  let run_s = t1.elapsed().as_secs_f64();
+  if let Some(path) = &args.csv {
+    let mut f = std::io::BufWriter::new(
+      std::fs::File::create(path).map_err(|e| e.to_string())?,
+    );
+    writeln!(
+      f,
+      "idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,bytes1,bytes2,bytes3,kbased,best,best_w,rewidth,rewidth_w,ms1,ms2,ms3"
+    )
+    .map_err(|e| e.to_string())?;
+    let opt = |b: Option<u64>| b.map_or(String::new(), |b| b.to_string());
+    for (r, c) in rows.iter().zip(consts) {
+      let wk = r.wk(layout);
+      let rw = r.rewidth(layout);
+      let (bw, bb) =
+        r.best().map_or((String::new(), String::new()), |(w, b)| {
+          (w.to_string(), b.to_string())
+        });
+      writeln!(
+        f,
+        "{},{},\"{}\",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3}",
+        r.idx,
+        r.addr,
+        name_of(&r.addr, &c.addr).replace('"', "'"),
+        r.kind,
+        r.raw,
+        r.k,
+        wk,
+        r.status[0],
+        r.status[1],
+        r.status[2],
+        r.stored[0],
+        r.stored[1],
+        r.stored[2],
+        opt(r.bytes[0]),
+        opt(r.bytes[1]),
+        opt(r.bytes[2]),
+        opt(r.bytes[wk - 1]),
+        bb,
+        bw,
+        opt(r.bytes[rw - 1]),
+        rw,
+        r.ms[0],
+        r.ms[1],
+        r.ms[2]
+      )
+      .map_err(|e| e.to_string())?;
+    }
+  }
+  // Summary over constants where all three widths succeeded.
+  let mut failed = [0u64; 3];
+  let (mut n_all, mut kb, mut best, mut rew) = (0u64, 0u128, 0u128, 0u128);
+  let mut wins = [0u64; 3];
+  let (mut b_better, mut b_equal) = (0u64, 0u64);
+  let (mut r_better, mut r_equal, mut r_worse) = (0u64, 0u64, 0u64);
+  let mut gains: Vec<i64> = Vec::new();
+  for r in &rows {
+    for (f, b) in failed.iter_mut().zip(&r.bytes) {
+      if b.is_none() {
+        *f += 1;
+      }
+    }
+    if r.bytes.iter().any(Option::is_none) {
+      continue;
+    }
+    n_all += 1;
+    let wk = r.wk(layout);
+    let k_b = r.bytes[wk - 1].unwrap_or(0);
+    let (bw, b_b) = r.best().unwrap_or((wk, k_b));
+    let r_b = r.bytes[r.rewidth(layout) - 1].unwrap_or(0);
+    kb += u128::from(k_b);
+    best += u128::from(b_b);
+    rew += u128::from(r_b);
+    wins[bw - 1] += 1;
+    if b_b < k_b {
+      b_better += 1;
+      gains.push(signed(b_b) - signed(k_b));
+    } else {
+      b_equal += 1;
+    }
+    match r_b.cmp(&k_b) {
+      std::cmp::Ordering::Less => r_better += 1,
+      std::cmp::Ordering::Equal => r_equal += 1,
+      std::cmp::Ordering::Greater => r_worse += 1,
+    }
+  }
+  println!(
+    "# sharing_corpus width experiment (not the canonical construction)"
+  );
+  println!(
+    "- corpus: {} ({} constants processed); layout {:?}; phases 1-3 at w = 1, 2, 3",
+    args.path,
+    rows.len(),
+    layout
+  );
+  println!(
+    "- wall: processing {run_s:.1} s with {} threads; peak RSS {} KiB",
+    rayon::current_num_threads(),
+    peak_rss_kib().map_or("?".into(), |k| k.to_string())
+  );
+  println!(
+    "- failures by width: w=1 {}, w=2 {}, w=3 {}; constants with all three ok: {n_all}",
+    failed[0], failed[1], failed[2]
+  );
+  println!(
+    "- layout bytes over those constants: K-based {kb}; best of three {best} ({:+}); stored-count re-solve {rew} ({:+})",
+    best.cast_signed() - kb.cast_signed(),
+    rew.cast_signed() - kb.cast_signed()
+  );
+  println!(
+    "- best-of-three width (ties to the lower w): w=1 {}, w=2 {}, w=3 {}",
+    wins[0], wins[1], wins[2]
+  );
+  println!(
+    "- best of three vs K-based per constant: better {b_better}, equal {b_equal}; change {}",
+    percentiles(gains)
+  );
+  println!(
+    "- stored-count re-solve vs K-based per constant: better {r_better}, equal {r_equal}, worse {r_worse}"
+  );
   println!("- total wall {:.1} s", t0.elapsed().as_secs_f64());
   Ok(())
 }
