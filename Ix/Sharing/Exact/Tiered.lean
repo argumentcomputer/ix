@@ -41,7 +41,9 @@
     "current weight + the largest remaining weights that still fit".
   * Remaining entries (pinned, not optimized): `F` in the pinned priority
     order (stored descendants first, larger in-degree, smaller ID), then the
-    rest in the same pinned order.
+    rest in the Kahn priority order (`kahnOrder`): repeatedly the available
+    entry (every entry its phase-1 body references already placed) with the
+    largest `ref`, ties by the smaller ID.
   * Guard: if this order's reference cost `Σ ref(t)·widthAt(index t)` is
     larger than the phase-1 order's, the phase-1 order is kept.
   Optimality claim: with the `ref` counts fixed, the allocation minimizes
@@ -164,6 +166,19 @@ def shareIndices : Ixon.Expr → Array Nat → Array Nat
 
 /-! ## First-tier allocation -/
 
+/-- Fail with an internal error unless `b` holds. -/
+def checkInternal (b : Bool) (msg : String) : Except SharingError Unit :=
+  if b then pure () else throw (.internal msg)
+
+/-- Add the closure of `d` to a partial closure (`none` once above `cap`). -/
+def tierClosureUnion (cap : Nat) (cl : Std.HashMap Nat (Option (List Nat)))
+    (acc : Option (List Nat)) (d : Nat) : Option (List Nat) :=
+  match acc, cl.getD d none with
+  | some a, some c =>
+    let u := c.foldl (fun a x => a.insert x) a
+    if u.length ≤ cap then some u else none
+  | _, _ => none
+
 /-- The first-tier closures, in an order `topo` where every term's
 dependencies come before it: the closure of `t` is `t` with the closures of
 its dependencies, or `none` when it has more than `cap` terms. A dependency
@@ -171,20 +186,10 @@ that is not yet closed, or a repeated term, is an internal error. -/
 def tierClosures (topo : Array Nat) (deps : Nat → List Nat) (cap : Nat) :
     Except SharingError (Std.HashMap Nat (Option (List Nat))) :=
   topo.foldlM (init := {}) fun cl t => do
-    if cl.contains t then throw (.internal "a stored term repeats in the phase-1 table")
-    unless (deps t).all cl.contains do
-      throw (.internal "a phase-1 body references a later entry")
-    let acc := (deps t).foldl (closureUnion cap cl) (some [t])
+    checkInternal (!cl.contains t) "a stored term repeats in the phase-1 table"
+    checkInternal ((deps t).all cl.contains) "a phase-1 body references a later entry"
+    let acc := (deps t).foldl (tierClosureUnion cap cl) (some [t])
     return cl.insert t (acc.bind fun a => if a.length ≤ cap then some a else none)
-where
-  /-- Add the closure of `d` to a partial closure (`none` once above `cap`). -/
-  closureUnion (cap : Nat) (cl : Std.HashMap Nat (Option (List Nat)))
-      (acc : Option (List Nat)) (d : Nat) : Option (List Nat) :=
-    match acc, cl.getD d none with
-    | some a, some c =>
-      let u := c.foldl (fun a x => a.insert x) a
-      if u.length ≤ cap then some u else none
-    | _, _ => none
 
 /-- Bound of the first-tier search: `acc` plus the largest `room` weights
 among `rest` outside `inF` (`rest` is in decreasing weight). -/
@@ -202,6 +207,20 @@ structure TierState where
   states : Nat := 0
   deriving Inhabited
 
+/-- Whether a subtree with bound `bound` is pruned: some set of weight at
+least `bound` is already found. -/
+def tierPruned (best : Option (Nat × List Nat)) (bound : Nat) : Bool :=
+  match best with
+  | some (b, _) => bound ≤ b
+  | none => false
+
+/-- Keep the best set: `inF` (of weight `cur`) replaces it only if heavier. -/
+def tierUpd (best : Option (Nat × List Nat)) (cur : Nat) (inF : List Nat) :
+    Option (Nat × List Nat) :=
+  match best with
+  | some (b, _) => if cur > b then some (cur, inF) else best
+  | none => some (cur, inF)
+
 /-- Depth-first branch and bound over `items` (in the search order), deciding
 `items[pos]`: "include" (its closure joins `inF`, if no excluded term is in
 it and it fits) before "exclude". `cur` is the weight of `inF`. The first
@@ -212,31 +231,30 @@ def tierDfs (items : Array Nat) (weight : Nat → Nat) (closure : Nat → Option
     Nat → Nat → Nat → List Nat → Std.HashSet Nat → TierState →
       Except SharingError TierState
   | 0, _, _, _, _, _ => throw (.internal "first-tier search fuel exhausted")
-  | fuel + 1, pos, cur, inF, excluded, st => do
+  | fuel + 1, pos, cur, inF, excluded, st =>
     if st.states + 1 > limits.maxStates then
       throw (.resourceExhausted .states limits.maxStates)
-    let st := { st with states := st.states + 1 }
-    let bound := tierBound weight inF (items.toList.drop pos) (cap - inF.length) cur
-    match st.best with
-    | some (b, _) => if bound ≤ b then return st
-    | none => pure ()
-    if pos ≥ items.size then
-      match st.best with
-      | some (b, _) => return if cur > b then { st with best := some (cur, inF) } else st
-      | none => return { st with best := some (cur, inF) }
-    let t := items[pos]!
-    if inF.contains t then
-      tierDfs items weight closure cap limits fuel (pos + 1) cur inF excluded st
     else
-      let st ← match closure t with
-        | some c =>
-          let new := c.filter (!inF.contains ·)
-          if !c.any excluded.contains && inF.length + new.length ≤ cap then
-            tierDfs items weight closure cap limits fuel (pos + 1)
-              (new.foldl (fun acc u => acc + weight u) cur) (inF ++ new) excluded st
-          else pure st
-        | none => pure st
-      tierDfs items weight closure cap limits fuel (pos + 1) cur inF (excluded.insert t) st
+      let st := { st with states := st.states + 1 }
+      if tierPruned st.best
+          (tierBound weight inF (items.toList.drop pos) (cap - inF.length) cur) then
+        pure st
+      else if pos ≥ items.size then
+        pure { st with best := tierUpd st.best cur inF }
+      else
+        let t := items[pos]!
+        if inF.contains t then
+          tierDfs items weight closure cap limits fuel (pos + 1) cur inF excluded st
+        else do
+          let st ← match closure t with
+            | some c =>
+              let new := c.filter (!inF.contains ·)
+              if !c.any excluded.contains && inF.length + new.length ≤ cap then
+                tierDfs items weight closure cap limits fuel (pos + 1)
+                  (new.foldl (fun acc u => acc + weight u) cur) (inF ++ new) excluded st
+              else pure st
+            | none => pure st
+          tierDfs items weight closure cap limits fuel (pos + 1) cur inF (excluded.insert t) st
 
 /-- The first-tier search order: weight descending, then ID ascending. -/
 def tierOrder (weight : Nat → Nat) (a b : Nat) : Bool :=
@@ -286,6 +304,41 @@ def respectsDeps (order : Array Nat) (deps : Nat → List Nat) : Bool :=
   let pos : Std.HashMap Nat Nat := order.zipIdx.foldl (fun m (t, i) => m.insert t i) {}
   order.zipIdx.all fun (t, i) => (deps t).all fun d => (pos.get? d).any (· < i)
 
+/-- The Kahn priority order of `rest`: repeatedly place the available term
+(every dependency of it in `rest` already placed) of the largest weight,
+ties by the smaller ID (`tierOrder`). Terms left over, which acyclic
+dependencies never leave, follow in priority order. -/
+def kahnOrder (weight : Nat → Nat) (deps : Nat → List Nat) (rest : Array Nat) : Array Nat :=
+  Id.run do
+  -- Ranks in priority order; the ready set is kept by rank.
+  let sorted := (rest.toList.mergeSort (tierOrder weight)).toArray
+  let m := sorted.size
+  let rank : Std.HashMap Nat Nat := sorted.zipIdx.foldl (fun r (t, i) => r.insert t i) {}
+  let mut pend : Array Nat := Array.replicate m 0
+  let mut users : Array (Array Nat) := Array.replicate m #[]
+  for h : i in [0:m] do
+    let ds := ((deps sorted[i]).filterMap rank.get?).eraseDups
+    pend := pend.set! i ds.length
+    for d in ds do
+      users := users.modify d (·.push i)
+  let mut ready : Std.TreeSet Nat :=
+    Std.TreeSet.ofList ((List.range m).filter (pend[·]! == 0))
+  let mut placed : Array Bool := Array.replicate m false
+  let mut out : Array Nat := #[]
+  for _ in [0:m] do
+    match ready.min? with
+    | none => break
+    | some r =>
+      ready := ready.erase r
+      placed := placed.set! r true
+      out := out.push sorted[r]!
+      for u in users[r]! do
+        pend := pend.modify u (· - 1)
+        if pend[u]! == 0 then ready := ready.insert u
+  for h : i in [0:m] do
+    if !placed[i]! then out := out.push sorted[i]
+  return out
+
 /-- Reference cost `Σ weight(t) · widthAt(index t)` of a table order. -/
 def refCost (layout : ShareLayout) (weight : Nat → Nat) (order : Array Nat) : Nat :=
   order.zipIdx.foldl (fun acc (t, i) => acc + weight t * layout.widthAt i) 0
@@ -307,7 +360,7 @@ structure Allocation where
 /-- Phase 2 on the phase-1 table `order1` with entries `entries1` and roots
 `roots1`: the first tier, then the pinned order, unless the guard keeps the
 phase-1 order. The final order is checked to place every body reference
-before its user. -/
+before its user and to be a permutation of the phase-1 table. -/
 def allocate (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array Nat)
     (order1 : Array Nat) (entries1 roots1 : Array Ixon.Expr) :
     Except SharingError Allocation := do
@@ -318,11 +371,12 @@ def allocate (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array N
   let stored := (order1.toList.mergeSort (· ≤ ·)).toArray
   let (tier, slotStates) ← firstTier order1 weight deps (min 8 order1.size) limits
   let rest := stored.filter (!tier.contains ·)
-  let order2 := pinnedOrder dag deg tier ++ pinnedOrder dag deg rest
-  let kept := refCost layout weight order2 > refCost layout weight order1
+  let order2 := pinnedOrder dag deg tier ++ kahnOrder weight deps rest
+  let kept : Bool := refCost layout weight order2 > refCost layout weight order1
   let order := if kept then order1 else order2
-  unless respectsDeps order deps do
-    throw (.internal "the allocated order places a body reference after its user")
+  checkInternal (respectsDeps order deps) "the allocated order places a body reference after its user"
+  checkInternal ((order.toList.mergeSort (· ≤ ·)).toArray == stored)
+    "the allocated order is not a permutation of the phase-1 table"
   return { tier, slotStates, order, kept, refCost1 := refCost layout weight order1,
            refCostFinal := refCost layout weight order }
 
@@ -367,52 +421,70 @@ structure TieredSharingResult where
   stats : TieredStats
   deriving Inhabited
 
+/-- Phase-3 output of one candidate. -/
+structure Rematerialized where
+  entries : Array Ixon.Expr
+  roots : Array Ixon.Expr
+  /-- Length priced by the layout. -/
+  bytes : Nat
+  work : Nat
+  /-- Serialized (Tag4) length. -/
+  measured : Nat
+  deriving Inhabited
+
+/-- Phase 3: re-materialize the table `order` and the roots under the real
+widths, check the price against the layout length and against phase 1, and
+re-expand the output. -/
+def rematerialize (layout : ShareLayout) (limits : Limits) (ex : Expanded) (order : Array Nat)
+    (phase1Layout : Nat) : Except SharingError Rematerialized := do
+  let (entries, roots, predicted, work) ←
+    materializeTable (Prep.ofDag ex.dag) order ex.roots limits layout.widthAt
+  let priced := layoutBytes layout entries roots
+  checkInternal (priced == predicted)
+    s!"layout length {priced} differs from the evaluation {predicted}"
+  checkInternal (predicted ≤ phase1Layout)
+    s!"re-materialization {predicted} is longer than phase 1 {phase1Layout}"
+  let (entryIds, rootIds, _) ← reexpand limits ex.dag entries roots
+  checkInternal (entryIds == order) "re-materialized entries do not expand to the stored terms"
+  checkInternal (rootIds == ex.roots) "re-materialized roots do not expand to the input roots"
+  -- The real length: the bytes written with the current wire codec.
+  let measured := tag0Size entries.size +
+    (entries ++ roots).foldl (fun acc e => acc + (serExpr e).size) 0
+  checkInternal (layout != ShareLayout.wire || measured == predicted)
+    s!"serialized length {measured} differs from the wire-layout price {predicted}"
+  return { entries, roots, bytes := predicted, work, measured }
+
+/-- Assemble one candidate from its three phases. -/
+def tieredResult (layout : ShareLayout) (ex : Expanded) (w : Nat) (u : UniformSharingResult)
+    (a : Allocation) (m : Rematerialized) : TieredSharingResult :=
+  let p := Prep.ofDag ex.dag
+  let f := graphFacts ex.dag ex.roots
+  let k := ((Array.range ex.dag.size).filter fun t => f.deg[t]! ≥ 2 && p.base[t]! ≥ 2).size
+  let phase1Layout := layoutBytes layout u.result.sharing u.result.roots
+  let stats : TieredStats :=
+    { layout := layout, candidateCount := k, nominalW := layout.uniformWidth k, w := w,
+      candidateLengths := #[(w, m.bytes)], phase1ModelBytes := u.result.modelBytes,
+      phase1LayoutBytes := phase1Layout, slotStates := a.slotStates, firstTier := a.tier,
+      keptPhase1Order := a.kept, phase1RefCost := a.refCost1, finalRefCost := a.refCostFinal,
+      phase3LayoutBytes := m.bytes, savings := phase1Layout - m.bytes }
+  let rstats : Stats :=
+    { u.result.stats with materializedNodes := m.work, outputBytes := m.measured }
+  let res : ExactSharingResult :=
+    { u.result with
+      roots := m.roots, sharing := m.entries, tableTerms := a.order,
+      variableBytes := m.measured, modelBytes := m.bytes, stats := rstats }
+  { result := res, phase1 := u, stats := stats }
+
 /-- One candidate of the tiered construction: phases 1–3 with phase-1
 uniform width `w`. -/
 def tieredAtWidth (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w : Nat) :
     Except SharingError TieredSharingResult := do
-  let p := Prep.ofDag ex.dag
-  let n := ex.dag.size
-  let f := graphFacts ex.dag ex.roots
-  let k := ((Array.range n).filter fun t => f.deg[t]! ≥ 2 && p.base[t]! ≥ 2).size
-  -- Phase 1.
   let u ← optimizeUniformExpanded w limits ex
-  let order1 := u.result.tableTerms
-  let entries1 := u.result.sharing
-  let roots1 := u.result.roots
-  let phase1Layout := layoutBytes layout entries1 roots1
-  -- Phase 2.
-  let a ← allocate layout limits ex.dag f.deg order1 entries1 roots1
-  let order := a.order
-  -- Phase 3.
-  let (entries, roots, predicted, work) ← materializeTable p order ex.roots limits layout.widthAt
-  let priced := layoutBytes layout entries roots
-  unless priced == predicted do
-    throw (.internal s!"layout length {priced} differs from the evaluation {predicted}")
-  unless predicted ≤ phase1Layout do
-    throw (.internal s!"re-materialization {predicted} is longer than phase 1 {phase1Layout}")
-  let (entryIds, rootIds, _) ← reexpand limits ex.dag entries roots
-  unless entryIds == order do
-    throw (.internal "re-materialized entries do not expand to the stored terms")
-  unless rootIds == ex.roots do
-    throw (.internal "re-materialized roots do not expand to the input roots")
-  -- The real length: the bytes written with the current wire codec.
-  let measured := tag0Size entries.size +
-    (entries ++ roots).foldl (fun acc e => acc + (serExpr e).size) 0
-  if layout == ShareLayout.wire && measured != predicted then
-    throw (.internal s!"serialized length {measured} differs from the wire-layout price {predicted}")
-  let stats : TieredStats :=
-    { layout := layout, candidateCount := k, nominalW := layout.uniformWidth k, w := w,
-      candidateLengths := #[(w, predicted)], phase1ModelBytes := u.result.modelBytes,
-      phase1LayoutBytes := phase1Layout, slotStates := a.slotStates, firstTier := a.tier,
-      keptPhase1Order := a.kept, phase1RefCost := a.refCost1, finalRefCost := a.refCostFinal,
-      phase3LayoutBytes := predicted, savings := phase1Layout - predicted }
-  let rstats : Stats := { u.result.stats with materializedNodes := work, outputBytes := measured }
-  let res : ExactSharingResult :=
-    { u.result with
-      roots := roots, sharing := entries, tableTerms := order,
-      variableBytes := measured, modelBytes := predicted, stats := rstats }
-  return { result := res, phase1 := u, stats := stats }
+  let a ← allocate layout limits ex.dag (graphFacts ex.dag ex.roots).deg u.result.tableTerms
+    u.result.sharing u.result.roots
+  let m ← rematerialize layout limits ex a.order
+    (layoutBytes layout u.result.sharing u.result.roots)
+  return tieredResult layout ex w u a m
 
 /-- Whether candidate `a` beats `b`: fewer final layout bytes, then the
 lower width, then `setPrec` on the stored set. -/

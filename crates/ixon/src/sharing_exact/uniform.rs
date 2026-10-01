@@ -1470,9 +1470,10 @@ pub(crate) fn optimize_uniform(
   // contain the certain-stored terms.
   let slack = i128::from(tag0_len(k_cs.saturating_add(k_unc)))
     - i128::from(tag0_len(k_cs));
-  // Search each component.
-  let mut results: Vec<(Choice, Vec<Option<Choice>>)> = Vec::new();
-  for members in &comps {
+  // Search each component (independent searches; see `Parallelism`).
+  let search_one = |members: &Vec<TermId>,
+                    meter: &mut Meter<'_>|
+   -> Result<(Choice, CTable), SharingError> {
     let area = component_area(&up, &facts, members);
     let area_set: FxHashSet<TermId> = area.iter().copied().collect();
     let mut mult: std::collections::BTreeMap<TermId, u128> =
@@ -1502,8 +1503,7 @@ pub(crate) fn optimize_uniform(
       };
       let (phi0, _) = cx.phi(&[])?;
       cx.phi0 = phi0;
-      results.push(cx.search(meter)?);
-      continue;
+      return cx.search(meter);
     }
     let area_idx: FxHashMap<TermId, usize> =
       area.iter().enumerate().map(|(j, &t)| (t, j)).collect();
@@ -1575,7 +1575,31 @@ pub(crate) fn optimize_uniform(
     let bs = best_set
       .cloned()
       .ok_or_else(|| internal("component search found no choice"))?;
-    results.push(((bd, bs), tb));
+    Ok(((bd, bs), tb))
+  };
+  let budget = meter.parallel.components;
+  let mut results: Vec<(Choice, CTable)> = Vec::with_capacity(comps.len());
+  if budget <= 1 {
+    for members in &comps {
+      results.push(search_one(members, meter)?);
+    }
+  } else {
+    // Each component on its own meter; the counts are added in component
+    // order afterwards (`Meter::absorb`), then the results are used in the
+    // same order as sequentially.
+    let limits = meter.limits();
+    let outs = super::par::map_ranges(comps.len(), budget, |r| {
+      r.map(|j| {
+        let mut m = Meter::new(limits);
+        let res = search_one(&comps[j], &mut m);
+        (res, m.stats)
+      })
+      .collect()
+    });
+    for (res, stats) in outs {
+      meter.absorb(&stats)?;
+      results.push(res?);
+    }
   }
   let states_visited = meter.stats.states_created;
   // Combine: per-component optima, unless a lower count bracket is shorter.

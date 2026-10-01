@@ -39,6 +39,20 @@ If it does, canonicity is broken and the property fails — which in turn
 breaks the zk-PCC story, because two parties compiling the same library
 would produce different hashes and could not share proofs.
 
+The address hashes the constant's serialized bytes, and those bytes include
+its sharing table and every `Share` occurrence. Since format version 4, the
+sharing representation is itself canonical: a function of the constant's
+anonymous expressions (§6.7). So the property also holds modulo:
+
+- how the expression DAG happens to be shared in memory;
+- the order in which the compiler built it;
+- which compiler ran, Lean or Rust.
+
+<!-- PENDING: [route] both compilers emit canonical sharing (plan §3). At 9611c3b6 they still use the heuristic sharing. -->
+
+<!-- PENDING: [parity] Lean and Rust agree byte for byte on the final rules (plan §1 gate). -->
+
+
 ## 2. Why It Matters
 
 Ix is a **zero-knowledge proof-carrying code** platform. A proof that
@@ -221,6 +235,7 @@ Everything that depends on source choices is stripped before hashing:
 | `_N` suffixes on aux names         | internal `_nested.Ext_N` uses canonical `N`          |
 | Hygiene info on `Name`             | stripped by `compile_name`                           |
 | Non-canonical universe-level spellings (§10.6) | `canonUniv` at the compile univ-intern boundary (`CompileM.compileAndInternUnivCanon` / `compile.rs compile_univ_idx`) |
+| In-memory DAG sharing, construction order, compiler choice | the canonical sharing construction rebuilds `sharing` and every `Share` from the expanded roots (§6.7) |
 
 ### 5.2 Preserved in the metadata sidecar
 
@@ -763,6 +778,55 @@ Since the level canonicalization (§10.6), the recipe additionally
 presupposes canonical (`canonUniv`-fixed) `univs` tables — level
 spellings have left the hash input.
 
+Since format version 4, the recipe also presupposes the canonical
+`sharing` table of §6.7. The members array, `refs` and `univs` fix the
+expressions. The sharing construction then fixes how they are written.
+
+### 6.7 Canonical sharing
+
+A block's `sharing` table, and the choice of each occurrence (inline or
+`Share`), are part of the canonical definition. They are the output of
+`Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Rust
+`canonical_sharing_tiered(ShareLayout::TagN, ..)`) on the block's roots,
+with every existing `Share` expanded first. The roots are the
+`ConstantInfo` expressions in their fixed order (`constantInfoRootExprs`).
+The output depends only on those expanded expressions:
+
+- **Identity is structural.** Subterms are identified by structural IDs,
+  numbered by height and then by constructor, scalars and child IDs.
+  Hashes and pointers never decide identity. `canonicalize_det` proves
+  that the numbering depends only on the root terms.
+- **Metadata does not participate.** The arena, names, binder info and
+  call-site data play no part, so a metadata-only change never moves an
+  address. Conversely, re-sharing never invalidates metadata: arena nodes
+  follow the unshared tree and a `Share` is transparent to them
+  (`sharing-minimum-integration.md` §5.4).
+- **Every tie is pinned.** The stored set is the `setPrec`-least minimum of
+  phase 1. The first tier, the Kahn order and the width selection all have
+  fixed tie-breaks. The result therefore does not depend on search order,
+  parallelism or hash-map iteration. The Rust implementation's
+  deterministic parallelism is checked by byte-identity tests.
+- **Backward references.** Entry `i` references only entries below `i`.
+  Expanding the table left to right reproduces every root exactly.
+- **Idempotent.** Normalizing a canonically shared constant reproduces its
+  bytes.
+
+[Ixon](Ixon.md#sharing-system) describes the three phases and the width
+selection. It also states which properties are machine-checked: phase-1
+minimality, and the per-phase specifications of phases 2 and 3 and of the
+selection. Two things are not claimed: that the result is a global byte
+minimum, and that the Rust implementation is proved. Rust is held to the
+Lean definition by differential tests.
+
+A failed construction, for example one that exceeds a resource limit, is a
+compile error for that block. There is no fallback, because a fallback
+would make the address depend on resource limits rather than on the
+expressions.
+
+<!-- PENDING: [route] the compilers route every block, including aux-gen blocks, kernel egress and decompile recompile, through this construction (plan §3). The recompile invariant `Named.original` (§9.2) then relies on recompile using exactly this route (integration map risk 6). -->
+
+<!-- PENDING: [parity] the final Lean/Rust byte-identity gate on Init and the Mathlib sample (plan §1). -->
+
 ## 7. The Compile Pipeline
 
 ```
@@ -859,6 +923,16 @@ Five invariants hold at the pipeline seams:
    names on `Lam`/`All`/`Let`; the arena records them as
    `ExprMetaData::Binder` entries that never contribute to
    `Constant::commit()`.
+
+A sixth invariant governs the final step, where each block's bytes are
+written:
+
+6. **Sharing is canonical (format v4).** Each block's `sharing` table and
+   `Share` occurrences are the output of the canonical construction (§6.7)
+   on its expanded roots. They do not depend on how the compiler built or
+   shared the expression DAG.
+
+<!-- PENDING: [route] invariant 6 holds once both compilers route through the canonical construction (plan §3). -->
 
 ## 8. Call-Site Surgery
 
@@ -1633,7 +1707,7 @@ univPatches : Array UnivPatch
 UnivPatch   ::= { arenaIdx : UInt64, univIdxs : Array UInt64 }
 ```
 
-— empty (one `Tag0` zero byte) on the overwhelming majority of
+— empty (one zero byte, the count `N0(0)`) on the overwhelming majority of
 constants. The arena key is exact because occurrence identity is
 spelling-injective: `Ix.Level.mk*` hash spelling trees per node and
 `Expr.mkSort`/`mkConst` fold those hashes into expression identity
@@ -2209,6 +2283,24 @@ Landed with the §17.9 stages:
 - `univPatches`/`metaUnivs` serde vectors in the property-test
   generators and hand-written wire fixtures.
 
+### 16.8 Canonical sharing (§6.7)
+
+- `lake test -- exact-sharing` covers the plan fixtures, with exact bytes
+  (`T2 → T2` in 17 bytes, from 20 unshared). It also covers the uniform
+  optimizer against the width-state reference, the tiered construction's
+  slot allocation, idempotence, and brute force for the first tier.
+- `lake test -- exact-sharing-ffi` compares Lean and Rust bytes on fixtures
+  and on generated inputs.
+- The Rust crate's `sharing_exact` tests cover:
+  - representation independence: every valid incoming encoding normalizes
+    to the same bytes;
+  - parallel against sequential byte identity.
+- Roundtrip (§16.5) adds the end-to-end check: a recompiled block must
+  reproduce its address, so decompile's recompile and the compiler must
+  produce the same canonical sharing.
+
+<!-- PENDING: [tests] the `sharing` (heuristic) suite is removed, and the exact-sharing suites run on the TagN wire codec only (plan §7). -->
+
 ## 17. Open Work
 
 ### 17.1 PermCtx Builder Consolidation
@@ -2428,6 +2520,11 @@ is known to be partial.
 
 - [`docs/Ixon.md`](./Ixon.md) — binary format, Expr/Constant/Meta
   layout, serialization details.
+- [`docs/Ixon.md` § Sharing System](./Ixon.md#sharing-system) and
+  [`docs/sharing-minimum.md`](./sharing-minimum.md) §12 — the canonical sharing
+  construction (§6.7): `Ix/Sharing/Exact/Tiered.lean`,
+  `crates/ixon/src/sharing_exact/tiered.rs`, proofs in
+  `Ix/Compile/Verify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect}.lean`.
 - `src/ix/compile.rs` — `sort_consts`, `Frame`, `compile_expr`.
 - `src/ix/kernel/canonical_check.rs` — kernel-side `sort_consts`
   port: `compare_kuniv`, `compare_kexpr`, `compare_kconst`,

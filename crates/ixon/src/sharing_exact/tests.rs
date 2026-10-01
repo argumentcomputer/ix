@@ -2808,3 +2808,116 @@ fn tiered_all_candidates_hook() {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Parallelism inside one constant
+// ---------------------------------------------------------------------------
+
+fn par(widths: usize, components: usize, materialize: usize) -> Parallelism {
+  Parallelism { widths, components, materialize }
+}
+
+const PAR_BUDGETS: [(usize, usize, usize); 6] =
+  [(3, 1, 1), (1, 4, 1), (1, 1, 4), (3, 4, 4), (2, 16, 3), (3, 64, 64)];
+
+fn par_cases() -> Vec<Constant> {
+  let t2 = chain(2);
+  let t16 = chain(16);
+  let (nine, _) = nine_ref_fixture();
+  let mut cases = vec![
+    axiom(Expr::all(t2.clone(), t2), 1),
+    axiom(Expr::all(t16.clone(), t16), 1),
+    nine,
+  ];
+  let mut rng = Rng(83);
+  for i in 0..90u64 {
+    let c = match i % 3 {
+      0 => {
+        let roots = gen_heavy_parent(&mut rng);
+        wrap(&mut rng, roots)
+      },
+      1 => {
+        let roots = gen_search_roots(&mut rng);
+        wrap(&mut rng, roots)
+      },
+      _ => gen_constant(i + 97_000, 6, 30, 5),
+    };
+    cases.push(c);
+  }
+  cases
+}
+
+/// Every parallel budget gives the sequential bytes and the same result,
+/// counters included, on the section-2 fixtures and generated families.
+#[test]
+fn parallel_tiered_matches_sequential() {
+  let (mut compared, mut multi_comp) = (0, 0);
+  for (i, c) in par_cases().iter().enumerate() {
+    for l in LAYOUTS {
+      let (n, r) = normalize_constant_sharing_tiered(l, c, &limits()).unwrap();
+      if r.phase1.components.len() > 1 {
+        multi_comp += 1;
+      }
+      for (w, k, m) in PAR_BUDGETS {
+        let (pn, pr) =
+          normalize_constant_sharing_tiered_par(l, c, &limits(), par(w, k, m))
+            .unwrap();
+        assert_eq!(put(&pn), put(&n), "case {i} {l:?} budget {w},{k},{m}");
+        assert_eq!(pr, r, "case {i} {l:?} budget {w},{k},{m}");
+        compared += 1;
+      }
+    }
+  }
+  eprintln!(
+    "parallel vs sequential: {compared} runs identical ({multi_comp} sequential runs with more than one component)"
+  );
+  assert!(multi_comp > 20);
+}
+
+/// Limits still fail closed under parallelism. With sequential components
+/// the error is the sequential one; with parallel components the call fails
+/// exactly when the sequential call fails (the reported resource may differ,
+/// see `Parallelism`).
+#[test]
+fn parallel_tiered_limits_fail_closed() {
+  let (mut both_fail, mut both_ok) = (0, 0);
+  let tight_limits =
+    [(3, u64::MAX), (40, u64::MAX), (u64::MAX, 2_000), (60, 20_000)];
+  for (i, c) in par_cases().iter().enumerate() {
+    for (max_states, max_work) in tight_limits {
+      let tight = ExactSharingLimits { max_states, max_work, ..limits() };
+      let seq = normalize_constant_sharing_tiered(ShareLayout::TagN, c, &tight);
+      for (w, k, m) in PAR_BUDGETS {
+        let res = normalize_constant_sharing_tiered_par(
+          ShareLayout::TagN,
+          c,
+          &tight,
+          par(w, k, m),
+        );
+        match (&seq, &res) {
+          (Ok((a, _)), Ok((b, _))) => {
+            assert_eq!(put(a), put(b), "case {i}");
+            both_ok += 1;
+          },
+          (Err(e), Err(f)) => {
+            if k <= 1 {
+              assert_eq!(e, f, "case {i} budget {w},{k},{m}");
+            }
+            assert!(
+              matches!(f, SharingError::ResourceExhausted(_)),
+              "case {i}: {f:?}"
+            );
+            both_fail += 1;
+          },
+          _ => panic!(
+            "case {i} budget {w},{k},{m} states {max_states} work {max_work}: sequential ok {} vs parallel ok {}",
+            seq.is_ok(),
+            res.is_ok()
+          ),
+        }
+      }
+    }
+  }
+  eprintln!("parallel limits: {both_ok} both succeed, {both_fail} both fail");
+  assert!(both_fail > 50 && both_ok > 50);
+}
