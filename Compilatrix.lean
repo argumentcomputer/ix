@@ -217,6 +217,12 @@ import Compilatrix.Rt.Proof.Pow
 import Compilatrix.Rt.Proof.Mem
 import Compilatrix.Rt.Proof.Heap
 import Compilatrix.Rt.Proof.Alloc
+import Compilatrix.Rt.Proof.Chunk
+import Compilatrix.Rt.Proof.Env
+import Compilatrix.Rt.Proof.Ops
+import Compilatrix.Rt.Proof.OpsDiv
+import Compilatrix.Rt.Proof.Check
+import Compilatrix.Rt.Proof.OpsCheck
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine

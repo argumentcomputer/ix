@@ -23,14 +23,14 @@ variable {p : Program} {mem : X86.Memory} {ctx : Word} {fr : Frame} {rest : List
 @[simp] theorem env_insert_self (ρ : Env) (x : VReg) (v : Word) : (ρ.insert x v)[x]? = some v :=
   Std.HashMap.getElem?_insert_self
 
-theorem env_insert_ne (ρ : Env) {x y : VReg} (v : Word) (h : x ≠ y) : (ρ.insert x v)[y]? = ρ[y]? := by
+theorem env_insert_ne (ρ : Env) {x y : Nat} (v : Word) (h : x ≠ y) : (ρ.insert x v)[y]? = ρ[y]? := by
   rw [Std.HashMap.getElem?_insert]
   simp [h]
 
 @[simp] theorem env_empty (x : VReg) : ({} : Env)[x]? = none := Std.HashMap.getElem?_empty
 
 /-- A lookup after an insert, as an `if` on the registers (for `simp only`). -/
-theorem env_insert_get (ρ : Env) (x y : VReg) (v : Word) :
+theorem env_insert_get (ρ : Env) (x y : Nat) (v : Word) :
     (ρ.insert x v)[y]? = if x = y then some v else ρ[y]? := by
   rw [Std.HashMap.getElem?_insert]
   simp

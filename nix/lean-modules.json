@@ -1824,6 +1824,18 @@
   "Compilatrix.Rt.Proof.Pow":
   {"path": "Compilatrix/Rt/Proof/Pow.lean",
    "imports": ["Compilatrix.Rt.Proof.Procs"]},
+  "Compilatrix.Rt.Proof.OpsDiv":
+  {"path": "Compilatrix/Rt/Proof/OpsDiv.lean",
+   "imports": ["Compilatrix.Rt.Proof.Ops"]},
+  "Compilatrix.Rt.Proof.OpsCheck":
+  {"path": "Compilatrix/Rt/Proof/OpsCheck.lean",
+   "imports": ["Compilatrix.Rt.Proof.Check"]},
+  "Compilatrix.Rt.Proof.Ops":
+  {"path": "Compilatrix/Rt/Proof/Ops.lean",
+   "imports":
+   ["Compilatrix.Rt.Proof.Env",
+    "Compilatrix.Rt.Proof.Alloc",
+    "Compilatrix.Rt.Proof.Pow"]},
   "Compilatrix.Rt.Proof.Mem":
   {"path": "Compilatrix/Rt/Proof/Mem.lean",
    "imports": ["Compilatrix.X86.Memory", "Compilatrix.Lir.Proof.Eval"]},
@@ -1834,6 +1846,18 @@
     "Compilatrix.Cfg.Semantics",
     "Compilatrix.Rt.Proof.Mem",
     "Compilatrix.Rt.Proof.Words"]},
+  "Compilatrix.Rt.Proof.Env":
+  {"path": "Compilatrix/Rt/Proof/Env.lean",
+   "imports": ["Compilatrix.Rt.Proof.Heap", "Compilatrix.Rt.Proof.Chunk"]},
+  "Compilatrix.Rt.Proof.Chunk":
+  {"path": "Compilatrix/Rt/Proof/Chunk.lean",
+   "imports":
+   ["Compilatrix.Rt.Lower",
+    "Compilatrix.Src.Proof.NatMap",
+    "Compilatrix.Lir.Proof.Eval"]},
+  "Compilatrix.Rt.Proof.Check":
+  {"path": "Compilatrix/Rt/Proof/Check.lean",
+   "imports": ["Compilatrix.Rt.Proof.Ops"]},
   "Compilatrix.Rt.Proof.Alloc":
   {"path": "Compilatrix/Rt/Proof/Alloc.lean",
    "imports": ["Compilatrix.Rt.Proof.Heap"]},
@@ -3184,6 +3208,12 @@
     "Compilatrix.Rt.Proof.Mem",
     "Compilatrix.Rt.Proof.Heap",
     "Compilatrix.Rt.Proof.Alloc",
+    "Compilatrix.Rt.Proof.Chunk",
+    "Compilatrix.Rt.Proof.Env",
+    "Compilatrix.Rt.Proof.Ops",
+    "Compilatrix.Rt.Proof.OpsDiv",
+    "Compilatrix.Rt.Proof.Check",
+    "Compilatrix.Rt.Proof.OpsCheck",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",

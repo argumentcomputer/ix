@@ -16,7 +16,7 @@ namespace Compilatrix.Lir
 
 attribute [lir_eval] execList Stmt.exec Rhs.eval Addr.eval Arg.eval_v Arg.eval_imm env_insert_get env_empty
   evalArgs_cons evalArgs_nil bindParams Option.bind_eq_bind Option.bind_some Option.map_eq_map Option.map_some
-  Option.bind_none
+  Option.bind_none decide_eq_true_eq
 
 @[lir_eval] theorem option_pure {α : Type} (a : α) : (pure a : Option α) = some a := rfl
 
