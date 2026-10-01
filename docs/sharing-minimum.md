@@ -824,3 +824,15 @@ Lean/Rust parity on Init (W2): 0 byte disagreements in 56,622 constants, tiered 
   (`maxMaterializeWork` = 2^36) all 120 such constants and the 10 Init ones succeed at defaults.
 - Rust canonical construction over all 679,499 Mathlib constants: 0 failures, 184 s processing
   on 20 threads (315 s wall), 5.3 GB peak RSS; TagN bytes −22.65% vs the stored heuristic.
+
+### 12.11 Phase-1 width rule corrected (2026-10-01)
+
+Choosing the nominal uniform width from the candidate count K was wrong: the optimum stores far
+fewer terms than K, so real references are narrower than modelled and the w = 2/3 models exclude
+terms that pay. On Mathlib the K-based construction was +0.46% vs MSS at TagN widths (larger on
+221,050 constants). **New rule:** run phase 1 at each w ∈ {1, 2, 3}, carry each through phases 2
+and 3, and keep the result with the fewest real layout bytes; ties → lower w, then `setPrec`.
+Measured (W2, Rust, all constants certified at every w): Mathlib −0.82% vs MSS (smaller on
+405,832, equal 256,519, larger 903, max +1,485, p99.9 +1); Init −1.41% (larger on 5, max +6).
+Width 1 wins for 505,671 Mathlib constants, width 2 for 156,170, width 3 for 1,413. Cost: three
+phase-1 runs instead of one (about 3× the time; still minutes for all of Mathlib in Rust).
