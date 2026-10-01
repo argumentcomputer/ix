@@ -77,6 +77,25 @@ the decoded environment, so the peak RSS is 47.3 GB. On the same machine,
 upstream con-leche (`3ca9e2fe`, `--verified --jobs=1`) takes 17.8 min and
 9.6 GB on a lean4export of Mathlib.
 
+With `kernel-check-ixe-opt` (untrusted measurement driver; same reader and
+verified check) on the same machine (AWS r8i.16xlarge, Xeon 6975P-C, one
+process at a time on an idle machine): a streaming load
+(`CHECK_IXE_LOAD=stream-free CHECK_IXE_THREAD=1 CHECK_IXE_MARK=1`, one core)
+gives the same rows in 19 min 43 s at a 20.2 GB peak. The two-phase pool
+(`CHECK_IXE_LOAD=stream CHECK_IXE_MARK=1 CHECK_IXE_PAR=n`) installs in a
+sequential phase A (234 s after a 60 s load, then 10 s of marking) and
+checks the 659,344 recorded checks in phase B, with 0 failures:
+
+| Workers | Phase B | Speed-up | Wall | Peak RSS |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 997.9 s | 1.00× | 21 min 49 s | 22.3 GB |
+| 4 | 253.3 s | 3.94× | 9 min 24 s | 22.3 GB |
+| 8 | 127.1 s | 7.85× | 7 min 18 s | 22.3 GB |
+| 16 | 64.1 s | 15.6× | 6 min 15 s | 22.3 GB |
+| 32 | 34.0 s | 29.4× | 5 min 45 s | 22.3 GB |
+
+The certified entry `Ix.Ixon.Admission.checkBytes` is sequential.
+
 The intrinsic kernel's native benchmark runner (`bench-certified-kernel`)
 and its environment check (`kernel-census-intrinsic`) were retired with that kernel
 (`docs/kernel.md`, "The retired intrinsic kernel"); their measurements are
