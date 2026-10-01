@@ -331,6 +331,14 @@ lean_exe «kernel-order» where
   root := `Tests.Ix.Kernel.BlockOrderHost
   moreLinkObjs := #[ix_rs_test]
 
+/-- Host-compiled Lean declarations through the certified entry
+`Ix.Ixon.Admission.checkBytes`, each with an exact expected verdict (L6b; the
+counterpart of the intrinsic kernel's retired `kernel-ingress`). -/
+lean_exe «kernel-entry-cases» where
+  root := `Tests.Ix.Kernel.EntryCases
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 /- The intrinsic reference kernel's census (`kernel-census-intrinsic`,
 `kernel-census-probe`, library `KernelCensus`), its host differentials
 (`kernel-differential`, `kernel-ingress`, `kernel-level-differential`) and
@@ -363,8 +371,8 @@ lean_exe «conleche-pin-gen» where
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
-the host-side tests, provenance, and the `ConLeche/**` layering and
-trust-surface fences. -/
+the host-side tests, provenance, the `ConLeche/**` layering and
+trust-surface fences, and the certified entry's host-compiled cases. -/
 script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
@@ -397,6 +405,14 @@ script "check-kernel" (args) := do
   -- while `ConLeche/` is absent; the trust-surface lexer self-test always runs.
   run "bash" #["scripts/layering.sh"]
   run "bash" #["scripts/trust-surface.sh"]
+  -- Host-compiled Lean declarations through the certified entry, each with
+  -- an exact expected verdict (L6b; `Tests/Ix/Kernel/EntryCases.lean`).
+  run "lake" #["build", "--wfail", "kernel-entry-cases"]
+  let entry ← IO.Process.output { cmd := ".lake/build/bin/kernel-entry-cases" }
+  IO.FS.writeFile ".lake/build/kernel-entry-cases.jsonl" entry.stdout
+  IO.eprint entry.stderr
+  unless entry.exitCode == 0 do
+    throw <| IO.userError "kernel-entry-cases failed; see .lake/build/kernel-entry-cases.jsonl"
   IO.println "Certified kernel checks passed."
   return 0
 

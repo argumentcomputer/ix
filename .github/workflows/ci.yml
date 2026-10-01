@@ -90,9 +90,9 @@ jobs:
             Mathlib.SetTheory.Cardinal.Regular \
             Mathlib.SetTheory.ZFC.VonNeumann \
             Mathlib.SetTheory.ZFC.Cardinal
-      - name: Check certified kernel, provenance, codec and order differentials, and model
+      - name: Check certified kernel, provenance, codec and order differentials, model, and entry cases
         run: lake run check-kernel --with-model
-      - name: Retain codec and block-order comparisons
+      - name: Retain codec, block-order and entry-case results
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
@@ -100,6 +100,7 @@ jobs:
           path: |
             .lake/build/kernel-codec.log
             .lake/build/kernel-order.jsonl
+            .lake/build/kernel-entry-cases.jsonl
           if-no-files-found: warn
 
   rust-test:
