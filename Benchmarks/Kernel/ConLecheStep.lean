@@ -19,7 +19,10 @@ them one record at a time, continuing past failures.
 **The order.** The prelude's records first, then a depth-first postorder
 over table references with projections replaced by their owners, in which a
 pinned `Nat` operation also depends on its certificate ground
-(`natOpDeps`), as `Frontend.preparePrelude`'s hoist arranges.
+(`natOpDeps`), as `Frontend.preparePrelude`'s hoist arranges, and a record
+that contains a literal depends on the constants the literal references
+(`ConLecheReader.literalEdges`: the `Nat` trio, and for a string literal the
+string-support constants).
 
 **The step.** `Checker.step` is phase A of `ConLeche.Cached.checkDecls`
 (`annotDeclStep`) on one declaration, then phase B (`checkPendingList`) on
@@ -195,6 +198,10 @@ def groundEdges (pins : Std.HashMap (ConstRef Address) CName) : Std.HashMap Addr
             out := out.insert r.block ((out.getD r.block #[]).push gr.block)
   return out
 
+/-- The union of two edge maps. -/
+def mergeEdges (a b : Std.HashMap Address (Array Address)) : Std.HashMap Address (Array Address) :=
+  b.fold (fun m k vs => m.insert k ((m.getD k #[]) ++ vs.filter (!(m.getD k #[]).contains ·))) a
+
 /-- The host's reducibility hints, at the address the compiler registers
 them under (a projection's for a block member). -/
 def hintsOf (store : RecordStore) (hints : Std.HashMap Address Lean.ReducibilityHints) :
@@ -254,7 +261,7 @@ def setup (store : RecordStore) (blobs : Address → Option ByteArray)
   let records := store.toArray
   let index := buildIndex (store[·]?) pins.names records
   let cx : Ctx := { store := (store[·]?), blob := blobs, pins, index, hint }
-  let extra := groundEdges pins.names
+  let extra := mergeEdges (groundEdges pins.names) (literalEdges pins.names records)
   let first := pre.records.foldl (fun acc (a, c) =>
     let o := owner a c
     if acc.contains o then acc else acc.push o) #[]

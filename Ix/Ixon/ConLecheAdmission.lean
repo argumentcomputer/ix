@@ -31,7 +31,12 @@ existing `Ix.Ixon.Admission.checkBytes` (which it does not change):
 `checkBytes_has_model` is `ConLeche.model_exists` at the prepared
 declarations: the reader owes nothing, because the main theorem holds for
 every declaration array. The host still supplies record order, address keys
-and literal blobs; addresses are keys, not authenticated content hashes.
+and literal blobs; addresses are keys, not authenticated content hashes. The
+entry does not reorder beyond `preparePrelude`: a host order is a dependency
+order in which each record follows its references, a pinned `Nat` operation's
+certificate ground, and the constants its literals reference
+(`ConLecheReader.literalEdges`; con-leche declines a string literal before the
+string-support declarations), as the census driver's order is.
 -/
 
 namespace Ix.Ixon.ConLecheAdmission

@@ -344,6 +344,23 @@ def stringPins : Pins :=
 -- without the support pinned on these constants, the literal does not check
 #guard !accepts strings strBlobs
 
+/-! ## The constants a literal references
+
+A record that contains a literal depends on the records of the constants the
+literal references (`literalEdges`): the `Nat` block for a `Nat` literal, and
+also the string-support records for a string literal. -/
+
+def natBlock : Address := match builtinPins.names.toList.find? (toString ·.2 == "Nat") with
+  | some (r, _) => r.block
+  | none => address 0
+
+#guard literalKinds strEq == (true, true) && literalKinds litEq == (true, false) &&
+  literalKinds charOfNat == (false, false)
+#guard (literalEdges stringPins.names strings.toArray)[address 75]? ==
+  some #[natBlock, address 70, address 74, address 50, address 60, address 64]
+#guard ((literalEdges stringPins.names strings.toArray)[address 74]?).isNone
+#guard (literalEdges builtinPins.names #[(address 42, litEq)])[address 42]? == some #[natBlock]
+
 /-! ## Negative: pinned names on constants of another shape -/
 
 /-- A one-constructor `Type` stored under the real `Eq` block's address, with

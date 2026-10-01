@@ -905,6 +905,79 @@ def readRecord (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant) : R
       pure { decls := out, projRewrites := rewrites }
     else malformed "a block mixes recursors and definitions"
 
+/-! ## The constants a literal references
+
+`ConLeche.Expr.constsResolve` counts a `Nat` literal as a reference to the
+`Nat` basis trio (`Nat`, `Nat.zero`, `Nat.succ`) and a `String` literal as a
+reference to that trio and the seven string-support constants (`String`,
+`String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat`), and
+the checker declines a string literal while those are not installed. An
+Ixon record that only uses a literal names none of them (its `nat`/`str`
+nodes point at blobs), so a dependency order over table references alone can
+put a literal user before the support: `String.instInhabited`, whose value
+is `⟨""⟩`, came before `String.ofList` and `Char.ofNat` in the L4a census
+and blocked 760 records. `literalEdges` adds those implicit references as
+dependency edges, as the census adds a pinned `Nat` operation's certificate
+ground (`natOpDeps`). The `Nat` trio is the prelude's `Nat` block, which
+every order here puts first, so only the string edges change an order; the
+`Nat` edges keep the relation complete for the blocking report. -/
+
+/-- Whether a record's expressions contain a `Nat` literal and a `String`
+literal: `(nat, str)`. Every expression is walked once: the top-level
+expressions without following `share`, and each sharing entry. -/
+def literalKinds (c : Ixon.Constant) : Bool × Bool :=
+  let exprs : Array Ixon.Expr := c.sharing ++ match c.info with
+    | .defn d => #[d.typ, d.value]
+    | .recr r => #[r.typ] ++ r.rules.map (·.rhs)
+    | .axio a => #[a.typ]
+    | .quot q => #[q.typ]
+    | .muts ms => ms.flatMap fun
+      | .defn d => #[d.typ, d.value]
+      | .indc i => #[i.typ] ++ i.ctors.map (·.typ)
+      | .recr r => #[r.typ] ++ r.rules.map (·.rhs)
+    | _ => #[]
+  exprs.foldl go (false, false)
+where
+  go (acc : Bool × Bool) : Ixon.Expr → Bool × Bool
+    | .nat _ => (true, acc.2)
+    | .str _ => (acc.1, true)
+    | .prj _ _ v => go acc v
+    | .app f a => go (go acc f) a
+    | .lam _ t b => go (go acc t) b
+    | .all _ _ t b => go (go acc t) b
+    | .letE _ t v b => go (go (go acc t) v) b
+    | _ => acc
+
+/-- The constants a `Nat` literal references (`Expr.constsResolve`). -/
+def natLitSupportNames : List CName :=
+  [ConLeche.natName, ConLeche.natZeroName, ConLeche.natSuccName]
+
+/-- The constants a `String` literal references (`Expr.constsResolve`). -/
+def strLitSupportNames : List CName :=
+  natLitSupportNames ++
+    [ConLeche.stringName, ConLeche.stringOfListName, ConLeche.listName, ConLeche.listNilName,
+     ConLeche.listConsName, ConLeche.charName, ConLeche.charOfNatName]
+
+/-- Dependency edges from every record that contains a literal to the records
+(block addresses) of the constants the literal references, under a pin table.
+A support constant the table does not pin contributes no edge (the checker
+then declines the literal, as it would anyway). -/
+def literalEdges (pins : Std.HashMap (ConstRef Address) CName)
+    (records : Array (Address × Ixon.Constant)) : Std.HashMap Address (Array Address) := Id.run do
+  let byName : Std.HashMap CName Address := pins.fold (fun m r n => m.insert n r.block) {}
+  let targets (names : List CName) : Array Address :=
+    names.foldl (fun acc n => match byName[n]? with
+      | some a => if acc.contains a then acc else acc.push a
+      | none => acc) #[]
+  let natTargets := targets natLitSupportNames
+  let strTargets := targets strLitSupportNames
+  let mut out : Std.HashMap Address (Array Address) := {}
+  for (a, c) in records do
+    let (nat, str) := literalKinds c
+    let ts := (if str then strTargets else if nat then natTargets else #[]).filter (· != a)
+    unless ts.isEmpty do out := out.insert a ts
+  return out
+
 /-! ## Streams -/
 
 /-- The records' store: the supplied records first, then a fallback (the
