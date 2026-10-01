@@ -183,7 +183,9 @@ def authored : Array String := #[
   "Ix/Kernel/Inductive/Structure.lean", "Ix/Kernel/Inductive/Natural.lean", "Ix/Kernel/Fidelity.lean",
   "Ix/Kernel/Model/QuotientValues.lean", "Ix/Kernel/Certified/Quotient/Install.lean",
   "Ix/Kernel/Certified/Standard/Install.lean", "Ix/Kernel/Certified/Basis/Empty.lean",
-  "Ix/Kernel/Runtime/Expr.lean", "Ix/Kernel/Runtime/Stack.lean", "Ix/Kernel/Runtime/Close.lean"
+  "Ix/Kernel/Runtime/Expr.lean", "Ix/Kernel/Runtime/Stack.lean", "Ix/Kernel/Runtime/Close.lean",
+  "Ix/Kernel/ConLeche/Reader.lean", "Ix/Kernel/ConLeche/Prelude.lean",
+  "Ix/Kernel/ConLeche/PinData.lean", "Ix/Ixon/ConLecheAdmission.lean"
 ]
 
 /-- Lean modules ported from the old branch. -/

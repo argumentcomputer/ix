@@ -358,6 +358,17 @@ lean_exe «kernel-census-probe» where
   root := `Benchmarks.Kernel.CensusProbe
   moreLinkObjs := #[ix_rs]
 
+/-- Con-leche's verified checker through the Ixon reader (plan v4, L4): the
+`checkBytes`-shaped entry and the per-record step (untrusted). -/
+lean_lib KernelConLeche where
+  roots := #[`Ix.Ixon.ConLecheAdmission, `Benchmarks.Kernel.ConLecheStep]
+
+/-- Regenerates `Ix/Kernel/ConLeche/PinData.lean` (pins and prelude) from a
+compiled Init (`.lake/census/initstd.ixe`), verified by con-leche. -/
+lean_exe «conleche-pin-gen» where
+  root := `Benchmarks.Kernel.ConLechePinGen
+  moreLinkObjs := #[ix_rs]
+
 /-- Run the certified kernel gate: the standalone strict build with its audits,
 the host-side tests, provenance, and the `ConLeche/**` layering and
 trust-surface fences. -/
