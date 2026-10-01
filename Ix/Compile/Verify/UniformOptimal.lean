@@ -691,4 +691,333 @@ theorem group_modular {dag : Dag} (hwf : DagWF dag) {roots : Array Nat}
   rw [hcx.width]
   exact hmod
 
+/-! ## The global setting and the shape of a minimum -/
+
+/-- The uncertain terms. -/
+def uunc (dag : Dag) (roots : Array Nat) (w : Nat) (θ : _root_.Int) : List Nat :=
+  (List.range dag.size).filter (fun t => (ucls dag roots w θ)[t]! == .uncertain)
+
+/-- The optimizer's global checks and choices. -/
+structure GlobalWF (dag : Dag) (roots : Array Nat) (w : Nat) (θ : _root_.Int) (cs : List Nat) :
+    Prop where
+  wf : DagWF dag
+  hroots : ∀ r ∈ roots.toList, r < dag.size
+  reach : ∀ y, y < dag.size → ∃ r ∈ roots.toList, Desc dag r y
+  theta : θ = 2 ∨ (θ = 1 ∧ tag0Size ((ucand dag roots w).filter id).size =
+    tag0Size ((ucls dag roots w 2).filter (· == .certainStored)).size)
+  cs : cs = (List.range dag.size).filter (fun t => (ucls dag roots w θ)[t]! == .certainStored)
+
+theorem ucls_eq {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} {t : Nat}
+    (ht : t < dag.size) :
+    (ucls dag roots w θ)[t]! =
+      if certainExcludedTest (Prep.ofDag dag) (graphFacts dag roots) w t then .certainExcluded
+      else if (graphFacts dag roots).deg[t]! < 2 then .lowDegree
+      else if storedGainC (Prep.ofDag dag) (uniformBounds (Prep.ofDag dag) w (ucand dag roots w)) w t
+          (visibleCounts dag roots (ucand dag roots w)).1[t]!
+          (visibleCounts dag roots (ucand dag roots w)).2[t]! ≥ θ then .certainStored
+      else .uncertain := by
+  simp only [ucls, classifyWith]
+  rw [getElem!_range_map _ (by rw [ofDag_dag]; exact ht)]
+
+theorem GlobalWF.mem_cs {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int}
+    {cs : List Nat} (hG : GlobalWF dag roots w θ cs) (t : Nat) :
+    t ∈ cs ↔ t < dag.size ∧ (ucls dag roots w θ)[t]! = .certainStored := by
+  rw [hG.cs, List.mem_filter, List.mem_range]
+  constructor
+  · rintro ⟨h1, h2⟩; exact ⟨h1, uclass_eq_of_beq h2⟩
+  · rintro ⟨h1, h2⟩; exact ⟨h1, by rw [h2]; exact uclass_beq_self _⟩
+
+theorem mem_uunc {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} (t : Nat) :
+    t ∈ uunc dag roots w θ ↔ t < dag.size ∧ (ucls dag roots w θ)[t]! = .uncertain := by
+  rw [uunc, List.mem_filter, List.mem_range]
+  constructor
+  · rintro ⟨h1, h2⟩; exact ⟨h1, uclass_eq_of_beq h2⟩
+  · rintro ⟨h1, h2⟩; exact ⟨h1, by rw [h2]; exact uclass_beq_self _⟩
+
+theorem GlobalWF.cs_nodup {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int}
+    {cs : List Nat} (hG : GlobalWF dag roots w θ cs) : cs.Nodup := by
+  rw [hG.cs]; exact List.nodup_range.sublist List.filter_sublist
+
+theorem uunc_nodup (dag : Dag) (roots : Array Nat) (w : Nat) (θ : _root_.Int) :
+    (uunc dag roots w θ).Nodup :=
+  List.nodup_range.sublist List.filter_sublist
+
+/-- Certain-stored and uncertain terms have in-degree at least 2. -/
+theorem deg_of_ucls {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} {t : Nat}
+    (ht : t < dag.size)
+    (h : (ucls dag roots w θ)[t]! = .certainStored ∨ (ucls dag roots w θ)[t]! = .uncertain) :
+    2 ≤ (graphFacts dag roots).deg[t]! := by
+  rw [ucls_eq ht] at h
+  by_cases hce : certainExcludedTest (Prep.ofDag dag) (graphFacts dag roots) w t = true
+  · rw [if_pos hce] at h; rcases h with h | h <;> cases h
+  · rw [if_neg hce] at h
+    by_cases hdeg : (graphFacts dag roots).deg[t]! < 2
+    · rw [if_pos hdeg] at h; rcases h with h | h <;> cases h
+    · omega
+
+/-- The threshold condition of `classify_sound` at a candidate a minimum omits. -/
+theorem GlobalWF.theta_ok {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int}
+    {cs : List Nat} (hG : GlobalWF dag roots w θ cs) {X : List Nat}
+    (hX : IsMinimum dag w roots X) {t : Nat} (htn : t < dag.size)
+    (hc : (ucand dag roots w)[t]! = true) (htX : t ∉ X) :
+    θ = 2 ∨ (θ = 1 ∧ tag0Size (X.length + 1) = tag0Size X.length) := by
+  rcases hG.theta with h | ⟨h1, h2⟩
+  · exact Or.inl h
+  · exact Or.inr ⟨h1, threshold_one_sound hG.wf roots hG.hroots hG.reach w hX htn h2 hc htX⟩
+
+/-- **Every minimum contains the certain-stored terms.** -/
+theorem GlobalWF.min_cs {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int}
+    {cs : List Nat} (hG : GlobalWF dag roots w θ cs) {X : List Nat}
+    (hX : IsMinimum dag w roots X) {t : Nat} (ht : t ∈ cs) : t ∈ X := by
+  obtain ⟨htn, hcls⟩ := (hG.mem_cs t).mp ht
+  refine Classical.byContradiction (fun htX => ?_)
+  have hθ := hG.theta_ok hX htn (ucand_of_ucls htn (Or.inl hcls)) htX
+  exact htX ((classify_sound hG.wf roots hG.hroots hG.reach w hX htn θ hθ).2 hcls)
+
+/-- **Every term of a minimum is certain-stored or uncertain.** -/
+theorem GlobalWF.min_class {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int}
+    {cs : List Nat} (hG : GlobalWF dag roots w θ cs) {X : List Nat}
+    (hX : IsMinimum dag w roots X) {t : Nat} (ht : t ∈ X) :
+    t < dag.size ∧ ((ucls dag roots w θ)[t]! = .certainStored ∨
+      (ucls dag roots w θ)[t]! = .uncertain) := by
+  obtain ⟨htn, hdeg⟩ := hX.1.2 t ht
+  refine ⟨htn, ?_⟩
+  rw [ucls_eq htn]
+  by_cases hce : certainExcludedTest (Prep.ofDag dag) (graphFacts dag roots) w t = true
+  · exfalso
+    unfold certainExcludedTest at hce
+    simp only [decide_eq_true_eq] at hce
+    exact excluded_of_minimum hG.wf roots hG.hroots w hX htn hce ht
+  · rw [if_neg hce, if_neg (by omega)]
+    split
+    · exact Or.inl rfl
+    · exact Or.inr rfl
+
+theorem nodup_app {a b : List Nat} (ha : a.Nodup) (hb : b.Nodup) (hd : ∀ x ∈ a, x ∉ b) :
+    (a ++ b).Nodup :=
+  List.nodup_append.mpr ⟨ha, hb, fun x hx y hy hxy => hd x hx (hxy ▸ hy)⟩
+
+theorem strictInc_spec {a : Array Nat} (h : strictInc a = true) : a.toList.Pairwise (· < ·) := by
+  unfold strictInc at h
+  rw [List.all_eq_true] at h
+  have hstep : ∀ j, j + 1 < a.size → a[j]! < a[j + 1]! := by
+    intro j hj
+    have := h j (List.mem_range.mpr (by omega))
+    simp only [decide_eq_true_eq] at this
+    exact this hj
+  have hlt : ∀ x y, x < y → y < a.size → a[x]! < a[y]! := by
+    intro x y hxy hy
+    induction y with
+    | zero => omega
+    | succ y ih =>
+      have := hstep y hy
+      by_cases hxy' : x = y
+      · subst hxy'; exact this
+      · exact Nat.lt_trans (ih (by omega) (by omega)) this
+  rw [List.pairwise_iff_getElem]
+  intro x y hx hy hxy
+  simp only [Array.length_toList] at hx hy
+  have := hlt x y hxy hy
+  rw [arr_getElem!_eq _ hx, arr_getElem!_eq _ hy] at this
+  simpa using this
+
+theorem strictInc_nodup {a : Array Nat} (h : strictInc a = true) : a.toList.Nodup :=
+  (strictInc_spec h).imp (fun h => Nat.ne_of_lt h)
+
+/-- The closure lists of a context in the form of `ulen_split_component`. -/
+theorem SCtxWF.cost_eq {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} {cs : List Nat}
+    {cx : SCtx} (hcx : SCtxWF dag roots w θ cs cx) (V : List Nat) :
+    scost cx dag V = compCost dag w cx.up.opaq
+      (roots.toList.filter ((markTable dag.size
+        (upClosure dag ((markTable dag.size cx.members)[·]!)))[·]!))
+      ((upClosure dag ((markTable dag.size cx.members)[·]!)).toList.filter (cx.up.opaq[·]!)) V := by
+  unfold scost
+  rw [hcx.width, hcx.rootsC, hcx.storedInC, hcx.closure, Array.toList_filter, Array.toList_filter]
+
+/-- **Replacing a group's part of a minimum.** Under a separated reduced
+context `(I, O)` respected by a minimum `Y`, the group part of `Y` costs at
+most `slack` more than any other part `S` of the group (otherwise replacing
+it by `S` would shorten `Y`). -/
+theorem group_rep {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} {cs : List Nat}
+    (hG : GlobalWF dag roots w θ cs) {cx : SCtx} (hcx : SCtxWF dag roots w θ cs cx)
+    (comp : Nat → Nat) (i : Nat)
+    (hcomp : ∀ a b, a < dag.size → (ucls dag roots w θ)[a]! = .uncertain →
+      (ucls dag roots w θ)[b]! = .uncertain → NReach (Prep.ofDag dag) (cx.up.opaq[·]!) a b →
+      comp a = comp b)
+    (hmemi : ∀ t, t < dag.size → (ucls dag roots w θ)[t]! = .uncertain →
+      (t ∈ cx.members.toList ↔ comp t = i))
+    {g I O : Array Nat} (hchk : cx.sepCheck g I O = true) (hgn : g.toList.Nodup)
+    (hIn : I.toList.Nodup)
+    (hI : ∀ t ∈ I.toList, t ∈ cx.members.toList ∧ t ∉ O.toList)
+    (hO : ∀ t ∈ O.toList, t ∈ cx.members.toList)
+    {Y : List Nat} (hY : IsMinimum dag w roots Y)
+    (hYI : ∀ t ∈ I.toList, t ∈ Y) (hYO : ∀ t ∈ O.toList, t ∉ Y)
+    {S : List Nat} (hS : ∀ t ∈ S, t ∈ g.toList) (hSn : S.Nodup) :
+    scost cx dag (I.toList ++ g.toList.filter (· ∈ Y)) ≤
+      scost cx dag (I.toList ++ S) +
+        (tag0Size (cs.length + (uunc dag roots w θ).length) - tag0Size cs.length) := by
+  have hwf := hG.wf
+  have hθ1 : 1 ≤ θ := by rcases hG.theta with h | ⟨h, _⟩ <;> omega
+  have hcsc : ∀ t ∈ cs, t < dag.size ∧ (ucls dag roots w θ)[t]! = .certainStored :=
+    fun t ht => (hG.mem_cs t).mp ht
+  have hdag : cx.up.prep.dag = dag := by rw [hcx.prep]; rfl
+  obtain ⟨ha, _⟩ := sepCheck_spec (cx := cx) (by rw [hdag]; exact hwf)
+    (by rw [hdag, hcx.closure])
+    (by intro t ht; rw [hdag]; exact (hcx.mem t (Array.mem_toList_iff.mpr ht)).1) hchk
+  rw [hdag] at ha
+  have hg : ∀ t ∈ g.toList, t ∈ cx.members.toList ∧ t ∉ I.toList ∧ t ∉ O.toList := by
+    intro t ht
+    obtain ⟨h1, _, h3, h4⟩ := ha t (Array.mem_toList_iff.mp ht)
+    exact ⟨Array.mem_toList_iff.mpr h1, fun h => h3 (Array.mem_toList_iff.mp h),
+      fun h => h4 (Array.mem_toList_iff.mp h)⟩
+  have hmemu : ∀ t ∈ cx.members.toList, t < dag.size ∧ (ucls dag roots w θ)[t]! = .uncertain :=
+    hcx.mem
+  have hmemcs : ∀ t ∈ cx.members.toList, t ∉ cs := by
+    intro t ht hcs
+    have h1 := (hcsc t hcs).2
+    rw [(hmemu t ht).2] at h1
+    cases h1
+  -- the parts of `Y`
+  generalize hYgd : g.toList.filter (· ∈ Y) = Yg
+  let D := (cx.members.toList.filter (· ∈ Y)).filter (fun t => decide (t ∉ g.toList ∧ t ∉ I.toList))
+  let R := Y.filter (fun t => (ucls dag roots w θ)[t]! == .uncertain && comp t != i)
+  have hYg : ∀ t ∈ Yg, t ∈ g.toList ∧ t ∈ Y := by
+    intro t ht; rw [← hYgd] at ht; simpa using ht
+  have hD : ∀ t ∈ D, t ∈ cx.members.toList ∧ t ∈ Y ∧ t ∉ g.toList ∧ t ∉ I.toList := by
+    intro t ht; simp only [D, List.mem_filter, decide_eq_true_eq] at ht; exact ⟨ht.1.1, ht.1.2, ht.2⟩
+  have hR : ∀ t ∈ R, t ∈ Y ∧ (ucls dag roots w θ)[t]! = .uncertain ∧ comp t ≠ i := by
+    intro t ht
+    simp only [R, List.mem_filter, Bool.and_eq_true, bne_iff_ne, ne_eq] at ht
+    exact ⟨ht.1, uclass_eq_of_beq ht.2.1, ht.2.2⟩
+  have hRn : ∀ t ∈ R, t < dag.size := fun t ht => (hY.1.2 t (hR t ht).1).1
+  have hRm : ∀ t ∈ R, t ∉ cx.members.toList := fun t ht hm =>
+    (hR t ht).2.2 ((hmemi t (hRn t ht) (hR t ht).2.1).mp hm)
+  have hRcs : ∀ t ∈ R, t ∉ cs := fun t ht hcs => by
+    have := (hcsc t hcs).2; rw [(hR t ht).2.1] at this; cases this
+  have hYn := hY.1.1
+  have hmn := hcx.memNodup
+  -- duplicate-freedom of the rearrangements
+  have hDn : D.Nodup := List.Nodup.sublist (List.Sublist.trans List.filter_sublist
+    List.filter_sublist) hmn
+  have hYgn : Yg.Nodup := by rw [← hYgd]; exact List.Nodup.sublist List.filter_sublist hgn
+  have hRnd : R.Nodup := List.Nodup.sublist List.filter_sublist hYn
+  have hcsn := hG.cs_nodup
+  have hVn : ∀ X : List Nat, X.Nodup → (∀ t ∈ X, t ∈ g.toList) →
+      (I.toList ++ D ++ X).Nodup := by
+    intro X hXn hXg
+    apply nodup_app (nodup_app hIn hDn (fun x hx hxD => (hD x hxD).2.2.2 hx)) hXn
+    intro x hx hxX
+    rcases List.mem_append.mp hx with h | h
+    · exact (hg x (hXg x hxX)).2.1 h
+    · exact (hD x h).2.2.1 (hXg x hxX)
+  have hVm : ∀ X : List Nat, (∀ t ∈ X, t ∈ g.toList) →
+      ∀ t ∈ I.toList ++ D ++ X, t ∈ cx.members.toList := by
+    intro X hXg t ht
+    rcases List.mem_append.mp ht with h | h
+    · rcases List.mem_append.mp h with h | h
+      · exact (hI t h).1
+      · exact (hD t h).1
+    · exact (hg t (hXg t h)).1
+  have hYn' : ∀ X : List Nat, X.Nodup → (∀ t ∈ X, t ∈ g.toList) →
+      (cs ++ (I.toList ++ D ++ X) ++ R).Nodup := by
+    intro X hXn hXg
+    apply nodup_app (nodup_app hcsn (hVn X hXn hXg) (fun x hx hxV => hmemcs x (hVm X hXg x hxV) hx))
+      hRnd
+    intro x hx hxR
+    rcases List.mem_append.mp hx with h | h
+    · exact hRcs x hxR h
+    · exact hRm x hxR (hVm X hXg x h)
+  have hnodup1 := hYn' Yg hYgn (fun t ht => (hYg t ht).1)
+  -- `Y` as certain-stored, component and other parts
+  have hperm : Y.Perm (cs ++ (I.toList ++ D ++ Yg) ++ R) := by
+    apply (List.perm_ext_iff_of_nodup hYn ?_).mpr
+    · intro t
+      constructor
+      · intro htY
+        obtain ⟨htn, hcl⟩ := hG.min_class hY htY
+        rcases hcl with hcl | hcl
+        · simp [(hG.mem_cs t).mpr ⟨htn, hcl⟩]
+        · by_cases hci : comp t = i
+          · have htm := (hmemi t htn hcl).mpr hci
+            by_cases htI : t ∈ I.toList
+            · simp [htI]
+            · by_cases htg : t ∈ g.toList
+              · have : t ∈ Yg := by rw [← hYgd]; simp [htg, htY]
+                simp [this]
+              · have : t ∈ D := by
+                  simp only [D, List.mem_filter, decide_eq_true_eq]
+                  exact ⟨⟨htm, htY⟩, htg, htI⟩
+                simp [this]
+          · have : t ∈ R := by
+              simp only [R, List.mem_filter, Bool.and_eq_true, bne_iff_ne, ne_eq]
+              exact ⟨htY, by rw [hcl]; exact uclass_beq_self _, hci⟩
+            simp [this]
+      · intro ht
+        simp only [List.mem_append] at ht
+        rcases ht with (h | ((h | h) | h)) | h
+        · exact hG.min_cs hY h
+        · exact hYI t h
+        · exact (hD t h).2.1
+        · exact (hYg t h).2
+        · exact (hR t h).1
+    · exact hnodup1
+  -- the replaced set is in the class
+  let Y' := cs ++ (I.toList ++ D ++ S) ++ R
+  have hY'n : Y'.Nodup := hYn' S hSn hS
+  have hY'c : InClass dag roots Y' := by
+    refine ⟨hY'n, fun s hs => ?_⟩
+    simp only [Y', List.mem_append] at hs
+    have hcl : s < dag.size ∧ ((ucls dag roots w θ)[s]! = .certainStored ∨
+        (ucls dag roots w θ)[s]! = .uncertain) := by
+      rcases hs with (h | h) | h
+      · exact ⟨(hcsc s h).1, Or.inl (hcsc s h).2⟩
+      · have := hmemu s (hVm S hS s (by rcases h with (h | h) | h <;> simp [h]))
+        exact ⟨this.1, Or.inr this.2⟩
+      · exact ⟨hRn s h, Or.inr (hR s h).2.1⟩
+    exact ⟨hcl.1, deg_of_ucls hcl.1 hcl.2⟩
+  have hle : ulen dag w roots (cs ++ (I.toList ++ D ++ Yg) ++ R) ≤ ulen dag w roots Y' := by
+    rw [← ulen_perm hperm]; exact hY.2 Y' hY'c
+  -- the component's share of each
+  have hVfacts : ∀ X : List Nat, (∀ t ∈ X, t ∈ g.toList) → ∀ t ∈ I.toList ++ D ++ X,
+      t ∈ cx.members.toList ∧ t < dag.size ∧ (ucls dag roots w θ)[t]! = .uncertain ∧
+        comp t = i := by
+    intro X hXg t ht
+    have hm := hVm X hXg t ht
+    exact ⟨hm, (hmemu t hm).1, (hmemu t hm).2, (hmemi t (hmemu t hm).1 (hmemu t hm).2).mp hm⟩
+  have hRfacts : ∀ t ∈ R, t < dag.size ∧ (ucls dag roots w θ)[t]! = .uncertain ∧ comp t ≠ i :=
+    fun t ht => ⟨hRn t ht, (hR t ht).2.1, (hR t ht).2.2⟩
+  have hs1 := ulen_split_component hwf roots hG.hroots w θ hθ1 hcx.opaq hcsn hcsc cx.members comp i
+    hcomp (V := I.toList ++ D ++ Yg) (R := R) (hVfacts Yg (fun t ht => (hYg t ht).1)) hRfacts
+  have hs2 := ulen_split_component hwf roots hG.hroots w θ hθ1 hcx.opaq hcsn hcsc cx.members comp i
+    hcomp (V := I.toList ++ D ++ S) (R := R) (hVfacts S hS) hRfacts
+  have hDfacts : ∀ t ∈ D, t ∈ cx.members.toList ∧ t ∉ g.toList ∧ t ∉ I.toList ∧ t ∉ O.toList :=
+    fun t ht => ⟨(hD t ht).1, (hD t ht).2.2.1, (hD t ht).2.2.2,
+      fun h => hYO t h (hD t ht).2.1⟩
+  have hm1 := group_modular hwf hG.hroots hθ1 hcx hcsc hchk hI hO (D := D) (S := Yg) hDfacts
+    (fun t ht => (hYg t ht).1)
+  have hm2 := group_modular hwf hG.hroots hθ1 hcx hcsc hchk hI hO (D := D) (S := S) hDfacts hS
+  rw [hcx.cost_eq, hcx.cost_eq, hcx.cost_eq, hcx.cost_eq] at hm1 hm2
+  rw [hcx.cost_eq, hcx.cost_eq]
+  -- the counts lie between `|cs|` and `|cs| + |unc|`
+  have hlenY : cs.length ≤ (cs ++ (I.toList ++ D ++ Yg) ++ R).length := by
+    simp only [List.length_append]; omega
+  have hlenY' : Y'.length ≤ cs.length + (uunc dag roots w θ).length := by
+    have hsub : ∀ t ∈ Y', t ∈ cs ++ uunc dag roots w θ := by
+      intro t ht
+      have := hY'c.2 t ht
+      simp only [Y', List.mem_append] at ht
+      rcases ht with (h | h) | h
+      · simp [h]
+      · have hm := hVm S hS t (by rcases h with (h | h) | h <;> simp [h])
+        simp [(mem_uunc t).mpr (hmemu t hm)]
+      · simp [(mem_uunc t).mpr ⟨hRn t h, (hR t h).2.1⟩]
+    have := List.Nodup.length_le_of_subset hY'n hsub
+    simpa using this
+  have ht1 := tag0Size_mono hlenY
+  have ht2 := tag0Size_mono hlenY'
+  have ht3 := tag0Size_mono (Nat.le_add_right cs.length (uunc dag roots w θ).length)
+  simp only [List.length_append] at ht1 ht2 hs1 hs2 hle
+  simp only [Y', List.length_append] at ht2 hle
+  omega
+
 end Ix.Compile.Verify.UniformModel

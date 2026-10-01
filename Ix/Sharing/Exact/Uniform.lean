@@ -502,6 +502,10 @@ def setPrec (a b : Array Nat) : Bool :=
 def mergeSorted (a b : Array Nat) : Array Nat :=
   ((a.toList ++ b.toList).mergeSort fun x y => decide (x ≤ y)).toArray
 
+/-- Strictly increasing. -/
+def strictInc (a : Array Nat) : Bool :=
+  (List.range a.size).all fun i => decide (i + 1 < a.size → a[i]! < a[i + 1]!)
+
 /-- The groups partition `und`: their terms, sorted, are `und`'s, sorted. -/
 def partitionCheck (und : Array Nat) (groups : Array (Array Nat)) : Bool :=
   (groups.toList.flatMap (·.toList)).mergeSort (fun x y => decide (x ≤ y)) ==
@@ -888,7 +892,8 @@ def SCtx.solveP (cx : SCtx) (limits : Limits) :
     let outSet : Std.HashSet Nat := outAll.foldl (·.insert ·) {}
     let (entries, _) := cx.memoKey (opqA[·]!) inSet outSet g
     let (inRed, outRed) := keyContext entries
-    unless inRed.all inSet.contains && outRed.all outSet.contains do
+    unless strictInc g && strictInc inRed && strictInc outRed &&
+        inRed.all inSet.contains && outRed.all outSet.contains do
       throw (.internal "memo key context is not part of the decided context")
     match st.memo.get? (g, entries) with
     | some tb => pure (tb, { st with memoHits := st.memoHits + 1 })
