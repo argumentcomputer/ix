@@ -597,7 +597,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/x86: merge layout proofs",
+ "baseline": "jcb/x86: merge M2.6b backend",
  "axiom_sha256":
  "863730d22a2c87e697dc978a8285c3130bed46a4777e849d1c24ad35f1f4de94",
  "axiom_count": 3087}

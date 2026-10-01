@@ -70,6 +70,8 @@ structure Ctx where
   effects : List Nat
   /-- The statement being selected, or `none` for the terminator. -/
   site : Option Nat := none
+  /-- The block's statements, for the stability check of a fold (`defStmt?`). -/
+  body : List Lir.Stmt := []
 
 structure St where
   next : VReg
@@ -103,12 +105,25 @@ def sitePos : SelM Nat := do
   let c ← read
   return c.site.getD c.size
 
+/-- A fold of `x := r` (the window's first statement) into the site after
+the window is exact: no statement of the window redefines a register `r`
+reads, and none after the first redefines `x`. So when the site reads `x`,
+it holds `r`'s value there (SSA with dominance implies it). -/
+def stableFrom (x : VReg) (r : Lir.Rhs) : List Lir.Stmt → Bool
+  | [] => true
+  | s :: rest =>
+      s.defs.all (fun d => !r.uses.contains d) &&
+        rest.all fun t => t.defs.all fun d => d != x && !r.uses.contains d
+
 /-- The unconsumed statement of this block, before the current site, that
-assigns `x`, and its right-hand side. -/
+assigns `x`, and its right-hand side, when folding it into the site is
+exact (`stableFrom`). -/
 def defStmt? (x : VReg) : SelM (Option (Nat × Lir.Rhs)) := do
   let some (j, r) := (← read).defs[x]? | return none
-  unless j < (← sitePos) do return none
+  let site ← sitePos
+  unless j < site do return none
   if (← get).consumed.contains j then return none
+  unless stableFrom x r (((← read).body.drop j).take (site - j)) do return none
   return some (j, r)
 
 /-- No `store` or `call` strictly between statements `j` and `i` (`i` may be

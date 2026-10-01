@@ -116,7 +116,10 @@ def foldOne (l : Lin) (used : List Nat) : List (Base VReg × Nat) → SelM (Opti
         let some (j, rhs) ← defStmt? x | return none
         if used.contains j then return none
         let some sub := rhsLin rhs | return none
-        let cand := ({ l with terms := l.terms.filter (·.1 != t) } : Lin).add (sub.scale m)
+        -- Every occurrence of `x` is replaced, with its multipliers summed
+        -- (a single-use register occurs once, with multiplier `m`).
+        let mult := ((l.terms.filter (·.1 == t)).map (·.2)).sum
+        let cand := ({ l with terms := l.terms.filter (·.1 != t) } : Lin).add (sub.scale mult)
         return if cand.encode.isSome then some (cand, j) else none
       match ← attempt with
       | some r => pure (some r)

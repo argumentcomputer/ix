@@ -43,6 +43,8 @@ import Compilatrix.Xv.Select.Rules
 import Compilatrix.Xv.Select.Branch
 import Compilatrix.Xv.Select.Driver
 import Compilatrix.Xv.Select.Lemmas
+import Compilatrix.Xv.Select.Proof.Place
+import Compilatrix.Xv.Select.Proof.Exec
 import Compilatrix.Src.Level
 import Compilatrix.Xv.Validate.NatMap
 import Compilatrix.Xv.Validate.State

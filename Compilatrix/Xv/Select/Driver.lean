@@ -67,26 +67,48 @@ def selectStmts (ctx : Ctx) : List (Lir.Stmt × Nat) → List (Inst VReg) →
         let insts ← (selectStmt i s).run { ctx with site := some i }
         selectStmts ctx rest (insts ++ out)
 
+/-- The registers the consumed statements of a block define. -/
+def consumedDefs (body : List Lir.Stmt) (consumed : List Nat) : List VReg :=
+  consumed.flatMap fun j => ((body[j]?).map Lir.Stmt.defs).getD []
+
+/-- Select a block: the Xv block, and the registers its folded (consumed)
+statements define, which no Xv instruction may read (`Block.avoids`). -/
 def selectBlock (fn : FunId) (uses : NatMap Nat) (label : Label) (b : Lir.Block) :
-    StateT St (Except Error) (Block VReg) := do
+    StateT St (Except Error) (Block VReg × List VReg) := do
   modify fun s => { s with consumed := [] }
   let body := b.body.toList
-  let ctx : Ctx := { fn, label, size := body.length, uses, defs := defSites body, effects := effectSites body }
+  let ctx : Ctx := { fn, label, size := body.length, uses, defs := defSites body, effects := effectSites body,
+                     body }
   let (pre, term) ← (selectTerm b.term).run ctx
   let out ← selectStmts ctx body.zipIdx.reverse pre
-  return { params := b.params, body := out.toArray, term, cold := b.cold }
+  return ({ params := b.params, body := out.toArray, term, cold := b.cold },
+    consumedDefs body (← get).consumed)
 
 def selectBlocks (fn : FunId) (uses : NatMap Nat) : List (Lir.Block × Label) →
-    StateT St (Except Error) (List (Block VReg))
+    StateT St (Except Error) (List (Block VReg × List VReg))
   | [] => pure []
   | (b, l) :: rest => do
       let b ← selectBlock fn uses l b
       return b :: (← selectBlocks fn uses rest)
 
+/-- Whether a selected block reads none of the registers in `dead`: its
+instructions, terminator and edge arguments. -/
+def _root_.Compilatrix.Xv.Block.avoids (dead : List VReg) (b : Block VReg) : Bool :=
+  b.body.toList.all (fun i => i.uses.all fun x => !dead.contains x) &&
+    (b.term.uses ++ b.term.edgeUses).all fun x => !dead.contains x
+
+/-- Select a function. A folded statement's register has one use, which its
+consumer's instruction replaces, so no instruction reads it; the function is
+declined (`fold`) if one would (never on SSA input, where the fold's use is
+that register's only one). -/
 def selectFunc (stats : Bool) (fn : FunId) (f : Lir.Func) :
     StateT (Std.TreeMap String Nat compare) (Except Error) (Func VReg) := do
-  let (blocks, st) ← (selectBlocks fn (useCounts f) f.blocks.toList.zipIdx).run
+  let (sel, st) ← (selectBlocks fn (useCounts f) f.blocks.toList.zipIdx).run
     { next := maxVReg f + 1, fired := ← get, stats }
+  let dead := sel.flatMap (·.2)
+  let blocks := sel.map (·.1)
+  if let some (_, l) := blocks.zipIdx.find? (fun (b, _) => !b.avoids dead) then
+    throw { fn, block := l, stmt := none, form := "fold", reason := "an instruction reads a folded register" }
   set st.fired
   return { name := f.name, params := f.params, results := f.results, blocks := blocks.toArray, conv := f.conv }
 

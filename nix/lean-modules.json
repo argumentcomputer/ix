@@ -1408,6 +1408,18 @@
   "Compilatrix.Xv.Select.Rules":
   {"path": "Compilatrix/Xv/Select/Rules.lean",
    "imports": ["Compilatrix.Xv.Select.Producer"]},
+  "Compilatrix.Xv.Select.Proof.Place":
+  {"path": "Compilatrix/Xv/Select/Proof/Place.lean",
+   "imports":
+   ["Compilatrix.Xv.Validate.Proof.XvRow",
+    "Compilatrix.Xv.Validate.Proof.Assign"]},
+  "Compilatrix.Xv.Select.Proof.Exec":
+  {"path": "Compilatrix/Xv/Select/Proof/Exec.lean",
+   "imports":
+   ["Compilatrix.Xv.Select.Proof.Place",
+    "Compilatrix.Xv.Select.Driver",
+    "Compilatrix.Lir.Proof.Steps",
+    "Compilatrix.X86.Width"]},
   "Compilatrix.Xv.Select.Producer":
   {"path": "Compilatrix/Xv/Select/Producer.lean",
    "imports": ["Compilatrix.Xv.Select.Amode", "Compilatrix.Xv.Select.Cond"]},
@@ -3369,6 +3381,8 @@
     "Compilatrix.Xv.Select.Branch",
     "Compilatrix.Xv.Select.Driver",
     "Compilatrix.Xv.Select.Lemmas",
+    "Compilatrix.Xv.Select.Proof.Place",
+    "Compilatrix.Xv.Select.Proof.Exec",
     "Compilatrix.Src.Level",
     "Compilatrix.Xv.Validate.NatMap",
     "Compilatrix.Xv.Validate.State",
