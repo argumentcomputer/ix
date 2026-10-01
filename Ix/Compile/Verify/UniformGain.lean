@@ -487,7 +487,7 @@ theorem forall₂_mem_right' {α β : Type} {R : α → β → Prop} :
       exact ⟨x, List.mem_cons_of_mem _ hx, h'⟩
 /-- **Exchange with the encoding's counts.** For `t ∉ S` and an encoding
 `E, R` of `S` that attains its length: adding `t` costs at most its optimal
-entry plus the growth of the count's `Tag0`, and saves `inl_S(t) - w` per
+entry plus the growth of the count's TagN, and saves `inl_S(t) - w` per
 head occurrence and `M_S(t) - w` per continuation occurrence of `t` in the
 encoding (when positive). -/
 theorem PrepWF.exchange_counts {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat}
@@ -594,7 +594,7 @@ theorem PrepWF.exchange_counts {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Na
 
 
 /-- **Exchange (lengths).** For `t ∉ S`, adding `t` costs at most its
-`S`-optimal entry and one table-count byte, and saves `inl_S(t) - w` per head
+`S`-optimal entry and the growth of the table count's TagN, and saves `inl_S(t) - w` per head
 occurrence and `M_S(t) - w` per continuation occurrence (when positive): the
 head occurrences number at least the root occurrences plus the
 non-continuation edges into `t`, the continuation occurrences at least the
@@ -611,7 +611,7 @@ theorem PrepWF.exchange {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat}
           (if w ≤ I then I - w else 0) +
         ((List.range p.dag.size).map fun y => edgeMult p y t true).sum *
           (if w ≤ M then M - w else 0) ≤
-      uniformCost p w A S roots + 1 + I := by
+      uniformCost p w A S roots + (tag0Size (S.length + 1) - tag0Size S.length) + I := by
   intro A I M
   have hSt : A t = false := by simp [A, htS]
   obtain ⟨E, R, hEnc, hcost⟩ := hp.uniformCost_attained w A S roots hSin hroots
@@ -670,7 +670,7 @@ theorem PrepWF.exchange {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat}
       exact ((hocc (E s) s (hEnc.1 s hs).1 (hSin s hs)).2).symm
     have := hcount true
     omega
-  have h0 := tag0Size_succ_le S.length
+  have h0 : tag0Size S.length ≤ tag0Size (S.length + 1) := tag0Size_mono (Nat.le_succ _)
   have hHm := Nat.mul_le_mul_right (if w ≤ I then I - w else 0) hH
   have hCm := Nat.mul_le_mul_right (if w ≤ M then M - w else 0) hC
   simp only [A, I, M] at hHm hCm ⊢
@@ -712,7 +712,8 @@ theorem edgeMult_cont_zero {p : Prep} (hp : PrepWF p) {t : Nat} (ht : t < p.dag.
 /-- **Stage 2: the monotone exchange.** On a well-formed DAG whose roots
 reach every term, for a stored set `S` within the candidates `ms` and a
 candidate `t ∉ S` with in-degree at least one,
-`uniformCost (t :: S) ≤ uniformCost S - storedGain t + 1`. -/
+`uniformCost (t :: S) ≤ uniformCost S - storedGain t + (tag0Size (|S| + 1) - tag0Size |S|)`
+(the growth of the table count's TagN). -/
 theorem uniformCost_insert_le {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size)
     (hreach : ∀ y, y < dag.size →
@@ -724,8 +725,10 @@ theorem uniformCost_insert_le {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
         _root_.Int) ≤
       (uniformCost (Prep.ofDag dag) w (fun y => decide (y ∈ S)) S roots.toList : _root_.Int) -
         storedGain (Prep.ofDag dag) (graphFacts dag roots)
-          (uniformBounds (Prep.ofDag dag) w ms) w t + 1 := by
+          (uniformBounds (Prep.ofDag dag) w ms) w t +
+        ((tag0Size (S.length + 1) : _root_.Int) - tag0Size S.length) := by
   have hp := prepWF_ofDag hwf
+  have h0 : tag0Size S.length ≤ tag0Size (S.length + 1) := tag0Size_mono (Nat.le_succ _)
   have hex := hp.exchange w hSin roots.toList hroots hreach htn htS
   simp only at hex
   -- in-degrees

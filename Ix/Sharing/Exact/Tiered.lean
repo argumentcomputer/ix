@@ -3,12 +3,12 @@
   re-materialization under a Share layout `widthAt : index → width`.
 
   Layouts (`ShareLayout.widthAt`, monotone, at least 1):
-  * `tag4`: the Ixon Tag4 Share: 1 byte below index 8, 2 below 256, 3 below
-    65536, … (the serialized width).
-  * `tagN` (TagN): the nibble-bootstrapped Share code whose widths
+  * `tag4`: a pricing layout only: Shares priced by `shareWidth` (the TagN
+    width, `Ixon.tagNByteWidth 4`) with the 2-byte tier ending at index 256.
+    It goes away together with the `Ixon.ShareCodec` shim in `Basic.lean`.
+  * `tagN` (TagN): the wire Share code (`putTagN 4 0xB idx`), whose widths
     climb in rungs of 1, 2, 3, 5 and 9 bytes (`tagNWidth`, which also
-    documents the bit layout). It is the wire code when
-    `Ixon.ShareCodec.current` is `.tagN` (format version 3 writes Tag4).
+    documents the bit layout); `Ixon.ShareCodec.current` is `.tagN`.
   The output is written with the current wire codec; `modelBytes` is the
   layout price, and the two agree whenever the layout is the wire layout
   (`ShareLayout.wire`), which is checked.
@@ -127,7 +127,8 @@ def tagNWidth (i : Nat) : Nat := Ixon.tagNByteWidth 4 i
 
 /-- A Share width layout. -/
 inductive ShareLayout where
-  /-- The Ixon Tag4 Share (the serialized width). -/
+  /-- Shares priced by `shareWidth` (the TagN width) with the 2-byte tier ending
+  at 256; a pricing layout only. -/
   | tag4
   /-- The TagN Share code (`tagNWidth`). -/
   | tagN
@@ -440,7 +441,7 @@ structure Rematerialized where
   /-- Length priced by the layout. -/
   bytes : Nat
   work : Nat
-  /-- Serialized (Tag4) length. -/
+  /-- Serialized length (`serExpr`, the TagN wire). -/
   measured : Nat
   deriving Inhabited
 

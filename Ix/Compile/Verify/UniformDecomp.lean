@@ -16,10 +16,10 @@ certain-stored terms are opaque in every candidate set containing them,
 * **Modularity** (`PrepWF.uCost_modular`, `uniformCost_modular`): if no
   available non-opaque term reaches both of two added sets `Z₁`, `Z₂`,
   adding both changes every cost, and the uniform length up to the count's
-  `Tag0`, by the sum of adding each.
+  TagN, by the sum of adding each.
 * **Components** (`components_modular`): with `cs` the certain-stored terms
   and a labeling of the uncertain terms that is constant along non-opaque
-  paths, the uniform length without the `Tag0` is modular across labels.
+  paths, the uniform length without the TagN is modular across labels.
 * **Search bound** (`lower_bound_sound`): the cost with every undecided term
   available and only the decided entries paid is at most the length of
   every completion.
@@ -711,7 +711,7 @@ with every term of `cs` opaque (in the base and the three extensions), no term
 of `z₁`, `z₂` opaque, and no available non-opaque term reaching both `z₁`
 and `z₂` along non-opaque paths:
 `L(cs ++ z₁ ++ z₂) + L(cs) = L(cs ++ z₁) + L(cs ++ z₂)` up to the count's
-`Tag0` (each side carries the other side's `Tag0` terms). -/
+TagN (each side carries the other side's TagN terms). -/
 theorem uniformCost_modular {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size) (w : Nat) {cs z1 z2 : List Nat}
     (hin : ∀ t ∈ cs ++ z1 ++ z2, t < dag.size)
@@ -866,7 +866,7 @@ certain-stored terms (threshold `θ ≥ 1`), and `z₁`, `z₂` uncertain terms
 from different components of a labeling that is constant along non-opaque
 paths between uncertain terms. Then the uniform length is modular:
 `L(cs ∪ z₁ ∪ z₂) + L(cs) = L(cs ∪ z₁) + L(cs ∪ z₂)` up to the count's
-`Tag0`; by induction, the length without the `Tag0` is a sum over
+TagN; by induction, the length without the TagN is a sum over
 components. -/
 theorem components_modular {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size) (w : Nat) (θ : _root_.Int) (hθ : 1 ≤ θ)
@@ -1010,7 +1010,7 @@ theorem sum_le_of_subset (f : Nat → Nat) : ∀ {l X : List Nat}, l.Nodup → X
 
 /-- **The lower bound of a search node is sound.** For decided-stored `F`
 and undecided `U`, the cost with `F ∪ U` available but only the entries of
-`F` paid is at most the length (without the count's `Tag0`) of every
+`F` paid is at most the length (without the count's TagN) of every
 completion `F ⊆ X ⊆ F ∪ U`. -/
 theorem lower_bound_sound {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size) (w : Nat) {F U X : List Nat}

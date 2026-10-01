@@ -975,7 +975,7 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
       have htag := getTag4_reads Ixon.Expr.FLAG_REF univs.size.toUInt64
         (by decide)
       have hidx := getTag0_reads refIdx
-      have hunivs := getTag0Sizes_reads univs.toList
+      have hunivs := getTagN0Values_reads univs.toList
       have hreturn : Reads
           (pure (Ixon.Expr.ref refIdx univs.toList.toArray) :
             Ixon.GetM Ixon.Expr)
@@ -989,10 +989,10 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
         (by simpa [hcount] using tag0ListBytes_size_ge_length univs.toList)
         hafterUnivs
       have htail0 := Reads.bind
-        (next := fun decoded : Ixon.Tag0 => do
+        (next := fun decoded : Ixon.TagN => do
           Ixon.checkCount univs.size.toUInt64
-          let decodedUnivs ← Ixon.getTag0Sizes univs.toList.length
-          return Ixon.Expr.ref decoded.size decodedUnivs.toArray)
+          let decodedUnivs ← Ixon.getTagN0Values univs.toList.length
+          return Ixon.Expr.ref decoded.value decodedUnivs.toArray)
         hidx hcheckedUnivs
       have hparsed : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)
@@ -1010,7 +1010,7 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
       have htag := getTag4_reads Ixon.Expr.FLAG_REC univs.size.toUInt64
         (by decide)
       have hidx := getTag0_reads recIdx
-      have hunivs := getTag0Sizes_reads univs.toList
+      have hunivs := getTagN0Values_reads univs.toList
       have hreturn : Reads
           (pure (Ixon.Expr.recur recIdx univs.toList.toArray) :
             Ixon.GetM Ixon.Expr)
@@ -1024,10 +1024,10 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
         (by simpa [hcount] using tag0ListBytes_size_ge_length univs.toList)
         hafterUnivs
       have htail0 := Reads.bind
-        (next := fun decoded : Ixon.Tag0 => do
+        (next := fun decoded : Ixon.TagN => do
           Ixon.checkCount univs.size.toUInt64
-          let decodedUnivs ← Ixon.getTag0Sizes univs.toList.length
-          return Ixon.Expr.recur decoded.size decodedUnivs.toArray)
+          let decodedUnivs ← Ixon.getTagN0Values univs.toList.length
+          return Ixon.Expr.recur decoded.value decodedUnivs.toArray)
         hidx hcheckedUnivs
       have hparsed : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)
@@ -1056,9 +1056,9 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
           (pure (Ixon.Expr.prj typeRefIdx fieldIdx decodedVal) :
             Ixon.GetM Ixon.Expr)) hval hreturn
       have htail0 := Reads.bind
-        (next := fun decodedIdx : Ixon.Tag0 => do
+        (next := fun decodedIdx : Ixon.TagN => do
           let decodedVal ← Ixon.getExprFuel fuel
-          return Ixon.Expr.prj decodedIdx.size fieldIdx decodedVal)
+          return Ixon.Expr.prj decodedIdx.value fieldIdx decodedVal)
         hidx hafterVal
       have hparsed : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)

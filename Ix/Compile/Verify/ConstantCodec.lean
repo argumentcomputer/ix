@@ -85,17 +85,17 @@ theorem getDefinition_reads (definition : Ixon.Definition)
       return ({ definition with typ, value } : Ixon.Definition))
     htypRead hafterValue
   have hafterLvls := Reads.bind
-    (next := fun lvls : Ixon.Tag0 => do
+    (next := fun lvls : Ixon.TagN => do
       let typ ← Ixon.getExpr
       let value ← Ixon.getExpr
-      return ({ definition with lvls := lvls.size, typ, value } :
+      return ({ definition with lvls := lvls.value, typ, value } :
         Ixon.Definition))
     hlvls hafterTyp
   have hafterLvls' : Reads
       (match Ixon.unpackDefKindSafety
           (Ixon.packDefKindSafety definition.kind definition.safety) with
         | (kind, safety) => do
-          let lvls := (← Ixon.getTag0).size
+          let lvls := (← Ixon.getTagN 0).value
           let typ ← Ixon.getExpr
           let value ← Ixon.getExpr
           return (⟨kind, safety, lvls, typ, value⟩ : Ixon.Definition))
@@ -110,7 +110,7 @@ theorem getDefinition_reads (definition : Ixon.Definition)
         if packed >>> 2 > 2 || (packed &&& 3) > 2 then
           throw "invalid definition kind/safety"
         let (kind, safety) := Ixon.unpackDefKindSafety packed
-        let lvls := (← Ixon.getTag0).size
+        let lvls := (← Ixon.getTagN 0).value
         let typ ← Ixon.getExpr
         let value ← Ixon.getExpr
         return (⟨kind, safety, lvls, typ, value⟩ : Ixon.Definition))
@@ -123,7 +123,7 @@ theorem getDefinition_reads (definition : Ixon.Definition)
       if packed >>> 2 > 2 || (packed &&& 3) > 2 then
         throw "invalid definition kind/safety"
       let (kind, safety) := Ixon.unpackDefKindSafety packed
-      let lvls := (← Ixon.getTag0).size
+      let lvls := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
       let value ← Ixon.getExpr
       return (⟨kind, safety, lvls, typ, value⟩ : Ixon.Definition))
@@ -143,13 +143,13 @@ theorem getAxiom_reads (axiomInfo : Ixon.Axiom)
       (pure ({ axiomInfo with typ } : Ixon.Axiom) : Ixon.GetM Ixon.Axiom))
     htypRead hreturn
   have hafterLvls := Reads.bind
-    (next := fun lvls : Ixon.Tag0 => do
+    (next := fun lvls : Ixon.TagN => do
       let typ ← Ixon.getExpr
-      return ({ axiomInfo with lvls := lvls.size, typ } : Ixon.Axiom))
+      return ({ axiomInfo with lvls := lvls.value, typ } : Ixon.Axiom))
     hlvls hafterTyp
   have hall := Reads.bind
     (next := fun isUnsafe : Bool => do
-      let lvls := (← Ixon.getTag0).size
+      let lvls := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
       return (⟨isUnsafe, lvls, typ⟩ : Ixon.Axiom))
     hbool hafterLvls
@@ -210,14 +210,14 @@ theorem reads_map {getm : Ixon.GetM α} {bytes : ByteArray} {value : α}
   rw [EStateM.bind, h]
   rfl
 
-def getInfoFromTag (tag : Ixon.Tag4) : Ixon.GetM Ixon.ConstantInfo := do
+def getInfoFromTag (tag : Ixon.TagN) : Ixon.GetM Ixon.ConstantInfo := do
   if tag.flag == Ixon.Constant.FLAG_MUTS then
     let mut ms := #[]
-    for _ in [0:tag.size.toNat] do
+    for _ in [0:tag.value.toNat] do
       ms := ms.push (← Ixon.getMutConst)
     return Ixon.ConstantInfo.muts ms
   else if tag.flag == Ixon.Constant.FLAG then
-    match tag.size with
+    match tag.value with
     | 0 => Ixon.ConstantInfo.defn <$> Ixon.getDefinition
     | 1 => Ixon.ConstantInfo.recr <$> Ixon.getRecursor
     | 2 => Ixon.ConstantInfo.axio <$> Ixon.getAxiom
@@ -231,7 +231,7 @@ def getInfoFromTag (tag : Ixon.Tag4) : Ixon.GetM Ixon.ConstantInfo := do
     throw s!"getConstantInfo: invalid flag {tag.flag}"
 
 theorem getConstantInfo_eq :
-    Ixon.getConstantInfo = (Ixon.getTag4 >>= getInfoFromTag) := by
+    Ixon.getConstantInfo = ((Ixon.getTagN 4) >>= getInfoFromTag) := by
   rfl
 
 theorem putConstantInfo_writes_core (info : Ixon.ConstantInfo)
@@ -304,7 +304,7 @@ def emptyConstantBytes (info : Ixon.ConstantInfo) : ByteArray :=
 def getConstantUnivs (info : Ixon.ConstantInfo)
     (sharing : Array Ixon.Expr) (refs : Array Address) :
     Ixon.GetM Ixon.Constant := do
-  let numUnivs := (← Ixon.getTag0).size.toNat
+  let numUnivs := (← Ixon.getTagN 0).value.toNat
   let mut univs : Array Ixon.Univ := #[]
   for _ in [0:numUnivs] do
     univs := univs.push (← Ixon.getUniv)
@@ -312,7 +312,7 @@ def getConstantUnivs (info : Ixon.ConstantInfo)
 
 def getConstantRefs (info : Ixon.ConstantInfo)
     (sharing : Array Ixon.Expr) : Ixon.GetM Ixon.Constant := do
-  let numRefs := (← Ixon.getTag0).size.toNat
+  let numRefs := (← Ixon.getTagN 0).value.toNat
   let mut refs : Array Address := #[]
   for _ in [0:numRefs] do
     refs := refs.push (← Ixon.Serialize.get)
@@ -320,7 +320,7 @@ def getConstantRefs (info : Ixon.ConstantInfo)
 
 def getConstantAfterInfo (info : Ixon.ConstantInfo) :
     Ixon.GetM Ixon.Constant := do
-  let numSharing := (← Ixon.getTag0).size.toNat
+  let numSharing := (← Ixon.getTagN 0).value.toNat
   let mut sharing : Array Ixon.Expr := #[]
   for _ in [0:numSharing] do
     sharing := sharing.push (← Ixon.getExpr)
@@ -355,9 +355,9 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
       ByteArray.empty (emptyConstant info) := by
     simpa [emptyConstant] using hreturn
   have hunivs := Reads.bind
-    (next := fun count : Ixon.Tag0 => do
+    (next := fun count : Ixon.TagN => do
       let mut univs : Array Ixon.Univ := #[]
-      for _ in [0:count.size.toNat] do
+      for _ in [0:count.value.toNat] do
         univs := univs.push (← Ixon.getUniv)
       return (⟨info, #[], #[], univs⟩ : Ixon.Constant))
     hzero hunivsTail
@@ -373,9 +373,9 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
       (tag0Bytes 0) (emptyConstant info) := by
     simpa using hunivs'
   have hrefs := Reads.bind
-    (next := fun count : Ixon.Tag0 => do
+    (next := fun count : Ixon.TagN => do
       let mut refs : Array Address := #[]
-      for _ in [0:count.size.toNat] do
+      for _ in [0:count.value.toNat] do
         refs := refs.push (← Ixon.Serialize.get)
       getConstantUnivs info #[] refs)
     hzero hrefsTail
@@ -391,9 +391,9 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
       (tag0Bytes 0 ++ tag0Bytes 0) (emptyConstant info) := by
     simpa using hrefs'
   have hsharing := Reads.bind
-    (next := fun count : Ixon.Tag0 => do
+    (next := fun count : Ixon.TagN => do
       let mut sharing : Array Ixon.Expr := #[]
-      for _ in [0:count.size.toNat] do
+      for _ in [0:count.value.toNat] do
         sharing := sharing.push (← Ixon.getExpr)
       getConstantRefs info sharing)
     hzero hsharingTail

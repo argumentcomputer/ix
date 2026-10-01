@@ -334,6 +334,7 @@ theorem forced_mem {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} {
   apply htY
   exact stored_in_minimum hwf roots hG.hroots hG.reach w ms hY hYms htn
     (deg_of_ucls htn (Or.inr htu)) (hble t).1 (hble t).2.1 hvis.1 hvis.2 hhd hd1
+    (fun _ => minimum_length_lt hwf hG.spines roots hG.hroots w hY htn htc htY)
     (by rcases hθ with h | ⟨h, hb⟩
         · left; rw [h] at hgain; exact hgain
         · right; rw [h] at hgain; exact ⟨hgain, hb⟩)
