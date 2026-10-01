@@ -16,12 +16,18 @@
   Share-bearing Constants (tiered TagN outputs and synthetic tables up to
   66,600 entries) to the same bytes (`rs_eq_constant_serialization`).
 
+  Modes: `tiered-tagN` is the canonical construction (the compiler's);
+  `uniform-w<k>` is its phase-1 optimizer alone at Share width `k`; `exact`
+  is the width-state search for the global minimum, a test oracle for small
+  inputs (not the compiler path).
+
   Inputs: every §2 fixture, the generated families of the uniform and tiered
   tests, and, when `IX_SHARING_CORPUS` names an `.ixe` file, every constant of
   that corpus (expanded from its stored table). Corpus mode compares the
   modes listed in `IX_SHARING_CORPUS_MODES` (comma separated, default
-  `tiered-tagN`; also `uniform-w<k>`, `exact`) and stops after
-  `IX_SHARING_CORPUS_LIMIT` constants when that is set.
+  `tiered-tagN`; also `uniform-w<k>`, `exact`), only the constants whose
+  addresses are listed in the file `IX_SHARING_CORPUS_SELECT` when that is
+  set, and stops after `IX_SHARING_CORPUS_LIMIT` constants when that is set.
 -/
 module
 
@@ -47,9 +53,9 @@ opaque rsExactNormalize : @& ByteArray → Except String ByteArray
 @[extern "rs_uniform_sharing_normalize"]
 opaque rsUniformNormalize : UInt64 → @& ByteArray → Except String ByteArray
 
-/-- Layout code: 1 = TagN (the only layout). -/
+/-- The canonical tiered construction (TagN layout). -/
 @[extern "rs_tiered_sharing_normalize"]
-opaque rsTieredNormalize : UInt8 → @& ByteArray → Except String ByteArray
+opaque rsTieredNormalize : @& ByteArray → Except String ByteArray
 
 /-! ## Modes and outcomes -/
 
@@ -57,24 +63,19 @@ opaque rsTieredNormalize : UInt8 → @& ByteArray → Except String ByteArray
 inductive Mode where
   | exact
   | uniform (w : Nat)
-  | tiered (layout : ShareLayout)
+  | tiered
   deriving BEq, Repr, Inhabited
 
 def Mode.name : Mode → String
   | .exact => "exact"
   | .uniform w => s!"uniform-w{w}"
-  | .tiered .tagN => "tiered-tagN"
+  | .tiered => "tiered-tagN"
 
 def Mode.parse (s : String) : Option Mode :=
   if s == "exact" then some .exact
-  else if s == "tiered-tagN" then some (.tiered .tagN)
+  else if s == "tiered-tagN" then some .tiered
   else if s.startsWith "uniform-w" then (String.ofList (s.toList.drop 9)).toNat?.map .uniform
   else none
-
-/-- Rust `ShareLayout::from_code`: TagN is code 1 (code 0, the former Tag4
-layout, is gone). -/
-def layoutCode : ShareLayout → UInt8
-  | .tagN => 1
 
 /-- One side's result: the serialized Constant, or an error category with
 its detail. -/
@@ -103,7 +104,7 @@ def leanNormalize (m : Mode) (c : Constant) (limits : Limits) : Except SharingEr
   match m with
   | .exact => normalizeConstantSharing c limits
   | .uniform w => normalizeConstantSharingUniform w c limits
-  | .tiered l => normalizeConstantSharingTiered l c limits
+  | .tiered => normalizeConstantSharingTiered .tagN c limits
 
 @[noinline] def leanSide (m : Mode) (c : Constant) : Outcome :=
   match leanNormalize m c {} with
@@ -114,7 +115,7 @@ def leanNormalize (m : Mode) (c : Constant) (limits : Limits) : Except SharingEr
   let r := match m with
     | .exact => rsExactNormalize bytes
     | .uniform w => rsUniformNormalize w.toUInt64 bytes
-    | .tiered l => rsTieredNormalize (layoutCode l) bytes
+    | .tiered => rsTieredNormalize bytes
   match r with
   | .ok b => .ok b
   | .error s => .err (rustCategory s) s
@@ -264,7 +265,7 @@ def judge (descr : String) (t : Tally) (expectAll : Bool) : Bool × String :=
 /-! ## Fixtures and generated families -/
 
 def allModes : List Mode :=
-  [.exact, .uniform 1, .uniform 2, .uniform 3, .uniform 5, .tiered .tagN]
+  [.exact, .uniform 1, .uniform 2, .uniform 3, .uniform 5, .tiered]
 
 def fixtures : Array (String × Constant) :=
   let chains := #[1, 2, 3, 4, 7, 8, 9, 16, 32].map fun n =>
@@ -375,13 +376,13 @@ def codecTests : TestSeq :=
 /-! ## Compiler sharing route
 
 The compiler builds every block through `Ix.CompileM.buildConstantWithSharing`
-(Lean, under `CompileEnv.sharingLimits`) and `apply_sharing_to_*_via` (Rust):
-the canonical construction, roots derived from the payload. Both languages
+(Lean, under `CompileEnv.sharingLimits`) and `apply_sharing_to_*` (Rust): the
+canonical construction, roots derived from the payload. Both languages
 must build the same bytes from the same unshared Constant, and exactly what
 the library normalizer builds. -/
 
-/-- Rust `apply_sharing_to_*_via` on one unshared Constant, under the default
-limits. -/
+/-- Rust `apply_sharing_to_*_with_limits` on one unshared Constant, under the
+default limits. -/
 @[extern "rs_compiler_sharing_build"]
 opaque rsCompilerSharingBuild : @& ByteArray → Except String ByteArray
 

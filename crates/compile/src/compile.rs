@@ -2408,9 +2408,9 @@ fn serialize_preresolved(
 // ===========================================================================
 
 // The compiler shares every block with the canonical tiered construction
-// (`canonical_sharing_tiered`, TagN layout); it is the only route. Every
-// construction error, resource exhaustion included, is a compile error:
-// there is no fallback. Mirrors `Ix.CompileM.buildConstantWithSharing`.
+// (`canonical_sharing_tiered`, TagN layout). Every construction error,
+// resource exhaustion included, is a compile error: there is no fallback.
+// Mirrors `Ix.CompileM.buildConstantWithSharing`.
 
 /// Environment variable carrying a sharing-limit override in the format of
 /// [`ExactSharingLimits::with_overrides`] (for example
@@ -2501,12 +2501,12 @@ pub fn apply_sharing_to_definition_with_stats(
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
 ) -> Result<SingletonSharingResult, CompileError> {
-  apply_sharing_to_definition_via(&compiler_limits()?, def, refs, univs)
+  apply_sharing_to_definition_with_limits(&compiler_limits()?, def, refs, univs)
 }
 
 /// [`apply_sharing_to_definition_with_stats`] under explicit limits.
 #[allow(clippy::needless_pass_by_value)]
-pub fn apply_sharing_to_definition_via(
+pub fn apply_sharing_to_definition_with_limits(
   limits: &ExactSharingLimits,
   def: Definition,
   refs: Vec<Address>,
@@ -2533,12 +2533,12 @@ pub fn apply_sharing_to_axiom_with_stats(
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
 ) -> Result<SingletonSharingResult, CompileError> {
-  apply_sharing_to_axiom_via(&compiler_limits()?, ax, refs, univs)
+  apply_sharing_to_axiom_with_limits(&compiler_limits()?, ax, refs, univs)
 }
 
 /// [`apply_sharing_to_axiom_with_stats`] under explicit limits.
 #[allow(clippy::needless_pass_by_value)]
-pub fn apply_sharing_to_axiom_via(
+pub fn apply_sharing_to_axiom_with_limits(
   limits: &ExactSharingLimits,
   ax: Axiom,
   refs: Vec<Address>,
@@ -2559,12 +2559,12 @@ pub fn apply_sharing_to_quotient_with_stats(
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
 ) -> Result<SingletonSharingResult, CompileError> {
-  apply_sharing_to_quotient_via(&compiler_limits()?, quot, refs, univs)
+  apply_sharing_to_quotient_with_limits(&compiler_limits()?, quot, refs, univs)
 }
 
 /// [`apply_sharing_to_quotient_with_stats`] under explicit limits.
 #[allow(clippy::needless_pass_by_value)]
-pub fn apply_sharing_to_quotient_via(
+pub fn apply_sharing_to_quotient_with_limits(
   limits: &ExactSharingLimits,
   quot: Quotient,
   refs: Vec<Address>,
@@ -2585,11 +2585,11 @@ pub fn apply_sharing_to_recursor_with_stats(
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
 ) -> Result<SingletonSharingResult, CompileError> {
-  apply_sharing_to_recursor_via(&compiler_limits()?, rec, refs, univs)
+  apply_sharing_to_recursor_with_limits(&compiler_limits()?, rec, refs, univs)
 }
 
 /// [`apply_sharing_to_recursor_with_stats`] under explicit limits.
-pub fn apply_sharing_to_recursor_via(
+pub fn apply_sharing_to_recursor_with_limits(
   limits: &ExactSharingLimits,
   rec: Recursor,
   refs: Vec<Address>,
@@ -2639,7 +2639,7 @@ pub fn apply_sharing_to_mutual_block(
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
 ) -> Result<MutualBlockSharingResult, CompileError> {
-  apply_sharing_to_mutual_block_via(
+  apply_sharing_to_mutual_block_with_limits(
     &compiler_limits()?,
     mut_consts,
     refs,
@@ -2648,7 +2648,7 @@ pub fn apply_sharing_to_mutual_block(
 }
 
 /// [`apply_sharing_to_mutual_block`] under explicit limits.
-pub fn apply_sharing_to_mutual_block_via(
+pub fn apply_sharing_to_mutual_block_with_limits(
   limits: &ExactSharingLimits,
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
@@ -7463,7 +7463,7 @@ mod tests {
     )
     .unwrap();
     assert_eq!(constant_hex(&r.constant), "d200009117b0b001921700170000000100");
-    let r = apply_sharing_to_axiom_via(
+    let r = apply_sharing_to_axiom_with_limits(
       &ExactSharingLimits::default(),
       t2_arrow_t2(),
       vec![],
@@ -7492,13 +7492,18 @@ mod tests {
     let cases = [
       (
         ConstantInfo::Axio(ax.clone()),
-        apply_sharing_to_axiom_via(&limits, ax.clone(), vec![], univs.clone())
-          .unwrap()
-          .constant,
+        apply_sharing_to_axiom_with_limits(
+          &limits,
+          ax.clone(),
+          vec![],
+          univs.clone(),
+        )
+        .unwrap()
+        .constant,
       ),
       (
         ConstantInfo::Defn(def.clone()),
-        apply_sharing_to_definition_via(
+        apply_sharing_to_definition_with_limits(
           &limits,
           def.clone(),
           vec![],
@@ -7512,7 +7517,7 @@ mod tests {
           IxonMutConst::Defn(def.clone()),
           IxonMutConst::Defn(def.clone()),
         ]),
-        apply_sharing_to_mutual_block_via(
+        apply_sharing_to_mutual_block_with_limits(
           &limits,
           vec![IxonMutConst::Defn(def.clone()), IxonMutConst::Defn(def)],
           vec![],
@@ -7542,7 +7547,7 @@ mod tests {
       max_distinct_nodes: 2,
       ..ExactSharingLimits::default()
     };
-    let err = apply_sharing_to_axiom_via(
+    let err = apply_sharing_to_axiom_with_limits(
       &limits,
       t2_arrow_t2(),
       vec![],

@@ -1,8 +1,10 @@
-//! Exact and canonical sharing FFI (test hooks).
+//! Exact and canonical sharing FFI (test hooks for the Lean/Rust
+//! differential, `Tests/Ix/SharingExactFFI.lean`).
 
 use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned};
 
-/// FFI: canonical exact-minimum sharing of one serialized Constant.
+/// FFI: exact-minimum sharing of one serialized Constant (the width-state
+/// search, a test oracle; not the compiler path).
 ///
 /// Lean signature:
 /// `@[extern "rs_exact_sharing_normalize"]
@@ -10,7 +12,7 @@ use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned};
 ///
 /// Decodes exactly one Constant (trailing bytes are rejected), expands and
 /// validates its sharing table under the backward-reference rule, and
-/// returns the serialized canonical encoding computed with
+/// returns the serialized exact-minimum encoding computed with
 /// `ExactSharingLimits::default()`. Error strings start with `decode:`,
 /// `malformed sharing:`, `format bound:`, `resource exhausted:` or
 /// `internal error:`; no error carries a partial encoding.
@@ -28,7 +30,8 @@ extern "C" fn rs_exact_sharing_normalize(
   }
 }
 
-/// FFI: uniform-width exact sharing of one serialized Constant.
+/// FFI: uniform-width exact sharing of one serialized Constant (phase 1 of
+/// the canonical construction, at a given width).
 ///
 /// Lean signature:
 /// `@[extern "rs_uniform_sharing_normalize"]
@@ -59,26 +62,20 @@ extern "C" fn rs_uniform_sharing_normalize(
 ///
 /// Lean signature:
 /// `@[extern "rs_tiered_sharing_normalize"]
-///  opaque tieredSharingNormalize : UInt8 → @& ByteArray → Except String ByteArray`
+///  opaque tieredSharingNormalize : @& ByteArray → Except String ByteArray`
 ///
-/// `layout` selects the Share layout: 0 = Tag4, 1 = TagN (any other value
-/// is a `format bound:` error). Uses `ExactSharingLimits::default()`; the
-/// output is serialized with Tag4 Shares in both layouts.
+/// Expands the Constant's table and re-shares it with the canonical tiered
+/// construction under the TagN layout and `ExactSharingLimits::default()`;
+/// the output is serialized with the wire (TagN) Share code.
 #[unsafe(no_mangle)]
 extern "C" fn rs_tiered_sharing_normalize(
-  layout: u8,
   bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   use ixon::sharing_exact::{
     ExactSharingLimits, ShareLayout, normalize_constant_bytes_tiered,
   };
-  let Some(layout) = ShareLayout::from_code(layout) else {
-    return LeanExcept::error_string(&format!(
-      "format bound: unknown Share layout code {layout}"
-    ));
-  };
   match normalize_constant_bytes_tiered(
-    layout,
+    ShareLayout::TagN,
     bytes_obj.as_bytes(),
     &ExactSharingLimits::default(),
   ) {
@@ -87,16 +84,16 @@ extern "C" fn rs_tiered_sharing_normalize(
   }
 }
 
-/// FFI: build one block Constant through the compiler's sharing route.
+/// FFI: build one block Constant through the compiler's sharing functions.
 ///
 /// Lean signature:
 /// `@[extern "rs_compiler_sharing_build"]
 ///  opaque compilerSharingBuild : @& ByteArray → Except String ByteArray`
 ///
 /// Decodes exactly one Constant whose roots carry no sharing table, and
-/// rebuilds it with `ix_compile::compile::apply_sharing_to_*_via` (the
-/// functions every compile, aux-gen, kernel-egress and decompile-recompile
-/// path calls; the canonical construction) under
+/// rebuilds it with `ix_compile::compile::apply_sharing_to_*_with_limits`
+/// (the explicit-limits forms of the functions every compile, aux-gen,
+/// kernel-egress and decompile-recompile path calls) under
 /// `ExactSharingLimits::default()`. Projections are returned unchanged.
 /// Errors are the compile error's text, prefixed `decode:` for input errors.
 #[unsafe(no_mangle)]
@@ -104,9 +101,11 @@ extern "C" fn rs_compiler_sharing_build(
   bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   use ix_compile::compile::{
-    apply_sharing_to_axiom_via, apply_sharing_to_definition_via,
-    apply_sharing_to_mutual_block_via, apply_sharing_to_quotient_via,
-    apply_sharing_to_recursor_via,
+    apply_sharing_to_axiom_with_limits,
+    apply_sharing_to_definition_with_limits,
+    apply_sharing_to_mutual_block_with_limits,
+    apply_sharing_to_quotient_with_limits,
+    apply_sharing_to_recursor_with_limits,
   };
   use ixon::constant::{Constant, ConstantInfo};
   use ixon::sharing_exact::ExactSharingLimits;
@@ -124,20 +123,23 @@ extern "C" fn rs_compiler_sharing_build(
   let (refs, univs) = (c.refs.clone(), c.univs.clone());
   let built = match c.info.clone() {
     ConstantInfo::Defn(d) => {
-      apply_sharing_to_definition_via(&limits, d, refs, univs)
+      apply_sharing_to_definition_with_limits(&limits, d, refs, univs)
         .map(|r| r.constant)
     },
     ConstantInfo::Recr(r) => {
-      apply_sharing_to_recursor_via(&limits, r, refs, univs).map(|r| r.constant)
+      apply_sharing_to_recursor_with_limits(&limits, r, refs, univs)
+        .map(|r| r.constant)
     },
     ConstantInfo::Axio(a) => {
-      apply_sharing_to_axiom_via(&limits, a, refs, univs).map(|r| r.constant)
+      apply_sharing_to_axiom_with_limits(&limits, a, refs, univs)
+        .map(|r| r.constant)
     },
     ConstantInfo::Quot(q) => {
-      apply_sharing_to_quotient_via(&limits, q, refs, univs).map(|r| r.constant)
+      apply_sharing_to_quotient_with_limits(&limits, q, refs, univs)
+        .map(|r| r.constant)
     },
     ConstantInfo::Muts(ms) => {
-      apply_sharing_to_mutual_block_via(&limits, ms, refs, univs)
+      apply_sharing_to_mutual_block_with_limits(&limits, ms, refs, univs)
         .map(|r| r.constant)
     },
     _ => Ok(c),
