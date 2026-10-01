@@ -1304,6 +1304,17 @@ impl SCtx<'_, '_> {
 // Order and driver
 // ---------------------------------------------------------------------------
 
+/// Bound on telescope spine lengths (Lean `teleSubaddEnd = Ixon.tagNEnd5 4`,
+/// 4,311,811,080): below it the TagN Share-flag width is subadditive
+/// (`tag4_len(a + b) <= tag4_len(a) + tag4_len(b)`), which the certain-excluded
+/// class relies on when two telescopes merge.
+pub(crate) const TELE_SUBADD_END: u64 = TagN::end5(4);
+
+/// Whether every telescope spine length is below [`TELE_SUBADD_END`].
+pub(crate) fn spines_within_bound(spine_len: &[u64]) -> bool {
+  spine_len.iter().all(|&l| l < TELE_SUBADD_END)
+}
+
 /// First count with the same TagN (f = 0) width as `k` (`tag0_len`): the
 /// start of `k`'s rung. Mirrors Lean `tag0BracketStart`.
 fn tag0_bracket_start(k: u64) -> u64 {
@@ -1399,10 +1410,17 @@ pub(crate) fn optimize_uniform(
   let nodes = dag.nodes();
   let n = nodes.len();
   let facts = graph_facts(dag);
+  // Fail closed on a telescope spine of `TELE_SUBADD_END` or more steps,
+  // before the search (Lean's `optimizeUniformExpanded`).
+  let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
+  if !spines_within_bound(&spine_len) {
+    return Err(SharingError::FormatBound(FormatBound::TelescopeSpine {
+      bound: TELE_SUBADD_END,
+    }));
+  }
   // Unshared sizes C_0 (no stop terms, nothing available).
   let empty = UPrep::new(nodes, wu, vec![false; n])?;
   let size: Vec<u128> = empty.base.iter().map(|v| v.cost).collect();
-  let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
   // Classes: certain-excluded, low degree, and the gain test on visible
   // counts with threshold theta.
   let ce: Vec<bool> =
@@ -1612,10 +1630,12 @@ pub(crate) fn optimize_uniform(
   if start > k_cs {
     let cap = usize::try_from(start - 1 - k_cs).map_err(|_e| overflow())?;
     let cells = (results.len() + 1).saturating_mul(cap + 1);
-    if u64::try_from(cells).unwrap_or(u64::MAX) > meter.limits().max_states {
+    if u64::try_from(cells).unwrap_or(u64::MAX)
+      > meter.limits().max_knapsack_cells
+    {
       return Err(SharingError::ResourceExhausted(super::ResourceExhausted {
-        resource: super::Resource::States,
-        limit: meter.limits().max_states,
+        resource: super::Resource::KnapsackCells,
+        limit: meter.limits().max_knapsack_cells,
       }));
     }
     let mut dp: Vec<Option<Choice>> = vec![None; cap + 1];
