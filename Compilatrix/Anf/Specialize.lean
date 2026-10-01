@@ -13,14 +13,17 @@ mask. At each such call site the pass
    definitions in scope: constructors (never one whose contract is
    `unique`, 06 S37), literals, function globals and local functions (whose
    free variables are followed in turn); an unknown value is a **hole**,
-   i.e. an extra parameter (Lean's abstraction);
+   i.e. an extra parameter (Lean's abstraction), and so is every operand
+   left when the tree walk runs out of fuel;
 3. keys the specialisation `GKey.spec (key g) args` (D19), with `args` one
    `ArgKey` per parameter: the masked argument's tree over constructor keys,
    literals and global keys (a local function is named by its origin,
    `glob (lam f [inv, i])`, the `i`-th λ of `f`'s body in invocation `inv`,
    which determines its body and free variables), and `hole k` for an
-   unmasked parameter or an abstracted value. Equal keys share one global;
-3. creates the specialisation when the key is new: parameters are the holes;
+   unmasked parameter or an abstracted value. A global with an equal key
+   is shared when it is exactly the specialisation this site would build
+   (same arity, same body calling itself);
+3. otherwise creates the specialisation: parameters are the holes;
    a prologue rebuilds the known definitions (a copy of each needed
    binding, in their original order), then `g`'s body follows with each
    masked parameter bound to its tree and every call of `g` whose masked
@@ -153,6 +156,14 @@ def Trees.holeOf (t : Trees) : Opd → Trees × Key.ArgKey
   | .lvl l => let (t, h) := t.levelHole l; (t, .hole h)
   | o => let (t, h) := t.hole (.atom o); (t, .hole h)
 
+/-- Every operand of a list unknown: holes. -/
+def Trees.holesOf (t : Trees) : List Opd → Trees × List Key.ArgKey
+  | [] => (t, [])
+  | o :: os =>
+    let (t, k) := t.holeOf o
+    let (t, ks) := t.holesOf os
+    (t, k :: ks)
+
 mutual
 
 /-- The key of an operand's value tree, collecting holes and needed
@@ -181,7 +192,9 @@ def tree (P : Program) (defs : Src.NatMap Def) (fkey : Key.GKey) (inv : Nat) :
 
 def trees (P : Program) (defs : Src.NatMap Def) (fkey : Key.GKey) (inv : Nat) :
     Nat → Trees → List Opd → Trees × List Key.ArgKey
-  | 0, t, _ => (t, [])
+  -- out of fuel: the remaining operands are holes (never dropped: a dropped
+  -- field would be rebuilt as □)
+  | 0, t, os => t.holesOf os
   | _, t, [] => (t, [])
   | fuel + 1, t, o :: os =>
     let (t, k) := tree P defs fkey inv fuel t o
@@ -238,8 +251,9 @@ structure St where
 
 abbrev M := StateT St (Except String)
 
-/-- The specialisation for a site, created if its key is new; `none` when no
-masked argument is known. -/
+/-- The specialisation for a site, shared with an equal-keyed global that is
+exactly what this site builds, created otherwise; `none` when no masked
+argument is known. -/
 def specialize (src : Program) (inv : Nat) (fkey : Key.GKey) (defs : Src.NatMap Def) (d : Nat)
     (g : GlobalId) (gd : GDef) (mask : List Bool) (as : List Atom) :
     M (Option (GlobalId × List Atom)) := do
@@ -268,14 +282,12 @@ def specialize (src : Program) (inv : Nat) (fkey : Key.GKey) (defs : Src.NatMap 
     | .param i => as.getD i .box
     | .level l => Opd.atom d (.lvl l)
     | .atom o => o.atom d
-  match st.prog.globalList.find? (fun (_, gd') => decide (gd'.key = key)) with
-  | some (s, _) => return some (s, args)
-  | none =>
-    let s := st.prog.size
-    let H := t.holes.length
+  -- the specialisation for this site, calling itself as `s`
+  let H := t.holes.length
+  let build := fun (s : GlobalId) => do
     -- the specialisation's frame: holes are its parameters
     let m0 : List (Nat × Opd) := t.levelHoles.map fun (l, h) => (l, .lvl h)
-    let (pro, m) ← liftM (prologue src defs m0 H (sortNats t.needed))
+    let (pro, m) ← prologue src defs m0 H (sortNats t.needed)
     let fixedOf := fun (i : Nat) => (roots.lookup i).map fun o => mapOpd defs m o
     let holeOf := fun (i : Nat) =>
       ((t.holes.zipIdx.find? fun (s, _) => match s with
@@ -292,16 +304,27 @@ def specialize (src : Program) (inv : Nat) (fkey : Key.GKey) (defs : Src.NatMap 
           | .param i => .param i
           | _ => .fixed (.lvl k) }
     let d0 := H + pro.length
-    let (body, _) ← liftM ((Walk.walk { prog := src, redirect := some r } Walk.fuel { σ }
-      { d := d0, dj := 0, facts := .leaf } gd.body .ret).run {})
+    let (body, _) ← (Walk.walk { prog := src, redirect := some r } Walk.fuel { σ }
+      { d := d0, dj := 0, facts := .leaf } gd.body .ret).run {}
     let ps := t.holes.map fun
       | .param i => gd.ps.getD i {}
       | _ => {}
-    let spec : GDef := { key, ps, result := gd.result, body := binds pro body }
+    return ({ key, ps, result := gd.result, body := binds pro body } : GDef)
+  let create := do
+    let s := st.prog.size
+    let spec ← liftM (build s)
     let gs := st.prog.globalList.map (fun (p : GlobalId × GDef) => p.2)
     set { st with prog := st.prog.withGlobals (gs ++ [spec]),
                   specs := st.specs + 1 }
     return some (s, args)
+  -- an existing specialisation with this key is shared when it is exactly the
+  -- one this site would build (same arity and body, calling itself)
+  match st.prog.globalList.find? (fun (_, gd') => decide (gd'.key = key)) with
+  | some (s, gd') =>
+    let spec ← liftM (build s)
+    if spec.ps.length == gd'.ps.length && spec.body.beq gd'.body then return some (s, args)
+    else create
+  | none => create
 where
   liftM {α : Type} (x : Except String α) : M α := StateT.lift x
 
