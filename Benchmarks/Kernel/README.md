@@ -11,11 +11,21 @@ watchdog are described in `docs/kernel.md` ("Environment check").
 ```sh
 lake build --wfail kernel-check-ixe
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe
-systemd-run --user --scope -p MemoryMax=24G -p MemorySwapMax=0 \
-  env CHECK_IXE_WATCH_MB=12000 scripts/check-ixe-guarded.sh \
-  .lake/build/bin/kernel-check-ixe .lake/envs/initstd.ixe .lake/envs/initstd.jsonl
-python3 scripts/check-ixe-report.py .lake/envs/initstd.jsonl
+CHECK_IXE_WATCH_MB=12000 .lake/build/bin/kernel-check-ixe --guarded --memory-max 24 \
+  .lake/envs/initstd.ixe .lake/envs/initstd.jsonl
+.lake/build/bin/kernel-check-ixe --report .lake/envs/initstd.jsonl
+.lake/build/bin/kernel-check-ixe --summary .lake/envs/initstd.jsonl --json initstd-summary.json
 ```
+
+`--guarded` reruns the check, in a fresh process, with every constant the
+driver's watchdog recorded in `<output>.runaway` skipped, until it completes;
+`--memory-max <GB>` runs each attempt in a cgroup scope capped at that size
+(`Ix.Watchdog`; exit 137 when the cap kills it), and `--binary <path>` runs
+another driver with the same contract (`kernel-check-ixe-opt`). `--report
+<rows> [top]` prints outcome counts, check time, decline reasons and the
+blocking roots ranked by reach; `--summary <rows> [--top N] [--json <out>]`
+writes the same as Markdown tables, with timing quantiles and the slowest
+rows. A compressed row file is decompressed first.
 
 Run one environment check at a time, with no concurrent build. A row's
 `micros` is the constant's install-and-check time and `readMicros` its
@@ -25,22 +35,24 @@ diagnostics, not process times.
 
 ## Paired runs
 
-`scripts/bench-check-ixe.py run` alternates fresh processes of a
-baseline and a candidate binary over the same `.ixe` (one warmup and three
-measured samples each by default) and records GNU time's peak RSS, whole
-process wall time, and executable, environment and source fingerprints. The
-output directory must be new. Every baseline acceptance the candidate loses,
+`kernel-check-ixe --paired` alternates fresh processes of a baseline and a
+candidate binary over the same `.ixe` (its first 4,300 primary records unless
+`--limit` says otherwise; one warmup and three measured samples each by
+default) and records GNU time's peak RSS, whole process wall time, and
+executable, environment and source fingerprints. The output directory must be
+new, and the samples run without the caller's `CHECK_IXE_*` variables, under a
+timeout (`--timeout`, 180 s). Every baseline acceptance the candidate loses,
 including missing rows, is listed and makes the runner exit nonzero; gained
 acceptances and other outcome changes are reported separately, and different
 coverage is flagged next to the wall-time ratio.
 
 ```sh
-python3 scripts/bench-check-ixe.py run \
+.lake/build/bin/kernel-check-ixe --paired \
   --baseline-binary /tmp/kernel-base/.lake/build/bin/kernel-check-ixe \
   --baseline-revision <baseline-commit> \
   --binary .lake/build/bin/kernel-check-ixe --revision <candidate-commit> \
   --input .lake/envs/initstd.ixe --output-dir .lake/check-ixe-paired
-python3 scripts/bench-check-ixe.py compare before.jsonl after.jsonl --output comparison.json
+.lake/build/bin/kernel-check-ixe --compare before.jsonl after.jsonl --output comparison.json
 ```
 
 ## Other drivers (untrusted, measurement only)

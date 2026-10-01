@@ -336,16 +336,22 @@ re-records it states why the closure or the statement moved.
 5. `kernel-codec` (production codec against Rust) and `kernel-order`
    (canonical block order against Rust);
 6. with `--with-model`, the `Models/SetTheory` build and its audit;
-7. `scripts/layering.sh`: the vendored tree's import layering, by upstream
-   path (implementation never imports theory, base never imports the model
-   lane, the rules fence and its five recorded doors, and the boundary: a
-   vendored module imports only the vendored tree, `Init`, `Std` and, at
-   elaboration time, `Lean`);
-8. `scripts/trust-surface.sh`: a lexer-based scan of the vendored tree for
-   compiler escapes (`unsafe`, `implemented_by`, `computed_field`,
-   `native_decide`, `extern`, `sorry`, `axiom`, ...); 11 escapes in four
+7. `kernel-layering` (`Tests/Ix/Kernel/Layering.lean`, derived from
+   con-leche's `tests/layering.sh`): the kernel's import layering, each file
+   of `Ix/Kernel/` classified by its path (`Tests/Ix/Kernel/KernelLayout.lean`;
+   an unclassified file fails): the checker never imports the theory, the
+   base never imports the model lane, the rules fence and its five recorded
+   doors, and the boundary: the checker and the theory import only
+   themselves, `Init`, `Std` and, at elaboration time, `Lean` (Ix's
+   boundary modules `Ixon`, `Audit`, `Ingress`, `Egress`, `Ref` and `Search`
+   import the kernel, not the reverse);
+8. `kernel-trust-surface` (`Tests/Ix/Kernel/TrustSurface.lean`, derived from
+   con-leche's `tests/trust-surface.sh`, with its lexer self-test on
+   `Tests/Fixtures/trust-surface/lexer.lean`): a lexer-based scan of the
+   checker and the theory for compiler escapes (`unsafe`, `implemented_by`,
+   `computed_field`, `native_decide`, `extern`, `sorry`, `axiom`, ...); 11 escapes in four
    allowlisted files (`Ix/Kernel/{Expr,Name,Exclusive,BasisGen}.lean`)
-   are permitted, each with its justification in the script;
+   are permitted, each with its justification in the tool's header;
 9. `kernel-entry-cases`: Lean declarations of
    `Tests/Ix/Kernel/EntryCaseDefs.lean` compiled by Ix's compiler and
    submitted as canonical bytes to `checkBytes`, each with an exact expected
@@ -510,10 +516,9 @@ reason, micros, readMicros`).
 ```sh
 lake build --wfail kernel-check-ixe
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe
-systemd-run --user --scope -p MemoryMax=24G -p MemorySwapMax=0 \
-  env CHECK_IXE_WATCH_MB=12000 scripts/check-ixe-guarded.sh \
-  .lake/build/bin/kernel-check-ixe .lake/envs/initstd.ixe .lake/envs/initstd.jsonl
-python3 scripts/check-ixe-report.py .lake/envs/initstd.jsonl
+CHECK_IXE_WATCH_MB=12000 .lake/build/bin/kernel-check-ixe --guarded --memory-max 24 \
+  .lake/envs/initstd.ixe .lake/envs/initstd.jsonl
+.lake/build/bin/kernel-check-ixe --report .lake/envs/initstd.jsonl
 ```
 
 Usage: `kernel-check-ixe <input.ixe> <output.jsonl> [limit]`. Environment:
@@ -527,15 +532,17 @@ Usage: `kernel-check-ixe <input.ixe> <output.jsonl> [limit]`. Environment:
   must exceed it, or the watchdog fires before the first check (for Mathlib,
   for example, `CHECK_IXE_WATCH_MB=60000` under a `MemoryMax` above that);
 - `CHECK_IXE_SKIP` (comma-separated addresses) declines those constants
-  unchecked; `scripts/check-ixe-guarded.sh` reruns with every recorded runaway
-  skipped until the run completes;
+  unchecked; `kernel-check-ixe --guarded` reruns with every recorded runaway
+  skipped until the run completes (`--memory-max <GB>` runs each attempt in
+  a memory-capped cgroup scope, `Ix.Watchdog`);
 - `CHECK_IXE_ROOTS` (comma-separated Lean names) restricts the run to the
   prelude and the dependency closure of those constants.
 
 Run one environment check at a time, under a memory cap, with no concurrent build.
-`scripts/check-ixe-summary.py` and `scripts/bench-check-ixe.py`
-summarize and compare runs. Mathlib's `.ixe` comes from
-`Benchmarks/Compile/CompileMathlib.lean` (`Benchmarks/Compile/README.md`).
+`kernel-check-ixe --report` and `--summary` summarize a run's rows, and
+`--compare` and `--paired` compare runs (`Benchmarks/Kernel/README.md`).
+Mathlib's `.ixe` comes from `Benchmarks/Compile/CompileMathlib.lean`
+(`Benchmarks/Compile/README.md`).
 
 ## The retired intrinsic kernel
 

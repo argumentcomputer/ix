@@ -447,11 +447,11 @@ script "check-kernel" (args) := do
     throw <| IO.userError "kernel-order failed; see .lake/build/kernel-order.jsonl"
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
-  -- Con-leche's fences for the vendored tree (`scripts/vendor-conleche.py
-  -- list`): import layering and the per-file escape allowlist, with the
-  -- trust-surface lexer's self-test.
-  run "bash" #["scripts/layering.sh"]
-  run "bash" #["scripts/trust-surface.sh"]
+  -- The kernel's fences, derived from con-leche's: import layering and the
+  -- per-file escape allowlist, with the trust-surface lexer's self-test.
+  run "lake" #["build", "--wfail", "kernel-layering", "kernel-trust-surface"]
+  run ".lake/build/bin/kernel-layering" #[]
+  run ".lake/build/bin/kernel-trust-surface" #[]
   -- Host-compiled Lean declarations through the certified entry, each with
   -- an exact expected verdict (`Tests/Ix/Kernel/EntryCases.lean`).
   -- Con-leche's level comparison against brute-force evaluation (cl-level).
