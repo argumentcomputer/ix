@@ -638,14 +638,12 @@ def CTable.trim (tb : CTable) (slack : Nat) : CTable :=
     | none => none
 
 /-- Combine the tables of disjoint groups: every pair of entries, summed. -/
-def CTable.conv (a b : CTable) : CTable := Id.run do
-  let mut out : CTable := #[]
-  for oa in a do
-    let some (da, sa) := oa | continue
-    for ob in b do
-      let some (db, sb) := ob | continue
-      out := out.add (da + db, mergeSorted sa sb)
-  return out
+def CTable.conv (a b : CTable) : CTable :=
+  a.foldl (fun out oa => match oa with
+    | none => out
+    | some (da, sa) => b.foldl (fun out ob => match ob with
+      | none => out
+      | some (db, sb) => out.add (da + db, mergeSorted sa sb)) out) #[]
 
 /-- Static context of one component's search. -/
 structure SCtx where
@@ -989,7 +987,7 @@ def SCtx.splitP (cx : SCtx) (limits : Limits) :
   | _ + 1, _, _, [], comb, st => pure (comb, st)
   | fuel + 1, inAll, outAll, grp :: grps, comb, st => do
     let (sub, st) ← cx.solveP limits fuel grp inAll outAll st
-    cx.splitP limits fuel inAll outAll grps ((comb.conv sub).trim cx.slack) st
+    cx.splitP limits fuel inAll outAll grps (comb.conv sub) st
 end
 
 
