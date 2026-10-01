@@ -1441,6 +1441,10 @@
    ["Compilatrix.Xv.Stacking.Proof.Trunc",
     "Compilatrix.Xv.Validate.Proof.Exec",
     "Compilatrix.X86.Memory"]},
+  "Compilatrix.Xv.Stacking.Proof.InstXl":
+  {"path": "Compilatrix/Xv/Stacking/Proof/InstXl.lean",
+   "imports":
+   ["Compilatrix.Xv.Stacking.Proof.RowXl", "Compilatrix.X86.Constructors"]},
   "Compilatrix.Xv.Stacking.Proof.Exit":
   {"path": "Compilatrix/Xv/Stacking/Proof/Exit.lean",
    "imports":
@@ -3889,6 +3893,7 @@
     "Compilatrix.Xv.Stacking.Proof.Trunc",
     "Compilatrix.Xv.Stacking.Proof.RowRel",
     "Compilatrix.Xv.Stacking.Proof.RowXl",
+    "Compilatrix.Xv.Stacking.Proof.InstXl",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",
