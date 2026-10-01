@@ -85,6 +85,13 @@ theorem convert_spec {L : Lam.Program} {Q : Program} (h : convert L = .ok Q) :
     cases he
   | true => ?_
   simp only [hr, ↓reduceIte] at h
+  cases hdn : (List.range L.size).all (fun g => (L.global? g).isSome) with
+  | false =>
+    simp only [hdn] at h
+    obtain ⟨_, he, _⟩ := Lam.ModesOk.bind_ok h
+    cases he
+  | true => ?_
+  simp only [hdn, ↓reduceIte] at h
   obtain ⟨gs, hgs, h⟩ := Lam.ModesOk.bind_ok h
   cases h
   refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, fun g gl hg hlt => ?_⟩

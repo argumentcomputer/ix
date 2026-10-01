@@ -299,12 +299,15 @@ end Convert
 
 open Convert in
 /-- P1: convert a `ModesOk` Lam program whose roots take value arguments
-(decline `convert-root-name` otherwise); global ids, roots, the constructor
-table and the pinned keys are unchanged. -/
+(decline `convert-root-name` otherwise) and whose ids below its size all have
+globals (decline `convert-dense`: the passes renumber globals densely);
+global ids, roots, the constructor table and the pinned keys are unchanged. -/
 def convert (P : Lam.Program) : Except String Program := do
   unless Lam.modesOk P do throw "convert: the Lam program is not ModesOk"
   unless P.roots.all (rootStrict P) do
     throw "convert-root-name: a root has by-name parameters"
+  unless (List.range P.size).all (fun g => (P.global? g).isSome) do
+    throw "convert-dense: a global id below the size has no global"
   let A := arities P
   let gs ← P.globalList.mapM fun (g, gl) => do
     let gd ← (Convert.global A gl).mapError (s!"global {g}: " ++ ·)
