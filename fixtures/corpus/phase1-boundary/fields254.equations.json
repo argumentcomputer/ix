@@ -1,0 +1,25 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "Limits.lean",
+  "roots": [
+    {
+      "name": "Limits.fields254",
+      "address": "b9cdbcb19faaabe7528b623730685920f9b0d24da0b1441b5530a50b14c3e95a"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Limits.keep254",
+      "definition_address": "6c49b1952c4812f432b8020c413aed25826d7c1c3e19699ebd6c5aa6d49cac0e",
+      "equation": "Limits.keep254.eq_def",
+      "equation_address": "a663a6462f33affd051bce2f7a2d71fbe0f6d5aa5f16ad15e4360c0666bc09f5"
+    },
+    {
+      "definition": "Nat.add",
+      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+    }
+  ],
+  "failures": []
+}

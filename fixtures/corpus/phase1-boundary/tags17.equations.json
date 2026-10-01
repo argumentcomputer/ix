@@ -1,0 +1,73 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "Limits.lean",
+  "roots": [
+    {
+      "name": "Limits.tags17",
+      "address": "47f72cbe37fc99046057a5aae7cdadb874f9f5f00ba95f421fb0cba2ad30446f"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Limits.keepT17",
+      "definition_address": "cb1e2bd67509365442367f6d135bb63fa9167dba1efe8b6a6d94cad103e7f5b9",
+      "equation": "Limits.keepT17.eq_def",
+      "equation_address": "0678f1031edf9ca29499a24ee6b07aed198d77d7db88923a87d82ca659ac3f5b"
+    },
+    {
+      "definition": "Nat.add",
+      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+    },
+    {
+      "definition": "Nat.beq",
+      "definition_address": "ffd3f02a19fda649aa5608ed818db382e160231b76d5b09176d7dd1a8d5b1ec5",
+      "equation": "Nat.beq.eq_def",
+      "equation_address": "e73554caa775dedc1ccfbbc71d99f6d55a13ac99a4c201f2d258fe60bf3be65a"
+    },
+    {
+      "definition": "Nat.bitwise",
+      "definition_address": "9d0e75e40a4548f0b5efb6e028f1231ef68bc7ed9a518964ece544dcd17973bc",
+      "equation": "Nat.bitwise.eq_def",
+      "equation_address": "fb727fa052760351cc40a8334f983098d7cc9bb0e4278748b377932d421e7eca"
+    },
+    {
+      "definition": "Nat.bitwise._unary",
+      "definition_address": "35d96d569802edf97efc0ced7e947036a6f5f749a6d2cd10463f2ff3f213d55c",
+      "equation": "Nat.bitwise._unary.eq_def",
+      "equation_address": "83cd559d2435276b825a141d0038fc6fe649e4382e8ca59d213237f3d5ac286c"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "68a3643ec69816aec107302ddbfa054cebcd3ec173cd5f7e6d883638631afe65",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "656121c2851fa53d6c8a8d453641667ff9e2f6c42b3ad0650d5acb9dce3b8e13"
+    },
+    {
+      "definition": "Nat.div.go",
+      "definition_address": "d8bc4e02b14f52e27846f825fa1f2dcb801fa4dd8bf3144cd2b8d266798fa5bc",
+      "equation": "Nat.div.go.eq_def",
+      "equation_address": "b6804866f16738eb190385ac8fcacff196462ac9a7ad0f80986bc9dea50463ae"
+    },
+    {
+      "definition": "Nat.modCore.go",
+      "definition_address": "eba496953114ffd258e4ce38af675c3bea2cc4715d9e866e23afded3f3bf566e",
+      "equation": "Nat.modCore.go.eq_def",
+      "equation_address": "366091eaf5cd58a57a944d3644d097a5a4ee6825c3f23f0b32bb9802c2d58e23"
+    },
+    {
+      "definition": "Nat.shiftRight",
+      "definition_address": "3f92725324b09fa75c6fcd16da863671428ff33b7db667eb760e1cd503a2bcad",
+      "equation": "Nat.shiftRight.eq_def",
+      "equation_address": "77e5409d34966c779277d0ee1649fec116991f70834826794931979233968860"
+    },
+    {
+      "definition": "Nat.sub",
+      "definition_address": "9de2d2c60e7d421a2fdfb8706e91e0e6d8576c3bd46ec00405c65875cb9b5a26",
+      "equation": "Nat.sub.eq_def",
+      "equation_address": "68e26cf2d4be356642d9276e924f6049e93a354b02a1a64c0c15d22ece59d16d"
+    }
+  ],
+  "failures": []
+}
