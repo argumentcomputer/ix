@@ -103,6 +103,9 @@
   "Compilatrix.Anf.Proof.Convert.Term",
   "Compilatrix.Anf.Proof.Lang",
   "Compilatrix.Anf.Proof.Mono",
+  "Compilatrix.Anf.Proof.Rel.Basic",
+  "Compilatrix.Anf.Proof.Rel.Fund",
+  "Compilatrix.Anf.Proof.Rel.Ident",
   "Compilatrix.Anf.Proof.Unfold",
   "Compilatrix.Anf.Semantics",
   "Compilatrix.Anf.Syntax",
@@ -423,5 +426,5 @@
   "Ix.Lib"],
  "baseline": "jcb/x86: merge M2.3",
  "axiom_sha256":
- "1e245e665b047c83df7faa8c72bb44c833fcfe9d0aee80af2cb65d85768d5d9c",
- "axiom_count": 1217}
+ "f8a142110b98be024791aa07e300874c41664e9fca79d4d45b3a6d3e0c267e11",
+ "axiom_count": 1239}

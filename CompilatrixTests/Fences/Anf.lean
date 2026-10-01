@@ -1,6 +1,7 @@
 import Compilatrix.Anf.Proof.Mono
 import Compilatrix.Sem.Dominance
 import Compilatrix.Anf.Proof.Convert.Correct
+import Compilatrix.Anf.Proof.Rel.Ident
 
 /-! Required axiom fences for the Anf proofs (M2.3): clock monotonicity of
 Anf evaluation; ANF conversion (P1, Lam → Anf); the Anf-to-Anf relation, its
@@ -99,3 +100,71 @@ verbatim. -/
 
 /-- info: 'Compilatrix.Anf.Convert.Proof.convert_refines_traced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Convert.Proof.convert_refines_traced
+
+/-! The Anf-to-Anf relation (`Anf.Proof.Rel`): compatibility per construct, the fundamental lemma, application of closures of the same code, adequacy, and the identity instance. -/
+
+/-- info: 'Compilatrix.Anf.Rel.compat_atom' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_atom
+
+/-- info: 'Compilatrix.Anf.Rel.compat_con' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_con
+
+/-- info: 'Compilatrix.Anf.Rel.compat_proj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_proj
+
+/-- info: 'Compilatrix.Anf.Rel.compat_prim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_prim
+
+/-- info: 'Compilatrix.Anf.Rel.compat_glob' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_glob
+
+/-- info: 'Compilatrix.Anf.Rel.compat_call' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_call
+
+/-- info: 'Compilatrix.Anf.Rel.compat_app' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_app
+
+/-- info: 'Compilatrix.Anf.Rel.compat_fn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_fn
+
+/-- info: 'Compilatrix.Anf.Rel.compat_bind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_bind
+
+/-- info: 'Compilatrix.Anf.Rel.compat_join' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_join
+
+/-- info: 'Compilatrix.Anf.Rel.compat_jumpTo' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_jumpTo
+
+/-- info: 'Compilatrix.Anf.Rel.compat_ret' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_ret
+
+/-- info: 'Compilatrix.Anf.Rel.compat_tick' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_tick
+
+/-- info: 'Compilatrix.Anf.Rel.compat_trap' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.compat_trap
+
+/-- info: 'Compilatrix.Anf.Rel.fund_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.fund_step
+
+/-- info: 'Compilatrix.Anf.Rel.app_idc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.app_idc
+
+/-- info: 'Compilatrix.Anf.Rel.run_simUpTo' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.run_simUpTo
+
+/-- info: 'Compilatrix.Anf.Rel.refines_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.refines_of
+
+/-- info: 'Compilatrix.Anf.Rel.Ident.structural' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.Ident.structural
+
+/-- info: 'Compilatrix.Anf.Rel.Ident.level' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.Ident.level
+
+/-- info: 'Compilatrix.Anf.Rel.Ident.fund' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.Ident.fund
+
+/-- info: 'Compilatrix.Anf.Rel.Ident.refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Rel.Ident.refines

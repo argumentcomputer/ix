@@ -877,7 +877,8 @@
    "imports":
    ["Compilatrix.Anf.Proof.Mono",
     "Compilatrix.Sem.Dominance",
-    "Compilatrix.Anf.Proof.Convert.Correct"]},
+    "Compilatrix.Anf.Proof.Convert.Correct",
+    "Compilatrix.Anf.Proof.Rel.Ident"]},
   "CompilatrixTests.Fences.AiurWire":
   {"path": "CompilatrixTests/Fences/AiurWire.lean",
    "imports": ["CompilatrixTests.Aiur.WireProofs"]},
@@ -2393,6 +2394,16 @@
   "Compilatrix.Anf.Proof.Unfold":
   {"path": "Compilatrix/Anf/Proof/Unfold.lean",
    "imports": ["Compilatrix.Anf.Semantics", "Compilatrix.Sem.Agrees"]},
+  "Compilatrix.Anf.Proof.Rel.Ident":
+  {"path": "Compilatrix/Anf/Proof/Rel/Ident.lean",
+   "imports": ["Compilatrix.Anf.Proof.Rel.Fund"]},
+  "Compilatrix.Anf.Proof.Rel.Fund":
+  {"path": "Compilatrix/Anf/Proof/Rel/Fund.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Rel.Basic", "Compilatrix.Anf.Proof.Lang"]},
+  "Compilatrix.Anf.Proof.Rel.Basic":
+  {"path": "Compilatrix/Anf/Proof/Rel/Basic.lean",
+   "imports": ["Compilatrix.Anf.Proof.Mono", "Compilatrix.Sem.Dominance"]},
   "Compilatrix.Anf.Proof.Mono":
   {"path": "Compilatrix/Anf/Proof/Mono.lean",
    "imports": ["Compilatrix.Anf.Proof.Unfold", "Compilatrix.Sem.SimUpTo"]},
@@ -2926,6 +2937,9 @@
     "Compilatrix.Anf.Proof.Convert.Term",
     "Compilatrix.Anf.Proof.Convert.Level",
     "Compilatrix.Anf.Proof.Convert.Correct",
+    "Compilatrix.Anf.Proof.Rel.Basic",
+    "Compilatrix.Anf.Proof.Rel.Fund",
+    "Compilatrix.Anf.Proof.Rel.Ident",
     "Compilatrix.Own.Kind",
     "Compilatrix.Fir.Syntax",
     "Compilatrix.Fir.Semantics",

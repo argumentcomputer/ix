@@ -152,6 +152,9 @@ import Compilatrix.Anf.Proof.Convert.Spine
 import Compilatrix.Anf.Proof.Convert.Term
 import Compilatrix.Anf.Proof.Convert.Level
 import Compilatrix.Anf.Proof.Convert.Correct
+import Compilatrix.Anf.Proof.Rel.Basic
+import Compilatrix.Anf.Proof.Rel.Fund
+import Compilatrix.Anf.Proof.Rel.Ident
 import Compilatrix.Own.Kind
 import Compilatrix.Fir.Syntax
 import Compilatrix.Fir.Semantics
