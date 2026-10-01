@@ -7,6 +7,7 @@ import Ix.CompileDriver
 import Ix.Meta
 import Tests.Ix.Kernel.ReaderFidelity
 import Tests.Ix.Kernel.ConLecheRoundtrip
+import Tests.Ix.Kernel.EgressFidelity
 
 /-! # `kernel-reader-fidelity`: the reader against Lean on Init and Std
 
@@ -30,8 +31,12 @@ from this toolchain's `.olean` files.
   (`Tests.Ix.Kernel.ConLecheRoundtrip.evaluate`: expected verdicts and tampers).
 
 `FIDELITY_ROOTS` (comma-separated Lean names) restricts a run to the prelude
-and the closure of those constants. The report goes to stdout; the exit code
-is 1 on any unexplained difference or problem. -/
+and the closure of those constants. Every mode also checks the kernel's
+output side on the same records (`Tests.Ix.Kernel.EgressFidelity`: each
+block's projection records as the certified writer writes them, its canonical
+order; with `--fixture`, re-reading and the certified entries' installed
+environments as well). The report goes to stdout; the exit code is 1 on any
+unexplained difference or problem. -/
 
 namespace Tests.Ix.Kernel.ReaderFidelityMain
 
@@ -61,8 +66,9 @@ def report (r : Report) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   if args == ["--fixture"] then
-    let (r, errors) ← Tests.Ix.Kernel.ConLecheRoundtrip.evaluate
+    let (r, lines, errors) ← Tests.Ix.Kernel.ConLecheRoundtrip.evaluate
     IO.println r.summary
+    for l in lines do IO.println l
     for e in errors do IO.eprintln s!"reader-fidelity: fixture: {e}"
     return if errors.isEmpty then 0 else 1
   let started ← IO.monoMsNow
@@ -91,6 +97,12 @@ def main (args : List String) : IO UInt32 := do
     | some list => pure <| some <| ((list.splitOn ",").filter (!·.isEmpty)).toArray.filterMap fun n =>
         (ixon.named[Ix.Name.fromLeanName n.toName]?).map (·.addr)
   let code ← report (← run input limit (roots := roots))
+  -- the kernel's output side: every block's projection records as the
+  -- certified writer writes them, and its canonical order
+  let proj := Tests.Ix.Kernel.EgressFidelity.projections input.store ixon.blobs.toList
+  IO.println proj.summary
+  let code := if proj.problems.isEmpty && proj.matched == proj.compiled && proj.orderProblems.isEmpty
+    then code else 1
   IO.eprintln s!"reader-fidelity: done in {(← IO.monoMsNow) - started} ms"
   -- exit without tearing the environments down (the Rust compiler's
   -- environment took minutes to free at exit)

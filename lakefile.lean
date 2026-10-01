@@ -439,7 +439,8 @@ script "check-kernel" (args) := do
   unless entry.exitCode == 0 do
     throw <| IO.userError "kernel-entry-cases failed; see .lake/build/kernel-entry-cases.jsonl"
   -- The Ixon reader against a direct translation of the Lean constants it was
-  -- compiled from: the fixture closure (the `lake test` suite's check) and the
+  -- compiled from, and the kernel's projection output against the compiler's
+  -- records: the fixture closure (the `lake test` suite's check) and the
   -- first records of Init and Std (`Tests/Ix/Kernel/ReaderFidelity.lean`).
   run "lake" #["build", "--wfail", "kernel-reader-fidelity"]
   let mut fidelityLog := ""
