@@ -114,13 +114,14 @@ def checkVMProof (env : AiurTestEnv) (fnName : Lean.Name)
   IO.ofExcept (env.aiurSystem.verify claim (Aiur.Proof.ofBytes proof.toBytes))
 
 /-- Every counted decoding path accepts one complete element and rejects a
-short stream when the count is two or the largest canonical UInt64. Each
-truncated stream supplies one element, then ends. The decode-only entrypoints
-ensure rejection happens before reserialization. -/
+short stream when the count is two, 128 (a two-byte TagN count for both
+f = 0 and f = 4) or the largest UInt64 (nine bytes). Each truncated stream
+supplies one element, then ends. The decode-only entrypoints ensure rejection
+happens before reserialization. -/
 def runCountTruncations (env : AiurTestEnv) : IO Nat := do
   let mut checks := 0
-  for count in [1, 2, (2 ^ 64 - 1 : Nat)] do
-    let large := count > 2
+  for count in [1, 2, 128, (2 ^ 64 - 1 : Nat)] do
+    let large := count == 2 ^ 64 - 1
     let accept := count == 1
     let tag0 : ByteArray := Ixon.runPut (Ixon.putTagN 0 0 count.toUInt64)
     let tag4 (flag : UInt8) : ByteArray := Ixon.runPut (Ixon.putTagN 4 flag count.toUInt64)
@@ -181,8 +182,12 @@ def runVMClaims : IO Nat := do
     let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env claim trees)
     checks := checks + (← checkVMClaim vm name witness true)
     let bytes := Ix.Claim.ser claim
+    -- Byte 1 is the object format; the circuit accepts exactly
+    -- `Ixon.Env.OBJECT_FORMAT` (4), not the previous format or a later one.
     for (mutation, bad) in [
-        ("trailing", bytes.push 0), ("legacy-version", bytes.set! 1 2),
+        ("trailing", bytes.push 0),
+        ("legacy-version", bytes.set! 1 (Ixon.Env.OBJECT_FORMAT - 1)),
+        ("future-version", bytes.set! 1 (Ixon.Env.OBJECT_FORMAT + 1)),
         ("wrong-validator", bytes.set! 2 255), ("truncated", bytes.extract 0 (bytes.size - 1))] do
       checks := checks + (← checkVMClaim vm s!"{name}-{mutation}"
         (replaceClaimBytes witness bad) false)
