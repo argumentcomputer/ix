@@ -1,12 +1,22 @@
 # Ixon v3 implementation and verification record
 
+> **Historical record.** This file records the gates executed when the
+> contract model (usage, ownership, relative locality) was introduced in
+> format v3. The current format is **v4**, which keeps that contract model
+> but replaces Tag0/Tag2/Tag4 with TagN and makes sharing canonical. See
+> the [v4 specification](Ixon-v4.md) and [Ixon](Ixon.md). The figures below
+> were measured on v3 and are not re-asserted for v4. In particular, the
+> byte sizes, addresses and FFT-cost pins all change with the v4 bytes.
+
+<!-- PENDING: [verify] a v4 verification record with the gates of plan §9 (lake build IxCompileVerify IxTcVerify, primary and ignored suites, cargo test/clippy/fmt, codegen --check, Init + Mathlib-sample parity) is written once they have been run on the PR commit. -->
+
 Ixon v3 carries independent usage, ownership, and relative-locality contracts
 through the Ix source frontend, Lean and Rust compilers, canonical bytes,
 sharing, text syntax, FFI, and decompilation. Scoped shared borrowing uses an
 explicit let kind. Native admission checks resources and erased typing before
 an annotated production artifact is emitted.
 
-## Implemented boundary
+## Implemented boundary (contract model)
 
 - Definitions, theorems, opaque bodies, and explicitly admitted interfaces are
   supported. Annotated inductive/constructor/recursor generation and nonidentity
@@ -23,9 +33,9 @@ an annotated production artifact is emitted.
 The [resource-checker specification](resource-checking.md) records the bounded
 normalization, higher-order capture, recursion, and projection fragment.
 
-## Executed gates
+## Executed gates (v3)
 
-Commands run from the repository root:
+Commands run from the repository root at the v3 change:
 
 | Gate | Result |
 | --- | --- |
@@ -64,12 +74,14 @@ reconstructs all 6,656 source constants with no errors or mismatches. The
 low-level diagnostic probes retain their existing mismatch baselines; the
 production-driver and fidelity gates require zero mismatches.
 
-## Formal trust frontier
+## Formal trust frontier (v3)
 
-The compiler manifest audits 143 roots. The typechecker manifests audit 2,034
+At the v3 change the compiler manifest audited 143 roots. (At commit
+`9611c3b6` of the v4 work it audits 212 roots, including the TagN and
+sharing-construction theorems.) The typechecker manifests audited 2,034
 completed roots, one conditional root, and seven statement roots. Their
 existing transitive assumptions remain explicit in the manifests. Both local
-sorry-frontier checks pass.
+sorry-frontier checks passed.
 
 The new resource audit covers 15 roots connected to executable quantitative,
 scope, ownership, loan-ending, and join checks. Contract-code inverses and
@@ -80,13 +92,14 @@ These results establish the stated codec and state-transition properties.
 They do not establish a theorem for the entire resource checker against a
 machine operational semantics or verify a backend allocation strategy.
 
-## Migration observations
+## Migration observations (v3)
 
-Environment format is 3, catalog-manifest format is 2, and claim/proof envelopes
-bind format 3 plus a validator identity. Old typed objects, claims, and
-primitive addresses require regeneration. The historical Mathlib proof fixture
-retains its original hash and root bytes and now rejects at the v3 envelope
-boundary.
+At the v3 change the environment format was 3, the catalog-manifest format 2,
+and claim/proof envelopes bound format 3 plus a validator identity (v4 moves
+the format to 4; the catalog-manifest format stays 2). Old typed objects,
+claims, and primitive addresses required regeneration. The historical Mathlib
+proof fixture retains its original hash and root bytes and rejects at the
+envelope boundary.
 
 The v3 VM's decoding and canonicality checks change its deterministic FFT-cost
 estimates. Across the 83 existing kernel pins the increase over the pre-v3
