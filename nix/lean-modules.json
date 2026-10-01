@@ -2084,6 +2084,14 @@
     "Compilatrix.Cfg.Lower",
     "Compilatrix.Rt.Backend",
     "Compilatrix.Rt.Readback"]},
+  "Compilatrix.Recheck.Proof.Front":
+  {"path": "Compilatrix/Recheck/Proof/Front.lean",
+   "imports":
+   ["Compilatrix.Recheck.Run",
+    "Compilatrix.Lam.Erase.Proof.Correct",
+    "Compilatrix.Anf.Proof.Pass.Pipeline",
+    "Compilatrix.Cfg.Proof.OfAnf",
+    "Compilatrix.Rt.Proof.Lang"]},
   "Compilatrix.Recheck.Produce":
   {"path": "Compilatrix/Recheck/Produce.lean",
    "imports":
@@ -3667,6 +3675,7 @@
     "Compilatrix.Rt.Backend",
     "Compilatrix.Src.Table.Cert",
     "Compilatrix.Recheck",
+    "Compilatrix.Recheck.Proof.Front",
     "Compilatrix.Cli",
     "Compilatrix.Aiur"]},
   "CheckX86Streams":
