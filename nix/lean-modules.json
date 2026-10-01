@@ -1830,6 +1830,12 @@
   "Compilatrix.Rt.Proof.Switch":
   {"path": "Compilatrix/Rt/Proof/Switch.lean",
    "imports": ["Compilatrix.Rt.Proof.Chain"]},
+  "Compilatrix.Rt.Proof.StepFrame":
+  {"path": "Compilatrix/Rt/Proof/StepFrame.lean",
+   "imports": ["Compilatrix.Rt.Proof.Rel"]},
+  "Compilatrix.Rt.Proof.Rel":
+  {"path": "Compilatrix/Rt/Proof/Rel.lean",
+   "imports": ["Compilatrix.Rt.Proof.LayoutFun", "Compilatrix.Cfg.Semantics"]},
   "Compilatrix.Rt.Proof.Procs":
   {"path": "Compilatrix/Rt/Proof/Procs.lean",
    "imports":
@@ -1860,9 +1866,18 @@
    ["Compilatrix.Rt.Proof.Env",
     "Compilatrix.Rt.Proof.Alloc",
     "Compilatrix.Rt.Proof.Pow"]},
+  "Compilatrix.Rt.Proof.Mono":
+  {"path": "Compilatrix/Rt/Proof/Mono.lean",
+   "imports": ["Compilatrix.Rt.Proof.Term"]},
   "Compilatrix.Rt.Proof.Mem":
   {"path": "Compilatrix/Rt/Proof/Mem.lean",
    "imports": ["Compilatrix.X86.Memory", "Compilatrix.Lir.Proof.Eval"]},
+  "Compilatrix.Rt.Proof.LayoutFun":
+  {"path": "Compilatrix/Rt/Proof/LayoutFun.lean",
+   "imports": ["Compilatrix.Rt.Proof.Layout"]},
+  "Compilatrix.Rt.Proof.Layout":
+  {"path": "Compilatrix/Rt/Proof/Layout.lean",
+   "imports": ["Compilatrix.Rt.Proof.Block"]},
   "Compilatrix.Rt.Proof.Instr":
   {"path": "Compilatrix/Rt/Proof/Instr.lean",
    "imports":
@@ -1895,6 +1910,9 @@
   "Compilatrix.Rt.Proof.Chain":
   {"path": "Compilatrix/Rt/Proof/Chain.lean",
    "imports": ["Compilatrix.Rt.Proof.Edge"]},
+  "Compilatrix.Rt.Proof.Block":
+  {"path": "Compilatrix/Rt/Proof/Block.lean",
+   "imports": ["Compilatrix.Rt.Proof.Mono"]},
   "Compilatrix.Rt.Proof.Alloc":
   {"path": "Compilatrix/Rt/Proof/Alloc.lean",
    "imports": ["Compilatrix.Rt.Proof.Heap"]},
@@ -3262,6 +3280,12 @@
     "Compilatrix.Rt.Proof.SwitchLink",
     "Compilatrix.Rt.Proof.SwitchSim",
     "Compilatrix.Rt.Proof.Term",
+    "Compilatrix.Rt.Proof.Mono",
+    "Compilatrix.Rt.Proof.Block",
+    "Compilatrix.Rt.Proof.Layout",
+    "Compilatrix.Rt.Proof.LayoutFun",
+    "Compilatrix.Rt.Proof.Rel",
+    "Compilatrix.Rt.Proof.StepFrame",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",

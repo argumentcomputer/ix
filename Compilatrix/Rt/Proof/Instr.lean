@@ -160,6 +160,39 @@ theorem instr_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Progra
       | ok v => intro hrun; simp only [Except.ok.injEq, Prod.mk.injEq] at hrun; rw [StateT.run, h, ← hrun.2]
     exact proj_sim hF hH hrun' hC ho hx (hlive y (by simp [Cfg.Check.rhsVars]))
 
+/-- An instruction whose lowering ended the block closed it with `fail
+natOverflow`. -/
+theorem instr_false {T : Tables} {f : Fir.FunId} {st st' : St} {i : Cfg.Instr}
+    (hrun : (instr f T i).run st = .ok (false, st')) : st' = closeSt st (.fail .natOverflow) := by
+  match i, hrun with
+  | .bind x (.fir (.arg a)), hrun =>
+    rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
+    · cases h
+    · exact h
+  | .bind x (.fir (.prim op as)), hrun =>
+    rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
+    · cases h
+    · exact h
+  | .bind x (.fir (.call g as)), hrun =>
+    rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
+    · cases h
+    · exact h
+  | .bind x (.alloc c as κ), hrun =>
+    rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
+    · cases h
+    · exact h
+  | .bind x (.fir (.ctor ..)), hrun =>
+    simp [instr, throw, throwThe, MonadExceptOf.throw, StateT.lift, Except.bind, bind, StateT.bind, StateT.run]
+      at hrun
+  | .bind x (.fir (.proj ..)), hrun =>
+    simp [instr, throw, throwThe, MonadExceptOf.throw, StateT.lift, Except.bind, bind, StateT.bind, StateT.run]
+      at hrun
+  | .bind x (.proj y c i), hrun =>
+    exfalso
+    simp only [instr, bind, StateT.bind, StateT.run, pure, StateT.pure, Except.bind, Except.pure] at hrun
+    revert hrun
+    cases Lower.proj f T x y c i st <;> simp
+
 /-- An instruction whose lowering ended the block leaves Lir at its
 `fail natOverflow`. -/
 theorem instr_fails {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {fn : Nat} {F : Lir.Func}
@@ -167,35 +200,7 @@ theorem instr_fails {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
     {st st' : St} {i : Cfg.Instr} (hrun : (instr f T i).run st = .ok (false, st')) (hC : Ext C st')
     (ho : Open st) (mem : X86.Memory) (ρl : Lir.Env) (rest : List Lir.Frame) :
     Sem.Fails (Lir.semStep lp) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest) := by
-  have hst : st' = closeSt st (.fail .natOverflow) := by
-    match i, hrun with
-    | .bind x (.fir (.arg a)), hrun =>
-      rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
-      · cases h
-      · exact h
-    | .bind x (.fir (.prim op as)), hrun =>
-      rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
-      · cases h
-      · exact h
-    | .bind x (.fir (.call g as)), hrun =>
-      rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
-      · cases h
-      · exact h
-    | .bind x (.alloc c as κ), hrun =>
-      rcases withOperands_run hrun with ⟨_, _, h, _⟩ | ⟨-, -, h⟩
-      · cases h
-      · exact h
-    | .bind x (.fir (.ctor ..)), hrun =>
-      simp [instr, throw, throwThe, MonadExceptOf.throw, StateT.lift, Except.bind, bind, StateT.bind, StateT.run]
-        at hrun
-    | .bind x (.fir (.proj ..)), hrun =>
-      simp [instr, throw, throwThe, MonadExceptOf.throw, StateT.lift, Except.bind, bind, StateT.bind, StateT.run]
-        at hrun
-    | .bind x (.proj y c i), hrun =>
-      exfalso
-      simp only [instr, bind, StateT.bind, StateT.run, pure, StateT.pure, Except.bind, Except.pure] at hrun
-      revert hrun
-      cases Lower.proj f T x y c i st <;> simp
+  have hst := instr_false hrun
   subst hst
   have hb := hC.done (j := st.cur) (b := { params := st.params, body := st.acc.reverse, term := .fail .natOverflow })
     (by simp [closeSt, Src.NatMap.get?_insert])

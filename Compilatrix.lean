@@ -234,6 +234,12 @@ import Compilatrix.Rt.Proof.SwitchTag
 import Compilatrix.Rt.Proof.SwitchLink
 import Compilatrix.Rt.Proof.SwitchSim
 import Compilatrix.Rt.Proof.Term
+import Compilatrix.Rt.Proof.Mono
+import Compilatrix.Rt.Proof.Block
+import Compilatrix.Rt.Proof.Layout
+import Compilatrix.Rt.Proof.LayoutFun
+import Compilatrix.Rt.Proof.Rel
+import Compilatrix.Rt.Proof.StepFrame
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine

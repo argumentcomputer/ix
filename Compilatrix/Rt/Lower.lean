@@ -594,11 +594,16 @@ def term (f : FunId) (T : Tables) (src : Nat) : Cfg.Term → M Unit
 
 /-! ## Blocks and functions -/
 
+/-- The variables an instruction reads. -/
+def instrUses : Cfg.Instr → List VReg
+  | .bind _ r => Cfg.Check.rhsVars r
+
+/-- The variables a block reads, each read once per occurrence. -/
+def blockUses (b : Cfg.Block) : List VReg := b.body.flatMap instrUses ++ Cfg.Check.termVars b.term
+
 /-- Uses of each variable in a function (instructions and terminators). -/
 def useCounts (fd : Cfg.Fun) : Src.NatMap Nat :=
-  let vars := fd.blocks.flatMap fun b =>
-    b.body.flatMap (fun | .bind _ r => Cfg.Check.rhsVars r) ++ Cfg.Check.termVars b.term
-  vars.foldl (fun m x => m.insert x (m.getD x 0 + 1)) .leaf
+  (fd.blocks.flatMap blockUses).foldl (fun m x => m.insert x (m.getD x 0 + 1)) .leaf
 
 /-- A block ending in a `Bool` comparison whose only use is the block's
 `switch` on `Bool` keys: the instructions before it, and the comparison. -/
@@ -636,7 +641,10 @@ def block (f : FunId) (T : Tables) (uses : Src.NatMap Nat) (src : Nat) (entry : 
   blockCode f T uses src b
 
 /-- The chunk's blocks in label order. -/
-def chunkBlocks (f : FunId) (st : St) : Except Error (List PBlock) :=
+def chunkBlocks (f : FunId) (st : St) : Except Error (List PBlock) := do
+  -- every label below `next` (what `chunkBlocks` reads), the last block closed
+  unless st.done.toList.all (·.1 < st.next) && (st.done.get? st.cur).isSome do
+    throw (.internal f "a chunk label past the next free one, or its last block open")
   (List.range st.next).mapM fun j =>
     match st.done.get? j with
     | some b => pure b
