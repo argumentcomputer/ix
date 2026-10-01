@@ -8,8 +8,8 @@ each and how the branches relate.
 
 | Repo | Branch | Base | Worktree | Status |
 |---|---|---|---|---|
-| ix | `sb/aiur-batch-proving` (PR #643) | `main` | `~/repos/ix.batch-proving` | local tip `a17b5f47`, two commits ahead of the pushed `7421baf2` plus a merge |
-| ix | `sb/aiur-gpu-lanes` (PR 2) | `sb/aiur-batch-proving` | `~/repos/ix.gpu-lanes` | based on the old PR 1 tip `7421baf2`; needs rebasing |
+| ix | `sb/aiur-batch-proving` (PR #643) | `main` | `~/repos/ix.batch-proving` | merged as `2ff0e5ce` |
+| ix | `sb/aiur-gpu-lanes` (PR #644) | `main` | `~/repos/ix.gpu-lanes` | the GPU code and one document; the SP1 terminal, dated bench reports and planning documents stay on `sb/aiur-gpu-lanes-sp1-compress` as a reference |
 | multi-stark | `sb/batch-proving` | `main` | `~/repos/multi-stark.batch-proving` | pushed; the first eight fork commits, `6495cd8..231942a` |
 | multi-stark | `sb/trace-sharding-gpu` | `sb/batch-proving` | `~/repos/multi-stark.trace-sharding` | on the remote at `59df87a`; the PR is the 32 commits above the base |
 
@@ -85,53 +85,25 @@ To do, in order:
 Untracked in the worktree: `docs/bencher-sharded-proving.md`, not written
 by this work; leave it or commit it deliberately.
 
-## PR 2 (`sb/aiur-gpu-lanes`)
+## PR 2 (`sb/aiur-gpu-lanes`, #644)
 
-The branch is the GPU half (lanes, GPU trace runtime, CUDA trace codegen,
-sppark pin, docs and bench scripts) as five commits on the
-old PR 1 tip. It must be rebuilt on the new PR 1 tip, and it will collide
-with #642 in its own files, since `lanes.rs` and the subtree plan use
-aggregate internals that now live in `aggregate/plan.rs`,
-`aggregate/prove.rs` and `aggregate/scheduler.rs`, and `ProveCmd.lean`'s
-lanes block and `AggregateCmd.lean`'s `--subtree` flag sit on the
-restructured commands.
+Three code commits on `main` (the multi-stark pin and the
+`cuda-trace-codegen` feature; the lanes scheduler, GPU trace runtime and
+metrics; the trace codegen) and one document,
+[`aiur-gpu-proving.md`](aiur-gpu-proving.md), which is the entry point
+for building, running and benchmarking the GPU prover.
 
-Recommended mechanics, the same as the first PR 2 cut:
+Everything else the GPU work produced is on `sb/aiur-gpu-lanes-sp1-compress`
+and is not meant to merge: the SP1 terminal (`ix compress-root`,
+`sp1-compress/`, its guest fixtures and the `IX_SP1` build switch), the
+dated `bench/*-2026-09-*` reports with their logs and scripts, and the
+planning and review documents. The fixture generator for the trace codegen
+parity tests, `bench/aiur-trace-codegen-2026-09-16/Generate.lean`, lives
+there too; `aiur-gpu-proving.md` §4 says how to run it.
 
-1. In `~/repos/ix.gpu-merge`, merge `sb/aiur-batch-proving` into
-   `tmp/pr2-merge` (it already contains the resolved main-into-GPU merge).
-   Conflicts will be the #642 layout; port `lanes.rs`, the subtree plan
-   (`leaves_under`, `split_frontier`, `subtree_plan` and its test) into the
-   new modules, and re-add the lanes hooks to `ProveCmd.lean`,
-   `AggregateCmd.lean` and `Ix/Aiur/Protocol.lean`.
-2. Regenerate: `lake exe ix codegen`, `lake exe ix codegen --trace-bundle`,
-   and the fixtures with
-   `lake env lean --load-dynlib=.lake/packages/Blake3/.lake/build/lib/libBlake3_Blake3Rust.so --load-dynlib=.lake/packages/Blake3/.lake/build/lib/libBlake3_Blake3.so --run bench/aiur-trace-codegen-2026-09-16/Generate.lean`.
-   Both `--check` forms and the fixture `--check` must pass.
-3. Verify as before: CI's clippy, `cargo test --release -p aiur`, the
-   primary suites plus `ffi` and `aiur-trace-plan`, `--ignored ixvm`,
-   `--ignored shard-map`.
-4. Recut the five commits on `sb/aiur-batch-proving` by path
-   (`git read-tree --reset -u tmp/pr2-merge`, then `git reset` and
-   `git add -A <paths>` per group), replacing `sb/aiur-gpu-lanes`.
-5. Retarget or reopen the PR with base `sb/aiur-batch-proving`.
-
-Things PR 2 already fixed that must not be lost in the recut:
-
-- The trace codegen emits the six-u16-limb u32 comparison witness of #635
-  on both the host and CUDA paths (`TraceCodegen.lean`, `TraceCuda.lean`,
-  `trace_codegen.rs`).
-- The Rust emitter is lint-clean by construction (tail expressions,
-  infallible writers returning unit and wrapped in closures for the
-  registry, elided zero offsets and shifts) in `Codegen.lean` and
-  `TraceCodegen.lean`.
-- FFI lint fixes in `lanes.rs`, `profile/metrics.rs` and `profile.rs`.
-- The bench tree keeps only scripts, READMEs and summaries; the root
-  `HANDOFF-recursion-fri-params.md` moved to
-  `docs/recursion-fri-params-handoff.md`.
-
-Not verifiable locally: the `cuda` and `cuda-trace-codegen` builds;
-there is no GPU on this host. CI's `cuda-compile` job covers the `cuda` feature.
+Not verifiable locally: the `cuda` and `cuda-trace-codegen` builds; there is
+no GPU on this host. CI's `cuda-compile` job covers the `cuda` feature and
+checks the generated trace bundle.
 
 ## multi-stark
 

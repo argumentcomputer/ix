@@ -516,6 +516,11 @@ LogUp argument itself; the same height sums bound it.
 
 ## 7. GPU execution model
 
+The multi-device scheduler that runs this model, the generated trace
+writers, and the benchmark procedure are in
+[aiur-gpu-proving.md](aiur-gpu-proving.md); this section is the sizing
+argument they rest on.
+
 ### 7.1 Sizing rule
 
 Cut shards so the CUDA backend never spills: per shard, all committed
