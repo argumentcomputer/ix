@@ -539,7 +539,7 @@ theorem optimizeUniform_variableBytes {w : Nat} {limits : Limits} {ex : Expanded
     {res : UniformSharingResult} (h : optimizeUniformExpanded w limits ex = .ok res)
     (hwidth : ∀ i, i < res.result.sharing.size → shareWidth i = w) :
     res.result.variableBytes = res.result.modelBytes := by
-  obtain ⟨_, hwf, hroots, c, hfin⟩ := optimizeUniform_parts h
+  obtain ⟨_, hwf, hroots, _, c, _, hfin⟩ := optimizeUniform_parts h
   obtain ⟨hin, hstored, _, hmodel, work, hmat, hvar⟩ := uniformFinish_spec hfin
   obtain ⟨hperm, hmodelEq⟩ := optimizeUniform_modelBytes h
   have hp := prepWF_ofDag hwf

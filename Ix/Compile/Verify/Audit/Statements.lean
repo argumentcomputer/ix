@@ -394,6 +394,10 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.UniformModel.certainStored_opaque,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.UniformModel.lower_bound_sound,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.componentsChecked_spec,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.optimizeUniform_reach,
     standardAxioms := standard }
 ]
 

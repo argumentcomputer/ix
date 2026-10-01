@@ -29,6 +29,8 @@ import Ix.Compile.Verify.SharingExactPasses
 import Ix.Compile.Verify.UniformOptimizer
 import Ix.Compile.Verify.UniformLength
 import Ix.Compile.Verify.UniformDecomp
+import Ix.Compile.Verify.UniformChecks
+import Ix.Compile.Verify.UniformFinal
 
 /-!
 # Public compiler-verification frontier
