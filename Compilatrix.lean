@@ -428,6 +428,8 @@ import Compilatrix.Xv.Stacking.Proof.Call
 import Compilatrix.Xv.Stacking.Proof.CallFacts
 import Compilatrix.Xv.Stacking.Proof.StepCall
 import Compilatrix.Xv.Stacking.Proof.CallMatch
+import Compilatrix.Xv.Stacking.Proof.CallRun
+import Compilatrix.Xv.Stacking.Proof.CallStep
 import Compilatrix.Backend
 import Compilatrix.Backend.Proof.Xl
 import Compilatrix.Backend.Proof.Emit

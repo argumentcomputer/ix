@@ -139,6 +139,8 @@ structure SuspFacts (S : Stk) (W : Wrap) (mem : Memory) (holes : Holes) (fr : Xl
     ∃ m, (ctxOf S.placed pl).cell x = .ok m ∧ mem.read64 (m.eval (atSp a.sp)) = v ∧
       ReadableData holes (m.eval (atSp a.sp)) 8
   inArgs : fr.inArgs.size = f.facts.inArgs
+  /-- It made a call, so it had the room a call needs. -/
+  room : W.limit.toNat + slack ≤ a.sp.toNat
 
 /-- Callee `fr₀` (activation `a₀`, return frame `ret₀`) of caller `fr₁`. -/
 structure Link (S : Stk) (a₀ : Act) (ret₀ : ReturnFrame) (f₀ : Func Loc) (l₀ : FrameLayout)

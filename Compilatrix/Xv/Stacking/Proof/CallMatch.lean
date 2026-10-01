@@ -264,7 +264,7 @@ theorem call_match {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Ho
         exact ⟨h.saves, h.savesData, h.allowed, h.slot, h.retAddr, h.snapshot, h.align, h.low, h.high, h.inBound⟩
       · refine ⟨⟨b, g, args, rets, hpos.block, by simp [Xl.suspend], by simpa [Xl.suspend] using hx, rfl, rfl⟩,
           fun i => by simp [Xl.suspend], htop.agree.size, htop.agree.regsRel, htop.agree.ctxReg, hRsp,
-          fun r hr hsp => htop.kept r hr hsp, fun x hx v hv => ?_, htop.inArgs⟩
+          fun r hr hsp => htop.kept r hr hsp, fun x hx v hv => ?_, htop.inArgs, hroomC⟩
         have hv' : Xl.read s.regs fr x = some v := by
           cases x with
           | reg r => simp [Loc.isCell] at hx

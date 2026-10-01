@@ -77,7 +77,7 @@ theorem Chain.mono {S : Stk} {W : Wrap} {mem mem' : Memory} {holes holes' : Hole
         exact ⟨hbytes _ (by rw [hb]; omega) (by rw [hb]; omega), by omega⟩
       refine ⟨hL, ⟨fun r o hro => ?_, fun r o hro => ?_, hA.allowed, hA.slot, ?_, hA.snapshot, hA.align, hA.low,
         hA.high, hA.inBound⟩, ⟨hS.call, hS.outArgs, hS.size, hS.regs, hS.r15, hS.rsp, hS.kept, fun x hx v hv => ?_,
-        hS.inArgs⟩⟩
+        hS.inArgs, hS.room⟩⟩
       · have hsr := save_range hs hro
         rw [← hA.saves r o hro]
         exact read64_keep fun i hi => by
