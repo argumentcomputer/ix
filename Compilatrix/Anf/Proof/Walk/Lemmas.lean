@@ -112,7 +112,7 @@ theorem paramOpds_length (d n : Nat) : (paramOpds d n).length = n := by simp [pa
 
 theorem fieldOpds_length (d n : Nat) : (Walk.fieldOpds d n).length = n := by simp [Walk.fieldOpds]
 
-variable {Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop}
+variable {Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
 
 /-! ## Value lists -/
 
@@ -132,8 +132,8 @@ theorem WVs.drop {vs ws : List Val} (h : WVs Q Valid Xc vs ws) (n : Nat) :
 /-- Operands with related values pushed on a walk environment. -/
 theorem WEnv.pushOpds {ρ' : List Val} : ∀ {os : List Opd} {vs ws : List Val},
     os.mapM (·.val ρ') = some ws → WVs Q Valid Xc vs ws →
-    ∀ {live : List Bool} {σ : List Ent} {ρ : List Val}, WEnv Q Valid Xc live σ ρ ρ' →
-    WEnv Q Valid Xc (List.replicate os.length true ++ live) (Walk.entsOf os ++ σ) (vs ++ ρ) ρ'
+    ∀ {live : List Bool} {σ : List Ent} {ρ : List Val}, WEnv Q Valid Xc C live σ ρ ρ' →
+    WEnv Q Valid Xc C (List.replicate os.length true ++ live) (Walk.entsOf os ++ σ) (vs ++ ρ) ρ'
   | [], vs, ws, h, hv, _, _, _, he => by
     simp at h; subst h; cases hv; exact he
   | o :: os, vs, ws, h, hv, _, _, _, he => by
@@ -147,8 +147,8 @@ theorem WEnv.pushOpds {ρ' : List Val} : ∀ {os : List Opd} {vs ws : List Val},
 /-- An environment prefix given entry by entry. -/
 theorem WEnv.pushIdx {ρ' : List Val} : ∀ {σP : List Ent} {V : List Val}, σP.length = V.length →
     (∀ i (hi : i < σP.length), ∃ o w, σP[i] = .opd o ∧ o.val ρ' = some w ∧ ∃ v, V[i]? = some v ∧ WV Q Valid Xc v w) →
-    ∀ {live : List Bool} {σ : List Ent} {ρ : List Val}, WEnv Q Valid Xc live σ ρ ρ' →
-    WEnv Q Valid Xc (List.replicate σP.length true ++ live) (σP ++ σ) (V ++ ρ) ρ'
+    ∀ {live : List Bool} {σ : List Ent} {ρ : List Val}, WEnv Q Valid Xc C live σ ρ ρ' →
+    WEnv Q Valid Xc C (List.replicate σP.length true ++ live) (σP ++ σ) (V ++ ρ) ρ'
   | [], [], _, _, _, _, _, he => he
   | [], _ :: _, hl, _, _, _, _, _ => by simp at hl
   | _ :: _, [], hl, _, _, _, _, _ => by simp at hl
@@ -184,8 +184,8 @@ theorem KT_mono {k : Kont} {J' : List JClo} {T : Val → Nat → Result Val} (h 
 of the same continuation. -/
 theorem JEnv.suffixK {n : Nat} {k : Kont} {ρ' ρ'' : List Val} {J' J'' : List JClo}
     {jl : List Bool} {jσ : List JEnt} {J : List JClo}
-    (h : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jl jσ J) (hρ : ρ' <:+ ρ'') (hJ : J' <:+ J'') :
-    JEnv P Q Valid Xc n (KT Q k J'') ρ'' J'' jl jσ J := by
+    (h : JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jl jσ J) (hρ : ρ' <:+ ρ'') (hJ : J' <:+ J'') :
+    JEnv P Q Valid Xc C n (KT Q k J'') ρ'' J'' jl jσ J := by
   cases hT : KT Q k J' with
   | none =>
     rw [hT] at h
@@ -198,24 +198,25 @@ theorem JEnv.suffixK {n : Nat} {k : Kont} {ρ' ρ'' : List Val} {J' J'' : List J
 /-- An emitted join entry that is live. -/
 theorem JEnv.get_emitted {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' : List Val}
     {J' : List JClo} : ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo},
-    JEnv P Q Valid Xc n T ρ' J' jl jσ J → ∀ {j l ar : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
+    JEnv P Q Valid Xc C n T ρ' J' jl jσ J → ∀ {j l ar : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
     {b : Exp}, jσ[j]? = some (.mk (some l) σj jσj ar r b) → jl[j]? = some true →
     ∃ ρj Jj livej jlj jc' Tk, J[j]? = some (.mk ρj Jj ar b r) ∧ l < J'.length ∧
       J'[J'.length - 1 - l]? = some jc' ∧ T = some Tk ∧ JoinR P Q Valid Xc n Tk (.mk ρj Jj ar b r) jc' ∧
-      WEnv Q Valid Xc livej σj ρj ρ' ∧ JEnv P Q Valid Xc n T ρ' J' jlj jσj Jj ∧
-      NoDead (List.replicate ar true ++ livej) (if r then true :: jlj else jlj) b
+      WEnv Q Valid Xc C livej σj ρj ρ' ∧ JEnv P Q Valid Xc C n T ρ' J' jlj jσj Jj ∧
+      NoDead (List.replicate ar true ++ livej) (if r then true :: jlj else jlj) b ∧
+      (∀ ρ'', ρ' <:+ ρ'' → Valid C ρj ρ'')
   | _, _, _, .nil, _, _, _, _, _, _, _, h, _ => by simp at h
-  | _, _, _, .emitted hl hjc hT hR henv hJj hnd _, 0, _, _, _, _, _, _, h, _ => by
+  | _, _, _, .emitted hl hjc hT hR henv hJj hnd hv _, 0, _, _, _, _, _, _, h, _ => by
     simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.mk.injEq] at h
     obtain ⟨⟨rfl⟩, rfl, rfl, rfl, rfl, rfl⟩ := h
-    exact ⟨_, _, _, _, _, _, rfl, hl, hjc, hT, hR, henv, hJj, hnd⟩
-  | _, _, _, .once _ _ _ _, 0, _, _, _, _, _, _, h, _ => by
+    exact ⟨_, _, _, _, _, _, rfl, hl, hjc, hT, hR, henv, hJj, hnd, hv⟩
+  | _, _, _, .once _ _ _ _ _, 0, _, _, _, _, _, _, h, _ => by
     simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.mk.injEq] at h
     cases h.1
   | _, _, _, .dead _, 0, _, _, _, _, _, _, _, hl => by simp at hl
-  | _, _, _, .emitted _ _ _ _ _ _ _ h, j + 1, _, _, _, _, _, _, he, hl => by
+  | _, _, _, .emitted _ _ _ _ _ _ _ _ h, j + 1, _, _, _, _, _, _, he, hl => by
     simpa using h.get_emitted (by simpa using he) (by simpa using hl)
-  | _, _, _, .once _ _ _ h, j + 1, _, _, _, _, _, _, he, hl => by
+  | _, _, _, .once _ _ _ _ h, j + 1, _, _, _, _, _, _, he, hl => by
     simpa using h.get_emitted (by simpa using he) (by simpa using hl)
   | _, _, _, .dead h, j + 1, _, _, _, _, _, _, he, hl => by
     simpa using h.get_emitted (by simpa using he) (by simpa using hl)
@@ -223,23 +224,23 @@ theorem JEnv.get_emitted {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ
 /-- A join entry inlined at its single jump, live. -/
 theorem JEnv.get_once {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' : List Val}
     {J' : List JClo} : ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo},
-    JEnv P Q Valid Xc n T ρ' J' jl jσ J → ∀ {j ar : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
+    JEnv P Q Valid Xc C n T ρ' J' jl jσ J → ∀ {j ar : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
     {b : Exp}, jσ[j]? = some (.mk none σj jσj ar r b) → jl[j]? = some true →
     r = false ∧ ∃ ρj Jj livej jlj, J[j]? = some (.mk ρj Jj ar b false) ∧
-      WEnv Q Valid Xc livej σj ρj ρ' ∧ JEnv P Q Valid Xc n T ρ' J' jlj jσj Jj ∧
-      NoDead (List.replicate ar true ++ livej) jlj b
+      WEnv Q Valid Xc C livej σj ρj ρ' ∧ JEnv P Q Valid Xc C n T ρ' J' jlj jσj Jj ∧
+      NoDead (List.replicate ar true ++ livej) jlj b ∧ (∀ ρ'', ρ' <:+ ρ'' → Valid C ρj ρ'')
   | _, _, _, .nil, _, _, _, _, _, _, h, _ => by simp at h
-  | _, _, _, .emitted _ _ _ _ _ _ _ _, 0, _, _, _, _, _, h, _ => by
+  | _, _, _, .emitted _ _ _ _ _ _ _ _ _, 0, _, _, _, _, _, h, _ => by
     simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.mk.injEq] at h
     cases h.1
-  | _, _, _, .once henv hJj hnd _, 0, _, _, _, _, _, h, _ => by
+  | _, _, _, .once henv hJj hnd hv _, 0, _, _, _, _, _, h, _ => by
     simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.mk.injEq] at h
     obtain ⟨-, rfl, rfl, rfl, rfl, rfl⟩ := h
-    exact ⟨rfl, _, _, _, _, rfl, henv, hJj, hnd⟩
+    exact ⟨rfl, _, _, _, _, rfl, henv, hJj, hnd, hv⟩
   | _, _, _, .dead _, 0, _, _, _, _, _, _, hl => by simp at hl
-  | _, _, _, .emitted _ _ _ _ _ _ _ h, j + 1, _, _, _, _, _, he, hl => by
+  | _, _, _, .emitted _ _ _ _ _ _ _ _ h, j + 1, _, _, _, _, _, he, hl => by
     simpa using h.get_once (by simpa using he) (by simpa using hl)
-  | _, _, _, .once _ _ _ h, j + 1, _, _, _, _, _, he, hl => by
+  | _, _, _, .once _ _ _ _ h, j + 1, _, _, _, _, _, he, hl => by
     simpa using h.get_once (by simpa using he) (by simpa using hl)
   | _, _, _, .dead h, j + 1, _, _, _, _, _, he, hl => by
     simpa using h.get_once (by simpa using he) (by simpa using hl)
@@ -313,7 +314,7 @@ theorem knownHead_sound {here : Here} {ρ' : List Val} (hf : FactsOk Q Valid her
     {g : GlobalId} {as0 : List Opd} (h : Walk.knownHead here o = some (g, as0)) {w : Val}
     (hw : o.val ρ' = some w) :
     ∃ gd ws0, Q.global? g = some gd ∧ as0.mapM (·.val ρ') = some ws0 ∧
-      (∀ C ρ, Valid C ρ → C.prog.arity? g = some gd.ps.length) ∧ ws0.length < gd.ps.length ∧
+      (∀ C ρ ρ', Valid C ρ ρ' → C.prog.arity? g = some gd.ps.length) ∧ ws0.length < gd.ps.length ∧
       w = .clos [] gd.ps.length gd.body ws0 := by
   cases o with
   | lit l => simp [Walk.knownHead] at h

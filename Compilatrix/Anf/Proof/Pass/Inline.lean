@@ -18,7 +18,7 @@ open Compilatrix.Anf.PassProof
 open Walk (Cfg)
 
 /-- The round's configurations: the input program, no redirection. -/
-def V (P : Program) : Cfg → List Val → Prop := fun C _ => C.prog = P ∧ C.redirect = none
+def V (P : Program) : Cfg → List Val → List Val → Prop := fun C _ _ => C.prog = P ∧ C.redirect = none
 
 /-- A global after the round (itself if not a listed caller, or if its walk
 fails). -/
@@ -88,12 +88,12 @@ theorem round_refines (h0 : P.WF) {Q : Program} {f : Walk.Fires} (h : round P r 
   refine ⟨wf_of_mapped hsize hQ h0, WalkProof.WalkProg.refines (Valid := V P)
     { roots := hroots, known := hknown
       globals := fun g gd hg => ⟨after P r g gd, by rw [hQ, if_pos (h0.1 g gd hg), hg]; rfl, after_walked g gd⟩
-      suffix := fun _ _ _ hV _ => hV
-      cknown := fun C _ hV => by rw [hV.1]
-      cglob := fun C _ hV g => by rw [hV.1]
-      cbody := fun C _ hV g _ => by rw [hV.1]
-      inl := fun C _ hV => ⟨hV.1, rfl⟩
-      noRed := fun C _ hV => hV.2 }⟩
+      suffix := fun _ _ _ _ _ hV _ _ => hV
+      cknown := fun C _ _ hV => by rw [hV.1]
+      cglob := fun C _ _ hV g => by rw [hV.1]
+      cbody := fun C _ _ hV g _ => by rw [hV.1]
+      inl := fun C _ _ _ hV => ⟨hV.1, rfl⟩
+      noRed := fun C _ _ hV => hV.2 }⟩
 
 
 /-- P3 as a pass: the certificate is the round (the oracle's choice); the

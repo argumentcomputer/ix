@@ -15,7 +15,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 theorem NoDead.fn_body {live : List Bool} {ps : List Ixon.V3.BinderContract} {fb : Exp}
     (h : ∀ i, live[i]? = some false → Bind.occ i (.fn ps fb) = 0) :
@@ -39,7 +39,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
   try dsimp only at h2
   obtain ⟨rfl, vs, ws, hvs, hws, hvws⟩ := resolveList_rel' henv h1 fun i hi => by
     simpa [Bind.occ] using hnd.bind_rhs i hi
-  have hK : C.prog.known = P.known := hctx.cknown C ρ' hV
+  have hK : C.prog.known = P.known := hctx.cknown C ρ ρ' hV
   have hsrc : ∀ k, evalBind P k ρ (.prim p as) = primResult P.known p vs := fun k => by
     rw [evalBind_prim, hvs]; rfl
   have hnat : natArgs ws = natArgs vs := Rel.natArgs_rel structural.toBase (pw_of hvws)
@@ -53,7 +53,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c (.prim p as) body)).bind (SK · k))
         (fun k => eval Q k ρ' J' e) := by
     intro e s0 s0' hocc he
-    refine skip_sim hW he hV henv hJ hd hdj hf hnd hk ?_
+    refine skip_sim hW he (hctx.push hV) henv hJ hd hdj hf hnd hk ?_
     rcases primResult_cases P.known p vs with hst | ⟨u, hu, _⟩
     · exact .inl fun k => by rw [hsrc, hst]
     · exact .inr ⟨u, fun k => by rw [hsrc, hu], .inr ⟨rfl, hocc⟩⟩
@@ -123,7 +123,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       obtain ⟨ns, hlits, hsem⟩ := Option.bind_eq_some_iff.1 hfold
       have hna := fold_lits hlits hws
       rw [hnat] at hna
-      refine skip_sim hW (run_fire_then h2) hV henv hJ hd hdj hf hnd hk
+      refine skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk
         (.inr ⟨.lit (.nat m0), fun k => ?_, .inl (.opd rfl .lit)⟩)
       rw [hsrc]; unfold primResult; rw [hna]; dsimp only; rw [hsem]
     · cases hfold
@@ -145,7 +145,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       split at h2'
       · next hc =>
         simp only [Bool.and_eq_true, beq_iff_eq] at hc
-        exact skip_sim hW h2' hV henv hJ hd hdj hf hnd hk
+        exact skip_sim hW h2' (hctx.push hV) henv hJ hd hdj hf hnd hk
           (.inr ⟨_, fun k => by rw [hsrc, hu], .inr ⟨rfl, hc.2⟩⟩)
       · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2'
         obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
@@ -174,10 +174,10 @@ theorem walkBind_fn (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel
   rw [Walk.walkBind] at h
   dsimp only at h
   have hndfb := NoDead.fn_body (hnd.bind_rhs)
-  have hpure : ∀ (ent : Ent), (ps ≠ [] → WEnt Q Valid Xc ent (.clos ρ ps.length fb []) ρ' ∨
+  have hpure : ∀ (ent : Ent), (ps ≠ [] → WEnt Q Valid Xc C ent (.clos ρ ps.length fb []) ρ' ∨
       (ent = .opd .box ∧ body.occ 0 = 0)) →
       (∀ k, evalBind P k ρ (.fn ps fb) = .stuck) ∨ ∃ u, (∀ k, evalBind P k ρ (.fn ps fb) = .ok u) ∧
-        (WEnt Q Valid Xc ent u ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) := by
+        (WEnt Q Valid Xc C ent u ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) := by
     intro ent hent
     by_cases hps : ps = []
     · subst hps; exact .inl fun k => evalBind_fn_nil P k ρ fb
@@ -185,10 +185,10 @@ theorem walkBind_fn (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel
   split at h
   · next hc =>
     simp only [Bool.and_eq_true, beq_iff_eq] at hc
-    exact skip_sim hW (run_fire_then h) hV henv hJ hd hdj hf hnd hk (hpure _ fun _ => .inr ⟨rfl, hc.2⟩)
+    exact skip_sim hW (run_fire_then h) (hctx.push hV) henv hJ hd hdj hf hnd hk (hpure _ fun _ => .inr ⟨rfl, hc.2⟩)
   · split at h
-    · exact skip_sim hW h hV henv hJ hd hdj hf hnd hk
-        (hpure _ fun hps => .inl (.fn henv hndfb (List.length_pos_iff.2 hps)))
+    · exact skip_sim hW h (hctx.push hV) henv hJ hd hdj hf hnd hk
+        (hpure _ fun hps => .inl (.fn henv hndfb (List.length_pos_iff.2 hps) (hctx.ext hV)))
     · obtain ⟨fb', s1, h1, h2⟩ := Walk.run_bind_ok h
       obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
       obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4

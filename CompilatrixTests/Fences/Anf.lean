@@ -1325,6 +1325,9 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.WalkProof.Ctx.cknown' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.cknown
 
+/-- info: 'Compilatrix.Anf.WalkProof.Ctx.ext' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.ext
+
 /-- info: 'Compilatrix.Anf.WalkProof.Ctx.glob' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.glob
 
@@ -1333,6 +1336,12 @@ expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Anf.WalkProof.Ctx.known' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.known
+
+/-- info: 'Compilatrix.Anf.WalkProof.Ctx.pre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.pre
+
+/-- info: 'Compilatrix.Anf.WalkProof.Ctx.push' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.push
 
 /-- info: 'Compilatrix.Anf.WalkProof.Ctx.red' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.red

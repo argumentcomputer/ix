@@ -16,7 +16,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 theorem FactsOk.insert' {facts : Src.NatMap Fact} {ρ' : List Val} (h : FactsOk Q Valid facts ρ') {d : Nat}
     (hd : d = ρ'.length) {w : Val} {f : Fact} (hf : FactOk Q Valid (w :: ρ') d f) :
@@ -89,7 +89,7 @@ theorem walkBind_atom (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
     simpa [Bind.occ] using hnd.bind_rhs i hi
   have hsrc : ∀ k, evalBind P k ρ (.atom a) = .ok v := fun k => by rw [evalBind_atom, hv]; rfl
   split at h2
-  · exact skip_sim hW (run_fire_then h2) hV henv hJ hd hdj hf hnd hk (.inr ⟨v, hsrc, .inl (.opd hw hvw)⟩)
+  · exact skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk (.inr ⟨v, hsrc, .inl (.opd hw hvw)⟩)
   · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
     obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
     refine emit_sim hctx hW h3 hV henv hJ hd hdj hnd hk ?_
@@ -113,7 +113,7 @@ theorem walkBind_con (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fue
   split at h2
   · next hc =>
     simp only [Bool.and_eq_true, beq_iff_eq] at hc
-    exact skip_sim hW (run_fire_then h2) hV henv hJ hd hdj hf hnd hk
+    exact skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk
       (.inr ⟨_, hsrc, .inr ⟨rfl, hc.2⟩⟩)
   · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
     obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
@@ -136,10 +136,10 @@ theorem walkBind_proj (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
     simpa [Bind.occ] using hnd.bind_rhs i hi
   have hsrc : ∀ k, evalBind P k ρ (.proj cc i x) = projVal cc i v := fun k => by
     rw [evalBind_proj, hv]; rfl
-  have hpure : ∀ (ent : Ent), (∀ u, projVal cc i v = .ok u → WEnt Q Valid Xc ent u ρ' ∨
+  have hpure : ∀ (ent : Ent), (∀ u, projVal cc i v = .ok u → WEnt Q Valid Xc C ent u ρ' ∨
       (ent = .opd .box ∧ body.occ 0 = 0)) →
       (∀ k, evalBind P k ρ (.proj cc i x) = .stuck) ∨ ∃ u, (∀ k, evalBind P k ρ (.proj cc i x) = .ok u) ∧
-        (WEnt Q Valid Xc ent u ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) := by
+        (WEnt Q Valid Xc C ent u ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) := by
     intro ent hent
     rcases projVal_cases cc i v with hst | ⟨u, hu⟩
     · exact .inl fun k => by rw [hsrc, hst]
@@ -154,9 +154,9 @@ theorem walkBind_proj (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         · next hc' =>
           simp only [decide_eq_true_eq] at hc'
           subst hc'
-          have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.cknown C ρ' hV]
+          have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.cknown C ρ ρ' hV]
           obtain ⟨wfs, hwfs, hwc⟩ := known_sound hK hf hkn hw
-          refine skip_sim hW (run_fire_then h2) hV henv hJ hd hdj hf hnd hk (hpure _ fun u hu => .inl ?_)
+          refine skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk (hpure _ fun u hu => .inl ?_)
           cases v with
           | con c'' fsv =>
             obtain ⟨wsw, rfl, hpw⟩ := structural.invCon c'' fsv w hvw
@@ -188,7 +188,7 @@ theorem walkBind_proj (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
   · split at h2
     · next hc =>
       simp only [Bool.and_eq_true, beq_iff_eq] at hc
-      exact skip_sim hW (run_fire_then h2) hV henv hJ hd hdj hf hnd hk
+      exact skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk
         (hpure _ fun _ _ => .inr ⟨rfl, hc.2⟩)
     · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
       obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4

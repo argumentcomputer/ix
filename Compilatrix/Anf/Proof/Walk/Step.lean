@@ -31,20 +31,22 @@ theorem getElem?_level {α : Type} {xs ys : List α} (h : xs <:+ ys) {l : Nat} (
   congr 1
   simp; omega
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
 
 /-! ## Join entries and continuations under growth -/
 
 theorem JEnv.suffix {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' ρ₂ : List Val}
     {J' J₂ : List JClo} (hρ : ρ' <:+ ρ₂) (hJ : J' <:+ J₂) :
-    ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo}, JEnv P Q Valid Xc n T ρ' J' jl jσ J →
-      JEnv P Q Valid Xc n T ρ₂ J₂ jl jσ J
+    ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo}, JEnv P Q Valid Xc C n T ρ' J' jl jσ J →
+      JEnv P Q Valid Xc C n T ρ₂ J₂ jl jσ J
   | _, _, _, .nil => .nil
-  | _, _, _, .emitted hl hjc hT hR henv hJj hnd h =>
+  | _, _, _, .emitted hl hjc hT hR henv hJj hnd hv h =>
     .emitted (Nat.lt_of_lt_of_le hl hJ.length_le) (by rw [getElem?_level hJ hl]; exact hjc) hT hR
-      (henv.suffix hρ) (JEnv.suffix hρ hJ hJj) hnd (JEnv.suffix hρ hJ h)
-  | _, _, _, .once henv hJj hnd h =>
-    .once (henv.suffix hρ) (JEnv.suffix hρ hJ hJj) hnd (JEnv.suffix hρ hJ h)
+      (henv.suffix hρ) (JEnv.suffix hρ hJ hJj) hnd (fun ρ'' h'' => hv ρ'' (hρ.trans h''))
+      (JEnv.suffix hρ hJ h)
+  | _, _, _, .once henv hJj hnd hv h =>
+    .once (henv.suffix hρ) (JEnv.suffix hρ hJ hJj) hnd (fun ρ'' h'' => hv ρ'' (hρ.trans h''))
+      (JEnv.suffix hρ hJ h)
   | _, _, _, .dead h => .dead (JEnv.suffix hρ hJ h)
 
 theorem JoinR.mono {n m : Nat} {T : Val → Nat → Result Val} {jc jc' : JClo}
@@ -53,31 +55,31 @@ theorem JoinR.mono {n m : Nat} {T : Val → Nat → Result Val} {jc jc' : JClo}
 
 theorem JEnv.mono {n m : Nat} (hm : m ≤ n) {T : Option (Val → Nat → Result Val)} {ρ' : List Val}
     {J' : List JClo} :
-    ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo}, JEnv P Q Valid Xc n T ρ' J' jl jσ J →
-      JEnv P Q Valid Xc m T ρ' J' jl jσ J
+    ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo}, JEnv P Q Valid Xc C n T ρ' J' jl jσ J →
+      JEnv P Q Valid Xc C m T ρ' J' jl jσ J
   | _, _, _, .nil => .nil
-  | _, _, _, .emitted hl hjc hT hR henv hJj hnd h =>
-    .emitted hl hjc hT (hR.mono hm) henv (JEnv.mono hm hJj) hnd (JEnv.mono hm h)
-  | _, _, _, .once henv hJj hnd h => .once henv (JEnv.mono hm hJj) hnd (JEnv.mono hm h)
+  | _, _, _, .emitted hl hjc hT hR henv hJj hnd hv h =>
+    .emitted hl hjc hT (hR.mono hm) henv (JEnv.mono hm hJj) hnd hv (JEnv.mono hm h)
+  | _, _, _, .once henv hJj hnd hv h => .once henv (JEnv.mono hm hJj) hnd hv (JEnv.mono hm h)
   | _, _, _, .dead h => .dead (JEnv.mono hm h)
 
 /-- Without a target meaning there are no emitted join points, so the
 entries are valid for every target meaning and join environment. -/
 theorem JEnv.retarget {n : Nat} {ρ' : List Val} {J' J₂ : List JClo}
     {T : Option (Val → Nat → Result Val)} :
-    ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo}, JEnv P Q Valid Xc n none ρ' J' jl jσ J →
-      JEnv P Q Valid Xc n T ρ' J₂ jl jσ J
+    ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo}, JEnv P Q Valid Xc C n none ρ' J' jl jσ J →
+      JEnv P Q Valid Xc C n T ρ' J₂ jl jσ J
   | _, _, _, .nil => .nil
-  | _, _, _, .emitted _ _ hT _ _ _ _ _ => nomatch hT
-  | _, _, _, .once henv hJj hnd h => .once henv (JEnv.retarget hJj) hnd (JEnv.retarget h)
+  | _, _, _, .emitted _ _ hT _ _ _ _ _ _ => nomatch hT
+  | _, _, _, .once henv hJj hnd hv h => .once henv (JEnv.retarget hJj) hnd hv (JEnv.retarget h)
   | _, _, _, .dead h => .dead (JEnv.retarget h)
 
 theorem JEnv.length {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' : List Val}
     {J' : List JClo} : ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo},
-    JEnv P Q Valid Xc n T ρ' J' jl jσ J → jσ.length = J.length ∧ jl.length = J.length
+    JEnv P Q Valid Xc C n T ρ' J' jl jσ J → jσ.length = J.length ∧ jl.length = J.length
   | _, _, _, .nil => ⟨rfl, rfl⟩
-  | _, _, _, .emitted _ _ _ _ _ _ _ h => by have := h.length; simp [this.1, this.2]
-  | _, _, _, .once _ _ _ h => by have := h.length; simp [this.1, this.2]
+  | _, _, _, .emitted _ _ _ _ _ _ _ _ h => by have := h.length; simp [this.1, this.2]
+  | _, _, _, .once _ _ _ _ h => by have := h.length; simp [this.1, this.2]
   | _, _, _, .dead h => by have := h.length; simp [this.1, this.2]
 
 theorem KT_suffix {k : Kont} {J' J₂ : List JClo} (hJ : J' <:+ J₂) {T : Val → Nat → Result Val}
@@ -124,31 +126,52 @@ theorem KontW.meaning {n : Nat} {k : Kont} {SK : Val → Nat → Result Val} {ρ
 
 /-! ## The statement -/
 
-/-- A redirected call (P4) simulates the call it replaces, in a target
-environment where the redirect's fixed operands mean what it assumes. -/
-def RedSim (n : Nat) (r : Walk.Redirect) (ρ' : List Val) : Prop :=
-  ∀ (os os' : List Opd) (vs ws : List Val),
-    Walk.redirectArgs r os = some os' → os.mapM (·.val ρ') = some ws → WVs Q Valid Xc vs ws →
+/-- A redirected call (P4) simulates the call it replaces: a call whose
+masked arguments are the redirected global's own parameters (`fixedAt`, at
+the source depth) and whose operands the redirect accepts, in source and
+target environments where the configuration is valid. -/
+def RedSim (n : Nat) (r : Walk.Redirect) (ρ ρ' : List Val) : Prop :=
+  ∀ (as : List Atom) (os os' : List Opd) (vs ws : List Val),
+    Walk.fixedAt r ρ.length as = true → Walk.redirectArgs r os = some os' →
+    evalAtoms ρ as = some vs → os.mapM (·.val ρ') = some ws → WVs Q Valid Xc vs ws →
     ∃ ws', os'.mapM (·.val ρ') = some ws' ∧
       SimUpTo (WV Q Valid Xc) n (fun k => (Result.ofOption (P.global? r.g)).bind (callVal P k · vs))
         (fun k => (Result.ofOption (Q.global? r.spec)).bind (callVal Q k · ws'))
 
 variable (P Q Valid Xc) in
 /-- What the walk's simulation at bound `n` assumes of the programs and of
-the valid configurations (`Valid C ρ'`: configuration `C` may walk a term
-whose target environment is `ρ'`; closed under growing `ρ'`). -/
+the valid configurations (`Valid C ρ ρ'`: configuration `C` may walk a term
+whose source environment is `ρ` and target environment `ρ'`; closed under
+growing both). -/
 structure Ctx (n : Nat) : Prop where
   known : Q.known = P.known
   arity : ∀ g gd, P.global? g = some gd → ∃ gd', Q.global? g = some gd' ∧ gd'.ps.length = gd.ps.length
-  suffix : ∀ C ρ' ρ'', Valid C ρ' → ρ' <:+ ρ'' → Valid C ρ''
-  cknown : ∀ C ρ', Valid C ρ' → C.prog.known = P.known
-  cglob : ∀ C ρ', Valid C ρ' → ∀ g,
+  suffix : ∀ C ρ ρ' ρ₂ ρ'₂, Valid C ρ ρ' → ρ <:+ ρ₂ → ρ' <:+ ρ'₂ → Valid C ρ₂ ρ'₂
+  cknown : ∀ C ρ ρ', Valid C ρ ρ' → C.prog.known = P.known
+  cglob : ∀ C ρ ρ', Valid C ρ ρ' → ∀ g,
     (C.prog.global? g).map (·.ps.length) = (P.global? g).map (·.ps.length)
-  cbody : ∀ C ρ', Valid C ρ' → ∀ g, C.inline.contains g = true → C.prog.global? g = P.global? g
-  inl : ∀ C ρ', Valid C ρ' → Valid { C with inline := [], redirect := none } ρ'
+  cbody : ∀ C ρ ρ', Valid C ρ ρ' → ∀ g, C.inline.contains g = true → C.prog.global? g = P.global? g
+  inl : ∀ C ρ ρ' ρ₂, Valid C ρ ρ' → Valid { C with inline := [], redirect := none } ρ₂ ρ'
   app : Rel.AppSim P Q (WV Q Valid Xc) n
   call : Rel.CallSim P Q (WV Q Valid Xc) n
   glob : Rel.GlobSim P Q (WV Q Valid Xc) n
-  red : ∀ C ρ' r, Valid C ρ' → C.redirect = some r → RedSim (P := P) (Q := Q) (Valid := Valid) (Xc := Xc) n r ρ'
+  red : ∀ C ρ ρ' r, Valid C ρ ρ' → C.redirect = some r →
+    RedSim (P := P) (Q := Q) (Valid := Valid) (Xc := Xc) n r ρ ρ'
+
+/-- A valid configuration stays valid when a source value is pushed. -/
+theorem Ctx.push {n : Nat} (hctx : Ctx P Q Valid Xc n) {C : Cfg} {ρ ρ' : List Val} (hV : Valid C ρ ρ')
+    (v : Val) : Valid C (v :: ρ) ρ' :=
+  hctx.suffix C ρ ρ' _ _ hV (List.suffix_cons _ _) (List.suffix_refl _)
+
+/-- A valid configuration stays valid when the target environment grows. -/
+theorem Ctx.ext {n : Nat} (hctx : Ctx P Q Valid Xc n) {C : Cfg} {ρ ρ' : List Val} (hV : Valid C ρ ρ') :
+    ∀ ρ'', ρ' <:+ ρ'' → Valid C ρ ρ'' :=
+  fun _ h => hctx.suffix C ρ ρ' _ _ hV (List.suffix_refl _) h
+
+/-- A recorded environment (a join point's or an inlined local function's),
+valid in every extension of the target environment, with values pushed. -/
+theorem Ctx.pre {n : Nat} (hctx : Ctx P Q Valid Xc n) {C : Cfg} {ρj ρ' : List Val}
+    (hVj : ∀ ρ'', ρ' <:+ ρ'' → Valid C ρj ρ'') (pre : List Val) : Valid C (pre ++ ρj) ρ' :=
+  hctx.suffix C ρj ρ' _ _ (hVj ρ' (List.suffix_refl _)) (List.suffix_append _ _) (List.suffix_refl _)
 
 end Compilatrix.Anf.WalkProof

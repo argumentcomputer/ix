@@ -15,15 +15,15 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 /-- A walk configuration's global has a source global of the same arity,
 and a target one. -/
-theorem Ctx.globals (hctx : Ctx P Q Valid Xc n) {C : Cfg} {ρ' : List Val} (hV : Valid C ρ') {g : GlobalId}
+theorem Ctx.globals (hctx : Ctx P Q Valid Xc n) {C : Cfg} {ρ ρ' : List Val} (hV : Valid C ρ ρ') {g : GlobalId}
     {gd : GDef} (hgd : C.prog.global? g = some gd) :
     ∃ gdP gdQ, P.global? g = some gdP ∧ gdP.ps.length = gd.ps.length ∧ Q.global? g = some gdQ ∧
       gdQ.ps.length = gd.ps.length := by
-  have hcg := hctx.cglob C ρ' hV g
+  have hcg := hctx.cglob C ρ ρ' hV g
   rw [hgd] at hcg
   cases hP : P.global? g with
   | none => rw [hP] at hcg; cases hcg
@@ -36,9 +36,9 @@ theorem Ctx.globals (hctx : Ctx P Q Valid Xc n) {C : Cfg} {ρ' : List Val} (hV :
 /-- Every valid configuration reads a global's arity as the target's. -/
 theorem Ctx.arity_of (hctx : Ctx P Q Valid Xc n) {g : GlobalId} {gdP gdQ : GDef} (hP : P.global? g = some gdP)
     (hlen : gdQ.ps.length = gdP.ps.length) :
-    ∀ C ρ, Valid C ρ → C.prog.arity? g = some gdQ.ps.length := by
-  intro C ρ hV
-  have hcg := hctx.cglob C ρ hV g
+    ∀ C ρ ρ', Valid C ρ ρ' → C.prog.arity? g = some gdQ.ps.length := by
+  intro C ρ ρ' hV
+  have hcg := hctx.cglob C ρ ρ' hV g
   rw [hP] at hcg
   unfold Program.arity?
   cases hC : C.prog.global? g with
@@ -76,7 +76,7 @@ theorem walkBind_glob (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       · -- a CAF inlined
         next hin =>
         have hgdP : gd = gdP := by
-          have := hctx.cbody C ρ' hV g hin
+          have := hctx.cbody C ρ ρ' hV g hin
           rw [hgd, hP] at this; exact Option.some.inj this
         subst hgdP
         have h' := run_fire_then h
@@ -84,7 +84,7 @@ theorem walkBind_glob (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         obtain ⟨o, s3, h4, h5⟩ := Walk.run_bind_ok h3
         obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h5
         have hk' := hW.after h2 ρ J ρ' J' live jlive SK hV henv hJ (hnd.bind_body true fun e => nomatch e) hk
-        have hin' := hW.walk h4 [] [] ρ' J' [] [] _ (hctx.inl C ρ' hV) .nil .nil hd hdj hf
+        have hin' := hW.walk h4 [] [] ρ' J' [] [] _ (hctx.inl C ρ ρ' [] hV) .nil .nil hd hdj hf
           ⟨fun i hi => by simp at hi, fun j hj => by simp at hj⟩ hk'
         refine (SimUpTo.tick (eval_mono P [] [] gd.body) (eval_mono Q ρ' J' o) hin').congr
           (fun k => ?_) (fun k => eval_tick Q k ρ' J' o)
@@ -109,7 +109,7 @@ theorem walkBind_glob (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       split at h
       · next hc =>
         simp only [Bool.and_eq_true, beq_iff_eq] at hc
-        exact skip_sim hW (run_fire_then h) hV henv hJ hd hdj hf hnd hk
+        exact skip_sim hW (run_fire_then h) (hctx.push hV) henv hJ hd hdj hf hnd hk
           (.inr ⟨_, hval, .inr ⟨rfl, hc.2⟩⟩)
       · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h
         obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
@@ -148,7 +148,8 @@ theorem walkBind_call (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
     split at hr'
     · next hg =>
       simp only [Bool.and_eq_true, beq_iff_eq] at hg
-      obtain ⟨hg', -⟩ := hg
+      obtain ⟨hg', hfix⟩ := hg
+      rw [henv.length.1] at hfix
       subst hg'
       obtain ⟨os'', hargs, he⟩ := Option.map_eq_some_iff.1 hr'
       simp only [Prod.mk.injEq] at he
@@ -156,7 +157,7 @@ theorem walkBind_call (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       have h2' := run_fire_then h2
       obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2'
       obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
-      obtain ⟨ws', hws', hsim⟩ := hctx.red C ρ' r hV hr os os'' vs ws hargs hws hvws
+      obtain ⟨ws', hws', hsim⟩ := hctx.red C ρ ρ' r hV hr as os os'' vs ws hfix hargs hvs hws hvws
       refine emit_sim hctx hW h3 hV henv hJ hd hdj hnd hk ?_
       refine (hsim.strengthen (S := fun w => FactsOk Q Valid here.facts (w :: ρ')) fun _ w _ => hf.push w).congr
         hsrc (fun k => ?_)
@@ -170,7 +171,7 @@ theorem walkBind_call (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         next hc =>
         simp only [Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at hc
         have hgdP : gd = gdP := by
-          have := hctx.cbody C ρ' hV g (by simp [hc.1])
+          have := hctx.cbody C ρ ρ' hV g (by simp [hc.1])
           rw [hgd, hP] at this; exact Option.some.inj this
         subst hgdP
         have hvl : vs.length = gd.ps.length := by rw [← hvws.length, mapM_length hws, hc.2]
@@ -179,9 +180,9 @@ theorem walkBind_call (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         obtain ⟨o, s3, h5, h6⟩ := Walk.run_bind_ok h4
         obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h6
         have hk' := hW.after h3 ρ J ρ' J' live jlive SK hV henv hJ (hnd.bind_body true fun e => nomatch e) hk
-        have henvb := WEnv.pushOpds (mapM_reverse hws) hvws.reverse (WEnv.nil (Q := Q) (Valid := Valid) (Xc := Xc) (ρ' := ρ'))
+        have henvb := WEnv.pushOpds (mapM_reverse hws) hvws.reverse (WEnv.nil (Q := Q) (Valid := Valid) (Xc := Xc) (C := { C with inline := [], redirect := none }) (ρ' := ρ'))
         simp only [List.append_nil, List.length_reverse] at henvb
-        have hin' := hW.walk h5 vs.reverse [] ρ' J' _ [] _ (hctx.inl C ρ' hV) henvb .nil hd hdj hf
+        have hin' := hW.walk h5 vs.reverse [] ρ' J' _ [] _ (hctx.inl C ρ ρ' vs.reverse hV) henvb .nil hd hdj hf
           ⟨fun i hi => by simp [List.getElem?_replicate] at hi, fun j hj => by simp at hj⟩ hk'
         refine (SimUpTo.tick (eval_mono P vs.reverse [] gd.body) (eval_mono Q ρ' J' o) hin').congr
           (fun k => ?_) (fun k => eval_tick Q k ρ' J' o)

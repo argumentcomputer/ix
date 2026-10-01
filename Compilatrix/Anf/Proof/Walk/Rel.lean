@@ -27,6 +27,11 @@ relations between a source program `P` and a target program `Q`:
   a target level (`JoinR`: jumping to both, then the continuation, simulates
   for every continuation that matches the target meaning `T` of the walk's
   continuation), inlined at their single jump, or dead.
+* `Valid C ρ ρ'`: walk configuration `C` may walk a term whose source
+  environment is `ρ` and target environment `ρ'` (P4 relates a redirected
+  call's source arguments to its activation's); entries that walk a body
+  later under another source environment (an inlined local function, a join
+  point) record its validity in every extension of the target environment.
 * `KontW n k SK`: the walk's continuation `k` against a source continuation
   `SK`: `ret` returns, `jump l` jumps to the target join closure at level
   `l` (its charge included), and a meta-continuation simulates `SK` on every
@@ -40,7 +45,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable (P Q : Program) (Valid : Cfg → List Val → Prop) (Xc : Nat → List Val → Exp → Exp → Prop)
+variable (P Q : Program) (Valid : Cfg → List Val → List Val → Prop) (Xc : Nat → List Val → Exp → Exp → Prop)
 
 /-- No dead variable or join point occurs in the term. -/
 def NoDead (live jlive : List Bool) (e : Exp) : Prop :=
@@ -52,10 +57,10 @@ def FactOk (ρ' : List Val) (l : Nat) : Fact → Prop
       w.asCtor Q.known = some (c, ws)
   | .succ y => ∃ m, (Opd.lvl l).val ρ' = some (.lit (.nat (m + 1))) ∧ y.val ρ' = some (.lit (.nat m))
   | .glob g => ∃ gd, Q.global? g = some gd ∧ gd.ps ≠ [] ∧
-      (∀ C ρ, Valid C ρ → C.prog.arity? g = some gd.ps.length) ∧
+      (∀ C ρ ρ', Valid C ρ ρ' → C.prog.arity? g = some gd.ps.length) ∧
       (Opd.lvl l).val ρ' = some (.clos [] gd.ps.length gd.body [])
   | .pap g as => ∃ gd ws, Q.global? g = some gd ∧ as.mapM (·.val ρ') = some ws ∧
-      (∀ C ρ, Valid C ρ → C.prog.arity? g = some gd.ps.length) ∧
+      (∀ C ρ ρ', Valid C ρ ρ' → C.prog.arity? g = some gd.ps.length) ∧
       ws.length < gd.ps.length ∧ (Opd.lvl l).val ρ' = some (.clos [] gd.ps.length gd.body ws)
 
 /-- Every fact holds. -/
@@ -74,10 +79,10 @@ inductive WV : Val → Val → Prop
   | walkc {C : Cfg} {fuel : Nat} {s s' : Fires} {σP σ0 : List Ent} {live : List Bool}
       {facts : Src.NatMap Fact} {ρ ρ' got got' : List Val} {n m : Nat} {b b' : Exp}
       {oOf : Nat → Opd} {wOf : Nat → Val} :
-      Valid C ρ' →
+      Valid C ρ ρ' →
       (Walk.walk C fuel { σ := σP ++ σ0, jσ := [] } { d := ρ'.length + m, dj := 0, facts } b
         .ret).run s = .ok (b', s') →
-      WEnv live σ0 ρ ρ' → FactsOk Q Valid facts ρ' → NoDead (List.replicate n true ++ live) [] b →
+      WEnv C live σ0 ρ ρ' → FactsOk Q Valid facts ρ' → NoDead (List.replicate n true ++ live) [] b →
       σP.length = n → m ≤ n → n - m ≤ got.length → got.length < n →
       got'.length + (n - m) = got.length →
       (∀ p, p < n - m → σP[n - 1 - p]? = some (.opd (oOf p)) ∧ (oOf p).val ρ' = some (wOf p)) →
@@ -94,21 +99,23 @@ inductive WVs : List Val → List Val → Prop
   | nil : WVs [] []
   | cons {v w : Val} {vs ws : List Val} : WV v w → WVs vs ws → WVs (v :: vs) (w :: ws)
 
-/-- A source environment entry against its walk entry. -/
-inductive WEnt : Ent → Val → List Val → Prop
-  | opd {o : Opd} {v w : Val} {ρ' : List Val} : o.val ρ' = some w → WV v w → WEnt (.opd o) v ρ'
-  | fn {σf : List Ent} {livef : List Bool} {ρf : List Val} {n : Nat} {fb : Exp} {ρ' : List Val} :
-      WEnv livef σf ρf ρ' → NoDead (List.replicate n true ++ livef) [] fb → 0 < n →
-      WEnt (.fn σf n fb) (.clos ρf n fb []) ρ'
+/-- A source environment entry against its walk entry, for walk
+configuration `C`. -/
+inductive WEnt : Cfg → Ent → Val → List Val → Prop
+  | opd {C : Cfg} {o : Opd} {v w : Val} {ρ' : List Val} : o.val ρ' = some w → WV v w → WEnt C (.opd o) v ρ'
+  | fn {C : Cfg} {σf : List Ent} {livef : List Bool} {ρf : List Val} {n : Nat} {fb : Exp} {ρ' : List Val} :
+      WEnv C livef σf ρf ρ' → NoDead (List.replicate n true ++ livef) [] fb → 0 < n →
+      (∀ ρ'', ρ' <:+ ρ'' → Valid C ρf ρ'') →
+      WEnt C (.fn σf n fb) (.clos ρf n fb []) ρ'
 
 /-- A source environment against its walk environment; `false` marks a
 dropped binding. -/
-inductive WEnv : List Bool → List Ent → List Val → List Val → Prop
-  | nil {ρ' : List Val} : WEnv [] [] [] ρ'
-  | live {e : Ent} {v : Val} {live : List Bool} {σ : List Ent} {ρ ρ' : List Val} :
-      WEnt e v ρ' → WEnv live σ ρ ρ' → WEnv (true :: live) (e :: σ) (v :: ρ) ρ'
-  | dead {v : Val} {live : List Bool} {σ : List Ent} {ρ ρ' : List Val} :
-      WEnv live σ ρ ρ' → WEnv (false :: live) (.opd .box :: σ) (v :: ρ) ρ'
+inductive WEnv : Cfg → List Bool → List Ent → List Val → List Val → Prop
+  | nil {C : Cfg} {ρ' : List Val} : WEnv C [] [] [] ρ'
+  | live {C : Cfg} {e : Ent} {v : Val} {live : List Bool} {σ : List Ent} {ρ ρ' : List Val} :
+      WEnt C e v ρ' → WEnv C live σ ρ ρ' → WEnv C (true :: live) (e :: σ) (v :: ρ) ρ'
+  | dead {C : Cfg} {v : Val} {live : List Bool} {σ : List Ent} {ρ ρ' : List Val} :
+      WEnv C live σ ρ ρ' → WEnv C (false :: live) (.opd .box :: σ) (v :: ρ) ρ'
 
 end
 
@@ -123,27 +130,30 @@ def JoinR (n : Nat) (T : Val → Nat → Result Val) (jc jc' : JClo) : Prop :=
     ∀ vs ws, WVs Q Valid Xc vs ws →
       SimUpTo (WV Q Valid Xc) m (fun k => (jumpTo P k jc vs).bind (SK · k)) (fun k => jumpTo Q k jc' ws)
 
-/-- Source join closures against their walk entries. -/
-inductive JEnv (n : Nat) (T : Option (Val → Nat → Result Val)) (ρ' : List Val) (J' : List JClo) :
+/-- Source join closures against their walk entries, for walk configuration
+`C`. -/
+inductive JEnv (C : Cfg) (n : Nat) (T : Option (Val → Nat → Result Val)) (ρ' : List Val) (J' : List JClo) :
     List Bool → List JEnt → List JClo → Prop
-  | nil : JEnv n T ρ' J' [] [] []
+  | nil : JEnv C n T ρ' J' [] [] []
   | emitted {l ar : Nat} {r : Bool} {b : Exp} {σj : List Ent} {jσj : List JEnt} {livej jlj : List Bool}
       {ρj : List Val} {Jj : List JClo} {jc' : JClo} {Tk : Val → Nat → Result Val} {jl : List Bool}
       {jσ : List JEnt} {J : List JClo} :
       l < J'.length → J'[J'.length - 1 - l]? = some jc' → T = some Tk →
       JoinR P Q Valid Xc n Tk (.mk ρj Jj ar b r) jc' →
-      WEnv Q Valid Xc livej σj ρj ρ' → JEnv n T ρ' J' jlj jσj Jj →
+      WEnv Q Valid Xc C livej σj ρj ρ' → JEnv C n T ρ' J' jlj jσj Jj →
       NoDead (List.replicate ar true ++ livej) (if r then true :: jlj else jlj) b →
-      JEnv n T ρ' J' jl jσ J →
-      JEnv n T ρ' J' (true :: jl) (.mk (some l) σj jσj ar r b :: jσ) (.mk ρj Jj ar b r :: J)
+      (∀ ρ'', ρ' <:+ ρ'' → Valid C ρj ρ'') →
+      JEnv C n T ρ' J' jl jσ J →
+      JEnv C n T ρ' J' (true :: jl) (.mk (some l) σj jσj ar r b :: jσ) (.mk ρj Jj ar b r :: J)
   | once {ar : Nat} {b : Exp} {σj : List Ent} {jσj : List JEnt} {livej jlj : List Bool}
       {ρj : List Val} {Jj : List JClo} {jl : List Bool} {jσ : List JEnt} {J : List JClo} :
-      WEnv Q Valid Xc livej σj ρj ρ' → JEnv n T ρ' J' jlj jσj Jj →
+      WEnv Q Valid Xc C livej σj ρj ρ' → JEnv C n T ρ' J' jlj jσj Jj →
       NoDead (List.replicate ar true ++ livej) jlj b →
-      JEnv n T ρ' J' jl jσ J →
-      JEnv n T ρ' J' (true :: jl) (.mk none σj jσj ar false b :: jσ) (.mk ρj Jj ar b false :: J)
+      (∀ ρ'', ρ' <:+ ρ'' → Valid C ρj ρ'') →
+      JEnv C n T ρ' J' jl jσ J →
+      JEnv C n T ρ' J' (true :: jl) (.mk none σj jσj ar false b :: jσ) (.mk ρj Jj ar b false :: J)
   | dead {je : JEnt} {jc : JClo} {jl : List Bool} {jσ : List JEnt} {J : List JClo} :
-      JEnv n T ρ' J' jl jσ J → JEnv n T ρ' J' (false :: jl) (je :: jσ) (jc :: J)
+      JEnv C n T ρ' J' jl jσ J → JEnv C n T ρ' J' (false :: jl) (je :: jσ) (jc :: J)
 
 /-- The target meaning of a walk continuation that is not a
 meta-continuation. -/

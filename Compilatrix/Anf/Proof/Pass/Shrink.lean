@@ -24,7 +24,7 @@ open Walk (Cfg)
 variable (P0 : Program) (p : Params)
 
 /-- Only the rounds' configuration is valid. -/
-def V : Cfg → List Val → Prop := fun C _ => C = cfg P0 p
+def V : Cfg → List Val → List Val → Prop := fun C _ _ => C = cfg P0 p
 
 /-- A global after a round, or itself if the round fails. -/
 def roundOr (gd : GDef) : GDef :=
@@ -80,12 +80,12 @@ theorem roundOn_walkProg {sel : GlobalId → Bool} {P : Program} (h : Agree P0 P
     · split
       · exact roundOr_walked gd
       · exact ⟨rfl, .inl rfl⟩
-  suffix _ _ _ hV _ := hV
-  cknown C _ hV := by subst hV; exact h.known.symm
-  cglob C _ hV g := by subst hV; exact (h.arity g).symm
-  cbody C _ hV g hin := by subst hV; simp [cfg] at hin
-  inl C _ hV := by subst hV; rfl
-  noRed C _ hV := by subst hV; rfl
+  suffix _ _ _ _ _ hV _ _ := hV
+  cknown C _ _ hV := by subst hV; exact h.known.symm
+  cglob C _ _ hV g := by subst hV; exact (h.arity g).symm
+  cbody C _ _ hV g hin := by subst hV; simp [cfg] at hin
+  inl C _ _ _ hV := by subst hV; rfl
+  noRed C _ _ hV := by subst hV; rfl
 
 theorem roundOn_agree {sel : GlobalId → Bool} {P : Program} (h : Agree P0 P) :
     Agree P0 (roundOn P0 p sel P) where

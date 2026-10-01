@@ -15,7 +15,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop}
+variable {Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
 
 /-! ## Structure -/
 
@@ -111,12 +111,12 @@ theorem FactsOk.suffix {facts : Src.NatMap Fact} {ρ ρ₂ : List Val} (h : Fact
 mutual
 
 theorem WEnt.suffix {ρ' ρ₂ : List Val} (hs : ρ' <:+ ρ₂) :
-    ∀ {e : Ent} {v : Val}, WEnt Q Valid Xc e v ρ' → WEnt Q Valid Xc e v ρ₂
+    ∀ {e : Ent} {v : Val}, WEnt Q Valid Xc C e v ρ' → WEnt Q Valid Xc C e v ρ₂
   | _, _, .opd hw hv => .opd (Opd.val_suffix hs hw) hv
-  | _, _, .fn henv hnd hn => .fn (WEnv.suffix hs henv) hnd hn
+  | _, _, .fn henv hnd hn hv => .fn (WEnv.suffix hs henv) hnd hn fun ρ'' h => hv ρ'' (hs.trans h)
 
 theorem WEnv.suffix {ρ' ρ₂ : List Val} (hs : ρ' <:+ ρ₂) :
-    ∀ {live : List Bool} {σ : List Ent} {ρ : List Val}, WEnv Q Valid Xc live σ ρ ρ' → WEnv Q Valid Xc live σ ρ ρ₂
+    ∀ {live : List Bool} {σ : List Ent} {ρ : List Val}, WEnv Q Valid Xc C live σ ρ ρ' → WEnv Q Valid Xc C live σ ρ ρ₂
   | _, _, _, .nil => .nil
   | _, _, _, .live he h => .live (WEnt.suffix hs he) (WEnv.suffix hs h)
   | _, _, _, .dead h => .dead (WEnv.suffix hs h)
@@ -124,15 +124,15 @@ theorem WEnv.suffix {ρ' ρ₂ : List Val} (hs : ρ' <:+ ρ₂) :
 end
 
 theorem WEnv.length : ∀ {live : List Bool} {σ : List Ent} {ρ ρ' : List Val},
-    WEnv Q Valid Xc live σ ρ ρ' → σ.length = ρ.length ∧ live.length = ρ.length
+    WEnv Q Valid Xc C live σ ρ ρ' → σ.length = ρ.length ∧ live.length = ρ.length
   | _, _, _, _, .nil => ⟨rfl, rfl⟩
   | _, _, _, _, .live _ h => by have := h.length; simp [this.1, this.2]
   | _, _, _, _, .dead h => by have := h.length; simp [this.1, this.2]
 
 /-- A live entry of the walk environment. -/
 theorem WEnv.get : ∀ {live : List Bool} {σ : List Ent} {ρ ρ' : List Val},
-    WEnv Q Valid Xc live σ ρ ρ' → ∀ {i : Nat} {e : Ent}, σ[i]? = some e → live[i]? = some true →
-    ∃ v, ρ[i]? = some v ∧ WEnt Q Valid Xc e v ρ'
+    WEnv Q Valid Xc C live σ ρ ρ' → ∀ {i : Nat} {e : Ent}, σ[i]? = some e → live[i]? = some true →
+    ∃ v, ρ[i]? = some v ∧ WEnt Q Valid Xc C e v ρ'
   | _, _, _, _, .nil, _, _, h, _ => by simp at h
   | _, _, _, _, .live he _, 0, _, h, _ => by simp at h; subst h; exact ⟨_, rfl, he⟩
   | _, _, _, _, .dead _, 0, _, _, hl => by simp at hl
@@ -144,7 +144,7 @@ theorem WEnv.get : ∀ {live : List Bool} {σ : List Ent} {ρ ρ' : List Val},
 /-- An atom that reads no dropped variable resolves to an operand whose
 value is related to the atom's source value. -/
 theorem resolve_rel {env : Walk.Env} {live : List Bool} {ρ ρ' : List Val}
-    (henv : WEnv Q Valid Xc live env.σ ρ ρ') {a : Atom} {o : Opd} {s s' : Fires}
+    (henv : WEnv Q Valid Xc C live env.σ ρ ρ') {a : Atom} {o : Opd} {s s' : Fires}
     (h : (Walk.resolve env a).run s = .ok (o, s'))
     (hlive : ∀ i, a = .var i → live[i]? = some true) :
     s' = s ∧ ∃ v w, a.eval ρ = some v ∧ o.val ρ' = some w ∧ WV Q Valid Xc v w := by
@@ -172,7 +172,7 @@ theorem resolve_rel {env : Walk.Env} {live : List Bool} {ρ ρ' : List Val}
     exact ⟨rfl, _, _, rfl, rfl, .box⟩
 
 theorem resolveList_rel {env : Walk.Env} {live : List Bool} {ρ ρ' : List Val}
-    (henv : WEnv Q Valid Xc live env.σ ρ ρ') : ∀ {as : List Atom} {os : List Opd} {s s' : Fires},
+    (henv : WEnv Q Valid Xc C live env.σ ρ ρ') : ∀ {as : List Atom} {os : List Opd} {s s' : Fires},
     (Walk.resolveList env as).run s = .ok (os, s') →
     (∀ i, Atom.var i ∈ as → live[i]? = some true) →
     s' = s ∧ ∃ vs ws, evalAtoms ρ as = some vs ∧ os.mapM (·.val ρ') = some ws ∧ WVs Q Valid Xc vs ws

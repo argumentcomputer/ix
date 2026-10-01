@@ -55,11 +55,11 @@ theorem get?_ofList_globalList (P : Program) (F : GlobalId → GDef → GDef) (g
 source. -/
 theorem refines_of_globals {P Q : Program} (hroots : Q.roots = P.roots) (hknown : Q.known = P.known)
     (hg : ∀ g, Q.global? g = P.global? g) : Sem.Refines P Q :=
-  WalkProof.WalkProg.refines (Valid := fun _ _ => False)
+  WalkProof.WalkProg.refines (Valid := fun _ _ _ => False)
     { roots := hroots, known := hknown
       globals := fun g gd h => ⟨gd, by rw [hg, h], rfl, .inl rfl⟩
-      suffix := fun _ _ _ h _ => h, cknown := fun _ _ h => h.elim, cglob := fun _ _ h => h.elim
-      cbody := fun _ _ h => h.elim, inl := fun _ _ h => h.elim, noRed := fun _ _ h => h.elim }
+      suffix := fun _ _ _ _ _ h _ _ => h, cknown := fun _ _ _ h => h.elim, cglob := fun _ _ _ h => h.elim
+      cbody := fun _ _ _ h => h.elim, inl := fun _ _ _ _ h => h.elim, noRed := fun _ _ _ h => h.elim }
 
 end PassProof
 

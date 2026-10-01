@@ -22,12 +22,12 @@ theorem run_fire_then {α : Type} {f : Fires → Fires} {x : Walk.M α} {s s' : 
   cases Walk.run_fire_ok h1
   exact h2
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
 
 /-! ## Resolving atoms that occur -/
 
 theorem resolve_rel' {env : Walk.Env} {live : List Bool} {ρ ρ' : List Val}
-    (henv : WEnv Q Valid Xc live env.σ ρ ρ') {a : Atom} {o : Opd} {s s' : Fires}
+    (henv : WEnv Q Valid Xc C live env.σ ρ ρ') {a : Atom} {o : Opd} {s s' : Fires}
     (h : (Walk.resolve env a).run s = .ok (o, s'))
     (hocc : ∀ i, live[i]? = some false → a.occ i = 0) :
     s' = s ∧ ∃ v w, a.eval ρ = some v ∧ o.val ρ' = some w ∧ WV Q Valid Xc v w := by
@@ -40,7 +40,7 @@ theorem resolve_rel' {env : Walk.Env} {live : List Bool} {ρ ρ' : List Val}
   cases h
 
 theorem resolveList_rel' {env : Walk.Env} {live : List Bool} {ρ ρ' : List Val}
-    (henv : WEnv Q Valid Xc live env.σ ρ ρ') : ∀ {as : List Atom} {os : List Opd} {s s' : Fires},
+    (henv : WEnv Q Valid Xc C live env.σ ρ ρ') : ∀ {as : List Atom} {os : List Opd} {s s' : Fires},
     (Walk.resolveList env as).run s = .ok (os, s') →
     (∀ i, live[i]? = some false → Atom.occList i as = 0) →
     s' = s ∧ ∃ vs ws, evalAtoms ρ as = some vs ∧ os.mapM (·.val ρ') = some ws ∧ WVs Q Valid Xc vs ws

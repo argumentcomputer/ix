@@ -16,7 +16,7 @@ open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 theorem fieldOpds_get (d m : Nat) {q : Nat} (hq : q < m) : (Walk.fieldOpds d m)[q]? = some (.lvl (d + q)) := by
   simp [Walk.fieldOpds, hq]
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 /-- The inlined body of an exactly or over-applied local function, behind
 the application's charge. -/
@@ -25,9 +25,10 @@ theorem beta_tick (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {here : Here} {σf
     (hrun : (Walk.walk C fuel { σ := Walk.entsOf (os.take nf).reverse ++ σf, jσ := [] } here fb k').run s =
       .ok (o, s'))
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo} {SK : Val → Nat → Result Val}
-    {body : Exp} (hV : Valid C ρ') (henvf : WEnv Q Valid Xc livef σf ρf ρ')
+    {body : Exp} (henvf : WEnv Q Valid Xc C livef σf ρf ρ')
     (hndf : NoDead (List.replicate nf true ++ livef) [] fb) (hpos : 0 < nf) (hl : nf ≤ os.length)
     {vs ws : List Val} (hws : os.mapM (·.val ρ') = some ws) (hvws : WVs Q Valid Xc vs ws)
+    (hV : Valid C ((vs.take nf).reverse ++ ρf) ρ')
     (hd : here.d = ρ'.length) (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ')
     (hk' : KontW Q Valid Xc n k' (fun r k => (applyN P k r (vs.drop nf)).bind fun v =>
       (eval P k (v :: ρ) J body).bind (SK · k)) ρ' J') :
@@ -87,10 +88,11 @@ theorem walkBind_app (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fue
         (fun j hj => by have := hocc j hj; simp only [Bind.occ] at this; omega) i rfl
         (by rw [hσi]; simp)
     obtain ⟨xf, hxf, hent⟩ := henv.get hσi hli
-    obtain ⟨ρf, livef, rfl, henvf, hndf, hpos⟩ : ∃ ρf livef, xf = .clos ρf nf fb [] ∧
-        WEnv Q Valid Xc livef σf ρf ρ' ∧ NoDead (List.replicate nf true ++ livef) [] fb ∧ 0 < nf := by
+    obtain ⟨ρf, livef, rfl, henvf, hndf, hpos, hvf⟩ : ∃ ρf livef, xf = .clos ρf nf fb [] ∧
+        WEnv Q Valid Xc C livef σf ρf ρ' ∧ NoDead (List.replicate nf true ++ livef) [] fb ∧ 0 < nf ∧
+        (∀ ρ'', ρ' <:+ ρ'' → Valid C ρf ρ'') := by
       cases hent with
-      | fn henvf hndf hpos => exact ⟨_, _, rfl, henvf, hndf, hpos⟩
+      | fn henvf hndf hpos hvf => exact ⟨_, _, rfl, henvf, hndf, hpos, hvf⟩
     split at h2
     · -- exactly or over-applied
       next hge =>
@@ -111,14 +113,16 @@ theorem walkBind_app (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fue
               (fun v k => (eval P k (v :: ρ) J body).bind (SK · k)) := by
             funext r k; rw [hdrop, applyN_nil']; rfl
           rw [e]; exact hk'
-        exact (beta_tick hW h5 hV henvf hndf hpos hge hws hvws hd hdj hf hk'').congr (hcongr hxf)
+        exact (beta_tick hW h5 henvf hndf hpos hge hws hvws
+          (hctx.suffix C ρf ρ' _ _ (hvf ρ' (List.suffix_refl _)) (List.suffix_append _ _) (List.suffix_refl _)) hd hdj hf hk'').congr (hcongr hxf)
           (fun _ => rfl)
       · next hemp =>
         obtain ⟨k', s2, h3, h4⟩ := Walk.run_bind_ok h'
         obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h3
         obtain ⟨o, s3, h5, h6⟩ := Walk.run_bind_ok h4
         obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h6
-        refine (beta_tick hW h5 hV henvf hndf hpos hge hws hvws hd hdj hf ?_).congr (hcongr hxf)
+        refine (beta_tick hW h5 henvf hndf hpos hge hws hvws
+          (hctx.suffix C ρf ρ' _ _ (hvf ρ' (List.suffix_refl _)) (List.suffix_append _ _) (List.suffix_refl _)) hd hdj hf ?_).congr (hcongr hxf)
           (fun _ => rfl)
         -- the over-application's meta-continuation
         intro here' o' e s4 s5 ρ'' J'' hF hρ hJ' hd' hdj' hf' x w' hw' hxw'
@@ -131,7 +135,7 @@ theorem walkBind_app (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fue
         · rw [evalBind_app, hd', Opd.val_atom hw', Walk.atoms, opds_eval hrest]; rfl
         · have hsuf : ρ'' <:+ u :: ρ'' := List.suffix_cons _ _
           have hsuf' : ρ' <:+ u :: ρ'' := hρ.trans hsuf
-          exact hW.walk h7 (v :: ρ) J (u :: ρ'') J'' (true :: live) jlive SK (hctx.suffix C ρ' _ hV hsuf')
+          exact hW.walk h7 (v :: ρ) J (u :: ρ'') J'' (true :: live) jlive SK (hctx.suffix C ρ ρ' _ _ hV (List.suffix_cons _ _) hsuf')
             (.live (.opd (lvl_top hd' u) hvu) (henv.suffix hsuf')) (hJ.suffixK hsuf' hJ') (by simp [hd'])
             hdj' (hf'.push u) (hnd.bind_body true fun e => nomatch e) (hk.suffix hsuf' hJ')
     · -- under-applied: the rest of the function, its first parameters bound
@@ -146,7 +150,7 @@ theorem walkBind_app (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fue
       have hwv : WV Q Valid Xc (.clos ρf nf fb vs) (.clos ρ' (nf - os.length) fb' []) := by
         refine .walkc (σP := Walk.entsOf (os ++ Walk.fieldOpds ρ'.length (nf - os.length)).reverse)
           (got' := []) (oOf := fun p => (os[p]?).getD .box) (wOf := fun p => (ws[p]?).getD .box)
-          hV h3 henvf hf hndf (by simp [Walk.entsOf, fieldOpds_length]; omega) (by omega) (by omega)
+          (hvf ρ' (List.suffix_refl _)) h3 henvf hf hndf (by simp [Walk.entsOf, fieldOpds_length]; omega) (by omega) (by omega)
           (by omega) (by simp; omega) (fun p hp => ?_) (fun p v hp hv => ?_) (fun p hp1 hp2 => ?_)
           (fun p v w _ _ _ hw => by simp at hw)
         · have hpl : p < os.length := by omega
@@ -173,7 +177,7 @@ theorem walkBind_app (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fue
       have hin : SimUpTo (WV Q Valid Xc) n (fun k => (eval P k (.clos ρf nf fb vs :: ρ) J body).bind (SK · k))
           (fun k => eval Q k ρ' J' (.bind c (.fn (List.replicate (nf - os.length) {}) fb') e)) := by
         have hsuf : ρ' <:+ Val.clos ρ' (nf - os.length) fb' [] :: ρ' := List.suffix_cons _ _
-        refine (hW.walk h5 (.clos ρf nf fb vs :: ρ) J _ J' (true :: live) jlive SK (hctx.suffix C ρ' _ hV hsuf)
+        refine (hW.walk h5 (.clos ρf nf fb vs :: ρ) J _ J' (true :: live) jlive SK (hctx.suffix C ρ ρ' _ _ hV (List.suffix_cons _ _) hsuf)
           (.live (.opd (lvl_top hd _) hwv) (henv.suffix hsuf)) (hJ.suffixK hsuf (List.suffix_refl _))
           (by simp [hd]) hdj (hf.push _) (hnd.bind_body true fun e => nomatch e)
           (hk.suffix hsuf (List.suffix_refl _))).congr (fun _ => rfl) (fun k => ?_)

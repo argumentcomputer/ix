@@ -100,19 +100,20 @@ theorem NoDead.ticks {live jlive : List Bool} : ∀ {m : Nat} {e : Exp},
   | 0, _, h => h
   | _ + 1, _, h => NoDead.ticks h.tick
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 /-- Case-of-case: the jump's charge and the join body's leading ticks
 become ticks over the walk of the alternative a known constructor
 selects. -/
 theorem caseOfCase_sim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {here : Here}
     {k : Kont} {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo}
-    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (hd : here.d = ρ'.length)
+    {SK : Val → Nat → Result Val} (hV : Valid C ρ ρ') (hd : here.d = ρ'.length)
     (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ') (hk : KontW Q Valid Xc n k SK ρ' J')
     {j m : Nat} {alts : List Alt} {dflt : Option Exp} {ρj : List Val} {Jj : List JClo}
     {livej jlj : List Bool} {σj : List Ent} {jσj : List JEnt}
     (hJj : J[j]? = some (.mk ρj Jj 1 (Walk.ticks m (.case (.var 0) alts dflt)) false))
-    (henvj : WEnv Q Valid Xc livej σj ρj ρ') (hJjj : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlj jσj Jj)
+    (henvj : WEnv Q Valid Xc C livej σj ρj ρ') (hJjj : JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlj jσj Jj)
+    (hVj : ∀ ρ'', ρ' <:+ ρ'' → Valid C ρj ρ'')
     (hndj : NoDead (true :: livej) jlj (Walk.ticks m (.case (.var 0) alts dflt)))
     {as : List Atom} {v w : Val} {o : Opd} (hvs : evalAtoms ρ as = some [v]) (how : o.val ρ' = some w)
     (hvw : WV Q Valid Xc v w) {c : Key.CtorKey} {fs : List Opd} {isAlt : Bool} {alt0 o' : Exp}
@@ -122,7 +123,7 @@ theorem caseOfCase_sim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n f
       jσj) here alt0 k).run s = .ok (o', s2)) :
     SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.jump j as)).bind (SK · k))
       (fun k => eval Q k ρ' J' (Walk.ticks (m + 1) o')) := by
-  have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.cknown C ρ' hV]
+  have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.cknown C ρ ρ' hV]
   obtain ⟨wfs, hwfs, hwc⟩ := known_sound hK hf hkn how
   have hfl := mapM_length hwfs
   have hndc := hndj.ticks
@@ -153,7 +154,7 @@ theorem caseOfCase_sim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n f
       simp only [Atom.eval, List.getElem?_cons_zero, Result.ofOption, Result.bind_ok, hvc]
       exact (select_spec (k := k) hsel).1
     obtain ⟨-, hmem, hdf⟩ := select_spec (P := P) (k := 0) (ρ := v :: ρj) (J := Jj) hsel
-    have hbase : WEnv Q Valid Xc (true :: livej) (.opd o :: σj) (v :: ρj) ρ' := .live (.opd how hvw) henvj
+    have hbase : WEnv Q Valid Xc C (true :: livej) (.opd o :: σj) (v :: ρj) ρ' := .live (.opd how hvw) henvj
     cases isAlt with
     | true =>
       obtain ⟨a, ha, hab, haa⟩ := hmem rfl
@@ -161,11 +162,11 @@ theorem caseOfCase_sim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n f
       have hnda := NoDead.case_alts hndc a ha
       rw [haa, hab, hvl] at hnda
       rw [List.length_reverse] at henvb
-      exact (hW.walk h2 _ Jj ρ' J' _ jlj SK hV (by simpa using henvb) hJjj hd hdj hf hnda hk).congr
+      exact (hW.walk h2 _ Jj ρ' J' _ jlj SK (by simpa using hctx.pre hVj (vfs.reverse ++ [v])) (by simpa using henvb) hJjj hd hdj hf hnda hk).congr
         (fun k => by rw [hcase]; rfl) (fun _ => rfl)
     | false =>
       have hnda := NoDead.case_dflt (by rw [← hdf rfl]; exact hndc)
-      exact (hW.walk h2 _ Jj ρ' J' _ jlj SK hV (by simpa using hbase) hJjj hd hdj hf hnda hk).congr
+      exact (hW.walk h2 _ Jj ρ' J' _ jlj SK (hctx.pre hVj [v]) (by simpa using hbase) hJjj hd hdj hf hnda hk).congr
         (fun k => by rw [hcase]; rfl) (fun _ => rfl)
 
 theorem walkJump_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg}
@@ -196,10 +197,10 @@ theorem walkJump_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       have h' := run_fire_then h
       obtain ⟨o, s2, h2, h3⟩ := Walk.run_bind_ok h'
       obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h3
-      obtain ⟨rfl, ρj, Jj, livej, jlj, hJj, henvj, hJjj, hndj⟩ := hJ.get_once hj (hlive hj)
+      obtain ⟨rfl, ρj, Jj, livej, jlj, hJj, henvj, hJjj, hndj, hVj⟩ := hJ.get_once hj (hlive hj)
       have henvb := WEnv.pushOpds (mapM_reverse hws) hvws.reverse henvj
       rw [List.length_reverse, har'] at henvb
-      have := hW.walk h2 (vs.reverse ++ ρj) Jj ρ' J' _ jlj SK hV henvb hJjj hd hdj hf hndj hk
+      have := hW.walk h2 (vs.reverse ++ ρj) Jj ρ' J' _ jlj SK (hctx.pre hVj vs.reverse) henvb hJjj hd hdj hf hndj hk
       refine (SimUpTo.tick (eval_mono P _ Jj b) (eval_mono Q ρ' J' o) this).congr (fun k => ?_)
         (fun k => by rw [eval_tick])
       rw [eval_jump, hJj]
@@ -208,7 +209,7 @@ theorem walkJump_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
     · exact absurd h (fun h => Walk.run_throw_ok h)
   · -- an emitted join point
     next _ l σj jσj ar r0 b hj =>
-    obtain ⟨ρj, Jj, livej, jlj, jc', Tk, hJj, hl, hjc', hT, hR, henvj, hJjj, hndj⟩ :=
+    obtain ⟨ρj, Jj, livej, jlj, jc', Tk, hJj, hl, hjc', hT, hR, henvj, hJjj, hndj, hVj⟩ :=
       hJ.get_emitted hj (hlive hj)
     have hSK := hk.meaning hT
     split at h
@@ -223,7 +224,7 @@ theorem walkJump_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       have henvb := WEnv.pushOpds (mapM_reverse hws) hvws.reverse henvj
       rw [List.length_reverse, har] at henvb
       simp only [Bool.false_eq_true, if_false] at hndj
-      have := hW.walk h2 (vs.reverse ++ ρj) Jj ρ' J' _ jlj SK hV henvb hJjj hd hdj hf hndj hk
+      have := hW.walk h2 (vs.reverse ++ ρj) Jj ρ' J' _ jlj SK (hctx.pre hVj vs.reverse) henvb hJjj hd hdj hf hndj hk
       refine (SimUpTo.tick (eval_mono P _ Jj b) (eval_mono Q ρ' J' o) this).congr (fun k => ?_)
         (fun k => by rw [eval_tick])
       rw [eval_jump, hJj]
@@ -270,7 +271,7 @@ theorem walkJump_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
                     cases h''; exact hw'
                   simp only [Bool.false_eq_true, if_false, List.replicate_one, List.singleton_append]
                     at hndj
-                  exact caseOfCase_sim hctx hW hV hd hdj hf hk hJj henvj hJjj hndj hvs how hvw hkn hsel h2
+                  exact caseOfCase_sim hctx hW hV hd hdj hf hk hJj henvj hJjj hVj hndj hvs how hvw hkn hsel h2
                 · cases hhit
               · cases hhit
             · cases hhit

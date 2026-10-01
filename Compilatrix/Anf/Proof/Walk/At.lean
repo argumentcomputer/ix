@@ -18,15 +18,15 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable (P Q : Program) (Valid : Cfg → List Val → Prop) (Xc : Nat → List Val → Exp → Exp → Prop)
+variable (P Q : Program) (Valid : Cfg → List Val → List Val → Prop) (Xc : Nat → List Val → Exp → Exp → Prop)
 
 /-- The walk's output (configuration `C`) simulates the source term followed
 by the source continuation. -/
 def ExpSim (n : Nat) (C : Cfg) (out : Exp) (env : Walk.Env) (here : Here) (k : Kont) (e : Exp) :
     Prop :=
   ∀ (ρ : List Val) (J : List JClo) (ρ' : List Val) (J' : List JClo) (live jlive : List Bool)
-    (SK : Val → Nat → Result Val), Valid C ρ' →
-    WEnv Q Valid Xc live env.σ ρ ρ' → JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J →
+    (SK : Val → Nat → Result Val), Valid C ρ ρ' →
+    WEnv Q Valid Xc C live env.σ ρ ρ' → JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlive env.jσ J →
     here.d = ρ'.length → here.dj = J'.length → FactsOk Q Valid here.facts ρ' → NoDead live jlive e →
     KontW Q Valid Xc n k SK ρ' J' →
     SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J e).bind (SK · k)) (fun k => eval Q k ρ' J' out)
@@ -39,8 +39,8 @@ structure WalkAt (n fuel : Nat) : Prop where
   after : ∀ ⦃C : Cfg⦄ ⦃env : Walk.Env⦄ ⦃body : Exp⦄ ⦃k k' : Kont⦄ ⦃s s' : Fires⦄,
     (Walk.after C fuel env body k).run s = .ok (k', s') →
     ∀ (ρ : List Val) (J : List JClo) (ρ' : List Val) (J' : List JClo) (live jlive : List Bool)
-      (SK : Val → Nat → Result Val), Valid C ρ' →
-    WEnv Q Valid Xc live env.σ ρ ρ' → JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J →
+      (SK : Val → Nat → Result Val), Valid C ρ ρ' →
+    WEnv Q Valid Xc C live env.σ ρ ρ' → JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlive env.jσ J →
     NoDead (true :: live) jlive body → KontW Q Valid Xc n k SK ρ' J' →
     KontW Q Valid Xc n k' (fun v k => (eval P k (v :: ρ) J body).bind (SK · k)) ρ' J'
   walkBind : ∀ ⦃C : Cfg⦄ ⦃env : Walk.Env⦄ ⦃here : Here⦄ ⦃c : Ixon.V3.LetContract⦄ ⦃b : Bind⦄
@@ -63,8 +63,8 @@ structure WalkAt (n fuel : Nat) : Prop where
     ⦃alts' : List Alt⦄ ⦃s s' : Fires⦄,
     (Walk.walkAlts C fuel env here xo alts k).run s = .ok (alts', s') →
     ∀ (ρ : List Val) (J : List JClo) (ρ' : List Val) (J' : List JClo) (live jlive : List Bool)
-      (SK : Val → Nat → Result Val), Valid C ρ' →
-    WEnv Q Valid Xc live env.σ ρ ρ' → JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J →
+      (SK : Val → Nat → Result Val), Valid C ρ ρ' →
+    WEnv Q Valid Xc C live env.σ ρ ρ' → JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlive env.jσ J →
     here.d = ρ'.length → here.dj = J'.length → FactsOk Q Valid here.facts ρ' →
     (∀ a ∈ alts, NoDead (List.replicate a.arity true ++ live) jlive a.body) →
     KontW Q Valid Xc n k SK ρ' J' →

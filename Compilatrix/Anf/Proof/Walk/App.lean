@@ -18,7 +18,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n : Nat}
 
 /-- The parameters of a walked closure entered with arguments `vs`. -/
 theorem walkc_params {σP : List Ent} {ρ' got got' : List Val} {nn m : Nat}
@@ -64,14 +64,14 @@ theorem walkc_params {σP : List Ent} {ρ' got got' : List Val} {nn m : Nat}
 /-- Entering a walked closure with enough arguments: the source body and its
 walk, one clock down. -/
 theorem enter_walkc (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid Xc m fuel)
-    (hsuffix : ∀ C ρ' ρ'', Valid C ρ' → ρ' <:+ ρ'' → Valid C ρ'')
+    (hsuffix : ∀ C ρ ρ' ρ₂ ρ'₂, Valid C ρ ρ' → ρ <:+ ρ₂ → ρ' <:+ ρ'₂ → Valid C ρ₂ ρ'₂)
     {C : Cfg} {fuel : Nat} {s s' : Fires} {σP σ0 : List Ent} {live : List Bool}
     {facts : Src.NatMap Fact} {ρ ρ' got got' : List Val} {nn m : Nat} {b b' : Exp}
     {oOf : Nat → Opd} {wOf : Nat → Val}
-    (hV : Valid C ρ')
+    (hV : Valid C ρ ρ')
     (hrun : (Walk.walk C fuel { σ := σP ++ σ0, jσ := [] } { d := ρ'.length + m, dj := 0, facts } b
       .ret).run s = .ok (b', s'))
-    (henv : WEnv Q Valid Xc live σ0 ρ ρ') (hf : FactsOk Q Valid facts ρ')
+    (henv : WEnv Q Valid Xc C live σ0 ρ ρ') (hf : FactsOk Q Valid facts ρ')
     (hnd : NoDead (List.replicate nn true ++ live) [] b) (hσP : σP.length = nn) (hmn : m ≤ nn)
     (hng : nn - m ≤ got.length) (hgg : got'.length + (nn - m) = got.length)
     (hpre : ∀ p, p < nn - m → σP[nn - 1 - p]? = some (.opd (oOf p)) ∧ (oOf p).val ρ' = some (wOf p))
@@ -100,7 +100,7 @@ theorem enter_walkc (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid Xc m fuel)
   have hk : KontW Q Valid Xc i .ret (fun v _ => .ok v) (((got' ++ ws).take m).reverse ++ ρ') [] :=
     ⟨_, rfl, fun x w hxw => SimUpTo.ok hxw⟩
   exact ((hlow i (by omega) fuel).walk hrun (((got ++ vs).take nn).reverse ++ ρ) [] _ [] _ [] _
-    (hsuffix C ρ' _ hV hsuf) henvb .nil (by simp [hall]; omega) rfl (hf.suffix hsuf) hnd hk).congr
+    (hsuffix C ρ ρ' _ _ hV (List.suffix_append _ _) hsuf) henvb .nil (by simp [hall]; omega) rfl (hf.suffix hsuf) hnd hk).congr
     (fun k => (Sem.Result.bind_pure _).symm) (fun _ => rfl)
 
 theorem drop_got {α : Type} {got vs : List α} {nn : Nat} (h : got.length ≤ nn) :
@@ -120,7 +120,7 @@ def XcEnter (i : Nat) : Prop :=
 fundamental lemma and the interface below `n`. -/
 theorem app_at (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid Xc m fuel)
     (hfund : ∀ m < n, Rel.FundAt P Q (WV Q Valid Xc) m) (hxlow : ∀ m < n, XcEnter P Q Valid Xc m)
-    (hsuffix : ∀ C ρ' ρ'', Valid C ρ' → ρ' <:+ ρ'' → Valid C ρ'') :
+    (hsuffix : ∀ C ρ ρ' ρ₂ ρ'₂, Valid C ρ ρ' → ρ <:+ ρ₂ → ρ' <:+ ρ'₂ → Valid C ρ₂ ρ'₂) :
     Rel.AppSim P Q (WV Q Valid Xc) n := by
   -- induction on the number of arguments
   suffices H : ∀ len, ∀ ⦃f g : Val⦄ ⦃vs ws : List Val⦄, vs.length ≤ len → WV Q Valid Xc f g →

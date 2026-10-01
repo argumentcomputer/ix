@@ -17,7 +17,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 theorem KontW.of_KT {k : Kont} {J' : List JClo} {T : Val → Nat → Result Val} {SK : Val → Nat → Result Val}
     {ρ' : List Val} (hT : KT Q k J' = some T)
@@ -63,20 +63,20 @@ theorem walk_step (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env} {
 /-- The meta-continuation that walks the rest of the caller. -/
 theorem after_cont (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {body : Exp} {k : Kont} {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo}
-    {live jlive : List Bool} {SK : Val → Nat → Result Val} (hV : Valid C ρ')
-    (henv : WEnv Q Valid Xc live env.σ ρ ρ') (hJ : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J)
+    {live jlive : List Bool} {SK : Val → Nat → Result Val} (hV : Valid C ρ ρ')
+    (henv : WEnv Q Valid Xc C live env.σ ρ ρ') (hJ : JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlive env.jσ J)
     (hnd : NoDead (true :: live) jlive body) (hk : KontW Q Valid Xc n k SK ρ' J') :
     KontW Q Valid Xc n (.cont fun here o => Walk.walk C fuel { σ := .opd o :: env.σ, jσ := env.jσ } here body k)
       (fun v k => (eval P k (v :: ρ) J body).bind (SK · k)) ρ' J' := by
   intro here' o e s s' ρ'' J'' hf hρ hJ' hd hdj hfacts x w hw hxw
-  exact hW.walk hf (x :: ρ) J ρ'' J'' (true :: live) jlive SK (hctx.suffix C ρ' ρ'' hV hρ)
+  exact hW.walk hf (x :: ρ) J ρ'' J'' (true :: live) jlive SK (hctx.suffix C ρ ρ' _ ρ'' hV (List.suffix_cons _ _) hρ)
     (.live (.opd hw hxw) (henv.suffix hρ)) (hJ.suffixK hρ hJ') hd hdj hfacts hnd (hk.suffix hρ hJ')
 
 theorem after_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {body : Exp} {k k' : Kont} {s s' : Fires} (h : (Walk.after C (fuel + 1) env body k).run s = .ok (k', s'))
     (ρ : List Val) (J : List JClo) (ρ' : List Val) (J' : List JClo) (live jlive : List Bool)
-    (SK : Val → Nat → Result Val) (hV : Valid C ρ') (henv : WEnv Q Valid Xc live env.σ ρ ρ')
-    (hJ : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J) (hnd : NoDead (true :: live) jlive body)
+    (SK : Val → Nat → Result Val) (hV : Valid C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
+    (hJ : JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlive env.jσ J) (hnd : NoDead (true :: live) jlive body)
     (hk : KontW Q Valid Xc n k SK ρ' J') :
     KontW Q Valid Xc n k' (fun v k => (eval P k (v :: ρ) J body).bind (SK · k)) ρ' J' := by
   have hcont := after_cont hctx hW hV henv hJ hnd hk
@@ -122,8 +122,8 @@ theorem joinR_emit (hctx : Ctx P Q Valid Xc n) (hlow : ∀ m < n, WalkAt P Q Val
       { d := here0.d + ar, dj := if r then here0.dj + 1 else here0.dj, facts := here0.facts } b k0).run s =
         .ok (b', s'))
     {ρ ρ' : List Val} {J J'0 : List JClo} {live jlive : List Bool} {Tk : Val → Nat → Result Val}
-    (hV : Valid C ρ') (henv : WEnv Q Valid Xc live env.σ ρ ρ')
-    (hJ : JEnv P Q Valid Xc n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J)
+    (hV : Valid C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
+    (hJ : JEnv P Q Valid Xc C n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J)
     (hd : here0.d = ρ'.length) (hdj : here0.dj = J'0.length) (hf : FactsOk Q Valid here0.facts ρ')
     (hnd : NoDead (List.replicate ar true ++ live) (if r then true :: jlive else jlive) b)
     (hT : KT Q k0 J'0 = some Tk) :
@@ -147,13 +147,13 @@ theorem joinR_emit (hctx : Ctx P Q Valid Xc n) (hlow : ∀ m < n, WalkAt P Q Val
         · exact List.suffix_refl _
       have hTb : KT Q k0 (if r then JClo.mk ρ' J'0 ar b' r :: J'0 else J'0) = some Tk := KT_suffix hJsuf hT
       have hJm := (hJ.mono (show m' ≤ n by omega)).suffixK hsuf hJsuf
-      have henvb : WEnv Q Valid Xc (List.replicate ar true ++ live)
+      have henvb : WEnv Q Valid Xc C (List.replicate ar true ++ live)
           (Walk.entsOf (paramOpds here0.d ar) ++ env.σ) (vs.reverse ++ ρ) (ws.reverse ++ ρ') := by
         have hp := paramOpds_val ρ' ws
         rw [har'] at hp
         have := WEnv.pushOpds hp hvs.reverse (henv.suffix hsuf)
         rw [paramOpds_length] at this; rw [hd]; exact this
-      have hJb : JEnv P Q Valid Xc m' (KT Q k0 (if r then JClo.mk ρ' J'0 ar b' r :: J'0 else J'0))
+      have hJb : JEnv P Q Valid Xc C m' (KT Q k0 (if r then JClo.mk ρ' J'0 ar b' r :: J'0 else J'0))
           (ws.reverse ++ ρ') (if r then JClo.mk ρ' J'0 ar b' r :: J'0 else J'0)
           (if r then true :: jlive else jlive)
           (if r then JEnt.mk (some here0.dj) env.σ env.jσ ar r b :: env.jσ else env.jσ)
@@ -163,13 +163,14 @@ theorem joinR_emit (hctx : Ctx P Q Valid Xc n) (hlow : ∀ m < n, WalkAt P Q Val
         | true =>
           simp only [if_true] at hJm hTb ⊢
           refine .emitted (by simp [hdj]) (by simp [hdj]) hTb
-            (fun i hi => ih i (by omega) (by omega)) (henv.suffix hsuf) hJm (by simpa using hnd) hJm
+            (fun i hi => ih i (by omega) (by omega)) (henv.suffix hsuf) hJm (by simpa using hnd)
+            (fun ρ'' h'' => hctx.ext hV ρ'' (hsuf.trans h'')) hJm
       have hkb : KontW Q Valid Xc m' k0 (fun x j => SK x (j + 1)) (ws.reverse ++ ρ')
           (if r then JClo.mk ρ' J'0 ar b' r :: J'0 else J'0) :=
         KontW.of_KT hTb fun x w hxw =>
           SimUpTo.shift (KT_mono hT w) (((hSK x w hxw).mono_n (show m' + 1 ≤ m by omega)))
       exact (hlow m' (by omega)).walk hb (vs.reverse ++ ρ) _ (ws.reverse ++ ρ') _ _ _
-        (fun x j => SK x (j + 1)) (hctx.suffix C ρ' _ hV hsuf) henvb hJb
+        (fun x j => SK x (j + 1)) (hctx.suffix C ρ ρ' _ _ hV (List.suffix_append _ _) hsuf) henvb hJb
         (by simp [hd, har']; omega) (by cases r <;> simp [hdj]) (hf.suffix hsuf) hnd hkb
     · simp only [jumpTo, har, if_true]
       exact later_bind_shift k _ _
@@ -199,7 +200,7 @@ theorem walkJoin_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       have hb := hnd.join_body
       simp only [Bool.false_eq_true, if_false] at hb
       exact (hW.walk h ρ (.mk ρ J ar b false :: J) ρ' J' live (true :: jlive) SK hV henv
-        (.once henv hJ hb hJ) hd hdj hf (hnd.join_rest true fun e => nomatch e) hk).congr
+        (.once henv hJ hb (hctx.ext hV) hJ) hd hdj hf (hnd.join_rest true fun e => nomatch e) hk).congr
         (fun k => by rw [eval_join']) (fun _ => rfl)
     · -- emitted
       refine branch_sim h hd hdj hf hk fun here0 k0 out0 s0 s0' J'0 hrun hd0 hf0 hdj0 hJsuf hT0 hKT hk0 => ?_
@@ -207,7 +208,7 @@ theorem walkJoin_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       obtain ⟨e', s2, h2, hrun⟩ := Walk.run_bind_ok hrun
       obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok hrun
       obtain ⟨Tk, hTk⟩ := hT0
-      have hJ0 : JEnv P Q Valid Xc n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J := by
+      have hJ0 : JEnv P Q Valid Xc C n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J := by
         rcases hKT with hKT | hKT
         · rw [hKT] at hJ; exact JEnv.retarget hJ
         · rw [hKT]; exact hJ.suffix (List.suffix_refl _) hJsuf
@@ -217,7 +218,7 @@ theorem walkJoin_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       have hsuf : J'0 <:+ JClo.mk ρ' J'0 ar b' r :: J'0 := List.suffix_cons _ _
       have hJe := hJ0.suffixK (List.suffix_refl _) hsuf
       refine (hW.walk h2 ρ (.mk ρ J ar b r :: J) ρ' (.mk ρ' J'0 ar b' r :: J'0) live (true :: jlive) SK hV
-        henv (.emitted (by simp [hdj0]) (by simp [hdj0]) (KT_suffix hsuf hTk) hR henv hJe hnd.join_body hJe)
+        henv (.emitted (by simp [hdj0]) (by simp [hdj0]) (KT_suffix hsuf hTk) hR henv hJe hnd.join_body (hctx.ext hV) hJe)
         hd0' (by simp [hdj0]) hf0' (hnd.join_rest true fun e => nomatch e) (hk0.suffix (List.suffix_refl _) hsuf)).congr
         (fun k => by rw [eval_join']) (fun k => by rw [eval_join'])
 

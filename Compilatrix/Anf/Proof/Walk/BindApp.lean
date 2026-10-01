@@ -38,7 +38,7 @@ theorem applyN_enter {P : Program} {k n : Nat} {ρ : List Val} {b : Exp} {vs : L
     simp only [List.length_nil, hn, if_true, List.nil_append, enter]
     simp only [h1, if_false]
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 /-- An application of a known function global's closure or partial
 application: a call when saturated (over-saturated: a call, then the rest
@@ -47,8 +47,8 @@ partial-application fact. -/
 theorem app_known (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {f : Atom} {as : List Atom} {body : Exp} {k : Kont}
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo} {live jlive : List Bool}
-    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid Xc live env.σ ρ ρ')
-    (hJ : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
+    {SK : Val → Nat → Result Val} (hV : Valid C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
+    (hJ : JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
     (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ') (hnd : NoDead live jlive (.bind c (.app f as) body))
     (hk : KontW Q Valid Xc n k SK ρ' J') {os : List Opd} {vs ws : List Val} (hws : os.mapM (·.val ρ') = some ws)
     (hvws : WVs Q Valid Xc vs ws) {x w : Val} (hxw : WV Q Valid Xc x w)
@@ -79,7 +79,7 @@ theorem app_known (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) 
     SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c (.app f as) body)).bind (SK · k))
       (fun k => eval Q k ρ' J' out) := by
   obtain ⟨gd, ws0, hgQ, hws0, harity, hlt, rfl⟩ := knownHead_sound hf hkh hw
-  have hN : (C.prog.arity? g).getD 0 = gd.ps.length := by rw [harity C ρ' hV]; rfl
+  have hN : (C.prog.arity? g).getD 0 = gd.ps.length := by rw [harity C ρ ρ' hV]; rfl
   rw [hN] at h
   have hall : (as0 ++ os).mapM (·.val ρ') = some (ws0 ++ ws) := mapM_append hws0 hws
   have hl0 := mapM_length hws0
@@ -119,7 +119,7 @@ theorem app_known (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) 
       · have hsuf : ρ' <:+ p.2 :: p.1 :: ρ' := (List.suffix_cons _ _).trans (List.suffix_cons _ _)
         have hval : (Opd.lvl (here.d + 1)).val (p.2 :: p.1 :: ρ') = some p.2 := by
           simp [Opd.val, hd]
-        exact hW.walk h3 (v :: ρ) J (p.2 :: p.1 :: ρ') J' (true :: live) jlive SK (hctx.suffix C ρ' _ hV hsuf)
+        exact hW.walk h3 (v :: ρ) J (p.2 :: p.1 :: ρ') J' (true :: live) jlive SK (hctx.suffix C ρ ρ' _ _ hV (List.suffix_cons _ _) hsuf)
           (.live (.opd hval hvp) (henv.suffix hsuf)) (hJ.suffixK hsuf (List.suffix_refl _)) (by simp [hd])
           hdj (hf.suffix hsuf) (hnd.bind_body true fun e => nomatch e) (hk.suffix hsuf (List.suffix_refl _))
       · rw [eval_bind, hsrc, bind_assoc']
@@ -144,9 +144,9 @@ theorem app_known (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) 
         have hvl : vs.length = ws.length := hvws.length.symm
         by_cases hv : vs = []
         · subst hv
-          exact skip_tick_sim hW h3 hV henv hJ hd hdj hf hnd hk
+          exact skip_tick_sim hW h3 (hctx.push hV) henv hJ hd hdj hf hnd hk
             (.inr fun k => by rw [hsrc, applyN_nil']) (.inr ⟨rfl, hc.2⟩)
-        · exact skip_tick_sim hW h3 hV henv hJ hd hdj hf hnd hk
+        · exact skip_tick_sim hW h3 (hctx.push hV) henv hJ hd hdj hf hnd hk
             (.inl fun k => by rw [hsrc, applyN_under (by omega) hv]) (.inr ⟨rfl, hc.2⟩)
       · -- kept, with the partial-application fact
         next hneq hngt hc =>
