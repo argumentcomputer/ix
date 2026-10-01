@@ -270,24 +270,34 @@ def pickOption (opts : Array (Choice × Nat × ByteArray)) : Option (Choice × N
       else best
   best.map fun o => (o.1, o.2.1)
 
-/-- Materialization state: built standalone expressions and work. -/
-structure MatState where
-  memo : Std.HashMap Nat Ixon.Expr := {}
-  nodes : Nat := 0
-  deriving Inhabited
+/-- The first `j` nodes of the telescope spine from `t`, outermost first,
+and the term after them. -/
+def Prep.spineWalk (p : Prep) : Nat → Nat → List Node × Nat
+  | 0, t => ([], t)
+  | j + 1, t =>
+    let n := p.dag.node t
+    let (ns, e) := p.spineWalk j n.spineNext
+    (n :: ns, e)
 
-abbrev MatM := StateT MatState (Except SharingError)
+/-- Rebuild one telescope node around its rebuilt continuation (`inner`)
+and side child. -/
+def rebuildSpineNode (n : Node) (inner side : Ixon.Expr) : Except SharingError Ixon.Expr :=
+  match n.head with
+  | .app => .ok (.app inner side)
+  | .lam bc => .ok (.lam bc side inner)
+  | .all bc r => .ok (.all bc r side inner)
+  | _ => .error (.internal "spine node is not a telescope node")
 
 /-- Build the chosen encoding of `t`. With `entry = true` the top may not be
 `Share(t)` (the body of `t`'s own table entry); nested terms always use
-their standalone choice. `fuel` bounds the recursion depth; every recursive
-call descends to a strictly smaller term ID, so `dag.size + 1` suffices. -/
-def Prep.build (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
-    (limits : Limits) : Bool → Nat → Nat → MatM Ixon.Expr
+their standalone choice. Pure and structurally recursive on `fuel`; every
+recursive call descends to a strictly smaller term ID, so `dag.size + 1`
+suffices. Each call emits one node of the output, so the work is bounded
+by the output size. Every inconsistency is an internal error. -/
+def Prep.build (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) :
+    Bool → Nat → Nat → Except SharingError Ixon.Expr
   | _, 0, _ => throw (.internal "materialization fuel exhausted")
   | entry, fuel + 1, t => do
-    if !entry then
-      if let some e := (← get).memo.get? t then return e
     let opts := p.options ev index width t
     let opts := if entry then opts.filter (·.1 != .share) else opts
     let some (choice, c) := pickOption opts
@@ -295,63 +305,51 @@ def Prep.build (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
     unless entry || c == ev.cost[t]! do
       throw (.internal s!"option cost {c} differs from C_M = {ev.cost[t]!} at term {t}")
     let node := p.dag.node t
-    let e ← match choice with
-      | .share =>
-        match index[t]?.getD none with
-        | some i => pure (Ixon.Expr.share i.toUInt64)
-        | none => throw (.internal "share choice without index")
-      | .inline =>
-        match node.head with
-        | .prj ti f => do
-          let v ← p.build ev index width limits false fuel (node.child 0)
-          pure (Ixon.Expr.prj ti f v)
-        | .letE lc => do
-          let ty ← p.build ev index width limits false fuel (node.child 0)
-          let v ← p.build ev index width limits false fuel (node.child 1)
-          let b ← p.build ev index width limits false fuel (node.child 2)
-          pure (Ixon.Expr.letE lc ty v b)
-        | _ => pure (node.toExpr fun _ => default)
-      | .cut j => do
-        let l := p.spineLen[t]!
-        let mut cur := t
-        let mut spine : Array Node := #[]
-        for _ in [0:j] do
-          let cn := p.dag.node cur
-          spine := spine.push cn
-          cur := cn.spineNext
-        let mut acc ← if j < l then
-            match index[cur]?.getD none with
-            | some i => pure (Ixon.Expr.share i.toUInt64)
-            | none => throw (.internal "telescope cut at unavailable term")
-          else p.build ev index width limits false fuel cur
-        for k in [0:j] do
-          let sn := spine[j - 1 - k]!
-          let side ← p.build ev index width limits false fuel sn.sideChild
-          acc := match sn.head with
-            | .app => .app acc side
-            | .lam bc => .lam bc side acc
-            | .all bc r => .all bc r side acc
-            | _ => acc
-        pure acc
-    let s ← get
-    let nodes := s.nodes + 1
-    if nodes > limits.maxMaterialize then
-      throw (.resourceExhausted .materialize limits.maxMaterialize)
-    set { s with memo := if entry then s.memo else s.memo.insert t e, nodes }
-    return e
+    match choice with
+    | .share =>
+      match index[t]?.getD none with
+      | some i => pure (Ixon.Expr.share i.toUInt64)
+      | none => throw (.internal "share choice without index")
+    | .inline =>
+      match node.head with
+      | .prj ti f => do
+        let v ← p.build ev index width false fuel (node.child 0)
+        pure (Ixon.Expr.prj ti f v)
+      | .letE lc => do
+        let ty ← p.build ev index width false fuel (node.child 0)
+        let v ← p.build ev index width false fuel (node.child 1)
+        let b ← p.build ev index width false fuel (node.child 2)
+        pure (Ixon.Expr.letE lc ty v b)
+      | .app | .lam _ | .all .. => throw (.internal "inline choice at a telescope head")
+      | _ => pure (node.toExpr fun _ => default)
+    | .cut j => do
+      let (spine, cur) := p.spineWalk j t
+      let tail ← if j < p.spineLen[t]! then
+          match index[cur]?.getD none with
+          | some i => pure (Ixon.Expr.share i.toUInt64)
+          | none => throw (.internal "telescope cut at unavailable term")
+        else p.build ev index width false fuel cur
+      spine.foldrM (fun n acc => do
+        let side ← p.build ev index width false fuel n.sideChild
+        rebuildSpineNode n acc side) tail
 
 /-- Materialize the byte-least minimum-cost standalone encodings of `targets`
 under the dictionary `index` (term ID ↦ table index), pricing each Share by
-`width` (which must be `some` exactly where `index` is). Returns the
-expressions, the costs used, and the work performed. -/
+`width` (which must be `some` exactly where `index` is). The predicted
+output size, which bounds the nodes built, is checked against
+`maxMaterialize` first. Returns the expressions, the costs used, and the
+work performed. -/
 def Prep.materializeWith (p : Prep) (index width : Array (Option Nat)) (targets : Array Nat)
     (limits : Limits) : Except SharingError (Array Ixon.Expr × Array Nat × Nat) := do
   for i in index do
     if let some i := i then
       if i ≥ wordBound then throw (.formatBound "share index" i)
   let ev := p.evalAll width
-  let (out, st) ← (targets.mapM fun t => p.build ev index width limits false (p.dag.size + 1) t).run {}
-  return (out, ev.cost, ev.work + st.nodes)
+  let total := targets.foldl (fun acc t => acc + ev.cost[t]!) 0
+  if total > limits.maxMaterialize then
+    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  let out ← targets.mapM fun t => p.build ev index width false (p.dag.size + 1) t
+  return (out, ev.cost, ev.work + total)
 
 /-- Materialize the byte-least minimum-length standalone encodings of
 `targets` under the dictionary `index` (term ID ↦ table index), with the
@@ -390,14 +388,14 @@ def Prep.materializeDependent (p : Prep) (table roots : Array Nat)
   if table.size ≥ wordBound then throw (.formatBound "share index" table.size)
   let index := indexOfPairs p.dag.size table.toList.zipIdx
   let ev := p.evalAll width
-  let run : MatM (Array Ixon.Expr × Array Ixon.Expr) := do
-    let es ← table.mapM fun t => p.build ev index width limits true (p.dag.size + 1) t
-    let rs ← roots.mapM fun r => p.build ev index width limits false (p.dag.size + 1) r
-    return (es, rs)
-  let ((es, rs), st) ← run.run {}
   let entryCost := table.foldl (fun acc t => acc + p.inlineCost ev index width t) 0
   let rootCost := roots.foldl (fun acc r => acc + ev.cost[r]!) 0
-  return (es, rs, tag0Size table.size + entryCost + rootCost, ev.work + st.nodes)
+  let total := tag0Size table.size + entryCost + rootCost
+  if total > limits.maxMaterialize then
+    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  let es ← table.mapM fun t => p.build ev index width true (p.dag.size + 1) t
+  let rs ← roots.mapM fun r => p.build ev index width false (p.dag.size + 1) r
+  return (es, rs, total, ev.work + total)
 
 end Ix.Sharing.Exact
 

@@ -313,7 +313,8 @@ structure Limits where
   maxCostEvals : Nat := 1 <<< 30
   /-- Variable bytes (roots, table count, table bodies) of the result. -/
   maxOutputBytes : Nat := 1 <<< 28
-  /-- Expression nodes allocated while materializing the result. -/
+  /-- Predicted size of the materialized output (an upper bound on the
+  expression nodes built), checked before materializing. -/
   maxMaterialize : Nat := 1 <<< 26
   /-- Tables enumerated by the exhaustive oracle. -/
   maxOracleTables : Nat := 1 <<< 20
