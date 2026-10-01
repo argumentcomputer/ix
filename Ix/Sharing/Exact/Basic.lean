@@ -70,6 +70,33 @@ tail-recursive counted loop). -/
   | k, i + 1, st => foldRange f (k + 1) i (f st k)
 
 
+/-! ## Wire representability -/
+
+/-- The telescope counts at the top of an expression (`App` arguments,
+`Lam` binders, `All` binders), provided every `UInt64` count the expression
+codec writes in it is representable (the public `wireWF` domain); `none`
+otherwise. Linear in the expression. -/
+def wireCounts : Ixon.Expr → Option (Nat × Nat × Nat)
+  | .sort _ | .var _ | .str _ | .nat _ | .share _ => some (0, 0, 0)
+  | .ref _ us | .recur _ us => if us.size < UInt64.size then some (0, 0, 0) else none
+  | .prj _ _ v => (wireCounts v).map fun _ => (0, 0, 0)
+  | .app f a =>
+    match wireCounts f, wireCounts a with
+    | some (n, _, _), some _ => if n + 1 < UInt64.size then some (n + 1, 0, 0) else none
+    | _, _ => none
+  | .lam _ ty b =>
+    match wireCounts ty, wireCounts b with
+    | some _, some (_, n, _) => if n + 1 < UInt64.size then some (0, n + 1, 0) else none
+    | _, _ => none
+  | .all _ _ ty b =>
+    match wireCounts ty, wireCounts b with
+    | some _, some (_, _, n) => if n + 1 < UInt64.size then some (0, 0, n + 1) else none
+    | _, _ => none
+  | .letE _ ty v b =>
+    match wireCounts ty, wireCounts v, wireCounts b with
+    | some _, some _, some _ => some (0, 0, 0)
+    | _, _, _ => none
+
 /-! ## Exact expression length -/
 
 /-- Size facts about one expression, computed bottom-up. `full` is the

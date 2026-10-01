@@ -18,6 +18,11 @@
 //!                             --select-min-cand R1/R2 candidates
 //!   [--select-stride N]       (default 50)
 //!   [--select-min-cand N]     (default 2000)
+//!   [--only HEX]              only constants whose address starts with HEX
+//!                             (repeatable)
+//!   [--par-widths N] [--par-components N] [--par-materialize N]
+//!                             thread budgets inside one constant
+//!   [--check-sequential]      also run the sequential reference and compare
 //!   [--width-experiment]      experiment, not the canonical construction:
 //!                             run phases 1-3 at each phase-1 width
 //!                             w in 1, 2, 3 and report the best of the
@@ -41,12 +46,15 @@ use std::time::Instant;
 use ix_common::address::Address;
 use ixon::Env;
 use ixon::constant::{Constant, ConstantInfo};
+use ixon::expr::Expr;
+use ixon::serialize::{ShareCodec, put_expr_with};
 use ixon::sharing_exact::{
-  ExactSharingLimits, Parallelism, Phase1Choice, ShareLayout, SharingDag,
-  SharingError, TieredSharingResult, candidate_terms, constant_fixed_len,
-  constant_len, layout_bytes, normalize_constant_sharing_tiered,
+  ExactSharingLimits, MssTies, Parallelism, Phase1Choice, ShareLayout,
+  SharingDag, SharingError, TieredSharingResult, candidate_terms,
+  constant_fixed_len, constant_len, expr_len_with, inspect_encoding,
+  layout_bytes, mss_constant, normalize_constant_sharing_tiered,
   normalize_constant_sharing_tiered_par,
-  normalize_constant_sharing_tiered_with,
+  normalize_constant_sharing_tiered_with, tagn_width,
 };
 use rayon::prelude::*;
 
@@ -62,6 +70,10 @@ struct Args {
   width_experiment: bool,
   parallel: Parallelism,
   check_sequential: bool,
+  only: Vec<String>,
+  mss_diff: bool,
+  mss_compare: bool,
+  mss_ties: MssTies,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -78,6 +90,10 @@ fn parse_args() -> Result<Args, String> {
     width_experiment: false,
     parallel: Parallelism::SEQUENTIAL,
     check_sequential: false,
+    only: Vec::new(),
+    mss_diff: false,
+    mss_compare: false,
+    mss_ties: MssTies::StructuralId,
   };
   let num = |v: Option<String>| -> Result<usize, String> {
     v.ok_or("missing value")?.parse::<usize>().map_err(|e| e.to_string())
@@ -102,6 +118,16 @@ fn parse_args() -> Result<Args, String> {
       "--par-components" => a.parallel.components = num(it.next())?,
       "--par-materialize" => a.parallel.materialize = num(it.next())?,
       "--check-sequential" => a.check_sequential = true,
+      "--only" => a.only.push(it.next().ok_or("missing value")?),
+      "--mss-diff" => a.mss_diff = true,
+      "--mss-compare" => a.mss_compare = true,
+      "--mss-ties" => {
+        a.mss_ties = match it.next().as_deref() {
+          Some("id") => MssTies::StructuralId,
+          Some("blake3") => MssTies::Blake3,
+          other => return Err(format!("unknown ties {other:?}")),
+        }
+      },
       p if !p.starts_with("--") && a.path.is_empty() => a.path = p.to_string(),
       other => return Err(format!("unknown argument {other}")),
     }
@@ -302,6 +328,12 @@ fn main() -> Result<(), String> {
   if let Some(n) = args.limit {
     consts.truncate(n);
   }
+  if !args.only.is_empty() {
+    consts.retain(|c| {
+      let h = c.addr.hex();
+      args.only.iter().any(|p| h.starts_with(p.as_str()))
+    });
+  }
   eprintln!(
     "[sharing_corpus] {}: {} constants, {} names, index parsed in {load_ms} ms; processing {} under {:?}",
     args.path,
@@ -343,6 +375,12 @@ fn main() -> Result<(), String> {
       .unwrap_or_else(|| format!("<{}>", &hex[..16]))
   };
   let limits = ExactSharingLimits::default();
+  if args.mss_diff {
+    return mss_diff(&args, &consts, &mmap, &limits, &name_of);
+  }
+  if args.mss_compare {
+    return mss_compare(&args, &consts, &mmap, &limits, &name_of, t0);
+  }
   if args.width_experiment {
     return width_experiment(&args, &consts, &mmap, &limits, &name_of, t0);
   }
@@ -594,6 +632,8 @@ struct WRow {
   stored: [u64; 4],
   bytes: [Option<u64>; 4],
   ms: [f64; 4],
+  /// Whether phase 2 kept the phase-1 order, per candidate.
+  kept: [bool; 4],
 }
 
 impl WRow {
@@ -660,6 +700,7 @@ fn process_widths(
         row.status[i] = "ok".into();
         row.k = res.stats.candidate_count;
         row.stored[i] = res.table_terms.len() as u64;
+        row.kept[i] = res.stats.kept_phase1_order;
         row.bytes[i] = Some(fixed + res.model_len);
       },
       Err(SharingError::ResourceExhausted(e)) => {
@@ -711,7 +752,7 @@ fn width_experiment(
     );
     writeln!(
       f,
-      "idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,bytes1,bytes2,bytes3,kbased,best,best_w,rewidth,rewidth_w,ms1,ms2,ms3,status_all,stored_all,bytes_all,best4,best4_w,ms_all"
+      "idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,bytes1,bytes2,bytes3,kbased,best,best_w,rewidth,rewidth_w,ms1,ms2,ms3,status_all,stored_all,bytes_all,best4,best4_w,ms_all,kept1,kept2,kept3,kept_all"
     )
     .map_err(|e| e.to_string())?;
     let opt = |b: Option<u64>| b.map_or(String::new(), |b| b.to_string());
@@ -730,7 +771,7 @@ fn width_experiment(
         });
       writeln!(
         f,
-        "{},{},\"{}\",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{},{},{},{},{},{:.3}",
+        "{},{},\"{}\",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{},{},{},{},{},{:.3},{},{},{},{}",
         r.idx,
         r.addr,
         name_of(&r.addr, &c.addr).replace('"', "'"),
@@ -760,7 +801,11 @@ fn width_experiment(
         opt(r.bytes[3]),
         bb4,
         bw4,
-        r.ms[3]
+        r.ms[3],
+        r.kept[0],
+        r.kept[1],
+        r.kept[2],
+        r.kept[3]
       )
       .map_err(|e| e.to_string())?;
     }
@@ -855,6 +900,301 @@ fn width_experiment(
   );
   println!(
     "- stored-count re-solve vs K-based per constant: better {r_better}, equal {r_equal}, worse {r_worse}"
+  );
+  println!("- total wall {:.1} s", t0.elapsed().as_secs_f64());
+  Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// MSS against the "all candidates" construction (experiment)
+// ---------------------------------------------------------------------------
+
+/// The TagN-priced length of one expression.
+fn tagn_len(e: &Expr) -> u64 {
+  expr_len_with(e, &tagn_width).unwrap_or(u64::MAX)
+}
+
+fn tagn_hex(e: &Expr, max: usize) -> String {
+  let mut buf = Vec::new();
+  put_expr_with(e, ShareCodec::TagN, &mut buf);
+  let s: String = buf.iter().take(max).map(|b| format!("{b:02x}")).collect();
+  if buf.len() > max { format!("{s}… ({} bytes)", buf.len()) } else { s }
+}
+
+/// Share counts by TagN width (1, 2, 3, wider) of an encoding.
+fn width_histogram(share_refs: &[u64]) -> [u64; 4] {
+  let mut h = [0u64; 4];
+  for (i, &r) in share_refs.iter().enumerate() {
+    let w = tagn_width(i as u64);
+    h[usize::try_from(w.min(4)).unwrap_or(4) - 1] += r;
+  }
+  h
+}
+
+/// Entry-by-entry comparison of MSS and the "all" candidate (TagN layout)
+/// for the selected constants (`--only`).
+fn mss_diff(
+  args: &Args,
+  consts: &[ixon::env::LazyConstSlice],
+  mmap: &[u8],
+  limits: &ExactSharingLimits,
+  name_of: &dyn Fn(&str, &Address) -> String,
+) -> Result<(), String> {
+  for cs in consts {
+    let hex = cs.addr.hex();
+    let c = Constant::get(&mut &mmap[cs.offset..cs.offset + cs.len])?;
+    let fixed = constant_fixed_len(&c).unwrap_or(0);
+    let (_, mss, dag) =
+      mss_constant(&c, limits, args.mss_ties).map_err(|e| e.to_string())?;
+    for ties in [MssTies::StructuralId, MssTies::Blake3] {
+      let (_, m, _) =
+        mss_constant(&c, limits, ties).map_err(|e| e.to_string())?;
+      println!(
+        "- MSS with {ties:?} ties: TagN {} B, Tag4 {} B",
+        fixed
+          + layout_bytes(ShareLayout::TagN, &m.sharing, &m.roots).unwrap_or(0),
+        fixed
+          + layout_bytes(ShareLayout::Tag4, &m.sharing, &m.roots).unwrap_or(0)
+      );
+    }
+    let (_, all) = normalize_constant_sharing_tiered_with(
+      ShareLayout::TagN,
+      &c,
+      limits,
+      Phase1Choice::AllCandidates,
+    )
+    .map_err(|e| e.to_string())?;
+    let im = inspect_encoding(&dag, &mss.table_terms, &mss.sharing, &mss.roots)
+      .map_err(|e| e.to_string())?;
+    let ia = inspect_encoding(&dag, &all.table_terms, &all.sharing, &all.roots)
+      .map_err(|e| e.to_string())?;
+    let m_bytes = fixed
+      + layout_bytes(ShareLayout::TagN, &mss.sharing, &mss.roots).unwrap_or(0);
+    let a_bytes = fixed
+      + layout_bytes(ShareLayout::TagN, &all.sharing, &all.roots).unwrap_or(0);
+    println!("# {} ({})", name_of(&hex, &cs.addr), &hex[..16]);
+    println!(
+      "- TagN bytes: MSS {m_bytes}, all {a_bytes} ({:+}); table entries MSS {}, all {}; DAG nodes {}",
+      signed(a_bytes) - signed(m_bytes),
+      mss.table_terms.len(),
+      all.table_terms.len(),
+      dag.len()
+    );
+    let sum_entries =
+      |es: &[Arc<Expr>]| es.iter().map(|e| tagn_len(e)).sum::<u64>();
+    let sum_roots =
+      |rs: &[Arc<Expr>]| rs.iter().map(|e| tagn_len(e)).sum::<u64>();
+    println!(
+      "- entry bodies MSS {}, all {}; roots MSS {}, all {}",
+      sum_entries(&mss.sharing),
+      sum_entries(&all.sharing),
+      sum_roots(&mss.roots),
+      sum_roots(&all.roots)
+    );
+    let hm = width_histogram(&im.share_refs);
+    let ha = width_histogram(&ia.share_refs);
+    println!(
+      "- Shares: MSS {} (TagN width 1/2/3/wider: {:?}), all {} ({:?}); stored-term occurrences written inline: MSS {}, all {}",
+      im.share_refs.iter().sum::<u64>(),
+      hm,
+      ia.share_refs.iter().sum::<u64>(),
+      ha,
+      im.inlined,
+      ia.inlined
+    );
+    println!(
+      "- all: phase-1 order kept {}, first tier {:?}, w {}",
+      all.stats.kept_phase1_order, all.stats.first_tier, all.stats.w
+    );
+    // Per stored term.
+    let pos_m: BTreeMap<u32, usize> =
+      mss.table_terms.iter().enumerate().map(|(i, &t)| (t, i)).collect();
+    let pos_a: BTreeMap<u32, usize> =
+      all.table_terms.iter().enumerate().map(|(i, &t)| (t, i)).collect();
+    let mut same_form = 0usize;
+    let mut first_diff: Option<u32> = None;
+    let mut index_diff = 0usize;
+    for (i, &t) in mss.table_terms.iter().enumerate() {
+      let j = pos_a.get(&t).copied();
+      if j != Some(i) {
+        index_diff += 1;
+      }
+      let same = j.is_some_and(|j| im.entry_forms[i] == ia.entry_forms[j]);
+      if same {
+        same_form += 1;
+      } else if first_diff.is_none() {
+        first_diff = Some(t);
+      }
+    }
+    println!(
+      "- entries with the same term-level form: {same_form} of {}; entries at a different index: {index_diff}",
+      mss.table_terms.len()
+    );
+    let roots_same = im.root_forms == ia.root_forms;
+    println!("- roots with the same term-level form: {roots_same}");
+    let mut inl: Vec<(&u32, &u64)> = ia.inlined_by_term.iter().collect();
+    inl.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+    println!(
+      "- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: {}",
+      inl
+        .iter()
+        .take(15)
+        .map(|(t, k)| format!(
+          "{t}: {k} (m{} a{} deg {})",
+          pos_m.get(t).copied().unwrap_or(usize::MAX),
+          pos_a.get(t).copied().unwrap_or(usize::MAX),
+          mss.deg[**t as usize]
+        ))
+        .collect::<Vec<_>>()
+        .join("; ")
+    );
+    // Per-entry table: largest length differences.
+    let mut rows: Vec<(i64, u32, usize, usize, u64, u64, u64, u64)> =
+      Vec::new();
+    for (i, &t) in mss.table_terms.iter().enumerate() {
+      let Some(&j) = pos_a.get(&t) else { continue };
+      let lm = tagn_len(&mss.sharing[i]);
+      let la = tagn_len(&all.sharing[j]);
+      rows.push((
+        signed(la) - signed(lm),
+        t,
+        i,
+        j,
+        im.share_refs[i],
+        ia.share_refs[j],
+        lm,
+        la,
+      ));
+    }
+    rows.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    println!(
+      "- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):"
+    );
+    for r in rows.iter().take(12) {
+      println!(
+        "  - {:+}: term {} m{} a{} refs {}/{} len {}/{}",
+        r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7
+      );
+    }
+    let neg: i64 = rows.iter().filter(|r| r.0 < 0).map(|r| r.0).sum();
+    let pos: i64 = rows.iter().filter(|r| r.0 > 0).map(|r| r.0).sum();
+    println!("- body length differences: total +{pos} / {neg}");
+    // Index cost: references weighted by width.
+    let cost = |refs: &[u64]| -> u64 {
+      refs.iter().enumerate().map(|(i, &r)| r * tagn_width(i as u64)).sum()
+    };
+    println!(
+      "- Share bytes (refs x TagN width): MSS {}, all {}",
+      cost(&im.share_refs),
+      cost(&ia.share_refs)
+    );
+    if let Some(t) = first_diff {
+      let i = pos_m[&t];
+      let j = pos_a[&t];
+      let fm = &im.entry_forms[i];
+      let fa = &ia.entry_forms[j];
+      let k = fm.iter().zip(fa.iter()).take_while(|(x, y)| x == y).count();
+      println!(
+        "- first entry (MSS order) with a different term-level form: term {t}, MSS index {i}, all index {j}, deg {}, refs {}/{}",
+        mss.deg[t as usize], im.share_refs[i], ia.share_refs[j]
+      );
+      println!(
+        "  - first difference at position {k}: MSS {:?}, all {:?}",
+        fm.get(k),
+        fa.get(k)
+      );
+      println!("  - MSS bytes: {}", tagn_hex(&mss.sharing[i], 120));
+      println!("  - all bytes: {}", tagn_hex(&all.sharing[j], 120));
+    }
+    println!();
+  }
+  Ok(())
+}
+
+/// Corpus-wide MSS vs "all candidates" (TagN layout), as a CSV and totals.
+fn mss_compare(
+  args: &Args,
+  consts: &[ixon::env::LazyConstSlice],
+  mmap: &[u8],
+  limits: &ExactSharingLimits,
+  name_of: &dyn Fn(&str, &Address) -> String,
+  t0: Instant,
+) -> Result<(), String> {
+  let rows: Vec<Option<(u64, u64, u64, u64, u64, u64, u64, u64)>> = consts
+    .par_iter()
+    .map(|cs| {
+      let c = Constant::get(&mut &mmap[cs.offset..cs.offset + cs.len]).ok()?;
+      let fixed = constant_fixed_len(&c)?;
+      let (_, mss, dag) = mss_constant(&c, limits, args.mss_ties).ok()?;
+      let (_, all) = normalize_constant_sharing_tiered_with(
+        ShareLayout::TagN,
+        &c,
+        limits,
+        Phase1Choice::AllCandidates,
+      )
+      .ok()?;
+      let im =
+        inspect_encoding(&dag, &mss.table_terms, &mss.sharing, &mss.roots)
+          .ok()?;
+      let ia =
+        inspect_encoding(&dag, &all.table_terms, &all.sharing, &all.roots)
+          .ok()?;
+      let cost = |refs: &[u64]| -> u64 {
+        refs.iter().enumerate().map(|(i, &r)| r * tagn_width(i as u64)).sum()
+      };
+      Some((
+        fixed + layout_bytes(ShareLayout::TagN, &mss.sharing, &mss.roots)?,
+        fixed + layout_bytes(ShareLayout::TagN, &all.sharing, &all.roots)?,
+        mss.table_terms.len() as u64,
+        im.share_refs.iter().sum(),
+        ia.share_refs.iter().sum(),
+        ia.inlined,
+        cost(&im.share_refs),
+        cost(&ia.share_refs),
+      ))
+    })
+    .collect();
+  if let Some(path) = &args.csv {
+    let mut f = std::io::BufWriter::new(
+      std::fs::File::create(path).map_err(|e| e.to_string())?,
+    );
+    writeln!(f, "addr,name,mss,all,entries,mss_shares,all_shares,all_inlined,mss_share_bytes,all_share_bytes")
+      .map_err(|e| e.to_string())?;
+    for (r, cs) in rows.iter().zip(consts) {
+      let hex = cs.addr.hex();
+      if let Some((m, a, k, sm, sa, inl, bm, ba)) = r {
+        writeln!(
+          f,
+          "{hex},\"{}\",{m},{a},{k},{sm},{sa},{inl},{bm},{ba}",
+          name_of(&hex, &cs.addr).replace('"', "'")
+        )
+        .map_err(|e| e.to_string())?;
+      }
+    }
+  }
+  let ok: Vec<_> = rows.iter().flatten().collect();
+  let tm: u64 = ok.iter().map(|r| r.0).sum();
+  let ta: u64 = ok.iter().map(|r| r.1).sum();
+  let larger = ok.iter().filter(|r| r.1 > r.0).count();
+  let smaller = ok.iter().filter(|r| r.1 < r.0).count();
+  let inl: u64 = ok.iter().map(|r| r.5).sum();
+  let with_inl = ok.iter().filter(|r| r.5 > 0).count();
+  println!(
+    "# MSS vs all candidates (TagN), {} constants ({} failed)",
+    ok.len(),
+    rows.len() - ok.len()
+  );
+  println!("- TagN bytes: MSS {tm}, all {ta} ({:+})", signed(ta) - signed(tm));
+  println!(
+    "- per constant: all larger {larger}, smaller {smaller}, equal {}",
+    ok.len() - larger - smaller
+  );
+  println!(
+    "- Shares: MSS {}, all {}; share bytes MSS {}, all {}; stored-term occurrences written inline by all: {inl} in {with_inl} constants",
+    ok.iter().map(|r| r.3).sum::<u64>(),
+    ok.iter().map(|r| r.4).sum::<u64>(),
+    ok.iter().map(|r| r.6).sum::<u64>(),
+    ok.iter().map(|r| r.7).sum::<u64>()
   );
   println!("- total wall {:.1} s", t0.elapsed().as_secs_f64());
   Ok(())
