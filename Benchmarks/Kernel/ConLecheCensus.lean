@@ -31,7 +31,13 @@ as for `kernel-census` and `scripts/census-guarded.sh`. `CENSUS_ROOTS`
 (comma-separated Lean names, resolved through the environment's metadata)
 restricts the run to the prelude and the dependency closure of those
 constants; a `«n»` component is numeric, as the rows print it (the `0` of a
-private name). -/
+private name).
+
+The loop (reading, stepping, rows) runs on a dedicated thread with a fresh
+allocator heap, after the decoded inputs are marked persistent, as
+con-leche's driver runs its check phase (`Main.lean`, `checkDeclsIO`);
+`CENSUS_THREAD=0` runs it on the main thread, behind the decode, as before
+T1. -/
 
 namespace Benchmarks.Kernel.ConLecheCensus
 
@@ -106,7 +112,7 @@ def run (args : List String) : IO UInt32 := do
         | none => IO.eprintln s!"census-cl: CENSUS_ROOTS: no constant {n}"
       pure (closure s.store s.extra roots)
   let total := match options.limit with | some n => min n ordered.size | none => ordered.size
-  let out ← censusLoop s natPins (names.getD · #[]) (ordered.extract 0 total) skip
+  let loop := censusLoop s natPins (names.getD · #[]) (ordered.extract 0 total) skip
     (emit := fun row => do handle.putStrLn row.json.compress; handle.flush)
     (before := fun a => do checking.set (some (a, ← IO.monoMsNow)))
     (after := checking.set none)
@@ -114,6 +120,18 @@ def run (args : List String) : IO UInt32 := do
       if i % 1000 == 0 then
         IO.eprintln s!"census-cl: {i}/{total} after {(← IO.monoMsNow) - started} ms; {o.counts.toList}; \
           RSS {(← statusKb "VmRSS:") / 1024} MB")
+  -- The loop runs as con-leche's driver runs its check phase at `--jobs=1`
+  -- (`Main.lean`, `checkDeclsIO`): on a dedicated thread, whose allocator
+  -- heap is fresh (this thread's holds the decoded corpus and the
+  -- temporaries of decoding it), with the read-only inputs marked
+  -- persistent first, so that handing them to the thread does not mark
+  -- the whole corpus multi-threaded (atomic reference counts) and the
+  -- loop pays no reference counting on them at all. `CENSUS_THREAD=0`
+  -- runs the loop on this thread instead.
+  let out ← if (← IO.getEnv "CENSUS_THREAD") == some "0" then loop else do
+    let _ ← unsafe Runtime.markPersistent s
+    let _ ← unsafe Runtime.markPersistent names
+    IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) loop))
   running.set false
   let ranked := out.reasons.toArray.qsort (fun a b => a.2 > b.2)
   IO.eprintln s!"census-cl: done in {(← IO.monoMsNow) - started} ms; {out.counts.toList}"
