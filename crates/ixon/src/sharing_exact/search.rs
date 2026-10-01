@@ -58,10 +58,9 @@
 //!
 //! # Upper bounds
 //!
-//! The initial feasible length is the least of the unshared encoding, the
-//! historical heuristic (when safely representable and verified to expand
-//! to the same DAG) and a deterministic greedy table sequence. They only
-//! tighten pruning; none of them is returned unless the search certifies it.
+//! The initial feasible length is the lesser of the unshared encoding and a
+//! deterministic greedy table sequence. They only tighten pruning; neither is
+//! returned unless the search certifies it.
 
 use std::sync::Arc;
 
@@ -90,8 +89,6 @@ pub(crate) struct Prepared {
   pub(crate) own: Vec<Len>,
   /// `C` under the empty dictionary: the unshared standalone lengths.
   pub(crate) base: Vec<Len>,
-  /// Expanded occurrence counts, saturating (only `>= 2` is used).
-  pub(crate) occ: Vec<u64>,
   pub(crate) cands: Vec<TermId>,
   pub(crate) is_cand: Vec<bool>,
   /// Materialization-bound bytes of one picked emission of each non-leaf
@@ -257,7 +254,6 @@ pub(crate) fn prepare_with(
   Ok(Prepared {
     own,
     base,
-    occ,
     cands,
     is_cand,
     picked,
@@ -701,57 +697,6 @@ pub(crate) fn width_state_search(
   best.ok_or_else(|| internal("every width state was pruned"))
 }
 
-/// Largest DAG height for which the historical heuristic (recursive
-/// topological sort) is run as an upper-bound seed.
-const HEURISTIC_MAX_HEIGHT: u32 = 2048;
-
-/// Variable length of the historical heuristic on the same AST, if it is
-/// safely representable and provably encodes exactly this DAG.
-///
-/// The heuristic uses `usize` occurrence counts and `isize` benefits; it is
-/// only run when `(sum occ)^2 * (max node header + 1)` stays below
-/// `2^(usize::BITS - 2)`, which bounds every such quantity. Its topological
-/// sort recurses once per level, so it is also skipped above
-/// [`HEURISTIC_MAX_HEIGHT`]. Skipping it only weakens pruning.
-fn heuristic_len(
-  dag: &SharingDag,
-  prep: &Prepared,
-  limits: &ExactSharingLimits,
-) -> Option<u64> {
-  use crate::sharing::{analyze_block, build_sharing_vec, decide_sharing};
-  if dag.heights().iter().any(|&h| h > HEURISTIC_MAX_HEIGHT) {
-    return None;
-  }
-  let total_occ: u128 =
-    prep.occ.iter().fold(0u128, |acc, &o| acc.saturating_add(u128::from(o)));
-  let max_head: u128 = prep
-    .own
-    .iter()
-    .map(|l| u128::from(l.raw()))
-    .max()
-    .unwrap_or(0)
-    .saturating_add(2);
-  let bound = 1u128 << (usize::BITS - 2);
-  if total_occ.saturating_mul(total_occ).saturating_mul(max_head) >= bound {
-    return None;
-  }
-  let roots = dag.root_exprs();
-  let (info, ptrs, topo) = analyze_block(&roots, false);
-  let shared = decide_sharing(&info, &topo);
-  let (rewritten, table) = if shared.is_empty() {
-    (roots, Vec::new())
-  } else {
-    build_sharing_vec(&roots, &shared, &ptrs, &info, &topo)
-  };
-  let mut len = sharing_table_len(&table)?;
-  for r in &rewritten {
-    len = len.checked_add(expr_len(r)?)?;
-  }
-  let mut meter = Meter::new(limits);
-  let check = SharingDag::build(&rewritten, Some(&table), &mut meter).ok()?;
-  (check == *dag).then_some(len)
-}
-
 /// Exact variable length of the table sequence `q` with every entry and
 /// root at its minimum: `sum C_{q<i}(q_i) + tag0(|q|) + sum C_q(root)`.
 pub fn sequence_len(
@@ -821,15 +766,8 @@ pub(crate) fn optimize(
     unshared = unshared.plus(prep.base[ix(r)]);
   }
   meter.stats.unshared_len = unshared.exact();
-  let mut ub = unshared;
-  if meter.limits().heuristic_upper_bound && !prep.cands.is_empty() {
-    let h = heuristic_len(dag, &prep, meter.limits());
-    meter.stats.heuristic_len = h;
-    if let Some(h) = h {
-      ub = ub.min(Len::new(h));
-    }
-  }
-  let (total, q) = width_state_search(dag, &prep, ub, meter, WidthModel::Ixon)?;
+  let (total, q) =
+    width_state_search(dag, &prep, unshared, meter, WidthModel::Ixon)?;
   let variable = total
     .exact()
     .ok_or(SharingError::FormatBound(FormatBound::LengthOverflow))?;

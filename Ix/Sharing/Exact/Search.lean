@@ -31,7 +31,6 @@
 module
 
 public import Ix.Sharing.Exact.Dictionary
-public import Ix.Sharing
 
 public section
 
@@ -258,20 +257,6 @@ structure ExactSharingResult where
   stats : Stats
   deriving Repr, Inhabited
 
-/-- Variable length of the existing heuristic applied to the expanded
-roots, if its output is a valid backward-reference encoding of exactly the
-same roots. Only used as a pruning upper bound. -/
-def heuristicVariableBytes (limits : Limits) (dag : Dag) (rootIds : Array Nat) :
-    Option Nat :=
-  let exprs := dag.toExprs
-  let roots := rootIds.map (exprs[·]!)
-  let (rw, tbl) := Ix.Sharing.applySharing roots
-  match reexpand limits dag tbl rw with
-  | .ok (_, ids, _) =>
-    if ids == rootIds then some (tag0Size tbl.size + exprsSize tbl + exprsSize rw)
-    else none
-  | .error _ => none
-
 /-- Optimize an expanded input. The result minimizes
 `(variable length, table term IDs, bytes)`; since the fixed Constant bytes
 are the same for every candidate, this is the §3.3 key of the complete
@@ -280,9 +265,8 @@ Constant.
 With `minInDegree2` only terms of compact in-degree at least 2 are
 candidates. With `uniform := some w` every Share is priced `w` bytes regardless of its
 index (a cost model, used as the reference for the uniform-width
-optimizer): the search minimizes the model length, the heuristic bound is
-not used (its bytes are real lengths), and `modelBytes` reports the model
-length while `variableBytes` reports the real serialized length of the
+optimizer): the search minimizes the model length, and `modelBytes` reports
+the model length while `variableBytes` reports the real serialized length of the
 same output. -/
 def optimizeExpanded (limits : Limits) (ex : Expanded) (uniform : Option Nat := none)
     (minInDegree2 : Bool := false) : Except SharingError ExactSharingResult := do
@@ -305,17 +289,11 @@ def optimizeExpanded (limits : Limits) (ex : Expanded) (uniform : Option Nat := 
   let isCand := cands.foldl (fun acc t => acc.set! t true) (Array.replicate n false)
   let affected := affectedTerms ex.dag isCand
   let unshared := tag0Size 0 + rootsCost p.base ex.roots
-  let heuristic :=
-    if uniform.isNone && limits.useHeuristicBound &&
-        unshared ≤ limits.heuristicMaxUnsharedBytes then
-      heuristicVariableBytes limits ex.dag ex.roots
-    else none
-  let upper := match heuristic with
-    | some h => min h unshared
-    | none => unshared
+  -- The unshared encoding is the initial upper bound.
+  let upper := unshared
   let stats0 : Stats :=
     { exprVisits := ex.visits, internedNodes := ex.internedNodes,
-      distinctSubterms := n, candidates := cands.size, heuristicBytes := heuristic }
+      distinctSubterms := n, candidates := cands.size }
   let inp : SearchInput := { prep := p, roots := ex.roots, candidates := cands, affected }
   let (best, stats) ← (search inp limits upper widthAt).run stats0
   if best.total > limits.maxOutputBytes then

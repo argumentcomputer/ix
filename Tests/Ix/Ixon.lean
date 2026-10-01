@@ -1,6 +1,5 @@
 module
 public import Ix.Ixon
-public import Ix.Sharing
 public import Tests.Gen.Ixon
 public import Tests.FFI.Ixon
 
@@ -333,43 +332,6 @@ def commUnits : TestSeq :=
   let addr2 : Address := ⟨(Blake3.Rust.hash "payload".toUTF8).val⟩
   let c := Comm.mk addr1 addr2
   test "Comm roundtrip" (commSerde c)
-
-/-!
-## Sharing Analysis Tests
--/
-
-def sharingTest1 : Bool :=
-  let e1 := Expr.app (.var 0) (.var 1)
-  let (rewritten1, sharing1) := Ix.Sharing.applySharing #[e1]
-  sharing1.isEmpty && rewritten1[0]! == e1
-
-def sharingTest2 : Bool :=
-  let ty := Expr.sort 0
-  let e2 := Expr.app (.leanLam ty (.var 0)) (.leanLam ty (.var 1))
-  let (_, sharing2) := Ix.Sharing.applySharing #[e2]
-  sharing2.size == 1
-
-def sharingTest3 : Bool :=
-  let var0 := Expr.var 0
-  let e3a := Expr.app var0 var0
-  let e3b := Expr.app var0 (.var 1)
-  let e3c := Expr.app var0 (.var 2)
-  let (_, sharing3) := Ix.Sharing.applySharing #[e3a, e3b, e3c]
-  sharing3.size >= 1
-
-def sharingTest4 : Bool :=
-  let e4 := Expr.leanLam (.sort 0) (.app (.var 0) (.var 0))
-  let (rewritten4, _) := Ix.Sharing.applySharing #[e4]
-  let serialized := serExpr rewritten4[0]!
-  match deExpr serialized with
-  | .ok e => e == rewritten4[0]!
-  | .error _ => false
-
-def sharingUnits : TestSeq :=
-  test "no sharing for unique subterms" sharingTest1
-  ++ test "shares repeated sort 0" sharingTest2
-  ++ test "analyzes multiple expressions" sharingTest3
-  ++ test "roundtrip after sharing" sharingTest4
 
 /-! ## Env Unit Tests -/
 

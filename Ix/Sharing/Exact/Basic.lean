@@ -24,6 +24,11 @@ namespace Ix.Sharing.Exact
 
 open Ixon
 
+/-- The memory address of an expression, for pointer-identity caches within
+one pass over expressions that are not modified meanwhile. -/
+@[inline]
+def exprPtr (e : Ixon.Expr) : USize := unsafe ptrAddrUnsafe e
+
 /-! ## Unsigned integer widths -/
 
 /-- Number of bytes in the minimal little-endian representation of `n`
@@ -389,12 +394,6 @@ structure Limits where
   maxOracleTables : Nat := 1 <<< 20
   /-- Representations enumerated by the exhaustive oracle. -/
   maxOracleVariants : Nat := 1 <<< 24
-  /-- Use the existing heuristic (`Ix.Sharing.applySharing`) as an extra
-  pruning upper bound. It never influences which result is returned. -/
-  useHeuristicBound : Bool := true
-  /-- Run the heuristic only when the unshared variable length is at most
-  this many bytes (bounds its tree walks). -/
-  heuristicMaxUnsharedBytes : Nat := 1 <<< 20
   /-- Lower-bound pruning. Disabling it (for testing) explores every
   reachable width state; the result must not change. -/
   prune : Bool := true
@@ -493,7 +492,6 @@ structure Stats where
   costEvals : Nat := 0
   materializedNodes : Nat := 0
   outputBytes : Nat := 0
-  heuristicBytes : Option Nat := none
   deriving BEq, Repr, Inhabited
 
 /-- Checked counter increment: `count + n` must stay within `limit`. -/

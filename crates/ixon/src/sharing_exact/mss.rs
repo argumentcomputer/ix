@@ -24,9 +24,84 @@ use super::{
 };
 use crate::constant::Constant;
 use crate::expr::Expr;
+use crate::tag::TagN;
 
 fn internal(msg: &str) -> SharingError {
   SharingError::Internal(msg.to_string())
+}
+
+/// Header bytes of one node in the structural hash: the whole encoding of a
+/// leaf, otherwise the node's own scalar and contract bytes (the children
+/// follow as their hashes). The former heuristic's node hash, kept for the
+/// [`MssTies::Blake3`] tie-break of W3's `mssBuild`.
+fn put_node_header(expr: &Expr, buf: &mut Vec<u8>) {
+  match expr {
+    Expr::Sort(_)
+    | Expr::Var(_)
+    | Expr::Ref(..)
+    | Expr::Rec(..)
+    | Expr::Str(_)
+    | Expr::Nat(_)
+    | Expr::Share(_) => crate::serialize::put_expr(expr, buf),
+    Expr::Prj(t, field, _) => {
+      TagN::put(4, Expr::FLAG_PRJ, *field, buf);
+      TagN::put(0, 0, *t, buf);
+    },
+    Expr::App(..) => TagN::put(4, Expr::FLAG_APP, 1, buf),
+    Expr::Lam(c, ..) => {
+      TagN::put(4, Expr::FLAG_LAM, 1, buf);
+      buf.push(c.to_bits());
+    },
+    Expr::All(c, v, ..) => {
+      TagN::put(4, Expr::FLAG_ALL, 1, buf);
+      buf.push(crate::contract::pack_all_contract(*c, *v));
+    },
+    Expr::Let(c, ..) => {
+      TagN::put(4, Expr::FLAG_LET, c.flags(), buf);
+      buf.push(c.binder.to_bits());
+    },
+  }
+}
+
+/// The structural (Merkle) hash of every pointer-distinct node reachable
+/// from `exprs`: blake3 of the node header followed by the children's
+/// hashes. Iterative (post-order with an explicit stack).
+fn structural_hashes(
+  exprs: &[Arc<Expr>],
+) -> FxHashMap<*const Expr, blake3::Hash> {
+  let mut hashes: FxHashMap<*const Expr, blake3::Hash> = FxHashMap::default();
+  let mut buf: Vec<u8> = Vec::with_capacity(128);
+  for root in exprs {
+    let mut stack: Vec<(&Arc<Expr>, bool)> = vec![(root, false)];
+    while let Some((e, ready)) = stack.pop() {
+      let ptr = std::ptr::from_ref(e.as_ref());
+      if hashes.contains_key(&ptr) {
+        continue;
+      }
+      if !ready {
+        stack.push((e, true));
+        for child in e.children().into_iter().rev() {
+          stack.push((child, false));
+        }
+        continue;
+      }
+      buf.clear();
+      put_node_header(e, &mut buf);
+      for child in e.children() {
+        let h = hashes[&std::ptr::from_ref(child.as_ref())];
+        buf.extend_from_slice(h.as_bytes());
+      }
+      hashes.insert(ptr, blake3::hash(&buf));
+    }
+  }
+  hashes
+}
+
+/// The structural hash of one expression ([`structural_hashes`]).
+#[cfg(test)]
+pub(crate) fn structural_hash(expr: &Arc<Expr>) -> blake3::Hash {
+  structural_hashes(std::slice::from_ref(expr))
+    [&std::ptr::from_ref(expr.as_ref())]
 }
 
 /// An MSS encoding of a DAG.
@@ -46,8 +121,8 @@ pub struct MssEncoding {
 pub enum MssTies {
   /// The smaller structural ID.
   StructuralId,
-  /// The smaller blake3 hash bytes of the production heuristic's hash
-  /// (`sharing::analyze_block`), as in W3's `mssBuild`.
+  /// The smaller blake3 structural hash bytes (the former heuristic's node
+  /// hash), as in W3's `mssBuild`.
   Blake3,
 }
 
@@ -107,7 +182,7 @@ pub fn mss_dag(
       .collect(),
     MssTies::Blake3 => {
       let exprs = dag.term_exprs();
-      let (_, ptr_to_hash, _) = crate::sharing::analyze_block(&exprs, false);
+      let ptr_to_hash = structural_hashes(&exprs);
       exprs
         .iter()
         .map(|e| {

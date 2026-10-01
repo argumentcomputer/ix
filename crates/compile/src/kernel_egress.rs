@@ -1049,18 +1049,12 @@ fn egress_muts_block(
   }
 
   let (refs, univs) = ctx.into_vecs();
-  let first_name = names
+  // The block must name its first member.
+  names
     .get(all.first().and_then(|c| c.first()).ok_or("empty Muts")?)
-    .cloned()
     .ok_or("first name missing")?;
-  let block_name_str = first_name.pretty();
-  let result = apply_sharing_to_mutual_block(
-    mut_consts,
-    refs,
-    univs,
-    Some(&block_name_str),
-  )
-  .map_err(|e| e.to_string())?;
+  let result = apply_sharing_to_mutual_block(mut_consts, refs, univs)
+    .map_err(|e| e.to_string())?;
   let block_addr = content_address_of(&result.constant);
   out.store_const(block_addr.clone(), result.constant);
 
@@ -1187,13 +1181,8 @@ fn egress_standalone(
     KConst::Defn { .. } => {
       let def = kdefn_to_ixon(kc, &mut ctx)?;
       let (refs, univs) = ctx.into_vecs();
-      let result = apply_sharing_to_definition_with_stats(
-        def,
-        refs,
-        univs,
-        Some(&name.pretty()),
-      )
-      .map_err(|e| e.to_string())?;
+      let result = apply_sharing_to_definition_with_stats(def, refs, univs)
+        .map_err(|e| e.to_string())?;
       let addr = content_address_of(&result.constant);
       (result.constant, addr)
     },

@@ -13,7 +13,6 @@ public import Ix.CompileM
 public import Ix.CompileDriver
 public import Ix.CondenseM
 public import Ix.GraphM
-public import Ix.Sharing
 public import Lean
 public import LSpec
 public import Tests.Ix.Fixtures

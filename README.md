@@ -228,8 +228,6 @@ not this stable overview.
 - `lake test -- cli` runs CLI integration tests
 - `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
 
-<!-- PENDING: [tests] the heuristic `sharing` suite (still registered in Tests/Main.lean at 9611c3b6, omitted above) is removed with the heuristic; re-check this list against `primarySuites` (plan §7). -->
-
 **Rust tests:** `cargo test` or `cargo nextest run`
 
 ### Proving under SP1

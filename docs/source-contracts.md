@@ -200,7 +200,7 @@ occurrences of equal terms, every arrow contract, syntax, imported interfaces,
 native metadata, result placement, both let kinds, and rejection of unadmitted
 external interfaces before artifacts are written. Syntax fixtures also reject accidental
 `sorryAx` insertion. The `ixon-v3-tests` target separately exercises binary
-representations, FFI, sharing hashes, accepted compilation and decompilation,
+representations, FFI, accepted compilation and decompilation,
 resource admission, VM execution, interpretation, and proving.
 
-<!-- PENDING: [tests] the `ixon-v3-tests` executable is renamed or retargeted for v4 (plan §5). Its "sharing hashes" checks follow the removal of the heuristic (plan §7). -->
+<!-- PENDING: [tests] the `ixon-v3-tests` executable is renamed or retargeted for v4 (plan §5). -->

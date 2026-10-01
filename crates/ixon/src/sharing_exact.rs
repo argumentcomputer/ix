@@ -57,8 +57,8 @@
 //!   rest of the Constant is fixed and checked against `Constant::put`.
 //!
 //! Pruning (the §4.1 bound strengthened with `share_width(k)` for future
-//! entries, the materialization bound, and the heuristic and greedy upper
-//! bound seeds) never changes a successful result, only which inputs finish
+//! entries, the materialization bound, and the greedy upper bound seed)
+//! never changes a successful result, only which inputs finish
 //! within the limits; `search` documents the proofs.
 
 mod cost;
@@ -145,9 +145,6 @@ pub struct ExactSharingLimits {
   /// table-count knapsack (Lean `maxKnapsackCells`), checked before it runs
   /// and counted separately from `max_states`.
   pub max_knapsack_cells: u64,
-  /// Seed the upper bound with the historical heuristic when it is safely
-  /// representable. Affects pruning only.
-  pub heuristic_upper_bound: bool,
   /// Prune states by proved lower bounds. Disabling it explores every
   /// reachable width state (a reference mode for tests).
   pub lower_bound_pruning: bool,
@@ -218,7 +215,6 @@ impl Default for ExactSharingLimits {
       max_work: 1 << 56,
       max_output_bytes: 1 << 40,
       max_knapsack_cells: 1 << 28,
-      heuristic_upper_bound: true,
       greedy_upper_bound: true,
       lower_bound_pruning: true,
       materialization_bound: true,
@@ -365,8 +361,6 @@ pub struct ExactSharingStats {
   pub max_layer: u64,
   pub layers: u64,
   pub work: u64,
-  /// Variable length of the historical heuristic, when it was evaluated.
-  pub heuristic_len: Option<u64>,
   /// Variable length of the greedy seed, when it was computed.
   pub greedy_len: Option<u64>,
   /// Variable length of the unshared encoding (`None` if it overflows).

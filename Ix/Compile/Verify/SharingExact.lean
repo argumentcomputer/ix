@@ -10,8 +10,7 @@ import Ix.Sharing.Exact
 Proofs about the executable exact-sharing core (`Ix.Sharing.Exact`):
 
 * the integer widths `tag0Size`, `tag4Size`, `shareWidth` are the sizes of
-  the production TagN encodings (`f = 0`, `f = 4`; `Ix.Compile.Verify.Codec`)
-  and agree with the heuristic's `tag0EncodedSize`/`tag4EncodedSize`;
+  the production TagN encodings (`f = 0`, `f = 4`; `Ix.Compile.Verify.Codec`);
   `tagNWidth` is the length of the `f = 4` TagN encoding and is monotone with
   the stated rung ends;
 * `exprSize` is the length of the production expression encoding for every
@@ -134,14 +133,6 @@ theorem byteCount_eq_u64ByteCount (x : UInt64) (h : x ≠ 0) :
   unfold UInt64.byteCount Ixon.u64ByteCount
   have h0 : (x == 0) = false := by simpa using h
   simp only [h0, Bool.false_eq_true, if_false]
-
-/-- The heuristic's TagN (`f = 0`) size agrees with `tag0Size`. -/
-theorem tag0EncodedSize_eq (x : UInt64) :
-    Ix.Sharing.tag0EncodedSize x = tag0Size x.toNat := rfl
-
-/-- The heuristic's TagN (`f = 4`) size agrees with `tag4Size`. -/
-theorem tag4EncodedSize_eq (x : UInt64) :
-    Ix.Sharing.tag4EncodedSize x = tag4Size x.toNat := rfl
 
 /-! ## TagN widths -/
 

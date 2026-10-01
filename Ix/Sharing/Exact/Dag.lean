@@ -21,7 +21,6 @@
 module
 
 public import Ix.Sharing.Exact.Basic
-public import Ix.Sharing
 
 public section
 
@@ -105,7 +104,7 @@ def internNode (limits : Limits) (n : Node) : IngestM Nat := do
 /-- Expand one expression into the interner and return its term ID. -/
 def ingestExpr (limits : Limits) (ctx : ShareCtx) (depth : Nat) (e : Ixon.Expr) :
     IngestM Nat := do
-  let ptr := Ix.Sharing.exprPtr e
+  let ptr := exprPtr e
   match (← get).ptrCache.get? ptr with
   | some id => return id
   | none =>

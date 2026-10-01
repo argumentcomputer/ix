@@ -5,7 +5,6 @@ public import Ix.Environment
 public import Ix.CanonM
 public import Ix.Ixon
 public import Ix.IxonSyntax
-public import Ix.Sharing
 public import Ix.Meta
 public import Ix.EnvScope
 public import Ix.GraphM
