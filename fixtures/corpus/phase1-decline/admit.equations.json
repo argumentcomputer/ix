@@ -1,0 +1,31 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "Decline.lean",
+  "roots": [
+    {
+      "name": "Decline.useOpaque",
+      "address": "e47a1532c8ff15830323c910983652363ae20edc8cc3c52f0682767ca2aa933d"
+    },
+    {
+      "name": "Decline.usePartial",
+      "address": "e73002e1c3b33ddd16b0c2c5b7725a5d6deaba8cd17b4d28cf5af68344a21662"
+    },
+    {
+      "name": "Decline.useUnsafe",
+      "address": "8e81a4a2de2d01ffc866b52200bb6810e8877fca432634a7b5fcd983dffc2452"
+    },
+    {
+      "name": "Decline.useChoice",
+      "address": "4c77d051026837e03f756fa41c9d4cf3c0b8e1229c505074c951f1f221e3a362"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+    }
+  ],
+  "failures": []
+}

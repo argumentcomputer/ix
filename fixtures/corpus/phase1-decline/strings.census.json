@@ -1,0 +1,3 @@
+{"message": "ixon-v3: count exceeds decoder budget or remaining bytes",
+ "ingress": "rejected",
+ "format": "compilatrix/census/1"}

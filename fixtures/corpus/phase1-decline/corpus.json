@@ -1,0 +1,844 @@
+{
+  "format": "compilatrix/corpus/1",
+  "family": "phase1-decline",
+  "description": "The Phase 1 decline corpus (phase1.md MT.4): real Lean programs outside the Phase 1 fragment, each declined with its exact stage and code (closures, strings, six parameters, erasure and admission declines, the alloc.fallback wrong decline), and roots whose exported symbols collide when compiled together (stacking.symbols).",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/corpus/phase1-decline",
+  "source_root": "fixtures/corpus/phase1-decline/src",
+  "lean": {
+    "version": "4.34.0",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "9c4b9c654f06e88f021cfd9753701e52852e5500",
+    "ix_binary_sha256": "d8ba031a087810c8cbd0ea96a6251c27fcd07b0b161e1cadd67d8647604e580c",
+    "ix_version": "4.34.0|0.0.1",
+    "ix_build": "Built with Lake (lake build Ix ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix 0a31c8dbc63755924c645bf1afedc563e395e88a; not a Nix build.",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "closures",
+      "source": {
+        "path": "Decline.lean",
+        "sha256": "f6e07dcbe3a6b6a1f613463df9d49a0432c7ecb1bdba308047bee677e7e34adc",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Decline.applyArg",
+        "Decline.composeClosure"
+      ],
+      "protocol": "stdin",
+      "allow_constructs": [
+        "partial",
+        "unsafe"
+      ],
+      "closure": {
+        "path": "closures.ixe",
+        "sha256": "f5b59c09e65a0e324ef01bdc97bf7b9f25bf3e49438b2a45f8ebee4d05ac6fef",
+        "bytes": 15509
+      },
+      "equations": {
+        "path": "closures.equations.json",
+        "sha256": "26afe5f7df344bb4915e78fd4c563b0fecc791a2fce0e33825f47e6c6a72d96d",
+        "equations": 2,
+        "failures": 0
+      },
+      "named_env_sha256": "dabe965cd423d266905d48d81860c8d3c7d0003e4ed5bd5a8cb1a8129db29f86",
+      "census": {
+        "path": "closures.census.json",
+        "sha256": "f4b8dacb9d94eb7e95b9abda0a03f286c692f4dc19b907811c3e13b8006cd670"
+      },
+      "roots": [
+        {
+          "name": "Decline.applyArg",
+          "address": "6838f921eb65b39699e96b1d13216aa78b1ab5356ffafb563a26dd097a1d2bcc",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "fir",
+            "code": "fir.closures"
+          },
+          "note": "an unknown function argument applied",
+          "cases": []
+        },
+        {
+          "name": "Decline.composeClosure",
+          "address": "bf3e52d1c1b610abfa2a51afdb8931e01466a036523ece5560cd83f641a0003a",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "fir",
+            "code": "fir.closures"
+          },
+          "note": "a function argument composed with itself each iteration",
+          "cases": []
+        }
+      ]
+    },
+    {
+      "name": "loops",
+      "source": {
+        "path": "Decline.lean",
+        "sha256": "f6e07dcbe3a6b6a1f613463df9d49a0432c7ecb1bdba308047bee677e7e34adc",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Decline.nestedFor",
+        "Decline.mulN"
+      ],
+      "protocol": "stdin",
+      "allow_constructs": [
+        "partial",
+        "unsafe"
+      ],
+      "closure": {
+        "path": "loops.ixe",
+        "sha256": "9f1c488ee627b538d457d4aab6462c70b31e87d6ac6a5010382574a0cc318058",
+        "bytes": 1139807
+      },
+      "equations": {
+        "path": "loops.equations.json",
+        "sha256": "3546868bbeed9d9c74b65b705de553e8d67aa8353ed8750bd370352ff9d2cea6",
+        "equations": 34,
+        "failures": 0
+      },
+      "named_env_sha256": "3c583970c2fc883588a41f5837b1114d455a7fcd67ccbbaa69799359a2fe9f9d",
+      "census": {
+        "path": "loops.census.json",
+        "sha256": "bfb9bddecb55a07cc76810dbcb826461a4bddd47fa87baa08fe7cac284f1d36a"
+      },
+      "roots": [
+        {
+          "name": "Decline.nestedFor",
+          "address": "8e0125894840666b366dda7b96a86eb84407fd37f8a35ca5e7e2581452662aec",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "fir",
+            "code": "fir.closures"
+          },
+          "note": "nested `for` loops (Phase 2, P8)",
+          "cases": []
+        },
+        {
+          "name": "Decline.mulN",
+          "address": "3c0df6579a2a7a6919fa51f0755600d2f090a78020a1a5b2ae77ea1a3ee8f406",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "alloc",
+            "code": "alloc.fallback"
+          },
+          "note": "WRONG DECLINE (MT.2 finding 1): a `for` loop reading a parameter specialises into an 8-argument loop function, beyond the internal convention's 7 argument registers; allocation fails, nothing earlier declines it",
+          "cases": []
+        }
+      ]
+    },
+    {
+      "name": "strings",
+      "source": {
+        "path": "Decline.lean",
+        "sha256": "f6e07dcbe3a6b6a1f613463df9d49a0432c7ecb1bdba308047bee677e7e34adc",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Decline.stringLength"
+      ],
+      "protocol": "stdin",
+      "allow_constructs": [
+        "partial",
+        "unsafe"
+      ],
+      "closure": {
+        "path": "strings.ixe",
+        "sha256": "be828bec6107afdace4824617bc1bf9ebb8306f52c9bb061dbb83b4dcb18d22a",
+        "bytes": 4294365
+      },
+      "equations": {
+        "path": "strings.equations.json",
+        "sha256": "c617e7cbcf290427c8b43ee5c6338fe4a226b4c7d10cfc0046b6e5c02b75470e",
+        "equations": 55,
+        "failures": 0
+      },
+      "named_env_sha256": "b47aa68bd55236b8c7f09695308abc7987fd8377e384082ed4cd36c6a7cb77de",
+      "census": {
+        "path": "strings.census.json",
+        "sha256": "9374cc20e96c237b2aa34401f11d022c88f9121102a0aec380ccf7c277cc34bb"
+      },
+      "roots": [
+        {
+          "name": "Decline.stringLength",
+          "address": "99b28e762e5e2f25c792a0c3827d5660925081b2bfef770d2e0ac899c544c484",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "ingress",
+            "code": "decode"
+          },
+          "note": "`String.length` reaches the `String` library, whose closure exceeds the decoder's count budget",
+          "cases": []
+        }
+      ]
+    },
+    {
+      "name": "panic",
+      "source": {
+        "path": "Decline.lean",
+        "sha256": "f6e07dcbe3a6b6a1f613463df9d49a0432c7ecb1bdba308047bee677e7e34adc",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Decline.withPanic"
+      ],
+      "protocol": "stdin",
+      "allow_constructs": [
+        "partial",
+        "unsafe"
+      ],
+      "closure": {
+        "path": "panic.ixe",
+        "sha256": "f9bbe0a1e6603636b0a94f31201337e3c6ea0c695bcacf7454a94d30b3ccf6c2",
+        "bytes": 175573
+      },
+      "equations": {
+        "path": "panic.equations.json",
+        "sha256": "df97efdcc7e48981155e5f01c0334445c643a5a75d201e3939b0395a45ecc9e9",
+        "equations": 15,
+        "failures": 0
+      },
+      "named_env_sha256": "916d20dad1dceea5b1495c60ac3bc93eec41171e38b9c206754eb0a32d301740",
+      "census": {
+        "path": "panic.census.json",
+        "sha256": "2666a7a9e2924642e27e87c19616a45c37fb3eb028731e7e766b3be7643f85ab"
+      },
+      "roots": [
+        {
+          "name": "Decline.withPanic",
+          "address": "bfca32cb5d37fb375aa6ef63f7b571f9b42ee4fd3f42f5b3ebedda07a5126a71",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "admit",
+            "code": "unsupported"
+          },
+          "note": "`panic!` carries a string",
+          "cases": []
+        }
+      ]
+    },
+    {
+      "name": "params",
+      "source": {
+        "path": "Decline.lean",
+        "sha256": "f6e07dcbe3a6b6a1f613463df9d49a0432c7ecb1bdba308047bee677e7e34adc",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Decline.six",
+        "Decline.fiveAndType",
+        "Decline.fiveAndProof"
+      ],
+      "protocol": "stdin",
+      "allow_constructs": [
+        "partial",
+        "unsafe"
+      ],
+      "closure": {
+        "path": "params.ixe",
+        "sha256": "f4a8e99b912034f3c2fd6bdb84d78deeea4419f4817d686cac63ef2954c01c3c",
+        "bytes": 13195
+      },
+      "equations": {
+        "path": "params.equations.json",
+        "sha256": "d8698e85f72862855a9055899e49f1947efd82e45f1c3d53c15cc3a8d82bce5c",
+        "equations": 1,
+        "failures": 0
+      },
+      "named_env_sha256": "5893615cfa6ac77adf958dbf2e45715659139f1f6c1918ed26563c0bb2cf4c47",
+      "census": {
+        "path": "params.census.json",
+        "sha256": "7050c988c4f6490bf15fab831b97eca510357733a879c08e31f6b54a2ff8a5a4"
+      },
+      "roots": [
+        {
+          "name": "Decline.six",
+          "address": "4ceb89594bc09d400c250edabf3a0c0f85ab03d7b48e126115fe968dd0864541",
+          "params": 6,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "rt",
+            "code": "rt.params"
+          },
+          "note": "six `Nat` parameters; the entry wrapper passes five",
+          "cases": []
+        },
+        {
+          "name": "Decline.fiveAndType",
+          "address": "042b8dd03a09224d70d4c1ff80df7a1ffdb31ef6274450a659655588e4b2457b",
+          "params": 6,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "rt",
+            "code": "rt.params"
+          },
+          "note": "an erased type parameter still takes a parameter slot",
+          "cases": []
+        },
+        {
+          "name": "Decline.fiveAndProof",
+          "address": "65ec4954947c2653c062b4cdb967eeb450772e765e55a3261e19dad13f81d72f",
+          "params": 6,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "rt",
+            "code": "rt.params"
+          },
+          "note": "an erased proof parameter still takes a parameter slot",
+          "cases": []
+        }
+      ]
+    },
+    {
+      "name": "erase",
+      "source": {
+        "path": "Decline.lean",
+        "sha256": "f6e07dcbe3a6b6a1f613463df9d49a0432c7ecb1bdba308047bee677e7e34adc",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Decline.recMinor",
+        "Decline.unboxMatch",
+        "Decline.subtypeMatch"
+      ],
+      "protocol": "stdin",
+      "allow_constructs": [
+        "partial",
+        "unsafe"
+      ],
+      "closure": {
+        "path": "erase.ixe",
+        "sha256": "6433405b08297b8e634b494e7a29fe7b993a0728eccd257f9a78c69021c1e995",
+        "bytes": 7359
+      },
+      "equations": {
+        "path": "erase.equations.json",
+        "sha256": "7531da7fe9c86ee2feff3dcc9a29c1c8a8387969c025b037b8fc3e235413ff7e",
+        "equations": 0,
+        "failures": 0
+      },
+      "named_env_sha256": "590e08fa036037d63909bf6caba618da2efff29ec475afd9127180570f33e869",
+      "census": {
+        "path": "erase.census.json",
+        "sha256": "acc03471c3f2cc68555aa179a13fba51638f2613773d799306abbb2f91ff6656"
+      },
+      "roots": [
+        {
+          "name": "Decline.recMinor",
+          "address": "83821c2679b87bebac778e9abf15551138e3ee74af5e15fb232fe679986d5c34",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "erase",
+            "code": "erase-minor"
+          },
+          "note": "`Nat.rec` with a variable minor premise (S25)",
+          "cases": []
+        },
+        {
+          "name": "Decline.unboxMatch",
+          "address": "5fca2528958e39ee82759b0591223dd5acd15cdecd998322ea60d50157cee627",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "erase",
+            "code": "erase-unbox-elim"
+          },
+          "note": "a match on a structure with one field",
+          "cases": []
+        },
+        {
+          "name": "Decline.subtypeMatch",
+          "address": "f4b3917a3b465353b4b6c958d15aa87f5b712c7d85cfd47888f0ba4286d2c990",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "erase",
+            "code": "erase-unbox-elim"
+          },
+          "note": "a match on a `Subtype`",
+          "cases": []
+        }
+      ]
+    },
+    {
+      "name": "admit",
+      "source": {
+        "path": "Decline.lean",
+        "sha256": "f6e07dcbe3a6b6a1f613463df9d49a0432c7ecb1bdba308047bee677e7e34adc",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Decline.useOpaque",
+        "Decline.usePartial",
+        "Decline.useUnsafe",
+        "Decline.useChoice"
+      ],
+      "protocol": "stdin",
+      "allow_constructs": [
+        "partial",
+        "unsafe"
+      ],
+      "closure": {
+        "path": "admit.ixe",
+        "sha256": "2a1a08d6e07be61a3f64033e549c28c5c42aaa4be7f7cbd1d5514022f4b32bc6",
+        "bytes": 14998
+      },
+      "equations": {
+        "path": "admit.equations.json",
+        "sha256": "43f8dd667c557c6546b08cb9159f974022c3d10002d5ca9a4120a185d46c0ed5",
+        "equations": 1,
+        "failures": 0
+      },
+      "named_env_sha256": "73456d123fa673ea9f5256afe0931e967566741c8ad11a1b302acf5ef986937f",
+      "census": {
+        "path": "admit.census.json",
+        "sha256": "6ba100a593fcff57417a8f559652840457ebc2374ce6e1cad5e45f5f7e491161"
+      },
+      "roots": [
+        {
+          "name": "Decline.useOpaque",
+          "address": "e47a1532c8ff15830323c910983652363ae20edc8cc3c52f0682767ca2aa933d",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "admit",
+            "code": "opaque"
+          },
+          "note": "an `opaque` constant",
+          "cases": []
+        },
+        {
+          "name": "Decline.usePartial",
+          "address": "e73002e1c3b33ddd16b0c2c5b7725a5d6deaba8cd17b4d28cf5af68344a21662",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "admit",
+            "code": "opaque"
+          },
+          "note": "a `partial def`, which Lean adds as an opaque constant",
+          "cases": []
+        },
+        {
+          "name": "Decline.useUnsafe",
+          "address": "8e81a4a2de2d01ffc866b52200bb6810e8877fca432634a7b5fcd983dffc2452",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "admit",
+            "code": "unsafe"
+          },
+          "note": "an `unsafe def`",
+          "cases": []
+        },
+        {
+          "name": "Decline.useChoice",
+          "address": "4c77d051026837e03f756fa41c9d4cf3c0b8e1229c505074c951f1f221e3a362",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "admit",
+            "code": "relevant-axiom"
+          },
+          "note": "`Classical.choice` in a relevant position",
+          "cases": []
+        }
+      ]
+    },
+    {
+      "name": "symbols",
+      "source": {
+        "path": "Symbols.lean",
+        "sha256": "9cbf016d703df3cab2f698eea474cc4994fe01a49fe28dd269e489b34dd28f27",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "A.b",
+        "A_b",
+        "«x-y»",
+        "_x_y_",
+        "α",
+        "β",
+        "init",
+        "root_init",
+        "twinA",
+        "twinB"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "symbols.ixe",
+        "sha256": "eb63686704891b4bddd34444636e9288218a5666359eb4412e27ecd13ce56ac0",
+        "bytes": 18338
+      },
+      "equations": {
+        "path": "symbols.equations.json",
+        "sha256": "be82ab7d1486f67b6759ea29039d8b2802a8716610249c7a88afab66b7b53a84",
+        "equations": 2,
+        "failures": 0
+      },
+      "named_env_sha256": "07861a8b473628161cb1e82981c3d603b0c8fd143ae58f4475049a9fa1f84dec",
+      "census": {
+        "path": "symbols.census.json",
+        "sha256": "dde388a83cab20d60d90ac9fa66cf6e124d67cd3dd8dbd9ddb3f680bab021703"
+      },
+      "roots": [
+        {
+          "name": "A.b",
+          "address": "ec61bc96e35f3bf60a292882d640d553abd0a4bd96a1e7b5627547a82fe5c982",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "alone: compiles (`n + 1`)",
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "6",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "A_b",
+          "address": "dbfc8c2a312f2b03fdc1da6f5c5c2175d45d8c63d7962750f34c09df584eaa0f",
+          "params": 1,
+          "result": "nat",
+          "together": [
+            "A.b"
+          ],
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "stacking",
+            "code": "stacking.symbols"
+          },
+          "note": "with `A.b`: both export `cx_A_b`",
+          "cases": []
+        },
+        {
+          "name": "«x-y»",
+          "address": "bc3140bad5094682431768b071adc0986a43025e596e5c9aa8e18ed192069f8d",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "alone: compiles (`n + 3`)",
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "8",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "name": "_x_y_",
+          "address": "2274eb25b99f622c70770517d0fa8c9e335ffaa1126b6a2ec1230f70c4dae1cf",
+          "params": 1,
+          "result": "nat",
+          "together": [
+            "«x-y»"
+          ],
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "stacking",
+            "code": "stacking.symbols"
+          },
+          "note": "with `«x-y»`: both export `cx__x_y_`",
+          "cases": []
+        },
+        {
+          "name": "α",
+          "address": "6eb3da85c0b720a459e869d28e49a19a73e0f00346ffaa7486fedb5745f8a41d",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "alone: compiles (`n + 5`)",
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "10",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "5"
+            }
+          ]
+        },
+        {
+          "name": "β",
+          "address": "870c575c61035f4a19a41e2df5fe1e18960c43a606e52c84b11bc0075880302d",
+          "params": 1,
+          "result": "nat",
+          "together": [
+            "α"
+          ],
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "stacking",
+            "code": "stacking.symbols"
+          },
+          "note": "with `α`: both export `cx__`",
+          "cases": []
+        },
+        {
+          "name": "init",
+          "address": "18b86e21f729332efc3a75c7a296abfebfb29c8d5d438b4b1fca33b88f831c75",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "alone: compiles (`n + 7`)",
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "12",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "7"
+            }
+          ]
+        },
+        {
+          "name": "root_init",
+          "address": "253d8f286ce82bd9f6b05794cd060f0a057fee6efd7c89f5243f7d5581dffa61",
+          "params": 1,
+          "result": "nat",
+          "together": [
+            "init"
+          ],
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "stacking",
+            "code": "stacking.symbols"
+          },
+          "note": "with `init`: both export `cx_root_init`",
+          "cases": []
+        },
+        {
+          "name": "twinA",
+          "address": "c2939e328362d92d283c7597ad5cc4fe4989141ff8f30ea424f53be7bf572663",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "alone: compiles (`n + 0`)",
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "36",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "twinB",
+          "address": "c2939e328362d92d283c7597ad5cc4fe4989141ff8f30ea424f53be7bf572663",
+          "params": 1,
+          "result": "nat",
+          "together": [
+            "twinA"
+          ],
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "with `twinA`, which has the same body (one content address): compiles, but the object exports only the first root's symbol (`cx_twinB`), dropping `cx_twinA` without a decline",
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "36",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

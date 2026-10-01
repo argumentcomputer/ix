@@ -1,0 +1,61 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "Symbols.lean",
+  "roots": [
+    {
+      "name": "A.b",
+      "address": "ec61bc96e35f3bf60a292882d640d553abd0a4bd96a1e7b5627547a82fe5c982"
+    },
+    {
+      "name": "A_b",
+      "address": "dbfc8c2a312f2b03fdc1da6f5c5c2175d45d8c63d7962750f34c09df584eaa0f"
+    },
+    {
+      "name": "«x-y»",
+      "address": "bc3140bad5094682431768b071adc0986a43025e596e5c9aa8e18ed192069f8d"
+    },
+    {
+      "name": "_x_y_",
+      "address": "2274eb25b99f622c70770517d0fa8c9e335ffaa1126b6a2ec1230f70c4dae1cf"
+    },
+    {
+      "name": "α",
+      "address": "6eb3da85c0b720a459e869d28e49a19a73e0f00346ffaa7486fedb5745f8a41d"
+    },
+    {
+      "name": "β",
+      "address": "870c575c61035f4a19a41e2df5fe1e18960c43a606e52c84b11bc0075880302d"
+    },
+    {
+      "name": "init",
+      "address": "18b86e21f729332efc3a75c7a296abfebfb29c8d5d438b4b1fca33b88f831c75"
+    },
+    {
+      "name": "root_init",
+      "address": "253d8f286ce82bd9f6b05794cd060f0a057fee6efd7c89f5243f7d5581dffa61"
+    },
+    {
+      "name": "twinA",
+      "address": "c2939e328362d92d283c7597ad5cc4fe4989141ff8f30ea424f53be7bf572663"
+    },
+    {
+      "name": "twinB",
+      "address": "c2939e328362d92d283c7597ad5cc4fe4989141ff8f30ea424f53be7bf572663"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "566a3c2249bc2076543d9bc561a841f6fd35ffb5bdbbc5c991a9c64feccbd5d4",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "25fab8b9f1e5e9f65c5bfd39ecf7d58236e2fd478758db70ef063a966bec4a36"
+    }
+  ],
+  "failures": []
+}

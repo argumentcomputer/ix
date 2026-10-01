@@ -12,6 +12,7 @@ ix.
 | `phase1-scalar` | [`fixtures/corpus/phase1-scalar/corpus.json`](../fixtures/corpus/phase1-scalar/corpus.json) | [`fixtures/corpus/phase1-scalar/src`](../fixtures/corpus/phase1-scalar/README.md) | the Phase 1 scalar corpus: 23 roots of first-order total programs, and five programs of Lean's `tests/compile` |
 | `phase1-boundary` | [`fixtures/corpus/phase1-boundary/corpus.json`](../fixtures/corpus/phase1-boundary/corpus.json) | [`fixtures/corpus/phase1-boundary/src`](../fixtures/corpus/phase1-boundary/README.md) | MT.3: every `Nat` primitive and operand shape at the `2⁶³` edge, literals of at least `2⁶³` in live and dead code, and the field-count and constructor-count limits |
 | `phase1-resource` | [`fixtures/corpus/phase1-resource/corpus.json`](../fixtures/corpus/phase1-resource/corpus.json) | [`fixtures/corpus/phase1-resource/src`](../fixtures/corpus/phase1-resource/README.md) | MT.3: heap, stack and trap failures (statuses 1, 2, 4) under per-case regions and stacks |
+| `phase1-decline` | [`fixtures/corpus/phase1-decline/corpus.json`](../fixtures/corpus/phase1-decline/corpus.json) | [`fixtures/corpus/phase1-decline/src`](../fixtures/corpus/phase1-decline/README.md) | MT.4: programs outside the Phase 1 fragment, each with its exact `stage: code`, and colliding export symbols |
 
 ## The manifest
 

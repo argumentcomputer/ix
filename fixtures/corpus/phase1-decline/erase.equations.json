@@ -1,0 +1,20 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "Decline.lean",
+  "roots": [
+    {
+      "name": "Decline.recMinor",
+      "address": "83821c2679b87bebac778e9abf15551138e3ee74af5e15fb232fe679986d5c34"
+    },
+    {
+      "name": "Decline.unboxMatch",
+      "address": "5fca2528958e39ee82759b0591223dd5acd15cdecd998322ea60d50157cee627"
+    },
+    {
+      "name": "Decline.subtypeMatch",
+      "address": "f4b3917a3b465353b4b6c958d15aa87f5b712c7d85cfd47888f0ba4286d2c990"
+    }
+  ],
+  "equations": [],
+  "failures": []
+}
