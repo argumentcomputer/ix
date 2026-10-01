@@ -1,5 +1,11 @@
 # Implement canonical minimum sharing in Ix
 
+> **Status note (2026-10-01).** §1–§10 are the original handoff, whose target was the global
+> byte minimum under the key of §3.3. That target was found infeasible at production scale
+> (§12.1) and **superseded** by the decisions in §12: the canonical construction is the two-phase
+> `canonicalSharingTiered` with the TagN layout (§12.8, §12.11), which is machine-checked minimal
+> in phase 1 and exact-per-phase in phases 2–3 (§12.13), not a global byte minimum. Read §12 first.
+
 Implementation plan, 2026-09-30 (revision 2, tracked in Ix). Target: an implementation and
 reviewable PR in the **Ix repository**, covering its Lean and Rust paths. This file is a
 plan, not evidence that the optimizer or migration already exists. Revision 1 and its
@@ -859,7 +865,10 @@ model `ulen` over the restricted class, with `modelBytes` equal to it) and `opti
 (it is the `setPrec`-least such minimum), both under `limits.uniformSubsetSearch = false`, no
 `sorry`, no new axioms, all `Uniform*` modules registered in the sorry-frontier audit (196 roots).
 Reachability of every term from a root is a runtime check plus `optimizeUniform_reach`. Phases 2
-and 3 and the best-of-three width selection are tested, not proved. The reference enumeration
+and 3 and the width selection have machine-checked per-phase specifications (`allocate_spec`,
+`firstTier_spec`, `materializeTable_min`, `rematerialize_spec`, `canonicalTiered_select`, audit
+roots 212 at 9611c3b6); not machine-checked: phase-2 optimality beyond the first tier, any global
+minimum, model length = TagN wire length, and `wireWF` of the output (in progress). The reference enumeration
 path (`uniformSubsetSearch = true`) is excluded from the theorems. Failure semantics: an error at
 any width fails the whole call (no fallback to other widths); Rust must match.
 
@@ -874,6 +883,21 @@ the "stored descendants first" order places high-reference entries late, whereas
 priority order (largest in-degree among available entries) keeps them in the 2-byte tier.
 Fix under way: phase 2's order beyond the first tier becomes the Kahn priority order by
 reference count (ties by structural ID), which is also what MSS measured with.
+
+### 12.15 Outlier resolved (2026-10-01): a tie-break artifact, no rule change
+
+The +3,588-byte loss of the construction vs "MSS" on `Affine.Triangle.dist_orthogonalProjectionSpan…`
+is entirely the tie rule inside the Kahn priority order: the measured MSS broke ties between
+equal-in-degree entries by blake3 hash, the construction by structural ID. With 2,230 entries
+straddling the TagN 1,032 boundary, the tie order moves thousands of references between the 2- and
+3-byte rungs (widths [1101, 13699, 4149] vs [1101, 10111, 7737]). Rust re-implementation of MSS with
+both tie rules on all 679,499 Mathlib constants: the construction's "store-all" candidate is **never
+larger than MSS under the same tie rule** (0 larger, 157,438 smaller, −1,227,943 B); structural-ID
+ties beat blake3 ties in aggregate by 374,383 B; choosing the better rule per constant would gain
+only 0.011%. Phase 2's exact allocation covers the first tier; beyond it the order is the greedy
+Kahn rule, whose tie-break is pinned (structural ID). A possible refinement, not adopted: exact
+maximum-weight closed set for the ≤ 1,032-entry second rung (same problem as the first tier with a
+larger cap), relevant only to tables that straddle the boundary.
 
 ## 13. Metadata sharing: the extended index space (owner decision 2026-10-01)
 

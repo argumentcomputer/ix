@@ -1833,6 +1833,779 @@ def uniformReport (rows : Array Row) (maxStates : Nat) : String := Id.run do
   md := md ++ uniformSlowSection wr ++ uniformGapSection wr ++ uniformClassSection wr
   return md
 
+/-! ## Metadata study (`--meta`)
+
+Streams a whole `.ixe` section by section with the production readers
+(`getExprMetaDataIndexed`, `getExpr`, `getUniv`, `getFusedHint`, …), recording the
+exact bytes of every component, and analyses each `ConstantMeta.metaSharing`
+against its constant's primary sharing table. Constants are parsed only when a
+`Named` entry needs them, so the file is never materialized as a whole `Env`.
+The byte categories must sum to the file size. -/
+
+/-- Run a reader at a byte offset of a shared buffer. -/
+def runAt (buf : ByteArray) (off : Nat) (m : Ixon.GetM α) : Except String (α × Nat) :=
+  match m.run { idx := off, bytes := buf } with
+  | .ok a st => .ok (a, st.idx)
+  | .error e _ => .error e
+
+def getPos : Ixon.GetM Nat := do return (← get).idx
+
+def arenaKindNames : Array String :=
+  #["leaf", "app", "binder", "letBinder", "ref", "prj", "mdata", "callSite", "etaCallSite"]
+
+def arenaKind : Ixon.ExprMetaData → Nat
+  | .leaf => 0 | .app .. => 1 | .binder .. => 2 | .letBinder .. => 3 | .ref .. => 4
+  | .prj .. => 5 | .mdata .. => 6 | .callSite .. => 7 | .etaCallSite .. => 8
+
+/-! ### ExprMeta arena structure: child deltas and duplication -/
+
+/-- Child arena indices of a node, with a slot id: 0 App function, 1 App
+argument, 2 Binder type, 3 Binder body, 4 Let type, 5 Let value, 6 Let body,
+7 Prj child, 8 Mdata child, 9 call-site metadata references (not in the delta
+study). -/
+def arenaChildren : Ixon.ExprMetaData → Array (Nat × UInt64)
+  | .leaf | .ref _ => #[]
+  | .app f a => #[(0, f), (1, a)]
+  | .binder _ _ t b => #[(2, t), (3, b)]
+  | .letBinder _ t v b => #[(4, t), (5, v), (6, b)]
+  | .prj _ c => #[(7, c)]
+  | .mdata _ c => #[(8, c)]
+  | .callSite _ es cm oh =>
+    (es.map fun e => match e with | .kept _ m | .collapsed _ m => (9, m)) ++
+      cm.map (9, ·) ++ (match oh with | some (_, m) => #[(9, m)] | none => #[])
+  | .etaCallSite _ _ es cm w =>
+    (es.map fun e => match e with | .kept _ m | .collapsed _ m => (9, m)) ++
+      cm.map (9, ·) ++ #[(9, w)]
+
+def arenaSlotNames : Array String :=
+  #["App function", "App argument", "Binder type", "Binder body", "Let type", "Let value",
+    "Let body", "Prj child", "Mdata child"]
+
+/-- Hash-consing key of an arena node: kind, payload, canonical child IDs. -/
+structure ArenaKey where
+  kind : UInt8
+  name : Address := ⟨ByteArray.empty⟩
+  info : UInt8 := 0
+  kids : Array Nat := #[]
+  extra : String := ""
+  deriving BEq, Hashable, Repr
+
+def binderInfoCode : Lean.BinderInfo → UInt8
+  | .default => 0 | .implicit => 1 | .strictImplicit => 2 | .instImplicit => 3
+
+def arenaKey (node : Ixon.ExprMetaData) (kids : Array Nat) : ArenaKey :=
+  match node with
+  | .leaf => { kind := 0 }
+  | .app .. => { kind := 1, kids }
+  | .binder n bi .. => { kind := 2, name := n, info := binderInfoCode bi, kids }
+  | .letBinder n .. => { kind := 3, name := n, kids }
+  | .ref n => { kind := 4, name := n }
+  | .prj n _ => { kind := 5, name := n, kids }
+  | .mdata md _ => { kind := 6, extra := reprStr md, kids }
+  | .callSite n es cm oh =>
+    let shape := es.map fun e => match e with | .kept c _ => (0, c) | .collapsed s _ => (1, s)
+    { kind := 7, name := n, kids, extra := reprStr (shape, cm.size, oh.map (·.1)) }
+  | .etaCallSite k n es cm _ =>
+    let shape := es.map fun e => match e with | .kept c _ => (0, c) | .collapsed s _ => (1, s)
+    { kind := 8, name := n, kids, extra := reprStr (k, shape, cm.size) }
+
+/-- Arena statistics. `slots` is flat, 10 numbers per slot (0..8): children,
+deltas = 1, 2–7, 8–127, 128–1023, 1024–16383, ≥ 16384, not backward, current
+child-field bytes (`Tag0`), delta bytes (TagN-byte). -/
+structure ArenaStudy where
+  slots : Array Nat := Array.replicate 90 0
+  nodes : Nat := 0
+  bytes : Nat := 0
+  dupNodes : Nat := 0
+  dupBytes : Nat := 0
+  appNodes : Nat := 0
+  appBytes : Nat := 0
+  appDupNodes : Nat := 0
+  appDupBytes : Nat := 0
+  /-- Maximal duplicate subtrees: duplicate nodes with no duplicate parent. -/
+  maxRoots : Nat := 0
+  maxNodes : Nat := 0
+  maxBytes : Nat := 0
+  /-- Sizes (duplicate nodes) of maximal duplicate subtrees: 1, 2–7, 8–63,
+  64–1023, ≥ 1024. -/
+  maxHist : Array Nat := Array.replicate 5 0
+  appMaxRoots : Nat := 0
+  appMaxNodes : Nat := 0
+  appMaxBytes : Nat := 0
+  /-- Children (any slot, including call-site references) that do not point
+  strictly backward. -/
+  notBackward : Nat := 0
+  arenas : Nat := 0
+  /-- Independent check on arenas of at most 256 nodes: duplicates recounted by
+  comparing full subtree strings (equal / different / skipped for size). -/
+  checkEq : Nat := 0
+  checkNe : Nat := 0
+  checkSkip : Nat := 0
+  deriving Inhabited
+
+def ArenaStudy.add (a b : ArenaStudy) : ArenaStudy :=
+  let z (x y : Array Nat) := (x.zip y).map fun (p, q) => p + q
+  { slots := z a.slots b.slots, nodes := a.nodes + b.nodes, bytes := a.bytes + b.bytes,
+    dupNodes := a.dupNodes + b.dupNodes, dupBytes := a.dupBytes + b.dupBytes,
+    appNodes := a.appNodes + b.appNodes, appBytes := a.appBytes + b.appBytes,
+    appDupNodes := a.appDupNodes + b.appDupNodes, appDupBytes := a.appDupBytes + b.appDupBytes,
+    maxRoots := a.maxRoots + b.maxRoots, maxNodes := a.maxNodes + b.maxNodes,
+    maxBytes := a.maxBytes + b.maxBytes, maxHist := z a.maxHist b.maxHist,
+    appMaxRoots := a.appMaxRoots + b.appMaxRoots, appMaxNodes := a.appMaxNodes + b.appMaxNodes,
+    appMaxBytes := a.appMaxBytes + b.appMaxBytes, notBackward := a.notBackward + b.notBackward,
+    arenas := a.arenas + b.arenas, checkEq := a.checkEq + b.checkEq,
+    checkNe := a.checkNe + b.checkNe, checkSkip := a.checkSkip + b.checkSkip }
+
+/-- One arena: child deltas per slot, and duplication by bottom-up hash-consing
+(kind, payload, canonical child IDs). A node is a duplicate when its canonical ID
+occurred earlier in the arena. A maximal duplicate subtree is rooted at a
+duplicate node that no duplicate node references; its size is the number of
+duplicate nodes reachable from it through duplicate nodes (each counted once). -/
+def arenaStudy (nodes : Array Ixon.ExprMetaData) (sizes : Array Nat) : ArenaStudy := Id.run do
+  let n := nodes.size
+  let mut st : ArenaStudy := { arenas := 1, nodes := n, bytes := sizes.foldl (· + ·) 0 }
+  let mut slots := st.slots
+  let mut canon : Array Nat := Array.mkEmpty n
+  let mut isDup : Array Bool := Array.mkEmpty n
+  let mut map : Std.HashMap ArenaKey Nat := {}
+  let mut kidsOf : Array (Array Nat) := Array.mkEmpty n
+  for i in [0:n] do
+    let node := nodes[i]!
+    let ch := arenaChildren node
+    let mut kids : Array Nat := #[]
+    let mut valid : Array Nat := #[]
+    for (slot, c64) in ch do
+      let c := c64.toNat
+      if c < i then
+        kids := kids.push canon[c]!
+        valid := valid.push c
+      else
+        kids := kids.push (UInt64.size + c)
+        st := { st with notBackward := st.notBackward + 1 }
+      if slot < 9 then
+        let base := slot * 10
+        let d := i - c
+        let b := if c ≥ i then 7 else if d == 1 then 1 else if d < 8 then 2 else if d < 128 then 3
+          else if d < 1024 then 4 else if d < 16384 then 5 else 6
+        slots := slots.modify base (· + 1) |>.modify (base + b) (· + 1)
+          |>.modify (base + 8) (· + Ix.Sharing.tag0EncodedSize c64)
+          |>.modify (base + 9) (· + (if c < i then tagNByteSize d else Ix.Sharing.tag0EncodedSize c64))
+    kidsOf := kidsOf.push valid
+    let key := arenaKey node kids
+    let isApp := match node with | .app .. => true | _ => false
+    if isApp then st := { st with appNodes := st.appNodes + 1, appBytes := st.appBytes + sizes[i]! }
+    match map.get? key with
+    | some id =>
+      canon := canon.push id
+      isDup := isDup.push true
+      st := { st with dupNodes := st.dupNodes + 1, dupBytes := st.dupBytes + sizes[i]! }
+      if isApp then
+        st := { st with appDupNodes := st.appDupNodes + 1, appDupBytes := st.appDupBytes + sizes[i]! }
+    | none =>
+      let id := map.size
+      map := map.insert key id
+      canon := canon.push id
+      isDup := isDup.push false
+  -- Maximal duplicate subtrees.
+  let mut dupParent : Array Bool := Array.replicate n false
+  for i in [0:n] do
+    if isDup[i]! then
+      for c in kidsOf[i]! do
+        dupParent := dupParent.set! c true
+  let mut seen : Array Bool := Array.replicate n false
+  for j in [0:n] do
+    let r := n - 1 - j
+    if isDup[r]! && !dupParent[r]! then
+      let mut cnt := 0
+      let mut byt := 0
+      let mut stack : Array Nat := #[r]
+      while !stack.isEmpty do
+        let t := stack.back!
+        stack := stack.pop
+        if seen[t]! || !isDup[t]! then continue
+        seen := seen.set! t true
+        cnt := cnt + 1
+        byt := byt + sizes[t]!
+        stack := stack ++ kidsOf[t]!
+      let h := if cnt ≤ 1 then 0 else if cnt < 8 then 1 else if cnt < 64 then 2
+        else if cnt < 1024 then 3 else 4
+      st := { st with maxRoots := st.maxRoots + 1, maxNodes := st.maxNodes + cnt,
+                      maxBytes := st.maxBytes + byt, maxHist := st.maxHist.modify h (· + 1) }
+      if (match nodes[r]! with | .app .. => true | _ => false) then
+        st := { st with appMaxRoots := st.appMaxRoots + 1, appMaxNodes := st.appMaxNodes + cnt,
+                        appMaxBytes := st.appMaxBytes + byt }
+  -- Independent recount on small arenas: full subtree strings.
+  if n ≤ 256 then
+    let mut strs : Array String := Array.mkEmpty n
+    let mut tooBig := false
+    for i in [0:n] do
+      let node := nodes[i]!
+      let base := reprStr (arenaKey node #[])
+      let kids := (arenaChildren node).map fun (_, c) =>
+        if c.toNat < i then strs[c.toNat]! else s!"!{c}"
+      let s := base ++ "(" ++ ",".intercalate kids.toList ++ ")"
+      if s.length > 100000 then tooBig := true
+      strs := strs.push (if tooBig then "" else s)
+    if tooBig then
+      st := { st with checkSkip := st.checkSkip + 1 }
+    else
+      let distinct := (strs.foldl (fun (h : Std.HashSet String) s => h.insert s) {}).size
+      if n - distinct == st.dupNodes then st := { st with checkEq := st.checkEq + 1 }
+      else st := { st with checkNe := st.checkNe + 1 }
+  else
+    st := { st with checkSkip := st.checkSkip + 1 }
+  return { st with slots }
+
+/-- Byte breakdown of one `ConstantMeta`. -/
+structure MetaBreak where
+  info : Nat := 0
+  arena : Nat := 0
+  kindBytes : Array Nat := Array.replicate 9 0
+  kindCount : Array Nat := Array.replicate 9 0
+  sharingBytes : Nat := 0
+  sharing : Array (Expr × Nat) := #[]
+  refs : Nat := 0
+  nRefs : Nat := 0
+  univs : Nat := 0
+  nUnivs : Nat := 0
+  patches : Nat := 0
+  ast : ArenaStudy := {}
+  deriving Inhabited
+
+/-- The arena, node by node, mirroring `getExprMetaArenaIndexed`. -/
+def getArenaBreak (rev : Ixon.NameReverseIndex) (mb : MetaBreak) : Ixon.GetM MetaBreak := do
+  let p0 ← getPos
+  let len := (← Ixon.getTag0).size.toNat
+  let mut kb := mb.kindBytes
+  let mut kc := mb.kindCount
+  let mut nodes : Array Ixon.ExprMetaData := Array.mkEmpty len
+  let mut sizes : Array Nat := Array.mkEmpty len
+  for _ in [0:len] do
+    let a ← getPos
+    let node ← Ixon.getExprMetaDataIndexed rev
+    let b ← getPos
+    let k := arenaKind node
+    kb := kb.modify k (· + (b - a))
+    kc := kc.modify k (· + 1)
+    nodes := nodes.push node
+    sizes := sizes.push (b - a)
+  let p1 ← getPos
+  return { mb with arena := mb.arena + (p1 - p0), kindBytes := kb, kindCount := kc,
+                   ast := mb.ast.add (arenaStudy nodes sizes) }
+
+/-- The variant payload, mirroring `getConstantMetaInfoIndexed`; the arena is
+measured separately. -/
+def getInfoBreak (rev : Ixon.NameReverseIndex) : Ixon.GetM MetaBreak := do
+  let p0 ← getPos
+  let mut mb : MetaBreak := {}
+  match ← Ixon.getU8 with
+  | 255 => pure ()
+  | 0 =>
+    let _ ← Ixon.getIdx rev
+    for _ in [0:3] do let _ ← Ixon.getIdxVec rev
+    mb ← getArenaBreak rev mb
+    let _ ← Ixon.getTag0
+    let _ ← Ixon.getTag0
+  | 1 | 2 =>
+    let _ ← Ixon.getIdx rev
+    let _ ← Ixon.getIdxVec rev
+    mb ← getArenaBreak rev mb
+    let _ ← Ixon.getTag0
+  | 3 =>
+    let _ ← Ixon.getIdx rev
+    for _ in [0:4] do let _ ← Ixon.getIdxVec rev
+    mb ← getArenaBreak rev mb
+    let _ ← Ixon.getTag0
+  | 4 =>
+    let _ ← Ixon.getIdx rev
+    let _ ← Ixon.getIdxVec rev
+    let _ ← Ixon.getIdx rev
+    mb ← getArenaBreak rev mb
+    let _ ← Ixon.getTag0
+  | 5 =>
+    let _ ← Ixon.getIdx rev
+    for _ in [0:4] do let _ ← Ixon.getIdxVec rev
+    mb ← getArenaBreak rev mb
+    let _ ← Ixon.getTag0
+    let n := (← Ixon.getTag0).size.toNat
+    for _ in [0:n] do let _ ← Ixon.getTag0
+  | 6 =>
+    let n := (← Ixon.getTag0).size.toNat
+    for _ in [0:n] do let _ ← Ixon.getIdxVec rev
+    match ← Ixon.getU8 with
+    | 0 => pure ()
+    | 1 =>
+      for _ in [0:2] do
+        let k := (← Ixon.getTag0).size.toNat
+        for _ in [0:k] do let _ ← Ixon.getTag0
+      let k := (← Ixon.getTag0).size.toNat
+      for _ in [0:k] do let _ ← Ixon.getU8
+    | x => throw s!"invalid aux_layout tag {x}"
+  | x => throw s!"invalid ConstantMeta tag {x}"
+  let p1 ← getPos
+  return { mb with info := (p1 - p0) - mb.arena }
+
+/-- One `ConstantMeta`, mirroring `getConstantMetaIndexed`. -/
+def getMetaBreak (rev : Ixon.NameReverseIndex) : Ixon.GetM MetaBreak := do
+  let mb ← getInfoBreak rev
+  let a ← getPos
+  let n := (← Ixon.getTag0).size.toNat
+  let mut sh : Array (Expr × Nat) := #[]
+  for _ in [0:n] do
+    let s ← getPos
+    let e ← Ixon.getExpr
+    let t ← getPos
+    sh := sh.push (e, t - s)
+  let b ← getPos
+  let nr := (← Ixon.getTag0).size.toNat
+  for _ in [0:nr] do let _ ← Ixon.Serialize.get (α := Address)
+  let c ← getPos
+  let nu := (← Ixon.getTag0).size.toNat
+  for _ in [0:nu] do let _ ← Ixon.getUniv
+  let d ← getPos
+  let np := (← Ixon.getTag0).size.toNat
+  for _ in [0:np] do
+    let _ ← Ixon.getTag0
+    let k := (← Ixon.getTag0).size.toNat
+    for _ in [0:k] do let _ ← Ixon.getTag0
+  let e ← getPos
+  return { mb with sharingBytes := b - a, sharing := sh, refs := c - b, nRefs := nr,
+                   univs := d - c, nUnivs := nu, patches := e - d }
+
+/-- `metaSharing` of one constant against its primary table. -/
+structure MSAnalysis where
+  constants : Nat := 0
+  entries : Nat := 0
+  bytes : Nat := 0
+  shareNodes : Nat := 0
+  unshared : Nat := 0
+  reenc : Nat := 0
+  distinct : Nat := 0
+  bytesDedup : Nat := 0
+  reencDedup : Nat := 0
+  matched : Nat := 0
+  matchedBytes : Nat := 0
+  matchedTable : Nat := 0
+  deriving Inhabited
+
+def MSAnalysis.add (a b : MSAnalysis) : MSAnalysis :=
+  { constants := a.constants + b.constants, entries := a.entries + b.entries,
+    bytes := a.bytes + b.bytes, shareNodes := a.shareNodes + b.shareNodes,
+    unshared := a.unshared + b.unshared, reenc := a.reenc + b.reenc,
+    distinct := a.distinct + b.distinct, bytesDedup := a.bytesDedup + b.bytesDedup,
+    reencDedup := a.reencDedup + b.reencDedup, matched := a.matched + b.matched,
+    matchedBytes := a.matchedBytes + b.matchedBytes, matchedTable := a.matchedTable + b.matchedTable }
+
+/-- Expand the primary table, the primary roots and the `metaSharing` entries
+into one canonical DAG (Share nodes in entries resolve against the primary table,
+as in decompilation), then:
+* count entries equal to a subterm of the primary roots, or to a table entry;
+* re-encode every entry optimally with the primary table as a fixed dictionary
+  at its current index widths (`Prep.materializeWith`), checking that the output
+  re-expands to the same terms and that its bytes equal the predicted `C_M`;
+* deduplicate equal entries. -/
+def metaSharingAnalysis (c : Constant) (entries : Array (Expr × Nat)) :
+    Except String MSAnalysis := do
+  let limits : Ix.Sharing.Exact.Limits :=
+    { maxNodes := 1 <<< 24, maxExprVisits := 1 <<< 28, maxMaterialize := 1 <<< 28,
+      maxDepth := 1 <<< 16 }
+  let es := entries.map (·.1)
+  let primRoots := Ix.Sharing.Exact.constantInfoRoots c.info
+  let ex ← (Ix.Sharing.Exact.expand limits c.sharing (primRoots ++ es) true).mapError toString
+  let k := primRoots.size
+  let metaIds := ex.roots.extract k ex.roots.size
+  let n := ex.dag.size
+  let mut reach : Array Bool := Array.replicate n false
+  let mut stack : Array Nat := ex.roots.extract 0 k
+  while !stack.isEmpty do
+    let t := stack.back!
+    stack := stack.pop
+    if reach[t]! then continue
+    reach := reach.set! t true
+    stack := stack ++ (ex.dag.node t).children
+  let (entryIds, _, _) ← (Ix.Sharing.Exact.reexpand limits ex.dag c.sharing #[]).mapError toString
+  let mut index : Array (Option Nat) := Array.replicate n none
+  for i in [0:entryIds.size] do
+    let t := entryIds[i]!
+    if (index[t]!).isNone then index := index.set! t (some i)
+  let width := Ix.Sharing.Exact.widthsOfIndex index
+  let p := Ix.Sharing.Exact.Prep.ofDag ex.dag
+  let (out, cost, _) ← (p.materializeWith index width metaIds limits).mapError toString
+  let (_, outIds, _) ← (Ix.Sharing.Exact.reexpand limits ex.dag c.sharing out).mapError toString
+  unless outIds == metaIds do throw "re-encoded entries do not expand to the original entries"
+  let outBytes := out.foldl (fun a e => a + (Ixon.serExpr e).size) 0
+  let reenc := metaIds.foldl (fun a t => a + cost[t]!) 0
+  unless outBytes == reenc do throw s!"re-encoded bytes {outBytes} differ from C_M {reenc}"
+  let mut seen : Std.HashSet Nat := {}
+  let mut r : MSAnalysis := { constants := 1, entries := entries.size, reenc }
+  for i in [0:metaIds.size] do
+    let t := metaIds[i]!
+    let b := entries[i]!.2
+    let refs := countShareRefs entries[i]!.1 (0, 0, 0)
+    r := { r with
+      bytes := r.bytes + b, unshared := r.unshared + p.base[t]!
+      shareNodes := r.shareNodes + refs.1 + refs.2.1 + refs.2.2
+      matched := r.matched + (if reach[t]! then 1 else 0)
+      matchedBytes := r.matchedBytes + (if reach[t]! then b else 0)
+      matchedTable := r.matchedTable + (if (index[t]!).isSome then 1 else 0) }
+    unless seen.contains t do
+      seen := seen.insert t
+      r := { r with distinct := r.distinct + 1, bytesDedup := r.bytesDedup + b,
+                    reencDedup := r.reencDedup + cost[t]! }
+  return r
+
+/-- Byte categories of the whole file. -/
+def metaCatNames : Array String := #[
+  "header: version, consts Merkle root, main, assumptions",
+  "§1 blobs: count, addresses, length prefixes",
+  "§1 blobs: payload",
+  "§2 constants: count, addresses, length prefixes",
+  "§2 constants: bodies (the anonymous constants)",
+  "§3 anonymous hints",
+  "§4 names: count and addresses",
+  "§4 names: components (tag, parent address, string/number bytes)",
+  "§5 Named: count, name and constant keys",
+  "§5 Named: per-name hints",
+  "§5 Named: metadata blob length prefixes",
+  "§5 ConstantMeta info (variant fields, name indices, root indices)",
+  "§5 ExprMeta arena",
+  "§5 metaSharing expressions (with count)",
+  "§5 metaRefs (with count)",
+  "§5 metaUnivs (with count)",
+  "§5 univPatches (with count)",
+  "§5 original: tag and address",
+  "§5 original ConstantMeta info",
+  "§5 original ExprMeta arena",
+  "§5 original metaSharing expressions",
+  "§5 original metaRefs",
+  "§5 original metaUnivs",
+  "§5 original univPatches",
+  "§6 comms"]
+
+structure MetaStudy where
+  fileSize : Nat := 0
+  cats : Array Nat := Array.replicate 25 0
+  blobs : Nat := 0
+  consts : Nat := 0
+  names : Nat := 0
+  named : Nat := 0
+  withOriginal : Nat := 0
+  comms : Nat := 0
+  kindBytes : Array Nat := Array.replicate 9 0
+  kindCount : Array Nat := Array.replicate 9 0
+  okindBytes : Array Nat := Array.replicate 9 0
+  okindCount : Array Nat := Array.replicate 9 0
+  nonEmpty : Nat := 0
+  nonEmptyOrig : Nat := 0
+  entryCounts : Array Nat := #[]
+  ms : MSAnalysis := {}
+  msOrig : MSAnalysis := {}
+  nRefs : Nat := 0
+  nUnivs : Nat := 0
+  errors : Array String := #[]
+  msEntries : Nat := 0
+  msBytes : Nat := 0
+  msOrigEntries : Nat := 0
+  /-- Non-empty metaSharing tables: (§4 name index, §2 rank, entries, bytes). -/
+  nonEmptyList : Array (Nat × Nat × Nat × Nat) := #[]
+  nonEmptyNameAddrs : Array Address := #[]
+  arenaP : ArenaStudy := {}
+  arenaO : ArenaStudy := {}
+  deriving Inhabited
+
+def MetaStudy.bump (st : MetaStudy) (cat n : Nat) : MetaStudy :=
+  { st with cats := st.cats.modify cat (· + n) }
+
+/-- Add one `ConstantMeta` breakdown to the totals (`orig` for `Named.original`). -/
+def MetaStudy.addMeta (st : MetaStudy) (mb : MetaBreak) (orig : Bool) : MetaStudy :=
+  let base := if orig then 18 else 11
+  let st := st.bump base mb.info |>.bump (base + 1) mb.arena |>.bump (base + 2) mb.sharingBytes
+    |>.bump (base + 3) mb.refs |>.bump (base + 4) mb.univs |>.bump (base + 5) mb.patches
+  let z (x y : Array Nat) := (x.zip y).map fun (p, q) => p + q
+  if orig then
+    { st with okindBytes := z st.okindBytes mb.kindBytes, okindCount := z st.okindCount mb.kindCount,
+              arenaO := st.arenaO.add mb.ast }
+  else
+    { st with kindBytes := z st.kindBytes mb.kindBytes, kindCount := z st.kindCount mb.kindCount,
+              nRefs := st.nRefs + mb.nRefs, nUnivs := st.nUnivs + mb.nUnivs,
+              arenaP := st.arenaP.add mb.ast }
+
+/-- Binary search for an address in the ascending §2 address array. -/
+def findRank (addrs : Array Address) (a : Address) : Option Nat := Id.run do
+  let mut lo := 0
+  let mut hi := addrs.size
+  while lo < hi do
+    let mid := (lo + hi) / 2
+    match Address.cmpBytes addrs[mid]! a with
+    | .lt => lo := mid + 1
+    | .gt => hi := mid
+    | .eq => return some mid
+  return none
+
+def liftExcept (e : Except String α) : IO α :=
+  match e with | .ok a => pure a | .error err => throw (IO.userError err)
+
+def metaStudy (path : String) (progress : Nat) : IO MetaStudy := do
+  let buf ← IO.FS.readBinFile path
+  let mut st : MetaStudy := { fileSize := buf.size }
+  -- Header.
+  let (_, off) ← liftExcept <| runAt buf 0 do
+    let _ ← Ixon.getTag4
+    let _ ← Ixon.Serialize.get (α := Address)
+    if (← Ixon.getU8) == 1 then let _ ← Ixon.Serialize.get (α := Address)
+    let n := (← Ixon.getTag0).size.toNat
+    for _ in [0:n] do let _ ← Ixon.Serialize.get (α := Address)
+  st := st.bump 0 off
+  -- §1 blobs.
+  let (nb, o2) ← liftExcept <| runAt buf off do return (← Ixon.getTag0).size.toNat
+  let mut cur := o2
+  let mut ovh := o2 - off
+  let mut payload := 0
+  for _ in [0:nb] do
+    let (len, o) ← liftExcept <| runAt buf cur do
+      let _ ← Ixon.Serialize.get (α := Address)
+      return (← Ixon.getTag0).size.toNat
+    ovh := ovh + (o - cur)
+    payload := payload + len
+    cur := o + len
+  st := { (st.bump 1 ovh |>.bump 2 payload) with blobs := nb }
+  IO.println s!"[meta] blobs {nb}, {payload} payload bytes"
+  -- §2 constants.
+  let s2 := cur
+  let (nc, o3) ← liftExcept <| runAt buf cur do return (← Ixon.getTag0).size.toNat
+  cur := o3
+  let mut addrs : Array Address := Array.mkEmpty nc
+  let mut offs : Array Nat := Array.mkEmpty nc
+  let mut bodies := 0
+  for _ in [0:nc] do
+    let ((a, len), o) ← liftExcept <| runAt buf cur do
+      let a ← Ixon.Serialize.get (α := Address)
+      return (a, (← Ixon.getTag0).size.toNat)
+    addrs := addrs.push a
+    offs := offs.push o
+    bodies := bodies + len
+    cur := o + len
+  st := { (st.bump 3 (cur - s2 - bodies) |>.bump 4 bodies) with consts := nc }
+  IO.println s!"[meta] constants {nc}, {bodies} body bytes"
+  -- §3 anonymous hints.
+  let s3 := cur
+  let (_, o4) ← liftExcept <| runAt buf cur do
+    let n := (← Ixon.getTag0).size.toNat
+    for _ in [0:n] do
+      let _ ← Ixon.getTag0
+      let _ ← Ixon.getFusedHint
+  cur := o4
+  st := st.bump 5 (cur - s3)
+  -- §4 names: keep the reverse index for name-indexed metadata.
+  let s4 := cur
+  let (nn, o5) ← liftExcept <| runAt buf cur do return (← Ixon.getTag0).size.toNat
+  cur := o5
+  let mut rev : Ixon.NameReverseIndex := Array.mkEmpty nn
+  let mut comp := 0
+  for _ in [0:nn] do
+    let (a, o) ← liftExcept <| runAt buf cur do Ixon.Serialize.get (α := Address)
+    rev := rev.push a
+    let (_, o') ← liftExcept <| runAt buf o do
+      match ← Ixon.getU8 with
+      | 0 => pure ()
+      | 1 | 2 =>
+        let _ ← Ixon.Serialize.get (α := Address)
+        let len := (← Ixon.getTag0).size.toNat
+        let _ ← Ixon.getBytes len
+      | t => throw s!"invalid name component tag {t}"
+    comp := comp + (o' - o)
+    cur := o'
+  st := { (st.bump 6 (cur - s4 - comp) |>.bump 7 comp) with names := nn }
+  IO.println s!"[meta] names {nn}"
+  -- §5 Named.
+  let (nm, o6) ← liftExcept <| runAt buf cur do return (← Ixon.getTag0).size.toNat
+  st := st.bump 8 (o6 - cur)
+  cur := o6
+  -- Primary constant of a named entry: its constant, or the block of a projection.
+  let primary (rank : Nat) : Except String Constant := do
+    let c ← Ixon.deConstantAt buf offs[rank]!
+    let blk? : Option Address := match c.info with
+      | .iPrj p => some p.block | .rPrj p => some p.block
+      | .dPrj p => some p.block | .cPrj p => some p.block
+      | _ => none
+    match blk? with
+    | none => pure c
+    | some blk =>
+      match findRank addrs blk with
+      | some r => Ixon.deConstantAt buf offs[r]!
+      | none => throw "projection block not stored"
+  let t0 ← IO.monoMsNow
+  for i in [0:nm] do
+    let ((nameIdx, rank), o) ← liftExcept <| runAt buf cur do
+      let ni := (← Ixon.getTag0).size.toNat
+      return (ni, (← Ixon.getTag0).size.toNat)
+    st := st.bump 8 (o - cur)
+    let (_, oh) ← liftExcept <| runAt buf o Ixon.getFusedOptHint
+    st := st.bump 9 (oh - o)
+    let (len, ob) ← liftExcept <| runAt buf oh do return (← Ixon.getTag0).size.toNat
+    st := st.bump 10 (ob - oh)
+    let (mb, om) ← liftExcept <| runAt buf ob (getMetaBreak rev)
+    st := { st.addMeta mb false with
+      named := st.named + 1, msEntries := st.msEntries + mb.sharing.size
+      msBytes := st.msBytes + mb.sharing.foldl (fun a x => a + x.2) 0 }
+    let (tag, ot) ← liftExcept <| runAt buf om Ixon.getU8
+    let mut endOff := ot
+    let mut origMb : Option (MetaBreak × Address) := none
+    if tag == 1 then
+      let (oa, oo) ← liftExcept <| runAt buf ot (Ixon.Serialize.get (α := Address))
+      let (omb, oe) ← liftExcept <| runAt buf oo (getMetaBreak rev)
+      st := { (st.bump 17 (oo - om)).addMeta omb true with
+        withOriginal := st.withOriginal + 1, msOrigEntries := st.msOrigEntries + omb.sharing.size }
+      origMb := some (omb, oa)
+      endOff := oe
+    else if tag == 0 then
+      st := st.bump 17 (ot - om)
+    else throw (IO.userError s!"invalid Named.original tag {tag}")
+    unless endOff - ob == len do
+      throw (IO.userError s!"§5 entry {i}: blob length {len}, parsed {endOff - ob}")
+    cur := endOff
+    -- metaSharing analysis.
+    if !mb.sharing.isEmpty then
+      st := { st with
+        nonEmpty := st.nonEmpty + 1
+        entryCounts := st.entryCounts.push mb.sharing.size
+        nonEmptyList := st.nonEmptyList.push
+          (nameIdx, rank, mb.sharing.size, mb.sharing.foldl (fun a x => a + x.2) 0)
+        nonEmptyNameAddrs := st.nonEmptyNameAddrs.push (rev[nameIdx]?.getD default) }
+      match primary rank >>= fun c => metaSharingAnalysis c mb.sharing with
+      | .ok r => st := { st with ms := st.ms.add r }
+      | .error e => st := { st with errors := st.errors.push s!"named entry {i} (rank {rank}): {e}" }
+    if let some (omb, oa) := origMb then
+      if !omb.sharing.isEmpty then
+        st := { st with nonEmptyOrig := st.nonEmptyOrig + 1 }
+        match findRank addrs oa with
+        | none => st := { st with errors := st.errors.push s!"named entry {i}: original constant not stored" }
+        | some r =>
+          match primary r >>= fun c => metaSharingAnalysis c omb.sharing with
+          | .ok res => st := { st with msOrig := st.msOrig.add res }
+          | .error e => st := { st with errors := st.errors.push s!"named entry {i} original: {e}" }
+    if progress > 0 && (i + 1) % progress == 0 then
+      IO.println s!"[meta] named {i + 1}/{nm}, {(← IO.monoMsNow) - t0} ms, metaSharing constants {st.nonEmpty}"
+      (← IO.getStdout).flush
+  -- §6 comms.
+  let s6 := cur
+  let (nco, o7) ← liftExcept <| runAt buf cur do
+    let n := (← Ixon.getTag0).size.toNat
+    for _ in [0:n] do
+      let _ ← Ixon.Serialize.get (α := Address)
+      let _ ← Ixon.getComm
+    return n
+  cur := o7
+  st := { st.bump 24 (cur - s6) with comms := nco }
+  unless cur == buf.size do
+    throw (IO.userError s!"scanner stopped at {cur}, file has {buf.size} bytes")
+  return st
+
+/-- Cross-check of the scanner against a full `deEnv` load (small files only). -/
+def metaCrossCheck (path : String) (st : MetaStudy) : IO String := do
+  let buf ← IO.FS.readBinFile path
+  let env ← IO.ofExcept (Ixon.deEnv buf)
+  let mut nonEmpty := 0
+  let mut entries := 0
+  let mut bytes := 0
+  let mut nRefs := 0
+  let mut nUnivs := 0
+  let mut withOrig := 0
+  let mut origEntries := 0
+  for (_, nmd) in env.named do
+    let m := nmd.constMeta
+    if !m.metaSharing.isEmpty then nonEmpty := nonEmpty + 1
+    entries := entries + m.metaSharing.size
+    bytes := bytes + m.metaSharing.foldl (fun a e => a + (Ixon.serExpr e).size) 0
+    nRefs := nRefs + m.metaRefs.size
+    nUnivs := nUnivs + m.metaUnivs.size
+    if let some (_, om) := nmd.original then
+      withOrig := withOrig + 1
+      origEntries := origEntries + om.metaSharing.size
+  let scanEntries := st.msEntries
+  let sharingExprBytes := st.msBytes
+  let ok := env.named.size == st.named && env.blobs.size == st.blobs &&
+    env.consts.size == st.consts && nonEmpty == st.nonEmpty && entries == scanEntries &&
+    bytes == sharingExprBytes && nRefs == st.nRefs && nUnivs == st.nUnivs &&
+    withOrig == st.withOriginal && origEntries == st.msOrigEntries
+  return s!"- Cross-check against a full `Ixon.deEnv` load: named {env.named.size} vs {st.named}, blobs {env.blobs.size} vs {st.blobs}, constants {env.consts.size} vs {st.consts}, non-empty metaSharing {nonEmpty} vs {st.nonEmpty}, metaSharing entries {entries} vs {scanEntries}, metaSharing expression bytes (`serExpr`) {bytes} vs {sharingExprBytes}, metaRefs {nRefs} vs {st.nRefs}, metaUnivs {nUnivs} vs {st.nUnivs}, entries with `original` {withOrig} vs {st.withOriginal}, original metaSharing entries {origEntries} vs {st.msOrigEntries}: **{if ok then "all equal" else "DIFFERENT"}**.\n"
+
+/-- Unsigned percentage with two decimals. -/
+def fmtPct2 (part whole : Nat) : String :=
+  if whole == 0 then "0" else
+    let q := (part * 10000 + whole / 2) / whole
+    let frac := q % 100
+    s!"{q / 100}.{if frac < 10 then "0" else ""}{frac}%"
+
+/-- ExprMeta arena structure: child deltas and duplication (primary and
+`original` arenas together; the split is given in a line). -/
+def arenaReport (st : MetaStudy) : String := Id.run do
+  let file := st.fileSize
+  let a := st.arenaP.add st.arenaO
+  let pc (x : Nat) : String := fmtPct2 x file
+  let mut md := "\n### ExprMeta arena structure: child deltas and duplication\n\n"
+  md := md ++ s!"- Arenas: {a.arenas} ({st.arenaO.arenas} of them in `original` metadata); nodes {a.nodes}; node bytes {a.bytes} ({pc a.bytes} of the file; the per-arena count prefixes are not included). Children that do not point strictly backward (any slot): {a.notBackward}.\n"
+  let kindSum := st.kindBytes.foldl (· + ·) 0 + st.okindBytes.foldl (· + ·) 0
+  md := md ++ s!"- Node bytes equal the per-kind arena bytes above ({kindSum}): **{if kindSum == a.bytes then "yes" else "NO"}**.\n\n"
+  md := md ++ "Child deltas (parent index − child index) per child slot, and the child-field bytes today (`Tag0` of the absolute index) and as backward deltas with TagN-byte widths:\n\n| slot | children | Δ = 1 | 2–7 | 8–127 | 128–1023 | 1024–16383 | ≥ 16384 | not backward | bytes today | delta bytes | change | change, % of file |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n"
+  let mut tot : Array Nat := Array.replicate 10 0
+  for h : s in [0:arenaSlotNames.size] do
+    let row := (List.range 10).toArray.map fun j => a.slots[s * 10 + j]!
+    tot := (tot.zip row).map fun (p, q) => p + q
+    let d : Int := (row[9]! : Int) - row[8]!
+    md := md ++ s!"| {arenaSlotNames[s]} | {row[0]!} | {row[1]!} | {row[2]!} | {row[3]!} | {row[4]!} | {row[5]!} | {row[6]!} | {row[7]!} | {row[8]!} | {row[9]!} | {d} | {fmtSignedPct2 d file} |\n"
+  let dt : Int := (tot[9]! : Int) - tot[8]!
+  md := md ++ s!"| **all slots** | {tot[0]!} | {tot[1]!} | {tot[2]!} | {tot[3]!} | {tot[4]!} | {tot[5]!} | {tot[6]!} | {tot[7]!} | {tot[8]!} | {tot[9]!} | {dt} | {fmtSignedPct2 dt file} |\n"
+  let appT := (List.range 10).toArray.map fun j => a.slots[j]! + a.slots[10 + j]!
+  let da : Int := (appT[9]! : Int) - appT[8]!
+  md := md ++ s!"| App slots only | {appT[0]!} | {appT[1]!} | {appT[2]!} | {appT[3]!} | {appT[4]!} | {appT[5]!} | {appT[6]!} | {appT[7]!} | {appT[8]!} | {appT[9]!} | {da} | {fmtSignedPct2 da file} |\n\n"
+  md := md ++ s!"- Children that are exactly the immediately preceding node (Δ = 1): {tot[1]!} of {tot[0]!} ({fmtPct2 tot[1]! tot[0]!}); App children: {appT[1]!} of {appT[0]!}.\n\n"
+  md := md ++ "Duplication within each arena (bottom-up hash-consing on kind, payload and canonical child IDs; a duplicate is a node whose canonical ID occurred earlier in the same arena):\n\n| nodes | total | duplicates | duplicate bytes | % of file | maximal duplicate subtrees | duplicate nodes in them | bytes in them | % of file |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n"
+  md := md ++ s!"| all kinds | {a.nodes} | {a.dupNodes} | {a.dupBytes} | {pc a.dupBytes} | {a.maxRoots} | {a.maxNodes} | {a.maxBytes} | {pc a.maxBytes} |\n"
+  md := md ++ s!"| App nodes (subtrees rooted at an App) | {a.appNodes} | {a.appDupNodes} | {a.appDupBytes} | {pc a.appDupBytes} | {a.appMaxRoots} | {a.appMaxNodes} | {a.appMaxBytes} | {pc a.appMaxBytes} |\n\n"
+  md := md ++ s!"- Distinct nodes per arena summed: {a.nodes - a.dupNodes} of {a.nodes} ({fmtPct2 (a.nodes - a.dupNodes) a.nodes}); distinct App nodes: {a.appNodes - a.appDupNodes} of {a.appNodes}.\n"
+  md := md ++ s!"- Maximal duplicate subtree sizes (duplicate nodes): 1: {a.maxHist[0]!}, 2–7: {a.maxHist[1]!}, 8–63: {a.maxHist[2]!}, 64–1023: {a.maxHist[3]!}, ≥ 1024: {a.maxHist[4]!}.\n"
+  md := md ++ s!"- Independent check on arenas of at most 256 nodes (duplicates recounted by comparing full subtree strings): agree for {a.checkEq} arenas, **differ for {a.checkNe}**; {a.checkSkip} arenas not checked (more than 256 nodes, or a subtree string over 100,000 characters).\n"
+  md := md ++ s!"- Split: primary arenas {st.arenaP.nodes} nodes, {st.arenaP.dupNodes} duplicates ({st.arenaP.dupBytes} B); `original` arenas {st.arenaO.nodes} nodes, {st.arenaO.dupNodes} duplicates ({st.arenaO.dupBytes} B).\n"
+  return md
+
+def msRow (label : String) (m : MSAnalysis) (file : Nat) : String :=
+  s!"| {label} | {m.constants} | {m.entries} | {m.bytes} ({fmtSignedPct2 m.bytes file |>.drop 1} of file) | {m.unshared} | {m.reenc} | {m.distinct} | {m.bytesDedup} | {m.reencDedup} | {m.matched} ({m.matchedBytes} B) | {m.matchedTable} | {m.shareNodes} |\n"
+
+def metaReport (path : String) (st : MetaStudy) (cross : String) (ms : Nat)
+    (names : Array String := #[]) : String := Id.run do
+  let file := st.fileSize
+  let mut md := s!"## Metadata study: `{path}`\n\n"
+  md := md ++ s!"- File: {file} bytes; blobs {st.blobs}; anonymous constants {st.consts}; names {st.names}; Named entries {st.named} ({st.withOriginal} with `original`); comms {st.comms}. Scan time {ms} ms.\n"
+  let total := st.cats.foldl (· + ·) 0
+  md := md ++ s!"- Byte categories sum to {total} bytes: **{if total == file then "equal to the file size" else "DIFFERENT from the file size"}**.\n"
+  md := md ++ cross
+  md := md ++ "\n| component | bytes | % of file |\n|---|---:|---:|\n"
+  for h : i in [0:metaCatNames.size] do
+    md := md ++ s!"| {metaCatNames[i]} | {st.cats[i]!} | {fmtSignedPct2 st.cats[i]! file |>.drop 1} |\n"
+  let named := (List.range 17).foldl (fun a i => if i ≥ 8 then a + st.cats[i]! else a) 0 +
+    (List.range 25).foldl (fun a i => if i ≥ 17 && i ≤ 23 then a + st.cats[i]! else a) 0
+  md := md ++ s!"\n- Section totals: §2 constants {st.cats[3]! + st.cats[4]!} ({fmtSignedPct2 (st.cats[3]! + st.cats[4]!) file |>.drop 1}); §5 Named {named} ({fmtSignedPct2 named file |>.drop 1}); §4 names {st.cats[6]! + st.cats[7]!} ({fmtSignedPct2 (st.cats[6]! + st.cats[7]!) file |>.drop 1}); §1 blobs {st.cats[1]! + st.cats[2]!} ({fmtSignedPct2 (st.cats[1]! + st.cats[2]!) file |>.drop 1}).\n"
+  md := md ++ "\nExprMeta arena by node kind (primary metadata; `original` metadata in the last two columns):\n\n| node kind | nodes | bytes | % of file | original nodes | original bytes |\n|---|---:|---:|---:|---:|---:|\n"
+  for h : k in [0:arenaKindNames.size] do
+    md := md ++ s!"| {arenaKindNames[k]} | {st.kindCount[k]!} | {st.kindBytes[k]!} | {fmtSignedPct2 st.kindBytes[k]! file |>.drop 1} | {st.okindCount[k]!} | {st.okindBytes[k]!} |\n"
+  let ec := st.entryCounts.qsort (· < ·)
+  md := md ++ s!"\n### metaSharing\n\n- Named entries with non-empty `metaSharing`: {st.nonEmpty} of {st.named}; with non-empty `original` metaSharing: {st.nonEmptyOrig}. Entries per non-empty table: min {ec[0]?.getD 0}, median {pct ec 50}, p90 {pct ec 90}, p99 {pct ec 99}, max {ec.back?.getD 0}.\n"
+  md := md ++ s!"- metaRefs entries: {st.nRefs}; metaUnivs entries: {st.nUnivs}.\n"
+  unless st.nonEmptyList.isEmpty do
+    md := md ++ "\n| Named entry | §2 rank | metaSharing entries | bytes |\n|---|---:|---:|---:|\n"
+    for h : i in [0:st.nonEmptyList.size] do
+      let (_, rank, n, b) := st.nonEmptyList[i]
+      md := md ++ s!"| `{names[i]?.getD "?"}` | {rank} | {n} | {b} |\n"
+    md := md ++ "\n"
+  md := md ++ s!"- Analysis errors (constants not analysed): {st.errors.size}.\n"
+  for e in st.errors.extract 0 10 do md := md ++ s!"  - {e}\n"
+  md := md ++ "\n| metadata | constants | entries | current bytes | unshared bytes | re-encoded against the primary table | distinct entries | current, deduplicated | re-encoded, deduplicated | entries equal to a primary subterm | equal to a primary table entry | Share nodes in entries |\n|---|---:|---:|---|---:|---:|---:|---:|---:|---|---:|---:|\n"
+  md := md ++ msRow "primary `ConstantMeta`" st.ms file
+  md := md ++ msRow "`Named.original`" st.msOrig file
+  md := md ++ arenaReport st
+  return md
+
 /-! ## Driver -/
 
 structure Opts where
@@ -1847,10 +2620,16 @@ structure Opts where
   uniform : Bool := true
   /-- `maxStates` for the uniform optimizer (other limits: W1 defaults). -/
   uniMaxStates : Nat := ({} : Ix.Sharing.Exact.Limits).maxStates
+  /-- Run the metadata study instead of the per-constant study. -/
+  metaMode : Bool := false
+  /-- Cross-check the metadata scanner against a full `deEnv` load. -/
+  metaCross : Bool := false
 
 def parseArgs : List String → Opts → Except String Opts
   | [], o => if o.corpus.isEmpty then .error "missing corpus path" else .ok o
   | "--no-uniform" :: rest, o => parseArgs rest { o with uniform := false }
+  | "--meta" :: rest, o => parseArgs rest { o with metaMode := true }
+  | "--meta-crosscheck" :: rest, o => parseArgs rest { o with metaCross := true }
   | "--uni-max-states" :: n :: rest, o =>
     parseArgs rest { o with uniMaxStates := n.toNat?.getD o.uniMaxStates }
   | "--md" :: p :: rest, o => parseArgs rest { o with md := some p }
@@ -1875,8 +2654,29 @@ def main (args : List String) : IO UInt32 := do
   let opts ← match parseArgs args {} with
     | .ok o => pure o
     | .error e =>
-      IO.eprintln s!"sharing-study: {e}\nusage: sharing-study <corpus.ixe> [--md p] [--csv p] [--limit n] [--validate-max bytes] [--occ-check-max bytes] [--progress n] [--no-uniform] [--uni-max-states n]"
+      IO.eprintln s!"sharing-study: {e}\nusage: sharing-study <corpus.ixe> [--md p] [--csv p] [--limit n] [--validate-max bytes] [--occ-check-max bytes] [--progress n] [--no-uniform] [--uni-max-states n] [--meta] [--meta-crosscheck]"
       return 2
+  if opts.metaMode then
+    let t0 ← IO.monoMsNow
+    let st ← metaStudy opts.corpus opts.progress
+    let t1 ← IO.monoMsNow
+    let cross ← if opts.metaCross then metaCrossCheck opts.corpus st else pure ""
+    -- Names of the entries with non-empty metaSharing (lazy anonymous loader).
+    let names ← if st.nonEmptyNameAddrs.isEmpty then pure #[] else do
+      let buf ← IO.FS.readBinFile opts.corpus
+      let env ← IO.ofExcept (Ixon.deEnvAnon buf)
+      let want : Std.HashSet Address := st.nonEmptyNameAddrs.foldl (·.insert ·) {}
+      let mut m : Std.HashMap Address String := {}
+      for (nm, _) in env.named do
+        if want.contains nm.getHash then m := m.insert nm.getHash (toString nm)
+      pure (st.nonEmptyNameAddrs.map fun a => m.getD a "?")
+    let md := metaReport opts.corpus st cross (t1 - t0) names
+    IO.println md
+    if let some p := opts.md then
+      IO.FS.writeFile p md
+      IO.println s!"[sharing-study] wrote {p}"
+    let total := st.cats.foldl (· + ·) 0
+    return (if total == st.fileSize && st.errors.isEmpty then 0 else 1)
   let ws := witnesses
   for w in ws do
     match w with

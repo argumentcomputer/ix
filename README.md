@@ -215,7 +215,8 @@ not this stable overview.
 
 **Lean tests:** `lake test`
 
-- `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `byte-array`, `ixon`, `claim`, `commit`, `canon`, `keccak`, `sharing`, `graph-unit`, `condense-unit`
+- `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `meta-env`, `catalog`, `import-ixe`, `truthmines-spec`, `ixon`, `ixon-syntax`, `claim`, `merkle`, `assumption-tree`, `commit`, `canon`, `keccak`, `exact-sharing`, `exact-sharing-ffi`, `source-contract`, `graph-unit`, `condense-unit`, `bench-measures`, `aux-gen-unit`, `ground-unit`, `aiur-cross`, `aiur-cost`, `prim-addrs`, `primitive-address-parity`, `decompile-unit`, `tc-unit`
+    - `exact-sharing` tests the canonical sharing construction of Ixon v4; `exact-sharing-ffi` checks that Lean and Rust produce identical bytes
 - `lake test -- --ignored` runs all expensive test suites and runners
     - Most tests require at least 32 GB RAM
     - The `compile` and `decompile` tests require 128 GB RAM
@@ -226,6 +227,8 @@ not this stable overview.
 - `lake test -- --include-ignored <name>` runs all primary suites plus selected expensive suites or runners
 - `lake test -- cli` runs CLI integration tests
 - `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
+
+<!-- PENDING: [tests] the heuristic `sharing` suite (still registered in Tests/Main.lean at 9611c3b6, omitted above) is removed with the heuristic; re-check this list against `primarySuites` (plan §7). -->
 
 **Rust tests:** `cargo test` or `cargo nextest run`
 
