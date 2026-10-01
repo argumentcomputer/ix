@@ -436,6 +436,22 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.UniformModel.ulen_split_component,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.UniformModel.minimum_exists,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.optimizeUniform_least,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.uniformChoose_tie,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.uniformKnapsack_tie,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.knapFold_tie,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.conv_tie,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.lexLt_iff,
+    standardAxioms := noChoice },
+  { root := ``Ix.Compile.Verify.UniformModel.precL_union,
+    standardAxioms := noChoice },
+  { root := ``Ix.Compile.Verify.UniformModel.bestSetOf_spec,
     standardAxioms := standard }
 ]
 

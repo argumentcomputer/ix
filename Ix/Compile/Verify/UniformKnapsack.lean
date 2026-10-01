@@ -693,4 +693,36 @@ theorem knapChoose_tie (kCS : Nat) {dp : CTable} (hd : Indexed dp) (hs : SortedT
     simp [getElem!_def, show ¬ c < dp.size from h] at he
   exact h2 c (List.mem_range.mpr hc) e he
 
+/-- The knapsack keeps strictly increasing sets in the processed universes. -/
+theorem knapFold_sorted {cap : Nat} (Uf : Nat → Nat → Prop)
+    (hU : ∀ i i' x, i ≠ i' → Uf i x → ¬ Uf i' x) (ts : List CTable) :
+    ∀ (j0 : Nat) (dp : CTable),
+      (∀ j, j < ts.length → SortedT ts[j]! ∧ SetsIn ts[j]! (Uf (j0 + j))) →
+      SortedT dp → SetsIn dp (fun x => ∃ i, i < j0 ∧ Uf i x) →
+      SortedT (ts.foldl (knapStep cap) dp) := by
+  induction ts with
+  | nil => intro _ dp _ h _; exact h
+  | cons t ts ih =>
+    intro j0 dp hall hdps hdpU
+    rw [List.foldl_cons]
+    obtain ⟨hts, htU⟩ := hall 0 (by simp)
+    simp only [List.getElem!_cons_zero, Nat.add_zero] at hts htU
+    have hdisj : ∀ (c : Nat) (e : Entry), dp[c]! = some e → ∀ (k' : Nat) (ek : Entry),
+        t[k']! = some ek → ∀ x ∈ e.2.toList, x ∉ ek.2.toList := by
+      intro c e he k' ek hek x hx hx'
+      obtain ⟨i, hi, hxi⟩ := hdpU c e he x hx
+      exact hU i j0 x (by omega) hxi (htU k' ek hek x hx')
+    apply ih (j0 + 1) _ (fun j hj => by
+      have := hall (j + 1) (by simp; omega)
+      simp only [List.getElem!_cons_succ] at this
+      rw [show j0 + 1 + j = j0 + (j + 1) by omega]
+      exact this) (knapStep_tie hdps hts hdisj).1
+    intro c e' he' x hx
+    obtain ⟨c1, k1, ec, ek', hec, hek', hset⟩ := knapStep_origin c e' he'
+    rw [hset] at hx
+    rcases List.mem_append.mp ((mergeSorted_perm ec.2 ek'.2).mem_iff.mp hx) with h | h
+    · obtain ⟨i, hi, hxi⟩ := hdpU c1 ec hec x h
+      exact ⟨i, by omega, hxi⟩
+    · exact ⟨j0, by omega, htU k1 ek' hek' x h⟩
+
 end Ix.Compile.Verify.UniformModel
