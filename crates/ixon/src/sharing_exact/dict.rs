@@ -406,3 +406,187 @@ pub fn materialize_with_dictionary(
   let costs = all_costs(dag.nodes(), &own, dict, &mut work);
   materialize(dag.nodes(), &own, dict, &costs, targets, &mut work)
 }
+
+/// A dictionary with one term's own Share hidden: the top of that term's
+/// table entry, which may not reference itself.
+pub(crate) struct Hide<'a, D> {
+  pub(crate) inner: &'a D,
+  pub(crate) hidden: TermId,
+}
+
+impl<D: Widths> Widths for Hide<'_, D> {
+  fn width(&self, t: TermId) -> Option<u64> {
+    if t == self.hidden { None } else { self.inner.width(t) }
+  }
+}
+
+impl<D: Indices> Indices for Hide<'_, D> {
+  fn index(&self, t: TermId) -> Option<u64> {
+    if t == self.hidden { None } else { self.inner.index(t) }
+  }
+}
+
+/// Real table indices with every Share priced at one uniform width.
+pub(crate) struct UniformIndex {
+  pub(crate) index: Vec<Option<u64>>,
+  pub(crate) width: u64,
+}
+
+impl Widths for UniformIndex {
+  fn width(&self, t: TermId) -> Option<u64> {
+    self.index[ix(t)].map(|_| self.width)
+  }
+}
+
+impl Indices for UniformIndex {
+  fn index(&self, t: TermId) -> Option<u64> {
+    self.index[ix(t)]
+  }
+}
+
+/// Materialize a table given in dependency order (every stored descendant
+/// of an entry precedes it) and the roots, from one evaluation `costs` of the
+/// whole dictionary `dict`. In such an order each entry can use every stored
+/// term that can occur inside it and no other, so the full dictionary prices
+/// and builds it exactly. Entry tops take their best non-Share choice; every
+/// nested occurrence takes its standalone choice. Returns entries, roots and
+/// the predicted cost `sum inline(entry) + sum C(root)` (without the count).
+pub(crate) fn materialize_dependent<D: Indices>(
+  nodes: &[Node],
+  own: &[Len],
+  dict: &D,
+  costs: &[Len],
+  table: &[TermId],
+  roots: &[TermId],
+  work: &mut u64,
+) -> Result<(Vec<Arc<Expr>>, Vec<Arc<Expr>>, Len), SharingError> {
+  let n = nodes.len();
+  let mut predicted = Len::ZERO;
+  let mut entry_choice: Vec<Choice> = Vec::with_capacity(table.len());
+  let mut needed = vec![false; n];
+  let mark_children =
+    |t: TermId, ch: Choice, needed: &mut Vec<bool>, work: &mut u64| match ch {
+      Choice::Share => Ok(()),
+      Choice::Inline => {
+        for &c in nodes[ix(t)].children().as_slice() {
+          needed[ix(c)] = true;
+        }
+        Ok(())
+      },
+      Choice::Telescope(j) => {
+        if j == 0 {
+          return Err(internal("telescope choice without an option"));
+        }
+        let mut cur = t;
+        for _ in 0..j {
+          *work = work.saturating_add(1);
+          let node = &nodes[ix(cur)];
+          match node {
+            Node::App(_, a) => needed[ix(*a)] = true,
+            Node::Lam(_, ty, _) | Node::All(_, _, ty, _) => {
+              needed[ix(*ty)] = true
+            },
+            _ => return Err(internal("telescope walked off its spine")),
+          }
+          cur = spine_next(node).ok_or_else(|| internal("spine"))?;
+        }
+        if nodes[ix(cur)].family() != nodes[ix(t)].family() {
+          needed[ix(cur)] = true;
+        }
+        Ok(())
+      },
+    };
+  for &t in table {
+    let hide = Hide { inner: dict, hidden: t };
+    let (c, ch) =
+      eval_node(nodes, own, t, &hide, &|x| costs[ix(x)], true, work);
+    if ch == Choice::Share {
+      return Err(internal("entry top chose a Share"));
+    }
+    predicted = predicted.plus(c);
+    mark_children(t, ch, &mut needed, work)?;
+    entry_choice.push(ch);
+  }
+  for &r in roots {
+    needed[ix(r)] = true;
+    predicted = predicted.plus(costs[ix(r)]);
+  }
+  let mut choice: Vec<Option<Choice>> = vec![None; n];
+  for t in (0..n).rev() {
+    if !needed[t] {
+      continue;
+    }
+    let tid = TermId::try_from(t).map_err(|_e| internal("term id"))?;
+    let (c, ch) =
+      eval_node(nodes, own, tid, dict, &|x| costs[ix(x)], true, work);
+    if c != costs[t] {
+      return Err(internal("standalone choice differs from C_M"));
+    }
+    choice[t] = Some(ch);
+    mark_children(tid, ch, &mut needed, work)?;
+  }
+  let mut rep: Vec<Option<Arc<Expr>>> = vec![None; n];
+  let get = |rep: &Vec<Option<Arc<Expr>>>, c: TermId| {
+    rep.get(ix(c)).cloned().flatten().ok_or_else(|| internal("missing child"))
+  };
+  let build = |t: TermId,
+               ch: Choice,
+               rep: &Vec<Option<Arc<Expr>>>|
+   -> Result<Arc<Expr>, SharingError> {
+    let node = &nodes[ix(t)];
+    Ok(match ch {
+      Choice::Share => Arc::new(Expr::Share(
+        dict.index(t).ok_or_else(|| internal("share index"))?,
+      )),
+      Choice::Inline => {
+        let mut kids: Vec<Arc<Expr>> = Vec::new();
+        for &c in node.children().as_slice() {
+          kids.push(get(rep, c)?);
+        }
+        let slot = |c: TermId| {
+          let pos = node.children().as_slice().iter().position(|&x| x == c);
+          kids[pos.unwrap_or(0)].clone()
+        };
+        Arc::new(node.to_expr(slot))
+      },
+      Choice::Telescope(j) => {
+        let mut spine = Vec::new();
+        let mut cur = t;
+        for _ in 0..j {
+          spine.push(cur);
+          cur = spine_next(&nodes[ix(cur)]).ok_or_else(|| internal("spine"))?;
+        }
+        let mut e = if nodes[ix(cur)].family() == node.family() {
+          Arc::new(Expr::Share(
+            dict.index(cur).ok_or_else(|| internal("cut index"))?,
+          ))
+        } else {
+          get(rep, cur)?
+        };
+        for &s in spine.iter().rev() {
+          e = Arc::new(match &nodes[ix(s)] {
+            Node::App(_, a) => Expr::App(e, get(rep, *a)?),
+            Node::Lam(c, ty, _) => Expr::Lam(*c, get(rep, *ty)?, e),
+            Node::All(c, v, ty, _) => Expr::All(*c, *v, get(rep, *ty)?, e),
+            _ => return Err(internal("telescope rebuild")),
+          });
+        }
+        e
+      },
+    })
+  };
+  for t in 0..n {
+    if let Some(ch) = choice[t] {
+      let tid = TermId::try_from(t).map_err(|_e| internal("term id"))?;
+      let e = build(tid, ch, &rep)?;
+      rep[t] = Some(e);
+    }
+  }
+  let mut entries = Vec::with_capacity(table.len());
+  for (&t, &ch) in table.iter().zip(&entry_choice) {
+    entries.push(build(t, ch, &rep)?);
+  }
+  let roots_out =
+    roots.iter().map(|&r| get(&rep, r)).collect::<Result<_, _>>()?;
+  Ok((entries, roots_out, predicted))
+}

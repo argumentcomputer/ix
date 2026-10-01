@@ -66,6 +66,7 @@ mod dag;
 mod dict;
 mod roots;
 mod search;
+mod uniform;
 
 #[cfg(test)]
 mod oracle;
@@ -84,7 +85,13 @@ pub use dict::{FixedDictionary, dictionary_cost, materialize_with_dictionary};
 pub use roots::{
   constant_info_root_count, constant_info_root_exprs, rebuild_constant_info,
 };
-pub use search::{candidate_terms, sequence_len};
+pub use search::{
+  candidate_terms, optimize_sharing_uniform_reference, sequence_len,
+};
+pub use uniform::{
+  UniformClass, UniformSharingResult, normalize_constant_sharing_uniform,
+  optimize_dag_uniform, optimize_sharing_uniform,
+};
 
 use crate::constant::Constant;
 use crate::expr::Expr;
@@ -215,6 +222,8 @@ pub enum FormatBound {
   TermIdSpace { nodes: u64 },
   /// A serialized length reaches `u64::MAX`.
   LengthOverflow,
+  /// A uniform Share width outside `1..=255`.
+  UniformWidth { w: u64 },
 }
 
 /// Which deterministic limit was exhausted.
@@ -513,6 +522,29 @@ pub fn normalize_constant_bytes(
     )));
   }
   let out = normalize_constant_sharing(&c, limits)
+    .map_err(NormalizeBytesError::Sharing)?;
+  let mut buf = Vec::new();
+  out.put(&mut buf);
+  Ok(buf)
+}
+
+/// Byte-level uniform-width normalization: decode exactly one serialized
+/// Constant, re-share it with the uniform-width optimum for Share width `w`,
+/// and return the serialized result.
+pub fn normalize_constant_bytes_uniform(
+  w: u64,
+  bytes: &[u8],
+  limits: &ExactSharingLimits,
+) -> Result<Vec<u8>, NormalizeBytesError> {
+  let mut input = bytes;
+  let c = Constant::get(&mut input).map_err(NormalizeBytesError::Decode)?;
+  if !input.is_empty() {
+    return Err(NormalizeBytesError::Decode(format!(
+      "{} trailing bytes after the Constant",
+      input.len()
+    )));
+  }
+  let (out, _) = normalize_constant_sharing_uniform(w, &c, limits)
     .map_err(NormalizeBytesError::Sharing)?;
   let mut buf = Vec::new();
   out.put(&mut buf);
