@@ -21,7 +21,7 @@ compilation path. Source syntax alone does not establish resource validity.
 
 The complete semantic and binary design is in [Ixon v4](Ixon-v4.md).
 
-<!-- PENDING: [format] the compilers emit format v4 (plan §2–§3). At 9611c3b6 they emit v3. -->
+<!-- PENDING: [format] the compilers emit format v4 (plan §2–§3). At 93e2895c they write TagN integers under version 3. -->
 
 ## Modes
 

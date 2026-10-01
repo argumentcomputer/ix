@@ -27,7 +27,7 @@ typing and explicitly rejects resource-proof requests. The
 [v3 verification record](ixon-v3-verification.md) lists the gates executed
 for the contract model.
 
-<!-- PENDING: [format][route][ids] everything specific to v4 in this file (TagN, version 4, canonical sharing as the compiler route, format byte 4, ixon-v4 identifiers) depends on plan §2–§3. At 9611c3b6 the format is v3 with heuristic sharing. A v4 verification record (plan §9) is not written yet. -->
+<!-- PENDING: [format][route][ids] everything specific to v4 in this file (TagN, version 4, canonical sharing as the compiler route, format byte 4, ixon-v4 identifiers) depends on plan §2–§3. At 93e2895c every integer is TagN, but the version is 3, the identifiers are the v3 ones and the compilers use heuristic sharing. A v4 verification record (plan §9) is not written yet. -->
 
 <!-- PENDING: [ixvm] the IxVM codecs read and write TagN and the v4 headers (plan §5). -->
 

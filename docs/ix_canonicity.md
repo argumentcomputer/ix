@@ -2299,7 +2299,7 @@ Landed with the §17.9 stages:
   reproduce its address, so decompile's recompile and the compiler must
   produce the same canonical sharing.
 
-<!-- PENDING: [tests] the `sharing` (heuristic) suite is removed, and the exact-sharing suites run on the TagN wire codec only (plan §7). -->
+<!-- PENDING: [tests] the `sharing` (heuristic) suite is removed (plan §7). The exact-sharing suites run on the TagN wire codec only since 93e2895c. -->
 
 ## 17. Open Work
 

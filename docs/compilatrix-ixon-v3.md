@@ -34,7 +34,7 @@ contract model.)
 - **Primitive addresses** have changed. Do not reuse v3 pins or infer an
   object's version from raw constant bytes.
 
-<!-- PENDING: [format][ids][route] every item above depends on the format switch, the identifier bump and the compiler routing (plan §0b-2, §2, §3). At 9611c3b6 the producer writes v3. -->
+<!-- PENDING: [format][ids][route] every item above depends on the format switch, the identifier bump and the compiler routing (plan §0b-2, §2, §3). At 93e2895c the producer writes TagN integers under version 3 and v3 identifiers, with heuristic sharing. -->
 
 See the [schema](Ixon-v4.md), [wire format](Ixon.md),
 [text syntax](ixon-text-v3.md), and [source frontend](source-contracts.md).
