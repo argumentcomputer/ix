@@ -23,6 +23,7 @@
 //!   [--par-widths N] [--par-components N] [--par-materialize N]
 //!                             thread budgets inside one constant
 //!   [--check-sequential]      also run the sequential reference and compare
+//!   [--max-states N]          override the max_states limit (experiments)
 //!   [--width-experiment]      experiment, not the canonical construction:
 //!                             run phases 1-3 at each phase-1 width
 //!                             w in 1, 2, 3 and report the best of the
@@ -75,6 +76,7 @@ struct Args {
   mss_compare: bool,
   mss_ties: MssTies,
   serial_constants: bool,
+  max_states: Option<u64>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -96,6 +98,7 @@ fn parse_args() -> Result<Args, String> {
     mss_compare: false,
     mss_ties: MssTies::StructuralId,
     serial_constants: false,
+    max_states: None,
   };
   let num = |v: Option<String>| -> Result<usize, String> {
     v.ok_or("missing value")?.parse::<usize>().map_err(|e| e.to_string())
@@ -123,6 +126,7 @@ fn parse_args() -> Result<Args, String> {
       "--mss-diff" => a.mss_diff = true,
       "--mss-compare" => a.mss_compare = true,
       "--serial-constants" => a.serial_constants = true,
+      "--max-states" => a.max_states = Some(num(it.next())? as u64),
       "--mss-ties" => {
         a.mss_ties = match it.next().as_deref() {
           Some("id") => MssTies::StructuralId,
@@ -376,7 +380,10 @@ fn main() -> Result<(), String> {
       .cloned()
       .unwrap_or_else(|| format!("<{}>", &hex[..16]))
   };
-  let limits = ExactSharingLimits::default();
+  let mut limits = ExactSharingLimits::default();
+  if let Some(m) = args.max_states {
+    limits.max_states = m;
+  }
   if args.mss_diff {
     return mss_diff(&args, &consts, &mmap, &limits, &name_of);
   }

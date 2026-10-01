@@ -2555,6 +2555,7 @@ pub fn compiler_sharing_limits() -> ExactSharingLimits {
     max_transitions: 1 << 28,
     max_work: 1 << 36,
     max_output_bytes: 1 << 32,
+    max_knapsack_cells: 1 << 28,
     heuristic_upper_bound: true,
     greedy_upper_bound: true,
     lower_bound_pruning: true,
