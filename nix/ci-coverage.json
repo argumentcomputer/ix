@@ -660,7 +660,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/x86: merge M2.6b stacking",
+ "baseline": "jcb/x86: merge M2.7b backend half and M2.8 Recheck.sound",
  "axiom_sha256":
  "3473045a684d69bd5cf3672f06768a256fe62a61cd62f56e5f62dafd8eb7c536",
  "axiom_count": 3977}

@@ -1605,6 +1605,9 @@
   "Compilatrix.Xv.Stacking.Proof.Return":
   {"path": "Compilatrix/Xv/Stacking/Proof/Return.lean",
    "imports": ["Compilatrix.Xv.Stacking.Proof.CallStep"]},
+  "Compilatrix.Xv.Stacking.Proof.Retarget":
+  {"path": "Compilatrix/Xv/Stacking/Proof/Retarget.lean",
+   "imports": ["Compilatrix.Xv.Stacking.Proof.Ends"]},
   "Compilatrix.Xv.Stacking.Proof.RetStep":
   {"path": "Compilatrix/Xv/Stacking/Proof/RetStep.lean",
    "imports": ["Compilatrix.Xv.Stacking.Proof.Return"]},
@@ -1932,6 +1935,12 @@
   "Compilatrix.X86.ObjectExecution":
   {"path": "Compilatrix/X86/ObjectExecution.lean",
    "imports": ["Compilatrix.X86.ELFLink"]},
+  "Compilatrix.X86.ObjectCallSafe":
+  {"path": "Compilatrix/X86/ObjectCallSafe.lean",
+   "imports": ["Compilatrix.X86.ObjectCall", "Compilatrix.X86.ObjectRunSafe"]},
+  "Compilatrix.X86.ObjectCall":
+  {"path": "Compilatrix/X86/ObjectCall.lean",
+   "imports": ["Compilatrix.X86.ObjectRun"]},
   "Compilatrix.X86.Memory":
   {"path": "Compilatrix/X86/Memory.lean", "imports": ["Compilatrix.X86.Eval"]},
   "Compilatrix.X86.Layout.Tunnel":
@@ -1947,6 +1956,9 @@
   "Compilatrix.X86.Layout.Proof.Rows":
   {"path": "Compilatrix/X86/Layout/Proof/Rows.lean",
    "imports": ["Compilatrix.X86.StreamEffects"]},
+  "Compilatrix.X86.Layout.Proof.Retarget":
+  {"path": "Compilatrix/X86/Layout/Proof/Retarget.lean",
+   "imports": ["Compilatrix.X86.Layout.Proof.Transport"]},
   "Compilatrix.X86.Layout.Proof.Order":
   {"path": "Compilatrix/X86/Layout/Proof/Order.lean",
    "imports": ["Compilatrix.X86.Layout.Order"]},
@@ -3117,6 +3129,9 @@
    ["Compilatrix.Backend",
     "Compilatrix.Xv.Select.Proof.Correct",
     "Compilatrix.Xv.Validate.Proof.Traced"]},
+  "Compilatrix.Backend.Proof.Retarget":
+  {"path": "Compilatrix/Backend/Proof/Retarget.lean",
+   "imports": ["Compilatrix.Backend.Proof.Xl"]},
   "Compilatrix.Backend.Proof.Object":
   {"path": "Compilatrix/Backend/Proof/Object.lean",
    "imports":
@@ -3124,6 +3139,14 @@
     "Compilatrix.Backend.Proof.Emit",
     "Compilatrix.X86.ObjectRunSafe",
     "Compilatrix.Sem.TracedSim"]},
+  "Compilatrix.Backend.Proof.Exports":
+  {"path": "Compilatrix/Backend/Proof/Exports.lean",
+   "imports":
+   ["Compilatrix.Backend.Proof.Ends",
+    "Compilatrix.Backend.Proof.Retarget",
+    "Compilatrix.Xv.Stacking.Proof.Retarget",
+    "Compilatrix.X86.Layout.Proof.Retarget",
+    "Compilatrix.X86.ObjectCallSafe"]},
   "Compilatrix.Backend.Proof.Ends":
   {"path": "Compilatrix/Backend/Proof/Ends.lean",
    "imports":
