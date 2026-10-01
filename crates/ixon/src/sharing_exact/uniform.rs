@@ -835,18 +835,22 @@ fn pick_branch(gains: &[(TermId, i128)]) -> Option<(TermId, i128)> {
   acc
 }
 
+/// Area position of no term (`SCtx::pos`).
+const NO_POS: u32 = u32::MAX;
+
 /// Bounds of the area under a maybe-stored predicate, over the root-level
-/// bounds (Lean `SCtx.rebound`).
+/// bounds (Lean `SCtx.rebound`): `vals[j]` for the area term at position
+/// `j`, the root-level bounds elsewhere.
 struct Overlay<'b> {
   base: &'b Bounds,
-  vals: FxHashMap<TermId, [u128; 4]>,
+  pos: &'b [u32],
+  vals: Vec<[u128; 4]>,
 }
 
 impl Overlay<'_> {
   fn get(&self, t: TermId) -> [u128; 4] {
-    match self.vals.get(&t) {
-      Some(v) => *v,
-      None => {
+    match self.pos[ix(t)] {
+      NO_POS => {
         let k = ix(t);
         [
           self.base.inl[k],
@@ -855,10 +859,15 @@ impl Overlay<'_> {
           self.base.cont_lb[k],
         ]
       },
+      j => self.vals[j as usize],
     }
   }
 }
 
+/// The search of one component (Lean `SCtx`). Sets of decided members are
+/// passed as sorted term lists and, inside one call, as flags over the area
+/// positions (every member is in the area; a term outside the area is in
+/// none of them).
 struct SCtx<'a, 'd> {
   up: &'a UPrep<'d>,
   facts: &'a Facts,
@@ -868,11 +877,14 @@ struct SCtx<'a, 'd> {
   spine_len: &'a [u64],
   dag_size: u64,
   members: Vec<TermId>,
-  member_idx: FxHashMap<TermId, usize>,
+  /// Member index of each area position (`NO_POS` for other terms).
+  member_of: Vec<u32>,
   area: Vec<TermId>,
-  area_idx: FxHashMap<TermId, usize>,
-  /// Per area node: `(parent, edges, head edges)` per distinct parent.
-  in_edges: Vec<Vec<(TermId, u64, u64)>>,
+  /// Area position of every term of the DAG (`NO_POS` outside the area).
+  pos: &'a [u32],
+  /// Per area node: `(parent, its area position, edges, head edges)` per
+  /// distinct parent.
+  in_edges: Vec<Vec<(TermId, u32, u64, u64)>>,
   root_occ: Vec<u64>,
   root_mult: Vec<(TermId, u128)>,
   stored_in: Vec<TermId>,
@@ -880,45 +892,59 @@ struct SCtx<'a, 'd> {
   theta: i128,
   memo: FxHashMap<Vec<u64>, CTable>,
   memo_hits: u64,
+  /// Scratch of `phi`: the value of each area term.
   vals: Vec<UVal>,
-  stamp: Vec<u32>,
-  epoch: u32,
 }
 
 impl SCtx<'_, '_> {
-  /// The component cost with `avail` available and the entries of
-  /// `stored`, and the evaluation work (Lean `SCtx.phi`).
+  fn at(&self, t: TermId) -> Option<usize> {
+    match self.pos[ix(t)] {
+      NO_POS => None,
+      j => Some(j as usize),
+    }
+  }
+
+  /// Flags over the area positions of the terms `ts`.
+  fn flags(&self, ts: &[TermId]) -> Vec<bool> {
+    let mut f = vec![false; self.area.len()];
+    for &t in ts {
+      if let Some(j) = self.at(t) {
+        f[j] = true;
+      }
+    }
+    f
+  }
+
+  /// The component cost with the area terms flagged in `avail` available
+  /// and the entries of `stored`, and the evaluation work (Lean
+  /// `SCtx.phi`). Every area term is evaluated, children first; other terms
+  /// keep their root-level values.
   fn phi(
     &mut self,
-    avail: &dyn Fn(TermId) -> bool,
+    avail: &[bool],
     stored: &[TermId],
   ) -> Result<(u128, u64), SharingError> {
-    if self.epoch == u32::MAX {
-      self.stamp.fill(0);
-      self.epoch = 0;
-    }
-    self.epoch += 1;
-    let ep = self.epoch;
     let mut work = 0u64;
     for k in 0..self.area.len() {
       let t = self.area[k];
       let (v, s) = {
-        let (vals, stamp, base) = (&self.vals, &self.stamp, &self.up.base);
-        let get = |c: TermId| {
-          if stamp[ix(c)] == ep { vals[ix(c)] } else { base[ix(c)] }
+        let (vals, base, pos) = (&self.vals, &self.up.base, self.pos);
+        let get = |c: TermId| match pos[ix(c)] {
+          NO_POS => base[ix(c)],
+          j => vals[j as usize],
         };
-        self.up.node(&get, avail, t)?
+        let av = |c: TermId| match pos[ix(c)] {
+          NO_POS => false,
+          j => avail[j as usize],
+        };
+        self.up.node(&get, &av, t)?
       };
-      self.vals[ix(t)] = v;
-      self.stamp[ix(t)] = ep;
+      self.vals[k] = v;
       work = work.saturating_add(1 + s);
     }
-    let get = |c: TermId| {
-      if self.stamp[ix(c)] == ep {
-        self.vals[ix(c)]
-      } else {
-        self.up.base[ix(c)]
-      }
+    let get = |c: TermId| match self.pos[ix(c)] {
+      NO_POS => self.up.base[ix(c)],
+      j => self.vals[j as usize],
     };
     let mut total = 0u128;
     for &(r, m) in &self.root_mult {
@@ -938,47 +964,54 @@ impl SCtx<'_, '_> {
     meter.work(work)
   }
 
-  fn rebound(
-    &self,
-    ms: &dyn Fn(TermId) -> bool,
-  ) -> Result<Overlay<'_>, SharingError> {
-    let mut ov = Overlay { base: self.b0, vals: FxHashMap::default() };
-    for &t in &self.area {
+  /// Whether `t` may be stored: a candidate not decided "not stored".
+  fn maybe(&self, out: &[bool], t: TermId) -> bool {
+    self.cand[ix(t)] && self.at(t).is_none_or(|j| !out[j])
+  }
+
+  fn rebound(&self, out: &[bool]) -> Result<Overlay<'_>, SharingError> {
+    let mut ov = Overlay {
+      base: self.b0,
+      pos: self.pos,
+      vals: Vec::with_capacity(self.area.len()),
+    };
+    for (j, &t) in self.area.iter().enumerate() {
       let v = {
         let ovr = &ov;
         bound_step(
           self.up.nodes,
           t,
           self.up.w,
-          ms(t),
+          self.cand[ix(t)] && !out[j],
           &|c| ovr.get(c)[2],
           &|c| ovr.get(c)[3],
         )?
       };
-      ov.vals.insert(t, v);
+      ov.vals.push(v);
     }
     Ok(ov)
   }
 
-  fn revisible(
-    &self,
-    ms: &dyn Fn(TermId) -> bool,
-  ) -> FxHashMap<TermId, (u64, u64)> {
-    let mut vis: FxHashMap<TermId, (u64, u64)> = FxHashMap::default();
+  /// Visible counts of the area terms (by area position).
+  fn revisible(&self, out: &[bool]) -> Vec<(u64, u64)> {
+    let mut vis: Vec<(u64, u64)> = vec![(0, 0); self.area.len()];
     for j in (0..self.area.len()).rev() {
-      let y = self.area[j];
       let r = self.root_occ[j];
       let (mut d, mut h) = (r, r);
-      for &(q, ma, mh) in &self.in_edges[j] {
-        let wq = if ms(q) {
+      for &(q, qj, ma, mh) in &self.in_edges[j] {
+        let wq = if self.maybe(out, q) {
           1
         } else {
-          vis.get(&q).map_or(self.vis0.0[ix(q)], |v| v.0).min(VISIBLE_CAP)
+          match qj {
+            NO_POS => self.vis0.0[ix(q)],
+            qj => vis[qj as usize].0,
+          }
+          .min(VISIBLE_CAP)
         };
         d = d.saturating_add(ma.saturating_mul(wq));
         h = h.saturating_add(mh.saturating_mul(wq));
       }
-      vis.insert(y, (d, h));
+      vis[j] = (d, h);
     }
     vis
   }
@@ -992,14 +1025,15 @@ impl SCtx<'_, '_> {
     }
   }
 
-  /// Groups of the undecided members (Lean `SCtx.groups`).
+  /// Groups of the undecided members (Lean `SCtx.groups`); `opq` and
+  /// `avail_fixed` are flags over the area positions.
   fn groups(
     &self,
-    opq: &dyn Fn(TermId) -> bool,
-    avail_fixed: &dyn Fn(TermId) -> bool,
+    opq: &[bool],
+    avail_fixed: &[bool],
     und: &[TermId],
   ) -> Vec<Vec<TermId>> {
-    let und_set: FxHashSet<TermId> = und.iter().copied().collect();
+    let und_f = self.flags(und);
     let mut uf: Vec<usize> = (0..self.members.len()).collect();
     let mut reps: Vec<Vec<usize>> = vec![Vec::new(); self.area.len()];
     let union = |uf: &mut Vec<usize>, x: usize, y: usize| {
@@ -1013,14 +1047,18 @@ impl SCtx<'_, '_> {
         }
       }
     };
+    let member = |j: usize| match self.member_of[j] {
+      NO_POS => 0,
+      m => m as usize,
+    };
     for j in 0..self.area.len() {
       let y = self.area[j];
-      if opq(y) {
+      if opq[j] {
         continue;
       }
       let mut rs: Vec<usize> = Vec::new();
       for &c in self.up.nodes[ix(y)].children().as_slice() {
-        if let Some(&jc) = self.area_idx.get(&c) {
+        if let Some(jc) = self.at(c) {
           for &r in &reps[jc] {
             let fr = uf_find(&uf, r);
             if !rs.contains(&fr) {
@@ -1029,13 +1067,13 @@ impl SCtx<'_, '_> {
           }
         }
       }
-      if und_set.contains(&y) {
-        let iy = self.member_idx.get(&y).copied().unwrap_or(0);
+      if und_f[j] {
+        let iy = member(j);
         for &r in &rs {
           union(&mut uf, iy, r);
         }
         reps[j] = vec![uf_find(&uf, iy)];
-      } else if avail_fixed(y) && rs.len() > 1 {
+      } else if avail_fixed[j] && rs.len() > 1 {
         let r0 = rs[0];
         for &r in &rs {
           union(&mut uf, r0, r);
@@ -1047,7 +1085,7 @@ impl SCtx<'_, '_> {
     }
     let mut groups: FxHashMap<usize, Vec<TermId>> = FxHashMap::default();
     for &t in und {
-      let r = uf_find(&uf, self.member_idx.get(&t).copied().unwrap_or(0));
+      let r = uf_find(&uf, self.at(t).map_or(0, member));
       groups.entry(r).or_default().push(t);
     }
     let mut gs: Vec<Vec<TermId>> = groups
@@ -1062,57 +1100,63 @@ impl SCtx<'_, '_> {
   }
 
   /// Memo key of a group and the decided members that reach it (Lean
-  /// `SCtx.memoKey`).
+  /// `SCtx.memoKey`), and those members as flags over the area positions.
+  /// `opq`, `in_f` and `out` are flags over the area positions.
   fn memo_key(
     &self,
-    opq: &dyn Fn(TermId) -> bool,
-    in_set: &FxHashSet<TermId>,
-    out_set: &FxHashSet<TermId>,
+    opq: &[bool],
+    in_f: &[bool],
+    out: &[bool],
     g: &[TermId],
-  ) -> (Vec<u64>, FxHashSet<TermId>) {
-    let code = |q: TermId| u64::from(q) * 3 + if opq(q) { 2 } else { 1 };
+  ) -> (Vec<u64>, Vec<bool>) {
+    let code =
+      |q: TermId, j: usize| u64::from(q) * 3 + if opq[j] { 2 } else { 1 };
     let mut entries: Vec<u64> = Vec::new();
-    let mut rel: FxHashSet<TermId> = FxHashSet::default();
+    let mut rel = vec![false; self.area.len()];
     let mut down_start: Vec<TermId> = g.to_vec();
-    let mut seen: FxHashSet<TermId> = g.iter().copied().collect();
+    let mut seen = self.flags(g);
     let mut stack: Vec<TermId> = g.to_vec();
     while let Some(y) = stack.pop() {
       for &q in &self.facts.parents[ix(y)] {
-        if !self.area_idx.contains_key(&q) || !seen.insert(q) {
+        let Some(j) = self.at(q) else { continue };
+        if seen[j] {
           continue;
         }
-        if out_set.contains(&q) {
+        seen[j] = true;
+        if out[j] {
           entries.push(u64::from(q) * 3);
-          rel.insert(q);
-        } else if in_set.contains(&q) {
-          entries.push(code(q));
-          rel.insert(q);
-          if !opq(q) {
+          rel[j] = true;
+        } else if in_f[j] {
+          entries.push(code(q, j));
+          rel[j] = true;
+          if !opq[j] {
             down_start.push(q);
           }
         }
-        if !opq(q) {
+        if !opq[j] {
           stack.push(q);
         }
       }
     }
-    let mut seen: FxHashSet<TermId> = down_start.iter().copied().collect();
+    let mut seen = self.flags(&down_start);
     let mut stack = down_start;
     while let Some(y) = stack.pop() {
       for &c in self.up.nodes[ix(y)].children().as_slice() {
-        if !self.area_idx.contains_key(&c) || !seen.insert(c) {
+        let Some(j) = self.at(c) else { continue };
+        if seen[j] {
           continue;
         }
-        if !rel.contains(&c) {
-          if out_set.contains(&c) {
+        seen[j] = true;
+        if !rel[j] {
+          if out[j] {
             entries.push(u64::from(c) * 3);
-            rel.insert(c);
-          } else if in_set.contains(&c) {
-            entries.push(code(c));
-            rel.insert(c);
+            rel[j] = true;
+          } else if in_f[j] {
+            entries.push(code(c, j));
+            rel[j] = true;
           }
         }
-        if !opq(c) {
+        if !opq[j] {
           stack.push(c);
         }
       }
@@ -1133,22 +1177,25 @@ impl SCtx<'_, '_> {
     in_all: &[TermId],
     out_all: &[TermId],
   ) -> Result<CTable, SharingError> {
-    let out_set: FxHashSet<TermId> = out_all.iter().copied().collect();
-    let in_set: FxHashSet<TermId> = in_all.iter().copied().collect();
+    let out = self.flags(out_all);
+    let in_f = self.flags(in_all);
     let key = {
-      let cand = self.cand;
-      let ms = |t: TermId| cand[ix(t)] && !out_set.contains(&t);
-      let b = self.rebound(&ms)?;
-      let opq = |t: TermId| {
-        self.up.opaq[ix(t)] || (in_set.contains(&t) && self.opaque_under(&b, t))
-      };
-      self.memo_key(&opq, &in_set, &out_set, g).0
+      let b = self.rebound(&out)?;
+      let opq: Vec<bool> = self
+        .area
+        .iter()
+        .enumerate()
+        .map(|(j, &t)| {
+          self.up.opaq[ix(t)] || (in_f[j] && self.opaque_under(&b, t))
+        })
+        .collect();
+      self.memo_key(&opq, &in_f, &out, g).0
     };
     if let Some(tb) = self.memo.get(&key) {
       self.memo_hits += 1;
       return Ok(tb.clone());
     }
-    let (phi0, work) = self.phi(&|t| in_set.contains(&t), in_all)?;
+    let (phi0, work) = self.phi(&in_f, in_all)?;
     Self::charge(meter, work.saturating_add(len64(self.area.len())))?;
     let tb = self.node(
       meter,
@@ -1178,19 +1225,16 @@ impl SCtx<'_, '_> {
     und: &[TermId],
     mut tb: CTable,
   ) -> Result<CTable, SharingError> {
-    let out_set: FxHashSet<TermId> = out_all.iter().copied().collect();
-    let cand = self.cand;
-    let ms = |t: TermId| cand[ix(t)] && !out_set.contains(&t);
+    let out = self.flags(&out_all);
     // Reclassify.
     let (gains, opaque_in) = {
-      let b = self.rebound(&ms)?;
-      let vis = self.revisible(&ms);
+      let b = self.rebound(&out)?;
+      let vis = self.revisible(&out);
       let mut gains: Vec<(TermId, i128)> = Vec::with_capacity(und.len());
       for &t in und {
-        let (d, h) = vis
-          .get(&t)
-          .copied()
-          .unwrap_or((self.vis0.0[ix(t)], self.vis0.1[ix(t)]));
+        let (d, h) = self
+          .at(t)
+          .map_or((self.vis0.0[ix(t)], self.vis0.1[ix(t)]), |j| vis[j]);
         let v = b.get(t);
         let gt = stored_gain(
           &self.up.nodes[ix(t)],
@@ -1205,14 +1249,16 @@ impl SCtx<'_, '_> {
       }
       // Opacity of every decided-stored member under these bounds (the
       // forced members included), for the split below.
-      let mut opaque_in: FxHashSet<TermId> = FxHashSet::default();
+      let mut opaque_in = vec![false; self.area.len()];
       for &t in in_ctx
         .iter()
         .chain(&local_in)
         .chain(gains.iter().filter(|(_, g)| *g >= self.theta).map(|(t, _)| t))
       {
-        if self.opaque_under(&b, t) {
-          opaque_in.insert(t);
+        if self.opaque_under(&b, t)
+          && let Some(j) = self.at(t)
+        {
+          opaque_in[j] = true;
         }
       }
       (gains, opaque_in)
@@ -1228,11 +1274,13 @@ impl SCtx<'_, '_> {
       gains.into_iter().filter(|(_, g)| *g < self.theta).collect();
     let und: Vec<TermId> = open.iter().map(|(t, _)| *t).collect();
     let in_all: Vec<TermId> = in_ctx.iter().chain(&local_in).copied().collect();
-    let in_set: FxHashSet<TermId> = in_all.iter().copied().collect();
-    let und_set: FxHashSet<TermId> = und.iter().copied().collect();
+    let in_f = self.flags(&in_all);
     // Lower bound: every undecided member available, its entry free.
-    let (phi, work) =
-      self.phi(&|t| in_set.contains(&t) || und_set.contains(&t), &in_all)?;
+    let mut in_und = self.flags(&und);
+    for (a, &b) in in_und.iter_mut().zip(&in_f) {
+      *a |= b;
+    }
+    let (phi, work) = self.phi(&in_und, &in_all)?;
     Self::charge(meter, work.saturating_add(2 * len64(self.area.len())))?;
     let delta = to_i(phi)? - to_i(phi0)?;
     if und.is_empty() {
@@ -1245,22 +1293,27 @@ impl SCtx<'_, '_> {
       return Ok(tb);
     }
     // Split into independent groups.
-    let opq = |t: TermId| {
-      self.up.opaq[ix(t)] || (in_set.contains(&t) && opaque_in.contains(&t))
-    };
-    let avail_fixed = |t: TermId| in_set.contains(&t) && !opq(t);
+    let opq: Vec<bool> = self
+      .area
+      .iter()
+      .enumerate()
+      .map(|(j, &t)| self.up.opaq[ix(t)] || (in_f[j] && opaque_in[j]))
+      .collect();
+    let avail_fixed: Vec<bool> =
+      in_f.iter().zip(&opq).map(|(&i, &o)| i && !o).collect();
     let groups = self.groups(&opq, &avail_fixed, &und);
     let route = if groups.len() > 1 {
       true
     } else if groups.len() == 1 {
-      let (_, rel) = self.memo_key(&opq, &in_set, &out_set, &groups[0]);
-      local_in.iter().any(|t| !rel.contains(t))
-        || out_all[n_out_ctx..].iter().any(|t| !rel.contains(t))
+      let (_, rel) = self.memo_key(&opq, &in_f, &out, &groups[0]);
+      let related = |t: &TermId| self.at(*t).is_some_and(|j| rel[j]);
+      local_in.iter().any(|t| !related(t))
+        || out_all[n_out_ctx..].iter().any(|t| !related(t))
     } else {
       false
     };
     if route {
-      let (phi_none, work) = self.phi(&|t| in_set.contains(&t), &in_all)?;
+      let (phi_none, work) = self.phi(&in_f, &in_all)?;
       Self::charge(meter, work)?;
       let base = to_i(phi_none)? - to_i(phi0)?;
       let mut comb: CTable = vec![Some((base, local_in.clone()))];
@@ -1538,15 +1591,15 @@ pub(crate) fn optimize_uniform_with(
   let slack = i128::from(tag0_len(k_cs.saturating_add(k_unc)))
     - i128::from(tag0_len(k_cs));
   // Search each component (independent searches; see `Parallelism`).
-  let search_one = |members: &Vec<TermId>,
-                    meter: &mut Meter<'_>|
+  let search_area = |members: &Vec<TermId>,
+                     area: Vec<TermId>,
+                     meter: &mut Meter<'_>,
+                     pos: &[u32]|
    -> Result<(Choice, CTable), SharingError> {
-    let area = component_area(&up, &facts, members);
-    let area_set: FxHashSet<TermId> = area.iter().copied().collect();
     let mut mult: std::collections::BTreeMap<TermId, u128> =
       std::collections::BTreeMap::new();
     for &r in dag.roots() {
-      if area_set.contains(&r) {
+      if pos[ix(r)] != NO_POS {
         *mult.entry(r).or_default() += 1;
       }
     }
@@ -1572,11 +1625,15 @@ pub(crate) fn optimize_uniform_with(
       cx.phi0 = phi0;
       return cx.search(meter);
     }
-    let area_idx: FxHashMap<TermId, usize> =
-      area.iter().enumerate().map(|(j, &t)| (t, j)).collect();
-    let member_idx: FxHashMap<TermId, usize> =
-      members.iter().enumerate().map(|(j, &t)| (t, j)).collect();
-    let in_edges: Vec<Vec<(TermId, u64, u64)>> = area
+    let mut member_of: Vec<u32> = vec![NO_POS; area.len()];
+    for (m, &t) in members.iter().enumerate() {
+      if let Some(j) =
+        usize::try_from(pos[ix(t)]).ok().filter(|&j| j < area.len())
+      {
+        member_of[j] = u32::try_from(m).unwrap_or(NO_POS);
+      }
+    }
+    let in_edges: Vec<Vec<(TermId, u32, u64, u64)>> = area
       .iter()
       .map(|&y| {
         facts.parents[ix(y)]
@@ -1592,7 +1649,7 @@ pub(crate) fn optimize_uniform_with(
                 }
               }
             }
-            (q, ma, mh)
+            (q, pos[ix(q)], ma, mh)
           })
           .collect()
       })
@@ -1606,18 +1663,19 @@ pub(crate) fn optimize_uniform_with(
           .map_or(0, |(_, m)| u64::try_from(*m).unwrap_or(u64::MAX))
       })
       .collect();
+    let area_len = area.len();
     let mut cx = SCtx {
       up: &up,
-      facts: &facts,
+      facts,
       cand: &cand,
       b0: &bounds,
       vis0: &vis0,
-      spine_len: &spine_len,
+      spine_len,
       dag_size: len64(n),
       members: members.clone(),
-      member_idx,
+      member_of,
       area,
-      area_idx,
+      pos,
       in_edges,
       root_occ,
       root_mult,
@@ -1626,9 +1684,7 @@ pub(crate) fn optimize_uniform_with(
       theta,
       memo: FxHashMap::default(),
       memo_hits: 0,
-      vals: vec![UVal::default(); n],
-      stamp: vec![0; n],
-      epoch: 0,
+      vals: vec![UVal::default(); area_len],
     };
     let tb = cx.solve(meter, members, &[], &[])?;
     let bd = table_best(&tb)
@@ -1644,13 +1700,31 @@ pub(crate) fn optimize_uniform_with(
       .ok_or_else(|| internal("component search found no choice"))?;
     Ok(((bd, bs), tb))
   };
+  // `pos` maps every term to its position in the component's area
+  // (`NO_POS` outside it); it is set for the area of each component and
+  // cleared afterwards, so one buffer serves every component.
+  let search_one = |members: &Vec<TermId>,
+                    meter: &mut Meter<'_>,
+                    pos: &mut [u32]|
+   -> Result<(Choice, CTable), SharingError> {
+    let area = component_area(&up, facts, members);
+    for (j, &t) in area.iter().enumerate() {
+      pos[ix(t)] = u32::try_from(j).unwrap_or(NO_POS);
+    }
+    let res = search_area(members, area.clone(), meter, pos);
+    for &t in &area {
+      pos[ix(t)] = NO_POS;
+    }
+    res
+  };
   drop(p);
   let p = prof::scope(Phase::Search);
   let budget = meter.parallel.components;
   let mut results: Vec<(Choice, CTable)> = Vec::with_capacity(comps.len());
   if budget <= 1 {
+    let mut pos = vec![NO_POS; n];
     for members in &comps {
-      results.push(search_one(members, meter)?);
+      results.push(search_one(members, meter, &mut pos)?);
     }
   } else {
     // Each component on its own meter; the counts are added in component
@@ -1658,9 +1732,10 @@ pub(crate) fn optimize_uniform_with(
     // same order as sequentially.
     let limits = meter.limits();
     let outs = super::par::map_ranges(comps.len(), budget, |r| {
+      let mut pos = vec![NO_POS; n];
       r.map(|j| {
         let mut m = Meter::new(limits);
-        let res = search_one(&comps[j], &mut m);
+        let res = search_one(&comps[j], &mut m, &mut pos);
         (res, m.stats)
       })
       .collect()
