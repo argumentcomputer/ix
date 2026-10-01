@@ -79,38 +79,6 @@ private def nativeCall (idx : Nat) (mode : RustExpr) (input hash : RustExpr) : R
 
 /-! ## Operation emission -/
 
-/-- How many ValIdx slots an Op consumes (i.e. how much it grows
-    Aiur's value-stack). MUST match `execute.rs`'s `map.push` /
-    `map.extend` totals exactly per arm — else local-variable names
-    drift from the bytecode's expected ValIdx layout and subsequent
-    ops index the wrong values. -/
-def Op.outputCount : Op → Nat
-  | .const _ => 1
-  | .add _ _ | .sub _ _ | .mul _ _ | .eqZero _ => 1
-  | .call _ _ outSize _ => outSize
-  | .store _ => 1
-  | .load size _ => size
-  | .assertEq _ _ _ => 0
-  | .ioGetInfo _ _ => 2
-  | .ioSetInfo _ _ _ _ => 0
-  | .ioRead _ _ len => len
-  | .ioWrite _ _ => 0
-  | .u8BitDecomposition _ => 8
-  | .u8ShiftLeft _ | .u8ShiftRight _ => 1
-  | .u8Xor _ _ | .u8And _ _ | .u8Or _ _ | .u8LessThan _ _ => 1
-  | .u8Mul _ _ => 2
-  | .u8Add _ _ | .u8Sub _ _ => 2
-  | .u8XorSplit7 _ _ | .u8XorSplit4 _ _ => 2
-  | .u32LessThan _ _ => 1
-  | .u8RangeCheck _ _ => 0
-  | .unconstrainedBigUintDivMod _ _ => 2
-  | .unconstrainedGToBytes _ => 8
-  | .unconstrainedGInverse _ => 1
-  | .unconstrainedU32Add _ _ | .unconstrainedU32Add3 _ _ _ => 5
-  | .u32ToField _ => 1
-  | .debug _ _ => 0
-
-
 private def emitConst (out : Nat) (c : Aiur.G) : Array RustStmt :=
   #[declVal out (gFromU64 c.n)]
 
@@ -145,11 +113,22 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
     pat := .wildcard
     body := tailBlock (nativeCall callee mode (.var "__args") (.var "__hash"))
   }
+  let lookup : RustBlock := {
+    stmts := #[lookupKey queries (.var "__args")]
+    tail := some (.matchExpr (.var "__hit") #[hit, miss])
+  }
+  -- A constrained call another record answers is deferred: the caller's row
+  -- pushes it and nothing runs (mirrors execute.rs `Op::Call`). Only a callee
+  -- without outputs is ever deferrable, so the zero array is its whole result.
+  let body : RustExpr := if opUn then .block lookup else
+    .ifExpr (.binop .and notUnconstrained
+        (.tryExpr (method (.var "record") "defer_call" #[.nat callee, sliceRef (.var "__args")])))
+      (tailBlock (.arrayRepeat gZero (.named s!"OUT_{callee}")))
+      lookup
   let rhs := blockValue #[
     .letStmt false "__args" (some (inputTy callee)) (argsAsArray args),
-    .letStmt false "__cu" none (if opUn then .bool true else .var "unconstrained"),
-    lookupKey queries (.var "__args")
-  ] (.matchExpr (.var "__hit") #[hit, miss])
+    .letStmt false "__cu" none (if opUn then .bool true else .var "unconstrained")
+  ] body
   #[.letStmt false "__r_arr" (some (outputTy callee)) rhs] ++
     splatArray out outSize "__r_arr"
 
@@ -176,11 +155,16 @@ private def emitStore (out : Nat) (values : Array ValIdx)
   let miss : MatchArm := {
     pat := .wildcard
     body := {
+      -- Pointers are offset by the record's base so that the tables of a
+      -- batch of records never hand out the same address twice.
       stmts := #[
-        .letStmt false "__ptr" none (gFromUsize (method table "len")),
-        .exprStmt (method table "insert_hashed" #[
+        .exprStmt (.tryExpr (runtimeCall "check_store"
+          #[.ref (.field (.var "record") "budget"), table, .nat values.size])),
+        .letStmt false "__ptr" none (gFromUsize
+          (.binop .add (.field (.var "record") "pointer_base") (method table "len"))),
+        .exprStmt (.tryExpr (method table "insert_hashed" #[
           sliceRef (.var "__values"), .ref (.arrayLit #[.var "__ptr"]),
-          gFromBool notUnconstrained, .var "__hash"])
+          gFromBool notUnconstrained, .var "__hash"]))
       ]
       tail := some (.var "__ptr")
     }
@@ -194,16 +178,21 @@ private def emitStore (out : Nat) (values : Array ValIdx)
 private def emitLoad (out size : Nat) (ptr : ValIdx)
     (memorySizes : Array Nat) : Array RustStmt :=
   let table : RustExpr := .var "__mq"
+  -- The table index is the pointer less the record's base (see `emitStore`).
+  let index : RustExpr := .tryExpr (method (method (method
+      (checkedCast "usize" (.var "__ptr_u64") "PointerTooLarge")
+      "checked_sub" #[.var "__base"])
+      "filter" #[.closure #[.binding "__i"] (.binop .lt (.deref (.var "__i")) (method table "len"))])
+      "ok_or" #[.structLit #["ExecError", "UnboundPointer"]
+        #[("ptr", .var "__ptr_u64"), ("size", .nat size)]])
   let rhs := blockValue #[
+    .letStmt false "__base" none (.field (.var "record") "pointer_base"),
     .letStmt false "__mq" none (memoryQuery memorySizes size),
     .letStmt false "__ptr_u64" none (canonical (valVar ptr)),
-    .letStmt false "__ptr_usize" none (checkedCast "usize" (.var "__ptr_u64") "PointerTooLarge"),
-    .ifStmt (.binop .ge (.var "__ptr_usize") (method table "len"))
-      #[returnError (.structLit #["ExecError", "UnboundPointer"]
-        #[("ptr", .var "__ptr_u64"), ("size", .nat size)])] none,
-    whenConstrained #[bumpMultiplicity table (.var "__ptr_usize")],
+    .letStmt false "__idx" none index,
+    whenConstrained #[bumpMultiplicity table (.var "__idx")],
     .letPattern (.tuple #[.binding "__args", .wildcard]) none
-      (expect (method table "get_index" #[.var "__ptr_usize"]) "bounds checked above"),
+      (expect (method table "get_index" #[.var "__idx"]) "bounds checked above"),
     .letStmt false "__arr" (some (gArray size)) (fixedArray (.var "__args") size)
   ] (.var "__arr")
   #[.letStmt false "__loaded" (some (gArray size)) rhs] ++ splatArray out size "__loaded"
@@ -491,8 +480,8 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     let outArr : RustStmt :=
       .letStmt false "__ret" (some (outputTy funIdx))
         (.arrayLit (outs.map valVar))
-    let insertCall : RustStmt := .exprStmt (method (funQueriesAt funIdx) "finish_hashed"
-      #[sliceRef (.var "inp"), sliceRef (.var "__ret"), notUnconstrained, .var "input_hash"])
+    let insertCall : RustStmt := .exprStmt (.tryExpr (method (funQueriesAt funIdx) "finish_hashed"
+      #[sliceRef (.var "inp"), sliceRef (.var "__ret"), notUnconstrained, .var "input_hash"]))
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]
@@ -583,8 +572,13 @@ def emitFunction (funIdx : FunIdx) (f : Function)
     declVal i (.index (.var "inp") (.nat i))
   let initState : EmitState := { nextVal := inSize, nextLabel := 0, memorySizes }
   let (stmts, _) := (emitBlock funIdx none f.body).run initState
+  -- The entry check propagates cancellation even through calls that allocate
+  -- no new query rows.
+  let entryCheck : RustStmt := .exprStmt (.tryExpr (runtimeCall "check_record_cap"
+    #[.ref (.field (.var "record") "budget")]))
   let body : RustBlock := {
-    stmts := #[.letStmt false "unconstrained" none (.var "UNCONSTRAINED")] ++ bindInputs ++ stmts
+    stmts := #[.letStmt false "unconstrained" none (.var "UNCONSTRAINED"), entryCheck] ++
+      bindInputs ++ stmts
   }
   -- Preserve stack growth at every function entry: 64 KiB red zone, 4 MiB segment.
   let guarded := .call (.path #["stacker", "maybe_grow"]) #[

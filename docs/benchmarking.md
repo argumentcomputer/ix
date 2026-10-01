@@ -232,10 +232,15 @@ BENCH_CONSTS=Nat.gcd,…         # bench exactly these constants on the
                                # found automatically)
 BENCH_PHASES=1                 # add the per-constant phase drill-downs
                                # to the comment (off by default)
+BENCH_TRACE_SHARDS=<GiB>       # aiur prove: plan each constant's proof as
+                               # trace shards within this per-constant RAM
+                               # budget (0: detect) and report
+                               # `ixvm-trace-shards`; a base checkout
+                               # that predates the flag proves whole
 RUST_LOG=info                  # passthrough env (allowlist: BENCH_PHASES,
                                # RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS,
                                # IX_COMPILE_EAGER, IX_COMPILE_DEMOTE,
-                               # IX_COMPILE_WORKERS,
+                               # IX_COMPILE_WORKERS, BENCH_TRACE_SHARDS,
                                # IX_DECOMPILE_KENV_CLEAR_ENTRIES)
 IX_DECOMPILE_KENV_CLEAR_ENTRIES=0
                                # decompile Pass 2 cache limit; 0 disables
@@ -281,7 +286,8 @@ run step while the clean rows still upload.
 
 **Dashboard plots**: `ix bench plots` pins one plot per (workload, measure)
 to <https://bencher.dev/console/projects/ix/plots> — main-branch trend
-lines on the native r8i testbed, one per benchmark row the cell uploads,
+lines on the historical Warp and native r8i testbeds, with a separate line
+per benchmark row and testbed so hardware changes preserve the visible history,
 plus the cross-kernel input-constants overlay. Registry-derived like the job matrices (titles,
 ordering, and skips live in `Ix/Cli/BenchPlots.lean`), so rerun the sync
 after changing the registry or the constant set — either locally

@@ -38,14 +38,15 @@ fn grouped_record(top: &Toplevel) -> QueryRecord {
       // An advice-only entry in the middle must not shift query indices
       // or selectors of the surrounding active rows.
       let mult = G::from_bool(i != 2 || row != 1);
-      record.function_queries[i].insert(&[value], &[value], mult);
+      record.function_queries[i].insert(&[value], &[value], mult).unwrap();
     }
   }
-  record.memory_queries.get_mut(&1).unwrap().insert(
-    &[G::ONE],
-    &[G::ZERO],
-    G::ONE,
-  );
+  record
+    .memory_queries
+    .get_mut(&1)
+    .unwrap()
+    .insert(&[G::ONE], &[G::ZERO], G::ONE)
+    .unwrap();
   record
 }
 

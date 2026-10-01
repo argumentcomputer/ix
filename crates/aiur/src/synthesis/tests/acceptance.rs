@@ -158,9 +158,18 @@ fn inactive_return_cannot_supply_claim() {
     })
     .collect();
   let witness = SystemWitness::from_stage_1(traces, &system.system);
-  let proof = system.system.prove(&system.key, &claim, witness);
+  let proof = system.prove_witness(&claim, witness);
+  // The shard's own constraints reject the row; the rejection does not
+  // rest on the rest of the batch failing to balance it.
   assert!(
-    system.verify(&claim, &proof).is_err(),
+    matches!(
+      system.verify_shard(&proof, 0),
+      Err(VerificationError::OodEvaluationMismatch)
+    ),
     "an inactive function row supplied an incorrect public result"
   );
+  assert!(matches!(
+    system.verify(&claim, &proof),
+    Err(AiurVerificationError::Stark(VerificationError::OodEvaluationMismatch))
+  ));
 }

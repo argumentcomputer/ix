@@ -59,6 +59,7 @@ inductive RustExpr where
   | range (start stop : Option RustExpr)
   | macroCall (name : String) (args : Array RustExpr)
   | arrayLit (elems : Array RustExpr)
+  | arrayRepeat (elem : RustExpr) (size : RustSize)
   | tuple (elems : Array RustExpr)
   | structLit (path : Array String) (fields : Array (String × RustExpr))
   | block (body : RustBlock)
@@ -183,6 +184,7 @@ partial def RustExpr.toStr : RustExpr → String
       (b.map (·.toStr) |>.getD "")
   | .macroCall n xs => n ++ "!(" ++ commaSep (xs.map (·.toStr)) ++ ")"
   | .arrayLit xs => "[" ++ commaSep (xs.map (·.toStr)) ++ "]"
+  | .arrayRepeat e n => "[" ++ e.toStr ++ "; " ++ n.toStr ++ "]"
   | .tuple xs => tupleText (xs.map (·.toStr))
   | .structLit p fs => "::".intercalate p.toList ++ " { " ++
       commaSep (fs.map fun (n, e) => n ++ ": " ++ e.toStr) ++ " }"

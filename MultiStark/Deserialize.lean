@@ -469,6 +469,92 @@ def deserialize := ⟦
               opening_proof, quotient_opened_values, preprocessed_opened_values,
               stage_1_opened_values, stage_2_opened_values), j7)
   }
+
+  -- ==========================================================================
+  -- `multi_stark::batch`: a vector of shard proofs under one preamble. The
+  -- preamble (headers, then messages) precedes the proofs on the wire.
+  -- ==========================================================================
+
+  -- `ShardHeader`: activation bitmap, stage-1 commitment, log degrees, and
+  -- the shard's claims (`Vec<Vec<Val>>`, raw limbs).
+  enum ShardHeader {
+    Mk(List‹G›, MerkleCap, List‹U8›, List‹List‹U64››)
+  }
+
+  -- `BatchMessage`: lookup arguments and a signed multiplicity, both raw
+  -- `Val` limbs.
+  enum BatchMessage {
+    Mk(List‹U64›, U64)
+  }
+
+  -- `BatchProof`: the headers and messages of the preamble, then one proof
+  -- per header.
+  enum Batch {
+    Mk(List‹ShardHeader›, List‹BatchMessage›, List‹Proof›)
+  }
+
+  fn read_header(i: G) -> (ShardHeader, G) {
+    let (active, j0) = @read_active(i);
+    let (stage_1, j1) = @read_merkle_cap_at(j0);
+    let (log_degrees, j2) = @read_u8_vec(j1);
+    let (claims, j3) = @read_u64_vec_vec(j2);
+    (ShardHeader.Mk(active, stage_1, log_degrees, claims), j3)
+  }
+  fn read_header_vec(i: G) -> (List‹ShardHeader›, G) {
+    let (n, j) = read_count_at(i);
+    read_header_vec_n(j, n)
+  }
+  fn read_header_vec_n(i: G, n: G) -> (List‹ShardHeader›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = @read_header(i);
+        let (rest, j2) = read_header_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  fn read_message(i: G) -> (BatchMessage, G) {
+    let (args, j0) = read_u64_vec(i);
+    let (multiplicity, j1) = #read_u64_at(j0);
+    (BatchMessage.Mk(args, multiplicity), j1)
+  }
+  fn read_message_vec(i: G) -> (List‹BatchMessage›, G) {
+    let (n, j) = read_count_at(i);
+    read_message_vec_n(j, n)
+  }
+  fn read_message_vec_n(i: G, n: G) -> (List‹BatchMessage›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = @read_message(i);
+        let (rest, j2) = read_message_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  fn read_proof_vec(i: G) -> (List‹Proof›, G) {
+    let (n, j) = read_count_at(i);
+    read_proof_vec_n(j, n)
+  }
+  fn read_proof_vec_n(i: G, n: G) -> (List‹Proof›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = read_proof(i);
+        let (rest, j2) = read_proof_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  -- Full `BatchProof` from the channel-0 IO arena at byte offset `i`; returns
+  -- the end offset, which the caller asserts equals the stream end.
+  fn read_batch(i: G) -> (Batch, G) {
+    let (headers, j0) = @read_header_vec(i);
+    let (messages, j1) = @read_message_vec(j0);
+    let (proofs, j2) = @read_proof_vec(j1);
+    (Batch.Mk(headers, messages, proofs), j2)
+  }
 ⟧
 
 end MultiStark

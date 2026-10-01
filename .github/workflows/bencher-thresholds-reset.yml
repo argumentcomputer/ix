@@ -30,10 +30,10 @@ name: Bencher thresholds reset
 #   - workflow_dispatch: reset the chosen workload at a given commit (default
 #     HEAD); does not read PR contents. For ad-hoc or bootstrap resets.
 #
-# pull_request_target / issue_comment both run in the base-repo context with a
-# write token (works for fork PRs too). Safe here because the jobs run no
-# PR-provided code — only `gh` calls against the trusted event payload, with the
-# comment body used purely as data (never evaluated).
+# `pull_request` rather than `pull_request_target`: same-repo PRs already get
+# a write-capable token on merge, and fork PRs are not supported (bench-pr.yml
+# refuses them too). The jobs run no PR-provided code — only `gh` calls against
+# the event payload, with the comment body used purely as data.
 on:
   workflow_dispatch:
     inputs:
@@ -48,7 +48,7 @@ on:
       sha:
         description: "Commit to anchor to (default: HEAD)"
         required: false
-  pull_request_target:
+  pull_request:
     types: [closed]
   issue_comment:
     types: [created]
@@ -112,7 +112,7 @@ jobs:
           [ -z "$done_list" ] && { echo "Nothing to reset."; exit 0; }
 
           # Confirm on the PR for the merge-triggered path.
-          [ "$EVENT" = pull_request_target ] && gh pr comment "$PR" --repo "$REPO" \
+          [ "$EVENT" = pull_request ] && gh pr comment "$PR" --repo "$REPO" \
             --body "♻️ Baseline reset to \`${sha:0:7}\` for:$done_list"
           true
 

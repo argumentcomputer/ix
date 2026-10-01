@@ -1,6 +1,9 @@
 use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
-use crate::G;
+use crate::{
+  G,
+  execute::{ExecError, RecordBudget},
+};
 
 /// Immutable view of one query entry.
 #[derive(Clone, Copy)]
@@ -254,10 +257,16 @@ pub struct QueryMap {
   mults: SegStore,
   hashes: SegU64s,
   table: hashbrown::HashTable<u32>,
+  // Fields drop in declaration order; release the charge after storage.
+  budget: RecordBudget,
 }
 
 impl QueryMap {
   pub fn new(key_stride: usize) -> Self {
+    Self::with_budget(key_stride, RecordBudget::default())
+  }
+
+  pub(crate) fn with_budget(key_stride: usize, budget: RecordBudget) -> Self {
     Self {
       out_stride_set: false,
       keys: SegStore::new(key_stride),
@@ -265,6 +274,7 @@ impl QueryMap {
       mults: SegStore::new(1),
       hashes: SegU64s::new(),
       table: hashbrown::HashTable::new(),
+      budget,
     }
   }
 
@@ -341,8 +351,13 @@ impl QueryMap {
 
   /// Register a function query at `Ctrl::Return`: insert on first
   /// registration and bump on constrained promotion of a cached hint row.
-  pub fn finish(&mut self, key: &[G], output: &[G], constrained: bool) {
-    self.finish_hashed(key, output, constrained, hash_g_slice(key));
+  pub fn finish(
+    &mut self,
+    key: &[G],
+    output: &[G],
+    constrained: bool,
+  ) -> Result<(), ExecError> {
+    self.finish_hashed(key, output, constrained, hash_g_slice(key))
   }
 
   /// Register using a hash previously obtained from `lookup` or
@@ -354,7 +369,7 @@ impl QueryMap {
     output: &[G],
     constrained: bool,
     hash: u64,
-  ) {
+  ) -> Result<(), ExecError> {
     debug_assert_eq!(hash, hash_g_slice(key));
     if let Some(i) = self.get_index_of_hashed(key, hash) {
       // The only ordinary way to execute an already cached function is
@@ -364,15 +379,21 @@ impl QueryMap {
         self.bump_multiplicity(i);
       }
     } else {
-      self.insert_hashed(key, output, G::from_bool(constrained), hash);
+      self.insert_hashed(key, output, G::from_bool(constrained), hash)?;
     }
+    Ok(())
   }
 
   /// Append a new entry. The key must not already be present: call sites
   /// only insert on a confirmed miss, and a same-key re-entrant call
   /// would loop forever before reaching its own insert.
-  pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
-    self.insert_hashed(key, output, multiplicity, hash_g_slice(key));
+  pub fn insert(
+    &mut self,
+    key: &[G],
+    output: &[G],
+    multiplicity: G,
+  ) -> Result<(), ExecError> {
+    self.insert_hashed(key, output, multiplicity, hash_g_slice(key))
   }
 
   /// Append on a confirmed miss using the hash of this exact key. As with
@@ -384,10 +405,11 @@ impl QueryMap {
     output: &[G],
     multiplicity: G,
     hash: u64,
-  ) {
+  ) -> Result<(), ExecError> {
     debug_assert_eq!(key.len(), self.keys.stride);
     debug_assert_eq!(hash, hash_g_slice(key));
     debug_assert!(self.get_index_of_hashed(key, hash).is_none());
+    crate::execute::note_retained(key.len() + output.len(), &self.budget)?;
     if !self.out_stride_set {
       self.outs.stride = output.len();
       self.out_stride_set = true;
@@ -401,6 +423,7 @@ impl QueryMap {
     self.hashes.push(hash);
     let hashes = &self.hashes;
     self.table.insert_unique(hash, i, |&j| hashes.at(j as usize));
+    Ok(())
   }
 
   /// Entry at insertion index `i`: the key slice plus a mutable handle on

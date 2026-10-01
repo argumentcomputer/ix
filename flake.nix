@@ -117,24 +117,54 @@
               ./Tests/Fixtures/ixon-v4
             ];
           };
-          craneArgs = {
-            inherit src;
-            pname = "ix";
-            version = "0.1.0";
-            strictDeps = true;
+          # Rust code generation for the sandboxed builds. `.cargo/config.toml`
+          # selects `-Ctarget-cpu=native`, and crane keeps that file in the
+          # source, so without an override every Rust derivation is compiled
+          # for whichever host builds it while sharing one store path: Cachix
+          # then hands Intel-native binaries to AMD hosts and vice versa.
+          # Default to the x86-64-v4 baseline setup-rust-toolchain's `portable`
+          # mode uses, so CI caches one portable set. For a build tuned to the
+          # local machine (the dev shell's cargo already is, via the config
+          # file):
+          #
+          #   IX_RUST_CODEGEN=native nix build --impure
+          #
+          # The flag string is part of the derivation, so a native build has
+          # its own store path and is never substituted from Cachix. Pure
+          # evaluation sees an empty variable and takes the default.
+          rustCodegen =
+            let
+              requested = builtins.getEnv "IX_RUST_CODEGEN";
+            in
+            if requested == "native" then
+              "-Ctarget-cpu=native"
+            else if requested == "" || requested == "portable" then
+              "-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni"
+            else
+              throw "IX_RUST_CODEGEN must be `portable` or `native`, got `${requested}`";
+          craneArgs =
+            pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
+              # Environment form of the `build.rustflags` key the config file sets
+              CARGO_BUILD_RUSTFLAGS = rustCodegen;
+            }
+            // {
+              inherit src;
+              pname = "ix";
+              version = "0.1.0";
+              strictDeps = true;
 
-            # build.rs uses LEAN_SYSROOT to locate lean/lean.h for bindgen
-            LEAN_SYSROOT = "${lean}";
-            # bindgen needs libclang to parse C headers
-            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+              # build.rs uses LEAN_SYSROOT to locate lean/lean.h for bindgen
+              LEAN_SYSROOT = "${lean}";
+              # bindgen needs libclang to parse C headers
+              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
 
-            buildInputs =
-              [ ]
-              ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-                # Additional darwin specific inputs can be set here
-                pkgs.libiconv
-              ];
-          };
+              buildInputs =
+                [ ]
+                ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+                  # Additional darwin specific inputs can be set here
+                  pkgs.libiconv
+                ];
+            };
           # Build dependencies once with every host feature enabled so the
           # `net` stack (tokio/iroh) is compiled and cached here, then shared
           # by the package builds and clippy. CUDA remains opt-in and is

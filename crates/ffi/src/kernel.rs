@@ -2275,7 +2275,7 @@ fn profile_block_size(env: &IxonEnv, block: &Address) -> u32 {
 ///   granularity, deduped, self-edges dropped. These are exactly the
 ///   edges that generate a shard's thin frontier, i.e. its ingress.
 #[allow(clippy::cast_possible_truncation)] // block sizes clamped to u32::MAX
-fn static_block_profile(env: &IxonEnv) -> BlockProfile {
+pub(crate) fn static_block_profile(env: &IxonEnv) -> BlockProfile {
   use rayon::prelude::*;
   let addrs: Vec<Address> =
     env.consts.iter().map(|e| e.key().clone()).collect();
@@ -2340,32 +2340,105 @@ fn static_block_profile(env: &IxonEnv) -> BlockProfile {
   builder.finish()
 }
 
+/// The blocks each block of `profile` references, by block id — every
+/// constant's `refs` mapped to their home blocks, the edges a byte scope
+/// (`Env::bfs_closure`) follows between blocks; projections reference
+/// their own block and a block its wrappers, so those edges never leave a
+/// block — and the blocks of the primitives the environment carries, which
+/// every byte scope also starts from. A superset of the profile's walk
+/// edges, which follow only the references a constant's body uses.
+fn static_block_dependencies(
+  env: &IxonEnv,
+  profile: &BlockProfile,
+) -> (Vec<Vec<u32>>, Vec<u32>) {
+  use ix_common::prim_addrs::PrimAddrs;
+  use rayon::prelude::*;
+  let id_of: FxHashMap<&Address, u32> = profile
+    .blocks()
+    .iter()
+    .enumerate()
+    .map(|(i, b)| (&b.addr, u32::try_from(i).expect("block ids are u32")))
+    .collect();
+  let addrs: Vec<Address> =
+    env.consts.iter().map(|e| e.key().clone()).collect();
+  let rows: Vec<(Address, Address, Vec<Address>)> = addrs
+    .par_iter()
+    .filter_map(|addr| {
+      let c = env.get_const(addr)?;
+      let home = match &c.info {
+        IxonCI::IPrj(p) => p.block.clone(),
+        IxonCI::CPrj(p) => p.block.clone(),
+        IxonCI::RPrj(p) => p.block.clone(),
+        IxonCI::DPrj(p) => p.block.clone(),
+        _ => addr.clone(),
+      };
+      Some((addr.clone(), home, c.refs.clone()))
+    })
+    .collect();
+  // Every constant's block id, projections included; a blob has none.
+  let block_of: FxHashMap<&Address, u32> = rows
+    .iter()
+    .filter_map(|(addr, home, _)| id_of.get(home).map(|&id| (addr, id)))
+    .collect();
+  let mut depends: Vec<Vec<u32>> = vec![Vec::new(); profile.num_blocks()];
+  for (addr, _, refs) in &rows {
+    let Some(&consumer) = block_of.get(addr) else { continue };
+    for r in refs {
+      if let Some(&producer) = block_of.get(r)
+        && producer != consumer
+      {
+        depends[consumer as usize].push(producer);
+      }
+    }
+  }
+  for d in &mut depends {
+    d.sort_unstable();
+    d.dedup();
+  }
+  let mut primitives: Vec<u32> = PrimAddrs::lean_parity_table()
+    .iter()
+    .filter_map(|(_, hex)| Address::from_hex(hex))
+    .chain(PrimAddrs::reserved_marker_addrs().iter().map(|(_, a)| a.clone()))
+    .filter_map(|a| block_of.get(&a).copied())
+    .collect();
+  primitives.sort_unstable();
+  primitives.dedup();
+  (depends, primitives)
+}
+
 /// FFI: partition a `.ixe` with the STATIC strategy — no out-of-circuit
 /// profiling run. An explicit nonzero `num_shards` fixes the count. Otherwise,
 /// `ram_gib` seeds it from the static block-shape score after the profile is
 /// loaded ([`ix_kernel::shard::static_seed_shards`]). Builds the static block
-/// profile ([`static_block_profile`]), byte-balanced min-cut over the walk-edge
-/// nets, then the predicted-cost rebalance post-pass
-/// (`ix_kernel::shard::shard_static`). Writes a `.ixes` manifest.
+/// profile ([`static_block_profile`]), then either the byte-balanced min-cut
+/// over the walk-edge nets with the predicted-cost rebalance post-pass
+/// (`ix_kernel::shard::shard_static`, `layout` = `mincut`) or contiguous
+/// ranges of a dependency order (`ix_kernel::shard::shard_static_ordered`,
+/// `layout` = `ordered`). Writes a `.ixes` manifest.
 #[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_env_static(
   env_path: LeanString<LeanBorrowed<'_>>,
-  num_shards: LeanString<LeanBorrowed<'_>>,
-  ram_gib: LeanString<LeanBorrowed<'_>>,
-  balance_pct: LeanString<LeanBorrowed<'_>>,
+  requested_shards: usize,
+  ram_gib: u64,
+  balance_pct: u64,
+  layout: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
+  exec_ahead: usize,
 ) -> LeanIOResult<LeanOwned> {
   let path = env_path.to_string();
-  let requested_shards = num_shards.to_string().parse::<usize>().unwrap_or(0);
-  let ram_gib = ram_gib.to_string().parse::<u64>().unwrap_or(0);
+  let layout = layout.to_string();
+  if layout != "mincut" && layout != "ordered" {
+    return LeanIOResult::error_string(&format!(
+      "rs_shard_env_static: unknown layout `{layout}` (mincut or ordered)"
+    ));
+  }
   if requested_shards == 0 && ram_gib == 0 {
     return LeanIOResult::error_string(
       "rs_shard_env_static: pass a positive shard count or RAM budget",
     );
   }
-  let balance =
-    (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
+  let balance = (balance_pct as f64) / 100.0;
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
   let t0 = Instant::now();
@@ -2389,11 +2462,30 @@ pub extern "C" fn rs_shard_env_static(
   );
   let num_shards = if requested_shards > 0 {
     requested_shards
+  } else if cfg!(feature = "cuda") {
+    // The trace-shard prover: seed against one execution's record share,
+    // computed as `ix prove --exec-jobs` computes it.
+    let cells = crate::aiur::protocol::trace_shard_max_cells();
+    let budget = usize::try_from(ram_gib << 30).unwrap_or(usize::MAX);
+    let share =
+      crate::aiur::protocol::record_share(budget, cells, exec_ahead + 2);
+    let tenths =
+      u32::try_from(share.saturating_mul(10) >> 30).unwrap_or(u32::MAX);
+    let share_gib = f64::from(tenths) / 10.0;
+    let bytes = ix_kernel::shard::static_env_bytes(&profile);
+    let n = ix_kernel::shard::gpu_seed_shards(&profile, share_gib);
+    eprintln!(
+      "[shard] trace-shard seed (cuda build): bytes={bytes:.4e}; round({} x (bytes/{:.4e}) x ({} GiB / {share_gib:.1} GiB record share: {ram_gib} GiB per worker, {cells} cells, {exec_ahead} executions ahead)) -> {n} shard(s) (heuristic; the record cap names any shard over its share)",
+      ix_kernel::shard::GPU_SEED_REFERENCE_SHARDS,
+      ix_kernel::shard::GPU_SEED_REFERENCE_BYTES,
+      ix_kernel::shard::GPU_SEED_REFERENCE_SHARE_GIB,
+    );
+    n
   } else {
     let score = ix_kernel::shard::static_env_score(&profile);
     let n = ix_kernel::shard::static_seed_shards(&profile, ram_gib);
     eprintln!(
-      "[shard] static seed: score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{ram_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
+      "[shard] static seed (cpu prover model): score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{ram_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
       ix_kernel::shard::STATIC_SEED_REFERENCE_SHARDS,
       ix_kernel::shard::STATIC_SEED_REFERENCE_SCORE,
       ix_kernel::shard::STATIC_SEED_SCORE_EXPONENT,
@@ -2402,7 +2494,19 @@ pub extern "C" fn rs_shard_env_static(
     );
     n
   };
-  match ix_kernel::shard::shard_static(&profile, num_shards, balance, out_opt) {
+  let report = if layout == "ordered" {
+    let (depends, primitives) = static_block_dependencies(&env, &profile);
+    ix_kernel::shard::shard_static_ordered(
+      &profile,
+      &depends,
+      &primitives,
+      num_shards,
+      out_opt,
+    )
+  } else {
+    ix_kernel::shard::shard_static(&profile, num_shards, balance, out_opt)
+  };
+  match report {
     Ok(report) => {
       eprintln!("[rs_shard_static]\n{report}");
       LeanIOResult::ok(LeanOwned::box_usize(0))
@@ -2943,15 +3047,13 @@ pub extern "C" fn rs_kernel_profile_anon(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp(
   esp_path: LeanString<LeanBorrowed<'_>>,
-  num_shards: LeanString<LeanBorrowed<'_>>,
-  balance_pct: LeanString<LeanBorrowed<'_>>,
-  parallelism: LeanString<LeanBorrowed<'_>>,
+  num_shards: usize,
+  balance_pct: u64,
+  parallelism: usize,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1);
-  let balance_pct = balance_pct.to_string().parse::<u64>().unwrap_or(5);
-  let parallelism =
-    parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
+  let num_shards = num_shards.max(1);
+  let parallelism = parallelism.max(1);
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
   let balance = (balance_pct as f64) / 100.0;
@@ -2979,25 +3081,23 @@ fn system_ram_gib() -> Option<f64> {
 }
 
 /// FFI: partition a `.ixprof` to a per-shard cycle/RAM budget and write a
-/// `.ixes` manifest. `max_cycles` is a guest-STEP cap; if `ram_gb` > 0 it is
+/// `.ixes` manifest. `max_cycles` is a guest-STEP cap; if `ram_gib` > 0 it is
 /// converted via the measured prover RAM model and overrides `max_cycles`. Pass
-/// "0" for both to default the budget to detected system RAM.
+/// 0 for both to default the budget to detected system RAM.
 #[allow(clippy::cast_precision_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp_cap(
   esp_path: LeanString<LeanBorrowed<'_>>,
-  max_cycles: LeanString<LeanBorrowed<'_>>,
-  ram_gb: LeanString<LeanBorrowed<'_>>,
-  balance_pct: LeanString<LeanBorrowed<'_>>,
-  parallelism: LeanString<LeanBorrowed<'_>>,
+  max_cycles: u64,
+  ram_gib: u64,
+  balance_pct: u64,
+  parallelism: usize,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let mc = max_cycles.to_string().parse::<u64>().unwrap_or(0);
-  let mut ram = ram_gb.to_string().parse::<f64>().unwrap_or(0.0);
-  let parallelism =
-    parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
-  let balance =
-    (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
+  let mc = max_cycles;
+  let mut ram = ram_gib as f64;
+  let parallelism = parallelism.max(1);
+  let balance = (balance_pct as f64) / 100.0;
   // No explicit cap → default the RAM budget to detected system RAM.
   if mc == 0 && ram <= 0.0 {
     match system_ram_gib() {

@@ -179,7 +179,8 @@ fn consolidated_byte_proofs_verify_in_both_partitions_and_key_codec() {
       (8, 8, 2, 11, 65_536)
     );
     let bytes = crate::vk_codec::aiur_system_to_bytes(&system).unwrap();
-    let (decoded, _, _) = crate::vk_codec::from_bytes(&bytes).unwrap();
+    let decoded =
+      crate::vk_codec::AiurVerifyingKey::from_bytes(&bytes).unwrap();
     for member in 0..3 {
       for (a, b) in [(0xd3_u8, 0x69_u8), (0, 255)] {
         let input = [G::from_u8(a), G::from_u8(b)];
@@ -253,8 +254,19 @@ fn forged_consolidated_outputs_and_nonbyte_inputs_fail_lookup_verification() {
           claimed_output,
         ];
         let witness = SystemWitness::from_stage_1(traces, &system.system);
-        let proof = system.system.prove(&system.key, &claim, witness);
-        assert!(system.verify(&claim, &proof).is_err());
+        let proof = system.prove_witness(&claim, witness);
+        // The row is well-formed; only the byte table disagrees with it,
+        // so the rejection is the unanswered lookup, not a constraint.
+        system.verify_shard(&proof, 0).unwrap();
+        assert!(
+          matches!(
+            system.verify(&claim, &proof),
+            Err(AiurVerificationError::Stark(
+              VerificationError::UnbalancedBatch
+            ))
+          ),
+          "a byte table balanced a wrong output"
+        );
       }
     }
   }

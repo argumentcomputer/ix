@@ -46,7 +46,8 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: |
+      # The path appended below is the installer's fixed location on the runner
+      run: | # zizmor: ignore[github-env]
         curl -L https://sp1up.succinct.xyz | bash
         ~/.sp1/bin/sp1up
         echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"

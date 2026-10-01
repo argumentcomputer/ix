@@ -12,7 +12,7 @@
 //! Merkle path is O(log n). This avoids the eager recursive `root`/`leaves`/
 //! `contains` traversals that made the former Lean startup super-linear.
 
-use aiur::synthesis::AiurSystem;
+use aiur::synthesis::{AiurProof, AiurSystem};
 use ix_kernel::shard::ShardManifest;
 use ixvm_codegen::env_handle::EnvHandle;
 use plan::{
@@ -20,8 +20,9 @@ use plan::{
   build_statement_specs, plan_replay,
 };
 use prepare::{PreparedShard, prepare_run, validate_root_statement};
-use protocol::{ChildKind, allowed_blob};
-use prove::{ProveContext, run_replay};
+use protocol::{ChildKind, allowed_blob, inner_claim};
+use prove::{ProveContext, run_replay, wrap_root};
+use rayon::prelude::*;
 use scheduler::run_scheduler;
 use statement::Statement;
 use std::{
@@ -30,6 +31,7 @@ use std::{
   sync::Arc,
   time::Instant,
 };
+pub(crate) use store::write_store;
 use store::{load_input_proofs, persist_wrapper, wrapper_address};
 
 mod ffi;
@@ -44,7 +46,7 @@ mod store;
 const MIB: usize = 1024 * 1024;
 const GIB: usize = 1024 * 1024 * 1024;
 
-fn format_gib(bytes: usize) -> String {
+pub(crate) fn format_gib(bytes: usize) -> String {
   let tenths = bytes.saturating_mul(10) / GIB;
   format!("{}.{:01}", tenths / 10, tenths % 10)
 }
@@ -72,6 +74,23 @@ struct RunConfig<'a> {
   cache_fri_bytes: &'a [u8],
   use_cache: bool,
   write_outputs: bool,
+  trace_shards: bool,
+  range_width: usize,
+  /// Wrap the root proof (shape 1) until the final proof is a single
+  /// trace shard.
+  wrap_root: bool,
+  /// Slots preparing (executing) ahead of the provers; `0` fuses
+  /// preparation and proving on one worker per slot.
+  exec_ahead: usize,
+  /// `ix verify --ixes <proofs>`: stop after the proof import — every
+  /// shard claim reconstructed natively, every supplied proof bound to its
+  /// shard by claim digest and verified in parallel, exactly one per shard
+  /// — and report that composed verdict instead of proving.
+  verify_only: bool,
+  /// Prove only the plan subtree rooted at this slot, from the proofs of
+  /// the leaves under it, and report that slot's proof; the root-only steps
+  /// (root validation, wrapping) are skipped. `None` proves the whole plan.
+  subtree: Option<usize>,
 }
 
 fn expected_from_manifest(
@@ -182,8 +201,76 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     .reprove_slot
     .map(|target| plan_replay(&specs, target))
     .transpose()?;
+  // The slots this run proves: the whole plan, or one subtree of it.
+  let active: Vec<bool> = match config.subtree {
+    None => vec![true; specs.len()],
+    Some(target) => {
+      if config.reprove_slot.is_some() {
+        return Err("--subtree cannot be combined with --reprove-slot".into());
+      }
+      if config.verify_only {
+        return Err("--subtree has no meaning for a composed verdict".into());
+      }
+      if config.wrap_root {
+        return Err(
+          "--wrap-root applies to the root; --subtree proves a subtree".into(),
+        );
+      }
+      if !config.plan_only && !config.use_cache {
+        return Err(
+          "--subtree publishes its root through the aggregate cache; it cannot run with --no-cache"
+            .into(),
+        );
+      }
+      let spec = specs.get(target).ok_or_else(|| {
+        format!(
+          "--subtree {target} is out of range; the plan has slots 0..{}",
+          specs.len().saturating_sub(1)
+        )
+      })?;
+      if spec.kind == ChildKind::Ixvm {
+        return Err(format!(
+          "--subtree {target} selects a raw IxVM leaf, not a Stage 2 proof"
+        ));
+      }
+      let mut active = vec![false; specs.len()];
+      let mut stack = vec![target];
+      while let Some(index) = stack.pop() {
+        if active[index] {
+          continue;
+        }
+        active[index] = true;
+        if let PlanOp::Join(left, right) = specs[index].op {
+          stack.push(left);
+          stack.push(right);
+        }
+      }
+      active
+    },
+  };
+  // The manifest shards whose proofs this run takes as input.
+  let mut required = vec![false; prepared.shards.len()];
+  for (index, spec) in specs.iter().enumerate() {
+    if let PlanOp::Leaf(shard) = spec.op {
+      required[shard] = active[index];
+    }
+  }
   let specs_at = Instant::now();
-  print_plan(&specs, &prepared.shards, config.structural_above);
+  if !config.verify_only {
+    print_plan(&specs, &prepared.shards, config.structural_above);
+  }
+  if let (true, Some(target)) = (config.plan_only, config.subtree) {
+    // The lane's `ix prove --shards` argument, on stdout as one line.
+    let mut ids: Vec<u32> = required
+      .iter()
+      .enumerate()
+      .filter(|(_, flag)| **flag)
+      .map(|(shard, _)| prepared.shards[shard].original_id)
+      .collect();
+    ids.sort_unstable();
+    let ids: Vec<String> = ids.iter().map(u32::to_string).collect();
+    println!("subtree {target} shards: {}", ids.join(","));
+  }
   if config.plan_only {
     eprintln!(
       "[aggregate] Rust plan startup: manifest {:.3}s, env/claims {:.3}s, plan/statements {:.3}s; total {:.3}s",
@@ -198,7 +285,8 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   let home = std::env::var_os("HOME").ok_or("no HOME environment variable")?;
   let ix_root = PathBuf::from(home).join(".ix");
   let store_dir = ix_root.join("store");
-  let cache_path = ix_root.join("cache").join("aggregate");
+  let cache_path = std::env::var_os("AIUR_AGGREGATE_CACHE_DIR")
+    .map_or_else(|| ix_root.join("cache").join("aggregate"), PathBuf::from);
   let cache_dir = config.use_cache.then_some(cache_path.as_path());
   if let Some(dir) = cache_dir {
     if config.write_outputs {
@@ -211,16 +299,21 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
         dir.display()
       ));
     }
-  } else {
+  } else if !config.verify_only {
     eprintln!("[aggregate] cache disabled (--no-cache)");
   }
-  if !config.write_outputs {
+  if !config.write_outputs && !config.verify_only {
     eprintln!("[aggregate] output writes disabled (--no-write)");
   }
   let needs_input_proofs =
     replay_plan.as_ref().is_none_or(|plan| plan.needs_input_proofs);
   let proofs = if needs_input_proofs {
-    Some(load_input_proofs(config.proof_hexes, &store_dir, &prepared.shards)?)
+    Some(load_input_proofs(
+      config.proof_hexes,
+      &store_dir,
+      &prepared.shards,
+      &required,
+    )?)
   } else {
     let supplied =
       config.proof_hexes.lines().filter(|line| !line.is_empty()).count();
@@ -230,6 +323,45 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     None
   };
   let proofs_at = Instant::now();
+  if config.verify_only {
+    let shards = prepared.shards.len();
+    let proofs = proofs.as_deref().unwrap_or(&[]);
+    let bound = proofs.iter().flatten().count();
+    if bound != shards {
+      return Err(format!(
+        "bound {bound} shard proofs but the manifest has {shards} shards"
+      ));
+    }
+    let failures: Vec<String> = proofs
+      .par_iter()
+      .enumerate()
+      .filter_map(|(shard, wrapper)| {
+        let wrapper = wrapper.as_ref()?;
+        let statement = &prepared.shards[shard].statement;
+        let inner = inner_claim(config.verify_idx, &statement.claim_bytes);
+        let proof = match AiurProof::from_bytes(&wrapper.proof) {
+          Ok(proof) => proof,
+          Err(error) => {
+            return Some(format!(
+              "shard {shard}: proof does not decode: {error}"
+            ));
+          },
+        };
+        config.ixvm_system.verify(&inner, &proof).err().map(|error| {
+          format!("shard {shard}: proof fails verification: {error:?}")
+        })
+      })
+      .collect();
+    if !failures.is_empty() {
+      return Err(failures.join("; "));
+    }
+    eprintln!(
+      "[verify] OK: composed verdict — all {shards} shards proven + disjoint cover ({shards} proofs verified natively in {:.1}s; claims {:.1}s)",
+      proofs_at.elapsed().as_secs_f64(),
+      (prepared_at - parsed_at).as_secs_f64(),
+    );
+    return Ok(String::new());
+  }
   eprintln!(
     "[aggregate] Rust startup: manifest {:.3}s, env/claims {:.3}s, plan/statements {:.3}s, proofs {:.3}s; total {:.3}s",
     (parsed_at - started).as_secs_f64(),
@@ -254,6 +386,14 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     cache_dir,
     reprove_slot: config.reprove_slot,
     write_outputs: config.write_outputs,
+    // Slots share the run's budget evenly across the concurrent jobs; with
+    // every ready slot allowed at once, each gets the whole budget and the
+    // scheduler's per-slot weights alone bound concurrency.
+    wrap_budget: config
+      .trace_shards
+      .then(|| config.ram_budget_bytes / config.jobs.max(1)),
+    range_width: config.range_width,
+    range_jobs: config.jobs.max(1),
   };
   if let (Some(target), Some(plan)) =
     (config.reprove_slot, replay_plan.as_ref())
@@ -270,21 +410,84 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     "[aggregate] scheduler: jobs={jobs_label}, RAM budget {} GiB; wrap/self 195.0 GiB, direct 390.0 GiB, mixed 340.0 GiB, flat +1 MiB/subject",
     format_gib(config.ram_budget_bytes)
   );
-  let slots = run_scheduler(context, config.jobs, config.ram_budget_bytes)?;
-  let root = slots.last().ok_or("aggregate plan produced no root slot")?;
+  let mut slots = run_scheduler(
+    context,
+    config.jobs,
+    config.exec_ahead,
+    config.ram_budget_bytes,
+    &active,
+  )?;
+  if let Some(target) = config.subtree {
+    // A lane's success means its subtree root is proven, verified and
+    // published where the final run will look for it.
+    let slot = slots
+      .get_mut(target)
+      .and_then(Option::take)
+      .ok_or_else(|| format!("scheduler produced no slot {target}"))?;
+    config.aggr_system.verify(&slot.outer_claim, &slot.proof).map_err(
+      |error| {
+        format!("subtree {target} root proof failed verification: {error:?}")
+      },
+    )?;
+    let (address, disposition) = match slot.proof_address.as_ref() {
+      Some(address) => (address.clone(), ""),
+      None if config.write_outputs => {
+        return Err(format!(
+          "subtree {target} root was proven but not published to the aggregate cache"
+        ));
+      },
+      None => {
+        (wrapper_address(&slot.statement, &slot.proof)?, " (not persisted)")
+      },
+    };
+    eprintln!(
+      "[aggregate] subtree {target} root: {}{disposition}",
+      address.hex()
+    );
+    return Ok(address.hex());
+  }
+  let root = slots
+    .last()
+    .and_then(Option::as_ref)
+    .ok_or("aggregate plan produced no root slot")?;
   if root.kind != ChildKind::Aggr {
     return Err("aggregate plan produced a raw IxVM root".into());
   }
   validate_root_statement(&prepared, &root.statement)?;
-  config.aggr_system.verify(&root.outer_claim, &root.proof).map_err(
-    |error| format!("aggregate root proof failed verification: {error:?}"),
-  )?;
-  let (address, persisted) = match &root.proof_address {
+  // Wrap until the final proof is a single trace shard: each wrap verifies
+  // the previous proof, so its own execution shrinks with that proof's
+  // shard count until one shard verifies it.
+  let mut wrapped: Option<AiurProof> = None;
+  if config.wrap_root {
+    loop {
+      let current = wrapped.as_ref().unwrap_or(&root.proof);
+      let shards = current.preamble.headers.len();
+      if shards <= 1 {
+        break;
+      }
+      let next = wrap_root(context, root, current)?;
+      if next.preamble.headers.len() >= shards {
+        eprintln!(
+          "[aggregate] root wrap did not shrink the proof ({shards} shards); keeping the previous one"
+        );
+        break;
+      }
+      wrapped = Some(next);
+    }
+  }
+  let (proof, proof_address) = match &wrapped {
+    Some(proof) => (proof, None),
+    None => (&root.proof, root.proof_address.as_ref()),
+  };
+  config.aggr_system.verify(&root.outer_claim, proof).map_err(|error| {
+    format!("aggregate root proof failed verification: {error:?}")
+  })?;
+  let (address, persisted) = match proof_address {
     Some(address) => (address.clone(), true),
     None if config.write_outputs => {
-      (persist_wrapper(&store_dir, &root.statement, &root.proof)?, true)
+      (persist_wrapper(&store_dir, &root.statement, proof)?, true)
     },
-    None => (wrapper_address(&root.statement, &root.proof)?, false),
+    None => (wrapper_address(&root.statement, proof)?, false),
   };
   let disposition = if persisted { "" } else { " (not persisted)" };
   eprintln!("[aggregate] root proof: {}{disposition}", address.hex());

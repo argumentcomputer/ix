@@ -90,10 +90,11 @@ private def stage2FixtureStorePath (home : System.FilePath) : System.FilePath :=
 
 /-- Pin a real whole-Mathlib root at the persisted-proof boundary. The 3.33 GB
 environment and 52.5 MB manifest are identified in the adjacent provenance
-record rather than checked in. This proof predates both the a8aab731 protocol
-bump and the Ixon v3 claim envelope. The gate re-hashes the exact old wrapper,
-pins its root bytes and unconditional flag, and checks rejection at the format
-boundary. No legacy decoding path is added to the production reader. -/
+record rather than checked in. This proof predates the a8aab731 protocol
+bump, the batch wire format and the Ixon v3 claim envelope. The gate
+re-hashes the exact old wrapper, pins its root bytes and unconditional flag,
+and checks rejection at the format boundary. No legacy decoding path is
+added to the production reader. -/
 private def stage2FixturePinnedAndFenced : IO Bool := do
   try
     unless (← stage2FixturePath.pathExists) do
@@ -136,10 +137,16 @@ private def stage2FixturePinnedAndFenced : IO Bool := do
         args := #[s!"HOME={home}", exe.toString, "verify", "--aggregate",
           stage2FixtureAddressHex] }
       if out.exitCode == 0 then
-        IO.eprintln "obsolete Stage 2 fixture unexpectedly verified under the current protocol"
+        IO.eprintln "historical Stage 2 fixture unexpectedly verified under the current protocol"
         return false
-      unless out.stderr.contains "claim: unsupported object format" ||
-          out.stdout.contains "claim: unsupported object format" do
+      -- The fence is the protocol boundary, wherever it currently falls: a
+      -- claim envelope the reader no longer accepts, a decoded proof of an
+      -- incompatible shape, or bytes that no longer decode as a proof at
+      -- all (the batch wire format).
+      let fenced (s : String) : Bool :=
+        s.contains "claim: unsupported object format" ||
+          s.contains "InvalidProofShape" || s.contains "does not decode"
+      unless fenced out.stderr || fenced out.stdout do
         IO.eprintln s!"obsolete Stage 2 fixture failed for an unexpected reason \
 ({out.exitCode}): {out.stderr.take 500}"
         return false
@@ -377,7 +384,8 @@ def semanticSuite : IO UInt32 := do
         let planWorks := (ixvmSystem.aggregateStage2 selfSystem handle
           ixesPath.toString "" verifyIdx fakeAggrIdx 1
           (16 * 1024 * 1024 * 1024) 4096 0 false true
-          childRecursionParameters.cacheFriBytes false true).isOk
+          childRecursionParameters.cacheFriBytes false true false 0 false 1
+          false 0).isOk
         let expectedMatches := match Aiur.AiurSystem.aggregateExpected
             handle ixesPath.toString 4096 with
           | .error _ => false
@@ -581,7 +589,7 @@ def semanticSuite : IO UInt32 := do
       shardPrepPreservesSemantics,
     test "verified aggregate proof audit certifies every fixture constant"
       aggregateProofAuditsEveryConstant,
-    test "dated Mathlib Stage 2 proof is pinned and fenced at its protocol boundary"
+    test "dated Mathlib Stage 2 proof is pinned and rejected by the current protocol"
       productionStage2FixturePinnedAndFenced,
     test "aggregate constant audit rejects an omitted environment constant"
       missingConstantRejected,

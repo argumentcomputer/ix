@@ -60,7 +60,7 @@ runs:
     # sets XDG_CONFIG_HOME, which would otherwise relocate it).
     - name: Install Zisk toolchain (ziskup)
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env]
         # Both pins track the argumentcomputer/zisk fork the guests build
         # against (`blake3-precompile-1.0.0-alpha`) and must move with it.
         #

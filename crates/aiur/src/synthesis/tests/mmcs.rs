@@ -59,11 +59,11 @@ fn public_verify_rejects_a_cap_above_the_shortest_trace_lde() {
   let system = AiurSystem::build(mul_toplevel(), cp, fp);
   let (claim, proof) =
     system.prove(0, &[G::ONE, G::ONE], &mut empty_io_buffer());
-  assert_eq!(proof.log_degrees[0], 0);
-  system.system.verify(&claim, &proof).unwrap();
+  assert_eq!(proof.preamble.headers[0].log_degrees[0], 0);
+  system.system.verify_batch(&proof).unwrap();
   assert!(matches!(
     system.verify(&claim, &proof),
-    Err(VerificationError::InvalidProofShape)
+    Err(AiurVerificationError::Stark(VerificationError::InvalidProofShape))
   ));
 }
 
@@ -81,7 +81,7 @@ fn public_verify_accepts_a_cap_at_the_shortest_trace_lde() {
   let system = AiurSystem::build(mul_toplevel(), cp, fp);
   let (claim, proof) =
     system.prove(0, &[G::from_u32(3), G::from_u32(5)], &mut empty_io_buffer());
-  assert_eq!(proof.log_degrees[0], 0);
+  assert_eq!(proof.preamble.headers[0].log_degrees[0], 0);
   system.verify(&claim, &proof).unwrap();
   let mut changed = claim.clone();
   *changed.last_mut().unwrap() += G::ONE;
