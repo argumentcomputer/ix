@@ -181,6 +181,9 @@ end Tests
 
 section Benchmarks
 
+lean_exe «uniform-hard» where
+  root := `Benchmarks.UniformHard
+
 lean_exe «bench-aiur» where
   root := `Benchmarks.Aiur
 

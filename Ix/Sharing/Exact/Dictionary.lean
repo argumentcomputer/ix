@@ -110,73 +110,79 @@ structure Prep where
 /-- `C_∅`: the standalone unshared length of every term. -/
 @[inline] def Prep.base (p : Prep) : Array Nat := p.empty.cost
 
+/-- One step of `spineTables`: the spine length and natural tail of `t` from
+those of its spine successor. -/
+def spineStep (dag : Dag) (family : Array Family) (st : Array Nat × Array Nat) (t : Nat) :
+    Array Nat × Array Nat :=
+  let fam := family[t]!
+  if fam != .none then
+    let nxt := (dag.node t).spineNext
+    if family[nxt]! == fam then (st.1.set! t (st.1[nxt]! + 1), st.2.set! t st.2[nxt]!)
+    else (st.1.set! t 1, st.2.set! t nxt)
+  else st
+
 /-- Spine lengths and natural tails, children before parents. -/
-def spineTables (dag : Dag) (family : Array Family) : Array Nat × Array Nat := Id.run do
-  let mut len : Array Nat := Array.replicate dag.size 0
-  let mut tail : Array Nat := Array.replicate dag.size 0
-  for t in [0:dag.size] do
-    let fam := family[t]!
-    if fam != .none then
-      let nxt := (dag.node t).spineNext
-      if family[nxt]! == fam then
-        len := len.set! t (len[nxt]! + 1)
-        tail := tail.set! t tail[nxt]!
-      else
-        len := len.set! t 1
-        tail := tail.set! t nxt
-  return (len, tail)
+def spineTables (dag : Dag) (family : Array Family) : Array Nat × Array Nat :=
+  foldRange (spineStep dag family) 0 dag.size
+    (Array.replicate dag.size 0, Array.replicate dag.size 0)
 
 /-- Width of term `t` in a dictionary (`none` when unavailable). -/
 @[inline] def widthOf (width : Array (Option Nat)) (t : Nat) : Option Nat :=
   width[t]?.getD none
+
+/-- The internal cuts of one telescope node: follow the `below` links through
+the available spine descendants (at most `fuel` of them), keeping the
+cheapest option. Returns the best cost and the work count. -/
+def cutScan (spineLen sides : Array Nat) (below : Array (Option Nat))
+    (width : Array (Option Nat)) (l s : Nat) : Nat → Option Nat → Nat → Nat → Nat × Nat
+  | 0, _, best, work => (best, work)
+  | _ + 1, none, best, work => (best, work)
+  | fuel + 1, some u, best, work =>
+    let cand := tag4Size (l - spineLen[u]!) + (s - sides[u]!) + (widthOf width u).getD 0
+    cutScan spineLen sides below width l s fuel below[u]! (if cand < best then cand else best)
+      (work + 1)
+
+/-- One step of `evalFrom`: evaluate term `t` from its children's entries. -/
+def evalStep (dag : Dag) (family : Array Family) (spineLen tail : Array Nat)
+    (width : Array (Option Nat)) (affected : Array Bool) (st : DictEval) (t : Nat) :
+    DictEval :=
+  if affected[t]! then
+    let node := dag.node t
+    let fam := family[t]!
+    if fam == .none then
+      let inl := node.children.foldl (fun acc c => acc + st.cost[c]!) node.head.ownBytes
+      let c := match widthOf width t with
+        | some w => min inl w
+        | none => inl
+      { st with cost := st.cost.set! t c, work := st.work + 1 }
+    else
+      let nxt := node.spineNext
+      let same := family[nxt]! == fam
+      let s := node.sideExtra + st.cost[node.sideChild]! + (if same then st.sides[nxt]! else 0)
+      let bl : Option Nat :=
+        if same then (if (widthOf width nxt).isSome then some nxt else st.below[nxt]!)
+        else none
+      let sides := st.sides.set! t s
+      let below := st.below.set! t bl
+      let l := spineLen[t]!
+      -- Natural end: all `l` spine nodes inline, then the tail; then the
+      -- internal cuts at available spine descendants.
+      let (inl, work) := cutScan spineLen sides below width l s l bl
+        (tag4Size l + s + st.cost[tail[t]!]!) st.work
+      let c := match widthOf width t with
+        | some w => min inl w
+        | none => inl
+      { cost := st.cost.set! t c, sides, below, work := work + 1 }
+  else st
 
 /-- Evaluate a dictionary. Terms with `affected[t] = false` keep their `init`
 entries (sound when no available term occurs inside them, since then their
 cost, spine sums and descendant links are those of the empty dictionary). -/
 def evalFrom (dag : Dag) (family : Array Family) (spineLen tail : Array Nat)
     (init : DictEval) (width : Array (Option Nat)) (affected : Array Bool) :
-    DictEval := Id.run do
-  let mut cost := init.cost
-  let mut sides := init.sides
-  let mut below := init.below
-  let mut work := 0
-  for t in [0:dag.size] do
-    if affected[t]! then
-      let node := dag.node t
-      let fam := family[t]!
-      let mut inl := 0
-      if fam == .none then
-        inl := node.children.foldl (fun acc c => acc + cost[c]!) node.head.ownBytes
-      else
-        let nxt := node.spineNext
-        let same := family[nxt]! == fam
-        let s := node.sideExtra + cost[node.sideChild]! + (if same then sides[nxt]! else 0)
-        let bl : Option Nat :=
-          if same then (if (widthOf width nxt).isSome then some nxt else below[nxt]!)
-          else none
-        sides := sides.set! t s
-        below := below.set! t bl
-        let l := spineLen[t]!
-        -- Natural end: all `l` spine nodes inline, then the tail.
-        let mut best := tag4Size l + s + cost[tail[t]!]!
-        -- Internal cuts: only at available spine descendants.
-        let mut cur := bl
-        for _ in [0:l] do
-          match cur with
-          | none => break
-          | some u =>
-            work := work + 1
-            let cand := tag4Size (l - spineLen[u]!) + (s - sides[u]!) +
-              (widthOf width u).getD 0
-            if cand < best then best := cand
-            cur := below[u]!
-        inl := best
-      let c := match widthOf width t with
-        | some w => min inl w
-        | none => inl
-      cost := cost.set! t c
-      work := work + 1
-  return { cost, sides, below, work }
+    DictEval :=
+  foldRange (evalStep dag family spineLen tail width affected) 0 dag.size
+    { init with work := 0 }
 
 /-- Build the per-DAG tables, including the empty-dictionary evaluation. -/
 def Prep.ofDag (dag : Dag) : Prep :=
@@ -230,34 +236,42 @@ def widthsOfIndex (index : Array (Option Nat)) : Array (Option Nat) :=
 /-- Tag4 header bytes from the production encoder. -/
 def tag4Bytes (flag : UInt8) (n : Nat) : ByteArray := runPut (putTag4 ⟨flag, n.toUInt64⟩)
 
+/-- The internal-cut options of a telescope node: follow the `below` links
+through the available spine descendants (at most `fuel`), adding a cut for
+each one present in `index`. -/
+def Prep.cutOptions (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (flag : UInt8) (l s : Nat) :
+    Nat → Option Nat → Array (Choice × Nat × ByteArray) → Array (Choice × Nat × ByteArray)
+  | 0, _, opts => opts
+  | _ + 1, none, opts => opts
+  | fuel + 1, some u, opts =>
+    let j := l - p.spineLen[u]!
+    let opts := if (index[u]?.getD none).isSome then
+        opts.push (.cut j, tag4Size j + (s - ev.sides[u]!) + (widthOf width u).getD 0,
+          tag4Bytes flag j)
+      else opts
+    p.cutOptions ev index width flag l s fuel ev.below[u]! opts
+
 /-- Every legal option at `t` with its exact cost and header bytes, given the
 evaluation `ev` of the dictionary with Share widths `width`; headers use the
 actual table indices `index`. -/
 def Prep.options (p : Prep) (ev : DictEval) (index : Array (Option Nat))
     (width : Array (Option Nat)) (t : Nat) :
-    Array (Choice × Nat × ByteArray) := Id.run do
+    Array (Choice × Nat × ByteArray) :=
   let node := p.dag.node t
-  let mut opts : Array (Choice × Nat × ByteArray) := #[]
-  if let some i := index[t]?.getD none then
-    opts := opts.push (.share, (widthOf width t).getD 0, tag4Bytes Ixon.Expr.FLAG_SHARE i)
+  let opts : Array (Choice × Nat × ByteArray) :=
+    match index[t]?.getD none with
+    | some i => #[(.share, (widthOf width t).getD 0, tag4Bytes Ixon.Expr.FLAG_SHARE i)]
+    | none => #[]
   if p.family[t]! == .none then
     let c := node.children.foldl (fun acc c => acc + ev.cost[c]!) node.head.ownBytes
-    opts := opts.push (.inline, c, runPut (putTag4 ⟨node.head.flag, node.head.tag4Field⟩))
+    opts.push (.inline, c, runPut (putTag4 ⟨node.head.flag, node.head.tag4Field⟩))
   else
     let l := p.spineLen[t]!
     let s := ev.sides[t]!
-    opts := opts.push (.cut l, tag4Size l + s + ev.cost[p.tail[t]!]!, tag4Bytes node.head.flag l)
-    let mut cur := ev.below[t]!
-    for _ in [0:l] do
-      match cur with
-      | none => break
-      | some u =>
-        let j := l - p.spineLen[u]!
-        if (index[u]?.getD none).isSome then
-          opts := opts.push (.cut j, tag4Size j + (s - ev.sides[u]!) + (widthOf width u).getD 0,
-            tag4Bytes node.head.flag j)
-        cur := ev.below[u]!
-  return opts
+    let opts := opts.push (.cut l, tag4Size l + s + ev.cost[p.tail[t]!]!,
+      tag4Bytes node.head.flag l)
+    p.cutOptions ev index width node.head.flag l s l ev.below[t]! opts
 
 /-- The minimum-cost option whose header is byte-least. -/
 def pickOption (opts : Array (Choice × Nat × ByteArray)) : Option (Choice × Nat) :=

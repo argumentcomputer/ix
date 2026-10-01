@@ -47,6 +47,13 @@ def shareWidth (idx : Nat) : Nat := tag4Size idx
 /-- Values written through a `UInt64` wire field must be below this bound. -/
 def wordBound : Nat := UInt64.size
 
+/-- `f` applied to the state at `k, k + 1, …, k + i - 1` in order (a
+tail-recursive counted loop). -/
+@[specialize] def foldRange {σ : Type} (f : σ → Nat → σ) : Nat → Nat → σ → σ
+  | _, 0, st => st
+  | k, i + 1, st => foldRange f (k + 1) i (f st k)
+
+
 /-! ## Exact expression length -/
 
 /-- Size facts about one expression, computed bottom-up. `full` is the
@@ -329,6 +336,10 @@ structure Limits where
   /-- Lower-bound pruning. Disabling it (for testing) explores every
   reachable width state; the result must not change. -/
   prune : Bool := true
+  /-- Uniform width: search each component by plain subset enumeration (the
+  reference) instead of the reclassifying branch and bound. The result must
+  not change. -/
+  uniformSubsetSearch : Bool := false
   deriving Repr, Inhabited
 
 /-- Nonsemantic work statistics. -/

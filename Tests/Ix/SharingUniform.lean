@@ -160,8 +160,8 @@ def witnessTests (_ : Unit) : TestSeq :=
         (u.certainStored == #[2] && u.stored == #[2] && u.result.modelBytes == 11 &&
           u.result.variableBytes == 11)) ++
     withOk "w=2" (run 2) (fun u =>
-      test s!"w=2: T2 uncertain (gain 1), search stores only T2, model {u.result.modelBytes} = 13"
-        (u.uncertain == #[2] && u.stored == #[2] && u.result.modelBytes == 13)) ++
+      test s!"w=2: T2 has gain 1, certain-stored at threshold 1 (no count bracket within reach), stores only T2, model {u.result.modelBytes} = 13"
+        (u.certainStored == #[2] && u.stored == #[2] && u.result.modelBytes == 13)) ++
     withOk "w=3" (run 3) (fun u =>
       test s!"w=3: T2 uncertain, search stores nothing, model {u.result.modelBytes} = 14 (unshared); T1 certain-excluded"
         (u.uncertain == #[2] && u.stored.isEmpty && u.result.modelBytes == 14 &&
@@ -230,6 +230,94 @@ def propertyTests (_ : Unit) : TestSeq :=
     test s!"{checked} constants: normalize is idempotent and independent of pointer layout" (err.isNone && checked == 200) ++
     (match err with | some m => test m false | none => .done)
 
+/-- `mk a₁ … aₙ`-style prefix chains: `uₖ = uₖ₋₁ aₖ`, each prefix also
+used once as the head of a longer spine with other arguments (the shape of
+the `injEq` components), plus a few repeated arguments. -/
+def genPrefixChain : RGen (Array Ixon.Expr) := do
+  let pool ← (List.range 4).toArray.mapM fun _ => genLeaf
+  let len := 3 + (← rand 14)
+  let mut u : Ixon.Expr := pool[0]!
+  let mut roots : Array Ixon.Expr := #[]
+  for k in [0:len] do
+    let a : Ixon.Expr ← if (← rand 3) == 0 then do pure pool[← rand pool.size]!
+      else pure (.var (k % 5).toUInt64)
+    u := .app u a
+    let mut x : Ixon.Expr := .app u (.sort 1)
+    for _ in [0:(← rand 4)] do x := .app x pool[← rand pool.size]!
+    roots := roots.push (if (← rand 2) == 0 then x else arr x (.sort 0))
+  roots := roots.push u
+  return roots
+
+/-- Nested binder telescopes whose prefixes and bodies repeat. -/
+def genTelescopes : RGen (Array Ixon.Expr) := do
+  let pool ← (List.range 4).toArray.mapM fun _ => genLeaf
+  let mut body : Ixon.Expr := pool[0]!
+  let mut roots : Array Ixon.Expr := #[]
+  for _ in [0:2 + (← rand 10)] do
+    let ty := pool[← rand pool.size]!
+    body ← match ← rand 3 with
+      | 0 => do pure (.lam (← genBinder) ty body)
+      | 1 => pure (arr ty body)
+      | _ => pure (.app body ty)
+    if (← rand 2) == 0 then roots := roots.push (.app (.var 3) body)
+  roots := roots.push body
+  return roots
+
+def genSearchRoots : RGen (Array Ixon.Expr) := do
+  match ← rand 7 with
+  | 0 => genPrefixChain
+  | 1 => genTelescopes
+  | 2 => genChain
+  | 3 => genSpines
+  | 4 => genPrefixes
+  | _ => genRoots 6 24 5
+
+/-- The reclassifying branch and bound returns exactly what the subset
+enumeration returns (same set, so the same tie-break), on inputs with larger
+uncertain components. -/
+def searchTests (_ : Unit) : TestSeq :=
+  let (checked, skipped, maxComp, err) := runGen 71 do
+    let mut checked := 0
+    let mut skipped := 0
+    let mut maxComp := 0
+    let mut err : Option String := none
+    for i in [0:4000] do
+      if checked ≥ 600 || err.isSome then break
+      let roots ← genSearchRoots
+      let w := [1, 2, 3, 5][← rand 4]!
+      match optimizeSharingUniform w roots,
+          optimizeSharingUniform w roots { maxStates := 1 <<< 16, uniformSubsetSearch := true } with
+      | .ok u, .ok r =>
+        let comp := u.components.foldl (fun acc c => max acc c.size) 0
+        if comp < 2 then continue
+        checked := checked + 1
+        maxComp := max maxComp comp
+        unless u.stored == r.stored && u.result.modelBytes == r.result.modelBytes &&
+            u.lowerBracket == r.lowerBracket do
+          err := some s!"case {i} w={w}: branch and bound stored {u.stored} model {u.result.modelBytes}, subset enumeration stored {r.stored} model {r.result.modelBytes} roots={reprStr roots}"
+      | .ok _, .error (.resourceExhausted ..) => skipped := skipped + 1
+      | .error e, _ => err := some s!"case {i} w={w}: branch and bound error {reprStr e} roots={reprStr roots}"
+      | _, .error e => err := some s!"case {i} w={w}: subset enumeration error {reprStr e}"
+    return (checked, skipped, maxComp, err)
+  group "uniform branch and bound vs subset enumeration" <|
+    test s!"{checked} generated inputs with a component of ≥ 2 uncertain terms (prefix chains, telescopes, App chains, long spines, prefixes, general; w ∈ 1,2,3,5; largest component {maxComp}; {skipped} skipped where the enumeration exceeded 2^16 states): identical stored set, model length and bracket choice"
+      (err.isNone && checked == 600) ++
+    (match err with | some m => test m false | none => .done)
+
+/-- Search agreement across the 128-entry table-count bracket: 120 one-byte
+atoms used twice (uncertain, gain 1) plus an App prefix chain. -/
+def searchBracketTests (_ : Unit) : TestSeq :=
+  let atoms : Array Ixon.Expr := (Array.range 120).map fun i => .ref i.toUInt64 #[0]
+  let chain := runGen 5 genPrefixChain
+  let roots := atoms.foldl (fun acc a => acc ++ #[a, a]) #[] ++ chain
+  group "uniform branch and bound across a count bracket" <|
+    test "w=1,2,3: the branch and bound and the subset enumeration store the same set"
+      ([1, 2, 3].all fun w =>
+        match optimizeSharingUniform w roots,
+            optimizeSharingUniform w roots { uniformSubsetSearch := true } with
+        | .ok u, .ok r => u.stored == r.stored && u.result.modelBytes == r.result.modelBytes
+        | _, _ => false)
+
 /-- The imperative tie order that `setPrec` replaced (kept as a reference). -/
 def setPrecLoop (a b : Array Nat) : Bool := Id.run do
   let mut i := 0
@@ -283,6 +371,8 @@ public def suite : List TestSeq := [
   deferred "uniform T16" t16Tests,
   deferred "uniform table-count brackets" bracketTests,
   deferred "uniform properties" propertyTests,
+  deferred "uniform search vs enumeration" searchTests,
+  deferred "uniform search across a bracket" searchBracketTests,
 ]
 
 end Tests.SharingUniform

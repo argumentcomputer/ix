@@ -702,7 +702,8 @@ have ≤ 8 candidates. The exact search of §6 stays as the **oracle** for small
 size > 1; reference every occurrence; priority topological order” is the exact minimum of the
 additive unit-width model. On Init it is 14.5% smaller than the heuristic in total, smaller
 on 90.6% of constants, larger on 0.4% (total loss 933 bytes, max 50), never larger than
-unshared, and reproduces the 17-byte and 46-byte witnesses. Its losses are all in tables
+unshared on Init (on Mathlib 26 of 679,499 constants are larger than unshared, by at most 38
+bytes), and reproduces the 17-byte and 46-byte witnesses. Its losses are all in tables
 with > 8 entries, i.e. the index-tier effect.
 
 ### 12.3 Uniform reference width makes the exact minimum tractable
@@ -800,3 +801,15 @@ is used to report the gap. The Share tag `0xB` adopts the TagN nibble layout (no
 change, backward references unchanged, bijective so no canonical-integer check is needed).
 Open: whether to adopt the TagN code for all Tag0/Tag4 integers (W3 measuring). W4
 integration starts once the Rust uniform/tiered port agrees with Lean on fixtures.
+
+### 12.9 Mathlib corpus (2026-09-30, `docs/sharing-minimum-measurements-mathlib.md`)
+
+679,499 unique constants (3.3 GB, compiled in 152 s, 18 GB peak RSS); harness: 0 rebuild
+mismatches, 0 skipped. Candidates median 69 / p99 2,029 / max 81,833. MSS is **21.8%** below
+the heuristic (1,468,281,356 → 1,148,195,956 bytes), smaller on 94.3% of constants, larger on
+0.3% (max loss 112 bytes), larger than unshared on 26 constants (≤ 38 bytes each). Uniform-model
+classification: certain-stored 88.4 / 71.0 / 57.9% at w = 1/2/3; largest uncertain component
+p99 4–5, max 45 (same constant as Init, `Lean.Grind.Config.mk.injEq`), ≤ 8 for 99.8%. Tier
+layouts on MSS: F (= TagN below 66,568) −1.55%, G −1.30%, D +1.44%. One stored heuristic table
+has 81,565 entries (Tag4 indices ≥ 65,536 cost 4 bytes); the largest MSS table is 21,461.
+Lean/Rust parity on Init (W2): 0 byte disagreements in 56,622 constants, tiered and uniform.
