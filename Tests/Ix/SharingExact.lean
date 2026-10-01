@@ -259,16 +259,18 @@ partial def naiveExpand (table : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
 
 def boundaryValues : List Nat :=
   [0, 1, 7, 8, 127, 128, 255, 256, 65535, 65536, 2^24 - 1, 2^24, 2^32 - 1, 2^32,
-   2^40 - 1, 2^40, 2^48 - 1, 2^48, 2^56 - 1, 2^56, 2^64 - 1]
+   2^40 - 1, 2^40, 2^48 - 1, 2^48, 2^56 - 1, 2^56, 2^64 - 1] ++
+  ([0, 2, 4].flatMap fun f =>
+    [tagNEnd1 f, tagNEnd2 f, tagNEnd3 f, tagNEnd4 f].flatMap fun e => [e - 1, e, e + 1])
 
 def widthTests (_ : Unit) : TestSeq :=
   group "integer widths" <|
-    test "tag0Size = putTag0 length at every byte-width boundary"
-      (boundaryValues.all fun n => tag0Size n == (runPut (putTag0 ⟨n.toUInt64⟩)).size) ++
-    test "tag4Size = putTag4 length at every byte-width boundary"
+    test "tag0Size = putTagN 0 length at every rung boundary"
+      (boundaryValues.all fun n => tag0Size n == (runPut (putTagN 0 0 n.toUInt64)).size) ++
+    test "tag4Size = putTagN 4 length at every rung boundary"
       (boundaryValues.all fun n =>
         [0x7, 0x8, 0x9, 0xB].all fun (f : UInt8) =>
-          tag4Size n == (runPut (putTag4 ⟨f, n.toUInt64⟩)).size) ++
+          tag4Size n == (runPut (putTagN 4 f n.toUInt64)).size) ++
     test "shareWidth = serialized Share length at every boundary"
       (boundaryValues.all fun n =>
         shareWidth n == (serExpr (.share n.toUInt64)).size &&
@@ -276,11 +278,22 @@ def widthTests (_ : Unit) : TestSeq :=
     test "natByteCount agrees with u64ByteCount"
       (boundaryValues.all fun n => natByteCount n == (u64ByteCount n.toUInt64).toNat) ++
     test "Share 7/8 → 1/2 bytes" (shareWidth 7 == 1 && shareWidth 8 == 2) ++
-    test "Share 255/256 → 2/3 bytes" (shareWidth 255 == 2 && shareWidth 256 == 3) ++
-    test "Share 65535/65536 → 3/4 bytes" (shareWidth 65535 == 3 && shareWidth 65536 == 4) ++
+    test "Share 1031/1032 → 2/3 bytes" (shareWidth 1031 == 2 && shareWidth 1032 == 3) ++
+    test "Share 66567/66568 → 3/5 bytes" (shareWidth 66567 == 3 && shareWidth 66568 == 5) ++
+    test "Share 4295033863/4295033864 → 5/9 bytes"
+      (shareWidth 4295033863 == 5 && shareWidth 4295033864 == 9) ++
     test "Share 2^64-1 → 9 bytes" (shareWidth (2^64 - 1) == 9) ++
-    test "Tag0 127/128 → 1/2 bytes, 255/256 → 2/3 bytes"
-      (tag0Size 127 == 1 && tag0Size 128 == 2 && tag0Size 255 == 2 && tag0Size 256 == 3)
+    test "TagN f=0 127/128 → 1/2 bytes, 16511/16512 → 2/3, 82047/82048 → 3/5"
+      (tag0Size 127 == 1 && tag0Size 128 == 2 && tag0Size 16511 == 2 && tag0Size 16512 == 3 &&
+        tag0Size 82047 == 3 && tag0Size 82048 == 5) ++
+    test "tag0BracketStart is the start of the count's TagN rung"
+      (boundaryValues.all fun k =>
+        tag0Size (tag0BracketStart k) == tag0Size k &&
+          (tag0BracketStart k == 0 || tag0Size (tag0BracketStart k - 1) < tag0Size k)) ++
+    test "tag0StepBound bounds the growth of the count's TagN width"
+      ((boundaryValues.all fun n =>
+          n == 0 || decide (tag0Size n - tag0Size (n - 1) ≤ tag0StepBound n)) &&
+        tag0StepBound 82047 == 1 && tag0StepBound 82048 == 2)
 
 /-- App spine with `n` arguments, Lam/All telescopes with `n` binders, and
 mixed nestings. -/
@@ -339,13 +352,14 @@ def decompositionTests (_ : Unit) : TestSeq :=
       .muts #[.defn ⟨.thm, .part, 0, rs[0]!, rs[1]!⟩,
               .indc ⟨true, 1, 1, 0, rs[2]!, #[⟨false, 1, 0, 1, 2, rs[3]!⟩, ⟨false, 1, 1, 1, 0, rs[0]!⟩]⟩,
               .recr ⟨false, true, 0, 0, 0, 0, 0, rs[1]!, #[⟨2, rs[2]!⟩]⟩] ]
-  let cases := [0, 1, 8, 9, 127, 128, 255, 256, 257].flatMap fun k =>
+  let cases := [0, 1, 8, 9, 127, 128, 255, 256, 257, 1032, 1033].flatMap fun k =>
     (infos (mkRoots k 4)).map fun info => tableConstant info k
   group "complete-Constant length decomposition" <|
-    test s!"serConstant size = fixed + roots + tag0(table) + table on {cases.length} constants (all kinds; tables 0/1/8/9/127/128/255/256/257)"
+    test s!"serConstant size = fixed + roots + tag0(table) + table on {cases.length} constants (all kinds; tables 0/1/8/9/127/128/255/256/257/1032/1033)"
       (cases.all decompositionHolds) ++
-    test "roots referencing Share 255/256 in a 257-entry table have widths 2/3"
-      (exprSize (.share 255) == 2 && exprSize (.share 256) == 3)
+    test "Share 7/8 and 1031/1032 have widths 1/2 and 2/3"
+      (exprSize (.share 7) == 1 && exprSize (.share 8) == 2 &&
+        exprSize (.share 1031) == 2 && exprSize (.share 1032) == 3)
 
 /-! ## Structural IDs, expansion and roots -/
 

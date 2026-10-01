@@ -79,7 +79,7 @@ fn u64_len(n: usize) -> u64 {
 }
 
 impl Node {
-  /// Constructor tag (the Tag4 expression flag).
+  /// Constructor tag (the TagN expression flag).
   pub fn tag(&self) -> u8 {
     match self {
       Node::Sort(_) => Expr::FLAG_SORT,
@@ -142,7 +142,7 @@ impl Node {
   }
 
   /// Bytes this node contributes besides its children and, for App/Lam/All,
-  /// besides the per-telescope Tag4 header: the whole encoding of a leaf,
+  /// besides the per-telescope TagN header: the whole encoding of a leaf,
   /// Prj/Let headers, and the contract byte of each Lam/All binder.
   pub(crate) fn own_len(&self) -> Len {
     match self {

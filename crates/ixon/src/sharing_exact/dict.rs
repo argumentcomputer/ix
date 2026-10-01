@@ -6,7 +6,7 @@
 //! constructor. For App, Lam and All the inline constructor is a telescope
 //! over the maximal same-family spine `t = t_0, t_1, ..., t_l` (App follows
 //! the function, Lam/All the body; `t_l` is the first node of another
-//! constructor). A telescope of `j` spine nodes costs its Tag4 header for
+//! constructor). A telescope of `j` spine nodes costs its TagN header for
 //! `j`, every side child's standalone cost (App arguments; Lam/All contract
 //! byte plus binder type), and its head: for `j < l` the head `t_j` continues
 //! the family, so the canonical writer would merge any inline form of it
@@ -136,7 +136,7 @@ pub(crate) enum Choice {
 /// Returns the least inline length found and its prefix length `j`. With
 /// `ties` unset the scan may stop once no remaining option can be strictly
 /// below `min(best, share)`; with `ties` set it stops only once none can
-/// reach that value, and among equal lengths it keeps the `j` whose Tag4
+/// reach that value, and among equal lengths it keeps the `j` whose TagN
 /// header bytes are least. Remaining options are bounded below by
 /// `header(j) + s + 2`: headers never shrink, a further spine node adds a
 /// side cost of at least one byte, and every head costs at least one byte.
@@ -201,7 +201,7 @@ fn scan_telescope<W: Widths, C: Fn(TermId) -> Len>(
 /// term. With `ties`, also the pinned byte-least choice among options of
 /// that length: any inline form precedes a Share (expression flags
 /// `0x0..=0xA` are below the Share flag `0xB`), and telescopes of one node
-/// are ordered by their Tag4 header bytes, which differ for distinct `j`.
+/// are ordered by their TagN header bytes, which differ for distinct `j`.
 /// Once the head is fixed the remaining segments have fixed lengths, so
 /// their least bytes are chosen independently by the same rule.
 pub(crate) fn eval_node<W: Widths, C: Fn(TermId) -> Len>(

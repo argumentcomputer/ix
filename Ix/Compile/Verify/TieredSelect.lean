@@ -112,14 +112,16 @@ theorem select_three (c₁ c₂ c₃ : TieredSharingResult) (h₁ : c₁.stats.w
         (mem3 _ (fun _ => by omega) (by rw [h₁, h₂]; omega) (by rw [h₁, h₃]; omega))
 
 /-- **Width selection.** The canonical tiered construction (no fixed width)
-runs the candidates at widths 1, 2 and 3 and returns one of them (with the
-three final lengths recorded): no candidate has fewer final layout bytes,
-and every candidate with as few bytes has at least the returned width (so
-the lowest width wins a tie; the widths differ, so the `setPrec` tie-break
-never decides). This is the real-byte minimum over the three candidates,
-NOT a global byte minimum. -/
-theorem canonicalTiered_select {layout : ShareLayout} {limits : Limits} {ex : Expanded}
-    {r : TieredSharingResult} (h : canonicalTieredExpanded layout limits ex none = .ok r) :
+on a DAG and roots runs the candidates at widths 1, 2 and 3 and returns one
+of them (with the three final lengths recorded): no candidate has fewer
+final layout bytes, and every candidate with as few bytes has at least the
+returned width (so the lowest width wins a tie; the widths differ, so the
+`setPrec` tie-break never decides). This is the real-byte minimum over the
+three candidates, NOT a global byte minimum. -/
+theorem canonicalTieredCore_select {layout : ShareLayout} {limits : Limits} {dag : Dag}
+    {roots : Array Nat} {r : TieredSharingResult}
+    (h : canonicalTieredCore layout limits dag roots none = .ok r) :
+    let ex : Expanded := { dag, roots, visits := 0, internedNodes := 0 }
     ∃ c₁ c₂ c₃, tieredAtWidth layout limits ex 1 = .ok c₁ ∧
       tieredAtWidth layout limits ex 2 = .ok c₂ ∧ tieredAtWidth layout limits ex 3 = .ok c₃ ∧
       (∃ c ∈ [c₁, c₂, c₃], r = { c with stats := { c.stats with candidateLengths :=
@@ -128,7 +130,8 @@ theorem canonicalTiered_select {layout : ShareLayout} {limits : Limits} {ex : Ex
       (∀ c ∈ [c₁, c₂, c₃], r.stats.phase3LayoutBytes ≤ c.stats.phase3LayoutBytes) ∧
       (∀ c ∈ [c₁, c₂, c₃], c.stats.phase3LayoutBytes = r.stats.phase3LayoutBytes →
         r.stats.w ≤ c.stats.w) := by
-  unfold canonicalTieredExpanded at h
+  intro ex
+  unfold canonicalTieredCore at h
   obtain ⟨c₁, hc₁, h⟩ := bind_eq_ok h
   obtain ⟨c₂, hc₂, h⟩ := bind_eq_ok h
   obtain ⟨c₃, hc₃, h⟩ := bind_eq_ok h
@@ -149,8 +152,26 @@ theorem canonicalTiered_select {layout : ShareLayout} {limits : Limits} {ex : Ex
     rw [hr] at heq ⊢
     exact htie c hc heq
 
+/-- On an expanded input the construction is that of its DAG and roots,
+with the expansion statistics recorded (the encoding, the table terms and
+the candidate statistics are those of `canonicalTieredCore`). -/
+theorem canonicalTiered_core {layout : ShareLayout} {limits : Limits} {ex : Expanded}
+    {fixedWidth : Option Nat} {r : TieredSharingResult}
+    (h : canonicalTieredExpanded layout limits ex fixedWidth = .ok r) :
+    ∃ r₀, canonicalTieredCore layout limits ex.dag ex.roots fixedWidth = .ok r₀ ∧
+      r = withExpansionStats ex r₀ ∧ r.stats = r₀.stats ∧
+      r.result.sharing = r₀.result.sharing ∧ r.result.roots = r₀.result.roots ∧
+      r.result.tableTerms = r₀.result.tableTerms ∧ r.phase1.stored = r₀.phase1.stored := by
+  unfold canonicalTieredExpanded at h
+  obtain ⟨r₀, hr₀, h⟩ := bind_eq_ok h
+  have hr := (Except.ok.inj h).symm
+  subst hr
+  exact ⟨r₀, hr₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
 /-- With a fixed width the construction is the single candidate. -/
-theorem canonicalTiered_fixed (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w : Nat) :
-    canonicalTieredExpanded layout limits ex (some w) = tieredAtWidth layout limits ex w := rfl
+theorem canonicalTiered_fixed (layout : ShareLayout) (limits : Limits) (dag : Dag)
+    (roots : Array Nat) (w : Nat) :
+    canonicalTieredCore layout limits dag roots (some w) =
+      tieredAtWidth layout limits { dag, roots, visits := 0, internedNodes := 0 } w := rfl
 
 end Ix.Compile.Verify.Tiered

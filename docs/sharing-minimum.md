@@ -502,6 +502,10 @@ Test mutual blocks with both shared anonymous terms and collapsed source call-si
 Keep metadata optimization outside this primary-byte objective. Primary minimization does
 not imply that the combined anonymous-plus-metadata artifact has globally minimum length.
 
+The extended index space for `Share` inside metadata expressions (a metadata `Share(i)` with
+`i < p` is a primary entry, `i ≥ p` is `metaSharing[i − p]`) and its construction are specified
+in §13; collapsed call-site indices keep addressing `metaSharing` directly.
+
 ### 8.3 Version and address migration
 
 The inspected `docs/Ixon.md` and `Ixon.Env.VERSION` documentation require a version bump
@@ -879,3 +883,88 @@ the "stored descendants first" order places high-reference entries late, whereas
 priority order (largest in-degree among available entries) keeps them in the 2-byte tier.
 Fix under way: phase 2's order beyond the first tier becomes the Kahn priority order by
 reference count (ties by structural ID), which is also what MSS measured with.
+
+### 12.15 Outlier resolved (2026-10-01): a tie-break artifact, no rule change
+
+The +3,588-byte loss of the construction vs "MSS" on `Affine.Triangle.dist_orthogonalProjectionSpan…`
+is entirely the tie rule inside the Kahn priority order: the measured MSS broke ties between
+equal-in-degree entries by blake3 hash, the construction by structural ID. With 2,230 entries
+straddling the TagN 1,032 boundary, the tie order moves thousands of references between the 2- and
+3-byte rungs (widths [1101, 13699, 4149] vs [1101, 10111, 7737]). Rust re-implementation of MSS with
+both tie rules on all 679,499 Mathlib constants: the construction's "store-all" candidate is **never
+larger than MSS under the same tie rule** (0 larger, 157,438 smaller, −1,227,943 B); structural-ID
+ties beat blake3 ties in aggregate by 374,383 B; choosing the better rule per constant would gain
+only 0.011%. Phase 2's exact allocation covers the first tier; beyond it the order is the greedy
+Kahn rule, whose tie-break is pinned (structural ID). A possible refinement, not adopted: exact
+maximum-weight closed set for the ≤ 1,032-entry second rung (same problem as the first tier with a
+larger cap), relevant only to tables that straddle the boundary.
+
+## 13. Metadata sharing: the extended index space (owner decision 2026-10-01)
+
+Status: **specified; the construction is not implemented in this PR.** Readers and writers
+keep the current behaviour until it is (metadata expressions are written without new shared
+entries). W3 measured the opportunity: Init has no metadata expressions; Mathlib has 524 in 7
+constants, 42,929 bytes in total (0.0013% of the file), and the best possible re-encoding saves
+about 40 KB. The format rule below is fixed now so that readers can be written once.
+
+### 13.1 Index space
+
+Let a constant have the primary sharing table `sharing` with `p` entries, and metadata
+`ConstantMeta` with `metaSharing` of `q` entries. A `Share(i)` occurring inside an expression
+of `metaSharing` denotes:
+
+* `i < p`: primary entry `i` (its expansion against the primary table);
+* `p ≤ i < p + q`: `metaSharing[i − p]` (its expansion);
+* `i ≥ p + q`: invalid (a decode error).
+
+This mirrors the existing extension tables (`metaRefs`, `metaUnivs`), which already extend the
+primary `refs`/`univs` index spaces. A `Share` inside a primary expression (a primary table
+entry or a primary root) always denotes a primary entry (`i < p`); metadata never changes how
+primary bytes decode.
+
+Well-foundedness: entry `metaSharing[j]` may reference every primary entry and the metadata
+entries before it (`p ≤ i < p + j`); a reader expands `metaSharing` in order, each entry against
+`sharing ++ metaSharing[0..j)`. Call-site references are unchanged: `CallSiteEntry.collapsed
+sharingIdx` and `origHead = some (sharingIdx, …)` index `metaSharing` directly
+(`metaSharing[sharingIdx]`, no offset by `p`), as in §8.2.
+
+Readers (Lean `DecompileM` and `Tc/IngressMeta`, Rust `decompile.rs` and kernel ingress of
+metadata, IxVM if it reads metadata) resolve a metadata `Share(i)` by the rule above; the current
+"resolve against the primary table only" behaviour is its `i < p` case, and the current
+"`metaSharing`-local" behaviour must be replaced by the offset rule.
+
+### 13.2 Canonical construction (specified, not implemented)
+
+The primary table is constructed first, from the primary roots alone (§12.8, `canonicalSharingTiered`),
+and is never influenced by metadata: the metadata construction takes the primary result as a
+fixed input. Given the primary table (`p` entries, the Share at index `i` priced by the layout
+width of `i`) and the metadata roots (the collapsed call-site argument expressions and any other
+`Expr` payloads of `ConstantMeta`, each expanded against the old primary and metadata tables
+into the canonical DAG of the constant):
+
+1. Every primary entry is pre-stored, at its own index and real width (certain-stored in the
+   uniform search; never removed, never moved).
+2. Candidates for new entries are the metadata roots' subterms of in-degree at least 2, counting
+   occurrences across the metadata roots only (primary subterms are already available through
+   the pre-stored entries).
+3. The same three-phase construction selects and orders the new entries `N`, at indices
+   `p, p + 1, …` (TagN widths at those indices); phase 3 re-materializes each new entry against
+   the primary entries and the new entries before it, and each metadata root against the whole
+   dictionary (primary entries and `N`).
+4. `metaSharing = N ++ R`, where `R[r]` is the re-materialized metadata root `r` in its original
+   order; every call-site index to root `r` becomes `|N| + r`.
+
+Obligations when implemented: the primary table, primary roots and primary bytes are identical
+with and without metadata (a theorem, by construction: the primary result is an input);
+expansion round trip of every metadata root; idempotence; Lean/Rust byte parity; fixtures.
+Like §8.2, this does not make the combined primary-plus-metadata artifact a global minimum.
+
+### 12.16 TagN gains a 4-byte rung (owner decision, 2026-10-01)
+
+Rung codes after `L=1, M=1`: `c = 0, 1, 2, 3` → 2, 3, 4, 8 following little-endian bytes (code 3 was
+invalid). Widths become 1/2/3/4/5/9 for every flag width f ∈ {0, 2, 4}; rung ends
+`R1 = 2^(r−1)`, `R2 = R1 + 2^(r−2+8)`, `R3 = R2 + 2^16`, `R4 = R3 + 2^24`, `R5 = R4 + 2^32`,
+`R6 = R5 + 2^64` (r = 8 − f). Reason: without it, f = 0 values in [82,048, 2^24) cost 5 bytes where
+Tag0 cost 4; Mathlib's 4.8M name indices lose 22.1 MB (+0.66% of the file). With it TagN is never
+longer than the old codes on any field measured. Still bijective; `Ix/Ixon.lean`'s TagN docstring is
+the normative layout.

@@ -26,7 +26,7 @@
 //!   inductive member). Checking the primary triggers the kernel's
 //!   block-coordination logic which covers every target.
 //!
-//! Dispatch on the outer `Tag4` byte via
+//! Dispatch on the outer `TagN` byte via
 //! [`ixon::lazy::LazyConstant::peek_variant`] avoids body parse +
 //! `Arc<Expr>` allocation for the ~95% of constants that are
 //! standalones or projections.
@@ -110,7 +110,7 @@ impl AnonWorkItem {
 /// `work.iter().map(|w| w.targets().len()).sum()`.
 ///
 /// Errors only on a corrupted env (missing const at an enumerated
-/// address, or a Tag4 head byte that doesn't correspond to a known
+/// address, or a TagN head byte that doesn't correspond to a known
 /// `ConstantInfo` variant).
 pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
   use ConstVariantTag as Tag;

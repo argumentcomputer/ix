@@ -3,9 +3,9 @@
 
   This file fixes the pieces every other part of the exact optimizer uses:
 
-  * exact serializer lengths for the Ixon integer headers (`tag0Size`,
-    `tag4Size`) and for complete expressions (`exprSize`), mirroring
-    `Ixon.putTag0`, `Ixon.putTag4` and `Ixon.putExpr` byte for byte;
+  * exact serializer lengths for the Ixon TagN integers (`tag0Size` for
+    `f = 0`, `tag4Size` for `f = 4`) and for complete expressions
+    (`exprSize`), mirroring `Ixon.putTagN` and `Ixon.putExpr` byte for byte;
   * the structural node alphabet (`Head`, `Node`) and the §3.2 key order;
   * unsigned byte-lexicographic comparison;
   * errors, resource limits and deterministic work counters.
@@ -20,6 +20,21 @@ public import Std.Data.HashMap
 
 public section
 
+namespace Ixon
+
+/-- Compatibility shim for `Ix/Sharing/Exact/Tiered.lean`, removed together with
+`ShareLayout.tag4` there. The wire has one Share code, TagN
+(`putTagN 4 0xB idx`); `tag4` names a pricing layout only. -/
+inductive ShareCodec where
+  | tag4
+  | tagN
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+/-- The wire Share code (TagN). -/
+def ShareCodec.current : ShareCodec := .tagN
+
+end Ixon
+
 namespace Ix.Sharing.Exact
 
 open Ixon
@@ -33,15 +48,16 @@ def natByteCount (n : Nat) : Nat :=
 termination_by n
 decreasing_by exact Nat.div_lt_self (Nat.pos_of_ne_zero h) (by decide)
 
-/-- Exact byte length of `Ixon.putTag0 ⟨n⟩`, for `n < 2^64`. -/
-def tag0Size (n : Nat) : Nat := if n < 128 then 1 else 1 + natByteCount n
+/-- Exact byte length of `Ixon.putTagN 0 0 n`, for `n < 2^64`: 1, 2, 3, 5 or 9
+(`Ixon.tagNByteWidth 0`). -/
+def tag0Size (n : Nat) : Nat := Ixon.tagNByteWidth 0 n
 
-/-- Exact byte length of `Ixon.putTag4 ⟨flag, n⟩`, for `n < 2^64`
-(independent of the flag). -/
-def tag4Size (n : Nat) : Nat := if n < 8 then 1 else 1 + natByteCount n
+/-- Exact byte length of `Ixon.putTagN 4 flag n`, for `n < 2^64` (independent of
+the flag): 1, 2, 3, 5 or 9 (`Ixon.tagNByteWidth 4`). -/
+def tag4Size (n : Nat) : Nat := Ixon.tagNByteWidth 4 n
 
-/-- Width in bytes of `Share(idx)`: one byte for indices `0..7`, then one
-header byte plus the minimal little-endian index bytes. -/
+/-- Width in bytes of `Share(idx)` (`Ixon.putTagN 4 0xB idx`): 1 byte below
+index 8, 2 below 1032, 3 below 66568, 5 below 4295033864, then 9. -/
 def shareWidth (idx : Nat) : Nat := tag4Size idx
 
 /-- Values written through a `UInt64` wire field must be below this bound. -/
@@ -54,13 +70,40 @@ tail-recursive counted loop). -/
   | k, i + 1, st => foldRange f (k + 1) i (f st k)
 
 
+/-! ## Wire representability -/
+
+/-- The telescope counts at the top of an expression (`App` arguments,
+`Lam` binders, `All` binders), provided every `UInt64` count the expression
+codec writes in it is representable (the public `wireWF` domain); `none`
+otherwise. Linear in the expression. -/
+def wireCounts : Ixon.Expr → Option (Nat × Nat × Nat)
+  | .sort _ | .var _ | .str _ | .nat _ | .share _ => some (0, 0, 0)
+  | .ref _ us | .recur _ us => if us.size < UInt64.size then some (0, 0, 0) else none
+  | .prj _ _ v => (wireCounts v).map fun _ => (0, 0, 0)
+  | .app f a =>
+    match wireCounts f, wireCounts a with
+    | some (n, _, _), some _ => if n + 1 < UInt64.size then some (n + 1, 0, 0) else none
+    | _, _ => none
+  | .lam _ ty b =>
+    match wireCounts ty, wireCounts b with
+    | some _, some (_, n, _) => if n + 1 < UInt64.size then some (0, n + 1, 0) else none
+    | _, _ => none
+  | .all _ _ ty b =>
+    match wireCounts ty, wireCounts b with
+    | some _, some (_, _, n) => if n + 1 < UInt64.size then some (0, 0, n + 1) else none
+    | _, _ => none
+  | .letE _ ty v b =>
+    match wireCounts ty, wireCounts v, wireCounts b with
+    | some _, some _, some _ => some (0, 0, 0)
+    | _, _, _ => none
+
 /-! ## Exact expression length -/
 
 /-- Size facts about one expression, computed bottom-up. `full` is the
 standalone serialized length. For a telescope family `appCont` (resp.
 `lamCont`, `allCont`) is `(n, b)`: if the expression is a node of that
 family, `n` is the number of nodes in its maximal same-family spine and `b`
-the spine's bytes excluding the one Tag4 header; otherwise `(0, full)`. -/
+the spine's bytes excluding the one TagN header; otherwise `(0, full)`. -/
 structure SizeInfo where
   full : Nat
   appCont : Nat × Nat
@@ -71,7 +114,7 @@ structure SizeInfo where
 /-- Size facts of a node that continues no telescope. -/
 def SizeInfo.plain (n : Nat) : SizeInfo := ⟨n, (0, n), (0, n), (0, n)⟩
 
-/-- Sum of the `Tag0` lengths of universe indices. -/
+/-- Sum of the TagN (`f = 0`) lengths of universe indices. -/
 def univIdxsSize (us : Array UInt64) : Nat :=
   us.foldl (fun acc u => acc + tag0Size u.toNat) 0
 
@@ -201,7 +244,7 @@ def flag : Head → UInt8
   | .all .. => Ixon.Expr.FLAG_ALL
   | .letE _ => Ixon.Expr.FLAG_LET
 
-/-- The Tag4 size field written by `putExpr` for a non-telescope head. -/
+/-- The TagN (`f = 4`) value written by `putExpr` for a non-telescope head. -/
 def tag4Field : Head → UInt64
   | .sort i => i
   | .var i => i

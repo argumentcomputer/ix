@@ -5,8 +5,7 @@ public import Tests.Gen.Ixon
 public import Tests.FFI.Ixon
 
 open LSpec SlimCheck Gen Ixon
-open Tests.FFI.Ixon (rsEqUnivSerialization rsEqExprSerialization rsEqConstantSerialization
-  rsEqEnvSerialization rsEqExprSerializationWith rsEqConstantSerializationWith)
+open Tests.FFI.Ixon (rsEqUnivSerialization rsEqExprSerialization rsEqConstantSerialization rsEqEnvSerialization)
 
 /-!
 ## Roundtrip Tests for New Format Types
@@ -234,85 +233,71 @@ def tagNUnits : TestSeq :=
   test "TagN f=2 short strings canonical" (tagNShortCanonical 2) ++
   test "TagN f=4 short strings canonical" (tagNShortCanonical 4)
 
-/-! ## Share codec
+/-! ## ExprMeta arena wire format
 
-The Share index encoding is selectable (`ShareCodec`): `.tag4` is format
-version 3, `.tagN` is the TagN (`f = 4`) code of the next version. -/
+Directed byte vectors for the arena encoding (implicit post-order children,
+explicit TagN backward deltas); the same vectors are pinned in Rust
+(`ixon::metadata::tests::arena_vector_*`). Name indices are 0 and 1 (one
+byte in every integer code). -/
 
-/-- Share indices at every Tag4 and TagN (`f = 4`) width boundary. -/
-def shareBoundaries : List UInt64 :=
-  [0, 1, 7, 8, 9, 255, 256, 1031, 1032, 1033, 65535, 65536, 66567, 66568, 66569,
-    4294967295, 4294967296, 4295033863, 4295033864, 4295033865,
-    0xFFFFFFFFFFFFFFFF]
+def arenaVecNames : Address × Address × NameIndex × NameReverseIndex :=
+  let a := Address.blake3 (ByteArray.mk #[1])
+  let b := Address.blake3 (ByteArray.mk #[2])
+  (a, b, (({} : NameIndex).insert a 0).insert b 1, #[a, b])
 
-/-- `bytes` decode exactly to `e` under codec `sc`. -/
-def decodesTo (sc : ShareCodec) (bytes : ByteArray) (e : Expr) : Bool :=
-  match deExpr bytes sc with
-  | .ok e' => e' == e
-  | .error _ => false
+def arenaBytes (arena : ExprMetaArena) : ByteArray :=
+  runPut (putExprMetaArenaIndexed arena arenaVecNames.2.2.1)
 
-def shareRejects (sc : ShareCodec) (bytes : Array UInt8) : Bool :=
-  match deExpr (ByteArray.mk bytes) sc with
+def arenaFrom (bytes : Array UInt8) : Except String ExprMetaArena :=
+  runGetExact (getExprMetaArenaIndexed arenaVecNames.2.2.2) (ByteArray.mk bytes)
+
+/-- The arena writes exactly `bytes`, and `bytes` read back to the arena. -/
+def arenaVector (arena : ExprMetaArena) (bytes : Array UInt8) : Bool :=
+  arenaBytes arena == ByteArray.mk bytes &&
+    match arenaFrom bytes with
+    | .ok a => a == arena
+    | .error _ => false
+
+def arenaRejects (bytes : Array UInt8) : Bool :=
+  match arenaFrom bytes with
   | .error _ => true
   | .ok _ => false
 
-/-- Width, Share flag nibble and exact roundtrip of `Share(i)` under `sc`. -/
-def shareRoundtrips (sc : ShareCodec) (i : UInt64) : Bool :=
-  let bytes := serExpr (.share i) sc
-  let width := match sc with
-    | .tag4 => (runPut (putTag4 ⟨Expr.FLAG_SHARE, i⟩)).size
-    | .tagN => tagNByteWidth 4 i.toNat
-  bytes.size == width && bytes[0]! >>> 4 == Expr.FLAG_SHARE && decodesTo sc bytes (.share i)
-
-/-- Expected `(index, Tag4 bytes, TagN bytes)` of a bare Share. -/
-def shareVectors : List (UInt64 × Array UInt8 × Array UInt8) := [
-  (7, #[0xB7], #[0xB7]),
-  (8, #[0xB8, 0x08], #[0xB8, 0x00]),
-  (255, #[0xB8, 0xFF], #[0xB8, 0xF7]),
-  (256, #[0xB9, 0x00, 0x01], #[0xB8, 0xF8]),
-  (1031, #[0xB9, 0x07, 0x04], #[0xBB, 0xFF]),
-  (1032, #[0xB9, 0x08, 0x04], #[0xBC, 0x00, 0x00]),
-  (66568, #[0xBA, 0x08, 0x04, 0x01], #[0xBD, 0, 0, 0, 0]),
-  (4295033864, #[0xBC, 0x08, 0x04, 0x01, 0x00, 0x01], #[0xBE, 0, 0, 0, 0, 0, 0, 0, 0])]
-
-/-- Constant roundtrip under an explicit Share codec. -/
-def constantSerdeWith (sc : ShareCodec) (c : Constant) : Bool :=
-  match deConstant (serConstant c sc) sc with
-  | .ok c' => c == c'
-  | .error _ => false
-
-def shareCodecUnits : TestSeq :=
-  test "Share codec: the current codec is Tag4 at format version 3"
-    (ShareCodec.current == .tag4 && Env.VERSION == 3 && Env.NEXT_VERSION == 4) ++
-  shareBoundaries.foldl (init := .done) (fun acc i =>
-    acc ++ test s!"Share({i}): width and roundtrip under both codecs; default is Tag4"
-      (shareRoundtrips .tag4 i && shareRoundtrips .tagN i &&
-        serExpr (.share i) == serExpr (.share i) .tag4 &&
-        serExpr (.share i) .tagN == runPut (putTagN 4 Expr.FLAG_SHARE i) &&
-        (decide (i < 8) == (serExpr (.share i) .tag4 == serExpr (.share i) .tagN)))) ++
-  shareVectors.foldl (init := .done) (fun acc (i, t4, tn) =>
-    acc ++ test s!"Share({i}) bytes: Tag4 {t4}, TagN {tn}"
-      (serExpr (.share i) .tag4 == ByteArray.mk t4 &&
-        serExpr (.share i) .tagN == ByteArray.mk tn)) ++
-  test "Tag4 bytes of Share(8) read as TagN are Share(16)"
-    (decodesTo .tagN (ByteArray.mk #[0xB8, 0x08]) (.share 16)) ++
-  test "TagN Share rejects code 3" (shareRejects .tagN #[0xBF, 0, 0, 0, 0, 0, 0, 0, 0]) ++
-  test "TagN Share rejects overflow"
-    (shareRejects .tagN #[0xBE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) ++
-  test "TagN Share rejects a truncated rung 2" (shareRejects .tagN #[0xB8]) ++
-  test "TagN Share rejects a truncated rung 3" (shareRejects .tagN #[0xBC, 0x00]) ++
-  test "TagN Share rejects a trailing byte" (shareRejects .tagN #[0xB0, 0x00]) ++
-  test "non-Share headers are Tag4 under both codecs"
-    ([Expr.var 300, .sort (2 ^ 40), .str 70000, .app (.share 1032) (.var 9),
-        .app (.var 1032) (.share 66568)].all fun e =>
-      decodesTo .tag4 (serExpr e .tag4) e && decodesTo .tagN (serExpr e .tagN) e) ++
-  test "Var(300) has the same bytes under both codecs"
-    (serExpr (.var 300) .tag4 == serExpr (.var 300) .tagN) ++
-  test "a Constant with Shares at every rung roundtrips under both codecs"
-    (let root := shareBoundaries.foldl (fun acc i => Expr.app acc (.share i)) (.var 0)
-     let c : Constant := ⟨.axio ⟨false, 0, root⟩, #[.var 0, .share 0], #[], #[.zero]⟩
-     constantSerdeWith .tag4 c && constantSerdeWith .tagN c &&
-       serConstant c != serConstant c .tagN)
+def exprMetaArenaUnits : TestSeq :=
+  let a := arenaVecNames.1
+  let b := arenaVecNames.2.1
+  -- `fun (x : T) => f x` in post-order: every child implicit.
+  let tree : ExprMetaArena := { nodes := #[
+    .ref b, .ref a, .leaf, .app 1 2, .binder a .default 0 3] }
+  -- Shared nodes: explicit backward deltas next to implicit slots.
+  let dag : ExprMetaArena := { nodes := #[
+    .leaf, .app 0 0, .letBinder a 0 1 0, .prj b 1, .mdata #[] 3] }
+  -- Call-site references are explicit; a forward reference wraps.
+  let calls : ExprMetaArena := { nodes := #[
+    .leaf,
+    .callSite a #[.kept 0 0, .collapsed 1 0] #[0] (some (2, 0)),
+    .etaCallSite 1 b #[.kept 0 1] #[1] 1,
+    .prj a 7] }
+  test "arena: a post-order tree writes no references"
+    (arenaVector tree #[0x05, 0x38, 0x01, 0x38, 0x00, 0x00, 0x0B, 0x13, 0x00]) ++
+  test "arena: shared nodes are explicit backward deltas"
+    (arenaVector dag #[0x05, 0x00, 0x0A, 0x00, 0x32, 0x00, 0x01, 0x01, 0x40,
+      0x01, 0x01, 0x49, 0x00]) ++
+  test "arena: call-site references are explicit; a forward reference wraps"
+    (arenaVector calls #[0x04, 0x00,
+      0x50, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x01, 0x02, 0x00,
+      0x58, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+      0x40, 0x00, 0xC2, 0x7B, 0xBF, 0xFE, 0xFF, 0xFE, 0xFF, 0xFF, 0xFF]) ++
+  test "arena: rejects an explicit slot at the implicit position"
+    (arenaRejects #[0x02, 0x00, 0x08, 0x00, 0x00]) ++
+  test "arena: rejects an implicit slot with no preceding node"
+    (arenaRejects #[0x01, 0x09, 0x00]) ++
+  test "arena: rejects mask bits beyond the kind's slots"
+    (arenaRejects #[0x01, 0x01] && arenaRejects #[0x02, 0x00, 0x0C] &&
+      arenaRejects #[0x01, 0x39, 0x00]) ++
+  test "arena: rejects unknown kinds" (arenaRejects #[0x01, 0x60]) ++
+  test "arena: the canonical form of a rejected vector is accepted"
+    (arenaVector { nodes := #[.leaf, .app 0 0] } #[0x02, 0x00, 0x0A, 0x00])
 
 def constantUnits : TestSeq :=
   let defn := Definition.mk .defn .safe 0 (.sort 0) (.var 0)
@@ -640,7 +625,7 @@ public def Tests.Ixon.suite : List TestSeq := [
   exprUnits,
   strictExprUnits,
   tagNUnits,
-  shareCodecUnits,
+  exprMetaArenaUnits,
   -- Env unit tests (for debugging serialization)
   envUnitTests,
   -- Env serialization comparison unit tests
@@ -651,19 +636,12 @@ public def Tests.Ixon.suite : List TestSeq := [
   checkIO "Univ serde roundtrips" (∀ u : Univ, univSerde u),
   checkIO "Expr serde roundtrips" (∀ e : Expr, exprSerde e),
   checkIO "Constant serde roundtrips" (∀ c : Constant, constantSerde c),
-  checkIO "Expr serde roundtrips (TagN Share)"
-    (∀ e : Expr, decodesTo .tagN (serExpr e .tagN) e),
-  checkIO "Constant serde roundtrips (TagN Share)" (∀ c : Constant, constantSerdeWith .tagN c),
   checkIO "Comm serde roundtrips" (∀ c : Comm, commSerde c),
   checkIO "Env serde roundtrips" (∀ raw : RawEnv, envSerde raw),
   -- Cross-implementation serialization comparison (Lean == Rust)
   checkIO "Univ serialization Lean==Rust" (∀ u : Univ, univSerializationMatches u),
   checkIO "Expr serialization Lean==Rust" (∀ e : Expr, exprSerializationMatches e),
   checkIO "Constant serialization Lean==Rust" (∀ c : Constant, constantSerializationMatches c),
-  checkIO "Expr serialization Lean==Rust (TagN Share)"
-    (∀ e : Expr, rsEqExprSerializationWith 1 e (serExpr e .tagN)),
-  checkIO "Constant serialization Lean==Rust (TagN Share)"
-    (∀ c : Constant, rsEqConstantSerializationWith 1 c (serConstant c .tagN)),
   checkIO "Env serialization Lean==Rust" (∀ raw : RawEnv, envSerializationMatches raw),
   -- Strict byte equality between the two writers over generated envs —
   -- generated named entries carry full metadata (call-site surgery,

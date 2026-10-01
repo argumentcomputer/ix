@@ -34,7 +34,7 @@
 //!
 //! Wire format: Convention B (own magic + explicit version, the
 //! `.ixes`/`.ixprof` precedent). Fixed-width little-endian integers —
-//! deliberately unlike `.ixe`'s Tag0 varints. Trailing bytes after the
+//! deliberately unlike `.ixe`'s TagN varints. Trailing bytes after the
 //! storage section are preserved opaquely (future sections: 0x01 agg
 //! tree, 0x02 per-unit assumption roots); readers of this version stop
 //! after storage, the `.ixes` trick.

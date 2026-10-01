@@ -122,7 +122,7 @@ length, so this order agrees with comparing complete Constants. -/
 def variablePartBytes (sharing roots : Array Ixon.Expr) : Except SharingError ByteArray :=
   .ok <| runPut do
     for r in roots do putExpr r
-    putTag0 ⟨sharing.size.toUInt64⟩
+    putTagN 0 0 sharing.size.toUInt64
     for e in sharing do putExpr e
 
 /-- Oracle result. -/

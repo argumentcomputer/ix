@@ -30,7 +30,7 @@ use ix_common::env::{
 };
 
 use ixon::{
-  CompileError, DecompileError, Tag0,
+  CompileError, DecompileError, TagN,
   constant::{
     Axiom, Constant, ConstantInfo, Constructor, DefKind, Definition,
     DefinitionProj, Inductive, InductiveProj, MutConst, Quotient, Recursor,
@@ -472,12 +472,10 @@ fn deserialize_int(bytes: &[u8]) -> Result<Int, DecompileError> {
   }
 }
 
-/// Read a Tag0-encoded u64 from a byte slice, advancing the cursor.
-fn read_tag0(buf: &mut &[u8]) -> Result<u64, DecompileError> {
-  Tag0::get(buf).map(|t| t.size).map_err(|_| {
-    DecompileError::BadConstantFormat {
-      msg: "read_tag0: unexpected EOF".into(),
-    }
+/// Read a TagN (f = 0) u64 from a byte slice, advancing the cursor.
+fn read_tagn0(buf: &mut &[u8]) -> Result<u64, DecompileError> {
+  TagN::get(0, buf).map(|t| t.value).map_err(|e| {
+    DecompileError::BadConstantFormat { msg: format!("read_tagn0: {e}") }
   })
 }
 
@@ -502,8 +500,8 @@ fn deserialize_substring(
 ) -> Result<Substring, DecompileError> {
   let str_addr = read_addr_bytes(buf)?;
   let s = read_string(&str_addr, stt)?;
-  let start_pos = Nat::from(read_tag0(buf)?);
-  let stop_pos = Nat::from(read_tag0(buf)?);
+  let start_pos = Nat::from(read_tagn0(buf)?);
+  let stop_pos = Nat::from(read_tagn0(buf)?);
   Ok(Substring { str: s, start_pos, stop_pos })
 }
 
@@ -522,14 +520,14 @@ fn deserialize_source_info(
   match tag {
     0 => {
       let leading = deserialize_substring(buf, stt)?;
-      let leading_pos = Nat::from(read_tag0(buf)?);
+      let leading_pos = Nat::from(read_tagn0(buf)?);
       let trailing = deserialize_substring(buf, stt)?;
-      let trailing_pos = Nat::from(read_tag0(buf)?);
+      let trailing_pos = Nat::from(read_tagn0(buf)?);
       Ok(SourceInfo::Original(leading, leading_pos, trailing, trailing_pos))
     },
     1 => {
-      let start = Nat::from(read_tag0(buf)?);
-      let end = Nat::from(read_tag0(buf)?);
+      let start = Nat::from(read_tagn0(buf)?);
+      let end = Nat::from(read_tagn0(buf)?);
       if buf.is_empty() {
         return Err(DecompileError::BadConstantFormat {
           msg: "source_info: missing canonical".into(),
@@ -567,7 +565,7 @@ fn deserialize_preresolved(
     1 => {
       let name_addr = read_addr_bytes(buf)?;
       let name = decompile_name(&name_addr, stt)?;
-      let count = read_tag0(buf)? as usize;
+      let count = read_tagn0(buf)? as usize;
       let mut fields = Vec::with_capacity(count);
       for _ in 0..count {
         let field_addr = read_addr_bytes(buf)?;
@@ -609,7 +607,7 @@ fn deserialize_syntax_inner(
       let info = deserialize_source_info(buf, stt)?;
       let kind_addr = read_addr_bytes(buf)?;
       let kind = decompile_name(&kind_addr, stt)?;
-      let arg_count = read_tag0(buf)? as usize;
+      let arg_count = read_tagn0(buf)? as usize;
       let mut args = Vec::with_capacity(arg_count);
       for _ in 0..arg_count {
         args.push(deserialize_syntax_inner(buf, stt)?);
@@ -627,7 +625,7 @@ fn deserialize_syntax_inner(
       let raw_val = deserialize_substring(buf, stt)?;
       let val_addr = read_addr_bytes(buf)?;
       let val = decompile_name(&val_addr, stt)?;
-      let pr_count = read_tag0(buf)? as usize;
+      let pr_count = read_tagn0(buf)? as usize;
       let mut preresolved = Vec::with_capacity(pr_count);
       for _ in 0..pr_count {
         preresolved.push(deserialize_preresolved(buf, stt)?);

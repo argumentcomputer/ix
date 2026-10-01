@@ -39,17 +39,15 @@ def uint64ToBytes (x : UInt64) : ByteArray :=
   ]
   ByteArray.mk arr
 
-/-- Compute encoded size of Tag0 (variable-length u64).
-    If value < 128: 1 byte, else 1 + byteCount bytes.
-    Must match Rust's Tag0::encoded_size(). -/
+/-- Encoded size of a TagN (`f = 0`) integer. Must match Rust
+    `TagN::byte_width(0, value)`. -/
 def tag0EncodedSize (value : UInt64) : Nat :=
-  if value < 128 then 1 else 1 + value.byteCount.toNat
+  Ixon.tagNByteWidth 0 value.toNat
 
-/-- Compute encoded size of Tag4 (4-bit flag + variable-length size).
-    If size < 8: 1 byte, else 1 + byteCount bytes.
-    Must match Rust's Tag4::encoded_size(). -/
+/-- Encoded size of a TagN (`f = 4`) integer. Must match Rust
+    `TagN::byte_width(4, size)`. -/
 def tag4EncodedSize (size : UInt64) : Nat :=
-  if size < 8 then 1 else 1 + size.byteCount.toNat
+  Ixon.tagNByteWidth 4 size.toNat
 
 /-- Canonical scalar/contract bytes, followed by fixed-size child hashes.
     This grammar agrees with Rust's structural sharing hash. -/
@@ -57,17 +55,17 @@ def putNodeHeader : Ixon.Expr → Ixon.PutM Unit
   | e@(.sort _) | e@(.var _) | e@(.ref ..) | e@(.recur ..) |
       e@(.str _) | e@(.nat _) | e@(.share _) => Ixon.putExpr e
   | .prj idx field _ => do
-    Ixon.putTag4 ⟨Ixon.Expr.FLAG_PRJ, field⟩
-    Ixon.putTag0 ⟨idx⟩
-  | .app .. => Ixon.putTag4 ⟨Ixon.Expr.FLAG_APP, 1⟩
+    Ixon.putTagN 4 Ixon.Expr.FLAG_PRJ field
+    Ixon.putTagN 0 0 idx
+  | .app .. => Ixon.putTagN 4 Ixon.Expr.FLAG_APP 1
   | .lam contract .. => do
-    Ixon.putTag4 ⟨Ixon.Expr.FLAG_LAM, 1⟩
+    Ixon.putTagN 4 Ixon.Expr.FLAG_LAM 1
     Ixon.putBinderContract contract
   | .all contract result .. => do
-    Ixon.putTag4 ⟨Ixon.Expr.FLAG_ALL, 1⟩
+    Ixon.putTagN 4 Ixon.Expr.FLAG_ALL 1
     Ixon.putU8 (Ixon.packAllContract contract result)
   | .letE contract .. => do
-    Ixon.putTag4 ⟨Ixon.Expr.FLAG_LET, contract.flags⟩
+    Ixon.putTagN 4 Ixon.Expr.FLAG_LET contract.flags
     Ixon.putBinderContract contract.binder
 
 def computeNodeHash (e : Ixon.Expr) (childHashes : Array Address) : Address :=
@@ -87,7 +85,7 @@ def computeExprHash (e : Ixon.Expr) : Address :=
 
 /-- Information about a subterm for sharing analysis. -/
 structure SubtermInfo where
-  /-- Base size of this node alone (Tag4 header, not including children) for Ixon format -/
+  /-- Base size of this node alone (TagN header, not including children) for Ixon format -/
   baseSize : Nat
   /-- Number of occurrences within this block -/
   usageCount : Nat
@@ -97,7 +95,7 @@ structure SubtermInfo where
   children : Array Address
   deriving Inhabited
 
-/-- Compute the base size of a node (Tag4 header size) for Ixon serialization. -/
+/-- Compute the base size of a node (TagN header size) for Ixon serialization. -/
 def computeBaseSize (e : Ixon.Expr) : Nat :=
   (Ixon.runPut (putNodeHeader e)).size
 
@@ -298,8 +296,7 @@ def computeEffectiveSizes (infoMap : Std.HashMap Address SubtermInfo)
 
 /-- Compute the encoded size of a Share(idx) tag. -/
 def shareRefSize (idx : Nat) : Nat :=
-  let idx64 := idx.toUInt64
-  if idx64 < 8 then 1 else 1 + idx64.byteCount.toNat
+  Ixon.tagNByteWidth 4 idx
 
 /-- Candidate for sharing: (hash, term_size, usage_count, potential_savings). -/
 structure SharingCandidate where

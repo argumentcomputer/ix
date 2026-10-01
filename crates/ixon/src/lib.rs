@@ -2,7 +2,7 @@
 //!
 //! This module provides:
 //! - Alpha-invariant representations of Lean expressions and constants
-//! - Compact tag-based serialization (Tag4 for exprs, Tag2 for univs, Tag0 for ints)
+//! - Compact TagN integer serialization (4-bit flag for exprs, 2-bit for univs, none for ints)
 //! - Content-addressed storage with sharing support
 //! - Cryptographic commitments for ZK proofs
 
@@ -59,7 +59,7 @@ pub use proof::{
   RevealRecursorRule,
 };
 pub use serialize::ShareCodec;
-pub use tag::{Tag0, Tag2, Tag4, TagN};
+pub use tag::TagN;
 pub use univ::Univ;
 
 /// Shared test utilities for ixon modules.
@@ -108,92 +108,52 @@ mod doc_examples {
   use ix_common::address::Address;
 
   // =========================================================================
-  // Tag4 examples (docs section "Tag4 (4-bit flag)")
+  // TagN examples (docs section "TagN"): f = 4, 2, 0 flag bits
   // =========================================================================
 
-  #[test]
-  fn tag4_small_value() {
-    // Tag4 { flag: 0x1, size: 5 }
-    // Header: 0b0001_0_101 = 0x15
-    let tag = Tag4::new(0x1, 5);
+  fn tagn(f: u32, flag: u8, value: u64) -> Vec<u8> {
     let mut buf = Vec::new();
-    tag.put(&mut buf);
-    assert_eq!(buf, vec![0x15], "Tag4 {{ flag: 1, size: 5 }} should be 0x15");
+    TagN::put(f, flag, value, &mut buf);
+    buf
   }
 
   #[test]
-  fn tag4_large_value() {
-    // Tag4 { flag: 0x2, size: 256 }
-    // Header: 0b0010_1_001 = 0x29 (large=1, 2 bytes follow)
-    // Bytes: 0x00 0x01 (256 in little-endian)
-    let tag = Tag4::new(0x2, 256);
-    let mut buf = Vec::new();
-    tag.put(&mut buf);
-    assert_eq!(
-      buf,
-      vec![0x29, 0x00, 0x01],
-      "Tag4 {{ flag: 2, size: 256 }} should be [0x29, 0x00, 0x01]"
-    );
-  }
-
-  // =========================================================================
-  // Tag2 examples (docs section "Tag2 (2-bit flag)")
-  // =========================================================================
-
-  #[test]
-  fn tag2_small_value() {
-    // Tag2 { flag: 0, size: 15 }
-    // Header: 0b00_0_01111 = 0x0F
-    let tag = Tag2::new(0, 15);
-    let mut buf = Vec::new();
-    tag.put(&mut buf);
-    assert_eq!(buf, vec![0x0F], "Tag2 {{ flag: 0, size: 15 }} should be 0x0F");
+  fn tagn4_small_value() {
+    // f = 4, flag 0x1, value 5: rung 1 (value < 8), header 0b0001_0_101.
+    assert_eq!(tagn(4, 0x1, 5), vec![0x15]);
   }
 
   #[test]
-  fn tag2_large_value() {
-    // Tag2 { flag: 3, size: 100 }
-    // 100 doesn't fit in 5 bits, needs 1 byte to encode
-    // Header: 0b11_1_00000 = 0xE0 (flag=3, large=1, byte_count-1=0)
-    // Bytes: 0x64 (100)
-    let tag = Tag2::new(3, 100);
-    let mut buf = Vec::new();
-    tag.put(&mut buf);
-    assert_eq!(
-      buf,
-      vec![0xE0, 0x64],
-      "Tag2 {{ flag: 3, size: 100 }} should be [0xE0, 0x64]"
-    );
-  }
-
-  // =========================================================================
-  // Tag0 examples (docs section "Tag0 (no flag)")
-  // =========================================================================
-
-  #[test]
-  fn tag0_small_value() {
-    // Tag0 { size: 42 }
-    // Header: 0b0_0101010 = 0x2A
-    let tag = Tag0::new(42);
-    let mut buf = Vec::new();
-    tag.put(&mut buf);
-    assert_eq!(buf, vec![0x2A], "Tag0 {{ size: 42 }} should be 0x2A");
+  fn tagn4_two_byte_value() {
+    // f = 4, flag 0x2, value 256: rung 2 ([8, 1032)), 256 - 8 = 248 = 0x0F8:
+    // header 0b0010_10_00 (L = 1, M = 0, high bits 0), then 0xF8.
+    assert_eq!(tagn(4, 0x2, 256), vec![0x28, 0xF8]);
   }
 
   #[test]
-  fn tag0_large_value() {
-    // Tag0 { size: 1000 }
-    // 1000 = 0x3E8, needs 2 bytes to encode
-    // Header: 0b1_0000001 = 0x81 (large=1, byte_count-1=1)
-    // Bytes: 0xE8 0x03 (1000 in little-endian)
-    let tag = Tag0::new(1000);
-    let mut buf = Vec::new();
-    tag.put(&mut buf);
-    assert_eq!(
-      buf,
-      vec![0x81, 0xE8, 0x03],
-      "Tag0 {{ size: 1000 }} should be [0x81, 0xE8, 0x03]"
-    );
+  fn tagn2_small_value() {
+    // f = 2, flag 0, value 15: rung 1 (value < 32), header 0b00_0_01111.
+    assert_eq!(tagn(2, 0, 15), vec![0x0F]);
+  }
+
+  #[test]
+  fn tagn2_two_byte_value() {
+    // f = 2, flag 3, value 100: rung 2 ([32, 4128)), 100 - 32 = 68 = 0x44:
+    // header 0b11_10_0000, then 0x44.
+    assert_eq!(tagn(2, 3, 100), vec![0xE0, 0x44]);
+  }
+
+  #[test]
+  fn tagn0_small_value() {
+    // f = 0, value 42: rung 1 (value < 128), header 0b0_0101010.
+    assert_eq!(tagn(0, 0, 42), vec![0x2A]);
+  }
+
+  #[test]
+  fn tagn0_two_byte_value() {
+    // f = 0, value 1000: rung 2 ([128, 16512)), 1000 - 128 = 872 = 0x368:
+    // header 0b10_000011 (high bits 3), then 0x68.
+    assert_eq!(tagn(0, 0, 1000), vec![0x83, 0x68]);
   }
 
   // =========================================================================
@@ -202,7 +162,7 @@ mod doc_examples {
 
   #[test]
   fn univ_zero() {
-    // Univ::Zero -> Tag2 { flag: 0, size: 0 } -> 0x00
+    // Univ::Zero -> TagN(2, 0, 0) -> 0x00
     let mut buf = Vec::new();
     univ::put_univ(&Univ::zero(), &mut buf);
     assert_eq!(buf, vec![0x00], "Univ::Zero should be 0x00");
@@ -211,7 +171,7 @@ mod doc_examples {
   #[test]
   fn univ_succ_zero() {
     // Univ::Succ(Zero) uses telescope compression:
-    // Tag2 { flag: 0, size: 1 } (succ_count=1) + base (Zero)
+    // TagN(2, 0, 1) (succ_count=1) + base (Zero)
     // = 0b00_0_00001 = 0x01, then Zero = 0x00
     let mut buf = Vec::new();
     univ::put_univ(&Univ::succ(Univ::zero()), &mut buf);
@@ -224,7 +184,7 @@ mod doc_examples {
 
   #[test]
   fn univ_var_1() {
-    // Univ::Var(1) -> Tag2 { flag: 3, size: 1 }
+    // Univ::Var(1) -> TagN(2, 3, 1)
     // = 0b11_0_00001 = 0xC1
     let mut buf = Vec::new();
     univ::put_univ(&Univ::var(1), &mut buf);
@@ -233,7 +193,7 @@ mod doc_examples {
 
   #[test]
   fn univ_max_zero_var1() {
-    // Univ::Max(Zero, Var(1)) -> Tag2 { flag: 1, size: 0 } + Zero + Var(1)
+    // Univ::Max(Zero, Var(1)) -> TagN(2, 1, 0) + Zero + Var(1)
     // = 0b01_0_00000 = 0x40, then 0x00 (Zero), then 0xC1 (Var(1))
     let mut buf = Vec::new();
     univ::put_univ(&Univ::max(Univ::zero(), Univ::var(1)), &mut buf);
@@ -250,7 +210,7 @@ mod doc_examples {
 
   #[test]
   fn expr_var_0() {
-    // Expr::Var(0) -> Tag4 { flag: 0x1, size: 0 } -> 0x10
+    // Expr::Var(0) -> TagN(4, 0x1, 0) -> 0x10
     let mut buf = Vec::new();
     serialize::put_expr(&Expr::Var(0), &mut buf);
     assert_eq!(buf, vec![0x10], "Expr::Var(0) should be 0x10");
@@ -258,7 +218,7 @@ mod doc_examples {
 
   #[test]
   fn expr_sort_0() {
-    // Expr::Sort(0) -> Tag4 { flag: 0x0, size: 0 } -> 0x00
+    // Expr::Sort(0) -> TagN(4, 0x0, 0) -> 0x00
     let mut buf = Vec::new();
     serialize::put_expr(&Expr::Sort(0), &mut buf);
     assert_eq!(buf, vec![0x00], "Expr::Sort(0) should be 0x00");
@@ -266,7 +226,7 @@ mod doc_examples {
 
   #[test]
   fn expr_ref_no_univs() {
-    // Expr::Ref(0, []) -> Tag4 { flag: 0x2, size: 0 } + idx(0)
+    // Expr::Ref(0, []) -> TagN(4, 0x2, 0) + idx(0)
     // = 0x20 + 0x00
     let mut buf = Vec::new();
     serialize::put_expr(&Expr::Ref(0, vec![]), &mut buf);
@@ -279,7 +239,7 @@ mod doc_examples {
 
   #[test]
   fn expr_share_5() {
-    // Expr::Share(5) -> Tag4 { flag: 0xB, size: 5 } -> 0xB5
+    // Expr::Share(5) -> TagN(4, 0xB, 5) -> 0xB5
     let mut buf = Vec::new();
     serialize::put_expr(&Expr::Share(5), &mut buf);
     assert_eq!(buf, vec![0xB5], "Expr::Share(5) should be 0xB5");
@@ -288,7 +248,7 @@ mod doc_examples {
   #[test]
   fn expr_app_telescope() {
     // App(App(App(f, a), b), c) with f=Var(3), a=Var(2), b=Var(1), c=Var(0)
-    // -> Tag4 { flag: 0x7, size: 3 } + f + a + b + c
+    // -> TagN(4, 0x7, 3) + f + a + b + c
     let expr = Expr::app(
       Expr::app(Expr::app(Expr::var(3), Expr::var(2)), Expr::var(1)),
       Expr::var(0),
@@ -327,7 +287,7 @@ mod doc_examples {
 
   #[test]
   fn eval_claim_tag() {
-    // Eval claim -> Tag4 { flag: 0xE, size: 3 } -> 0xE3 (single byte)
+    // Eval claim -> TagN(4, 0xE, 3) -> 0xE3 (single byte)
     let claim = Claim::Eval {
       input: Address::hash(b"input"),
       output: Address::hash(b"output"),
@@ -342,7 +302,7 @@ mod doc_examples {
 
   #[test]
   fn eval_proof_tag() {
-    // Eval proof -> Tag4 { flag: 0xF, size: 0 } -> 0xF0 (single byte)
+    // Eval proof -> TagN(4, 0xF, 0) -> 0xF0 (single byte)
     let proof = Proof::new(
       Claim::Eval {
         input: Address::hash(b"input"),
@@ -362,7 +322,7 @@ mod doc_examples {
 
   #[test]
   fn check_claim_tag() {
-    // Check claim -> Tag4 { flag: 0xE, size: 4 } -> 0xE4
+    // Check claim -> TagN(4, 0xE, 4) -> 0xE4
     let claim =
       Claim::Check { const_addr: Address::hash(b"value"), assumptions: None };
     let mut buf = Vec::new();
@@ -373,7 +333,7 @@ mod doc_examples {
 
   #[test]
   fn check_proof_tag() {
-    // Check proof -> Tag4 { flag: 0xF, size: 1 } -> 0xF1
+    // Check proof -> TagN(4, 0xF, 1) -> 0xF1
     let proof = Proof::new(
       Claim::Check { const_addr: Address::hash(b"value"), assumptions: None },
       vec![5, 6, 7],
@@ -450,7 +410,7 @@ mod doc_examples {
 
   #[test]
   fn constant_defn_tag() {
-    // Constant with Defn -> Tag4 { flag: 0xD, size: 0 } -> 0xD0
+    // Constant with Defn -> TagN(4, 0xD, 0) -> 0xD0
     use constant::{Constant, ConstantInfo, DefKind, Definition};
     use ix_common::env::DefinitionSafety;
 
@@ -468,7 +428,7 @@ mod doc_examples {
 
   #[test]
   fn constant_muts_tag() {
-    // Muts with 3 entries -> Tag4 { flag: 0xC, size: 3 } -> 0xC3
+    // Muts with 3 entries -> TagN(4, 0xC, 3) -> 0xC3
     use constant::{Constant, ConstantInfo, DefKind, Definition, MutConst};
     use ix_common::env::DefinitionSafety;
 
@@ -495,7 +455,7 @@ mod doc_examples {
 
   #[test]
   fn env_tag() {
-    // Env -> Tag4 { flag: 0xE, size: VERSION } -> 0xE3 for v3
+    // Env -> TagN(4, 0xE, VERSION) -> 0xE3 for v3
     let env = Env::new();
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
