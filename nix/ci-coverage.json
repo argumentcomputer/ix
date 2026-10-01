@@ -156,6 +156,7 @@
   "Compilatrix.Anf.Walk",
   "Compilatrix.Anf.WellFormed",
   "Compilatrix.Backend",
+  "Compilatrix.Backend.Proof.Xl",
   "Compilatrix.Cfg.Lower",
   "Compilatrix.Cfg.Proof.Correct",
   "Compilatrix.Cfg.Proof.Fuel",
@@ -443,6 +444,8 @@
   "Compilatrix.X86.Layout.Tunnel",
   "Compilatrix.X86.Memory",
   "Compilatrix.X86.ObjectExecution",
+  "Compilatrix.X86.ObjectRun",
+  "Compilatrix.X86.ObjectRunSafe",
   "Compilatrix.X86.SafeControl",
   "Compilatrix.X86.SafeSteps",
   "Compilatrix.X86.SafeStepsObject",
@@ -569,6 +572,7 @@
   "CompilatrixTests.Fences.AiurWire",
   "CompilatrixTests.Fences.Anf",
   "CompilatrixTests.Fences.Backend",
+  "CompilatrixTests.Fences.BackendProof",
   "CompilatrixTests.Fences.CfgLower",
   "CompilatrixTests.Fences.CfgProof",
   "CompilatrixTests.Fences.Erase",
@@ -617,5 +621,5 @@
   "Ix.Lib"],
  "baseline": "jcb/x86: merge M2.6b backend",
  "axiom_sha256":
- "427a72443b39348b34018d35adf9999becb1b6e583e145db4597d23358839001",
- "axiom_count": 3528}
+ "19343c0ab009157dbeea48579e5875ddfbee544e3b548ec0093529c5f903c212",
+ "axiom_count": 3549}

@@ -31,3 +31,4 @@ import CompilatrixTests.Fences.CfgLower
 import CompilatrixTests.Fences.Front
 import CompilatrixTests.Fences.LayoutProof
 import CompilatrixTests.Fences.SelectProof
+import CompilatrixTests.Fences.BackendProof

@@ -369,6 +369,8 @@ import Compilatrix.X86.ObjectExecution
 import Compilatrix.X86.SafeControl
 import Compilatrix.X86.SafeSteps
 import Compilatrix.X86.SafeStepsObject
+import Compilatrix.X86.ObjectRun
+import Compilatrix.X86.ObjectRunSafe
 import Compilatrix.X86.StreamCalls
 import Compilatrix.X86.StreamControl
 import Compilatrix.X86.StreamDecidable
@@ -407,6 +409,7 @@ import Compilatrix.X86.Layout.Proof.Rows
 import Compilatrix.X86.Layout.Proof.Linearize
 import Compilatrix.X86.Layout.Proof.Transport
 import Compilatrix.Backend
+import Compilatrix.Backend.Proof.Xl
 import Compilatrix.Rt.Backend
 import Compilatrix.Src.Table.Cert
 import Compilatrix.Recheck
