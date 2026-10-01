@@ -16,7 +16,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
 
 theorem FactsOk.insert' {facts : Src.NatMap Fact} {ρ' : List Val} (h : FactsOk Q Valid facts ρ') {d : Nat}
     (hd : d = ρ'.length) {w : Val} {f : Fact} (hf : FactOk Q Valid (w :: ρ') d f) :
@@ -29,7 +29,7 @@ theorem lvl_top {d : Nat} {ρ' : List Val} (hd : d = ρ'.length) (w : Val) :
 
 /-- A value related to itself: literals and field-free constructors (the
 results of primitives). -/
-theorem WV.lit_or_con {u : Val} (h : (∃ l, u = .lit l) ∨ ∃ key, u = .con key []) : WV Q Valid u u := by
+theorem WV.lit_or_con {u : Val} (h : (∃ l, u = .lit l) ∨ ∃ key, u = .con key []) : WV Q Valid Xc u u := by
   rcases h with ⟨l, rfl⟩ | ⟨key, rfl⟩
   · exact .lit
   · exact .con .nil
@@ -76,10 +76,10 @@ theorem projVal_cases (c : Key.CtorKey) (i : Nat) (v : Val) :
     · exact .inl rfl
   · exact .inl rfl
 
-theorem walkBind_atom (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env}
+theorem walkBind_atom (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {a : Atom} {body : Exp} {k : Kont} {out : Exp} {s s' : Fires}
     (h : (Walk.walkBind C (fuel + 1) env here c (.atom a) body k).run s = .ok (out, s')) :
-    ExpSim P Q Valid n C out env here k (.bind c (.atom a) body) := by
+    ExpSim P Q Valid Xc n C out env here k (.bind c (.atom a) body) := by
   intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
   rw [Walk.walkBind] at h
   dsimp only at h
@@ -96,11 +96,11 @@ theorem walkBind_atom (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
     refine (SimUpTo.ok ⟨hvw, hf.push w⟩).congr hsrc (fun k => ?_)
     rw [evalBind_atom, hd, Opd.val_atom hw]; rfl
 
-theorem walkBind_con (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env}
+theorem walkBind_con (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {cc : Key.CtorKey} {as : List Atom} {body : Exp} {k : Kont}
     {out : Exp} {s s' : Fires}
     (h : (Walk.walkBind C (fuel + 1) env here c (.con cc as) body k).run s = .ok (out, s')) :
-    ExpSim P Q Valid n C out env here k (.bind c (.con cc as) body) := by
+    ExpSim P Q Valid Xc n C out env here k (.bind c (.con cc as) body) := by
   intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
   rw [Walk.walkBind] at h
   dsimp only at h
@@ -122,11 +122,11 @@ theorem walkBind_con (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C 
       opds_suffix (List.suffix_cons _ _) hws, rfl⟩⟩).congr hsrc (fun k => ?_)
     rw [evalBind_con, hd, Walk.atoms, opds_eval hws]; rfl
 
-theorem walkBind_proj (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env}
+theorem walkBind_proj (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {cc : Key.CtorKey} {i : Nat} {x : Atom} {body : Exp}
     {k : Kont} {out : Exp} {s s' : Fires}
     (h : (Walk.walkBind C (fuel + 1) env here c (.proj cc i x) body k).run s = .ok (out, s')) :
-    ExpSim P Q Valid n C out env here k (.bind c (.proj cc i x) body) := by
+    ExpSim P Q Valid Xc n C out env here k (.bind c (.proj cc i x) body) := by
   intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
   rw [Walk.walkBind] at h
   dsimp only at h
@@ -136,10 +136,10 @@ theorem walkBind_proj (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
     simpa [Bind.occ] using hnd.bind_rhs i hi
   have hsrc : ∀ k, evalBind P k ρ (.proj cc i x) = projVal cc i v := fun k => by
     rw [evalBind_proj, hv]; rfl
-  have hpure : ∀ (ent : Ent), (∀ u, projVal cc i v = .ok u → WEnt Q Valid ent u ρ' ∨
+  have hpure : ∀ (ent : Ent), (∀ u, projVal cc i v = .ok u → WEnt Q Valid Xc ent u ρ' ∨
       (ent = .opd .box ∧ body.occ 0 = 0)) →
       (∀ k, evalBind P k ρ (.proj cc i x) = .stuck) ∨ ∃ u, (∀ k, evalBind P k ρ (.proj cc i x) = .ok u) ∧
-        (WEnt Q Valid ent u ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) := by
+        (WEnt Q Valid Xc ent u ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) := by
     intro ent hent
     rcases projVal_cases cc i v with hst | ⟨u, hu⟩
     · exact .inl fun k => by rw [hsrc, hst]

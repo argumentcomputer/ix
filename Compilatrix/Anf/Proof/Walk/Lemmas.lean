@@ -112,28 +112,28 @@ theorem paramOpds_length (d n : Nat) : (paramOpds d n).length = n := by simp [pa
 
 theorem fieldOpds_length (d n : Nat) : (Walk.fieldOpds d n).length = n := by simp [Walk.fieldOpds]
 
-variable {Q : Program} {Valid : Cfg → List Val → Prop}
+variable {Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop}
 
 /-! ## Value lists -/
 
-theorem WVs.reverse {vs ws : List Val} (h : WVs Q Valid vs ws) : WVs Q Valid vs.reverse ws.reverse :=
+theorem WVs.reverse {vs ws : List Val} (h : WVs Q Valid Xc vs ws) : WVs Q Valid Xc vs.reverse ws.reverse :=
   of_pw (pw_of h).reverse
 
-theorem WVs.take {vs ws : List Val} (h : WVs Q Valid vs ws) (n : Nat) :
-    WVs Q Valid (vs.take n) (ws.take n) :=
+theorem WVs.take {vs ws : List Val} (h : WVs Q Valid Xc vs ws) (n : Nat) :
+    WVs Q Valid Xc (vs.take n) (ws.take n) :=
   of_pw ((pw_of h).take n)
 
-theorem WVs.drop {vs ws : List Val} (h : WVs Q Valid vs ws) (n : Nat) :
-    WVs Q Valid (vs.drop n) (ws.drop n) :=
+theorem WVs.drop {vs ws : List Val} (h : WVs Q Valid Xc vs ws) (n : Nat) :
+    WVs Q Valid Xc (vs.drop n) (ws.drop n) :=
   of_pw ((pw_of h).drop n)
 
 /-! ## Pushing operands -/
 
 /-- Operands with related values pushed on a walk environment. -/
 theorem WEnv.pushOpds {ρ' : List Val} : ∀ {os : List Opd} {vs ws : List Val},
-    os.mapM (·.val ρ') = some ws → WVs Q Valid vs ws →
-    ∀ {live : List Bool} {σ : List Ent} {ρ : List Val}, WEnv Q Valid live σ ρ ρ' →
-    WEnv Q Valid (List.replicate os.length true ++ live) (Walk.entsOf os ++ σ) (vs ++ ρ) ρ'
+    os.mapM (·.val ρ') = some ws → WVs Q Valid Xc vs ws →
+    ∀ {live : List Bool} {σ : List Ent} {ρ : List Val}, WEnv Q Valid Xc live σ ρ ρ' →
+    WEnv Q Valid Xc (List.replicate os.length true ++ live) (Walk.entsOf os ++ σ) (vs ++ ρ) ρ'
   | [], vs, ws, h, hv, _, _, _, he => by
     simp at h; subst h; cases hv; exact he
   | o :: os, vs, ws, h, hv, _, _, _, he => by
@@ -146,9 +146,9 @@ theorem WEnv.pushOpds {ρ' : List Val} : ∀ {os : List Opd} {vs ws : List Val},
 
 /-- An environment prefix given entry by entry. -/
 theorem WEnv.pushIdx {ρ' : List Val} : ∀ {σP : List Ent} {V : List Val}, σP.length = V.length →
-    (∀ i (hi : i < σP.length), ∃ o w, σP[i] = .opd o ∧ o.val ρ' = some w ∧ ∃ v, V[i]? = some v ∧ WV Q Valid v w) →
-    ∀ {live : List Bool} {σ : List Ent} {ρ : List Val}, WEnv Q Valid live σ ρ ρ' →
-    WEnv Q Valid (List.replicate σP.length true ++ live) (σP ++ σ) (V ++ ρ) ρ'
+    (∀ i (hi : i < σP.length), ∃ o w, σP[i] = .opd o ∧ o.val ρ' = some w ∧ ∃ v, V[i]? = some v ∧ WV Q Valid Xc v w) →
+    ∀ {live : List Bool} {σ : List Ent} {ρ : List Val}, WEnv Q Valid Xc live σ ρ ρ' →
+    WEnv Q Valid Xc (List.replicate σP.length true ++ live) (σP ++ σ) (V ++ ρ) ρ'
   | [], [], _, _, _, _, _, he => he
   | [], _ :: _, hl, _, _, _, _, _ => by simp at hl
   | _ :: _, [], hl, _, _, _, _, _ => by simp at hl
@@ -184,8 +184,8 @@ theorem KT_mono {k : Kont} {J' : List JClo} {T : Val → Nat → Result Val} (h 
 of the same continuation. -/
 theorem JEnv.suffixK {n : Nat} {k : Kont} {ρ' ρ'' : List Val} {J' J'' : List JClo}
     {jl : List Bool} {jσ : List JEnt} {J : List JClo}
-    (h : JEnv P Q Valid n (KT Q k J') ρ' J' jl jσ J) (hρ : ρ' <:+ ρ'') (hJ : J' <:+ J'') :
-    JEnv P Q Valid n (KT Q k J'') ρ'' J'' jl jσ J := by
+    (h : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jl jσ J) (hρ : ρ' <:+ ρ'') (hJ : J' <:+ J'') :
+    JEnv P Q Valid Xc n (KT Q k J'') ρ'' J'' jl jσ J := by
   cases hT : KT Q k J' with
   | none =>
     rw [hT] at h
@@ -198,11 +198,11 @@ theorem JEnv.suffixK {n : Nat} {k : Kont} {ρ' ρ'' : List Val} {J' J'' : List J
 /-- An emitted join entry that is live. -/
 theorem JEnv.get_emitted {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' : List Val}
     {J' : List JClo} : ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo},
-    JEnv P Q Valid n T ρ' J' jl jσ J → ∀ {j l ar : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
+    JEnv P Q Valid Xc n T ρ' J' jl jσ J → ∀ {j l ar : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
     {b : Exp}, jσ[j]? = some (.mk (some l) σj jσj ar r b) → jl[j]? = some true →
     ∃ ρj Jj livej jlj jc' Tk, J[j]? = some (.mk ρj Jj ar b r) ∧ l < J'.length ∧
-      J'[J'.length - 1 - l]? = some jc' ∧ T = some Tk ∧ JoinR P Q Valid n Tk (.mk ρj Jj ar b r) jc' ∧
-      WEnv Q Valid livej σj ρj ρ' ∧ JEnv P Q Valid n T ρ' J' jlj jσj Jj ∧
+      J'[J'.length - 1 - l]? = some jc' ∧ T = some Tk ∧ JoinR P Q Valid Xc n Tk (.mk ρj Jj ar b r) jc' ∧
+      WEnv Q Valid Xc livej σj ρj ρ' ∧ JEnv P Q Valid Xc n T ρ' J' jlj jσj Jj ∧
       NoDead (List.replicate ar true ++ livej) (if r then true :: jlj else jlj) b
   | _, _, _, .nil, _, _, _, _, _, _, _, h, _ => by simp at h
   | _, _, _, .emitted hl hjc hT hR henv hJj hnd _, 0, _, _, _, _, _, _, h, _ => by
@@ -223,10 +223,10 @@ theorem JEnv.get_emitted {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ
 /-- A join entry inlined at its single jump, live. -/
 theorem JEnv.get_once {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' : List Val}
     {J' : List JClo} : ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo},
-    JEnv P Q Valid n T ρ' J' jl jσ J → ∀ {j ar : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
+    JEnv P Q Valid Xc n T ρ' J' jl jσ J → ∀ {j ar : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
     {b : Exp}, jσ[j]? = some (.mk none σj jσj ar r b) → jl[j]? = some true →
     r = false ∧ ∃ ρj Jj livej jlj, J[j]? = some (.mk ρj Jj ar b false) ∧
-      WEnv Q Valid livej σj ρj ρ' ∧ JEnv P Q Valid n T ρ' J' jlj jσj Jj ∧
+      WEnv Q Valid Xc livej σj ρj ρ' ∧ JEnv P Q Valid Xc n T ρ' J' jlj jσj Jj ∧
       NoDead (List.replicate ar true ++ livej) jlj b
   | _, _, _, .nil, _, _, _, _, _, _, h, _ => by simp at h
   | _, _, _, .emitted _ _ _ _ _ _ _ _, 0, _, _, _, _, _, h, _ => by

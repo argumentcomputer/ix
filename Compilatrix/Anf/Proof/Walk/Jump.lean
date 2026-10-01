@@ -100,27 +100,27 @@ theorem NoDead.ticks {live jlive : List Bool} : ∀ {m : Nat} {e : Exp},
   | 0, _, h => h
   | _ + 1, _, h => NoDead.ticks h.tick
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
 
 /-- Case-of-case: the jump's charge and the join body's leading ticks
 become ticks over the walk of the alternative a known constructor
 selects. -/
-theorem caseOfCase_sim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg} {here : Here}
+theorem caseOfCase_sim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {here : Here}
     {k : Kont} {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo}
     {SK : Val → Nat → Result Val} (hV : Valid C ρ') (hd : here.d = ρ'.length)
-    (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ') (hk : KontW Q Valid n k SK ρ' J')
+    (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ') (hk : KontW Q Valid Xc n k SK ρ' J')
     {j m : Nat} {alts : List Alt} {dflt : Option Exp} {ρj : List Val} {Jj : List JClo}
     {livej jlj : List Bool} {σj : List Ent} {jσj : List JEnt}
     (hJj : J[j]? = some (.mk ρj Jj 1 (Walk.ticks m (.case (.var 0) alts dflt)) false))
-    (henvj : WEnv Q Valid livej σj ρj ρ') (hJjj : JEnv P Q Valid n (KT Q k J') ρ' J' jlj jσj Jj)
+    (henvj : WEnv Q Valid Xc livej σj ρj ρ') (hJjj : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlj jσj Jj)
     (hndj : NoDead (true :: livej) jlj (Walk.ticks m (.case (.var 0) alts dflt)))
     {as : List Atom} {v w : Val} {o : Opd} (hvs : evalAtoms ρ as = some [v]) (how : o.val ρ' = some w)
-    (hvw : WV Q Valid v w) {c : Key.CtorKey} {fs : List Opd} {isAlt : Bool} {alt0 o' : Exp}
+    (hvw : WV Q Valid Xc v w) {c : Key.CtorKey} {fs : List Opd} {isAlt : Bool} {alt0 o' : Exp}
     {s s2 : Fires} (hkn : Walk.known C.prog.known here o = some (c, fs))
     (hsel : Walk.select alts dflt c fs.length = some (isAlt, alt0))
     (h2 : (Walk.walk C fuel (Walk.Env.mk ((if isAlt then Walk.entsOf fs.reverse else []) ++ Ent.opd o :: σj)
       jσj) here alt0 k).run s = .ok (o', s2)) :
-    SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J (.jump j as)).bind (SK · k))
+    SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.jump j as)).bind (SK · k))
       (fun k => eval Q k ρ' J' (Walk.ticks (m + 1) o')) := by
   have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.cknown C ρ' hV]
   obtain ⟨wfs, hwfs, hwc⟩ := known_sound hK hf hkn how
@@ -153,7 +153,7 @@ theorem caseOfCase_sim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {
       simp only [Atom.eval, List.getElem?_cons_zero, Result.ofOption, Result.bind_ok, hvc]
       exact (select_spec (k := k) hsel).1
     obtain ⟨-, hmem, hdf⟩ := select_spec (P := P) (k := 0) (ρ := v :: ρj) (J := Jj) hsel
-    have hbase : WEnv Q Valid (true :: livej) (.opd o :: σj) (v :: ρj) ρ' := .live (.opd how hvw) henvj
+    have hbase : WEnv Q Valid Xc (true :: livej) (.opd o :: σj) (v :: ρj) ρ' := .live (.opd how hvw) henvj
     cases isAlt with
     | true =>
       obtain ⟨a, ha, hab, haa⟩ := hmem rfl
@@ -168,10 +168,10 @@ theorem caseOfCase_sim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {
       exact (hW.walk h2 _ Jj ρ' J' _ jlj SK hV (by simpa using hbase) hJjj hd hdj hf hnda hk).congr
         (fun k => by rw [hcase]; rfl) (fun _ => rfl)
 
-theorem walkJump_step (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg}
+theorem walkJump_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg}
     {env : Walk.Env} {here : Here} {j : Nat} {as : List Atom} {k : Kont} {out : Exp} {s s' : Fires}
     (h : (Walk.walkJump C (fuel + 1) env here j as k).run s = .ok (out, s')) :
-    ExpSim P Q Valid n C out env here k (.jump j as) := by
+    ExpSim P Q Valid Xc n C out env here k (.jump j as) := by
   intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
   rw [Walk.walkJump] at h
   obtain ⟨os, s1, h1, h2⟩ := Walk.run_bind_ok h
@@ -262,7 +262,7 @@ theorem walkJump_step (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
                   obtain ⟨v, rfl⟩ : ∃ v, vs = [v] := by
                     cases hvws with
                     | cons hv hrest => cases hrest; exact ⟨_, rfl⟩
-                  have hvw : WV Q Valid v w := by cases hvws with | cons hv _ => exact hv
+                  have hvw : WV Q Valid Xc v w := by cases hvws with | cons hv _ => exact hv
                   have how : o.val ρ' = some w := by
                     simp only [List.mapM_cons, List.mapM_nil, Option.bind_eq_bind,
                       Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hws

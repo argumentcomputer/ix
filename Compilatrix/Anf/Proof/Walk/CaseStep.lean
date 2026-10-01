@@ -17,23 +17,23 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
 
 /-- The general case: the walked alternatives and default under the
 scrutinee's operand. -/
-theorem case_general (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg}
+theorem case_general (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg}
     {env : Walk.Env} {here0 : Here} {x : Atom} {alts : List Alt} {d : Option Exp} {k0 : Kont}
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J'0 : List JClo} {live jlive : List Bool}
-    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid live env.σ ρ ρ')
-    (hJ0 : JEnv P Q Valid n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J) (hd0 : here0.d = ρ'.length)
+    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid Xc live env.σ ρ ρ')
+    (hJ0 : JEnv P Q Valid Xc n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J) (hd0 : here0.d = ρ'.length)
     (hdj0 : here0.dj = J'0.length) (hf0 : FactsOk Q Valid here0.facts ρ')
-    (hnd : NoDead live jlive (.case x alts d)) (hk0 : KontW Q Valid n k0 SK ρ' J'0)
-    {xo : Opd} {v w : Val} (hv : x.eval ρ = some v) (hw : xo.val ρ' = some w) (hvw : WV Q Valid v w)
+    (hnd : NoDead live jlive (.case x alts d)) (hk0 : KontW Q Valid Xc n k0 SK ρ' J'0)
+    {xo : Opd} {v w : Val} (hv : x.eval ρ = some v) (hw : xo.val ρ' = some w) (hvw : WV Q Valid Xc v w)
     {alts' : List Alt} {dflt' : Option Exp} {s0 s1 : Fires}
     (halts : (Walk.walkAlts C fuel env here0 xo alts k0).run s0 = .ok (alts', s1))
     (hdflt : (d = none ∧ dflt' = none) ∨ ∃ e e' s2 s3, d = some e ∧ dflt' = some e' ∧
       (Walk.walk C fuel env here0 e k0).run s2 = .ok (e', s3)) :
-    SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J (.case x alts d)).bind (SK · k))
+    SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.case x alts d)).bind (SK · k))
       (fun k => eval Q k ρ' J'0 (.case (xo.atom here0.d) alts' dflt')) := by
   rcases Rel.asCtor_rel structural.toBase P.known hvw with hnone | ⟨c, vfs, wfs, hvc, hwc, hfs⟩
   · refine (SimUpTo.stuck _).congr (fun k => ?_) (fun _ => rfl)
@@ -42,7 +42,7 @@ theorem case_general (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C 
     rfl
   · have hwc' : w.asCtor Q.known = some (c, wfs) := by rw [hctx.known]; exact hwc
     have hdsim : (d = none ∧ dflt' = none) ∨ ∃ e e', d = some e ∧ dflt' = some e' ∧
-        SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J e).bind (SK · k)) (fun k => eval Q k ρ' J'0 e') := by
+        SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J e).bind (SK · k)) (fun k => eval Q k ρ' J'0 e') := by
       rcases hdflt with h0 | ⟨e, e', s2, s3, rfl, rfl, he⟩
       · exact .inl h0
       · exact .inr ⟨e, e', rfl, rfl, hW.walk he ρ J ρ' J'0 live jlive SK hV henv hJ0 hd0 hdj0 hf0
@@ -52,11 +52,11 @@ theorem case_general (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C 
     · rw [eval_case, hv]; simp [Result.ofOption, hvc]
     · rw [eval_case, hd0, Opd.val_atom hw]; simp [Result.ofOption, hwc']
 
-theorem walkCase_step (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg}
+theorem walkCase_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg}
     {env : Walk.Env} {here : Here} {x : Atom} {alts : List Alt} {d : Option Exp} {k : Kont}
     {out : Exp} {s s' : Fires}
     (h : (Walk.walkCase C (fuel + 1) env here x alts d k).run s = .ok (out, s')) :
-    ExpSim P Q Valid n C out env here k (.case x alts d) := by
+    ExpSim P Q Valid Xc n C out env here k (.case x alts d) := by
   intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
   rw [Walk.walkCase] at h
   obtain ⟨xo, s1, h1, h2⟩ := Walk.run_bind_ok h
@@ -199,15 +199,15 @@ theorem walkCase_step (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
             ((d = none ∧ dflt' = none) ∨ ∃ e e' s2 s3, d = some e ∧ dflt' = some e' ∧
               (Walk.walk C fuel env here0 e k0).run s2 = .ok (e', s3)) →
             here0.d = here.d → here0.facts = here.facts → here0.dj = J'0.length →
-            JEnv P Q Valid n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J → KontW Q Valid n k0 SK ρ' J'0 →
-            SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J (.case x alts d)).bind (SK · k))
+            JEnv P Q Valid Xc n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J → KontW Q Valid Xc n k0 SK ρ' J'0 →
+            SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.case x alts d)).bind (SK · k))
               (fun k => eval Q k ρ' J'0 (.case (xo.atom here0.d) alts' dflt')) :=
           fun here0 k0 J'0 alts' dflt' s0 s0' halts hdflt hd0 hf0 hdj0 hJ0 hk0 =>
             case_general hctx hW hV henv hJ0 (by rw [hd0, hd]) hdj0 (by rw [hf0]; exact hf) hnd hk0 hv hw
               hvw halts hdflt
         have hJK : ∀ (k0 : Kont) (J'0 : List JClo), J' <:+ J'0 →
             (KT Q k J' = none ∨ KT Q k0 J'0 = KT Q k J') →
-            JEnv P Q Valid n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J := by
+            JEnv P Q Valid Xc n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J := by
           intro k0 J'0 hsuf hKT
           rcases hKT with hKT | hKT
           · rw [hKT] at hJ; exact JEnv.retarget hJ

@@ -22,15 +22,15 @@ theorem run_fire_then {α : Type} {f : Fires → Fires} {x : Walk.M α} {s s' : 
   cases Walk.run_fire_ok h1
   exact h2
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop}
+variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop}
 
 /-! ## Resolving atoms that occur -/
 
 theorem resolve_rel' {env : Walk.Env} {live : List Bool} {ρ ρ' : List Val}
-    (henv : WEnv Q Valid live env.σ ρ ρ') {a : Atom} {o : Opd} {s s' : Fires}
+    (henv : WEnv Q Valid Xc live env.σ ρ ρ') {a : Atom} {o : Opd} {s s' : Fires}
     (h : (Walk.resolve env a).run s = .ok (o, s'))
     (hocc : ∀ i, live[i]? = some false → a.occ i = 0) :
-    s' = s ∧ ∃ v w, a.eval ρ = some v ∧ o.val ρ' = some w ∧ WV Q Valid v w := by
+    s' = s ∧ ∃ v w, a.eval ρ = some v ∧ o.val ρ' = some w ∧ WV Q Valid Xc v w := by
   refine resolve_rel henv h fun i hi => ?_
   have hlen : env.σ.length = live.length := by
     have := henv.length; omega
@@ -40,10 +40,10 @@ theorem resolve_rel' {env : Walk.Env} {live : List Bool} {ρ ρ' : List Val}
   cases h
 
 theorem resolveList_rel' {env : Walk.Env} {live : List Bool} {ρ ρ' : List Val}
-    (henv : WEnv Q Valid live env.σ ρ ρ') : ∀ {as : List Atom} {os : List Opd} {s s' : Fires},
+    (henv : WEnv Q Valid Xc live env.σ ρ ρ') : ∀ {as : List Atom} {os : List Opd} {s s' : Fires},
     (Walk.resolveList env as).run s = .ok (os, s') →
     (∀ i, live[i]? = some false → Atom.occList i as = 0) →
-    s' = s ∧ ∃ vs ws, evalAtoms ρ as = some vs ∧ os.mapM (·.val ρ') = some ws ∧ WVs Q Valid vs ws
+    s' = s ∧ ∃ vs ws, evalAtoms ρ as = some vs ∧ os.mapM (·.val ρ') = some ws ∧ WVs Q Valid Xc vs ws
   | [], os, s, s', h, _ => by
     simp only [Walk.resolveList] at h
     obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h
@@ -84,14 +84,14 @@ theorem branch_sim {here : Here} {k : Kont} {body : Here → Kont → Walk.M Exp
     {s s' : Fires} (h : (Walk.branch here k body).run s = .ok (out, s')) {ρ' : List Val}
     {J' : List JClo} (hd : here.d = ρ'.length) (hdj : here.dj = J'.length)
     (hfacts : FactsOk Q Valid here.facts ρ') {SK : Val → Nat → Result Val}
-    (hk : KontW Q Valid n k SK ρ' J') {c : Nat → Result Val}
+    (hk : KontW Q Valid Xc n k SK ρ' J') {c : Nat → Result Val}
     (hbody : ∀ (here0 : Here) (k0 : Kont) (out0 : Exp) (s0 s0' : Fires) (J'0 : List JClo),
       (body here0 k0).run s0 = .ok (out0, s0') → here0.d = here.d → here0.facts = here.facts →
       here0.dj = J'0.length → J' <:+ J'0 → (∃ T, KT Q k0 J'0 = some T) →
       (KT Q k J' = none ∨ KT Q k0 J'0 = KT Q k J') →
-      KontW Q Valid n k0 SK ρ' J'0 →
-      SimUpTo (WV Q Valid) n c (fun k => eval Q k ρ' J'0 out0)) :
-    SimUpTo (WV Q Valid) n c (fun k => eval Q k ρ' J' out) := by
+      KontW Q Valid Xc n k0 SK ρ' J'0 →
+      SimUpTo (WV Q Valid Xc) n c (fun k => eval Q k ρ' J'0 out0)) :
+    SimUpTo (WV Q Valid Xc) n c (fun k => eval Q k ρ' J' out) := by
   cases k with
   | cont f =>
     simp only [Walk.branch] at h

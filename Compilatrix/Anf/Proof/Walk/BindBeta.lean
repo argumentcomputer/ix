@@ -16,22 +16,22 @@ open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 theorem fieldOpds_get (d m : Nat) {q : Nat} (hq : q < m) : (Walk.fieldOpds d m)[q]? = some (.lvl (d + q)) := by
   simp [Walk.fieldOpds, hq]
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
 
 /-- The inlined body of an exactly or over-applied local function, behind
 the application's charge. -/
-theorem beta_tick (hW : WalkAt P Q Valid n fuel) {C : Cfg} {here : Here} {σf : List Ent} {livef : List Bool}
+theorem beta_tick (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {here : Here} {σf : List Ent} {livef : List Bool}
     {ρf : List Val} {nf : Nat} {fb : Exp} {k' : Kont} {o : Exp} {s s' : Fires} {os : List Opd}
     (hrun : (Walk.walk C fuel { σ := Walk.entsOf (os.take nf).reverse ++ σf, jσ := [] } here fb k').run s =
       .ok (o, s'))
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo} {SK : Val → Nat → Result Val}
-    {body : Exp} (hV : Valid C ρ') (henvf : WEnv Q Valid livef σf ρf ρ')
+    {body : Exp} (hV : Valid C ρ') (henvf : WEnv Q Valid Xc livef σf ρf ρ')
     (hndf : NoDead (List.replicate nf true ++ livef) [] fb) (hpos : 0 < nf) (hl : nf ≤ os.length)
-    {vs ws : List Val} (hws : os.mapM (·.val ρ') = some ws) (hvws : WVs Q Valid vs ws)
+    {vs ws : List Val} (hws : os.mapM (·.val ρ') = some ws) (hvws : WVs Q Valid Xc vs ws)
     (hd : here.d = ρ'.length) (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ')
-    (hk' : KontW Q Valid n k' (fun r k => (applyN P k r (vs.drop nf)).bind fun v =>
+    (hk' : KontW Q Valid Xc n k' (fun r k => (applyN P k r (vs.drop nf)).bind fun v =>
       (eval P k (v :: ρ) J body).bind (SK · k)) ρ' J') :
-    SimUpTo (WV Q Valid) n
+    SimUpTo (WV Q Valid Xc) n
       (fun k => (applyN P k (.clos ρf nf fb []) vs).bind fun v => (eval P k (v :: ρ) J body).bind (SK · k))
       (fun k => eval Q k ρ' J' (.tick o)) := by
   have hvl : vs.length = os.length := by rw [← hvws.length, mapM_length hws]
@@ -46,11 +46,11 @@ theorem beta_tick (hW : WalkAt P Q Valid n fuel) {C : Cfg} {here : Here} {σf : 
   | zero => rfl
   | succ k => simp only [later_succ, Sem.Result.bind_assoc]
 
-theorem walkBind_app (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env}
+theorem walkBind_app (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {f : Atom} {as : List Atom} {body : Exp} {k : Kont}
     {out : Exp} {s s' : Fires}
     (h : (Walk.walkBind C (fuel + 1) env here c (.app f as) body k).run s = .ok (out, s')) :
-    ExpSim P Q Valid n C out env here k (.bind c (.app f as) body) := by
+    ExpSim P Q Valid Xc n C out env here k (.bind c (.app f as) body) := by
   intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
   rw [Walk.walkBind.eq_def] at h
   dsimp only at h
@@ -88,7 +88,7 @@ theorem walkBind_app (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C 
         (by rw [hσi]; simp)
     obtain ⟨xf, hxf, hent⟩ := henv.get hσi hli
     obtain ⟨ρf, livef, rfl, henvf, hndf, hpos⟩ : ∃ ρf livef, xf = .clos ρf nf fb [] ∧
-        WEnv Q Valid livef σf ρf ρ' ∧ NoDead (List.replicate nf true ++ livef) [] fb ∧ 0 < nf := by
+        WEnv Q Valid Xc livef σf ρf ρ' ∧ NoDead (List.replicate nf true ++ livef) [] fb ∧ 0 < nf := by
       cases hent with
       | fn henvf hndf hpos => exact ⟨_, _, rfl, henvf, hndf, hpos⟩
     split at h2
@@ -105,7 +105,7 @@ theorem walkBind_app (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C 
           rw [List.drop_eq_nil_iff, hvl]
           rw [List.isEmpty_iff, List.drop_eq_nil_iff] at hemp
           exact hemp
-        have hk'' : KontW Q Valid n k' (fun r k => (applyN P k r (vs.drop nf)).bind fun v =>
+        have hk'' : KontW Q Valid Xc n k' (fun r k => (applyN P k r (vs.drop nf)).bind fun v =>
             (eval P k (v :: ρ) J body).bind (SK · k)) ρ' J' := by
           have e : (fun r k => (applyN P k r (vs.drop nf)).bind fun v => (eval P k (v :: ρ) J body).bind (SK · k)) =
               (fun v k => (eval P k (v :: ρ) J body).bind (SK · k)) := by
@@ -143,7 +143,7 @@ theorem walkBind_app (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C 
       obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h6
       have hm : 0 < nf - os.length := by omega
       rw [hd] at h3
-      have hwv : WV Q Valid (.clos ρf nf fb vs) (.clos ρ' (nf - os.length) fb' []) := by
+      have hwv : WV Q Valid Xc (.clos ρf nf fb vs) (.clos ρ' (nf - os.length) fb' []) := by
         refine .walkc (σP := Walk.entsOf (os ++ Walk.fieldOpds ρ'.length (nf - os.length)).reverse)
           (got' := []) (oOf := fun p => (os[p]?).getD .box) (wOf := fun p => (ws[p]?).getD .box)
           hV h3 henvf hf hndf (by simp [Walk.entsOf, fieldOpds_length]; omega) (by omega) (by omega)
@@ -170,7 +170,7 @@ theorem walkBind_app (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C 
           rw [hL, List.getElem?_append_right (by omega), fieldOpds_get _ _ (by omega)] at this
           rw [this]
           simp; omega
-      have hin : SimUpTo (WV Q Valid) n (fun k => (eval P k (.clos ρf nf fb vs :: ρ) J body).bind (SK · k))
+      have hin : SimUpTo (WV Q Valid Xc) n (fun k => (eval P k (.clos ρf nf fb vs :: ρ) J body).bind (SK · k))
           (fun k => eval Q k ρ' J' (.bind c (.fn (List.replicate (nf - os.length) {}) fb') e)) := by
         have hsuf : ρ' <:+ Val.clos ρ' (nf - os.length) fb' [] :: ρ' := List.suffix_cons _ _
         refine (hW.walk h5 (.clos ρf nf fb vs :: ρ) J _ J' (true :: live) jlive SK (hctx.suffix C ρ' _ hV hsuf)

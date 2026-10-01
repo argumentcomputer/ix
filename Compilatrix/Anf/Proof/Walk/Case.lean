@@ -191,22 +191,22 @@ theorem evalAlts_same {P : Program} {ρ : List Val} {J : List JClo} {c : Key.Cto
 
 /-! ## Alternatives -/
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
 
-theorem walkAlts_step (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg}
+theorem walkAlts_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg}
     {env : Walk.Env} {here : Here} {xo : Opd} {alts : List Alt} {k : Kont} {alts' : List Alt}
     {s s' : Fires} (h : (Walk.walkAlts C (fuel + 1) env here xo alts k).run s = .ok (alts', s'))
     (ρ : List Val) (J : List JClo) (ρ' : List Val) (J' : List JClo) (live jlive : List Bool)
-    (SK : Val → Nat → Result Val) (hV : Valid C ρ') (henv : WEnv Q Valid live env.σ ρ ρ')
-    (hJ : JEnv P Q Valid n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
+    (SK : Val → Nat → Result Val) (hV : Valid C ρ') (henv : WEnv Q Valid Xc live env.σ ρ ρ')
+    (hJ : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
     (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ')
     (hnd : ∀ a ∈ alts, NoDead (List.replicate a.arity true ++ live) jlive a.body)
-    (hk : KontW Q Valid n k SK ρ' J')
+    (hk : KontW Q Valid Xc n k SK ρ' J')
     (c : Key.CtorKey) (fs fs' : List Val) (w : Val) (dflt : Option Exp) (dflt' : Option Exp)
-    (hfs : WVs Q Valid fs fs') (hw : xo.val ρ' = some w) (hc : w.asCtor Q.known = some (c, fs'))
+    (hfs : WVs Q Valid Xc fs fs') (hw : xo.val ρ' = some w) (hc : w.asCtor Q.known = some (c, fs'))
     (hdflt : (dflt = none ∧ dflt' = none) ∨ ∃ e e', dflt = some e ∧ dflt' = some e' ∧
-      SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J e).bind (SK · k)) (fun k => eval Q k ρ' J' e')) :
-    SimUpTo (WV Q Valid) n (fun k => (evalAlts P k ρ J c fs alts dflt).bind (SK · k))
+      SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J e).bind (SK · k)) (fun k => eval Q k ρ' J' e')) :
+    SimUpTo (WV Q Valid Xc) n (fun k => (evalAlts P k ρ J c fs alts dflt).bind (SK · k))
       (fun k => evalAlts Q k ρ' J' c fs' alts' dflt') := by
   have hfl := hfs.length
   cases alts with
@@ -225,7 +225,7 @@ theorem walkAlts_step (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
         (key = c ∧ m = fs.length → FactsOk Q Valid facts' (fs'.reverse ++ ρ')) →
         (rest' : List Alt) → (s1 s1' : Fires) →
         (Walk.walkAlts C fuel env here xo rest k).run s1 = .ok (rest', s1') →
-        SimUpTo (WV Q Valid) n (fun k => (evalAlts P k ρ J c fs (.mk key m b :: rest) dflt).bind (SK · k))
+        SimUpTo (WV Q Valid Xc) n (fun k => (evalAlts P k ρ J c fs (.mk key m b :: rest) dflt).bind (SK · k))
           (fun k => evalAlts Q k ρ' J' c fs' (.mk key m b' :: rest') dflt') := by
       intro facts' b' s0 s0' hb hfacts rest' s1 s1' hrest
       by_cases hsel : key = c ∧ m = fs.length

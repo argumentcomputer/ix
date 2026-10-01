@@ -18,7 +18,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable (P Q : Program) (Valid : Cfg → List Val → Prop)
+variable (P Q : Program) (Valid : Cfg → List Val → Prop) (Xc : Nat → List Val → Exp → Exp → Prop)
 
 /-- The walk's output (configuration `C`) simulates the source term followed
 by the source continuation. -/
@@ -26,64 +26,64 @@ def ExpSim (n : Nat) (C : Cfg) (out : Exp) (env : Walk.Env) (here : Here) (k : K
     Prop :=
   ∀ (ρ : List Val) (J : List JClo) (ρ' : List Val) (J' : List JClo) (live jlive : List Bool)
     (SK : Val → Nat → Result Val), Valid C ρ' →
-    WEnv Q Valid live env.σ ρ ρ' → JEnv P Q Valid n (KT Q k J') ρ' J' jlive env.jσ J →
+    WEnv Q Valid Xc live env.σ ρ ρ' → JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J →
     here.d = ρ'.length → here.dj = J'.length → FactsOk Q Valid here.facts ρ' → NoDead live jlive e →
-    KontW Q Valid n k SK ρ' J' →
-    SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J e).bind (SK · k)) (fun k => eval Q k ρ' J' out)
+    KontW Q Valid Xc n k SK ρ' J' →
+    SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J e).bind (SK · k)) (fun k => eval Q k ρ' J' out)
 
 /-- The simulation of every walk function at fuel `fuel`, bound `n`. -/
 structure WalkAt (n fuel : Nat) : Prop where
   walk : ∀ ⦃C : Cfg⦄ ⦃env : Walk.Env⦄ ⦃here : Here⦄ ⦃e : Exp⦄ ⦃k : Kont⦄ ⦃out : Exp⦄ ⦃s s' : Fires⦄,
     (Walk.walk C fuel env here e k).run s = .ok (out, s') →
-    ExpSim P Q Valid n C out env here k e
+    ExpSim P Q Valid Xc n C out env here k e
   after : ∀ ⦃C : Cfg⦄ ⦃env : Walk.Env⦄ ⦃body : Exp⦄ ⦃k k' : Kont⦄ ⦃s s' : Fires⦄,
     (Walk.after C fuel env body k).run s = .ok (k', s') →
     ∀ (ρ : List Val) (J : List JClo) (ρ' : List Val) (J' : List JClo) (live jlive : List Bool)
       (SK : Val → Nat → Result Val), Valid C ρ' →
-    WEnv Q Valid live env.σ ρ ρ' → JEnv P Q Valid n (KT Q k J') ρ' J' jlive env.jσ J →
-    NoDead (true :: live) jlive body → KontW Q Valid n k SK ρ' J' →
-    KontW Q Valid n k' (fun v k => (eval P k (v :: ρ) J body).bind (SK · k)) ρ' J'
+    WEnv Q Valid Xc live env.σ ρ ρ' → JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J →
+    NoDead (true :: live) jlive body → KontW Q Valid Xc n k SK ρ' J' →
+    KontW Q Valid Xc n k' (fun v k => (eval P k (v :: ρ) J body).bind (SK · k)) ρ' J'
   walkBind : ∀ ⦃C : Cfg⦄ ⦃env : Walk.Env⦄ ⦃here : Here⦄ ⦃c : Ixon.V3.LetContract⦄ ⦃b : Bind⦄
     ⦃body : Exp⦄ ⦃k : Kont⦄ ⦃out : Exp⦄ ⦃s s' : Fires⦄,
     (Walk.walkBind C fuel env here c b body k).run s = .ok (out, s') →
-    ExpSim P Q Valid n C out env here k (.bind c b body)
+    ExpSim P Q Valid Xc n C out env here k (.bind c b body)
   walkJoin : ∀ ⦃C : Cfg⦄ ⦃env : Walk.Env⦄ ⦃here : Here⦄ ⦃ar : Nat⦄ ⦃r : Bool⦄ ⦃b body : Exp⦄
     ⦃k : Kont⦄ ⦃out : Exp⦄ ⦃s s' : Fires⦄,
     (Walk.walkJoin C fuel env here ar r b body k).run s = .ok (out, s') →
-    ExpSim P Q Valid n C out env here k (.join ar r b body)
+    ExpSim P Q Valid Xc n C out env here k (.join ar r b body)
   walkJump : ∀ ⦃C : Cfg⦄ ⦃env : Walk.Env⦄ ⦃here : Here⦄ ⦃j : Nat⦄ ⦃as : List Atom⦄ ⦃k : Kont⦄
     ⦃out : Exp⦄ ⦃s s' : Fires⦄,
     (Walk.walkJump C fuel env here j as k).run s = .ok (out, s') →
-    ExpSim P Q Valid n C out env here k (.jump j as)
+    ExpSim P Q Valid Xc n C out env here k (.jump j as)
   walkCase : ∀ ⦃C : Cfg⦄ ⦃env : Walk.Env⦄ ⦃here : Here⦄ ⦃x : Atom⦄ ⦃alts : List Alt⦄
     ⦃d : Option Exp⦄ ⦃k : Kont⦄ ⦃out : Exp⦄ ⦃s s' : Fires⦄,
     (Walk.walkCase C fuel env here x alts d k).run s = .ok (out, s') →
-    ExpSim P Q Valid n C out env here k (.case x alts d)
+    ExpSim P Q Valid Xc n C out env here k (.case x alts d)
   walkAlts : ∀ ⦃C : Cfg⦄ ⦃env : Walk.Env⦄ ⦃here : Here⦄ ⦃xo : Opd⦄ ⦃alts : List Alt⦄ ⦃k : Kont⦄
     ⦃alts' : List Alt⦄ ⦃s s' : Fires⦄,
     (Walk.walkAlts C fuel env here xo alts k).run s = .ok (alts', s') →
     ∀ (ρ : List Val) (J : List JClo) (ρ' : List Val) (J' : List JClo) (live jlive : List Bool)
       (SK : Val → Nat → Result Val), Valid C ρ' →
-    WEnv Q Valid live env.σ ρ ρ' → JEnv P Q Valid n (KT Q k J') ρ' J' jlive env.jσ J →
+    WEnv Q Valid Xc live env.σ ρ ρ' → JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J →
     here.d = ρ'.length → here.dj = J'.length → FactsOk Q Valid here.facts ρ' →
     (∀ a ∈ alts, NoDead (List.replicate a.arity true ++ live) jlive a.body) →
-    KontW Q Valid n k SK ρ' J' →
+    KontW Q Valid Xc n k SK ρ' J' →
     ∀ (c : Key.CtorKey) (fs fs' : List Val) (w : Val) (dflt : Option Exp) (dflt' : Option Exp),
-    WVs Q Valid fs fs' → xo.val ρ' = some w → w.asCtor Q.known = some (c, fs') →
+    WVs Q Valid Xc fs fs' → xo.val ρ' = some w → w.asCtor Q.known = some (c, fs') →
     ((dflt = none ∧ dflt' = none) ∨ ∃ e e', dflt = some e ∧ dflt' = some e' ∧
-      SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J e).bind (SK · k)) (fun k => eval Q k ρ' J' e')) →
-    SimUpTo (WV Q Valid) n (fun k => (evalAlts P k ρ J c fs alts dflt).bind (SK · k))
+      SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J e).bind (SK · k)) (fun k => eval Q k ρ' J' e')) →
+    SimUpTo (WV Q Valid Xc) n (fun k => (evalAlts P k ρ J c fs alts dflt).bind (SK · k))
       (fun k => evalAlts Q k ρ' J' c fs' alts' dflt')
 
-variable {P Q Valid}
+variable {P Q Valid Xc}
 
 /-- Passing an operand to the continuation. -/
 theorem pass_sim {n : Nat} {here : Here} {o : Opd} {k : Kont} {out : Exp} {s s' : Fires}
     (h : (Walk.pass here o k).run s = .ok (out, s')) {ρ' : List Val} {J' : List JClo}
     (hd : here.d = ρ'.length) (hdj : here.dj = J'.length) (hfacts : FactsOk Q Valid here.facts ρ')
-    {SK : Val → Nat → Result Val} (hk : KontW Q Valid n k SK ρ' J') {x w : Val}
-    (ho : o.val ρ' = some w) (hx : WV Q Valid x w) :
-    SimUpTo (WV Q Valid) n (SK x) (fun k => eval Q k ρ' J' out) := by
+    {SK : Val → Nat → Result Val} (hk : KontW Q Valid Xc n k SK ρ' J') {x w : Val}
+    (ho : o.val ρ' = some w) (hx : WV Q Valid Xc x w) :
+    SimUpTo (WV Q Valid Xc) n (SK x) (fun k => eval Q k ρ' J' out) := by
   cases k with
   | ret =>
     simp only [Walk.pass] at h

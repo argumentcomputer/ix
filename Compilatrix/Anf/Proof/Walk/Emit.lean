@@ -126,16 +126,17 @@ theorem applyN_under {k N : Nat} {ρ : List Val} {body : Exp} {got vs : List Val
     have h1 : got.length < N := by simp at hlt; omega
     simp only [h1, if_true, hlt]
 
-variable {Valid : Cfg → List Val → Prop}
+variable {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop}
 
 /-- A source value related to an unsaturated target closure is an
 unsaturated closure missing as many arguments. -/
 theorem WV.clos_inv {v : Val} {ρ' : List Val} {m : Nat} {b' : Exp} {got' : List Val}
-    (h : WV Q Valid v (.clos ρ' m b' got')) (hlt : got'.length < m) :
+    (h : WV Q Valid Xc v (.clos ρ' m b' got')) (hlt : got'.length < m) :
     ∃ ρ n b got, v = .clos ρ n b got ∧ got.length < n ∧ n - got.length = m - got'.length := by
   cases h with
   | idc hρ hg => have := hg.length; exact ⟨_, _, _, _, rfl, by omega, by omega⟩
   | walkc _ _ _ _ _ _ hmn hng hgn hgg _ _ _ _ => exact ⟨_, _, _, _, rfl, hgn, by omega⟩
+  | xc hρ hg _ => have := hg.length; exact ⟨_, _, _, _, rfl, by omega, by omega⟩
 
 /-! ## Emitting and skipping a binding -/
 
@@ -156,18 +157,18 @@ theorem FactsOk.insert {facts : Src.NatMap Fact} {ρ' : List Val} (h : FactsOk Q
 
 /-- A kept binding: its value simulates, and the facts recorded about it
 hold of the target value. -/
-theorem emit_sim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env}
+theorem emit_sim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c c' : Ixon.V3.LetContract} {b b' : Bind} {body e : Exp} {k : Kont} {s s' : Fires}
     {facts' : Src.NatMap Fact}
     (he : (Walk.walk C fuel { σ := .opd (.lvl here.d) :: env.σ, jσ := env.jσ }
       { d := here.d + 1, dj := here.dj, facts := facts' } body k).run s = .ok (e, s'))
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo} {live jlive : List Bool}
-    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid live env.σ ρ ρ')
-    (hJ : JEnv P Q Valid n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
-    (hdj : here.dj = J'.length) (hnd : NoDead live jlive (.bind c b body)) (hk : KontW Q Valid n k SK ρ' J')
-    (hb : SimUpTo (fun v w => WV Q Valid v w ∧ FactsOk Q Valid facts' (w :: ρ')) n
+    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid Xc live env.σ ρ ρ')
+    (hJ : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
+    (hdj : here.dj = J'.length) (hnd : NoDead live jlive (.bind c b body)) (hk : KontW Q Valid Xc n k SK ρ' J')
+    (hb : SimUpTo (fun v w => WV Q Valid Xc v w ∧ FactsOk Q Valid facts' (w :: ρ')) n
       (fun k => evalBind P k ρ b) (fun k => evalBind Q k ρ' b')) :
-    SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J (.bind c b body)).bind (SK · k))
+    SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c b body)).bind (SK · k))
       (fun k => eval Q k ρ' J' (.bind c' b' e)) := by
   refine (SimUpTo.bind (d := fun v k => (eval P k (v :: ρ) J body).bind (SK · k)) (evalBind_mono Q ρ' b') (fun w => eval_mono Q (w :: ρ') J' e) hb
     fun v w hvw => ?_).congr (fun k => ?_) (fun k => eval_bind Q k ρ' J' c' b' e)
@@ -180,16 +181,16 @@ theorem emit_sim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cf
 
 /-- The body after a skipped binding, for a source value the entry
 describes (or □ for a value nothing reads). -/
-theorem skip_core (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env} {here : Here}
+theorem skip_core (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env} {here : Here}
     {c : Ixon.V3.LetContract} {b : Bind} {body e : Exp} {k : Kont} {s s' : Fires} {ent : Ent}
     (he : (Walk.walk C fuel { σ := ent :: env.σ, jσ := env.jσ } here body k).run s = .ok (e, s'))
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo} {live jlive : List Bool}
-    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid live env.σ ρ ρ')
-    (hJ : JEnv P Q Valid n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
+    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid Xc live env.σ ρ ρ')
+    (hJ : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
     (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ') (hnd : NoDead live jlive (.bind c b body))
-    (hk : KontW Q Valid n k SK ρ' J') {v : Val}
-    (hent : WEnt Q Valid ent v ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) :
-    SimUpTo (WV Q Valid) n (fun k => (eval P k (v :: ρ) J body).bind (SK · k)) (fun k => eval Q k ρ' J' e) := by
+    (hk : KontW Q Valid Xc n k SK ρ' J') {v : Val}
+    (hent : WEnt Q Valid Xc ent v ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) :
+    SimUpTo (WV Q Valid Xc) n (fun k => (eval P k (v :: ρ) J body).bind (SK · k)) (fun k => eval Q k ρ' J' e) := by
   rcases hent with hent | ⟨rfl, hocc⟩
   · exact hW.walk he (v :: ρ) J ρ' J' (true :: live) jlive SK hV (.live hent henv) hJ hd hdj hf
       (hnd.bind_body true fun e => nomatch e) hk
@@ -197,17 +198,17 @@ theorem skip_core (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env} {her
       (hnd.bind_body false fun _ => hocc) hk
 
 /-- A skipped binding whose right-hand side is pure (no clock). -/
-theorem skip_sim (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env} {here : Here}
+theorem skip_sim (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env} {here : Here}
     {c : Ixon.V3.LetContract} {b : Bind} {body e : Exp} {k : Kont} {s s' : Fires} {ent : Ent}
     (he : (Walk.walk C fuel { σ := ent :: env.σ, jσ := env.jσ } here body k).run s = .ok (e, s'))
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo} {live jlive : List Bool}
-    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid live env.σ ρ ρ')
-    (hJ : JEnv P Q Valid n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
+    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid Xc live env.σ ρ ρ')
+    (hJ : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
     (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ') (hnd : NoDead live jlive (.bind c b body))
-    (hk : KontW Q Valid n k SK ρ' J')
+    (hk : KontW Q Valid Xc n k SK ρ' J')
     (hr : (∀ k, evalBind P k ρ b = .stuck) ∨ ∃ v, (∀ k, evalBind P k ρ b = .ok v) ∧
-      (WEnt Q Valid ent v ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0))) :
-    SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J (.bind c b body)).bind (SK · k))
+      (WEnt Q Valid Xc ent v ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0))) :
+    SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c b body)).bind (SK · k))
       (fun k => eval Q k ρ' J' e) := by
   rcases hr with hst | ⟨v, hv, hent⟩
   · exact (SimUpTo.stuck _).congr (fun k => by rw [eval_bind, hst]; rfl) (fun _ => rfl)
@@ -216,17 +217,17 @@ theorem skip_sim (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env} {here
 
 /-- A skipped binding that charges once (an unsaturated application): the
 charge becomes a tick. -/
-theorem skip_tick_sim (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env} {here : Here}
+theorem skip_tick_sim (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env} {here : Here}
     {c : Ixon.V3.LetContract} {b : Bind} {body e : Exp} {k : Kont} {s s' : Fires} {ent : Ent}
     (he : (Walk.walk C fuel { σ := ent :: env.σ, jσ := env.jσ } here body k).run s = .ok (e, s'))
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo} {live jlive : List Bool}
-    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid live env.σ ρ ρ')
-    (hJ : JEnv P Q Valid n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
+    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid Xc live env.σ ρ ρ')
+    (hJ : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
     (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ') (hnd : NoDead live jlive (.bind c b body))
-    (hk : KontW Q Valid n k SK ρ' J') {v : Val}
+    (hk : KontW Q Valid Xc n k SK ρ' J') {v : Val}
     (hr : (∀ k, evalBind P k ρ b = later k fun _ => .ok v) ∨ (∀ k, evalBind P k ρ b = .ok v))
-    (hent : WEnt Q Valid ent v ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) :
-    SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J (.bind c b body)).bind (SK · k))
+    (hent : WEnt Q Valid Xc ent v ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) :
+    SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c b body)).bind (SK · k))
       (fun k => eval Q k ρ' J' (.tick e)) := by
   have hin := skip_core hW he hV henv hJ hd hdj hf hnd hk hent
   rcases hr with hr | hr

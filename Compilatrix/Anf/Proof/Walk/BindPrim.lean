@@ -15,7 +15,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
 
 theorem NoDead.fn_body {live : List Bool} {ps : List Ixon.V3.BinderContract} {fb : Exp}
     (h : ∀ i, live[i]? = some false → Bind.occ i (.fn ps fb) = 0) :
@@ -27,11 +27,11 @@ theorem NoDead.fn_body {live : List Bool} {ps : List Ixon.V3.BinderContract} {fb
     rw [getElem?_replicate_append] at hi
     simpa [Bind.occ] using h i' hi
 
-theorem walkBind_prim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env}
+theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {p : Lam.Prim} {as : List Atom} {body : Exp} {k : Kont}
     {out : Exp} {s s' : Fires}
     (h : (Walk.walkBind C (fuel + 1) env here c (.prim p as) body k).run s = .ok (out, s')) :
-    ExpSim P Q Valid n C out env here k (.bind c (.prim p as) body) := by
+    ExpSim P Q Valid Xc n C out env here k (.bind c (.prim p as) body) := by
   intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
   rw [Walk.walkBind] at h
   dsimp only at h
@@ -50,7 +50,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
     rw [hctx.known]; unfold primResult; rw [hnat]
   have hdead : ∀ {e : Exp} {s0 s0' : Fires}, body.occ 0 = 0 →
       (Walk.walk C fuel { σ := .opd .box :: env.σ, jσ := env.jσ } here body k).run s0 = .ok (e, s0') →
-      SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J (.bind c (.prim p as) body)).bind (SK · k))
+      SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c (.prim p as) body)).bind (SK · k))
         (fun k => eval Q k ρ' J' e) := by
     intro e s0 s0' hocc he
     refine skip_sim hW he hV henv hJ hd hdj hf hnd hk ?_
@@ -61,7 +61,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
       (Walk.walk C fuel { σ := .opd (.lvl here.d) :: env.σ, jσ := env.jσ }
         { d := here.d + 1, dj := here.dj, facts := facts' } body k).run s0 = .ok (e, s0') →
       (∀ u, primResult P.known p vs = .ok u → FactsOk Q Valid facts' (u :: ρ')) →
-      SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J (.bind c (.prim p as) body)).bind (SK · k))
+      SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c (.prim p as) body)).bind (SK · k))
         (fun k => eval Q k ρ' J' (.bind c (.prim p (Walk.atoms here.d os)) e)) := by
     intro e s0 s0' facts' he hfacts
     refine emit_sim hctx hW he hV henv hJ hd hdj hnd hk ?_
@@ -80,7 +80,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
       | some wy =>
         have h1 : (Opd.lit (.nat 1)).val ρ' = some (.lit (.nat 1)) := rfl
         exact ⟨wy, rfl, by simp [List.mapM_cons, hy, h1] at hws; exact hws.symm⟩
-    obtain ⟨vy, v1, rfl, hvy, hv1⟩ : ∃ vy v1, vs = [vy, v1] ∧ WV Q Valid vy wy ∧ WV Q Valid v1 (.lit (.nat 1)) := by
+    obtain ⟨vy, v1, rfl, hvy, hv1⟩ : ∃ vy v1, vs = [vy, v1] ∧ WV Q Valid Xc vy wy ∧ WV Q Valid Xc v1 (.lit (.nat 1)) := by
       cases hvws with
       | cons h1 hrest => cases hrest with
         | cons h2 hrest2 => cases hrest2; exact ⟨_, _, rfl, h1, h2⟩
@@ -165,19 +165,19 @@ theorem walkBind_prim (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C
       obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
       exact hemit h3 hsuccFacts
 
-theorem walkBind_fn (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env}
+theorem walkBind_fn (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {ps : List Ixon.V3.BinderContract} {fb : Exp} {body : Exp}
     {k : Kont} {out : Exp} {s s' : Fires}
     (h : (Walk.walkBind C (fuel + 1) env here c (.fn ps fb) body k).run s = .ok (out, s')) :
-    ExpSim P Q Valid n C out env here k (.bind c (.fn ps fb) body) := by
+    ExpSim P Q Valid Xc n C out env here k (.bind c (.fn ps fb) body) := by
   intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
   rw [Walk.walkBind] at h
   dsimp only at h
   have hndfb := NoDead.fn_body (hnd.bind_rhs)
-  have hpure : ∀ (ent : Ent), (ps ≠ [] → WEnt Q Valid ent (.clos ρ ps.length fb []) ρ' ∨
+  have hpure : ∀ (ent : Ent), (ps ≠ [] → WEnt Q Valid Xc ent (.clos ρ ps.length fb []) ρ' ∨
       (ent = .opd .box ∧ body.occ 0 = 0)) →
       (∀ k, evalBind P k ρ (.fn ps fb) = .stuck) ∨ ∃ u, (∀ k, evalBind P k ρ (.fn ps fb) = .ok u) ∧
-        (WEnt Q Valid ent u ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) := by
+        (WEnt Q Valid Xc ent u ρ' ∨ (ent = .opd .box ∧ body.occ 0 = 0)) := by
     intro ent hent
     by_cases hps : ps = []
     · subst hps; exact .inl fun k => evalBind_fn_nil P k ρ fb
@@ -197,7 +197,7 @@ theorem walkBind_fn (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C :
         exact (SimUpTo.stuck _).congr (fun k => by rw [eval_bind, evalBind_fn_nil]; rfl) (fun _ => rfl)
       have hpos : 0 < ps.length := List.length_pos_iff.2 hps
       rw [hd] at h1
-      have hwv : WV Q Valid (.clos ρ ps.length fb []) (.clos ρ' ps.length fb' []) :=
+      have hwv : WV Q Valid Xc (.clos ρ ps.length fb []) (.clos ρ' ps.length fb' []) :=
         .walkc (σP := Walk.entsOf (paramOpds ρ'.length ps.length)) (got := []) (got' := [])
           (oOf := fun _ => .box) (wOf := fun _ => .box) hV h1 henv hf hndfb
           (by simp [Walk.entsOf, paramOpds_length]) (Nat.le_refl _) (by simp) (by simpa using hpos)

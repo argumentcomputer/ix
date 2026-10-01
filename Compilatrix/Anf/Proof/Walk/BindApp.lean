@@ -38,20 +38,20 @@ theorem applyN_enter {P : Program} {k n : Nat} {ρ : List Val} {b : Exp} {vs : L
     simp only [List.length_nil, hn, if_true, List.nil_append, enter]
     simp only [h1, if_false]
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n fuel : Nat}
 
 /-- An application of a known function global's closure or partial
 application: a call when saturated (over-saturated: a call, then the rest
 applied), a tick when dead and unsaturated, else kept with the
 partial-application fact. -/
-theorem app_known (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : Cfg} {env : Walk.Env}
+theorem app_known (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {f : Atom} {as : List Atom} {body : Exp} {k : Kont}
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo} {live jlive : List Bool}
-    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid live env.σ ρ ρ')
-    (hJ : JEnv P Q Valid n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
+    {SK : Val → Nat → Result Val} (hV : Valid C ρ') (henv : WEnv Q Valid Xc live env.σ ρ ρ')
+    (hJ : JEnv P Q Valid Xc n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
     (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ') (hnd : NoDead live jlive (.bind c (.app f as) body))
-    (hk : KontW Q Valid n k SK ρ' J') {os : List Opd} {vs ws : List Val} (hws : os.mapM (·.val ρ') = some ws)
-    (hvws : WVs Q Valid vs ws) {x w : Val} (hxw : WV Q Valid x w)
+    (hk : KontW Q Valid Xc n k SK ρ' J') {os : List Opd} {vs ws : List Val} (hws : os.mapM (·.val ρ') = some ws)
+    (hvws : WVs Q Valid Xc vs ws) {x w : Val} (hxw : WV Q Valid Xc x w)
     (hsrc : ∀ k, evalBind P k ρ (.app f as) = applyN P k x vs) {fo : Opd} (hw : fo.val ρ' = some w)
     {g : GlobalId} {as0 : List Opd} (hkh : Walk.knownHead here fo = some (g, as0))
     {out : Exp} {s0 s0' : Fires}
@@ -76,7 +76,7 @@ theorem app_known (hctx : Ctx P Q Valid n) (hW : WalkAt P Q Valid n fuel) {C : C
           let e ← Walk.walk C fuel { σ := .opd (.lvl here.d) :: env.σ, jσ := env.jσ }
             { d := here.d + 1, dj := here.dj, facts := here.facts.insert here.d (.pap g (as0 ++ os)) } body k
           pure (Exp.bind c (.app (fo.atom here.d) (Walk.atoms here.d os)) e)).run s0 = .ok (out, s0')) :
-    SimUpTo (WV Q Valid) n (fun k => (eval P k ρ J (.bind c (.app f as) body)).bind (SK · k))
+    SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c (.app f as) body)).bind (SK · k))
       (fun k => eval Q k ρ' J' out) := by
   obtain ⟨gd, ws0, hgQ, hws0, harity, hlt, rfl⟩ := knownHead_sound hf hkh hw
   have hN : (C.prog.arity? g).getD 0 = gd.ps.length := by rw [harity C ρ' hV]; rfl

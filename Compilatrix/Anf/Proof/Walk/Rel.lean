@@ -40,7 +40,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable (P Q : Program) (Valid : Cfg → List Val → Prop)
+variable (P Q : Program) (Valid : Cfg → List Val → Prop) (Xc : Nat → List Val → Exp → Exp → Prop)
 
 /-- No dead variable or join point occurs in the term. -/
 def NoDead (live jlive : List Bool) (e : Exp) : Prop :=
@@ -85,6 +85,10 @@ inductive WV : Val → Val → Prop
       (∀ p, n - m ≤ p → p < n → σP[n - 1 - p]? = some (.opd (.lvl (ρ'.length + (p - (n - m)))))) →
       (∀ p v w, n - m ≤ p → p < n → got[p]? = some v → got'[p - (n - m)]? = some w → WV v w) →
       WV (.clos ρ n b got) (.clos ρ' m b' got')
+  /-- A closure of another pass's code (`Xc`: arity, source environment,
+  source body, target body). -/
+  | xc {ρ ρ' got got' : List Val} {n : Nat} {b b' : Exp} :
+      WVs ρ ρ' → WVs got got' → Xc n ρ b b' → WV (.clos ρ n b got) (.clos ρ' n b' got')
 
 inductive WVs : List Val → List Val → Prop
   | nil : WVs [] []
@@ -108,13 +112,16 @@ inductive WEnv : List Bool → List Ent → List Val → List Val → Prop
 
 end
 
+/-- No closures of another pass's code. -/
+def noXc : Nat → List Val → Exp → Exp → Prop := fun _ _ _ _ => False
+
 /-- Jumping to a source and a target join closure, then a continuation
 that matches the target meaning `T`, simulates, at every bound up to `n`. -/
 def JoinR (n : Nat) (T : Val → Nat → Result Val) (jc jc' : JClo) : Prop :=
   ∀ m ≤ n, ∀ SK : Val → Nat → Result Val,
-    (∀ x w, WV Q Valid x w → SimUpTo (WV Q Valid) m (SK x) (T w)) →
-    ∀ vs ws, WVs Q Valid vs ws →
-      SimUpTo (WV Q Valid) m (fun k => (jumpTo P k jc vs).bind (SK · k)) (fun k => jumpTo Q k jc' ws)
+    (∀ x w, WV Q Valid Xc x w → SimUpTo (WV Q Valid Xc) m (SK x) (T w)) →
+    ∀ vs ws, WVs Q Valid Xc vs ws →
+      SimUpTo (WV Q Valid Xc) m (fun k => (jumpTo P k jc vs).bind (SK · k)) (fun k => jumpTo Q k jc' ws)
 
 /-- Source join closures against their walk entries. -/
 inductive JEnv (n : Nat) (T : Option (Val → Nat → Result Val)) (ρ' : List Val) (J' : List JClo) :
@@ -124,14 +131,14 @@ inductive JEnv (n : Nat) (T : Option (Val → Nat → Result Val)) (ρ' : List V
       {ρj : List Val} {Jj : List JClo} {jc' : JClo} {Tk : Val → Nat → Result Val} {jl : List Bool}
       {jσ : List JEnt} {J : List JClo} :
       l < J'.length → J'[J'.length - 1 - l]? = some jc' → T = some Tk →
-      JoinR P Q Valid n Tk (.mk ρj Jj ar b r) jc' →
-      WEnv Q Valid livej σj ρj ρ' → JEnv n T ρ' J' jlj jσj Jj →
+      JoinR P Q Valid Xc n Tk (.mk ρj Jj ar b r) jc' →
+      WEnv Q Valid Xc livej σj ρj ρ' → JEnv n T ρ' J' jlj jσj Jj →
       NoDead (List.replicate ar true ++ livej) (if r then true :: jlj else jlj) b →
       JEnv n T ρ' J' jl jσ J →
       JEnv n T ρ' J' (true :: jl) (.mk (some l) σj jσj ar r b :: jσ) (.mk ρj Jj ar b r :: J)
   | once {ar : Nat} {b : Exp} {σj : List Ent} {jσj : List JEnt} {livej jlj : List Bool}
       {ρj : List Val} {Jj : List JClo} {jl : List Bool} {jσ : List JEnt} {J : List JClo} :
-      WEnv Q Valid livej σj ρj ρ' → JEnv n T ρ' J' jlj jσj Jj →
+      WEnv Q Valid Xc livej σj ρj ρ' → JEnv n T ρ' J' jlj jσj Jj →
       NoDead (List.replicate ar true ++ livej) jlj b →
       JEnv n T ρ' J' jl jσ J →
       JEnv n T ρ' J' (true :: jl) (.mk none σj jσj ar false b :: jσ) (.mk ρj Jj ar b false :: J)
@@ -153,8 +160,8 @@ def KontW (n : Nat) (k : Kont) (SK : Val → Nat → Result Val) (ρ' : List Val
   | .cont f => ∀ (here' : Here) (o : Opd) (e : Exp) (s s' : Fires) (ρ'' : List Val) (J'' : List JClo),
       (f here' o).run s = .ok (e, s') → ρ' <:+ ρ'' → J' <:+ J'' → here'.d = ρ''.length →
       here'.dj = J''.length → FactsOk Q Valid here'.facts ρ'' →
-      ∀ x w, o.val ρ'' = some w → WV Q Valid x w →
-        SimUpTo (WV Q Valid) n (SK x) (fun k => eval Q k ρ'' J'' e)
-  | k => ∃ T, KT Q k J' = some T ∧ ∀ x w, WV Q Valid x w → SimUpTo (WV Q Valid) n (SK x) (T w)
+      ∀ x w, o.val ρ'' = some w → WV Q Valid Xc x w →
+        SimUpTo (WV Q Valid Xc) n (SK x) (fun k => eval Q k ρ'' J'' e)
+  | k => ∃ T, KT Q k J' = some T ∧ ∀ x w, WV Q Valid Xc x w → SimUpTo (WV Q Valid Xc) n (SK x) (T w)
 
 end Compilatrix.Anf.WalkProof

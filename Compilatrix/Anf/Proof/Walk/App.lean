@@ -18,19 +18,19 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop} {n : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {n : Nat}
 
 /-- The parameters of a walked closure entered with arguments `vs`. -/
 theorem walkc_params {σP : List Ent} {ρ' got got' : List Val} {nn m : Nat}
     {oOf : Nat → Opd} {wOf : Nat → Val} (hmn : m ≤ nn)
     (hng : nn - m ≤ got.length) (hgg : got'.length + (nn - m) = got.length)
     (hpre : ∀ p, p < nn - m → σP[nn - 1 - p]? = some (.opd (oOf p)) ∧ (oOf p).val ρ' = some (wOf p))
-    (hpreg : ∀ p v, p < nn - m → got[p]? = some v → WV Q Valid v (wOf p))
+    (hpreg : ∀ p v, p < nn - m → got[p]? = some v → WV Q Valid Xc v (wOf p))
     (hown : ∀ p, nn - m ≤ p → p < nn → σP[nn - 1 - p]? = some (.opd (.lvl (ρ'.length + (p - (nn - m))))))
-    (hownv : ∀ p v w, nn - m ≤ p → p < nn → got[p]? = some v → got'[p - (nn - m)]? = some w → WV Q Valid v w)
-    {vs ws : List Val} (hvs : WVs Q Valid vs ws) (hsat : nn ≤ got.length + vs.length) :
+    (hownv : ∀ p v w, nn - m ≤ p → p < nn → got[p]? = some v → got'[p - (nn - m)]? = some w → WV Q Valid Xc v w)
+    {vs ws : List Val} (hvs : WVs Q Valid Xc vs ws) (hsat : nn ≤ got.length + vs.length) :
     ∀ p, p < nn → ∃ o w v, σP[nn - 1 - p]? = some (.opd o) ∧
-      o.val (((got' ++ ws).take m).reverse ++ ρ') = some w ∧ (got ++ vs)[p]? = some v ∧ WV Q Valid v w := by
+      o.val (((got' ++ ws).take m).reverse ++ ρ') = some w ∧ (got ++ vs)[p]? = some v ∧ WV Q Valid Xc v w := by
   intro p hp
   have hwl := hvs.length
   have hsuf : ρ' <:+ ((got' ++ ws).take m).reverse ++ ρ' := List.suffix_append _ _
@@ -63,7 +63,7 @@ theorem walkc_params {σP : List Ent} {ρ' got got' : List Val} {nn m : Nat}
 
 /-- Entering a walked closure with enough arguments: the source body and its
 walk, one clock down. -/
-theorem enter_walkc (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid m fuel)
+theorem enter_walkc (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid Xc m fuel)
     (hsuffix : ∀ C ρ' ρ'', Valid C ρ' → ρ' <:+ ρ'' → Valid C ρ'')
     {C : Cfg} {fuel : Nat} {s s' : Fires} {σP σ0 : List Ent} {live : List Bool}
     {facts : Src.NatMap Fact} {ρ ρ' got got' : List Val} {nn m : Nat} {b b' : Exp}
@@ -71,15 +71,15 @@ theorem enter_walkc (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid m fuel)
     (hV : Valid C ρ')
     (hrun : (Walk.walk C fuel { σ := σP ++ σ0, jσ := [] } { d := ρ'.length + m, dj := 0, facts } b
       .ret).run s = .ok (b', s'))
-    (henv : WEnv Q Valid live σ0 ρ ρ') (hf : FactsOk Q Valid facts ρ')
+    (henv : WEnv Q Valid Xc live σ0 ρ ρ') (hf : FactsOk Q Valid facts ρ')
     (hnd : NoDead (List.replicate nn true ++ live) [] b) (hσP : σP.length = nn) (hmn : m ≤ nn)
     (hng : nn - m ≤ got.length) (hgg : got'.length + (nn - m) = got.length)
     (hpre : ∀ p, p < nn - m → σP[nn - 1 - p]? = some (.opd (oOf p)) ∧ (oOf p).val ρ' = some (wOf p))
-    (hpreg : ∀ p v, p < nn - m → got[p]? = some v → WV Q Valid v (wOf p))
+    (hpreg : ∀ p v, p < nn - m → got[p]? = some v → WV Q Valid Xc v (wOf p))
     (hown : ∀ p, nn - m ≤ p → p < nn → σP[nn - 1 - p]? = some (.opd (.lvl (ρ'.length + (p - (nn - m))))))
-    (hownv : ∀ p v w, nn - m ≤ p → p < nn → got[p]? = some v → got'[p - (nn - m)]? = some w → WV Q Valid v w)
-    {vs ws : List Val} (hvs : WVs Q Valid vs ws) (hsat : nn ≤ got.length + vs.length) {i : Nat} (hi : i + 1 ≤ n) :
-    SimUpTo (WV Q Valid) i (fun k => eval P k (((got ++ vs).take nn).reverse ++ ρ) [] b)
+    (hownv : ∀ p v w, nn - m ≤ p → p < nn → got[p]? = some v → got'[p - (nn - m)]? = some w → WV Q Valid Xc v w)
+    {vs ws : List Val} (hvs : WVs Q Valid Xc vs ws) (hsat : nn ≤ got.length + vs.length) {i : Nat} (hi : i + 1 ≤ n) :
+    SimUpTo (WV Q Valid Xc) i (fun k => eval P k (((got ++ vs).take nn).reverse ++ ρ) [] b)
       (fun k => eval Q k (((got' ++ ws).take m).reverse ++ ρ') [] b') := by
   have hwl := hvs.length
   have hall : ((got' ++ ws).take m).length = m := by simp; omega
@@ -97,7 +97,7 @@ theorem enter_walkc (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid m fuel)
       rw [show min nn (got.length + vs.length) - 1 - i = nn - 1 - i by omega, if_pos (by omega)]
       exact hv) (henv.suffix hsuf)
   rw [hσP] at henvb
-  have hk : KontW Q Valid i .ret (fun v _ => .ok v) (((got' ++ ws).take m).reverse ++ ρ') [] :=
+  have hk : KontW Q Valid Xc i .ret (fun v _ => .ok v) (((got' ++ ws).take m).reverse ++ ρ') [] :=
     ⟨_, rfl, fun x w hxw => SimUpTo.ok hxw⟩
   exact ((hlow i (by omega) fuel).walk hrun (((got ++ vs).take nn).reverse ++ ρ) [] _ [] _ [] _
     (hsuffix C ρ' _ hV hsuf) henvb .nil (by simp [hall]; omega) rfl (hf.suffix hsuf) hnd hk).congr
@@ -107,31 +107,40 @@ theorem drop_got {α : Type} {got vs : List α} {nn : Nat} (h : got.length ≤ n
     (got ++ vs).drop nn = vs.drop (nn - got.length) := by
   rw [List.drop_append, List.drop_eq_nil_of_le h, List.nil_append]
 
+variable (P Q Valid Xc) in
+/-- Entering a closure of another pass's code (`Xc`) with its arguments
+simulates at bound `i`. -/
+def XcEnter (i : Nat) : Prop :=
+  ∀ ⦃n : Nat⦄ ⦃ρ ρ' : List Val⦄ ⦃b b' : Exp⦄ ⦃args args' : List Val⦄, WVs Q Valid Xc ρ ρ' →
+    Xc n ρ b b' → WVs Q Valid Xc args args' → args.length = n →
+    SimUpTo (WV Q Valid Xc) i (fun k => eval P k (args.reverse ++ ρ) [] b)
+      (fun k => eval Q k (args'.reverse ++ ρ') [] b')
+
 /-- `AppSim` for the walk relation at `n`, from the simulation, the
 fundamental lemma and the interface below `n`. -/
-theorem app_at (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid m fuel)
-    (hfund : ∀ m < n, Rel.FundAt P Q (WV Q Valid) m)
+theorem app_at (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid Xc m fuel)
+    (hfund : ∀ m < n, Rel.FundAt P Q (WV Q Valid Xc) m) (hxlow : ∀ m < n, XcEnter P Q Valid Xc m)
     (hsuffix : ∀ C ρ' ρ'', Valid C ρ' → ρ' <:+ ρ'' → Valid C ρ'') :
-    Rel.AppSim P Q (WV Q Valid) n := by
+    Rel.AppSim P Q (WV Q Valid Xc) n := by
   -- induction on the number of arguments
-  suffices H : ∀ len, ∀ ⦃f g : Val⦄ ⦃vs ws : List Val⦄, vs.length ≤ len → WV Q Valid f g →
-      Pw (WV Q Valid) vs ws → SimUpTo (WV Q Valid) n (fun k => applyN P k f vs) (fun k => applyN Q k g ws) by
+  suffices H : ∀ len, ∀ ⦃f g : Val⦄ ⦃vs ws : List Val⦄, vs.length ≤ len → WV Q Valid Xc f g →
+      Pw (WV Q Valid Xc) vs ws → SimUpTo (WV Q Valid Xc) n (fun k => applyN P k f vs) (fun k => applyN Q k g ws) by
     intro f g vs ws hfg hvs; exact H _ (Nat.le_refl _) hfg hvs
   intro len
   induction len using Nat.strongRecOn with
   | _ len ih =>
   intro f g vs ws hlen hfg hvs
-  have hrest : ∀ ⦃f g : Val⦄ ⦃us us' : List Val⦄, WV Q Valid f g → Pw (WV Q Valid) us us' →
+  have hrest : ∀ ⦃f g : Val⦄ ⦃us us' : List Val⦄, WV Q Valid Xc f g → Pw (WV Q Valid Xc) us us' →
       us.length < vs.length →
-      SimUpTo (WV Q Valid) n (fun k => applyN P k f us) (fun k => applyN Q k g us') :=
+      SimUpTo (WV Q Valid Xc) n (fun k => applyN P k f us) (fun k => applyN Q k g us') :=
     fun f g us us' hfg hus hl => ih us.length (by omega) (Nat.le_refl _) hfg hus
-  have hnil : ∀ ⦃f g : Val⦄, WV Q Valid f g → vs = [] →
-      SimUpTo (WV Q Valid) n (fun k => applyN P k f vs) (fun k => applyN Q k g ws) := by
+  have hnil : ∀ ⦃f g : Val⦄, WV Q Valid Xc f g → vs = [] →
+      SimUpTo (WV Q Valid Xc) n (fun k => applyN P k f vs) (fun k => applyN Q k g ws) := by
     intro f g hfg hv
     subst hv; cases hvs
     exact (SimUpTo.ok hfg).congr (fun k => applyN_nil' P k f) (fun k => applyN_nil' Q k g)
   have hnc : ∀ ⦃f g : Val⦄, (∀ ρ n b got, f ≠ .clos ρ n b got) → (∀ ρ n b got, g ≠ .clos ρ n b got) →
-      WV Q Valid f g → SimUpTo (WV Q Valid) n (fun k => applyN P k f vs) (fun k => applyN Q k g ws) := by
+      WV Q Valid Xc f g → SimUpTo (WV Q Valid Xc) n (fun k => applyN P k f vs) (fun k => applyN Q k g ws) := by
     intro f g hf hg hfg
     cases vs with
     | nil => exact hnil hfg rfl
@@ -145,6 +154,55 @@ theorem app_at (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid m fuel)
   | con h => exact hnc (fun _ _ _ _ h => nomatch h) (fun _ _ _ _ h => nomatch h) (.con h)
   | idc hρ hg =>
     exact Rel.app_idc structural hfund (pw_of hρ) (pw_of hg) hvs hrest
+  | xc hρ hgot hb =>
+    rename_i ρ ρ' got got' m b b'
+    have hρ' := pw_of hρ
+    have hgot' := pw_of hgot
+    have hgl := hgot'.length
+    have hvl := hvs.length
+    cases vs with
+    | nil =>
+      cases hvs
+      exact (SimUpTo.ok (.xc hρ hgot hb)).congr (fun k => applyN_nil' P k _) (fun k => applyN_nil' Q k _)
+    | cons v vs' =>
+      obtain ⟨w, ws', rfl⟩ : ∃ w ws', ws = w :: ws' := by
+        cases ws with
+        | nil => cases hvs
+        | cons w ws' => exact ⟨w, ws', rfl⟩
+      by_cases hg : got.length < m
+      · by_cases hu : got.length + (v :: vs').length < m
+        · have hu' : got'.length + (w :: ws').length < m := by simp at hvl hu ⊢; omega
+          refine (SimUpTo.later fun _ _ => SimUpTo.ok (WV.xc (n := m) hρ (of_pw (hgot'.append hvs)) hb)).congr
+            (fun k => ?_) (fun k => ?_)
+          · rw [applyN_clos]; simp only [hg, hu, if_true]
+          · rw [applyN_clos]; simp only [show got'.length < m by omega, hu', if_true]
+        · have hall := hgot'.append hvs
+          refine (SimUpTo.bind (d := fun r k => applyN P k r ((got ++ v :: vs').drop m))
+            (d' := fun r k => applyN Q k r ((got' ++ w :: ws').drop m))
+            (ClockMono.later (eval_mono Q _ [] _)) (fun r => applyN_mono Q r _)
+            (SimUpTo.later fun i hi => hxlow i (by omega) hρ hb (of_pw (hall.take m)) (by simp at hu hvl ⊢; omega))
+            fun r r' hr => ?_).congr (fun k => ?_) (fun k => ?_)
+          · by_cases hnil : ((got ++ v :: vs').drop m) = []
+            · have : ((got' ++ w :: ws').drop m) = [] := by
+                rw [List.drop_eq_nil_iff] at hnil ⊢; simp at hnil hvl ⊢; omega
+              rw [hnil, this]
+              exact (SimUpTo.ok hr).congr (fun k => applyN_nil' P k r) (fun k => applyN_nil' Q k r')
+            · exact ih _ (by simp at hnil hlen ⊢; omega) (Nat.le_refl _) hr (hall.drop m)
+          · rw [applyN_clos]
+            simp only [hg, hu, if_true, if_false]
+            cases k with
+            | zero => rfl
+            | succ k => simp only [later_succ, enter]
+          · rw [applyN_clos]
+            simp only [show got'.length < m by omega, if_true,
+              show ¬ (got'.length + (w :: ws').length < m) by simp at hvl hu ⊢; omega, if_false]
+            cases k with
+            | zero => rfl
+            | succ k => simp only [later_succ, enter]
+      · refine (SimUpTo.later (c₁ := fun _ => (.stuck : Result Val)) (c₂ := fun _ => .stuck)
+          fun _ _ => SimUpTo.stuck _).congr (fun k => ?_) (fun k => ?_)
+        · rw [applyN_clos]; simp only [hg, if_false]
+        · rw [applyN_clos]; simp only [show ¬ got'.length < m by omega, if_false]
   | walkc hV hrun henv hf hnd hσP hmn hng hgn hgg hpre hpreg hown hownv =>
     rename_i C fuel s s' σP σ0 live facts ρ ρ' got got' nn m b b' oOf wOf
     have hwl := hvs.length
@@ -160,7 +218,7 @@ theorem app_at (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid m fuel)
       by_cases hu : got.length + (v :: vs₀).length < nn
       · -- under-saturated: the closures with the arguments added
         have hu' : got'.length + (w :: ws₀).length < m := by simp at hu hwl ⊢; omega
-        have hwv : WV Q Valid (.clos ρ nn b (got ++ v :: vs₀)) (.clos ρ' m b' (got' ++ w :: ws₀)) := by
+        have hwv : WV Q Valid Xc (.clos ρ nn b (got ++ v :: vs₀)) (.clos ρ' m b' (got' ++ w :: ws₀)) := by
           refine .walkc hV hrun henv hf hnd hσP hmn (by simp; omega) (by simpa using hu)
             (by simp at hwl ⊢; omega) hpre (fun p u hp hu => ?_) hown (fun p u u' hp1 hp2 hu hu' => ?_)
           · rw [List.getElem?_append_left (by omega)] at hu; exact hpreg p u hp hu

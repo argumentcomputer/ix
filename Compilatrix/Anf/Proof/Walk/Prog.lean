@@ -45,7 +45,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → Prop}
+variable {P Q : Program} {Valid : Cfg → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop}
 
 theorem factsOk_leaf (ρ' : List Val) : FactsOk Q Valid (.leaf : Src.NatMap Fact) ρ' :=
   fun l f h => by simp [Src.NatMap.get?] at h
@@ -65,7 +65,7 @@ theorem walked_global {C : Cfg} {gd gd' : GDef} {s s' : Fires}
   obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h2
   exact ⟨rfl, .inr ⟨C, Walk.fuel, s, s1, hV, h1⟩⟩
 
-variable (P Q Valid) in
+variable (P Q Valid Xc) in
 /-- A pass whose globals are walks of the source's (`Walked`), under
 configurations that read the program as the source does and redirect
 nothing. -/
@@ -84,24 +84,24 @@ structure WalkProg : Prop where
 /-- A global's body against its target version, entered with related
 arguments, at a bound below the walk's simulation and the fundamental
 lemma. -/
-theorem walked_body (H : WalkProg P Q Valid) {m : Nat} (hW : ∀ fuel, WalkAt P Q Valid m fuel)
-    (hF : Rel.FundAt P Q (WV Q Valid) m) {gd gd' : GDef} (hwk : Walked Valid gd gd') {vs ws : List Val}
-    (hvs : WVs Q Valid vs ws) (hl : vs.length = gd.ps.length) :
-    SimUpTo (WV Q Valid) m (fun k => eval P k vs.reverse [] gd.body) (fun k => eval Q k ws.reverse [] gd'.body) := by
+theorem walked_body (H : WalkProg P Q Valid) {m : Nat} (hW : ∀ fuel, WalkAt P Q Valid Xc m fuel)
+    (hF : Rel.FundAt P Q (WV Q Valid Xc) m) {gd gd' : GDef} (hwk : Walked Valid gd gd') {vs ws : List Val}
+    (hvs : WVs Q Valid Xc vs ws) (hl : vs.length = gd.ps.length) :
+    SimUpTo (WV Q Valid Xc) m (fun k => eval P k vs.reverse [] gd.body) (fun k => eval Q k ws.reverse [] gd'.body) := by
   obtain ⟨-, hb | ⟨C, fuel, s, s', hV, hrun⟩⟩ := hwk
   · rw [hb]; exact hF (pw_of hvs).reverse .nil gd.body
   · have hwl : ws.length = gd.ps.length := by rw [hvs.length, hl]
     have hp := paramOpds_val [] ws
     rw [hwl] at hp
-    have henv := WEnv.pushOpds hp hvs.reverse (WEnv.nil (Q := Q) (Valid := Valid) (ρ' := ws.reverse ++ []))
+    have henv := WEnv.pushOpds hp hvs.reverse (WEnv.nil (Q := Q) (Valid := Valid) (Xc := Xc) (ρ' := ws.reverse ++ []))
     simp only [List.append_nil, paramOpds_length, List.length_nil] at henv hp
-    have hk : KontW Q Valid m .ret (fun v _ => .ok v) ws.reverse [] := ⟨_, rfl, fun x w hxw => SimUpTo.ok hxw⟩
+    have hk : KontW Q Valid Xc m .ret (fun v _ => .ok v) ws.reverse [] := ⟨_, rfl, fun x w hxw => SimUpTo.ok hxw⟩
     refine ((hW fuel).walk hrun vs.reverse [] ws.reverse [] _ [] _
       (H.suffix C [] _ hV List.nil_suffix) henv .nil (by simp [hwl]) rfl (factsOk_leaf _)
       ⟨fun i hi => by simp [List.getElem?_replicate] at hi, fun j hj => by simp at hj⟩ hk).congr
       (fun k => (Sem.Result.bind_pure _).symm) (fun _ => rfl)
 
-theorem WalkProg.hyp (H : WalkProg P Q Valid) : Hyp P Q Valid where
+theorem WalkProg.hyp (H : WalkProg P Q Valid) : Hyp P Q Valid noXc where
   known := H.known
   arity g gd hg := by
     obtain ⟨gd', hg', hps, -⟩ := H.globals g gd hg
@@ -111,7 +111,7 @@ theorem WalkProg.hyp (H : WalkProg P Q Valid) : Hyp P Q Valid where
   cglob := H.cglob
   cbody := H.cbody
   inl := H.inl
-  call n hlowW hlowF g vs ws hvs := by
+  call n hlow g vs ws hvs := by
     cases hP : P.global? g with
     | none => exact (SimUpTo.stuck _).congr (fun k => rfl) (fun _ => rfl)
     | some gd =>
@@ -119,14 +119,14 @@ theorem WalkProg.hyp (H : WalkProg P Q Valid) : Hyp P Q Valid where
       have hvl := hvs.length
       by_cases hl : vs.length = gd.ps.length
       · have hl' : ws.length = gd'.ps.length := by rw [hwk.1, hvl, hl]
-        refine (SimUpTo.later fun m hm => walked_body H (hlowW m (by omega)) (hlowF m (by omega)) hwk
+        refine (SimUpTo.later fun m hm => walked_body H (hlow m (by omega)).1 (hlow m (by omega)).2.1 hwk
           (of_pw hvs) hl).congr (fun k => ?_) (fun k => ?_)
         · simp only [Result.ofOption, Result.bind_ok, callVal, hl, if_true]
         · rw [hQ]; simp only [Result.ofOption, Result.bind_ok, callVal, hl', if_true]
       · have hl' : ¬ ws.length = gd'.ps.length := by rw [hwk.1, hvl]; exact hl
         refine (SimUpTo.stuck _).congr (fun k => ?_) (fun _ => rfl)
         simp only [Result.ofOption, Result.bind_ok, callVal, hl, if_false]
-  glob n hlowW hlowF g := by
+  glob n hlow g := by
     cases hP : P.global? g with
     | none => exact (SimUpTo.stuck _).congr (fun k => rfl) (fun _ => rfl)
     | some gd =>
@@ -138,7 +138,7 @@ theorem WalkProg.hyp (H : WalkProg P Q Valid) : Hyp P Q Valid where
       cases hps : gd.ps with
       | nil =>
         refine SimUpTo.later fun m hm => ?_
-        have := walked_body H (hlowW m (by omega)) (hlowF m (by omega)) hwk (.nil) (by simp [hps])
+        have := walked_body H (hlow m (by omega)).1 (hlow m (by omega)).2.1 hwk (.nil) (by simp [hps])
         exact this
       | cons p ps =>
         refine SimUpTo.ok ?_
@@ -155,7 +155,8 @@ theorem WalkProg.hyp (H : WalkProg P Q Valid) : Hyp P Q Valid where
               simp only [Walk.entsOf, List.getElem?_map, paramOpds_get _ _ hq, Option.map_some]
               simp)
             (fun _ _ _ _ _ hv => by simp at hv)
-  red n _ _ C ρ' r hV hr := by rw [H.noRed C ρ' hV] at hr; cases hr
+  red n _ C ρ' r hV hr := by rw [H.noRed C ρ' hV] at hr; cases hr
+  xenter _ _ _ _ _ _ _ _ _ _ _ _ _ hx := hx.elim
 
 /-- **A walk pass refines its input.** -/
 theorem WalkProg.refines (H : WalkProg P Q Valid) : Sem.Refines P Q :=
