@@ -12,12 +12,10 @@ import Ix.Kernel.Audit.Roots
 /-! The byte adapter has its own import and runtime boundary. The pure
 codec's allowlist is not widened.
 
-From L5 (plan v4) the certified entry `Ix.Ixon.Admission.checkBytes` runs
-con-leche's verified checker behind the Ixon reader; its closure is frozen
-with the ruled constructs it reaches (`Ix.Kernel.Audit.runtimeRulings`), and
-the externs it adds beyond the codec, the reader and the fold are listed.
-The intrinsic kernel's byte admission (`checkBytesIntrinsic`, 1834 compiled
-functions at L4) and its frozen statements were retired at L6. -/
+The certified entry `Ix.Ixon.Admission.checkBytes` runs con-leche's verified
+checker behind the Ixon reader; its closure is frozen with the ruled
+constructs it reaches (`Ix.Kernel.Audit.runtimeRulings`), and the externs it
+adds beyond the codec, the reader and the fold are listed. -/
 
 namespace Ix.Ixon.Admission.Audit
 

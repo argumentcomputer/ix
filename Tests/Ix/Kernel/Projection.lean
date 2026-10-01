@@ -9,8 +9,7 @@ import Tests.Ix.Kernel.ByteAdmission
 
 /-! Projection reconstruction (pure BLAKE3 keys, exact records, the request
 bound and conflicts) and the certified entry with projection omission,
-`Ix.Ixon.Projection.checkBytes`. Until L6 (plan v4) the entry checks ran
-through the intrinsic kernel's `checkBytesIntrinsic`, retired with it. -/
+`Ix.Ixon.Projection.checkBytes`. -/
 
 open Ix.Kernel Tests.Ix.Kernel.IxonFixtures Tests.Ix.Kernel.Codec
 

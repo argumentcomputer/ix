@@ -20,11 +20,9 @@ OmegaInaccessibles.{u} →
 theorems there: `checkBytes_has_ZFSet_model` (every input the entry accepts
 has a model in `ZFSet`) and `checkBytes_no_proof_of_False`.
 
-Until L6 the same construction also provided Ix's own class
-`Ix.Kernel.Model.SetTheory`, the interface of the intrinsic reference
-kernel (`setTheoryOfChain`, `setTheoryOfCarneiro`, `carneiro_implies_ix`).
-L6 retired that kernel, its copy of the class and that instance; the
-lemmas are now stated over con-leche's `IsTGUniverse` and `Equinumerous`.
+The construction's lemmas are stated over con-leche's `IsTGUniverse` and
+`Equinumerous`. (Until 2026-10-01 it also instantiated the retired intrinsic
+kernel's own class; see `docs/kernel.md`.)
 
 The construction includes the interface's Lean-level replacement scheme:
 Mathlib's `Classical.allZFSetDefinable` supplies images of arbitrary functions

@@ -4,7 +4,7 @@
 Two retirements are recorded: the lean4lean/lean4ix proof system and the
 Ix.Tc verification machinery (roadmap section 11), and the intrinsic
 proof-carrying kernel with its entry points, tests, census and benchmark
-(plan v4, L6; `INTRINSIC` below). Run from a checkout or a Nix source
+(2026-10-01, `docs/kernel.md`; `INTRINSIC` below). Run from a checkout or a Nix source
 export. Historical documentation and legal attribution are intentionally
 outside this check; Lean comments are ignored, including nested comments.
 The guard's own negative controls are the sole source-file exemption. This
@@ -30,7 +30,7 @@ RETIRED = re.compile(
     r"ix-ffi-dyn|crates/ffi-dyn",
     re.IGNORECASE,
 )
-# The intrinsic kernel (plan v4, L6): its modules (syntax, checker, inductive
+# The intrinsic kernel (retired 2026-10-01): its modules (syntax, checker, inductive
 # routes, certified rules, model, ingress and egress over its own syntax,
 # runtime, consistency), its entry points, the executables and scripts that
 # ran it, and its test and benchmark modules. Case-sensitive. Kept names are
@@ -62,7 +62,7 @@ INTRINSIC = re.compile(
 )
 RETIRED_TREES = (
     "Ix/Tc/Verify/", "Ix/Compile/Verify/", "crates/ffi-dyn/",
-    # The intrinsic kernel's wholly retired directories (L6).
+    # The intrinsic kernel's wholly retired directories.
     "Ix/Kernel/Certified/", "Ix/Kernel/Inductive/", "Ix/Kernel/Model/",
     "Ix/Kernel/Runtime/", "Ix/Kernel/Std/",
 )
@@ -72,7 +72,7 @@ RETIRED_FILES = {
     "Benchmarks/TruthMines/Drivers/Lean4Lean.lean",
     "Benchmarks/Compile/TruthMines/Members/Lean4Lean.lean",
     "Tests/Ix/Lean4Lean.lean",
-    # The intrinsic kernel's census, benchmark and scripts (L6).
+    # The intrinsic kernel's census, benchmark and scripts.
     "Benchmarks/Kernel/Census.lean",
     "Benchmarks/Kernel/CensusMain.lean",
     "Benchmarks/Kernel/CensusProbe.lean",
@@ -230,7 +230,7 @@ def controls() -> None:
             raise RuntimeError(f"retirement control escaped: {path}")
     if inspect("docs/history.md", "Lean4Lean attribution") or inspect("NOTICE", "lean4ix"):
         raise RuntimeError("historical documentation or legal attribution rejected")
-    # The intrinsic kernel (L6): its entries, executables and modules are
+    # The intrinsic kernel: its entries, executables and modules are
     # rejected in code and configuration; comments and kept names are not.
     for path, source in (
         ("Fixture.lean", "#eval Ix.Ixon.Admission.checkBytesIntrinsic"),

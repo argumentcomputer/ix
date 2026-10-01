@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Ixon.Admission
 import Ix.Ixon.ConLecheConsistency
 
-/-! # The public theorems of the certified Ixon API (plan v4, L5)
+/-! # The public theorems of the certified Ixon API
 
 The contract of `Ix.Ixon.Admission.checkBytes` (roadmap section 2), stated
 for the executed function. Each theorem is the con-leche entry's
@@ -21,10 +21,9 @@ table, prelude and Nat-operation pin list) at the committed tables.
   `False` as its type; `checkBytes_no_False_theorem`: no theorem record of
   accepted bytes has a type that reads as the pinned `False` (D3, con-leche's
   pinned form).
-* `checkBytes_reading`: fidelity, in the role of the intrinsic kernel's
-  `Ingress.Installed` (retired at L6), with key uniqueness (`UniqueKeys`,
-  L6b: the role of the intrinsic entry's `unique_keys` theorem, dropped at
-  L5).
+* `checkBytes_reading`: fidelity: the batch limits, key uniqueness
+  (`UniqueKeys`), the exact canonical reading of every record, and
+  installation of what the records describe.
 * `checkBytes_resources`: the byte limits bound the decoded representation.
 
 The set theory is the standing hypothesis; `Models/SetTheory` provides an

@@ -15,7 +15,7 @@ import Ix.Kernel.ConLeche.Values
 
 /-! # Ix.Kernel
 
-The kernel-side boundary of the certified Ixon checker (plan v4). The checker
+The kernel-side boundary of the certified Ixon checker. The checker
 is con-leche's, ported in place under `ConLeche/**` (`ConLeche.Cached.checkDecls`
 at `.verified`, with `ConLeche.model_exists`); Ix contributes only the
 boundary:
@@ -38,12 +38,8 @@ boundary:
 The certified API is `Ix.Ixon.Admission.checkBytes`; its public theorems
 (model existence over `ConLeche.Model`, no proof of the pinned `False`,
 fidelity, resources) are in `Ix.Ixon.Consistency` and
-`Ix.Ixon.ConLecheConsistency`.
-
-The intrinsic proof-carrying kernel that this module exported through L5
-(`Ix.Kernel.check`, `checkDecls`, `checkEnv`, the `Ix.Kernel.Model` set model
-and `Ix.Kernel.Consistency`) was retired at L6; its final state is
-integration head `tmxpopss` (`plans/ix-kernel-con-leche-port-v4.md`,
-section 6).
+`Ix.Ixon.ConLecheConsistency`. The contract, trust surface, audits and
+provenance are described in `docs/kernel.md`, which also records the
+intrinsic kernel this module exported before the port.
 
 Roadmap: `plans/ix-certified-roadmap.md`. -/

@@ -285,12 +285,14 @@ end Scripts
 
 section ConLeche
 
-/- Con-leche's verified checker core, imported in place and verbatim from
+/- Con-leche's verified checker core, imported in place from
 `https://github.com/leanprover/con-leche.git` at
 `ae0c0c4e4ce6a0081648aff03fe9c39d002c4526` (Apache-2.0; the seven files of
-upstream task #323 at `3ca9e2fe`, int-5): the import closure
-of `ConLeche.model_exists` under its upstream `ConLeche/**` paths, plus the
-adapted `ConLeche/MainTheorem.lean`. See `plans/ix-kernel-con-leche-port-v4.md`.
+upstream task #323 at `3ca9e2fe`): the import closure of
+`ConLeche.model_exists` under its upstream `ConLeche/**` paths. Files are
+byte-identical except the adapted ones and two Ix-authored modules
+(`ConLeche/{Kernel,Verify}/LevelGeran.lean`), each listed with its change in
+`Tests/Ix/Kernel/ImportManifest.lean` (`docs/kernel.md`, "Provenance").
 `linter.deprecated` is off so the upstream bytes, written for Lean 4.33.0,
 build under `--wfail` on 4.34.0 without renaming deprecated lemmas. Not a
 default target; `IxKernel/lakefile.lean` declares the same library.
@@ -298,8 +300,8 @@ The glob is the whole subtree: a module the globs miss is not compiled to
 native code, and an executable that imports it fails to link. Upstream's
 `ConLeche/Kernel/NatOpPins.lean`, which splices upstream's JSON pin dumps, is
 not ported: Ix's Nat-operation pins are the Ixon-generated
-`Ix/Kernel/ConLeche/NatOpPinData.lean` (plan v4, L4b), and int-4 deleted the
-unbuilt verbatim copy so that this glob needs no per-file list. -/
+`Ix/Kernel/ConLeche/NatOpPinData.lean`, and the unbuilt verbatim copy is
+not kept, so that this glob needs no per-file list. -/
 lean_lib ConLeche where
   roots := #[`ConLeche]
   globs := #[.submodules `ConLeche]
@@ -333,8 +335,7 @@ lean_exe «kernel-order» where
   moreLinkObjs := #[ix_rs_test]
 
 /-- Host-compiled Lean declarations through the certified entry
-`Ix.Ixon.Admission.checkBytes`, each with an exact expected verdict (L6b; the
-counterpart of the intrinsic kernel's retired `kernel-ingress`). -/
+`Ix.Ixon.Admission.checkBytes`, each with an exact expected verdict. -/
 lean_exe «kernel-entry-cases» where
   root := `Tests.Ix.Kernel.EntryCases
   supportInterpreter := true
@@ -347,13 +348,7 @@ lean_exe «conleche-level-differential» where
   root := `Tests.Ix.Kernel.ConLecheLevels
   moreLinkObjs := #[ix_rs]
 
-/- The intrinsic reference kernel's census (`kernel-census-intrinsic`,
-`kernel-census-probe`, library `KernelCensus`), its host differentials
-(`kernel-differential`, `kernel-ingress`, `kernel-level-differential`) and
-its benchmark (`bench-certified-kernel`) were retired at L6 (plan v4) with
-that kernel. -/
-
-/-- Con-leche's verified checker through the Ixon reader (plan v4, L4): the
+/-- Con-leche's verified checker through the Ixon reader: the
 `checkBytes`-shaped entry and its per-record census (untrusted). -/
 lean_lib KernelConLeche where
   roots := #[`Ix.Ixon.ConLecheAdmission, `Ix.Ixon.ConLecheConsistency, `Ix.Ixon.Consistency,
@@ -415,13 +410,13 @@ script "check-kernel" (args) := do
     throw <| IO.userError "kernel-order failed; see .lake/build/kernel-order.jsonl"
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
-  -- Con-leche's fences for the ported `ConLeche/**` subtree (plan v4, L0):
-  -- import layering and the per-file escape allowlist. Both pass vacuously
-  -- while `ConLeche/` is absent; the trust-surface lexer self-test always runs.
+  -- Con-leche's fences for the ported `ConLeche/**` subtree: import layering
+  -- and the per-file escape allowlist, with the trust-surface lexer's
+  -- self-test.
   run "bash" #["scripts/layering.sh"]
   run "bash" #["scripts/trust-surface.sh"]
   -- Host-compiled Lean declarations through the certified entry, each with
-  -- an exact expected verdict (L6b; `Tests/Ix/Kernel/EntryCases.lean`).
+  -- an exact expected verdict (`Tests/Ix/Kernel/EntryCases.lean`).
   -- Con-leche's level comparison against brute-force evaluation (cl-level).
   run "lake" #["build", "--wfail", "conleche-level-differential"]
   run ".lake/build/bin/conleche-level-differential" #[]

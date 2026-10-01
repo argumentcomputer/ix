@@ -13,9 +13,6 @@ import Std.Data.HashSet.Lemmas
 The reading relation names every supplied address and canonical payload in
 order, independently of any decoder. It is the byte half of the certified
 entry's theorems (`Ix.Ixon.Consistency`, `Ix.Ixon.ConLecheConsistency`).
-
-The intrinsic kernel's compositions (`checkBytesIntrinsic_*`) were retired
-at L6 (plan v4) with that kernel.
 -/
 
 namespace Ix.Ixon.Verify.Admission

@@ -132,8 +132,7 @@ def ctorContext : Except Error (List (Option Nat)) := do
 
 -- The certified entry with canonical block order admits the separately
 -- stored family/recursor fixture and derives its model through the same
--- checker success (until L6 this ran through the intrinsic kernel's
--- `checkBytesIntrinsic`, retired with it).
+-- checker success.
 def byteAccepts : Bool := (checkBytes 16 ByteAdmission.limits {}
   (Projection.encode Projection.separatedInput) []).isOk
 #guard byteAccepts

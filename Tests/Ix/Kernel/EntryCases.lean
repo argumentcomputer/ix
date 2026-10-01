@@ -26,9 +26,7 @@ Every case has an exact expected verdict: accepted with each seed installed
 under its reader name, or the entry's error at a named stage with the
 classification of `Ix.Ixon.Admission.outcome`. The compiler, loader, order
 and hints are untrusted producers of the input; only the verdict of
-`checkBytes` is under test. One JSON row per case goes to stdout. This
-replaces the intrinsic kernel's `kernel-ingress` (retired at L6) for the
-certified entry. -/
+`checkBytes` is under test. One JSON row per case goes to stdout. -/
 
 open Ix.Kernel.ConLecheReader
 open Benchmarks.Kernel.ConLecheStep (RecordStore Hints setup)

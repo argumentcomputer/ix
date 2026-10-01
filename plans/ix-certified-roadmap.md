@@ -1,11 +1,14 @@
 # Ix.Kernel: certified kernel roadmap
 
-The [UID and performance plan](../docs/certified-kernel-uids-plan.md), dated
-2026-09-30, specifies the proposed internal arenas, external BLAKE3 boundary,
-optional metadata, declaration receipts, proof obligations, and staged
-InitStd performance gates. Its checkpoint notes distinguish completed work
-from pending combined validation; the historical milestones below retain
-their original scope.
+Status, 2026-10-01: the certified checker is con-leche's verified checker,
+ported in place under `ConLeche/**` and run on Ixon records by the reader in
+`Ix/Kernel/ConLeche/`; the certified API is `Ix.Ixon.Admission.checkBytes`.
+`docs/kernel.md` describes the entry, its theorems, the trust surface, the
+audits, provenance and the census, and section 2 below is its contract.
+Con-leche's design is its `DESIGN.md` (with `OVERVIEW.md` and `PERF.md`) at
+the pinned revision. The intrinsic proof-carrying kernel that this roadmap
+first planned (K0 to K4, section 10's P-steps) was retired on 2026-10-01;
+the milestone sections below are its dated record.
 
 Date: 2026-09-16, implementation plan updated 2026-09-29; the in-place
 con-leche port was adopted on 2026-09-30 (revision note, fifth pass). K0,
@@ -140,6 +143,13 @@ are kept as its record. L6 (2026-10-01) retired it: its modules, entry
 points, tests, census, benchmark and audits are gone, and each section that
 describes it carries a one-line note. Port steps L0–L8 are plan v4's (section 4 there);
 they are unrelated to section 12's L1 (Lean 4.34.0).
+
+Sixth pass, 2026-10-01, before review: sections 3.1 to 3.7 (the intrinsic
+kernel's design) are replaced by a pointer to con-leche's `DESIGN.md` and
+`docs/kernel.md`; the module layout lists the current tree; the UID and
+performance plan for the intrinsic kernel (`docs/certified-kernel-uids-plan.md`)
+is removed. Section 2, the ledger, the source policy and these notes are
+kept; the milestone sections stay as dated history.
 
 ## 1. Thesis and scope
 
@@ -428,355 +438,43 @@ with `OVERVIEW.md` and `PERF.md`, at the pinned revision (reviewable in
 | Audits and fences | `Ix/Kernel/Audit/*.lean`, `Ix/Ixon/*Audit.lean`, `scripts/layering.sh`, `scripts/trust-surface.sh`, `Tests/Ix/Kernel/{ImportManifest,Provenance}.lean` | L0, L5 |
 | Model instance | `Models/SetTheory`, switched to con-leche's `SetTheory` class | L5 |
 
-Sections 3.1 to 3.7 describe the intrinsic kernel line (`Ix/Kernel/**`).
-It was the public API through L4 and the differential reference until L6
-retired it (2026-10-01); they are kept as its record.
-
-### 3.1 Syntax
-
-> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
-
-Kernel terms are the old branch's `VExpr`/`AExpr` over `ConstRef Address`,
-extended with `let`:
-
-```lean
-inductive Level | zero | succ | max | imax | param (i : Nat)
-
-inductive ConstRef (β)
-  | member (block : β) (i : Nat)          -- i-th member of a block
-  | ctor (block : β) (i c : Nat)          -- c-th constructor of member i
-
-inductive Expr (β)
-  | bvar (i : Nat)
-  | sort (u : Level)
-  | const (r : ConstRef β) (us : List Level)
-  | app (f a : Expr β)
-  | lam (dom body : Expr β)
-  | forallE (dom body : Expr β)
-  | letE (ty val body : Expr β)
-  | proj (r : ConstRef β) (i : Nat) (e : Expr β)
-  | natLit (n : Nat)
-```
-
-A natural-number literal names the reference of its family (`natLit r n`,
-on raw and annotated syntax alike): with content addresses the `Nat` block
-is unique, and the host that produces the literal knows its address.
-Typing a literal requires that family to carry the `natural` fact, which
-only the exact zero/successor block receives.
-
-The annotated form `AExpr` adds a `PropWhen` regime condition to `lam` and
-`forallE` and nothing else. `letE` carries no annotation: its meaning is
-substitution, and the kernel zeta-reduces before any structural comparison,
-as con-leche does. At the reviewed baseline, annotations do not steer
-reduction; they are written by annotation, validated by inference, compared
-during conversion, and read by the model. P09 explicitly revises that
-operational rule for the proved `.never` beta shortcut.
-
-Ixon's substructural contracts are layout data, not kernel syntax. Ixon v3
-defines three kinds:
-- a binder contract: usage `erased`, `linear`, `affine`, or `many`, plus an
-  input value contract of ownership (`unique`/`shared`) and locality
-  (`unrestricted`/`local`);
-- a forall result contract;
-- a let contract: dependency, value or shared borrow, and a binder contract.
-
-Kernel terms carry none of them. Ingress reads the kernel term, and the egress
-layout retains each contract, so records reproduce exactly. Typing,
-conversion, and the model ignore contracts. Two terms that differ only in
-their contracts are therefore the same kernel term.
-
-The implementation first had this shape under Ixon v2, where it declined
-non-default modes. Section 12 (V2) accepts every v3 contract. Mode checking,
-and any optimization contracts license, operate on Ixon expressions or their
-layouts (K7).
-
-There are no names, no binder info, no metadata, no free variables, no
-metavariables, and no string literals in the first release. Binders are
-opened by extending a context list, as in the old branch's judgments.
-Universe parameters are positional, matching Ixon `Univ.var`. The kernel is
-parametric in the reference type `β` where that costs nothing, and the
-public API fixes `β := Address`.
-
-### 3.2 Declarations and environment
-
-> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
-
-Declarations mirror Ixon constant shapes: axiom, definition/theorem/opaque,
-quotient primitive, inductive with constructors, recursor with rules, and a
-block (`muts`) of members that may refer to each other by index. Ixon
-projection constants (`iPrj`, `cPrj`, `rPrj`, `dPrj`) are consumed at
-ingress to build an alias map from their addresses to `ConstRef` values;
-the kernel checks blocks, and a reference whose address is neither a block
-nor an alias rejects. Production ingress reconstructs projection addresses
-by hashing; the certified ingress requires them to be supplied and only
-looks them up.
-
-The environment is an ordered, `Address`-keyed finite map: a list of
-installed blocks with their addresses and an index for lookup. Checking
-folds over the input in the order supplied. A reference to an address that
-is not yet installed rejects; a duplicate address rejects. Dependency order
-is a property of the supplied list, not of hashes, so acceptance needs no
-acyclicity proof and no collision assumption. Within a block, members refer
-to each other by index and are checked together.
-
-### 3.3 Semantics and model
-
-> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
-
-Port the old branch's `Ix.Theory.Model` as `Ix.Kernel.Model`:
-
-- `SetTheory V` and the derived constructions (`SetModel`: pairs, graphs,
-  dependent products `piR`/`lamR` by regime, universes, numerals).
-- The total interpretation `interp constants levels env : AExpr → V` with
-  the separate hereditary predicate `WellDenoted`. A total function replaces
-  con-leche's `Denotes` relation; functionality is by definition.
-- `Environment`, `ConstantEntry` (universes, type, optional body, published
-  equations, facts), `Realizes`, `Assignment`, and `Extends`.
-- The semantic judgments `TypingClaim` and `ConversionClaim`, quantified over
-  every compatible assignment, with their proved rule theorems (sort, bvar,
-  const, app, lam, forallE, conversion, beta, eta, proof irrelevance, delta,
-  equation, literal) and the projection and equation facts published by the
-  admission constructions.
-
-The `letE` clause (interpretation by substitution) with its rules
-`TypingClaim.letE` and `ConversionClaim.zeta` is in (`Ix.Kernel.Model.LetRules`).
-
-### 3.4 Checker
-
-> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
-
-The checker is a reference algorithm in the shape of `Ix.Tc` and nanoda,
-written for proof. K1 built its core (`Ix.Kernel.Infer`) in a
-proof-carrying style: each operation returns its result together with a
-proof of the semantic claim about it, the claims are propositions erased at
-run time, and the public theorems are assembled from them rather than
-proved about the functions afterwards.
-
-- `annotate` (unverified, `Ix.Kernel.Annotate`): raw terms carry no binder
-  regimes; this pass computes the zero condition of every binder's inferred
-  codomain sort bottom up by calling the certified operations on the
-  already annotated subterms. Annotation validity is established by
-  `inferA`, so acceptance does not trust the annotator to choose valid
-  regimes. Fidelity to the supplied raw term is a separate obligation,
-  made explicit in P02. P04 reuses the evidence obtained while annotating
-  instead of validating the same subtrees repeatedly.
-- `inferA`: infers the type of an annotated term and returns
-  `TypingClaim Γ e A`. Binder cases check that the recorded regime equals
-  the zero condition of the inferred codomain sort.
-- `whnf`/`step`: beta, zeta, delta by unfolding stored bodies, and
-  reduction under an application head, returning `ReductionClaim`. Beta is
-  typed: the argument is re-inferred and converted to the binder's domain
-  before the redex fires, because the set model licenses substitution only
-  when the argument denotes a member of the domain, and denotational typing
-  cannot recover the domain of a function in the `Prop` regime. Fuel-bounded;
-  no caches; no reducibility hints. P07 shares typed rule arguments; P09
-  eliminates argument rechecking in the non-Prop `.never` case by proof.
-  Iota (K2): a recursor applied to a constructor reduces through the rule
-  the inductive route published as an equation with typed endpoints; the
-  target is converted to the typed instance of the left side (which checks
-  the constructor's parameters and the indices against the recursor's by
-  conversion), and the equation takes it to the typed instance of the right
-  side. The arities come from a `ConstantFact.recursor` on the entry.
-  Structures (K2): the family entry of a structure carries a
-  `ConstantFact.structure` with its arities, one typed projection fact per
-  field, and the eta and iota equations. `inferA` types `proj` by applying
-  the field's projection fact to the parameters and the major; `whnf`
-  reduces a projection of a constructor application through the iota
-  equation; `isDefEq` converts a constructor application to a term of the
-  structure's type through the eta equation. For structures the rule
-  endpoints are typed by inference at reduction time rather than read from
-  facts.
-  Literals (K2): `inferA` types `natLit r n` at `r` when `r` carries the
-  `natural` fact; `isDefEq` unfolds a literal against a constructor
-  application one step (`0` to `zero`, `n + 1` to `succ n`), and recursor
-  iota unfolds a literal major the same way. Whole literals stay literals
-  in normal forms.
-- `isDefEq`: syntactic equality, then `whnf` on both sides, then structural
-  comparison (`sort` by level equivalence through `LevelEq.normalize`,
-  `const` by reference and level lists, `bvar`, `app`, `lam`, `forallE`),
-  eta on either side, and proof irrelevance for terms whose type is a
-  proposition; returns `ConvClaim`. Regimes are compared syntactically;
-  `PropWhen` is canonical (`PropWhen.eq_of_holds`), so this is semantic
-  equality of conditions. An unsuccessful comparison follows P01's search
-  outcome policy; it is not by itself a proof of non-convertibility.
-- `checkDeclC`: for a single-member block holding a safe definition,
-  theorem, or opaque: the address is fresh, the term forms are supported,
-  every reference is installed, the annotated type and body are closed in
-  their universe parameters and variables, the declared type inhabits a sort, the body has
-  the declared type, and a theorem's type is a proposition. It installs the
-  entry with its body and returns the environment with `StepClaim`, the
-  proof that every model of the input environment extends
-  (`extend_definition` with `Environment.WF.insert`). Unsupported inputs
-  decline by name, including unsafe or partial definitions, unsupported
-  block shapes, and fuel exhaustion. Projections and Nat literals are
-  supported by the K2 routes described above.
-  For a block holding an inductive and its recursor (K2), an unverified
-  reader (`Ix.Kernel.Certified.Ordinary.Read`) recovers the `Shape`; the
-  block is accepted only if it equals the block generated from that shape
-  and `checkBlock` establishes formation, elimination mode, and rule
-  typing; installation adds the family, constructors, and recursor with
-  its rule equations and typed rule facts, and the model extension comes
-  from the ported construction (`Ix.Kernel.Inductive.Ordinary`).
-
-Two drivers sit on top of `checkDeclC`, both pure and both erasing the
-proof component for the public API: the closed fold `check` is the subject
-of `check_has_model`; `checkDecls` takes an assumed environment, whose model
-is a hypothesis, and is the claim-shaped entry point behind
-`checkDecls_has_model`. Because the executables carry proofs about models
-in `Type v`, they take that universe as a parameter (`check.{u,v}`); it
-does not affect computation, and `checkAddressed` fixes `v := 1`, the
-universe of the `ZFSet.{0}` model. A parallel driver is con-leche's
-install/check split: install the prefixes first, then run the same
-`checkDeclC` on each declaration's own prefix concurrently, so its verdict
-equals the sequential fold's by construction. The four operations the
-compiler's auxiliary generator uses today through `Ix.Tc.Knot` (`whnf`,
-`infer` with `ensureSort`, `isDefEq`, `isLargeEliminator`) are exported as
-pure functions at K6.
-
-Soundness is intrinsic, not extrinsic: con-leche proves theorems of the
-shape `infer Γ e = some (e', A) → TypingClaim Γ e' A` after the fact, while
-here the functions construct those claims as they run, consuming the rule
-theorems of 3.3; `Ix.Kernel.Claims` packages them as `FormedClaim`,
-`ConvClaim`, and `ReductionClaim` with the closure rules the checker needs.
-The choice was made at K1 because it keeps each rule application next to
-the code that relies on it and removes a second, parallel definition of
-every operation.
-
-`partial` is not used in certified code. Termination is by fuel or by
-structural recursion; fuel exhaustion declines.
-
-### 3.5 Inductive types and pinned blocks
-
-> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
-
-The kernel validates an inductive declaration (universe and parameter
-agreement across the block, manifest return types, strict positivity, field
-sort bounds, elimination level) and computes the recursor it expects. A
-stored recursor is accepted only if it is structurally equal to the
-computed one. The model side is a construction per shape class, ported from
-the old branch's admission routes:
-
-| Profile item | Model construction (old branch source) | Release |
-| --- | --- | --- |
-| Ordinary strictly positive families: ordinary fields, then recursive fields whose domains and indices do not depend on other recursive fields | `Certified/Ordinary` (carriers, eliminators, rule equations, large elimination) | K2 |
-| Structures with projections, eta, and the `Prop` field restriction | `Certified/Structure` | K2 |
-| `Nat`: structural pin of zero and successor, numerals, literal typing | `Certified/Natural` | K2 |
-| `Eq`: admitted as an ordinary indexed family; its meaning as set equality and K-like reduction through proof irrelevance | `Certified/Ordinary`, `Certified/Basis/Equality`, `Certified/Standard/Realization` | K2 |
-| Quotient primitives and `Quot.sound` | `Certified/Quotient` | K2 |
-| `propext`, `Classical.choice` | `Certified/Standard` | K2 |
-| Constructor-free inductives (`False`, `Empty`) | follows from the ordinary construction | K2 |
-| Mutual and nested blocks | `Certified/Modeled` uses checked companions; treat as a later promotion, not a first-release route | K6 |
-| K for other families, reflexive blocks, string literals | none yet | K6 |
-
-Status (2026-09-17): the ordinary route is implemented and connected
-(`Ix.Kernel.Certified.Ordinary`, `Ix.Kernel.Inductive.Ordinary`), with the
-recursor at member 1 of the family's block as Ixon's `muts` layout has it;
-the K flag is accepted for a singleton proposition without fields, and K-like
-reduction synthesizes the constructor from the recursor's parameters,
-converting the major to it by proof irrelevance. The structure route is implemented
-(`Ix.Kernel.Certified.Structure`, `Ix.Kernel.Inductive.Structure`): an
-ordinary block with one constructor, no indices, and no recursive fields
-whose fields are propositions whenever the family is one gets projections,
-eta, and iota; otherwise it stays a plain inductive without projections, as
-`Exists` does in Lean. The `Nat` route is implemented (`Ix.Kernel.Certified.Natural`,
-`Ix.Kernel.Inductive.Natural`): a block whose shape is exactly zero and
-successor gets the `natural` fact, whose meaning now includes that the
-successor is a function on the carrier, which literal unfolding needs. The
-quotient route is implemented (`Ix.Kernel.Certified.Quotient`): the former,
-the constructor, the lift, and the eliminator are installed one by one from
-their exact generated declarations, each publishing a `quotient` fact that
-pins its value; no computation rule is published, since the lift's rule is
-derived at reduction time from the published facts and the admitted `Eq`
-interface and the eliminator's holds outright; `Quot.sound` is an axiom over
-the admitted interfaces. The standard axioms are implemented
-(`Ix.Kernel.Certified.Standard`): `propext` and `Classical.choice` are
-admitted at their exact types once the `Eq`, `Iff`, and `Nonempty`
-interfaces are installed as ordinary blocks, and realized by the point and
-by a choice function. Every row of the table is implemented.
-
-Pins exist only where a reduction rule must identify a block: `Nat` for
-literals in the first release, `Bool`/`String` later. A pin is a structural
-comparison of the stored block with the pinned declaration; the address is
-only the lookup key. Nothing in the consistency theorem depends on a pin.
-Unsupported shapes decline with the class named.
-
-### 3.6 Simplifications and why each preserves the theorem
-
-> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
-
-| Simplification | What it removes | Why consistency is preserved |
-| --- | --- | --- |
-| Addresses and `ConstRef` instead of names | `Name`, prefix scoping, reserved names, shadowing rules, "installed under its own name" theorems, name-injectivity encodings | The model indexes constants by reference; a reference resolves by key or rejects |
-| Positional universe parameters | Named `LevelParam`, `substFn`, capture reasoning | Level assignments are lists; evaluation is unchanged |
-| Ordered environment, order supplied by the host | Dependency walks with proved decreasing ranks, hash-based acyclicity | Acceptance requires every reference to be installed earlier |
-| Total `interp` with `WellDenoted` | The `Denotes` relation and `Denotes_functional` | Same denotations; rewriting works directly |
-| Annotations computed by an unverified pass and validated by certified inference | Annotation witnesses and readers | Acceptance depends only on the validated annotations; a wrong one is rejected |
-| Direct checker soundness | `TypingWitness`/`ConversionWitness` trees, witness search, reject-on-search-failure | The witness rules are the rule theorems; the checker applies them in the proof |
-| One fold, no cached tier | `Cached/` and its simulation proofs | The executed function is the theorem's subject |
-| No parser in the closure | `Frontend/`, chunked byte theorems | Bytes get their own contract in K4 |
-| Generated recursors and direct model constructions per shape class | Generated `_model` families, opaque installs, projection-function rewriting, companions | Each class has a proved model extension; other classes decline |
-| No-False from constructor-free inductives | Pinned `False` basis block with a `false_empty` model field | The ordinary construction interprets a constructor-free inductive as the empty set |
-| Structural pins, `Nat` only | Hardcoded address tables for dispatch, name-based basis pins | Pins identify content; addresses stay keys |
-| Zeta by substitution | Let annotations, lazy zeta machinery | The regime is read on binders only |
-| Strings and Nat acceleration deferred | `strLitToConstructor`, `NatOpPinSet`, division certificates | Coverage changes, soundness does not |
-| Pure BLAKE3 outside the kernel | FFI hashing on certified paths and a refinement obligation against it | The kernel never hashes; hashing theorems are about a Lean function |
-
-Kept deliberately: the `SetTheory` interface, the `PropWhen` regime on
-binders, the collapse of definitional to propositional equality, and
-level-polymorphic constants as functions of level assignments. The old
-branch's refutation `CheckedTyping.annotations_not_determined` still
-applies: identical erased syntax does not license interchangeable
-annotations, which is why the kernel compares annotations in conversion
-instead of assuming them.
-
-### 3.7 Why addresses help the proof
-
-> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
-
-- Lookup is a total function on keys. There is no resolution, no scope, and
-  no rename; the environment invariant is a list invariant.
-- Mutual blocks and constructors are structural positions. Block ownership
-  and constructor membership are bounds checks, not name conventions.
-- Content addressing gives the host a canonical dependency order for free,
-  and the kernel only has to check it.
-- The identity the rest of Ix certifies, `KId.addr`, subject roots,
-  assumption trees, and claim payloads, is the same key the kernel's theorem
-  is stated over. K3 to K5 compose without a translation layer.
-- The old branch's model, judgments, and admission constructions were built
-  over `ConstRef β` for exactly this reason and port without redesign.
+Sections 3.1 to 3.7 described the intrinsic kernel's design (its syntax,
+environment, set model, proof-carrying checker, inductive profile,
+simplifications and use of addresses). That kernel was the public API
+through L4 and was retired on 2026-10-01, and the sections were removed
+with it; they remain in this file's history. The design of the certified
+checker is con-leche's `DESIGN.md`; the Ix boundary is the table above and
+`docs/kernel.md`.
 
 ## 4. Layout, layering and the certification ledger
 
 ### Module layout
 
-> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: of the `Ix/Kernel/` modules below only `Ref.lean` and `Audit/` remain, beside `Search`, the record store `Ingress/Records`, the projection writer `Egress/Projection` and `ConLeche/` (the Ixon reader, pins, prelude); `Ix/Kernel.lean` is that boundary's umbrella.
-
 ```text
-Ix/Kernel.lean                 Public API and theorem imports
+Ix/Kernel.lean                 The kernel-side boundary's umbrella
 Ix/Kernel/
-  Level.lean                   Positional levels, equivalence, normalization
+  ConLeche/                    Ixon reader (Reader, ReaderSpec), committed pins
+                               (PinData, NatOpPinData), Ixon prelude,
+                               installation and definition values of the fold
   Ref.lean                     ConstRef
-  Expr.lean                    VExpr, AExpr, lift/inst/instL, scope
-  Const.lean                   Declarations and blocks
-  Env.lean                     Ordered Address-keyed environment
-  Whnf.lean  Infer.lean  DefEq.lean  Inductive.lean  Check.lean
-  Model/                       SetTheory, SetModel, Interpret, Judgment,
-                               Environment, Inductive constructions
-  Verify/                      Soundness proofs; imports the implementation
-  Consistency.lean             check_has_model, no_proof_of_False
-  Audit/                       Axiom, import, runtime, provenance audits
-  Ingress.lean                 K3: Ixon constants to kernel declarations
-  Egress.lean                  K3: exact record reconstruction with retained layout
-Ix/Address/Core.lean           Pure address key (K0 split, see below)
-Ix/Ixon/Types.lean             K3: pure Ixon data types split from codecs
-Ix/Ixon/Codec.lean             K4: pure production anonymous encoders/decoders
-Ix/Ixon/Wire.lean              K4: structural wire representability
-Ix/Ixon/Verify/                K4: retained codec and exact framing proofs
-Ix/Ixon/Audit.lean             K4: independent codec/proof boundaries
-IxKernel/lakefile.lean         The kernel as a dependency-free package over the sources above
-Tests/Ix/Kernel/               Fixtures, soundness tests, audit controls, provenance
-Models/SetTheory/              Mathlib instance package (ported), depends on IxKernel only
-docs/kernel.md                 Public contract, coverage, trust boundary
+  Search.lean                  Bounded search outcomes
+  Ingress/Records.lean         Decoded-record store
+  Egress/Projection.lean       Projection-record writer
+  Audit/                       Axiom, import and runtime audits, frozen roots
+Ix/Address/Core.lean           Pure address key
+Ix/Ixon/Types.lean             Pure Ixon data types
+Ix/Ixon/Codec.lean             Pure production anonymous encoders/decoders
+Ix/Ixon/Wire.lean, WireCheck   Structural wire representability
+Ix/Ixon/Verify/                Codec, framing and byte-admission proofs
+Ix/Ixon/Audit.lean             The codec's import, runtime and axiom audit
+Ix/Ixon/Admission.lean         The certified API checkBytes and its outcome classification
+Ix/Ixon/ConLecheAdmission.lean The pipeline: byte stage, reader, prelude, fold
+Ix/Ixon/Consistency.lean       The public theorems
+Ix/Ixon/{Projection,BlockOrder}{,Proofs,Audit}.lean  The variants
+IxKernel/lakefile.lean         The certified gate's dependency-free package
+Tests/Ix/Kernel/               Fixtures, entry cases, provenance manifest
+Models/SetTheory/              Mathlib instance of con-leche's SetTheory
+docs/kernel.md                 Contract, trust surface, audits, provenance, census
 ```
 
 From the port the tree also holds con-leche's subtree, with its paths and
@@ -1015,6 +713,10 @@ holds through L4. At L5 the statements change once: they are recorded
 before and after, with the reasons, and the docstring changes with them.
 
 ## 6. Milestones
+
+K0 to K4 and K6 to K7 below planned and record the retired intrinsic kernel
+(2026-09-17 to 2026-09-30); the con-leche port's steps (L0 to L6b) replaced
+them, and `docs/kernel.md` describes the result.
 
 | Milestone | Outcome | Depends on |
 | --- | --- | --- |
@@ -1653,6 +1355,10 @@ strategy.
 - The semantics of binder modes in the model: K7.
 
 ## 10. Concrete implementation sequence from the review
+
+This sequence (P00 to P12) was written for the retired intrinsic kernel and
+is kept as its record; the review's ontology and contracts below still
+describe what the certified entry must preserve.
 
 The checkpoint below distinguishes completed work from planned packets.
 The reviewed baseline is `ade9216d` in the

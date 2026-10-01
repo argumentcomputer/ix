@@ -18,7 +18,7 @@ the original Lean source meant is outside the claim.
 
 ```lean
 def Ix.Ixon.Admission.checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address â Option ConLeche.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
     Except ConLecheAdmission.Error ConLeche.Env
 ```
 
@@ -83,15 +83,15 @@ generated. Every public and fidelity root depends on exactly `propext`,
 | Theorem (`Ix.Ixon.Admission.`) | Statement, for `h : checkBytes limits records blobs hint = .ok env` |
 | --- | --- |
 | `checkBytes_eq` | `checkBytes = ConLecheAdmission.checkBytes` (definitional) |
-| `checkBytes_has_model` | `â V [ConLeche.SetTheory V], Nonempty (ConLeche.Model V env)` |
-| `checkBytes_has_model_values` | there is a model `M` in which every stored `defnInfo cv value _` satisfies `Denotes M.cval env Ï Ï value (M.cval cv.name Ï)` for all `Ï Ï` |
-| `checkBytes_no_proof_of_False` | no `ci â env.consts` has type `.const ConLeche.falseName []` |
+| `checkBytes_has_model` | `∀ V [ConLeche.SetTheory V], Nonempty (ConLeche.Model V env)` |
+| `checkBytes_has_model_values` | there is a model `M` in which every stored `defnInfo cv value _` satisfies `Denotes M.cval env φ ρ value (M.cval cv.name φ)` for all `φ ρ` |
+| `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const ConLeche.falseName []` |
 | `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader reads as `.const ConLeche.falseName []` |
 | `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `RecordsRead limits records constants` for some `constants`; and `ConLecheAdmission.Installed pins pre natPins constants blobs hint env` |
-| `checkBytes_resources` | `resourceUnits constants â¤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
+| `checkBytes_resources` | `resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
 
 `ConLeche.Model V env` (`ConLeche/Denotes.lean`) assigns a set
-`cval c Ï` to every constant at every level assignment such that every
+`cval c φ` to every constant at every level assignment such that every
 stored constant is a member of what its type denotes (`mem`), what the
 built-in `False` denotes is empty (`false_empty`), and what the built-in `Eq`
 denotes is set equality (`eq_equality`). Definitional equalities need no
@@ -131,7 +131,7 @@ Not proved:
 
 - that installed types and values equal the decoded ones. Con-leche
   installs the annotation of a declared term: binder regimes (`pw`) are
-  computed (the reader emits `pw := .never`), `let` is Î¶-reduced, and
+  computed (the reader emits `pw := .never`), `let` is ζ-reduced, and
   projections are checked. The intended statement is about `pw`-erasure and
   needs a lemma about con-leche's `installConstantVal`/`installValue`;
 - the member-level reading of inductive blocks (member order, constructor
@@ -387,7 +387,7 @@ To sync with a newer con-leche revision:
 3. Set `conLeche.revision` in the manifest, and the revision in the
    `ConLeche` library docstrings of `lakefile.lean` and
    `IxKernel/lakefile.lean` and in the two fence scripts' headers.
-4. Keep ``leanOptions := #[â¨`linter.deprecated, falseâ©]`` on both
+4. Keep ``leanOptions := #[⟨`linter.deprecated, false⟩]`` on both
    `ConLeche` library declarations: upstream writes for Lean 4.33.0 and
    uses lemma names that 4.34.0 deprecates, and the files must build under
    `--wfail` without edits.
@@ -457,10 +457,13 @@ partial declarations, and general mutual and nested inductives. L5
 renamed the intrinsic entries `checkBytesIntrinsic`; L6 (2026-10-01)
 deleted the kernel (132 files, 29,805 lines) with its entries, 19 test
 modules, census, benchmark and host differentials (25 files, 4,080
-lines). Its last development state is
-`tmxpopss` (int-1); the last tree that contains it is `runnvnly`, the
-parent of the retirement. The retirement's file-by-file inventory is in
-`plans/review/cl-l6/` (not versioned).
+lines). The last tree that contains it is the parent of "L6-A: retire the
+intrinsic entry points and their consumers" in this branch's history. The
+retirement's file-by-file
+inventory is in `plans/review/cl-l6/` (not versioned). Its design notes
+went with it: the roadmap's sections 3.1 to 3.7, and the UID and
+performance plan for that kernel (`docs/certified-kernel-uids-plan.md`,
+2026-09-30, never implemented), both removed on 2026-10-01.
 
 ## Removal ledger: lean4ix and Ix.Tc
 
@@ -520,7 +523,7 @@ acceptance/rejection behavior or full `Nat.add_comm` certified parity.
 | Production compiler refinement/value-preservation and end-to-end semantic square | Retired as part of D01; a separate compiler-correctness project would need new source semantics and proofs | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
 
 The retained codec chain imports the pure structural `wireWF` predicates,
-so the former `ExprSpineCodec â Catalog â IxonValue â Lean4Lean` dependency
+so the former `ExprSpineCodec → Catalog → IxonValue → Lean4Lean` dependency
 is gone. The temporary old copies have been deleted. Retained codec roots
 use only the three standard axioms; native hash/name allowances from the
 old compiler proofs are not inherited. K4's resource bounds, validity,

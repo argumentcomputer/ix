@@ -11,8 +11,7 @@ writer, audits), `Ix.Address.Core`, and the pure Ixon types/codecs/proofs
 with the certified API `Ix.Ixon.Admission` and its theorems. Data import
 closures use Lean core and `ConLeche` only (`Lean` only at elaboration time,
 in con-leche's ruled generators); proofs additionally use Lean/Std proof
-tooling. The intrinsic kernel this package built through L5 was retired at
-L6 (plan v4).
+tooling.
 The root `ix` package builds the same modules for its host consumers; this
 package is what the certified gate builds (`lake -d IxKernel build --wfail`),
 so a kernel module that imports anything outside the kernel fails here even
@@ -38,8 +37,7 @@ lean_lib IxKernel where
     .one `Ix.Ixon.ConLecheConsistency, .one `Ix.Ixon.Consistency]
 
 /-- Certified fixtures also run without the host package's dependencies: the
-Ixon record fixtures, the codec, and the certified entry's byte admission
-(the intrinsic kernel's fixtures were retired at L6, plan v4). -/
+Ixon record fixtures, the codec, and the certified entry's byte admission. -/
 def kernelFixtureRoots : Array Lean.Name := #[
   `Tests.Ix.Kernel.IxonFixtures, `Tests.Ix.Kernel.Codec,
   `Tests.Ix.Kernel.ByteAdmission, `Tests.Ix.Kernel.ParserWork]
@@ -59,13 +57,14 @@ lean_exe «kernel-provenance» where
   srcDir := ".."
   root := `Tests.Ix.Kernel.Provenance
 
-/-- Con-leche's verified checker core, imported verbatim at `ae0c0c4e` (task
-#323's seven files at `3ca9e2fe`, int-5; see
-the root `lakefile.lean`, which declares the same library). Lean core only;
-`linter.deprecated` is off so the 4.33.0-era sources build under `--wfail`
-on 4.34.0 unchanged. Not a default target. The glob is the whole subtree,
-as in the root `lakefile.lean` (upstream's `ConLeche/Kernel/NatOpPins.lean`
-is not ported, int-4). -/
+/-- Con-leche's verified checker core, imported in place at `ae0c0c4e`
+(task #323's seven files at `3ca9e2fe`; see the root `lakefile.lean`, which
+declares the same library, and `Tests/Ix/Kernel/ImportManifest.lean` for
+the adapted and Ix-authored files). Lean core only; `linter.deprecated` is
+off so the 4.33.0-era sources build under `--wfail` on 4.34.0 unchanged.
+Not a default target. The glob is the whole subtree, as in the root
+`lakefile.lean` (upstream's `ConLeche/Kernel/NatOpPins.lean` is not
+ported). -/
 lean_lib ConLeche where
   srcDir := ".."
   roots := #[`ConLeche]

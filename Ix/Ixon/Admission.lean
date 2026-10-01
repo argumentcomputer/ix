@@ -8,7 +8,7 @@ import Ix.Ixon.ConLecheAdmission
 
 /-! # Admission from ordered Ixon record bytes
 
-The certified Ixon entry (plan v4, L5). This adapter lives outside the
+The certified Ixon entry (`docs/kernel.md`). This adapter lives outside the
 checker: decoding and admission execute here; their composition with the
 checker is proved in `Ix.Ixon.Consistency` (the public theorems) and
 `Ix.Ixon.ConLecheConsistency` (the same theorems at every pin table and
@@ -18,9 +18,6 @@ prelude).
   canonical decoding (`Ix.Ixon.Admission.Bytes`), then con-leche's verified
   checker behind the Ixon reader under the committed pin table and Ixon
   prelude (`Ix.Ixon.ConLecheAdmission.checkBytes`).
-* The intrinsic kernel's byte admission (`checkBytesIntrinsic`, the
-  certified entry through L4) was retired at L6 (plan v4) with the
-  intrinsic kernel.
 
 The host supplies record order, address keys, and literal blobs. Addresses
 are keys, not authenticated content hashes. Blobs retain their exact supplied

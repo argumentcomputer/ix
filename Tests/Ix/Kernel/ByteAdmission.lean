@@ -10,9 +10,7 @@ import Tests.Ix.Kernel.Codec
 decoding) of the
 certified entry `Ix.Ixon.Admission.checkBytes`, and that entry's verdicts on
 the shared Ixon record fixtures. The entry's reader and checker are tested
-in `Tests.Ix.Kernel.ConLecheReader` and `Tests.Ix.Kernel.CertifiedEntry`.
-Until L6 (plan v4) these fixtures also ran through the intrinsic kernel's
-entry `checkBytesIntrinsic`, retired with that kernel. -/
+in `Tests.Ix.Kernel.ConLecheReader` and `Tests.Ix.Kernel.CertifiedEntry`. -/
 
 open Tests.Ix.Kernel.IxonFixtures Tests.Ix.Kernel.Codec
 

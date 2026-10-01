@@ -33,8 +33,7 @@ the executed functions.
   record. `checkBytesWith_no_False_reference` is the syntactic case: the
   record's type is a bare reference to the constant the reader names
   `False`.
-* **Fidelity** (`Installed`, `checkBytesWith_reading`), in the role of the
-  intrinsic kernel's `Ingress.Installed` (retired at L6): no two records and
+* **Fidelity** (`Installed`, `checkBytesWith_reading`): no two records and
   no two blobs share an address (`UniqueKeys`), the records are read exactly
   and canonically (`RecordsRead`), the reader's output is a record-by-record reading of them
   (`StreamRead`), the fold accepted exactly that output behind the prelude,
@@ -50,8 +49,7 @@ the executed functions.
   constant, the counterpart of Ix's `Realizes.bodyValue` for definitions
   (`Ix.Kernel.ConLecheFold.checkDecls_model_defn_values`).
 * **Resources** (`checkBytesWith_resources`): the byte limits checked
-  before decoding bound the whole decoded representation, as they did for
-  the intrinsic entry (retired at L6).
+  before decoding bound the whole decoded representation.
 
 Every theorem holds at every pin table, prelude and Nat-operation pin list
 (`checkBytesWith`), so none depends on how the pins are generated;

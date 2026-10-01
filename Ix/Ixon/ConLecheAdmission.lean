@@ -7,11 +7,10 @@ import Ix.Ixon.Admission.Bytes
 import Ix.Kernel.ConLeche.Prelude
 import ConLeche.MainTheorem
 
-/-! # Admission from ordered Ixon record bytes through con-leche (plan v4, L4)
+/-! # Admission from ordered Ixon record bytes through con-leche
 
 The `checkBytes`-shaped entry of con-leche's verified checker, which the
-certified API's `Ix.Ixon.Admission.checkBytes` runs from L5 (the intrinsic
-kernel's entry was retired at L6):
+certified API `Ix.Ixon.Admission.checkBytes` runs:
 
     preflight → uniqueKeys → decodeRecords → Ixon reader → preparePrelude
               → ConLeche.Cached.checkDecls .verified natPins
