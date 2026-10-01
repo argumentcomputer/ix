@@ -1,35 +1,56 @@
 # Implement canonical minimum sharing in Ix
 
-> **Status note (2026-10-01).** §1–§10 are the original handoff, whose target was the global
-> byte minimum under the key of §3.3. That target was found infeasible at production scale
-> (§12.1) and **superseded** by the decisions in §12: the canonical construction is the two-phase
-> `canonicalSharingTiered` with the TagN layout (§12.8, §12.11), which is machine-checked minimal
-> in phase 1 and exact-per-phase in phases 2–3 (§12.13), not a global byte minimum. Read §12 first.
+> **Status: implemented, with the target revised (§12).** §1–§10 are the original plan. Its
+> target, the global byte minimum under the key of §3.3, was found infeasible at production
+> scale (§12.1) and is **superseded** by the decisions of §12 wherever the two differ. Read §12
+> first. What was built:
+>
+> - **Construction.** `Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Lean
+>   `Ix/Sharing/Exact/Tiered.lean`, Rust `crates/ixon/src/sharing_exact/tiered.rs`). Phase 1 is
+>   the exact minimum of the uniform-width model at each width `w ∈ {1, 2, 3}` (§12.3, §12.11).
+>   Phase 2 allocates an exact first tier of eight 1-byte slots, then orders the rest by Kahn
+>   priority (§12.14, §12.15). Phase 3 re-materializes every entry and root at the real TagN
+>   widths. The candidate with the fewest real bytes wins, ties going to the lower width.
+> - **Single route.** Both compilers build every table with it. The heuristic
+>   (`Ix/Sharing.lean`, `crates/ixon/src/sharing.rs`) and its proofs are removed.
+> - **Format.** TagN replaces Tag0, Tag2 and Tag4 (§12.12, §12.16). The format version is 4
+>   (`.ixe` header `0xE4`), with object format 4 and the identifiers `ixon-v4` and
+>   `ixon-v4/resource-v1`. The IxVM circuit reads and writes TagN.
+> - **Proofs.** Phase-1 minimality, the per-phase specifications and wire validity of the
+>   output are machine-checked (§12.13).
+> - **Limits.** Resource limits are a safety net with a CLI override (`ix compile
+>   --sharing-limits`). Exceeding one is a compile error; there is no fallback.
+> - **Metadata.** The decompilers implement the extended index space of §13.1. The
+>   construction of §13.2 is not implemented.
+> - **Oracles.** The exact search of §6 is kept as a test oracle for small inputs (§12.1).
+>
+> Not built: the global minimum of §1 and §3.3, and the metadata construction of §13.2.
+> [Ixon](Ixon.md#sharing-system) is the normative description of the format;
+> [the integration map](sharing-minimum-integration.md) says where it lives in the code.
 
-Implementation plan, 2026-09-30 (revision 2, tracked in Ix). Target: an implementation and
-reviewable PR in the **Ix repository**, covering its Lean and Rust paths. This file is a
-plan, not evidence that the optimizer or migration already exists. Revision 1 and its
-research oracles live in the Cybernet.ix research directory
-`/home/jcb/projects/Cybernet.ix/plans/ixsy/sharing-optimality/` (read-only for this work).
+Implementation plan, 2026-09-30 (revision 2). Target: an implementation and reviewable PR in
+the **Ix repository**, covering its Lean and Rust paths. §0–§11 are the plan as written, apart
+from local paths; §12 and §13 record the decisions taken while implementing it. Revision 1
+and its research oracles are in a separate research directory, not part of this repository.
 Revision 2 adds §0 (workspace), §4.1 (proved reductions and bounds), §6.4 (sparse states),
-the corpus-measurement gate P1.5, and §11 (parallel workstreams).
+the corpus-measurement gate P1.5, and §11 (division of the work).
 
 ## 0. Workspace, toolchain and corpus
 
-- Work in the git worktree `/home/jcb/projects/ix-sharing`, branch `ix-sharing`, based on
-  `864130ec` (the revision the research inspected). Do not touch `/home/jcb/projects/ix`.
+- The work is based on Ix `864130ec`, the revision the research inspected.
 - The toolchain comes from the flake: run every `lake`/`cargo` command as
-  `nix develop --command bash -c '<cmd>'` from the worktree root. `lake build ix IxTests`
-  has already completed once in this worktree; incremental rebuilds are fast.
-- Tests: `lake test -- sharing` runs `Tests/Ix/Sharing.lean`; `lake test -- ixon` the codec
-  suite; `cargo test -p ixon` the Rust crate; `lake build IxCompileVerify` the proofs.
-- A real corpus is available: `Init` compiled by the production Lean compiler to
-  `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe`
-  (65,995 constants, 195 MB). Regenerate with
-  `lake exe ix compile Benchmarks/CompileInit.lean --out <path>` from the worktree root
+  `nix develop --command bash -c '<cmd>'` from the repository root.
+- Tests: `lake test -- exact-sharing exact-sharing-ffi` runs the construction's suites (the
+  plan was written against the heuristic's `sharing` suite, since removed); `lake test --
+  ixon` the codec suite; `cargo test -p ixon` the Rust crate; `lake build IxCompileVerify`
+  the proofs.
+- Corpus: `Init`, compiled by the production compiler with
+  `lake exe ix compile Benchmarks/CompileInit.lean --out init.ixe` from the repository root
   (NOT `Benchmarks/Compile/CompileInit.lean`, which is a separate Lake project that pulls
-  Mathlib). Load it with `Ixon.deEnv` / `Ixon.deEnvAnon`; each `LazyConstant` exposes
-  `rawBytes` (the exact production bytes) and `get` (the parsed `Constant`).
+  Mathlib). It has 65,995 constants; the file was 195 MB in format v3 when the plan was
+  written and is 143,680,738 bytes in format v4. Load it with `Ixon.deEnv` /
+  `Ixon.deEnvAnon`; each `LazyConstant` exposes `rawBytes` (the exact production bytes) and
+  `get` (the parsed `Constant`).
 - The production root API is `Ix.CompileM.constantInfoRootExprs` and the rebuild logic in
   `Ix.CompileM.buildConstantWithSharing` (`Ix/CompileM.lean`); expand an existing table
   before re-optimizing (§7).
@@ -65,13 +86,13 @@ benchmarking obligation; no polynomial runtime claim has been established for fu
 
 ## 2. Starting evidence and source map
 
-Research inspected Ix revision `864130ecaaee8aac9ddc38eaefdfc333fc793513` at
-`/home/jcb/projects/Cybernet.ix/plans/refs/ix`; another local checkout was
-`/home/jcb/projects/ix-cybernetix`. Refresh the target branch, repository instructions,
-interfaces and test commands before implementing. Do not copy stale source over later work.
-Use an isolated branch/worktree and submit the PR to Ix, not Cybernet.ix.
+Research inspected Ix revision `864130ecaaee8aac9ddc38eaefdfc333fc793513`. Refresh the
+target branch, repository instructions, interfaces and test commands before implementing.
+Do not copy stale source over later work. Use an isolated branch/worktree and submit the PR
+to Ix.
 
-Relevant paths relative to the Ix checkout:
+Relevant paths at that revision, relative to the Ix checkout (the heuristic's files and
+functions in this table were removed by this work):
 
 | Area | Files / entry points to inspect and update |
 |---|---|
@@ -86,10 +107,10 @@ Relevant paths relative to the Ix checkout:
 | Tests | `Tests/Ix/Sharing.lean`, Rust sharing tests, codec/compile/decompile differential suites |
 | Version policy and docs | `docs/Ixon.md`, `docs/Ixon-v3.md`, format IDs, manifests, CLI/version checks, generated fixtures |
 
-The current heuristic estimates `(uses−1)·size − uses·shareRefSize` before rewriting.
-It uses logical expanded occurrence counts, ignores telescope savings in its subtree cost,
-and prices provisional indices before emission changes their order. Existing sharing proofs
-establish wire well-formedness/capacity, not size optimality.
+The heuristic at that revision estimated `(uses−1)·size − uses·shareRefSize` before
+rewriting. It used logical expanded occurrence counts, ignored telescope savings in its
+subtree cost, and priced provisional indices before emission changed their order. Its
+proofs established wire well-formedness/capacity, not size optimality.
 
 Known complete-Constant measurements:
 
@@ -113,16 +134,17 @@ Another closed fixture has two different minimum 25-byte encodings: let
 univs `[Zero, Succ Zero]`. Both entry orders `[A,B]` and `[B,A]` attain the minimum.
 The nine-Ref ordering fixture is a wire/expansion witness, not a kernel-checked recursor.
 
-Supporting material in this handoff directory:
+Supporting material in the research directory of revision 1 (not part of this repository):
 
-- [Research report](REPORT.md), including the finite-space and dynamic-programming argument.
-- [Independent Astra report](astra/report.txt), [production results](astra/production-results.txt),
-  [source hashes](astra/sources.txt) and [production probe](astra/production-probe/main.rs).
-- [Counterexample.lean](Counterexample.lean): subset codec, kernel-checked small byte-count
-  equalities, and a complete 3,061,082-candidate search of the tiny witness.
-- [ExactDP.lean](ExactDP.lean), [driver](RunExact.lean), and
-  [results](exact-dp-results.txt): fixed-dictionary telescope recurrence checked against
-  exhaustive variants in 260 cases; subset DP finds the 17-byte minimum with 16 states.
+- the research report (`REPORT.md`), including the finite-space and dynamic-programming
+  argument;
+- an independent report (`astra/report.txt`) with production results, source hashes and a
+  production probe;
+- `Counterexample.lean`: subset codec, kernel-checked small byte-count equalities, and a
+  complete 3,061,082-candidate search of the tiny witness;
+- `ExactDP.lean`, its driver `RunExact.lean`, and `exact-dp-results.txt`: fixed-dictionary
+  telescope recurrence checked against exhaustive variants in 260 cases; subset DP finds the
+  17-byte minimum with 16 states.
 
 These scripts are research oracles. They do not implement the complete format, general
 width buckets, production metering or the proposed structural-ID tie-break. Preserve the
@@ -678,22 +700,19 @@ all integration/version/metadata paths are coherent, required proofs and checks 
 production performance and failure behavior have been reported honestly. A deterministic
 compression improvement alone does not satisfy this handoff.
 
-## 11. Parallel workstreams
+## 11. Division of the work
 
-Independent agents own disjoint files; each works in its own worktree from `ix-sharing`
-and commits to its own branch, and the integrator merges. Cross-stream interfaces are the
-spec above (structural IDs §3.2, key §3.3, recurrence §5, DP §6) and the golden fixtures
-in §2. Every stream reports verified facts only: commands run, their output, and what was
-not run.
+The work splits into four parts with disjoint files. Their interfaces are the spec above
+(structural IDs §3.2, key §3.3, recurrence §5, DP §6) and the golden fixtures in §2.
 
-| Stream | Owns | Deliverable |
+| Part | Files | Deliverable |
 |---|---|---|
-| W1 Lean exact core | `Ix/Sharing/Exact.lean` (new; split as needed), `Tests/Ix/SharingExact.lean`, `Tests/Main.lean` suite entry | Structural IDs, bounded share expansion, exact serializer-length helpers checked against `putExpr`, tiny all-order/all-occurrence oracle, fixed-dictionary telescope DP with materialization, sparse width-state DP with LB pruning and resource errors; P1–P3 tests including every §2 fixture |
-| W2 Rust exact core | `crates/ixon/src/sharing_exact.rs` (new), its tests, `crates/ffi` differential hook | Same algorithm and key, checked arithmetic, differential test against Lean bytes via the existing FFI parity harness pattern (`Tests/Ix/IxonV3FFI.lean`) |
-| W3 Corpus measurement | `Benchmarks/SharingStudy.lean`, `lakefile.lean` exe entry, `docs/sharing-minimum-measurements.md` | P1.5 numbers on `init.ixe`; once W1 lands, rerun with the exact optimizer under explicit limits and report success rate, byte savings vs heuristic, states/transitions and wall time |
-| W4 Integration (after W1–W3 review) | `Ix/CompileM.lean`, `crates/compile`, metadata remap, version bump, proofs, docs | P5–P6 |
+| Lean exact core | `Ix/Sharing/Exact.lean` (new; split as needed), `Tests/Ix/SharingExact.lean`, `Tests/Main.lean` suite entry | Structural IDs, bounded share expansion, exact serializer-length helpers checked against `putExpr`, tiny all-order/all-occurrence oracle, fixed-dictionary telescope DP with materialization, sparse width-state DP with LB pruning and resource errors; P1–P3 tests including every §2 fixture |
+| Rust exact core | `crates/ixon/src/sharing_exact.rs` (new), its tests, `crates/ffi` differential hook | Same algorithm and key, checked arithmetic, differential test against Lean bytes through the FFI parity harness |
+| Corpus measurement | `Benchmarks/SharingStudy.lean`, `lakefile.lean` exe entry, `docs/sharing-minimum-measurements.md` | P1.5 numbers on `init.ixe`; once the Lean core lands, rerun with the exact optimizer under explicit limits and report success rate, byte savings vs heuristic, states/transitions and wall time |
+| Integration (after review of the other three) | `Ix/CompileM.lean`, `crates/compile`, metadata remap, version bump, proofs, docs | P5–P6 |
 
-Do not start W4 until the P1.5 gate has been evaluated and the exact cores agree on all
+Integration starts after the P1.5 gate has been evaluated and the exact cores agree on all
 fixtures.
 
 ## 12. Decision record after gate P1.5 (2026-09-30)
@@ -735,7 +754,7 @@ classify → exhaustive search with a sound lower bound per component (cost via 
 fixed-dictionary DP with all certain-stored terms available) → pinned dependency order
 (in-degree descending, structural ID ascending). Its minimality proof is: exchange lemmas
 for the two certain classes, independence of components, completeness of the finite search.
-This is being implemented as `optimizeSharingUniform` (W1).
+It is implemented as `optimizeSharingUniform` (`Ix/Sharing/Exact/Uniform.lean`).
 
 ### 12.4 Format change: fixed per-constant Share width (proposal)
 
@@ -752,19 +771,20 @@ Decoder impact: the Share tag `0xB` changes from Tag4 to “flag nibble + index 
 reader must know `w` before the roots. Either write `K` (or `w`) in the constant header
 before `ConstantInfo`, or move the sharing table ahead of the info. Everything else in the
 grammar is unchanged. Backward references remain the feasible class (`SharingWF`).
-**Status: proposed, awaiting decision.** Until decided, the exact uniform algorithm is
-implemented parameterised by `w` and measured under scheme D's width choice.
+**Status: not adopted.** §12.8 chose the two-phase construction with the TagN layout
+instead; the exact uniform algorithm stays parameterised by `w` and is phase 1 of it.
 
-### 12.5 Revised workstreams
+### 12.5 Revised work plan
 
-- W1: `optimizeSharingUniform` + differential tests against the width-state oracle.
-- W2: Rust port of the same, plus differential FFI test.
-- W3: rerun the corpus with the exact uniform optimizer (bytes vs MSS/heuristic, class and
+- Lean: `optimizeSharingUniform` + differential tests against the width-state oracle.
+- Rust: a port of the same, plus a differential FFI test.
+- Corpus: rerun with the exact uniform optimizer (bytes vs MSS/heuristic, class and
   component statistics, wall time, resource failures).
-- W4 (after the format decision): Share width encoding, header field, `SharingWF`/codec
-  proofs, compiler routes in Lean and Rust, metadata remap, version bump, fixtures.
+- Integration (after the format decision): Share width encoding, header field,
+  `SharingWF`/codec proofs, compiler routes in Lean and Rust, metadata remap, version bump,
+  fixtures.
 
-### 12.6 Corrections from the W1 implementation (pinned rules)
+### 12.6 Corrections from the Lean implementation (pinned rules)
 
 - **R1 is an exchange, not an exclusion.** An in-degree-1 term `t` can be referenced once
   per inline write of its unstored parent `p`. Storing `p` instead (or turning extra writes of
@@ -783,7 +803,7 @@ implemented parameterised by `w` and measured under scheme D's width choice.
   difference is left out). Decomposes over components. **Table order:** stored descendants
   first, then larger in-degree, then smaller ID.
 - Lean (`Ix/Sharing/Exact/Uniform.lean`) agrees with the width-state reference on 400 generated
-  inputs at w ∈ {1,2,3,5}; corpus measurement is W3's next task.
+  inputs at w ∈ {1,2,3,5}.
 
 ### 12.7 Tier layouts measured (MSS encoding, Init)
 
@@ -794,11 +814,12 @@ implemented parameterised by `w` and measured under scheme D's width choice.
 | G: nibble escapes 14/15 | 14 | 256 | −1.21% | 0 |
 | D: fixed per constant | 16 | 4,096 | +0.93% | 23,342 |
 
-Recommended layout **TagN** (nibble-bootstrapped) (formerly "TagN"): nibble `[L][M][c1][c0]`; `L=0` → 3-bit index; `L=1,M=0` → 2 bits +
-1 byte (8..1031); `L=1,M=1,c∈{0,1,2}` → 2/4/8 following bytes (offsets continue; `c=3` invalid).
+Recommended layout **TagN** (nibble-bootstrapped; first called Ladder4): nibble `[L][M][c1][c0]`; `L=0` → 3-bit index; `L=1,M=0` → 2 bits +
+1 byte (8..1031); `L=1,M=1,c∈{0,1,2}` → 2/4/8 following bytes (offsets continue; `c=3` invalid;
+superseded by the 4-byte rung of §12.16).
 Bijective (each index has one encoding), capped only at 2^64 like every other count.
 Two-phase construction (uniform-model selection → exact 8-slot allocation + pinned order →
-re-materialisation under real widths) is being implemented parameterised by the layout.
+re-materialisation under real widths), parameterised by the layout.
 
 ### 12.8 Decision (2026-09-30): two-phase canonical construction with the TagN Share layout
 
@@ -809,8 +830,10 @@ beyond; phase 3 per-part re-materialisation under real widths. Each phase's opti
 stated in its docstring; the width-1 model length is a provable lower bound on any encoding and
 is used to report the gap. The Share tag `0xB` adopts the TagN nibble layout (no header
 change, backward references unchanged, bijective so no canonical-integer check is needed).
-Open: whether to adopt the TagN code for all Tag0/Tag4 integers (W3 measuring). W4
-integration starts once the Rust uniform/tiered port agrees with Lean on fixtures.
+Open at the time: whether to adopt the TagN code for all Tag0/Tag4 integers (decided in
+§12.12). Integration was to start once the Rust uniform/tiered port agreed with Lean on
+fixtures. Later changes: phase 1 runs at every width w ∈ {1, 2, 3} (§12.11), and the order
+beyond the first tier is the Kahn priority order (§12.14).
 
 ### 12.9 Mathlib corpus (2026-09-30, `docs/sharing-minimum-measurements-mathlib.md`)
 
@@ -822,7 +845,7 @@ classification: certain-stored 88.4 / 71.0 / 57.9% at w = 1/2/3; largest uncerta
 p99 4–5, max 45 (same constant as Init, `Lean.Grind.Config.mk.injEq`), ≤ 8 for 99.8%. Tier
 layouts on MSS: F (= TagN below 66,568) −1.55%, G −1.30%, D +1.44%. One stored heuristic table
 has 81,565 entries (Tag4 indices ≥ 65,536 cost 4 bytes); the largest MSS table is 21,461.
-Lean/Rust parity on Init (W2): 0 byte disagreements in 56,622 constants, tiered and uniform.
+Lean/Rust parity on Init: 0 byte disagreements in 56,622 constants, tiered and uniform.
 
 ### 12.10 Lean/Rust parity and production speed (2026-10-01)
 
@@ -842,7 +865,7 @@ fewer terms than K, so real references are narrower than modelled and the w = 2/
 terms that pay. On Mathlib the K-based construction was +0.46% vs MSS at TagN widths (larger on
 221,050 constants). **New rule:** run phase 1 at each w ∈ {1, 2, 3}, carry each through phases 2
 and 3, and keep the result with the fewest real layout bytes; ties → lower w, then `setPrec`.
-Measured (W2, Rust, all constants certified at every w): Mathlib −0.82% vs MSS (smaller on
+Measured (Rust, all constants certified at every w): Mathlib −0.82% vs MSS (smaller on
 405,832, equal 256,519, larger 903, max +1,485, p99.9 +1); Init −1.41% (larger on 5, max +6).
 Width 1 wins for 505,671 Mathlib constants, width 2 for 156,170, width 3 for 1,413. Cost: three
 phase-1 runs instead of one (about 3× the time; still minutes for all of Mathlib in Rust).
@@ -857,20 +880,43 @@ code with one proof of roundtrip/bijectivity (`Ix/Compile/Verify/TagN.lean`); th
 `tag0Bytes`/`tag4Bytes` sizes is restated with `tagNBytes`; the format version bumps once for
 sharing + integers together.
 
-### 12.13 Certified minimality of phase 1 (2026-10-01, W1 HEAD 3eb09b9c)
+### 12.13 What is machine-checked (2026-10-01)
 
-`Ix/Compile/Verify/UniformOptimality.lean`: `optimizeUniform_minimum` (a successful
-`optimizeUniformExpanded w limits ex` returns a stored set that is a minimum of the uniform
-model `ulen` over the restricted class, with `modelBytes` equal to it) and `optimizeUniform_least`
-(it is the `setPrec`-least such minimum), both under `limits.uniformSubsetSearch = false`, no
-`sorry`, no new axioms, all `Uniform*` modules registered in the sorry-frontier audit (196 roots).
-Reachability of every term from a root is a runtime check plus `optimizeUniform_reach`. Phases 2
-and 3 and the width selection have machine-checked per-phase specifications (`allocate_spec`,
-`firstTier_spec`, `materializeTable_min`, `rematerialize_spec`, `canonicalTiered_select`, audit
-roots 212 at 9611c3b6); not machine-checked: phase-2 optimality beyond the first tier, any global
-minimum, model length = TagN wire length, and `wireWF` of the output (in progress). The reference enumeration
-path (`uniformSubsetSearch = true`) is excluded from the theorems. Failure semantics: an error at
-any width fails the whole call (no fallback to other widths); Rust must match.
+The theorems below are roots of the compiler audit manifest
+(`Ix/Compile/Verify/Audit/Statements.lean`, 225 roots; standard axioms, no `sorry`, checked by
+`lake build IxCompileVerify`), except `exprSize_eq_serExpr` and
+`serConstant_size_decomposition`, which are proved lemmas of `SharingExact.lean` but not roots.
+
+- **Phase 1** (`UniformOptimality.lean`): `optimizeUniform_minimum` (a successful
+  `optimizeUniformExpanded w limits ex` returns a stored set that is a minimum of the uniform
+  model `ulen` over the restricted class, with `modelBytes` equal to it) and
+  `optimizeUniform_least` (it is the `setPrec`-least such minimum), both under
+  `limits.uniformSubsetSearch = false`. The certain-excluded class needs every telescope spine
+  shorter than `teleSubaddEnd`, which the optimizer checks before it runs (§12.17).
+  Reachability of every term from a root is a runtime check plus `optimizeUniform_reach`.
+- **Phases 2 and 3 and the width selection** have per-phase specifications: `allocate_spec`,
+  `firstTier_spec`, `allocate_optimal` (the order's reference cost is minimal when the table
+  has at most 1,032 entries), `materializeTable_min`, `rematerialize_spec`, `phase3_le_phase1`
+  and `canonicalTieredCore_select`.
+- **Format.** `canonicalSharingTiered_format` (`TieredWire.lean`) gives every output entry and
+  root `wireWF`, a table count below 2^64, and backward Shares (entry `k` references only
+  entries below `k`, roots only table entries). The compiler endpoint theorems
+  (`buildConstantWithSharing_wireWF` and the `*_codecWF` theorems of
+  `Ix/Compile/Verify/Compile*Codec.lean`) are stated over it and conclude `SharingRunOK`: a
+  compiler run returns an exactly decodable block or fails with the construction's error.
+- **Model length and wire length.** The minimality statements are about the layout length
+  (`sizeInfoWith` priced with TagN widths). `exprSize_eq_serExpr` proves that this size is the
+  serialized length of every expression in the wire domain, `serConstant_size_decomposition`
+  splits a constant's serialized length into root-free bytes, roots, table count and table
+  entries, and `optimizeUniform_variableBytes` proves that phase 1's serialized length equals
+  its model length when every table index has width `w`. No theorem states that the final
+  tiered result's layout length equals its serialized length; the construction checks the
+  equality at run time and fails closed on a mismatch.
+
+Not machine-checked: phase-2 optimality for tables of more than 1,032 entries, and any global
+minimum. The reference enumeration path (`uniformSubsetSearch = true`) is excluded from the
+theorems. Failure semantics: an error at any width fails the whole call (no fallback to other
+widths); Rust matches.
 
 ### 12.14 Best-of-four rejected; outlier diagnosis (2026-10-01)
 
@@ -881,8 +927,8 @@ loses even with MSS's exact stored set (67,367 vs MSS 63,779), so the gap is in 
 order for entries beyond the first tier (its 2,230 entries straddle the TagN 1,032 boundary):
 the "stored descendants first" order places high-reference entries late, whereas MSS's Kahn
 priority order (largest in-degree among available entries) keeps them in the 2-byte tier.
-Fix under way: phase 2's order beyond the first tier becomes the Kahn priority order by
-reference count (ties by structural ID), which is also what MSS measured with.
+Adopted: phase 2's order beyond the first tier is the Kahn priority order by reference count
+(ties by structural ID), which is also what MSS measured with.
 
 ### 12.15 Outlier resolved (2026-10-01): a tie-break artifact, no rule change
 
@@ -899,13 +945,38 @@ Kahn rule, whose tie-break is pinned (structural ID). A possible refinement, not
 maximum-weight closed set for the ≤ 1,032-entry second rung (same problem as the first tier with a
 larger cap), relevant only to tables that straddle the boundary.
 
+### 12.16 TagN gains a 4-byte rung (owner decision, 2026-10-01)
+
+Rung codes after `L=1, M=1`: `c = 0, 1, 2, 3` → 2, 3, 4, 8 following little-endian bytes (code 3 was
+invalid). Widths become 1/2/3/4/5/9 for every flag width f ∈ {0, 2, 4}; rung ends
+`R1 = 2^(r−1)`, `R2 = R1 + 2^(r−2+8)`, `R3 = R2 + 2^16`, `R4 = R3 + 2^24`, `R5 = R4 + 2^32`,
+`R6 = R5 + 2^64` (r = 8 − f). Reason: without it, f = 0 values in [82,048, 2^24) cost 5 bytes where
+Tag0 cost 4; Mathlib's 4.8M name indices lose 22.1 MB (+0.66% of the file). With it TagN is never
+longer than the old codes on any field measured. Still bijective; `Ix/Ixon.lean`'s TagN docstring is
+the normative layout.
+
+### 12.17 Proof-library status after the TagN switch (2026-10-01, head 6b9f7767)
+
+The whole verification library is restated against the TagN-only codec and the six-rung table
+(`IxCompileVerify` 227 audit roots, `IxTcVerify` 2034+7+1, sorry frontier clean, no new axioms).
+Changes to earlier statements in this section: the certain-stored threshold is now
+θ = `tag0StepBound n + 1` (exact Tag0 growth, replacing the fixed "gain ≥ 2"); header-width
+subadditivity (`tag4Size_add_le`) holds only below `teleSubaddEnd = Ixon.tagNEnd5 4`
+(4,311,811,080), so `optimizeUniformExpanded` fails closed (`formatBound "telescope spine length"`)
+on any longer telescope spine and the optimality theorems derive the bound from that guard;
+`ShareLayout` has the single constructor `tagN`. Lean/Rust parity re-checked: 0 disagreements on
+fixtures, 350 generated inputs, 124 Share-bearing constants and 306 compiler-route cases.
+Removing the heuristic later dropped its two audit roots (`rewriteWithSharing_wireWF`,
+`applySharing_wireWF`), leaving 225.
+
 ## 13. Metadata sharing: the extended index space (owner decision 2026-10-01)
 
-Status: **specified; the construction is not implemented in this PR.** Readers and writers
-keep the current behaviour until it is (metadata expressions are written without new shared
-entries). W3 measured the opportunity: Init has no metadata expressions; Mathlib has 524 in 7
-constants, 42,929 bytes in total (0.0013% of the file), and the best possible re-encoding saves
-about 40 KB. The format rule below is fixed now so that readers can be written once.
+Status: **the index space (§13.1) is implemented by the readers; the construction (§13.2) is
+not.** No writer emits a `Share` inside a metadata expression, and serialization is unchanged.
+The opportunity is small (`sharing-minimum-measurements.md`): Init has no metadata expressions;
+Mathlib has 524 in 7 constants, 42,929 bytes in total (0.0013% of the file), and the best
+possible re-encoding saves about 40 KB. The reader rule is fixed now so that readers need not
+change when a construction lands.
 
 ### 13.1 Index space
 
@@ -914,7 +985,8 @@ Let a constant have the primary sharing table `sharing` with `p` entries, and me
 of `metaSharing` denotes:
 
 * `i < p`: primary entry `i` (its expansion against the primary table);
-* `p ≤ i < p + q`: `metaSharing[i − p]` (its expansion);
+* `p ≤ i < p + q`: `metaSharing[i − p]` (its expansion), subject to the well-foundedness
+  rule below;
 * `i ≥ p + q`: invalid (a decode error).
 
 This mirrors the existing extension tables (`metaRefs`, `metaUnivs`), which already extend the
@@ -928,10 +1000,21 @@ entries before it (`p ≤ i < p + j`); a reader expands `metaSharing` in order, 
 sharingIdx` and `origHead = some (sharingIdx, …)` index `metaSharing` directly
 (`metaSharing[sharingIdx]`, no offset by `p`), as in §8.2.
 
-Readers (Lean `DecompileM` and `Tc/IngressMeta`, Rust `decompile.rs` and kernel ingress of
-metadata, IxVM if it reads metadata) resolve a metadata `Share(i)` by the rule above; the current
-"resolve against the primary table only" behaviour is its `i < p` case, and the current
-"`metaSharing`-local" behaviour must be replaced by the offset rule.
+Readers. Only the two decompilers read `metaSharing` contents, and both implement the rule:
+Lean `Ix.DecompileM` (`ShareScope`, `resolveShareIn`; also the semantic-contract scan
+`Ix.SemanticContract.containsIxon`) and Rust `ix_compile::decompile` (`ShareScope`; also
+`semantic_contract::contains_ixon`). A primary `Share(i)` with `i ≥ p` is
+`invalidShareIndex`; a metadata `Share(i)` outside `[0, p + j)` is `invalidMetaShareIndex`
+(Rust `InvalidMetaShareIndex`, error tag 11 in both languages), with `i ≥ p + q` out of range
+and `p + j ≤ i < p + q` a forward or self reference. When a constant's metadata is loaded, the
+whole table is checked first (`validateMetaSharing`, Rust `validate_meta_sharing`), reporting
+the first violation in entry order and then left-to-right pre-order. Kernel ingress
+(`Ix/Tc/IngressMeta.lean`, Rust `crates/kernel/src/ingress.rs`), the IxVM circuit and the
+resource validators do not read `metaSharing` contents. Two limits of the decompilers predate
+this rule and are not addressed by it: a call site nested inside a metadata expression may
+reference any `metaSharing` entry, including its own, and the decompilers do not check that
+primary table entries reference only earlier entries. A malformed table of either kind can
+therefore make decompilation loop instead of failing.
 
 ### 13.2 Canonical construction (specified, not implemented)
 
@@ -958,25 +1041,3 @@ Obligations when implemented: the primary table, primary roots and primary bytes
 with and without metadata (a theorem, by construction: the primary result is an input);
 expansion round trip of every metadata root; idempotence; Lean/Rust byte parity; fixtures.
 Like §8.2, this does not make the combined primary-plus-metadata artifact a global minimum.
-
-### 12.16 TagN gains a 4-byte rung (owner decision, 2026-10-01)
-
-Rung codes after `L=1, M=1`: `c = 0, 1, 2, 3` → 2, 3, 4, 8 following little-endian bytes (code 3 was
-invalid). Widths become 1/2/3/4/5/9 for every flag width f ∈ {0, 2, 4}; rung ends
-`R1 = 2^(r−1)`, `R2 = R1 + 2^(r−2+8)`, `R3 = R2 + 2^16`, `R4 = R3 + 2^24`, `R5 = R4 + 2^32`,
-`R6 = R5 + 2^64` (r = 8 − f). Reason: without it, f = 0 values in [82,048, 2^24) cost 5 bytes where
-Tag0 cost 4; Mathlib's 4.8M name indices lose 22.1 MB (+0.66% of the file). With it TagN is never
-longer than the old codes on any field measured. Still bijective; `Ix/Ixon.lean`'s TagN docstring is
-the normative layout.
-
-### 12.17 Proof-library status after the TagN switch (2026-10-01, head 6b9f7767)
-
-The whole verification library is restated against the TagN-only codec and the six-rung table
-(`IxCompileVerify` 227 audit roots, `IxTcVerify` 2034+7+1, sorry frontier clean, no new axioms).
-Changes to earlier statements in this section: the certain-stored threshold is now
-θ = `tag0StepBound n + 1` (exact Tag0 growth, replacing the fixed "gain ≥ 2"); header-width
-subadditivity (`tag4Size_add_le`) holds only below `teleSubaddEnd = Ixon.tagNEnd5 4`
-(4,311,811,080), so `optimizeUniformExpanded` fails closed (`formatBound "telescope spine length"`)
-on any longer telescope spine and the optimality theorems derive the bound from that guard;
-`ShareLayout` has the single constructor `tagN`. Lean/Rust parity re-checked: 0 disagreements on
-fixtures, 350 generated inputs, 124 Share-bearing constants and 306 compiler-route cases.
