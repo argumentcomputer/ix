@@ -362,6 +362,41 @@ re-records it states why the closure or the statement moved.
 The CI job runs the same gate and keeps the codec, order and entry-case
 logs.
 
+### On a toolchain bump
+
+When `lean-toolchain` changes, by hand or by the toolchain bot
+(`.github/workflows/update.yml`, which moves the toolchain files and the
+Mathlib tag but regenerates nothing), the change also does the following.
+
+1. **Toolchains.** `lean-toolchain`, `Benchmarks/Compile/lean-toolchain`,
+   `IxKernel/lean-toolchain` and `Models/SetTheory/lean-toolchain` name the
+   same release (CI's `lean-test` job compares them). The model's `mathlib`
+   `rev` in `Models/SetTheory/lakefile.toml` is Mathlib's tag for that
+   release; after changing it, `lake -d Models/SetTheory update mathlib`
+   refreshes `Models/SetTheory/lake-manifest.json`.
+2. **Pin tables.** A new toolchain moves Init's addresses: regenerate
+   `PinData.lean` and `NatOpPinData.lean` with the three commands under
+   "Regeneration" above (the full `--consts` list is in the generated
+   headers). Until then the moved constants are not pinned, and the
+   inputs and entry cases that need them decline.
+3. **Frozen audit records.** The runtime closures (`N compiled functions;
+   inherited externs M, ...`), the extern differences and the frozen
+   `#check` statements are `#guard_msgs` records in
+   `Ix/Kernel/Audit/Roots.lean`, `Ix/Ixon/Audit.lean` and
+   `Ix/Ixon/Admission/Audit.lean` (built by `lake -d IxKernel build
+   --wfail`), and in `Ix/Ixon/ProjectionAudit.lean` and
+   `Ix/Ixon/BlockOrderAudit.lean` (built by `lake build --wfail
+   Ix.Ixon.ProjectionAudit Ix.Ixon.BlockOrderAudit`). A record that no
+   longer matches fails the build and prints the message its command now
+   produces; re-record it by replacing the record's docstring with that
+   message, and update the closure table above and the counts in
+   `Roots.lean`'s module docstring. Any other `#guard_msgs` that fails (the
+   controls in `Ix/Kernel/Audit/Runtime.lean`, the axiom records in
+   `Tests/Ix/Kernel/Axioms.lean`) is re-recorded the same way. A changed
+   closure **count** is accepted only with its explanation: the change that
+   re-records it states what entered or left the closure and why.
+4. **Gate.** `lake run check-kernel --with-model` passes in full.
+
 ## Origin and attribution
 
 [Con-leche](https://github.com/leanprover/con-leche) is a Lean kernel
