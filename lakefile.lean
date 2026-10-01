@@ -359,7 +359,8 @@ lean_exe «kernel-census-probe» where
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
-the host-side tests, and provenance. -/
+the host-side tests, provenance, and the `ConLeche/**` layering and
+trust-surface fences. -/
 script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
@@ -399,6 +400,11 @@ script "check-kernel" (args) := do
     throw <| IO.userError "kernel-order failed; see .lake/build/kernel-order.jsonl"
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
+  -- Con-leche's fences for the ported `ConLeche/**` subtree (plan v4, L0):
+  -- import layering and the per-file escape allowlist. Both pass vacuously
+  -- while `ConLeche/` is absent; the trust-surface lexer self-test always runs.
+  run "bash" #["scripts/layering.sh"]
+  run "bash" #["scripts/trust-surface.sh"]
   IO.println "Certified kernel checks passed."
   return 0
 

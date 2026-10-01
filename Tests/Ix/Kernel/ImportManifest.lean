@@ -297,6 +297,15 @@ def conLecheRows : Array PortRow := #[
 -- END con-leche rows
 ]
 
+/-- Con-leche tooling ported outside the inventory roots: the layering and
+trust-surface fences (adapted to this repository's paths; their headers
+list the changes) and the lexer fixture (verbatim). -/
+def conLecheTooling : Array PortRow := #[
+  ⟨"tests/layering.sh", "scripts/layering.sh", "9b6dfa842951c290f9b832367a3cb2795d18dc66f3f68e8011dcfc844bb7ad61", "5f3afe6db7691bee436f15d8556501c3f1525cb2371be7736956d32a59ecfed6", .adapted "scan ConLeche/** only; the dead base-to-model clause repaired; the boundary clause added; tolerant of an absent or partial subtree"⟩,
+  ⟨"tests/trust-surface.sh", "scripts/trust-surface.sh", "f7c5406a102347a0618aec0e327999036098928075cb4bfac2edef726b81b912", "79cac42dcb4083659beb549383c4ac9e4dc1d4bd50bad74ffd7a4e0e7da01bb0", .adapted "scan ConLeche/** only; Main.lean and Challenge.lean entries dropped; header condensed; tolerant of an absent subtree"⟩,
+  ⟨"tests/trust-surface/lexer.lean", "scripts/trust-surface/lexer.lean", "b8cd4b707f0cd1548475a7ff2a994d362d4715ae90be16fd94c2c50c809f422b", "b8cd4b707f0cd1548475a7ff2a994d362d4715ae90be16fd94c2c50c809f422b", .verbatim⟩
+]
+
 /-- The old branch's set theory and set model, ported from con-leche
 `oldSetTheoryOrigin`. -/
 def setTheoryDerived (target : String) : Bool :=
@@ -308,7 +317,7 @@ def portSets : Array PortSet := #[
     rows := (ported.filter (!setTheoryDerived ·.target)).map PortedFile.toRow ++ licenses },
   { origin := oldBranch, license := "Apache-2.0 AND (MIT OR Apache-2.0)",
     rows := (ported.filter (setTheoryDerived ·.target)).map PortedFile.toRow },
-  { origin := conLeche, license := "Apache-2.0", rows := conLecheRows }
+  { origin := conLeche, license := "Apache-2.0", rows := conLecheRows ++ conLecheTooling }
 ]
 
 end Tests.Ix.Kernel.ImportManifest

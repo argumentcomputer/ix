@@ -11,8 +11,9 @@ Checks, against `Tests.Ix.Kernel.ImportManifest`:
 
 * the inventory of `Ix/Kernel/**/*.lean`, the pure `Ix/Ixon/**/*.lean`
   boundary, and `ConLeche/**/*.lean` (with `ConLeche.lean`) is exactly the
-  ported Lean targets plus the authored modules (a file added or removed
-  without a manifest update fails);
+  ported Lean targets under those roots plus the authored modules (a file
+  added or removed without a manifest update fails); rows outside the roots
+  (the ported fences under `scripts/`) are checked row by row;
 * every row's target exists with its recorded SHA-256, and no target is
   recorded twice;
 * a verbatim row records equal source and target hashes; an adapted Lean
@@ -110,6 +111,13 @@ private def parseArgs : List String → Options → IO Options
   | "--source-git" :: path :: rest, options => parseArgs rest { options with git := some path }
   | _, _ => do fail usage; pure {}
 
+/-- The trees whose Lean files must all be recorded (`authored` or a row). -/
+private def inventoryDirs : List String := ["Ix/Kernel", "Ix/Ixon", "ConLeche"]
+private def inventoryFiles : List String := ["Ix/Kernel.lean", "Ix/Address/Core.lean", "ConLeche.lean"]
+
+private def inInventory (target : String) : Bool :=
+  isLean target && (inventoryFiles.contains target || inventoryDirs.any (target.startsWith <| · ++ "/"))
+
 private def leanFiles (root : String) : IO (Array String) := do
   unless ← (FilePath.mk root).pathExists do return #[]
   return ((← (FilePath.mk root).walkDir).filter (·.extension == some "lean")).map (·.toString)
@@ -117,14 +125,15 @@ private def leanFiles (root : String) : IO (Array String) := do
 def main (args : List String) : IO UInt32 := do
   try
     let options ← parseArgs args {}
-    let mut files := (← leanFiles "Ix/Kernel") ++ (← leanFiles "Ix/Ixon") ++ (← leanFiles "ConLeche")
-    for single in ["Ix/Kernel.lean", "Ix/Address/Core.lean", "ConLeche.lean"] do
+    let mut files := #[]
+    for dir in inventoryDirs do files := files ++ (← leanFiles dir)
+    for single in inventoryFiles do
       if ← (FilePath.mk single).pathExists then files := files.push single
     let rows := portSets.flatMap (·.rows)
     let targets := rows.map (·.target)
     let duplicates := targets.filter fun target => (targets.filter (· == target)).size > 1
     need duplicates.isEmpty s!"targets recorded more than once: {duplicates.toList.eraseDups}"
-    sameFiles "Ix/Kernel, pure Ixon and ConLeche source" files (targets.filter isLean ++ authored)
+    sameFiles "Ix/Kernel, pure Ixon and ConLeche source" files (targets.filter inInventory ++ authored)
     for set in portSets do
       for row in set.rows do checkRow set row
     if let some checkout := options.git then checkGitRevision checkout conLeche.revision
@@ -137,13 +146,13 @@ def main (args : List String) : IO UInt32 := do
         for row in set.rows do checkSource set.origin checkout row
         verified := verified.push s!"{set.origin.label} ({set.rows.size})"
     let modules (origin : Origin) := (portSets.filter (·.origin == origin)).foldl
-      (fun n set => n + (set.rows.filter (isLean ·.target)).size) 0
-    let others := (rows.filter (!isLean ·.target)).size
+      (fun n set => n + (set.rows.filter (inInventory ·.target)).size) 0
+    let others := (rows.filter (!inInventory ·.target)).size
     let sources := if verified.isEmpty then "" else
       s!"; source hashes verified for {", ".intercalate verified.toList}"
     IO.println s!"Kernel provenance OK: {modules oldBranch} ported modules from the old branch, \
       {modules conLeche} from con-leche, {authored.size} authored modules, \
-      {others} license and notice files{sources}."
+      {others} other files (licences, notice, fences){sources}."
     return 0
   catch e =>
     IO.eprintln s!"kernel-provenance: {e}"
