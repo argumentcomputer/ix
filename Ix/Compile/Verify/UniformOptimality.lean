@@ -531,6 +531,7 @@ theorem tag0Size_bracketStart (k : Nat) : tag0Size (tag0BracketStart k) = tag0Si
   have h12 : Ixon.tagNEnd1 0 < Ixon.tagNEnd2 0 := by decide
   have h23 : Ixon.tagNEnd2 0 < Ixon.tagNEnd3 0 := by decide
   have h34 : Ixon.tagNEnd3 0 < Ixon.tagNEnd4 0 := by decide
+  have h45 : Ixon.tagNEnd4 0 < Ixon.tagNEnd5 0 := by decide
   unfold tag0BracketStart
   repeat' split
   all_goals

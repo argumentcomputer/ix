@@ -1331,10 +1331,10 @@ theorem same_bracket {X G C : List Nat} (hGX : ∀ g ∈ G, g ∈ X) (hXC : ∀ 
 /-! ## Certain-excluded: the removal exchange -/
 
 /-- Telescope headers (TagN, `f = 4`) are subadditive for lengths below this
-bound: the widths are 1, 2 and 3 below `Ixon.tagNEnd3 4`, and the next rung is
-5 bytes wide, so `tag4Size (1 + b)` exceeds `tag4Size 1 + tag4Size b` at
-`b = Ixon.tagNEnd3 4 - 1`. -/
-def teleSubaddEnd : Nat := Ixon.tagNEnd3 4
+bound: the widths are 1, 2, 3, 4 and 5 below `Ixon.tagNEnd5 4`, and the next
+rung is 9 bytes wide, so `tag4Size (1 + b)` exceeds `tag4Size 1 + tag4Size b`
+at `b = Ixon.tagNEnd5 4 - 1`. -/
+def teleSubaddEnd : Nat := Ixon.tagNEnd5 4
 
 /-- Every telescope spine of `p` is shorter than `teleSubaddEnd`, so merging two
 telescopes never costs more header bytes than the two headers. -/
@@ -1347,7 +1347,8 @@ theorem tag4Size_add_le {a b : Nat} (ha : 1 ≤ a) (hb : 1 ≤ b) (hab : a + b <
   unfold teleSubaddEnd at hab
   unfold tag4Size Ixon.tagNByteWidth
   simp only [Ix.Compile.Verify.TagN.tagNEnd1_eq_4, Ix.Compile.Verify.TagN.tagNEnd2_eq_4,
-    Ix.Compile.Verify.TagN.tagNEnd3_eq_4, Ix.Compile.Verify.TagN.tagNEnd4_eq_4] at hab ⊢
+    Ix.Compile.Verify.TagN.tagNEnd3_eq_4, Ix.Compile.Verify.TagN.tagNEnd4_eq_4,
+    Ix.Compile.Verify.TagN.tagNEnd5_eq_4] at hab ⊢
   repeat' split
   all_goals omega
 

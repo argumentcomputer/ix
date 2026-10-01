@@ -22,32 +22,36 @@ open Ix.Compile.Verify.Codec
 theorem tagNEnd1_eq_0 : Ixon.tagNEnd1 0 = 128 := by decide
 theorem tagNEnd2_eq_0 : Ixon.tagNEnd2 0 = 16512 := by decide
 theorem tagNEnd3_eq_0 : Ixon.tagNEnd3 0 = 82048 := by decide
-theorem tagNEnd4_eq_0 : Ixon.tagNEnd4 0 = 4295049344 := by decide
+theorem tagNEnd4_eq_0 : Ixon.tagNEnd4 0 = 16859264 := by decide
+theorem tagNEnd5_eq_0 : Ixon.tagNEnd5 0 = 4311826560 := by decide
 theorem tagNEnd1_eq_2 : Ixon.tagNEnd1 2 = 32 := by decide
 theorem tagNEnd2_eq_2 : Ixon.tagNEnd2 2 = 4128 := by decide
 theorem tagNEnd3_eq_2 : Ixon.tagNEnd3 2 = 69664 := by decide
-theorem tagNEnd4_eq_2 : Ixon.tagNEnd4 2 = 4295036960 := by decide
+theorem tagNEnd4_eq_2 : Ixon.tagNEnd4 2 = 16846880 := by decide
+theorem tagNEnd5_eq_2 : Ixon.tagNEnd5 2 = 4311814176 := by decide
 theorem tagNEnd1_eq_4 : Ixon.tagNEnd1 4 = 8 := by decide
 theorem tagNEnd2_eq_4 : Ixon.tagNEnd2 4 = 1032 := by decide
 theorem tagNEnd3_eq_4 : Ixon.tagNEnd3 4 = 66568 := by decide
-theorem tagNEnd4_eq_4 : Ixon.tagNEnd4 4 = 4295033864 := by decide
+theorem tagNEnd4_eq_4 : Ixon.tagNEnd4 4 = 16843784 := by decide
+theorem tagNEnd5_eq_4 : Ixon.tagNEnd5 4 = 4311811080 := by decide
 
 /-- The rung ends increase. -/
 theorem tagNEnd_le (f : Nat) :
     Ixon.tagNEnd1 f ≤ Ixon.tagNEnd2 f ∧ Ixon.tagNEnd2 f ≤ Ixon.tagNEnd3 f ∧
-      Ixon.tagNEnd3 f ≤ Ixon.tagNEnd4 f ∧ Ixon.tagNEnd4 f ≤ Ixon.tagNEnd5 f := by
-  unfold Ixon.tagNEnd5 Ixon.tagNEnd4 Ixon.tagNEnd3 Ixon.tagNEnd2
+      Ixon.tagNEnd3 f ≤ Ixon.tagNEnd4 f ∧ Ixon.tagNEnd4 f ≤ Ixon.tagNEnd5 f ∧
+      Ixon.tagNEnd5 f ≤ Ixon.tagNEnd6 f := by
+  unfold Ixon.tagNEnd6 Ixon.tagNEnd5 Ixon.tagNEnd4 Ixon.tagNEnd3 Ixon.tagNEnd2
   exact ⟨Nat.le_add_right _ _, Nat.le_add_right _ _, Nat.le_add_right _ _,
-    Nat.le_add_right _ _⟩
+    Nat.le_add_right _ _, Nat.le_add_right _ _⟩
 
-/-- Every `UInt64` lies below the end of rung 5, for every flag width. -/
-theorem uint64_lt_tagNEnd5 (f : Nat) (v : UInt64) : v.toNat < Ixon.tagNEnd5 f := by
-  unfold Ixon.tagNEnd5
+/-- Every `UInt64` lies below the end of rung 6, for every flag width. -/
+theorem uint64_lt_tagNEnd6 (f : Nat) (v : UInt64) : v.toNat < Ixon.tagNEnd6 f := by
+  unfold Ixon.tagNEnd6
   exact Nat.lt_of_lt_of_le v.toNat_lt (Nat.le_add_left _ _)
 
 /-- The 9-byte rung starts below `2^64` for the supported flag widths. -/
-theorem tagNEnd4_lt (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4) :
-    Ixon.tagNEnd4 f < 2 ^ 33 := by
+theorem tagNEnd5_lt (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4) :
+    Ixon.tagNEnd5 f < 2 ^ 33 := by
   rcases hf with rfl | rfl | rfl <;> decide
 
 /-! ## Width -/
@@ -186,7 +190,7 @@ it returned, and the decoded flag fits in `f` bits. -/
 theorem getTagN_consumed (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
     {s s' : Ixon.GetState} {t : Ixon.TagN} (h : Ixon.getTagN f s = .ok t s') :
     Consumed s s' (tagNBytes f t.flag t.value) ∧ t.flag.toNat < 2 ^ f := by
-  obtain ⟨hR, hlead, hmbit, hE1, hE2, hE3, hE4, hE4lt⟩ := tagN_consts f hf
+  obtain ⟨hR, hlead, hmbit, hE1, hE2, hE3, hE4, hE5, hE5lt⟩ := tagN_consts f hf
   unfold Ixon.getTagN at h
   obtain ⟨b, s1, hb, h⟩ := bind_ok_inv h
   obtain ⟨hc1, -⟩ := getU8_ok hb
@@ -262,7 +266,7 @@ theorem getTagN_consumed (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
     have hv := toUInt64_toNat_of_lt (n := Ixon.tagNEnd3 f + x.toNat) (by omega)
     refine ⟨?_, hflag⟩
     have henc : tagNBytes f flag (Ixon.tagNEnd3 f + x.toNat).toUInt64 =
-        [b].toByteArray ++ trimmedBytes x 4 := by
+        [b].toByteArray ++ trimmedBytes x 3 := by
       unfold tagNBytes
       simp only
       rw [hv, if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos (by omega),
@@ -275,25 +279,46 @@ theorem getTagN_consumed (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
   by_cases h5 : p - 2 ^ (8 - f - 1) - 2 ^ (8 - f - 2) = 2
   · rw [if_pos h5] at h
     obtain ⟨x, s2, hx, h⟩ := bind_ok_inv h
+    obtain ⟨rfl, rfl⟩ := pure_ok_inv h
     obtain ⟨hc2, hxlt⟩ := getU64TrimmedLEAux_ok (by omega) hx
-    by_cases hov : Ixon.tagNEnd4 f + x.toNat < 2 ^ 64
+    simp only [Nat.reduceMul, Nat.reducePow] at hxlt
+    have hv := toUInt64_toNat_of_lt (n := Ixon.tagNEnd4 f + x.toNat) (by omega)
+    refine ⟨?_, hflag⟩
+    have henc : tagNBytes f flag (Ixon.tagNEnd4 f + x.toNat).toUInt64 =
+        [b].toByteArray ++ trimmedBytes x 4 := by
+      unfold tagNBytes
+      simp only
+      rw [hv, if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
+        if_pos (by omega),
+        show 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 2 = p by omega, hhdr,
+        show Ixon.tagNEnd4 f + x.toNat - Ixon.tagNEnd4 f = x.toNat by omega]
+      simp
+    rw [henc]
+    exact hc1.trans hc2
+  rw [if_neg h5] at h
+  by_cases h6 : p - 2 ^ (8 - f - 1) - 2 ^ (8 - f - 2) = 3
+  · rw [if_pos h6] at h
+    obtain ⟨x, s2, hx, h⟩ := bind_ok_inv h
+    obtain ⟨hc2, hxlt⟩ := getU64TrimmedLEAux_ok (by omega) hx
+    by_cases hov : Ixon.tagNEnd5 f + x.toNat < 2 ^ 64
     · rw [if_pos hov] at h
       obtain ⟨rfl, rfl⟩ := pure_ok_inv h
       have hv := toUInt64_toNat_of_lt hov
       refine ⟨?_, hflag⟩
-      have henc : tagNBytes f flag (Ixon.tagNEnd4 f + x.toNat).toUInt64 =
+      have henc : tagNBytes f flag (Ixon.tagNEnd5 f + x.toNat).toUInt64 =
           [b].toByteArray ++ trimmedBytes x 8 := by
         unfold tagNBytes
         simp only
         rw [hv, if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
-          show 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 2 = p by omega, hhdr,
-          show Ixon.tagNEnd4 f + x.toNat - Ixon.tagNEnd4 f = x.toNat by omega]
+          if_neg (by omega),
+          show 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 3 = p by omega, hhdr,
+          show Ixon.tagNEnd5 f + x.toNat - Ixon.tagNEnd5 f = x.toNat by omega]
         simp
       rw [henc]
       exact hc1.trans hc2
     · rw [if_neg hov] at h
       exact (throw_ok_false h).elim
-  rw [if_neg h5] at h
+  rw [if_neg h6] at h
   exact (throw_ok_false h).elim
 
 /-- Every byte string accepted by the full-buffer TagN decoder is the
@@ -354,11 +379,11 @@ theorem putTagN_inj (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
 
 /-! ## Rejection -/
 
-/-- A header whose `L = M = 1` code is 3 or more is rejected, whatever
-follows it. -/
+/-- A header whose `L = M = 1` code is 4 or more is rejected, whatever
+follows it. Only `f = 0` and `f = 2` have such codes (`tagN4_code_valid`). -/
 theorem getTagN_rejects_code (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
     {s : Ixon.GetState}
-    (hcode : 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 3 ≤
+    (hcode : 2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 4 ≤
       (s.bytes[s.idx]!).toNat % 2 ^ (8 - f))
     (t : Ixon.TagN) (s' : Ixon.GetState) :
     Ixon.getTagN f s ≠ .ok t s' := by
@@ -372,24 +397,32 @@ theorem getTagN_rejects_code (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
   generalize b.toNat % 2 ^ (8 - f) = p at h hcode
   rw [if_neg (by omega), if_neg (by omega)] at h
   unfold Ixon.getTagNWide at h
-  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)] at h
+  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)] at h
   exact throw_ok_false h
+
+/-- With a 4-bit flag every header code is valid: the `L = M = 1` code has two
+bits and selects one of the 3-, 4-, 5- and 9-byte rungs. -/
+theorem tagN4_code_valid (b : UInt8) :
+    b.toNat % 2 ^ (8 - 4) < 2 ^ (8 - 4 - 1) + 2 ^ (8 - 4 - 2) + 4 := by
+  have := Nat.mod_lt b.toNat (show 0 < 2 ^ (8 - 4) by decide)
+  simp only [Nat.reduceSub, Nat.reducePow] at this ⊢
+  omega
 
 /-- A 9-byte encoding whose value would reach `2^64` is rejected. -/
 theorem getTagN_rejects_overflow (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
     (flag : UInt8) (hflag : flag.toNat < 2 ^ f) (x : UInt64)
-    (hx : 2 ^ 64 ≤ Ixon.tagNEnd4 f + x.toNat) (before after : ByteArray)
+    (hx : 2 ^ 64 ≤ Ixon.tagNEnd5 f + x.toNat) (before after : ByteArray)
     (t : Ixon.TagN) (s' : Ixon.GetState) :
     Ixon.getTagN f {
       idx := before.size
       bytes := before ++
-        [Ixon.tagNHeader f flag (2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 2)].toByteArray ++
+        [Ixon.tagNHeader f flag (2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 3)].toByteArray ++
         trimmedBytes x 8 ++ after } ≠ .ok t s' := by
   intro h
   obtain ⟨hR, hlead, hmbit, -⟩ := tagN_consts f hf
-  generalize hhdr : Ixon.tagNHeader f flag (2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 2) = hdr at h
+  generalize hhdr : Ixon.tagNHeader f flag (2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 3) = hdr at h
   obtain ⟨hdiv, hmod⟩ := tagNHeader_fields f hf flag hflag
-    (2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 2) (by omega)
+    (2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 3) (by omega)
   rw [hhdr] at hdiv hmod
   unfold Ixon.getTagN at h
   obtain ⟨b, s1, hb, h⟩ := bind_ok_inv h
@@ -400,7 +433,7 @@ theorem getTagN_rejects_overflow (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4)
   simp only [hdiv, hmod] at h
   rw [if_neg (by omega), if_neg (by omega)] at h
   unfold Ixon.getTagNWide at h
-  rw [if_neg (by omega), if_neg (by omega), if_pos (by omega)] at h
+  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos (by omega)] at h
   obtain ⟨y, s2, hy, h⟩ := bind_ok_inv h
   have hr := getU64TrimmedLEAux_reads x 8
     (shiftBytes_eq_zero_of_lt x 8 (by simpa using x.toNat_lt))

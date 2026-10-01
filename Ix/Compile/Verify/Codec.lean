@@ -325,10 +325,13 @@ def tagNBytes (f : Nat) (flag : UInt8) (value : UInt64) : ByteArray :=
       trimmedBytes (v - Ixon.tagNEnd2 f).toUInt64 2
   else if v < Ixon.tagNEnd4 f then
     [Ixon.tagNHeader f flag (lead + mbit + 1)].toByteArray ++
-      trimmedBytes (v - Ixon.tagNEnd3 f).toUInt64 4
-  else
+      trimmedBytes (v - Ixon.tagNEnd3 f).toUInt64 3
+  else if v < Ixon.tagNEnd5 f then
     [Ixon.tagNHeader f flag (lead + mbit + 2)].toByteArray ++
-      trimmedBytes (v - Ixon.tagNEnd4 f).toUInt64 8
+      trimmedBytes (v - Ixon.tagNEnd4 f).toUInt64 4
+  else
+    [Ixon.tagNHeader f flag (lead + mbit + 3)].toByteArray ++
+      trimmedBytes (v - Ixon.tagNEnd5 f).toUInt64 8
 
 theorem putTagN_writes (f : Nat) (flag : UInt8) (value : UInt64) :
     Writes (Ixon.putTagN f flag value) (tagNBytes f flag value) := by
@@ -346,7 +349,10 @@ theorem putTagN_writes (f : Nat) (flag : UInt8) (value : UInt64) :
   by_cases h4 : value.toNat < Ixon.tagNEnd4 f
   · simp only [h1, h2, h3, h4, ↓reduceIte]
     exact (putU8_writes _).bind (putU64TrimmedLEAux_writes _ _)
-  · simp only [h1, h2, h3, h4, ↓reduceIte]
+  by_cases h5 : value.toNat < Ixon.tagNEnd5 f
+  · simp only [h1, h2, h3, h4, h5, ↓reduceIte]
+    exact (putU8_writes _).bind (putU64TrimmedLEAux_writes _ _)
+  · simp only [h1, h2, h3, h4, h5, ↓reduceIte]
     exact (putU8_writes _).bind (putU64TrimmedLEAux_writes _ _)
 
 theorem runPut_putTagN (f : Nat) (flag : UInt8) (value : UInt64) :
@@ -386,8 +392,9 @@ theorem tagN_consts (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4) :
       4 ≤ 2 ^ (8 - f - 2) ∧ Ixon.tagNEnd1 f = 2 ^ (8 - f - 1) ∧
       Ixon.tagNEnd2 f = Ixon.tagNEnd1 f + 2 ^ (8 - f - 2) * 256 ∧
       Ixon.tagNEnd3 f = Ixon.tagNEnd2 f + 65536 ∧
-      Ixon.tagNEnd4 f = Ixon.tagNEnd3 f + 4294967296 ∧
-      Ixon.tagNEnd4 f < 2 ^ 33 := by
+      Ixon.tagNEnd4 f = Ixon.tagNEnd3 f + 16777216 ∧
+      Ixon.tagNEnd5 f = Ixon.tagNEnd4 f + 4294967296 ∧
+      Ixon.tagNEnd5 f < 2 ^ 33 := by
   rcases hf with rfl | rfl | rfl <;> decide
 
 theorem tagNHeader_fields (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4) (flag : UInt8)
@@ -418,7 +425,7 @@ theorem tagN_mk_eq {flag : UInt8} {value : UInt64} {n m : Nat}
 theorem getTagN_reads (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4) (flag : UInt8)
     (hflag : flag.toNat < 2 ^ f) (value : UInt64) :
     Reads (Ixon.getTagN f) (tagNBytes f flag value) ⟨flag, value⟩ := by
-  obtain ⟨hR, hlead, hmbit, hE1, hE2, hE3, hE4, hE4lt⟩ := tagN_consts f hf
+  obtain ⟨hR, hlead, hmbit, hE1, hE2, hE3, hE4, hE5, hE5lt⟩ := tagN_consts f hf
   have hv := value.toNat_lt
   unfold tagNBytes Ixon.getTagN
   simp only
@@ -464,10 +471,11 @@ theorem getTagN_reads (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4) (flag : UInt8)
       ← ByteArray.append_empty (b := trimmedBytes _ _)]
     have hx : ((value.toNat - Ixon.tagNEnd3 f).toUInt64).toNat =
         value.toNat - Ixon.tagNEnd3 f := by simp; omega
-    refine Reads.bind (getU64TrimmedLEAux_reads _ 4
+    refine Reads.bind (getU64TrimmedLEAux_reads _ 3
       (shiftBytes_eq_zero_of_lt _ _ (by rw [hx]; omega))) ?_
     exact Reads.pure_of_eq (tagN_mk_eq rfl (by rw [hx]; omega))
-  · rw [if_neg h1, if_neg h2, if_neg h3, if_neg h4]
+  by_cases h5 : value.toNat < Ixon.tagNEnd5 f
+  · rw [if_neg h1, if_neg h2, if_neg h3, if_neg h4, if_pos h5]
     refine Reads.bind (getU8_reads _) ?_
     obtain ⟨hdiv, hmod⟩ := tagNHeader_fields f hf flag hflag
       (2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 2) (by omega)
@@ -478,6 +486,20 @@ theorem getTagN_reads (f : Nat) (hf : f = 0 ∨ f = 2 ∨ f = 4) (flag : UInt8)
       ← ByteArray.append_empty (b := trimmedBytes _ _)]
     have hx : ((value.toNat - Ixon.tagNEnd4 f).toUInt64).toNat =
         value.toNat - Ixon.tagNEnd4 f := by simp; omega
+    refine Reads.bind (getU64TrimmedLEAux_reads _ 4
+      (shiftBytes_eq_zero_of_lt _ _ (by rw [hx]; omega))) ?_
+    exact Reads.pure_of_eq (tagN_mk_eq rfl (by rw [hx]; omega))
+  · rw [if_neg h1, if_neg h2, if_neg h3, if_neg h4, if_neg h5]
+    refine Reads.bind (getU8_reads _) ?_
+    obtain ⟨hdiv, hmod⟩ := tagNHeader_fields f hf flag hflag
+      (2 ^ (8 - f - 1) + 2 ^ (8 - f - 2) + 3) (by omega)
+    simp only [hdiv, hmod]
+    rw [if_neg (by omega), if_neg (by omega)]
+    unfold Ixon.getTagNWide
+    rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos (by omega),
+      ← ByteArray.append_empty (b := trimmedBytes _ _)]
+    have hx : ((value.toNat - Ixon.tagNEnd5 f).toUInt64).toNat =
+        value.toNat - Ixon.tagNEnd5 f := by simp; omega
     refine Reads.bind (getU64TrimmedLEAux_reads _ 8
       (shiftBytes_eq_zero_of_lt _ _ (by rw [hx]; omega))) ?_
     rw [if_pos (by rw [hx]; omega)]
