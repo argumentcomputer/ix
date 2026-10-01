@@ -118,7 +118,14 @@ reader also the nine functions of Lean's `List.mergeSort` implementation
 (`mergeSortTR₂` with `run` and `run'`, `mergeTR` with `go`, `splitRevAt`
 with `go`, `splitRevInTwo`, `splitRevInTwo'`), which the entry already
 reaches through `Frontend.preparePrelude`. Externs, unsafe and rulings are
-unchanged. -/
+unchanged. T1 (2026-10-01) builds the reader context's
+record maps once (`Ix.Kernel.ConLecheReader.contextOf`; `storeOf` partially
+applied rebuilt its map at every lookup): `storeOf`, its boxed form, its fold
+specialization and the closed term `contextOf._closed_2` (the empty fallback
+store) leave, and `recordMap` with its fold specialization enter, so the
+reader falls from 1871 to 1869 functions and the entry from 5296 to 5294
+(1856 to 1854 and 5290 to 5288 on T1's own base, before cl-m1; int-5);
+externs, unsafe and rulings are unchanged. -/
 
 open Lean
 
@@ -339,8 +346,10 @@ L5 and at int-4): the fold reaches con-leche's computed-field overrides of
 `Level`, `Expr` and `Name` (18) and 20 project csimps; the reader adds the
 in-model generator's 10 `partial` definitions; the entry adds the byte stage
 and the committed tables. The pin-parametric forms (`checkBytesWith`,
-`checkConstantsWith`) reach 4519 functions (4509 from L6, which did not
-update this sentence, to L6b's `uniqueKeys`); the committed pin table,
+`checkConstantsWith`) reach 4523 functions (4509 from L6, which did not
+update this sentence, 4519 with L6b's `uniqueKeys`, 4517 with T1's record
+maps on its own base, 4523 with cl-m1's `genNested` as well, +6 as in the
+entry; int-5); the committed pin table,
 prelude and Nat-operation pin decoder add the rest. -/
 
 #guard_msgs (drop info) in
@@ -368,7 +377,7 @@ implemented_by 0, unsafe 22, csimp 4; ruled computed_field 18, csimp 20 -/
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.ConLecheReader.readRecords,
- Ix.Ixon.ConLecheAdmission.readStream]: 1871 compiled functions; inherited externs 81, implemented_by 0,
+ Ix.Ixon.ConLecheAdmission.readStream]: 1869 compiled functions; inherited externs 81, implemented_by 0,
 unsafe 23, csimp 0; ruled computed_field 18, csimp 7, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
@@ -377,7 +386,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
  Ix.Ixon.ConLecheAdmission.checkBytes,
  Ix.Ixon.ConLecheAdmission.checkBytesWith,
  Ix.Ixon.ConLecheAdmission.checkConstantsWith,
- Ix.Ixon.ConLecheAdmission.checkConstants]: 5296 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.ConLecheAdmission.checkConstants]: 5294 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings

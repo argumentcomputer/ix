@@ -238,11 +238,19 @@ structure Prelude where
 
 instance : Inhabited Prelude := ⟨{}⟩
 
-/-- The reader context of `records` with the fallback store `fallback`. -/
+/-- The reader context of `records` with the fallback store `fallback`.
+
+The store is `storeOf records (storeOf fallback)` with both maps built here,
+once: `storeOf` partially applied rebuilds its map at every lookup (it is
+compiled at its full arity), which made reading quadratic in the number of
+records (the 99,346 records of Init+Std did not finish reading in ten
+minutes; they now read in 14 s). -/
 def contextOf (pins : Pins) (records : Array (Address × Ixon.Constant))
     (blobs : List (Address × ByteArray)) (fallback : Array (Address × Ixon.Constant) := #[])
     (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) : Ctx :=
-  let store := storeOf records (storeOf fallback)
+  let m := recordMap records
+  let fm := recordMap fallback
+  let store : Store := fun a => m[a]? <|> (fm[a]? <|> none)
   let blobMap : Std.HashMap Address ByteArray :=
     blobs.foldl (fun m (a, b) => if m.contains a then m else m.insert a b) {}
   let known : Std.HashSet Address := records.foldl (fun s (a, _) => s.insert a) {}

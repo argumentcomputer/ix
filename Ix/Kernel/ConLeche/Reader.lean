@@ -1110,12 +1110,20 @@ def literalEdges (pins : Std.HashMap (ConstRef Address) CName)
 
 /-! ## Streams -/
 
+/-- The first record under each address. -/
+def recordMap (records : Array (Address × Ixon.Constant)) : Std.HashMap Address Ixon.Constant :=
+  records.foldl (fun m (a, c) => if m.contains a then m else m.insert a c) {}
+
 /-- The records' store: the supplied records first, then a fallback (the
-prelude's records). -/
+prelude's records).
+
+The compiler compiles `storeOf` at its full arity, three arguments, so a
+partial application `storeOf records` rebuilds the map at every lookup. A
+driver that looks records up more than a few times binds `recordMap records`
+first and closes over it, as `contextOf` does. -/
 def storeOf (records : Array (Address × Ixon.Constant)) (fallback : Store := fun _ => none) :
     Store :=
-  let m : Std.HashMap Address Ixon.Constant :=
-    records.foldl (fun m (a, c) => if m.contains a then m else m.insert a c) {}
+  let m := recordMap records
   fun a => m[a]? <|> fallback a
 
 /-- Read records in order into declarations (the fold's input before
