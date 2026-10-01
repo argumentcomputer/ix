@@ -90,6 +90,49 @@ theorem runAt_head {P : Cfg.Program} {lp : Lir.Program} {Pw : List Word} {f : Na
 
 /-! ## Entry -/
 
+/-- **A function entered on related arguments**: Lir's fresh activation
+reaches, without charges (the entry block's jump is forward), block 0's
+chunk with the parameters bound. -/
+theorem entry_rel {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P lp) {g : Nat} {fd : Cfg.Fun}
+    {b0 : Cfg.Block} (hfd : P.fun? g = some fd) (hb0 : fd.blocks[0]? = some b0) {vs : List Own.RVal}
+    {ws : List Word} {Pw : List Word} (hlen : vs.length = b0.params.length)
+    (hws : ListRel (ValRel (tables P) Pw) vs ws) {H : Own.Heap} {mem : X86.Memory}
+    (hheap : HeapInv (tables P) Pw H ctx mem) {stk : List (Cfg.Frame × Nat)} {lrest : List Lir.Frame}
+    (hstk : ListRel (SuspAt P lp Pw) stk lrest) :
+    ∃ callee, Lir.enter lp g ws = some callee ∧ ∃ s₂', Sem.Star (Lir.semStep lp) { mem, ctx, stack := callee :: lrest } 0 s₂' ∧
+      Rel P lp ctx (.run { fn := g, blk := 0, rest := b0.body, env := Own.bindAll .leaf (b0.params.map (·.1)) vs } stk H)
+        s₂' := by
+  obtain ⟨F, starts, hF, hL⟩ := ht.fn hfd
+  obtain ⟨o0, ho0, hentry⟩ := hL.entry hb0
+  have hwlen : ws.length = b0.params.length := hws.length_eq.symm.trans hlen
+  have hρ0 : EnvRel (tables P) Pw (Fused (tables P) fd) (supOf fd) .leaf {} := envRel_leaf _ _ _ _ _
+  rcases hentry with ⟨hm, rfl, hps⟩ | ⟨hm, hF0, hpos, hnd, hge, hplen⟩
+  · -- block 0 is the entry: its parameters are the function's
+    obtain ⟨ρ0, hbind⟩ := bindParams_some {} (ps := F.params) (ws := ws) (by rw [hps]; simpa using hwlen.symm)
+    have henter : Lir.enter lp g ws = some { fn := g, label := 0, pos := 0, env := ρ0 } := by
+      simp [Lir.enter, hF, hbind]
+    obtain ⟨ρ0', hb', hρ⟩ := bind_rel hρ0 hws (by simp [hlen]) (params_lt_sup hb0)
+    rw [hps] at hbind
+    rw [hbind] at hb'
+    cases hb'
+    refine ⟨_, henter, _, .refl _, rfl, Pw, hheap, _, lrest, rfl, ?_, hstk⟩
+    have := runAt_head (Pw := Pw) hfd hF hL hb0 ho0 hρ
+    simpa [headParams, hm] using this
+  · -- the entry block jumps to block 0's chunk
+    obtain ⟨ρ0, hbind⟩ := bindParams_some {} (ps := F.params) (ws := ws) (by rw [hplen, hwlen])
+    have henter : Lir.enter lp g ws = some { fn := g, label := 0, pos := 0, env := ρ0 } := by
+      simp [Lir.enter, hF, hbind]
+    obtain ⟨tb, htb, htp⟩ := hL.head hb0 ho0
+    have htp' : tb.params = b0.params.map (·.1) := by rw [htp]; simp [headParams, hm]
+    obtain ⟨ρ1, hb1, hρ⟩ := bind_rel (envRel_leaf (tables P) Pw (Fused (tables P) fd) (supOf fd) ρ0) hws
+      (by simp [hlen]) (params_lt_sup hb0)
+    have h2 := Lir.jump_at (p := lp) (mem := mem) (ctx := ctx) (rest := lrest) (pos := 0) (ρ := ρ0)
+      (e := { target := o0, args := F.params.map .v }) (vals := ws) (ρ' := ρ1) hF hF0 rfl rfl
+      (evalArgs_bindParams hnd hbind) htb (by rw [htp']; exact hb1)
+    have hc : decide (o0 ≤ 0) = false := by simp; omega
+    rw [hc] at h2
+    exact ⟨_, henter, _, Lir.star_of_step h2, rfl, Pw, hheap, _, lrest, rfl, runAt_head hfd hF hL hb0 ho0 hρ, hstk⟩
+
 /-- **Cfg's entry of a function is Lir's.** -/
 theorem step_enter {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P lp) {g : Nat}
     {vs : List Own.RVal} {stk : List (Cfg.Frame × Nat)} {H : Own.Heap} {s₂ : Lir.State}
@@ -110,40 +153,11 @@ theorem step_enter {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Targe
       · rename_i hlen
         simp only [Sem.Step.next.injEq, and_true] at hs
         subst hs
-        obtain ⟨F, starts, hF, hL⟩ := ht.fn hfd
-        obtain ⟨o0, ho0, hentry⟩ := hL.entry hb0
-        have hwlen : ws.length = b0.params.length := hws.length_eq.symm.trans hlen
-        have hρ0 : EnvRel (tables P) Pw (Fused (tables P) fd) (supOf fd) .leaf {} :=
-          envRel_leaf _ _ _ _ _
-        rcases hentry with ⟨hm, rfl, hps⟩ | ⟨hm, hF0, hpos, hnd, hge, hplen⟩
-        · -- block 0 is the entry: its parameters are the function's
-          obtain ⟨ρ0, hbind⟩ := bindParams_some {} (ps := F.params) (ws := ws) (by rw [hps]; simpa using hwlen.symm)
-          have henter : Lir.enter lp g ws = some { fn := g, label := 0, pos := 0, env := ρ0 } := by
-            simp [Lir.enter, hF, hbind]
-          have h1 := hstep _ henter
-          obtain ⟨ρ0', hb', hρ⟩ := bind_rel hρ0 hws (by simp [hlen]) (params_lt_sup hb0)
-          rw [hps] at hbind
-          rw [hbind] at hb'
-          cases hb'
-          refine ⟨1, _, Lir.star_of_step h1, Nat.le_refl _, hctx, Pw, hheap, _, lrest, rfl, ?_, hstk⟩
-          have := runAt_head (Pw := Pw) hfd hF hL hb0 ho0 hρ
-          simpa [headParams, hm] using this
-        · -- the entry block jumps to block 0's chunk
-          obtain ⟨ρ0, hbind⟩ := bindParams_some {} (ps := F.params) (ws := ws) (by rw [hplen, hwlen])
-          have henter : Lir.enter lp g ws = some { fn := g, label := 0, pos := 0, env := ρ0 } := by
-            simp [Lir.enter, hF, hbind]
-          have h1 := hstep _ henter
-          obtain ⟨tb, htb, htp⟩ := hL.head hb0 ho0
-          have htp' : tb.params = b0.params.map (·.1) := by rw [htp]; simp [headParams, hm]
-          obtain ⟨ρ1, hb1, hρ⟩ := bind_rel (envRel_leaf (tables P) Pw (Fused (tables P) fd) (supOf fd) ρ0) hws
-            (by simp [hlen]) (params_lt_sup hb0)
-          have h2 := Lir.jump_at (p := lp) (mem := s₂.mem) (ctx := s₂.ctx) (rest := lrest) (pos := 0) (ρ := ρ0)
-            (e := { target := o0, args := F.params.map .v }) (vals := ws) (ρ' := ρ1) hF hF0 rfl rfl
-            (evalArgs_bindParams hnd hbind) htb (by rw [htp']; exact hb1)
-          have hc : decide (o0 ≤ 0) = false := by simp; omega
-          rw [hc] at h2
-          refine ⟨1 + 0, _, (Lir.star_of_step h1).trans (Lir.star_of_step h2), by omega, hctx, Pw, hheap, _, lrest,
-            rfl, runAt_head hfd hF hL hb0 ho0 hρ, hstk⟩
+        obtain ⟨callee, he, s₂', hst, hrel'⟩ := entry_rel (ctx := ctx) ht hfd hb0 hlen hws hheap hstk
+        have h1 := hstep _ he
+        refine ⟨1 + 0, s₂', (Lir.star_of_step h1).trans ?_, by omega, hrel'⟩
+        rw [hctx]
+        exact hst
       · cases hs
 
 /-! ## Return -/

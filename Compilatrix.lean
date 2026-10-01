@@ -25,6 +25,8 @@ import Compilatrix.Lir.Proof.Run
 import Compilatrix.Lir.Proof.Steps
 import Compilatrix.Lir.Proof.EvalAttr
 import Compilatrix.Lir.Proof.Eval
+import Compilatrix.Lir.Proof.Relabel
+import Compilatrix.Lir.Proof.Split
 import Compilatrix.Xv.Syntax
 import Compilatrix.Xv.Slots
 import Compilatrix.Xv.Semantics
@@ -245,6 +247,7 @@ import Compilatrix.Rt.Proof.StepInstr
 import Compilatrix.Rt.Proof.StepEdge
 import Compilatrix.Rt.Proof.StepTerm
 import Compilatrix.Rt.Proof.Diagram
+import Compilatrix.Rt.Proof.Prune
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine

@@ -125,4 +125,72 @@ theorem sim (hd : Forward step₁ step₂ R M) {s₁ : σ₁} {s₂ : σ₂} (hm
 
 end Forward
 
+
+/-- A lock-step diagram (as `Xv.Validate.LockStep`, over the shared
+vocabulary): each source step is matched by target steps spending the same
+charge, and each final source step other than a stuck one by free target
+steps and the same final step. -/
+structure LockStep {σ₁ σ₂ α : Type} (step₁ : σ₁ → Step σ₁ α) (step₂ : σ₂ → Step σ₂ α) (M : σ₁ → σ₂ → Prop) :
+    Prop where
+  next : ∀ {s₁ s₁' : σ₁} {s₂ : σ₂} {b : Bool}, M s₁ s₂ → step₁ s₁ = .next s₁' b →
+    ∃ s₂', Star step₂ s₂ b.toNat s₂' ∧ M s₁' s₂'
+  final : ∀ {s₁ : σ₁} {s₂ : σ₂} {r : Result α}, M s₁ s₂ → Final (step₁ s₁) r → r ≠ .stuck →
+    ∃ s₂', Star step₂ s₂ 0 s₂' ∧ Final (step₂ s₂') r
+
+namespace LockStep
+
+variable {σ₁ σ₂ σ₃ γ : Type} {step₁ : σ₁ → Step σ₁ γ} {step₂ : σ₂ → Step σ₂ γ} {step₃ : σ₃ → Step σ₃ γ}
+  {M : σ₁ → σ₂ → Prop} {N : σ₂ → σ₃ → Prop}
+
+/-- The target reaches each outcome of the source other than a stuck one,
+at the same clock. -/
+theorem reaches (hd : LockStep step₁ step₂ M) {s₁ : σ₁} {k : Nat} {r : Result γ}
+    (h : Reaches step₁ s₁ k r) (hr : r ≠ .stuck) {s₂ : σ₂} (hm : M s₁ s₂) : Reaches step₂ s₂ k r := by
+  induction h generalizing s₂ with
+  | final hf =>
+    obtain ⟨s₂', hst, hf₂⟩ := hd.final hm hf hr
+    exact .of_final hst hf₂ (Nat.zero_le _)
+  | free hst _ ih =>
+    obtain ⟨s₂', hst₂, hm'⟩ := hd.next hm hst
+    exact (ih hr hm').star hst₂
+  | charge hst _ ih =>
+    obtain ⟨s₂', hst₂, hm'⟩ := hd.next hm hst
+    exact (ih hr hm').star hst₂
+  | timeout hst =>
+    obtain ⟨s₂', hst₂, _⟩ := hd.next hm hst
+    exact Reaches.timeout_of_star hst₂ (by simp)
+
+/-- Target steps of one lock-step diagram run through the next. -/
+theorem star_through (h₂ : LockStep step₂ step₃ N) {c : Nat} {s₂ s₂' : σ₂} (hst : Star step₂ s₂ c s₂') :
+    ∀ {s₃ : σ₃}, N s₂ s₃ → ∃ s₃', Star step₃ s₃ c s₃' ∧ N s₂' s₃' := by
+  induction hst with
+  | refl => intro s₃ hn; exact ⟨s₃, .refl _, hn⟩
+  | free hs₂ _ ih =>
+    intro s₃ hn
+    obtain ⟨s₃', hst₃, hn'⟩ := h₂.next hn hs₂
+    obtain ⟨s₃'', hst₃', hn''⟩ := ih hn'
+    exact ⟨s₃'', by simpa using hst₃.trans hst₃', hn''⟩
+  | charge hs₂ _ ih =>
+    intro s₃ hn
+    obtain ⟨s₃', hst₃, hn'⟩ := h₂.next hn hs₂
+    obtain ⟨s₃'', hst₃', hn''⟩ := ih hn'
+    exact ⟨s₃'', by simpa [Nat.add_comm] using hst₃.trans hst₃', hn''⟩
+
+/-- Lock-step diagrams compose. -/
+theorem comp (h₁ : LockStep step₁ step₂ M) (h₂ : LockStep step₂ step₃ N) :
+    LockStep step₁ step₃ (fun s₁ s₃ => ∃ s₂, M s₁ s₂ ∧ N s₂ s₃) where
+  next := by
+    intro s₁ s₁' s₃ b ⟨s₂, hm, hn⟩ hs
+    obtain ⟨s₂', hst₂, hm'⟩ := h₁.next hm hs
+    obtain ⟨s₃', hst₃, hn'⟩ := star_through h₂ hst₂ hn
+    exact ⟨s₃', hst₃, s₂', hm', hn'⟩
+  final := by
+    intro s₁ s₃ r ⟨s₂, hm, hn⟩ hf hr
+    obtain ⟨s₂', hst₂, hf₂⟩ := h₁.final hm hf hr
+    obtain ⟨s₃', hst₃, hn'⟩ := star_through h₂ hst₂ hn
+    obtain ⟨s₃'', hst₃', hf₃⟩ := h₂.final hn' hf₂ hr
+    exact ⟨s₃'', by simpa using hst₃.trans hst₃', hf₃⟩
+
+end LockStep
+
 end Compilatrix.Sem

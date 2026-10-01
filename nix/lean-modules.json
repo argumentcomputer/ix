@@ -1848,6 +1848,10 @@
   "Compilatrix.Rt.Proof.Rel":
   {"path": "Compilatrix/Rt/Proof/Rel.lean",
    "imports": ["Compilatrix.Rt.Proof.LayoutFun", "Compilatrix.Cfg.Semantics"]},
+  "Compilatrix.Rt.Proof.Prune":
+  {"path": "Compilatrix/Rt/Proof/Prune.lean",
+   "imports":
+   ["Compilatrix.Rt.Proof.LayoutFun", "Compilatrix.Lir.Proof.Relabel"]},
   "Compilatrix.Rt.Proof.Procs":
   {"path": "Compilatrix/Rt/Proof/Procs.lean",
    "imports":
@@ -2044,9 +2048,15 @@
   "Compilatrix.Lir.Proof.Steps":
   {"path": "Compilatrix/Lir/Proof/Steps.lean",
    "imports": ["Compilatrix.Lir.Proof.Run", "Std.Data.HashMap.Lemmas"]},
+  "Compilatrix.Lir.Proof.Split":
+  {"path": "Compilatrix/Lir/Proof/Split.lean",
+   "imports": ["Compilatrix.Lir.Proof.Relabel", "Compilatrix.Lir.SplitEdges"]},
   "Compilatrix.Lir.Proof.Run":
   {"path": "Compilatrix/Lir/Proof/Run.lean",
    "imports": ["Compilatrix.Lir.Semantics", "Compilatrix.Sem.Smallstep"]},
+  "Compilatrix.Lir.Proof.Relabel":
+  {"path": "Compilatrix/Lir/Proof/Relabel.lean",
+   "imports": ["Compilatrix.Lir.Proof.Steps", "Compilatrix.Sem.Forward"]},
   "Compilatrix.Lir.Proof.EvalAttr":
   {"path": "Compilatrix/Lir/Proof/EvalAttr.lean",
    "imports": ["Lean.Meta.Tactic.Simp.RegisterCommand"]},
@@ -3086,6 +3096,8 @@
     "Compilatrix.Lir.Proof.Steps",
     "Compilatrix.Lir.Proof.EvalAttr",
     "Compilatrix.Lir.Proof.Eval",
+    "Compilatrix.Lir.Proof.Relabel",
+    "Compilatrix.Lir.Proof.Split",
     "Compilatrix.Xv.Syntax",
     "Compilatrix.Xv.Slots",
     "Compilatrix.Xv.Semantics",
@@ -3306,6 +3318,7 @@
     "Compilatrix.Rt.Proof.StepEdge",
     "Compilatrix.Rt.Proof.StepTerm",
     "Compilatrix.Rt.Proof.Diagram",
+    "Compilatrix.Rt.Proof.Prune",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",
