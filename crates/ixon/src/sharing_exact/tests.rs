@@ -2544,3 +2544,162 @@ fn tiered_byte_level() {
     (Some(ShareLayout::Tag4), Some(ShareLayout::TagN), None)
   );
 }
+
+// ---------------------------------------------------------------------------
+// Reclassifying branch and bound vs the subset enumeration
+// ---------------------------------------------------------------------------
+
+/// `mk a1 ... an`-style prefix chains: `u_k = u_{k-1} a_k`, each prefix also
+/// used once as the head of a longer spine with other arguments, plus a few
+/// repeated arguments.
+fn gen_prefix_chain(rng: &mut Rng) -> Vec<E> {
+  let mut g = ExprGen::new(rng.next(), 0);
+  let pool: Vec<E> = (0..4).map(|_| g.leaf()).collect();
+  let len = 3 + rng.below(14);
+  let mut u = pool[0].clone();
+  let mut roots = Vec::new();
+  for k in 0..len {
+    let a = if rng.below(3) == 0 {
+      rng.pick(&pool).clone()
+    } else {
+      Expr::var(k % 5)
+    };
+    u = Expr::app(u, a);
+    let mut x = Expr::app(u.clone(), Expr::sort(1));
+    for _ in 0..rng.below(4) {
+      x = Expr::app(x, rng.pick(&pool).clone());
+    }
+    roots.push(if rng.below(2) == 0 { x } else { Expr::all(x, Expr::sort(0)) });
+  }
+  roots.push(u);
+  roots
+}
+
+/// Nested binder telescopes whose prefixes and bodies repeat.
+fn gen_telescopes(rng: &mut Rng) -> Vec<E> {
+  let mut g = ExprGen::new(rng.next(), 0);
+  let pool: Vec<E> = (0..4).map(|_| g.leaf()).collect();
+  let mut body = pool[0].clone();
+  let mut roots = Vec::new();
+  for _ in 0..2 + rng.below(10) {
+    let ty = rng.pick(&pool).clone();
+    body = match rng.below(3) {
+      0 => Expr::lam_contract(binder_contract(rng), ty, body),
+      1 => Expr::all(ty, body),
+      _ => Expr::app(body, ty),
+    };
+    if rng.below(2) == 0 {
+      roots.push(Expr::app(Expr::var(3), body.clone()));
+    }
+  }
+  roots.push(body);
+  roots
+}
+
+/// Long App/binder spines, each used twice.
+fn gen_spines(rng: &mut Rng) -> Vec<E> {
+  let mut g = ExprGen::new(rng.next(), 0);
+  let mut roots = Vec::new();
+  for _ in 0..1 + rng.below(3) {
+    let mut e = g.leaf();
+    for _ in 0..5 + rng.below(40) {
+      let x = g.leaf();
+      e = match rng.below(4) {
+        0 | 1 => Expr::app(e, x),
+        2 => Expr::lam_contract(binder_contract(rng), x, e),
+        _ => Expr::all(x, e),
+      };
+    }
+    roots.push(e.clone());
+    roots.push(Expr::app(e.clone(), e));
+  }
+  roots
+}
+
+fn gen_search_roots(rng: &mut Rng) -> Vec<E> {
+  match rng.below(7) {
+    0 => gen_prefix_chain(rng),
+    1 => gen_telescopes(rng),
+    2 | 3 => gen_spines(rng),
+    4 => gen_uniform_roots(rng),
+    _ => {
+      let mut g = ExprGen::new(rng.next(), 40);
+      (0..1 + rng.below(5)).map(|_| g.expr(5)).collect()
+    },
+  }
+}
+
+fn subset_reference_limits() -> ExactSharingLimits {
+  ExactSharingLimits {
+    uniform_subset_search: true,
+    max_states: 1 << 16,
+    ..limits()
+  }
+}
+
+/// The reclassifying branch and bound returns exactly what the subset
+/// enumeration returns (same set, so the same tie-break, and the same
+/// output), on inputs with larger uncertain components.
+#[test]
+fn uniform_branch_and_bound_matches_subset_enumeration() {
+  let mut rng = Rng(71);
+  let reference = subset_reference_limits();
+  let (mut checked, mut skipped, mut max_comp) = (0, 0, 0);
+  for i in 0..4000 {
+    if checked >= 600 {
+      break;
+    }
+    let roots = gen_search_roots(&mut rng);
+    let w = [1u64, 2, 3, 5][rng.below(4) as usize];
+    let u = optimize_sharing_uniform(w, &roots, &limits())
+      .unwrap_or_else(|e| panic!("case {i} w={w}: {e:?} roots={roots:?}"));
+    let comp = u.components.iter().map(Vec::len).max().unwrap_or(0);
+    if comp < 2 {
+      continue;
+    }
+    match optimize_sharing_uniform(w, &roots, &reference) {
+      Ok(r) => {
+        assert_eq!(
+          (&u.stored, u.model_len, u.lower_bracket),
+          (&r.stored, r.model_len, r.lower_bracket),
+          "case {i} w={w} roots={roots:?}"
+        );
+        assert_eq!(
+          (&u.table_terms, &u.sharing, &u.roots),
+          (&r.table_terms, &r.sharing, &r.roots)
+        );
+      },
+      Err(SharingError::ResourceExhausted(_)) => skipped += 1,
+      Err(e) => panic!("case {i} w={w}: subset enumeration error {e:?}"),
+    }
+    checked += 1;
+    max_comp = max_comp.max(comp);
+  }
+  eprintln!(
+    "uniform branch and bound vs subset enumeration: {checked} inputs with a \
+     component of >= 2 uncertain terms, largest component {max_comp}, \
+     {skipped} skipped where the enumeration exceeded 2^16 states"
+  );
+  assert_eq!(checked, 600);
+  assert!(checked - skipped >= 400);
+}
+
+/// Search agreement across the 128-entry table-count bracket: 120 one-byte
+/// atoms used twice (uncertain, gain 1) plus an App prefix chain.
+#[test]
+fn uniform_branch_and_bound_across_a_bracket() {
+  let mut roots = Vec::new();
+  for i in 0..120 {
+    let a = Expr::reference(i, vec![0]);
+    roots.push(a.clone());
+    roots.push(a);
+  }
+  roots.extend(gen_prefix_chain(&mut Rng(5)));
+  let reference =
+    ExactSharingLimits { uniform_subset_search: true, ..limits() };
+  for w in 1..=3 {
+    let u = optimize_sharing_uniform(w, &roots, &limits()).unwrap();
+    let r = optimize_sharing_uniform(w, &roots, &reference).unwrap();
+    assert_eq!((&u.stored, u.model_len), (&r.stored, r.model_len), "w={w}");
+  }
+}
