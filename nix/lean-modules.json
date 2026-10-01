@@ -1824,11 +1824,20 @@
   "Compilatrix.Rt.Proof.Pow":
   {"path": "Compilatrix/Rt/Proof/Pow.lean",
    "imports": ["Compilatrix.Rt.Proof.Procs"]},
+  "Compilatrix.Rt.Proof.OpsProj":
+  {"path": "Compilatrix/Rt/Proof/OpsProj.lean",
+   "imports": ["Compilatrix.Rt.Proof.OpsAlloc"]},
   "Compilatrix.Rt.Proof.OpsDiv":
   {"path": "Compilatrix/Rt/Proof/OpsDiv.lean",
    "imports": ["Compilatrix.Rt.Proof.Ops"]},
   "Compilatrix.Rt.Proof.OpsCheck":
   {"path": "Compilatrix/Rt/Proof/OpsCheck.lean",
+   "imports": ["Compilatrix.Rt.Proof.Check"]},
+  "Compilatrix.Rt.Proof.OpsCall":
+  {"path": "Compilatrix/Rt/Proof/OpsCall.lean",
+   "imports": ["Compilatrix.Rt.Proof.Ops", "Compilatrix.Rt.Proof.Pow"]},
+  "Compilatrix.Rt.Proof.OpsAlloc":
+  {"path": "Compilatrix/Rt/Proof/OpsAlloc.lean",
    "imports": ["Compilatrix.Rt.Proof.Check"]},
   "Compilatrix.Rt.Proof.Ops":
   {"path": "Compilatrix/Rt/Proof/Ops.lean",
@@ -1839,6 +1848,13 @@
   "Compilatrix.Rt.Proof.Mem":
   {"path": "Compilatrix/Rt/Proof/Mem.lean",
    "imports": ["Compilatrix.X86.Memory", "Compilatrix.Lir.Proof.Eval"]},
+  "Compilatrix.Rt.Proof.Instr":
+  {"path": "Compilatrix/Rt/Proof/Instr.lean",
+   "imports":
+   ["Compilatrix.Rt.Proof.OpsDiv",
+    "Compilatrix.Rt.Proof.OpsCheck",
+    "Compilatrix.Rt.Proof.OpsProj",
+    "Compilatrix.Rt.Proof.OpsCall"]},
   "Compilatrix.Rt.Proof.Heap":
   {"path": "Compilatrix/Rt/Proof/Heap.lean",
    "imports":
@@ -3214,6 +3230,10 @@
     "Compilatrix.Rt.Proof.OpsDiv",
     "Compilatrix.Rt.Proof.Check",
     "Compilatrix.Rt.Proof.OpsCheck",
+    "Compilatrix.Rt.Proof.OpsAlloc",
+    "Compilatrix.Rt.Proof.OpsProj",
+    "Compilatrix.Rt.Proof.OpsCall",
+    "Compilatrix.Rt.Proof.Instr",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",

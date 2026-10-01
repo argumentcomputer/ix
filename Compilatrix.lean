@@ -223,6 +223,10 @@ import Compilatrix.Rt.Proof.Ops
 import Compilatrix.Rt.Proof.OpsDiv
 import Compilatrix.Rt.Proof.Check
 import Compilatrix.Rt.Proof.OpsCheck
+import Compilatrix.Rt.Proof.OpsAlloc
+import Compilatrix.Rt.Proof.OpsProj
+import Compilatrix.Rt.Proof.OpsCall
+import Compilatrix.Rt.Proof.Instr
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine

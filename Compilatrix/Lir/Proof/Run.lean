@@ -41,6 +41,20 @@ def semStep (p : Program) (s : State) : Sem.Step State (List Word × X86.Memory)
   unfold semStep
   cases step p s <;> simp [Step.toSem]
 
+@[simp] theorem semStep_fail {p : Program} {s : State} {r : Sem.Resource} :
+    semStep p s = .fail r ↔ step p s = .fail r := by
+  unfold semStep
+  cases step p s <;> simp [Step.toSem]
+
+@[simp] theorem semStep_trap {p : Program} {s : State} : semStep p s = .trap ↔ step p s = .trap := by
+  unfold semStep
+  cases step p s <;> simp [Step.toSem]
+
+@[simp] theorem semStep_done {p : Program} {s : State} {vals : List Word} {mem : X86.Memory} :
+    semStep p s = .done (vals, mem) ↔ step p s = .done vals mem := by
+  unfold semStep
+  cases step p s <;> simp [Step.toSem]
+
 /-- `Lir.run` is `Sem.runClocked` over `semStep`. -/
 theorem run_eq_runClocked (p : Program) :
     ∀ (fuel k : Nat) (s : State), run p fuel k s = Sem.runClocked (semStep p) fuel k s
