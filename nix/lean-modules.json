@@ -1446,6 +1446,10 @@
   "Compilatrix.Xv.Stacking.Proof.StepBody":
   {"path": "Compilatrix/Xv/Stacking/Proof/StepBody.lean",
    "imports": ["Compilatrix.Xv.Stacking.Proof.Machine"]},
+  "Compilatrix.Xv.Stacking.Proof.Sim":
+  {"path": "Compilatrix/Xv/Stacking/Proof/Sim.lean",
+   "imports":
+   ["Compilatrix.Xv.Stacking.Proof.WrapperExit", "Compilatrix.Sem.Smallstep"]},
   "Compilatrix.Xv.Stacking.Proof.Shape":
   {"path": "Compilatrix/Xv/Stacking/Proof/Shape.lean",
    "imports": ["Compilatrix.Xv.Stacking.Run"]},
@@ -3986,6 +3990,7 @@
     "Compilatrix.Xv.Stacking.Proof.TailMatch",
     "Compilatrix.Xv.Stacking.Proof.TailStep",
     "Compilatrix.Xv.Stacking.Proof.WrapperExit",
+    "Compilatrix.Xv.Stacking.Proof.Sim",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",
