@@ -112,7 +112,7 @@ measurements and marks the unfinished pair `OOM`.
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
 
-The certified checker's environment check (`kernel-check-ixe`, con-leche behind the Ixon
+The certified checker's environment check (`kernel-check-ixe`, the verified checker behind the Ixon
 reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/README.md)
 and [kernel.md](kernel.md). It is separate from the Rust benchmarks above;
 the former Lean4Lean replay backend has been retired.

@@ -14,8 +14,7 @@ the bytes encode, bounded resources), under which assumptions (an
 `Ix.Kernel.SetTheory V`; proofs on `propext`, `Classical.choice` and
 `Quot.sound` only), on which execution foundation ("Trust surface"), and
 with which outcomes (accept, reject, decline; only an accept carries the
-theorems). Plan v4 (`plans/ix-kernel-con-leche-port-v4.md`, not versioned)
-records the port's steps L0 to L6.
+theorems).
 
 Nothing here certifies the Lean-to-Ixon compiler, the Rust checker, `Ix.Tc`
 or IxVM. An accepted environment has a model; that it is the environment
@@ -42,7 +41,7 @@ reducibility hint per constant. The entry runs, in order:
 | canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
 | the Ixon reader: records to `Array Ix.Kernel.Declaration` | `IxonReader.readRecords` | `.read position (.malformed _ / .declined _)` |
 | the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
-| con-leche's fold | `Ix.Kernel.Cached.checkDecls .verified natPins` | `.kernel error position` |
+| the verified fold | `Ix.Kernel.Cached.checkDecls .verified natPins` | `.kernel error position` |
 
 The pipeline is `Ix.Ixon.KernelAdmission.checkBytes`; `checkBytesWith`
 takes the pin table, prelude and Nat-operation pin list as parameters, and
@@ -54,9 +53,9 @@ order of mutual blocks: an inductive, definition or mixed block in canonical
 structural order (`canonicalClasses`, as Rust's `canonical_check.rs`), a block
 of recursors in motive order (member `j` eliminates motive `j`, read off its
 type as the reader reads it, `recursorMotive_of_analyse`), which is the order
-the compiler stores it in and not always the structural one (2026-10-01:
-the structural check refused 2 of the 7 compiled recursor blocks of the
-fidelity fixture, `Rose.rec`/`Rose.rec_1` and `Args.rec`/`Tm.rec`).
+the compiler stores it in and not always the structural one (a structural
+check would refuse 2 of the 7 compiled recursor blocks of the fidelity
+fixture, `Rose.rec`/`Rose.rec_1` and `Args.rec`/`Tm.rec`).
 
 **Outcomes.** `Admission.outcome` classifies every failure as a reject (the
 input is wrong) or a decline (the checker does not certify it):
@@ -68,7 +67,7 @@ input is wrong) or a decline (the checker does not certify it):
 | `.read _ (.malformed _)` | reject | the records describe no declaration (a missing reference or blob, a bad table index, a recursor header that disagrees with its block, ...) |
 | `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions, unsafe axioms, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
 | `.prelude` | decline | a corrupted committed table |
-| `.kernel` | decline | every checker verdict: con-leche reports fuel exhaustion as `internal` and a failed conversion search as `invalid`, and neither is independent evidence that the input is wrong |
+| `.kernel` | decline | every checker verdict: the checker reports fuel exhaustion as `internal` and a failed conversion search as `invalid`, and neither is independent evidence that the input is wrong |
 
 Only an accept carries the theorems below.
 
@@ -112,10 +111,10 @@ clause: an accepted `rfl` theorem's two sides denote the same set. The
 model theorem is `Ix.Kernel.model_exists` (`Ix/Kernel/MainTheorem.lean`,
 upstream's statement and proof) at the prepared declarations: it holds for
 every declaration array the fold accepts, so the reader owes nothing for
-consistency. Definition values come from con-leche's `defn_reads` through
-`Ix.Kernel.IxonFold.checkDecls_model_defn_values`
+consistency. Definition values come from the kernel's model invariant
+`defn_reads` through `Ix.Kernel.IxonFold.checkDecls_model_defn_values`
 (`Ix/Kernel/Ixon/Values.lean`). Theorem and opaque bodies have no value
-equation, by con-leche's design.
+equation, by upstream's design.
 
 **Fidelity** is what `checkBytes_reading` adds to consistency:
 
@@ -142,11 +141,11 @@ equation, by con-leche's design.
 
 Not proved:
 
-- that installed types and values equal the decoded ones. Con-leche
+- that installed types and values equal the decoded ones. The checker
   installs the annotation of a declared term: binder regimes (`pw`) are
   computed (the reader emits `pw := .never`), `let` is ζ-reduced, and
   projections are checked. The intended statement is about `pw`-erasure and
-  needs a lemma about con-leche's `installConstantVal`/`installValue`;
+  needs a lemma about the kernel's `installConstantVal`/`installValue`;
 - the member-level reading of inductive blocks (member order, constructor
   and recursor headers, rule constructors) through `readInductive`;
 - per-member completeness of definition blocks (`defOrder` is not proved to
@@ -187,7 +186,7 @@ admitted through pins and certificates the checker checks itself
 
 ## Keys, pins and the prelude
 
-**Keys** (`Ix/Kernel/Ixon/Reader.lean`). Con-leche's environment is keyed
+**Keys** (`Ix/Kernel/Ixon/Reader.lean`). The kernel's environment is keyed
 by `Ix.Kernel.Name`. A reference `ConstRef Address` is encoded under the
 reserved root `ix`: `.member b i` is `ix.<hex b>.i` and `.ctor b i c` is
 `ix.<hex b>.i.c`, with numeric components (`keyName`, injective). Level
@@ -195,22 +194,22 @@ parameters are positional. Three kinds of names differ:
 
 - recursors are named after what they eliminate, as Lean names them
   (`T.rec`, and `T.rec_j` for the `j`-th auxiliary motive of a nested
-  block), because con-leche finds a block's recursor by name;
+  block), because the checker finds a block's recursor by name;
 - pinned references take their pinned name;
 - the pinned standard-axiom constants and their recursors carry Lean's own
-  level-parameter names (`Pins.levels`), because con-leche's `matchesPin`
+  level-parameter names (`Pins.levels`), because the checker's `matchesPin`
   compares them, and a large eliminator names its extra level parameter
-  so that con-leche recognises it.
+  so that the checker recognises it.
 
 **Pins** (`Ix/Kernel/Ixon/PinData.lean`, generated). The table maps 55
-references to con-leche's pinned names and no others: the basis (`Eq`,
+references to the checker's pinned names and no others: the basis (`Eq`,
 `Nat`, `PUnit`, `Empty`, `False`, the `Quot` package), `And` and `Bool`, the
 literal support (`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`),
 the structural and pin-certified `Nat` operations, the standard axioms with
 `Iff` and `Nonempty`, the compiler-trust family with `True`, and `sorryAx`.
 `pinMap` refuses a table that is not a partial injection or that uses the
 `ix` root or a derived name shape. The table decides coverage only:
-con-leche compares every pinned name's declaration with its pinned shape
+the checker compares every pinned name's declaration with its pinned shape
 (basis blocks up to `canon`, with a reserved-name reject otherwise; literal
 support and `Nat` operations by exact type shapes and certified
 recurrences; standard and trust axioms by `matchesPin`), so a pin on a
@@ -224,8 +223,8 @@ the operations' stored values in the compiled Init, the certificates are the
 theorems of `Ix/Kernel/PinGen/Certs.lean` compiled by Ix. `model_exists`
 holds at every pin list, so the list is untrusted.
 
-**Prelude** (`Ix/Kernel/Ixon/Prelude.lean`). Con-leche puts twelve
-declarations in front of every fold: the basis blocks `Eq`, `Nat`, `PUnit`,
+**Prelude** (`Ix/Kernel/Ixon/Prelude.lean`). The checker puts twelve
+declarations in front of every fold (`preparePrelude`): the basis blocks `Eq`, `Nat`, `PUnit`,
 `Empty`, `False`, the quotient package (four `Quot` constants and
 `Quot.sound`), `And` and `Bool`. Here they are the compiled Init's own Ixon
 records (`PinData.prelude`, canonical bytes by address), decoded by the
@@ -236,7 +235,7 @@ prelude's copy fills in where the stream has none.
 
 **Regeneration.** Both tables come from `kernel-pin-gen`
 (`Benchmarks/Kernel/PinGen.lean`), which checks every pinned
-constant's record and the literal capabilities through con-leche's fold
+constant's record and the literal capabilities through the verified fold
 before writing:
 
 ```sh
@@ -274,7 +273,7 @@ Project-level execution constructs are admitted only as named by
 | `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
 | `Ix.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `Ix/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
 | elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `Ix.Kernel.BasisGen`, `Ix.Kernel.PinGen*` | elaboration only; compiled code cannot reach them |
-| `partial` | `Ix.Kernel.Frontend.InModel`, `InModelDump` | con-leche's in-process modeller, vendored as upstream has it |
+| `partial` | `Ix.Kernel.Frontend.InModel`, `InModelDump` | the in-process modeller, vendored as upstream has it |
 
 Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
 
@@ -293,7 +292,7 @@ Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
 - `elaborationImports`: below `Ix.Kernel.BasisGen` and
   `Ix.Kernel.PinGen` only `Init`, `Std`, `Lean` and `Ix.Kernel`.
 
-`Std` is admitted for its maps and their lemmas, as con-leche uses them.
+`Std` is admitted for its maps and their lemmas, as the vendored kernel uses them.
 
 ## Audits and fences
 
@@ -320,13 +319,8 @@ Frozen runtime closures (compiled functions; inherited externs):
 | projection: `address`, `reconstruct`, `Projection.checkBytes` | 5430 | 132 |
 | block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5563 | 132 |
 
-A frozen value changes only in a commit that explains the change in the
-audit's comment (the closures above include L6b's `uniqueKeys`, 10
-functions, cl-m1's adapted modeller grouping: 6, and 15 in the reader,
-which also reaches `List.mergeSort`, T1's record maps: −2, and its address
-encodings: +4, and cl-level's Géran fallback of the level comparison: 12, and
-13 in the reader, with `Int.natAbs`; the block-order entry's motive order for
-recursor blocks: 9). Statements are re-recorded the same way.
+A frozen value or statement changes only deliberately: the change that
+re-records it states why the closure or the statement moved.
 
 `lake run check-kernel [--with-model]` is the gate. In order:
 
@@ -399,6 +393,11 @@ deterministic script, `scripts/vendor-conleche.py`:
   scripts/vendor-conleche.py (paths and namespace ConLeche → Ix.Kernel); see
   Ix/Kernel/NOTICE.`
 
+That first line is the per-file statement of change the Apache licence asks
+of a modified file, and `kernel-provenance` checks it on every rewritten
+file. Upstream text that is neither a namespace nor a module name keeps its
+spelling (comments, and string literals such as `"ConLecheCapsWall.T"`).
+
 445 of the 452 modules are exactly that (`Transformation.rewritten` in the
 manifest), so they stay "verbatim up to the rewrite", and checkably so:
 `kernel-provenance --source-git <checkout>` re-derives each from upstream
@@ -416,8 +415,8 @@ then the same rewrite:
 | --- | --- | --- |
 | `Ix/Kernel/CheckerBase.lean` | imports `NatOpPinSet` instead of `NatOpPins` | upstream's `NatOpPins` splices JSON pin dumps; Ix's Nat-operation pins are generated from Ixon records (`Ix/Kernel/Ixon/NatOpPinData.lean`) |
 | `Ix/Kernel/Verify/Cached/{AgreeFloor,PushChain}.lean` | `import all Init.LetFun` | Lean 4.34.0 no longer exposes `letFun`'s body, which these proofs unfold |
-| `Ix/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Ix's compiler orders a nested block's auxiliary motives canonically (cl-m1) |
-| `Ix/Kernel/Level.lean`, `Ix/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`, cl-level) |
+| `Ix/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Ix's compiler orders a nested block's auxiliary motives canonically |
+| `Ix/Kernel/Level.lean`, `Ix/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
 | `Ix/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
 
 The axiom pin `Tests/Ix/Kernel/Axioms.lean` (upstream's
@@ -431,11 +430,7 @@ vendored tree. Upstream's `ConLeche/Kernel/NatOpPins.lean` is not vendored.
 **Ix's boundary beside it** (`Ix/Kernel/{Ref,Search}.lean`,
 `Ix/Kernel/{Audit,Ingress,Egress,Ixon}/`, the umbrella `Ix/Kernel.lean`) is
 Ix-authored: the Ixon reader and its specification, the committed pins and
-prelude, the record store, the projection writer and the audits. It was
-`Ix/Kernel/ConLeche/` until 2026-10-01; the vendored tree was `ConLeche/**`
-with namespace `ConLeche`, byte-identical to upstream, from the port (plan
-v4, 2026-09-30) until the user's ruling of 2026-10-01 moved it under
-`Ix.Kernel`.
+prelude, the record store, the projection writer and the audits.
 
 **Builds.** The vendored modules are the library `IxKernelVendored` in both
 `lakefile.lean` and `IxKernel/lakefile.lean`, for one option:
@@ -446,7 +441,7 @@ v4, 2026-09-30) until the user's ruling of 2026-10-01 moved it under
 **Syncing with upstream.** Upstream drifts (master has uniform inductives,
 FEnv linearity, csimp openers); a sync is a separate change:
 
-1. Fetch the new revision into a con-leche checkout (`plans/refs/con-leche`).
+1. Fetch the new revision into a con-leche checkout.
 2. `python3 scripts/vendor-conleche.py sync <checkout> <revision>`: it
    rewrites every vendored file from the new revision, leaves the adapted
    and Ix-authored files alone (and lists them), and lists upstream files
@@ -477,17 +472,16 @@ transformation (`verbatim`, `rewritten` by `scripts/vendor-conleche.py`, or
   rewritten, seven adapted; above), the axiom pin `Tests/Ix/Kernel/Axioms.lean`,
   the licence, and the two fence scripts with the lexer fixture. The seven
   modules upstream task #323 (KEEPPROJ) changed are at
-  `3ca9e2fe749a51cba4c6e3527aeecba074c29316` instead and form their own set
-  (int-5). `MainTheorem.lean` and the axiom pin carry Argument's
+  `3ca9e2fe749a51cba4c6e3527aeecba074c29316` instead and form their own set. `MainTheorem.lean` and the axiom pin carry Argument's
   modification notice and are licensed `Apache-2.0 AND (MIT OR Apache-2.0)`;
   the rest is `Apache-2.0`;
-- the old Ix branch `jcb/ix-kernel-consistency` at `ad60e5f6`: only
-  `Ix/Kernel/Ref.lean` and its licence and notice files remain since L6;
+- the old Ix branch `jcb/ix-kernel-consistency` at `ad60e5f6`:
+  `Ix/Kernel/Ref.lean` and its licence and notice files;
 - `authored`: the 68 Ix-authored modules under the inventoried trees, among
   them the boundary `Ix/Kernel/{Ixon,Ingress,Egress,Audit}/**`,
   `Ix/Kernel/Search.lean`, the umbrella, the pure Ixon boundary, and
-  `Ix/Kernel/LevelGeran.lean` and `Ix/Kernel/Verify/LevelGeran.lean`
-  (cl-level), the only Ix modules inside the vendored tree.
+  `Ix/Kernel/LevelGeran.lean` and `Ix/Kernel/Verify/LevelGeran.lean`,
+  the only Ix modules inside the vendored tree.
 
 `lake exe kernel-provenance` checks that every Lean file under `Ix/Kernel`
 and `Ix/Ixon` (and `Ix/Kernel.lean`, `Ix/Address/Core.lean`) is recorded;
@@ -495,9 +489,8 @@ every destination hash; the vendoring header of every rewritten file and
 that its path is the script's destination of its source; the port header of
 every adapted file; licences and licence files. `--source-git <con-leche
 checkout>` also verifies every source hash at the recorded revision and
-re-derives every rewritten file from upstream through the script
-(`plans/refs/con-leche` and `plans/refs/con-leche-upstream` hold both
-revisions); `--source <jj workspace>` does so for the old branch, which
+re-derives every rewritten file from upstream through the script (the
+checkout must hold both revisions); `--source <jj workspace>` does so for the old branch, which
 needs a workspace holding `ad60e5f6`. The upstream-sync recipe is above.
 
 ## Environment check
@@ -508,7 +501,7 @@ The environment check measures coverage on a compiled environment (an
 `.ixe`, orders its primary constants (the prelude's first, then dependencies,
 `Nat`-operation grounds and literal edges), reads each constant with the Ixon
 reader and installs and checks it one constant at a time with an incremental
-step of con-leche's fold (`Benchmarks/Kernel/CheckIxeStep.lean`),
+step of the verified fold (`Benchmarks/Kernel/CheckIxeStep.lean`),
 continuing past failures and reporting dependents of a failure as blocked.
 Hints are the compiler's. Each row is JSON (`address, names, kind, outcome,
 reason, micros, readMicros`).
@@ -545,69 +538,64 @@ summarize and compare runs. Mathlib's `.ixe` comes from
 
 ## The retired intrinsic kernel
 
-From K0 (2026-09-17) to L5, the certified checker was an intrinsic,
-proof-carrying kernel in `Ix/Kernel/**` (`Ix.Kernel.check`, `checkDecls`,
-`checkEnv`), built on a set model and syntax ported from the Ix branch
-`jcb/ix-kernel-consistency` at `ad60e5f6` (with con-leche's `SetTheory` at
-`86cd20a6`). Each admitted declaration constructed its model extension
-(`StepClaim`, `AdmissionClaim`); the public theorems were
+Before the vendored checker, this branch's certified checker was an
+intrinsic, proof-carrying kernel in `Ix/Kernel/**` (`Ix.Kernel.check`,
+`checkDecls`, `checkEnv`), built on a set model and syntax ported from the
+Ix branch `jcb/ix-kernel-consistency` at `ad60e5f6` (with con-leche's
+`SetTheory` at `86cd20a6`). Each admitted declaration constructed its model
+extension (`StepClaim`, `AdmissionClaim`); the public theorems were
 `check_has_model`, the conditional `checkDecls_has_model`, a semantic
 `no_proof_of_False` over `Env.EmptyType`, installation fidelity
 (`Ingress.Installed`) and `checkBytes_unique_keys`. Its supported profile
 covered single definitions, theorems and opaques, ordinary inductive
 families with supplied recursors, structures, `Nat`, equality, quotients
 and the two standard axioms, and declined arbitrary axioms, unsafe and
-partial declarations, and general mutual and nested inductives. L5
-(2026-09-30) made con-leche behind the Ixon reader the certified API and
-renamed the intrinsic entries `checkBytesIntrinsic`; L6 (2026-10-01)
-deleted the kernel (132 files, 29,805 lines) with its entries, 19 test
-modules, census, benchmark and host differentials (25 files, 4,080
-lines). The last tree that contains it is the parent of "L6-A: retire the
-intrinsic entry points and their consumers" in this branch's history. The
-retirement's file-by-file
-inventory is in `plans/review/cl-l6/` (not versioned). Its design notes
-went with it: sections 3.1 to 3.7 of the certified-kernel roadmap (no
-longer versioned), and the UID and performance plan for that kernel
-(`docs/certified-kernel-uids-plan.md`, 2026-09-30, never implemented),
-both removed on 2026-10-01. Since the vendored
-con-leche tree moved under `Ix/Kernel/**` (2026-10-01), four of its module
-names are reused (`Ix.Kernel.Env`, `Ix.Kernel.Expr`, `Ix.Kernel.Level` and
-the directory `Ix/Kernel/Model/`, with different contents), as is the axiom
-test's path `Tests/Ix/Kernel/Axioms.lean`; `scripts/check-kernel-retirement.py`
-rejects the intrinsic names that are not reused, and the reused paths are
-guarded by provenance (every Lean file there is a hash-pinned row).
+partial declarations, and general mutual and nested inductives. It was
+deleted (132 files, 29,805 lines) with its entry points, 19 test modules,
+environment check, benchmark and host differentials (25 files, 4,080
+lines); it never reached `main`. Its level normalizer is the source of
+`Ix/Kernel/LevelGeran.lean`'s algorithm.
+
+Four of the vendored tree's module names are the intrinsic kernel's
+(`Ix.Kernel.Env`, `Ix.Kernel.Expr`, `Ix.Kernel.Level` and the directory
+`Ix/Kernel/Model/`, with different contents), as is the axiom test's path
+`Tests/Ix/Kernel/Axioms.lean`; `scripts/check-kernel-retirement.py` rejects
+the intrinsic names that are not reused, and the reused paths are guarded
+by provenance (every Lean file there is a hash-pinned row).
 
 ## Removal ledger: lean4ix and Ix.Tc
 
-Recorded at D01 (2026-09-29), before the con-leche port. Where it names
-`Ix.Kernel` roots, audits and `check-kernel` job counts, it describes the
-intrinsic kernel of that date; the current gate is described above.
+This ledger records what was removed from `main` with the lean4ix/Lean4Lean
+dependency and the `Ix.Tc` and `Ix.Compile` verification trees, and what
+replaced each part. Where it names `Ix.Kernel` roots, audits or fixtures, it
+describes the retired intrinsic kernel (above), which the vendored checker
+has since replaced; the current gate is described above.
 
-D01 removed both dependency paths on 2026-09-29: the root Lake package
-`lean4lean` fetched `argumentcomputer/lean4ix` at
+Both dependency paths are removed: the root Lake package `lean4lean`
+fetched `argumentcomputer/lean4ix` at
 `a4188d7c2979378d85c6bb41fdd96c3a48a71371`, and TruthMines independently
 fetched `digama0/lean4lean` at `e0e3f6bcccb840cb0ea6f11c2b274ada93a12e00`.
 The old verification trees and their consumers are gone. Runtime `Ix.Tc`
-remains until D02's consumer and corpus-parity gates are satisfied.
+remains until its consumers move and the parity gates below are met.
 
 | Retired or remaining surface | Replacement or disposition | Status |
 | --- | --- | --- |
-| `Ix/Tc/Verify/**` checker statements and proof frontier | Executed `Ix.Kernel` acceptance/model/fidelity roots and adversarial fixtures; behavior outside the supported profile remains in runtime tests | D01 complete |
-| `Ix/Tc/Verify/Audit/{Basic,Completed,Conditional,Statements,SorryFrontier}.lean` | Kernel axiom/import/runtime audits supply strict checks and negative controls; obsolete upstream/native/sorry allowances were deleted | D01 complete |
-| `Ix/Compile/Verify/{Codec,ExprCodec,ExprSpineCodec,ConstantCodec,ConstantTablesCodec,NonrecursiveConstantCodec,RecursorConstantCodec,MutualConstantCodec}.lean` | Preserved under `Ix/Ixon/Verify`, with complete wire domains, frozen contracts, and independent audits | D01 complete; old copies deleted |
-| `Ix/Compile/Verify/{Catalog,IxonValue,SourceValue,Reference}.lean` | Structural predicates live in `Ix/Ixon/Wire`; K3 exact readings cover resolved values; the old semantic square is retired | D01 complete |
-| Remaining `Ix/Compile/Verify/**`, including `Compile*`, `Arena`, `Sharing`, `Statements`, and its audits | Retired compiler/specification machinery; no Ix.Kernel compiler-correctness theorem is claimed | D01 complete |
-| Root `lakefile.lean` / `lake-manifest.json` | Removed dependency, proof libraries, replay benchmark, proof loader, and `build-all` exception; Lake regenerated the manifest | D01 complete; all 24 remaining targets build strictly |
-| `ix_ffi_dyn`, `crates/ffi-dyn`, workspace `Cargo.toml` / `Cargo.lock` | Removed the proof-only crate and loader; ordinary runtime FFI remains | D01 complete; Cargo regenerated the lockfile |
-| `Benchmarks/Lean4Lean.lean`, `Benchmarks/Lean4LeanMain.lean`, `Tests/Ix/Lean4Lean.lean`, `Tests/Main.lean` | Removed replay library, executable, smoke runner and registration; fixture dispositions below | D01 complete |
-| `Ix/Cli/BenchCmd.lean`, `Ix/BenchConstants.lean`, `docs/benchmarking.md` | Removed backend registry, dispatch, help, and active commands; measurements use the existing certified harness and Rust driver | D01 complete; removed backend exits 2 as unknown |
-| `Benchmarks/TruthMinesSpec/{Catalog,Spec}.lean` | Removed package/member at the generator source | D01 complete; generator checks pass |
-| `Benchmarks/TruthMines/{lakefile.lean,lake-manifest.json,Drivers/Lean4Lean.lean}` | Regenerated configuration without the independent upstream dependency; deleted the generated driver | D01 complete; 78 retained package entries |
-| `Benchmarks/Compile/{lake-manifest.json,TruthMines/lake-manifest.json,TruthMines/Members/Lean4Lean.lean}` | Removed inherited package entries and generated member; retained unrelated pins | D01 complete; 24 and 80 retained package entries |
-| `.github/workflows/merge-tests.yml`, `.github/workflows/ci.yml` | Removed old proof jobs and runner; the certified kernel/model/provenance/differential job covers PRs and merge groups; temporary runtime parity jobs remain | D01 complete |
-| `flake.nix` | Removed dependency override; added the retirement source check and Python to development shells | D01 complete; native x86_64-linux Nix gate passes |
-| `docs/ffi.md`, `docs/tc-k0-backedge-audit.md`, this ledger | Obsolete active commands retired; historical audit labeled explicitly; replacement guarantees stated below | D01 complete |
-| `Ix/Tc.lean`, remaining `Ix/Tc/**`, `Tests/Ix/Tc/**`, CLI, AuxGen, IxVM claim harness, and validation round trips | Move consumers and behavior tests to their new owners; switch differential testing to Rust; delete Ix.Tc last | D02 pending after K3/K4 and K6 consumer parity |
+| `Ix/Tc/Verify/**` checker statements and proof frontier | Executed `Ix.Kernel` acceptance/model/fidelity roots and adversarial fixtures; behavior outside the supported profile remains in runtime tests | Done |
+| `Ix/Tc/Verify/Audit/{Basic,Completed,Conditional,Statements,SorryFrontier}.lean` | Kernel axiom/import/runtime audits supply strict checks and negative controls; obsolete upstream/native/sorry allowances were deleted | Done |
+| `Ix/Compile/Verify/{Codec,ExprCodec,ExprSpineCodec,ConstantCodec,ConstantTablesCodec,NonrecursiveConstantCodec,RecursorConstantCodec,MutualConstantCodec}.lean` | Preserved under `Ix/Ixon/Verify`, with complete wire domains, frozen contracts, and independent audits | Done; old copies deleted |
+| `Ix/Compile/Verify/{Catalog,IxonValue,SourceValue,Reference}.lean` | Structural predicates live in `Ix/Ixon/Wire`; the intrinsic kernel's exact readings covered resolved values; the old semantic square is retired | Done |
+| Remaining `Ix/Compile/Verify/**`, including `Compile*`, `Arena`, `Sharing`, `Statements`, and its audits | Retired compiler/specification machinery; no Ix.Kernel compiler-correctness theorem is claimed | Done |
+| Root `lakefile.lean` / `lake-manifest.json` | Removed dependency, proof libraries, replay benchmark, proof loader, and `build-all` exception; Lake regenerated the manifest | Done; the remaining targets build strictly |
+| `ix_ffi_dyn`, `crates/ffi-dyn`, workspace `Cargo.toml` / `Cargo.lock` | Removed the proof-only crate and loader; ordinary runtime FFI remains | Done; Cargo regenerated the lockfile |
+| `Benchmarks/Lean4Lean.lean`, `Benchmarks/Lean4LeanMain.lean`, `Tests/Ix/Lean4Lean.lean`, `Tests/Main.lean` | Removed replay library, executable, smoke runner and registration; fixture dispositions below | Done |
+| `Ix/Cli/BenchCmd.lean`, `Ix/BenchConstants.lean`, `docs/benchmarking.md` | Removed backend registry, dispatch, help, and active commands; measurements use the existing certified harness and Rust driver | Done; removed backend exits 2 as unknown |
+| `Benchmarks/TruthMinesSpec/{Catalog,Spec}.lean` | Removed package/member at the generator source | Done; generator checks pass |
+| `Benchmarks/TruthMines/{lakefile.lean,lake-manifest.json,Drivers/Lean4Lean.lean}` | Regenerated configuration without the independent upstream dependency; deleted the generated driver | Done; 78 retained package entries |
+| `Benchmarks/Compile/{lake-manifest.json,TruthMines/lake-manifest.json,TruthMines/Members/Lean4Lean.lean}` | Removed inherited package entries and generated member; retained unrelated pins | Done; 24 and 80 retained package entries |
+| `.github/workflows/merge-tests.yml`, `.github/workflows/ci.yml` | Removed old proof jobs and runner; the certified kernel/model/provenance/differential job covers PRs and merge groups; temporary runtime parity jobs remain | Done |
+| `flake.nix` | Removed dependency override; added the retirement source check and Python to development shells | Done |
+| `docs/ffi.md`, `docs/tc-k0-backedge-audit.md`, this ledger | Obsolete active commands retired; historical audit labeled explicitly; replacement guarantees stated below | Done |
+| `Ix/Tc.lean`, remaining `Ix/Tc/**`, `Tests/Ix/Tc/**`, CLI, AuxGen, IxVM claim harness, and validation round trips | Move consumers and behavior tests to their new owners; switch differential testing to Rust; delete Ix.Tc last | Pending, in a later change |
 | Kernel/model LICENSE and NOTICE; explanatory attribution in Rust, IxVM, tests and historical documentation | Retained; historical mentions are outside the active-reference guard | Preserved |
 
 The final consumer scan confirmed that the proof loader was the only Lake
@@ -630,18 +618,20 @@ acceptance/rejection behavior or full `Nat.add_comm` certified parity.
 | `deExpr_serExpr` | `Ix.Ixon.Verify.deExpr_serExpr` (implemented) | Wire-sized vectors, spine counts, binder bits, and whole-buffer consumption retained |
 | `deConstant_serConstant` | `Ix.Ixon.Verify.deConstant_serConstant`, plus `deConstantExact_serConstant` (implemented) | All variants and arbitrary side tables retained with count/address/table bounds |
 | `Reads` / `Writes` | `Ix.Ixon.Verify.Codec` cursor and append laws (implemented) | Codec behavior only; exact consumption and suffix rejection added in `Verify.Framing` |
-| `ExprTableWF`, decreasing sharing bounds, reference/universe table resolution | K3 checked resolution plus exact erasure to the supplied Ixon declaration | Detect bad indexes, missing payloads, sharing cycles/forward entries, and unsupported modes before certification |
-| Binder-mode erasure relation | K3 explicit accepted mode policy and exact reading; K7 for nonstandard semantic modes | No Lean4Lean interpretation is retained as a hidden premise |
-| Production compiler refinement/value-preservation and end-to-end semantic square | Retired as part of D01; a separate compiler-correctness project would need new source semantics and proofs | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
+| `ExprTableWF`, decreasing sharing bounds, reference/universe table resolution | Checked resolution in the canonical decoder and the Ixon reader (a bad index or a missing payload is a malformed record) | Detect bad indexes, missing payloads, sharing cycles/forward entries, and unsupported modes before certification |
+| Binder-mode erasure relation | An explicit accepted mode policy: the Ixon reader erases binder contracts | No Lean4Lean interpretation is retained as a hidden premise |
+| Production compiler refinement/value-preservation and end-to-end semantic square | Retired; a separate compiler-correctness project would need new source semantics and proofs | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
 
 The retained codec chain imports the pure structural `wireWF` predicates,
 so the former `ExprSpineCodec → Catalog → IxonValue → Lean4Lean` dependency
 is gone. The temporary old copies have been deleted. Retained codec roots
 use only the three standard axioms; native hash/name allowances from the
-old compiler proofs are not inherited. K4's resource bounds, validity,
-canonicality, and byte-admission composition remain open.
+old compiler proofs are not inherited. For the certified entry, the
+resource bound, canonical decoding and the byte-admission composition are
+proved (`checkBytes_resources`, `decodeRecords_ok_iff`,
+`Ix/Ixon/Verify/Admission.lean`).
 
-### D01 validation and recurrence guard
+### Recurrence guard
 
 `python3 scripts/check-kernel-retirement.py` runs before `check-kernel`
 and as a Nix check. It checks tracked Lean code (including `public import`,
@@ -652,35 +642,7 @@ controls cover import forms, aliased repository URLs, stale target/crate
 names, retired paths, and malformed manifests. A source-export walk covers
 Nix builds without VCS metadata.
 
-Validation used a fresh jj workspace with no project Lean artifacts and no
-Lean4Lean package. Only retained pinned third-party package caches and the
-Rust artifact cache were reused. All 24 host library/executable targets
-passed `lake lint -- --wfail`; default tests (including TruthMines records,
-benchmark measures, runtime Tc, and FFI), CLI tests, generator checks, and
-the explicit removed-backend/help checks passed. The regenerated TruthMines
-Lake configuration compiled. Lake's manifest reader/writer removed the
-three nested entries while retaining every other entry and revision; no
-unrelated package pin changed. This validates corpus configuration, not a
-build or parity sweep of all retained corpus packages.
-
-`lake run check-kernel --with-model` passed: 164 standalone, 173 host
-fixture/provenance, 529 runner, and 975 model jobs; 38 differential cases,
-26 compiler ingress/exact-egress cases, and the production codec property
-tests with Rust comparisons. Provenance remains 97 ported, 53 authored or
-reorganized modules, and four license files. Public statements and audit
-allowlists are unchanged.
-
-The x86_64-linux Nix gate used immutable source snapshot
-`a829f6d86f49dec0acb9447da014bf76b32ab9ec`, with no workspace caches in the
-source. The library, packaged Lean tests, retirement guard, clippy, nextest,
-and distributable CLI smoke check passed. Nextest ran 1,533 tests with
-1,533 passes and 14 skips. Other operating systems were not tested.
-The final checkpoint differs from that tested snapshot only in this ledger
-and the (then versioned) roadmap's completion notes.
-The remaining Rust workspace also passed the local locked release
-all-target build and clippy checks with `parallel,net,test-ffi` enabled,
-and the default-feature workspace tests and doc tests.
-
-D02 still requires no active `Ix.Tc` dependency and the documented consumer
-parity corpus, including the ordered-reference policy. Dependency
-retirement does not complete the runtime cutover.
+Removing runtime `Ix.Tc` still requires no active dependency on it and
+consumer parity on a documented set of environments, including the
+ordered-reference policy. Dependency retirement does not complete the
+runtime cutover.

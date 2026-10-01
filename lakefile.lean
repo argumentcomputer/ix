@@ -349,7 +349,7 @@ same modules for its host consumers through the `Ix` library. See
 /- Provenance check for the kernel, the vendored con-leche tree among it: file
 inventory, exact content hashes, vendor and port headers, licences, and
 license files, against `Tests/Ix/Kernel/ImportManifest.lean`. Pass
-`--source <old-ix-workspace>` (jj) and `--source-git plans/refs/con-leche`
+`--source <old-ix-workspace>` (jj) and `--source-git <con-leche checkout>`
 (git) to also verify the recorded source hashes and re-derive every vendored
 file from upstream through `scripts/vendor-conleche.py`. -/
 lean_exe «kernel-provenance» where
@@ -370,9 +370,9 @@ lean_exe «kernel-entry-cases» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
-/-- Con-leche's universe-level comparison (`Level.leq`, `Level.isEquiv`, and
+/-- The kernel's universe-level comparison (`Level.leq`, `Level.isEquiv`, and
 its Géran fallback `Level.Geran.leq`) against brute-force evaluation, on
-random levels and on Ixon's canonical forms (cl-level). -/
+random levels and on Ixon's canonical forms. -/
 lean_exe «kernel-level-comparison» where
   root := `Tests.Ix.Kernel.LevelComparison
   moreLinkObjs := #[ix_rs]
@@ -387,28 +387,29 @@ lean_exe «kernel-reader-fidelity» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
-/-- Con-leche's verified checker through the Ixon reader: the
-`checkBytes`-shaped entry and its per-constant check (untrusted). -/
+/-- The verified checker through the Ixon reader: the `checkBytes`-shaped
+entry and its per-constant check (untrusted). -/
 lean_lib KernelEntry where
   roots := #[`Ix.Ixon.KernelAdmission, `Ix.Ixon.KernelConsistency, `Ix.Ixon.Consistency,
     `Benchmarks.Kernel.CheckIxeStep,
     `Benchmarks.Kernel.CheckIxeReadCache, `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold]
 
-/-- The certified checker's environment check over a compiled `.ixe` (L5):
-con-leche through the Ixon reader, one row per constant (untrusted step). -/
+/-- The certified checker's environment check over a compiled `.ixe`: the
+verified checker through the Ixon reader, one row per constant (untrusted
+step). -/
 lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
 /-- `kernel-check-ixe` with driver-side optimization switches (load mode,
 worker-thread lane, persistent mark, two-phase pool), for measurement only
-(`Benchmarks.Kernel.CheckIxeOpt`, untrusted; `plans/review/cl-opt/`). -/
+(`Benchmarks.Kernel.CheckIxeOpt`, untrusted). -/
 lean_exe «kernel-check-ixe-opt» where
   root := `Benchmarks.Kernel.CheckIxeOpt
   moreLinkObjs := #[ix_rs]
 
 /-- Regenerates `Ix/Kernel/Ixon/PinData.lean` (pins and prelude) from a
-compiled Init (`.lake/envs/initstd.ixe`), verified by con-leche. -/
+compiled Init (`.lake/envs/initstd.ixe`), verified by the verified fold. -/
 lean_exe «kernel-pin-gen» where
   root := `Benchmarks.Kernel.PinGen
   moreLinkObjs := #[ix_rs]
