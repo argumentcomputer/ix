@@ -198,9 +198,6 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
   let metaMap : Std.HashMap Name Ixon.ConstantMeta :=
     allMetas.foldl (init := {}) fun m (n, cm) => m.insert n cm
 
-  -- `name_str` (mutual.rs:192) feeds Rust's sharing debug stats only —
-  -- not modeled.
-
   -- Singleton non-inductive aux blocks: standalone `Defn`/`Recr`
   -- Constant instead of `Muts([one])` (mutual.rs:199-247).
   if mutConsts.size == 1 && !(mutConsts[0]! matches .indc _) then
