@@ -3,6 +3,7 @@ import Compilatrix.Src.Relevance.Check
 import Compilatrix.Lam.Erase.Term
 import Compilatrix.Fir.Lower
 import Compilatrix.Rt.Lower
+import Compilatrix.Rt.Switches
 import Compilatrix.Backend
 
 /-! # Declines and rejections of the compiler
@@ -17,7 +18,9 @@ erasure's `EraseError.code` (`erase-const-kind`, `erase-string`,
 its proof excludes: `erase-univs`, `erase-unbox-elim`, `erase-pin`,
 `erase-key`), `fir.closures`, `Rt.lower`'s `rt.*`, the allocation
 validator's check names and so on; the compiler adds `rt.params` (a root
-with more parameters than the entry wrapper passes), `cli.*` (arguments and
+with more parameters than the entry wrapper passes), `rt.dispatch` and
+`rt.pins` (the switch check `Rt.checkSwitches`: a default arm, mixed or
+indistinguishable keys, `Nat.zero` and `Nat.succ` on one key), `cli.*` (arguments and
 files) and `cert.*` (a certificate that does not parse). A decline is a
 program outside the Phase 1 fragment; a rejection is a certificate the
 recheck path does not accept. Neither ever produces code. -/
@@ -93,6 +96,10 @@ def Err.ofFir (e : Fir.Lower.Error) : Err :=
   { stage := .fir, code, message }
 
 def Err.ofRt (e : Rt.Error) : Err :=
+  let (code, message) := splitCode e.render
+  { stage := .rt, code, message }
+
+def Err.ofSwitch (e : Rt.SwitchError) : Err :=
   let (code, message) := splitCode e.render
   { stage := .rt, code, message }
 

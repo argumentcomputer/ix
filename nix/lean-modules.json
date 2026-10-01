@@ -1889,6 +1889,8 @@
   "Compilatrix.Sem.Agrees":
   {"path": "Compilatrix/Sem/Agrees.lean",
    "imports": ["Compilatrix.Sem.Clocked"]},
+  "Compilatrix.Rt.Switches":
+  {"path": "Compilatrix/Rt/Switches.lean", "imports": ["Compilatrix.Rt.Lower"]},
   "Compilatrix.Rt.Readback":
   {"path": "Compilatrix/Rt/Readback.lean",
    "imports": ["Compilatrix.Rt.Layout", "Compilatrix.X86.State"]},
@@ -1901,6 +1903,9 @@
   "Compilatrix.Rt.Proof.Term":
   {"path": "Compilatrix/Rt/Proof/Term.lean",
    "imports": ["Compilatrix.Rt.Proof.SwitchSim"]},
+  "Compilatrix.Rt.Proof.Switches":
+  {"path": "Compilatrix/Rt/Proof/Switches.lean",
+   "imports": ["Compilatrix.Rt.Proof.Diagram", "Compilatrix.Rt.Switches"]},
   "Compilatrix.Rt.Proof.SwitchTag":
   {"path": "Compilatrix/Rt/Proof/SwitchTag.lean",
    "imports": ["Compilatrix.Rt.Proof.Switch"]},
@@ -1937,6 +1942,7 @@
    ["Compilatrix.Rt.Proof.Correct",
     "Compilatrix.Rt.Proof.Readback",
     "Compilatrix.Rt.Proof.CxInit",
+    "Compilatrix.Rt.Proof.Switches",
     "Compilatrix.Sem.TracedSim"]},
   "Compilatrix.Rt.Proof.Prune":
   {"path": "Compilatrix/Rt/Proof/Prune.lean",
@@ -2101,6 +2107,7 @@
     "Compilatrix.Lam.Erase.Term",
     "Compilatrix.Fir.Lower",
     "Compilatrix.Rt.Lower",
+    "Compilatrix.Rt.Switches",
     "Compilatrix.Backend"]},
   "Compilatrix.Recheck.Cert":
   {"path": "Compilatrix/Recheck/Cert.lean",
@@ -3500,6 +3507,7 @@
     "Compilatrix.Rt.Procs.Nat",
     "Compilatrix.Rt.Lower",
     "Compilatrix.Rt.Readback",
+    "Compilatrix.Rt.Switches",
     "Compilatrix.Rt.Proof.Words",
     "Compilatrix.Rt.Proof.Procs",
     "Compilatrix.Rt.Proof.Pow",
@@ -3533,6 +3541,7 @@
     "Compilatrix.Rt.Proof.StepEdge",
     "Compilatrix.Rt.Proof.StepTerm",
     "Compilatrix.Rt.Proof.Diagram",
+    "Compilatrix.Rt.Proof.Switches",
     "Compilatrix.Rt.Proof.Prune",
     "Compilatrix.Rt.Proof.Program",
     "Compilatrix.Rt.Proof.Correct",

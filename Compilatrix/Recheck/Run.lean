@@ -17,7 +17,7 @@ decisions, validating what the producer searched for:
 P ─Table.ofCert (V)→ ─install + Relevance.check (V)→ ─Lazify (P)→ ─Lam.erase (P)→ Lam
   ─Anf.Pipeline.run c.mid (P: P1, then P2/P3/P4/prune on the certificate's decisions)→ Anf
   ─Fir.lower (P)→ ─Own.immortal (P)→ ─Cfg.lower (P)→ Cfg ─roots (≤ 5 parameters)→
-  ─Rt.lower (P, with edge splitting)→ Lir ─Select.select (P)→ Xv
+  ─switches (check)→ ─Rt.lower (P, with edge splitting)→ Lir ─Select.select (P)→ Xv
   ─Validate.program c.alloc (V)→ ─Alloc.applyProgram→ Xl
   ─Backend.emit: FrameLayout.check c.frames (V), stacking emission, tunnelling (P),
     Order.check c.order (V), linearisation (P), Program.check, E1, E2, ELF→ object
@@ -30,8 +30,10 @@ accepts gives code as correct as any other it would accept (the passes'
 theorems quantify over the certificate). `Recheck.sound` (M2.8) is stated of
 this function.
 
-**Kernel style.** `runTyped` is `run` up to the laid-out typed x86 program
-(everything before `Backend.finish`); `run` adds `Backend.finish`: the typed
+**Kernel style.** `runLir` is the front half, up to the lowered Lir program
+(what M2.7's front theorem, `Recheck.front_refines`, is stated of);
+`runTyped` is `run` up to the laid-out typed x86 program (`runLir`, then
+everything before `Backend.finish`); `run` adds `Backend.finish`: the typed
 program's check, E1 encoding, E2's stream check and the ELF writer with its
 validator, each by its kernel-evaluable twin proved equal to the original
 (`Program.checkK`, `Stream.encodeK`, `ELF.writeCheckedK`). The whole path is
@@ -116,17 +118,22 @@ def boolSig (C : Cfg.Program) : Rt.Sig :=
 def cfgParams (C : Cfg.Program) (f : Fir.FunId) : Nat :=
   ((C.fun? f).map (·.params.length)).getD 0
 
+/-- A root constant's readback signature and type: `Nat`, or `Bool` with the
+program's tags (`none`: Phase 1 reads it back as nothing). -/
+def rootTy (p : Src.Program) (C : Cfg.Program) (c : CId) : Option (Rt.Sig × Rt.FoTy) :=
+  match resultTy p c with
+  | some .nat => some ({}, Rt.FoTy.nat)
+  | some t => some (boolSig C, t)
+  | none => none
+
 /-- The roots: Src's roots, Cfg's exports and Rt's symbols correspond by
 position (erasure keeps the Src root order, Anf and Fir keep Lam's). -/
 def rootsOf (cfg : Config) (p : Src.Program) (C : Cfg.Program) (l : Rt.Lowered) :
     List (Nat × (Ixon.Address × CId) × Fir.FunId × (Lir.FunId × String)) → List Root
   | [] => []
   | (i, (addr, c), f, (fn, symbol)) :: rest =>
-    let ty := match resultTy p c with
-      | some .nat => some ({}, Rt.FoTy.nat)
-      | some t => some (boolSig C, t)
-      | none => none
-    { name := (cfg.names[i]?).getD s!"root{i}", const := c, addr, fn, symbol, params := cfgParams C f, ty } ::
+    { name := (cfg.names[i]?).getD s!"root{i}", const := c, addr, fn, symbol, params := cfgParams C f
+      ty := rootTy p C c } ::
       rootsOf cfg p C l rest
 
 /-- A root with more parameters than the wrapper passes (04 §6): declined
@@ -206,19 +213,41 @@ structure Typed where
   provenance : X86.ELF.Provenance
   roots : List Root
 
-/-- The recheck path up to the laid-out typed program: `run` without its
-final checks and encodings (`Program.check`, E1/E2 and the ELF writer). -/
-def runTyped (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Typed := do
+/-- What the recheck path makes up to the lowered Lir program (its front
+half, `runLir`): every level from the checked source to Lir. -/
+structure Front where
+  src : Src.Program
+  checked : Src.Relevance.Checked
+  lam : Lam.Program
+  anf : Anf.Program
+  fir : Fir.Program
+  own : Own.Program
+  cfg : Cfg.Program
+  lowered : Rt.Lowered
+
+/-- The recheck path up to the lowered Lir program (the front half, M2.7):
+the front end, erasure, the middle end, Fir, Own and Cfg, the roots'
+parameter check, the switch check (`Rt.checkSwitches`, which discharges
+`Rt.lower_correct`'s `SwitchOk` without types) and `Rt.lower`. -/
+def runLir (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Front := do
   let (src, checked) ← front cfg P c
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
   let (anf, fir, own, C) ← middle c lam
   checkParams cfg C (List.zipIdx C.exports |>.map fun (f, i) => (i, f))
+  (Rt.checkSwitches C).mapError Err.ofSwitch
   let lowered ← (Rt.lower { names := cfg.names } C).mapError Err.ofRt
-  let root := (src.roots.head?.map (·.1)).getD default
-  let (xv, xl, stacked, program, exports) ← backTyped cfg lowered root c
-  let rows := (List.range src.roots.length).zip (src.roots.zip (C.exports.zip lowered.roots))
-  let roots := rootsOf cfg src C lowered rows
-  pure { src, checked, lam, anf, fir, own, cfg := C, lowered, xv, xl, stacked, program, exports
+  pure { src, checked, lam, anf, fir, own, cfg := C, lowered }
+
+/-- The recheck path up to the laid-out typed program: `run` without its
+final checks and encodings (`Program.check`, E1/E2 and the ELF writer). -/
+def runTyped (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Typed := do
+  let f ← runLir cfg P c
+  let root := (f.src.roots.head?.map (·.1)).getD default
+  let (xv, xl, stacked, program, exports) ← backTyped cfg f.lowered root c
+  let rows := (List.range f.src.roots.length).zip (f.src.roots.zip (f.cfg.exports.zip f.lowered.roots))
+  let roots := rootsOf cfg f.src f.cfg f.lowered rows
+  pure { src := f.src, checked := f.checked, lam := f.lam, anf := f.anf, fir := f.fir, own := f.own
+         cfg := f.cfg, lowered := f.lowered, xv, xl, stacked, program, exports
          provenance := cfg.provenance.getD (defaultProvenance root), roots }
 
 /-- The recheck path (D17): the object `P` compiles to under certificate `c`,

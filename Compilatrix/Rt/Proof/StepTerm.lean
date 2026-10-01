@@ -87,13 +87,16 @@ theorem selectEdge_mem {key : Key.CtorKey} : ∀ {alts : List (Key.CtorKey × Cf
     · obtain ⟨p, hp, rfl⟩ := selectEdge_mem h
       exact ⟨p, by simp [hp], rfl⟩
 
-/-- **A terminator simulates Cfg's step.** -/
-theorem step_term {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P lp) {fr : Cfg.Frame}
+/-- **A terminator simulates Cfg's step**, given `Dispatches` at a switch
+Cfg steps on: a scrutinee related to a word under the heap invariant, whose
+key selects an edge. -/
+theorem step_term_sel {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P lp) {fr : Cfg.Frame}
     {stk : List (Cfg.Frame × Nat)} {H : Own.Heap} {s₂ : Lir.State} (hrel : Rel P lp ctx (.run fr stk H) s₂)
     (hfr : fr.rest = [])
-    (hdisp : ∀ fd b x alts d v, P.fun? fr.fn = some fd → fd.blocks[fr.blk]? = some b →
+    (hdisp : ∀ fd b x alts d v key fs e Pw w ctx' m, P.fun? fr.fn = some fd → fd.blocks[fr.blk]? = some b →
       fusable (tables P) (useCounts fd) b = none → b.term = .switch x alts d → fr.env.get? x = some v →
-      Dispatches (tables P) H v alts)
+      ValRel (tables P) Pw v w → HeapInv (tables P) Pw H ctx' m → v.asCtor P.known H = some (key, fs) →
+      Cfg.selectEdge key alts d = some e → Dispatches (tables P) H v alts)
     {s₁' : Cfg.State} {bb : Bool} (hs : Cfg.step .immortal P (.run fr stk H) = .next s₁' bb) :
     (∃ c s₂', Sem.Star (Lir.semStep lp) s₂ c s₂' ∧ bb.toNat ≤ c ∧ Rel P lp ctx s₁' s₂') ∨
       Sem.Fails (Lir.semStep lp) s₂ := by
@@ -231,9 +234,10 @@ theorem step_term {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target
               have := (fused_once hD hb).2 alts d hterm
               rw [hfus] at this
               cases this
+            obtain ⟨wx, -, hvx⟩ := hρ.val hxv hxD
             obtain ⟨pe, le, ρl', hok, -, hres', hreach, hρ'⟩ := switch_sim (mem := s₂.mem) (ctx := s₂.ctx) (rest := lrest)
               hF hH hcode hl ho (Grows.refl _) hC hheap' hρ hsup hxD hxv hac hsel
-              (hdisp fd b x alts d v hfd hb hfus hterm hxv)
+              (hdisp fd b x alts d v key fs e Pw wx s₂.ctx s₂.mem hfd hb hfus hterm hxv hvx hheap' hac hsel)
             rw [← hs₂] at hreach
             have he : e ∈ b.term.edges := by
               rw [hterm]
@@ -290,6 +294,19 @@ theorem step_term {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target
       rw [hterm] at hs
       cases hs
 
+/-- **A terminator simulates Cfg's step**, given `Dispatches` at every
+switch the block ends in. -/
+theorem step_term {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P lp) {fr : Cfg.Frame}
+    {stk : List (Cfg.Frame × Nat)} {H : Own.Heap} {s₂ : Lir.State} (hrel : Rel P lp ctx (.run fr stk H) s₂)
+    (hfr : fr.rest = [])
+    (hdisp : ∀ fd b x alts d v, P.fun? fr.fn = some fd → fd.blocks[fr.blk]? = some b →
+      fusable (tables P) (useCounts fd) b = none → b.term = .switch x alts d → fr.env.get? x = some v →
+      Dispatches (tables P) H v alts)
+    {s₁' : Cfg.State} {bb : Bool} (hs : Cfg.step .immortal P (.run fr stk H) = .next s₁' bb) :
+    (∃ c s₂', Sem.Star (Lir.semStep lp) s₂ c s₂' ∧ bb.toNat ≤ c ∧ Rel P lp ctx s₁' s₂') ∨
+      Sem.Fails (Lir.semStep lp) s₂ :=
+  step_term_sel ht hrel hfr
+    (fun fd b x alts d v _ _ _ _ _ _ _ h1 h2 h3 h4 h5 _ _ _ _ => hdisp fd b x alts d v h1 h2 h3 h4 h5) hs
 
 theorem takeEdge_ne_trap {fd : Cfg.Fun} {fr : Cfg.Frame} {stk : List (Cfg.Frame × Nat)} {H : Own.Heap}
     {e : Cfg.Edge} : Cfg.takeEdge fd fr stk H e ≠ .trap := by

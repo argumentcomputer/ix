@@ -32,6 +32,22 @@ def SwitchOk (P : Cfg.Program) : Cfg.State → Prop
       Dispatches (tables P) H v alts
   | _ => True
 
+/-- **What the switch lowering needs where Cfg steps**: `SwitchOk` only at
+a scrutinee related to a word under the heap invariant whose key selects an
+edge (a switch Cfg is stuck on needs nothing). `Rt.Proof.switchSel_of_ok`
+gives it at every state of a program the pipeline's check accepts. -/
+def SwitchSel (P : Cfg.Program) : Cfg.State → Prop
+  | .run fr _ H => ∀ fd b x alts d v key fs e Pw w ctx m, P.fun? fr.fn = some fd → fd.blocks[fr.blk]? = some b →
+      fr.rest = [] → fusable (tables P) (useCounts fd) b = none → b.term = .switch x alts d →
+      fr.env.get? x = some v → ValRel (tables P) Pw v w → HeapInv (tables P) Pw H ctx m →
+      v.asCtor P.known H = some (key, fs) → Cfg.selectEdge key alts d = some e → Dispatches (tables P) H v alts
+  | _ => True
+
+theorem SwitchOk.sel {P : Cfg.Program} : ∀ {s : Cfg.State}, SwitchOk P s → SwitchSel P s
+  | .run _ _ _, h => fun fd b x alts d v _ _ _ _ _ _ _ h1 h2 h3 h4 h5 h6 _ _ _ _ => h fd b x alts d v h1 h2 h3 h4 h5 h6
+  | .call .., _ => trivial
+  | .ret .., _ => trivial
+
 /-- Cfg's step over an instruction other than a call. -/
 theorem step_bind {P : Cfg.Program} {fr : Cfg.Frame} {stk : List (Cfg.Frame × Nat)} {H : Own.Heap} {x : Nat}
     {r : Own.Rhs} {is : List Cfg.Instr} (hfr : fr.rest = .bind x r :: is) (hnc : ∀ g as, r ≠ .fir (.call g as)) :
@@ -48,9 +64,10 @@ theorem step_bind {P : Cfg.Program} {fr : Cfg.Frame} {stk : List (Cfg.Frame × N
     | _ => simp only [Cfg.step, hfr]; rfl
   | _ => simp only [Cfg.step, hfr]; rfl
 
-/-- **The forward diagram.** -/
-theorem diagram {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P lp) (s₀ : Cfg.State)
-    (hsafe : ∀ s, Reach P s₀ s → SwitchOk P s) :
+/-- **The forward diagram**, given `SwitchSel` of the reachable states
+(`diagram` with `SwitchOk`, `switchSel_of_ok` with the pipeline's check). -/
+theorem diagram_sel {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P lp) (s₀ : Cfg.State)
+    (hsafe : ∀ s, Reach P s₀ s → SwitchSel P s) :
     Sem.Forward (Cfg.step .immortal P) (Lir.semStep lp) (Res P ctx)
       (fun s₁ s₂ => Rel P lp ctx s₁ s₂ ∧ Reach P s₀ s₁) where
   next := by
@@ -80,7 +97,9 @@ theorem diagram {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P
       cases hfr : fr.rest with
       | nil =>
         have hdisp := hsafe _ ⟨c₀, hreach⟩
-        exact (step_term ht hrel hfr (fun fd b x alts d v h1 h2 h3 h4 h5 => hdisp fd b x alts d v h1 h2 hfr h3 h4 h5)
+        exact (step_term_sel ht hrel hfr
+          (fun fd b x alts d v key fs e Pw w ctx' m h1 h2 h3 h4 h5 h6 h7 h8 h9 =>
+            hdisp fd b x alts d v key fs e Pw w ctx' m h1 h2 hfr h3 h4 h5 h6 h7 h8 h9)
           hs).imp (fun ⟨c, s₂', hst, hc, hrel'⟩ => ⟨c, s₂', hst, hc, hrel', hreach'⟩) id
       | cons i is =>
         obtain ⟨x, r⟩ := i
@@ -187,5 +206,12 @@ theorem diagram {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P
           rcases evalRhs_ok_or_stuck (T := P.tables) (ρ := fr.env) (H := H) r' with ⟨p, hp⟩ | hp
           · rw [hp] at hf; cases hf
           · rw [hp] at hf; cases hf; exact hr rfl
+
+/-- **The forward diagram.** -/
+theorem diagram {P : Cfg.Program} {lp : Lir.Program} {ctx : Word} (ht : Target P lp) (s₀ : Cfg.State)
+    (hsafe : ∀ s, Reach P s₀ s → SwitchOk P s) :
+    Sem.Forward (Cfg.step .immortal P) (Lir.semStep lp) (Res P ctx)
+      (fun s₁ s₂ => Rel P lp ctx s₁ s₂ ∧ Reach P s₀ s₁) :=
+  diagram_sel ht s₀ fun s h => (hsafe s h).sel
 
 end Compilatrix.Rt.Proof

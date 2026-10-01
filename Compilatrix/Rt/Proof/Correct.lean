@@ -62,19 +62,14 @@ theorem call_step_cases {P : Cfg.Program} {g : Nat} {args : List Own.RVal} {H : 
         exact .inr ⟨fd, b0, rfl, hb0, hlen, rfl⟩
       · exact .inl rfl
 
-/-- **`Rt.lower_correct`**: the runtime lowering simulates Cfg's immortal
-semantics, with the clock map `k ↦ k + 1` at the level of `Cfg.run` and
-`Lir.eval` (Cfg charges the entry), related arguments and results (`Res`:
-one word related by `ValRel`, the heap invariant), resource failures
-(`natOverflow`, `heap`) allowed, and a stuck Cfg run imposing nothing. It
-assumes `SwitchOk` of every state Cfg's run reaches: each executed switch
-scrutinises a value its lowering dispatches on (as a well-typed program's
-do). -/
-theorem lower_correct {cfg : Config} {P : Cfg.Program} {L : Compilatrix.Rt.Lowered}
+/-- **`Rt.lower_correct`**, assuming `SwitchSel` of every state Cfg's run
+reaches (`lower_correct` assumes `SwitchOk`; the pipeline's switch check
+gives `SwitchSel` everywhere, `switchSel_of_ok`). -/
+theorem lower_correct_sel {cfg : Config} {P : Cfg.Program} {L : Compilatrix.Rt.Lowered}
     (h : Compilatrix.Rt.lower cfg P = .ok L) {g : Nat} {args : List Own.RVal} {H : Own.Heap} {ws : List Word}
     {mem : X86.Memory} {ctx : Word} {Pw : List Word} (hargs : ListRel (ValRel (tables P) Pw) args ws)
     (hheap : HeapInv (tables P) Pw H ctx mem)
-    (hsafe : ∀ s, Reach P (.call g args [] H) s → SwitchOk P s) :
+    (hsafe : ∀ s, Reach P (.call g args [] H) s → SwitchSel P s) :
     Sem.Sim (Res P ctx) (· + 1) (fun k => Cfg.run .immortal P k g args H)
       (fun k => Lir.eval { L.program with main := g } k ws mem ctx) := by
   have hl := (lower_lowers h).1
@@ -98,7 +93,7 @@ theorem lower_correct {cfg : Config} {P : Cfg.Program} {L : Compilatrix.Rt.Lower
     have hm : (∃ u, Lir.StateRel (pruneRel P) { mem, ctx, stack := [callee₀] } u ∧
         Lir.StateRel (splitRelOf P L.roots) u { mem, ctx, stack := [callee₂] }) :=
       ⟨{ mem, ctx, stack := [callee₁] }, ⟨rfl, rfl, .cons hcr₁ .nil⟩, ⟨rfl, rfl, .cons hcr₂ .nil⟩⟩
-    have hd := diagram (ctx := ctx) ht (.call g args [] H) hsafe
+    have hd := diagram_sel (ctx := ctx) ht (.call g args [] H) hsafe
     have hreach₁ : Reach P (.call g args [] H) (.run (entryFrame g b0 args) [] H) :=
       ⟨1, by simpa using Sem.Star.single hst⟩
     -- carry a run of the unpruned program from the entry to the final program
@@ -128,5 +123,22 @@ theorem lower_correct {cfg : Config} {P : Cfg.Program} {L : Compilatrix.Rt.Lower
       rcases hd.timeout h₁ ⟨hrel, hreach₁⟩ with h₂ | ⟨failure, h₂⟩
       · exact .inl (hcarry (by simp) h₂)
       · exact .inr ⟨failure, hcarry (by simp) h₂⟩
+
+/-- **`Rt.lower_correct`**: the runtime lowering simulates Cfg's immortal
+semantics, with the clock map `k ↦ k + 1` at the level of `Cfg.run` and
+`Lir.eval` (Cfg charges the entry), related arguments and results (`Res`:
+one word related by `ValRel`, the heap invariant), resource failures
+(`natOverflow`, `heap`) allowed, and a stuck Cfg run imposing nothing. It
+assumes `SwitchOk` of every state Cfg's run reaches: each executed switch
+scrutinises a value its lowering dispatches on (as a well-typed program's
+do). -/
+theorem lower_correct {cfg : Config} {P : Cfg.Program} {L : Compilatrix.Rt.Lowered}
+    (h : Compilatrix.Rt.lower cfg P = .ok L) {g : Nat} {args : List Own.RVal} {H : Own.Heap} {ws : List Word}
+    {mem : X86.Memory} {ctx : Word} {Pw : List Word} (hargs : ListRel (ValRel (tables P) Pw) args ws)
+    (hheap : HeapInv (tables P) Pw H ctx mem)
+    (hsafe : ∀ s, Reach P (.call g args [] H) s → SwitchOk P s) :
+    Sem.Sim (Res P ctx) (· + 1) (fun k => Cfg.run .immortal P k g args H)
+      (fun k => Lir.eval { L.program with main := g } k ws mem ctx) :=
+  lower_correct_sel h hargs hheap fun s hs => (hsafe s hs).sel
 
 end Compilatrix.Rt.Proof

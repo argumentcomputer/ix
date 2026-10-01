@@ -237,6 +237,7 @@ import Compilatrix.Rt.Procs.Entry
 import Compilatrix.Rt.Procs.Nat
 import Compilatrix.Rt.Lower
 import Compilatrix.Rt.Readback
+import Compilatrix.Rt.Switches
 import Compilatrix.Rt.Proof.Words
 import Compilatrix.Rt.Proof.Procs
 import Compilatrix.Rt.Proof.Pow
@@ -270,6 +271,7 @@ import Compilatrix.Rt.Proof.StepInstr
 import Compilatrix.Rt.Proof.StepEdge
 import Compilatrix.Rt.Proof.StepTerm
 import Compilatrix.Rt.Proof.Diagram
+import Compilatrix.Rt.Proof.Switches
 import Compilatrix.Rt.Proof.Prune
 import Compilatrix.Rt.Proof.Program
 import Compilatrix.Rt.Proof.Correct
