@@ -324,7 +324,8 @@ and integrity-pinned. It links with an object compiled from `Rt.lower`'s
 output, which exports `cx_init` and a SysV wrapper per root, maps a
 private region (`--region`, default 64 MiB) and a separate stack for the
 program (`--stack`, default 8 MiB, above a guard page), and for each input
-calls `cx_init(region, size, stack_budget)` and the root, both on that
+stores `stack_budget` at `region + 16`, where every export wrapper reads it,
+and calls `cx_init(region, size, stack_budget)` and the root, both on that
 stack with sentinels in the callee-saved registers, printing `rax:rdx` and
 whether the sentinels and `rsp` survived. Its contract: the region is
 private, writable, untouched between `cx_init` and the root's return, and
@@ -344,7 +345,8 @@ driver, one adapter per row, and tagged C twins of `ackermann`, `tak`,
 `collatz`, `prime-count`, `even-odd` and `sfib`)
 is untrusted measurement code, integrity-pinned so that a change to how a
 row is built or timed is reviewed with the ledger. Its compilatrix adapter
-calls `cx_init` once and then the root's SysV wrapper directly, under the
+stores the stack budget at `region + 16` as the runtime driver does, calls
+`cx_init` once and then the root's SysV wrapper directly, under the
 runtime driver's contract (a private region untouched by C, a stack budget
 that leaves at least 1 MiB below the thread's stack limit); it checks the
 status and the Nat tag of every result. No check, proof or production

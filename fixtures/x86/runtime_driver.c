@@ -13,9 +13,11 @@
  *
  * The driver maps one private, writable region (--region BYTES, default
  * 64 MiB) and one stack for the program (--stack BYTES, default 8 MiB, with
- * a guard page below it). For each input line "a1 ... a5" it calls cx_init
- * on the whole region with stack_budget = the stack size less 4 KiB, then
- * the root, both on the mapped stack with sentinels in rbx, rbp and r12-r15,
+ * a guard page below it). For each input line "a1 ... a5" it stores
+ * stack_budget = the stack size less 4 KiB at region + 16 (ctx - 48, where
+ * every export wrapper reads it), calls cx_init on the whole region with
+ * that budget, then the root, both on the mapped stack with the same stack
+ * pointer and return address and with sentinels in rbx, rbp and r12-r15,
  * and prints
  *
  *     status value ok [obs] [ns]
@@ -24,7 +26,8 @@
  * --type T --sig S (the text forms of Rt.FoTy.encode and Rt.Sig.encode) it
  * decodes the value as a C mirror of Rt.readback (fuel (limit - base)/8)
  * and prints the observation as Rt.renderObs does ("-" if it does not read
- * back, or the status is not 0). With --time it prints the root call's wall
+ * back, or the status is not 0); like the model's readback, the decoder
+ * reads only the region from region + 16. With --time it prints the root call's wall
  * time in nanoseconds. With --dump it then prints
  *
  *     dump base start bump hex
@@ -36,6 +39,8 @@
  * cx_init and the root's return, and disjoint from .rodata and from the
  * stack; the stack budget leaves at least 4 KiB above the guard page for
  * the wrapper frame and the 64-byte slack of the largest frameless leaf.
+ * Recheck.sound's model of these calls is X86.Driver and X86.Linked (a
+ * specification assumption in docs/trusted-extern-ledger.md).
  */
 #define _GNU_SOURCE
 #include <stdint.h>
@@ -209,9 +214,15 @@ static void put(str_t *o, const char *s) {
   o->len += n;
 }
 
+/* The part of the region Lir uses, from region + 16: the first 16 bytes
+ * (entrySp, stackLimit) are the wrappers', and Rt.readback in the model
+ * (X86.Driver.lirView) does not read them either. */
+#define WRAPPER_BYTES ((uint64_t)16)
+
 static int readable(uint64_t a, uint64_t n) {
-  uint64_t base = (uint64_t)(uintptr_t)region;
-  return a >= base && a - base <= region_size && n <= region_size - (a - base);
+  if (region_size < WRAPPER_BYTES) return 0;
+  uint64_t base = (uint64_t)(uintptr_t)region + WRAPPER_BYTES, size = region_size - WRAPPER_BYTES;
+  return a >= base && a - base <= size && n <= size - (a - base);
 }
 
 static int decode(uint64_t w, int ty, uint64_t fuel, str_t *o) {
@@ -315,6 +326,9 @@ int main(int argc, char **argv) {
       cursor = end;
     }
     uint64_t init_args[6] = {(uint64_t)(uintptr_t)region, region_size, budget, 0, 0, 0};
+    /* The stack budget at region + 16 (ctx - 48), where every export
+     * wrapper, cx_init's included, reads it (X86.Driver.initBytes). */
+    memcpy(region + 16, &budget, 8);
     struct result r;
     call_on_stack(init_args, &r, cx_init, top);
     if (r.rax != 0 || !saved_ok(&r)) {

@@ -669,7 +669,7 @@
   "integrity": {
     "tracked_files": {
       "benchmarks/runner/entry/driver.c": "aa604895b80ac49ce0f9ee26f2b2763a83297d9943d5c0517b97bc6504dc652a",
-      "benchmarks/runner/entry/row_compilatrix.c": "93512d54685ae07ccbc548d2b60a5c46f73c221866afa2ab9b70ddc637c5236b",
+      "benchmarks/runner/entry/row_compilatrix.c": "5b4aea33830a5fa213b26ab11b53db4cb541d2a36385efaacfcdb748f6b483ab",
       "benchmarks/runner/entry/row_idiomatic.c": "f653c7ec9179947924fd12d921547ef87546657066514c57bde839a9adeb929f",
       "benchmarks/runner/entry/row_lean.c": "7e2bc1377e424fd6e08d248946f2f9ac4feedc98f801e1523c58b1b942bad148",
       "benchmarks/runner/entry/row_lir.c": "0a71244e982081f4eb576f202c53d2cd95475c33c53f4311c23c9c029e1218fb",
@@ -1004,7 +1004,7 @@
       "fixtures/x86/backend_driver.c": "d4863ed952aeb8f262fe1e4585b403ef22a0e1e33cb3930b40c39bc3629551b1",
       "fixtures/x86/hw_diff_harness.c": "39e0c301496321e1ce1b2821b3fd80cabd42812d7afee73da8dee9d80e24d9c9",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
-      "fixtures/x86/runtime_driver.c": "87d54a57d32edafde7c03ba41fa1607bca8bb851c34616251978648e5c2a0e80",
+      "fixtures/x86/runtime_driver.c": "e0a1b9413371487edf155040ca033d64e63f9563a289ea2e4610627e6a0929ac",
       "flake.lock": "158f8954e4291ec21dee7ee356b12987a15a990e30f7de18b0ccb76b445dc54a",
       "flake.nix": "d82956132247e125f6bf4ec03bbd5f21dd5aa75edc7289c8252bd5c96af2d997",
       "lakefile.lean": "8bd5aeb68d188cb7b8880d6dde08d8cb9a0bd5907ad964ef5e1f36cdbb6710aa",

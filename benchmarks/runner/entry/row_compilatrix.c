@@ -40,6 +40,7 @@ extern cx_result cx_entry(void *region, uint64_t a1, uint64_t a2, uint64_t a3, u
 
 #define REGION_SIZE ((uint64_t)64 << 20)
 #define BUMP_OFFSET (64 - 40) /* ctx - 40, with ctx = region + 64 */
+#define BUDGET_OFFSET (64 - 48) /* ctx - 48 */
 
 static uint8_t *region;
 static uint64_t bump_at_init;
@@ -70,7 +71,11 @@ void row_init(void) {
     perror("mmap region");
     exit(2);
   }
-  cx_result r = cx_init(region, REGION_SIZE, stack_budget());
+  /* The stack budget at region + 16 (ctx - 48), where every export wrapper,
+   * cx_init's included, reads it, as runtime_driver.c stores it. */
+  uint64_t budget = stack_budget();
+  memcpy(region + BUDGET_OFFSET, &budget, 8);
+  cx_result r = cx_init(region, REGION_SIZE, budget);
   if (r.status != 0) {
     fprintf(stderr, "cx_init failed with status %" PRIu64 "\n", r.status);
     exit(3);
