@@ -44,31 +44,31 @@ pub fn u64_get_trimmed_le(len: usize, buf: &mut &[u8]) -> Result<u64, String> {
   }
 }
 
-/// TagN: nibble-bootstrapped integer code. A rule-for-rule port of
-/// `Ixon.putTagN` / `Ixon.getTagN` (`Ix/Ixon.lean`).
+/// TagN: the Ixon integer code. A rule-for-rule port of `Ixon.putTagN` /
+/// `Ixon.getTagN` (`Ix/Ixon.lean`).
 ///
 /// One header byte `[flag : f bits][payload : r = 8 - f bits]`
-/// (`f` in `{0, 2, 4}`) followed by 0, 1, 2, 4 or 8 little-endian bytes.
+/// (`f` in `{0, 2, 4}`) followed by 0, 1, 2, 3, 4 or 8 little-endian bytes.
 /// With `L` the top payload bit and `M` the next one:
 ///
 /// * `L = 0`: the low `r - 1` payload bits are the value (rung 1,
 ///   `[0, R1)`, `R1 = 2^(r-1)`);
 /// * `L = 1, M = 0`: the low `r - 2` bits followed by one byte hold
 ///   `value - R1` (rung 2, `[R1, R2)`, `R2 = R1 + 2^(r-2+8)`);
-/// * `L = 1, M = 1`: the low `r - 2` bits are a code `c`; `c = 0, 1, 2`
-///   select 2, 4, 8 following bytes holding `value - R2`, `value - R3`,
-///   `value - R4` (`R3 = R2 + 2^16`, `R4 = R3 + 2^32`); every other code is
-///   invalid.
+/// * `L = 1, M = 1`: the low `r - 2` bits are a code `c`; `c = 0, 1, 2, 3`
+///   select 2, 3, 4, 8 following bytes holding `value - R2`, `value - R3`,
+///   `value - R4`, `value - R5` (`R3 = R2 + 2^16`, `R4 = R3 + 2^24`,
+///   `R5 = R4 + 2^32`); every other code is invalid (none for `f = 4`).
 ///
 /// Each rung starts where the previous one ends, so a value has exactly one
-/// encoding (the code is bijective and needs no canonicality check). Rung
-/// ends:
+/// encoding (the code is bijective and needs no canonicality check). Widths
+/// 1, 2, 3, 4, 5, 9; rung ends:
 ///
-/// | f | R1 | R2 | R3 | R4 |
-/// |---|---|---|---|---|
-/// | 0 | 128 | 16512 | 82048 | 4295049344 |
-/// | 2 | 32 | 4128 | 69664 | 4295036960 |
-/// | 4 | 8 | 1032 | 66568 | 4295033864 |
+/// | f | R1 | R2 | R3 | R4 | R5 |
+/// |---|---|---|---|---|---|
+/// | 0 | 128 | 16512 | 82048 | 16859264 | 4311826560 |
+/// | 2 | 32 | 4128 | 69664 | 16846880 | 4311814176 |
+/// | 4 | 8 | 1032 | 66568 | 16843784 | 4311811080 |
 ///
 /// Every `u64` is representable for each `f`; the decoder rejects 8-byte
 /// payloads whose value would reach `2^64`.
@@ -94,14 +94,19 @@ impl TagN {
     Self::end2(f) + (1 << 16)
   }
 
-  /// End of rung 4 (`Ixon.tagNEnd4`). Rung 5 ends at `end4 + 2^64`, beyond
-  /// every `u64`.
+  /// End of rung 4 (`Ixon.tagNEnd4`).
   pub const fn end4(f: u32) -> u64 {
-    Self::end3(f) + (1 << 32)
+    Self::end3(f) + (1 << 24)
+  }
+
+  /// End of rung 5 (`Ixon.tagNEnd5`). Rung 6 ends at `end5 + 2^64`, beyond
+  /// every `u64`.
+  pub const fn end5(f: u32) -> u64 {
+    Self::end4(f) + (1 << 32)
   }
 
   /// Byte width of the encoding of `value` (`Ixon.tagNByteWidth`):
-  /// 1, 2, 3, 5 or 9.
+  /// 1, 2, 3, 4, 5 or 9.
   pub const fn byte_width(f: u32, value: u64) -> usize {
     if value < Self::end1(f) {
       1
@@ -110,6 +115,8 @@ impl TagN {
     } else if value < Self::end3(f) {
       3
     } else if value < Self::end4(f) {
+      4
+    } else if value < Self::end5(f) {
       5
     } else {
       9
@@ -143,10 +150,13 @@ impl TagN {
       buf.extend_from_slice(&(value - Self::end2(f)).to_le_bytes()[..2]);
     } else if value < Self::end4(f) {
       buf.push(Self::header(f, flag, lead + mbit + 1));
-      buf.extend_from_slice(&(value - Self::end3(f)).to_le_bytes()[..4]);
-    } else {
+      buf.extend_from_slice(&(value - Self::end3(f)).to_le_bytes()[..3]);
+    } else if value < Self::end5(f) {
       buf.push(Self::header(f, flag, lead + mbit + 2));
-      buf.extend_from_slice(&(value - Self::end4(f)).to_le_bytes());
+      buf.extend_from_slice(&(value - Self::end4(f)).to_le_bytes()[..4]);
+    } else {
+      buf.push(Self::header(f, flag, lead + mbit + 3));
+      buf.extend_from_slice(&(value - Self::end5(f)).to_le_bytes());
     }
   }
 
@@ -187,8 +197,9 @@ impl TagN {
     }
     let (len, base) = match p - lead - mbit {
       0 => (2, Self::end2(f)),
-      1 => (4, Self::end3(f)),
-      2 => (8, Self::end4(f)),
+      1 => (3, Self::end3(f)),
+      2 => (4, Self::end4(f)),
+      3 => (8, Self::end5(f)),
       c => return Err(format!("TagN::get: invalid TagN code {c}")),
     };
     let x = u64_get_trimmed_le(len, buf)?;
@@ -253,7 +264,13 @@ mod tests {
   /// `tagNBoundaries`: 0, 1, `2^64 - 1` and every rung end `e - 1, e, e + 1`.
   fn tagn_boundaries(f: u32) -> Vec<u64> {
     let mut v = vec![0, 1, u64::MAX];
-    for e in [TagN::end1(f), TagN::end2(f), TagN::end3(f), TagN::end4(f)] {
+    for e in [
+      TagN::end1(f),
+      TagN::end2(f),
+      TagN::end3(f),
+      TagN::end4(f),
+      TagN::end5(f),
+    ] {
       v.extend([e - 1, e, e + 1]);
     }
     v
@@ -279,11 +296,18 @@ mod tests {
 
   #[test]
   fn tagn_rung_ends() {
-    let ends =
-      |f: u32| [TagN::end1(f), TagN::end2(f), TagN::end3(f), TagN::end4(f)];
-    assert_eq!(ends(0), [128, 16512, 82048, 4_295_049_344]);
-    assert_eq!(ends(2), [32, 4128, 69664, 4_295_036_960]);
-    assert_eq!(ends(4), [8, 1032, 66568, 4_295_033_864]);
+    let ends = |f: u32| {
+      [
+        TagN::end1(f),
+        TagN::end2(f),
+        TagN::end3(f),
+        TagN::end4(f),
+        TagN::end5(f),
+      ]
+    };
+    assert_eq!(ends(0), [128, 16512, 82048, 16_859_264, 4_311_826_560]);
+    assert_eq!(ends(2), [32, 4128, 69664, 16_846_880, 4_311_814_176]);
+    assert_eq!(ends(4), [8, 1032, 66568, 16_843_784, 4_311_811_080]);
   }
 
   #[test]
@@ -293,13 +317,28 @@ mod tests {
       (4, 0xA, 8, &[0xA8, 0x00]),
       (4, 0x1, 1031, &[0x1B, 0xFF]),
       (4, 0, 1032, &[0x0C, 0x00, 0x00]),
-      (4, 0, 66568, &[0x0D, 0, 0, 0, 0]),
-      (4, 0, 4_295_033_864, &[0x0E, 0, 0, 0, 0, 0, 0, 0, 0]),
+      (4, 0, 66567, &[0x0C, 0xFF, 0xFF]),
+      (4, 0, 66568, &[0x0D, 0, 0, 0]),
+      (4, 0, 16_843_783, &[0x0D, 0xFF, 0xFF, 0xFF]),
+      (4, 0, 16_843_784, &[0x0E, 0, 0, 0, 0]),
+      (4, 0, 4_311_811_079, &[0x0E, 0xFF, 0xFF, 0xFF, 0xFF]),
+      (4, 0, 4_311_811_080, &[0x0F, 0, 0, 0, 0, 0, 0, 0, 0]),
       (0, 0, 127, &[0x7F]),
       (0, 0, 128, &[0x80, 0x00]),
       (0, 0, 16512, &[0xC0, 0x00, 0x00]),
+      (0, 0, 82047, &[0xC0, 0xFF, 0xFF]),
+      (0, 0, 82048, &[0xC1, 0, 0, 0]),
+      (0, 0, 16_859_263, &[0xC1, 0xFF, 0xFF, 0xFF]),
+      (0, 0, 16_859_264, &[0xC2, 0, 0, 0, 0]),
+      (0, 0, 4_311_826_560, &[0xC3, 0, 0, 0, 0, 0, 0, 0, 0]),
+      (0, 0, u64::MAX, &[0xC3, 0x7F, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]),
       (2, 3, 32, &[0xE0, 0x00]),
       (2, 3, 4128, &[0xF0, 0x00, 0x00]),
+      (2, 3, 69663, &[0xF0, 0xFF, 0xFF]),
+      (2, 3, 69664, &[0xF1, 0, 0, 0]),
+      (2, 3, 16_846_879, &[0xF1, 0xFF, 0xFF, 0xFF]),
+      (2, 3, 16_846_880, &[0xF2, 0, 0, 0, 0]),
+      (2, 3, 4_311_814_176, &[0xF3, 0, 0, 0, 0, 0, 0, 0, 0]),
     ];
     for &(f, flag, v, expected) in cases {
       assert_eq!(tagn_bytes(f, flag, v), expected, "f={f} flag={flag} v={v}");
@@ -310,22 +349,23 @@ mod tests {
   #[test]
   fn tagn_rejects() {
     let cases: &[(u32, &[u8], &str)] = &[
-      (4, &[0x0F, 0, 0, 0, 0, 0, 0, 0, 0], "f=4 code 3"),
-      (2, &[0x33], "f=2 code 3"),
+      (2, &[0x34], "f=2 code 4"),
       (2, &[0x3F], "f=2 code 15"),
-      (0, &[0xC3], "f=0 code 3"),
+      (0, &[0xC4], "f=0 code 4"),
       (0, &[0xFF], "f=0 code 63"),
       (
         4,
-        &[0x0E, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+        &[0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
         "f=4 overflow",
       ),
       (
         0,
-        &[0xC2, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+        &[0xC3, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
         "f=0 overflow",
       ),
       (4, &[0x08], "truncated rung 2"),
+      (4, &[0x0D, 0x00, 0x00], "truncated rung 4"),
+      (4, &[0x0F, 0x00, 0x00, 0x00], "truncated rung 6"),
       (4, &[0x07, 0x00], "trailing byte"),
     ];
     for &(f, bytes, what) in cases {

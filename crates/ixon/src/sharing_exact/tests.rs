@@ -363,7 +363,13 @@ fn boundary_sizes() -> Vec<u64> {
     sizes.extend([x - 1, x, x + 1]);
   }
   for f in [0u32, 2, 4] {
-    for e in [TagN::end1(f), TagN::end2(f), TagN::end3(f), TagN::end4(f)] {
+    for e in [
+      TagN::end1(f),
+      TagN::end2(f),
+      TagN::end3(f),
+      TagN::end4(f),
+      TagN::end5(f),
+    ] {
       sizes.extend([e - 1, e, e + 1]);
     }
   }
@@ -393,12 +399,29 @@ fn tag_lengths_match_encoders() {
     }
   }
   // Share width boundaries named by the plan.
-  for (i, w) in
-    [(7u64, 1u64), (8, 2), (1031, 2), (1032, 3), (66567, 3), (66568, 5)]
-  {
+  for (i, w) in [
+    (7u64, 1u64),
+    (8, 2),
+    (1031, 2),
+    (1032, 3),
+    (66567, 3),
+    (66568, 4),
+    (16_843_783, 4),
+    (16_843_784, 5),
+    (4_311_811_079, 5),
+    (4_311_811_080, 9),
+  ] {
     assert_eq!(share_width(i), w);
   }
-  for (n, w) in [(127u64, 1u64), (128, 2), (16511, 2), (16512, 3), (82048, 5)] {
+  for (n, w) in [
+    (127u64, 1u64),
+    (128, 2),
+    (16511, 2),
+    (16512, 3),
+    (82048, 4),
+    (16_859_264, 5),
+    (4_311_826_560, 9),
+  ] {
     assert_eq!(tag0_len(n), w);
   }
 }
@@ -2873,7 +2896,8 @@ fn parallel_tiered_matches_sequential() {
   eprintln!(
     "parallel vs sequential: {compared} runs identical ({multi_comp} sequential runs with more than one component)"
   );
-  assert!(multi_comp > 20);
+  // 19 of the 93 cases run with more than one component (TagN layout only).
+  assert!(multi_comp > 10);
 }
 
 /// Limits still fail closed under parallelism. With sequential components

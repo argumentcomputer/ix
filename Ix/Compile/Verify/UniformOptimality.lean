@@ -7,7 +7,8 @@ The stage facts of `uniformChoose` (classification, components, the search
 context of every component), the component decomposition of the uniform
 length, and the final theorem: a successful `optimizeUniformExpanded` (with
 the default branch-and-bound search) stores a minimum of the uniform length
-over the restricted class.
+over the restricted class, when every telescope spine is shorter than
+`teleSubaddEnd` (`SpinesFit`).
 -/
 
 namespace Ix.Compile.Verify.UniformModel
@@ -24,28 +25,40 @@ variable (w : Nat) (ex : Expanded)
 /-- The stage of an input. -/
 abbrev stg := uniformStage w ex (Prep.ofDag ex.dag)
 
+theorem tag0StepBound_pos (n : Nat) : 1 ≤ tag0StepBound n := by
+  unfold tag0StepBound
+  repeat' split
+  all_goals omega
+
 theorem stage_cls_theta :
     (stg w ex).cls = ucls ex.dag ex.roots w (stg w ex).theta ∧
-      ((stg w ex).theta = 2 ∨ ((stg w ex).theta = 1 ∧
+      ((stg w ex).theta = uthetaMax ex.dag ex.roots w ∨ ((stg w ex).theta = 1 ∧
         tag0Size ((ucand ex.dag ex.roots w).filter id).size =
-          tag0Size ((ucls ex.dag ex.roots w 2).filter (· == .certainStored)).size)) := by
-  simp only [stg, uniformStage]
+          tag0Size ((ucls ex.dag ex.roots w (uthetaMax ex.dag ex.roots w)).filter
+            (· == .certainStored)).size)) := by
+  have hmax : (uthetaMax ex.dag ex.roots w == 1) = false := by
+    have := tag0StepBound_pos ((ucand ex.dag ex.roots w).filter id).size
+    rw [beq_eq_false_iff_ne]
+    unfold uthetaMax
+    omega
+  have htheta : (stg w ex).theta =
+      if (tag0Size ((ucand ex.dag ex.roots w).filter id).size ==
+        tag0Size ((ucls ex.dag ex.roots w (uthetaMax ex.dag ex.roots w)).filter
+          (· == .certainStored)).size) then 1 else uthetaMax ex.dag ex.roots w := rfl
+  have hcls : (stg w ex).cls =
+      if (stg w ex).theta == 1 then ucls ex.dag ex.roots w 1
+      else ucls ex.dag ex.roots w (uthetaMax ex.dag ex.roots w) := rfl
   by_cases hc : (tag0Size ((ucand ex.dag ex.roots w).filter id).size ==
-      tag0Size ((ucls ex.dag ex.roots w 2).filter (· == .certainStored)).size) = true
-  · have hc' : (tag0Size ((searchCandidates (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots) w).filter id).size ==
-        tag0Size ((classifyWith (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots) w
-          (uniformBounds (Prep.ofDag ex.dag) w (searchCandidates (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots) w))
-          (visibleCounts ex.dag ex.roots (searchCandidates (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots) w)) 2).filter
-            (· == .certainStored)).size) = true := hc
-    simp only [hc', if_true]
-    refine ⟨by first | rfl | trivial, Or.inr ⟨by first | rfl | trivial, by simpa using hc⟩⟩
-  · have hc' : ¬ (tag0Size ((searchCandidates (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots) w).filter id).size ==
-        tag0Size ((classifyWith (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots) w
-          (uniformBounds (Prep.ofDag ex.dag) w (searchCandidates (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots) w))
-          (visibleCounts ex.dag ex.roots (searchCandidates (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots) w)) 2).filter
-            (· == .certainStored)).size) = true := hc
-    simp only [hc', if_false]
-    exact ⟨by first | rfl | trivial, Or.inl (by first | rfl | trivial)⟩
+      tag0Size ((ucls ex.dag ex.roots w (uthetaMax ex.dag ex.roots w)).filter
+        (· == .certainStored)).size) = true
+  · have ht : (stg w ex).theta = 1 := by rw [htheta, if_pos hc]
+    refine ⟨?_, Or.inr ⟨ht, by simpa using hc⟩⟩
+    rw [hcls, ht]
+    rfl
+  · have ht : (stg w ex).theta = uthetaMax ex.dag ex.roots w := by rw [htheta, if_neg hc]
+    refine ⟨?_, Or.inl ht⟩
+    rw [hcls, ht]
+    simp only [hmax, Bool.false_eq_true, if_false]
 
 theorem stage_pick (c : UClass) :
     ((Array.range ex.dag.size).filter ((stg w ex).cls[·]! == c)).toList =
@@ -89,11 +102,13 @@ theorem stage_widthCs (u : Nat) :
     (Array.replicate ex.dag.size none)) u = _
   rw [← Array.foldl_toList, widthOfStored ex.dag.size w _ (stage_cs_lt w ex) u, stage_opaq]
 
-/-- **The optimizer's global setting.** -/
-theorem stage_global (hwf : DagWF ex.dag) (hroots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
+/-- **The optimizer's global setting**, on a DAG whose telescope spines fit
+(`SpinesFit`). -/
+theorem stage_global (hwf : DagWF ex.dag) (hsp : SpinesFit (Prep.ofDag ex.dag))
+    (hroots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (hreach : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y) :
     GlobalWF ex.dag ex.roots w (stg w ex).theta (stg w ex).cs.toList :=
-  { wf := hwf, hroots, reach := hreach, theta := (stage_cls_theta w ex).2, cs := stage_cs w ex }
+  { wf := hwf, spines := hsp, hroots, reach := hreach, theta := (stage_cls_theta w ex).2, cs := stage_cs w ex }
 
 end Stage
 
@@ -196,6 +211,7 @@ theorem rootCount_le (ex : Expanded) (hroots : ∀ r ∈ ex.roots.toList, r < ex
 
 /-- **The search environment of every component is well formed.** -/
 theorem compEnv_wf {w : Nat} {ex : Expanded} (hwf : DagWF ex.dag)
+    (hsp : SpinesFit (Prep.ofDag ex.dag))
     (hroots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (hreach : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     (hchk : componentsChecked ex.dag (stg w ex).cls (stg w ex).opaq (stg w ex).comps
@@ -206,7 +222,7 @@ theorem compEnv_wf {w : Nat} {ex : Expanded} (hwf : DagWF ex.dag)
   have hcls := (stage_cls_theta w ex).1
   rw [hcls] at hca hcc hcd
   have hn := (stage_cls_theta w ex).2
-  refine { G := stage_global w ex hwf hroots hreach, cx := ?_, area := ?_, comp := ?_,
+  refine { G := stage_global w ex hwf hsp hroots hreach, cx := ?_, area := ?_, comp := ?_,
            memi := ?_, slack := ?_ }
   · exact { prep := rfl, width := rfl, opaq := stage_opaq w ex, cand := rfl, bounds0 := rfl,
             vis0 := rfl, mem := fun t ht => ⟨(hca j hj t ht).1, (hca j hj t ht).2.1⟩,
@@ -389,7 +405,7 @@ theorem compCx_sctx {w : Nat} {ex : Expanded} (hwf : DagWF ex.dag)
           rootsC := rfl, storedInC := rfl, theta := rfl }
 
 /-- **The base of the model** is the length of the certain-stored terms
-without the count's `Tag0`. -/
+without the count's TagN. -/
 theorem csBase_eq {w : Nat} {ex : Expanded} (hwf : DagWF ex.dag)
     (hroots : ∀ r ∈ ex.roots.toList, r < ex.dag.size) :
     csBase ex (Prep.ofDag ex.dag) (stg w ex) + tag0Size (stg w ex).cs.toList.length =
@@ -447,6 +463,7 @@ theorem mem_compParts {comps : Array (Array Nat)} {Y : List Nat} {j t : Nat} :
 the first `j` components**: each component adds its change of component
 cost. -/
 theorem ulen_compParts {w : Nat} {ex : Expanded} (hwf : DagWF ex.dag)
+    (hsp : SpinesFit (Prep.ofDag ex.dag))
     (hroots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (hreach : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     (hchk : componentsChecked ex.dag (stg w ex).cls (stg w ex).opaq (stg w ex).comps
@@ -460,11 +477,11 @@ theorem ulen_compParts {w : Nat} {ex : Expanded} (hwf : DagWF ex.dag)
           tag0Size ((stg w ex).cs.toList ++ compParts (stg w ex).comps Y j).length +
           ((List.range j).map fun i =>
             scost (compCx w ex i) ex.dag (partOf Y (stg w ex).comps[i]!.toList)).sum := by
-  have hG := stage_global w ex hwf hroots hreach
+  have hG := stage_global w ex hwf hsp hroots hreach
   obtain ⟨hca, hcb, hcc, hcd⟩ := componentsChecked_spec hwf hchk
   rw [(stage_cls_theta w ex).1] at hca hcc hcd
   let comp : Nat → Nat := fun t => ((componentLabels ex.dag.size (stg w ex).comps)[t]!).getD 0
-  have hθ1 : 1 ≤ (stg w ex).theta := by rcases hG.theta with h | ⟨h, _⟩ <;> omega
+  have hθ1 : 1 ≤ (stg w ex).theta := hG.one_le_theta
   intro j
   induction j with
   | zero => intro _; simp [compParts]
@@ -508,36 +525,18 @@ theorem ulen_compParts {w : Nat} {ex : Expanded} (hwf : DagWF ex.dag)
 
 /-! ## The count brackets and the knapsack bound -/
 
-theorem natByteCount_pow256 : ∀ m : Nat, natByteCount (256 ^ m) = m + 1
-  | 0 => by simp [natByteCount_small (n := 1) (by omega) (by omega)]
-  | m + 1 => by
-    rw [Nat.pow_succ, Nat.mul_comm, natByteCount_mul256 (Nat.pos_iff_ne_zero.mp (Nat.pow_pos (by omega))), natByteCount_pow256 m]
-
-theorem natByteCount_ge2 {k : Nat} (hk : 256 ≤ k) : 2 ≤ natByteCount k := by
-  rw [Ix.Compile.Verify.SharingExact.natByteCount_of_ne_zero (by omega)]
-  have : natByteCount (k / 256) ≥ 1 := by
-    rw [Ix.Compile.Verify.SharingExact.natByteCount_of_ne_zero (by omega)]; omega
-  omega
-
-/-- **A count bracket starts with its own `Tag0` size.** -/
+/-- **A count bracket starts with its own TagN (`f = 0`) size.** -/
 theorem tag0Size_bracketStart (k : Nat) : tag0Size (tag0BracketStart k) = tag0Size k := by
+  have h1 : 0 < Ixon.tagNEnd1 0 := by decide
+  have h12 : Ixon.tagNEnd1 0 < Ixon.tagNEnd2 0 := by decide
+  have h23 : Ixon.tagNEnd2 0 < Ixon.tagNEnd3 0 := by decide
+  have h34 : Ixon.tagNEnd3 0 < Ixon.tagNEnd4 0 := by decide
   unfold tag0BracketStart
-  by_cases h1 : k < 128
-  · rw [if_pos h1]; unfold tag0Size; rw [if_pos (by omega), if_pos h1]
-  · rw [if_neg h1]
-    by_cases h2 : k < 256
-    · rw [if_pos h2]
-      unfold tag0Size
-      rw [if_neg (by omega), if_neg h1, natByteCount_small (by omega) (by omega),
-        natByteCount_small (by omega) h2]
-    · rw [if_neg h2]
-      have hb := natByteCount_ge2 (k := k) (by omega)
-      have hpow : 256 ≤ 256 ^ (natByteCount k - 1) := by
-        calc 256 = 256 ^ 1 := by simp
-          _ ≤ 256 ^ (natByteCount k - 1) := Nat.pow_le_pow_right (by omega) (by omega)
-      unfold tag0Size
-      rw [if_neg (by omega), if_neg h1, natByteCount_pow256]
-      omega
+  repeat' split
+  all_goals
+    unfold tag0Size Ixon.tagNByteWidth
+    repeat' split
+    all_goals omega
 
 theorem tag0Size_ge_of_bracket {k m : Nat} (h : tag0BracketStart k ≤ m) : tag0Size k ≤ tag0Size m := by
   rw [← tag0Size_bracketStart k]
@@ -594,7 +593,7 @@ theorem indexed_fold {cap : Nat} :
 
 /-- **The knapsack bound.** For any choice of one entry per component table
 (at counts `ks`, values at most `vs`), the chosen total is at most the
-choice's `Δ` plus the `Tag0` of its count. -/
+choice's `Δ` plus the TagN of its count. -/
 theorem uniformKnapsack_le {limits : Limits} {kCS : Nat} {results : Array CompResult}
     {cd : _root_.Int} {cx : Array Nat} {lb : Bool}
     (h : uniformKnapsack limits kCS results = .ok (cd, cx, lb))
@@ -688,13 +687,14 @@ theorem minimum_exists (dag : Dag) (w : Nat) (roots : Array Nat) :
 
 /-- A minimum is the certain-stored terms and its parts in the components. -/
 theorem min_perm_parts {w : Nat} {ex : Expanded} (hwf : DagWF ex.dag)
+    (hsp : SpinesFit (Prep.ofDag ex.dag))
     (hroots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (hreach : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     (hchk : componentsChecked ex.dag (stg w ex).cls (stg w ex).opaq (stg w ex).comps
       (componentLabels ex.dag.size (stg w ex).comps) = true)
     {Y : List Nat} (hY : IsMinimum ex.dag w ex.roots Y) :
     Y.Perm ((stg w ex).cs.toList ++ compParts (stg w ex).comps Y (stg w ex).comps.size) := by
-  have hG := stage_global w ex hwf hroots hreach
+  have hG := stage_global w ex hwf hsp hroots hreach
   obtain ⟨hca, hcb, hcc, _⟩ := componentsChecked_spec hwf hchk
   rw [(stage_cls_theta w ex).1] at hca hcc
   -- the parts are duplicate-free and disjoint
@@ -754,6 +754,7 @@ branch-and-bound search, the model length `uniformChoose` reports is at most
 the uniform length of every minimum. -/
 theorem uniformChoose_model_le {w : Nat} {limits : Limits} {ex : Expanded}
     (hsub : limits.uniformSubsetSearch = false) (hwf : DagWF ex.dag)
+    (hsp : SpinesFit (Prep.ofDag ex.dag))
     (hroots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (hreach : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     {c : UniformChoice} (h : uniformChoose w limits ex (Prep.ofDag ex.dag) = .ok c)
@@ -787,7 +788,7 @@ theorem uniformChoose_model_le {w : Nat} {limits : Limits} {ex : Expanded}
       (∀ (k : Nat) (e : Entry), results[j]!.bySize[k]! = some e → results[j]!.bestDelta ≤ e.1) := by
     intro j hj
     obtain ⟨hpar, _, st0, st, hm0, hsolve, hbest, _⟩ := hok j hj
-    have hE := compEnv_wf hwf hroots hreach hchk hj hpar
+    have hE := compEnv_wf hwf hsp hroots hreach hchk hj hpar
     obtain ⟨htabj, hcovj⟩ := Env.component_table (E := compEnv w ex j) hE hsolve hm0
     exact ⟨(hcovj Y hY).toHasAt, fun k e he => (htabj k e he).1, fun k e he => best_le hbest he⟩
   let ks := (List.range m).map fun j => (V j).length
@@ -803,9 +804,9 @@ theorem uniformChoose_model_le {w : Nat} {limits : Limits} {ex : Expanded}
     (fun j hj => (hfacts j (by simp only [m]; omega)).2.1)
     (fun j hj => (hfacts j (by simp only [m]; omega)).2.2)
   -- the minimum's length, component by component
-  have hdec := ulen_compParts hwf hroots hreach hchk Y m (Nat.le_refl _)
+  have hdec := ulen_compParts hwf hsp hroots hreach hchk Y m (Nat.le_refl _)
   have hbase := csBase_eq (w := w) hwf hroots
-  have hperm := min_perm_parts hwf hroots hreach hchk hY
+  have hperm := min_perm_parts hwf hsp hroots hreach hchk hY
   rw [← ulen_perm hperm] at hdec
   have hlen : ((stg w ex).cs.toList ++ compParts (stg w ex).comps Y m).length =
       (stg w ex).cs.size + ks.sum := by
@@ -840,9 +841,13 @@ theorem inClass_of_check {dag : Dag} {roots stored : Array Nat}
 branch-and-bound component search (`uniformSubsetSearch = false`), the set a
 successful `optimizeUniformExpanded` stores minimises the uniform length over
 the restricted class (duplicate-free terms of in-degree at least 2): its
-model length equals its uniform length and is at most every member's. -/
+model length equals its uniform length and is at most every member's.
+Hypothesis `SpinesFit`: every telescope spine is shorter than
+`teleSubaddEnd` (`Ixon.tagNEnd3 4`), where the TagN telescope headers are
+subadditive; the certain-excluded class relies on it. -/
 theorem optimizeUniform_minimum {w : Nat} {limits : Limits} {ex : Expanded}
     {res : UniformSharingResult} (hsub : limits.uniformSubsetSearch = false)
+    (hsp : SpinesFit (Prep.ofDag ex.dag))
     (h : optimizeUniformExpanded w limits ex = .ok res) :
     IsMinimum ex.dag w ex.roots res.stored.toList ∧
       res.result.modelBytes = ulen ex.dag w ex.roots res.stored.toList := by
@@ -854,7 +859,7 @@ theorem optimizeUniform_minimum {w : Nat} {limits : Limits} {ex : Expanded}
   have hic : InClass ex.dag ex.roots res.stored.toList := by
     rw [hstored]; exact inClass_of_check hin hcls
   obtain ⟨Ys, hYs⟩ := minimum_exists ex.dag w ex.roots
-  have hle := uniformChoose_model_le hsub hwf hroots hreach hc hYs
+  have hle := uniformChoose_model_le hsub hwf hsp hroots hreach hc hYs
   refine ⟨⟨hic, fun Y' hY' => ?_⟩, hul⟩
   rw [← hul, hmodel]
   exact Nat.le_trans hle (hYs.2 Y' hY')
@@ -1274,6 +1279,7 @@ uncertain set are at least as good as every minimum's length and uncertain
 part. -/
 theorem uniformChoose_tie {w : Nat} {limits : Limits} {ex : Expanded}
     (hsub : limits.uniformSubsetSearch = false) (hwf : DagWF ex.dag)
+    (hsp : SpinesFit (Prep.ofDag ex.dag))
     (hroots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (hreach : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     {c : UniformChoice} (h : uniformChoose w limits ex (Prep.ofDag ex.dag) = .ok c)
@@ -1313,7 +1319,7 @@ theorem uniformChoose_tie {w : Nat} {limits : Limits} {ex : Expanded}
       bestSetOf results[j]!.bySize results[j]!.bestDelta = some results[j]!.bestSet := by
     intro j hj
     obtain ⟨hpar, _, st0, st, hm0, hsolve, hbest, hbset⟩ := hok j hj
-    have hE := compEnv_wf hwf hroots hreach hchk hj hpar
+    have hE := compEnv_wf hwf hsp hroots hreach hchk hj hpar
     obtain ⟨htabj, hcovj⟩ := Env.component_table (E := compEnv w ex j) hE hsolve hm0
     exact ⟨htabj.sorted, fun k e he => (htabj k e he).1, fun k e he x hx => (htabj k e he).2.2.1 x hx,
       hcovj Y hY, fun x hx => (partOf_sub x hx).1, fun k e he => best_le hbest he, hbset⟩
@@ -1331,9 +1337,9 @@ theorem uniformChoose_tie {w : Nat} {limits : Limits} {ex : Expanded}
       rw [hgr _ hjm, hgr _ hjm, hgr _ hjm]
       exact hfacts j hjm)
   -- the minimum's length, component by component
-  have hdec := ulen_compParts hwf hroots hreach hchk Y m (Nat.le_refl _)
+  have hdec := ulen_compParts hwf hsp hroots hreach hchk Y m (Nat.le_refl _)
   have hbase := csBase_eq (w := w) hwf hroots
-  have hperm := min_perm_parts hwf hroots hreach hchk hY
+  have hperm := min_perm_parts hwf hsp hroots hreach hchk hY
   rw [← ulen_perm hperm] at hdec
   have hlen : ((stg w ex).cs.toList ++ compParts (stg w ex).comps Y m).length =
       (stg w ex).cs.size + ks.sum := by
@@ -1368,19 +1374,21 @@ default branch-and-bound component search, the set a successful
 `optimizeUniformExpanded` stores minimises the uniform length over the
 restricted class, its `modelBytes` is that length, and it comes first in the
 tie order `setPrec` (the smallest term where it differs from another minimum
-belongs to the other) among all minima. -/
+belongs to the other) among all minima. Same `SpinesFit` hypothesis as
+`optimizeUniform_minimum`. -/
 theorem optimizeUniform_least {w : Nat} {limits : Limits} {ex : Expanded}
     {res : UniformSharingResult} (hsub : limits.uniformSubsetSearch = false)
+    (hsp : SpinesFit (Prep.ofDag ex.dag))
     (h : optimizeUniformExpanded w limits ex = .ok res) :
     IsMinimum ex.dag w ex.roots res.stored.toList ∧
       res.result.modelBytes = ulen ex.dag w ex.roots res.stored.toList ∧
       ∀ Y, IsMinimum ex.dag w ex.roots Y → LeL res.stored.toList Y := by
-  obtain ⟨hmin, hmb⟩ := optimizeUniform_minimum hsub h
+  obtain ⟨hmin, hmb⟩ := optimizeUniform_minimum hsub hsp h
   refine ⟨hmin, hmb, fun Y hY => ?_⟩
   obtain ⟨_, hwf, hroots, _, c, hc, hfin⟩ := optimizeUniform_parts h
   have hreach := optimizeUniform_reach h
   obtain ⟨_, _, hstored, _, hmodel, _⟩ := uniformFinish_spec hfin
-  obtain ⟨cx, hcs, hcle⟩ := uniformChoose_tie hsub hwf hroots hreach hc hY
+  obtain ⟨cx, hcs, hcle⟩ := uniformChoose_tie hsub hwf hsp hroots hreach hc hY
   -- both are minima, so their lengths agree
   have h1 := hmin.2 Y hY.1
   have h2 := hY.2 _ hmin.1
@@ -1397,7 +1405,7 @@ theorem optimizeUniform_least {w : Nat} {limits : Limits} {ex : Expanded}
     split at hc
     · simpa using (by assumption : _)
     · cases hc
-  have hperm := min_perm_parts hwf hroots hreach hchk hY
+  have hperm := min_perm_parts hwf hsp hroots hreach hchk hY
   have hXperm : res.stored.toList.Perm ((stg w ex).cs.toList ++ cx.toList) := by
     rw [hstored, hcs]; exact mergeSorted_perm _ _
   have hXn := hmin.1.1

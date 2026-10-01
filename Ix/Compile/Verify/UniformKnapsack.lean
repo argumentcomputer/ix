@@ -270,7 +270,7 @@ theorem knapFold_hasAt {cap : Nat} (ts : List CTable) :
 
 /-! ## The choice among the counts -/
 
-/-- The length a choice stands for: its `Δ` and its count's `Tag0`. -/
+/-- The length a choice stands for: its `Δ` and its count's TagN. -/
 def knapTotal (kCS : Nat) (acc : _root_.Int × Array Nat × Bool) : _root_.Int :=
   acc.1 + (tag0Size (kCS + acc.2.1.size) : _root_.Int)
 

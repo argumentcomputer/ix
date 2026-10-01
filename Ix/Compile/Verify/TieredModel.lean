@@ -570,7 +570,7 @@ theorem PrepWF.gInlineCost_eq {p : Prep} (hp : PrepWF p)
       exact foldl_add_congr _ _ fun c hc =>
         hcost c (by have := hp.dag.child_lt ht hc; omega)
     rw [pickOption_cost _ (Choice.inline, gInlOf p wd avail (gCost p wd avail) t,
-      Ixon.runPut (Ixon.putTag4 ⟨(p.dag.node t).head.flag, (p.dag.node t).head.tag4Field⟩)) []]
+      Ixon.runPut (Ixon.putTagN 4 (p.dag.node t).head.flag (p.dag.node t).head.tag4Field)) []]
     · rfl
     · rw [Array.toList_filter, Array.toList_push, List.filter_append]
       change base.toList.filter _ ++ _ = _

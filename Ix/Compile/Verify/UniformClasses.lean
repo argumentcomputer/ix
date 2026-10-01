@@ -14,10 +14,12 @@ import Ix.Compile.Verify.UniformGain
 * **Certain-stored**, generalised to partial assignments: for any
   maybe-stored set `M ⊇ S` and `t ∉ S`, the gain under `uniformBounds … M`
   and the visible counts of `M` bounds the length drop of adding `t`, up to
-  the growth of the count's `Tag0`; so a gain `≥ θ` puts `t` in every
+  the growth of the count's TagN; so a gain `≥ θ` puts `t` in every
   minimum (over any class containing `S ∪ {t}`) that lies in `M`.
 * **Certain-excluded**: the removal exchange and `refs ≤ occ` in a minimum
-  without unreferenced entries.
+  without unreferenced entries, on DAGs whose telescope spines are shorter
+  than `teleSubaddEnd` (`SpinesFit`: the TagN telescope headers are
+  subadditive there).
 -/
 
 namespace Ix.Compile.Verify.UniformModel
@@ -1127,7 +1129,7 @@ theorem PrepWF.conts_zero {p : Prep} (hp : PrepWF p) {S : List Nat} {E : Nat →
 `t ∉ S`, any bounds `b` below `uniformBounds … ms` at `t` and any lower
 bounds `h ≤ d` (with `1 ≤ d`) of the visible counts of `ms` at `t`:
 adding `t` to `S` shortens the uniform length by at least the gain, up to
-the growth of the count's `Tag0`:
+the growth of the count's TagN:
 `L(S ∪ {t}) + tag0Size |S| ≤ L(S) - storedGainC b w t d h + tag0Size (|S|+1)`. -/
 theorem uniformCost_insert_le_counts {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size)
@@ -1221,15 +1223,10 @@ theorem uniformCost_insert_le_counts {dag : Dag} (hwf : DagWF dag) (roots : Arra
 def ulen (dag : Dag) (w : Nat) (roots : Array Nat) (S : List Nat) : Nat :=
   uniformCost (Prep.ofDag dag) w (fun y => decide (y ∈ S)) S roots.toList
 
-theorem tag0Size_mono {a b : Nat} (h : a ≤ b) : tag0Size a ≤ tag0Size b := by
-  have := natByteCount_mono h
-  unfold tag0Size
-  split <;> split <;> omega
-
 /-- **Certain-stored, for any maybe-stored set.** If `S ⊆ ms`, `t ∉ S` would
 make `S` strictly longer than `S ∪ {t}` when the gain of `t` (bounds below
 `uniformBounds … ms`, counts below the visible counts of `ms`) exceeds the
-growth of the count's `Tag0`; so a set no longer than `S ∪ {t}` contains `t`. -/
+growth of the count's TagN; so a set no longer than `S ∪ {t}` contains `t`. -/
 theorem mem_of_gain {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size)
     (hreach : ∀ y, y < dag.size → ∃ r ∈ roots.toList, Desc dag r y)
@@ -1252,13 +1249,17 @@ theorem mem_of_gain {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     have hm := _root_.Int.ofNat_le.mpr hmin
     omega
 
-/-- The two thresholds: gain `≥ 2` always beats the `Tag0` growth; gain `≥ 1`
-does when `S` and `S ∪ {t}` share a count bracket. -/
-theorem tag0_growth_lt {n : Nat} {g : _root_.Int}
-    (h : 2 ≤ g ∨ (1 ≤ g ∧ tag0Size (n + 1) = tag0Size n)) :
+/-- The two thresholds: below `N` entries, a gain `≥ tag0StepBound N + 1` always
+beats the growth of the table count's TagN; a gain `≥ 1` does when `S` and
+`S ∪ {t}` share a count bracket. -/
+theorem tag0_growth_lt {n N : Nat} {g : _root_.Int}
+    (h : ((tag0StepBound N : _root_.Int) + 1 ≤ g ∧ n < N) ∨
+      (1 ≤ g ∧ tag0Size (n + 1) = tag0Size n)) :
     (tag0Size (n + 1) : _root_.Int) - tag0Size n < g := by
-  have := tag0Size_succ_le n
-  rcases h with h | ⟨h1, h2⟩ <;> omega
+  rcases h with ⟨h1, hn⟩ | ⟨h1, h2⟩
+  · have := tag0Size_succ_le hn
+    omega
+  · omega
 
 /-- The restricted class: duplicate-free sets of terms of in-degree at least
 two. -/
@@ -1274,8 +1275,9 @@ minimum over the restricted class and `ms` any maybe-stored set containing
 `X` (for a partial assignment respected by `X`: the candidates minus the
 terms decided not stored). A term `t` of in-degree `≥ 2` whose gain under
 `ms` (with any bounds below `uniformBounds … ms` and any counts `h ≤ d`
-below the visible counts of `ms`) is `≥ 2`, or `≥ 1` when `|X|` and
-`|X| + 1` share a `Tag0` bracket, is in `X`. -/
+below the visible counts of `ms`) is `≥ tag0StepBound N + 1` (with `|X| < N`
+whenever `t ∉ X`), or `≥ 1` when `|X|` and `|X| + 1` share a TagN count
+bracket, is in `X`. -/
 theorem stored_in_minimum {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size)
     (hreach : ∀ y, y < dag.size → ∃ r ∈ roots.toList, Desc dag r y)
@@ -1286,7 +1288,8 @@ theorem stored_in_minimum {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hbM : b.mergedLB[t]! ≤ (uniformBounds (Prep.ofDag dag) w ms).mergedLB[t]!)
     {d h : Nat} (hd : d ≤ (visibleCounts dag roots ms).1[t]!)
     (hh : h ≤ (visibleCounts dag roots ms).2[t]!) (hhd : h ≤ d) (hd1 : 1 ≤ d)
-    (hgain : 2 ≤ storedGainC (Prep.ofDag dag) b w t d h ∨
+    {N : Nat} (hN : t ∉ X → X.length < N)
+    (hgain : (tag0StepBound N : _root_.Int) + 1 ≤ storedGainC (Prep.ofDag dag) b w t d h ∨
       (1 ≤ storedGainC (Prep.ofDag dag) b w t d h ∧
         tag0Size (X.length + 1) = tag0Size X.length)) :
     t ∈ X := by
@@ -1298,7 +1301,10 @@ theorem stored_in_minimum {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
         · exact ⟨htn, hdeg⟩
         · exact hX.1.2 s hs⟩
     exact mem_of_gain hwf roots hroots hreach w ms (fun s hs => (hX.1.2 s hs).1) hXms htn hbI hbM
-      hd hh hhd hd1 (hX.2 _ hcl) (tag0_growth_lt hgain)
+      hd hh hhd hd1 (hX.2 _ hcl)
+      (tag0_growth_lt (by rcases hgain with h | h
+                          · exact Or.inl ⟨h, hN htX⟩
+                          · exact Or.inr h))
 
 /-- The bracket condition behind threshold 1: if every minimum contains a set
 `G` and lies within a set `C` (both duplicate-free), with
@@ -1324,45 +1330,31 @@ theorem same_bracket {X G C : List Nat} (hGX : ∀ g ∈ G, g ∈ X) (hXC : ∀ 
 
 /-! ## Certain-excluded: the removal exchange -/
 
-theorem natByteCount_mul256 {m : Nat} (hm : m ≠ 0) : natByteCount (256 * m) = natByteCount m + 1 := by
-  rw [Ix.Compile.Verify.SharingExact.natByteCount_of_ne_zero (by omega)]
-  congr 2
-  omega
+/-- Telescope headers (TagN, `f = 4`) are subadditive for lengths below this
+bound: the widths are 1, 2 and 3 below `Ixon.tagNEnd3 4`, and the next rung is
+5 bytes wide, so `tag4Size (1 + b)` exceeds `tag4Size 1 + tag4Size b` at
+`b = Ixon.tagNEnd3 4 - 1`. -/
+def teleSubaddEnd : Nat := Ixon.tagNEnd3 4
 
-theorem natByteCount_double (m : Nat) : natByteCount (2 * m) ≤ natByteCount m + 1 := by
-  by_cases hm : m = 0
-  · subst hm; simp
-  · have := natByteCount_mono (show 2 * m ≤ 256 * m by omega)
-    rw [natByteCount_mul256 hm] at this
-    exact this
+/-- Every telescope spine of `p` is shorter than `teleSubaddEnd`, so merging two
+telescopes never costs more header bytes than the two headers. -/
+def SpinesFit (p : Prep) : Prop :=
+  ∀ x, x < p.dag.size → p.spineLen[x]! < teleSubaddEnd
 
-theorem natByteCount_small {n : Nat} (h0 : n ≠ 0) (h : n < 256) : natByteCount n = 1 := by
-  rw [Ix.Compile.Verify.SharingExact.natByteCount_of_ne_zero h0, show n / 256 = 0 by omega,
-    Ix.Compile.Verify.SharingExact.natByteCount_zero]
-
-/-- Telescope headers are subadditive. -/
-theorem tag4Size_add_le {a b : Nat} (ha : 1 ≤ a) (hb : 1 ≤ b) :
+/-- Telescope headers are subadditive below `teleSubaddEnd`. -/
+theorem tag4Size_add_le {a b : Nat} (ha : 1 ≤ a) (hb : 1 ≤ b) (hab : a + b < teleSubaddEnd) :
     tag4Size (a + b) ≤ tag4Size a + tag4Size b := by
-  have key : ∀ a b, 1 ≤ a → a ≤ b → tag4Size (a + b) ≤ tag4Size a + tag4Size b := by
-    intro a b ha hab
-    unfold tag4Size
-    by_cases hs : a + b < 8
-    · simp only [hs, if_true]; split <;> split <;> omega
-    · simp only [hs, if_false]
-      have h2 := natByteCount_mono (show a + b ≤ 2 * b by omega)
-      have h3 := natByteCount_double b
-      by_cases hb8 : b < 8
-      · have ha8 : a < 8 := by omega
-        simp only [hb8, ha8, if_true]
-        rw [natByteCount_small (by omega) (by omega)]
-        omega
-      · simp only [hb8, if_false]
-        split <;> omega
-  by_cases hab : a ≤ b
-  · exact key a b ha hab
-  · have := key b a hb (by omega)
-    rw [Nat.add_comm a b]
-    omega
+  unfold teleSubaddEnd at hab
+  unfold tag4Size Ixon.tagNByteWidth
+  simp only [Ix.Compile.Verify.TagN.tagNEnd1_eq_4, Ix.Compile.Verify.TagN.tagNEnd2_eq_4,
+    Ix.Compile.Verify.TagN.tagNEnd3_eq_4, Ix.Compile.Verify.TagN.tagNEnd4_eq_4] at hab ⊢
+  repeat' split
+  all_goals omega
+
+/-- `teleSubaddEnd` is tight: one more and the headers are not subadditive. -/
+theorem tag4Size_not_subadditive_at_end :
+    tag4Size 1 + tag4Size (teleSubaddEnd - 1) < tag4Size (1 + (teleSubaddEnd - 1)) := by
+  decide
 
 /-- A writing stays valid when the available set keeps its Shares. -/
 theorem Valid.restrict {p : Prep} {S S' : Nat → Bool} :
@@ -1483,7 +1475,7 @@ theorem valid_tele_inv {p : Prep} {S : Nat → Bool} {t : Nat} {W : WTree} (h : 
 /-- **Unsharing.** Replacing the Shares of `t` by an inline writing `W` of
 `t` gives a writing without `t` that is longer by at most `cost W - w` per
 replaced Share (telescope headers are subadditive). -/
-theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (w : Nat) {A A' : Nat → Bool} {t : Nat}
+theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (hsp : SpinesFit p) (w : Nat) {A A' : Nat → Bool} {t : Nat}
     (htn : t < p.dag.size) (hA' : ∀ y, A' y = true ↔ (A y = true ∧ y ≠ t)) {W : WTree}
     (hW : Valid p A' t W) (hWs : W.isShare = false) :
     ∀ {x : Nat} {T : WTree}, Valid p A x T → x < p.dag.size →
@@ -1554,7 +1546,9 @@ theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (w : Nat) {A A' : Nat →
         · exact h1
         · obtain ⟨hl1', _⟩ := hp.spine t hts hft
           omega
-      have hT := tag4Size_add_le hj1 hj'1
+      have hjj : j + j' ≤ p.spineLen[x]! := by
+        rcases hcase with ⟨_, hj', _, _⟩ | ⟨hj', _⟩ <;> omega
+      have hT := tag4Size_add_le hj1 hj'1 (Nat.lt_of_le_of_lt hjj (hsp x hx))
       have hcW : W.cost p w = tag4Size j' + j' * (p.dag.node t).sideExtra +
           (s'.map (WTree.cost p w)).sum + tl'.cost p w := by
         rw [hWeq]; simp only [WTree.cost, WTree.costs_eq]
@@ -1659,7 +1653,7 @@ theorem forall₂_map_of {R R' : Nat → WTree → Prop} (g : WTree → WTree) :
 /-- **Removal.** Dropping a stored `t` and writing its entry `W` at each of its
 `R` Shares (continuing telescopes through it at cuts) costs at most
 `R · (cost W - w) - cost W`: `L(S \ {t}) + cost W + R·w ≤ cost(E) + R·cost W`. -/
-theorem PrepWF.removal {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat} (hSnd : S.Nodup)
+theorem PrepWF.removal {p : Prep} (hp : PrepWF p) (hsp : SpinesFit p) (w : Nat) {S : List Nat} (hSnd : S.Nodup)
     (hSin : ∀ s ∈ S, s < p.dag.size) {roots : List Nat} (hroots : ∀ r ∈ roots, r < p.dag.size)
     {t : Nat} (htS : t ∈ S) {E : Nat → WTree} {R : List WTree}
     (hEnc : EncodingWF p (fun y => decide (y ∈ S)) S E roots R) :
@@ -1682,7 +1676,7 @@ theorem PrepWF.removal {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat} (hSnd
         (T.isShare = false → (WTree.unshare p t (E t) T).isShare = false) ∧
         (WTree.unshare p t (E t) T).cost p w + T.shares.count t * w ≤
           T.cost p w + T.shares.count t * (E t).cost p w :=
-    fun hv hx => hp.unshare_spec w htn hA' hW' hWs hv hx
+    fun hv hx => hp.unshare_spec hsp w htn hA' hW' hWs hv hx
   have hEnc' : EncodingWF p (fun y => decide (y ∈ S.erase t)) (S.erase t)
       (fun s => WTree.unshare p t (E t) (E s)) roots (R.map (WTree.unshare p t (E t))) := by
     refine ⟨fun s hs => ?_, forall₂_map_of _ hEnc.2 fun r hr T hT => (hU hT (hroots r hr)).1⟩
@@ -1950,7 +1944,8 @@ theorem PrepWF.uInl_le_empty {p : Prep} (hp : PrepWF p) (w : Nat) (A : Nat → B
 /-- **Stage 3 (certain-excluded).** A term with `(occ - 1)·size < occ·w`
 (`size` the unshared length `C_∅`) is in no minimum over the restricted
 class: removing it from a minimum would be strictly shorter. -/
-theorem excluded_of_minimum {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
+theorem excluded_of_minimum {dag : Dag} (hwf : DagWF dag) (hsp : SpinesFit (Prep.ofDag dag))
+    (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size) (w : Nat) {X : List Nat}
     (hX : IsMinimum dag w roots X) {t : Nat} (htn : t < dag.size)
     (hce : ((occurrences dag roots)[t]! - 1) * (Prep.ofDag dag).base[t]! <
@@ -1964,7 +1959,7 @@ theorem excluded_of_minimum {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
   obtain ⟨E, R, hEnc, hcost⟩ :=
     hp.uniformCost_attained w (fun y => decide (y ∈ X)) X roots.toList hXin hroots'
   have hI := hp.entries_attain w hXin hroots' hEnc hcost t htX
-  have hrem := hp.removal w hX.1.1 hXin hroots' htX hEnc
+  have hrem := hp.removal hsp w hX.1.1 hXin hroots' htX hEnc
   have hmin := hX.2 _ (inClass_erase hX.1 t)
   have hRocc := refs_le_occ hwf roots hroots w hX hEnc hcost htX
   have hI1 := hp.cost_pos (w := w) (hEnc.1 t htX).1 (hXin t htX) (hEnc.1 t htX).2
@@ -2037,7 +2032,8 @@ theorem getElem!_range_map {α : Type} [Inhabited α] (f : Nat → α) {n t : Na
   simp [getElem!_def, ht]
 
 /-- Every minimum stores only search candidates. -/
-theorem minimum_in_candidates {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
+theorem minimum_in_candidates {dag : Dag} (hwf : DagWF dag) (hsp : SpinesFit (Prep.ofDag dag))
+    (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size) (w : Nat) {X : List Nat}
     (hX : IsMinimum dag w roots X) :
     ∀ s ∈ X, (searchCandidates (Prep.ofDag dag) (graphFacts dag roots) w)[s]! = true := by
@@ -2052,19 +2048,60 @@ theorem minimum_in_candidates {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
   · exfalso
     unfold certainExcludedTest at hce
     simp only [decide_eq_true_eq] at hce
-    exact excluded_of_minimum hwf roots hroots w hX hsn hce hs
+    exact excluded_of_minimum hwf hsp roots hroots w hX hsn hce hs
+
+theorem filter_size_range_map {α : Type} [Inhabited α] (n : Nat) (F : Nat → α) (P : α → Bool) :
+    (((Array.range n).map F).filter P).size =
+      ((List.range n).filter fun t => P ((Array.range n).map F)[t]!).length := by
+  rw [Array.size_eq_length_toList, Array.toList_filter, Array.toList_map, Array.toList_range,
+    List.filter_map, List.length_map]
+  congr 1
+  apply List.filter_congr
+  intro t ht
+  rw [List.mem_range] at ht
+  simp only [Function.comp_def, getElem!_range_map F ht]
+
+/-- A minimum that omits a candidate has fewer terms than there are
+candidates. -/
+theorem minimum_length_lt {dag : Dag} (hwf : DagWF dag) (hsp : SpinesFit (Prep.ofDag dag))
+    (roots : Array Nat) (hroots : ∀ r ∈ roots.toList, r < dag.size) (w : Nat) {X : List Nat}
+    (hX : IsMinimum dag w roots X) {t : Nat} (htn : t < dag.size)
+    (htc : (searchCandidates (Prep.ofDag dag) (graphFacts dag roots) w)[t]! = true)
+    (htX : t ∉ X) :
+    X.length < ((searchCandidates (Prep.ofDag dag) (graphFacts dag roots) w).filter id).size := by
+  have hn : (Prep.ofDag dag).dag.size = dag.size := by rw [ofDag_dag]
+  let C := (List.range dag.size).filter fun s =>
+    (searchCandidates (Prep.ofDag dag) (graphFacts dag roots) w)[s]!
+  have hC : ((searchCandidates (Prep.ofDag dag) (graphFacts dag roots) w).filter id).size =
+      C.length := by
+    simp only [searchCandidates, C]
+    rw [filter_size_range_map, hn]
+    rfl
+  rw [hC]
+  have hsub : t :: X ⊆ C := by
+    intro y hy
+    simp only [C, List.mem_filter, List.mem_range]
+    rcases List.mem_cons.mp hy with rfl | hy
+    · exact ⟨htn, htc⟩
+    · exact ⟨(hX.1.2 y hy).1, minimum_in_candidates hwf hsp roots hroots w hX y hy⟩
+  have := List.Nodup.length_le_of_subset (List.nodup_cons.mpr ⟨htX, hX.1.1⟩) hsub
+  simp only [List.length_cons] at this
+  omega
 
 /-- **Stage 3, the executable classes.** With the root-level candidates,
-bounds and visible counts (as `uniformChoose` computes them): a
-certain-excluded term is in no minimum, and a term classified certain-stored
-at threshold 2 (or at threshold 1 when `|X|` and `|X| + 1` share a `Tag0`
-bracket) is in every minimum `X`. -/
-theorem classify_sound {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
+bounds and visible counts (as `uniformChoose` computes them), on a DAG whose
+telescope spines fit (`SpinesFit`): a certain-excluded term is in no
+minimum, and a term classified certain-stored at threshold
+`tag0StepBound N + 1` (`N` the number of candidates), or at threshold 1 when
+`|X|` and `|X| + 1` share a TagN count bracket, is in every minimum `X`. -/
+theorem classify_sound {dag : Dag} (hwf : DagWF dag) (hsp : SpinesFit (Prep.ofDag dag))
+    (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size)
     (hreach : ∀ y, y < dag.size → ∃ r ∈ roots.toList, Desc dag r y)
     (w : Nat) {X : List Nat} (hX : IsMinimum dag w roots X) {t : Nat} (htn : t < dag.size)
     (θ : _root_.Int)
-    (hθ : θ = 2 ∨ (θ = 1 ∧ tag0Size (X.length + 1) = tag0Size X.length)) :
+    (hθ : θ = (tag0StepBound ((searchCandidates (Prep.ofDag dag) (graphFacts dag roots) w).filter
+        id).size : _root_.Int) + 1 ∨ (θ = 1 ∧ tag0Size (X.length + 1) = tag0Size X.length)) :
     let p := Prep.ofDag dag
     let f := graphFacts dag roots
     let cand := searchCandidates p f w
@@ -2084,7 +2121,7 @@ theorem classify_sound {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     · rename_i hce
       unfold certainExcludedTest at hce
       simp only [decide_eq_true_eq] at hce
-      exact excluded_of_minimum hwf roots hroots w hX htn hce
+      exact excluded_of_minimum hwf hsp roots hroots w hX htn hce
     · split at h <;> (try split at h) <;> cases h
   · rw [hcls] at h
     split at h
@@ -2092,50 +2129,49 @@ theorem classify_sound {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     · split at h
       · cases h
       · split at h
-        · rename_i _ hdeg hg
+        · rename_i hce hdeg hg
           have hhd := vis_head_le hwf roots hroots cand htn
           have hg1 : 1 ≤ storedGainC p (uniformBounds p w cand) w t
               (visibleCounts dag roots cand).1[t]! (visibleCounts dag roots cand).2[t]! := by
-            rcases hθ with rfl | ⟨rfl, _⟩ <;> omega
+            rcases hθ with h | ⟨h, _⟩ <;> omega
+          have htc : (searchCandidates (Prep.ofDag dag) (graphFacts dag roots) w)[t]! = true := by
+            unfold searchCandidates
+            rw [getElem!_range_map _ (by rw [ofDag_dag]; exact htn)]
+            simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq]
+            exact ⟨by simpa using hce, Nat.le_of_not_lt hdeg⟩
           exact stored_in_minimum hwf roots hroots hreach w cand hX
-            (minimum_in_candidates hwf roots hroots w hX) htn (Nat.le_of_not_lt hdeg) (Nat.le_refl _)
-            (Nat.le_refl _) (Nat.le_refl _) (Nat.le_refl _) hhd (gain_d_pos hhd hg1)
-            (by rcases hθ with rfl | ⟨rfl, hb⟩
-                · exact Or.inl hg
-                · exact Or.inr ⟨hg, hb⟩)
+            (minimum_in_candidates hwf hsp roots hroots w hX) htn (Nat.le_of_not_lt hdeg)
+            (Nat.le_refl _) (Nat.le_refl _) (Nat.le_refl _) (Nat.le_refl _) hhd
+            (gain_d_pos hhd hg1)
+            (fun htX => minimum_length_lt hwf hsp roots hroots w hX htn htc htX)
+            (by rcases hθ with h | ⟨h, hb⟩
+                · exact Or.inl (by rw [h] at hg; exact hg)
+                · exact Or.inr ⟨by rw [h] at hg; exact hg, hb⟩)
         · cases h
 
-theorem filter_size_range_map {α : Type} [Inhabited α] (n : Nat) (F : Nat → α) (P : α → Bool) :
-    (((Array.range n).map F).filter P).size =
-      ((List.range n).filter fun t => P ((Array.range n).map F)[t]!).length := by
-  rw [Array.size_eq_length_toList, Array.toList_filter, Array.toList_map, Array.toList_range,
-    List.filter_map, List.length_map]
-  congr 1
-  apply List.filter_congr
-  intro t ht
-  rw [List.mem_range] at ht
-  simp only [Function.comp_def, getElem!_range_map F ht]
-
-/-- **The threshold-1 test of `uniformChoose`.** If the candidates and the
-gain-2 terms fill the same `Tag0` bracket, then for every minimum `X` and
+/-- **The threshold-1 test of `uniformStage`.** If the candidates and the terms
+certain-stored at threshold `tag0StepBound N + 1` (`N` the number of
+candidates) fill the same TagN count bracket, then for every minimum `X` and
 candidate `t ∉ X`, `|X|` and `|X| + 1` share a bracket (so threshold 1 is
 sound in `classify_sound` and `stored_in_minimum`). -/
-theorem threshold_one_sound {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
+theorem threshold_one_sound {dag : Dag} (hwf : DagWF dag) (hsp : SpinesFit (Prep.ofDag dag))
+    (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size)
     (hreach : ∀ y, y < dag.size → ∃ r ∈ roots.toList, Desc dag r y)
     (w : Nat) {X : List Nat} (hX : IsMinimum dag w roots X) {t : Nat} (htn : t < dag.size) :
     let p := Prep.ofDag dag
     let f := graphFacts dag roots
     let cand := searchCandidates p f w
-    let cls2 := classifyWith p f w (uniformBounds p w cand) (visibleCounts dag roots cand) 2
-    tag0Size (cand.filter id).size = tag0Size (cls2.filter (· == .certainStored)).size →
+    let clsMax := classifyWith p f w (uniformBounds p w cand) (visibleCounts dag roots cand)
+      ((tag0StepBound (cand.filter id).size : _root_.Int) + 1)
+    tag0Size (cand.filter id).size = tag0Size (clsMax.filter (· == .certainStored)).size →
     cand[t]! = true → t ∉ X → tag0Size (X.length + 1) = tag0Size X.length := by
-  intro p f cand cls2 hbr htc htX
+  intro p f cand clsMax hbr htc htX
   have hn : (Prep.ofDag dag).dag.size = dag.size := by rw [ofDag_dag]
-  let G := (List.range dag.size).filter fun s => cls2[s]! == .certainStored
+  let G := (List.range dag.size).filter fun s => clsMax[s]! == .certainStored
   let C := (List.range dag.size).filter fun s => cand[s]!
-  have hG : (cls2.filter (· == .certainStored)).size = G.length := by
-    simp only [cls2, classifyWith, G]
+  have hG : (clsMax.filter (· == .certainStored)).size = G.length := by
+    simp only [clsMax, classifyWith, G]
     rw [filter_size_range_map, hn]
   have hC : (cand.filter id).size = C.length := by
     simp only [cand, searchCandidates, C]
@@ -2146,14 +2182,14 @@ theorem threshold_one_sound {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (List.nodup_range.filter _) ?_ htX hbr
   · intro g hg
     simp only [G, List.mem_filter, List.mem_range] at hg
-    have hcs : cls2[g]! = .certainStored := by
+    have hcs : clsMax[g]! = .certainStored := by
       have h2 := hg.2
       revert h2
-      cases cls2[g]! <;> intro h <;> first | rfl | (exact absurd h (by decide))
-    exact (classify_sound hwf roots hroots hreach w hX hg.1 2 (Or.inl rfl)).2 hcs
+      cases clsMax[g]! <;> intro h <;> first | rfl | (exact absurd h (by decide))
+    exact (classify_sound hwf hsp roots hroots hreach w hX hg.1 _ (Or.inl rfl)).2 hcs
   · intro x hx
     simp only [C, List.mem_filter, List.mem_range]
-    exact ⟨(hX.1.2 x hx).1, minimum_in_candidates hwf roots hroots w hX x hx⟩
+    exact ⟨(hX.1.2 x hx).1, minimum_in_candidates hwf hsp roots hroots w hX x hx⟩
   · simp only [C, List.mem_filter, List.mem_range]
     exact ⟨htn, htc⟩
 

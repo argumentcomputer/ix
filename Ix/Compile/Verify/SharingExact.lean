@@ -10,10 +10,10 @@ import Ix.Sharing.Exact
 Proofs about the executable exact-sharing core (`Ix.Sharing.Exact`):
 
 * the integer widths `tag0Size`, `tag4Size`, `shareWidth` are the sizes of
-  the production `Tag0`/`Tag4` encodings, and agree with the heuristic's
-  `tag0EncodedSize`/`tag4EncodedSize`; `tagNWidth` is the length of the
-  `f = 4` TagN encoding (`Ix.Compile.Verify.TagN`) and is monotone with the
-  stated rung ends;
+  the production TagN encodings (`f = 0`, `f = 4`; `Ix.Compile.Verify.Codec`)
+  and agree with the heuristic's `tag0EncodedSize`/`tag4EncodedSize`;
+  `tagNWidth` is the length of the `f = 4` TagN encoding and is monotone with
+  the stated rung ends;
 * `exprSize` is the length of the production expression encoding for every
   expression in the codec's wire domain (telescope rule included), and the
   complete-Constant length decomposes as `fixedConstantBytes` plus the
@@ -97,85 +97,51 @@ theorem natByteCount_toNat (x : UInt64) :
   · simp only [UInt64.lt_iff_toNat_lt, UInt64.reduceToNat] at h7
     simpa using natByteCount_eq_of_range 7 x.toNat (by simp; omega) (by simpa using hx)
 
-/-! ## `Tag0` and `Tag4` lengths -/
+/-! ## TagN (`f = 0`, `f = 4`) lengths -/
 
 theorem trimmedBytes_size (x : UInt64) (len : Nat) : (trimmedBytes x len).size = len :=
-  TagN.trimmedBytes_size x len
+  Codec.trimmedBytes_size x len
 
-/-- `tag4Size` is the length of the production `Tag4` bytes. -/
+/-- `tag4Size` is the length of the production TagN (`f = 4`) bytes. -/
 theorem tag4Bytes_size (flag : UInt8) (size : UInt64) :
-    (Codec.tag4Bytes flag size).size = tag4Size size.toNat := by
-  unfold Codec.tag4Bytes tag4Size
-  by_cases h : size < 8
-  · have h' : size.toNat < 8 := by simpa [UInt64.lt_iff_toNat_lt] using h
-    simp [h, h']
-  · have h' : ¬ size.toNat < 8 := by simpa [UInt64.lt_iff_toNat_lt] using h
-    simp only [h, h', if_false, ByteArray.size_append, trimmedBytes_size,
-      natByteCount_toNat]
-    simp only [List.size_toByteArray, List.length_singleton]
-    all_goals omega
+    (Codec.tag4Bytes flag size).size = tag4Size size.toNat :=
+  Codec.tagNBytes_size 4 flag size
 
-/-- `tag0Size` is the length of the production `Tag0` bytes. -/
+/-- `tag0Size` is the length of the production TagN (`f = 0`) bytes. -/
 theorem tag0Bytes_size (size : UInt64) :
-    (tag0Bytes size).size = tag0Size size.toNat := by
-  unfold tag0Bytes tag0Size
-  by_cases h : size < 128
-  · have h' : size.toNat < 128 := by simpa [UInt64.lt_iff_toNat_lt] using h
-    simp [h, h']
-  · have h' : ¬ size.toNat < 128 := by simpa [UInt64.lt_iff_toNat_lt] using h
-    simp only [h, h', if_false, ByteArray.size_append, trimmedBytes_size,
-      natByteCount_toNat]
-    simp only [List.size_toByteArray, List.length_singleton]
-    all_goals omega
+    (tag0Bytes size).size = tag0Size size.toNat :=
+  Codec.tagNBytes_size 0 0 size
 
-/-- `tag4Size` is the size of what `putTag4` writes. -/
+/-- `tag4Size` is the size of what `putTagN 4` writes. -/
 theorem putTag4_size (flag : UInt8) (size : UInt64) :
-    (Ixon.runPut (Ixon.putTag4 ⟨flag, size⟩)).size = tag4Size size.toNat := by
-  have h := putTag4_writes flag size ByteArray.empty
-  simp only [Ixon.runPut, h, ByteArray.empty_append, tag4Bytes_size]
+    (Ixon.runPut (Ixon.putTagN 4 flag size)).size = tag4Size size.toNat :=
+  Codec.runPut_putTagN_size 4 flag size
 
-/-- `tag0Size` is the size of what `putTag0` writes. -/
+/-- `tag0Size` is the size of what `putTagN 0` writes. -/
 theorem putTag0_size (size : UInt64) :
-    (Ixon.runPut (Ixon.putTag0 ⟨size⟩)).size = tag0Size size.toNat := by
-  have h := putTag0_writes size ByteArray.empty
-  simp only [Ixon.runPut, h, ByteArray.empty_append, tag0Bytes_size]
+    (Ixon.runPut (Ixon.putTagN 0 0 size)).size = tag0Size size.toNat :=
+  Codec.runPut_putTagN_size 0 0 size
 
 /-- The Share width is the size of the serialized `Share`. -/
 theorem shareWidth_eq_putTag4 (idx : UInt64) :
     shareWidth idx.toNat =
-      (Ixon.runPut (Ixon.putTag4 ⟨Ixon.Expr.FLAG_SHARE, idx⟩)).size := by
-  rw [putTag4_size]
-  rfl
+      (Ixon.runPut (Ixon.putTagN 4 Ixon.Expr.FLAG_SHARE idx)).size :=
+  (putTag4_size Ixon.Expr.FLAG_SHARE idx).symm
 
-/-- `UInt64.byteCount` (used by the heuristic) agrees with the minimal byte
-count on nonzero values. -/
+/-- `UInt64.byteCount` agrees with the minimal byte count on nonzero values. -/
 theorem byteCount_eq_u64ByteCount (x : UInt64) (h : x ≠ 0) :
     x.byteCount = Ixon.u64ByteCount x := by
   unfold UInt64.byteCount Ixon.u64ByteCount
   have h0 : (x == 0) = false := by simpa using h
   simp only [h0, Bool.false_eq_true, if_false]
 
-/-- The heuristic's `Tag0` size agrees with `tag0Size`. -/
+/-- The heuristic's TagN (`f = 0`) size agrees with `tag0Size`. -/
 theorem tag0EncodedSize_eq (x : UInt64) :
-    Ix.Sharing.tag0EncodedSize x = tag0Size x.toNat := by
-  unfold Ix.Sharing.tag0EncodedSize tag0Size
-  by_cases h : x < 128
-  · have h' : x.toNat < 128 := by simpa [UInt64.lt_iff_toNat_lt] using h
-    simp [h, h']
-  · have h' : ¬ x.toNat < 128 := by simpa [UInt64.lt_iff_toNat_lt] using h
-    have hne : x ≠ 0 := by intro hz; subst hz; exact h (by decide)
-    simp [h, h', byteCount_eq_u64ByteCount x hne, natByteCount_toNat]
+    Ix.Sharing.tag0EncodedSize x = tag0Size x.toNat := rfl
 
-/-- The heuristic's `Tag4` size agrees with `tag4Size`. -/
+/-- The heuristic's TagN (`f = 4`) size agrees with `tag4Size`. -/
 theorem tag4EncodedSize_eq (x : UInt64) :
-    Ix.Sharing.tag4EncodedSize x = tag4Size x.toNat := by
-  unfold Ix.Sharing.tag4EncodedSize tag4Size
-  by_cases h : x < 8
-  · have h' : x.toNat < 8 := by simpa [UInt64.lt_iff_toNat_lt] using h
-    simp [h, h']
-  · have h' : ¬ x.toNat < 8 := by simpa [UInt64.lt_iff_toNat_lt] using h
-    have hne : x ≠ 0 := by intro hz; subst hz; exact h (by decide)
-    simp [h, h', byteCount_eq_u64ByteCount x hne, natByteCount_toNat]
+    Ix.Sharing.tag4EncodedSize x = tag4Size x.toNat := rfl
 
 /-! ## TagN widths -/
 
@@ -243,8 +209,8 @@ theorem tagNWidth_eq_encoded (i : UInt64) :
     tagNWidth i.toNat = (Ixon.runPut (Ixon.putTagN 4 0xB i)).size ∧
       Ixon.runGetExact (Ixon.getTagN 4) (Ixon.runPut (Ixon.putTagN 4 0xB i)) =
         .ok ⟨0xB, i⟩ :=
-  ⟨(TagN.runPut_putTagN_size 4 0xB i).symm,
-    TagN.runGetExact_getTagN_putTagN 4 (by decide) 0xB (by decide) i⟩
+  ⟨(Codec.runPut_putTagN_size 4 0xB i).symm,
+    Codec.runGetExact_getTagN_putTagN 4 (by decide) 0xB (by decide) i⟩
 
 /-! ## Expression length -/
 
@@ -801,7 +767,7 @@ theorem constantBytes_size (c : Ixon.Constant) :
   omega
 
 theorem S_var_zero : S (.var 0) = 1 := by
-  simp [S, spineWireEncode, tag4Bytes_size, tag4Size]
+  simp [S, spineWireEncode, tag4Bytes_size, tag4Size, Ixon.tagNByteWidth, TagN.tagNEnd1_eq_4]
 
 /-- The complete-Constant length decomposes into the root-free bytes
 (`fixedConstantBytes`), the roots, the table count and the table bodies. -/

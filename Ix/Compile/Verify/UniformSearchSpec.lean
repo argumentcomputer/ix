@@ -154,8 +154,7 @@ theorem pickBranch_isSome {l : Array (Nat × _root_.Int)} (h : l.toList ≠ []) 
 
 /-! ## Groups: shifting the base, pruning, trimming -/
 
-theorem Env.WF.θ1 {E : Env} (hE : E.WF) : 1 ≤ E.θ := by
-  rcases hE.G.theta with h | ⟨h, _⟩ <;> omega
+theorem Env.WF.θ1 {E : Env} (hE : E.WF) : 1 ≤ E.θ := hE.G.one_le_theta
 
 theorem Env.WF.csc {E : Env} (hE : E.WF) :
     ∀ t ∈ E.cs, t < E.dag.size ∧ (ucls E.dag E.roots E.w E.θ)[t]! = .certainStored :=

@@ -198,7 +198,7 @@ all old lookups and establish exact recovery for every traversed name,
 ancestor name component, and blob payload.
 The v2 universe writer and reader are now kernel-visible total definitions;
 an exact-consumption runner rejects trailing bytes, trimmed little-endian
-integers and both `Tag2` forms have proved production inverses, and every
+integers and the TagN integer code have proved production inverses, and every
 universe whose compressed successor counts fit `UInt64` has an exact
 serializer/decoder inverse.  In particular, the `Sort 1` universe required by
 the first declaration fixture is covered. The v2 expression writer and reader
@@ -208,7 +208,7 @@ compiler-facing wire domain, including arbitrary canonical application,
 lambda, and forall spines. Reference and recursive-reference instantiations
 may carry arbitrary wire-sized universe-index vectors. That domain includes
 the `A` type and both the type and value shapes of `idA`, with unrestricted
-`UInt64` fields backed by complete `Tag0` and `Tag4` inverse laws.
+`UInt64` fields backed by complete TagN (`f = 0`, `f = 4`) inverse laws.
 The declaration layer now composes those results through production definition
 and axiom payloads, their `ConstantInfo` discriminants, and the top-level
 `serConstant`/`deConstant` pair with arbitrary wire-representable sharing,

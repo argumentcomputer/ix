@@ -49,60 +49,24 @@ theorem merged_mem_mergedCuts (p : Prep) (w : Nat) (S : Nat → Bool) (f : Nat �
   refine ⟨j, List.mem_range'_1.mpr ⟨hj1, by omega⟩, ?_⟩
   rw [if_pos hS]
 
-theorem tag4Size_pos (n : Nat) : 1 ≤ tag4Size n := by
-  unfold tag4Size; split <;> omega
+theorem tag4Size_pos (n : Nat) : 1 ≤ tag4Size n :=
+  Ix.Compile.Verify.TagN.tagNByteWidth_pos 4 n
 
-theorem natByteCount_mono : ∀ {a b : Nat}, a ≤ b → natByteCount a ≤ natByteCount b := by
-  intro a b
-  induction b using Nat.strongRecOn generalizing a with
-  | _ b ih =>
-    intro h
-    by_cases ha : a = 0
-    · subst ha; rw [Ix.Compile.Verify.SharingExact.natByteCount_zero]; omega
-    · have hb : b ≠ 0 := by omega
-      rw [Ix.Compile.Verify.SharingExact.natByteCount_of_ne_zero ha,
-        Ix.Compile.Verify.SharingExact.natByteCount_of_ne_zero hb]
-      have := ih (b / 256) (Nat.div_lt_self (by omega) (by decide))
-        (Nat.div_le_div_right (c := 256) h)
-      omega
+theorem tag4Size_mono {a b : Nat} (h : a ≤ b) : tag4Size a ≤ tag4Size b :=
+  Ix.Compile.Verify.TagN.tagNByteWidth_mono 4 h
 
-theorem natByteCount_succ_le : ∀ (n : Nat), natByteCount (n + 1) ≤ natByteCount n + 1 := by
-  intro n
-  induction n using Nat.strongRecOn with
-  | _ n ih =>
-    by_cases hn : n = 0
-    · subst hn
-      rw [Ix.Compile.Verify.SharingExact.natByteCount_of_ne_zero (by decide),
-        Ix.Compile.Verify.SharingExact.natByteCount_zero]
-      simp
-    · rw [Ix.Compile.Verify.SharingExact.natByteCount_of_ne_zero (by omega),
-        Ix.Compile.Verify.SharingExact.natByteCount_of_ne_zero hn]
-      have h1 : (n + 1) / 256 ≤ n / 256 + 1 := by omega
-      have h2 := natByteCount_mono h1
-      have h3 := ih (n / 256) (Nat.div_lt_self (by omega) (by decide))
-      omega
+theorem tag0Size_mono {a b : Nat} (h : a ≤ b) : tag0Size a ≤ tag0Size b :=
+  Ix.Compile.Verify.TagN.tagNByteWidth_mono 0 h
 
-theorem tag4Size_mono {a b : Nat} (h : a ≤ b) : tag4Size a ≤ tag4Size b := by
-  have := natByteCount_mono h
-  unfold tag4Size
-  split <;> split <;> omega
-
-theorem tag0Size_succ_le (n : Nat) : tag0Size (n + 1) ≤ tag0Size n + 1 := by
-  have := natByteCount_succ_le n
-  unfold tag0Size
-  split <;> split
-  · omega
-  · omega
-  · rename_i h1 h2
-    have : n = 127 := by omega
-    subst this
-    have h128 : natByteCount 128 = 1 := by
-      rw [Ix.Compile.Verify.SharingExact.natByteCount_of_ne_zero (by decide)]
-      simp [Ix.Compile.Verify.SharingExact.natByteCount_zero]
-    show 1 + natByteCount (127 + 1) ≤ 1 + 1
-    rw [show 127 + 1 = 128 from rfl, h128]
-    omega
-  · omega
+/-- One more table entry grows the TagN (`f = 0`) table count by at most
+`tag0StepBound n` bytes, for every count below `n`. -/
+theorem tag0Size_succ_le {k n : Nat} (h : k < n) :
+    tag0Size (k + 1) ≤ tag0Size k + tag0StepBound n := by
+  unfold tag0Size tag0StepBound Ixon.tagNByteWidth
+  simp only [Ix.Compile.Verify.TagN.tagNEnd1_eq_0, Ix.Compile.Verify.TagN.tagNEnd2_eq_0,
+    Ix.Compile.Verify.TagN.tagNEnd3_eq_0, Ix.Compile.Verify.TagN.tagNEnd4_eq_0]
+  repeat' split
+  all_goals omega
 
 /-- An inline telescope writing costs its header plus its merged part:
 `1 + M_S(t) ≤ inl_S(t) ≤ tag4Size (spineLen t) + M_S(t)`. -/

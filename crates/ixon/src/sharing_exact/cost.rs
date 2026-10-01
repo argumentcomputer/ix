@@ -68,12 +68,12 @@ pub fn byte_count(x: u64) -> u64 {
 }
 
 /// Encoded length of a TagN (f = 4) integer `size` for any flag:
-/// 1, 2, 3, 5 or 9 bytes ([`TagN::byte_width`]).
+/// 1, 2, 3, 4, 5 or 9 bytes ([`TagN::byte_width`]).
 pub fn tag4_len(size: u64) -> u64 {
   TagN::byte_width(4, size) as u64
 }
 
-/// Encoded length of a TagN (f = 0) integer `size`: 1, 2, 3, 5 or 9 bytes.
+/// Encoded length of a TagN (f = 0) integer `size`: 1, 2, 3, 4, 5 or 9 bytes.
 pub fn tag0_len(size: u64) -> u64 {
   TagN::byte_width(0, size) as u64
 }

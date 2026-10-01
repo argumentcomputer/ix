@@ -196,7 +196,7 @@ theorem availOf_eq_mem {opaq : Array Bool} {cs : List Nat} (hcs : ∀ u, opaq[u]
 
 /-- **The component cost is the component's part of the length.** With
 `opaq` the certain-stored list `cs`, adding a list `V` of the component's
-members to `cs` changes the uniform length (without the count's `Tag0`) by the
+members to `cs` changes the uniform length (without the count's TagN) by the
 change of the component cost. -/
 theorem ulen_compCost {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size) (w : Nat) {opaq : Array Bool} {cs : List Nat}
@@ -298,7 +298,7 @@ theorem ulen_perm {dag : Dag} {w : Nat} {roots : Array Nat} {Y Y' : List Nat} (h
 
 /-- **Splitting off a component.** Adding a list `V` of a component's members
 to `cs ++ R` (`R` uncertain terms of other components) changes the uniform
-length (without the count's `Tag0`) by the change of the component cost. -/
+length (without the count's TagN) by the change of the component cost. -/
 theorem ulen_split_component {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (hroots : ∀ r ∈ roots.toList, r < dag.size) (w : Nat) (θ : _root_.Int) (hθ : 1 ≤ θ)
     {opaq : Array Bool} {cs : List Nat}
@@ -697,14 +697,21 @@ theorem group_modular {dag : Dag} (hwf : DagWF dag) {roots : Array Nat}
 def uunc (dag : Dag) (roots : Array Nat) (w : Nat) (θ : _root_.Int) : List Nat :=
   (List.range dag.size).filter (fun t => (ucls dag roots w θ)[t]! == .uncertain)
 
-/-- The optimizer's global checks and choices. -/
+/-- The always-sound certain-stored threshold of `uniformStage`: one more than
+the largest growth of the table count's TagN below the number of candidates. -/
+def uthetaMax (dag : Dag) (roots : Array Nat) (w : Nat) : _root_.Int :=
+  (tag0StepBound ((ucand dag roots w).filter id).size : _root_.Int) + 1
+
+/-- The optimizer's global checks and choices, and the telescope-spine bound
+(`SpinesFit`) under which the certain-excluded class is sound. -/
 structure GlobalWF (dag : Dag) (roots : Array Nat) (w : Nat) (θ : _root_.Int) (cs : List Nat) :
     Prop where
   wf : DagWF dag
+  spines : SpinesFit (Prep.ofDag dag)
   hroots : ∀ r ∈ roots.toList, r < dag.size
   reach : ∀ y, y < dag.size → ∃ r ∈ roots.toList, Desc dag r y
-  theta : θ = 2 ∨ (θ = 1 ∧ tag0Size ((ucand dag roots w).filter id).size =
-    tag0Size ((ucls dag roots w 2).filter (· == .certainStored)).size)
+  theta : θ = uthetaMax dag roots w ∨ (θ = 1 ∧ tag0Size ((ucand dag roots w).filter id).size =
+    tag0Size ((ucls dag roots w (uthetaMax dag roots w)).filter (· == .certainStored)).size)
   cs : cs = (List.range dag.size).filter (fun t => (ucls dag roots w θ)[t]! == .certainStored)
 
 theorem ucls_eq {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} {t : Nat}
@@ -760,10 +767,18 @@ theorem GlobalWF.theta_ok {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_
     {cs : List Nat} (hG : GlobalWF dag roots w θ cs) {X : List Nat}
     (hX : IsMinimum dag w roots X) {t : Nat} (htn : t < dag.size)
     (hc : (ucand dag roots w)[t]! = true) (htX : t ∉ X) :
-    θ = 2 ∨ (θ = 1 ∧ tag0Size (X.length + 1) = tag0Size X.length) := by
+    θ = uthetaMax dag roots w ∨ (θ = 1 ∧ tag0Size (X.length + 1) = tag0Size X.length) := by
   rcases hG.theta with h | ⟨h1, h2⟩
   · exact Or.inl h
-  · exact Or.inr ⟨h1, threshold_one_sound hG.wf roots hG.hroots hG.reach w hX htn h2 hc htX⟩
+  · exact Or.inr ⟨h1, threshold_one_sound hG.wf hG.spines roots hG.hroots hG.reach w hX htn h2 hc
+      htX⟩
+
+/-- The threshold is at least 1. -/
+theorem GlobalWF.one_le_theta {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int}
+    {cs : List Nat} (hG : GlobalWF dag roots w θ cs) : 1 ≤ θ := by
+  rcases hG.theta with h | ⟨h, _⟩
+  · rw [h]; unfold uthetaMax; omega
+  · omega
 
 /-- **Every minimum contains the certain-stored terms.** -/
 theorem GlobalWF.min_cs {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int}
@@ -772,7 +787,7 @@ theorem GlobalWF.min_cs {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.I
   obtain ⟨htn, hcls⟩ := (hG.mem_cs t).mp ht
   refine Classical.byContradiction (fun htX => ?_)
   have hθ := hG.theta_ok hX htn (ucand_of_ucls htn (Or.inl hcls)) htX
-  exact htX ((classify_sound hG.wf roots hG.hroots hG.reach w hX htn θ hθ).2 hcls)
+  exact htX ((classify_sound hG.wf hG.spines roots hG.hroots hG.reach w hX htn θ hθ).2 hcls)
 
 /-- **Every term of a minimum is certain-stored or uncertain.** -/
 theorem GlobalWF.min_class {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int}
@@ -787,7 +802,7 @@ theorem GlobalWF.min_class {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root
   · exfalso
     unfold certainExcludedTest at hce
     simp only [decide_eq_true_eq] at hce
-    exact excluded_of_minimum hG.wf roots hG.hroots w hX htn hce ht
+    exact excluded_of_minimum hG.wf hG.spines roots hG.hroots w hX htn hce ht
   · rw [if_neg hce, if_neg (by omega)]
     split
     · exact Or.inl rfl
@@ -857,7 +872,7 @@ theorem group_rep {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} {c
       scost cx dag (I.toList ++ S) +
         (tag0Size (cs.length + (uunc dag roots w θ).length) - tag0Size cs.length) := by
   have hwf := hG.wf
-  have hθ1 : 1 ≤ θ := by rcases hG.theta with h | ⟨h, _⟩ <;> omega
+  have hθ1 : 1 ≤ θ := hG.one_le_theta
   have hcsc : ∀ t ∈ cs, t < dag.size ∧ (ucls dag roots w θ)[t]! = .certainStored :=
     fun t ht => (hG.mem_cs t).mp ht
   have hdag : cx.up.prep.dag = dag := by rw [hcx.prep]; rfl
