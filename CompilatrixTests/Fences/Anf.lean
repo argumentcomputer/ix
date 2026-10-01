@@ -2,6 +2,8 @@ import Compilatrix.Anf.Proof.Mono
 import Compilatrix.Sem.Dominance
 import Compilatrix.Anf.Proof.Convert.Correct
 import Compilatrix.Anf.Proof.Rel.Ident
+import Compilatrix.Anf.Proof.Pass.Shrink
+import Compilatrix.Anf.Proof.Pass.Inline
 
 /-! Required axiom fences for the Anf proofs (M2.3): clock monotonicity of
 Anf evaluation; ANF conversion (P1, Lam → Anf); the Anf-to-Anf relation, its
@@ -168,3 +170,157 @@ verbatim. -/
 
 /-- info: 'Compilatrix.Anf.Rel.Ident.refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.Rel.Ident.refines
+
+/-! The rewriting walk (`Anf.Proof.Walk`, shared by P2, P3 and P4's bodies): the walk relation is structural and keeps observations; one fuel level per walk function (returns, continuations, join points by Löb induction, jumps, case-of-case, case tests and alternatives, kept and skipped bindings, globals, calls, applications and β); application of walked closures; the simulation at every bound and adequacy. -/
+
+/-- info: 'Compilatrix.Anf.WalkProof.structural' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.structural
+
+/-- info: 'Compilatrix.Anf.WalkProof.obs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.obs
+
+/-- info: 'Compilatrix.Sem.SimUpTo.strengthen' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.SimUpTo.strengthen
+
+/-- info: 'Compilatrix.Sem.SimUpTo.unmap' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.SimUpTo.unmap
+
+/-- info: 'Compilatrix.Anf.WalkProof.pass_sim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.pass_sim
+
+/-- info: 'Compilatrix.Anf.WalkProof.branch_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.branch_sim
+
+/-- info: 'Compilatrix.Anf.WalkProof.walk_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walk_step
+
+/-- info: 'Compilatrix.Anf.WalkProof.after_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.after_step
+
+/-- info: 'Compilatrix.Anf.WalkProof.joinR_emit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.joinR_emit
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkJoin_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkJoin_step
+
+/-- info: 'Compilatrix.Anf.WalkProof.caseOfCase_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.caseOfCase_sim
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkJump_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkJump_step
+
+/-- info: 'Compilatrix.Anf.WalkProof.identityTail_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.identityTail_spec
+
+/-- info: 'Compilatrix.Anf.WalkProof.sameArms_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.sameArms_spec
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkAlts_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkAlts_step
+
+/-- info: 'Compilatrix.Anf.WalkProof.case_general' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.case_general
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkCase_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkCase_step
+
+/-- info: 'Compilatrix.Anf.WalkProof.emit_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.emit_sim
+
+/-- info: 'Compilatrix.Anf.WalkProof.skip_sim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.skip_sim
+
+/-- info: 'Compilatrix.Anf.WalkProof.skip_tick_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.skip_tick_sim
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkBind_atom' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkBind_atom
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkBind_con' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkBind_con
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkBind_proj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkBind_proj
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkBind_prim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkBind_prim
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkBind_fn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkBind_fn
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkBind_glob' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkBind_glob
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkBind_call' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkBind_call
+
+/-- info: 'Compilatrix.Anf.WalkProof.app_known' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.app_known
+
+/-- info: 'Compilatrix.Anf.WalkProof.beta_tick' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.beta_tick
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkBind_app' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkBind_app
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkBind_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkBind_step
+
+/-- info: 'Compilatrix.Anf.WalkProof.enter_walkc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.enter_walkc
+
+/-- info: 'Compilatrix.Anf.WalkProof.app_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.app_at
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkAt_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkAt_succ
+
+/-- info: 'Compilatrix.Anf.WalkProof.walkAt_all' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.walkAt_all
+
+/-- info: 'Compilatrix.Anf.WalkProof.levels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.levels
+
+/-- info: 'Compilatrix.Anf.WalkProof.refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.refines
+
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.hyp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.hyp
+
+/-- info: 'Compilatrix.Anf.WalkProof.WalkProg.refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WalkProg.refines
+
+/-! P2 shrink and P3 inline (`Anf.Proof.Pass`): every certificate and oracle the re-run accepts gives a refinement of the input; the traced shape. -/
+
+/-- info: 'Compilatrix.Anf.PassProof.get?_ofList_globalList' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.PassProof.get?_ofList_globalList
+
+/-- info: 'Compilatrix.Anf.PassProof.refines_of_globals' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.PassProof.refines_of_globals
+
+/-- info: 'Compilatrix.Anf.Shrink.Proof.roundOn_walkProg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.roundOn_walkProg
+
+/-- info: 'Compilatrix.Anf.Shrink.Proof.stage_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.stage_refines
+
+/-- info: 'Compilatrix.Anf.Shrink.Proof.stage_global' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.stage_global
+
+/-- info: 'Compilatrix.Anf.Shrink.Proof.run_global' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.run_global
+
+/-- info: 'Compilatrix.Anf.Shrink.Proof.run_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.run_refines
+
+/-- info: 'Compilatrix.Anf.Shrink.Proof.run_refines_traced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Shrink.Proof.run_refines_traced
+
+/-- info: 'Compilatrix.Anf.Inline.Proof.round_global' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Inline.Proof.round_global
+
+/-- info: 'Compilatrix.Anf.Inline.Proof.round_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Inline.Proof.round_refines
+
+/-- info: 'Compilatrix.Anf.Inline.Proof.round_refines_traced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.Inline.Proof.round_refines_traced

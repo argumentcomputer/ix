@@ -878,7 +878,9 @@
    ["Compilatrix.Anf.Proof.Mono",
     "Compilatrix.Sem.Dominance",
     "Compilatrix.Anf.Proof.Convert.Correct",
-    "Compilatrix.Anf.Proof.Rel.Ident"]},
+    "Compilatrix.Anf.Proof.Rel.Ident",
+    "Compilatrix.Anf.Proof.Pass.Shrink",
+    "Compilatrix.Anf.Proof.Pass.Inline"]},
   "CompilatrixTests.Fences.AiurWire":
   {"path": "CompilatrixTests/Fences/AiurWire.lean",
    "imports": ["CompilatrixTests.Aiur.WireProofs"]},
@@ -2391,6 +2393,78 @@
   "Compilatrix.Anf.Props":
   {"path": "Compilatrix/Anf/Props.lean",
    "imports": ["Compilatrix.Anf.Semantics"]},
+  "Compilatrix.Anf.Proof.Walk.StepB":
+  {"path": "Compilatrix/Anf/Proof/Walk/StepB.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.StepA"]},
+  "Compilatrix.Anf.Proof.Walk.StepA":
+  {"path": "Compilatrix/Anf/Proof/Walk/StepA.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.Lemmas"]},
+  "Compilatrix.Anf.Proof.Walk.Step":
+  {"path": "Compilatrix/Anf/Proof/Walk/Step.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.Basic"]},
+  "Compilatrix.Anf.Proof.Walk.Rel":
+  {"path": "Compilatrix/Anf/Proof/Walk/Rel.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Rel.Fund",
+    "Compilatrix.Anf.Proof.Walk.Beq",
+    "Compilatrix.Anf.Proof.Walk.Monad",
+    "Compilatrix.Anf.Proof.Convert.Rel"]},
+  "Compilatrix.Anf.Proof.Walk.Prog":
+  {"path": "Compilatrix/Anf/Proof/Walk/Prog.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Walk.Level", "Compilatrix.Lam.Proof.ModesOk"]},
+  "Compilatrix.Anf.Proof.Walk.Occ":
+  {"path": "Compilatrix/Anf/Proof/Walk/Occ.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.At"]},
+  "Compilatrix.Anf.Proof.Walk.Monad":
+  {"path": "Compilatrix/Anf/Proof/Walk/Monad.lean",
+   "imports": ["Compilatrix.Anf.Walk"]},
+  "Compilatrix.Anf.Proof.Walk.Level":
+  {"path": "Compilatrix/Anf/Proof/Walk/Level.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.App"]},
+  "Compilatrix.Anf.Proof.Walk.Lemmas":
+  {"path": "Compilatrix/Anf/Proof/Walk/Lemmas.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.Occ"]},
+  "Compilatrix.Anf.Proof.Walk.Jump":
+  {"path": "Compilatrix/Anf/Proof/Walk/Jump.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.StepB"]},
+  "Compilatrix.Anf.Proof.Walk.Emit":
+  {"path": "Compilatrix/Anf/Proof/Walk/Emit.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.CaseStep"]},
+  "Compilatrix.Anf.Proof.Walk.CaseStep":
+  {"path": "Compilatrix/Anf/Proof/Walk/CaseStep.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.Case"]},
+  "Compilatrix.Anf.Proof.Walk.Case":
+  {"path": "Compilatrix/Anf/Proof/Walk/Case.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Walk.Jump", "Compilatrix.Src.Proof.NatMap"]},
+  "Compilatrix.Anf.Proof.Walk.BindPure":
+  {"path": "Compilatrix/Anf/Proof/Walk/BindPure.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.Emit"]},
+  "Compilatrix.Anf.Proof.Walk.BindPrim":
+  {"path": "Compilatrix/Anf/Proof/Walk/BindPrim.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.BindPure"]},
+  "Compilatrix.Anf.Proof.Walk.BindCall":
+  {"path": "Compilatrix/Anf/Proof/Walk/BindCall.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.BindPrim"]},
+  "Compilatrix.Anf.Proof.Walk.BindBeta":
+  {"path": "Compilatrix/Anf/Proof/Walk/BindBeta.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.BindApp"]},
+  "Compilatrix.Anf.Proof.Walk.BindApp":
+  {"path": "Compilatrix/Anf/Proof/Walk/BindApp.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.BindCall"]},
+  "Compilatrix.Anf.Proof.Walk.Beq":
+  {"path": "Compilatrix/Anf/Proof/Walk/Beq.lean",
+   "imports": ["Compilatrix.Anf.Syntax"]},
+  "Compilatrix.Anf.Proof.Walk.Basic":
+  {"path": "Compilatrix/Anf/Proof/Walk/Basic.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.Rel"]},
+  "Compilatrix.Anf.Proof.Walk.At":
+  {"path": "Compilatrix/Anf/Proof/Walk/At.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.Step"]},
+  "Compilatrix.Anf.Proof.Walk.App":
+  {"path": "Compilatrix/Anf/Proof/Walk/App.lean",
+   "imports": ["Compilatrix.Anf.Proof.Walk.BindBeta"]},
   "Compilatrix.Anf.Proof.Unfold":
   {"path": "Compilatrix/Anf/Proof/Unfold.lean",
    "imports": ["Compilatrix.Anf.Semantics", "Compilatrix.Sem.Agrees"]},
@@ -2404,6 +2478,22 @@
   "Compilatrix.Anf.Proof.Rel.Basic":
   {"path": "Compilatrix/Anf/Proof/Rel/Basic.lean",
    "imports": ["Compilatrix.Anf.Proof.Mono", "Compilatrix.Sem.Dominance"]},
+  "Compilatrix.Anf.Proof.Pass.Shrink":
+  {"path": "Compilatrix/Anf/Proof/Pass/Shrink.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Pass.Basic",
+    "Compilatrix.Anf.Shrink",
+    "Compilatrix.Anf.Proof.Lang"]},
+  "Compilatrix.Anf.Proof.Pass.Inline":
+  {"path": "Compilatrix/Anf/Proof/Pass/Inline.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Pass.Basic",
+    "Compilatrix.Anf.Inline",
+    "Compilatrix.Anf.Proof.Lang"]},
+  "Compilatrix.Anf.Proof.Pass.Basic":
+  {"path": "Compilatrix/Anf/Proof/Pass/Basic.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Walk.Prog", "Compilatrix.Anf.Proof.Convert.Prog"]},
   "Compilatrix.Anf.Proof.Mono":
   {"path": "Compilatrix/Anf/Proof/Mono.lean",
    "imports": ["Compilatrix.Anf.Proof.Unfold", "Compilatrix.Sem.SimUpTo"]},
@@ -2940,6 +3030,31 @@
     "Compilatrix.Anf.Proof.Rel.Basic",
     "Compilatrix.Anf.Proof.Rel.Fund",
     "Compilatrix.Anf.Proof.Rel.Ident",
+    "Compilatrix.Anf.Proof.Walk.Beq",
+    "Compilatrix.Anf.Proof.Walk.Monad",
+    "Compilatrix.Anf.Proof.Walk.Rel",
+    "Compilatrix.Anf.Proof.Walk.Basic",
+    "Compilatrix.Anf.Proof.Walk.Step",
+    "Compilatrix.Anf.Proof.Walk.At",
+    "Compilatrix.Anf.Proof.Walk.Occ",
+    "Compilatrix.Anf.Proof.Walk.Lemmas",
+    "Compilatrix.Anf.Proof.Walk.StepA",
+    "Compilatrix.Anf.Proof.Walk.StepB",
+    "Compilatrix.Anf.Proof.Walk.Jump",
+    "Compilatrix.Anf.Proof.Walk.Case",
+    "Compilatrix.Anf.Proof.Walk.CaseStep",
+    "Compilatrix.Anf.Proof.Walk.Emit",
+    "Compilatrix.Anf.Proof.Walk.BindPure",
+    "Compilatrix.Anf.Proof.Walk.BindPrim",
+    "Compilatrix.Anf.Proof.Walk.BindCall",
+    "Compilatrix.Anf.Proof.Walk.BindApp",
+    "Compilatrix.Anf.Proof.Walk.BindBeta",
+    "Compilatrix.Anf.Proof.Walk.App",
+    "Compilatrix.Anf.Proof.Walk.Level",
+    "Compilatrix.Anf.Proof.Walk.Prog",
+    "Compilatrix.Anf.Proof.Pass.Basic",
+    "Compilatrix.Anf.Proof.Pass.Shrink",
+    "Compilatrix.Anf.Proof.Pass.Inline",
     "Compilatrix.Own.Kind",
     "Compilatrix.Fir.Syntax",
     "Compilatrix.Fir.Semantics",
