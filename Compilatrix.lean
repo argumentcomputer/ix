@@ -435,6 +435,7 @@ import Compilatrix.Xv.Stacking.Proof.RetStep
 import Compilatrix.Xv.Stacking.Proof.RetFacts
 import Compilatrix.Xv.Stacking.Proof.RetMatch
 import Compilatrix.Xv.Stacking.Proof.TailMatch
+import Compilatrix.Xv.Stacking.Proof.TailStep
 import Compilatrix.Backend
 import Compilatrix.Backend.Proof.Xl
 import Compilatrix.Backend.Proof.Emit
