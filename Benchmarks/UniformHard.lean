@@ -5,8 +5,8 @@ import Ix.Sharing.Exact
 # Uniform optimizer on the hardest Init constants
 
 Runs `Ix.Sharing.Exact.optimizeSharingUniformTable` for `w ∈ {1, 2, 3}` on the
-named constants of an `.ixe` corpus (default: the ten slowest Init runs of
-W3's corpus measurement and W3's listed `states` failures), with
+named constants of an `.ixe` corpus (default: the slowest Init constants of
+an earlier corpus measurement and those that exhausted its `states` limit), with
 `maxStates = 2^20`, and prints one line per run: certified or the error, the
 wall time, the search states and the largest component.
 
@@ -15,6 +15,8 @@ lake exe uniform-hard <corpus.ixe> [name ...]
 lake exe uniform-hard <corpus.ixe> --compare      # every constant, vs the enumeration
 lake exe uniform-hard <corpus.ixe> --dump w name  # the largest component
 lake exe uniform-hard <corpus.ixe> --tiered [name ...]  # tiered construction, TagN layout
+lake exe uniform-hard <corpus.ixe> --work [name ...]    # each width's candidate alone
+lake exe uniform-hard <corpus.ixe> --scan-k <bound>     # constants with more than <bound> candidates
 ```
 Limits can be overridden with `UNIFORM_STATES` / `UNIFORM_EVALS`.
 -/
@@ -57,7 +59,7 @@ def headName : Ix.Sharing.Exact.Head → String
   | .letE _ => "let"
 
 /-- The tiered construction on the named constants under the TagN layout: the
-three candidate lengths, the winning width and the nominal-width length. -/
+three candidate lengths and the winning width. -/
 def tieredAll (corpus : String) (names : List String) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile corpus
   let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
@@ -77,14 +79,14 @@ def tieredAll (corpus : String) (names : List String) : IO UInt32 := do
       let ms := (t1 - t0) / 1000000
       match r with
       | .ok r =>
-        let nominal := (r.stats.candidateLengths.find? (·.1 == r.stats.nominalW)).map (·.2)
-        IO.println s!"{name} {reprStr l}: final={r.stats.phase3LayoutBytes} w={r.stats.w} nominalW={r.stats.nominalW} nominal={nominal.getD 0} candidates={r.stats.candidateLengths} serialized={r.result.variableBytes} entries={r.result.sharing.size} stored={hash r.phase1.stored} {ms} ms"
+        IO.println s!"{name} {reprStr l}: final={r.stats.phase3LayoutBytes} w={r.stats.w} candidates={r.stats.candidateLengths} serialized={r.result.variableBytes} entries={r.result.sharing.size} stored={hash r.phase1.stored} {ms} ms"
       | .error e => IO.println s!"{name} {reprStr l}: FAILED {repr e} {ms} ms"
       (← IO.getStdout).flush
   return 0
 
-/-- Phase-3 materialization work of every candidate (w = 1, 2, 3) under the TagN
-layout, with the final bytes and the time of the candidate. -/
+/-- Phase-3 materialization work of every candidate (w = 1, 2, 3, each run alone
+with `tieredAtWidth`) under the TagN layout, with the final bytes and the time
+of the candidate. -/
 def workAll (corpus : String) (names : List String) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile corpus
   let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
@@ -99,8 +101,10 @@ def workAll (corpus : String) (names : List String) : IO UInt32 := do
     for l in [Ix.Sharing.Exact.ShareLayout.tagN] do
       for w in [1, 2, 3] do
         let t0 ← IO.monoNanosNow
-        let r ← IO.lazyPure fun _ => Ix.Sharing.Exact.canonicalSharingTieredTable l c.sharing
-          (Ix.Sharing.Exact.constantInfoRoots c.info) limits (some w)
+        let r ← IO.lazyPure fun _ =>
+          (Ix.Sharing.Exact.expand limits c.sharing
+            (Ix.Sharing.Exact.constantInfoRoots c.info) true).bind
+            fun ex => Ix.Sharing.Exact.tieredAtWidth l limits ex w
         let t1 ← IO.monoNanosNow
         let ms := (t1 - t0) / 1000000
         match r with

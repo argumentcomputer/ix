@@ -1,6 +1,6 @@
 //! Exact minimum sharing under a uniform Share width.
 //!
-//! This is a byte-for-byte port of W1's `Ix/Sharing/Exact/Uniform.lean`;
+//! This is a byte-for-byte port of the Lean `Ix/Sharing/Exact/Uniform.lean`;
 //! the rules below are pinned by that implementation.
 //!
 //! Cost model: every `Share` costs exactly `w >= 1` bytes regardless of its
@@ -57,9 +57,10 @@
 //! choice reaches a TagN bracket of 128 or more entries, a knapsack over
 //! components checks the lower brackets.
 //!
-//! The component search is W1's reclassifying branch and bound. At each node
-//! it (1) recomputes the bounds and visible counts over the component's
-//! area with the members decided "not stored" removed from `M`, and forces
+//! The component search is the reclassifying branch and bound of the Lean
+//! implementation. At each node it (1) recomputes the bounds and visible
+//! counts over the component's area with the members decided "not stored"
+//! removed from `M`, and forces
 //! "stored" every undecided member with `g >= theta`; (2) bounds the node by
 //! the cost with every undecided member available and its entry free,
 //! pruning only when strictly above the best by more than `slack`; (3)
@@ -70,8 +71,9 @@
 //! keyed by the group and the decisions that reach it; (4) branches on the
 //! undecided member with the largest `|g|` (then the smaller ID), "stored"
 //! first when `g > 0`. Per-count tables of groups combine by convolution.
-//! The plain subset enumeration is kept as the reference
-//! (`ExactSharingLimits::uniform_subset_search`).
+//! The plain subset enumeration is kept as a test oracle
+//! (`ExactSharingLimits::uniform_subset_search`); it is not on the compiler
+//! path, and the Lean optimality theorems assume it is off.
 //!
 //! # Tie-break
 //!
@@ -383,7 +385,7 @@ fn certainly_excluded(occ: u128, size: u128, w: u128) -> bool {
   }
 }
 
-/// Lower bounds of the certain-stored test (W1's `UBounds`): `inl`, bytes
+/// Lower bounds of the certain-stored test (Lean `UBounds`): `inl`, bytes
 /// of a term written inline at a head position; `merged`, bytes of a
 /// telescope node inside a telescope running through it (no header);
 /// `head_lb`/`cont_lb`, the same at a head/continuation position when the
@@ -396,7 +398,7 @@ pub(crate) struct Bounds {
   cont_lb: Vec<u128>,
 }
 
-/// One step of the bounds (W1's `boundsStep`): `[inl, merged, head_lb,
+/// One step of the bounds (Lean `boundsStep`): `[inl, merged, head_lb,
 /// cont_lb]` of `t` from its children's head/continuation bounds.
 fn bound_step(
   nodes: &[Node],
@@ -460,7 +462,7 @@ fn uniform_bounds(
 /// Cap of the visible counts where they are passed on.
 const VISIBLE_CAP: u64 = 1 << 20;
 
-/// W1's `propagateCounts`: per term, root occurrences plus, over the edges
+/// Lean `propagateCounts`: per term, root occurrences plus, over the edges
 /// from each parent `y` (descending IDs), `weight(y, count of y)`; the second
 /// array counts only head (non-continuation) edges.
 fn propagate_counts(
@@ -499,7 +501,7 @@ fn to_i(x: u128) -> Result<i128, SharingError> {
   i128::try_from(x).map_err(|_e| overflow())
 }
 
-/// The certain-stored gain bound (W1's `storedGainC`) with `d` inline
+/// The certain-stored gain bound (Lean `storedGainC`) with `d` inline
 /// occurrences in all, `h` of them at head positions, and the term's bounds
 /// `inl`/`merged`.
 fn stored_gain(
@@ -771,7 +773,7 @@ impl CompCtx<'_, '_> {
 }
 
 // ---------------------------------------------------------------------------
-// Reclassifying branch and bound with splitting (W1's `SCtx`)
+// Reclassifying branch and bound with splitting (Lean `SCtx`)
 // ---------------------------------------------------------------------------
 
 /// Best `(delta, set)` per chosen count (index = set size).
@@ -832,7 +834,7 @@ fn pick_branch(gains: &[(TermId, i128)]) -> Option<(TermId, i128)> {
 }
 
 /// Bounds of the area under a maybe-stored predicate, over the root-level
-/// bounds (W1's `SCtx.rebound`).
+/// bounds (Lean `SCtx.rebound`).
 struct Overlay<'b> {
   base: &'b Bounds,
   vals: FxHashMap<TermId, [u128; 4]>,
@@ -883,7 +885,7 @@ struct SCtx<'a, 'd> {
 
 impl SCtx<'_, '_> {
   /// The component cost with `avail` available and the entries of
-  /// `stored`, and the evaluation work (W1's `SCtx.phi`).
+  /// `stored`, and the evaluation work (Lean `SCtx.phi`).
   fn phi(
     &mut self,
     avail: &dyn Fn(TermId) -> bool,
@@ -988,7 +990,7 @@ impl SCtx<'_, '_> {
     }
   }
 
-  /// Groups of the undecided members (W1's `SCtx.groups`).
+  /// Groups of the undecided members (Lean `SCtx.groups`).
   fn groups(
     &self,
     opq: &dyn Fn(TermId) -> bool,
@@ -1057,7 +1059,7 @@ impl SCtx<'_, '_> {
     gs
   }
 
-  /// Memo key of a group and the decided members that reach it (W1's
+  /// Memo key of a group and the decided members that reach it (Lean
   /// `SCtx.memoKey`).
   fn memo_key(
     &self,
@@ -1120,7 +1122,7 @@ impl SCtx<'_, '_> {
     (key, rel)
   }
 
-  /// Exact table of a group under the decided members outside it (W1's
+  /// Exact table of a group under the decided members outside it (Lean
   /// `SCtx.solve`).
   fn solve(
     &mut self,
@@ -1161,7 +1163,7 @@ impl SCtx<'_, '_> {
     Ok(tb)
   }
 
-  /// Branch-and-bound node of a group (W1's `SCtx.node`).
+  /// Branch-and-bound node of a group (Lean `SCtx.node`).
   #[allow(clippy::too_many_arguments)]
   fn node(
     &mut self,
@@ -1757,91 +1759,6 @@ pub(crate) fn optimize_uniform(
     components: comps,
     states_visited,
     lower_bracket,
-    stats: meter.stats.clone(),
-  })
-}
-
-/// Experiment hook (not an optimizer): the uniform-`w` encoding of a given
-/// stored set, materialized in the pinned order like the optimum. Every
-/// stored term must have compact in-degree >= 2 or be referenced; the
-/// classification fields of the result are empty.
-pub(crate) fn uniform_with_stored_set(
-  w: u64,
-  dag: &SharingDag,
-  stored: &[TermId],
-  meter: &mut Meter<'_>,
-) -> Result<UniformSharingResult, SharingError> {
-  let nodes = dag.nodes();
-  let n = nodes.len();
-  let facts = graph_facts(dag);
-  let len_u64 = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
-  let order = pinned_order(dag, &facts.deg, stored);
-  if order.len() != stored.len() {
-    return Err(internal("pinned order dropped a stored term"));
-  }
-  let k = len_u64(order.len());
-  let mut index: Vec<Option<u64>> = vec![None; n];
-  for (pos, &t) in order.iter().enumerate() {
-    index[ix(t)] = Some(len_u64(pos));
-  }
-  let dict = UniformIndex { index, width: w };
-  let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
-  let mut work = 0u64;
-  let costs = all_costs(nodes, &own, &dict, &mut work);
-  let (entries, roots, predicted) = materialize_dependent(
-    nodes,
-    &own,
-    &dict,
-    &costs,
-    &order,
-    dag.roots(),
-    &mut work,
-  )?;
-  meter.work(work)?;
-  let model = predicted.plus_u64(tag0_len(k)).exact().ok_or_else(overflow)?;
-  meter.output(model)?;
-  let mut check_meter = Meter::new(meter.limits());
-  let (check, entry_ids) =
-    SharingDag::build_full(&roots, Some(&entries), &mut check_meter)?;
-  if check != *dag {
-    return Err(internal("materialized encoding changes the expanded AST"));
-  }
-  if entry_ids
-    .iter()
-    .map(|x| x.unwrap_or(TermId::MAX))
-    .ne(order.iter().copied())
-  {
-    return Err(internal(
-      "materialized entries do not expand to the stored terms",
-    ));
-  }
-  let mut measured = tag0_len(k);
-  for e in entries.iter().chain(&roots) {
-    measured =
-      expr_len(e).and_then(|l| measured.checked_add(l)).ok_or_else(overflow)?;
-  }
-  let base_len = all_costs(nodes, &own, &super::dict::NoWidths, &mut work);
-  let mut unshared = Len::new(tag0_len(0));
-  for &r in dag.roots() {
-    unshared = unshared.plus(base_len[ix(r)]);
-  }
-  let mut sorted = stored.to_vec();
-  sorted.sort_unstable();
-  Ok(UniformSharingResult {
-    roots,
-    sharing: entries,
-    table_terms: order,
-    model_len: model,
-    variable_len: measured,
-    unshared_len: unshared.exact(),
-    stored: sorted,
-    certain_stored: Vec::new(),
-    certain_excluded: Vec::new(),
-    uncertain: Vec::new(),
-    low_degree: Vec::new(),
-    components: Vec::new(),
-    states_visited: 0,
-    lower_bracket: false,
     stats: meter.stats.clone(),
   })
 }

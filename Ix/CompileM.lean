@@ -2463,12 +2463,12 @@ def withRootExprs (info : Ixon.ConstantInfo) (rewrittenExprs : Array Ixon.Expr) 
 The compiler builds every block Constant with the canonical sharing
 construction `Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Rust
 `canonical_sharing_tiered`), under the limits of `CompileEnv.sharingLimits`.
-It is the only route: every construction failure is a compile error. -/
+There is no fallback: every construction failure is a compile error. -/
 
 /-- Resource limits of the compiler's canonical sharing construction: the
     library defaults (`Ix.Sharing.Exact.Limits`), a safety net far above every
-    corpus maximum (PR plan §0b-4). `CompileEnv.sharingLimits` carries the
-    limits a compile runs under. Mirrors Rust `compiler_sharing_limits`. -/
+    corpus maximum. `CompileEnv.sharingLimits` carries the limits a compile
+    runs under. Mirrors Rust `compiler_sharing_limits`. -/
 def compilerSharingLimits : Ix.Sharing.Exact.Limits := {}
 
 /-- Environment variable carrying a sharing-limit override in the format of

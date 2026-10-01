@@ -132,8 +132,9 @@
   4. Branch on the undecided member with the largest `|g|` (then the smaller
      ID), "stored" first when `g > 0`.
   Each node and each sub-search counts as one search state. The plain subset
-  enumeration of each component is kept as the reference
-  (`Limits.uniformSubsetSearch`).
+  enumeration of each component is kept as a test oracle
+  (`Limits.uniformSubsetSearch`, off by default and excluded from the
+  optimality theorems); it is not the compiler path.
 
   ## Tie-break
   Among minimum-length sets the least one in the order "the smaller
@@ -1185,7 +1186,8 @@ def searchComponent (cx : SCtx) (limits : Limits) (states costEvals : Nat) :
   pure ({ members := cx.members, bestDelta := bd, bestSet := bs, bySize := tb },
     st.states, st.costEvals)
 
-/-- Search one component with the reference subset enumeration. -/
+/-- Search one component with the subset enumeration (the test oracle of
+`Limits.uniformSubsetSearch`). -/
 def searchComponentRef (up : UPrep) (f : GraphFacts) (opaq : Array Bool) (roots : Array Nat)
     (slack : Nat) (limits : Limits) (members : Array Nat) (states costEvals : Nat) :
     Except SharingError (CompResult × Nat × Nat) := do

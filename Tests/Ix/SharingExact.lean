@@ -1,6 +1,6 @@
 /-
-  Tests for the exact minimum sharing core (`Ix.Sharing.Exact`, workstream
-  W1 of `docs/sharing-minimum.md`).
+  Tests for the exact minimum sharing core (`Ix.Sharing.Exact`; specified in
+  `docs/sharing-minimum.md`).
 
   Groups:
   * exact serializer lengths vs the production writer (integer widths,
@@ -1098,7 +1098,7 @@ def limitTests (_ : Unit) : TestSeq :=
   let resources : List Resource := [.exprVisits, .depth, .nodes, .states, .transitions,
     .costEvals, .outputBytes, .materialize, .materializeWork, .knapsackCells]
   group "limits" <|
-    test "the defaults are the safety net (PR plan §0b-4)"
+    test "the defaults are the safety net"
       (d.maxExprVisits == 2 ^ 40 && d.maxDepth == 2 ^ 20 && d.maxNodes == 2 ^ 32 &&
         d.maxStates == 2 ^ 40 && d.maxTransitions == 2 ^ 40 && d.maxCostEvals == 2 ^ 50 &&
         d.maxOutputBytes == 2 ^ 40 && d.maxMaterialize == 2 ^ 40 &&

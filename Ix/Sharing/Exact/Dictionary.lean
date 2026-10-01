@@ -1,5 +1,5 @@
 /-
-  Exact minimum sharing (W1): fixed-dictionary optimizer (§5).
+  Exact minimum sharing: fixed-dictionary optimizer (§5).
 
   For a dictionary `M` (available term IDs with their Share widths),
   `Prep.eval` computes `C_M(t)`, the minimum byte length of a standalone

@@ -1,7 +1,7 @@
 //! Tiered canonical sharing: uniform-width selection, slot allocation and
 //! re-materialization under a Share layout.
 //!
-//! A rule-for-rule port of W1's `Ix/Sharing/Exact/Tiered.lean`.
+//! A rule-for-rule port of the Lean `Ix/Sharing/Exact/Tiered.lean`.
 //!
 //! The one layout, [`ShareLayout::TagN`], prices a Share at table index `i` by
 //! the wire width of the TagN Share code ([`tagn_width`]: 1, 2, 3, 4, 5 or 9
@@ -14,12 +14,7 @@
 //! lower `w`, then `set_prec` on the stored set. An error at any width fails
 //! the call. Each candidate is exact per phase as described below; the
 //! final choice is the real-byte minimum over the three candidates, not a
-//! global optimum. The nominal width from `K` (the number of terms with
-//! compact in-degree at least 2 and unshared length at least 2; `w = 1` if
-//! `K <= 8`, `2` if `K <= tier2_end`, else `3`) is only reported in the
-//! statistics.
-//! [`normalize_constant_sharing_tiered_at_width`] runs the single candidate
-//! at one width (W1's `fixedWidth`).
+//! global optimum. One candidate is `tiered_at` (Lean `tieredAtWidth`).
 //!
 //! **Phase 1 (selection).** The stored set and its bodies are the
 //! uniform-`w` optimum ([`super::optimize_dag_uniform`]).
@@ -52,7 +47,6 @@ use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{Indices, Widths, all_costs, materialize};
 use super::uniform::{
   UniformSharingResult, graph_facts, optimize_uniform, pinned_order, set_prec,
-  uniform_with_stored_set,
 };
 use super::{
   ExactSharingLimits, FormatBound, Meter, NormalizeBytesError, Parallelism,
@@ -116,32 +110,9 @@ impl ShareLayout {
     }
   }
 
-  /// Nominal uniform width for `k` candidates (`k` up to 8 fit the 1-byte
-  /// rung, up to `tier2_end` the 2-byte rung). The canonical construction
-  /// tries every width instead (see the module doc); this is reported in the
-  /// statistics.
-  pub fn uniform_width(self, k: u64) -> u64 {
-    if k <= 8 {
-      1
-    } else if k <= self.tier2_end() {
-      2
-    } else {
-      3
-    }
-  }
-
   /// The layout of the wire Share code (TagN).
   pub fn wire() -> ShareLayout {
     ShareLayout::TagN
-  }
-
-  /// The layout code used at the FFI boundary: 1 = TagN (0, the former
-  /// Tag4 pricing layout, and every other code are invalid).
-  pub fn from_code(code: u8) -> Option<ShareLayout> {
-    match code {
-      1 => Some(ShareLayout::TagN),
-      _ => None,
-    }
   }
 }
 
@@ -195,7 +166,7 @@ impl Indices for LayoutIndex {
 // First-tier allocation
 // ---------------------------------------------------------------------------
 
-/// Whether every term of `order` comes after all its dependencies (W1's
+/// Whether every term of `order` comes after all its dependencies (Lean
 /// `respectsDeps`).
 fn respects_deps(
   order: &[TermId],
@@ -210,7 +181,7 @@ fn respects_deps(
   })
 }
 
-/// The Kahn priority order of `rest` (W1's `kahnOrder`): repeatedly place
+/// The Kahn priority order of `rest` (Lean `kahnOrder`): repeatedly place
 /// the available term (every dependency of it in `rest` already placed) of
 /// the largest weight, ties by the smaller ID. Terms left over, which
 /// acyclic dependencies never leave, follow in priority order.
@@ -394,13 +365,10 @@ pub struct TieredStats {
   pub layout: ShareLayout,
   /// Terms with in-degree >= 2 and unshared length >= 2.
   pub candidate_count: u64,
-  /// Nominal width for the candidate count ([`ShareLayout::uniform_width`]).
-  pub nominal_w: u64,
-  /// Phase-1 uniform width of the returned candidate (the winning width;
-  /// 0 for the all-candidates experiment).
+  /// Phase-1 uniform width of the returned candidate (the winning width).
   pub w: u64,
   /// Final layout length of every candidate run, as `(w, bytes)` in
-  /// increasing `w` (one entry for a single forced candidate).
+  /// increasing `w` (one entry for a single candidate, `tiered_at`).
   pub candidate_lengths: Vec<(u64, u64)>,
   /// Phase-1 uniform-model length.
   pub phase1_model_bytes: u64,
@@ -435,8 +403,8 @@ pub struct TieredSharingResult {
   pub stats: TieredStats,
 }
 
-/// The tiered canonical construction on a DAG (W1's
-/// `canonicalTieredExpanded`): phases 1-3 at each phase-1 width 1, 2 and 3,
+/// The tiered canonical construction on a DAG (Lean
+/// `canonicalTieredCore`): phases 1-3 at each phase-1 width 1, 2 and 3,
 /// returning the candidate with the fewest final layout bytes; ties go to
 /// the lower width, then `set_prec` on the stored set. Each candidate runs
 /// under its own meter with the same limits, and an error at any width
@@ -449,7 +417,7 @@ pub(crate) fn tiered(
 ) -> Result<TieredSharingResult, SharingError> {
   let run = |w: u64| {
     let mut meter = Meter::with_parallelism(limits, par);
-    tiered_at(layout, dag, &mut meter, Phase1Choice::Width(w))
+    tiered_at(layout, dag, &mut meter, w)
   };
   let candidates: Vec<Result<TieredSharingResult, SharingError>> =
     if par.widths <= 1 {
@@ -479,7 +447,7 @@ pub(crate) fn tiered(
   Ok(best)
 }
 
-/// Whether candidate `a` beats `b` (W1's `tieredBetter`): fewer final layout
+/// Whether candidate `a` beats `b` (Lean `tieredBetter`): fewer final layout
 /// bytes, then the lower width, then `set_prec` on the stored set.
 fn tiered_better(a: &TieredSharingResult, b: &TieredSharingResult) -> bool {
   let (x, y) = (&a.stats, &b.stats);
@@ -489,22 +457,13 @@ fn tiered_better(a: &TieredSharingResult, b: &TieredSharingResult) -> bool {
         || (x.w == y.w && set_prec(&a.phase1.stored, &b.phase1.stored))))
 }
 
-/// One phase-1 candidate, for the escape hatch and experiments.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Phase1Choice {
-  /// The uniform optimum at width `w` (W1's `fixedWidth := some w`).
-  Width(u64),
-  /// Experiment: every candidate (compact in-degree >= 2, unshared length
-  /// >= 2) stored, bodies materialized at uniform width 1 (the MSS set).
-  AllCandidates,
-}
-
-/// The tiered construction with phase 1 chosen by `phase1`.
+/// One candidate of the tiered construction (Lean `tieredAtWidth`): phases
+/// 1-3 with phase-1 uniform width `w`.
 fn tiered_at(
   layout: ShareLayout,
   dag: &SharingDag,
   meter: &mut Meter<'_>,
-  phase1: Phase1Choice,
+  w: u64,
 ) -> Result<TieredSharingResult, SharingError> {
   let nodes = dag.nodes();
   let n = nodes.len();
@@ -516,16 +475,7 @@ fn tiered_at(
     (0..n).filter(|&t| facts.deg[t] >= 2 && base[t] >= Len::new(2)).count(),
   );
   // Phase 1.
-  let (w, u) = match phase1 {
-    Phase1Choice::Width(w) => (w, optimize_uniform(w, dag, meter)?),
-    Phase1Choice::AllCandidates => {
-      let stored: Vec<TermId> = (0..n)
-        .filter(|&t| facts.deg[t] >= 2 && base[t] >= Len::new(2))
-        .map(|t| TermId::try_from(t).map_err(|_e| overflow()))
-        .collect::<Result<_, _>>()?;
-      (0, uniform_with_stored_set(1, dag, &stored, meter)?)
-    },
-  };
+  let u = optimize_uniform(w, dag, meter)?;
   let order1 = u.table_terms.clone();
   let entries1 = &u.sharing;
   let roots1 = &u.roots;
@@ -679,7 +629,6 @@ fn tiered_at(
   let stats = TieredStats {
     layout,
     candidate_count: k,
-    nominal_w: layout.uniform_width(k),
     w,
     candidate_lengths: vec![(w, predicted)],
     phase1_model_bytes: u.model_len,
@@ -723,7 +672,9 @@ pub fn normalize_constant_sharing_tiered(
   c: &Constant,
   limits: &ExactSharingLimits,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, None, Parallelism::SEQUENTIAL)
+  normalize_tiered_with(c, limits, |dag| {
+    tiered(layout, dag, limits, Parallelism::SEQUENTIAL)
+  })
 }
 
 /// [`normalize_constant_sharing_tiered`] with the thread budgets `par`
@@ -734,56 +685,36 @@ pub fn normalize_constant_sharing_tiered_par(
   limits: &ExactSharingLimits,
   par: Parallelism,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, None, par)
+  normalize_tiered_with(c, limits, |dag| tiered(layout, dag, limits, par))
 }
 
-/// Escape hatch (W1's `fixedWidth := some w`), not the canonical
-/// construction: the single candidate with phase-1 width `w`. The canonical
-/// construction returns one of the candidates at `w = 1, 2, 3`.
-pub fn normalize_constant_sharing_tiered_at_width(
+/// The single candidate with phase-1 width `w` ([`tiered_at`], Lean
+/// `tieredAtWidth`) on `c`, for the tests of the width selection: the
+/// canonical construction returns one of the candidates at `w = 1, 2, 3`.
+#[cfg(test)]
+pub(crate) fn normalize_constant_sharing_tiered_at_width(
   layout: ShareLayout,
   c: &Constant,
   limits: &ExactSharingLimits,
   w: u64,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(
-    layout,
-    c,
-    limits,
-    Some(Phase1Choice::Width(w)),
-    Parallelism::SEQUENTIAL,
-  )
+  normalize_tiered_with(c, limits, |dag| {
+    tiered_at(layout, dag, &mut Meter::new(limits), w)
+  })
 }
 
-/// Experiment hook, not the canonical construction: the single candidate
-/// chosen by `phase1`. The reported `stats.w` is 0 for
-/// [`Phase1Choice::AllCandidates`].
-pub fn normalize_constant_sharing_tiered_with(
-  layout: ShareLayout,
+/// Expand `c`'s table, run `run` on its DAG, and reassemble the Constant,
+/// checking its serialized length against the result's accounting.
+fn normalize_tiered_with(
   c: &Constant,
   limits: &ExactSharingLimits,
-  phase1: Phase1Choice,
-) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, Some(phase1), Parallelism::SEQUENTIAL)
-}
-
-fn normalize_tiered_at(
-  layout: ShareLayout,
-  c: &Constant,
-  limits: &ExactSharingLimits,
-  phase1: Option<Phase1Choice>,
-  par: Parallelism,
+  run: impl FnOnce(&SharingDag) -> Result<TieredSharingResult, SharingError>,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
   let mut meter = Meter::new(limits);
   let roots = constant_info_root_exprs(&c.info);
   let dag = SharingDag::build(&roots, Some(&c.sharing), &mut meter)?;
   let fixed = constant_fixed_len(c).ok_or_else(overflow)?;
-  let result = match phase1 {
-    None => tiered(layout, &dag, limits, par)?,
-    Some(p) => {
-      tiered_at(layout, &dag, &mut Meter::with_parallelism(limits, par), p)?
-    },
-  };
+  let result = run(&dag)?;
   let info = rebuild_constant_info(&c.info, &result.roots)?;
   let out = Constant {
     info,
