@@ -42,6 +42,7 @@ use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{Indices, Widths, all_costs, materialize};
 use super::uniform::{
   UniformSharingResult, graph_facts, optimize_uniform, pinned_order,
+  uniform_with_stored_set,
 };
 use super::{
   ExactSharingLimits, FormatBound, Meter, NormalizeBytesError, Resource,
@@ -364,16 +365,27 @@ pub(crate) fn tiered(
   dag: &SharingDag,
   meter: &mut Meter<'_>,
 ) -> Result<TieredSharingResult, SharingError> {
-  tiered_at(layout, dag, meter, None)
+  tiered_at(layout, dag, meter, Phase1Choice::KBased)
 }
 
-/// The tiered construction with the phase-1 width `width`, or the
-/// `K`-based width when `None` (the canonical construction).
+/// How phase 1 chooses its stored set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase1Choice {
+  /// The canonical construction: the uniform optimum at the `K`-based width.
+  KBased,
+  /// Experiment: the uniform optimum at width `w`.
+  Width(u64),
+  /// Experiment: every candidate (compact in-degree >= 2, unshared length
+  /// >= 2) stored, bodies materialized at uniform width 1 (the MSS set).
+  AllCandidates,
+}
+
+/// The tiered construction with phase 1 chosen by `phase1`.
 fn tiered_at(
   layout: ShareLayout,
   dag: &SharingDag,
   meter: &mut Meter<'_>,
-  width: Option<u64>,
+  phase1: Phase1Choice,
 ) -> Result<TieredSharingResult, SharingError> {
   let nodes = dag.nodes();
   let n = nodes.len();
@@ -384,9 +396,21 @@ fn tiered_at(
   let k = len64(
     (0..n).filter(|&t| facts.deg[t] >= 2 && base[t] >= Len::new(2)).count(),
   );
-  let w = width.unwrap_or_else(|| layout.uniform_width(k));
   // Phase 1.
-  let u = optimize_uniform(w, dag, meter)?;
+  let (w, u) = match phase1 {
+    Phase1Choice::KBased => {
+      let w = layout.uniform_width(k);
+      (w, optimize_uniform(w, dag, meter)?)
+    },
+    Phase1Choice::Width(w) => (w, optimize_uniform(w, dag, meter)?),
+    Phase1Choice::AllCandidates => {
+      let stored: Vec<TermId> = (0..n)
+        .filter(|&t| facts.deg[t] >= 2 && base[t] >= Len::new(2))
+        .map(|t| TermId::try_from(t).map_err(|_e| overflow()))
+        .collect::<Result<_, _>>()?;
+      (0, uniform_with_stored_set(1, dag, &stored, meter)?)
+    },
+  };
   let order1 = u.table_terms.clone();
   let entries1 = &u.sharing;
   let roots1 = &u.roots;
@@ -539,7 +563,7 @@ pub fn normalize_constant_sharing_tiered(
   c: &Constant,
   limits: &ExactSharingLimits,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, None)
+  normalize_tiered_at(layout, c, limits, Phase1Choice::KBased)
 }
 
 /// Experiment hook, not the canonical construction: the tiered construction
@@ -553,20 +577,32 @@ pub fn normalize_constant_sharing_tiered_at_width(
   limits: &ExactSharingLimits,
   w: u64,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, Some(w))
+  normalize_tiered_at(layout, c, limits, Phase1Choice::Width(w))
+}
+
+/// Experiment hook, not the canonical construction: the tiered construction
+/// of `c` with phase 1 chosen by `phase1`. The reported `stats.w` is 0 for
+/// [`Phase1Choice::AllCandidates`].
+pub fn normalize_constant_sharing_tiered_with(
+  layout: ShareLayout,
+  c: &Constant,
+  limits: &ExactSharingLimits,
+  phase1: Phase1Choice,
+) -> Result<(Constant, TieredSharingResult), SharingError> {
+  normalize_tiered_at(layout, c, limits, phase1)
 }
 
 fn normalize_tiered_at(
   layout: ShareLayout,
   c: &Constant,
   limits: &ExactSharingLimits,
-  width: Option<u64>,
+  phase1: Phase1Choice,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
   let mut meter = Meter::new(limits);
   let roots = constant_info_root_exprs(&c.info);
   let dag = SharingDag::build(&roots, Some(&c.sharing), &mut meter)?;
   let fixed = constant_fixed_len(c).ok_or_else(overflow)?;
-  let result = tiered_at(layout, &dag, &mut meter, width)?;
+  let result = tiered_at(layout, &dag, &mut meter, phase1)?;
   let info = rebuild_constant_info(&c.info, &result.roots)?;
   let out = Constant {
     info,

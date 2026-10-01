@@ -1696,6 +1696,91 @@ pub(crate) fn optimize_uniform(
   })
 }
 
+/// Experiment hook (not an optimizer): the uniform-`w` encoding of a given
+/// stored set, materialized in the pinned order like the optimum. Every
+/// stored term must have compact in-degree >= 2 or be referenced; the
+/// classification fields of the result are empty.
+pub(crate) fn uniform_with_stored_set(
+  w: u64,
+  dag: &SharingDag,
+  stored: &[TermId],
+  meter: &mut Meter<'_>,
+) -> Result<UniformSharingResult, SharingError> {
+  let nodes = dag.nodes();
+  let n = nodes.len();
+  let facts = graph_facts(dag);
+  let len_u64 = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
+  let order = pinned_order(dag, &facts.deg, stored);
+  if order.len() != stored.len() {
+    return Err(internal("pinned order dropped a stored term"));
+  }
+  let k = len_u64(order.len());
+  let mut index: Vec<Option<u64>> = vec![None; n];
+  for (pos, &t) in order.iter().enumerate() {
+    index[ix(t)] = Some(len_u64(pos));
+  }
+  let dict = UniformIndex { index, width: w };
+  let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
+  let mut work = 0u64;
+  let costs = all_costs(nodes, &own, &dict, &mut work);
+  let (entries, roots, predicted) = materialize_dependent(
+    nodes,
+    &own,
+    &dict,
+    &costs,
+    &order,
+    dag.roots(),
+    &mut work,
+  )?;
+  meter.work(work)?;
+  let model = predicted.plus_u64(tag0_len(k)).exact().ok_or_else(overflow)?;
+  meter.output(model)?;
+  let mut check_meter = Meter::new(meter.limits());
+  let (check, entry_ids) =
+    SharingDag::build_full(&roots, Some(&entries), &mut check_meter)?;
+  if check != *dag {
+    return Err(internal("materialized encoding changes the expanded AST"));
+  }
+  if entry_ids
+    .iter()
+    .map(|x| x.unwrap_or(TermId::MAX))
+    .ne(order.iter().copied())
+  {
+    return Err(internal(
+      "materialized entries do not expand to the stored terms",
+    ));
+  }
+  let mut measured = tag0_len(k);
+  for e in entries.iter().chain(&roots) {
+    measured =
+      expr_len(e).and_then(|l| measured.checked_add(l)).ok_or_else(overflow)?;
+  }
+  let base_len = all_costs(nodes, &own, &super::dict::NoWidths, &mut work);
+  let mut unshared = Len::new(tag0_len(0));
+  for &r in dag.roots() {
+    unshared = unshared.plus(base_len[ix(r)]);
+  }
+  let mut sorted = stored.to_vec();
+  sorted.sort_unstable();
+  Ok(UniformSharingResult {
+    roots,
+    sharing: entries,
+    table_terms: order,
+    model_len: model,
+    variable_len: measured,
+    unshared_len: unshared.exact(),
+    stored: sorted,
+    certain_stored: Vec::new(),
+    certain_excluded: Vec::new(),
+    uncertain: Vec::new(),
+    low_degree: Vec::new(),
+    components: Vec::new(),
+    states_visited: 0,
+    lower_bracket: false,
+    stats: meter.stats.clone(),
+  })
+}
+
 /// Exact uniform-width sharing of ordered, fully expanded roots.
 pub fn optimize_sharing_uniform(
   w: u64,

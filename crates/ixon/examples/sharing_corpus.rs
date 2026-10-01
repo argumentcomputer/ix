@@ -42,10 +42,9 @@ use ix_common::address::Address;
 use ixon::Env;
 use ixon::constant::{Constant, ConstantInfo};
 use ixon::sharing_exact::{
-  ExactSharingLimits, ShareLayout, SharingDag, SharingError, candidate_terms,
-  constant_fixed_len, constant_len, layout_bytes,
-  normalize_constant_sharing_tiered,
-  normalize_constant_sharing_tiered_at_width,
+  ExactSharingLimits, Phase1Choice, ShareLayout, SharingDag, SharingError,
+  candidate_terms, constant_fixed_len, constant_len, layout_bytes,
+  normalize_constant_sharing_tiered, normalize_constant_sharing_tiered_with,
 };
 use rayon::prelude::*;
 
@@ -510,8 +509,9 @@ fn main() -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 /// One constant under the width experiment: phases 1-3 at each phase-1
-/// width `w` in 1, 2, 3. `bytes[i]` is the complete constant priced by the
-/// layout (for Tag4, the serialized length) at `w = i + 1`.
+/// width `w` in 1, 2, 3, and with every candidate stored ("all"). `bytes[i]`
+/// is the complete constant priced by the layout (for Tag4, the serialized
+/// length) at `w = i + 1` for `i < 3`, and for "all" at `i = 3`.
 #[derive(Default, Clone)]
 struct WRow {
   idx: usize,
@@ -519,10 +519,10 @@ struct WRow {
   kind: &'static str,
   raw: u64,
   k: u64,
-  status: [String; 3],
-  stored: [u64; 3],
-  bytes: [Option<u64>; 3],
-  ms: [f64; 3],
+  status: [String; 4],
+  stored: [u64; 4],
+  bytes: [Option<u64>; 4],
+  ms: [f64; 4],
 }
 
 impl WRow {
@@ -532,8 +532,16 @@ impl WRow {
   }
   /// Fewest layout bytes over the three widths; ties to the lower width.
   fn best(&self) -> Option<(usize, u64)> {
+    self.best_of(3)
+  }
+  /// Fewest layout bytes over the widths 1, 2, 3 and then "all" (index 4);
+  /// ties to the earlier candidate.
+  fn best4(&self) -> Option<(usize, u64)> {
+    self.best_of(4)
+  }
+  fn best_of(&self, n: usize) -> Option<(usize, u64)> {
     let mut best: Option<(usize, u64)> = None;
-    for (i, b) in self.bytes.iter().enumerate() {
+    for (i, b) in self.bytes.iter().take(n).enumerate() {
       if let Some(b) = *b
         && best.is_none_or(|(_, x)| b < x)
       {
@@ -567,14 +575,14 @@ fn process_widths(
   };
   row.kind = kind_of(&c);
   let fixed = constant_fixed_len(&c).unwrap_or(0);
-  for i in 0..3 {
+  for i in 0..4 {
     let start = Instant::now();
-    let r = normalize_constant_sharing_tiered_at_width(
-      layout,
-      &c,
-      limits,
-      i as u64 + 1,
-    );
+    let choice = if i < 3 {
+      Phase1Choice::Width(i as u64 + 1)
+    } else {
+      Phase1Choice::AllCandidates
+    };
+    let r = normalize_constant_sharing_tiered_with(layout, &c, limits, choice);
     row.ms[i] = start.elapsed().as_secs_f64() * 1e3;
     match r {
       Ok((_, res)) => {
@@ -632,10 +640,12 @@ fn width_experiment(
     );
     writeln!(
       f,
-      "idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,bytes1,bytes2,bytes3,kbased,best,best_w,rewidth,rewidth_w,ms1,ms2,ms3"
+      "idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,bytes1,bytes2,bytes3,kbased,best,best_w,rewidth,rewidth_w,ms1,ms2,ms3,status_all,stored_all,bytes_all,best4,best4_w,ms_all"
     )
     .map_err(|e| e.to_string())?;
     let opt = |b: Option<u64>| b.map_or(String::new(), |b| b.to_string());
+    let wname =
+      |w: usize| if w == 4 { "all".to_string() } else { w.to_string() };
     for (r, c) in rows.iter().zip(consts) {
       let wk = r.wk(layout);
       let rw = r.rewidth(layout);
@@ -643,9 +653,13 @@ fn width_experiment(
         r.best().map_or((String::new(), String::new()), |(w, b)| {
           (w.to_string(), b.to_string())
         });
+      let (bw4, bb4) =
+        r.best4().map_or((String::new(), String::new()), |(w, b)| {
+          (wname(w), b.to_string())
+        });
       writeln!(
         f,
-        "{},{},\"{}\",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3}",
+        "{},{},\"{}\",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{},{},{},{},{},{:.3}",
         r.idx,
         r.addr,
         name_of(&r.addr, &c.addr).replace('"', "'"),
@@ -669,15 +683,24 @@ fn width_experiment(
         rw,
         r.ms[0],
         r.ms[1],
-        r.ms[2]
+        r.ms[2],
+        r.status[3],
+        r.stored[3],
+        opt(r.bytes[3]),
+        bb4,
+        bw4,
+        r.ms[3]
       )
       .map_err(|e| e.to_string())?;
     }
   }
-  // Summary over constants where all three widths succeeded.
-  let mut failed = [0u64; 3];
+  // Summary over constants where all four candidates succeeded.
+  let mut failed = [0u64; 4];
   let (mut n_all, mut kb, mut best, mut rew) = (0u64, 0u128, 0u128, 0u128);
+  let (mut best4_total, mut all_total) = (0u128, 0u128);
   let mut wins = [0u64; 3];
+  let mut wins4 = [0u64; 4];
+  let (mut b4_better, mut b4_equal) = (0u64, 0u64);
   let (mut b_better, mut b_equal) = (0u64, 0u64);
   let (mut r_better, mut r_equal, mut r_worse) = (0u64, 0u64, 0u64);
   let mut gains: Vec<i64> = Vec::new();
@@ -694,11 +717,20 @@ fn width_experiment(
     let wk = r.wk(layout);
     let k_b = r.bytes[wk - 1].unwrap_or(0);
     let (bw, b_b) = r.best().unwrap_or((wk, k_b));
+    let (bw4, b_b4) = r.best4().unwrap_or((bw, b_b));
     let r_b = r.bytes[r.rewidth(layout) - 1].unwrap_or(0);
     kb += u128::from(k_b);
     best += u128::from(b_b);
+    best4_total += u128::from(b_b4);
+    all_total += u128::from(r.bytes[3].unwrap_or(0));
     rew += u128::from(r_b);
     wins[bw - 1] += 1;
+    wins4[bw4 - 1] += 1;
+    if b_b4 < b_b {
+      b4_better += 1;
+    } else {
+      b4_equal += 1;
+    }
     if b_b < k_b {
       b_better += 1;
       gains.push(signed(b_b) - signed(k_b));
@@ -726,8 +758,16 @@ fn width_experiment(
     peak_rss_kib().map_or("?".into(), |k| k.to_string())
   );
   println!(
-    "- failures by width: w=1 {}, w=2 {}, w=3 {}; constants with all three ok: {n_all}",
-    failed[0], failed[1], failed[2]
+    "- failures by candidate: w=1 {}, w=2 {}, w=3 {}, all {}; constants with all four ok: {n_all}",
+    failed[0], failed[1], failed[2], failed[3]
+  );
+  println!(
+    "- best of four (w = 1, 2, 3, all; ties to the earlier): {best4_total} ({:+} vs best of three); all candidates stored: {all_total}",
+    best4_total.cast_signed() - best.cast_signed()
+  );
+  println!(
+    "- best-of-four winner: w=1 {}, w=2 {}, w=3 {}, all {}; best of four vs best of three per constant: better {b4_better}, equal {b4_equal}",
+    wins4[0], wins4[1], wins4[2], wins4[3]
   );
   println!(
     "- layout bytes over those constants: K-based {kb}; best of three {best} ({:+}); stored-count re-solve {rew} ({:+})",

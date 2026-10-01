@@ -2745,3 +2745,34 @@ fn tiered_at_width_hook() {
     }
   }
 }
+
+/// The "all candidates" experiment hook stores exactly the `K` candidates
+/// and encodes the same constant.
+#[test]
+fn tiered_all_candidates_hook() {
+  let mut rng = Rng(79);
+  for i in 0..60u64 {
+    let c = if i % 2 == 0 {
+      let roots = gen_heavy_parent(&mut rng);
+      wrap(&mut rng, roots)
+    } else {
+      gen_constant(i + 95_000, 6, 30, 5)
+    };
+    for l in LAYOUTS {
+      let (m, s) = normalize_constant_sharing_tiered_with(
+        l,
+        &c,
+        &limits(),
+        Phase1Choice::AllCandidates,
+      )
+      .unwrap();
+      assert_eq!(s.stats.w, 0);
+      assert_eq!(s.table_terms.len() as u64, s.stats.candidate_count);
+      assert_eq!(
+        roundtrip(&m).len() as u64,
+        constant_fixed_len(&c).unwrap() + s.variable_len
+      );
+      assert_eq!(put(&unshared(&m)), put(&unshared(&c)), "case {i} {l:?}");
+    }
+  }
+}
