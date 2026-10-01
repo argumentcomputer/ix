@@ -6533,3 +6533,419 @@ mod tests {
     let _ = Level::zero();
   }
 }
+
+// ===========================================================================
+// Extended index space for `Share` inside `meta_sharing`
+//
+// `Share(i)` inside `meta_sharing[j]` denotes primary entry `i` (`i < p`) or
+// `meta_sharing[i - p]` (`p <= i < p + j`); anything else is
+// `InvalidMetaShareIndex`. No compiler emits such a share today, so these
+// hand-built fixtures pin the reader rule. They mirror the Lean
+// `decompile-unit` "metadata share" tests in `Tests/Ix/Decompile.lean`.
+//
+// Every fixture has one primary entry (`p = 1`), `prim0 = (#1 #2)`, and a
+// primary root `head #99` whose `CallSite` metadata reads one collapsed
+// argument from `meta_sharing` before the kept `#99`.
+// ===========================================================================
+
+#[cfg(test)]
+mod meta_share_tests {
+  use super::*;
+  use crate::compile::compile_name;
+
+  struct Fx {
+    stt: CompileState,
+    head: Name,
+    head_addr: Address,
+    head2: Name,
+    head2_addr: Address,
+  }
+
+  fn fx() -> Fx {
+    let stt = CompileState::default();
+    let head = Name::str(Name::anon(), "MS.head".to_string());
+    let head2 = Name::str(Name::anon(), "MS.head2".to_string());
+    let head_addr = compile_name(&head, &stt);
+    let head2_addr = compile_name(&head2, &stt);
+    Fx { stt, head, head_addr, head2, head2_addr }
+  }
+
+  fn prim0() -> Arc<Expr> {
+    Expr::app(Expr::var(1), Expr::var(2))
+  }
+  /// `meta_sharing[0]`, shared: `Share(0)` is primary entry 0.
+  fn shared_m0() -> Arc<Expr> {
+    Expr::app(Expr::share(0), Expr::var(3))
+  }
+  /// `meta_sharing[1]`, shared: `Share(1) = p + 0` is `meta_sharing[0]`.
+  fn shared_m1() -> Arc<Expr> {
+    Expr::app(Expr::share(1), Expr::share(0))
+  }
+  fn plain_m0() -> Arc<Expr> {
+    Expr::app(prim0(), Expr::var(3))
+  }
+  fn plain_m1() -> Arc<Expr> {
+    Expr::app(plain_m0(), prim0())
+  }
+
+  fn bv(n: u64) -> LeanExpr {
+    LeanExpr::bvar(Nat::from(n))
+  }
+  fn lean_prim0() -> LeanExpr {
+    LeanExpr::app(bv(1), bv(2))
+  }
+  fn lean_m0() -> LeanExpr {
+    LeanExpr::app(lean_prim0(), bv(3))
+  }
+  fn lean_m1() -> LeanExpr {
+    LeanExpr::app(lean_m0(), lean_prim0())
+  }
+
+  /// The primary root `head #99`.
+  fn root() -> Arc<Expr> {
+    Expr::app(Expr::reference(0, vec![]), Expr::var(99))
+  }
+
+  /// `head x #99`.
+  fn spine(fx: &Fx, x: LeanExpr) -> LeanExpr {
+    LeanExpr::app(
+      LeanExpr::app(LeanExpr::cnst(fx.head.clone(), vec![]), x),
+      bv(99),
+    )
+  }
+
+  /// Arena `0` leaf (the kept argument), `1` the call site, whose source
+  /// spine is `head <meta_sharing[k]> #99`.
+  fn arena(fx: &Fx, k: u64, orig_head: Option<(u64, u64)>) -> ExprMeta {
+    let mut arena = ExprMeta::default();
+    let leaf = arena.alloc(ExprMetaData::Leaf);
+    arena.alloc(ExprMetaData::CallSite {
+      name: fx.head_addr.clone(),
+      entries: vec![
+        CallSiteEntry::Collapsed { sharing_idx: k, meta: u64::MAX },
+        CallSiteEntry::Kept { canon_idx: 0, meta: leaf },
+      ],
+      canon_meta: vec![leaf],
+      orig_head,
+    });
+    arena
+  }
+
+  /// A cache with the primary table `[prim0]` and `meta_sharing` installed
+  /// directly (no table check), so the lazy checks are exercised.
+  fn cache(fx: &Fx, meta_sharing: Vec<Arc<Expr>>) -> BlockCache {
+    BlockCache {
+      sharing: vec![prim0()],
+      meta_sharing,
+      refs: vec![fx.head_addr.clone()],
+      current_const: "meta_share".into(),
+      ..Default::default()
+    }
+  }
+
+  fn run(
+    fx: &Fx,
+    meta_sharing: Vec<Arc<Expr>>,
+    arena: &ExprMeta,
+    root: &Arc<Expr>,
+    root_idx: u64,
+  ) -> Result<LeanExpr, DecompileError> {
+    let mut cache = cache(fx, meta_sharing);
+    decompile_expr(
+      root,
+      arena,
+      root_idx,
+      &[],
+      &mut cache,
+      &fx.stt,
+      &DecompileState::default(),
+    )
+  }
+
+  fn assert_meta_share_err<T: std::fmt::Debug>(
+    r: Result<T, DecompileError>,
+    want_idx: u64,
+    want_entry: u64,
+    want_p: usize,
+    want_q: usize,
+  ) {
+    match r {
+      Err(DecompileError::InvalidMetaShareIndex {
+        idx,
+        entry,
+        primary_len,
+        meta_len,
+        ..
+      }) => assert_eq!(
+        (idx, entry, primary_len, meta_len),
+        (want_idx, want_entry, want_p, want_q)
+      ),
+      other => panic!("expected InvalidMetaShareIndex, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn meta_share_primary_entry() {
+    let fx = fx();
+    let got = run(&fx, vec![shared_m0()], &arena(&fx, 0, None), &root(), 1);
+    assert_eq!(got.expect("decompiles"), spine(&fx, lean_m0()));
+  }
+
+  #[test]
+  fn meta_share_earlier_meta_entry() {
+    let fx = fx();
+    let got = run(
+      &fx,
+      vec![shared_m0(), shared_m1()],
+      &arena(&fx, 1, None),
+      &root(),
+      1,
+    );
+    assert_eq!(got.expect("decompiles"), spine(&fx, lean_m1()));
+  }
+
+  /// The shared table decompiles exactly like the unshared original.
+  #[test]
+  fn meta_share_round_trip_equals_unshared() {
+    let fx = fx();
+    let a = arena(&fx, 1, None);
+    let shared =
+      run(&fx, vec![shared_m0(), shared_m1()], &a, &root(), 1).unwrap();
+    let plain = run(&fx, vec![plain_m0(), plain_m1()], &a, &root(), 1).unwrap();
+    assert_eq!(shared, plain);
+    assert_eq!(shared, spine(&fx, lean_m1()));
+  }
+
+  /// `orig_head` reads its entry in that entry's metadata scope too:
+  /// source spine `<meta_sharing[1]> <meta_sharing[0]> #99`.
+  #[test]
+  fn meta_share_orig_head() {
+    let fx = fx();
+    let got = run(
+      &fx,
+      vec![shared_m0(), shared_m1()],
+      &arena(&fx, 0, Some((1, u64::MAX))),
+      &root(),
+      1,
+    );
+    assert_eq!(
+      got.expect("decompiles"),
+      LeanExpr::app(LeanExpr::app(lean_m1(), lean_m0()), bv(99))
+    );
+  }
+
+  #[test]
+  fn meta_share_forward_reference_rejected() {
+    let fx = fx();
+    let table = vec![Expr::app(Expr::share(2), Expr::var(3)), Expr::var(4)];
+    let lazy = run(&fx, table.clone(), &arena(&fx, 0, None), &root(), 1);
+    assert_meta_share_err(lazy, 2, 0, 1, 2);
+    assert_meta_share_err(validate_meta_sharing(1, &table, "t"), 2, 0, 1, 2);
+  }
+
+  #[test]
+  fn meta_share_self_reference_rejected() {
+    let fx = fx();
+    let table = vec![Expr::app(Expr::share(1), Expr::var(3))];
+    let lazy = run(&fx, table.clone(), &arena(&fx, 0, None), &root(), 1);
+    assert_meta_share_err(lazy, 1, 0, 1, 1);
+    assert_meta_share_err(validate_meta_sharing(1, &table, "t"), 1, 0, 1, 1);
+  }
+
+  #[test]
+  fn meta_share_out_of_range_rejected() {
+    let fx = fx();
+    let table = vec![Expr::var(0), Expr::app(Expr::share(5), Expr::var(3))];
+    let lazy = run(&fx, table.clone(), &arena(&fx, 1, None), &root(), 1);
+    let msg = lazy.as_ref().unwrap_err().to_string();
+    assert!(msg.contains("out of range"), "{msg}");
+    assert_meta_share_err(lazy, 5, 1, 1, 2);
+    assert_meta_share_err(validate_meta_sharing(1, &table, "t"), 5, 1, 1, 2);
+  }
+
+  /// A primary `Share(i)` with `i >= p` stays invalid although
+  /// `meta_sharing` has entries: metadata never changes how primary bytes
+  /// decode.
+  #[test]
+  fn meta_share_primary_share_unchanged() {
+    let fx = fx();
+    let root = Expr::app(Expr::reference(0, vec![]), Expr::share(1));
+    let got = run(&fx, vec![shared_m0()], &arena(&fx, 0, None), &root, 1);
+    assert!(
+      matches!(
+        got,
+        Err(DecompileError::InvalidShareIndex { idx: 1, max: 1, .. })
+      ),
+      "{got:?}"
+    );
+  }
+
+  /// The expression cache is keyed by scope: `sub = Share(1) #7` is valid
+  /// in `meta_sharing[1]` (decoded first, as the collapsed argument of the
+  /// call site in function position) and must still be rejected when the
+  /// primary root applies the call site to the same `sub` (same pointer,
+  /// same arena index; no call-site scan covers that occurrence).
+  #[test]
+  fn meta_share_cache_keyed_by_scope() {
+    let fx = fx();
+    let sub = Expr::app(Expr::share(1), Expr::var(7));
+    let root = Expr::app(root(), sub.clone());
+    let mut a = arena(&fx, 1, None);
+    let root_idx = a.alloc(ExprMetaData::App { children: [1, u64::MAX] });
+    let got = run(&fx, vec![shared_m0(), sub], &a, &root, root_idx);
+    assert!(
+      matches!(
+        got,
+        Err(DecompileError::InvalidShareIndex { idx: 1, max: 1, .. })
+      ),
+      "{got:?}"
+    );
+  }
+
+  /// A call site nested in a metadata expression: its canonical spine runs
+  /// through a metadata share into `meta_sharing[0]`, and an argument there
+  /// is a primary share. Source: `head (head2 (#1 #2) #9) #99`.
+  #[test]
+  fn meta_share_nested_call_site_crosses_scopes() {
+    let fx = fx();
+    let m0 = Expr::app(Expr::reference(0, vec![]), Expr::share(0));
+    let m1 = Expr::app(Expr::share(1), Expr::var(9));
+    let mut a = ExprMeta::default();
+    let leaf = a.alloc(ExprMetaData::Leaf);
+    let inner = a.alloc(ExprMetaData::CallSite {
+      name: fx.head2_addr.clone(),
+      entries: vec![
+        CallSiteEntry::Kept { canon_idx: 0, meta: u64::MAX },
+        CallSiteEntry::Kept { canon_idx: 1, meta: u64::MAX },
+      ],
+      canon_meta: vec![u64::MAX, u64::MAX],
+      orig_head: None,
+    });
+    let outer = a.alloc(ExprMetaData::CallSite {
+      name: fx.head_addr.clone(),
+      entries: vec![
+        CallSiteEntry::Collapsed { sharing_idx: 1, meta: inner },
+        CallSiteEntry::Kept { canon_idx: 0, meta: leaf },
+      ],
+      canon_meta: vec![leaf],
+      orig_head: None,
+    });
+    let got = run(&fx, vec![m0, m1], &a, &root(), outer);
+    let inner_lean = LeanExpr::app(
+      LeanExpr::app(LeanExpr::cnst(fx.head2.clone(), vec![]), lean_prim0()),
+      bv(9),
+    );
+    assert_eq!(got.expect("decompiles"), spine(&fx, inner_lean));
+  }
+
+  /// An eta call site in a metadata expression: the synthesized wrapper is
+  /// stripped across a metadata share (`meta_sharing[1] = λ. Share(1)`, the
+  /// inner lambda being `meta_sharing[0]`). Source: `head (head2 #1) #99`
+  /// (the kept `#3` is lowered by the two synthesized binders).
+  #[test]
+  fn meta_share_eta_wrapper_across_meta_share() {
+    let fx = fx();
+    let m0 = Expr::lam(
+      Expr::var(5),
+      Expr::app(
+        Expr::app(Expr::reference(0, vec![]), Expr::var(3)),
+        Expr::var(0),
+      ),
+    );
+    let m1 = Expr::lam(Expr::var(6), Expr::share(1));
+    let mut a = ExprMeta::default();
+    let leaf = a.alloc(ExprMetaData::Leaf);
+    let eta = a.alloc(ExprMetaData::EtaCallSite {
+      n_synth: 2,
+      name: fx.head2_addr.clone(),
+      entries: vec![CallSiteEntry::Kept { canon_idx: 0, meta: u64::MAX }],
+      canon_meta: vec![u64::MAX, u64::MAX],
+      wrapper_meta: u64::MAX,
+    });
+    let outer = a.alloc(ExprMetaData::CallSite {
+      name: fx.head_addr.clone(),
+      entries: vec![
+        CallSiteEntry::Collapsed { sharing_idx: 1, meta: eta },
+        CallSiteEntry::Kept { canon_idx: 0, meta: leaf },
+      ],
+      canon_meta: vec![leaf],
+      orig_head: None,
+    });
+    let got = run(&fx, vec![m0, m1], &a, &root(), outer);
+    let inner_lean =
+      LeanExpr::app(LeanExpr::cnst(fx.head2.clone(), vec![]), bv(1));
+    assert_eq!(got.expect("decompiles"), spine(&fx, inner_lean));
+  }
+
+  /// Register an axiom `MS.ax : head <meta_sharing[1]> #99` with the given
+  /// `meta_sharing` and run the whole `decompile_env` path (the table is
+  /// checked by `load_meta_extensions`).
+  fn decompile_axiom_env(
+    meta_sharing: Vec<Arc<Expr>>,
+  ) -> (Result<DecompileState, DecompileError>, Fx, Name) {
+    let fx = fx();
+    let ax_name = Name::str(Name::anon(), "MS.ax".to_string());
+    let ax_addr_name = compile_name(&ax_name, &fx.stt);
+    let ax = Constant {
+      info: ConstantInfo::Axio(Axiom {
+        is_unsafe: false,
+        lvls: 0,
+        typ: root(),
+      }),
+      sharing: vec![prim0()],
+      refs: vec![fx.head_addr.clone()],
+      univs: vec![],
+    };
+    let mut bytes = Vec::new();
+    ax.put(&mut bytes);
+    let addr = Address::hash(&bytes);
+    fx.stt.env.store_const(addr.clone(), ax);
+    let mut meta = ConstantMeta::new(ConstantMetaInfo::Axio {
+      name: ax_addr_name,
+      lvls: vec![],
+      arena: arena(&fx, 1, None),
+      type_root: 1,
+    });
+    meta.meta_sharing = meta_sharing;
+    fx.stt.env.register_name(ax_name.clone(), Named::new(addr, meta));
+    (decompile_env(&fx.stt), fx, ax_name)
+  }
+
+  #[test]
+  fn meta_share_whole_constant_decompiles() {
+    let (dstt, fx, ax_name) =
+      decompile_axiom_env(vec![shared_m0(), shared_m1()]);
+    let dstt = dstt.expect("decompile_env succeeds");
+    let entry = dstt.env.get(&ax_name).expect("MS.ax decompiled");
+    match &*entry {
+      LeanConstantInfo::AxiomInfo(v) => {
+        assert_eq!(v.cnst.typ, spine(&fx, lean_m1()));
+      },
+      other => {
+        panic!("expected AxiomInfo, got {:?}", std::mem::discriminant(other))
+      },
+    }
+  }
+
+  /// Entry 2 is never read (the call site reads entry 1) but references
+  /// itself (`Share(3) = p + 2`): the table check still rejects it.
+  #[test]
+  fn meta_share_unread_malformed_entry_rejected() {
+    let (dstt, _, _) = decompile_axiom_env(vec![
+      shared_m0(),
+      shared_m1(),
+      Expr::app(Expr::share(3), Expr::var(0)),
+    ]);
+    assert_meta_share_err(dstt.map(|_| ()), 3, 2, 1, 3);
+  }
+
+  /// Regression: metadata without shares behaves as before.
+  #[test]
+  fn meta_share_tables_without_shares_unchanged() {
+    let fx = fx();
+    let got = run(&fx, vec![plain_m0()], &arena(&fx, 0, None), &root(), 1);
+    assert_eq!(got.expect("decompiles"), spine(&fx, lean_m0()));
+    validate_meta_sharing(0, &[plain_m0(), plain_m1()], "t")
+      .expect("no shares: valid against an empty primary table");
+  }
+}
