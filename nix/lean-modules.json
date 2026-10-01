@@ -1024,6 +1024,30 @@
    ["Compilatrix.Xv.Stacking.Frame",
     "Compilatrix.X86.Layout.Tunnel",
     "Compilatrix.X86.Layout.Linearize"]},
+  "CompilatrixTests.Fences.BackHalf":
+  {"path": "CompilatrixTests/Fences/BackHalf.lean",
+   "imports":
+   ["Compilatrix.Sem.SimConst",
+    "Compilatrix.Lir.Proof.Perms",
+    "Compilatrix.Rt.Proof.CxInit",
+    "Compilatrix.Rt.Proof.Publish",
+    "Compilatrix.Rt.Proof.Lang",
+    "Compilatrix.Rt.Proof.ReadbackCongr",
+    "Compilatrix.Rt.Proof.Roots",
+    "Compilatrix.X86.ObjectCall",
+    "Compilatrix.X86.ObjectCallSafe",
+    "Compilatrix.X86.Linked",
+    "Compilatrix.X86.Layout.Proof.Retarget",
+    "Compilatrix.Xv.Stacking.Proof.Retarget",
+    "Compilatrix.Backend.Proof.Retarget",
+    "Compilatrix.Backend.Proof.Exports",
+    "Compilatrix.Backend.Proof.Funcs",
+    "Compilatrix.Backend.Proof.Driver",
+    "Compilatrix.Recheck.Proof.Front",
+    "Compilatrix.Recheck.Proof.Parts",
+    "Compilatrix.Recheck.Proof.Back",
+    "Compilatrix.Recheck.Proof.Object",
+    "Compilatrix.Recheck.Proof.Soundness"]},
   "CompilatrixTests.Fences.Anf":
   {"path": "CompilatrixTests/Fences/Anf.lean",
    "imports":
@@ -1101,7 +1125,8 @@
     "CompilatrixTests.Fences.SelectProof",
     "CompilatrixTests.Fences.BackendProof",
     "CompilatrixTests.Fences.StackingProof",
-    "CompilatrixTests.Fences.BackendEnds"]},
+    "CompilatrixTests.Fences.BackendEnds",
+    "CompilatrixTests.Fences.BackHalf"]},
   "CompilatrixTests.Corpus.ToolMain":
   {"path": "CompilatrixTests/Corpus/ToolMain.lean",
    "imports":
@@ -2508,8 +2533,7 @@
     "Compilatrix.Rt.Readback"]},
   "Compilatrix.Recheck.Proof.Soundness":
   {"path": "Compilatrix/Recheck/Proof/Soundness.lean",
-   "imports":
-   ["Compilatrix.Recheck.Proof.Object", "Compilatrix.Recheck.Produce"]},
+   "imports": ["Compilatrix.Recheck.Proof.Object"]},
   "Compilatrix.Recheck.Proof.Sound":
   {"path": "Compilatrix/Recheck/Proof/Sound.lean",
    "imports": ["Compilatrix.Recheck.Proof.Front"]},

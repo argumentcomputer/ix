@@ -34,3 +34,4 @@ import CompilatrixTests.Fences.SelectProof
 import CompilatrixTests.Fences.BackendProof
 import CompilatrixTests.Fences.StackingProof
 import CompilatrixTests.Fences.BackendEnds
+import CompilatrixTests.Fences.BackHalf

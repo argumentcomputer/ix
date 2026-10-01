@@ -1,5 +1,4 @@
 import Compilatrix.Recheck.Proof.Object
-import Compilatrix.Recheck.Produce
 
 /-!
 # `Recheck.sound` (M2.8)
@@ -16,10 +15,13 @@ Roadmap §1.1 at stage S for the recheck path: for every object
 - a diverging source has an object that runs at every clock or fails for a
   resource (`sound`).
 
-Such a driver exists for every object (`driver_exists`). The compiler
-(`Recheck.compile`: ingress, `produce`, `run`) inherits the statement for
-its artifact (`compiled_sound`, `compiled_safe`), and so does an object
-the kernel gate evaluates (`sound_bytes`).
+Such a driver exists for every object (`driver_exists`). Its three clauses
+are `compile_sound_linked`, `compile_safe_linked` and
+`compile_diverges_linked`; an object the kernel gate evaluates is such an
+artifact's (`sound_bytes`). (Theorems about `Recheck.compile` or
+`compileInput` are not stated: their definitions reach Blake3's
+`native_decide`, through ingress and `produce`, which are not on the
+recheck path.)
 -/
 
 set_option autoImplicit false
@@ -67,46 +69,26 @@ theorem sound_bytes {bytes : List UInt8} (h : (run cfg P c).map Artifact.bytes =
     simp only [Except.map, Except.ok.injEq] at h
     exact ⟨a, rfl, h, fun _ => h⟩
 
-/-- The compiler's artifact is `Recheck.run`'s, on the certificate `produce` made. -/
-theorem compile_run {cfg : Config} {bytes : ByteArray} {equations : Lean.Json} {roots : List String} {tc : Bool}
-    {cert : Cert} {a : Artifact} (h : compile cfg bytes equations roots tc = .ok (cert, a)) :
-    ∃ cfg' P, run cfg' P cert = .ok a := by
-  unfold compile at h
-  simp only [bind, Except.bind] at h
-  split at h
-  · cases h
-  · rename_i inp _
-    unfold compileInput at h
-    simp only [bind, Except.bind] at h
-    split at h
-    · cases h
-    · rename_i c' _
-      split at h
-      · cases h
-      · rename_i a' ha
-        simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-        obtain ⟨rfl, rfl⟩ := h
-        exact ⟨_, _, ha⟩
-
-/-- **`compile_sound` for the compiler** (roadmap §1.1, stage S): a value
-the compiled object returns, run by a driver that keeps its contract, is
-the view of a value SrcEval returns, or the source goes wrong. -/
-theorem compiled_sound {cfg : Config} {bytes : ByteArray} {equations : Lean.Json} {roots : List String} {tc : Bool}
-    {cert : Cert} {a : Artifact} (h : compile cfg bytes equations roots tc = .ok (cert, a)) (D : X86.Driver)
-    (hD : D.Ok a.backend.encoded.text.size) {i : Nat × List Nat} {k : Nat} {w : Option Obs}
-    (hw : Lang.run (a.linked D) i k = .ok w) :
+/-- **`compile_sound` for the object** (roadmap §1.1, stage S), from
+`Recheck.sound`: a value the object returns is the view of a value SrcEval
+returns, or the source goes wrong. -/
+theorem compile_sound_linked (h : run cfg P c = .ok a) (D : X86.Driver) (hD : D.Ok a.backend.encoded.text.size)
+    {i : Nat × List Nat} {k : Nat} {w : Option Obs} (hw : Lang.run (a.linked D) i k = .ok w) :
     (∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) i k' = .ok v ∧
-      a.front.view i.1 (Lang.obs v) = some w) ∨ a.front.GoesWrong i := by
-  obtain ⟨cfg', P, hr⟩ := compile_run h
-  exact (sound hr D hD i).1 k w hw
+      a.front.view i.1 (Lang.obs v) = some w) ∨ a.front.GoesWrong i :=
+  (sound h D hD i).1 k w hw
 
-/-- **`compile_safe` for the compiler**: a source that does not go wrong
-has a compiled object that goes wrong at no clock. -/
-theorem compiled_safe {cfg : Config} {bytes : ByteArray} {equations : Lean.Json} {roots : List String} {tc : Bool}
-    {cert : Cert} {a : Artifact} (h : compile cfg bytes equations roots tc = .ok (cert, a)) (D : X86.Driver)
-    (hD : D.Ok a.backend.encoded.text.size) {i : Nat × List Nat} (hs : ¬ a.front.GoesWrong i) (k : Nat) :
-    ¬ (Lang.run (a.linked D) i k).GoesWrong := by
-  obtain ⟨cfg', P, hr⟩ := compile_run h
-  exact (sound hr D hD i).2.1 hs k
+/-- **`compile_safe` for the object**, from `Recheck.sound`: if the source
+does not go wrong, the object goes wrong at no clock. -/
+theorem compile_safe_linked (h : run cfg P c = .ok a) (D : X86.Driver) (hD : D.Ok a.backend.encoded.text.size)
+    {i : Nat × List Nat} (hs : ¬ a.front.GoesWrong i) (k : Nat) : ¬ (Lang.run (a.linked D) i k).GoesWrong :=
+  (sound h D hD i).2.1 hs k
+
+/-- **Divergence for the object**, from `Recheck.sound`: a diverging source
+has an object that runs at every clock or fails for a resource. -/
+theorem compile_diverges_linked (h : run cfg P c = .ok a) (D : X86.Driver) (hD : D.Ok a.backend.encoded.text.size)
+    {i : Nat × List Nat} (hs : ∀ k, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) i k = .timeout) :
+    (∀ k, Lang.run (a.linked D) i k = .timeout) ∨ ∃ k failure, Lang.run (a.linked D) i k = .resource failure :=
+  (sound h D hD i).2.2 hs
 
 end Compilatrix.Recheck
