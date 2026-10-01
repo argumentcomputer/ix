@@ -58,13 +58,7 @@ fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) -> usize {
         continue;
       }
       let mut seed = vec![u64::MAX; writer.seed_words()];
-      writer.pack_row(record, io, query, false, &mut seed).unwrap();
-      let mut strict = vec![u64::MAX; writer.seed_words()];
-      writer.pack_row(record, io, query, true, &mut strict).unwrap();
-      assert_eq!(
-        seed, strict,
-        "function {index}, query {query}: strict seed differs"
-      );
+      writer.pack_row(record, io, query, &mut seed).unwrap();
       let schema = writer.schema();
       assert!(schema.is_consistent());
       let mut direct = vec![0xff; schema.bytes];
@@ -188,27 +182,6 @@ fn call_load_dependencies_and_nonzero_pointer_namespace() {
 }
 
 #[test]
-fn strict_alias_verification_and_unconstrained_calls() {
-  for value in [0, 7, G::ORDER_U64 - 1] {
-    assert_eq!(run(6, &[value]), 2);
-    assert!(run(14, &[value]) >= 1);
-  }
-  let program = (generated::PROGRAM.expected)();
-  let mut record = QueryRecord::new(&program);
-  record.function_queries[6].insert(&[G::ZERO], &[G::ONE], G::ONE).unwrap();
-  record.function_queries[5].insert(&[G::ZERO], &[G::ZERO], G::ONE).unwrap();
-  let bound = generated::PROGRAM.bind(&program).unwrap();
-  let writer = bound.function(6).unwrap();
-  let mut seed = vec![0; writer.seed_words()];
-  writer.pack_row(&record, &io(), 0, false, &mut seed).unwrap();
-  let error = writer.pack_row(&record, &io(), 0, true, &mut seed).unwrap_err();
-  assert_eq!(error.function, 6);
-  assert_eq!(error.operation, Some(1));
-  assert_eq!(error.query, Some(0));
-  assert!(error.detail.contains("alias disagrees"));
-}
-
-#[test]
 fn early_returns_do_not_resolve_unexecuted_reads() {
   for function in [8, 9] {
     assert_eq!(run(function, &[0]), 1);
@@ -229,7 +202,7 @@ fn early_returns_do_not_resolve_unexecuted_reads() {
     let bound = generated::PROGRAM.bind(&program).unwrap();
     let writer = bound.function(function).unwrap();
     let mut seed = vec![0; writer.seed_words()];
-    let error = writer.pack_row(&record, &io, 0, false, &mut seed).unwrap_err();
+    let error = writer.pack_row(&record, &io, 0, &mut seed).unwrap_err();
     assert!(error.detail.contains("missing loaded values"));
   }
 }
@@ -333,7 +306,7 @@ fn current_blake3_bytecode_all_stages_and_negative_multiplicities() {
     }
     assert_eq!(parity(&program, &record, &io), 8);
     let mut seed = vec![0; writer.seed_words()];
-    writer.pack_row(&record, &io, 7, true, &mut seed).unwrap();
+    writer.pack_row(&record, &io, 7, &mut seed).unwrap();
     drop(record);
     let mut row = vec![0; 533];
     writer.write_row(&seed, circuit_of(&program, 17), &mut row).unwrap();
@@ -470,7 +443,7 @@ fn typed_guard_failure_leaves_the_span_full_width() {
   let mut typed = vec![0; writer.schema().bytes];
   assert!(!writer.pack_typed_row(&record, &io, 0, &mut typed).unwrap());
   let mut seed = vec![0; writer.seed_words()];
-  writer.pack_row(&record, &io, 0, false, &mut seed).unwrap();
+  writer.pack_row(&record, &io, 0, &mut seed).unwrap();
   assert_eq!(seed[2], 1 << 32);
   assert_eq!(parity(&program, &record, &io), 1);
 }
@@ -515,14 +488,14 @@ fn missing_match_and_inactive_queries_are_rejected() {
   let bound = generated::PROGRAM.bind(&program).unwrap();
   let writer = bound.function(19).unwrap();
   let mut seed = vec![0; writer.seed_words()];
-  writer.pack_row(&record, &io, 0, false, &mut seed).unwrap();
+  writer.pack_row(&record, &io, 0, &mut seed).unwrap();
   seed[1] = 7;
   let circuit = circuit_of(&program, 19);
   let mut row = vec![0; program.circuits[circuit].layout.width()];
   let error = writer.write_row(&seed, circuit, &mut row).unwrap_err();
   assert!(error.detail.contains("no match"));
   *record.function_queries[19].get_index_mut(0).unwrap().1 = G::ZERO;
-  assert!(writer.pack_row(&record, &io, 0, false, &mut seed).is_err());
+  assert!(writer.pack_row(&record, &io, 0, &mut seed).is_err());
   seed[0] = 0;
   assert!(writer.write_row(&seed, circuit, &mut row).is_err());
 }

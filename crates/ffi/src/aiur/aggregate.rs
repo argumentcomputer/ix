@@ -156,7 +156,6 @@ fn print_plan(
 }
 
 fn run(config: RunConfig<'_>) -> Result<String, String> {
-  crate::profile::init();
   if config.cache_fri_bytes.len() != 40 {
     return Err(format!(
       "aggregate cache FRI serialization is {} bytes, expected 40",

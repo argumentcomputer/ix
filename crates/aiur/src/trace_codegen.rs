@@ -100,22 +100,6 @@ impl SeedContext<'_> {
     })
   }
 
-  pub fn check_returned<const N: usize>(
-    &self,
-    operation: usize,
-    callee: usize,
-    args: &[G],
-  ) -> TraceResult<[G; N]> {
-    let output = self.returned(operation)?;
-    if self.call::<N>(operation, callee, args)? != output {
-      return Err(self.fail(
-        operation,
-        format!("returned-call alias disagrees with function {callee}"),
-      ));
-    }
-    Ok(output)
-  }
-
   pub fn store(&self, operation: usize, values: &[G]) -> TraceResult<[G; 1]> {
     let index = self
       .record
@@ -438,7 +422,6 @@ pub struct FunctionWriter {
   pub schema: &'static SeedSchema,
   pub pack: fn(&SeedContext<'_>, &mut [u64]) -> TraceResult<()>,
   pub pack_typed: fn(&SeedContext<'_>, &mut TypedSeed<'_>) -> TraceResult<()>,
-  pub pack_checked: fn(&SeedContext<'_>, &mut [u64]) -> TraceResult<()>,
   pub write: fn(&[u64], RowOffsets, &mut [u64]) -> TraceResult<()>,
 }
 
@@ -570,7 +553,6 @@ impl BoundFunction<'_> {
     record: &QueryRecord,
     io: &IOBuffer,
     query: usize,
-    check_aliases: bool,
     seed: &mut [u64],
   ) -> TraceResult<()> {
     if seed.len() != self.seed_words() {
@@ -606,9 +588,7 @@ impl BoundFunction<'_> {
       io,
       function: self.index,
     };
-    let pack =
-      if check_aliases { self.writer.pack_checked } else { self.writer.pack };
-    pack(&context, seed).map_err(|mut error| {
+    (self.writer.pack)(&context, seed).map_err(|mut error| {
       error.query = Some(query);
       error
     })

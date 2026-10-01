@@ -133,11 +133,8 @@ structure FunctionPlan where
   seedSchema : SeedSchema
   rowOperations : Array Nat
   preparationOperations : Array Nat
-  /-- Preparation dependencies including returned-call alias validation. -/
-  aliasCheckOperations : Array Nat
   rowValues : Array ValueId
   preparationValues : Array ValueId
-  aliasCheckValues : Array ValueId
   deriving Repr
 
 def FunctionPlan.canonicalSeedBytes (plan : FunctionPlan) : Nat :=
@@ -195,7 +192,6 @@ private structure BuildState where
   rowRoots : Array ValueId := #[]
   rowWrites : Array Nat := #[]
   preparationRoots : Array ValueId := #[]
-  aliasRoots : Array ValueId := #[]
 
 private abbrev PlanM := StateT BuildState (Except String)
 
@@ -321,8 +317,6 @@ private def planOp (top : Toplevel) (scope : Scope) (op : Op) (control : Ctrl) :
       rowRoots := state.rowRoots ++ rowInputs }
   if let some read := externalRead then
     modify fun state => { state with preparationRoots := state.preparationRoots ++ read.inputs }
-  if returned then
-    modify fun state => { state with aliasRoots := state.aliasRoots ++ inputs }
   pure (index, { scope with
     locals := scope.locals ++ outputs
     degrees := allocated.degrees
@@ -808,14 +802,11 @@ def function (top : Toplevel) (index : FunIdx) : Except String FunctionPlan := d
     state.rowRoots state.rowWrites false
   let (preparationOperations, preparationValues) := dependencies state.values state.operations.size
     preparationRoots reads true
-  let (aliasCheckOperations, aliasCheckValues) := dependencies state.values state.operations.size
-    (preparationRoots ++ state.aliasRoots) reads true
   let plan : FunctionPlan := {
     index, layout := computed, outputSize := state.outputSize, body := result.plan,
     values := state.values, operations := state.operations, seedWords := result.scope.seed
     seedSchema := SeedSchema.canonical result.scope.seed
-    rowOperations, preparationOperations, aliasCheckOperations
-    rowValues, preparationValues, aliasCheckValues }
+    rowOperations, preparationOperations, rowValues, preparationValues }
   -- Without the library, callees and memory contribute no bounds; `program`
   -- refines this.
   pure { plan with seedSchema := seedSchema plan (analyze plan Library.empty).1 }

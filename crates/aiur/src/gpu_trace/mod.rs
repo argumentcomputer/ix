@@ -112,8 +112,6 @@ impl TraceProvider {
         }
         let bound = program.bound();
         if !bound.supports(_circuit) {
-          tracing::info!(target: "prover_metrics", metric = "fallback",
-            circuit = _circuit, reason = "uncovered", rows = _row_count);
           tracing::debug!(
             circuit = _circuit,
             rows = _row_count,
@@ -132,13 +130,10 @@ impl TraceProvider {
           _start,
           _end,
           _row_count,
-          false,
           _retain_device_seeds,
         ) {
           Ok(prepared) => Some(prepared),
           Err(error) => {
-            tracing::info!(target: "prover_metrics", metric = "fallback",
-              circuit = _circuit, reason = "preparation_error", rows = _row_count);
             tracing::warn!(
               circuit = _circuit,
               rows = _row_count,

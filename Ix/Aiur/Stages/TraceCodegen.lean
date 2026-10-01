@@ -11,7 +11,7 @@ namespace Aiur.TraceCodegen
 open Bytecode TracePlan Codegen
 
 private inductive Mode where
-  | row | pack | typed | checked
+  | row | pack | typed
   deriving BEq
 
 private def setter : SeedWidth → String
@@ -44,20 +44,18 @@ private def Mode.operations (mode : Mode) (plan : FunctionPlan) : Array Nat :=
   match mode with
   | .row => plan.rowOperations
   | .pack | .typed => plan.preparationOperations
-  | .checked => plan.aliasCheckOperations
 
 private def Mode.values (mode : Mode) (plan : FunctionPlan) : Array ValueId :=
   match mode with
   | .row => plan.rowValues
   | .pack | .typed => plan.preparationValues
-  | .checked => plan.aliasCheckValues
 
 private def rowWrite (region : String) (index : Nat) (value : RustExpr) : RustStmt :=
   let base := RustExpr.field (.var "offsets") region
   let column := if index == 0 then base else .binop .add base (.nat index)
   .assign (.index (.var "row") column) (canonical value)
 
-private def readExpression (mode : Mode) (op : Operation) (read : ExternalRead) : RustExpr :=
+private def readExpression (op : Operation) (read : ExternalRead) : RustExpr :=
   let args := op.inputs.map valueExpr
   let site := RustExpr.nat op.index
   -- `context.<name>::<OUTPUTS>(…)`: the reads that size their result by the
@@ -67,10 +65,7 @@ private def readExpression (mode : Mode) (op : Operation) (read : ExternalRead) 
   let plain := fun (name : String) (params : Array RustExpr) => method (.var "context") name params
   .tryExpr <| match read.kind with
   | .callResult callee => sized "call" #[site, .nat callee, .ref (.arrayLit args)]
-  | .returnedCall callee =>
-    if mode == .checked then
-      sized "check_returned" #[site, .nat callee, .ref (.arrayLit args)]
-    else sized "returned" #[site]
+  | .returnedCall _ => sized "returned" #[site]
   | .storePointer _ => plain "store" #[site, .ref (.arrayLit args)]
   | .loadValues _ => sized "load" #[site, args[0]!]
   | .ioInfo => plain "io_info" #[site, args[0]!, .ref (.arrayLit (args.extract 1 args.size))]
@@ -92,7 +87,7 @@ private def emitOperation (plan : FunctionPlan) (mode : Mode) (op : Operation) :
       if mode == .row then
         pure (.arrayLit ((Array.range read.seed.size).map fun i =>
           call "G::from_u64" #[indexExpr "seed" (read.seed.start + i)]))
-      else pure (readExpression mode op read)
+      else pure (readExpression op read)
     | none =>
       match op.opcode with
       | .const value => pure (single (gFromU64 value.n))
@@ -255,7 +250,7 @@ private def emitFunction (plan : FunctionPlan) (mode : Mode) : Except String (St
   let block := tailReturns fallible body
   let block := if fallible then block else bareReturns block
   let name := if mode == .row then s!"write_{plan.index}"
-    else s!"pack_{plan.index}" ++ (if mode == .checked then "_checked" else if mode == .typed then "_typed" else "")
+    else s!"pack_{plan.index}" ++ (if mode == .typed then "_typed" else "")
   let params : Array (String × RustType) := if mode == .row then
       #[("seed", u64Slice false), ("offsets", .named "RowOffsets"), ("row", u64Slice true)]
     else
@@ -367,11 +362,11 @@ def emit (top : Bytecode.Toplevel) (cratePath : String := "aiur")
       -- The registry holds fallible writers; an infallible one is wrapped
       -- in a closure, which coerces to the function pointer.
       let mut entries := #[]
-      for mode in #[Mode.pack, .typed, .checked, .row] do
+      for mode in #[Mode.pack, .typed, .row] do
         let (text, fallible) ← emitFunction f mode
         source := source ++ text ++ "\n"
         let name := if mode == .row then s!"write_{f.index}"
-          else s!"pack_{f.index}" ++ (if mode == .checked then "_checked" else if mode == .typed then "_typed" else "")
+          else s!"pack_{f.index}" ++ (if mode == .typed then "_typed" else "")
         let args := if mode == .row then "seed, offsets, row" else "context, seed"
         entries := entries.push (if fallible then name
           else s!"|{args}| " ++ "{ " ++ s!"{name}({args}); Ok(()) " ++ "}")
@@ -380,8 +375,7 @@ def emit (top : Bytecode.Toplevel) (cratePath : String := "aiur")
         ", ".intercalate (f.seedSchema.offsets.toList.map toString) ++ s!"], bytes: {f.seedSchema.bytes} " ++ "};\n\n"
       descriptors := descriptors.push ("Some(FunctionWriter { layout: " ++ layout f.layout ++
         s!", output_size: {f.outputSize.getD 0}, seed_words: {f.seedWords}, schema: &SCHEMA_{f.index}, " ++
-        s!"pack: {entries[0]!}, pack_typed: {entries[1]!}, " ++
-        s!"pack_checked: {entries[2]!}, write: {entries[3]!}" ++ " })")
+        s!"pack: {entries[0]!}, pack_typed: {entries[1]!}, write: {entries[2]!}" ++ " })")
   source := source ++ expected top
   pure (source ++ "pub static PROGRAM: GeneratedProgram = GeneratedProgram { fingerprint: [" ++ TraceContract.fingerprintLiteral top ++ s!"], complete: {selected.isNone}, expected: expected_program, functions: &[\n" ++
     ",\n".intercalate descriptors.toList ++ "\n] };\n")

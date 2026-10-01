@@ -43,24 +43,12 @@ pub(super) fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) {
     let height = rows.next_power_of_two();
     let width = circuit.layout.width();
     expected.resize(height * width, 0);
-    // Alias checking forces the canonical codec; without it the typed codec
-    // is used wherever the guards pass. Both must reproduce the oracle, from
-    // seeds staged per tile and from seeds kept resident on the device.
-    for (check_aliases, retain) in
-      [(true, false), (false, false), (false, true)]
-    {
+    // The typed codec is used wherever the guards pass. It must reproduce
+    // the oracle from seeds staged per tile and from seeds kept resident on
+    // the device.
+    for retain in [false, true] {
       let (source, _) = bound
-        .prepare(
-          index,
-          record,
-          io,
-          &[],
-          (0, 0),
-          end,
-          rows,
-          check_aliases,
-          retain,
-        )
+        .prepare(index, record, io, &[], (0, 0), end, rows, retain)
         .unwrap();
       let TraceSource::Generated(source) = source else { unreachable!() };
       let mut host = vec![G::ZERO; expected.len()];
@@ -68,7 +56,7 @@ pub(super) fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) {
       assert_eq!(
         host.iter().map(|g| g.as_canonical_u64()).collect::<Vec<_>>(),
         expected,
-        "circuit {index}, check_aliases {check_aliases}: CPU mirror"
+        "circuit {index}, retain {retain}: CPU mirror"
       );
       for (first, rows) in [(0, height), (height - 1, height + 1)] {
         let actual = dft.generated_trace_rows(source.clone(), first, rows);
@@ -91,7 +79,7 @@ pub(super) fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) {
           assert_eq!(
             word,
             expected[row * width + i % width],
-            "circuit {index}, check_aliases {check_aliases}, row {row}, column {}",
+            "circuit {index}, retain {retain}, row {row}, column {}",
             i % width
           );
           assert!(word < G::ORDER_U64);
@@ -118,9 +106,8 @@ fn regrouping_and_frozen_seeds() {
   }
   parity(&program, &record, &io);
   let bound = generated_cuda::CUDA.bind(&generated::PROGRAM, &program).unwrap();
-  let (source, _) = bound
-    .prepare(0, &record, &io, &[], (0, 0), (3, 0), 3, true, false)
-    .unwrap();
+  let (source, _) =
+    bound.prepare(0, &record, &io, &[], (0, 0), (3, 0), 3, false).unwrap();
   drop(record);
   drop(io);
   let TraceSource::Generated(source) = source else { unreachable!() };
@@ -244,7 +231,7 @@ fn blake3_generated_timing() {
   };
   let prepare = || {
     compiled
-      .prepare(0, &record, &io, &[], (0, 0), (0, ROWS), ROWS, false, false)
+      .prepare(0, &record, &io, &[], (0, 0), (0, ROWS), ROWS, false)
       .unwrap()
   };
   let (source, _) = prepare();
@@ -355,7 +342,7 @@ fn generated_sources_and_commitments_stay_on_their_device() {
   assert_eq!(count, 8, "one query per BLAKE3 stage");
   let compiled = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
   let (source, _) = compiled
-    .prepare(0, &record, &io, &[], (0, 0), (0, count), count, false, false)
+    .prepare(0, &record, &io, &[], (0, 0), (0, count), count, false)
     .unwrap();
   let devices: Vec<i32> = std::env::var("AIUR_TEST_GPU_DEVICES")
     .unwrap_or_else(|_| "0".into())
@@ -395,7 +382,7 @@ fn maximum_tile_and_wrapped_halo() {
   let (program, record, io) = synthetic_blake3(65537);
   let compiled = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
   let (source, _) = compiled
-    .prepare(0, &record, &io, &[], (0, 0), (0, 65537), 65537, false, false)
+    .prepare(0, &record, &io, &[], (0, 0), (0, 65537), 65537, false)
     .unwrap();
   let TraceSource::Generated(source) = source else { unreachable!() };
   let dft = CudaDft::new(0);
@@ -418,7 +405,7 @@ fn resident_seeds_serve_tiles_until_released() {
   let compiled = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
   let prepare = |retain| {
     let (source, _) = compiled
-      .prepare(0, &record, &io, &[], (0, 0), (0, ROWS), ROWS, false, retain)
+      .prepare(0, &record, &io, &[], (0, 0), (0, ROWS), ROWS, retain)
       .unwrap();
     let TraceSource::Generated(source) = source else { unreachable!() };
     source
@@ -464,9 +451,8 @@ fn concurrent_uploads_keep_frozen_seeds() {
     .collect();
   let (program, record, io) = synthetic_blake3(33);
   let bound = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
-  let (source, _) = bound
-    .prepare(0, &record, &io, &[], (0, 0), (0, 33), 33, false, false)
-    .unwrap();
+  let (source, _) =
+    bound.prepare(0, &record, &io, &[], (0, 0), (0, 33), 33, false).unwrap();
   let TraceSource::Generated(source) = source else { unreachable!() };
   let barrier = std::sync::Barrier::new(8);
   std::thread::scope(|scope| {
@@ -607,7 +593,6 @@ fn wide_rows_widen_the_member_span_once() {
       (member, 1024),
       1024,
       false,
-      false,
     )
     .unwrap();
   let TraceSource::Generated(source) = source else { unreachable!() };
@@ -676,7 +661,6 @@ fn wide_row_in_a_later_chunk_widens_earlier_chunks() {
       (member, 0),
       (member, ROWS as usize),
       live.len(),
-      false,
       false,
     )
     .unwrap();

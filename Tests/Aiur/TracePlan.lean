@@ -1,7 +1,7 @@
 module
 
 public import LSpec
-public import Ix.Aiur.Stages.TraceReport
+public import Ix.Aiur.Stages.TracePlan
 
 public section
 
@@ -139,10 +139,10 @@ def allocationTests : TestSeq :=
     (singletonProgram #[definition 2 (branchBody 4 1 3)])
 
 def preparationTests : TestSeq :=
-  accepts "returned-call alias skips key arithmetic but retains strict-check dependencies"
+  accepts "returned-call alias skips key arithmetic"
     (singletonProgram #[returnedCall, identityFunction]) (fun plan =>
       plan.seedWords == 3 && plan.preparationOperations == #[2] &&
-      plan.aliasCheckOperations == #[0, 1, 2] && plan.rowOperations == #[0, 2] &&
+      plan.rowOperations == #[0, 2] &&
       plan.operations.filterMap (fun op => op.externalRead.map (·.kind)) ==
         #[.returnedCall 1]) ++
   accepts "call-result-to-load chain retains CPU key arithmetic"
@@ -346,60 +346,9 @@ def groupingTests : TestSeq :=
   rejects "unconstrained function cannot be a circuit member" { grouped with
     functions := #[{ arithmetic with constrained := false }, nested] }
 
-private def reportFixture (reverseAliases : Bool) : Except String Lean.Json :=
-  let names : List (Global × Nat) := [(⟨`z_alias⟩, 0), (⟨`a_alias⟩, 0), (⟨`nested⟩, 1)]
-  Aiur.TraceReport.program "fixture" {
-    source := ⟨#[], #[], #[]⟩, bytecode := grouped,
-    nameMap := .ofList (if reverseAliases then names.reverse else names) }
-
-private def reportShapes : Except String Bool := do
-  let report ← reportFixture false
-  let circuits ← (← report.getObjVal? "circuits").getArr?
-  let some circuit := circuits[0]? | throw "missing grouped circuit"
-  let members ← (← circuit.getObjVal? "members").getArr?
-  let some first := members[0]? | throw "missing first member"
-  let some second := members[1]? | throw "missing second member"
-  let firstSelector ← (← first.getObjVal? "selector_base").getNat?
-  let secondSelector ← (← second.getObjVal? "selector_base").getNat?
-  let firstAuxiliary ← (← first.getObjVal? "auxiliary_base").getNat?
-  let secondAuxiliary ← (← second.getObjVal? "auxiliary_base").getNat?
-  let unknownRows := match ← circuit.getObjVal? "real_rows" with
-    | .null => true
-    | _ => false
-  let bytes ← (← report.getObjVal? "primitive_circuits").getArr?
-  let some bytes1 := bytes[0]? | throw "missing bytes1"
-  let some bytes2 := bytes[1]? | throw "missing bytes2"
-  let height1 ← (← bytes1.getObjVal? "fixed_height").getNat?
-  let height2 ← (← bytes2.getObjVal? "fixed_height").getNat?
-  let active1 ← (← bytes1.getObjVal? "always_active").getBool?
-  let active2 ← (← bytes2.getObjVal? "always_active").getBool?
-  pure (firstSelector == 2 && secondSelector == 3 &&
-    firstAuxiliary == 7 && secondAuxiliary == 7 && unknownRows &&
-    height1 == 256 && height2 == 65536 && active1 && active2)
-
-private def oneSelectorMatchIsBranchless : Except String Bool := do
-  let top := singletonProgram #[definition 1 {
-    ops := #[], ctrl := .match 0
-      #[(0, { ops := #[], ctrl := .match 0 #[] none })]
-      (some { ops := #[], ctrl := .return 0 #[0] }) }]
-  let report ← Aiur.TraceReport.program "fixture" {
-    source := ⟨#[], #[], #[]⟩, bytecode := top, nameMap := {} }
-  let circuits ← (← report.getObjVal? "circuits").getArr?
-  let some circuit := circuits[0]? | throw "missing circuit"
-  (← circuit.getObjVal? "branchless").getBool?
-
-def reportTests : TestSeq :=
-  test "report ordering is independent of alias-map insertion order"
-    ((match reportFixture false, reportFixture true with
-    | .ok left, .ok right => left.compress == right.compress
-    | _, _ => false) : Bool) ++
-  test "report has group offsets, unknown weights and mandatory byte-table heights"
-    ((match reportShapes with | .ok valid => valid | .error _ => false) : Bool) ++
-  test "one-selector match with an empty arm is not branchless"
-    ((match oneSelectorMatchIsBranchless with | .ok branchless => !branchless | .error _ => false) : Bool)
 
 def tests : TestSeq := allocationTests ++ preparationTests ++ schemaTests ++
-  malformedTests ++ groupingTests ++ reportTests
+  malformedTests ++ groupingTests
 
 end AiurTests.TracePlan
 

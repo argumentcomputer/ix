@@ -149,7 +149,6 @@ The generated units are checked in and regenerated like the executors:
 ```sh
 lake exe ix codegen --trace-bundle          # regenerate the three programs' units
 lake exe ix codegen --trace-bundle --check  # CI: fail on a stale unit
-lake exe ix codegen --trace-report --target ixvm   # the plan inventory as JSON
 lake exe IxTests aiur-trace-plan            # planner fixtures
 cargo test -p aiur trace_codegen            # Rust parity, no GPU needed
 ```
@@ -186,8 +185,6 @@ The ones a run needs, then the ones a measurement might.
 | `MULTI_STARK_CUDA_MIN_FREE_BYTES` | Device headroom the backend keeps by spilling LDEs to the host; default a quarter of the card. |
 | `MULTI_STARK_CUDA_MEMORY_LOG=1` | Logs stage-1 placement and per-lookup-job budget and free bytes to stderr. |
 | `MULTI_STARK_CUDA_TRACE_FORCE_SPILL=1`, `MULTI_STARK_CUDA_LOOKUP_TRACE_TILE_ROWS=3` | Validation only: spill every LDE and regenerate from tiny tiles, to exercise the recovery path. |
-| `AIUR_METRICS=<path.jsonl>`, `AIUR_METRICS_RUN_ID` | Lightweight per-piece and per-execution summaries (§6). |
-| `AIUR_PROFILE=<path.jsonl>` | Timestamped span events, per-circuit witness time included. Heavier than metrics; not for timing runs. |
 | `--texray` | Per-phase wall and RSS lines on stderr, as on the CPU. |
 
 ## 6. Benchmarking a multi-GPU run
@@ -209,8 +206,7 @@ OUT=runs/$LABEL; mkdir -p "$OUT/cache"
 [ -n "${RECORD_MAX_GIB:-}" ] && export AIUR_RECORD_MAX_BYTES=$((RECORD_MAX_GIB << 30))
 export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24 AIUR_TRACE_SHARD_MAX_CELLS=1500000000
 export AIUR_GPU_TRACE=generated AIUR_LANES_CACHE_DIR=$OUT/cache
-export AIUR_METRICS=$OUT/metrics.jsonl AIUR_METRICS_RUN_ID=$LABEL
-unset AIUR_PROFILE RUST_LOG MULTI_STARK_CUDA_MEMORY_LOG
+unset RUST_LOG MULTI_STARK_CUDA_MEMORY_LOG
 {
   echo "started $(date -u +%FT%TZ)  host $(hostname)"
   echo "ix $(sha256sum "$BIN" | cut -d' ' -f1)"; sha256sum "$IXE" "$IXES"
@@ -241,8 +237,7 @@ What to read off, and where:
 | Quantity | Source |
 |---|---|
 | Wall and peak RSS | `/usr/bin/time -v` in `lanes.err` |
-| Per-claim and per-join execution time, record bytes, proof time | `metrics.jsonl`, one JSON line per execution and proving piece, with the `AIUR_*` knobs in the `summary` record |
-| Pool grants, waits, bisections | `[lanes]` lines in `lanes.err` |
+| Per-claim and per-join execution time, record bytes, proof time, pool grants, waits, bisections | `[lanes]` lines in `lanes.err` |
 | Device utilization and memory over time | `gpu.csv` |
 | Root address and verdict | last line of `lanes.out`; `ix verify --aggregate` |
 

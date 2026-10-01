@@ -31,7 +31,6 @@ public import Cli
 public import Ix.Aggr
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Stages.Codegen
-public import Ix.Aiur.Stages.TraceReport
 public import Ix.Aiur.Stages.TraceCodegen
 public import Ix.Aiur.Stages.TraceCuda
 public import Ix.IxVM
@@ -105,13 +104,6 @@ def emitTarget (checkOnly : Bool) (t : Target) : IO Bool := do
     ({compiled.bytecode.functions.size} aiur fns)"
   return true
 
-def traceReportTarget (target : Target) : Except String Lean.Json := do
-  let source ← target.source.mapError fun error => s!"source error: {repr error}"
-  let compiled ← source.compile
-  -- Reports describe production grouping independent of the runtime override.
-  let grouped ← compiled.groupFunctions target.groups
-  TraceReport.program target.label grouped
-
 /-- Circuits generated beyond the static rule, by circuit name per target:
 the IxVM circuits whose host trace building dominates a proof, small rows
 in very large numbers whose typed seed is a fraction of the row. The list
@@ -182,13 +174,12 @@ def emitTraceBundle (checkOnly : Bool) : IO UInt32 := do
 
 def runCodegenCmd (p : Cli.Parsed) : IO UInt32 := do
   let checkOnly := p.hasFlag "check"
-  let traceReport := p.hasFlag "trace-report"
   let traceRust := p.hasFlag "trace-rust"
   let traceCuda := p.hasFlag "trace-cuda"
   let traceRegistry := p.hasFlag "trace-cuda-registry"
   let bundle := p.hasFlag "trace-bundle"
-  if (#[checkOnly && !bundle, bundle, traceReport, traceRust, traceCuda, traceRegistry].filter id).size > 1 then
-    IO.eprintln "Select one codegen mode: --check, --trace-bundle [--check], --trace-report, --trace-rust, --trace-cuda, or --trace-cuda-registry"
+  if (#[checkOnly && !bundle, bundle, traceRust, traceCuda, traceRegistry].filter id).size > 1 then
+    IO.eprintln "Select one codegen mode: --check, --trace-bundle [--check], --trace-rust, --trace-cuda, or --trace-cuda-registry"
     return 1
   if bundle then
     if p.hasFlag "target" || p.hasFlag "trace-functions" then
@@ -243,16 +234,6 @@ def runCodegenCmd (p : Cli.Parsed) : IO UInt32 := do
     match emitted with
     | .ok source => IO.print source; return 0
     | .error error => IO.eprintln s!"{target.label} trace codegen: {error}"; return 1
-  if traceReport then
-    let mut reports := #[]
-    for target in selected do
-      match traceReportTarget target with
-      | .ok report => reports := reports.push report
-      | .error error =>
-        IO.eprintln s!"{target.label} trace report: {error}"
-        return 1
-    IO.println (TraceReport.document reports).compress
-    return 0
   let mut ok := true
   for t in selected do
     ok := (← emitTarget checkOnly t) && ok
@@ -270,9 +251,8 @@ def codegenCmd : Cli.Cmd := `[Cli|
     "check"; "Compare selected emitted Rust sources against disk and exit 0 if identical, 1 otherwise. Does not modify files."
     "trace-cuda"; "Emit CUDA row writers for --trace-functions in one --target."
     "trace-cuda-registry"; "Emit the Rust registry for the same CUDA function selection."
-    "trace-functions" : String; "Comma-separated constrained function indices from --trace-report; required for CUDA emission."
+    "trace-functions" : String; "Comma-separated constrained function indices required for CUDA emission."
     "trace-rust"; "Emit experimental scalar trace writers and read-only seed packers to stdout for one --target."
-    "trace-report"; "Print a static GPU trace-plan inventory as JSON, with production groups and explicit missing row weights. Does not write generated source."
     "target" : String; "Select ixvm, multi-stark, or ix-aggr (default: all three)."
 ]
 
