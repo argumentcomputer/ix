@@ -108,11 +108,11 @@ def moduleOf (env : Environment) (name : Name) : Option Name :=
 /-- The standard logical axioms. -/
 def standardAxioms : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
 
-/-- Ruled exceptions to the runtime audit (plan v4, "Audits"). Each field
+/-- Ruled exceptions to the runtime audit. Each field
 names exactly what it admits; a project-level replacement that no field
 names is still flagged. -/
 structure RuntimeRulings where
-  /-- R-meta: inductive types whose `@[computed_field]` machinery is admitted:
+  /-- Inductive types whose `@[computed_field]` machinery is admitted:
   the `unsafe` overrides `C._override` of each constructor, `casesOn._override`,
   and `f._override` of each computed field `f`, installed by `implemented_by`. -/
   computedFieldTypes : Array Name := #[]
@@ -120,7 +120,7 @@ structure RuntimeRulings where
   when its theorem depends on no axiom outside `csimpAxioms`. -/
   csimpModules : Array Name := #[]
   csimpAxioms : Array Name := standardAxioms
-  /-- Exact Lean runtime primitives (R-ptr: `withPtrEq`, `withPtrAddr` and
+  /-- Exact Lean runtime primitives (`withPtrEq`, `withPtrAddr` and
   their implementations; `isExclusiveUnsafe` behind `withExclusive`). They
   are inherited from `Init` anyway; naming them keeps them admitted under a
   narrower prefix list. -/

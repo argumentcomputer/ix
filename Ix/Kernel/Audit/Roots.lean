@@ -13,18 +13,15 @@ import Ix.Kernel.Audit.Runtime
 
 /-! # The required roots and their frozen boundaries
 
-This module is the certified gate's manifest. From port step L5 (plan v4,
-2026-09-30) its public roots are con-leche's verified checker behind the
-Ixon reader: the certified API `Ix.Ixon.Admission.checkBytes`, which runs
-the entry `Ix.Ixon.KernelAdmission.checkBytes` (and its
-pin-parametric form `checkBytesWith`, and `checkConstants`/`checkConstantsWith`
-over decoded records) and the restated public theorems of
-`Ix.Ixon.Consistency` and `Ix.Ixon.KernelConsistency` (model existence,
-no proof of the pinned `False`, fidelity, resources). L0's rulings (`runtimeRulings`,
-`elaborationImports`) are active on them. The intrinsic kernel's roots
-(`Ix.Kernel.check`, `checkEnv`, Egress's record round trip), their frozen
-runtime closures (kernel 1563, ingress 1540, egress 221 compiled functions)
-and their frozen statements were retired with that kernel at L6 (plan v4).
+This module is the certified gate's manifest. Its public roots are the
+verified checker `Ix.Kernel.Cached.checkDecls` behind the Ixon reader: the
+certified API `Ix.Ixon.Admission.checkBytes`, which runs the entry
+`Ix.Ixon.KernelAdmission.checkBytes` (and its pin-parametric form
+`checkBytesWith`, and `checkConstants`/`checkConstantsWith` over decoded
+records), and the restated public theorems of `Ix.Ixon.Consistency` and
+`Ix.Ixon.KernelConsistency` (model existence, no proof of the pinned
+`False`, fidelity, resources). The rulings `runtimeRulings` and
+`elaborationImports` apply to them.
 
 It fails elaboration when
 
@@ -45,116 +42,31 @@ It fails elaboration when
 * the statement of a public theorem changes, since the expected `#check`
   output is frozen below.
 
-Expected values were measured before being frozen (K0 to K2, 2026-09-17).
-Every change to a frozen value is a deliberate, explained update. The
-inherited replacements reached at K2 are `Nat` arithmetic and comparison
-(`Nat.add`, `Nat.sub`, `Nat.mul`, `Nat.decEq`, `Nat.decLt`) on fuel, de Bruijn
-indices, universe parameter indices, level normal forms, and rule positions,
-and the `Array`-backed tail-recursive implementations Lean substitutes for
-`List.zipIdx` and `List.flatMap` (`Array.mk`, `Array.mkEmpty`, `Array.push`,
-`Array.size`, `Array.toList`, `USize.decEq`, `USize.ofNat`, `USize.sub`, and
-the one `unsafe` declaration, `Array.ugetBorrowed`), which the inductive
-route uses to number constructors and publish rule facts. The quotient and
-standard-axiom routes (K2) grow the closure with the decidable interface
-checks, the generated primitive types, and the derived rule endpoints, and
-reach no further replacement. P01 (2026-09-29) retains structured failure
-causes and adds `String.append` for contextual diagnostics and `Nat.decLe`
-for an out-of-range projection diagnostic. Both are inherited from `Init`;
-the axiom, import, and replacement allowlists are unchanged. P03 adds the
-`checkAgainst` helper to the compiled closure (899 → 900 functions), reusing
-expected-type formation while keeping the same inherited replacements. K3
-adds family-only admission and a shared optional-recursor stage for Nat and
-structure facts (900 → 920 functions), with the same replacements. B1
-(2026-09-30) applies rule endpoints by infer-only fitting (`applyIOC`,
-`applyTypedWC`, `fitArg`, `Witness.advance`; 1543 → 1560 functions, ingress
-1519 → 1536, on the spine-form reduction) and projection iota at non-Prop
-fields without endpoint inference (`applyNever`; 1560 → 1563, ingress
-1536 → 1540), with the same replacements. L0 of the con-leche port
-(2026-09-30) adds the ruled allowlists below as data (`runtimeRulings`,
-`elaborationImports`, and the con-leche prefix, then `ConLeche`, in
-`importAllowlist`) and makes the runtime audit see `partial` definitions and
-`csimp` replacements by their compiled form; no con-leche module was in the
-tree yet, and no frozen count changed. L5 (2026-09-30) roots the gate at the con-leche entry: the fold
-`Ix.Kernel.Cached.checkDecls` (3010 compiled functions), the Ixon reader
-and the entry are frozen with the rulings they use (18 computed-field
-overrides, up to 21 proved csimps, the 10 `partial` definitions of the
-in-model generator); `importAllowlist` gains the eight modules of the
-entry's byte stage; the intrinsic kernel's audits are kept unchanged under
-`intrinsicRoots`, `intrinsicFidelityRoots` and `intrinsicOperations`. Rebased
-onto L4b/L4c at integration (int-4, 2026-10-01), the reader is 1856 (L5
-alone: 1853; L4c's `safetyDecline` and its message constants, which replace
-the inline checks of `readDefinition`) and the entry, with the certified API
-`Ix.Ixon.Admission.checkBytes`, 5290 with 123 externs (L5 alone: 33,409 with
-115). The entry's committed Nat-operation pins were upstream's JSON dumps
-spliced as one closed term, `ConLeche.natOpPinSets`, whose compiled closure
-is 27,096 functions, 26,957 of them extracted closed subterms; L4b's
-`builtinNatOpPins` decodes a string table at first use (235 functions, and
-the eight string-scanning externs `String.decodeChar`, `String.Pos.next`,
-`UInt32.decLe`, `String.toUTF8` and `String.Pos.Raw.{extract, next, get,
-atEnd}`). L6 (2026-10-01) retires the intrinsic kernel: its roots,
-closures and statements leave this manifest, and the projection writer it
-shared with the certified entries (`Ix.Kernel.Egress.writeProjection`) is
-guarded in `Ix.Ixon.ProjectionAudit`. The entry falls from 5290 to 5280
-functions: the byte stage's error lost its intrinsic `kernel` case, so
-`KernelAdmission.Error.ofAdmission` no longer prints a `Kernel.Error`
-(`Ix.Kernel.instReprError.repr` and its eight extracted closed terms, and the
-closed message prefix). L6b (2026-10-01) adds the byte stage's key check
-(`Ix.Ixon.Admission.uniqueKeys`: no two records and no two blobs under one
-address, a reject): the entry grows from 5280 to 5290 functions with
-`uniqueKeys`, its two closed empty-set terms, `firstDuplicate`, and six
-`Std.HashSet Address` lookup and insertion specializations at
-`firstDuplicate`; externs, unsafe and rulings are unchanged. The fidelity
-statements gain `UniqueKeys`, and the reader's own duplicate-record check
-is proved (`readRecords_nodup`, through `LawfulBEq Address` in
-`Ix.Kernel.Ingress.Records`). cl-m1 (2026-10-01) adapts the in-process
-modeller's `genNested` (`Ix/Kernel/Frontend/InModel/Nested.lean`): it forms
-its container groups largest family first, by `List.mergeSort`, and
-declines a group that shares a member with an earlier one. The reader grows
-from 1856 to 1871 functions and the entry from 5290 to 5296: in both,
-`genNested`'s three new lifted lambdas (the family size, the sort's order,
-the overlap test), two `List.any` specializations for the overlap test, and
-a net one closed term from re-specializing the group loop (+4, −3); in the
-reader also the nine functions of Lean's `List.mergeSort` implementation
-(`mergeSortTR₂` with `run` and `run'`, `mergeTR` with `go`, `splitRevAt`
-with `go`, `splitRevInTwo`, `splitRevInTwo'`), which the entry already
-reaches through `Frontend.preparePrelude`. Externs, unsafe and rulings are
-unchanged. T1 (2026-10-01) builds the reader context's
-record maps once (`Ix.Kernel.IxonReader.contextOf`; `storeOf` partially
-applied rebuilt its map at every lookup): `storeOf`, its boxed form, its fold
-specialization and the closed term `contextOf._closed_2` (the empty fallback
-store) leave, and `recordMap` with its fold specialization enter, so the
-reader falls from 1871 to 1869 functions and the entry from 5296 to 5294
-(1856 to 1854 and 5290 to 5288 on T1's own base, before cl-m1; int-5);
-externs, unsafe and rulings are unchanged. T1-4 computes the address
-encodings ahead of reading (`KeyNames`, one name object per reference
-instead of a hexadecimal spelling at every occurrence): `KeyNames.get`,
-`KeyNames.insert`, `keyNamesOf` and its fold specialization enter, and the
-two `Std.HashMap` lookup specializations that `Ctx.nameOf` emitted are now
-emitted at `KeyNames.get` (the same map type): the reader grows from 1869 to
-1873, the entry from 5294 to 5298 (1854 to 1858 and 5288 to 5292 on T1's own
-base; int-5); externs, unsafe and rulings are unchanged. cl-level
-(2026-10-01) adapts con-leche's level comparison
-(`Ix/Kernel/Level.lean`): `rest`'s `(param, max)` case falls back on
-Géran's sublevels (`Ix/Kernel/LevelGeran.lean`) when both branches of
-the `max` fail. The fold grows from 3010 to 3022 functions and the entry from
-5298 to 5310 (5296 to 5308 on cl-level's own base, before T1; rebased at
-mergeability): `Level.Geran.decomposeAux`, `nzConds` with its closed `[[]]`,
-`dominates`, `Sub.isZero`, `leq` with one closed term, the `List.all`,
-`List.any`, `List.elem` and `List.foldl` specializations at `le`, `subset`
-and `decomposeAux` (five), and one closed term that moves from `isEquiv` to
-`rest`. The reader grows from 1873 to 1886 (1871 to 1884 on cl-level's own
-base): the same twelve and `Int.natAbs` (an extern of Lean core, 81 to 82
-externs), which the fold already reaches. No `unsafe`, `partial`,
-`implemented_by` or csimp is added, and the rulings are unchanged. -/
+Expected values were measured before being frozen, and every change to a
+frozen value is a deliberate update whose cause is stated where it is made.
+The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
+reaches 3022 compiled functions, with the computed-field overrides of
+`Level`, `Expr` and `Name` and 20 proved csimps; the Ixon reader
+(`readRecords` with `KernelAdmission.readStream`) reaches 1886, adding the
+in-model generator's 10 `partial` definitions; the entry (the five
+`publicOperations`) reaches 5310 with 123 inherited externs, adding the
+byte stage (`preflight`, `uniqueKeys`, `decodeRecords`) and the committed
+tables. The committed Nat-operation pins (`builtinNatOpPins`) are decoded
+from a string table at first use, which brings in the eight string-scanning
+externs `String.decodeChar`, `String.Pos.next`, `UInt32.decLe`,
+`String.toUTF8` and `String.Pos.Raw.{extract, next, get, atEnd}`. No
+`unsafe`, `partial`, `implemented_by` or csimp outside the rulings is
+reached. -/
 
 open Lean
 
 namespace Ix.Kernel.Audit
 
-/-- The public theorems (L5; `docs/kernel.md`, "The theorems"): model
-existence, no proof of the pinned `False`, and resources for the con-leche entry, at the
-committed tables and at every pin table, prelude and Nat-operation pin list,
-and con-leche's own two letters they rest on. -/
+/-- The public theorems (`docs/kernel.md`, "The theorems"): model
+existence, no proof of the pinned `False`, and resources for the kernel entry,
+at the committed tables and at every pin table, prelude and Nat-operation pin
+list, and the two vendored theorems they rest on (`model_exists`,
+`no_False_theorem_accepted`). -/
 def publicRoots : Array Lean.Name :=
   #[``Ix.Ixon.Admission.checkBytes_has_model, ``Ix.Ixon.Admission.checkBytes_has_model_values,
     ``Ix.Ixon.Admission.checkBytes_no_proof_of_False, ``Ix.Ixon.Admission.checkBytes_no_False_theorem,
@@ -172,9 +84,7 @@ def publicRoots : Array Lean.Name :=
     ``Ix.Ixon.KernelAdmission.checkBytes_resources, ``Ix.Ixon.KernelAdmission.checkBytesWith_resources,
     ``Ix.Kernel.model_exists, ``Ix.Kernel.no_False_theorem_accepted]
 
-/-- Fidelity (the role of the intrinsic kernel's `Ingress.Installed`,
-retired at L6) and the facts it is built
-from: the reading of accepted bytes, the record-by-record reading of the
+/-- Fidelity and the facts it is built from: the reading of accepted bytes, the record-by-record reading of the
 reader, per-record installation, and the address encoding's injectivity. -/
 def fidelityRoots : Array Lean.Name :=
   #[``Ix.Ixon.Admission.checkBytes_reading, ``Ix.Ixon.KernelAdmission.checkBytes_reading, ``Ix.Ixon.KernelAdmission.checkBytesWith_reading,
@@ -187,18 +97,17 @@ def fidelityRoots : Array Lean.Name :=
     ``Ix.Kernel.IxonFold.checkDecls_installs, ``Ix.Kernel.IxonFold.checkDecls_model_defn_values]
 
 /-- The executable entry whose runtime closure is audited: the certified API
-`Ix.Ixon.Admission.checkBytes`, which runs con-leche's fold behind the Ixon
+`Ix.Ixon.Admission.checkBytes`, which runs the verified fold behind the Ixon
 reader, and that entry over bytes and over decoded records. -/
 def publicOperations : Array Lean.Name :=
   #[``Ix.Ixon.Admission.checkBytes, ``Ix.Ixon.KernelAdmission.checkBytes,
     ``Ix.Ixon.KernelAdmission.checkBytesWith,
     ``Ix.Ixon.KernelAdmission.checkConstantsWith, ``Ix.Ixon.KernelAdmission.checkConstants]
 
-/-- Con-leche's verified fold, the kernel of the entry. -/
+/-- The verified fold, the kernel of the entry. -/
 def kernelOperations : Array Lean.Name := #[``Ix.Kernel.Cached.checkDecls]
 
-/-- The Ixon reader of the entry (L4; the intrinsic kernel's ingress, its
-counterpart until L5, was retired at L6). -/
+/-- The Ixon reader of the entry. -/
 def readerOperations : Array Lean.Name :=
   #[``Ix.Kernel.IxonReader.readRecords, ``Ix.Ixon.KernelAdmission.readStream]
 
@@ -206,28 +115,22 @@ def readerOperations : Array Lean.Name :=
 def publicModules : Array Lean.Name := #[`Ix.Ixon.Admission]
 
 /-- Module prefixes the kernel-side modules may use: Lean core (`Init` and
-`Std`, which ships with the toolchain), the kernel `Ix.Kernel` (con-leche's
-vendored checker and Ix's boundary beside it), the pure address key and the
-pure Ixon types. Through L5 this was the intrinsic kernel's list; from L6
-it fences the Ixon reader, the record store, the projection writer and the
-pure Ixon types (below), and is the base of `importAllowlist`. `Std` was admitted by the user's
-decision of 2026-09-30 (`plans/ix-kernel-competitive.md`) for its maps and
-their lemmas, as con-leche's kernel uses them; `Classical.choice` reaching
-kernel definitions through it is accepted, and the axiom guards below record
-where. Measured after the K0 import trim, the closure of `Ix.Kernel` had 690
-modules, all under `Init` except the kernel's own and `Ix.Address.Core`. K3
-also checks the pure Ixon types independently. No `Lean` or `Batteries`
-module, nothing else under `Ix`, and no `Blake3`, `LSpec`, `Cli`, or
-`lean4lean` module may enter. The vendored con-leche tree was a separate
-prefix, `ConLeche`, until it moved under `Ix.Kernel` (2026-10-01; plan v4,
-D4, kept its upstream paths until then); `Lean` enters it only at
-elaboration time (`elaborationImports`). -/
+`Std`, which ships with the toolchain), the kernel `Ix.Kernel` (the vendored
+checker and Ix's boundary beside it), the pure address key and the pure Ixon
+types. It fences the Ixon reader, the record store, the projection writer
+and the pure Ixon types (below), and is the base of `importAllowlist`. `Std`
+is admitted for its maps and their lemmas, which the vendored kernel uses;
+`Classical.choice` reaching kernel definitions through it is accepted, and
+the axiom guards below record where. No `Lean` or `Batteries` module,
+nothing else under `Ix`, and no `Blake3`, `LSpec`, `Cli`, or `lean4lean`
+module may enter; `Lean` enters `Ix.Kernel` only at elaboration time
+(`elaborationImports`). -/
 def kernelImportAllowlist : Array Lean.Name :=
   #[`Init, `Std, `Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types]
 
-/-- Module prefixes the certified import closure may use (L5): the
-kernel-side list (`kernelImportAllowlist`), plus exactly the modules of the con-leche entry's
-byte stage, as the int-3 probe of `Ix.Ixon.KernelAdmission` found them.
+/-- Module prefixes the certified import closure may use: the kernel-side
+list (`kernelImportAllowlist`), plus exactly the modules of the entry's byte
+stage, as the import closure of `Ix.Ixon.KernelAdmission` has them.
 Each is pure Lean core and is audited on its own terms elsewhere:
 * `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.WireCheck`,
   `Ix.Ixon.Bounded.Constant`, `Ix.Ixon.Bounded.Universe`, `Ix.Ixon.Canonical`:
@@ -236,7 +139,7 @@ Each is pure Lean core and is audited on its own terms elsewhere:
 * `Ix.Ixon.Admission`: the certified API module, and
   `Ix.Ixon.Admission.Bytes`, the batch limits (`preflight`) and the decoding
   loop (`decodeRecords`) (`Ix.Ixon.Admission.Audit`);
-* `Ix.Ixon.KernelAdmission`: the con-leche entry the API runs.
+* `Ix.Ixon.KernelAdmission`: the kernel entry the API runs.
 Nothing else under `Ix.Ixon` (in particular no projection hashing,
 `Ix.Address.Pure`, block order or proof module) and still no `Lean` outside
 the ruled elaboration-time edges. -/
@@ -252,15 +155,13 @@ def proofImportAllowlist : Array Lean.Name :=
   importAllowlist ++ #[`Ix.Ixon.Bounded.Size, `Ix.Ixon.Verify, `Ix.Ixon.KernelConsistency,
     `Ix.Ixon.Consistency, `Lean]
 
-/-- Con-leche's elaboration-time imports (plan v4, "Audits"):
+/-- The vendored kernel's elaboration-time imports:
 `Ix/Kernel/BasisGen.lean` (`public meta import Lean`) splices the
 annotated basis and pins, and the `PinGen` generators meta-import
 `Ix.Kernel.Expr` and each other. Below these edges only Lean core,
-`Lean`, and `Ix.Kernel` may appear. The transitional JSON exception,
-upstream's `ConLeche/Kernel/NatOpPins.lean` meta-importing `ConLeche.PinGen.Dump` for
-the committed Nat-op pin dumps, is gone since L4b: the pins come from Ixon
-(`Ix/Kernel/Ixon/NatOpPinData.lean`), `Dump` is deleted, and `NatOpPins`
-is not vendored (kept verbatim and unbuilt at L4b, deleted at int-4). -/
+`Lean`, and `Ix.Kernel` may appear. Upstream's JSON pin dumps
+(`NatOpPins.lean` and `PinGen/Dump.lean`) are not vendored: the
+Nat-operation pins come from Ixon (`Ix/Kernel/Ixon/NatOpPinData.lean`). -/
 def elaborationImports : ElaborationImports where
   importers := #[`Ix.Kernel.BasisGen, `Ix.Kernel.PinGen]
   allowed := #[`Init, `Std, `Lean, `Ix.Kernel]
@@ -268,14 +169,13 @@ def elaborationImports : ElaborationImports where
 /-- Modules whose execution replacements are inherited Lean runtime. -/
 def runtimeAllowlist : Array Lean.Name := #[`Init, `Std]
 
-/-- The ruled exceptions to the runtime audit (plan v4, "Audits";
-`docs/kernel.md`, "Trust surface"). Each names exactly what it admits:
-* R-meta: the `@[computed_field]` overrides of con-leche's `Level`
-  (`hashData`), `Expr` (`data`) and `Name` (`hashData`) (until L6 also of
-  the intrinsic kernel's `AExpr`, B2);
+/-- The ruled exceptions to the runtime audit (`docs/kernel.md`, "Trust
+surface"). Each names exactly what it admits:
+* the `@[computed_field]` overrides of the kernel's `Level` (`hashData`),
+  `Expr` (`data`) and `Name` (`hashData`);
 * project `@[csimp]` replacements in `Ix.Kernel`, each only with a theorem
-  on the standard axioms (until L6 also in the intrinsic `Ix.Kernel`);
-* R-ptr: `withPtrEq`, `withPtrAddr`, their `unsafe` implementations, and
+  on the standard axioms;
+* `withPtrEq`, `withPtrAddr`, their `unsafe` implementations, and
   the pointer reads under them; and `isExclusiveUnsafe`, the reference-count
   read behind `withExclusive` (all `Init`, so already inherited);
 * `Ix.Kernel.withExclusive`, `implemented_by` `Ix.Kernel.withExclusiveUnsafe`,
@@ -284,7 +184,7 @@ def runtimeAllowlist : Array Lean.Name := #[`Init, `Std]
   (`unsafe evalTerm` wrappers paired by `implemented_by`), which compiled
   non-`meta` code cannot call;
 * `partial` definitions of the in-model generator,
-  `Ix/Kernel/Frontend/InModel*` (L4). -/
+  `Ix/Kernel/Frontend/InModel*`. -/
 def runtimeRulings : RuntimeRulings where
   computedFieldTypes := #[`Ix.Kernel.Level, `Ix.Kernel.Expr, `Ix.Kernel.Name]
   csimpModules := #[`Ix.Kernel]
@@ -297,7 +197,7 @@ def runtimeRulings : RuntimeRulings where
 
 end Ix.Kernel.Audit
 
-/-! ## The certified entry (L5): con-leche behind the Ixon reader
+/-! ## The certified entry: the verified fold behind the Ixon reader
 
 ### Axiom boundaries
 
@@ -362,17 +262,12 @@ run_cmd do
 The entry's import closure stays inside `importAllowlist`, below the ruled
 elaboration-time edges inside `elaborationImports.allowed`; the theorems'
 closure inside `proofImportAllowlist`. The runtime closures are frozen with
-the rulings they use, measured before freezing (int-3 probe, re-measured at
-L5 and at int-4): the fold reaches con-leche's computed-field overrides of
-`Level`, `Expr` and `Name` (18) and 20 project csimps; the reader adds the
-in-model generator's 10 `partial` definitions; the entry adds the byte stage
-and the committed tables. The pin-parametric forms (`checkBytesWith`,
-`checkConstantsWith`) reach 4539 functions (4509 from L6, which did not
-update this sentence, 4519 with L6b's `uniqueKeys`, 4517 with T1's record
-maps on its own base, 4523 with cl-m1's `genNested` as well, +6 as in the
-entry; int-5; 4527 with T1's address encodings; 4539 with cl-level's Géran
-fallback, +12 as in the entry, measured when it was rebased onto int-5);
-the committed pin table, prelude and Nat-operation pin decoder add the rest. -/
+the rulings they use: the fold reaches the kernel's computed-field
+overrides of `Level`, `Expr` and `Name` (18) and 20 project csimps; the
+reader adds the in-model generator's 10 `partial` definitions; the entry
+adds the byte stage and the committed tables. The pin-parametric forms
+(`checkBytesWith`, `checkConstantsWith`) reach 4539 functions; the
+committed pin table, prelude and Nat-operation pin decoder add the rest. -/
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports

@@ -12,7 +12,7 @@ allowed; permitting the entire Blake3 prefix would admit its FFI backends. -/
 
 namespace Ix.Ixon.Projection.Audit
 
-/-- The certified entry with projection reconstruction (L5). -/
+/-- The certified entry with projection reconstruction. -/
 def operations : Array Lean.Name :=
   #[``Projection.address, ``Projection.reconstruct, ``Projection.checkBytes]
 
@@ -26,10 +26,10 @@ def allowedProof (name : Lean.Name) : Bool :=
   allowedData name || Kernel.Audit.allowed #[`Lean, `Ix.Ixon.Verify, `Ix.Ixon.ProjectionProofs,
     `Ix.Ixon.KernelConsistency] name
 
-/-- The import closure of `roots` stays inside `allowed`, below con-leche's
+/-- The import closure of `roots` stays inside `allowed`, below the kernel's
 ruled elaboration-time imports inside `Kernel.Audit.elaborationImports`
-(L5: the certified checker's `BasisGen` and `PinGen` use `Lean` at
-elaboration time only; L4b removed `NatOpPins` from those edges). -/
+(the vendored checker's `BasisGen` and `PinGen` use `Lean` at elaboration
+time only). -/
 def checkImports (roots : Array Lean.Name) (allowed : Lean.Name → Bool) : Lean.Elab.Command.CommandElabM Unit := do
   let graph := Kernel.Audit.importEdges (← Lean.getEnv)
   for root in roots do
@@ -63,21 +63,9 @@ run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.ProjectionProofs] Ix.Ix
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Audit.dataImports `Ix.Ixon.Projection
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.Projection
 
-/- Measured independently before freezing (L5; re-measured at int-4). The
-certified entry adds projection reconstruction (pure BLAKE3) to the
-certified byte admission. L5 alone froze 33519 functions and 124 externs;
-rebased onto L4b, the committed Nat-operation pins are decoded from a string
-table instead of upstream's JSON dumps spliced as one closed term (27,096
-compiled functions), as in `Ix.Ixon.Admission.Audit`. L6b's byte-stage key
-check (`Ix.Ixon.Admission.uniqueKeys`, also run here before decoding) adds
-the same 10 functions as there: 5400 to 5410. cl-m1 adapts the in-process modeller's `genNested` (container groups
-largest family first): 6 functions, the same as in `Ix.Kernel.Audit.Roots`:
-5410 to 5416. T1's record maps (as there)
-remove 2: 5414; its address encodings add 4: 5418 (5408 and 5412 on T1's own
-base; int-5). cl-level adapts con-leche's level comparison (the Géran
-fallback of `Level.rest`): 12 functions, the same as in
-`Ix.Kernel.Audit.Roots`: 5418 to 5430 (5416 to 5428 on cl-level's own base,
-before T1; rebased at mergeability). -/
+/- Measured independently before freezing. The certified entry adds
+projection reconstruction (pure BLAKE3) to the certified byte admission
+(`Ix.Ixon.Admission.Audit`), with the same ruled constructs. -/
 /-- info: runtime closure of [Ix.Ixon.Projection.address,
  Ix.Ixon.Projection.reconstruct,
  Ix.Ixon.Projection.checkBytes]: 5430 compiled functions; inherited externs 132, implemented_by 0,
@@ -95,7 +83,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Projection.Audit.operations #[`
 #guard_kernel_axioms Ix.Ixon.Projection.Expanded.complete [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.Expanded.origin [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.Expanded.length [propext, Quot.sound]
--- The projection writer the reconstruction runs (kept from Egress at L6).
+-- The projection writer the reconstruction runs.
 #guard_kernel_axioms Ix.Kernel.Egress.writeProjection_reading [propext]
 #guard_kernel_axioms Ix.Kernel.Egress.writeProjection_roundtrip [propext]
 #guard_kernel_axioms Ix.Ixon.Projection.checkBytes [propext, Classical.choice, Quot.sound]
@@ -161,7 +149,7 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.Expanded.length
 
-/-! ### The certified entry's theorems (L5) -/
+/-! ### The certified entry's theorems -/
 
 /-- info: Ix.Ixon.Projection.checkBytes_ok_iff : ∀ (maxProjections : Nat) (limits : Ix.Ixon.Admission.Limits)
   (records : Ix.Ixon.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)

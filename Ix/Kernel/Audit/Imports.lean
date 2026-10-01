@@ -14,11 +14,11 @@ headers of the current environment (`Environment.header`), so the check sees
 `lean_lib` does not enforce layering; this does, and the controls at the end
 fail on a deliberately forbidden module.
 
-One ruling refines the closure (plan v4, "Audits"): a `meta import` made by
+One ruling refines the closure: a `meta import` made by
 a module under `ElaborationImports.importers` is elaboration-time only. The
 modules reached only through such edges form the elaboration closure, which
 is checked against `ElaborationImports.allowed` instead. This is how
-con-leche's `BasisGen` and `PinGen` use `Lean`: everywhere
+the vendored `Ix.Kernel.BasisGen` and `Ix.Kernel.PinGen` use `Lean`: everywhere
 else `Lean` stays forbidden. -/
 
 open Lean Elab Command

@@ -12,23 +12,23 @@ import Ix.Kernel.Audit.Roots
 /-! The byte adapter has its own import and runtime boundary. The pure
 codec's allowlist is not widened.
 
-The certified entry `Ix.Ixon.Admission.checkBytes` runs con-leche's verified
-checker behind the Ixon reader; its closure is frozen with the ruled
+The certified entry `Ix.Ixon.Admission.checkBytes` runs the verified checker
+`Ix.Kernel.Cached.checkDecls` behind the Ixon reader; its closure is frozen with the ruled
 constructs it reaches (`Ix.Kernel.Audit.runtimeRulings`), and the externs it
 adds beyond the codec, the reader and the fold are listed. -/
 
 namespace Ix.Ixon.Admission.Audit
 
-/-- The certified entry's byte admission (L5). -/
+/-- The certified entry's byte admission. -/
 def operations : Array Lean.Name :=
   #[``Ix.Ixon.Admission.preflight, ``Ix.Ixon.Admission.uniqueKeys, ``Ix.Ixon.Admission.decodeRecords,
     ``Ix.Ixon.Admission.checkBytes]
 
-/-- Admission runs con-leche's checker behind the Ixon reader (L5:
-`Ix.Ixon.KernelAdmission`, and the kernel `Ix.Kernel`, con-leche's vendored
-checker with the reader beside it; `Lean` only below con-leche's ruled
-elaboration-time imports), whose closure admits
-`Std` (`Ix.Kernel.Audit.importAllowlist`, 2026-09-30). -/
+/-- Admission runs the vendored checker behind the Ixon reader
+(`Ix.Ixon.KernelAdmission`, and the kernel `Ix.Kernel`: the vendored checker
+with the reader beside it; `Lean` only below the kernel's ruled
+elaboration-time imports), whose closure admits `Std`
+(`Ix.Kernel.Audit.importAllowlist`). -/
 def dataImports : Array Lean.Name :=
   Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Ixon.Admission,
     `Ix.Ixon.KernelAdmission]
@@ -57,34 +57,14 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Consistency] Ix.Ixon.Admission.A
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `Ix.Ixon.Admission
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Audit.dataImports `Ix.Ixon.Admission
 
-/- Measured independently before freezing (L5; re-measured at int-4). The
-certified entry reaches the codec, the Ixon reader, the committed tables and
-con-leche's fold. Its ruled constructs are the fold's computed-field
-overrides and proved csimps and the in-model generator's `partial`
-definitions. L5 alone froze 33407 functions and 115 externs: the committed
-Nat-operation pins were then upstream's JSON dumps spliced as one closed
-term (`ConLeche.natOpPinSets`, 27,096 compiled functions, 26,957 of them
-extracted closed subterms). Rebased onto L4b they are decoded from a string
-table at first use (`Ix.Kernel.IxonReader.builtinNatOpPins`, 235
-functions), which adds eight string-scanning externs (below). L6 removed the
-byte stage's intrinsic `kernel` error, whose message printed a `Kernel.Error`
-(10 functions; `Ix.Kernel.Audit.Roots`): 5288 at int-4, 5278 at L6. L6b adds
-the key check `uniqueKeys` (now also an operation here, already reached
-through `checkBytes`) with `firstDuplicate` and its `Std.HashSet Address`
-specializations: 10 functions, the same as in `Ix.Kernel.Audit.Roots`. cl-m1 adapts the in-process modeller's `genNested` (container groups
-largest family first): 6 functions, the same as in `Ix.Kernel.Audit.Roots`:
-5288 to 5294. T1
-(2026-10-01) builds the reader context's record maps once
-(`Ix.Kernel.IxonReader.contextOf`; `storeOf` partially applied rebuilt its
-map at every lookup): `storeOf`, its boxed form, its fold specialization and
-the closed term `contextOf._closed_2` (the empty fallback store) leave, and
-`recordMap` with its fold specialization enter, so the closure is 2 functions
-smaller: 5294 to 5292 (5288 to 5286 on T1's own base, before cl-m1; int-5).
-T1-4's address encodings (`KeyNames`, as in `Ix.Kernel.Audit.Roots`) add 4:
-5296 (5290 on T1's own base; int-5). cl-level adapts con-leche's level
-comparison (the Géran fallback of `Level.rest`): 12 functions, the same as in
-`Ix.Kernel.Audit.Roots`: 5296 to 5308 (5294 to 5306 on cl-level's own base,
-before T1; rebased at mergeability). -/
+/- Measured independently before freezing. The certified entry reaches the
+codec, the byte stage (`preflight`, `uniqueKeys`, `decodeRecords`), the
+Ixon reader, the committed tables and the verified fold. Its ruled
+constructs are the fold's computed-field overrides and proved csimps and
+the in-model generator's `partial` definitions. The committed
+Nat-operation pins are decoded from a string table at first use
+(`Ix.Kernel.IxonReader.builtinNatOpPins`), which adds eight
+string-scanning externs (below). -/
 /-- info: runtime closure of [Ix.Ixon.Admission.preflight,
  Ix.Ixon.Admission.uniqueKeys,
  Ix.Ixon.Admission.decodeRecords,
@@ -150,7 +130,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Verify.Admission.decodeRecords_ok_iff
 
-/-! ### The certified entry's public theorems (L5) -/
+/-! ### The certified entry's public theorems -/
 
 /-- info: Ix.Ixon.Admission.checkBytes_eq : ∀ (limits : Ix.Ixon.Admission.Limits) (records : Ix.Ixon.Admission.Records)
   (blobs : Ix.Kernel.Ingress.Blobs) (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint),
@@ -239,7 +219,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
 the fold: `ByteArray.mk` and `Array.pop`, used to load the committed pin
 table and prelude (`Ix.Kernel.IxonReader.defaultPins`, `builtinPrelude`),
 and the eight string-scanning primitives of the Nat-operation pin decoder
-(`builtinNatOpPins`, L4b; int-4). No further unsafe primitive. -/
+(`builtinNatOpPins`). No further unsafe primitive. -/
 /-- info: Additional certified-entry externs: [Array.pop,
  String.decodeChar,
  String.Pos.next,

@@ -8,7 +8,7 @@ import Ix.Ixon.ProjectionAudit
 
 namespace Ix.Ixon.BlockOrder.Audit
 
-/-- The certified entry with canonical block order (L5). -/
+/-- The certified entry with canonical block order. -/
 def operations : Array Lean.Name := #[``checkBytes, ``canonicalClasses, ``compareExpr]
 
 def allowedData (name : Lean.Name) : Bool :=
@@ -35,30 +35,12 @@ run_cmd Ix.Ixon.Projection.Audit.checkImports #[`Ix.Ixon.BlockOrderProofs] Ix.Ix
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Audit.dataImports `Ix.Ixon.BlockOrder
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.BlockOrder
 
-/- Measured before freezing (L5; re-measured at int-4): the certified entry
-adds the order check to the certified projection entry. L5 alone froze 33643
-functions and 124 externs; rebased onto L4b, the committed Nat-operation
-pins are decoded from a string table instead of upstream's JSON dumps
-spliced as one closed term (27,096 compiled functions), as in
-`Ix.Ixon.Admission.Audit`. L6b's byte-stage key check
-(`Ix.Ixon.Admission.uniqueKeys`, also run here before decoding) adds the
-same 10 functions as there: 5524 to 5534. cl-m1 adapts the in-process modeller's `genNested` (container groups
-largest family first): 6 functions, the same as in `Ix.Kernel.Audit.Roots`:
-5534 to 5540. T1's record maps (as there)
-remove 2: 5538; its address encodings add 4: 5542 (5532 and 5536 on T1's own
-base; int-5). cl-level adapts con-leche's level comparison (the Géran
-fallback of `Level.rest`): 12 functions, the same as in
-`Ix.Kernel.Audit.Roots`: 5542 to 5554 (5540 to 5552 on cl-level's own base,
-before T1; rebased at mergeability). On 2026-10-01 recursor blocks are
-checked in motive order instead of structurally (`checkRecord`, the
-orchestrator's ruling on cl-fidelity's finding that the structural check
-refused 2 of the 7 compiled recursor blocks of the fidelity fixture): 9
-functions, 5554 to 5563, exactly `checkRecord`, `isRecursor`, its
-`Array.any` specialization, `checkMotives` with its three closed terms,
-`recursorMotive`, and a shared `Option Nat` equality specialization; the
-reader's `stripAll` and `appHead`, which `recursorMotive` calls, were already
-in the closure (`IxonReader.analyseRecursor`). No extern, unsafe or
-ruled entry changed. -/
+/- Measured before freezing: the certified entry adds the order check to the
+certified projection entry (`Ix.Ixon.ProjectionAudit`), with the same ruled
+constructs. A block of recursors is checked in motive order (`checkRecord`,
+`isRecursor`, `checkMotives`, `recursorMotive`), which reuses the reader's
+`stripAll` and `appHead` (`IxonReader.analyseRecursor`); every other block
+is checked in canonical structural order. -/
 /-- info: runtime closure of [Ix.Ixon.BlockOrder.checkBytes,
  Ix.Ixon.BlockOrder.canonicalClasses,
  Ix.Ixon.BlockOrder.compareExpr]: 5563 compiled functions; inherited externs 132, implemented_by 0,
@@ -107,13 +89,12 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.BlockOrder.Audit.operations #[`
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBlock_ok_iff
 
-/- Recursor blocks in motive order (2026-10-01). `Ordered`, which every entry
-theorem below states, is `OrderedRecord` at each record: since this change a
-block of recursors must be `MotiveOrdered` (member `j` eliminates motive `j`,
-read off its type as the reader reads it, `recursorMotive_of_analyse`, and
-declares one motive per member) instead of `Canonical`; every other `muts`
-block is still `Canonical`. The statements of the entry theorems are
-unchanged; these freeze what `Ordered` now means. -/
+/- Recursor blocks in motive order. `Ordered`, which every entry theorem
+below states, is `OrderedRecord` at each record: a block of recursors must
+be `MotiveOrdered` (member `j` eliminates motive `j`, read off its type as
+the reader reads it, `recursorMotive_of_analyse`, and declares one motive
+per member); every other `muts` block must be `Canonical`. These freeze
+what `Ordered` means. -/
 /-- info: def Ix.Ixon.BlockOrder.OrderedRecord : Ix.Ixon.BlockOrder.Limits →
   Ix.Kernel.Ingress.Blobs → Address × Ixon.Constant → Prop :=
 fun limits blobs pair =>
@@ -141,7 +122,7 @@ fun source size start members =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkRecord_ok_iff
 
-/-! ### The certified entry's theorems (L5) -/
+/-! ### The certified entry's theorems -/
 
 /-- info: Ix.Ixon.BlockOrder.checkBytes_ok_iff : ∀ (maxProjections : Nat) (limits : Ix.Ixon.Admission.Limits)
   (orderLimits : Ix.Ixon.BlockOrder.Limits) (records : Ix.Ixon.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
@@ -209,7 +190,7 @@ fun source size start members =>
 #check @Ix.Ixon.BlockOrder.checkBytes_of_ordered
 
 /- The certified entry's order check reaches no extern or unsafe primitive
-beyond the certified projection entry's (con-leche's closure already uses
+beyond the certified projection entry's (the fold's closure already uses
 `String.compare`, the `UInt64` operations and `Array.uget`). -/
 /-- info: Additional certified block-order externs: []
 ---
