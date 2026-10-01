@@ -25,3 +25,5 @@ import CompilatrixTests.Fences.SemForward
 import CompilatrixTests.Fences.CfgProof
 import CompilatrixTests.Fences.LirProof
 import CompilatrixTests.Fences.RtProof
+import CompilatrixTests.Fences.FirProof
+import CompilatrixTests.Fences.OwnProof

@@ -203,6 +203,10 @@ import Compilatrix.Own.Heap
 import Compilatrix.Own.Semantics
 import Compilatrix.Own.Immortal
 import Compilatrix.Own.WellFormed
+import Compilatrix.Fir.Proof.Unfold
+import Compilatrix.Fir.Proof.Mono
+import Compilatrix.Own.Proof.Unfold
+import Compilatrix.Own.Proof.Mono
 import Compilatrix.Cfg.Syntax
 import Compilatrix.Cfg.Semantics
 import Compilatrix.Cfg.WellFormed

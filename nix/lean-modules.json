@@ -883,6 +883,9 @@
   "CompilatrixTests.Fences.Rt":
   {"path": "CompilatrixTests/Fences/Rt.lean",
    "imports": ["Compilatrix.Rt.Readback"]},
+  "CompilatrixTests.Fences.OwnProof":
+  {"path": "CompilatrixTests/Fences/OwnProof.lean",
+   "imports": ["Compilatrix.Own.Proof.Mono"]},
   "CompilatrixTests.Fences.Own":
   {"path": "CompilatrixTests/Fences/Own.lean",
    "imports": ["Compilatrix.Own.Immortal", "Compilatrix.Own.Semantics"]},
@@ -907,6 +910,9 @@
   {"path": "CompilatrixTests/Fences/IxonV3.lean",
    "imports":
    ["Compilatrix.Ixon.V3.Resource.StateProofs", "Compilatrix.Ixon.V3.Source"]},
+  "CompilatrixTests.Fences.FirProof":
+  {"path": "CompilatrixTests/Fences/FirProof.lean",
+   "imports": ["Compilatrix.Fir.Proof.Mono"]},
   "CompilatrixTests.Fences.Fir":
   {"path": "CompilatrixTests/Fences/Fir.lean",
    "imports": ["Compilatrix.Fir.Semantics"]},
@@ -996,7 +1002,9 @@
     "CompilatrixTests.Fences.SemForward",
     "CompilatrixTests.Fences.CfgProof",
     "CompilatrixTests.Fences.LirProof",
-    "CompilatrixTests.Fences.RtProof"]},
+    "CompilatrixTests.Fences.RtProof",
+    "CompilatrixTests.Fences.FirProof",
+    "CompilatrixTests.Fences.OwnProof"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":
@@ -2111,6 +2119,12 @@
   "Compilatrix.Own.Semantics":
   {"path": "Compilatrix/Own/Semantics.lean",
    "imports": ["Compilatrix.Own.Syntax", "Compilatrix.Own.Heap"]},
+  "Compilatrix.Own.Proof.Unfold":
+  {"path": "Compilatrix/Own/Proof/Unfold.lean",
+   "imports": ["Compilatrix.Own.Semantics", "Compilatrix.Sem.Agrees"]},
+  "Compilatrix.Own.Proof.Mono":
+  {"path": "Compilatrix/Own/Proof/Mono.lean",
+   "imports": ["Compilatrix.Own.Proof.Unfold", "Compilatrix.Sem.SimUpTo"]},
   "Compilatrix.Own.Kind": {"path": "Compilatrix/Own/Kind.lean", "imports": []},
   "Compilatrix.Own.Immortal":
   {"path": "Compilatrix/Own/Immortal.lean",
@@ -2547,6 +2561,12 @@
   "Compilatrix.Fir.Semantics":
   {"path": "Compilatrix/Fir/Semantics.lean",
    "imports": ["Compilatrix.Fir.Syntax", "Compilatrix.Sem.Result"]},
+  "Compilatrix.Fir.Proof.Unfold":
+  {"path": "Compilatrix/Fir/Proof/Unfold.lean",
+   "imports": ["Compilatrix.Fir.Semantics", "Compilatrix.Sem.Agrees"]},
+  "Compilatrix.Fir.Proof.Mono":
+  {"path": "Compilatrix/Fir/Proof/Mono.lean",
+   "imports": ["Compilatrix.Fir.Proof.Unfold", "Compilatrix.Sem.SimUpTo"]},
   "Compilatrix.Fir.Print":
   {"path": "Compilatrix/Fir/Print.lean", "imports": ["Compilatrix.Fir.Syntax"]},
   "Compilatrix.Fir.Lower":
@@ -3360,6 +3380,10 @@
     "Compilatrix.Own.Semantics",
     "Compilatrix.Own.Immortal",
     "Compilatrix.Own.WellFormed",
+    "Compilatrix.Fir.Proof.Unfold",
+    "Compilatrix.Fir.Proof.Mono",
+    "Compilatrix.Own.Proof.Unfold",
+    "Compilatrix.Own.Proof.Mono",
     "Compilatrix.Cfg.Syntax",
     "Compilatrix.Cfg.Semantics",
     "Compilatrix.Cfg.WellFormed",
