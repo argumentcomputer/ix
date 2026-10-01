@@ -39,8 +39,8 @@ def checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
   KernelAdmission.checkBytes limits records blobs hint
 
 /-- How an Ix caller classifies a failure of the certified entry (D-trust,
-inventory section 3.7, rows 21-22; roadmap section 2, "Coverage and
-rejection"): `reject` only where an independent check establishes that the
+inventory section 3.7, rows 21-22; `docs/kernel.md`, "Outcomes"):
+`reject` only where an independent check establishes that the
 input is wrong (the batch limits are a coverage bound and decline; a key
 used twice in one table, a non-canonical record and a record the reader
 finds malformed reject); every checker verdict declines, because con-leche

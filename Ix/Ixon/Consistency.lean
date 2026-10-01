@@ -8,7 +8,7 @@ import Ix.Ixon.KernelConsistency
 
 /-! # The public theorems of the certified Ixon API
 
-The contract of `Ix.Ixon.Admission.checkBytes` (roadmap section 2), stated
+The contract of `Ix.Ixon.Admission.checkBytes` (`docs/kernel.md`), stated
 for the executed function. Each theorem is the con-leche entry's
 (`Ix.Ixon.KernelConsistency`, where the same statements hold at every pin
 table, prelude and Nat-operation pin list) at the committed tables.

@@ -8,9 +8,14 @@ see "Vendored con-leche" below), run on Ixon records by Ix's reader in
 page states what that entry does, what is proved about it, what is trusted,
 how the gate checks the trust boundary, how the vendored copy tracks
 upstream, and how to check a whole compiled environment.
-The roadmap's section 2 (`plans/ix-certified-roadmap.md`) is the contract
-this page implements; plan v4 (`plans/ix-kernel-con-leche-port-v4.md`, not
-versioned) records the port's steps L0 to L6.
+This page is the contract: what an accept promises (a set-theoretic model,
+no constant of the pinned `False`, the checked declarations are the ones
+the bytes encode, bounded resources), under which assumptions (an
+`Ix.Kernel.SetTheory V`; proofs on `propext`, `Classical.choice` and
+`Quot.sound` only), on which execution foundation ("Trust surface"), and
+with which outcomes (accept, reject, decline; only an accept carries the
+theorems). Plan v4 (`plans/ix-kernel-con-leche-port-v4.md`, not versioned)
+records the port's steps L0 to L6.
 
 Nothing here certifies the Lean-to-Ixon compiler, the Rust checker, `Ix.Tc`
 or IxVM. An accepted environment has a model; that it is the environment
@@ -159,6 +164,26 @@ ok_iff, of_ordered, reading, has_model, no_proof_of_False}`, each with
 `Ix.Kernel.SetTheory ZFSet` instance under `OmegaInaccessibles`, and the
 corollaries `IxSetTheoryModel.checkBytes_has_ZFSet_model` and
 `IxSetTheoryModel.checkBytes_no_proof_of_False`.
+
+**Assumptions.** Consistency is relative to `Ix.Kernel.SetTheory V`
+(`Ix/Kernel/SetTheory/Core.lean`): membership with extensionality,
+unordered pairs, unions, power sets, regularity, replacement as a
+Lean-level scheme (the image of a set under any `V → V`), and a strictly
+increasing ω-chain of Grothendieck universes interpreting the universe
+tower. The Mathlib instance above supplies it from ω inaccessible
+cardinals, which its corollaries take as a hypothesis, not as an axiom.
+
+**Input policy.** The entry never falls back to `Ix.Tc` or the Rust
+checker; neither is in its closure ("Trust surface"). An input may declare
+Init's compiler-trust family (`Ix/Kernel/TrustAxioms.lean`):
+`Lean.trustCompiler` installs as an opaque with value `True.intro`,
+`Lean.reduceBool` and `Lean.reduceNat` as opaques whose stored values are
+pinned against the identity (a drifted value declines), and
+`Lean.ofReduceBool` and `Lean.ofReduceNat` as pinned axioms over them.
+`sorryAx` is tolerated as a declaration and installs nothing; any use of it
+declines (`Ix/Kernel/Core.lean`). The well-founded `Nat` operations are
+admitted through pins and certificates the checker checks itself
+("Nat-operation pins" below).
 
 ## Keys, pins and the prelude
 
@@ -541,9 +566,10 @@ lines). The last tree that contains it is the parent of "L6-A: retire the
 intrinsic entry points and their consumers" in this branch's history. The
 retirement's file-by-file
 inventory is in `plans/review/cl-l6/` (not versioned). Its design notes
-went with it: the roadmap's sections 3.1 to 3.7, and the UID and
-performance plan for that kernel (`docs/certified-kernel-uids-plan.md`,
-2026-09-30, never implemented), both removed on 2026-10-01. Since the vendored
+went with it: sections 3.1 to 3.7 of the certified-kernel roadmap (no
+longer versioned), and the UID and performance plan for that kernel
+(`docs/certified-kernel-uids-plan.md`, 2026-09-30, never implemented),
+both removed on 2026-10-01. Since the vendored
 con-leche tree moved under `Ix/Kernel/**` (2026-10-01), four of its module
 names are reused (`Ix.Kernel.Env`, `Ix.Kernel.Expr`, `Ix.Kernel.Level` and
 the directory `Ix/Kernel/Model/`, with different contents), as is the axiom
@@ -650,7 +676,7 @@ source. The library, packaged Lean tests, retirement guard, clippy, nextest,
 and distributable CLI smoke check passed. Nextest ran 1,533 tests with
 1,533 passes and 14 skips. Other operating systems were not tested.
 The final checkpoint differs from that tested snapshot only in this ledger
-and the roadmap's completion notes.
+and the (then versioned) roadmap's completion notes.
 The remaining Rust workspace also passed the local locked release
 all-target build and clippy checks with `parallel,net,test-ffi` enabled,
 and the default-feature workspace tests and doc tests.

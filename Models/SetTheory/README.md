@@ -35,7 +35,8 @@ The package imports the actual interfaces by a path dependency on the
 `IxKernel` package, which builds `Ix.Kernel`, the `Ix.Kernel` subtree and the
 certified Ixon entry from the repository sources with no other dependencies. Mathlib is confined to this package; ordinary Ix and
 `Ix.Kernel` builds do not depend on it. This construction supplies the
-set-theoretic assumption used by the [certified kernel roadmap](../../plans/ix-certified-roadmap.md).
+set-theoretic assumption of the certified kernel's theorems
+([`docs/kernel.md`](../../docs/kernel.md), "Assumptions").
 A converse from the interface to inaccessible cardinals is a separate proof
 obligation.
 

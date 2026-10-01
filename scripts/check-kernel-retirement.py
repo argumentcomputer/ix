@@ -2,7 +2,7 @@
 """Reject active dependencies on retired checker code.
 
 Two retirements are recorded: the lean4lean/lean4ix proof system and the
-Ix.Tc verification machinery (roadmap section 11), and the intrinsic
+Ix.Tc verification machinery (`docs/kernel.md`, "Removal ledger"), and the intrinsic
 proof-carrying kernel with its entry points, tests, census and benchmark
 (2026-10-01, `docs/kernel.md`; `INTRINSIC` below). Run from a checkout or a Nix source
 export. Historical documentation and legal attribution are intentionally
@@ -183,7 +183,7 @@ def inspect(path: str, content: str) -> list[str]:
             return errors
         except (ValueError, KeyError, TypeError) as error:
             return [f"{path}: invalid Lake manifest: {error}"]
-    if path.startswith(("docs/", "plans/")):
+    if path.startswith("docs/"):
         return []
     if file.suffix == ".lean":
         content = lean_without_comments(content)
@@ -206,12 +206,13 @@ def source_paths(root: Path) -> list[str]:
         command = ["git", "ls-files", "-z"]
         separator = "\0"
     else:
-        # Nix exports have no VCS metadata. Never descend into caches/refs.
+        # Nix exports have no VCS metadata. Never descend into caches, nor
+        # into `plans/`, which is never versioned (`.gitignore`).
         paths = []
         for directory, dirs, files in os.walk(root):
             relative = Path(directory).relative_to(root)
             dirs[:] = [d for d in dirs if d not in EXCLUDED_DIRS
-                       and not (relative == Path("plans") and d == "refs")]
+                       and not (relative == Path(".") and d == "plans")]
             paths.extend((relative / file).as_posix() for file in files)
         return sorted(paths)
     output = subprocess.run(command, cwd=root, check=True, capture_output=True, text=True)
@@ -251,6 +252,8 @@ def controls() -> None:
         ("Cargo.lock", 'name = "ix-ffi-dyn"'),
         ("Ix/Tc/Verify/Empty.lean", ""),
         ("Nested/lake-manifest.json", "{}"),
+        # nothing under plans/ is versioned, so nothing there is exempt
+        ("plans/Fixture.lean", "import Lean4Lean.Environment"),
     ):
         if not inspect(path, content):
             raise RuntimeError(f"retirement control escaped: {path}")

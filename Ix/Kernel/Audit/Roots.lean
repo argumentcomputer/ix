@@ -151,8 +151,8 @@ open Lean
 
 namespace Ix.Kernel.Audit
 
-/-- The public theorems (L5; roadmap section 2): model existence, no proof
-of the pinned `False`, and resources for the con-leche entry, at the
+/-- The public theorems (L5; `docs/kernel.md`, "The theorems"): model
+existence, no proof of the pinned `False`, and resources for the con-leche entry, at the
 committed tables and at every pin table, prelude and Nat-operation pin list,
 and con-leche's own two letters they rest on. -/
 def publicRoots : Array Lean.Name :=
@@ -268,8 +268,8 @@ def elaborationImports : ElaborationImports where
 /-- Modules whose execution replacements are inherited Lean runtime. -/
 def runtimeAllowlist : Array Lean.Name := #[`Init, `Std]
 
-/-- The ruled exceptions to the runtime audit (plan v4, "Audits"; roadmap
-section 2, "Execution boundary"). Each names exactly what it admits:
+/-- The ruled exceptions to the runtime audit (plan v4, "Audits";
+`docs/kernel.md`, "Trust surface"). Each names exactly what it admits:
 * R-meta: the `@[computed_field]` overrides of con-leche's `Level`
   (`hashData`), `Expr` (`data`) and `Name` (`hashData`) (until L6 also of
   the intrinsic kernel's `AExpr`, B2);

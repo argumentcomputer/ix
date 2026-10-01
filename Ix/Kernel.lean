@@ -40,6 +40,4 @@ The certified API is `Ix.Ixon.Admission.checkBytes`; its public theorems
 fidelity, resources) are in `Ix.Ixon.Consistency` and
 `Ix.Ixon.KernelConsistency`. The contract, trust surface, audits and
 provenance are described in `docs/kernel.md`, which also records the
-intrinsic kernel this module exported before the port.
-
-Roadmap: `plans/ix-certified-roadmap.md`. -/
+intrinsic kernel this module exported before the port. -/

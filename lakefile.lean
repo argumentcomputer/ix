@@ -344,7 +344,7 @@ is built for certification by the separate `IxKernel/` package, which reads the
 same sources with no dependencies beyond the Lean toolchain:
 `lake -d IxKernel build --wfail` is the strict gate. The root package builds the
 same modules for its host consumers through the `Ix` library. See
-`plans/ix-certified-roadmap.md`. -/
+`docs/kernel.md`. -/
 
 /- Provenance check for the kernel, the vendored con-leche tree among it: file
 inventory, exact content hashes, vendor and port headers, licences, and

@@ -13,7 +13,7 @@ import Ix.Kernel.Verify.Frontend.Prepare
 
 /-! # The public theorems of the con-leche entry (plan v4, L5)
 
-The certified contract of Ix's Ixon checker from L5 on (roadmap section 2,
+The certified contract of Ix's Ixon checker from L5 on (`docs/kernel.md`;
 decisions D2 (iii) and D3): con-leche's verified fold
 (`Ix.Kernel.Cached.checkDecls .verified`) behind the Ixon reader, stated for
 the executed functions.

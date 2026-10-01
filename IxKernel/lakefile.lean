@@ -17,7 +17,7 @@ package is what the certified gate builds (`lake -d IxKernel build --wfail`),
 so a kernel module that imports anything outside the kernel fails here even
 if it would build inside the root workspace, and it is what
 `Models/SetTheory` depends on, so the model's workspace holds Mathlib and the
-kernel only. See `plans/ix-certified-roadmap.md`. -/
+kernel only. See `docs/kernel.md`. -/
 
 package «ix-kernel» where
   version := v!"0.1.0"
