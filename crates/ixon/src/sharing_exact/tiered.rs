@@ -59,8 +59,8 @@ use super::uniform::{
   uniform_with_stored_set,
 };
 use super::{
-  ExactSharingLimits, FormatBound, Meter, NormalizeBytesError, Resource,
-  ResourceExhausted, SharingError, constant_fixed_len,
+  ExactSharingLimits, FormatBound, Meter, NormalizeBytesError, Parallelism,
+  Resource, ResourceExhausted, SharingError, constant_fixed_len,
   constant_info_root_exprs, rebuild_constant_info,
 };
 use crate::constant::Constant;
@@ -401,17 +401,35 @@ pub struct TieredSharingResult {
 /// returning the candidate with the fewest final layout bytes; ties go to
 /// the lower width, then `set_prec` on the stored set. Each candidate runs
 /// under its own meter with the same limits, and an error at any width
-/// fails the whole call.
+/// fails the whole call. `par` sets the thread budgets ([`Parallelism`]).
 pub(crate) fn tiered(
   layout: ShareLayout,
   dag: &SharingDag,
   limits: &ExactSharingLimits,
+  par: Parallelism,
 ) -> Result<TieredSharingResult, SharingError> {
+  let run = |w: u64| {
+    let mut meter = Meter::with_parallelism(limits, par);
+    tiered_at(layout, dag, &mut meter, Phase1Choice::Width(w))
+  };
+  let candidates: Vec<Result<TieredSharingResult, SharingError>> =
+    if par.widths <= 1 {
+      // The sequential reference stops at the first failing width.
+      let mut v = Vec::with_capacity(3);
+      for w in 1..=3 {
+        v.push(Ok(run(w)?));
+      }
+      v
+    } else {
+      super::par::map_ranges(3, par.widths, |r| {
+        r.map(|i| run(len64(i) + 1)).collect()
+      })
+    };
   let mut best: Option<TieredSharingResult> = None;
   let mut lengths = Vec::with_capacity(3);
-  for w in 1..=3 {
-    let c =
-      tiered_at(layout, dag, &mut Meter::new(limits), Phase1Choice::Width(w))?;
+  for (w, c) in (1..=3).zip(candidates) {
+    // In width order: the error of the lowest failing width, as above.
+    let c = c?;
     lengths.push((w, c.stats.phase3_layout_bytes));
     if best.as_ref().is_none_or(|b| tiered_better(&c, b)) {
       best = Some(c);
@@ -521,24 +539,56 @@ fn tiered_at(
   };
   let kept = ref_cost(&order2) > ref_cost(&order1);
   let order = if kept { order1.clone() } else { order2 };
-  // Phase 3: each entry under the entries before it, priced by the layout.
-  let mut dict = LayoutIndex { index: vec![None; n], layout };
-  let mut entries = Vec::with_capacity(order.len());
-  let mut predicted = Len::new(tag0_len(len64(order.len())));
-  for (i, &t) in order.iter().enumerate() {
-    let costs = all_costs(nodes, &own, &dict, &mut work);
-    let mut e = materialize(nodes, &own, &dict, &costs, &[t], &mut work)?;
-    entries.push(e.pop().ok_or_else(|| internal("missing entry"))?);
-    predicted = predicted.plus(costs[ix(t)]);
-    dict.index[ix(t)] = Some(len64(i));
-    meter.work(std::mem::take(&mut work))?;
+  // Phase 3: each entry under the entries before it, priced by the layout,
+  // then the roots under all entries. Task `j < k` is entry `j`, task `k`
+  // the roots; each depends only on the prefix `order[..j]`, so the tasks
+  // run independently (see `Parallelism::materialize`) and are combined in
+  // task order exactly as the sequential loop proceeds.
+  let k_entries = order.len();
+  let phase3 = |range: std::ops::Range<usize>| {
+    let mut dict = LayoutIndex { index: vec![None; n], layout };
+    for (i, &t) in order[..range.start].iter().enumerate() {
+      dict.index[ix(t)] = Some(len64(i));
+    }
+    let mut out: Vec<Result<(Vec<Arc<Expr>>, Len, u64), SharingError>> =
+      Vec::with_capacity(range.len());
+    for j in range {
+      let mut w = 0u64;
+      let costs = all_costs(nodes, &own, &dict, &mut w);
+      if let Some(&t) = order.get(j) {
+        let r = materialize(nodes, &own, &dict, &costs, &[t], &mut w);
+        out.push(r.map(|e| (e, costs[ix(t)], w)));
+        dict.index[ix(t)] = Some(len64(j));
+      } else {
+        let mut c = Len::ZERO;
+        for &r in dag.roots() {
+          c = c.plus(costs[ix(r)]);
+        }
+        let r = materialize(nodes, &own, &dict, &costs, dag.roots(), &mut w);
+        out.push(r.map(|rs| (rs, c, w)));
+      }
+    }
+    out
+  };
+  let tasks =
+    super::par::map_ranges(k_entries + 1, meter.parallel.materialize, phase3);
+  let mut entries = Vec::with_capacity(k_entries);
+  let mut roots = Vec::new();
+  let mut predicted = Len::new(tag0_len(len64(k_entries)));
+  // The work counted before phase 3 is charged with the first task, as the
+  // sequential loop does.
+  let mut carried = work;
+  for (j, task) in tasks.into_iter().enumerate() {
+    let (mut es, cost, w) = task?;
+    if j < k_entries {
+      entries.push(es.pop().ok_or_else(|| internal("missing entry"))?);
+    } else {
+      roots = es;
+    }
+    predicted = predicted.plus(cost);
+    meter.work(carried.saturating_add(w))?;
+    carried = 0;
   }
-  let costs = all_costs(nodes, &own, &dict, &mut work);
-  let roots = materialize(nodes, &own, &dict, &costs, dag.roots(), &mut work)?;
-  for &r in dag.roots() {
-    predicted = predicted.plus(costs[ix(r)]);
-  }
-  meter.work(work)?;
   let predicted = predicted.exact().ok_or_else(overflow)?;
   let priced = layout_bytes(layout, &entries, &roots).ok_or_else(overflow)?;
   if priced != predicted {
@@ -619,7 +669,7 @@ pub fn canonical_sharing_tiered(
 ) -> Result<TieredSharingResult, SharingError> {
   let mut meter = Meter::new(limits);
   let dag = SharingDag::build(roots, None, &mut meter)?;
-  tiered(layout, &dag, limits)
+  tiered(layout, &dag, limits, Parallelism::SEQUENTIAL)
 }
 
 /// Expand `c`'s table and re-share it with the tiered canonical
@@ -629,7 +679,18 @@ pub fn normalize_constant_sharing_tiered(
   c: &Constant,
   limits: &ExactSharingLimits,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, None)
+  normalize_tiered_at(layout, c, limits, None, Parallelism::SEQUENTIAL)
+}
+
+/// [`normalize_constant_sharing_tiered`] with the thread budgets `par`
+/// ([`Parallelism`]): the same bytes and result for every budget.
+pub fn normalize_constant_sharing_tiered_par(
+  layout: ShareLayout,
+  c: &Constant,
+  limits: &ExactSharingLimits,
+  par: Parallelism,
+) -> Result<(Constant, TieredSharingResult), SharingError> {
+  normalize_tiered_at(layout, c, limits, None, par)
 }
 
 /// Escape hatch (W1's `fixedWidth := some w`), not the canonical
@@ -641,7 +702,13 @@ pub fn normalize_constant_sharing_tiered_at_width(
   limits: &ExactSharingLimits,
   w: u64,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, Some(Phase1Choice::Width(w)))
+  normalize_tiered_at(
+    layout,
+    c,
+    limits,
+    Some(Phase1Choice::Width(w)),
+    Parallelism::SEQUENTIAL,
+  )
 }
 
 /// Experiment hook, not the canonical construction: the single candidate
@@ -653,7 +720,7 @@ pub fn normalize_constant_sharing_tiered_with(
   limits: &ExactSharingLimits,
   phase1: Phase1Choice,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, Some(phase1))
+  normalize_tiered_at(layout, c, limits, Some(phase1), Parallelism::SEQUENTIAL)
 }
 
 fn normalize_tiered_at(
@@ -661,14 +728,17 @@ fn normalize_tiered_at(
   c: &Constant,
   limits: &ExactSharingLimits,
   phase1: Option<Phase1Choice>,
+  par: Parallelism,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
   let mut meter = Meter::new(limits);
   let roots = constant_info_root_exprs(&c.info);
   let dag = SharingDag::build(&roots, Some(&c.sharing), &mut meter)?;
   let fixed = constant_fixed_len(c).ok_or_else(overflow)?;
   let result = match phase1 {
-    None => tiered(layout, &dag, limits)?,
-    Some(p) => tiered_at(layout, &dag, &mut Meter::new(limits), p)?,
+    None => tiered(layout, &dag, limits, par)?,
+    Some(p) => {
+      tiered_at(layout, &dag, &mut Meter::with_parallelism(limits, par), p)?
+    },
   };
   let info = rebuild_constant_info(&c.info, &result.roots)?;
   let out = Constant {
