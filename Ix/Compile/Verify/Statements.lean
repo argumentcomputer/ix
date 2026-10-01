@@ -23,6 +23,12 @@ import Ix.Compile.Verify.CompileInductiveCodec
 import Ix.Compile.Verify.CompileMutualCodec
 import Ix.Compile.Verify.Reference
 import Ix.Compile.Verify.SourceValue
+import Ix.Compile.Verify.TagN
+import Ix.Compile.Verify.SharingExactCanon
+import Ix.Compile.Verify.SharingExactPasses
+import Ix.Compile.Verify.UniformOptimizer
+import Ix.Compile.Verify.UniformLength
+import Ix.Compile.Verify.UniformDecomp
 
 /-!
 # Public compiler-verification frontier
