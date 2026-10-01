@@ -210,3 +210,35 @@ extern "C" fn rs_uniform_sharing_normalize(
     Err(err) => LeanExcept::error_string(&err.to_string()),
   }
 }
+
+/// FFI: tiered canonical sharing of one serialized Constant.
+///
+/// Lean signature:
+/// `@[extern "rs_tiered_sharing_normalize"]
+///  opaque tieredSharingNormalize : UInt8 → @& ByteArray → Except String ByteArray`
+///
+/// `layout` selects the Share layout: 0 = Tag4, 1 = TagN (any other value
+/// is a `format bound:` error). Uses `ExactSharingLimits::default()`; the
+/// output is serialized with Tag4 Shares in both layouts.
+#[unsafe(no_mangle)]
+extern "C" fn rs_tiered_sharing_normalize(
+  layout: u8,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use ixon::sharing_exact::{
+    ExactSharingLimits, ShareLayout, normalize_constant_bytes_tiered,
+  };
+  let Some(layout) = ShareLayout::from_code(layout) else {
+    return LeanExcept::error_string(&format!(
+      "format bound: unknown Share layout code {layout}"
+    ));
+  };
+  match normalize_constant_bytes_tiered(
+    layout,
+    bytes_obj.as_bytes(),
+    &ExactSharingLimits::default(),
+  ) {
+    Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
+    Err(err) => LeanExcept::error_string(&err.to_string()),
+  }
+}
