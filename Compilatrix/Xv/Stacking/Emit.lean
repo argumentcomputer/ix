@@ -154,7 +154,11 @@ def arg (c : FnCtx) : Loc → Except String X86.Arg
 
 /-- The machine operand of a bound slot (`Bound.isSlot`). -/
 def slotArg (c : FnCtx) : Bound Loc → Except String X86.Arg
-  | .input _ (.r l) | .output _ l | .tied _ l _ => c.arg l
+  | .input s (.r l) =>
+      -- An address slot (`lea`) of a location would be the cell's address
+      -- here but the location's value at Xl.
+      if s.role == .address then throw "a location in an address slot" else c.arg l
+  | .output _ l | .tied _ l _ => c.arg l
   | .input _ (.m a) | .memory _ a => (.mem ·) <$> amode a
   | .input _ (.i w) => pure (.imm w)
   | .fixedUse .. | .fixedDef .. | .fixedTied .. => throw "an implicit operand has no slot"

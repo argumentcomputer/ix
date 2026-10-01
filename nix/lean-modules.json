@@ -1416,7 +1416,21 @@
   "Compilatrix.Xv.Stacking.Run":
   {"path": "Compilatrix/Xv/Stacking/Run.lean",
    "imports":
-   ["Compilatrix.Xv.Stacking.Wrapper", "Compilatrix.X86.Layout.Basic"]},
+   ["Compilatrix.Xv.Stacking.Wrapper",
+    "Compilatrix.X86.Layout.Basic",
+    "Compilatrix.X86.CheckK"]},
+  "Compilatrix.Xv.Stacking.Proof.Steps":
+  {"path": "Compilatrix/Xv/Stacking/Proof/Steps.lean",
+   "imports": ["Compilatrix.X86.SafeControl", "Compilatrix.X86.Constructors"]},
+  "Compilatrix.Xv.Stacking.Proof.Shape":
+  {"path": "Compilatrix/Xv/Stacking/Proof/Shape.lean",
+   "imports": ["Compilatrix.Xv.Stacking.Run"]},
+  "Compilatrix.Xv.Stacking.Proof.Exit":
+  {"path": "Compilatrix/Xv/Stacking/Proof/Exit.lean",
+   "imports":
+   ["Compilatrix.Xv.Stacking.Proof.Shape",
+    "Compilatrix.Xv.Stacking.Proof.Steps",
+    "Compilatrix.X86.SafeStepsObject"]},
   "Compilatrix.Xv.Stacking.Frame":
   {"path": "Compilatrix/Xv/Stacking/Frame.lean",
    "imports": ["Compilatrix.Xv.XlSemantics"]},
@@ -3853,6 +3867,9 @@
     "Compilatrix.X86.Layout.Proof.Rows",
     "Compilatrix.X86.Layout.Proof.Linearize",
     "Compilatrix.X86.Layout.Proof.Transport",
+    "Compilatrix.Xv.Stacking.Proof.Shape",
+    "Compilatrix.Xv.Stacking.Proof.Steps",
+    "Compilatrix.Xv.Stacking.Proof.Exit",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",

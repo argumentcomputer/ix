@@ -1,5 +1,6 @@
 import Compilatrix.Xv.Stacking.Wrapper
 import Compilatrix.X86.Layout.Basic
+import Compilatrix.X86.CheckK
 
 /-!
 # Stacking a program (05 §6)
@@ -44,8 +45,12 @@ inductive Error where
   | noEntry
   | tooLarge (blocks : Nat)
   /-- A function may change registers outside its declared clobber set
-  (`Xl.Env.clobbers`) and results. -/
+  (`Xl.Env.clobbers`) and results, or declares a callee-saved register
+  clobbered. -/
   | clobbers (fn : FunId) (extra : List X86.GPR)
+  /-- The emitted program is not a well-formed typed program
+  (`X86.Program.wellFormed`). -/
+  | malformed
   deriving DecidableEq, Repr, Inhabited
 
 def Error.toString : Error → String
@@ -56,6 +61,7 @@ def Error.toString : Error → String
   | .noEntry => "stacking: main is not a SysV export"
   | .tooLarge n => s!"stacking: {n} blocks"
   | .clobbers fn extra => s!"stacking: function {fn} changes {repr extra} beyond its declared clobbers"
+  | .malformed => "stacking: the emitted program is not well formed"
 
 instance : ToString Error := ⟨Error.toString⟩
 
@@ -122,54 +128,95 @@ declared clobbers and its result registers. -/
 def allowedChanges (env : Xl.Env) (fn : FunId) (f : Func Loc) : List X86.GPR :=
   env.clobbers fn ++ Lir.Conv.resultRegs.take f.results
 
+/-- Each function with its number, its layout and its facts. -/
+def withLayouts (p : LProgram) (layouts : List FrameLayout) : List (Func Loc × FunId × FrameLayout × Facts) :=
+  (p.funcs.toList.zipIdx.zip layouts).map fun ((f, fn), l) => (f, fn, l, f.facts)
+
+/-- The result registers of the functions a function tail-calls: a tail call
+returns to the caller's caller, so its callee's results are changes the
+caller must allow. -/
+def tailResults (p : LProgram) (f : Func Loc) : List X86.GPR :=
+  f.blocks.toList.flatMap fun b =>
+    match b.term with
+    | .tail g _ => Lir.Conv.resultRegs.take ((p.funcs.toList[g]?.map (·.results)).getD 0)
+    | _ => []
+
+/-- The registers a function may change beyond what its callers allow
+(`allowedChanges`): what it and its callees may change, and what its tail
+callees return in; and the callee-saved registers its declaration claims it
+may change (a call must keep them, 05 §6). -/
+def extraChanges (p : LProgram) (env : Xl.Env) (f : Func Loc) (fn : FunId) (l : FrameLayout) (a : Facts) :
+    List X86.GPR :=
+  (mayChange env f a l ++ tailResults p f).filter (!(allowedChanges env fn f).contains ·) ++
+    (env.clobbers fn).filter (fun r => !X86.SysV.callerSaved.toList.contains r)
+
+/-- The exports, with their argument passing. -/
+def exportsOf (reps : FunId → Option (List ArgRep)) (fns : List (Func Loc × FunId × FrameLayout × Facts)) :
+    List (FunId × String × List ArgRep × Func Loc) :=
+  fns.filterMap fun (f, fn, _, _) =>
+    match f.conv with
+    | .sysvExport s => some (fn, s, exportReps reps fn f, f)
+    | .internal => none
+
+/-- The wrappers' first blocks, after the exit group, and the next free block. -/
+def placeExports (exports : List (FunId × String × List ArgRep × Func Loc)) : List PlacedExport × Nat :=
+  exports.foldl (init := ([], exitBlocks)) fun (acc, n) (fn, symbol, rs, _) =>
+    (acc ++ [({ fn, symbol, reps := rs, start := n } : PlacedExport)], n + wrapperBlocks rs)
+
+/-- The functions' first blocks, from block `next`, and the block count. -/
+def placeFuncs (fns : List (Func Loc × FunId × FrameLayout × Facts)) (next : Nat) : List Placed × Nat :=
+  fns.foldl (init := ([], next)) fun (acc, n) (func, fn, layout, facts) =>
+    (acc ++ [({ func, fn, layout, facts, start := n } : Placed)], n + funcBlocks func layout facts)
+
+/-- Each function's entry block and parameter count. -/
+def entriesOf (placed : List Placed) : NatMap (Nat × Nat) :=
+  placed.foldl (init := {}) fun m pl => m.insert pl.fn (pl.start, pl.func.params.length)
+
+/-- The wrapper of an export calling its function's entry. -/
+def wrapperOf (entries : NatMap (Nat × Nat)) (w : PlacedExport) (f : Func Loc) : Except Error (List X86.Block) := do
+  unless f.results == 1 do throw (.export w.fn "an export returns one value")
+  unless w.reps.length == f.params.length do throw (.export w.fn "one representation per parameter")
+  let some (entry, _) := entries.get? w.fn | throw (.export w.fn "no entry")
+  (wrapper (UInt32.ofNat entry) (UInt32.ofNat (0 + statusOf .natOverflow - 1)) w.reps w.start).mapError
+    (.export w.fn)
+
+/-- The layout shape: wrappers, functions, then the exit group, so an
+export's symbol starts the text. -/
+def groupsOf (wrappers : List PlacedExport) (placed : List Placed) : List X86.Layout.Group :=
+  (wrappers.map fun w => { start := w.start, count := wrapperBlocks w.reps, entry := some w.start }) ++
+  (placed.map fun pl =>
+    { start := pl.start, count := funcBlocks pl.func pl.layout pl.facts, entry := some pl.start,
+      cold := coldBlocks pl }) ++
+  [{ start := 0, count := exitBlocks, cold := (List.range exitBlocks).map (0 + ·) }]
+
 def run (p : LProgram) (layouts : List FrameLayout) (reps : FunId → Option (List ArgRep) := fun _ => none)
     (env : Xl.Env := {}) : Except Error Stacked := do
   let funcs := p.funcs.toList.zipIdx
   unless layouts.length == funcs.length do throw (.layouts funcs.length layouts.length)
-  let checkedFns := (funcs.zip layouts).map fun ((f, fn), l) => (f, fn, l, f.facts)
+  let checkedFns := withLayouts p layouts
   match checkedFns.find? (fun (_, _, l, a) => !l.check a) with
   | some (_, fn, _, _) => throw (.layout fn)
   | none => pure ()
   -- The validator trusts `env.clobbers` (06 S15): every function must change
   -- no register its callers assume it keeps.
-  let extra (f : Func Loc) (fn : FunId) (l : FrameLayout) (a : Facts) : List X86.GPR :=
-    (mayChange env f a l).filter (!(allowedChanges env fn f).contains ·)
-  match checkedFns.find? (fun (f, fn, l, a) => !(extra f fn l a).isEmpty) with
-  | some (f, fn, l, a) => throw (.clobbers fn (extra f fn l a))
+  match checkedFns.find? (fun (f, fn, l, a) => !(extraChanges p env f fn l a).isEmpty) with
+  | some (f, fn, l, a) => throw (.clobbers fn (extraChanges p env f fn l a))
   | none => pure ()
-  let exports := checkedFns.filterMap fun (f, fn, _, _) =>
-    match f.conv with
-    | .sysvExport s => some (fn, s, exportReps reps fn f, f)
-    | .internal => none
-  let exit := 0
-  let (wrappers, next) := exports.foldl (init := ([], exitBlocks)) fun (acc, n) (fn, symbol, rs, _) =>
-    (acc ++ [({ fn, symbol, reps := rs, start := n } : PlacedExport)], n + wrapperBlocks rs)
-  let (placed, total) := checkedFns.foldl (init := ([], next)) fun (acc, n) (func, fn, layout, facts) =>
-    (acc ++ [({ func, fn, layout, facts, start := n } : Placed)], n + funcBlocks func layout facts)
+  let exports := exportsOf reps checkedFns
+  let (wrappers, next) := placeExports exports
+  let (placed, total) := placeFuncs checkedFns next
   unless total < 2 ^ 32 do throw (.tooLarge total)
-  let entries : NatMap (Nat × Nat) := placed.foldl (init := {}) fun m pl =>
-    m.insert pl.fn (pl.start, pl.func.params.length)
-  let wrapperCode ← (wrappers.zip exports).mapM fun (w, (_, _, _, f)) => do
-    unless f.results == 1 do throw (.export w.fn "an export returns one value")
-    unless w.reps.length == f.params.length do throw (.export w.fn "one representation per parameter")
-    let some (entry, _) := entries.get? w.fn | throw (.export w.fn "no entry")
-    (wrapper (UInt32.ofNat entry) (UInt32.ofNat (exit + statusOf .natOverflow - 1)) w.reps w.start).mapError
-      (.export w.fn)
+  let entries := entriesOf placed
+  let wrapperCode ← (wrappers.zip exports).mapM fun (w, (_, _, _, f)) => wrapperOf entries w f
   let funcCode ← placed.mapM fun pl =>
-    (emitFunc entries exit pl.func pl.layout pl.facts pl.start).mapError (.func pl.fn)
+    (emitFunc entries 0 pl.func pl.layout pl.facts pl.start).mapError (.func pl.fn)
   let some main := wrappers.find? (·.fn == p.main) | throw .noEntry
-  -- Laid out as wrappers, functions, then the exit group, so an export's
-  -- symbol starts the text.
-  let groups : List X86.Layout.Group :=
-    (wrappers.map fun w => { start := w.start, count := wrapperBlocks w.reps, entry := some w.start }) ++
-    (placed.map fun pl =>
-      { start := pl.start, count := funcBlocks pl.func pl.layout pl.facts, entry := some pl.start,
-        cold := coldBlocks pl }) ++
-    [{ start := exit, count := exitBlocks, cold := (List.range exitBlocks).map (exit + ·) }]
+  let program : X86.Program :=
+    { blocks := (exitGroup 0 ++ wrapperCode.flatten ++ funcCode.flatten).toArray, entry := UInt32.ofNat main.start }
+  unless program.wellFormedK do throw .malformed
   pure {
-    program := { blocks := (exitGroup exit ++ wrapperCode.flatten ++ funcCode.flatten).toArray,
-                 entry := UInt32.ofNat main.start }
-    shape := { groups, roots := wrappers.map (·.start) }
+    program
+    shape := { groups := groupsOf wrappers placed, roots := wrappers.map (·.start) }
     exports := wrappers.map fun w => { fn := w.fn, symbol := w.symbol, block := w.start } }
 
 end Compilatrix.Xv.Stacking

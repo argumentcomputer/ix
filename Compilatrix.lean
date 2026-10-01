@@ -408,6 +408,9 @@ import Compilatrix.X86.Layout.Proof.Order
 import Compilatrix.X86.Layout.Proof.Rows
 import Compilatrix.X86.Layout.Proof.Linearize
 import Compilatrix.X86.Layout.Proof.Transport
+import Compilatrix.Xv.Stacking.Proof.Shape
+import Compilatrix.Xv.Stacking.Proof.Steps
+import Compilatrix.Xv.Stacking.Proof.Exit
 import Compilatrix.Backend
 import Compilatrix.Backend.Proof.Xl
 import Compilatrix.Backend.Proof.Emit
