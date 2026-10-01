@@ -189,23 +189,26 @@ def optimizeSharingUniformReference (w : Nat) (roots : Array Ixon.Expr)
 
 /-! ## Tiered construction -/
 
-/-- Tiered canonical sharing of Share-free roots under a Share layout (see
-`Exact.Tiered` for the claim of each phase). -/
+/-- Tiered canonical sharing of Share-free roots under a Share layout: the
+fewest final layout bytes over the phase-1 widths 1, 2, 3 (see
+`Exact.Tiered` for the claim of each phase); `fixedWidth` runs one width. -/
 def canonicalSharingTiered (layout : ShareLayout) (roots : Array Ixon.Expr)
-    (limits : Limits := {}) : Except SharingError TieredSharingResult := do
+    (limits : Limits := {}) (fixedWidth : Option Nat := none) :
+    Except SharingError TieredSharingResult := do
   let ex ← expand limits #[] roots false
-  canonicalTieredExpanded layout limits ex
+  canonicalTieredExpanded layout limits ex fixedWidth
 
 /-- `canonicalSharingTiered` for roots given with an existing sharing table. -/
 def canonicalSharingTieredTable (layout : ShareLayout) (sharing roots : Array Ixon.Expr)
-    (limits : Limits := {}) : Except SharingError TieredSharingResult := do
+    (limits : Limits := {}) (fixedWidth : Option Nat := none) :
+    Except SharingError TieredSharingResult := do
   let ex ← expand limits sharing roots true
-  canonicalTieredExpanded layout limits ex
+  canonicalTieredExpanded layout limits ex fixedWidth
 
 /-- Re-share a Constant with the tiered construction. -/
 def normalizeConstantSharingTiered (layout : ShareLayout) (c : Constant)
-    (limits : Limits := {}) : Except SharingError Constant := do
-  let r ← canonicalSharingTieredTable layout c.sharing (constantInfoRoots c.info) limits
+    (limits : Limits := {}) (fixedWidth : Option Nat := none) : Except SharingError Constant := do
+  let r ← canonicalSharingTieredTable layout c.sharing (constantInfoRoots c.info) limits fixedWidth
   let info ← withRoots c.info r.result.roots
   return { c with info, sharing := r.result.sharing }
 

@@ -11,11 +11,21 @@
     still written with Tag4 Shares and `modelBytes` reports the TagN
     price.
 
+  ## Width selection
+  Phase 1 runs at each uniform width `w ∈ {1, 2, 3}`, each result is carried
+  through phases 2 and 3, and the construction returns the candidate with
+  the fewest real layout bytes (the phase-3 length priced by the layout);
+  ties go to the lower `w` (then `setPrec` on the stored set). Each
+  candidate is exact per phase as described below; the final choice is the
+  real-byte minimum over the three candidates, not a global optimum over
+  all tables and orders. (Choosing `w` from the candidate count alone,
+  `ShareLayout.uniformWidth`, overestimates the widths: the optimum stores
+  far fewer terms than there are candidates.) `fixedWidth := some w` runs
+  the single candidate at `w`, for experiments and tests.
+
   ## Phase 1: selection (exact for the uniform model)
-  `K` = number of terms with compact in-degree ≥ 2 and unshared length ≥ 2.
-  `w = 1` if `K ≤ 8`, `2` if `K ≤ tier2End` (256 for tag4, 1032 for tagN),
-  else `3`. `S` and its bodies are `optimizeSharingUniform w`: a minimum of
-  the uniform-`w` model length (exact, with the pinned tie order).
+  `S` and its bodies are `optimizeSharingUniform w`: a minimum of the
+  uniform-`w` model length (exact, with the pinned tie order).
 
   ## Phase 2: slot allocation
   From the phase-1 output: `ref(t)` = the number of `Share(t)` in the phase-1
@@ -118,7 +128,9 @@ def ShareLayout.tier2End : ShareLayout → Nat
   | .tag4 => 256
   | .tagN => tagNRung2End
 
-/-- Phase-1 uniform width for `k` candidates. -/
+/-- Nominal uniform width for `k` candidates (`k` up to 8 fit the 1-byte
+rung, up to `tier2End` the 2-byte rung). The canonical path tries every
+width instead (see the module doc); this is reported in the statistics. -/
 def ShareLayout.uniformWidth (l : ShareLayout) (k : Nat) : Nat :=
   if k ≤ 8 then 1 else if k ≤ l.tier2End then 2 else 3
 
@@ -239,8 +251,13 @@ structure TieredStats where
   layout : ShareLayout
   /-- Terms with in-degree ≥ 2 and unshared length ≥ 2. -/
   candidateCount : Nat
-  /-- Phase-1 uniform width. -/
+  /-- Nominal width for the candidate count (`ShareLayout.uniformWidth`). -/
+  nominalW : Nat
+  /-- Phase-1 uniform width of the returned candidate (the winning width). -/
   w : Nat
+  /-- Final layout length of every candidate run, as `(w, bytes)` in
+  increasing `w` (one entry under `fixedWidth`). -/
+  candidateLengths : Array (Nat × Nat) := #[]
   /-- Phase-1 uniform-model length. -/
   phase1ModelBytes : Nat
   /-- Phase-1 output priced by the layout (its own order). -/
@@ -267,14 +284,14 @@ structure TieredSharingResult where
   stats : TieredStats
   deriving Inhabited
 
-/-- The tiered canonical construction on an expanded input. -/
-def canonicalTieredExpanded (layout : ShareLayout) (limits : Limits) (ex : Expanded) :
+/-- One candidate of the tiered construction: phases 1–3 with phase-1
+uniform width `w`. -/
+def tieredAtWidth (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w : Nat) :
     Except SharingError TieredSharingResult := do
   let p := Prep.ofDag ex.dag
   let n := ex.dag.size
   let f := graphFacts ex.dag ex.roots
   let k := ((Array.range n).filter fun t => f.deg[t]! ≥ 2 && p.base[t]! ≥ 2).size
-  let w := layout.uniformWidth k
   -- Phase 1.
   let u ← optimizeUniformExpanded w limits ex
   let order1 := u.result.tableTerms
@@ -317,7 +334,8 @@ def canonicalTieredExpanded (layout : ShareLayout) (limits : Limits) (ex : Expan
   if layout == .tag4 && measured != predicted then
     throw (.internal s!"serialized length {measured} differs from the Tag4 price {predicted}")
   let stats : TieredStats :=
-    { layout := layout, candidateCount := k, w := w, phase1ModelBytes := u.result.modelBytes,
+    { layout := layout, candidateCount := k, nominalW := layout.uniformWidth k, w := w,
+      candidateLengths := #[(w, predicted)], phase1ModelBytes := u.result.modelBytes,
       phase1LayoutBytes := phase1Layout, slotStates := slotStates, firstTier := tier,
       keptPhase1Order := kept, phase1RefCost := refCost order1, finalRefCost := refCost order,
       phase3LayoutBytes := predicted, savings := phase1Layout - predicted }
@@ -327,6 +345,29 @@ def canonicalTieredExpanded (layout : ShareLayout) (limits : Limits) (ex : Expan
       roots := roots, sharing := entries, tableTerms := order,
       variableBytes := measured, modelBytes := predicted, stats := rstats }
   return { result := res, phase1 := u, stats := stats }
+
+/-- Whether candidate `a` beats `b`: fewer final layout bytes, then the
+lower width, then `setPrec` on the stored set. -/
+def tieredBetter (a b : TieredSharingResult) : Bool :=
+  a.stats.phase3LayoutBytes < b.stats.phase3LayoutBytes ||
+    (a.stats.phase3LayoutBytes == b.stats.phase3LayoutBytes &&
+      (a.stats.w < b.stats.w ||
+        (a.stats.w == b.stats.w && setPrec a.phase1.stored b.phase1.stored)))
+
+/-- The tiered canonical construction on an expanded input: the candidate
+with the fewest final layout bytes over the phase-1 widths 1, 2 and 3
+(module doc), or the single candidate at `fixedWidth`. -/
+def canonicalTieredExpanded (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (fixedWidth : Option Nat := none) : Except SharingError TieredSharingResult := do
+  match fixedWidth with
+  | some w => tieredAtWidth layout limits ex w
+  | none =>
+    let c1 ← tieredAtWidth layout limits ex 1
+    let c2 ← tieredAtWidth layout limits ex 2
+    let c3 ← tieredAtWidth layout limits ex 3
+    let best := #[c2, c3].foldl (fun b c => if tieredBetter c b then c else b) c1
+    let lengths := #[c1, c2, c3].map fun c => (c.stats.w, c.stats.phase3LayoutBytes)
+    return { best with stats := { best.stats with candidateLengths := lengths } }
 
 end Ix.Sharing.Exact
 
