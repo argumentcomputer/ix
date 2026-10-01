@@ -68,38 +68,42 @@ def SizeInfo.plain (n : Nat) : SizeInfo := ⟨n, (0, n), (0, n), (0, n)⟩
 def univIdxsSize (us : Array UInt64) : Nat :=
   us.foldl (fun acc u => acc + tag0Size u.toNat) 0
 
-/-- Size facts of an Ixon expression (which may contain `Share` leaves).
-Structurally recursive; mirrors the maximal-telescope rule of `putExpr`. -/
-def sizeInfo : Ixon.Expr → SizeInfo
+/-- Size facts of an Ixon expression (which may contain `Share` leaves), with
+`Share(i)` priced `shareCost i`. Structurally recursive; mirrors the
+maximal-telescope rule of `putExpr`. -/
+def sizeInfoWith (shareCost : Nat → Nat) : Ixon.Expr → SizeInfo
   | .sort i => .plain (tag4Size i.toNat)
   | .var i => .plain (tag4Size i.toNat)
   | .ref r us => .plain (tag4Size us.size + tag0Size r.toNat + univIdxsSize us)
   | .recur r us => .plain (tag4Size us.size + tag0Size r.toNat + univIdxsSize us)
-  | .prj t f v => .plain (tag4Size f.toNat + tag0Size t.toNat + (sizeInfo v).full)
+  | .prj t f v => .plain (tag4Size f.toNat + tag0Size t.toNat + (sizeInfoWith shareCost v).full)
   | .str i => .plain (tag4Size i.toNat)
   | .nat i => .plain (tag4Size i.toNat)
   | .app f a =>
-    let (n, b) := (sizeInfo f).appCont
+    let (n, b) := (sizeInfoWith shareCost f).appCont
     let n' := n + 1
-    let b' := b + (sizeInfo a).full
+    let b' := b + (sizeInfoWith shareCost a).full
     let full := tag4Size n' + b'
     ⟨full, (n', b'), (0, full), (0, full)⟩
   | .lam _ ty body =>
-    let (n, b) := (sizeInfo body).lamCont
+    let (n, b) := (sizeInfoWith shareCost body).lamCont
     let n' := n + 1
-    let b' := 1 + (sizeInfo ty).full + b
+    let b' := 1 + (sizeInfoWith shareCost ty).full + b
     let full := tag4Size n' + b'
     ⟨full, (0, full), (n', b'), (0, full)⟩
   | .all _ _ ty body =>
-    let (n, b) := (sizeInfo body).allCont
+    let (n, b) := (sizeInfoWith shareCost body).allCont
     let n' := n + 1
-    let b' := 1 + (sizeInfo ty).full + b
+    let b' := 1 + (sizeInfoWith shareCost ty).full + b
     let full := tag4Size n' + b'
     ⟨full, (0, full), (0, full), (n', b')⟩
   | .letE c ty v body =>
-    .plain (tag4Size c.flags.toNat + 1 + (sizeInfo ty).full + (sizeInfo v).full +
-      (sizeInfo body).full)
-  | .share i => .plain (tag4Size i.toNat)
+    .plain (tag4Size c.flags.toNat + 1 + (sizeInfoWith shareCost ty).full + (sizeInfoWith shareCost v).full +
+      (sizeInfoWith shareCost body).full)
+  | .share i => .plain (shareCost i.toNat)
+
+/-- Size facts with the real `Share` widths. -/
+def sizeInfo : Ixon.Expr → SizeInfo := sizeInfoWith tag4Size
 
 /-- Exact byte length of `Ixon.runPut (Ixon.putExpr e)` whenever every
 telescope count and payload is below `2^64` (the codec `wireWF` domain). -/

@@ -25,6 +25,7 @@
   * `Exact.Search`     width-state DP with LB pruning and self-verification
   * `Exact.Oracle`     tiny exhaustive reference search (tests only)
   * `Exact.Uniform`    exact optimizer for a uniform Share width (cost model)
+  * `Exact.Tiered`     uniform selection, slot allocation, re-materialization
 -/
 module
 
@@ -34,6 +35,7 @@ public import Ix.Sharing.Exact.Dictionary
 public import Ix.Sharing.Exact.Search
 public import Ix.Sharing.Exact.Oracle
 public import Ix.Sharing.Exact.Uniform
+public import Ix.Sharing.Exact.Tiered
 
 public section
 
@@ -184,6 +186,28 @@ def optimizeSharingUniformReference (w : Nat) (roots : Array Ixon.Expr)
     Except SharingError ExactSharingResult := do
   let ex ← expand limits #[] roots false
   optimizeExpanded limits ex (some w) minInDegree2
+
+/-! ## Tiered construction -/
+
+/-- Tiered canonical sharing of Share-free roots under a Share layout (see
+`Exact.Tiered` for the claim of each phase). -/
+def canonicalSharingTiered (layout : ShareLayout) (roots : Array Ixon.Expr)
+    (limits : Limits := {}) : Except SharingError TieredSharingResult := do
+  let ex ← expand limits #[] roots false
+  canonicalTieredExpanded layout limits ex
+
+/-- `canonicalSharingTiered` for roots given with an existing sharing table. -/
+def canonicalSharingTieredTable (layout : ShareLayout) (sharing roots : Array Ixon.Expr)
+    (limits : Limits := {}) : Except SharingError TieredSharingResult := do
+  let ex ← expand limits sharing roots true
+  canonicalTieredExpanded layout limits ex
+
+/-- Re-share a Constant with the tiered construction. -/
+def normalizeConstantSharingTiered (layout : ShareLayout) (c : Constant)
+    (limits : Limits := {}) : Except SharingError Constant := do
+  let r ← canonicalSharingTieredTable layout c.sharing (constantInfoRoots c.info) limits
+  let info ← withRoots c.info r.result.roots
+  return { c with info, sharing := r.result.sharing }
 
 end Ix.Sharing.Exact
 
