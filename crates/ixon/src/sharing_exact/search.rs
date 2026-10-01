@@ -1,4 +1,7 @@
-//! Exact table selection and ordering (§6).
+//! Exact table selection and ordering (§6): the width-state search for the
+//! global minimum of `docs/sharing-minimum.md` §3. Exponential in the
+//! candidates, it is a test oracle for small inputs (and the reference of
+//! the uniform optimizer's tests), not on the compiler path.
 //!
 //! A width state assigns each stored term the Share width of its index. By
 //! §6.2 every future length depends only on the state, so histories reaching

@@ -1,18 +1,16 @@
-//! Experiment hooks, not constructions of the plan: maximal structural
-//! sharing (MSS) on the structural DAG, and an inspector for any encoding of
-//! a DAG. They exist to compare the tiered construction with MSS.
+//! Maximal structural sharing (MSS), a reference encoding for the tests; it
+//! is not on the compiler path. The tests use it as a valid Share-bearing
+//! input that the exact constructions must normalize from and never exceed.
 //!
 //! MSS stores every candidate (compact in-degree at least 2, unshared length
 //! at least 2), orders the table by the Kahn priority order of compact
 //! in-degree (repeatedly the available entry, every stored term its body
 //! references already placed, with the largest in-degree; ties by the
-//! smaller structural ID, or the blake3 hash), and replaces every occurrence of a stored term by a
-//! Share, in roots and in other entries.
+//! smaller structural ID), and replaces every occurrence of a stored term by
+//! a Share, in roots and in other entries.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
-
-use rustc_hash::FxHashMap;
 
 use super::cost::Len;
 use super::dag::{Node, SharingDag, TermId, ix};
@@ -24,113 +22,21 @@ use super::{
 };
 use crate::constant::Constant;
 use crate::expr::Expr;
-use crate::tag::TagN;
 
 fn internal(msg: &str) -> SharingError {
   SharingError::Internal(msg.to_string())
 }
 
-/// Header bytes of one node in the structural hash: the whole encoding of a
-/// leaf, otherwise the node's own scalar and contract bytes (the children
-/// follow as their hashes). The former heuristic's node hash, kept for the
-/// [`MssTies::Blake3`] tie-break of W3's `mssBuild`.
-fn put_node_header(expr: &Expr, buf: &mut Vec<u8>) {
-  match expr {
-    Expr::Sort(_)
-    | Expr::Var(_)
-    | Expr::Ref(..)
-    | Expr::Rec(..)
-    | Expr::Str(_)
-    | Expr::Nat(_)
-    | Expr::Share(_) => crate::serialize::put_expr(expr, buf),
-    Expr::Prj(t, field, _) => {
-      TagN::put(4, Expr::FLAG_PRJ, *field, buf);
-      TagN::put(0, 0, *t, buf);
-    },
-    Expr::App(..) => TagN::put(4, Expr::FLAG_APP, 1, buf),
-    Expr::Lam(c, ..) => {
-      TagN::put(4, Expr::FLAG_LAM, 1, buf);
-      buf.push(c.to_bits());
-    },
-    Expr::All(c, v, ..) => {
-      TagN::put(4, Expr::FLAG_ALL, 1, buf);
-      buf.push(crate::contract::pack_all_contract(*c, *v));
-    },
-    Expr::Let(c, ..) => {
-      TagN::put(4, Expr::FLAG_LET, c.flags(), buf);
-      buf.push(c.binder.to_bits());
-    },
-  }
-}
-
-/// The structural (Merkle) hash of every pointer-distinct node reachable
-/// from `exprs`: blake3 of the node header followed by the children's
-/// hashes. Iterative (post-order with an explicit stack).
-fn structural_hashes(
-  exprs: &[Arc<Expr>],
-) -> FxHashMap<*const Expr, blake3::Hash> {
-  let mut hashes: FxHashMap<*const Expr, blake3::Hash> = FxHashMap::default();
-  let mut buf: Vec<u8> = Vec::with_capacity(128);
-  for root in exprs {
-    let mut stack: Vec<(&Arc<Expr>, bool)> = vec![(root, false)];
-    while let Some((e, ready)) = stack.pop() {
-      let ptr = std::ptr::from_ref(e.as_ref());
-      if hashes.contains_key(&ptr) {
-        continue;
-      }
-      if !ready {
-        stack.push((e, true));
-        for child in e.children().into_iter().rev() {
-          stack.push((child, false));
-        }
-        continue;
-      }
-      buf.clear();
-      put_node_header(e, &mut buf);
-      for child in e.children() {
-        let h = hashes[&std::ptr::from_ref(child.as_ref())];
-        buf.extend_from_slice(h.as_bytes());
-      }
-      hashes.insert(ptr, blake3::hash(&buf));
-    }
-  }
-  hashes
-}
-
-/// The structural hash of one expression ([`structural_hashes`]).
-#[cfg(test)]
-pub(crate) fn structural_hash(expr: &Arc<Expr>) -> blake3::Hash {
-  structural_hashes(std::slice::from_ref(expr))
-    [&std::ptr::from_ref(expr.as_ref())]
-}
-
 /// An MSS encoding of a DAG.
-#[derive(Clone, Debug)]
-pub struct MssEncoding {
+struct MssEncoding {
   /// Stored terms in table order.
-  pub table_terms: Vec<TermId>,
-  pub sharing: Vec<Arc<Expr>>,
-  pub roots: Vec<Arc<Expr>>,
-  /// Compact in-degree of every term of the DAG (edges with multiplicity
-  /// plus root occurrences).
-  pub deg: Vec<u64>,
-}
-
-/// How MSS breaks ties between available entries of equal in-degree.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MssTies {
-  /// The smaller structural ID.
-  StructuralId,
-  /// The smaller blake3 structural hash bytes (the former heuristic's node
-  /// hash), as in W3's `mssBuild`.
-  Blake3,
+  table_terms: Vec<TermId>,
+  sharing: Vec<Arc<Expr>>,
+  roots: Vec<Arc<Expr>>,
 }
 
 /// MSS of a DAG.
-pub fn mss_dag(
-  dag: &SharingDag,
-  ties: MssTies,
-) -> Result<MssEncoding, SharingError> {
+fn mss_dag(dag: &SharingDag) -> Result<MssEncoding, SharingError> {
   let nodes = dag.nodes();
   let n = nodes.len();
   let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
@@ -172,33 +78,11 @@ pub fn mss_dag(
       }
     }
   }
-  let tie: Vec<[u8; 32]> = match ties {
-    MssTies::StructuralId => (0..n)
-      .map(|t| {
-        let mut b = [0u8; 32];
-        b[24..].copy_from_slice(&(t as u64).to_be_bytes());
-        b
-      })
-      .collect(),
-    MssTies::Blake3 => {
-      let exprs = dag.term_exprs();
-      let ptr_to_hash = structural_hashes(&exprs);
-      exprs
-        .iter()
-        .map(|e| {
-          ptr_to_hash
-            .get(&std::ptr::from_ref(e.as_ref()))
-            .map(|h| *h.as_bytes())
-            .ok_or_else(|| internal("unhashed term"))
-        })
-        .collect::<Result<_, _>>()?
-    },
-  };
-  let key = |t: usize| (std::cmp::Reverse(facts.deg[t]), tie[t], t);
-  let mut ready: BTreeSet<(std::cmp::Reverse<u64>, [u8; 32], usize)> =
+  let key = |t: usize| (std::cmp::Reverse(facts.deg[t]), t);
+  let mut ready: BTreeSet<(std::cmp::Reverse<u64>, usize)> =
     (0..n).filter(|&t| stored[t] && pend[t] == 0).map(key).collect();
   let mut order: Vec<usize> = Vec::new();
-  while let Some((_, _, t)) = ready.pop_first() {
+  while let Some((_, t)) = ready.pop_first() {
     order.push(t);
     for &u in &users[t] {
       pend[u] -= 1;
@@ -236,20 +120,19 @@ pub fn mss_dag(
     .iter()
     .map(|&t| TermId::try_from(t).map_err(|_e| internal("id")))
     .collect::<Result<_, _>>()?;
-  Ok(MssEncoding { table_terms, sharing, roots, deg: facts.deg })
+  Ok(MssEncoding { table_terms, sharing, roots })
 }
 
-/// MSS of a constant (its table expanded first). Returns the constant, the
-/// encoding and the DAG; the encoding is checked to expand to the same DAG.
-pub fn mss_constant(
+/// MSS of a constant (its table expanded first), checked to expand to the
+/// same DAG.
+pub(crate) fn mss_constant(
   c: &Constant,
   limits: &ExactSharingLimits,
-  ties: MssTies,
-) -> Result<(Constant, MssEncoding, SharingDag), SharingError> {
+) -> Result<Constant, SharingError> {
   let mut meter = Meter::new(limits);
   let roots = constant_info_root_exprs(&c.info);
   let dag = SharingDag::build(&roots, Some(&c.sharing), &mut meter)?;
-  let enc = mss_dag(&dag, ties)?;
+  let enc = mss_dag(&dag)?;
   let mut check_meter = Meter::new(limits);
   let (check, ids) =
     SharingDag::build_full(&enc.roots, Some(&enc.sharing), &mut check_meter)?;
@@ -262,134 +145,10 @@ pub fn mss_constant(
     return Err(internal("MSS encoding does not expand to the input"));
   }
   let info = rebuild_constant_info(&c.info, &enc.roots)?;
-  let out = Constant {
+  Ok(Constant {
     info,
-    sharing: enc.sharing.clone(),
+    sharing: enc.sharing,
     refs: c.refs.clone(),
     univs: c.univs.clone(),
-  };
-  Ok((out, enc, dag))
-}
-
-/// What an encoding of a DAG writes, position by position.
-#[derive(Clone, Debug, Default)]
-pub struct EncodingInfo {
-  /// `Share(i)` occurrences per table index.
-  pub share_refs: Vec<u64>,
-  /// Positions (outside the entry tops) that write a stored term inline.
-  pub inlined: u64,
-  /// The same, per stored term.
-  pub inlined_by_term: FxHashMap<TermId, u64>,
-  /// For every entry and root, the term ID of each written position in
-  /// pre-order with Shares as `(true, term)`, inline nodes as
-  /// `(false, term)`: a form independent of the table order.
-  pub entry_forms: Vec<Vec<(bool, TermId)>>,
-  pub root_forms: Vec<Vec<(bool, TermId)>>,
-}
-
-/// Inspect an encoding (`table_terms[i]` is the term of entry `i`) of `dag`.
-pub fn inspect_encoding(
-  dag: &SharingDag,
-  table_terms: &[TermId],
-  sharing: &[Arc<Expr>],
-  roots: &[Arc<Expr>],
-) -> Result<EncodingInfo, SharingError> {
-  let nodes = dag.nodes();
-  let lookup: FxHashMap<&Node, TermId> = nodes
-    .iter()
-    .enumerate()
-    .map(|(t, node)| TermId::try_from(t).map(|id| (node, id)))
-    .collect::<Result<_, _>>()
-    .map_err(|_e| internal("id"))?;
-  let stored: rustc_hash::FxHashSet<TermId> =
-    table_terms.iter().copied().collect();
-  let mut info = EncodingInfo {
-    share_refs: vec![0; table_terms.len()],
-    ..EncodingInfo::default()
-  };
-  let mut memo: FxHashMap<*const Expr, TermId> = FxHashMap::default();
-  // Term of an expression (memoized by pointer; post-order, iterative).
-  let term_of = |root: &Arc<Expr>,
-                 memo: &mut FxHashMap<*const Expr, TermId>|
-   -> Result<TermId, SharingError> {
-    let mut stack: Vec<(&Expr, bool)> = vec![(root.as_ref(), false)];
-    while let Some((e, ready)) = stack.pop() {
-      let key = std::ptr::from_ref(e);
-      if memo.contains_key(&key) {
-        continue;
-      }
-      if let Expr::Share(i) = e {
-        let t = usize::try_from(*i)
-          .ok()
-          .and_then(|i| table_terms.get(i))
-          .copied()
-          .ok_or_else(|| internal("share index out of range"))?;
-        memo.insert(key, t);
-        continue;
-      }
-      if let Some(leaf) = Node::from_leaf(e) {
-        let t = *lookup.get(&leaf).ok_or_else(|| internal("unknown leaf"))?;
-        memo.insert(key, t);
-        continue;
-      }
-      if !ready {
-        stack.push((e, true));
-        for c in e.children() {
-          stack.push((c.as_ref(), false));
-        }
-        continue;
-      }
-      let id = |c: &Arc<Expr>| memo[&Arc::as_ptr(c)];
-      let node = match e {
-        Expr::Prj(t, f, v) => Node::Prj(*t, *f, id(v)),
-        Expr::App(a, b) => Node::App(id(a), id(b)),
-        Expr::Lam(c, a, b) => Node::Lam(*c, id(a), id(b)),
-        Expr::All(c, v, a, b) => Node::All(*c, *v, id(a), id(b)),
-        Expr::Let(c, a, b, d) => Node::Let(*c, id(a), id(b), id(d)),
-        _ => return Err(internal("unexpected leaf")),
-      };
-      let t = *lookup.get(&node).ok_or_else(|| internal("unknown node"))?;
-      memo.insert(key, t);
-    }
-    memo.get(&Arc::as_ptr(root)).copied().ok_or_else(|| internal("missing"))
-  };
-  // Walk every position of every entry and root.
-  let mut walk = |e: &Arc<Expr>,
-                  top_is_entry: bool,
-                  info: &mut EncodingInfo|
-   -> Result<Vec<(bool, TermId)>, SharingError> {
-    term_of(e, &mut memo)?;
-    let mut form = Vec::new();
-    let mut stack: Vec<(&Arc<Expr>, bool)> = vec![(e, true)];
-    while let Some((x, top)) = stack.pop() {
-      let t = memo[&Arc::as_ptr(x)];
-      if let Expr::Share(i) = x.as_ref() {
-        form.push((true, t));
-        if let Some(r) =
-          usize::try_from(*i).ok().and_then(|i| info.share_refs.get_mut(i))
-        {
-          *r += 1;
-        }
-        continue;
-      }
-      form.push((false, t));
-      if stored.contains(&t) && !(top && top_is_entry) {
-        info.inlined += 1;
-        *info.inlined_by_term.entry(t).or_default() += 1;
-      }
-      for c in x.children().iter().rev() {
-        stack.push((c, false));
-      }
-    }
-    Ok(form)
-  };
-  for e in sharing {
-    let f = walk(e, true, &mut info)?;
-    info.entry_forms.push(f);
-  }
-  for r in roots {
-    let f = walk(r, false, &mut info)?;
-    info.root_forms.push(f);
-  }
-  Ok(info)
+  })
 }

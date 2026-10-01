@@ -1,5 +1,5 @@
 /-
-  Exact minimum sharing (W1): expanded structural DAG.
+  Exact minimum sharing: expanded structural DAG.
 
   * `ingestTable` expands an existing sharing table and its roots into a
     hash-consed DAG without materializing the occurrence tree. Entry `i` may

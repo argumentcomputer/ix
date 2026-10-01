@@ -1,5 +1,6 @@
 /-
-  Exact minimum sharing (W1): tiny exhaustive reference oracle (§6.3, P1).
+  Exact minimum sharing: tiny exhaustive reference oracle (§6.3), a test
+  oracle, not the compiler path.
 
   Deliberately independent of the telescope recurrence and the width-state
   search. It enumerates

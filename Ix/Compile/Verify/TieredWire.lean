@@ -162,29 +162,24 @@ root the tiered construction returns is in the expression codec's wire
 domain, the table count fits a `UInt64`, entry `k` references only entries
 below `k`, and every root only table entries. -/
 theorem canonicalTiered_format {layout : ShareLayout} {limits : Limits} {ex : Expanded}
-    {fixedWidth : Option Nat} {r : TieredSharingResult}
-    (h : canonicalTieredExpanded layout limits ex fixedWidth = .ok r) :
+    {r : TieredSharingResult} (h : canonicalTieredExpanded layout limits ex = .ok r) :
     FormatOK r.result.sharing r.result.roots := by
   obtain ⟨r₀, hr₀, -, -, hs, hr, -, -⟩ := canonicalTiered_core h
   rw [hs, hr]
-  cases fixedWidth with
-  | some w =>
-    exact tieredAtWidth_format (ex := ⟨ex.dag, ex.roots, 0, 0⟩) hr₀
-  | none =>
-    obtain ⟨c₁, c₂, c₃, h₁, h₂, h₃, ⟨c, hc, hrc⟩, -, -⟩ := canonicalTieredCore_select hr₀
-    have hres : r₀.result = c.result := by rw [hrc]
-    rw [hres]
-    simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
-    rcases hc with hc | hc | hc <;> rw [hc]
-    · exact tieredAtWidth_format h₁
-    · exact tieredAtWidth_format h₂
-    · exact tieredAtWidth_format h₃
+  obtain ⟨c₁, c₂, c₃, h₁, h₂, h₃, ⟨c, hc, hrc⟩, -, -⟩ := canonicalTieredCore_select hr₀
+  have hres : r₀.result = c.result := by rw [hrc]
+  rw [hres]
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
+  rcases hc with hc | hc | hc <;> rw [hc]
+  · exact tieredAtWidth_format h₁
+  · exact tieredAtWidth_format h₂
+  · exact tieredAtWidth_format h₃
 
 /-- `canonicalSharingTiered` (Share-free roots): the output is in the format
 domain. -/
 theorem canonicalSharingTiered_format {layout : ShareLayout} {roots : Array Ixon.Expr}
-    {limits : Limits} {fixedWidth : Option Nat} {r : TieredSharingResult}
-    (h : canonicalSharingTiered layout roots limits fixedWidth = .ok r) :
+    {limits : Limits} {r : TieredSharingResult}
+    (h : canonicalSharingTiered layout roots limits = .ok r) :
     FormatOK r.result.sharing r.result.roots := by
   unfold canonicalSharingTiered at h
   obtain ⟨ex, -, h⟩ := bind_eq_ok h
@@ -193,9 +188,8 @@ theorem canonicalSharingTiered_format {layout : ShareLayout} {roots : Array Ixon
 /-- `canonicalSharingTieredTable` (roots with an existing table): the output
 is in the format domain. -/
 theorem canonicalSharingTieredTable_format {layout : ShareLayout}
-    {sharing roots : Array Ixon.Expr} {limits : Limits} {fixedWidth : Option Nat}
-    {r : TieredSharingResult}
-    (h : canonicalSharingTieredTable layout sharing roots limits fixedWidth = .ok r) :
+    {sharing roots : Array Ixon.Expr} {limits : Limits} {r : TieredSharingResult}
+    (h : canonicalSharingTieredTable layout sharing roots limits = .ok r) :
     FormatOK r.result.sharing r.result.roots := by
   unfold canonicalSharingTieredTable at h
   obtain ⟨ex, -, h⟩ := bind_eq_ok h

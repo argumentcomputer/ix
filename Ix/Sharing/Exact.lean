@@ -1,10 +1,18 @@
 /-
-  Exact minimum sharing for anonymous Ixon constants (workstream W1).
+  Sharing tables of anonymous Ixon constants: the canonical construction and
+  its reference searches (`docs/sharing-minimum.md`).
 
-  Specification: `docs/sharing-minimum.md` (§3 canonical rule, §4.1
-  reductions, §5 fixed-dictionary recurrence, §6 width-state search, §7 API).
-  For a resolved Constant, the canonical sharing encoding is the feasible
-  backward-reference encoding with the least key
+  The compiler shares every block with the tiered canonical construction
+  `canonicalSharingTiered` (`Exact.Tiered`; Rust
+  `ixon::sharing_exact::canonical_sharing_tiered`): phase 1 is the exact
+  uniform-width optimizer (`Exact.Uniform`) at widths 1, 2 and 3, phase 2
+  allocates the table slots, phase 3 re-materializes every part under the
+  real TagN widths, and the candidate with the fewest bytes wins.
+
+  The global exact minimum of `docs/sharing-minimum.md` §3 is computed by the
+  width-state search (`optimizeSharing`, `normalizeConstantSharing`,
+  `Exact.Search`): for a resolved Constant, the feasible backward-reference
+  encoding with the least key
 
     (complete serialized length, table structural-ID vector, bytes)
 
@@ -12,7 +20,9 @@
   choices, with every non-sharing field, the refs and univs tables and the
   ordered roots fixed. Only strictly backward table references are feasible
   (entry `i` may use entries `< i`, roots may use every entry); forward and
-  self references are rejected rather than optimized over.
+  self references are rejected rather than optimized over. The search is
+  exponential in the candidates: it is a test oracle for small inputs, not
+  the compiler path.
 
   Every operation is pure over Ixon data (no Lean frontend) and returns an
   explicit error instead of an uncertified result. Resource limits may turn a
@@ -22,11 +32,11 @@
   * `Exact.Basic`      exact serializer lengths, node alphabet, errors, limits
   * `Exact.Dag`        bounded share expansion, structural IDs, root API
   * `Exact.Dictionary` fixed-dictionary optimizer `C_M` and materialization
-  * `Exact.Search`     width-state DP with LB pruning and self-verification
-  * `Exact.Oracle`     tiny exhaustive reference search (tests only)
-  * `Exact.Uniform`    exact optimizer for a uniform Share width (cost model)
-  * `Exact.Tiered`     uniform selection, slot allocation, re-materialization
-                       (layouts: Tag4 and TagN)
+  * `Exact.Search`     width-state search for the global minimum (test oracle),
+                       and the table materialization the construction uses
+  * `Exact.Oracle`     tiny exhaustive reference search (test oracle)
+  * `Exact.Uniform`    exact optimizer for a uniform Share width (phase 1)
+  * `Exact.Tiered`     the canonical tiered construction (TagN layout)
 -/
 module
 
@@ -44,15 +54,17 @@ namespace Ix.Sharing.Exact
 
 open Ixon
 
-/-- Exact minimum sharing of expanded (Share-free) roots. A `Share` leaf in
-the input is an error. -/
+/-- Exact minimum sharing of expanded (Share-free) roots: the width-state
+search, a test oracle (the compiler path is `canonicalSharingTiered`). A
+`Share` leaf in the input is an error. -/
 def optimizeSharing (roots : Array Ixon.Expr) (limits : Limits := {}) :
     Except SharingError ExactSharingResult := do
   let ex ← expand limits #[] roots false
   optimizeExpanded limits ex
 
-/-- Exact minimum sharing of roots given with an existing sharing table,
-which is first expanded logically (backward references only). -/
+/-- Exact minimum sharing (test oracle, `optimizeSharing`) of roots given with
+an existing sharing table, which is first expanded logically (backward
+references only). -/
 def optimizeSharingTable (sharing roots : Array Ixon.Expr) (limits : Limits := {}) :
     Except SharingError ExactSharingResult := do
   let ex ← expand limits sharing roots true
@@ -67,8 +79,9 @@ def expandConstantSharing (c : Constant) (limits : Limits := {}) :
   let info ← withRoots c.info (ex.roots.map (exprs[·]!))
   return { c with info, sharing := #[] }
 
-/-- The canonical exact-minimum sharing of a Constant: expand its table,
-optimize, and reassemble the same ConstantInfo, refs and univs. -/
+/-- The exact-minimum sharing of a Constant (test oracle, `optimizeSharing`):
+expand its table, optimize, and reassemble the same ConstantInfo, refs and
+univs. -/
 def normalizeConstantSharing (c : Constant) (limits : Limits := {}) :
     Except SharingError Constant := do
   let r ← optimizeSharingTable c.sharing (constantInfoRoots c.info) limits
@@ -82,7 +95,8 @@ inductive CanonicalCheck where
   | noncanonical (expected : ByteArray)
   deriving Inhabited
 
-/-- Whether `c` is byte-identical to its exact canonical sharing. -/
+/-- Whether `c` is byte-identical to its exact-minimum sharing (the test oracle
+`normalizeConstantSharing`, not the compiler's canonical construction). -/
 def checkCanonicalSharing (c : Constant) (limits : Limits := {}) :
     Except SharingError CanonicalCheck := do
   let n ← normalizeConstantSharing c limits
@@ -183,24 +197,23 @@ def optimizeSharingUniformReference (w : Nat) (roots : Array Ixon.Expr)
 
 /-- Tiered canonical sharing of Share-free roots under a Share layout: the
 fewest final layout bytes over the phase-1 widths 1, 2, 3 (see
-`Exact.Tiered` for the claim of each phase); `fixedWidth` runs one width. -/
+`Exact.Tiered` for the claim of each phase). This is the compiler's sharing
+(`Ix.CompileM.buildConstantWithSharing`). -/
 def canonicalSharingTiered (layout : ShareLayout) (roots : Array Ixon.Expr)
-    (limits : Limits := {}) (fixedWidth : Option Nat := none) :
-    Except SharingError TieredSharingResult := do
+    (limits : Limits := {}) : Except SharingError TieredSharingResult := do
   let ex ← expand limits #[] roots false
-  canonicalTieredExpanded layout limits ex fixedWidth
+  canonicalTieredExpanded layout limits ex
 
 /-- `canonicalSharingTiered` for roots given with an existing sharing table. -/
 def canonicalSharingTieredTable (layout : ShareLayout) (sharing roots : Array Ixon.Expr)
-    (limits : Limits := {}) (fixedWidth : Option Nat := none) :
-    Except SharingError TieredSharingResult := do
+    (limits : Limits := {}) : Except SharingError TieredSharingResult := do
   let ex ← expand limits sharing roots true
-  canonicalTieredExpanded layout limits ex fixedWidth
+  canonicalTieredExpanded layout limits ex
 
 /-- Re-share a Constant with the tiered construction. -/
 def normalizeConstantSharingTiered (layout : ShareLayout) (c : Constant)
-    (limits : Limits := {}) (fixedWidth : Option Nat := none) : Except SharingError Constant := do
-  let r ← canonicalSharingTieredTable layout c.sharing (constantInfoRoots c.info) limits fixedWidth
+    (limits : Limits := {}) : Except SharingError Constant := do
+  let r ← canonicalSharingTieredTable layout c.sharing (constantInfoRoots c.info) limits
   let info ← withRoots c.info r.result.roots
   return { c with info, sharing := r.result.sharing }
 

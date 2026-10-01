@@ -27,15 +27,30 @@ def selectionOk (r : TieredSharingResult) : Bool :=
   ls.map (·.1) == #[1, 2, 3] && r.stats.phase3LayoutBytes == best &&
     (ls.find? (·.2 == best)).map (·.1) == some r.stats.w
 
-/-- The output is byte-identical to the single candidate at the nominal
-width (the former width rule). -/
-def sameAsNominal (l : ShareLayout) (c : Constant) : Bool :=
-  match canonicalSharingTieredTable l c.sharing (constantInfoRoots c.info),
-      normalizeConstantSharingTiered l c with
-  | .ok r, .ok n =>
-    (normalizeConstantSharingTiered l c {} (some r.stats.nominalW)).toOption.map serConstant ==
-      some (serConstant n)
-  | _, _ => false
+/-- The candidate at phase-1 width `w` alone (`tieredAtWidth`) on the
+expanded roots of `c`. -/
+def candidateAt (l : ShareLayout) (c : Constant) (w : Nat) :
+    Except SharingError TieredSharingResult := do
+  let ex ← expand {} c.sharing (constantInfoRoots c.info) true
+  tieredAtWidth l {} ex w
+
+/-- Every recorded candidate length is that of the candidate run alone, and
+the result is byte-identical to the candidate at its winning width. -/
+def candidatesOk (l : ShareLayout) (c : Constant) (r : TieredSharingResult) : Bool :=
+  r.stats.candidateLengths.all (fun (w, b) =>
+    match candidateAt l c w with
+    | .ok cw => cw.stats.w == w && cw.stats.phase3LayoutBytes == b &&
+        cw.stats.candidateLengths == #[(w, b)]
+    | .error _ => false) &&
+  match candidateAt l c r.stats.w with
+  | .ok cw => cw.result.sharing == r.result.sharing && cw.result.roots == r.result.roots
+  | .error _ => false
+
+/-- `candidatesOk` for the canonical result of `c`. -/
+def sameAsCandidates (l : ShareLayout) (c : Constant) : Bool :=
+  match canonicalSharingTieredTable l c.sharing (constantInfoRoots c.info) with
+  | .ok r => candidatesOk l c r
+  | .error _ => false
 
 def fixtureTests (_ : Unit) : TestSeq :=
   let (nine, hot) := nineRef
@@ -46,14 +61,15 @@ def fixtureTests (_ : Unit) : TestSeq :=
       withOk "T2" (normalizeConstantSharingTiered l w2) (fun n =>
         test s!"T2 → T2: {cbytes n} bytes = 17, d200009117b0b001921700170000000100"
           (cbytes n == 17 && hexOf (serConstant n) == "d200009117b0b001921700170000000100" &&
-            sameAsNominal l w2)) ++
+            sameAsCandidates l w2)) ++
       withOk "T16" (normalizeConstantSharingTiered l w16) (fun n =>
-        test s!"T16 → T16: {cbytes n} bytes = 46, same bytes as the nominal width"
-          (cbytes n == 46 && sameAsNominal l w16)) ++
+        test s!"T16 → T16: {cbytes n} bytes = 46, the candidates run alone agree"
+          (cbytes n == 46 && sameAsCandidates l w16)) ++
       withOk "nine" (canonicalSharingTieredTable l #[] (constantInfoRoots nine.info)) (fun r =>
         withOk "nine" (normalizeConstantSharingTiered l nine) fun n =>
-          test s!"nine Refs: {cbytes n} bytes = 578, same bytes as the nominal width; w={r.stats.w} (nominal {r.stats.nominalW}, candidates {r.stats.candidateLengths}); first tier {r.stats.firstTier} holds the hot atom; phase-1 layout {r.stats.phase1LayoutBytes}, final {r.stats.phase3LayoutBytes}"
-            (cbytes n == 578 && selectionOk r && sameAsNominal l nine && r.stats.firstTier.contains 2 &&
+          test s!"nine Refs: {cbytes n} bytes = 578, the candidates run alone agree; w={r.stats.w} (candidates {r.stats.candidateLengths}); first tier {r.stats.firstTier} holds the hot atom; phase-1 layout {r.stats.phase1LayoutBytes}, final {r.stats.phase3LayoutBytes}"
+            (cbytes n == 578 && selectionOk r && sameAsCandidates l nine &&
+              r.stats.firstTier.contains 2 &&
               (n.sharing.findIdx? (· == hot)).map (fun i => decide (i < 8)) == some true)))
 
 /-- A heavy parent `P` over two lighter children, next to more than eight
@@ -75,11 +91,11 @@ def genHeavyParent : RGen (Array Ixon.Expr) := do
   return roots
 
 def allocationTests (_ : Unit) : TestSeq :=
-  let (checked, changed, saved, beatNominal, err) := runGen 71 do
+  let (checked, changed, saved, beatOther, err) := runGen 71 do
     let mut checked := 0
     let mut changed := 0
     let mut saved := 0
-    let mut beatNominal := 0
+    let mut beatOther := 0
     let mut err : Option String := none
     for i in [0:120] do
       if err.isSome then break
@@ -95,28 +111,23 @@ def allocationTests (_ : Unit) : TestSeq :=
           let fixedOk := cbytes n == fixedConstantBytes c + r.result.variableBytes
           let idem := (normalizeConstantSharingTiered l n).toOption.map serConstant ==
             some (serConstant n)
-          -- the candidate at the nominal width is never shorter than the result
-          let nominal := canonicalSharingTieredTable l #[] (constantInfoRoots c.info) {}
-            (some r.stats.nominalW)
-          let nominalOk := match nominal with
-            | .ok rn =>
-              r.stats.phase3LayoutBytes ≤ rn.stats.phase3LayoutBytes &&
-                rn.stats.candidateLengths == #[(r.stats.nominalW, rn.stats.phase3LayoutBytes)]
-            | .error _ => false
-          if let .ok rn := nominal then
-            if rn.stats.phase3LayoutBytes > r.stats.phase3LayoutBytes then
-              beatNominal := beatNominal + 1
+          -- every candidate run alone has its recorded length, and the result
+          -- is the candidate at its winning width
+          let candOk := candidatesOk l c r
+          if r.stats.candidateLengths.any (·.2 > r.stats.phase3LayoutBytes) then
+            beatOther := beatOther + 1
           unless r.stats.phase3LayoutBytes ≤ r.stats.phase1LayoutBytes &&
               r.stats.finalRefCost ≤ r.stats.phase1RefCost && fixedOk && idem &&
-              selectionOk r && nominalOk &&
+              selectionOk r && candOk &&
               (l != ShareLayout.wire || r.result.modelBytes == r.result.variableBytes) do
-            err := some s!"case {i} {reprStr l}: phase1={r.stats.phase1LayoutBytes} final={r.stats.phase3LayoutBytes} refcost {r.stats.phase1RefCost}->{r.stats.finalRefCost} fixed={fixedOk} idem={idem} selection={selectionOk r} {r.stats.candidateLengths} nominal={nominalOk}"
+            err := some s!"case {i} {reprStr l}: phase1={r.stats.phase1LayoutBytes} final={r.stats.phase3LayoutBytes} refcost {r.stats.phase1RefCost}->{r.stats.finalRefCost} fixed={fixedOk} idem={idem} selection={selectionOk r} {r.stats.candidateLengths} candidates={candOk}"
         | .error e, _ | _, .error e => err := some s!"case {i} {reprStr l}: error {reprStr e}"
-    return (checked, changed, saved, beatNominal, err)
+    return (checked, changed, saved, beatOther, err)
   group "slot allocation and re-materialization" <|
-    test s!"{checked} runs (120 inputs, TagN layout): final ≤ phase 1 in layout bytes and in reference cost; serialized = fixed + variable; wire price = serialized; idempotent; the fewest bytes over w = 1, 2, 3 (lower w at a tie), never longer than the nominal-width candidate ({changed} runs where allocation lowered the reference cost, {saved} with positive savings, {beatNominal} shorter than the nominal width)"
+    test s!"{checked} runs (120 inputs, TagN layout): final ≤ phase 1 in layout bytes and in reference cost; serialized = fixed + variable; wire price = serialized; idempotent; the fewest bytes over w = 1, 2, 3 (lower w at a tie), each candidate as when run alone ({changed} runs where allocation lowered the reference cost, {saved} with positive savings, {beatOther} where another width was longer)"
       (err.isNone && checked == 120 && changed > 0) ++
     (match err with | some m => test m false | none => .done)
+
 
 /-- Brute force over all subsets: dependency-closed, at most `cap` terms,
 maximum weight, ties by the greatest indicator vector in the order
@@ -229,9 +240,6 @@ def layoutTests (_ : Unit) : TestSeq :=
         ShareLayout.tagN.widthAt == [1, 2, 2, 3, 3, 4, 4, 5, 5, 9] &&
       tagNRung2End == 1032 && tagNRung3End == 66568 && tagNRung4End == 16843784 &&
       tagNRung5End == 4311811080) ++
-  test "uniform width by candidate count: 1 up to 8, 2 up to 1032, then 3"
-    (ShareLayout.tagN.uniformWidth 8 == 1 && ShareLayout.tagN.uniformWidth 9 == 2 &&
-      ShareLayout.tagN.uniformWidth 1032 == 2 && ShareLayout.tagN.uniformWidth 1033 == 3) ++
   test "the wire layout is TagN" (ShareLayout.wire == .tagN)
 
 public def suite : List TestSeq := [

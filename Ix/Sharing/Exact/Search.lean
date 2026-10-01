@@ -1,5 +1,11 @@
 /-
-  Exact minimum sharing (W1): table selection and ordering (§4.1, §6).
+  Exact minimum sharing: table selection and ordering (§4.1, §6).
+
+  The width-state search below computes the global minimum of
+  `docs/sharing-minimum.md` §3. It is exponential in the candidates and is a
+  test oracle for small inputs, not the compiler path. The table
+  materialization (`materializeTable`) and `ExactSharingResult` are shared
+  with the canonical construction (`Exact.Uniform`, `Exact.Tiered`).
 
   Candidates. By R1 a term with a single logical occurrence is never stored,
   and by R2 neither is a term whose inline encoding is one byte. The search

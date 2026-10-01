@@ -19,6 +19,7 @@ use super::oracle::{
   variants,
 };
 use super::search::materialize_sequence;
+use super::tiered::normalize_constant_sharing_tiered_at_width;
 use super::*;
 use crate::constant::{
   Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind,
@@ -948,12 +949,17 @@ fn fixture_t16_improves_on_store_only_t16() {
   );
 }
 
-/// Nine independent 5-byte Ref atoms; the one with the greatest structural
-/// hash (the former heuristic's node hash) is used 100 times, the others twice (the production probe fixture).
+/// Nine independent 5-byte Ref atoms, in the order of the blake3 hashes of
+/// their encodings (as Lean `nineRef`); the last one is used 100 times, the
+/// others twice (the probe fixture of `docs/sharing-minimum.md` §2).
 fn nine_ref_fixture() -> (Constant, E) {
   let mut atoms: Vec<E> =
     (0..9).map(|i| Expr::reference(i, vec![0, 0, 0])).collect();
-  atoms.sort_by_key(|e| *mss::structural_hash(e).as_bytes());
+  atoms.sort_by_key(|e| {
+    let mut buf = Vec::new();
+    put_expr(e, &mut buf);
+    *blake3::hash(&buf).as_bytes()
+  });
   let hot = atoms.last().unwrap().clone();
   let mut roots: Vec<E> =
     atoms.iter().flat_map(|a| [a.clone(), a.clone()]).collect();
@@ -1242,7 +1248,7 @@ fn exact_is_idempotent_and_never_worse() {
   l.max_layer_states = 100_000;
   for seed in 0..150 {
     let c = gen_constant(seed + 20_000, 4, 45, 6);
-    let (h, _, _) = mss_constant(&c, &limits(), MssTies::StructuralId).unwrap();
+    let h = mss::mss_constant(&c, &limits()).unwrap();
     let u = unshared(&c);
     let exact = match normalize_constant_sharing_with_stats(&c, &l) {
       Ok((x, r)) => {
@@ -1933,7 +1939,7 @@ fn candidate_terms_apply_r1_and_r2() {
 }
 
 // ===========================================================================
-// Uniform Share width (port of W1's Tests/Ix/SharingUniform.lean)
+// Uniform Share width (port of Tests/Ix/SharingUniform.lean)
 // ===========================================================================
 
 use super::dict::{Hide, UniformIndex, all_costs, eval_node};
@@ -2324,7 +2330,7 @@ fn uniform_byte_level() {
 }
 
 // ===========================================================================
-// Tiered construction (port of W1's Tests/Ix/SharingTiered.lean)
+// Tiered construction (port of Tests/Ix/SharingTiered.lean)
 // ===========================================================================
 
 const LAYOUTS: [ShareLayout; 1] = [ShareLayout::TagN];
@@ -2361,16 +2367,6 @@ fn tiered_layout_widths() {
     assert_eq!(tagn_width(i), TagN::byte_width(4, i) as u64);
   }
   assert_eq!(ShareLayout::TagN.width_at(u64::MAX), 9);
-  let tn = ShareLayout::TagN;
-  assert_eq!(
-    (
-      tn.uniform_width(8),
-      tn.uniform_width(9),
-      tn.uniform_width(1032),
-      tn.uniform_width(1033)
-    ),
-    (1, 2, 2, 3)
-  );
   assert_eq!(ShareLayout::wire(), ShareLayout::TagN);
 }
 
@@ -2403,8 +2399,7 @@ fn tiered_fixtures() {
       r.stats.kept_phase1_order
     );
     assert_eq!(roundtrip(&n).len(), 578);
-    // Same bytes as the nominal width (2); the tie goes to the lower width.
-    assert_eq!(r.stats.nominal_w, 2);
+    // The candidate at w = 2 alone writes the same bytes.
     let (m, _) =
       normalize_constant_sharing_tiered_at_width(l, &nine, &limits(), 2)
         .unwrap();
@@ -2414,7 +2409,7 @@ fn tiered_fixtures() {
 }
 
 /// A heavy parent over two lighter children next to more than eight atoms
-/// used a few times each (W1's `genHeavyParent`).
+/// used a few times each (Lean `genHeavyParent`).
 fn gen_heavy_parent(rng: &mut Rng) -> Vec<E> {
   let n_atoms = 9 + rng.below(4);
   let atoms: Vec<E> = (0..n_atoms)
@@ -2567,14 +2562,6 @@ fn tiered_byte_level() {
     let out = normalize_constant_bytes_tiered(l, &put(&c), &limits()).unwrap();
     assert_eq!(hex(&out), "d200009117b0b001921700170000000100");
   }
-  assert_eq!(
-    (
-      ShareLayout::from_code(0),
-      ShareLayout::from_code(1),
-      ShareLayout::from_code(2)
-    ),
-    (None, Some(ShareLayout::TagN), None)
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -2737,15 +2724,15 @@ fn uniform_branch_and_bound_across_a_bracket() {
 }
 
 // ---------------------------------------------------------------------------
-// Forced phase-1 width (experiment hook)
+// Width selection against the single-width candidates
 // ---------------------------------------------------------------------------
 
-/// The canonical construction is the forced-width candidate with the fewest
-/// layout bytes (ties to the lower width), never longer than the nominal
-/// width's, and reports every candidate length; every forced width is a
-/// valid encoding of the same constant, priced and serialized consistently.
+/// The canonical construction is the single-width candidate (`tiered_at`)
+/// with the fewest layout bytes (ties to the lower width), and reports every
+/// candidate length; every candidate is a valid encoding of the same
+/// constant, priced and serialized consistently.
 #[test]
-fn tiered_at_width_hook() {
+fn tiered_selects_the_best_width_candidate() {
   let mut rng = Rng(73);
   for i in 0..60u64 {
     let c = if i % 2 == 0 {
@@ -2756,8 +2743,6 @@ fn tiered_at_width_hook() {
     };
     for l in LAYOUTS {
       let (n, r) = normalize_constant_sharing_tiered(l, &c, &limits()).unwrap();
-      let nominal = l.uniform_width(r.stats.candidate_count);
-      assert_eq!(r.stats.nominal_w, nominal);
       let mut lengths = Vec::new();
       let mut best: Option<(u64, u64)> = None;
       for w in 1..=3 {
@@ -2782,47 +2767,10 @@ fn tiered_at_width_hook() {
         if w == r.stats.w {
           assert_eq!((put(&m), s.model_len), (put(&n), r.model_len));
         }
-        if w == nominal {
-          assert!(
-            r.model_len <= s.model_len,
-            "case {i} {l:?}: longer than nominal"
-          );
-        }
       }
       // The selection rule: fewest layout bytes, ties to the lower width.
       assert_eq!(best, Some((r.stats.w, r.model_len)), "case {i} {l:?}");
       assert_eq!(r.stats.candidate_lengths, lengths);
-    }
-  }
-}
-
-/// The "all candidates" experiment hook stores exactly the `K` candidates
-/// and encodes the same constant.
-#[test]
-fn tiered_all_candidates_hook() {
-  let mut rng = Rng(79);
-  for i in 0..60u64 {
-    let c = if i % 2 == 0 {
-      let roots = gen_heavy_parent(&mut rng);
-      wrap(&mut rng, roots)
-    } else {
-      gen_constant(i + 95_000, 6, 30, 5)
-    };
-    for l in LAYOUTS {
-      let (m, s) = normalize_constant_sharing_tiered_with(
-        l,
-        &c,
-        &limits(),
-        Phase1Choice::AllCandidates,
-      )
-      .unwrap();
-      assert_eq!(s.stats.w, 0);
-      assert_eq!(s.table_terms.len() as u64, s.stats.candidate_count);
-      assert_eq!(
-        roundtrip(&m).len() as u64,
-        constant_fixed_len(&c).unwrap() + s.variable_len
-      );
-      assert_eq!(put(&unshared(&m)), put(&unshared(&c)), "case {i} {l:?}");
     }
   }
 }
@@ -2848,8 +2796,7 @@ fn par_cases() -> Vec<Constant> {
     nine,
   ];
   let mut rng = Rng(83);
-  // One layout since the TagN-only wire (`LAYOUTS`), so twice the cases of
-  // the two-layout version keep more than 20 multi-component runs.
+  // Enough cases for more than 20 multi-component runs.
   for i in 0..180u64 {
     let c = match i % 3 {
       0 => {
@@ -2995,21 +2942,16 @@ fn kahn_order_matches_reference() {
   }
 }
 
-/// The MSS experiment hook reproduces the plan's §2 numbers (T2 17 bytes,
-/// T16 46) and writes every occurrence of a stored term as a Share: the
-/// inspector counts `deg(t)` Shares of every stored term and nothing inline.
+/// The MSS reference encoding reproduces the `docs/sharing-minimum.md` §2
+/// numbers (T2 17 bytes, T16 46) and encodes the same constant.
 #[test]
-fn mss_hook_and_inspector() {
+fn mss_reference_encoding() {
   let t2 = chain(2);
   let w2 = axiom(Expr::all(t2.clone(), t2), 1);
   let t16 = chain(16);
   let w16 = axiom(Expr::all(t16.clone(), t16), 1);
-  for ties in [MssTies::StructuralId, MssTies::Blake3] {
-    let (n, _, _) = mss_constant(&w2, &limits(), ties).unwrap();
-    assert_eq!(roundtrip(&n).len(), 17);
-    let (n, _, _) = mss_constant(&w16, &limits(), ties).unwrap();
-    assert_eq!(roundtrip(&n).len(), 46);
-  }
+  assert_eq!(roundtrip(&mss::mss_constant(&w2, &limits()).unwrap()).len(), 17);
+  assert_eq!(roundtrip(&mss::mss_constant(&w16, &limits()).unwrap()).len(), 46);
   let mut rng = Rng(91);
   for i in 0..60u64 {
     let c = if i % 2 == 0 {
@@ -3018,16 +2960,8 @@ fn mss_hook_and_inspector() {
     } else {
       gen_constant(i + 99_000, 6, 30, 5)
     };
-    let (n, enc, dag) =
-      mss_constant(&c, &limits(), MssTies::StructuralId).unwrap();
+    let n = mss::mss_constant(&c, &limits()).unwrap();
     assert_eq!(put(&unshared(&n)), put(&unshared(&c)), "case {i}");
-    let info =
-      inspect_encoding(&dag, &enc.table_terms, &enc.sharing, &enc.roots)
-        .unwrap();
-    assert_eq!(info.inlined, 0, "case {i}");
-    for (j, &t) in enc.table_terms.iter().enumerate() {
-      assert_eq!(info.share_refs[j], enc.deg[t as usize], "case {i} term {t}");
-    }
   }
 }
 
@@ -3035,7 +2969,7 @@ fn mss_hook_and_inspector() {
 // Limits: defaults and overrides
 // ---------------------------------------------------------------------------
 
-/// The production defaults are the safety-net values (PR plan §0b-4).
+/// The production defaults are the safety-net values.
 #[test]
 fn limit_defaults_are_the_safety_net() {
   let d = ExactSharingLimits::default();

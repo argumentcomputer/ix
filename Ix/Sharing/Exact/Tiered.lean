@@ -16,10 +16,9 @@
   ties go to the lower `w` (then `setPrec` on the stored set). Each
   candidate is exact per phase as described below; the final choice is the
   real-byte minimum over the three candidates, not a global optimum over
-  all tables and orders. (Choosing `w` from the candidate count alone,
-  `ShareLayout.uniformWidth`, overestimates the widths: the optimum stores
-  far fewer terms than there are candidates.) `fixedWidth := some w` runs
-  the single candidate at `w`, for experiments and tests.
+  all tables and orders. (Choosing `w` from the candidate count alone
+  overestimates the widths: the optimum stores far fewer terms than there
+  are candidates.) `tieredAtWidth` is the candidate at one width.
 
   Proved (`Ix/Compile/Verify/Tiered*.lean`, no `sorry`): the width selection
   (`canonicalTieredCore_select`), phase 1 (`optimizeUniform_least`), the
@@ -141,12 +140,6 @@ def ShareLayout.widthAt : ShareLayout → Nat → Nat
 /-- First index whose width exceeds 2. -/
 def ShareLayout.tier2End : ShareLayout → Nat
   | .tagN => tagNRung2End
-
-/-- Nominal uniform width for `k` candidates (`k` up to 8 fit the 1-byte
-rung, up to `tier2End` the 2-byte rung). The canonical path tries every
-width instead (see the module doc); this is reported in the statistics. -/
-def ShareLayout.uniformWidth (l : ShareLayout) (k : Nat) : Nat :=
-  if k ≤ 8 then 1 else if k ≤ l.tier2End then 2 else 3
 
 /-- Variable length of an encoding with Shares priced by the layout. -/
 def layoutBytes (l : ShareLayout) (sharing roots : Array Ixon.Expr) : Nat :=
@@ -390,12 +383,10 @@ structure TieredStats where
   layout : ShareLayout
   /-- Terms with in-degree ≥ 2 and unshared length ≥ 2. -/
   candidateCount : Nat
-  /-- Nominal width for the candidate count (`ShareLayout.uniformWidth`). -/
-  nominalW : Nat
   /-- Phase-1 uniform width of the returned candidate (the winning width). -/
   w : Nat
   /-- Final layout length of every candidate run, as `(w, bytes)` in
-  increasing `w` (one entry under `fixedWidth`). -/
+  increasing `w` (one entry for a single candidate, `tieredAtWidth`). -/
   candidateLengths : Array (Nat × Nat) := #[]
   /-- Phase-1 uniform-model length. -/
   phase1ModelBytes : Nat
@@ -467,7 +458,7 @@ def tieredResult (layout : ShareLayout) (ex : Expanded) (w : Nat) (u : UniformSh
   let k := ((Array.range ex.dag.size).filter fun t => f.deg[t]! ≥ 2 && p.base[t]! ≥ 2).size
   let phase1Layout := layoutBytes layout u.result.sharing u.result.roots
   let stats : TieredStats :=
-    { layout := layout, candidateCount := k, nominalW := layout.uniformWidth k, w := w,
+    { layout := layout, candidateCount := k, w := w,
       candidateLengths := #[(w, m.bytes)], phase1ModelBytes := u.result.modelBytes,
       phase1LayoutBytes := phase1Layout, slotStates := a.slotStates, firstTier := a.tier,
       keptPhase1Order := a.kept, phase1RefCost := a.refCost1, finalRefCost := a.refCostFinal,
@@ -501,15 +492,11 @@ def tieredBetter (a b : TieredSharingResult) : Bool :=
 
 /-- The tiered construction on the canonical DAG `dag` and root IDs
 `roots` alone: the candidate with the fewest final layout bytes over the
-phase-1 widths 1, 2 and 3 (module doc), or the single candidate at
-`fixedWidth`. -/
+phase-1 widths 1, 2 and 3 (module doc). -/
 def canonicalTieredCore (layout : ShareLayout) (limits : Limits) (dag : Dag)
-    (roots : Array Nat) (fixedWidth : Option Nat := none) :
-    Except SharingError TieredSharingResult :=
+    (roots : Array Nat) : Except SharingError TieredSharingResult :=
   let ex : Expanded := { dag, roots, visits := 0, internedNodes := 0 }
-  match fixedWidth with
-  | some w => tieredAtWidth layout limits ex w
-  | none => do
+  do
     let c1 ← tieredAtWidth layout limits ex 1
     let c2 ← tieredAtWidth layout limits ex 2
     let c3 ← tieredAtWidth layout limits ex 3
@@ -530,9 +517,9 @@ def withExpansionStats (ex : Expanded) (r : TieredSharingResult) : TieredSharing
 /-- The tiered canonical construction on an expanded input: a function of
 its DAG and root IDs (`canonicalTieredCore`), with the expansion statistics
 recorded. -/
-def canonicalTieredExpanded (layout : ShareLayout) (limits : Limits) (ex : Expanded)
-    (fixedWidth : Option Nat := none) : Except SharingError TieredSharingResult := do
-  let r ← canonicalTieredCore layout limits ex.dag ex.roots fixedWidth
+def canonicalTieredExpanded (layout : ShareLayout) (limits : Limits) (ex : Expanded) :
+    Except SharingError TieredSharingResult := do
+  let r ← canonicalTieredCore layout limits ex.dag ex.roots
   return withExpansionStats ex r
 
 end Ix.Sharing.Exact

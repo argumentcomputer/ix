@@ -37,8 +37,8 @@ Loads a serialized `Ixon.Env` (`.ixe`) and, for every stored constant:
 6. Builds the "maximal structural sharing" (MSS) encoding (see `mssBuild`),
    serializes it with `serConstant`, decodes and expands it again and checks
    the expanded roots equal the original ones exactly, and compares it with
-   the canonical encoding. The plan §2 witnesses are run through the same path
-   at startup.
+   the canonical encoding. The `docs/sharing-minimum.md` §2 witnesses are run
+   through the same path at startup.
 
 With `--meta` it instead runs the metadata study (see `metaStudy`).
 
@@ -374,7 +374,7 @@ def countShareRefs (e : Expr) (acc : Nat × Nat × Nat) : Nat × Nat × Nat :=
 
 /-! ## Maximal structural sharing (MSS)
 
-The candidate polynomial rule measured for the coordinator's follow-up:
+The in-degree rule measured against the canonical encoding:
 
 1. `deg(t)`: incoming edges of `t` in the compact hash-consed DAG, counted with
    multiplicity (`App(x,x)` contributes 2 to `x`), plus the number of roots
@@ -1276,8 +1276,9 @@ def MSAnalysis.add (a b : MSAnalysis) : MSAnalysis :=
     matchedBytes := a.matchedBytes + b.matchedBytes, matchedTable := a.matchedTable + b.matchedTable }
 
 /-- Expand the primary table, the primary roots and the `metaSharing` entries
-into one canonical DAG (Share nodes in entries resolve against the primary table,
-as in decompilation), then:
+into one canonical DAG (Share nodes in entries resolve against the primary table
+only: an index at or past its size, which the extended metadata index space of
+`docs/sharing-minimum.md` §13 allows, is an expansion error here), then:
 * count entries equal to a subterm of the primary roots, or to a table entry;
 * re-encode every entry optimally with the primary table as a fixed dictionary
   at its current index widths (`Prep.materializeWith`), checking that the output
