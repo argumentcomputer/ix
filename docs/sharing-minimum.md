@@ -813,3 +813,36 @@ p99 4–5, max 45 (same constant as Init, `Lean.Grind.Config.mk.injEq`), ≤ 8 f
 layouts on MSS: F (= TagN below 66,568) −1.55%, G −1.30%, D +1.44%. One stored heuristic table
 has 81,565 entries (Tag4 indices ≥ 65,536 cost 4 bytes); the largest MSS table is 21,461.
 Lean/Rust parity on Init (W2): 0 byte disagreements in 56,622 constants, tiered and uniform.
+
+### 12.10 Lean/Rust parity and production speed (2026-10-01)
+
+- Init, all 56,622 constants, both implementations on the branch-and-reclassify search:
+  tiered-TagN 0 byte disagreements; uniform-w2 56,622/56,622 identical with no exhaustion.
+- Mathlib sample (20,263 constants: every 50th plus every constant with > 2,000 candidates):
+  0 byte disagreements in tiered-TagN and uniform-w2; every one-sided Lean exhaustion was the
+  phase-3 materialisation work limit and gives Rust's bytes once raised; at head 3ddda798
+  (`maxMaterializeWork` = 2^36) all 120 such constants and the 10 Init ones succeed at defaults.
+- Rust canonical construction over all 679,499 Mathlib constants: 0 failures, 184 s processing
+  on 20 threads (315 s wall), 5.3 GB peak RSS; TagN bytes −22.65% vs the stored heuristic.
+
+### 12.11 Phase-1 width rule corrected (2026-10-01)
+
+Choosing the nominal uniform width from the candidate count K was wrong: the optimum stores far
+fewer terms than K, so real references are narrower than modelled and the w = 2/3 models exclude
+terms that pay. On Mathlib the K-based construction was +0.46% vs MSS at TagN widths (larger on
+221,050 constants). **New rule:** run phase 1 at each w ∈ {1, 2, 3}, carry each through phases 2
+and 3, and keep the result with the fewest real layout bytes; ties → lower w, then `setPrec`.
+Measured (W2, Rust, all constants certified at every w): Mathlib −0.82% vs MSS (smaller on
+405,832, equal 256,519, larger 903, max +1,485, p99.9 +1); Init −1.41% (larger on 5, max +6).
+Width 1 wins for 505,671 Mathlib constants, width 2 for 156,170, width 3 for 1,413. Cost: three
+phase-1 runs instead of one (about 3× the time; still minutes for all of Mathlib in Rust).
+
+### 12.12 Decision (2026-10-01): TagN replaces all three integer codes
+
+Owner decision: TagN (flag widths 0, 2, 4) replaces Tag0, Tag2 and Tag4 everywhere in the Ixon
+grammar, for uniformity and to simplify the serialization. Measured byte effect is the Share
+savings only (other fields change by ≈0), and no integer gets longer. Consequences: one integer
+code with one proof of roundtrip/bijectivity (`Ix/Compile/Verify/TagN.lean`); the three
+"noncanonical … integer" reader checks are removed; every codec theorem that mentions
+`tag0Bytes`/`tag4Bytes` sizes is restated with `tagNBytes`; the format version bumps once for
+sharing + integers together.
