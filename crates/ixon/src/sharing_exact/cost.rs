@@ -140,7 +140,7 @@ pub(crate) struct ExprLenInfo {
 }
 
 /// The children of an expression node, without allocating.
-fn expr_children(e: &Expr) -> [Option<&Arc<Expr>>; 3] {
+pub(crate) fn expr_children(e: &Expr) -> [Option<&Arc<Expr>>; 3] {
   match e {
     Expr::Prj(_, _, v) => [Some(v), None, None],
     Expr::App(a, b) | Expr::Lam(_, a, b) | Expr::All(_, _, a, b) => {
@@ -157,10 +157,6 @@ fn expr_len_memo(
   share: &dyn Fn(u64) -> u64,
   memo: &mut FxHashMap<*const Expr, ExprLenInfo>,
 ) -> Option<u64> {
-  type Info = ExprLenInfo;
-  fn leaf(len: u64) -> Info {
-    Info { len, count: 0, sum: 0, tail: 0 }
-  }
   let mut stack: Vec<(&Expr, bool)> = vec![(e, false)];
   while let Some((node, ready)) = stack.pop() {
     let key = std::ptr::from_ref(node);
@@ -177,61 +173,83 @@ fn expr_len_memo(
       }
       continue;
     }
-    let get = |c: &Arc<Expr>| memo[&Arc::as_ptr(c)];
-    let info = match node {
-      Expr::Sort(n) | Expr::Var(n) | Expr::Str(n) | Expr::Nat(n) => {
-        leaf(tag4_len(*n))
-      },
-      Expr::Share(n) => leaf(share(*n)),
-      Expr::Ref(n, us) | Expr::Rec(n, us) => {
-        let mut len =
-          tag4_len(usize_u64(us.len())?).checked_add(tag0_len(*n))?;
-        for u in us {
-          len = len.checked_add(tag0_len(*u))?;
-        }
-        leaf(len)
-      },
-      Expr::Prj(t, f, v) => {
-        leaf(tag4_len(*f).checked_add(tag0_len(*t))?.checked_add(get(v).len)?)
-      },
-      Expr::Let(c, ty, v, b) => leaf(
-        tag4_len(c.flags())
-          .checked_add(1)?
-          .checked_add(get(ty).len)?
-          .checked_add(get(v).len)?
-          .checked_add(get(b).len)?,
-      ),
-      Expr::App(f, a) => {
-        let (count, sum, tail) = if matches!(f.as_ref(), Expr::App(..)) {
-          let fi = get(f);
-          (fi.count.checked_add(1)?, fi.sum.checked_add(get(a).len)?, fi.tail)
-        } else {
-          (1, get(a).len, get(f).len)
-        };
-        let len = tag4_len(count).checked_add(sum)?.checked_add(tail)?;
-        Info { len, count, sum, tail }
-      },
-      Expr::Lam(_, ty, b) | Expr::All(_, _, ty, b) => {
-        let all = matches!(node, Expr::All(..));
-        let same = if all {
-          matches!(b.as_ref(), Expr::All(..))
-        } else {
-          matches!(b.as_ref(), Expr::Lam(..))
-        };
-        let side = get(ty).len.checked_add(1)?;
-        let (count, sum, tail) = if same {
-          let bi = get(b);
-          (bi.count.checked_add(1)?, bi.sum.checked_add(side)?, bi.tail)
-        } else {
-          (1, side, get(b).len)
-        };
-        let len = tag4_len(count).checked_add(sum)?.checked_add(tail)?;
-        Info { len, count, sum, tail }
-      },
-    };
+    let info = expr_len_info(node, &|c| memo[&Arc::as_ptr(c)], share)?;
     memo.insert(key, info);
   }
   memo.get(&std::ptr::from_ref(e)).map(|i| i.len)
+}
+
+/// The [`ExprLenInfo`] of one node from those of its children (`None` if
+/// a length overflows).
+pub(crate) fn expr_len_info(
+  node: &Expr,
+  get: &dyn Fn(&Arc<Expr>) -> ExprLenInfo,
+  share: &dyn Fn(u64) -> u64,
+) -> Option<ExprLenInfo> {
+  type Info = ExprLenInfo;
+  fn leaf(len: u64) -> Info {
+    Info { len, count: 0, sum: 0, tail: 0 }
+  }
+  Some(match node {
+    Expr::Sort(n) | Expr::Var(n) | Expr::Str(n) | Expr::Nat(n) => {
+      leaf(tag4_len(*n))
+    },
+    Expr::Share(n) => leaf(share(*n)),
+    Expr::Ref(n, us) | Expr::Rec(n, us) => {
+      let mut len = tag4_len(usize_u64(us.len())?).checked_add(tag0_len(*n))?;
+      for u in us {
+        len = len.checked_add(tag0_len(*u))?;
+      }
+      leaf(len)
+    },
+    Expr::Prj(t, f, v) => {
+      leaf(tag4_len(*f).checked_add(tag0_len(*t))?.checked_add(get(v).len)?)
+    },
+    Expr::Let(c, ty, v, b) => leaf(
+      tag4_len(c.flags())
+        .checked_add(1)?
+        .checked_add(get(ty).len)?
+        .checked_add(get(v).len)?
+        .checked_add(get(b).len)?,
+    ),
+    Expr::App(f, a) => {
+      let (count, sum, tail) = if matches!(f.as_ref(), Expr::App(..)) {
+        let fi = get(f);
+        (fi.count.checked_add(1)?, fi.sum.checked_add(get(a).len)?, fi.tail)
+      } else {
+        (1, get(a).len, get(f).len)
+      };
+      let len = tag4_len(count).checked_add(sum)?.checked_add(tail)?;
+      Info { len, count, sum, tail }
+    },
+    Expr::Lam(_, ty, b) | Expr::All(_, _, ty, b) => {
+      let all = matches!(node, Expr::All(..));
+      let same = if all {
+        matches!(b.as_ref(), Expr::All(..))
+      } else {
+        matches!(b.as_ref(), Expr::Lam(..))
+      };
+      let side = get(ty).len.checked_add(1)?;
+      let (count, sum, tail) = if same {
+        let bi = get(b);
+        (bi.count.checked_add(1)?, bi.sum.checked_add(side)?, bi.tail)
+      } else {
+        (1, side, get(b).len)
+      };
+      let len = tag4_len(count).checked_add(sum)?.checked_add(tail)?;
+      Info { len, count, sum, tail }
+    },
+  })
+}
+
+impl ExprLenInfo {
+  pub(crate) const ZERO: ExprLenInfo =
+    ExprLenInfo { len: 0, count: 0, sum: 0, tail: 0 };
+
+  /// The standalone length.
+  pub(crate) fn len(self) -> u64 {
+    self.len
+  }
 }
 
 /// Exact length of a sharing table: its TagN count plus every entry.

@@ -273,14 +273,8 @@ pub(crate) fn all_costs<W: Widths>(
 pub(crate) struct IncrementalCosts<'a> {
   nodes: &'a [Node],
   own: &'a [Len],
-  /// Parent edges, grouped by child (`edges[edge_start[x]..edge_start[x +
-  /// 1]]` are the distinct parents of `x`), each with what the parent's
-  /// evaluation reads of `x`: [`READS_COST`] and/or [`READS_SPINE`].
-  edge_start: Vec<u32>,
-  edges: Vec<(TermId, u8)>,
-  costs: Vec<Len>,
-  term_work: Vec<u64>,
-  total: u128,
+  edges: &'a ReadEdges,
+  eval: Evaluation,
   /// Stamps of the current step: cost changed, spine-dirty.
   changed: Vec<u32>,
   spine_dirty: Vec<u32>,
@@ -289,18 +283,20 @@ pub(crate) struct IncrementalCosts<'a> {
   queued: Vec<u64>,
 }
 
-/// The parent reads the cost of the child (a non-telescope child, a side
-/// child, or a spine successor of another family).
-const READS_COST: u8 = 1;
-/// The child continues the parent's spine: the parent reads its width and
-/// the values along its spine.
-const READS_SPINE: u8 = 2;
+/// One evaluation of a dictionary ([`all_costs`]) with the work of every
+/// term.
+#[derive(Clone)]
+pub(crate) struct Evaluation {
+  pub(crate) costs: Vec<Len>,
+  term_work: Vec<u64>,
+  total: u128,
+}
 
-impl<'a> IncrementalCosts<'a> {
-  /// A full evaluation of `widths` (as [`all_costs`]).
+impl Evaluation {
+  /// [`all_costs`] of `widths`, keeping each term's work.
   pub(crate) fn new<W: Widths>(
-    nodes: &'a [Node],
-    own: &'a [Len],
+    nodes: &[Node],
+    own: &[Len],
     widths: &W,
   ) -> Self {
     let n = nodes.len();
@@ -316,7 +312,34 @@ impl<'a> IncrementalCosts<'a> {
       term_work.push(w);
       total += u128::from(w);
     }
-    // Parent edges with their read kinds, grouped by child.
+    Evaluation { costs, term_work, total }
+  }
+
+  /// The work [`all_costs`] counts (it saturates; the per-term counts are
+  /// small).
+  pub(crate) fn work(&self) -> u64 {
+    u64::try_from(self.total).unwrap_or(u64::MAX)
+  }
+}
+
+/// The parent edges of a DAG grouped by child (`edges[start[x]..start[x +
+/// 1]]` are the distinct parents of `x`), each tagged with what the parent's
+/// evaluation reads of `x`: [`READS_COST`] and/or [`READS_SPINE`].
+pub(crate) struct ReadEdges {
+  start: Vec<u32>,
+  edges: Vec<(TermId, u8)>,
+}
+
+/// The parent reads the cost of the child (a non-telescope child, a side
+/// child, or a spine successor of another family).
+const READS_COST: u8 = 1;
+/// The child continues the parent's spine: the parent reads its width and
+/// the values along its spine.
+const READS_SPINE: u8 = 2;
+
+impl ReadEdges {
+  pub(crate) fn new(nodes: &[Node]) -> Self {
+    let n = nodes.len();
     let reads = |p: &Node| -> [(TermId, u8); 3] {
       match spine_parts(p) {
         Some((side, next)) => {
@@ -343,19 +366,19 @@ impl<'a> IncrementalCosts<'a> {
         },
       }
     };
-    let mut edge_start = vec![0u32; n + 1];
+    let mut start = vec![0u32; n + 1];
     for node in nodes {
       for (c, f) in reads(node) {
         if f != 0 {
-          edge_start[ix(c) + 1] += 1;
+          start[ix(c) + 1] += 1;
         }
       }
     }
     for i in 0..n {
-      edge_start[i + 1] += edge_start[i];
+      start[i + 1] += start[i];
     }
-    let mut fill: Vec<u32> = edge_start[..n].to_vec();
-    let mut edges: Vec<(TermId, u8)> = vec![(0, 0); edge_start[n] as usize];
+    let mut fill: Vec<u32> = start[..n].to_vec();
+    let mut edges: Vec<(TermId, u8)> = vec![(0, 0); start[n] as usize];
     for (p, node) in nodes.iter().enumerate() {
       let p = TermId::try_from(p).unwrap_or(TermId::MAX);
       for (c, f) in reads(node) {
@@ -365,14 +388,28 @@ impl<'a> IncrementalCosts<'a> {
         }
       }
     }
+    ReadEdges { start, edges }
+  }
+
+  fn of(&self, x: usize) -> &[(TermId, u8)] {
+    &self.edges[self.start[x] as usize..self.start[x + 1] as usize]
+  }
+}
+
+impl<'a> IncrementalCosts<'a> {
+  /// Continue from the evaluation `eval` of the current dictionary.
+  pub(crate) fn new(
+    nodes: &'a [Node],
+    own: &'a [Len],
+    edges: &'a ReadEdges,
+    eval: Evaluation,
+  ) -> Self {
+    let n = nodes.len();
     IncrementalCosts {
       nodes,
       own,
-      edge_start,
       edges,
-      costs,
-      term_work,
-      total,
+      eval,
       changed: vec![0; n],
       spine_dirty: vec![0; n],
       epoch: 0,
@@ -382,12 +419,12 @@ impl<'a> IncrementalCosts<'a> {
 
   /// `C_M` of every term under the current dictionary.
   pub(crate) fn costs(&self) -> &[Len] {
-    &self.costs
+    &self.eval.costs
   }
 
   /// The work [`all_costs`] counts for the current dictionary (saturating).
   pub(crate) fn work(&self) -> u64 {
-    u64::try_from(self.total).unwrap_or(u64::MAX)
+    self.eval.work()
   }
 
   /// `widths` is the previous dictionary with `t`'s width changed (`t` was
@@ -418,14 +455,15 @@ impl<'a> IncrementalCosts<'a> {
       let x = TermId::try_from(xi).unwrap_or(TermId::MAX);
       let mut w = 0u64;
       let c = {
-        let costs = &self.costs;
+        let costs = &self.eval.costs;
         eval_node(nodes, self.own, x, widths, &|y| costs[ix(y)], false, &mut w)
           .0
       };
-      self.total = self.total - u128::from(self.term_work[xi]) + u128::from(w);
-      self.term_work[xi] = w;
-      if c != self.costs[xi] {
-        self.costs[xi] = c;
+      let ev = &mut self.eval;
+      ev.total = ev.total - u128::from(ev.term_work[xi]) + u128::from(w);
+      ev.term_work[xi] = w;
+      if c != ev.costs[xi] {
+        ev.costs[xi] = c;
         self.changed[xi] = ep;
       }
       let changed = |y: TermId| self.changed[ix(y)] == ep;
@@ -446,9 +484,7 @@ impl<'a> IncrementalCosts<'a> {
       if !x_changed && !x_spine {
         continue;
       }
-      let (lo, hi) =
-        (self.edge_start[xi] as usize, self.edge_start[xi + 1] as usize);
-      for &(p, f) in &self.edges[lo..hi] {
+      for &(p, f) in self.edges.of(xi) {
         if (f & READS_COST != 0 && x_changed)
           || (f & READS_SPINE != 0 && x_spine)
         {

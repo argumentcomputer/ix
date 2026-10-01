@@ -44,7 +44,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::cost::{Len, exprs_len_with, tag0_len};
 use super::dag::{SharingDag, TermId, ix};
-use super::dict::{IncrementalCosts, Indices, Materializer, Widths};
+use super::dict::{
+  Evaluation, IncrementalCosts, Indices, Materializer, Widths,
+};
 use super::prof::{self, Phase};
 use super::uniform::{
   DagPrep, UniformSharingResult, optimize_uniform_with, pinned_order, set_prec,
@@ -135,7 +137,7 @@ pub(crate) fn share_indices(e: &Expr, out: &mut Vec<u64>) {
     if let Expr::Share(i) = x {
       out.push(*i);
     }
-    for c in x.children().into_iter().rev() {
+    for c in super::cost::expr_children(x).into_iter().rev().flatten() {
       stack.push(c.as_ref());
     }
   }
@@ -477,11 +479,11 @@ fn tiered_at(
   let p = prof::scope(Phase::Prep);
   let own = &prep.own;
   // The work of the evaluation `C_0` (`prep.base`), charged with phase 3.
-  let work = prep.base_work;
+  let work = prep.base.work();
   let facts = &prep.facts;
   let k = len64(
     (0..n)
-      .filter(|&t| facts.deg[t] >= 2 && prep.base[t] >= Len::new(2))
+      .filter(|&t| facts.deg[t] >= 2 && prep.base.costs[t] >= Len::new(2))
       .count(),
   );
   drop(p);
@@ -569,7 +571,14 @@ fn tiered_at(
     for (i, &t) in order[..range.start].iter().enumerate() {
       dict.index[ix(t)] = Some(len64(i));
     }
-    let mut eval = IncrementalCosts::new(nodes, own, &dict);
+    // The evaluation of the empty prefix is `C_0`, the same for every
+    // candidate.
+    let start = if range.start == 0 {
+      prep.base.clone()
+    } else {
+      Evaluation::new(nodes, own, &dict)
+    };
+    let mut eval = IncrementalCosts::new(nodes, own, &prep.edges, start);
     let mut mat = Materializer::new(n);
     drop(p);
     let mut out: Vec<Result<(Vec<Arc<Expr>>, Len, u64), SharingError>> =
@@ -620,7 +629,15 @@ fn tiered_at(
   }
   let _p = prof::scope(Phase::RematerializeCheck);
   let predicted = predicted.exact().ok_or_else(overflow)?;
-  let priced = layout_bytes(layout, &entries, &roots).ok_or_else(overflow)?;
+  // The layout price and the re-expansion check in one walk; when it
+  // reports a mismatch or an overflow, the separate checks run in their
+  // order.
+  let price = |i: u64| layout.width_at(i);
+  let fused = dag.check_and_measure(&order, &entries, &roots, &price);
+  let priced = match fused {
+    Some((_, len)) => len,
+    None => layout_bytes(layout, &entries, &roots).ok_or_else(overflow)?,
+  };
   if priced != predicted {
     return Err(internal(format!(
       "layout length {priced} differs from the evaluation {predicted}"
@@ -631,14 +648,17 @@ fn tiered_at(
       "re-materialization {predicted} is longer than phase 1 {phase1_layout}"
     )));
   }
-  dag.check_reexpansion(
-    &order,
-    &entries,
-    &roots,
-    meter.limits(),
-    "re-materialized encoding changes the expanded AST",
-    "re-materialized entries do not expand to the stored terms",
-  )?;
+  match fused {
+    Some((visited, _)) => dag.check_input_nodes(visited, meter.limits())?,
+    None => dag.check_reexpansion(
+      &order,
+      &entries,
+      &roots,
+      meter.limits(),
+      "re-materialized encoding changes the expanded AST",
+      "re-materialized entries do not expand to the stored terms",
+    )?,
+  }
   // The real length: Shares priced by the current wire codec, every other
   // header as written by `put_expr`. The TagN layout prices a Share at its
   // wire width (`TagN::byte_width(4, i)`), so this is `priced`.

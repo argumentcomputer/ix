@@ -94,7 +94,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::cost::{Len, exprs_len_with, tag0_len, tag4_len};
 use super::dag::{Node, SharingDag, TermId, ix};
-use super::dict::{UniformIndex, all_costs, materialize_dependent};
+use super::dict::{
+  Evaluation, ReadEdges, UniformIndex, all_costs, materialize_dependent,
+};
 use super::prof::{self, Phase};
 use super::{
   ExactSharingLimits, ExactSharingStats, FormatBound, Meter, SharingError,
@@ -1616,17 +1618,21 @@ pub(crate) fn pinned_order(
   for &t in stored {
     is_stored[ix(t)] = true;
   }
-  // Nearest stored descendants of each stored term.
+  // Nearest stored descendants of each stored term (`seen[x] == k + 1`:
+  // visited from the `k`-th stored term).
   let mut pending: Vec<usize> = Vec::with_capacity(stored.len());
   let mut dependents: FxHashMap<TermId, Vec<TermId>> = FxHashMap::default();
-  for &t in stored {
-    let mut seen: FxHashSet<TermId> = FxHashSet::default();
-    let mut stack: Vec<TermId> = nodes[ix(t)].children().as_slice().to_vec();
+  let mut seen: Vec<usize> = vec![0; nodes.len()];
+  let mut stack: Vec<TermId> = Vec::new();
+  for (k, &t) in stored.iter().enumerate() {
+    stack.clear();
+    stack.extend_from_slice(nodes[ix(t)].children().as_slice());
     let mut deps = 0usize;
     while let Some(x) = stack.pop() {
-      if !seen.insert(x) {
+      if seen[ix(x)] == k + 1 {
         continue;
       }
+      seen[ix(x)] = k + 1;
       if is_stored[ix(x)] {
         deps += 1;
         dependents.entry(x).or_default().push(t);
@@ -1679,9 +1685,10 @@ pub(crate) fn optimize_uniform(
 pub(crate) struct DagPrep {
   /// `Node::own_len` of every term.
   pub(crate) own: Vec<Len>,
-  /// `C_0` (`all_costs` with no dictionary) and the work it counts.
-  pub(crate) base: Vec<Len>,
-  pub(crate) base_work: u64,
+  /// `C_0` (`all_costs` with no dictionary), with each term's work.
+  pub(crate) base: Evaluation,
+  /// The parent edges and what each parent reads (phase 3).
+  pub(crate) edges: ReadEdges,
   pub(crate) facts: Facts,
   /// Spine lengths with no stop terms.
   spine_len: Vec<u64>,
@@ -1695,8 +1702,8 @@ impl DagPrep {
     let nodes = dag.nodes();
     let n = nodes.len();
     let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
-    let mut base_work = 0u64;
-    let base = all_costs(nodes, &own, &super::dict::NoWidths, &mut base_work);
+    let base = Evaluation::new(nodes, &own, &super::dict::NoWidths);
+    let edges = ReadEdges::new(nodes);
     let facts = graph_facts(dag);
     let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
     // With no opaque and no available term, `UPrep::node` reads the width
@@ -1704,7 +1711,7 @@ impl DagPrep {
     // any width gives these sizes.
     let size = UPrep::new(nodes, 1, vec![false; n])
       .map(|empty| empty.base.iter().map(|v| v.cost).collect());
-    DagPrep { own, base, base_work, facts, spine_len, size }
+    DagPrep { own, base, edges, facts, spine_len, size }
   }
 }
 
@@ -2058,20 +2065,30 @@ pub(crate) fn optimize_uniform_with(
   }
   drop(p);
   let _p = prof::scope(Phase::UniformCheck);
-  dag.check_reexpansion(
-    &order,
-    &entries,
-    &roots,
-    meter.limits(),
-    "materialized encoding changes the expanded AST",
-    "materialized entries do not expand to the stored terms",
-  )?;
-  // The real length (Shares at their TagN width, `expr_len`).
-  let measured = exprs_len_with(k, entries.iter().chain(&roots), &tag4_len)
-    .ok_or_else(overflow)?;
+  // The re-expansion check, then the real length (Shares at their TagN
+  // width, `expr_len`); both in one walk when the check passes.
+  let measured =
+    match dag.check_and_measure(&order, &entries, &roots, &tag4_len) {
+      Some((visited, len)) => {
+        dag.check_input_nodes(visited, meter.limits())?;
+        len
+      },
+      None => {
+        dag.check_reexpansion(
+          &order,
+          &entries,
+          &roots,
+          meter.limits(),
+          "materialized encoding changes the expanded AST",
+          "materialized entries do not expand to the stored terms",
+        )?;
+        exprs_len_with(k, entries.iter().chain(&roots), &tag4_len)
+          .ok_or_else(overflow)?
+      },
+    };
   let mut unshared = Len::new(tag0_len(0));
   for &r in dag.roots() {
-    unshared = unshared.plus(prep.base[ix(r)]);
+    unshared = unshared.plus(prep.base.costs[ix(r)]);
   }
   Ok(UniformSharingResult {
     roots,

@@ -3139,7 +3139,10 @@ fn knapsack_cells_limit() {
 /// expressions with the same work as `materialize`.
 #[test]
 fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
-  use super::dict::{IncrementalCosts, Materializer, all_costs, materialize};
+  use super::dict::{
+    Evaluation, IncrementalCosts, Materializer, ReadEdges, all_costs,
+    materialize,
+  };
   let mut rng = Rng(97);
   let mut cases: Vec<Vec<E>> =
     par_cases().iter().map(|c| constant_info_root_exprs(&c.info)).collect();
@@ -3164,7 +3167,13 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
     }
     terms.truncate(1 + rng.below(n as u64) as usize);
     let mut dict = FixedDictionary::new();
-    let mut eval = IncrementalCosts::new(nodes, &own, &dict);
+    let edges = ReadEdges::new(nodes);
+    let mut eval = IncrementalCosts::new(
+      nodes,
+      &own,
+      &edges,
+      Evaluation::new(nodes, &own, &dict),
+    );
     let mut mat = Materializer::new(n);
     let mut index = rng.below(20);
     for (step, &t) in terms.iter().enumerate() {
@@ -3266,6 +3275,15 @@ fn encoding_check_matches_reexpansion() {
     ] {
       let fast = dag.check_encoding(order, es, rs);
       assert!(fast.is_some());
+      let len = super::cost::exprs_len_with(
+        es.len() as u64,
+        es.iter().chain(rs),
+        &tag4_len,
+      );
+      assert_eq!(
+        dag.check_and_measure(order, es, rs, &tag4_len),
+        fast.zip(len)
+      );
       assert_eq!(fast, reference(&dag, order, es, rs));
       valid += 1;
       for _ in 0..4 {
@@ -3284,6 +3302,13 @@ fn encoding_check_matches_reexpansion() {
         }
         let fast = dag.check_encoding(order, &es2, &rs2);
         let slow = reference(&dag, order, &es2, &rs2);
+        let fused = dag.check_and_measure(order, &es2, &rs2, &tag4_len);
+        let len = super::cost::exprs_len_with(
+          es2.len() as u64,
+          es2.iter().chain(&rs2),
+          &tag4_len,
+        );
+        assert_eq!(fused, fast.zip(len));
         if fast.is_some() {
           assert_eq!(fast, slow);
         } else {
