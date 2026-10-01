@@ -41,9 +41,9 @@ is encoded injectively under the reserved root `ix`:
 
 Hex spelling of the address bytes is injective, and the two shapes differ in
 their number of `.num` components, so distinct references get distinct
-names. None of these names has a shape the checker reserves (`_model`,
-`T.proj.i`, `T.projTable.0`) or that the frontend derives (`T.rec`,
-`T.rec_k`).
+names (`keyName_injective`). None of these names has a shape the checker
+reserves (`_model`, `T.proj.i`, `T.projTable.0`) or that the frontend derives
+(`T.rec`, `T.rec_k`).
 
 Three kinds of names are not of this form:
 
@@ -131,6 +131,113 @@ def keyName : ConstRef Address → CName
 def levelName (i : Nat) : CName := .num .anonymous i
 
 def levelNames (n : Nat) : List CName := (List.range n).map levelName
+
+/-! ### `keyName` is injective
+
+Distinct references get distinct names: the hexadecimal spelling of the
+address bytes is injective (each byte is two digits that `byteOfHex` reads
+back, checked for all 256 bytes by kernel evaluation), and a member's name
+and a constructor's name differ in their number of trailing `.num`
+components. Nothing in the checker's soundness needs this (`model_exists`
+holds for every declaration array); it is what makes the encoding a key. -/
+
+/-- `ByteArray.toList`'s loop, in closed form. -/
+theorem byteArray_toList_loop (bs : ByteArray) (i : Nat) (r : List UInt8) :
+    ByteArray.toList.loop bs i r = r.reverse ++ bs.data.toList.drop i := by
+  fun_induction ByteArray.toList.loop bs i r with
+  | case1 i r h ih =>
+    rw [ih]
+    have h' : i < bs.data.size := h
+    have hl : i < bs.data.toList.length := by rw [Array.length_toList]; exact h'
+    rw [List.drop_eq_getElem_cons hl]
+    simp only [ByteArray.get!, getElem!_pos bs.data i h', List.reverse_cons, List.append_assoc,
+      List.singleton_append, Array.getElem_toList]
+  | case2 i r h =>
+    have : bs.data.toList.length ≤ i := by rw [Array.length_toList]; exact Nat.le_of_not_lt h
+    rw [List.drop_eq_nil_of_le this, List.append_nil]
+
+theorem byteArray_toList (bs : ByteArray) : bs.toList = bs.data.toList := by
+  rw [ByteArray.toList, byteArray_toList_loop]; rfl
+
+/-- The two hexadecimal digits `hexOfByte` writes for a byte. -/
+def hexDigits (b : UInt8) : List Char :=
+  [(hexOfNat (UInt8.toNat (b >>> 4))).get!, (hexOfNat (UInt8.toNat (b &&& 0xF))).get!]
+
+theorem hexOfByte_toList (b : UInt8) : (hexOfByte b).toList = hexDigits b := by
+  simp [hexOfByte, hexDigits]
+
+/-- Every byte's digits read back as the byte (all 256, by kernel evaluation). -/
+theorem byteOfHex_hexDigits_lt : ∀ n, n < 256 →
+    byteOfHex (hexDigits (UInt8.ofNat n))[0]! (hexDigits (UInt8.ofNat n))[1]! =
+      some (UInt8.ofNat n) := by
+  decide +kernel
+
+theorem byteOfHex_hexDigits (b : UInt8) :
+    byteOfHex (hexDigits b)[0]! (hexDigits b)[1]! = some b := by
+  have := byteOfHex_hexDigits_lt b.toNat b.toNat_lt
+  rwa [UInt8.ofNat_toNat] at this
+
+theorem hexOfBytes_toList_foldl (acc : String) (l : List UInt8) :
+    ((l.map hexOfByte).foldl (· ++ ·) acc).toList = acc.toList ++ l.flatMap hexDigits := by
+  induction l generalizing acc with
+  | nil => simp
+  | cons b l ih => simp [ih, String.toList_append, hexOfByte_toList, List.append_assoc]
+
+theorem hexOfBytes_toList (bs : ByteArray) :
+    (hexOfBytes bs).toList = bs.data.toList.flatMap hexDigits := by
+  rw [hexOfBytes, hexOfBytes_toList_foldl, byteArray_toList]; simp
+
+theorem hexDigits_injective {a b : UInt8} (h : hexDigits a = hexDigits b) : a = b := by
+  have ha := byteOfHex_hexDigits a
+  rw [h, byteOfHex_hexDigits b] at ha
+  exact (Option.some.inj ha).symm
+
+theorem hexDigits_length (b : UInt8) : (hexDigits b).length = 2 := rfl
+
+theorem flatMap_hexDigits_injective :
+    ∀ {l m : List UInt8}, l.flatMap hexDigits = m.flatMap hexDigits → l = m
+  | [], [], _ => rfl
+  | [], b :: m, h => by simp [List.flatMap_cons, hexDigits] at h
+  | a :: l, [], h => by simp [List.flatMap_cons, hexDigits] at h
+  | a :: l, b :: m, h => by
+    rw [List.flatMap_cons, List.flatMap_cons] at h
+    obtain ⟨hd, tl⟩ := List.append_inj h (by rw [hexDigits_length, hexDigits_length])
+    rw [hexDigits_injective hd, flatMap_hexDigits_injective tl]
+
+/-- The hexadecimal spelling of a byte array is injective. -/
+theorem hexOfBytes_injective {a b : ByteArray} (h : hexOfBytes a = hexOfBytes b) : a = b := by
+  have hl := congrArg String.toList h
+  rw [hexOfBytes_toList, hexOfBytes_toList] at hl
+  have hd := flatMap_hexDigits_injective hl
+  cases a; cases b
+  simp only [Array.toList_inj] at hd
+  rw [hd]
+
+theorem addressHex_injective {a b : Address} (h : addressHex a = addressHex b) : a = b := by
+  cases a; cases b
+  simp only [addressHex] at h
+  rw [hexOfBytes_injective h]
+
+/-- **`keyName` is injective**: distinct constant references get distinct
+names (decision D1 (b)). -/
+theorem keyName_injective {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := by
+  cases r with
+  | member b i =>
+    cases s with
+    | member b' i' =>
+      simp only [keyName, blockName, ConLeche.Name.num.injEq, ConLeche.Name.str.injEq,
+        true_and] at h
+      obtain ⟨hb, hi⟩ := h
+      rw [addressHex_injective hb, hi]
+    | ctor b' i' c' => simp [keyName, blockName] at h
+  | ctor b i c =>
+    cases s with
+    | member b' i' => simp [keyName, blockName] at h
+    | ctor b' i' c' =>
+      simp only [keyName, blockName, ConLeche.Name.num.injEq, ConLeche.Name.str.injEq,
+        true_and] at h
+      obtain ⟨⟨hb, hi⟩, hc⟩ := h
+      rw [addressHex_injective hb, hi, hc]
 
 /-! ## Errors -/
 

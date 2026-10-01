@@ -450,6 +450,13 @@ def natBlockRecord : Ixon.Constant := Id.run do
 #guard (pinMap #[⟨.member (address 1) 0, .str (.str .anonymous "A") "rec"⟩]).isOk == false
 #guard (pinMap #[⟨.member (address 1) 0, .str (.str .anonymous "A") "B"⟩]).isOk
 
+/-! ## The key encoding is injective -/
+
+example {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := keyName_injective h
+
+/-- info: 'Ix.Kernel.ConLecheReader.keyName_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms keyName_injective
+
 /-! ## Model existence -/
 
 example (V : Type) [ConLeche.SetTheory V] {records : Ix.Ixon.Admission.Records}
