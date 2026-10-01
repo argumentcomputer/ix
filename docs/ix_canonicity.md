@@ -1535,18 +1535,52 @@ atoms `succ^c zero` / `succ^k (var i)`; entries at non-empty paths
 are reconstructed as `imax`-gated subterms by **per-atom gate
 inversion**: each atom self-strips gates its own value already
 dominates (`covered` — a subset-path constant `≥ k`, or a var
-`offset+1 ≥ k`), the remaining gate order is recovered greedily
-outermost-first (the smallest gate carrying a `(g,·)` absorber atom
-at a path within the chosen set), marker entries are consumed, and a
-root constant is absorbed into the emission (settled empirically
-during implementation — formerly open detail O1; P2 pins it
-exhaustively over all ≤7-node terms). Required properties, pinned by
-tests in both languages:
+`offset+1 ≥ k`) **provided the stripped context stays leak-free**
+(`gatesLeakFree` / `gate_order(..).1`: each of its gates keeps an
+absorber atom at a map path inside the gate's prefix, since
+`imax t u_g ≥ u_g` wherever the outer gates are active), the
+remaining gate order is recovered greedily outermost-first (the
+smallest gate carrying a `(g,·)` absorber atom at a path within the
+chosen set), marker entries are consumed, and a root constant is
+absorbed into the emission (settled empirically during
+implementation — formerly open detail O1; P2 pins it exhaustively over
+all ≤8-node terms). Required properties, pinned by tests in both
+languages:
 
+- **P0 (value preservation):** `canonUniv u` and `u` take the same
+  value at every valuation of the parameters. The compiler must not
+  change the universe a declaration states: the kernel checks the
+  stored canonical levels. Until 2026-10-01 the leak-free proviso
+  above was missing and P0 failed on deep `imax`-by-parameter chains
+  over three or more parameters: `imax (imax (imax u w + 1) u) v`
+  canonicalized to `max (imax (imax (w+1) u) v) (imax (imax (u+1) w) v)`,
+  which is `2` at `u = 0, v = 1, w = 2` where the level is `1` (the
+  self-strip of `u + 1` from `[u, v, w]` left gate `w` without an
+  absorber in `[v, w]`). The fix changes a canonical form only where
+  the old one had the wrong value; no stored level of the Init+Std or
+  Mathlib corpora changed (0 of 345,177 and 3,343,350 table entries,
+  0 of 16,621 and 426,093 original spellings), so no address moved.
+  Tests: the witness family, every ≤8-node term (Rust) / ≤6-node term
+  (Lean) over three parameters, and the cl-level differential's
+  biased random levels in both languages, with exact valuation sets.
 - **P1 (idempotence):** `canonUniv (canonUniv u) = canonUniv u`.
+  It holds wherever the normal forms involved carry no subsumption
+  leftover (below), which covers every stored level of both corpora;
+  the random family pins how rare the exceptions are.
 - **P2 (roundtrip-fixpoint):** `geran (linearize L) = L` on canonical
   forms — `linearize` picks a genuine representative of its class;
-  with P1, `canonUniv` is constant on Géran classes.
+  with P1, `canonUniv` is constant on Géran classes. Like P1, it fails
+  only on normal forms with a **subsumption leftover**: `subsumption`
+  mirrors the kernels' normalizers, which test a gated constant
+  against its own node's vars instead of the dominator's, so
+  `max (v+1) (imax (imax 2 u) v)` keeps a constant `2` at `[u, v]` that
+  `v + 1` dominates (`Ix/Tc/Level.lean`, `crates/kernel/src/level.rs`,
+  `Ix/IxonUniv.lean` alike). Then two equal levels can have different
+  normal forms. 239 of the 125,000 levels of the random family hit
+  it, and none of the corpora's. An exact subsumption (in all
+  normalizers together, to keep P4's oracle aligned) would make P1, P2
+  and P6 unconditional and the quotient exact; measured on both
+  corpora it changes no stored level either.
 - **P3 (mk\*-fixpoint):** `linearize` output triggers no rule of the
   kernel-rebuild set below — rebuilding it through the `mk*`
   constructors is the node-for-node identity, so kernel ingress

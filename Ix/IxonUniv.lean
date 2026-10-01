@@ -25,7 +25,9 @@ what makes kernel ingress the identity on canonical content.
 the actual kernel constructors; `tc-unit` pins their agreement.)
 
 Property set (tested in `Tests/Ix/Tc/Unit.lean` and the Rust twin;
-Verify-layer proofs are the D7 follow-up): P1 idempotence; P2
+Verify-layer proofs are the D7 follow-up): P0 value preservation
+(`canonUniv u` and `u` agree at every valuation of the params); P1
+idempotence; P2
 roundtrip-fixpoint (`normalize (linearize L) = L`, exact on non-empty
 entries — `subsumption` can leave EMPTY entries which `linearize`
 cannot and should not re-express); P3 `mk*`-fixpoint; P4 soundness vs
@@ -252,29 +254,52 @@ structure CGroup where
   deriving Inhabited
 
 /-- Is a `u_i = 0` fallout of `k` dominated under `ctx`? Some entry at
-    a subset path must guarantee ≥ k whenever `ctx` is active. -/
+    a subset path must guarantee ≥ k whenever `ctx` is active: a
+    constant ≥ k, or a var atom `(q, off)` with `off + 1 ≥ k`. Exact: at
+    `u_i = 0`, with the context's params at 1 and every other param at 0,
+    the map's value is the best such guarantee. -/
 def covered (norm : CNorm) (k : UInt64) (ctx : CPath) : Bool :=
   k == 0 || norm.toList.any fun (q, n) =>
     q.all (fun x => ctx.contains x)
       && (n.constant ≥ k || n.vars.any (fun v => v.2 + 1 ≥ k))
 
-/-- Gate-nesting order for a context (outermost first): greedily the
-    smallest remaining gate with a `(g, ·)` atom at some map path inside
-    `chosen ∪ {g}` — its creation site / leak absorber; falls back to
-    the smallest remaining for totality on unreachable inputs. -/
-def gateOrder (norm : CNorm) (ctx : CPath) : List UInt64 := Id.run do
+/-- Gate-nesting order for a context (outermost first), and whether it
+    is leak-free (`canon_univ.rs::gate_order`). The greedy pick is the
+    smallest remaining gate `g` with a `(g, ·)` atom at some non-empty
+    map path inside `chosen ∪ {g}`: its creation site, the absorber of
+    its leak (`imax t u_g ≥ u_g` wherever the outer gates are active).
+    Absorbability only grows with `chosen`, so the greedy finds a full
+    order whenever one exists. Every path of a normalizer-reachable map
+    has one; a self-stripped context `P∖{i}` need not, which the second
+    component reports. When no remaining gate is absorbable, the
+    smallest is taken for totality and the order is reported as leaking
+    (`false`). -/
+def gateOrderChecked (norm : CNorm) (ctx : CPath) : List UInt64 × Bool :=
+  Id.run do
   let mut order : List UInt64 := []
+  let mut leakFree := true
   let mut remaining := ctx
   while h : !remaining.isEmpty do
-    let pick := (remaining.find? fun g =>
+    let found := remaining.find? fun g =>
       norm.toList.any fun (p, n) =>
         !p.isEmpty
           && p.all (fun x => x == g || order.contains x)
-          && n.vars.any (fun v => v.1 == g)).getD
-      (remaining.head (by simpa using h))
+          && n.vars.any (fun v => v.1 == g)
+    if found.isNone then
+      leakFree := false
+    let pick := found.getD (remaining.head (by simpa using h))
     order := order ++ [pick]
     remaining := remaining.filter (· != pick)
-  return order
+  return (order, leakFree)
+
+/-- The gate-nesting order of `gateOrderChecked`. -/
+def gateOrder (norm : CNorm) (ctx : CPath) : List UInt64 :=
+  (gateOrderChecked norm ctx).1
+
+/-- Does every gate of `ctx` have an absorber (`gateOrderChecked`)? A
+    self-strip to `ctx` is value-preserving only then. -/
+def gatesLeakFree (norm : CNorm) (ctx : CPath) : Bool :=
+  (gateOrderChecked norm ctx).2
 
 /-- Right-nested max chain of terms (in order), or `zero` when empty. -/
 def maxChain (terms : List Univ) : Univ :=
@@ -283,7 +308,13 @@ def maxChain (terms : List Univ) : Univ :=
   | last :: rest => rest.foldl (fun acc t => .max t acc) last
 
 /-- The canonical representative of a canonical form, by per-atom gate
-    inversion (see the Rust twin's doc for the full construction). -/
+    inversion (see the Rust twin's doc for the full construction). An
+    atom `(i, k)@P` self-strips to `P∖{i}` only when its `u_i = 0`
+    fallout is `covered` there AND the context's gates are leak-free
+    (`gatesLeakFree`); otherwise it stays gated at `P`. Before 2026-10-01
+    the second condition was missing, and
+    `imax (imax (imax u w + 1) u) v` canonicalized to a level that is `2`
+    at `u = 0, v = 1, w = 2` where it is `1`. -/
 def linearize (norm : CNorm) : Univ := Id.run do
   let cRoot := (norm.findD [] {}).constant
   -- Explode into per-atom items; self-strip under domination coverage.
@@ -295,7 +326,8 @@ def linearize (norm : CNorm) : Univ := Id.run do
         { g with constant := max g.constant node.constant }
     for (i, k) in node.vars do
       let ctx := path.filter (· != i)
-      let home := if covered norm k ctx then ctx else path
+      let home := if covered norm k ctx && gatesLeakFree norm ctx then ctx
+        else path
       let g := groups.findD home {}
       let slot := max (g.atoms.findD i 0) k
       groups := groups.insert home { g with atoms := g.atoms.insert i slot }
