@@ -83,24 +83,32 @@ def selectBlocks (fn : FunId) (uses : NatMap Nat) : List (Lir.Block × Label) �
       let b ← selectBlock fn uses l b
       return b :: (← selectBlocks fn uses rest)
 
-def selectFunc (fn : FunId) (f : Lir.Func) :
+def selectFunc (stats : Bool) (fn : FunId) (f : Lir.Func) :
     StateT (Std.TreeMap String Nat compare) (Except Error) (Func VReg) := do
   let (blocks, st) ← (selectBlocks fn (useCounts f) f.blocks.toList.zipIdx).run
-    { next := maxVReg f + 1, fired := ← get }
+    { next := maxVReg f + 1, fired := ← get, stats }
   set st.fired
   return { name := f.name, params := f.params, results := f.results, blocks := blocks.toArray, conv := f.conv }
 
-def selectFuncs : List (Lir.Func × FunId) →
+def selectFuncs (stats : Bool) : List (Lir.Func × FunId) →
     StateT (Std.TreeMap String Nat compare) (Except Error) (List (Func VReg))
   | [] => pure []
   | (f, fn) :: rest => do
-      let f ← selectFunc fn f
-      return f :: (← selectFuncs rest)
+      let f ← selectFunc stats fn f
+      return f :: (← selectFuncs stats rest)
 
 /-- Select a Lir program: the Xv program and how often each rule fired. -/
 def run (p : Lir.Program) : Except Error (VProgram × Std.TreeMap String Nat compare) := do
-  let (funcs, fired) ← (selectFuncs p.funcs.toList.zipIdx).run {}
+  let (funcs, fired) ← (selectFuncs true p.funcs.toList.zipIdx).run {}
   return ({ funcs := funcs.toArray, main := p.main }, fired)
+
+/-- Select a Lir program without the firing statistics: the recheck path's
+entry (`Recheck.run`, M1.K1), whose kernel evaluation keeps no
+`String`-keyed map. The statistics are write-only, so it selects what
+`run` selects (`check-xv-select` and the pipeline suites compare). -/
+def select (p : Lir.Program) : Except Error VProgram := do
+  let (funcs, _) ← (selectFuncs false p.funcs.toList.zipIdx).run {}
+  return { funcs := funcs.toArray, main := p.main }
 
 /-- The rule names `run` reports, in table order (05 §4). -/
 def ruleNames : List String :=

@@ -17,7 +17,7 @@ decisions, validating what the producer searched for:
 P ─Table.ofCert (V)→ ─install + Relevance.check (V)→ ─Lazify (P)→ ─Lam.erase (P)→ Lam
   ─Anf.Pipeline.run c.mid (P: P1, then P2/P3/P4/prune on the certificate's decisions)→ Anf
   ─Fir.lower (P)→ ─Own.immortal (P)→ ─Cfg.lower (P)→ Cfg ─roots (≤ 5 parameters)→
-  ─Rt.lower (P, with edge splitting)→ Lir ─Select.run (P)→ Xv
+  ─Rt.lower (P, with edge splitting)→ Lir ─Select.select (P)→ Xv
   ─Validate.program c.alloc (V)→ ─Alloc.applyProgram→ Xl
   ─Backend.emit: FrameLayout.check c.frames (V), stacking emission, tunnelling (P),
     Order.check c.order (V), linearisation (P), Program.check, E1, E2, ELF→ object
@@ -177,7 +177,7 @@ certificate, stacking and layout with the certificate's layouts and order. -/
 def backTyped (cfg : Config) (l : Rt.Lowered) (root : Ixon.Address) (c : Cert) :
     Except Err (Xv.VProgram × Xv.LProgram × Xv.Stacking.Stacked × X86.Program ×
       List (String × X86.BlockId)) := do
-  let (xv, _) ← (Xv.Select.run l.program).mapError Err.ofSelect
+  let xv ← (Xv.Select.select l.program).mapError Err.ofSelect
   (Xv.Validate.program cfg.env xv c.alloc).mapError Err.ofValidate
   let xl ← (Xv.Alloc.applyProgram xv c.alloc).mapError fun msg =>
     { stage := .alloc, code := "alloc.apply", message := msg }

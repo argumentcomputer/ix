@@ -386,7 +386,11 @@
   "CompilatrixTests.Recheck.Run":
   {"path": "CompilatrixTests/Recheck/Run.lean",
    "imports":
-   ["CompilatrixTests.Recheck.Artifact", "CompilatrixTests.Recheck.Kernel"]},
+   ["CompilatrixTests.Recheck.Artifact",
+    "CompilatrixTests.Recheck.Kernel",
+    "CompilatrixTests.Recheck.Audit",
+    "CompilatrixTests.Lir.Gen",
+    "Compilatrix.Lir.SplitEdges"]},
   "CompilatrixTests.Recheck.Main":
   {"path": "CompilatrixTests/Recheck/Main.lean",
    "imports": ["CompilatrixTests.Recheck.Run"]},
@@ -453,6 +457,9 @@
    ["CompilatrixTests.Recheck.Kernel.Fib",
     "CompilatrixTests.Recheck.Kernel.Tak",
     "CompilatrixTests.Recheck.Kernel.Gcd"]},
+  "CompilatrixTests.Recheck.Audit":
+  {"path": "CompilatrixTests/Recheck/Audit.lean",
+   "imports": ["Compilatrix.Recheck.Run", "Compilatrix.Anf.Semantics", "Lean"]},
   "CompilatrixTests.Recheck.Artifacts.Tak":
   {"path": "CompilatrixTests/Recheck/Artifacts/Tak.lean",
    "imports": ["Compilatrix.Recheck.Run"]},

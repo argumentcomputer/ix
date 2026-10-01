@@ -117,9 +117,10 @@ lean_exe «gen-recheck-artifacts» where
   root := `CompilatrixTests.Recheck.ArtifactMain
 
 /- The recheck path in kernel-evaluable style (M1.K1): building it evaluates
-`Recheck.runTyped` on the fib, tak and gcd artifacts by `decide +kernel`;
-running it checks every committed artifact against a fresh ingress,
-`produce` and native run. -/
+`Recheck.runTyped` on the fib, tak and gcd artifacts and the whole
+`Recheck.run` on fib by `decide +kernel`; running it checks every committed
+artifact against a fresh ingress, `produce` and native run, and the
+recheck path's statistics-free selection against `Select.run`. -/
 lean_exe «tests-recheck» where
   root := `CompilatrixTests.Recheck.Main
 

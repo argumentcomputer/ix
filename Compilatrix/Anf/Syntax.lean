@@ -178,8 +178,9 @@ def atomsBeq : List Atom → List Atom → Bool
 
 mutual
 
-/-- Structural equality (the passes compare terms only in tests and
-`produce`; the kernel never needs it). -/
+/-- Structural equality, by structural recursion: shrink compares arms
+(`Walk.sameArms`) on the recheck path, which the kernel evaluates (M1.K1;
+the derived form was compiled by well-founded recursion). -/
 def Exp.beq : Exp → Exp → Bool
   | .bind c b e, .bind c' b' e' => c == c' && b.beq b' && e.beq e'
   | .join n r b e, .join n' r' b' e' => n == n' && r == r' && b.beq b' && e.beq e'
@@ -189,6 +190,7 @@ def Exp.beq : Exp → Exp → Bool
   | .tick e, .tick e' => e.beq e'
   | .trap, .trap => true
   | _, _ => false
+termination_by structural e _ => e
 
 def Bind.beq : Bind → Bind → Bool
   | .atom a, .atom a' => a.beq a'
@@ -200,17 +202,20 @@ def Bind.beq : Bind → Bind → Bool
   | .app f as, .app f' as' => f.beq f' && atomsBeq as as'
   | .fn ps b, .fn ps' b' => ps == ps' && b.beq b'
   | _, _ => false
+termination_by structural b _ => b
 
 def Exp.altsBeq : List Alt → List Alt → Bool
   | [], [] => true
   | .mk k n b :: as, .mk k' n' b' :: as' =>
     decide (k = k') && n == n' && b.beq b' && Exp.altsBeq as as'
   | _, _ => false
+termination_by structural as _ => as
 
 def Exp.optBeq : Option Exp → Option Exp → Bool
   | none, none => true
   | some e, some e' => e.beq e'
   | _, _ => false
+termination_by structural o _ => o
 
 end
 

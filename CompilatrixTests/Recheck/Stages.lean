@@ -82,7 +82,7 @@ def upToE (s : Stage) (cfg : Config) (P : Src.Program) (c : Cert) : Except (Opti
   if s == .cfg then throw (some (cfgSize C))
   let lowered ← (Compilatrix.Rt.lower { names := cfg.names } C).mapError fun _ => none
   if s == .rt then throw (some ((fun (a, b, c, d, e) => [a, b, c, d, e]) (CompilatrixTests.Rt.Kernel.summaryOf lowered.program)))
-  let (xv, _) ← (Compilatrix.Xv.Select.run lowered.program).mapError fun _ => none
+  let xv ← (Compilatrix.Xv.Select.select lowered.program).mapError fun _ => none
   if s == .select then throw (some (xSize xv))
   (Compilatrix.Xv.Validate.program cfg.env xv c.alloc).mapError fun _ => none
   let xl ← (Compilatrix.Xv.Alloc.applyProgram xv c.alloc).mapError fun _ => none

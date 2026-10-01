@@ -248,7 +248,7 @@ def layoutK (list : List UInt8) (total : Nat) (view : ELFRead.View) : Bool :=
     ((sections[2]?).map (fun part => part.data.size) == some (24 * view.relocations.size)) &&
     ((sections[5]?).map terminated == some true) &&
     ((sections[7]?).map terminated == some true) &&
-    bytesEq view.note.name ("COMPILATRIX".toUTF8.push 0) && view.note.noteType == 0x43495801
+    view.note.name.data.toList == "COMPILATRIX".toUTF8.data.toList ++ [0] && view.note.noteType == 0x43495801
 
 /-- `validName` over the name's bytes as a list. -/
 def validNameK (name : String) : Bool :=
@@ -341,8 +341,11 @@ theorem layoutK_eq (bytes : ByteArray) (view : ELFRead.View) :
     layoutK bytes.data.toList bytes.size view = layout bytes view := by
   have sections : sectionLayoutK bytes.data.toList bytes.size view.sections.toList view.header.sectionOffset =
       sectionLayout bytes view := funext (sectionLayoutK_eq bytes view)
+  have name : (view.note.name.data.toList == "COMPILATRIX".toUTF8.data.toList ++ [0]) =
+      (view.note.name == "COMPILATRIX".toUTF8.push 0) := by
+    rw [← bytes_beq_toList, ByteArray.data_push, Array.toList_push]
   unfold layoutK layout terminated
-  simp only [sections, Array.getElem?_toList, Array.length_toList, bytesEq_eq, section_data_beq]
+  simp only [sections, Array.getElem?_toList, Array.length_toList, bytesEq_eq, section_data_beq, name]
 
 theorem validNameK_eq (name : String) : validNameK name = validName name := by
   simp only [validNameK, validName, Array.contains_toList]

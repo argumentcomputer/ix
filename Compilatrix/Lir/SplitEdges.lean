@@ -23,41 +23,52 @@ namespace Compilatrix.Lir
 
 namespace Func
 
+/-- The new label of each old block, from `label` on: its index plus the
+split blocks before it (`offset` so far). -/
+def newLabels : List Nat → Nat → Nat → List Label
+  | [], _, _ => []
+  | split :: splits, label, offset => (label + offset) :: newLabels splits (label + 1) (offset + split)
+
+/-- A block's edges with each critical one redirected to its split block
+(numbered from `first`), and the critical edges in order. -/
+def splitEdges (critical : Edge → Bool) (relabel : Label → Label) (first : Label) :
+    List Edge → List Edge → List Edge → List Edge × List Edge
+  | [], edges, pending => (edges, pending)
+  | e :: rest, edges, pending =>
+    if critical e then
+      splitEdges critical relabel first rest (edges ++ [{ target := first + pending.length, args := [] }])
+        (pending ++ [e])
+    else
+      splitEdges critical relabel first rest (edges ++ [{ e with target := relabel e.target }]) pending
+
 /-- Split every critical edge (see the module note). The entry keeps
-label 0, and a function without critical edges is returned unchanged. -/
-def splitCriticalEdges (f : Func) : Func := Id.run do
-  let n := f.blocks.size
-  let preds := f.predCounts
+label 0, and a function without critical edges is returned unchanged.
+Kernel-evaluable style (M1.K1): the blocks are walked as a list, the
+predecessor counts and labels are lists built once, and no array is
+indexed. -/
+def splitCriticalEdges (f : Func) : Func :=
+  let blocks := f.blocks.toList
+  let n := blocks.length
+  let succs := blocks.flatMap (·.term.succs)
+  let preds := (List.range n).map succs.count
   let critical (b : Block) (e : Edge) : Bool :=
     b.term.edges.length ≥ 2 && (preds[e.target]?.getD 0) ≥ 2
-  let splits := f.blocks.map fun b => (b.term.edges.filter (critical b)).length
-  if splits.all (· == 0) then return f
-  -- New label of each old block: its index plus the split blocks before it.
-  let mut newLabel := Array.emptyWithCapacity n
-  let mut offset := 0
-  for h : b in [:n] do
-    newLabel := newLabel.push (b + offset)
-    offset := offset + splits[b]!
-  let total := offset
-  let relabel (l : Label) : Label := if h : l < newLabel.size then newLabel[l] else l + total
-  let mut blocks := Array.emptyWithCapacity (n + total)
-  for h : b in [:n] do
-    let block := f.blocks[b]
-    let mut edges := []
-    let mut pending := []
-    for e in block.term.edges do
-      if critical block e then
-        let split := newLabel[b]! + 1 + pending.length
-        edges := edges ++ [{ target := split, args := [] }]
-        pending := pending ++ [e]
-      else
-        edges := edges ++ [{ e with target := relabel e.target }]
-    blocks := blocks.push { block with term := block.term.setEdges edges }
-    for e in pending do
-      let targetCold := (f.blocks[e.target]?.map (·.cold)).getD false
-      blocks := blocks.push
-        { term := .jump { e with target := relabel e.target }, cold := block.cold || targetCold }
-  return { f with blocks }
+  let splits := blocks.map fun b => (b.term.edges.filter (critical b)).length
+  if splits.all (· == 0) then f else
+  let labels := newLabels splits 0 0
+  let total := splits.sum
+  let relabel (l : Label) : Label := if l < n then labels[l]?.getD l else l + total
+  let rec emit : List Block → List Label → List Block
+    | [], _ => []
+    | block :: rest, label :: labels =>
+      let (edges, pending) := splitEdges (critical block) relabel (label + 1) block.term.edges [] []
+      ({ block with term := block.term.setEdges edges } ::
+        pending.map fun e =>
+          let targetCold := ((blocks[e.target]?).map (·.cold)).getD false
+          { term := .jump { e with target := relabel e.target }, cold := block.cold || targetCold }) ++
+        emit rest labels
+    | _ :: _, [] => []
+  { f with blocks := (emit blocks labels).toArray }
 
 end Func
 

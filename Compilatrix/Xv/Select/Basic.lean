@@ -76,14 +76,17 @@ structure St where
   /-- Statements of the current block already folded into a consumer. -/
   consumed : List Nat := []
   fired : Std.TreeMap String Nat compare := {}
+  /-- Whether `fire` counts: off on the recheck path (`Select.select`), whose
+  kernel evaluation has no use for `String`-keyed statistics (M1.K1). -/
+  stats : Bool := true
 
 abbrev SelM := ReaderT Ctx (StateT St (Except Error))
 
 def fresh : SelM VReg := modifyGet fun s => (s.next, { s with next := s.next + 1 })
 
-/-- Count one firing of the rule `name`. -/
+/-- Count one firing of the rule `name` (when statistics are on). -/
 def fire (name : String) : SelM Unit :=
-  modify fun s => { s with fired := s.fired.insert name (s.fired.getD name 0 + 1) }
+  modify fun s => if s.stats then { s with fired := s.fired.insert name (s.fired.getD name 0 + 1) } else s
 
 def consume (j : Nat) : SelM Unit := modify fun s => { s with consumed := j :: s.consumed }
 

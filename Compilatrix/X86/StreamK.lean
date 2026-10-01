@@ -112,6 +112,18 @@ def blocksK (w : WalkK) : List Block → List UInt8 → Nat → Bool
     bodyK w block.terminator block.instructions.toList rest offset &&
       blocksK w blocks (rest.drop (blockSizeK block)) (offset + blockSizeK block)
 
+/-- `expectedRelocations` with the block offsets given and the instruction
+offsets from the list encoder's sizes. -/
+def expectedRelocationsK (starts : List Nat) (blocks : List Block) : List Encode.Relocation :=
+  blocks.zipIdx.flatMap fun (block, blockIndex) =>
+    block.instructions.toList.zipIdx.filterMap fun (instruction, instructionIndex) =>
+      match instruction with
+      | .callRuntime intrinsic => some {
+          offset := starts[blockIndex]?.getD 0 +
+            prefixSize (block.instructions.toList.map instructionSizeK) instructionIndex + 1
+          symbol := Encode.intrinsicSymbol intrinsic, addend := -4 }
+      | _ => none
+
 /-- `check` in kernel-evaluable style (`checkK_eq`). -/
 def checkK (program : Program) (output : Encode.Output) (externals : ExternalTargets := unresolved) : Bool :=
   let blocks := program.blocks.toList
@@ -119,7 +131,7 @@ def checkK (program : Program) (output : Encode.Output) (externals : ExternalTar
   let starts := (sizes.scanl (· + ·) 0).dropLast
   let total := sizes.sum
   decide (total < UInt64.size) && output.text.size == total &&
-    output.blockOffsets.toList == starts && output.relocations == expectedRelocations program &&
+    output.blockOffsets.toList == starts && output.relocations.toList == expectedRelocationsK starts blocks &&
     blocksK ⟨starts, blocks.length, externals⟩ blocks output.text.data.toList 0
 
 /-! ## `checkK = check` -/
@@ -359,6 +371,32 @@ theorem blockOffsets_toList (program : Program) :
     simp [bound]
 
 /-- The stream check in one pass is the stream specification. -/
+private theorem flatMap_congr_mem {α β : Type} {l : List α} {f g : α → List β}
+    (h : ∀ a ∈ l, f a = g a) : l.flatMap f = l.flatMap g := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    simp only [List.flatMap_cons, h a (by simp), ih (fun b hb => h b (by simp [hb]))]
+
+theorem expectedRelocationsK_eq (program : Program) :
+    expectedRelocationsK ((blockSizes program).scanl (· + ·) 0).dropLast program.blocks.toList =
+      (expectedRelocations program).toList := by
+  have sizes : (instructionSizeK : Instr → Nat) = instructionSize := funext instructionSizeK_eq
+  unfold expectedRelocationsK expectedRelocations
+  rw [List.toList_toArray]
+  apply flatMap_congr_mem
+  rintro ⟨block, blockIndex⟩ member
+  have bound : blockIndex < program.blocks.size := by
+    have := (List.mk_mem_zipIdx_iff_getElem?.mp member)
+    simpa using (List.getElem?_eq_some_iff.mp this).1
+  have start : (((blockSizes program).scanl (· + ·) 0).dropLast)[blockIndex]? =
+      some (blockOffset program blockIndex) := by
+    rw [List.getElem?_dropLast, ite_eq_left (by simp [blockSizes]; omega),
+      scanl_getElem? _ (by simp [blockSizes]; omega)]
+    rfl
+  simp only [start, Option.getD_some, sizes]
+  rfl
+
 theorem checkK_eq (program : Program) (output : Encode.Output) (externals : ExternalTargets := unresolved) :
     checkK program output externals = check program output externals := by
   have sizes : program.blocks.toList.map blockSizeK = blockSizes program := by
@@ -367,10 +405,14 @@ theorem checkK_eq (program : Program) (output : Encode.Output) (externals : Exte
   have offsets : (output.blockOffsets.toList == ((blockSizes program).scanl (· + ·) 0).dropLast) =
       (output.blockOffsets == blockOffsets program) := by
     rw [← blockOffsets_toList, Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq, Array.toList_inj]
+  have relocations : (output.relocations.toList ==
+      expectedRelocationsK ((blockSizes program).scanl (· + ·) 0).dropLast program.blocks.toList) =
+      (output.relocations == expectedRelocations program) := by
+    rw [expectedRelocationsK_eq, Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq, Array.toList_inj]
   have walk := blocksK_eq (starts_fits program externals) output 0 (Nat.zero_le _)
   simp only [List.drop_zero, blockOffset_zero, Nat.sub_zero, sizes] at walk
   unfold checkK check
-  simp only [sizes, offsets, walk, textSize, List.range_eq_range']
+  simp only [sizes, offsets, relocations, walk, textSize, List.range_eq_range']
   exact walk ▸ rfl
 
 
