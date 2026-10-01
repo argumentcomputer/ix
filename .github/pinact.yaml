@@ -1,0 +1,9 @@
+version: 3
+rules:
+  # Branch refs that must keep tracking their branch: there is no stable tag
+  # to pin to. lean-update's `dev` carries the fork's features, and the shared
+  # ci-workflows actions are consumed from `main`.
+  - ignore: true
+    conditions:
+      - expr: ActionName == "argumentcomputer/lean-update"
+      - expr: ActionName matches "^argumentcomputer/ci-workflows/"

@@ -110,7 +110,7 @@ jobs:
       - name: Post initial comment
         if: github.event_name == 'workflow_dispatch'
         id: post
-        uses: peter-evans/create-or-update-comment@v5
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           token: ${{ github.token }}
           issue-number: ${{ steps.target.outputs.pr }}
@@ -170,7 +170,7 @@ jobs:
             *) echo "::error::Unknown merge-test variant: $TEST_KIND"; exit 1 ;;
           esac
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
           persist-credentials: false
@@ -188,18 +188,18 @@ jobs:
       # sccache keys rustc outputs by content, so the workspace crates, which
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits (see ci.yml).
-      - uses: runs-on/action@v2
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
         with:
           sccache: s3
           sticky_cache: |
             rust
             custom,path=.lake,path=target
-      - uses: mozilla-actions/sccache-action@v0.0.11
-      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: portable
           use-github-cache: "false"
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           use-github-cache: false
@@ -227,7 +227,7 @@ jobs:
     # than sharing a sticky disk with the x86-64-v4 partitions.
     runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
           persist-credentials: false
@@ -242,18 +242,18 @@ jobs:
             exit 1
           fi
 
-      - uses: runs-on/action@v2
-      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: generic
       # `./.lake`, not `.lake`: the path string is hashed into the cache
       # entry's version, so the spelling must stay fixed for restores to hit.
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ./.lake
           key: lake-valgrind-x64-generic-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: lake-valgrind-x64-generic-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           use-github-cache: false
@@ -283,7 +283,7 @@ jobs:
     permissions:
       actions: read
       checks: read
-    uses: runs-on/spot-retry-gate/.github/workflows/merge-queue.yml@v1
+    uses: runs-on/spot-retry-gate/.github/workflows/merge-queue.yml@451eea7c3d2c58d14a1f80f0bbb99eaa347b9471 # v1.0.0
     with:
       job_results: ${{ toJSON(needs) }}
 
@@ -329,7 +329,7 @@ jobs:
           } > comment-body.md
 
       - name: Update result comment
-        uses: peter-evans/create-or-update-comment@v5
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           token: ${{ github.token }}
           issue-number: ${{ needs.prepare.outputs.pr }}
