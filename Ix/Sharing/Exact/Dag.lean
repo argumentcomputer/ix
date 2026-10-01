@@ -182,16 +182,51 @@ structure Dag where
 @[inline] def Dag.node (d : Dag) (t : Nat) : Node := d.nodes[t]?.getD default
 
 /-- Heights of the given nodes, which must have children before parents. -/
-def nodeHeights (nodes : Array Node) : Array Nat := Id.run do
-  let mut height : Array Nat := Array.replicate nodes.size 0
-  for h : t in [0:nodes.size] do
-    let hgt := nodes[t].children.foldl (fun acc c => max acc (height[c]! + 1)) 0
-    height := height.set! t hgt
-  return height
+def nodeHeights (nodes : Array Node) : Array Nat :=
+  (List.range nodes.size).foldl (fun height t =>
+      height.set! t (nodes[t]!.children.foldl (fun acc c => max acc (height[c]! + 1)) 0))
+    (Array.replicate nodes.size 0)
 
 /-- Check that every child ID is smaller than its parent's ID. -/
 def childrenPrecede (nodes : Array Node) : Bool :=
   nodes.zipIdx.all fun (n, t) => n.children.all (· < t)
+
+/-- Mark the nodes reachable from `roots`: the roots, then the children of
+every marked node, visiting parents before children (descending IDs, as
+children precede parents). -/
+def reachMarks (temp : Array Node) (roots : Array Nat) : Array Bool :=
+  (List.range temp.size).foldr
+    (fun t reach =>
+      if reach[t]! then temp[t]!.children.foldl (fun r c => r.set! c true) reach else reach)
+    (roots.foldl (fun r t => r.set! t true) (Array.replicate temp.size false))
+
+/-- The marked nodes grouped by height, each group in increasing ID order. -/
+def heightBuckets (reach : Array Bool) (height : Array Nat) (maxH n : Nat) :
+    Array (Array Nat) :=
+  (List.range n).foldl
+    (fun buckets t => if reach[t]! then buckets.modify height[t]! (·.push t) else buckets)
+    (Array.replicate (maxH + 1) #[])
+
+/-- Assign the next IDs to a key-sorted group, checking that the keys
+strictly increase. -/
+def placeSorted : List (Nat × Node) → Option Node → Array Nat × Array Node →
+    Except SharingError (Array Nat × Array Node)
+  | [], _, st => pure st
+  | (t, node) :: rest, prev, (canon, out) => do
+    if let some p := prev then
+      unless Node.compareKey p node == .lt do
+        throw (.internal "structural keys not strictly increasing within a height")
+    placeSorted rest (some node) (canon.set! t out.size, out.push node)
+
+/-- Renumber one height group: key every node by its head and the canonical
+IDs of its (lower) children, sort by key, and append. -/
+def placeBucket (temp : Array Node) (st : Array Nat × Array Node) (bucket : Array Nat) :
+    Except SharingError (Array Nat × Array Node) :=
+  let keyed := bucket.toList.map fun t =>
+    let node := temp[t]!
+    (t, { node with children := node.children.map (st.1[·]!) })
+  let sorted := keyed.mergeSort fun x y => Node.compareKey x.2 y.2 != .gt
+  placeSorted sorted none st
 
 /-- Keep the nodes reachable from `rootTemps` and renumber them by the §3.2
 rule: increasing height, then increasing `(tag, scalars, child IDs)`.
@@ -203,35 +238,13 @@ def canonicalize (temp : Array Node) (rootTemps : Array Nat) :
     throw (.internal "interner produced a child after its parent")
   unless rootTemps.all (· < n) do
     throw (.internal "root ID out of range")
-  -- Reachability, parents before children (descending IDs).
-  let mut reach : Array Bool := Array.replicate n false
-  for r in rootTemps do reach := reach.set! r true
-  for k in [0:n] do
-    let t := n - 1 - k
-    if reach[t]! then
-      for c in temp[t]!.children do reach := reach.set! c true
-  -- Heights, children before parents.
+  let reach := reachMarks temp rootTemps
   let height := nodeHeights temp
   let maxH := (List.range n).foldl
     (fun acc t => if reach[t]! then max acc height[t]! else acc) 0
-  let mut buckets : Array (Array Nat) := Array.replicate (maxH + 1) #[]
-  for t in [0:n] do
-    if reach[t]! then buckets := buckets.modify height[t]! (·.push t)
-  let mut canon : Array Nat := Array.replicate n 0
-  let mut out : Array Node := #[]
-  for bucket in buckets do
-    let keyed := bucket.toList.map fun t =>
-      let node := temp[t]!
-      (t, { node with children := node.children.map (canon[·]!) })
-    let sorted := keyed.mergeSort fun x y => Node.compareKey x.2 y.2 != .gt
-    let mut prev : Option Node := none
-    for (t, node) in sorted do
-      if let some p := prev then
-        unless Node.compareKey p node == .lt do
-          throw (.internal "structural keys not strictly increasing within a height")
-      prev := some node
-      canon := canon.set! t out.size
-      out := out.push node
+  let buckets := heightBuckets reach height maxH n
+  let (canon, out) ← (List.range (maxH + 1)).foldlM
+    (fun st h => placeBucket temp st buckets[h]!) (Array.replicate n 0, #[])
   return (⟨out⟩, rootTemps.map (canon[·]!))
 
 /-- Result of expanding input into a canonical DAG. -/
