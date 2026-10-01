@@ -1,15 +1,3 @@
-/-
-Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
-Source: ConLeche/Frontend/InModel/Nested.lean
-Transformations: in `genNested`, the container groups are formed in
-decreasing order of the container family's size instead of in motive
-order, and a group that would share a member with an earlier one
-declines (Ix's compiler orders a nested block's auxiliary motives
-canonically, not in the kernel's discovery order; see the comment at
-the change, cl-m1); then the vendoring rewrite of `scripts/vendor-conleche.py` (paths and
-namespace `ConLeche` → `Ix.Kernel`, without its comment line) is applied; this header added. Nothing
-else changes.
--/
 module
 
 public import Ix.Kernel.Frontend.InModel.Mutual
@@ -497,7 +485,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- container's motive order; `pack`/`unpackPack` for a group are one
   -- application of each group member's recursor with the group's
   -- motives.  A plain container is a singleton group.
-  -- (Ix adaptation, cl-m1.)  The groups are formed in decreasing order
+  -- (Ix adaptation.)  The groups are formed in decreasing order
   -- of the container family's size (its recursor's motive count), in
   -- motive order among equals.  The kernel's nested→mutual reduction
   -- discovers a nested container's head before the instances its family

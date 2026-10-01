@@ -1,4 +1,3 @@
--- con-leche's ConLeche/Model/Inductives/SumData.lean, vendored by scripts/vendor-conleche.py (paths and namespace ConLeche → Ix.Kernel); see Ix/Kernel/NOTICE.
 module
 
 import Ix.Kernel.Model.Inductives.StructCtorFrames

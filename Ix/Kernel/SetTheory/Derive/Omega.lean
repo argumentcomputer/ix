@@ -1,4 +1,3 @@
--- con-leche's ConLeche/SetTheory/Derive/Omega.lean, vendored by scripts/vendor-conleche.py (paths and namespace ConLeche → Ix.Kernel); see Ix/Kernel/NOTICE.
 module
 
 public import Ix.Kernel.SetTheory.Derive.Universe

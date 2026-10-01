@@ -57,9 +57,9 @@ through `lake run check-kernel --with-model`.
 From the repository root, `lake run check-kernel --with-model` includes this
 build alongside the kernel proofs, foundation audits, and host regressions.
 
-## Provenance
+## Origin
 
-`IxSetTheoryModel/Carneiro.lean` is copied from con-leche revision
+`IxSetTheoryModel/Carneiro.lean` is derived from con-leche revision
 `86cd20a65660d757cedc81561a44579099b565d0`. The original path and source
 SHA-256 are recorded in [NOTICE](NOTICE).
 Namespaces, imports, and documentation are adapted for Ix; the mathematical

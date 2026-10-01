@@ -1,16 +1,3 @@
-/-
-Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
-Source: ConLeche/Kernel/CheckerBase.lean
-Transformations: the line `public import ConLeche.Kernel.NatOpPins` is
-replaced by `public import ConLeche.Kernel.NatOpPinSet`, the structure it
-re-exported and the only part of it this closure uses (Ix reads Ixon only:
-the Nat-operation pin variant is generated from Ixon records,
-`Ix/Kernel/Ixon/NatOpPinData.lean`, and upstream's `NatOpPins`, which
-splices the JSON pin dumps at elaboration time, is not vendored); then
-the vendoring rewrite of `scripts/vendor-conleche.py` (paths and namespace
-`ConLeche` → `Ix.Kernel`, without its comment line) is applied; this header
-added. No statement, proof or tactic text changes.
--/
 module
 
 public import Ix.Kernel.StdAxioms

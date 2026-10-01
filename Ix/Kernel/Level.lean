@@ -1,15 +1,3 @@
-/-
-Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
-Source: ConLeche/Kernel/Level.lean
-Transformations: in `rest`, the `(param, max)` case answers with
-`Geran.leq` (Géran's sublevels, `Ix/Kernel/LevelGeran.lean`, Ix)
-when both branches of the `max` fail, instead of `false`: that split is
-where nanoda's comparison is incomplete, and `Geran.leq` decides the
-case; `public import ConLeche.Kernel.LevelGeran` added; see the comment
-at the change (cl-level); then the vendoring rewrite of `scripts/vendor-conleche.py` (paths and
-namespace `ConLeche` → `Ix.Kernel`, without its comment line) is applied; this header added.
-Nothing else changes.
--/
 module
 
 public import Ix.Kernel.Expr
@@ -111,7 +99,7 @@ def rest (fuel : Nat) (l r : Level) (diff : Int) : Option Bool :=
   | .max a b, _ => do
     if ← leqCore fuel a r diff then leqCore fuel b r diff else pure false
   | .param _, .max x y => do
-    -- Ix (cl-level): nanoda's branch-by-branch split is incomplete here.
+    -- Ix: nanoda's branch-by-branch split is incomplete here.
     -- `x + k` is two of Géran's sublevels (`x + k` where `x` is nonzero,
     -- `k` where it is zero), and the two may be dominated in different
     -- branches, as in `v + 1 ≤ max (imax (max (u+2) (v+1)) v) 1`.  When

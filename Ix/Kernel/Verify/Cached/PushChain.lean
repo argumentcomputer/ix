@@ -1,12 +1,3 @@
-/-
-Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
-Source: ConLeche/Verify/Cached/PushChain.lean
-Transformations: Lean 4.34.0 fix, the line `import all Init.LetFun` added
-after `import ConLeche.Verify.CheckerF` (its use of `Yields.letFun` from
-`AgreeFloor` unfolds `letFun`, whose body 4.34.0 no longer exposes); then the vendoring rewrite of `scripts/vendor-conleche.py` (paths and
-namespace `ConLeche` → `Ix.Kernel`, without its comment line) is applied;
-this header added. No statement, proof or tactic text changes.
--/
 module
 
 public import Ix.Kernel.Verify.Cached.AgreeFloor

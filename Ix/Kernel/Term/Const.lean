@@ -1,4 +1,3 @@
--- con-leche's ConLeche/Term/Const.lean, vendored by scripts/vendor-conleche.py (paths and namespace ConLeche → Ix.Kernel); see Ix/Kernel/NOTICE.
 module
 
 public import Ix.Kernel.Term.Subst

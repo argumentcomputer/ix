@@ -1,93 +1,56 @@
 Ix.Kernel notices
 =================
 
-Copyright (c) 2026 Argument Computer Corporation
+Ix/Kernel is Ix's certified kernel. Most of it is derived from con-leche,
+the verified Lean kernel checker at https://github.com/leanprover/con-leche,
+received under the Apache License, Version 2.0; con-leche's licence is
+LICENSE-CON-LECHE in this directory. Upstream holds the copyright of the
+con-leche files; the changes are Argument Computer Corporation's, under the
+same licence. The code is maintained in this repository and is expected to
+diverge from upstream.
 
-Vendored con-leche
-------------------
+Origin
+------
 
-Most of Ix/Kernel is a modified copy of con-leche, the verified Lean kernel
-checker at https://github.com/leanprover/con-leche, vendored in place:
+The files of con-leche's ConLeche/ tree that the checker, the Ixon reader
+and the main theorem use, at revision
+ae0c0c4e4ce6a0081648aff03fe9c39d002c4526, except seven taken at revision
+3ca9e2fe749a51cba4c6e3527aeecba074c29316 (upstream task #323):
+Cached/CoreC.lean, Core.lean, Verify/BetaSpine.lean,
+Verify/Cached/DiscC4.lean, Verify/InferLeaves.lean, Verify/InferLemmas.lean
+and Verify/Rules/RedBridge.lean. Tests/Ix/Kernel/Axioms.lean is derived
+from con-leche's tests/ConLecheTests/Axioms.lean at the first revision.
 
-  * the files of con-leche's ConLeche/ tree that the certified checker uses,
-    at revision ae0c0c4e4ce6a0081648aff03fe9c39d002c4526, and seven of them
-    at revision 3ca9e2fe749a51cba4c6e3527aeecba074c29316 (upstream task
-    #323), received under the Apache License, Version 2.0; con-leche's
-    licence is LICENSE-CON-LECHE in this directory;
-  * every such file was changed: scripts/vendor-conleche.py moves it from
-    ConLeche/Kernel/X or ConLeche/X to Ix/Kernel/X, renames the namespace
-    and module prefix ConLeche to Ix.Kernel, and adds a first line naming
-    its source file and this notice. A file with that line has no other
-    change;
-  * seven files carry further changes, each listed in its own header
-    ("Ported from con-leche at ..."): CheckerBase.lean, Level.lean,
-    MainTheorem.lean, Frontend/InModel/Nested.lean, Verify/Level.lean and
-    Verify/Cached/{AgreeFloor,PushChain}.lean;
-  * LevelGeran.lean and Verify/LevelGeran.lean, inside the vendored tree,
-    and Ref.lean, Search.lean and the Audit, Ingress, Egress and Ixon
-    directories, beside it, are this repository's (Ref.lean as below).
+Modifications
+-------------
 
-Each file's source path, revision and SHA-256, and its own SHA-256, are
-recorded in Tests/Ix/Kernel/ImportManifest.lean; lake exe kernel-provenance
-checks them, and with --source-git re-derives every rewritten file from
-upstream. Upstream holds the copyright of the con-leche files; the changes
-are Argument Computer Corporation's, under the same licence.
+  * Every derived file was moved from ConLeche/Kernel/X or ConLeche/X to
+    Ix/Kernel/X, and the namespace and module prefix ConLeche (and
+    ConLeche.Kernel) was renamed to Ix.Kernel.
+  * CheckerBase.lean imports NatOpPinSet instead of upstream's NatOpPins,
+    which splices JSON pin dumps at elaboration time; Ix's Nat-operation
+    pins are generated from Ixon records (Ixon/NatOpPinData.lean), and
+    NatOpPins.lean is not included.
+  * Level.lean: when both branches of the level comparison's (param, max)
+    case fail, the comparison falls back on Géran's sublevels
+    (LevelGeran.lean), which decide the case nanoda's branch split misses.
+    Verify/Level.lean extends the soundness proof to that answer.
+  * Frontend/InModel/Nested.lean forms a nested block's container groups
+    largest family first, and declines a group that would share a member
+    with an earlier one, so that the result does not depend on the order
+    of the block's auxiliary motives.
+  * MainTheorem.lean keeps only model_exists; the corollary about NDJSON
+    files and the imports it needs are dropped.
+  * Verify/Cached/AgreeFloor.lean and Verify/Cached/PushChain.lean import
+    Init.LetFun with `import all`: Lean 4.34.0 no longer exposes the body
+    of letFun, which these proofs unfold.
+  * Tests/Ix/Kernel/Axioms.lean keeps the guards on the modules Ix uses.
 
-The old Ix branch
------------------
+Ix's own files
+--------------
 
-Ix/Kernel/Ref.lean was ported from the jcb/ix-kernel-consistency branch of
-the Ix repository (revision ad60e5f6dd23655da79cf9898d2b6b3fefbe8658,
-directory Ix/Theory). There it was authored in the Lean4Ix working tree,
-and Lean4Ix is based on lean4lean:
-
-  https://github.com/digama0/lean4lean
-
-The lean4lean-derived portions were received under the Apache License,
-Version 2.0. Their original copyright, attribution, licensing, and
-modification-notice requirements continue to apply. The repository history
-and retained per-file notices provide the detailed provenance of those
-portions.
-
-The rest of that port, the intrinsic kernel's model and certified
-constructions, was retired on 2026-10-01 (step L6 of
-plans/ix-kernel-con-leche-port-v4.md). It included Ix/Kernel/Model/SetTheory
-and Ix/Kernel/Model/SetModel, a port of the con-leche set-theoretic
-foundation received under the Apache License, Version 2.0, from
-https://github.com/leanprover/con-leche at revision
-86cd20a65660d757cedc81561a44579099b565d0. The repository history retains
-those files and their notices. The certified checker now uses con-leche's
-own set theory, vendored as above (Ix/Kernel/SetTheory, Ix/Kernel/SetModel).
-
-In the Lean4Ix tree, certain files also identify more specific Apache-2.0
-sources in their headers; none of these files is part of this repository:
-
-  * Main.lean contains code copied from leanprover-community/import-graph.
-  * Lean4Lean/Std/ToExpr.lean contains code from mathlib.
-  * Lean4Lean/Verify/QSort.lean is adapted from Lean 4's qsort verification.
-
-Lean 4, Batteries, import-graph, and mathlib are distributed under the Apache
-License, Version 2.0. When a distribution of this code includes their code
-or artifacts, preserve the license and notice material shipped with them.
-
-The exact source and ported file hashes are recorded in
-Tests/Ix/Kernel/ImportManifest.lean and checked by
-Tests/Ix/Kernel/Provenance.lean (lake exe kernel-provenance).
-
-Except where a contribution or upstream component is explicitly identified
-under different terms, contributions intentionally submitted for inclusion
-in Ix/Kernel are accepted under the same MIT OR Apache-2.0 choice described
-in LICENSE, LICENSE-MIT, and LICENSE-APACHE in this directory.
+LevelGeran.lean, Verify/LevelGeran.lean, Ref.lean, Search.lean, and the
+Audit, Ingress, Egress and Ixon directories are this repository's, under
+its root licence.
 
 This NOTICE is informational and does not modify any applicable license.
-
-This file adapts Ix/Theory/NOTICE of the source revision (SHA-256
-046d7aefcc035fac38420bef9c4eded1591efe83b6d8e68739d70f055c8d7497). On
-2026-09-30 the ported directories and the location of the hash record were
-updated to this repository's paths, the Lean4Ix-only file references were
-marked as such, and the paragraph on Lean4Ix's lake-manifest.json and
-lean-toolchain files, which this directory does not contain, was removed.
-On 2026-10-01 (L6) the paragraphs on the model and on the con-leche set
-theory were rewritten to record their retirement, since only Ref.lean
-remains from the port, and the section on the vendored con-leche tree was
-added when that tree moved under Ix/Kernel.

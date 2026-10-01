@@ -1,4 +1,3 @@
--- con-leche's ConLeche/Semantics/Tower/TowerRec.lean, vendored by scripts/vendor-conleche.py (paths and namespace ConLeche → Ix.Kernel); see Ix/Kernel/NOTICE.
 module
 
 public import Ix.Kernel.Semantics.Tower.TowerMk

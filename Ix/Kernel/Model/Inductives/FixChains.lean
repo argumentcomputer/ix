@@ -1,4 +1,3 @@
--- con-leche's ConLeche/Model/Inductives/FixChains.lean, vendored by scripts/vendor-conleche.py (paths and namespace ConLeche → Ix.Kernel); see Ix/Kernel/NOTICE.
 module
 
 public import Ix.Kernel.Model.Inductives.FixShadow

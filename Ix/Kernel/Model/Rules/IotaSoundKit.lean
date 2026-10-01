@@ -1,4 +1,3 @@
--- con-leche's ConLeche/Model/Rules/IotaSoundKit.lean, vendored by scripts/vendor-conleche.py (paths and namespace ConLeche → Ix.Kernel); see Ix/Kernel/NOTICE.
 module
 
 -- lane S-red's kit is the SHARED one: `DenoteMetaSpine`'s list algebra,

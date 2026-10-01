@@ -1,4 +1,3 @@
--- con-leche's ConLeche/Kernel/BasisGen.lean, vendored by scripts/vendor-conleche.py (paths and namespace ConLeche → Ix.Kernel); see Ix/Kernel/NOTICE.
 module
 
 public meta import Lean
