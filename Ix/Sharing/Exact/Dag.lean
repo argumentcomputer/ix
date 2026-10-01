@@ -279,18 +279,38 @@ def reexpand (limits : Limits) (dag : Dag) (sharing roots : Array Ixon.Expr) :
 
 /-! ## Occurrences and materialized expressions -/
 
+/-- Whether the edge from `parent` to its `i`-th child continues the parent's
+telescope. -/
+def continuationEdge (parent : Node) (i : Nat) (child : Node) : Bool :=
+  match parent.head, child.head with
+  | .app, .app => i == 0
+  | .lam _, .lam _ => i == 1
+  | .all .., .all .. => i == 1
+  | _, _ => false
+
+/-- Counts pushed from parents to children, the largest ID first: every root
+occurrence counts 1, and each term `y`, whose own count `c` is final by then,
+adds `weight y c` per edge into each child. The second array counts only the
+head (non-continuation) edges. -/
+def propagateCounts (dag : Dag) (roots : Array Nat) (weight : Nat → Nat → Nat) :
+    Array Nat × Array Nat :=
+  let n := dag.size
+  let base := roots.foldl (fun acc r => acc.modify r (· + 1)) (Array.replicate n 0)
+  foldRange (fun (st : Array Nat × Array Nat) k =>
+      let y := n - 1 - k
+      let wy := weight y st.1[y]!
+      let node := dag.node y
+      (List.range node.children.size).foldl (fun (st : Array Nat × Array Nat) i =>
+        let c := node.child i
+        (st.1.modify c (· + wy),
+         if continuationEdge node i (dag.node c) then st.2 else st.2.modify c (· + wy)))
+        st)
+    0 n (base, base)
+
 /-- Logical occurrence count of every term in the expanded roots, counted
 through every DAG edge with multiplicity and every root occurrence. -/
-def occurrences (dag : Dag) (roots : Array Nat) : Array Nat := Id.run do
-  let n := dag.size
-  let mut occ : Array Nat := Array.replicate n 0
-  for r in roots do occ := occ.modify r (· + 1)
-  for k in [0:n] do
-    let t := n - 1 - k
-    let o := occ[t]!
-    if o > 0 then
-      for c in (dag.node t).children do occ := occ.modify c (· + o)
-  return occ
+def occurrences (dag : Dag) (roots : Array Nat) : Array Nat :=
+  (propagateCounts dag roots fun _ c => c).1
 
 /-- One expanded expression per term, built bottom-up with maximal pointer
 sharing (no occurrence-tree allocation). -/
