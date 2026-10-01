@@ -858,3 +858,15 @@ Reachability of every term from a root is a runtime check plus `optimizeUniform_
 and 3 and the best-of-three width selection are tested, not proved. The reference enumeration
 path (`uniformSubsetSearch = true`) is excluded from the theorems. Failure semantics: an error at
 any width fails the whole call (no fallback to other widths); Rust must match.
+
+### 12.14 Best-of-four rejected; outlier diagnosis (2026-10-01)
+
+Adding "store every candidate" as a fourth phase-1 candidate closes 901 of the 903 Mathlib
+losses vs MSS but saves only 2,896 bytes in total (of 1.12 GB) and costs a fourth pass; not
+adopted. The one real outlier (`Affine.Triangle.dist_orthogonalProjectionSpan…`, +1,485 vs MSS)
+loses even with MSS's exact stored set (67,367 vs MSS 63,779), so the gap is in phase 2's pinned
+order for entries beyond the first tier (its 2,230 entries straddle the TagN 1,032 boundary):
+the "stored descendants first" order places high-reference entries late, whereas MSS's Kahn
+priority order (largest in-degree among available entries) keeps them in the 2-byte tier.
+Fix under way: phase 2's order beyond the first tier becomes the Kahn priority order by
+reference count (ties by structural ID), which is also what MSS measured with.
