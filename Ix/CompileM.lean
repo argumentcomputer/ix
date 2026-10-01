@@ -588,31 +588,14 @@ def BlockState.compileNames (state : BlockState)
 def compileNames (names : Array Ix.Name) : CompileM Unit :=
   modifyBlockState fun state => state.compileNames names
 
-/-- Serialize a u64 in trimmed little-endian format (only necessary bytes).
-    Uses Ixon.u64ByteCount for the byte count calculation. -/
-def putU64TrimmedLE (x : UInt64) : ByteArray := Id.run do
-  let count := Ixon.u64ByteCount x
-  let mut bytes := ByteArray.empty
-  let mut v := x
-  for _ in [:count.toNat] do
-    bytes := bytes.push (v &&& 0xFF).toUInt8
-    v := v >>> 8
-  bytes
-
-/-- Serialize a Nat using Tag0 encoding (variable length, compact for small values).
-    Uses Ixon.u64ByteCount for the byte count calculation. -/
-def putTag0 (n : Nat) : ByteArray :=
-  let x := n.toUInt64
-  if x < 128 then
-    ByteArray.mk #[x.toUInt8]
-  else
-    let byteCount := Ixon.u64ByteCount x
-    ByteArray.mk #[0x80 ||| (byteCount - 1)] ++ putU64TrimmedLE x
+/-- A Nat as a TagN (`f = 0`) integer (`Ixon.putTagN 0 0`). -/
+def tagN0Bytes (n : Nat) : ByteArray :=
+  Ixon.runPut (Ixon.putTagN 0 0 n.toUInt64)
 
 /-- Serialize an Ix.Substring to bytes, storing strings as blobs. -/
 def serializeIxSubstring (ss : Ix.Substring) : CompileM ByteArray := do
   let strAddr ← storeString ss.str
-  pure (strAddr.hash ++ putTag0 ss.startPos ++ putTag0 ss.stopPos)
+  pure (strAddr.hash ++ tagN0Bytes ss.startPos ++ tagN0Bytes ss.stopPos)
 
 /-- Serialize an Ix.SourceInfo to bytes, storing strings as blobs. -/
 def serializeIxSourceInfo (si : Ix.SourceInfo) : CompileM ByteArray := do
@@ -620,10 +603,10 @@ def serializeIxSourceInfo (si : Ix.SourceInfo) : CompileM ByteArray := do
   | .original leading leadingPos trailing trailingPos =>
     let leadingBytes ← serializeIxSubstring leading
     let trailingBytes ← serializeIxSubstring trailing
-    pure (ByteArray.mk #[0] ++ leadingBytes ++ putTag0 leadingPos ++
-      trailingBytes ++ putTag0 trailingPos)
+    pure (ByteArray.mk #[0] ++ leadingBytes ++ tagN0Bytes leadingPos ++
+      trailingBytes ++ tagN0Bytes trailingPos)
   | .synthetic start stop canonical =>
-    pure (ByteArray.mk #[1] ++ putTag0 start ++ putTag0 stop ++
+    pure (ByteArray.mk #[1] ++ tagN0Bytes start ++ tagN0Bytes stop ++
       ByteArray.mk #[if canonical then 1 else 0])
   | .none => pure (ByteArray.mk #[2])
 
@@ -635,7 +618,7 @@ def serializeIxSyntaxPreresolved (sp : Ix.SyntaxPreresolved) : CompileM ByteArra
     pure (ByteArray.mk #[0] ++ name.getHash.hash)
   | .decl name aliases =>
     compileName name
-    let header := ByteArray.mk #[1] ++ name.getHash.hash ++ putTag0 aliases.size
+    let header := ByteArray.mk #[1] ++ name.getHash.hash ++ tagN0Bytes aliases.size
     let aliasAddrs ← aliases.mapM storeString
     let aliasesBytes := aliasAddrs.foldl (fun bytes addr => bytes ++ addr.hash)
       ByteArray.empty
@@ -652,7 +635,7 @@ def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
     let header := ByteArray.mk #[1]
     let infoBytes ← serializeIxSourceInfo info
     let kindBytes := kind.getHash.hash
-    let lenBytes := putTag0 args.size
+    let lenBytes := tagN0Bytes args.size
     let serializedArgs ← args.attach.mapM fun arg => serializeIxSyntax arg.1
     let argsBytes := serializedArgs.foldl (fun bytes arg => bytes ++ arg)
       ByteArray.empty
@@ -667,7 +650,7 @@ def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
     let infoBytes ← serializeIxSourceInfo info
     let rawBytes ← serializeIxSubstring rawVal
     let valBytes := val.getHash.hash
-    let lenBytes := putTag0 preresolved.size
+    let lenBytes := tagN0Bytes preresolved.size
     let serializedPres ← preresolved.mapM serializeIxSyntaxPreresolved
     let presBytes := serializedPres.foldl (fun bytes pr => bytes ++ pr)
       ByteArray.empty

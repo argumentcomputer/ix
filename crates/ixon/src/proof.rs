@@ -3,7 +3,7 @@
 //! Claims assert properties about committed constants (type-checking, evaluation,
 //! or selective field revelation). Proofs pair a claim with opaque proof bytes.
 //!
-//! `RevealConstantInfo` uses bitmask-based serialization: a mask (Tag0) encodes
+//! `RevealConstantInfo` uses bitmask-based serialization: a mask (TagN) encodes
 //! which fields are present, followed by only the present field values in bit
 //! order. This enables revealing specific fields of a committed constant without
 //! exposing the full structure.
@@ -12,7 +12,7 @@ use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, QuotKind};
 
 use super::constant::DefKind;
-use super::tag::{Tag0, Tag4};
+use super::tag::TagN;
 
 // ============================================================================
 // Reveal info types (per-variant selective-field structures)
@@ -188,10 +188,10 @@ pub struct Proof {
 }
 
 // ============================================================================
-// Tag4 variant layout for flags 0xE (data + claims) and 0xF (proofs)
+// TagN variant layout for flags 0xE (data + claims) and 0xF (proofs)
 // ============================================================================
 
-/// Tag4 flag for envs, commitments, AssumptionTree, and claims (0xE).
+/// TagN flag for envs, commitments, AssumptionTree, and claims (0xE).
 ///
 /// Variants 0–7 fit in single-byte tags (`0xE0`–`0xE7`) and are all
 /// taken. Variant 8 (Catalog) is the first — and so far only —
@@ -221,7 +221,7 @@ pub const VARIANT_CONTAINS_CLAIM: u64 = 7;
 pub const VARIANT_CATALOG_CLAIM: u64 = 8;
 pub const VARIANT_RESOURCE_CLAIM: u64 = 9;
 
-/// Tag4 flag for ZK proofs (0xF). All variants in single-byte tags
+/// TagN flag for ZK proofs (0xF). All variants in single-byte tags
 /// (`0xF0`–`0xF5`). Slots 6-7 reserved for future proof variants.
 ///
 /// Proof bytes are uniform opaque ZK proofs — witness data (e.g.,
@@ -350,7 +350,7 @@ fn get_bool_field(buf: &mut &[u8]) -> Result<bool, String> {
 // ============================================================================
 
 impl RevealConstructorInfo {
-  /// Serialize: mask (Tag0) + field values in mask order.
+  /// Serialize: mask (TagN) + field values in mask order.
   pub fn put(&self, buf: &mut Vec<u8>) {
     let mask = compute_mask(&[
       self.is_unsafe.is_some(),
@@ -360,21 +360,21 @@ impl RevealConstructorInfo {
       self.fields.is_some(),
       self.typ.is_some(),
     ]);
-    Tag0::new(mask).put(buf);
+    TagN::put(0, 0, mask, buf);
     if let Some(u) = self.is_unsafe {
       put_bool_field(u, buf);
     }
     if let Some(l) = self.lvls {
-      Tag0::new(l).put(buf);
+      TagN::put(0, 0, l, buf);
     }
     if let Some(c) = self.cidx {
-      Tag0::new(c).put(buf);
+      TagN::put(0, 0, c, buf);
     }
     if let Some(p) = self.params {
-      Tag0::new(p).put(buf);
+      TagN::put(0, 0, p, buf);
     }
     if let Some(f) = self.fields {
-      Tag0::new(f).put(buf);
+      TagN::put(0, 0, f, buf);
     }
     if let Some(t) = &self.typ {
       buf.extend_from_slice(t.as_bytes());
@@ -382,13 +382,17 @@ impl RevealConstructorInfo {
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let mask = Tag0::get(buf)?.size;
+    let mask = TagN::get(0, buf)?.value;
     let is_unsafe =
       if mask & 1 != 0 { Some(get_bool_field(buf)?) } else { None };
-    let lvls = if mask & 2 != 0 { Some(Tag0::get(buf)?.size) } else { None };
-    let cidx = if mask & 4 != 0 { Some(Tag0::get(buf)?.size) } else { None };
-    let params = if mask & 8 != 0 { Some(Tag0::get(buf)?.size) } else { None };
-    let fields = if mask & 16 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+    let lvls =
+      if mask & 2 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
+    let cidx =
+      if mask & 4 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
+    let params =
+      if mask & 8 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
+    let fields =
+      if mask & 16 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
     let typ = if mask & 32 != 0 { Some(get_address(buf)?) } else { None };
     Ok(RevealConstructorInfo { is_unsafe, lvls, cidx, params, fields, typ })
   }
@@ -400,14 +404,14 @@ impl RevealConstructorInfo {
 
 impl RevealRecursorRule {
   pub fn put(&self, buf: &mut Vec<u8>) {
-    Tag0::new(self.rule_idx).put(buf);
-    Tag0::new(self.fields).put(buf);
+    TagN::put(0, 0, self.rule_idx, buf);
+    TagN::put(0, 0, self.fields, buf);
     buf.extend_from_slice(self.rhs.as_bytes());
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let rule_idx = Tag0::get(buf)?.size;
-    let fields = Tag0::get(buf)?.size;
+    let rule_idx = TagN::get(0, buf)?.value;
+    let fields = TagN::get(0, buf)?.value;
     let rhs = get_address(buf)?;
     Ok(RevealRecursorRule { rule_idx, fields, rhs })
   }
@@ -418,7 +422,7 @@ impl RevealRecursorRule {
 // ============================================================================
 
 fn put_rules(rules: &[RevealRecursorRule], buf: &mut Vec<u8>) {
-  Tag0::new(rules.len() as u64).put(buf);
+  TagN::put(0, 0, rules.len() as u64, buf);
   for rule in rules {
     rule.put(buf);
   }
@@ -426,7 +430,7 @@ fn put_rules(rules: &[RevealRecursorRule], buf: &mut Vec<u8>) {
 
 fn get_rules(buf: &mut &[u8]) -> Result<Vec<RevealRecursorRule>, String> {
   let count =
-    usize::try_from(Tag0::get(buf)?.size).map_err(|e| e.to_string())?;
+    usize::try_from(TagN::get(0, buf)?.value).map_err(|e| e.to_string())?;
   let mut rules = Vec::with_capacity(count);
   for _ in 0..count {
     rules.push(RevealRecursorRule::get(buf)?);
@@ -435,9 +439,9 @@ fn get_rules(buf: &mut &[u8]) -> Result<Vec<RevealRecursorRule>, String> {
 }
 
 fn put_ctors(ctors: &[(u64, RevealConstructorInfo)], buf: &mut Vec<u8>) {
-  Tag0::new(ctors.len() as u64).put(buf);
+  TagN::put(0, 0, ctors.len() as u64, buf);
   for (idx, info) in ctors {
-    Tag0::new(*idx).put(buf);
+    TagN::put(0, 0, *idx, buf);
     info.put(buf);
   }
 }
@@ -446,10 +450,10 @@ fn get_ctors(
   buf: &mut &[u8],
 ) -> Result<Vec<(u64, RevealConstructorInfo)>, String> {
   let count =
-    usize::try_from(Tag0::get(buf)?.size).map_err(|e| e.to_string())?;
+    usize::try_from(TagN::get(0, buf)?.value).map_err(|e| e.to_string())?;
   let mut ctors = Vec::with_capacity(count);
   for _ in 0..count {
-    let idx = Tag0::get(buf)?.size;
+    let idx = TagN::get(0, buf)?.value;
     let info = RevealConstructorInfo::get(buf)?;
     ctors.push((idx, info));
   }
@@ -472,7 +476,7 @@ impl RevealMutConstInfo {
           typ.is_some(),
           value.is_some(),
         ]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(k) = kind {
           put_def_kind(*k, buf);
         }
@@ -480,7 +484,7 @@ impl RevealMutConstInfo {
           put_def_safety(*s, buf);
         }
         if let Some(l) = lvls {
-          Tag0::new(*l).put(buf);
+          TagN::put(0, 0, *l, buf);
         }
         if let Some(t) = typ {
           buf.extend_from_slice(t.as_bytes());
@@ -499,18 +503,18 @@ impl RevealMutConstInfo {
           typ.is_some(),
           ctors.is_some(),
         ]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(u) = is_unsafe {
           put_bool_field(*u, buf);
         }
         if let Some(l) = lvls {
-          Tag0::new(*l).put(buf);
+          TagN::put(0, 0, *l, buf);
         }
         if let Some(p) = params {
-          Tag0::new(*p).put(buf);
+          TagN::put(0, 0, *p, buf);
         }
         if let Some(i) = indices {
-          Tag0::new(*i).put(buf);
+          TagN::put(0, 0, *i, buf);
         }
         if let Some(t) = typ {
           buf.extend_from_slice(t.as_bytes());
@@ -542,7 +546,7 @@ impl RevealMutConstInfo {
           typ.is_some(),
           rules.is_some(),
         ]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(k) = k {
           put_bool_field(*k, buf);
         }
@@ -550,19 +554,19 @@ impl RevealMutConstInfo {
           put_bool_field(*u, buf);
         }
         if let Some(l) = lvls {
-          Tag0::new(*l).put(buf);
+          TagN::put(0, 0, *l, buf);
         }
         if let Some(p) = params {
-          Tag0::new(*p).put(buf);
+          TagN::put(0, 0, *p, buf);
         }
         if let Some(i) = indices {
-          Tag0::new(*i).put(buf);
+          TagN::put(0, 0, *i, buf);
         }
         if let Some(m) = motives {
-          Tag0::new(*m).put(buf);
+          TagN::put(0, 0, *m, buf);
         }
         if let Some(m) = minors {
-          Tag0::new(*m).put(buf);
+          TagN::put(0, 0, *m, buf);
         }
         if let Some(t) = typ {
           buf.extend_from_slice(t.as_bytes());
@@ -576,14 +580,14 @@ impl RevealMutConstInfo {
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let variant = get_u8(buf)?;
-    let mask = Tag0::get(buf)?.size;
+    let mask = TagN::get(0, buf)?.value;
     match variant {
       0 => {
         let kind = if mask & 1 != 0 { Some(get_def_kind(buf)?) } else { None };
         let safety =
           if mask & 2 != 0 { Some(get_def_safety(buf)?) } else { None };
         let lvls =
-          if mask & 4 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 4 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 8 != 0 { Some(get_address(buf)?) } else { None };
         let value = if mask & 16 != 0 { Some(get_address(buf)?) } else { None };
         Ok(Self::Defn { kind, safety, lvls, typ, value })
@@ -592,11 +596,11 @@ impl RevealMutConstInfo {
         let is_unsafe =
           if mask & 1 != 0 { Some(get_bool_field(buf)?) } else { None };
         let lvls =
-          if mask & 2 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 2 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let params =
-          if mask & 4 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 4 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let indices =
-          if mask & 8 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 8 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 16 != 0 { Some(get_address(buf)?) } else { None };
         let ctors = if mask & 32 != 0 { Some(get_ctors(buf)?) } else { None };
         Ok(Self::Indc { is_unsafe, lvls, params, indices, typ, ctors })
@@ -606,15 +610,15 @@ impl RevealMutConstInfo {
         let is_unsafe =
           if mask & 2 != 0 { Some(get_bool_field(buf)?) } else { None };
         let lvls =
-          if mask & 4 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 4 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let params =
-          if mask & 8 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 8 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let indices =
-          if mask & 16 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 16 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let motives =
-          if mask & 32 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 32 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let minors =
-          if mask & 64 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 64 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 128 != 0 { Some(get_address(buf)?) } else { None };
         let rules = if mask & 256 != 0 { Some(get_rules(buf)?) } else { None };
         Ok(Self::Recr {
@@ -639,7 +643,7 @@ impl RevealMutConstInfo {
 // ============================================================================
 
 impl RevealConstantInfo {
-  /// Serialize: variant byte + mask (Tag0) + field values in mask order.
+  /// Serialize: variant byte + mask (TagN) + field values in mask order.
   pub fn put(&self, buf: &mut Vec<u8>) {
     match self {
       Self::Defn { kind, safety, lvls, typ, value } => {
@@ -651,7 +655,7 @@ impl RevealConstantInfo {
           typ.is_some(),
           value.is_some(),
         ]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(k) = kind {
           put_def_kind(*k, buf);
         }
@@ -659,7 +663,7 @@ impl RevealConstantInfo {
           put_def_safety(*s, buf);
         }
         if let Some(l) = lvls {
-          Tag0::new(*l).put(buf);
+          TagN::put(0, 0, *l, buf);
         }
         if let Some(t) = typ {
           buf.extend_from_slice(t.as_bytes());
@@ -691,7 +695,7 @@ impl RevealConstantInfo {
           typ.is_some(),
           rules.is_some(),
         ]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(k) = k {
           put_bool_field(*k, buf);
         }
@@ -699,19 +703,19 @@ impl RevealConstantInfo {
           put_bool_field(*u, buf);
         }
         if let Some(l) = lvls {
-          Tag0::new(*l).put(buf);
+          TagN::put(0, 0, *l, buf);
         }
         if let Some(p) = params {
-          Tag0::new(*p).put(buf);
+          TagN::put(0, 0, *p, buf);
         }
         if let Some(i) = indices {
-          Tag0::new(*i).put(buf);
+          TagN::put(0, 0, *i, buf);
         }
         if let Some(m) = motives {
-          Tag0::new(*m).put(buf);
+          TagN::put(0, 0, *m, buf);
         }
         if let Some(m) = minors {
-          Tag0::new(*m).put(buf);
+          TagN::put(0, 0, *m, buf);
         }
         if let Some(t) = typ {
           buf.extend_from_slice(t.as_bytes());
@@ -724,12 +728,12 @@ impl RevealConstantInfo {
         buf.push(2);
         let mask =
           compute_mask(&[is_unsafe.is_some(), lvls.is_some(), typ.is_some()]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(u) = is_unsafe {
           put_bool_field(*u, buf);
         }
         if let Some(l) = lvls {
-          Tag0::new(*l).put(buf);
+          TagN::put(0, 0, *l, buf);
         }
         if let Some(t) = typ {
           buf.extend_from_slice(t.as_bytes());
@@ -739,12 +743,12 @@ impl RevealConstantInfo {
         buf.push(3);
         let mask =
           compute_mask(&[kind.is_some(), lvls.is_some(), typ.is_some()]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(k) = kind {
           put_quot_kind(*k, buf);
         }
         if let Some(l) = lvls {
-          Tag0::new(*l).put(buf);
+          TagN::put(0, 0, *l, buf);
         }
         if let Some(t) = typ {
           buf.extend_from_slice(t.as_bytes());
@@ -754,12 +758,12 @@ impl RevealConstantInfo {
         buf.push(4);
         let mask =
           compute_mask(&[idx.is_some(), cidx.is_some(), block.is_some()]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(i) = idx {
-          Tag0::new(*i).put(buf);
+          TagN::put(0, 0, *i, buf);
         }
         if let Some(c) = cidx {
-          Tag0::new(*c).put(buf);
+          TagN::put(0, 0, *c, buf);
         }
         if let Some(b) = block {
           buf.extend_from_slice(b.as_bytes());
@@ -768,9 +772,9 @@ impl RevealConstantInfo {
       Self::RPrj { idx, block } => {
         buf.push(5);
         let mask = compute_mask(&[idx.is_some(), block.is_some()]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(i) = idx {
-          Tag0::new(*i).put(buf);
+          TagN::put(0, 0, *i, buf);
         }
         if let Some(b) = block {
           buf.extend_from_slice(b.as_bytes());
@@ -779,9 +783,9 @@ impl RevealConstantInfo {
       Self::IPrj { idx, block } => {
         buf.push(6);
         let mask = compute_mask(&[idx.is_some(), block.is_some()]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(i) = idx {
-          Tag0::new(*i).put(buf);
+          TagN::put(0, 0, *i, buf);
         }
         if let Some(b) = block {
           buf.extend_from_slice(b.as_bytes());
@@ -790,9 +794,9 @@ impl RevealConstantInfo {
       Self::DPrj { idx, block } => {
         buf.push(7);
         let mask = compute_mask(&[idx.is_some(), block.is_some()]);
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if let Some(i) = idx {
-          Tag0::new(*i).put(buf);
+          TagN::put(0, 0, *i, buf);
         }
         if let Some(b) = block {
           buf.extend_from_slice(b.as_bytes());
@@ -801,11 +805,11 @@ impl RevealConstantInfo {
       Self::Muts { components } => {
         buf.push(8);
         let mask: u64 = if components.is_empty() { 0 } else { 1 };
-        Tag0::new(mask).put(buf);
+        TagN::put(0, 0, mask, buf);
         if !components.is_empty() {
-          Tag0::new(components.len() as u64).put(buf);
+          TagN::put(0, 0, components.len() as u64, buf);
           for (idx, info) in components {
-            Tag0::new(*idx).put(buf);
+            TagN::put(0, 0, *idx, buf);
             info.put(buf);
           }
         }
@@ -815,7 +819,7 @@ impl RevealConstantInfo {
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let variant = get_u8(buf)?;
-    let mask = Tag0::get(buf)?.size;
+    let mask = TagN::get(0, buf)?.value;
     match variant {
       0 => {
         // Defn
@@ -823,7 +827,7 @@ impl RevealConstantInfo {
         let safety =
           if mask & 2 != 0 { Some(get_def_safety(buf)?) } else { None };
         let lvls =
-          if mask & 4 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 4 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 8 != 0 { Some(get_address(buf)?) } else { None };
         let value = if mask & 16 != 0 { Some(get_address(buf)?) } else { None };
         Ok(Self::Defn { kind, safety, lvls, typ, value })
@@ -834,15 +838,15 @@ impl RevealConstantInfo {
         let is_unsafe =
           if mask & 2 != 0 { Some(get_bool_field(buf)?) } else { None };
         let lvls =
-          if mask & 4 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 4 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let params =
-          if mask & 8 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 8 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let indices =
-          if mask & 16 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 16 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let motives =
-          if mask & 32 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 32 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let minors =
-          if mask & 64 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 64 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 128 != 0 { Some(get_address(buf)?) } else { None };
         let rules = if mask & 256 != 0 { Some(get_rules(buf)?) } else { None };
         Ok(Self::Recr {
@@ -862,7 +866,7 @@ impl RevealConstantInfo {
         let is_unsafe =
           if mask & 1 != 0 { Some(get_bool_field(buf)?) } else { None };
         let lvls =
-          if mask & 2 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 2 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 4 != 0 { Some(get_address(buf)?) } else { None };
         Ok(Self::Axio { is_unsafe, lvls, typ })
       },
@@ -870,44 +874,48 @@ impl RevealConstantInfo {
         // Quot
         let kind = if mask & 1 != 0 { Some(get_quot_kind(buf)?) } else { None };
         let lvls =
-          if mask & 2 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 2 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let typ = if mask & 4 != 0 { Some(get_address(buf)?) } else { None };
         Ok(Self::Quot { kind, lvls, typ })
       },
       4 => {
         // CPrj
-        let idx = if mask & 1 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+        let idx =
+          if mask & 1 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let cidx =
-          if mask & 2 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 2 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let block = if mask & 4 != 0 { Some(get_address(buf)?) } else { None };
         Ok(Self::CPrj { idx, cidx, block })
       },
       5 => {
         // RPrj
-        let idx = if mask & 1 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+        let idx =
+          if mask & 1 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let block = if mask & 2 != 0 { Some(get_address(buf)?) } else { None };
         Ok(Self::RPrj { idx, block })
       },
       6 => {
         // IPrj
-        let idx = if mask & 1 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+        let idx =
+          if mask & 1 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let block = if mask & 2 != 0 { Some(get_address(buf)?) } else { None };
         Ok(Self::IPrj { idx, block })
       },
       7 => {
         // DPrj
-        let idx = if mask & 1 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+        let idx =
+          if mask & 1 != 0 { Some(TagN::get(0, buf)?.value) } else { None };
         let block = if mask & 2 != 0 { Some(get_address(buf)?) } else { None };
         Ok(Self::DPrj { idx, block })
       },
       8 => {
         // Muts
         let components = if mask & 1 != 0 {
-          let count =
-            usize::try_from(Tag0::get(buf)?.size).map_err(|e| e.to_string())?;
+          let count = usize::try_from(TagN::get(0, buf)?.value)
+            .map_err(|e| e.to_string())?;
           let mut comps = Vec::with_capacity(count);
           for _ in 0..count {
-            let idx = Tag0::get(buf)?.size;
+            let idx = TagN::get(0, buf)?.value;
             let info = RevealMutConstInfo::get(buf)?;
             comps.push((idx, info));
           }
@@ -969,7 +977,7 @@ fn get_scope(validator: u8, buf: &mut &[u8]) -> Result<(), String> {
 
 impl Claim {
   pub fn put(&self, buf: &mut Vec<u8>) {
-    Tag4::new(FLAG_CLAIM, self.proof_variant_size() + 3).put(buf);
+    TagN::put(4, FLAG_CLAIM, self.proof_variant_size() + 3, buf);
     put_scope(validator_for_variant(self.proof_variant_size() + 3), buf);
     match self {
       Claim::Eval { input, output, assumptions } => {
@@ -1007,15 +1015,15 @@ impl Claim {
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let tag = Tag4::get(buf)?;
+    let tag = TagN::get(4, buf)?;
     if tag.flag != FLAG_CLAIM {
       return Err(format!(
         "Claim::get: expected flag 0x{:X}, got 0x{:X}",
         FLAG_CLAIM, tag.flag
       ));
     }
-    get_scope(validator_for_variant(tag.size), buf)?;
-    match tag.size {
+    get_scope(validator_for_variant(tag.value), buf)?;
+    match tag.value {
       VARIANT_EVAL_CLAIM => {
         let input = get_address(buf)?;
         let output = get_address(buf)?;
@@ -1102,7 +1110,7 @@ impl Proof {
     let proof_size = self.claim.proof_variant_size();
     // Proofs live under flag 0xF; claim payload is the same body as the
     // matching Claim variant.
-    Tag4::new(FLAG_PROOF, proof_size).put(buf);
+    TagN::put(4, FLAG_PROOF, proof_size, buf);
     put_scope(validator_for_variant(proof_size + 3), buf);
     match &self.claim {
       Claim::Eval { input, output, assumptions } => {
@@ -1137,20 +1145,20 @@ impl Proof {
       },
     }
     // Opaque ZK proof bytes: length prefix + data
-    Tag0::new(self.proof.len() as u64).put(buf);
+    TagN::put(0, 0, self.proof.len() as u64, buf);
     buf.extend_from_slice(&self.proof);
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let tag = Tag4::get(buf)?;
+    let tag = TagN::get(4, buf)?;
     if tag.flag != FLAG_PROOF {
       return Err(format!(
         "Proof::get: expected flag 0x{:X}, got 0x{:X}",
         FLAG_PROOF, tag.flag
       ));
     }
-    get_scope(validator_for_variant(tag.size.wrapping_add(3)), buf)?;
-    let claim = match tag.size {
+    get_scope(validator_for_variant(tag.value.wrapping_add(3)), buf)?;
+    let claim = match tag.value {
       VARIANT_EVAL_PROOF => {
         let input = get_address(buf)?;
         let output = get_address(buf)?;
@@ -1194,8 +1202,8 @@ impl Proof {
     };
 
     // Opaque ZK proof bytes
-    let len = usize::try_from(Tag0::get(buf)?.size)
-      .map_err(|_e| "Proof::get: Tag0 size overflows usize".to_string())?;
+    let len = usize::try_from(TagN::get(0, buf)?.value)
+      .map_err(|_e| "Proof::get: TagN size overflows usize".to_string())?;
     if buf.len() < len {
       return Err(format!(
         "Proof::get: need {} bytes for proof data, have {}",
@@ -1493,7 +1501,7 @@ mod tests {
 
   /// The catalog claim's exact wire form is a cross-serializer
   /// commitment (the Rust↔Lean digest-parity gate pins the same bytes
-  /// from the Lean side): the first multi-byte claim tag `0xE8 0x08`,
+  /// from the Lean side): the first multi-byte claim tag, TagN `0xE8 0x00`,
   /// then members ‖ content ‖ opt-assumptions. A drift here changes
   /// every catalog digest.
   #[test]
@@ -1507,7 +1515,7 @@ mod tests {
       assumptions: Some(asm.clone()),
     };
     let (addr, bytes) = claim.commit();
-    let mut expected = vec![0xE8, 0x08, 3, 1];
+    let mut expected = vec![0xE8, 0x00, 3, 1];
     expected.extend_from_slice(members.as_bytes());
     expected.extend_from_slice(content.as_bytes());
     expected.push(0x01);
@@ -1748,19 +1756,19 @@ mod tests {
     assert!(proof_roundtrip(&proof));
   }
 
-  // ---------- Tag4 flag/size dispatch ----------
+  // ---------- TagN flag/size dispatch ----------
 
-  fn parse_tag(bytes: &[u8]) -> Tag4 {
-    Tag4::get(&mut &bytes[..]).unwrap()
+  fn parse_tag(bytes: &[u8]) -> TagN {
+    TagN::get(4, &mut &bytes[..]).unwrap()
   }
 
-  fn claim_tag(claim: &Claim) -> Tag4 {
+  fn claim_tag(claim: &Claim) -> TagN {
     let mut buf = Vec::new();
     claim.put(&mut buf);
     parse_tag(&buf)
   }
 
-  fn proof_tag(proof: &Proof) -> Tag4 {
+  fn proof_tag(proof: &Proof) -> TagN {
     let mut buf = Vec::new();
     proof.put(&mut buf);
     parse_tag(&buf)
@@ -1801,7 +1809,7 @@ mod tests {
     for (claim, expected_size) in cases {
       let tag = claim_tag(&claim);
       assert_eq!(tag.flag, FLAG_CLAIM, "claim must use flag 0xE");
-      assert_eq!(tag.size, expected_size);
+      assert_eq!(tag.value, expected_size);
     }
   }
 
@@ -1841,7 +1849,7 @@ mod tests {
       let proof = Proof::new(claim, vec![0]);
       let tag = proof_tag(&proof);
       assert_eq!(tag.flag, FLAG_PROOF, "proof must use flag 0xF");
-      assert_eq!(tag.size, expected_size);
+      assert_eq!(tag.value, expected_size);
     }
   }
 
@@ -1859,7 +1867,7 @@ mod tests {
     let b = Address::hash(b"b");
     let asm = Address::hash(b"asm");
 
-    // Single-byte Tag4 + payload + 1 opt byte (+ 32 if Some).
+    // Single-byte TagN + payload + 1 opt byte (+ 32 if Some).
     assert_eq!(
       claim_bytes(&Claim::Eval {
         input: a.clone(),
@@ -1910,7 +1918,7 @@ mod tests {
 
   #[test]
   fn test_claim_first_byte() {
-    // Single-byte Tag4 encoding: size 0-7 fits in one byte (0xE0..0xE7).
+    // Single-byte TagN encoding: size 0-7 fits in one byte (0xE0..0xE7).
     let a = Address::hash(b"a");
     let b = Address::hash(b"b");
     let reveal_info = RevealConstantInfo::Defn {

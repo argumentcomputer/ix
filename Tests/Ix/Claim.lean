@@ -132,8 +132,8 @@ def catalogClaimTests : TestSeq :=
   let proofRoundtrips : Bool := match Ixon.Proof.de proofBytes with
     | .ok p => p.claim == proof.claim && p.proof == proof.proof
     | .error _ => false
-  test "Catalog tag is 2 bytes 0xE8 0x08"
-    (someBytes.data[0]! == 0xE8 && someBytes.data[1]! == 0x08)
+  test "Catalog tag is 2 bytes 0xE8 0x00 (TagN 4 0xE 8)"
+    (someBytes.data[0]! == 0xE8 && someBytes.data[1]! == 0x00)
   ++ test "Catalog no-asm size is 69" (noneBytes.size == 4 + 64 + 1)
   ++ test "Catalog with-asm size is 101" (someBytes.size == 4 + 64 + 33)
   ++ test "Catalog digest parity with Rust pin"

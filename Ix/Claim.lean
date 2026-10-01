@@ -64,7 +64,7 @@ private def getQuotKind : GetM QuotKind := do
   | 0 => return .type | 1 => return .ctor | 2 => return .lift | 3 => return .ind
   | v => throw s!"getQuotKind: invalid {v}"
 
-private def getTag0Size : GetM UInt64 := return (← getTag0).size
+private def getTagN0Value : GetM UInt64 := return (← getTagN 0).value
 
 private def getOpt (mask : UInt64) (bit : UInt64) (read : GetM α) : GetM (Option α) :=
   if mask &&& bit != 0 then some <$> read else pure none
@@ -168,21 +168,21 @@ namespace RevealConstructorInfo
 def put (info : RevealConstructorInfo) : PutM Unit := do
   let mask := computeMask [info.isUnsafe.isSome, info.lvls.isSome, info.cidx.isSome,
                            info.params.isSome, info.fields.isSome, info.typ.isSome]
-  putTag0 ⟨mask⟩
+  putTagN 0 0 mask
   match info.isUnsafe with | some b => putBoolField b | none => pure ()
-  match info.lvls with | some n => putTag0 ⟨n⟩ | none => pure ()
-  match info.cidx with | some n => putTag0 ⟨n⟩ | none => pure ()
-  match info.params with | some n => putTag0 ⟨n⟩ | none => pure ()
-  match info.fields with | some n => putTag0 ⟨n⟩ | none => pure ()
+  match info.lvls with | some n => putTagN 0 0 n | none => pure ()
+  match info.cidx with | some n => putTagN 0 0 n | none => pure ()
+  match info.params with | some n => putTagN 0 0 n | none => pure ()
+  match info.fields with | some n => putTagN 0 0 n | none => pure ()
   match info.typ with | some a => Serialize.put a | none => pure ()
 
 def get : GetM RevealConstructorInfo := do
-  let mask := (← getTag0).size
+  let mask := (← getTagN 0).value
   let isUnsafe ← getOpt mask 1 getBoolField
-  let lvls ← getOpt mask 2 getTag0Size
-  let cidx ← getOpt mask 4 getTag0Size
-  let params ← getOpt mask 8 getTag0Size
-  let fields ← getOpt mask 16 getTag0Size
+  let lvls ← getOpt mask 2 getTagN0Value
+  let cidx ← getOpt mask 4 getTagN0Value
+  let params ← getOpt mask 8 getTagN0Value
+  let fields ← getOpt mask 16 getTagN0Value
   let typ ← getOpt mask 32 Serialize.get
   return ⟨isUnsafe, lvls, cidx, params, fields, typ⟩
 
@@ -195,13 +195,13 @@ end RevealConstructorInfo
 namespace RevealRecursorRule
 
 def put (rule : RevealRecursorRule) : PutM Unit := do
-  putTag0 ⟨rule.ruleIdx⟩
-  putTag0 ⟨rule.fields⟩
+  putTagN 0 0 rule.ruleIdx
+  putTagN 0 0 rule.fields
   Serialize.put rule.rhs
 
 def get : GetM RevealRecursorRule := do
-  let ruleIdx ← getTag0Size
-  let fields ← getTag0Size
+  let ruleIdx ← getTagN0Value
+  let fields ← getTagN0Value
   let rhs ← Serialize.get
   return ⟨ruleIdx, fields, rhs⟩
 
@@ -212,26 +212,26 @@ end RevealRecursorRule
 -- ============================================================================
 
 private def putRules (rules : Array RevealRecursorRule) : PutM Unit := do
-  putTag0 ⟨rules.size.toUInt64⟩
+  putTagN 0 0 rules.size.toUInt64
   for rule in rules do RevealRecursorRule.put rule
 
 private def getRules : GetM (Array RevealRecursorRule) := do
-  let count ← getTag0Size
+  let count ← getTagN0Value
   let mut rules := #[]
   for _ in [:count.toNat] do rules := rules.push (← RevealRecursorRule.get)
   return rules
 
 private def putCtors (ctors : Array (UInt64 × RevealConstructorInfo)) : PutM Unit := do
-  putTag0 ⟨ctors.size.toUInt64⟩
+  putTagN 0 0 ctors.size.toUInt64
   for (idx, info) in ctors do
-    putTag0 ⟨idx⟩
+    putTagN 0 0 idx
     RevealConstructorInfo.put info
 
 private def getCtors : GetM (Array (UInt64 × RevealConstructorInfo)) := do
-  let count ← getTag0Size
+  let count ← getTagN0Value
   let mut ctors := #[]
   for _ in [:count.toNat] do
-    let idx ← getTag0Size
+    let idx ← getTagN0Value
     let info ← RevealConstructorInfo.get
     ctors := ctors.push (idx, info)
   return ctors
@@ -246,21 +246,21 @@ def put : RevealMutConstInfo → PutM Unit
   | .defn kind safety lvls typ value => do
     putU8 0
     let mask := computeMask [kind.isSome, safety.isSome, lvls.isSome, typ.isSome, value.isSome]
-    putTag0 ⟨mask⟩
+    putTagN 0 0 mask
     match kind with | some k => putDefKind k | none => pure ()
     match safety with | some s => putDefSafety s | none => pure ()
-    match lvls with | some n => putTag0 ⟨n⟩ | none => pure ()
+    match lvls with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match value with | some a => Serialize.put a | none => pure ()
   | .indc isUnsafe lvls params indices typ ctors => do
     putU8 1
     let mask := computeMask [isUnsafe.isSome, lvls.isSome, params.isSome, 
       indices.isSome, typ.isSome, ctors.isSome]
-    putTag0 ⟨mask⟩
+    putTagN 0 0 mask
     match isUnsafe with | some b => putBoolField b | none => pure ()
-    match lvls with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match params with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match indices with | some n => putTag0 ⟨n⟩ | none => pure ()
+    match lvls with | some n => putTagN 0 0 n | none => pure ()
+    match params with | some n => putTagN 0 0 n | none => pure ()
+    match indices with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match ctors with | some c => putCtors c | none => pure ()
   | .recr k isUnsafe lvls params indices motives minors typ rules => do
@@ -268,44 +268,44 @@ def put : RevealMutConstInfo → PutM Unit
     let mask := computeMask [k.isSome, isUnsafe.isSome, lvls.isSome,
                              params.isSome, indices.isSome, motives.isSome,
                              minors.isSome, typ.isSome, rules.isSome]
-    putTag0 ⟨mask⟩
+    putTagN 0 0 mask
     match k with | some b => putBoolField b | none => pure ()
     match isUnsafe with | some b => putBoolField b | none => pure ()
-    match lvls with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match params with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match indices with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match motives with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match minors with | some n => putTag0 ⟨n⟩ | none => pure ()
+    match lvls with | some n => putTagN 0 0 n | none => pure ()
+    match params with | some n => putTagN 0 0 n | none => pure ()
+    match indices with | some n => putTagN 0 0 n | none => pure ()
+    match motives with | some n => putTagN 0 0 n | none => pure ()
+    match minors with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match rules with | some r => putRules r | none => pure ()
 
 def get : GetM RevealMutConstInfo := do
   let variant ← getU8
-  let mask ← getTag0Size
+  let mask ← getTagN0Value
   match variant with
   | 0 => do -- Defn
     let kind ← getOpt mask 1 getDefKind
     let safety ← getOpt mask 2 getDefSafety
-    let lvls ← getOpt mask 4 getTag0Size
+    let lvls ← getOpt mask 4 getTagN0Value
     let typ ← getOpt mask 8 Serialize.get
     let value ← getOpt mask 16 Serialize.get
     return .defn kind safety lvls typ value
   | 1 => do -- Indc
     let isUnsafe ← getOpt mask 1 getBoolField
-    let lvls ← getOpt mask 2 getTag0Size
-    let params ← getOpt mask 4 getTag0Size
-    let indices ← getOpt mask 8 getTag0Size
+    let lvls ← getOpt mask 2 getTagN0Value
+    let params ← getOpt mask 4 getTagN0Value
+    let indices ← getOpt mask 8 getTagN0Value
     let typ ← getOpt mask 16 Serialize.get
     let ctors ← getOpt mask 32 getCtors
     return .indc isUnsafe lvls params indices typ ctors
   | 2 => do -- Recr
     let k ← getOpt mask 1 getBoolField
     let isUnsafe ← getOpt mask 2 getBoolField
-    let lvls ← getOpt mask 4 getTag0Size
-    let params ← getOpt mask 8 getTag0Size
-    let indices ← getOpt mask 16 getTag0Size
-    let motives ← getOpt mask 32 getTag0Size
-    let minors ← getOpt mask 64 getTag0Size
+    let lvls ← getOpt mask 4 getTagN0Value
+    let params ← getOpt mask 8 getTagN0Value
+    let indices ← getOpt mask 16 getTagN0Value
+    let motives ← getOpt mask 32 getTagN0Value
+    let minors ← getOpt mask 64 getTagN0Value
     let typ ← getOpt mask 128 Serialize.get
     let rules ← getOpt mask 256 getRules
     return .recr k isUnsafe lvls params indices motives minors typ rules
@@ -323,10 +323,10 @@ def put : RevealConstantInfo → PutM Unit
   | .defn kind safety lvls typ value => do
     putU8 0
     let mask := computeMask [kind.isSome, safety.isSome, lvls.isSome, typ.isSome, value.isSome]
-    putTag0 ⟨mask⟩
+    putTagN 0 0 mask
     match kind with | some k => putDefKind k | none => pure ()
     match safety with | some s => putDefSafety s | none => pure ()
-    match lvls with | some n => putTag0 ⟨n⟩ | none => pure ()
+    match lvls with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match value with | some a => Serialize.put a | none => pure ()
   | .recr k isUnsafe lvls params indices motives minors typ rules => do
@@ -334,120 +334,120 @@ def put : RevealConstantInfo → PutM Unit
     let mask := computeMask [k.isSome, isUnsafe.isSome, lvls.isSome,
                              params.isSome, indices.isSome, motives.isSome,
                              minors.isSome, typ.isSome, rules.isSome]
-    putTag0 ⟨mask⟩
+    putTagN 0 0 mask
     match k with | some b => putBoolField b | none => pure ()
     match isUnsafe with | some b => putBoolField b | none => pure ()
-    match lvls with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match params with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match indices with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match motives with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match minors with | some n => putTag0 ⟨n⟩ | none => pure ()
+    match lvls with | some n => putTagN 0 0 n | none => pure ()
+    match params with | some n => putTagN 0 0 n | none => pure ()
+    match indices with | some n => putTagN 0 0 n | none => pure ()
+    match motives with | some n => putTagN 0 0 n | none => pure ()
+    match minors with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match rules with | some r => putRules r | none => pure ()
   | .axio isUnsafe lvls typ => do
     putU8 2
     let mask := computeMask [isUnsafe.isSome, lvls.isSome, typ.isSome]
-    putTag0 ⟨mask⟩
+    putTagN 0 0 mask
     match isUnsafe with | some b => putBoolField b | none => pure ()
-    match lvls with | some n => putTag0 ⟨n⟩ | none => pure ()
+    match lvls with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
   | .quot kind lvls typ => do
     putU8 3
     let mask := computeMask [kind.isSome, lvls.isSome, typ.isSome]
-    putTag0 ⟨mask⟩
+    putTagN 0 0 mask
     match kind with | some k => putQuotKind k | none => pure ()
-    match lvls with | some n => putTag0 ⟨n⟩ | none => pure ()
+    match lvls with | some n => putTagN 0 0 n | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
   | .cPrj idx cidx block => do
     putU8 4
     let mask := computeMask [idx.isSome, cidx.isSome, block.isSome]
-    putTag0 ⟨mask⟩
-    match idx with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match cidx with | some n => putTag0 ⟨n⟩ | none => pure ()
+    putTagN 0 0 mask
+    match idx with | some n => putTagN 0 0 n | none => pure ()
+    match cidx with | some n => putTagN 0 0 n | none => pure ()
     match block with | some a => Serialize.put a | none => pure ()
   | .rPrj idx block => do
     putU8 5
     let mask := computeMask [idx.isSome, block.isSome]
-    putTag0 ⟨mask⟩
-    match idx with | some n => putTag0 ⟨n⟩ | none => pure ()
+    putTagN 0 0 mask
+    match idx with | some n => putTagN 0 0 n | none => pure ()
     match block with | some a => Serialize.put a | none => pure ()
   | .iPrj idx block => do
     putU8 6
     let mask := computeMask [idx.isSome, block.isSome]
-    putTag0 ⟨mask⟩
-    match idx with | some n => putTag0 ⟨n⟩ | none => pure ()
+    putTagN 0 0 mask
+    match idx with | some n => putTagN 0 0 n | none => pure ()
     match block with | some a => Serialize.put a | none => pure ()
   | .dPrj idx block => do
     putU8 7
     let mask := computeMask [idx.isSome, block.isSome]
-    putTag0 ⟨mask⟩
-    match idx with | some n => putTag0 ⟨n⟩ | none => pure ()
+    putTagN 0 0 mask
+    match idx with | some n => putTagN 0 0 n | none => pure ()
     match block with | some a => Serialize.put a | none => pure ()
   | .muts components => do
     putU8 8
     let mask : UInt64 := if components.isEmpty then 0 else 1
-    putTag0 ⟨mask⟩
+    putTagN 0 0 mask
     if !components.isEmpty then
-      putTag0 ⟨components.size.toUInt64⟩
+      putTagN 0 0 components.size.toUInt64
       for (idx, info) in components do
-        putTag0 ⟨idx⟩
+        putTagN 0 0 idx
         RevealMutConstInfo.put info
 
 def get : GetM RevealConstantInfo := do
   let variant ← getU8
-  let mask ← getTag0Size
+  let mask ← getTagN0Value
   match variant with
   | 0 => do -- Defn
     let kind ← getOpt mask 1 getDefKind
     let safety ← getOpt mask 2 getDefSafety
-    let lvls ← getOpt mask 4 getTag0Size
+    let lvls ← getOpt mask 4 getTagN0Value
     let typ ← getOpt mask 8 Serialize.get
     let value ← getOpt mask 16 Serialize.get
     return .defn kind safety lvls typ value
   | 1 => do -- Recr
     let k ← getOpt mask 1 getBoolField
     let isUnsafe ← getOpt mask 2 getBoolField
-    let lvls ← getOpt mask 4 getTag0Size
-    let params ← getOpt mask 8 getTag0Size
-    let indices ← getOpt mask 16 getTag0Size
-    let motives ← getOpt mask 32 getTag0Size
-    let minors ← getOpt mask 64 getTag0Size
+    let lvls ← getOpt mask 4 getTagN0Value
+    let params ← getOpt mask 8 getTagN0Value
+    let indices ← getOpt mask 16 getTagN0Value
+    let motives ← getOpt mask 32 getTagN0Value
+    let minors ← getOpt mask 64 getTagN0Value
     let typ ← getOpt mask 128 Serialize.get
     let rules ← getOpt mask 256 getRules
     return .recr k isUnsafe lvls params indices motives minors typ rules
   | 2 => do -- Axio
     let isUnsafe ← getOpt mask 1 getBoolField
-    let lvls ← getOpt mask 2 getTag0Size
+    let lvls ← getOpt mask 2 getTagN0Value
     let typ ← getOpt mask 4 Serialize.get
     return .axio isUnsafe lvls typ
   | 3 => do -- Quot
     let kind ← getOpt mask 1 getQuotKind
-    let lvls ← getOpt mask 2 getTag0Size
+    let lvls ← getOpt mask 2 getTagN0Value
     let typ ← getOpt mask 4 Serialize.get
     return .quot kind lvls typ
   | 4 => do -- CPrj
-    let idx ← getOpt mask 1 getTag0Size
-    let cidx ← getOpt mask 2 getTag0Size
+    let idx ← getOpt mask 1 getTagN0Value
+    let cidx ← getOpt mask 2 getTagN0Value
     let block ← getOpt mask 4 Serialize.get
     return .cPrj idx cidx block
   | 5 => do -- RPrj
-    let idx ← getOpt mask 1 getTag0Size
+    let idx ← getOpt mask 1 getTagN0Value
     let block ← getOpt mask 2 Serialize.get
     return .rPrj idx block
   | 6 => do -- IPrj
-    let idx ← getOpt mask 1 getTag0Size
+    let idx ← getOpt mask 1 getTagN0Value
     let block ← getOpt mask 2 Serialize.get
     return .iPrj idx block
   | 7 => do -- DPrj
-    let idx ← getOpt mask 1 getTag0Size
+    let idx ← getOpt mask 1 getTagN0Value
     let block ← getOpt mask 2 Serialize.get
     return .dPrj idx block
   | 8 => do -- Muts
     let components ← if mask &&& 1 != 0 then do
-      let count ← getTag0Size
+      let count ← getTagN0Value
       let mut comps : Array (UInt64 × RevealMutConstInfo) := #[]
       for _ in [:count.toNat] do
-        let idx ← getTag0Size
+        let idx ← getTagN0Value
         let info ← RevealMutConstInfo.get
         comps := comps.push (idx, info)
       pure comps
@@ -463,7 +463,7 @@ end RevealConstantInfo
 
 namespace Claim
 
--- Tag4 size dispatch (mirrors src/ix/ixon/proof.rs).
+-- TagN (`f = 4`) value dispatch (mirrors src/ix/ixon/proof.rs).
 -- Flag 0xE holds Env, Comm, AssumptionTree, and claims. Variants 0–7
 -- are single-byte tags and all taken; variant 8 (catalog) is the
 -- first multi-byte claim tag, `0xE8 0x08` on the wire.
@@ -528,7 +528,7 @@ def getScope (validator : UInt8) : GetM Unit := do
   unless (← getU8) == validator do throw "claim: wrong validator identity"
 
 def put (claim : Claim) : PutM Unit := do
-  putTag4 ⟨FLAG_CLAIM, variantOf claim⟩
+  putTagN 4 FLAG_CLAIM (variantOf claim)
   putScope (validatorForVariant (variantOf claim))
   match claim with
   | .eval input output assumptions => do
@@ -557,36 +557,36 @@ def put (claim : Claim) : PutM Unit := do
     Serialize.put profile
 
 def get : GetM Claim := do
-  let tag ← getTag4
+  let tag ← getTagN 4
   if tag.flag != FLAG_CLAIM then
     throw s!"Claim.get: expected flag 0xE, got {tag.flag}"
-  getScope (validatorForVariant tag.size)
-  if tag.size == VARIANT_EVAL_CLAIM then
+  getScope (validatorForVariant tag.value)
+  if tag.value == VARIANT_EVAL_CLAIM then
     let input ← Serialize.get
     let output ← Serialize.get
     let asm ← getOptAddr
     return .eval input output asm
-  else if tag.size == VARIANT_CHECK_CLAIM then
+  else if tag.value == VARIANT_CHECK_CLAIM then
     let const ← Serialize.get
     let asm ← getOptAddr
     return .check const asm
-  else if tag.size == VARIANT_CHECK_ENV_CLAIM then
+  else if tag.value == VARIANT_CHECK_ENV_CLAIM then
     let root ← Serialize.get
     let asm ← getOptAddr
     return .checkEnv root asm
-  else if tag.size == VARIANT_REVEAL_CLAIM then
+  else if tag.value == VARIANT_REVEAL_CLAIM then
     return .reveal (← Serialize.get) (← RevealConstantInfo.get)
-  else if tag.size == VARIANT_CONTAINS_CLAIM then
+  else if tag.value == VARIANT_CONTAINS_CLAIM then
     return .contains (← Serialize.get) (← Serialize.get)
-  else if tag.size == VARIANT_CATALOG_CLAIM then
+  else if tag.value == VARIANT_CATALOG_CLAIM then
     let members ← Serialize.get
     let content ← Serialize.get
     let asm ← getOptAddr
     return .catalog members content asm
-  else if tag.size == VARIANT_RESOURCE_CLAIM then
+  else if tag.value == VARIANT_RESOURCE_CLAIM then
     return .resource (← Serialize.get) (← Serialize.get)
   else
-    throw s!"Claim.get: invalid claim variant {tag.size}"
+    throw s!"Claim.get: invalid claim variant {tag.value}"
 
 def ser (c : Claim) : ByteArray := runPut (put c)
 def de (bytes : ByteArray) : Except String Claim := runGetExact get bytes
@@ -621,7 +621,7 @@ structure Proof where
 
 namespace Proof
 
-/-- The proof-variant size matching this claim, used as the Tag4 size
+/-- The proof-variant size matching this claim, used as the TagN (`f = 4`) value
     field under `FLAG_PROOF = 0xF`. -/
 def variantOf : Ix.Claim → UInt64
   | .eval _ _ _     => Ix.Claim.VARIANT_EVAL_PROOF
@@ -633,7 +633,7 @@ def variantOf : Ix.Claim → UInt64
   | .resource _ _   => Ix.Claim.VARIANT_RESOURCE_PROOF
 
 def put (p : Proof) : PutM Unit := do
-  putTag4 ⟨Ix.Claim.FLAG_PROOF, variantOf p.claim⟩
+  putTagN 4 Ix.Claim.FLAG_PROOF (variantOf p.claim)
   Ix.Claim.putScope (Ix.Claim.validatorForVariant (Ix.Claim.variantOf p.claim))
   match p.claim with
   | .eval input output asm => do
@@ -659,47 +659,47 @@ def put (p : Proof) : PutM Unit := do
   | .resource root profile => do
     Serialize.put root
     Serialize.put profile
-  putTag0 ⟨p.proof.size.toUInt64⟩
+  putTagN 0 0 p.proof.size.toUInt64
   putBytes p.proof
 
 def get : GetM Proof := do
-  let tag ← getTag4
+  let tag ← getTagN 4
   if tag.flag != Ix.Claim.FLAG_PROOF then
     throw s!"Ixon.Proof.get: expected flag 0xF, got {tag.flag}"
-  Ix.Claim.getScope (Ix.Claim.validatorForVariant (tag.size + 3))
+  Ix.Claim.getScope (Ix.Claim.validatorForVariant (tag.value + 3))
   let claim : Ix.Claim ←
-    if tag.size == Ix.Claim.VARIANT_EVAL_PROOF then do
+    if tag.value == Ix.Claim.VARIANT_EVAL_PROOF then do
       let input ← Serialize.get
       let output ← Serialize.get
       let asm ← Ix.Claim.getOptAddr
       pure (.eval input output asm)
-    else if tag.size == Ix.Claim.VARIANT_CHECK_PROOF then do
+    else if tag.value == Ix.Claim.VARIANT_CHECK_PROOF then do
       let addr ← Serialize.get
       let asm ← Ix.Claim.getOptAddr
       pure (.check addr asm)
-    else if tag.size == Ix.Claim.VARIANT_CHECK_ENV_PROOF then do
+    else if tag.value == Ix.Claim.VARIANT_CHECK_ENV_PROOF then do
       let root ← Serialize.get
       let asm ← Ix.Claim.getOptAddr
       pure (.checkEnv root asm)
-    else if tag.size == Ix.Claim.VARIANT_REVEAL_PROOF then do
+    else if tag.value == Ix.Claim.VARIANT_REVEAL_PROOF then do
       let comm ← Serialize.get
       let info ← Ix.RevealConstantInfo.get
       pure (.reveal comm info)
-    else if tag.size == Ix.Claim.VARIANT_CONTAINS_PROOF then do
+    else if tag.value == Ix.Claim.VARIANT_CONTAINS_PROOF then do
       let tree ← Serialize.get
       let target ← Serialize.get
       pure (.contains tree target)
-    else if tag.size == Ix.Claim.VARIANT_CATALOG_PROOF then do
+    else if tag.value == Ix.Claim.VARIANT_CATALOG_PROOF then do
       let members ← Serialize.get
       let content ← Serialize.get
       let asm ← Ix.Claim.getOptAddr
       pure (.catalog members content asm)
-    else if tag.size == Ix.Claim.VARIANT_RESOURCE_PROOF then do
+    else if tag.value == Ix.Claim.VARIANT_RESOURCE_PROOF then do
       pure (.resource (← Serialize.get) (← Serialize.get))
     else
-      throw s!"Ixon.Proof.get: invalid proof variant {tag.size}"
-  let lenTag ← getTag0
-  let bytes ← getBytes lenTag.size.toNat
+      throw s!"Ixon.Proof.get: invalid proof variant {tag.value}"
+  let lenTag ← getTagN 0
+  let bytes ← getBytes lenTag.value.toNat
   pure { claim, proof := bytes }
 
 def ser (p : Proof) : ByteArray := runPut (put p)

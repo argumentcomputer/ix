@@ -29,7 +29,7 @@ use crate::contract::{BinderContract, LetContract, ValueContract};
 use crate::expr::Expr;
 use crate::serialize::put_expr;
 use crate::sharing::{analyze_block, build_sharing_vec, decide_sharing};
-use crate::tag::{Tag0, Tag4, u64_byte_count};
+use crate::tag::{TagN, u64_byte_count};
 use crate::univ::Univ;
 
 // ===========================================================================
@@ -362,6 +362,11 @@ fn boundary_sizes() -> Vec<u64> {
     let x = 1u64 << (8 * b);
     sizes.extend([x - 1, x, x + 1]);
   }
+  for f in [0u32, 2, 4] {
+    for e in [TagN::end1(f), TagN::end2(f), TagN::end3(f), TagN::end4(f)] {
+      sizes.extend([e - 1, e, e + 1]);
+    }
+  }
   sizes
 }
 
@@ -370,30 +375,30 @@ fn tag_lengths_match_encoders() {
   for s in boundary_sizes() {
     assert_eq!(byte_count(s), u64::from(u64_byte_count(s)), "byte_count {s}");
     let mut b = Vec::new();
-    Tag4::new(Expr::FLAG_SHARE, s).put(&mut b);
+    TagN::put(4, Expr::FLAG_SHARE, s, &mut b);
     assert_eq!(tag4_len(s), b.len() as u64, "tag4 {s}");
     assert_eq!(share_width(s), b.len() as u64, "share {s}");
     assert_eq!(expr_len(&Expr::Share(s)), Some(b.len() as u64));
     let mut b = Vec::new();
-    Tag0::new(s).put(&mut b);
+    TagN::put(0, 0, s, &mut b);
     assert_eq!(tag0_len(s), b.len() as u64, "tag0 {s}");
   }
-  // Pinned header order: Tag4 bytes of one flag, unsigned lexicographic.
+  // Pinned header order: TagN bytes of one flag, unsigned lexicographic.
   for a in boundary_sizes() {
     for b in boundary_sizes() {
       let (mut x, mut y) = (Vec::new(), Vec::new());
-      Tag4::new(Expr::FLAG_APP, a).put(&mut x);
-      Tag4::new(Expr::FLAG_APP, b).put(&mut y);
+      TagN::put(4, Expr::FLAG_APP, a, &mut x);
+      TagN::put(4, Expr::FLAG_APP, b, &mut y);
       assert_eq!(tag4_bytes_cmp(a, b), x.cmp(&y), "{a} vs {b}");
     }
   }
   // Share width boundaries named by the plan.
   for (i, w) in
-    [(7u64, 1u64), (8, 2), (255, 2), (256, 3), (65535, 3), (65536, 4)]
+    [(7u64, 1u64), (8, 2), (1031, 2), (1032, 3), (66567, 3), (66568, 5)]
   {
     assert_eq!(share_width(i), w);
   }
-  for (n, w) in [(127u64, 1u64), (128, 2), (255, 2), (256, 3)] {
+  for (n, w) in [(127u64, 1u64), (128, 2), (16511, 2), (16512, 3), (82048, 5)] {
     assert_eq!(tag0_len(n), w);
   }
 }
@@ -2316,7 +2321,7 @@ fn uniform_byte_level() {
 // Tiered construction (port of W1's Tests/Ix/SharingTiered.lean)
 // ===========================================================================
 
-const LAYOUTS: [ShareLayout; 2] = [ShareLayout::Tag4, ShareLayout::TagN];
+const LAYOUTS: [ShareLayout; 1] = [ShareLayout::TagN];
 
 #[test]
 fn tiered_layout_widths() {
@@ -2338,13 +2343,17 @@ fn tiered_layout_widths() {
     (1032, 66568, 66568 + (1 << 32))
   );
   assert_eq!(ShareLayout::TagN.width_at(u64::MAX), 9);
-  let t4 = ShareLayout::Tag4;
-  assert_eq!(
-    (t4.uniform_width(8), t4.uniform_width(256), t4.uniform_width(257)),
-    (1, 2, 3)
-  );
   let tn = ShareLayout::TagN;
-  assert_eq!((tn.uniform_width(1032), tn.uniform_width(1033)), (2, 3));
+  assert_eq!(
+    (
+      tn.uniform_width(8),
+      tn.uniform_width(9),
+      tn.uniform_width(1032),
+      tn.uniform_width(1033)
+    ),
+    (1, 2, 2, 3)
+  );
+  assert_eq!(ShareLayout::wire(), ShareLayout::TagN);
 }
 
 #[test]
@@ -2434,7 +2443,7 @@ fn tiered_allocation_properties() {
         roundtrip(&n).len() as u64,
         constant_fixed_len(&c).unwrap() + r.variable_len
       );
-      if l == ShareLayout::Tag4 {
+      if l == ShareLayout::wire() {
         assert_eq!(r.model_len, r.variable_len);
       }
       let (again, _) =
@@ -2456,7 +2465,7 @@ fn tiered_allocation_properties() {
     "tiered: {checked} runs; allocation lowered the reference cost in {changed}, \
      positive savings in {saved}, phase-1 order kept in {kept}"
   );
-  assert!(checked == 240 && changed > 0);
+  assert!(checked == 120 && changed > 0);
 }
 
 /// Brute force over all subsets: dependency-closed, at most `cap` terms,

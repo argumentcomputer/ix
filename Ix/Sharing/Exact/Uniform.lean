@@ -61,11 +61,13 @@
     `≤ tag4Size(spine length)`), and replace every occurrence by `Share(t)`:
     descendants lose occurrences, ancestors get a `w`-byte leaf where the
     subtree was, telescopes only shorten. The length drops by at least `g`
-    minus the growth of the table count's `Tag0`, contradicting minimality.
-    Threshold: the `Tag0` grows by at most 1 byte, so `θ = 2` always holds;
-    `θ = 1` holds when `tag0Size(#candidates) = tag0Size(#terms with g ≥ 2)`,
-    since every candidate-only minimum contains the `g ≥ 2` terms and only
-    candidates, so its count and that count plus one share a `Tag0` bracket.
+    minus the growth of the table count's TagN, contradicting minimality.
+    Threshold: with `n` candidates, one more entry grows the count by at most
+    `tag0StepBound n` bytes (1 below 82048, the TagN `f = 0` rung-3 end), so
+    `θ = θmax = tag0StepBound n + 1` always holds; `θ = 1` holds when
+    `tag0Size(#candidates) = tag0Size(#terms with g ≥ θmax)`, since every
+    candidate-only minimum contains the `g ≥ θmax` terms and only candidates,
+    so its count and that count plus one share a TagN bracket.
     Visible counts, for a maybe-stored set `M` (here the candidates): lower
     bounds `d(t)`, `h(t)` on the inline occurrences of `t` in an encoding of
     any `S ⊆ M` with `t ∉ S`. One per root occurrence, plus per edge from `z`
@@ -1033,9 +1035,20 @@ structure UniformSharingResult where
   lowerBracket : Bool
   deriving Inhabited
 
-/-- First count with the same `Tag0` width as `k`. -/
+/-- First count with the same TagN (`f = 0`) width as `k` (`tag0Size`): the
+start of `k`'s rung. -/
 def tag0BracketStart (k : Nat) : Nat :=
-  if k < 128 then 0 else if k < 256 then 128 else 256 ^ (natByteCount k - 1)
+  if k < Ixon.tagNEnd1 0 then 0
+  else if k < Ixon.tagNEnd2 0 then Ixon.tagNEnd1 0
+  else if k < Ixon.tagNEnd3 0 then Ixon.tagNEnd2 0
+  else if k < Ixon.tagNEnd4 0 then Ixon.tagNEnd3 0
+  else Ixon.tagNEnd4 0
+
+/-- An upper bound on `tag0Size (k + 1) - tag0Size k` for every `k < n`: the
+TagN (`f = 0`) width grows by one byte at 128 and 16512, by two at 82048 and
+by four at 4295049344. -/
+def tag0StepBound (n : Nat) : Nat :=
+  if n < Ixon.tagNEnd3 0 then 1 else if n < Ixon.tagNEnd4 0 then 2 else 4
 
 /-- The next term of the pinned order: among the remaining terms whose
 nearest stored descendants are all placed, the larger in-degree first, then
@@ -1241,14 +1254,16 @@ def uniformStage (w : Nat) (ex : Expanded) (p : Prep) : UStage :=
   let cand := searchCandidates p f w
   let b0 := uniformBounds p w cand
   let vis0 := visibleCounts ex.dag ex.roots cand
-  -- The certain-stored threshold: 2 always holds (the table count grows by at
-  -- most one byte); 1 holds when every minimum lies in one count bracket
-  -- (it contains the gain-2 terms and only candidates).
-  let cls2 := classifyWith p f w b0 vis0 2
-  let nCs2 := (cls2.filter (· == .certainStored)).size
+  -- The certain-stored threshold: `1 + tag0StepBound nCand` always holds (one
+  -- more entry grows the table count by at most that many bytes; 2 below
+  -- 82048 candidates); 1 holds when every minimum lies in one count bracket
+  -- (it contains the certain-stored terms and only candidates).
   let nCand := (cand.filter id).size
-  let theta : _root_.Int := if tag0Size nCand == tag0Size nCs2 then 1 else 2
-  let cls := if theta == 1 then classifyWith p f w b0 vis0 1 else cls2
+  let thetaMax : _root_.Int := tag0StepBound nCand + 1
+  let clsMax := classifyWith p f w b0 vis0 thetaMax
+  let nCsMax := (clsMax.filter (· == .certainStored)).size
+  let theta : _root_.Int := if tag0Size nCand == tag0Size nCsMax then 1 else thetaMax
+  let cls := if theta == 1 then classifyWith p f w b0 vis0 1 else clsMax
   let pick (c : UClass) := (Array.range n).filter (cls[·]! == c)
   let cs := pick .certainStored
   let unc := pick .uncertain

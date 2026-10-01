@@ -27,7 +27,7 @@ use ix_common::env::{
 use ix_common::strong_ordering::SOrd;
 
 use ixon::{
-  CompileError, Tag0,
+  CompileError, TagN,
   canon_univ::canon_univ,
   constant::{
     Axiom, Constant, ConstantInfo, Constructor, Definition, Inductive,
@@ -2342,7 +2342,7 @@ fn serialize_syntax_inner(
       bytes.push(1);
       serialize_source_info(info, stt, bytes);
       bytes.extend_from_slice(compile_name(kind, stt).as_bytes());
-      Tag0::new(args.len() as u64).put(bytes);
+      TagN::put(0, 0, args.len() as u64, bytes);
       for arg in args {
         serialize_syntax_inner(arg, stt, bytes);
       }
@@ -2357,7 +2357,7 @@ fn serialize_syntax_inner(
       serialize_source_info(info, stt, bytes);
       serialize_substring(raw_val, stt, bytes);
       bytes.extend_from_slice(compile_name(val, stt).as_bytes());
-      Tag0::new(preresolved.len() as u64).put(bytes);
+      TagN::put(0, 0, preresolved.len() as u64, bytes);
       for pr in preresolved {
         serialize_preresolved(pr, stt, bytes);
       }
@@ -2375,14 +2375,14 @@ fn serialize_source_info(
       bytes.push(0);
       serialize_substring(leading, stt, bytes);
       // u64::MAX sentinel for positions that overflow u64 (should never happen in practice)
-      Tag0::new(leading_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
+      TagN::put(0, 0, leading_pos.to_u64().unwrap_or(u64::MAX), bytes);
       serialize_substring(trailing, stt, bytes);
-      Tag0::new(trailing_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
+      TagN::put(0, 0, trailing_pos.to_u64().unwrap_or(u64::MAX), bytes);
     },
     LeanSourceInfo::Synthetic(start, end, canonical) => {
       bytes.push(1);
-      Tag0::new(start.to_u64().unwrap_or(u64::MAX)).put(bytes);
-      Tag0::new(end.to_u64().unwrap_or(u64::MAX)).put(bytes);
+      TagN::put(0, 0, start.to_u64().unwrap_or(u64::MAX), bytes);
+      TagN::put(0, 0, end.to_u64().unwrap_or(u64::MAX), bytes);
       bytes.push(if *canonical { 1 } else { 0 });
     },
     LeanSourceInfo::None => bytes.push(2),
@@ -2395,8 +2395,8 @@ fn serialize_substring(
   bytes: &mut Vec<u8>,
 ) {
   bytes.extend_from_slice(store_string(&ss.str, stt).as_bytes());
-  Tag0::new(ss.start_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
-  Tag0::new(ss.stop_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
+  TagN::put(0, 0, ss.start_pos.to_u64().unwrap_or(u64::MAX), bytes);
+  TagN::put(0, 0, ss.stop_pos.to_u64().unwrap_or(u64::MAX), bytes);
 }
 
 fn serialize_preresolved(
@@ -2412,7 +2412,7 @@ fn serialize_preresolved(
     SyntaxPreresolved::Decl(n, fields) => {
       bytes.push(1);
       bytes.extend_from_slice(compile_name(n, stt).as_bytes());
-      Tag0::new(fields.len() as u64).put(bytes);
+      TagN::put(0, 0, fields.len() as u64, bytes);
       for f in fields {
         bytes.extend_from_slice(store_string(f, stt).as_bytes());
       }
@@ -7726,7 +7726,8 @@ mod tests {
 
   #[test]
   fn tiered_route_reaches_the_17_byte_minimum() {
-    for layout in [ShareLayout::Tag4, ShareLayout::TagN] {
+    {
+      let layout = ShareLayout::TagN;
       let route = SharingRoute::new(SharingConstruction::Tiered(layout));
       let r = apply_sharing_to_axiom_via(
         &route,
@@ -7757,7 +7758,8 @@ mod tests {
       typ: ax.typ.clone(),
       value: Expr::app(ax.typ.clone(), ax.typ.clone()),
     };
-    for layout in [ShareLayout::Tag4, ShareLayout::TagN] {
+    {
+      let layout = ShareLayout::TagN;
       let route = SharingRoute::new(SharingConstruction::Tiered(layout));
       let univs = vec![Univ::zero()];
       let cases = [

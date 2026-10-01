@@ -329,7 +329,7 @@ pub struct AuxLayout {
 }
 
 /// One constant in a [`LazyIndex`]: its content address plus the byte window
-/// `[offset, offset+len)` of its serialized Tag4 body within the source buffer.
+/// `[offset, offset+len)` of its serialized TagN body within the source buffer.
 /// No bytes are copied — the consumer (the Lean lazy loader) slices its own
 /// copy of the buffer at these offsets.
 #[derive(Debug, Clone)]
