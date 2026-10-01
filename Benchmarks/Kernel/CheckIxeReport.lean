@@ -1,8 +1,3 @@
-/-
-Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: MIT OR Apache-2.0
--/
-
 import Benchmarks.Kernel.CheckIxeRows
 
 /-! # Summaries of an environment check's rows (untrusted tooling)

@@ -1,8 +1,3 @@
-/-
-Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: Apache-2.0 AND (MIT OR Apache-2.0)
--/
-
 import Std.Data.HashMap
 import Std.Data.HashSet
 import Tests.Ix.Kernel.KernelLayout

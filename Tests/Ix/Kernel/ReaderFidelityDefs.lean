@@ -1,8 +1,3 @@
-/-
-Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: MIT OR Apache-2.0
--/
-
 /-! # Lean sources of the reader's fidelity test
 
 Ordinary Lean declarations, checked by Lean's kernel, that

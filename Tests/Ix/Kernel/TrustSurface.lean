@@ -1,8 +1,3 @@
-/-
-Copyright (c) 2026 Argument Computer Corporation.
-SPDX-License-Identifier: Apache-2.0 AND (MIT OR Apache-2.0)
--/
-
 import Tests.Ix.Kernel.KernelLayout
 
 /-! # The kernel's trust-surface fence (`kernel-trust-surface`)
