@@ -347,7 +347,7 @@ def usage : String :=
   "usage: corpus check [MANIFEST…] [--interpret] [--lean LEAN] [--work DIR]\n" ++
   "       corpus rebuild MANIFEST --ix IX [--ix-path DIR]… [--lean LEAN] [--work DIR] [--only FIXTURE]…"
 
-def main (args : List String) : IO UInt32 := cli "corpus" do
+def toolMain (args : List String) : IO UInt32 := cli "corpus" do
   let rec parse (t : Tools) (pos : List String) (only : List String) (interp : Bool) :
       List String → Except String (Tools × List String × List String × Bool)
     | [] => .ok (t, pos, only, interp)

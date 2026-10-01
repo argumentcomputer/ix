@@ -258,7 +258,7 @@ def stackKb : Nat := CompilatrixTests.Src.Bench.deepStackKb
 /-- Usage: `tests-corpus [MANIFEST…] [--cc CC] [--work DIR] [--only FIXTURE]…
 [--root ROOT]… [--no-machines] [--progress] [--survey [--dump]]`. Without a manifest, every
 registered family (`Corpus.families`). -/
-def main (args : List String) : IO UInt32 := do
+def suiteMain (args : List String) : IO UInt32 := do
   -- re-run once with a large stack for the big-step evaluators
   if (← IO.getEnv "COMPILATRIX_CORPUS_CHILD").isNone then
     let self ← IO.appPath

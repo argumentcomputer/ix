@@ -8,4 +8,4 @@ def main (args : List String) : IO UInt32 :=
   match args with
   | ["kernel-artifacts"] => CompilatrixTests.Corpus.KernelGen.main false
   | ["kernel-artifacts", "--check"] => CompilatrixTests.Corpus.KernelGen.main true
-  | _ => CompilatrixTests.Corpus.main args
+  | _ => CompilatrixTests.Corpus.toolMain args
