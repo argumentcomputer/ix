@@ -311,10 +311,9 @@ def maxChain (terms : List Univ) : Univ :=
     inversion (see the Rust twin's doc for the full construction). An
     atom `(i, k)@P` self-strips to `P∖{i}` only when its `u_i = 0`
     fallout is `covered` there AND the context's gates are leak-free
-    (`gatesLeakFree`); otherwise it stays gated at `P`. Before 2026-10-01
-    the second condition was missing, and
-    `imax (imax (imax u w + 1) u) v` canonicalized to a level that is `2`
-    at `u = 0, v = 1, w = 2` where it is `1`. -/
+    (`gatesLeakFree`); otherwise it stays gated at `P`. Without the second
+    condition, `imax (imax (imax u w + 1) u) v` would canonicalize to a
+    level that is `2` at `u = 0, v = 1, w = 2` where it is `1`. -/
 def linearize (norm : CNorm) : Univ := Id.run do
   let cRoot := (norm.findD [] {}).constant
   -- Explode into per-atom items; self-strip under domination coverage.

@@ -1550,18 +1550,18 @@ languages:
 - **P0 (value preservation):** `canonUniv u` and `u` take the same
   value at every valuation of the parameters. The compiler must not
   change the universe a declaration states: the kernel checks the
-  stored canonical levels. Until 2026-10-01 the leak-free proviso
-  above was missing and P0 failed on deep `imax`-by-parameter chains
-  over three or more parameters: `imax (imax (imax u w + 1) u) v`
-  canonicalized to `max (imax (imax (w+1) u) v) (imax (imax (u+1) w) v)`,
-  which is `2` at `u = 0, v = 1, w = 2` where the level is `1` (the
-  self-strip of `u + 1` from `[u, v, w]` left gate `w` without an
-  absorber in `[v, w]`). The fix changes a canonical form only where
-  the old one had the wrong value; no stored level of the Init+Std or
-  Mathlib environments changed (0 of 345,177 and 3,343,350 table entries,
+  stored canonical levels. Without the leak-free proviso above, P0
+  fails on deep `imax`-by-parameter chains over three or more
+  parameters: `imax (imax (imax u w + 1) u) v` canonicalizes to
+  `max (imax (imax (w+1) u) v) (imax (imax (u+1) w) v)`, which is `2`
+  at `u = 0, v = 1, w = 2` where the level is `1` (the self-strip of
+  `u + 1` from `[u, v, w]` leaves gate `w` without an absorber in
+  `[v, w]`). The proviso changes a canonical form only where the form
+  without it has the wrong value; it changes no stored level of the
+  Init+Std or Mathlib environments (0 of 345,177 and 3,343,350 table entries,
   0 of 16,621 and 426,093 original spellings), so no address moved.
   Tests: the witness family, every ≤8-node term (Rust) / ≤6-node term
-  (Lean) over three parameters, and the cl-level differential's
+  (Lean) over three parameters, and the kernel level comparison's
   biased random levels in both languages, with exact valuation sets.
 - **P1 (idempotence):** `canonUniv (canonUniv u) = canonUniv u`.
   It holds wherever the normal forms involved carry no subsumption

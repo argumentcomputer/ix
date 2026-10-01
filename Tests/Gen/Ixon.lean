@@ -115,13 +115,13 @@ def univDifferAt? (params : Nat) (a b : Univ) : Option (List Nat) := Id.run do
       return some vals
   return none
 
-/-- The cl-level differential's LCG (`LevelComparison.next`), mirrored by
+/-- The kernel level comparison's LCG (`Tests.Ix.Kernel.LevelComparison.next`), mirrored by
     `canon_univ.rs::tests::lcg_next`. -/
 def lcgNext (seed : UInt64) : UInt64 :=
   seed * 6364136223846793005 + 1442695040888963407
 
 /-- A pseudo-random level biased towards the shapes of canonical forms:
-    `imax` by a parameter, offsets and `max` (the cl-level differential's
+    `imax` by a parameter, offsets and `max` (the kernel level comparison's
     `biasedLevel`; mirrored by `canon_univ.rs::tests::biased`, so both
     languages draw the same levels). -/
 def biasedUniv (params : Nat) (size : Nat) (seed : UInt64) : Univ × UInt64 :=
@@ -159,11 +159,11 @@ def biasedUnivFamily (params size count : Nat) (seed : UInt64) : Array Univ := I
     out := out ++ #[a, .max (.succ .zero) a, .max a b, .imax a b, .succ a]
   return out
 
-/-- The smallest level whose canonical form changed its value before the
-    2026-10-01 linearization fix, `imax (imax (imax u w + 1) u) v`, under
+/-- The smallest level whose canonical form changes its value without the
+    leak-free self-strip proviso, `imax (imax (imax u w + 1) u) v`, under
     every renaming of its params (and a fourth), with deeper offsets,
-    under `max 1`, `succ` and a further gate, plus the cl-level shrink
-    log's other counterexample (mirrors
+    under `max 1`, `succ` and a further gate, plus one other shrunk
+    counterexample of that linearization (mirrors
     `canon_univ.rs::tests::witness_family`). -/
 def univWitnessFamily : Array Univ := Id.run do
   let succs (u : Univ) (k : Nat) : Univ := k.fold (fun _ _ acc => .succ acc) u

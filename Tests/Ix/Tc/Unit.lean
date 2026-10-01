@@ -409,7 +409,7 @@ exhaustively over every ≤6-node term with 3 params (the
 property-relevant shapes — nested imax at depth ≥ 3 — sit outside
 `genUniv`'s shallow-resized sampling; every linearizer bug found during
 development lived there), on the value-change witness family, and on
-the cl-level differential's biased random levels (where P1/P2/class/P6
+the kernel level comparison's biased random levels (where P1/P2/class/P6
 are conditional on slip-free normal forms, `normHasSlip`), plus:
 
 - P4 against the kernel's own Géran machinery (`Level.normalizeLevel`

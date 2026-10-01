@@ -477,9 +477,9 @@ fn gate_order(norm: &NormLevel, ctx: &[u64]) -> (Vec<u64>, bool) {
 ///      absorber for every gate of `P∖{i}`): the emitted chain
 ///      `imax(…, u_g)` is `≥ u_g` wherever its outer gates are active,
 ///      so a gate without an absorber at a path inside its prefix would
-///      raise the value. Before 2026-10-01 only the first condition was
-///      checked, and `imax (imax (imax u w + 1) u) v` canonicalized to a
-///      level that is `2` at `u = 0, v = 1, w = 2` where it is `1`;
+///      raise the value. With the first condition alone,
+///      `imax (imax (imax u w + 1) u) v` would canonicalize to a level
+///      that is `2` at `u = 0, v = 1, w = 2` where it is `1`;
 ///
 ///    otherwise it stays fully gated at `P` (every map path is
 ///    leak-free: its creation chain is a gate order);
@@ -798,7 +798,7 @@ mod tests {
   /// sub-path; an atom `(x, k)@P` by an atom `(x, ≥ k)` at a strict
   /// sub-path. `subsumption` mirrors the kernels' normalizers, which
   /// test a constant against the vars of its own node instead of the
-  /// dominator's (`plans/review/g-levels`: `max (v+1) (imax (imax 2 u) v)`
+  /// dominator's (for example `max (v+1) (imax (imax 2 u) v)`
   /// keeps the constant `2` at `[u, v]`, dominated by `v + 1`). Only
   /// such leftovers make two equal levels' normal forms differ, so a
   /// slip-free normal form is the unique one of its class.
@@ -870,10 +870,10 @@ mod tests {
     }
   }
 
-  /// The smallest level found whose canonical form changed its value
-  /// (`imax (imax (imax u w + 1) u) v`, cl-level differential): the
-  /// self-strip of `u + 1` from `[u, v, w]` to `[v, w]` left gate `w`
-  /// without an absorber, leaking `w` at `u = 0`.
+  /// The smallest level found whose canonical form changes its value
+  /// without the leak-free proviso (`imax (imax (imax u w + 1) u) v`):
+  /// the self-strip of `u + 1` from `[u, v, w]` to `[v, w]` would leave
+  /// gate `w` without an absorber, leaking `w` at `u = 0`.
   #[test]
   fn p0_witness() {
     let (u, vv, w) = (v(0), v(1), v(2));
@@ -898,7 +898,7 @@ mod tests {
 
   /// The witness under every renaming of its params (and a fourth),
   /// with deeper offsets, under `max 1`, `succ` and a further gate,
-  /// plus the cl-level shrink log's other counterexample.
+  /// plus one other shrunk counterexample of that linearization.
   fn witness_family() -> Vec<Arc<Univ>> {
     let mut out = Vec::new();
     let perms: [[u64; 3]; 8] = [
@@ -928,8 +928,8 @@ mod tests {
     out
   }
 
-  /// The pseudo-random generator of the cl-level differential
-  /// (`biasedLevel`): levels biased towards `imax` by a parameter,
+  /// The pseudo-random generator of the kernel level comparison
+  /// (`Tests.Ix.Kernel.LevelComparison.biasedLevel`): levels biased towards `imax` by a parameter,
   /// offsets and `max`. Mirrored by `Tests.Gen.Ixon.biasedUniv`.
   fn lcg_next(seed: u64) -> u64 {
     seed

@@ -74,8 +74,8 @@ run_cmd Elab.Command.liftCoreM do
   ax (n "orderMaxVU") [`u, `v] (.sort (.max v u))
   ax (n "orderAssocL") [`u, `v, `w] (.sort (.max (.max u v) w))
   ax (n "orderAssocR") [`u, `v, `w] (.sort (.max u (.max v w)))
-  -- The smallest level whose canonical form changed its value before the
-  -- 2026-10-01 linearization fix (canonicity §10.6, P0):
+  -- The smallest level whose canonical form changes its value without the
+  -- leak-free self-strip proviso (canonicity §10.6, P0):
   -- `imax (imax (imax u w + 1) u) v` is `1` at `u = 0, v = 1, w = 2`.
   -- Its canonical form must be too; the spelling is patched back.
   ax (n "canonValueWitness") [`u, `v, `w]

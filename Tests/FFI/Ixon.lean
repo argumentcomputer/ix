@@ -647,10 +647,10 @@ def suite : List TestSeq := [
       rsReduceUnivMatches u (Ixon.reduceUniv u)),
   checkIO "Ixon.canonUniv mirror parity (sampled)"
     (∀ x : Univ, rsCanonUnivMatches x (Ixon.canonUniv x)),
-  -- The value-change witness family and the cl-level differential's
+  -- The value-change witness family and the kernel level comparison's
   -- biased random levels (deep imax-by-parameter chains over 3–4
-  -- params, where the 2026-10-01 linearization fix changed output): both
-  -- languages must make the same leak-free self-strip decisions.
+  -- params, where the leak-free self-strip proviso decides the output):
+  -- both languages must make the same leak-free self-strip decisions.
   test "Ixon.canonUniv mirror parity (value-change witness family)"
     (Tests.Gen.Ixon.univWitnessFamily.all fun u =>
       rsCanonUnivMatches u (Ixon.canonUniv u)),
