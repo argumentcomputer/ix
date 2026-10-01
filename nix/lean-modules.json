@@ -3043,6 +3043,12 @@
     "Compilatrix.Backend.Proof.Emit",
     "Compilatrix.X86.ObjectRunSafe",
     "Compilatrix.Sem.TracedSim"]},
+  "Compilatrix.Backend.Proof.Ends":
+  {"path": "Compilatrix/Backend/Proof/Ends.lean",
+   "imports":
+   ["Compilatrix.Backend.Proof.Object",
+    "Compilatrix.Xv.Stacking.Proof.Ends",
+    "Compilatrix.X86.Layout.Proof.Transport"]},
   "Compilatrix.Backend.Proof.Emit":
   {"path": "Compilatrix/Backend/Proof/Emit.lean",
    "imports": ["Compilatrix.Backend"]},
@@ -4061,6 +4067,7 @@
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",
     "Compilatrix.Backend.Proof.Object",
+    "Compilatrix.Backend.Proof.Ends",
     "Compilatrix.Rt.Backend",
     "Compilatrix.Src.Table.Cert",
     "Compilatrix.Recheck",
