@@ -13,7 +13,9 @@ inferred sort, exact without normalisation) is `proof` under that condition;
 otherwise one whose type whnf's to a Π-telescope ending in a sort is `type`;
 anything else is `rel`. Each λ gets `propWhen` from the zero condition of
 the sort of its body's type. Field classes and constant classes use the same
-test.
+test. A λ binder, let, constant parameter or argument written `0` (erased)
+is irrelevant at every instance whatever its type (`honourErased`; CX-1),
+so a run-time use of it fails the checker's C1 instead of its C0.
 
 The annotator is an oracle of the pipeline: nothing it produces is trusted.
 `Src.Relevance.check` decides the result, and a wrong annotation only makes
@@ -133,36 +135,58 @@ def propWhenOfLam (lamE : KExpr .anon) : M PropWhen := do
   let u ← TcM.ensureSort s
   return condOfLevel u
 
+/-- A binder written `0` (erased) is irrelevant at every instance (CX-1):
+the class its type gives is kept when that is already irrelevant at every
+instance, and is a proof at every instance otherwise. The checker decides
+the consequences: a run-time use of the binder fails C1, and a call whose
+argument class disagrees with the parameter's fails C2. -/
+def honourErased (c : Ixon.V3.BinderContract) (r : Rel) : Rel :=
+  if c.uses == .erased && !r.alwaysIrr then Rel.prf else r
+
+/-- Whether the `i`-th argument of a spine headed by `head` meets a binder
+written erased: a parameter of a constant's Π telescope, or a binder of a
+β-redex's λ telescope. -/
+def erasedAt (p : Program) (head : Term) (i : Nat) : Bool :=
+  let binders : List (Binder × Term) := match head with
+    | .const c _ => ((p.decl? c).map fun (d : Decl) => d.type.pis.1).getD []
+    | .lam .. => head.lams.1
+    | _ => []
+  match binders[i]? with
+  | some (b, _) => b.contract.uses == .erased
+  | none => false
+
 /-- Walk the positions of a Src term that are relevant at some instance,
 with its kernel reading. -/
-def walk (via : PropWhenVia) : Nat → Term → KExpr .anon → Acc → M Acc
+def walk (p : Program) (via : PropWhenVia) : Nat → Term → KExpr .anon → Acc → M Acc
   | 0, _, _, _ => fail "relevance annotator: depth budget exhausted"
   | fuel + 1, t, e, acc => do
     let acc := { acc with nodes := acc.nodes + 1 }
     if acc.nodes > nodeBudget then fail "relevance annotator: node budget exhausted"
     match t, e with
-    | .lam _ _ body, .lam _ _ kty kbody _ => do
-      let r ← classifyType kty
+    | .lam b _ body, .lam _ _ kty kbody _ => do
+      let r := honourErased b.contract (← classifyType kty)
       let pwLam ← if via == .lambda then some <$> propWhenOfLam e else pure none
       withScope do
         let (kb, _) ← TcM.openBinderAnon kty kbody
         let pw ← match pwLam with
           | some pw => pure pw
           | none => propWhenOf kb
-        walk via fuel body kb { acc with tags := acc.tags.push (.lam r pw) }
+        walk p via fuel body kb { acc with tags := acc.tags.push (.lam r pw) }
     | .app f a _ _, .app kf ka _ => do
-      let acc ← walk via fuel f kf acc
+      let acc ← walk p via fuel f kf acc
       let r ← classifyTerm ka
+      let (head, args) := Term.spine t
+      let r := if erasedAt p head (args.length - 1) then honourErased .erased r else r
       let acc := { acc with tags := acc.tags.push (.arg r) }
-      if r.alwaysIrr then pure acc else walk via fuel a ka acc
-    | .letE _ _ _ v body, .letE _ kty kv kbody _ _ => do
-      let r ← classifyType kty
+      if r.alwaysIrr then pure acc else walk p via fuel a ka acc
+    | .letE c _ _ v body, .letE _ kty kv kbody _ _ => do
+      let r := honourErased c.binder (← classifyType kty)
       let acc := { acc with tags := acc.tags.push (.letE r) }
-      let acc ← if r.alwaysIrr then pure acc else walk via fuel v kv acc
+      let acc ← if r.alwaysIrr then pure acc else walk p via fuel v kv acc
       withScope do
         let (kb, _) ← TcM.openLet RecM.anonN kty kv kbody
-        walk via fuel body kb acc
-    | .proj s _ e', .prj _ _ kv _ => walk via fuel e' kv { acc with projs := acc.projs.push s }
+        walk p via fuel body kb acc
+    | .proj s _ e', .prj _ _ kv _ => walk p via fuel e' kv { acc with projs := acc.projs.push s }
     | .const c _, .const .. => pure { acc with refs := acc.refs.push c }
     | .var _, .fvar .. | .var _, .var .. => pure acc
     | .natLit _, .nat .. | .strLit _, .str .. | .sort _, .sort .. | .pi .., .all .. => pure acc
@@ -212,16 +236,22 @@ def openPi (ty : KExpr .anon) : M (Option (KExpr .anon × KExpr .anon)) := do
     return some (dom, b)
   | _ => return none
 
+/-- A constant's class and its parameters' classes; a parameter written
+erased in the constant's Src type is irrelevant (`honourErased`). -/
 def constRel (p : Program) (c : CId) : M ConstRel := do
   let ty := (← kConst p c).ty
   let result ← classifyType ty
+  let written := ((p.decl? c).map fun d => d.type.pis.1.map (·.1.contract)).getD []
   withScope do
     let mut cur := ty
     let mut params := #[]
     for _ in [0:4096] do
       match cur with
       | .all _ _ dom body _ =>
-        params := params.push (← classifyType dom)
+        let r ← classifyType dom
+        params := params.push (match written[params.size]? with
+          | some contract => honourErased contract r
+          | none => r)
         let (b, _) ← TcM.openBinderAnon dom body
         cur := b
       | _ => break
@@ -270,7 +300,7 @@ def run (p : Program) (via : PropWhenVia := .body) : M Ann := do
     for key in p.runtimeKeys c do
       let some t := p.termOf key | fail "relevance annotator: missing runtime term"
       let e ← kTermOf p key
-      let acc ← walk via depthBudget t e {}
+      let acc ← walk p via depthBudget t e {}
       nodes := nodes.push (key, acc.tags)
       queue := queue ++ acc.refs
       for s in acc.projs do ctorQueue := ctorQueue ++ ctorsOf p s
