@@ -236,34 +236,42 @@ def widthsOfIndex (index : Array (Option Nat)) : Array (Option Nat) :=
 /-- Tag4 header bytes from the production encoder. -/
 def tag4Bytes (flag : UInt8) (n : Nat) : ByteArray := runPut (putTag4 ⟨flag, n.toUInt64⟩)
 
+/-- The internal-cut options of a telescope node: follow the `below` links
+through the available spine descendants (at most `fuel`), adding a cut for
+each one present in `index`. -/
+def Prep.cutOptions (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (flag : UInt8) (l s : Nat) :
+    Nat → Option Nat → Array (Choice × Nat × ByteArray) → Array (Choice × Nat × ByteArray)
+  | 0, _, opts => opts
+  | _ + 1, none, opts => opts
+  | fuel + 1, some u, opts =>
+    let j := l - p.spineLen[u]!
+    let opts := if (index[u]?.getD none).isSome then
+        opts.push (.cut j, tag4Size j + (s - ev.sides[u]!) + (widthOf width u).getD 0,
+          tag4Bytes flag j)
+      else opts
+    p.cutOptions ev index width flag l s fuel ev.below[u]! opts
+
 /-- Every legal option at `t` with its exact cost and header bytes, given the
 evaluation `ev` of the dictionary with Share widths `width`; headers use the
 actual table indices `index`. -/
 def Prep.options (p : Prep) (ev : DictEval) (index : Array (Option Nat))
     (width : Array (Option Nat)) (t : Nat) :
-    Array (Choice × Nat × ByteArray) := Id.run do
+    Array (Choice × Nat × ByteArray) :=
   let node := p.dag.node t
-  let mut opts : Array (Choice × Nat × ByteArray) := #[]
-  if let some i := index[t]?.getD none then
-    opts := opts.push (.share, (widthOf width t).getD 0, tag4Bytes Ixon.Expr.FLAG_SHARE i)
+  let opts : Array (Choice × Nat × ByteArray) :=
+    match index[t]?.getD none with
+    | some i => #[(.share, (widthOf width t).getD 0, tag4Bytes Ixon.Expr.FLAG_SHARE i)]
+    | none => #[]
   if p.family[t]! == .none then
     let c := node.children.foldl (fun acc c => acc + ev.cost[c]!) node.head.ownBytes
-    opts := opts.push (.inline, c, runPut (putTag4 ⟨node.head.flag, node.head.tag4Field⟩))
+    opts.push (.inline, c, runPut (putTag4 ⟨node.head.flag, node.head.tag4Field⟩))
   else
     let l := p.spineLen[t]!
     let s := ev.sides[t]!
-    opts := opts.push (.cut l, tag4Size l + s + ev.cost[p.tail[t]!]!, tag4Bytes node.head.flag l)
-    let mut cur := ev.below[t]!
-    for _ in [0:l] do
-      match cur with
-      | none => break
-      | some u =>
-        let j := l - p.spineLen[u]!
-        if (index[u]?.getD none).isSome then
-          opts := opts.push (.cut j, tag4Size j + (s - ev.sides[u]!) + (widthOf width u).getD 0,
-            tag4Bytes node.head.flag j)
-        cur := ev.below[u]!
-  return opts
+    let opts := opts.push (.cut l, tag4Size l + s + ev.cost[p.tail[t]!]!,
+      tag4Bytes node.head.flag l)
+    p.cutOptions ev index width node.head.flag l s l ev.below[t]! opts
 
 /-- The minimum-cost option whose header is byte-least. -/
 def pickOption (opts : Array (Choice × Nat × ByteArray)) : Option (Choice × Nat) :=

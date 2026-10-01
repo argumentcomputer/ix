@@ -502,12 +502,10 @@ def pinnedPlace (deg : Array Nat) (deps : Std.HashMap Nat (Array Nat)) :
     | some pick =>
       pinnedPlace deg deps fuel (order.push pick) (remaining.erase pick) (placed.insert pick)
 
-/-- Pinned table order of a stored set: stored descendants first; among
-ready terms the larger in-degree first, then the smaller ID. -/
-def pinnedOrder (dag : Dag) (deg : Array Nat) (stored : Array Nat) : Array Nat := Id.run do
+/-- Nearest stored descendants of each stored term. -/
+def pinnedDeps (dag : Dag) (stored : Array Nat) : Std.HashMap Nat (Array Nat) := Id.run do
   let n := dag.size
   let isStored := stored.foldl (fun acc t => acc.set! t true) (Array.replicate n false)
-  -- Nearest stored descendants of each stored term.
   let mut deps : Std.HashMap Nat (Array Nat) := {}
   for t in stored do
     let mut seen : Std.HashSet Nat := {}
@@ -525,7 +523,12 @@ def pinnedOrder (dag : Dag) (deg : Array Nat) (stored : Array Nat) : Array Nat :
         else
           stack := stack ++ (dag.node u).children
     deps := deps.insert t out
-  return pinnedPlace deg deps stored.size #[] stored {}
+  return deps
+
+/-- Pinned table order of a stored set: stored descendants first; among
+ready terms the larger in-degree first, then the smaller ID. -/
+def pinnedOrder (dag : Dag) (deg : Array Nat) (stored : Array Nat) : Array Nat :=
+  pinnedPlace deg (pinnedDeps dag stored) stored.size #[] stored {}
 
 /-- The stored set chosen by the uniform-width search, before
 materialization, with its model length and the search statistics. -/
