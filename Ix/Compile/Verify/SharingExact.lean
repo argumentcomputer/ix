@@ -236,4 +236,257 @@ theorem tagNWidth_rung5 {i : Nat} (h1 : tagNRung4End ≤ i) : tagNWidth i = 9 :=
   rw [tagNWidth_eq, if_neg (by omega), if_neg (by omega), if_neg (by omega),
     if_neg (by omega)]
 
+/-! ## Expression length -/
+
+/-- Length of the production encoding of an expression. -/
+def S (e : Ixon.Expr) : Nat := (spineWireEncode e).size
+
+theorem exprListBytes_size (enc : Ixon.Expr → ByteArray) (xs : List Ixon.Expr) :
+    (exprListBytes enc xs).size = (xs.map fun e => (enc e).size).sum := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih => simp [exprListBytes, ih]
+
+theorem lamBinderListBytes_size (enc : Ixon.Expr → ByteArray)
+    (bs : List (Ixon.BinderContract × Ixon.Expr)) :
+    (lamBinderListBytes enc bs).size = (bs.map fun b => 1 + (enc b.2).size).sum := by
+  induction bs with
+  | nil => rfl
+  | cons b bs ih =>
+    obtain ⟨u, ty⟩ := b
+    simp [lamBinderListBytes, ih]
+    all_goals omega
+
+theorem allBinderListBytes_size (enc : Ixon.Expr → ByteArray)
+    (bs : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)) :
+    (allBinderListBytes enc bs).size = (bs.map fun b => 1 + (enc b.2.2).size).sum := by
+  induction bs with
+  | nil => rfl
+  | cons b bs ih =>
+    obtain ⟨u, o, ty⟩ := b
+    simp [allBinderListBytes, ih]
+    all_goals omega
+
+theorem tag0ListBytes_size (xs : List UInt64) :
+    (tag0ListBytes xs).size = (xs.map fun u => tag0Size u.toNat).sum := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih => simp [tag0ListBytes, ih, tag0Bytes_size]
+
+theorem univIdxsSize_eq (us : Array UInt64) :
+    univIdxsSize us = (us.toList.map fun u => tag0Size u.toNat).sum := by
+  unfold univIdxsSize
+  rw [← Array.foldl_toList]
+  generalize us.toList = xs
+  suffices h : ∀ acc, xs.foldl (fun acc u => acc + tag0Size u.toNat) acc =
+      acc + (xs.map fun u => tag0Size u.toNat).sum by simpa using h 0
+  induction xs with
+  | nil => simp
+  | cons x xs ih => intro acc; simp [ih]; omega
+
+/-- What `sizeInfo` computes for an expression: its full length and the
+three telescope continuations. -/
+def Spec (i : SizeInfo) (e : Ixon.Expr) : Prop :=
+  i.full = S e ∧
+  i.appCont = (e.collectAppArgs.1.length,
+    S e.collectAppArgs.2 + (e.collectAppArgs.1.map S).sum) ∧
+  i.lamCont = (e.collectLamBinders.1.length,
+    (e.collectLamBinders.1.map fun b => 1 + S b.2).sum + S e.collectLamBinders.2) ∧
+  i.allCont = (e.collectAllBinders.1.length,
+    (e.collectAllBinders.1.map fun b => 1 + S b.2.2).sum + S e.collectAllBinders.2)
+
+/-- A node that continues no telescope satisfies the spec once its length
+is right. -/
+theorem spec_plain (e : Ixon.Expr) (n : Nat) (hn : n = S e)
+    (ha : e.collectAppArgs = ([], e)) (hl : e.collectLamBinders = ([], e))
+    (hal : e.collectAllBinders = ([], e)) : Spec (.plain n) e := by
+  simp [Spec, SizeInfo.plain, ha, hl, hal, hn]
+
+theorem toNat_toUInt64_of_lt {n : Nat} (h : n < UInt64.size) : n.toUInt64.toNat = n := by
+  simp [Nat.toUInt64, Nat.mod_eq_of_lt h]
+
+theorem exprListBytes_size_S (xs : List Ixon.Expr) :
+    (exprListBytes spineWireEncode xs).size = (xs.map S).sum :=
+  exprListBytes_size spineWireEncode xs
+
+theorem lamBinderListBytes_size_S (bs : List (Ixon.BinderContract × Ixon.Expr)) :
+    (lamBinderListBytes spineWireEncode bs).size = (bs.map fun b => 1 + S b.2).sum :=
+  lamBinderListBytes_size spineWireEncode bs
+
+theorem allBinderListBytes_size_S
+    (bs : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)) :
+    (allBinderListBytes spineWireEncode bs).size = (bs.map fun b => 1 + S b.2.2).sum :=
+  allBinderListBytes_size spineWireEncode bs
+
+theorem S_def (e : Ixon.Expr) : S e = (spineWireEncode e).size := rfl
+
+/-- The size facts of a telescope node keep their full length in the
+continuations of the other families. -/
+theorem sizeInfoWith_app_lamCont (sc : Nat → Nat) (f a : Ixon.Expr) :
+    (sizeInfoWith sc (.app f a)).lamCont = (0, (sizeInfoWith sc (.app f a)).full) := rfl
+theorem sizeInfoWith_app_allCont (sc : Nat → Nat) (f a : Ixon.Expr) :
+    (sizeInfoWith sc (.app f a)).allCont = (0, (sizeInfoWith sc (.app f a)).full) := rfl
+theorem sizeInfoWith_lam_appCont (sc : Nat → Nat) (c : Ixon.BinderContract) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.lam c t b)).appCont = (0, (sizeInfoWith sc (.lam c t b)).full) := rfl
+theorem sizeInfoWith_lam_allCont (sc : Nat → Nat) (c : Ixon.BinderContract) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.lam c t b)).allCont = (0, (sizeInfoWith sc (.lam c t b)).full) := rfl
+theorem sizeInfoWith_all_appCont (sc : Nat → Nat) (c : Ixon.BinderContract)
+    (r : Ixon.ValueContract) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.all c r t b)).appCont = (0, (sizeInfoWith sc (.all c r t b)).full) := rfl
+theorem sizeInfoWith_all_lamCont (sc : Nat → Nat) (c : Ixon.BinderContract)
+    (r : Ixon.ValueContract) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.all c r t b)).lamCont = (0, (sizeInfoWith sc (.all c r t b)).full) := rfl
+
+theorem sizeInfoWith_app_full (sc : Nat → Nat) (f a : Ixon.Expr) :
+    (sizeInfoWith sc (.app f a)).full =
+      tag4Size ((sizeInfoWith sc f).appCont.1 + 1) +
+        ((sizeInfoWith sc f).appCont.2 + (sizeInfoWith sc a).full) := rfl
+theorem sizeInfoWith_app_appCont (sc : Nat → Nat) (f a : Ixon.Expr) :
+    (sizeInfoWith sc (.app f a)).appCont =
+      ((sizeInfoWith sc f).appCont.1 + 1,
+        (sizeInfoWith sc f).appCont.2 + (sizeInfoWith sc a).full) := rfl
+theorem sizeInfoWith_lam_full (sc : Nat → Nat) (c : Ixon.BinderContract) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.lam c t b)).full =
+      tag4Size ((sizeInfoWith sc b).lamCont.1 + 1) +
+        (1 + (sizeInfoWith sc t).full + (sizeInfoWith sc b).lamCont.2) := rfl
+theorem sizeInfoWith_lam_lamCont (sc : Nat → Nat) (c : Ixon.BinderContract) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.lam c t b)).lamCont =
+      ((sizeInfoWith sc b).lamCont.1 + 1,
+        1 + (sizeInfoWith sc t).full + (sizeInfoWith sc b).lamCont.2) := rfl
+theorem sizeInfoWith_all_full (sc : Nat → Nat) (c : Ixon.BinderContract)
+    (r : Ixon.ValueContract) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.all c r t b)).full =
+      tag4Size ((sizeInfoWith sc b).allCont.1 + 1) +
+        (1 + (sizeInfoWith sc t).full + (sizeInfoWith sc b).allCont.2) := rfl
+theorem sizeInfoWith_all_allCont (sc : Nat → Nat) (c : Ixon.BinderContract)
+    (r : Ixon.ValueContract) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.all c r t b)).allCont =
+      ((sizeInfoWith sc b).allCont.1 + 1,
+        1 + (sizeInfoWith sc t).full + (sizeInfoWith sc b).allCont.2) := rfl
+
+theorem sizeInfo_spec (e : Ixon.Expr) (h : e.wireWF) : Spec (sizeInfoWith tag4Size e) e := by
+  induction e with
+  | sort i =>
+    exact spec_plain _ _ (by simp [S, spineWireEncode, tag4Bytes_size]) rfl rfl rfl
+  | var i =>
+    exact spec_plain _ _ (by simp [S, spineWireEncode, tag4Bytes_size]) rfl rfl rfl
+  | str i =>
+    exact spec_plain _ _ (by simp [S, spineWireEncode, tag4Bytes_size]) rfl rfl rfl
+  | nat i =>
+    exact spec_plain _ _ (by simp [S, spineWireEncode, tag4Bytes_size]) rfl rfl rfl
+  | share i =>
+    exact spec_plain _ _ (by simp [S, spineWireEncode, tag4Bytes_size]) rfl rfl rfl
+  | ref r us =>
+    have hus : us.size < UInt64.size := h
+    exact spec_plain _ _ (by
+      simp [S, spineWireEncode, tag4Bytes_size, tag0Bytes_size, tag0ListBytes_size,
+        univIdxsSize_eq, toNat_toUInt64_of_lt hus]
+      all_goals omega) rfl rfl rfl
+  | recur r us =>
+    have hus : us.size < UInt64.size := h
+    exact spec_plain _ _ (by
+      simp [S, spineWireEncode, tag4Bytes_size, tag0Bytes_size, tag0ListBytes_size,
+        univIdxsSize_eq, toNat_toUInt64_of_lt hus]
+      all_goals omega) rfl rfl rfl
+  | prj t f v ih =>
+    have hv : (sizeInfoWith tag4Size v).full = (spineWireEncode v).size := (ih h).1
+    exact spec_plain _ _ (by
+      simp only [sizeInfoWith, hv, S, spineWireEncode, ByteArray.size_append,
+        tag4Bytes_size, tag0Bytes_size]) rfl rfl rfl
+  | letE c ty v body iht ihv ihb =>
+    have h1 : (sizeInfoWith tag4Size ty).full = (spineWireEncode ty).size := (iht h.1).1
+    have h2 : (sizeInfoWith tag4Size v).full = (spineWireEncode v).size := (ihv h.2.1).1
+    have h3 : (sizeInfoWith tag4Size body).full = (spineWireEncode body).size := (ihb h.2.2).1
+    exact spec_plain _ _ (by
+      simp only [sizeInfoWith, h1, h2, h3, S, spineWireEncode, ByteArray.size_append,
+        tag4Bytes_size, List.size_toByteArray, List.length_singleton]
+      omega) rfl rfl rfl
+  | app f a ihf iha =>
+    obtain ⟨hf, ha, hcount⟩ := h
+    obtain ⟨_, hfApp, _, _⟩ := ihf hf
+    have haFull : (sizeInfoWith tag4Size a).full = S a := (iha ha).1
+    have hlenLt : f.collectAppArgs.1.length + 1 < UInt64.size := by
+      rw [collectAppArgs_length]; exact hcount
+    have hS : S (.app f a) = tag4Size (f.collectAppArgs.1.length + 1) +
+        (S f.collectAppArgs.2 + ((f.collectAppArgs.1.map S).sum + S a)) := by
+      rw [S_def, spineWireEncode_app]
+      simp only [← S_def, ByteArray.size_append, tag4Bytes_size, exprListBytes_size_S, Ixon.Expr.collectAppArgs, List.length_append,
+        List.length_singleton, toNat_toUInt64_of_lt hlenLt, List.map_append,
+        List.sum_append, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+      omega
+    have hfull : (sizeInfoWith tag4Size (.app f a)).full = S (.app f a) := by
+      rw [sizeInfoWith_app_full]
+      simp only [hfApp, haFull, hS]
+      omega
+    refine ⟨hfull, ?_, ?_, ?_⟩
+    · rw [sizeInfoWith_app_appCont, hfApp, haFull]
+      simp only [Ixon.Expr.collectAppArgs, List.length_append, List.length_singleton,
+        List.map_append, List.sum_append, List.map_cons, List.map_nil, List.sum_cons,
+        List.sum_nil, Prod.mk.injEq]
+      constructor <;> first | trivial | omega
+    · rw [sizeInfoWith_app_lamCont, hfull]
+      simp [Ixon.Expr.collectLamBinders]
+    · rw [sizeInfoWith_app_allCont, hfull]
+      simp [Ixon.Expr.collectAllBinders]
+  | lam c ty body iht ihb =>
+    obtain ⟨ht, hb, hcount⟩ := h
+    have htFull : (sizeInfoWith tag4Size ty).full = S ty := (iht ht).1
+    obtain ⟨_, _, hbLam, _⟩ := ihb hb
+    have hlenLt : body.collectLamBinders.1.length + 1 < UInt64.size := by
+      rw [collectLamBinders_length]; exact hcount
+    have hS : S (.lam c ty body) = tag4Size (body.collectLamBinders.1.length + 1) +
+        (1 + S ty + ((body.collectLamBinders.1.map fun b => 1 + S b.2).sum +
+          S body.collectLamBinders.2)) := by
+      rw [S_def, spineWireEncode_lam]
+      simp only [← S_def, ByteArray.size_append, tag4Bytes_size, lamBinderListBytes_size_S, Ixon.Expr.collectLamBinders, List.length_cons,
+        toNat_toUInt64_of_lt hlenLt, List.map_cons, List.sum_cons]
+      omega
+    have hfull : (sizeInfoWith tag4Size (.lam c ty body)).full = S (.lam c ty body) := by
+      rw [sizeInfoWith_lam_full, hbLam, htFull, hS]
+    refine ⟨hfull, ?_, ?_, ?_⟩
+    · rw [sizeInfoWith_lam_appCont, hfull]
+      simp [Ixon.Expr.collectAppArgs]
+    · rw [sizeInfoWith_lam_lamCont, hbLam, htFull]
+      simp only [Ixon.Expr.collectLamBinders, List.length_cons, List.map_cons,
+        List.sum_cons, Prod.mk.injEq]
+      constructor <;> first | trivial | omega
+    · rw [sizeInfoWith_lam_allCont, hfull]
+      simp [Ixon.Expr.collectAllBinders]
+  | all c r ty body iht ihb =>
+    obtain ⟨ht, hb, hcount⟩ := h
+    have htFull : (sizeInfoWith tag4Size ty).full = S ty := (iht ht).1
+    obtain ⟨_, _, _, hbAll⟩ := ihb hb
+    have hlenLt : body.collectAllBinders.1.length + 1 < UInt64.size := by
+      rw [collectAllBinders_length]; exact hcount
+    have hS : S (.all c r ty body) = tag4Size (body.collectAllBinders.1.length + 1) +
+        (1 + S ty + ((body.collectAllBinders.1.map fun b => 1 + S b.2.2).sum +
+          S body.collectAllBinders.2)) := by
+      rw [S_def, spineWireEncode_all]
+      simp only [← S_def, ByteArray.size_append, tag4Bytes_size, allBinderListBytes_size_S, Ixon.Expr.collectAllBinders, List.length_cons,
+        toNat_toUInt64_of_lt hlenLt, List.map_cons, List.sum_cons]
+      omega
+    have hfull : (sizeInfoWith tag4Size (.all c r ty body)).full = S (.all c r ty body) := by
+      rw [sizeInfoWith_all_full, hbAll, htFull, hS]
+    refine ⟨hfull, ?_, ?_, ?_⟩
+    · rw [sizeInfoWith_all_appCont, hfull]
+      simp [Ixon.Expr.collectAppArgs]
+    · rw [sizeInfoWith_all_lamCont, hfull]
+      simp [Ixon.Expr.collectLamBinders]
+    · rw [sizeInfoWith_all_allCont, hbAll, htFull]
+      simp only [Ixon.Expr.collectAllBinders, List.length_cons, List.map_cons,
+        List.sum_cons, Prod.mk.injEq]
+      constructor <;> first | trivial | omega
+
+/-- `exprSize` is the length of the production expression encoding, for
+every expression in the codec's wire domain. -/
+theorem exprSize_eq_spineWireEncode (e : Ixon.Expr) (h : e.wireWF) :
+    exprSize e = (spineWireEncode e).size :=
+  (sizeInfo_spec e h).1
+
+/-- `exprSize` is the length of what `putExpr` writes. -/
+theorem exprSize_eq_serExpr (e : Ixon.Expr) (h : e.wireWF) :
+    exprSize e = (Ixon.runPut (Ixon.putExpr e)).size := by
+  rw [exprSize_eq_spineWireEncode e h, ← serExpr_eq_spineWireEncode e h]
+  rfl
+
 end Ix.Compile.Verify.SharingExact
