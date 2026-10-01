@@ -813,3 +813,14 @@ p99 4–5, max 45 (same constant as Init, `Lean.Grind.Config.mk.injEq`), ≤ 8 f
 layouts on MSS: F (= TagN below 66,568) −1.55%, G −1.30%, D +1.44%. One stored heuristic table
 has 81,565 entries (Tag4 indices ≥ 65,536 cost 4 bytes); the largest MSS table is 21,461.
 Lean/Rust parity on Init (W2): 0 byte disagreements in 56,622 constants, tiered and uniform.
+
+### 12.10 Lean/Rust parity and production speed (2026-10-01)
+
+- Init, all 56,622 constants, both implementations on the branch-and-reclassify search:
+  tiered-TagN 0 byte disagreements; uniform-w2 56,622/56,622 identical with no exhaustion.
+- Mathlib sample (20,263 constants: every 50th plus every constant with > 2,000 candidates):
+  0 byte disagreements in tiered-TagN and uniform-w2; every one-sided Lean exhaustion was the
+  phase-3 materialisation work limit and gives Rust's bytes once raised; at head 3ddda798
+  (`maxMaterializeWork` = 2^36) all 120 such constants and the 10 Init ones succeed at defaults.
+- Rust canonical construction over all 679,499 Mathlib constants: 0 failures, 184 s processing
+  on 20 threads (315 s wall), 5.3 GB peak RSS; TagN bytes −22.65% vs the stored heuristic.
