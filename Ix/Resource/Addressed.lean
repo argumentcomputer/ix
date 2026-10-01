@@ -53,14 +53,14 @@ Lists are validated before these bytes are used as a commitment. -/
 def Profile.bytes (profile : Profile) : ByteArray :=
   (validatorId ++ "/profile\x00").toUTF8 ++ runPut do
     for addresses in #[profile.assumptions, profile.shareableTypes, profile.choices] do
-      putTag0 ⟨addresses.size.toUInt64⟩
+      putTagN 0 0 addresses.size.toUInt64
       for address in addresses do Serialize.put address
     for address in #[profile.natType, profile.stringType] do
       match address with
       | none => putU8 0
       | some address => putU8 1; Serialize.put address
-    putTag0 ⟨profile.limits.depth.toUInt64⟩
-    putTag0 ⟨profile.limits.steps.toUInt64⟩
+    putTagN 0 0 profile.limits.depth.toUInt64
+    putTagN 0 0 profile.limits.steps.toUInt64
 
 def Profile.address (profile : Profile) : Except String Address := do
   profile.validate
@@ -71,7 +71,7 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
     let header := (validatorId ++ "/profile\x00").toUTF8
     unless (← getBytes header.size) == header do throw "resource profile: wrong validator identifier"
     let list : GetM (Array Address) := do
-      let count := (← getTag0).size.toNat
+      let count := (← getTagN 0).value.toNat
       let state ← get
       if count > (state.bytes.size - state.idx) / 32 then throw "resource profile: impossible address count"
       let mut result := #[]
@@ -87,8 +87,8 @@ def Profile.ofBytes (bytes : ByteArray) : Except String Profile := do
     let choices ← list
     let natType ← optional
     let stringType ← optional
-    let depth := (← getTag0).size.toNat
-    let steps := (← getTag0).size.toNat
+    let depth := (← getTagN 0).value.toNat
+    let steps := (← getTagN 0).value.toNat
     return { assumptions, shareableTypes, choices, natType, stringType, limits := { depth, steps } }) bytes
   profile.validate
   return profile

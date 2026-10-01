@@ -1,4 +1,5 @@
-//! Exact serialized-length helpers for the v3 expression and Constant grammar.
+//! Exact serialized-length helpers for the expression and Constant grammar
+//! (TagN integers).
 //!
 //! Every function here mirrors a writer in `serialize.rs` byte for byte; the
 //! tests compare them against the real serializer. Arithmetic is checked:
@@ -14,6 +15,7 @@ use crate::constant::{
   Constant, ConstantInfo, Constructor, Inductive, MutConst, Recursor,
 };
 use crate::expr::Expr;
+use crate::tag::TagN;
 use crate::univ::put_univ;
 
 /// Serialized byte length with an explicit overflow sentinel.
@@ -65,14 +67,15 @@ pub fn byte_count(x: u64) -> u64 {
   (64 - u64::from(x.leading_zeros())).div_ceil(8)
 }
 
-/// Encoded length of `Tag4 { flag, size }` for any flag.
+/// Encoded length of a TagN (f = 4) integer `size` for any flag:
+/// 1, 2, 3, 5 or 9 bytes ([`TagN::byte_width`]).
 pub fn tag4_len(size: u64) -> u64 {
-  if size < 8 { 1 } else { 1 + byte_count(size) }
+  TagN::byte_width(4, size) as u64
 }
 
-/// Encoded length of `Tag0 { size }`.
+/// Encoded length of a TagN (f = 0) integer `size`: 1, 2, 3, 5 or 9 bytes.
 pub fn tag0_len(size: u64) -> u64 {
-  if size < 128 { 1 } else { 1 + byte_count(size) }
+  TagN::byte_width(0, size) as u64
 }
 
 /// Byte width of `Expr::Share(index)`.
@@ -80,28 +83,15 @@ pub fn share_width(index: u64) -> u64 {
   tag4_len(index)
 }
 
-/// The low-nibble part of a Tag4 header followed by its size bytes. The flag
-/// nibble is omitted: callers compare headers of one flag only.
-fn tag4_size_bytes(size: u64) -> ([u8; 9], usize) {
-  let mut out = [0u8; 9];
-  if size < 8 {
-    out[0] = size.to_le_bytes()[0];
-    (out, 1)
-  } else {
-    let n = usize::try_from(byte_count(size)).unwrap_or(8);
-    // n is in 1..=8, so n - 1 fits the three low header bits.
-    out[0] = 0b1000 | n.to_le_bytes()[0].wrapping_sub(1);
-    out[1..=n].copy_from_slice(&size.to_le_bytes()[..n]);
-    (out, n + 1)
-  }
-}
-
-/// Unsigned lexicographic order of the Tag4 encodings of two sizes under the
-/// same flag. Distinct sizes always differ inside the header.
+/// Unsigned lexicographic order of the TagN (f = 4) encodings of two values
+/// under the same flag (flag 0 stands for it: the flag bits are equal). TagN
+/// is a prefix code, so distinct values differ inside the shorter encoding.
 pub(crate) fn tag4_bytes_cmp(a: u64, b: u64) -> Ordering {
-  let (xa, na) = tag4_size_bytes(a);
-  let (xb, nb) = tag4_size_bytes(b);
-  xa[..na].cmp(&xb[..nb])
+  let mut xa = Vec::with_capacity(9);
+  let mut xb = Vec::with_capacity(9);
+  TagN::put(4, 0, a, &mut xa);
+  TagN::put(4, 0, b, &mut xb);
+  xa.cmp(&xb)
 }
 
 fn usize_u64(n: usize) -> Option<u64> {
@@ -117,7 +107,7 @@ pub fn expr_len(e: &Expr) -> Option<u64> {
 }
 
 /// [`expr_len`] with every `Share(i)` priced `share(i)` bytes instead of its
-/// Tag4 width (a Share-width layout or model).
+/// TagN width (a Share-width layout or model).
 pub fn expr_len_with(e: &Expr, share: &dyn Fn(u64) -> u64) -> Option<u64> {
   #[derive(Clone, Copy)]
   struct Info {
@@ -205,7 +195,7 @@ pub fn expr_len_with(e: &Expr, share: &dyn Fn(u64) -> u64) -> Option<u64> {
   memo.get(&std::ptr::from_ref(e)).map(|i| i.len)
 }
 
-/// Exact length of a sharing table: its Tag0 count plus every entry.
+/// Exact length of a sharing table: its TagN count plus every entry.
 pub fn sharing_table_len(table: &[Arc<Expr>]) -> Option<u64> {
   let mut len = tag0_len(usize_u64(table.len())?);
   for e in table {
@@ -261,7 +251,7 @@ fn mut_const_fixed(m: &MutConst) -> Option<u64> {
 
 /// Exact length of every byte of `c` except its root expressions (as listed
 /// by [`constant_info_root_exprs`]) and its whole sharing table, including
-/// the table's Tag0 count.
+/// the table's TagN count.
 pub fn constant_fixed_len(c: &Constant) -> Option<u64> {
   let info = match &c.info {
     ConstantInfo::Muts(ms) => {

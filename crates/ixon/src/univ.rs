@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use super::tag::Tag2;
+use super::tag::TagN;
 
 /// Universe levels for Lean's type system.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -22,7 +22,7 @@ pub enum Univ {
 }
 
 impl Univ {
-  /// Tag2 flags for universe variants.
+  /// TagN flags for universe variants.
   pub const FLAG_ZERO_SUCC: u8 = 0; // size=0 for Zero, size=1 for Succ
   pub const FLAG_MAX: u8 = 1;
   pub const FLAG_IMAX: u8 = 2;
@@ -56,7 +56,7 @@ pub fn put_univ(u: &Univ, buf: &mut Vec<u8>) {
   while let Some(curr) = stack.pop() {
     match curr {
       Univ::Zero => {
-        Tag2::new(Univ::FLAG_ZERO_SUCC, 0).put(buf);
+        TagN::put(2, Univ::FLAG_ZERO_SUCC, 0, buf);
       },
       Univ::Succ(inner) => {
         // Count the number of successors for telescope compression
@@ -66,21 +66,21 @@ pub fn put_univ(u: &Univ, buf: &mut Vec<u8>) {
           count += 1;
           base = next.as_ref();
         }
-        Tag2::new(Univ::FLAG_ZERO_SUCC, count).put(buf);
+        TagN::put(2, Univ::FLAG_ZERO_SUCC, count, buf);
         stack.push(base);
       },
       Univ::Max(a, b) => {
-        Tag2::new(Univ::FLAG_MAX, 0).put(buf);
+        TagN::put(2, Univ::FLAG_MAX, 0, buf);
         stack.push(b); // Process b after a
         stack.push(a);
       },
       Univ::IMax(a, b) => {
-        Tag2::new(Univ::FLAG_IMAX, 0).put(buf);
+        TagN::put(2, Univ::FLAG_IMAX, 0, buf);
         stack.push(b); // Process b after a
         stack.push(a);
       },
       Univ::Var(idx) => {
-        Tag2::new(Univ::FLAG_VAR, *idx).put(buf);
+        TagN::put(2, Univ::FLAG_VAR, *idx, buf);
       },
     }
   }
@@ -106,14 +106,14 @@ pub fn get_univ(buf: &mut &[u8]) -> Result<Arc<Univ>, String> {
   while let Some(frame) = work.pop() {
     match frame {
       GetUnivFrame::Parse => {
-        let tag = Tag2::get(buf)?;
+        let tag = TagN::get(2, buf)?;
         match tag.flag {
           Univ::FLAG_ZERO_SUCC => {
-            if tag.size == 0 {
+            if tag.value == 0 {
               results.push(Univ::zero());
             } else {
               // Parse inner, then wrap in Succs
-              work.push(GetUnivFrame::WrapSuccs(tag.size));
+              work.push(GetUnivFrame::WrapSuccs(tag.value));
               work.push(GetUnivFrame::Parse);
             }
           },
@@ -130,7 +130,7 @@ pub fn get_univ(buf: &mut &[u8]) -> Result<Arc<Univ>, String> {
             work.push(GetUnivFrame::Parse); // a
           },
           Univ::FLAG_VAR => {
-            results.push(Univ::var(tag.size));
+            results.push(Univ::var(tag.value));
           },
           f => return Err(format!("get_univ: invalid flag {f}")),
         }

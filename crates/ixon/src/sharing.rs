@@ -15,12 +15,12 @@ use indexmap::IndexSet;
 use rustc_hash::FxHashMap;
 
 use super::expr::Expr;
-use super::tag::{Tag0, Tag4};
+use super::tag::TagN;
 
 /// Information about a subterm for sharing analysis.
 #[derive(Debug)]
 pub struct SubtermInfo {
-  /// Base size of this node alone (Tag4 header, not including children) for Ixon format
+  /// Base size of this node alone (TagN header, not including children) for Ixon format
   pub base_size: usize,
   /// Size in a fully hash-consed store (32-byte key + value with hash references)
   pub hash_consed_size: usize,
@@ -44,20 +44,20 @@ fn put_node_header(expr: &Expr, buf: &mut Vec<u8>) {
     | Expr::Nat(_)
     | Expr::Share(_) => crate::serialize::put_expr(expr, buf),
     Expr::Prj(t, field, _) => {
-      Tag4::new(Expr::FLAG_PRJ, *field).put(buf);
-      Tag0::new(*t).put(buf);
+      TagN::put(4, Expr::FLAG_PRJ, *field, buf);
+      TagN::put(0, 0, *t, buf);
     },
-    Expr::App(..) => Tag4::new(Expr::FLAG_APP, 1).put(buf),
+    Expr::App(..) => TagN::put(4, Expr::FLAG_APP, 1, buf),
     Expr::Lam(c, ..) => {
-      Tag4::new(Expr::FLAG_LAM, 1).put(buf);
+      TagN::put(4, Expr::FLAG_LAM, 1, buf);
       buf.push(c.to_bits());
     },
     Expr::All(c, v, ..) => {
-      Tag4::new(Expr::FLAG_ALL, 1).put(buf);
+      TagN::put(4, Expr::FLAG_ALL, 1, buf);
       buf.push(crate::contract::pack_all_contract(*c, *v));
     },
     Expr::Let(c, ..) => {
-      Tag4::new(Expr::FLAG_LET, c.flags()).put(buf);
+      TagN::put(4, Expr::FLAG_LET, c.flags(), buf);
       buf.push(c.binder.to_bits());
     },
   }
@@ -364,8 +364,7 @@ pub fn analyze_sharing_stats(
   });
 
   for (term_size, usage_count) in candidates {
-    let next_ref_size =
-      Tag4::new(Expr::FLAG_SHARE, simulated_shared as u64).encoded_size();
+    let next_ref_size = TagN::byte_width(4, simulated_shared as u64);
     let n = usage_count as isize;
     let savings = (n - 1) * (term_size as isize) - n * (next_ref_size as isize);
     if savings > 0 {
@@ -496,8 +495,7 @@ pub fn decide_sharing(
   // while a low-usage large term remains profitable.
   for (hash, term_size, usage_count) in candidates {
     let next_idx = shared.len();
-    let next_ref_size =
-      Tag4::new(Expr::FLAG_SHARE, next_idx as u64).encoded_size();
+    let next_ref_size = TagN::byte_width(4, next_idx as u64);
     let n = usage_count as isize;
     let savings = (n - 1) * (term_size as isize) - n * (next_ref_size as isize);
 
@@ -644,7 +642,7 @@ mod tests {
   fn test_early_break_bug() {
     // Filler: 8 unique terms with gross > 18
     // Var(256)..Var(263), each appearing 10 times
-    // size=3 (256 fits in 2 bytes after Tag4 header), n=10, gross=9*3=27 > 18
+    // size=3 (256 fits in 2 bytes after TagN header), n=10, gross=9*3=27 > 18
     let mut all_exprs: Vec<Arc<Expr>> = Vec::new();
 
     for i in 0..8u64 {
@@ -655,7 +653,7 @@ mod tests {
     }
 
     // Term A: Var(10), appearing 10 times
-    // size=2 (10 < 256, so fits in Tag4 with 2-byte encoding), n=10, gross=9*2=18
+    // size=2 (10 < 256, so fits in TagN with 2-byte encoding), n=10, gross=9*2=18
     // At ref_size=2 (idx >= 8): savings = 18 - 20 = -2 < 0 (triggers break!)
     let term_a = Expr::var(10);
     for _ in 0..10 {

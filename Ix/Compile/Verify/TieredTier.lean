@@ -1381,33 +1381,51 @@ theorem allocate_spec {layout : ShareLayout} {limits : Limits} {dag : Dag} {deg 
       kahnOrder weight deps ((order1.toList.mergeSort (· ≤ ·)).toArray.filter
         (!a.tier.contains ·))) ∧
     a.refCost1 = refCost layout weight order1 ∧ a.refCostFinal = refCost layout weight a.order ∧
-    a.refCostFinal ≤ a.refCost1 := by
+    a.refCostFinal ≤ a.refCost1 ∧
+    (pinnedOrder dag deg a.tier ++ kahnOrder weight deps
+      ((order1.toList.mergeSort (· ≤ ·)).toArray.filter (!a.tier.contains ·))).toList.Perm
+      order1.toList ∧
+    a.refCostFinal ≤ refCost layout weight (pinnedOrder dag deg a.tier ++ kahnOrder weight deps
+      ((order1.toList.mergeSort (· ≤ ·)).toArray.filter (!a.tier.contains ·))) := by
   intro weight deps cap
   unfold allocate at h
   dsimp only at h
   obtain ⟨⟨tier, states⟩, hft, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
   dsimp only at h
-  obtain ⟨_, hc1, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
   obtain ⟨_, hc2, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
+  try dsimp only at h
+  obtain ⟨_, hc1, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
   have hresp := checkInternal_ok hc1
   have hperm := checkInternal_ok hc2
   simp only [pure, Except.pure, Except.ok.injEq] at h
   subst h
   have hnd := firstTier_nodup hft
-  refine ⟨hnd, firstTier_spec hft, ?_, respectsDeps_spec hresp, by dsimp only, by dsimp only,
-    by dsimp only, ?_⟩
-  · -- the sorted final order equals the sorted phase-1 table
+  -- the sorted pinned order equals the sorted phase-1 table
+  have hperm2 : (pinnedOrder dag deg tier ++ kahnOrder weight deps
+      ((order1.toList.mergeSort (· ≤ ·)).toArray.filter (!tier.contains ·))).toList.Perm
+      order1.toList := by
     have hs := congrArg Array.toList (beq_iff_eq.mp hperm)
     simp only at hs
-    dsimp only
     refine (List.mergeSort_perm _ (fun x1 x2 => decide (x1 ≤ x2))).symm.trans ?_
     rw [hs]
     exact List.mergeSort_perm _ _
+  refine ⟨hnd, firstTier_spec hft, ?_, respectsDeps_spec hresp, by dsimp only, by dsimp only,
+    by dsimp only, ?_, hperm2, ?_⟩
+  · dsimp only
+    split
+    · exact List.Perm.refl _
+    · exact hperm2
   · simp only
     split
     · exact Nat.le_refl _
     · rename_i hk
       simp only [Bool.not_eq_true, decide_eq_false_iff_not, Nat.not_lt] at hk
       exact hk
+  · simp only
+    split
+    · rename_i hk
+      simp only [decide_eq_true_eq] at hk
+      exact Nat.le_of_lt hk
+    · exact Nat.le_refl _
 
 end Ix.Compile.Verify.Tiered

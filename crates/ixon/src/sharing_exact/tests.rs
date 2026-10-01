@@ -29,7 +29,7 @@ use crate::contract::{BinderContract, LetContract, ValueContract};
 use crate::expr::Expr;
 use crate::serialize::put_expr;
 use crate::sharing::{analyze_block, build_sharing_vec, decide_sharing};
-use crate::tag::{Tag0, Tag4, u64_byte_count};
+use crate::tag::{TagN, u64_byte_count};
 use crate::univ::Univ;
 
 // ===========================================================================
@@ -362,6 +362,11 @@ fn boundary_sizes() -> Vec<u64> {
     let x = 1u64 << (8 * b);
     sizes.extend([x - 1, x, x + 1]);
   }
+  for f in [0u32, 2, 4] {
+    for e in [TagN::end1(f), TagN::end2(f), TagN::end3(f), TagN::end4(f)] {
+      sizes.extend([e - 1, e, e + 1]);
+    }
+  }
   sizes
 }
 
@@ -370,30 +375,30 @@ fn tag_lengths_match_encoders() {
   for s in boundary_sizes() {
     assert_eq!(byte_count(s), u64::from(u64_byte_count(s)), "byte_count {s}");
     let mut b = Vec::new();
-    Tag4::new(Expr::FLAG_SHARE, s).put(&mut b);
+    TagN::put(4, Expr::FLAG_SHARE, s, &mut b);
     assert_eq!(tag4_len(s), b.len() as u64, "tag4 {s}");
     assert_eq!(share_width(s), b.len() as u64, "share {s}");
     assert_eq!(expr_len(&Expr::Share(s)), Some(b.len() as u64));
     let mut b = Vec::new();
-    Tag0::new(s).put(&mut b);
+    TagN::put(0, 0, s, &mut b);
     assert_eq!(tag0_len(s), b.len() as u64, "tag0 {s}");
   }
-  // Pinned header order: Tag4 bytes of one flag, unsigned lexicographic.
+  // Pinned header order: TagN bytes of one flag, unsigned lexicographic.
   for a in boundary_sizes() {
     for b in boundary_sizes() {
       let (mut x, mut y) = (Vec::new(), Vec::new());
-      Tag4::new(Expr::FLAG_APP, a).put(&mut x);
-      Tag4::new(Expr::FLAG_APP, b).put(&mut y);
+      TagN::put(4, Expr::FLAG_APP, a, &mut x);
+      TagN::put(4, Expr::FLAG_APP, b, &mut y);
       assert_eq!(tag4_bytes_cmp(a, b), x.cmp(&y), "{a} vs {b}");
     }
   }
   // Share width boundaries named by the plan.
   for (i, w) in
-    [(7u64, 1u64), (8, 2), (255, 2), (256, 3), (65535, 3), (65536, 4)]
+    [(7u64, 1u64), (8, 2), (1031, 2), (1032, 3), (66567, 3), (66568, 5)]
   {
     assert_eq!(share_width(i), w);
   }
-  for (n, w) in [(127u64, 1u64), (128, 2), (255, 2), (256, 3)] {
+  for (n, w) in [(127u64, 1u64), (128, 2), (16511, 2), (16512, 3), (82048, 5)] {
     assert_eq!(tag0_len(n), w);
   }
 }
@@ -2316,7 +2321,7 @@ fn uniform_byte_level() {
 // Tiered construction (port of W1's Tests/Ix/SharingTiered.lean)
 // ===========================================================================
 
-const LAYOUTS: [ShareLayout; 2] = [ShareLayout::Tag4, ShareLayout::TagN];
+const LAYOUTS: [ShareLayout; 1] = [ShareLayout::TagN];
 
 #[test]
 fn tiered_layout_widths() {
@@ -2338,13 +2343,17 @@ fn tiered_layout_widths() {
     (1032, 66568, 66568 + (1 << 32))
   );
   assert_eq!(ShareLayout::TagN.width_at(u64::MAX), 9);
-  let t4 = ShareLayout::Tag4;
-  assert_eq!(
-    (t4.uniform_width(8), t4.uniform_width(256), t4.uniform_width(257)),
-    (1, 2, 3)
-  );
   let tn = ShareLayout::TagN;
-  assert_eq!((tn.uniform_width(1032), tn.uniform_width(1033)), (2, 3));
+  assert_eq!(
+    (
+      tn.uniform_width(8),
+      tn.uniform_width(9),
+      tn.uniform_width(1032),
+      tn.uniform_width(1033)
+    ),
+    (1, 2, 2, 3)
+  );
+  assert_eq!(ShareLayout::wire(), ShareLayout::TagN);
 }
 
 #[test]
@@ -2434,7 +2443,7 @@ fn tiered_allocation_properties() {
         roundtrip(&n).len() as u64,
         constant_fixed_len(&c).unwrap() + r.variable_len
       );
-      if l == ShareLayout::Tag4 {
+      if l == ShareLayout::wire() {
         assert_eq!(r.model_len, r.variable_len);
       }
       let (again, _) =
@@ -2456,7 +2465,7 @@ fn tiered_allocation_properties() {
     "tiered: {checked} runs; allocation lowered the reference cost in {changed}, \
      positive savings in {saved}, phase-1 order kept in {kept}"
   );
-  assert!(checked == 240 && changed > 0);
+  assert!(checked == 120 && changed > 0);
 }
 
 /// Brute force over all subsets: dependency-closed, at most `cap` terms,
@@ -2911,4 +2920,92 @@ fn parallel_tiered_limits_fail_closed() {
   }
   eprintln!("parallel limits: {both_ok} both succeed, {both_fail} both fail");
   assert!(both_fail > 50 && both_ok > 50);
+}
+
+/// The Kahn priority order of phase 2 against a direct reference: the
+/// available term of largest weight, ties by the smaller ID, on random DAGs
+/// (dependencies outside `rest` are ignored).
+#[test]
+fn kahn_order_matches_reference() {
+  use super::tiered::kahn_order;
+  let mut rng = Rng(89);
+  for case in 0..300 {
+    let m = 1 + rng.below(30) as usize;
+    // Distinct IDs in a random topological sequence; a term may depend on
+    // earlier terms of the sequence and on IDs outside `rest`.
+    let mut ids: Vec<TermId> = (0..m as u32).map(|i| i * 3 + (i % 2)).collect();
+    for i in (1..m).rev() {
+      ids.swap(i, rng.below(i as u64 + 1) as usize);
+    }
+    let mut weight: FxHashMap<TermId, u64> = FxHashMap::default();
+    let mut deps: FxHashMap<TermId, Vec<TermId>> = FxHashMap::default();
+    for (i, &t) in ids.iter().enumerate() {
+      weight.insert(t, rng.below(5));
+      let mut ds = Vec::new();
+      for &u in &ids[..i] {
+        if rng.below(4) == 0 {
+          ds.push(u);
+        }
+      }
+      if rng.below(3) == 0 {
+        ds.push(10_000 + rng.below(5) as u32);
+      }
+      deps.insert(t, ds);
+    }
+    let mut rest = ids.clone();
+    rest.sort_unstable();
+    let in_rest: FxHashMap<TermId, ()> =
+      rest.iter().map(|&t| (t, ())).collect();
+    let w = |t: TermId| weight[&t];
+    let mut placed: Vec<TermId> = Vec::new();
+    while placed.len() < m {
+      let next = rest
+        .iter()
+        .copied()
+        .filter(|t| !placed.contains(t))
+        .filter(|t| {
+          deps[t].iter().all(|d| !in_rest.contains_key(d) || placed.contains(d))
+        })
+        .min_by(|&a, &b| w(b).cmp(&w(a)).then(a.cmp(&b)))
+        .unwrap();
+      placed.push(next);
+    }
+    assert_eq!(kahn_order(&weight, &deps, &rest), placed, "case {case}");
+  }
+}
+
+/// The MSS experiment hook reproduces the plan's §2 numbers (T2 17 bytes,
+/// T16 46) and writes every occurrence of a stored term as a Share: the
+/// inspector counts `deg(t)` Shares of every stored term and nothing inline.
+#[test]
+fn mss_hook_and_inspector() {
+  let t2 = chain(2);
+  let w2 = axiom(Expr::all(t2.clone(), t2), 1);
+  let t16 = chain(16);
+  let w16 = axiom(Expr::all(t16.clone(), t16), 1);
+  for ties in [MssTies::StructuralId, MssTies::Blake3] {
+    let (n, _, _) = mss_constant(&w2, &limits(), ties).unwrap();
+    assert_eq!(roundtrip(&n).len(), 17);
+    let (n, _, _) = mss_constant(&w16, &limits(), ties).unwrap();
+    assert_eq!(roundtrip(&n).len(), 46);
+  }
+  let mut rng = Rng(91);
+  for i in 0..60u64 {
+    let c = if i % 2 == 0 {
+      let roots = gen_heavy_parent(&mut rng);
+      wrap(&mut rng, roots)
+    } else {
+      gen_constant(i + 99_000, 6, 30, 5)
+    };
+    let (n, enc, dag) =
+      mss_constant(&c, &limits(), MssTies::StructuralId).unwrap();
+    assert_eq!(put(&unshared(&n)), put(&unshared(&c)), "case {i}");
+    let info =
+      inspect_encoding(&dag, &enc.table_terms, &enc.sharing, &enc.roots)
+        .unwrap();
+    assert_eq!(info.inlined, 0, "case {i}");
+    for (j, &t) in enc.table_terms.iter().enumerate() {
+      assert_eq!(info.share_refs[j], enc.deg[t as usize], "case {i} term {t}");
+    }
+  }
 }

@@ -181,8 +181,8 @@ pub enum ConstantInfo {
 }
 
 impl ConstantInfo {
-  // Constant variant indices (used as Tag4 size field)
-  // These are 0-7, fitting in 3 bits for single-byte Tag4
+  // Constant variant indices (used as TagN size field)
+  // These are 0-7, fitting in 3 bits for single-byte TagN
   // Note: Muts uses a separate flag (0xC), not a variant here
   pub const CONST_DEFN: u64 = 0;
   pub const CONST_RECR: u64 = 1;
@@ -193,7 +193,7 @@ impl ConstantInfo {
   pub const CONST_IPRJ: u64 = 6;
   pub const CONST_DPRJ: u64 = 7;
 
-  /// Returns the variant index (used as Tag4 size field)
+  /// Returns the variant index (used as TagN size field)
   /// Returns None for Muts (which uses its own flag)
   pub fn variant(&self) -> Option<u64> {
     match self {
@@ -224,9 +224,9 @@ pub struct Constant {
 }
 
 impl Constant {
-  /// Tag4 flag used for non-Muts constants (variant in size field, always 1 byte)
+  /// TagN flag used for non-Muts constants (variant in size field, always 1 byte)
   pub const FLAG: u8 = 0xD;
-  /// Tag4 flag used for Muts constants (entry count in size field)
+  /// TagN flag used for Muts constants (entry count in size field)
   pub const FLAG_MUTS: u8 = 0xC;
 
   /// Create a new constant with no sharing, refs, or univs

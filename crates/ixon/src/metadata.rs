@@ -18,7 +18,7 @@ use ix_common::env::{self, BinderInfo, Name};
 use super::env::AuxLayout;
 use super::expr::Expr;
 use super::serialize::{get_expr, put_expr};
-use super::tag::{Tag0, TagN};
+use super::tag::TagN;
 use super::univ::{Univ, get_univ, put_univ};
 
 // ===========================================================================
@@ -413,14 +413,14 @@ impl ConstantMeta {
     for univ in &self.meta_univs {
       put_univ(univ, buf);
     }
-    // Level-spelling patches (canonicity §10.6): per entry, Tag0
-    // arena_idx, Tag0 len, Tag0 virtual univ indices.
+    // Level-spelling patches (canonicity §10.6): per entry, TagN
+    // arena_idx, TagN len, TagN virtual univ indices.
     put_vec_len(self.univ_patches.len(), buf);
     for patch in &self.univ_patches {
-      Tag0::new(patch.arena_idx).put(buf);
+      TagN::put(0, 0, patch.arena_idx, buf);
       put_vec_len(patch.univ_idxs.len(), buf);
       for idx in &patch.univ_idxs {
-        Tag0::new(*idx).put(buf);
+        TagN::put(0, 0, *idx, buf);
       }
     }
     Ok(())
@@ -462,11 +462,11 @@ impl ConstantMeta {
     let patches_len = get_vec_len(buf)?;
     let mut univ_patches = Vec::with_capacity(patches_len);
     for _ in 0..patches_len {
-      let arena_idx = Tag0::get(buf)?.size;
+      let arena_idx = TagN::get(0, buf)?.value;
       let idxs_len = get_vec_len(buf)?;
       let mut univ_idxs = Vec::with_capacity(idxs_len);
       for _ in 0..idxs_len {
-        univ_idxs.push(Tag0::get(buf)?.size);
+        univ_idxs.push(TagN::get(0, buf)?.value);
       }
       univ_patches.push(UnivPatch { arena_idx, univ_idxs });
     }
@@ -551,7 +551,7 @@ fn deser_u8(buf: &mut &[u8]) -> Option<u8> {
 }
 
 fn deser_tag0(buf: &mut &[u8]) -> Option<u64> {
-  Tag0::get(buf).ok().map(|t| t.size)
+  TagN::get(0, buf).ok().map(|t| t.value)
 }
 
 fn deser_addr(buf: &mut &[u8]) -> Option<Address> {
@@ -720,19 +720,19 @@ fn get_address_raw(buf: &mut &[u8]) -> Result<Address, String> {
 }
 
 fn put_u64(x: u64, buf: &mut Vec<u8>) {
-  Tag0::new(x).put(buf);
+  TagN::put(0, 0, x, buf);
 }
 
 fn get_u64(buf: &mut &[u8]) -> Result<u64, String> {
-  Ok(Tag0::get(buf)?.size)
+  Ok(TagN::get(0, buf)?.value)
 }
 
 pub(super) fn put_vec_len(len: usize, buf: &mut Vec<u8>) {
-  Tag0::new(len as u64).put(buf);
+  TagN::put(0, 0, len as u64, buf);
 }
 
 pub(super) fn get_vec_len(buf: &mut &[u8]) -> Result<usize, String> {
-  Ok(Tag0::get(buf)?.size as usize)
+  Ok(TagN::get(0, buf)?.value as usize)
 }
 
 // ===========================================================================
@@ -769,7 +769,7 @@ impl IxonByteSerde for BinderInfo {
 
 // `ReducibilityHints` has no `IxonByteSerde` impl: its only wire home
 // is the env-level §3 section, which fuses the variant and height into
-// a single Tag0 value (see `serialize.rs::fuse_hint`).
+// a single TagN value (see `serialize.rs::fuse_hint`).
 
 // ===========================================================================
 // Indexed serialization (Address -> u64 index)
@@ -1051,13 +1051,14 @@ fn em_implicit_mask(node: &ExprMetaData, i: u64, lo: &[u64]) -> (u8, u64) {
   (mask, top)
 }
 
-/// Explicit reference from node `i` to node `c`.
+/// Explicit reference from node `i` to node `c`: the backward delta
+/// `(i - 1 - c) mod 2^64` as a TagN (`f = 0`) integer.
 fn put_em_ref(i: u64, c: u64, buf: &mut Vec<u8>) {
-  TagN::put(0, 0, i.wrapping_sub(1).wrapping_sub(c), buf);
+  put_u64(i.wrapping_sub(1).wrapping_sub(c), buf);
 }
 
 fn get_em_ref(i: u64, buf: &mut &[u8]) -> Result<u64, String> {
-  Ok(i.wrapping_sub(1).wrapping_sub(TagN::get(0, buf)?.value))
+  Ok(i.wrapping_sub(1).wrapping_sub(get_u64(buf)?))
 }
 
 /// Structural slot `s` of node `i`: written only when not implicit.
@@ -1476,7 +1477,7 @@ impl ConstantMetaInfo {
         }
         // Option<AuxLayout>: 0 tag = None, 1 tag = Some(perm_vec,
         // ctor_vec, evaporated_vec). The usize vecs are written as
-        // Vec<u64> via Tag0 so the serialized form is target-word-size
+        // Vec<u64> via TagN so the serialized form is target-word-size
         // independent; `evaporated` is one u8 (0/1) per entry.
         match aux_layout {
           None => put_u8(0, buf),
