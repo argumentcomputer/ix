@@ -350,4 +350,345 @@ theorem ulen_split_component {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     (V := V) (fun t ht => (hV t ht).1)
   omega
 
+/-! ## The search context of a component -/
+
+/-- What the search context of a component satisfies (established by
+`uniformChoose`). -/
+structure SCtxWF (dag : Dag) (roots : Array Nat) (w : Nat) (θ : _root_.Int) (cs : List Nat)
+    (cx : SCtx) : Prop where
+  prep : cx.up.prep = Prep.ofDag dag
+  width : cx.up.w = w
+  opaq : ∀ u, cx.up.opaq[u]! = decide (u ∈ cs)
+  cand : cx.cand = ucand dag roots w
+  bounds0 : cx.bounds0 = uniformBounds (Prep.ofDag dag) w (ucand dag roots w)
+  vis0 : cx.vis0 = visibleCounts dag roots (ucand dag roots w)
+  mem : ∀ t ∈ cx.members.toList, t < dag.size ∧ (ucls dag roots w θ)[t]! = .uncertain
+  memNodup : cx.members.toList.Nodup
+  widthCs_size : cx.widthCs.size = dag.size
+  widthCs : ∀ u, widthOf cx.widthCs u = if cx.up.opaq[u]! then some cx.up.w else none
+  allTrue : cx.allTrue = Array.replicate dag.size true
+  baseEv : cx.baseEv = (Prep.ofDag dag).eval cx.widthCs (Array.replicate dag.size true)
+  closure : cx.closure = upClosure dag ((markTable dag.size cx.members)[·]!)
+  rootsC : cx.rootsC = roots.filter ((markTable dag.size cx.closure)[·]!)
+  storedInC : cx.storedInC = cx.closure.filter (cx.up.opaq[·]!)
+  theta : cx.theta = θ
+
+/-- The component cost of a context. -/
+def scost (cx : SCtx) (dag : Dag) (V : List Nat) : Nat :=
+  compCost dag cx.up.w cx.up.opaq cx.rootsC.toList cx.storedInC.toList V
+
+theorem compAvail_eq_availOf {opaq : Array Bool} {members : Array Nat} {V : List Nat}
+    (hV : ∀ t ∈ V, t ∈ members.toList) :
+    compAvail opaq members (fun t => decide (t ∈ V)) = availOf opaq V := by
+  funext u
+  simp only [compAvail, availOf]
+  by_cases hu : u ∈ V
+  · have := Array.mem_toList_iff.mp (hV u hu)
+    simp [hu, this]
+  · simp [hu]
+
+/-- **`phiE` is the component cost** of the entries it is given, when they are
+the available members. -/
+theorem phiE_cost {dag : Dag} (hwf : DagWF dag) {roots : Array Nat} {w : Nat} {θ : _root_.Int}
+    {cs : List Nat} {cx : SCtx} (hcx : SCtxWF dag roots w θ cs cx) (inArr : Array Nat)
+    (hin : ∀ t ∈ inArr.toList, t ∈ cx.members.toList) (avail : Nat → Bool)
+    (havail : ∀ t, avail t = decide (t ∈ inArr.toList)) :
+    (cx.phiE avail inArr).1 = scost cx dag inArr.toList := by
+  have hmem : ∀ t ∈ cx.members, t < dag.size :=
+    fun t ht => (hcx.mem t (Array.mem_toList_iff.mpr ht)).1
+  have hclo := mem_upClosure hwf ((markTable dag.size cx.members)[·]!)
+  have hsc : ∀ t ∈ cx.storedInC, t < dag.size := by
+    intro t ht
+    rw [hcx.storedInC, Array.mem_filter, hcx.closure] at ht
+    exact ((hclo t).mp (Array.mem_toList_iff.mpr ht.1)).1
+  have havail' : avail = fun t => decide (t ∈ inArr.toList) := funext havail
+  rw [phiE_spec hwf hcx.prep hcx.widthCs_size hcx.widthCs hcx.allTrue hcx.baseEv hcx.closure hmem
+    hsc avail inArr (fun x hx => hmem x (Array.mem_toList_iff.mp (hin x (Array.mem_toList_iff.mpr hx))))]
+  rw [havail', compAvail_eq_availOf hin]
+  rfl
+
+/-- **The lower bound of a node.** `phiE` with the undecided members also
+available, but only the decided entries paid, is at most the component cost
+of every completion. -/
+theorem phiE_lower {dag : Dag} (hwf : DagWF dag) {roots : Array Nat} {w : Nat} {θ : _root_.Int}
+    {cs : List Nat} {cx : SCtx} (hcx : SCtxWF dag roots w θ cs cx) (inArr : Array Nat)
+    (U : List Nat) (hin : ∀ t ∈ inArr.toList, t ∈ cx.members.toList)
+    (hU : ∀ t ∈ U, t ∈ cx.members.toList) (avail : Nat → Bool)
+    (havail : ∀ t, avail t = decide (t ∈ inArr.toList ∨ t ∈ U)) {X : List Nat}
+    (hX : ∀ t ∈ X, t ∈ U) :
+    (cx.phiE avail inArr).1 ≤ scost cx dag (inArr.toList ++ X) := by
+  have hp := prepWF_ofDag hwf
+  have hmem : ∀ t ∈ cx.members, t < dag.size :=
+    fun t ht => (hcx.mem t (Array.mem_toList_iff.mpr ht)).1
+  have hclo := mem_upClosure hwf ((markTable dag.size cx.members)[·]!)
+  have hsc : ∀ t ∈ cx.storedInC, t < dag.size := by
+    intro t ht
+    rw [hcx.storedInC, Array.mem_filter, hcx.closure] at ht
+    exact ((hclo t).mp (Array.mem_toList_iff.mpr ht.1)).1
+  have hinU : ∀ t ∈ inArr.toList ++ U, t ∈ cx.members.toList := by
+    intro t ht
+    rcases List.mem_append.mp ht with h | h
+    · exact hin t h
+    · exact hU t h
+  have havail' : avail = fun t => decide (t ∈ inArr.toList ++ U) := by
+    funext t; rw [havail]; simp [List.mem_append]
+  rw [phiE_spec hwf hcx.prep hcx.widthCs_size hcx.widthCs hcx.allTrue hcx.baseEv hcx.closure hmem
+    hsc avail inArr (fun x hx => hmem x (Array.mem_toList_iff.mp (hin x (Array.mem_toList_iff.mpr hx))))]
+  rw [havail', compAvail_eq_availOf hinU]
+  unfold scost compCost
+  -- more availability lowers every cost
+  have hsub : ∀ v, availOf cx.up.opaq (inArr.toList ++ X) v = true →
+      availOf cx.up.opaq (inArr.toList ++ U) v = true := by
+    intro v hv
+    simp only [availOf, Bool.or_eq_true, decide_eq_true_eq, List.mem_append] at hv ⊢
+    rcases hv with h | h | h
+    · exact Or.inl h
+    · exact Or.inr (Or.inl h)
+    · exact Or.inr (Or.inr (hX v h))
+  have hlt : ∀ t, t ∈ cx.members.toList → t < (Prep.ofDag dag).dag.size := by
+    intro t ht; rw [ofDag_dag]; exact (hcx.mem t ht).1
+  have hr := sum_le_sum_of_le cx.rootsC.toList (f := uCost (Prep.ofDag dag) cx.up.w
+      (availOf cx.up.opaq (inArr.toList ++ U)))
+    (g := uCost (Prep.ofDag dag) cx.up.w (availOf cx.up.opaq (inArr.toList ++ X)))
+    (fun r hr => by
+      by_cases hrn : r < dag.size
+      · exact (hp.costs_antitone cx.up.w hsub (by rw [ofDag_dag]; exact hrn)).1
+      · rw [uCost_of_ge _ _ _ (by rw [ofDag_dag]; omega),
+          uCost_of_ge _ _ _ (by rw [ofDag_dag]; omega)]
+        exact Nat.le_refl 0)
+  have hc := sum_le_sum_of_le cx.storedInC.toList (f := uInl (Prep.ofDag dag) cx.up.w
+      (availOf cx.up.opaq (inArr.toList ++ U)))
+    (g := uInl (Prep.ofDag dag) cx.up.w (availOf cx.up.opaq (inArr.toList ++ X)))
+    (fun c hc => (hp.costs_antitone cx.up.w hsub (by
+      rw [ofDag_dag]; exact hsc c (Array.mem_toList_iff.mp hc))).2)
+  have he := sum_le_sum_of_le inArr.toList (f := uInl (Prep.ofDag dag) cx.up.w
+      (availOf cx.up.opaq (inArr.toList ++ U)))
+    (g := uInl (Prep.ofDag dag) cx.up.w (availOf cx.up.opaq (inArr.toList ++ X)))
+    (fun x hx => (hp.costs_antitone cx.up.w hsub (hlt x (hin x hx))).2)
+  simp only [List.map_append, List.sum_append]
+  omega
+
+/-! ## Opaque terms of a decided context -/
+
+/-- The maybe-stored set of a decided-out list. -/
+def msOf (cand : Array Bool) (O : Array Nat) : Array Bool :=
+  O.foldl (fun acc t => acc.set! t false) cand
+
+theorem msOf_spec (cand : Array Bool) (O : Array Nat) (v : Nat) :
+    (msOf cand O)[v]! = true ↔ cand[v]! = true ∧ v ∉ O.toList := by
+  unfold msOf
+  rw [← Array.foldl_toList, foldl_setBang_const]
+  by_cases hv : v ∈ O.toList
+  · by_cases hs : v < cand.size
+    · simp [hv, hs]
+    · simp only [hv, hs, and_false, if_false, not_true_eq_false, and_false, iff_false]
+      simp [getElem!_def, hs]
+  · simp [hv]
+
+theorem opaqueArr_spec (cx : SCtx) (I O : Array Nat) (t : Nat) :
+    (cx.opaqueArr I O)[t]! =
+      (cx.up.opaq[t]! || (decide (t ∈ I.toList) && decide (t < cx.up.opaq.size) &&
+        cx.opaqueUnder (cx.rebound (msOf cx.cand O)) t)) := by
+  unfold SCtx.opaqueArr
+  rw [← Array.foldl_toList, foldl_setBang_or]
+  rfl
+
+/-- **The opaque terms of a decided context are opaque** in every
+availability within its maybe-stored set that contains the certain-stored
+terms and the decided-stored ones. -/
+theorem opaqueArr_opaqueOn {dag : Dag} (hwf : DagWF dag) {roots : Array Nat}
+    (hroots : ∀ r ∈ roots.toList, r < dag.size) {w : Nat} {θ : _root_.Int} (hθ : 1 ≤ θ)
+    {cs : List Nat} {cx : SCtx} (hcx : SCtxWF dag roots w θ cs cx)
+    (hcsc : ∀ t ∈ cs, t < dag.size ∧ (ucls dag roots w θ)[t]! = .certainStored)
+    {I O : Array Nat} {A : Nat → Bool}
+    (hA : ∀ v, A v = true → (ucand dag roots w)[v]! = true ∧ v ∉ O.toList)
+    (hAin : ∀ t ∈ I.toList, A t = true) (hAcs : ∀ t ∈ cs, A t = true) :
+    OpaqueOn (Prep.ofDag dag) w ((cx.opaqueArr I O)[·]!) A := by
+  have hp := prepWF_ofDag hwf
+  intro t ht hO
+  rw [ofDag_dag] at ht
+  simp only at hO
+  rw [opaqueArr_spec] at hO
+  simp only [Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hO
+  rcases hO with hcs | ⟨⟨htI, _⟩, hun⟩
+  · rw [hcx.opaq] at hcs
+    have htcs : t ∈ cs := by simpa using hcs
+    exact certainStored_opaque hwf roots hroots w θ hθ ht (hcsc t htcs).2 (hAcs t htcs)
+      (fun v hv => (hA v hv).1)
+  · generalize hmsd : msOf cx.cand O = ms at hun
+    have hms : ∀ v : Nat, ms[v]! = true → (ucand dag roots w)[v]! = true := by
+      intro v hv
+      rw [← hmsd] at hv
+      have := (msOf_spec cx.cand O v).mp hv
+      rw [hcx.cand] at this
+      exact this.1
+    have hAms : ∀ v, A v = true → ms[v]! = true := by
+      intro v hv
+      rw [← hmsd]
+      apply (msOf_spec cx.cand O v).mpr
+      rw [hcx.cand]
+      exact hA v hv
+    have hble : BLe (cx.rebound ms) (uniformBounds (Prep.ofDag dag) w ms) := by
+      unfold SCtx.rebound
+      rw [hcx.prep, hcx.width, hcx.bounds0, ← Array.foldl_toList]
+      exact hp.boundsFold_le w cx.area.toList _
+        (uniformBounds_antitone (Prep.ofDag dag) w hms) (uniformBounds_size _ _ _)
+    have hbs := hp.bounds_sound w ms A hAms t (by rw [ofDag_dag]; exact ht)
+    unfold SCtx.opaqueUnder at hun
+    rw [hcx.prep, hcx.width] at hun
+    refine ⟨hAin t htI, fun hf => ?_, fun hf => ?_⟩
+    · have hfb : ((Prep.ofDag dag).family[t]! == .none) = true := by simp [hf]
+      rw [if_pos hfb] at hun
+      have h1 := (hble t).1
+      have h2 := hbs.2.1
+      simp only [ge_iff_le, decide_eq_true_eq] at hun
+      omega
+    · have hfb : ((Prep.ofDag dag).family[t]! == .none) = false := by simpa using hf
+      rw [if_neg (by simp [hfb])] at hun
+      have h1 := (hble t).2.1
+      have h2 := (hbs.2.2 hf).1
+      simp only [ge_iff_le, decide_eq_true_eq] at hun
+      omega
+
+/-- Certain-stored and uncertain terms are candidates. -/
+theorem ucand_of_ucls {dag : Dag} {roots : Array Nat} {w : Nat} {θ : _root_.Int} {t : Nat}
+    (ht : t < dag.size)
+    (h : (ucls dag roots w θ)[t]! = .certainStored ∨ (ucls dag roots w θ)[t]! = .uncertain) :
+    (ucand dag roots w)[t]! = true := by
+  have h1 : (ucls dag roots w θ)[t]! ≠ .certainExcluded := by
+    rcases h with h | h <;> rw [h] <;> exact fun h => by cases h
+  have h2 : (ucls dag roots w θ)[t]! ≠ .lowDegree := by
+    rcases h with h | h <;> rw [h] <;> exact fun h => by cases h
+  simp only [ucls, classifyWith] at h1 h2
+  rw [getElem!_range_map _ (by rw [ofDag_dag]; exact ht)] at h1 h2
+  unfold ucand searchCandidates
+  rw [getElem!_range_map _ (by rw [ofDag_dag]; exact ht)]
+  simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq]
+  by_cases hce : certainExcludedTest (Prep.ofDag dag) (graphFacts dag roots) w t = true
+  · exact absurd (by rw [if_pos hce]) h1
+  · rw [if_neg hce] at h1 h2
+    by_cases hdeg : (graphFacts dag roots).deg[t]! < 2
+    · exact absurd (by rw [if_pos hdeg]) h2
+    · exact ⟨by simpa using hce, by omega⟩
+
+/-- **Groups are modular.** If a group passes the separation check under the
+reduced context `(I, O)`, adding a part `S` of the group and a list `D` of
+other members (outside the group and the context) to `I` is additive. -/
+theorem group_modular {dag : Dag} (hwf : DagWF dag) {roots : Array Nat}
+    (hroots : ∀ r ∈ roots.toList, r < dag.size) {w : Nat} {θ : _root_.Int} (hθ : 1 ≤ θ)
+    {cs : List Nat} {cx : SCtx} (hcx : SCtxWF dag roots w θ cs cx)
+    (hcsc : ∀ t ∈ cs, t < dag.size ∧ (ucls dag roots w θ)[t]! = .certainStored)
+    {g I O : Array Nat} (hchk : cx.sepCheck g I O = true)
+    (hI : ∀ t ∈ I.toList, t ∈ cx.members.toList ∧ t ∉ O.toList)
+    (hO : ∀ t ∈ O.toList, t ∈ cx.members.toList)
+    {D S : List Nat}
+    (hD : ∀ t ∈ D, t ∈ cx.members.toList ∧ t ∉ g.toList ∧ t ∉ I.toList ∧ t ∉ O.toList)
+    (hS : ∀ t ∈ S, t ∈ g.toList) :
+    scost cx dag (I.toList ++ D ++ S) + scost cx dag I.toList =
+      scost cx dag (I.toList ++ D) + scost cx dag (I.toList ++ S) := by
+  have hdag : cx.up.prep.dag = dag := by rw [hcx.prep]; rfl
+  obtain ⟨ha, hb⟩ := sepCheck_spec (cx := cx) (by rw [hdag]; exact hwf)
+    (by rw [hdag, hcx.closure])
+    (by intro t ht; rw [hdag]; exact (hcx.mem t (Array.mem_toList_iff.mpr ht)).1) hchk
+  rw [hdag] at ha hb
+  -- members are uncertain, so not certain-stored
+  have hmemcs : ∀ t ∈ cx.members.toList, t ∉ cs := by
+    intro t ht hcs
+    have h1 := (hcsc t hcs).2
+    rw [(hcx.mem t ht).2] at h1
+    cases h1
+  have hmemcand : ∀ t ∈ cx.members.toList, (ucand dag roots w)[t]! = true :=
+    fun t ht => ucand_of_ucls (hcx.mem t ht).1 (Or.inr (hcx.mem t ht).2)
+  have hcscand : ∀ t ∈ cs, (ucand dag roots w)[t]! = true :=
+    fun t ht => ucand_of_ucls (hcsc t ht).1 (Or.inl (hcsc t ht).2)
+  have hgm : ∀ t ∈ g.toList, t ∈ cx.members.toList ∧ t < dag.size ∧ t ∉ I ∧ t ∉ O :=
+    fun t ht => ⟨Array.mem_toList_iff.mpr (ha t (Array.mem_toList_iff.mp ht)).1,
+      (ha t (Array.mem_toList_iff.mp ht)).2⟩
+  have hall : ∀ t ∈ I.toList ++ D ++ S, t ∈ cx.members.toList ∧ t ∉ O.toList := by
+    intro t ht
+    rcases List.mem_append.mp ht with ht | ht
+    · rcases List.mem_append.mp ht with ht | ht
+      · exact hI t ht
+      · exact ⟨(hD t ht).1, (hD t ht).2.2.2⟩
+    · obtain ⟨h1, _, _, h4⟩ := hgm t (hS t ht)
+      exact ⟨h1, fun h => h4 (Array.mem_toList_iff.mp h)⟩
+  let OR : Nat → Bool := ((cx.opaqueArr I O)[·]!)
+  have hORcs : ∀ v, cx.up.opaq[v]! = true → OR v = true := by
+    intro v hv
+    show (cx.opaqueArr I O)[v]! = true
+    rw [opaqueArr_spec, hv, Bool.true_or]
+  have hORfalse : ∀ v, v ∉ cs → v ∉ I.toList → OR v = false := by
+    intro v h1 h2
+    show (cx.opaqueArr I O)[v]! = false
+    rw [opaqueArr_spec, hcx.opaq]
+    simp [h1, h2]
+  have hop : ∀ X : List Nat,
+      (X = I.toList ∨ X = I.toList ++ D ∨ X = I.toList ++ S ∨ X = I.toList ++ D ++ S) →
+      OpaqueOn (Prep.ofDag dag) w OR (availOf cx.up.opaq X) := by
+    intro X hX
+    have hXs : ∀ t ∈ X, t ∈ I.toList ++ D ++ S := by
+      intro t ht
+      rcases hX with rfl | rfl | rfl | rfl
+      · simp [ht]
+      · rcases List.mem_append.mp ht with h | h <;> simp [h]
+      · rcases List.mem_append.mp ht with h | h <;> simp [h]
+      · exact ht
+    apply opaqueArr_opaqueOn hwf hroots hθ hcx hcsc
+    · intro v hv
+      simp only [availOf, Bool.or_eq_true, decide_eq_true_eq] at hv
+      rcases hv with hv | hv
+      · rw [hcx.opaq] at hv
+        have hvcs : v ∈ cs := by simpa using hv
+        refine ⟨hcscand v hvcs, fun hvO => ?_⟩
+        exact hmemcs v (hO v hvO) hvcs
+      · obtain ⟨h1, h2⟩ := hall v (hXs v hv)
+        exact ⟨hmemcand v h1, h2⟩
+    · intro t ht
+      simp only [availOf, Bool.or_eq_true, decide_eq_true_eq]
+      right
+      rcases hX with rfl | rfl | rfl | rfl <;> simp [ht]
+    · intro t ht
+      simp only [availOf, Bool.or_eq_true, decide_eq_true_eq]
+      left
+      rw [hcx.opaq]; simp [ht]
+  have hmod := compCost_modular hwf w cx.up.opaq cx.rootsC.toList cx.storedInC.toList
+    (by
+      intro r hr
+      rw [hcx.rootsC, Array.toList_filter, List.mem_filter] at hr
+      exact hroots r hr.1)
+    (by
+      intro c hc
+      rw [hcx.storedInC, Array.toList_filter, List.mem_filter, hcx.closure] at hc
+      exact ((mem_upClosure hwf _ c).mp hc.1).1)
+    OR (I := I.toList) (D := D) (S := S)
+    (fun t ht => (hcx.mem t (hall t ht).1).1)
+    hop
+    (fun x hx => hORfalse x (hmemcs x (hD x hx).1) (hD x hx).2.2.1)
+    (fun x hx => hORfalse x (hmemcs x (hgm x (hS x hx)).1)
+      (fun h => (hgm x (hS x hx)).2.2.1 (Array.mem_toList_iff.mp h)))
+    (by
+      intro v hv hav hOv
+      have hvcs : v ∉ cs := by
+        intro h
+        have := hORcs v (by rw [hcx.opaq]; simp [h])
+        rw [this] at hOv; cases hOv
+      have hvX : v ∈ I.toList ++ D ++ S := by
+        simp only [availOf, Bool.or_eq_true, decide_eq_true_eq] at hav
+        rcases hav with h | h
+        · rw [hcx.opaq] at h; exact absurd (by simpa using h) hvcs
+        · exact h
+      obtain ⟨hvm, hvO⟩ := hall v hvX
+      refine Classical.byContradiction (fun hne => ?_)
+      simp only [Unreached, not_or, Classical.not_forall] at hne
+      obtain ⟨⟨a, haR, haS⟩, ⟨b, hbR, hbD⟩⟩ := hne
+      simp only [Bool.not_eq_false, decide_eq_true_eq] at haS hbD
+      obtain ⟨hbm, hbg, hbI, hbO⟩ := hD b hbD
+      exact hb v (Array.mem_toList_iff.mp hvm) (fun h => hvO (Array.mem_toList_iff.mpr h)) hOv
+        a b haR hbR (Array.mem_toList_iff.mp (hS a haS)) (Array.mem_toList_iff.mp hbm)
+        (fun h => hbg (Array.mem_toList_iff.mpr h)) (fun h => hbI (Array.mem_toList_iff.mpr h))
+        (fun h => hbO (Array.mem_toList_iff.mpr h)))
+  unfold scost
+  rw [hcx.width]
+  exact hmod
+
 end Ix.Compile.Verify.UniformModel
