@@ -5,9 +5,9 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Benchmarks.Kernel.CheckIxeReadCache
 
-/-! # Con-leche census over a compiled Ixon environment (untrusted)
+/-! # Environment check of a compiled Ixon environment (untrusted)
 
-The certified checker's census: con-leche's verified checker, read through
+The certified checker's environment check: con-leche's verified checker, read through
 the Ixon reader
 (`Ix.Kernel.IxonReader`): every primary record of an `.ixe`, in
 dependency order (the Ixon prelude's records first), read into con-leche
@@ -71,7 +71,7 @@ def parseArgs : List String → Option Options
   | [input, output, limit] => do some { input, output, limit := some (← limit.toNat?) }
   | _ => none
 
-/-- The census loop's inputs: from a live setup, or from a read-cache plan. -/
+/-- The check loop's inputs: from a live setup, or from a read-cache plan. -/
 inductive Source where
   | live (env : Ixon.Env) (s : Setup) (names : Std.HashMap Address (Array String))
       (ordered : Array Address)
@@ -175,10 +175,10 @@ def run (args : List String) : IO UInt32 := do
       pure out
   -- The loop runs as con-leche's driver runs its check phase at `--jobs=1`
   -- (`Main.lean`, `checkDeclsIO`): on a dedicated thread, whose allocator
-  -- heap is fresh (this thread's holds the decoded corpus and the
+  -- heap is fresh (this thread's holds the decoded environment and the
   -- temporaries of decoding it), with the read-only inputs marked
   -- persistent first, so that handing them to the thread does not mark
-  -- the whole corpus multi-threaded (atomic reference counts) and the
+  -- the whole environment multi-threaded (atomic reference counts) and the
   -- loop pays no reference counting on them at all. `CHECK_IXE_THREAD=0`
   -- runs the loop on this thread instead. A plan's objects are persistent
   -- already: they live in the mapped region.

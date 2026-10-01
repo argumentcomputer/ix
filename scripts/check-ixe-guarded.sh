@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Run a census to completion under the watchdog: when a check exceeds the
-# watchdog's limits the census exits with code 3 and records the address in
+# Run an environment check to completion under the watchdog: when a check exceeds the
+# watchdog's limits the environment check exits with code 3 and records the address in
 # <output>.runaway; rerun with every recorded address skipped.
-# Usage: check-ixe-guarded.sh <census-binary> <input.ixe> <output.jsonl> [limit] [fuel]
+# Usage: check-ixe-guarded.sh <binary> <input.ixe> <output.jsonl> [limit] [fuel]
 set -u
 binary=$1; input=$2; output=$3; shift 3
 runaway="$output.runaway"

@@ -12,7 +12,7 @@ and `Ix/Kernel/Ixon/NatOpPinData.lean` (the pin variant of the eight
 pin-certified `Nat` operations) from two compiled `.ixe` files: the compiled
 Init (`.lake/envs/initstd.ixe`) and `Ix/Kernel/PinGen/Certs.lean` compiled
 by the Ix compiler (`regenerate` below gives the commands). No JSON is read,
-and none is generated: the optional closure rows are the census's JSONL
+and none is generated: the optional closure rows are the environment check's JSONL
 report rows.
 
 1. **The names.** Con-leche's pinned names, and only those: the basis
@@ -28,7 +28,7 @@ report rows.
 3. **The Nat-operation pins** (plan v4 §2 "Pins"; upstream's
    `Ix/Kernel/PinGen.lean`, over Ixon):
    - **the pins** are the operations' stored values, as the reader reads them
-     from the compiled Init (in the dependency order the census uses). Ixon
+     from the compiled Init (in the dependency order the environment check uses). Ixon
      names a constant by its content, so the pin table's address for
      `Nat.div` already fixes `Nat.div`'s helpers: upstream's helper
      unfolding, which keeps a pin stable when an export renames a helper,
@@ -49,7 +49,7 @@ report rows.
      certificates' `.ixe` is its address in the Init `.ixe`.
 4. **Verification by con-leche.** The prelude records are read under the
    candidate table, and the dependency closure of every pinned constant is
-   read and checked record by record (`CheckIxeStep.checkLoop`, the census's
+   read and checked record by record (`CheckIxeStep.checkLoop`, the environment check's
    own step) with the generated pin variant. The run fails unless every
    pinned constant's record is accepted (a basis block matches its pin up to
    `canon`, the literal-support constants have their exact types, the
@@ -179,7 +179,7 @@ def loadStore (path : System.FilePath) : IO (Ixon.Env × RecordStore) := do
 
 /-! ## Reading declarations -/
 
-/-- Read `addresses` in order, threading the reader state as the census does,
+/-- Read `addresses` in order, threading the reader state as the environment check does,
 and return each record's declarations, with the records that do not read. -/
 def readOrdered (s : Setup) (addresses : Array Address) :
     Std.HashMap Address (Array CDecl) × Array (Address × ReadError) := Id.run do

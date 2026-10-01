@@ -6,19 +6,19 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Benchmarks.Kernel.CheckIxeStep
 import Ix.Ixon.KernelAdmission
 
-/-! # The batch fold over a census's accepted records (untrusted harness)
+/-! # The batch fold over an environment check's accepted records (untrusted harness)
 
 `kernel-check-ixe --fold <input.ixe> <output.jsonl>` measures con-leche's
 declaration fold `Ix.Kernel.Cached.checkDecls` run ONCE over every record the
-per-record census would accept, as con-leche's own driver (`Main.lean`,
+per-constant check would accept, as con-leche's own driver (`Main.lean`,
 `checkDeclsIO`) runs it over a lean4export stream: phase A
 (`annotDeclStep` over all declarations), then phase B (`checkPending` of
 every recorded declaration against its prefix view, each from a fresh memo
-state). It is the comparison point for the census's per-record step
+state). It is the comparison point for the environment check's per-record step
 (`CheckIxeStep.Checker.step`: phase A on one declaration, then phase B on
 what that step left pending).
 
-The records: the census order (`CheckIxeStep.setup`); a record the reader
+The records: the check order (`CheckIxeStep.setup`); a record the reader
 declines or fails, and every record that depends on one, is left out, as are
 the recursor and projection records of left-out blocks. What remains is read
 by the certified entry's own reader path (`KernelAdmission.readStream`,
@@ -35,7 +35,7 @@ summary on stderr: reading, phase A, phase B (sum of the per-record times and
 wall) and the total. Knobs (environment): `FOLD_THREAD=0` runs phase B on the
 main thread, `FOLD_PERSIST=0` skips the mark, `FOLD_SHARE=1` runs
 `ShareCommon.shareCommon'` over all prepared declarations before phase A
-(corpus-wide sharing of every subterm, name and level), and
+(environment-wide sharing of every subterm, name and level), and
 `FOLD_READSTATS=1` only reports the reader's per-reference work (node and
 reference counts, the time of `resolve`, `Ctx.nameOf` and `keyName` over
 every reference-table entry). -/
@@ -46,7 +46,7 @@ open Ix.Kernel (ConstRef)
 open Ix.Kernel.IxonReader
 open Benchmarks.Kernel.CheckIxeStep
 
-/-- The records the census would accept or check (in census order), and
+/-- The records the environment check would accept or check (in check order), and
 every recursor and projection record of their blocks. -/
 def acceptedRecords (s : Setup) : Array (Address × Ixon.Constant) × Nat := Id.run do
   let mut st : State := {}
@@ -177,7 +177,7 @@ def run (args : List String) : IO UInt32 := do
   let (records, dropped) ← IO.lazyPure fun _ => acceptedRecords s
   let tSelect ← IO.monoMsNow
   IO.eprintln s!"fold: {s.store.size} records, {s.ordered.size} primary; kept {records.size} \
-    (dropped {dropped} primary records the census declines or blocks); load {tLoad - started} ms, \
+    (dropped {dropped} primary records the environment check declines or blocks); load {tLoad - started} ms, \
     selection {tSelect - tLoad} ms"
   if (← IO.getEnv "FOLD_READSTATS") == some "1" then
     readStats s records

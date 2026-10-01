@@ -10,7 +10,7 @@ import Ix.Kernel.NatOpPinSet
 
 /-! # Con-leche's fold one record at a time (untrusted harness)
 
-The per-record step shared by the census (`Benchmarks.Kernel.CheckIxe`)
+The per-record step shared by the environment check (`Benchmarks.Kernel.CheckIxe`)
 and the pin generator (`Benchmarks.Kernel.PinGen`): the dependency
 order of an environment's primary records, the Ixon reader's declarations of
 each record, and an incremental con-leche state that installs and checks
@@ -209,7 +209,7 @@ once, from the whole store, and every lookup is two probes.
 (The L4a version returned the lookup as a closure from a function of the
 store; the compiler compiled it at its full arity, so every lookup rebuilt
 the projection map over all ~100k records, about 55 ms per definition
-record: 50.6 s of the 4,300-record prefix census's "reading".) -/
+record: 50.6 s of the 4,300-record prefix environment check's "reading".) -/
 structure Hints where
   projAt : Std.HashMap (ConstRef Address) Address := {}
   hints : Std.HashMap Address Lean.ReducibilityHints := {}
@@ -254,7 +254,7 @@ def statusKb (field : String) : IO Nat := do
 
 /-! ## The run -/
 
-/-- What a census run reads: the store, the reader context and the order. -/
+/-- What an environment-check run reads: the store, the reader context and the order. -/
 structure Setup where
   store : RecordStore
   cx : Ctx
@@ -279,14 +279,14 @@ def setup (store : RecordStore) (blobs : Address → Option ByteArray)
     if acc.contains o then acc else acc.push o) #[]
   return ⟨store, cx, extra, order store extra first⟩
 
-/-- The outcome of one census run over `addresses` (in order). -/
+/-- The outcome of one environment-check run over `addresses` (in order). -/
 structure Outcome where
   checker : Checker
   counts : Std.HashMap String Nat := {}
   reasons : Std.HashMap String Nat := {}
   failed : Std.HashMap Address Address := {}
 
-/-- What the census loop needs to know about a record besides its reading:
+/-- What the check loop needs to know about a record besides its reading:
 its kind, the recursor records read with it, and the record owners it
 depends on (computed only for a record that reads). -/
 structure RecordView where
@@ -294,7 +294,7 @@ structure RecordView where
   recs : Array Address
   deps : Unit → Array Address
 
-/-- A record's view in a census setup. -/
+/-- A record's view in a check setup. -/
 def Setup.view (s : Setup) (address : Address) : Option RecordView := do
   let source ← s.store[address]?
   pure { kind := kindOf source, recs := recursorRecords s.cx.index address,
@@ -382,7 +382,7 @@ def checkLoopWith {σ : Type} (view : Address → Option RecordView)
           out := { out with reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
   return out
 
-/-- `checkLoopWith` over a census setup: each record is read by the reader
+/-- `checkLoopWith` over a check setup: each record is read by the reader
 at the state the records before it left. -/
 def checkLoop (s : Setup) (pins : List Ix.Kernel.NatOpPinSet) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)

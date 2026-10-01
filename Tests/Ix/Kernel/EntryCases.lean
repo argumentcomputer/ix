@@ -16,7 +16,7 @@ harness loads that module's environment, takes the dependency closure of
 the seeds (with the recursors of every inductive in it, which the reader
 requires), compiles it with Ix's compiler (`Ix.CompileM.compileLeanConsts`),
 loads the serialized environment with the host codec, orders the primary
-records as the census does (`Benchmarks.Kernel.CheckIxeStep`: dependencies,
+records as the environment check does (`Benchmarks.Kernel.CheckIxeStep`: dependencies,
 `Nat`-operation grounds and literal edges first; projections last), and
 submits canonical record bytes, the literal blobs and the compiler's
 reducibility hints to the certified entry `Ix.Ixon.Admission.checkBytes`.
@@ -87,14 +87,14 @@ structure Input where
   seeds : List (Lean.Name × Address)
   /-- every compiled name's address -/
   named : Lean.Name → Option Address
-  /-- the census's view of the same records (store, reader context, order) -/
+  /-- the environment check's view of the same records (store, reader context, order) -/
   step : Benchmarks.Kernel.CheckIxeStep.Setup
 
 def owner (address : Address) (source : Ixon.Constant) : Address :=
   Benchmarks.Kernel.CheckIxeStep.owner address source
 
 /-- Compile the seeds' closure and order its records: primaries in the
-census order (without the prelude's own records, which the entry supplies),
+check order (without the prelude's own records, which the entry supplies),
 then projections by address. -/
 def prepare (leanEnv : Lean.Environment) (seeds : List Lean.Name) : IO Input := do
   let closed ← IO.ofExcept (closure leanEnv seeds)
@@ -298,15 +298,15 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
     IO.eprintln s!"{test.label}: expected {test.expected.label}, got {outcome}: {detail}"
   return passed
 
-/-! ## The census's classification
+/-! ## The environment check's classification
 
-The census (`Benchmarks.Kernel.CheckIxeStep.checkLoop`) runs the same
+The environment check (`Benchmarks.Kernel.CheckIxeStep.checkLoop`) runs the same
 reader and checker one record at a time and classifies each verdict: a
-checker `invalid` is a reject. These cases run the census over a case's
+checker `invalid` is a reject. These cases run the environment check over a case's
 records and check the seed's row. Cl-m1 declined a declaration that was
 `invalid` but accepted at every closed instantiation of its level
 parameters. Cl-level decides the level comparison's missing case by Géran's
-sublevels and removed that rule, so `levelCanon` is accepted by the census
+sublevels and removed that rule, so `levelCanon` is accepted by the environment check
 as by the entry. -/
 
 structure StepCase where

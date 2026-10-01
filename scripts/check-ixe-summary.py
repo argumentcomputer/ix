@@ -3,7 +3,7 @@
 
 Reports outcome counts by declaration kind, first-cause decline/reject reasons,
 and root blockers ranked by how many records they transitively block. A blocked
-row's reason is the address of its root blocker, as the census writes it.
+row's reason is the address of its root blocker, as the environment check writes it.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def main() -> None:
                      key=lambda row: -row["micros"])[:10]
 
     total = len(rows)
-    print(f"# Census of {args.jsonl.name}: {total} declaration rows\n")
+    print(f"# Environment check of {args.jsonl.name}: {total} declaration rows\n")
     print("| Outcome | Records | Share |\n| --- | ---: | ---: |")
     for outcome, count in outcomes.most_common():
         print(f"| {outcome} | {count} | {100 * count / total:.1f}% |")

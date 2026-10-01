@@ -15,8 +15,8 @@ import Benchmarks.Kernel.CheckIxeStep
 The fidelity test of `Ix.Kernel.IxonReader`, in the style of Ix.Tc's
 meta roundtrip (`Tests/Ix/Tc/Roundtrip.lean`, `Ix.Tc.metaRoundtripEnv`):
 compile a Lean environment to Ixon with Ix's compiler, read every primary
-record through the reader exactly as the census does (the Ixon prelude's
-records first, then the census's dependency order, one record at a time with
+record through the reader exactly as the environment check does (the Ixon prelude's
+records first, then the environment check's dependency order, one record at a time with
 the reader's state threaded by `State.commit`, the compiler's reducibility
 hints), and compare every constant the reader emits against a **reference
 translation** of the Lean `ConstantInfo` it was compiled from. The reference
@@ -26,7 +26,7 @@ name ↦ record address), which the reader never reads.
 
 The drivers are `Tests.Ix.Kernel.ReaderRoundtrip` (`lake test`, the
 closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
-(`Init` and `Std`: the census corpus or an in-process compile).
+(`Init` and `Std`: the compiled environment or an in-process compile).
 
 ## The reference translation
 
@@ -87,7 +87,7 @@ difference on the fixture closure and on all of `Init` and `Std` is one of:
     value `fun x => x.i` rewritten to recursor form (con-leche's `ProjRec`,
     `ExportC.projRewriteD`). The entry must equal the same rewrite of the
     reference value at the reader's state (`Node.val`, `Node.kids`);
-  - *compiler hint (per address)*: the census supplies the compiler's hint
+  - *compiler hint (per address)*: the environment check supplies the compiler's hint
     at the record's address (`Env.anonHints`), which Ix min-merges over the
     alpha-equivalent definitions that share one address; Lean has one hint per
     name. Counted only when everything but the hint is equal, the hint is the
@@ -645,7 +645,7 @@ structure Cx where
   environment (the compiled source's own declarations) -/
   foreign : Std.HashSet Address
   keep : Lean.Name → Bool
-  /-- the host hint the census supplies at a Lean constant's reference -/
+  /-- the host hint the environment check supplies at a Lean constant's reference -/
   advisory : Lean.Name → Option Ix.Kernel.ReducibilityHint
   /-- how many Lean constants share a Lean constant's reference -/
   aliases : Lean.Name → Nat
@@ -687,7 +687,7 @@ def judge (cx : Cx) (st : State) (n : Lean.Name) (actual : Entry) (expected : Re
         let actualHint := match actual with | .defn _ _ h => some h | _ => none
         let nd := cx.named[n]?
         if hintOnly then
-          -- the census supplies the compiler's per-address hint, which Ix
+          -- the environment check supplies the compiler's per-address hint, which Ix
           -- min-merges over the alpha-equivalent definitions at one address
           if actualHint == cx.advisory n && cx.aliases n > 1 then .normalized "compiler hint (per address)"
           else .unexplained s!"{diff} (the reader's hint is not the per-address hint of an alias set)"
@@ -777,7 +777,7 @@ def compareRecord (cx : Cx) (st : State) (address : Address) (rd : Read)
 
 /-- Compare the reader's reading of the compiled records with the reference
 translation of the Lean constants. `limit` bounds the records read (in the
-census order); `keep` decides which verdicts are kept by name; `roots`
+check order); `keep` decides which verdicts are kept by name; `roots`
 restricts the run to the prelude and the closure of those records. -/
 def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool := fun _ => false)
     (roots : Option (Array Address) := none) :
@@ -821,7 +821,7 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
   let advisory (n : Lean.Name) : Option Ix.Kernel.ReducibilityHint := (refs[n]?).bind s.cx.hint
   let aliases (n : Lean.Name) : Nat := ((refs[n]?).map fun r => (byRef.getD r #[]).size).getD 0
   let cx : Cx := { input, rcx, named, byName, foreign, keep, advisory, aliases }
-  -- read in the census order, comparing each record's constants at the
+  -- read in the check order, comparing each record's constants at the
   -- reader's state before it
   let base := match roots with
     | some rs => Benchmarks.Kernel.CheckIxeStep.closure store s.extra (pre.records.map (fun (p : Address × Ixon.Constant) => p.1) ++ rs)

@@ -109,7 +109,7 @@ lean_lib MultiStark where
 
 /-- `lake build -K profile` compiles with frame pointers, so `perf` can unwind
 call graphs through generated C (LBR and DWARF unwinding are unavailable on
-the census machines). The default build is unaffected. -/
+the benchmark machines). The default build is unaffected. -/
 def profileLeancArgs : Array String :=
   if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
 
@@ -378,7 +378,7 @@ lean_exe «kernel-level-comparison» where
   moreLinkObjs := #[ix_rs]
 
 /-- The Ixon reader against a direct translation of Lean's constants over
-`Init` and `Std` (`Tests/Ix/Kernel/ReaderFidelity.lean`): the census corpus
+`Init` and `Std` (`Tests/Ix/Kernel/ReaderFidelity.lean`): the compiled environment
 (`kernel-reader-fidelity .lake/envs/initstd.ixe [limit]`), `Init` and `Std`
 compiled in process (`--compile [limit]`), `check-kernel`'s run
 (`--check-kernel`) or the `lake test` fixture (`--fixture`). -/
@@ -388,14 +388,14 @@ lean_exe «kernel-reader-fidelity» where
   moreLinkObjs := #[ix_rs]
 
 /-- Con-leche's verified checker through the Ixon reader: the
-`checkBytes`-shaped entry and its per-record census (untrusted). -/
+`checkBytes`-shaped entry and its per-constant check (untrusted). -/
 lean_lib KernelEntry where
   roots := #[`Ix.Ixon.KernelAdmission, `Ix.Ixon.KernelConsistency, `Ix.Ixon.Consistency,
     `Benchmarks.Kernel.CheckIxeStep,
     `Benchmarks.Kernel.CheckIxeReadCache, `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold]
 
-/-- The certified checker's census (L5: the default census target):
-con-leche through the Ixon reader, one row per record (untrusted step). -/
+/-- The certified checker's environment check over a compiled `.ixe` (L5):
+con-leche through the Ixon reader, one row per constant (untrusted step). -/
 lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]

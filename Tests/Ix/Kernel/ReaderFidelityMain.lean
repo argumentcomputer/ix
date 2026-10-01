@@ -17,15 +17,15 @@ reference translation of the Lean environment it was compiled from
 from this toolchain's `.olean` files.
 
 * `kernel-reader-fidelity <input.ixe> [limit]`: the compiled side is an
-  `.ixe`, normally the census corpus `.lake/envs/initstd.ixe` (compiled by
+  `.ixe`, normally the compiled environment `.lake/envs/initstd.ixe` (compiled by
   `ix compile` from `Benchmarks/Compile/CompileInitStd.lean`, which imports
-  exactly `Init` and `Std`); `limit` bounds the records read, in the census
+  exactly `Init` and `Std`); `limit` bounds the records read, in the environment check
   order.
 * `kernel-reader-fidelity --compile [limit]`: compiles `Init` and `Std` in
   process with Ix's Rust compiler (`Ix.CompileM.rsCompileEnvBytes`, the
   compiler behind `ix compile`) and compares that.
 * `kernel-reader-fidelity --check-kernel`: what `lake run check-kernel` runs,
-  the census corpus if it is present and an in-process compile otherwise,
+  the compiled environment if it is present and an in-process compile otherwise,
   at `checkKernelLimit` records.
 * `kernel-reader-fidelity --fixture`: the `lake test` suite's check of the fixture closure
   (`Tests.Ix.Kernel.ReaderRoundtrip.evaluate`: expected verdicts and tampers).
@@ -45,12 +45,12 @@ namespace Tests.Ix.Kernel.ReaderFidelityMain
 
 open Tests.Ix.Kernel.ReaderFidelity
 
-/-- The records `check-kernel` compares (in the census order, about a
+/-- The records `check-kernel` compares (in the check order, about a
 fifth of Init and Std: the prelude, `Init.Prelude`'s closure and well past
 it, which covers the nested `Lean.Syntax` block). -/
 def checkKernelLimit : Nat := 20000
 
-def corpus : System.FilePath := ".lake/envs/initstd.ixe"
+def initStdEnv : System.FilePath := ".lake/envs/initstd.ixe"
 
 /-- `Init` and `Std` compiled in process by Ix's Rust compiler. -/
 def compileInitStd (leanEnv : Lean.Environment) : IO Ixon.Env := do
@@ -91,9 +91,9 @@ def main (args : List String) : IO UInt32 := do
   let leanEnv ← getCompileEnv #[`Init, `Std]
   let (ixon, limit, source) ← match args with
     | ["--check-kernel"] =>
-      if ← corpus.pathExists then
-        pure (← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile corpus)), some checkKernelLimit,
-          corpus.toString)
+      if ← initStdEnv.pathExists then
+        pure (← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile initStdEnv)), some checkKernelLimit,
+          initStdEnv.toString)
       else pure (← compileInitStd leanEnv, some checkKernelLimit, "in-process compile")
     | "--compile" :: rest => pure (← compileInitStd leanEnv, rest.head?.bind String.toNat?,
         "in-process compile")

@@ -6,7 +6,7 @@ copy: `scripts/vendor-conleche.py` rewrites upstream's `ConLeche` paths and
 namespace; seventh pass below) and run on Ixon records by the reader in
 `Ix/Kernel/Ixon/`; the certified API is `Ix.Ixon.Admission.checkBytes`.
 `docs/kernel.md` describes the entry, its theorems, the trust surface, the
-audits, provenance and the census, and section 2 below is its contract.
+audits, provenance and the environment check, and section 2 below is its contract.
 Con-leche's design is its `DESIGN.md` (with `OVERVIEW.md` and `PERF.md`) at
 the pinned revision. The intrinsic proof-carrying kernel that this roadmap
 first planned (K0 to K4, section 10's P-steps) was retired on 2026-10-01;
@@ -129,7 +129,7 @@ kernel:
   sync is a diff and not a re-port;
 - Ix-specific code sits at the boundary only: the Ixon reader, the address
   encoding, the Ixon prelude and pins, the restated public theorems, the
-  census driver, and the audits. The Ixon ingress and the integrations with
+  environment-check driver, and the audits. The Ixon ingress and the integrations with
   the rest of Ix stay.
 
 The one imperative is unchanged: a certified consistent typechecker for
@@ -167,6 +167,18 @@ upstream sync is still a diff, now after the script. Text before this pass
 names the tree `ConLeche/**`; the current-structure passages (sections 2,
 3.0, 4, 5 and 9) are updated. `docs/kernel.md`, "Vendored con-leche",
 describes the vendoring and the sync.
+
+Terminology pass, 2026-10-02: Ix-authored names no longer say "ConLeche",
+"census" or "corpus" (vendored files keep upstream's text, and con-leche is
+named wherever the upstream project is meant). `Ix.Ixon.ConLecheAdmission`
+and `ConLecheConsistency` are `Ix.Ixon.KernelAdmission` and
+`KernelConsistency`; the namespaces `Ix.Kernel.ConLecheReader` and
+`Ix.Kernel.ConLecheFold` are `Ix.Kernel.IxonReader` and `Ix.Kernel.IxonFold`;
+the census (`kernel-census`, `Benchmarks/Kernel/ConLecheCensus.lean`,
+`CENSUS_*`, `.lake/census/`) is the environment check (`kernel-check-ixe`,
+`Benchmarks/Kernel/CheckIxe.lean`, `CHECK_IXE_*`, `.lake/envs/`);
+`conleche-pin-gen` and `conleche-level-differential` are `kernel-pin-gen` and
+`kernel-level-comparison`. Text before this pass uses the old names.
 
 ## 1. Thesis and scope
 
@@ -278,7 +290,7 @@ values denote their constants, from `defn_reads`), `checkBytes_no_proof_of_False
 (no accepted constant of the pinned `False`), `checkBytes_no_False_theorem` (no
 accepted theorem record whose type reads as the pinned `False`),
 `checkBytes_reading` (fidelity) and `checkBytes_resources`. The same theorems
-hold at every pin table and prelude (`Ix/Ixon/ConLecheConsistency.lean`,
+hold at every pin table and prelude (`Ix/Ixon/KernelConsistency.lean`,
 over `checkBytesWith`). The intrinsic entries (`checkBytesIntrinsic`) were
 retired at L6 (see plan v4).
 
@@ -383,7 +395,7 @@ the compiled Init records (`.ixe`). The one transitional exception,
 con-leche's `NatOpPins` elaboration-time JSON dump (verbatim from L2, so
 that `model_exists` was green first), was removed at L4: the Nat-operation
 pin variant is generated from Ixon records by the Ixon pinner
-(`conleche-pin-gen`, committed as `Ix/Kernel/Ixon/NatOpPinData.lean` since
+(`kernel-pin-gen`, committed as `Ix/Kernel/Ixon/NatOpPinData.lean` since
 the seventh pass), `pins/*.json` and `ConLeche/PinGen/Dump.lean` are
 deleted, and upstream's `ConLeche/Kernel/NatOpPins.lean` is not ported (L4b
 kept it verbatim and unbuilt; int-4 deleted it).
@@ -451,7 +463,7 @@ with `OVERVIEW.md` and `PERF.md`, at the pinned revision (reviewable in
 | Ixon prelude and pins | the prelude records of the compiled Init; Nat-op, trust and standard-axiom pins from an Ixon pinner (a host tool), committed as Lean literals | L4 |
 | Restated public theorems | model existence and no-False at the Ix entry (section 2), with the fidelity theorem | L5 |
 | `Ix/Ixon/Admission.lean`, `Audit.lean`, `Projection.lean` | byte admission and its audits, retargeted to the new entry | L5 |
-| Census driver | `Benchmarks/Kernel/ConLecheCensus.lean` (`kernel-census`), with an untrusted per-record step; the intrinsic `Census.lean` was retired at L6 | L4 |
+| Environment-check driver | `Benchmarks/Kernel/CheckIxe.lean` (`kernel-check-ixe`), with an untrusted per-constant step; the intrinsic `Census.lean` was retired at L6 | L4 |
 | Audits and fences | `Ix/Kernel/Audit/*.lean`, `Ix/Ixon/*Audit.lean`, `scripts/layering.sh`, `scripts/trust-surface.sh`, `Tests/Ix/Kernel/{ImportManifest,Provenance}.lean` | L0, L5 |
 | Model instance | `Models/SetTheory`, switched to con-leche's `SetTheory` class | L5 |
 
@@ -486,13 +498,13 @@ Ix/Ixon/Wire.lean, WireCheck   Structural wire representability
 Ix/Ixon/Verify/                Codec, framing and byte-admission proofs
 Ix/Ixon/Audit.lean             The codec's import, runtime and axiom audit
 Ix/Ixon/Admission.lean         The certified API checkBytes and its outcome classification
-Ix/Ixon/ConLecheAdmission.lean The pipeline: byte stage, reader, prelude, fold
+Ix/Ixon/KernelAdmission.lean   The pipeline: byte stage, reader, prelude, fold
 Ix/Ixon/Consistency.lean       The public theorems
 Ix/Ixon/{Projection,BlockOrder}{,Proofs,Audit}.lean  The variants
 IxKernel/lakefile.lean         The certified gate's dependency-free package
 Tests/Ix/Kernel/               Fixtures, entry cases, provenance manifest
 Models/SetTheory/              Mathlib instance of con-leche's SetTheory
-docs/kernel.md                 Contract, trust surface, audits, provenance, census
+docs/kernel.md                 Contract, trust surface, audits, provenance, environment check
 ```
 
 From the port the tree also holds con-leche's checker, vendored under

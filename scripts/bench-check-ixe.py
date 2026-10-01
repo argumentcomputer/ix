@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Alternate native census runs and compare coverage separately from timing.
+"""Alternate native environment-check runs and compare coverage separately from timing.
 
-The census measures supported-profile coverage, not a checkEnv verdict. Run
+The environment check measures supported-profile coverage, not a checkEnv verdict. Run
 under a memory cap and without concurrent builds or benchmark processes.
 """
 
@@ -72,7 +72,7 @@ def read_rows(path: Path) -> dict[str, dict]:
             except (KeyError, TypeError, ValueError) as error:
                 raise ValueError(f"{path}:{line_number}: {error}") from error
     if not rows:
-        raise ValueError(f"{path}: no census rows")
+        raise ValueError(f"{path}: no check rows")
     return rows
 
 
@@ -183,7 +183,7 @@ def run(args: argparse.Namespace) -> int:
         raise ValueError("GNU time is required (or pass --time-binary)")
     report = {
         "schema": 1, "completed": False,
-        "scope": "census supported-profile coverage; not a certified whole-environment verdict",
+        "scope": "environment-check supported-profile coverage; not a certified whole-environment verdict",
         "input": {"path": str(args.input), "sha256": sha256(args.input)},
         "source_sha256": source_fingerprint(args.source),
         "source_note": "local source at invocation; caller must build the binary from this source",

@@ -7,13 +7,13 @@ import LSpec
 import Benchmarks.Kernel.CheckIxeReadCache
 import Tests.Ix.Kernel.ReaderRoundtrip
 
-/-! # The census's persistent read cache (`lake test`)
+/-! # The environment check's persistent read cache (`lake test`)
 
 `Benchmarks.Kernel.CheckIxeReadCache` on the compiled fixture closure of
-`Tests.Ix.Kernel.ReaderRoundtrip`: a census run over the closure of a few
+`Tests.Ix.Kernel.ReaderRoundtrip`: an environment-check run over the closure of a few
 fixture declarations (nested and mutual blocks, the modeller's records, a
 nested structure) records its readings; the plan is written as a compacted
-region, mapped back, and the census run from the plan gives the same rows
+region, mapped back, and the environment-check run from the plan gives the same rows
 (address, kind, names, outcome, reason) for every record. A plan written
 under another version is not used. -/
 
@@ -76,7 +76,7 @@ def check : IO (Nat × Array String) := do
   return ((← liveRows.get).size, errors)
 
 def suite : List TestSeq := [
-  .individualIO "read cache: a census from the mapped plan gives the live rows" none (do
+  .individualIO "read cache: an environment check from the mapped plan gives the live rows" none (do
     let (rows, errors) ← check
     IO.println s!"read cache: {rows} rows"
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)

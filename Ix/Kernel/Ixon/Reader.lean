@@ -110,7 +110,7 @@ Three kinds of names are not of this form:
 * Every binder carries `pw := .never` (con-leche's annotation pass computes
   the datum); Ixon v3 binder contracts are erased, as by Ix's own reader.
 * Definitions get the kernel's height rule `regular (1 + max height)` unless
-  the host supplies a hint (the census supplies the compiler's own).
+  the host supplies a hint (the environment check supplies the compiler's own).
 -/
 
 namespace Ix.Kernel.IxonReader
@@ -1092,9 +1092,9 @@ the checker declines a string literal while those are not installed. An
 Ixon record that only uses a literal names none of them (its `nat`/`str`
 nodes point at blobs), so a dependency order over table references alone can
 put a literal user before the support: `String.instInhabited`, whose value
-is `⟨""⟩`, came before `String.ofList` and `Char.ofNat` in the L4a census
+is `⟨""⟩`, came before `String.ofList` and `Char.ofNat` in the L4a environment check
 and blocked 760 records. `literalEdges` adds those implicit references as
-dependency edges, as the census adds a pinned `Nat` operation's certificate
+dependency edges, as the environment check adds a pinned `Nat` operation's certificate
 ground (`natOpDeps`). The `Nat` trio is the prelude's `Nat` block, which
 every order here puts first, so only the string edges change an order; the
 `Nat` edges keep the relation complete for the blocking report. -/

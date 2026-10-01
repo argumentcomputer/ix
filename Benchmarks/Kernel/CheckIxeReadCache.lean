@@ -7,14 +7,14 @@ import Benchmarks.Kernel.CheckIxeStep
 import Lean.CompactedRegion
 import Ix.Address
 
-/-! # A persistent read cache for the census (untrusted host tooling)
+/-! # A persistent read cache for the environment check (untrusted host tooling)
 
-A census run decodes the whole `.ixe` (`Ixon.deEnv`), builds the record
+An environment-check run decodes the whole `.ixe` (`Ixon.deEnv`), builds the record
 store, the reader's index, the dependency order and the report names, and
 reads every record through the Ixon reader, before and while it checks. All
 of that is a function of the `.ixe`'s bytes and of the reader's code, so a
 second run over the same file repeats it exactly. This cache keeps it: a
-**plan** of the run (per record in the census order: its kind, the recursor
+**plan** of the run (per record in the check order: its kind, the recursor
 records read with it, the owners it depends on, and the reader's reading,
 `Except ReadError Read`, with every declaration), written once as a Lean
 compacted region (`Lean.CompactedRegion.save`, the `.olean` mechanism) and
@@ -24,13 +24,13 @@ memory-mapped by later runs, which then decode and read nothing.
 `version`: the cache format, Lean's githash and a digest of the sources a
 reading or the plan's layout depends on (the reader, the prelude and pin
 data, the imported frontend passes it runs, con-leche's syntax, the Ixon
-decoder, the census order, this module), embedded at compile time
+decoder, the check order, this module), embedded at compile time
 (`sourceDigest`). A file is only ever read under the key it was written
 under, so a plan of another reader, layout or toolchain is never
 reinterpreted. Corrupt or foreign files are refused by the region reader's
 header check.
 
-**What may use it.** The census drivers (`kernel-check-ixe`:
+**What may use it.** The environment-check drivers (`kernel-check-ixe`:
 `CHECK_IXE_READ_CACHE=<dir>`) and other host tools. Never the certified entry
 (`Ix.Ixon.Admission.checkBytes`): its theorems are about the bytes it is
 given, so it decodes and reads them itself every time. Nothing here is
@@ -49,7 +49,7 @@ open Benchmarks.Kernel.CheckIxeStep
 
 /-! ## The plan -/
 
-/-- One record of a census run, in the census order. -/
+/-- One record of an environment-check run, in the check order. -/
 structure PlanRecord where
   address : Address
   kind : String
@@ -58,7 +58,7 @@ structure PlanRecord where
   reading : Except ReadError Read
   deriving Inhabited
 
-/-- A census run's plan: the setup line's counts, the report names, and the
+/-- An environment-check run's plan: the setup line's counts, the report names, and the
 records in order. -/
 structure Plan where
   version : String
@@ -72,7 +72,7 @@ structure Plan where
 
 /-- Bump when the plan's layout or its meaning changes in a way the source
 digest would not see. -/
-def formatTag : String := "conleche-read-cache-1"
+def formatTag : String := "check-ixe-read-cache-1"
 
 /-- The sources a reading or the plan's layout depends on. -/
 def sourceDigest : UInt64 := hash [
@@ -109,7 +109,7 @@ def planPath (dir : System.FilePath) (ixeBytes : ByteArray) : System.FilePath ×
 
 /-! ## Writing and reading -/
 
-/-- The plan of a finished census run: its readings (in order) with each
+/-- The plan of a finished environment-check run: its readings (in order) with each
 record's view in the setup. -/
 def ofRun (s : Setup) (ixe header : String) (names : Std.HashMap Address (Array String))
     (readings : Array (Address × Except ReadError Read)) : Plan := Id.run do
@@ -140,7 +140,7 @@ def load (path : System.FilePath) (ixe : String) : IO (Option Plan) := do
 
 /-! ## Running from a plan -/
 
-/-- The census loop over a plan: every view and reading is the plan's, and
+/-- The check loop over a plan: every view and reading is the plan's, and
 the reading state is not threaded (no record is read). `limit` bounds the
 records, as for a live run. -/
 def checkLoopPlan (plan : Plan) (pins : List Ix.Kernel.NatOpPinSet) (limit : Option Nat)

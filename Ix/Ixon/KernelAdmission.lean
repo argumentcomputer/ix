@@ -39,7 +39,7 @@ entry does not reorder beyond `preparePrelude`: a host order is a dependency
 order in which each record follows its references, a pinned `Nat` operation's
 certificate ground, and the constants its literals reference
 (`IxonReader.literalEdges`; con-leche declines a string literal before the
-string-support declarations), as the census driver's order is.
+string-support declarations), as the environment-check driver's order is.
 -/
 
 namespace Ix.Ixon.KernelAdmission

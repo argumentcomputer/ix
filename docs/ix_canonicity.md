@@ -1558,14 +1558,14 @@ languages:
   self-strip of `u + 1` from `[u, v, w]` left gate `w` without an
   absorber in `[v, w]`). The fix changes a canonical form only where
   the old one had the wrong value; no stored level of the Init+Std or
-  Mathlib corpora changed (0 of 345,177 and 3,343,350 table entries,
+  Mathlib environments changed (0 of 345,177 and 3,343,350 table entries,
   0 of 16,621 and 426,093 original spellings), so no address moved.
   Tests: the witness family, every ≤8-node term (Rust) / ≤6-node term
   (Lean) over three parameters, and the cl-level differential's
   biased random levels in both languages, with exact valuation sets.
 - **P1 (idempotence):** `canonUniv (canonUniv u) = canonUniv u`.
   It holds wherever the normal forms involved carry no subsumption
-  leftover (below), which covers every stored level of both corpora;
+  leftover (below), which covers every stored level of both environments;
   the random family pins how rare the exceptions are.
 - **P2 (roundtrip-fixpoint):** `geran (linearize L) = L` on canonical
   forms — `linearize` picks a genuine representative of its class;
@@ -1577,10 +1577,10 @@ languages:
   `v + 1` dominates (`Ix/Tc/Level.lean`, `crates/kernel/src/level.rs`,
   `Ix/IxonUniv.lean` alike). Then two equal levels can have different
   normal forms. 239 of the 125,000 levels of the random family hit
-  it, and none of the corpora's. An exact subsumption (in all
+  it, and none of the environments'. An exact subsumption (in all
   normalizers together, to keep P4's oracle aligned) would make P1, P2
   and P6 unconditional and the quotient exact; measured on both
-  corpora it changes no stored level either.
+  environments it changes no stored level either.
 - **P3 (mk\*-fixpoint):** `linearize` output triggers no rule of the
   kernel-rebuild set below — rebuilding it through the `mk*`
   constructors is the node-for-node identity, so kernel ingress

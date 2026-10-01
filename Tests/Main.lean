@@ -114,7 +114,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
   -- the Ixon reader against a direct translation of compiled Lean constants
   ("kernel-reader-fidelity", Tests.Ix.Kernel.ReaderRoundtrip.suite),
-  -- the census's persistent read cache: a run from the mapped plan gives the live rows
+  -- the environment check's persistent read cache: a run from the mapped plan gives the live rows
   ("kernel-read-cache", Tests.Ix.Kernel.ReadCache.suite),
   ("primitive-address-parity", Tests.Ix.Kernel.BuildPrimitives.paritySuite
     ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),

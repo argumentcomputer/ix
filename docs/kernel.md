@@ -7,7 +7,7 @@ see "Vendored con-leche" below), run on Ixon records by Ix's reader in
 `Ix/Kernel/Ixon/`. The certified API is `Ix.Ixon.Admission.checkBytes`. This
 page states what that entry does, what is proved about it, what is trusted,
 how the gate checks the trust boundary, how the vendored copy tracks
-upstream, and how to run the census.
+upstream, and how to check a whole compiled environment.
 The roadmap's section 2 (`plans/ix-certified-roadmap.md`) is the contract
 this page implements; plan v4 (`plans/ix-kernel-con-leche-port-v4.md`, not
 versioned) records the port's steps L0 to L6.
@@ -75,7 +75,7 @@ record that contains a literal must follow the constants the literal names
 (`IxonReader.literalEdges`: the `Nat` block, and for a string literal
 `String`, `String.ofList`, `List`, `Char`, `Char.ofNat`); a pinned `Nat`
 operation must follow its certificate ground. A host order that violates
-this declines; it cannot cause an unsound accept. The census driver's
+this declines; it cannot cause an unsound accept. The environment check's
 order (`Benchmarks/Kernel/CheckIxeStep.lean`, `order`) satisfies it.
 
 ## The theorems
@@ -475,14 +475,14 @@ re-derives every rewritten file from upstream through the script
 revisions); `--source <jj workspace>` does so for the old branch, which
 needs a workspace holding `ad60e5f6`. The upstream-sync recipe is above.
 
-## Census
+## Environment check
 
-The census measures coverage on a compiled corpus; it is not a certified
-verdict. `kernel-check-ixe` (`Benchmarks/Kernel/CheckIxe.lean`, entry
-`CheckIxeMain.lean`; `kernel-census-cl` is the same driver) reads an
-`.ixe`, orders its primary records (the prelude's first, then dependencies,
-`Nat`-operation grounds and literal edges), reads each record with the Ixon
-reader and installs and checks it one record at a time with an incremental
+The environment check measures coverage on a compiled environment (an
+`.ixe`); it is not a certified verdict. `kernel-check-ixe`
+(`Benchmarks/Kernel/CheckIxe.lean`, entry `CheckIxeMain.lean`) reads an
+`.ixe`, orders its primary constants (the prelude's first, then dependencies,
+`Nat`-operation grounds and literal edges), reads each constant with the Ixon
+reader and installs and checks it one constant at a time with an incremental
 step of con-leche's fold (`Benchmarks/Kernel/CheckIxeStep.lean`),
 continuing past failures and reporting dependents of a failure as blocked.
 Hints are the compiler's. Each row is JSON (`address, names, kind, outcome,
@@ -500,20 +500,20 @@ python3 scripts/check-ixe-report.py .lake/envs/initstd.jsonl
 Usage: `kernel-check-ixe <input.ixe> <output.jsonl> [limit]`. Environment:
 
 - `CHECK_IXE_WATCH_MS` (default 60000) and `CHECK_IXE_WATCH_MB` (default 20000):
-  a watchdog ends the run with exit code 3 when one record's check exceeds
+  a watchdog ends the run with exit code 3 when one constant's check exceeds
   the time or the process's resident memory exceeds the size, and appends
-  the record's address to `<output>.runaway`. The resident size includes
-  the decoded corpus, which the driver holds in memory: about 4 GB for
+  the constant's address to `<output>.runaway`. The resident size includes
+  the decoded environment, which the driver holds in memory: about 4 GB for
   Init and about 38 GB for Mathlib. `CHECK_IXE_WATCH_MB` must exceed it, or
   the watchdog fires before the first check (for Mathlib, for example,
   `CHECK_IXE_WATCH_MB=46000` under a `MemoryMax` above that);
-- `CHECK_IXE_SKIP` (comma-separated addresses) declines those records
+- `CHECK_IXE_SKIP` (comma-separated addresses) declines those constants
   unchecked; `scripts/check-ixe-guarded.sh` reruns with every recorded runaway
   skipped until the run completes;
 - `CHECK_IXE_ROOTS` (comma-separated Lean names) restricts the run to the
   prelude and the dependency closure of those constants.
 
-Run one census at a time, under a memory cap, with no concurrent build.
+Run one environment check at a time, under a memory cap, with no concurrent build.
 `scripts/check-ixe-summary.py` and `scripts/bench-check-ixe.py`
 summarize and compare runs. Mathlib's `.ixe` comes from
 `Benchmarks/Compile/CompileMathlib.lean` (`Benchmarks/Compile/README.md`).

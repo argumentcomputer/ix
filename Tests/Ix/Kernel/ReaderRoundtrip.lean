@@ -16,7 +16,7 @@ The Ix.Tc-style roundtrip for con-leche's Ixon reader: the declarations of
 `Tests.Ix.Kernel.ReaderFidelityDefs` (nested, mutual, indexed, reflexive and
 structure-like inductives, quotients, literals, mutual and well-founded
 definitions) and everything in `Init` they reach are compiled with Ix's
-compiler, read through `Ix.Kernel.IxonReader` as the census reads them,
+compiler, read through `Ix.Kernel.IxonReader` as the environment check reads them,
 and compared constant by constant with the reference translation of the Lean
 constants (`Tests.Ix.Kernel.ReaderFidelity`, whose docstring lists the
 normalizations and canonicalizations it classifies).

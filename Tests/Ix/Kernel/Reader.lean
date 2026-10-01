@@ -459,7 +459,7 @@ def natBlock : Address := match builtinPins.names.toList.find? (toString ·.2 ==
 
 The records Ix's compiler produces for `Tests.Ix.Kernel.EntryCaseDefs.LTree`
 (`lake exe ix compile Tests/Ix/Kernel/EntryCaseDefs.lean --consts` with
-`LTree`, its recursors, `LNode`'s recursors and `List.rec`), in the census
+`LTree`, its recursors, `LNode`'s recursors and `List.rec`), in the environment check
 order with the projections last; the same records `kernel-entry-cases`
 submits for its `nested-through-nested` case:
 
@@ -476,7 +476,7 @@ stream, has the head first. The in-process modeller formed its container
 groups in motive order, so `List`'s singleton group and `LNode`'s family both
 claimed motive 1, and the block was rejected with `duplicate declaration
 ix.<LTree>.0._model._impl.pack_0`, as `Lean.Elab.InfoTree` was (with `pack_1`)
-in the first Mathlib census. The modeller now forms the groups largest family
+in the first Mathlib environment check. The modeller now forms the groups largest family
 first (`Ix/Kernel/Frontend/InModel/Nested.lean`, an adapted row). -/
 
 /-- (address, canonical record bytes) -/
@@ -634,7 +634,7 @@ def lTreeNames : List String :=
 
 The records Ix's compiler produces for
 `Tests.Ix.Kernel.EntryCaseDefs.levelCanon` (`--consts levelCanon,Subtype.rec,
-True.rec`), in the census order with the projections last:
+True.rec`), in the check order with the projections last:
 
     theorem levelCanon.{w, x} {a b : {_f : (K : Type w) → (P : Sort x) → P // True}}
         (h : a = b) : a = b := h
@@ -650,7 +650,7 @@ ports) establishes only `≤`: the converse `x+1 ≤ max (imax … x) 1` splits
 the `max`, and each branch fails on its own (at `x = 0` and at `x = 1`).
 Until cl-level the theorem was refused with `application type mismatch`, as
 `RatFunc.liftOn_def` and `RatFunc.liftOn'_def` (unfolding lemmas of
-`irreducible_def`) were in the Mathlib census. That case of the comparison
+`irreducible_def`) were in the Mathlib environment check. That case of the comparison
 now falls back on Géran's sublevels (`Ix/Kernel/LevelGeran.lean`, a
 decision procedure, `Ix.Kernel.Level.Geran.leq_iff`), and the theorem is
 accepted. The reader converts levels as stored. -/

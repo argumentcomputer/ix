@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Summarize a kernel census (`kernel-check-ixe` JSONL output).
+"""Summarize a kernel environment check (`kernel-check-ixe` JSONL output).
 
-Usage: check-ixe-report.py <census.jsonl> [top]
+Usage: check-ixe-report.py <rows.jsonl> [top]
 
 Prints outcome counts, check time, decline reasons, and the root causes
 ranked by how many records they block. A blocked row names the root record
-whose failure it inherits (the census follows first causes transitively), so
+whose failure it inherits (the environment check follows first causes transitively), so
 ranking roots by blocked rows ranks the fixes by reach."""
 import json
 import sys
@@ -49,7 +49,7 @@ print(f"\nroots by blocked records (top {top}):")
 for root, count in sorted(reach.items(), key=lambda kv: -kv[1])[:top]:
     r = by_address.get(root)
     if r is None:
-        print(f"  {count:6d}  {root[:16]}  (not in this census)")
+        print(f"  {count:6d}  {root[:16]}  (not in this environment check)")
     else:
         print(f"  {count:6d}  {name(r)[:60]:60s}  {r['outcome']}: {group(r['reason'])[:70]}")
 

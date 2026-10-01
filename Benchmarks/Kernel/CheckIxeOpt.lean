@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Benchmarks.Kernel.CheckIxe
 
-/-! # Driver-side optimizations of the con-leche census, measured (untrusted prototype)
+/-! # Driver-side optimizations of the environment check, measured (untrusted prototype)
 
 `kernel-check-ixe-opt` is `kernel-check-ixe` (`Benchmarks.Kernel.CheckIxe`)
 with switches for four driver-side ports, none of which touches the verified
@@ -15,23 +15,23 @@ is not a certified verdict.
 * `CHECK_IXE_LOAD=stream`: the metadata-light lazy load Ix.Tc uses
   (`Ixon.deEnvAnon`: the `.ixe` stays one buffer, names map to addresses, no
   metadata is decoded). Every record is decoded once up front for its
-  skeleton (`skeleton`: the tables and expressions the census and the reader
+  skeleton (`skeleton`: the tables and expressions the environment check and the reader
   read of a record *other* than the one being read: info tags, references,
   recursors in full, constructor counts) and decoded again, in full, only
   when its turn comes; nothing decoded is kept but the skeletons. The default
   `CHECK_IXE_LOAD=full` is `kernel-check-ixe`'s eager `Ixon.deEnv` with every
   record decoded and kept.
-* `CHECK_IXE_THREAD=1`: the census loop runs on one dedicated worker thread, so
+* `CHECK_IXE_THREAD=1`: the check loop runs on one dedicated worker thread, so
   the checker allocates out of a fresh heap instead of the main thread's, which
-  holds the decoded corpus (con-leche task #269: 2.06x on a 2 GB Mathlib
+  holds the decoded environment (con-leche task #269: 2.06x on a 2 GB Mathlib
   prefix at the same instruction count).
 * `CHECK_IXE_MARK=1`: the store, the reader context and the order are marked
   persistent before the loop (con-leche task #265), so their reference counts
   are never touched again.
-* `CHECK_IXE_PAR=n1,n2,…`: instead of the per-record census, con-leche's two
+* `CHECK_IXE_PAR=n1,n2,…`: instead of the per-constant check, con-leche's two
   phases (`Cached.checkDecls`): phase A installs every record in order
   (`annotDeclStep`; a record whose reading or install fails, and every record
-  that depends on it, is left out, as the census blocks it), then phase B
+  that depends on it, is left out, as the environment check blocks it), then phase B
   checks the recorded declarations (`Cached.checkPending` from a fresh memo
   state, which is `Cached.checkRecord`'s computation) on a pool of `n`
   dedicated worker threads claiming one record at a time off a shared counter
@@ -41,7 +41,7 @@ is not a certified verdict.
   `PAR_ROWS=<file>` writes one JSONL row per recorded check of the first
   pool run (`address`, `micros`, `ok`).
 
-The census rows (`address, names, kind, outcome, reason, micros,
+The check rows (`address, names, kind, outcome, reason, micros,
 readMicros`) are `kernel-check-ixe`'s. Every stage boundary prints the resident
 set (`rss`) and its peak (`hwm`). -/
 
@@ -66,7 +66,7 @@ def stubDefn (d : Ixon.Definition) : Ixon.Definition := { d with typ := stubExpr
 def stubInd (i : Ixon.Inductive) : Ixon.Inductive :=
   { i with typ := stubExpr, ctors := i.ctors.map fun c => { c with typ := stubExpr } }
 
-/-- What the census and the reader read of a record other than the one being
+/-- What the environment check and the reader read of a record other than the one being
 read: its info tag and kind (`owner`, `kindOf`, `resolveSource`), its
 references (`order`, `dependencies`), an inductive's constructor count
 (`inductiveAt`), and recursor records in full (`buildIndex` reads their
@@ -394,7 +394,7 @@ def runStats (bytes : ByteArray) (list output : System.FilePath) : IO UInt32 := 
       ("refNames", Lean.toJson refNames)]).compress
   return 0
 
-/-! ## The census loop, with the record fetched in full -/
+/-! ## The check loop, with the record fetched in full -/
 
 /-- `CheckIxeStep.checkLoop`, except that the record being read is
 `fetch`ed (decoded in full) while the store holds skeletons. -/
@@ -702,7 +702,7 @@ def run (args : List String) : IO UInt32 := do
   let (out, internMicros, interner, st) ←
     if thread then IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) loop)) else loop
   let tEnd ← IO.monoMsNow
-  stage started s!"census loop done in {tEnd - tLoop} ms; {out.counts.toList}; \
+  stage started s!"check loop done in {tEnd - tLoop} ms; {out.counts.toList}; \
     {out.checker.fe.env.consts.length} constants installed; interning {internMicros / 1000} ms \
     ({interner.names.size} names, {interner.levels.size} levels, {interner.exprs.size} terms)"
   if (← IO.getEnv "CHECK_IXE_SIZE") == some "1" then

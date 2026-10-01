@@ -17,7 +17,7 @@ projections from its `muts` blocks, and `BlockOrder` decides that a block's
 members are in canonical order with the same addresses. This module checks
 that output against real compiled environments:
 
-1. **Records written are the compiler's** (`projections`, every corpus): for
+1. **Records written are the compiler's** (`projections`, every environment): for
    every `muts` record, the projections `Projection.reconstruct` writes for
    that block alone are exactly the compiler's projection records of that
    block, with the same keys (pure BLAKE3 against the compiler's hash) and the
@@ -53,7 +53,7 @@ and refused compiled batches that contained those two; the Rust kernel checks
 only inductive blocks at ingress (`crates/kernel/src/ingress.rs`: "Skip Recr
 blocks (they contain primary + aux recursors, with the aux portion in
 kernel-computed canonical order, not stored sort_consts)"). Every block of
-every corpus must now pass (`ProjectionReport.refused` is a problem), the two
+every environment must now pass (`ProjectionReport.refused` is a problem), the two
 named fixture blocks are required among the accepted recursor blocks
 (`Tests.Ix.Kernel.ReaderRoundtrip`), and every accepted recursor block with
 its first two members swapped must be refused for its motive order.
@@ -298,8 +298,8 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
           s!"projection {k} ({reprStr layout}) names {n}, which is not installed") }
   return report
 
-/-- The records of `roots`' closure that the census checker accepts, in the
-census order (the certified entries take only accepted batches). -/
+/-- The records of `roots`' closure that the environment check accepts, in the
+check order (the certified entries take only accepted batches). -/
 def acceptedClosure (input : Input) (roots : Array Lean.Name) : IO (Array Address) := do
   let pins ← IO.ofExcept defaultPins
   let pre ← IO.ofExcept builtinPrelude
