@@ -172,7 +172,13 @@ they are not imports from the older model branch inventoried below. The
 intrinsic kernel's authored modules (its checker, ingress and egress over
 its own syntax, its runtime, `Ix/Kernel/Model.lean`, `Consistency`) were
 retired at L6; `Ix/Kernel/Ingress/Records.lean` keeps the record store the
-certified entries use. -/
+certified entries use. `ConLeche/Kernel/LevelGeran.lean` and
+`ConLeche/Verify/LevelGeran.lean` are Ix's, inside the con-leche subtree
+because the adapted `ConLeche/Kernel/Level.lean` and
+`ConLeche/Verify/Level.lean` import them, and a `ConLeche/**` module imports
+only `ConLeche`, `Init`, `Std` and `Lean` (`scripts/layering.sh`, clause 5):
+Géran's sublevels, the fallback that makes the level comparison decide the
+case nanoda's misses (cl-level). -/
 def authored : Array String := #[
   "Ix/Ixon/Types.lean", "Ix/Ixon/Types/Kinds.lean", "Ix/Ixon/Types/Modes.lean",
   "Ix/Ixon/Types/Contract.lean", "Ix/Ixon/Codec.lean", "Ix/Ixon/Wire.lean", "Ix/Ixon/Verify.lean",
@@ -199,7 +205,8 @@ def authored : Array String := #[
   "Ix/Kernel/ConLeche/NatOpPinData.lean", "Ix/Ixon/ConLecheAdmission.lean",
   "Ix/Kernel/ConLeche/ReaderSpec.lean", "Ix/Kernel/ConLeche/Installed.lean",
   "Ix/Kernel/ConLeche/Values.lean", "Ix/Ixon/ConLecheConsistency.lean",
-  "Ix/Ixon/Admission/Bytes.lean", "Ix/Ixon/Consistency.lean", "Ix/Kernel/Ingress/Records.lean"
+  "Ix/Ixon/Admission/Bytes.lean", "Ix/Ixon/Consistency.lean", "Ix/Kernel/Ingress/Records.lean",
+  "ConLeche/Kernel/LevelGeran.lean", "ConLeche/Verify/LevelGeran.lean"
 ]
 
 /-- Lean modules ported from the old branch (one since L6). -/
@@ -216,11 +223,14 @@ def licenses : Array PortRow := #[
 ]
 
 /-- Files ported from con-leche at `conLeche.revision`: the import closure of
-`ConLeche.model_exists` (439 modules verbatim, seven of them, upstream task
+`ConLeche.model_exists` (437 modules verbatim, seven of them, upstream task
 #323's, at `conLecheKeepProj.revision` since int-5; `Verify/Cached/AgreeFloor` and
 `Verify/Cached/PushChain` with the one-line 4.34.0 fix, the adapted
-`ConLeche/MainTheorem.lean`, and `ConLeche/Kernel/CheckerBase.lean` adapted
-to import `NatOpPinSet` instead of `NatOpPins`, L4b), the eight frontend
+`ConLeche/MainTheorem.lean`, `ConLeche/Kernel/CheckerBase.lean` adapted
+to import `NatOpPinSet` instead of `NatOpPins`, L4b, and
+`ConLeche/Kernel/Level.lean` and `ConLeche/Verify/Level.lean`, adapted at
+cl-level to fall back on Géran's sublevels where nanoda's level comparison
+is incomplete, `plans/review/cl-level/rows.tsv`), the eight frontend
 modules the Ixon reader imports (`ConLeche/Frontend/**` and
 `ConLeche/Verify/Frontend/Prepare.lean`, verbatim, L4a, except
 `ConLeche/Frontend/InModel/Nested.lean`, adapted at cl-m1 to form its
@@ -295,7 +305,7 @@ def conLecheRows : Array PortRow := #[
   ⟨"ConLeche/Kernel/Inductives/SumInstall.lean", "ConLeche/Kernel/Inductives/SumInstall.lean", "6718f72cd716970e1df4ab4347cb8bd2d92f463282fcfb58eff22d053dc10690", "6718f72cd716970e1df4ab4347cb8bd2d92f463282fcfb58eff22d053dc10690", .verbatim⟩,
   ⟨"ConLeche/Kernel/Inductives/SumInstallF.lean", "ConLeche/Kernel/Inductives/SumInstallF.lean", "ad68353c7da5eb350d615e5938a55279aa628e233866a9e056f7129a419c72bc", "ad68353c7da5eb350d615e5938a55279aa628e233866a9e056f7129a419c72bc", .verbatim⟩,
   ⟨"ConLeche/Kernel/Inductives/SumParts.lean", "ConLeche/Kernel/Inductives/SumParts.lean", "c3dd816a698db3dab5413bc6f6701f69c13c3c7da79424450268a5ff0007dc59", "c3dd816a698db3dab5413bc6f6701f69c13c3c7da79424450268a5ff0007dc59", .verbatim⟩,
-  ⟨"ConLeche/Kernel/Level.lean", "ConLeche/Kernel/Level.lean", "2ae9b97c4d67c9a476c7b6edd49a5bb6738f2d5c60d38f13ab692861a03364bc", "2ae9b97c4d67c9a476c7b6edd49a5bb6738f2d5c60d38f13ab692861a03364bc", .verbatim⟩,
+  ⟨"ConLeche/Kernel/Level.lean", "ConLeche/Kernel/Level.lean", "2ae9b97c4d67c9a476c7b6edd49a5bb6738f2d5c60d38f13ab692861a03364bc", "df87e8d991c92f90f98a3dcad2cba47eea044a330366b3c019c9481f87516e7c", .adapted "adapted: in `rest`, the `(param, max)` case answers with `Geran.leq` (Géran's sublevels, the Ix module `ConLeche/Kernel/LevelGeran.lean`) when both branches of the `max` fail, instead of `false`, so that nanoda's incomplete split is decided (cl-level); `public import ConLeche.Kernel.LevelGeran`; port header added"⟩,
   ⟨"ConLeche/Kernel/Name.lean", "ConLeche/Kernel/Name.lean", "46e1005573233f5306444d4c12a5b204614d46e3b7a13064804174e2960a433a", "46e1005573233f5306444d4c12a5b204614d46e3b7a13064804174e2960a433a", .verbatim⟩,
   ⟨"ConLeche/Kernel/NatOpPinSet.lean", "ConLeche/Kernel/NatOpPinSet.lean", "4fc2ff657643c87f8522549517f078600c901a5bcf0f3c66479c165b2c36e397", "4fc2ff657643c87f8522549517f078600c901a5bcf0f3c66479c165b2c36e397", .verbatim⟩,
   ⟨"ConLeche/Kernel/PropRead.lean", "ConLeche/Kernel/PropRead.lean", "95277d1575a6ede73e604f6e5bd1c8d83ff0e33bc621205a6feab50f8a28bd0b", "95277d1575a6ede73e604f6e5bd1c8d83ff0e33bc621205a6feab50f8a28bd0b", .verbatim⟩,
@@ -676,7 +686,7 @@ def conLecheRows : Array PortRow := #[
   ⟨"ConLeche/Verify/IotaWalkInv.lean", "ConLeche/Verify/IotaWalkInv.lean", "219469e47f05e1649e8d857861924e8a515ea254aa849047472537e413403440", "219469e47f05e1649e8d857861924e8a515ea254aa849047472537e413403440", .verbatim⟩,
   ⟨"ConLeche/Verify/Knot.lean", "ConLeche/Verify/Knot.lean", "76fa607a8d04e226ce6f94b5194a90b20ec4c2e60845e979ffcd7a07acd5dcb5", "76fa607a8d04e226ce6f94b5194a90b20ec4c2e60845e979ffcd7a07acd5dcb5", .verbatim⟩,
   ⟨"ConLeche/Verify/Leaves.lean", "ConLeche/Verify/Leaves.lean", "6805a06eab92a6cffa39547f1430d3725c9407624307ce85d85157dd4383440c", "6805a06eab92a6cffa39547f1430d3725c9407624307ce85d85157dd4383440c", .verbatim⟩,
-  ⟨"ConLeche/Verify/Level.lean", "ConLeche/Verify/Level.lean", "ec7db26a95d7c6a8e367c98a4acda19599dcd10f959a6663767213de45355c46", "ec7db26a95d7c6a8e367c98a4acda19599dcd10f959a6663767213de45355c46", .verbatim⟩,
+  ⟨"ConLeche/Verify/Level.lean", "ConLeche/Verify/Level.lean", "ec7db26a95d7c6a8e367c98a4acda19599dcd10f959a6663767213de45355c46", "b7d8be5c68c414949069875906d351b9269f7c0c67691ac78a00bb9990698fdf", .adapted "adapted: `leqCore_sound` covers the `Geran.leq` answer of `rest`'s `(param, max)` case by `Geran.leq_sound` (the Ix module `ConLeche/Verify/LevelGeran.lean`) and the new `eval_eq_levelEval`; every existing statement unchanged (cl-level); `public import ConLeche.Verify.LevelGeran`; port header added"⟩,
   ⟨"ConLeche/Verify/Mono.lean", "ConLeche/Verify/Mono.lean", "5fd646c014f1f6b9f915edfef7d0e25343f9b4287108c4a1ac0f9c972123b773", "5fd646c014f1f6b9f915edfef7d0e25343f9b4287108c4a1ac0f9c972123b773", .verbatim⟩,
   ⟨"ConLeche/Verify/NatOpFrag.lean", "ConLeche/Verify/NatOpFrag.lean", "c91f4483da2355427108d61dc6fffe0691ccef0fc548a79940f08849cfc5bf63", "c91f4483da2355427108d61dc6fffe0691ccef0fc548a79940f08849cfc5bf63", .verbatim⟩,
   ⟨"ConLeche/Verify/OfReducePin.lean", "ConLeche/Verify/OfReducePin.lean", "2fdafbe62768e8b30284d3734f988501dd22244f9b606f9ee0bc87356bb307ba", "2fdafbe62768e8b30284d3734f988501dd22244f9b606f9ee0bc87356bb307ba", .verbatim⟩,

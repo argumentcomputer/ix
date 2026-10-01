@@ -340,6 +340,13 @@ lean_exe «kernel-entry-cases» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
+/-- Con-leche's universe-level comparison (`Level.leq`, `Level.isEquiv`, and
+its Géran fallback `Level.Geran.leq`) against brute-force evaluation, on
+random levels and on Ixon's canonical forms (cl-level). -/
+lean_exe «conleche-level-differential» where
+  root := `Tests.Ix.Kernel.ConLecheLevels
+  moreLinkObjs := #[ix_rs]
+
 /- The intrinsic reference kernel's census (`kernel-census-intrinsic`,
 `kernel-census-probe`, library `KernelCensus`), its host differentials
 (`kernel-differential`, `kernel-ingress`, `kernel-level-differential`) and
@@ -415,6 +422,9 @@ script "check-kernel" (args) := do
   run "bash" #["scripts/trust-surface.sh"]
   -- Host-compiled Lean declarations through the certified entry, each with
   -- an exact expected verdict (L6b; `Tests/Ix/Kernel/EntryCases.lean`).
+  -- Con-leche's level comparison against brute-force evaluation (cl-level).
+  run "lake" #["build", "--wfail", "conleche-level-differential"]
+  run ".lake/build/bin/conleche-level-differential" #[]
   run "lake" #["build", "--wfail", "kernel-entry-cases"]
   let entry ← IO.Process.output { cmd := ".lake/build/bin/kernel-entry-cases" }
   IO.FS.writeFile ".lake/build/kernel-entry-cases.jsonl" entry.stdout

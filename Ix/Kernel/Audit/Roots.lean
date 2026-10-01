@@ -132,7 +132,20 @@ instead of a hexadecimal spelling at every occurrence): `KeyNames.get`,
 two `Std.HashMap` lookup specializations that `Ctx.nameOf` emitted are now
 emitted at `KeyNames.get` (the same map type): the reader grows from 1869 to
 1873, the entry from 5294 to 5298 (1854 to 1858 and 5288 to 5292 on T1's own
-base; int-5); externs, unsafe and rulings are unchanged. -/
+base; int-5); externs, unsafe and rulings are unchanged. cl-level
+(2026-10-01) adapts con-leche's level comparison
+(`ConLeche/Kernel/Level.lean`): `rest`'s `(param, max)` case falls back on
+Géran's sublevels (`ConLeche/Kernel/LevelGeran.lean`) when both branches of
+the `max` fail. The fold grows from 3010 to 3022 functions and the entry from
+5298 to 5310 (5296 to 5308 on cl-level's own base, before T1; rebased at
+mergeability): `Level.Geran.decomposeAux`, `nzConds` with its closed `[[]]`,
+`dominates`, `Sub.isZero`, `leq` with one closed term, the `List.all`,
+`List.any`, `List.elem` and `List.foldl` specializations at `le`, `subset`
+and `decomposeAux` (five), and one closed term that moves from `isEquiv` to
+`rest`. The reader grows from 1873 to 1886 (1871 to 1884 on cl-level's own
+base): the same twelve and `Int.natAbs` (an extern of Lean core, 81 to 82
+externs), which the fold already reaches. No `unsafe`, `partial`,
+`implemented_by` or csimp is added, and the rulings are unchanged. -/
 
 open Lean
 
@@ -353,11 +366,12 @@ L5 and at int-4): the fold reaches con-leche's computed-field overrides of
 `Level`, `Expr` and `Name` (18) and 20 project csimps; the reader adds the
 in-model generator's 10 `partial` definitions; the entry adds the byte stage
 and the committed tables. The pin-parametric forms (`checkBytesWith`,
-`checkConstantsWith`) reach 4527 functions (4509 from L6, which did not
+`checkConstantsWith`) reach 4539 functions (4509 from L6, which did not
 update this sentence, 4519 with L6b's `uniqueKeys`, 4517 with T1's record
 maps on its own base, 4523 with cl-m1's `genNested` as well, +6 as in the
-entry; int-5; 4527 with T1's address encodings); the committed pin table,
-prelude and Nat-operation pin decoder add the rest. -/
+entry; int-5; 4527 with T1's address encodings; 4539 with cl-level's Géran
+fallback, +12 as in the entry, measured when it was rebased onto int-5);
+the committed pin table, prelude and Nat-operation pin decoder add the rest. -/
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports
@@ -378,13 +392,13 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Ixon.ConLecheConsistency, `Ix.Ixo
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `Ix.Ixon.Canonical
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `Ix.Ixon.Admission
 
-/-- info: runtime closure of [ConLeche.Cached.checkDecls]: 3010 compiled functions; inherited externs 83,
+/-- info: runtime closure of [ConLeche.Cached.checkDecls]: 3022 compiled functions; inherited externs 83,
 implemented_by 0, unsafe 22, csimp 4; ruled computed_field 18, csimp 20 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.ConLecheReader.readRecords,
- Ix.Ixon.ConLecheAdmission.readStream]: 1873 compiled functions; inherited externs 81, implemented_by 0,
+ Ix.Ixon.ConLecheAdmission.readStream]: 1886 compiled functions; inherited externs 82, implemented_by 0,
 unsafe 23, csimp 0; ruled computed_field 18, csimp 7, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
@@ -393,7 +407,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
  Ix.Ixon.ConLecheAdmission.checkBytes,
  Ix.Ixon.ConLecheAdmission.checkBytesWith,
  Ix.Ixon.ConLecheAdmission.checkConstantsWith,
- Ix.Ixon.ConLecheAdmission.checkConstants]: 5298 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.ConLecheAdmission.checkConstants]: 5310 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings

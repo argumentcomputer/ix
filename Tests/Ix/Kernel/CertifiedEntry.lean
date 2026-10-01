@@ -46,6 +46,10 @@ def outcomeOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × B
 #guard accepted pFixture
 #guard accepted [(address 40, quotIota)]
 #guard accepted [(address 42, litEq)] [(address 41, ⟨#[2]⟩)]
+-- a theorem in Ixon's canonical universe levels, which only the Géran
+-- fallback of the level comparison equates (cl-m1, cl-level,
+-- `RatFunc.liftOn_def`'s shape)
+#guard (Ix.Ixon.Admission.checkBytes limits levelStream []).isOk
 -- the empty stream installs the prelude
 #guard match check [] with
   | .ok env => env.consts.length == 27
@@ -65,13 +69,6 @@ limits decline. -/
     [eq, nat, address 11, natSucc, natZero, eqRefl] [one])] == some .declined
 -- a block without its recursor
 #guard outcomeOf (twoFixture.take 4) == some .declined
--- a well-typed theorem whose canonical universe levels con-leche's level
--- comparison does not equate (cl-m1, `RatFunc.liftOn_def`'s shape): refused
--- by the checker, so a decline, not a reject
-#guard match Ix.Ixon.Admission.checkBytes limits levelStream [] with
-  | .error e@(.kernel (.invalid m) _) =>
-    m == "application type mismatch" && Ix.Ixon.Admission.outcome e == .declined
-  | _ => false
 -- a literal blob that is not supplied
 #guard outcomeOf [(address 42, litEq)] == some .rejected
 -- a non-canonical record

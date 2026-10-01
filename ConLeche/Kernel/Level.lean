@@ -1,6 +1,17 @@
+/-
+Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
+Source: ConLeche/Kernel/Level.lean
+Transformations: in `rest`, the `(param, max)` case answers with
+`Geran.leq` (Géran's sublevels, `ConLeche/Kernel/LevelGeran.lean`, Ix)
+when both branches of the `max` fail, instead of `false`: that split is
+where nanoda's comparison is incomplete, and `Geran.leq` decides the
+case; `public import ConLeche.Kernel.LevelGeran` added; see the comment
+at the change (cl-level); this header added. Nothing else changes.
+-/
 module
 
 public import ConLeche.Kernel.Expr
+public import ConLeche.Kernel.LevelGeran
 
 @[expose] public section
 
@@ -98,7 +109,15 @@ def rest (fuel : Nat) (l r : Level) (diff : Int) : Option Bool :=
   | .max a b, _ => do
     if ← leqCore fuel a r diff then leqCore fuel b r diff else pure false
   | .param _, .max x y => do
-    if ← leqCore fuel l x diff then pure true else leqCore fuel l y diff
+    -- Ix (cl-level): nanoda's branch-by-branch split is incomplete here.
+    -- `x + k` is two of Géran's sublevels (`x + k` where `x` is nonzero,
+    -- `k` where it is zero), and the two may be dominated in different
+    -- branches, as in `v + 1 ≤ max (imax (max (u+2) (v+1)) v) 1`.  When
+    -- both branches fail, `Geran.leq` decides the case; it is sound and
+    -- complete (`Verify/LevelGeran.lean`).
+    if ← leqCore fuel l x diff then pure true
+    else if ← leqCore fuel l y diff then pure true
+    else pure (Geran.leq l r diff)
   | .zero, .max x y => do
     if ← leqCore fuel l x diff then pure true else leqCore fuel l y diff
   | _, _ =>

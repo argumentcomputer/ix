@@ -279,17 +279,19 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `ConLeche.Cached.checkDecls` | 3010 | 83 |
-| reader `readRecords`, `readStream` | 1873 | 81 |
-| entry: the API, `ConLecheAdmission.checkBytes{,With}`, `checkConstants{,With}` | 5298 | 123 |
-| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5296 | 123 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5418 | 132 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5542 | 132 |
+| fold `ConLeche.Cached.checkDecls` | 3022 | 83 |
+| reader `readRecords`, `readStream` | 1886 | 82 |
+| entry: the API, `ConLecheAdmission.checkBytes{,With}`, `checkConstants{,With}` | 5310 | 123 |
+| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5308 | 123 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5430 | 132 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5554 | 132 |
 
 A frozen value changes only in a commit that explains the change in the
 audit's comment (the closures above include L6b's `uniqueKeys`, 10
-functions, and cl-m1's adapted modeller grouping: 6, and 15 in the reader,
-which also reaches `List.mergeSort`; T1's record maps: −2, and its address encodings: +4). Statements are re-recorded the same way.
+functions, cl-m1's adapted modeller grouping: 6, and 15 in the reader,
+which also reaches `List.mergeSort`, T1's record maps: −2, and its address
+encodings: +4, and cl-level's Géran fallback of the level comparison: 12, and
+13 in the reader, with `Int.natAbs`). Statements are re-recorded the same way.
 
 `lake run check-kernel [--with-model]` is the gate. In order:
 
@@ -343,19 +345,25 @@ origin and licence:
   changed, are at `3ca9e2fe749a51cba4c6e3527aeecba074c29316` instead and
   form their own set (int-5).
   Verbatim files are byte-identical and carry no header. Adapted files start
-  with a port header (revision, source path, transformations): five modules
+  with a port header (revision, source path, transformations): seven modules
   (`ConLeche/Kernel/CheckerBase.lean`, which imports `NatOpPinSet` in place
   of the unported JSON `NatOpPins`; `ConLeche/Verify/Cached/{AgreeFloor,
   PushChain}.lean`, which add `import all Init.LetFun` for Lean 4.34.0;
   `ConLeche/Frontend/InModel/Nested.lean`, whose container groups do not
   depend on the auxiliary motives' order, cl-m1;
-  `ConLeche/MainTheorem.lean`, cut to `model_exists`) and
+  `ConLeche/Kernel/Level.lean` and `ConLeche/Verify/Level.lean`, whose
+  `(param, max)` case falls back on Géran's sublevels, with its soundness
+  case, cl-level; `ConLeche/MainTheorem.lean`, cut to `model_exists`) and
   `Tests/ConLeche/Axioms.lean`. The last two carry Argument's modification
   notice and are licensed `Apache-2.0 AND (MIT OR Apache-2.0)`; the rest is
   `Apache-2.0`;
 - the old Ix branch `jcb/ix-kernel-consistency` at `ad60e5f6`: only
   `Ix/Kernel/Ref.lean` and its licence and notice files remain since L6;
-- `authored`: the 66 Ix-authored modules under the inventoried trees.
+- `authored`: the 68 Ix-authored modules under the inventoried trees,
+  among them `ConLeche/Kernel/LevelGeran.lean` and
+  `ConLeche/Verify/LevelGeran.lean` (cl-level), the only Ix modules inside
+  `ConLeche/`: the adapted `Level.lean` files import them, and a
+  `ConLeche/**` module imports only `ConLeche`, `Init`, `Std` and `Lean`.
 
 `lake exe kernel-provenance` checks that every Lean file under `Ix/Kernel`,
 `Ix/Ixon` and `ConLeche` (and `Ix/Kernel.lean`, `Ix/Address/Core.lean`,

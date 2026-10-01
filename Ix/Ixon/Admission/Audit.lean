@@ -82,11 +82,14 @@ the closed term `contextOf._closed_2` (the empty fallback store) leave, and
 `recordMap` with its fold specialization enter, so the closure is 2 functions
 smaller: 5294 to 5292 (5288 to 5286 on T1's own base, before cl-m1; int-5).
 T1-4's address encodings (`KeyNames`, as in `Ix.Kernel.Audit.Roots`) add 4:
-5296 (5290 on T1's own base; int-5). -/
+5296 (5290 on T1's own base; int-5). cl-level adapts con-leche's level
+comparison (the Géran fallback of `Level.rest`): 12 functions, the same as in
+`Ix.Kernel.Audit.Roots`: 5296 to 5308 (5294 to 5306 on cl-level's own base,
+before T1; rebased at mergeability). -/
 /-- info: runtime closure of [Ix.Ixon.Admission.preflight,
  Ix.Ixon.Admission.uniqueKeys,
  Ix.Ixon.Admission.decodeRecords,
- Ix.Ixon.Admission.checkBytes]: 5296 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.Admission.checkBytes]: 5308 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings

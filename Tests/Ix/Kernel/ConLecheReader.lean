@@ -20,14 +20,12 @@ inductive with its separately stored recursor and an ι-reduction, a
 structure with a projection function and a projection reduction, the
 quotient's lift reduction, a Nat literal against its constructors, a String
 literal against its `String.ofList` expansion (over test constants pinned as
-the string-literal support), and a compiled block nested through a container
+the string-literal support), a compiled block nested through a container
 that is itself nested, whose auxiliary motives Ix's compiler orders with the
-container family's instance before its head (cl-m1).
-
-A documented limitation: a compiled theorem whose universe levels Ix's
-compiler stored in canonical form is refused, because con-leche's level
-comparison does not equate two levels that are equal at every valuation
-(cl-m1, the `RatFunc.liftOn_def` shape).
+container family's instance before its head (cl-m1), and a compiled theorem
+whose universe levels Ix's compiler stored in canonical form, which only the
+Géran fallback of con-leche's level comparison equates (cl-m1, cl-level, the
+`RatFunc.liftOn_def` shape).
 
 Negative: a block of another shape stored under the real `Eq`'s address is
 named `Eq` and rejected by con-leche's reserved-name check; a definition
@@ -632,7 +630,7 @@ def lTreeNames : List String :=
       names.contains (t ++ ".rec_2") && names.contains (keyString (.member lNodeBlock 0))
   | .error _ => false
 
-/-! ## Universe levels con-leche does not equate (cl-m1)
+/-! ## Universe levels in canonical form (cl-m1, cl-level)
 
 The records Ix's compiler produces for
 `Tests.Ix.Kernel.EntryCaseDefs.levelCanon` (`--consts levelCanon,Subtype.rec,
@@ -647,16 +645,15 @@ x)`. Ixon stores each level as the canonical form of its semantic class
 `Eq.{max (x+1) (imax (w+2) x)}`. The checker infers the `Subtype`'s type,
 `Sort (max (imax (max (w+2) (x+1)) x) 1)`, where the `Eq` expects
 `Sort (max (x+1) (imax (w+2) x))`. The two levels are equal at every
-valuation, but con-leche's comparison (nanoda's and the official kernel's
-`leq`: sound, not complete) establishes only `≤`: the converse
-`x+1 ≤ max (imax … x) 1` needs a case split on `x` above the `max`. So the
-theorem is refused with `application type mismatch`, as `RatFunc.liftOn_def`
-and `RatFunc.liftOn'_def` (unfolding lemmas of `irreducible_def`) are in the
-Mathlib census. Not a reader defect: the reader converts levels as stored.
-The input is not malformed; the Ix API classifies the refusal as a decline
-(`Tests.Ix.Kernel.CertifiedEntry`), and the census declines it with a
-level-comparison reason (`Benchmarks.Kernel.ConLecheStep.levelDecline`,
-checked by `kernel-entry-cases`). -/
+valuation. Nanoda's comparison (the official kernel's `leq`, which con-leche
+ports) establishes only `≤`: the converse `x+1 ≤ max (imax … x) 1` splits
+the `max`, and each branch fails on its own (at `x = 0` and at `x = 1`).
+Until cl-level the theorem was refused with `application type mismatch`, as
+`RatFunc.liftOn_def` and `RatFunc.liftOn'_def` (unfolding lemmas of
+`irreducible_def`) were in the Mathlib census. That case of the comparison
+now falls back on Géran's sublevels (`ConLeche/Kernel/LevelGeran.lean`, a
+decision procedure, `ConLeche.Level.Geran.leq_iff`), and the theorem is
+accepted. The reader converts levels as stored. -/
 
 /-- (address, canonical record bytes) -/
 def levelRecords : List (String × String) := [
@@ -694,6 +691,9 @@ def levelRecords : List (String × String) := [
     "d40000cfec05d1d7f2512f6577c2f61a840523804c36d4043c252ab4ba2508ede7517100" ++
     "0000")]
 
+/-- The theorem's record. -/
+def levelTheorem : String := "10cebb826088ceb379d85969e9cc3f60ee05aaa02088e7ab36cb7caa3d28b410"
+
 def levelStream : Ix.Ixon.Admission.Records :=
   levelRecords.filterMap fun (a, b) => do pure (← addressOfHex a, ← bytesOfHex b)
 
@@ -715,14 +715,19 @@ def eqLevel : ConLeche.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
 #guard (List.range 6).all fun i => (List.range 6).all fun j =>
   let φ : ConLeche.Name → Nat := fun n => if n == levelName 0 then i else if n == levelName 1 then j else 0
   ConLeche.Level.eval φ subtypeLevel == ConLeche.Level.eval φ eqLevel
--- con-leche establishes one direction and not the other
+-- the comparison establishes both directions, and so the equivalence
 #guard ConLeche.Level.leq subtypeLevel eqLevel == some true
-#guard ConLeche.Level.leq eqLevel subtypeLevel == some false
-#guard ConLeche.Level.isEquiv subtypeLevel eqLevel == some false
--- so the theorem is refused, at its type
+#guard ConLeche.Level.leq eqLevel subtypeLevel == some true
+#guard ConLeche.Level.isEquiv subtypeLevel eqLevel == some true
+-- the case nanoda's split misses, `x + 1 ≤ max (imax … x) 1`, by sublevels:
+-- `x + 1` is dominated by the `imax`'s `x + 1` where `x` is nonzero and by
+-- the `1` where it is zero
+#guard ConLeche.Level.Geran.leq lx (subtypeLevel) (-1)
+-- and the theorem is accepted
 #guard match checkBytesWith builtinPins builtinPre builtinNatPins limits levelStream [] with
-  | .error (.kernel (.invalid m) _) => m == "application type mismatch"
-  | _ => false
+  | .ok env => (env.consts.map (toString ·.name)).contains
+      (keyString (.member ((addressOfHex levelTheorem).getD (address 0)) 0))
+  | .error _ => false
 
 /-! ## Negative: pinned names on constants of another shape -/
 

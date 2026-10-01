@@ -100,27 +100,28 @@ inhabitant of its type. The recursive body is the `partial` companion
 `loop._unsafe_rec`. -/
 partial def loop (n : Nat) : Nat := loop (n + 1)
 
-/-! ## Refused -/
-
 /-- An equation between elements of a `Subtype` of a type in
 `Sort (imax (u+2) (imax (v+1) v))`, the shape of `RatFunc.liftOn_def` (an
 `irreducible_def` unfolding lemma). Lean elaborates `Subtype.{W}` and
 `Eq.{max 1 W}`; Ix's compiler stores each level as its canonical form,
-`Subtype.{imax (max (u+2) (v+1)) v}` and `Eq.{max (v+1) (imax (u+2) v)}`,
-and con-leche's level comparison (nanoda's, the official kernel's) does not
-establish that the `Subtype`'s type `Sort (max (imax (max (u+2) (v+1)) v) 1)`
-is the `Eq`'s domain, although the two are equal at every valuation (cl-m1).
+`Subtype.{imax (max (u+2) (v+1)) v}` and `Eq.{max (v+1) (imax (u+2) v)}`.
+The `Subtype`'s type `Sort (max (imax (max (u+2) (v+1)) v) 1)` is the
+`Eq`'s domain at every valuation, which nanoda's level comparison (the
+official kernel's) does not establish (cl-m1). Con-leche's comparison
+decides that case by Géran's sublevels since cl-level.
 -/
 theorem levelCanon.{w, x} {a b : {_f : (K : Type w) → (P : Sort x) → P // True}} (h : a = b) :
     a = b := h
+
+/-! ## Refused -/
 
 /-- An axiom other than the pinned standard ones. -/
 axiom someAxiom (n : Nat) : n = n
 
 -- `∀ (α : Sort w) (a : α), @Eq.{w+1} α a a`, by `Eq.refl.{w+1}`: an
 -- equation at the wrong universe level, installed in Lean unchecked. No
--- valuation of `w` makes it well typed (cl-m1: the census's level-comparison
--- decline must not apply to it).
+-- valuation of `w` makes it well typed (cl-m1: a reject, not a level
+-- comparison's decline; cl-level: still rejected by the complete comparison).
 bad_decl .thmDecl {
   name := `Tests.Ix.Kernel.EntryCaseDefs.levelWrong
   levelParams := [`w]

@@ -1,6 +1,16 @@
+/-
+Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
+Source: ConLeche/Verify/Level.lean
+Transformations: `leqCore_sound` covers the new `Geran.leq` answer of
+`rest`'s `(param, max)` case (`ConLeche/Kernel/Level.lean`, cl-level) by
+`Geran.leq_sound` and the new `eval_eq_levelEval`;
+`public import ConLeche.Verify.LevelGeran` added; this header added.
+Every existing statement is unchanged.
+-/
 module
 
 public import ConLeche.Kernel.Level
+public import ConLeche.Verify.LevelGeran
 
 public section
 
@@ -113,6 +123,10 @@ private theorem eval_imax_max (φ : Name → Nat) (a x y : Level) :
     eval φ (Level.imax a (.max x y)) = eval φ (Level.max (.imax a x) (.imax a y)) := by
   simp only [eval]; grind
 
+/-- `Geran.levelEval` (`Verify/LevelGeran.lean`, Ix, cl-level) is `eval`. -/
+theorem eval_eq_levelEval (φ : Name → Nat) (l : Level) : eval φ l = Geran.levelEval φ l := by
+  induction l <;> simp_all [eval, Geran.levelEval]
+
 /-- Soundness of `leqCore` (with `rest`, `imaxRules`, `byCases`):
 a `some true` verdict means `l ≤ r + diff` under every assignment. -/
 theorem leqCore_sound : ∀ {fuel : Nat} {l r : Level} {diff : Int},
@@ -147,8 +161,14 @@ theorem leqCore_sound : ∀ {fuel : Nat} {l r : Level} {diff : Int},
       · obtain ⟨h1, h2⟩ := bind_and_some_true h
         intro φ; have H1 := ih h1 φ; have H2 := ih h2 φ
         simp only [eval] at H1 H2 ⊢; omega
-      · rcases bind_or_some_true h with h1 | h1 <;>
-          { intro φ; have H := ih h1 φ; simp only [eval] at H ⊢; omega }
+      · -- `(param, max)`: a branch, or `Geran.leq` (cl-level)
+        rcases bind_or_some_true h with h1 | h1
+        · intro φ; have H := ih h1 φ; simp only [eval] at H ⊢; omega
+        rcases bind_or_some_true h1 with h2 | h2
+        · intro φ; have H := ih h2 φ; simp only [eval] at H ⊢; omega
+        intro φ
+        have H := Geran.leq_sound (by simpa [Pure.pure] using h2) φ
+        rw [eval_eq_levelEval, eval_eq_levelEval]; exact H
       · rcases bind_or_some_true h with h1 | h1 <;>
           { intro φ; have H := ih h1 φ; simp only [eval] at H ⊢; omega }
       · split at h

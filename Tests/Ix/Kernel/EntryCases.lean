@@ -194,6 +194,10 @@ def cases : List Case := [
   -- duplicate declaration of `pack_1`)
   { label := "nested-through-nested-structure", seeds := [seed "ITree"], expected := .accept },
   { label := "partial-definition-face", seeds := [seed "loop"], expected := .accept },
+  -- an equation over a `Subtype` whose levels Ix's compiler stores in
+  -- canonical form, equal at every valuation (cl-m1: con-leche's level
+  -- comparison did not equate them; the shape of `RatFunc.liftOn_def`)
+  { label := "level-comparison", seeds := [seed "levelCanon"], expected := .accept },
   -- rejected: malformed input
   { label := "malformed-bytes", seeds := [seed "twiceId"],
     expected := .fail .rejected "decode" fun input e => match e with
@@ -249,14 +253,6 @@ def cases : List Case := [
     expected := .fail .declined "checker" fun input e => match e, keyOf input (seed "someAxiom") with
       | .kernel (.notImplemented m) _, some key => m == s!"non-standard axiom ({key})"
       | _, _ => false },
-  -- an equation over a `Subtype` whose levels Ix's compiler stores in
-  -- canonical form: equal at every valuation, but con-leche's level
-  -- comparison does not equate them (cl-m1, the shape of
-  -- `RatFunc.liftOn_def`); a checker verdict, so a decline at the Ix API
-  { label := "level-comparison", seeds := [seed "levelCanon"],
-    expected := .fail .declined "checker" fun _ e => match e with
-      | .kernel (.invalid m) _ => m == "application type mismatch"
-      | _ => false },
   -- an equation at the wrong universe level, installed in Lean unchecked
   { label := "wrong-universe-level", seeds := [seed "levelWrong"],
     expected := .fail .declined "checker" fun _ e => match e with
@@ -309,9 +305,10 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
 The census (`Benchmarks.Kernel.ConLecheStep.censusLoop`) runs the same
 reader and checker one record at a time and classifies each verdict. A
 checker `invalid` is a reject, except when the declaration is accepted at
-every instantiation of its level parameters from `{0, 1, K}`: then the
-failure is con-leche's level comparison, not the input, and the row declines
-(cl-m1). These cases run the census over a case's records and check the
+every instantiation of its level parameters from `{0, 1, K}`: then the row
+declines (cl-m1). Cl-level decides the level comparison's missing case by
+Géran's sublevels, so `levelCanon` is accepted by the census as by the
+entry. These cases run the census over a case's records and check the
 seed's row. -/
 
 structure CensusCase where
@@ -321,10 +318,8 @@ structure CensusCase where
   reason : String → Bool
 
 def censusCases : List CensusCase := [
-  { label := "census-level-comparison", seed := seed "levelCanon", outcome := "decline",
-    reason := (· == "level comparison: application type mismatch, at universe levels con-leche \
-      does not equate; the declaration is accepted at all 9 instantiations of its 2 level \
-      parameters in {0, 1, 4}") },
+  { label := "census-level-comparison", seed := seed "levelCanon", outcome := "accept",
+    reason := (· == "") },
   { label := "census-wrong-universe-level", seed := seed "levelWrong", outcome := "reject",
     reason := (· == "application type mismatch") },
   { label := "census-false-theorem", seed := `falseThm, outcome := "reject",
