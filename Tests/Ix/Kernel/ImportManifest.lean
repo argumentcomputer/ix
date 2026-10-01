@@ -3,12 +3,19 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-/-! # Import provenance for the `Ix.Kernel` model port
+/-! # Import provenance for `Ix.Kernel` and the ported `ConLeche` subtree
 
-Recorded on 2026-09-17 from the `jcb/ix-kernel-consistency` branch of the Ix
-repository at the pinned revision below (the old workspace's working copy was
-identical to the pin). Each ported file is identified by the SHA-256 of its
-source and of its ported form; the transformations are the namespace
+Every imported file has a row: its source path and SHA-256 at its origin's
+revision, its destination path and SHA-256, and its transformation. Rows
+are grouped into `PortSet`s, each with one origin (repository, revision,
+and how `--source` reads it) and one licence, so rows from different
+sources coexist. The file inventory, hashes, headers, licences and source
+hashes are enforced by `Tests/Ix/Kernel/Provenance.lean`
+(`lake exe kernel-provenance`).
+
+**The old branch.** Recorded on 2026-09-17 from the `jcb/ix-kernel-consistency`
+branch of the Ix repository at `oldBranch.revision` (the old workspace's
+working copy was identical to the pin). The transformations are the namespace
 rename `Ix.Theory` to `Ix.Kernel`, the provenance header, for three files
 the import trim that makes the kernel depend on Lean core only, and for twelve
 files the `letE` constructor with its cases, for three model files the
@@ -25,25 +32,104 @@ claims. P02 adds exact reference-transfer and admission fidelity evidence,
 and K3 makes recursor references explicit and shares Nat/structure facts
 between family-only and supplied-recursor stages,
 as the header of
-every ported file states. License and notice files are verbatim copies. The
-file inventory, hashes, headers, and licenses are enforced by
-`Tests/Ix/Kernel/Provenance.lean` (`lake exe kernel-provenance`).
+every ported file states. License files are verbatim copies; the notice was
+updated to this repository's paths on 2026-09-30.
 
 The branch's own provenance chain is retained in `Ix/Kernel/NOTICE`: the
 model was authored in the Lean4Ix working tree, and its `SetTheory` and
-`SetModel` directories port con-leche revision
-`86cd20a65660d757cedc81561a44579099b565d0` under Apache-2.0. -/
+`SetModel` directories port con-leche revision `oldSetTheoryOrigin` under
+Apache-2.0, which is why those 20 rows form their own set.
+
+**Con-leche** (plans/ix-kernel-con-leche-port-v4.md, 2026-09-30). The
+`ConLeche/**` subtree is ported in place from con-leche at
+`conLeche.revision`, keeping its paths and namespace. A verbatim file is
+byte-identical (equal hashes, no header); an adapted Lean file starts with
+the con-leche form of the port header:
+
+```
+/-
+Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
+Source: ConLeche/Kernel/Core.lean
+Transformations: …
+-/
+module
+```
+
+`conLecheRows` is generated: `scripts/provenance-rows.py` turns a TSV
+(`source_path`, `source_sha256`, `dest_path`, `dest_sha256`,
+`transformation`) into rows and splices them between the markers below. -/
 
 namespace Tests.Ix.Kernel.ImportManifest
 
-def sourceBranch : String := "jcb/ix-kernel-consistency"
-def sourceRevision : String := "ad60e5f6dd23655da79cf9898d2b6b3fefbe8658"
-def conLecheRevision : String := "86cd20a65660d757cedc81561a44579099b565d0"
+/-- How the optional `--source` checks read a file at a revision. -/
+inductive Vcs where
+  /-- `jj -R <workspace> file show -r <revision> root:"<path>"` (`--source`). -/
+  | jj
+  /-- `git -C <checkout> show <revision>:<path>` (`--source-git`). -/
+  | git
+  deriving Repr, BEq
 
-/-- The header every ported Lean file starts with. -/
-def portHeader (source : String) : String :=
-  s!"/-\nPorted from Ix branch {sourceBranch} at {sourceRevision}.\nSource: {source}\n"
+/-- Where a set of rows comes from. -/
+structure Origin where
+  /-- Names the source in messages and in the port header. -/
+  label : String
+  repository : String
+  revision : String
+  vcs : Vcs
+  deriving Repr, BEq
 
+/-- The header an adapted Lean file from `origin` starts with. -/
+def Origin.header (origin : Origin) (source : String) : String :=
+  s!"/-\nPorted from {origin.label} at {origin.revision}.\nSource: {source}\n"
+
+/-- The old Ix consistency branch (`Ix/Theory/**`). -/
+def oldBranch : Origin where
+  label := "Ix branch jcb/ix-kernel-consistency"
+  repository := "https://github.com/argumentcomputer/ix.git"
+  revision := "ad60e5f6dd23655da79cf9898d2b6b3fefbe8658"
+  vcs := .jj
+
+/-- Con-leche, the origin of the in-place port (`ConLeche/**`). The checkout
+`plans/refs/con-leche` is clean at this revision. -/
+def conLeche : Origin where
+  label := "con-leche"
+  repository := "https://github.com/leanprover/con-leche.git"
+  revision := "ae0c0c4e4ce6a0081648aff03fe9c39d002c4526"
+  vcs := .git
+
+/-- The con-leche revision the old branch's `SetTheory`/`SetModel` came from.
+Those rows keep this origin; do not claim a newer one for them. -/
+def oldSetTheoryOrigin : String := "86cd20a65660d757cedc81561a44579099b565d0"
+
+/-- How a ported file relates to its source. -/
+inductive Transformation where
+  /-- Byte-identical: no header, and the two recorded hashes are equal. -/
+  | verbatim
+  /-- Changed as summarized; an adapted Lean file starts with its origin's
+  port header, and declares the set's licence if it declares one. -/
+  | adapted (summary : String)
+  deriving Repr, BEq
+
+/-- One imported file. -/
+structure PortRow where
+  /-- Path at the origin's revision. -/
+  source : String
+  /-- Path in this repository. -/
+  target : String
+  sourceSha256 : String
+  targetSha256 : String
+  transformation : Transformation
+  deriving Repr
+
+/-- Rows sharing one origin and one licence (an SPDX expression). -/
+structure PortSet where
+  origin : Origin
+  license : String
+  rows : Array PortRow
+  deriving Repr
+
+/-- An old-branch Lean row, recorded before rows carried their own
+transformation; the summary is in the file's port header. -/
 structure PortedFile where
   /-- Path in the source revision. -/
   source : String
@@ -52,6 +138,9 @@ structure PortedFile where
   sourceSha256 : String
   targetSha256 : String
   deriving Repr
+
+def PortedFile.toRow (row : PortedFile) : PortRow :=
+  ⟨row.source, row.target, row.sourceSha256, row.targetSha256, .adapted "as stated in the port header"⟩
 
 /-- Modules authored in this repository, including the pure Ixon boundary.
 Reorganized codec proofs retain their source path/revision in each header;
@@ -93,7 +182,7 @@ def authored : Array String := #[
   "Ix/Kernel/Runtime/Expr.lean", "Ix/Kernel/Runtime/Stack.lean", "Ix/Kernel/Runtime/Close.lean"
 ]
 
-/-- Ported Lean modules. -/
+/-- Lean modules ported from the old branch. -/
 def ported : Array PortedFile := #[
   ⟨"Ix/Theory/Certified/Basis/Equality.lean", "Ix/Kernel/Certified/Basis/EqualityChecked.lean", "66c404ed6c66211dfb60690cd072197238ab6305efa3a6dbcef7b5ddca5baf27", "5f49fa99eb80747ff180dd01380d869cd50c82e853aa1a9113ed8b150a538440"⟩,
   ⟨"Ix/Theory/Certified/Basis/Equality.lean", "Ix/Kernel/Certified/Basis/Equality.lean", "66c404ed6c66211dfb60690cd072197238ab6305efa3a6dbcef7b5ddca5baf27", "b8cee7826bb4495b4e7708200d4ab3d08bf164c6ddabaf531f6bbc36e10f5784"⟩,
@@ -194,12 +283,32 @@ def ported : Array PortedFile := #[
   ⟨"Ix/Theory/VLevelLemmas.lean", "Ix/Kernel/VLevelLemmas.lean", "9f17589c3888e03bd1e66d3d3ef04b86ea5761570a928e49bce1b71c5947c6b0", "a131cafa208faf7dbce493bbdbd08dfa93041d5b425e92598e4d724b50dd05e7"⟩
 ]
 
-/-- Verbatim license and notice copies. -/
-def licenses : Array PortedFile := #[
-  ⟨"Ix/Theory/LICENSE", "Ix/Kernel/LICENSE", "cf9ee0e22d7f19885552c933d4097d500c9027fdddfea3bd675e90af212284e9", "cf9ee0e22d7f19885552c933d4097d500c9027fdddfea3bd675e90af212284e9"⟩,
-  ⟨"Ix/Theory/LICENSE-APACHE", "Ix/Kernel/LICENSE-APACHE", "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4", "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"⟩,
-  ⟨"Ix/Theory/LICENSE-MIT", "Ix/Kernel/LICENSE-MIT", "fb722e573ab676ffc697f17a01fb13888dad389fbc879314018380a7dbfc70d7", "fb722e573ab676ffc697f17a01fb13888dad389fbc879314018380a7dbfc70d7"⟩,
-  ⟨"Ix/Theory/NOTICE", "Ix/Kernel/NOTICE", "046d7aefcc035fac38420bef9c4eded1591efe83b6d8e68739d70f055c8d7497", "046d7aefcc035fac38420bef9c4eded1591efe83b6d8e68739d70f055c8d7497"⟩
+/-- License and notice files from the old branch. -/
+def licenses : Array PortRow := #[
+  ⟨"Ix/Theory/LICENSE", "Ix/Kernel/LICENSE", "cf9ee0e22d7f19885552c933d4097d500c9027fdddfea3bd675e90af212284e9", "cf9ee0e22d7f19885552c933d4097d500c9027fdddfea3bd675e90af212284e9", .verbatim⟩,
+  ⟨"Ix/Theory/LICENSE-APACHE", "Ix/Kernel/LICENSE-APACHE", "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4", "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4", .verbatim⟩,
+  ⟨"Ix/Theory/LICENSE-MIT", "Ix/Kernel/LICENSE-MIT", "fb722e573ab676ffc697f17a01fb13888dad389fbc879314018380a7dbfc70d7", "fb722e573ab676ffc697f17a01fb13888dad389fbc879314018380a7dbfc70d7", .verbatim⟩,
+  ⟨"Ix/Theory/NOTICE", "Ix/Kernel/NOTICE", "046d7aefcc035fac38420bef9c4eded1591efe83b6d8e68739d70f055c8d7497", "1bf502e56514469e03c508e5358ad4e4f90cbc92bc4daf2a3e909963399952e0", .adapted "paths updated to this repository (2026-09-30): the ported directories, the hash record, and the file references outside this repository"⟩
+]
+
+/-- Files ported from con-leche at `conLeche.revision`. -/
+def conLecheRows : Array PortRow := #[
+-- BEGIN con-leche rows (generated by scripts/provenance-rows.py)
+-- END con-leche rows
+]
+
+/-- The old branch's set theory and set model, ported from con-leche
+`oldSetTheoryOrigin`. -/
+def setTheoryDerived (target : String) : Bool :=
+  target.startsWith "Ix/Kernel/Model/SetTheory/" || target.startsWith "Ix/Kernel/Model/SetModel/"
+
+/-- Every imported file, by origin and licence. -/
+def portSets : Array PortSet := #[
+  { origin := oldBranch, license := "MIT OR Apache-2.0",
+    rows := (ported.filter (!setTheoryDerived ·.target)).map PortedFile.toRow ++ licenses },
+  { origin := oldBranch, license := "Apache-2.0 AND (MIT OR Apache-2.0)",
+    rows := (ported.filter (setTheoryDerived ·.target)).map PortedFile.toRow },
+  { origin := conLeche, license := "Apache-2.0", rows := conLecheRows }
 ]
 
 end Tests.Ix.Kernel.ImportManifest

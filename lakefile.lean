@@ -312,10 +312,11 @@ same sources with no dependencies beyond the Lean toolchain:
 same modules for its host consumers through the `Ix` library. See
 `plans/ix-certified-roadmap.md`. -/
 
-/- Provenance check for the ported model: file inventory, exact content
-hashes, port headers, and license files, against
-`Tests/Ix/Kernel/ImportManifest.lean`. Pass `--source <old-ix-workspace>` to
-also verify the recorded source hashes. -/
+/- Provenance check for the ported model and the `ConLeche` subtree: file
+inventory, exact content hashes, port headers, licences, and license files,
+against `Tests/Ix/Kernel/ImportManifest.lean`. Pass `--source <old-ix-workspace>`
+(jj) and `--source-git plans/refs/con-leche` (git) to also verify the recorded
+source hashes. -/
 lean_exe «kernel-provenance» where
   root := `Tests.Ix.Kernel.Provenance
 
