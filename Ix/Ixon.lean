@@ -2011,176 +2011,281 @@ def getMdataStackIndexed (rev : NameReverseIndex) : GetM (Array KVMap) := do
     mdata := mdata.push (← getKVMapIndexed rev)
   pure mdata
 
-/-- Serialize ExprMetaData with indexed addresses. Arena indices use Tag0 encoding. -/
-def putExprMetaDataIndexed (em : ExprMetaData) (idx : NameIndex) : PutM Unit := do
+/-! ### ExprMeta arena wire format
+
+`arena := len node₀ … node_{len-1}`; node `i` is a tag byte
+`kind <<< 3 ||| mask` followed by its fields in declaration order. Kinds:
+0 leaf, 1 app, 2–5 binder (2 + binder info), 6 letBinder, 7 ref, 8 prj,
+9 mdata, 10 callSite, 11 etaCallSite. Child references are never absolute:
+
+* The *structural* slots (app fun/arg, binder type/body, let
+  type/value/body, prj child, mdata child) may be **implicit**: bit `s` of
+  `mask` set means slot `s` is not written and refers to the node the
+  post-order cursor expects. The cursor `top` starts at `i` and visits the
+  slots last to first; an implicit slot is node `top - 1`, after which `top`
+  becomes `lo[top - 1]`; `lo[i]` is `top` after the last slot (the first
+  index of node `i`'s contiguous post-order block; `lo[i] = i` for a node
+  without structural slots). A tree allocated bottom-up in post-order writes
+  no child references at all.
+* Every other reference (a structural slot whose bit is clear, and every
+  call-site reference) is **explicit**: TagN (`f = 0`) of the backward
+  delta `(i - 1 - c) mod 2^64`. Forward references are representable
+  (wrapping), so every arena of `UInt64` indices has an encoding.
+
+The writer marks a slot implicit exactly when its child is `top - 1`, and
+the reader rejects an explicit slot equal to `top - 1` and an implicit slot
+with `top = 0`, so each arena has exactly one encoding. Mirrors Rust
+`ixon::metadata::ExprMeta::put_with` / `get_with`. -/
+
+/-- Number of structural (possibly implicit) child slots of a node kind;
+`none` for an unknown kind. -/
+def exprMetaSlotCount : Nat → Option Nat
+  | 0 | 7 | 10 | 11 => some 0
+  | 1 | 2 | 3 | 4 | 5 => some 2
+  | 6 => some 3
+  | 8 | 9 => some 1
+  | _ => none
+
+/-- The structural child slots of a node, in field order. -/
+def ExprMetaData.structuralSlots : ExprMetaData → Array UInt64
+  | .app f a => #[f, a]
+  | .binder _ _ t b => #[t, b]
+  | .letBinder _ t v b => #[t, v, b]
+  | .prj _ c => #[c]
+  | .mdata _ c => #[c]
+  | _ => #[]
+
+/-- The implicit-slot mask of node `i` and its block start `lo[i]`, given
+the block starts `lo[0..i]` of the preceding nodes. -/
+def exprMetaImplicitMask (node : ExprMetaData) (i : Nat) (lo : Array Nat) :
+    UInt8 × Nat := Id.run do
+  let slots := node.structuralSlots
+  let mut top := i
+  let mut mask : UInt8 := 0
+  for k in [0:slots.size] do
+    let s := slots.size - 1 - k
+    if top > 0 && slots[s]!.toNat == top - 1 then
+      mask := mask ||| ((1 : UInt8) <<< s.toUInt8)
+      top := lo[top - 1]!
+  return (mask, top)
+
+/-- Explicit reference from node `i` to node `c`: TagN of `i - 1 - c`
+(wrapping). -/
+def putExprMetaRef (i : Nat) (c : UInt64) : PutM Unit :=
+  putTagN 0 0 (i.toUInt64 - 1 - c)
+
+def getExprMetaRef (i : Nat) : GetM UInt64 := do
+  let d := (← getTagN 0).value
+  pure (i.toUInt64 - 1 - d)
+
+/-- Call-site entries: count, then per entry a tag byte, the canonical or
+sharing index, and an explicit reference. -/
+def putExprMetaEntries (i : Nat) (entries : Array CallSiteEntry) : PutM Unit := do
+  putTag0 ⟨entries.size.toUInt64⟩
+  for entry in entries do
+    match entry with
+    | .kept canonIdx metaIdx =>
+      putU8 0
+      putTag0 ⟨canonIdx⟩
+      putExprMetaRef i metaIdx
+    | .collapsed sharingIdx metaIdx =>
+      putU8 1
+      putTag0 ⟨sharingIdx⟩
+      putExprMetaRef i metaIdx
+
+def getExprMetaEntries (i : Nat) : GetM (Array CallSiteEntry) := do
+  let numEntries := (← getTag0).size.toNat
+  let mut entries : Array CallSiteEntry := #[]
+  for _ in [0:numEntries] do
+    let entry ← match ← getU8 with
+      | 0 =>
+        let canonIdx := (← getTag0).size
+        let metaIdx ← getExprMetaRef i
+        pure (CallSiteEntry.kept canonIdx metaIdx)
+      | 1 =>
+        let sharingIdx := (← getTag0).size
+        let metaIdx ← getExprMetaRef i
+        pure (CallSiteEntry.collapsed sharingIdx metaIdx)
+      | x => throw s!"invalid CallSiteEntry tag {x}"
+    entries := entries.push entry
+  pure entries
+
+/-- A count followed by explicit references. -/
+def putExprMetaRefs (i : Nat) (refs : Array UInt64) : PutM Unit := do
+  putTag0 ⟨refs.size.toUInt64⟩
+  for c in refs do putExprMetaRef i c
+
+def getExprMetaRefs (i : Nat) : GetM (Array UInt64) := do
+  let n := (← getTag0).size.toNat
+  let mut refs : Array UInt64 := #[]
+  for _ in [0:n] do
+    refs := refs.push (← getExprMetaRef i)
+  pure refs
+
+/-- Node tag byte: `kind <<< 3 ||| mask`. -/
+def exprMetaTag (kind mask : UInt8) : UInt8 := (kind <<< 3) ||| mask
+
+/-- Write node `i` of an arena with its implicit-slot `mask`. -/
+def putExprMetaNode (em : ExprMetaData) (i : Nat) (mask : UInt8) (idx : NameIndex) :
+    PutM Unit := do
+  let slot (s : UInt8) (c : UInt64) : PutM Unit :=
+    if mask &&& ((1 : UInt8) <<< s) == 0 then putExprMetaRef i c else pure ()
   match em with
   | .leaf => putU8 0
   | .app f a =>
-    putU8 1
-    putTag0 ⟨f⟩
-    putTag0 ⟨a⟩
+    putU8 (exprMetaTag 1 mask)
+    slot 0 f
+    slot 1 a
   | .binder name info tyChild bodyChild =>
-    let tag : UInt8 := 2 + match info with
+    let kind : UInt8 := 2 + match info with
       | .default => 0 | .implicit => 1 | .strictImplicit => 2 | .instImplicit => 3
-    putU8 tag
+    putU8 (exprMetaTag kind mask)
     putIdx name idx
-    putTag0 ⟨tyChild⟩
-    putTag0 ⟨bodyChild⟩
+    slot 0 tyChild
+    slot 1 bodyChild
   | .letBinder name tyChild valChild bodyChild =>
-    putU8 6
+    putU8 (exprMetaTag 6 mask)
     putIdx name idx
-    putTag0 ⟨tyChild⟩
-    putTag0 ⟨valChild⟩
-    putTag0 ⟨bodyChild⟩
+    slot 0 tyChild
+    slot 1 valChild
+    slot 2 bodyChild
   | .ref name =>
-    putU8 7
+    putU8 (exprMetaTag 7 0)
     putIdx name idx
   | .prj structName child =>
-    putU8 8
+    putU8 (exprMetaTag 8 mask)
     putIdx structName idx
-    putTag0 ⟨child⟩
+    slot 0 child
   | .mdata mdata child =>
-    putU8 9
+    putU8 (exprMetaTag 9 mask)
     putMdataStackIndexed mdata idx
-    putTag0 ⟨child⟩
+    slot 0 child
   | .callSite name entries canonMeta origHead =>
-    putU8 10
+    putU8 (exprMetaTag 10 0)
     putIdx name idx
-    putTag0 ⟨entries.size.toUInt64⟩
-    for entry in entries do
-      match entry with
-      | .kept canonIdx metaIdx =>
-        putU8 0
-        putTag0 ⟨canonIdx⟩
-        putTag0 ⟨metaIdx⟩
-      | .collapsed sharingIdx metaIdx =>
-        putU8 1
-        putTag0 ⟨sharingIdx⟩
-        putTag0 ⟨metaIdx⟩
-    putTag0 ⟨canonMeta.size.toUInt64⟩
-    for m in canonMeta do putTag0 ⟨m⟩
+    putExprMetaEntries i entries
+    putExprMetaRefs i canonMeta
     match origHead with
     | none => putU8 0
     | some (sharingIdx, metaIdx) =>
       putU8 1
       putTag0 ⟨sharingIdx⟩
-      putTag0 ⟨metaIdx⟩
+      putExprMetaRef i metaIdx
   | .etaCallSite nSynth name entries canonMeta wrapperMeta =>
-    putU8 11
+    putU8 (exprMetaTag 11 0)
     putTag0 ⟨nSynth⟩
     putIdx name idx
-    putTag0 ⟨entries.size.toUInt64⟩
-    for entry in entries do
-      match entry with
-      | .kept canonIdx metaIdx =>
-        putU8 0
-        putTag0 ⟨canonIdx⟩
-        putTag0 ⟨metaIdx⟩
-      | .collapsed sharingIdx metaIdx =>
-        putU8 1
-        putTag0 ⟨sharingIdx⟩
-        putTag0 ⟨metaIdx⟩
-    putTag0 ⟨canonMeta.size.toUInt64⟩
-    for m in canonMeta do putTag0 ⟨m⟩
-    putTag0 ⟨wrapperMeta⟩
+    putExprMetaEntries i entries
+    putExprMetaRefs i canonMeta
+    putExprMetaRef i wrapperMeta
 
-def getExprMetaDataIndexed (rev : NameReverseIndex) : GetM ExprMetaData := do
+/-- Resolve the implicit slots of node `i` (explicit ones are already read)
+and return them with `lo[i]`; rejects an implicit slot with no preceding
+node and an explicit slot at the implicit position. -/
+def resolveExprMetaSlots (slots : Array UInt64) (mask : UInt8) (i : Nat)
+    (lo : Array Nat) : GetM (Array UInt64 × Nat) := do
+  let mut cs := slots
+  let mut top := i
+  for k in [0:cs.size] do
+    let s := cs.size - 1 - k
+    if mask &&& ((1 : UInt8) <<< s.toUInt8) != 0 then
+      if top == 0 then
+        throw s!"ExprMeta: node {i}: implicit child slot {s} with no preceding node"
+      cs := cs.set! s (top - 1).toUInt64
+      top := lo[top - 1]!
+    else if top > 0 && cs[s]!.toNat == top - 1 then
+      throw s!"ExprMeta: node {i}: explicit child slot {s} refers to the implicit \
+        position {top - 1} (noncanonical)"
+  return (cs, top)
+
+/-- Read node `i` of an arena, given the block starts `lo[0..i]`; returns the
+node and `lo[i]`. -/
+def getExprMetaNode (rev : NameReverseIndex) (i : Nat) (lo : Array Nat) :
+    GetM (ExprMetaData × Nat) := do
   let tag ← getU8
-  match tag with
-  | 0 => pure .leaf
+  let kind := (tag >>> 3).toNat
+  let mask := tag &&& 7
+  match exprMetaSlotCount kind with
+  | some n => if mask.toNat ≥ 2 ^ n then throw s!"invalid ExprMetaData tag {tag}"
+  | none => throw s!"invalid ExprMetaData tag {tag}"
+  let slot (s : UInt8) : GetM UInt64 :=
+    if mask &&& ((1 : UInt8) <<< s) == 0 then getExprMetaRef i else pure 0
+  match kind with
+  | 0 => pure (.leaf, i)
   | 1 =>
-    let f := (← getTag0).size
-    let a := (← getTag0).size
-    pure (.app f a)
+    let f ← slot 0
+    let a ← slot 1
+    let (cs, top) ← resolveExprMetaSlots #[f, a] mask i lo
+    pure (.app cs[0]! cs[1]!, top)
   | 2 | 3 | 4 | 5 =>
-    let info := match tag with
+    let info := match kind with
       | 2 => Lean.BinderInfo.default | 3 => .implicit
       | 4 => .strictImplicit | _ => .instImplicit
     let name ← getIdx rev
-    let tyChild := (← getTag0).size
-    let bodyChild := (← getTag0).size
-    pure (.binder name info tyChild bodyChild)
+    let t ← slot 0
+    let b ← slot 1
+    let (cs, top) ← resolveExprMetaSlots #[t, b] mask i lo
+    pure (.binder name info cs[0]! cs[1]!, top)
   | 6 =>
     let name ← getIdx rev
-    let tyChild := (← getTag0).size
-    let valChild := (← getTag0).size
-    let bodyChild := (← getTag0).size
-    pure (.letBinder name tyChild valChild bodyChild)
+    let t ← slot 0
+    let v ← slot 1
+    let b ← slot 2
+    let (cs, top) ← resolveExprMetaSlots #[t, v, b] mask i lo
+    pure (.letBinder name cs[0]! cs[1]! cs[2]!, top)
   | 7 =>
     let name ← getIdx rev
-    pure (.ref name)
+    pure (.ref name, i)
   | 8 =>
     let structName ← getIdx rev
-    let child := (← getTag0).size
-    pure (.prj structName child)
+    let c ← slot 0
+    let (cs, top) ← resolveExprMetaSlots #[c] mask i lo
+    pure (.prj structName cs[0]!, top)
   | 9 =>
     let mdata ← getMdataStackIndexed rev
-    let child := (← getTag0).size
-    pure (.mdata mdata child)
+    let c ← slot 0
+    let (cs, top) ← resolveExprMetaSlots #[c] mask i lo
+    pure (.mdata mdata cs[0]!, top)
   | 10 =>
     let name ← getIdx rev
-    let numEntries := (← getTag0).size.toNat
-    let mut entries : Array CallSiteEntry := #[]
-    for _ in [0:numEntries] do
-      let entry ← match ← getU8 with
-        | 0 =>
-          let canonIdx := (← getTag0).size
-          let metaIdx := (← getTag0).size
-          pure (CallSiteEntry.kept canonIdx metaIdx)
-        | 1 =>
-          let sharingIdx := (← getTag0).size
-          let metaIdx := (← getTag0).size
-          pure (CallSiteEntry.collapsed sharingIdx metaIdx)
-        | x => throw s!"invalid CallSiteEntry tag {x}"
-      entries := entries.push entry
-    let numCanonMeta := (← getTag0).size.toNat
-    let mut canonMeta : Array UInt64 := #[]
-    for _ in [0:numCanonMeta] do
-      canonMeta := canonMeta.push (← getTag0).size
+    let entries ← getExprMetaEntries i
+    let canonMeta ← getExprMetaRefs i
     let origHead ← match ← getU8 with
       | 0 => pure none
       | 1 =>
         let sharingIdx := (← getTag0).size
-        let metaIdx := (← getTag0).size
+        let metaIdx ← getExprMetaRef i
         pure (some (sharingIdx, metaIdx))
       | x => throw s!"invalid CallSite origHead tag {x}"
-    pure (.callSite name entries canonMeta origHead)
-  | 11 =>
+    pure (.callSite name entries canonMeta origHead, i)
+  | _ =>
     let nSynth := (← getTag0).size
     let name ← getIdx rev
-    let numEntries := (← getTag0).size.toNat
-    let mut entries : Array CallSiteEntry := #[]
-    for _ in [0:numEntries] do
-      let entry ← match ← getU8 with
-        | 0 =>
-          let canonIdx := (← getTag0).size
-          let metaIdx := (← getTag0).size
-          pure (CallSiteEntry.kept canonIdx metaIdx)
-        | 1 =>
-          let sharingIdx := (← getTag0).size
-          let metaIdx := (← getTag0).size
-          pure (CallSiteEntry.collapsed sharingIdx metaIdx)
-        | x => throw s!"invalid CallSiteEntry tag {x}"
-      entries := entries.push entry
-    let numCanonMeta := (← getTag0).size.toNat
-    let mut canonMeta : Array UInt64 := #[]
-    for _ in [0:numCanonMeta] do
-      canonMeta := canonMeta.push (← getTag0).size
-    let wrapperMeta := (← getTag0).size
-    pure (.etaCallSite nSynth name entries canonMeta wrapperMeta)
-  | x => throw s!"invalid ExprMetaData tag {x}"
+    let entries ← getExprMetaEntries i
+    let canonMeta ← getExprMetaRefs i
+    let wrapperMeta ← getExprMetaRef i
+    pure (.etaCallSite nSynth name entries canonMeta wrapperMeta, i)
 
-/-- Serialize ExprMetaArena (length-prefixed array of ExprMetaData nodes). -/
+/-- Serialize ExprMetaArena (length-prefixed array of nodes; see the arena
+wire format above). -/
 def putExprMetaArenaIndexed (arena : ExprMetaArena) (idx : NameIndex) : PutM Unit := do
   putTag0 ⟨arena.nodes.size.toUInt64⟩
+  let mut lo : Array Nat := #[]
+  let mut i := 0
   for node in arena.nodes do
-    putExprMetaDataIndexed node idx
+    let (mask, top) := exprMetaImplicitMask node i lo
+    putExprMetaNode node i mask idx
+    lo := lo.push top
+    i := i + 1
 
 def getExprMetaArenaIndexed (rev : NameReverseIndex) : GetM ExprMetaArena := do
   let len := (← getTag0).size.toNat
   let mut nodes : Array ExprMetaData := #[]
-  for _ in [0:len] do
-    nodes := nodes.push (← getExprMetaDataIndexed rev)
+  let mut lo : Array Nat := #[]
+  for i in [0:len] do
+    let (node, top) ← getExprMetaNode rev i lo
+    nodes := nodes.push node
+    lo := lo.push top
   pure ⟨nodes⟩
 
 /-- Serialize the ConstantMetaInfo variant payload with indexed addresses. -/

@@ -281,6 +281,72 @@ def constantSerdeWith (sc : ShareCodec) (c : Constant) : Bool :=
   | .ok c' => c == c'
   | .error _ => false
 
+/-! ## ExprMeta arena wire format
+
+Directed byte vectors for the arena encoding (implicit post-order children,
+explicit TagN backward deltas); the same vectors are pinned in Rust
+(`ixon::metadata::tests::arena_vector_*`). Name indices are 0 and 1 (one
+byte in every integer code). -/
+
+def arenaVecNames : Address × Address × NameIndex × NameReverseIndex :=
+  let a := Address.blake3 (ByteArray.mk #[1])
+  let b := Address.blake3 (ByteArray.mk #[2])
+  (a, b, (({} : NameIndex).insert a 0).insert b 1, #[a, b])
+
+def arenaBytes (arena : ExprMetaArena) : ByteArray :=
+  runPut (putExprMetaArenaIndexed arena arenaVecNames.2.2.1)
+
+def arenaFrom (bytes : Array UInt8) : Except String ExprMetaArena :=
+  runGetExact (getExprMetaArenaIndexed arenaVecNames.2.2.2) (ByteArray.mk bytes)
+
+/-- The arena writes exactly `bytes`, and `bytes` read back to the arena. -/
+def arenaVector (arena : ExprMetaArena) (bytes : Array UInt8) : Bool :=
+  arenaBytes arena == ByteArray.mk bytes &&
+    match arenaFrom bytes with
+    | .ok a => a == arena
+    | .error _ => false
+
+def arenaRejects (bytes : Array UInt8) : Bool :=
+  match arenaFrom bytes with
+  | .error _ => true
+  | .ok _ => false
+
+def exprMetaArenaUnits : TestSeq :=
+  let a := arenaVecNames.1
+  let b := arenaVecNames.2.1
+  -- `fun (x : T) => f x` in post-order: every child implicit.
+  let tree : ExprMetaArena := { nodes := #[
+    .ref b, .ref a, .leaf, .app 1 2, .binder a .default 0 3] }
+  -- Shared nodes: explicit backward deltas next to implicit slots.
+  let dag : ExprMetaArena := { nodes := #[
+    .leaf, .app 0 0, .letBinder a 0 1 0, .prj b 1, .mdata #[] 3] }
+  -- Call-site references are explicit; a forward reference wraps.
+  let calls : ExprMetaArena := { nodes := #[
+    .leaf,
+    .callSite a #[.kept 0 0, .collapsed 1 0] #[0] (some (2, 0)),
+    .etaCallSite 1 b #[.kept 0 1] #[1] 1,
+    .prj a 7] }
+  test "arena: a post-order tree writes no references"
+    (arenaVector tree #[0x05, 0x38, 0x01, 0x38, 0x00, 0x00, 0x0B, 0x13, 0x00]) ++
+  test "arena: shared nodes are explicit backward deltas"
+    (arenaVector dag #[0x05, 0x00, 0x0A, 0x00, 0x32, 0x00, 0x01, 0x01, 0x40,
+      0x01, 0x01, 0x49, 0x00]) ++
+  test "arena: call-site references are explicit; a forward reference wraps"
+    (arenaVector calls #[0x04, 0x00,
+      0x50, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x01, 0x02, 0x00,
+      0x58, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+      0x40, 0x00, 0xC2, 0x7B, 0xBF, 0xFE, 0xFF, 0xFE, 0xFF, 0xFF, 0xFF]) ++
+  test "arena: rejects an explicit slot at the implicit position"
+    (arenaRejects #[0x02, 0x00, 0x08, 0x00, 0x00]) ++
+  test "arena: rejects an implicit slot with no preceding node"
+    (arenaRejects #[0x01, 0x09, 0x00]) ++
+  test "arena: rejects mask bits beyond the kind's slots"
+    (arenaRejects #[0x01, 0x01] && arenaRejects #[0x02, 0x00, 0x0C] &&
+      arenaRejects #[0x01, 0x39, 0x00]) ++
+  test "arena: rejects unknown kinds" (arenaRejects #[0x01, 0x60]) ++
+  test "arena: the canonical form of a rejected vector is accepted"
+    (arenaVector { nodes := #[.leaf, .app 0 0] } #[0x02, 0x00, 0x0A, 0x00])
+
 def shareCodecUnits : TestSeq :=
   test "Share codec: the current codec is Tag4 at format version 3"
     (ShareCodec.current == .tag4 && Env.VERSION == 3 && Env.NEXT_VERSION == 4) ++
@@ -640,6 +706,7 @@ public def Tests.Ixon.suite : List TestSeq := [
   exprUnits,
   strictExprUnits,
   tagNUnits,
+  exprMetaArenaUnits,
   shareCodecUnits,
   -- Env unit tests (for debugging serialization)
   envUnitTests,
