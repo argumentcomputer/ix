@@ -6,6 +6,7 @@ import Compilatrix.Sem.Clocked
 import Compilatrix.Sem.Simulation
 import Compilatrix.Sem.Transform
 import Compilatrix.Sem.Smallstep
+import Compilatrix.Sem.Forward
 import Compilatrix.Sem.Agrees
 import Compilatrix.Sem.SimUpTo
 import Compilatrix.Sem.Bind
@@ -240,6 +241,10 @@ import Compilatrix.Rt.Proof.Layout
 import Compilatrix.Rt.Proof.LayoutFun
 import Compilatrix.Rt.Proof.Rel
 import Compilatrix.Rt.Proof.StepFrame
+import Compilatrix.Rt.Proof.StepInstr
+import Compilatrix.Rt.Proof.StepEdge
+import Compilatrix.Rt.Proof.StepTerm
+import Compilatrix.Rt.Proof.Diagram
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine

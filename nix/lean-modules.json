@@ -1793,6 +1793,9 @@
    "imports": ["Compilatrix.Sem.Simulation", "Compilatrix.Sem.Agrees"]},
   "Compilatrix.Sem.Result":
   {"path": "Compilatrix/Sem/Result.lean", "imports": []},
+  "Compilatrix.Sem.Forward":
+  {"path": "Compilatrix/Sem/Forward.lean",
+   "imports": ["Compilatrix.Sem.Smallstep"]},
   "Compilatrix.Sem.Dominance":
   {"path": "Compilatrix/Sem/Dominance.lean",
    "imports": ["Compilatrix.Sem.SimUpTo"]},
@@ -1830,9 +1833,18 @@
   "Compilatrix.Rt.Proof.Switch":
   {"path": "Compilatrix/Rt/Proof/Switch.lean",
    "imports": ["Compilatrix.Rt.Proof.Chain"]},
+  "Compilatrix.Rt.Proof.StepTerm":
+  {"path": "Compilatrix/Rt/Proof/StepTerm.lean",
+   "imports": ["Compilatrix.Rt.Proof.StepEdge"]},
+  "Compilatrix.Rt.Proof.StepInstr":
+  {"path": "Compilatrix/Rt/Proof/StepInstr.lean",
+   "imports": ["Compilatrix.Rt.Proof.StepFrame"]},
   "Compilatrix.Rt.Proof.StepFrame":
   {"path": "Compilatrix/Rt/Proof/StepFrame.lean",
    "imports": ["Compilatrix.Rt.Proof.Rel"]},
+  "Compilatrix.Rt.Proof.StepEdge":
+  {"path": "Compilatrix/Rt/Proof/StepEdge.lean",
+   "imports": ["Compilatrix.Rt.Proof.StepInstr"]},
   "Compilatrix.Rt.Proof.Rel":
   {"path": "Compilatrix/Rt/Proof/Rel.lean",
    "imports": ["Compilatrix.Rt.Proof.LayoutFun", "Compilatrix.Cfg.Semantics"]},
@@ -1898,6 +1910,9 @@
   "Compilatrix.Rt.Proof.Edge":
   {"path": "Compilatrix/Rt/Proof/Edge.lean",
    "imports": ["Compilatrix.Rt.Proof.Instr"]},
+  "Compilatrix.Rt.Proof.Diagram":
+  {"path": "Compilatrix/Rt/Proof/Diagram.lean",
+   "imports": ["Compilatrix.Rt.Proof.StepTerm", "Compilatrix.Sem.Forward"]},
   "Compilatrix.Rt.Proof.Chunk":
   {"path": "Compilatrix/Rt/Proof/Chunk.lean",
    "imports":
@@ -3052,6 +3067,7 @@
     "Compilatrix.Sem.Simulation",
     "Compilatrix.Sem.Transform",
     "Compilatrix.Sem.Smallstep",
+    "Compilatrix.Sem.Forward",
     "Compilatrix.Sem.Agrees",
     "Compilatrix.Sem.SimUpTo",
     "Compilatrix.Sem.Bind",
@@ -3286,6 +3302,10 @@
     "Compilatrix.Rt.Proof.LayoutFun",
     "Compilatrix.Rt.Proof.Rel",
     "Compilatrix.Rt.Proof.StepFrame",
+    "Compilatrix.Rt.Proof.StepInstr",
+    "Compilatrix.Rt.Proof.StepEdge",
+    "Compilatrix.Rt.Proof.StepTerm",
+    "Compilatrix.Rt.Proof.Diagram",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",
