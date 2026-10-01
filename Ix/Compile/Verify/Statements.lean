@@ -35,6 +35,8 @@ import Ix.Compile.Verify.UniformSearch
 import Ix.Compile.Verify.UniformOptimality
 import Ix.Compile.Verify.TieredSelect
 import Ix.Compile.Verify.TieredTier
+import Ix.Compile.Verify.TieredModel
+import Ix.Compile.Verify.TieredPhase3
 
 /-!
 # Public compiler-verification frontier

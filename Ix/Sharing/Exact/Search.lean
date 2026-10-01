@@ -225,19 +225,19 @@ is evaluated once and then updated incrementally (`Prep.evalUp`). -/
 def materializeTable (p : Prep) (table roots : Array Nat) (limits : Limits)
     (widthAt : Nat → Nat := shareWidth) :
     Except SharingError (Array Ixon.Expr × Array Ixon.Expr × Nat × Nat) := do
-  if table.size ≥ wordBound then throw (.formatBound "share index" table.size)
-  let none0 : Array (Option Nat) := Array.replicate p.dag.size none
-  let st0 : TableState :=
-    { entries := #[], index := none0, width := none0, ev := p.evalAll none0,
+  if table.size ≥ wordBound then throw (.formatBound "share index" table.size) else
+  if !table.all (· < p.dag.size) then throw (.internal "table term out of range") else do
+  let st ← (List.range table.size).foldlM (materializeStep p table limits widthAt)
+    { entries := #[], index := Array.replicate p.dag.size none,
+      width := Array.replicate p.dag.size none,
+      ev := p.evalAll (Array.replicate p.dag.size none),
       predicted := tag0Size table.size, work := 0 }
-  let st ← (List.range table.size).foldlM (materializeStep p table limits widthAt) st0
-  let total := roots.foldl (fun acc r => acc + st.ev.cost[r]!) 0
-  if total > limits.maxMaterialize then
-    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  if roots.foldl (fun acc r => acc + st.ev.cost[r]!) 0 > limits.maxMaterialize then
+    throw (.resourceExhausted .materialize limits.maxMaterialize) else do
   let rs ← roots.mapM fun r => p.build st.ev st.index st.width false (p.dag.size + 1) r
-  let work := st.work + st.ev.work + total
+  let work := st.work + st.ev.work + roots.foldl (fun acc r => acc + st.ev.cost[r]!) 0
   if work > limits.maxMaterializeWork then
-    throw (.resourceExhausted .materializeWork limits.maxMaterializeWork)
+    throw (.resourceExhausted .materializeWork limits.maxMaterializeWork) else
   return (st.entries, rs, st.predicted + rootsCost st.ev.cost roots, work)
 
 /-- Result of an exact optimization. -/

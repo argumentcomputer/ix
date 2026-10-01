@@ -514,7 +514,7 @@ word, the entry loop, and the roots built against its final dictionary. -/
 theorem materializeTable_parts (p : Prep) (table roots : Array Nat) (limits : Limits)
     (widthAt : Nat → Nat) {entries rs : Array Ixon.Expr} {predicted work : Nat}
     (h : materializeTable p table roots limits widthAt = .ok (entries, rs, predicted, work)) :
-    table.size < UInt64.size ∧ ∃ st,
+    table.size < UInt64.size ∧ (∀ k, k < table.size → table[k]! < p.dag.size) ∧ ∃ st,
       (List.range table.size).foldlM (materializeStep p table limits widthAt)
         { entries := #[], index := Array.replicate p.dag.size none,
           width := Array.replicate p.dag.size none,
@@ -527,6 +527,15 @@ theorem materializeTable_parts (p : Prep) (table roots : Array Nat) (limits : Li
   split at h
   · cases h
   · rename_i hsz
+    split at h
+    · cases h
+    rename_i hall
+    have hall' : (table.all fun x => decide (x < p.dag.size)) = true := by simpa using hall
+    have hrange : ∀ k, k < table.size → table[k]! < p.dag.size := by
+      intro k hk
+      rw [Array.all_eq_true] at hall'
+      rw [getElem!_pos table k hk]
+      simpa using hall' k hk
     obtain ⟨st, hst, h⟩ := bind_eq_ok h
     try simp only at h
     split at h
@@ -537,7 +546,7 @@ theorem materializeTable_parts (p : Prep) (table roots : Array Nat) (limits : Li
       · cases h
       · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨rfl, rfl, rfl, -⟩ := h
-        exact ⟨by unfold wordBound at hsz; omega, st, hst, rfl, hrs, rfl⟩
+        exact ⟨by unfold wordBound at hsz; omega, hrange, st, hst, rfl, hrs, rfl⟩
 
 theorem indexOfPrefix_zero (size : Nat) (table : Array Nat) :
     indexOfPrefix size table 0 = Array.replicate size none := by
@@ -616,7 +625,7 @@ theorem materializeTable_backward (p : Prep) (table roots : Array Nat) (limits :
     entries.size = table.size ∧
       (∀ (k : Nat) (hk : k < entries.size), SharesIn (· < k) entries[k]) ∧
       ∀ r ∈ rs.toList, SharesIn (· < table.size) r := by
-  obtain ⟨_, st, hst, rfl, hroots, -⟩ := materializeTable_parts p table roots limits widthAt h
+  obtain ⟨_, _, st, hst, rfl, hroots, -⟩ := materializeTable_parts p table roots limits widthAt h
   obtain ⟨-, hidx, -, hsz, hent⟩ := tableInv_loop p table limits widthAt hst
   refine ⟨hsz, fun k hk => ?_, fun r hr => ?_⟩
   · obtain ⟨ev, hb⟩ := hent k hk
@@ -645,7 +654,7 @@ theorem materializeTable_correct (p : Prep) (table roots : Array Nat) (limits : 
         substShares (fun i => E table[i]!) entries[k] = E table[k]!) ∧
       List.Forall₂ (fun r e => substShares (fun i => E table[i]!) e = E r)
         roots.toList rs.toList := by
-  obtain ⟨_, st, hst, rfl, hroots, -⟩ := materializeTable_parts p table roots limits widthAt h
+  obtain ⟨_, _, st, hst, rfl, hroots, -⟩ := materializeTable_parts p table roots limits widthAt h
   obtain ⟨-, hidx, -, hsz, hent⟩ := tableInv_loop p table limits widthAt hst
   refine ⟨fun k hk => ?_, ?_⟩
   · obtain ⟨ev, hb⟩ := hent k hk
