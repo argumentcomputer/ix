@@ -112,7 +112,6 @@ replaces `plans/x86-phase1/bench-k1/build.sh`.
 ```sh
 lake exe tests-corpus [MANIFEST…] [--cc CC] [--work DIR] [--only FIXTURE]… [--root ROOT]…
                       [--no-machines] [--progress] [--survey [--dump]]
-lake exe corpus kernel-artifacts [--check]
 ```
 
 Without a manifest it runs every registered family. For each root, the
