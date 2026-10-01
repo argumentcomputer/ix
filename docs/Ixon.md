@@ -861,22 +861,57 @@ pub enum ExprMetaData {
 }
 ```
 
-**ExprMetaData Serialization** (tags 0-9, with BinderInfo packed into Binder tags):
+**ExprMeta serialization.** An arena is `N0(len)` followed by its nodes in
+index order. Node `i` starts with a tag byte `kind << 3 | mask`; the fields
+follow in declaration order:
 
-| Tag | Variant | Payload |
-|-----|---------|---------|
-| 0 | Leaf | (none) |
-| 1 | App | children: [u64, u64] |
-| 2 | Binder (Default) | name_idx + children: [u64, u64] |
-| 3 | Binder (Implicit) | name_idx + children: [u64, u64] |
-| 4 | Binder (StrictImplicit) | name_idx + children: [u64, u64] |
-| 5 | Binder (InstImplicit) | name_idx + children: [u64, u64] |
-| 6 | LetBinder | name_idx + children: [u64, u64, u64] |
-| 7 | Ref | name_idx |
-| 8 | Prj | struct_name_idx + child: u64 |
-| 9 | Mdata | kvmap_count + kvmaps + child: u64 |
+| kind | Variant | Payload (in order) | structural slots |
+|-----|---------|---------|---|
+| 0 | Leaf | (none) | — |
+| 1 | App | fun?, arg? | fun, arg |
+| 2–5 | Binder (2 + BinderInfo: Default, Implicit, StrictImplicit, InstImplicit) | name_idx, type?, body? | type, body |
+| 6 | LetBinder | name_idx, type?, value?, body? | type, value, body |
+| 7 | Ref | name_idx | — |
+| 8 | Prj | struct_name_idx, child? | child |
+| 9 | Mdata | kvmap_count + kvmaps, child? | child |
+| 10 | CallSite | name_idx, entries, canon_meta, orig_head | — |
+| 11 | EtaCallSite | n_synth, name_idx, entries, canon_meta, wrapper_meta | — |
 
-Packing BinderInfo into the Binder tag (tags 2-5) saves 1 byte per binder. Name addresses are serialized as indices into a `NameIndex` for compactness.
+Child references are never absolute indices:
+
+- **Implicit (post-order) children.** Bit `s` of `mask` set means
+  structural slot `s` is not written: it is the node a post-order cursor
+  expects. The cursor `top` starts at `i` and visits the slots last to
+  first; an implicit slot is node `top − 1`, after which `top` becomes
+  `lo[top − 1]`, and `lo[i]` is `top` after the last slot (the first index
+  of node `i`'s contiguous post-order block; `lo[i] = i` for a node without
+  structural slots). The compiler allocates the arena bottom-up in
+  post-order, so an unshared subtree costs one tag byte per App and no
+  child bytes at all.
+- **Explicit references.** A structural slot whose bit is clear (a shared
+  node: an expression-cache hit, or any other position), and every
+  call-site reference (entry `meta`, `canon_meta`, `orig_head` meta,
+  `wrapper_meta`), is `N0` of the backward delta `(i − 1 − c) mod 2^64`.
+  Forward references are representable (they wrap), so every arena of
+  `u64` indices has an encoding.
+- **One encoding per arena.** The writer marks a slot implicit exactly
+  when its child is `top − 1`; the reader rejects an explicit slot equal to
+  `top − 1`, an implicit slot with `top = 0`, mask bits beyond the kind's
+  slot count, and kinds above 11.
+
+The decoded arena (absolute `u64` indices) is identical to the one the
+compiler built, so readers of `ExprMeta` see no difference.
+
+Example: `fun (x : T) => f x` allocated as `[Ref T, Ref f, Leaf, App(1, 2),
+Binder(x, Default, [0, 3])]` serializes (name indices `T = 1`, `f = x = 0`)
+to `05 38 01 38 00 00 0B 13 00`: both App children and both Binder children
+are implicit (`0B = 1 << 3 | 0b11`, `13 = 2 << 3 | 0b11`). Sharing the leaf
+in `[Leaf, App(0, 0)]` gives `02 00 0A 00`: the argument is implicit, the
+function an explicit delta `1 − 1 − 0 = 0`.
+
+Name addresses are serialized as indices into a `NameIndex` for
+compactness. Measurements and the design are in
+[`sharing-minimum-arena.md`](sharing-minimum-arena.md).
 
 ### ConstantMeta
 

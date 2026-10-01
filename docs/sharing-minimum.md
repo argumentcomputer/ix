@@ -958,3 +958,13 @@ Obligations when implemented: the primary table, primary roots and primary bytes
 with and without metadata (a theorem, by construction: the primary result is an input);
 expansion round trip of every metadata root; idempotence; Lean/Rust byte parity; fixtures.
 Like §8.2, this does not make the combined primary-plus-metadata artifact a global minimum.
+
+### 12.16 TagN gains a 4-byte rung (owner decision, 2026-10-01)
+
+Rung codes after `L=1, M=1`: `c = 0, 1, 2, 3` → 2, 3, 4, 8 following little-endian bytes (code 3 was
+invalid). Widths become 1/2/3/4/5/9 for every flag width f ∈ {0, 2, 4}; rung ends
+`R1 = 2^(r−1)`, `R2 = R1 + 2^(r−2+8)`, `R3 = R2 + 2^16`, `R4 = R3 + 2^24`, `R5 = R4 + 2^32`,
+`R6 = R5 + 2^64` (r = 8 − f). Reason: without it, f = 0 values in [82,048, 2^24) cost 5 bytes where
+Tag0 cost 4; Mathlib's 4.8M name indices lose 22.1 MB (+0.66% of the file). With it TagN is never
+longer than the old codes on any field measured. Still bijective; `Ix/Ixon.lean`'s TagN docstring is
+the normative layout.
