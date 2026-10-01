@@ -58,10 +58,11 @@ def run (args : List String) : IO UInt32 := do
   let names := reportNames env store
   let pins ← IO.ofExcept defaultPins
   let pre ← IO.ofExcept builtinPrelude
-  let s := setup store (env.blobs[·]?) pins pre (hintsOf store env.anonHints)
+  let hints := Hints.ofStore store env.anonHints
+  let s := setup store (env.blobs[·]?) pins pre hints.lookup
   IO.eprintln s!"census-cl: {s.store.size} records, {s.ordered.size} primary, {env.blobs.size} blobs, \
     {pins.names.size} pins, {s.cx.index.recs.size} recursors indexed, prelude {pre.ix.decls.size} declarations, \
-    loaded in {(← IO.monoMsNow) - started} ms"
+    {hints.hints.size} hints ({hints.projAt.size} at projections), loaded in {(← IO.monoMsNow) - started} ms"
   let skip : Std.HashSet String := match ← IO.getEnv "CENSUS_SKIP" with
     | some list => (list.splitOn ",").foldl (fun set a => if a.isEmpty then set else set.insert a) {}
     | none => {}

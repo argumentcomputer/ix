@@ -203,19 +203,30 @@ def mergeEdges (a b : Std.HashMap Address (Array Address)) : Std.HashMap Address
   b.fold (fun m k vs => m.insert k ((m.getD k #[]) ++ vs.filter (!(m.getD k #[]).contains ·))) a
 
 /-- The host's reducibility hints, at the address the compiler registers
-them under (a projection's for a block member). -/
-def hintsOf (store : RecordStore) (hints : Std.HashMap Address Lean.ReducibilityHints) :
-    ConstRef Address → Option ConLeche.ReducibilityHint := Id.run do
+them under (a projection's for a block member): the projection map is built
+once, from the whole store, and every lookup is two probes.
+
+(The L4a version returned the lookup as a closure from a function of the
+store; the compiler compiled it at its full arity, so every lookup rebuilt
+the projection map over all ~100k records, about 55 ms per definition
+record: 50.6 s of the 4,300-record prefix census's "reading".) -/
+structure Hints where
+  projAt : Std.HashMap (ConstRef Address) Address := {}
+  hints : Std.HashMap Address Lean.ReducibilityHints := {}
+
+def Hints.ofStore (store : RecordStore) (hints : Std.HashMap Address Lean.ReducibilityHints) :
+    Hints := Id.run do
   let mut projAt : Std.HashMap (ConstRef Address) Address := {}
   for (a, c) in store.toList do
     if let .dPrj p := c.info then projAt := projAt.insert (.member p.block p.idx.toNat) a
+  return { projAt, hints }
+
+def Hints.lookup (h : Hints) (r : ConstRef Address) : Option ConLeche.ReducibilityHint := do
   let conv : Lean.ReducibilityHints → ConLeche.ReducibilityHint
     | .opaque => .opaque
     | .abbrev => .abbrev
     | .regular h => .regular h.toNat
-  return fun r => do
-    let a := (projAt[r]?).getD r.block
-    conv <$> hints[a]?
+  conv <$> h.hints[(h.projAt[r]?).getD r.block]?
 
 /-! ## Rows -/
 

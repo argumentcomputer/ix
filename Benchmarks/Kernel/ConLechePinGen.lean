@@ -225,7 +225,7 @@ def run (args : List String) : IO UInt32 := do
   IO.eprintln s!"pin-gen: prelude: {preRecords.size} records, {pre.ix.decls.size} declarations: \
     {pre.ix.decls.toList.map ConLeche.Frontend.preludeKey}"
   -- 3: verification by con-leche over the pinned constants' closure
-  let s := setup store (env.blobs[·]?) pinned pre (hintsOf store env.anonHints)
+  let s := setup store (env.blobs[·]?) pinned pre (Hints.ofStore store env.anonHints).lookup
   for n in recNames do
     let a := addrOf.getD n default
     let some c := store[a]? | continue
