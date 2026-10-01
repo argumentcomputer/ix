@@ -1852,6 +1852,13 @@
   {"path": "Compilatrix/Rt/Proof/Prune.lean",
    "imports":
    ["Compilatrix.Rt.Proof.LayoutFun", "Compilatrix.Lir.Proof.Relabel"]},
+  "Compilatrix.Rt.Proof.Program":
+  {"path": "Compilatrix/Rt/Proof/Program.lean",
+   "imports":
+   ["Compilatrix.Rt.Proof.Diagram",
+    "Compilatrix.Rt.Proof.Prune",
+    "Compilatrix.Lir.Proof.Split",
+    "Compilatrix.Cfg.Proof.Fuel"]},
   "Compilatrix.Rt.Proof.Procs":
   {"path": "Compilatrix/Rt/Proof/Procs.lean",
    "imports":
@@ -1917,6 +1924,9 @@
   "Compilatrix.Rt.Proof.Diagram":
   {"path": "Compilatrix/Rt/Proof/Diagram.lean",
    "imports": ["Compilatrix.Rt.Proof.StepTerm", "Compilatrix.Sem.Forward"]},
+  "Compilatrix.Rt.Proof.Correct":
+  {"path": "Compilatrix/Rt/Proof/Correct.lean",
+   "imports": ["Compilatrix.Rt.Proof.Program"]},
   "Compilatrix.Rt.Proof.Chunk":
   {"path": "Compilatrix/Rt/Proof/Chunk.lean",
    "imports":
@@ -3319,6 +3329,8 @@
     "Compilatrix.Rt.Proof.StepTerm",
     "Compilatrix.Rt.Proof.Diagram",
     "Compilatrix.Rt.Proof.Prune",
+    "Compilatrix.Rt.Proof.Program",
+    "Compilatrix.Rt.Proof.Correct",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",
