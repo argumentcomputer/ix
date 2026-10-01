@@ -197,7 +197,7 @@ impl Node {
     }
   }
 
-  fn from_leaf(e: &Expr) -> Option<Node> {
+  pub(crate) fn from_leaf(e: &Expr) -> Option<Node> {
     Some(match e {
       Expr::Sort(n) => Node::Sort(*n),
       Expr::Var(n) => Node::Var(*n),

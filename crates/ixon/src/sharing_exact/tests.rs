@@ -2912,3 +2912,91 @@ fn parallel_tiered_limits_fail_closed() {
   eprintln!("parallel limits: {both_ok} both succeed, {both_fail} both fail");
   assert!(both_fail > 50 && both_ok > 50);
 }
+
+/// The Kahn priority order of phase 2 against a direct reference: the
+/// available term of largest weight, ties by the smaller ID, on random DAGs
+/// (dependencies outside `rest` are ignored).
+#[test]
+fn kahn_order_matches_reference() {
+  use super::tiered::kahn_order;
+  let mut rng = Rng(89);
+  for case in 0..300 {
+    let m = 1 + rng.below(30) as usize;
+    // Distinct IDs in a random topological sequence; a term may depend on
+    // earlier terms of the sequence and on IDs outside `rest`.
+    let mut ids: Vec<TermId> = (0..m as u32).map(|i| i * 3 + (i % 2)).collect();
+    for i in (1..m).rev() {
+      ids.swap(i, rng.below(i as u64 + 1) as usize);
+    }
+    let mut weight: FxHashMap<TermId, u64> = FxHashMap::default();
+    let mut deps: FxHashMap<TermId, Vec<TermId>> = FxHashMap::default();
+    for (i, &t) in ids.iter().enumerate() {
+      weight.insert(t, rng.below(5));
+      let mut ds = Vec::new();
+      for &u in &ids[..i] {
+        if rng.below(4) == 0 {
+          ds.push(u);
+        }
+      }
+      if rng.below(3) == 0 {
+        ds.push(10_000 + rng.below(5) as u32);
+      }
+      deps.insert(t, ds);
+    }
+    let mut rest = ids.clone();
+    rest.sort_unstable();
+    let in_rest: FxHashMap<TermId, ()> =
+      rest.iter().map(|&t| (t, ())).collect();
+    let w = |t: TermId| weight[&t];
+    let mut placed: Vec<TermId> = Vec::new();
+    while placed.len() < m {
+      let next = rest
+        .iter()
+        .copied()
+        .filter(|t| !placed.contains(t))
+        .filter(|t| {
+          deps[t].iter().all(|d| !in_rest.contains_key(d) || placed.contains(d))
+        })
+        .min_by(|&a, &b| w(b).cmp(&w(a)).then(a.cmp(&b)))
+        .unwrap();
+      placed.push(next);
+    }
+    assert_eq!(kahn_order(&weight, &deps, &rest), placed, "case {case}");
+  }
+}
+
+/// The MSS experiment hook reproduces the plan's §2 numbers (T2 17 bytes,
+/// T16 46) and writes every occurrence of a stored term as a Share: the
+/// inspector counts `deg(t)` Shares of every stored term and nothing inline.
+#[test]
+fn mss_hook_and_inspector() {
+  let t2 = chain(2);
+  let w2 = axiom(Expr::all(t2.clone(), t2), 1);
+  let t16 = chain(16);
+  let w16 = axiom(Expr::all(t16.clone(), t16), 1);
+  for ties in [MssTies::StructuralId, MssTies::Blake3] {
+    let (n, _, _) = mss_constant(&w2, &limits(), ties).unwrap();
+    assert_eq!(roundtrip(&n).len(), 17);
+    let (n, _, _) = mss_constant(&w16, &limits(), ties).unwrap();
+    assert_eq!(roundtrip(&n).len(), 46);
+  }
+  let mut rng = Rng(91);
+  for i in 0..60u64 {
+    let c = if i % 2 == 0 {
+      let roots = gen_heavy_parent(&mut rng);
+      wrap(&mut rng, roots)
+    } else {
+      gen_constant(i + 99_000, 6, 30, 5)
+    };
+    let (n, enc, dag) =
+      mss_constant(&c, &limits(), MssTies::StructuralId).unwrap();
+    assert_eq!(put(&unshared(&n)), put(&unshared(&c)), "case {i}");
+    let info =
+      inspect_encoding(&dag, &enc.table_terms, &enc.sharing, &enc.roots)
+        .unwrap();
+    assert_eq!(info.inlined, 0, "case {i}");
+    for (j, &t) in enc.table_terms.iter().enumerate() {
+      assert_eq!(info.share_refs[j], enc.deg[t as usize], "case {i} term {t}");
+    }
+  }
+}

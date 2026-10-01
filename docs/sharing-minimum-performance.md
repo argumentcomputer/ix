@@ -59,9 +59,10 @@ join, cites both.
 
   - **Never larger than unshared** on either corpus.
   - **Larger than MSS** for 5 Init and 903 Mathlib constants (TagN), and for 3 and 861 (Tag4).
-  - **The largest loss** is one Mathlib outlier at +1,485 bytes (TagN). It loses even with MSS's exact
-    stored set, and the plan attributes it to phase 2's order beyond the first tier, which is being
-    changed [X4] [P §12.14].
+  - **The largest loss** is one Mathlib outlier at +1,485 bytes (TagN; +1,468 with the Kahn order). It
+    is a tie-break artifact of the Kahn order: MSS with the construction's tie rule (structural ID)
+    gives the same 67,367 bytes as storing MSS's set, and over all of Mathlib storing every candidate is
+    never larger than MSS under the same tie rule [X5] [X6] [P §12.15].
 - **Rejected alternatives.**
   - The K-based width rule: on Mathlib it was larger than MSS in total (+0.46% TagN, +0.21% Tag4),
     larger on about a third of constants [J2]. This led to §12.11.
@@ -90,7 +91,8 @@ join, cites both.
   - serialized unshared sizes for 619 Mathlib constants;
   - serialized TagN bytes;
   - Lean on all of Mathlib;
-  - the effect of the coming phase-2 order change.
+  - best-of-three byte totals and Lean/Rust parity with the Kahn order beyond the first tier (the totals
+    above predate it; see [X6] for the outlier).
 
 ## Sources
 
@@ -116,6 +118,8 @@ Terms used in the table:
 | [X2] | **best of three**, Tag4 layout, Init and Mathlib, 8 threads | `faf1a7c7` | new | `$S/w2/p4/wx_{init,ml}_tag4.{md,err,csv}`, `wx_*_tag4_{join,best}.txt` |
 | [X3] | best of three, TagN layout, Init, 1 thread | `faf1a7c7` | new | `$S/w2/p4/wx_init_tagN_t1.{md,err,csv}` |
 | [X4] | best of four (w = 1, 2, 3 and all candidates), both layouts, Init and Mathlib, 12 threads | `94882265` | new | `$S/w2/p4/wx4_{init,ml}_{tagN,tag4}.{md,err,csv}`, `wx4_*_{join,best}.txt` |
+| [X5] | MSS (ties by structural ID and by blake3) against "all", all of Mathlib; entry-level diffs | `7b083108` | new | `$S/w2/p6/cmp_{id,blake3}.{md,err,csv}`, `outlier_diff2.md`, `diff_up7_blake3.md`, `diff_sample13_id.md` |
+| [X6] | the outlier with the Kahn order, per width and "all", both layouts | `0ef72793` | new | `$S/w2/p5/outlier_kahn_{tagN,tag4}.csv` |
 | [R1] | K-based, runner, Init, TagN layout, 16 threads | `2072a9bf` | old | `$S/w2/init_tiered.{md,err,csv}` |
 | [R2] | K-based, runner, Mathlib, TagN layout, 20 threads | `2072a9bf` | old | `$S/w2/mathlib_tiered.{md,err,csv}` |
 | [R3] | K-based, runner, Mathlib, TagN layout, 20 threads | `e4c0dead` | new | `$S/w2/mathlib_tiered_bb.{md,err,csv}` |
@@ -141,7 +145,9 @@ Notes on the sources:
   for [R4]–[R7] was built at `e4c0dead`. The binary for [X1]–[X3] was built from `faf1a7c7`'s source
   before two lint-only edits to the runner; `faf1a7c7` itself refactors the canonical path into
   `tiered_at(…, None)` without changing it. The Lean side of [D5]/[D6] was built at `3ddda798`; later
-  commits change only documentation and Rust. [X4] used a copy of the runner built at `94882265`. [D7] and [D8]
+  commits change only documentation and Rust. [X4] used a copy of the runner built at `94882265`. [X5] and [X6] used runner binaries
+  built from the sources of `7b083108` and `0ef72793` before those were committed; only lint and
+  documentation edits followed. [D7] and [D8]
   used `IxTests` built at `a80c16cf`, whose Lean side is W1's best of three (`3eb09b9c`).
 - **The Mathlib sample** used by [D3]/[D4] has 20,263 constants: every 50th constant in address order,
   plus every constant with more than 2,000 R1/R2 candidates. It was written by the runner's
@@ -803,18 +809,71 @@ on any constant of either corpus under either layout.
 - **Cost.** Four candidates per constant took 1,021.8 s (TagN) and 1,141.4 s (Tag4) of processing over
   Mathlib on 12 threads, with peak RSS 4.87 and 5.02 GB [X4].
 
-**The outlier, diagnosed.**
+**The outlier, diagnosed (plan §12.14, resolved in §12.15).**
 
 - Under "all", the outlier stores MSS's exact set (2,230 entries), yet ends at 67,367 bytes under TagN.
   That is worse than its own `w = 2` candidate (65,264) and 3,588 bytes worse than MSS (63,779) [X4] CSV.
   Under Tag4 "all" gives 72,065.
-- With the same stored set, the difference lies in the table order or in the per-occurrence encoding,
-  not in the set.
-- The plan attributes it to phase 2's pinned order beyond the first tier [P §12.14]. Its 2,230 entries
-  straddle the TagN 1,032 boundary. The "stored descendants first" order places high-reference entries
-  late, whereas MSS's Kahn priority order keeps them in the 2-byte tier.
-- Phase 2's order beyond the first tier is being changed to the Kahn priority order by reference count.
-  Its effect on the outlier is not measured yet.
+- §12.14 first attributed the gap to phase 2's pinned order beyond the first tier. Phase 2 now uses the
+  Kahn priority order by reference count there (W1 `7a7113cf`, Rust `0ef72793`), and this does not
+  close the gap [X6]:
+  - TagN bytes at w = 1 / 2 / 3: 65,444 / 65,264 / **65,247**; "all" 67,367 (unchanged).
+  - The best of three is now 65,247, +1,468 over MSS (was +1,485).
+  - Tag4 at w = 1 / 2 / 3: 72,405 / **70,422** / 70,623; "all" 72,065.
+- The cause is the **tie-break inside the Kahn order** [X5] [P §12.15]. Re-implemented in Rust, MSS
+  (every candidate stored, Kahn order by in-degree, every occurrence a Share) gives on the outlier:
+
+  | encoding | TagN bytes | Tag4 bytes | Shares at TagN widths 1 / 2 / 3 bytes |
+  |---|---:|---:|---|
+  | MSS, ties by blake3 hash (W3's `mssBuild` rule) | **63,779** | **72,195** | 1,101 / 13,699 / 4,149 |
+  | MSS, ties by structural ID | 67,367 | 72,071 | 1,101 / 10,111 / 7,737 |
+  | "all" (tiered phases 2 and 3 on MSS's set) | 67,367 | | 1,101 / 7,891 / 7,737 |
+
+  - The blake3-tie MSS reproduces W5's MSS bytes and scheme-F price exactly.
+  - The ID-tie MSS and "all" have the same table order (no entry at a different index) and the same
+    total entry and root lengths (28,683 and 32,421).
+  - "all" writes 2,220 occurrences of size-2 stored terms inline. A 2-byte Share and a 2-byte inline
+    write cost the same, so the total is unchanged.
+  - The two MSS orders differ for 2,175 of the 2,230 entries. With the table straddling the TagN 1,032
+    boundary, the tie order decides which entries become available early and so reach the 2-byte rung.
+  - Under Tag4 the ID order is the better of the two, by 124 bytes.
+
+### Store-all against MSS under both tie rules (plan §12.15) [X5]
+
+All 679,499 Mathlib constants, TagN prices. "all" is the all-candidates construction with the Kahn order.
+
+| comparison | "all" larger | "all" smaller | equal | total difference |
+|---|---:|---:|---:|---:|
+| "all" − MSS with structural-ID ties | **0** | 157,438 | 522,061 | −1,227,943 B |
+| "all" − MSS with blake3 ties | 206 (+22,185 B, max +3,588) | 166,865 | 512,428 | −1,602,326 B |
+
+- **Totals:**
+  - MSS with ID ties: 1,130,616,480 B.
+  - MSS with blake3 ties: 1,130,990,863 B. This equals [W5]'s scheme-F rooted total plus the 609,546
+    rootless bytes. Its Share bytes, 280,471,878, equal [W5]'s scheme-F reference bytes.
+  - "all": 1,129,388,537 B.
+- **Shares:** both MSS variants write 159,110,515 Shares; "all" writes 145,331,762. "all" writes
+  13,778,893 occurrences of stored terms inline, in 239,559 constants.
+- **Every "all" loss is a tie-break effect.** For each of the 206 constants where "all" is larger than
+  blake3-tie MSS, ID-tie MSS is at least as large as "all".
+- **The tie rule itself:**
+  - ID ties are better than blake3 ties overall, by 374,383 B.
+  - ID ties win on 36,846 constants, blake3 ties on 23,605, and 619,048 are equal.
+  - The largest ID advantage is 6,980 B (`CartanMatrix.E₈_det`); the largest blake3 advantage is the
+    outlier's 3,588 B.
+  - Taking the better rule per constant would gain 119,735 B (0.011%).
+- **Twenty constants examined entry by entry** (`--mss-diff`) where "all" and MSS differ by more than 1%:
+  - The 7 where "all" exceeds blake3-tie MSS by more than 1%: in each, ID-tie MSS is at least as large as
+    "all", and blake3 ties beat ID ties under TagN.
+  - 13 random constants of the 8,440 where "all" is more than 1% below ID-tie MSS: "all" gains through
+    the exact first tier, which puts more references in the 1-byte slots (for example 198 → 239 in
+    `LinearMap.toMatrix₂`), and through phase 3 writing a stored term inline where its Share would cost
+    at least as much.
+- **Decision.** No rule change; structural-ID ties stay pinned [P §12.15]. The order beyond the first
+  tier is a greedy rule. An exact maximum-weight closed set for the 1,032-entry second rung is a possible
+  refinement, not adopted.
+- **Against the best of three.** The best of three (`faf1a7c7`, before the Kahn order) is larger than
+  ID-tie MSS on 902 constants, by +2,504 B in total and at most +37 bytes [X1] [X5].
 
 ### What the experiment shows
 
@@ -856,8 +915,8 @@ on any constant of either corpus under either layout.
     aborted.
   - The phase statistics above are for one phase-1 run (the K-based width). Per-width search statistics
     (states, components) were not recorded.
-- **The coming phase-2 order change** [P §12.14] is not measured here. The outlier will be re-measured
-  once it is mirrored in Rust.
+- **The Kahn order beyond the first tier** (W1 `7a7113cf`, Rust `0ef72793`) is measured here only on the
+  outlier [X6] and in the store-all comparison [X5]; the best-of-three byte totals above predate it.
 - **Lean on all of Mathlib.** The K-based tiered-TagN differential over all 679,499 constants ran in 6
   address shards [D6]. Three shards (339,749 constants) completed with 0 disagreements. The other three
   processes ended without output, for reasons not explained. No best-of-three Lean run over all of
@@ -2159,6 +2218,666 @@ rooted 663254: heuristic 1468281356, MSS(tag4 widths) 1148195956, best of four 1
 vs heuristic: smaller 627129 equal 35622 larger 503; vs MSS: smaller 405989 equal 257170 larger 95; larger than unshared 0
 best of four - heuristic (n=663254): min -262502 p1 -6433 p10 -1031 p50 -125 p90 -4 p99 0 p99.9 0 max 36
 best of four - MSS (n=663254): min -22505 p1 -361 p10 -31 p50 -3 p90 0 p99 0 p99.9 0 max 266
+```
+
+</details>
+
+<details><summary>[X5] join output (<code>p6/cmp_id_report.md</code>)</summary>
+
+```text
+# MSS vs all candidates (TagN), 679499 constants (0 failed)
+- TagN bytes: MSS 1130616480, all 1129388537 (-1227943)
+- per constant: all larger 0, smaller 157438, equal 522061
+- Shares: MSS 159110515, all 145331762; share bytes MSS 280097495, all 251311059; stored-term occurrences written inline by all: 13778893 in 239559 constants
+- total wall 490.4 s
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 9:46.80
+	Maximum resident set size (kbytes): 4930696
+exit=0
+```
+
+</details>
+
+<details><summary>[X5] join output (<code>p6/cmp_blake3_report.md</code>)</summary>
+
+```text
+# MSS vs all candidates (TagN), 679499 constants (0 failed)
+- TagN bytes: MSS 1130990863, all 1129388537 (-1602326)
+- per constant: all larger 206, smaller 166865, equal 512428
+- Shares: MSS 159110515, all 145331762; share bytes MSS 280471878, all 251311059; stored-term occurrences written inline by all: 13778893 in 239559 constants
+- total wall 374.6 s
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 6:15.35
+	Maximum resident set size (kbytes): 4948468
+exit=0
+```
+
+</details>
+
+<details><summary>[X5] join output (<code>p6/outlier_diff2.md</code>)</summary>
+
+```text
+- MSS with StructuralId ties: TagN 67367 B, Tag4 72071 B
+- MSS with Blake3 ties: TagN 63779 B, Tag4 72195 B
+# Affine.Triangle.dist_orthogonalProjectionSpan_faceOpposite_eq_iff_two_zsmul_oangle_eq (048653e65a77d222)
+- TagN bytes: MSS 67367, all 67367 (+0); table entries MSS 2230, all 2230; DAG nodes 19417
+- entry bodies MSS 28683, all 28683; roots MSS 32421, all 32421
+- Shares: MSS 18949 (TagN width 1/2/3/wider: [1101, 10111, 7737, 0]), all 16729 ([1101, 7891, 7737, 0]); stored-term occurrences written inline: MSS 0, all 2220
+- all: phase-1 order kept false, first tier [18, 19, 20, 89, 100, 203, 215, 279], w 0
+- entries with the same term-level form: 1456 of 2230; entries at a different index: 0
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 23: 108 (m9 a9 deg 108); 31: 104 (m10 a10 deg 104); 26: 94 (m11 a11 deg 94); 17: 83 (m13 a13 deg 83); 39: 82 (m14 a14 deg 82); 15: 79 (m15 a15 deg 79); 25: 75 (m16 a16 deg 75); 21: 72 (m17 a17 deg 72); 16: 62 (m18 a18 deg 62); 24: 60 (m19 a19 deg 60); 22: 57 (m23 a23 deg 57); 47: 55 (m24 a24 deg 55); 94: 47 (m26 a26 deg 47); 126: 42 (m27 a27 deg 42); 32: 38 (m28 a28 deg 38)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +0: term 12 m29 a29 refs 37/0 len 2/2
+  - +0: term 13 m30 a30 refs 37/0 len 2/2
+  - +0: term 14 m37 a37 refs 31/0 len 2/2
+  - +0: term 15 m15 a15 refs 79/0 len 2/2
+  - +0: term 16 m18 a18 refs 62/0 len 2/2
+  - +0: term 17 m13 a13 refs 83/0 len 2/2
+  - +0: term 18 m2 a2 refs 134/134 len 2/2
+  - +0: term 19 m1 a1 refs 151/151 len 2/2
+  - +0: term 20 m5 a5 refs 124/124 len 2/2
+  - +0: term 21 m17 a17 refs 72/0 len 2/2
+  - +0: term 22 m23 a23 refs 57/0 len 2/2
+  - +0: term 23 m9 a9 refs 108/0 len 2/2
+- body length differences: total +0 / 0
+- Share bytes (refs x TagN width): MSS 44534, all 40094
+- first entry (MSS order) with a different term-level form: term 736, MSS index 70, all index 70, deg 17, refs 17/17
+  - first difference at position 4: MSS Some((true, 17)), all Some((false, 17))
+  - MSS bytes: 72b824b1b805
+  - all bytes: 72b824b1180d
+
+```
+
+</details>
+
+<details><summary>[X5] join output (<code>p6/diff_up7_blake3.md</code>)</summary>
+
+```text
+- MSS with StructuralId ties: TagN 67367 B, Tag4 72071 B
+- MSS with Blake3 ties: TagN 63779 B, Tag4 72195 B
+# Affine.Triangle.dist_orthogonalProjectionSpan_faceOpposite_eq_iff_two_zsmul_oangle_eq (048653e65a77d222)
+- TagN bytes: MSS 63779, all 67367 (+3588); table entries MSS 2230, all 2230; DAG nodes 19417
+- entry bodies MSS 27958, all 28683; roots MSS 29558, all 32421
+- Shares: MSS 18949 (TagN width 1/2/3/wider: [1101, 13699, 4149, 0]), all 16729 ([1101, 7891, 7737, 0]); stored-term occurrences written inline: MSS 0, all 2220
+- all: phase-1 order kept false, first tier [18, 19, 20, 89, 100, 203, 215, 279], w 0
+- entries with the same term-level form: 1456 of 2230; entries at a different index: 2175
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 23: 108 (m9 a9 deg 108); 31: 104 (m10 a10 deg 104); 26: 94 (m11 a11 deg 94); 17: 83 (m13 a13 deg 83); 39: 82 (m14 a14 deg 82); 15: 79 (m15 a15 deg 79); 25: 75 (m16 a16 deg 75); 21: 72 (m17 a17 deg 72); 16: 62 (m18 a18 deg 62); 24: 60 (m20 a19 deg 60); 22: 57 (m23 a23 deg 57); 47: 55 (m24 a24 deg 55); 94: 47 (m26 a26 deg 47); 126: 42 (m27 a27 deg 42); 32: 38 (m28 a28 deg 38)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +153: term 19100 m2032 a2228 refs 2/2 len 1426/1579
+  - +151: term 19094 m2034 a2227 refs 2/2 len 1455/1606
+  - +150: term 19088 m2033 a2226 refs 2/2 len 1458/1608
+  - +147: term 19039 m2029 a2224 refs 2/2 len 1519/1666
+  - +33: term 14001 m2022 a2093 refs 22/22 len 268/301
+  - +30: term 14002 m1966 a2095 refs 22/22 len 315/345
+  - +21: term 13999 m2020 a2089 refs 22/22 len 312/333
+  - +19: term 14000 m925 a2091 refs 22/22 len 262/281
+  - +7: term 10191 m825 a1756 refs 22/22 len 39/46
+  - +6: term 10187 m902 a2125 refs 22/22 len 24/30
+  - +6: term 11061 m2023 a1776 refs 22/22 len 36/42
+  - +6: term 11663 m1982 a2076 refs 22/22 len 47/53
+- body length differences: total +1397 / -672
+- Share bytes (refs x TagN width): MSS 40946, all 40094
+- first entry (MSS order) with a different term-level form: term 736, MSS index 70, all index 70, deg 17, refs 17/17
+  - first difference at position 4: MSS Some((true, 17)), all Some((false, 17))
+  - MSS bytes: 72b820b1b805
+  - all bytes: 72b824b1180d
+
+- MSS with StructuralId ties: TagN 162916 B, Tag4 168886 B
+- MSS with Blake3 ties: TagN 160431 B, Tag4 167951 B
+# sum_eight_sq_mul_sum_eight_sq (0bd4b1175ac1d995)
+- TagN bytes: MSS 160431, all 162472 (+2041); table entries MSS 7281, all 7281; DAG nodes 49322
+- entry bodies MSS 49920, all 50577; roots MSS 107233, all 108617
+- Shares: MSS 55565 (TagN width 1/2/3/wider: [2359, 23866, 29340, 0]), all 53293 ([3089, 18093, 32111, 0]); stored-term occurrences written inline: MSS 0, all 2272
+- all: phase-1 order kept false, first tier [10, 52, 142, 146, 300, 447, 468, 509], w 0
+- entries with the same term-level form: 7125 of 7281; entries at a different index: 7278
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 11: 295 (m1 a8 deg 295); 12: 295 (m6 a9 deg 295); 13: 295 (m5 a10 deg 295); 14: 295 (m3 a11 deg 295); 15: 295 (m2 a12 deg 295); 16: 295 (m4 a13 deg 295); 17: 294 (m7 a14 deg 294); 19: 125 (m8 a15 deg 125); 147: 38 (m10 a16 deg 38); 20: 21 (m15 a21 deg 21); 18: 10 (m16 a23 deg 10); 145: 6 (m23 a31 deg 6); 26: 3 (m26 a40 deg 3); 122: 3 (m25 a42 deg 3); 92: 2 (m44 a92 deg 2)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +5: term 21183 m3836 a3314 refs 13/13 len 34/39
+  - +5: term 21184 m3435 a3140 refs 7/7 len 37/42
+  - +4: term 21212 m3433 a3191 refs 13/13 len 36/40
+  - +4: term 26293 m6322 a3981 refs 9/9 len 59/63
+  - +4: term 26294 m6260 a3984 refs 9/9 len 59/63
+  - +4: term 26295 m7232 a3987 refs 9/9 len 59/63
+  - +4: term 26296 m6211 a3990 refs 9/9 len 59/63
+  - +4: term 26297 m6288 a3993 refs 9/9 len 59/63
+  - +4: term 26298 m6044 a3996 refs 9/9 len 59/63
+  - +4: term 26299 m6033 a3999 refs 9/9 len 59/63
+  - +3: term 655 m154 a1341 refs 6/6 len 9/12
+  - +3: term 805 m191 a1925 refs 7/7 len 9/12
+- body length differences: total +2161 / -1504
+- Share bytes (refs x TagN width): MSS 138111, all 135608
+- first entry (MSS order) with a different term-level form: term 294, MSS index 17, all index 24, deg 28, refs 28/28
+  - first difference at position 3: MSS Some((true, 19)), all Some((false, 19))
+  - MSS bytes: 72211e03b800b808
+  - all bytes: 72211e0318111810
+
+- MSS with StructuralId ties: TagN 24055 B, Tag4 26675 B
+- MSS with Blake3 ties: TagN 23547 B, Tag4 26729 B
+# _private.Init.Data.List.ToArray.0.List.insertIdx_toArray._proof_1_8 (12f7c5d124fdd295)
+- TagN bytes: MSS 23547, all 23791 (+244); table entries MSS 1486, all 1486; DAG nodes 6311
+- entry bodies MSS 15584, all 15819; roots MSS 4365, all 4374
+- Shares: MSS 7445 (TagN width 1/2/3/wider: [298, 5589, 1558, 0]), all 6881 ([562, 4253, 2066, 0]); stored-term occurrences written inline: MSS 0, all 564
+- all: phase-1 order kept false, first tier [12, 89, 99, 101, 186, 195, 215, 305], w 0
+- entries with the same term-level form: 1142 of 1486; entries at a different index: 1466
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 14: 31 (m4 a9 deg 31); 13: 30 (m5 a11 deg 30); 10: 28 (m6 a12 deg 28); 49: 25 (m7 a14 deg 25); 40: 24 (m8 a16 deg 24); 11: 22 (m9 a17 deg 22); 15: 17 (m18 a18 deg 17); 57: 16 (m23 a20 deg 16); 59: 16 (m22 a21 deg 16); 76: 16 (m20 a22 deg 16); 78: 16 (m21 a23 deg 16); 16: 14 (m25 a24 deg 14); 85: 14 (m24 a25 deg 14); 52: 13 (m26 a26 deg 13); 9: 11 (m31 a31 deg 11)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +31: term 5841 m1239 a1462 refs 2/2 len 186/217
+  - +28: term 6036 m1412 a1438 refs 3/3 len 155/183
+  - +28: term 6037 m1413 a1469 refs 2/2 len 155/183
+  - +28: term 6073 m1472 a1482 refs 2/2 len 168/196
+  - +23: term 6040 m1479 a1472 refs 2/2 len 163/186
+  - +23: term 6061 m1475 a1475 refs 2/2 len 169/192
+  - +22: term 5901 m1340 a1396 refs 3/3 len 157/179
+  - +19: term 6135 m1476 a1483 refs 2/2 len 153/172
+  - +18: term 5878 m1478 a1466 refs 2/2 len 138/156
+  - +14: term 5873 m1329 a1464 refs 2/2 len 118/132
+  - +13: term 6098 m1468 a1453 refs 4/4 len 156/169
+  - +12: term 5870 m1303 a1417 refs 3/3 len 138/150
+- body length differences: total +762 / -527
+- Share bytes (refs x TagN width): MSS 16150, all 15266
+- first entry (MSS order) with a different term-level form: term 415, MSS index 15, all index 10, deg 34, refs 34/34
+  - first difference at position 2: MSS Some((true, 14)), all Some((false, 14))
+  - MSS bytes: 71b805b4
+  - all bytes: 71b6180d
+
+- MSS with StructuralId ties: TagN 29926 B, Tag4 33101 B
+- MSS with Blake3 ties: TagN 28862 B, Tag4 33682 B
+# _private.Init.Data.Int.LemmasAux.0.Int.max_min_distrib_left._proof_1_1 (20646855d719ed79)
+- TagN bytes: MSS 28862, all 29495 (+633); table entries MSS 1815, all 1815; DAG nodes 8427
+- entry bodies MSS 14988, all 15230; roots MSS 11207, all 11598
+- Shares: MSS 9731 (TagN width 1/2/3/wider: [433, 6942, 2356, 0]), all 9347 ([864, 5063, 3420, 0]); stored-term occurrences written inline: MSS 0, all 384
+- all: phase-1 order kept false, first tier [8, 9, 14, 62, 69, 70, 106, 118], w 0
+- entries with the same term-level form: 1538 of 1815; entries at a different index: 1789
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 29: 27 (m5 a8 deg 27); 59: 26 (m6 a9 deg 26); 42: 22 (m11 a11 deg 22); 11: 21 (m13 a13 deg 21); 39: 20 (m15 a14 deg 20); 78: 17 (m17 a16 deg 17); 54: 16 (m19 a18 deg 16); 55: 16 (m18 a19 deg 16); 20: 15 (m20 a20 deg 15); 53: 15 (m21 a21 deg 15); 27: 12 (m24 a24 deg 12); 18: 11 (m25 a25 deg 11); 37: 11 (m26 a26 deg 11); 84: 11 (m27 a27 deg 11); 31: 8 (m30 a28 deg 8)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +23: term 8190 m1799 a1764 refs 3/3 len 374/397
+  - +23: term 8245 m1814 a1813 refs 2/2 len 377/400
+  - +19: term 8119 m1771 a1809 refs 2/2 len 210/229
+  - +19: term 8192 m1806 a1811 refs 2/2 len 378/397
+  - +16: term 8123 m1801 a1810 refs 2/2 len 206/222
+  - +6: term 8057 m1774 a1808 refs 2/2 len 79/85
+  - +5: term 7236 m1600 a1790 refs 2/2 len 47/52
+  - +4: term 7237 m1581 a1791 refs 2/2 len 48/52
+  - +4: term 7474 m1717 a1792 refs 2/2 len 67/71
+  - +4: term 7769 m1465 a1794 refs 2/2 len 75/79
+  - +4: term 7874 m1716 a1805 refs 2/2 len 126/130
+  - +3: term 7765 m1449 a1793 refs 2/2 len 76/79
+- body length differences: total +662 / -420
+- Share bytes (refs x TagN width): MSS 21385, all 21250
+- first entry (MSS order) with a different term-level form: term 104, MSS index 33, all index 33, deg 7, refs 7/7
+  - first difference at position 1: MSS Some((true, 29)), all Some((false, 29))
+  - MSS bytes: 71b5b0
+  - all bytes: 712018b0
+
+- MSS with StructuralId ties: TagN 37641 B, Tag4 39855 B
+- MSS with Blake3 ties: TagN 37065 B, Tag4 39847 B
+# _private.Mathlib.CategoryTheory.Sites.Hypercover.One.0.CategoryTheory.PreOneHypercover.sieve₁_inter.match_1_3 (b544e59047529675)
+- TagN bytes: MSS 37065, all 37641 (+576); table entries MSS 2271, all 2271; DAG nodes 12584
+- entry bodies MSS 31380, all 31920; roots MSS 4384, all 4420
+- Shares: MSS 13361 (TagN width 1/2/3/wider: [1019, 8987, 3355, 0]), all 9693 ([1019, 4743, 3931, 0]); stored-term occurrences written inline: MSS 0, all 3668
+- all: phase-1 order kept false, first tier [25, 26, 27, 28, 29, 30, 33, 37], w 0
+- entries with the same term-level form: 1078 of 2271; entries at a different index: 2213
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 39: 122 (m6 a8 deg 122); 17: 121 (m11 a9 deg 121); 20: 121 (m12 a10 deg 121); 24: 121 (m10 a11 deg 121); 35: 121 (m9 a12 deg 121); 19: 120 (m16 a13 deg 120); 21: 120 (m15 a14 deg 120); 31: 120 (m14 a15 deg 120); 34: 120 (m13 a16 deg 120); 32: 119 (m18 a17 deg 119); 38: 119 (m17 a18 deg 119); 18: 117 (m21 a19 deg 117); 23: 117 (m19 a20 deg 117); 36: 117 (m20 a21 deg 117); 22: 116 (m22 a22 deg 116)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +12: term 11638 m2070 a2231 refs 2/2 len 273/285
+  - +12: term 11800 m2221 a2249 refs 2/2 len 105/117
+  - +11: term 11789 m2225 a2247 refs 2/2 len 204/215
+  - +11: term 11826 m1941 a2260 refs 2/2 len 112/123
+  - +10: term 11284 m2191 a2218 refs 2/2 len 73/83
+  - +9: term 11785 m2193 a2245 refs 2/2 len 110/119
+  - +8: term 11428 m1918 a2224 refs 2/2 len 98/106
+  - +8: term 11787 m2077 a2246 refs 2/2 len 112/120
+  - +7: term 10930 m1939 a2147 refs 2/2 len 76/83
+  - +7: term 11737 m2237 a2237 refs 2/2 len 353/360
+  - +7: term 11772 m2218 a2239 refs 2/2 len 108/115
+  - +7: term 11774 m2149 a2185 refs 3/3 len 107/114
+- body length differences: total +919 / -379
+- Share bytes (refs x TagN width): MSS 29058, all 22298
+- first entry (MSS order) with a different term-level form: term 3480, MSS index 91, all index 111, deg 6, refs 6/6
+  - first difference at position 7: MSS Some((true, 24)), all Some((false, 24))
+  - MSS bytes: 74b824b2b4b802b80b
+  - all bytes: 74b824b2b318161815
+
+- MSS with StructuralId ties: TagN 27698 B, Tag4 30928 B
+- MSS with Blake3 ties: TagN 26940 B, Tag4 31434 B
+# _private.Init.Data.Int.LemmasAux.0.Int.min_max_distrib_left._proof_1_1 (ba424920055f512c)
+- TagN bytes: MSS 26940, all 27314 (+374); table entries MSS 1716, all 1716; DAG nodes 7820
+- entry bodies MSS 16436, all 16706; roots MSS 7837, all 7941
+- Shares: MSS 9026 (TagN width 1/2/3/wider: [425, 6476, 2125, 0]), all 8676 ([809, 4984, 2883, 0]); stored-term occurrences written inline: MSS 0, all 350
+- all: phase-1 order kept false, first tier [8, 9, 59, 62, 69, 70, 106, 118], w 0
+- entries with the same term-level form: 1462 of 1716; entries at a different index: 1690
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 29: 25 (m6 a10 deg 25); 11: 21 (m12 a12 deg 21); 42: 21 (m13 a13 deg 21); 39: 19 (m15 a15 deg 19); 78: 19 (m16 a16 deg 19); 54: 16 (m17 a17 deg 16); 20: 15 (m19 a18 deg 15); 53: 13 (m24 a21 deg 13); 55: 13 (m21 a22 deg 13); 27: 12 (m25 a25 deg 12); 18: 11 (m26 a26 deg 11); 37: 11 (m27 a27 deg 11); 84: 11 (m28 a28 deg 11); 31: 8 (m32 a31 deg 8); 32: 8 (m34 a32 deg 8)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +31: term 7645 m1628 a1714 refs 2/2 len 382/413
+  - +30: term 7509 m1686 a1706 refs 2/2 len 271/301
+  - +26: term 7510 m1546 a1707 refs 2/2 len 303/329
+  - +25: term 7669 m1582 a1715 refs 2/2 len 313/338
+  - +23: term 7511 m1592 a1708 refs 2/2 len 284/307
+  - +23: term 7528 m1574 a1711 refs 2/2 len 280/303
+  - +21: term 7612 m1575 a1712 refs 2/2 len 298/319
+  - +21: term 7636 m1581 a1713 refs 2/2 len 317/338
+  - +18: term 7512 m1580 a1709 refs 2/2 len 209/227
+  - +17: term 7513 m1560 a1710 refs 2/2 len 210/227
+  - +16: term 7447 m1590 a1702 refs 2/2 len 137/153
+  - +15: term 7271 m1494 a1692 refs 2/2 len 105/120
+- body length differences: total +760 / -490
+- Share bytes (refs x TagN width): MSS 19752, all 19426
+- first entry (MSS order) with a different term-level form: term 104, MSS index 23, all index 23, deg 13, refs 13/13
+  - first difference at position 1: MSS Some((true, 29)), all Some((false, 29))
+  - MSS bytes: 71b6b0
+  - all bytes: 712018b0
+
+- MSS with StructuralId ties: TagN 27064 B, Tag4 30475 B
+- MSS with Blake3 ties: TagN 26449 B, Tag4 30809 B
+# _private.Init.Data.Int.LemmasAux.0.Int.min_max_distrib_right._proof_1_1 (bda7230c49640697)
+- TagN bytes: MSS 26449, all 26954 (+505); table entries MSS 1687, all 1687; DAG nodes 7767
+- entry bodies MSS 16756, all 17087; roots MSS 7026, all 7200
+- Shares: MSS 8897 (TagN width 1/2/3/wider: [649, 6125, 2123, 0]), all 8540 ([759, 5043, 2738, 0]); stored-term occurrences written inline: MSS 0, all 357
+- all: phase-1 order kept false, first tier [8, 9, 29, 62, 69, 70, 106, 117], w 0
+- entries with the same term-level form: 1432 of 1687; entries at a different index: 1657
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 59: 26 (m5 a8 deg 26); 11: 21 (m12 a12 deg 21); 39: 20 (m14 a13 deg 20); 42: 20 (m15 a14 deg 20); 78: 19 (m16 a16 deg 19); 54: 16 (m18 a18 deg 16); 20: 15 (m19 a19 deg 15); 84: 15 (m20 a20 deg 15); 53: 14 (m21 a21 deg 14); 55: 13 (m22 a22 deg 13); 27: 12 (m25 a25 deg 12); 18: 8 (m29 a29 deg 8); 31: 8 (m31 a30 deg 8); 32: 8 (m34 a31 deg 8); 37: 8 (m32 a32 deg 8)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +35: term 7546 m1616 a1683 refs 2/2 len 292/327
+  - +34: term 7440 m1611 a1675 refs 2/2 len 275/309
+  - +32: term 7441 m1615 a1676 refs 2/2 len 300/332
+  - +32: term 7459 m1620 a1681 refs 2/2 len 271/303
+  - +29: term 7607 m1617 a1686 refs 2/2 len 298/327
+  - +27: term 7377 m1296 a1671 refs 2/2 len 179/206
+  - +24: term 7376 m1511 a1670 refs 2/2 len 182/206
+  - +24: term 7386 m1681 a1672 refs 2/2 len 197/221
+  - +21: term 7445 m1490 a1680 refs 2/2 len 205/226
+  - +18: term 7476 m1685 a1682 refs 2/2 len 247/265
+  - +12: term 7421 m1496 a1673 refs 2/2 len 163/175
+  - +11: term 7134 m1393 a1657 refs 2/2 len 61/72
+- body length differences: total +807 / -476
+- Share bytes (refs x TagN width): MSS 19268, all 19059
+- first entry (MSS order) with a different term-level form: term 109, MSS index 33, all index 33, deg 9, refs 9/9
+  - first difference at position 1: MSS Some((true, 37)), all Some((false, 37))
+  - MSS bytes: 71b81817
+  - all bytes: 71202017
+
+```
+
+</details>
+
+<details><summary>[X5] join output (<code>p6/diff_sample13_id.md</code>)</summary>
+
+```text
+- MSS with StructuralId ties: TagN 2819 B, Tag4 2819 B
+- MSS with Blake3 ties: TagN 2819 B, Tag4 2819 B
+# LinearMap.toMatrix₂ (150fea7b7bae8d61)
+- TagN bytes: MSS 2819, all 2778 (-41); table entries MSS 75, all 75; DAG nodes 654
+- entry bodies MSS 724, all 702; roots MSS 632, all 613
+- Shares: MSS 492 (TagN width 1/2/3/wider: [198, 294, 0, 0]), all 403 ([239, 164, 0, 0]); stored-term occurrences written inline: MSS 0, all 89
+- all: phase-1 order kept false, first tier [14, 15, 20, 23, 26, 72, 217, 232], w 0
+- entries with the same term-level form: 48 of 75; entries at a different index: 9
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 21: 13 (m6 a8 deg 13); 16: 11 (m7 a9 deg 11); 17: 11 (m8 a10 deg 11); 19: 11 (m9 a11 deg 11); 22: 11 (m10 a12 deg 11); 18: 10 (m11 a13 deg 10); 24: 9 (m12 a14 deg 9); 25: 7 (m15 a15 deg 7); 27: 6 (m16 a16 deg 6)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +3: term 321 m42 a42 refs 4/4 len 16/19
+  - +1: term 130 m28 a28 refs 2/2 len 5/6
+  - +1: term 131 m29 a29 refs 2/2 len 5/6
+  - +1: term 172 m18 a18 refs 4/4 len 5/6
+  - +1: term 274 m54 a54 refs 2/2 len 10/11
+  - +1: term 305 m60 a60 refs 2/2 len 11/12
+  - +0: term 14 m2 a2 refs 21/21 len 2/2
+  - +0: term 15 m3 a3 refs 21/21 len 2/2
+  - +0: term 16 m7 a9 refs 11/0 len 2/2
+  - +0: term 17 m8 a10 refs 11/0 len 2/2
+  - +0: term 18 m11 a13 refs 10/0 len 2/2
+  - +0: term 19 m9 a11 refs 11/0 len 2/2
+- body length differences: total +8 / -30
+- Share bytes (refs x TagN width): MSS 786, all 567
+- first entry (MSS order) with a different term-level form: term 172, MSS index 18, all index 18, deg 4, refs 4/4
+  - first difference at position 1: MSS Some((true, 21)), all Some((false, 21))
+  - MSS bytes: 9117b6b808
+  - all bytes: 9117180f1815
+
+- MSS with StructuralId ties: TagN 775 B, Tag4 775 B
+- MSS with Blake3 ties: TagN 775 B, Tag4 775 B
+# Pi.seminormedRing._proof_5 (3fdd3d0435a6cd0f)
+- TagN bytes: MSS 775, all 766 (-9); table entries MSS 13, all 13; DAG nodes 89
+- entry bodies MSS 65, all 63; roots MSS 113, all 106
+- Shares: MSS 39 (TagN width 1/2/3/wider: [20, 19, 0, 0]), all 39 ([29, 10, 0, 0]); stored-term occurrences written inline: MSS 0, all 0
+- all: phase-1 order kept false, first tier [8, 10, 11, 12, 26, 27, 39, 40], w 0
+- entries with the same term-level form: 13 of 13; entries at a different index: 4
+- roots with the same term-level form: true
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +1: term 57 m11 a11 refs 2/2 len 8/9
+  - +0: term 8 m0 a0 refs 3/3 len 2/2
+  - +0: term 10 m3 a3 refs 2/2 len 3/3
+  - +0: term 11 m4 a4 refs 2/2 len 4/4
+  - +0: term 12 m5 a5 refs 2/2 len 3/3
+  - +0: term 13 m6 a8 refs 2/2 len 3/3
+  - +0: term 25 m7 a9 refs 2/2 len 3/3
+  - +0: term 26 m1 a1 refs 3/3 len 3/3
+  - +0: term 27 m8 a6 refs 2/2 len 3/3
+  - +0: term 32 m10 a10 refs 2/2 len 4/4
+  - +0: term 39 m2 a2 refs 4/4 len 4/4
+  - -1: term 40 m9 a7 refs 11/11 len 5/4
+- body length differences: total +1 / -3
+- Share bytes (refs x TagN width): MSS 58, all 49
+
+- MSS with StructuralId ties: TagN 5285 B, Tag4 5285 B
+- MSS with Blake3 ties: TagN 5285 B, Tag4 5285 B
+# _private.Mathlib.NumberTheory.Bernoulli.0.Bernoulli.sum_pow_add_indicator_eq_zero (41a2b46683027c60)
+- TagN bytes: MSS 5285, all 5176 (-109); table entries MSS 181, all 181; DAG nodes 775
+- entry bodies MSS 1381, all 1299; roots MSS 566, all 539
+- Shares: MSS 645 (TagN width 1/2/3/wider: [73, 572, 0, 0]), all 608 ([182, 426, 0, 0]); stored-term occurrences written inline: MSS 0, all 37
+- all: phase-1 order kept false, first tier [24, 83, 103, 105, 155, 156, 157, 246], w 0
+- entries with the same term-level form: 163 of 181; entries at a different index: 40
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 42: 5 (m2 a8 deg 5); 109: 5 (m4 a9 deg 5); 8: 3 (m11 a17 deg 3); 20: 3 (m16 a22 deg 3); 27: 3 (m19 a25 deg 3); 71: 3 (m27 a33 deg 3); 90: 3 (m31 a37 deg 3); 93: 3 (m33 a39 deg 3); 108: 3 (m43 a43 deg 3); 6: 2 (m58 a58 deg 2); 14: 2 (m59 a59 deg 2); 29: 2 (m63 a63 deg 2)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +3: term 335 m8 a13 refs 8/8 len 8/11
+  - +1: term 269 m51 a51 refs 3/3 len 5/6
+  - +1: term 361 m10 a15 refs 5/5 len 11/12
+  - +1: term 561 m157 a157 refs 2/2 len 14/15
+  - +1: term 619 m168 a168 refs 2/2 len 18/19
+  - +1: term 688 m174 a174 refs 2/2 len 18/19
+  - +0: term 6 m58 a58 refs 2/0 len 2/2
+  - +0: term 8 m11 a17 refs 3/0 len 2/2
+  - +0: term 9 m5 a10 refs 4/4 len 3/3
+  - +0: term 11 m12 a18 refs 3/3 len 3/3
+  - +0: term 12 m13 a19 refs 3/3 len 3/3
+  - +0: term 13 m14 a20 refs 3/3 len 3/3
+- body length differences: total +8 / -90
+- Share bytes (refs x TagN width): MSS 1217, all 1034
+- first entry (MSS order) with a different term-level form: term 335, MSS index 8, all index 13, deg 8, refs 8/8
+  - first difference at position 5: MSS Some((true, 109)), all Some((false, 109))
+  - MSS bytes: 73b7b0b4712054b4
+  - all bytes: 73b804b0681d712054681d
+
+- MSS with StructuralId ties: TagN 1443 B, Tag4 1443 B
+- MSS with Blake3 ties: TagN 1443 B, Tag4 1443 B
+# TensorProduct.comm_comp_comm (47a67d941d274480)
+- TagN bytes: MSS 1443, all 1424 (-19); table entries MSS 28, all 28; DAG nodes 309
+- entry bodies MSS 327, all 325; roots MSS 226, all 209
+- Shares: MSS 146 (TagN width 1/2/3/wider: [74, 72, 0, 0]), all 146 ([93, 53, 0, 0]); stored-term occurrences written inline: MSS 0, all 0
+- all: phase-1 order kept false, first tier [31, 89, 94, 113, 164, 169, 171, 201], w 0
+- entries with the same term-level form: 28 of 28; entries at a different index: 9
+- roots with the same term-level form: true
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +6: term 261 m25 a25 refs 2/2 len 54/60
+  - +0: term 26 m14 a14 refs 2/2 len 4/4
+  - +0: term 31 m6 a3 refs 3/3 len 3/3
+  - +0: term 65 m15 a15 refs 2/2 len 5/5
+  - +0: term 66 m16 a16 refs 2/2 len 5/5
+  - +0: term 69 m17 a17 refs 2/2 len 5/5
+  - +0: term 89 m7 a4 refs 18/18 len 4/4
+  - +0: term 94 m9 a6 refs 10/10 len 6/6
+  - +0: term 113 m8 a5 refs 15/15 len 11/11
+  - +0: term 114 m18 a18 refs 2/2 len 12/12
+  - +0: term 115 m19 a19 refs 2/2 len 12/12
+  - +0: term 164 m2 a2 refs 13/13 len 15/15
+- body length differences: total +6 / -8
+- Share bytes (refs x TagN width): MSS 218, all 199
+
+- MSS with StructuralId ties: TagN 1498 B, Tag4 1498 B
+- MSS with Blake3 ties: TagN 1498 B, Tag4 1498 B
+# PartialEquiv.prod_symm (47be2a47baaa41c6)
+- TagN bytes: MSS 1498, all 1483 (-15); table entries MSS 43, all 43; DAG nodes 308
+- entry bodies MSS 372, all 359; roots MSS 256, all 254
+- Shares: MSS 118 (TagN width 1/2/3/wider: [22, 96, 0, 0]), all 118 ([37, 81, 0, 0]); stored-term occurrences written inline: MSS 0, all 0
+- all: phase-1 order kept false, first tier [12, 54, 55, 56, 134, 135, 136, 137], w 0
+- entries with the same term-level form: 43 of 43; entries at a different index: 11
+- roots with the same term-level form: true
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +1: term 220 m18 a18 refs 3/3 len 18/19
+  - +1: term 221 m30 a30 refs 3/3 len 10/11
+  - +0: term 12 m1 a1 refs 3/3 len 2/2
+  - +0: term 28 m4 a10 refs 2/2 len 6/6
+  - +0: term 29 m5 a11 refs 2/2 len 6/6
+  - +0: term 40 m6 a12 refs 2/2 len 4/4
+  - +0: term 54 m0 a0 refs 5/5 len 2/2
+  - +0: term 55 m7 a2 refs 2/2 len 4/4
+  - +0: term 56 m10 a5 refs 2/2 len 4/4
+  - +0: term 63 m13 a13 refs 2/2 len 4/4
+  - +0: term 65 m16 a16 refs 2/2 len 4/4
+  - +0: term 66 m17 a17 refs 2/2 len 4/4
+- body length differences: total +2 / -15
+- Share bytes (refs x TagN width): MSS 214, all 199
+
+- MSS with StructuralId ties: TagN 594 B, Tag4 594 B
+- MSS with Blake3 ties: TagN 588 B, Tag4 588 B
+# Complex.exists (47c8de36ea6414a9)
+- TagN bytes: MSS 594, all 585 (-9); table entries MSS 21, all 21; DAG nodes 114
+- entry bodies MSS 94, all 92; roots MSS 171, all 164
+- Shares: MSS 77 (TagN width 1/2/3/wider: [41, 36, 0, 0]), all 75 ([50, 25, 0, 0]); stored-term occurrences written inline: MSS 0, all 2
+- all: phase-1 order kept false, first tier [10, 14, 16, 17, 33, 34, 37, 52], w 0
+- entries with the same term-level form: 21 of 21; entries at a different index: 8
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 9: 2 (m4 a9 deg 2)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +1: term 27 m13 a13 refs 2/2 len 3/4
+  - +1: term 32 m14 a14 refs 2/2 len 3/4
+  - +0: term 9 m4 a9 refs 2/0 len 2/2
+  - +0: term 10 m1 a1 refs 10/10 len 2/2
+  - +0: term 13 m5 a10 refs 2/2 len 3/3
+  - +0: term 14 m2 a2 refs 4/4 len 2/2
+  - +0: term 15 m6 a11 refs 2/2 len 3/3
+  - +0: term 16 m7 a4 refs 2/2 len 3/3
+  - +0: term 17 m0 a0 refs 15/15 len 2/2
+  - +0: term 19 m12 a12 refs 2/2 len 3/3
+  - +0: term 33 m9 a6 refs 4/4 len 3/3
+  - +0: term 34 m8 a5 refs 8/8 len 3/3
+- body length differences: total +2 / -4
+- Share bytes (refs x TagN width): MSS 113, all 100
+
+- MSS with StructuralId ties: TagN 2776 B, Tag4 2776 B
+- MSS with Blake3 ties: TagN 2776 B, Tag4 2776 B
+# Std.Packages.PreorderOfLEArgs.decidableLT._autoParam (4a870ecdd4f7740a)
+- TagN bytes: MSS 2776, all 2713 (-63); table entries MSS 34, all 34; DAG nodes 334
+- entry bodies MSS 444, all 412; roots MSS 309, all 278
+- Shares: MSS 243 (TagN width 1/2/3/wider: [69, 174, 0, 0]), all 229 ([132, 97, 0, 0]); stored-term occurrences written inline: MSS 0, all 14
+- all: phase-1 order kept false, first tier [0, 1, 8, 9, 84, 85, 89, 95], w 0
+- entries with the same term-level form: 30 of 34; entries at a different index: 21
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 11: 4 (m2 a12 deg 4); 5: 2 (m7 a17 deg 2); 19: 2 (m13 a18 deg 2); 26: 2 (m14 a19 deg 2); 51: 2 (m15 a20 deg 2); 54: 2 (m16 a21 deg 2)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +1: term 96 m23 a23 refs 2/2 len 6/7
+  - +1: term 97 m28 a28 refs 2/2 len 5/6
+  - +0: term 0 m0 a0 refs 16/16 len 2/2
+  - +0: term 1 m1 a1 refs 5/5 len 2/2
+  - +0: term 5 m7 a17 refs 2/0 len 2/2
+  - +0: term 8 m8 a4 refs 2/2 len 2/2
+  - +0: term 9 m4 a2 refs 3/3 len 2/2
+  - +0: term 11 m2 a12 refs 4/0 len 2/2
+  - +0: term 19 m13 a18 refs 2/0 len 2/2
+  - +0: term 26 m14 a19 refs 2/0 len 2/2
+  - +0: term 51 m15 a20 refs 2/0 len 2/2
+  - +0: term 54 m16 a21 refs 2/0 len 2/2
+- body length differences: total +2 / -34
+- Share bytes (refs x TagN width): MSS 417, all 326
+- first entry (MSS order) with a different term-level form: term 96, MSS index 23, all index 23, deg 2, refs 2/2
+  - first difference at position 2: MSS Some((true, 5)), all Some((false, 5))
+  - MSS bytes: 72b7582a583d
+  - all bytes: 72200e582a583d
+
+- MSS with StructuralId ties: TagN 2895 B, Tag4 2895 B
+- MSS with Blake3 ties: TagN 2895 B, Tag4 2895 B
+# CategoryTheory.Limits.biprod.braiding._proof_2 (6a9812db4d4daf40)
+- TagN bytes: MSS 2895, all 2851 (-44); table entries MSS 151, all 151; DAG nodes 676
+- entry bodies MSS 1049, all 997; roots MSS 614, all 622
+- Shares: MSS 562 (TagN width 1/2/3/wider: [41, 521, 0, 0]), all 554 ([85, 469, 0, 0]); stored-term occurrences written inline: MSS 0, all 8
+- all: phase-1 order kept false, first tier [114, 117, 121, 143, 186, 214, 216, 218], w 0
+- entries with the same term-level form: 151 of 151; entries at a different index: 77
+- roots with the same term-level form: false
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 40: 4 (m3 a17 deg 4); 44: 4 (m5 a19 deg 4)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +1: term 189 m27 a53 refs 3/3 len 4/5
+  - +1: term 190 m28 a54 refs 3/3 len 4/5
+  - +1: term 191 m29 a55 refs 3/3 len 4/5
+  - +1: term 192 m30 a56 refs 3/3 len 4/5
+  - +1: term 199 m31 a57 refs 3/3 len 4/5
+  - +1: term 200 m32 a58 refs 3/3 len 4/5
+  - +1: term 201 m33 a59 refs 3/3 len 4/5
+  - +1: term 202 m34 a60 refs 3/3 len 4/5
+  - +1: term 301 m104 a104 refs 2/2 len 4/5
+  - +1: term 302 m105 a105 refs 2/2 len 4/5
+  - +1: term 305 m106 a106 refs 2/2 len 4/5
+  - +1: term 306 m107 a107 refs 2/2 len 4/5
+- body length differences: total +12 / -64
+- Share bytes (refs x TagN width): MSS 1083, all 1023
+
+- MSS with StructuralId ties: TagN 2031 B, Tag4 2031 B
+- MSS with Blake3 ties: TagN 2031 B, Tag4 2031 B
+# Monoid.Coprod.map._proof_1 (75bca4f10bbf0073)
+- TagN bytes: MSS 2031, all 2009 (-22); table entries MSS 63, all 63; DAG nodes 404
+- entry bodies MSS 605, all 591; roots MSS 277, all 269
+- Shares: MSS 229 (TagN width 1/2/3/wider: [53, 176, 0, 0]), all 226 ([75, 151, 0, 0]); stored-term occurrences written inline: MSS 0, all 3
+- all: phase-1 order kept false, first tier [13, 14, 25, 40, 159, 164, 209, 257], w 0
+- entries with the same term-level form: 60 of 63; entries at a different index: 10
+- roots with the same term-level form: true
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 86: 3 (m6 a10 deg 3)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +2: term 355 m59 a59 refs 2/2 len 35/37
+  - +1: term 204 m40 a40 refs 2/2 len 14/15
+  - +1: term 205 m21 a21 refs 3/3 len 8/9
+  - +1: term 235 m45 a45 refs 2/2 len 13/14
+  - +1: term 236 m46 a46 refs 2/2 len 13/14
+  - +0: term 13 m1 a1 refs 11/11 len 2/2
+  - +0: term 14 m0 a0 refs 14/14 len 2/2
+  - +0: term 18 m7 a12 refs 2/2 len 4/4
+  - +0: term 19 m8 a13 refs 2/2 len 4/4
+  - +0: term 25 m9 a4 refs 2/2 len 4/4
+  - +0: term 33 m12 a14 refs 2/2 len 5/5
+  - +0: term 40 m13 a6 refs 2/2 len 3/3
+- body length differences: total +6 / -20
+- Share bytes (refs x TagN width): MSS 405, all 377
+- first entry (MSS order) with a different term-level form: term 235, MSS index 45, all index 45, deg 2, refs 2/2
+  - first difference at position 5: MSS Some((true, 86)), all Some((false, 86))
+  - MSS bytes: 7321150e17b67221170e17b809
+  - all bytes: 7321150e1768087221170e17b809
+
+- MSS with StructuralId ties: TagN 2008 B, Tag4 2008 B
+- MSS with Blake3 ties: TagN 2008 B, Tag4 2008 B
+# Polynomial.cyclotomic_prime_mul_X_sub_one (75fb50ca854467f1)
+- TagN bytes: MSS 2008, all 1969 (-39); table entries MSS 74, all 74; DAG nodes 277
+- entry bodies MSS 518, all 484; roots MSS 198, all 193
+- Shares: MSS 218 (TagN width 1/2/3/wider: [31, 187, 0, 0]), all 216 ([70, 146, 0, 0]); stored-term occurrences written inline: MSS 0, all 2
+- all: phase-1 order kept false, first tier [7, 12, 17, 18, 74, 75, 83, 84], w 0
+- entries with the same term-level form: 72 of 74; entries at a different index: 6
+- roots with the same term-level form: true
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 48: 2 (m32 a32 deg 2)
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +1: term 81 m37 a37 refs 2/2 len 4/5
+  - +1: term 210 m69 a69 refs 2/2 len 21/22
+  - +0: term 7 m4 a4 refs 2/2 len 3/3
+  - +0: term 9 m5 a8 refs 2/2 len 3/3
+  - +0: term 12 m0 a0 refs 9/9 len 2/2
+  - +0: term 14 m6 a9 refs 2/2 len 3/3
+  - +0: term 16 m7 a10 refs 2/2 len 3/3
+  - +0: term 17 m1 a1 refs 4/4 len 3/3
+  - +0: term 18 m8 a5 refs 2/2 len 3/3
+  - +0: term 20 m11 a11 refs 2/2 len 3/3
+  - +0: term 26 m12 a12 refs 2/2 len 3/3
+  - +0: term 27 m13 a13 refs 2/2 len 3/3
+- body length differences: total +2 / -36
+- Share bytes (refs x TagN width): MSS 405, all 362
+- first entry (MSS order) with a different term-level form: term 141, MSS index 52, all index 52, deg 2, refs 2/2
+  - first difference at position 4: MSS Some((true, 48)), all Some((false, 48))
+  - MSS bytes: 72b80bb801b818
+  - all bytes: 72b80bb6680c
+
+- MSS with StructuralId ties: TagN 1366 B, Tag4 1366 B
+- MSS with Blake3 ties: TagN 1352 B, Tag4 1352 B
+# CommGrpCat.toAddCommGrp._proof_1 (7610a624ae9ed671)
+- TagN bytes: MSS 1366, all 1347 (-19); table entries MSS 32, all 32; DAG nodes 134
+- entry bodies MSS 313, all 294; roots MSS 19, all 19
+- Shares: MSS 95 (TagN width 1/2/3/wider: [20, 75, 0, 0]), all 95 ([39, 56, 0, 0]); stored-term occurrences written inline: MSS 0, all 0
+- all: phase-1 order kept false, first tier [3, 5, 11, 17, 35, 36, 46, 47], w 0
+- entries with the same term-level form: 32 of 32; entries at a different index: 9
+- roots with the same term-level form: true
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +0: term 3 m0 a0 refs 4/4 len 3/3
+  - +0: term 5 m2 a2 refs 2/2 len 3/3
+  - +0: term 6 m3 a8 refs 2/2 len 3/3
+  - +0: term 7 m4 a9 refs 2/2 len 3/3
+  - +0: term 11 m1 a1 refs 4/4 len 3/3
+  - +0: term 15 m5 a10 refs 2/2 len 3/3
+  - +0: term 16 m6 a11 refs 2/2 len 3/3
+  - +0: term 17 m7 a3 refs 2/2 len 3/3
+  - +0: term 20 m12 a12 refs 2/2 len 3/3
+  - +0: term 22 m13 a13 refs 2/2 len 4/4
+  - +0: term 25 m14 a14 refs 2/2 len 4/4
+  - +0: term 26 m15 a15 refs 2/2 len 4/4
+- body length differences: total +0 / -19
+- Share bytes (refs x TagN width): MSS 170, all 151
+
+- MSS with StructuralId ties: TagN 848 B, Tag4 848 B
+- MSS with Blake3 ties: TagN 847 B, Tag4 847 B
+# SkewMonoidAlgebra.instNonUnitalRing._proof_1 (84f5c3fc061d7f4a)
+- TagN bytes: MSS 848, all 838 (-10); table entries MSS 18, all 18; DAG nodes 130
+- entry bodies MSS 151, all 140; roots MSS 101, all 102
+- Shares: MSS 56 (TagN width 1/2/3/wider: [25, 31, 0, 0]), all 56 ([35, 21, 0, 0]); stored-term occurrences written inline: MSS 0, all 0
+- all: phase-1 order kept false, first tier [10, 12, 26, 27, 51, 54, 76, 79], w 0
+- entries with the same term-level form: 18 of 18; entries at a different index: 8
+- roots with the same term-level form: true
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +0: term 10 m1 a1 refs 4/4 len 3/3
+  - +0: term 12 m0 a0 refs 5/5 len 3/3
+  - +0: term 15 m4 a8 refs 2/2 len 3/3
+  - +0: term 22 m5 a9 refs 2/2 len 4/4
+  - +0: term 26 m2 a2 refs 4/4 len 4/4
+  - +0: term 27 m3 a3 refs 4/4 len 3/3
+  - +0: term 38 m6 a10 refs 2/2 len 5/5
+  - +0: term 41 m7 a11 refs 2/2 len 5/5
+  - +0: term 51 m8 a4 refs 2/2 len 4/4
+  - +0: term 54 m10 a6 refs 2/2 len 4/4
+  - +0: term 73 m12 a12 refs 2/2 len 12/12
+  - +0: term 94 m14 a14 refs 2/2 len 12/12
+- body length differences: total +0 / -11
+- Share bytes (refs x TagN width): MSS 87, all 77
+
+- MSS with StructuralId ties: TagN 1294 B, Tag4 1294 B
+- MSS with Blake3 ties: TagN 1294 B, Tag4 1294 B
+# CategoryTheory.MonoidalOpposite.mopMopEquivalence_counitIso_inv_app (859c756372f27e7c)
+- TagN bytes: MSS 1294, all 1271 (-23); table entries MSS 36, all 36; DAG nodes 210
+- entry bodies MSS 292, all 277; roots MSS 187, all 179
+- Shares: MSS 126 (TagN width 1/2/3/wider: [23, 103, 0, 0]), all 126 ([46, 80, 0, 0]); stored-term occurrences written inline: MSS 0, all 0
+- all: phase-1 order kept false, first tier [17, 21, 22, 42, 53, 60, 62, 92], w 0
+- entries with the same term-level form: 36 of 36; entries at a different index: 18
+- roots with the same term-level form: true
+- all: stored terms written inline (term: count, MSS index, all index, deg, unshared-size class), top 15: 
+- entries with the largest (all - MSS) body length (term, MSS index, all index, refs MSS/all, length MSS/all):
+  - +1: term 57 m21 a21 refs 2/2 len 4/5
+  - +1: term 58 m22 a22 refs 2/2 len 4/5
+  - +0: term 6 m1 a14 refs 2/2 len 6/6
+  - +0: term 8 m2 a15 refs 2/2 len 8/8
+  - +0: term 12 m3 a16 refs 2/2 len 4/4
+  - +0: term 14 m4 a17 refs 2/2 len 4/4
+  - +0: term 17 m5 a0 refs 2/2 len 4/4
+  - +0: term 21 m7 a2 refs 2/2 len 3/3
+  - +0: term 22 m11 a5 refs 2/2 len 4/4
+  - +0: term 24 m18 a18 refs 2/2 len 4/4
+  - +0: term 27 m19 a19 refs 2/2 len 6/6
+  - +0: term 33 m20 a20 refs 2/2 len 6/6
+- body length differences: total +2 / -17
+- Share bytes (refs x TagN width): MSS 229, all 206
+
+```
+
+</details>
+
+<details><summary>[X6] join output (<code>p5/outlier_kahn.txt</code>)</summary>
+
+```text
+idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,bytes1,bytes2,bytes3,kbased,best,best_w,rewidth,rewidth_w,ms1,ms2,ms3,status_all,stored_all,bytes_all,best4,best4_w,ms_all,kept1,kept2,kept3,kept_all
+0,048653e65a77d222b4f07c2bee4a1b01ae69f1d615ee776d997156626975b878,"Affine.Triangle.dist_orthogonalProjectionSpan_faceOpposite_eq_iff_two_zsmul_oangle_eq",defn,96389,2230,3,ok,ok,ok,1924,1895,1755,65444,65264,65247,65247,65247,3,65247,3,1034.347,1010.188,1015.793,ok,2230,67367,65247,3,1367.599,true,true,false,false
+idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,bytes1,bytes2,bytes3,kbased,best,best_w,rewidth,rewidth_w,ms1,ms2,ms3,status_all,stored_all,bytes_all,best4,best4_w,ms_all
+0,048653e65a77d222b4f07c2bee4a1b01ae69f1d615ee776d997156626975b878,"Affine.Triangle.dist_orthogonalProjectionSpan_faceOpposite_eq_iff_two_zsmul_oangle_eq",defn,96389,2230,3,ok,ok,ok,1924,1895,1755,72405,70422,70623,70623,70422,2,70623,3,585.156,579.169,629.983,ok,2230,72065,70422,2,652.159
 ```
 
 </details>

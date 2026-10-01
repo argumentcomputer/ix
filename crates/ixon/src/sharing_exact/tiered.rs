@@ -37,9 +37,11 @@
 //! terms by `ref` descending then ID ascending, and prefer the set that
 //! contains the first term where two sets differ), found by branch and
 //! bound. The table is the first tier in pinned priority order, then the
-//! rest in pinned order. If that order's reference cost
+//! rest in the Kahn priority order: repeatedly the available entry (every
+//! entry its phase-1 body references already placed) with the largest
+//! `ref`, ties by the smaller ID. If that order's reference cost
 //! `sum ref(t) * width_at(index t)` exceeds the phase-1 order's, the phase-1
-//! order is kept.
+//! order is kept. The final order is checked to respect the dependencies.
 //!
 //! **Phase 3 (re-materialization).** Every entry is re-encoded with `C_M`
 //! under the entries before it, priced by `width_at(index)`, and the roots
@@ -216,6 +218,67 @@ impl Indices for LayoutIndex {
 // ---------------------------------------------------------------------------
 // First-tier allocation
 // ---------------------------------------------------------------------------
+
+/// Whether every term of `order` comes after all its dependencies (W1's
+/// `respectsDeps`).
+fn respects_deps(
+  order: &[TermId],
+  deps: &FxHashMap<TermId, Vec<TermId>>,
+) -> bool {
+  let pos: FxHashMap<TermId, usize> =
+    order.iter().enumerate().map(|(i, &t)| (t, i)).collect();
+  order.iter().enumerate().all(|(i, t)| {
+    deps
+      .get(t)
+      .is_none_or(|ds| ds.iter().all(|d| pos.get(d).is_some_and(|&p| p < i)))
+  })
+}
+
+/// The Kahn priority order of `rest` (W1's `kahnOrder`): repeatedly place
+/// the available term (every dependency of it in `rest` already placed) of
+/// the largest weight, ties by the smaller ID. Terms left over, which
+/// acyclic dependencies never leave, follow in priority order.
+pub(crate) fn kahn_order(
+  weight: &FxHashMap<TermId, u64>,
+  deps: &FxHashMap<TermId, Vec<TermId>>,
+  rest: &[TermId],
+) -> Vec<TermId> {
+  let w = |t: TermId| weight.get(&t).copied().unwrap_or(0);
+  let mut sorted = rest.to_vec();
+  sorted.sort_by(|&a, &b| w(b).cmp(&w(a)).then(a.cmp(&b)));
+  let m = sorted.len();
+  let rank: FxHashMap<TermId, usize> =
+    sorted.iter().enumerate().map(|(i, &t)| (t, i)).collect();
+  let mut pend = vec![0usize; m];
+  let mut users: Vec<Vec<usize>> = vec![Vec::new(); m];
+  for (i, t) in sorted.iter().enumerate() {
+    let mut seen = FxHashSet::default();
+    for d in deps.get(t).into_iter().flatten() {
+      if let Some(&r) = rank.get(d)
+        && seen.insert(r)
+      {
+        pend[i] += 1;
+        users[r].push(i);
+      }
+    }
+  }
+  let mut ready: std::collections::BTreeSet<usize> =
+    (0..m).filter(|&i| pend[i] == 0).collect();
+  let mut placed = vec![false; m];
+  let mut out = Vec::with_capacity(m);
+  while let Some(r) = ready.pop_first() {
+    placed[r] = true;
+    out.push(sorted[r]);
+    for &u in &users[r] {
+      pend[u] -= 1;
+      if pend[u] == 0 {
+        ready.insert(u);
+      }
+    }
+  }
+  out.extend((0..m).filter(|&i| !placed[i]).map(|i| sorted[i]));
+  out
+}
 
 /// Maximum-weight dependency-closed set of at most `cap` stored terms, with
 /// the tie order of the module docs. `deps[t]` are the terms `t`
@@ -530,7 +593,7 @@ fn tiered_at(
   let rest: Vec<TermId> =
     stored.iter().copied().filter(|t| !tier.contains(t)).collect();
   let mut order2 = pinned_order(dag, &facts.deg, &tier);
-  order2.extend(pinned_order(dag, &facts.deg, &rest));
+  order2.extend(kahn_order(&weight, &deps, &rest));
   let ref_cost = |ord: &[TermId]| -> u128 {
     ord.iter().enumerate().fold(0u128, |acc, (i, t)| {
       let wt = u128::from(weight.get(t).copied().unwrap_or(0));
@@ -539,6 +602,11 @@ fn tiered_at(
   };
   let kept = ref_cost(&order2) > ref_cost(&order1);
   let order = if kept { order1.clone() } else { order2 };
+  if !respects_deps(&order, &deps) {
+    return Err(internal(
+      "the allocated order places a body reference after its user",
+    ));
+  }
   // Phase 3: each entry under the entries before it, priced by the layout,
   // then the roots under all entries. Task `j < k` is entry `j`, task `k`
   // the roots; each depends only on the prefix `order[..j]`, so the tasks
