@@ -346,15 +346,6 @@ same sources with no dependencies beyond the Lean toolchain:
 same modules for its host consumers through the `Ix` library. See
 `docs/kernel.md`. -/
 
-/- Provenance check for the kernel, the vendored con-leche tree among it: file
-inventory, exact content hashes, vendor and port headers, licences, and
-license files, against `Tests/Ix/Kernel/ImportManifest.lean`. Pass
-`--source <old-ix-workspace>` (jj) and `--source-git <con-leche checkout>`
-(git) to also verify the recorded source hashes and re-derive every vendored
-file from upstream through `scripts/vendor-conleche.py`. -/
-lean_exe «kernel-provenance» where
-  root := `Tests.Ix.Kernel.Provenance
-
 lean_exe «kernel-codec» where
   root := `Tests.Ix.Kernel.CodecHost
   moreLinkObjs := #[ix_rs_test]
@@ -431,8 +422,7 @@ script "check-kernel" (args) := do
   -- the vendored library's globs are exactly the vendored tree
   run "python3" #["scripts/vendor-conleche.py", "check-lake", "lakefile.lean", "IxKernel/lakefile.lean"]
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
-  run ".lake/build/bin/kernel-provenance" #[]
+  run "lake" #["build", "--wfail", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
   IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)

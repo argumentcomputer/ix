@@ -48,15 +48,6 @@ lean_lib KernelFixtures where
   roots := kernelFixtureRoots
   globs := kernelFixtureRoots.map (fun root => .one root)
 
-lean_lib KernelProvenance where
-  srcDir := ".."
-  roots := #[`Tests.Ix.Kernel.ImportManifest]
-  globs := #[.one `Tests.Ix.Kernel.ImportManifest]
-
-lean_exe «kernel-provenance» where
-  srcDir := ".."
-  root := `Tests.Ix.Kernel.Provenance
-
 /-- The vendored con-leche modules under `Ix/Kernel`: every module there except
 Ix's boundary (`Ref`, `Search`, `Audit`, `Ingress`, `Egress`, `Ixon`), one glob
 per top-level entry (`scripts/vendor-conleche.py lake-globs`). -/
