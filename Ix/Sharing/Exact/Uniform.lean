@@ -480,6 +480,28 @@ structure UniformSharingResult where
 def tag0BracketStart (k : Nat) : Nat :=
   if k < 128 then 0 else if k < 256 then 128 else 256 ^ (natByteCount k - 1)
 
+/-- The next term of the pinned order: among the remaining terms whose
+nearest stored descendants are all placed, the larger in-degree first, then
+the smaller ID. -/
+def pinnedPick (deg : Array Nat) (deps : Std.HashMap Nat (Array Nat))
+    (placed : Std.HashSet Nat) (remaining : Array Nat) : Option Nat :=
+  let ready := remaining.filter fun t => ((deps.getD t #[]).all placed.contains)
+  ready.foldl (init := none) fun acc t =>
+    match acc with
+    | none => some t
+    | some a => if deg[t]! > deg[a]! || (deg[t]! == deg[a]! && t < a) then some t else acc
+
+/-- Place up to `fuel` terms in the pinned order; anything left unplaced (never
+the case for a DAG) is appended as given. -/
+def pinnedPlace (deg : Array Nat) (deps : Std.HashMap Nat (Array Nat)) :
+    Nat → Array Nat → Array Nat → Std.HashSet Nat → Array Nat
+  | 0, order, remaining, _ => order ++ remaining
+  | fuel + 1, order, remaining, placed =>
+    match pinnedPick deg deps placed remaining with
+    | none => order ++ remaining
+    | some pick =>
+      pinnedPlace deg deps fuel (order.push pick) (remaining.erase pick) (placed.insert pick)
+
 /-- Pinned table order of a stored set: stored descendants first; among
 ready terms the larger in-degree first, then the smaller ID. -/
 def pinnedOrder (dag : Dag) (deg : Array Nat) (stored : Array Nat) : Array Nat := Id.run do
@@ -503,28 +525,29 @@ def pinnedOrder (dag : Dag) (deg : Array Nat) (stored : Array Nat) : Array Nat :
         else
           stack := stack ++ (dag.node u).children
     deps := deps.insert t out
-  let mut placed : Std.HashSet Nat := {}
-  let mut order : Array Nat := #[]
-  let mut remaining := stored
-  for _ in [0:stored.size] do
-    let ready := remaining.filter fun t => ((deps.getD t #[]).all placed.contains)
-    let choice := ready.foldl (init := none) fun acc t =>
-      match acc with
-      | none => some t
-      | some a => if deg[t]! > deg[a]! || (deg[t]! == deg[a]! && t < a) then some t else acc
-    match choice with
-    | none => break
-    | some pick =>
-      order := order.push pick
-      placed := placed.insert pick
-      remaining := remaining.filter (· != pick)
-  return order
+  return pinnedPlace deg deps stored.size #[] stored {}
 
-/-- Exact uniform-width optimization of an expanded input. -/
-def optimizeUniformExpanded (w : Nat) (limits : Limits) (ex : Expanded) :
-    Except SharingError UniformSharingResult := do
-  if w == 0 then throw (.formatBound "uniform Share width" 0)
-  let p := Prep.ofDag ex.dag
+/-- The stored set chosen by the uniform-width search, before
+materialization, with its model length and the search statistics. -/
+structure UniformChoice where
+  facts : GraphFacts
+  certainStored : Array Nat
+  certainExcluded : Array Nat
+  uncertain : Array Nat
+  lowDegree : Array Nat
+  components : Array (Array Nat)
+  /-- The stored set, ascending. -/
+  stored : Array Nat
+  /-- The uniform-model length of `stored`, from the truncated evaluation. -/
+  model : Nat
+  states : Nat
+  costEvals : Nat
+  lowerBracket : Bool
+
+/-- Classify, search every component and combine: the stored set and its
+model length. -/
+def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
+    Except SharingError UniformChoice := do
   let n := ex.dag.size
   let f := graphFacts ex.dag ex.roots
   let cls := classify p f w
@@ -605,9 +628,20 @@ def optimizeUniformExpanded (w : Nat) (limits : Limits) (ex : Expanded) :
   let model := modelInt.toNat
   if model > limits.maxOutputBytes then
     throw (.resourceExhausted .outputBytes limits.maxOutputBytes)
-  -- Materialize in the pinned order with the real evaluation and check.
-  let stored := mergeSorted cs chosenX
-  let order := pinnedOrder ex.dag f.deg stored
+  return { facts := f, certainStored := cs, certainExcluded := ce, uncertain := unc,
+           lowDegree := low, components := comps, stored := mergeSorted cs chosenX, model,
+           states, costEvals, lowerBracket }
+
+/-- Materialize a chosen set in the pinned order with the real evaluation, and
+check it against the model length and the input. -/
+def uniformFinish (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (c : UniformChoice) :
+    Except SharingError UniformSharingResult := do
+  let n := ex.dag.size
+  let stored := c.stored
+  let model := c.model
+  unless stored.all (· < n) do
+    throw (.internal "stored term out of range")
+  let order := pinnedOrder ex.dag c.facts.deg stored
   let width := stored.foldl (fun acc t => acc.set! t (some w)) (Array.replicate n none)
   let (entries, roots, predicted, work) ← p.materializeDependent order ex.roots width limits
   unless predicted == model do
@@ -621,13 +655,26 @@ def optimizeUniformExpanded (w : Nat) (limits : Limits) (ex : Expanded) :
   let unshared := tag0Size 0 + rootsCost p.base ex.roots
   let stats : Stats :=
     { exprVisits := ex.visits, internedNodes := ex.internedNodes, distinctSubterms := n,
-      candidates := cs.size + unc.size, statesExpanded := states, costEvals,
-      materializedNodes := work, outputBytes := measured }
+      candidates := c.certainStored.size + c.uncertain.size, statesExpanded := c.states,
+      costEvals := c.costEvals, materializedNodes := work, outputBytes := measured }
   return {
     result := { roots, sharing := entries, tableTerms := order, variableBytes := measured,
                 modelBytes := model, unsharedBytes := unshared, stats }
-    stored, certainStored := cs, certainExcluded := ce, uncertain := unc,
-    lowDegree := low, components := comps, statesVisited := states, lowerBracket }
+    stored, certainStored := c.certainStored, certainExcluded := c.certainExcluded,
+    uncertain := c.uncertain, lowDegree := c.lowDegree, components := c.components,
+    statesVisited := c.states, lowerBracket := c.lowerBracket }
+
+/-- Exact uniform-width optimization of an expanded input. -/
+def optimizeUniformExpanded (w : Nat) (limits : Limits) (ex : Expanded) :
+    Except SharingError UniformSharingResult := do
+  if w == 0 then throw (.formatBound "uniform Share width" 0)
+  unless childrenPrecede ex.dag.nodes do
+    throw (.internal "DAG children do not precede their parents")
+  unless ex.dag.nodes.all (fun node => node.children.size == node.head.arity) do
+    throw (.internal "DAG node arity")
+  let p := Prep.ofDag ex.dag
+  let c ← uniformChoose w limits ex p
+  uniformFinish w limits ex p c
 
 end Ix.Sharing.Exact
 

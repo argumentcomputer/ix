@@ -47,6 +47,13 @@ def shareWidth (idx : Nat) : Nat := tag4Size idx
 /-- Values written through a `UInt64` wire field must be below this bound. -/
 def wordBound : Nat := UInt64.size
 
+/-- `f` applied to the state at `k, k + 1, …, k + i - 1` in order (a
+tail-recursive counted loop). -/
+@[specialize] def foldRange {σ : Type} (f : σ → Nat → σ) : Nat → Nat → σ → σ
+  | _, 0, st => st
+  | k, i + 1, st => foldRange f (k + 1) i (f st k)
+
+
 /-! ## Exact expression length -/
 
 /-- Size facts about one expression, computed bottom-up. `full` is the
