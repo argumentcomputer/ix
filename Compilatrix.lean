@@ -423,6 +423,7 @@ import Compilatrix.Xv.Stacking.Proof.Writes
 import Compilatrix.Xv.Stacking.Proof.Body
 import Compilatrix.Xv.Stacking.Proof.Machine
 import Compilatrix.Xv.Stacking.Proof.StepBody
+import Compilatrix.Xv.Stacking.Proof.StepTerm
 import Compilatrix.Backend
 import Compilatrix.Backend.Proof.Xl
 import Compilatrix.Backend.Proof.Emit

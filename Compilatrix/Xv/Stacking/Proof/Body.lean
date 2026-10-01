@@ -43,19 +43,20 @@ theorem defCell_bytes {S : Stk} {W : Wrap} {mem : Memory} {holes : Holes} {fr : 
 
 /-- A body instruction other than a call: the invariant again, one
 instruction on, from the frame's agreement after it. -/
-theorem Match.body {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Holes} {fr : Xl.Frame} {a : Act}
+theorem Match.update {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Holes} {fr : Xl.Frame} {a : Act}
     {ret : ReturnFrame} {below : List (Xl.Frame × Act × ReturnFrame)} (hm : Match S W s m holes fr a ret below)
     {f : Func Loc} {l : FrameLayout} {pl : Placed} (htop : Top S W s m holes fr a ret f l pl)
-    {b : Block Loc} {codes : List (List Instr)} {post : List Instr} {t : X86.Terminator}
-    (hpos : XlPos S fr f l pl b codes post t) {x : Inst Loc} (hx : b.body[fr.pos]? = some x)
+    {D : List Loc} (hwrites : ∀ r, Loc.reg r ∈ D → r ∈ f.facts.writes)
     {regs' : Xl.Regs} {fr'' : Xl.Frame} {mem' : Memory} {core' : Core} {holes' : Holes}
-    (hafter : After (ctxOf S.placed pl) x.defs s.regs fr s.mem m.core regs' fr'' mem' W.ctx core')
+    (hafter : After (ctxOf S.placed pl) D s.regs fr s.mem m.core regs' fr'' mem' W.ctx core')
     (hholes : ∀ y, holes' y → holes y)
-    (hdefined : ∀ y ∈ x.defs, y.isCell = true → ∀ mm, (ctxOf S.placed pl).cell y = .ok mm →
-      ReadableData holes' (mm.eval m.core) 8) :
-    Match S W { s with mem := mem', regs := regs', stack := { fr'' with pos := fr.pos + 1 } :: below.map (·.1) }
-      { m with core := core', pc := pcOf S pl fr.label (offsetOf l fr.label (fr.pos + 1) codes) } holes'
-      { fr'' with pos := fr.pos + 1 } a ret below := by
+    (hdefined : ∀ y ∈ D, y.isCell = true → ∀ mm, (ctxOf S.placed pl).cell y = .ok mm →
+      ReadableData holes' (mm.eval m.core) 8)
+    {L p : Nat} {b' : Block Loc} {codes' : List (List Instr)} {post' : List Instr} {t' : X86.Terminator}
+    (hpos' : XlPos S { fr'' with label := L, pos := p } f l pl b' codes' post' t') :
+    Match S W { s with mem := mem', regs := regs', stack := { fr'' with label := L, pos := p } :: below.map (·.1) }
+      { m with core := core', pc := pcOf S pl L (offsetOf l L p codes') } holes'
+      { fr'' with label := L, pos := p } a ret below := by
   have hg := hm.global
   have hf := htop.fn
   have hs := hf.checks.1
@@ -64,14 +65,14 @@ theorem Match.body {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Ho
   have hctl := hafter.ctl
   have hrsp' : core'.readReg .rsp = a.sp := by rw [hafter.rsp, htop.rsp]
   -- The defined cells' bytes lie in the frame.
-  have hcellB : ∀ y ∈ x.defs, y.isCell = true → ∀ mm, (ctxOf S.placed pl).cell y = .ok mm → ∀ i < 8,
+  have hcellB : ∀ y ∈ D, y.isCell = true → ∀ mm, (ctxOf S.placed pl).cell y = .ok mm → ∀ i < 8,
       ∃ o, CellAt l f.facts.inArgs y o ∧ (mm.eval m.core + UInt64.ofNat i).toNat = a.sp.toNat + o + i ∧
         o + 8 ≤ l.size + 8 + 8 * f.facts.inArgs ∧ W.InStack (mm.eval m.core + UInt64.ofNat i) := by
     intro y _ _ mm hmm i hi
     obtain ⟨o, hc, hr, hb⟩ := defCell_bytes hf hact hg.top htop.rsp hmm
     exact ⟨o, hc, (hb i hi).1, hr, (hb i hi).2⟩
   -- A stack byte at a frame offset apart from every cell, or outside the frame, is kept.
-  have hkeepStack : ∀ z, W.InStack z → (∀ y ∈ x.defs, y.isCell = true → ∀ o, CellAt l f.facts.inArgs y o →
+  have hkeepStack : ∀ z, W.InStack z → (∀ y ∈ D, y.isCell = true → ∀ o, CellAt l f.facts.inArgs y o →
       ∀ i < 8, z.toNat ≠ a.sp.toNat + o + i) → core'.memory.bytes z = m.core.memory.bytes z := by
     intro z hz hne
     refine hafter.bytes z (hg.stack z hz).2.1 fun y hy hc mm hmm i hi e => ?_
@@ -108,18 +109,13 @@ theorem Match.body {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Ho
   have hperm₂ : mem'.writable = s.mem.writable := hafter.writable₁
   have hperm₃ : core'.memory.readable = m.core.memory.readable := hafter.readable₂
   have hperm₄ : core'.memory.writable = m.core.memory.writable := hafter.writable₂
-  obtain ⟨hcode₁, hcode₂⟩ : fr.pos < b.body.size ∧ True := ⟨(List.getElem?_eq_some_iff.1
-    (by simpa using hx)).1, trivial⟩
   refine ⟨hm.running, rfl, hm.returns, hm.ctx, ⟨f, l, pl, ?_⟩, ?_, ?_⟩
-  · refine ⟨by simpa [hctl.fn] using hf, ⟨b, codes, post, t, ?_, by simp [hctl.label]⟩, ?_, hrsp', ?_, ?_, ?_, htop.room, ?_⟩
-    · exact ⟨by simpa [hctl.label] using hpos.block, by simpa [hctl.label] using hpos.found, hpos.len,
-        hpos.insts, hpos.term, by show fr.pos + 1 ≤ b.body.size; omega⟩
+  · refine ⟨by simpa [hctl.fn] using hf, ⟨b', codes', post', t', hpos', rfl⟩, ?_, hrsp', ?_, ?_, ?_, htop.room, ?_⟩
     · have ha := hafter.agree
       exact ⟨ha.size, ha.regsRel, ha.ctxReg, ha.inside, fun y hy v hv => ha.cells y hy v hv, ha.frame⟩
     · intro r hr hrsp
-      by_cases hd : Loc.reg r ∈ x.defs
-      · have hw := facts_inst (List.mem_of_getElem? (by simpa using hpos.block))
-          (List.mem_of_getElem? (by simpa using hx)) hd
+      by_cases hd : Loc.reg r ∈ D
+      · have hw := hwrites r hd
         rcases write_allowed hf hw with hsv | hal
         · exact .inl hsv
         · exact absurd (hact.allowed r hal) hr
@@ -137,7 +133,7 @@ theorem Match.body {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Ho
     · intro y hy v hv mm hmm
       have he : mm.eval core' = mm.eval m.core := cell_rsp hmm (by rw [hrsp', htop.rsp])
       rw [he]
-      by_cases hd : y ∈ x.defs
+      by_cases hd : y ∈ D
       · exact hdefined y hd hy mm hmm
       · have hv' : Xl.read s.regs fr y = some v := by rw [← hafter.locs y hd]; exact hv
         exact fun i hi hh => htop.cellsData y hy v hv' mm hmm i hi (hholes _ hh)
@@ -178,5 +174,31 @@ theorem Match.body {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Ho
       exact read64_keep fun j hj => by
         rw [UInt64.add_assoc, ← UInt64.ofNat_add, hkeepCtx (8 + j) (by omega)]
     · exact fun i hi hh => hg.limitData i hi (hholes _ hh)
+
+/-- A body instruction other than a call: the invariant again, one
+instruction on. -/
+theorem Match.body {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Holes} {fr : Xl.Frame} {a : Act}
+    {ret : ReturnFrame} {below : List (Xl.Frame × Act × ReturnFrame)} (hm : Match S W s m holes fr a ret below)
+    {f : Func Loc} {l : FrameLayout} {pl : Placed} (htop : Top S W s m holes fr a ret f l pl)
+    {b : Block Loc} {codes : List (List Instr)} {post : List Instr} {t : X86.Terminator}
+    (hpos : XlPos S fr f l pl b codes post t) {x : Inst Loc} (hx : b.body[fr.pos]? = some x)
+    {regs' : Xl.Regs} {fr'' : Xl.Frame} {mem' : Memory} {core' : Core} {holes' : Holes}
+    (hafter : After (ctxOf S.placed pl) x.defs s.regs fr s.mem m.core regs' fr'' mem' W.ctx core')
+    (hholes : ∀ y, holes' y → holes y)
+    (hdefined : ∀ y ∈ x.defs, y.isCell = true → ∀ mm, (ctxOf S.placed pl).cell y = .ok mm →
+      ReadableData holes' (mm.eval m.core) 8) :
+    Match S W { s with mem := mem', regs := regs', stack := { fr'' with pos := fr.pos + 1 } :: below.map (·.1) }
+      { m with core := core', pc := pcOf S pl fr.label (offsetOf l fr.label (fr.pos + 1) codes) } holes'
+      { fr'' with pos := fr.pos + 1 } a ret below := by
+  have hctl := hafter.ctl
+  have hlt : fr.pos < b.body.size := (List.getElem?_eq_some_iff.1 (by simpa using hx)).1
+  have e : { fr'' with label := fr.label, pos := fr.pos + 1 } = { fr'' with pos := fr.pos + 1 } := by
+    rw [← hctl.label]
+  have hpos' : XlPos S { fr'' with label := fr.label, pos := fr.pos + 1 } f l pl b codes post t :=
+    ⟨hpos.block, hpos.found, hpos.len, hpos.insts, hpos.term, by show fr.pos + 1 ≤ b.body.size; omega⟩
+  have := Match.update hm htop (D := x.defs)
+    (fun r hd => facts_inst (List.mem_of_getElem? (by simpa using hpos.block))
+      (List.mem_of_getElem? (by simpa using hx)) hd) hafter hholes hdefined hpos'
+  rwa [e] at this
 
 end Compilatrix.Xv.Stacking.Proof
