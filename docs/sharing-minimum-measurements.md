@@ -944,8 +944,9 @@ nix develop --command bash -c "lake exe sharing-study $S/mathlib.ixe --meta \
 
 ---
 
-The rest of this document is the harness's `--md` output from the tenth run, unedited,
-followed by the uniform-optimizer section of the ninth run's output, unedited.
+The rest of this document is the harness's `--md` output from the tenth run, unedited.
+It is followed by the uniform-optimizer section of the ninth run's output and by the
+`--meta` outputs for Init and Mathlib, all unedited.
 
 ## Results
 
