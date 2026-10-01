@@ -261,7 +261,8 @@ def boundaryValues : List Nat :=
   [0, 1, 7, 8, 127, 128, 255, 256, 65535, 65536, 2^24 - 1, 2^24, 2^32 - 1, 2^32,
    2^40 - 1, 2^40, 2^48 - 1, 2^48, 2^56 - 1, 2^56, 2^64 - 1] ++
   ([0, 2, 4].flatMap fun f =>
-    [tagNEnd1 f, tagNEnd2 f, tagNEnd3 f, tagNEnd4 f].flatMap fun e => [e - 1, e, e + 1])
+    [tagNEnd1 f, tagNEnd2 f, tagNEnd3 f, tagNEnd4 f, tagNEnd5 f].flatMap fun e =>
+      [e - 1, e, e + 1])
 
 def widthTests (_ : Unit) : TestSeq :=
   group "integer widths" <|
@@ -279,13 +280,16 @@ def widthTests (_ : Unit) : TestSeq :=
       (boundaryValues.all fun n => natByteCount n == (u64ByteCount n.toUInt64).toNat) ++
     test "Share 7/8 → 1/2 bytes" (shareWidth 7 == 1 && shareWidth 8 == 2) ++
     test "Share 1031/1032 → 2/3 bytes" (shareWidth 1031 == 2 && shareWidth 1032 == 3) ++
-    test "Share 66567/66568 → 3/5 bytes" (shareWidth 66567 == 3 && shareWidth 66568 == 5) ++
-    test "Share 4295033863/4295033864 → 5/9 bytes"
-      (shareWidth 4295033863 == 5 && shareWidth 4295033864 == 9) ++
+    test "Share 66567/66568 → 3/4 bytes" (shareWidth 66567 == 3 && shareWidth 66568 == 4) ++
+    test "Share 16843783/16843784 → 4/5 bytes"
+      (shareWidth 16843783 == 4 && shareWidth 16843784 == 5) ++
+    test "Share 4311811079/4311811080 → 5/9 bytes"
+      (shareWidth 4311811079 == 5 && shareWidth 4311811080 == 9) ++
     test "Share 2^64-1 → 9 bytes" (shareWidth (2^64 - 1) == 9) ++
-    test "TagN f=0 127/128 → 1/2 bytes, 16511/16512 → 2/3, 82047/82048 → 3/5"
+    test "TagN f=0 127/128 → 1/2 bytes, 16511/16512 → 2/3, 82047/82048 → 3/4, 16859263/16859264 → 4/5"
       (tag0Size 127 == 1 && tag0Size 128 == 2 && tag0Size 16511 == 2 && tag0Size 16512 == 3 &&
-        tag0Size 82047 == 3 && tag0Size 82048 == 5) ++
+        tag0Size 82047 == 3 && tag0Size 82048 == 4 && tag0Size 16859263 == 4 &&
+        tag0Size 16859264 == 5) ++
     test "tag0BracketStart is the start of the count's TagN rung"
       (boundaryValues.all fun k =>
         tag0Size (tag0BracketStart k) == tag0Size k &&
@@ -293,7 +297,8 @@ def widthTests (_ : Unit) : TestSeq :=
     test "tag0StepBound bounds the growth of the count's TagN width"
       ((boundaryValues.all fun n =>
           n == 0 || decide (tag0Size n - tag0Size (n - 1) ≤ tag0StepBound n)) &&
-        tag0StepBound 82047 == 1 && tag0StepBound 82048 == 2)
+        tag0StepBound 82048 == 1 && tag0StepBound (tagNEnd5 0 - 1) == 1 &&
+        tag0StepBound (tagNEnd5 0) == 4)
 
 /-- App spine with `n` arguments, Lam/All telescopes with `n` binders, and
 mixed nestings. -/

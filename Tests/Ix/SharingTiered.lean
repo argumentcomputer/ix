@@ -224,10 +224,11 @@ def kahnTests (_ : Unit) : TestSeq :=
     (match err with | some m => test m false | none => .done)
 
 def layoutTests (_ : Unit) : TestSeq :=
-  test "TagN widths: 1 below 8, 2 below 1032, 3 below 66568, 5 below 66568+2^32, then 9"
-    ([7, 8, 1031, 1032, 66567, 66568, 66568 + 2 ^ 32 - 1, 66568 + 2 ^ 32].map ShareLayout.tagN.widthAt ==
-      [1, 2, 2, 3, 3, 5, 5, 9] &&
-      tagNRung2End == 1032 && tagNRung3End == 66568 && tagNRung4End == 66568 + 2 ^ 32) ++
+  test "TagN widths: 1 below 8, 2 below 1032, 3 below 66568, 4 below 16843784, 5 below 4311811080, then 9"
+    ([7, 8, 1031, 1032, 66567, 66568, 16843783, 16843784, 4311811079, 4311811080].map
+        ShareLayout.tagN.widthAt == [1, 2, 2, 3, 3, 4, 4, 5, 5, 9] &&
+      tagNRung2End == 1032 && tagNRung3End == 66568 && tagNRung4End == 16843784 &&
+      tagNRung5End == 4311811080) ++
   test "uniform width by candidate count: 1 up to 8, 2 up to 1032, then 3"
     (ShareLayout.tagN.uniformWidth 8 == 1 && ShareLayout.tagN.uniformWidth 9 == 2 &&
       ShareLayout.tagN.uniformWidth 1032 == 2 && ShareLayout.tagN.uniformWidth 1033 == 3) ++

@@ -48,16 +48,17 @@ def natByteCount (n : Nat) : Nat :=
 termination_by n
 decreasing_by exact Nat.div_lt_self (Nat.pos_of_ne_zero h) (by decide)
 
-/-- Exact byte length of `Ixon.putTagN 0 0 n`, for `n < 2^64`: 1, 2, 3, 5 or 9
+/-- Exact byte length of `Ixon.putTagN 0 0 n`, for `n < 2^64`: 1, 2, 3, 4, 5 or 9
 (`Ixon.tagNByteWidth 0`). -/
 def tag0Size (n : Nat) : Nat := Ixon.tagNByteWidth 0 n
 
 /-- Exact byte length of `Ixon.putTagN 4 flag n`, for `n < 2^64` (independent of
-the flag): 1, 2, 3, 5 or 9 (`Ixon.tagNByteWidth 4`). -/
+the flag): 1, 2, 3, 4, 5 or 9 (`Ixon.tagNByteWidth 4`). -/
 def tag4Size (n : Nat) : Nat := Ixon.tagNByteWidth 4 n
 
 /-- Width in bytes of `Share(idx)` (`Ixon.putTagN 4 0xB idx`): 1 byte below
-index 8, 2 below 1032, 3 below 66568, 5 below 4295033864, then 9. -/
+index 8, 2 below 1032, 3 below 66568, 4 below 16843784, 5 below 4311811080,
+then 9. -/
 def shareWidth (idx : Nat) : Nat := tag4Size idx
 
 /-- Values written through a `UInt64` wire field must be below this bound. -/

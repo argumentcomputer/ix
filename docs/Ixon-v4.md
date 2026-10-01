@@ -27,7 +27,7 @@ typing and explicitly rejects resource-proof requests. The
 [v3 verification record](ixon-v3-verification.md) lists the gates executed
 for the contract model.
 
-<!-- PENDING: [format][route][ids] everything specific to v4 in this file (TagN, version 4, canonical sharing as the compiler route, format byte 4, ixon-v4 identifiers) depends on plan §2–§3. At 9611c3b6 the format is v3 with heuristic sharing. A v4 verification record (plan §9) is not written yet. -->
+<!-- PENDING: [format][route][ids] everything specific to v4 in this file (TagN, version 4, canonical sharing as the compiler route, format byte 4, ixon-v4 identifiers) depends on plan §2–§3. At 93e2895c every integer is TagN, but the version is 3, the identifiers are the v3 ones and the compilers use heuristic sharing. A v4 verification record (plan §9) is not written yet. -->
 
 <!-- PENDING: [ixvm] the IxVM codecs read and write TagN and the v4 headers (plan §5). -->
 
@@ -240,14 +240,14 @@ layouts, examples and proof references.
 
 **TagN.** Every variable-length integer is a TagN integer. That is one header
 byte `[flag : f bits][payload : 8 − f bits]` with `f ∈ {0, 2, 4}`, followed
-by 0, 1, 2, 4 or 8 bytes:
+by 0, 1, 2, 3, 4 or 8 bytes:
 
 - `f = 4` is used for expression, constant, environment, claim and proof
   headers;
 - `f = 2` for universe terms;
 - `f = 0` for counts, indices and lengths.
 
-The rungs hold 1, 2, 3, 5 and 9 bytes, and each rung starts where the
+The rungs hold 1, 2, 3, 4, 5 and 9 bytes, and each rung starts where the
 previous one ends, so the code is bijective. Values below 128, 32 or 8 (for
 `f` = 0, 2 or 4) encode to the same single byte as v3's Tag0, Tag2 or Tag4.
 Larger values encode differently: for example, `Share(8)` is `B8 00`, and the

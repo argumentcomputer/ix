@@ -60,7 +60,7 @@ This separation means cosmetic changes (renaming variables) don't change the con
 
 ## Integer Encoding (TagN)
 
-<!-- PENDING: [format] TagN replaces Tag0/Tag2/Tag4 at every site of the Lean and Rust codecs, and Env.VERSION = 4 (plan §2). At 9611c3b6 `Ixon.putTagN`/`getTagN` and Rust `TagN::put`/`TagN::get` exist and are tested, but no writer uses them yet. -->
+<!-- PENDING: [format] Env.VERSION = 4 (plan §2). Since 93e2895c every site of the Lean and Rust codecs writes and reads TagN (the Tag0/Tag2/Tag4 codes are deleted), still under version 3. -->
 
 Every variable-length integer in the Ixon grammar uses one code, **TagN**.
 That includes expression, constant, environment, claim and proof headers,
@@ -85,7 +85,7 @@ The implementation is Lean `Ixon.putTagN f flag value` / `Ixon.getTagN f`
 
 ### Layout
 
-A TagN integer is one header byte followed by 0, 1, 2, 4 or 8 bytes. The
+A TagN integer is one header byte followed by 0, 1, 2, 3, 4 or 8 bytes. The
 header is
 
 ```
@@ -100,25 +100,27 @@ Let `L` be the top payload bit, `M` the next bit, and `c` the remaining low
 | `L = 0` | none | `[0, R₁)` | the low `r − 1` payload bits |
 | `L = 1, M = 0` | 1 | `[R₁, R₂)` | `R₁ + c·256 + byte` (`c` is the high part, the byte the low 8 bits) |
 | `L = 1, M = 1, c = 0` | 2, little-endian | `[R₂, R₃)` | `R₂ + u16` |
-| `L = 1, M = 1, c = 1` | 4, little-endian | `[R₃, R₄)` | `R₃ + u32` |
-| `L = 1, M = 1, c = 2` | 8, little-endian | `[R₄, 2^64)` | `R₄ + u64` |
-| `L = 1, M = 1, c ≥ 3` | — | invalid | |
+| `L = 1, M = 1, c = 1` | 3, little-endian | `[R₃, R₄)` | `R₃ + u24` |
+| `L = 1, M = 1, c = 2` | 4, little-endian | `[R₄, R₅)` | `R₄ + u32` |
+| `L = 1, M = 1, c = 3` | 8, little-endian | `[R₅, 2^64)` | `R₅ + u64` |
+| `L = 1, M = 1, c ≥ 4` | — | invalid (`f = 0, 2` only: for `f = 4`, `c` has two bits) | |
 
-The rung ends are `R₁ = 2^(r−1)`, `R₂ = R₁ + 2^(r−2+8)`, `R₃ = R₂ + 2^16` and
-`R₄ = R₃ + 2^32`. The encoded widths are 1, 2, 3, 5 and 9 bytes.
+The rung ends are `R₁ = 2^(r−1)`, `R₂ = R₁ + 2^(r−2+8)`, `R₃ = R₂ + 2^16`,
+`R₄ = R₃ + 2^24` and `R₅ = R₄ + 2^32`. The encoded widths are 1, 2, 3, 4, 5
+and 9 bytes.
 
-| `f` | R₁ | R₂ | R₃ | R₄ |
-|---|---:|---:|---:|---:|
-| 0 | 128 | 16,512 | 82,048 | 4,295,049,344 |
-| 2 | 32 | 4,128 | 69,664 | 4,295,036,960 |
-| 4 | 8 | 1,032 | 66,568 | 4,295,033,864 |
+| `f` | R₁ | R₂ | R₃ | R₄ | R₅ |
+|---|---:|---:|---:|---:|---:|
+| 0 | 128 | 16,512 | 82,048 | 16,859,264 | 4,311,826,560 |
+| 2 | 32 | 4,128 | 69,664 | 16,846,880 | 4,311,814,176 |
+| 4 | 8 | 1,032 | 66,568 | 16,843,784 | 4,311,811,080 |
 
 **Bijective.** Each rung starts where the previous one ends. So every
 `UInt64` value has exactly one encoding, and every accepted byte string is the
 encoding of the value it decodes to. There is no non-minimal form for readers
 to reject. A reader rejects only three things:
 
-- a code `c ≥ 3`;
+- a code `c ≥ 4` (`f = 0` or `2`);
 - an 8-byte rung whose value would reach `2^64`;
 - truncated input.
 
@@ -165,7 +167,9 @@ value with `Ixon.getTagN`:
 | `N4(0xB, 8)` (`Share(8)`) | `B8 00` | 2 |
 | `N4(0xB, 1031)` | `BB FF` | 2 |
 | `N4(0xB, 1032)` | `BC 00 00` | 3 |
-| `N4(0xB, 66568)` | `BD 00 00 00 00` | 5 |
+| `N4(0xB, 66568)` | `BD 00 00 00` | 4 |
+| `N4(0xB, 16843784)` | `BE 00 00 00 00` | 5 |
+| `N4(0xB, 4311811080)` | `BF 00 00 00 00 00 00 00 00` | 9 |
 | `N4(0x2, 256)` (`Ref` with 256 universe arguments) | `28 F8` | 2 |
 | `N4(0xE, 4)` (the version-4 `.ixe` header) | `E4` | 1 |
 | `N4(0xE, 9)` (Resource claim) | `E8 01` | 2 |
@@ -174,10 +178,12 @@ value with `Ixon.getTagN`:
 | `N0(128)` | `80 00` | 2 |
 | `N0(1000)` | `83 68` | 2 |
 | `N0(16512)` | `C0 00 00` | 3 |
-| `N0(2^64 − 1)` | `C2 7F BF FE FF FE FF FF FF` | 9 |
+| `N0(82048)` | `C1 00 00 00` | 4 |
+| `N0(16859264)` | `C2 00 00 00 00` | 5 |
+| `N0(2^64 − 1)` | `C3 7F BF FE FE FE FF FF FF` | 9 |
 
-`getTagN 4` rejects the header `BF` (`L = M = 1`, `c = 3`) with "invalid TagN
-code 3".
+`getTagN 0` rejects the header `C4` (`L = M = 1`, `c = 4`) with "invalid TagN
+code 4". `getTagN 4` has no invalid header: its code `c` has two bits.
 
 ---
 
@@ -715,7 +721,7 @@ another construction, and a partial or best-so-far table is never emitted.
 
 <!-- PENDING: [route][limits] compiler limits set far above every corpus maximum, with a CLI override (plan §0b-4, §3). At 9611c3b6 the error constructors exist, but `compilerSharingLimits` are the library defaults and the compiler route is the heuristic. -->
 
-<!-- PENDING: [price] the construction prices table counts, headers and Shares with TagN widths (`shareWidth` ≡ `tagNWidth`, `ShareLayout.tag4` removed, Dictionary/dict tie-break bytes updated; plan §2). At 9611c3b6 the model still prices non-Share integers with Tag0/Tag4 sizes. -->
+<!-- PENDING: [price] `ShareLayout.tag4` and its `Ixon.ShareCodec` shim removed from `Ix/Sharing/Exact/Tiered.lean` and `sharing_exact/tiered.rs` (plan §2). Since 93e2895c the construction prices table counts, headers and Shares with TagN widths (`shareWidth` ≡ `tagNWidth`) and the Dictionary/dict tie-break bytes are TagN encodings. -->
 
 ### What is proved, and what is not
 
@@ -1088,7 +1094,7 @@ back-compat reading of old versions — `.ixe` files are regenerated
 artifacts. Versions 0–7 fit in the header byte; later versions use the
 multi-byte TagN rungs.
 
-<!-- PENDING: [format] Env.VERSION = 4, wireFormatId / WIRE_FORMAT_ID = "ixon-v4", and readers reject version 3 (plan §0b-2, §2). At 9611c3b6 the version is 3, `Env.NEXT_VERSION = 4` is only scaffolding, and wireFormatId is "ixon-v3". -->
+<!-- PENDING: [format] Env.VERSION = 4, wireFormatId / WIRE_FORMAT_ID = "ixon-v4", and readers reject version 3 (plan §0b-2, §2). At 93e2895c the version is 3 (there is no `NEXT_VERSION`) and wireFormatId is "ixon-v3", while every integer is already TagN. -->
 
 The version-4 header byte `0xE4` is the same byte as the Check claim tag
 `N4(0xE, 4)` (see [Proofs and Claims](#proofs-and-claims)), just as
@@ -1415,7 +1421,7 @@ Environment headers are interpreted in the `.ixe` context: the v4
 environment header is `0xE4`, the same byte as the Check claim tag. The
 enclosing protocol must identify the object kind.
 
-<!-- PENDING: [format] claim/proof headers written with TagN, so Catalog = E8 00 and Resource = E8 01 (in v3 they were E8 08 and E8 09); pinned by proof.rs::catalog_claim_wire_bytes_pinned, the claim suite and Tests/Fixtures claims.tsv once regenerated (plan §2, §6). -->
+<!-- PENDING: [fixtures] Tests/Fixtures claims.tsv and the catalog digest pins regenerated (plan §6). Since 93e2895c claim and proof headers are TagN (Catalog E8 00, Resource E8 01; v3 wrote E8 08 and E8 09), pinned by proof.rs::catalog_claim_wire_bytes_pinned and the claim suite. -->
 
 Every claim and proof payload starts with two bytes immediately after its
 header: object format `4`, then validator `0` (structural-v1),
@@ -1615,7 +1621,7 @@ E8 01                 -- N4(0xE, 9) (Resource): two-byte TagN rung
 ```
 Total: 68 bytes.
 
-<!-- PENDING: [format][ids] all serialization examples above assume the v4 claim codec (TagN headers, object format 4); regenerate the claims fixture (claims.tsv) and re-check these bytes against it (plan §6). -->
+<!-- PENDING: [ids][fixtures] all serialization examples above assume object format 4; regenerate the claims fixture (claims.tsv) and re-check these bytes against it (plan §6). Their TagN headers are written since 93e2895c. -->
 
 
 ---

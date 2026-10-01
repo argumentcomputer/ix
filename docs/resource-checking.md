@@ -127,7 +127,7 @@ A canonical profile begins with the UTF-8 bytes
 2. Optional Nat and String type addresses: a byte `0`, or `1` and an address.
 3. Nonzero depth and step limits, each a TagN (`f = 0`) unsigned integer.
 
-<!-- PENDING: [ids][format] validatorId / VALIDATOR_ID = "ixon-v4/resource-v1" (so the profile prefix is "ixon-v4/resource-v1/profile"), and profile integers written with TagN (plan §0b-2, §2). At 9611c3b6: "ixon-v3/resource-v1" and Tag0. -->
+<!-- PENDING: [ids] validatorId / VALIDATOR_ID = "ixon-v4/resource-v1" (so the profile prefix is "ixon-v4/resource-v1/profile") (plan §0b-2). At 93e2895c: "ixon-v3/resource-v1"; profile integers are TagN since that commit. -->
 
 Selection primitives must also be assumptions. Literal types, when selected,
 must match the kernel's pinned primitive identities. The profile address is
