@@ -1,5 +1,13 @@
 # Certified Lean kernel
 
+> **Retired at L6 (2026-10-01).** This page describes the intrinsic kernel
+> (`Ix.Kernel.check`, `checkEnv`, its ingress, egress, model and host
+> differentials), which step L6 of `plans/ix-kernel-con-leche-port-v4.md`
+> retired. The certified checker is con-leche's, ported under `ConLeche/**`
+> and run on Ixon by `Ix.Ixon.Admission.checkBytes`; its contract is section 2
+> of `plans/ix-certified-roadmap.md`. The page is kept as the intrinsic
+> kernel's record; the removal ledger below stays current.
+
 `Ix.Kernel.check` checks an ordered list of anonymous declarations and returns
 an environment only when it can construct its model extension. The three
 public consistency theorems apply to this executed function. `Ix.Kernel` is

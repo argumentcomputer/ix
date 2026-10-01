@@ -136,7 +136,9 @@ admitted), section 5 (the provenance rule and statement recording) and
 section 9 (fixed decisions). The intrinsic kernel (`Ix/Kernel/**`, final
 state at integration head `tmxpopss`) is the public API through L4 and the
 differential reference until L6 retires it; the sections that describe it
-are kept as its record. Port steps L0–L8 are plan v4's (section 4 there);
+are kept as its record. L6 (2026-10-01) retired it: its modules, entry
+points, tests, census, benchmark and audits are gone, and each section that
+describes it carries a one-line note. Port steps L0–L8 are plan v4's (section 4 there);
 they are unrelated to section 12's L1 (Lean 4.34.0).
 
 ## 1. Thesis and scope
@@ -250,8 +252,8 @@ values denote their constants, from `defn_reads`), `checkBytes_no_proof_of_False
 accepted theorem record whose type reads as the pinned `False`),
 `checkBytes_reading` (fidelity) and `checkBytes_resources`. The same theorems
 hold at every pin table and prelude (`Ix/Ixon/ConLecheConsistency.lean`,
-over `checkBytesWith`). The intrinsic entries stay as `checkBytesIntrinsic`
-until L6.
+over `checkBytesWith`). The intrinsic entries (`checkBytesIntrinsic`) were
+retired at L6 (see plan v4).
 
 The K0 shapes, which stay the public statements until L5. They were fixed
 at K0 on a kernel that rejects everything and preserved by every later
@@ -417,20 +419,22 @@ with `OVERVIEW.md` and `PERF.md`, at the pinned revision (reviewable in
 
 | Boundary module | Role | Step |
 | --- | --- | --- |
-| Ixon reader, beside `Ix/Kernel/Ingress*.lean` (its reference) | Ixon records to `Array ConLeche.Declaration`: one record per block (regrouping `muts` and projection records), keys per D1, `pw := .never` | L4 |
+| Ixon reader, `Ix/Kernel/ConLeche/Reader.lean` (its reference, the intrinsic `Ix/Kernel/Ingress*.lean`, was retired at L6) | Ixon records to `Array ConLeche.Declaration`: one record per block (regrouping `muts` and projection records), keys per D1, `pw := .never` | L4 |
 | Address-to-name encoding | each `ConstRef Address` as a reserved `ConLeche.Name`, injectively. The pinned basis, Nat-op and trust names go to the addresses whose declarations match the pinned shapes, from a table generated from the compiled Init | L4 |
 | Ixon prelude and pins | the prelude records of the compiled Init; Nat-op, trust and standard-axiom pins from an Ixon pinner (a host tool), committed as Lean literals | L4 |
 | Restated public theorems | model existence and no-False at the Ix entry (section 2), with the fidelity theorem | L5 |
 | `Ix/Ixon/Admission.lean`, `Audit.lean`, `Projection.lean` | byte admission and its audits, retargeted to the new entry | L5 |
-| Census driver | `Benchmarks/Kernel/Census.lean`, with an untrusted per-record step | L4 |
+| Census driver | `Benchmarks/Kernel/ConLecheCensus.lean` (`kernel-census`), with an untrusted per-record step; the intrinsic `Census.lean` was retired at L6 | L4 |
 | Audits and fences | `Ix/Kernel/Audit/*.lean`, `Ix/Ixon/*Audit.lean`, `scripts/layering.sh`, `scripts/trust-surface.sh`, `Tests/Ix/Kernel/{ImportManifest,Provenance}.lean` | L0, L5 |
 | Model instance | `Models/SetTheory`, switched to con-leche's `SetTheory` class | L5 |
 
 Sections 3.1 to 3.7 describe the intrinsic kernel line (`Ix/Kernel/**`).
-It stays the public API through L4 and the differential reference until L6
-retires it.
+It was the public API through L4 and the differential reference until L6
+retired it (2026-10-01); they are kept as its record.
 
 ### 3.1 Syntax
+
+> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
 
 Kernel terms are the old branch's `VExpr`/`AExpr` over `ConstRef Address`,
 extended with `let`:
@@ -495,6 +499,8 @@ public API fixes `β := Address`.
 
 ### 3.2 Declarations and environment
 
+> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
+
 Declarations mirror Ixon constant shapes: axiom, definition/theorem/opaque,
 quotient primitive, inductive with constructors, recursor with rules, and a
 block (`muts`) of members that may refer to each other by index. Ixon
@@ -515,6 +521,8 @@ to each other by index and are checked together.
 
 ### 3.3 Semantics and model
 
+> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
+
 Port the old branch's `Ix.Theory.Model` as `Ix.Kernel.Model`:
 
 - `SetTheory V` and the derived constructions (`SetModel`: pairs, graphs,
@@ -534,6 +542,8 @@ The `letE` clause (interpretation by substitution) with its rules
 `TypingClaim.letE` and `ConversionClaim.zeta` is in (`Ix.Kernel.Model.LetRules`).
 
 ### 3.4 Checker
+
+> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
 
 The checker is a reference algorithm in the shape of `Ix.Tc` and nanoda,
 written for proof. K1 built its core (`Ix.Kernel.Infer`) in a
@@ -637,6 +647,8 @@ structural recursion; fuel exhaustion declines.
 
 ### 3.5 Inductive types and pinned blocks
 
+> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
+
 The kernel validates an inductive declaration (universe and parameter
 agreement across the block, manifest return types, strict positivity, field
 sort bounds, elimination level) and computes the recursor it expects. A
@@ -690,6 +702,8 @@ Unsupported shapes decline with the class named.
 
 ### 3.6 Simplifications and why each preserves the theorem
 
+> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
+
 | Simplification | What it removes | Why consistency is preserved |
 | --- | --- | --- |
 | Addresses and `ConstRef` instead of names | `Name`, prefix scoping, reserved names, shadowing rules, "installed under its own name" theorems, name-injectivity encodings | The model indexes constants by reference; a reference resolves by key or rejects |
@@ -717,6 +731,8 @@ instead of assuming them.
 
 ### 3.7 Why addresses help the proof
 
+> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: this describes the intrinsic kernel, kept as its record.
+
 - Lookup is a total function on keys. There is no resolution, no scope, and
   no rename; the environment invariant is a list invariant.
 - Mutual blocks and constructors are structural positions. Block ownership
@@ -732,6 +748,8 @@ instead of assuming them.
 ## 4. Layout, layering and the certification ledger
 
 ### Module layout
+
+> Retired at L6 (2026-10-01), see `plans/ix-kernel-con-leche-port-v4.md`: of the `Ix/Kernel/` modules below only `Ref.lean` and `Audit/` remain, beside `Search`, the record store `Ingress/Records`, the projection writer `Egress/Projection` and `ConLeche/` (the Ixon reader, pins, prelude); `Ix/Kernel.lean` is that boundary's umbrella.
 
 ```text
 Ix/Kernel.lean                 Public API and theorem imports
@@ -804,6 +822,11 @@ Both are mechanical, reviewed separately, and change no behavior.
   Nothing else: no `Lean` or `Batteries` module, nothing else under `Ix`,
   no `Blake3`, no `lean4lean`, no `Ix.Tc`. The standalone package build
   enforces this structurally; the import audit records the exact closure.
+  Since L6 (see plan v4) this list fences the Ixon reader, the record store,
+  the projection writer, `Search` and `Ref`; the committed pin table and
+  prelude (`Ix.Kernel.ConLeche.{PinData,Prelude}`) also read records through
+  the canonical decoder, so the `Ix.Kernel` umbrella is audited against the
+  certified `importAllowlist`.
 - `ConLeche/**` is a ported subtree with con-leche's own layering:
   - the implementation (`Kernel`, `Cached`, `Frontend`) never imports the
     theory (`SetTheory`, `SetModel`, `Semantics`, `Model`, `Verify`,
@@ -825,11 +848,14 @@ Both are mechanical, reviewed separately, and change no behavior.
   `Ix.Ixon.Audit` checks these separate boundaries; the kernel's narrower
   allowlist is unchanged.
 - `Ix.Ixon.Admission` composes the pure codecs with `Ix.Kernel.Ingress`
-  outside the kernel tree. Its implementation imports neither `Verify` nor
+  outside the kernel tree (from L5 with the con-leche entry; the intrinsic
+  ingress was retired at L6, see plan v4). Its implementation imports neither `Verify` nor
   host modules; `Verify.Admission` proves the byte contract separately.
   `Admission.Audit` checks its own closure without widening the kernel or
   codec allowlists.
-- Implementation modules do not import `Model` or `Verify`. Proofs import the
+- Implementation modules do not import `Model` or `Verify` (the intrinsic
+  kernel's rule, retired with it at L6, see plan v4; `ConLeche/**` has its
+  own fence above). Proofs import the
   implementation. Audits and tests import the library; the library never
   imports them.
 - Everything else in `Ix` may import `Ix.Kernel`.
@@ -869,12 +895,12 @@ checkpoint. Initial entries:
 
 | Component | Modules | Status now | Route |
 | --- | --- | --- | --- |
-| Certified kernel | `Ix.Kernel.*` | K1: definitions, theorems, and opaques certified; inductives at K2 | K0 to K2 |
+| Certified kernel | `Ix.Kernel.*` | K1: definitions, theorems, and opaques certified; inductives at K2 (retired at L6, see plan v4: the certified checker is con-leche's, `ConLeche/**`, behind `Ix.Ixon.Admission.checkBytes`) | K0 to K2 |
 | Address key | `Ix.Address.Core` | pure data | K0 |
 | BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
 | Ixon data types | `Ix.Ixon.Types` | pure production data in the standalone audited closure | K3 split complete |
 | Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `WireCheck`, `Bounded`, `Canonical`, `Verify` | production grammar and inverses, complete-record byte/universe limits, exact wire validation, canonical re-encoding, and all-outcome abstract parser-work bounds | K4 implemented |
-| Ixon to kernel ingress and egress | `Ix.Kernel.Ingress`, `Ix.Kernel.Egress` | exact readings, physical-reference fidelity, model theorem for accepted in-memory input, and exact reconstruction with retained layout | K3 complete |
+| Ixon to kernel ingress and egress | `Ix.Kernel.Ingress`, `Ix.Kernel.Egress` | exact readings, physical-reference fidelity, model theorem for accepted in-memory input, and exact reconstruction with retained layout (retired at L6, see plan v4; the Ixon reader `Ix.Kernel.ConLecheReader` replaces the ingress, and only the record store and the projection writer remain) | K3 complete |
 | Byte admission | `Ix.Ixon.Admission`, `Verify.Admission`, `Verify.WorkAdmission`, `Admission.Audit`; `Ix.Ixon.Projection`, `ProjectionProofs`, `ProjectionAudit`; `Ix.Ixon.BlockOrder`, `BlockOrderProofs`, `BlockOrderAudit` | exact canonical-byte reading, aggregate parser-work bound, bounded projection reconstruction, recomputed canonical block order, installed declarations, and model theorem for the executed checker | K4 implemented |
 | Claims, assumption trees, Merkle roots, commitments | `Ix.Claim`, `Ix.AssumptionTree`, `Ix.Merkle`, `Ix.Commit` | host | K5, with explicit cryptographic assumptions |
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
