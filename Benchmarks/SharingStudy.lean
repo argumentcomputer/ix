@@ -1836,7 +1836,7 @@ def uniformReport (rows : Array Row) (maxStates : Nat) : String := Id.run do
 /-! ## Metadata study (`--meta`)
 
 Streams a whole `.ixe` section by section with the production readers
-(`getExprMetaDataIndexed`, `getExpr`, `getUniv`, `getFusedHint`, …), recording the
+(`getExprMetaNode`, `getExpr`, `getUniv`, `getFusedHint`, …), recording the
 exact bytes of every component, and analyses each `ConstantMeta.metaSharing`
 against its constant's primary sharing table. Constants are parsed only when a
 `Named` entry needs them, so the file is never materialized as a whole `Env`.
@@ -2080,9 +2080,11 @@ def getArenaBreak (rev : Ixon.NameReverseIndex) (mb : MetaBreak) : Ixon.GetM Met
   let mut kc := mb.kindCount
   let mut nodes : Array Ixon.ExprMetaData := Array.mkEmpty len
   let mut sizes : Array Nat := Array.mkEmpty len
-  for _ in [0:len] do
+  let mut lo : Array Nat := Array.mkEmpty len
+  for i in [0:len] do
     let a ← getPos
-    let node ← Ixon.getExprMetaDataIndexed rev
+    let (node, top) ← Ixon.getExprMetaNode rev i lo
+    lo := lo.push top
     let b ← getPos
     let k := arenaKind node
     kb := kb.modify k (· + (b - a))
