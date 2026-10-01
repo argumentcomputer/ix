@@ -154,95 +154,167 @@ def shareIndices : Ixon.Expr → Array Nat → Array Nat
 
 /-! ## First-tier allocation -/
 
-/-- Inputs of the first-tier search, over stored terms. -/
-structure TierProblem where
-  /-- Stored terms in search order: `ref` descending, ID ascending. -/
-  items : Array Nat
-  weight : Std.HashMap Nat Nat
-  /-- Dependency closure (including the term), if it has at most `cap`
-  terms. -/
-  closure : Std.HashMap Nat (Array Nat)
-  cap : Nat
+/-- The first-tier closures, in an order `topo` where every term's
+dependencies come before it: the closure of `t` is `t` with the closures of
+its dependencies, or `none` when it has more than `cap` terms. A dependency
+that is not yet closed, or a repeated term, is an internal error. -/
+def tierClosures (topo : Array Nat) (deps : Nat → List Nat) (cap : Nat) :
+    Except SharingError (Std.HashMap Nat (Option (List Nat))) :=
+  topo.foldlM (init := {}) fun cl t => do
+    if cl.contains t then throw (.internal "a stored term repeats in the phase-1 table")
+    unless (deps t).all cl.contains do
+      throw (.internal "a phase-1 body references a later entry")
+    let acc := (deps t).foldl (closureUnion cap cl) (some [t])
+    return cl.insert t (acc.bind fun a => if a.length ≤ cap then some a else none)
+where
+  /-- Add the closure of `d` to a partial closure (`none` once above `cap`). -/
+  closureUnion (cap : Nat) (cl : Std.HashMap Nat (Option (List Nat)))
+      (acc : Option (List Nat)) (d : Nat) : Option (List Nat) :=
+    match acc, cl.getD d none with
+    | some a, some c =>
+      let u := c.foldl (fun a x => a.insert x) a
+      if u.length ≤ cap then some u else none
+    | _, _ => none
+
+/-- Bound of the first-tier search: `acc` plus the largest `room` weights
+among `rest` outside `inF` (`rest` is in decreasing weight). -/
+def tierBound (weight : Nat → Nat) (inF : List Nat) : List Nat → Nat → Nat → Nat
+  | [], _, acc => acc
+  | t :: ts, room, acc =>
+    if room = 0 then acc
+    else if inF.contains t then tierBound weight inF ts room acc
+    else tierBound weight inF ts (room - 1) (acc + weight t)
+
+/-- First-tier search state: the best set with its weight, and the states
+visited. -/
+structure TierState where
+  best : Option (Nat × List Nat) := none
+  states : Nat := 0
   deriving Inhabited
 
-/-- Search state. -/
-structure TierState where
-  best : Option (Nat × Array Nat) := none
-  states : Nat := 0
-
-abbrev TierM := StateT TierState (Except SharingError)
-
-/-- Depth-first branch and bound, "include" before "exclude"; the first
-maximum found is the tie-break winner, so later subtrees are pruned when
-their bound does not exceed the best weight. -/
-def TierProblem.dfs (pr : TierProblem) (limits : Limits) :
-    Nat → Nat → Nat → Array Nat → Std.HashSet Nat → TierM Unit
-  | 0, _, _, _, _ => throw (.internal "first-tier search fuel exhausted")
-  | fuel + 1, pos, cur, inF, excluded => do
-    let st ← get
+/-- Depth-first branch and bound over `items` (in the search order), deciding
+`items[pos]`: "include" (its closure joins `inF`, if no excluded term is in
+it and it fits) before "exclude". `cur` is the weight of `inF`. The first
+maximum found is the tie-break winner, so a subtree is pruned when its
+bound does not exceed the best weight. -/
+def tierDfs (items : Array Nat) (weight : Nat → Nat) (closure : Nat → Option (List Nat))
+    (cap : Nat) (limits : Limits) :
+    Nat → Nat → Nat → List Nat → Std.HashSet Nat → TierState →
+      Except SharingError TierState
+  | 0, _, _, _, _, _ => throw (.internal "first-tier search fuel exhausted")
+  | fuel + 1, pos, cur, inF, excluded, st => do
     if st.states + 1 > limits.maxStates then
       throw (.resourceExhausted .states limits.maxStates)
-    set { st with states := st.states + 1 }
-    -- Bound: the largest remaining weights that still fit.
-    let room := pr.cap - inF.size
-    let mut bound := cur
-    let mut taken := 0
-    for t in pr.items.extract pos pr.items.size do
-      if taken ≥ room then break
-      if inF.contains t then continue
-      bound := bound + pr.weight.getD t 0
-      taken := taken + 1
-    if let some (b, _) := (← get).best then
-      if bound ≤ b then return
-    if pos ≥ pr.items.size then
-      match (← get).best with
-      | some (b, _) => if cur > b then modify fun s => { s with best := some (cur, inF) }
-      | none => modify fun s => { s with best := some (cur, inF) }
-      return
-    let t := pr.items[pos]!
+    let st := { st with states := st.states + 1 }
+    let bound := tierBound weight inF (items.toList.drop pos) (cap - inF.length) cur
+    match st.best with
+    | some (b, _) => if bound ≤ b then return st
+    | none => pure ()
+    if pos ≥ items.size then
+      match st.best with
+      | some (b, _) => return if cur > b then { st with best := some (cur, inF) } else st
+      | none => return { st with best := some (cur, inF) }
+    let t := items[pos]!
     if inF.contains t then
-      pr.dfs limits fuel (pos + 1) cur inF excluded
+      tierDfs items weight closure cap limits fuel (pos + 1) cur inF excluded st
     else
-      if let some cl := pr.closure.get? t then
-        let new := cl.filter (!inF.contains ·)
-        if !cl.any excluded.contains && inF.size + new.size ≤ pr.cap then
-          let w := new.foldl (fun acc u => acc + pr.weight.getD u 0) 0
-          pr.dfs limits fuel (pos + 1) (cur + w) (inF ++ new) excluded
-      pr.dfs limits fuel (pos + 1) cur inF (excluded.insert t)
+      let st ← match closure t with
+        | some c =>
+          let new := c.filter (!inF.contains ·)
+          if !c.any excluded.contains && inF.length + new.length ≤ cap then
+            tierDfs items weight closure cap limits fuel (pos + 1)
+              (new.foldl (fun acc u => acc + weight u) cur) (inF ++ new) excluded st
+          else pure st
+        | none => pure st
+      tierDfs items weight closure cap limits fuel (pos + 1) cur inF (excluded.insert t) st
 
-/-- Maximum-weight dependency-closed set of at most `cap` stored terms (tie
-order as in the module doc). `deps t` are the terms `t` references. Returns
-the set (ascending) and the states visited. -/
-def firstTier (stored : Array Nat) (weight : Std.HashMap Nat Nat)
-    (deps : Std.HashMap Nat (Array Nat)) (cap : Nat) (limits : Limits) :
-    Except SharingError (Array Nat × Nat) := do
-  let items := stored.qsort fun a b =>
-    let wa := weight.getD a 0
-    let wb := weight.getD b 0
-    wa > wb || (wa == wb && a < b)
-  -- Closures with early cutoff above `cap`.
-  let mut closure : Std.HashMap Nat (Array Nat) := {}
-  for t in stored do
-    let mut seen : Std.HashSet Nat := {}
-    let mut stack := #[t]
-    let mut ok := true
-    for _ in [0:stored.size * 4 + 4] do
-      match stack.back? with
-      | none => break
-      | some u =>
-        stack := stack.pop
-        if seen.contains u then continue
-        seen := seen.insert u
-        if seen.size > cap then
-          ok := false
-          break
-        stack := stack ++ deps.getD u #[]
-    if ok then closure := closure.insert t (seen.toArray.qsort (· < ·))
-  let pr : TierProblem := { items, weight, closure, cap }
-  let ((), st) ← (pr.dfs limits (items.size + 2) 0 0 #[] {}).run {}
+/-- The first-tier search order: weight descending, then ID ascending. -/
+def tierOrder (weight : Nat → Nat) (a b : Nat) : Bool :=
+  weight a > weight b || (weight a == weight b && a ≤ b)
+
+/-- Maximum-weight set of at most `cap` stored terms closed under `deps`
+(tie order as in the module doc). The stored terms are given in an order
+`topo` with every term's dependencies before it. Returns the set
+(ascending) and the states visited. -/
+def firstTier (topo : Array Nat) (weight : Nat → Nat) (deps : Nat → List Nat) (cap : Nat)
+    (limits : Limits) : Except SharingError (Array Nat × Nat) := do
+  let items := (topo.toList.mergeSort (tierOrder weight)).toArray
+  let cl ← tierClosures topo deps cap
+  let st ← tierDfs items weight (fun t => cl.getD t none) cap limits (items.size + 2) 0 0 []
+    {} {}
   match st.best with
-  | some (_, s) => return (s.qsort (· < ·), st.states)
+  | some (_, s) => return ((s.mergeSort (· ≤ ·)).toArray, st.states)
   | none => return (#[], st.states)
+
+/-! ## Phase 2: slot allocation -/
+
+/-- Reference counts by phase-1 index: the `Share(i)` (`i < m`) in `exprs`. -/
+def shareCounts (m : Nat) (exprs : Array Ixon.Expr) : Array Nat :=
+  exprs.foldl (fun refs e => (shareIndices e #[]).foldl
+    (fun refs i => if i < refs.size then refs.modify i (· + 1) else refs) refs)
+    (Array.replicate m 0)
+
+/-- The terms a phase-1 body references: `order1[i]` for every `Share(i)`. -/
+def bodyRefs (order1 : Array Nat) (e : Ixon.Expr) : List Nat :=
+  ((shareIndices e #[]).filterMap (order1[·]?)).toList
+
+/-- Reference count of every stored term: its Shares in the phase-1 entries
+and roots. -/
+def tierWeights (order1 : Array Nat) (entries1 roots1 : Array Ixon.Expr) :
+    Std.HashMap Nat Nat :=
+  let refs := shareCounts order1.size (entries1 ++ roots1)
+  (List.range order1.size).foldl (fun m i => m.insert order1[i]! refs[i]!) {}
+
+/-- The stored terms each phase-1 body references. -/
+def tierDeps (order1 : Array Nat) (entries1 : Array Ixon.Expr) :
+    Std.HashMap Nat (List Nat) :=
+  (List.range order1.size).foldl
+    (fun m i => m.insert order1[i]! (bodyRefs order1 (entries1[i]?.getD default))) {}
+
+/-- Whether every term's dependencies come before it in `order`. -/
+def respectsDeps (order : Array Nat) (deps : Nat → List Nat) : Bool :=
+  let pos : Std.HashMap Nat Nat := order.zipIdx.foldl (fun m (t, i) => m.insert t i) {}
+  order.zipIdx.all fun (t, i) => (deps t).all fun d => (pos.get? d).any (· < i)
+
+/-- Reference cost `Σ weight(t) · widthAt(index t)` of a table order. -/
+def refCost (layout : ShareLayout) (weight : Nat → Nat) (order : Array Nat) : Nat :=
+  order.zipIdx.foldl (fun acc (t, i) => acc + weight t * layout.widthAt i) 0
+
+/-- The slot allocation of phase 2. -/
+structure Allocation where
+  /-- The first tier (ascending). -/
+  tier : Array Nat
+  slotStates : Nat
+  /-- The final table order. -/
+  order : Array Nat
+  /-- The guard kept the phase-1 order. -/
+  kept : Bool
+  /-- Reference cost of the phase-1 order and of the final order. -/
+  refCost1 : Nat
+  refCostFinal : Nat
+  deriving Inhabited
+
+/-- Phase 2 on the phase-1 table `order1` with entries `entries1` and roots
+`roots1`: the first tier, then the pinned order, unless the guard keeps the
+phase-1 order. The final order is checked to place every body reference
+before its user. -/
+def allocate (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array Nat)
+    (order1 : Array Nat) (entries1 roots1 : Array Ixon.Expr) :
+    Except SharingError Allocation := do
+  let wm := tierWeights order1 entries1 roots1
+  let dm := tierDeps order1 entries1
+  let weight := fun t => wm.getD t 0
+  let deps := fun t => dm.getD t []
+  let stored := (order1.toList.mergeSort (· ≤ ·)).toArray
+  let (tier, slotStates) ← firstTier order1 weight deps (min 8 order1.size) limits
+  let rest := stored.filter (!tier.contains ·)
+  let order2 := pinnedOrder dag deg tier ++ pinnedOrder dag deg rest
+  let kept := refCost layout weight order2 > refCost layout weight order1
+  let order := if kept then order1 else order2
+  unless respectsDeps order deps do
+    throw (.internal "the allocated order places a body reference after its user")
+  return { tier, slotStates, order, kept, refCost1 := refCost layout weight order1,
+           refCostFinal := refCost layout weight order }
 
 /-! ## Result -/
 
@@ -298,26 +370,9 @@ def tieredAtWidth (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w : 
   let entries1 := u.result.sharing
   let roots1 := u.result.roots
   let phase1Layout := layoutBytes layout entries1 roots1
-  -- Phase 2: reference counts and dependencies from the phase-1 output.
-  let mut refs : Array Nat := Array.replicate order1.size 0
-  for e in entries1 ++ roots1 do
-    for i in shareIndices e #[] do
-      if i < refs.size then refs := refs.modify i (· + 1)
-  let mut weight : Std.HashMap Nat Nat := {}
-  let mut deps : Std.HashMap Nat (Array Nat) := {}
-  for h : i in [0:order1.size] do
-    let t := order1[i]
-    weight := weight.insert t refs[i]!
-    let ds := (shareIndices (entries1[i]?.getD default) #[]).filterMap (order1[·]?)
-    deps := deps.insert t (ds.foldl (fun acc d => if acc.contains d then acc else acc.push d) #[])
-  let stored := order1.qsort (· < ·)
-  let (tier, slotStates) ← firstTier stored weight deps (min 8 stored.size) limits
-  let rest := stored.filter (!tier.contains ·)
-  let order2 := pinnedOrder ex.dag f.deg tier ++ pinnedOrder ex.dag f.deg rest
-  let refCost (ord : Array Nat) : Nat :=
-    ord.zipIdx.foldl (fun acc (t, i) => acc + weight.getD t 0 * layout.widthAt i) 0
-  let kept := refCost order2 > refCost order1
-  let order := if kept then order1 else order2
+  -- Phase 2.
+  let a ← allocate layout limits ex.dag f.deg order1 entries1 roots1
+  let order := a.order
   -- Phase 3.
   let (entries, roots, predicted, work) ← materializeTable p order ex.roots limits layout.widthAt
   let priced := layoutBytes layout entries roots
@@ -336,8 +391,8 @@ def tieredAtWidth (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w : 
   let stats : TieredStats :=
     { layout := layout, candidateCount := k, nominalW := layout.uniformWidth k, w := w,
       candidateLengths := #[(w, predicted)], phase1ModelBytes := u.result.modelBytes,
-      phase1LayoutBytes := phase1Layout, slotStates := slotStates, firstTier := tier,
-      keptPhase1Order := kept, phase1RefCost := refCost order1, finalRefCost := refCost order,
+      phase1LayoutBytes := phase1Layout, slotStates := a.slotStates, firstTier := a.tier,
+      keptPhase1Order := a.kept, phase1RefCost := a.refCost1, finalRefCost := a.refCostFinal,
       phase3LayoutBytes := predicted, savings := phase1Layout - predicted }
   let rstats : Stats := { u.result.stats with materializedNodes := work, outputBytes := measured }
   let res : ExactSharingResult :=
