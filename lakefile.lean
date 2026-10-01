@@ -5,7 +5,7 @@ package ix where
   version := v!"0.1.0"
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "ab4d5eb461941837f48eb891be755c8c73e89fdd"
+  "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
 
 /- Blake3 precompiles its libraries, so Lake loads their shared objects -- which
 bundle the C and Rust FFI objects -- into any process elaborating a module that
@@ -15,7 +15,7 @@ the revision that turned precompilation on. Before it, Blake3 exposed a
 `blake3_rs_shared` cdylib that `ix_native_decide_dynlib` had to fetch and link;
 that target no longer exists. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "78f5bc4b22de1172af8a5d91e7039128084fad3a"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "3f8b805614a0bae1c033469ff893a8f0ee85f601"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.34.0"
@@ -35,7 +35,7 @@ value (leanprover/lean4#14498), which the replay path in
 inductive-environment and projection development, and tracks Lean v4.33.1 as
 this package does. -/
 require lean4lean from git
-  "https://github.com/argumentcomputer/lean4ix" @ "a4188d7c2979378d85c6bb41fdd96c3a48a71371"
+  "https://github.com/argumentcomputer/lean4ix" @ "a5621ecfe6416360d4e310c0ed40f3e79ae0710e"
 
 /-! ## FFI
 
