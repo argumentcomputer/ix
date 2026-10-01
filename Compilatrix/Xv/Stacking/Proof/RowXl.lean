@@ -332,7 +332,7 @@ theorem pos_cases {c : FnCtx} {LB : List (Bound Loc)} (hcells : (xlCells LB).len
     (∃ r, a₁ = .reg r ∧ a₂ = .reg r ∧ Xl.reserved r = false ∧
         ((s.role.writes = false ∧ b.defs = []) ∨ (s.role.writes = true ∧ b.defs = [.reg r]))) ∨
     (∃ l m, l.isCell = true ∧ c.cell l = .ok m ∧ a₁ = .reg (placeL LB l) ∧ a₂ = .mem m ∧
-        l ∈ b.uses ++ b.defs ∧
+        (l ∈ b.uses ++ b.defs ∧ (s.role ≠ .write → l ∈ b.uses) ∧ (s.role.writes = true → s.width = .w64)) ∧
         ((s.role.writes = false ∧ b.defs = []) ∨ (s.role.writes = true ∧ b.defs = [l]))) ∨
     (∃ m₁ m₂, a₁ = .mem m₁ ∧ a₂ = .mem m₂ ∧ b.defs = []) ∨
     (∃ v, a₁ = .imm v ∧ a₂ = .imm v ∧ b.defs = []) := by
@@ -359,7 +359,7 @@ theorem pos_cases {c : FnCtx} {LB : List (Bound Loc)} (hcells : (xlCells LB).len
         exact .inl ⟨r, rfl, rfl, hr, .inl ⟨hrole, rfl⟩⟩
       | _ =>
         obtain ⟨m, hm, rfl⟩ := arg_cell rfl h₂
-        exact .inr (.inl ⟨_, m, rfl, hm, rfl, rfl, by simp [Bound.uses, XArg.regs], .inl ⟨hrole, rfl⟩⟩)
+        exact .inr (.inl ⟨_, m, rfl, hm, rfl, rfl, ⟨by simp [Bound.uses, XArg.regs], fun _ => by simp [Bound.uses, XArg.regs], fun h => by rw [hrole] at h; cases h⟩, .inl ⟨hrole, rfl⟩⟩)
     | m am =>
       simp only [Bound.machine, Option.map_eq_map, Functor.map, Option.map_eq_some_iff] at h₁
       obtain ⟨m₁, -, rfl⟩ := h₁
@@ -389,14 +389,14 @@ theorem pos_cases {c : FnCtx} {LB : List (Bound Loc)} (hcells : (xlCells LB).len
       exact .inl ⟨r, rfl, rfl, hr, .inr ⟨hw, rfl⟩⟩
     | _ =>
       obtain ⟨m, hm, rfl⟩ := arg_cell rfl h₂
-      exact .inr (.inl ⟨_, m, rfl, hm, rfl, rfl, by simp [Bound.defs], .inr ⟨hw, rfl⟩⟩)
+      exact .inr (.inl ⟨_, m, rfl, hm, rfl, rfl, ⟨by simp [Bound.defs], fun h => absurd hrole h, fun _ => by simp [Xl.Bound.placeable, Loc.isCell] at hplace; exact hplace.2⟩, .inr ⟨hw, rfl⟩⟩)
   | tied s' a x =>
     simp only [Bound.slot?, Option.some.injEq] at hs
     subst hs
     simp only [Bound.RoleOk] at hrole
     have hw : s'.role.writes = true := by rw [hrole]; rfl
     simp only [Xl.Bound.placeable, Bool.and_eq_true, beq_iff_eq] at hplace
-    obtain ⟨rfl, -⟩ := hplace
+    obtain ⟨rfl, hplace⟩ := hplace
     have hpl := hloc a (by simp [Bound.uses])
     simp only [Bound.machine, hpl, Option.map_eq_map, Option.map_some, Option.some.injEq,
       Functor.map] at h₁
@@ -408,7 +408,7 @@ theorem pos_cases {c : FnCtx} {LB : List (Bound Loc)} (hcells : (xlCells LB).len
       exact .inl ⟨r, rfl, rfl, hr, .inr ⟨hw, rfl⟩⟩
     | _ =>
       obtain ⟨m, hm, rfl⟩ := arg_cell rfl h₂
-      exact .inr (.inl ⟨_, m, rfl, hm, rfl, rfl, by simp [Bound.uses], .inr ⟨hw, rfl⟩⟩)
+      exact .inr (.inl ⟨_, m, rfl, hm, rfl, rfl, ⟨by simp [Bound.uses], fun _ => by simp [Bound.uses], fun _ => by simp [Loc.isCell] at hplace; exact hplace.2⟩, .inr ⟨hw, rfl⟩⟩)
   | memory s' am =>
     simp only [Bound.machine, Option.map_eq_map, Functor.map, Option.map_eq_some_iff] at h₁
     obtain ⟨m₁, -, rfl⟩ := h₁
@@ -499,23 +499,48 @@ theorem zip_cellWrite_of {core : Core} {l : Loc} (hl : l.isCell = true) {m : Mem
           exact .inl ⟨hw, rfl, m, rfl, rfl⟩
       · exact .inr (zip_cellWrite_of hl hm t h)
 
-/-- A cell the stacked row touches is one of its locations. -/
+/-- The stacked row writes each cell definition's eight bytes. -/
+theorem zip_write_of_def {core : Core} {l : Loc} (hl : l.isCell = true) {m : MemAddr} (hm : c.cell l = .ok m) :
+    ∀ {L : List (Bound Loc)} {S : List Slot} {xs₁ xs₂ : List Arg}, Zip4 (PosOk c LB) L S xs₁ xs₂ →
+      l ∈ L.flatMap Bound.defs → (⟨m.eval core, 8⟩ : Access) ∈ slotWrites core S xs₂
+  | _, _, _, _, .nil, h => by simp at h
+  | _, _, _, _, .cons (a := b) (b := s) (d := a₂) (as := L) (bs := S) (ds := xs₂) ⟨hp, hb, hr, hpl⟩ t, h => by
+      have hcons : slotWrites core (s :: S) (a₂ :: xs₂) =
+          (if s.role.writes then a₂.access core s.width else []) ++ slotWrites core S xs₂ := by
+        obtain ⟨kinds, width, role⟩ := s
+        cases role <;> rfl
+      rw [hcons, List.mem_append]
+      rw [List.flatMap_cons, List.mem_append] at h
+      rcases h with h | h
+      · left
+        rcases pos_cases hcells hb hr hpl hp with ⟨r, -, -, -, ⟨-, hd⟩ | ⟨-, hd⟩⟩ |
+            ⟨l', m', hl', hm', -, rfl, ⟨-, -, hw64⟩, ⟨-, hd⟩ | ⟨hw, hd⟩⟩ | ⟨-, -, -, -, hd⟩ | ⟨-, -, -, hd⟩ <;>
+          rw [hd] at h <;> simp at h
+        · subst h; simp [Loc.isCell] at hl
+        · subst h
+          rw [hm] at hm'
+          cases hm'
+          simp [hw, hw64 hw, Arg.access, Width.bytes]
+      · exact .inr (zip_write_of_def hl hm t h)
+
+/-- A cell the stacked row reads is one of its uses. -/
 theorem zip_cellArg {core : Core} {a : Word} {r : GPR} :
     ∀ {L : List (Bound Loc)} {S : List Slot} {xs₁ xs₂ : List Arg}, Zip4 (PosOk c LB) L S xs₁ xs₂ →
       CellArg core a r S xs₁ xs₂ →
-      ∃ b ∈ L, ∃ l ∈ b.uses ++ b.defs, l.isCell = true ∧ ∃ m, c.cell l = .ok m ∧ a = m.eval core
+      ∃ b ∈ L, ∃ l ∈ b.uses, l.isCell = true ∧ ∃ m, c.cell l = .ok m ∧ a = m.eval core
   | _, _, _, _, .nil, h => h.elim
   | _, _, _, _, .cons ⟨hp, hb, hr, hpl⟩ t, h => by
-      rcases h with ⟨h₁, m', h₂, ha⟩ | h
+      rcases h with ⟨hrw, h₁, m', h₂, ha⟩ | h
       · rcases pos_cases hcells hb hr hpl hp with ⟨r', rfl, rfl, -, -⟩ |
             ⟨l, m, hl, hm, rfl, rfl, hlb, -⟩ | ⟨m₁, m₂, rfl, rfl, hd⟩ | ⟨v, rfl, rfl, hd⟩
         · cases h₂
         · cases h₁; cases h₂
-          exact ⟨_, List.mem_cons_self, l, hlb, hl, _, hm, ha.symm⟩
+          exact ⟨_, List.mem_cons_self, l, hlb.2.1 hrw, hl, _, hm, ha.symm⟩
         · cases h₁
         · cases h₁
       · obtain ⟨b, hb', rest⟩ := zip_cellArg t h
         exact ⟨b, List.mem_cons_of_mem _ hb', rest⟩
+
 
 end Zipped
 
@@ -743,13 +768,14 @@ structure After (c : FnCtx) (defs : List Loc) (fr : Xl.Frame) (mem : Memory) (co
 
 /-- The memory a stacked row touches: what Xl may touch, or a cell of the
 frame. -/
-structure Foot (c : FnCtx) (o : Op) (xs : List Arg) (mem : Memory) (core : Core) : Prop where
+structure Foot (c : FnCtx) (o : Op) (xs : List Arg) (mem : Memory) (core : Core) (U D : List Loc) : Prop where
   reads : ∀ acc ∈ Op.reads o xs core,
     (∀ i < acc.bytes, mem.readable (acc.address + UInt64.ofNat i) = true) ∨
-      (acc.bytes ≤ 8 ∧ ∃ l, l.isCell = true ∧ ∃ m, c.cell l = .ok m ∧ acc.address = m.eval core)
+      (acc.bytes ≤ 8 ∧ ∃ l ∈ U, l.isCell = true ∧ ∃ m, c.cell l = .ok m ∧ acc.address = m.eval core)
   writes : ∀ acc ∈ Op.writes o xs core,
     (∀ i < acc.bytes, mem.writable (acc.address + UInt64.ofNat i) = true) ∨
       (acc.bytes = 8 ∧ ∃ l, l.isCell = true ∧ ∃ m, c.cell l = .ok m ∧ acc.address = m.eval core)
+  defs : ∀ l ∈ D, l.isCell = true → ∀ m, c.cell l = .ok m → (⟨m.eval core, 8⟩ : Access) ∈ Op.writes o xs core
 
 theorem cell_rsp {c : FnCtx} {l : Loc} {m : MemAddr} (h : c.cell l = .ok m) {c₁ c₂ : Core}
     (hrsp : c₁.readReg .rsp = c₂.readReg .rsp) : m.eval c₁ = m.eval c₂ := by
@@ -839,7 +865,9 @@ theorem part_rel {c : FnCtx} {LB : List (Bound Loc)} (hcells : (xlCells LB).leng
       (∀ l ∈ bs.flatMap Bound.defs, l.isCell = true → ∃ m, c.cell l = .ok m ∧
         CellWrite c₂ (m.eval c₂) (placeL LB l) (desc o).slots xs₁ xs₂) ∧
       (∀ a r, CellArg c₂ a r (desc o).slots xs₁ xs₂ →
-        ∃ l, l.isCell = true ∧ ∃ m, c.cell l = .ok m ∧ a = m.eval c₂) ∧
+        ∃ l ∈ bs.flatMap Bound.uses, l.isCell = true ∧ ∃ m, c.cell l = .ok m ∧ a = m.eval c₂) ∧
+      (∀ l ∈ bs.flatMap Bound.defs, l.isCell = true → ∀ m, c.cell l = .ok m →
+        (⟨m.eval c₂, 8⟩ : Access) ∈ Op.writes o xs₂ c₂) ∧
       (desc o).stack = .none := by
   simp only [rowShape, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true,
     Bool.or_eq_true] at hshape
@@ -890,7 +918,7 @@ theorem part_rel {c : FnCtx} {LB : List (Bound Loc)} (hcells : (xlCells LB).leng
   have hone : memCount xs₂ ≤ 1 := by rw [memCount_eq]; exact hmem
   obtain ⟨c₂', h₂, out⟩ := exec_rel hstack hin hargs himp hnd hone h
   refine ⟨c₂', h₂, out, fun r => ?_, fun r => ?_, fun a r hc => ?_, fun l hl hc => ?_,
-    fun a r hc => ?_, hstack⟩
+    fun a r hc => ?_, fun l hl hc m hm => ?_, hstack⟩
   · rw [rowWrites, zip_slotWrites₂ hcells hz, hI₁, List.mem_append, List.flatMap_append, List.mem_append,
       List.mem_filterMap, List.mem_map]
     constructor
@@ -917,8 +945,14 @@ theorem part_rel {c : FnCtx} {LB : List (Bound Loc)} (hcells : (xlCells LB).leng
       exact ⟨m, hm, zip_cellWrite_of hcells hc hm hz hl⟩
     · obtain ⟨r, rfl⟩ := hI₂ l hl
       simp [Loc.isCell] at hc
-  · obtain ⟨b, -, l, -, hl, m, hm, ha⟩ := zip_cellArg hcells hz hc
-    exact ⟨l, hl, m, hm, ha⟩
+  · obtain ⟨b, hb, l, hlu, hl, m, hm, ha⟩ := zip_cellArg hcells hz hc
+    exact ⟨l, List.mem_flatMap.2 ⟨b, List.mem_append_left _ hb, hlu⟩, hl, m, hm, ha⟩
+  · rw [List.flatMap_append, List.mem_append] at hl
+    simp only [Op.writes, Op.pushes, hstack, List.nil_append]
+    rcases hl with hl | hl
+    · exact zip_write_of_def hcells hc hm hz hl
+    · obtain ⟨r, rfl⟩ := hI₂ l hl
+      simp [Loc.isCell] at hc
 
 /-- Xl's locations, lent registers in the row core it builds, agree with
 the machine's where Xl reads them. -/
@@ -954,7 +988,7 @@ theorem op_sim {c : FnCtx} {o : Op} {defs : List Loc} {args : List (XArg Loc)} {
     {regs' : Xl.Regs} {fr' : Xl.Frame} {mem' : Memory} {flags : ByteEval.Flags}
     (h : Xl.execBound [(o, bs)] regs fr mem ctx false = some (regs', fr', mem', flags)) :
     ∃ core', o.exec xs core {} = .ok (core', flags) ∧
-      After c (bs.flatMap Bound.defs) fr mem core regs' fr' mem' ctx core' ∧ Foot c o xs mem core ∧
+      After c (bs.flatMap Bound.defs) fr mem core regs' fr' mem' ctx core' ∧ Foot c o xs mem core (bs.flatMap Bound.uses) (bs.flatMap Bound.defs) ∧
       (desc o).stack = .none := by
   rw [Xl.execBound_eq] at h
   simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil, Option.bind_eq_some_iff] at h
@@ -994,7 +1028,7 @@ theorem op_sim {c : FnCtx} {o : Op} {defs : List Loc} {args : List (XArg Loc)} {
         obtain ⟨b, hb, hu⟩ := List.mem_flatMap.1 hu
         exact List.mem_flatMap.2 ⟨b, hb, Xl.Bound.mem_locs.2 (List.mem_append_left _ hu)⟩
       simpa using List.all_eq_true.1 hnamed r (Xl.mem_xlNamed.2 hl)
-    obtain ⟨core', h₂, out, hW₂, -, hCW, hCWof, hCA, hstack⟩ :=
+    obtain ⟨core', h₂, out, hW₂, -, hCW, hCWof, hCA, hWD, hstack⟩ :=
       part_rel (c := c) hcells hbind (fun b hb => hb) hall hx₁ hxs hshape huse hres
         (fun d _ _ m hm => ha.frame.cell d m hm)
         (fun b hb hn => absurd hn (by simp [hnn b hb]))
@@ -1024,7 +1058,7 @@ theorem op_sim {c : FnCtx} {o : Op} {defs : List Loc} {args : List (XArg Loc)} {
       fun l hl => hdefR (l, placeL bs l) (List.mem_map_of_mem hl)
     refine ⟨core', h₂, ⟨⟨hsize', fun r hr v hv => ?_, by rw [h15', ha.ctxReg], out.inside, fun l hl v hv => ?_,
       ha.frame.keep hrsp out.readable₁ out.writable₁ out.readable₂ out.writable₂⟩, hctl, hrsp,
-      out.readable₁, out.writable₁, out.readable₂, out.writable₂, hkept, fun x hx hout => ?_⟩, ⟨?_, ?_⟩, hstack⟩
+      out.readable₁, out.writable₁, out.readable₂, out.writable₂, hkept, fun x hx hout => ?_⟩, ⟨?_, ?_, hWD⟩, hstack⟩
     · by_cases hd : Loc.reg r ∈ bs.flatMap Bound.defs
       · have := hdefR' _ hd
         rw [Xl.read_reg hr, Xl.placeL_reg] at this
@@ -1057,7 +1091,8 @@ theorem op_sim {c : FnCtx} {o : Op} {defs : List Loc} {args : List (XArg Loc)} {
     · intro acc hacc
       rcases out.writes acc hacc with h | ⟨hb, r, hcw⟩
       · exact .inl h
-      · exact .inr ⟨hb, hCA _ r hcw.cellArg⟩
+      · obtain ⟨l, -, hl, m, hm, ha, -⟩ := hCW _ r hcw
+        exact .inr ⟨hb, l, hl, m, hm, ha⟩
   · simp at hrows
 
 end Compilatrix.Xv.Stacking.Proof

@@ -325,10 +325,10 @@ def CellWrite (c₂ : Core) (a : Word) (r : GPR) : List Slot → List Arg → Li
       (s.role.writes = true ∧ a₁ = .reg r ∧ ∃ m, a₂ = .mem m ∧ m.eval c₂ = a) ∨ CellWrite c₂ a r ss as₁ as₂
   | _, _, _ => False
 
-/-- Some slot reads or writes the cell at `a`, lent Xl's scratch register `r`. -/
+/-- Some slot reads the cell at `a`, lent Xl's scratch register `r`. -/
 def CellArg (c₂ : Core) (a : Word) (r : GPR) : List Slot → List Arg → List Arg → Prop
-  | _ :: ss, a₁ :: as₁, a₂ :: as₂ =>
-      (a₁ = .reg r ∧ ∃ m, a₂ = .mem m ∧ m.eval c₂ = a) ∨ CellArg c₂ a r ss as₁ as₂
+  | s :: ss, a₁ :: as₁, a₂ :: as₂ =>
+      (s.role ≠ .write ∧ a₁ = .reg r ∧ ∃ m, a₂ = .mem m ∧ m.eval c₂ = a) ∨ CellArg c₂ a r ss as₁ as₂
   | _, _, _ => False
 
 theorem CellWrite.memCount {c₂ : Core} {a : Word} {r : GPR} :
@@ -338,13 +338,6 @@ theorem CellWrite.memCount {c₂ : Core} {a : Word} {r : GPR} :
       · simp [Proof.memCount]
       · have := CellWrite.memCount h
         cases a₂ <;> simp [Proof.memCount] <;> omega
-
-theorem CellWrite.cellArg {c₂ : Core} {a : Word} {r : GPR} :
-    ∀ {ss : List Slot} {as₁ as₂ : List Arg}, CellWrite c₂ a r ss as₁ as₂ → CellArg c₂ a r ss as₁ as₂
-  | _ :: _, _ :: _, _ :: _, h => by
-      rcases h with ⟨_, h⟩ | h
-      · exact .inl h
-      · exact .inr (CellWrite.cellArg h)
 
 theorem memCount_cons_le (a : Arg) (as : List Arg) : memCount as ≤ memCount (a :: as) := by
   cases a <;> simp [memCount]
@@ -821,7 +814,7 @@ theorem reads_rel {c₁ c₂ : Core} :
         rcases hacc with hacc | hacc
         · cases a₁ <;> cases a₂ <;> simp only [ArgRel] at ha <;> simp [Arg.access] at hacc
           · subst hacc
-            exact .inr ⟨width_bytes_le _, _, .inl ⟨rfl, _, rfl, rfl⟩⟩
+            exact .inr ⟨width_bytes_le _, _, .inl ⟨by simp, rfl, _, rfl, rfl⟩⟩
           · subst hacc
             rename_i m₁ m₂
             refine .inl fun i hi => ?_

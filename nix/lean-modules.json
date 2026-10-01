@@ -1441,6 +1441,11 @@
    ["Compilatrix.Xv.Stacking.Proof.Trunc",
     "Compilatrix.Xv.Validate.Proof.Exec",
     "Compilatrix.X86.Memory"]},
+  "Compilatrix.Xv.Stacking.Proof.Match":
+  {"path": "Compilatrix/Xv/Stacking/Proof/Match.lean",
+   "imports":
+   ["Compilatrix.Xv.Stacking.Proof.Code",
+    "Compilatrix.Xv.Stacking.Proof.Exit"]},
   "Compilatrix.Xv.Stacking.Proof.InstXl":
   {"path": "Compilatrix/Xv/Stacking/Proof/InstXl.lean",
    "imports":
@@ -1451,6 +1456,14 @@
    ["Compilatrix.Xv.Stacking.Proof.Shape",
     "Compilatrix.Xv.Stacking.Proof.Steps",
     "Compilatrix.X86.SafeStepsObject"]},
+  "Compilatrix.Xv.Stacking.Proof.Code":
+  {"path": "Compilatrix/Xv/Stacking/Proof/Code.lean",
+   "imports":
+   ["Compilatrix.Xv.Stacking.Proof.Shape",
+    "Compilatrix.Xv.Stacking.Proof.InstXl"]},
+  "Compilatrix.Xv.Stacking.Proof.Cells":
+  {"path": "Compilatrix/Xv/Stacking/Proof/Cells.lean",
+   "imports": ["Compilatrix.Xv.Stacking.Proof.Match"]},
   "Compilatrix.Xv.Stacking.Frame":
   {"path": "Compilatrix/Xv/Stacking/Frame.lean",
    "imports": ["Compilatrix.Xv.XlSemantics"]},
@@ -3894,6 +3907,9 @@
     "Compilatrix.Xv.Stacking.Proof.RowRel",
     "Compilatrix.Xv.Stacking.Proof.RowXl",
     "Compilatrix.Xv.Stacking.Proof.InstXl",
+    "Compilatrix.Xv.Stacking.Proof.Code",
+    "Compilatrix.Xv.Stacking.Proof.Match",
+    "Compilatrix.Xv.Stacking.Proof.Cells",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",

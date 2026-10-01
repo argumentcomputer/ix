@@ -95,21 +95,22 @@ theorem slotWrites_congr {c c' : Core} (h : ∀ r, c.readReg r = c'.readReg r) :
       cases a <;> simp [Arg.access, eval_congr h]
 
 /-- A row's footprint is read off the registers. -/
-theorem Foot.congr {c : FnCtx} {o : Op} {xs : List Arg} {mem : Memory} {core core' : Core}
-    (hf : Foot c o xs mem core) (h : ∀ r, core'.readReg r = core.readReg r) : Foot c o xs mem core' := by
+theorem Foot.congr {c : FnCtx} {o : Op} {xs : List Arg} {mem : Memory} {core core' : Core} {U D : List Loc}
+    (hf : Foot c o xs mem core U D) (h : ∀ r, core'.readReg r = core.readReg r) : Foot c o xs mem core' U D := by
   have hr : Op.reads o xs core' = Op.reads o xs core := by
     simp only [Op.reads, Op.pops, slotReads_congr h, h]
   have hw : Op.writes o xs core' = Op.writes o xs core := by
     simp only [Op.writes, Op.pushes, slotWrites_congr h, h]
-  refine ⟨fun acc hacc => ?_, fun acc hacc => ?_⟩
+  refine ⟨fun acc hacc => ?_, fun acc hacc => ?_, fun l hl hc m hm => ?_⟩
   · rw [hr] at hacc
-    rcases hf.reads acc hacc with h' | ⟨hb, l, hl, m, hm, ha⟩
+    rcases hf.reads acc hacc with h' | ⟨hb, l, hlU, hl, m, hm, ha⟩
     · exact .inl h'
-    · exact .inr ⟨hb, l, hl, m, hm, by rw [ha]; exact (eval_congr h m).symm⟩
+    · exact .inr ⟨hb, l, hlU, hl, m, hm, by rw [ha]; exact (eval_congr h m).symm⟩
   · rw [hw] at hacc
     rcases hf.writes acc hacc with h' | ⟨hb, l, hl, m, hm, ha⟩
     · exact .inl h'
     · exact .inr ⟨hb, l, hl, m, hm, by rw [ha]; exact (eval_congr h m).symm⟩
+  · rw [hw, eval_congr h m]; exact hf.defs l hl hc m hm
 
 /-- A location's agreement survives cores that keep what it reads: its
 register, or its cell's bytes, `rsp` and the register Xl lends it. -/
@@ -151,7 +152,8 @@ theorem fused_sim {c : FnCtx} {p q : Op} {pargs cargs : List (XArg Loc)} {defs :
     (h : Xl.execBound [(p, pb), (q, qb)] regs fr mem ctx true = some (regs', fr', mem', flags)) :
     ∃ core₁ fl₁ core', p.exec pxs core_z {} = .ok (core₁, fl₁) ∧ q.exec qxs core₁ fl₁ = .ok (core', flags) ∧
       After c (qb.flatMap Bound.defs) fr mem core regs' fr' mem' ctx core' ∧
-      Foot c p pxs mem core_z ∧ Foot c q qxs mem core_z ∧ (desc p).stack = .none ∧ (desc q).stack = .none := by
+      Foot c p pxs mem core_z (pb.flatMap Bound.uses) [] ∧
+      Foot c q qxs mem core_z (qb.flatMap Bound.uses) (qb.flatMap Bound.defs) ∧ (desc p).stack = .none ∧ (desc q).stack = .none := by
   rw [Xl.execBound_eq] at h
   simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil, Option.bind_eq_some_iff] at h
   obtain ⟨_, hg₁, _, hg₂, _, hg₃, vs, hread, _, hg₅, margs, hmargs, cf, hrows, rf, hrf, hfin⟩ := h
@@ -226,7 +228,7 @@ theorem fused_sim {c : FnCtx} {p q : Op} {pargs cargs : List (XArg Loc)} {defs :
       have h15₀ : (⟨Xl.rowRegisters regs fr ctx (xlTable (pb ++ qb)) zs, mem⟩ : Core).readReg .r15 =
           core_z.readReg .r15 := by
         rw [hz₂ _ hz15, ha.ctxReg]; exact Xl.rowRegisters_r15 regs fr ctx (xlTable (pb ++ qb)) zs
-      obtain ⟨core₁, hp₂, outP, hWP, hW₁P, hCWP, -, hCAP, hstackP⟩ :=
+      obtain ⟨core₁, hp₂, outP, hWP, hW₁P, hCWP, -, hCAP, -, hstackP⟩ :=
         part_rel (c := c) hcells hpb (fun b hb => List.mem_append_left _ hb)
           (fun b hb => hall b (List.mem_append_left _ hb)) hpx₁ hpx hps
           (fun u hu => hagree₀ u (by rw [List.flatMap_append]; exact List.mem_append_left _ hu))
@@ -262,7 +264,7 @@ theorem fused_sim {c : FnCtx} {p q : Op} {pargs cargs : List (XArg Loc)} {defs :
         rw [hk₁, hk₂, hz₁ r hr]
         exact Xl.rowRegisters_zeroed (fun e => hz15 (e ▸ hr)) hr
       have h15₁ : res₁.1.readReg .r15 = core₁.readReg .r15 := by rw [hk₁, hk₂]; exact h15₀
-      obtain ⟨core', hq₂, outQ, hWQ, -, hCWQ, hCWofQ, hCAQ, hstackQ⟩ :=
+      obtain ⟨core', hq₂, outQ, hWQ, -, hCWQ, hCWofQ, hCAQ, hWDQ, hstackQ⟩ :=
         part_rel (c := c) hcells hqb (fun b hb => List.mem_append_right _ hb)
           (fun b hb => hall b (List.mem_append_right _ hb)) hqx₁ hqx hqs hagree₁
           (fun u hu => huseRes u (by rw [List.flatMap_append]; exact List.mem_append_right _ hu))
@@ -283,7 +285,7 @@ theorem fused_sim {c : FnCtx} {p q : Op} {pargs cargs : List (XArg Loc)} {defs :
       have hnd : (qb.flatMap Bound.defs).Nodup := by
         simp only [rowShape, Bool.and_eq_true] at hqs
         exact distinctLocs_nodup hqs.1.2
-      refine ⟨core₁, res₁.2, core', hp₂, hq₂, ?_, ⟨?_, ?_⟩, ?_, hstackP, hstackQ⟩
+      refine ⟨core₁, res₁.2, core', hp₂, hq₂, ?_, ⟨?_, ?_, fun l hl => by cases hl⟩, ?_, hstackP, hstackQ⟩
       · refine finish hnd hdefsRes ha hrf' (fun r hr => outQ.written r ((hWQ r).2 hr)) (fun r hr => ?_)
           (fun l hl hc => ?_) (fun x hx hout => ?_) outQ.inside
           (outQ.readable₁.trans outP.readable₁) (outQ.writable₁.trans outP.writable₁)
@@ -304,14 +306,15 @@ theorem fused_sim {c : FnCtx} {p q : Op} {pargs cargs : List (XArg Loc)} {defs :
       · intro acc hacc
         rcases outP.writes acc hacc with h | ⟨hb, r, hcw⟩
         · exact .inl h
-        · exact .inr ⟨hb, hCAP _ r hcw.cellArg⟩
-      · refine Foot.congr (core := core₁) ⟨fun acc hacc => ?_, fun acc hacc => ?_⟩ fun r => (hk₂ r).symm
+        · obtain ⟨l, hl, -⟩ := hCWP _ r hcw; rw [hpdefs] at hl; cases hl
+      · refine Foot.congr (core := core₁) ⟨fun acc hacc => ?_, fun acc hacc => ?_, hWDQ⟩ fun r => (hk₂ r).symm
         · rcases outQ.reads acc hacc with h | ⟨hb, r, hca⟩
           · exact .inl fun i hi => by rw [← outP.readable₁]; exact h i hi
           · exact .inr ⟨hb, hCAQ _ r hca⟩
         · rcases outQ.writes acc hacc with h | ⟨hb, r, hcw⟩
           · exact .inl fun i hi => by rw [← outP.writable₁]; exact h i hi
-          · exact .inr ⟨hb, hCAQ _ r hcw.cellArg⟩
+          · obtain ⟨l, -, hl, m, hm, ha, -⟩ := hCWQ _ r hcw
+            exact .inr ⟨hb, l, hl, m, hm, ha⟩
     · simp at hrows
   · simp at hrows
 
@@ -533,7 +536,7 @@ theorem move_sim {c : FnCtx} {dst src : Loc} {ins : List Instr} (hm : c.move dst
     (hw : Xl.write regs fr dst v = some (regs', fr')) :
     (ins = [] ∧ After c [dst] fr mem core regs' fr' mem ctx core) ∨
     (∃ o xs core' fl, ins = [.op o xs] ∧ o.exec xs core {} = .ok (core', fl) ∧ (desc o).stack = .none ∧
-      Foot c o xs mem core ∧ After c [dst] fr mem core regs' fr' mem ctx core') := by
+      Foot c o xs mem core [src] [dst] ∧ After c [dst] fr mem core regs' fr' mem ctx core') := by
   rcases move_cases hm with ⟨rfl, rfl⟩ | ⟨d, s, rfl, rfl, hd, hs, rfl⟩ | ⟨d, m, rfl, hsc, hcm, hd, rfl⟩ |
       ⟨s, m, hdc, rfl, hcm, hs, rfl⟩
   · exact .inl ⟨rfl, after_same ha hv hw⟩
@@ -541,7 +544,7 @@ theorem move_sim {c : FnCtx} {dst src : Loc} {ins : List Instr} (hm : c.move dst
     have hcv := ha.regsRel s hs v hv
     obtain ⟨fl, hex⟩ := movRR_exec d s core
     rw [hcv] at hex
-    refine .inr ⟨_, _, _, fl, rfl, hex, rfl, ⟨fun acc hacc => ?_, fun acc hacc => ?_⟩, after_reg ha hw⟩
+    refine .inr ⟨_, _, _, fl, rfl, hex, rfl, ⟨fun acc hacc => ?_, fun acc hacc => ?_, fun l hl hc => by simp at hl; subst hl; simp [Loc.isCell] at hc⟩, after_reg ha hw⟩
     · rw [(movRR_foot d s core).1] at hacc; cases hacc
     · rw [(movRR_foot d s core).2] at hacc; cases hacc
   · obtain ⟨m', hm', hv'⟩ := ha.cells src hsc v hv
@@ -550,11 +553,11 @@ theorem move_sim {c : FnCtx} {dst src : Loc} {ins : List Instr} (hm : c.move dst
     have hrd : core.memory.read? .w64 (m.eval core) = .ok v := by
       rw [(ha.frame.cell src m hcm).read? .w64, truncate_w64, hv']
     obtain ⟨fl, hex⟩ := load64_exec d m core hrd
-    refine .inr ⟨_, _, _, fl, rfl, hex, rfl, ⟨fun acc hacc => ?_, fun acc hacc => ?_⟩, after_reg ha hw⟩
+    refine .inr ⟨_, _, _, fl, rfl, hex, rfl, ⟨fun acc hacc => ?_, fun acc hacc => ?_, fun l hl hc => by simp at hl; subst hl; simp [Loc.isCell] at hc⟩, after_reg ha hw⟩
     · rw [(load64_foot d m core).1] at hacc
       simp only [List.mem_singleton] at hacc
       subst hacc
-      exact .inr ⟨Nat.le_refl _, src, hsc, m, hcm, rfl⟩
+      exact .inr ⟨Nat.le_refl _, src, List.mem_singleton_self _, hsc, m, hcm, rfl⟩
     · rw [(load64_foot d m core).2] at hacc; cases hacc
   · rw [Xl.read_reg hs] at hv
     have hcv := ha.regsRel s hs v hv
@@ -562,7 +565,8 @@ theorem move_sim {c : FnCtx} {dst src : Loc} {ins : List Instr} (hm : c.move dst
         .ok (core.memory.write .w64 (m.eval core) v) := by
       rw [hcv]; exact (ha.frame.cell dst m hcm).write? v
     obtain ⟨fl, hex⟩ := store64_exec m s core hwr
-    refine .inr ⟨_, _, _, fl, rfl, hex, rfl, ⟨fun acc hacc => ?_, fun acc hacc => ?_⟩,
+    refine .inr ⟨_, _, _, fl, rfl, hex, rfl, ⟨fun acc hacc => ?_, fun acc hacc => ?_, fun l hl _ m' hm' => by
+      simp at hl; subst hl; rw [hcm] at hm'; cases hm'; rw [(store64_foot m s core).2]; simp⟩,
       after_cell ha hdc hcm hw⟩
     · rw [(store64_foot m s core).1] at hacc; cases hacc
     · rw [(store64_foot m s core).2] at hacc
