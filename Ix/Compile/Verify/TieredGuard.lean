@@ -725,10 +725,10 @@ theorem phase3_le_phase1 {layout : ShareLayout} {limits : Limits} {ex : Expanded
       .ok (entries, rs, predicted, work)) :
     predicted ≤ layoutBytes layout u.result.sharing u.result.roots := by
   obtain ⟨hwf, hroots, hin1, hsize1, hindex1, hents, hrts⟩ := phase1_trees hu
-  obtain ⟨hnd1, -, hperm, hback, -, -, -, -⟩ := allocate_spec ha
+  obtain ⟨hnd1, -, hperm, hback, -, -, -, -, -, -⟩ := allocate_spec ha
   have hrcEq := (allocate_spec ha).2.2.2.2.2.1
   have hrfEq := (allocate_spec ha).2.2.2.2.2.2.1
-  have hrcLe := (allocate_spec ha).2.2.2.2.2.2.2
+  have hrcLe := (allocate_spec ha).2.2.2.2.2.2.2.1
   obtain ⟨hsz3, -, hr3, hpred⟩ := materializeTable_spec hwf hroots hm
   obtain ⟨hmin3, hrmin3⟩ := materializeTable_min hwf hroots hm
   -- names
@@ -991,5 +991,132 @@ theorem phase3_le_phase1 {layout : ShareLayout} {limits : Limits} {ex : Expanded
 
 
 
+
+/-! ## Optimality of the allocation in the 2-byte tier -/
+
+open Ix.Compile.Verify.SharingExact (natByteCount_zero natByteCount_of_ne_zero tagNWidth_rung1
+  tagNWidth_rung2 tagNRung1End_eq) in
+theorem widthAt_lt8 (layout : ShareLayout) {k : Nat} (hk : k < 8) : layout.widthAt k = 1 := by
+  cases layout with
+  | tag4 => simp [ShareLayout.widthAt, shareWidth, tag4Size, hk]
+  | tagN => exact tagNWidth_rung1 (by rw [tagNRung1End_eq]; exact hk)
+
+open Ix.Compile.Verify.SharingExact (natByteCount_zero natByteCount_of_ne_zero tagNWidth_rung1
+  tagNWidth_rung2 tagNRung1End_eq) in
+theorem widthAt_tier2 (layout : ShareLayout) {k : Nat} (h1 : 8 ≤ k) (h2 : k < layout.tier2End) :
+    layout.widthAt k = 2 := by
+  cases layout with
+  | tag4 =>
+    simp only [ShareLayout.tier2End] at h2
+    simp only [ShareLayout.widthAt, shareWidth, tag4Size, if_neg (show ¬ k < 8 by omega)]
+    rw [natByteCount_of_ne_zero (by omega), show k / 256 = 0 by omega, natByteCount_zero]
+  | tagN => exact tagNWidth_rung2 (by rw [tagNRung1End_eq]; exact h1) h2
+
+/-- The reference cost of an order of at most `tier2End` terms: the first
+`min 8 N` entries cost one byte per reference, the others two. -/
+theorem refCost_tier2 (layout : ShareLayout) (weight : Nat → Nat) (ρ : Array Nat)
+    (hsmall : ρ.size ≤ layout.tier2End) :
+    refCost layout weight ρ + ((List.range (min 8 ρ.size)).map fun k => weight ρ[k]!).sum =
+      2 * ((List.range ρ.size).map fun k => weight ρ[k]!).sum := by
+  rw [refCost_eq_sum]
+  suffices h : ∀ M, M ≤ ρ.size →
+      ((List.range M).map fun k => weight ρ[k]! * layout.widthAt k).sum +
+        ((List.range (min 8 M)).map fun k => weight ρ[k]!).sum =
+      2 * ((List.range M).map fun k => weight ρ[k]!).sum from h ρ.size (Nat.le_refl _)
+  intro M
+  induction M with
+  | zero => intro _; simp
+  | succ M ih =>
+    intro hM
+    have ih' := ih (by omega)
+    simp only [List.range_succ, List.map_append, List.sum_append, List.map_cons, List.map_nil,
+      List.sum_cons, List.sum_nil]
+    by_cases h8 : M < 8
+    · rw [widthAt_lt8 layout h8, show min 8 (M + 1) = min 8 M + 1 by omega, List.range_succ,
+        List.map_append, List.sum_append, show min 8 M = M by omega]
+      simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+      rw [show min 8 M = M by omega] at ih'
+      omega
+    · rw [widthAt_tier2 layout (by omega) (by omega), show min 8 (M + 1) = min 8 M by omega]
+      omega
+
+theorem take_feasible {deps : Nat → List Nat} {order1 π : Array Nat} {m : Nat}
+    (hperm : π.toList.Perm order1.toList) (hnd : order1.toList.Nodup)
+    (hback : ∀ k (hk : k < π.size), ∀ d ∈ deps π[k], ∃ j, j < k ∧ π[j]? = some d) :
+    Feasible deps order1.toList m (π.toList.take m) := by
+  have hndπ : π.toList.Nodup := hperm.nodup_iff.mpr hnd
+  refine ⟨hndπ.sublist (List.take_sublist _ _), fun x hx => hperm.subset
+    (List.mem_of_mem_take hx), fun u hu d hd => ?_, by simp; omega⟩
+  obtain ⟨k, hk, rfl⟩ := List.mem_iff_getElem.mp hu
+  have hk' : k < π.size := by simp at hk; omega
+  have hkm : k < m := by simp at hk; omega
+  rw [List.getElem_take, Array.getElem_toList] at hd
+  obtain ⟨j, hjk, hj⟩ := hback k hk' d hd
+  have hjs : j < π.size := (Array.getElem?_eq_some_iff.mp hj).1
+  rw [List.mem_iff_getElem]
+  refine ⟨j, by simp; omega, ?_⟩
+  rw [List.getElem_take, Array.getElem_toList]
+  exact (Array.getElem?_eq_some_iff.mp hj).2
+
+theorem wsum_take (weight : Nat → Nat) (π : Array Nat) (m : Nat) :
+    wsum weight (π.toList.take m) =
+      ((List.range (min m π.size)).map fun k => weight π[k]!).sum := by
+  unfold wsum
+  congr 1
+  apply List.ext_getElem (by simp)
+  intro k h1 h2
+  simp only [List.getElem_map, List.getElem_take, Array.getElem_toList, List.getElem_range]
+  simp at h1
+  rw [getElem!_pos π k (by omega)]
+
+/-- **Optimality of the allocation when the table fits the 2-byte tier.**
+With the reference counts fixed, if the phase-1 table has at most
+`tier2End` entries (so every index from 8 on has width 2), the allocated
+order has the minimum reference cost `Σ ref · widthAt (index)` among all
+orders of the table that place every body reference before its user. -/
+theorem allocate_optimal {layout : ShareLayout} {limits : Limits} {dag : Dag} {deg : Array Nat}
+    {order1 : Array Nat} {entries1 roots1 : Array Ixon.Expr} {a : Allocation}
+    (h : allocate layout limits dag deg order1 entries1 roots1 = .ok a)
+    (hsmall : order1.size ≤ layout.tier2End) :
+    ∀ π : Array Nat, π.toList.Perm order1.toList →
+      (∀ k (hk : k < π.size), ∀ d ∈ (tierDeps order1 entries1).getD π[k] [],
+        ∃ j, j < k ∧ π[j]? = some d) →
+      a.refCostFinal ≤ refCost layout (fun t => (tierWeights order1 entries1 roots1).getD t 0) π := by
+  intro π hπ hπback
+  obtain ⟨hnd, ⟨hFfeas, -, hFmax, -⟩, -, -, -, -, -, -, hperm2, hle2⟩ := allocate_spec h
+  generalize hw : (fun t => (tierWeights order1 entries1 roots1).getD t 0) = weight at *
+  generalize ho2 : pinnedOrder dag deg a.tier ++ kahnOrder weight
+    (fun t => (tierDeps order1 entries1).getD t [])
+    ((order1.toList.mergeSort (· ≤ ·)).toArray.filter (!a.tier.contains ·)) = order2 at *
+  have hNπ : π.size = order1.size := by simpa using hπ.length_eq
+  have hN2 : order2.size = order1.size := by simpa using hperm2.length_eq
+  -- both orders split their cost by the weight of their first `min 8 N` entries
+  have hsplitπ := refCost_tier2 layout weight π (by omega)
+  have hsplit2 := refCost_tier2 layout weight order2 (by omega)
+  have htot : ∀ ρ : Array Nat, ρ.toList.Perm order1.toList →
+      ((List.range ρ.size).map fun k => weight ρ[k]!).sum = wsum weight order1.toList := by
+    intro ρ hρ
+    rw [sum_range_array ρ weight, wsum]
+    exact (hρ.map _).sum_nat
+  rw [htot π hπ] at hsplitπ
+  rw [htot order2 hperm2] at hsplit2
+  -- the first entries of `π` form a closed set of at most `min 8 N` terms
+  have hfeas := take_feasible (deps := fun t => (tierDeps order1 entries1).getD t [])
+    (m := min 8 order1.size) hπ hnd hπback
+  have hπle := hFmax _ hfeas
+  rw [wsum_take, show min (min 8 order1.size) π.size = min 8 π.size by omega] at hπle
+  -- the first entries of the pinned order contain the first tier
+  have htier : wsum weight a.tier.toList ≤
+      ((List.range (min 8 order2.size)).map fun k => weight order2[k]!).sum := by
+    rw [← wsum_take]
+    have hlenT : a.tier.size ≤ min 8 order2.size := by
+      have := hFfeas.2.2.2; simp at this; omega
+    have hpin : (pinnedOrder dag deg a.tier).toList.Perm a.tier.toList := pinnedOrder_perm _ _ _
+    have hpsz : (pinnedOrder dag deg a.tier).size = a.tier.size := by
+      simpa using hpin.length_eq
+    rw [← ho2, Array.toList_append, List.take_append, wsum_append,
+      List.take_of_length_le (by simp; omega), wsum_perm hpin]
+    exact Nat.le_add_right _ _
+  omega
 
 end Ix.Compile.Verify.Tiered

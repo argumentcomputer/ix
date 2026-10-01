@@ -508,6 +508,8 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.UniformModel.WTree.gcost_eq,
     standardAxioms := noChoice },
   { root := ``Ix.Compile.Verify.Tiered.phase3_le_phase1,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.Tiered.allocate_optimal,
     standardAxioms := standard }
 ]
 

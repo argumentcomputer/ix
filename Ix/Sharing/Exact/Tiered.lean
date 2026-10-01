@@ -25,6 +25,16 @@
   far fewer terms than there are candidates.) `fixedWidth := some w` runs
   the single candidate at `w`, for experiments and tests.
 
+  Proved (`Ix/Compile/Verify/Tiered*.lean`, no `sorry`): the width selection
+  (`canonicalTieredCore_select`), phase 1 (`optimizeUniform_least`), the
+  first tier, backwardness and the 2-byte-tier optimality of phase 2
+  (`firstTier_spec`, `allocate_spec`, `allocate_optimal`), the per-part
+  minimality, expansion and length bound of phase 3
+  (`materializeTable_min`, `rematerialize_spec`, `phase3_le_phase1`), and the
+  determinism, round trip and format domain of the output
+  (`canonicalTiered_det`, `canonicalTiered_reexpand`, `canonicalTiered_format`).
+  The composition is not claimed to be a global byte minimum.
+
   ## Phase 1: selection (exact for the uniform model)
   `S` and its bodies are `optimizeSharingUniform w`: a minimum of the
   uniform-`w` model length (exact, with the pinned tie order).
@@ -46,11 +56,11 @@
     largest `ref`, ties by the smaller ID.
   * Guard: if this order's reference cost `Σ ref(t)·widthAt(index t)` is
     larger than the phase-1 order's, the phase-1 order is kept.
-  Optimality claim: with the `ref` counts fixed, the allocation minimizes
-  `Σ ref·widthAt` over all orders respecting the dependencies whenever all
-  entries beyond the first tier share one width (`|S| ≤ tier2End`), since
-  then that sum is `w₂·Σref - (w₂-1)·Σ_{F} ref`. Beyond that only the first
-  tier is optimized.
+  Optimality (`allocate_optimal`): with the `ref` counts fixed, the
+  allocation minimizes `Σ ref·widthAt` over all orders respecting the
+  dependencies whenever all entries beyond the first tier share one width
+  (`|S| ≤ tier2End`), since then that sum is `2·Σref − Σ_{first 8} ref`.
+  Beyond that only the first tier is optimized.
 
   ## Phase 3: re-materialization (exact per part)
   Every entry is re-encoded with `C_M` under the entries before it, priced
@@ -59,8 +69,9 @@
   minimum for its dictionary, with the byte-least tie-break. The phase-1
   bodies are valid in the allocated order (dependencies come first), so
   the result is no longer than the phase-1 bodies in this order, which by
-  the guard is no longer than the phase-1 output priced by the layout. This
-  is checked, and the output is serialized, measured and re-expanded.
+  the guard is no longer than the phase-1 output priced by the layout
+  (`phase3_le_phase1`). This is also checked, and the output is serialized,
+  measured and re-expanded.
 
   The construction is a function of the expanded AST and the layout, so
   normalizing its output reproduces it.
@@ -360,7 +371,8 @@ structure Allocation where
 /-- Phase 2 on the phase-1 table `order1` with entries `entries1` and roots
 `roots1`: the first tier, then the pinned order, unless the guard keeps the
 phase-1 order. The final order is checked to place every body reference
-before its user and to be a permutation of the phase-1 table. -/
+before its user, and the pinned order to be a permutation of the phase-1
+table. -/
 def allocate (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array Nat)
     (order1 : Array Nat) (entries1 roots1 : Array Ixon.Expr) :
     Except SharingError Allocation := do
@@ -372,11 +384,11 @@ def allocate (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array N
   let (tier, slotStates) ← firstTier order1 weight deps (min 8 order1.size) limits
   let rest := stored.filter (!tier.contains ·)
   let order2 := pinnedOrder dag deg tier ++ kahnOrder weight deps rest
+  checkInternal ((order2.toList.mergeSort (· ≤ ·)).toArray == stored)
+    "the allocated order is not a permutation of the phase-1 table"
   let kept : Bool := refCost layout weight order2 > refCost layout weight order1
   let order := if kept then order1 else order2
   checkInternal (respectsDeps order deps) "the allocated order places a body reference after its user"
-  checkInternal ((order.toList.mergeSort (· ≤ ·)).toArray == stored)
-    "the allocated order is not a permutation of the phase-1 table"
   return { tier, slotStates, order, kept, refCost1 := refCost layout weight order1,
            refCostFinal := refCost layout weight order }
 
