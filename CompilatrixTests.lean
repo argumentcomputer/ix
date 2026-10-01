@@ -14,6 +14,7 @@ import CompilatrixTests.Pipeline.Run
 import CompilatrixTests.Corpus.Run
 import CompilatrixTests.Corpus.Build
 import CompilatrixTests.Corpus.KernelGen
+import CompilatrixTests.Own.Suite
 import CompilatrixTests.Recheck.Run
 import CompilatrixTests.Recheck.KernelSlow
 
@@ -27,5 +28,5 @@ for its relevance suite, `tests-lam` for `CompilatrixTests.Lam`, `tests-anf`
 for `CompilatrixTests.Anf`, `tests-fir` for `CompilatrixTests.Fir`, `tests-rt`
 for `CompilatrixTests.Rt`, `tests-pipeline` for `CompilatrixTests.Pipeline`, `corpus` and `tests-corpus` for
 `CompilatrixTests.Corpus` (whose kernel sample, `CompilatrixTests.Corpus.KernelSample`,
-is a manual target),
+is a manual target), `tests-own` for `CompilatrixTests.Own`,
 `tests-recheck` for `CompilatrixTests.Recheck`). -/

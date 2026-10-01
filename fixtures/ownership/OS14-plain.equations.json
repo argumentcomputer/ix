@@ -1,0 +1,12 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "OS14/Plain.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "5859fe4a2f9d657badc3d7fc9f9e37834c728709a74c478d13c7e8bc9ab1a808"
+    }
+  ],
+  "equations": [],
+  "failures": []
+}

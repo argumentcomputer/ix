@@ -1,0 +1,16 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "OS13/Annotated.lean",
+  "roots": [
+    {
+      "name": "linId",
+      "address": "3ddf7a1d927e6fe75e1d684daff3b0f43849bd4fa847b3e7659f6a3f33966706"
+    },
+    {
+      "name": "entry",
+      "address": "930460b73ebce5680a1eb473cafdaf6267facc0a45b72e6affb7d642e22aeb62"
+    }
+  ],
+  "equations": [],
+  "failures": []
+}

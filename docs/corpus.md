@@ -14,6 +14,7 @@ ix.
 | `phase1-resource` | [`fixtures/corpus/phase1-resource/corpus.json`](../fixtures/corpus/phase1-resource/corpus.json) | [`fixtures/corpus/phase1-resource/src`](../fixtures/corpus/phase1-resource/README.md) | MT.3: heap, stack and trap failures (statuses 1, 2, 4) under per-case regions and stacks |
 | `phase1-decline` | [`fixtures/corpus/phase1-decline/corpus.json`](../fixtures/corpus/phase1-decline/corpus.json) | [`fixtures/corpus/phase1-decline/src`](../fixtures/corpus/phase1-decline/README.md) | MT.4: programs outside the Phase 1 fragment, each with its exact `stage: code`, and colliding export symbols |
 | `phase1-abi` | [`fixtures/corpus/phase1-abi/corpus.json`](../fixtures/corpus/phase1-abi/corpus.json) | [`fixtures/corpus/phase1-abi/src`](../fixtures/corpus/phase1-abi/README.md) | MT.4: the ABI and readback matrix, arities 0–6 by `Nat`, `Bool` and an enumeration |
+| `ownership` | [`fixtures/ownership/corpus.json`](../fixtures/ownership/corpus.json) | [`fixtures/ownership/src`](../fixtures/ownership/README.md) | the ownership suite (MT.7): annotated programs ix accepts, each beside its plain twin, and plain erasure and allocation fixtures; run by `tests-own` (with ix's verdicts on the annotated sources it rejects), not among `tests-corpus`'s registered families |
 
 ## The manifest
 

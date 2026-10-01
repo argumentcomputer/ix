@@ -130,6 +130,13 @@ frozen cases against Lean's interpreter. -/
 lean_exe «tests-corpus» where
   root := `CompilatrixTests.Corpus.Main
 
+/- The ownership and usage-annotation suite, Phase 1 part (MT.7): the annotated
+programs ix accepts against their plain twins and Lean's interpreter at every
+level and natively, their code compared, erasure, the Cfg stepper's counters,
+CX-1, and ix's recorded verdicts (`fixtures/ownership`). -/
+lean_exe «tests-own» where
+  root := `CompilatrixTests.Own.Main
+
 /- Regenerates (or with `--check` compares) the recheck artifacts the kernel
 evaluates (M1.K1): `CompilatrixTests/Recheck/Artifacts/*.lean`, each bench-k1
 closure's `Src.Program`, configuration and certificate as shared Lean terms,

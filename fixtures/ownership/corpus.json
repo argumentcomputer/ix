@@ -1,0 +1,2289 @@
+{
+  "format": "compilatrix/corpus/1",
+  "family": "ownership",
+  "description": "The ownership and usage-annotation suite, Phase 1 part (MT.7): each annotated program ix accepts, written with ix's contract syntax, with its plain twin (the annotated source with the contract atoms deleted), and the plain-only erasure and allocation fixtures. tests-own pairs the twins; ix's verdicts on the annotated sources it rejects are in verdicts.json.",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/ownership",
+  "source_root": "fixtures/ownership/src",
+  "lean": {
+    "version": "4.34.0",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "9c4b9c654f06e88f021cfd9753701e52852e5500",
+    "ix_binary_sha256": "d8ba031a087810c8cbd0ea96a6251c27fcd07b0b161e1cadd67d8647604e580c",
+    "ix_version": "4.34.0|0.0.1",
+    "ix_build": "Built with Lake (lake build Ix ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix 0a31c8dbc63755924c645bf1afedc563e395e88a; not a Nix build.",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "OS01-annotated",
+      "source": {
+        "path": "OS01/Annotated.lean",
+        "sha256": "523cfdc0a51e02954a8297a40d48dc8768c501964a455688c6c8bcda64d2f9dd",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "annotated",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS01-annotated.ixe",
+        "sha256": "668dfabd6bab6226f126f6bf67680019585a89a33ed414417eb3e2b89aa0ba0a",
+        "bytes": 12776
+      },
+      "equations": {
+        "path": "OS01-annotated.equations.json",
+        "sha256": "61df23364465eb4e6295830b4dab707b8133c68e91e7ac491faa9ca1c94dcdd7",
+        "equations": 1,
+        "failures": 0
+      },
+      "named_env_sha256": "99c0160f29570cdfb4968fcee6f10150d8a51fdd0a4c40f93ffe5c94093a8e75",
+      "census": {
+        "path": "OS01-annotated.census.json",
+        "sha256": "1081a0912b78a0254511182c9496f9a05a398bb90bb67b19942551d9532e6274"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "9093efac2b1abeafeca2aafe9cd1877cd93d86fb0d888e27e8c92321c3ff98b3",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 101,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "8",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "101"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387904"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775808"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                957507
+              ],
+              "value": "957508",
+              "generated": true
+            },
+            {
+              "args": [
+                964621
+              ],
+              "value": "964622",
+              "generated": true
+            },
+            {
+              "args": [
+                845183
+              ],
+              "value": "845184",
+              "generated": true
+            },
+            {
+              "args": [
+                569215
+              ],
+              "value": "569216",
+              "generated": true
+            },
+            {
+              "args": [
+                384873
+              ],
+              "value": "384874",
+              "generated": true
+            },
+            {
+              "args": [
+                567921
+              ],
+              "value": "567922",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS01-plain",
+      "source": {
+        "path": "OS01/Plain.lean",
+        "sha256": "6491c0764a4fe0dbe524a742131602f710e4161a4478b44a4977d66265fe03ea",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "plain",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS01-plain.ixe",
+        "sha256": "7056fce8d8ba1eba2d1df83d14bb1471730ff95f7007d16578a9d641e2725259",
+        "bytes": 12776
+      },
+      "equations": {
+        "path": "OS01-plain.equations.json",
+        "sha256": "9a035d94b509b898780fd1456f9a2fe93fb4aeae81accdd5c38cede0ac480e37",
+        "equations": 1,
+        "failures": 0
+      },
+      "named_env_sha256": "e77a2d55ca740944e335565417f97cc11284c659c831560e5ede4e0941e97af3",
+      "census": {
+        "path": "OS01-plain.census.json",
+        "sha256": "02b1f697f474bd2f8c46ce43b96156c414efe57e849908efd6f4c3882ce240ab"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "3b4b3ba3a38d529b5133da408d0231b633cb979a9524c362598a7bf5f798bbb4",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 101,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "8",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "101"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387904"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775808"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                957507
+              ],
+              "value": "957508",
+              "generated": true
+            },
+            {
+              "args": [
+                964621
+              ],
+              "value": "964622",
+              "generated": true
+            },
+            {
+              "args": [
+                845183
+              ],
+              "value": "845184",
+              "generated": true
+            },
+            {
+              "args": [
+                569215
+              ],
+              "value": "569216",
+              "generated": true
+            },
+            {
+              "args": [
+                384873
+              ],
+              "value": "384874",
+              "generated": true
+            },
+            {
+              "args": [
+                567921
+              ],
+              "value": "567922",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS02-plain",
+      "source": {
+        "path": "OS02/Plain.lean",
+        "sha256": "e4fe0e6cea18a73a5e44f79d732c75069f6030a1911c4447426f6634c39d0f59",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "plain",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS02-plain.ixe",
+        "sha256": "53c79a1ead694b68b00d185b12ab3702b6c7297e1836cefbe7c85e7fcffc7c55",
+        "bytes": 47037
+      },
+      "equations": {
+        "path": "OS02-plain.equations.json",
+        "sha256": "19404c6dc1830e81a5e082bb283501400af02f702cab2a8895c0b994a82b23a0",
+        "equations": 3,
+        "failures": 0
+      },
+      "named_env_sha256": "7383f61fa433bb74046a9994385cbb2a1610ffb3e5f196e71e7b0f463cf90a58",
+      "census": {
+        "path": "OS02-plain.census.json",
+        "sha256": "2d8791f4deacc1f704be7ba4d125586d543af70aa77f436820275aa45c262828"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "bc619fc30987b67085cda6493e00c6c7ab48afc218363915256a3e355d6866a6",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "`n < 5` is `Nat.decLt`, i.e. `n + 1 ≤ 5`, so `n = 2⁶³ − 1` fails with status 3 at the word levels although nothing exceeds a word (MT.2 finding 4)",
+          "generate": {
+            "seed": 102,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "6",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "6"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "6"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "6"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "6",
+              "allow": [
+                "natOverflow"
+              ]
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                446517
+              ],
+              "value": "6",
+              "generated": true
+            },
+            {
+              "args": [
+                327927
+              ],
+              "value": "6",
+              "generated": true
+            },
+            {
+              "args": [
+                464187
+              ],
+              "value": "6",
+              "generated": true
+            },
+            {
+              "args": [
+                226828
+              ],
+              "value": "6",
+              "generated": true
+            },
+            {
+              "args": [
+                22107
+              ],
+              "value": "6",
+              "generated": true
+            },
+            {
+              "args": [
+                317508
+              ],
+              "value": "6",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS03-annotated",
+      "source": {
+        "path": "OS03/Annotated.lean",
+        "sha256": "037bf7a16ea6523c62cf59e9e2bc1dd61de4e631748d10669f005747ccc517f6",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "annotated",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS03-annotated.ixe",
+        "sha256": "47a259909f17a6ce4e318d284164415e37789380819ac4f07891e010881c4866",
+        "bytes": 12202
+      },
+      "equations": {
+        "path": "OS03-annotated.equations.json",
+        "sha256": "f19418857379d853d545902246373159ee3373357e155714534bcdb34bae071b",
+        "equations": 1,
+        "failures": 0
+      },
+      "named_env_sha256": "9fd5d998b4933dfc5552fa22709ad80567b61402b2f06755b0646230469079fe",
+      "census": {
+        "path": "OS03-annotated.census.json",
+        "sha256": "d5d978d660bb71240d1dff3b25aba973ccdb3cff03471e0710a12c7bf04fd638"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "6790938ce3dd67d872a8a037eafa431b768f337cc678a4a808be30fa21cecc5d",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 103,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "8",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "101"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387904"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775808"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                526456
+              ],
+              "value": "526457",
+              "generated": true
+            },
+            {
+              "args": [
+                739202
+              ],
+              "value": "739203",
+              "generated": true
+            },
+            {
+              "args": [
+                990780
+              ],
+              "value": "990781",
+              "generated": true
+            },
+            {
+              "args": [
+                526704
+              ],
+              "value": "526705",
+              "generated": true
+            },
+            {
+              "args": [
+                906858
+              ],
+              "value": "906859",
+              "generated": true
+            },
+            {
+              "args": [
+                894874
+              ],
+              "value": "894875",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS03-plain",
+      "source": {
+        "path": "OS03/Plain.lean",
+        "sha256": "f93fe99fb967255804e43ad0e91c6de842ad6bf404a20931aebb7bfd6135d715",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "plain",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS03-plain.ixe",
+        "sha256": "446bd589807ede1b1b3a4194604202972a23f7616b3aa314787a1cd0122820d9",
+        "bytes": 12202
+      },
+      "equations": {
+        "path": "OS03-plain.equations.json",
+        "sha256": "238cb9b402a7092cfa8099469c2672ac534db2695d1f2347e2fc72223b9cb8d3",
+        "equations": 1,
+        "failures": 0
+      },
+      "named_env_sha256": "e5adb1cc238382151221c3348ec5b82a14d3e817eb346e87ae90ff612e812b15",
+      "census": {
+        "path": "OS03-plain.census.json",
+        "sha256": "0ac040df2ca1ea8b422bf733f5eb28c60891fe206ff5246c12f96f35a28a38c9"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "1329724b2e5638e5d86a7d39e9344f703cd26b52ecc26c2f1e4dc0659e6088de",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 103,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "8",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "101"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387904"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775808"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                526456
+              ],
+              "value": "526457",
+              "generated": true
+            },
+            {
+              "args": [
+                739202
+              ],
+              "value": "739203",
+              "generated": true
+            },
+            {
+              "args": [
+                990780
+              ],
+              "value": "990781",
+              "generated": true
+            },
+            {
+              "args": [
+                526704
+              ],
+              "value": "526705",
+              "generated": true
+            },
+            {
+              "args": [
+                906858
+              ],
+              "value": "906859",
+              "generated": true
+            },
+            {
+              "args": [
+                894874
+              ],
+              "value": "894875",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS03b-annotated",
+      "source": {
+        "path": "OS03b/Annotated.lean",
+        "sha256": "a925cf242bae61cec829f1cc89215c1c7c381b1e2b03283c412f6adefc5a5066",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "annotated",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS03b-annotated.ixe",
+        "sha256": "8bc8b4c41c50495e3f65885169a9070790d26361d9d1a2190456fed0a59a09b5",
+        "bytes": 15805
+      },
+      "equations": {
+        "path": "OS03b-annotated.equations.json",
+        "sha256": "21ce21488b12886a7476fe7bf4b78c27f453df8b23cfe7c34195bdfbd95ecc3c",
+        "equations": 2,
+        "failures": 0
+      },
+      "named_env_sha256": "748570b83dd33afdf288a184a286eb5d1a4a1c8a1c91d56975d8e71cdc8e7bb5",
+      "census": {
+        "path": "OS03b-annotated.census.json",
+        "sha256": "07887e67caefebab27f34f64b0800f067555f1834e73a92a68422825d8a1bb80"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "4521596fa110ea16872c71b554aedc364c319b2d67365511920840b743c015d3",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 113,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "8",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "101"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387904"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775808"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                805461
+              ],
+              "value": "805462",
+              "generated": true
+            },
+            {
+              "args": [
+                565860
+              ],
+              "value": "565861",
+              "generated": true
+            },
+            {
+              "args": [
+                151660
+              ],
+              "value": "151661",
+              "generated": true
+            },
+            {
+              "args": [
+                415150
+              ],
+              "value": "415151",
+              "generated": true
+            },
+            {
+              "args": [
+                326271
+              ],
+              "value": "326272",
+              "generated": true
+            },
+            {
+              "args": [
+                99034
+              ],
+              "value": "99035",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS03b-plain",
+      "source": {
+        "path": "OS03b/Plain.lean",
+        "sha256": "897c5f37fafe7c080f1bd4575d76c447ef7f45c38f1d7e1d56eed7577fb59b30",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "plain",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS03b-plain.ixe",
+        "sha256": "e34ceda0815bd718867eb0fb3716d4d26f2b830bc3361b52715491771b19a629",
+        "bytes": 15805
+      },
+      "equations": {
+        "path": "OS03b-plain.equations.json",
+        "sha256": "65131b0260ba15c9dc8a30d76206c4b74f715c4fa8b7f03c1b3830858e5383f4",
+        "equations": 2,
+        "failures": 0
+      },
+      "named_env_sha256": "156f270d262876a37553b87ace72096f399559267c969a2b81b3a1121a5d4d8d",
+      "census": {
+        "path": "OS03b-plain.census.json",
+        "sha256": "d30c87693ee8a1407174cad8a875f7e678d2199c1244b6c0822bb8986f2d238b"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "1b15468eef3863429971de6c97caa0bdcd5327820b241973647b7d9e919501b7",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 113,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "8",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "101"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387904"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775808"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                805461
+              ],
+              "value": "805462",
+              "generated": true
+            },
+            {
+              "args": [
+                565860
+              ],
+              "value": "565861",
+              "generated": true
+            },
+            {
+              "args": [
+                151660
+              ],
+              "value": "151661",
+              "generated": true
+            },
+            {
+              "args": [
+                415150
+              ],
+              "value": "415151",
+              "generated": true
+            },
+            {
+              "args": [
+                326271
+              ],
+              "value": "326272",
+              "generated": true
+            },
+            {
+              "args": [
+                99034
+              ],
+              "value": "99035",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS13-annotated",
+      "source": {
+        "path": "OS13/Annotated.lean",
+        "sha256": "ca3eb6ce4ed1a9c9edfca167fc3b0b1cb85ea4c57c0257bffe381005b35be53b",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "annotated",
+        "origins": []
+      },
+      "consts": [
+        "linId",
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS13-annotated.ixe",
+        "sha256": "89783b951fde5efc79d1e3b5c3655425b716d7654e11b4826ed32e4cf5ca24f4",
+        "bytes": 936
+      },
+      "equations": {
+        "path": "OS13-annotated.equations.json",
+        "sha256": "cf2f63afbaa6c45abf3bbe7af795b74855147dd8f391c71bb9d449936104426b",
+        "equations": 0,
+        "failures": 0
+      },
+      "named_env_sha256": "58a165485742d855590d87307869b5c6ff39396a00f8f4201d8a51a26f5e3158",
+      "census": {
+        "path": "OS13-annotated.census.json",
+        "sha256": "1f98f41a1454a33f6dca161dd109e246d56ae965943c8b98ba9365777c58a5e1"
+      },
+      "roots": [
+        {
+          "name": "linId",
+          "address": "3ddf7a1d927e6fe75e1d684daff3b0f43849bd4fa847b3e7659f6a3f33966706",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 131,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "7",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "100"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387903"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775806"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                186735
+              ],
+              "value": "186735",
+              "generated": true
+            },
+            {
+              "args": [
+                904595
+              ],
+              "value": "904595",
+              "generated": true
+            },
+            {
+              "args": [
+                938605
+              ],
+              "value": "938605",
+              "generated": true
+            },
+            {
+              "args": [
+                314229
+              ],
+              "value": "314229",
+              "generated": true
+            },
+            {
+              "args": [
+                746046
+              ],
+              "value": "746046",
+              "generated": true
+            },
+            {
+              "args": [
+                94435
+              ],
+              "value": "94435",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "entry",
+          "address": "930460b73ebce5680a1eb473cafdaf6267facc0a45b72e6affb7d642e22aeb62",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 113,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "7",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "100"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387903"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775806"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                805461
+              ],
+              "value": "805461",
+              "generated": true
+            },
+            {
+              "args": [
+                565860
+              ],
+              "value": "565860",
+              "generated": true
+            },
+            {
+              "args": [
+                151660
+              ],
+              "value": "151660",
+              "generated": true
+            },
+            {
+              "args": [
+                415150
+              ],
+              "value": "415150",
+              "generated": true
+            },
+            {
+              "args": [
+                326271
+              ],
+              "value": "326271",
+              "generated": true
+            },
+            {
+              "args": [
+                99034
+              ],
+              "value": "99034",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS13-plain",
+      "source": {
+        "path": "OS13/Plain.lean",
+        "sha256": "4dbc55ac52471cc6836089eb7298c20ff6a760ddfa67a1fdbd8f4eb30355030f",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "plain",
+        "origins": []
+      },
+      "consts": [
+        "linId",
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS13-plain.ixe",
+        "sha256": "c5275db5d19002040932ab34eac61c3ea367687d5ee7aa88b53f205396e3b5e0",
+        "bytes": 936
+      },
+      "equations": {
+        "path": "OS13-plain.equations.json",
+        "sha256": "4d78e4e2433dfdf89986f90d33a4e1fe24ac61243afad120a4c476ae2dfcfbce",
+        "equations": 0,
+        "failures": 0
+      },
+      "named_env_sha256": "fd0b25149a11eacc06751b0199e1b5bd5e6a9ede2d80bf0bb2dbaf6f497807db",
+      "census": {
+        "path": "OS13-plain.census.json",
+        "sha256": "40856d1b6ce6ffe5728f40b97d50f63d34929fac4877d1ca7fea6d6db4e7c8ff"
+      },
+      "roots": [
+        {
+          "name": "linId",
+          "address": "733dc79213a887b5d8bc79e64b11efd9110c44b02c4b9f0669ea80df24c50da2",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 131,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "7",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "100"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387903"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775806"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                186735
+              ],
+              "value": "186735",
+              "generated": true
+            },
+            {
+              "args": [
+                904595
+              ],
+              "value": "904595",
+              "generated": true
+            },
+            {
+              "args": [
+                938605
+              ],
+              "value": "938605",
+              "generated": true
+            },
+            {
+              "args": [
+                314229
+              ],
+              "value": "314229",
+              "generated": true
+            },
+            {
+              "args": [
+                746046
+              ],
+              "value": "746046",
+              "generated": true
+            },
+            {
+              "args": [
+                94435
+              ],
+              "value": "94435",
+              "generated": true
+            }
+          ]
+        },
+        {
+          "name": "entry",
+          "address": "c69cddc711d189c2f0646968207608776df46cc4ac5fbafe51ab961343183cdc",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 113,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "7",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "100"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387903"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775806"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                805461
+              ],
+              "value": "805461",
+              "generated": true
+            },
+            {
+              "args": [
+                565860
+              ],
+              "value": "565860",
+              "generated": true
+            },
+            {
+              "args": [
+                151660
+              ],
+              "value": "151660",
+              "generated": true
+            },
+            {
+              "args": [
+                415150
+              ],
+              "value": "415150",
+              "generated": true
+            },
+            {
+              "args": [
+                326271
+              ],
+              "value": "326271",
+              "generated": true
+            },
+            {
+              "args": [
+                99034
+              ],
+              "value": "99034",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS14-annotated",
+      "source": {
+        "path": "OS14/Annotated.lean",
+        "sha256": "c73c95c967a90d9ca6a68244939277912d590130cabe5f8e67296da543658fef",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "annotated",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS14-annotated.ixe",
+        "sha256": "d145ba7b6c2037df88141982bacf66837bfa02d41b20fead3cd8bbe06b58895b",
+        "bytes": 4103
+      },
+      "equations": {
+        "path": "OS14-annotated.equations.json",
+        "sha256": "9311c5273dbbe7f5599ddc519f89a02d1747650e952b23bc537f18f9fb62849a",
+        "equations": 0,
+        "failures": 0
+      },
+      "named_env_sha256": "f8c32ffc34fe9d9f0ef3d03343b20f1c6ff567d02b9cebef0ff177edc9acc9e4",
+      "census": {
+        "path": "OS14-annotated.census.json",
+        "sha256": "e26983aab68e819c5bf06507202a6a9f3a0c4535f2a46aaf3a995bdf9c379532"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "ab940bf7ea17d846e48317e64ca903ac0dd23657a0c7985af451d46ebe268af9",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 114,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "6",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "99"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387902"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775805"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775806"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                151522
+              ],
+              "value": "151521",
+              "generated": true
+            },
+            {
+              "args": [
+                91368
+              ],
+              "value": "91367",
+              "generated": true
+            },
+            {
+              "args": [
+                692471
+              ],
+              "value": "692470",
+              "generated": true
+            },
+            {
+              "args": [
+                922191
+              ],
+              "value": "922190",
+              "generated": true
+            },
+            {
+              "args": [
+                853019
+              ],
+              "value": "853018",
+              "generated": true
+            },
+            {
+              "args": [
+                140057
+              ],
+              "value": "140056",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS14-plain",
+      "source": {
+        "path": "OS14/Plain.lean",
+        "sha256": "f1bc58f8585dfb5eb885496544a31f02746d815da6b68bc1c0ffb8d8342c018d",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "plain",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS14-plain.ixe",
+        "sha256": "2be7df63121d1711b9af2157fe5004fe8e45c2f3589903cecf092184400f1a32",
+        "bytes": 4103
+      },
+      "equations": {
+        "path": "OS14-plain.equations.json",
+        "sha256": "e6876142d49debe480eff46df8c4d68d0007ae026e6b7a2bdb2c5ac7f2fe16c6",
+        "equations": 0,
+        "failures": 0
+      },
+      "named_env_sha256": "ae87cac1b1facc440acbfb12e851e9f19e98a81d96e3da64a82dc0494a13cdf8",
+      "census": {
+        "path": "OS14-plain.census.json",
+        "sha256": "d7e745b2782170d372563ef85f2c52b74dd372e54d2f2565cbed28db4bf28b96"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "5859fe4a2f9d657badc3d7fc9f9e37834c728709a74c478d13c7e8bc9ab1a808",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 114,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "6",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "99"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387902"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775805"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775806"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                151522
+              ],
+              "value": "151521",
+              "generated": true
+            },
+            {
+              "args": [
+                91368
+              ],
+              "value": "91367",
+              "generated": true
+            },
+            {
+              "args": [
+                692471
+              ],
+              "value": "692470",
+              "generated": true
+            },
+            {
+              "args": [
+                922191
+              ],
+              "value": "922190",
+              "generated": true
+            },
+            {
+              "args": [
+                853019
+              ],
+              "value": "853018",
+              "generated": true
+            },
+            {
+              "args": [
+                140057
+              ],
+              "value": "140056",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS16-plain",
+      "source": {
+        "path": "OS16/Plain.lean",
+        "sha256": "c3c7b86091990f00929c44861fe7ece220308bc3eed8d5a8cbda5a5d2b9ad858",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "plain",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS16-plain.ixe",
+        "sha256": "70bb90a59ae83fbda79324980843bc98a26392146e8101058271b97d86f91153",
+        "bytes": 23882
+      },
+      "equations": {
+        "path": "OS16-plain.equations.json",
+        "sha256": "2616ecaaf44c2f223c48b40efb4e54611d9e07ba5d53067cf9ebff4f6f63b969",
+        "equations": 4,
+        "failures": 0
+      },
+      "named_env_sha256": "8b864055c2685871f602d9967b7d35051ca4574a0abdca0161b389656ee09ea5",
+      "census": {
+        "path": "OS16-plain.census.json",
+        "sha256": "2c5a17039463922b367d825f7e3c666169401a2ee27d6cd77267f4148fd9e99b"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "46ab4b63a591d1aa555fbb2b5c4d080d7a4a5a66bf8a38618cc38accf5e55a63",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                10
+              ],
+              "value": "45",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "4950"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS22-annotated",
+      "source": {
+        "path": "OS22/Annotated.lean",
+        "sha256": "b5250514ba3c234df6863ea877be8c87d479ef2e774da862f5e7ce3b4985c863",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "annotated",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS22-annotated.ixe",
+        "sha256": "e4754516bb4a78983a7ef0a52329edd1878e9718d4bf1ebdf442ea54d801c92b",
+        "bytes": 938
+      },
+      "equations": {
+        "path": "OS22-annotated.equations.json",
+        "sha256": "7e85adb30347ac57e98689e8061b39f05a7b969d6eea69f554471de2b11b1703",
+        "equations": 0,
+        "failures": 0
+      },
+      "named_env_sha256": "07237bee3bc494d5c2999e3cff1f2f0baf4bcaea912301f20b4ac74f22523c3a",
+      "census": {
+        "path": "OS22-annotated.census.json",
+        "sha256": "1fe1b47549f96c3127f14ca04e61f16f0ffb3fdb53d6c79418a8894a7ea7b3bb"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "fd7693502ee122203a968352bd9c5fa0e548d90a825292de81087bc3c2233fb1",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 122,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "7",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "100"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387903"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775806"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                501376
+              ],
+              "value": "501376",
+              "generated": true
+            },
+            {
+              "args": [
+                639249
+              ],
+              "value": "639249",
+              "generated": true
+            },
+            {
+              "args": [
+                403718
+              ],
+              "value": "403718",
+              "generated": true
+            },
+            {
+              "args": [
+                780751
+              ],
+              "value": "780751",
+              "generated": true
+            },
+            {
+              "args": [
+                470687
+              ],
+              "value": "470687",
+              "generated": true
+            },
+            {
+              "args": [
+                946803
+              ],
+              "value": "946803",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS22-plain",
+      "source": {
+        "path": "OS22/Plain.lean",
+        "sha256": "f6de6ed0863a972b6f858c3f0d1d474fc7f33f1ddde71a6f6a4b99cf56f8dfd6",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "plain",
+        "origins": []
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "OS22-plain.ixe",
+        "sha256": "25d3027e13d4ca3db84450ff334428fb8a004b75b89e04ce7b369a6da0306d64",
+        "bytes": 938
+      },
+      "equations": {
+        "path": "OS22-plain.equations.json",
+        "sha256": "a01129695b446cce42bba44a18ad28f5c2045a75a9f78fddee62be338ceca8a9",
+        "equations": 0,
+        "failures": 0
+      },
+      "named_env_sha256": "3604dd070f3d24ba2d6d2e6e63ab65ccb36f247e5bc580394f7b18ee63de5c34",
+      "census": {
+        "path": "OS22-plain.census.json",
+        "sha256": "2cfaf842e0587761f137da7f1c406229e53655fa027e1b9d1b8ce2b94be1ce0a"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "c69cddc711d189c2f0646968207608776df46cc4ac5fbafe51ab961343183cdc",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 122,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                1000000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "7",
+              "machine": true
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "100"
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "4611686018427387903"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775806"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                501376
+              ],
+              "value": "501376",
+              "generated": true
+            },
+            {
+              "args": [
+                639249
+              ],
+              "value": "639249",
+              "generated": true
+            },
+            {
+              "args": [
+                403718
+              ],
+              "value": "403718",
+              "generated": true
+            },
+            {
+              "args": [
+                780751
+              ],
+              "value": "780751",
+              "generated": true
+            },
+            {
+              "args": [
+                470687
+              ],
+              "value": "470687",
+              "generated": true
+            },
+            {
+              "args": [
+                946803
+              ],
+              "value": "946803",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "OS03b/Plain.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "1b15468eef3863429971de6c97caa0bdcd5327820b241973647b7d9e919501b7"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "566a3c2249bc2076543d9bc561a841f6fd35ffb5bdbbc5c991a9c64feccbd5d4",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "25fab8b9f1e5e9f65c5bfd39ecf7d58236e2fd478758db70ef063a966bec4a36"
+    }
+  ],
+  "failures": []
+}

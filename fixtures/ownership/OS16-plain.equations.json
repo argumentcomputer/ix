@@ -1,0 +1,37 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "OS16/Plain.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "46ab4b63a591d1aa555fbb2b5c4d080d7a4a5a66bf8a38618cc38accf5e55a63"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+    },
+    {
+      "definition": "build",
+      "definition_address": "dbfaaa579691944b99dd56689811f744e707bad27c7591df9281f6bad4adc324",
+      "equation": "build.eq_def",
+      "equation_address": "8994593056ab14e5731f7972c625ea38e99014f893e7d2b4696ca18108f65dd5"
+    },
+    {
+      "definition": "revAcc",
+      "definition_address": "bec95a11972ff7b9e913ab9c2df6143b752ef3fcbacb3354509b9e8cbb68eb5e",
+      "equation": "revAcc.eq_def",
+      "equation_address": "f5c4fa9dde345af5eee9b1b59d08e4a914f84cab0d47bd29a76fadfd3a573dd5"
+    },
+    {
+      "definition": "sumL",
+      "definition_address": "e5ed01f82c9dcf16cf51bd51f1d7aebb96bc4c4fbde6b31df5ad438bd78b67d1",
+      "equation": "sumL.eq_def",
+      "equation_address": "0f9d03e92d8fb4d65e8e623cf0399efff2796b84adc9ac11d4001ba26265cbb9"
+    }
+  ],
+  "failures": []
+}

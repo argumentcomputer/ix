@@ -1,0 +1,19 @@
+{
+  "format": "compilatrix/k1-equations/1",
+  "source": "OS03/Annotated.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "6790938ce3dd67d872a8a037eafa431b768f337cc678a4a808be30fa21cecc5d"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "0410e321765dede7d6f2defaa7ce46a115c9e8ae1c4371f362b5a11e01cf6015"
+    }
+  ],
+  "failures": []
+}

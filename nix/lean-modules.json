@@ -10,6 +10,7 @@
   {"roots": ["CompilatrixTests.Recheck.Main"], "kind": "lean_exe"},
   "tests-pipeline":
   {"roots": ["CompilatrixTests.Pipeline.Main"], "kind": "lean_exe"},
+  "tests-own": {"roots": ["CompilatrixTests.Own.Main"], "kind": "lean_exe"},
   "tests-lam": {"roots": ["CompilatrixTests.Lam.Main"], "kind": "lean_exe"},
   "tests-ixon-v3":
   {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
@@ -573,6 +574,26 @@
     "CompilatrixTests.Rt.Differential",
     "CompilatrixTests.Rt.Cases",
     "CompilatrixTests.Lam.Differential"]},
+  "CompilatrixTests.Own.Verdicts":
+  {"path": "CompilatrixTests/Own/Verdicts.lean",
+   "imports": ["CompilatrixTests.Corpus.Build"]},
+  "CompilatrixTests.Own.Suite":
+  {"path": "CompilatrixTests/Own/Suite.lean",
+   "imports":
+   ["CompilatrixTests.Corpus.Run",
+    "CompilatrixTests.Own.Verdicts",
+    "CompilatrixTests.Own.Strip",
+    "CompilatrixTests.Own.Counters",
+    "Compilatrix.Fir.Print",
+    "Compilatrix.Cfg.Print"]},
+  "CompilatrixTests.Own.Strip":
+  {"path": "CompilatrixTests/Own/Strip.lean", "imports": []},
+  "CompilatrixTests.Own.Main":
+  {"path": "CompilatrixTests/Own/Main.lean",
+   "imports": ["CompilatrixTests.Own.Suite"]},
+  "CompilatrixTests.Own.Counters":
+  {"path": "CompilatrixTests/Own/Counters.lean",
+   "imports": ["Compilatrix.Cfg.Semantics"]},
   "CompilatrixTests.Lir.Run":
   {"path": "CompilatrixTests/Lir/Run.lean",
    "imports": ["CompilatrixTests.Lir.Props", "CompilatrixTests.Lir.Cases"]},
@@ -1444,6 +1465,7 @@
     "CompilatrixTests.Corpus.Run",
     "CompilatrixTests.Corpus.Build",
     "CompilatrixTests.Corpus.KernelGen",
+    "CompilatrixTests.Own.Suite",
     "CompilatrixTests.Recheck.Run",
     "CompilatrixTests.Recheck.KernelSlow"]},
   "Compilatrix.Xv.XlSemantics":
