@@ -152,15 +152,6 @@ open Ixon
 
 /-! ## Graph facts -/
 
-/-- Whether the edge from `parent` to its `i`-th child continues the parent's
-telescope. -/
-def continuationEdge (parent : Node) (i : Nat) (child : Node) : Bool :=
-  match parent.head, child.head with
-  | .app, .app => i == 0
-  | .lam _, .lam _ => i == 1
-  | .all .., .all .. => i == 1
-  | _, _ => false
-
 /-- In-degrees, head in-degrees, occurrences and parent lists. -/
 structure GraphFacts where
   deg : Array Nat
@@ -272,19 +263,7 @@ inline write). The second array counts only head (non-continuation) edges.
 Values are capped at `visibleCap` where they are passed on. -/
 def visibleCounts (dag : Dag) (roots : Array Nat) (maybeStored : Array Bool) :
     Array Nat × Array Nat :=
-  let n := dag.size
-  let base := roots.foldl (fun acc r => acc.modify r (· + 1)) (Array.replicate n 0)
-  -- Descending: the parents (larger IDs) of a term are final before it.
-  foldRange (fun (st : Array Nat × Array Nat) k =>
-      let y := n - 1 - k
-      let wy := if maybeStored[y]! then 1 else min st.1[y]! visibleCap
-      let node := dag.node y
-      (List.range node.children.size).foldl (fun (st : Array Nat × Array Nat) i =>
-        let c := node.child i
-        (st.1.modify c (· + wy),
-         if continuationEdge node i (dag.node c) then st.2 else st.2.modify c (· + wy)))
-        st)
-    0 n (base, base)
+  propagateCounts dag roots fun y c => if maybeStored[y]! then 1 else min c visibleCap
 
 /-- Whether a term is certain-excluded: `(occ-1)·size < occ·w`. -/
 def certainExcludedTest (p : Prep) (f : GraphFacts) (w t : Nat) : Bool :=

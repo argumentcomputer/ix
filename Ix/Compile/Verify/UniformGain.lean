@@ -485,26 +485,25 @@ theorem forall₂_mem_right' {α β : Type} {R : α → β → Prop} :
     · exact ⟨_, List.mem_cons_self, hr⟩
     · obtain ⟨x, hx, h'⟩ := forall₂_mem_right' hs y hy
       exact ⟨x, List.mem_cons_of_mem _ hx, h'⟩
-
-/-- **Exchange (lengths).** For `t ∉ S`, adding `t` costs at most its
-`S`-optimal entry and one table-count byte, and saves `inl_S(t) - w` per head
-occurrence and `M_S(t) - w` per continuation occurrence (when positive): the
-head occurrences number at least the root occurrences plus the
-non-continuation edges into `t`, the continuation occurrences at least the
-continuation edges into `t`. -/
-theorem PrepWF.exchange {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat}
+/-- **Exchange with the encoding's counts.** For `t ∉ S` and an encoding
+`E, R` of `S` that attains its length: adding `t` costs at most its optimal
+entry plus the growth of the count's `Tag0`, and saves `inl_S(t) - w` per
+head occurrence and `M_S(t) - w` per continuation occurrence of `t` in the
+encoding (when positive). -/
+theorem PrepWF.exchange_counts {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat}
     (hSin : ∀ s ∈ S, s < p.dag.size) (roots : List Nat) (hroots : ∀ r ∈ roots, r < p.dag.size)
-    (hreach : ∀ y, y < p.dag.size → ∃ r ∈ roots, Ix.Compile.Verify.SharingExact.Desc p.dag r y)
-    {t : Nat} (htn : t < p.dag.size) (htS : t ∉ S) :
+    {t : Nat} (htn : t < p.dag.size) (htS : t ∉ S) {E : Nat → WTree} {R : List WTree}
+    (hEnc : EncodingWF p (fun y => decide (y ∈ S)) S E roots R)
+    (hcost : encodingCost p w S E R = uniformCost p w (fun y => decide (y ∈ S)) S roots) :
     let A := fun y => decide (y ∈ S)
     let I := uInl p w A t
     let M := mergedOf p w A (uCost p w A) t
-    uniformCost p w (fun y => decide (y ∈ t :: S)) (t :: S) roots +
-        (roots.count t + ((List.range p.dag.size).map fun y => edgeMult p y t false).sum) *
+    uniformCost p w (fun y => decide (y ∈ t :: S)) (t :: S) roots + tag0Size S.length +
+        ((S.map fun s => (E s).occH t).sum + (R.map (WTree.occH t)).sum) *
           (if w ≤ I then I - w else 0) +
-        ((List.range p.dag.size).map fun y => edgeMult p y t true).sum *
+        ((S.map fun s => (E s).occC p t).sum + (R.map (WTree.occC p t)).sum) *
           (if w ≤ M then M - w else 0) ≤
-      uniformCost p w A S roots + 1 + I := by
+      uniformCost p w A S roots + tag0Size (S.length + 1) + I := by
   intro A I M
   have hSt : A t = false := by simp [A, htS]
   have hA' : (fun y => decide (y ∈ t :: S)) = addT A t := by
@@ -512,7 +511,6 @@ theorem PrepWF.exchange {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat}
     simp only [A, addT, List.mem_cons]
     by_cases hy : y = t <;> by_cases hyS : y ∈ S <;> simp [hy, hyS]
   rw [hA']
-  obtain ⟨E, R, hEnc, hcost⟩ := hp.uniformCost_attained w A S roots hSin hroots
   obtain ⟨Tt, hTt, hTts, hTtc⟩ := (hp.exists_opt w A t htn).2
   let rh := decide (w ≤ I)
   let rc := decide (w ≤ M)
@@ -587,6 +585,38 @@ theorem PrepWF.exchange {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat}
     (WTree.cost p w) Ah Ac R (fun T hT => by
       obtain ⟨r, hr⟩ := Ix.Compile.Verify.SharingExact.forall₂_mem_right hsubR T hT
       exact hr.2)
+  have hI : I = uInl p w A t := rfl
+  have hc' : uniformCost p w (fun y => decide (y ∈ S)) S roots = uniformCost p w A S roots := rfl
+  rw [hE', hR'c, hTtc] at hle
+  simp only [List.length_cons] at hle
+  simp only [Nat.add_mul]
+  omega
+
+
+/-- **Exchange (lengths).** For `t ∉ S`, adding `t` costs at most its
+`S`-optimal entry and one table-count byte, and saves `inl_S(t) - w` per head
+occurrence and `M_S(t) - w` per continuation occurrence (when positive): the
+head occurrences number at least the root occurrences plus the
+non-continuation edges into `t`, the continuation occurrences at least the
+continuation edges into `t`. -/
+theorem PrepWF.exchange {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat}
+    (hSin : ∀ s ∈ S, s < p.dag.size) (roots : List Nat) (hroots : ∀ r ∈ roots, r < p.dag.size)
+    (hreach : ∀ y, y < p.dag.size → ∃ r ∈ roots, Ix.Compile.Verify.SharingExact.Desc p.dag r y)
+    {t : Nat} (htn : t < p.dag.size) (htS : t ∉ S) :
+    let A := fun y => decide (y ∈ S)
+    let I := uInl p w A t
+    let M := mergedOf p w A (uCost p w A) t
+    uniformCost p w (fun y => decide (y ∈ t :: S)) (t :: S) roots +
+        (roots.count t + ((List.range p.dag.size).map fun y => edgeMult p y t false).sum) *
+          (if w ≤ I then I - w else 0) +
+        ((List.range p.dag.size).map fun y => edgeMult p y t true).sum *
+          (if w ≤ M then M - w else 0) ≤
+      uniformCost p w A S roots + 1 + I := by
+  intro A I M
+  have hSt : A t = false := by simp [A, htS]
+  obtain ⟨E, R, hEnc, hcost⟩ := hp.uniformCost_attained w A S roots hSin hroots
+  have hx := hp.exchange_counts w hSin roots hroots htn htS hEnc hcost
+  simp only at hx
   -- the occurrence counts
   have hocc : ∀ (W : WTree) (x : Nat), Valid p A x W → x < p.dag.size →
       W.occH t = (if W.topIs t then 1 else 0) +
@@ -641,12 +671,10 @@ theorem PrepWF.exchange {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Nat}
     have := hcount true
     omega
   have h0 := tag0Size_succ_le S.length
-  have hHm := Nat.mul_le_mul_right Ah hH
-  have hCm := Nat.mul_le_mul_right Ac hC
-  have hI : I = uInl p w A t := rfl
-  rw [hE', hR'c, hTtc] at hle
-  simp only [List.length_cons] at hle
-  simp only [Nat.add_mul] at hHm hCm ⊢
+  have hHm := Nat.mul_le_mul_right (if w ≤ I then I - w else 0) hH
+  have hCm := Nat.mul_le_mul_right (if w ≤ M then M - w else 0) hC
+  simp only [A, I, M] at hHm hCm ⊢
+  simp only [Nat.add_mul] at hHm hCm hx ⊢
   omega
 
 /-! ## The stage-2 inequality -/
