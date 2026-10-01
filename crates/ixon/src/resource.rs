@@ -1,4 +1,4 @@
-//! Resource checking for Ixon v3. Mirrors `Ix/Resource/{Basic,Check}.lean`.
+//! Resource checking for Ixon. Mirrors `Ix/Resource/{Basic,Check}.lean`.
 //!
 //! The address adapter supplies a globally indexed program whose erased types
 //! have been checked. External interfaces and special primitives are explicit

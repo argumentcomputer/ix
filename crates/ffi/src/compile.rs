@@ -960,7 +960,7 @@ extern "C" fn rs_get_block_sharing_len(
 // =============================================================================
 
 #[cfg(feature = "test-ffi")]
-/// Expand shares while preserving all v3 contracts and static groups.
+/// Expand shares while preserving all Ixon contracts and static groups.
 fn unshare_expr(
   expr: &Arc<IxonExpr>,
   sharing: &[Arc<IxonExpr>],

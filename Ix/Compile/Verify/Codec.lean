@@ -2,7 +2,7 @@ import Ix.Ixon
 import Std.Tactic.BVDecide
 
 /-!
-# Proof-visible v3 codecs
+# Proof-visible Ixon codecs
 
 These X1 slices make universe serialization kernel-visible end to end.
 `Reads` records exact cursor movement in arbitrary surrounding bytes, while

@@ -1,7 +1,7 @@
 import Ix.Compile.Verify.ExprSpineCodec
 
 /-!
-# Proof-visible v3 core constant codec
+# Proof-visible Ixon core constant codec
 
 This slice composes the verified arbitrary-spine expression codec through
 production definition and axiom payloads, their `ConstantInfo` tags, and a

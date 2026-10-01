@@ -9,7 +9,7 @@ E3-S production-driver adapter.  The runtime checker call remains a required
 gate, but semantic authority for these two coordinated blocks comes from the
 fixed family transition and existing-recursor certificates.  In particular,
 the proof supplies a topological semantic schedule independently of runtime
-cache order. The v3 address order enumerates the family before its recursor.
+cache order. The Ixon address order enumerates the family before its recursor.
 
 The staged baseline below has the constructively generated Boolean Theory
 environment and an empty trust predicate.  Its `VEnv.WF` field is derived
@@ -419,7 +419,7 @@ theorem subjects_disjoint_assumptions :
   simp [noAssumptions] at haddr
 
 /-- The family is admitted first because every recursor reference collapses
-into that family block. This schedule agrees with the v3 address order. -/
+into that family block. This schedule agrees with the Ixon address order. -/
 def wellFounded :
     WellFoundedBlocks dependencyGraph (expectedAnonWork recursorIxonEnv)
       sourceWF.subjects where

@@ -13,7 +13,7 @@ use ix_common::address::Address;
 use ix_common::env::DefinitionSafety;
 use rustc_hash::FxHashMap;
 
-pub const VALIDATOR_ID: &str = "ixon-v3/resource-v1";
+pub const VALIDATOR_ID: &str = "ixon-v4/resource-v1";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Profile {

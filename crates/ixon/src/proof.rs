@@ -12,6 +12,7 @@ use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, QuotKind};
 
 use super::constant::DefKind;
+use super::env::Env;
 use super::tag::TagN;
 
 // ============================================================================
@@ -963,10 +964,10 @@ fn validator_for_variant(variant: u64) -> u8 {
   }
 }
 fn put_scope(validator: u8, buf: &mut Vec<u8>) {
-  buf.extend_from_slice(&[3, validator]);
+  buf.extend_from_slice(&[Env::OBJECT_FORMAT, validator]);
 }
 fn get_scope(validator: u8, buf: &mut &[u8]) -> Result<(), String> {
-  if get_u8(buf)? != 3 {
+  if get_u8(buf)? != Env::OBJECT_FORMAT {
     return Err("claim: unsupported object format".into());
   }
   if get_u8(buf)? != validator {
@@ -2202,7 +2203,7 @@ mod tests {
       assert!(Claim::from_bytes(&trailing).is_err());
       let header = if claim.proof_variant_size() + 3 >= 8 { 2 } else { 1 };
       let mut old_format = bytes.clone();
-      old_format[header] = 2;
+      old_format[header] = 3;
       assert!(Claim::from_bytes(&old_format).is_err());
       let mut wrong_validator = bytes.clone();
       wrong_validator[header + 1] = 255;

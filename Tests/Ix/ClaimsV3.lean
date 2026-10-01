@@ -34,7 +34,7 @@ def run : IO Unit := do
         throw <| IO.userError "truncated v3 claim accepted"
     unless (Ix.Claim.de (bytes.push 0)).toOption.isNone do throw <| IO.userError "trailing v3 claim accepted"
     let header := if Ix.Claim.variantOf claim >= 8 then 2 else 1
-    unless (Ix.Claim.de (bytes.set! header 2)).toOption.isNone do throw <| IO.userError "legacy claim version accepted"
+    unless (Ix.Claim.de (bytes.set! header 3)).toOption.isNone do throw <| IO.userError "version 3 object format accepted"
     unless (Ix.Claim.de (bytes.set! (header + 1) 255)).toOption.isNone do throw <| IO.userError "wrong validator accepted"
     let proof : Ixon.Proof := { claim, proof := ⟨#[1, 2, 3]⟩ }
     let proofBytes := Ixon.Proof.ser proof

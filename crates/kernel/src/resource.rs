@@ -1,4 +1,4 @@
-//! Combined resource and erased-type validation for addressed Ixon v3.
+//! Combined resource and erased-type validation for addressed Ixon.
 //! Kernel typechecking on its own makes no resource promise.
 
 use crate::anon_work::build_anon_work;

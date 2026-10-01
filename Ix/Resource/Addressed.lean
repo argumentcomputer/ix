@@ -18,7 +18,7 @@ namespace Ix.Resource
 
 open Ixon
 
-def validatorId : String := "ixon-v3/resource-v1"
+def validatorId : String := "ixon-v4/resource-v1"
 
 structure Profile where
   assumptions : Array Address := #[]
