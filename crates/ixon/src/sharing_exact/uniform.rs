@@ -213,7 +213,8 @@ fn continuation_edge(parent: &Node, i: usize, child: &Node) -> bool {
 pub(crate) struct Facts {
   pub(crate) deg: Vec<u64>,
   occ: Vec<u128>,
-  parents: Vec<Vec<TermId>>,
+  /// Distinct parents of each term.
+  pub(crate) parents: Vec<Vec<TermId>>,
 }
 
 pub(crate) fn graph_facts(dag: &SharingDag) -> Facts {

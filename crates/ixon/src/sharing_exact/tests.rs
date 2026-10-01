@@ -3132,3 +3132,83 @@ fn knapsack_cells_limit() {
   }
   assert!(knapsack_failures > 0);
 }
+
+/// The incremental evaluation of a growing dictionary equals a full
+/// evaluation (`all_costs`) after every addition, costs and work count, for
+/// additions in any order; the sparse materializer writes the same
+/// expressions with the same work as `materialize`.
+#[test]
+fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
+  use super::dict::{IncrementalCosts, Materializer, all_costs, materialize};
+  let mut rng = Rng(97);
+  let mut cases: Vec<Vec<E>> =
+    par_cases().iter().map(|c| constant_info_root_exprs(&c.info)).collect();
+  for _ in 0..60 {
+    cases.push(gen_search_roots(&mut rng));
+    cases.push(gen_spines(&mut rng));
+  }
+  let (mut steps, mut materialized) = (0u64, 0u64);
+  for (i, roots) in cases.iter().enumerate() {
+    if roots.is_empty() {
+      continue;
+    }
+    let dag = SharingDag::from_expanded_roots(roots, &limits()).unwrap();
+    let nodes = dag.nodes();
+    let n = nodes.len();
+    let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
+    let mut parents: Vec<Vec<TermId>> = vec![Vec::new(); n];
+    for (t, node) in nodes.iter().enumerate() {
+      for &c in node.children().as_slice() {
+        if !parents[c as usize].contains(&(t as TermId)) {
+          parents[c as usize].push(t as TermId);
+        }
+      }
+    }
+    // A random sequence of distinct terms, in any order, with indices that
+    // cross the TagN width boundaries.
+    let mut terms: Vec<TermId> = (0..n as TermId).collect();
+    for k in (1..terms.len()).rev() {
+      terms.swap(k, rng.below(k as u64 + 1) as usize);
+    }
+    terms.truncate(1 + rng.below(n as u64) as usize);
+    let mut dict = FixedDictionary::new();
+    let mut eval = IncrementalCosts::new(nodes, &own, &parents, &dict);
+    let mut mat = Materializer::new(n);
+    let mut index = rng.below(20);
+    for (step, &t) in terms.iter().enumerate() {
+      let gap = if rng.pct(10) { 200 } else { 3 };
+      index += 1 + rng.below(gap);
+      dict.insert(t, index);
+      eval.add(t, &dict);
+      let mut w = 0u64;
+      let full = all_costs(nodes, &own, &dict, &mut w);
+      assert_eq!(eval.costs(), &full[..], "case {i} step {step}");
+      assert_eq!(eval.work(), w, "case {i} step {step}");
+      steps += 1;
+      if step % 3 == 0 || step + 1 == terms.len() {
+        let mut targets =
+          vec![t, terms[rng.below(terms.len() as u64) as usize]];
+        targets.push(rng.below(n as u64) as TermId);
+        targets.extend_from_slice(dag.roots());
+        let (mut wa, mut wb) = (w, w);
+        let a =
+          materialize(nodes, &own, &dict, &full, &targets, &mut wa).unwrap();
+        let b = mat.run(nodes, &own, &dict, &full, &targets, &mut wb).unwrap();
+        assert_eq!(wa, wb, "case {i} step {step}");
+        let bytes = |es: &[E]| {
+          let mut out = Vec::new();
+          for e in es {
+            put_expr(e, &mut out);
+          }
+          out
+        };
+        assert_eq!(bytes(&a), bytes(&b), "case {i} step {step}");
+        materialized += 1;
+      }
+    }
+  }
+  eprintln!(
+    "incremental evaluation: {steps} steps, {materialized} materializations"
+  );
+  assert!(steps > 1000 && materialized > 300);
+}

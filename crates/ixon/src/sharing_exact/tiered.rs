@@ -44,7 +44,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::cost::{Len, expr_len_with, tag0_len};
 use super::dag::{Node, SharingDag, TermId, ix};
-use super::dict::{Indices, Widths, all_costs, materialize};
+use super::dict::{IncrementalCosts, Indices, Materializer, Widths, all_costs};
 use super::prof::{self, Phase};
 use super::uniform::{
   UniformSharingResult, graph_facts, optimize_uniform, pinned_order, set_prec,
@@ -550,30 +550,46 @@ fn tiered_at(
   // the roots; each depends only on the prefix `order[..j]`, so the tasks
   // run independently (see `Parallelism::materialize`) and are combined in
   // task order exactly as the sequential loop proceeds.
+  //
+  // Task `j` is charged the work of a full evaluation `all_costs` of the
+  // dictionary `order[..j]` plus its materialization. The evaluation is
+  // maintained incrementally from one prefix to the next
+  // (`IncrementalCosts`), which yields the same costs and the same work
+  // count as evaluating every prefix from scratch; the materialization
+  // (`Materializer`) makes the same choices with the same work as
+  // `materialize`.
   let k_entries = order.len();
   let phase3 = |range: std::ops::Range<usize>| {
+    let p = prof::scope(Phase::RematerializeCosts);
     let mut dict = LayoutIndex { index: vec![None; n], layout };
     for (i, &t) in order[..range.start].iter().enumerate() {
       dict.index[ix(t)] = Some(len64(i));
     }
+    let mut eval = IncrementalCosts::new(nodes, &own, &facts.parents, &dict);
+    let mut mat = Materializer::new(n);
+    drop(p);
     let mut out: Vec<Result<(Vec<Arc<Expr>>, Len, u64), SharingError>> =
       Vec::with_capacity(range.len());
-    for j in range {
-      let mut w = 0u64;
-      let p = prof::scope(Phase::RematerializeCosts);
-      let costs = all_costs(nodes, &own, &dict, &mut w);
-      drop(p);
+    for j in range.clone() {
+      if j > range.start {
+        let p = prof::scope(Phase::RematerializeCosts);
+        let t = order[j - 1];
+        dict.index[ix(t)] = Some(len64(j - 1));
+        eval.add(t, &dict);
+        drop(p);
+      }
       let _p = prof::scope(Phase::RematerializeBuild);
+      let mut w = eval.work();
+      let costs = eval.costs();
       if let Some(&t) = order.get(j) {
-        let r = materialize(nodes, &own, &dict, &costs, &[t], &mut w);
+        let r = mat.run(nodes, &own, &dict, costs, &[t], &mut w);
         out.push(r.map(|e| (e, costs[ix(t)], w)));
-        dict.index[ix(t)] = Some(len64(j));
       } else {
         let mut c = Len::ZERO;
         for &r in dag.roots() {
           c = c.plus(costs[ix(r)]);
         }
-        let r = materialize(nodes, &own, &dict, &costs, dag.roots(), &mut w);
+        let r = mat.run(nodes, &own, &dict, costs, dag.roots(), &mut w);
         out.push(r.map(|rs| (rs, c, w)));
       }
     }
