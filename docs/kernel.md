@@ -1,565 +1,458 @@
 # Certified Lean kernel
 
-> **Retired at L6 (2026-10-01).** This page describes the intrinsic kernel
-> (`Ix.Kernel.check`, `checkEnv`, its ingress, egress, model and host
-> differentials), which step L6 of `plans/ix-kernel-con-leche-port-v4.md`
-> retired. The certified checker is con-leche's, ported under `ConLeche/**`
-> and run on Ixon by `Ix.Ixon.Admission.checkBytes`; its contract is section 2
-> of `plans/ix-certified-roadmap.md`. The page is kept as the intrinsic
-> kernel's record; the removal ledger below stays current.
+Ix's certified checker is con-leche's verified checker
+(`ConLeche.Cached.checkDecls` at `.verified`), ported in place under
+`ConLeche/**`, run on Ixon records by a reader in `Ix/Kernel/ConLeche/`. The
+certified API is `Ix.Ixon.Admission.checkBytes`. This page states what that
+entry does, what is proved about it, what is trusted, how the gate checks
+the trust boundary, how the port tracks upstream, and how to run the census.
+The roadmap's section 2 (`plans/ix-certified-roadmap.md`) is the contract
+this page implements; plan v4 (`plans/ix-kernel-con-leche-port-v4.md`, not
+versioned) records the port's steps L0 to L6.
 
-`Ix.Kernel.check` checks an ordered list of anonymous declarations and returns
-an environment only when it can construct its model extension. The three
-public consistency theorems apply to this executed function. `Ix.Kernel` is
-being developed to replace `Ix.Tc`; the runtime consumer migration remains
-pending. D01 removed lean4ix and the legacy verification machinery.
+Nothing here certifies the Lean-to-Ixon compiler, the Rust checker, `Ix.Tc`
+or IxVM. An accepted environment has a model; that it is the environment
+the original Lean source meant is outside the claim.
 
-The implementation sequence and remaining gates are in
-[`plans/ix-certified-roadmap.md`](../plans/ix-certified-roadmap.md). This page
-records the current contract and the disposition of the old verification
-system. It does not certify the Lean-to-Ixon compiler, Rust checker, or IxVM.
+## The certified entry
 
-## Data and evidence
-
-| Layer | Meaning | Established by |
-| --- | --- | --- |
-| `Decl`, `Block`, `Const`, `VExpr`, `VLevel`, `ConstRef` | The supplied declarations, member/constructor positions, terms, and positional universes | Input data, without a typing assumption |
-| `Ix.Ixon.Types`, `Ingress.Context`, `ExprReads`, `BlockReads` | Pure production Ixon data and its exact reading after table, projection, sharing, and literal resolution | `readExpr_reading`, `readBlock_reading`, and reading determinism |
-| `Egress.Record`, expression/declaration layouts | Raw payloads plus the sharing, table, and let-spelling choices needed to reconstruct the source | Checked writer readings and `records_roundtrip`, with exact list equality |
-| `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.Verify` | Production anonymous byte grammar, representable counts/address widths, and cursor/append laws | All-variant serializer inverses, exact constant framing, and separate codec audits |
-| `Ix.Ixon.Bounded.Universe` | Universe decoding with explicit byte and expanded-constructor limits | Exact budget accounting, production-decoder agreement, round trips within limits, and wire validity below the wire count capacity |
-| `Ix.Ixon.Bounded.Constant`, `WireCheck`, `Canonical` | Complete-record input/expansion limits, wire validity, and canonical byte spelling | Success iff the record is wire-well-formed, re-encodes to the supplied bytes, and fits both limits |
-| `Ix.Ixon.Bounded.Size`, `Verify.ReaderBounds`, `Verify.ConstantBounds` | Structural constructors and table slots in successful production reads | At most two structural units per consumed byte, plus the separate expanded-universe budget; no additional runtime traversal |
-| `Ix.Ixon.Admission`, `Verify.Admission.RecordsRead` | Ordered canonical record bytes, unchanged address keys, exact literal blobs, and batch limits | Exact decoding/acceptance domains, installed readings, model existence, and preservation of kernel outcomes |
-| `Ix.Ixon.Projection`, `ProjectionProofs` | Projection records derived from physical mutual blocks and addressed with pure BLAKE3 | Complete reconstruction, exact input preservation, primary order, bounded requests, and byte-admission/model contracts |
-| `AExpr`, `PropWhen` | A reading with a condition at each binder describing when its codomain is a proposition | `annotate_erase` proves exact erasure; separate scope checks include annotation conditions |
-| `Typed`, `TypedSort`, `Reduced`, `Conv` | Search results with erased semantic evidence for this environment and context | `inferA`, normalization, conversion, and the declaration checkers |
-| Admission candidate | An ordinary inductive shape, structure description, or standard primitive interface | A reader proposes it; validation and exact generated-block comparison justify installation |
-| `Certified.Ordinary.Stage` | The family/constructor stage, optionally extended with a supplied recursor at its actual reference | Each stage constructs its model and constructor reading; Nat and structure facts share this interface |
-| `Env`, `ConstantEntry`, `Environment` | Concrete storage and its functional lookup view, including types, bodies, equations, and facts | Admission constructs `AdmissionClaim` and exact `Block.Installed` readings |
-| `Model`, `SetTheory`, interpretation | A simultaneous realization of the installed entries in an explicit set theory | Model extension and the closed acceptance theorem |
-
-An annotation is not a typing certificate. Its erasure theorem says exactly
-which raw expression was read; `inferA` checks binder conditions. Similarly,
-recognizing a familiar inductive name or shape is not admission evidence.
-
-`StepClaim` extends realizability and well-formedness. `AdmissionClaim` also
-preserves every old lookup. The separate fidelity theorems
-`checkDecl_installed`, `checkDecls_installed`, and `check_installed` establish
-the supplied universes, erased types and definition bodies at their exact
-references, including nested constructors. They do not reconstruct bytes or
-authenticate addresses. Specialized publication lemmas describe the additional
-equations and facts. `ConvClaim` is conditional on formed inputs; composing
-it requires a formed intermediate term.
-
-## Supported profile
-
-The current checked input is a list of `Decl β`, for any `β` with decidable
-equality. `checkAddressed` specializes it to opaque `Address` keys.
-`checkEnv` reads ordered production Ixon constant pairs and literal blobs
-through the pure `Ix.Ixon.Types` boundary. `Ix.Ixon.Admission.checkBytes`
-accepts ordered canonical record bytes with explicit input limits and uses
-the same checker; host transport framing and scheduling remain outside it.
-
-| Input | Current behavior |
-| --- | --- |
-| Single safe definition, theorem, or opaque | Check its declared type and body; theorems must have a propositional type |
-| Variables, universes, constants, applications, lambdas, Pi types, lets | Check scope, universe arity, typing, and binder conditions |
-| Ordinary inductive family | Check the family and constructors independently; validate positivity, universe constraints, and the complete supplied declarations |
-| Supplied ordinary recursor | Associate by the major premise; check its complete type, metadata, rules, elimination, and freshness at its own reference |
-| Structure-shaped ordinary block | Publish projection typing, iota, and eta when the field and Prop restrictions hold; otherwise try ordinary admission. Running out of fuel in the structure description or check declines rather than installing a plain inductive, so fuel never changes installed content |
-| Natural numbers | Recognize the natural-number interface (fuel-free; a block with the natural shape that fails it is admitted as ordinary); literals name their admitted family; literal/constructor conversion and recursor iota are supported |
-| Equality | Ordinary admission plus K-like reduction through checked constructor synthesis and proof irrelevance |
-| Quotient | Check the four primitive declarations and soundness against the admitted Eq/quotient interfaces; prove lift and eliminator computation |
-| `propext`, `Classical.choice` | Check the generated types against admitted Eq/Iff/Nonempty interfaces and construct their realizations |
-| Interface eliminators | An Eq/Iff/Nonempty eliminator is the installed entry with that family's eliminator interface, found by search: Ixon stores a recursor as its own record. The quotient lift's published fact names the Eq eliminator for its computation rule. A missing or mismatched interface declines |
-| Arbitrary axioms, unsafe/partial declarations, general mutual or nested inductives | Decline outside the supported profile |
-| String literals, full Lean universe conversion, full Mathlib | Not a current coverage guarantee |
-
-The tracked positive fixtures include False, True, And, Or, Nat, List, Eq,
-Prod, dependent subtypes, standard axioms, and quotient computation. Each
-feature has malformed or unsupported controls. Passing those fixtures is a
-supported-profile check, not a completeness theorem about Lean.
-
-Declarations must arrive in dependency order. References to unavailable
-constants and duplicate addresses are rejected. An inductive block's own
-members are handled by its admission construction. Ixon ingress preserves
-physical member and constructor references. Production stores an inductive
-family and its recursor separately; the driver consumes an associated pair
-together and checks all intervening records afterward in their relative
-order. Every external reference must resolve against the checked prefix.
-The existing combined family/recursor fixture layout remains supported.
-
-`Ix.Tc` and Rust discover a recursor's owner through its major premise and
-compare the complete generated candidate. The certified ordinary reader
-uses the same association, restricted to syntactic telescopes in its current
-profile; it never normalizes an open peeled body in an empty context.
-Association cannot authorize acceptance. A missing recursor admits only the
-family and constructors, with Nat or structure facts when applicable. It
-does not generate a replacement recursor. Mutual/nested auxiliary recursors
-and adding a separate recursor later through single-declaration admission
-remain outside this interface.
-
-`checkEnv_reading` establishes `Ingress.Installed`: unique constant and blob
-keys, exact source readings, and each primary record installed at its own
-reference. Projection records must name the proper owner, member kind, and
-position and have empty tables. Sharing edges must decrease; indexes resolve
-without narrowing. `checkEnv_ok_iff` gives the exact acceptance domain: distinct keys, the
-records read as declarations by `readDeclarations` at the configured fuel (the
-reading is deterministic, `DeclarationsRead.deterministic`), and the closed
-`check` accepts them. `checkEnv_has_model` applies to this executed Ixon entry
-point. Nat payloads are little-endian; strings decline. Every Ixon v3
-contract is erased by the reading, as at upstream `Ix.Tc`'s erased typing
-boundary: lambda binder contracts, forall input and result contracts, and let
-contracts (dependency bit, value or shared borrow, binder contract). Typing,
-conversion, and the model do not observe them, and the egress layout retains
-them, so records reproduce exactly. Kernel acceptance therefore says nothing
-about resource validity: upstream's frozen handoff environment whose local
-result escapes (`rejected-local-escape.ixe`) fails native resource admission
-and is accepted here, like its resource-valid twin. Address authentication, wire canonicality, and unused table entries
-are outside this reading contract.
-
-`Egress.readRecords` retains the layout choices that expanded raw terms lose.
-`Egress.writeRecords` reconstructs declaration payloads from those terms,
-checks their complete readings against the retained tables, and validates
-each reconstructed projection's actual variant and owner. It preserves every
-address, record position, declaration field, sharing node, repeated or unused
-table slot, and let contract. Numeric reconstruction rejects values
-outside `UInt64`; constructor and rule lists cannot silently truncate.
-
-`Egress.records_roundtrip` proves exact source recovery after any successful
-read at the same fuel and with the same reference/blob context. The writer
-uses a blank `Context.source`; it does not copy the original primary record.
-Its retained sharing and universe tables still carry source layout. The
-reading/writing operations do not establish typing, dependency order, key
-uniqueness, byte canonicality, or address authentication; use `checkEnv` for
-declaration admission. Unused table entries remain outside validation. The
-serializer profile includes all declaration variants with ordinary Lean
-expression modes; the admission profile remains the smaller one above.
-
-The certified environment retains the checked body of every definition-like
-declaration, including theorem and opaque declarations. Delta reduction can
-unfold such a stored body. This is the current kernel transparency policy;
-host reducibility hints and a theorem/opaque opacity policy are not inputs
-to this API. Consumer parity must record any operational differences this
-causes.
-
-The recursor K flag is also an explicit policy difference. Ix.Kernel rejects
-`k = true` for a shape without K support, but permits `k = false` for an
-eligible shape and can still derive a K-like step from typing and proof
-irrelevance. Ix.Tc requires the flag to equal its computed eligibility. The
-differential suite uses canonical flags for its shared positive corpus and
-retains noncanonical Eq/True flags and a forged Nat flag as separate controls.
-
-## Outcomes and fuel
-
-Acceptance carries the model theorem. `Error.rejected` records an
-independently established input defect, such as bad scope, a missing
-reference, a duplicate address, wrong universe arity, or a sort used as a
-function. `Error.declined` records exhausted fuel, an unsupported form, or
-conversion that search did not establish. An unsuccessful conservative
-conversion procedure does not prove that two terms are unequal.
-
-`Config.fuel` is a recursive depth bound, not an operation budget. Nested
-checks retain exhaustion. Normalization returns any proved reduction along
-with its stopping cause; a partial reduction can still support a successful
-conversion. Failure of an optional strategy does not block a subsequent
-proved success. There is no fallback whose Ix.Tc or Rust result is labeled
-certified.
-
-`checkAgainst` reuses evidence that the expected type is formed in the exact
-current context. Rule checkers establish the common type once and use it for
-both endpoints. `checkType_acceptance` proves that obtaining formation first
-preserves successful `checkType` results at the same fuel; the first failure
-reported can differ when both independent checks fail.
-
-## Mathematical and execution boundary
-
-`check_has_model` and `checkDecls_has_model` are relative to an explicit
-`SetTheory V`. It supplies the set-theoretic operations and a countable tower
-of Grothendieck universes. `no_proof_of_False` rules out an accepted
-inhabitant of a type interpreted as empty. Its hypothesis is semantic;
-`Env.emptyType_of_empty` discharges it syntactically for a parameter-free,
-index-free family whose installed large eliminator has the constructor-free
-type (`Certified.Basis.Empty.Interface`, a decidable check), so
-`no_inhabitant_of_empty` rules out accepted proofs of `False` and inhabitants
-of `Empty`. The eliminator is required: a family admitted without its
-recursor is not constrained to be empty. `checkEnv_has_model`,
-`checkEnv_no_proof_of_False`, and `checkEnv_no_inhabitant_of_empty` state the
-same for Ixon records, which `checkEnv` admits through the same fold as
-`check`, associating separately stored recursors with their families. The separate
-[`Models/SetTheory`](../Models/SetTheory) package constructs the model with
-Mathlib under its stated `OmegaInaccessibles` hypothesis.
-
-The frozen roots permit exactly Lean's standard logical axioms (`propext`,
-`Classical.choice`, `Quot.sound`), without `sorryAx`, `Lean.ofReduceBool`, or
-project axioms. Type/body/constructor dependency traversal, frozen theorem
-statements, import auditing, and compiled runtime auditing are independent
-checks. Axiom sets alone do not establish that theorem premises are useful.
-
-The execution foundation is Lean's kernel, compiler, runtime, and core data
-representations. At this K3 checkpoint the public runtime closure contains 920 compiled
-functions, 16 inherited externs, one inherited unsafe declaration, and no
-`implemented_by` or `csimp` replacement. The allowed inherited operations
-are listed and explained in
-[`Ix/Kernel/Audit/Roots.lean`](../Ix/Kernel/Audit/Roots.lean). No project FFI,
-Rust checker, or BLAKE3 operation is reached by the certified checker. An
-address is only a key inside this boundary; it is never hashed there. The
-Ixon ingress closure contains 962 compiled functions, 23 inherited externs,
-two inherited unsafe array accessors, and no `implemented_by` or `csimp`.
-The separate reader/writer closure contains 202 compiled functions, 21
-inherited externs, and the same two array accessors, also without project
-replacements. Its bounded conversions additionally use `UInt64.ofNat`.
-
-`Ix.Ixon.Codec` now owns the production anonymous encoders and total decoders;
-`Ix.Ixon` reexports them for host consumers. `Ix.Ixon.Wire` describes the
-lossless wire domain independently of compiler/source semantics. The eight
-retained proof modules under `Ix.Ixon.Verify` prove universe, full expression
-spine, and all-variant constant inverses, including arbitrary representable
-side tables. `deConstant` retains prefix behavior; `deConstantExact` consumes
-the whole buffer, with round-trip and nonempty-suffix rejection theorems.
-
-The pure codec/data import closure uses only Lean core. The proof closure
-additionally uses Lean/Std tactics, including checked bit-vector proofs;
-it imports no host code or Lean4Lean. `Ix.Ixon.Audit` freezes theorem types,
-axiom sets, both import boundaries, and the codec's execution closure: 331
-compiled functions, 52 inherited externs, two inherited unsafe array
-accessors, and no `implemented_by`, `csimp`, or project replacement. The
-new extern is Init's `ByteArray.decEq` (`lean_sarray_dec_eq`), used for exact
-re-encoding equality. The existing kernel and egress closures remain unchanged.
-
-`Ix.Ixon.Bounded.Universe` adds a separate universe entry point with a byte
-limit and a shared budget for expanded constructors. It reserves the tag's
-charge before reading children or constructing a compressed successor chain;
-binary children spend the same budget sequentially. Success preserves the
-production value and cursor and spends exactly the expanded node count.
-Conversely, every successful production read whose node count fits also
-succeeds with that budget. Full-buffer round trips and suffix rejection are
-proved; a node limit below `UInt64.size` establishes the universe wire
-invariant. The limits count input bytes and tree constructors, not runtime
-heap bytes or elapsed time.
-
-The strict standalone fixtures cover exact/insufficient limits, binary
-budget sharing, truncation, suffixes, and a ten-byte encoding that requests
-`UInt64.max` successors. The latter is rejected at the end of its tag, before
-reading the base or constructing the chain. The host suite also checks
-generated values with the existing Rust serialization oracle.
-
-`Bounded.Constant` now spends one universe budget across the whole table.
-The shared `getConstantWithUnivs` grammar preserves the production decoder
-on every input and state. The bounded record API accepts exactly its
-successful full-buffer reads that fit the byte and aggregate universe-node
-limits, with all-variant round trips and suffix rejection.
-
-`Verify.ReaderBounds` and `Verify.ConstantBounds` now prove structural bounds
-for the original readers, including arbitrary successful byte spellings and
-nonzero starting cursors. `Span` records an unchanged buffer, a monotone
-in-bounds cursor, and at most two structural units per consumed byte. The
-units count expression/declaration constructors and variable table slots;
-reference universe-index vectors count too. Compressed application spines
-can exceed one constructor per byte, which is why the bound uses two.
-Universe trees retain their separate expanded-node budget.
-
-For exact records, `constant.resourceSize ≤ 2 * bytes.size`; bounded records
-add the expanded universe count to obtain a limit of
-`2 * maxBytes + maxUnivNodes`. No parser implementation changes or extra
-validation traversal are needed. A counted-array failure is a successful
-prefix followed by the first failing element; when each successful element
-consumes a byte, that prefix has at most the available byte count. This
-bounds array iterations, not the work inside an element reader. These are
-structural and prefix bounds, not heap-byte or wall-clock guarantees.
-
-`Verify.Work` through `WorkRecord` additionally bound complete bounded-record
-parser work, including work inside a failed element. Their ghost interpreter
-erases exactly to production, preserving successful values, error strings,
-buffers, and cursors on every outcome. Byte potential and transferable credits
-fund construction and collection work without trusting declared counts. Nested
-binds share one terminal-failure allowance. Universe expansion reserves work
-before descending, with one budget across the whole table, so a later failure
-cannot erase earlier work or restart the allowance.
-
-The bound is `16 * input.size + 2 * universeBudget + 3` per attempted record.
-`WorkAdmission` preserves the complete canonical parser-stage result and proves
-an aggregate bound of
-`16 * maxTotalBytes + maxRecords * (2 * maxRecordUnivNodes + 3)` without assuming
-success. Preflight failure performs no parsing, and canonical failure stops
-before subsequent records. The production decoder executes no counters.
-These abstract units count byte attempts/copies, tag and structural construction,
-collection work, telescope folds, reserved expansion, and record framing/checks.
-They do not measure heap bytes, wall time, or arithmetic bit complexity;
-canonical validation/re-encoding, batch administration, projection hashing,
-ordering, literal interpretation, ingress, and checking are outside the metric.
-
-`Verify.Canonical.Reads` names the per-record contract that canonical decoding
-characterizes (`deConstant_reads_iff`) and every byte-admission record reading
-carries: a wire-well-formed constant whose serialization is exactly the input,
-within the byte and aggregate universe-node limits.
-
-`WireCheck.validConstant` decides the complete `Constant.wireWF` predicate.
-Its recursive checks carry telescope counts, avoiding repeated scans of
-long application, binder, and successor chains. `Canonical.deConstant`
-combines the bounded parser, this validator, and exact re-encoding equality.
-Its successful-domain theorem is an iff: the result must be wire-well-formed,
-serialize to precisely the input bytes, and fit both limits. The Ixon v3
-production decoder itself rejects nonminimal integer tags, counts larger than
-the remaining bytes, invalid definition/recursor flags, and non-Boolean flags;
-canonical decoding additionally rejects noncanonical universe spellings
-(split successor prefixes and ignored universe tag sizes) that the production
-decoder accepts. Tests exercise both groups, large truncated counts, aggregate
-budget exhaustion, 4,096-entry tables and application spines, and generated
-values compared against Rust serialization.
-
-`Ix.Ixon.Admission.checkBytes` connects canonical records to `checkEnv`.
-Before decoding, a short-circuiting preflight checks separate record/blob
-counts and one total payload-byte budget shared by both lists. Address keys
-and outer transport framing are excluded from that byte count. Explicit
-per-record limits cap bytes and the entire universe table; together with
-the record-count limit they bound aggregate universe expansion. The
-tail-recursive decoder preserves every key, record position, and side table.
-Decode failures identify the original zero-based position and address;
-kernel failures retain their exact rejection/decline reason.
-
-`Verify.Admission.RecordsRead` describes each canonical payload without
-referring to a decoder. `decodeRecords_ok_iff` proves its exact successful
-domain; `checkBytes_ok_iff` composes it with the actual checker at the same
-configuration and literal family. `checkBytes_of_reading` preserves all
-kernel outcomes on bounded canonical input. `checkBytes_reading` ties that
-same ordered reading to the installed declarations, and
-`checkBytes_has_model` establishes the accepted environment's model.
-Uniqueness of both key lists is proved from successful byte admission.
-`checkBytes_resources` ties the same installed reading to a decoded-record
-bound of `2 * maxTotalBytes + maxRecords * maxRecordUnivNodes`. The measure
-includes unused side tables and expanded universe nodes; it does not measure
-blob interpretation, host keys, or later ingress/checker expansion.
-Literal blobs retain their exact supplied bytes and the existing natural
-number interpretation; this does not require a canonical spelling of blobs.
-
-The adapter lives outside `Ix.Kernel` and imports no verification modules.
-Its independent `Admission.Audit` checks data/proof import closures, exact
-axiom sets and theorem statements, and 1,250 compiled functions reaching
-56 inherited externs, two inherited unsafe array accessors, and no project
-replacement. A set-difference check confirms that these primitives all
-already occur in the kernel/codec closures. Their narrower allowlists and
-existing public contracts remain unchanged.
-
-`Ix.Ixon.Projection.checkBytes` now accepts the same canonical record format
-with projection records optionally omitted. It derives definition,
-inductive, recursor, and constructor projections from physical mutual-block
-positions, writes them with the certified projection writer, and hashes their
-complete production encodings with `Address.blake3Pure`. Standalone
-definitions and recursors retain their primary address. Owner keys in
-projection payloads must be 32 bytes, and positions must fit UInt64.
-
-Reconstruction reuses an identical existing projection or prepends a new one
-at a fresh key; a conflicting payload fails. The proofs characterize the
-exact successful extension, establish every requested projection's presence
-and every added record's structural origin, preserve all supplied records,
-lookups, and primary declaration order, and bound output count by input count
-plus `maxProjections`. This separate limit counts requests, including reused
-records, and is spent before writing/hashing. Request enumeration itself
-visits the supplied block arrays; the byte entry point bounds those inputs.
-The byte-reading and installed-declaration relation use the same expanded
-store as the executed checker. All kernel outcomes are preserved for that
-store, and accepted environments have models.
-
-The new hash adapter has its own audit and is built in the root package,
-where the pinned Blake3 package is available. The standalone kernel/codec
-package remains dependency-free. Data imports allow exactly `Blake3` and
-`Blake3.Pure`, plus their permitted Lean-core/Std dependencies; C/Rust hash
-backends and proof-module imports are excluded. Its measured runtime closure
-has 1,381 functions, 70 inherited externs, two inherited unsafe accessors, and
-no project replacement. The additional primitives are 14 standard array and
-integer operations used by pure BLAKE3. Reconstruction assumes no hash
-injectivity: conflicting payloads are rejected. Primary keys, supplied alias
-keys, and blob keys remain unauthenticated until K5.
-
-`Ix.Ixon.BlockOrder.checkBytes` adds canonical mutual-block order to that
-path. It computes member/constructor projection keys, retains physical
-external alias addresses, compares literal values, and rebuilds universes
-through the shared ingress rules. Stable merge sort and consecutive grouping
-refine one address-seeded class; acceptance requires the original ordered
-singletons after an observed unchanged pass. Explicit comparison-descent and
-refinement-pass limits report exhaustion without accepting unfinished work.
-This does not typecheck unused expression branches: complete semantic
-admission still comes from the final kernel invocation.
-
-The successful refinement loop is equivalent to a finite counted derivation;
-its output is a fixed point and remains the same at larger refinement fuel.
-Block and byte acceptance have exact iff contracts, and the composed path
-retains exact readings, installed declarations, model existence, and every
-final kernel outcome/reason on ordered inputs. The implementation follows
-Rust's lexicographic vector comparison (the old Ix.Tc mirror was length-first)
-and uses full refinement without the native strong-order/hash-equality fast
-path. No compiler ordering metadata is trusted. Differential agreement is
-not a formal equivalence theorem about the Rust implementation.
-
-Its separate audit admits the pure shared universe reducer and block-order
-adapter without widening any prior boundary. The measured runtime closure
-has 1,509 functions, 77 inherited externs, two inherited unsafe accessors, and
-no project replacement. Seven added externs are standard string/UTF-8,
-UInt64, and array operations; no unsafe accessor was added.
-
-K4's byte contracts, reconstruction, ordering, and abstract parser-work
-accounting are implemented and validated. The canonical
-record API establishes byte spelling; semantic admission still has K3's
-supported profile. Existing production callers use the original decoders
-pending D02. Supplied primary, alias, and blob keys are not authenticated
-hashes, and the theorem does
-not certify the compiler or host container loader. K5 will connect
-authenticated subjects and receipts.
-
-## Validation
-
-```sh
-lake -d IxKernel build --wfail
-lake -d IxKernel exe kernel-provenance
-lake run check-kernel --with-model
+```lean
+def Ix.Ixon.Admission.checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
+    (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
+    Except ConLecheAdmission.Error ConLeche.Env
 ```
 
-The standalone package reads the repository's kernel sources and has no
-external packages. Its default strict build checks all kernel modules,
-frozen audits (including negative controls), the isolated codec proof chain,
-and twelve fixture modules, including byte-admission adversarial controls.
-Provenance validates the port inventory, inspected target hashes, source
-pins, headers, and license files. `--source PATH` additionally checks the
-old source checkout against the recorded source hashes.
+`records` is an ordered list of `(Address, ByteArray)` pairs, one canonical
+Ixon constant per pair; `blobs` holds literal payloads (`Nat` little-endian
+bytes, `String` UTF-8 bytes) by address; `hint` is an optional, untrusted
+reducibility hint per constant. The entry runs, in order:
 
-The host-only `kernel-differential` executable compares 38 cases against
-Ix.Tc: shared positive inputs for every K2 route, corrupted variants, and
-explicit differences for search outcomes, ordering, duplicate storage,
-unsupported declarations, K metadata, and opaque transparency. It checks
-raw declarations through a test adapter, not production Ixon ingress. The
-adapter assigns synthetic reference identities, uses Ix.Tc's homogeneous
-storage groups, preserves the source K flag, and configures the fixture
-primitive references. Neither its translation nor the oracle is a premise
-of a certified theorem.
+| Stage | Function | Fails with |
+| --- | --- | --- |
+| the committed pin table, prelude and Nat-operation pins load | `defaultPins`, `builtinPrelude`, `builtinNatOpPins` | `.prelude reason` |
+| batch limits: record and blob counts, total payload bytes | `Admission.preflight` | `.limit resource` |
+| key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
+| canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
+| the Ixon reader: records to `Array ConLeche.Declaration` | `ConLecheReader.readRecords` | `.read position (.malformed _ / .declined _)` |
+| the prelude is put in front (`ConLeche.Frontend.preparePrelude`) | | |
+| con-leche's fold | `ConLeche.Cached.checkDecls .verified natPins` | `.kernel error position` |
 
-The host-only `kernel-ingress` executable compiles tutorial declarations with
-`Ix.CompileM`, serializes and reloads them through the production codec, and
-runs both `checkEnv` and `Ix.Ixon.Admission.checkBytes`. Its 26 cases cover eight ordinary families, definition and
-reduction examples, family-only dependencies, and mutations of recursor
-rules, field counts, metadata, and K flags. The compiler, loader, and host
-ordering remain untrusted producers. Each case checks that canonical record
-decoding preserves the complete ordered input and that byte admission has
-the same outcome and reason as in-memory admission. It also passes through the
-certified reader and writer, comparing complete records and exact production
-Ixon bytes; this includes cases whose declarations are declined or rejected.
-Pure egress fixtures cover layout duplication, unused entries, sharing,
-projection variants, numeric overflow, count mismatches, and changed raw
-payloads behind retained table slots. Exact Ixon bytes and outcomes are
-retained in `.lake/build/kernel-ingress.jsonl`, together with byte limits,
-checker fuel, the literal-family reference, byte outcomes/reasons, and the
-exact-decoding result. Pure byte-admission
-fixtures cover preflight rejection before decoding, zero-byte entries,
-shared total budgets across records and blobs, exact/insufficient limits,
-duplicate keys, order-sensitive references, fuel exhaustion, noncanonical
-encodings, successor expansion bombs, every proper record prefix, and every
-single-byte suffix.
+The pipeline is `Ix.Ixon.ConLecheAdmission.checkBytes`; `checkBytesWith`
+takes the pin table, prelude and Nat-operation pin list as parameters, and
+`checkConstants{,With}` start from decoded records. Two variants share the
+byte stage and the checker: `Ix.Ixon.Projection.checkBytes` reconstructs
+omitted projection records (addresses by pure BLAKE3 of their canonical
+bytes) before checking, and `Ix.Ixon.BlockOrder.checkBytes` also checks the
+canonical order of mutual blocks.
 
-The host-only `kernel-codec` runner executes the existing production codec
-unit/property suite, including Rust serialization comparisons for universes,
-expressions, constants, and environments. It links the `test-ffi` Rust
-archive; no such dependency enters the standalone package. Results are
-retained in `.lake/build/kernel-codec.log`. Pure codec fixtures additionally
-cover all constant variants, binder modes, integer/tag boundaries, every
-proper prefix of a representative record, and exact suffix rejection.
+**Outcomes.** `Admission.outcome` classifies every failure as a reject (the
+input is wrong) or a decline (the checker does not certify it):
 
-`lake run check-kernel` writes exact raw input trees, outcomes and reasons
-to `.lake/build/kernel-differential.jsonl`. The CI job **Certified Lean
-kernel** runs the host/standalone/provenance/model gate and uploads that
-file and the ingress JSONL. The 2026-09-29 K2 release run passed in a fresh jj workspace with no
-project Lean artifacts: 134 standalone jobs, 144 host fixture/provenance
-jobs, 342 differential build jobs, 38 comparison cases, and 975 model jobs
-including its full axiom audit. That run reused pinned third-party package
-caches and unchanged Rust artifacts. No dependency revision changed.
-The later K3 incremental full gate passed 144 standalone jobs, 154 host
-fixture/provenance jobs, 457 runner build jobs, all 38 differential and 26
-ingress cases, and the 975-job model gate. Provenance covers 97 ported,
-35 authored modules, and four license files. This run was not a clean build.
-Native performance commands and retained
-operation counts are documented in
-[`Benchmarks/Kernel/README.md`](../Benchmarks/Kernel/README.md). Diagnostic
-tracing runs in disposable source copies and is excluded from the certified
-runtime. Timings use uninstrumented native executables.
+| Error | Outcome | Why |
+| --- | --- | --- |
+| `.limit` | decline | a coverage bound, not evidence about the input |
+| `.duplicate`, `.decode` | reject | the bytes are malformed |
+| `.read _ (.malformed _)` | reject | the records describe no declaration (a missing reference or blob, a bad table index, a recursor header that disagrees with its block, ...) |
+| `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions, unsafe axioms, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
+| `.prelude` | decline | a corrupted committed table |
+| `.kernel` | decline | every checker verdict: con-leche reports fuel exhaustion as `internal` and a failed conversion search as `invalid`, and neither is independent evidence that the input is wrong |
 
-The K4 byte-admission checkpoint passed the incremental full gate on
-2026-09-29: 176 standalone jobs, 184 host fixture/provenance jobs, 541 runner
-build jobs, and 975 model jobs. All 38 differential cases and all 26 compiler
-ingress/byte-admission/exact-egress cases passed, as did the codec suite.
-The byte route preserved 20 accepted, five declined, and one rejected outcome,
-including their exact reasons. Twelve new exact axiom checks cover batch
-accounting, exact byte readings, aggregate expansion, admission fidelity,
-key uniqueness, model existence, and the executable entry point. Provenance
-covers 97 ported and 64 authored/reorganized modules plus four license files.
-The retained inputs include every byte-admission argument. Evidence is in
-`plans/review/k4-byte-admission/summary.json`; its tested source is
-`d8f5ca265ed496b060c197dfaedf87a77cd4ce47`. This was an incremental run, not
-whole-corpus parity or the D02 runtime cutover.
+Only an accept carries the theorems below.
 
-The subsequent K4 reader-resource checkpoint passed the incremental full
-gate on 2026-09-29: 179 standalone, 187 host fixture/provenance, 543 runner,
-and 975 model jobs; all 38 differential and 26 compiler cases retain their
-outcomes. The codec suite adds generated expression-resource checks with
-nonzero cursors and Rust serialization comparisons, and checks the combined
-record/universe bound. Thirteen new exact axiom checks cover successful
-reader bounds, counted-array failure prefixes, and the accepted batch's
-resource theorem. All parser implementations, import allowlists, and audited
-runtime closures are unchanged. Provenance covers 97 ported and 67
-authored/reorganized modules plus four license files. Evidence is in
-`plans/review/k4-reader-bounds/summary.json`; tested source:
-`e34c8cc3aad3f7d13fbc65a3c4f20351be3352e5`. At that checkpoint, complete
-parser-work accounting and whole-corpus parity remained open.
+**Host obligations.** The host supplies the order, the address keys and the
+blobs. Addresses are keys, not authenticated hashes (only the projection
+variant derives addresses). The entry does not reorder beyond
+`preparePrelude`: each record must follow the records it references; a
+record that contains a literal must follow the constants the literal names
+(`ConLecheReader.literalEdges`: the `Nat` block, and for a string literal
+`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`); a pinned `Nat`
+operation must follow its certificate ground. A host order that violates
+this declines; it cannot cause an unsound accept. The census driver's
+order (`Benchmarks/Kernel/ConLecheStep.lean`, `order`) satisfies it.
 
-The K4 projection-reconstruction checkpoint passed the incremental full gate
-on 2026-09-29: 179 standalone, 197 host fixture/provenance, 550 runner, and
-975 model jobs, with all 38 differential and 26 compiler cases passing.
-Fifteen compiler cases omitted a total of 44 projection records. Pure
-reconstruction recovered every original key/value store and primary order;
-all 26 cases preserved their verdict and exact reason. The retained inputs
-include the projection-free record sequence and request limit. Directed
-fixtures compare all four variants and UInt64 tag boundaries with Rust hashes
-and cover reuse, conflicts, index/owner-width errors, limits, and constructor
-metadata validation. Sixteen new exact axiom checks cover the new contracts;
-provenance covers 97 ported, 70 authored/reorganized modules, and four license
-files. Tested source: `19313f7ea597202ed3d544980d898ea6f5d8ba7c`; evidence:
-`plans/review/k4-projection-reconstruction/summary.json`. This completes pure
-projection reconstruction. Canonical ordering and complete parser-work
-accounting remained open at that checkpoint and were completed in the two
-checkpoints below. The D02 consumer cutover remains open.
+## The theorems
 
-The canonical-block-order checkpoint passed the incremental full gate on
-2026-09-29: 179 standalone, 202 host fixture/provenance, 607 runner, and 975
-model jobs. All 38 host differential cases, 26 compiler cases, the codec
-suite, and 1,117 Rust canonical-order comparisons pass. The compiler cases
-run the new order-aware byte entry point with identical prior verdicts and
-reasons. Forty-four directed controls cover permutations, weak refinement,
-alpha-equivalent self/cyclic references, constructor offsets, unequal-length
-universe vectors, normalized levels, sharing, literal values, limits, and
-byte-admission outcomes. The independent test-only Rust oracle computes its
-own projection keys and uses native ingress/comparison/refinement. Thirteen
-exact axiom checks and six frozen signatures cover the new contracts;
-provenance covers 97 ported, 74 authored/reorganized modules, and four license
-files. Tested source: `d0377deba61b6b57fe24b6a72bacaeb0b1098990`; evidence:
-`plans/review/k4-block-order/summary.json`. At that checkpoint K4 still needed
-complete parser-work accounting, including nested failure paths and
-element-reader cost.
+All public theorems are in `Ix/Ixon/Consistency.lean`, about the executed
+function, at the committed tables. Each is the corresponding theorem of
+`Ix/Ixon/ConLecheConsistency.lean` (namespace `Ix.Ixon.ConLecheAdmission`)
+at `checkBytesWith`, where it holds for every pin table, prelude and
+Nat-operation pin list, so no theorem depends on how the tables were
+generated. Every public and fidelity root depends on exactly `propext`,
+`Classical.choice` and `Quot.sound`.
 
-The parser-work checkpoint passed the incremental full gate on 2026-09-29:
-188 standalone, 211 host fixture/provenance, 621 runner, and 975 model jobs.
-All 38 differential cases, 26 compiler cases, 1,117 Rust order comparisons,
-and the codec suite pass. Thirty-seven parser guard groups pin operation
-counts and cover malformed/truncated readers, huge declared counts, failed
-array elements, shared universe budgets, and admission short-circuiting.
-Eighteen exact axiom checks and eight frozen contracts cover complete outcome
-erasure and record/batch work bounds. The prior import/runtime boundaries are
-unchanged; nine production files are byte-identical to the preceding checkpoint.
-Provenance covers 97 ported, 82 authored/reorganized modules, and four license
-files. Tested source: `5079c6edf77b88e2c267186a169998c36646b7e5`; evidence:
-`plans/review/k4-parser-work/summary.json`. K4 is complete under the stated
-parser metric and supported admission profile. K5, P04–P12, D02 consumer
-migration and Ix.Tc deletion, whole-corpus Rust parity, and K7 remain open.
+| Theorem (`Ix.Ixon.Admission.`) | Statement, for `h : checkBytes limits records blobs hint = .ok env` |
+| --- | --- |
+| `checkBytes_eq` | `checkBytes = ConLecheAdmission.checkBytes` (definitional) |
+| `checkBytes_has_model` | `∀ V [ConLeche.SetTheory V], Nonempty (ConLeche.Model V env)` |
+| `checkBytes_has_model_values` | there is a model `M` in which every stored `defnInfo cv value _` satisfies `Denotes M.cval env φ ρ value (M.cval cv.name φ)` for all `φ ρ` |
+| `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const ConLeche.falseName []` |
+| `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader reads as `.const ConLeche.falseName []` |
+| `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `RecordsRead limits records constants` for some `constants`; and `ConLecheAdmission.Installed pins pre natPins constants blobs hint env` |
+| `checkBytes_resources` | `resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
+
+`ConLeche.Model V env` (`ConLeche/Denotes.lean`) assigns a set
+`cval c φ` to every constant at every level assignment such that every
+stored constant is a member of what its type denotes (`mem`), what the
+built-in `False` denotes is empty (`false_empty`), and what the built-in `Eq`
+denotes is set equality (`eq_equality`). Definitional equalities need no
+clause: an accepted `rfl` theorem's two sides denote the same set. The
+model theorem is `ConLeche.model_exists` (`ConLeche/MainTheorem.lean`,
+upstream's statement and proof) at the prepared declarations: it holds for
+every declaration array the fold accepts, so the reader owes nothing for
+consistency. Definition values come from con-leche's `defn_reads` through
+`Ix.Kernel.ConLecheFold.checkDecls_model_defn_values`
+(`Ix/Kernel/ConLeche/Values.lean`). Theorem and opaque bodies have no value
+equation, by con-leche's design.
+
+**Fidelity** is what `checkBytes_reading` adds to consistency:
+
+- `WithinBatch` and `UniqueKeys` (`Ix/Ixon/Verify/Admission.lean`): the
+  batch limits hold, and the record keys and the blob keys are each
+  pairwise distinct (`preflight_ok_iff`, `uniqueKeys_ok_iff`).
+- `RecordsRead`: each payload is the canonical encoding of its decoded
+  constant within the per-record limits, keys unchanged
+  (`decodeRecords_ok_iff`, unique by `RecordsRead.deterministic`).
+- `Installed` (`Ix/Ixon/ConLecheConsistency.lean`): the reader's output is a
+  record-by-record reading of the decoded records (`StreamRead`, from
+  `readRecords_spec`), no two decoded records share an address
+  (`Installed.keys`, from `readRecords_nodup`), and the fold accepted
+  exactly that output behind the prelude. `Installed.skels`: the
+  environment has exactly the install skeletons of the accepted array.
+  `Installed.singleton`: every definition, theorem, opaque, axiom or
+  quotient record is read under its name with its level parameters, its
+  type's reading and its value's reading (or the projection rewrite), and
+  is installed under that name with its kind (a quotient record,
+  `sorryAx` and `Quot.sound` install as the pinned blocks do).
+- `keyName_injective` and `Ctx.nameOf_of_pin`/`Ctx.nameOf_of_unpinned`
+  (`Ix/Kernel/ConLeche/{Reader,ReaderSpec}.lean`): which name a reference
+  is read under.
+
+Not proved:
+
+- that installed types and values equal the decoded ones. Con-leche
+  installs the annotation of a declared term: binder regimes (`pw`) are
+  computed (the reader emits `pw := .never`), `let` is ζ-reduced, and
+  projections are checked. The intended statement is about `pw`-erasure and
+  needs a lemma about con-leche's `installConstantVal`/`installValue`;
+- the member-level reading of inductive blocks (member order, constructor
+  and recursor headers, rule constructors) through `readInductive`;
+- per-member completeness of definition blocks (`defOrder` is not proved to
+  be a permutation);
+- that the committed table pins Init's own constants. That is the
+  generator's verification, not a theorem; the no-False theorems are stated
+  at `falseName` and hold for any table.
+
+The projection and block-order variants have the same shape:
+`Ix.Ixon.Projection.checkBytes_{run_iff, ok_iff, of_expansion, reading,
+has_model, no_proof_of_False}` and `Ix.Ixon.BlockOrder.checkBytes_{run_iff,
+ok_iff, of_ordered, reading, has_model, no_proof_of_False}`, each with
+`UniqueKeys` in its reading. The separate package `Models/SetTheory`
+(Mathlib) provides `IxSetTheoryModel.conLecheSetTheoryOfCarneiro`, a
+`ConLeche.SetTheory ZFSet` instance under `OmegaInaccessibles`, and the
+corollaries `IxSetTheoryModel.checkBytes_has_ZFSet_model` and
+`IxSetTheoryModel.checkBytes_no_proof_of_False`.
+
+## Keys, pins and the prelude
+
+**Keys** (`Ix/Kernel/ConLeche/Reader.lean`). Con-leche's environment is keyed
+by `ConLeche.Name`. A reference `ConstRef Address` is encoded under the
+reserved root `ix`: `.member b i` is `ix.<hex b>.i` and `.ctor b i c` is
+`ix.<hex b>.i.c`, with numeric components (`keyName`, injective). Level
+parameters are positional. Three kinds of names differ:
+
+- recursors are named after what they eliminate, as Lean names them
+  (`T.rec`, and `T.rec_j` for the `j`-th auxiliary motive of a nested
+  block), because con-leche finds a block's recursor by name;
+- pinned references take their pinned name;
+- the pinned standard-axiom constants and their recursors carry Lean's own
+  level-parameter names (`Pins.levels`), because con-leche's `matchesPin`
+  compares them, and a large eliminator names its extra level parameter
+  so that con-leche recognises it.
+
+**Pins** (`Ix/Kernel/ConLeche/PinData.lean`, generated). The table maps 55
+references to con-leche's pinned names and no others: the basis (`Eq`,
+`Nat`, `PUnit`, `Empty`, `False`, the `Quot` package), `And` and `Bool`, the
+literal support (`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`),
+the structural and pin-certified `Nat` operations, the standard axioms with
+`Iff` and `Nonempty`, the compiler-trust family with `True`, and `sorryAx`.
+`pinMap` refuses a table that is not a partial injection or that uses the
+`ix` root or a derived name shape. The table decides coverage only:
+con-leche compares every pinned name's declaration with its pinned shape
+(basis blocks up to `canon`, with a reserved-name reject otherwise; literal
+support and `Nat` operations by exact type shapes and certified
+recurrences; standard and trust axioms by `matchesPin`), so a pin on a
+constant of another shape is refused, never accepted under the pinned
+name.
+
+**Nat-operation pins** (`Ix/Kernel/ConLeche/NatOpPinData.lean`, generated).
+One `ConLeche.NatOpPinSet` for the eight pin-certified operations (`div`,
+`mod`, `gcd`, `land`, `lor`, `xor`, `shiftLeft`, `shiftRight`): the pins are
+the operations' stored values in the compiled Init, the certificates are the
+theorems of `ConLeche/PinGen/Certs.lean` compiled by Ix. `model_exists`
+holds at every pin list, so the list is untrusted.
+
+**Prelude** (`Ix/Kernel/ConLeche/Prelude.lean`). Con-leche puts twelve
+declarations in front of every fold: the basis blocks `Eq`, `Nat`, `PUnit`,
+`Empty`, `False`, the quotient package (four `Quot` constants and
+`Quot.sound`), `And` and `Bool`. Here they are the compiled Init's own Ixon
+records (`PinData.prelude`, canonical bytes by address), decoded by the
+canonical decoder and read by the same reader. The empty stream installs
+27 constants. A stream that declares a prelude constant is checked on its
+own record (`preparePrelude` moves the stream's copy to the front); the
+prelude's copy fills in where the stream has none.
+
+**Regeneration.** Both tables come from `conleche-pin-gen`
+(`Benchmarks/Kernel/ConLechePinGen.lean`), which checks every pinned
+constant's record and the literal capabilities through con-leche's fold
+before writing:
+
+```sh
+lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe
+lake exe ix compile ConLeche/PinGen/Certs.lean --out .lake/census/certs.ixe --consts <the certificate theorems>
+lake exe conleche-pin-gen .lake/census/initstd.ixe .lake/census/certs.ixe \
+  Ix/Kernel/ConLeche/PinData.lean Ix/Kernel/ConLeche/NatOpPinData.lean
+```
+
+The full `--consts` list and the source hashes are in the generated files'
+headers. The table names addresses, so a toolchain or compiler change that
+moves Init's addresses requires regeneration: until then the moved
+constants are not pinned and the inputs that need them (literals, the
+pinned `Nat` operations, the standard axioms) decline. Soundness does not
+depend on the table.
+
+## Trust surface
+
+The theorems are about the Lean functions. Trusted beneath them: Lean's
+kernel, compiler and runtime, and the inherited `Init`/`Std` primitives the
+compiled code reaches (the entry's closure reaches 123 inherited externs,
+for example `ByteArray` and `String` primitives and `lean_sarray_dec_eq`,
+which implements `ByteArray` equality and therefore `Address` equality).
+Not in the closure: `ix_rs`, C or Rust BLAKE3, `Ix.Tc`, any JSON or
+lean4export parser. The projection variant computes addresses with pure
+Lean BLAKE3 (`Address.blake3Pure`).
+
+Project-level execution constructs are admitted only as named by
+`runtimeRulings` (`Ix/Kernel/Audit/Roots.lean`):
+
+| Construct | Where | Why admitted |
+| --- | --- | --- |
+| `@[computed_field]` overrides | `ConLeche.Level`, `ConLeche.Expr`, `ConLeche.Name` | cached hashes and packed data; a compiler feature, trusted with the compiler |
+| project `@[csimp]` | `ConLeche` | each replacement theorem depends on the standard axioms only |
+| `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
+| `ConLeche.withExclusive` `implemented_by` `withExclusiveUnsafe` | `ConLeche/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
+| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `ConLeche.Kernel.BasisGen`, `ConLeche.PinGen*` | elaboration only; compiled code cannot reach them |
+| `partial` | `ConLeche.Frontend.InModel`, `InModelDump` | con-leche's in-process modeller, ported as upstream has it |
+
+Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
+
+- `kernelImportAllowlist`: `Init`, `Std`, `Ix.Kernel`, `Ix.Address.Core`,
+  `Ix.Ixon.Types`, `ConLeche`. It fences the reader, the record store, the
+  projection writer and the pure Ixon types.
+- `importAllowlist` (the certified API's closure, rooted at
+  `Ix.Ixon.Admission`): the above plus exactly `Ix.Ixon.{Codec, Wire,
+  WireCheck, Bounded.Constant, Bounded.Universe, Canonical, Admission,
+  ConLecheAdmission}`. No projection hashing, block order, `Ix.Address.Pure`,
+  proof module or `Lean` (outside `elaborationImports`).
+- `proofImportAllowlist` (the theorem modules): `importAllowlist` plus
+  `Ix.Ixon.Bounded.Size`, `Ix.Ixon.Verify`, the two theorem modules and
+  `Lean`.
+- `elaborationImports`: below `ConLeche.Kernel.BasisGen` and
+  `ConLeche.PinGen` only `Init`, `Std`, `Lean` and `ConLeche`.
+
+`Std` is admitted for its maps and their lemmas, as con-leche uses them.
+
+## Audits and fences
+
+The audits are Lean modules that fail elaboration on a violation. They are
+built by the strict standalone package `IxKernel/` (`lake -d IxKernel build
+--wfail`, sources from the repository, no dependency beyond the toolchain).
+
+| Module | Checks |
+| --- | --- |
+| `Ix/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 20, `fidelityRoots` 17, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements; a control showing the fold fails without the rulings |
+| `Ix/Ixon/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
+| `Ix/Ixon/ProjectionAudit.lean`, `Ix/Ixon/BlockOrderAudit.lean` | the variants' imports, closures, extern differences and statements, and the projection writer's guards |
+| `Ix/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
+| `Models/SetTheory/IxSetTheoryModel/Audit.lean` | the model package's full dependency closure: standard axioms only |
+
+Frozen runtime closures (compiled functions; inherited externs):
+
+| Roots | Functions | Externs |
+| --- | ---: | ---: |
+| fold `ConLeche.Cached.checkDecls` | 3010 | 83 |
+| reader `readRecords`, `readStream` | 1856 | 81 |
+| entry: the API, `ConLecheAdmission.checkBytes{,With}`, `checkConstants{,With}` | 5290 | 123 |
+| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5288 | 123 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5410 | 132 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5534 | 132 |
+
+A frozen value changes only in a commit that explains the change in the
+audit's comment (the closures above include L6b's `uniqueKeys`, 10
+functions). Statements are re-recorded the same way.
+
+`lake run check-kernel [--with-model]` is the gate. In order:
+
+1. `scripts/check-kernel-retirement.py`: no active reference to a retired
+   intrinsic module, entry point, executable or script (with negative and
+   positive controls);
+2. the strict `IxKernel` build with every audit;
+3. the host build of the kernel tests (`Tests/Ix/Kernel/{ByteAdmission,
+   ConLecheReader, CertifiedEntry, Projection, BlockOrder, Codec, ...}`),
+   whose `#guard`s run at elaboration;
+4. `kernel-provenance` (below);
+5. `kernel-codec` (production codec against Rust) and `kernel-order`
+   (canonical block order against Rust);
+6. with `--with-model`, the `Models/SetTheory` build and its audit;
+7. `scripts/layering.sh`: the `ConLeche/**` import layering (implementation
+   never imports theory, base never imports the model lane, the rules fence
+   and its five recorded doors, and the boundary: `ConLeche/**` imports
+   only `ConLeche`, `Init`, `Std` and, at elaboration time, `Lean`);
+8. `scripts/trust-surface.sh`: a lexer-based scan of `ConLeche/**` for
+   compiler escapes (`unsafe`, `implemented_by`, `computed_field`,
+   `native_decide`, `extern`, `sorry`, `axiom`, ...); 11 escapes in four
+   allowlisted files (`ConLeche/Kernel/{Expr,Name,Exclusive,BasisGen}.lean`)
+   are permitted, each with its justification in the script;
+9. `kernel-entry-cases`: Lean declarations of
+   `Tests/Ix/Kernel/EntryCaseDefs.lean` compiled by Ix's compiler and
+   submitted as canonical bytes to `checkBytes`, each with an exact expected
+   verdict (accepts: a definition, a theorem, an inductive with its
+   recursor, a structure with a projection, a quotient reduction, `Nat`
+   literals and a pinned `Nat` operation, a `String` literal, a nested
+   inductive, the opaque face of a `partial` definition; rejects: truncated
+   bytes, a duplicate constant, a duplicate blob, `Nat.rec` with a wrong K
+   flag; declines: `Nat.add` with another value, a `partial` definition's
+   `_unsafe_rec` body, a non-standard axiom, a theorem of `False`). Rows go
+   to `.lake/build/kernel-entry-cases.jsonl`.
+
+The CI job runs the same gate and keeps the codec, order and entry-case
+logs.
+
+## Provenance
+
+`Tests/Ix/Kernel/ImportManifest.lean` records every imported file: source
+path and SHA-256 at the origin's revision, destination path and SHA-256, and
+transformation (`verbatim`, or `adapted` with a summary). Rows are grouped by
+origin and licence:
+
+- con-leche, `https://github.com/leanprover/con-leche.git` at
+  `ae0c0c4e4ce6a0081648aff03fe9c39d002c4526`: the import closure of
+  `ConLeche.model_exists` plus what the reader and theorems use (452
+  modules), the licence, and the two fence scripts with the lexer fixture.
+  Verbatim files are byte-identical and carry no header. Adapted files start
+  with a port header (revision, source path, transformations): four modules
+  (`ConLeche/Kernel/CheckerBase.lean`, which imports `NatOpPinSet` in place
+  of the unported JSON `NatOpPins`; `ConLeche/Verify/Cached/{AgreeFloor,
+  PushChain}.lean`, which add `import all Init.LetFun` for Lean 4.34.0;
+  `ConLeche/MainTheorem.lean`, cut to `model_exists`) and
+  `Tests/ConLeche/Axioms.lean`. The last two carry Argument's modification
+  notice and are licensed `Apache-2.0 AND (MIT OR Apache-2.0)`; the rest is
+  `Apache-2.0`;
+- the old Ix branch `jcb/ix-kernel-consistency` at `ad60e5f6`: only
+  `Ix/Kernel/Ref.lean` and its licence and notice files remain since L6;
+- `authored`: the 66 Ix-authored modules under the inventoried trees.
+
+`lake exe kernel-provenance` checks that every Lean file under `Ix/Kernel`,
+`Ix/Ixon` and `ConLeche` (and `Ix/Kernel.lean`, `Ix/Address/Core.lean`,
+`ConLeche.lean`) is recorded, every destination hash and port header,
+licences and licence files. `--source-git <con-leche checkout>` also
+verifies every source hash against the recorded revision; `--source
+<jj workspace>` does so for the old branch, which needs a workspace holding
+`ad60e5f6`.
+
+To sync with a newer con-leche revision:
+
+1. In a con-leche checkout at the new revision, copy the changed files of
+   the closure into `ConLeche/` at the same paths (and any new file the
+   closure now imports). Keep verbatim files byte-identical; re-apply each
+   adaptation to its new source and update its port header.
+2. Write a TSV with one row per imported file (`source_path`,
+   `source_sha256`, `dest_path`, `dest_sha256`, `transformation`) and run
+   `python3 scripts/provenance-rows.py rows.tsv --check-dest . --check-source
+   <checkout> --rev <revision> --splice Tests/Ix/Kernel/ImportManifest.lean`.
+   It checks the hashes and splices `conLecheRows` between its markers.
+3. Set `conLeche.revision` in the manifest, and the revision in the
+   `ConLeche` library docstrings of `lakefile.lean` and
+   `IxKernel/lakefile.lean` and in the two fence scripts' headers.
+4. Keep ``leanOptions := #[⟨`linter.deprecated, false⟩]`` on both
+   `ConLeche` library declarations: upstream writes for Lean 4.33.0 and
+   uses lemma names that 4.34.0 deprecates, and the files must build under
+   `--wfail` without edits.
+5. Run `lake exe kernel-provenance --source-git <checkout>` and the full
+   gate. A changed closure moves the frozen counts; re-record each with its
+   explanation, and re-record changed statements.
+
+## Census
+
+The census measures coverage on a compiled corpus; it is not a certified
+verdict. `kernel-census` (`Benchmarks/Kernel/ConLecheCensus.lean`, entry
+`CensusCertifiedMain.lean`; `kernel-census-cl` is the same driver) reads an
+`.ixe`, orders its primary records (the prelude's first, then dependencies,
+`Nat`-operation grounds and literal edges), reads each record with the Ixon
+reader and installs and checks it one record at a time with an incremental
+step of con-leche's fold (`Benchmarks/Kernel/ConLecheStep.lean`),
+continuing past failures and reporting dependents of a failure as blocked.
+Hints are the compiler's. Each row is JSON (`address, names, kind, outcome,
+reason, micros, readMicros`).
+
+```sh
+lake build --wfail kernel-census
+lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe
+systemd-run --user --scope -p MemoryMax=24G -p MemorySwapMax=0 \
+  env CENSUS_WATCH_MB=12000 scripts/census-guarded.sh \
+  .lake/build/bin/kernel-census .lake/census/initstd.ixe .lake/census/initstd.jsonl
+python3 scripts/census-report.py .lake/census/initstd.jsonl
+```
+
+Usage: `kernel-census <input.ixe> <output.jsonl> [limit]`. Environment:
+
+- `CENSUS_WATCH_MS` (default 60000) and `CENSUS_WATCH_MB` (default 20000):
+  a watchdog ends the run with exit code 3 when one record's check exceeds
+  the time or the process's resident memory exceeds the size, and appends
+  the record's address to `<output>.runaway`. The resident size includes
+  the decoded corpus, which the driver holds in memory: about 4 GB for
+  Init and about 38 GB for Mathlib. `CENSUS_WATCH_MB` must exceed it, or
+  the watchdog fires before the first check (for Mathlib, for example,
+  `CENSUS_WATCH_MB=46000` under a `MemoryMax` above that);
+- `CENSUS_SKIP` (comma-separated addresses) declines those records
+  unchecked; `scripts/census-guarded.sh` reruns with every recorded runaway
+  skipped until the run completes;
+- `CENSUS_ROOTS` (comma-separated Lean names) restricts the run to the
+  prelude and the dependency closure of those constants.
+
+Run one census at a time, under a memory cap, with no concurrent build.
+`scripts/kernel-census-report.py` and `scripts/bench-kernel-census.py`
+summarize and compare runs. Mathlib's `.ixe` comes from
+`Benchmarks/Compile/CompileMathlib.lean` (`Benchmarks/Compile/README.md`).
+
+## The retired intrinsic kernel
+
+From K0 (2026-09-17) to L5, the certified checker was an intrinsic,
+proof-carrying kernel in `Ix/Kernel/**` (`Ix.Kernel.check`, `checkDecls`,
+`checkEnv`), built on a set model and syntax ported from the Ix branch
+`jcb/ix-kernel-consistency` at `ad60e5f6` (with con-leche's `SetTheory` at
+`86cd20a6`). Each admitted declaration constructed its model extension
+(`StepClaim`, `AdmissionClaim`); the public theorems were
+`check_has_model`, the conditional `checkDecls_has_model`, a semantic
+`no_proof_of_False` over `Env.EmptyType`, installation fidelity
+(`Ingress.Installed`) and `checkBytes_unique_keys`. Its supported profile
+covered single definitions, theorems and opaques, ordinary inductive
+families with supplied recursors, structures, `Nat`, equality, quotients
+and the two standard axioms, and declined arbitrary axioms, unsafe and
+partial declarations, and general mutual and nested inductives. L5
+(2026-09-30) made con-leche behind the Ixon reader the certified API and
+renamed the intrinsic entries `checkBytesIntrinsic`; L6 (2026-10-01)
+deleted the kernel (132 files, 29,805 lines) with its entries, 19 test
+modules, census, benchmark and host differentials (25 files, 4,080
+lines). Its last development state is
+`tmxpopss` (int-1); the last tree that contains it is `runnvnly`, the
+parent of the retirement. The retirement's file-by-file inventory is in
+`plans/review/cl-l6/` (not versioned).
 
 ## Removal ledger: lean4ix and Ix.Tc
+
+Recorded at D01 (2026-09-29), before the con-leche port. Where it names
+`Ix.Kernel` roots, audits and `check-kernel` job counts, it describes the
+intrinsic kernel of that date; the current gate is described above.
 
 D01 removed both dependency paths on 2026-09-29: the root Lake package
 `lean4lean` fetched `argumentcomputer/lean4ix` at
