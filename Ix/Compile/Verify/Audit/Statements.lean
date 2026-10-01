@@ -83,8 +83,12 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.ExprTableWF.mono },
   { root := ``Ix.Compile.Verify.Catalog.empty_wf,
     standardAxioms := standard, nativeAxioms := blake3Native },
+  -- `Std.HashMap`'s well-formedness proof reaches core's `Nat.le_iff_lt_add_one`
+  -- and `Nat.pow_lt_pow_iff_right`, which are classical as of Lean v4.34, so
+  -- any statement over `Ixon.Env` (hash-map fields) now carries
+  -- `Classical.choice` regardless of its own proof.
   { root := ``Ix.Compile.Verify.Catalog.ofEnv_finite,
-    standardAxioms := noChoice },
+    standardAxioms := standard },
   { root := ``Ix.Compile.Verify.BlockState.internRef_wf,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.BlockState.internUniv_wf,
@@ -141,8 +145,10 @@ def roots : Array RootAllowance := #[
   { root :=
       ``Ix.Compile.Verify.PreseedCollectionCovers.compileExprRef_of_indexed,
     standardAxioms := standard, nativeAxioms := blake3Native },
+  -- Over hash-map state: carries `Classical.choice` for the reason given at
+  -- `Catalog.ofEnv_finite` above.
   { root := ``Ix.Compile.Verify.BlockWireTablesWF.of_preseed,
-    standardAxioms := noChoice },
+    standardAxioms := standard },
   { root := ``Ix.Compile.Verify.preseedExprTables_singleton_run_ready,
     standardAxioms := standard, nativeAxioms := blake3Native },
   { root := ``Ix.Compile.Verify.preseedExprTables_singleton_run_ready_wireWF,
