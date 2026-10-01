@@ -41,6 +41,7 @@ public import Ix.BenchConstants
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Watchdog
+import Ix.Ixon
 
 public section
 
@@ -677,7 +678,9 @@ def ensureIxe (repo : String) (info : EnvSpec) (explicit : Option String) :
 /-- Cut the closure-shard artifacts for one constant: `ix shard
     extract` (standalone closure env) → `ix profile` → `ix shard`
     (heartbeat-profiled min-cut manifest, capped by predicted RAM). Skips
-    work when the artifacts already exist. Returns `(ixe, ixes)` on
+    work when the artifacts already exist under the current `.ixe` format
+    version (`<dir>/ixe-v<VERSION>/`: artifacts cut under another version
+    are unreadable and never reused). Returns `(ixe, ixes)` on
     success, `none` when any step fails (the caller falls back to the
     single-leaf run — the watchdog then records the honest OOM row). -/
 def cutClosureShards (ix : String) (envIxe : String)
@@ -685,6 +688,7 @@ def cutClosureShards (ix : String) (envIxe : String)
     IO (Option (String × String)) := do
   let slug := name.map fun c =>
     if c == '/' || c == ' ' || c == '.' || c == ':' then '_' else c
+  let dir := s!"{dir}/ixe-v{Ixon.Env.VERSION}"
   let subIxe := s!"{dir}/{slug}.ixe"
   let manifest := s!"{dir}/{slug}.ixes"
   if (← FilePath.pathExists subIxe) && (← FilePath.pathExists manifest) then
