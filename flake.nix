@@ -381,7 +381,6 @@
                 rust-analyzer
                 lean
                 cargo-deny
-                python3
                 valgrind
               ];
             };
@@ -406,7 +405,6 @@
                   rust-analyzer
                   lean
                   cargo-deny
-                  python3
                   valgrind
                 ])
                 ++ [ cudaToolkit ];
