@@ -41,7 +41,7 @@ private partial def closure (env : Environment) (pending : List Name)
 checker's consistency in `ZFSet`. (`carneiro_implies_ix`, the instance of
 the intrinsic kernel's interface, was retired with that kernel at L6.) -/
 def roots : List Name :=
-  [``carneiro_implies_conleche, ``checkBytes_has_ZFSet_model,
+  [``carneiro_implies_setTheory, ``checkBytes_has_ZFSet_model,
     ``checkBytes_no_proof_of_False]
 
 run_cmd do

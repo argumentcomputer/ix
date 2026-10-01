@@ -29,8 +29,8 @@ that output against real compiled environments:
    installed environment** (`entries`, the fixture): over a set of records the
    checker accepts,
    - the reader's declarations with the compiler's projections and with the
-     reconstructed ones are equal (`ConLecheAdmission.readStream`);
-   - `ConLecheAdmission.checkConstants` with the compiler's projections,
+     reconstructed ones are equal (`KernelAdmission.readStream`);
+   - `KernelAdmission.checkConstants` with the compiler's projections,
      `Projection.checkBytes` with the projections omitted (reconstructed) and
      `BlockOrder.checkBytes` (reconstructed, order decided) install the same
      environment: the same constants, in the same order, of the same kinds,
@@ -55,7 +55,7 @@ blocks (they contain primary + aux recursors, with the aux portion in
 kernel-computed canonical order, not stored sort_consts)"). Every block of
 every corpus must now pass (`ProjectionReport.refused` is a problem), the two
 named fixture blocks are required among the accepted recursor blocks
-(`Tests.Ix.Kernel.ConLecheRoundtrip`), and every accepted recursor block with
+(`Tests.Ix.Kernel.ReaderRoundtrip`), and every accepted recursor block with
 its first two members swapped must be refused for its motive order.
 
 **No environment egress exists.** Nothing writes con-leche's `Env` back to
@@ -64,8 +64,8 @@ retired at L6 (`plans/review/cl-l6`). What it would need is in
 `plans/review/cl-fidelity/README.md` ("Egress of the environment"). -/
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.ConLecheReader
-open Benchmarks.Kernel.ConLecheStep (RecordStore Hints setup Setup owner)
+open Ix.Kernel.IxonReader
+open Benchmarks.Kernel.CheckIxeStep (RecordStore Hints setup Setup owner)
 
 namespace Tests.Ix.Kernel.EgressFidelity
 
@@ -255,12 +255,12 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   let reconstructed ← match Ix.Ixon.Projection.reconstruct maxProjections prim with
     | .ok cs => pure cs
     | .error e => throw (IO.userError s!"reconstruct: {reprStr e}")
-  let decls₁ ← IO.ofExcept ((Ix.Ixon.ConLecheAdmission.readStream pins pre compiled blobs hints.lookup).mapError toString)
-  let decls₂ ← IO.ofExcept ((Ix.Ixon.ConLecheAdmission.readStream pins pre reconstructed blobs hints.lookup).mapError toString)
+  let decls₁ ← IO.ofExcept ((Ix.Ixon.KernelAdmission.readStream pins pre compiled blobs hints.lookup).mapError toString)
+  let decls₂ ← IO.ofExcept ((Ix.Ixon.KernelAdmission.readStream pins pre reconstructed blobs hints.lookup).mapError toString)
   if let some d := declsDiff decls₁ decls₂ then
     report := { report with problems := report.problems.push s!"re-read with written projections: {d}" }
   -- the three certified entries
-  let env₁ ← IO.ofExcept ((Ix.Ixon.ConLecheAdmission.checkConstants compiled blobs hints.lookup).mapError
+  let env₁ ← IO.ofExcept ((Ix.Ixon.KernelAdmission.checkConstants compiled blobs hints.lookup).mapError
     fun e => s!"checkConstants: {e}")
   let bytes := prim.map fun (a, c) => (a, Ixon.serConstant c)
   let env₂ ← match Ix.Ixon.Projection.checkBytes maxProjections limits bytes blobs hints.lookup with
@@ -280,7 +280,7 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   | .error (.checker e) =>
     report := { report with problems := report.problems.push s!"block-order entry: {e}" }
   -- each projection record names an installed constant of its kind
-  let cx := Ix.Ixon.ConLecheAdmission.streamContext pins pre compiled blobs hints.lookup
+  let cx := Ix.Ixon.KernelAdmission.streamContext pins pre compiled blobs hints.lookup
   let installed : Std.HashMap CName String := env₁.consts.foldl
     (fun m ci => m.insert ci.toConstantVal.name (infoKind ci)) {}
   for (k, p) in projs do
@@ -308,10 +308,10 @@ def acceptedClosure (input : Input) (roots : Array Lean.Name) : IO (Array Addres
   let s : Setup := setup input.store (input.ixon.blobs[·]?) pins pre hints.lookup
   let rootAddrs := roots.filterMap fun n =>
     (input.ixon.named[_root_.Ix.Name.fromLeanName n]?).map (·.addr)
-  let ordered := Benchmarks.Kernel.ConLecheStep.closure s.store s.extra
+  let ordered := Benchmarks.Kernel.CheckIxeStep.closure s.store s.extra
     (pre.records.map (fun (p : Address × Ixon.Constant) => p.1) ++ rootAddrs)
-  let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.ConLecheStep.Row)
-  let _ ← Benchmarks.Kernel.ConLecheStep.censusLoop s natPins (fun _ => #[]) ordered {}
+  let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.CheckIxeStep.Row)
+  let _ ← Benchmarks.Kernel.CheckIxeStep.checkLoop s natPins (fun _ => #[]) ordered {}
     (emit := fun row => rows.modify (·.push row))
   let accepted : Std.HashSet Address := (← rows.get).foldl
     (fun acc r => if r.outcome == "accept" then acc.insert r.address else acc) {}
@@ -319,7 +319,7 @@ def acceptedClosure (input : Input) (roots : Array Lean.Name) : IO (Array Addres
   -- with each block's recursor records after it (no root reaches them: they
   -- reference their block, not the other way)
   let withRecs := ordered.flatMap fun a =>
-    #[a] ++ Benchmarks.Kernel.ConLecheStep.recursorRecords s.cx.index a
+    #[a] ++ Benchmarks.Kernel.CheckIxeStep.recursorRecords s.cx.index a
   let mut seen : Std.HashSet Address := {}
   let mut out : Array Address := #[]
   for a in withRecs do

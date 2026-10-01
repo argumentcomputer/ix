@@ -3,12 +3,12 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Ixon.ConLecheAdmission
+import Ix.Ixon.KernelAdmission
 
 /-! # Ixon records through con-leche's verified checker (plan v4, L4)
 
-End-to-end fixtures for `Ix.Ixon.ConLecheAdmission.checkBytes`: canonical
-record bytes are preflighted, decoded, read by `Ix.Kernel.ConLecheReader`,
+End-to-end fixtures for `Ix.Ixon.KernelAdmission.checkBytes`: canonical
+record bytes are preflighted, decoded, read by `Ix.Kernel.IxonReader`,
 prepared with the Ixon prelude (`Eq`, `Nat`, `PUnit`, `Empty`, `False`, the
 quotient package, `And`, `Bool`, from the compiled Init's own records) and
 checked by `Ix.Kernel.Cached.checkDecls .verified`.
@@ -40,10 +40,10 @@ and unsafe declarations;
 `pinMap`'s refusals. -/
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.ConLecheReader
-open Ix.Ixon.ConLecheAdmission
+open Ix.Kernel.IxonReader
+open Ix.Ixon.KernelAdmission
 
-namespace Tests.Ix.Kernel.ConLecheReader
+namespace Tests.Ix.Kernel.Reader
 
 /-! ## Fixture builders -/
 
@@ -823,7 +823,7 @@ def natBlockRecord : Ixon.Constant := Id.run do
 
 example {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := keyName_injective h
 
-/-- info: 'Ix.Kernel.ConLecheReader.keyName_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Ix.Kernel.IxonReader.keyName_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms keyName_injective
 
 /-! ## Model existence -/
@@ -837,4 +837,4 @@ example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
     (h : run strings strBlobs stringPins = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytesWith_has_model V h
 
-end Tests.Ix.Kernel.ConLecheReader
+end Tests.Ix.Kernel.Reader

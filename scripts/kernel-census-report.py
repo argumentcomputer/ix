@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize a `kernel-census` JSONL run.
+"""Summarize a `kernel-check-ixe` JSONL run.
 
 Reports outcome counts by declaration kind, first-cause decline/reject reasons,
 and root blockers ranked by how many records they transitively block. A blocked

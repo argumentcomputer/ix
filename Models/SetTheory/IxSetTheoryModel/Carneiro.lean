@@ -145,14 +145,15 @@ theorem isTGUniverse_vonNeumann (hκ : κ.IsInaccessible) :
 
 This is con-leche's own bridge (`bridge/lean4lean-model/ConLecheBridge/Carneiro.lean`
 at `86cd20a6`, the source of this file), whose instance `setTheoryOfChain`
-targets `Ix.Kernel.SetTheory` directly. -/
+targets `Ix.Kernel.SetTheory` directly; here `zfSetTheoryOfChain`,
+`zfSetTheoryOfCarneiro` and `carneiro_implies_setTheory`. -/
 
 set_option warn.classDefReducibility false in
-/-- Con-leche's set theory on Mathlib's `ZFSet.{u}`, from any strictly
+/-- The kernel's set theory on Mathlib's `ZFSet.{u}`, from any strictly
 increasing sequence of inaccessibles: the ZF⁻ fields are Mathlib's
 (`ZFSet.ext`, pairs, `⋃₀`, `powerset`, `mem_wf`, `image` under
 `Classical.allZFSetDefinable`), and `univChain n := V_ (κ n).ord`. -/
-noncomputable def conLecheSetTheoryOfChain (κ : ℕ → Cardinal.{u}) (hmono : StrictMono κ)
+noncomputable def zfSetTheoryOfChain (κ : ℕ → Cardinal.{u}) (hmono : StrictMono κ)
     (hinacc : ∀ n, (κ n).IsInaccessible) : Ix.Kernel.SetTheory ZFSet.{u} where
   Mem := (· ∈ ·)
   ext h := ZFSet.ext h
@@ -175,16 +176,16 @@ noncomputable def conLecheSetTheoryOfChain (κ : ℕ → Cardinal.{u}) (hmono : 
   univChain_tg n := isTGUniverse_vonNeumann (hinacc n)
 
 set_option warn.classDefReducibility false in
-/-- Con-leche's set theory on `ZFSet.{u}` under Carneiro's hypothesis. -/
-noncomputable def conLecheSetTheoryOfCarneiro (h : OmegaInaccessibles.{u}) :
+/-- The kernel's set theory on `ZFSet.{u}` under Carneiro's hypothesis. -/
+noncomputable def zfSetTheoryOfCarneiro (h : OmegaInaccessibles.{u}) :
     Ix.Kernel.SetTheory ZFSet.{u} :=
-  conLecheSetTheoryOfChain (Classical.choose h) (Classical.choose_spec h).1 (Classical.choose_spec h).2
+  zfSetTheoryOfChain (Classical.choose h) (Classical.choose_spec h).1 (Classical.choose_spec h).2
 
-/-- **Carneiro's hypothesis implies con-leche's.** `ω` strongly inaccessible
+/-- **Carneiro's hypothesis implies the kernel's.** `ω` strongly inaccessible
 cardinals give a model of `Ix.Kernel.SetTheory`, the interface the certified
 checker's theorems are stated over, on Mathlib's `ZFSet.{u}`. -/
-theorem carneiro_implies_conleche :
+theorem carneiro_implies_setTheory :
     OmegaInaccessibles.{u} → Nonempty (Σ V : Type (u + 1), Ix.Kernel.SetTheory V) :=
-  fun h => ⟨⟨ZFSet.{u}, conLecheSetTheoryOfCarneiro h⟩⟩
+  fun h => ⟨⟨ZFSet.{u}, zfSetTheoryOfCarneiro h⟩⟩
 
 end IxSetTheoryModel

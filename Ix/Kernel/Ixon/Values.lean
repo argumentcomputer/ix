@@ -24,7 +24,7 @@ value (binder regimes computed, `let` reduced). Theorems and opaques keep
 no such equation: their values are opaque to reduction and the invariant
 records none (con-leche's design, `AcvalDefnInst`'s docstring). -/
 
-namespace Ix.Kernel.ConLecheFold
+namespace Ix.Kernel.IxonFold
 
 open Ix.Kernel Ix.Kernel.Model
 
@@ -54,4 +54,4 @@ theorem checkDecls_model_defn_values (V : Type w) [SetTheory V] (pins : List Nat
   rw [Expr.closeN_of_hasFvar _ 0 0 hv.1, interp_cvalOf m.base2.cval_closedL] at hb
   exact hb
 
-end Ix.Kernel.ConLecheFold
+end Ix.Kernel.IxonFold

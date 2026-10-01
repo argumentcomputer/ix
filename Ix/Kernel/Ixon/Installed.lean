@@ -8,7 +8,7 @@ import Ix.Kernel.Verify.Cached.AgreeFloor
 /-! # What con-leche's fold installs (plan v4, L5)
 
 The kernel half of the fidelity theorem of the con-leche entry
-(`Ix.Ixon.ConLecheConsistency`). Con-leche proves that the environment an
+(`Ix.Ixon.KernelConsistency`). Con-leche proves that the environment an
 accepted `Cached.checkDecls` returns has exactly the install skeletons its
 input declares (`Cached.checkDecls_skels`, `Ix/Kernel/Verify/Cached/AgreeFloor.lean`):
 the same constants, in the same order, with the same names, kinds,
@@ -23,7 +23,7 @@ nothing of their own, as con-leche specifies (`declCSkels`): `sorryAx`
 (tolerated, never modelled) and `Quot.sound` (a member of the pinned
 quotient block). -/
 
-namespace Ix.Kernel.ConLecheFold
+namespace Ix.Kernel.IxonFold
 
 open Ix.Kernel Ix.Kernel.Cached
 
@@ -144,4 +144,4 @@ theorem checkDecls_installs {pins : List NatOpPinSet} {mode : CheckMode} {ds : A
   obtain ⟨ci, hci, rfl⟩ := List.mem_map.mp hm
   exact ⟨ci, hci, rfl⟩
 
-end Ix.Kernel.ConLecheFold
+end Ix.Kernel.IxonFold

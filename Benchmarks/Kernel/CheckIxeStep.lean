@@ -10,8 +10,8 @@ import Ix.Kernel.NatOpPinSet
 
 /-! # Con-leche's fold one record at a time (untrusted harness)
 
-The per-record step shared by the census (`Benchmarks.Kernel.ConLecheCensus`)
-and the pin generator (`Benchmarks.Kernel.ConLechePinGen`): the dependency
+The per-record step shared by the census (`Benchmarks.Kernel.CheckIxe`)
+and the pin generator (`Benchmarks.Kernel.PinGen`): the dependency
 order of an environment's primary records, the Ixon reader's declarations of
 each record, and an incremental con-leche state that installs and checks
 them one record at a time, continuing past failures.
@@ -21,7 +21,7 @@ over table references with projections replaced by their owners, in which a
 pinned `Nat` operation also depends on its certificate ground
 (`natOpDeps`), as `Frontend.preparePrelude`'s hoist arranges, and a record
 that contains a literal depends on the constants the literal references
-(`ConLecheReader.literalEdges`: the `Nat` trio, and for a string literal the
+(`IxonReader.literalEdges`: the `Nat` trio, and for a string literal the
 string-support constants).
 
 **The step.** `Checker.step` is phase A of `Ix.Kernel.Cached.checkDecls`
@@ -33,12 +33,12 @@ from the constant list before the step and the memo state is reset (it is
 only a cache), so a failure leaves no constant behind. A record that
 references a failed or blocked one is blocked and not checked. Recursor
 records are read with their inductive block and take its outcome. None of
-this is a certified verdict; `Ix.Ixon.ConLecheAdmission.checkBytes` is. -/
+this is a certified verdict; `Ix.Ixon.KernelAdmission.checkBytes` is. -/
 
-namespace Benchmarks.Kernel.ConLecheStep
+namespace Benchmarks.Kernel.CheckIxeStep
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.ConLecheReader
+open Ix.Kernel.IxonReader
 
 /-! ## The per-record step -/
 
@@ -305,7 +305,7 @@ to `emit`. `before` runs before each record's check (the watchdog's hook).
 The records' views and readings come from `view` and `read`; the reading
 state `σ` is threaded through `commit` after every reading that succeeds.
 `onRead` sees every reading (the persistent read cache records them). -/
-def censusLoopWith {σ : Type} (view : Address → Option RecordView)
+def checkLoopWith {σ : Type} (view : Address → Option RecordView)
     (read : σ → Address → Except ReadError Read) (commit : σ → Read → σ) (init : σ)
     (pins : List Ix.Kernel.NatOpPinSet) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)
@@ -382,15 +382,15 @@ def censusLoopWith {σ : Type} (view : Address → Option RecordView)
           out := { out with reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
   return out
 
-/-- `censusLoopWith` over a census setup: each record is read by the reader
+/-- `checkLoopWith` over a census setup: each record is read by the reader
 at the state the records before it left. -/
-def censusLoop (s : Setup) (pins : List Ix.Kernel.NatOpPinSet) (names : Address → Array String)
+def checkLoop (s : Setup) (pins : List Ix.Kernel.NatOpPinSet) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
     (after : IO Unit := pure ()) (progress : Nat → Outcome → IO Unit := fun _ _ => pure ())
     (onRead : Address → Except ReadError Read → Nat → IO Unit := fun _ _ _ => pure ()) :
     IO Outcome :=
-  censusLoopWith s.view
+  checkLoopWith s.view
     (fun st address => match s.store[address]? with
       | some source => readRecord s.cx st address source
       | none => .error (.malformed "record is missing"))
@@ -407,4 +407,4 @@ def reportNames (env : Ixon.Env) (store : RecordStore) : Std.HashMap Address (Ar
     if current.size < 3 then names := names.insert root (current.push (toString name))
   return names
 
-end Benchmarks.Kernel.ConLecheStep
+end Benchmarks.Kernel.CheckIxeStep

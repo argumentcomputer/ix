@@ -56,7 +56,7 @@ inductive Table where
 /-- Byte failures: a batch limit, a key used twice in one table, or a record
 that does not decode canonically. Positions are zero-based and identify the
 original input record or blob; a duplicate's is its second occurrence.
-Checker failures are the entry's own (`Ix.Ixon.ConLecheAdmission.Error`). -/
+Checker failures are the entry's own (`Ix.Ixon.KernelAdmission.Error`). -/
 inductive Error where
   | limit (resource : Resource)
   | duplicate (table : Table) (position : Nat) (address : Address)

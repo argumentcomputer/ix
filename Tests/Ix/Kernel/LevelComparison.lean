@@ -48,7 +48,7 @@ refutes is unsound; a `false` verdict that no valuation refutes is
 incomplete; a `none` is an internal error. Each is a failure. Output is one
 summary line; the exit code is nonzero on any failure. -/
 
-namespace Tests.Ix.Kernel.ConLecheLevels
+namespace Tests.Ix.Kernel.LevelComparison
 
 open _root_.Ix.Kernel (Level Name)
 
@@ -254,7 +254,7 @@ def rewrites (params size count : Nat) (c : Counts) : Counts := Id.run do
   return c
 
 /-- Ixon's universe of a level over `param`s (`u{i}` is `var i`), and back,
-as the reader converts it (`Ix.Kernel.ConLecheReader.convUniv`). -/
+as the reader converts it (`Ix.Kernel.IxonReader.convUniv`). -/
 def toUniv : Level → Ixon.Univ
   | .zero => .zero
   | .succ l => .succ (toUniv l)
@@ -331,6 +331,6 @@ def main : IO UInt32 := do
   let failed := c.unsound + c.incomplete + c.internal + c.geranWrong
   return if failed == 0 && wOk then 0 else 1
 
-end Tests.Ix.Kernel.ConLecheLevels
+end Tests.Ix.Kernel.LevelComparison
 
-def main : IO UInt32 := Tests.Ix.Kernel.ConLecheLevels.main
+def main : IO UInt32 := Tests.Ix.Kernel.LevelComparison.main

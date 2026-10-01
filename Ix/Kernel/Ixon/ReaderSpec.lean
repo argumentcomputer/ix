@@ -9,9 +9,9 @@ import Std.Data.HashSet.Lemmas
 
 /-! # What the Ixon reader produces (plan v4, L5)
 
-Facts about the executed reader (`Ix.Kernel.ConLecheReader`), proved about
+Facts about the executed reader (`Ix.Kernel.IxonReader`), proved about
 its definitions as they stand. They are the reader half of the fidelity
-theorem of the con-leche entry (`Ix.Ixon.ConLecheConsistency`): the
+theorem of the con-leche entry (`Ix.Ixon.KernelConsistency`): the
 declarations the fold checks are the ones the records describe.
 
 * `readRecords_spec`: an accepted stream reading is a record-by-record
@@ -31,12 +31,12 @@ declarations the fold checks are the ones the records describe.
 * `Ctx.nameOf_of_pin`, `Ctx.nameOf_of_unpinned`: when a reference takes its
   pinned name and when its address encoding. The encoding is injective
   (`keyName_injective`, decision D1 (b)); that proof is L4b-D's, in
-  `Ix.Kernel.ConLecheReader` itself.
+  `Ix.Kernel.IxonReader` itself.
 
 None of this is needed for consistency: `Ix.Kernel.model_exists` holds for
 every declaration array. -/
 
-namespace Ix.Kernel.ConLecheReader
+namespace Ix.Kernel.IxonReader
 
 open Ix.Kernel (ConstRef)
 
@@ -373,4 +373,4 @@ theorem MemberReader.read_ref {mr : MemberReader} {i : UInt64} {a : Address}
   simp only [MemberReader.mk']
   rfl
 
-end Ix.Kernel.ConLecheReader
+end Ix.Kernel.IxonReader

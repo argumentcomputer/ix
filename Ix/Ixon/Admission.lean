@@ -4,20 +4,20 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Ixon.Admission.Bytes
-import Ix.Ixon.ConLecheAdmission
+import Ix.Ixon.KernelAdmission
 
 /-! # Admission from ordered Ixon record bytes
 
 The certified Ixon entry (`docs/kernel.md`). This adapter lives outside the
 checker: decoding and admission execute here; their composition with the
 checker is proved in `Ix.Ixon.Consistency` (the public theorems) and
-`Ix.Ixon.ConLecheConsistency` (the same theorems at every pin table and
+`Ix.Ixon.KernelConsistency` (the same theorems at every pin table and
 prelude).
 
 * `checkBytes` is the certified entry: batch limits, key uniqueness and
   canonical decoding (`Ix.Ixon.Admission.Bytes`), then con-leche's verified
   checker behind the Ixon reader under the committed pin table and Ixon
-  prelude (`Ix.Ixon.ConLecheAdmission.checkBytes`).
+  prelude (`Ix.Ixon.KernelAdmission.checkBytes`).
 
 The host supplies record order, address keys, and literal blobs. Addresses
 are keys, not authenticated content hashes. Blobs retain their exact supplied
@@ -35,8 +35,8 @@ the batch limits, key uniqueness and canonical per-record decoding. `hint`
 is the host's optional (untrusted) reducibility hint per constant. -/
 def checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except ConLecheAdmission.Error Ix.Kernel.Env :=
-  ConLecheAdmission.checkBytes limits records blobs hint
+    Except KernelAdmission.Error Ix.Kernel.Env :=
+  KernelAdmission.checkBytes limits records blobs hint
 
 /-- How an Ix caller classifies a failure of the certified entry (D-trust,
 inventory section 3.7, rows 21-22; roadmap section 2, "Coverage and
@@ -51,7 +51,7 @@ inductive Outcome where
   | declined
   deriving Repr, DecidableEq
 
-def outcome : ConLecheAdmission.Error → Outcome
+def outcome : KernelAdmission.Error → Outcome
   | .limit _ => .declined
   | .duplicate .. => .rejected
   | .decode .. => .rejected

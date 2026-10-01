@@ -115,7 +115,7 @@ def univDifferAt? (params : Nat) (a b : Univ) : Option (List Nat) := Id.run do
       return some vals
   return none
 
-/-- The cl-level differential's LCG (`ConLecheLevels.next`), mirrored by
+/-- The cl-level differential's LCG (`LevelComparison.next`), mirrored by
     `canon_univ.rs::tests::lcg_next`. -/
 def lcgNext (seed : UInt64) : UInt64 :=
   seed * 6364136223846793005 + 1442695040888963407

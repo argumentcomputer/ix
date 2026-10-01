@@ -1,7 +1,7 @@
 # Certified kernel benchmarks
 
-The certified checker's measurements are its census: `kernel-census`
-(`Benchmarks/Kernel/ConLecheCensus.lean`, entry `CensusCertifiedMain.lean`;
+The certified checker's measurements are its census: `kernel-check-ixe`
+(`Benchmarks/Kernel/CheckIxe.lean`, entry `CheckIxeMain.lean`;
 `kernel-census-cl` is the same driver under its earlier name) checks a
 compiled corpus record by record with con-leche's checker behind the Ixon
 reader and writes one JSON row per record. It measures coverage and time; it
@@ -9,11 +9,11 @@ is not a certified verdict (`Ix.Ixon.Admission.checkBytes` is). Its inputs,
 options and watchdog are described in `docs/kernel.md` ("Census").
 
 ```sh
-lake build --wfail kernel-census
+lake build --wfail kernel-check-ixe
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe
 systemd-run --user --scope -p MemoryMax=24G -p MemorySwapMax=0 \
   env CENSUS_WATCH_MB=12000 scripts/census-guarded.sh \
-  .lake/build/bin/kernel-census .lake/census/initstd.ixe .lake/census/initstd.jsonl
+  .lake/build/bin/kernel-check-ixe .lake/census/initstd.ixe .lake/census/initstd.jsonl
 python3 scripts/census-report.py .lake/census/initstd.jsonl
 ```
 
@@ -35,19 +35,19 @@ coverage is flagged next to the wall-time ratio.
 
 ```sh
 python3 scripts/bench-kernel-census.py run \
-  --baseline-binary /tmp/kernel-base/.lake/build/bin/kernel-census \
+  --baseline-binary /tmp/kernel-base/.lake/build/bin/kernel-check-ixe \
   --baseline-revision <baseline-commit> \
-  --binary .lake/build/bin/kernel-census --revision <candidate-commit> \
+  --binary .lake/build/bin/kernel-check-ixe --revision <candidate-commit> \
   --input .lake/census/initstd.ixe --output-dir .lake/census-paired
 python3 scripts/bench-kernel-census.py compare before.jsonl after.jsonl --output comparison.json
 ```
 
 ## Other drivers (untrusted, measurement only)
 
-- `kernel-census --fold` (`Benchmarks/Kernel/ConLecheFold.lean`): con-leche's
+- `kernel-check-ixe --fold` (`Benchmarks/Kernel/CheckIxeFold.lean`): con-leche's
   batch fold over the census's accepted records, for comparison with the
   per-record step.
-- `kernel-census-opt` (`Benchmarks/Kernel/ConLecheOpt.lean`): the census with
+- `kernel-check-ixe-opt` (`Benchmarks/Kernel/CheckIxeOpt.lean`): the census with
   driver-side switches (load mode, worker lane, persistent mark, two-phase
   pool).
 

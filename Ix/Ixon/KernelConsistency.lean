@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Ixon.ConLecheAdmission
+import Ix.Ixon.KernelAdmission
 import Ix.Ixon.Verify.Admission
 import Ix.Kernel.Ixon.ReaderSpec
 import Ix.Kernel.Ixon.Installed
@@ -47,7 +47,7 @@ the executed functions.
 * **Definition values** (`checkBytesWith_has_model_values`, D2 (ii)): the
   model can be chosen so that every stored definition's value denotes the
   constant, the counterpart of Ix's `Realizes.bodyValue` for definitions
-  (`Ix.Kernel.ConLecheFold.checkDecls_model_defn_values`).
+  (`Ix.Kernel.IxonFold.checkDecls_model_defn_values`).
 * **Resources** (`checkBytesWith_resources`): the byte limits checked
   before decoding bound the whole decoded representation.
 
@@ -56,11 +56,11 @@ Every theorem holds at every pin table, prelude and Nat-operation pin list
 `checkBytes` (the committed tables) inherits them through `checkBytes_with`.
 -/
 
-namespace Ix.Ixon.ConLecheAdmission
+namespace Ix.Ixon.KernelAdmission
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.ConLecheReader
-open Ix.Kernel.ConLecheFold (declSkel checkDecls_installs)
+open Ix.Kernel.IxonReader
+open Ix.Kernel.IxonFold (declSkel checkDecls_installs)
 open Ix.Ixon.Admission (Limits Records preflight uniqueKeys decodeRecords)
 open Ix.Ixon.Verify.Admission (WithinBatch UniqueKeys RecordsRead resourceUnits)
 
@@ -69,7 +69,7 @@ universe u
 /-! ## Checking decoded records
 
 `streamContext`, `checkConstantsWith` and `checkConstants` are defined with
-the entry (`Ix.Ixon.ConLecheAdmission`). -/
+the entry (`Ix.Ixon.KernelAdmission`). -/
 
 /-- The bytes entry is byte admission (`preflight`, `uniqueKeys`,
 `decodeRecords`) followed by the check of the decoded records. -/
@@ -259,7 +259,7 @@ theorem Installed.has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {pins : 
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
       ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
   obtain ⟨decls, _, _, hc⟩ := h.reading
-  exact Ix.Kernel.ConLecheFold.checkDecls_model_defn_values V natPins _ env hc
+  exact Ix.Kernel.IxonFold.checkDecls_model_defn_values V natPins _ env hc
 
 /-- No constant of an accepted environment has the pinned `False` as its
 type (con-leche's `no_proof_of_False_cached`). -/
@@ -465,4 +465,4 @@ theorem checkConstants_has_model (V : Type u) [Ix.Kernel.SetTheory V]
   obtain ⟨_, _, _, _, _, _, hw⟩ := checkConstants_with h
   exact checkConstantsWith_has_model V hw
 
-end Ix.Ixon.ConLecheAdmission
+end Ix.Ixon.KernelAdmission

@@ -21,7 +21,7 @@ the original Lean source meant is outside the claim.
 ```lean
 def Ix.Ixon.Admission.checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except ConLecheAdmission.Error Ix.Kernel.Env
+    Except KernelAdmission.Error Ix.Kernel.Env
 ```
 
 `records` is an ordered list of `(Address, ByteArray)` pairs, one canonical
@@ -35,11 +35,11 @@ reducibility hint per constant. The entry runs, in order:
 | batch limits: record and blob counts, total payload bytes | `Admission.preflight` | `.limit resource` |
 | key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
 | canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
-| the Ixon reader: records to `Array Ix.Kernel.Declaration` | `ConLecheReader.readRecords` | `.read position (.malformed _ / .declined _)` |
+| the Ixon reader: records to `Array Ix.Kernel.Declaration` | `IxonReader.readRecords` | `.read position (.malformed _ / .declined _)` |
 | the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
 | con-leche's fold | `Ix.Kernel.Cached.checkDecls .verified natPins` | `.kernel error position` |
 
-The pipeline is `Ix.Ixon.ConLecheAdmission.checkBytes`; `checkBytesWith`
+The pipeline is `Ix.Ixon.KernelAdmission.checkBytes`; `checkBytesWith`
 takes the pin table, prelude and Nat-operation pin list as parameters, and
 `checkConstants{,With}` start from decoded records. Two variants share the
 byte stage and the checker: `Ix.Ixon.Projection.checkBytes` reconstructs
@@ -72,17 +72,17 @@ blobs. Addresses are keys, not authenticated hashes (only the projection
 variant derives addresses). The entry does not reorder beyond
 `preparePrelude`: each record must follow the records it references; a
 record that contains a literal must follow the constants the literal names
-(`ConLecheReader.literalEdges`: the `Nat` block, and for a string literal
+(`IxonReader.literalEdges`: the `Nat` block, and for a string literal
 `String`, `String.ofList`, `List`, `Char`, `Char.ofNat`); a pinned `Nat`
 operation must follow its certificate ground. A host order that violates
 this declines; it cannot cause an unsound accept. The census driver's
-order (`Benchmarks/Kernel/ConLecheStep.lean`, `order`) satisfies it.
+order (`Benchmarks/Kernel/CheckIxeStep.lean`, `order`) satisfies it.
 
 ## The theorems
 
 All public theorems are in `Ix/Ixon/Consistency.lean`, about the executed
 function, at the committed tables. Each is the corresponding theorem of
-`Ix/Ixon/ConLecheConsistency.lean` (namespace `Ix.Ixon.ConLecheAdmission`)
+`Ix/Ixon/KernelConsistency.lean` (namespace `Ix.Ixon.KernelAdmission`)
 at `checkBytesWith`, where it holds for every pin table, prelude and
 Nat-operation pin list, so no theorem depends on how the tables were
 generated. Every public and fidelity root depends on exactly `propext`,
@@ -90,12 +90,12 @@ generated. Every public and fidelity root depends on exactly `propext`,
 
 | Theorem (`Ix.Ixon.Admission.`) | Statement, for `h : checkBytes limits records blobs hint = .ok env` |
 | --- | --- |
-| `checkBytes_eq` | `checkBytes = ConLecheAdmission.checkBytes` (definitional) |
+| `checkBytes_eq` | `checkBytes = KernelAdmission.checkBytes` (definitional) |
 | `checkBytes_has_model` | `∀ V [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V env)` |
 | `checkBytes_has_model_values` | there is a model `M` in which every stored `defnInfo cv value _` satisfies `Denotes M.cval env φ ρ value (M.cval cv.name φ)` for all `φ ρ` |
 | `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const Ix.Kernel.falseName []` |
 | `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader reads as `.const Ix.Kernel.falseName []` |
-| `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `RecordsRead limits records constants` for some `constants`; and `ConLecheAdmission.Installed pins pre natPins constants blobs hint env` |
+| `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `RecordsRead limits records constants` for some `constants`; and `KernelAdmission.Installed pins pre natPins constants blobs hint env` |
 | `checkBytes_resources` | `resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
 
 `Ix.Kernel.Model V env` (`Ix/Kernel/Denotes.lean`) assigns a set
@@ -108,7 +108,7 @@ model theorem is `Ix.Kernel.model_exists` (`Ix/Kernel/MainTheorem.lean`,
 upstream's statement and proof) at the prepared declarations: it holds for
 every declaration array the fold accepts, so the reader owes nothing for
 consistency. Definition values come from con-leche's `defn_reads` through
-`Ix.Kernel.ConLecheFold.checkDecls_model_defn_values`
+`Ix.Kernel.IxonFold.checkDecls_model_defn_values`
 (`Ix/Kernel/Ixon/Values.lean`). Theorem and opaque bodies have no value
 equation, by con-leche's design.
 
@@ -120,7 +120,7 @@ equation, by con-leche's design.
 - `RecordsRead`: each payload is the canonical encoding of its decoded
   constant within the per-record limits, keys unchanged
   (`decodeRecords_ok_iff`, unique by `RecordsRead.deterministic`).
-- `Installed` (`Ix/Ixon/ConLecheConsistency.lean`): the reader's output is a
+- `Installed` (`Ix/Ixon/KernelConsistency.lean`): the reader's output is a
   record-by-record reading of the decoded records (`StreamRead`, from
   `readRecords_spec`), no two decoded records share an address
   (`Installed.keys`, from `readRecords_nodup`), and the fold accepted
@@ -155,7 +155,7 @@ The projection and block-order variants have the same shape:
 has_model, no_proof_of_False}` and `Ix.Ixon.BlockOrder.checkBytes_{run_iff,
 ok_iff, of_ordered, reading, has_model, no_proof_of_False}`, each with
 `UniqueKeys` in its reading. The separate package `Models/SetTheory`
-(Mathlib) provides `IxSetTheoryModel.conLecheSetTheoryOfCarneiro`, a
+(Mathlib) provides `IxSetTheoryModel.zfSetTheoryOfCarneiro`, a
 `Ix.Kernel.SetTheory ZFSet` instance under `OmegaInaccessibles`, and the
 corollaries `IxSetTheoryModel.checkBytes_has_ZFSet_model` and
 `IxSetTheoryModel.checkBytes_no_proof_of_False`.
@@ -209,15 +209,15 @@ canonical decoder and read by the same reader. The empty stream installs
 own record (`preparePrelude` moves the stream's copy to the front); the
 prelude's copy fills in where the stream has none.
 
-**Regeneration.** Both tables come from `conleche-pin-gen`
-(`Benchmarks/Kernel/ConLechePinGen.lean`), which checks every pinned
+**Regeneration.** Both tables come from `kernel-pin-gen`
+(`Benchmarks/Kernel/PinGen.lean`), which checks every pinned
 constant's record and the literal capabilities through con-leche's fold
 before writing:
 
 ```sh
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe
 lake exe ix compile Ix/Kernel/PinGen/Certs.lean --out .lake/census/certs.ixe --consts <the certificate theorems>
-lake exe conleche-pin-gen .lake/census/initstd.ixe .lake/census/certs.ixe \
+lake exe kernel-pin-gen .lake/census/initstd.ixe .lake/census/certs.ixe \
   Ix/Kernel/Ixon/PinData.lean Ix/Kernel/Ixon/NatOpPinData.lean
 ```
 
@@ -260,7 +260,7 @@ Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
 - `importAllowlist` (the certified API's closure, rooted at
   `Ix.Ixon.Admission`): the above plus exactly `Ix.Ixon.{Codec, Wire,
   WireCheck, Bounded.Constant, Bounded.Universe, Canonical, Admission,
-  ConLecheAdmission}`. No projection hashing, block order, `Ix.Address.Pure`,
+  KernelAdmission}`. No projection hashing, block order, `Ix.Address.Pure`,
   proof module or `Lean` (outside `elaborationImports`).
 - `proofImportAllowlist` (the theorem modules): `importAllowlist` plus
   `Ix.Ixon.Bounded.Size`, `Ix.Ixon.Verify`, the two theorem modules and
@@ -290,7 +290,7 @@ Frozen runtime closures (compiled functions; inherited externs):
 | --- | ---: | ---: |
 | fold `Ix.Kernel.Cached.checkDecls` | 3022 | 83 |
 | reader `readRecords`, `readStream` | 1886 | 82 |
-| entry: the API, `ConLecheAdmission.checkBytes{,With}`, `checkConstants{,With}` | 5310 | 123 |
+| entry: the API, `KernelAdmission.checkBytes{,With}`, `checkConstants{,With}` | 5310 | 123 |
 | byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5308 | 123 |
 | projection: `address`, `reconstruct`, `Projection.checkBytes` | 5430 | 132 |
 | block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5563 | 132 |
@@ -311,7 +311,7 @@ recursor blocks: 9). Statements are re-recorded the same way.
    vendored library's globs are exactly the vendored tree;
 2. the strict `IxKernel` build with every audit;
 3. the host build of the kernel tests (`Tests/Ix/Kernel/{ByteAdmission,
-   ConLecheReader, CertifiedEntry, Projection, BlockOrder, Codec, ...}`),
+   Reader, CertifiedEntry, Projection, BlockOrder, Codec, ...}`),
    whose `#guard`s run at elaboration;
 4. `kernel-provenance` (below);
 5. `kernel-codec` (production codec against Rust) and `kernel-order`
@@ -478,26 +478,26 @@ needs a workspace holding `ad60e5f6`. The upstream-sync recipe is above.
 ## Census
 
 The census measures coverage on a compiled corpus; it is not a certified
-verdict. `kernel-census` (`Benchmarks/Kernel/ConLecheCensus.lean`, entry
-`CensusCertifiedMain.lean`; `kernel-census-cl` is the same driver) reads an
+verdict. `kernel-check-ixe` (`Benchmarks/Kernel/CheckIxe.lean`, entry
+`CheckIxeMain.lean`; `kernel-census-cl` is the same driver) reads an
 `.ixe`, orders its primary records (the prelude's first, then dependencies,
 `Nat`-operation grounds and literal edges), reads each record with the Ixon
 reader and installs and checks it one record at a time with an incremental
-step of con-leche's fold (`Benchmarks/Kernel/ConLecheStep.lean`),
+step of con-leche's fold (`Benchmarks/Kernel/CheckIxeStep.lean`),
 continuing past failures and reporting dependents of a failure as blocked.
 Hints are the compiler's. Each row is JSON (`address, names, kind, outcome,
 reason, micros, readMicros`).
 
 ```sh
-lake build --wfail kernel-census
+lake build --wfail kernel-check-ixe
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/census/initstd.ixe
 systemd-run --user --scope -p MemoryMax=24G -p MemorySwapMax=0 \
   env CENSUS_WATCH_MB=12000 scripts/census-guarded.sh \
-  .lake/build/bin/kernel-census .lake/census/initstd.ixe .lake/census/initstd.jsonl
+  .lake/build/bin/kernel-check-ixe .lake/census/initstd.ixe .lake/census/initstd.jsonl
 python3 scripts/census-report.py .lake/census/initstd.jsonl
 ```
 
-Usage: `kernel-census <input.ixe> <output.jsonl> [limit]`. Environment:
+Usage: `kernel-check-ixe <input.ixe> <output.jsonl> [limit]`. Environment:
 
 - `CENSUS_WATCH_MS` (default 60000) and `CENSUS_WATCH_MB` (default 20000):
   a watchdog ends the run with exit code 3 when one record's check exceeds

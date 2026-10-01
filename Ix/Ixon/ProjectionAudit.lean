@@ -24,7 +24,7 @@ def allowedData (name : Lean.Name) : Bool :=
 
 def allowedProof (name : Lean.Name) : Bool :=
   allowedData name || Kernel.Audit.allowed #[`Lean, `Ix.Ixon.Verify, `Ix.Ixon.ProjectionProofs,
-    `Ix.Ixon.ConLecheConsistency] name
+    `Ix.Ixon.KernelConsistency] name
 
 /-- The import closure of `roots` stays inside `allowed`, below con-leche's
 ruled elaboration-time imports inside `Kernel.Audit.elaborationImports`
@@ -172,7 +172,7 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
         ∃ input output,
           Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
             Ix.Ixon.Projection.Expanded maxProjections input output ∧
-              Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint = Except.ok env -/
+              Ix.Ixon.KernelAdmission.checkConstants output blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_ok_iff
 
@@ -185,7 +185,7 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
         Ix.Ixon.Projection.Expanded maxProjections input output →
           Ix.Ixon.Projection.checkBytes maxProjections limits records blobs hint =
             Except.mapError Ix.Ixon.Projection.CheckError.checker
-              (Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint) -/
+              (Ix.Ixon.KernelAdmission.checkConstants output blobs hint) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_of_expansion
 
@@ -198,10 +198,10 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
         Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
           Ix.Ixon.Projection.Expanded maxProjections input output ∧
             ∃ pins pre natPins,
-              Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins ∧
-                Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre ∧
-                  Ix.Kernel.ConLecheReader.builtinNatOpPins = Except.ok natPins ∧
-                    Ix.Ixon.ConLecheAdmission.Installed pins pre natPins output blobs hint env -/
+              Ix.Kernel.IxonReader.defaultPins = Except.ok pins ∧
+                Ix.Kernel.IxonReader.builtinPrelude = Except.ok pre ∧
+                  Ix.Kernel.IxonReader.builtinNatOpPins = Except.ok natPins ∧
+                    Ix.Ixon.KernelAdmission.Installed pins pre natPins output blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_reading
 

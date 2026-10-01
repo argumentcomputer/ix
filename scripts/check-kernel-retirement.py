@@ -35,7 +35,8 @@ RETIRED = re.compile(
 # runtime, consistency), its entry points, the executables and scripts that
 # ran it, and its test and benchmark modules. Case-sensitive. Kept names are
 # not matched: `Ix.Kernel.Ref`, `Ix.Kernel.Search`, `Ix.Kernel.Audit`,
-# `Ix.Kernel.Ixon` (until 2026-10-01 `Ix.Kernel.ConLeche`), the record store
+# `Ix.Kernel.Ixon` (until 2026-10-01 `Ix.Kernel.ConLeche`; its namespaces
+# `Ix.Kernel.IxonReader` and `Ix.Kernel.IxonFold`), the record store
 # `Ix.Kernel.Ingress.Records` and the projection writer
 # `Ix.Kernel.Egress.Projection` (with their namespaces), and
 # `certified-kernel-differential` (a CI artifact name).
@@ -283,8 +284,8 @@ def controls() -> None:
             raise RuntimeError(f"intrinsic negative control escaped: {path}: {source}")
     for source in (
         "/- `checkBytesIntrinsic` and `kernel-census-intrinsic` were retired. -/\nimport Init",
-        "import Tests.Ix.Kernel.IxonFixtures\nimport Benchmarks.Kernel.CensusCertifiedMain",
-        "import Benchmarks.Kernel.CensusIx\nimport Tests.Ix.Kernel.IngressFixturesNew",
+        "import Tests.Ix.Kernel.IxonFixtures\nimport Benchmarks.Kernel.CheckIxeMain",
+        "import Benchmarks.Kernel.IxEnv\nimport Tests.Ix.Kernel.IngressFixturesNew",
         'def artifact := "certified-kernel-differential"',
         "import Ix.Kernel.Ingress.Records\nimport Ix.Kernel.Egress.Projection\nimport Ix.Kernel.Ref",
         "import Ix.KernelCheck\nimport Ix.Kernel.Ixon.Reader\nimport Ix.Kernel.Search",
@@ -295,6 +296,10 @@ def controls() -> None:
         "import Ix.Kernel.Expr\nimport Ix.Kernel.Env\nimport Ix.Kernel.Level",
         "import Ix.Kernel.Model.Fold\nimport Ix.Kernel.Model.Claims\nimport Ix.Kernel.SetTheory.Core",
         "import Tests.Ix.Kernel.Axioms\nimport Ix.Kernel.Checker\nimport Ix.Kernel.Inductives.StructParts",
+        # the certified entry's tools and tests under their current names (step 3)
+        "import Tests.Ix.Kernel.LevelComparison\nimport Tests.Ix.Kernel.Reader\nimport Ix.Ixon.KernelAdmission",
+        "open Ix.Kernel.IxonReader\nopen Ix.Kernel.IxonFold\nimport Benchmarks.Kernel.CheckIxeStep",
+        'run "lake" #["build", "kernel-level-comparison", "kernel-check-ixe", "kernel-pin-gen"]',
     ):
         if inspect("Fixture.lean", source):
             raise RuntimeError(f"kept name or comment rejected: {source}")

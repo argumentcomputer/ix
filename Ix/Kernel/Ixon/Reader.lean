@@ -61,7 +61,7 @@ Three kinds of names are not of this form:
   pin-certified Nat operations, the standard axioms with `Iff` and
   `Nonempty`, the compiler-trust family with `True`, and `sorryAx`. The table
   maps a `ConstRef Address` to its pinned name; it is generated from the
-  compiled Init records (`Benchmarks/Kernel/ConLechePinGen.lean`, which
+  compiled Init records (`Benchmarks/Kernel/PinGen.lean`, which
   checks every entry through con-leche) and committed
   (`Ix/Kernel/Ixon/PinData.lean`); the reader never reads Ixon metadata.
   `pinMap` refuses a table that is not a partial injection or that uses the
@@ -113,7 +113,7 @@ Three kinds of names are not of this form:
   the host supplies a hint (the census supplies the compiler's own).
 -/
 
-namespace Ix.Kernel.ConLecheReader
+namespace Ix.Kernel.IxonReader
 
 open Ix.Kernel (ConstRef)
 
@@ -1191,4 +1191,4 @@ def readRecords (cx : Ctx) (st : State) (records : Array (Address × Ixon.Consta
     | .error e => throw (e, i)
   return (st, out)
 
-end Ix.Kernel.ConLecheReader
+end Ix.Kernel.IxonReader

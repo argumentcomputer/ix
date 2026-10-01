@@ -10,7 +10,7 @@ import Tests.Ix.Kernel.Codec
 decoding) of the
 certified entry `Ix.Ixon.Admission.checkBytes`, and that entry's verdicts on
 the shared Ixon record fixtures. The entry's reader and checker are tested
-in `Tests.Ix.Kernel.ConLecheReader` and `Tests.Ix.Kernel.CertifiedEntry`. -/
+in `Tests.Ix.Kernel.Reader` and `Tests.Ix.Kernel.CertifiedEntry`. -/
 
 open Tests.Ix.Kernel.IxonFixtures Tests.Ix.Kernel.Codec
 
@@ -29,7 +29,7 @@ def roundtrip (constants : List (Address × Ixon.Constant)) : Bool :=
   | .error _ => false
 
 def check (records : Records) (blobs : List (Address × ByteArray) := []) (bounds : Limits := limits) :
-    Except Ix.Ixon.ConLecheAdmission.Error Ix.Kernel.Env :=
+    Except Ix.Ixon.KernelAdmission.Error Ix.Kernel.Env :=
   checkBytes bounds records blobs
 
 def accepts (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Bool :=

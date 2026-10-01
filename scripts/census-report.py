@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize a kernel census (`kernel-census` JSONL output).
+"""Summarize a kernel census (`kernel-check-ixe` JSONL output).
 
 Usage: census-report.py <census.jsonl> [top]
 

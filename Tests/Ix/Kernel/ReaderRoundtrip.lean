@@ -16,7 +16,7 @@ The Ix.Tc-style roundtrip for con-leche's Ixon reader: the declarations of
 `Tests.Ix.Kernel.ReaderFidelityDefs` (nested, mutual, indexed, reflexive and
 structure-like inductives, quotients, literals, mutual and well-founded
 definitions) and everything in `Init` they reach are compiled with Ix's
-compiler, read through `Ix.Kernel.ConLecheReader` as the census reads them,
+compiler, read through `Ix.Kernel.IxonReader` as the census reads them,
 and compared constant by constant with the reference translation of the Lean
 constants (`Tests.Ix.Kernel.ReaderFidelity`, whose docstring lists the
 normalizations and canonicalizations it classifies).
@@ -34,14 +34,14 @@ certified writer writes them against the compiler's, every block's order
 `Args.rec`/`Tm.rec`, which are not in structural order; every one refused
 with two members swapped), and over two accepted batches the reader's
 declarations with written projections and the installed environments of
-`ConLecheAdmission.checkConstants`, `Projection.checkBytes` and
+`KernelAdmission.checkConstants`, `Projection.checkBytes` and
 `BlockOrder.checkBytes`, with every projection record naming an installed
 constant of its kind.
 
 The whole of `Init` and `Std` runs through the same comparisons (projections and
 block order only, for the output side) in `kernel-reader-fidelity`. -/
 
-namespace Tests.Ix.Kernel.ConLecheRoundtrip
+namespace Tests.Ix.Kernel.ReaderRoundtrip
 
 open LSpec
 open Tests.Ix.Kernel.ReaderFidelity
@@ -251,4 +251,4 @@ def suiteIO : TestSeq :=
 
 def suite : List TestSeq := [suiteIO]
 
-end Tests.Ix.Kernel.ConLecheRoundtrip
+end Tests.Ix.Kernel.ReaderRoundtrip

@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Benchmarks.Kernel.ConLecheStep
+import Benchmarks.Kernel.CheckIxeStep
 import Lean.CompactedRegion
 import Ix.Address
 
@@ -30,7 +30,7 @@ under, so a plan of another reader, layout or toolchain is never
 reinterpreted. Corrupt or foreign files are refused by the region reader's
 header check.
 
-**What may use it.** The census drivers (`kernel-census`, `kernel-census-cl`:
+**What may use it.** The census drivers (`kernel-check-ixe`:
 `CENSUS_READ_CACHE=<dir>`) and other host tools. Never the certified entry
 (`Ix.Ixon.Admission.checkBytes`): its theorems are about the bytes it is
 given, so it decodes and reads them itself every time. Nothing here is
@@ -42,10 +42,10 @@ below are the only uses, at the one type `Plan`, under the key discipline
 above. The mapped objects are persistent (no reference counts) and never
 freed during a run. -/
 
-namespace Benchmarks.Kernel.ConLecheReadCache
+namespace Benchmarks.Kernel.CheckIxeReadCache
 
-open Ix.Kernel.ConLecheReader
-open Benchmarks.Kernel.ConLecheStep
+open Ix.Kernel.IxonReader
+open Benchmarks.Kernel.CheckIxeStep
 
 /-! ## The plan -/
 
@@ -95,8 +95,8 @@ def sourceDigest : UInt64 := hash [
   include_str "../../Ix/Kernel/PropWhen.lean",
   include_str "../../Ix/Ixon.lean",
   include_str "../../Ix/Ixon/Types.lean",
-  include_str "ConLecheStep.lean",
-  include_str "ConLecheReadCache.lean"]
+  include_str "CheckIxeStep.lean",
+  include_str "CheckIxeReadCache.lean"]
 
 /-- The reader version a plan is written under. -/
 def version : String := s!"{formatTag}-{Lean.githash}-{sourceDigest}"
@@ -143,7 +143,7 @@ def load (path : System.FilePath) (ixe : String) : IO (Option Plan) := do
 /-- The census loop over a plan: every view and reading is the plan's, and
 the reading state is not threaded (no record is read). `limit` bounds the
 records, as for a live run. -/
-def censusLoopPlan (plan : Plan) (pins : List Ix.Kernel.NatOpPinSet) (limit : Option Nat)
+def checkLoopPlan (plan : Plan) (pins : List Ix.Kernel.NatOpPinSet) (limit : Option Nat)
     (skip : Std.HashSet String) (emit : Row → IO Unit)
     (before : Address → IO Unit := fun _ => pure ()) (after : IO Unit := pure ())
     (progress : Nat → Outcome → IO Unit := fun _ _ => pure ()) : IO Outcome := do
@@ -152,11 +152,11 @@ def censusLoopPlan (plan : Plan) (pins : List Ix.Kernel.NatOpPinSet) (limit : Op
   let names : Std.HashMap Address (Array String) := plan.names.foldl (fun m (a, ns) => m.insert a ns) {}
   let addresses := plan.records.map (·.address)
   let addresses := match limit with | some n => addresses.extract 0 n | none => addresses
-  censusLoopWith
+  checkLoopWith
     (fun a => (byAddress[a]?).map fun r => { kind := r.kind, recs := r.recs, deps := fun _ => r.deps })
     (fun (_ : Unit) a => match byAddress[a]? with
       | some r => r.reading
       | none => .error (.malformed "record is missing from the read cache"))
     (fun _ _ => ()) () pins (names.getD · #[]) addresses skip emit before after progress
 
-end Benchmarks.Kernel.ConLecheReadCache
+end Benchmarks.Kernel.CheckIxeReadCache

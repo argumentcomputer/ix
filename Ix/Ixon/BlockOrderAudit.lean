@@ -57,7 +57,7 @@ functions, 5554 to 5563, exactly `checkRecord`, `isRecursor`, its
 `Array.any` specialization, `checkMotives` with its three closed terms,
 `recursorMotive`, and a shared `Option Nat` equality specialization; the
 reader's `stripAll` and `appHead`, which `recursorMotive` calls, were already
-in the closure (`ConLecheReader.analyseRecursor`). No extern, unsafe or
+in the closure (`IxonReader.analyseRecursor`). No extern, unsafe or
 ruled entry changed. -/
 /-- info: runtime closure of [Ix.Ixon.BlockOrder.checkBytes,
  Ix.Ixon.BlockOrder.canonicalClasses,
@@ -153,7 +153,7 @@ fun source size start members =>
           Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
             Ix.Ixon.Projection.Expanded maxProjections input output ∧
               Ix.Ixon.BlockOrder.Ordered orderLimits blobs input ∧
-                Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint = Except.ok env -/
+                Ix.Ixon.KernelAdmission.checkConstants output blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_ok_iff
 
@@ -167,10 +167,10 @@ fun source size start members =>
           Ix.Ixon.Projection.Expanded maxProjections input output ∧
             Ix.Ixon.BlockOrder.Ordered orderLimits blobs input ∧
               ∃ pins pre natPins,
-                Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins ∧
-                  Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre ∧
-                    Ix.Kernel.ConLecheReader.builtinNatOpPins = Except.ok natPins ∧
-                      Ix.Ixon.ConLecheAdmission.Installed pins pre natPins output blobs hint env -/
+                Ix.Kernel.IxonReader.defaultPins = Except.ok pins ∧
+                  Ix.Kernel.IxonReader.builtinPrelude = Except.ok pre ∧
+                    Ix.Kernel.IxonReader.builtinNatOpPins = Except.ok natPins ∧
+                      Ix.Ixon.KernelAdmission.Installed pins pre natPins output blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_reading
 
@@ -204,7 +204,7 @@ fun source size start members =>
           Ix.Ixon.BlockOrder.Ordered orderLimits blobs input →
             Ix.Ixon.BlockOrder.checkBytes maxProjections limits orderLimits records blobs hint =
               Except.mapError Ix.Ixon.BlockOrder.CheckError.checker
-                (Ix.Ixon.ConLecheAdmission.checkConstants output blobs hint) -/
+                (Ix.Ixon.KernelAdmission.checkConstants output blobs hint) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_of_ordered
 

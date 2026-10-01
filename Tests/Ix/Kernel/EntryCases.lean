@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Ixon.Admission
 import Ix.CompileDriver
 import Ix.Meta
-import Benchmarks.Kernel.ConLecheStep
+import Benchmarks.Kernel.CheckIxeStep
 import Tests.Ix.Kernel.EntryCaseDefs
 
 /-! # Host-compiled cases of the certified entry (`kernel-entry-cases`)
@@ -16,7 +16,7 @@ harness loads that module's environment, takes the dependency closure of
 the seeds (with the recursors of every inductive in it, which the reader
 requires), compiles it with Ix's compiler (`Ix.CompileM.compileLeanConsts`),
 loads the serialized environment with the host codec, orders the primary
-records as the census does (`Benchmarks.Kernel.ConLecheStep`: dependencies,
+records as the census does (`Benchmarks.Kernel.CheckIxeStep`: dependencies,
 `Nat`-operation grounds and literal edges first; projections last), and
 submits canonical record bytes, the literal blobs and the compiler's
 reducibility hints to the certified entry `Ix.Ixon.Admission.checkBytes`.
@@ -28,8 +28,8 @@ classification of `Ix.Ixon.Admission.outcome`. The compiler, loader, order
 and hints are untrusted producers of the input; only the verdict of
 `checkBytes` is under test. One JSON row per case goes to stdout. -/
 
-open Ix.Kernel.ConLecheReader
-open Benchmarks.Kernel.ConLecheStep (RecordStore Hints setup)
+open Ix.Kernel.IxonReader
+open Benchmarks.Kernel.CheckIxeStep (RecordStore Hints setup)
 
 namespace Tests.Ix.Kernel.EntryCases
 
@@ -88,10 +88,10 @@ structure Input where
   /-- every compiled name's address -/
   named : Lean.Name → Option Address
   /-- the census's view of the same records (store, reader context, order) -/
-  census : Benchmarks.Kernel.ConLecheStep.Setup
+  step : Benchmarks.Kernel.CheckIxeStep.Setup
 
 def owner (address : Address) (source : Ixon.Constant) : Address :=
-  Benchmarks.Kernel.ConLecheStep.owner address source
+  Benchmarks.Kernel.CheckIxeStep.owner address source
 
 /-- Compile the seeds' closure and order its records: primaries in the
 census order (without the prelude's own records, which the entry supplies),
@@ -120,7 +120,7 @@ def prepare (leanEnv : Lean.Environment) (seeds : List Lean.Name) : IO Input := 
     pure (n, a)
   let blobs := (env.blobs.toArray.qsort fun x y => x.1.cmpBytes y.1 == .lt).toList
   return { constants := (primaries ++ projections).toList, blobs, hints, cx := s.cx,
-           seeds := seedAddrs, named, census := s }
+           seeds := seedAddrs, named, step := s }
 
 /-! ## Cases -/
 
@@ -128,7 +128,7 @@ inductive Expected where
   | accept
   /-- the classification, the stage, and what the error must be -/
   | fail (outcome : Ix.Ixon.Admission.Outcome) (stage : String)
-      (check : Input → Ix.Ixon.ConLecheAdmission.Error → Bool)
+      (check : Input → Ix.Ixon.KernelAdmission.Error → Bool)
 
 def Expected.label : Expected → String
   | .accept => "accept"
@@ -300,7 +300,7 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
 
 /-! ## The census's classification
 
-The census (`Benchmarks.Kernel.ConLecheStep.censusLoop`) runs the same
+The census (`Benchmarks.Kernel.CheckIxeStep.checkLoop`) runs the same
 reader and checker one record at a time and classifies each verdict: a
 checker `invalid` is a reject. These cases run the census over a case's
 records and check the seed's row. Cl-m1 declined a declaration that was
@@ -309,26 +309,26 @@ parameters. Cl-level decides the level comparison's missing case by Géran's
 sublevels and removed that rule, so `levelCanon` is accepted by the census
 as by the entry. -/
 
-structure CensusCase where
+structure StepCase where
   label : String
   seed : Lean.Name
   outcome : String
   reason : String → Bool
 
-def censusCases : List CensusCase := [
-  { label := "census-level-comparison", seed := seed "levelCanon", outcome := "accept",
+def stepCases : List StepCase := [
+  { label := "step-level-comparison", seed := seed "levelCanon", outcome := "accept",
     reason := (· == "") },
-  { label := "census-wrong-universe-level", seed := seed "levelWrong", outcome := "reject",
+  { label := "step-wrong-universe-level", seed := seed "levelWrong", outcome := "reject",
     reason := (· == "application type mismatch") },
-  { label := "census-false-theorem", seed := `falseThm, outcome := "reject",
+  { label := "step-false-theorem", seed := `falseThm, outcome := "reject",
     reason := (·.startsWith "type mismatch in theorem") } ]
 
-def runCensus (leanEnv : Lean.Environment) (test : CensusCase) : IO Bool := do
+def runStep (leanEnv : Lean.Environment) (test : StepCase) : IO Bool := do
   let input ← prepare leanEnv [test.seed]
   let natPins ← IO.ofExcept builtinNatOpPins
-  let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.ConLecheStep.Row)
-  let _ ← Benchmarks.Kernel.ConLecheStep.censusLoop input.census natPins (fun _ => #[])
-    input.census.ordered {} (emit := fun row => rows.modify (·.push row))
+  let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.CheckIxeStep.Row)
+  let _ ← Benchmarks.Kernel.CheckIxeStep.checkLoop input.step natPins (fun _ => #[])
+    input.step.ordered {} (emit := fun row => rows.modify (·.push row))
   let some a := input.named test.seed | throw (IO.userError s!"seed {test.seed} was not compiled")
   let row := (← rows.get).find? (·.address == a)
   let passed := match row with
@@ -352,12 +352,12 @@ def main : IO UInt32 := do
       IO.eprintln s!"{test.label}: harness error: {e}"
       pure false
     unless passed do failed := failed + 1
-  for test in censusCases do
-    let passed ← try runCensus leanEnv test catch e => do
+  for test in stepCases do
+    let passed ← try runStep leanEnv test catch e => do
       IO.eprintln s!"{test.label}: harness error: {e}"
       pure false
     unless passed do failed := failed + 1
-  let total := cases.length + censusCases.length
+  let total := cases.length + stepCases.length
   IO.eprintln s!"Certified entry, host-compiled cases: {total - failed}/{total} passed."
   return if failed == 0 then 0 else 1
 

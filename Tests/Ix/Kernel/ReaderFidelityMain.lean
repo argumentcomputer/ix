@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.CompileDriver
 import Ix.Meta
 import Tests.Ix.Kernel.ReaderFidelity
-import Tests.Ix.Kernel.ConLecheRoundtrip
+import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.EgressFidelity
 
 /-! # `kernel-reader-fidelity`: the reader against Lean on Init and Std
@@ -28,7 +28,7 @@ from this toolchain's `.olean` files.
   the census corpus if it is present and an in-process compile otherwise,
   at `checkKernelLimit` records.
 * `kernel-reader-fidelity --fixture`: the `lake test` suite's check of the fixture closure
-  (`Tests.Ix.Kernel.ConLecheRoundtrip.evaluate`: expected verdicts and tampers).
+  (`Tests.Ix.Kernel.ReaderRoundtrip.evaluate`: expected verdicts and tampers).
 * `kernel-reader-fidelity --egress <input.ixe>`: the output side only, with no
   Lean side, for an environment of any size (Mathlib): every block's
   projection records and its order (`Tests.Ix.Kernel.EgressFidelity.projections`).
@@ -69,7 +69,7 @@ def report (r : Report) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   if args == ["--fixture"] then
-    let (r, lines, errors) ← Tests.Ix.Kernel.ConLecheRoundtrip.evaluate
+    let (r, lines, errors) ← Tests.Ix.Kernel.ReaderRoundtrip.evaluate
     IO.println r.summary
     for l in lines do IO.println l
     for e in errors do IO.eprintln s!"reader-fidelity: fixture: {e}"
@@ -77,7 +77,7 @@ def main (args : List String) : IO UInt32 := do
   let started ← IO.monoMsNow
   if let ["--egress", path] := args then
     let ixon ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
-    let mut store : Benchmarks.Kernel.ConLecheStep.RecordStore := {}
+    let mut store : Benchmarks.Kernel.CheckIxeStep.RecordStore := {}
     for (address, lazy) in ixon.consts.toList do
       store := store.insert address (← IO.ofExcept lazy.get)
     IO.eprintln s!"reader-fidelity: {path}: {store.size} constants decoded in \

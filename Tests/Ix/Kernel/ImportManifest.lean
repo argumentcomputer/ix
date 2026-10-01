@@ -232,9 +232,9 @@ def authored : Array String := #[
   "Ix/Kernel/Audit/Imports.lean", "Ix/Kernel/Audit/Runtime.lean", "Ix/Kernel/Audit/Roots.lean",
   "Ix/Address/Core.lean", "Ix/Kernel/Search.lean", "Ix/Kernel/Ixon/Reader.lean",
   "Ix/Kernel/Ixon/Prelude.lean", "Ix/Kernel/Ixon/PinData.lean",
-  "Ix/Kernel/Ixon/NatOpPinData.lean", "Ix/Ixon/ConLecheAdmission.lean",
+  "Ix/Kernel/Ixon/NatOpPinData.lean", "Ix/Ixon/KernelAdmission.lean",
   "Ix/Kernel/Ixon/ReaderSpec.lean", "Ix/Kernel/Ixon/Installed.lean",
-  "Ix/Kernel/Ixon/Values.lean", "Ix/Ixon/ConLecheConsistency.lean",
+  "Ix/Kernel/Ixon/Values.lean", "Ix/Ixon/KernelConsistency.lean",
   "Ix/Ixon/Admission/Bytes.lean", "Ix/Ixon/Consistency.lean", "Ix/Kernel/Ingress/Records.lean",
   "Ix/Kernel/LevelGeran.lean", "Ix/Kernel/Verify/LevelGeran.lean"
 ]

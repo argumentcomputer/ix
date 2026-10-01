@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Ixon.Consistency
 import Ix.Ixon.BlockOrderProofs
-import Tests.Ix.Kernel.ConLecheReader
+import Tests.Ix.Kernel.Reader
 
 /-! # The certified Ixon API (plan v4, L5)
 
@@ -13,7 +13,7 @@ The public entries from L5 — `Ix.Ixon.Admission.checkBytes`, and its
 projection-reconstructing and block-ordering variants
 `Ix.Ixon.Projection.checkBytes` and `Ix.Ixon.BlockOrder.checkBytes` — run
 con-leche's verified checker behind the Ixon reader. These fixtures are the
-L4 reader fixtures (`Tests.Ix.Kernel.ConLecheReader`) through the public
+L4 reader fixtures (`Tests.Ix.Kernel.Reader`) through the public
 names, the failure classification at the Ix API (`Admission.outcome`), a
 theorem of the pinned `False` that is not accepted, and the public theorems
 applied. The byte stage and the shared Ixon record fixtures are tested in
@@ -21,13 +21,13 @@ applied. The byte stage and the shared Ixon record fixtures are tested in
 `Tests.Ix.Kernel.Projection`. -/
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.ConLecheReader (isSingleton SingletonRead keyName keyName_injective)
-open Tests.Ix.Kernel.ConLecheReader
+open Ix.Kernel.IxonReader (isSingleton SingletonRead keyName keyName_injective)
+open Tests.Ix.Kernel.Reader
 
 namespace Tests.Ix.Kernel.CertifiedEntry
 
 def check (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) :
-    Except Ix.Ixon.ConLecheAdmission.Error Ix.Kernel.Env :=
+    Except Ix.Ixon.KernelAdmission.Error Ix.Kernel.Env :=
   Ix.Ixon.Admission.checkBytes limits (encode cs) blobs
 
 def accepted (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Bool :=
@@ -197,9 +197,9 @@ example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArra
     (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
     ∃ pins pre constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
       ∀ owner c, (owner, c) ∈ constants → isSingleton c.info = true →
-        ∃ st decl, SingletonRead (Ix.Ixon.ConLecheAdmission.streamContext pins pre constants blobs
+        ∃ st decl, SingletonRead (Ix.Ixon.KernelAdmission.streamContext pins pre constants blobs
           (fun _ => none)) st owner c decl ∧
-          ∀ s, Ix.Kernel.ConLecheFold.declSkel decl = some s →
+          ∀ s, Ix.Kernel.IxonFold.declSkel decl = some s →
             ∃ ci ∈ env.consts, Ix.Kernel.Cached.ciSkel ci = s := by
   obtain ⟨pins, pre, _, _, _, _, _, _, constants, reading, installed⟩ :=
     Ix.Ixon.Admission.checkBytes_reading h
@@ -214,7 +214,7 @@ example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArra
     (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
     (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup ∧
       ∃ pins pre natPins constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-        Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs (fun _ => none) env ∧
+        Ix.Ixon.KernelAdmission.Installed pins pre natPins constants blobs (fun _ => none) env ∧
         (constants.map Prod.fst).Nodup := by
   obtain ⟨pins, pre, natPins, _, _, _, _, keys, constants, reading, installed⟩ :=
     Ix.Ixon.Admission.checkBytes_reading h

@@ -8,11 +8,11 @@ import Ix.SemanticContract
 import Ix.IxonUniv
 import Ix.Tc.Validate
 import Ix.CanonM
-import Benchmarks.Kernel.ConLecheStep
+import Benchmarks.Kernel.CheckIxeStep
 
 /-! # The Ixon reader against a direct translation of Lean's constants
 
-The fidelity test of `Ix.Kernel.ConLecheReader`, in the style of Ix.Tc's
+The fidelity test of `Ix.Kernel.IxonReader`, in the style of Ix.Tc's
 meta roundtrip (`Tests/Ix/Tc/Roundtrip.lean`, `Ix.Tc.metaRoundtripEnv`):
 compile a Lean environment to Ixon with Ix's compiler, read every primary
 record through the reader exactly as the census does (the Ixon prelude's
@@ -24,7 +24,7 @@ is written here from Lean's own data and does not call the reader; the only
 bridge between the two sides is the compiled environment's metadata (Lean
 name ↦ record address), which the reader never reads.
 
-The drivers are `Tests.Ix.Kernel.ConLecheRoundtrip` (`lake test`, the
+The drivers are `Tests.Ix.Kernel.ReaderRoundtrip` (`lake test`, the
 closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
 (`Init` and `Std`: the census corpus or an in-process compile).
 
@@ -110,8 +110,8 @@ difference on the fixture closure and on all of `Init` and `Std` is one of:
 * Anything else is **unexplained** and fails the drivers. -/
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.ConLecheReader
-open Benchmarks.Kernel.ConLecheStep (RecordStore Hints setup Setup owner)
+open Ix.Kernel.IxonReader
+open Benchmarks.Kernel.CheckIxeStep (RecordStore Hints setup Setup owner)
 
 namespace Tests.Ix.Kernel.ReaderFidelity
 
@@ -824,7 +824,7 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
   -- read in the census order, comparing each record's constants at the
   -- reader's state before it
   let base := match roots with
-    | some rs => Benchmarks.Kernel.ConLecheStep.closure store s.extra (pre.records.map (fun (p : Address × Ixon.Constant) => p.1) ++ rs)
+    | some rs => Benchmarks.Kernel.CheckIxeStep.closure store s.extra (pre.records.map (fun (p : Address × Ixon.Constant) => p.1) ++ rs)
     | none => s.ordered
   let ordered := match limit with | some k => base.extract 0 k | none => base
   let mut st : State := {}

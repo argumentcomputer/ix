@@ -6,9 +6,9 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 /-! # Lean sources of the reader's fidelity test
 
 Ordinary Lean declarations, checked by Lean's kernel, that
-`Tests.Ix.Kernel.ConLecheRoundtrip` loads from this module's `.olean`,
+`Tests.Ix.Kernel.ReaderRoundtrip` loads from this module's `.olean`,
 compiles with Ix's compiler, reads through the Ixon reader
-(`Ix.Kernel.ConLecheReader`) and compares constant by constant against a
+(`Ix.Kernel.IxonReader`) and compares constant by constant against a
 direct translation of the Lean constants (`Tests.Ix.Kernel.ReaderFidelity`).
 The module imports only `Init`, so the test's closure is these declarations
 and the part of `Init` they reach. It covers every record shape the reader

@@ -25,7 +25,7 @@ A block whose members are all recursors is checked in motive order instead
 (`checkMotives`): member `j` eliminates motive `j` and declares one motive per
 member. That is the order the compiler stores a recursor block in (`T.rec`,
 `T.rec_1`, …; for a mutual block, its members' order) and the order in which
-the Ixon reader regroups a block's recursors (`ConLecheReader.buildIndex`
+the Ixon reader regroups a block's recursors (`IxonReader.buildIndex`
 reads each recursor's motive off its type), and it is not always the
 structural order (a nested block's auxiliary recursors, or a mutual block's
 recursors whose types compare otherwise). Inductive, definition and mixed
@@ -375,15 +375,15 @@ def isRecursor : MutConst → Bool
   | _ => false
 
 /-- The motive a recursor eliminates, read off its type exactly as the Ixon
-reader does (the first component of `ConLecheReader.analyseRecursor`): after
+reader does (the first component of `IxonReader.analyseRecursor`): after
 the parameters, motives, minors, indices and the major premise, the head of
 the result is the bound variable of one of the motives. -/
 def recursorMotive (source : _root_.Ixon.Constant) (r : _root_.Ixon.Recursor) : Option Nat := do
   let nP := r.params.toNat
   let nM := r.motives.toNat
   let depth := nP + nM + r.minors.toNat + r.indices.toNat + 1
-  let (_, body) ← ConLecheReader.stripAll source depth r.typ
-  let .var k := ConLecheReader.appHead source ConLecheReader.spineFuel body | none
+  let (_, body) ← IxonReader.stripAll source depth r.typ
+  let .var k := IxonReader.appHead source IxonReader.spineFuel body | none
   let pos := depth - 1 - k.toNat
   guard (k.toNat < depth && nP ≤ pos && pos < nP + nM)
   pure (pos - nP)
@@ -420,10 +420,10 @@ def checkConstants (limits : Limits) (blobs : Ingress.Blobs) :
     checkConstants limits blobs rest
 
 /-- Failures of the certified entry: byte admission, reconstruction and
-order (`Error`), or the checker (`ConLecheAdmission.Error`). -/
+order (`Error`), or the checker (`KernelAdmission.Error`). -/
 inductive CheckError where
   | order (error : Error)
-  | checker (error : ConLecheAdmission.Error)
+  | checker (error : KernelAdmission.Error)
 
 /-- **The certified entry with canonical block order**: byte spelling,
 computed projections, canonical block order (recursor blocks in motive
@@ -440,6 +440,6 @@ def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits :
   let expanded ← (Projection.reconstruct maxProjections constants).mapError
     (fun error => .order (.projection error))
   (checkConstants orderLimits blobs constants).mapError .order
-  (ConLecheAdmission.checkConstants expanded blobs hint).mapError .checker
+  (KernelAdmission.checkConstants expanded blobs hint).mapError .checker
 
 end Ix.Ixon.BlockOrder

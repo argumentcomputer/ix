@@ -25,16 +25,16 @@ def operations : Array Lean.Name :=
     ``Ix.Ixon.Admission.checkBytes]
 
 /-- Admission runs con-leche's checker behind the Ixon reader (L5:
-`Ix.Ixon.ConLecheAdmission`, and the kernel `Ix.Kernel`, con-leche's vendored
+`Ix.Ixon.KernelAdmission`, and the kernel `Ix.Kernel`, con-leche's vendored
 checker with the reader beside it; `Lean` only below con-leche's ruled
 elaboration-time imports), whose closure admits
 `Std` (`Ix.Kernel.Audit.importAllowlist`, 2026-09-30). -/
 def dataImports : Array Lean.Name :=
   Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Ixon.Admission,
-    `Ix.Ixon.ConLecheAdmission]
+    `Ix.Ixon.KernelAdmission]
 
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `Ix.Ixon.Verify,
-  `Ix.Ixon.ConLecheConsistency, `Ix.Ixon.Consistency]
+  `Ix.Ixon.KernelConsistency, `Ix.Ixon.Consistency]
 
 end Ix.Ixon.Admission.Audit
 
@@ -65,7 +65,7 @@ definitions. L5 alone froze 33407 functions and 115 externs: the committed
 Nat-operation pins were then upstream's JSON dumps spliced as one closed
 term (`ConLeche.natOpPinSets`, 27,096 compiled functions, 26,957 of them
 extracted closed subterms). Rebased onto L4b they are decoded from a string
-table at first use (`Ix.Kernel.ConLecheReader.builtinNatOpPins`, 235
+table at first use (`Ix.Kernel.IxonReader.builtinNatOpPins`, 235
 functions), which adds eight string-scanning externs (below). L6 removed the
 byte stage's intrinsic `kernel` error, whose message printed a `Kernel.Error`
 (10 functions; `Ix.Kernel.Audit.Roots`): 5288 at int-4, 5278 at L6. L6b adds
@@ -75,7 +75,7 @@ specializations: 10 functions, the same as in `Ix.Kernel.Audit.Roots`. cl-m1 ada
 largest family first): 6 functions, the same as in `Ix.Kernel.Audit.Roots`:
 5288 to 5294. T1
 (2026-10-01) builds the reader context's record maps once
-(`Ix.Kernel.ConLecheReader.contextOf`; `storeOf` partially applied rebuilt its
+(`Ix.Kernel.IxonReader.contextOf`; `storeOf` partially applied rebuilt its
 map at every lookup): `storeOf`, its boxed form, its fold specialization and
 the closed term `contextOf._closed_2` (the empty fallback store) leave, and
 `recordMap` with its fold specialization enter, so the closure is 2 functions
@@ -155,7 +155,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
 /-- info: Ix.Ixon.Admission.checkBytes_eq : ∀ (limits : Ix.Ixon.Admission.Limits) (records : Ix.Ixon.Admission.Records)
   (blobs : Ix.Kernel.Ingress.Blobs) (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint),
   Ix.Ixon.Admission.checkBytes limits records blobs hint =
-    Ix.Ixon.ConLecheAdmission.checkBytes limits records blobs hint -/
+    Ix.Ixon.KernelAdmission.checkBytes limits records blobs hint -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Admission.checkBytes_eq
 
@@ -191,17 +191,17 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
   {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
   {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
   Ix.Ixon.Admission.checkBytes limits records blobs hint = Except.ok env →
-    ∀ {pins : Ix.Kernel.ConLecheReader.Pins} {pre : Ix.Kernel.ConLecheReader.Prelude},
-      Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins →
-        Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre →
+    ∀ {pins : Ix.Kernel.IxonReader.Pins} {pre : Ix.Kernel.IxonReader.Prelude},
+      Ix.Kernel.IxonReader.defaultPins = Except.ok pins →
+        Ix.Kernel.IxonReader.builtinPrelude = Except.ok pre →
           ∀ {constants : List (Address × Ixon.Constant)},
             Ix.Ixon.Verify.Admission.RecordsRead limits records constants →
               ∀ {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition},
                 (owner, c) ∈ constants →
                   c.info = Ixon.ConstantInfo.defn d →
                     d.kind = Ix.DefKind.thm →
-                      (Ix.Kernel.ConLecheReader.definitionReader
-                                (Ix.Ixon.ConLecheAdmission.streamContext pins pre constants blobs hint) owner c d).read
+                      (Ix.Kernel.IxonReader.definitionReader
+                                (Ix.Ixon.KernelAdmission.streamContext pins pre constants blobs hint) owner c d).read
                             d.typ =
                           Except.ok (Ix.Kernel.Expr.const Ix.Kernel.falseName []) →
                         False -/
@@ -213,14 +213,14 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
   {env : Ix.Kernel.Env},
   Ix.Ixon.Admission.checkBytes limits records blobs hint = Except.ok env →
     ∃ pins pre natPins,
-      Ix.Kernel.ConLecheReader.defaultPins = Except.ok pins ∧
-        Ix.Kernel.ConLecheReader.builtinPrelude = Except.ok pre ∧
-          Ix.Kernel.ConLecheReader.builtinNatOpPins = Except.ok natPins ∧
+      Ix.Kernel.IxonReader.defaultPins = Except.ok pins ∧
+        Ix.Kernel.IxonReader.builtinPrelude = Except.ok pre ∧
+          Ix.Kernel.IxonReader.builtinNatOpPins = Except.ok natPins ∧
             Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
               Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
                 ∃ constants,
                   Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-                    Ix.Ixon.ConLecheAdmission.Installed pins pre natPins constants blobs hint env -/
+                    Ix.Ixon.KernelAdmission.Installed pins pre natPins constants blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Admission.checkBytes_reading
 
@@ -237,7 +237,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
 
 /- The certified entry adds ten Init externs beyond the codec, the reader and
 the fold: `ByteArray.mk` and `Array.pop`, used to load the committed pin
-table and prelude (`Ix.Kernel.ConLecheReader.defaultPins`, `builtinPrelude`),
+table and prelude (`Ix.Kernel.IxonReader.defaultPins`, `builtinPrelude`),
 and the eight string-scanning primitives of the Nat-operation pin decoder
 (`builtinNatOpPins`, L4b; int-4). No further unsafe primitive. -/
 /-- info: Additional certified-entry externs: [Array.pop,

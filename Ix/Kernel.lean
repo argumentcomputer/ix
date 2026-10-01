@@ -20,14 +20,14 @@ is con-leche's, ported in place under `Ix/Kernel/**` (`Ix.Kernel.Cached.checkDec
 at `.verified`, with `Ix.Kernel.model_exists`); Ix contributes only the
 boundary:
 
-* `Ix.Kernel.ConLecheReader` (`Ix/Kernel/Ixon/Reader.lean`, with
+* `Ix.Kernel.IxonReader` (`Ix/Kernel/Ixon/Reader.lean`, with
   `ReaderSpec`): the Ixon reader from decoded records to
   `Array Ix.Kernel.Declaration`, its address-to-name encoding (`keyName`,
   injective) and its record-by-record specification;
 * `Ix/Kernel/Ixon/{PinData,NatOpPinData,Prelude}.lean`: the committed pin
   table, Nat-operation pins and Ixon prelude, generated from the compiled
   Init's records;
-* `Ix.Kernel.ConLecheFold` (`Installed`, `Values`): installation and
+* `Ix.Kernel.IxonFold` (`Installed`, `Values`): installation and
   definition values of the fold, used by the public theorems;
 * `Ix.Kernel.ConstRef` (`Ref`), the decoded-record store
   (`Ix.Kernel.Ingress`, `Ingress/Records.lean`), bounded search outcomes
@@ -38,7 +38,7 @@ boundary:
 The certified API is `Ix.Ixon.Admission.checkBytes`; its public theorems
 (model existence over `Ix.Kernel.Model`, no proof of the pinned `False`,
 fidelity, resources) are in `Ix.Ixon.Consistency` and
-`Ix.Ixon.ConLecheConsistency`. The contract, trust surface, audits and
+`Ix.Ixon.KernelConsistency`. The contract, trust surface, audits and
 provenance are described in `docs/kernel.md`, which also records the
 intrinsic kernel this module exported before the port.
 

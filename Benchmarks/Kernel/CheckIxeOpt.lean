@@ -3,11 +3,11 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Benchmarks.Kernel.ConLecheCensus
+import Benchmarks.Kernel.CheckIxe
 
 /-! # Driver-side optimizations of the con-leche census, measured (untrusted prototype)
 
-`kernel-census-opt` is `kernel-census` (`Benchmarks.Kernel.ConLecheCensus`)
+`kernel-check-ixe-opt` is `kernel-check-ixe` (`Benchmarks.Kernel.CheckIxe`)
 with switches for four driver-side ports, none of which touches the verified
 core or the reader. It exists to measure them (`plans/review/cl-opt/`), and it
 is not a certified verdict.
@@ -19,7 +19,7 @@ is not a certified verdict.
   read of a record *other* than the one being read: info tags, references,
   recursors in full, constructor counts) and decoded again, in full, only
   when its turn comes; nothing decoded is kept but the skeletons. The default
-  `CENSUS_LOAD=full` is `kernel-census`'s eager `Ixon.deEnv` with every
+  `CENSUS_LOAD=full` is `kernel-check-ixe`'s eager `Ixon.deEnv` with every
   record decoded and kept.
 * `CENSUS_THREAD=1`: the census loop runs on one dedicated worker thread, so
   the checker allocates out of a fresh heap instead of the main thread's, which
@@ -42,14 +42,14 @@ is not a certified verdict.
   pool run (`address`, `micros`, `ok`).
 
 The census rows (`address, names, kind, outcome, reason, micros,
-readMicros`) are `kernel-census`'s. Every stage boundary prints the resident
+readMicros`) are `kernel-check-ixe`'s. Every stage boundary prints the resident
 set (`rss`) and its peak (`hwm`). -/
 
-namespace Benchmarks.Kernel.ConLecheOpt
+namespace Benchmarks.Kernel.CheckIxeOpt
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.ConLecheReader
-open Benchmarks.Kernel.ConLecheStep
+open Ix.Kernel.IxonReader
+open Benchmarks.Kernel.CheckIxeStep
 
 def rssMb : IO Nat := return (← statusKb "VmRSS:") / 1024
 def hwmMb : IO Nat := return (← statusKb "VmHWM:") / 1024
@@ -104,7 +104,7 @@ structure Loaded where
   released once it is fetched -/
   fetch : Address → IO (Option Ixon.Constant) := fun a => pure (fetchPure a)
 
-/-- `ConLecheStep.setup` with the literal edges supplied. -/
+/-- `CheckIxeStep.setup` with the literal edges supplied. -/
 def setupWith (store : RecordStore) (blobs : Address → Option ByteArray) (pins : Pins) (pre : Prelude)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint)
     (lits : Array (Address × Ixon.Constant)) : Setup := Id.run do
@@ -396,9 +396,9 @@ def runStats (bytes : ByteArray) (list output : System.FilePath) : IO UInt32 := 
 
 /-! ## The census loop, with the record fetched in full -/
 
-/-- `ConLecheStep.censusLoop`, except that the record being read is
+/-- `CheckIxeStep.checkLoop`, except that the record being read is
 `fetch`ed (decoded in full) while the store holds skeletons. -/
-def censusLoopWith (s : Setup) (fetch : Address → IO (Option Ixon.Constant))
+def checkLoopWith (s : Setup) (fetch : Address → IO (Option Ixon.Constant))
     (pins : List Ix.Kernel.NatOpPinSet) (names : Address → Array String)
     (intern : Option Bool)
     (addresses : Array Address) (skip : Std.HashSet String)
@@ -631,8 +631,8 @@ def runPar (started : Nat) (l : Loaded) (natPins : List Ix.Kernel.NatOpPinSet)
 /-! ## The run -/
 
 def run (args : List String) : IO UInt32 := do
-  let some options := ConLecheCensus.parseArgs args
-    | IO.eprintln "usage: kernel-census-opt <input.ixe> <output.jsonl> [limit]"; return 2
+  let some options := CheckIxe.parseArgs args
+    | IO.eprintln "usage: kernel-check-ixe-opt <input.ixe> <output.jsonl> [limit]"; return 2
   let started ← IO.monoMsNow
   let load := (← IO.getEnv "CENSUS_LOAD").getD "full"
   let stream := load == "stream" || load == "stream-free"
@@ -665,7 +665,7 @@ def run (args : List String) : IO UInt32 := do
     | some list => do
       let mut roots : Array Address := pre.records.map (·.1)
       for n in (list.splitOn ",").filter (!·.isEmpty) do
-        match l.env.named[Ix.Name.fromLeanName (ConLecheCensus.rootName n)]? with
+        match l.env.named[Ix.Name.fromLeanName (CheckIxe.rootName n)]? with
         | some named => roots := roots.push named.addr
         | none => IO.eprintln s!"census-opt: CENSUS_ROOTS: no constant {n}"
       pure (closure s.store s.extra roots)
@@ -692,7 +692,7 @@ def run (args : List String) : IO UInt32 := do
     stage started "marked persistent"
   let handle ← IO.FS.Handle.mk options.output .write
   let loop : IO (Outcome × Nat × Interner × State) :=
-    censusLoopWith s l.fetch natPins (names.getD · #[]) intern ordered {}
+    checkLoopWith s l.fetch natPins (names.getD · #[]) intern ordered {}
       (emit := fun row => do handle.putStrLn row.json.compress; handle.flush)
       (progress := fun i o => do
         if i % 20000 == 0 then
@@ -715,6 +715,6 @@ def run (args : List String) : IO UInt32 := do
       {st.indBlocks.size} blocks, {st.projOwners.size} owners)"
   return 0
 
-end Benchmarks.Kernel.ConLecheOpt
+end Benchmarks.Kernel.CheckIxeOpt
 
-def main (args : List String) : IO UInt32 := Benchmarks.Kernel.ConLecheOpt.run args
+def main (args : List String) : IO UInt32 := Benchmarks.Kernel.CheckIxeOpt.run args

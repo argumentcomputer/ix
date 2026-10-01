@@ -373,8 +373,8 @@ lean_exe «kernel-entry-cases» where
 /-- Con-leche's universe-level comparison (`Level.leq`, `Level.isEquiv`, and
 its Géran fallback `Level.Geran.leq`) against brute-force evaluation, on
 random levels and on Ixon's canonical forms (cl-level). -/
-lean_exe «conleche-level-differential» where
-  root := `Tests.Ix.Kernel.ConLecheLevels
+lean_exe «kernel-level-comparison» where
+  root := `Tests.Ix.Kernel.LevelComparison
   moreLinkObjs := #[ix_rs]
 
 /-- The Ixon reader against a direct translation of Lean's constants over
@@ -389,34 +389,28 @@ lean_exe «kernel-reader-fidelity» where
 
 /-- Con-leche's verified checker through the Ixon reader: the
 `checkBytes`-shaped entry and its per-record census (untrusted). -/
-lean_lib KernelConLeche where
-  roots := #[`Ix.Ixon.ConLecheAdmission, `Ix.Ixon.ConLecheConsistency, `Ix.Ixon.Consistency,
-    `Benchmarks.Kernel.ConLecheStep,
-    `Benchmarks.Kernel.ConLecheReadCache, `Benchmarks.Kernel.ConLecheCensus, `Benchmarks.Kernel.ConLecheFold]
+lean_lib KernelEntry where
+  roots := #[`Ix.Ixon.KernelAdmission, `Ix.Ixon.KernelConsistency, `Ix.Ixon.Consistency,
+    `Benchmarks.Kernel.CheckIxeStep,
+    `Benchmarks.Kernel.CheckIxeReadCache, `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold]
 
 /-- The certified checker's census (L5: the default census target):
 con-leche through the Ixon reader, one row per record (untrusted step). -/
-lean_exe «kernel-census» where
-  root := `Benchmarks.Kernel.CensusCertifiedMain
+lean_exe «kernel-check-ixe» where
+  root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
-/-- The same driver under its L4 name, for existing scripts (Lake needs a
-distinct root module per executable). -/
-lean_exe «kernel-census-cl» where
-  root := `Benchmarks.Kernel.ConLecheCensusMain
-  moreLinkObjs := #[ix_rs]
-
-/-- `kernel-census` with driver-side optimization switches (load mode,
+/-- `kernel-check-ixe` with driver-side optimization switches (load mode,
 worker-thread lane, persistent mark, two-phase pool), for measurement only
-(`Benchmarks.Kernel.ConLecheOpt`, untrusted; `plans/review/cl-opt/`). -/
-lean_exe «kernel-census-opt» where
-  root := `Benchmarks.Kernel.ConLecheOpt
+(`Benchmarks.Kernel.CheckIxeOpt`, untrusted; `plans/review/cl-opt/`). -/
+lean_exe «kernel-check-ixe-opt» where
+  root := `Benchmarks.Kernel.CheckIxeOpt
   moreLinkObjs := #[ix_rs]
 
 /-- Regenerates `Ix/Kernel/Ixon/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/census/initstd.ixe`), verified by con-leche. -/
-lean_exe «conleche-pin-gen» where
-  root := `Benchmarks.Kernel.ConLechePinGen
+lean_exe «kernel-pin-gen» where
+  root := `Benchmarks.Kernel.PinGen
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
@@ -437,7 +431,7 @@ script "check-kernel" (args) := do
   -- the vendored library's globs are exactly the vendored tree
   run "python3" #["scripts/vendor-conleche.py", "check-lake", "lakefile.lean", "IxKernel/lakefile.lean"]
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.ConLecheReader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ConLecheRoundtrip", "Tests.Ix.Kernel.Axioms"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
   run ".lake/build/bin/kernel-provenance" #[]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
@@ -461,8 +455,8 @@ script "check-kernel" (args) := do
   -- Host-compiled Lean declarations through the certified entry, each with
   -- an exact expected verdict (`Tests/Ix/Kernel/EntryCases.lean`).
   -- Con-leche's level comparison against brute-force evaluation (cl-level).
-  run "lake" #["build", "--wfail", "conleche-level-differential"]
-  run ".lake/build/bin/conleche-level-differential" #[]
+  run "lake" #["build", "--wfail", "kernel-level-comparison"]
+  run ".lake/build/bin/kernel-level-comparison" #[]
   run "lake" #["build", "--wfail", "kernel-entry-cases"]
   let entry ← IO.Process.output { cmd := ".lake/build/bin/kernel-entry-cases" }
   IO.FS.writeFile ".lake/build/kernel-entry-cases.jsonl" entry.stdout

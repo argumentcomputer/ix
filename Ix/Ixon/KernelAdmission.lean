@@ -19,15 +19,15 @@ certified API `Ix.Ixon.Admission.checkBytes` runs:
   the same batch limits, key uniqueness (no two records and no two blobs
   under one address), the same canonical per-record decoding, the same
   error positions.
-* The reader is `Ix.Kernel.ConLecheReader` (keys per D1 (b), regrouping of
+* The reader is `Ix.Kernel.IxonReader` (keys per D1 (b), regrouping of
   `muts` blocks and projection records, the in-process modeller and the
   projection rewrite), against the supplied records with the Ixon prelude's
   records as a fallback store.
 * `preparePrelude` is con-leche's (`Ix/Kernel/Frontend/Prepare.lean`,
-  verbatim), with the Ixon prelude (`Ix.Kernel.ConLecheReader.builtinPrelude`).
+  verbatim), with the Ixon prelude (`Ix.Kernel.IxonReader.builtinPrelude`).
 * The fold is con-leche's `checkDecls` at `.verified`, at the committed
   Nat-operation pin variant generated from Ixon records
-  (`Ix.Kernel.ConLecheReader.builtinNatOpPins`, decoded from
+  (`Ix.Kernel.IxonReader.builtinNatOpPins`, decoded from
   `Ix/Kernel/Ixon/NatOpPinData.lean`; the theorem holds at every pin
   list, so the pins are untrusted).
 
@@ -38,14 +38,14 @@ and literal blobs; addresses are keys, not authenticated content hashes. The
 entry does not reorder beyond `preparePrelude`: a host order is a dependency
 order in which each record follows its references, a pinned `Nat` operation's
 certificate ground, and the constants its literals reference
-(`ConLecheReader.literalEdges`; con-leche declines a string literal before the
+(`IxonReader.literalEdges`; con-leche declines a string literal before the
 string-support declarations), as the census driver's order is.
 -/
 
-namespace Ix.Ixon.ConLecheAdmission
+namespace Ix.Ixon.KernelAdmission
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.ConLecheReader
+open Ix.Kernel.IxonReader
 open Ix.Ixon.Admission (Limits Records Resource Table preflight uniqueKeys decodeRecords)
 
 /-- Byte, reader and checker failures, kept apart. Positions are the
@@ -199,4 +199,4 @@ theorem checkBytes_has_model (V : Type u) [Ix.Kernel.SetTheory V]
         simp only [hp, hq, hn, bind, Except.bind, Except.mapError] at h
         exact checkBytesWith_has_model V h
 
-end Ix.Ixon.ConLecheAdmission
+end Ix.Ixon.KernelAdmission

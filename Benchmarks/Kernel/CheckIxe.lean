@@ -3,30 +3,30 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Benchmarks.Kernel.ConLecheReadCache
+import Benchmarks.Kernel.CheckIxeReadCache
 
 /-! # Con-leche census over a compiled Ixon environment (untrusted)
 
 The certified checker's census: con-leche's verified checker, read through
 the Ixon reader
-(`Ix.Kernel.ConLecheReader`): every primary record of an `.ixe`, in
+(`Ix.Kernel.IxonReader`): every primary record of an `.ixe`, in
 dependency order (the Ixon prelude's records first), read into con-leche
 declarations and installed and checked one record at a time by the
-incremental step of `Benchmarks.Kernel.ConLecheStep` (`annotDeclStep`, then
+incremental step of `Benchmarks.Kernel.CheckIxeStep` (`annotDeclStep`, then
 `checkPendingList` on what it left pending), continuing past failures and
 reporting the dependents of a failure as blocked. Reducibility hints are the
 compiler's (`Env.anonHints`). Not a certified verdict:
-`Ix.Ixon.ConLecheAdmission.checkBytes` is.
+`Ix.Ixon.KernelAdmission.checkBytes` is.
 
-Rows are JSONL with the fields of `kernel-census` (`address, names, kind,
+Rows are JSONL with the fields of `kernel-check-ixe` (`address, names, kind,
 outcome, reason, micros, readMicros`; a blocked row's reason is its root's
 address), so `scripts/census-report.py` reads them unchanged.
 
-Usage: `kernel-census-cl <input.ixe> <output.jsonl> [limit]`. The watchdog
+Usage: `kernel-check-ixe <input.ixe> <output.jsonl> [limit]`. The watchdog
 (`CENSUS_WATCH_MS`, default 60000; `CENSUS_WATCH_MB`, default 20000) appends a
 runaway record's address to `<output>.runaway` and exits with code 3;
 `CENSUS_SKIP` (comma-separated addresses) declines those records unchecked,
-as for `kernel-census` and `scripts/census-guarded.sh`. `CENSUS_ROOTS`
+as for `kernel-check-ixe` and `scripts/census-guarded.sh`. `CENSUS_ROOTS`
 (comma-separated Lean names, resolved through the environment's metadata)
 restricts the run to the prelude and the dependency closure of those
 constants; a `«n»` component is numeric, as the rows print it (the `0` of a
@@ -39,18 +39,18 @@ con-leche's driver runs its check phase (`Main.lean`, `checkDeclsIO`);
 T1.
 
 `CENSUS_READ_CACHE=<dir>` keeps a persistent read cache
-(`Benchmarks.Kernel.ConLecheReadCache`): a full-order run (no `CENSUS_ROOTS`,
+(`Benchmarks.Kernel.CheckIxeReadCache`): a full-order run (no `CENSUS_ROOTS`,
 no limit) writes the run's plan (every record's view and reading, keyed by
 the `.ixe`'s BLAKE3 hash and the reader version), and a later run over the
 same bytes maps it instead of decoding the `.ixe`, building the setup and
 reading; its rows are the same, with `readMicros` the cache lookup's. The
 certified entry never uses it. -/
 
-namespace Benchmarks.Kernel.ConLecheCensus
+namespace Benchmarks.Kernel.CheckIxe
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.ConLecheReader
-open Benchmarks.Kernel.ConLecheStep
+open Ix.Kernel.IxonReader
+open Benchmarks.Kernel.CheckIxeStep
 
 /-- A dot-separated name as the rows print it: `«n»` is the numeric
 component `n`, every other component a string. -/
@@ -75,23 +75,23 @@ def parseArgs : List String → Option Options
 inductive Source where
   | live (env : Ixon.Env) (s : Setup) (names : Std.HashMap Address (Array String))
       (ordered : Array Address)
-  | planned (plan : ConLecheReadCache.Plan)
+  | planned (plan : CheckIxeReadCache.Plan)
 
 def run (args : List String) : IO UInt32 := do
   let some options := parseArgs args
-    | IO.eprintln "usage: kernel-census-cl <input.ixe> <output.jsonl> [limit]"; return 2
+    | IO.eprintln "usage: kernel-check-ixe <input.ixe> <output.jsonl> [limit]"; return 2
   let started ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile options.input
   let natPins ← IO.ofExcept builtinNatOpPins
   let rootsEnv ← IO.getEnv "CENSUS_ROOTS"
-  -- the persistent read cache (`ConLecheReadCache`): full-order runs only
+  -- the persistent read cache (`CheckIxeReadCache`): full-order runs only
   let cacheDir ← IO.getEnv "CENSUS_READ_CACHE"
   let cache : Option (System.FilePath × String) := do
     let dir ← cacheDir
     guard rootsEnv.isNone
-    pure (ConLecheReadCache.planPath dir bytes)
+    pure (CheckIxeReadCache.planPath dir bytes)
   let plan ← match cache with
-    | some (path, ixe) => ConLecheReadCache.load path ixe
+    | some (path, ixe) => CheckIxeReadCache.load path ixe
     | none => pure none
   let source ← match plan with
     | some plan =>
@@ -159,18 +159,18 @@ def run (args : List String) : IO UInt32 := do
       let total := match options.limit with
         | some n => min n plan.records.size
         | none => plan.records.size
-      ConLecheReadCache.censusLoopPlan plan natPins options.limit skip emit before after (progressAt total)
+      CheckIxeReadCache.checkLoopPlan plan natPins options.limit skip emit before after (progressAt total)
     | .live _ s names ordered => do
       let total := match options.limit with | some n => min n ordered.size | none => ordered.size
       let readings ← IO.mkRef (#[] : Array (Address × Except ReadError Read))
-      let out ← censusLoop s natPins (names.getD · #[]) (ordered.extract 0 total) skip emit before after
+      let out ← checkLoop s natPins (names.getD · #[]) (ordered.extract 0 total) skip emit before after
         (progressAt total)
         (onRead := fun a r _ => if record then readings.modify (·.push (a, r)) else pure ())
       if let some (path, ixe) := cache then
         if record then
           let t0 ← IO.monoMsNow
           let header := s!"census-cl: {s.store.size} records, {s.ordered.size} primary"
-          ConLecheReadCache.save path (ConLecheReadCache.ofRun s ixe header names (← readings.get))
+          CheckIxeReadCache.save path (CheckIxeReadCache.ofRun s ixe header names (← readings.get))
           IO.eprintln s!"census-cl: read cache {path} written in {(← IO.monoMsNow) - t0} ms"
       pure out
   -- The loop runs as con-leche's driver runs its check phase at `--jobs=1`
@@ -196,4 +196,4 @@ def run (args : List String) : IO UInt32 := do
     IO.eprintln s!"  {count}\t{reason}"
   return 0
 
-end Benchmarks.Kernel.ConLecheCensus
+end Benchmarks.Kernel.CheckIxe

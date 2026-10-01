@@ -88,14 +88,14 @@ def reconstruct (maxProjections : Nat) (constants : Ingress.Constants) :
   reconstructLoop maxProjections (requests constants) constants
 
 /-- Failures of the certified entry: byte admission and reconstruction
-(`Error`), or the checker (`ConLecheAdmission.Error`). -/
+(`Error`), or the checker (`KernelAdmission.Error`). -/
 inductive CheckError where
   | reconstruction (error : Error)
-  | checker (error : ConLecheAdmission.Error)
+  | checker (error : KernelAdmission.Error)
 
 /-- **The certified entry with optional omission of projection records**:
 canonical byte admission, projection reconstruction, then con-leche's
-verified checker behind the Ixon reader (`ConLecheAdmission.checkConstants`)
+verified checker behind the Ixon reader (`KernelAdmission.checkConstants`)
 on the expanded records. Input byte limits and key uniqueness apply before
 reconstruction; the separate projection limit bounds generated requests. Owner keys remain
 supplied keys: only derived projection addresses are authenticated here. -/
@@ -108,6 +108,6 @@ def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (records : Adm
   let constants ← (Admission.decodeRecords limits records).mapError
     (fun error => .reconstruction (.admission error))
   let expanded ← (reconstruct maxProjections constants).mapError .reconstruction
-  (ConLecheAdmission.checkConstants expanded blobs hint).mapError .checker
+  (KernelAdmission.checkConstants expanded blobs hint).mapError .checker
 
 end Ix.Ixon.Projection

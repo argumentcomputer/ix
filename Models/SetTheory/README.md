@@ -6,9 +6,9 @@ sequence of strongly inaccessible cardinals. Its universe chain is
 `V_ (κ n).ord`.
 
 From port step L5 (plan v4) the checker's theorems are stated over
-con-leche's class `Ix.Kernel.SetTheory`. `IxSetTheoryModel.conLecheSetTheoryOfChain`
-assembles that instance from a given chain, `conLecheSetTheoryOfCarneiro`
-selects a chain from `OmegaInaccessibles`, and `carneiro_implies_conleche`
+con-leche's class `Ix.Kernel.SetTheory`. `IxSetTheoryModel.zfSetTheoryOfChain`
+assembles that instance from a given chain, `zfSetTheoryOfCarneiro`
+selects a chain from `OmegaInaccessibles`, and `carneiro_implies_setTheory`
 proves:
 
 ```lean
