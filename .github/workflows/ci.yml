@@ -77,9 +77,11 @@ jobs:
     name: Certified Lean kernel
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-rust-toolchain
-      - uses: leanprover/lean-action@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/setup-rust-toolchain
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           use-github-cache: false
@@ -94,7 +96,7 @@ jobs:
         run: lake run check-kernel --with-model
       - name: Retain codec, block-order, entry-case and reader-fidelity results
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: certified-kernel-differential
           path: |
