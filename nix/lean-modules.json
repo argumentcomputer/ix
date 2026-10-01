@@ -2469,6 +2469,32 @@
   "Compilatrix.Anf.Proof.Unfold":
   {"path": "Compilatrix/Anf/Proof/Unfold.lean",
    "imports": ["Compilatrix.Anf.Semantics", "Compilatrix.Sem.Agrees"]},
+  "Compilatrix.Anf.Proof.Spec.Trees":
+  {"path": "Compilatrix/Anf/Proof/Spec/Trees.lean",
+   "imports": ["Compilatrix.Anf.Proof.Spec.Basic"]},
+  "Compilatrix.Anf.Proof.Spec.Sim":
+  {"path": "Compilatrix/Anf/Proof/Spec/Sim.lean",
+   "imports": ["Compilatrix.Anf.Proof.Spec.Frame"]},
+  "Compilatrix.Anf.Proof.Spec.Rw":
+  {"path": "Compilatrix/Anf/Proof/Spec/Rw.lean",
+   "imports": ["Compilatrix.Anf.Proof.Spec.Sim"]},
+  "Compilatrix.Anf.Proof.Spec.Run":
+  {"path": "Compilatrix/Anf/Proof/Spec/Run.lean",
+   "imports": ["Compilatrix.Anf.Proof.Spec.Rewrite"]},
+  "Compilatrix.Anf.Proof.Spec.Rewrite":
+  {"path": "Compilatrix/Anf/Proof/Spec/Rewrite.lean",
+   "imports": ["Compilatrix.Anf.Proof.Spec.Rw"]},
+  "Compilatrix.Anf.Proof.Spec.Rel":
+  {"path": "Compilatrix/Anf/Proof/Spec/Rel.lean",
+   "imports":
+   ["Compilatrix.Anf.Proof.Spec.Trees", "Compilatrix.Anf.Proof.Walk.Prog"]},
+  "Compilatrix.Anf.Proof.Spec.Frame":
+  {"path": "Compilatrix/Anf/Proof/Spec/Frame.lean",
+   "imports": ["Compilatrix.Anf.Proof.Spec.Rel"]},
+  "Compilatrix.Anf.Proof.Spec.Basic":
+  {"path": "Compilatrix/Anf/Proof/Spec/Basic.lean",
+   "imports":
+   ["Compilatrix.Anf.Specialize", "Compilatrix.Anf.Proof.Pass.Prune"]},
   "Compilatrix.Anf.Proof.Rel.Ident":
   {"path": "Compilatrix/Anf/Proof/Rel/Ident.lean",
    "imports": ["Compilatrix.Anf.Proof.Rel.Fund"]},
@@ -2504,6 +2530,7 @@
     "Compilatrix.Anf.Proof.Pass.Inline",
     "Compilatrix.Anf.Proof.Pass.Prune",
     "Compilatrix.Anf.Proof.Convert.Correct",
+    "Compilatrix.Anf.Proof.Spec.Run",
     "Compilatrix.Anf.Pipeline"]},
   "Compilatrix.Anf.Proof.Pass.Inline":
   {"path": "Compilatrix/Anf/Proof/Pass/Inline.lean",

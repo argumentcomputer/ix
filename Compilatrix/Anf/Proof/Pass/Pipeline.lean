@@ -2,19 +2,21 @@ import Compilatrix.Anf.Proof.Pass.Shrink
 import Compilatrix.Anf.Proof.Pass.Inline
 import Compilatrix.Anf.Proof.Pass.Prune
 import Compilatrix.Anf.Proof.Convert.Correct
+import Compilatrix.Anf.Proof.Spec.Run
 import Compilatrix.Anf.Pipeline
 
 /-! # The middle end is correct
 
 `Pipeline.run` is P1 followed by the certificate's steps. P1 gives a
 program whose ids are exactly `0 … size - 1` (`convert_wf`; Lam programs
-with a gap below their size are declined, `convert-dense`), every P2, P3
-and prune step keeps that shape and refines its input
+with a gap below their size are declined, `convert-dense`), every P2, P3,
+P4 and prune step keeps that shape and refines its input
 (`Shrink.Proof.run_refines`, `Inline.Proof.round_refines`,
-`Prune.Proof.run_refines`), and refinement composes
-(`Sem.Refines.trans`). P4's correctness is not yet proved (M2.3 status):
-`run_correct` takes it as the hypothesis `SpecCorrect`; for certificates
-without P4 steps (`NoSpec`) the theorem is unconditional (`run_correct_noSpec`). -/
+`Specialize.Proof.run_refines`, `Prune.Proof.run_refines`), and refinement
+composes (`Sem.Refines.trans`): `run_correct` holds for every certificate
+the re-run accepts. The step lemmas still take P4's correctness as a
+premise (`SpecCorrect`, now `spec_correct`); `run_correct_noSpec` states
+the result for certificates without P4 steps without it. -/
 
 set_option autoImplicit false
 
@@ -85,10 +87,13 @@ theorem convert_wf {L : Lam.Program} {Q : Program} (h : convert L = .ok Q) : Q.W
     obtain ⟨gd, hgd, -⟩ := hgl g gl hgl' hg
     exact ⟨gd, hgd⟩
 
-/-- P4's correctness (to be proved): every certificate the re-run accepts
-gives a refinement of the input with ids `0 … size - 1`. -/
+/-- P4's correctness: every certificate the re-run accepts gives a
+refinement of the input with ids `0 … size - 1`. -/
 def SpecCorrect : Prop :=
   ∀ (c : Specialize.Cert) (P Q : Program), P.WF → Specialize.run c P = .ok Q → Q.WF ∧ Sem.Refines P Q
+
+/-- **P4 is correct** (`Specialize.Proof.run_refines`). -/
+theorem spec_correct : SpecCorrect := fun _ _ _ hw h => Specialize.Proof.run_refines hw h
 
 /-- A step other than P4. -/
 def Step.NoSpec : Step → Prop
@@ -132,14 +137,14 @@ theorem steps_correct (p : Shrink.Params) : ∀ (steps : List Step) (P Q : Progr
 
 
 
-/-- **The middle end is correct**, given P4's correctness: if the re-run
-accepts a certificate, its output refines the Lam program. -/
-theorem run_correct (hspec : SpecCorrect) {cert : Cert} {L : Lam.Program} {Q : Program}
+/-- **The middle end is correct**: if the re-run accepts a certificate, its
+output refines the Lam program. -/
+theorem run_correct {cert : Cert} {L : Lam.Program} {Q : Program}
     (h : run cert L = .ok Q) : Sem.Refines L Q := by
   unfold run at h
   obtain ⟨P, h1, h2⟩ := Lam.ModesOk.bind_ok h
   exact (Convert.Proof.convert_refines h1).trans
-    (steps_correct cert.shrink cert.steps P Q (fun _ _ => .inr hspec) (convert_wf h1) h2).2
+    (steps_correct cert.shrink cert.steps P Q (fun _ _ => .inr spec_correct) (convert_wf h1) h2).2
 
 /-- **The middle end is correct** for every certificate without P4 steps:
 if the re-run accepts it, its output refines the Lam program. -/
@@ -152,9 +157,9 @@ theorem run_correct_noSpec {cert : Cert} (hno : ∀ s ∈ cert.steps, Step.NoSpe
 
 /-! ## The traced shape (decision D-1) -/
 
-theorem run_correct_traced (hspec : SpecCorrect) {cert : Cert} {L : Lam.Program} {Q : Program}
+theorem run_correct_traced {cert : Cert} {L : Lam.Program} {Q : Program}
     (h : run cert L = .ok Q) : Sem.TRefines L Q :=
-  Sem.Refines.ofPure (run_correct hspec h)
+  Sem.Refines.ofPure (run_correct h)
 
 theorem run_correct_noSpec_traced {cert : Cert} (hno : ∀ s ∈ cert.steps, Step.NoSpec s) {L : Lam.Program}
     {Q : Program} (h : run cert L = .ok Q) : Sem.TRefines L Q :=

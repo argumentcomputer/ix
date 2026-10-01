@@ -117,6 +117,14 @@
   "Compilatrix.Anf.Proof.Rel.Basic",
   "Compilatrix.Anf.Proof.Rel.Fund",
   "Compilatrix.Anf.Proof.Rel.Ident",
+  "Compilatrix.Anf.Proof.Spec.Basic",
+  "Compilatrix.Anf.Proof.Spec.Frame",
+  "Compilatrix.Anf.Proof.Spec.Rel",
+  "Compilatrix.Anf.Proof.Spec.Rewrite",
+  "Compilatrix.Anf.Proof.Spec.Run",
+  "Compilatrix.Anf.Proof.Spec.Rw",
+  "Compilatrix.Anf.Proof.Spec.Sim",
+  "Compilatrix.Anf.Proof.Spec.Trees",
   "Compilatrix.Anf.Proof.Unfold",
   "Compilatrix.Anf.Proof.Walk.App",
   "Compilatrix.Anf.Proof.Walk.At",
@@ -461,8 +469,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline":
- "jcb/p2-anf-spec: walk validity as a predicate with related value pairs",
+ "baseline": "jcb/p2-anf-spec: P4 specialise proved",
  "axiom_sha256":
- "355b804de06f15522478810461c95eb4d587616eb76c155b2f0d9571f636e83a",
- "axiom_count": 1789}
+ "f237b721942b49564d4e45838ce6813ac6dea623c0b2b9666343905f97a2528e",
+ "axiom_count": 1955}
