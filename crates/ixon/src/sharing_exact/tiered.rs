@@ -370,6 +370,10 @@ pub struct TieredStats {
   /// Final layout length of every candidate run, as `(w, bytes)` in
   /// increasing `w` (one entry for a single candidate, `tiered_at`).
   pub candidate_lengths: Vec<(u64, u64)>,
+  /// Per candidate run, in increasing `w`: `(w, phase-1 uniform-model
+  /// length, states_created, work)`, the last two the totals charged to that
+  /// candidate's meter. Diagnostic: the counts that the limits act on.
+  pub candidate_meters: Vec<(u64, u64, u64, u64)>,
   /// Phase-1 uniform-model length.
   pub phase1_model_bytes: u64,
   /// Phase-1 output priced by the layout (its own order).
@@ -434,16 +438,19 @@ pub(crate) fn tiered(
     };
   let mut best: Option<TieredSharingResult> = None;
   let mut lengths = Vec::with_capacity(3);
+  let mut meters = Vec::with_capacity(3);
   for (w, c) in (1..=3).zip(candidates) {
     // In width order: the error of the lowest failing width, as above.
     let c = c?;
     lengths.push((w, c.stats.phase3_layout_bytes));
+    meters.extend_from_slice(&c.stats.candidate_meters);
     if best.as_ref().is_none_or(|b| tiered_better(&c, b)) {
       best = Some(c);
     }
   }
   let mut best = best.ok_or_else(|| internal("no tiered candidate"))?;
   best.stats.candidate_lengths = lengths;
+  best.stats.candidate_meters = meters;
   Ok(best)
 }
 
@@ -631,6 +638,12 @@ fn tiered_at(
     candidate_count: k,
     w,
     candidate_lengths: vec![(w, predicted)],
+    candidate_meters: vec![(
+      w,
+      u.model_len,
+      meter.stats.states_created,
+      meter.stats.work,
+    )],
     phase1_model_bytes: u.model_len,
     phase1_layout_bytes: phase1_layout,
     slot_states,

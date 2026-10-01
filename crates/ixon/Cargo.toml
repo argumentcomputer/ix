@@ -23,6 +23,8 @@ rayon = { workspace = true }
 
 [dev-dependencies]
 ix-common = { workspace = true, features = ["quickcheck"] }
+# The process allocator of the `ix` binary, for the `sharing_corpus` runner.
+mimalloc = { workspace = true }
 quickcheck = { workspace = true }
 quickcheck_macros = { workspace = true }
 

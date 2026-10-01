@@ -13,7 +13,9 @@
 //! cargo run --release -p ixon --example sharing_corpus -- <file.ixe>
 //!   [--threads N]             worker threads (default: all cores)
 //!   [--limit N]               only the first N constants (address order)
-//!   [--csv PATH]              per-constant CSV
+//!   [--csv PATH]              per-constant CSV (with the blake3 of the
+//!                             output and, per phase-1 width, the final
+//!                             bytes, model bytes, states and work)
 //!   [--select-out PATH]       write a selection: every --select-stride-th
 //!                             constant plus those with more than
 //!                             --select-min-cand R1/R2 candidates
@@ -52,6 +54,11 @@ use ixon::sharing_exact::{
   normalize_constant_sharing_tiered_par,
 };
 use rayon::prelude::*;
+
+// The allocator of the `ix` binary (`crates/ffi`), so per-constant times
+// match the compiler's.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 /// The Share layout of the construction: TagN, the wire Share code.
 const LAYOUT: ShareLayout = ShareLayout::TagN;
@@ -140,6 +147,11 @@ struct Row {
   /// `--check-sequential`: how the sequential reference compares.
   seq_check: &'static str,
   uniform_states: u64,
+  /// blake3 of the serialized output Constant (empty on failure).
+  out_hash: String,
+  /// Per phase-1 width 1, 2, 3: `(final layout bytes, phase-1 model bytes,
+  /// states_created, work)` of that candidate's run.
+  per_width: Vec<(u64, u64, u64, u64)>,
   ms: f64,
 }
 
@@ -220,6 +232,18 @@ fn process(
         res.phase1.components.iter().map(Vec::len).max().unwrap_or(0) as u64;
       row.slot_states = res.stats.slot_states;
       row.uniform_states = res.phase1.states_visited;
+      let mut bytes = Vec::new();
+      out.put(&mut bytes);
+      row.out_hash = blake3::hash(&bytes).to_hex().to_string();
+      row.per_width = res
+        .stats
+        .candidate_lengths
+        .iter()
+        .zip(&res.stats.candidate_meters)
+        .map(|(&(_, len), &(_, model, states, work))| {
+          (len, model, states, work)
+        })
+        .collect();
     },
     Err(SharingError::ResourceExhausted(e)) => {
       row.status = format!("resource:{:?}", e.resource);
@@ -389,11 +413,17 @@ fn main() -> Result<(), String> {
     let mut f = std::io::BufWriter::new(
       std::fs::File::create(path).map_err(|e| e.to_string())?,
     );
-    writeln!(f, "idx,addr,name,kind,status,raw,real,tagn,unshared,n,cand,k,w,uncertain,comps,max_comp,slot_states,uniform_states,ms").map_err(|e| e.to_string())?;
+    writeln!(f, "idx,addr,name,kind,status,raw,real,tagn,unshared,n,cand,k,w,uncertain,comps,max_comp,slot_states,uniform_states,out_hash,len1,len2,len3,model1,model2,model3,states1,states2,states3,work1,work2,work3,ms").map_err(|e| e.to_string())?;
     for (r, c) in rows.iter().zip(&consts) {
+      let col = |k: usize, f: fn(&(u64, u64, u64, u64)) -> u64| {
+        r.per_width.get(k).map_or(String::new(), |x| f(x).to_string())
+      };
+      let cols = |f: fn(&(u64, u64, u64, u64)) -> u64| {
+        format!("{},{},{}", col(0, f), col(1, f), col(2, f))
+      };
       writeln!(
         f,
-        "{},{},\"{}\",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3}",
+        "{},{},\"{}\",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3}",
         r.idx,
         r.addr,
         name_of(&r.addr, &c.addr).replace('"', "'"),
@@ -412,6 +442,11 @@ fn main() -> Result<(), String> {
         r.max_comp,
         r.slot_states,
         r.uniform_states,
+        r.out_hash,
+        cols(|x| x.0),
+        cols(|x| x.1),
+        cols(|x| x.2),
+        cols(|x| x.3),
         r.ms
       )
       .map_err(|e| e.to_string())?;

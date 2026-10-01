@@ -1880,6 +1880,7 @@ dependencies = [
  "indexmap",
  "ix-common",
  "memmap2",
+ "mimalloc",
  "nom",
  "num-bigint 0.4.6",
  "quickcheck",
