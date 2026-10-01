@@ -1,4 +1,4 @@
-import Ix.Compile.Verify.UniformRevisible
+import Ix.Compile.Verify.UniformTies
 
 /-!
 # Stage 4: the search tables
@@ -424,5 +424,342 @@ theorem conv_entries {a b : CTable} {Pa Pb : Entry → Prop} (ha : ∀ e, some e
     exact ha _ hoa
   · intro k e he
     simp [getElem!_def] at he
+
+/-! ## Tables with the tie order -/
+
+/-- `e` is at least as good as `e'`: a smaller `Δ`, or the same and an earlier
+or equal set. -/
+def TLe (e e' : Entry) : Prop := e.1 < e'.1 ∨ (e.1 = e'.1 ∧ LeL e.2.toList e'.2.toList)
+
+/-- `tb` has an entry at count `k` at least as good as `(v, S)`. -/
+def HasAtT (tb : CTable) (k : Nat) (v : _root_.Int) (S : List Nat) : Prop :=
+  ∃ e, tb[k]! = some e ∧ (e.1 < v ∨ (e.1 = v ∧ LeL e.2.toList S))
+
+/-- `tb'` has an entry at least as good at every count where `tb` has one. -/
+def ImprovesT (tb tb' : CTable) : Prop :=
+  ∀ (k : Nat) (e : Entry), tb[k]! = some e → ∃ e', tb'[k]! = some e' ∧ TLe e' e
+
+/-- Every entry's set is strictly increasing. -/
+def SortedT (tb : CTable) : Prop := ∀ (k : Nat) (e : Entry), tb[k]! = some e → e.2.toList.Pairwise (· < ·)
+
+theorem tle_refl (e : Entry) : TLe e e := Or.inr ⟨rfl, leL_refl _⟩
+
+theorem tle_trans {a b c : Entry} (h1 : TLe a b) (h2 : TLe b c) : TLe a c := by
+  rcases h1 with h1 | ⟨h1, h1'⟩ <;> rcases h2 with h2 | ⟨h2, h2'⟩
+  · exact Or.inl (Int.lt_trans h1 h2)
+  · exact Or.inl (by omega)
+  · exact Or.inl (by omega)
+  · exact Or.inr ⟨by omega, leL_trans h1' h2'⟩
+
+theorem improvesT_refl (tb : CTable) : ImprovesT tb tb := fun _ e h => ⟨e, h, tle_refl e⟩
+
+theorem improvesT_trans {a b c : CTable} (h1 : ImprovesT a b) (h2 : ImprovesT b c) :
+    ImprovesT a c := by
+  intro k e he
+  obtain ⟨e', he', h⟩ := h1 k e he
+  obtain ⟨e'', he'', h'⟩ := h2 k e' he'
+  exact ⟨e'', he'', tle_trans h' h⟩
+
+theorem HasAtT.mono {a b : CTable} {k : Nat} {v : _root_.Int} {S : List Nat} (h : HasAtT a k v S)
+    (hi : ImprovesT a b) : HasAtT b k v S := by
+  obtain ⟨e, he, hv⟩ := h
+  obtain ⟨e', he', hle⟩ := hi k e he
+  refine ⟨e', he', ?_⟩
+  rcases hle with hle | ⟨hle, hle'⟩ <;> rcases hv with hv | ⟨hv, hv'⟩
+  · exact Or.inl (Int.lt_trans hle hv)
+  · exact Or.inl (by omega)
+  · exact Or.inl (by omega)
+  · exact Or.inr ⟨by omega, leL_trans hle' hv'⟩
+
+theorem HasAtT.congr {tb : CTable} {k : Nat} {v : _root_.Int} {S S' : List Nat} (h : HasAtT tb k v S)
+    (hS : ∀ u, u ∈ S ↔ u ∈ S') : HasAtT tb k v S' := by
+  obtain ⟨e, he, hv⟩ := h
+  refine ⟨e, he, ?_⟩
+  rcases hv with hv | ⟨hv, hv'⟩
+  · exact Or.inl hv
+  · exact Or.inr ⟨hv, leL_congr (fun _ => Iff.rfl) hS hv'⟩
+
+theorem HasAtT.weakenT {tb : CTable} {k : Nat} {v v' : _root_.Int} {S S' : List Nat}
+    (h : HasAtT tb k v S) (hv : v < v' ∨ (v = v' ∧ LeL S S')) : HasAtT tb k v' S' := by
+  obtain ⟨e, he, hgood⟩ := h
+  refine ⟨e, he, ?_⟩
+  rcases hgood with h1 | ⟨h1, h1'⟩ <;> rcases hv with h2 | ⟨h2, h2'⟩
+  · exact Or.inl (Int.lt_trans h1 h2)
+  · exact Or.inl (by omega)
+  · exact Or.inl (by omega)
+  · exact Or.inr ⟨by omega, leL_trans h1' h2'⟩
+
+theorem HasAtT.toHasAt {tb : CTable} {k : Nat} {v : _root_.Int} {S : List Nat} (h : HasAtT tb k v S) :
+    HasAt tb k v := by
+  obtain ⟨e, he, hv⟩ := h
+  exact ⟨e, he, by rcases hv with hv | ⟨hv, _⟩ <;> omega⟩
+
+theorem HasAtT.of_tle {tb : CTable} {k : Nat} {e : Entry} (he : tb[k]! = some e) {v : _root_.Int}
+    {S : List Nat} (hv : e.1 < v ∨ (e.1 = v ∧ LeL e.2.toList S)) : HasAtT tb k v S :=
+  ⟨e, he, hv⟩
+
+/-- An entry at least as good as `(v, S)` stays so under a no-worse entry. -/
+theorem tle_good {e' e : Entry} {v : _root_.Int} {S : List Nat} (h : TLe e' e)
+    (hv : e.1 < v ∨ (e.1 = v ∧ LeL e.2.toList S)) : e'.1 < v ∨ (e'.1 = v ∧ LeL e'.2.toList S) := by
+  rcases h with h | ⟨h, h'⟩ <;> rcases hv with hv | ⟨hv, hv'⟩
+  · exact Or.inl (Int.lt_trans h hv)
+  · exact Or.inl (by omega)
+  · exact Or.inl (by omega)
+  · exact Or.inr ⟨by omega, leL_trans h' hv'⟩
+
+/-- `betterEntry` decides the tie order on sorted sets. -/
+theorem better_tle {e : Entry} {o : Entry} (he : e.2.toList.Pairwise (· < ·))
+    (ho : o.2.toList.Pairwise (· < ·)) :
+    (betterEntry e (some o) = true → TLe e o) ∧ (betterEntry e (some o) = false → TLe o e) := by
+  obtain ⟨d, s⟩ := e
+  obtain ⟨d0, s0⟩ := o
+  simp only [betterEntry]
+  constructor
+  · intro h
+    simp only [Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true, beq_iff_eq] at h
+    rcases h with h | ⟨h, h'⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨h, Or.inr ((setPrec_iff he ho).mp h')⟩
+  · intro h
+    simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_imp, beq_iff_eq] at h
+    obtain ⟨h1, h2⟩ := h
+    by_cases hd : d = d0
+    · have hns := h2 hd
+      refine Or.inr ⟨hd.symm, ?_⟩
+      rcases leL_total ho he with h | h
+      · exact h
+      · exact absurd ((setPrec_iff he ho).mpr h) (by simp [hns])
+    · exact Or.inl (by simp only at h1 hd ⊢; omega)
+
+theorem add_improvesT {tb : CTable} {e : Entry} (hs : SortedT tb) (he : e.2.toList.Pairwise (· < ·)) :
+    ImprovesT tb (tb.add e) := by
+  intro j x hx
+  by_cases hj : j = e.2.size ∧ betterEntry e tb[e.2.size]! = true
+  · obtain ⟨rfl, hb⟩ := hj
+    refine ⟨e, by rw [add_getElem!, if_pos ⟨rfl, hb⟩], ?_⟩
+    rw [hx] at hb
+    exact (better_tle he (hs _ x hx)).1 hb
+  · exact ⟨x, by rw [add_getElem!, if_neg hj, hx], tle_refl x⟩
+
+theorem add_hasAtT {tb : CTable} {e : Entry} (hs : SortedT tb) (he : e.2.toList.Pairwise (· < ·)) :
+    HasAtT (tb.add e) e.2.size e.1 e.2.toList := by
+  by_cases hb : betterEntry e tb[e.2.size]! = true
+  · exact ⟨e, by rw [add_getElem!, if_pos ⟨rfl, hb⟩], Or.inr ⟨rfl, leL_refl _⟩⟩
+  · have hget : (tb.add e)[e.2.size]! = tb[e.2.size]! := by
+      rw [add_getElem!, if_neg (fun h => hb h.2)]
+    cases ho : tb[e.2.size]! with
+    | none => rw [ho] at hb; simp [betterEntry] at hb
+    | some x =>
+      rw [ho] at hb
+      have := (better_tle he (hs _ x ho)).2 (by simpa using hb)
+      exact ⟨x, by rw [hget, ho], tle_good this (Or.inr ⟨rfl, leL_refl _⟩)⟩
+
+theorem add_sortedT {tb : CTable} {e : Entry} (hs : SortedT tb) (he : e.2.toList.Pairwise (· < ·)) :
+    SortedT (tb.add e) := by
+  intro j x hx
+  rw [add_getElem!] at hx
+  split at hx
+  · cases hx; exact he
+  · exact hs j x hx
+
+theorem foldl_improvesT_inv {α : Type} (f : CTable → α → CTable) (Inv : CTable → Prop)
+    (hinv : ∀ acc x, Inv acc → Inv (f acc x)) (hf : ∀ acc x, Inv acc → ImprovesT acc (f acc x)) :
+    ∀ (l : List α) (acc : CTable), Inv acc → ImprovesT acc (l.foldl f acc)
+  | [], acc, _ => improvesT_refl acc
+  | x :: xs, acc, h => improvesT_trans (hf acc x h)
+      (foldl_improvesT_inv f Inv hinv hf xs (f acc x) (hinv acc x h))
+
+theorem foldl_inv {α : Type} (f : CTable → α → CTable) (Inv : CTable → Prop)
+    (hinv : ∀ acc x, Inv acc → Inv (f acc x)) :
+    ∀ (l : List α) (acc : CTable), Inv acc → Inv (l.foldl f acc)
+  | [], _, h => h
+  | x :: xs, acc, h => foldl_inv f Inv hinv xs _ (hinv acc x h)
+
+theorem foldl_hasAtT_inv {α : Type} (f : CTable → α → CTable) (Inv : CTable → Prop)
+    (hinv : ∀ acc x, Inv acc → Inv (f acc x)) (hf : ∀ acc x, Inv acc → ImprovesT acc (f acc x))
+    {l : List α} {x : α} (hx : x ∈ l) (k : Nat) (v : _root_.Int) (S : List Nat) (acc : CTable)
+    (hacc : Inv acc) (hstep : ∀ acc, Inv acc → HasAtT (f acc x) k v S) :
+    HasAtT (l.foldl f acc) k v S := by
+  induction l generalizing acc with
+  | nil => exact absurd hx List.not_mem_nil
+  | cons y ys ih =>
+    rw [List.foldl_cons]
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact (hstep acc hacc).mono (foldl_improvesT_inv f Inv hinv hf ys _ (hinv acc _ hacc))
+    · exact ih hx _ (hinv acc y hacc)
+
+/-- The step of `addAll`. -/
+def addStep (acc : CTable) (o : Option Entry) : CTable :=
+  match o with
+  | some e => acc.add e
+  | none => acc
+
+theorem addAll_eq (tb comb : CTable) : addAll tb comb = comb.toList.foldl addStep tb := by
+  unfold addAll; rw [← Array.foldl_toList]; rfl
+
+theorem addAll_tie {tb comb : CTable} (h1 : SortedT tb)
+    (h2 : ∀ e, some e ∈ comb.toList → e.2.toList.Pairwise (· < ·)) :
+    SortedT (addAll tb comb) ∧ ImprovesT tb (addAll tb comb) ∧
+      ∀ e, some e ∈ comb.toList → HasAtT (addAll tb comb) e.2.size e.1 e.2.toList := by
+  rw [addAll_eq]
+  let Inv : CTable → Prop := SortedT
+  have hinv : ∀ acc (o : Option Entry), o ∈ comb.toList → Inv acc → Inv (addStep acc o) := by
+    intro acc o ho h
+    cases o with
+    | none => exact h
+    | some e => exact add_sortedT h (h2 e ho)
+  have key : ∀ (l : List (Option Entry)), (∀ o ∈ l, o ∈ comb.toList) → ∀ acc, Inv acc →
+      Inv (l.foldl addStep acc) ∧ ImprovesT acc (l.foldl addStep acc) ∧
+        ∀ e, some e ∈ l → HasAtT (l.foldl addStep acc) e.2.size e.1 e.2.toList := by
+    intro l
+    induction l with
+    | nil => intro _ acc h; exact ⟨h, improvesT_refl _, fun e he => absurd he List.not_mem_nil⟩
+    | cons o l ih =>
+      intro hl acc h
+      rw [List.foldl_cons]
+      have hstep := hinv acc o (hl o List.mem_cons_self) h
+      obtain ⟨r1, r2, r3⟩ := ih (fun o' ho' => hl o' (List.mem_cons_of_mem _ ho')) _ hstep
+      have himp : ImprovesT acc (addStep acc o) := by
+        cases o with
+        | none => exact improvesT_refl _
+        | some e => exact add_improvesT h (h2 e (hl _ List.mem_cons_self))
+      refine ⟨r1, improvesT_trans himp r2, fun e he => ?_⟩
+      rcases List.mem_cons.mp he with he | he
+      · subst he
+        exact (add_hasAtT h (h2 e (hl _ List.mem_cons_self))).mono r2
+      · exact r3 e he
+  exact key comb.toList (fun o ho => ho) tb h1
+
+theorem trim_tie {tb : CTable} (s : Nat) (hs : SortedT tb) :
+    SortedT (tb.trim s) ∧ ∀ {k : Nat} {v : _root_.Int} {S : List Nat}, HasAtT tb k v S →
+      (∀ b, tb.best = some b → v ≤ b + (s : _root_.Int)) → HasAtT (tb.trim s) k v S := by
+  have hsub : ∀ (k : Nat) (e : Entry), (tb.trim s)[k]! = some e → tb[k]! = some e := by
+    intro k e he
+    rw [trim_getElem!] at he
+    cases hb : tb.best with
+    | none => rw [hb] at he; exact he
+    | some b =>
+      rw [hb] at he
+      simp only at he
+      cases hk : tb[k]! with
+      | none => rw [hk] at he; cases he
+      | some x =>
+        rw [hk] at he
+        simp only at he
+        split at he
+        · cases he
+        · exact (Option.some.inj he) ▸ rfl
+  refine ⟨fun k e he => hs k e (hsub k e he), fun {k v S} h hv => ?_⟩
+  obtain ⟨e, he, hgood⟩ := h
+  refine ⟨e, ?_, hgood⟩
+  rw [trim_getElem!]
+  cases hb : tb.best with
+  | none => exact he
+  | some b =>
+    simp only
+    rw [he]
+    simp only
+    have := hv b hb
+    rw [if_neg (by rcases hgood with h | ⟨h, _⟩ <;> omega)]
+
+theorem mergeSorted_strict {a b : Array Nat} (ha : a.toList.Pairwise (· < ·))
+    (hb : b.toList.Pairwise (· < ·)) (hd : ∀ x ∈ a.toList, x ∉ b.toList) :
+    (mergeSorted a b).toList.Pairwise (· < ·) := by
+  have hn : (mergeSorted a b).toList.Nodup :=
+    (mergeSorted_perm a b).nodup_iff.mpr (nodup_app (ha.imp Nat.ne_of_lt) (hb.imp Nat.ne_of_lt) hd)
+  have hle := mergeSorted_sorted a b
+  have : (mergeSorted a b).toList.Pairwise (fun x y => x ≤ y ∧ x ≠ y) :=
+    List.Pairwise.and hle hn
+  exact this.imp (fun h => Nat.lt_of_le_of_ne h.1 h.2)
+
+/-- **Convolution with the tie order.** -/
+theorem conv_tie {a b : CTable} (ha : ∀ e, some e ∈ a.toList → e.2.toList.Pairwise (· < ·))
+    (hb : ∀ e, some e ∈ b.toList → e.2.toList.Pairwise (· < ·))
+    (hd : ∀ ea, some ea ∈ a.toList → ∀ eb, some eb ∈ b.toList → ∀ x ∈ ea.2.toList, x ∉ eb.2.toList) :
+    SortedT (a.conv b) ∧ ∀ ea, some ea ∈ a.toList → ∀ eb, some eb ∈ b.toList →
+      HasAtT (a.conv b) (ea.2.size + eb.2.size) (ea.1 + eb.1) (mergeSorted ea.2 eb.2).toList := by
+  rw [conv_eq]
+  -- the inner steps of one outer entry
+  have hin : ∀ (da : _root_.Int) (sa : Array Nat), some (da, sa) ∈ a.toList → ∀ acc (ob : Option Entry),
+      ob ∈ b.toList → SortedT acc → SortedT (convIn da sa acc ob) ∧ ImprovesT acc (convIn da sa acc ob) := by
+    intro da sa hsa acc ob hob hacc
+    cases ob with
+    | none => exact ⟨hacc, improvesT_refl _⟩
+    | some eb =>
+      obtain ⟨db, sb⟩ := eb
+      have hs := mergeSorted_strict (ha _ hsa) (hb _ hob) (hd _ hsa _ hob)
+      exact ⟨add_sortedT hacc hs, add_improvesT hacc hs⟩
+  have hinner : ∀ (da : _root_.Int) (sa : Array Nat), some (da, sa) ∈ a.toList →
+      ∀ (l : List (Option Entry)), (∀ o ∈ l, o ∈ b.toList) → ∀ acc, SortedT acc →
+        SortedT (l.foldl (convIn da sa) acc) ∧ ImprovesT acc (l.foldl (convIn da sa) acc) := by
+    intro da sa hsa l
+    induction l with
+    | nil => intro _ acc h; exact ⟨h, improvesT_refl _⟩
+    | cons o l ih =>
+      intro hl acc h
+      rw [List.foldl_cons]
+      obtain ⟨h1, h2⟩ := hin da sa hsa acc o (hl o List.mem_cons_self) h
+      obtain ⟨h3, h4⟩ := ih (fun o' ho' => hl o' (List.mem_cons_of_mem _ ho')) _ h1
+      exact ⟨h3, improvesT_trans h2 h4⟩
+  have hout : ∀ acc (oa : Option Entry), oa ∈ a.toList → SortedT acc →
+      SortedT (convOut b acc oa) ∧ ImprovesT acc (convOut b acc oa) := by
+    intro acc oa hoa hacc
+    cases oa with
+    | none => exact ⟨hacc, improvesT_refl _⟩
+    | some ea =>
+      obtain ⟨da, sa⟩ := ea
+      exact hinner da sa hoa b.toList (fun o ho => ho) acc hacc
+  have houter : ∀ (l : List (Option Entry)), (∀ o ∈ l, o ∈ a.toList) → ∀ acc, SortedT acc →
+      SortedT (l.foldl (convOut b) acc) ∧ ImprovesT acc (l.foldl (convOut b) acc) := by
+    intro l
+    induction l with
+    | nil => intro _ acc h; exact ⟨h, improvesT_refl _⟩
+    | cons o l ih =>
+      intro hl acc h
+      rw [List.foldl_cons]
+      obtain ⟨h1, h2⟩ := hout acc o (hl o List.mem_cons_self) h
+      obtain ⟨h3, h4⟩ := ih (fun o' ho' => hl o' (List.mem_cons_of_mem _ ho')) _ h1
+      exact ⟨h3, improvesT_trans h2 h4⟩
+  have hsorted0 : SortedT (#[] : CTable) := fun k e he => by simp [getElem!_def] at he
+  refine ⟨(houter a.toList (fun o ho => ho) #[] hsorted0).1, fun ea hea eb heb => ?_⟩
+  -- the pair's entry, then improvement by the rest
+  have key : ∀ (l : List (Option Entry)), (∀ o ∈ l, o ∈ a.toList) → some ea ∈ l → ∀ acc, SortedT acc →
+      HasAtT (l.foldl (convOut b) acc) (ea.2.size + eb.2.size) (ea.1 + eb.1)
+        (mergeSorted ea.2 eb.2).toList := by
+    intro l
+    induction l with
+    | nil => intro _ h; exact absurd h List.not_mem_nil
+    | cons o l ih =>
+      intro hl hmem acc hacc
+      rw [List.foldl_cons]
+      obtain ⟨hs1, _⟩ := hout acc o (hl o List.mem_cons_self) hacc
+      rcases List.mem_cons.mp hmem with rfl | hmem
+      · have hrest := (houter l (fun o' ho' => hl o' (List.mem_cons_of_mem _ ho')) _ hs1).2
+        refine HasAtT.mono ?_ hrest
+        obtain ⟨da, sa⟩ := ea
+        simp only [convOut]
+        -- inner: the pair's add, then the rest of the inner fold
+        have kin : ∀ (l' : List (Option Entry)), (∀ o ∈ l', o ∈ b.toList) → some eb ∈ l' →
+            ∀ acc', SortedT acc' → HasAtT (l'.foldl (convIn da sa) acc') ((da, sa).2.size + eb.2.size)
+              ((da, sa).1 + eb.1) (mergeSorted (da, sa).2 eb.2).toList := by
+          intro l'
+          induction l' with
+          | nil => intro _ h; exact absurd h List.not_mem_nil
+          | cons o' l' ih' =>
+            intro hl' hmem' acc' hacc'
+            rw [List.foldl_cons]
+            obtain ⟨hs2, _⟩ := hin da sa hea acc' o' (hl' o' List.mem_cons_self) hacc'
+            rcases List.mem_cons.mp hmem' with rfl | hmem'
+            · have hrest' := (hinner da sa hea l' (fun o ho => hl' o (List.mem_cons_of_mem _ ho)) _ hs2).2
+              refine HasAtT.mono ?_ hrest'
+              obtain ⟨db, sb⟩ := eb
+              have hs := mergeSorted_strict (ha _ hea) (hb _ heb) (hd _ hea _ heb)
+              have := add_hasAtT hacc' hs (e := (da + db, mergeSorted sa sb))
+              simp only [mergeSorted_size] at this
+              exact this
+            · exact ih' (fun o ho => hl' o (List.mem_cons_of_mem _ ho)) hmem' _ hs2
+        exact kin b.toList (fun o ho => ho) heb acc hacc
+      · exact ih (fun o' ho' => hl o' (List.mem_cons_of_mem _ ho')) hmem _ hs1
+  exact key a.toList (fun o ho => ho) hea #[] hsorted0
 
 end Ix.Compile.Verify.UniformModel

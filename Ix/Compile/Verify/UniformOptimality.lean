@@ -789,7 +789,7 @@ theorem uniformChoose_model_le {w : Nat} {limits : Limits} {ex : Expanded}
     obtain ⟨hpar, _, st0, st, hm0, hsolve, hbest⟩ := hok j hj
     have hE := compEnv_wf hwf hroots hreach hchk hj hpar
     obtain ⟨htabj, hcovj⟩ := Env.component_table (E := compEnv w ex j) hE hsolve hm0
-    exact ⟨hcovj Y hY, fun k e he => (htabj k e he).1, fun k e he => best_le hbest he⟩
+    exact ⟨(hcovj Y hY).toHasAt, fun k e he => (htabj k e he).1, fun k e he => best_le hbest he⟩
   let ks := (List.range m).map fun j => (V j).length
   let vs := (List.range m).map fun j => (compEnv w ex j).delta [] (V j)
   have hgr : ∀ {α : Type} [Inhabited α] (f : Nat → α) {j : Nat}, j < m →
