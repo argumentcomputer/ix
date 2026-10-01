@@ -90,17 +90,16 @@ jobs:
             Mathlib.SetTheory.Cardinal.Regular \
             Mathlib.SetTheory.ZFC.VonNeumann \
             Mathlib.SetTheory.ZFC.Cardinal
-      - name: Check certified kernel, host differential, provenance, and model
+      - name: Check certified kernel, provenance, codec and order differentials, and model
         run: lake run check-kernel --with-model
-      - name: Retain kernel inputs, verdicts, and codec comparisons
+      - name: Retain codec and block-order comparisons
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: certified-kernel-differential
           path: |
-            .lake/build/kernel-differential.jsonl
-            .lake/build/kernel-ingress.jsonl
             .lake/build/kernel-codec.log
+            .lake/build/kernel-order.jsonl
           if-no-files-found: warn
 
   rust-test:

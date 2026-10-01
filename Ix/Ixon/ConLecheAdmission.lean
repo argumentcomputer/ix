@@ -11,7 +11,7 @@ import ConLeche.MainTheorem
 
 The `checkBytes`-shaped entry of con-leche's verified checker, which the
 certified API's `Ix.Ixon.Admission.checkBytes` runs from L5 (the intrinsic
-kernel's entry is `Ix.Ixon.Admission.checkBytesIntrinsic` until L6):
+kernel's entry was retired at L6):
 
     preflight → decodeRecords → Ixon reader → preparePrelude
               → ConLeche.Cached.checkDecls .verified natPins
@@ -68,7 +68,6 @@ instance : ToString Error where
 def Error.ofAdmission : Ix.Ixon.Admission.Error → Error
   | .limit r => .limit r
   | .decode p a r => .decode p a r
-  | .kernel e => .prelude s!"unexpected kernel error from the decoder: {repr e}"
 
 /-- The reading of decoded records: the prelude's state continues into the
 stream, and the prelude's records back the store. -/

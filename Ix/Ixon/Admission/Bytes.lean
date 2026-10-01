@@ -5,15 +5,13 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Ixon.Canonical
 import Ix.Kernel.Ingress.Reading
-import Ix.Kernel.Check
 
 /-! # The byte stage of admission
 
 Batch limits (`preflight`) and canonical per-record decoding
-(`decodeRecords`), shared by the certified entry
-(`Ix.Ixon.Admission.checkBytes`, con-leche behind the Ixon reader) and the
-intrinsic reference entry (`Ix.Ixon.Admission.checkBytesIntrinsic`).
-Their composition is proved in `Ix.Ixon.Verify.Admission`.
+(`decodeRecords`) of the certified entry (`Ix.Ixon.Admission.checkBytes`,
+con-leche behind the Ixon reader). Their composition is proved in
+`Ix.Ixon.Verify.Admission`.
 
 The host supplies record order, address keys, and literal blobs. Addresses
 are keys, not authenticated content hashes. Blobs retain their exact supplied
@@ -45,12 +43,13 @@ inductive Resource where
   | totalBytes
   deriving Repr, DecidableEq
 
-/-- Keep byte failures separate from the kernel's rejected/declined outcomes.
-The decoder position is zero-based and identifies the original input record. -/
+/-- Byte failures: a batch limit, or a record that does not decode
+canonically. The decoder position is zero-based and identifies the original
+input record. Checker failures are the entry's own
+(`Ix.Ixon.ConLecheAdmission.Error`). -/
 inductive Error where
   | limit (resource : Resource)
   | decode (position : Nat) (address : Address) (reason : String)
-  | kernel (error : Kernel.Error)
   deriving Repr, DecidableEq
 
 /-- Measure payloads only; admission uses the short-circuiting preflight

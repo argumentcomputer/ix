@@ -1,5 +1,16 @@
 # Certified kernel benchmarks
 
+> **Retired at L6 (plan v4, 2026-10-01).** The intrinsic kernel described in
+> most of this file was retired with its native benchmark runner
+> (`bench-certified-kernel`, `scripts/bench-certified-kernel.py`,
+> `scripts/count-certified-kernel.py`) and its census
+> (`kernel-census-intrinsic`, `kernel-census-probe`). The commands below no
+> longer build; the measurements are kept as that kernel's record. The
+> certified checker's census is `kernel-census` (con-leche through the Ixon
+> reader, `Benchmarks/Kernel/ConLecheCensus.lean`); the paired census runner
+> `scripts/bench-kernel-census.py` and `scripts/census-report.py` work on its
+> rows unchanged.
+
 Build the native runner without the host package or its dependencies:
 
 ```sh
@@ -179,9 +190,9 @@ speedup or a demonstrated memory reduction. No cache or entry schema changed.
 From L5 (plan v4) `kernel-census` is the certified checker's census
 (con-leche through the Ixon reader, `Benchmarks/Kernel/ConLecheCensus.lean`;
 also built as `kernel-census-cl`). The intrinsic reference kernel's census
-described in this section is `kernel-census-intrinsic` until L6 retires it;
-read `kernel-census` below as `kernel-census-intrinsic` for the comparisons
-recorded here.
+described in this section was `kernel-census-intrinsic`, retired at L6; read
+`kernel-census` below as that census for the comparisons recorded here (the
+paired runner itself applies to the current `kernel-census`).
 
 `kernel-census-intrinsic` reads an Ixon environment and attempts certified admissions in
 dependency order, retaining accepted declarations and reporting declines,

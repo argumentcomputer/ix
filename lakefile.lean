@@ -160,9 +160,6 @@ end Tests
 
 section Benchmarks
 
-lean_exe «bench-certified-kernel» where
-  root := `Benchmarks.Kernel.Certified
-
 lean_exe «bench-aiur» where
   root := `Benchmarks.Aiur
 
@@ -326,23 +323,6 @@ source hashes. -/
 lean_exe «kernel-provenance» where
   root := `Tests.Ix.Kernel.Provenance
 
-/-- Géran level order against brute-force evaluation and Ix.Tc. -/
-lean_exe «kernel-level-differential» where
-  root := `Tests.Ix.Kernel.LevelDifferential
-  moreLinkObjs := #[ix_rs]
-
-/-- Host-only comparison with the temporary Ix.Tc oracle. -/
-lean_exe «kernel-differential» where
-  root := `Tests.Ix.Kernel.Differential
-  -- Resolve the host allocator from ix_ffi before Blake3's Rust archive,
-  -- as for bench-aggregate-policy. Neither archive enters IxKernel/.
-  moreLinkObjs := #[ix_rs]
-
-lean_exe «kernel-ingress» where
-  root := `Tests.Ix.Kernel.IngressHost
-  supportInterpreter := true
-  moreLinkObjs := #[ix_rs]
-
 lean_exe «kernel-codec» where
   root := `Tests.Ix.Kernel.CodecHost
   moreLinkObjs := #[ix_rs_test]
@@ -351,19 +331,11 @@ lean_exe «kernel-order» where
   root := `Tests.Ix.Kernel.BlockOrderHost
   moreLinkObjs := #[ix_rs_test]
 
-/-- Coverage census of the intrinsic reference kernel over a compiled `.ixe`
-environment (the certified kernel's census through L4; L6 retires it). -/
-lean_lib KernelCensus where
-  roots := #[`Benchmarks.Kernel.Census]
-  moreLeancArgs := profileLeancArgs
-
-lean_exe «kernel-census-intrinsic» where
-  root := `Benchmarks.Kernel.CensusMain
-  moreLinkObjs := #[ix_rs]
-
-lean_exe «kernel-census-probe» where
-  root := `Benchmarks.Kernel.CensusProbe
-  moreLinkObjs := #[ix_rs]
+/- The intrinsic reference kernel's census (`kernel-census-intrinsic`,
+`kernel-census-probe`, library `KernelCensus`), its host differentials
+(`kernel-differential`, `kernel-ingress`, `kernel-level-differential`) and
+its benchmark (`bench-certified-kernel`) were retired at L6 (plan v4) with
+that kernel. -/
 
 /-- Con-leche's verified checker through the Ixon reader (plan v4, L4): the
 `checkBytes`-shaped entry and its per-record census (untrusted). -/
@@ -404,21 +376,9 @@ script "check-kernel" (args) := do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "python3" #["scripts/check-kernel-retirement.py"]
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Interleaved", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.ConversionSpines", "Tests.Ix.Kernel.ProofIrrelevance", "Tests.Ix.Kernel.AnnotationContexts", "Tests.Ix.Kernel.SubstitutionSharing", "Tests.Ix.Kernel.RuntimeStack", "Tests.Ix.Kernel.Fidelity", "Tests.Ix.Kernel.Ingress", "Tests.Ix.Kernel.Egress", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.ConLecheReader", "Tests.Ix.Kernel.CertifiedEntry"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.ConLecheReader", "Tests.Ix.Kernel.CertifiedEntry"]
   run ".lake/build/bin/kernel-provenance" #[]
-  run "lake" #["build", "--wfail", "kernel-differential", "kernel-ingress", "kernel-codec", "kernel-order",
-    "kernel-level-differential"]
-  run ".lake/build/bin/kernel-level-differential" #[]
-  let differential ← IO.Process.output { cmd := ".lake/build/bin/kernel-differential" }
-  IO.FS.writeFile ".lake/build/kernel-differential.jsonl" differential.stdout
-  IO.eprint differential.stderr
-  unless differential.exitCode == 0 do
-    throw <| IO.userError "kernel-differential failed; see .lake/build/kernel-differential.jsonl"
-  let ingress ← IO.Process.output { cmd := ".lake/build/bin/kernel-ingress" }
-  IO.FS.writeFile ".lake/build/kernel-ingress.jsonl" ingress.stdout
-  IO.eprint ingress.stderr
-  unless ingress.exitCode == 0 do
-    throw <| IO.userError "kernel-ingress failed; see .lake/build/kernel-ingress.jsonl"
+  run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
   IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)
   IO.eprint codec.stderr

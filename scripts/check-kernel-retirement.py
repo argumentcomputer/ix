@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Reject active dependencies on the retired checker proof system.
+"""Reject active dependencies on retired checker code.
 
-Run from a checkout or a Nix source export. Historical documentation and
-legal attribution are intentionally outside this check; Lean comments are
-ignored, including nested comments. The guard's own negative controls are
-the sole source-file exemption. This does not establish kernel correctness:
-the strict Lean, model, provenance, and differential gates remain separate.
+Two retirements are recorded: the lean4lean/lean4ix proof system and the
+Ix.Tc verification machinery (roadmap section 11), and the intrinsic
+proof-carrying kernel with its entry points, tests, census and benchmark
+(plan v4, L6; `INTRINSIC` below). Run from a checkout or a Nix source
+export. Historical documentation and legal attribution are intentionally
+outside this check; Lean comments are ignored, including nested comments.
+The guard's own negative controls are the sole source-file exemption. This
+does not establish kernel correctness: the strict Lean, model, provenance,
+and differential gates remain separate.
 """
 
 from __future__ import annotations
@@ -26,6 +30,22 @@ RETIRED = re.compile(
     r"ix-ffi-dyn|crates/ffi-dyn",
     re.IGNORECASE,
 )
+# The intrinsic kernel (plan v4, L6): its entry points, the executables and
+# scripts that ran it, and its test and benchmark modules. Case-sensitive;
+# `certified-kernel-differential` (a CI artifact name) is not a target.
+INTRINSIC_TESTS = (
+    "AnnotationContexts|Axioms|ConversionSpines|Differential|Egress|Fidelity|"
+    "Fixtures|Inductives|Ingress|IngressHost|Interleaved|LevelDifferential|"
+    "Literals|ProofIrrelevance|Quotients|RuntimeStack|SearchOutcomes|"
+    "Structures|SubstitutionSharing"
+)
+INTRINSIC = re.compile(
+    r"checkBytesIntrinsic|kernel-census-intrinsic|kernel-census-probe|"
+    r"bench-certified-kernel|count-certified-kernel|kernel-level-differential|"
+    r"(?<![\w-])kernel-(?:differential|ingress)(?![\w-])|"
+    r"Tests[./]Ix[./]Kernel[./](?:" + INTRINSIC_TESTS + r")\b|"
+    r"Benchmarks[./]Kernel[./](?:Census|CensusMain|CensusProbe|Certified)\b"
+)
 RETIRED_TREES = ("Ix/Tc/Verify/", "Ix/Compile/Verify/", "crates/ffi-dyn/")
 RETIRED_FILES = {
     "Benchmarks/Lean4Lean.lean",
@@ -33,7 +53,14 @@ RETIRED_FILES = {
     "Benchmarks/TruthMines/Drivers/Lean4Lean.lean",
     "Benchmarks/Compile/TruthMines/Members/Lean4Lean.lean",
     "Tests/Ix/Lean4Lean.lean",
-}
+    # The intrinsic kernel's census, benchmark and scripts (L6).
+    "Benchmarks/Kernel/Census.lean",
+    "Benchmarks/Kernel/CensusMain.lean",
+    "Benchmarks/Kernel/CensusProbe.lean",
+    "Benchmarks/Kernel/Certified.lean",
+    "scripts/bench-certified-kernel.py",
+    "scripts/count-certified-kernel.py",
+} | {f"Tests/Ix/Kernel/{name}.lean" for name in INTRINSIC_TESTS.split("|")}
 CONFIG_SUFFIXES = {".nix", ".toml", ".yml", ".yaml", ".sh", ".py"}
 EXCLUDED_DIRS = {".git", ".jj", ".lake", "target", "__pycache__"}
 
@@ -110,10 +137,12 @@ def inspect(path: str, content: str) -> list[str]:
         content = lean_without_comments(content)
     elif file.suffix not in CONFIG_SUFFIXES and file.name != "Cargo.lock":
         return []
+    matches = sorted([*RETIRED.finditer(content), *INTRINSIC.finditer(content)],
+                     key=lambda match: match.start())
     return [
         f"{path}:{content.count(chr(10), 0, match.start()) + 1}: "
         f"retired active reference {match.group()}"
-        for match in RETIRED.finditer(content)
+        for match in matches
     ]
 
 
@@ -175,6 +204,26 @@ def controls() -> None:
             raise RuntimeError(f"retirement control escaped: {path}")
     if inspect("docs/history.md", "Lean4Lean attribution") or inspect("NOTICE", "lean4ix"):
         raise RuntimeError("historical documentation or legal attribution rejected")
+    # The intrinsic kernel (L6): its entries, executables and modules are
+    # rejected in code and configuration; comments and kept names are not.
+    for path, source in (
+        ("Fixture.lean", "#eval Ix.Ixon.Admission.checkBytesIntrinsic"),
+        ("Fixture.lean", "import Tests.Ix.Kernel.Fixtures"),
+        ("Fixture.lean", "roots := #[`Benchmarks.Kernel.Census]"),
+        ("Fixture.lean", 'run "lake" #["build", "kernel-differential"]'),
+        ("scripts/run.sh", "lake exe bench-certified-kernel"),
+        ("Tests/Ix/Kernel/Fixtures.lean", ""),
+    ):
+        if not inspect(path, source):
+            raise RuntimeError(f"intrinsic negative control escaped: {path}: {source}")
+    for source in (
+        "/- `checkBytesIntrinsic` and `kernel-census-intrinsic` were retired. -/\nimport Init",
+        "import Tests.Ix.Kernel.IxonFixtures\nimport Benchmarks.Kernel.CensusCertifiedMain",
+        "import Benchmarks.Kernel.CensusIx\nimport Tests.Ix.Kernel.IngressFixturesNew",
+        'def artifact := "certified-kernel-differential"',
+    ):
+        if inspect("Fixture.lean", source):
+            raise RuntimeError(f"kept name or comment rejected: {source}")
 
 
 def main() -> int:

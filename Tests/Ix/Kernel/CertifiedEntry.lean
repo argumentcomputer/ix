@@ -16,8 +16,9 @@ con-leche's verified checker behind the Ixon reader. These fixtures are the
 L4 reader fixtures (`Tests.Ix.Kernel.ConLecheReader`) through the public
 names, the failure classification at the Ix API (`Admission.outcome`), a
 theorem of the pinned `False` that is not accepted, and the public theorems
-applied. The intrinsic reference kernel's byte admission is tested in
-`Tests.Ix.Kernel.ByteAdmission`. -/
+applied. The byte stage and the shared Ixon record fixtures are tested in
+`Tests.Ix.Kernel.ByteAdmission`, projection reconstruction in
+`Tests.Ix.Kernel.Projection`. -/
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.ConLecheReader (isSingleton SingletonRead keyName keyName_injective)
@@ -93,8 +94,7 @@ def false_ := pinned "False"
 
 The `Two` fixture with its projection records omitted: the recursor and the
 ι theorem name the projections by their reconstructed addresses (the pure
-BLAKE3 of their canonical encodings). The intrinsic variant is
-`Ix.Ixon.Projection.checkBytesIntrinsic` (`Tests.Ix.Kernel.Projection`). -/
+BLAKE3 of their canonical encodings). -/
 
 def twoI : Address := Ix.Ixon.Projection.address (iPrj (address 20))
 def twoA : Address := Ix.Ixon.Projection.address (cPrj (address 20) 0)

@@ -9,7 +9,7 @@ import Ix.Ixon.Verify.Admission
 namespace Ix.Ixon.Verify.Work.Admission
 
 open _root_.Ixon
-open Kernel hiding Error
+open Kernel
 open Ix.Ixon.Admission
 
 /-! Accounting for the parser portion of the actual byte-admission path.

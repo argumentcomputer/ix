@@ -31,16 +31,11 @@ lean_lib IxKernel where
     .andSubmodules `Ix.Ixon.Admission, .one `Ix.Ixon.ConLecheAdmission,
     .one `Ix.Ixon.ConLecheConsistency, .one `Ix.Ixon.Consistency]
 
-/-- Certified fixtures also run without the host package's dependencies. -/
+/-- Certified fixtures also run without the host package's dependencies: the
+Ixon record fixtures, the codec, and the certified entry's byte admission
+(the intrinsic kernel's fixtures were retired at L6, plan v4). -/
 def kernelFixtureRoots : Array Lean.Name := #[
-  `Tests.Ix.Kernel.Fixtures, `Tests.Ix.Kernel.Inductives,
-  `Tests.Ix.Kernel.Structures, `Tests.Ix.Kernel.Literals,
-  `Tests.Ix.Kernel.Quotients, `Tests.Ix.Kernel.Axioms,
-  `Tests.Ix.Kernel.SearchOutcomes, `Tests.Ix.Kernel.ConversionSpines,
-  `Tests.Ix.Kernel.ProofIrrelevance, `Tests.Ix.Kernel.AnnotationContexts,
-  `Tests.Ix.Kernel.SubstitutionSharing, `Tests.Ix.Kernel.RuntimeStack,
-  `Tests.Ix.Kernel.Fidelity,
-  `Tests.Ix.Kernel.Ingress, `Tests.Ix.Kernel.Egress, `Tests.Ix.Kernel.Codec,
+  `Tests.Ix.Kernel.IxonFixtures, `Tests.Ix.Kernel.Codec,
   `Tests.Ix.Kernel.ByteAdmission, `Tests.Ix.Kernel.ParserWork]
 
 @[default_target]
@@ -48,10 +43,6 @@ lean_lib KernelFixtures where
   srcDir := ".."
   roots := kernelFixtureRoots
   globs := kernelFixtureRoots.map (fun root => .one root)
-
-lean_exe «bench-certified-kernel» where
-  srcDir := ".."
-  root := `Benchmarks.Kernel.Certified
 
 lean_lib KernelProvenance where
   srcDir := ".."

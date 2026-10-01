@@ -6,9 +6,9 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Ixon.BlockOrderProofs
 import Tests.Ix.Kernel.Projection
 
-open Ix.Kernel hiding Error
+open Ix.Kernel
 open Ix.Ixon.BlockOrder
-open Tests.Ix.Kernel.Ingress (address)
+open Tests.Ix.Kernel.IxonFixtures (address)
 
 namespace Tests.Ix.Kernel.BlockOrder
 
@@ -29,15 +29,15 @@ def indc (params : UInt64) (ctors : Array Ixon.Constructor := #[]) : Ixon.MutCon
 def record (members : Array Ixon.MutConst) : Ixon.Constant :=
   ⟨.muts members, #[], #[], #[.zero, .succ .zero, .var 0]⟩
 
-def classes (source : Ixon.Constant) (blobs : Ingress.Blobs := [])
+def classes (source : Ixon.Constant) (blobs : List (Address × ByteArray) := [])
     (limits : Limits := {}) : Except Error Classes := do
   canonicalClasses limits (← prepare owner source blobs)
 
-def accepts (source : Ixon.Constant) (blobs : Ingress.Blobs := []) (limits : Limits := {}) : Bool :=
+def accepts (source : Ixon.Constant) (blobs : List (Address × ByteArray) := []) (limits : Limits := {}) : Bool :=
   (checkBlock limits owner source blobs).isOk
 
 def compareIn (source : Ixon.Constant) (left right : Ixon.Expr)
-    (blobs : Ingress.Blobs := []) (partition : Classes := []) (fuel : Nat := 32) : Except Error Ordering := do
+    (blobs : List (Address × ByteArray) := []) (partition : Classes := []) (fuel : Nat := 32) : Except Error Ordering := do
   let block ← prepare owner source blobs
   let ctx ← localContext block partition
   compareRoot block ctx fuel left right
@@ -101,7 +101,7 @@ def forward : Ixon.Constant := { record #[] with sharing := #[.share 1, .var 3] 
 #guard compareIn external (.recur 0 #[]) (.ref 0 #[]) == .error (.malformed "member index outside block")
 
 -- Literal order is independent of the spelling/address of the backing blob.
-def blobs : Ingress.Blobs := [(address 1, ⟨#[0, 1]⟩), (address 2, ⟨#[255]⟩)]
+def blobs : List (Address × ByteArray) := [(address 1, ⟨#[0, 1]⟩), (address 2, ⟨#[255]⟩)]
 #guard compareIn external (.nat 0) (.nat 1) blobs == .ok .gt
 #guard compareIn external (.str 0) (.str 1)
   [(address 1, "z".toUTF8), (address 2, "a".toUTF8)] == .ok .gt
@@ -130,28 +130,26 @@ def ctorContext : Except Error (List (Option Nat)) := do
 #guard groupSorted (fun x y => pure (compare (x / 10) (y / 10))) [0, 10, 11, 21, 22] ==
   .ok [[0], [10, 11], [21, 22]]
 
--- The executed byte route still admits the separately stored family/recursor
--- fixture and derives its model through the same kernel success.
-def byteAccepts : Bool := (checkBytesIntrinsic.{1} 16 ByteAdmission.limits {} {}
+-- The certified entry with canonical block order admits the separately
+-- stored family/recursor fixture and derives its model through the same
+-- checker success (until L6 this ran through the intrinsic kernel's
+-- `checkBytesIntrinsic`, retired with it).
+def byteAccepts : Bool := (checkBytes 16 ByteAdmission.limits {}
   (Projection.encode Projection.separatedInput) []).isOk
 #guard byteAccepts
 
-#guard match checkBytesIntrinsic.{1} 16 ByteAdmission.limits {} {}
+#guard match checkBytes 16 ByteAdmission.limits {}
     (Projection.encode [(owner, reversed)]) [] with
-  | .error (.nonCanonical _ _) => true
+  | .error (.order (.nonCanonical _ _)) => true
   | _ => false
-#guard match checkBytesIntrinsic.{1} 16 ByteAdmission.limits ⟨32, 2⟩ {}
+#guard match checkBytes 16 ByteAdmission.limits ⟨32, 2⟩
     (Projection.encode [(owner, weak)]) [] with
-  | .error (.exhausted .refinement) => true
-  | _ => false
-#guard match checkBytesIntrinsic.{1} 16 ByteAdmission.limits {} ⟨0⟩
-    (Projection.encode Projection.separatedInput) [] with
-  | .error (.admission (.kernel (.declined _))) => true
+  | .error (.order (.exhausted .refinement)) => true
   | _ => false
 
-example (V : Type 1) [Model.SetTheory V] {env : Env Address}
-    (h : checkBytesIntrinsic.{1} 16 ByteAdmission.limits {} {}
-      (Projection.encode Projection.separatedInput) [] = .ok env) : Nonempty (Model V env) :=
-  checkBytesIntrinsic_has_model V h
+example (V : Type) [ConLeche.SetTheory V] {env : ConLeche.Env}
+    (h : checkBytes 16 ByteAdmission.limits {}
+      (Projection.encode Projection.separatedInput) [] = .ok env) : Nonempty (ConLeche.Model V env) :=
+  checkBytes_has_model V h
 
 end Tests.Ix.Kernel.BlockOrder

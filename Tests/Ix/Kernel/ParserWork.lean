@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Ixon.Verify.WorkAdmission
 import Tests.Ix.Kernel.ByteAdmission
 
-open Ix.Ixon.Verify Tests.Ix.Kernel.Ingress Tests.Ix.Kernel.Egress
+open Ix.Ixon.Verify Tests.Ix.Kernel.IxonFixtures
 
 namespace Tests.Ix.Kernel.ParserWork
 

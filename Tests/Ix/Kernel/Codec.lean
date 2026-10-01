@@ -4,9 +4,10 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Ixon.Verify
-import Tests.Ix.Kernel.Egress
+import Ix.Ixon.Canonical
+import Tests.Ix.Kernel.IxonFixtures
 
-open Tests.Ix.Kernel.Ingress Tests.Ix.Kernel.Egress
+open Tests.Ix.Kernel.IxonFixtures
 
 namespace Tests.Ix.Kernel.Codec
 
@@ -351,8 +352,10 @@ end Tests.Ix.Kernel.Codec
 
 /-- Independently specified Ixon v3 expression bytes from upstream
 `Tests/Fixtures/ixon-v3/expressions.txt` (the binder, result, and let contract
-cases). The flag records whether the reading needs only the identity context;
-`ordinary_let` names a Nat blob and `borrow` a projection family. -/
+cases). The flag recorded whether the intrinsic kernel's reading needed only
+the identity context (`ordinary_let` names a Nat blob and `borrow` a
+projection family); that reading's round trip was retired at L6 with the
+intrinsic kernel, so only the codec's exact round trip is checked here. -/
 def upstreamV3Expressions : List (String × Bool × List UInt8) := [
   ("app", true, [0x73, 0x13, 0x12, 0x11, 0x10]),
   ("lam", true, [0x83, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x10]),
@@ -364,14 +367,14 @@ def upstreamV3Expressions : List (String × Bool × List UInt8) := [
   ("borrow", false, [0xa2, 0x0e, 0x00, 0x41, 0x02, 0x11, 0x10]),
   ("borrow_nondep", true, [0xa3, 0x0f, 0x00, 0x11, 0x10])]
 
-#guard upstreamV3Expressions.all fun (_, standalone, bytes) =>
+#guard upstreamV3Expressions.all fun (_, _, bytes) =>
   match Ixon.deExpr ⟨bytes.toArray⟩ with
-  | .ok source =>
-    Ixon.serExpr source == ⟨bytes.toArray⟩ && (!standalone || exprRoundtrips (ctx) source)
+  | .ok source => Ixon.serExpr source == ⟨bytes.toArray⟩
   | .error _ => false
 
--- Ixon v3 admits single-use sharing entries: canonical decoding, the kernel,
--- and exact egress accept a table slot referenced exactly once.
+-- Ixon v3 admits single-use sharing entries: canonical decoding accepts a
+-- table slot referenced exactly once (the certified entry's verdict is in
+-- `Tests.Ix.Kernel.ByteAdmission`).
 def singleUseSharing : Ixon.Constant :=
   { identity with
     sharing := #[.var 0]
@@ -380,5 +383,4 @@ def singleUseSharing : Ixon.Constant :=
 #guard match Ixon.Canonical.deConstant 256 64 (Ixon.serConstant singleUseSharing) with
   | .ok value => value == singleUseSharing
   | .error _ => false
-#guard accepts [(address 1, singleUseSharing)]
-#guard roundtrips [(address 1, singleUseSharing)]
+

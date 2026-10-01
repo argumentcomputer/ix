@@ -16,10 +16,6 @@ namespace Ix.Ixon.Projection.Audit
 def operations : Array Lean.Name :=
   #[``Projection.address, ``Projection.reconstruct, ``Projection.checkBytes]
 
-/-- The intrinsic reference variant (until L6). -/
-def intrinsicOperations : Array Lean.Name :=
-  #[``Projection.address, ``Projection.reconstruct, ``Projection.checkBytesIntrinsic]
-
 def dataPrefixes : Array Lean.Name :=
   Admission.Audit.dataImports ++ #[`Std, `Ix.Address.Pure, `Ix.Ixon.Projection]
 
@@ -80,14 +76,8 @@ unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
-/- The intrinsic reference variant, unchanged from L4. Added primitives are
-standard array and integer operations used by pure BLAKE3, not hash FFI
-calls. -/
-/-- info: runtime closure of [Ix.Ixon.Projection.address,
-Ix.Ixon.Projection.reconstruct, Ix.Ixon.Projection.checkBytesIntrinsic]: 1962 compiled functions;
-inherited externs 82, implemented_by 0, unsafe 3, csimp 0 -/
-#guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Projection.Audit.intrinsicOperations #[`Init, `Std]
+/- The intrinsic reference variant (`checkBytesIntrinsic`, 1962 compiled
+functions at L4) was retired at L6 with the intrinsic kernel. -/
 
 #guard_kernel_axioms Ix.Ixon.Projection.address_width [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.requests_spec [propext, Quot.sound]
@@ -98,13 +88,10 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Projection.Audit.intrinsicOperation
 #guard_kernel_axioms Ix.Ixon.Projection.Added.primaries [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.Expanded.complete [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.Expanded.origin [propext, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Projection.Expanded.primary [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.Expanded.length [propext, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Projection.checkBytesIntrinsic_ok_iff [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Projection.checkBytesIntrinsic_of_expansion [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Projection.checkBytesIntrinsic_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Projection.checkBytesIntrinsic_has_model [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Projection.checkBytesIntrinsic [propext, Classical.choice, Quot.sound]
+-- The projection writer the reconstruction runs (kept from Egress at L6).
+#guard_kernel_axioms Ix.Kernel.Egress.writeProjection_reading [propext]
+#guard_kernel_axioms Ix.Kernel.Egress.writeProjection_roundtrip [propext]
 #guard_kernel_axioms Ix.Ixon.Projection.checkBytes [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.checkBytes_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Projection.checkBytes_of_expansion [propext, Classical.choice, Quot.sound]
@@ -168,50 +155,6 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.Expanded.length
 
-/-- info: Ix.Ixon.Projection.checkBytesIntrinsic_ok_iff : ∀ (maxProjections : Nat) (limits : Ix.Ixon.Admission.Limits)
-  (cfg : Ix.Kernel.Config) (records : Ix.Ixon.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
-  (family : Option (Ix.Kernel.ConstRef Address)) (env : Ix.Kernel.Env Address),
-  Ix.Ixon.Projection.checkBytesIntrinsic maxProjections limits cfg records blobs family = Except.ok env ↔
-    Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
-      ∃ input output,
-        Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
-          Ix.Ixon.Projection.Expanded maxProjections input output ∧
-            Ix.Kernel.checkEnv cfg output blobs family = Except.ok env -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Ixon.Projection.checkBytesIntrinsic_ok_iff
-
-/-- info: @Ix.Ixon.Projection.checkBytesIntrinsic_of_expansion : ∀ {maxProjections : Nat} {limits : Ix.Ixon.Admission.Limits}
-  {cfg : Ix.Kernel.Config} {records : Ix.Ixon.Admission.Records} {input output : Ix.Kernel.Ingress.Constants}
-  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)},
-  Ix.Ixon.Verify.Admission.WithinBatch limits records blobs →
-    Ix.Ixon.Verify.Admission.RecordsRead limits records input →
-      Ix.Ixon.Projection.Expanded maxProjections input output →
-        Ix.Ixon.Projection.checkBytesIntrinsic maxProjections limits cfg records blobs family =
-          Except.mapError (fun error => Ix.Ixon.Projection.Error.admission (Ix.Ixon.Admission.Error.kernel error))
-            (Ix.Kernel.checkEnv cfg output blobs family) -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Ixon.Projection.checkBytesIntrinsic_of_expansion
-
-/-- info: @Ix.Ixon.Projection.checkBytesIntrinsic_reading : ∀ {maxProjections : Nat} {limits : Ix.Ixon.Admission.Limits}
-  {cfg : Ix.Kernel.Config} {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
-  Ix.Ixon.Projection.checkBytesIntrinsic maxProjections limits cfg records blobs family = Except.ok env →
-    ∃ input output,
-      Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
-        Ix.Ixon.Projection.Expanded maxProjections input output ∧
-          Ix.Kernel.Ingress.Installed output blobs family none env -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Ixon.Projection.checkBytesIntrinsic_reading
-
-/-- info: Ix.Ixon.Projection.checkBytesIntrinsic_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.Model.SetTheory V]
-  {maxProjections : Nat} {limits : Ix.Ixon.Admission.Limits} {cfg : Ix.Kernel.Config}
-  {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)}
-  {env : Ix.Kernel.Env Address},
-  Ix.Ixon.Projection.checkBytesIntrinsic maxProjections limits cfg records blobs family = Except.ok env →
-    Nonempty (Ix.Kernel.Model V env) -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Ixon.Projection.checkBytesIntrinsic_has_model
-
 /-! ### The certified entry's theorems (L5) -/
 
 /-- info: Ix.Ixon.Projection.checkBytes_ok_iff : ∀ (maxProjections : Nat) (limits : Ix.Ixon.Admission.Limits)
@@ -269,27 +212,6 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
       ci ∈ env.consts → ci.toConstantVal.type = ConLeche.Expr.const ConLeche.falseName [] → False -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_no_proof_of_False
-
-/-- info: Additional projection externs: [ByteArray.mk,
- Array.emptyWithCapacity,
- UInt32.lor,
- UInt32.shiftLeft,
- UInt32.sub,
- UInt32.shiftRight,
- UInt32.xor,
- UInt32.add,
- UInt64.toUInt32,
- UInt32.ofNat,
- Nat.log2]
----
-info: Additional projection unsafe: [] -/
-#guard_msgs (whitespace := lax) in
-run_cmd do
-  let env ← Lean.getEnv
-  let before := Ix.Kernel.Audit.runtimeClosure env Ix.Ixon.Admission.Audit.intrinsicOperations
-  let after := Ix.Kernel.Audit.runtimeClosure env Ix.Ixon.Projection.Audit.intrinsicOperations
-  Lean.logInfo m!"Additional projection externs: {after.externs.filter (!before.externs.contains ·)}"
-  Lean.logInfo m!"Additional projection unsafe: {after.unsafes.filter (!before.unsafes.contains ·)}"
 
 /-- info: Additional certified projection externs: [UInt32.lor,
  UInt32.shiftLeft,

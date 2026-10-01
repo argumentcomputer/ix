@@ -382,18 +382,4 @@ def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits :
   (checkConstants orderLimits blobs constants).mapError .order
   (ConLecheAdmission.checkConstants expanded blobs hint).mapError .checker
 
-universe v
-
-/-- The intrinsic kernel's variant (the certified entry through L4, the
-reference kernel's until L6): byte spelling, computed projections, canonical
-block order, and the intrinsic kernel. -/
-def checkBytesIntrinsic (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
-    (cfg : Config) (records : Admission.Records) (blobs : Ingress.Blobs)
-    (family : Option (ConstRef Address) := none) : Except Error (Env Address) := do
-  (Admission.preflight limits records blobs).mapError .admission
-  let constants ← (Admission.decodeRecords limits records).mapError .admission
-  let expanded ← (Projection.reconstruct maxProjections constants).mapError .projection
-  checkConstants orderLimits blobs constants
-  (Kernel.checkEnv.{v} cfg expanded blobs family).mapError (fun error => .admission (.kernel error))
-
 end Ix.Ixon.BlockOrder

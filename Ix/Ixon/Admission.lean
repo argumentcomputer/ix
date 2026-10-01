@@ -5,7 +5,6 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Ixon.Admission.Bytes
 import Ix.Ixon.ConLecheAdmission
-import Ix.Kernel.Ingress
 
 /-! # Admission from ordered Ixon record bytes
 
@@ -19,14 +18,13 @@ prelude).
   (`Ix.Ixon.Admission.Bytes`), then con-leche's verified checker behind the
   Ixon reader under the committed pin table and Ixon prelude
   (`Ix.Ixon.ConLecheAdmission.checkBytes`).
-* `checkBytesIntrinsic` is the intrinsic kernel's byte admission, the entry
-  of the certified API through L4. It stays as the reference kernel's entry
-  (the host differential and the intrinsic tests use it) until L6 retires
-  it; it is not the certified API.
+* The intrinsic kernel's byte admission (`checkBytesIntrinsic`, the
+  certified entry through L4) was retired at L6 (plan v4) with the
+  intrinsic kernel.
 
 The host supplies record order, address keys, and literal blobs. Addresses
 are keys, not authenticated content hashes. Blobs retain their exact supplied
-bytes and the kernel's literal interpretation. No host decoder or verdict
+bytes. No host decoder or verdict
 participates in this path.
 -/
 
@@ -63,18 +61,5 @@ def outcome : ConLecheAdmission.Error → Outcome
   | .read _ (.malformed _) => .rejected
   | .read _ (.declined _) => .declined
   | .kernel _ _ => .declined
-
-universe v
-
-/-- The intrinsic kernel's byte admission (the certified entry through L4,
-the reference kernel's until L6): check exactly the declarations described
-by the supplied canonical record bytes with the intrinsic kernel. Batch
-limits are checked before decoding; kernel errors are preserved without
-relabeling rejection or exhaustion as a successful result. -/
-def checkBytesIntrinsic (limits : Limits) (cfg : Config) (records : Records) (blobs : Ingress.Blobs)
-    (family : Option (ConstRef Address) := none) : Except Error (Env Address) := do
-  preflight limits records blobs
-  let constants ← decodeRecords limits records
-  (Kernel.checkEnv.{v} cfg constants blobs family).mapError .kernel
 
 end Ix.Ixon.Admission

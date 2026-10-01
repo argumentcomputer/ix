@@ -22,10 +22,9 @@ over decoded records) and the restated public theorems of
 `Ix.Ixon.Consistency` and `Ix.Ixon.ConLecheConsistency` (model existence,
 no proof of the pinned `False`, fidelity, resources). L0's rulings (`runtimeRulings`,
 `elaborationImports`) are active on them. The intrinsic kernel's roots
-(`Ix.Kernel.check`, `checkEnv`) stay audited below as the reference kernel:
-they remain reachable through the renamed intrinsic entries
-(`Ix.Ixon.Admission.checkBytesIntrinsic` and its projection and block-order
-variants) until L6 retires them.
+(`Ix.Kernel.check`, `checkEnv`, Egress's record round trip), their frozen
+runtime closures (kernel 1563, ingress 1540, egress 221 compiled functions)
+and their frozen statements were retired with that kernel at L6 (plan v4).
 
 It fails elaboration when
 
@@ -92,7 +91,14 @@ is 27,096 functions, 26,957 of them extracted closed subterms; L4b's
 `builtinNatOpPins` decodes a string table at first use (235 functions, and
 the eight string-scanning externs `String.decodeChar`, `String.Pos.next`,
 `UInt32.decLe`, `String.toUTF8` and `String.Pos.Raw.{extract, next, get,
-atEnd}`). -/
+atEnd}`). L6 (2026-10-01) retires the intrinsic kernel: its roots,
+closures and statements leave this manifest, and the projection writer it
+shared with the certified entries (`Ix.Kernel.Egress.writeProjection`) is
+guarded in `Ix.Ixon.ProjectionAudit`. The entry falls from 5290 to 5280
+functions: the byte stage's error lost its intrinsic `kernel` case, so
+`ConLecheAdmission.Error.ofAdmission` no longer prints a `Kernel.Error`
+(`Ix.Kernel.instReprError.repr` and its eight extracted closed terms, and the
+closed message prefix). -/
 
 open Lean
 
@@ -142,45 +148,13 @@ def publicOperations : Array Name :=
 /-- Con-leche's verified fold, the kernel of the entry. -/
 def kernelOperations : Array Name := #[``ConLeche.Cached.checkDecls]
 
-/-- The Ixon reader of the entry (the counterpart of `ingressOperations`). -/
+/-- The Ixon reader of the entry (L4; the intrinsic kernel's ingress, its
+counterpart until L5, was retired at L6). -/
 def readerOperations : Array Name :=
   #[``Ix.Kernel.ConLecheReader.readRecords, ``Ix.Ixon.ConLecheAdmission.readStream]
 
 /-- The certified API's module, whose import closure is audited. -/
 def publicModules : Array Name := #[`Ix.Ixon.Admission]
-
-/-- The intrinsic kernel's public theorems (K0 to L4), kept as the
-reference kernel's until L6. -/
-def intrinsicRoots : Array Name :=
-  #[``Ix.Kernel.check_has_model, ``Ix.Kernel.checkDecls_has_model, ``Ix.Kernel.no_proof_of_False]
-
-/-- The intrinsic kernel's fidelity roots. -/
-def intrinsicFidelityRoots : Array Name :=
-  #[``Ix.Kernel.annotate_erase, ``Ix.Kernel.checkDecl_installed, ``Ix.Kernel.checkDecls_installed,
-    ``Ix.Kernel.check_installed, ``Ix.Kernel.checkDecl_preserves, ``Ix.Kernel.checkDecls_preserves]
-
-/-- The intrinsic kernel's executable operations. -/
-def intrinsicOperations : Array Name :=
-  #[``Ix.Kernel.check, ``Ix.Kernel.checkDecls, ``Ix.Kernel.checkDecl,
-    ``Ix.Kernel.Env.lookup, ``Ix.Kernel.Env.toEnvironment]
-
-/-- K3's Ixon entry points additionally reach Lean's byte/array access and
-UInt conversions and physical declaration association. Their separate closure
-is frozen below: 962 functions,
-23 inherited externs, and two inherited unsafe array accessors. Factoring
-`referenceSource` for the egress projection check adds one function. -/
-def ingressOperations : Array Name :=
-  #[``Ix.Kernel.checkEnv, ``Ix.Kernel.Ingress.readExpr,
-    ``Ix.Kernel.Ingress.readBlock, ``Ix.Kernel.Ingress.reference]
-
-/-- Exact layout-preserving readers/writers, independent of admission.
-The measured closure has 202 functions, 21 inherited externs, and two
-inherited unsafe array accessors. It additionally uses `UInt64.ofNat` to
-reconstruct bounded indexes and metadata, with an explicit overflow check.
-It reaches no project execution replacement, hashing, or host codec. -/
-def egressOperations : Array Name :=
-  #[``Ix.Kernel.Egress.readRecords, ``Ix.Kernel.Egress.writeRecords,
-    ``Ix.Kernel.Egress.writeExpr, ``Ix.Kernel.Egress.writeProjection]
 
 /-- Module prefixes the intrinsic kernel's import closure may use: Lean core
 (`Init` and `Std`, which ships with the toolchain), the kernel itself, the
@@ -208,8 +182,7 @@ Each is pure Lean core and is audited on its own terms elsewhere:
   `dataImports` is `Init` and these);
 * `Ix.Ixon.Admission`: the certified API module, and
   `Ix.Ixon.Admission.Bytes`, the batch limits (`preflight`) and the decoding
-  loop (`decodeRecords`) it shares with the intrinsic entry
-  (`Ix.Ixon.Admission.Audit`);
+  loop (`decodeRecords`) (`Ix.Ixon.Admission.Audit`);
 * `Ix.Ixon.ConLecheAdmission`: the con-leche entry the API runs.
 Nothing else under `Ix.Ixon` (in particular no projection hashing,
 `Ix.Address.Pure`, block order or proof module) and still no `Lean` outside
@@ -349,7 +322,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel
 run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Ixon.ConLecheConsistency, `Ix.Ixon.Consistency] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
 
 -- The entry's byte stage is admitted; projection hashing, block order, the
--- codec proofs and the intrinsic kernel's own boundary are not widened.
+-- codec proofs and `kernelImportAllowlist` are not widened.
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Canonical
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Admission
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Ix.Ixon.Projection
@@ -376,7 +349,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
  Ix.Ixon.ConLecheAdmission.checkBytes,
  Ix.Ixon.ConLecheAdmission.checkBytesWith,
  Ix.Ixon.ConLecheAdmission.checkConstantsWith,
- Ix.Ixon.ConLecheAdmission.checkConstants]: 5290 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.ConLecheAdmission.checkConstants]: 5280 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
@@ -512,57 +485,11 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.kernelOperations Ix.Kernel.
 #guard_msgs (whitespace := lax) in
 #check @ConLeche.model_exists
 
-/-! ## The intrinsic reference kernel (until L6)
+/-! ## The kernel-side modules and the import allowlists
 
-The intrinsic kernel's boundaries, unchanged from L0: its axiom guards,
-import closure (under `kernelImportAllowlist`), runtime closures and frozen
-statements. -/
-
-#guard_kernel_axioms Ix.Kernel.check_has_model [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkDecls_has_model [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.no_proof_of_False [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.check [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkDecls [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Env.toEnvironment [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.annotate_erase [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkDecl_installed [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkDecls_installed [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.check_installed [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkDecl_preserves [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkDecls_preserves [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.readExpr_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.readBlock_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.ExprReads.deterministic [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.readExpr_agree [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.Installed.primary [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkFamilyC [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkEnv_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkEnv_has_model [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkEnv [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkEnv_no_proof_of_False [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkEnv_no_inhabitant_of_empty [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Env.emptyType_of_empty [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.no_inhabitant_of_empty [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.checkEnv_ok_iff [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.DeclarationsRead.deterministic [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Ingress.BlockReads.deterministic [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeExpr_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeExpr_roundtrip [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeBlock_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeBlock_roundtrip [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeProjection_reading [propext]
-#guard_kernel_axioms Ix.Kernel.Egress.writeProjection_roundtrip [propext]
-#guard_kernel_axioms Ix.Kernel.Egress.readRecord_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeRecord_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeRecord_source [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.record_roundtrip [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.readRecords_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeRecords_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.records_roundtrip [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.readRecords [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Egress.writeRecords [propext, Classical.choice, Quot.sound]
-
-/-! ### Import and runtime closures -/
+`Ix.Kernel` and the pure Ixon types stay inside `kernelImportAllowlist`; the
+allowlists admit `Std` and `ConLeche`, and `Lean` only below the ruled
+elaboration-time imports. -/
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Audit.kernelImportAllowlist Ix.Kernel.Audit.elaborationImports
@@ -577,130 +504,3 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.elaborationImports.allowed `Lean.Elab.Term
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.elaborationImports.importers `ConLeche.Kernel.Core
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.elaborationImports.allowed `Ix.Tc
-
-/-- info: runtime closure of [Ix.Kernel.check, Ix.Kernel.checkDecls, Ix.Kernel.checkDecl,
-Ix.Kernel.Env.lookup, Ix.Kernel.Env.toEnvironment]: 1563 compiled functions; inherited externs 32,
-implemented_by 0, unsafe 2, csimp 0 -/
-#guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.intrinsicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
-
-/-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
-Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 1540 compiled functions;
-inherited externs 45, implemented_by 0, unsafe 3, csimp 0 -/
-#guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
-
-/-- info: runtime closure of [Ix.Kernel.Egress.readRecords, Ix.Kernel.Egress.writeRecords,
-Ix.Kernel.Egress.writeExpr, Ix.Kernel.Egress.writeProjection]: 221 compiled functions;
-inherited externs 26, implemented_by 0, unsafe 2, csimp 0 -/
-#guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.egressOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
-
-/-! ### Frozen statements -/
-
-/-- info: @Ix.Kernel.check_has_model : ∀ {β : Type u_1} [inst : DecidableEq β] (V : Type u_2)
-  [inst_1 : Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config} {decls : List (Ix.Kernel.Decl β)}
-  {env : Ix.Kernel.Env β}, Ix.Kernel.check cfg decls = Except.ok env → Nonempty (Ix.Kernel.Model V env) -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.check_has_model
-
-/-- info: @Ix.Kernel.checkDecls_has_model : ∀ {β : Type u_1} [inst : DecidableEq β] (V : Type u_2)
-  [inst_1 : Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config} {env env' : Ix.Kernel.Env β}
-  {decls : List (Ix.Kernel.Decl β)} (m : Ix.Kernel.Model V env),
-  Ix.Kernel.checkDecls cfg env decls = Except.ok env' → Nonempty (Ix.Kernel.Model V env') -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.checkDecls_has_model
-
-/-- info: @Ix.Kernel.no_proof_of_False : ∀ {β : Type u_1} [inst : DecidableEq β] (V : Type u_2) [Ix.Kernel.Model.SetTheory V]
-  {cfg : Ix.Kernel.Config} {decls : List (Ix.Kernel.Decl β)} {env : Ix.Kernel.Env β},
-  Ix.Kernel.check cfg decls = Except.ok env →
-    ∀ {r : Ix.Kernel.ConstRef β} {entry : Ix.Kernel.Model.ConstantEntry β},
-      env.toEnvironment r = some entry → env.EmptyType entry.universes entry.type → False -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.no_proof_of_False
-
-/-! ### Frozen statements added with the Ixon v3 takeover (R3)
-
-`checkEnv` is the Ixon entry point over the same admission fold as `check`;
-its reading, model, and no-False statements are frozen like the K0 ones, as is
-the syntactic `EmptyType` corollary for constructor-free families. -/
-
-/-- info: @Ix.Kernel.checkEnv_reading : ∀ {cfg : Ix.Kernel.Config} {constants : Ix.Kernel.Ingress.Constants}
-  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)}
-  {strings : Option (Ix.Kernel.StringRefs Address)} {env : Ix.Kernel.Env Address},
-  Ix.Kernel.checkEnv cfg constants blobs family strings = Except.ok env →
-    Ix.Kernel.Ingress.Installed constants blobs family strings env -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.checkEnv_reading
-
-/-- info: Ix.Kernel.checkEnv_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config}
-  {constants : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
-  {family : Option (Ix.Kernel.ConstRef Address)} {strings : Option (Ix.Kernel.StringRefs Address)}
-  {env : Ix.Kernel.Env Address},
-  Ix.Kernel.checkEnv cfg constants blobs family strings = Except.ok env → Nonempty (Ix.Kernel.Model V env) -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.checkEnv_has_model
-
-/-- info: Ix.Kernel.checkEnv_no_proof_of_False : ∀ (V : Type u_1) [Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config}
-  {constants : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
-  {family : Option (Ix.Kernel.ConstRef Address)} {strings : Option (Ix.Kernel.StringRefs Address)}
-  {env : Ix.Kernel.Env Address},
-  Ix.Kernel.checkEnv cfg constants blobs family strings = Except.ok env →
-    ∀ {r : Ix.Kernel.ConstRef Address} {entry : Ix.Kernel.Model.ConstantEntry Address},
-      env.toEnvironment r = some entry → env.EmptyType entry.universes entry.type → False -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.checkEnv_no_proof_of_False
-
-/-- info: @Ix.Kernel.Env.emptyType_of_empty : ∀ {β : Type u_1} [inst : DecidableEq β] {env : Ix.Kernel.Env β} {source : β}
-  {recursor : Ix.Kernel.ConstRef β},
-  Ix.Kernel.Certified.Basis.Empty.Interface env.toEnvironment source recursor →
-    env.EmptyType 0 (Ix.Kernel.Model.AExpr.const (Ix.Kernel.ConstRef.member source 0) []) -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.Env.emptyType_of_empty
-
-/-- info: @Ix.Kernel.no_inhabitant_of_empty : ∀ {β : Type u_1} [inst : DecidableEq β] (V : Type u_2) [Ix.Kernel.Model.SetTheory V]
-  {cfg : Ix.Kernel.Config} {decls : List (Ix.Kernel.Decl β)} {env : Ix.Kernel.Env β},
-  Ix.Kernel.check cfg decls = Except.ok env →
-    ∀ {source : β} {recursor : Ix.Kernel.ConstRef β},
-      Ix.Kernel.Certified.Basis.Empty.Interface env.toEnvironment source recursor →
-        ∀ {r : Ix.Kernel.ConstRef β} {entry : Ix.Kernel.Model.ConstantEntry β},
-          env.toEnvironment r = some entry →
-            entry.universes = 0 →
-              entry.type = Ix.Kernel.Model.AExpr.const (Ix.Kernel.ConstRef.member source 0) [] → False -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.no_inhabitant_of_empty
-
-/-- info: Ix.Kernel.checkEnv_no_inhabitant_of_empty : ∀ (V : Type u_1) [Ix.Kernel.Model.SetTheory V] {cfg : Ix.Kernel.Config}
-  {constants : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
-  {family : Option (Ix.Kernel.ConstRef Address)} {strings : Option (Ix.Kernel.StringRefs Address)}
-  {env : Ix.Kernel.Env Address},
-  Ix.Kernel.checkEnv cfg constants blobs family strings = Except.ok env →
-    ∀ {source : Address} {recursor : Ix.Kernel.ConstRef Address},
-      Ix.Kernel.Certified.Basis.Empty.Interface env.toEnvironment source recursor →
-        ∀ {r : Ix.Kernel.ConstRef Address} {entry : Ix.Kernel.Model.ConstantEntry Address},
-          env.toEnvironment r = some entry →
-            entry.universes = 0 →
-              entry.type = Ix.Kernel.Model.AExpr.const (Ix.Kernel.ConstRef.member source 0) [] → False -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.checkEnv_no_inhabitant_of_empty
-
-/-- info: @Ix.Kernel.checkEnv_ok_iff : ∀ {cfg : Ix.Kernel.Config} {constants : Ix.Kernel.Ingress.Constants}
-  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)}
-  {strings : Option (Ix.Kernel.StringRefs Address)} {env : Ix.Kernel.Env Address},
-  Ix.Kernel.checkEnv cfg constants blobs family strings = Except.ok env ↔
-    (List.map Prod.fst constants).Nodup ∧
-      (List.map Prod.fst blobs).Nodup ∧
-        ∃ decls,
-          Ix.Kernel.Ingress.readDeclarations constants blobs family strings cfg.fuel constants = Except.ok decls ∧
-            Ix.Kernel.checkIndexed cfg decls = Except.ok env -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.checkEnv_ok_iff
-
-/-- info: @Ix.Kernel.Ingress.DeclarationsRead.deterministic : ∀ {constants : Ix.Kernel.Ingress.Constants}
-  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)}
-  {strings : Option (Ix.Kernel.StringRefs Address)} {inputs : Ix.Kernel.Ingress.Constants}
-  {left right : List (Ix.Kernel.Decl Address)},
-  Ix.Kernel.Ingress.DeclarationsRead constants blobs family strings inputs left →
-    Ix.Kernel.Ingress.DeclarationsRead constants blobs family strings inputs right → left = right -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.Ingress.DeclarationsRead.deterministic

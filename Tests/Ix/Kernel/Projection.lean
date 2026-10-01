@@ -7,7 +7,12 @@ import Ix.Ixon.ProjectionProofs
 import Ix.Address
 import Tests.Ix.Kernel.ByteAdmission
 
-open Ix.Kernel Tests.Ix.Kernel.Ingress Tests.Ix.Kernel.Egress Tests.Ix.Kernel.Codec
+/-! Projection reconstruction (pure BLAKE3 keys, exact records, the request
+bound and conflicts) and the certified entry with projection omission,
+`Ix.Ixon.Projection.checkBytes`. Until L6 (plan v4) the entry checks ran
+through the intrinsic kernel's `checkBytesIntrinsic`, retired with it. -/
+
+open Ix.Kernel Tests.Ix.Kernel.IxonFixtures Tests.Ix.Kernel.Codec
 
 namespace Tests.Ix.Kernel.Projection
 
@@ -29,20 +34,20 @@ def variants (owner : Address) (index ctor : UInt64) : List Ixon.Constant :=
 def entry (record : Ixon.Constant) : Address × Ixon.Constant :=
   (Ix.Ixon.Projection.address record, record)
 
-def blockInput : Ingress.Constants := [(address 12, variedBlock)]
+def blockInput : List (Address × Ixon.Constant) := [(address 12, variedBlock)]
 
-def generated : Ingress.Constants := [
+def generated : List (Address × Ixon.Constant) := [
   entry ⟨.rPrj ⟨2, address 12⟩, #[], #[], #[]⟩,
   entry ⟨.cPrj ⟨1, 0, address 12⟩, #[], #[], #[]⟩,
   entry ⟨.iPrj ⟨1, address 12⟩, #[], #[], #[]⟩,
   entry ⟨.dPrj ⟨0, address 12⟩, #[], #[], #[]⟩]
 
-def reconstructs (input expected : Ingress.Constants) (limit : Nat) : Bool :=
+def reconstructs (input expected : List (Address × Ixon.Constant)) (limit : Nat) : Bool :=
   match Ix.Ixon.Projection.reconstruct limit input with
   | .ok output => output == expected
   | .error _ => false
 
-def reconstructionError (input : Ingress.Constants) (limit : Nat := 16) :
+def reconstructionError (input : List (Address × Ixon.Constant)) (limit : Nat := 16) :
     Option Ix.Ixon.Projection.Error :=
   match Ix.Ixon.Projection.reconstruct limit input with
   | .ok _ => none
@@ -74,44 +79,56 @@ def definitionAddress : Address := Ix.Ixon.Projection.address definitionProjecti
 
 -- The family and recursor are physically separate. The recursor refers to
 -- the computed family projection, which is deliberately absent from input.
-def separatedInput : Ingress.Constants := [
+def separatedInput : List (Address × Ixon.Constant) := [
   (address 3, falseFamily),
   (address 6, { falseRecursorRecord with refs := #[Ix.Ixon.Projection.address falseProjection] })]
 
-def encode (input : Ingress.Constants) : Ix.Ixon.Admission.Records :=
+def encode (input : List (Address × Ixon.Constant)) : Ix.Ixon.Admission.Records :=
   input.map fun (key, record) => (key, Ixon.serConstant record)
 
-def accepts (input : Ingress.Constants) (limit : Nat := 16) : Bool :=
-  (Ix.Ixon.Projection.checkBytesIntrinsic.{1} limit ByteAdmission.limits {} (encode input) []).isOk
+def check (input : List (Address × Ixon.Constant)) (limit : Nat := 16)
+    (bounds : Ix.Ixon.Admission.Limits := ByteAdmission.limits) :
+    Except Ix.Ixon.Projection.CheckError ConLeche.Env :=
+  Ix.Ixon.Projection.checkBytes limit bounds (encode input) []
+
+def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool :=
+  (check input limit).isOk
 
 #guard accepts separatedInput
-#guard !(Ix.Ixon.Admission.checkBytesIntrinsic.{1} ByteAdmission.limits {} (encode separatedInput) []).isOk
+#guard !(Ix.Ixon.Admission.checkBytes ByteAdmission.limits (encode separatedInput) []).isOk
 #guard accepts [(address 3, falseBlock)]
-#guard accepts [(address 3, falseFamily)]
 #guard accepts [(address 1, identity), (address 2, aliasIdentity)] 0
 #guard accepts (entry falseProjection :: separatedInput)
 #guard !(accepts separatedInput 0)
-#guard match Ix.Ixon.Projection.checkBytesIntrinsic.{1} 16 ByteAdmission.limits ⟨0⟩
-    (encode separatedInput) [] with
-  | .error (.admission (.kernel (.declined _))) => true
+-- A family stored without its recursor declines at the reader (the intrinsic
+-- kernel admitted it); the request bound and the batch limits apply first.
+#guard match check [(address 3, falseFamily)] with
+  | .error (.checker error) => Ix.Ixon.Admission.outcome error == .declined
   | _ => false
-#guard match Ix.Ixon.Projection.checkBytesIntrinsic.{1} 0
-    { ByteAdmission.limits with maxRecords := 0 } {} [(address 1, ⟨#[]⟩)] [] with
-  | .error (.admission (.limit .records)) => true
+#guard match check separatedInput 0 with
+  | .error (.reconstruction .limit) => true
+  | _ => false
+#guard match check [] 0 { ByteAdmission.limits with maxRecords := 0 } with
+  | .ok _ => true
+  | _ => false
+#guard match Ix.Ixon.Projection.checkBytes 0 { ByteAdmission.limits with maxRecords := 0 }
+    [(address 1, ⟨#[]⟩)] [] with
+  | .error (.reconstruction (.admission (.limit .records))) => true
   | _ => false
 
 def wrongConstructorIndex : Ixon.Constant :=
   ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0,
     #[⟨false, 0, 1, 0, 0, .recur 0 #[]⟩]⟩], #[], #[], #[.zero]⟩
 
-#guard match Ix.Ixon.Projection.checkBytesIntrinsic.{1} 16 ByteAdmission.limits {}
-    (encode [(address 20, wrongConstructorIndex)]) [] with
-  | .error (.admission (.kernel (.rejected _))) => true
+-- The reconstructed constructor projection does not match the block's
+-- metadata: the reader finds it malformed, which rejects.
+#guard match check [(address 20, wrongConstructorIndex)] with
+  | .error (.checker error) => Ix.Ixon.Admission.outcome error == .rejected
   | _ => false
 
-example (V : Type 1) [Model.SetTheory V] {env : Env Address}
-    (h : Ix.Ixon.Projection.checkBytesIntrinsic.{1} 16 ByteAdmission.limits {}
-      (encode separatedInput) [] = .ok env) : Nonempty (Model V env) :=
-  Ix.Ixon.Projection.checkBytesIntrinsic_has_model V h
+example (V : Type) [ConLeche.SetTheory V] {env : ConLeche.Env}
+    (h : Ix.Ixon.Projection.checkBytes 16 ByteAdmission.limits (encode separatedInput) [] = .ok env) :
+    Nonempty (ConLeche.Model V env) :=
+  Ix.Ixon.Projection.checkBytes_has_model V h
 
 end Tests.Ix.Kernel.Projection

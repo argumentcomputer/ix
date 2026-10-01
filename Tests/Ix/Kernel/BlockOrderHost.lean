@@ -7,7 +7,7 @@ import Tests.Ix.Kernel.BlockOrder
 import Lean.Data.Json
 
 open Ix.Kernel Ix.Ixon.BlockOrder Tests.Ix.Kernel.BlockOrder
-open Tests.Ix.Kernel.Ingress (address)
+open Tests.Ix.Kernel.IxonFixtures (address)
 
 namespace Tests.Ix.Kernel.BlockOrderHost
 

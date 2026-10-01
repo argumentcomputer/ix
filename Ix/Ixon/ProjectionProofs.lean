@@ -294,82 +294,12 @@ theorem Expanded.origin {limit : Nat} {input output : Ingress.Constants}
   · exact .inl old
   · exact .inr ⟨request, (requests_spec _ _).mp requested, reading, hashed⟩
 
-theorem Expanded.primary {limit : Nat} {input output : Ingress.Constants}
-    {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}
-    (h : Expanded limit input output) (installed : Ingress.Installed output blobs family none env)
-    {pair : Address × _root_.Ixon.Constant} (mem : pair ∈ input)
-    (primary : Ingress.isProjection pair.2.info = false) :
-    ∃ block, Ingress.BlockReads (Ingress.context output blobs family none pair) block ∧
-      block.Installed pair.1 env.toEnvironment :=
-  installed.primary (h.2.preserves mem) primary
-
 theorem Reads.decode {request : Request} {record : _root_.Ixon.Constant}
     (h : Reads request record) :
     _root_.Ixon.deConstantExact (_root_.Ixon.serConstant record) = .ok record :=
   Verify.deConstantExact_serConstant record h.wireWF
 
 universe v
-
-theorem checkBytesIntrinsic_run_iff (maxProjections : Nat) (limits : Admission.Limits) (cfg : Config)
-    (records : Admission.Records) (blobs : Ingress.Blobs) (family : Option (ConstRef Address))
-    (env : Env Address) : checkBytesIntrinsic.{v} maxProjections limits cfg records blobs family = .ok env ↔
-      Admission.preflight limits records blobs = .ok () ∧ ∃ input output,
-        Admission.decodeRecords limits records = .ok input ∧
-        reconstruct maxProjections input = .ok output ∧
-        Kernel.checkEnv.{v} cfg output blobs family = .ok env := by
-  cases flight : Admission.preflight limits records blobs with
-  | error reason => simp [checkBytesIntrinsic, flight, Except.mapError, bind, Except.bind]
-  | ok value =>
-    cases value
-    cases decoded : Admission.decodeRecords limits records with
-    | error reason => simp [checkBytesIntrinsic, flight, decoded, Except.mapError, bind, Except.bind]
-    | ok input =>
-      cases expanded : reconstruct maxProjections input with
-      | error reason => simp [checkBytesIntrinsic, flight, decoded, expanded, Except.mapError, bind, Except.bind]
-      | ok output =>
-        cases checked : Kernel.checkEnv.{v} cfg output blobs family <;>
-          simp [checkBytesIntrinsic, flight, decoded, expanded, checked, Except.mapError, bind, Except.bind]
-
-/-- Exact byte reading, bounded projection extension, and the same in-memory
-checker. The additional predicates do not assume a host hash or verdict. -/
-theorem checkBytesIntrinsic_ok_iff (maxProjections : Nat) (limits : Admission.Limits) (cfg : Config)
-    (records : Admission.Records) (blobs : Ingress.Blobs) (family : Option (ConstRef Address))
-    (env : Env Address) : checkBytesIntrinsic.{v} maxProjections limits cfg records blobs family = .ok env ↔
-      Verify.Admission.WithinBatch limits records blobs ∧ ∃ input output,
-        Verify.Admission.RecordsRead limits records input ∧ Expanded maxProjections input output ∧
-        Kernel.checkEnv.{v} cfg output blobs family = .ok env := by
-  simp only [checkBytesIntrinsic_run_iff, Verify.Admission.preflight_ok_iff,
-    Verify.Admission.decodeRecords_ok_iff, reconstruct_ok_iff]
-
-theorem checkBytesIntrinsic_reading {maxProjections : Nat} {limits : Admission.Limits} {cfg : Config}
-    {records : Admission.Records} {blobs : Ingress.Blobs} {family : Option (ConstRef Address)}
-    {env : Env Address} (h : checkBytesIntrinsic.{v} maxProjections limits cfg records blobs family = .ok env) :
-    ∃ input output, Verify.Admission.RecordsRead limits records input ∧
-      Expanded maxProjections input output ∧ Ingress.Installed output blobs family none env := by
-  obtain ⟨_, input, output, reading, expanded, checked⟩ := (checkBytesIntrinsic_ok_iff _ _ _ _ _ _ _).mp h
-  exact ⟨input, output, reading, expanded, Kernel.checkEnv_reading checked⟩
-
-/-- Every kernel outcome, including its exact rejection or decline reason,
-is preserved after a bounded canonical reading and projection extension. -/
-theorem checkBytesIntrinsic_of_expansion {maxProjections : Nat} {limits : Admission.Limits} {cfg : Config}
-    {records : Admission.Records} {input output : Ingress.Constants} {blobs : Ingress.Blobs}
-    {family : Option (ConstRef Address)} (within : Verify.Admission.WithinBatch limits records blobs)
-    (reading : Verify.Admission.RecordsRead limits records input)
-    (expanded : Expanded maxProjections input output) :
-    checkBytesIntrinsic.{v} maxProjections limits cfg records blobs family =
-      (Kernel.checkEnv.{v} cfg output blobs family).mapError (fun error => .admission (.kernel error)) := by
-  have flight := (Verify.Admission.preflight_ok_iff _ _ _).mpr within
-  have decoded := (Verify.Admission.decodeRecords_ok_iff _ _ _).mpr reading
-  have reconstructed := (reconstruct_ok_iff _ _ _).mpr expanded
-  simp [checkBytesIntrinsic, flight, decoded, reconstructed, Except.mapError, bind, Except.bind]
-
-theorem checkBytesIntrinsic_has_model (V : Type v) [Model.SetTheory V]
-    {maxProjections : Nat} {limits : Admission.Limits} {cfg : Config} {records : Admission.Records}
-    {blobs : Ingress.Blobs} {family : Option (ConstRef Address)} {env : Env Address}
-    (h : checkBytesIntrinsic.{v} maxProjections limits cfg records blobs family = .ok env) :
-    Nonempty (Model V env) := by
-  obtain ⟨_, _, _, _, _, checked⟩ := (checkBytesIntrinsic_ok_iff _ _ _ _ _ _ _).mp h
-  exact Kernel.checkEnv_has_model V checked
 
 /-! ## The certified entry (L5) -/
 

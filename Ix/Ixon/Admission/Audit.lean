@@ -9,16 +9,15 @@ import Ix.Ixon.Consistency
 import Ix.Ixon.Audit
 import Ix.Kernel.Audit.Roots
 
-/-! The byte adapter has its own import and runtime boundary. Neither the
-intrinsic kernel's in-memory boundary nor the pure codec's allowlist is
-widened.
+/-! The byte adapter has its own import and runtime boundary. The pure
+codec's allowlist is not widened.
 
 From L5 (plan v4) the certified entry `Ix.Ixon.Admission.checkBytes` runs
 con-leche's verified checker behind the Ixon reader; its closure is frozen
 with the ruled constructs it reaches (`Ix.Kernel.Audit.runtimeRulings`), and
 the externs it adds beyond the codec, the reader and the fold are listed.
-The intrinsic kernel's byte admission, `checkBytesIntrinsic`, keeps its L4
-boundary as the reference kernel's until L6. -/
+The intrinsic kernel's byte admission (`checkBytesIntrinsic`, 1834 compiled
+functions at L4) and its frozen statements were retired at L6. -/
 
 namespace Ix.Ixon.Admission.Audit
 
@@ -27,16 +26,10 @@ def operations : Array Lean.Name :=
   #[``Ix.Ixon.Admission.preflight, ``Ix.Ixon.Admission.decodeRecords,
     ``Ix.Ixon.Admission.checkBytes]
 
-/-- The intrinsic reference kernel's byte admission (until L6). -/
-def intrinsicOperations : Array Lean.Name :=
-  #[``Ix.Ixon.Admission.preflight, ``Ix.Ixon.Admission.decodeRecords,
-    ``Ix.Ixon.Admission.checkBytesIntrinsic]
-
 /-- Admission runs con-leche's checker behind the Ixon reader (L5: `ConLeche`,
 `Ix.Ixon.ConLecheAdmission`, and the reader under `Ix.Kernel`; `Lean` only
-below con-leche's ruled elaboration-time imports) and the intrinsic reference
-kernel, whose closure admits `Std` (`Ix.Kernel.Audit.importAllowlist`,
-2026-09-30). -/
+below con-leche's ruled elaboration-time imports), whose closure admits
+`Std` (`Ix.Kernel.Audit.importAllowlist`, 2026-09-30). -/
 def dataImports : Array Lean.Name :=
   Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Ixon.Admission, `ConLeche,
     `Ix.Ixon.ConLecheAdmission]
@@ -74,30 +67,15 @@ Nat-operation pins were then upstream's JSON dumps spliced as one closed
 term (`ConLeche.natOpPinSets`, 27,096 compiled functions, 26,957 of them
 extracted closed subterms). Rebased onto L4b they are decoded from a string
 table at first use (`Ix.Kernel.ConLecheReader.builtinNatOpPins`, 235
-functions), which adds eight string-scanning externs (below). -/
+functions), which adds eight string-scanning externs (below). L6 removed the
+byte stage's intrinsic `kernel` error, whose message printed a `Kernel.Error`
+(10 functions; `Ix.Kernel.Audit.Roots`): 5288 at int-4. -/
 /-- info: runtime closure of [Ix.Ixon.Admission.preflight,
  Ix.Ixon.Admission.decodeRecords,
- Ix.Ixon.Admission.checkBytes]: 5288 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.Admission.checkBytes]: 5278 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
-
-/- The intrinsic reference entry, unchanged from L4. It reaches the existing
-kernel and codec primitives only; the set-difference check below enforces
-that adding the adapter introduces no further extern or unsafe primitive. -/
-/-- info: runtime closure of [Ix.Ixon.Admission.preflight,
-Ix.Ixon.Admission.decodeRecords, Ix.Ixon.Admission.checkBytesIntrinsic]: 1834 compiled functions;
-inherited externs 71, implemented_by 0, unsafe 3, csimp 0 -/
-#guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Admission.Audit.intrinsicOperations #[`Init, `Std]
-
-run_cmd do
-  let env ← Lean.getEnv
-  let externs (roots : Array Lean.Name) := (Ix.Kernel.Audit.runtimeClosure env roots).externs
-  let components := externs Ix.Ixon.Audit.operations ++ externs Ix.Kernel.Audit.ingressOperations
-  let added := (externs Ix.Ixon.Admission.Audit.intrinsicOperations).filter (!components.contains ·)
-  unless added.isEmpty do
-    throwError "byte admission adds externs beyond the codec and ingress closures: {added}"
 
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.consume_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.preflight_ok_iff [propext, Classical.choice, Quot.sound]
@@ -106,18 +84,11 @@ run_cmd do
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.RecordsRead.resourceUnits_le [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.RecordsRead.deterministic [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Admission.decodeRecords_ok_iff [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytesIntrinsic_ok_iff [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytesIntrinsic_of_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytesIntrinsic_reading [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytesIntrinsic_unique_keys [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytesIntrinsic_resources [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Verify.Admission.checkBytesIntrinsic_has_model [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.canonicalRecord_erases [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.decodeLoop_erases [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.decodeLoop_work_le [propext, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.parserStage_erases [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.parserStage_work_le [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Admission.checkBytesIntrinsic [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Admission.checkBytes [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Admission.checkBytes_eq [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Admission.checkBytes_has_model [propext, Classical.choice, Quot.sound]
@@ -239,72 +210,6 @@ run_cmd do
           2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Admission.checkBytes_resources
-
-/-! ### The intrinsic reference entry (until L6) -/
-
-/-- info: Ix.Ixon.Verify.Admission.checkBytesIntrinsic_ok_iff : ∀ (limits : Ix.Ixon.Admission.Limits) (cfg : Ix.Kernel.Config)
-  (records : Ix.Ixon.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs) (family : Option (Ix.Kernel.ConstRef Address))
-  (env : Ix.Kernel.Env Address),
-  Ix.Ixon.Admission.checkBytesIntrinsic limits cfg records blobs family = Except.ok env ↔
-    Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
-      ∃ constants,
-        Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-          Ix.Kernel.checkEnv cfg constants blobs family = Except.ok env -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Ixon.Verify.Admission.checkBytesIntrinsic_ok_iff
-
-/-- info: @Ix.Ixon.Verify.Admission.checkBytesIntrinsic_of_reading : ∀ {limits : Ix.Ixon.Admission.Limits}
-  {cfg : Ix.Kernel.Config} {records : Ix.Ixon.Admission.Records} {constants : Ix.Kernel.Ingress.Constants}
-  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)},
-  Ix.Ixon.Verify.Admission.WithinBatch limits records blobs →
-    Ix.Ixon.Verify.Admission.RecordsRead limits records constants →
-      Ix.Ixon.Admission.checkBytesIntrinsic limits cfg records blobs family =
-        Except.mapError Ix.Ixon.Admission.Error.kernel (Ix.Kernel.checkEnv cfg constants blobs family) -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Ixon.Verify.Admission.checkBytesIntrinsic_of_reading
-
-/-- info: @Ix.Ixon.Verify.Admission.checkBytesIntrinsic_reading : ∀ {limits : Ix.Ixon.Admission.Limits} {cfg : Ix.Kernel.Config}
-  {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)}
-  {env : Ix.Kernel.Env Address},
-  Ix.Ixon.Admission.checkBytesIntrinsic limits cfg records blobs family = Except.ok env →
-    Ix.Ixon.Verify.Admission.WithinBatch limits records blobs ∧
-      ∃ constants,
-        Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-          Ix.Kernel.Ingress.Installed constants blobs family none env -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Ixon.Verify.Admission.checkBytesIntrinsic_reading
-
-/-- info: Ix.Ixon.Verify.Admission.checkBytesIntrinsic_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.Model.SetTheory V]
-  {limits : Ix.Ixon.Admission.Limits} {cfg : Ix.Kernel.Config} {records : Ix.Ixon.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)} {env : Ix.Kernel.Env Address},
-  Ix.Ixon.Admission.checkBytesIntrinsic limits cfg records blobs family = Except.ok env →
-    Nonempty (Ix.Kernel.Model V env) -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Ixon.Verify.Admission.checkBytesIntrinsic_has_model
-
-/-- info: @Ix.Ixon.Verify.Admission.checkBytesIntrinsic_resources : ∀ {limits : Ix.Ixon.Admission.Limits} {cfg : Ix.Kernel.Config}
-  {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs} {family : Option (Ix.Kernel.ConstRef Address)}
-  {env : Ix.Kernel.Env Address},
-  Ix.Ixon.Admission.checkBytesIntrinsic limits cfg records blobs family = Except.ok env →
-    ∃ constants,
-      Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-        Ix.Kernel.Ingress.Installed constants blobs family none env ∧
-          Ix.Ixon.Verify.Admission.resourceUnits constants ≤
-            2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Ixon.Verify.Admission.checkBytesIntrinsic_resources
-
-/-- info: Additional byte-admission externs: []
----
-info: Additional byte-admission unsafe: [] -/
-#guard_msgs (whitespace := lax) in
-run_cmd do
-  let env ← Lean.getEnv
-  let before := Ix.Kernel.Audit.runtimeClosure env
-    (Ix.Kernel.Audit.ingressOperations ++ Ix.Ixon.Audit.operations)
-  let after := Ix.Kernel.Audit.runtimeClosure env Ix.Ixon.Admission.Audit.intrinsicOperations
-  Lean.logInfo m!"Additional byte-admission externs: {after.externs.filter (!before.externs.contains ·)}"
-  Lean.logInfo m!"Additional byte-admission unsafe: {after.unsafes.filter (!before.unsafes.contains ·)}"
 
 /- The certified entry adds ten Init externs beyond the codec, the reader and
 the fold: `ByteArray.mk` and `Array.pop`, used to load the committed pin

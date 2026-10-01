@@ -7,8 +7,9 @@ import Benchmarks.Kernel.ConLecheStep
 
 /-! # Con-leche census over a compiled Ixon environment (untrusted)
 
-The per-record counterpart of `Benchmarks.Kernel.Census` for con-leche's
-verified checker, read through the L4 Ixon reader
+The certified checker's census (the per-record counterpart of the intrinsic
+kernel's `Benchmarks.Kernel.Census`, retired at L6): con-leche's verified
+checker, read through the L4 Ixon reader
 (`Ix.Kernel.ConLecheReader`): every primary record of an `.ixe`, in
 dependency order (the Ixon prelude's records first), read into con-leche
 declarations and installed and checked one record at a time by the
