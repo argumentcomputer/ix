@@ -263,13 +263,18 @@ theorem run_runLir {cfg : Config} {P : Src.Program} {c : Cert} {a : Artifact} (h
   | ok t =>
     rw [ht] at h
     simp only [bind, Except.bind] at h
-    cases hb : Backend.finish t.xl.main t.stacked t.program t.exports t.provenance with
-    | error e => rw [hb] at h; cases h
-    | ok b =>
-      simp only [hb, Except.mapError, pure, Except.pure, Except.ok.injEq] at h
-      subst h
-      obtain ⟨f, hf, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := runTyped_runLir ht
-      exact ⟨f, hf, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩
+    cases hc : checkSymbols t.stacked.exports with
+    | error e => rw [hc] at h; cases h
+    | ok u =>
+      rw [hc] at h
+      simp only at h
+      cases hb : Backend.finish t.xl.main t.stacked t.program t.exports t.provenance with
+      | error e => rw [hb] at h; cases h
+      | ok b =>
+        simp only [hb, Except.mapError, pure, Except.pure, Except.ok.injEq] at h
+        subst h
+        obtain ⟨f, hf, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := runTyped_runLir ht
+        exact ⟨f, hf, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩
 
 theorem rootsOf_get {cfg : Config} {p : Src.Program} {C : Cfg.Program} {l : Rt.Lowered} :
     ∀ {rows : List (Nat × (Ixon.Address × Src.CId) × Fir.FunId × (Lir.FunId × String))} {i : Nat} {root : Root},

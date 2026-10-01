@@ -20,7 +20,8 @@ its proof excludes: `erase-univs`, `erase-unbox-elim`, `erase-pin`,
 validator's check names and so on; the compiler adds `rt.params` (a root
 with more parameters than the entry wrapper passes), `rt.dispatch` and
 `rt.pins` (the switch check `Rt.checkSwitches`: a default arm, mixed or
-indistinguishable keys, `Nat.zero` and `Nat.succ` on one key), `cli.*` (arguments and
+indistinguishable keys, `Nat.zero` and `Nat.succ` on one key), `stacking.symbols`
+(two exports sharing a symbol, `Recheck.checkSymbols`), `cli.*` (arguments and
 files) and `cert.*` (a certificate that does not parse). A decline is a
 program outside the Phase 1 fragment; a rejection is a certificate the
 recheck path does not accept. Neither ever produces code. -/

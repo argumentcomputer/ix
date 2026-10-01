@@ -1,0 +1,100 @@
+import Compilatrix.X86.Driver
+import Compilatrix.Rt.Readback
+import Compilatrix.Sem.Entry
+import Compilatrix.Sem.Transform
+
+/-!
+# The object's execution as a language
+
+`X86.Linked` is an ELF object with its roots, run as `runtime_driver.c`
+runs it (`X86.Driver`): on input `(r, ns)`,
+
+1. a `Nat` argument the driver cannot pass (2^64 or more) fails with
+   `natOverflow` (the wrapper's status 3 covers the rest above 2^63);
+2. `cx_init` is called by its symbol (`ObjectEval.call`) on the region,
+   its size and the stack budget, from the driver's first memory;
+3. root `r` is called by its symbol on the arguments' words, from the bytes
+   `cx_init` left, in the process's mapping;
+4. the returned word is read back at the root's type (`Rt.readback`, fuel
+   the region's size in words) over the part of the region Lir uses
+   (`Driver.lirView`), as `Rt.Loaded` observes it; a root without a type
+   observes nothing.
+
+A status from either call is its outcome (`statusResult`: 1–3 resource
+failures, 4 a trap). Roots are applied as at every level (`Sem.entryRun`):
+exactly their parameter count calls them; fewer arguments give a value
+with no observation; more call them on the first ones and are stuck.
+-/
+
+namespace Compilatrix.X86
+
+open Compilatrix.Sem (Result Obs Lang ClockMono)
+
+/-- A root of a linked object: its symbol, its parameter count and its
+readback signature and type (`none`: read back as nothing). -/
+structure Linked.Root where
+  symbol : String
+  params : Nat
+  ty : Option (Rt.Sig × Rt.FoTy)
+
+/-- An object with its roots, run by the driver. -/
+structure Linked where
+  object : ByteArray
+  /-- `cx_init`'s symbol. -/
+  init : String
+  roots : List Linked.Root
+  driver : Driver
+
+namespace Linked
+
+variable (L : Linked)
+
+/-- A returned word read back at a root's type. -/
+def observe (r : Root) (w : Word) (m : Memory) : Option Obs :=
+  match r.ty with
+  | some (sig, ty) => Rt.readback sig (L.driver.size.toNat / 8) (L.driver.lirView m) ty w
+  | none => none
+
+/-- `cx_init`'s call. -/
+def initCall (k : Nat) : Result (Word × Memory) :=
+  ObjectEval.call L.object L.init L.driver.base
+    (L.driver.core [L.driver.size, L.driver.budget] L.driver.initBytes) L.driver.flags k
+
+/-- A root's call on the arguments' words, from the bytes `bytes`. -/
+def rootCall (r : Root) (ns : List Nat) (bytes : Word → UInt8) (k : Nat) : Result (Word × Memory) :=
+  ObjectEval.call L.object r.symbol L.driver.base (L.driver.core (ns.map UInt64.ofNat) bytes) L.driver.flags k
+
+/-- A call of a root on exactly its arguments (see the module note). -/
+def call (r : Root) (ns : List Nat) (k : Nat) : Result (Option Obs) :=
+  if ns.all (· < 2 ^ 64) then
+    (L.initCall k).bind fun v => (L.rootCall r ns v.2.bytes k).map fun v' => L.observe r v'.1 v'.2
+  else .resource .natOverflow
+
+/-- A run of root `i.1` on the `Nat` inputs `i.2`, applied as at every level. -/
+def run (i : Nat × List Nat) (k : Nat) : Result (Option Obs) :=
+  match L.roots[i.1]? with
+  | some r => Sem.entryRun r.params none (L.call r) i.2 k
+  | none => .stuck
+
+theorem call_mono (r : Root) (ns : List Nat) : ClockMono (L.call r ns) := by
+  unfold call
+  split
+  · exact ClockMono.bind (ObjectEval.call_mono _ _ _ _ _) fun _ =>
+      ClockMono.bind (ObjectEval.call_mono _ _ _ _ _) fun _ => ClockMono.const _
+  · exact ClockMono.const _
+
+end Linked
+
+instance : Lang (Nat × List Nat) Linked where
+  Val := Option Obs
+  run := Linked.run
+  mono L i := by
+    unfold Linked.run
+    split
+    · exact Sem.entryRun_mono (fun ns => L.call_mono _ ns) _
+    · exact ClockMono.const _
+  obs := id
+
+theorem Linked.lang_run (L : Linked) (i : Nat × List Nat) : Lang.run L i = L.run i := rfl
+
+end Compilatrix.X86

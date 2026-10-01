@@ -148,6 +148,21 @@ def checkParams (cfg : Config) (C : Cfg.Program) : List (Nat × Fir.FunId) → E
                  the entry wrapper passes at most {maxParams}" }
     else checkParams cfg C rest
 
+/-- A symbol two exports share, if any (the first export's, in order). -/
+def sharedSymbol? : List Xv.Stacking.Export → Option String
+  | [] => none
+  | e :: rest => if rest.any (·.symbol == e.symbol) then some e.symbol else sharedSymbol? rest
+
+/-- Every export has its own symbol (M2.8). `Backend.finish` lists the
+further exports without the entry symbol, so an export sharing the entry's
+symbol would be dropped and its symbol would run `main`'s wrapper;
+`Rt.symbolOf` replaces characters, so distinct root names can share a
+symbol. Declined with `stacking.symbols`. -/
+def checkSymbols (exports : List Xv.Stacking.Export) : Except Err Unit :=
+  match sharedSymbol? exports with
+  | none => pure ()
+  | some s => .error { stage := .stacking, code := "stacking.symbols", message := s!"two exports share the symbol {s}" }
+
 /-! ## The passes -/
 
 /-- The front end on the certificate: the table, the annotation, `Lazify`. -/
@@ -252,9 +267,11 @@ def runTyped (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Typed := d
 
 /-- The recheck path (D17): the object `P` compiles to under certificate `c`,
 or the stage and code that declined or rejected it: `runTyped`, then
-`Backend.finish` (`Program.check`, E1/E2 and the ELF writer). -/
+`checkSymbols` (every export its own symbol) and `Backend.finish` (`Program.check`, E1/E2 and
+the ELF writer). -/
 def run (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Artifact := do
   let t ← runTyped cfg P c
+  checkSymbols t.stacked.exports
   let backend ← (Backend.finish t.xl.main t.stacked t.program t.exports t.provenance).mapError
     Err.ofBackend
   pure { src := t.src, checked := t.checked, lam := t.lam, anf := t.anf, fir := t.fir

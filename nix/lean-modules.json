@@ -1943,6 +1943,13 @@
    "imports": ["Compilatrix.X86.ObjectRun"]},
   "Compilatrix.X86.Memory":
   {"path": "Compilatrix/X86/Memory.lean", "imports": ["Compilatrix.X86.Eval"]},
+  "Compilatrix.X86.Linked":
+  {"path": "Compilatrix/X86/Linked.lean",
+   "imports":
+   ["Compilatrix.X86.Driver",
+    "Compilatrix.Rt.Readback",
+    "Compilatrix.Sem.Entry",
+    "Compilatrix.Sem.Transform"]},
   "Compilatrix.X86.Layout.Tunnel":
   {"path": "Compilatrix/X86/Layout/Tunnel.lean",
    "imports": ["Compilatrix.X86.Layout.Basic", "Compilatrix.X86.Eval"]},
@@ -2064,6 +2071,9 @@
   "Compilatrix.X86.ELF":
   {"path": "Compilatrix/X86/ELF.lean",
    "imports": ["Compilatrix.X86.Encode", "Compilatrix.Ixon.Address"]},
+  "Compilatrix.X86.Driver":
+  {"path": "Compilatrix/X86/Driver.lean",
+   "imports": ["Compilatrix.X86.ObjectCall"]},
   "Compilatrix.X86.DecodeWindow":
   {"path": "Compilatrix/X86/DecodeWindow.lean",
    "imports": ["Compilatrix.X86.Decode"]},
@@ -2333,9 +2343,18 @@
   "Compilatrix.Rt.Proof.StepEdge":
   {"path": "Compilatrix/Rt/Proof/StepEdge.lean",
    "imports": ["Compilatrix.Rt.Proof.StepInstr"]},
+  "Compilatrix.Rt.Proof.Roots":
+  {"path": "Compilatrix/Rt/Proof/Roots.lean",
+   "imports":
+   ["Compilatrix.Rt.Proof.Program",
+    "Compilatrix.Rt.Proof.LayoutFun",
+    "Compilatrix.Rt.Proof.Publish"]},
   "Compilatrix.Rt.Proof.Rel":
   {"path": "Compilatrix/Rt/Proof/Rel.lean",
    "imports": ["Compilatrix.Rt.Proof.LayoutFun", "Compilatrix.Cfg.Semantics"]},
+  "Compilatrix.Rt.Proof.ReadbackCongr":
+  {"path": "Compilatrix/Rt/Proof/ReadbackCongr.lean",
+   "imports": ["Compilatrix.Rt.Readback", "Compilatrix.Rt.Proof.Mem"]},
   "Compilatrix.Rt.Proof.Readback":
   {"path": "Compilatrix/Rt/Proof/Readback.lean",
    "imports": ["Compilatrix.Rt.Proof.Heap", "Compilatrix.Rt.Readback"]},
@@ -2487,6 +2506,14 @@
   "Compilatrix.Recheck.Proof.Sound":
   {"path": "Compilatrix/Recheck/Proof/Sound.lean",
    "imports": ["Compilatrix.Recheck.Proof.Front"]},
+  "Compilatrix.Recheck.Proof.Parts":
+  {"path": "Compilatrix/Recheck/Proof/Parts.lean",
+   "imports":
+   ["Compilatrix.Recheck.Proof.Front",
+    "Compilatrix.Recheck.Linked",
+    "Compilatrix.Backend.Proof.Exports",
+    "Compilatrix.Backend.Proof.Funcs",
+    "Compilatrix.Rt.Proof.Roots"]},
   "Compilatrix.Recheck.Proof.Front":
   {"path": "Compilatrix/Recheck/Proof/Front.lean",
    "imports":
@@ -2510,6 +2537,9 @@
     "Compilatrix.Xv.Alloc.Driver",
     "Compilatrix.Xv.Stacking.Run",
     "Compilatrix.X86.Layout.Tunnel"]},
+  "Compilatrix.Recheck.Linked":
+  {"path": "Compilatrix/Recheck/Linked.lean",
+   "imports": ["Compilatrix.Recheck.Run", "Compilatrix.X86.Linked"]},
   "Compilatrix.Recheck.Json":
   {"path": "Compilatrix/Recheck/Json.lean",
    "imports":
@@ -3142,6 +3172,9 @@
     "Compilatrix.Backend.Proof.Emit",
     "Compilatrix.X86.ObjectRunSafe",
     "Compilatrix.Sem.TracedSim"]},
+  "Compilatrix.Backend.Proof.Funcs":
+  {"path": "Compilatrix/Backend/Proof/Funcs.lean",
+   "imports": ["Compilatrix.Backend.Proof.Retarget"]},
   "Compilatrix.Backend.Proof.Exports":
   {"path": "Compilatrix/Backend/Proof/Exports.lean",
    "imports":
@@ -3159,6 +3192,13 @@
   "Compilatrix.Backend.Proof.Emit":
   {"path": "Compilatrix/Backend/Proof/Emit.lean",
    "imports": ["Compilatrix.Backend"]},
+  "Compilatrix.Backend.Proof.Driver":
+  {"path": "Compilatrix/Backend/Proof/Driver.lean",
+   "imports":
+   ["Compilatrix.X86.Driver",
+    "Compilatrix.Backend.Proof.Ends",
+    "Compilatrix.Rt.Proof.CxInit",
+    "Compilatrix.Rt.Proof.Mem"]},
   "Compilatrix.Backend":
   {"path": "Compilatrix/Backend.lean",
    "imports":
