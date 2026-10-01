@@ -309,6 +309,26 @@ def constantInfoRoots : Ixon.ConstantInfo → Array Ixon.Expr
   | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => #[]
   | .muts ms => (ms.toList.flatMap mutConstRoots).toArray
 
+/-- Apply `f` to every root of a mutual member, in `mutConstRoots` order. -/
+def mapMutConstRoots (f : Ixon.Expr → Ixon.Expr) : Ixon.MutConst → Ixon.MutConst
+  | .defn d => .defn { d with typ := f d.typ, value := f d.value }
+  | .indc i => .indc { i with typ := f i.typ, ctors := i.ctors.map fun c => { c with typ := f c.typ } }
+  | .recr r => .recr { r with typ := f r.typ, rules := r.rules.map fun rl => { rl with rhs := f rl.rhs } }
+
+/-- Apply `f` to every root of a `ConstantInfo`, in `constantInfoRoots` order,
+leaving every other field unchanged (a pure, total form of
+`withRoots info ((constantInfoRoots info).map f)`). -/
+def mapRoots (f : Ixon.Expr → Ixon.Expr) : Ixon.ConstantInfo → Ixon.ConstantInfo
+  | .defn d => .defn { d with typ := f d.typ, value := f d.value }
+  | .recr r => .recr { r with typ := f r.typ, rules := r.rules.map fun rl => { rl with rhs := f rl.rhs } }
+  | .axio a => .axio { a with typ := f a.typ }
+  | .quot q => .quot { q with typ := f q.typ }
+  | .cPrj p => .cPrj p
+  | .rPrj p => .rPrj p
+  | .iPrj p => .iPrj p
+  | .dPrj p => .dPrj p
+  | .muts ms => .muts (ms.map (mapMutConstRoots f))
+
 private def takeRoot : List Ixon.Expr → Except SharingError (Ixon.Expr × List Ixon.Expr)
   | e :: rest => .ok (e, rest)
   | [] => .error (.internal "root cursor underflow")

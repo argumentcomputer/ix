@@ -71,9 +71,7 @@ def allocationTests (_ : Unit) : TestSeq :=
           checked := checked + 1
           if r.stats.finalRefCost < r.stats.phase1RefCost then changed := changed + 1
           if r.stats.savings > 0 then saved := saved + 1
-          let fixedOk := match fixedConstantBytes c with
-            | .ok fx => cbytes n == fx + r.result.variableBytes
-            | .error _ => false
+          let fixedOk := cbytes n == fixedConstantBytes c + r.result.variableBytes
           let idem := (normalizeConstantSharingTiered l n).toOption.map serConstant ==
             some (serConstant n)
           unless r.stats.phase3LayoutBytes ≤ r.stats.phase1LayoutBytes &&

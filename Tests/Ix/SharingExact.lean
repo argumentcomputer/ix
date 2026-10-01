@@ -324,11 +324,8 @@ def tableConstant (info : ConstantInfo) (k : Nat) : Constant :=
     univs := testUnivs }
 
 def decompositionHolds (c : Constant) : Bool :=
-  match fixedConstantBytes c with
-  | .ok fixed =>
-    cbytes c == fixed + exprsSize (constantInfoRoots c.info) + tag0Size c.sharing.size +
-      exprsSize c.sharing
-  | .error _ => false
+  cbytes c == fixedConstantBytes c + exprsSize (constantInfoRoots c.info) +
+    tag0Size c.sharing.size + exprsSize c.sharing
 
 def decompositionTests (_ : Unit) : TestSeq :=
   let mkRoots (k : Nat) (n : Nat) : Array Ixon.Expr :=
@@ -485,6 +482,10 @@ def rootApiTests (_ : Unit) : TestSeq :=
         match withRoots i rs with
         | .ok i' => constantInfoRoots i' == rs && (withRoots i' (constantInfoRoots i)).toOption == some i
         | .error _ => false) ++
+    test "mapRoots f info = withRoots info ((constantInfoRoots info).map f) on every kind"
+      (sampleInfos.all fun i =>
+        let g := fun r => Ixon.Expr.app r (.var 98)
+        (withRoots i ((constantInfoRoots i).map g)).toOption == some (mapRoots g i)) ++
     test "withRoots rejects one root too many / too few"
       (sampleInfos.all fun i =>
         let rs := constantInfoRoots i
@@ -912,9 +913,8 @@ def propertyTests (_ : Unit) : TestSeq :=
           | .ok .canonical => serConstant heur == serConstant n
           | .ok (.noncanonical exp) => exp == serConstant n
           | .error _ => false
-        let fixedOk := match fixedConstantBytes c with
-          | .ok f => cbytes n == f + r.variableBytes && cbytes c == f + r.unsharedBytes
-          | .error _ => false
+        let f := fixedConstantBytes c
+        let fixedOk := cbytes n == f + r.variableBytes && cbytes c == f + r.unsharedBytes
         let expandsBack := (expandConstantSharing n).toOption.map (fun e => constantInfoRoots e.info) ==
           some (constantInfoRoots c.info)
         unless cbytes n ≤ cbytes c && cbytes n ≤ cbytes heur && idem && fromHeur &&
