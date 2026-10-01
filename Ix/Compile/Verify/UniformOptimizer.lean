@@ -265,18 +265,18 @@ theorem optimizeUniform_parts {w : Nat} {limits : Limits} {ex : Expanded}
         | true =>
           cases hm : (reachMarks ex.dag.nodes ex.roots).all id with
           | false =>
-            simp only [hw, hcp, har, hr, hm, Bool.false_eq_true, if_false, if_true,
-              Bool.not_true, Bool.not_false, ↓reduceIte] at h
+            simp only [hw, hcp, har, hr, hm, Bool.false_eq_true,
+              ↓reduceIte] at h
             cases h
           | true =>
             simp only [hw, hcp, har, hr, hm, Bool.false_eq_true, if_false, if_true] at h
             cases hs : (List.range ex.dag.size).all
                 (fun t => (Prep.ofDag ex.dag).spineLen[t]! < teleSubaddEnd) with
             | false =>
-              simp only [hs, Bool.false_eq_true, Bool.not_false, ↓reduceIte] at h
+              simp only [hs, Bool.false_eq_true, ↓reduceIte] at h
               cases h
             | true =>
-              simp only [hs, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+              simp only [hs, ↓reduceIte] at h
               obtain ⟨c, hc, h⟩ := bind_eq_ok h
               refine ⟨by simpa using hw, dagWF_of_checks hcp har, fun r hrm => ?_, rfl,
                 fun t ht => ?_, c, hc, h⟩

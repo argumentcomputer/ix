@@ -123,7 +123,7 @@ theorem PrepWF.spine_count {p : Prep} (hp : PrepWF p) {x j t : Nat} (hx : x < p.
   rw [List.count_eq_length_filter, filter_length_eq_sum, List.map_map]
   have hfun : ((fun i => if (i == t) = true then 1 else 0) ∘ spineAt p x) =
       fun k => if spineAt p x k = t then 1 else 0 := by
-    funext k; simp [Function.comp_def]
+    funext k; simp
   rw [hfun, sum_indicator_unique (fun k => spineAt p x k = t) j huniq]
   by_cases hxt : x = t
   · subst hxt
@@ -199,7 +199,7 @@ theorem PrepWF.count_written {p : Prep} (hp : PrepWF p) {S : Nat → Bool} (t : 
       simp [WTree.occH, WTree.occC, hp.spineHit_self hx hf (Nat.le_of_lt hj)]
     · simp only [WTree.occH, WTree.occC, hxt, if_false, occHs_eq, occCs_eq, Nat.zero_add]
       rw [List.map_congr_left (fun T hT => (hside T hT).1), sum_map_add']
-      simp [WTree.occH, WTree.occC]
+      simp
       omega
   | @teleFull x sides tail hf hlen hsides htail ih iht =>
     intro hx
@@ -586,8 +586,8 @@ theorem modify_addc_getElem! (acc : Array Nat) (c t a : Nat) :
   by_cases hct : c = t
   · subst hct
     by_cases hc : c < acc.size
-    · simp [hc, Array.getElem?_eq_getElem hc]
-    · simp [hc, Array.getElem?_eq_none (by omega : acc.size ≤ c)]
+    · simp [hc]
+    · simp [hc]
   · simp [hct]
 
 /-- The weight of a parent in `visibleCounts`. -/
@@ -817,7 +817,7 @@ theorem int_mul_le_mul_left' {a b c : _root_.Int} (hab : a ≤ b) (hc : 0 ≤ c)
 /-- Non-telescope: `(d-1)·i⁻ - d·w ≤ H·max(I-w, 0) - I` when `1 ≤ d ≤ H`,
 `i⁻ ≤ I`. -/
 theorem gain_alg_node (d H I iLB w Ah : _root_.Int) (hd1 : 1 ≤ d) (hdH : d ≤ H) (hiLB : iLB ≤ I)
-    (hw : 0 ≤ w) (hA : (w ≤ I ∧ Ah = I - w) ∨ (I < w ∧ Ah = 0)) :
+    (_hw : 0 ≤ w) (hA : (w ≤ I ∧ Ah = I - w) ∨ (I < w ∧ Ah = 0)) :
     (d - 1) * iLB - d * w ≤ H * Ah - I := by
   have e1 := int_mul_le_mul_left' hiLB (show (0 : _root_.Int) ≤ d - 1 by omega)
   rcases hA with ⟨hwI, rfl⟩ | ⟨hIw, rfl⟩
@@ -825,7 +825,7 @@ theorem gain_alg_node (d H I iLB w Ah : _root_.Int) (hd1 : 1 ≤ d) (hdH : d ≤
     simp only [_root_.Int.sub_mul, _root_.Int.mul_sub, _root_.Int.one_mul] at e1 e2 ⊢
     omega
   · have e2 := int_mul_le_mul_left' (show I ≤ w by omega) (show (0 : _root_.Int) ≤ d - 1 by omega)
-    simp only [_root_.Int.sub_mul, _root_.Int.mul_sub, _root_.Int.one_mul,
+    simp only [_root_.Int.sub_mul, _root_.Int.one_mul,
       _root_.Int.mul_zero] at e1 e2 ⊢
     omega
 
@@ -833,8 +833,8 @@ theorem gain_alg_node (d H I iLB w Ah : _root_.Int) (hd1 : 1 ≤ d) (hdH : d ≤
 `(d-1)·b + (h-1) - d·w ≤ H·max(I-w, 0) + C·max(M-w, 0) - I` when
 `1 ≤ h ≤ H`, `h ≤ d ≤ H + C`, `b ≤ M`, `1 + M ≤ I`. -/
 theorem gain_alg_head (d h H C I M mLB w Ah Ac : _root_.Int) (hh1 : 1 ≤ h) (hhd : h ≤ d)
-    (hhH : h ≤ H) (hdHC : d ≤ H + C) (hC0 : 0 ≤ C) (hmLB : mLB ≤ M) (hMI : 1 + M ≤ I)
-    (hw : 0 ≤ w) (hAh : (w ≤ I ∧ Ah = I - w) ∨ (I < w ∧ Ah = 0))
+    (hhH : h ≤ H) (hdHC : d ≤ H + C) (_hC0 : 0 ≤ C) (hmLB : mLB ≤ M) (hMI : 1 + M ≤ I)
+    (_hw : 0 ≤ w) (hAh : (w ≤ I ∧ Ah = I - w) ∨ (I < w ∧ Ah = 0))
     (hAc : (w ≤ M ∧ Ac = M - w) ∨ (M < w ∧ Ac = 0)) :
     (d - 1) * mLB + (h - 1) - d * w ≤ H * Ah + C * Ac - I := by
   have e1 := int_mul_le_mul_left' hmLB (show (0 : _root_.Int) ≤ d - 1 by omega)
@@ -863,8 +863,8 @@ theorem gain_alg_head (d h H C I M mLB w Ah Ac : _root_.Int) (hh1 : 1 ≤ h) (hh
 `(d-1)·b - T - d·w ≤ H·max(I-w, 0) + C·max(M-w, 0) - I` when
 `1 ≤ d ≤ H + C`, `b ≤ M`, `1 + M ≤ I ≤ T + M`. -/
 theorem gain_alg_cont (d H C I M mLB T w Ah Ac : _root_.Int) (hd1 : 1 ≤ d) (hdHC : d ≤ H + C)
-    (hH0 : 0 ≤ H) (hC0 : 0 ≤ C) (hmLB : mLB ≤ M) (hMI : 1 + M ≤ I) (hIT : I ≤ T + M)
-    (hw : 0 ≤ w) (hAh : (w ≤ I ∧ Ah = I - w) ∨ (I < w ∧ Ah = 0))
+    (hH0 : 0 ≤ H) (_hC0 : 0 ≤ C) (hmLB : mLB ≤ M) (hMI : 1 + M ≤ I) (hIT : I ≤ T + M)
+    (_hw : 0 ≤ w) (hAh : (w ≤ I ∧ Ah = I - w) ∨ (I < w ∧ Ah = 0))
     (hAc : (w ≤ M ∧ Ac = M - w) ∨ (M < w ∧ Ac = 0)) :
     (d - 1) * mLB - T - d * w ≤ H * Ah + C * Ac - I := by
   have e1 := int_mul_le_mul_left' hmLB (show (0 : _root_.Int) ≤ d - 1 by omega)
@@ -872,8 +872,8 @@ theorem gain_alg_cont (d H C I M mLB T w Ah Ac : _root_.Int) (hd1 : 1 ≤ d) (hd
   · rcases hAh with ⟨_, rfl⟩ | ⟨hIw, _⟩
     · have e2 := int_mul_le_mul_left' (show M - w ≤ I - w by omega) hH0
       have e3 := int_mul_le_mul_right' hdHC (show (0 : _root_.Int) ≤ M - w by omega)
-      simp only [_root_.Int.sub_mul, _root_.Int.mul_sub, _root_.Int.one_mul, _root_.Int.add_mul,
-        _root_.Int.mul_one] at e1 e2 e3 ⊢
+      simp only [_root_.Int.sub_mul, _root_.Int.mul_sub, _root_.Int.one_mul,
+        _root_.Int.add_mul] at e1 e2 e3 ⊢
       omega
     · omega
   · have e2 := int_mul_le_mul_left' (show mLB ≤ w - 1 by omega) (show (0 : _root_.Int) ≤ d - 1 by omega)
@@ -1311,7 +1311,7 @@ theorem stored_in_minimum {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
 `tag0Size |C| = tag0Size |G|`, then for a minimum `X` and `t ∈ C \ X`,
 `|X|` and `|X| + 1` share a bracket. -/
 theorem same_bracket {X G C : List Nat} (hGX : ∀ g ∈ G, g ∈ X) (hXC : ∀ x ∈ X, x ∈ C)
-    (hG : G.Nodup) (hX : X.Nodup) (hC : C.Nodup) {t : Nat} (htC : t ∈ C) (htX : t ∉ X)
+    (hG : G.Nodup) (hX : X.Nodup) (_hC : C.Nodup) {t : Nat} (htC : t ∈ C) (htX : t ∉ X)
     (hbr : tag0Size C.length = tag0Size G.length) :
     tag0Size (X.length + 1) = tag0Size X.length := by
   have h1 : G.length ≤ X.length := List.Nodup.length_le_of_subset hG hGX
@@ -1442,7 +1442,7 @@ theorem unshares_eq (p : Prep) (t : Nat) (W : WTree) (l : List WTree) :
   | nil => rfl
   | cons k ks ih => simp [WTree.unshares, ih]
 
-theorem sum_ineq2 {α : Type} (f g c d : α → Nat) (A B : Nat) :
+theorem sum_ineq2 {α : Type} (f g c _d : α → Nat) (A B : Nat) :
     ∀ (l : List α), (∀ a ∈ l, f a + g a * A ≤ c a + g a * B) →
       (l.map f).sum + (l.map g).sum * A ≤ (l.map c).sum + (l.map g).sum * B := by
   intro l h
@@ -1488,8 +1488,7 @@ theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (hsp : SpinesFit p) (w : 
     · subst hxt
       simp only [WTree.unshare, if_true, WTree.shares, count_singleton', WTree.cost]
       refine ⟨hW, fun h => by simp [WTree.isShare] at h, by omega⟩
-    · simp only [WTree.unshare, hxt, if_false, WTree.shares, count_singleton', WTree.isShare,
-        WTree.label]
+    · simp only [WTree.unshare, hxt, if_false, WTree.shares, count_singleton', WTree.isShare]
       refine ⟨.share ((hA' x).mpr ⟨hS, hxt⟩), fun h => by simp at h, by omega⟩
   | @node x kids hf hlen hkids ih =>
     intro hx
@@ -1501,7 +1500,7 @@ theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (hsp : SpinesFit p) (w : 
       have hc := hp.dag.childAt_lt hx (k := i) (by omega)
       obtain ⟨h1, _, h3⟩ := ih i hi (by omega)
       exact ⟨h1, h3⟩
-    simp only [WTree.unshare, unshares_eq, WTree.isShare, Bool.false_and]
+    simp only [WTree.unshare, unshares_eq, WTree.isShare]
     refine ⟨.node hf (by simp [hlen]) fun i hi => by
       simp only [List.getElem_map]
       exact (hk i (by simpa using hi)).1, fun _ => trivial, ?_⟩
@@ -1593,7 +1592,7 @@ theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (hsp : SpinesFit p) (w : 
         rw [hlenx]
         exact .teleFull hf (by rw [hlenL, hlenx]) hsidesV (by rw [← httail]; exact htl')
     · rw [if_neg (fun h => hut h.1)]
-      simp only [WTree.unshare, hut, if_false]
+      simp only [hut, if_false]
       refine ⟨.teleCut hf hj1 hj (by simp [hlen]) hL1 ((hA' _).mpr ⟨hS, hut⟩), fun _ => rfl, ?_⟩
       simp only [WTree.cost, WTree.costs_eq, List.map_map, Function.comp_def, WTree.shares,
         sharess_count, List.count_append, count_singleton', hut, if_false, Nat.add_zero]
@@ -1918,7 +1917,7 @@ theorem base_eq_uInl {dag : Dag} (hwf : DagWF dag) (w : Nat) {t : Nat} (ht : t <
     (by simp [ofDag_dag]) (Array.replicate dag.size true)
     (fun t ht => by
       rw [ofDag_dag] at ht
-      simp [getElem!_def, Array.getElem?_replicate, ht])
+      simp [ht])
     t (by rw [ofDag_dag]; exact ht)
   have hb : (Prep.ofDag dag).base = (evalFrom (Prep.ofDag dag).dag (Prep.ofDag dag).family
       (Prep.ofDag dag).spineLen (Prep.ofDag dag).tail
@@ -1988,7 +1987,7 @@ theorem excluded_of_minimum {dag : Dag} (hwf : DagWF dag) (hsp : SpinesFit (Prep
     _root_.Int.ofNat_lt.mpr hce
   simp only [_root_.Int.natCast_add, _root_.Int.natCast_mul] at h1'
   rw [_root_.Int.natCast_mul, _root_.Int.natCast_mul, _root_.Int.ofNat_sub (by omega)] at hce'
-  simp only [_root_.Int.sub_mul, _root_.Int.mul_sub, _root_.Int.one_mul, _root_.Int.mul_one,
+  simp only [_root_.Int.sub_mul, _root_.Int.mul_sub, _root_.Int.one_mul,
     _root_.Int.natCast_one] at e1 e2 hce'
   rw [_root_.Int.mul_comm (Rf : _root_.Int) (I : _root_.Int)] at e1 h1'
   omega
@@ -2026,7 +2025,7 @@ theorem gain_d_pos {p : Prep} {b : UBounds} {w t d h : Nat} (hhd : h ≤ d)
 
 theorem getElem!_range_map {α : Type} [Inhabited α] (f : Nat → α) {n t : Nat} (ht : t < n) :
     ((Array.range n).map f)[t]! = f t := by
-  simp [getElem!_def, ht]
+  simp [ht]
 
 /-- Every minimum stores only search candidates. -/
 theorem minimum_in_candidates {dag : Dag} (hwf : DagWF dag) (hsp : SpinesFit (Prep.ofDag dag))

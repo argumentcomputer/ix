@@ -516,7 +516,7 @@ theorem Valid.leaves_avail {p : Prep} {S : Nat → Bool} {x : Nat} {T : WTree}
     rcases hy with hy | hy
     · obtain ⟨i, hi, hyi⟩ := mem_leavesL_iff.mp hy
       exact ih i hi y hyi
-    · simp [WTree.leaves] at hy; subst hy; exact hS
+    · simp at hy; subst hy; exact hS
   | teleFull _ _ _ _ ih iht =>
     intro y hy
     simp only [WTree.leaves, List.mem_append] at hy
@@ -628,7 +628,7 @@ theorem sum_count (N : Nat) (g : Nat → Nat) :
       simp only [List.getElem_map, List.getElem_range, List.getElem_zipWith, List.count_cons]
       by_cases hai : a = i
       · subst hai; simp [Nat.add_mul]
-      · simp [hai, Ne.symm hai]
+      · simp [hai]
     have hsplit : ∀ (l1 l2 : List Nat), l1.length = l2.length →
         (List.zipWith (· + ·) l1 l2).sum = l1.sum + l2.sum := by
       intro l1

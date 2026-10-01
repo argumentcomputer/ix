@@ -67,8 +67,8 @@ theorem markTable_spec (n : Nat) (ts : Array Nat) (x : Nat) :
     constructor
     · intro hx
       by_cases hxn : x < n
-      · simp [getElem!_def, hxn] at hx
-      · simp [getElem!_def, hxn] at hx
+      · simp [hxn] at hx
+      · simp [hxn] at hx
     · rintro ⟨h1, h2⟩; exact absurd h2 (h h1)
 
 theorem sepLabels_spec (n : Nat) (members g inRed outRed : Array Nat) (x : Nat) :
@@ -85,9 +85,9 @@ theorem sepLabels_spec (n : Nat) (members g inRed outRed : Array Nat) (x : Nat) 
   by_cases hxn : x < n
   · by_cases hio : x ∈ inRed ∨ x ∉ outRed <;> by_cases hi : x ∈ inRed <;> by_cases ho : x ∈ outRed <;>
       by_cases hg : x ∈ g <;> by_cases hm : x ∈ members <;>
-      simp_all [getElem!_def]
+      simp_all
   · have : ¬ x < (Array.replicate n (none : Option Nat)).size := by simpa using hxn
-    simp [hxn, getElem!_def]
+    simp [hxn]
     rfl
 
 /-! ## Paths and descendants -/
@@ -335,7 +335,7 @@ theorem sepCheck_spec {cx : SCtx} (hwf : DagWF cx.up.prep.dag)
   have hga : ∀ t ∈ g, t ∈ cx.members ∧ t < dag.size ∧ t ∉ inRed ∧ t ∉ outRed := by
     intro t ht
     have := hg t ht
-    simp only [Bool.and_eq_true, beq_iff_eq] at this
+    simp only [beq_iff_eq] at this
     obtain ⟨h1, h2⟩ := this
     rw [markTable_spec] at h1
     rw [sepLabels_spec] at h2
@@ -418,7 +418,7 @@ theorem widthFold_size (w : Nat) (avail : Nat → Bool) :
   | [], _ => rfl
   | t :: l, a => by
     rw [List.foldl_cons, widthFold_size w avail l]
-    split <;> simp [size_setBang]
+    split <;> simp
 
 theorem widthFold_spec (w : Nat) (avail : Nat → Bool) :
     ∀ (l : List Nat) (a : Array (Option Nat)) (u : Nat),
@@ -428,15 +428,15 @@ theorem widthFold_spec (w : Nat) (avail : Nat → Bool) :
   | t :: l, a, u => by
     rw [List.foldl_cons, widthFold_spec w avail l]
     have hsz : (if avail t = true then a.set! t (some w) else a).size = a.size := by
-      split <;> simp [size_setBang]
+      split <;> simp
     rw [hsz]
     by_cases hut : u = t
     · subst hut
       by_cases hav : avail u = true
       · simp only [hav, if_true, widthOf_eq]
         by_cases hu : u < a.size
-        · simp [hu, setBang_getElem!_self _ _ hu]
-        · simp [hu, setBang_getElem!, getElem!_def]
+        · simp [hu]
+        · simp [hu]
       · simp [hav]
     · have hw : widthOf (if avail t = true then a.set! t (some w) else a) u = widthOf a u := by
         split
@@ -623,7 +623,7 @@ theorem entry_inl {dag : Dag} (hwf : DagWF dag) {w : Nat} {A : Nat → Bool}
 
 theorem replicate_getBang {α : Type} [Inhabited α] {n t : Nat} {v : α} (ht : t < n) :
     (Array.replicate n v)[t]! = v := by
-  simp [getElem!_def, ht]
+  simp [ht]
 
 /-- The evaluation of a component with `avail` available: the model rows of
 `compAvail` at every term. -/
@@ -722,7 +722,7 @@ theorem phiE_spec {cx : SCtx} {dag : Dag} (hwf : DagWF dag) (hprep : cx.up.prep 
     by_cases hr : r < dag.size
     · exact (hrows r hr).1
     · rw [uCost_of_ge _ _ _ (by simp only [ofDag_dag]; omega)]
-      simp [getElem!_def, show ¬ r < ev.cost.size by omega]
+      simp [show ¬ r < ev.cost.size by omega]
   have hent : ∀ x, x < dag.size →
       (evalStep (Prep.ofDag dag).dag (Prep.ofDag dag).family (Prep.ofDag dag).spineLen
         (Prep.ofDag dag).tail (width.set! x none) (Array.replicate dag.size true) ev x).cost[x]! =

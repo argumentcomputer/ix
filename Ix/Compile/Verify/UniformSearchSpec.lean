@@ -174,9 +174,9 @@ theorem Env.delta_shift {E : Env} (hE : E.WF) {h Ih Oh : Array Nat} (hctx : E.Gr
   let D := B.filter (fun t => decide (t ∉ Ih.toList))
   have hperm : B.Perm (Ih.toList ++ D) := by
     apply (List.perm_ext_iff_of_nodup hBn (nodup_app hIn (List.Nodup.sublist List.filter_sublist hBn)
-      (fun x hx hxD => by simp only [D, List.mem_filter, decide_eq_true_eq] at hxD; exact hxD.2 hx))).mpr
+      (fun x hx hxD => by simp only [List.mem_filter, decide_eq_true_eq] at hxD; exact hxD.2 hx))).mpr
     intro t
-    simp only [List.mem_append, D, List.mem_filter, decide_eq_true_eq]
+    simp only [List.mem_append, List.mem_filter, decide_eq_true_eq]
     constructor
     · intro ht
       by_cases hti : t ∈ Ih.toList
@@ -424,7 +424,7 @@ theorem Env.specs_zero (E : Env) (limits : Limits) :
 
 theorem empty_tabOK (E : Env) (g I : List Nat) : E.TabOK g I #[] := by
   intro k e he
-  simp [getElem!_def] at he
+  simp at he
 
 theorem Env.solveBody_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
     (hnode : E.NodePSpec limits fuel) : E.SolveBodySpec limits (fuel + 1) := by
@@ -462,7 +462,7 @@ theorem Env.solveBody_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
     exact hcov Y (by simpa using hY)
   exact ⟨hmemo', trim_entries htab _, E.covers_trim hE hctx htab hcov'⟩
 
-theorem Env.solveP_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
+theorem Env.solveP_step {E : Env} (_hE : E.WF) {limits : Limits} {fuel : Nat}
     (hbody : E.SolveBodySpec limits fuel) : E.SolvePSpec limits (fuel + 1) := by
   intro g inAll outAll st tb st' h hinM houtM hio hmemo
   rw [SCtx.solveP] at h
@@ -809,7 +809,7 @@ theorem Env.nodeP_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
     apply (List.perm_ext_iff_of_nodup (List.Nodup.sublist List.filter_sublist hgn)
       (List.Nodup.sublist (List.Sublist.append_left List.filter_sublist _) hLUn)).mpr
     intro x
-    simp only [partOf, List.mem_append, List.mem_filter, decide_eq_true_eq]
+    simp only [List.mem_append, List.mem_filter, decide_eq_true_eq]
     constructor
     · rintro ⟨hxg, hxY⟩
       rcases hcov' x hxg with h | h | h
