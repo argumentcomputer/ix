@@ -37,10 +37,11 @@ private partial def closure (env : Environment) (pending : List Name)
     | some info => closure env ((directConstants info).toList ++ rest) (seen.insert name)
     | none => closure env rest (seen.insert name)
 
-/-- The audited roots: the instances' existence theorems for both
-interfaces, and the certified checker's consistency in `ZFSet`. -/
+/-- The audited roots: the instance's existence theorem and the certified
+checker's consistency in `ZFSet`. (`carneiro_implies_ix`, the instance of
+the intrinsic kernel's interface, was retired with that kernel at L6.) -/
 def roots : List Name :=
-  [``carneiro_implies_ix, ``carneiro_implies_conleche, ``checkBytes_has_ZFSet_model,
+  [``carneiro_implies_conleche, ``checkBytes_has_ZFSet_model,
     ``checkBytes_no_proof_of_False]
 
 run_cmd do

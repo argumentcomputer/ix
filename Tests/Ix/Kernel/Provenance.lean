@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Tests.Ix.Kernel.ImportManifest
 
-/-! # Provenance gate for the ported model and the `ConLeche` subtree
+/-! # Provenance gate for `Ix/Kernel`, the pure Ixon boundary and the `ConLeche` subtree
 
 Checks, against `Tests.Ix.Kernel.ImportManifest`:
 

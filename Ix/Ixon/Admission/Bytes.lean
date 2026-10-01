@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Ixon.Canonical
-import Ix.Kernel.Ingress.Reading
+import Ix.Kernel.Ingress.Records
 
 /-! # The byte stage of admission
 

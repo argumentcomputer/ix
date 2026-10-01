@@ -3,11 +3,10 @@ Ix.Kernel notices
 
 Copyright (c) 2026 Argument Computer Corporation
 
-The model and the certified constructions under Ix/Kernel were ported from
-the jcb/ix-kernel-consistency branch of the Ix repository (revision
-ad60e5f6dd23655da79cf9898d2b6b3fefbe8658, directory Ix/Theory). There they
-were authored in the Lean4Ix working tree, and Lean4Ix is based on
-lean4lean:
+Ix/Kernel/Ref.lean was ported from the jcb/ix-kernel-consistency branch of
+the Ix repository (revision ad60e5f6dd23655da79cf9898d2b6b3fefbe8658,
+directory Ix/Theory). There it was authored in the Lean4Ix working tree,
+and Lean4Ix is based on lean4lean:
 
   https://github.com/digama0/lean4lean
 
@@ -17,9 +16,19 @@ modification-notice requirements continue to apply. The repository history
 and retained per-file notices provide the detailed provenance of those
 portions.
 
-The executable kernel model is itself derived from the Lean 4 kernel. In the
-Lean4Ix tree, certain files also identify more specific Apache-2.0 sources in
-their headers; none of these files is part of this repository:
+The rest of that port, the intrinsic kernel's model and certified
+constructions, was retired on 2026-10-01 (step L6 of
+plans/ix-kernel-con-leche-port-v4.md). It included Ix/Kernel/Model/SetTheory
+and Ix/Kernel/Model/SetModel, a port of the con-leche set-theoretic
+foundation received under the Apache License, Version 2.0, from
+https://github.com/leanprover/con-leche at revision
+86cd20a65660d757cedc81561a44579099b565d0. The repository history retains
+those files and their notices. The certified checker now uses con-leche's
+own set theory under ConLeche/, which carries con-leche's licence
+(ConLeche/LICENSE).
+
+In the Lean4Ix tree, certain files also identify more specific Apache-2.0
+sources in their headers; none of these files is part of this repository:
 
   * Main.lean contains code copied from leanprover-community/import-graph.
   * Lean4Lean/Std/ToExpr.lean contains code from mathlib.
@@ -29,20 +38,9 @@ Lean 4, Batteries, import-graph, and mathlib are distributed under the Apache
 License, Version 2.0. When a distribution of this code includes their code
 or artifacts, preserve the license and notice material shipped with them.
 
-Ix/Kernel/Model/SetTheory and Ix/Kernel/Model/SetModel contain a port of the
-con-leche set-theoretic foundation, dependent-function operators, least
-fixed points, tuple and container constructions, and recursor graphs,
-received under the Apache License, Version 2.0:
-
-  https://github.com/leanprover/con-leche
-  revision 86cd20a65660d757cedc81561a44579099b565d0
-
-The port retains the upstream license in LICENSE-APACHE. Per-file headers
-identify the original files and modifications. The exact source and ported
-file hashes are recorded in Tests/Ix/Kernel/ImportManifest.lean and checked
-by Tests/Ix/Kernel/Provenance.lean (lake exe kernel-provenance). This
-upstream code remains subject to Apache-2.0; the repository's dual-license
-default does not relicense it.
+The exact source and ported file hashes are recorded in
+Tests/Ix/Kernel/ImportManifest.lean and checked by
+Tests/Ix/Kernel/Provenance.lean (lake exe kernel-provenance).
 
 Except where a contribution or upstream component is explicitly identified
 under different terms, contributions intentionally submitted for inclusion
@@ -57,3 +55,6 @@ This file adapts Ix/Theory/NOTICE of the source revision (SHA-256
 updated to this repository's paths, the Lean4Ix-only file references were
 marked as such, and the paragraph on Lean4Ix's lake-manifest.json and
 lean-toolchain files, which this directory does not contain, was removed.
+On 2026-10-01 (L6) the paragraphs on the model and on the con-leche set
+theory were rewritten to record their retirement, since only Ref.lean
+remains from the port.

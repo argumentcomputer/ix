@@ -3,10 +3,16 @@ open Lake DSL
 
 /-! # The certified kernel as its own package
 
-`ix-kernel` builds `Ix.Kernel`, `Ix.Address.Core`, and the pure Ixon
-types/codecs/proofs from the repository's `Ix/` tree (`srcDir := ".."`) with
-no dependencies beyond the Lean toolchain. Kernel/data import closures use
-Lean core only; codec proofs additionally use Lean/Std proof tooling.
+`ix-kernel` builds the certified Ixon checker from the repository sources
+(`srcDir := ".."`) with no dependencies beyond the Lean toolchain:
+con-leche's checker ported under `ConLeche/**`, the kernel-side boundary
+`Ix.Kernel` (the Ixon reader, pins and prelude, record store, projection
+writer, audits), `Ix.Address.Core`, and the pure Ixon types/codecs/proofs
+with the certified API `Ix.Ixon.Admission` and its theorems. Data import
+closures use Lean core and `ConLeche` only (`Lean` only at elaboration time,
+in con-leche's ruled generators); proofs additionally use Lean/Std proof
+tooling. The intrinsic kernel this package built through L5 was retired at
+L6 (plan v4).
 The root `ix` package builds the same modules for its host consumers; this
 package is what the certified gate builds (`lake -d IxKernel build --wfail`),
 so a kernel module that imports anything outside the kernel fails here even

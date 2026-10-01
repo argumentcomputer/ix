@@ -9,7 +9,6 @@ Changes: namespaces and imports adapted to Ix; documentation updated.
 import Mathlib.SetTheory.Cardinal.Regular
 import Mathlib.SetTheory.ZFC.VonNeumann
 import Mathlib.SetTheory.ZFC.Cardinal
-import Ix.Kernel.Model.SetTheory.Core
 import ConLeche.SetTheory.Core
 
 /-!
@@ -17,12 +16,12 @@ import ConLeche.SetTheory.Core
 
 A strictly increasing countable sequence of inaccessible cardinals gives
 `ConLeche.SetTheory ZFSet.{u}`, the interface of the certified checker's
-theorems from port step L5 (plan v4), and Ix's own
-`Ix.Kernel.Model.SetTheory ZFSet.{u}`, the interface of the intrinsic
-reference kernel until L6. Both use `univChain n := V_ (κ n).ord`; the two
-classes are textually identical up to namespace, so one construction serves
-both (`IsTGUniverse` and `Equinumerous` are definitions with the same
-bodies, so a proof of either is a proof of the other).
+theorems from port step L5 (plan v4), with `univChain n := V_ (κ n).ord`.
+Until L6 the same construction also served Ix's own copy of the class
+(`Ix.Kernel.Model.SetTheory`, textually identical up to namespace), the
+interface of the intrinsic kernel; L6 retired that kernel, its class and
+this package's instance of it (`setTheoryOfChain`, `setTheoryOfCarneiro`,
+`carneiro_implies_ix`).
 Mathlib supplies the set operations, including images of arbitrary Lean
 functions via `Classical.allZFSetDefinable`. The proof below establishes
 Tarski's universe clauses for each inaccessible stage of the von Neumann
@@ -98,10 +97,10 @@ theorem card_eq_of_not_rank_lt (hκ : κ.IsInaccessible) {y : ZFSet.{u}}
   rw [card_vonNeumann_ord hκ]
   exact not_lt.mp fun h => hr (rank_lt_ord_of_card_lt hκ.isRegular hy h)
 
-/-- Equal cardinality gives Ix's meta-level equinumerosity: a global
-function `ZFSet → ZFSet` that restricts to a bijection. -/
+/-- Equal cardinality gives the interface's meta-level equinumerosity: a
+global function `ZFSet → ZFSet` that restricts to a bijection. -/
 theorem equinumerous_of_card_eq {y s : ZFSet.{u}} (h : card y = card s) :
-    Ix.Kernel.Model.Equinumerous (· ∈ ·) y s := by
+    ConLeche.Equinumerous (· ∈ ·) y s := by
   obtain ⟨e'⟩ := Cardinal.eq.mp h
   let e : y ≃ s := (equivShrink _).trans (e'.trans (equivShrink _).symm)
   classical
@@ -117,10 +116,10 @@ theorem equinumerous_of_card_eq {y s : ZFSet.{u}} (h : card y = card s) :
     refine ⟨(e.symm ⟨w, hw⟩).1, (e.symm ⟨w, hw⟩).2, ?_⟩
     simp only [(e.symm ⟨w, hw⟩).2, ↓reduceDIte, Subtype.coe_eta, Equiv.apply_symm_apply]
 
-/-- **`V_ κ` is a Grothendieck universe in Tarski's form** (Ix's
-`IsTGUniverse`) for every inaccessible `κ`. -/
+/-- **`V_ κ` is a Grothendieck universe in Tarski's form**
+(`ConLeche.IsTGUniverse`) for every inaccessible `κ`. -/
 theorem isTGUniverse_vonNeumann (hκ : κ.IsInaccessible) :
-    Ix.Kernel.Model.IsTGUniverse (· ∈ ·) (V_ κ.ord) := by
+    ConLeche.IsTGUniverse (· ∈ ·) (V_ κ.ord) := by
   have hlim : IsSuccLimit κ.ord := isSuccLimit_ord hκ.aleph0_lt.le
   refine ⟨?_, ?_, ?_, ?_⟩
   · -- transitivity
@@ -142,59 +141,17 @@ theorem isTGUniverse_vonNeumann (hκ : κ.IsInaccessible) :
     · exact Or.inr (mem_vonNeumann.mpr hr)
     · exact Or.inl (equinumerous_of_card_eq (card_eq_of_not_rank_lt hκ hy' hr))
 
-/-! ### The `Ix.Kernel.Model.SetTheory` instance on `ZFSet` -/
-
-set_option warn.classDefReducibility false in
-/-- Ix's set theory on Mathlib's `ZFSet.{u}`, from any strictly
-increasing sequence of inaccessibles: the ZF⁻ fields are Mathlib's
-(`ZFSet.ext`, pairs, `⋃₀`, `powerset`, `mem_wf`, `image` under
-`Classical.allZFSetDefinable`), and `univChain n := V_ (κ n).ord`. -/
-noncomputable def setTheoryOfChain (κ : ℕ → Cardinal.{u}) (hmono : StrictMono κ)
-    (hinacc : ∀ n, (κ n).IsInaccessible) : Ix.Kernel.Model.SetTheory ZFSet.{u} where
-  Mem := (· ∈ ·)
-  ext h := ZFSet.ext h
-  upair a b := {a, b}
-  mem_upair := mem_pair
-  sUnion := ZFSet.sUnion
-  mem_sUnion := mem_sUnion
-  power := powerset
-  mem_power := mem_powerset
-  regularity x h := by
-    obtain ⟨y, hy, hmin⟩ := mem_wf.has_min {y | y ∈ x} h
-    exact ⟨y, hy, fun ⟨z, hzy, hzx⟩ => hmin z hzx hzy⟩
-  image f := @ZFSet.image f (Classical.allZFSetDefinable _)
-  mem_image := by
-    intro f a z
-    rw [@mem_image f (Classical.allZFSetDefinable _)]
-    exact exists_congr fun w => and_congr_right fun _ => eq_comm
-  univChain n := V_ (κ n).ord
-  univChain_mem n := vonNeumann_mem_of_lt (ord_lt_ord.mpr (hmono (Nat.lt_succ_self n)))
-  univChain_tg n := isTGUniverse_vonNeumann (hinacc n)
-
-set_option warn.classDefReducibility false in
-/-- Ix's set theory on `ZFSet.{u}` under Carneiro's hypothesis. -/
-noncomputable def setTheoryOfCarneiro (h : OmegaInaccessibles.{u}) : Ix.Kernel.Model.SetTheory ZFSet.{u} :=
-  setTheoryOfChain (Classical.choose h) (Classical.choose_spec h).1 (Classical.choose_spec h).2
-
-/-- **Carneiro's hypothesis implies Ix's.**  `ω` strongly inaccessible
-cardinals give a model of
-Ix's `SetTheory` interface — on Mathlib's `ZFSet.{u}`, with the
-universe chain `V_ (κ n).ord`. -/
-theorem carneiro_implies_ix :
-    OmegaInaccessibles.{u} → Nonempty (Σ V : Type (u + 1), Ix.Kernel.Model.SetTheory V) :=
-  fun h => ⟨⟨ZFSet.{u}, setTheoryOfCarneiro h⟩⟩
-
-
 /-! ### The `ConLeche.SetTheory` instance on `ZFSet` (plan v4, L5)
 
-The same construction as `setTheoryOfChain`, for con-leche's class. This is
-con-leche's own bridge (`bridge/lean4lean-model/ConLecheBridge/Carneiro.lean`
+This is con-leche's own bridge (`bridge/lean4lean-model/ConLecheBridge/Carneiro.lean`
 at `86cd20a6`, the source of this file), whose instance `setTheoryOfChain`
 targets `ConLeche.SetTheory` directly. -/
 
 set_option warn.classDefReducibility false in
 /-- Con-leche's set theory on Mathlib's `ZFSet.{u}`, from any strictly
-increasing sequence of inaccessibles; the fields are `setTheoryOfChain`'s. -/
+increasing sequence of inaccessibles: the ZF⁻ fields are Mathlib's
+(`ZFSet.ext`, pairs, `⋃₀`, `powerset`, `mem_wf`, `image` under
+`Classical.allZFSetDefinable`), and `univChain n := V_ (κ n).ord`. -/
 noncomputable def conLecheSetTheoryOfChain (κ : ℕ → Cardinal.{u}) (hmono : StrictMono κ)
     (hinacc : ∀ n, (κ n).IsInaccessible) : ConLeche.SetTheory ZFSet.{u} where
   Mem := (· ∈ ·)

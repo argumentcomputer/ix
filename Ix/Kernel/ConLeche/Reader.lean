@@ -323,8 +323,8 @@ def emptyTables (c : Ixon.Constant) : Bool :=
 
 /-- The reference a record address denotes: a singleton is member 0 of
 itself, a projection the member (or constructor) of its owning block, a
-`muts` block nothing. The same resolution as Ix's own reader
-(`Ix.Kernel.Ingress.referenceSourceBy`). -/
+`muts` block nothing. The same resolution as the intrinsic kernel's reader
+(`Ix.Kernel.Ingress.referenceSourceBy`, retired at L6). -/
 def resolveSource (store : Store) (address : Address) (c : Ixon.Constant) :
     Option (ConstRef Address) :=
   match c.info with

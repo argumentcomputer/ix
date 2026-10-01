@@ -21,7 +21,8 @@ table, prelude and Nat-operation pin list) at the committed tables.
   `False` as its type; `checkBytes_no_False_theorem`: no theorem record of
   accepted bytes has a type that reads as the pinned `False` (D3, con-leche's
   pinned form).
-* `checkBytes_reading`: fidelity, in the role of `Ingress.Installed`.
+* `checkBytes_reading`: fidelity, in the role of the intrinsic kernel's
+  `Ingress.Installed` (retired at L6).
 * `checkBytes_resources`: the byte limits bound the decoded representation.
 
 The set theory is the standing hypothesis; `Models/SetTheory` provides an

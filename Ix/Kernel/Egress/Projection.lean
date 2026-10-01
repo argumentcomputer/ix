@@ -3,8 +3,19 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Kernel.Egress.Layout
+import Ix.Kernel.Ref
 import Ix.Kernel.Search
+import Ix.Kernel.Ingress.Records
+
+/-! # Projection records from kernel references
+
+The exact projection-record reading and writer that projection
+reconstruction (`Ix.Ixon.Projection`) and canonical block order
+(`Ix.Ixon.BlockOrder`) run: a projection record is its variant and the
+member/constructor position of its owner block, with empty tables. This is
+the part of the intrinsic kernel's exact egress (K3) that the certified
+entries use; the record round trip over that kernel's syntax was retired with
+it at L6 (plan v4). -/
 
 namespace Ix.Kernel.Egress
 

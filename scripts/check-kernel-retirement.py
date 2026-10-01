@@ -30,9 +30,19 @@ RETIRED = re.compile(
     r"ix-ffi-dyn|crates/ffi-dyn",
     re.IGNORECASE,
 )
-# The intrinsic kernel (plan v4, L6): its entry points, the executables and
-# scripts that ran it, and its test and benchmark modules. Case-sensitive;
-# `certified-kernel-differential` (a CI artifact name) is not a target.
+# The intrinsic kernel (plan v4, L6): its modules (syntax, checker, inductive
+# routes, certified rules, model, ingress and egress over its own syntax,
+# runtime, consistency), its entry points, the executables and scripts that
+# ran it, and its test and benchmark modules. Case-sensitive. Kept names are
+# not matched: `Ix.Kernel.Ref`, `Ix.Kernel.Search`, `Ix.Kernel.Audit`,
+# `Ix.Kernel.ConLeche`, the record store `Ix.Kernel.Ingress.Records` and the
+# projection writer `Ix.Kernel.Egress.Projection` (with their namespaces),
+# and `certified-kernel-differential` (a CI artifact name).
+INTRINSIC_MODULES = (
+    "Annotate|Arithmetic|Check|Claims|Consistency|Const|Env|Expr|"
+    "ExprSubstitution|Fidelity|Infer|Level|Model|Quot|Rename|Revalue|Store|"
+    "StringLiteral|VLevel|VLevelLemmas|Certified|Inductive|Runtime|Std"
+)
 INTRINSIC_TESTS = (
     "AnnotationContexts|Axioms|ConversionSpines|Differential|Egress|Fidelity|"
     "Fixtures|Inductives|Ingress|IngressHost|Interleaved|LevelDifferential|"
@@ -44,9 +54,18 @@ INTRINSIC = re.compile(
     r"bench-certified-kernel|count-certified-kernel|kernel-level-differential|"
     r"(?<![\w-])kernel-(?:differential|ingress)(?![\w-])|"
     r"Tests[./]Ix[./]Kernel[./](?:" + INTRINSIC_TESTS + r")\b|"
-    r"Benchmarks[./]Kernel[./](?:Census|CensusMain|CensusProbe|Certified)\b"
+    r"Benchmarks[./]Kernel[./](?:Census|CensusMain|CensusProbe|Certified)\b|"
+    r"Ix[./]Kernel[./](?:" + INTRINSIC_MODULES + r")\b|"
+    r"Ix[./]Kernel[./](?:Ingress[./](?:Reading|Expr|Constant)|Egress[./](?:Layout|Expr|Constant))\b|"
+    r"Ix/Kernel/(?:Ingress|Egress)\.lean|"
+    r"\bimport\s+(?:all\s+)?Ix\.Kernel\.(?:Ingress|Egress)(?![\w.])"
 )
-RETIRED_TREES = ("Ix/Tc/Verify/", "Ix/Compile/Verify/", "crates/ffi-dyn/")
+RETIRED_TREES = (
+    "Ix/Tc/Verify/", "Ix/Compile/Verify/", "crates/ffi-dyn/",
+    # The intrinsic kernel's wholly retired directories (L6).
+    "Ix/Kernel/Certified/", "Ix/Kernel/Inductive/", "Ix/Kernel/Model/",
+    "Ix/Kernel/Runtime/", "Ix/Kernel/Std/",
+)
 RETIRED_FILES = {
     "Benchmarks/Lean4Lean.lean",
     "Benchmarks/Lean4LeanMain.lean",
@@ -60,7 +79,14 @@ RETIRED_FILES = {
     "Benchmarks/Kernel/Certified.lean",
     "scripts/bench-certified-kernel.py",
     "scripts/count-certified-kernel.py",
-} | {f"Tests/Ix/Kernel/{name}.lean" for name in INTRINSIC_TESTS.split("|")}
+} | {f"Tests/Ix/Kernel/{name}.lean" for name in INTRINSIC_TESTS.split("|")} | {
+    f"Ix/Kernel/{name}.lean" for name in INTRINSIC_MODULES.split("|")
+    if name not in ("Certified", "Inductive", "Runtime", "Std")
+} | {
+    "Ix/Kernel/Ingress.lean", "Ix/Kernel/Ingress/Reading.lean", "Ix/Kernel/Ingress/Expr.lean",
+    "Ix/Kernel/Ingress/Constant.lean", "Ix/Kernel/Egress.lean", "Ix/Kernel/Egress/Layout.lean",
+    "Ix/Kernel/Egress/Expr.lean", "Ix/Kernel/Egress/Constant.lean",
+}
 CONFIG_SUFFIXES = {".nix", ".toml", ".yml", ".yaml", ".sh", ".py"}
 EXCLUDED_DIRS = {".git", ".jj", ".lake", "target", "__pycache__"}
 
@@ -213,6 +239,16 @@ def controls() -> None:
         ("Fixture.lean", 'run "lake" #["build", "kernel-differential"]'),
         ("scripts/run.sh", "lake exe bench-certified-kernel"),
         ("Tests/Ix/Kernel/Fixtures.lean", ""),
+        ("Fixture.lean", "import Ix.Kernel.Check"),
+        ("Fixture.lean", "public import Ix.Kernel.Model.SetTheory.Core"),
+        ("Fixture.lean", "import Ix.Kernel.Ingress"),
+        ("Fixture.lean", "import\n  Ix.Kernel.Egress\nimport Init"),
+        ("Fixture.lean", "import Ix.Kernel.Ingress.Reading"),
+        ("Fixture.lean", "theorem t : Ix.Kernel.Model.SetTheory V := x"),
+        ("Fixture.lean", 'def p := "Ix/Kernel/Egress.lean"'),
+        ("Ix/Kernel/Certified/Checker.lean", ""),
+        ("Ix/Kernel/Check.lean", ""),
+        ("Ix/Kernel/Egress/Layout.lean", ""),
     ):
         if not inspect(path, source):
             raise RuntimeError(f"intrinsic negative control escaped: {path}: {source}")
@@ -221,6 +257,11 @@ def controls() -> None:
         "import Tests.Ix.Kernel.IxonFixtures\nimport Benchmarks.Kernel.CensusCertifiedMain",
         "import Benchmarks.Kernel.CensusIx\nimport Tests.Ix.Kernel.IngressFixturesNew",
         'def artifact := "certified-kernel-differential"',
+        "import Ix.Kernel.Ingress.Records\nimport Ix.Kernel.Egress.Projection\nimport Ix.Kernel.Ref",
+        "import Ix.KernelCheck\nimport Ix.Kernel.ConLeche.Reader\nimport Ix.Kernel.Search",
+        "namespace Ix.Kernel.Ingress\nend Ix.Kernel.Ingress\nopen Ix.Kernel.Egress",
+        "def r : Ix.Kernel.ConstRef Address := x\n#check Ix.Kernel.Ingress.Constants",
+        "/- retired at L6: Ix.Kernel.Check, Ix/Kernel/Model/SetTheory -/\nimport Init",
     ):
         if inspect("Fixture.lean", source):
             raise RuntimeError(f"kept name or comment rejected: {source}")

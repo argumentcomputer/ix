@@ -125,7 +125,8 @@ def publicRoots : Array Name :=
     ``Ix.Ixon.ConLecheAdmission.checkBytes_resources, ``Ix.Ixon.ConLecheAdmission.checkBytesWith_resources,
     ``ConLeche.model_exists, ``ConLeche.no_False_theorem_accepted]
 
-/-- Fidelity (the role of `Ingress.Installed`) and the facts it is built
+/-- Fidelity (the role of the intrinsic kernel's `Ingress.Installed`,
+retired at L6) and the facts it is built
 from: the reading of accepted bytes, the record-by-record reading of the
 reader, per-record installation, and the address encoding's injectivity. -/
 def fidelityRoots : Array Name :=
@@ -156,9 +157,12 @@ def readerOperations : Array Name :=
 /-- The certified API's module, whose import closure is audited. -/
 def publicModules : Array Name := #[`Ix.Ixon.Admission]
 
-/-- Module prefixes the intrinsic kernel's import closure may use: Lean core
-(`Init` and `Std`, which ships with the toolchain), the kernel itself, the
-pure address key, and the pure Ixon types. `Std` was admitted by the user's
+/-- Module prefixes the kernel-side modules may use: Lean core (`Init` and
+`Std`, which ships with the toolchain), the kernel-side boundary
+(`Ix.Kernel`), the pure address key, the pure Ixon types, and the ported
+`ConLeche` subtree. Through L5 this was the intrinsic kernel's list; from L6
+it fences the Ixon reader, the record store, the projection writer and the
+pure Ixon types (below), and is the base of `importAllowlist`. `Std` was admitted by the user's
 decision of 2026-09-30 (`plans/ix-kernel-competitive.md`) for its maps and
 their lemmas, as con-leche's kernel uses them; `Classical.choice` reaching
 kernel definitions through it is accepted, and the axiom guards below record
@@ -173,7 +177,7 @@ def kernelImportAllowlist : Array Name :=
   #[`Init, `Std, `Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types, `ConLeche]
 
 /-- Module prefixes the certified import closure may use (L5): the
-intrinsic kernel's list, plus exactly the modules of the con-leche entry's
+kernel-side list (`kernelImportAllowlist`), plus exactly the modules of the con-leche entry's
 byte stage, as the int-3 probe of `Ix.Ixon.ConLecheAdmission` found them.
 Each is pure Lean core and is audited on its own terms elsewhere:
 * `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.WireCheck`,
@@ -218,10 +222,10 @@ def runtimeAllowlist : Array Name := #[`Init, `Std]
 /-- The ruled exceptions to the runtime audit (plan v4, "Audits"; roadmap
 section 2, "Execution boundary"). Each names exactly what it admits:
 * R-meta: the `@[computed_field]` overrides of con-leche's `Level`
-  (`hashData`), `Expr` (`data`) and `Name` (`hashData`), and of Ix's `AExpr`
-  (B2: `looseBound`, `structHash`);
-* project `@[csimp]` replacements in `ConLeche` and `Ix.Kernel`, each only
-  with a theorem on the standard axioms;
+  (`hashData`), `Expr` (`data`) and `Name` (`hashData`) (until L6 also of
+  the intrinsic kernel's `AExpr`, B2);
+* project `@[csimp]` replacements in `ConLeche`, each only with a theorem
+  on the standard axioms (until L6 also in the intrinsic `Ix.Kernel`);
 * R-ptr: `withPtrEq`, `withPtrAddr`, their `unsafe` implementations, and
   the pointer reads under them; and `isExclusiveUnsafe`, the reference-count
   read behind `withExclusive` (all `Init`, so already inherited);
@@ -233,8 +237,8 @@ section 2, "Execution boundary"). Each names exactly what it admits:
 * `partial` definitions of the in-model generator,
   `ConLeche/Frontend/InModel*` (L4). -/
 def runtimeRulings : RuntimeRulings where
-  computedFieldTypes := #[`ConLeche.Level, `ConLeche.Expr, `ConLeche.Name, ``Ix.Kernel.Model.AExpr]
-  csimpModules := #[`ConLeche, `Ix.Kernel]
+  computedFieldTypes := #[`ConLeche.Level, `ConLeche.Expr, `ConLeche.Name]
+  csimpModules := #[`ConLeche]
   primitives := #[``withPtrEq, ``withPtrEqUnsafe, ``withPtrEqDecEq, ``withPtrAddr,
     ``withPtrAddrUnsafe, ``ptrEq, ``ptrAddrUnsafe, ``isExclusiveUnsafe]
   implementations := #[(`ConLeche.withExclusive, `ConLeche.withExclusiveUnsafe)]
@@ -487,12 +491,20 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.kernelOperations Ix.Kernel.
 
 /-! ## The kernel-side modules and the import allowlists
 
-`Ix.Kernel` and the pure Ixon types stay inside `kernelImportAllowlist`; the
-allowlists admit `Std` and `ConLeche`, and `Lean` only below the ruled
-elaboration-time imports. -/
+The `Ix.Kernel` umbrella (the kernel-side boundary, including the committed
+pin table and prelude, which read records through the canonical decoder)
+stays inside `importAllowlist`; the Ixon reader, the record store, the
+projection writer, bounded search outcomes and the pure Ixon types stay
+inside `kernelImportAllowlist`. The allowlists admit `Std` and `ConLeche`,
+and `Lean` only below the ruled elaboration-time imports. -/
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel, `Ix.Ixon.Types] Ix.Kernel.Audit.kernelImportAllowlist Ix.Kernel.Audit.elaborationImports
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel] Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports
+
+#guard_msgs (drop info) in
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`Ix.Kernel.ConLeche.Reader, `Ix.Kernel.ConLeche.ReaderSpec,
+  `Ix.Kernel.Ingress.Records, `Ix.Kernel.Egress.Projection, `Ix.Kernel.Search, `Ix.Kernel.Ref,
+  `Ix.Ixon.Types] Ix.Kernel.Audit.kernelImportAllowlist Ix.Kernel.Audit.elaborationImports
 
 -- `Std` is admitted; the compiler frontend and third-party libraries are not.
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `Std.Data.TreeMap

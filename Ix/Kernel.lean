@@ -4,51 +4,46 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Address.Core
-import Ix.Kernel.Model
-import Ix.Kernel.Env
-import Ix.Kernel.Check
-import Ix.Kernel.Consistency
-import Ix.Kernel.Ingress
-import Ix.Kernel.Egress
+import Ix.Kernel.Ref
+import Ix.Kernel.Search
+import Ix.Kernel.Ingress.Records
+import Ix.Kernel.Egress.Projection
+import Ix.Kernel.ConLeche.Prelude
+import Ix.Kernel.ConLeche.ReaderSpec
+import Ix.Kernel.ConLeche.Installed
+import Ix.Kernel.ConLeche.Values
 
 /-! # Ix.Kernel
 
-The certified kernel: a reference type checker for Ixon-shaped declarations
-with a machine-checked theorem that every environment it accepts has a model
-in an explicit set theory, and therefore contains no proof of `False`.
+The kernel-side boundary of the certified Ixon checker (plan v4). The checker
+is con-leche's, ported in place under `ConLeche/**` (`ConLeche.Cached.checkDecls`
+at `.verified`, with `ConLeche.model_exists`); Ix contributes only the
+boundary:
 
-* `Ix.Kernel.check` and `Ix.Kernel.checkDecls` (`Ix.Kernel.Check`) are the
-  executable entry points.
-* `Ix.Kernel.check_has_model`, `Ix.Kernel.checkDecls_has_model`, and
-  `Ix.Kernel.no_proof_of_False` (`Ix.Kernel.Consistency`) are the public
-  theorems.
-* `Ix.Kernel.Model` is the set-theoretic model those theorems are stated in.
+* `Ix.Kernel.ConLecheReader` (`Ix/Kernel/ConLeche/Reader.lean`, with
+  `ReaderSpec`): the Ixon reader from decoded records to
+  `Array ConLeche.Declaration`, its address-to-name encoding (`keyName`,
+  injective) and its record-by-record specification;
+* `Ix/Kernel/ConLeche/{PinData,NatOpPinData,Prelude}.lean`: the committed pin
+  table, Nat-operation pins and Ixon prelude, generated from the compiled
+  Init's records;
+* `Ix.Kernel.ConLecheFold` (`Installed`, `Values`): installation and
+  definition values of the fold, used by the public theorems;
+* `Ix.Kernel.ConstRef` (`Ref`), the decoded-record store
+  (`Ix.Kernel.Ingress`, `Ingress/Records.lean`), bounded search outcomes
+  (`Search`), and the projection-record writer (`Ix.Kernel.Egress`,
+  `Egress/Projection.lean`) that projection reconstruction runs;
+* `Ix.Kernel.Audit`: the certified gate's manifest and audits.
 
-The kernel is parametric in the reference type `β`; the public instantiation
-uses `Address` (`Ix.Address.Core`), an opaque 32-byte key. The kernel never
-hashes: the binding between bytes and addresses is a host property, stated
-explicitly where a claim needs it.
+The certified API is `Ix.Ixon.Admission.checkBytes`; its public theorems
+(model existence over `ConLeche.Model`, no proof of the pinned `False`,
+fidelity, resources) are in `Ix.Ixon.Consistency` and
+`Ix.Ixon.ConLecheConsistency`.
 
-The executables carry their model extension as an erased proof component,
-so they take the universe `v` of the set theories the attached theorems
-speak about (`check.{u,v}`). The computation does not depend on `v`; a use
-site that is not a theorem instantiates it. `checkAddressed` fixes `v := 1`,
-the universe of the `ZFSet.{0}` model supplied by `Models/SetTheory`.
-
-`checkAddressed` is `checkIndexed`: the same fold as `check`, started from an
-environment whose lookup index hashes addresses (`Env.emptyWith`), so a lookup
-scans one bucket instead of every installed entry. Its theorems
-(`checkIndexed_has_model`, `checkIndexed_installed`) are the generic ones
-instantiated at that starting environment, and `checkEnv_ok_iff` is stated
-against it.
+The intrinsic proof-carrying kernel that this module exported through L5
+(`Ix.Kernel.check`, `checkDecls`, `checkEnv`, the `Ix.Kernel.Model` set model
+and `Ix.Kernel.Consistency`) was retired at L6; its final state is
+integration head `tmxpopss` (`plans/ix-kernel-con-leche-port-v4.md`,
+section 6).
 
 Roadmap: `plans/ix-certified-roadmap.md`. -/
-
-namespace Ix.Kernel
-
-/-- The public instantiation of the closed check at content addresses, with
-the address-hashed environment index. -/
-abbrev checkAddressed (cfg : Config) (decls : List (Decl Address)) : Except Error (Env Address) :=
-  checkIndexed.{1} cfg decls
-
-end Ix.Kernel
