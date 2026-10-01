@@ -93,11 +93,10 @@ def checkCanonicalSharing (c : Constant) (limits : Limits := {}) :
 except the expression roots, the sharing count and the table bodies. Then
 `(serConstant c).size = fixedConstantBytes c + Σ exprSize roots
 + tag0Size c.sharing.size + Σ exprSize c.sharing`. -/
-def fixedConstantBytes (c : Constant) : Except SharingError Nat := do
+def fixedConstantBytes (c : Constant) : Nat :=
   let roots := constantInfoRoots c.info
-  let info ← withRoots c.info (roots.map fun _ => Ixon.Expr.var 0)
-  let size := (serConstant { c with info, sharing := #[] }).size
-  return size - roots.size - tag0Size 0
+  let info := mapRoots (fun _ => Ixon.Expr.var 0) c.info
+  (serConstant { c with info, sharing := #[] }).size - roots.size - tag0Size 0
 
 /-- Size profile of a Constant's sharing problem, without running the search
 (for corpus measurements). All byte counts are variable bytes: roots, table

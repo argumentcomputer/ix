@@ -114,26 +114,14 @@ def exprsSize (es : Array Ixon.Expr) : Nat := es.foldl (fun acc e => acc + exprS
 
 /-! ## Byte and vector order -/
 
-/-- Unsigned lexicographic comparison; a proper prefix sorts first. -/
-def compareBytes (a b : ByteArray) : Ordering := Id.run do
-  let n := min a.size b.size
-  for i in [0:n] do
-    let x := a.get! i
-    let y := b.get! i
-    if x < y then return .lt
-    if y < x then return .gt
-  return compare a.size b.size
+/-- Unsigned lexicographic comparison of byte strings; a proper prefix sorts
+first (core `List.compareLex` on the bytes, a lawful total order). -/
+def compareBytes (a b : ByteArray) : Ordering :=
+  List.compareLex compare a.data.toList b.data.toList
 
-/-- Lexicographic comparison of natural-number vectors; a proper prefix sorts
-first. -/
-def lexCompare : List Nat → List Nat → Ordering
-  | [], [] => .eq
-  | [], _ :: _ => .lt
-  | _ :: _, [] => .gt
-  | x :: xs, y :: ys =>
-    match compare x y with
-    | .eq => lexCompare xs ys
-    | o => o
+/-- Lexicographic comparison of natural-number vectors, numeric on entries; a
+proper prefix sorts first (core `List.compareLex`, a lawful total order). -/
+def lexCompare (a b : List Nat) : Ordering := List.compareLex compare a b
 
 /-- `Array` form of `lexCompare`. -/
 def compareNatArray (a b : Array Nat) : Ordering := lexCompare a.toList b.toList
@@ -244,12 +232,9 @@ structure Node where
 ordered child-ID vector, each compared numerically/lexicographically with a
 proper prefix first. -/
 def Node.compareKey (x y : Node) : Ordering :=
-  match compare x.head.tag y.head.tag with
-  | .eq =>
-    match lexCompare x.head.scalars y.head.scalars with
-    | .eq => compareNatArray x.children y.children
-    | o => o
-  | o => o
+  (compare x.head.tag y.head.tag).then
+    ((lexCompare x.head.scalars y.head.scalars).then
+      (lexCompare x.children.toList y.children.toList))
 
 /-- The `i`-th child ID (the arity invariant makes the default unreachable). -/
 @[inline] def Node.child (n : Node) (i : Nat) : Nat := n.children.getD i 0
@@ -328,7 +313,8 @@ structure Limits where
   maxCostEvals : Nat := 1 <<< 30
   /-- Variable bytes (roots, table count, table bodies) of the result. -/
   maxOutputBytes : Nat := 1 <<< 28
-  /-- Expression nodes allocated while materializing the result. -/
+  /-- Predicted size of the materialized output (an upper bound on the
+  expression nodes built), checked before materializing. -/
   maxMaterialize : Nat := 1 <<< 26
   /-- Tables enumerated by the exhaustive oracle. -/
   maxOracleTables : Nat := 1 <<< 20
