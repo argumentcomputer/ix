@@ -367,7 +367,10 @@ impl Builder<'_, '_> {
   }
 
   /// Keep the subterms reachable from `roots` and renumber them by §3.2.
-  fn finalize(self, roots: &[TermId]) -> Result<SharingDag, SharingError> {
+  fn finalize(
+    self,
+    roots: &[TermId],
+  ) -> Result<(SharingDag, Vec<TermId>), SharingError> {
     let n = self.nodes.len();
     let mut reach = vec![false; n];
     for &r in roots {
@@ -431,7 +434,8 @@ impl Builder<'_, '_> {
       }
     }
     let roots = roots.iter().map(|&r| new_id[ix(r)]).collect();
-    Ok(SharingDag { nodes, heights, roots })
+    let dag = SharingDag { nodes, heights, roots };
+    Ok((dag, new_id))
   }
 }
 
@@ -489,6 +493,16 @@ impl SharingDag {
     table: Option<&[Arc<Expr>]>,
     meter: &mut Meter<'_>,
   ) -> Result<SharingDag, SharingError> {
+    Self::build_full(roots, table, meter).map(|(dag, _)| dag)
+  }
+
+  /// [`SharingDag::build`], also returning the term ID each table entry
+  /// expands to (`None` for an entry no root reaches).
+  pub(crate) fn build_full(
+    roots: &[Arc<Expr>],
+    table: Option<&[Arc<Expr>]>,
+    meter: &mut Meter<'_>,
+  ) -> Result<(SharingDag, Vec<Option<TermId>>), SharingError> {
     let mut b = Builder {
       nodes: Vec::new(),
       heights: Vec::new(),
@@ -497,6 +511,7 @@ impl SharingDag {
     };
     let mut memo: FxHashMap<*const Expr, TermId> = FxHashMap::default();
     let mut root_ids = Vec::with_capacity(roots.len());
+    let mut entry_ids: Vec<TermId> = Vec::new();
     match table {
       None => {
         for (i, r) in roots.iter().enumerate() {
@@ -514,6 +529,7 @@ impl SharingDag {
           };
           let id = b.intern_expr(e, &mut memo, ctx)?;
           resolved.push(id);
+          entry_ids.push(id);
         }
         for (i, r) in roots.iter().enumerate() {
           let ctx = ShareCtx::Table {
@@ -525,7 +541,12 @@ impl SharingDag {
         }
       },
     }
-    b.finalize(&root_ids)
+    let (dag, new_id) = b.finalize(&root_ids)?;
+    let entries = entry_ids
+      .iter()
+      .map(|&p| Some(new_id[ix(p)]).filter(|&id| id != TermId::MAX))
+      .collect();
+    Ok((dag, entries))
   }
 
   /// Build from fully expanded roots; any Share leaf is an error.

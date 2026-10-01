@@ -125,7 +125,7 @@ impl Widths for Candidates<'_> {
 }
 
 /// Expanded occurrence counts (saturating) of every term.
-fn occurrences(dag: &SharingDag) -> Vec<u64> {
+pub(crate) fn occurrences(dag: &SharingDag) -> Vec<u64> {
   let nodes = dag.nodes();
   let mut occ = vec![0u64; nodes.len()];
   for &r in dag.roots() {
@@ -165,13 +165,23 @@ pub(crate) fn prepare(
   dag: &SharingDag,
   meter: &mut Meter<'_>,
 ) -> Result<Prepared, SharingError> {
+  prepare_with(dag, meter, |_| true)
+}
+
+/// [`prepare`] keeping only the R1/R2 candidates accepted by `keep`.
+pub(crate) fn prepare_with(
+  dag: &SharingDag,
+  meter: &mut Meter<'_>,
+  keep: impl Fn(TermId) -> bool,
+) -> Result<Prepared, SharingError> {
   let nodes = dag.nodes();
   let n = nodes.len();
   let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
   let mut work = 0u64;
   let base = all_costs(nodes, &own, &NoWidths, &mut work);
   let occ = occurrences(dag);
-  let cands = candidates_of(&occ, &base);
+  let cands: Vec<TermId> =
+    candidates_of(&occ, &base).into_iter().filter(|&t| keep(t)).collect();
   meter.candidates(u64::try_from(cands.len()).unwrap_or(u64::MAX))?;
   let mut is_cand = vec![false; n];
   for &t in &cands {
@@ -499,6 +509,24 @@ impl<'p> StateEval<'p> {
 
 type StateKey = Vec<(TermId, u8)>;
 
+/// How a Share at table index `k` is priced.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WidthModel {
+  /// The real Tag4 width of index `k`.
+  Ixon,
+  /// Every Share costs `w` bytes (the uniform-width cost model).
+  Uniform(u8),
+}
+
+impl WidthModel {
+  pub(crate) fn width(self, k: u64) -> u64 {
+    match self {
+      WidthModel::Ixon => share_width(k),
+      WidthModel::Uniform(w) => u64::from(w),
+    }
+  }
+}
+
 /// Whether `prefix ++ [t]` is lexicographically below `other` (same length).
 fn extension_less(prefix: &[TermId], t: TermId, other: &[TermId]) -> bool {
   match prefix.cmp(&other[..prefix.len()]) {
@@ -527,6 +555,7 @@ fn greedy_upper_bound(
   eval: &mut StateEval<'_>,
   prep: &Prepared,
   meter: &mut Meter<'_>,
+  model: WidthModel,
 ) -> Result<Len, SharingError> {
   let mut key: StateKey = Vec::new();
   let mut f = Len::ZERO;
@@ -539,7 +568,7 @@ fn greedy_upper_bound(
   eval.reset(&key);
   meter.work(std::mem::take(&mut work))?;
   loop {
-    let w = u8::try_from(share_width(k))
+    let w = u8::try_from(model.width(k))
       .map_err(|_e| internal("share width exceeds u8"))?;
     let count = Len::new(tag0_len(k.saturating_add(1)));
     let mut step: Option<(Len, TermId, Len)> = None;
@@ -579,6 +608,7 @@ pub(crate) fn width_state_search(
   prep: &Prepared,
   mut ub: Len,
   meter: &mut Meter<'_>,
+  model: WidthModel,
 ) -> Result<(Len, Vec<TermId>), SharingError> {
   let prune = meter.limits().lower_bound_pruning;
   let materialization = meter.limits().materialization_bound;
@@ -586,7 +616,7 @@ pub(crate) fn width_state_search(
   let mut eval = StateEval::new(prep, dag, &mut work);
   meter.work(work)?;
   if prune && meter.limits().greedy_upper_bound && !prep.cands.is_empty() {
-    let g = greedy_upper_bound(&mut eval, prep, meter)?;
+    let g = greedy_upper_bound(&mut eval, prep, meter, model)?;
     meter.stats.greedy_len = g.exact();
     ub = ub.min(g);
   }
@@ -600,7 +630,7 @@ pub(crate) fn width_state_search(
     meter.layer(u64::try_from(layer.len()).unwrap_or(u64::MAX))?;
     let count_k = Len::new(tag0_len(k));
     let count_next = Len::new(tag0_len(k.saturating_add(1)));
-    let width_k = share_width(k);
+    let width_k = model.width(k);
     let width_next =
       u8::try_from(width_k).map_err(|_e| internal("share width exceeds u8"))?;
     let mut work = 0u64;
@@ -799,7 +829,7 @@ pub(crate) fn optimize(
       ub = ub.min(Len::new(h));
     }
   }
-  let (total, q) = width_state_search(dag, &prep, ub, meter)?;
+  let (total, q) = width_state_search(dag, &prep, ub, meter, WidthModel::Ixon)?;
   let variable = total
     .exact()
     .ok_or(SharingError::FormatBound(FormatBound::LengthOverflow))?;
@@ -835,4 +865,57 @@ pub(crate) fn optimize(
     variable_len: variable,
     stats: meter.stats.clone(),
   })
+}
+
+/// Reference for the uniform-width model: the width-state search with every
+/// Share priced `w`, over the R1/R2 candidates (optionally only those of
+/// compact in-degree at least 2). Returns the minimum model length and the
+/// least term-ID table sequence attaining it. Exponential; for tests.
+pub(crate) fn uniform_reference_dag(
+  dag: &SharingDag,
+  w: u8,
+  min_in_degree2: bool,
+  meter: &mut Meter<'_>,
+) -> Result<(u64, Vec<TermId>), SharingError> {
+  if w == 0 {
+    return Err(SharingError::FormatBound(FormatBound::UniformWidth { w: 0 }));
+  }
+  let mut deg = vec![0u64; dag.len()];
+  for &r in dag.roots() {
+    deg[ix(r)] += 1;
+  }
+  for node in dag.nodes() {
+    for &c in node.children().as_slice() {
+      deg[ix(c)] += 1;
+    }
+  }
+  let prep = prepare_with(dag, meter, |t| !min_in_degree2 || deg[ix(t)] >= 2)?;
+  let mut unshared = Len::new(tag0_len(0));
+  for &r in dag.roots() {
+    unshared = unshared.plus(prep.base[ix(r)]);
+  }
+  let (total, q) =
+    width_state_search(dag, &prep, unshared, meter, WidthModel::Uniform(w))?;
+  let total = total
+    .exact()
+    .ok_or(SharingError::FormatBound(FormatBound::LengthOverflow))?;
+  Ok((total, q))
+}
+
+/// Reference optimum of the uniform-width model for fully expanded roots:
+/// the width-state search with every Share priced `w` (`1..=255`), over the
+/// R1/R2 candidates, or only those of compact in-degree at least 2. Returns
+/// the minimum model length and the least term-ID table sequence attaining
+/// it. Exponential in the candidates; intended for differential tests.
+pub fn optimize_sharing_uniform_reference(
+  w: u64,
+  roots: &[Arc<Expr>],
+  limits: &ExactSharingLimits,
+  min_in_degree2: bool,
+) -> Result<(u64, Vec<TermId>), SharingError> {
+  let w = u8::try_from(w)
+    .map_err(|_e| SharingError::FormatBound(FormatBound::UniformWidth { w }))?;
+  let mut meter = Meter::new(limits);
+  let dag = SharingDag::build(roots, None, &mut meter)?;
+  uniform_reference_dag(&dag, w, min_in_degree2, &mut meter)
 }

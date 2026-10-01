@@ -1918,3 +1918,392 @@ fn candidate_terms_apply_r1_and_r2() {
   let (_, res) = normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
   assert_eq!(res.stats.candidates, 2);
 }
+
+// ===========================================================================
+// Uniform Share width (port of W1's Tests/Ix/SharingUniform.lean)
+// ===========================================================================
+
+use super::dict::{Hide, UniformIndex, all_costs, eval_node};
+use super::search::uniform_reference_dag;
+use super::uniform::set_prec;
+
+fn uni(w: u64, roots: &[E]) -> UniformSharingResult {
+  optimize_sharing_uniform(w, roots, &limits()).unwrap()
+}
+
+fn uni_reference(w: u64, roots: &[E], deg2: bool) -> (u64, Vec<u32>) {
+  let lim = limits();
+  let mut meter = Meter::new(&lim);
+  let dag = SharingDag::from_expanded_roots(roots, &lim).unwrap();
+  uniform_reference_dag(&dag, w as u8, deg2, &mut meter).unwrap()
+}
+
+/// Exact uniform-model length of a stored set (entries in any dependency
+/// order see every stored descendant).
+fn uniform_set_len(dag: &SharingDag, w: u64, set: &[u32]) -> u64 {
+  let nodes = dag.nodes();
+  let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
+  let mut index = vec![None; nodes.len()];
+  for &t in set {
+    index[t as usize] = Some(0);
+  }
+  let dict = UniformIndex { index, width: w };
+  let mut work = 0;
+  let costs = all_costs(nodes, &own, &dict, &mut work);
+  let mut total = Len::new(tag0_len(set.len() as u64));
+  for &t in set {
+    let hide = Hide { inner: &dict, hidden: t };
+    total = total.plus(
+      eval_node(
+        nodes,
+        &own,
+        t,
+        &hide,
+        &|x| costs[x as usize],
+        false,
+        &mut work,
+      )
+      .0,
+    );
+  }
+  for &r in dag.roots() {
+    total = total.plus(costs[r as usize]);
+  }
+  total.exact().unwrap()
+}
+
+fn in_degrees(dag: &SharingDag) -> Vec<u64> {
+  let mut deg = vec![0u64; dag.len()];
+  for &r in dag.roots() {
+    deg[r as usize] += 1;
+  }
+  for node in dag.nodes() {
+    for &c in node.children().as_slice() {
+      deg[c as usize] += 1;
+    }
+  }
+  deg
+}
+
+/// Exhaustive canonical uniform optimum over a candidate pool: the least
+/// `(model length, set)` with sets ordered by `set_prec`.
+fn uniform_brute(dag: &SharingDag, w: u64, pool: &[u32]) -> (u64, Vec<u32>) {
+  let mut best: Option<(u64, Vec<u32>)> = None;
+  for mask in 0u64..(1u64 << pool.len()) {
+    let set: Vec<u32> = (0..pool.len())
+      .filter(|&i| mask >> i & 1 == 1)
+      .map(|i| pool[i])
+      .collect();
+    let l = uniform_set_len(dag, w, &set);
+    let better = match &best {
+      None => true,
+      Some((bl, bs)) => l < *bl || (l == *bl && set_prec(&set, bs)),
+    };
+    if better {
+      best = Some((l, set));
+    }
+  }
+  best.unwrap()
+}
+
+#[test]
+fn uniform_witness_t2() {
+  let t2 = chain(2);
+  let roots = vec![Expr::all(t2.clone(), t2)];
+  let u1 = uni(1, &roots);
+  assert_eq!(
+    (
+      u1.certain_stored.clone(),
+      u1.stored.clone(),
+      u1.model_len,
+      u1.variable_len
+    ),
+    (vec![2], vec![2], 11, 11)
+  );
+  let u2 = uni(2, &roots);
+  assert_eq!(
+    (u2.uncertain.clone(), u2.stored.clone(), u2.model_len),
+    (vec![2], vec![2], 13)
+  );
+  let u3 = uni(3, &roots);
+  assert_eq!(
+    (u3.uncertain.clone(), u3.stored.is_empty(), u3.model_len),
+    (vec![2], true, 14)
+  );
+  assert!(u3.certain_excluded.contains(&1));
+  for w in 1..=3 {
+    assert_eq!(uni(w, &roots).model_len, uni_reference(w, &roots, false).0);
+  }
+  assert_eq!(
+    optimize_sharing_uniform(0, &roots, &limits()).unwrap_err(),
+    SharingError::FormatBound(FormatBound::UniformWidth { w: 0 })
+  );
+  eprintln!(
+    "uniform T2: w=1 {} bytes {:?}; w=2 classes cs={:?} unc={:?}; w=3 model {}",
+    u1.model_len, u1.table_terms, u2.certain_stored, u2.uncertain, u3.model_len
+  );
+}
+
+#[test]
+fn uniform_brackets_and_atoms() {
+  let atoms = |n: u64| -> Vec<E> {
+    (0..n).map(|i| Expr::reference(i, vec![0])).collect()
+  };
+  let roots_of = |n: u64| -> Vec<E> {
+    atoms(n).into_iter().flat_map(|a| [a.clone(), a]).collect()
+  };
+  let u = uni(1, &roots_of(128));
+  assert_eq!(u.uncertain.len(), 128);
+  assert_eq!(u.stored.len(), 127);
+  assert!(!u.stored.contains(&0) && u.lower_bracket);
+  assert_eq!(u.model_len, 642);
+  let u = uni(1, &roots_of(129));
+  assert_eq!(
+    (u.stored.len(), u.lower_bracket, u.certain_stored.clone(), u.model_len),
+    (129, false, vec![128], 648)
+  );
+  // Atom brute force with mixed sizes and uses.
+  let atoms10: Vec<E> =
+    (0..10u64).map(|i| Expr::reference(i, vec![0; (i % 3) as usize])).collect();
+  let occs: Vec<u64> = (0..10).map(|i| 1 + i % 4).collect();
+  let roots: Vec<E> = (0..10)
+    .flat_map(|i| std::iter::repeat_n(atoms10[i].clone(), occs[i] as usize))
+    .collect();
+  for w in 1..=3u64 {
+    let mut best = u64::MAX;
+    for mask in 0u64..1024 {
+      let ins = |i: usize| mask >> i & 1 == 1;
+      let mut cost = tag0_len((0..10).filter(|&i| ins(i)).count() as u64);
+      for i in 0..10 {
+        let s = expr_len(&atoms10[i]).unwrap();
+        cost += if ins(i) { s + occs[i] * w } else { occs[i] * s };
+      }
+      best = best.min(cost);
+    }
+    assert_eq!(uni(w, &roots).model_len, best, "w={w}");
+  }
+}
+
+#[test]
+fn uniform_in_degree_one_tie() {
+  // t (a 20-byte leaf) has the single parent p = App(Var0, t), which only
+  // continues two App telescopes. Storing {t} and {p} tie; the canonical
+  // class (in-degree >= 2) stores p.
+  let t = Expr::reference(1, vec![0; 18]);
+  let p = Expr::app(Expr::var(0), t.clone());
+  let roots =
+    vec![Expr::app(p.clone(), Expr::var(1)), Expr::app(p, Expr::var(2))];
+  let dag = SharingDag::from_expanded_roots(&roots, &limits()).unwrap();
+  let id = |e: &E| dag.term_exprs().iter().position(|x| x == e).unwrap() as u32;
+  let (tid_, pid) = (id(&t), id(&Expr::app(Expr::var(0), t.clone())));
+  let u = uni(1, &roots);
+  let len_t = uniform_set_len(&dag, 1, &[tid_]);
+  let len_p = uniform_set_len(&dag, 1, &[pid]);
+  eprintln!(
+    "in-degree-1 tie: {{t}} {len_t} bytes, {{p}} {len_p} bytes, uniform stores {:?}",
+    u.stored
+  );
+  assert_eq!(len_t, len_p);
+  assert_eq!(u.model_len, len_p);
+  assert_eq!(u.stored, vec![pid]);
+  assert_eq!(uni_reference(1, &roots, false).0, u.model_len);
+  // Over all R1/R2 candidates the pinned order also leaves out the smaller
+  // ID (t), so here the in-degree restriction does not change the result.
+  let pool = candidate_terms(&dag);
+  assert_eq!(uniform_brute(&dag, 1, &pool), (len_t, vec![pid]));
+}
+
+fn gen_uniform_roots(rng: &mut Rng) -> Vec<E> {
+  let mut g = ExprGen::new(rng.next(), 30);
+  let leaf = |g: &mut ExprGen| g.leaf();
+  match rng.below(6) {
+    0 => {
+      let (f, a, b) = (leaf(&mut g), leaf(&mut g), leaf(&mut g));
+      let pre = if rng.pct(50) {
+        Expr::app(f, a)
+      } else {
+        Expr::app(Expr::app(f, a), b)
+      };
+      (0..2 + rng.below(4))
+        .map(|i| {
+          let x = Expr::var(i % 3);
+          if rng.pct(50) {
+            Expr::app(pre.clone(), x)
+          } else {
+            Expr::app(Expr::app(pre.clone(), x), leaf(&mut g))
+          }
+        })
+        .collect()
+    },
+    1 => {
+      let e = Expr::app(Expr::var(rng.below(2)), Expr::var(1));
+      (0..2 + rng.below(5))
+        .map(|_| match rng.below(3) {
+          0 => Expr::app(Expr::reference(1, vec![]), e.clone()),
+          1 => Expr::lam(e.clone(), Expr::var(0)),
+          _ => Expr::all(e.clone(), Expr::sort(0)),
+        })
+        .collect()
+    },
+    2 => {
+      let pool: Vec<E> = (0..3).map(|_| leaf(&mut g)).collect();
+      let c = Expr::app(
+        pool[rng.below(3) as usize].clone(),
+        pool[rng.below(3) as usize].clone(),
+      );
+      let p = match rng.below(3) {
+        0 => Expr::app(c.clone(), pool[0].clone()),
+        1 => Expr::all(pool[1].clone(), c.clone()),
+        _ => Expr::prj(0, 1, c.clone()),
+      };
+      let mut roots = Vec::new();
+      for _ in 0..1 + rng.below(4) {
+        roots.push(Expr::app(Expr::var(2), p.clone()));
+      }
+      for _ in 0..1 + rng.below(4) {
+        roots.push(Expr::lam(c.clone(), Expr::var(0)));
+      }
+      roots
+    },
+    3 => {
+      let leaves: Vec<E> = (0..3).map(|_| leaf(&mut g)).collect();
+      let mut u = Expr::app(leaves[0].clone(), leaves[1].clone());
+      let mut roots = Vec::new();
+      for _ in 0..3 + rng.below(6) {
+        for _ in 0..1 + rng.below(2) {
+          roots.push(if rng.pct(50) {
+            Expr::app(Expr::var(7), u.clone())
+          } else {
+            Expr::all(u.clone(), Expr::sort(0))
+          });
+        }
+        u = Expr::app(u, leaves[rng.below(3) as usize].clone());
+      }
+      roots.push(u);
+      roots
+    },
+    _ => (0..1 + rng.below(3)).map(|_| g.expr(4)).collect(),
+  }
+}
+
+#[test]
+fn uniform_agrees_with_reference_and_brute_force() {
+  let mut rng = Rng(61);
+  let (mut checked, mut cs, mut ce, mut un, mut max_comp, mut with_unc) =
+    (0, 0, 0, 0, 0, 0);
+  let mut brute_checked = 0;
+  let (mut full_checked, mut restricted_differs) = (0, 0);
+  let mut attempts = 0;
+  while checked < 400 {
+    attempts += 1;
+    assert!(attempts < 20_000);
+    let roots = gen_uniform_roots(&mut rng);
+    let w = [1u64, 2, 3, 5][rng.below(4) as usize];
+    let dag = SharingDag::from_expanded_roots(&roots, &limits()).unwrap();
+    let cands = candidate_terms(&dag);
+    if cands.len() > 11 {
+      continue;
+    }
+    let u = uni(w, &roots);
+    let (rm, rq) = uni_reference(w, &roots, false);
+    let (rrm, rrq) = uni_reference(w, &roots, true);
+    assert_eq!((u.model_len, rrm), (rm, rm), "w={w} roots={roots:?}");
+    assert!(
+      u.certain_stored.iter().all(|t| rrq.contains(t)),
+      "w={w} {roots:?}"
+    );
+    assert!(
+      u.certain_excluded.iter().all(|t| !rq.contains(t) && !rrq.contains(t))
+    );
+    assert!(u.model_len <= u.unshared_len.unwrap());
+    // The full key over the restricted class, by exhaustive subsets.
+    let deg = in_degrees(&dag);
+    let pool: Vec<u32> =
+      cands.iter().copied().filter(|&t| deg[t as usize] >= 2).collect();
+    if pool.len() <= 10 {
+      assert_eq!(
+        uniform_brute(&dag, w, &pool),
+        (u.model_len, u.stored.clone()),
+        "w={w} {roots:?}"
+      );
+      brute_checked += 1;
+      if cands.len() <= 10 {
+        let full = uniform_brute(&dag, w, &cands);
+        assert_eq!(full.0, u.model_len);
+        if full.1 != u.stored {
+          restricted_differs += 1;
+          eprintln!(
+            "restricted != unrestricted canonical set: w={w} {:?} vs {:?} roots={roots:?}",
+            u.stored, full.1
+          );
+        }
+        full_checked += 1;
+      }
+    }
+    checked += 1;
+    cs += u.certain_stored.len();
+    ce += u.certain_excluded.len();
+    un += u.uncertain.len();
+    max_comp =
+      max_comp.max(u.components.iter().map(Vec::len).max().unwrap_or(0));
+    if !u.uncertain.is_empty() {
+      with_unc += 1;
+    }
+  }
+  eprintln!(
+    "uniform vs reference: {checked} inputs ({brute_checked} also by exhaustive subsets): \
+     {cs} certain-stored, {ce} certain-excluded, {un} uncertain; {with_unc} inputs with \
+     uncertain terms; largest component {max_comp}; unrestricted subsets checked \
+     {full_checked}, canonical set differs from the restricted class {restricted_differs}"
+  );
+  assert!(with_unc > 50 && brute_checked > 300);
+}
+
+#[test]
+fn uniform_t16_and_properties() {
+  let t16 = chain(16);
+  let roots = vec![Expr::all(t16.clone(), t16)];
+  let u = uni(1, &roots);
+  let (rm, _) = uni_reference(1, &roots, false);
+  eprintln!(
+    "uniform T16 w=1: model {} = reference {rm}; classes {}/{}/{}; {} states",
+    u.model_len,
+    u.certain_stored.len(),
+    u.uncertain.len(),
+    u.certain_excluded.len(),
+    u.states_visited
+  );
+  assert_eq!(u.model_len, rm);
+  let mut checked = 0;
+  for seed in 0..200u64 {
+    let c = gen_constant(seed + 70_000, 6, 16, 4);
+    let w = [1u64, 2, 4][(seed % 3) as usize];
+    let (n, r) = normalize_constant_sharing_uniform(w, &c, &limits()).unwrap();
+    let bytes = roundtrip(&n);
+    let (again, _) =
+      normalize_constant_sharing_uniform(w, &n, &limits()).unwrap();
+    assert_eq!(put(&again), bytes, "seed {seed}");
+    let fresh = Constant::get(&mut put(&c).as_slice()).unwrap();
+    let (f, _) =
+      normalize_constant_sharing_uniform(w, &fresh, &limits()).unwrap();
+    assert_eq!(put(&f), bytes);
+    assert!(r.model_len <= r.unshared_len.unwrap());
+    checked += 1;
+  }
+  assert_eq!(checked, 200);
+}
+
+#[test]
+fn uniform_byte_level() {
+  let t2 = chain(2);
+  let c = axiom(Expr::all(t2.clone(), t2), 1);
+  let out = normalize_constant_bytes_uniform(1, &put(&c), &limits()).unwrap();
+  // At w = 1 the uniform optimum is the 17-byte exact minimum.
+  assert_eq!(hex(&out), "d200009117b0b001921700170000000100");
+  let out3 = normalize_constant_bytes_uniform(3, &put(&c), &limits()).unwrap();
+  assert_eq!(out3, put(&c));
+  assert!(matches!(
+    normalize_constant_bytes_uniform(0, &put(&c), &limits()),
+    Err(NormalizeBytesError::Sharing(SharingError::FormatBound(_)))
+  ));
+}
