@@ -33,6 +33,7 @@ import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.Arena
 import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.Kernel.ConLecheRoundtrip
+import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
@@ -113,6 +114,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
   -- the Ixon reader against a direct translation of compiled Lean constants
   ("kernel-reader-fidelity", Tests.Ix.Kernel.ConLecheRoundtrip.suite),
+  -- the census's persistent read cache: a run from the mapped plan gives the live rows
+  ("kernel-read-cache", Tests.Ix.Kernel.ReadCache.suite),
   ("primitive-address-parity", Tests.Ix.Kernel.BuildPrimitives.paritySuite
     ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),
   ("decompile-unit", Tests.Decompile.unitSuite),

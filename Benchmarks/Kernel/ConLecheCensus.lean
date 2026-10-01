@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Benchmarks.Kernel.ConLecheStep
+import Benchmarks.Kernel.ConLecheReadCache
 
 /-! # Con-leche census over a compiled Ixon environment (untrusted)
 
@@ -36,7 +36,15 @@ The loop (reading, stepping, rows) runs on a dedicated thread with a fresh
 allocator heap, after the decoded inputs are marked persistent, as
 con-leche's driver runs its check phase (`Main.lean`, `checkDeclsIO`);
 `CENSUS_THREAD=0` runs it on the main thread, behind the decode, as before
-T1. -/
+T1.
+
+`CENSUS_READ_CACHE=<dir>` keeps a persistent read cache
+(`Benchmarks.Kernel.ConLecheReadCache`): a full-order run (no `CENSUS_ROOTS`,
+no limit) writes the run's plan (every record's view and reading, keyed by
+the `.ixe`'s BLAKE3 hash and the reader version), and a later run over the
+same bytes maps it instead of decoding the `.ixe`, building the setup and
+reading; its rows are the same, with `readMicros` the cache lookup's. The
+certified entry never uses it. -/
 
 namespace Benchmarks.Kernel.ConLecheCensus
 
@@ -63,23 +71,57 @@ def parseArgs : List String → Option Options
   | [input, output, limit] => do some { input, output, limit := some (← limit.toNat?) }
   | _ => none
 
+/-- The census loop's inputs: from a live setup, or from a read-cache plan. -/
+inductive Source where
+  | live (env : Ixon.Env) (s : Setup) (names : Std.HashMap Address (Array String))
+      (ordered : Array Address)
+  | planned (plan : ConLecheReadCache.Plan)
+
 def run (args : List String) : IO UInt32 := do
   let some options := parseArgs args
     | IO.eprintln "usage: kernel-census-cl <input.ixe> <output.jsonl> [limit]"; return 2
   let started ← IO.monoMsNow
-  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile options.input))
-  let mut store : RecordStore := {}
-  for (address, lazy) in env.consts.toList do
-    store := store.insert address (← IO.ofExcept lazy.get)
-  let names := reportNames env store
-  let pins ← IO.ofExcept defaultPins
-  let pre ← IO.ofExcept builtinPrelude
+  let bytes ← IO.FS.readBinFile options.input
   let natPins ← IO.ofExcept builtinNatOpPins
-  let hints := Hints.ofStore store env.anonHints
-  let s := setup store (env.blobs[·]?) pins pre hints.lookup
-  IO.eprintln s!"census-cl: {s.store.size} records, {s.ordered.size} primary, {env.blobs.size} blobs, \
-    {pins.names.size} pins, {s.cx.index.recs.size} recursors indexed, prelude {pre.ix.decls.size} declarations, \
-    {hints.hints.size} hints ({hints.projAt.size} at projections), loaded in {(← IO.monoMsNow) - started} ms"
+  let rootsEnv ← IO.getEnv "CENSUS_ROOTS"
+  -- the persistent read cache (`ConLecheReadCache`): full-order runs only
+  let cacheDir ← IO.getEnv "CENSUS_READ_CACHE"
+  let cache : Option (System.FilePath × String) := do
+    let dir ← cacheDir
+    guard rootsEnv.isNone
+    pure (ConLecheReadCache.planPath dir bytes)
+  let plan ← match cache with
+    | some (path, ixe) => ConLecheReadCache.load path ixe
+    | none => pure none
+  let source ← match plan with
+    | some plan =>
+      let path := (cache.map (·.1.toString)).getD ""
+      IO.eprintln s!"{plan.header}; read cache {path}, mapped in {(← IO.monoMsNow) - started} ms"
+      pure (Source.planned plan)
+    | none => do
+      let env ← IO.ofExcept (Ixon.deEnv bytes)
+      let mut store : RecordStore := {}
+      for (address, lazy) in env.consts.toList do
+        store := store.insert address (← IO.ofExcept lazy.get)
+      let names := reportNames env store
+      let pins ← IO.ofExcept defaultPins
+      let pre ← IO.ofExcept builtinPrelude
+      let hints := Hints.ofStore store env.anonHints
+      let s := setup store (env.blobs[·]?) pins pre hints.lookup
+      let header := s!"census-cl: {s.store.size} records, {s.ordered.size} primary, {env.blobs.size} blobs, \
+        {pins.names.size} pins, {s.cx.index.recs.size} recursors indexed, prelude {pre.ix.decls.size} declarations, \
+        {hints.hints.size} hints ({hints.projAt.size} at projections)"
+      IO.eprintln s!"{header}, loaded in {(← IO.monoMsNow) - started} ms"
+      let ordered ← match rootsEnv with
+        | none => pure s.ordered
+        | some list => do
+          let mut roots : Array Address := pre.records.map (·.1)
+          for n in (list.splitOn ",").filter (!·.isEmpty) do
+            match env.named[Ix.Name.fromLeanName (rootName n)]? with
+            | some named => roots := roots.push named.addr
+            | none => IO.eprintln s!"census-cl: CENSUS_ROOTS: no constant {n}"
+          pure (closure s.store s.extra roots)
+      pure (Source.live env s names ordered)
   let skip : Std.HashSet String := match ← IO.getEnv "CENSUS_SKIP" with
     | some list => (list.splitOn ",").foldl (fun set a => if a.isEmpty then set else set.insert a) {}
     | none => {}
@@ -101,24 +143,36 @@ def run (args : List String) : IO UInt32 := do
           file.flush
           IO.Process.exit 3
   let handle ← IO.FS.Handle.mk options.output .write
-  let ordered ← match ← IO.getEnv "CENSUS_ROOTS" with
-    | none => pure s.ordered
-    | some list => do
-      let mut roots : Array Address := pre.records.map (·.1)
-      for n in (list.splitOn ",").filter (!·.isEmpty) do
-        match env.named[Ix.Name.fromLeanName (rootName n)]? with
-        | some named => roots := roots.push named.addr
-        | none => IO.eprintln s!"census-cl: CENSUS_ROOTS: no constant {n}"
-      pure (closure s.store s.extra roots)
-  let total := match options.limit with | some n => min n ordered.size | none => ordered.size
-  let loop := censusLoop s natPins (names.getD · #[]) (ordered.extract 0 total) skip
-    (emit := fun row => do handle.putStrLn row.json.compress; handle.flush)
-    (before := fun a => do checking.set (some (a, ← IO.monoMsNow)))
-    (after := checking.set none)
-    (progress := fun i o => do
-      if i % 1000 == 0 then
-        IO.eprintln s!"census-cl: {i}/{total} after {(← IO.monoMsNow) - started} ms; {o.counts.toList}; \
-          RSS {(← statusKb "VmRSS:") / 1024} MB")
+  let emit := fun (row : Row) => do handle.putStrLn row.json.compress; handle.flush
+  let before := fun a => do checking.set (some (a, ← IO.monoMsNow))
+  let after := checking.set none
+  let progressAt (total : Nat) := fun (i : Nat) (o : Outcome) => do
+    if i % 1000 == 0 then
+      IO.eprintln s!"census-cl: {i}/{total} after {(← IO.monoMsNow) - started} ms; {o.counts.toList}; \
+        RSS {(← statusKb "VmRSS:") / 1024} MB"
+  -- a full-order live run records its readings and writes its plan, on the
+  -- loop's own thread: readings handed to another thread would be marked
+  -- multi-threaded, and every reference count on them made atomic
+  let record := cache.isSome && options.limit.isNone && rootsEnv.isNone
+  let loop : IO Outcome := match source with
+    | .planned plan =>
+      let total := match options.limit with
+        | some n => min n plan.records.size
+        | none => plan.records.size
+      ConLecheReadCache.censusLoopPlan plan natPins options.limit skip emit before after (progressAt total)
+    | .live _ s names ordered => do
+      let total := match options.limit with | some n => min n ordered.size | none => ordered.size
+      let readings ← IO.mkRef (#[] : Array (Address × Except ReadError Read))
+      let out ← censusLoop s natPins (names.getD · #[]) (ordered.extract 0 total) skip emit before after
+        (progressAt total)
+        (onRead := fun a r _ => if record then readings.modify (·.push (a, r)) else pure ())
+      if let some (path, ixe) := cache then
+        if record then
+          let t0 ← IO.monoMsNow
+          let header := s!"census-cl: {s.store.size} records, {s.ordered.size} primary"
+          ConLecheReadCache.save path (ConLecheReadCache.ofRun s ixe header names (← readings.get))
+          IO.eprintln s!"census-cl: read cache {path} written in {(← IO.monoMsNow) - t0} ms"
+      pure out
   -- The loop runs as con-leche's driver runs its check phase at `--jobs=1`
   -- (`Main.lean`, `checkDeclsIO`): on a dedicated thread, whose allocator
   -- heap is fresh (this thread's holds the decoded corpus and the
@@ -126,10 +180,12 @@ def run (args : List String) : IO UInt32 := do
   -- persistent first, so that handing them to the thread does not mark
   -- the whole corpus multi-threaded (atomic reference counts) and the
   -- loop pays no reference counting on them at all. `CENSUS_THREAD=0`
-  -- runs the loop on this thread instead.
+  -- runs the loop on this thread instead. A plan's objects are persistent
+  -- already: they live in the mapped region.
   let out ← if (← IO.getEnv "CENSUS_THREAD") == some "0" then loop else do
-    let _ ← unsafe Runtime.markPersistent s
-    let _ ← unsafe Runtime.markPersistent names
+    if let .live _ s names _ := source then
+      let _ ← unsafe Runtime.markPersistent s
+      let _ ← unsafe Runtime.markPersistent names
     IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) loop))
   running.set false
   let ranked := out.reasons.toArray.qsort (fun a b => a.2 > b.2)

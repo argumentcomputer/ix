@@ -286,30 +286,51 @@ structure Outcome where
   reasons : Std.HashMap String Nat := {}
   failed : Std.HashMap Address Address := {}
 
+/-- What the census loop needs to know about a record besides its reading:
+its kind, the recursor records read with it, and the record owners it
+depends on (computed only for a record that reads). -/
+structure RecordView where
+  kind : String
+  recs : Array Address
+  deps : Unit → Array Address
+
+/-- A record's view in a census setup. -/
+def Setup.view (s : Setup) (address : Address) : Option RecordView := do
+  let source ← s.store[address]?
+  pure { kind := kindOf source, recs := recursorRecords s.cx.index address,
+         deps := fun _ => dependencies s.store s.cx.index s.extra address source }
+
 /-- Check `addresses` in order, continuing past failures; each row is passed
-to `emit`. `before` runs before each record's check (the watchdog's hook). -/
-def censusLoop (s : Setup) (pins : List ConLeche.NatOpPinSet) (names : Address → Array String)
+to `emit`. `before` runs before each record's check (the watchdog's hook).
+The records' views and readings come from `view` and `read`; the reading
+state `σ` is threaded through `commit` after every reading that succeeds.
+`onRead` sees every reading (the persistent read cache records them). -/
+def censusLoopWith {σ : Type} (view : Address → Option RecordView)
+    (read : σ → Address → Except ReadError Read) (commit : σ → Read → σ) (init : σ)
+    (pins : List ConLeche.NatOpPinSet) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
-    (after : IO Unit := pure ()) (progress : Nat → Outcome → IO Unit := fun _ _ => pure ()) :
+    (after : IO Unit := pure ()) (progress : Nat → Outcome → IO Unit := fun _ _ => pure ())
+    (onRead : Address → Except ReadError Read → Nat → IO Unit := fun _ _ _ => pure ()) :
     IO Outcome := do
   let mut out : Outcome := { checker := {} }
-  let mut st : State := {}
+  let mut st : σ := init
   let mut consumed : Std.HashSet Address := {}
   let mut index := 0
   for address in addresses do
     index := index + 1
     progress index out
     if consumed.contains address then continue
-    let some source := s.store[address]? | continue
-    let recs := recursorRecords s.cx.index address
+    let some v := view address | continue
+    let recs := v.recs
     let rowsFor (outcome reason : String) (micros readMicros : Nat) : Array Row :=
-      #[⟨address, names address, kindOf source, outcome, reason, micros, readMicros⟩] ++
+      #[⟨address, names address, v.kind, outcome, reason, micros, readMicros⟩] ++
         recs.map fun r => ⟨r, names r, "recursor", outcome, reason, micros, readMicros⟩
     for r in recs do consumed := consumed.insert r
     let r0 ← IO.monoNanosNow
-    let reading ← IO.lazyPure fun _ => readRecord s.cx st address source
+    let reading ← IO.lazyPure fun _ => read st address
     let readMicros := ((← IO.monoNanosNow) - r0) / 1000
+    onRead address reading readMicros
     match reading with
     | .error e =>
       let (outcome, reason) := readOutcome e
@@ -321,8 +342,8 @@ def censusLoop (s : Setup) (pins : List ConLeche.NatOpPinSet) (names : Address �
     | .ok rd =>
       -- the reader's state learns from every record it reads; what a failed
       -- record taught is read only by its dependents, which are blocked
-      st := st.commit rd
-      let deps := dependencies s.store s.cx.index s.extra address source
+      st := commit st rd
+      let deps := v.deps ()
       match deps.find? out.failed.contains with
       | some blocker =>
         let root := out.failed.getD blocker blocker
@@ -360,6 +381,20 @@ def censusLoop (s : Setup) (pins : List ConLeche.NatOpPinSet) (names : Address �
             emit row
           out := { out with reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
   return out
+
+/-- `censusLoopWith` over a census setup: each record is read by the reader
+at the state the records before it left. -/
+def censusLoop (s : Setup) (pins : List ConLeche.NatOpPinSet) (names : Address → Array String)
+    (addresses : Array Address) (skip : Std.HashSet String)
+    (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
+    (after : IO Unit := pure ()) (progress : Nat → Outcome → IO Unit := fun _ _ => pure ())
+    (onRead : Address → Except ReadError Read → Nat → IO Unit := fun _ _ _ => pure ()) :
+    IO Outcome :=
+  censusLoopWith s.view
+    (fun st address => match s.store[address]? with
+      | some source => readRecord s.cx st address source
+      | none => .error (.malformed "record is missing"))
+    State.commit {} pins names addresses skip emit before after progress onRead
 
 /-- Names by owning record, for reporting only (at most three). -/
 def reportNames (env : Ixon.Env) (store : RecordStore) : Std.HashMap Address (Array String) := Id.run do
