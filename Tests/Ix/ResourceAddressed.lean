@@ -14,16 +14,22 @@ def store (env : Ixon.Env) (c : Constant) : Ixon.Env × Address :=
   let address := Addressed.commit c
   (env.storeConst address c, address)
 
-def unitBlock : Constant := {
+/-- The unit fixture in a chosen sort. `Sort 0` makes it a proposition, whose
+values are erased when passed as call arguments. -/
+def unitBlockIn (sort : Ixon.Univ) : Constant := {
   info := .muts #[.indc ⟨false, 0, 0, 0, .sort 0,
     #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩]⟩]
-  sharing := #[], refs := #[], univs := #[.zero] }
+  sharing := #[], refs := #[], univs := #[sort] }
 
-def unitEnv : Ixon.Env × Address := Id.run do
-  let (env, block) := store {} unitBlock
+def unitBlock : Constant := unitBlockIn .zero
+
+def unitEnvIn (sort : Ixon.Univ) : Ixon.Env × Address := Id.run do
+  let (env, block) := store {} (unitBlockIn sort)
   let (env, type) := store env (Addressed.wrapper (.iPrj ⟨0, block⟩))
   let (env, _) := store env (Addressed.constructorWrapper block 0 0)
   return (env, type)
+
+def unitEnv : Ixon.Env × Address := unitEnvIn .zero
 
 def linearLocal : Ixon.BinderContract := ⟨.linear, .localShared⟩
 
@@ -138,6 +144,9 @@ def run : IO Unit := do
     throw <| IO.userError "literal identities collided across local reference tables"
   let badBlob := { blobEnv with blobs := blobEnv.blobs.insert bogus ⟨#[0]⟩ }
   check "blob integrity" (Addressed.prepare badBlob profile) false
+  -- Linear unique resources must live in a type, not a proposition.
+  let (typeBase, typeUnit) := unitEnvIn (.succ .zero)
+  let typeProfile : Profile := { natType := some typeUnit, shareableTypes := #[typeUnit] }
   let recursiveType := Ixon.Expr.all ⟨.linear, .unique⟩ .unique (.ref 0 #[]) (.ref 0 #[])
   let recursive : Constant := {
     info := .muts #[
@@ -145,11 +154,17 @@ def run : IO Unit := do
         .lam ⟨.linear, .unique⟩ (.ref 0 #[]) (.app (.recur 1 #[]) (.var 0))⟩,
       .defn ⟨.defn, .safe, 0, recursiveType,
         .lam ⟨.linear, .unique⟩ (.ref 0 #[]) (.app (.recur 0 #[]) (.var 0))⟩]
-    sharing := #[], refs := #[unit], univs := #[] }
-  let (recEnv, block) := store base recursive
+    sharing := #[], refs := #[typeUnit], univs := #[] }
+  let (recEnv, block) := store typeBase recursive
   let (recEnv, _) := store recEnv (Addressed.wrapper (.dPrj ⟨0, block⟩))
   let (recEnv, _) := store recEnv (Addressed.wrapper (.dPrj ⟨1, block⟩))
-  check "mutual recursive interface checking" (Addressed.checkResources recEnv profile) true
+  check "mutual recursive interface checking" (Addressed.checkResources recEnv typeProfile) true
+  -- The same recursion over a proposition passes erased proofs: the linear
+  -- binder is never consumed.
+  let (propEnv, propBlock) := store base { recursive with refs := #[unit] }
+  let (propEnv, _) := store propEnv (Addressed.wrapper (.dPrj ⟨0, propBlock⟩))
+  let (propEnv, _) := store propEnv (Addressed.wrapper (.dPrj ⟨1, propBlock⟩))
+  check "proof arguments have no demand" (Addressed.checkResources propEnv profile) false
   let recursor : Constant := {
     info := .recr ⟨false, false, 0, 0, 0, 0, 0, .ref 0 #[],
       #[⟨0, .lam linearLocal (.ref 0 #[]) (.var 0)⟩]⟩

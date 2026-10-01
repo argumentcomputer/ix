@@ -73,7 +73,14 @@ def runAdmission : IO Unit := do
     throw <| IO.userError "relevance expanded a shared DAG as a tree"
   let cyclic := { dag with sharing := #[.share 0], declarations := #[{ type := .sort 0, body := some (.share 0) }] }
   unless (relevance cyclic).toOption.isNone do throw <| IO.userError "cyclic sharing was admitted"
-  IO.println "Resource admission: 18 profile, dependency, constructor, and DAG checks passed"
+  -- A linear binder that is never consumed is rejected in a definition, but a
+  -- theorem's proof is erased computation with no resource obligation.
+  let unusedLinear : Declaration := { type := arr (b .linear), body := some (lam (b .linear) zero) }
+  checkAdmission "theorem proof carries no obligation"
+    { program with declarations := program.declarations.push { unusedLinear with kind := .theorem } } true
+  checkAdmission "definition with the same body is checked"
+    { program with declarations := program.declarations.push unusedLinear } false
+  IO.println "Resource admission: 20 profile, dependency, constructor, theorem, and DAG checks passed"
 
 end Tests.Resource
 

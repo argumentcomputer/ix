@@ -4,16 +4,24 @@
 
 use super::*;
 use crate::constant::{
-  Constant, ConstantInfo, Definition, MutConst, Recursor, ctor_proj_constant,
-  defn_proj_constant, indc_proj_constant, recr_proj_constant,
+  Constant, ConstantInfo, DefKind, Definition, MutConst, Recursor,
+  ctor_proj_constant, defn_proj_constant, indc_proj_constant,
+  recr_proj_constant,
 };
 use crate::env::Env;
 use crate::tag::TagN;
+use crate::univ::Univ;
 use ix_common::address::Address;
 use ix_common::env::DefinitionSafety;
 use rustc_hash::FxHashMap;
 
 pub const VALIDATOR_ID: &str = "ixon-v4/resource-v1";
+
+/// Program-wide sort indices: every addressed sort is rewritten to one of
+/// these, so that the checker can recognize propositions without universe
+/// tables. A sort that is not literally `Sort 0` is never treated as `Prop`.
+pub const TYPE_SORT: u64 = 0;
+pub const PROP_SORT: u64 = 1;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Profile {
@@ -152,10 +160,10 @@ fn definition(d: &Definition) -> Declaration {
   Declaration {
     typ: d.typ.clone(),
     body: Some(d.value.clone()),
-    kind: if d.safety == DefinitionSafety::Safe {
-      DeclKind::Definition
-    } else {
-      DeclKind::Assumption
+    kind: match (d.safety, d.kind) {
+      (DefinitionSafety::Safe, DefKind::Theorem) => DeclKind::Theorem,
+      (DefinitionSafety::Safe, _) => DeclKind::Definition,
+      _ => DeclKind::Assumption,
     },
   }
 }
@@ -205,7 +213,7 @@ struct Tables<'a> {
   indices: &'a FxHashMap<Address, u64>,
   kinds: &'a [DeclKind],
   blobs: &'a FxHashMap<Address, u64>,
-  univ_count: usize,
+  univs: &'a [Arc<Univ>],
   share_count: usize,
   share_offset: usize,
 }
@@ -221,7 +229,7 @@ impl Tables<'_> {
   }
 
   fn universes(&self, levels: &[u64]) -> Result<(), String> {
-    if levels.iter().any(|l| *l >= self.univ_count as u64) {
+    if levels.iter().any(|l| *l >= self.univs.len() as u64) {
       return Err("resource adapter: universe index out of bounds".into());
     }
     Ok(())
@@ -233,9 +241,14 @@ impl Tables<'_> {
       .ok_or("resource adapter: expression depth exceeded")?;
     Ok(Arc::new(match e.as_ref() {
       Expr::Var(_) => return Ok(e.clone()),
+      // Sorts index the constant's own universe table. Only `Prop` matters
+      // to resource analysis, so every sort becomes the program-wide
+      // `TYPE_SORT` or, for a literal `Sort 0`, `PROP_SORT`.
       Expr::Sort(level) => {
         self.universes(&[*level])?;
-        return Ok(e.clone());
+        let univ = &self.univs[usize::try_from(*level)
+          .map_err(|_error| "resource adapter: universe index overflow")?];
+        Expr::Sort(if **univ == Univ::Zero { PROP_SORT } else { TYPE_SORT })
       },
       Expr::Ref(i, levels) => {
         self.universes(levels)?;
@@ -566,7 +579,7 @@ pub fn prepare(
       indices: &indices,
       kinds: &kinds,
       blobs: &blobs,
-      univ_count: p.constant.univs.len(),
+      univs: &p.constant.univs,
       share_count: p.constant.sharing.len(),
       share_offset: offsets
         .get(&p.parent)
@@ -618,6 +631,7 @@ pub fn prepare(
   program.string_type =
     profile.string_type.as_ref().map(literal_type).transpose()?;
   program.shareable_types = shareable.clone();
+  program.prop_sort = Some(PROP_SORT);
   program.choices = choices.clone();
   for (typ, ctor, count) in field_specs {
     if let Ok(derived) = fields(
@@ -690,6 +704,11 @@ mod tests {
     addr
   }
   fn unit_block() -> Constant {
+    unit_block_in(Univ::zero())
+  }
+  /// The unit fixture in a chosen sort. `Sort 0` makes it a proposition,
+  /// whose values are erased when passed as call arguments.
+  fn unit_block_in(sort: Arc<Univ>) -> Constant {
     Constant::with_tables(
       ConstantInfo::Muts(vec![MutConst::Indc(Inductive {
         is_unsafe: false,
@@ -708,12 +727,15 @@ mod tests {
       })]),
       vec![],
       vec![],
-      vec![Univ::zero()],
+      vec![sort],
     )
   }
   fn unit_env() -> (Env, Address) {
+    unit_env_in(Univ::zero())
+  }
+  fn unit_env_in(sort: Arc<Univ>) -> (Env, Address) {
     let env = Env::new();
-    let block = store(&env, unit_block());
+    let block = store(&env, unit_block_in(sort));
     let typ = store(&env, indc_proj_constant(0, block.clone()));
     store(&env, ctor_proj_constant(0, 0, block));
     (env, typ)
@@ -905,7 +927,20 @@ mod tests {
 
   #[test]
   fn mutual_recursive_interfaces() {
+    // Linear unique resources must live in a type, not a proposition.
+    let (env, unit) = unit_env_in(Univ::succ(Univ::zero()));
+    let resolved =
+      check_resources(&mutual_pair(&env, &unit), &profile(&unit)).unwrap();
+    assert_eq!(resolved.program.groups.len(), 2);
+    // Over a proposition the same calls pass erased proofs, so the linear
+    // binder is never consumed.
     let (env, unit) = unit_env();
+    let rejected = check_resources(&mutual_pair(&env, &unit), &profile(&unit));
+    assert!(rejected.unwrap_err().contains("Usage(0, Linear, Erased)"));
+  }
+
+  fn mutual_pair(env: &Env, unit: &Address) -> Env {
+    let env = env.clone();
     let input =
       BinderContract { uses: Uses::Linear, value: ValueContract::unique() };
     let typ = Expr::all_contract(
@@ -940,8 +975,7 @@ mod tests {
     );
     store(&env, defn_proj_constant(0, block.clone()));
     store(&env, defn_proj_constant(1, block));
-    let resolved = check_resources(&env, &profile(&unit)).unwrap();
-    assert_eq!(resolved.program.groups.len(), 2);
+    env
   }
 
   #[test]

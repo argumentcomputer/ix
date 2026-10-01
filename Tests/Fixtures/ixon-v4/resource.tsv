@@ -6,7 +6,7 @@ erased argument has zero demand	ok	911420002000	8104200071200410
 unused affine	ok	911620002000	8106200060
 missing linear consumption	usage	911520002000	8105200060
 runtime erased variable	usage	911420002000	8104200010
-many invocation scales demand	usage	911620002000	8106200071200510
+many invocation crosses for a shareable immediate	ok	911620002000	8106200071200510
 many permits repeated demand	ok	911720002000	8107200071200510
 linear ordinary let	ok	911520002000	81052000a00520001010
 erased let initializer	ok	911520002000	81052000a00420001011

@@ -82,6 +82,10 @@ pub enum DeclKind {
   Assumption,
   Constructor,
   TypeConstructor,
+  /// A safe theorem. Its proof is erased computation that no backend runs, so
+  /// admission checks no resource obligation in it. Its statement still
+  /// takes part in relevance, and callers still use it as an interface.
+  Theorem,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -112,6 +116,11 @@ pub struct Program {
   pub shareable_types: Vec<u64>,
   /// Profile-bound non-strict selection, with exactly three arguments.
   pub choices: Vec<u64>,
+  /// The sort index that denotes `Prop`. The address adapter rewrites every
+  /// sort to `0` (some type universe) or this index (literally `Sort 0`).
+  /// Values of a proposition are erased computation with zero demand; without
+  /// this index no type is recognized as a proposition.
+  pub prop_sort: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -629,6 +638,81 @@ impl<'a> Checker<'a> {
       _ => false,
     })
   }
+  /// Whether `typ` is a proposition, so that its values are erased proofs.
+  /// A `∀` is a proposition when its body is (impredicativity); otherwise the
+  /// type's own type must reduce to the program's `Prop` sort. Anything this
+  /// bounded inference cannot type is conservatively not a proposition.
+  fn is_proposition(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    typ: &Term,
+  ) -> Result<bool, Error> {
+    let Some(prop) = self.program.prop_sort else { return Ok(false) };
+    let fuel = self.tick(fuel)?;
+    let typ = self.whnf(fuel, typ)?;
+    match typ.as_ref() {
+      Expr::All(c, _, domain, body) => {
+        let before = self.state.bindings.clone();
+        let id = self.push(*c, Value::shared(domain.clone()));
+        let mut inner = ctx.clone();
+        inner.vars.push(id);
+        let result = self.is_proposition(fuel, &inner, body);
+        self.state.bindings = before;
+        result
+      },
+      Expr::Sort(_) | Expr::Lam(..) => Ok(false),
+      _ => {
+        let before = self.state.bindings.clone();
+        let sort =
+          self.type_of(fuel, ctx, &typ).and_then(|sort| self.whnf(fuel, &sort));
+        self.state.bindings = before;
+        match sort {
+          Ok(sort) => Ok(matches!(sort.as_ref(), Expr::Sort(s) if *s == prop)),
+          Err(Error::Budget) => Err(Error::Budget),
+          Err(_) => Ok(false),
+        }
+      },
+    }
+  }
+  /// Argument demand at a call. A callee's multiplicity does not scale the
+  /// demand on a value of a profile-shareable (immediate) type: the callee
+  /// receives a copy that holds no resource, so passing it is one
+  /// consumption. The caller's own reads still count, and a zero-use input
+  /// still has zero demand.
+  fn argument_grade(
+    &mut self,
+    fuel: usize,
+    grade: Uses,
+    input: Uses,
+    domain: &Term,
+  ) -> Result<Uses, Error> {
+    if input != Uses::Erased && self.is_shareable(fuel, domain)? {
+      Ok(grade)
+    } else {
+      Ok(scale(grade, input))
+    }
+  }
+  /// Analyze one argument against a callee binder. A proof (an argument whose
+  /// domain is a proposition) is erased computation: it has no demand, owner
+  /// transfer, or origin, and its typing is the erased typechecker's job.
+  #[allow(clippy::too_many_arguments)]
+  fn analyze_argument(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    a: &Term,
+    domain: Term,
+    input: BinderContract,
+    scope: usize,
+    grade: Uses,
+  ) -> Result<Value, Error> {
+    if self.is_proposition(fuel, ctx, &domain)? {
+      return Ok(Value::fresh(domain));
+    }
+    let grade = self.argument_grade(fuel, grade, input.uses, &domain)?;
+    self.analyze(fuel, ctx, a, Some((domain, input.value)), scope, grade)
+  }
   fn literal_type(typ: &Option<Term>) -> Result<Term, Error> {
     typ.clone().ok_or(Error::Unsupported(
       "literal type is absent from the addressed profile",
@@ -795,14 +879,8 @@ impl<'a> Checker<'a> {
     let f = self.analyze(fuel, ctx, f, None, scope, grade)?;
     self.require_type(fuel, &f.typ, &fn_type)?;
     self.invoke(&f)?;
-    let arg = self.analyze(
-      fuel,
-      ctx,
-      a,
-      Some((domain, input.value)),
-      scope,
-      scale(grade, input.uses),
-    )?;
+    let arg =
+      self.analyze_argument(fuel, ctx, a, domain, input, scope, grade)?;
     let typ = self.substitute(fuel, &codomain, a, 0)?;
     let origins = if result.locality == Locality::Local {
       union(&union(&f.origins, &arg.origins), &[scope])
@@ -824,13 +902,14 @@ impl<'a> Checker<'a> {
   ) -> Result<Value, Error> {
     let typ = self.declaration(index)?.typ.clone();
     let (c, _, selector_type, tail) = self.arrow(fuel, &typ)?;
-    self.analyze(
+    self.analyze_argument(
       fuel,
       ctx,
       &args[0],
-      Some((selector_type, c.value)),
+      selector_type,
+      c,
       ctx.scope,
-      scale(grade, c.uses),
+      grade,
     )?;
     let tail = self.substitute(fuel, &tail, &args[0], 0)?;
     let (_, _, left_type, tail) = self.arrow(fuel, &tail)?;
@@ -1447,7 +1526,7 @@ pub fn admit_program(
         },
         DeclKind::Constructor => Checker::new(program, limits)
           .check_constructor_type(limits.depth, &d.typ, false, false),
-        DeclKind::TypeConstructor => Ok(()),
+        DeclKind::TypeConstructor | DeclKind::Theorem => Ok(()),
       };
       result.map_err(|error| AdmissionError { declaration: Some(i), error })?;
     }
@@ -1593,16 +1672,14 @@ mod tests {
     expr
   }
 
-  #[test]
-  fn shared_resource_acceptance_and_rejection_fixtures() {
+  /// Check every `name, expected code, type hex, body hex` line of a shared
+  /// fixture file against `base` extended with the case definition.
+  fn run_fixture_lines(base: &Program, text: &str) -> usize {
     let mut count = 0;
-    for line in include_str!("../../../Tests/Fixtures/ixon-v4/resource.tsv")
-      .lines()
-      .filter(|l| !l.starts_with('#') && !l.is_empty())
-    {
+    for line in text.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
       let cols: Vec<_> = line.split('\t').collect();
       assert_eq!(cols.len(), 4);
-      let mut p = program();
+      let mut p = base.clone();
       let index = p.declarations.len();
       p.declarations.push(Declaration {
         typ: parse(cols[2]),
@@ -1614,7 +1691,81 @@ mod tests {
       assert_eq!(code, cols[1], "{}: {actual:?}", cols[0]);
       count += 1;
     }
-    assert!(count >= 55);
+    count
+  }
+
+  #[test]
+  fn shared_resource_acceptance_and_rejection_fixtures() {
+    let text = include_str!("../../../Tests/Fixtures/ixon-v4/resource.tsv");
+    assert!(run_fixture_lines(&program(), text) >= 55);
+  }
+
+  /// The base program extended for the usage and ownership modes. Mirrors
+  /// `Tests.Resource.modesProgram`; new declarations are only appended.
+  fn modes_program() -> Program {
+    let mut p = program();
+    let res = Expr::reference(11, vec![]);
+    let prf = Expr::reference(13, vec![]);
+    let many = b(Uses::Many, ValueContract::shared());
+    p.declarations.extend([
+      // 11 Res: a type with no shareable or plain-data rule.
+      Declaration {
+        typ: Expr::sort(0),
+        body: None,
+        kind: DeclKind::TypeConstructor,
+      },
+      // 12 consumes a Res through a many binder.
+      assumption(arr(many, ValueContract::shared(), res.clone(), res)),
+      // 13 Prf: a proposition.
+      Declaration {
+        typ: Expr::sort(1),
+        body: None,
+        kind: DeclKind::TypeConstructor,
+      },
+      // 14 consumes a proof through a many binder.
+      assumption(arr(many, ValueContract::shared(), prf, nat())),
+      // 15 a binary many function on Nat.
+      assumption(arr(
+        many,
+        ValueContract::shared(),
+        nat(),
+        unary(many, ValueContract::shared()),
+      )),
+    ]);
+    p.prop_sort = Some(1);
+    p
+  }
+
+  #[test]
+  fn usage_and_ownership_mode_fixtures() {
+    let text =
+      include_str!("../../../Tests/Fixtures/ixon-v4/resource-modes.tsv");
+    assert!(run_fixture_lines(&modes_program(), text) >= 8);
+  }
+
+  #[test]
+  fn theorem_proofs_carry_no_resource_obligation() {
+    let mut p = program();
+    let typ =
+      unary(b(Uses::Linear, ValueContract::shared()), ValueContract::shared());
+    // A linear binder that is never consumed would be rejected in a definition.
+    let body = Expr::lam_contract(
+      b(Uses::Linear, ValueContract::shared()),
+      nat(),
+      Expr::nat(0),
+    );
+    p.declarations.push(Declaration {
+      typ: typ.clone(),
+      body: Some(body.clone()),
+      kind: DeclKind::Theorem,
+    });
+    assert!(admit_program(&p, &policy(), Limits::default()).is_ok());
+    let last = p.declarations.len() - 1;
+    p.declarations[last].kind = DeclKind::Definition;
+    assert_eq!(
+      admit_program(&p, &policy(), Limits::default()).unwrap_err().error,
+      Error::Usage(0, Uses::Linear, Uses::Erased)
+    );
   }
 
   #[test]

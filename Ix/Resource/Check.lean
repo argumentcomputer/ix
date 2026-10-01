@@ -28,6 +28,10 @@ inductive DeclKind where
   | assumption
   | constructor
   | typeConstructor
+  /-- A safe theorem. Its proof is erased computation that no backend runs,
+  so admission checks no resource obligation in it. Its statement still takes
+  part in relevance, and callers still use it as an interface. -/
+  | theorem
   deriving BEq, Repr, Inhabited
 
 structure Declaration where
@@ -63,6 +67,11 @@ structure Program where
   /-- Profile-bound non-strict selection primitives, with exactly selector,
   left alternative, and right alternative as their three arguments. -/
   choices : Array UInt64 := #[]
+  /-- The sort index that denotes `Prop`. The address adapter rewrites every
+  sort to `0` (some type universe) or this index (literally `Sort 0`). An
+  argument whose domain is a proposition is erased computation. Without this
+  index no type is recognized as a proposition. -/
+  propSort : Option UInt64 := none
   deriving BEq, Repr, Inhabited
 
 structure Context where
@@ -289,6 +298,44 @@ def typeOf : Nat → Context → Ixon.Expr → CheckM Ixon.Expr
       modify fun s => { s with bindings := before.bindings }
       substitute ctx.program fuel type initializer 0
 
+/-- Whether `type` is a proposition, so that its values are erased proofs.
+A `∀` is a proposition when its body is (impredicativity); otherwise the
+type's own type must reduce to the program's `Prop` sort. Anything this
+bounded inference cannot type is conservatively not a proposition. -/
+def isProposition : Nat → Context → Ixon.Expr → CheckM Bool
+  | 0, _, _ => throw .budget
+  | fuel + 1, ctx, type => do
+    let some prop := ctx.program.propSort | return false
+    tick
+    match ← whnf ctx.program fuel type with
+    | .all input _ domain body =>
+      let before ← get
+      let id ← pushBinding input { type := domain }
+      let result ← isProposition fuel { ctx with vars := ctx.vars.push id } body
+      modify fun s => { s with bindings := before.bindings }
+      return result
+    | .sort _ | .lam .. => return false
+    | type =>
+      let before ← get
+      let sort ← tryCatch (some <$> (do whnf ctx.program fuel (← typeOf fuel ctx type)))
+        fun error => match error with
+          | .budget => throw .budget
+          | _ => pure none
+      modify fun s => { s with bindings := before.bindings }
+      return match sort with
+        | some (.sort s) => s == prop
+        | _ => false
+
+/-- Argument demand at a call. A callee's multiplicity does not scale the
+demand on a value of a profile-shareable (immediate) type: the callee
+receives a copy that holds no resource, so passing it is one consumption.
+The caller's own reads still count, and a zero-use input still has zero
+demand. -/
+def argumentGrade (program : Program) (fuel : Nat) (grade input : Uses)
+    (domain : Ixon.Expr) : CheckM Uses := do
+  if input != .erased && (← isShareable program fuel domain) then return grade
+  return grade.mul input
+
 def splitApp (program : Program) :
     Nat → Ixon.Expr → List Ixon.Expr → CheckM (Ixon.Expr × List Ixon.Expr)
   | 0, _, _ => throw .budget
@@ -474,7 +521,12 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
           let fnValue ← analyze fuel ctx fn none callScope grade
           requireType ctx.program fuel fnValue.type fnType
           invoke fnValue
-          let argValue ← analyze fuel ctx arg (some (domain, input.value)) callScope (grade.mul input.uses)
+          -- A proof argument is erased computation: no demand, transfer, or origin.
+          let argValue ← if ← isProposition fuel ctx domain then
+              pure { type := domain, owned := .unique }
+            else
+              analyze fuel ctx arg (some (domain, input.value)) callScope
+                (← argumentGrade ctx.program fuel grade input.uses domain)
           let type ← substitute ctx.program fuel codomain arg 0
           let origins := if result.locality == .local then
             unionOrigins (unionOrigins fnValue.origins argValue.origins) [callScope] else []
@@ -491,7 +543,9 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
           if ctx.program.choices.contains index then
             let decl ← declaration ctx.program index
             let (c, _, selectorType, tail) ← arrow ctx.program fuel decl.type
-            let _ ← analyze fuel ctx selector (some (selectorType, c.value)) ctx.scope (grade.mul c.uses)
+            unless ← isProposition fuel ctx selectorType do
+              let _ ← analyze fuel ctx selector (some (selectorType, c.value)) ctx.scope
+                (← argumentGrade ctx.program fuel grade c.uses selectorType)
             let tail ← substitute ctx.program fuel tail selector 0
             let (_, _, leftType, tail) ← arrow ctx.program fuel tail
             let tail ← substitute ctx.program fuel tail left 0

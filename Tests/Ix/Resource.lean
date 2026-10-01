@@ -107,7 +107,7 @@ def cases : Array Case := #[
   ⟨"unused affine", arr (b .affine), lam (b .affine) zero, "ok"⟩,
   ⟨"missing linear consumption", arr (b .linear), lam (b .linear) zero, "usage"⟩,
   ⟨"runtime erased variable", arr (b .erased), lam (b .erased) (v 0), "usage"⟩,
-  ⟨"many invocation scales demand", arr (b .affine), lam (b .affine) (call 5 (v 0)), "usage"⟩,
+  ⟨"many invocation crosses for a shareable immediate", arr (b .affine), lam (b .affine) (call 5 (v 0)), "ok"⟩,
   ⟨"many permits repeated demand", arr (b .many), lam (b .many) (call 5 (v 0)), "ok"⟩,
   ⟨"linear ordinary let", arr (b .linear),
     lam (b .linear) (bind (b .linear) (v 0) (v 0)), "ok"⟩,
@@ -273,20 +273,68 @@ def fixtureText : String :=
   allCases.foldl (fun text test => text ++ fixtureLine test ++ "\n")
     s!"# name\texpected\ttype ({Ixon.wireFormatId} hex)\tbody ({Ixon.wireFormatId} hex)\n"
 
-def runFixtureCases : IO Nat := do
-  let file ← IO.FS.readFile "Tests/Fixtures/ixon-v4/resource.tsv"
+def resTy : E := .ref 11 #[]
+def prfTy : E := .ref 13 #[]
+
+/-- The base program extended for the usage and ownership modes. Mirrors the
+Rust `modes_program`; new declarations are only appended. -/
+def modesProgram : Program := { program with
+  declarations := program.declarations ++ #[
+    { type := .sort 0, kind := .typeConstructor },                            -- 11 Res
+    { type := arr (b .many) .shared resTy resTy, kind := .assumption },       -- 12 Res consumer
+    { type := .sort 1, kind := .typeConstructor },                            -- 13 Prf : Prop
+    { type := arr (b .many) .shared prfTy natTy, kind := .assumption },       -- 14 proof consumer
+    { type := arr (b .many) .shared natTy (arr (b .many)), kind := .assumption } -- 15 binary
+  ]
+  propSort := some 1 }
+
+def modeCases : Array Case := #[
+  -- Usage crossing for shareable immediates at call boundaries.
+  ⟨"linear shareable value crosses a many call", arr (b .linear),
+    lam (b .linear) (call 5 (v 0)), "ok"⟩,
+  ⟨"many call scales demand of a non-shareable value", arr (b .affine) .shared resTy resTy,
+    lam (b .affine) (call 12 (v 0)) resTy, "usage"⟩,
+  ⟨"crossing still counts every caller read", arr (b .linear),
+    lam (b .linear) (.app (call 15 (v 0)) (v 0)), "usage"⟩,
+  ⟨"crossing keeps zero demand of an erased input", arr (b .linear),
+    lam (b .linear) (call 4 (v 0)), "usage"⟩,
+  -- Proof arguments are erased computation.
+  ⟨"erased proof passed to an ordinary binder", arr (b .erased) .shared prfTy natTy,
+    lam (b .erased) (call 14 (v 0)) prfTy, "ok"⟩,
+  ⟨"local proof passed to an unrestricted binder", arr (b .many .localShared) .shared prfTy natTy,
+    lam (b .many .localShared) (call 14 (v 0)) prfTy, "ok"⟩,
+  ⟨"erased data passed to an ordinary binder", arr (b .erased),
+    lam (b .erased) (call 5 (v 0)), "usage"⟩,
+  ⟨"a returned proof is still checked as a value", arr (b .linear .localShared) .shared prfTy prfTy,
+    lam (b .linear .localShared) (v 0) prfTy, "unrestricted"⟩
+]
+
+def runCaseIn (base : Program) (type value : E) (limits : Limits := {}) : Except Error Unit :=
+  let p := { base with declarations := base.declarations.push { type, body := some value } }
+  checkDefinition p base.declarations.size limits
+
+def runFixtureFile (path : String) (base : Program) (tests : Array Case) : IO Nat := do
+  let file ← IO.FS.readFile path
   let lines := file.splitOn "\n"
-  for test in allCases do
-    let actual := runCase test.type test.value
+  let mut missing := #[]
+  for test in tests do
+    let actual := runCaseIn base test.type test.value
     let code := match actual with | .ok _ => "ok" | .error e => errorCode e
     unless code == test.expected do
       throw <| IO.userError s!"resource: {test.name}: expected {test.expected}, got {repr actual}"
-    unless lines.contains (fixtureLine test) do
-      throw <| IO.userError s!"resource fixture bytes differ: {test.name}"
-  unless file == fixtureText do
+    let line := fixtureLine test
+    unless lines.contains line do missing := missing.push line
+  unless missing.isEmpty do
+    throw <| IO.userError s!"resource fixture bytes differ in {path}; expected lines:\n{"\n".intercalate missing.toList}"
+  return tests.size
+
+def runFixtureCases : IO Nat := do
+  let base ← runFixtureFile "Tests/Fixtures/ixon-v4/resource.tsv" program allCases
+  unless (← IO.FS.readFile "Tests/Fixtures/ixon-v4/resource.tsv") == fixtureText do
     throw <| IO.userError "resource fixture differs from its producer; regenerate it with \
       `lake exe ixon-v4-tests --export-fixtures`"
-  return allCases.size
+  let modes ← runFixtureFile "Tests/Fixtures/ixon-v4/resource-modes.tsv" modesProgram modeCases
+  return base + modes
 
 def runContractMatrix : IO Nat := do
   let mut checks := 0

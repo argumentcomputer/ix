@@ -23,6 +23,12 @@ format (`Ixon.wireFormatId`) it reads, so a format version bump moves profile
 addresses to a new domain. Mirrors Rust `VALIDATOR_ID`. -/
 def validatorId : String := wireFormatId ++ "/resource-v1"
 
+/-- Program-wide sort indices: every addressed sort is rewritten to one of
+these, so that the checker can recognize propositions without universe
+tables. A sort that is not literally `Sort 0` is never treated as `Prop`. -/
+def typeSort : UInt64 := 0
+def propSort : UInt64 := 1
+
 structure Profile where
   assumptions : Array Address := #[]
   shareableTypes : Array Address := #[]
@@ -127,7 +133,10 @@ def constructorWrapper (block : Address) (index ctor : UInt64) : Constant :=
 
 def definition (d : Definition) : Declaration := {
   type := d.typ, body := some d.value
-  kind := if d.safety == .safe then .definition else .assumption }
+  kind := match d.safety, d.kind with
+    | .safe, .thm => .theorem
+    | .safe, _ => .definition
+    | _, _ => .assumption }
 
 def recursor (d : Recursor) : Declaration := {
   type := d.typ, kind := .assumption }
@@ -151,7 +160,7 @@ structure Tables where
   indices : Std.HashMap Address UInt64
   kinds : Array DeclKind
   blobs : Std.HashMap Address UInt64
-  univCount : Nat
+  univs : Array Ixon.Univ
   shareCount : Nat
   shareOffset : Nat
   deriving Inhabited
@@ -167,7 +176,7 @@ def Tables.reference (tables : Tables) (i : UInt64) : Except String Address :=
 
 def Tables.universes (tables : Tables) (levels : Array UInt64) : Except String Unit := do
   for level in levels do
-    if level.toNat >= tables.univCount then throw "resource adapter: universe index out of bounds"
+    if level.toNat >= tables.univs.size then throw "resource adapter: universe index out of bounds"
 
 /-- Resolve every local reference namespace, including blob identities. The
 global sharing table still contains open expressions; analysis expands them
@@ -177,9 +186,13 @@ def remap (tables : Tables) : Nat → Ixon.Expr → Except String Ixon.Expr
   | fuel + 1, e => do
     match e with
     | .var _ => return e
+    -- Sorts index the constant's own universe table. Only `Prop` matters to
+    -- resource analysis, so every sort becomes `typeSort` or, for a literal
+    -- `Sort 0`, `propSort`.
     | .sort level =>
-      if level.toNat >= tables.univCount then throw "resource adapter: universe index out of bounds"
-      return e
+      let some univ := tables.univs[level.toNat]?
+        | throw "resource adapter: universe index out of bounds"
+      return .sort (if univ == .zero then propSort else typeSort)
     | .ref i levels =>
       tables.universes levels
       return .ref (← index tables.indices (← tables.reference i)) levels
@@ -328,7 +341,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     let parent := commit p.constant
     let tables : Tables := {
       refs := p.constant.refs, members := p.members, indices, kinds, blobs
-      univCount := p.constant.univs.size, shareCount := p.constant.sharing.size
+      univs := p.constant.univs, shareCount := p.constant.sharing.size
       shareOffset := offsets[parent]?.getD program.sharing.size }
     if !offsets.contains parent then
       offsets := offsets.insert parent tables.shareOffset
@@ -356,7 +369,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
   program := { program with
     natType := ← profile.natType.mapM literalType
     stringType := ← profile.stringType.mapM literalType
-    shareableTypes := shareable, choices }
+    shareableTypes := shareable, choices, propSort := some propSort }
   for (typeAddr, ctorAddr, count) in fieldSpecs do
     if let .ok derived := fields program profile.limits (← index indices typeAddr) (← index indices ctorAddr) count then
       program := { program with fields := program.fields ++ derived }

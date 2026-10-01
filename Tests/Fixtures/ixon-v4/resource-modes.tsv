@@ -1,0 +1,10 @@
+# name	expected	type (ixon-v4 hex)	body (ixon-v4 hex)
+# Cases over Tests.Resource.modesProgram (Rust: modes_program).
+linear shareable value crosses a many call	ok	911520002000	8105200071200510
+many call scales demand of a non-shareable value	usage	9116200b200b	8106200b71200c10
+crossing still counts every caller read	usage	911520002000	8105200072200f1010
+crossing keeps zero demand of an erased input	usage	911520002000	8105200071200410
+erased proof passed to an ordinary binder	ok	9114200d2000	8104200d71200e10
+local proof passed to an unrestricted binder	ok	911f200d2000	810f200d71200e10
+erased data passed to an ordinary binder	usage	911420002000	8104200071200510
+a returned proof is still checked as a value	unrestricted	911d200d200d	810d200d10

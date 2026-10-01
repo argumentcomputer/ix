@@ -43,6 +43,17 @@ paths join. Erased computation and type formation contribute zero demand.
 A binder is checked when its scope finishes; exactly one rejects an optional
 or absent consumption.
 
+Two call-boundary rules refine the scaling. A value of a profile-shareable type
+is an immediate: the callee receives a copy that holds no resource, so passing
+it to a nonzero input counts as one consumption whatever the callee's
+multiplicity. The caller's own reads still add, and a zero-use input still has
+zero demand. An argument whose domain is a proposition is a proof, which is
+erased computation: it has no demand, owner transfer, or origin. The adapter
+recognizes propositions from addressed universes (only a literal `Sort 0` is
+`Prop`). A proof returned or bound by a let is still checked as a value. A safe
+theorem's own proof carries no resource obligation; its statement still takes
+part in relevance.
+
 Zero demand still checks the full resource structure of argument types. An
 erased owner or view cannot be made usable by borrowing or reborrowing it.
 

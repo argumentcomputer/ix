@@ -187,7 +187,7 @@ def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits :=
           if policy.assumptions.contains i then .ok ()
           else .error (.unsupported "external resource interface is absent from the bound profile")
         | .constructor => runCheck limits (checkConstructorType program limits.depth d.type false false)
-        | .typeConstructor => .ok ()
+        | .typeConstructor | .theorem => .ok ()
       checked.mapError (⟨some i, ·⟩)
 
 end Ix.Resource
