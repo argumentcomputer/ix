@@ -89,6 +89,8 @@ structure Input where
   seeds : List (Lean.Name × Address)
   /-- every compiled name's address -/
   named : Lean.Name → Option Address
+  /-- the census's view of the same records (store, reader context, order) -/
+  census : Benchmarks.Kernel.ConLecheStep.Setup
 
 def owner (address : Address) (source : Ixon.Constant) : Address :=
   Benchmarks.Kernel.ConLecheStep.owner address source
@@ -120,7 +122,7 @@ def prepare (leanEnv : Lean.Environment) (seeds : List Lean.Name) : IO Input := 
     pure (n, a)
   let blobs := (env.blobs.toArray.qsort fun x y => x.1.cmpBytes y.1 == .lt).toList
   return { constants := (primaries ++ projections).toList, blobs, hints, cx := s.cx,
-           seeds := seedAddrs, named }
+           seeds := seedAddrs, named, census := s }
 
 /-! ## Cases -/
 
@@ -247,6 +249,19 @@ def cases : List Case := [
     expected := .fail .declined "checker" fun input e => match e, keyOf input (seed "someAxiom") with
       | .kernel (.notImplemented m) _, some key => m == s!"non-standard axiom ({key})"
       | _, _ => false },
+  -- an equation over a `Subtype` whose levels Ix's compiler stores in
+  -- canonical form: equal at every valuation, but con-leche's level
+  -- comparison does not equate them (cl-m1, the shape of
+  -- `RatFunc.liftOn_def`); a checker verdict, so a decline at the Ix API
+  { label := "level-comparison", seeds := [seed "levelCanon"],
+    expected := .fail .declined "checker" fun _ e => match e with
+      | .kernel (.invalid m) _ => m == "application type mismatch"
+      | _ => false },
+  -- an equation at the wrong universe level, installed in Lean unchecked
+  { label := "wrong-universe-level", seeds := [seed "levelWrong"],
+    expected := .fail .declined "checker" fun _ e => match e with
+      | .kernel (.invalid m) _ => m == "application type mismatch"
+      | _ => false },
   -- `bad_thm` declares its name at the root
   { label := "false-theorem", seeds := [`falseThm],
     expected := .fail .declined "checker" fun input e => match e, keyOf input `falseThm with
@@ -289,6 +304,53 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
     IO.eprintln s!"{test.label}: expected {test.expected.label}, got {outcome}: {detail}"
   return passed
 
+/-! ## The census's classification
+
+The census (`Benchmarks.Kernel.ConLecheStep.censusLoop`) runs the same
+reader and checker one record at a time and classifies each verdict. A
+checker `invalid` is a reject, except when the declaration is accepted at
+every instantiation of its level parameters from `{0, 1, K}`: then the
+failure is con-leche's level comparison, not the input, and the row declines
+(cl-m1). These cases run the census over a case's records and check the
+seed's row. -/
+
+structure CensusCase where
+  label : String
+  seed : Lean.Name
+  outcome : String
+  reason : String → Bool
+
+def censusCases : List CensusCase := [
+  { label := "census-level-comparison", seed := seed "levelCanon", outcome := "decline",
+    reason := (· == "level comparison: application type mismatch, at universe levels con-leche \
+      does not equate; the declaration is accepted at all 9 instantiations of its 2 level \
+      parameters in {0, 1, 4}") },
+  { label := "census-wrong-universe-level", seed := seed "levelWrong", outcome := "reject",
+    reason := (· == "application type mismatch") },
+  { label := "census-false-theorem", seed := `falseThm, outcome := "reject",
+    reason := (·.startsWith "type mismatch in theorem") } ]
+
+def runCensus (leanEnv : Lean.Environment) (test : CensusCase) : IO Bool := do
+  let input ← prepare leanEnv [test.seed]
+  let natPins ← IO.ofExcept builtinNatOpPins
+  let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.ConLecheStep.Row)
+  let _ ← Benchmarks.Kernel.ConLecheStep.censusLoop input.census natPins (fun _ => #[])
+    input.census.ordered {} (emit := fun row => rows.modify (·.push row))
+  let some a := input.named test.seed | throw (IO.userError s!"seed {test.seed} was not compiled")
+  let row := (← rows.get).find? (·.address == a)
+  let passed := match row with
+    | some r => r.outcome == test.outcome && test.reason r.reason
+    | none => false
+  IO.println (Lean.Json.mkObj [
+    ("case", Lean.toJson test.label), ("expected", Lean.toJson test.outcome),
+    ("outcome", Lean.toJson ((row.map (·.outcome)).getD "none")),
+    ("detail", Lean.toJson ((row.map (·.reason)).getD "")),
+    ("passed", Lean.toJson passed), ("records", Lean.toJson (← rows.get).size),
+    ("leanVersion", Lean.toJson Lean.versionString)]).compress
+  unless passed do
+    IO.eprintln s!"{test.label}: expected {test.outcome}, got {row.map (·.outcome)}: {row.map (·.reason)}"
+  return passed
+
 def main : IO UInt32 := do
   let leanEnv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
   let mut failed := 0
@@ -297,7 +359,13 @@ def main : IO UInt32 := do
       IO.eprintln s!"{test.label}: harness error: {e}"
       pure false
     unless passed do failed := failed + 1
-  IO.eprintln s!"Certified entry, host-compiled cases: {cases.length - failed}/{cases.length} passed."
+  for test in censusCases do
+    let passed ← try runCensus leanEnv test catch e => do
+      IO.eprintln s!"{test.label}: harness error: {e}"
+      pure false
+    unless passed do failed := failed + 1
+  let total := cases.length + censusCases.length
+  IO.eprintln s!"Certified entry, host-compiled cases: {total - failed}/{total} passed."
   return if failed == 0 then 0 else 1
 
 end Tests.Ix.Kernel.EntryCases

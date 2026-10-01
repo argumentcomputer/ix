@@ -65,6 +65,13 @@ limits decline. -/
     [eq, nat, address 11, natSucc, natZero, eqRefl] [one])] == some .declined
 -- a block without its recursor
 #guard outcomeOf (twoFixture.take 4) == some .declined
+-- a well-typed theorem whose canonical universe levels con-leche's level
+-- comparison does not equate (cl-m1, `RatFunc.liftOn_def`'s shape): refused
+-- by the checker, so a decline, not a reject
+#guard match Ix.Ixon.Admission.checkBytes limits levelStream [] with
+  | .error e@(.kernel (.invalid m) _) =>
+    m == "application type mismatch" && Ix.Ixon.Admission.outcome e == .declined
+  | _ => false
 -- a literal blob that is not supplied
 #guard outcomeOf [(address 42, litEq)] == some .rejected
 -- a non-canonical record

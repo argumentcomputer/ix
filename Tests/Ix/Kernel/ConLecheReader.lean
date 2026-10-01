@@ -24,6 +24,11 @@ the string-literal support), and a compiled block nested through a container
 that is itself nested, whose auxiliary motives Ix's compiler orders with the
 container family's instance before its head (cl-m1).
 
+A documented limitation: a compiled theorem whose universe levels Ix's
+compiler stored in canonical form is refused, because con-leche's level
+comparison does not equate two levels that are equal at every valuation
+(cl-m1, the `RatFunc.liftOn_def` shape).
+
 Negative: a block of another shape stored under the real `Eq`'s address is
 named `Eq` and rejected by con-leche's reserved-name check; a definition
 block with an ill-typed member is rejected by the checker; a `partial` block
@@ -626,6 +631,98 @@ def lTreeNames : List String :=
     names.contains t && names.contains (t ++ ".rec") && names.contains (t ++ ".rec_1") &&
       names.contains (t ++ ".rec_2") && names.contains (keyString (.member lNodeBlock 0))
   | .error _ => false
+
+/-! ## Universe levels con-leche does not equate (cl-m1)
+
+The records Ix's compiler produces for
+`Tests.Ix.Kernel.EntryCaseDefs.levelCanon` (`--consts levelCanon,Subtype.rec,
+True.rec`), in the census order with the projections last:
+
+    theorem levelCanon.{w, x} {a b : {_f : (K : Type w) → (P : Sort x) → P // True}}
+        (h : a = b) : a = b := h
+
+Lean elaborates `Subtype.{W}` and `Eq.{max 1 W}`, `W = imax (w+2) (imax (x+1)
+x)`. Ixon stores each level as the canonical form of its semantic class
+(`Ix/IxonUniv.lean`): `Subtype.{imax (max (w+2) (x+1)) x}` and
+`Eq.{max (x+1) (imax (w+2) x)}`. The checker infers the `Subtype`'s type,
+`Sort (max (imax (max (w+2) (x+1)) x) 1)`, where the `Eq` expects
+`Sort (max (x+1) (imax (w+2) x))`. The two levels are equal at every
+valuation, but con-leche's comparison (nanoda's and the official kernel's
+`leq`: sound, not complete) establishes only `≤`: the converse
+`x+1 ≤ max (imax … x) 1` needs a case split on `x` above the `max`. So the
+theorem is refused with `application type mismatch`, as `RatFunc.liftOn_def`
+and `RatFunc.liftOn'_def` (unfolding lemmas of `irreducible_def`) are in the
+Mathlib census. Not a reader defect: the reader converts levels as stored.
+The input is not malformed; the Ix API classifies the refusal as a decline
+(`Tests.Ix.Kernel.CertifiedEntry`), and the census declines it with a
+level-comparison reason (`Benchmarks.Kernel.ConLecheStep.levelDecline`,
+checked by `kernel-entry-cases`). -/
+
+/-- (address, canonical record bytes) -/
+def levelRecords : List (String × String) := [
+  ("cfec05d1d7f2512f6577c2f61a840523804c36d4043c252ab4ba2508ede75171",
+    "c1010000000000010000000000300000000100"),
+  ("34447f09a3a88dfbf7eba2070430dbab3343de5f3b67b7db2d75d31af390d13d",
+    "c1010001020092170217b00101000100020294170217b017111771111072310002131201" ++
+    "9117100000030040c00100c0"),
+  ("10cebb826088ceb379d85969e9cc3f60ee05aaa02088e7ab36cb7caa3d28b410",
+    "d009029317b517b517b80872b612118307b507b507b808100921000291170310911700b1" ++
+    "71b0b28107b2200271b3b471210101b571b61171b710036620bf274c4c89870476888d22" ++
+    "8d0b43af0ddcc856cfa7b006fb5a979d12eb89c37d6290e00fb865fb5db7bce18fd69e6d" ++
+    "1674ad573724b85466ea9f7578a207e35ab17358fae7a81efb3d94a164fd3f85ab8b0c88" ++
+    "8aaa071cfe0d60ffbc1cac0401c04001c18002c0c1804002c001c1c1c1"),
+  ("17f54217ac922579222cf29e42f1ccaac7cdc1f3b90401881d65a63b51064057",
+    "d1000202000101951702179117100017b317b80917722100021312711210010286070207" ++
+    "9117100007b307b809071307711310721211100a7121010214712100021171b1109117b2" ++
+    "0171b01371b41171b5107112b69117711210b7911712b808026620bf274c4c8987047688" ++
+    "8d228d0b43af0ddcc856cfa7b006fb5a979d12eb899e92d21510c29302dae3880e11eb53" ++
+    "a149d96c49662a866d86b080c41f8f45510300c0c1"),
+  ("4402b03b4b95a01edd5bed60a5851e3d851a2073590236d7ee4935f8b0261e88",
+    "d10101000001019317b217b017b171121001008207b207b010037110200120009117b100" ++
+    "02e35ab17358fae7a81efb3d94a164fd3f85ab8b0c888aaa071cfe0d60ffbc1cacf4bc2a" ++
+    "9e8e268eb352f719657d8806b072a555a29f2eb85e72805fddc9cd019101c0"),
+  ("6620bf274c4c89870476888d228d0b43af0ddcc856cfa7b006fb5a979d12eb89",
+    "d60034447f09a3a88dfbf7eba2070430dbab3343de5f3b67b7db2d75d31af390d13d0000" ++
+    "00"),
+  ("9e92d21510c29302dae3880e11eb53a149d96c49662a866d86b080c41f8f4551",
+    "d4000034447f09a3a88dfbf7eba2070430dbab3343de5f3b67b7db2d75d31af390d13d00" ++
+    "0000"),
+  ("e35ab17358fae7a81efb3d94a164fd3f85ab8b0c888aaa071cfe0d60ffbc1cac",
+    "d600cfec05d1d7f2512f6577c2f61a840523804c36d4043c252ab4ba2508ede751710000" ++
+    "00"),
+  ("f4bc2a9e8e268eb352f719657d8806b072a555a29f2eb85e72805fddc9cd0191",
+    "d40000cfec05d1d7f2512f6577c2f61a840523804c36d4043c252ab4ba2508ede7517100" ++
+    "0000")]
+
+def levelStream : Ix.Ixon.Admission.Records :=
+  levelRecords.filterMap fun (a, b) => do pure (← addressOfHex a, ← bytesOfHex b)
+
+/-- The theorem's level parameters as the reader names them. -/
+def lw : ConLeche.Level := .param (levelName 0)
+def lx : ConLeche.Level := .param (levelName 1)
+def lsucc (l : ConLeche.Level) : Nat → ConLeche.Level
+  | 0 => l
+  | k + 1 => .succ (lsucc l k)
+
+/-- The `Subtype`'s inferred type level and the `Eq`'s domain level. -/
+def subtypeLevel : ConLeche.Level :=
+  .max (.imax (.max (lsucc lw 2) (lsucc lx 1)) lx) (lsucc .zero 1)
+def eqLevel : ConLeche.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
+
+#guard levelStream.length == levelRecords.length && levelRecords.length == 9
+-- equal at every valuation of `w, x` in `0‥5` (both are `1` at `x = 0`, and
+-- `max (w+2) (x+1)` otherwise)
+#guard (List.range 6).all fun i => (List.range 6).all fun j =>
+  let φ : ConLeche.Name → Nat := fun n => if n == levelName 0 then i else if n == levelName 1 then j else 0
+  ConLeche.Level.eval φ subtypeLevel == ConLeche.Level.eval φ eqLevel
+-- con-leche establishes one direction and not the other
+#guard ConLeche.Level.leq subtypeLevel eqLevel == some true
+#guard ConLeche.Level.leq eqLevel subtypeLevel == some false
+#guard ConLeche.Level.isEquiv subtypeLevel eqLevel == some false
+-- so the theorem is refused, at its type
+#guard match checkBytesWith builtinPins builtinPre builtinNatPins limits levelStream [] with
+  | .error (.kernel (.invalid m) _) => m == "application type mismatch"
+  | _ => false
 
 /-! ## Negative: pinned names on constants of another shape -/
 

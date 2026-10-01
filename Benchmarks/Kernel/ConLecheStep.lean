@@ -32,8 +32,12 @@ the prefix. A failing declaration is rolled back: the environment is rebuilt
 from the constant list before the step and the memo state is reset (it is
 only a cache), so a failure leaves no constant behind. A record that
 references a failed or blocked one is blocked and not checked. Recursor
-records are read with their inductive block and take its outcome. None of
-this is a certified verdict; `Ix.Ixon.ConLecheAdmission.checkBytes` is. -/
+records are read with their inductive block and take its outcome. A checker
+`invalid` verdict is a reject, a `notImplemented` or `internal` one a
+decline; an `invalid` declaration that is accepted at every instantiation of
+its level parameters from `{0, 1, K}` declines with a level-comparison reason
+(see "Universe levels con-leche does not equate"). None of this is a
+certified verdict; `Ix.Ixon.ConLecheAdmission.checkBytes` is. -/
 
 namespace Benchmarks.Kernel.ConLecheStep
 
@@ -63,20 +67,159 @@ def Checker.step (pins : List ConLeche.NatOpPinSet) (c : Checker) (d : ConLeche.
     | .ok () => (⟨fe', cs', pos'⟩, none)
     | .error (e, _) => (⟨ConLeche.mkFEnv before, {}, pos'⟩, some e)
 
-/-- One record's declarations, in order; the first failure ends it. -/
-def Checker.steps (pins : List ConLeche.NatOpPinSet) (c : Checker)
-    (ds : Array ConLeche.Declaration) : Checker × Option ConLeche.CheckError := Id.run do
+/-- One record's declarations, in order; the first failure ends it, with
+the failing declaration's position in `ds`. -/
+def Checker.stepsAt (pins : List ConLeche.NatOpPinSet) (c : Checker)
+    (ds : Array ConLeche.Declaration) : Checker × Option (Nat × ConLeche.CheckError) := Id.run do
   let mut c := c
-  for d in ds do
+  for (d, i) in ds.zipIdx do
     let (c', e) := c.step pins d
     c := c'
-    if e.isSome then return (c, e)
+    if let some e := e then return (c, some (i, e))
   return (c, none)
+
+/-- One record's declarations, in order; the first failure ends it. -/
+def Checker.steps (pins : List ConLeche.NatOpPinSet) (c : Checker)
+    (ds : Array ConLeche.Declaration) : Checker × Option ConLeche.CheckError :=
+  let (c, e) := c.stepsAt pins ds
+  (c, e.map (·.2))
 
 def checkOutcome : ConLeche.CheckError → String × String
   | .invalid m => ("reject", m)
   | .notImplemented m => ("decline", m)
   | .internal m => ("decline", s!"internal: {m}")
+
+/-! ## Universe levels con-leche does not equate (cl-m1)
+
+Ixon stores every universe level as the canonical representative of its
+semantic class (`Ix/IxonUniv.lean`, `crates/ixon/src/canon_univ.rs`), not as
+Lean elaborated it, and the reader converts it as stored. Con-leche compares
+levels with nanoda's (the official kernel's) algorithm, `Level.leqCore`,
+which is sound but incomplete: `false` is "not established". A term whose
+levels the compiler canonicalized one by one can then need an equivalence
+that Lean's own term never needed. In `RatFunc.liftOn_def` (an
+`irreducible_def` unfolding lemma), Lean has `Subtype.{W}` and
+`Eq.{max 1 W}`; Ixon has `Subtype.{imax (max (u+2) (v+1)) v}`, whose type is
+`Sort (max (imax (max (u+2) (v+1)) v) 1)`, and `Eq.{max (v+1) (imax (u+2) v)}`.
+The two are equal at every valuation, but `v+1 ≤ max (imax … v) 1` needs a
+case split on `v` above the `max`, which `leqCore` does not make; the
+application is rejected as a type mismatch although the input is well typed.
+
+So when a declaration is `invalid` and has level parameters (at most four),
+the census checks it again with its level parameters instantiated at every
+assignment from `{0, 1, K}`, `K` two above the largest successor offset among
+its levels. Instantiated levels are closed, and the comparison is complete
+on closed levels; `{0, 1, K}` per parameter decides the equality of two
+levels whose offsets are below `K` (zero against positive for `imax`, and
+the constant and slope of each `max` piece). If every instance is accepted,
+the failure is the comparison's and the row declines with that reason. A
+declaration that fails at some instance stays rejected. Host-side
+classification only: the certified entry's verdict is unchanged (and is a
+decline at the Ix API anyway, `Ix.Ixon.Admission.outcome`). -/
+
+/-- The largest `succ` nesting in a level. -/
+def levelOffset : ConLeche.Level → Nat
+  | .zero | .param _ => 0
+  | .succ l => levelOffset l + 1
+  | .max a b | .imax a b => max (levelOffset a) (levelOffset b)
+
+/-- The largest `succ` nesting among an expression's levels, one visit per
+shared node. -/
+partial def exprOffset (e : ConLeche.Expr) (acc : Std.HashSet ConLeche.Expr × Nat := ({}, 0)) :
+    Std.HashSet ConLeche.Expr × Nat :=
+  let (seen, m) := acc
+  if seen.contains e then acc else
+  let acc := (seen.insert e, m)
+  match e with
+  | .sort u => (acc.1, max m (levelOffset u))
+  | .const _ us => (acc.1, us.foldl (fun m u => max m (levelOffset u)) m)
+  | .app f a => exprOffset a (exprOffset f acc)
+  | .lam t b _ | .forallE t b _ => exprOffset b (exprOffset t acc)
+  | .letE t v b => exprOffset b (exprOffset v (exprOffset t acc))
+  | .proj _ _ x => exprOffset x acc
+  | .fvar _ t => exprOffset t acc
+  | _ => acc
+
+/-- Level-parameter instantiation, memoized by node (it reads no binder
+cursor). -/
+partial def instLevels (ks : List ConLeche.Name) (us : List ConLeche.Level) (e : ConLeche.Expr)
+    (memo : Std.HashMap ConLeche.Expr ConLeche.Expr := {}) :
+    ConLeche.Expr × Std.HashMap ConLeche.Expr ConLeche.Expr :=
+  match memo[e]? with
+  | some r => (r, memo)
+  | none =>
+    let (r, memo) : ConLeche.Expr × Std.HashMap ConLeche.Expr ConLeche.Expr := match e with
+      | .sort u => (.sort (ConLeche.Level.subst ks us u), memo)
+      | .const n ls => (.const n (ls.map (ConLeche.Level.subst ks us)), memo)
+      | .app f a =>
+        let (f', memo) := instLevels ks us f memo
+        let (a', memo) := instLevels ks us a memo
+        (.app f' a', memo)
+      | .lam t b m =>
+        let (t', memo) := instLevels ks us t memo
+        let (b', memo) := instLevels ks us b memo
+        (.lam t' b' m, memo)
+      | .forallE t b m =>
+        let (t', memo) := instLevels ks us t memo
+        let (b', memo) := instLevels ks us b memo
+        (.forallE t' b' m, memo)
+      | .letE t v b =>
+        let (t', memo) := instLevels ks us t memo
+        let (v', memo) := instLevels ks us v memo
+        let (b', memo) := instLevels ks us b memo
+        (.letE t' v' b', memo)
+      | .proj sn i x =>
+        let (x', memo) := instLevels ks us x memo
+        (.proj sn i x', memo)
+      | .fvar i t =>
+        let (t', memo) := instLevels ks us t memo
+        (.fvar i t', memo)
+      | e => (e, memo)
+    (r, memo.insert e r)
+
+/-- A definition, theorem or opaque at closed levels (no level parameters). -/
+def instantiateDecl (d : ConLeche.Declaration) (us : List ConLeche.Level) :
+    Option ConLeche.Declaration :=
+  let at_ (cv : ConLeche.ConstantVal) (v : ConLeche.Expr) :
+      ConLeche.ConstantVal × ConLeche.Expr :=
+    let (ty, memo) := instLevels cv.levelParams us cv.type
+    let (v', _) := instLevels cv.levelParams us v memo
+    ({ cv with levelParams := [], type := ty }, v')
+  match d with
+  | .thmDecl cv v => let (cv', v') := at_ cv v; some (.thmDecl cv' v')
+  | .defnDecl cv v h => let (cv', v') := at_ cv v; some (.defnDecl cv' v' h)
+  | .opaqueDecl cv v => let (cv', v') := at_ cv v; some (.opaqueDecl cv' v')
+  | _ => none
+
+/-- Every list of length `n` over `xs`. -/
+def assignments (xs : List α) : Nat → List (List α)
+  | 0 => [[]]
+  | n + 1 => (assignments xs n).flatMap fun rest => xs.map (· :: rest)
+
+/-- `succ^k zero`. -/
+def levelOfNat : Nat → ConLeche.Level
+  | 0 => .zero
+  | k + 1 => .succ (levelOfNat k)
+
+/-- The decline reason for a declaration con-leche found `invalid` (`m`) at
+the state `c` (before it), when the failure is the level comparison's: the
+declaration has one to four level parameters and is accepted at every
+assignment of them from `{0, 1, K}`. -/
+def levelDecline (pins : List ConLeche.NatOpPinSet) (c : Checker) (d : ConLeche.Declaration)
+    (m : String) : Option String := do
+  let (lps, ty, v) ← match d with
+    | .thmDecl cv v | .defnDecl cv v _ | .opaqueDecl cv v => some (cv.levelParams, cv.type, v)
+    | _ => none
+  let n := lps.length
+  guard (0 < n && n ≤ 4)
+  let k := (exprOffset v (exprOffset ty)).2 + 2
+  let values := [ConLeche.Level.zero, levelOfNat 1, levelOfNat k]
+  let all := assignments values n
+  for us in all do
+    let d' ← instantiateDecl d us
+    if (c.step pins d').2.isSome then none
+  some s!"level comparison: {m}, at universe levels con-leche does not equate; the declaration \
+    is accepted at all {all.length} instantiations of its {n} level parameters in \{0, 1, {k}}"
 
 def readOutcome : ReadError → String × String
   | .malformed m => ("reject", s!"reader: {m}")
@@ -342,8 +485,13 @@ def censusLoop (s : Setup) (pins : List ConLeche.NatOpPinSet) (names : Address �
         let t0 ← IO.monoNanosNow
         let checker := out.checker
         out := { out with checker := {} }
-        let (checker, err) ← IO.lazyPure fun _ => checker.steps pins rd.decls
+        let (checker, err) ← IO.lazyPure fun _ => checker.stepsAt pins rd.decls
         let micros := ((← IO.monoNanosNow) - t0) / 1000
+        -- an `invalid` verdict at levels the comparison does not equate
+        -- declines (see "Universe levels con-leche does not equate")
+        let levelReason ← match err with
+          | some (i, .invalid m) => IO.lazyPure fun _ => (rd.decls[i]?).bind (levelDecline pins checker · m)
+          | _ => pure none
         after
         out := { out with checker }
         match err with
@@ -351,8 +499,10 @@ def censusLoop (s : Setup) (pins : List ConLeche.NatOpPinSet) (names : Address �
           for row in rowsFor "accept" "" micros readMicros do
             out := { out with counts := out.counts.insert "accept" (out.counts.getD "accept" 0 + 1) }
             emit row
-        | some e =>
-          let (outcome, reason) := checkOutcome e
+        | some (_, e) =>
+          let (outcome, reason) := match levelReason with
+            | some r => ("decline", r)
+            | none => checkOutcome e
           for row in rowsFor outcome reason micros readMicros do
             out := { out with failed := out.failed.insert row.address row.address,
                               counts := out.counts.insert outcome (out.counts.getD outcome 0 + 1) }

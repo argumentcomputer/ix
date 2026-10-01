@@ -102,8 +102,34 @@ partial def loop (n : Nat) : Nat := loop (n + 1)
 
 /-! ## Refused -/
 
+/-- An equation between elements of a `Subtype` of a type in
+`Sort (imax (u+2) (imax (v+1) v))`, the shape of `RatFunc.liftOn_def` (an
+`irreducible_def` unfolding lemma). Lean elaborates `Subtype.{W}` and
+`Eq.{max 1 W}`; Ix's compiler stores each level as its canonical form,
+`Subtype.{imax (max (u+2) (v+1)) v}` and `Eq.{max (v+1) (imax (u+2) v)}`,
+and con-leche's level comparison (nanoda's, the official kernel's) does not
+establish that the `Subtype`'s type `Sort (max (imax (max (u+2) (v+1)) v) 1)`
+is the `Eq`'s domain, although the two are equal at every valuation (cl-m1).
+-/
+theorem levelCanon.{w, x} {a b : {_f : (K : Type w) → (P : Sort x) → P // True}} (h : a = b) :
+    a = b := h
+
 /-- An axiom other than the pinned standard ones. -/
 axiom someAxiom (n : Nat) : n = n
+
+-- `∀ (α : Sort w) (a : α), @Eq.{w+1} α a a`, by `Eq.refl.{w+1}`: an
+-- equation at the wrong universe level, installed in Lean unchecked. No
+-- valuation of `w` makes it well typed (cl-m1: the census's level-comparison
+-- decline must not apply to it).
+bad_decl .thmDecl {
+  name := `Tests.Ix.Kernel.EntryCaseDefs.levelWrong
+  levelParams := [`w]
+  type := .forallE `α (.sort (.param `w))
+    (.forallE `a (.bvar 0) (Lean.mkApp3 (.const ``Eq [.succ (.param `w)]) (.bvar 1) (.bvar 0) (.bvar 0))
+      .default) .default
+  value := .lam `α (.sort (.param `w))
+    (.lam `a (.bvar 0) (Lean.mkApp2 (.const ``Eq.refl [.succ (.param `w)]) (.bvar 1) (.bvar 0)) .default)
+    .default }
 
 -- A theorem of `False`, installed in Lean unchecked.
 bad_thm falseThm : False := unchecked True.intro
