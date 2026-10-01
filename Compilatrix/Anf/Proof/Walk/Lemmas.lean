@@ -112,7 +112,7 @@ theorem paramOpds_length (d n : Nat) : (paramOpds d n).length = n := by simp [pa
 
 theorem fieldOpds_length (d n : Nat) : (Walk.fieldOpds d n).length = n := by simp [Walk.fieldOpds]
 
-variable {Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
+variable {Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
 
 /-! ## Value lists -/
 
@@ -204,7 +204,7 @@ theorem JEnv.get_emitted {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ
       J'[J'.length - 1 - l]? = some jc' ∧ T = some Tk ∧ JoinR P Q Valid Xc n Tk (.mk ρj Jj ar b r) jc' ∧
       WEnv Q Valid Xc C livej σj ρj ρ' ∧ JEnv P Q Valid Xc C n T ρ' J' jlj jσj Jj ∧
       NoDead (List.replicate ar true ++ livej) (if r then true :: jlj else jlj) b ∧
-      (∀ ρ'', ρ' <:+ ρ'' → Valid C ρj ρ'')
+      (∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρj ρ'')
   | _, _, _, .nil, _, _, _, _, _, _, _, h, _ => by simp at h
   | _, _, _, .emitted hl hjc hT hR henv hJj hnd hv _, 0, _, _, _, _, _, _, h, _ => by
     simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.mk.injEq] at h
@@ -228,7 +228,7 @@ theorem JEnv.get_once {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' :
     {b : Exp}, jσ[j]? = some (.mk none σj jσj ar r b) → jl[j]? = some true →
     r = false ∧ ∃ ρj Jj livej jlj, J[j]? = some (.mk ρj Jj ar b false) ∧
       WEnv Q Valid Xc C livej σj ρj ρ' ∧ JEnv P Q Valid Xc C n T ρ' J' jlj jσj Jj ∧
-      NoDead (List.replicate ar true ++ livej) jlj b ∧ (∀ ρ'', ρ' <:+ ρ'' → Valid C ρj ρ'')
+      NoDead (List.replicate ar true ++ livej) jlj b ∧ (∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρj ρ'')
   | _, _, _, .nil, _, _, _, _, _, _, h, _ => by simp at h
   | _, _, _, .emitted _ _ _ _ _ _ _ _ _, 0, _, _, _, _, _, h, _ => by
     simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.mk.injEq] at h
@@ -314,7 +314,7 @@ theorem knownHead_sound {here : Here} {ρ' : List Val} (hf : FactsOk Q Valid her
     {g : GlobalId} {as0 : List Opd} (h : Walk.knownHead here o = some (g, as0)) {w : Val}
     (hw : o.val ρ' = some w) :
     ∃ gd ws0, Q.global? g = some gd ∧ as0.mapM (·.val ρ') = some ws0 ∧
-      (∀ C ρ ρ', Valid C ρ ρ' → C.prog.arity? g = some gd.ps.length) ∧ ws0.length < gd.ps.length ∧
+      (∀ C ρ ρ' prs, Valid C ρ ρ' prs → C.prog.arity? g = some gd.ps.length) ∧ ws0.length < gd.ps.length ∧
       w = .clos [] gd.ps.length gd.body ws0 := by
   cases o with
   | lit l => simp [Walk.knownHead] at h

@@ -1243,6 +1243,9 @@ expected messages are preserved verbatim. -/
 /-- info: 'Compilatrix.Anf.WalkProof.JEnv.brecOn' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.JEnv.brecOn
 
+/-- info: 'Compilatrix.Anf.WalkProof.VOk.brecOn' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.VOk.brecOn
+
 /-- info: 'Compilatrix.Anf.WalkProof.WEnt.brecOn' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WEnt.brecOn
 
@@ -1262,6 +1265,9 @@ expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Anf.WalkProof.FactsOk.suffix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.FactsOk.suffix
+
+/-- info: 'Compilatrix.Anf.WalkProof.VOk.suffix' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.VOk.suffix
 
 /-- info: 'Compilatrix.Anf.WalkProof.WEnt.suffix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.WEnt.suffix
@@ -1348,6 +1354,21 @@ expected messages are preserved verbatim. -/
 
 /-- info: 'Compilatrix.Anf.WalkProof.Ctx.suffix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.suffix
+
+/-- info: 'Compilatrix.Anf.WalkProof.Ctx.vbody' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.vbody
+
+/-- info: 'Compilatrix.Anf.WalkProof.Ctx.vglob' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.vglob
+
+/-- info: 'Compilatrix.Anf.WalkProof.Ctx.vinl' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.vinl
+
+/-- info: 'Compilatrix.Anf.WalkProof.Ctx.vknown' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.vknown
+
+/-- info: 'Compilatrix.Anf.WalkProof.Ctx.vsuffix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Anf.WalkProof.Ctx.vsuffix
 
 /-- info: 'Compilatrix.Anf.WalkProof.JEnv.length' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Anf.WalkProof.JEnv.length

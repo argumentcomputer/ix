@@ -100,20 +100,20 @@ theorem NoDead.ticks {live jlive : List Bool} : ∀ {m : Nat} {e : Exp},
   | 0, _, h => h
   | _ + 1, _, h => NoDead.ticks h.tick
 
-variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 /-- Case-of-case: the jump's charge and the join body's leading ticks
 become ticks over the walk of the alternative a known constructor
 selects. -/
 theorem caseOfCase_sim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {here : Here}
     {k : Kont} {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo}
-    {SK : Val → Nat → Result Val} (hV : Valid C ρ ρ') (hd : here.d = ρ'.length)
+    {SK : Val → Nat → Result Val} (hV : VOk Q Valid Xc C ρ ρ') (hd : here.d = ρ'.length)
     (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ') (hk : KontW Q Valid Xc n k SK ρ' J')
     {j m : Nat} {alts : List Alt} {dflt : Option Exp} {ρj : List Val} {Jj : List JClo}
     {livej jlj : List Bool} {σj : List Ent} {jσj : List JEnt}
     (hJj : J[j]? = some (.mk ρj Jj 1 (Walk.ticks m (.case (.var 0) alts dflt)) false))
     (henvj : WEnv Q Valid Xc C livej σj ρj ρ') (hJjj : JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlj jσj Jj)
-    (hVj : ∀ ρ'', ρ' <:+ ρ'' → Valid C ρj ρ'')
+    (hVj : ∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρj ρ'')
     (hndj : NoDead (true :: livej) jlj (Walk.ticks m (.case (.var 0) alts dflt)))
     {as : List Atom} {v w : Val} {o : Opd} (hvs : evalAtoms ρ as = some [v]) (how : o.val ρ' = some w)
     (hvw : WV Q Valid Xc v w) {c : Key.CtorKey} {fs : List Opd} {isAlt : Bool} {alt0 o' : Exp}
@@ -123,7 +123,7 @@ theorem caseOfCase_sim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n f
       jσj) here alt0 k).run s = .ok (o', s2)) :
     SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.jump j as)).bind (SK · k))
       (fun k => eval Q k ρ' J' (Walk.ticks (m + 1) o')) := by
-  have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.cknown C ρ ρ' hV]
+  have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.vknown hV]
   obtain ⟨wfs, hwfs, hwc⟩ := known_sound hK hf hkn how
   have hfl := mapM_length hwfs
   have hndc := hndj.ticks

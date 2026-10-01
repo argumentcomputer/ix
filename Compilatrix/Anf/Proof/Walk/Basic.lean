@@ -15,7 +15,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
+variable {Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
 
 /-! ## Structure -/
 
@@ -122,6 +122,14 @@ theorem WEnv.suffix {ρ' ρ₂ : List Val} (hs : ρ' <:+ ρ₂) :
   | _, _, _, .dead h => .dead (WEnv.suffix hs h)
 
 end
+
+/-- A valid configuration stays valid as both environments grow, when the
+pass's predicate does. -/
+theorem VOk.suffix
+    (hs : ∀ C ρ ρ' prs ρ₂ ρ'₂, Valid C ρ ρ' prs → ρ <:+ ρ₂ → ρ' <:+ ρ'₂ → Valid C ρ₂ ρ'₂ prs)
+    {ρ ρ' ρ₂ ρ'₂ : List Val} (h : VOk Q Valid Xc C ρ ρ') (h₁ : ρ <:+ ρ₂) (h₂ : ρ' <:+ ρ'₂) :
+    VOk Q Valid Xc C ρ₂ ρ'₂ := by
+  cases h with | mk hv hp => exact .mk (hs _ _ _ _ _ _ hv h₁ h₂) hp
 
 theorem WEnv.length : ∀ {live : List Bool} {σ : List Ent} {ρ ρ' : List Val},
     WEnv Q Valid Xc C live σ ρ ρ' → σ.length = ρ.length ∧ live.length = ρ.length

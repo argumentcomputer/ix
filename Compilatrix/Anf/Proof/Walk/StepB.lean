@@ -17,7 +17,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 theorem KontW.of_KT {k : Kont} {J' : List JClo} {T : Val → Nat → Result Val} {SK : Val → Nat → Result Val}
     {ρ' : List Val} (hT : KT Q k J' = some T)
@@ -63,19 +63,19 @@ theorem walk_step (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env} {
 /-- The meta-continuation that walks the rest of the caller. -/
 theorem after_cont (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {body : Exp} {k : Kont} {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo}
-    {live jlive : List Bool} {SK : Val → Nat → Result Val} (hV : Valid C ρ ρ')
+    {live jlive : List Bool} {SK : Val → Nat → Result Val} (hV : VOk Q Valid Xc C ρ ρ')
     (henv : WEnv Q Valid Xc C live env.σ ρ ρ') (hJ : JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlive env.jσ J)
     (hnd : NoDead (true :: live) jlive body) (hk : KontW Q Valid Xc n k SK ρ' J') :
     KontW Q Valid Xc n (.cont fun here o => Walk.walk C fuel { σ := .opd o :: env.σ, jσ := env.jσ } here body k)
       (fun v k => (eval P k (v :: ρ) J body).bind (SK · k)) ρ' J' := by
   intro here' o e s s' ρ'' J'' hf hρ hJ' hd hdj hfacts x w hw hxw
-  exact hW.walk hf (x :: ρ) J ρ'' J'' (true :: live) jlive SK (hctx.suffix C ρ ρ' _ ρ'' hV (List.suffix_cons _ _) hρ)
+  exact hW.walk hf (x :: ρ) J ρ'' J'' (true :: live) jlive SK (hctx.vsuffix hV (List.suffix_cons _ _) hρ)
     (.live (.opd hw hxw) (henv.suffix hρ)) (hJ.suffixK hρ hJ') hd hdj hfacts hnd (hk.suffix hρ hJ')
 
 theorem after_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {body : Exp} {k k' : Kont} {s s' : Fires} (h : (Walk.after C (fuel + 1) env body k).run s = .ok (k', s'))
     (ρ : List Val) (J : List JClo) (ρ' : List Val) (J' : List JClo) (live jlive : List Bool)
-    (SK : Val → Nat → Result Val) (hV : Valid C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
+    (SK : Val → Nat → Result Val) (hV : VOk Q Valid Xc C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
     (hJ : JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlive env.jσ J) (hnd : NoDead (true :: live) jlive body)
     (hk : KontW Q Valid Xc n k SK ρ' J') :
     KontW Q Valid Xc n k' (fun v k => (eval P k (v :: ρ) J body).bind (SK · k)) ρ' J' := by
@@ -122,7 +122,7 @@ theorem joinR_emit (hctx : Ctx P Q Valid Xc n) (hlow : ∀ m < n, WalkAt P Q Val
       { d := here0.d + ar, dj := if r then here0.dj + 1 else here0.dj, facts := here0.facts } b k0).run s =
         .ok (b', s'))
     {ρ ρ' : List Val} {J J'0 : List JClo} {live jlive : List Bool} {Tk : Val → Nat → Result Val}
-    (hV : Valid C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
+    (hV : VOk Q Valid Xc C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
     (hJ : JEnv P Q Valid Xc C n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J)
     (hd : here0.d = ρ'.length) (hdj : here0.dj = J'0.length) (hf : FactsOk Q Valid here0.facts ρ')
     (hnd : NoDead (List.replicate ar true ++ live) (if r then true :: jlive else jlive) b)
@@ -170,7 +170,7 @@ theorem joinR_emit (hctx : Ctx P Q Valid Xc n) (hlow : ∀ m < n, WalkAt P Q Val
         KontW.of_KT hTb fun x w hxw =>
           SimUpTo.shift (KT_mono hT w) (((hSK x w hxw).mono_n (show m' + 1 ≤ m by omega)))
       exact (hlow m' (by omega)).walk hb (vs.reverse ++ ρ) _ (ws.reverse ++ ρ') _ _ _
-        (fun x j => SK x (j + 1)) (hctx.suffix C ρ ρ' _ _ hV (List.suffix_append _ _) hsuf) henvb hJb
+        (fun x j => SK x (j + 1)) (hctx.vsuffix hV (List.suffix_append _ _) hsuf) henvb hJb
         (by simp [hd, har']; omega) (by cases r <;> simp [hdj]) (hf.suffix hsuf) hnd hkb
     · simp only [jumpTo, har, if_true]
       exact later_bind_shift k _ _

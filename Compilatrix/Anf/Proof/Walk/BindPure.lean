@@ -16,7 +16,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 theorem FactsOk.insert' {facts : Src.NatMap Fact} {ρ' : List Val} (h : FactsOk Q Valid facts ρ') {d : Nat}
     (hd : d = ρ'.length) {w : Val} {f : Fact} (hf : FactOk Q Valid (w :: ρ') d f) :
@@ -154,7 +154,7 @@ theorem walkBind_proj (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         · next hc' =>
           simp only [decide_eq_true_eq] at hc'
           subst hc'
-          have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.cknown C ρ ρ' hV]
+          have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.vknown hV]
           obtain ⟨wfs, hwfs, hwc⟩ := known_sound hK hf hkn hw
           refine skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk (hpure _ fun u hu => .inl ?_)
           cases v with

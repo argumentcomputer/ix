@@ -22,7 +22,7 @@ theorem run_fire_then {α : Type} {f : Fires → Fires} {x : Walk.M α} {s s' : 
   cases Walk.run_fire_ok h1
   exact h2
 
-variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
 
 /-! ## Resolving atoms that occur -/
 

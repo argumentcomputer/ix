@@ -462,7 +462,7 @@
   "Ix.IndexMap",
   "Ix.Lib"],
  "baseline":
- "jcb/p2-anf-spec: walk validity over source and target environments",
+ "jcb/p2-anf-spec: walk validity as a predicate with related value pairs",
  "axiom_sha256":
- "94e380d618997b22b08c10a1355255d8064ead8345e511f2bf48cc3efbb2b074",
- "axiom_count": 1782}
+ "355b804de06f15522478810461c95eb4d587616eb76c155b2f0d9571f636e83a",
+ "axiom_count": 1789}

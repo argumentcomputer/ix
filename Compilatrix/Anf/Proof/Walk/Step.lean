@@ -31,7 +31,7 @@ theorem getElem?_level {α : Type} {xs ys : List α} (h : xs <:+ ys) {l : Nat} (
   congr 1
   simp; omega
 
-variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg}
 
 /-! ## Join entries and continuations under growth -/
 
@@ -140,38 +140,67 @@ def RedSim (n : Nat) (r : Walk.Redirect) (ρ ρ' : List Val) : Prop :=
 
 variable (P Q Valid Xc) in
 /-- What the walk's simulation at bound `n` assumes of the programs and of
-the valid configurations (`Valid C ρ ρ'`: configuration `C` may walk a term
-whose source environment is `ρ` and target environment `ρ'`; closed under
-growing both). -/
+the pass's predicate on configurations (`Valid C ρ ρ' prs`: configuration
+`C` may walk a term whose source environment is `ρ` and target environment
+`ρ'`, given that the pairs `prs` are related; closed under growing both
+environments). -/
 structure Ctx (n : Nat) : Prop where
   known : Q.known = P.known
   arity : ∀ g gd, P.global? g = some gd → ∃ gd', Q.global? g = some gd' ∧ gd'.ps.length = gd.ps.length
-  suffix : ∀ C ρ ρ' ρ₂ ρ'₂, Valid C ρ ρ' → ρ <:+ ρ₂ → ρ' <:+ ρ'₂ → Valid C ρ₂ ρ'₂
-  cknown : ∀ C ρ ρ', Valid C ρ ρ' → C.prog.known = P.known
-  cglob : ∀ C ρ ρ', Valid C ρ ρ' → ∀ g,
+  suffix : ∀ C ρ ρ' prs ρ₂ ρ'₂, Valid C ρ ρ' prs → ρ <:+ ρ₂ → ρ' <:+ ρ'₂ → Valid C ρ₂ ρ'₂ prs
+  cknown : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → C.prog.known = P.known
+  cglob : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → ∀ g,
     (C.prog.global? g).map (·.ps.length) = (P.global? g).map (·.ps.length)
-  cbody : ∀ C ρ ρ', Valid C ρ ρ' → ∀ g, C.inline.contains g = true → C.prog.global? g = P.global? g
-  inl : ∀ C ρ ρ' ρ₂, Valid C ρ ρ' → Valid { C with inline := [], redirect := none } ρ₂ ρ'
+  cbody : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → ∀ g, C.inline.contains g = true → C.prog.global? g = P.global? g
+  inl : ∀ C ρ ρ' prs ρ₂, Valid C ρ ρ' prs → Valid { C with inline := [], redirect := none } ρ₂ ρ' prs
   app : Rel.AppSim P Q (WV Q Valid Xc) n
   call : Rel.CallSim P Q (WV Q Valid Xc) n
   glob : Rel.GlobSim P Q (WV Q Valid Xc) n
-  red : ∀ C ρ ρ' r, Valid C ρ ρ' → C.redirect = some r →
+  red : ∀ C ρ ρ' r, VOk Q Valid Xc C ρ ρ' → C.redirect = some r →
     RedSim (P := P) (Q := Q) (Valid := Valid) (Xc := Xc) n r ρ ρ'
 
+section
+
+variable {n : Nat} (hctx : Ctx P Q Valid Xc n)
+include hctx
+
+/-- A valid configuration stays valid as both environments grow. -/
+theorem Ctx.vsuffix {ρ ρ' ρ₂ ρ'₂ : List Val} (hV : VOk Q Valid Xc C ρ ρ') (h₁ : ρ <:+ ρ₂)
+    (h₂ : ρ' <:+ ρ'₂) : VOk Q Valid Xc C ρ₂ ρ'₂ :=
+  VOk.suffix hctx.suffix hV h₁ h₂
+
+theorem Ctx.vknown {ρ ρ' : List Val} (hV : VOk Q Valid Xc C ρ ρ') : C.prog.known = P.known := by
+  cases hV with | mk hv _ => exact hctx.cknown _ _ _ _ hv
+
+theorem Ctx.vglob {ρ ρ' : List Val} (hV : VOk Q Valid Xc C ρ ρ') (g : GlobalId) :
+    (C.prog.global? g).map (·.ps.length) = (P.global? g).map (·.ps.length) := by
+  cases hV with | mk hv _ => exact hctx.cglob _ _ _ _ hv g
+
+theorem Ctx.vbody {ρ ρ' : List Val} (hV : VOk Q Valid Xc C ρ ρ') (g : GlobalId)
+    (hin : C.inline.contains g = true) : C.prog.global? g = P.global? g := by
+  cases hV with | mk hv _ => exact hctx.cbody _ _ _ _ hv g hin
+
+/-- An inlined callee's body is walked under a valid configuration, for
+every source environment. -/
+theorem Ctx.vinl {ρ ρ' : List Val} (ρ₂ : List Val) (hV : VOk Q Valid Xc C ρ ρ') :
+    VOk Q Valid Xc { C with inline := [], redirect := none } ρ₂ ρ' := by
+  cases hV with | mk hv hp => exact .mk (hctx.inl _ _ _ _ ρ₂ hv) hp
+
 /-- A valid configuration stays valid when a source value is pushed. -/
-theorem Ctx.push {n : Nat} (hctx : Ctx P Q Valid Xc n) {C : Cfg} {ρ ρ' : List Val} (hV : Valid C ρ ρ')
-    (v : Val) : Valid C (v :: ρ) ρ' :=
-  hctx.suffix C ρ ρ' _ _ hV (List.suffix_cons _ _) (List.suffix_refl _)
+theorem Ctx.push {ρ ρ' : List Val} (hV : VOk Q Valid Xc C ρ ρ') (v : Val) : VOk Q Valid Xc C (v :: ρ) ρ' :=
+  hctx.vsuffix hV (List.suffix_cons _ _) (List.suffix_refl _)
 
 /-- A valid configuration stays valid when the target environment grows. -/
-theorem Ctx.ext {n : Nat} (hctx : Ctx P Q Valid Xc n) {C : Cfg} {ρ ρ' : List Val} (hV : Valid C ρ ρ') :
-    ∀ ρ'', ρ' <:+ ρ'' → Valid C ρ ρ'' :=
-  fun _ h => hctx.suffix C ρ ρ' _ _ hV (List.suffix_refl _) h
+theorem Ctx.ext {ρ ρ' : List Val} (hV : VOk Q Valid Xc C ρ ρ') :
+    ∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρ ρ'' :=
+  fun _ h => hctx.vsuffix hV (List.suffix_refl _) h
 
 /-- A recorded environment (a join point's or an inlined local function's),
 valid in every extension of the target environment, with values pushed. -/
-theorem Ctx.pre {n : Nat} (hctx : Ctx P Q Valid Xc n) {C : Cfg} {ρj ρ' : List Val}
-    (hVj : ∀ ρ'', ρ' <:+ ρ'' → Valid C ρj ρ'') (pre : List Val) : Valid C (pre ++ ρj) ρ' :=
-  hctx.suffix C ρj ρ' _ _ (hVj ρ' (List.suffix_refl _)) (List.suffix_append _ _) (List.suffix_refl _)
+theorem Ctx.pre {ρj ρ' : List Val} (hVj : ∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρj ρ'') (pre : List Val) :
+    VOk Q Valid Xc C (pre ++ ρj) ρ' :=
+  hctx.vsuffix (hVj ρ' (List.suffix_refl _)) (List.suffix_append _ _) (List.suffix_refl _)
+
+end
 
 end Compilatrix.Anf.WalkProof

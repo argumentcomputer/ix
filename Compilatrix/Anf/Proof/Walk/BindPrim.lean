@@ -15,7 +15,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 theorem NoDead.fn_body {live : List Bool} {ps : List Ixon.V3.BinderContract} {fb : Exp}
     (h : ∀ i, live[i]? = some false → Bind.occ i (.fn ps fb) = 0) :
@@ -39,7 +39,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
   try dsimp only at h2
   obtain ⟨rfl, vs, ws, hvs, hws, hvws⟩ := resolveList_rel' henv h1 fun i hi => by
     simpa [Bind.occ] using hnd.bind_rhs i hi
-  have hK : C.prog.known = P.known := hctx.cknown C ρ ρ' hV
+  have hK : C.prog.known = P.known := hctx.vknown hV
   have hsrc : ∀ k, evalBind P k ρ (.prim p as) = primResult P.known p vs := fun k => by
     rw [evalBind_prim, hvs]; rfl
   have hnat : natArgs ws = natArgs vs := Rel.natArgs_rel structural.toBase (pw_of hvws)

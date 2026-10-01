@@ -16,7 +16,7 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n : Nat}
 
 theorem walkBind_step {fuel : Nat} (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg}
     {env : Walk.Env} {here : Here} {c : Ixon.V3.LetContract} {b : Bind} {body : Exp} {k : Kont} {out : Exp}
@@ -73,16 +73,16 @@ it (and, for `Xc` entry, the program interface at the bound). -/
 structure Hyp : Prop where
   known : Q.known = P.known
   arity : ∀ g gd, P.global? g = some gd → ∃ gd', Q.global? g = some gd' ∧ gd'.ps.length = gd.ps.length
-  suffix : ∀ C ρ ρ' ρ₂ ρ'₂, Valid C ρ ρ' → ρ <:+ ρ₂ → ρ' <:+ ρ'₂ → Valid C ρ₂ ρ'₂
-  cknown : ∀ C ρ ρ', Valid C ρ ρ' → C.prog.known = P.known
-  cglob : ∀ C ρ ρ', Valid C ρ ρ' → ∀ g,
+  suffix : ∀ C ρ ρ' prs ρ₂ ρ'₂, Valid C ρ ρ' prs → ρ <:+ ρ₂ → ρ' <:+ ρ'₂ → Valid C ρ₂ ρ'₂ prs
+  cknown : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → C.prog.known = P.known
+  cglob : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → ∀ g,
     (C.prog.global? g).map (·.ps.length) = (P.global? g).map (·.ps.length)
-  cbody : ∀ C ρ ρ', Valid C ρ ρ' → ∀ g, C.inline.contains g = true → C.prog.global? g = P.global? g
-  inl : ∀ C ρ ρ' ρ₂, Valid C ρ ρ' → Valid { C with inline := [], redirect := none } ρ₂ ρ'
+  cbody : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → ∀ g, C.inline.contains g = true → C.prog.global? g = P.global? g
+  inl : ∀ C ρ ρ' prs ρ₂, Valid C ρ ρ' prs → Valid { C with inline := [], redirect := none } ρ₂ ρ' prs
   call : ∀ n, Low P Q Valid Xc n → Rel.CallSim P Q (WV Q Valid Xc) n
   glob : ∀ n, Low P Q Valid Xc n → Rel.GlobSim P Q (WV Q Valid Xc) n
   red : ∀ n, Low P Q Valid Xc n →
-    ∀ C ρ ρ' r, Valid C ρ ρ' → C.redirect = some r →
+    ∀ C ρ ρ' r, VOk Q Valid Xc C ρ ρ' → C.redirect = some r →
       RedSim (P := P) (Q := Q) (Valid := Valid) (Xc := Xc) n r ρ ρ'
   xenter : ∀ n, Low P Q Valid Xc n → Rel.AppSim P Q (WV Q Valid Xc) n → Rel.CallSim P Q (WV Q Valid Xc) n →
     Rel.GlobSim P Q (WV Q Valid Xc) n → XcEnter P Q Valid Xc n

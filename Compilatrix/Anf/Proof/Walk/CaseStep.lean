@@ -17,14 +17,14 @@ open Compilatrix.Sem (Result ClockMono SimUpTo later later_succ later_zero)
 open Compilatrix.Anf.Rel (Pw)
 open Walk (Ent JEnt Fact Here Cfg Kont Fires)
 
-variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 /-- The general case: the walked alternatives and default under the
 scrutinee's operand. -/
 theorem case_general (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg}
     {env : Walk.Env} {here0 : Here} {x : Atom} {alts : List Alt} {d : Option Exp} {k0 : Kont}
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J'0 : List JClo} {live jlive : List Bool}
-    {SK : Val → Nat → Result Val} (hV : Valid C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
+    {SK : Val → Nat → Result Val} (hV : VOk Q Valid Xc C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
     (hJ0 : JEnv P Q Valid Xc C n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J) (hd0 : here0.d = ρ'.length)
     (hdj0 : here0.dj = J'0.length) (hf0 : FactsOk Q Valid here0.facts ρ')
     (hnd : NoDead live jlive (.case x alts d)) (hk0 : KontW Q Valid Xc n k0 SK ρ' J'0)
@@ -65,7 +65,7 @@ theorem walkCase_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
   clear h2
   dsimp only at h
   obtain ⟨rfl, v, w, hv, hw, hvw⟩ := resolve_rel' henv h1 hnd.case_atom
-  have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.cknown C ρ ρ' hV]
+  have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.vknown hV]
   have hsrc : ∀ k, eval P k ρ J (.case x alts d) = match v.asCtor P.known with
       | some (c, fs) => evalAlts P k ρ J c fs alts d
       | none => .stuck := by
@@ -101,7 +101,7 @@ theorem walkCase_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
             rw [haa, hab, hvl] at hnda
             rw [List.length_reverse] at henvb
             exact (hW.walk h' (vfs.reverse ++ ρ) J ρ' J' _ jlive SK
-              (hctx.suffix C ρ ρ' _ _ hV (List.suffix_append _ _) (List.suffix_refl _)) (by simpa using henvb) hJ hd hdj
+              (hctx.vsuffix hV (List.suffix_append _ _) (List.suffix_refl _)) (by simpa using henvb) hJ hd hdj
               hf hnda hk).congr
               (fun k => by rw [hsrc']; rfl) (fun _ => rfl)
           | false =>
@@ -126,7 +126,7 @@ theorem walkCase_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
           hst | ⟨rfl, hz, c0, heq⟩
         · exact (SimUpTo.stuck _).congr (fun k => by rw [hsrc, hvc]; dsimp only; rw [hst]; rfl)
             (fun _ => rfl)
-        have hz' : P.known.natZero ≠ some c := by rw [← hctx.cknown C ρ ρ' hV]; exact hz
+        have hz' : P.known.natZero ≠ some c := by rw [← hctx.vknown hV]; exact hz
         have hv' : v = .con c [] := asCtor_nil hvc hz'
         subst hv'
         have hsrc' : ∀ k, (eval P k ρ J (.case x alts none)).bind (SK · k) =

@@ -191,13 +191,13 @@ theorem evalAlts_same {P : Program} {ρ : List Val} {J : List JClo} {c : Key.Cto
 
 /-! ## Alternatives -/
 
-variable {P Q : Program} {Valid : Cfg → List Val → List Val → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
+variable {P Q : Program} {Valid : Cfg → List Val → List Val → List (Val × Val) → Prop} {Xc : Nat → List Val → Exp → Exp → Prop} {C : Cfg} {n fuel : Nat}
 
 theorem walkAlts_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg}
     {env : Walk.Env} {here : Here} {xo : Opd} {alts : List Alt} {k : Kont} {alts' : List Alt}
     {s s' : Fires} (h : (Walk.walkAlts C (fuel + 1) env here xo alts k).run s = .ok (alts', s'))
     (ρ : List Val) (J : List JClo) (ρ' : List Val) (J' : List JClo) (live jlive : List Bool)
-    (SK : Val → Nat → Result Val) (hV : Valid C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
+    (SK : Val → Nat → Result Val) (hV : VOk Q Valid Xc C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
     (hJ : JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)
     (hdj : here.dj = J'.length) (hf : FactsOk Q Valid here.facts ρ')
     (hnd : ∀ a ∈ alts, NoDead (List.replicate a.arity true ++ live) jlive a.body)
@@ -238,7 +238,7 @@ theorem walkAlts_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         have hndb := hnd (.mk key m b) List.mem_cons_self
         simp only [Alt.arity, Alt.body] at hndb
         exact (hW.walk hb (fs.reverse ++ ρ) J (fs'.reverse ++ ρ') J' _ jlive SK
-          (hctx.suffix C ρ ρ' _ _ hV (List.suffix_append _ _) hsuf) henvb (hJ.suffixK hsuf (List.suffix_refl _))
+          (hctx.vsuffix hV (List.suffix_append _ _) hsuf) henvb (hJ.suffixK hsuf (List.suffix_refl _))
           (by simp [hd, hsel'.2]; omega) hdj (hfacts hsel) hndb (hk.suffix hsuf (List.suffix_refl _))).congr
           (fun k => by rw [evalAlts_cons, if_pos hsel]) (fun k => by rw [evalAlts_cons, if_pos hsel'])
       · have hsel' : ¬ (key = c ∧ m = fs'.length) := by rw [hfl]; exact hsel
