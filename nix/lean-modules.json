@@ -1453,6 +1453,9 @@
    ["Compilatrix.Xv.Stacking.Proof.Trunc",
     "Compilatrix.Xv.Validate.Proof.Exec",
     "Compilatrix.X86.Memory"]},
+  "Compilatrix.Xv.Stacking.Proof.Return":
+  {"path": "Compilatrix/Xv/Stacking/Proof/Return.lean",
+   "imports": ["Compilatrix.Xv.Stacking.Proof.CallStep"]},
   "Compilatrix.Xv.Stacking.Proof.Match":
   {"path": "Compilatrix/Xv/Stacking/Proof/Match.lean",
    "imports":
@@ -3958,6 +3961,7 @@
     "Compilatrix.Xv.Stacking.Proof.CallMatch",
     "Compilatrix.Xv.Stacking.Proof.CallRun",
     "Compilatrix.Xv.Stacking.Proof.CallStep",
+    "Compilatrix.Xv.Stacking.Proof.Return",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",
