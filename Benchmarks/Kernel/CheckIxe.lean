@@ -20,13 +20,13 @@ compiler's (`Env.anonHints`). Not a certified verdict:
 
 Rows are JSONL with the fields of `kernel-check-ixe` (`address, names, kind,
 outcome, reason, micros, readMicros`; a blocked row's reason is its root's
-address), so `scripts/check-ixe-report.py` reads them unchanged.
+address), so `kernel-check-ixe --report` and `--summary` read them unchanged.
 
 Usage: `kernel-check-ixe <input.ixe> <output.jsonl> [limit]`. The watchdog
 (`CHECK_IXE_WATCH_MS`, default 60000; `CHECK_IXE_WATCH_MB`, default 20000) appends a
 runaway record's address to `<output>.runaway` and exits with code 3;
 `CHECK_IXE_SKIP` (comma-separated addresses) declines those records unchecked,
-as for `kernel-check-ixe` and `scripts/check-ixe-guarded.sh`. `CHECK_IXE_ROOTS`
+as `kernel-check-ixe --guarded` does to rerun past runaways. `CHECK_IXE_ROOTS`
 (comma-separated Lean names, resolved through the environment's metadata)
 restricts the run to the prelude and the dependency closure of those
 constants; a `«n»` component is numeric, as the rows print it (the `0` of a
