@@ -188,4 +188,155 @@ theorem step_zero {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Hol
       (fun y hy hc => by simp only [Inst.defs, List.mem_singleton] at hy; subst hy; simp [Loc.isCell] at hc) hafter
   | _ => simp [Xl.execInst] at hexec
 
+/-! ## Fused pairs -/
+
+/-- The registers `zs` zeroed in turn. -/
+def zeroAll (core : Core) : List GPR → Core
+  | [] => core
+  | r :: rs => zeroAll (core.setReg r 0) rs
+
+theorem zeroAll_readReg : ∀ (core : Core) (zs : List GPR) (q : GPR),
+    (zeroAll core zs).readReg q = if q ∈ zs then 0 else core.readReg q
+  | core, [], q => by simp [zeroAll]
+  | core, r :: rs, q => by
+      rw [zeroAll, zeroAll_readReg]
+      by_cases hq : q ∈ rs
+      · simp [hq]
+      · by_cases e : q = r
+        · subst e; simp [hq, Validate.readReg_setReg]
+        · simp [hq, e, Validate.readReg_setReg]
+
+theorem zeroAll_memory : ∀ (core : Core) (zs : List GPR), (zeroAll core zs).memory = core.memory
+  | _, [] => rfl
+  | core, r :: rs => by rw [zeroAll, zeroAll_memory]; rfl
+
+/-- The zeroing before a fused pair: one checked step per register, no
+memory touched. -/
+theorem zero_steps {cs : Checked} {block : BlockId} {returns : List ReturnFrame} {holes : Holes} :
+    ∀ (zs : List GPR) {off : Nat} {core : Core}, Straight.Segment cs block off (zs.map zeroReg) →
+      off + zs.length < UInt32.size →
+      SafeSteps Runtime.rejecting cs zs.length holes (inFrame core block off returns) holes
+        (inFrame (zeroAll core zs) block (off + zs.length) returns)
+  | [], off, core, _, _ => by simpa [zeroAll] using SafeSteps.refl holes (inFrame core block off returns)
+  | r :: rs, off, core, hseg, hfits => by
+      have hseg' : Straight.Segment cs block off ([zeroReg r] ++ rs.map zeroReg) := by simpa using hseg
+      obtain ⟨fl, hex⟩ := zero_exec r core {}
+      obtain ⟨hsafe, hkeep⟩ := OperationSafe.of_noMemory (o := zeroRow) (args := [.reg r, .reg r]) (core := core)
+        (holes := holes) (returns := returns)
+        (zero_foot r core).1 (zero_foot r core).2
+      have one := hseg'.left.safe_op (by simp at hfits; omega) Runtime.rejecting hsafe hex
+      rw [hkeep] at one
+      have rest := zero_steps (returns := returns) (holes := holes) rs (off := off + 1) (core := core.setReg r 0) (by simpa using hseg'.right)
+        (by simp [UInt32.size] at hfits ⊢; omega)
+      have := one.append rest
+      simpa [zeroAll, Nat.add_assoc, Nat.add_comm 1] using this
+
+theorem zeroes_regs {g : Loc → Except String Instr}
+    (hg : ∀ l z, g l = .ok z → ∃ r, l = .reg r ∧ Xl.reserved r = false ∧ z = zeroReg r) :
+    ∀ {L : List Loc} {zeroes : List Instr}, L.mapM g = .ok zeroes →
+      ∃ zs : List GPR, L = zs.map Loc.reg ∧ zeroes = zs.map zeroReg ∧ ∀ r ∈ zs, Xl.reserved r = false
+  | [], zeroes, h => by
+      simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at h
+      exact ⟨[], rfl, h.symm, by simp⟩
+  | l :: L, zeroes, h => by
+      rw [List.mapM_cons] at h
+      obtain ⟨z, hz, h'⟩ := bind_ok.1 h
+      obtain ⟨zs', hzs, h''⟩ := bind_ok.1 h'
+      cases h''
+      obtain ⟨r, rfl, hr, rfl⟩ := hg l z hz
+      obtain ⟨zs, rfl, rfl, hzs'⟩ := zeroes_regs hg hzs
+      refine ⟨r :: zs, rfl, rfl, fun q hq => ?_⟩
+      rcases List.mem_cons.1 hq with rfl | hq
+      · exact hr
+      · exact hzs' q hq
+
+/-- A fused pair: one step per zeroed register, then the pair. -/
+theorem step_fused {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Holes} {fr : Xl.Frame} {a : Act}
+    {ret : ReturnFrame} {below : List (Xl.Frame × Act × ReturnFrame)} (hm : Match S W s m holes fr a ret below)
+    {f : Func Loc} {l : FrameLayout} {pl : Placed} (htop : Top S W s m holes fr a ret f l pl)
+    {b : Block Loc} {codes : List (List Instr)} {post : List Instr} {t : X86.Terminator}
+    (hpos : XlPos S fr f l pl b codes post t) (hpc : m.pc = pcOf S pl fr.label (offsetOf l fr.label fr.pos codes))
+    {p q : Op} {pargs cargs : List (XArg Loc)} {defs : List Loc}
+    (hx : b.body[fr.pos]? = some (.fused p pargs q defs cargs))
+    {regs' : Xl.Regs} {fr'' : Xl.Frame} {mem' : Memory}
+    (hexec : Xl.execInst s.regs fr s.mem s.ctx (.fused p pargs q defs cargs) = some (regs', fr'', mem')) :
+    ∃ n holes' m', SafeSteps Runtime.rejecting S.cs n holes m holes' m' ∧
+      Match S W { s with mem := mem', regs := regs', stack := { fr'' with pos := fr.pos + 1 } :: below.map (·.1) }
+        m' holes' { fr'' with pos := fr.pos + 1 } a ret below := by
+  simp only [Xl.execInst, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hexec
+  obtain ⟨pb, hpb, qb, hqb, ⟨regs₁, fr₁, mem₁, fl⟩, hrun, he⟩ := hexec
+  simp only [Prod.mk.injEq] at he
+  obtain ⟨rfl, rfl, rfl⟩ := he
+  rw [hm.ctx] at hrun
+  obtain ⟨code, hcode, hinst⟩ := hpos.insts fr.pos _ hx
+  simp only [FnCtx.inst, FnCtx.bind, hpb, hqb, bind, Except.bind, pure, Except.pure] at hinst
+  have key : ∃ (pxs qxs : List Arg) (zs : List GPR), (ctxOf S.placed pl).rowArgs pb = .ok pxs ∧ (ctxOf S.placed pl).rowArgs qb = .ok qxs ∧
+      rowShape p pb pxs false = true ∧ rowShape q qb qxs true = true ∧
+      (qb.filter Bound.narrowOutput).flatMap Bound.defs = zs.map Loc.reg ∧ (∀ r ∈ zs, Xl.reserved r = false) ∧
+      code = zs.map zeroReg ++ [.fused p pxs q qxs] := by
+    split at hinst
+    · simp at hinst
+    rename_i pxs hpxs
+    split at hinst
+    · simp at hinst
+    rename_i qxs hqxs
+    split at hinst
+    · rename_i hcond
+      split at hinst
+      · simp at hinst
+      rename_i zeroes hzeroes
+      simp only [Except.ok.injEq] at hinst
+      have hz := zeroes_regs ?_ hzeroes
+      · obtain ⟨zs, hzs, rfl, hzr⟩ := hz
+        simp only [Bool.and_eq_true] at hcond
+        exact ⟨pxs, qxs, zs, hpxs, hqxs, hcond.1.2, hcond.2, hzs, hzr, hinst.symm⟩
+      · intro l z hz
+        try simp only [bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw] at hz
+        split at hz
+        · simp at hz
+        · split at hz
+          · simp at hz
+          · rename_i r hg
+            simp only [Except.ok.injEq] at hz
+            cases l with
+            | reg r' =>
+              obtain ⟨hres, e⟩ := gpr_ok hg
+              subst e
+              exact ⟨_, rfl, hres, hz.symm⟩
+            | _ => simp [gpr, throw, throwThe, MonadExceptOf.throw] at hg
+    · simp [throw, throwThe, MonadExceptOf.throw] at hinst
+  obtain ⟨pxs, qxs, zs, hpx, hqx, hps, hqs, hzs, hzr, rfl⟩ := key
+  have hzsp : GPR.rsp ∉ zs := fun h => by have := hzr _ h; simp [Xl.reserved] at this
+  -- Xl's uses are defined
+  have huses : ∀ u ∈ (pb ++ qb).flatMap Bound.uses, ∃ v, Xl.read s.regs fr u = some v := by
+    have h := hrun
+    rw [Xl.execBound_eq] at h
+    simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil, Option.bind_eq_some_iff] at h
+    obtain ⟨_, -, _, -, _, -, vs, hread, -⟩ := h
+    exact readAll_some hread
+  have hz₁ : ∀ r ∈ zs, (zeroAll m.core zs).readReg r = 0 := fun r hr => by simp [zeroAll_readReg, hr]
+  have hz₂ : ∀ r, r ∉ zs → (zeroAll m.core zs).readReg r = m.core.readReg r := fun r hr => by
+    simp [zeroAll_readReg, hr]
+  obtain ⟨core₁, fl₁, core', hp, hq, hafter, footP, footQ, -, -⟩ :=
+    fused_sim hpb hqb hpx hqx hps hqs hzs htop.agree hz₁ hz₂ (zeroAll_memory _ _) hrun
+  rw [(bindRow_regs hqb).2] at hafter
+  have hcz : (zeroAll m.core zs).readReg .rsp = m.core.readReg .rsp := hz₂ _ hzsp
+  have hpsafe := footP.safe hm htop hcz fun u hu _ => huses u (by rw [List.flatMap_append]; exact List.mem_append_left _ hu)
+  have hqsafe := footQ.safe hm htop hcz fun u hu _ => huses u (by rw [List.flatMap_append]; exact List.mem_append_right _ hu)
+  obtain ⟨hseg, hfits⟩ := hpos.segment hcode
+  have hzero := zero_steps (returns := m.returns) (holes := holes) zs (core := m.core) hseg.left
+    (by simp [UInt32.size] at hfits ⊢; omega)
+  have hfused := hseg.right.safe_fused (by simp [UInt32.size] at hfits ⊢; omega) Runtime.rejecting hpsafe hqsafe hp hq
+  rw [List.length_map] at hfused
+  have hsteps := hzero.append hfused
+  rw [← machine_at hm.running hpc] at hsteps
+  refine ⟨_, _, _, hsteps, ?_⟩
+  have hb := Match.body hm htop hpos hx (x := .fused p pargs q defs cargs) hafter (fun y hy => nextHoles_op_sub y hy)
+    (fun y hy hc mm hmm => by
+      have := footQ.defs y (by rw [(bindRow_regs hqb).2]; exact hy) hc mm hmm
+      have hcl := nextHoles_op_clears (holes := holes) this
+      rwa [cell_rsp hmm hcz] at hcl)
+  rw [machine_next hm.running, offsetOf_succ hcode] at hb
+  simpa [Nat.add_assoc] using hb
+
 end Compilatrix.Xv.Stacking.Proof
