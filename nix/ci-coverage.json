@@ -435,6 +435,11 @@
   "Compilatrix.X86.Layout.Basic",
   "Compilatrix.X86.Layout.Linearize",
   "Compilatrix.X86.Layout.Order",
+  "Compilatrix.X86.Layout.Proof.Linearize",
+  "Compilatrix.X86.Layout.Proof.Order",
+  "Compilatrix.X86.Layout.Proof.Rows",
+  "Compilatrix.X86.Layout.Proof.Transport",
+  "Compilatrix.X86.Layout.Proof.Tunnel",
   "Compilatrix.X86.Layout.Tunnel",
   "Compilatrix.X86.Memory",
   "Compilatrix.X86.ObjectExecution",
@@ -556,6 +561,7 @@
   "CompilatrixTests.Fences.IxonV3",
   "CompilatrixTests.Fences.IxonV3Catalog",
   "CompilatrixTests.Fences.IxonV3Typing",
+  "CompilatrixTests.Fences.LayoutProof",
   "CompilatrixTests.Fences.Lir",
   "CompilatrixTests.Fences.LirProof",
   "CompilatrixTests.Fences.Own",
@@ -593,5 +599,5 @@
   "Ix.Lib"],
  "baseline": "jcb/x86: merge layout proofs",
  "axiom_sha256":
- "546079253a941d11985ceaadb15807928778834dbff4a8a58169fbd056d90c46",
- "axiom_count": 2989}
+ "863730d22a2c87e697dc978a8285c3130bed46a4777e849d1c24ad35f1f4de94",
+ "axiom_count": 3087}

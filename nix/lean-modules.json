@@ -900,6 +900,14 @@
   "CompilatrixTests.Fences.Lir":
   {"path": "CompilatrixTests/Fences/Lir.lean",
    "imports": ["Compilatrix.Lir.Operands"]},
+  "CompilatrixTests.Fences.LayoutProof":
+  {"path": "CompilatrixTests/Fences/LayoutProof.lean",
+   "imports":
+   ["Compilatrix.X86.Layout.Proof.Tunnel",
+    "Compilatrix.X86.Layout.Proof.Order",
+    "Compilatrix.X86.Layout.Proof.Rows",
+    "Compilatrix.X86.Layout.Proof.Linearize",
+    "Compilatrix.X86.Layout.Proof.Transport"]},
   "CompilatrixTests.Fences.IxonV3Typing":
   {"path": "CompilatrixTests/Fences/IxonV3Typing.lean",
    "imports": ["Compilatrix.Ixon.V3.Validate"]},
@@ -1015,7 +1023,8 @@
     "CompilatrixTests.Fences.FirProof",
     "CompilatrixTests.Fences.OwnProof",
     "CompilatrixTests.Fences.CfgLower",
-    "CompilatrixTests.Fences.Front"]},
+    "CompilatrixTests.Fences.Front",
+    "CompilatrixTests.Fences.LayoutProof"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":
