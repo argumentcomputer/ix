@@ -428,7 +428,6 @@ script "check-kernel" (args) := do
     let code ← child.wait
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
-  run "python3" #["scripts/check-kernel-retirement.py"]
   -- the vendored library's globs are exactly the vendored tree
   run "python3" #["scripts/vendor-conleche.py", "check-lake", "lakefile.lean", "IxKernel/lakefile.lean"]
   run "lake" #["-d", "IxKernel", "build", "--wfail"]

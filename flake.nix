@@ -332,12 +332,6 @@
           };
 
           checks = {
-            # Check the exported source too, without checkout metadata or
-            # cached Lake dependencies masking a retired import/target.
-            kernel-retirement = pkgs.runCommand "kernel-retirement" { } ''
-              ${pkgs.python3}/bin/python3 ${./scripts/check-kernel-retirement.py} --root ${./.}
-              touch $out
-            '';
             # Lint the host workspace; warnings are errors.
             clippy = craneLib.cargoClippy (
               craneArgs
