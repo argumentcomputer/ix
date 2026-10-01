@@ -910,6 +910,12 @@
   {"path": "CompilatrixTests/Fences/IxonV3.lean",
    "imports":
    ["Compilatrix.Ixon.V3.Resource.StateProofs", "Compilatrix.Ixon.V3.Source"]},
+  "CompilatrixTests.Fences.Front":
+  {"path": "CompilatrixTests/Fences/Front.lean",
+   "imports":
+   ["Compilatrix.Rt.Proof.Publish",
+    "Compilatrix.Rt.Proof.Lang",
+    "Compilatrix.Recheck.Proof.Sound"]},
   "CompilatrixTests.Fences.FirProof":
   {"path": "CompilatrixTests/Fences/FirProof.lean",
    "imports": ["Compilatrix.Fir.Proof.Mono", "Compilatrix.Fir.Proof.Lang"]},
@@ -1008,7 +1014,8 @@
     "CompilatrixTests.Fences.RtProof",
     "CompilatrixTests.Fences.FirProof",
     "CompilatrixTests.Fences.OwnProof",
-    "CompilatrixTests.Fences.CfgLower"]},
+    "CompilatrixTests.Fences.CfgLower",
+    "CompilatrixTests.Fences.Front"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":

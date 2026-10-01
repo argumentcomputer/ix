@@ -28,3 +28,4 @@ import CompilatrixTests.Fences.RtProof
 import CompilatrixTests.Fences.FirProof
 import CompilatrixTests.Fences.OwnProof
 import CompilatrixTests.Fences.CfgLower
+import CompilatrixTests.Fences.Front
