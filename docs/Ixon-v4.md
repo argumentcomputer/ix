@@ -27,9 +27,15 @@ typing and explicitly rejects resource-proof requests. The
 [v3 verification record](ixon-v3-verification.md) lists the gates executed
 for the contract model.
 
-<!-- PENDING: [format][ids] everything specific to v4 in this file (version 4, format byte 4, ixon-v4 identifiers) depends on plan §2. Every integer is TagN (since 93e2895c) and both compilers use the canonical construction (since the route switch), but the version is 3 and the identifiers are the v3 ones. A v4 verification record (plan §9) is not written yet. -->
-
-<!-- PENDING: [ixvm] the IxVM codecs read and write TagN and the v4 headers (plan §5). -->
+The IxVM circuit has its own codec (`Ix/IxVM/IxonDeserialize.lean`,
+`Ix/IxVM/IxonSerialize.lean`, generated into
+`crates/ixvm-codegen/src/aiur_ixvm.rs`). It reads and writes TagN with the
+host codec's accept and reject rules. The suite `ixvm-tagn` checks it
+against `Ixon.putTagN`/`getTagN` on every rung boundary, the rejection
+vectors, every one-byte string, and every header with a sample of second
+bytes. Its claim readers require object format `4`, and its kernel
+recognizes primitives by their v4 canonical addresses. The circuit reads
+neither `.ixe` headers nor `ConstantMeta`.
 
 ## 1. Independent contracts
 
@@ -181,8 +187,6 @@ carry object format `4`, and the resource validator identity is
 `ixon-v4/resource-v1`. Blob addresses remain BLAKE3 of raw bytes. No v3
 fallback or mixed-version typed environment is admitted.
 
-<!-- PENDING: [format][ids] Env.VERSION = 4, header 0xE4, wireFormatId "ixon-v4", object-format byte 4, validatorId "ixon-v4/resource-v1" (plan §0b-2, §0b-7, §2). At 9611c3b6 these are 3 / 0xE3 / "ixon-v3" / 3 / "ixon-v3/resource-v1". -->
-
 The `0xE4` header byte is also the byte of the Check claim tag (`0xE3` was
 also the Eval claim tag). Readers interpret it by context, and the enclosing
 protocol identifies the object kind.
@@ -282,13 +286,15 @@ The construction keeps two properties:
     `optimizeUniform_least`).
   - Phases 2 and 3 and the width selection meet their per-phase
     specifications (`allocate_spec`, `materializeTable_min`,
-    `rematerialize_spec`, `canonicalTiered_select`).
+    `rematerialize_spec`, `canonicalTieredCore_select`).
 - **Not claimed.**
   - The composed result is not claimed to be a global byte minimum.
   - The Rust implementation is checked by differential tests, not proofs.
-  - Equality between the model length and the serialized TagN length is
-    not proved; the construction checks it on every output and fails closed
-    on a mismatch.
+  - No single theorem states that the final layout length equals the
+    serialized TagN length. The size model is proved to be the serialized
+    length of every wire-domain expression (`exprSize_eq_serExpr`), and the
+    construction checks the equality on every output and fails closed on a
+    mismatch.
 - **Wire validity (machine-checked).** Every output entry and root is in the
   codec's wire domain, the table count is below `2^64` and Shares point
   backward (`canonicalSharingTiered_format`). The compiler endpoint theorems
@@ -298,16 +304,19 @@ The construction keeps two properties:
 Both compilers build every table with this construction; it is the only
 sharing construction.
 
-**Metadata expressions.** A `Share(i)` inside a metadata expression (the
-collapsed call-site arguments in `ConstantMeta.metaSharing`) refers to:
+**Metadata expressions.** A `Share(i)` inside entry `j` of
+`ConstantMeta.metaSharing` (the collapsed call-site arguments) is read in an
+extended index space. With `p` the size of the primary table:
 
-- primary entry `i` when `i < p`, where `p` is the size of the primary table;
-- `metaSharing[i − p]` when `i ≥ p`.
+- `i < p` refers to primary entry `i`;
+- `p ≤ i < p + j` refers to `metaSharing[i − p]`;
+- every other index is a decode error (out of range, or a forward or self
+  reference).
 
-The compilers emit no such `Share` today, and a canonical metadata
-construction is deferred.
-
-<!-- PENDING: [meta] readers resolve the extended index space (plan §11). At 9611c3b6 both decompilers resolve against the primary table only. -->
+A `Share` in a primary expression always refers to the primary table. The
+two decompilers implement this rule; the compilers emit no such `Share`, and
+there is no canonical metadata construction.
+[Ixon](Ixon.md#sharing-in-metadata-expressions) gives the details.
 
 **Compilation failures.** The construction runs under explicit resource
 limits, a safety net far above every corpus maximum that

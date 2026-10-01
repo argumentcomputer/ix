@@ -127,8 +127,6 @@ A canonical profile begins with the UTF-8 bytes
 2. Optional Nat and String type addresses: a byte `0`, or `1` and an address.
 3. Nonzero depth and step limits, each a TagN (`f = 0`) unsigned integer.
 
-<!-- PENDING: [ids] validatorId / VALIDATOR_ID = "ixon-v4/resource-v1" (so the profile prefix is "ixon-v4/resource-v1/profile") (plan §0b-2). At 93e2895c: "ixon-v3/resource-v1"; profile integers are TagN since that commit. -->
-
 Selection primitives must also be assumptions. Literal types, when selected,
 must match the kernel's pinned primitive identities. The profile address is
 BLAKE3 of these exact bytes. Changing limits or assumptions changes the claim.
@@ -140,8 +138,6 @@ the complete subject root and profile address, then reruns combined validation.
 The claim has format byte `4` and validator byte `2` (`resource-v1`).
 Assumptions describe admitted behavior; they do not remove constants from the
 required closure. Merely parsing a claim or proof wrapper validates no program.
-
-<!-- PENDING: [ids] object-format byte 4 in Resource claims (plan §0b-2). At 9611c3b6 it is 3. -->
 
 | Consumer | Advertised validation |
 | --- | --- |
@@ -175,8 +171,7 @@ These are executable-check and transition invariants. They do not replace the
 ordinary typechecking prerequisite or claim a proof of a machine backend's
 allocation behavior.
 
-<!-- PENDING: [fixtures] the fixture directory moves to Tests/Fixtures/ixon-v4/ (plan §6); update this link. -->
-[Shared resource fixtures](../Tests/Fixtures/ixon-v3/resource.tsv) exercise
+[Shared resource fixtures](../Tests/Fixtures/ixon-v4/resource.tsv) exercise
 accepted and rejected terms in both implementations. The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic

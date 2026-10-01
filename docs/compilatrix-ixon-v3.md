@@ -34,8 +34,6 @@ contract model.)
 - **Primitive addresses** have changed. Do not reuse v3 pins or infer an
   object's version from raw constant bytes.
 
-<!-- PENDING: [format][ids] every item above depends on the format switch and the identifier bump (plan §0b-2, §2). At 93e2895c the producer writes TagN integers under version 3 and v3 identifiers; since the route switch it builds every table with the canonical construction. -->
-
 See the [schema](Ixon-v4.md), [wire format](Ixon.md),
 [text syntax](ixon-text-v3.md), and [source frontend](source-contracts.md).
 
@@ -66,11 +64,7 @@ for higher-order capture, recursion, loan, and normalization limits.
 
 ## Fixture package
 
-<!-- PENDING: [ixvm] the IxVM codec update (plan §5); the interface table above states the target. -->
-
-<!-- PENDING: [fixtures] the package is regenerated for v4 through its producers, never relabelled: the directory becomes Tests/Fixtures/ixon-v4/, `ixon-v3-tests` / `ixon-v3-primitives` are renamed or retargeted, and the /tmp paths below change with them (plan §5, §6). At 9611c3b6 the directory holds the v3 package. Update every path in this section when that lands. -->
-
-The [fixture directory](../Tests/Fixtures/ixon-v3/) contains:
+The [fixture directory](../Tests/Fixtures/ixon-v4/) contains:
 
 | File | Purpose |
 | --- | --- |
@@ -91,11 +85,16 @@ must accept the first and reject the second. Changing any committed contract,
 subject, or profile must invalidate the associated identity. Reading the claim
 is not validation, and its bytes are not an IxVM resource proof.
 
-Run `lake exe ixon-v3-tests` from the repository root for codec, FFI, source,
-resource, decompiler, catalog, and VM checks. `--primitives` additionally checks
-the generated primitive closure at `/tmp/ixon-v3-primitives.ixe`.
-`--export-handoff` writes the deterministic handoff files under
-`/tmp/ixon-v3-handoff`; copy them into the fixture directory only after validation.
+Run `lake exe ixon-v4-tests` from the repository root for codec, FFI, source,
+resource, decompiler, catalog, and VM checks. The generated files (the handoff
+set, `claims.tsv`, `addressed.tsv` and `resource.tsv`) must equal their
+producers' output byte for byte. `lake exe ixon-v4-primitives` writes the
+primitive closure to `/tmp/ixon-v4-primitives.ixe` and fails if `primitives.tsv`
+differs from the live addresses; `ixon-v4-tests --primitives` then validates
+that closure. `--export-handoff` writes the deterministic handoff files under
+`/tmp/ixon-v4-handoff`, and `--export-fixtures` writes `claims.tsv`,
+`addressed.tsv` and `resource.tsv` under `/tmp/ixon-v4-fixtures`; copy them into
+the fixture directory only after validation.
 
 The formal gates are `lake build IxCompileVerify IxTcVerify Ix.Resource.Audit`.
 Resource theorems cover the executed quantitative and state-transition

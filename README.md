@@ -217,6 +217,8 @@ not this stable overview.
 
 - `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `meta-env`, `catalog`, `import-ixe`, `truthmines-spec`, `ixon`, `ixon-syntax`, `claim`, `merkle`, `assumption-tree`, `commit`, `canon`, `keccak`, `exact-sharing`, `exact-sharing-ffi`, `source-contract`, `graph-unit`, `condense-unit`, `bench-measures`, `aux-gen-unit`, `ground-unit`, `aiur-cross`, `aiur-cost`, `prim-addrs`, `primitive-address-parity`, `decompile-unit`, `tc-unit`
     - `exact-sharing` tests the canonical sharing construction of Ixon v4; `exact-sharing-ffi` checks that Lean and Rust produce identical bytes
+    - Primary runners run with the primary suites and can be selected by name in the same way: `aiur-rust-syntax`, `ixvm-tagn`, `aiur-prove`, `aiur-hashes`, `rbtree-map`, `multi-stark`, `recursive-verifier`, `ix-aggr`, `ixes-manifest`; `ixvm-tagn` holds the IxVM circuit's TagN codec to the Lean codec
+- `lake exe ixon-v4-tests` runs the Ixon v4 format suite (golden bytes, FFI, VM, text grammar, resource admission, claims, and the fixtures in `Tests/Fixtures/ixon-v4/`); `lake exe ixon-v4-primitives` regenerates the primitive closure and checks `primitives.tsv` against it
 - `lake test -- --ignored` runs all expensive test suites and runners
     - Most tests require at least 32 GB RAM
     - The `compile` and `decompile` tests require 128 GB RAM

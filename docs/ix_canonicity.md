@@ -46,10 +46,8 @@ anonymous expressions (§6.7). So the property also holds modulo:
 
 - how the expression DAG happens to be shared in memory;
 - the order in which the compiler built it;
-- which compiler ran, Lean or Rust.
-
-<!-- PENDING: [parity] Lean and Rust agree byte for byte on the final rules (plan §1 gate). -->
-
+- which compiler ran, Lean or Rust (Rust is held to the Lean definition by
+  differential tests, §6.7).
 
 ## 2. Why It Matters
 
@@ -812,9 +810,12 @@ The output depends only on those expanded expressions:
 [Ixon](Ixon.md#sharing-system) describes the three phases and the width
 selection. It also states which properties are machine-checked: phase-1
 minimality, and the per-phase specifications of phases 2 and 3 and of the
-selection. Two things are not claimed: that the result is a global byte
-minimum, and that the Rust implementation is proved. Rust is held to the
-Lean definition by differential tests.
+selection, and wire validity of the output (`canonicalSharingTiered_format`).
+Two things are not claimed: that the result is a global byte minimum, and
+that the Rust implementation is proved. Rust is held to the Lean definition
+by differential tests (`exact-sharing-ffi`, and the corpus differential on
+Init and a Mathlib sample described in
+[Ixon](Ixon.md#what-is-proved-and-what-is-not)).
 
 A failed construction, for example one that exceeds a resource limit, is a
 compile error for that block. There is no fallback, because a fallback
@@ -826,7 +827,7 @@ aux-gen blocks, and in Rust also kernel egress and the decompiler's
 recompile. The recompile invariant `Named.original` (§9.2) relies on
 recompile using exactly this route.
 
-<!-- PENDING: [parity] the final Lean/Rust byte-identity gate on Init and the Mathlib sample (plan §1). -->
+<!-- PENDING: [parity] Lean/Rust differential at the PR commit (Init in full, Mathlib sample): state here that Lean and Rust produce identical bytes on both corpora at that commit, with the counts. -->
 
 ## 7. The Compile Pipeline
 
@@ -2521,7 +2522,7 @@ is known to be partial.
   [`docs/sharing-minimum.md`](./sharing-minimum.md) §12 — the canonical sharing
   construction (§6.7): `Ix/Sharing/Exact/Tiered.lean`,
   `crates/ixon/src/sharing_exact/tiered.rs`, proofs in
-  `Ix/Compile/Verify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect}.lean`.
+  `Ix/Compile/Verify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect,TieredWire}.lean`.
 - `src/ix/compile.rs` — `sort_consts`, `Frame`, `compile_expr`.
 - `src/ix/kernel/canonical_check.rs` — kernel-side `sort_consts`
   port: `compare_kuniv`, `compare_kexpr`, `compare_kconst`,

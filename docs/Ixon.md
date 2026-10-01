@@ -60,8 +60,6 @@ This separation means cosmetic changes (renaming variables) don't change the con
 
 ## Integer Encoding (TagN)
 
-<!-- PENDING: [format] Env.VERSION = 4 (plan §2). Since 93e2895c every site of the Lean and Rust codecs writes and reads TagN (the Tag0/Tag2/Tag4 codes are deleted), still under version 3. -->
-
 Every variable-length integer in the Ixon grammar uses one code, **TagN**.
 That includes expression, constant, environment, claim and proof headers,
 universe terms, counts, indices and lengths. Fixed-width fields are raw bytes,
@@ -152,8 +150,6 @@ All four are roots of the compiler audit manifest.
 | 0xD | Constant | Non-Muts | Variant (0-7) |
 | 0xE | Env/Claim | Env/Comm/AssumptionTree/Claim | `.ixe` header: format version (4, byte `0xE4`); Comm/AssumptionTree/Claim: variant |
 | 0xF | Proof | ZK proofs | Variant (0-6) |
-
-<!-- PENDING: [format] the .ixe header byte 0xE4 (TagN(0xE, 4)) is written and required by both readers (plan §0b-7, §2). -->
 
 ### Examples
 
@@ -668,7 +664,7 @@ decompiler's recompile check. It is the only sharing construction.
   left to right, reproduces the roots exactly. No de Bruijn index is shifted
   at a `Share`. Consumers reject a `Share` index outside the table.
 - **Encoding.** A Share is `N4(0xB, idx)`: 1 byte for indices 0–7, 2 bytes
-  for 8–1,031, 3 bytes for 1,032–66,567, then 5 and 9 bytes. The table is
+  for 8–1,031, 3 bytes for 1,032–66,567, then 4, 5 and 9 bytes. The table is
   written as `N0(count)` followed by the entries in order. A `Share` written
   where a telescope would continue ends that telescope. For example, the body
   `Share(j)` of an `All` ends the `All` telescope, even if entry `j` is an
@@ -718,26 +714,37 @@ existing `Share` expanded, so normalizing a canonical constant reproduces it.
    (one per `w`) with the fewest real bytes, ties going to the lower `w`.
    An error at any width fails the whole construction.
 
-The construction runs under explicit resource limits. They are a safety net:
-the defaults (Lean `Ix.Sharing.Exact.Limits`, Rust `ExactSharingLimits`) are
-at least 2^6 (Lean) and 2^8 (Rust) times the limits under which the corpora
-were built without exhaustion. `ix compile --sharing-limits` (and
-`ix compile-lean --sharing-limits`, or the `IX_SHARING_LIMITS` environment
-variable that both compilers read) overrides them: comma-separated
-`key=value` items, with values as digits, `2^k` or `max`, or `unbounded`.
-Exceeding a limit is a compile error (`CompileError.resourceLimit`) that names
-the limit's key and the override, for example `canonical sharing: resource
-exhausted: states (limit 1099511627776); raise it with --sharing-limits
-states=N`. Every other construction failure is
-`CompileError.sharingConstruction`. There is no fallback to another
-construction, and a partial or best-so-far table is never emitted.
+The construction runs under explicit resource limits (Lean
+`Ix.Sharing.Exact.Limits`, Rust `ExactSharingLimits`). They are a safety net,
+not part of the definition: they decide whether a run succeeds, never which
+bytes a success produces. The defaults are far above every value observed on
+the Init and Mathlib corpora. Each limit is at least 2^6 (Lean) or 2^8 (Rust)
+times the earlier default under which those corpora were measured, for
+example `states` 2^40 and `materialize_work` 2^56. The exceptions are
+`knapsack_cells` (2^28 in both languages) and Rust's `candidates` (2^16),
+which bounds only the exhaustive width-state search kept as a test oracle.
+
+`ix compile --sharing-limits SPEC` (also `ix compile-lean --sharing-limits`)
+overrides the defaults. It sets the `IX_SHARING_LIMITS` environment variable,
+which both compilers read. `SPEC` is a comma-separated list of `key=value`
+items, with values given as digits, `2^k` or `max`, or the single word
+`unbounded`. The keys are the limit names of either implementation (for
+example `states`, `depth`, `materialize_work`, `distinct_nodes`); keys of the
+other language are accepted and ignored, so one string serves both compilers.
+
+Exceeding a limit is a compile error (`CompileError.resourceLimit`) that
+names the limit's key and the override, for example `canonical sharing:
+resource exhausted: states (limit 1099511627776); raise it with
+--sharing-limits states=N (IX_SHARING_LIMITS)`. Every other construction
+failure is `CompileError.sharingConstruction`. There is no fallback to
+another construction, and a partial or best-so-far table is never emitted.
 
 ### What is proved, and what is not
 
-The following theorems are machine-checked in Lean. They are roots of
-`Ix/Compile/Verify/Audit/Statements.lean`, which checks that they use only
-the standard axioms and no `sorry`. The audit passed for 212 roots at
-`9611c3b6`.
+The following theorems are machine-checked in Lean. They are roots of the
+compiler audit manifest `Ix/Compile/Verify/Audit/Statements.lean` (225
+roots), which `lake build IxCompileVerify` checks: every root uses only its
+listed axioms and no `sorry`.
 
 - **Phase 1 minimality** (`Ix/Compile/Verify/UniformOptimality.lean`):
   `optimizeUniform_minimum` and `optimizeUniform_least`. Suppose
@@ -747,14 +754,23 @@ the standard axioms and no `sorry`. The audit passed for 212 roots at
     sets of terms with in-degree at least 2;
   - its `modelBytes` is that minimum;
   - it is the `setPrec`-least such minimum.
-- **Phase 2** (`TieredTier.lean`: `allocate_spec`, `firstTier_spec`):
+
+  The certain-excluded rule needs every telescope spine to be shorter than
+  `teleSubaddEnd` (the fifth TagN rung end for `f = 4`, 4,311,811,080). The
+  optimizer checks this before it runs and otherwise fails with a format
+  error, so the theorems carry no extra hypothesis.
+- **Phase 2** (`TieredTier.lean`: `allocate_spec`, `firstTier_spec`;
+  `TieredGuard.lean`: `allocate_optimal`):
   - the first tier is a maximum-`ref` set of at most 8 terms closed under
     body references, and the first such set in the tie order;
   - the final order is a permutation of the phase-1 table in which every
     entry's body references come before it;
   - it is the phase-1 order when the guard kept that order, and otherwise
     the first tier followed by the Kahn order;
-  - its reference cost is at most that of the phase-1 order.
+  - its reference cost is at most that of the phase-1 order;
+  - when the table has at most 1,032 entries, so that every index from 8 on
+    has width 2, its reference cost `Σ ref · width` is the minimum over all
+    orders that place every body reference first.
 - **Phase 3** (`TieredPhase3.lean`: `materializeTable_min`,
   `rematerialize_spec`):
   - every entry, and every root, has the minimum layout length among all
@@ -762,7 +778,7 @@ the standard axioms and no `sorry`. The audit passed for 212 roots at
   - the output expands back to the input roots;
   - entry `k` references only entries below `k`;
   - the layout length is at most the phase-1 candidate's.
-- **Width selection** (`TieredSelect.lean`: `canonicalTiered_select`): the
+- **Width selection** (`TieredSelect.lean`: `canonicalTieredCore_select`): the
   result has the fewest final layout bytes of the three candidates, and the
   lowest width among ties.
 
@@ -771,29 +787,51 @@ Not claimed:
 - **No global minimum.** The canonical table is not a global byte minimum
   over all tables, orders and occurrence choices. Each phase is exact for
   its own problem; their composition is not claimed to be optimal.
-- **Phase 2 beyond the first tier.** The construction's further claim, that
-  the order minimizes `Σ ref · width` whenever every entry beyond the first
-  tier has one width, is not among the machine-checked statements.
+- **Phase 2 on larger tables.** For tables of more than 1,032 entries, whose
+  indices span the 2- and 3-byte rungs, the Kahn order is not claimed to
+  minimize `Σ ref · width`.
 - **Rust.** The Rust implementation is not proved. It is checked against
-  Lean by differential tests: 0 byte disagreements on all 56,622 Init
-  constants, and on a sample of 20,263 Mathlib constants (every 50th, plus
-  every constant with more than 2,000 candidates; `docs/sharing-minimum.md`
-  §12.10).
-- **Model versus wire.** The theorems above are stated about the model
-  length. That it equals the serialized TagN length is not proved; the
-  construction serializes its output, compares the two and fails closed on
-  a mismatch. Wire validity is proved:
-  `Tiered.canonicalSharingTiered_format` (`TieredWire.lean`) gives every
-  output entry and root `wireWF`, a table count below `2^64` and backward
-  Shares (entry `k` references only entries below `k`), and the compiler
-  endpoint theorems (`buildConstantWithSharing_wireWF` and the `*_codecWF`
-  theorems of `Ix/Compile/Verify/Compile*Codec.lean`) are stated over it:
-  a compiler run either returns an exactly decodable block or fails with
-  the construction's error (`SharingRunOK`).
+  Lean by differential tests (`exact-sharing-ffi`; with `IX_SHARING_CORPUS`
+  it runs over a whole `.ixe`). On corpora compiled with the TagN encoding
+  at commit `36fe2777` of this work, Lean and Rust produced the same bytes
+  for all 56,622 Init constants. On a Mathlib sample (every 50th constant,
+  plus every constant with more than 2,000 candidates), they produced the
+  same bytes for 20,264 of 20,265 constants. On the remaining constant,
+  `CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`,
+  both implementations exhausted a resource limit (Rust reports `states`).
+  That limit was charged by the count-bracket knapsack, which has since
+  been given its own limit, `knapsack_cells`
+  ([performance](sharing-minimum-performance.md)).
+- **Model versus wire.** The minimality statements are about the layout
+  length: `sizeInfoWith` priced with the TagN widths. Three facts connect
+  that length to serialized bytes:
+  - `exprSize_eq_serExpr` (`SharingExact.lean`): for every expression in the
+    codec's wire domain (`wireWF`), the TagN-priced size is the length of
+    `putExpr`'s output;
+  - `serConstant_size_decomposition` (`SharingExact.lean`): a constant's
+    serialized length splits into its root-free bytes, its roots, the table
+    count and the table entries;
+  - `optimizeUniform_variableBytes` (`UniformLength.lean`, an audit root):
+    phase 1's serialized length equals its model length when every table
+    index has Share width `w`.
+
+  No theorem states that the final tiered result's layout length equals its
+  serialized length. The construction checks that equality on every output
+  at run time and fails closed on a mismatch.
 - **Failure.** The theorems describe successful runs. A run that exceeds a
   limit returns an error.
 
-<!-- PENDING: [parity] the Lean/Rust 0-disagreement gate on all of Init and the Mathlib sample is rerun at the PR commit with the final rules; the §12.10 figures were measured at earlier heads (plan §1 gate, §7). -->
+**Wire validity** is proved.
+`Tiered.canonicalSharingTiered_format` (`TieredWire.lean`) states that
+every output entry and root is `wireWF`, that the table count is below
+`2^64`, and that Shares are backward: entry `k` references only entries
+below `k`, and roots only table entries. The compiler endpoint theorems
+(`buildConstantWithSharing_wireWF` and the `*_codecWF` theorems of
+`Ix/Compile/Verify/Compile*Codec.lean`) are stated over it. A compiler run
+either returns an exactly decodable block or fails with the construction's
+error (`SharingRunOK`).
+
+<!-- PENDING: [parity] Lean/Rust differential at the PR commit, on Init (all constants) and the Mathlib sample, both compiled at that commit: replace the 36fe2777 figures in the "Rust" item with constants compared, same bytes, and disagreements. -->
 
 ### Example
 
@@ -824,28 +862,60 @@ D2 00 00                    -- N4(0xD, 2) Axiom, not unsafe, lvls = 0
 
 The bytes were produced by `normalizeConstantSharingTiered .tagN`, and the
 `exact-sharing` suite checks them. The compilers' sharing builders
-(`Ix.CompileM.buildConstantWithSharing`, Rust `apply_sharing_to_axiom_via`)
-build the same bytes from the unshared constant (`exact-sharing-ffi`). The
-table has one entry and the Share index is 0, so these bytes are the same
-under Tag4 and TagN.
+(`Ix.CompileM.buildConstantWithSharing`, Rust
+`apply_sharing_to_axiom_with_stats`) build the same bytes from the unshared
+constant (`exact-sharing-ffi`). Every integer here is below the first TagN
+rung end, so v3's integer codes would write the same bytes for this table.
 
 ### Sharing in metadata expressions
 
-Metadata expressions are the compiled call-site arguments in
-`ConstantMeta.metaSharing`. They may contain `Share(i)` in an extended
-index space. With `p` entries in the constant's primary table:
+Metadata expressions are the entries of `ConstantMeta.metaSharing`: the
+compiled call-site arguments that call-site surgery collapsed, and rewritten
+call-site heads. A `Share(i)` inside them is read in an extended index
+space. This is a reader rule; it adds no bytes. Let `p` be the size of the
+primary `sharing` table (for a projection, the table of its `Muts` block)
+and `q` the size of `metaSharing`.
 
-- `Share(i)` with `i < p` refers to primary entry `i`;
-- `Share(i)` with `i ≥ p` refers to `metaSharing[i − p]`.
+- **Primary expressions** (roots and primary entries): `Share(i)` is
+  `sharing[i]` and needs `i < p`. Metadata never changes how primary bytes
+  decode.
+- **Inside `metaSharing[j]`:**
+  - `Share(i)` with `i < p` is primary entry `i`. Shares nested inside that
+    entry are again primary.
+  - `Share(i)` with `p ≤ i < p + j` is `metaSharing[i − p]`, read in the
+    scope of entry `i − p`.
+  - Any other index is rejected: `i ≥ p + q` is out of range, and
+    `p + j ≤ i < p + q` is a forward or self reference.
 
-The primary table is built first and never depends on metadata. The
-compilers do not currently emit a `Share` in metadata expressions. On
-Mathlib, metadata expressions total 42,929 bytes (0.0013% of the
-environment file), so a canonical metadata construction is deferred.
+  Every metadata-to-metadata step goes to a lower entry, so expansion
+  terminates.
+- **Call-site references.** `CallSiteEntry.collapsed sharingIdx` and
+  `origHead = some (sharingIdx, _)` index `metaSharing` directly, not offset
+  by `p`, and read that entry in its own scope.
 
-<!-- PENDING: [measure] the 42,929-byte figure is from the W3 metadata measurement recorded only in the untracked plan (plan §11); record it in docs/sharing-minimum-measurements*.md or drop it. -->
+Both decompilers implement the rule: Lean `Ix.DecompileM` (`ShareScope`,
+`resolveShareIn`) and Rust `ix_compile::decompile` (`ShareScope`). When a
+constant's metadata is loaded, they check the whole table first
+(`validateMetaSharing`, Rust `validate_meta_sharing`): every `Share(i)`
+occurring in `metaSharing[j]` must have `i < p + j`. The first violation, in
+entry order and then left-to-right pre-order, is reported as
+`invalidMetaShareIndex` (Rust `DecompileError::InvalidMetaShareIndex`,
+error tag 11). An out-of-range index in a primary expression, or an
+out-of-range call-site `sharingIdx`, is `invalidShareIndex`. The
+semantic-contract scan (`Ix.SemanticContract.containsIxon`, Rust
+`semantic_contract::contains_ixon`) expands Shares with the same scopes.
+Kernel ingress, the IxVM circuit and the resource validators do not read
+`metaSharing` contents. Two older gaps remain in the decompilers: a call
+site nested inside a metadata expression may reference any `metaSharing`
+entry, including its own, and neither decompiler checks that primary entries
+reference only earlier entries, so a malformed table of either kind can make
+decompilation loop instead of failing.
 
-<!-- PENDING: [meta] readers (Lean DecompileM and Tc/IngressMeta, Rust decompile.rs and kernel ingress metadata, IxVM if it reads metadata) resolve the extended space as above (plan §11). At 9611c3b6 both decompilers resolve a metadata Share against the primary table only (docs/sharing-minimum-integration.md §5.3). Whether a metadata construction lands in this PR is open; plan §11 recommends specifying only the index space. -->
+The primary table is built first and never depends on metadata. No compiler
+emits a `Share` in metadata expressions, and there is no canonical metadata
+construction. On Mathlib, metadata expressions total 42,929 bytes (0.0013%
+of the environment file), and no metadata expression contains a `Share`
+([measurements](sharing-minimum-measurements.md#metasharing)).
 
 
 ---
@@ -1108,7 +1178,13 @@ back-compat reading of old versions — `.ixe` files are regenerated
 artifacts. Versions 0–7 fit in the header byte; later versions use the
 multi-byte TagN rungs.
 
-<!-- PENDING: [format] Env.VERSION = 4, wireFormatId / WIRE_FORMAT_ID = "ixon-v4", and readers reject version 3 (plan §0b-2, §2). At 93e2895c the version is 3 (there is no `NEXT_VERSION`) and wireFormatId is "ixon-v3", while every integer is already TagN. -->
+Format version 4 also sets the object-format byte of claims, proofs and
+catalog manifests (`Ixon.Env.OBJECT_FORMAT`, Rust `Env::OBJECT_FORMAT`, equal
+to the version). Artifacts that cache `.ixe` files key them by the version:
+the TruthMines piece cache includes `ixe=<VERSION>` in its key, `ix bench`
+keeps its closure shards under `<dir>/ixe-v<VERSION>/`, and the test
+environment `tc-parity.ixe` is recompiled when its header carries another
+version.
 
 The version-4 header byte `0xE4` is the same byte as the Check claim tag
 `N4(0xE, 4)` (see [Proofs and Claims](#proofs-and-claims)), just as
@@ -1412,8 +1488,6 @@ storage (by flags bit0):
 trailing bytes: reserved future sections, preserved opaquely
 ```
 
-<!-- PENDING: [ids] catalog manifests write and require object_format 4 (Ix/Catalog.lean, crates/ixon/src/catalog.rs; plan §0b-2). At 9611c3b6 they use 3. -->
-
 Both roots are recomputed against a stored manifest: `members_root`
 from the entries on every parse, `content_root` by the k-way sweep in
 `ix catalog verify` (which also enforces the profile's dedup rule and
@@ -1435,16 +1509,12 @@ Environment headers are interpreted in the `.ixe` context: the v4
 environment header is `0xE4`, the same byte as the Check claim tag. The
 enclosing protocol must identify the object kind.
 
-<!-- PENDING: [fixtures] Tests/Fixtures claims.tsv and the catalog digest pins regenerated (plan §6). Since 93e2895c claim and proof headers are TagN (Catalog E8 00, Resource E8 01; v3 wrote E8 08 and E8 09), pinned by proof.rs::catalog_claim_wire_bytes_pinned and the claim suite. -->
-
 Every claim and proof payload starts with two bytes immediately after its
 header: object format `4`, then validator `0` (structural-v1),
 `1` (erased-lean-v1), or `2` (resource-v1). Readers require the validator
 assigned to that variant. Whole-object readers reject trailing bytes and
 earlier unscoped encodings. These bytes are included in the claim digest
 and proof statement.
-
-<!-- PENDING: [ids] object-format byte 4 in Ix/Claim.lean, crates/ixon/src/proof.rs, catalogs and the IxVM claim circuit (plan §0b-2, §5). At 9611c3b6 the byte is 3. -->
 
 ### Flag 0xE Variant Layout (Env + Comm + AssumptionTree + Claims)
 
@@ -1635,7 +1705,11 @@ E8 01                 -- N4(0xE, 9) (Resource): two-byte TagN rung
 ```
 Total: 68 bytes.
 
-<!-- PENDING: [ids][fixtures] all serialization examples above assume object format 4; regenerate the claims fixture (claims.tsv) and re-check these bytes against it (plan §6). Their TagN headers are written since 93e2895c. -->
+The claims fixture `Tests/Fixtures/ixon-v4/claims.tsv` holds the canonical
+bytes and BLAKE3 digest of one claim of every variant; its headers and scope
+bytes match the claim examples above. `lake exe ixon-v4-tests` compares the file
+with the serializers' output, and `--export-fixtures` regenerates it under
+`/tmp/ixon-v4-fixtures`.
 
 
 ---
@@ -1716,7 +1790,7 @@ Decompilation reconstructs Lean constants from Ixon format.
 3. **Load metadata** from `env.named`
 4. **Reconstruct expressions** with committed contracts, and names/binder info from metadata
 5. **Resolve references**: `Ref(idx, _)` → lookup `refs[idx]`, get name from `addr_to_name`
-6. **Expand shares**: `Share(idx)` → inline `sharing[idx]` (or cache result). In metadata expressions, indices at or above the primary table size resolve into `meta_sharing` (see [Sharing in metadata expressions](#sharing-in-metadata-expressions))
+6. **Expand shares**: `Share(idx)` → inline `sharing[idx]` (or cache result). Inside a `meta_sharing` entry, indices at or above the primary table size resolve into earlier `meta_sharing` entries (see [Sharing in metadata expressions](#sharing-in-metadata-expressions))
 
 Nondefault contracts are reconstructed from semantic bytes even without names
 or optional metadata. Optional metadata cannot inject contracts or replay an
@@ -1787,10 +1861,7 @@ Binary: `0x81 0x07` (Lam, 1 ordinary binder) + `0x20 0x00` (Ref 0) + `0x72` (App
   byte, so storing it never pays.
 
 The canonical table is therefore `[Ref(0, [])]`, and the constant is 84
-bytes instead of the 85 it would take unshared. These bytes were produced
-by `normalizeConstantSharingTiered .tagN`, with placeholder addresses.
-
-<!-- PENDING: [route] check that `ix compile` emits these bytes for `double`, with its real addresses in place of the placeholders; both compilers use the canonical construction since the route switch (plan §3). -->
+bytes instead of the 85 it would take unshared.
 
 **Build Constant**:
 ```rust
@@ -1831,13 +1902,27 @@ entry, plus 64 bytes for the two addresses: **84 bytes**.
 Note: The constant header is always 1 byte (0xD0) since every non-Muts
 variant (0-7) is below TagN's first rung end of 8.
 
+`ix compile` writes exactly these bytes. For a file `Double.lean` that
+contains only the definition above, `ix compile Double.lean --no-build
+--consts double --out double.ixe` stores this 84-byte constant, in hex:
+
+```
+d0 01 00 91 17 b0 b0 81 07 b0 72 20 01 10 10 01 20 00 02
+35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc   -- Nat
+3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8   -- Nat.add
+00
+```
+
 ### Step 4: Content Address
 
 ```
 address = blake3(serialized_constant)
 ```
 
-This address is how `double` is referenced by other constants.
+This address is how `double` is referenced by other constants. For the
+bytes above it is
+`eefff4002f029ee49aa94e8e9127b0b1664c86fec956e62332fd3be1672d0cef`
+(`ix addr-of double --ixe double.ixe`).
 
 ### Step 5: Metadata
 
