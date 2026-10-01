@@ -1,5 +1,11 @@
 # Implement canonical minimum sharing in Ix
 
+> **Status note (2026-10-01).** §1–§10 are the original handoff, whose target was the global
+> byte minimum under the key of §3.3. That target was found infeasible at production scale
+> (§12.1) and **superseded** by the decisions in §12: the canonical construction is the two-phase
+> `canonicalSharingTiered` with the TagN layout (§12.8, §12.11), which is machine-checked minimal
+> in phase 1 and exact-per-phase in phases 2–3 (§12.13), not a global byte minimum. Read §12 first.
+
 Implementation plan, 2026-09-30 (revision 2, tracked in Ix). Target: an implementation and
 reviewable PR in the **Ix repository**, covering its Lean and Rust paths. This file is a
 plan, not evidence that the optimizer or migration already exists. Revision 1 and its
@@ -855,7 +861,10 @@ model `ulen` over the restricted class, with `modelBytes` equal to it) and `opti
 (it is the `setPrec`-least such minimum), both under `limits.uniformSubsetSearch = false`, no
 `sorry`, no new axioms, all `Uniform*` modules registered in the sorry-frontier audit (196 roots).
 Reachability of every term from a root is a runtime check plus `optimizeUniform_reach`. Phases 2
-and 3 and the best-of-three width selection are tested, not proved. The reference enumeration
+and 3 and the width selection have machine-checked per-phase specifications (`allocate_spec`,
+`firstTier_spec`, `materializeTable_min`, `rematerialize_spec`, `canonicalTiered_select`, audit
+roots 212 at 9611c3b6); not machine-checked: phase-2 optimality beyond the first tier, any global
+minimum, model length = TagN wire length, and `wireWF` of the output (in progress). The reference enumeration
 path (`uniformSubsetSearch = true`) is excluded from the theorems. Failure semantics: an error at
 any width fails the whole call (no fallback to other widths); Rust must match.
 
