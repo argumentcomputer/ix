@@ -332,6 +332,55 @@ def uncertainComponents (dag : Dag) (cls : Array UClass) : Array (Array Nat) := 
   let comps := groups.toArray.map (·.2)
   return comps.qsort fun a b => a[0]! < b[0]!
 
+/-! ## Checked separation of labeled terms -/
+
+/-- Join of two reach summaries: `none` (no labeled term), `some (some ℓ)`
+(every labeled term has label `ℓ`), `some none` (several labels). -/
+def labelJoin : Option (Option Nat) → Option (Option Nat) → Option (Option Nat)
+  | none, x => x
+  | some x, none => some x
+  | some (some a), some (some b) => if a = b then some (some a) else some none
+  | some _, some _ => some none
+
+/-- For every term, the labels of the labeled terms reachable from it along
+DAG paths whose intermediate terms are not opaque (children first). -/
+def reachLabels (dag : Dag) (opq : Nat → Bool) (lab : Nat → Option Nat) :
+    Array (Option (Option Nat)) :=
+  foldRange (fun acc t =>
+      acc.set! t ((dag.node t).children.foldl (fun v c =>
+        labelJoin v (if opq c then (lab c).map some else acc[c]!)) ((lab t).map some)))
+    0 dag.size (Array.replicate dag.size none)
+
+/-- Every term of `terms` reaches only terms carrying its own label. -/
+def labelsSeparated (dag : Dag) (opq : Nat → Bool) (lab : Nat → Option Nat)
+    (terms : Array Nat) : Bool :=
+  let rl := reachLabels dag opq lab
+  terms.all fun y => match lab y with
+    | some ℓ => rl[y]! == some (some ℓ)
+    | none => false
+
+/-- The components partition the uncertain terms (each listed once, in
+increasing order, labeled with its component) and are separated by the
+certain-stored terms. -/
+def componentsChecked (dag : Dag) (cls : Array UClass) (opaq : Array Bool)
+    (comps : Array (Array Nat)) (label : Array (Option Nat)) : Bool :=
+  let n := dag.size
+  ((Array.range comps.size).all fun i =>
+      (List.range comps[i]!.size).all (fun j =>
+        let t := comps[i]![j]!
+        t < n && cls[t]! == .uncertain && label[t]! == some i &&
+          (j + 1 < comps[i]!.size → t < comps[i]![j + 1]!))) &&
+    ((Array.range n).all fun t =>
+      cls[t]! != .uncertain || match label[t]! with
+        | some i => i < comps.size && comps[i]!.contains t
+        | none => false) &&
+    labelsSeparated dag (opaq[·]!) (label[·]!) ((Array.range n).filter (cls[·]! == .uncertain))
+
+/-- Component index of every listed term. -/
+def componentLabels (n : Nat) (comps : Array (Array Nat)) : Array (Option Nat) :=
+  (Array.range comps.size).foldl
+    (fun acc i => comps[i]!.foldl (fun acc t => acc.set! t (some i)) acc) (Array.replicate n none)
+
 /-! ## Truncated evaluation (certain-stored terms opaque) -/
 
 /-- Values of one term in the truncated evaluation. -/
@@ -980,6 +1029,8 @@ def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
   let opaq := cs.foldl (fun acc t => acc.set! t true) (Array.replicate n false)
   let up := UPrep.mk' p w opaq
   let comps := uncertainComponents ex.dag cls
+  unless componentsChecked ex.dag cls opaq comps (componentLabels n comps) do
+    throw (.internal "uncertain components are not a separated partition")
   -- Largest table-count difference between two sets that contain the
   -- certain-stored terms and only candidates.
   let slack := tag0Size (cs.size + unc.size) - tag0Size cs.size
@@ -1132,6 +1183,8 @@ def optimizeUniformExpanded (w : Nat) (limits : Limits) (ex : Expanded) :
     throw (.internal "DAG node arity")
   unless ex.roots.all (· < ex.dag.size) do
     throw (.internal "root ID out of range")
+  unless (reachMarks ex.dag.nodes ex.roots).all id do
+    throw (.internal "DAG term unreachable from the roots")
   let p := Prep.ofDag ex.dag
   let c ← uniformChoose w limits ex p
   uniformFinish w limits ex p c

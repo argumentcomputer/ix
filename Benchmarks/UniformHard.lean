@@ -169,7 +169,7 @@ def main (args : List String) : IO UInt32 := do
           match r with
           | .ok u =>
             let comp := u.components.foldl (fun acc m => max acc m.size) 0
-            IO.println s!"{name} w={w}: certified model={u.result.modelBytes} cs={u.certainStored.size} unc={u.uncertain.size} states={u.statesVisited} comp={comp} {ms} ms"
+            IO.println s!"{name} w={w}: certified model={u.result.modelBytes} stored={hash u.stored} cs={u.certainStored.size} unc={u.uncertain.size} states={u.statesVisited} comp={comp} {ms} ms"
           | .error e =>
             IO.println s!"{name} w={w}: FAILED {repr e} {ms} ms"
           (← IO.getStdout).flush

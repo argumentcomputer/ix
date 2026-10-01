@@ -196,8 +196,8 @@ def materializeEntry (p : Prep) (table : Array Nat) (limits : Limits)
   return (e, cost[t]!, w)
 
 /-- Materialize the entries `is` in order onto `entries`, accumulating the
-predicted size and the work; the work is checked against `maxMaterialize`
-after every entry. -/
+predicted size and the work; the work is checked against
+`maxMaterializeWork` after every entry. -/
 def materializeEntries (p : Prep) (table : Array Nat) (limits : Limits)
     (widthAt : Nat → Nat) :
     List Nat → Array Ixon.Expr → Nat → Nat →
@@ -206,8 +206,8 @@ def materializeEntries (p : Prep) (table : Array Nat) (limits : Limits)
   | i :: is, entries, predicted, work => do
     let (e, c, w) ← materializeEntry p table limits widthAt i
     let work := work + w
-    if work > limits.maxMaterialize then
-      throw (.resourceExhausted .materialize limits.maxMaterialize)
+    if work > limits.maxMaterializeWork then
+      throw (.resourceExhausted .materializeWork limits.maxMaterializeWork)
     materializeEntries p table limits widthAt is (entries.push e) (predicted + c) work
 
 /-- Materialize a table sequence and the roots with the byte-least
@@ -223,8 +223,8 @@ def materializeTable (p : Prep) (table roots : Array Nat) (limits : Limits)
   let (rs, cost, w) ← p.materializeWith index (index.map (·.map widthAt)) roots limits
   let predicted := predicted + rootsCost cost roots
   let work := work + w
-  if work > limits.maxMaterialize then
-    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  if work > limits.maxMaterializeWork then
+    throw (.resourceExhausted .materializeWork limits.maxMaterializeWork)
   return (entries, rs, predicted, work)
 
 /-- Result of an exact optimization. -/
