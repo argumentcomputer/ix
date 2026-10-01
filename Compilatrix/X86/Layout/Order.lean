@@ -12,7 +12,10 @@ recheck path, accepts it only if
 - every block reachable from the entry and the roots appears, so every
   target of a laid-out block is laid out;
 - a reachable group entry comes first in its group (CompCert
-  `Linearize.v`), and the program entry is laid out.
+  `Linearize.v`), and the program entry is laid out;
+- every target of a laid-out block is laid out, checked directly
+  (`placedClosed`), which is what `Proof.Order.check_sound` gives the
+  linearisation proof.
 
 Blocks left out are unreachable and dropped.
 
@@ -35,6 +38,13 @@ namespace Compilatrix.X86.Layout
 /-- Per group, the blocks in layout order. -/
 abbrev Order := List (List Nat)
 
+/-- Every target of a placed block is placed: so a run that starts at a
+placed block never leaves the laid-out blocks (the linearisation proof
+relies on this local check rather than on the reachability walk's fuel). -/
+def placedClosed (p : Program) (placed : NatSet) : Bool :=
+  p.blocks.toList.zipIdx.all fun (blk, b) =>
+    !placed.contains b || blk.targets.all fun t => placed.contains t.toNat
+
 /-- The recheck-path validator of a proposed order. -/
 def Order.check (p : Program) (s : Shape) (o : Order) : Bool :=
   let seen := reachable p s.roots
@@ -49,7 +59,8 @@ def Order.check (p : Program) (s : Shape) (o : Order) : Bool :=
       | some e => !seen.contains e || bs.head? == some e
       | none => true) &&
   seen.toList.all placed.contains &&
-  placed.contains p.entry.toNat
+  placed.contains p.entry.toNat &&
+  placedClosed p placed
 
 /-! ## The oracle (untrusted) -/
 
