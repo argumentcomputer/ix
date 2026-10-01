@@ -196,9 +196,12 @@ Rust consumers can instead enable the `cuda` feature on `aiur` or `ix-ffi`.
 The backend requires an NVIDIA GPU and a CUDA toolkit with `nvcc`; build and
 architecture controls are documented in the multi-stark repository. It keeps
 the Goldilocks/BLAKE3 protocol and proof format unchanged, and GPU proofs remain
-verifiable by the CPU implementation. Dated hardware measurements belong in
-[BENCHMARKS.md](BENCHMARKS.md) and [docs/benchmarking.md](docs/benchmarking.md),
-not this stable overview.
+verifiable by the CPU implementation. Proving a whole environment across
+several GPUs (`ix prove --lanes`), generating traces on the device, and
+benchmarking such runs are covered in
+[docs/aiur-gpu-proving.md](docs/aiur-gpu-proving.md). Dated hardware
+measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
+[docs/benchmarking.md](docs/benchmarking.md), not this stable overview.
 
 ## Usage
 
