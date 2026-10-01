@@ -90,9 +90,21 @@ Three kinds of names are not of this form:
   carrier's constructors in `cidx` order (a nested auxiliary recursor's
   rules are its container's constructors). The block's records emit at the
   block's position; recursor records emit nothing.
-* A definition `muts` block becomes one declaration per member, in an order
-  where every member follows the members it references (a genuine cycle is
-  declined: the kernel has no mutual definitions).
+* A definition `muts` block becomes one declaration per member (a
+  `defnDecl`, `thmDecl` or `opaqueDecl` each, checked like a singleton),
+  ordered so that every member follows the members it names by `recur`.
+  The safety policy is applied to every member before the order is sought,
+  with a singleton's reasons: a block with a member that is not safe
+  declines with that member's safety. Those are the only blocks with a cycle
+  in practice: Lean's kernel takes a mutual definition block only when its
+  members are `partial` or `unsafe` (`add_mutual`), and that is how the
+  compiler's `_unsafe_rec` companions of structural and well-founded
+  definitions are stored (`addAndCompilePartialRec`: one `partial` block per
+  mutual group, the members calling each other). Safe mutual recursion
+  reaches Lean's kernel as definitions added one at a time (through
+  `brecOn` or a `_mutual` fixpoint), so a safe block orders; one that does
+  not is declined as a mutually recursive definition block (con-leche, like
+  Lean's kernel, has no safe mutual definitions).
 * `defn`/`axio`/`quot` singletons become one declaration each; projection
   records emit nothing (they are only checked to resolve).
 * Every binder carries `pw := .never` (con-leche's annotation pass computes
@@ -740,6 +752,15 @@ def safetyWord : Ix.DefinitionSafety → String
   | .part => "partial"
   | .safe => "safe"
 
+/-- The safety policy of a definition record (`ExportC.processLineCoreD`): a
+definition that is not safe, and an unsafe opaque, decline; the reason. The
+same for a singleton and for every member of a block. -/
+def safetyDecline (d : Ixon.Definition) : Option String :=
+  match d.kind with
+  | .defn => if d.safety == .safe then none else some s!"definition with safety '{safetyWord d.safety}'"
+  | .opaq => if d.safety == .unsaf then some "unsafe opaque declaration" else none
+  | .thm => none
+
 /-- A definition member: its declaration (`ExportC.processLineCoreD`), and
 whether the projection rewrite applied. `heights` are the definitional
 heights so far (the block's earlier members included). -/
@@ -750,16 +771,13 @@ def readDefinition (cx : Ctx) (st : State) (heights : CName → Nat) (ref : Cons
   let value ← mr.read d.value
   let rewritten := projRewrite st cv value
   let value' := rewritten.getD value
-  let decl ← match d.kind with
-    | .defn => do
-      unless d.safety == .safe do
-        declined s!"definition with safety '{safetyWord d.safety}'"
+  if let some why := safetyDecline d then declined why
+  let decl := match d.kind with
+    | .defn =>
       let hint := (cx.hint ref).getD (ConLeche.Frontend.InModel.hintFor heights value')
-      pure (ConLeche.Declaration.defnDecl cv value' hint)
-    | .thm => pure (ConLeche.Declaration.thmDecl cv value')
-    | .opaq => do
-      if d.safety == .unsaf then declined "unsafe opaque declaration"
-      pure (ConLeche.Declaration.opaqueDecl cv value)
+      ConLeche.Declaration.defnDecl cv value' hint
+    | .thm => ConLeche.Declaration.thmDecl cv value'
+    | .opaq => ConLeche.Declaration.opaqueDecl cv value
   pure (decl, rewritten.isSome && d.kind != .opaq)
 
 /-- The members of a definition block that member `i`'s expressions name by
@@ -782,7 +800,9 @@ where
     | _ => acc
 
 /-- A definition block's members in an order where each follows the members
-it references; `none` on a cycle. -/
+it references; `none` on a cycle. A member may name itself: con-leche then
+checks its value in the environment before the member is added
+(`checkDefnVal`), where the reference does not resolve. -/
 def defOrder (deps : Array (Std.HashSet Nat)) : Option (Array Nat) := Id.run do
   let n := deps.size
   let mut done : Array Bool := Array.replicate n false
@@ -987,6 +1007,9 @@ def readRecord (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant) : R
       pure {}
     else if ms.all (fun | .defn _ => true | _ => false) then
       let defs : Array Ixon.Definition := ms.filterMap fun | .defn d => some d | _ => none
+      -- the safety policy first, member by member: a `partial` block (the
+      -- `_unsafe_rec` companions) declines as its members would one by one
+      if let some why := defs.findSome? safetyDecline then declined why
       let some order := defOrder (defs.map (recurDeps c))
         | declined "mutually recursive definition block"
       let self : Nat → Option CName := fun i =>

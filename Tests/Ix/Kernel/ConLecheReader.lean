@@ -13,7 +13,9 @@ prepared with the Ixon prelude (`Eq`, `Nat`, `PUnit`, `Empty`, `False`, the
 quotient package, `And`, `Bool`, from the compiled Init's own records) and
 checked by `ConLeche.Cached.checkDecls .verified`.
 
-Positive: a definition and a definition over it with a theorem by delta, an
+Positive: a definition and a definition over it with a theorem by delta, a
+definition block stored out of dependency order with a theorem by delta
+through both members, an
 inductive with its separately stored recursor and an ι-reduction, a
 structure with a projection function and a projection reduction, the
 quotient's lift reduction, a Nat literal against its constructors, a String
@@ -21,7 +23,11 @@ literal against its `String.ofList` expansion (over test constants pinned as
 the string-literal support).
 
 Negative: a block of another shape stored under the real `Eq`'s address is
-named `Eq` and rejected by con-leche's reserved-name check; a definition of
+named `Eq` and rejected by con-leche's reserved-name check; a definition
+block with an ill-typed member is rejected by the checker; a `partial` block
+whose members call each other (the shape of Lean's `_unsafe_rec` companions)
+declines with its safety, as a partial singleton does, and the same block
+marked safe declines as mutually recursive; a definition of
 the wrong shape pinned as `Nat.add` is not accepted under that name (and is
 accepted unpinned); a copy of `Nat`'s contents at another address is not
 named `Nat`; malformed tables, duplicate records and unsafe declarations;
@@ -146,6 +152,74 @@ def definitions : List (Address × Ixon.Constant) :=
 #guard !accepts [(address 10, idNat), (address 11, twoDef),
   (address 12, defn .thm (apps (ref 0 [0]) [ref 1, ref 2, ref 4]) (apps (ref 5 [0]) [ref 1, ref 4])
     [eq, nat, address 11, natSucc, natZero, eqRefl] [one])]
+
+/-! ## Definition blocks
+
+A definition `muts` block is one `defnDecl` per member, each checked against
+the environment that holds what it names, in an order where every member
+follows the members it names by `recur`. Here the block stores
+`b : Nat := a zero` before `a : Nat → Nat := fun n => n`: the reader puts
+`a` first, and `b = zero` checks by delta through both. -/
+
+def dPrj (block : Address) (i : Nat) : Ixon.Constant := const (.dPrj ⟨i.toUInt64, block⟩) [] []
+
+def member (typ value : E) (safety : Ix.DefinitionSafety := .safe) : Ixon.MutConst :=
+  .defn ⟨.defn, safety, 0, typ, value⟩
+
+def natToNat : E := all (ref 0) (ref 0)
+
+/-- `[b := a zero, a := fun n => n]`, refs `[Nat, Nat.zero]`. -/
+def abBlock (aValue : E := lam (ref 0) (var 0)) : Ixon.Constant :=
+  const (.muts #[member (ref 0) (.app (recur 1) (ref 1)), member natToNat aValue]) [nat, natZero] []
+
+/-- `b = Nat.zero`, by delta through `b` and `a`. -/
+def bEq : Ixon.Constant :=
+  defn .thm (apps (ref 0 [0]) [ref 1, ref 2, ref 3]) (apps (ref 4 [0]) [ref 1, ref 3])
+    [eq, nat, address 101, natZero, eqRefl] [one]
+
+def abFixture (block : Ixon.Constant := abBlock) : List (Address × Ixon.Constant) :=
+  [(address 100, block), (address 101, dPrj (address 100) 0), (address 102, dPrj (address 100) 1),
+   (address 103, bEq)]
+
+#guard (recurDeps abBlock ⟨.defn, .safe, 0, ref 0, .app (recur 1) (ref 1)⟩).toList == [1]
+#guard defOrder #[Std.HashSet.ofList [1], {}] == some #[1, 0]
+#guard defOrder #[Std.HashSet.ofList [0], {}] == some #[0, 1]
+#guard defOrder #[Std.HashSet.ofList [1], Std.HashSet.ofList [0]] == none
+#guard accepts abFixture
+#guard (namesOf abFixture).contains (keyString (.member (address 100) 0)) &&
+  (namesOf abFixture).contains (keyString (.member (address 100) 1))
+-- `b = succ zero` is not
+#guard !accepts ((abFixture.take 3) ++ [(address 103,
+  defn .thm (apps (ref 0 [0]) [ref 1, ref 2, .app (ref 5) (ref 3)]) (apps (ref 4 [0]) [ref 1, ref 3])
+    [eq, nat, address 101, natZero, eqRefl, natSucc] [one])])
+-- every member is checked: `a := fun n => Nat` is ill-typed, and the checker rejects it
+#guard match run (abFixture (abBlock (lam (ref 0) (ref 0)))) with
+  | .error (.kernel _ _) => true
+  | _ => false
+
+/-- `f := fun n => g n`, `g := fun n => f n` at a safety: the shape of the
+compiler's `_unsafe_rec` companions when `partial`
+(`addAndCompilePartialRec` adds one block per mutual group, its members
+calling each other). -/
+def fgBlock (safety : Ix.DefinitionSafety) : Ixon.Constant :=
+  const (.muts #[member natToNat (lam (ref 0) (.app (recur 1) (var 0))) safety,
+    member natToNat (lam (ref 0) (.app (recur 0) (var 0))) safety]) [nat] []
+
+def declineReason (cs : List (Address × Ixon.Constant)) : Option String :=
+  match run cs with
+  | .error (.read _ (.declined r)) => some r
+  | _ => none
+
+-- the partial block declines with its safety, as a partial singleton does
+#guard declineReason [(address 110, fgBlock .part)] == some "definition with safety 'partial'"
+#guard declineReason [(address 110, fgBlock .part)] ==
+  declineReason [(address 10, defn .defn natToNat (lam (ref 0) (var 0)) [nat] (safety := .part))]
+#guard declineReason [(address 110, fgBlock .unsaf)] == some "definition with safety 'unsafe'"
+-- the same block marked safe has no order (Lean's kernel refuses it too)
+#guard declineReason [(address 110, fgBlock .safe)] == some "mutually recursive definition block"
+-- a member that is not safe declines the block whatever the others are
+#guard declineReason [(address 111, const (.muts #[member (ref 0) (ref 1),
+  member (ref 0) (ref 1) .part]) [nat, natZero] [])] == some "definition with safety 'partial'"
 
 /-! ## An inductive with its separately stored recursor
 

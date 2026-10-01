@@ -29,13 +29,23 @@ runaway record's address to `<output>.runaway` and exits with code 3;
 as for `kernel-census` and `scripts/census-guarded.sh`. `CENSUS_ROOTS`
 (comma-separated Lean names, resolved through the environment's metadata)
 restricts the run to the prelude and the dependency closure of those
-constants. -/
+constants; a `«n»` component is numeric, as the rows print it (the `0` of a
+private name). -/
 
 namespace Benchmarks.Kernel.ConLecheCensus
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.ConLecheReader
 open Benchmarks.Kernel.ConLecheStep
+
+/-- A dot-separated name as the rows print it: `«n»` is the numeric
+component `n`, every other component a string. -/
+def rootName (n : String) : Lean.Name :=
+  (n.splitOn ".").foldl (init := .anonymous) fun acc c =>
+    let inner := ((c.drop 1).dropEnd 1).toString
+    if c.startsWith "«" && c.endsWith "»" && !inner.isEmpty && inner.all Char.isDigit then
+      .num acc inner.toNat!
+    else .str acc c
 
 structure Options where
   input : System.FilePath
@@ -90,8 +100,7 @@ def run (args : List String) : IO UInt32 := do
     | some list => do
       let mut roots : Array Address := pre.records.map (·.1)
       for n in (list.splitOn ",").filter (!·.isEmpty) do
-        let name := (n.splitOn ".").foldl (fun acc c => Lean.Name.str acc c) Lean.Name.anonymous
-        match env.named[Ix.Name.fromLeanName name]? with
+        match env.named[Ix.Name.fromLeanName (rootName n)]? with
         | some named => roots := roots.push named.addr
         | none => IO.eprintln s!"census-cl: CENSUS_ROOTS: no constant {n}"
       pure (closure s.store s.extra roots)
