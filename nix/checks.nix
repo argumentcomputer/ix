@@ -88,7 +88,7 @@ in
     # if any suite fails, naming each one.
     suites = mkCheck "suites" nativeInputs ''
       ${pkgs.lib.optionalString (!native)
-        ''echo "suites: native runs skipped (tests-rt, tests-pipeline, check-backend, tests-corpus): ${system} is not x86_64-linux"''}
+        ''echo "suites: native runs skipped (tests-rt, tests-pipeline, check-backend, tests-corpus, tests-own): ${system} is not x86_64-linux"''}
       mkdir -p suite-logs
       bin=./.lake/build/bin
       parallel=''${NIX_BUILD_CORES:-1}
@@ -119,6 +119,7 @@ in
       launch tests-fir $bin/tests-fir
       launch check-lir $bin/check-lir
       launch tests-anf $bin/tests-anf
+      launch tests-own $bin/tests-own ${ccArg}
       launch tests-relevance $bin/tests-relevance
       launch tests-recheck $bin/tests-recheck
       wait

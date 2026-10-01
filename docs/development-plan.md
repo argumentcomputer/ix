@@ -64,7 +64,8 @@ coverage inventory and the coverage-change record. During development:
   pipeline suites `tests-src`, `tests-relevance`, `tests-lam`, `tests-anf`,
   `tests-fir`, `tests-rt --cc cc`, `tests-pipeline --cc cc`,
   `tests-recheck`, `check-lir`, `check-xv-select`, `check-regalloc`,
-  `check-backend --cc cc`, `corpus check`, `tests-corpus --cc cc` and
+  `check-backend --cc cc`, `corpus check`, `tests-corpus --cc cc`,
+  `tests-own --cc cc` and
   `check-steps` (the required checks that run each are in the CI guide).
 - After a reviewed change to emitted code, regenerate the step-count
   baseline with `lake exe check-steps --write` and review its diff; it is
