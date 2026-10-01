@@ -24,6 +24,7 @@
   * `Exact.Dictionary` fixed-dictionary optimizer `C_M` and materialization
   * `Exact.Search`     width-state DP with LB pruning and self-verification
   * `Exact.Oracle`     tiny exhaustive reference search (tests only)
+  * `Exact.Uniform`    exact optimizer for a uniform Share width (cost model)
 -/
 module
 
@@ -32,6 +33,7 @@ public import Ix.Sharing.Exact.Dag
 public import Ix.Sharing.Exact.Dictionary
 public import Ix.Sharing.Exact.Search
 public import Ix.Sharing.Exact.Oracle
+public import Ix.Sharing.Exact.Uniform
 
 public section
 
@@ -150,6 +152,38 @@ def oracleConstant (c : Constant) (limits : Limits := {}) (product : Bool := fal
   let r ← (if product then oracleProduct else oracle) ex.dag ex.roots (constantWriter c) limits
   let info ← withRoots c.info r.roots
   return ({ c with info, sharing := r.sharing }, r)
+
+/-! ## Uniform Share width -/
+
+/-- Exact minimum sharing of Share-free roots when every Share costs `w`
+bytes (see `Exact.Uniform`). `result.modelBytes` is the minimum model
+length; `result.variableBytes` is the real serialized length of the output. -/
+def optimizeSharingUniform (w : Nat) (roots : Array Ixon.Expr) (limits : Limits := {}) :
+    Except SharingError UniformSharingResult := do
+  let ex ← expand limits #[] roots false
+  optimizeUniformExpanded w limits ex
+
+/-- `optimizeSharingUniform` for roots given with an existing sharing table. -/
+def optimizeSharingUniformTable (w : Nat) (sharing roots : Array Ixon.Expr)
+    (limits : Limits := {}) : Except SharingError UniformSharingResult := do
+  let ex ← expand limits sharing roots true
+  optimizeUniformExpanded w limits ex
+
+/-- Re-share a Constant with the uniform-width optimum. -/
+def normalizeConstantSharingUniform (w : Nat) (c : Constant) (limits : Limits := {}) :
+    Except SharingError Constant := do
+  let r ← optimizeSharingUniformTable w c.sharing (constantInfoRoots c.info) limits
+  let info ← withRoots c.info r.result.roots
+  return { c with info, sharing := r.result.sharing }
+
+/-- Reference for the uniform model: the width-state search with every Share
+priced `w` (exponential in the candidates; for tests). With `minInDegree2`
+it searches the same candidate space as the uniform optimizer. -/
+def optimizeSharingUniformReference (w : Nat) (roots : Array Ixon.Expr)
+    (limits : Limits := {}) (minInDegree2 : Bool := false) :
+    Except SharingError ExactSharingResult := do
+  let ex ← expand limits #[] roots false
+  optimizeExpanded limits ex (some w) minInDegree2
 
 end Ix.Sharing.Exact
 
