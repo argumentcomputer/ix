@@ -155,6 +155,84 @@ def strictExprUnits : TestSeq :=
   test "rejects invalid lambda mode" (exprRejects #[0x81, 0x04]) ++
   test "rejects invalid forall mode" (exprRejects #[0x91, 0x08])
 
+/-! ## TagN integer code -/
+
+/-- Rung boundary values for an `f`-bit flag, plus the `UInt64` extremes. -/
+def tagNBoundaries (f : Nat) : List Nat :=
+  let ends := [tagNEnd1 f, tagNEnd2 f, tagNEnd3 f, tagNEnd4 f]
+  [0, 1, 2 ^ 64 - 1] ++ ends.flatMap fun e => [e - 1, e, e + 1]
+
+/-- Encode, check the width, decode exactly. -/
+def tagNRoundtrip (f : Nat) (flag : UInt8) (v : Nat) : Bool :=
+  let t : TagN := ⟨flag, v.toUInt64⟩
+  let bytes := runPut (putTagN f flag v.toUInt64)
+  bytes.size == tagNByteWidth f v &&
+    match runGetExact (getTagN f) bytes with
+    | .ok t' => t' == t
+    | .error _ => false
+
+def tagNEncodes (f : Nat) (flag : UInt8) (v : Nat) (expected : Array UInt8) : Bool :=
+  runPut (putTagN f flag v.toUInt64) == ByteArray.mk expected
+
+def tagNRejects (f : Nat) (bytes : Array UInt8) : Bool :=
+  match runGetExact (getTagN f) (ByteArray.mk bytes) with
+  | .error _ => true
+  | .ok _ => false
+
+/-- Every byte string of length 1 or 2 that decodes exactly re-encodes to
+itself (no value has two encodings within these lengths). -/
+def tagNShortCanonical (f : Nat) : Bool := Id.run do
+  for a in [0:256] do
+    let one := ByteArray.mk #[a.toUInt8]
+    if let .ok t := runGetExact (getTagN f) one then
+      if runPut (putTagN f t.flag t.value) != one then return false
+    for b in [0:256] do
+      let two := ByteArray.mk #[a.toUInt8, b.toUInt8]
+      if let .ok t := runGetExact (getTagN f) two then
+        if runPut (putTagN f t.flag t.value) != two then return false
+  return true
+
+def tagNUnits : TestSeq :=
+  let perF (f : Nat) : TestSeq :=
+    let flags : List UInt8 := [0, (2 ^ f - 1).toUInt8]
+    let cases := flags.flatMap fun flag => (tagNBoundaries f).map (flag, ·)
+    cases.foldl (init := .done) fun acc (flag, v) =>
+      acc ++ test s!"TagN f={f} flag={flag} value={v}: width and roundtrip"
+        (tagNRoundtrip f flag v)
+  perF 0 ++ perF 2 ++ perF 4 ++
+  test "TagN rung ends f=0" ([tagNEnd1 0, tagNEnd2 0, tagNEnd3 0, tagNEnd4 0]
+    == [128, 16512, 82048, 4295049344]) ++
+  test "TagN rung ends f=2" ([tagNEnd1 2, tagNEnd2 2, tagNEnd3 2, tagNEnd4 2]
+    == [32, 4128, 69664, 4295036960]) ++
+  test "TagN rung ends f=4" ([tagNEnd1 4, tagNEnd2 4, tagNEnd3 4, tagNEnd4 4]
+    == [8, 1032, 66568, 4295033864]) ++
+  test "TagN f=4 bytes: 7" (tagNEncodes 4 0xA 7 #[0xA7]) ++
+  test "TagN f=4 bytes: 8" (tagNEncodes 4 0xA 8 #[0xA8, 0x00]) ++
+  test "TagN f=4 bytes: 1031" (tagNEncodes 4 0x1 1031 #[0x1B, 0xFF]) ++
+  test "TagN f=4 bytes: 1032" (tagNEncodes 4 0 1032 #[0x0C, 0x00, 0x00]) ++
+  test "TagN f=4 bytes: 66568" (tagNEncodes 4 0 66568 #[0x0D, 0, 0, 0, 0]) ++
+  test "TagN f=4 bytes: 4295033864"
+    (tagNEncodes 4 0 4295033864 #[0x0E, 0, 0, 0, 0, 0, 0, 0, 0]) ++
+  test "TagN f=0 bytes: 127" (tagNEncodes 0 0 127 #[0x7F]) ++
+  test "TagN f=0 bytes: 128" (tagNEncodes 0 0 128 #[0x80, 0x00]) ++
+  test "TagN f=0 bytes: 16512" (tagNEncodes 0 0 16512 #[0xC0, 0x00, 0x00]) ++
+  test "TagN f=2 bytes: 32" (tagNEncodes 2 3 32 #[0xE0, 0x00]) ++
+  test "TagN f=2 bytes: 4128" (tagNEncodes 2 3 4128 #[0xF0, 0x00, 0x00]) ++
+  test "TagN f=4 rejects code 3" (tagNRejects 4 #[0x0F, 0, 0, 0, 0, 0, 0, 0, 0]) ++
+  test "TagN f=2 rejects code 3" (tagNRejects 2 #[0x33]) ++
+  test "TagN f=2 rejects code 15" (tagNRejects 2 #[0x3F]) ++
+  test "TagN f=0 rejects code 3" (tagNRejects 0 #[0xC3]) ++
+  test "TagN f=0 rejects code 63" (tagNRejects 0 #[0xFF]) ++
+  test "TagN f=4 rejects overflow"
+    (tagNRejects 4 #[0x0E, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) ++
+  test "TagN f=0 rejects overflow"
+    (tagNRejects 0 #[0xC2, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) ++
+  test "TagN rejects truncated rung 2" (tagNRejects 4 #[0x08]) ++
+  test "TagN rejects trailing byte" (tagNRejects 4 #[0x07, 0x00]) ++
+  test "TagN f=0 short strings canonical" (tagNShortCanonical 0) ++
+  test "TagN f=2 short strings canonical" (tagNShortCanonical 2) ++
+  test "TagN f=4 short strings canonical" (tagNShortCanonical 4)
+
 def constantUnits : TestSeq :=
   let defn := Definition.mk .defn .safe 0 (.sort 0) (.var 0)
   let c := Constant.mk
@@ -480,6 +558,7 @@ public def Tests.Ixon.suite : List TestSeq := [
   exprExactUnits,
   exprUnits,
   strictExprUnits,
+  tagNUnits,
   -- Env unit tests (for debugging serialization)
   envUnitTests,
   -- Env serialization comparison unit tests

@@ -185,6 +185,31 @@ def search (inp : SearchInput) (limits : Limits) (upper : Nat)
 
 /-! ## Materialization and verification -/
 
+/-- Materialize table entry `i` of `table` against the dictionary of the
+entries before it. Returns the body, its cost and the work. -/
+def materializeEntry (p : Prep) (table : Array Nat) (limits : Limits)
+    (widthAt : Nat → Nat) (i : Nat) : Except SharingError (Ixon.Expr × Nat × Nat) := do
+  let t := table[i]!
+  let index := indexOfPrefix p.dag.size table i
+  let (es, cost, w) ← p.materializeWith index (index.map (·.map widthAt)) #[t] limits
+  let some e := es[0]? | throw (.internal "missing materialized entry")
+  return (e, cost[t]!, w)
+
+/-- Materialize the entries `is` in order onto `entries`, accumulating the
+predicted size and the work; the work is checked against `maxMaterialize`
+after every entry. -/
+def materializeEntries (p : Prep) (table : Array Nat) (limits : Limits)
+    (widthAt : Nat → Nat) :
+    List Nat → Array Ixon.Expr → Nat → Nat →
+      Except SharingError (Array Ixon.Expr × Nat × Nat)
+  | [], entries, predicted, work => pure (entries, predicted, work)
+  | i :: is, entries, predicted, work => do
+    let (e, c, w) ← materializeEntry p table limits widthAt i
+    let work := work + w
+    if work > limits.maxMaterialize then
+      throw (.resourceExhausted .materialize limits.maxMaterialize)
+    materializeEntries p table limits widthAt is (entries.push e) (predicted + c) work
+
 /-- Materialize a table sequence and the roots with the byte-least
 minimum-length encodings. Returns entries, roots, and the variable length
 predicted by `C_M`. The Share at index `i` is priced `widthAt i` (the real
@@ -192,24 +217,12 @@ width by default, or a model width). -/
 def materializeTable (p : Prep) (table roots : Array Nat) (limits : Limits)
     (widthAt : Nat → Nat := shareWidth) :
     Except SharingError (Array Ixon.Expr × Array Ixon.Expr × Nat × Nat) := do
-  let n := p.dag.size
-  let mut entries : Array Ixon.Expr := #[]
-  let mut predicted := tag0Size table.size
-  let mut work := 0
-  for h : i in [0:table.size] do
-    let t := table[i]
-    let index := indexOfPrefix n table i
-    let (es, cost, w) ← p.materializeWith index (index.map (·.map widthAt)) #[t] limits
-    let some e := es[0]? | throw (.internal "missing materialized entry")
-    entries := entries.push e
-    predicted := predicted + cost[t]!
-    work := work + w
-    if work > limits.maxMaterialize then
-      throw (.resourceExhausted .materialize limits.maxMaterialize)
-  let index := indexOfPrefix n table table.size
+  let (entries, predicted, work) ← materializeEntries p table limits widthAt
+    (List.range table.size) #[] (tag0Size table.size) 0
+  let index := indexOfPrefix p.dag.size table table.size
   let (rs, cost, w) ← p.materializeWith index (index.map (·.map widthAt)) roots limits
-  predicted := predicted + rootsCost cost roots
-  work := work + w
+  let predicted := predicted + rootsCost cost roots
+  let work := work + w
   if work > limits.maxMaterialize then
     throw (.resourceExhausted .materialize limits.maxMaterialize)
   return (entries, rs, predicted, work)

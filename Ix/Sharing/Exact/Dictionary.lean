@@ -293,7 +293,8 @@ def rebuildSpineNode (n : Node) (inner side : Ixon.Expr) : Except SharingError I
 their standalone choice. Pure and structurally recursive on `fuel`; every
 recursive call descends to a strictly smaller term ID, so `dag.size + 1`
 suffices. Each call emits one node of the output, so the work is bounded
-by the output size. Every inconsistency is an internal error. -/
+by the output size. Every inconsistency is an internal error, including a
+cut of zero spine nodes (`options` never offers one). -/
 def Prep.build (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) :
     Bool → Nat → Nat → Except SharingError Ixon.Expr
   | _, 0, _ => throw (.internal "materialization fuel exhausted")
@@ -322,7 +323,8 @@ def Prep.build (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) :
         pure (Ixon.Expr.letE lc ty v b)
       | .app | .lam _ | .all .. => throw (.internal "inline choice at a telescope head")
       | _ => pure (node.toExpr fun _ => default)
-    | .cut j => do
+    | .cut j =>
+      if j = 0 then throw (.internal "empty telescope cut") else do
       let (spine, cur) := p.spineWalk j t
       let tail ← if j < p.spineLen[t]! then
           match index[cur]?.getD none with

@@ -1,4 +1,5 @@
 import Ix.Compile.Verify.ExprSpineCodec
+import Ix.Compile.Verify.TagN
 import Ix.Compile.Verify.Catalog
 import Ix.Compile.Verify.MutualConstantCodec
 import Ix.Sharing.Exact
@@ -10,7 +11,8 @@ Proofs about the executable exact-sharing core (`Ix.Sharing.Exact`):
 
 * the integer widths `tag0Size`, `tag4Size`, `shareWidth` are the sizes of
   the production `Tag0`/`Tag4` encodings, and agree with the heuristic's
-  `tag0EncodedSize`/`tag4EncodedSize`; `tagNWidth` is monotone with the
+  `tag0EncodedSize`/`tag4EncodedSize`; `tagNWidth` is the length of the
+  `f = 4` TagN encoding (`Ix.Compile.Verify.TagN`) and is monotone with the
   stated rung ends;
 * `exprSize` is the length of the production expression encoding for every
   expression in the codec's wire domain (telescope rule included), and the
@@ -97,10 +99,8 @@ theorem natByteCount_toNat (x : UInt64) :
 
 /-! ## `Tag0` and `Tag4` lengths -/
 
-theorem trimmedBytes_size (x : UInt64) (len : Nat) : (trimmedBytes x len).size = len := by
-  induction len generalizing x with
-  | zero => rfl
-  | succ len ih => simp [trimmedBytes, ih]; omega
+theorem trimmedBytes_size (x : UInt64) (len : Nat) : (trimmedBytes x len).size = len :=
+  TagN.trimmedBytes_size x len
 
 /-- `tag4Size` is the length of the production `Tag4` bytes. -/
 theorem tag4Bytes_size (flag : UInt8) (size : UInt64) :
@@ -179,25 +179,22 @@ theorem tag4EncodedSize_eq (x : UInt64) :
 
 /-! ## TagN widths -/
 
-theorem tagNRung1End_eq : tagNRung1End = 8 := rfl
-theorem tagNRung2End_eq : tagNRung2End = 1032 := by
-  unfold tagNRung2End tagNRung1End; rfl
-theorem tagNRung3End_eq : tagNRung3End = 66568 := by
-  unfold tagNRung3End; rw [tagNRung2End_eq]
+theorem tagNRung1End_eq : tagNRung1End = 8 := TagN.tagNEnd1_eq_4
+theorem tagNRung2End_eq : tagNRung2End = 1032 := TagN.tagNEnd2_eq_4
+theorem tagNRung3End_eq : tagNRung3End = 66568 := TagN.tagNEnd3_eq_4
 /-- `66568 + 2^32`. -/
-theorem tagNRung4End_eq : tagNRung4End = 4295033864 := by
-  unfold tagNRung4End; rw [tagNRung3End_eq]
+theorem tagNRung4End_eq : tagNRung4End = 4295033864 := TagN.tagNEnd4_eq_4
 /-- `66568 + 2^32 + 2^64`. -/
 theorem tagNRung5End_eq : tagNRung5End = 18446744078004585480 := by
-  unfold tagNRung5End; rw [tagNRung4End_eq]
+  unfold tagNRung5End Ixon.tagNEnd5; rw [TagN.tagNEnd4_eq_4]
 
 /-- `tagNWidth` with the rung ends evaluated. -/
 theorem tagNWidth_eq (i : Nat) :
     tagNWidth i =
       if i < 8 then 1 else if i < 1032 then 2 else if i < 66568 then 3
       else if i < 4295033864 then 5 else 9 := by
-  unfold tagNWidth
-  rw [tagNRung1End_eq, tagNRung2End_eq, tagNRung3End_eq, tagNRung4End_eq]
+  unfold tagNWidth Ixon.tagNByteWidth
+  rw [TagN.tagNEnd1_eq_4, TagN.tagNEnd2_eq_4, TagN.tagNEnd3_eq_4, TagN.tagNEnd4_eq_4]
 
 theorem tagNWidth_pos (i : Nat) : 1 ≤ tagNWidth i := by
   rw [tagNWidth_eq]
@@ -236,6 +233,18 @@ theorem tagNWidth_rung5 {i : Nat} (h1 : tagNRung4End ≤ i) : tagNWidth i = 9 :=
   rw [tagNRung4End_eq] at h1
   rw [tagNWidth_eq, if_neg (by omega), if_neg (by omega), if_neg (by omega),
     if_neg (by omega)]
+
+/-- The Share width is the `f = 4` instance of the TagN width function. -/
+theorem tagNWidth_eq_byteWidth : tagNWidth = Ixon.tagNByteWidth 4 := rfl
+
+/-- `tagNWidth` is the length of the `f = 4` TagN encoding of the index
+(the Share code, flag `0xB`), which the decoder reads back exactly. -/
+theorem tagNWidth_eq_encoded (i : UInt64) :
+    tagNWidth i.toNat = (Ixon.runPut (Ixon.putTagN 4 0xB i)).size ∧
+      Ixon.runGetExact (Ixon.getTagN 4) (Ixon.runPut (Ixon.putTagN 4 0xB i)) =
+        .ok ⟨0xB, i⟩ :=
+  ⟨(TagN.runPut_putTagN_size 4 0xB i).symm,
+    TagN.runGetExact_getTagN_putTagN 4 (by decide) 0xB (by decide) i⟩
 
 /-! ## Expression length -/
 
@@ -1129,6 +1138,8 @@ theorem build_correct (p : Prep) (ev : DictEval) (index width : Array (Option Na
             | cases h
         · -- telescope cut
           split at h
+          · cases h
+          split at h
           · split at h
             · rename_i i hi
               simp only [pure_bind] at h
@@ -1213,6 +1224,8 @@ theorem build_shares (p : Prep) (ev : DictEval) (index width : Array (Option Nat
             | (cases h; simp only [SharesIn, Node.toExpr, hh])
             | cases h
         · split at h
+          · cases h
+          split at h
           · split at h
             · rename_i i hi
               simp only [pure_bind] at h
