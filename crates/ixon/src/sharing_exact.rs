@@ -96,9 +96,9 @@ pub use search::{
 };
 pub use tiered::{
   Phase1Choice, ShareLayout, TAGN_RUNG1_END, TAGN_RUNG2_END, TAGN_RUNG3_END,
-  TAGN_RUNG4_END, TieredSharingResult, TieredStats, canonical_sharing_tiered,
-  first_tier, layout_bytes, normalize_constant_bytes_tiered,
-  normalize_constant_sharing_tiered,
+  TAGN_RUNG4_END, TAGN_RUNG5_END, TieredSharingResult, TieredStats,
+  canonical_sharing_tiered, first_tier, layout_bytes,
+  normalize_constant_bytes_tiered, normalize_constant_sharing_tiered,
   normalize_constant_sharing_tiered_at_width,
   normalize_constant_sharing_tiered_par,
   normalize_constant_sharing_tiered_with, tagn_width,

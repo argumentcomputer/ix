@@ -3,7 +3,7 @@
 //! Runs the tiered canonical construction (`sharing_exact`) on every
 //! constant of an `.ixe` file (or a deterministic subset), in parallel, and
 //! prints a report: certified count, failures with names and candidate
-//! counts, byte totals under Tag4 and TagN prices against the stored and
+//! counts, serialized and TagN-priced byte totals against the stored and
 //! unshared encodings, the per-constant delta distribution, phase
 //! statistics, the slowest constants, wall time and peak RSS.
 //!
@@ -105,7 +105,6 @@ fn parse_args() -> Result<Args, String> {
       "--layout" => {
         a.layout = match it.next().as_deref() {
           Some("tagN") => ShareLayout::TagN,
-          Some("tag4") => ShareLayout::Tag4,
           other => return Err(format!("unknown layout {other:?}")),
         }
       },
@@ -152,7 +151,7 @@ struct Row {
   n: u64,
   cand: u64,
   k: u64,
-  /// Real (Tag4-serialized) bytes of the output.
+  /// Serialized bytes of the output (the wire Share code).
   real: u64,
   /// The same output priced with TagN Shares.
   tagn: u64,
@@ -539,12 +538,12 @@ fn main() -> Result<(), String> {
   let raw_known: u64 = un_known.iter().map(|r| r.raw).sum();
   let real_known: u64 = un_known.iter().map(|r| r.real).sum();
   println!(
-    "- certified constants: stored (heuristic) {raw} B; output under Tag4 {real} B ({:+.2}%); under TagN {tagn} B ({:+.2}%)",
+    "- certified constants: stored (heuristic) {raw} B; serialized output {real} B ({:+.2}%); under TagN {tagn} B ({:+.2}%)",
     (real as f64 - raw as f64) / raw as f64 * 100.0,
     (tagn as f64 - raw as f64) / raw as f64 * 100.0
   );
   println!(
-    "- unshared (where it fits u64, {} constants): {unshared} B; stored {raw_known} B; Tag4 output {real_known} B",
+    "- unshared (where it fits u64, {} constants): {unshared} B; stored {raw_known} B; serialized output {real_known} B",
     un_known.len()
   );
   let deltas: Vec<i64> =
@@ -555,7 +554,7 @@ fn main() -> Result<(), String> {
     deltas.iter().filter(|d| **d > 0).count(),
   );
   println!(
-    "- Tag4 output - stored per constant: {neg} smaller, {zero} equal, {pos} larger; {}",
+    "- serialized output - stored per constant: {neg} smaller, {zero} equal, {pos} larger; {}",
     percentiles(deltas)
   );
   let tdeltas: Vec<i64> =
@@ -625,7 +624,7 @@ fn main() -> Result<(), String> {
 
 /// One constant under the width experiment: phases 1-3 at each phase-1
 /// width `w` in 1, 2, 3, and with every candidate stored ("all"). `bytes[i]`
-/// is the complete constant priced by the layout (for Tag4, the serialized
+/// is the complete constant priced by the layout (the serialized
 /// length) at `w = i + 1` for `i < 3`, and for "all" at `i = 3`.
 #[derive(Default, Clone)]
 struct WRow {
@@ -956,11 +955,9 @@ fn mss_diff(
       let (_, m, _) =
         mss_constant(&c, limits, ties).map_err(|e| e.to_string())?;
       println!(
-        "- MSS with {ties:?} ties: TagN {} B, Tag4 {} B",
+        "- MSS with {ties:?} ties: TagN {} B",
         fixed
           + layout_bytes(ShareLayout::TagN, &m.sharing, &m.roots).unwrap_or(0),
-        fixed
-          + layout_bytes(ShareLayout::Tag4, &m.sharing, &m.roots).unwrap_or(0)
       );
     }
     let (_, all) = normalize_constant_sharing_tiered_with(

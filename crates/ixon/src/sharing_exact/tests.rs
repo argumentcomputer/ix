@@ -2355,16 +2355,31 @@ fn tiered_layout_widths() {
     1032,
     66567,
     66568,
-    66568 + (1 << 32) - 1,
-    66568 + (1 << 32),
+    66568 + (1 << 24) - 1,
+    66568 + (1 << 24),
+    66568 + (1 << 24) + (1 << 32) - 1,
+    66568 + (1 << 24) + (1 << 32),
   ];
   let got: Vec<u64> =
     at.iter().map(|&i| ShareLayout::TagN.width_at(i)).collect();
-  assert_eq!(got, vec![1, 2, 2, 3, 3, 5, 5, 9]);
+  assert_eq!(got, vec![1, 2, 2, 3, 3, 4, 4, 5, 5, 9]);
   assert_eq!(
-    (TAGN_RUNG2_END, TAGN_RUNG3_END, TAGN_RUNG4_END),
-    (1032, 66568, 66568 + (1 << 32))
+    (
+      TAGN_RUNG1_END,
+      TAGN_RUNG2_END,
+      TAGN_RUNG3_END,
+      TAGN_RUNG4_END,
+      TAGN_RUNG5_END
+    ),
+    (8, 1032, 66568, 66568 + (1 << 24), 66568 + (1 << 24) + (1 << 32))
   );
+  // The Share pricing is the wire width of the Share code.
+  for i in at {
+    assert_eq!(
+      tagn_width(i),
+      crate::serialize::ShareCodec::CURRENT.width(i) as u64
+    );
+  }
   assert_eq!(ShareLayout::TagN.width_at(u64::MAX), 9);
   let tn = ShareLayout::TagN;
   assert_eq!(
@@ -2578,7 +2593,7 @@ fn tiered_byte_level() {
       ShareLayout::from_code(1),
       ShareLayout::from_code(2)
     ),
-    (Some(ShareLayout::Tag4), Some(ShareLayout::TagN), None)
+    (None, Some(ShareLayout::TagN), None)
   );
 }
 

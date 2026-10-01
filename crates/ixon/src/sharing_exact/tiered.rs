@@ -3,16 +3,10 @@
 //!
 //! A rule-for-rule port of W1's `Ix/Sharing/Exact/Tiered.lean`.
 //!
-//! Layouts ([`ShareLayout::width_at`], monotone, at least 1):
-//! * `Tag4`: the Ixon Tag4 Share (1 byte below index 8, 2 below 256, ...),
-//!   the serialized width.
-//! * `TagN`: the nibble-bootstrapped Share code whose widths climb in rungs
-//!   of 1, 2, 3, 5 and 9 bytes ([`tagn_width`]). It is the wire code when
-//!   [`ShareCodec::CURRENT`] is `TagN` (format version 3 writes Tag4).
-//!
-//! The output is written with the current wire codec; the model length is
-//! the layout price, and the two agree whenever the layout is the wire layout
-//! ([`ShareLayout::wire`]), which is checked.
+//! The one layout, [`ShareLayout::TagN`], prices a Share at table index `i` by
+//! the wire width of the TagN Share code ([`tagn_width`]: 1, 2, 3, 4, 5 or 9
+//! bytes, [`ShareCodec::CURRENT`]). The output is written with that codec,
+//! so the model length and the serialized length agree, which is checked.
 //!
 //! **Width selection.** Phase 1 runs at each uniform width `w` in 1, 2, 3,
 //! each result is carried through phases 2 and 3, and the construction
@@ -53,7 +47,7 @@ use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::cost::{Len, expr_len_with, share_width, tag0_len};
+use super::cost::{Len, expr_len_with, tag0_len};
 use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{Indices, Widths, all_costs, materialize};
 use super::uniform::{
@@ -68,6 +62,7 @@ use super::{
 use crate::constant::Constant;
 use crate::expr::Expr;
 use crate::serialize::ShareCodec;
+use crate::tag::TagN;
 
 fn internal(msg: impl Into<String>) -> SharingError {
   SharingError::Internal(msg.into())
@@ -81,36 +76,28 @@ fn len64(n: usize) -> u64 {
   u64::try_from(n).unwrap_or(u64::MAX)
 }
 
-/// End (exclusive) of the 1-byte TagN rung.
-pub const TAGN_RUNG1_END: u64 = 8;
-/// End of the 2-byte rung (2 + 8 value bits).
-pub const TAGN_RUNG2_END: u64 = TAGN_RUNG1_END + (1 << 10);
-/// End of the 3-byte rung.
-pub const TAGN_RUNG3_END: u64 = TAGN_RUNG2_END + (1 << 16);
-/// End of the 5-byte rung; every larger `u64` index is in the 9-byte rung
-/// (which ends at `TAGN_RUNG4_END + 2^64`).
-pub const TAGN_RUNG4_END: u64 = TAGN_RUNG3_END + (1 << 32);
+/// End (exclusive) of the 1-byte TagN Share rung (the Share flag is 4 bits,
+/// so the payload has 4 bits; `TagN::end1(4)`).
+pub const TAGN_RUNG1_END: u64 = TagN::end1(4);
+/// End of the 2-byte rung (2 + 8 value bits; `TagN::end2(4)`).
+pub const TAGN_RUNG2_END: u64 = TagN::end2(4);
+/// End of the 3-byte rung (2 following bytes; `TagN::end3(4)`).
+pub const TAGN_RUNG3_END: u64 = TagN::end3(4);
+/// End of the 4-byte rung (3 following bytes; `TagN::end4(4)`).
+pub const TAGN_RUNG4_END: u64 = TagN::end4(4);
+/// End of the 5-byte rung (4 following bytes; `TagN::end5(4)`); every larger
+/// `u64` index is in the 9-byte rung.
+pub const TAGN_RUNG5_END: u64 = TagN::end5(4);
 
-/// Byte width of the TagN Share at index `i`.
+/// Byte width of the TagN Share at index `i` (`TagN::byte_width(4, i)`:
+/// 1, 2, 3, 4, 5 or 9), as Lean's `tagNWidth`.
 pub fn tagn_width(i: u64) -> u64 {
-  if i < TAGN_RUNG1_END {
-    1
-  } else if i < TAGN_RUNG2_END {
-    2
-  } else if i < TAGN_RUNG3_END {
-    3
-  } else if i < TAGN_RUNG4_END {
-    5
-  } else {
-    9
-  }
+  len64(TagN::byte_width(4, i))
 }
 
-/// A Share width layout.
+/// The Share width layout: the TagN Share code, the only wire code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ShareLayout {
-  /// The Ixon Tag4 Share (the serialized width).
-  Tag4,
   /// The TagN Share code ([`tagn_width`]).
   TagN,
 }
@@ -119,7 +106,6 @@ impl ShareLayout {
   /// Width of the Share at table index `i`.
   pub fn width_at(self, i: u64) -> u64 {
     match self {
-      ShareLayout::Tag4 => share_width(i),
       ShareLayout::TagN => tagn_width(i),
     }
   }
@@ -127,7 +113,6 @@ impl ShareLayout {
   /// First index whose width exceeds 2.
   pub fn tier2_end(self) -> u64 {
     match self {
-      ShareLayout::Tag4 => 256,
       ShareLayout::TagN => TAGN_RUNG2_END,
     }
   }
@@ -146,23 +131,15 @@ impl ShareLayout {
     }
   }
 
-  /// The layout of a wire Share codec.
-  pub fn of_codec(codec: ShareCodec) -> ShareLayout {
-    match codec {
-      ShareCodec::Tag4 => ShareLayout::Tag4,
-      ShareCodec::TagN => ShareLayout::TagN,
-    }
-  }
-
-  /// The layout of the current wire codec [`ShareCodec::CURRENT`].
+  /// The layout of the wire Share code ([`ShareCodec::CURRENT`], TagN).
   pub fn wire() -> ShareLayout {
-    Self::of_codec(ShareCodec::CURRENT)
+    ShareLayout::TagN
   }
 
-  /// The layout code used at the FFI boundary: 0 = Tag4, 1 = TagN.
+  /// The layout code used at the FFI boundary: 1 = TagN (0, the former
+  /// Tag4 pricing layout, and every other code are invalid).
   pub fn from_code(code: u8) -> Option<ShareLayout> {
     match code {
-      0 => Some(ShareLayout::Tag4),
       1 => Some(ShareLayout::TagN),
       _ => None,
     }

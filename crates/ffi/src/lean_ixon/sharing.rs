@@ -252,8 +252,8 @@ extern "C" fn rs_tiered_sharing_normalize(
 /// Decodes exactly one Constant whose roots carry no sharing table, and
 /// rebuilds it with `ix_compile::compile::apply_sharing_to_*_via` (the
 /// functions every compile, aux-gen, kernel-egress and decompile-recompile
-/// route calls) along the route `code`: 0 = heuristic, 1 = tiered with the
-/// Tag4 layout, 2 = tiered with the TagN layout, each under
+/// route calls) along the route `code`: 0 = heuristic, 2 = tiered with the
+/// TagN layout (1, the former Tag4 pricing layout, is invalid), each under
 /// `compiler_sharing_limits()`. Projections are returned unchanged. Errors
 /// are the compile error's text, prefixed `decode:` for input errors.
 #[unsafe(no_mangle)]
@@ -270,7 +270,6 @@ extern "C" fn rs_compiler_sharing_build(
   use ixon::sharing_exact::ShareLayout;
   let construction = match code {
     0 => SharingConstruction::Heuristic,
-    1 => SharingConstruction::Tiered(ShareLayout::Tag4),
     2 => SharingConstruction::Tiered(ShareLayout::TagN),
     _ => {
       return LeanExcept::error_string(&format!(
