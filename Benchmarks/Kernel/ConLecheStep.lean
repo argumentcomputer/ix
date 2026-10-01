@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Ixon
 import Ix.Kernel.ConLeche.Prelude
 import ConLeche.Cached.Installed
-import ConLeche.Kernel.NatOpPins
+import ConLeche.Kernel.NatOpPinSet
 
 /-! # Con-leche's fold one record at a time (untrusted harness)
 

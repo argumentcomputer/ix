@@ -18,7 +18,7 @@ One ruling refines the closure (plan v4, "Audits"): a `meta import` made by
 a module under `ElaborationImports.importers` is elaboration-time only. The
 modules reached only through such edges form the elaboration closure, which
 is checked against `ElaborationImports.allowed` instead. This is how
-con-leche's `BasisGen`, `NatOpPins` and `PinGen` use `Lean`: everywhere
+con-leche's `BasisGen` and `PinGen` use `Lean`: everywhere
 else `Lean` stays forbidden. -/
 
 open Lean Elab Command

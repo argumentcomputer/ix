@@ -295,10 +295,26 @@ of `ConLeche.model_exists` under its upstream `ConLeche/**` paths, plus the
 adapted `ConLeche/MainTheorem.lean`. See `plans/ix-kernel-con-leche-port-v4.md`.
 `linter.deprecated` is off so the upstream bytes, written for Lean 4.33.0,
 build under `--wfail` on 4.34.0 without renaming deprecated lemmas. Not a
-default target; `IxKernel/lakefile.lean` declares the same library. -/
+default target; `IxKernel/lakefile.lean` declares the same library.
+The globs list every file of the subtree (directories as `.submodules`, the
+files directly under `ConLeche/Kernel` one by one) except
+`ConLeche/Kernel/NatOpPins.lean`, which is kept verbatim for upstream diffs
+and not built: it splices upstream's JSON pin dumps, which Ix replaces with
+the Ixon-generated `Ix/Kernel/ConLeche/NatOpPinData.lean` (plan v4, L4b). A
+module the globs miss is not compiled to native code, and an executable that
+imports it fails to link: a new upstream file under `ConLeche/Kernel` must be
+added here and in `IxKernel/lakefile.lean`. -/
 lean_lib ConLeche where
   roots := #[`ConLeche]
-  globs := #[.submodules `ConLeche]
+  globs := #[.submodules `ConLeche.Cached, .one `ConLeche.Denotes, .submodules `ConLeche.Frontend,
+    .andSubmodules `ConLeche.Kernel.Basis, .submodules `ConLeche.Kernel.Inductives,
+    .one `ConLeche.MainTheorem, .submodules `ConLeche.Model, .submodules `ConLeche.PinGen,
+    .submodules `ConLeche.Rules, .submodules `ConLeche.Semantics, .submodules `ConLeche.SetModel,
+    .submodules `ConLeche.SetTheory, .submodules `ConLeche.Term, .submodules `ConLeche.Verify] ++
+    #[`BasisA, `BasisGen, `Canon, `CheckerBase, `Checker, `CheckerSplit, `CoreDefs, `CoreIO, `Core,
+      `DeclCheck, `Env, `Exclusive, `Expr, `ExprOps, `FEnv, `Level, `Name, `NatOpPinSet, `PropRead,
+      `PropWhen, `StdAxioms, `TrustAxioms, `TrustPins, `TypeChecker].map
+      (fun n => .one (`ConLeche.Kernel ++ n))
   leanOptions := #[⟨`linter.deprecated, false⟩]
 
 end ConLeche

@@ -1,8 +1,19 @@
+/-
+Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
+Source: ConLeche/Kernel/CheckerBase.lean
+Transformations: the line `public import ConLeche.Kernel.NatOpPins` is
+replaced by `public import ConLeche.Kernel.NatOpPinSet`, the structure it
+re-exported and the only part of it this closure uses (Ix reads Ixon only:
+the Nat-operation pin variant is generated from Ixon records,
+`Ix/Kernel/ConLeche/NatOpPinData.lean`, and upstream's `NatOpPins`, which
+splices the JSON pin dumps at elaboration time, is kept verbatim but not
+built); this header added. No statement, proof or tactic text changes.
+-/
 module
 
 public import ConLeche.Kernel.StdAxioms
 public import ConLeche.Kernel.TypeChecker
-public import ConLeche.Kernel.NatOpPins
+public import ConLeche.Kernel.NatOpPinSet
 public import ConLeche.Kernel.Inductives.StructParts
 
 @[expose] public section

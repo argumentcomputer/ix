@@ -328,7 +328,7 @@ fails.
 | project `@[csimp]` | `ConLeche/**`, `Ix/Kernel/**` | only when the replacement theorem depends on the standard axioms alone |
 | `withPtrEq`, `withPtrAddr` | Lean's `Init` primitives | R-ptr: the continuation carries the obligation that it does not observe the answer |
 | `withExclusive` | `ConLeche/Kernel/Exclusive.lean` | the obligation `k true = k false`, discharged by `Subsingleton.elim` |
-| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `ConLeche/Kernel/BasisGen.lean`, `ConLeche/Kernel/NatOpPins.lean`, `ConLeche/PinGen/**` | elaboration only: `meta` declarations cannot reach compiled code, and `Lean` modules are admitted only below these modules' meta imports |
+| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `ConLeche/Kernel/BasisGen.lean`, `ConLeche/PinGen/**` | elaboration only: `meta` declarations cannot reach compiled code, and `Lean` modules are admitted only below these modules' meta imports |
 | `partial` | `ConLeche/Frontend/InModel*` | the in-model generator, ported at L4 as con-leche has it |
 
 For the runtime audit's detection, "reached" means reached in the compiled
@@ -337,10 +337,13 @@ code, and a `csimp` replacement as its target. Both are detected that way.
 
 **Ixon only.** No JSON parser, NDJSON frontend or lean4export input is in
 the certified closure or on Ix's build path; pins and the prelude come from
-the compiled Init records (`.ixe`). The one transitional exception is
-con-leche's `NatOpPins` elaboration-time JSON dump. It stays verbatim from
-L2, so that `model_exists` is green first, until the Ixon pinner replaces
-it at L4.
+the compiled Init records (`.ixe`). The one transitional exception,
+con-leche's `NatOpPins` elaboration-time JSON dump (verbatim from L2, so
+that `model_exists` was green first), was removed at L4: the Nat-operation
+pin variant is generated from Ixon records by the Ixon pinner
+(`conleche-pin-gen`, committed as `Ix/Kernel/ConLeche/NatOpPinData.lean`),
+`pins/*.json` and `ConLeche/PinGen/Dump.lean` are deleted, and
+`ConLeche/Kernel/NatOpPins.lean` is kept verbatim but is not built.
 
 Where a certified operation outside the kernel needs BLAKE3 (address
 reconstruction after K4, authentication and subject roots in K5), it calls
@@ -801,8 +804,7 @@ Both are mechanical, reviewed separately, and change no behavior.
   compiler escapes. Both run in `check-kernel` and pass vacuously while
   `ConLeche/` is absent.
 - `ConLeche/**` imports only `Init`, `Std` and `ConLeche`, plus `Lean` at
-  elaboration time below the meta imports of `BasisGen`, `NatOpPins` and
-  `PinGen`. Ix imports `ConLeche`; `ConLeche` never imports `Ix`.
+  elaboration time below the meta imports of `BasisGen` and `PinGen`. Ix imports `ConLeche`; `ConLeche` never imports `Ix`.
 - K4's `Ix.Ixon.Codec` and `Wire` likewise import only Lean core and the
   pure address/types. Their proof modules additionally use Lean/Std proof
   tooling, without host code, Lean4Lean, or foreign execution replacements.

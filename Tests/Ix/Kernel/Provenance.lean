@@ -13,9 +13,8 @@ Checks, against `Tests.Ix.Kernel.ImportManifest`:
   boundary, and `ConLeche/**/*.lean` (with `ConLeche.lean`) is exactly the
   ported Lean targets under those roots plus the authored modules (a file
   added or removed without a manifest update fails); other rows (the
-  ported fences under `scripts/`, the `pins/` dumps, the con-leche axiom
-  pin under `Tests/`, and the licence and notice files) are checked row by
-  row;
+  ported fences under `scripts/`, the con-leche axiom pin under `Tests/`,
+  and the licence and notice files) are checked row by row;
 * every row's target exists with its recorded SHA-256, and no target is
   recorded twice;
 * a verbatim row records equal source and target hashes; an adapted Lean
@@ -154,7 +153,7 @@ def main (args : List String) : IO UInt32 := do
       s!"; source hashes verified for {", ".intercalate verified.toList}"
     IO.println s!"Kernel provenance OK: {modules oldBranch} ported modules from the old branch, \
       {modules conLeche} from con-leche, {authored.size} authored modules, \
-      {others} other files (licences, notice, fences, pin dumps, tests){sources}."
+      {others} other files (licences, notice, fences, tests){sources}."
     return 0
   catch e =>
     IO.eprintln s!"kernel-provenance: {e}"

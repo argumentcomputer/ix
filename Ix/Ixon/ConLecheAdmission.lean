@@ -13,7 +13,7 @@ The `checkBytes`-shaped entry of con-leche's verified checker, beside the
 existing `Ix.Ixon.Admission.checkBytes` (which it does not change):
 
     preflight → decodeRecords → Ixon reader → preparePrelude
-              → ConLeche.Cached.checkDecls .verified natOpPinSets
+              → ConLeche.Cached.checkDecls .verified natPins
 
 * `preflight` and `decodeRecords` are `Ix.Ixon.Admission`'s: the same batch
   limits, the same canonical per-record decoding, the same error positions.
@@ -24,9 +24,10 @@ existing `Ix.Ixon.Admission.checkBytes` (which it does not change):
 * `preparePrelude` is con-leche's (`ConLeche/Frontend/Prepare.lean`,
   verbatim), with the Ixon prelude (`Ix.Kernel.ConLecheReader.builtinPrelude`).
 * The fold is con-leche's `checkDecls` at `.verified`, at the committed
-  Nat-operation pin variants `ConLeche.natOpPinSets` renamed into the
-  reader's names (`Ix.Kernel.ConLecheReader.ixonNatOpPins`; the theorem holds
-  at every pin list, so the renaming is untrusted).
+  Nat-operation pin variant generated from Ixon records
+  (`Ix.Kernel.ConLecheReader.builtinNatOpPins`, decoded from
+  `Ix/Kernel/ConLeche/NatOpPinData.lean`; the theorem holds at every pin
+  list, so the pins are untrusted).
 
 `checkBytes_has_model` is `ConLeche.model_exists` at the prepared
 declarations: the reader owes nothing, because the main theorem holds for
@@ -101,14 +102,15 @@ def checkBytesWith (pins : Pins) (pre : Prelude) (natPins : List ConLeche.NatOpP
     fun (e, i) => .kernel e i
 
 /-- Check exactly the declarations described by the supplied canonical record
-bytes with con-leche's verified checker, under the committed pin table and
-Ixon prelude. -/
+bytes with con-leche's verified checker, under the committed pin table, Ixon
+prelude and Nat-operation pin variant. -/
 def checkBytes (limits : Limits) (records : Records) (blobs : List (Address × ByteArray))
     (hint : ConstRef Address → Option ConLeche.ReducibilityHint := fun _ => none) :
     Except Error ConLeche.Env := do
   let pins ← defaultPins.mapError Error.prelude
   let pre ← builtinPrelude.mapError Error.prelude
-  checkBytesWith pins pre ixonNatOpPins limits records blobs hint
+  let natPins ← builtinNatOpPins.mapError Error.prelude
+  checkBytesWith pins pre natPins limits records blobs hint
 
 universe u
 
@@ -157,7 +159,10 @@ theorem checkBytes_has_model (V : Type u) [ConLeche.SetTheory V]
     cases hq : builtinPrelude with
     | error e => simp [hp, hq, bind, Except.bind, Except.mapError] at h
     | ok pre =>
-      simp only [hp, hq, bind, Except.bind, Except.mapError] at h
-      exact checkBytesWith_has_model V h
+      cases hn : builtinNatOpPins with
+      | error e => simp [hp, hq, hn, bind, Except.bind, Except.mapError] at h
+      | ok natPins =>
+        simp only [hp, hq, hn, bind, Except.bind, Except.mapError] at h
+        exact checkBytesWith_has_model V h
 
 end Ix.Ixon.ConLecheAdmission

@@ -58,6 +58,7 @@ def run (args : List String) : IO UInt32 := do
   let names := reportNames env store
   let pins ← IO.ofExcept defaultPins
   let pre ← IO.ofExcept builtinPrelude
+  let natPins ← IO.ofExcept builtinNatOpPins
   let hints := Hints.ofStore store env.anonHints
   let s := setup store (env.blobs[·]?) pins pre hints.lookup
   IO.eprintln s!"census-cl: {s.store.size} records, {s.ordered.size} primary, {env.blobs.size} blobs, \
@@ -95,7 +96,7 @@ def run (args : List String) : IO UInt32 := do
         | none => IO.eprintln s!"census-cl: CENSUS_ROOTS: no constant {n}"
       pure (closure s.store s.extra roots)
   let total := match options.limit with | some n => min n ordered.size | none => ordered.size
-  let out ← censusLoop s ixonNatOpPins (names.getD · #[]) (ordered.extract 0 total) skip
+  let out ← censusLoop s natPins (names.getD · #[]) (ordered.extract 0 total) skip
     (emit := fun row => do handle.putStrLn row.json.compress; handle.flush)
     (before := fun a => do checking.set (some (a, ← IO.monoMsNow)))
     (after := checking.set none)

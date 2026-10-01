@@ -6,7 +6,8 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.ConLeche.Reader
 import Ix.Kernel.ConLeche.PinData
 import Ix.Ixon.Canonical
-import ConLeche.Kernel.NatOpPins
+import Ix.Kernel.ConLeche.NatOpPinData
+import ConLeche.Kernel.NatOpPinSet
 
 /-! # The Ixon prelude and the pin table (decision D5)
 
@@ -29,7 +30,9 @@ fills in only where the stream has none.
 
 `PinData.pins` is the pin table (`Ix.Kernel.ConLecheReader.Pin`), from the
 same generator; see the reader's module docstring for what it may and may not
-affect. -/
+affect. `NatOpPinData` is the pin variant of the pin-certified `Nat`
+operations, from the same generator and also from Ixon records only (below,
+"The Nat-operation pins, from Ixon"). -/
 
 namespace Ix.Kernel.ConLecheReader
 
@@ -61,80 +64,157 @@ def levelTable : Except String (Std.HashMap (ConstRef Address) (List CName)) :=
 def defaultPins : Except String Pins := do
   pure { names := ← pinMap (← pinTable), levels := ← levelTable }
 
-/-! ## The Nat-operation pins in the reader's names
+/-! ## The Nat-operation pins, from Ixon (plan v4 §2 "Pins")
 
-Con-leche's committed pin variants (`ConLeche.natOpPinSets`, the JSON dumps
-spliced by `Kernel/NatOpPins.lean`) spell their pins and certificate proofs
-with Lean names. Ixon content-addresses alpha-equivalent constants to one
-record, so several of those names denote one Ixon constant (`HAdd.hAdd`,
-`HMod.hMod`, `HDiv.hDiv`, … are one projection), which the reader can name
-only once; and most of the others are read as `ix.…` names. `PinData.renames`
-(generated with the table) maps each name the pins mention to the reader's
-name of the constant it compiles to, and `ixonNatOpPins` is the committed
-variants renamed through it (constants and projection type names). The fold
-takes its pin list as a parameter and `ConLeche.model_exists` holds at every
-list, so the renaming carries no trust; it decides only whether the
-pin-certified operations' fast paths match. L4b's Ixon pinner replaces the
-JSON dumps and this renaming with pins generated from the Ixon records. -/
+Con-leche's pin-certified `Nat` operations (`div`, `mod`, `gcd`, `land`,
+`lor`, `xor`, `shiftLeft`, `shiftRight`) take a pin variant
+(`ConLeche.NatOpPinSet`): per operation, the pinned defining expression the
+stored value is compared with, and the certificate proofs of its pinned
+recurrence statements. `NatOpPinData` is that variant generated from Ixon
+records by `conleche-pin-gen` (`Benchmarks/Kernel/ConLechePinGen.lean`): the
+pins are the operations' stored values in the compiled Init, read by this
+reader; the proofs are the theorems of `ConLeche/PinGen/Certs.lean` compiled
+by the Ix compiler and read by this reader, with every constant outside the
+operation's dependency cone, its certificate ground and the statements'
+machinery inlined, as upstream's pinner does. The fold takes its pin list as
+a parameter and `ConLeche.model_exists` holds at every list, so neither the
+data nor this decoder carries trust; they decide only whether the fast paths
+are enabled.
 
-/-- Rename constants and projection type names through `f`, sharing
-preserved (one memoised walk of the DAG). -/
-def renameExpr (f : CName → CName) (e : CExpr) : CExpr :=
-  (go {} e).1
-where
-  go (memo : Std.HashMap CExpr CExpr) : CExpr → CExpr × Std.HashMap CExpr CExpr
-    | .const n us => (.const (f n) us, memo)
-    | .bvar i => (.bvar i, memo)
-    | .sort u => (.sort u, memo)
-    | .lit l => (.lit l, memo)
-    | e =>
-      match memo[e]? with
-      | some r => (r, memo)
-      | none =>
-        let (r, memo) : CExpr × Std.HashMap CExpr CExpr := match e with
-          | .fvar i ty => let (ty, memo) := go memo ty; (.fvar i ty, memo)
-          | .app a b =>
-            let (a, memo) := go memo a
-            let (b, memo) := go memo b
-            (.app a b, memo)
-          | .lam ty b m =>
-            let (ty, memo) := go memo ty
-            let (b, memo) := go memo b
-            (.lam ty b m, memo)
-          | .forallE ty b m =>
-            let (ty, memo) := go memo ty
-            let (b, memo) := go memo b
-            (.forallE ty b m, memo)
-          | .letE ty v b =>
-            let (ty, memo) := go memo ty
-            let (v, memo) := go memo v
-            let (b, memo) := go memo b
-            (.letE ty v b, memo)
-          | .proj s i x => let (x, memo) := go memo x; (.proj (f s) i x, memo)
-          | e => (e, memo)
-        (r, memo.insert e r)
+**The table.** `NatOpPinData.table` is a share table, one node per line,
+fields separated by single spaces. A reference is the index of an earlier
+node: index 0 is `Name.anonymous`, index 1 is `Level.zero`, and line `k`
+(from 0) is index `k + 2`. String payloads are percent-encoded UTF-8 (every
+byte outside `[A-Za-z0-9._'!?-]` as `%XX`).
 
-def NatOpPinSet.rename (f : CName → CName) (ps : ConLeche.NatOpPinSet) : ConLeche.NatOpPinSet :=
-  let r := renameExpr f
-  { ps with
-    divPin := r ps.divPin, modPin := r ps.modPin, gcdPin := r ps.gcdPin, landPin := r ps.landPin,
-    lorPin := r ps.lorPin, xorPin := r ps.xorPin, shiftLeftPin := r ps.shiftLeftPin,
-    shiftRightPin := r ps.shiftRightPin,
-    divProofs := ps.divProofs.map r, modProofs := ps.modProofs.map r,
-    gcdProofs := ps.gcdProofs.map r, landProofs := ps.landProofs.map r,
-    lorProofs := ps.lorProofs.map r, xorProofs := ps.xorProofs.map r,
-    shiftLeftProofs := ps.shiftLeftProofs.map r, shiftRightProofs := ps.shiftRightProofs.map r }
+| line | node |
+|---|---|
+| `n p s` / `m p k` | `Name.str p s` / `Name.num p k` |
+| `S u` / `M u v` / `I u v` / `P n` | `Level.succ` / `max` / `imax` / `param` |
+| `B k` / `Y u` / `C n u…` / `A f a` | `Expr.bvar` / `sort` / `const` / `app` |
+| `L t b` / `F t b` / `E t v b` | `lam` / `forallE` / `letE` (every binder `pw := .never`) |
+| `N k` / `T s` / `J n i e` | a `Nat` literal / a `String` literal / `proj` |
 
-/-- The committed renaming of the pins' names. -/
-def pinRenames : Std.HashMap CName CName :=
-  PinData.renames.foldl (fun m (a, b) => m.insert (nameOfComponents a) (nameOfComponents b)) {}
+`NatOpPinData.ops` lists, in `NatOpPinSet` field order, each operation's pin
+and certificate-proof roots. -/
 
-/-- The pin variants under a renaming. -/
-def renamePins (renames : Std.HashMap CName CName) : List ConLeche.NatOpPinSet :=
-  ConLeche.natOpPinSets.map (NatOpPinSet.rename (fun n => renames.getD n n))
+/-- One decoded share-table node. -/
+inductive PinNode where
+  | name (n : CName)
+  | level (l : CLevel)
+  | expr (e : CExpr)
+  deriving Inhabited
 
-/-- The committed pin variants in the reader's names. -/
-def ixonNatOpPins : List ConLeche.NatOpPinSet := renamePins pinRenames
+/-- A hex digit's value. -/
+def hexDigit (c : Char) : Option Nat :=
+  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
+  else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+  else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+  else none
+
+/-- Undo the table's percent-encoding. -/
+def percentDecode (s : String) : Except String String := do
+  let cs := s.toList.toArray
+  let mut bytes : ByteArray := .empty
+  let mut i := 0
+  for _ in [0:cs.size] do
+    if h : i < cs.size then
+      let c := cs[i]
+      if c == '%' then
+        let some hi := (cs[i + 1]?).bind hexDigit | throw s!"pin table: bad escape in {s}"
+        let some lo := (cs[i + 2]?).bind hexDigit | throw s!"pin table: bad escape in {s}"
+        bytes := bytes.push (hi * 16 + lo).toUInt8
+        i := i + 3
+      else
+        bytes := bytes ++ c.toString.toUTF8
+        i := i + 1
+  match String.fromUTF8? bytes with
+  | some r => pure r
+  | none => throw s!"pin table: {s} is not UTF-8"
+
+/-- Decode the share table. -/
+def decodePinTable (text : String) : Except String (Array PinNode) := do
+  let mut out : Array PinNode := #[.name .anonymous, .level .zero]
+  for line in text.splitOn "\n" do
+    if line.isEmpty then continue
+    let fs := (line.splitOn " ").toArray
+    let field (i : Nat) : Except String String :=
+      match fs[i]? with
+      | some f => pure f
+      | none => throw s!"pin table: short line {line}"
+    let num (i : Nat) : Except String Nat := do
+      match (← field i).toNat? with
+      | some k => pure k
+      | none => throw s!"pin table: bad number in {line}"
+    let node (i : Nat) : Except String PinNode := do
+      match out[← num i]? with
+      | some n => pure n
+      | none => throw s!"pin table: forward reference in {line}"
+    let nameAt (i : Nat) : Except String CName := do
+      match ← node i with
+      | .name n => pure n
+      | _ => throw s!"pin table: not a name at field {i} of {line}"
+    let levelAt (i : Nat) : Except String CLevel := do
+      match ← node i with
+      | .level l => pure l
+      | _ => throw s!"pin table: not a level at field {i} of {line}"
+    let exprAt (i : Nat) : Except String CExpr := do
+      match ← node i with
+      | .expr e => pure e
+      | _ => throw s!"pin table: not an expression at field {i} of {line}"
+    let n : PinNode ← match ← field 0 with
+      | "n" => pure (.name (.str (← nameAt 1) (← percentDecode (← field 2))))
+      | "m" => pure (.name (.num (← nameAt 1) (← num 2)))
+      | "S" => pure (.level (.succ (← levelAt 1)))
+      | "M" => pure (.level (.max (← levelAt 1) (← levelAt 2)))
+      | "I" => pure (.level (.imax (← levelAt 1) (← levelAt 2)))
+      | "P" => pure (.level (.param (← nameAt 1)))
+      | "B" => pure (.expr (ConLeche.Expr.mkBvar (← num 1)))
+      | "Y" => pure (.expr (.sort (← levelAt 1)))
+      | "C" => do
+        let us ← ((List.range (fs.size - 2)).map (· + 2)).mapM levelAt
+        pure (.expr (.const (← nameAt 1) us))
+      | "A" => pure (.expr (.app (← exprAt 1) (← exprAt 2)))
+      | "L" => pure (.expr (.lam (← exprAt 1) (← exprAt 2) ⟨.never⟩))
+      | "F" => pure (.expr (.forallE (← exprAt 1) (← exprAt 2) ⟨.never⟩))
+      | "E" => pure (.expr (.letE (← exprAt 1) (← exprAt 2) (← exprAt 3)))
+      | "N" => pure (.expr (.lit (.natVal (← num 1))))
+      | "T" => pure (.expr (.lit (.strVal (← percentDecode (← field 1)))))
+      | "J" => pure (.expr (.proj (← nameAt 1) (← num 2) (← exprAt 3)))
+      | t => throw s!"pin table: unknown node {t}"
+    out := out.push n
+  return out
+
+/-- A pin variant from a decoded table and its per-operation roots (the
+`NatOpPinSet` field order: `div`, `mod`, `gcd`, `land`, `lor`, `xor`,
+`shiftLeft`, `shiftRight`). -/
+def natOpPinSetOf (toolchain : String) (nodes : Array PinNode)
+    (ops : Array (String × Nat × List Nat)) : Except String ConLeche.NatOpPinSet := do
+  let expr (i : Nat) : Except String CExpr :=
+    match nodes[i]? with
+    | some (.expr e) => pure e
+    | _ => throw s!"pin table: root {i} is not an expression"
+  let op (k : Nat) (name : String) : Except String (CExpr × List CExpr) := do
+    let some (n, pin, proofs) := ops[k]? | throw s!"pin table: no entry for {name}"
+    unless n == name do throw s!"pin table: entry {k} is {n}, expected {name}"
+    pure (← expr pin, ← proofs.mapM expr)
+  let (divPin, divProofs) ← op 0 "Nat.div"
+  let (modPin, modProofs) ← op 1 "Nat.mod"
+  let (gcdPin, gcdProofs) ← op 2 "Nat.gcd"
+  let (landPin, landProofs) ← op 3 "Nat.land"
+  let (lorPin, lorProofs) ← op 4 "Nat.lor"
+  let (xorPin, xorProofs) ← op 5 "Nat.xor"
+  let (shiftLeftPin, shiftLeftProofs) ← op 6 "Nat.shiftLeft"
+  let (shiftRightPin, shiftRightProofs) ← op 7 "Nat.shiftRight"
+  pure { toolchain, divPin, modPin, gcdPin, landPin, lorPin, xorPin, shiftLeftPin, shiftRightPin,
+         divProofs, modProofs, gcdProofs, landProofs, lorProofs, xorProofs, shiftLeftProofs,
+         shiftRightProofs }
+
+/-- The committed pin variant, decoded; a failure is a corrupted committed
+file, which the entry reports. -/
+def builtinNatOpPins : Except String (List ConLeche.NatOpPinSet) := do
+  let nodes ← decodePinTable NatOpPinData.table
+  pure [← natOpPinSetOf NatOpPinData.toolchain nodes NatOpPinData.ops]
 
 /-- Generous per-record limits for the committed prelude records. -/
 def preludeMaxBytes : Nat := 1 <<< 24

@@ -114,13 +114,15 @@ def importAllowlist : Array Name :=
 
 /-- Con-leche's elaboration-time imports (plan v4, "Audits"):
 `ConLeche/Kernel/BasisGen.lean` (`public meta import Lean`) splices the
-annotated basis and pins; `ConLeche/Kernel/NatOpPins.lean` meta-imports
-`ConLeche.PinGen.Dump` (which imports `Lean`) for the committed Nat-op pin
-dump, the transitional JSON exception that L4 removes; and the `PinGen`
-generators meta-import `ConLeche.Kernel.Expr` and each other. Below these
-edges only Lean core, `Lean`, and `ConLeche` may appear. -/
+annotated basis and pins, and the `PinGen` generators meta-import
+`ConLeche.Kernel.Expr` and each other. Below these edges only Lean core,
+`Lean`, and `ConLeche` may appear. The transitional JSON exception,
+`ConLeche/Kernel/NatOpPins.lean` meta-importing `ConLeche.PinGen.Dump` for
+the committed Nat-op pin dumps, is gone since L4b: the pins come from Ixon
+(`Ix/Kernel/ConLeche/NatOpPinData.lean`), `Dump` is deleted, and `NatOpPins`
+is kept verbatim but not built. -/
 def elaborationImports : ElaborationImports where
-  importers := #[`ConLeche.Kernel.BasisGen, `ConLeche.Kernel.NatOpPins, `ConLeche.PinGen]
+  importers := #[`ConLeche.Kernel.BasisGen, `ConLeche.PinGen]
   allowed := #[`Init, `Std, `Lean, `ConLeche]
 
 /-- Modules whose execution replacements are inherited Lean runtime. -/
@@ -138,7 +140,7 @@ section 2, "Execution boundary"). Each names exactly what it admits:
   read behind `withExclusive` (all `Init`, so already inherited);
 * `ConLeche.withExclusive`, `implemented_by` `ConLeche.withExclusiveUnsafe`,
   whose type carries the obligation `k true = k false`;
-* elaboration-time `meta` code in `BasisGen`, `NatOpPins`, and `PinGen`
+* elaboration-time `meta` code in `BasisGen` and `PinGen`
   (`unsafe evalTerm` wrappers paired by `implemented_by`), which compiled
   non-`meta` code cannot call;
 * `partial` definitions of the in-model generator,
@@ -149,8 +151,8 @@ def runtimeRulings : RuntimeRulings where
   primitives := #[``withPtrEq, ``withPtrEqUnsafe, ``withPtrEqDecEq, ``withPtrAddr,
     ``withPtrAddrUnsafe, ``ptrEq, ``ptrAddrUnsafe, ``isExclusiveUnsafe]
   implementations := #[(`ConLeche.withExclusive, `ConLeche.withExclusiveUnsafe)]
-  elaborationModules := #[`ConLeche.Kernel.BasisGen, `ConLeche.Kernel.NatOpPins,
-    `ConLeche.PinGen, `ConLeche.PinGen.Certs, `ConLeche.PinGen.Dump, `ConLeche.PinGen.Prelude]
+  elaborationModules := #[`ConLeche.Kernel.BasisGen,
+    `ConLeche.PinGen, `ConLeche.PinGen.Certs, `ConLeche.PinGen.Prelude]
   partialModules := #[`ConLeche.Frontend.InModel, `ConLeche.Frontend.InModelDump]
 
 end Ix.Kernel.Audit

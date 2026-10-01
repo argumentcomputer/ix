@@ -67,10 +67,11 @@ def encode (cs : List (Address × Ixon.Constant)) : Ix.Ixon.Admission.Records :=
 
 def builtinPins : Pins := match defaultPins with | .ok p => p | .error _ => {}
 def builtinPre : Prelude := match builtinPrelude with | .ok p => p | .error _ => default
+def builtinNatPins : List ConLeche.NatOpPinSet := match builtinNatOpPins with | .ok ps => ps | .error _ => []
 
 def run (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
     (pins : Pins := builtinPins) : Except Error ConLeche.Env :=
-  checkBytesWith pins builtinPre ixonNatOpPins limits (encode cs) blobs
+  checkBytesWith pins builtinPre builtinNatPins limits (encode cs) blobs
 
 def accepts (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
     (pins : Pins := builtinPins) : Bool :=
@@ -102,7 +103,20 @@ def quotLift := pinned "Quot.lift"
 
 /-! ## The prelude and the tables -/
 
-#guard defaultPins.isOk && builtinPrelude.isOk
+#guard defaultPins.isOk && builtinPrelude.isOk && builtinNatOpPins.isOk
+-- the committed Nat-operation pin variant, generated from Ixon records: one
+-- variant, eight operations, the certificate proofs of their pinned statements
+#guard builtinNatPins.length == 1 && builtinNatPins.all fun ps =>
+  ps.divProofs.length == 3 && ps.modProofs.length == 3 && ps.gcdProofs.length == 2 &&
+  ps.landProofs.length == 2 && ps.lorProofs.length == 2 && ps.xorProofs.length == 2 &&
+  ps.shiftLeftProofs.length == 2 && ps.shiftRightProofs.length == 2
+-- the share-table decoder refuses forward references and unknown nodes
+#guard (decodePinTable "A 2 3").isOk == false && (decodePinTable "Q 0").isOk == false
+#guard match decodePinTable "n 0 Nat\nn 2 succ\nC 3\nT a%20b" with
+  | .ok ns => match (ns[4]? : Option PinNode), (ns[5]? : Option PinNode) with
+    | some (.expr (.const n [])), some (.expr (.lit (.strVal s))) => toString n == "Nat.succ" && s == "a b"
+    | _, _ => false
+  | .error _ => false
 #guard builtinPins.names.size == 55
 #guard (builtinPre.ix.decls.toList.map (toString ∘ ConLeche.Frontend.preludeKey)) ==
   ["Eq", "Nat", "PUnit", "Empty", "False", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Quot.sound",
@@ -424,7 +438,7 @@ def natBlockRecord : Ixon.Constant := Id.run do
   | .error (.read 0 (.declined _)) => true
   | _ => false
 -- a non-canonical byte string fails at decoding
-#guard match checkBytesWith builtinPins builtinPre ixonNatOpPins limits [(address 10, ⟨#[0xff]⟩)] [] with
+#guard match checkBytesWith builtinPins builtinPre builtinNatPins limits [(address 10, ⟨#[0xff]⟩)] [] with
   | .error (.decode 0 _ _) => true
   | _ => false
 

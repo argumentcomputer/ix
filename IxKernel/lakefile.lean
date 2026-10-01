@@ -63,9 +63,19 @@ lean_exe «kernel-provenance» where
 /-- Con-leche's verified checker core, imported verbatim at `ae0c0c4e` (see
 the root `lakefile.lean`, which declares the same library). Lean core only;
 `linter.deprecated` is off so the 4.33.0-era sources build under `--wfail`
-on 4.34.0 unchanged. Not a default target. -/
+on 4.34.0 unchanged. Not a default target. The globs list every file of the
+subtree except `ConLeche/Kernel/NatOpPins.lean`, which is not built (see the
+root `lakefile.lean`, whose globs these copy). -/
 lean_lib ConLeche where
   srcDir := ".."
   roots := #[`ConLeche]
-  globs := #[.submodules `ConLeche]
+  globs := #[.submodules `ConLeche.Cached, .one `ConLeche.Denotes, .submodules `ConLeche.Frontend,
+    .andSubmodules `ConLeche.Kernel.Basis, .submodules `ConLeche.Kernel.Inductives,
+    .one `ConLeche.MainTheorem, .submodules `ConLeche.Model, .submodules `ConLeche.PinGen,
+    .submodules `ConLeche.Rules, .submodules `ConLeche.Semantics, .submodules `ConLeche.SetModel,
+    .submodules `ConLeche.SetTheory, .submodules `ConLeche.Term, .submodules `ConLeche.Verify] ++
+    #[`BasisA, `BasisGen, `Canon, `CheckerBase, `Checker, `CheckerSplit, `CoreDefs, `CoreIO, `Core,
+      `DeclCheck, `Env, `Exclusive, `Expr, `ExprOps, `FEnv, `Level, `Name, `NatOpPinSet, `PropRead,
+      `PropWhen, `StdAxioms, `TrustAxioms, `TrustPins, `TypeChecker].map
+      (fun n => .one (`ConLeche.Kernel ++ n))
   leanOptions := #[⟨`linter.deprecated, false⟩]
