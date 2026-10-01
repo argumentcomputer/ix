@@ -462,11 +462,8 @@ def censusLoopWith (s : Setup) (fetch : Address → IO (Option Ixon.Constant))
         let t0 ← IO.monoNanosNow
         let checker := out.checker
         out := { out with checker := {} }
-        let (checker, err) ← IO.lazyPure fun _ => checker.stepsAt pins rd.decls
+        let (checker, err) ← IO.lazyPure fun _ => checker.steps pins rd.decls
         let micros := ((← IO.monoNanosNow) - t0) / 1000
-        let levelReason ← match err with
-          | some (i, .invalid m) => IO.lazyPure fun _ => (rd.decls[i]?).bind (levelDecline pins checker · m)
-          | _ => pure none
         after
         out := { out with checker }
         match err with
@@ -474,10 +471,8 @@ def censusLoopWith (s : Setup) (fetch : Address → IO (Option Ixon.Constant))
           for row in rowsFor "accept" "" micros readMicros do
             out := { out with counts := out.counts.insert "accept" (out.counts.getD "accept" 0 + 1) }
             emit row
-        | some (_, e) =>
-          let (outcome, reason) := match levelReason with
-            | some r => ("decline", r)
-            | none => checkOutcome e
+        | some e =>
+          let (outcome, reason) := checkOutcome e
           for row in rowsFor outcome reason micros readMicros do
             out := { out with failed := out.failed.insert row.address row.address,
                               counts := out.counts.insert outcome (out.counts.getD outcome 0 + 1) }

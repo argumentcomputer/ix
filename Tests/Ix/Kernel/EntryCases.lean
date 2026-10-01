@@ -303,13 +303,13 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
 /-! ## The census's classification
 
 The census (`Benchmarks.Kernel.ConLecheStep.censusLoop`) runs the same
-reader and checker one record at a time and classifies each verdict. A
-checker `invalid` is a reject, except when the declaration is accepted at
-every instantiation of its level parameters from `{0, 1, K}`: then the row
-declines (cl-m1). Cl-level decides the level comparison's missing case by
-Géran's sublevels, so `levelCanon` is accepted by the census as by the
-entry. These cases run the census over a case's records and check the
-seed's row. -/
+reader and checker one record at a time and classifies each verdict: a
+checker `invalid` is a reject. These cases run the census over a case's
+records and check the seed's row. Cl-m1 declined a declaration that was
+`invalid` but accepted at every closed instantiation of its level
+parameters. Cl-level decides the level comparison's missing case by Géran's
+sublevels and removed that rule, so `levelCanon` is accepted by the census
+as by the entry. -/
 
 structure CensusCase where
   label : String
