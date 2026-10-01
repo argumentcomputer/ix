@@ -1,8 +1,8 @@
 module
-public import Tests.Ix.IxonV3
+public import Tests.Ix.IxonV4
 
 public section
-namespace Tests.IxonV3
+namespace Tests.IxonV4
 open Ixon
 
 @[extern "rs_roundtrip_ixon_expr"] opaque roundtripExpr : @& Expr → Expr
@@ -37,4 +37,4 @@ def runFFI (cases : List ExprCase) : IO Nat := do
     checks := checks + 2
   return checks
 
-end Tests.IxonV3
+end Tests.IxonV4

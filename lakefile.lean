@@ -166,14 +166,15 @@ lean_exe «source-contract-tests» where
   root := `Tests.SourceContractMain
   supportInterpreter := true
 
-/-- Focused v3 codec, locality, and cross-language transport checks. -/
-lean_exe «ixon-v3-tests» where
-  root := `Tests.IxonV3Main
+/-- Focused Ixon v4 codec, locality, and cross-language transport checks;
+`--export-fixtures` and `--export-handoff` regenerate the generated fixtures. -/
+lean_exe «ixon-v4-tests» where
+  root := `Tests.IxonV4Main
   moreLinkObjs := #[ix_rs_test]
 
 /-- Regenerate format-specific primitive identities from the installed Lean environment. -/
-lean_exe «ixon-v3-primitives» where
-  root := `Tests.IxonV3Primitives
+lean_exe «ixon-v4-primitives» where
+  root := `Tests.IxonV4Primitives
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_test]
 

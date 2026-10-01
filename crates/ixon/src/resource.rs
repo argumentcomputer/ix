@@ -1596,7 +1596,7 @@ mod tests {
   #[test]
   fn shared_resource_acceptance_and_rejection_fixtures() {
     let mut count = 0;
-    for line in include_str!("../../../Tests/Fixtures/ixon-v3/resource.tsv")
+    for line in include_str!("../../../Tests/Fixtures/ixon-v4/resource.tsv")
       .lines()
       .filter(|l| !l.starts_with('#') && !l.is_empty())
     {

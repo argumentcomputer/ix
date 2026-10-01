@@ -1000,7 +1000,7 @@ mod tests {
       ),
     ];
     let fixture =
-      include_str!("../../../../Tests/Fixtures/ixon-v3/addressed.tsv");
+      include_str!("../../../../Tests/Fixtures/ixon-v4/addressed.tsv");
     for (name, constant) in cases {
       let (address, bytes) = constant.commit();
       let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();

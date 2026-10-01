@@ -3278,7 +3278,7 @@ mod tests {
   use quickcheck::{Arbitrary, Gen};
   use quickcheck_macros::quickcheck;
 
-  fn v3_fixture_exprs() -> Vec<(&'static str, Arc<Expr>)> {
+  fn v4_fixture_exprs() -> Vec<(&'static str, Arc<Expr>)> {
     use crate::contract::LetKind;
     use crate::expr::Uses;
     let binder = |uses, value| BinderContract { uses, value };
@@ -3372,9 +3372,9 @@ mod tests {
   }
 
   #[test]
-  fn v3_independent_golden_expressions() {
-    let file = include_str!("../../../Tests/Fixtures/ixon-v3/expressions.txt");
-    for (name, expr) in v3_fixture_exprs() {
+  fn v4_independent_golden_expressions() {
+    let file = include_str!("../../../Tests/Fixtures/ixon-v4/expressions.txt");
+    for (name, expr) in v4_fixture_exprs() {
       let line = file
         .lines()
         .find(|line| line.starts_with(&format!("{name} ")))

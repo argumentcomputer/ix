@@ -10,7 +10,7 @@ result*
 
 #Ix
 *.ixe
-!Tests/Fixtures/ixon-v3/handoff/*.ixe
+!Tests/Fixtures/ixon-v4/handoff/*.ixe
 plans
 refs
 

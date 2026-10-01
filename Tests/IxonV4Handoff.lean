@@ -5,7 +5,7 @@ public import Ix.Resource.Claim
 
 public section
 
-namespace Tests.IxonV3Handoff
+namespace Tests.IxonV4Handoff
 
 /-- A complete anonymous environment and its native resource admission claim.
 The rejected fixture differs only in the escaping result contract. -/
@@ -26,8 +26,8 @@ def artifacts : Except String (Array (String × ByteArray)) := do
     ("profile.bin", profile.bytes),
     ("accepted.claim", Ix.Claim.ser claim) ]
   let manifest := Lean.Json.mkObj [
-    ("schema", .str "ixon-v3-handoff-1"),
-    ("objectFormat", .str "ixon-v3"),
+    ("schema", .str "ixon-v4-handoff-1"),
+    ("objectFormat", .str Ixon.wireFormatId),
     ("validator", .str Ix.Resource.validatorId),
     ("subject", .str (toString accepted.merkleRoot.get!)),
     ("profile", .str (toString profileAddress)),
@@ -47,6 +47,6 @@ def check (directory : System.FilePath) : IO Unit := do
     unless (← IO.FS.readBinFile (directory / name)) == bytes do
       throw <| IO.userError s!"handoff fixture differs: {name}"
 
-end Tests.IxonV3Handoff
+end Tests.IxonV4Handoff
 
 end
