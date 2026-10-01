@@ -1104,7 +1104,8 @@
     "CompilatrixTests.Fences.BackendEnds"]},
   "CompilatrixTests.Corpus.ToolMain":
   {"path": "CompilatrixTests/Corpus/ToolMain.lean",
-   "imports": ["CompilatrixTests.Corpus.Build"]},
+   "imports":
+   ["CompilatrixTests.Corpus.Build", "CompilatrixTests.Corpus.KernelGen"]},
   "CompilatrixTests.Corpus.Run":
   {"path": "CompilatrixTests/Corpus/Run.lean",
    "imports":
@@ -1119,6 +1120,37 @@
   "CompilatrixTests.Corpus.Main":
   {"path": "CompilatrixTests/Corpus/Main.lean",
    "imports": ["CompilatrixTests.Corpus.Run"]},
+  "CompilatrixTests.Corpus.KernelSample":
+  {"path": "CompilatrixTests/Corpus/KernelSample.lean",
+   "imports":
+   ["CompilatrixTests.Corpus.Kernel.Tuple",
+    "CompilatrixTests.Corpus.Kernel.EvenOdd",
+    "CompilatrixTests.Corpus.Kernel.StrictAnd",
+    "CompilatrixTests.Corpus.Kernel.NatShiftr"]},
+  "CompilatrixTests.Corpus.KernelGen":
+  {"path": "CompilatrixTests/Corpus/KernelGen.lean",
+   "imports":
+   ["CompilatrixTests.Corpus.Manifest", "CompilatrixTests.Recheck.Artifact"]},
+  "CompilatrixTests.Corpus.Kernel.Tuple":
+  {"path": "CompilatrixTests/Corpus/Kernel/Tuple.lean",
+   "imports":
+   ["CompilatrixTests.Corpus.Artifacts.Tuple",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Corpus.Kernel.StrictAnd":
+  {"path": "CompilatrixTests/Corpus/Kernel/StrictAnd.lean",
+   "imports":
+   ["CompilatrixTests.Corpus.Artifacts.StrictAnd",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Corpus.Kernel.NatShiftr":
+  {"path": "CompilatrixTests/Corpus/Kernel/NatShiftr.lean",
+   "imports":
+   ["CompilatrixTests.Corpus.Artifacts.NatShiftr",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
+  "CompilatrixTests.Corpus.Kernel.EvenOdd":
+  {"path": "CompilatrixTests/Corpus/Kernel/EvenOdd.lean",
+   "imports":
+   ["CompilatrixTests.Corpus.Artifacts.EvenOdd",
+    "CompilatrixTests.Recheck.Kernel.Support"]},
   "CompilatrixTests.Corpus.Json":
   {"path": "CompilatrixTests/Corpus/Json.lean", "imports": ["Lean.Data.Json"]},
   "CompilatrixTests.Corpus.Build":
@@ -1129,6 +1161,18 @@
     "Compilatrix.Tools.Census",
     "Compilatrix.Tools.SourceScan",
     "Compilatrix.Recheck.Produce"]},
+  "CompilatrixTests.Corpus.Artifacts.Tuple":
+  {"path": "CompilatrixTests/Corpus/Artifacts/Tuple.lean",
+   "imports": ["Compilatrix.Recheck.Run"]},
+  "CompilatrixTests.Corpus.Artifacts.StrictAnd":
+  {"path": "CompilatrixTests/Corpus/Artifacts/StrictAnd.lean",
+   "imports": ["Compilatrix.Recheck.Run"]},
+  "CompilatrixTests.Corpus.Artifacts.NatShiftr":
+  {"path": "CompilatrixTests/Corpus/Artifacts/NatShiftr.lean",
+   "imports": ["Compilatrix.Recheck.Run"]},
+  "CompilatrixTests.Corpus.Artifacts.EvenOdd":
+  {"path": "CompilatrixTests/Corpus/Artifacts/EvenOdd.lean",
+   "imports": ["Compilatrix.Recheck.Run"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":
@@ -1364,6 +1408,9 @@
     "CompilatrixTests.Fir.Run",
     "CompilatrixTests.Rt.Run",
     "CompilatrixTests.Pipeline.Run",
+    "CompilatrixTests.Corpus.Run",
+    "CompilatrixTests.Corpus.Build",
+    "CompilatrixTests.Corpus.KernelGen",
     "CompilatrixTests.Recheck.Run",
     "CompilatrixTests.Recheck.KernelSlow"]},
   "Compilatrix.Xv.XlSemantics":
