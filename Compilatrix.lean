@@ -214,6 +214,9 @@ import Compilatrix.Rt.Readback
 import Compilatrix.Rt.Proof.Words
 import Compilatrix.Rt.Proof.Procs
 import Compilatrix.Rt.Proof.Pow
+import Compilatrix.Rt.Proof.Mem
+import Compilatrix.Rt.Proof.Heap
+import Compilatrix.Rt.Proof.Alloc
 import Compilatrix.Lam.Proof.Unfold
 import Compilatrix.Lam.Proof.Mono
 import Compilatrix.Lam.Proof.Spine

@@ -1824,6 +1824,19 @@
   "Compilatrix.Rt.Proof.Pow":
   {"path": "Compilatrix/Rt/Proof/Pow.lean",
    "imports": ["Compilatrix.Rt.Proof.Procs"]},
+  "Compilatrix.Rt.Proof.Mem":
+  {"path": "Compilatrix/Rt/Proof/Mem.lean",
+   "imports": ["Compilatrix.X86.Memory", "Compilatrix.Lir.Proof.Eval"]},
+  "Compilatrix.Rt.Proof.Heap":
+  {"path": "Compilatrix/Rt/Proof/Heap.lean",
+   "imports":
+   ["Compilatrix.Rt.Lower",
+    "Compilatrix.Cfg.Semantics",
+    "Compilatrix.Rt.Proof.Mem",
+    "Compilatrix.Rt.Proof.Words"]},
+  "Compilatrix.Rt.Proof.Alloc":
+  {"path": "Compilatrix/Rt/Proof/Alloc.lean",
+   "imports": ["Compilatrix.Rt.Proof.Heap"]},
   "Compilatrix.Rt.Procs.Nat":
   {"path": "Compilatrix/Rt/Procs/Nat.lean",
    "imports": ["Compilatrix.Rt.Layout"]},
@@ -3168,6 +3181,9 @@
     "Compilatrix.Rt.Proof.Words",
     "Compilatrix.Rt.Proof.Procs",
     "Compilatrix.Rt.Proof.Pow",
+    "Compilatrix.Rt.Proof.Mem",
+    "Compilatrix.Rt.Proof.Heap",
+    "Compilatrix.Rt.Proof.Alloc",
     "Compilatrix.Lam.Proof.Unfold",
     "Compilatrix.Lam.Proof.Mono",
     "Compilatrix.Lam.Proof.Spine",
