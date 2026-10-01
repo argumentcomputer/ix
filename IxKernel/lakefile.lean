@@ -23,11 +23,13 @@ lean_lib IxKernel where
   roots := #[`Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
     `Ix.Ixon.WireCheck, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant, `Ix.Ixon.Bounded.Size,
     `Ix.Ixon.Canonical, `Ix.Ixon.Verify, `Ix.Ixon.Audit,
-    `Ix.Ixon.Admission, `Ix.Ixon.Admission.Audit, `Ix.Ixon.ConLecheAdmission]
+    `Ix.Ixon.Admission, `Ix.Ixon.Admission.Audit, `Ix.Ixon.ConLecheAdmission,
+    `Ix.Ixon.ConLecheConsistency]
   globs := #[.andSubmodules `Ix.Kernel, .one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types,
     .one `Ix.Ixon.Codec, .one `Ix.Ixon.Wire, .one `Ix.Ixon.WireCheck, .submodules `Ix.Ixon.Bounded,
     .one `Ix.Ixon.Canonical, .andSubmodules `Ix.Ixon.Verify, .one `Ix.Ixon.Audit,
-    .andSubmodules `Ix.Ixon.Admission, .one `Ix.Ixon.ConLecheAdmission]
+    .andSubmodules `Ix.Ixon.Admission, .one `Ix.Ixon.ConLecheAdmission,
+    .one `Ix.Ixon.ConLecheConsistency]
 
 /-- Certified fixtures also run without the host package's dependencies. -/
 def kernelFixtureRoots : Array Lean.Name := #[

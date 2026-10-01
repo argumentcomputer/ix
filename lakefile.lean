@@ -377,7 +377,7 @@ lean_exe «kernel-census-probe» where
 /-- Con-leche's verified checker through the Ixon reader (plan v4, L4): the
 `checkBytes`-shaped entry and its per-record census (untrusted). -/
 lean_lib KernelConLeche where
-  roots := #[`Ix.Ixon.ConLecheAdmission, `Benchmarks.Kernel.ConLecheStep,
+  roots := #[`Ix.Ixon.ConLecheAdmission, `Ix.Ixon.ConLecheConsistency, `Benchmarks.Kernel.ConLecheStep,
     `Benchmarks.Kernel.ConLecheCensus]
 
 lean_exe «kernel-census-cl» where
