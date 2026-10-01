@@ -675,6 +675,8 @@ def optimizeUniformExpanded (w : Nat) (limits : Limits) (ex : Expanded) :
     throw (.internal "DAG children do not precede their parents")
   unless ex.dag.nodes.all (fun node => node.children.size == node.head.arity) do
     throw (.internal "DAG node arity")
+  unless ex.roots.all (· < ex.dag.size) do
+    throw (.internal "root ID out of range")
   let p := Prep.ofDag ex.dag
   let c ← uniformChoose w limits ex p
   uniformFinish w limits ex p c

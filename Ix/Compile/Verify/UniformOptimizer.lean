@@ -240,7 +240,8 @@ theorem dagWF_of_checks {dag : Dag} (hcp : childrenPrecede dag.nodes = true)
 /-- The optimizer's checks and its last stage. -/
 theorem optimizeUniform_parts {w : Nat} {limits : Limits} {ex : Expanded}
     {res : UniformSharingResult} (h : optimizeUniformExpanded w limits ex = .ok res) :
-    w ≠ 0 ∧ DagWF ex.dag ∧ ∃ c, uniformFinish w limits ex (Prep.ofDag ex.dag) c = .ok res := by
+    w ≠ 0 ∧ DagWF ex.dag ∧ (∀ r ∈ ex.roots.toList, r < ex.dag.size) ∧
+      ∃ c, uniformFinish w limits ex (Prep.ofDag ex.dag) c = .ok res := by
   unfold optimizeUniformExpanded at h
   cases hw : (w == 0) with
   | true => simp [hw] at h; cases h
@@ -251,9 +252,15 @@ theorem optimizeUniform_parts {w : Nat} {limits : Limits} {ex : Expanded}
       cases har : ex.dag.nodes.all (fun node => node.children.size == node.head.arity) with
       | false => simp [hw, hcp, har] at h; cases h
       | true =>
-        simp only [hw, hcp, har, Bool.false_eq_true, if_false, if_true] at h
-        obtain ⟨c, _, h⟩ := bind_eq_ok h
-        exact ⟨by simpa using hw, dagWF_of_checks hcp har, c, h⟩
+        cases hr : ex.roots.all (· < ex.dag.size) with
+        | false => simp [hw, hcp, har, hr] at h; cases h
+        | true =>
+          simp only [hw, hcp, har, hr, Bool.false_eq_true, if_false, if_true] at h
+          obtain ⟨c, _, h⟩ := bind_eq_ok h
+          refine ⟨by simpa using hw, dagWF_of_checks hcp har, fun r hrm => ?_, c, h⟩
+          rw [Array.all_eq_true] at hr
+          obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hrm
+          simpa using hr i (by simpa using hi)
 
 /-- **`modelBytes` soundness.** The model length reported by the uniform
 optimizer is `uniformCost` of the stored set it returns (every stored term
@@ -265,7 +272,7 @@ theorem optimizeUniform_modelBytes {w : Nat} {limits : Limits} {ex : Expanded}
     res.result.tableTerms.toList.Perm res.stored.toList ∧
       res.result.modelBytes = uniformCost (Prep.ofDag ex.dag) w
         (fun t => decide (t ∈ res.stored.toList)) res.stored.toList ex.roots.toList := by
-  obtain ⟨_, hwf, c, hfin⟩ := optimizeUniform_parts h
+  obtain ⟨_, hwf, _, c, hfin⟩ := optimizeUniform_parts h
   obtain ⟨hin, hstored, htable, hmodel, work, hmat, _⟩ := uniformFinish_spec hfin
   have hp := prepWF_ofDag hwf
   have hempty := ofDag_empty_size ex.dag
