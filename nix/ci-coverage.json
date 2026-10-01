@@ -285,7 +285,10 @@
   "Compilatrix.Own.Heap",
   "Compilatrix.Own.Immortal",
   "Compilatrix.Own.Kind",
+  "Compilatrix.Own.Proof.Heap",
+  "Compilatrix.Own.Proof.Immortal",
   "Compilatrix.Own.Proof.Mono",
+  "Compilatrix.Own.Proof.Refines",
   "Compilatrix.Own.Proof.Unfold",
   "Compilatrix.Own.Semantics",
   "Compilatrix.Own.Syntax",
@@ -338,6 +341,7 @@
   "Compilatrix.Sem.Clock",
   "Compilatrix.Sem.Clocked",
   "Compilatrix.Sem.Dominance",
+  "Compilatrix.Sem.Forall2",
   "Compilatrix.Sem.Forward",
   "Compilatrix.Sem.Result",
   "Compilatrix.Sem.SimUpTo",
@@ -542,7 +546,7 @@
   "Ix.Aiur.Stages.Typed",
   "Ix.IndexMap",
   "Ix.Lib"],
- "baseline": "jcb/p2-fir: Fir.convert_correct (on 7e5e869)",
+ "baseline": "jcb/p2-fir: Own.immortal_refines",
  "axiom_sha256":
- "90c98b5d8973f6a2e36ef708996b8331560ee30f68901593ed45f5bb1d871f09",
- "axiom_count": 2764}
+ "2417bb49d8389a25373e0578768e1f98d81226aed0161041b576a995f567f037",
+ "axiom_count": 2811}

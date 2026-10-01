@@ -885,7 +885,7 @@
    "imports": ["Compilatrix.Rt.Readback"]},
   "CompilatrixTests.Fences.OwnProof":
   {"path": "CompilatrixTests/Fences/OwnProof.lean",
-   "imports": ["Compilatrix.Own.Proof.Mono"]},
+   "imports": ["Compilatrix.Own.Proof.Mono", "Compilatrix.Own.Proof.Refines"]},
   "CompilatrixTests.Fences.Own":
   {"path": "CompilatrixTests/Fences/Own.lean",
    "imports": ["Compilatrix.Own.Immortal", "Compilatrix.Own.Semantics"]},
@@ -1864,6 +1864,8 @@
   "Compilatrix.Sem.Forward":
   {"path": "Compilatrix/Sem/Forward.lean",
    "imports": ["Compilatrix.Sem.Smallstep"]},
+  "Compilatrix.Sem.Forall2":
+  {"path": "Compilatrix/Sem/Forall2.lean", "imports": []},
   "Compilatrix.Sem.Dominance":
   {"path": "Compilatrix/Sem/Dominance.lean",
    "imports": ["Compilatrix.Sem.SimUpTo"]},
@@ -2122,9 +2124,25 @@
   "Compilatrix.Own.Proof.Unfold":
   {"path": "Compilatrix/Own/Proof/Unfold.lean",
    "imports": ["Compilatrix.Own.Semantics", "Compilatrix.Sem.Agrees"]},
+  "Compilatrix.Own.Proof.Refines":
+  {"path": "Compilatrix/Own/Proof/Refines.lean",
+   "imports": ["Compilatrix.Own.Proof.Immortal", "Compilatrix.Sem.TracedSim"]},
   "Compilatrix.Own.Proof.Mono":
   {"path": "Compilatrix/Own/Proof/Mono.lean",
    "imports": ["Compilatrix.Own.Proof.Unfold", "Compilatrix.Sem.SimUpTo"]},
+  "Compilatrix.Own.Proof.Immortal":
+  {"path": "Compilatrix/Own/Proof/Immortal.lean",
+   "imports":
+   ["Compilatrix.Own.Proof.Mono",
+    "Compilatrix.Own.Proof.Heap",
+    "Compilatrix.Own.Immortal",
+    "Compilatrix.Fir.Proof.Mono"]},
+  "Compilatrix.Own.Proof.Heap":
+  {"path": "Compilatrix/Own/Proof/Heap.lean",
+   "imports":
+   ["Compilatrix.Own.Heap",
+    "Compilatrix.Src.Proof.NatMap",
+    "Compilatrix.Sem.Forall2"]},
   "Compilatrix.Own.Kind": {"path": "Compilatrix/Own/Kind.lean", "imports": []},
   "Compilatrix.Own.Immortal":
   {"path": "Compilatrix/Own/Immortal.lean",
@@ -2572,7 +2590,8 @@
    "imports":
    ["Compilatrix.Fir.Proof.Mono",
     "Compilatrix.Fir.Lower",
-    "Compilatrix.Anf.Proof.Mono"]},
+    "Compilatrix.Anf.Proof.Mono",
+    "Compilatrix.Sem.Forall2"]},
   "Compilatrix.Fir.Proof.Mono":
   {"path": "Compilatrix/Fir/Proof/Mono.lean",
    "imports": ["Compilatrix.Fir.Proof.Unfold", "Compilatrix.Sem.SimUpTo"]},
@@ -3405,6 +3424,7 @@
     "Compilatrix.Own.Immortal",
     "Compilatrix.Own.WellFormed",
     "Compilatrix.Fir.Proof.Unfold",
+    "Compilatrix.Sem.Forall2",
     "Compilatrix.Fir.Proof.Mono",
     "Compilatrix.Fir.Proof.Rel",
     "Compilatrix.Fir.Proof.Lowering",
@@ -3414,6 +3434,9 @@
     "Compilatrix.Fir.Proof.Correct",
     "Compilatrix.Own.Proof.Unfold",
     "Compilatrix.Own.Proof.Mono",
+    "Compilatrix.Own.Proof.Heap",
+    "Compilatrix.Own.Proof.Immortal",
+    "Compilatrix.Own.Proof.Refines",
     "Compilatrix.Cfg.Syntax",
     "Compilatrix.Cfg.Semantics",
     "Compilatrix.Cfg.WellFormed",

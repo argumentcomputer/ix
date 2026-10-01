@@ -175,37 +175,39 @@ verbatim. -/
 /-- info: 'Compilatrix.Fir.jump_measure' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Fir.jump_measure
 
+/-! Every other public theorem of `Compilatrix.Sem.Forall2`. -/
+
+/-- info: 'Compilatrix.Sem.Forall2.append' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.Forall2.append
+
+/-- info: 'Compilatrix.Sem.Forall2.brecOn' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.Forall2.brecOn
+
+/-- info: 'Compilatrix.Sem.Forall2.drop' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.Forall2.drop
+
+/-- info: 'Compilatrix.Sem.Forall2.get' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Forall2.get
+
+/-- info: 'Compilatrix.Sem.Forall2.get'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Forall2.get'
+
+/-- info: 'Compilatrix.Sem.Forall2.length' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Forall2.length
+
+/-- info: 'Compilatrix.Sem.Forall2.mono' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.Forall2.mono
+
+/-- info: 'Compilatrix.Sem.Forall2.of_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Forall2.of_get
+
+/-- info: 'Compilatrix.Sem.Forall2.reverse' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Sem.Forall2.reverse
+
+/-- info: 'Compilatrix.Sem.Forall2.take' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Sem.Forall2.take
+
 /-! Every other public theorem of `Compilatrix.Fir.Proof.Rel`. -/
-
-/-- info: 'Compilatrix.Fir.Proof.Forall2.append' does not depend on any axioms -/
-#guard_msgs in #print axioms Compilatrix.Fir.Proof.Forall2.append
-
-/-- info: 'Compilatrix.Fir.Proof.Forall2.brecOn' does not depend on any axioms -/
-#guard_msgs in #print axioms Compilatrix.Fir.Proof.Forall2.brecOn
-
-/-- info: 'Compilatrix.Fir.Proof.Forall2.drop' does not depend on any axioms -/
-#guard_msgs in #print axioms Compilatrix.Fir.Proof.Forall2.drop
-
-/-- info: 'Compilatrix.Fir.Proof.Forall2.get' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms Compilatrix.Fir.Proof.Forall2.get
-
-/-- info: 'Compilatrix.Fir.Proof.Forall2.get'' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms Compilatrix.Fir.Proof.Forall2.get'
-
-/-- info: 'Compilatrix.Fir.Proof.Forall2.length' depends on axioms: [propext] -/
-#guard_msgs in #print axioms Compilatrix.Fir.Proof.Forall2.length
-
-/-- info: 'Compilatrix.Fir.Proof.Forall2.mono' does not depend on any axioms -/
-#guard_msgs in #print axioms Compilatrix.Fir.Proof.Forall2.mono
-
-/-- info: 'Compilatrix.Fir.Proof.Forall2.of_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms Compilatrix.Fir.Proof.Forall2.of_get
-
-/-- info: 'Compilatrix.Fir.Proof.Forall2.reverse' depends on axioms: [propext] -/
-#guard_msgs in #print axioms Compilatrix.Fir.Proof.Forall2.reverse
-
-/-- info: 'Compilatrix.Fir.Proof.Forall2.take' does not depend on any axioms -/
-#guard_msgs in #print axioms Compilatrix.Fir.Proof.Forall2.take
 
 /-- info: 'Compilatrix.Fir.Proof.VR.brecOn' does not depend on any axioms -/
 #guard_msgs in #print axioms Compilatrix.Fir.Proof.VR.brecOn

@@ -204,6 +204,7 @@ import Compilatrix.Own.Semantics
 import Compilatrix.Own.Immortal
 import Compilatrix.Own.WellFormed
 import Compilatrix.Fir.Proof.Unfold
+import Compilatrix.Sem.Forall2
 import Compilatrix.Fir.Proof.Mono
 import Compilatrix.Fir.Proof.Rel
 import Compilatrix.Fir.Proof.Lowering
@@ -213,6 +214,9 @@ import Compilatrix.Fir.Proof.Sim
 import Compilatrix.Fir.Proof.Correct
 import Compilatrix.Own.Proof.Unfold
 import Compilatrix.Own.Proof.Mono
+import Compilatrix.Own.Proof.Heap
+import Compilatrix.Own.Proof.Immortal
+import Compilatrix.Own.Proof.Refines
 import Compilatrix.Cfg.Syntax
 import Compilatrix.Cfg.Semantics
 import Compilatrix.Cfg.WellFormed
