@@ -814,6 +814,213 @@ fn table_conv(a: &CTable, b: &CTable) -> CTable {
   out
 }
 
+// ---------------------------------------------------------------------------
+// Table-count knapsack
+// ---------------------------------------------------------------------------
+
+/// "No element": the first difference of two equal sets.
+const NO_DIFF: u32 = u32::MAX;
+
+/// The least element of the symmetric difference of two ascending sets
+/// (`NO_DIFF` if they are equal): at the first position where the lists
+/// differ, the smaller element is in one set only.
+fn first_diff(a: &[TermId], b: &[TermId]) -> u32 {
+  let (mut i, mut j) = (0, 0);
+  loop {
+    match (a.get(i), b.get(j)) {
+      (Some(x), Some(y)) if x == y => {
+        i += 1;
+        j += 1;
+      },
+      (Some(x), Some(y)) => return (*x).min(*y),
+      (Some(x), None) => return *x,
+      (None, Some(y)) => return *y,
+      (None, None) => return NO_DIFF,
+    }
+  }
+}
+
+/// One layer of [`Knapsack`]: per cell (total count) the least delta, the
+/// rank of the cell's set among the layer's sets (`set_prec` order), and a
+/// sparse table over the first differences of rank-adjacent sets.
+struct KnapsackLayer {
+  delta: Vec<Option<i128>>,
+  rank: Vec<u32>,
+  /// `sparse[i][r]`: the least first difference among the rank-adjacent
+  /// pairs `r .. r + 2^i`.
+  sparse: Vec<Vec<u32>>,
+}
+
+impl KnapsackLayer {
+  /// The least element of the symmetric difference of the sets of two
+  /// distinct cells. For sets in ascending `set_prec` order (lexicographic
+  /// on their indicator vectors), it is the least first difference of the
+  /// rank-adjacent pairs between them, as for sorted strings.
+  fn first_diff(&self, a: usize, b: usize) -> u32 {
+    let (ra, rb) = (self.rank[a] as usize, self.rank[b] as usize);
+    let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+    let level = (hi - lo).ilog2() as usize;
+    self.sparse[level][lo].min(self.sparse[level][hi - (1 << level)])
+  }
+}
+
+/// The table-count knapsack of [`optimize_uniform`] for total counts
+/// `<= cap`: after the components `0..j`, every cell `c` holds the least
+/// `(delta, set)` under [`better`] (delta, then `set_prec`) over the choices
+/// of one entry per component table with counts summing to `c`. The sets of
+/// distinct choices differ (the components are disjoint), so `better` is a
+/// strict total order on them, and adding the same entry of a later
+/// component preserves it; each cell is therefore the least combination of
+/// the cells of the previous layer with the entries of the next table.
+///
+/// The sets themselves are not built. Comparing `S_a + X` with `S_b + Y`
+/// (`S` from earlier components, `X`, `Y` entries of the next one) needs the
+/// least element of the symmetric difference: the smaller of that of `S_a,
+/// S_b` (from the previous layer's ranks) and that of `X, Y`; the set
+/// without it precedes. `back` keeps the entry each cell took, to rebuild
+/// the chosen set.
+struct Knapsack {
+  last: KnapsackLayer,
+  /// Per component, per cell: the count of the entry taken (`u32::MAX`
+  /// where the cell is empty).
+  back: Vec<Vec<u32>>,
+}
+
+impl Knapsack {
+  fn run(tables: &[&CTable], cap: usize) -> Knapsack {
+    let mut layer = KnapsackLayer {
+      delta: vec![None; cap + 1],
+      rank: vec![0; cap + 1],
+      sparse: Vec::new(),
+    };
+    layer.delta[0] = Some(0);
+    let mut back: Vec<Vec<u32>> = Vec::with_capacity(tables.len());
+    for tab in tables {
+      let prev = &layer;
+      // Whether choice `(a, ka)` precedes `(b, kb)` (distinct choices).
+      let prec = |(a, ka): (usize, usize), (b, kb): (usize, usize)| {
+        let old = if a == b { NO_DIFF } else { prev.first_diff(a, b) };
+        let (xa, xb) = (&tab[ka], &tab[kb]);
+        let new = match (xa, xb) {
+          (Some((_, xa)), Some((_, xb))) if ka != kb => first_diff(xa, xb),
+          _ => NO_DIFF,
+        };
+        if old < new {
+          prev.rank[a] < prev.rank[b]
+        } else {
+          xa.as_ref().is_none_or(|(_, xa)| xa.binary_search(&new).is_err())
+        }
+      };
+      let mut delta: Vec<Option<i128>> = vec![None; cap + 1];
+      let mut choice: Vec<(usize, usize)> = vec![(0, 0); cap + 1];
+      let mut took: Vec<u32> = vec![u32::MAX; cap + 1];
+      for c in 0..=cap {
+        let mut best: Option<(i128, usize, usize)> = None;
+        for (k, entry) in tab.iter().enumerate().take(c + 1) {
+          let Some((dk, _)) = entry else { continue };
+          let a = c - k;
+          let Some(da) = prev.delta[a] else { continue };
+          let d = da + dk;
+          if best.is_none_or(|(bd, ba, bk)| {
+            d < bd || (d == bd && prec((a, k), (ba, bk)))
+          }) {
+            best = Some((d, a, k));
+          }
+        }
+        if let Some((d, a, k)) = best {
+          delta[c] = Some(d);
+          choice[c] = (a, k);
+          took[c] = u32::try_from(k).unwrap_or(u32::MAX);
+        }
+      }
+      // Rank the new sets and record the first differences of neighbours.
+      let mut order: Vec<usize> =
+        (0..=cap).filter(|&c| delta[c].is_some()).collect();
+      order.sort_by(|&u, &v| {
+        if u == v {
+          std::cmp::Ordering::Equal
+        } else if prec(choice[u], choice[v]) {
+          std::cmp::Ordering::Less
+        } else {
+          std::cmp::Ordering::Greater
+        }
+      });
+      let mut rank = vec![0u32; cap + 1];
+      for (r, &c) in order.iter().enumerate() {
+        rank[c] = u32::try_from(r).unwrap_or(u32::MAX);
+      }
+      let adjacent: Vec<u32> = order
+        .windows(2)
+        .map(|w| {
+          let ((a, ka), (b, kb)) = (choice[w[0]], choice[w[1]]);
+          let old = if a == b { NO_DIFF } else { prev.first_diff(a, b) };
+          let new = match (&tab[ka], &tab[kb]) {
+            (Some((_, xa)), Some((_, xb))) if ka != kb => first_diff(xa, xb),
+            _ => NO_DIFF,
+          };
+          old.min(new)
+        })
+        .collect();
+      let mut sparse = vec![adjacent];
+      let mut width = 1;
+      loop {
+        let below = &sparse[sparse.len() - 1];
+        if below.len() <= width {
+          break;
+        }
+        let next: Vec<u32> = (0..below.len() - width)
+          .map(|r| below[r].min(below[r + width]))
+          .collect();
+        sparse.push(next);
+        width *= 2;
+      }
+      layer = KnapsackLayer { delta, rank, sparse };
+      back.push(took);
+    }
+    Knapsack { last: layer, back }
+  }
+
+  /// The set of cell `c` of the last layer, ascending.
+  fn set(&self, tables: &[&CTable], mut c: usize) -> Vec<TermId> {
+    let mut out: Vec<TermId> = Vec::new();
+    for (tab, took) in tables.iter().zip(&self.back).rev() {
+      let k = usize::try_from(took[c]).unwrap_or(0);
+      if let Some(Some((_, s))) = tab.get(k) {
+        out.extend_from_slice(s);
+      }
+      c -= k;
+    }
+    out.sort_unstable();
+    out
+  }
+}
+
+/// The knapsack as a plain dynamic program over explicit sets (the
+/// reference of [`Knapsack`]).
+#[cfg(test)]
+fn knapsack_reference(tables: &[&CTable], cap: usize) -> Vec<Option<Choice>> {
+  let mut dp: Vec<Option<Choice>> = vec![None; cap + 1];
+  dp[0] = Some((0, Vec::new()));
+  for by_size in tables {
+    let mut ndp: Vec<Option<Choice>> = vec![None; cap + 1];
+    for c in 0..dp.len() {
+      let Some((d, s)) = &dp[c] else { continue };
+      for (k, opt) in by_size.iter().enumerate() {
+        let Some((dk, sk)) = opt else { continue };
+        if c + k > cap {
+          continue;
+        }
+        let cand = (d + dk, merge_sorted(s, sk));
+        if better(cand.0, &cand.1, ndp[c + k].as_ref()) {
+          ndp[c + k] = Some(cand);
+        }
+      }
+    }
+    dp = ndp;
+  }
+  dp
+}
+
 /// The undecided member to branch on: the largest `|gain|`, then the
 /// smaller ID.
 fn pick_branch(gains: &[(TermId, i128)]) -> Option<(TermId, i128)> {
@@ -1749,12 +1956,15 @@ pub(crate) fn optimize_uniform_with(
   let p = prof::scope(Phase::Knapsack);
   let states_visited = meter.stats.states_created;
   // Combine: per-component optima, unless a lower count bracket is shorter.
+  // The components are disjoint, so the union of their sets is their
+  // concatenation, sorted once.
   let mut chosen_x: Vec<TermId> = Vec::new();
   let mut chosen_delta: i128 = 0;
   for ((d, s), _) in &results {
-    chosen_x = merge_sorted(&chosen_x, s);
+    chosen_x.extend_from_slice(s);
     chosen_delta += d;
   }
+  chosen_x.sort_unstable();
   let len_u64 = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
   let k0 = k_cs.saturating_add(len_u64(chosen_x.len()));
   let start = tag0_bracket_start(k0);
@@ -1770,33 +1980,28 @@ pub(crate) fn optimize_uniform_with(
         limit: meter.limits().max_knapsack_cells,
       }));
     }
-    let mut dp: Vec<Option<Choice>> = vec![None; cap + 1];
-    dp[0] = Some((0, Vec::new()));
-    for (_, by_size) in &results {
-      let mut ndp: Vec<Option<Choice>> = vec![None; cap + 1];
-      for c in 0..dp.len() {
-        let Some((d, s)) = &dp[c] else { continue };
-        for (k, opt) in by_size.iter().enumerate() {
-          let Some((dk, sk)) = opt else { continue };
-          if c + k > cap {
-            continue;
-          }
-          let cand = (d + dk, merge_sorted(s, sk));
-          if better(cand.0, &cand.1, ndp[c + k].as_ref()) {
-            ndp[c + k] = Some(cand);
-          }
-        }
-      }
-      dp = ndp;
-    }
-    for (c, entry) in dp.iter().enumerate() {
-      let Some((d, s)) = entry else { continue };
+    let tables: Vec<&CTable> = results.iter().map(|(_, t)| t).collect();
+    let ks = Knapsack::run(&tables, cap);
+    // The per-component optimum is replaced by the least cell under
+    // (length, set_prec) when that cell precedes it: the least of the
+    // optimum and every cell, as a scan of the cells in count order with
+    // `set_prec` on ties keeps. The cells' ranks are their `set_prec` order.
+    let l0 =
+      chosen_delta + i128::from(tag0_len(k_cs + len_u64(chosen_x.len())));
+    let mut best: Option<(i128, u32, usize, i128)> = None;
+    for c in 0..=cap {
+      let Some(d) = ks.last.delta[c] else { continue };
       let l = d + i128::from(tag0_len(k_cs + len_u64(c)));
-      let l0 =
-        chosen_delta + i128::from(tag0_len(k_cs + len_u64(chosen_x.len())));
-      if l < l0 || (l == l0 && set_prec(s, &chosen_x)) {
-        chosen_x = s.clone();
-        chosen_delta = *d;
+      let r = ks.last.rank[c];
+      if best.is_none_or(|(bl, br, _, _)| l < bl || (l == bl && r < br)) {
+        best = Some((l, r, c, d));
+      }
+    }
+    if let Some((l, _, c, d)) = best {
+      let s = ks.set(&tables, c);
+      if l < l0 || (l == l0 && set_prec(&s, &chosen_x)) {
+        chosen_x = s;
+        chosen_delta = d;
         lower_bracket = true;
       }
     }
@@ -1967,5 +2172,96 @@ mod count_bracket_tests {
     assert_eq!(tag0_step_bound(82048), 1);
     assert_eq!(tag0_step_bound(TagN::end5(0) - 1), 1);
     assert_eq!(tag0_step_bound(TagN::end5(0)), 4);
+  }
+}
+
+#[cfg(test)]
+mod knapsack_tests {
+  use super::{CTable, Knapsack, TermId, knapsack_reference, set_prec};
+
+  struct Rng(u64);
+
+  impl Rng {
+    fn below(&mut self, n: u64) -> u64 {
+      self.0 ^= self.0 << 13;
+      self.0 ^= self.0 >> 7;
+      self.0 ^= self.0 << 17;
+      self.0 % n.max(1)
+    }
+  }
+
+  /// The rank-based knapsack returns the reference's least `(delta, set)`
+  /// in every cell, and its ranks order the cells' sets by `set_prec`.
+  #[test]
+  fn knapsack_matches_explicit_sets() {
+    let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+    let mut cells_checked = 0usize;
+    for case in 0..400 {
+      // Disjoint components over a shuffled domain of term IDs.
+      let mut domain: Vec<TermId> = (0..300).collect();
+      for i in (1..domain.len()).rev() {
+        let j = rng.below(i as u64 + 1) as usize;
+        domain.swap(i, j);
+      }
+      let comps = rng.below(30) as usize;
+      let mut next = 0usize;
+      let mut tables: Vec<CTable> = Vec::new();
+      for _ in 0..comps {
+        let size = 1 + rng.below(6) as usize;
+        let mut members: Vec<TermId> = domain[next..next + size].to_vec();
+        next += size;
+        members.sort_unstable();
+        let mut tb: CTable = Vec::new();
+        for k in 0..=size {
+          if rng.below(10) < 7 || k == 0 {
+            // A random `k`-subset; small deltas make ties common.
+            let mut pool = members.clone();
+            let mut set = Vec::new();
+            for _ in 0..k {
+              let i = rng.below(pool.len() as u64) as usize;
+              set.push(pool.swap_remove(i));
+            }
+            set.sort_unstable();
+            let d = i128::from(rng.below(4) as u8) - 1;
+            tb.push(Some((d, set)));
+          } else {
+            tb.push(None);
+          }
+        }
+        tables.push(tb);
+      }
+      let total: usize = tables.iter().map(|t| t.len() - 1).sum();
+      let cap = rng.below(total as u64 + 4) as usize;
+      let refs: Vec<&CTable> = tables.iter().collect();
+      let want = knapsack_reference(&refs, cap);
+      let got = Knapsack::run(&refs, cap);
+      let mut some: Vec<usize> = Vec::new();
+      for c in 0..=cap {
+        assert_eq!(
+          got.last.delta[c],
+          want[c].as_ref().map(|x| x.0),
+          "case {case} cell {c}"
+        );
+        if let Some((_, s)) = &want[c] {
+          assert_eq!(&got.set(&refs, c), s, "case {case} cell {c}");
+          some.push(c);
+          cells_checked += 1;
+        }
+      }
+      for &a in &some {
+        for &b in &some {
+          if a != b {
+            let (sa, sb) =
+              (&want[a].as_ref().unwrap().1, &want[b].as_ref().unwrap().1);
+            assert_eq!(
+              got.last.rank[a] < got.last.rank[b],
+              set_prec(sa, sb),
+              "case {case} cells {a} {b}"
+            );
+          }
+        }
+      }
+    }
+    assert!(cells_checked > 2000);
   }
 }
