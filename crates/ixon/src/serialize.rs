@@ -1546,9 +1546,18 @@ impl Env {
   /// (versions < 8 cost zero extra bytes). Any change to serialized
   /// bytes bumps this. Readers reject a mismatch; there is no
   /// back-compat reading of old versions — `.ixe` files are
-  /// regenerated artifacts. Mirrors `Ixon.Env.VERSION` in
+  /// regenerated artifacts. Version 4 is the TagN format; its header
+  /// is the single byte `0xE4`. Mirrors `Ixon.Env.VERSION` in
   /// `Ix/Ixon.lean`.
-  pub const VERSION: u64 = 3;
+  pub const VERSION: u64 = 4;
+
+  /// Object-format byte bound by claim, proof and catalog scopes: the
+  /// format version as one byte, so an object produced under another
+  /// version is rejected. Mirrors `Ixon.Env.OBJECT_FORMAT`.
+  pub const OBJECT_FORMAT: u8 = {
+    assert!(Self::VERSION <= u8::MAX as u64);
+    Self::VERSION as u8
+  };
 
   /// Serialize an Env to bytes.
   ///
@@ -3269,7 +3278,7 @@ mod tests {
   use quickcheck::{Arbitrary, Gen};
   use quickcheck_macros::quickcheck;
 
-  fn v3_fixture_exprs() -> Vec<(&'static str, Arc<Expr>)> {
+  fn v4_fixture_exprs() -> Vec<(&'static str, Arc<Expr>)> {
     use crate::contract::LetKind;
     use crate::expr::Uses;
     let binder = |uses, value| BinderContract { uses, value };
@@ -3363,9 +3372,9 @@ mod tests {
   }
 
   #[test]
-  fn v3_independent_golden_expressions() {
-    let file = include_str!("../../../Tests/Fixtures/ixon-v3/expressions.txt");
-    for (name, expr) in v3_fixture_exprs() {
+  fn v4_independent_golden_expressions() {
+    let file = include_str!("../../../Tests/Fixtures/ixon-v4/expressions.txt");
+    for (name, expr) in v4_fixture_exprs() {
       let line = file
         .lines()
         .find(|line| line.starts_with(&format!("{name} ")))
@@ -3664,10 +3673,11 @@ mod tests {
     env.put(&mut buf).unwrap();
     // Versions < 8 encode inline in the TagN head byte.
     assert_eq!(buf[0], (Env::FLAG << 4) | (Env::VERSION as u8));
-    // A pre-versioning header (size 0) and a future version must both
-    // be rejected, with an error naming the versions, on every reader
-    // path through `read_env_header`.
-    for wrong in [0u8, Env::VERSION as u8 + 1] {
+    assert_eq!(buf[0], 0xE4, "the version 4 header is the byte 0xE4");
+    // A pre-versioning header (size 0), the previous version (3) and a
+    // future version must all be rejected, with an error naming the
+    // versions, on every reader path through `read_env_header`.
+    for wrong in [0u8, 3, Env::VERSION as u8 + 1] {
       let mut bad = buf.clone();
       bad[0] = (Env::FLAG << 4) | wrong;
       for err in [
@@ -3676,7 +3686,10 @@ mod tests {
         Env::parse_lazy_index(&bad).map(|_| ()).unwrap_err(),
       ] {
         assert!(
-          err.contains("format version"),
+          err.contains(&format!(
+            "expected .ixe format version {}, got {wrong}",
+            Env::VERSION
+          )),
           "expected a format-version error, got: {err}"
         );
       }

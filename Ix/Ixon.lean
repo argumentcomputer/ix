@@ -18,8 +18,9 @@ public section
 
 namespace Ixon
 
-/-- Stable identifier for the v2 Ixon wire grammar. -/
-def wireFormatId : String := "ixon-v3"
+/-- Stable identifier for the Ixon wire format, version 4 (`Env.VERSION`).
+Mirrors Rust `WIRE_FORMAT_ID`. -/
+def wireFormatId : String := "ixon-v4"
 
 /-! ## Serialization Monad and Typeclass -/
 
@@ -384,10 +385,10 @@ namespace Expr
   def FLAG_LET : UInt8 := 0xA
   def FLAG_SHARE : UInt8 := 0xB
 
-  /-- Embed an ordinary Lean lambda in Ixon v3. -/
+  /-- Embed an ordinary Lean lambda in Ixon. -/
   def leanLam (ty body : Expr) : Expr := .lam .many ty body
 
-  /-- Embed an ordinary Lean forall in Ixon v3. -/
+  /-- Embed an ordinary Lean forall in Ixon. -/
   def leanAll (ty body : Expr) : Expr := .all .many .shared ty body
 
   /-- Embed an ordinary Lean let with default contracts. -/
@@ -1101,7 +1102,7 @@ private theorem nodeCount_right_lt_sum3 (left middle right : Nat) :
   Nat.lt_of_le_of_lt (Nat.le_add_left right (left + middle))
     (Nat.lt_succ_self _)
 
-/-- Total canonical v3 expression writer. Telescope collection preserves the
+/-- Total canonical expression writer. Telescope collection preserves the
     Rust byte grammar; the node-count lemmas above expose its recursive calls
     to the kernel termination checker. -/
 def putExpr : Expr → PutM Unit
@@ -1214,7 +1215,7 @@ def getExprAllBinders (recur : GetM Expr) :
     let tail ← getExprAllBinders recur count
     return (contract, result, ty) :: tail
 
-/-- Parse a v3 expression after its leading TagN (`f = 4`) header. Recursive reads are
+/-- Parse an expression after its leading TagN (`f = 4`) header. Recursive reads are
     supplied explicitly so `getExprFuel` below remains structurally total. -/
 def getExprFromTag (recur : GetM Expr) (tag : TagN) : GetM Expr := do
   match tag.flag with
@@ -1279,7 +1280,7 @@ def getExprFromTag (recur : GetM Expr) (tag : TagN) : GetM Expr := do
   | 0xB => return .share tag.value
   | f => throw s!"getExpr: invalid flag {f}"
 
-/-- Total v3 expression reader. Every recursive layer consumes a TagN (`f = 4`) header
+/-- Total expression reader. Every recursive layer consumes a TagN (`f = 4`) header
     header, so a caller-supplied byte budget is a complete termination
     measure even for telescope-compressed applications and binders. -/
 def getExprFuel : Nat → GetM Expr
@@ -2803,9 +2804,15 @@ def FLAG : UInt8 := 0xE
 /-- `.ixe` format version, carried in the header's TagN value field.
     Any change to serialized bytes bumps this; readers reject a
     mismatch and there is no back-compat reading of old versions —
-    `.ixe` files are regenerated artifacts. Mirrors Rust
+    `.ixe` files are regenerated artifacts. Version 4 is the TagN
+    format; its header is the single byte `0xE4`. Mirrors Rust
     `Env::VERSION` in `crates/ixon/src/serialize.rs`. -/
-def VERSION : UInt64 := 3
+def VERSION : UInt64 := 4
+
+/-- Object-format byte bound by claim, proof and catalog scopes: the
+    format version as one byte, so an object produced under another
+    version is rejected. Mirrors Rust `Env::OBJECT_FORMAT`. -/
+def OBJECT_FORMAT : UInt8 := VERSION.toUInt8
 
 /-- Serialize a name component (references parent by address).
     Format: tag (1 byte) + parent_addr (32 bytes) + data -/

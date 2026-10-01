@@ -233,7 +233,7 @@ def unitTests : TestSeq :=
   ++ test "bad magic rejected" (deFails (setByte 0 0xFF) "magic")
   ++ test "unknown flags rejected" (deFails (setByte 12 0xFF) "flags")
   ++ test "legacy manifest rejected" (deFails (setByte 8 1) "version")
-  ++ test "legacy object format rejected" (deFails (setByte 16 2) "format")
+  ++ test "version 3 object format rejected" (deFails (setByte 16 3) "format")
   ++ test "resource validator cannot label catalog" (deFails (setByte 17 2) "validator")
   ++ test "members_root drift rejected"
       (deFails (setByte (8 + 4 + 4 + 2) 0xFF) "members_root")

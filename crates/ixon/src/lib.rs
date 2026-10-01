@@ -30,8 +30,9 @@ pub mod syntax;
 pub mod tag;
 pub mod univ;
 
-/// Stable identifier for the v3 Ixon wire grammar.
-pub const WIRE_FORMAT_ID: &str = "ixon-v3";
+/// Stable identifier for the Ixon wire format, version 4
+/// (`Env::VERSION`). Mirrors `Ixon.wireFormatId`.
+pub const WIRE_FORMAT_ID: &str = "ixon-v4";
 
 // Re-export main types
 pub use comm::Comm;
@@ -275,7 +276,7 @@ mod doc_examples {
     assert_eq!(
       buf,
       vec![0x83, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x10],
-      "Lam telescope carries explicit v3 input contracts"
+      "Lam telescope carries explicit input contracts"
     );
   }
 
@@ -453,7 +454,7 @@ mod doc_examples {
 
   #[test]
   fn env_tag() {
-    // Env -> TagN(4, 0xE, VERSION) -> 0xE3 for v3
+    // Env -> TagN(4, 0xE, VERSION) -> 0xE4 for version 4
     let env = Env::new();
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();

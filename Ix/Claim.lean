@@ -503,8 +503,8 @@ def getOptAddr : GetM (Option Address) := do
   else if b == 0x01 then return some (← Serialize.get)
   else throw s!"getOptAddr: invalid tag {b}"
 
-/-- Claim and proof payloads bind both the object format and the validator.
-0 is structural-v1, 1 is erased-lean-v1, 2 is resource-v1. -/
+/-- Claim and proof payloads bind both the object format (`Ixon.Env.OBJECT_FORMAT`)
+and the validator. 0 is structural-v1, 1 is erased-lean-v1, 2 is resource-v1. -/
 def validatorForVariant (variant : UInt64) : UInt8 :=
   if variant == VARIANT_REVEAL_CLAIM || variant == VARIANT_CONTAINS_CLAIM then 0
   else if variant == VARIANT_RESOURCE_CLAIM then 2
@@ -520,11 +520,11 @@ def variantOf : Claim → UInt64
   | .resource .. => VARIANT_RESOURCE_CLAIM
 
 def putScope (validator : UInt8) : PutM Unit := do
-  putU8 3
+  putU8 Ixon.Env.OBJECT_FORMAT
   putU8 validator
 
 def getScope (validator : UInt8) : GetM Unit := do
-  unless (← getU8) == 3 do throw "claim: unsupported object format"
+  unless (← getU8) == Ixon.Env.OBJECT_FORMAT do throw "claim: unsupported object format"
   unless (← getU8) == validator do throw "claim: wrong validator identity"
 
 def put (claim : Claim) : PutM Unit := do

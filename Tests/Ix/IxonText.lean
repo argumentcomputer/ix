@@ -1,6 +1,6 @@
 import Tests.Ix.IxonSyntax
 
-namespace Tests.IxonV3
+namespace Tests.IxonText
 open Ixon.Syntax
 
 def textContractKey : Term → Option (String × Nat × Nat)
@@ -18,7 +18,7 @@ def textContractKey : Term → Option (String × Nat × Nat)
   | _ => none
 
 def runText : IO Nat := do
-  let bytes ← IO.FS.readFile "Tests/Fixtures/ixon-v3/text.tsv"
+  let bytes ← IO.FS.readFile "Tests/Fixtures/ixon-v4/text.tsv"
   let mut count := 0
   for line in bytes.splitOn "\n" do
     if line.isEmpty then continue
@@ -64,4 +64,4 @@ def runText : IO Nat := do
   unless result == 0 do throw (IO.userError "text grammar regression suite failed")
   return count
 
-end Tests.IxonV3
+end Tests.IxonText

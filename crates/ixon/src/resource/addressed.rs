@@ -13,7 +13,7 @@ use ix_common::address::Address;
 use ix_common::env::DefinitionSafety;
 use rustc_hash::FxHashMap;
 
-pub const VALIDATOR_ID: &str = "ixon-v3/resource-v1";
+pub const VALIDATOR_ID: &str = "ixon-v4/resource-v1";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Profile {
@@ -1000,7 +1000,7 @@ mod tests {
       ),
     ];
     let fixture =
-      include_str!("../../../../Tests/Fixtures/ixon-v3/addressed.tsv");
+      include_str!("../../../../Tests/Fixtures/ixon-v4/addressed.tsv");
     for (name, constant) in cases {
       let (address, bytes) = constant.commit();
       let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();

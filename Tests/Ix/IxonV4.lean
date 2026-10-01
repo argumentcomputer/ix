@@ -3,7 +3,7 @@ public import Ix.Ixon
 
 public section
 
-namespace Tests.IxonV3
+namespace Tests.IxonV4
 open Ixon
 
 structure ExprCase where
@@ -58,7 +58,7 @@ def modeCases : List ExprCase := Id.run do
 
 /-- Load independent golden bytes once for the Lean, Rust FFI, and VM suites. -/
 def readExprCases : IO (List ExprCase) := do
-  let file ← IO.FS.readFile "Tests/Fixtures/ixon-v3/expressions.txt"
+  let file ← IO.FS.readFile "Tests/Fixtures/ixon-v4/expressions.txt"
   let lines := file.splitOn "\n"
   let golden : List ExprCase ← fixtures.mapM fun (name, expr) => do
     let some line := lines.find? (·.startsWith (name ++ " "))
@@ -93,9 +93,17 @@ def malformedCases : Array (String × ByteArray) := #[
   ("split-lambda-telescope", .mk #[0x81, 0x07, 0x00, 0x81, 0x07, 0x00, 0x10]),
   ("split-forall-telescope", .mk #[0x91, 0x17, 0x00, 0x91, 0x17, 0x00, 0x10]),
   ("reserved-let-flags", .mk #[0xA4, 0x07, 0x00, 0x10, 0x10]),
-  ("nonminimal-variable", .mk #[0x18, 0x00]),
-  ("nonminimal-reference-count", .mk #[0x28, 0x07, 0x00]),
-  ("nonminimal-reference-index", .mk #[0x20, 0x80, 0x00]),
+  -- TagN is bijective, so no integer has a second encoding (the v3
+  -- non-minimal cases `18 00` and `20 80 00` are now `Var(8)` and
+  -- `Ref(128, [])`, and `28 07` heads a 15-universe reference). The integer
+  -- rejections are a missing rung byte, an invalid `f = 0` code, a value
+  -- reaching 2^64, and a count larger than the remaining input. A
+  -- reference header carries its universe count, then the TagN index.
+  ("truncated-variable-rung", .mk #[0x18]),
+  ("truncated-reference-count-rung", .mk #[0x2C, 0x00]),
+  ("invalid-reference-index-code", .mk #[0x20, 0xC4]),
+  ("overflowing-variable", .mk #[0x1F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
+  ("oversized-reference-universe-count", .mk #[0x28, 0xFF, 0x00]),
   ("truncated-lambda-telescope", .mk #[0x87, 0x07, 0x00, 0x10]),
   ("truncated-app-telescope", .mk #[0x77, 0x10])
 ]
@@ -120,4 +128,4 @@ def runGolden (cases : List ExprCase) : IO Nat := do
     checks := checks + 1
   return checks
 
-end Tests.IxonV3
+end Tests.IxonV4

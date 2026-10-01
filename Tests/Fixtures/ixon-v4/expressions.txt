@@ -1,4 +1,4 @@
-# Independently specified Ixon v3 bytes: relative locality, no lifetime parameters.
+# Independently specified Ixon v4 bytes: relative locality, no lifetime parameters.
 app 7313121110
 lam 8307000700070010
 lam_local_unique 81090010

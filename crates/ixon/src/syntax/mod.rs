@@ -92,7 +92,7 @@ mod tests {
   fn all_contracts_match_shared_text_fixtures() {
     let mut count = 0;
     for line in
-      include_str!("../../../../Tests/Fixtures/ixon-v3/text.tsv").lines()
+      include_str!("../../../../Tests/Fixtures/ixon-v4/text.tsv").lines()
     {
       let columns: Vec<_> = line.split('\t').collect();
       assert_eq!(columns.len(), 4);

@@ -109,7 +109,7 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
       let result ← compile "cliEscape" flags
       if result.exitCode == 0 || (← output.pathExists) then
         throw <| IO.userError "CLI emitted an artifact for an escaping local input"
-    IO.println "v3 CLI: source/import contracts preserved; local escape rejected in every output mode"
+    IO.println "CLI: source/import contracts preserved; local escape rejected in every output mode"
   finally
     IO.FS.removeDirAll dir
 

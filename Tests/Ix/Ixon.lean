@@ -598,9 +598,38 @@ def envMerkleRootUnitTests : TestSeq :=
   test "(a,b) and (b,a) same root"
     (raw_ab.merkleRoot == raw_ba.merkleRoot)
 
+/-! ## Format version 4: header byte and version rejection -/
+
+/-- The empty env's bytes, with the header byte replaced by `header`. -/
+private def emptyEnvWithHeader (header : UInt8) : ByteArray :=
+  match serEnv ({} : Env) with
+  | .ok bytes => bytes.set! 0 header
+  | .error _ => .empty
+
+/-- `r` failed with the readers' format-version error for version `got`. -/
+private def versionRejected {α : Type} (r : Except String α) (got : Nat) : Bool :=
+  match r with
+  | .ok _ => false
+  | .error e =>
+    (e.splitOn s!"expected .ixe format version {Env.VERSION}, got {got}").length > 1
+
+def envHeaderUnits : TestSeq :=
+  let bytes := match serEnv ({} : Env) with | .ok b => b | .error _ => .empty
+  test "env header is TagN(4, 0xE, 4) = 0xE4" (bytes.data[0]? == some 0xE4)
+  ++ test "wireFormatId is ixon-v4" (wireFormatId == "ixon-v4")
+  ++ test "object-format byte is the version" (Env.OBJECT_FORMAT == 4)
+  ++ test "Lean reader accepts the version 4 header" ((deEnv bytes).toOption.isSome)
+  ++ test "Lean reader rejects a version 3 header"
+      (versionRejected (deEnv (emptyEnvWithHeader 0xE3)) 3)
+  ++ test "Lean streaming reader rejects a version 3 header"
+      (versionRejected (deEnvVerifiedLazy (emptyEnvWithHeader 0xE3)) 3)
+  ++ test "Rust reader rejects a version 3 header"
+      (versionRejected (deEnvAnon (emptyEnvWithHeader 0xE3)) 3)
+
 /-! ## Test Suite (property-based) -/
 
 public def Tests.Ixon.suite : List TestSeq := [
+  envHeaderUnits,
   univExactUnits,
   univUnits,
   exprExactUnits,

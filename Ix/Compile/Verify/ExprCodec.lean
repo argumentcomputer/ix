@@ -1,7 +1,7 @@
 import Ix.Compile.Verify.Codec
 
 /-!
-# Proof-visible v3 expression codec
+# Proof-visible Ixon expression codec
 
 This expression slice proves the production writer/reader inverse for all
 constructors with wire-sized universe-instantiation vectors and canonical

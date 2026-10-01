@@ -40,8 +40,9 @@
                     the whole deliverable AND the machine-readable
                     record (`ix catalog info`) — no report artifacts
                     are written. Pieces are cached: a member is
-                    recompiled only when its pin closure, toolchain, or
-                    ix version changed (`<out>/.cache/<Q>.key`), or
+                    recompiled only when its pin closure, toolchain, ix
+                    version or `.ixe` format version changed
+                    (`<out>/.cache/<Q>.key`), or
                     with `--no-cache`. On a full build,
                     `--palomar-ixc` flattens the already-verified
                     standalone Palomar catalog into the final manifest;
@@ -239,10 +240,11 @@ private def pinOf (record : PackageSpec) : String :=
 
 /-- The piece cache key: everything whose change must force a member
     recompile — the member's transitive pin closure over the records,
-    the toolchain, the ix version, and the member's roots. Local
-    fixture sources contribute their path only (content edits need
-    `--no-cache` or a `gen`-level change); pinned git sources are
-    exact. -/
+    the toolchain, the ix version, the `.ixe` format version
+    (`Ixon.Env.VERSION`; a piece written under another version is
+    unreadable), and the member's roots. Local fixture sources
+    contribute their path only (content edits need `--no-cache` or a
+    `gen`-level change); pinned git sources are exact. -/
 private partial def cacheKeyOf (lib : CatalogSpecLib) : IO String := do
   let record ← recordOf lib
   let mut seen : Array String := #[]
@@ -263,8 +265,8 @@ private partial def cacheKeyOf (lib : CatalogSpecLib) : IO String := do
     queue := queue ++ dep.directDeps
   let pinsSorted := pins.qsort (· < ·)
   let roots := lib.roots.map (·.toString (escape := false))
-  return s!"ix={Ix.versionString};toolchain={expectedToolchain};\
-roots={String.intercalate "," roots.toList};\
+  return s!"ix={Ix.versionString};ixe={Ixon.Env.VERSION};\
+toolchain={expectedToolchain};roots={String.intercalate "," roots.toList};\
 pins={String.intercalate "," pinsSorted.toList}"
 
 private structure MemberOutcome where

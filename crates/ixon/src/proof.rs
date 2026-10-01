@@ -12,6 +12,7 @@ use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, QuotKind};
 
 use super::constant::DefKind;
+use super::env::Env;
 use super::tag::TagN;
 
 // ============================================================================
@@ -963,10 +964,10 @@ fn validator_for_variant(variant: u64) -> u8 {
   }
 }
 fn put_scope(validator: u8, buf: &mut Vec<u8>) {
-  buf.extend_from_slice(&[3, validator]);
+  buf.extend_from_slice(&[Env::OBJECT_FORMAT, validator]);
 }
 fn get_scope(validator: u8, buf: &mut &[u8]) -> Result<(), String> {
-  if get_u8(buf)? != 3 {
+  if get_u8(buf)? != Env::OBJECT_FORMAT {
     return Err("claim: unsupported object format".into());
   }
   if get_u8(buf)? != validator {
@@ -1515,7 +1516,7 @@ mod tests {
       assumptions: Some(asm.clone()),
     };
     let (addr, bytes) = claim.commit();
-    let mut expected = vec![0xE8, 0x00, 3, 1];
+    let mut expected = vec![0xE8, 0x00, 4, 1];
     expected.extend_from_slice(members.as_bytes());
     expected.extend_from_slice(content.as_bytes());
     expected.push(0x01);
@@ -1527,7 +1528,7 @@ mod tests {
     // two serializers cannot drift on the large-tag path unnoticed.
     assert_eq!(
       addr.hex(),
-      "1ae7fec8efde892b6b540888df70d53977a264bbc84be300d4335ce04c916072",
+      "8c4fa4fa2e88fc73c72fbb624696485ec252c6685247541b40a59b221f83dbf4",
       "catalog claim digest drifted"
     );
     // Unconditional form: trailing 0x00, same 2-byte tag.
@@ -1535,7 +1536,7 @@ mod tests {
     let mut buf = Vec::new();
     claim_none.put(&mut buf);
     assert_eq!(buf.len(), 2 + 2 + 32 + 32 + 1);
-    assert_eq!(&buf[0..2], &[0xE8, 0x08]);
+    assert_eq!(&buf[0..2], &[0xE8, 0x00]);
     assert_eq!(*buf.last().unwrap(), 0x00);
     // The proof wrapper stays a single-byte tag: 0xF5.
     let proof = Proof::new(claim_none, Vec::new());
@@ -2173,9 +2174,9 @@ mod tests {
     }
   }
   #[test]
-  fn v3_claim_fixtures_and_strict_scope() {
+  fn v4_claim_fixtures_and_strict_scope() {
     for line in
-      include_str!("../../../Tests/Fixtures/ixon-v3/claims.tsv").lines()
+      include_str!("../../../Tests/Fixtures/ixon-v4/claims.tsv").lines()
     {
       if line.starts_with('#') || line.is_empty() {
         continue;
@@ -2202,7 +2203,7 @@ mod tests {
       assert!(Claim::from_bytes(&trailing).is_err());
       let header = if claim.proof_variant_size() + 3 >= 8 { 2 } else { 1 };
       let mut old_format = bytes.clone();
-      old_format[header] = 2;
+      old_format[header] = 3;
       assert!(Claim::from_bytes(&old_format).is_err());
       let mut wrong_validator = bytes.clone();
       wrong_validator[header + 1] = 255;
