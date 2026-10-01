@@ -18,8 +18,14 @@ ae0c0c4e4ce6a0081648aff03fe9c39d002c4526, except seven taken at revision
 3ca9e2fe749a51cba4c6e3527aeecba074c29316 (upstream task #323):
 Cached/CoreC.lean, Core.lean, Verify/BetaSpine.lean,
 Verify/Cached/DiscC4.lean, Verify/InferLeaves.lean, Verify/InferLemmas.lean
-and Verify/Rules/RedBridge.lean. Tests/Ix/Kernel/Axioms.lean is derived
-from con-leche's tests/ConLecheTests/Axioms.lean at the first revision.
+and Verify/Rules/RedBridge.lean.
+
+Outside this directory, at the first revision: Tests/Ix/Kernel/Axioms.lean
+is derived from con-leche's tests/ConLecheTests/Axioms.lean and modified;
+Tests/Ix/Kernel/Layering.lean and Tests/Ix/Kernel/TrustSurface.lean are
+derived from con-leche's tests/layering.sh and tests/trust-surface.sh
+(Apache-2.0) and modified; Tests/Fixtures/trust-surface/lexer.lean is
+con-leche's tests/trust-surface/lexer.lean, unchanged.
 
 Modifications
 -------------
@@ -44,7 +50,8 @@ Modifications
   * Verify/Cached/AgreeFloor.lean and Verify/Cached/PushChain.lean import
     Init.LetFun with `import all`: Lean 4.34.0 no longer exposes the body
     of letFun, which these proofs unfold.
-  * Tests/Ix/Kernel/Axioms.lean keeps the guards on the modules Ix uses.
+  * Tests/Ix/Kernel/Axioms.lean keeps the axiom guards on the modules Ix
+    uses, under the renamed namespace.
 
 Ix's own files
 --------------
