@@ -721,8 +721,6 @@ another construction, and a partial or best-so-far table is never emitted.
 
 <!-- PENDING: [route][limits] compiler limits set far above every corpus maximum, with a CLI override (plan §0b-4, §3). At 9611c3b6 the error constructors exist, but `compilerSharingLimits` are the library defaults and the compiler route is the heuristic. -->
 
-<!-- PENDING: [price] `ShareLayout.tag4` and its `Ixon.ShareCodec` shim removed from `Ix/Sharing/Exact/Tiered.lean` and `sharing_exact/tiered.rs` (plan §2). Since 93e2895c the construction prices table counts, headers and Shares with TagN widths (`shareWidth` ≡ `tagNWidth`) and the Dictionary/dict tie-break bytes are TagN encodings. -->
-
 ### What is proved, and what is not
 
 The following theorems are machine-checked in Lean. They are roots of

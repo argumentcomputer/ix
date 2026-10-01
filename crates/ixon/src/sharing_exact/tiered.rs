@@ -5,7 +5,7 @@
 //!
 //! The one layout, [`ShareLayout::TagN`], prices a Share at table index `i` by
 //! the wire width of the TagN Share code ([`tagn_width`]: 1, 2, 3, 4, 5 or 9
-//! bytes, [`ShareCodec::CURRENT`]). The output is written with that codec,
+//! bytes, the width of `TagN::put(4, 0xB, i)`). The output is written with that code,
 //! so the model length and the serialized length agree, which is checked.
 //!
 //! **Width selection.** Phase 1 runs at each uniform width `w` in 1, 2, 3,
@@ -61,7 +61,6 @@ use super::{
 };
 use crate::constant::Constant;
 use crate::expr::Expr;
-use crate::serialize::ShareCodec;
 use crate::tag::TagN;
 
 fn internal(msg: impl Into<String>) -> SharingError {
@@ -131,7 +130,7 @@ impl ShareLayout {
     }
   }
 
-  /// The layout of the wire Share code ([`ShareCodec::CURRENT`], TagN).
+  /// The layout of the wire Share code (TagN).
   pub fn wire() -> ShareLayout {
     ShareLayout::TagN
   }
@@ -429,7 +428,7 @@ pub struct TieredSharingResult {
   pub table_terms: Vec<TermId>,
   /// Variable length priced by the layout.
   pub model_len: u64,
-  /// Real variable length, serialized with [`ShareCodec::CURRENT`].
+  /// Real variable length, serialized with the wire codec (`put_expr`).
   pub variable_len: u64,
   pub unshared_len: Option<u64>,
   pub phase1: UniformSharingResult,
@@ -663,7 +662,7 @@ fn tiered_at(
   }
   // The real length: Shares priced by the current wire codec, every other
   // header as written by `put_expr`.
-  let wire = |i: u64| len64(ShareCodec::CURRENT.width(i));
+  let wire = |i: u64| len64(TagN::byte_width(4, i));
   let mut measured = tag0_len(len64(entries.len()));
   for e in entries.iter().chain(&roots) {
     measured = expr_len_with(e, &wire)

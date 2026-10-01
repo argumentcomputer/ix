@@ -26,28 +26,6 @@ use super::metadata::IxonByteSerde;
 use super::tag::TagN;
 use super::univ::{Univ, get_univ, put_univ};
 
-/// Compatibility shim for `sharing_exact::tiered`, removed together with
-/// `ShareLayout::Tag4` there. The wire has one Share code, TagN
-/// (`TagN::put(4, Expr::FLAG_SHARE, idx, buf)`); `Tag4` names a pricing
-/// layout only.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ShareCodec {
-  /// A pricing layout of `sharing_exact::tiered` (not a wire code).
-  Tag4,
-  /// The wire Share code.
-  TagN,
-}
-
-impl ShareCodec {
-  /// The wire Share code.
-  pub const CURRENT: ShareCodec = ShareCodec::TagN;
-
-  /// Byte width of the wire `Share(idx)` (`TagN::byte_width(4, idx)`).
-  pub fn width(self, idx: u64) -> usize {
-    TagN::byte_width(4, idx)
-  }
-}
-
 // ============================================================================
 // Primitive helpers
 // ============================================================================

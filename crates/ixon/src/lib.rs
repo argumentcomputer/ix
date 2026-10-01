@@ -58,7 +58,6 @@ pub use proof::{
   Claim, Proof, RevealConstantInfo, RevealConstructorInfo, RevealMutConstInfo,
   RevealRecursorRule,
 };
-pub use serialize::ShareCodec;
 pub use tag::TagN;
 pub use univ::Univ;
 

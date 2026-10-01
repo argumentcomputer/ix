@@ -20,21 +20,6 @@ public import Std.Data.HashMap
 
 public section
 
-namespace Ixon
-
-/-- Compatibility shim for `Ix/Sharing/Exact/Tiered.lean`, removed together with
-`ShareLayout.tag4` there. The wire has one Share code, TagN
-(`putTagN 4 0xB idx`); `tag4` names a pricing layout only. -/
-inductive ShareCodec where
-  | tag4
-  | tagN
-  deriving BEq, DecidableEq, Repr, Inhabited
-
-/-- The wire Share code (TagN). -/
-def ShareCodec.current : ShareCodec := .tagN
-
-end Ixon
-
 namespace Ix.Sharing.Exact
 
 open Ixon

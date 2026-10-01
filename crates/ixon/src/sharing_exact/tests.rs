@@ -2375,10 +2375,7 @@ fn tiered_layout_widths() {
   );
   // The Share pricing is the wire width of the Share code.
   for i in at {
-    assert_eq!(
-      tagn_width(i),
-      crate::serialize::ShareCodec::CURRENT.width(i) as u64
-    );
+    assert_eq!(tagn_width(i), TagN::byte_width(4, i) as u64);
   }
   assert_eq!(ShareLayout::TagN.width_at(u64::MAX), 9);
   let tn = ShareLayout::TagN;
