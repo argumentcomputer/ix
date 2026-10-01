@@ -66,6 +66,7 @@ mod dag;
 mod dict;
 mod roots;
 mod search;
+mod tiered;
 mod uniform;
 
 #[cfg(test)]
@@ -77,8 +78,8 @@ use std::fmt;
 use std::sync::Arc;
 
 pub use cost::{
-  Len, byte_count, constant_fixed_len, constant_len, expr_len, share_width,
-  sharing_table_len, tag0_len, tag4_len,
+  Len, byte_count, constant_fixed_len, constant_len, expr_len, expr_len_with,
+  share_width, sharing_table_len, tag0_len, tag4_len,
 };
 pub use dag::{Children, Node, NodeKey, SharingDag, TermId};
 pub use dict::{FixedDictionary, dictionary_cost, materialize_with_dictionary};
@@ -87,6 +88,12 @@ pub use roots::{
 };
 pub use search::{
   candidate_terms, optimize_sharing_uniform_reference, sequence_len,
+};
+pub use tiered::{
+  ShareLayout, TAGN_RUNG1_END, TAGN_RUNG2_END, TAGN_RUNG3_END, TAGN_RUNG4_END,
+  TieredSharingResult, TieredStats, canonical_sharing_tiered, first_tier,
+  layout_bytes, normalize_constant_bytes_tiered,
+  normalize_constant_sharing_tiered, tagn_width,
 };
 pub use uniform::{
   UniformClass, UniformSharingResult, normalize_constant_sharing_uniform,

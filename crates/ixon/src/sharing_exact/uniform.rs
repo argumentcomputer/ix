@@ -182,14 +182,14 @@ fn continuation_edge(parent: &Node, i: usize, child: &Node) -> bool {
   }
 }
 
-struct Facts {
-  deg: Vec<u64>,
+pub(crate) struct Facts {
+  pub(crate) deg: Vec<u64>,
   head_deg: Vec<u64>,
   occ: Vec<u128>,
   parents: Vec<Vec<TermId>>,
 }
 
-fn graph_facts(dag: &SharingDag) -> Facts {
+pub(crate) fn graph_facts(dag: &SharingDag) -> Facts {
   let nodes = dag.nodes();
   let n = nodes.len();
   let mut deg = vec![0u64; n];
