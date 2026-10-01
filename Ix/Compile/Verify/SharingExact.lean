@@ -1006,4 +1006,317 @@ end Orders
 
 
 
+/-! ## Expansion correctness of materialization -/
+
+section Materialize
+
+/-- Replace every `Share(i)` by `σ i`: the expansion of an encoding whose
+table entry `i` expands to `σ i`. -/
+def substShares (σ : Nat → Ixon.Expr) : Ixon.Expr → Ixon.Expr
+  | .share i => σ i.toNat
+  | .prj t f v => .prj t f (substShares σ v)
+  | .app f a => .app (substShares σ f) (substShares σ a)
+  | .lam c t b => .lam c (substShares σ t) (substShares σ b)
+  | .all c r t b => .all c r (substShares σ t) (substShares σ b)
+  | .letE c t v b => .letE c (substShares σ t) (substShares σ v) (substShares σ b)
+  | e => e
+
+/-- `E` interprets every term of the DAG as the expression its node
+describes. -/
+def DagModel (dag : Dag) (E : Nat → Ixon.Expr) : Prop :=
+  ∀ u, E u = (dag.node u).toExpr E
+
+/-- Every index of the dictionary names a table entry (`σ`) whose expansion
+is the term's interpretation. -/
+def IndexModel (index : Array (Option Nat)) (E σ : Nat → Ixon.Expr) : Prop :=
+  ∀ u i, index[u]?.getD none = some i → i < UInt64.size ∧ σ i = E u
+
+theorem bind_eq_ok {ε α β : Type} {x : Except ε α} {f : α → Except ε β} {b : β}
+    (h : (x >>= f) = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
+  cases x with
+  | error e => cases h
+  | ok a => exact ⟨a, rfl, h⟩
+
+theorem share_subst {index : Array (Option Nat)} {E σ : Nat → Ixon.Expr}
+    (hσ : IndexModel index E σ) {u i : Nat} (h : index[u]?.getD none = some i) :
+    substShares σ (.share i.toUInt64) = E u := by
+  obtain ⟨hi, he⟩ := hσ u i h
+  simp only [substShares, toNat_toUInt64_of_lt hi, he]
+
+/-- Rebuilding a spine collected by `spineWalk` around correct pieces
+gives the interpretation of the spine's top. -/
+theorem spineFold_correct (p : Prep) (E σ : Nat → Ixon.Expr) (hE : DagModel p.dag E)
+    (buildSide : Node → Except SharingError Ixon.Expr)
+    (hside : ∀ n e, buildSide n = .ok e → substShares σ e = E n.sideChild) :
+    ∀ (j t : Nat) (tail res : Ixon.Expr),
+      substShares σ tail = E (p.spineWalk j t).2 →
+      (p.spineWalk j t).1.foldrM
+          (fun n acc => do let side ← buildSide n; rebuildSpineNode n acc side) tail = .ok res →
+      substShares σ res = E t := by
+  intro j
+  induction j with
+  | zero =>
+    intro t tail res htail h
+    simp only [Prep.spineWalk, List.foldrM_nil] at htail h
+    cases h
+    exact htail
+  | succ j ih =>
+    intro t tail res htail h
+    simp only [Prep.spineWalk] at htail h
+    rw [List.foldrM_cons] at h
+    obtain ⟨acc, hacc, hstep⟩ := bind_eq_ok h
+    have hinner := ih (p.dag.node t).spineNext tail acc htail hacc
+    obtain ⟨side, hs, hre⟩ := bind_eq_ok hstep
+    have hside' := hside _ side hs
+    rw [hE t]
+    generalize hn : p.dag.node t = n at hinner hside' hre
+    cases hh : n.head with
+    | app =>
+      simp only [rebuildSpineNode, hh] at hre
+      cases hre
+      simp only [substShares, hinner, hside', Node.toExpr, hh, Node.spineNext, Node.sideChild]
+    | lam bc =>
+      simp only [rebuildSpineNode, hh] at hre
+      cases hre
+      simp only [substShares, hinner, hside', Node.toExpr, hh, Node.spineNext, Node.sideChild]
+    | all bc r =>
+      simp only [rebuildSpineNode, hh] at hre
+      cases hre
+      simp only [substShares, hinner, hside', Node.toExpr, hh, Node.spineNext, Node.sideChild]
+    | _ => simp [rebuildSpineNode, hh] at hre
+
+/-- Every successful materialization is correct: replacing each `Share(i)`
+of the built expression by the expansion `σ i` of table entry `i` gives the
+interpretation of the requested term. -/
+theorem build_correct (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (E σ : Nat → Ixon.Expr) (hE : DagModel p.dag E) (hσ : IndexModel index E σ) :
+    ∀ (fuel : Nat) (entry : Bool) (t : Nat) (e : Ixon.Expr),
+      p.build ev index width entry fuel t = .ok e → substShares σ e = E t := by
+  intro fuel
+  induction fuel with
+  | zero => intro entry t e h; simp [Prep.build] at h
+  | succ fuel ih =>
+    intro entry t e h
+    have hside : ∀ (n : Node) (e' : Ixon.Expr),
+        p.build ev index width false fuel n.sideChild = .ok e' →
+        substShares σ e' = E n.sideChild := fun n e' h' => ih false n.sideChild e' h'
+    simp only [Prep.build] at h
+    split at h
+    · split at h
+      · split at h
+        · -- Share
+          split at h
+          · rename_i i hi
+            cases h
+            exact share_subst hσ hi
+          · cases h
+        · -- inline node
+          rw [hE t]
+          cases hh : (p.dag.node t).head <;> simp only [hh] at h
+          case prj ti f =>
+            obtain ⟨v, hv, hpure⟩ := bind_eq_ok h
+            cases hpure
+            simp only [substShares, Node.toExpr, hh, ih false _ v hv]
+          case letE lc =>
+            obtain ⟨ty, hty, h2⟩ := bind_eq_ok h
+            obtain ⟨v, hv, h3⟩ := bind_eq_ok h2
+            obtain ⟨b, hb, hpure⟩ := bind_eq_ok h3
+            cases hpure
+            simp only [substShares, Node.toExpr, hh, ih false _ ty hty, ih false _ v hv,
+              ih false _ b hb]
+          all_goals first
+            | (cases h; simp only [substShares, Node.toExpr, hh])
+            | cases h
+        · -- telescope cut
+          split at h
+          · split at h
+            · rename_i i hi
+              simp only [pure_bind] at h
+              exact spineFold_correct p E σ hE _ hside _ _ _ _ (share_subst hσ hi) h
+            · cases h
+          · obtain ⟨tail, htail, hfold⟩ := bind_eq_ok h
+            exact spineFold_correct p E σ hE _ hside _ _ _ _ (ih false _ tail htail) hfold
+      · cases h
+    · cases h
+
+
+/-- Every `Share` index of an expression satisfies `P`. -/
+def SharesIn (P : Nat → Prop) : Ixon.Expr → Prop
+  | .share i => P i.toNat
+  | .prj _ _ v => SharesIn P v
+  | .app f a => SharesIn P f ∧ SharesIn P a
+  | .lam _ t b => SharesIn P t ∧ SharesIn P b
+  | .all _ _ t b => SharesIn P t ∧ SharesIn P b
+  | .letE _ t v b => SharesIn P t ∧ SharesIn P v ∧ SharesIn P b
+  | _ => True
+
+theorem spineFold_shares (P : Nat → Prop) (buildSide : Node → Except SharingError Ixon.Expr)
+    (hside : ∀ n e, buildSide n = .ok e → SharesIn P e) :
+    ∀ (ns : List Node) (tail res : Ixon.Expr), SharesIn P tail →
+      ns.foldrM (fun n acc => do let side ← buildSide n; rebuildSpineNode n acc side) tail =
+        .ok res → SharesIn P res := by
+  intro ns
+  induction ns with
+  | nil => intro tail res ht h; simp only [List.foldrM_nil] at h; cases h; exact ht
+  | cons n ns ih =>
+    intro tail res ht h
+    rw [List.foldrM_cons] at h
+    obtain ⟨acc, hacc, hstep⟩ := bind_eq_ok h
+    have hinner := ih tail acc ht hacc
+    obtain ⟨side, hs, hre⟩ := bind_eq_ok hstep
+    have hside' := hside n side hs
+    cases hh : n.head <;> simp only [rebuildSpineNode, hh] at hre <;> cases hre <;>
+      exact ⟨by assumption, by assumption⟩
+
+/-- Every `Share` that a successful materialization emits is the index of
+some term in its dictionary (so it satisfies any property all those indices
+have). -/
+theorem build_shares (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (P : Nat → Prop)
+    (hP : ∀ (u i : Nat), index[u]?.getD none = some i → i < UInt64.size ∧ P i) :
+    ∀ (fuel : Nat) (entry : Bool) (t : Nat) (e : Ixon.Expr),
+      p.build ev index width entry fuel t = .ok e → SharesIn P e := by
+  intro fuel
+  induction fuel with
+  | zero => intro entry t e h; simp [Prep.build] at h
+  | succ fuel ih =>
+    intro entry t e h
+    have hside : ∀ (n : Node) (e' : Ixon.Expr),
+        p.build ev index width false fuel n.sideChild = .ok e' → SharesIn P e' :=
+      fun n e' h' => ih false n.sideChild e' h'
+    have hshare : ∀ (u i : Nat), index[u]?.getD none = some i →
+        SharesIn P (.share i.toUInt64) := by
+      intro u i hi
+      obtain ⟨hlt, hp⟩ := hP u i hi
+      simp only [SharesIn, toNat_toUInt64_of_lt hlt, hp]
+    simp only [Prep.build] at h
+    split at h
+    · split at h
+      · split at h
+        · split at h
+          · rename_i i hi
+            cases h
+            exact hshare _ _ hi
+          · cases h
+        · cases hh : (p.dag.node t).head <;> simp only [hh] at h
+          case prj ti f =>
+            obtain ⟨v, hv, hpure⟩ := bind_eq_ok h
+            cases hpure
+            exact ih false _ v hv
+          case letE lc =>
+            obtain ⟨ty, hty, h2⟩ := bind_eq_ok h
+            obtain ⟨v, hv, h3⟩ := bind_eq_ok h2
+            obtain ⟨b, hb, hpure⟩ := bind_eq_ok h3
+            cases hpure
+            exact ⟨ih false _ ty hty, ih false _ v hv, ih false _ b hb⟩
+          all_goals first
+            | (cases h; simp only [SharesIn, Node.toExpr, hh])
+            | cases h
+        · split at h
+          · split at h
+            · rename_i i hi
+              simp only [pure_bind] at h
+              exact spineFold_shares P _ hside _ _ _ (hshare _ _ hi) h
+            · cases h
+          · obtain ⟨tail, htail, hfold⟩ := bind_eq_ok h
+            exact spineFold_shares P _ hside _ _ _ (ih false _ tail htail) hfold
+      · cases h
+    · cases h
+
+theorem indexOfPairs_bound (size k : Nat) (pairs : List (Nat × Nat))
+    (h : ∀ x ∈ pairs, x.2 < k) :
+    ∀ (u i : Nat), (indexOfPairs size pairs)[u]?.getD none = some i → i < k := by
+  unfold indexOfPairs
+  suffices hs : ∀ (acc : Array (Option Nat)),
+      (∀ (u i : Nat), acc[u]?.getD none = some i → i < k) →
+      ∀ (u i : Nat), (pairs.foldl (fun acc (t, i) => acc.set! t (some i)) acc)[u]?.getD none =
+        some i → i < k by
+    refine hs _ (fun u i hu => ?_)
+    simp only [Array.getElem?_replicate] at hu
+    split at hu <;> simp at hu
+  induction pairs with
+  | nil => intro acc hacc; simpa using hacc
+  | cons x xs ih =>
+    intro acc hacc
+    rw [List.foldl_cons]
+    apply ih (fun y hy => h y (List.mem_cons_of_mem x hy))
+    intro u i hu
+    obtain ⟨t, j⟩ := x
+    simp only [Array.set!, Array.getElem?_setIfInBounds] at hu
+    split at hu
+    · split at hu
+      · simp at hu
+        subst hu
+        exact h (t, j) List.mem_cons_self
+      · simp at hu
+    · exact hacc u i hu
+
+/-- The dictionary of the first `k` table entries only holds indices below
+`k`. -/
+theorem indexOfPrefix_bound (size : Nat) (table : Array Nat) (k : Nat) :
+    ∀ (u i : Nat), (indexOfPrefix size table k)[u]?.getD none = some i → i < k := by
+  unfold indexOfPrefix
+  apply indexOfPairs_bound
+  intro x hx
+  obtain ⟨_, hlt, _⟩ := List.mem_zipIdx hx
+  simp only [List.length_take, Nat.zero_add] at hlt
+  omega
+
+/-- Backward references: building with the dictionary of the first `k`
+entries emits only `Share` indices below `k` (for a table entry `k` that
+is "strictly earlier", for roots `k` is the table size). -/
+theorem build_prefix_backward (p : Prep) (ev : DictEval) (table : Array Nat) (k : Nat)
+    (hk : k ≤ UInt64.size) (width : Array (Option Nat)) :
+    ∀ (fuel : Nat) (entry : Bool) (t : Nat) (e : Ixon.Expr),
+      p.build ev (indexOfPrefix p.dag.size table k) width entry fuel t = .ok e →
+        SharesIn (· < k) e :=
+  build_shares p ev _ width (· < k) fun u i hi =>
+    have := indexOfPrefix_bound p.dag.size table k u i hi
+    ⟨by omega, this⟩
+
+theorem forall₂_imp {α β : Type} {R S : α → β → Prop} (hRS : ∀ a b, R a b → S a b) :
+    ∀ {xs : List α} {ys : List β}, List.Forall₂ R xs ys → List.Forall₂ S xs ys
+  | _, _, .nil => .nil
+  | _, _, .cons h hs => .cons (hRS _ _ h) (forall₂_imp hRS hs)
+
+theorem mapM_ok_forall₂ {α β ε : Type} (f : α → Except ε β) :
+    ∀ (xs : List α) (ys : List β), xs.mapM f = .ok ys → List.Forall₂ (fun x y => f x = .ok y) xs ys
+  | [], ys, h => by simp only [List.mapM_nil] at h; cases h; exact .nil
+  | x :: xs, ys, h => by
+    rw [List.mapM_cons] at h
+    obtain ⟨y, hy, h2⟩ := bind_eq_ok h
+    obtain ⟨ys', hys, h3⟩ := bind_eq_ok h2
+    cases h3
+    exact .cons hy (mapM_ok_forall₂ f xs ys' hys)
+
+/-- Every expression returned by a successful `materializeWith` expands to
+its target term. -/
+theorem materializeWith_correct (p : Prep) (index width : Array (Option Nat))
+    (targets : Array Nat) (limits : Limits) (out : Array Ixon.Expr) (cost : Array Nat) (work : Nat)
+    (h : p.materializeWith index width targets limits = .ok (out, cost, work))
+    (E σ : Nat → Ixon.Expr) (hE : DagModel p.dag E) (hσ : IndexModel index E σ) :
+    List.Forall₂ (fun t e => substShares σ e = E t) targets.toList out.toList := by
+  unfold Prep.materializeWith at h
+  obtain ⟨_, _, h⟩ := bind_eq_ok h
+  simp only at h
+  split at h
+  · cases h
+  · obtain ⟨out', hout, hret⟩ := bind_eq_ok h
+    cases hret
+    rw [Array.mapM_eq_mapM_toList] at hout
+    cases hm : List.mapM (fun t => p.build (p.evalAll width) index width false (p.dag.size + 1) t)
+        targets.toList with
+    | error err => rw [hm] at hout; cases hout
+    | ok l =>
+      rw [hm] at hout
+      have hout' : out = l.toArray := by
+        cases hout; rfl
+      subst hout'
+      exact forall₂_imp (fun t e he => build_correct p _ index width E σ hE hσ _ false t e he)
+        (mapM_ok_forall₂ _ _ _ hm)
+
+
+end Materialize
+
+
 end Ix.Compile.Verify.SharingExact
