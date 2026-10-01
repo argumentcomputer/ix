@@ -10,7 +10,7 @@ import Tests.Ix.Kernel.ReaderFidelity
 import Tests.Ix.Kernel.EgressFidelity
 import Tests.Ix.Kernel.ReaderFidelityDefs
 
-/-! # The Ixon reader's fidelity on compiled Lean declarations (`lake test`)
+/-! # The Ixon reader's fidelity on compiled Lean declarations (`lake test -- kernel-reader-roundtrip`)
 
 The Ix.Tc-style roundtrip for the Ixon reader: the declarations of
 `Tests.Ix.Kernel.ReaderFidelityDefs` (nested, mutual, indexed, reflexive and
