@@ -40,8 +40,7 @@ theorem selectFunc_conv {stats : Bool} {fn : Lir.FunId} {f : Lir.Func}
     | some p =>
       obtain ⟨b, l⟩ := p
       rw [hf] at h
-      simp only [throw, throwThe, MonadExceptOf.throw, StateT.instMonadExceptOf, bind, StateT.bind, Except.bind,
-        StateT.lift] at h
+      simp only [throw, throwThe, MonadExceptOf.throw, bind, StateT.bind, Except.bind] at h
       cases h
     | none =>
       rw [hf] at h

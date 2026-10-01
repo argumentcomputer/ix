@@ -55,11 +55,11 @@ theorem lower_roots {cfg : Config} {P : Cfg.Program} {L : Compilatrix.Rt.Lowered
     ∃ named : List (Nat × String), L.roots = named.map fun p => (p.1, (named.lookup p.1).getD p.2) := by
   unfold lower at h
   cases hm : P.exports.head? with
-  | none => simp [hm, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+  | none => simp [hm, throw, throwThe, MonadExceptOf.throw] at h
   | some main =>
     simp only [hm, bind, Except.bind] at h
     cases hr : P.funs.toList.find? (P.size ≤ ·.1) with
-    | some p => simp [hr, throw, throwThe, MonadExceptOf.throw, Except.bind] at h
+    | some p => simp [hr, throw, throwThe, MonadExceptOf.throw] at h
     | none =>
       simp only [hr] at h
       split at h
@@ -98,7 +98,7 @@ theorem function_params {T : Tables} {f : Nat} {fd : Cfg.Fun} {conv : Lir.Conv} 
   cases hb : fd.blocks with
   | nil =>
     unfold functionRaw at hraw
-    simp [hb, throw, throwThe, MonadExceptOf.throw, Except.bind] at hraw
+    simp [hb, throw, throwThe, MonadExceptOf.throw] at hraw
   | cons b0 bs =>
     have hb0 : fd.blocks[0]? = some b0 := by rw [hb]; rfl
     obtain ⟨o0, -, hent⟩ := low.entry hb0

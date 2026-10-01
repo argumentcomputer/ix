@@ -272,7 +272,7 @@ theorem argsFit_nat {ns : List Nat} (hlen : ns.length ≤ 5) (h64 : ∀ n ∈ ns
   | [], _ => simp [sysvArgs]
   | [a], _ =>
     simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq] at hv ⊢
-    simp [sysvArgs, Driver.core, Driver.regs, Core.readReg, hv, or_imp, forall_and]
+    simp [sysvArgs, Driver.core, Driver.regs, Core.readReg, hv]
   | [a, b], _ =>
     simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hv ⊢
     simp [sysvArgs, Driver.core, Driver.regs, Core.readReg, hv, or_imp, forall_and]
@@ -298,10 +298,34 @@ it. So the entry invariant the backend's theorems assume
 theorem exists_ok {n : Nat} (hn : n < 2 ^ 64) : ∃ D : Driver, D.Ok n := by
   refine ⟨{ base := 0, region := 2 ^ 32, size := 2 ^ 26, budget := 2 ^ 23, sp := 2 ^ 40 + 8,
             ret := UInt64.ofNat (2 ^ 64 - 1),
-            init := fun _ => 0, flags := {} }, ?_⟩
+            init := fun _ => 0, flags := {}, other := fun _ => 0 }, ?_⟩
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, .inr (by decide), ?_⟩
   show n ≤ (UInt64.ofNat (2 ^ 64 - 1) - 0 : Word).toNat
   have : (UInt64.ofNat (2 ^ 64 - 1) - 0 : Word).toNat = 2 ^ 64 - 1 := by decide
   omega
 
 end Compilatrix.X86.Driver
+
+namespace Compilatrix.Backend
+
+open Compilatrix.Xv.Stacking.Proof (EntryBase)
+
+/-- **The whole region and the wrapper's entry invariant exclude each other**:
+`Rt.Proof.Region` makes the region's first byte (`entrySp`, at `ctx − 64`)
+readable in Lir's memory, which `EntryBase.ctxCells` forbids. So
+`Recheck.compile_sound`'s premises `hreg` and a backend refinement built on
+the stacking theorem cannot hold together for one memory; the front half is
+restated on the part of the region Lir uses (`Rt.Proof.LirRegion`). -/
+theorem region_not_entryBase {mem : X86.Memory} {ctx size : X86.Word} (hreg : Rt.Proof.Region mem ctx size)
+    (hsize : 0 < size.toNat) {core₀ : X86.Core} {retAddr : X86.Word} (base : EntryBase core₀ retAddr mem ctx) : False := by
+  have h1 := (hreg (ctx - 64).toNat (Nat.le_refl _) (by omega)).1
+  have h2 := (base.ctxCells 0 (by decide)).2.2.1
+  rw [UInt64.ofNat_toNat] at h1
+  have h0 : ctx - 64 + UInt64.ofNat 0 = ctx - 64 := by
+    apply UInt64.toNat_inj.mp
+    rw [UInt64.toNat_add]
+    simp
+  rw [h0, h1] at h2
+  cases h2
+
+end Compilatrix.Backend

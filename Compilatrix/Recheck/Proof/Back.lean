@@ -186,7 +186,7 @@ theorem call_sim_linked {r fn : Nat} {sym : String} (hr : a.lowered.roots[r]? = 
   have hreps : mainReps { a.xl with main := fn } bcfg.reps = List.replicate ns.length .nat := by
     show mainReps { a.xl with main := fn } a.lowered.reps = _
     simp only [mainReps, hxf, Xv.Stacking.exportReps, Rt.Lowered.reps, Option.getD]
-    rw [if_neg (by simpa using hfn), hxfp, hns]
+    rw [ite_eq_right_iff.mpr (fun h => absurd (by simpa using h) hfn), hxfp, hns]
   have hbase : ∀ (wv : X86.Word) (m : X86.Memory), Lifted Backend.StackFinal ([left], mem') (wv, m) →
       Xv.Stacking.Proof.EntryBase (D.core (ns.map UInt64.ofNat) m.bytes) D.ret mem' D.ctx := by
     intro wv m hl

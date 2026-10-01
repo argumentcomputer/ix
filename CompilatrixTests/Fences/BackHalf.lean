@@ -28,7 +28,8 @@ every object `Recheck.run` makes (`Recheck.sound`, `compile_sound_linked`,
 `compile_safe_linked`, `compile_diverges_linked`, `sound_bytes`), the
 driver's contract satisfiable (`X86.Driver.exists_ok`,
 `Recheck.driver_exists`) and implying the export wrapper's entry invariant
-(`X86.Driver.entryBase`); every export of an emitted object run by its
+(`X86.Driver.entryBase`), which the whole region of the old front premise
+excludes (`Backend.region_not_entryBase`); every export of an emitted object run by its
 symbol (`ObjectEval.call`, `Backend.call_sim_export`,
 `Backend.call_overflow_export`, through `Stacking.Proof.stacked_ends_at`,
 `Layout.Proof.transport_at`, `select_withMain`, `validate_withMain`); the
@@ -318,6 +319,9 @@ verbatim. -/
 
 /-- info: 'Compilatrix.X86.Driver.exists_ok' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Driver.exists_ok
+
+/-- info: 'Compilatrix.Backend.region_not_entryBase' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Backend.region_not_entryBase
 
 /-- info: 'Compilatrix.Recheck.front_refines_lir' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Recheck.front_refines_lir

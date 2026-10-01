@@ -13,8 +13,8 @@ from an input is a definite function (`X86.Linked`, the object's `Lang`):
   `rdi = region` and its arguments in `rsi`…`r9`;
 - every call runs with `rsp = sp`, the caller's return address `ret` in the
   word at `sp` (the driver's `call` pushes it), on the stack below it; the
-  other registers are zero (the C caller's values are unconstrained; the
-  wrappers save and restore what they use);
+  other registers hold any values (`other`; the wrappers save and restore
+  what they use);
 - the process's mapping: the region and the call stack (the `budget + 56`
   bytes below `sp` and the return slot) are readable and writable, nothing
   else is. The program cannot change permissions, so each call starts from
@@ -51,6 +51,8 @@ structure Driver where
   init : Word → UInt8
   /-- The flags at each call's entry. -/
   flags : ByteEval.Flags
+  /-- The caller's other registers at each call's entry. -/
+  other : Registers
 
 namespace Driver
 
@@ -80,7 +82,7 @@ def mem (bytes : Word → UInt8) : Memory :=
 
 /-- A call's registers: `rdi` the region, the arguments in `rsi`, `rdx`,
 `rcx`, `r8`, `r9` (zero where there are fewer), `rsp` the stack pointer,
-the others zero. -/
+the others the caller's (`other`). -/
 def regs (args : List Word) : Registers
   | .rdi => D.region
   | .rsp => D.sp
@@ -89,7 +91,7 @@ def regs (args : List Word) : Registers
   | .rcx => args.getD 2 0
   | .r8 => args.getD 3 0
   | .r9 => args.getD 4 0
-  | _ => 0
+  | r => D.other r
 
 /-- A call's machine. -/
 def core (args : List Word) (bytes : Word → UInt8) : Core := ⟨D.regs args, D.mem bytes⟩
