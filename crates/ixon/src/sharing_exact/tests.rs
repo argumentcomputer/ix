@@ -3212,3 +3212,97 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
   );
   assert!(steps > 1000 && materialized > 300);
 }
+
+/// Replace one random leaf of `e` (a Share index or a variable) by a
+/// different one, returning whether something changed.
+fn mutate_leaf(e: &E, rng: &mut Rng, budget: &mut u64) -> E {
+  match e.as_ref() {
+    Expr::Share(k) if *budget == 0 => {
+      *budget = u64::MAX;
+      Arc::new(Expr::Share(k ^ (1 + rng.below(3))))
+    },
+    Expr::Var(n) if *budget == 0 => {
+      *budget = u64::MAX;
+      Arc::new(Expr::Var(n + 1))
+    },
+    Expr::Share(_) | Expr::Var(_) => {
+      *budget = budget.saturating_sub(1);
+      e.clone()
+    },
+    _ => {
+      let kids: Vec<E> =
+        e.children().into_iter().map(|c| mutate_leaf(c, rng, budget)).collect();
+      Arc::new(e.with_children(&kids).unwrap())
+    },
+  }
+}
+
+/// The re-expansion check without interning (`check_encoding`) accepts
+/// exactly the encodings that `build_full` expands back to the DAG with the
+/// table terms, and counts the input nodes `build_full` charges.
+#[test]
+fn encoding_check_matches_reexpansion() {
+  let mut rng = Rng(101);
+  let (mut valid, mut rejected) = (0, 0);
+  let unbounded = ExactSharingLimits::unbounded();
+  let reference = |dag: &SharingDag, order: &[TermId], es: &[E], rs: &[E]| {
+    let mut m = Meter::new(&unbounded);
+    match SharingDag::build_full(rs, Some(es), &mut m) {
+      Ok((d, ids)) => (d == *dag
+        && ids
+          .iter()
+          .map(|x| x.unwrap_or(TermId::MAX))
+          .eq(order.iter().copied()))
+      .then_some(m.stats.input_nodes),
+      Err(_) => None,
+    }
+  };
+  for c in par_cases() {
+    let roots = constant_info_root_exprs(&c.info);
+    if roots.is_empty() {
+      continue;
+    }
+    let (_, t) =
+      normalize_constant_sharing_tiered(ShareLayout::TagN, &c, &limits())
+        .unwrap();
+    let u =
+      optimize_sharing_uniform(1 + rng.below(3), &roots, &limits()).unwrap();
+    let dag = SharingDag::from_expanded_roots(&roots, &limits()).unwrap();
+    for (order, es, rs) in [
+      (&t.table_terms, &t.sharing, &t.roots),
+      (&u.table_terms, &u.sharing, &u.roots),
+    ] {
+      let fast = dag.check_encoding(order, es, rs);
+      assert!(fast.is_some());
+      assert_eq!(fast, reference(&dag, order, es, rs));
+      valid += 1;
+      for _ in 0..4 {
+        let (mut es2, mut rs2) = (es.clone(), rs.clone());
+        let pick = rng.below((es2.len() + rs2.len()) as u64) as usize;
+        let mut budget = rng.below(6);
+        let target = if pick < es2.len() {
+          &mut es2[pick]
+        } else {
+          &mut rs2[pick - es.len()]
+        };
+        *target = mutate_leaf(target, &mut rng, &mut budget);
+        if rng.below(4) == 0 && es2.len() > 1 {
+          let i = rng.below(es2.len() as u64 - 1) as usize;
+          es2.swap(i, i + 1);
+        }
+        let fast = dag.check_encoding(order, &es2, &rs2);
+        let slow = reference(&dag, order, &es2, &rs2);
+        if fast.is_some() {
+          assert_eq!(fast, slow);
+        } else {
+          rejected += 1;
+          assert_eq!(slow, None);
+        }
+      }
+    }
+  }
+  eprintln!(
+    "encoding check: {valid} valid encodings, {rejected} mutations rejected"
+  );
+  assert!(valid > 300 && rejected > 300);
+}

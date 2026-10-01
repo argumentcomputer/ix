@@ -92,7 +92,7 @@ use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::cost::{Len, expr_len, tag0_len, tag4_len};
+use super::cost::{Len, exprs_len_with, tag0_len, tag4_len};
 use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{UniformIndex, all_costs, materialize_dependent};
 use super::prof::{self, Phase};
@@ -1410,22 +1410,70 @@ pub(crate) fn optimize_uniform(
   if w == 0 {
     return Err(SharingError::FormatBound(FormatBound::UniformWidth { w }));
   }
+  optimize_uniform_with(w, dag, &DagPrep::new(dag), meter)
+}
+
+/// The tables of one DAG that do not depend on the uniform width, computed
+/// once and shared by the candidates of the tiered construction. Each is
+/// exactly what `optimize_uniform` and `tiered_at` computed for themselves.
+pub(crate) struct DagPrep {
+  /// `Node::own_len` of every term.
+  pub(crate) own: Vec<Len>,
+  /// `C_0` (`all_costs` with no dictionary) and the work it counts.
+  pub(crate) base: Vec<Len>,
+  pub(crate) base_work: u64,
+  pub(crate) facts: Facts,
+  /// Spine lengths with no stop terms.
+  spine_len: Vec<u64>,
+  /// Unshared sizes of the uniform model (the empty evaluation; it does not
+  /// read the width), or its overflow error.
+  size: Result<Vec<u128>, SharingError>,
+}
+
+impl DagPrep {
+  pub(crate) fn new(dag: &SharingDag) -> Self {
+    let nodes = dag.nodes();
+    let n = nodes.len();
+    let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
+    let mut base_work = 0u64;
+    let base = all_costs(nodes, &own, &super::dict::NoWidths, &mut base_work);
+    let facts = graph_facts(dag);
+    let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
+    // With no opaque and no available term, `UPrep::node` reads the width
+    // nowhere (no cut is available and every cost is the inline bound), so
+    // any width gives these sizes.
+    let size = UPrep::new(nodes, 1, vec![false; n])
+      .map(|empty| empty.base.iter().map(|v| v.cost).collect());
+    DagPrep { own, base, base_work, facts, spine_len, size }
+  }
+}
+
+/// [`optimize_uniform`] (`w >= 1`) with the width-independent tables of
+/// `prep`.
+pub(crate) fn optimize_uniform_with(
+  w: u64,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+) -> Result<UniformSharingResult, SharingError> {
+  if w == 0 {
+    return Err(SharingError::FormatBound(FormatBound::UniformWidth { w }));
+  }
   let wu = u(w);
   let nodes = dag.nodes();
   let n = nodes.len();
   let p = prof::scope(Phase::Classify);
-  let facts = graph_facts(dag);
+  let facts = &prep.facts;
   // Fail closed on a telescope spine of `TELE_SUBADD_END` or more steps,
   // before the search (Lean's `optimizeUniformExpanded`).
-  let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
-  if !spines_within_bound(&spine_len) {
+  let spine_len = &prep.spine_len;
+  if !spines_within_bound(spine_len) {
     return Err(SharingError::FormatBound(FormatBound::TelescopeSpine {
       bound: TELE_SUBADD_END,
     }));
   }
   // Unshared sizes C_0 (no stop terms, nothing available).
-  let empty = UPrep::new(nodes, wu, vec![false; n])?;
-  let size: Vec<u128> = empty.base.iter().map(|v| v.cost).collect();
+  let size: &[u128] = prep.size.as_ref().map_err(Clone::clone)?;
   // Classes: certain-excluded, low degree, and the gain test on visible
   // counts with threshold theta.
   let ce: Vec<bool> =
@@ -1709,12 +1757,12 @@ pub(crate) fn optimize_uniform(
     index[ix(t)] = Some(len_u64(pos));
   }
   let dict = UniformIndex { index, width: w };
-  let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
+  let own = &prep.own;
   let mut work = 0u64;
-  let costs = all_costs(nodes, &own, &dict, &mut work);
+  let costs = all_costs(nodes, own, &dict, &mut work);
   let (entries, roots, predicted) = materialize_dependent(
     nodes,
-    &own,
+    own,
     &dict,
     &costs,
     &order,
@@ -1730,30 +1778,20 @@ pub(crate) fn optimize_uniform(
   }
   drop(p);
   let _p = prof::scope(Phase::UniformCheck);
-  let mut check_meter = Meter::new(meter.limits());
-  let (check, entry_ids) =
-    SharingDag::build_full(&roots, Some(&entries), &mut check_meter)?;
-  if check != *dag {
-    return Err(internal("materialized encoding changes the expanded AST"));
-  }
-  if entry_ids
-    .iter()
-    .map(|x| x.unwrap_or(TermId::MAX))
-    .ne(order.iter().copied())
-  {
-    return Err(internal(
-      "materialized entries do not expand to the stored terms",
-    ));
-  }
-  let mut measured = tag0_len(k);
-  for e in entries.iter().chain(&roots) {
-    measured =
-      expr_len(e).and_then(|l| measured.checked_add(l)).ok_or_else(overflow)?;
-  }
-  let base_len = all_costs(nodes, &own, &super::dict::NoWidths, &mut work);
+  dag.check_reexpansion(
+    &order,
+    &entries,
+    &roots,
+    meter.limits(),
+    "materialized encoding changes the expanded AST",
+    "materialized entries do not expand to the stored terms",
+  )?;
+  // The real length (Shares at their TagN width, `expr_len`).
+  let measured = exprs_len_with(k, entries.iter().chain(&roots), &tag4_len)
+    .ok_or_else(overflow)?;
   let mut unshared = Len::new(tag0_len(0));
   for &r in dag.roots() {
-    unshared = unshared.plus(base_len[ix(r)]);
+    unshared = unshared.plus(prep.base[ix(r)]);
   }
   Ok(UniformSharingResult {
     roots,

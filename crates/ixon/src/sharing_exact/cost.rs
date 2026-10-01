@@ -109,29 +109,68 @@ pub fn expr_len(e: &Expr) -> Option<u64> {
 /// [`expr_len`] with every `Share(i)` priced `share(i)` bytes instead of its
 /// TagN width (a Share-width layout or model).
 pub fn expr_len_with(e: &Expr, share: &dyn Fn(u64) -> u64) -> Option<u64> {
-  #[derive(Clone, Copy)]
-  struct Info {
-    /// Standalone length.
-    len: u64,
-    /// Telescope count, summed side bytes and tail length when this node
-    /// is the top of its App/Lam/All spine.
-    count: u64,
-    sum: u64,
-    tail: u64,
+  expr_len_memo(e, share, &mut FxHashMap::default())
+}
+
+/// `tag0_len(count)` plus the [`expr_len_with`] of every expression, with
+/// one pointer memo for all of them (the length of an expression does not
+/// depend on where it occurs); `None` if the sum overflows.
+pub(crate) fn exprs_len_with<'a>(
+  count: u64,
+  exprs: impl Iterator<Item = &'a Arc<Expr>>,
+  share: &dyn Fn(u64) -> u64,
+) -> Option<u64> {
+  let mut memo: FxHashMap<*const Expr, ExprLenInfo> = FxHashMap::default();
+  let mut total = tag0_len(count);
+  for e in exprs {
+    total = total.checked_add(expr_len_memo(e, share, &mut memo)?)?;
   }
+  Some(total)
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ExprLenInfo {
+  /// Standalone length.
+  len: u64,
+  /// Telescope count, summed side bytes and tail length when this node is
+  /// the top of its App/Lam/All spine.
+  count: u64,
+  sum: u64,
+  tail: u64,
+}
+
+/// The children of an expression node, without allocating.
+fn expr_children(e: &Expr) -> [Option<&Arc<Expr>>; 3] {
+  match e {
+    Expr::Prj(_, _, v) => [Some(v), None, None],
+    Expr::App(a, b) | Expr::Lam(_, a, b) | Expr::All(_, _, a, b) => {
+      [Some(a), Some(b), None]
+    },
+    Expr::Let(_, a, b, c) => [Some(a), Some(b), Some(c)],
+    _ => [None, None, None],
+  }
+}
+
+/// [`expr_len_with`] with a caller-provided pointer memo.
+fn expr_len_memo(
+  e: &Expr,
+  share: &dyn Fn(u64) -> u64,
+  memo: &mut FxHashMap<*const Expr, ExprLenInfo>,
+) -> Option<u64> {
+  type Info = ExprLenInfo;
   fn leaf(len: u64) -> Info {
     Info { len, count: 0, sum: 0, tail: 0 }
   }
-  let mut memo: FxHashMap<*const Expr, Info> = FxHashMap::default();
   let mut stack: Vec<(&Expr, bool)> = vec![(e, false)];
   while let Some((node, ready)) = stack.pop() {
     let key = std::ptr::from_ref(node);
     if memo.contains_key(&key) {
       continue;
     }
-    if !ready && !node.children().is_empty() {
+    let children = expr_children(node);
+    if !ready && children[0].is_some() {
       stack.push((node, true));
-      for child in node.children() {
+      for child in children.into_iter().flatten() {
         if !memo.contains_key(&Arc::as_ptr(child)) {
           stack.push((child.as_ref(), false));
         }

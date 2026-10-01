@@ -42,12 +42,12 @@ use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::cost::{Len, expr_len_with, tag0_len};
-use super::dag::{Node, SharingDag, TermId, ix};
-use super::dict::{IncrementalCosts, Indices, Materializer, Widths, all_costs};
+use super::cost::{Len, exprs_len_with, tag0_len};
+use super::dag::{SharingDag, TermId, ix};
+use super::dict::{IncrementalCosts, Indices, Materializer, Widths};
 use super::prof::{self, Phase};
 use super::uniform::{
-  UniformSharingResult, graph_facts, optimize_uniform, pinned_order, set_prec,
+  DagPrep, UniformSharingResult, optimize_uniform_with, pinned_order, set_prec,
 };
 use super::{
   ExactSharingLimits, FormatBound, Meter, NormalizeBytesError, Parallelism,
@@ -124,11 +124,7 @@ pub fn layout_bytes(
   roots: &[Arc<Expr>],
 ) -> Option<u64> {
   let price = |i: u64| layout.width_at(i);
-  let mut total = tag0_len(len64(sharing.len()));
-  for e in sharing.iter().chain(roots) {
-    total = total.checked_add(expr_len_with(e, &price)?)?;
-  }
-  Some(total)
+  exprs_len_with(len64(sharing.len()), sharing.iter().chain(roots), &price)
 }
 
 /// All `Share` indices of an expression, with multiplicity, in left-to-right
@@ -420,9 +416,11 @@ pub(crate) fn tiered(
   limits: &ExactSharingLimits,
   par: Parallelism,
 ) -> Result<TieredSharingResult, SharingError> {
+  // The width-independent tables, shared by the three candidates.
+  let prep = DagPrep::new(dag);
   let run = |w: u64| {
     let mut meter = Meter::with_parallelism(limits, par);
-    tiered_at(layout, dag, &mut meter, w)
+    tiered_at(layout, dag, &prep, &mut meter, w)
   };
   let candidates: Vec<Result<TieredSharingResult, SharingError>> =
     if par.widths <= 1 {
@@ -470,28 +468,34 @@ fn tiered_better(a: &TieredSharingResult, b: &TieredSharingResult) -> bool {
 fn tiered_at(
   layout: ShareLayout,
   dag: &SharingDag,
+  prep: &DagPrep,
   meter: &mut Meter<'_>,
   w: u64,
 ) -> Result<TieredSharingResult, SharingError> {
   let nodes = dag.nodes();
   let n = nodes.len();
   let p = prof::scope(Phase::Prep);
-  let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
-  let mut work = 0u64;
-  let base = all_costs(nodes, &own, &super::dict::NoWidths, &mut work);
-  let facts = graph_facts(dag);
+  let own = &prep.own;
+  // The work of the evaluation `C_0` (`prep.base`), charged with phase 3.
+  let work = prep.base_work;
+  let facts = &prep.facts;
   let k = len64(
-    (0..n).filter(|&t| facts.deg[t] >= 2 && base[t] >= Len::new(2)).count(),
+    (0..n)
+      .filter(|&t| facts.deg[t] >= 2 && prep.base[t] >= Len::new(2))
+      .count(),
   );
   drop(p);
   // Phase 1.
-  let u = optimize_uniform(w, dag, meter)?;
+  let u = optimize_uniform_with(w, dag, prep, meter)?;
   let p = prof::scope(Phase::Allocate);
   let order1 = u.table_terms.clone();
   let entries1 = &u.sharing;
   let roots1 = &u.roots;
-  let phase1_layout =
-    layout_bytes(layout, entries1, roots1).ok_or_else(overflow)?;
+  // The phase-1 output priced by the layout. The TagN layout prices a Share
+  // at its wire width, so this is the real length that phase 1 measured.
+  let phase1_layout = match layout {
+    ShareLayout::TagN => u.variable_len,
+  };
   // Phase 2: reference counts and dependencies from the phase-1 output.
   let mut refs = vec![0u64; order1.len()];
   let mut idx = Vec::new();
@@ -565,7 +569,7 @@ fn tiered_at(
     for (i, &t) in order[..range.start].iter().enumerate() {
       dict.index[ix(t)] = Some(len64(i));
     }
-    let mut eval = IncrementalCosts::new(nodes, &own, &facts.parents, &dict);
+    let mut eval = IncrementalCosts::new(nodes, own, &facts.parents, &dict);
     let mut mat = Materializer::new(n);
     drop(p);
     let mut out: Vec<Result<(Vec<Arc<Expr>>, Len, u64), SharingError>> =
@@ -582,14 +586,14 @@ fn tiered_at(
       let mut w = eval.work();
       let costs = eval.costs();
       if let Some(&t) = order.get(j) {
-        let r = mat.run(nodes, &own, &dict, costs, &[t], &mut w);
+        let r = mat.run(nodes, own, &dict, costs, &[t], &mut w);
         out.push(r.map(|e| (e, costs[ix(t)], w)));
       } else {
         let mut c = Len::ZERO;
         for &r in dag.roots() {
           c = c.plus(costs[ix(r)]);
         }
-        let r = mat.run(nodes, &own, &dict, costs, dag.roots(), &mut w);
+        let r = mat.run(nodes, own, &dict, costs, dag.roots(), &mut w);
         out.push(r.map(|rs| (rs, c, w)));
       }
     }
@@ -627,30 +631,20 @@ fn tiered_at(
       "re-materialization {predicted} is longer than phase 1 {phase1_layout}"
     )));
   }
-  let mut check_meter = Meter::new(meter.limits());
-  let (check, entry_ids) =
-    SharingDag::build_full(&roots, Some(&entries), &mut check_meter)?;
-  if check != *dag {
-    return Err(internal("re-materialized encoding changes the expanded AST"));
-  }
-  if entry_ids
-    .iter()
-    .map(|x| x.unwrap_or(TermId::MAX))
-    .ne(order.iter().copied())
-  {
-    return Err(internal(
-      "re-materialized entries do not expand to the stored terms",
-    ));
-  }
+  dag.check_reexpansion(
+    &order,
+    &entries,
+    &roots,
+    meter.limits(),
+    "re-materialized encoding changes the expanded AST",
+    "re-materialized entries do not expand to the stored terms",
+  )?;
   // The real length: Shares priced by the current wire codec, every other
-  // header as written by `put_expr`.
-  let wire = |i: u64| len64(TagN::byte_width(4, i));
-  let mut measured = tag0_len(len64(entries.len()));
-  for e in entries.iter().chain(&roots) {
-    measured = expr_len_with(e, &wire)
-      .and_then(|l| measured.checked_add(l))
-      .ok_or_else(overflow)?;
-  }
+  // header as written by `put_expr`. The TagN layout prices a Share at its
+  // wire width (`TagN::byte_width(4, i)`), so this is `priced`.
+  let measured = match layout {
+    ShareLayout::TagN => priced,
+  };
   if layout == ShareLayout::wire() && measured != predicted {
     return Err(internal(format!(
       "serialized length {measured} differs from the wire-layout price \
@@ -740,7 +734,7 @@ pub(crate) fn normalize_constant_sharing_tiered_at_width(
   w: u64,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
   normalize_tiered_with(c, limits, |dag| {
-    tiered_at(layout, dag, &mut Meter::new(limits), w)
+    tiered_at(layout, dag, &DagPrep::new(dag), &mut Meter::new(limits), w)
   })
 }
 
