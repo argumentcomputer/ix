@@ -94,14 +94,14 @@ theorem Chain.tail {S : Stk} {W : Wrap} {mem : Memory} {holes : Holes} {fr fr' :
     {ret : ReturnFrame} {f : Func Loc} {l : FrameLayout} {pl : Placed} (hf : FnAt S fr.fn f l pl)
     {gf : Func Loc} {gl : FrameLayout} {gpl : Placed} (hfg : FnAt S fr'.fn gf gl gpl)
     (hsp : a'.sp.toNat + gl.size = a.sp.toNat + l.size) (hentry : a'.entry = a.entry) (hallow : a'.allow = a.allow)
-    (hin : gf.facts.inArgs = 0) :
+    (hin : gf.facts.inArgs = 0) (hres : gf.results = f.results) :
     ∀ {below : List (Xl.Frame × Act × ReturnFrame)}, Chain S W mem holes fr a ret below →
       Chain S W mem holes fr' a' ret below
   | [], h => fun f₀ l₀ pl₀ hf₀ => by
       obtain ⟨e₁, e₂, -⟩ := hfg.unique hf₀
       subst e₁ e₂
-      obtain ⟨h₁, h₂, h₃, h₄, -⟩ := h f l pl hf
-      exact ⟨h₁, by omega, by rw [hentry]; exact h₃, by rw [hallow]; exact h₄, hin⟩
+      obtain ⟨h₁, h₂, h₃, h₄, -, h₆⟩ := h f l pl hf
+      exact ⟨h₁, by omega, by rw [hentry]; exact h₃, by rw [hallow]; exact h₄, hin, by rw [hres]; exact h₆⟩
   | (_, _, _) :: _, ⟨hex, hlink, hrest⟩ =>
       ⟨hex, fun f₀ l₀ pl₀ hf₀ f₁ l₁ pl₁ hf₁ => by
         obtain ⟨e₁, e₂, -⟩ := hfg.unique hf₀
@@ -258,9 +258,13 @@ theorem tail_match {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : Ho
     · show ((vals.drop Xl.nArgRegs).toArray).size = gf'.facts.inArgs
       rw [hkin, hdrop]; rfl
   · -- The suspended activations, below the callee as they were below the tail caller
+    have hres : gf'.results = f.results := by
+      have := (hf.arities hbmem).2.2 g args hterm
+      rw [resultsOf_eq hfg.func] at this
+      exact Option.some.inj this
     refine Chain.mono (B := ret.returnSlot.toNat) htopE (fun x h₁ _ => hkeepUp x h₁) (fun x hx => .inl (hh x hx))
       (Chain.tail (a := a) (a' := tailAct a ret.returnSlot gl) hf hfg (by simp only [tailAct]; rw [hRc]; omega) rfl rfl
-        hkin hm.chain) ?_
+        hkin hres hm.chain) ?_
     intro fr₁ a₁ ret₁ rest e f₁ l₁ pl₁ hf₁
     have hc0 := hm.chain
     rw [e] at hc0

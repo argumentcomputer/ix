@@ -163,6 +163,8 @@ structure Bottom (S : Stk) (W : Wrap) (a : Act) (ret : ReturnFrame) (f : Func Lo
   entry : ∀ r, r ≠ .rsp → a.entry r = W.regs r
   allow : ∃ mf, S.p.funcs[S.p.main]? = some mf ∧ a.allow = allowedChanges S.env S.p.main mf
   inArgs : f.facts.inArgs = 0
+  /-- It returns one value, as the wrapper expects. -/
+  results : f.results = 1
 
 /-- The suspended activations below `fr`, innermost first, each with its
 return frame. -/

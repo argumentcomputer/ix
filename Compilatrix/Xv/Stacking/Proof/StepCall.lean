@@ -121,8 +121,8 @@ theorem Chain.react {S : Stk} {W : Wrap} {mem : Memory} {holes : Holes} {fr : Xl
     ∀ {below : List (Xl.Frame × Act × ReturnFrame)}, Chain S W mem holes fr a ret below →
       Chain S W mem holes fr a' ret below
   | [], h => fun f l pl hf => by
-      obtain ⟨h₁, h₂, h₃, h₄, h₅⟩ := h f l pl hf
-      exact ⟨h₁, by rw [hsp]; exact h₂, by rw [hentry]; exact h₃, by rw [hallow]; exact h₄, h₅⟩
+      obtain ⟨h₁, h₂, h₃, h₄, h₅, h₆⟩ := h f l pl hf
+      exact ⟨h₁, by rw [hsp]; exact h₂, by rw [hentry]; exact h₃, by rw [hallow]; exact h₄, h₅, h₆⟩
   | (_, _, _) :: _, ⟨hex, hlink, hrest⟩ =>
       ⟨hex, fun f l pl hf f₁ l₁ pl₁ hf₁ => by
         obtain ⟨⟨h₁, h₂, h₃, h₄, h₅⟩, hA, hS⟩ := hlink f l pl hf f₁ l₁ pl₁ hf₁

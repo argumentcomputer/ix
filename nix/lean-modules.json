@@ -1422,6 +1422,9 @@
   "Compilatrix.Xv.Stacking.Proof.Writes":
   {"path": "Compilatrix/Xv/Stacking/Proof/Writes.lean",
    "imports": ["Compilatrix.Xv.Stacking.Proof.Chain"]},
+  "Compilatrix.Xv.Stacking.Proof.WrapperExit":
+  {"path": "Compilatrix/Xv/Stacking/Proof/WrapperExit.lean",
+   "imports": ["Compilatrix.Xv.Stacking.Proof.TailStep"]},
   "Compilatrix.Xv.Stacking.Proof.Trunc":
   {"path": "Compilatrix/Xv/Stacking/Proof/Trunc.lean",
    "imports": ["Compilatrix.X86.Width"]},
@@ -3982,6 +3985,7 @@
     "Compilatrix.Xv.Stacking.Proof.RetMatch",
     "Compilatrix.Xv.Stacking.Proof.TailMatch",
     "Compilatrix.Xv.Stacking.Proof.TailStep",
+    "Compilatrix.Xv.Stacking.Proof.WrapperExit",
     "Compilatrix.Backend",
     "Compilatrix.Backend.Proof.Xl",
     "Compilatrix.Backend.Proof.Emit",
