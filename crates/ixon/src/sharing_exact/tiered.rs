@@ -11,9 +11,20 @@
 //!   the output is still written with Tag4 Shares and the model length
 //!   reports the TagN price.
 //!
-//! **Phase 1 (selection).** `K` = terms with compact in-degree >= 2 and
-//! unshared length >= 2; `w = 1` if `K <= 8`, `2` if `K <= tier2_end` (256
-//! for Tag4, 1032 for TagN), else `3`. The stored set and its bodies are the
+//! **Width selection.** Phase 1 runs at each uniform width `w` in 1, 2, 3,
+//! each result is carried through phases 2 and 3, and the construction
+//! returns the candidate with the fewest final layout bytes; ties go to the
+//! lower `w`, then `set_prec` on the stored set. An error at any width fails
+//! the call. Each candidate is exact per phase as described below; the
+//! final choice is the real-byte minimum over the three candidates, not a
+//! global optimum. The nominal width from `K` (the number of terms with
+//! compact in-degree at least 2 and unshared length at least 2; `w = 1` if
+//! `K <= 8`, `2` if `K <= tier2_end`, else `3`) is only reported in the
+//! statistics.
+//! [`normalize_constant_sharing_tiered_at_width`] runs the single candidate
+//! at one width (W1's `fixedWidth`).
+//!
+//! **Phase 1 (selection).** The stored set and its bodies are the
 //! uniform-`w` optimum ([`super::optimize_dag_uniform`]).
 //!
 //! **Phase 2 (slot allocation).** From the phase-1 output, `ref(t)` counts
@@ -41,7 +52,7 @@ use super::cost::{Len, expr_len, expr_len_with, share_width, tag0_len};
 use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{Indices, Widths, all_costs, materialize};
 use super::uniform::{
-  UniformSharingResult, graph_facts, optimize_uniform, pinned_order,
+  UniformSharingResult, graph_facts, optimize_uniform, pinned_order, set_prec,
   uniform_with_stored_set,
 };
 use super::{
@@ -115,7 +126,10 @@ impl ShareLayout {
     }
   }
 
-  /// Phase-1 uniform width for `k` candidates.
+  /// Nominal uniform width for `k` candidates (`k` up to 8 fit the 1-byte
+  /// rung, up to `tier2_end` the 2-byte rung). The canonical construction
+  /// tries every width instead (see the module doc); this is reported in the
+  /// statistics.
   pub fn uniform_width(self, k: u64) -> u64 {
     if k <= 8 {
       1
@@ -324,8 +338,14 @@ pub struct TieredStats {
   pub layout: ShareLayout,
   /// Terms with in-degree >= 2 and unshared length >= 2.
   pub candidate_count: u64,
-  /// Phase-1 uniform width.
+  /// Nominal width for the candidate count ([`ShareLayout::uniform_width`]).
+  pub nominal_w: u64,
+  /// Phase-1 uniform width of the returned candidate (the winning width;
+  /// 0 for the all-candidates experiment).
   pub w: u64,
+  /// Final layout length of every candidate run, as `(w, bytes)` in
+  /// increasing `w` (one entry for a single forced candidate).
+  pub candidate_lengths: Vec<(u64, u64)>,
   /// Phase-1 uniform-model length.
   pub phase1_model_bytes: u64,
   /// Phase-1 output priced by the layout (its own order).
@@ -359,21 +379,46 @@ pub struct TieredSharingResult {
   pub stats: TieredStats,
 }
 
-/// The tiered construction on a DAG.
+/// The tiered canonical construction on a DAG (W1's
+/// `canonicalTieredExpanded`): phases 1-3 at each phase-1 width 1, 2 and 3,
+/// returning the candidate with the fewest final layout bytes; ties go to
+/// the lower width, then `set_prec` on the stored set. Each candidate runs
+/// under its own meter with the same limits, and an error at any width
+/// fails the whole call.
 pub(crate) fn tiered(
   layout: ShareLayout,
   dag: &SharingDag,
-  meter: &mut Meter<'_>,
+  limits: &ExactSharingLimits,
 ) -> Result<TieredSharingResult, SharingError> {
-  tiered_at(layout, dag, meter, Phase1Choice::KBased)
+  let mut best: Option<TieredSharingResult> = None;
+  let mut lengths = Vec::with_capacity(3);
+  for w in 1..=3 {
+    let c =
+      tiered_at(layout, dag, &mut Meter::new(limits), Phase1Choice::Width(w))?;
+    lengths.push((w, c.stats.phase3_layout_bytes));
+    if best.as_ref().is_none_or(|b| tiered_better(&c, b)) {
+      best = Some(c);
+    }
+  }
+  let mut best = best.ok_or_else(|| internal("no tiered candidate"))?;
+  best.stats.candidate_lengths = lengths;
+  Ok(best)
 }
 
-/// How phase 1 chooses its stored set.
+/// Whether candidate `a` beats `b` (W1's `tieredBetter`): fewer final layout
+/// bytes, then the lower width, then `set_prec` on the stored set.
+fn tiered_better(a: &TieredSharingResult, b: &TieredSharingResult) -> bool {
+  let (x, y) = (&a.stats, &b.stats);
+  x.phase3_layout_bytes < y.phase3_layout_bytes
+    || (x.phase3_layout_bytes == y.phase3_layout_bytes
+      && (x.w < y.w
+        || (x.w == y.w && set_prec(&a.phase1.stored, &b.phase1.stored))))
+}
+
+/// One phase-1 candidate, for the escape hatch and experiments.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase1Choice {
-  /// The canonical construction: the uniform optimum at the `K`-based width.
-  KBased,
-  /// Experiment: the uniform optimum at width `w`.
+  /// The uniform optimum at width `w` (W1's `fixedWidth := some w`).
   Width(u64),
   /// Experiment: every candidate (compact in-degree >= 2, unshared length
   /// >= 2) stored, bodies materialized at uniform width 1 (the MSS set).
@@ -398,10 +443,6 @@ fn tiered_at(
   );
   // Phase 1.
   let (w, u) = match phase1 {
-    Phase1Choice::KBased => {
-      let w = layout.uniform_width(k);
-      (w, optimize_uniform(w, dag, meter)?)
-    },
     Phase1Choice::Width(w) => (w, optimize_uniform(w, dag, meter)?),
     Phase1Choice::AllCandidates => {
       let stored: Vec<TermId> = (0..n)
@@ -522,7 +563,9 @@ fn tiered_at(
   let stats = TieredStats {
     layout,
     candidate_count: k,
+    nominal_w: layout.uniform_width(k),
     w,
+    candidate_lengths: vec![(w, predicted)],
     phase1_model_bytes: u.model_len,
     phase1_layout_bytes: phase1_layout,
     slot_states,
@@ -554,34 +597,33 @@ pub fn canonical_sharing_tiered(
 ) -> Result<TieredSharingResult, SharingError> {
   let mut meter = Meter::new(limits);
   let dag = SharingDag::build(roots, None, &mut meter)?;
-  tiered(layout, &dag, &mut meter)
+  tiered(layout, &dag, limits)
 }
 
-/// Expand `c`'s table and re-share it with the tiered construction.
+/// Expand `c`'s table and re-share it with the tiered canonical
+/// construction (the best of the phase-1 widths 1, 2 and 3).
 pub fn normalize_constant_sharing_tiered(
   layout: ShareLayout,
   c: &Constant,
   limits: &ExactSharingLimits,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, Phase1Choice::KBased)
+  normalize_tiered_at(layout, c, limits, None)
 }
 
-/// Experiment hook, not the canonical construction: the tiered construction
-/// of `c` with the phase-1 uniform width forced to `w` instead of the
-/// `K`-based choice. Phases 2 and 3 are unchanged. With
-/// `w = layout.uniform_width(K)` it equals
-/// [`normalize_constant_sharing_tiered`].
+/// Escape hatch (W1's `fixedWidth := some w`), not the canonical
+/// construction: the single candidate with phase-1 width `w`. The canonical
+/// construction returns one of the candidates at `w = 1, 2, 3`.
 pub fn normalize_constant_sharing_tiered_at_width(
   layout: ShareLayout,
   c: &Constant,
   limits: &ExactSharingLimits,
   w: u64,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, Phase1Choice::Width(w))
+  normalize_tiered_at(layout, c, limits, Some(Phase1Choice::Width(w)))
 }
 
-/// Experiment hook, not the canonical construction: the tiered construction
-/// of `c` with phase 1 chosen by `phase1`. The reported `stats.w` is 0 for
+/// Experiment hook, not the canonical construction: the single candidate
+/// chosen by `phase1`. The reported `stats.w` is 0 for
 /// [`Phase1Choice::AllCandidates`].
 pub fn normalize_constant_sharing_tiered_with(
   layout: ShareLayout,
@@ -589,20 +631,23 @@ pub fn normalize_constant_sharing_tiered_with(
   limits: &ExactSharingLimits,
   phase1: Phase1Choice,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
-  normalize_tiered_at(layout, c, limits, phase1)
+  normalize_tiered_at(layout, c, limits, Some(phase1))
 }
 
 fn normalize_tiered_at(
   layout: ShareLayout,
   c: &Constant,
   limits: &ExactSharingLimits,
-  phase1: Phase1Choice,
+  phase1: Option<Phase1Choice>,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
   let mut meter = Meter::new(limits);
   let roots = constant_info_root_exprs(&c.info);
   let dag = SharingDag::build(&roots, Some(&c.sharing), &mut meter)?;
   let fixed = constant_fixed_len(c).ok_or_else(overflow)?;
-  let result = tiered_at(layout, &dag, &mut meter, phase1)?;
+  let result = match phase1 {
+    None => tiered(layout, &dag, limits)?,
+    Some(p) => tiered_at(layout, &dag, &mut Meter::new(limits), p)?,
+  };
   let info = rebuild_constant_info(&c.info, &result.roots)?;
   let out = Constant {
     info,

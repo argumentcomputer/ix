@@ -2376,7 +2376,12 @@ fn tiered_fixtures() {
       r.stats.kept_phase1_order
     );
     assert_eq!(roundtrip(&n).len(), 578);
-    assert_eq!(r.stats.w, 2);
+    // Same bytes as the nominal width (2); the tie goes to the lower width.
+    assert_eq!(r.stats.nominal_w, 2);
+    let (m, _) =
+      normalize_constant_sharing_tiered_at_width(l, &nine, &limits(), 2)
+        .unwrap();
+    assert_eq!(put(&m), put(&n));
     assert!(r.stats.first_tier.contains(&2) && pos < 8);
   }
 }
@@ -2708,9 +2713,10 @@ fn uniform_branch_and_bound_across_a_bracket() {
 // Forced phase-1 width (experiment hook)
 // ---------------------------------------------------------------------------
 
-/// The experiment hook at the `K`-based width is the canonical
-/// construction; at any other width it is a valid encoding of the same
-/// constant, priced and serialized consistently.
+/// The canonical construction is the forced-width candidate with the fewest
+/// layout bytes (ties to the lower width), never longer than the nominal
+/// width's, and reports every candidate length; every forced width is a
+/// valid encoding of the same constant, priced and serialized consistently.
 #[test]
 fn tiered_at_width_hook() {
   let mut rng = Rng(73);
@@ -2723,7 +2729,10 @@ fn tiered_at_width_hook() {
     };
     for l in LAYOUTS {
       let (n, r) = normalize_constant_sharing_tiered(l, &c, &limits()).unwrap();
-      let wk = l.uniform_width(r.stats.candidate_count);
+      let nominal = l.uniform_width(r.stats.candidate_count);
+      assert_eq!(r.stats.nominal_w, nominal);
+      let mut lengths = Vec::new();
+      let mut best: Option<(u64, u64)> = None;
       for w in 1..=3 {
         let (m, s) =
           normalize_constant_sharing_tiered_at_width(l, &c, &limits(), w)
@@ -2738,10 +2747,24 @@ fn tiered_at_width_hook() {
           put(&unshared(&c)),
           "case {i} {l:?} w={w}: different constant"
         );
-        if w == wk {
+        assert_eq!(s.stats.candidate_lengths, vec![(w, s.model_len)]);
+        lengths.push((w, s.model_len));
+        if best.is_none_or(|(_, b)| s.model_len < b) {
+          best = Some((w, s.model_len));
+        }
+        if w == r.stats.w {
           assert_eq!((put(&m), s.model_len), (put(&n), r.model_len));
         }
+        if w == nominal {
+          assert!(
+            r.model_len <= s.model_len,
+            "case {i} {l:?}: longer than nominal"
+          );
+        }
       }
+      // The selection rule: fewest layout bytes, ties to the lower width.
+      assert_eq!(best, Some((r.stats.w, r.model_len)), "case {i} {l:?}");
+      assert_eq!(r.stats.candidate_lengths, lengths);
     }
   }
 }
