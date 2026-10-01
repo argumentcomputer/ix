@@ -398,6 +398,18 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.UniformModel.componentsChecked_spec,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.UniformModel.optimizeUniform_reach,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.reachLabelsOn_allows,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.mem_upClosure,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.sepCheck_spec,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.evalFold_rows,
+    standardAxioms := noChoice },
+  { root := ``Ix.Compile.Verify.UniformModel.entry_inl,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.Verify.UniformModel.phiE_spec,
     standardAxioms := standard }
 ]
 

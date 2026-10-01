@@ -662,13 +662,13 @@ structure SCtx where
   slack : Nat
   theta : _root_.Int
   /-- Full evaluation with the certain-stored terms available, their widths,
-  the members and their ancestors (ascending), the roots among them with
-  multiplicities, and the certain-stored terms among them. -/
+  the members and their ancestors (ascending), the roots among them (with
+  repetitions), and the certain-stored terms among them. -/
   baseEv : DictEval
   widthCs : Array (Option Nat)
   allTrue : Array Bool
   closure : Array Nat
-  rootMultC : Array (Nat × Nat)
+  rootsC : Array Nat
   storedInC : Array Nat
   /-- Every uncertain term (all components). -/
   allUnc : Array Nat
@@ -696,7 +696,7 @@ def SCtx.phiE (cx : SCtx) (avail : Nat → Bool) (stored : Array Nat) : Nat × N
   let ev := cx.closure.foldl (evalStep p.dag p.family p.spineLen p.tail width cx.allTrue) cx.baseEv
   let inl := fun x =>
     (evalStep p.dag p.family p.spineLen p.tail (width.set! x none) cx.allTrue ev x).cost[x]!
-  let roots := cx.rootMultC.foldl (fun acc (r, m) => acc + m * ev.cost[r]!) 0
+  let roots := cx.rootsC.foldl (fun acc r => acc + ev.cost[r]!) 0
   let base := cx.storedInC.foldl (fun acc c => acc + inl c) 0
   let entries := stored.foldl (fun acc x => acc + inl x) 0
   (roots + base + entries, cx.closure.size + stored.size)
@@ -1171,16 +1171,15 @@ def uniformChoose (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) :
                acc.2.2 + (if continuationEdge node i (ex.dag.node y) then 0 else 1))
             else acc) (q, 0, 0)
       let rootOcc := area.map fun y => rootMult.getD y 0
-      let memberSet : Std.HashSet Nat := members.foldl (·.insert ·) {}
-      let closure := upClosure ex.dag (memberSet.contains ·)
-      let closureSet : Std.HashSet Nat := closure.foldl (·.insert ·) {}
-      let rootMultC := (ex.roots.foldl (fun (acc : Std.HashMap Nat Nat) r =>
-        if closureSet.contains r then acc.insert r (acc.getD r 0 + 1) else acc) {}).toArray
+      let isMem := markTable n members
+      let closure := upClosure ex.dag (isMem[·]!)
+      let inClosure := markTable n closure
+      let rootsC := ex.roots.filter (inClosure[·]!)
       let storedInC := closure.filter (opaq[·]!)
       let cx : SCtx :=
         { up, facts := f, cand, bounds0 := b0, vis0, members, memberIdx, area, areaIdx,
           inEdges, rootOcc, rootMult := rootArr, storedIn, slack, theta,
-          baseEv, widthCs, allTrue, closure, rootMultC, storedInC, allUnc := unc }
+          baseEv, widthCs, allTrue, closure, rootsC, storedInC, allUnc := unc }
       let st0 : SState := { states, costEvals }
       let (tb, st) ← cx.solveP limits (8 * members.size + 8) members #[] #[] st0
       states := st.states
