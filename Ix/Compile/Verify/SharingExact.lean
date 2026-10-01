@@ -1,5 +1,6 @@
 import Ix.Compile.Verify.ExprSpineCodec
 import Ix.Compile.Verify.Catalog
+import Ix.Compile.Verify.MutualConstantCodec
 import Ix.Sharing.Exact
 
 /-!
@@ -320,6 +321,14 @@ theorem allBinderListBytes_size_S
 
 theorem S_def (e : Ixon.Expr) : S e = (spineWireEncode e).size := rfl
 
+theorem map_S_eq (l : List Ixon.Expr) :
+    l.map S = l.map fun e => (spineWireEncode e).size := rfl
+
+theorem sum_map_const_one {α : Type} (l : List α) : (l.map fun _ => 1).sum = l.length := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih => simp [ih]; omega
+
 /-- The size facts of a telescope node keep their full length in the
 continuations of the other families. -/
 theorem sizeInfoWith_app_lamCont (sc : Nat → Nat) (f a : Ixon.Expr) :
@@ -488,5 +497,342 @@ theorem exprSize_eq_serExpr (e : Ixon.Expr) (h : e.wireWF) :
     exprSize e = (Ixon.runPut (Ixon.putExpr e)).size := by
   rw [exprSize_eq_spineWireEncode e h, ← serExpr_eq_spineWireEncode e h]
   rfl
+
+/-! ## Complete-Constant length -/
+
+section ConstantLength
+
+open Ix.Compile.Verify.Codec.Ixon.Constant
+open Ix.Compile.Verify.Codec.Ixon.ConstantTables
+open Ix.Compile.Verify.Codec.Ixon.NonrecursiveConstant
+open Ix.Compile.Verify.Codec.Ixon.RecursorConstant
+open Ix.Compile.Verify.Codec.Ixon.MutualConstant
+
+theorem listBytes_size {α : Type} (enc : α → ByteArray) (xs : List α) :
+    (listBytes enc xs).size = (xs.map fun x => (enc x).size).sum := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih => simp [listBytes, ih]
+
+theorem sum_map_add {α : Type} (xs : List α) (f g : α → Nat) :
+    (xs.map fun x => f x + g x).sum = (xs.map f).sum + (xs.map g).sum := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih => simp [ih]; omega
+
+/-- Root-free bytes of a recursor rule, constructor, recursor, inductive. -/
+def ruleFixed (rl : Ixon.RecursorRule) : Nat := tag0Size rl.fields.toNat
+
+def ctorFixed (c : Ixon.Constructor) : Nat :=
+  1 + tag0Size c.lvls.toNat + tag0Size c.cidx.toNat + tag0Size c.params.toNat +
+    tag0Size c.fields.toNat
+
+def recFixed (r : Ixon.Recursor) : Nat :=
+  1 + tag0Size r.lvls.toNat + tag0Size r.params.toNat + tag0Size r.indices.toNat +
+    tag0Size r.motives.toNat + tag0Size r.minors.toNat +
+    tag0Size r.rules.size.toUInt64.toNat + (r.rules.toList.map ruleFixed).sum
+
+def indFixed (i : Ixon.Inductive) : Nat :=
+  1 + tag0Size i.lvls.toNat + tag0Size i.params.toNat + tag0Size i.indices.toNat +
+    tag0Size i.ctors.size.toUInt64.toNat + (i.ctors.toList.map ctorFixed).sum
+
+def memberFixed : Ixon.MutConst → Nat
+  | .defn d => 1 + (1 + tag0Size d.lvls.toNat)
+  | .indc i => 1 + indFixed i
+  | .recr r => 1 + recFixed r
+
+/-- Bytes of a `ConstantInfo` encoding that are not expression roots. -/
+def infoFixed : Ixon.ConstantInfo → Nat
+  | .defn d => tag4Size 0 + (1 + tag0Size d.lvls.toNat)
+  | .recr r => tag4Size 1 + recFixed r
+  | .axio a => tag4Size 2 + (1 + tag0Size a.lvls.toNat)
+  | .quot q => tag4Size 3 + (1 + tag0Size q.lvls.toNat)
+  | .muts ms => tag4Size ms.size.toUInt64.toNat + (ms.toList.map memberFixed).sum
+  | info => (constantInfoBytes info).size
+
+theorem rules_bytes (f : Ixon.Expr → Ixon.Expr) (rules : Array Ixon.RecursorRule) :
+    (listBytes recursorRuleBytes (rules.map fun rl => { rl with rhs := f rl.rhs }).toList).size =
+      (rules.toList.map ruleFixed).sum + ((rules.toList.map (·.rhs)).map fun r => S (f r)).sum := by
+  rw [listBytes_size, Array.toList_map, List.map_map, List.map_map]
+  simp only [Function.comp_def, recursorRuleBytes, ByteArray.size_append, tag0Bytes_size]
+  rw [sum_map_add]
+  rfl
+
+theorem ctors_bytes (f : Ixon.Expr → Ixon.Expr) (ctors : Array Ixon.Constructor) :
+    (listBytes constructorBytes (ctors.map fun c => { c with typ := f c.typ }).toList).size =
+      (ctors.toList.map ctorFixed).sum + ((ctors.toList.map (·.typ)).map fun r => S (f r)).sum := by
+  rw [listBytes_size, Array.toList_map, List.map_map, List.map_map]
+  simp only [Function.comp_def, constructorBytes, ByteArray.size_append, tag0Bytes_size,
+    List.size_toByteArray, List.length_singleton]
+  rw [← sum_map_add]
+  congr 1
+
+theorem recursorBytes_map (f : Ixon.Expr → Ixon.Expr) (r : Ixon.Recursor) :
+    (recursorBytes
+        { r with
+          typ := f r.typ,
+          rules := r.rules.map fun rl => { rl with rhs := f rl.rhs } }).size =
+      recFixed r + (((r.typ :: r.rules.toList.map (·.rhs))).map fun e => S (f e)).sum := by
+  simp only [recursorBytes, ByteArray.size_append, tag0Bytes_size, List.size_toByteArray,
+    List.length_singleton, Array.size_map, rules_bytes, recFixed, List.map_cons, List.sum_cons]
+  simp only [S]
+  omega
+
+theorem inductiveBytes_map (f : Ixon.Expr → Ixon.Expr) (i : Ixon.Inductive) :
+    (inductiveBytes
+        { i with
+          typ := f i.typ,
+          ctors := i.ctors.map fun c => { c with typ := f c.typ } }).size =
+      indFixed i + (((i.typ :: i.ctors.toList.map (·.typ))).map fun e => S (f e)).sum := by
+  simp only [inductiveBytes, ByteArray.size_append, tag0Bytes_size, List.size_toByteArray,
+    List.length_singleton, Array.size_map, ctors_bytes, indFixed, List.map_cons, List.sum_cons]
+  simp only [S]
+  omega
+
+theorem memberBytes_map (f : Ixon.Expr → Ixon.Expr) (m : Ixon.MutConst) :
+    (mutConstBytes (mapMutConstRoots f m)).size =
+      memberFixed m + ((mutConstRoots m).map fun e => S (f e)).sum := by
+  cases m with
+  | defn d =>
+    simp only [mapMutConstRoots, mutConstBytes, definitionBytes, ByteArray.size_append,
+      List.size_toByteArray, List.length_singleton, tag0Bytes_size, memberFixed, mutConstRoots,
+      List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    simp only [S]
+    omega
+  | indc i =>
+    simp only [mapMutConstRoots, mutConstBytes, ByteArray.size_append, List.size_toByteArray,
+      List.length_singleton, inductiveBytes_map, memberFixed, mutConstRoots]
+    simp only [List.map_cons, List.map_map, Function.comp_def]
+    omega
+  | recr r =>
+    simp only [mapMutConstRoots, mutConstBytes, ByteArray.size_append, List.size_toByteArray,
+      List.length_singleton, recursorBytes_map, memberFixed, mutConstRoots]
+    simp only [List.map_cons, List.map_map, Function.comp_def]
+    omega
+
+theorem members_bytes (f : Ixon.Expr → Ixon.Expr) (ms : List Ixon.MutConst) :
+    (listBytes mutConstBytes (ms.map (mapMutConstRoots f))).size =
+      (ms.map memberFixed).sum + ((ms.flatMap mutConstRoots).map fun e => S (f e)).sum := by
+  induction ms with
+  | nil => rfl
+  | cons m ms ih =>
+    simp only [List.map_cons, listBytes, ByteArray.size_append, memberBytes_map, ih,
+      List.flatMap_cons, List.map_append, List.sum_append, List.sum_cons]
+    omega
+
+/-- The info bytes are the root-free bytes plus the roots' encodings, for any
+map applied to the roots. -/
+theorem infoBytes_mapRoots (f : Ixon.Expr → Ixon.Expr) (info : Ixon.ConstantInfo) :
+    (constantInfoBytes (mapRoots f info)).size =
+      infoFixed info + ((constantInfoRoots info).toList.map fun e => S (f e)).sum := by
+  cases info with
+  | defn d =>
+    simp only [mapRoots, constantInfoBytes, standaloneInfoBytes, nonrecursiveInfoBytes,
+      definitionBytes, Ixon.ConstantInfo.CONST_DEFN, UInt64.reduceToNat, ByteArray.size_append, tag4Bytes_size, List.size_toByteArray,
+      List.length_singleton, tag0Bytes_size, infoFixed, constantInfoRoots, mutConstRoots,
+      List.toList_toArray, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    simp only [S]
+    omega
+  | recr r =>
+    simp only [mapRoots, constantInfoBytes, standaloneInfoBytes, ByteArray.size_append,
+      Ixon.ConstantInfo.CONST_RECR, UInt64.reduceToNat, tag4Bytes_size, recursorBytes_map, infoFixed, constantInfoRoots, mutConstRoots,
+      List.toList_toArray]
+    omega
+  | axio a =>
+    simp only [mapRoots, constantInfoBytes, standaloneInfoBytes, nonrecursiveInfoBytes,
+      axiomBytes, Ixon.ConstantInfo.CONST_AXIO, UInt64.reduceToNat, ByteArray.size_append, tag4Bytes_size, List.size_toByteArray,
+      List.length_singleton, tag0Bytes_size, infoFixed, constantInfoRoots,
+      List.toList_toArray, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    simp only [S]
+    omega
+  | quot q =>
+    simp only [mapRoots, constantInfoBytes, standaloneInfoBytes, nonrecursiveInfoBytes,
+      quotientBytes, Ixon.ConstantInfo.CONST_QUOT, UInt64.reduceToNat, ByteArray.size_append, tag4Bytes_size, List.size_toByteArray,
+      List.length_singleton, tag0Bytes_size, infoFixed, constantInfoRoots,
+      List.toList_toArray, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    simp only [S]
+    omega
+  | cPrj p => simp [mapRoots, infoFixed, constantInfoRoots]
+  | rPrj p => simp [mapRoots, infoFixed, constantInfoRoots]
+  | iPrj p => simp [mapRoots, infoFixed, constantInfoRoots]
+  | dPrj p => simp [mapRoots, infoFixed, constantInfoRoots]
+  | muts ms =>
+    simp only [mapRoots, constantInfoBytes, ByteArray.size_append, tag4Bytes_size,
+      Array.size_map, Array.toList_map, members_bytes, infoFixed, constantInfoRoots,
+      List.toList_toArray]
+    omega
+
+theorem mapMutConstRoots_id (m : Ixon.MutConst) : mapMutConstRoots (fun e => e) m = m := by
+  cases m <;> simp [mapMutConstRoots]
+
+theorem mapRoots_id (info : Ixon.ConstantInfo) : mapRoots (fun e => e) info = info := by
+  have hm : (mapMutConstRoots fun e => e) = id := funext mapMutConstRoots_id
+  cases info <;> simp [mapRoots, hm]
+
+/-- The info bytes are the root-free bytes plus the roots' encodings. -/
+theorem infoBytes_size (info : Ixon.ConstantInfo) :
+    (constantInfoBytes info).size = infoFixed info + ((constantInfoRoots info).toList.map S).sum := by
+  have h := infoBytes_mapRoots (fun e => e) info
+  rw [mapRoots_id] at h
+  exact h
+
+theorem mutConstRoots_wireWF (m : Ixon.MutConst) (h : m.wireWF) :
+    ∀ e ∈ mutConstRoots m, e.wireWF := by
+  cases m with
+  | defn d =>
+    obtain ⟨ht, hv⟩ := h
+    intro e he
+    simp only [mutConstRoots, List.mem_cons, List.not_mem_nil, or_false] at he
+    rcases he with rfl | rfl <;> assumption
+  | indc i =>
+    obtain ⟨ht, _, hc⟩ := h
+    intro e he
+    simp only [mutConstRoots, List.mem_cons, List.mem_map] at he
+    rcases he with rfl | ⟨c, hcm, rfl⟩
+    · exact ht
+    · exact hc c (Array.mem_toList_iff.mp hcm)
+  | recr r =>
+    obtain ⟨ht, _, hr⟩ := h
+    intro e he
+    simp only [mutConstRoots, List.mem_cons, List.mem_map] at he
+    rcases he with rfl | ⟨rl, hrl, rfl⟩
+    · exact ht
+    · exact hr rl (Array.mem_toList_iff.mp hrl)
+
+/-- Every root of a wire-well-formed `ConstantInfo` is wire-well-formed. -/
+theorem constantInfoRoots_wireWF (info : Ixon.ConstantInfo) (h : info.wireWF) :
+    ∀ e ∈ (constantInfoRoots info).toList, e.wireWF := by
+  cases info with
+  | defn d => exact mutConstRoots_wireWF (.defn d) h
+  | recr r => exact mutConstRoots_wireWF (.recr r) h
+  | axio a =>
+    intro e he
+    simp only [constantInfoRoots, List.toList_toArray, List.mem_cons, List.not_mem_nil,
+      or_false] at he
+    subst he; exact h
+  | quot q =>
+    intro e he
+    simp only [constantInfoRoots, List.toList_toArray, List.mem_cons, List.not_mem_nil,
+      or_false] at he
+    subst he; exact h
+  | cPrj p | rPrj p | iPrj p | dPrj p => intro e he; simp [constantInfoRoots] at he
+  | muts ms =>
+    obtain ⟨_, hms⟩ := h
+    intro e he
+    simp only [constantInfoRoots, List.toList_toArray, List.mem_flatMap] at he
+    obtain ⟨m, hm, he⟩ := he
+    exact mutConstRoots_wireWF m (hms m (Array.mem_toList_iff.mp hm)) e he
+
+theorem mapMutConstRoots_wireWF (f : Ixon.Expr → Ixon.Expr) (hf : ∀ e, (f e).wireWF)
+    (m : Ixon.MutConst) (h : m.wireWF) : (mapMutConstRoots f m).wireWF := by
+  cases m with
+  | defn d => exact ⟨hf _, hf _⟩
+  | indc i =>
+    obtain ⟨_, hsize, _⟩ := h
+    refine ⟨hf _, by simpa using hsize, ?_⟩
+    intro c hc
+    obtain ⟨c0, _, rfl⟩ := Array.mem_map.mp hc
+    exact hf _
+  | recr r =>
+    obtain ⟨_, hsize, _⟩ := h
+    refine ⟨hf _, by simpa using hsize, ?_⟩
+    intro rl hrl
+    obtain ⟨rl0, _, rfl⟩ := Array.mem_map.mp hrl
+    exact hf _
+
+theorem mapRoots_wireWF (f : Ixon.Expr → Ixon.Expr) (hf : ∀ e, (f e).wireWF)
+    (info : Ixon.ConstantInfo) (h : info.wireWF) : (mapRoots f info).wireWF := by
+  cases info with
+  | defn d => exact mapMutConstRoots_wireWF f hf (.defn d) h
+  | recr r => exact mapMutConstRoots_wireWF f hf (.recr r) h
+  | axio a => exact hf _
+  | quot q => exact hf _
+  | cPrj p | rPrj p | iPrj p | dPrj p => exact h
+  | muts ms =>
+    obtain ⟨hsize, hms⟩ := h
+    refine ⟨by simpa using hsize, ?_⟩
+    intro m hm
+    obtain ⟨m0, hm0, rfl⟩ := Array.mem_map.mp hm
+    exact mapMutConstRoots_wireWF f hf m0 (hms m0 hm0)
+
+theorem exprsSize_eq (es : Array Ixon.Expr) (h : ∀ e ∈ es, e.wireWF) :
+    exprsSize es = (es.toList.map S).sum := by
+  unfold exprsSize
+  rw [← Array.foldl_toList]
+  have h' : ∀ e ∈ es.toList, e.wireWF := fun e he => h e (Array.mem_toList_iff.mp he)
+  generalize es.toList = xs at h'
+  suffices hs : ∀ acc, xs.foldl (fun acc e => acc + exprSize e) acc = acc + (xs.map S).sum by
+    simpa using hs 0
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+    intro acc
+    simp only [List.foldl_cons, List.map_cons, List.sum_cons]
+    rw [ih (fun e he => h' e (List.mem_cons_of_mem x he)),
+      exprSize_eq_spineWireEncode x (h' x (List.mem_cons_self))]
+    simp only [S]
+    omega
+
+/-- `putConstant` writes `constantBytes` for every wire-well-formed Constant. -/
+theorem serConstant_eq_constantBytes (c : Ixon.Constant) (h : c.wireWF) :
+    Ixon.serConstant c = Ix.Compile.Verify.Codec.Ixon.MutualConstant.constantBytes c := by
+  have hw := putConstant_writes c ((constantWireWF_iff_catalog c).mpr h) ByteArray.empty
+  simp only [Ixon.serConstant, Ixon.runPut, hw, ByteArray.empty_append]
+
+theorem constantBytes_size (c : Ixon.Constant) :
+    (Ix.Compile.Verify.Codec.Ixon.MutualConstant.constantBytes c).size =
+      (constantInfoBytes c.info).size + tag0Size c.sharing.size.toUInt64.toNat +
+        (c.sharing.toList.map S).sum +
+          ((tag0Bytes c.refs.size.toUInt64).size + (listBytes Address.hash c.refs.toList).size +
+            (tag0Bytes c.univs.size.toUInt64).size +
+              (listBytes Ix.Compile.Verify.Codec.Ixon.Univ.wireEncode c.univs.toList).size) := by
+  simp only [Ix.Compile.Verify.Codec.Ixon.MutualConstant.constantBytes, ByteArray.size_append,
+    tag0Bytes_size, listBytes_size]
+  rw [map_S_eq]
+  omega
+
+theorem S_var_zero : S (.var 0) = 1 := by
+  simp [S, spineWireEncode, tag4Bytes_size, tag4Size]
+
+/-- The complete-Constant length decomposes into the root-free bytes
+(`fixedConstantBytes`), the roots, the table count and the table bodies. -/
+theorem serConstant_size_decomposition (c : Ixon.Constant) (h : c.wireWF) :
+    (Ixon.serConstant c).size =
+      fixedConstantBytes c + exprsSize (constantInfoRoots c.info) + tag0Size c.sharing.size +
+        exprsSize c.sharing := by
+  obtain ⟨hinfo, hsharingSize, hsharing, hrefsSize, hrefs, hunivsSize, hunivs⟩ := h
+  let c' : Ixon.Constant :=
+    { c with info := mapRoots (fun _ => Ixon.Expr.var 0) c.info, sharing := #[] }
+  have h' : c'.wireWF := by
+    refine ⟨mapRoots_wireWF (fun _ => Ixon.Expr.var 0)
+      (fun _ => by unfold Ixon.Expr.wireWF; trivial) _ hinfo,
+      by simp [c'], ?_, hrefsSize, hrefs,
+      hunivsSize, hunivs⟩
+    intro e he
+    simp [c'] at he
+  have hc := serConstant_eq_constantBytes c
+    ⟨hinfo, hsharingSize, hsharing, hrefsSize, hrefs, hunivsSize, hunivs⟩
+  have hc' := serConstant_eq_constantBytes c' h'
+  have hfixed : fixedConstantBytes c = (Ixon.serConstant c').size -
+      (constantInfoRoots c.info).size - tag0Size 0 := rfl
+  have hroots := exprsSize_eq (constantInfoRoots c.info)
+    (fun e he => constantInfoRoots_wireWF c.info hinfo e (Array.mem_toList_iff.mpr he))
+  have hshare := exprsSize_eq c.sharing hsharing
+  have hmap := infoBytes_mapRoots (fun _ => Ixon.Expr.var 0) c.info
+  have hbase := infoBytes_size c.info
+  have hlen : ((constantInfoRoots c.info).toList.map fun _ => S (.var 0)).sum =
+      (constantInfoRoots c.info).size := by
+    rw [show (fun (_ : Ixon.Expr) => S (.var 0)) = fun _ => 1 from funext fun _ => S_var_zero,
+      sum_map_const_one, Array.length_toList]
+  rw [hlen] at hmap
+  rw [hfixed, hroots, hshare, hc, hc', constantBytes_size, constantBytes_size]
+  have hz : (Nat.toUInt64 0).toNat = 0 := rfl
+  simp only [c', toNat_toUInt64_of_lt hsharingSize, List.map_nil, List.sum_nil,
+    Array.size_empty, Array.toList_empty, hmap, hbase, hz]
+  omega
+
+
+end ConstantLength
+
 
 end Ix.Compile.Verify.SharingExact
