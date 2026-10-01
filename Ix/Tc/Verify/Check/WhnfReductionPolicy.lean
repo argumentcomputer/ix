@@ -120,7 +120,7 @@ theorem isTransientNatLiteralWork_preservesInferOnly
   cases direct with
   | true => exact TcM.PreservesInferOnly.pure true
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       rcases hspine : source.collectSpine with ⟨head, args⟩
       cases head with
       | const id levels info =>
@@ -152,15 +152,15 @@ private theorem tryProjAppReduce_preservesInferOnly
   rcases hspine : source.collectSpine with ⟨head, args⟩
   cases hempty : args.isEmpty with
   | true =>
-      simp only [hempty, if_true]
+      simp only [hempty, ite_true]
       exact TcM.PreservesInferOnly.pure none
   | false =>
-      simp only [hempty, Bool.false_eq_true, if_false, pure_bind]
+      simp only [hempty, Bool.false_eq_true, ite_false, pure_bind]
       cases head with
       | prj id field value info =>
           cases hcheap : flags.cheapProj with
           | true =>
-              simp only [if_true, ReaderT.run_bind]
+              simp only [ite_true, ReaderT.run_bind]
               apply TcM.PreservesInferOnly.bind
                 (whnfCoreFlagsRec_preservesInferOnly hmethods value flags)
               intro reduced
@@ -168,7 +168,7 @@ private theorem tryProjAppReduce_preservesInferOnly
               intro projection
               cases projection <;> exact TcM.PreservesInferOnly.pure _
           | false =>
-              simp only [Bool.false_eq_true, if_false, ReaderT.run_bind]
+              simp only [Bool.false_eq_true, ite_false, ReaderT.run_bind]
               apply TcM.PreservesInferOnly.bind
                 (whnfRec_preservesInferOnly hmethods value)
               intro reduced
@@ -487,7 +487,7 @@ theorem whnfNoDeltaReducersStep_preservesInferOnly
                   | none =>
                       cases hfull : flags.isFull with
                       | true =>
-                          simp only [if_true]
+                          simp only [ite_true]
                           apply TcM.PreservesInferOnly.bind
                             (helpers.projectionDefinition source)
                           intro projectionDefinition

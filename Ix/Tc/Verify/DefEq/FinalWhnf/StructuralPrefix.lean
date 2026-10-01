@@ -57,10 +57,10 @@ theorem tryDefEqWhnfStructural_wf
   · rename_i leftIdx leftName leftInfo rightIdx rightName rightInfo
     cases hidx : leftIdx == rightIdx with
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         exact RecM.WF.pure fun _ => trivial
     | true =>
-        simp only [if_true]
+        simp only [ite_true]
         exact RecM.WF.pure fun hI _ => by
           have hsameIdx : leftIdx = rightIdx := eq_of_beq hidx
           subst rightIdx
@@ -97,10 +97,10 @@ theorem tryDefEqWhnfStructural_wf
         (leftId.addr == rightId.addr &&
           sameDefEqUniverses leftLevels rightLevels) with
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         exact RecM.WF.pure fun _ => trivial
     | true =>
-        simp only [if_true]
+        simp only [ite_true]
         exact RecM.WF.pure fun _ _ => by
           obtain ⟨hid, hlevels⟩ := Bool.and_eq_true_iff.mp hguard
           exact constantHeadsDefEq resources.collision
@@ -118,10 +118,10 @@ theorem tryDefEqWhnfStructural_wf
     intro answer after hanswer
     cases answer with
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         exact RecM.WF.pure fun _ => trivial
     | true =>
-        simp only [if_true]
+        simp only [ite_true]
         exact RecM.WF.pure fun _ => hanswer
   · apply RecM.WF.bind <| by
       simpa only [quickDefEq] using
@@ -130,10 +130,10 @@ theorem tryDefEqWhnfStructural_wf
     intro answer after hanswer
     cases answer with
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         exact RecM.WF.pure fun _ => trivial
     | true =>
-        simp only [if_true]
+        simp only [ite_true]
         exact RecM.WF.pure fun _ => hanswer
   · rename_i leftName leftTy leftVal leftBody leftNondep leftInfo
       rightName rightTy rightVal rightBody rightNondep rightInfo

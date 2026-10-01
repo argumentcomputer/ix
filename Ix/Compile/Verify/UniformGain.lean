@@ -114,14 +114,14 @@ theorem edgeCounts_spec {dag : Dag} (h : DagWF dag) (roots : Array Nat)
     rw [ofDag_dag, ← har]
     cases headOnly with
     | true =>
-      simp only [if_true]
+      simp only [ite_true]
       congr 1
       apply List.filter_congr
       intro i _
       cases hc : continuationEdge (dag.node y) i (dag.node ((dag.node y).child i)) <;>
         by_cases hct : (dag.node y).child i = t <;> simp_all
     | false =>
-      simp only [Bool.false_eq_true, if_false, Bool.false_and, Bool.not_false, Bool.true_and]
+      simp only [Bool.false_eq_true, ite_false, Bool.false_and, Bool.not_false, Bool.true_and]
       rw [filter_length_split (fun i => (dag.node y).child i == t)
         (fun i => continuationEdge (dag.node y) i (dag.node t))]
   have hinv : ∀ m, m ≤ dag.size →
@@ -193,11 +193,11 @@ theorem BoundsRow.congr {p : Prep} (hp : PrepWF p) {w : Nat} {ms : Array Bool} {
 
 theorem setBang_getElem!_ne {α : Type} [Inhabited α] (a : Array α) {i j : Nat} (v : α)
     (h : j ≠ i) : (a.set! i v)[j]! = a[j]! := by
-  rw [Ix.Compile.Verify.SharingExact.setBang_getElem!, if_neg (fun h' => h h'.1.symm)]
+  rw [Ix.Compile.Verify.SharingExact.setBang_getElem!, ite_eq_right (fun h' => h h'.1.symm)]
 
 theorem setBang_getElem!_self {α : Type} [Inhabited α] (a : Array α) {i : Nat} (v : α)
     (h : i < a.size) : (a.set! i v)[i]! = v := by
-  rw [Ix.Compile.Verify.SharingExact.setBang_getElem!, if_pos ⟨rfl, h⟩]
+  rw [Ix.Compile.Verify.SharingExact.setBang_getElem!, ite_eq_left ⟨rfl, h⟩]
 
 /-- `uniformBounds` satisfies its recurrence at every term. -/
 theorem PrepWF.uniformBounds_spec {p : Prep} (hp : PrepWF p) (w : Nat) (ms : Array Bool) (t : Nat)
@@ -238,7 +238,7 @@ theorem PrepWF.uniformBounds_spec {p : Prep} (hp : PrepWF p) (w : Nat) (ms : Arr
         simp only
         by_cases hf : p.family[t]! = .none
         · have hfb : (p.family[t]! == Family.none) = true := by simp [hf]
-          simp only [hfb, if_true]
+          simp only [hfb, ite_true]
           refine ⟨fun _ => ⟨?_, ?_⟩, fun h => absurd hf h, ?_, ?_⟩
           · rw [setBang_getElem!_self _ _ (by omega)]
             exact foldl_add_congr _ _ fun c hc => (setBang_getElem!_ne _ _ (by
@@ -247,7 +247,7 @@ theorem PrepWF.uniformBounds_spec {p : Prep} (hp : PrepWF p) (w : Nat) (ms : Arr
           · rw [setBang_getElem!_self _ _ (by omega), setBang_getElem!_self _ _ (by omega)]
           · rw [setBang_getElem!_self _ _ (by omega), setBang_getElem!_self _ _ (by omega)]
         · have hfb : (p.family[t]! == Family.none) = false := by simpa using hf
-          simp only [hfb, Bool.false_eq_true, if_false]
+          simp only [hfb, Bool.false_eq_true, ite_false]
           have hs := hp.sideChild_lt hmn hf
           have hn := hp.snext_lt hmn hf
           refine ⟨fun h => absurd h hf, fun _ => ⟨?_, ?_⟩, ?_, ?_⟩
@@ -289,7 +289,7 @@ theorem PrepWF.merged_ge {p : Prep} (hp : PrepWF p) (w : Nat) (S : Nat → Bool)
       (prefixSides p (uCost p w S) t p.spineLen[t]! + uCost p w S p.tail[t]!)) with h | h
   · rw [h]
     rcases hp.spine_step ht hf with ⟨hs, hl, htl⟩ | ⟨hs, hl, htl⟩
-    · rw [if_pos hs, hl, htl]
+    · rw [ite_eq_left hs, hl, htl]
       simp only [prefixSides]
       have := contVal_le p w S (snext p t)
       have := foldl_min_le (mergedCuts p w S (uCost p w S) (snext p t))
@@ -297,12 +297,12 @@ theorem PrepWF.merged_ge {p : Prep} (hp : PrepWF p) (w : Nat) (S : Nat → Bool)
           uCost p w S p.tail[snext p t]!) _ List.mem_cons_self
       unfold mergedOf at *
       omega
-    · rw [if_neg hs, hl, htl]
+    · rw [ite_eq_right hs, hl, htl]
       simp [prefixSides]
   · obtain ⟨j, hj1, hj, hSj, hc⟩ := mem_mergedCuts h
     rw [hc]
     rcases hp.spine_step ht hf with ⟨hs, hl, htl⟩ | ⟨hs, hl, htl⟩
-    · rw [if_pos hs]
+    · rw [ite_eq_left hs]
       obtain ⟨j', rfl⟩ : ∃ j', j = j' + 1 := ⟨j - 1, by omega⟩
       simp only [prefixSides]
       by_cases hj' : j' = 0
@@ -311,7 +311,7 @@ theorem PrepWF.merged_ge {p : Prep} (hp : PrepWF p) (w : Nat) (S : Nat → Bool)
         have : contVal p w S (snext p t) ≤ w := by
           unfold contVal
           simp only [spineAt] at hSj
-          rw [if_pos hSj]; omega
+          rw [ite_eq_left hSj]; omega
         omega
       · have hmem := merged_mem_mergedCuts p w S (uCost p w S) (x := snext p t) (j := j')
           (by omega) (by omega) (by simpa [spineAt] using hSj)
@@ -347,7 +347,7 @@ theorem PrepWF.bounds_sound {p : Prep} (hp : PrepWF p) (w : Nat) (ms : Array Boo
         refine ⟨?_, fun h => absurd hf h⟩
         rw [a]
         unfold uInl inlOf
-        rw [if_pos hf, ← Array.foldl_toList, ← Array.foldl_toList, foldl_add_eq_sum,
+        rw [ite_eq_left hf, ← Array.foldl_toList, ← Array.foldl_toList, foldl_add_eq_sum,
           foldl_add_eq_sum]
         have : ∀ c ∈ (p.dag.node t).children.toList,
             (uniformBounds p w ms).headLB[c]! ≤ uCost p w S c := by
@@ -365,10 +365,10 @@ theorem PrepWF.bounds_sound {p : Prep} (hp : PrepWF p) (w : Nat) (ms : Array Boo
           have hside := (ih _ hs (by omega)).1
           unfold sideCost at hge
           by_cases hsame : p.family[snext p t]! = p.family[t]!
-          · rw [if_pos hsame] at hge ⊢
+          · rw [ite_eq_left hsame] at hge ⊢
             have := ((ih _ hn (by omega)).2.2 (by rw [hsame]; exact hf)).2
             omega
-          · rw [if_neg hsame] at hge ⊢
+          · rw [ite_eq_right hsame] at hge ⊢
             have := (ih _ hn (by omega)).1
             omega
         refine ⟨?_, fun _ => hm⟩
@@ -382,15 +382,15 @@ theorem PrepWF.bounds_sound {p : Prep} (hp : PrepWF p) (w : Nat) (ms : Array Boo
       have := hinl.1
       unfold uInl at this
       by_cases hSt : S t = true
-      · rw [if_pos (hS t hSt), if_pos hSt]; omega
-      · simp only [hSt, Bool.false_eq_true, if_false]
+      · rw [ite_eq_left (hS t hSt), ite_eq_left hSt]; omega
+      · simp only [hSt, Bool.false_eq_true, ite_false]
         split <;> omega
     · rw [r4]
       unfold contVal
       have := hinl.2 hf
       by_cases hSt : S t = true
-      · rw [if_pos (hS t hSt), if_pos hSt]; omega
-      · simp only [hSt, Bool.false_eq_true, if_false]
+      · rw [ite_eq_left (hS t hSt), ite_eq_left hSt]; omega
+      · simp only [hSt, Bool.false_eq_true, ite_false]
         split <;> omega
 where
   sum_le_sum_of_le' {f g : Nat → Nat} {l : List Nat} (h : ∀ k ∈ l, f k ≤ g k) :
@@ -452,10 +452,10 @@ theorem subst_isShare {p : Prep} {S : Nat → Bool} {t : Nat} (rh rc : Bool) {x 
   | share => simp [WTree.isShare] at hs
   | node => simp [WTree.subst, hxt, WTree.isShare]
   | teleCut =>
-    simp only [WTree.subst, hxt, if_false]
+    simp only [WTree.subst, hxt, ite_false]
     split <;> (try split) <;> rfl
   | teleFull =>
-    simp only [WTree.subst, hxt, if_false]
+    simp only [WTree.subst, hxt, ite_false]
     split <;> (try split) <;> rfl
 
 theorem topIs_root {p : Prep} {S : Nat → Bool} {t : Nat} (hSt : S t = false) :
@@ -465,8 +465,8 @@ theorem topIs_root {p : Prep} {S : Nat → Bool} {t : Nat} (hSt : S t = false) :
   | r :: rs, T :: Ts, .cons hv hs => by
     simp only [List.map_cons, List.sum_cons, List.count_cons, topIs_root hSt hs]
     by_cases hrt : r = t
-    · rw [if_pos ((top_iff hSt hv).mpr hrt)]; simp [hrt]; omega
-    · rw [if_neg (fun h => hrt ((top_iff hSt hv).mp (by simpa using h)))]
+    · rw [ite_eq_left ((top_iff hSt hv).mpr hrt)]; simp [hrt]; omega
+    · rw [ite_eq_right (fun h => hrt ((top_iff hSt hv).mp (by simpa using h)))]
       simp [hrt]
 
 theorem forall₂_imp_mem {α β : Type} {R R' : α → β → Prop} :
@@ -554,13 +554,13 @@ theorem PrepWF.exchange_counts {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Na
     refine ⟨fun y hy => ?_, hR'⟩
     by_cases hyt : y = t
     · subst hyt
-      simp only [E', if_true]
+      simp only [E', ite_true]
       exact ⟨hTt.mono (addT_le A y), hTts⟩
     · have hyS : y ∈ S := by
         rcases List.mem_cons.mp hy with h | h
         · exact absurd h hyt
         · exact h
-      simp only [E', if_neg hyt]
+      simp only [E', ite_eq_right hyt]
       exact ⟨(hsubE y hyS).1, subst_isShare rh rc (hEnc.1 y hyS).1 (hEnc.1 y hyS).2 hyt⟩
   have hle := hp.uniformCost_le w (addT A t) (fun s hs => by
       rcases List.mem_cons.mp hs with rfl | h
@@ -570,12 +570,12 @@ theorem PrepWF.exchange_counts {p : Prep} (hp : PrepWF p) (w : Nat) {S : List Na
   -- the new entry costs
   have hE' : ((t :: S).map fun s => (E' s).cost p w).sum =
       Tt.cost p w + (S.map fun s => ((E s).subst p t rh rc).cost p w).sum := by
-    simp only [List.map_cons, List.sum_cons, E', if_true]
+    simp only [List.map_cons, List.sum_cons, E', ite_true]
     congr 1
     apply congrArg
     apply List.map_congr_left
     intro s hs
-    rw [if_neg (fun h => htS (by rw [← h]; exact hs))]
+    rw [ite_eq_right (fun h => htS (by rw [← h]; exact hs))]
   have hR'c : (R'.map (WTree.cost p w)).sum = (R.map fun T => (T.subst p t rh rc).cost p w).sum := by
     simp only [R', List.map_map, Function.comp_def]
   -- the savings
@@ -734,7 +734,7 @@ theorem uniformCost_insert_le {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
   -- in-degrees
   have hdegE := edgeCounts_spec hwf roots hroots false t
   have hheadE := edgeCounts_spec hwf roots hroots true t
-  simp only [Bool.false_eq_true, if_false, if_true] at hdegE hheadE
+  simp only [Bool.false_eq_true, ite_false, ite_true] at hdegE hheadE
   rw [sum_map_add'] at hdegE
   rw [ofDag_dag] at hex
   generalize hHc : roots.toList.count t +
@@ -774,7 +774,7 @@ theorem uniformCost_insert_le {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
       exact sum_map_eq_zero fun y _ => edgeMult_cont_zero hp (by rw [ofDag_dag]; exact htn) hf y
     subst hCc0
     have hfb : ((Prep.ofDag dag).family[t]! == Family.none) = true := by simp [hf]
-    simp only [hfb, if_true]
+    simp only [hfb, ite_true]
     have hiLB := hb.2.1
     have e2 := prod_nonneg_expand (Hc : _root_.Int) 1 I
       (uniformBounds (Prep.ofDag dag) w ms).inlineLB[t]! (by omega) (by omega)
@@ -783,18 +783,18 @@ theorem uniformCost_insert_le {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
       _root_.Int.sub_mul, _root_.Int.one_mul] at hexI hAc hdeg ⊢
     omega
   · have hfb : ((Prep.ofDag dag).family[t]! == Family.none) = false := by simpa using hf
-    simp only [hfb, Bool.false_eq_true, if_false]
+    simp only [hfb, Bool.false_eq_true, ite_false]
     have hmLB := (hb.2.2 hf).1
     obtain ⟨hIM1, hIM2⟩ := hIMb hf
     by_cases hH : Hc ≥ 1
-    · rw [if_pos (by omega)]
+    · rw [ite_eq_left (by omega)]
       have f3 := prod_nonneg_expand (Hc : _root_.Int) 1 I (1 + M) (by omega) (by omega)
       have f4 := prod_nonneg_expand ((Hc + Cc : Nat) : _root_.Int) 1 M
         (uniformBounds (Prep.ofDag dag) w ms).mergedLB[t]! (by omega) (by omega)
       simp only [_root_.Int.one_mul, _root_.Int.mul_add, _root_.Int.mul_one,
         _root_.Int.natCast_add, _root_.Int.add_mul, _root_.Int.sub_mul] at f3 f4 ⊢
       omega
-    · rw [if_neg (by omega)]
+    · rw [ite_eq_right (by omega)]
       have hH0 : Hc = 0 := by omega
       subst hH0
       have f5 := prod_nonneg_expand (Cc : _root_.Int) 1 M

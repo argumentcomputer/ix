@@ -119,7 +119,7 @@ theorem checkConstMember_axiom_sound
   have hframe := validateConstWellScoped_frame hresources methods
     (hfault.withInferOnly false) state ⟨hI, hpolicy⟩
   unfold checkConstMember at hrun
-  simp only [Mode.F.hasDups, Bool.false_eq_true, if_false,
+  simp only [Mode.F.hasDups, Bool.false_eq_true, ite_false,
     ReaderT.run_bind, pure_bind] at hrun
   cases hvalidation :
       (validateConstWellScoped
@@ -197,7 +197,7 @@ theorem checkConstMember_defn_sound
   have hframe := validateConstWellScoped_frame hresources methods
     (hfault.withInferOnly false) state ⟨hI, hpolicy⟩
   unfold checkConstMember at hrun
-  simp only [Mode.F.hasDups, Bool.false_eq_true, if_false,
+  simp only [Mode.F.hasDups, Bool.false_eq_true, ite_false,
     ReaderT.run_bind, pure_bind] at hrun
   cases hvalidation :
       (validateConstWellScoped
@@ -248,9 +248,9 @@ theorem checkConstMember_defn_sound
               have htypeTr := htypePost.2.2.1
               have htypeEvidence := htypePost.2.2.2
               by_cases htheorem : kind == .thm && !univEq level .mkZero
-              · simp only [htheorem, if_true] at hrun
+              · simp only [htheorem, ite_true] at hrun
                 contradiction
-              · simp only [htheorem, Bool.false_eq_true, if_false,
+              · simp only [htheorem, Bool.false_eq_true, ite_false,
                   ReaderT.run_bind] at hrun
                 cases hinferValue : (infer value).run methods afterType with
                 | error err failed =>
@@ -267,7 +267,7 @@ theorem checkConstMember_defn_sound
                         simp only [hanswer] at hrun
                         cases answer with
                         | false =>
-                            simp only [Bool.not_false, if_true] at hrun
+                            simp only [Bool.not_false, ite_true] at hrun
                             contradiction
                         | true =>
                             have hvaluePipeline :
@@ -286,8 +286,8 @@ theorem checkConstMember_defn_sound
                             have hvalueEvidence := hvaluePost.2
                             by_cases hsafety : safety != .unsaf
                             · simp only [Bool.not_true, Bool.false_eq_true,
-                                if_false] at hrun
-                              simp only [hsafety, if_true,
+                                ite_false] at hrun
+                              simp only [hsafety, ite_true,
                                 ReaderT.run_bind] at hrun
                               cases htypeSafety :
                                   (checkNoUnsafeRefs type safety).run methods
@@ -326,7 +326,7 @@ theorem checkConstMember_defn_sound
                                         by simpa [huvars] using htypeEvidence,
                                         by simpa [huvars] using hvalueEvidence⟩
                             · simp only [Bool.not_true, Bool.false_eq_true,
-                                if_false] at hrun
+                                ite_false] at hrun
                               simp only [hsafety] at hrun
                               cases hrun
                               exact ⟨hIDefEq,
@@ -412,7 +412,7 @@ theorem checkConstMember_validation_success
   cases hresources with
   | @«axiom» name levelParams isUnsafe levels type hcoverage hsize =>
       unfold checkConstMember at hrun
-      simp only [Mode.F.hasDups, Bool.false_eq_true, if_false,
+      simp only [Mode.F.hasDups, Bool.false_eq_true, ite_false,
         ReaderT.run_bind, pure_bind] at hrun
       cases hvalidation :
           (validateConstWellScoped
@@ -426,7 +426,7 @@ theorem checkConstMember_validation_success
   | @defn name levelParams kind safety hints levels type value leanAll block
       htypeCoverage htypeSize hvalueCoverage hvalueSize =>
       unfold checkConstMember at hrun
-      simp only [Mode.F.hasDups, Bool.false_eq_true, if_false,
+      simp only [Mode.F.hasDups, Bool.false_eq_true, ite_false,
         ReaderT.run_bind, pure_bind] at hrun
       cases hvalidation :
           (validateConstWellScoped

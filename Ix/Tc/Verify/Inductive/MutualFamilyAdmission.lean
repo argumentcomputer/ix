@@ -94,109 +94,109 @@ theorem allPhysicalEntriesLoaded_eq : allPhysicalEntriesLoaded = true :=
 
 theorem catalog_tree : catalog treeId = some treeConcrete := by
   unfold catalog
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 
 theorem catalog_treeList : catalog treeListId = some treeListConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_leaf : catalog treeLeafId = some treeLeafConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem catalog_node : catalog treeNodeId = some treeNodeConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_branch : catalog treeBranchId = some treeBranchConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem catalog_nil : catalog treeListNilId = some treeListNilConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_cons : catalog treeListConsId = some treeListConsConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem catalog_treeRec : catalog treeRecId = some treeRecConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_treeListRec :
     catalog treeListRecId = some treeListRecConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem nameOf_tree : nameOf treeId.addr = some ``Tree := by
   unfold nameOf
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 
 theorem nameOf_treeList : nameOf treeListId.addr = some ``TreeList := by
   unfold nameOf
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nameOf_leaf : nameOf treeLeafId.addr = some ``Tree.leaf := by
   unfold nameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem nameOf_node : nameOf treeNodeId.addr = some ``Tree.node := by
   unfold nameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nameOf_branch : nameOf treeBranchId.addr = some ``Tree.branch := by
   unfold nameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem nameOf_nil : nameOf treeListNilId.addr = some ``TreeList.nil := by
   unfold nameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nameOf_cons : nameOf treeListConsId.addr = some ``TreeList.cons := by
   unfold nameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem nameOf_treeRec : nameOf treeRecId.addr = some ``Tree.rec := by
   unfold nameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nameOf_treeListRec :
     nameOf treeListRecId.addr = some ``TreeList.rec := by
   unfold nameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 def blockCatalog : BlockCatalog := fun id => recursorIngressAfter.getBlock? id
 

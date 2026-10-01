@@ -69,10 +69,10 @@ theorem lazyDeltaReductionStepAfterClassification_wf
   unfold lazyDeltaReductionStepAfterClassification
   cases hnone : (!aDelta && !bDelta) with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ => hpair
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact hactive hnone hpair
 
 namespace LazyDeltaReductionAfterClassification

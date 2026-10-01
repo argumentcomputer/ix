@@ -1947,7 +1947,7 @@ theorem isDefEq_equivHit_true
       _ s1 = _
   unfold EStateM.bind
   rw [hstats]
-  simp only [haddr, Bool.false_eq_true, if_false]
+  simp only [haddr, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
   unfold EStateM.bind
@@ -2091,7 +2091,7 @@ theorem isDefEq_fullHit_true
       _ s1 = _
   unfold EStateM.bind
   rw [hstats]
-  simp only [haddr, Bool.false_eq_true, if_false]
+  simp only [haddr, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
   unfold EStateM.bind
@@ -2110,7 +2110,7 @@ theorem isDefEq_fullHit_true
         ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
   unfold EStateM.bind
   rw [hequiv]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -2120,7 +2120,7 @@ theorem isDefEq_fullHit_true
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
-  simp only [hhit, if_true]
+  simp only [hhit, ite_true]
   rfl
 
 /-- A positive non-cheap full-cache hit is accepted by the real DefEq entry
@@ -2299,7 +2299,7 @@ theorem isDefEq_rootFullHit_true
       _ s1 = _
   unfold EStateM.bind
   rw [hstats]
-  simp only [haddr, Bool.false_eq_true, if_false]
+  simp only [haddr, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
   unfold EStateM.bind
@@ -2318,7 +2318,7 @@ theorem isDefEq_rootFullHit_true
         ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
   unfold EStateM.bind
   rw [hequiv]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -2348,7 +2348,7 @@ theorem isDefEq_rootFullHit_true
       ((aRoot?, bRoot?), em))) _ s4 = _
   unfold EStateM.bind
   rw [hroots]
-  simp only [hchanged, hscope, if_true]
+  simp only [hchanged, hscope, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s5 = _
   unfold EStateM.bind
@@ -2550,7 +2550,7 @@ theorem isDefEq_cheapHit_true
       _ s1 = _
   unfold EStateM.bind
   rw [hstats]
-  simp only [haddr, Bool.false_eq_true, if_false]
+  simp only [haddr, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
   unfold EStateM.bind
@@ -2569,7 +2569,7 @@ theorem isDefEq_cheapHit_true
         ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
   unfold EStateM.bind
   rw [hequiv]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -2579,12 +2579,12 @@ theorem isDefEq_cheapHit_true
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
-  simp only [hfullMiss, if_true]
+  simp only [hfullMiss, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
-  simp only [hhit, if_true]
+  simp only [hhit, ite_true]
   rfl
 
 /-- A positive cheap hit is semantically accepted, promoted with the same
@@ -2727,7 +2727,7 @@ theorem isDefEq_addrEq_wf
         (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
         (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1
     · intro _ s2 _
-      simp only [haddr, if_true]
+      simp only [haddr, ite_true]
       apply RecM.WF.pure
       intro hI htrue
       exact DefEqMeaning.of_translations theory hI.2.1.wf ha hb

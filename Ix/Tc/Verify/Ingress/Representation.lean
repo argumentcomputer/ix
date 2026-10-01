@@ -121,7 +121,7 @@ theorem getConstVerified_true {env : Ixon.Env} (h : RepresentationWF env)
   unfold getConstVerified
   change env.consts[addr]? = some lazy at hlookup
   rw [hlookup]
-  simp only [Bool.true_or, if_true]
+  simp only [Bool.true_or, ite_true]
   rw [hhash]
   simp [hget]
   change Except.ok (some constant) = Except.ok (some constant)

@@ -54,7 +54,7 @@ theorem isDefEq_directMiss_noncheap
       _ s1 = _
   unfold EStateM.bind
   rw [hstats]
-  simp only [haddr, Bool.false_eq_true, if_false]
+  simp only [haddr, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
   unfold EStateM.bind
@@ -73,7 +73,7 @@ theorem isDefEq_directMiss_noncheap
         ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
   unfold EStateM.bind
   rw [hequiv]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -83,7 +83,7 @@ theorem isDefEq_directMiss_noncheap
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
-  simp only [hfullMiss, Bool.false_eq_true, if_false]
+  simp only [hfullMiss, Bool.false_eq_true, ite_false]
   rfl
 
 /-- In cheap mode, once both direct partitions miss, the same exact root
@@ -129,7 +129,7 @@ theorem isDefEq_directMiss_cheap
       _ s1 = _
   unfold EStateM.bind
   rw [hstats]
-  simp only [haddr, Bool.false_eq_true, if_false]
+  simp only [haddr, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
   unfold EStateM.bind
@@ -148,7 +148,7 @@ theorem isDefEq_directMiss_cheap
         ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
   unfold EStateM.bind
   rw [hequiv]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -158,7 +158,7 @@ theorem isDefEq_directMiss_cheap
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
-  simp only [hfullMiss, if_true]
+  simp only [hfullMiss, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -340,7 +340,7 @@ private theorem applyFullRootResult_wf
         world.venv.IsDefEqU model.keys.uvars Delta.toCtx va vb) := by
   cases answer with
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       apply RecM.WF.bind (Q₁ := fun _ _ => True)
       · exact RecM.WF.modify
           (fun hI => fullResult_whnfStateInv hI hfull)
@@ -348,7 +348,7 @@ private theorem applyFullRootResult_wf
       · intro _ _ _
         exact RecM.WF.pure fun _ h => by contradiction
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       have hrel := hfull.kernelDefEqEquivCanonical hcollision
         haSupport hbSupport
       apply RecM.WF.bind (Q₁ := fun _ _ => True)
@@ -408,7 +408,7 @@ private theorem applyCheapRootResult_wf
     hfull.kernelDefEqRekind
   cases answer with
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       apply RecM.WF.bind (Q₁ := fun _ _ => True)
       · exact RecM.WF.modify
           (fun hI => cheapResult_whnfStateInv hI hcheap
@@ -417,7 +417,7 @@ private theorem applyCheapRootResult_wf
       · intro _ _ _
         exact RecM.WF.pure fun _ h => by contradiction
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       have hrel := hfull.kernelDefEqEquivCanonical hcollision
         haSupport hbSupport
       apply RecM.WF.bind (Q₁ := fun _ _ => True)
@@ -479,10 +479,10 @@ private theorem applyDirectFullHit_wf
   | false =>
       cases answer with
       | false =>
-          simp only [Bool.false_eq_true, if_false, pure_bind]
+          simp only [Bool.false_eq_true, ite_false, pure_bind]
           exact RecM.WF.pure fun _ h => by contradiction
       | true =>
-          simp only [Bool.false_eq_true, if_false, if_true, pure_bind]
+          simp only [Bool.false_eq_true, ite_false, ite_true, pure_bind]
           have hrel := hfull.kernelDefEqEquivCanonical hcollision
             haSupport hbSupport
           apply RecM.WF.bind (Q₁ := fun _ _ => True)
@@ -502,7 +502,7 @@ private theorem applyDirectFullHit_wf
   | true =>
       cases answer with
       | false =>
-          simp only [Bool.false_eq_true, if_false, if_true, pure_bind]
+          simp only [Bool.false_eq_true, ite_false, ite_true, pure_bind]
           apply RecM.WF.bind (Q₁ := fun _ _ => True)
           · exact RecM.WF.modify
               (fun hI => DefEqCacheUpdate.cheap_whnfStateInv hI hcheap)
@@ -510,7 +510,7 @@ private theorem applyDirectFullHit_wf
           · intro _ _ _
             exact RecM.WF.pure fun _ h => by contradiction
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           have hrel := hfull.kernelDefEqEquivCanonical hcollision
             haSupport hbSupport
           apply RecM.WF.bind (Q₁ := fun _ _ => True)
@@ -565,10 +565,10 @@ private theorem applyDirectCheapHit_wf
         world.venv.IsDefEqU model.keys.uvars Delta.toCtx va vb) := by
   cases answer with
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       exact RecM.WF.pure fun _ h => by contradiction
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       have hfull : CacheProvenance
           (kernelCacheSemantics model.keys trProj)
           (CacheAuthority.stable world) support
@@ -656,7 +656,7 @@ theorem isDefEqAfterRootCacheMiss_wf
         intro read s₄ hread
         subst read
         by_cases hdepth : s₄.defEqDepth > maxDefEqDepth
-        · simp only [hdepth, if_true]
+        · simp only [hdepth, ite_true]
           apply RecM.WF.bind (Q₁ := fun _ _ => True)
           · exact RecM.WF.modify
               (fun hI => hI.of_semantic_fields_eq
@@ -664,7 +664,7 @@ theorem isDefEqAfterRootCacheMiss_wf
               (fun _ => trivial)
           · intro _ _ _
             exact RecM.WF.throw fun _ => trivial
-        · simp only [hdepth, if_false, pure_bind]
+        · simp only [hdepth, ite_false, pure_bind]
           apply RecM.WF.bind
             (Q₁ := fun result _ => match result with
               | .ok answer => answer = true →
@@ -818,21 +818,21 @@ theorem isDefEqAfterDirectCacheMiss_wf
                 ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩ ||
               bRoot != ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) with
             | false =>
-                simp only [hchanged, Bool.false_eq_true, if_false]
+                simp only [hchanged, Bool.false_eq_true, ite_false]
                 exact isDefEqAfterRootCacheMiss_wf model hcollision hinner
                   haSupport hbSupport ha hb hctx hreferences
                   (s := s₁) (cheapMode := cheapMode)
             | true =>
-                simp only [hchanged, if_true]
+                simp only [hchanged, ite_true]
                 cases hscope : aRoot.rootCacheScopeMatches bRoot ctxAddr
                     (max a.lbr b.lbr) with
                 | false =>
-                    simp only [Bool.false_eq_true, if_false]
+                    simp only [Bool.false_eq_true, ite_false]
                     exact isDefEqAfterRootCacheMiss_wf model hcollision hinner
                       haSupport hbSupport ha hb hctx hreferences
                       (s := s₁) (cheapMode := cheapMode)
                 | true =>
-                    simp only [if_true]
+                    simp only [ite_true]
                     apply RecM.WF.bind
                       (Q₁ := fun read after => read = after ∧
                         WhnfStateInv layer
@@ -852,20 +852,20 @@ theorem isDefEqAfterDirectCacheMiss_wf
                           hcollision hI₂ haPath hbPath hscope hctx hroot
                           haSupport hbSupport ha hb (hreferences .full answer)
                         simp only [pure_bind, Bool.false_eq_true,
-                          if_false]
+                          ite_false]
                         exact applyFullRootResult_wf hcollision
                           haSupport hbSupport horiginal.1 horiginal.2
                           (cheapMode := cheapMode)
                     | none =>
                         cases cheapMode with
                         | false =>
-                            simp only [Bool.false_eq_true, if_false,
+                            simp only [Bool.false_eq_true, ite_false,
                               pure_bind]
                             exact isDefEqAfterRootCacheMiss_wf model hcollision
                               hinner haSupport hbSupport ha hb hctx hreferences
                               (s := s₂) (cheapMode := false)
                         | true =>
-                            simp only [if_true, pure_bind]
+                            simp only [ite_true, pure_bind]
                             apply RecM.WF.bind
                               (Q₁ := fun read after => read = after ∧
                                 WhnfStateInv layer
@@ -936,13 +936,13 @@ theorem isDefEq_wf
     · intro _ s₂ _
       cases haddr : (a.addr == b.addr) with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact RecM.WF.pure fun hI _ =>
             DefEqMeaning.of_translations theory hI.2.1.wf ha hb
               (DefEqMeaning.of_addr_beq theory hI.2.1 hcollision
                 haSupport hbSupport ha haddr) rfl
       | false =>
-          simp only [Bool.false_eq_true, if_false, pure_bind]
+          simp only [Bool.false_eq_true, ite_false, pure_bind]
           apply RecM.WF.bind
           · apply RecM.WF.withInv
             apply RecM.WF.liftTcM
@@ -963,12 +963,12 @@ theorem isDefEq_wf
               rcases hequivPost with ⟨hI₄, hequiv⟩
               cases isEq with
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   have hsemantic := (hequiv rfl).sound theory hI₄.2.1.wf
                     hcollision haSupport rfl hbSupport rfl hrepresented ha hb
                   exact RecM.WF.pure fun _ _ => hsemantic
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   apply RecM.WF.bind
                     (Q₁ := fun read after => read = after ∧
                       WhnfStateInv layer
@@ -999,15 +999,15 @@ theorem isDefEq_wf
                         fun htrue => DefEqMeaning.of_translations theory
                           hI₆.2.1.wf ha hb hmeaning htrue
                       by_cases hcheapMode : s₅.cheapRecursionDepth > 0
-                      · simp only [hcheapMode, if_true]
+                      · simp only [hcheapMode, ite_true]
                         exact applyDirectFullHit_wf hcollision haSupport
                           hbSupport hfull hsemantic (cheapMode := true)
-                      · simp only [hcheapMode, if_false]
+                      · simp only [hcheapMode, ite_false]
                         exact applyDirectFullHit_wf hcollision haSupport
                           hbSupport hfull hsemantic (cheapMode := false)
                   | none =>
                       by_cases hcheapMode : s₅.cheapRecursionDepth > 0
-                      · simp only [hcheapMode, if_true, decide_true]
+                      · simp only [hcheapMode, ite_true, decide_true]
                         apply RecM.WF.bind
                           (Q₁ := fun read after => read = after ∧
                             WhnfStateInv layer
@@ -1038,7 +1038,7 @@ theorem isDefEq_wf
                               hcollision hinner haSupport hbSupport ha hb
                               hrepresented (hreferences ctxAddr)
                               (s := s₇) (cheapMode := true)
-                      · simp only [hcheapMode, if_false, decide_false]
+                      · simp only [hcheapMode, ite_false, decide_false]
                         exact isDefEqAfterDirectCacheMiss_wf model theory
                           hcollision hinner haSupport hbSupport ha hb
                           hrepresented (hreferences ctxAddr)

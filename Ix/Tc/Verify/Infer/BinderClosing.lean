@@ -132,7 +132,7 @@ theorem TrKExprS.closeFVarSpec
       | @var _ _ _ _ e A hfind =>
           rw [KExpr.mkVar_shape, KExpr.abstractFVarsSpec]
           by_cases hge : idx ≥ depth
-          · rw [if_pos hge, KExpr.mkVar_shape]
+          · rw [ite_eq_left hge, KExpr.mkVar_shape]
             refine .var (A := A) ?_
             have hsucc : (idx + 1).toNat = idx.toNat + 1 := by
               rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
@@ -141,7 +141,7 @@ theorem TrKExprS.closeFVarSpec
             exact W.find?_ge_rev (by
               rw [← hdepth]
               exact UInt64.le_iff_toNat_le.mp hge) hfind
-          · rw [if_neg hge]
+          · rw [ite_eq_right hge]
             refine .var (A := A) ?_
             exact W.find?_lt_rev (by
               rw [← hdepth]

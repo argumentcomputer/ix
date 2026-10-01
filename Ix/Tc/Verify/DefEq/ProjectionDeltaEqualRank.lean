@@ -136,15 +136,15 @@ theorem lazyDeltaReductionStepWithEqualRank_wf
   unfold lazyDeltaReductionStepWithEqualRank
   cases hguard : (leftId.addr == rightId.addr) with
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact lazyDeltaReductionStepAfterSameHeadMiss_wf context hDelta hpair
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       apply RecM.WF.bind (isRegular_wf hfault leftId)
       intro regular afterRegular _
       cases regular with
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           apply RecM.WF.bind <|
             trySameHeadSpineSpeculative_wf hsame hpair.leftSupport
               hpair.rightSupport hleft hright
@@ -163,7 +163,7 @@ theorem lazyDeltaReductionStepWithEqualRank_wf
                     hleftEq.trans world.venvWF hDelta <|
                       (hresult rfl).trans world.venvWF hDelta hrightEq.symm
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           apply RecM.WF.bind <|
             hsame hpair.leftSupport hpair.rightSupport hleft hright
           intro result afterSame hresult

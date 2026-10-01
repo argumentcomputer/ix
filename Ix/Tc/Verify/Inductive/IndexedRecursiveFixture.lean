@@ -1057,49 +1057,49 @@ def blockCatalog : BlockCatalog := fun id => recursorIngressAfter.getBlock? id
 private theorem catalogFamilyNative :
     catalog familyId = some familyConcrete := by
   unfold catalog
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 theorem catalog_family : catalog familyId = some familyConcrete :=
   catalogFamilyNative
 
 private theorem catalogNilNative : catalog nilId = some nilConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 theorem catalog_nil : catalog nilId = some nilConcrete := catalogNilNative
 
 private theorem catalogConsNative : catalog consId = some consConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 theorem catalog_cons : catalog consId = some consConcrete := catalogConsNative
 
 private theorem catalogRecursorNative :
     catalog recursorId = some recursorConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 theorem catalog_recursor : catalog recursorId = some recursorConcrete :=
   catalogRecursorNative
 
 private theorem catalogNatNative : catalog natId = some natConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 theorem catalog_nat : catalog natId = some natConcrete := catalogNatNative
 
 private theorem catalogZeroNative : catalog zeroId = some zeroConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 theorem catalog_zero : catalog zeroId = some zeroConcrete := catalogZeroNative
 
 private theorem catalogSuccNative : catalog succId = some succConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 theorem catalog_succ : catalog succId = some succConcrete := catalogSuccNative
 
 private theorem natEntryAtZeroNative :

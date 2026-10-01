@@ -369,9 +369,9 @@ theorem freshFVarId :
   intro before
   by_cases hroom : before.env.nextFVarId.toNat + 1 < UInt64.size
   · rw [TcM.freshFVarId]
-    simp only [if_pos hroom]
+    simp only [ite_eq_left hroom]
   · rw [TcM.freshFVarId]
-    simp only [if_neg hroom]
+    simp only [ite_eq_right hroom]
 
 /-- Binder opening changes the fvar counter, intern table, and local-context
 stack, but never the inference policy. -/
@@ -513,10 +513,10 @@ theorem inferWith_preservesInferOnly
   · exact TcM.PreservesInferOnly.pure _
   · cases hpolicy : before.inferOnly with
     | false =>
-        simpa only [Bool.false_eq_true, if_false, pure_bind] using
+        simpa only [Bool.false_eq_true, ite_false, pure_bind] using
           inferMissTail_preservesInferOnly methods huncached false source key
     | true =>
-        simp only [if_true, pure_bind, ReaderT.run_bind]
+        simp only [ite_true, pure_bind, ReaderT.run_bind]
         apply TcM.PreservesInferOnly.bind TcM.PreservesInferOnly.get
         intro afterFullMiss
         split

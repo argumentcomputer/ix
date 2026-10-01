@@ -233,7 +233,7 @@ theorem inferProj_wf
       by_cases haddr : headId.addr = structId.addr
       · have haddrTest : (headId.addr != structId.addr) = false := by
           simp [haddr]
-        simp only [haddrTest, Bool.false_eq_true, if_false]
+        simp only [haddrTest, Bool.false_eq_true, ite_false]
         apply RecM.WF.bind
           (RecM.WF.withInv <| RecM.WF.liftTcM <|
             TcM.tryGetConst_loaded_wf hfault headId afterWhnf)
@@ -255,7 +255,7 @@ theorem inferProj_wf
               by_cases hctorCount : ctors.size = 1
               · have hcountTest : (ctors.size != 1) = false := by
                   simp [hctorCount]
-                simp only [hcountTest, Bool.false_eq_true, if_false]
+                simp only [hcountTest, Bool.false_eq_true, ite_false]
                 have hclassRequest :
                     ProjectionInductiveInstantiationRequest world requests
                       headId levels := by
@@ -314,12 +314,12 @@ theorem inferProj_wf
                       (hfields hparameterizedSupport hparameterizedTr)
               · have hcountTest : (ctors.size != 1) = true := by
                   simp [hctorCount]
-                simp only [hcountTest, if_true]
+                simp only [hcountTest, ite_true]
                 exact RecM.WF.throw fun _ => trivial
             all_goals exact RecM.WF.throw fun _ => trivial
       · have haddrTest : (headId.addr != structId.addr) = true := by
           simp [haddr]
-        simp only [haddrTest, if_true]
+        simp only [haddrTest, ite_true]
         exact RecM.WF.throw fun _ => trivial
   | var | fvar | sort | app | lam | all | letE | prj | nat | str =>
       exact RecM.WF.throw fun _ => trivial

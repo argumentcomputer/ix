@@ -95,7 +95,7 @@ theorem tryIotaWithFlags_state_wf_of_contexts
             using hcleaned
     cases hcheap : flags.cheapRec with
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         rw [ReaderT.run_bind]
         apply TcM.WF.bind
           ((whnfRec_wf (s := afterCleanup) hcleanedSupport hcleanedTr)
@@ -106,7 +106,7 @@ theorem tryIotaWithFlags_state_wf_of_contexts
           constructorInputs recursorInputs hfault hreferences hwrites
           hspineMajorSupport hspineMajorTr
     | true =>
-        simp only [if_true]
+        simp only [ite_true]
         rw [ReaderT.run_bind]
         apply TcM.WF.bind
           ((whnfCoreFlagsRec_wf (s := afterCleanup)
@@ -135,7 +135,7 @@ theorem tryIotaWithFlags_state_wf_of_contexts
           | some recr =>
               simp only [hinfo, pure_bind]
               by_cases hmajor : spine.size ≤ recr.majorIdx
-              · simp only [hmajor, if_pos]
+              · simp only [hmajor, ite_eq_left]
                 exact TcM.WF.pure (fun _ => trivial)
               · simp only [hmajor]
                 let major := spine[recr.majorIdx]!
@@ -158,11 +158,11 @@ theorem tryIotaWithFlags_state_wf_of_contexts
                   hspineTr.argument hmajorMem
                 cases hk : recr.k with
                 | false =>
-                    simp only [Bool.false_eq_true, if_false]
+                    simp only [Bool.false_eq_true, ite_false]
                     exact hpost recId recr recUs spine major afterLookup
                       hmajorSupport hmajorTr hmajorSupport hmajorTr
                 | true =>
-                    simp only [if_true, if_false]
+                    simp only [ite_true, ite_false]
                     rw [ReaderT.run_bind]
                     apply TcM.WF.bind
                       (synthCtorWhenK_state_wf_of_inputs hrun kCensus

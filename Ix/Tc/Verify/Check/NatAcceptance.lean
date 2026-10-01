@@ -264,7 +264,7 @@ theorem reset_validation :
         .ok () resetState := by
     unfold RecM.validateExprWellScoped
     rw [RecM.validateExprWellScoped.go.eq_def]
-    simp only [Std.HashSet.contains_empty, Bool.false_eq_true, if_false,
+    simp only [Std.HashSet.contains_empty, Bool.false_eq_true, ite_false,
       natRef]
     rw [ReaderT.run_bind]
     change EStateM.bind (TcM.getConst natId) _ resetState = _
@@ -302,7 +302,7 @@ theorem reset_member :
     (RecM.checkConstMember goodId goodConcrete).run methodsOut resetState =
       .ok () resetState := by
   unfold RecM.checkConstMember
-  simp only [goodConcrete, Mode.F.hasDups, Bool.false_eq_true, if_false,
+  simp only [goodConcrete, Mode.F.hasDups, Bool.false_eq_true, ite_false,
     ReaderT.run_bind]
   change EStateM.bind
     ((RecM.validateConstWellScoped goodConcrete).run methodsOut) _
@@ -425,7 +425,7 @@ theorem reset_bad_validation :
         .error (.univParamOutOfRange 0 0) resetState := by
     unfold RecM.validateExprWellScoped
     rw [RecM.validateExprWellScoped.go.eq_def]
-    simp only [Std.HashSet.contains_empty, Bool.false_eq_true, if_false,
+    simp only [Std.HashSet.contains_empty, Bool.false_eq_true, ite_false,
       IllTypedPending.badType]
     rw [ReaderT.run_bind]
     change EStateM.bind
@@ -450,7 +450,7 @@ theorem reset_bad_member :
       .error (.univParamOutOfRange 0 0) resetState := by
   unfold RecM.checkConstMember
   simp only [IllTypedPending.concrete, Mode.F.hasDups,
-    Bool.false_eq_true, if_false, ReaderT.run_bind]
+    Bool.false_eq_true, ite_false, ReaderT.run_bind]
   change EStateM.bind
     ((RecM.validateConstWellScoped IllTypedPending.concrete).run methodsOut) _
       resetState = _

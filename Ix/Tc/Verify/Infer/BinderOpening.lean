@@ -156,7 +156,7 @@ theorem TrKExprS.openFVar
           UInt64.lt_iff_toNat_lt.mpr (by rw [hsuccNat]; omega)
         have hwindow : ((depth ≥ depth && depth < depth + 1) = true) := by
           simp [hlt]
-        rw [if_pos hwindow]
+        rw [ite_eq_left hwindow]
         simp
         exact .fvar (W.find?_hit (by simpa [hdepth] using hfind))
       · by_cases hgt : depth < i
@@ -171,7 +171,7 @@ theorem TrKExprS.openFVar
             omega
           have hwindow : ¬((i ≥ depth && i < depth + 1) = true) := by
             simp [hnltSucc]
-          rw [if_neg hwindow, if_pos hgeSucc, KExpr.mkVar_shape]
+          rw [ite_eq_right hwindow, ite_eq_left hgeSucc, KExpr.mkVar_shape]
           refine .var (A := A) ?_
           have hOneLe : (1 : UInt64) ≤ i :=
             UInt64.le_iff_toNat_le.mpr (by
@@ -201,7 +201,7 @@ theorem TrKExprS.openFVar
               omega))
           have hwindow : ¬((i ≥ depth && i < depth + 1) = true) := by
             simp [hnge]
-          rw [if_neg hwindow, if_neg hngeSucc]
+          rw [ite_eq_right hwindow, ite_eq_right hngeSucc]
           exact .var (W.find?_lt hlt hfind)
   | @fvar source fv name info e A hfind =>
       intro fvData decl target dk depth fvName W hdepth hfresh hbig

@@ -855,7 +855,7 @@ theorem Env.nodeP_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
   obtain ⟨st1, hst1, h⟩ := bind_eq_ok h
   have hm1 : st1.memo = st.memo := chargeP_memo hst1
   by_cases hemp : (open_.map (·.1)).isEmpty = true
-  · rw [if_pos hemp] at h
+  · rw [ite_eq_left hemp] at h
     -- every undecided member is decided: one entry
     simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
@@ -880,9 +880,9 @@ theorem Env.nodeP_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
     rw [hp.length_eq, E.delta_perm hp, ← hval, Array.length_toList]
     exact (add_hasAtT pre.tab.sorted hL's (e := ((phi : _root_.Int) - phi0, localIn'))).congr
       (fun u => hp.mem_iff.symm)
-  rw [if_neg hemp] at h
+  rw [ite_eq_right hemp] at h
   by_cases hpr : tb.prunes ((phi : _root_.Int) - phi0) E.cx.slack = true
-  · rw [if_pos hpr] at h
+  · rw [ite_eq_left hpr] at h
     -- pruned: no minimum respects the node
     simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
@@ -897,7 +897,7 @@ theorem Env.nodeP_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
       simp only [decide_eq_true_eq] at hpr
       omega
     · cases hpr
-  rw [if_neg hpr] at h
+  rw [ite_eq_right hpr] at h
   split at h
   next hpc =>
     generalize hgr : E.cx.groups _ _ (Array.map (fun x => x.fst) open_) = groups at h hpc
@@ -906,7 +906,7 @@ theorem Env.nodeP_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
     generalize hrt : (if groups.size > 1 then true else _ : Bool) = route at h
     cases route
     case true =>
-      rw [if_pos rfl] at h
+      rw [ite_eq_left rfl] at h
       -- split into groups
       have hphiN := phiE_cost hE.G.wf hE.cx (I ++ localIn') hinM
         (fun t => ((I ++ localIn').foldl (·.insert ·) (∅ : Std.HashSet Nat)).contains t)
@@ -970,7 +970,7 @@ theorem Env.nodeP_step {E : Env} (hE : E.WF) {limits : Limits} {fuel : Nat}
         rw [E.delta_perm hpp]
         exact Or.inr ⟨rfl, leL_refl _⟩
     case false =>
-      rw [if_neg (by decide)] at h
+      rw [ite_eq_right (by decide)] at h
       split at h
       · rename_i t gt hpick
         have htU : t ∈ Un := by

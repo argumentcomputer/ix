@@ -199,7 +199,7 @@ theorem eval
     (ReaderT.run (callIsDefEq majorTyW h.ctorTy) methods) _ h.sAttempt = _
   unfold EStateM.bind
   rw [h.typeDefEq]
-  simp only [Bool.not_false, if_true]
+  simp only [Bool.not_false, ite_true]
   change EStateM.bind
     (TcM.bumpStats
       (fun st => { st with kSynthRejects := st.kSynthRejects + 1 })) _
@@ -282,7 +282,7 @@ theorem eval
   have hlevels : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [h.levelArity]
   rw [hlevels]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec major)) methods) _ s = _
@@ -318,7 +318,7 @@ theorem eval
   rw [h.sameInductive]
   have haddrNe : (h.indId.addr != h.indId.addr) = false := by simp
   rw [haddrNe]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   change EStateM.bind (TcM.tryGetConst h.indId) _ h.sInductive = _
   unfold EStateM.bind
   rw [h.inductiveLookup]
@@ -367,7 +367,7 @@ theorem tryIotaWithFlags_kPrefix
   simp only
   rw [hinfo]
   simp only
-  rw [if_neg (Nat.not_le.mpr hmajorBound)]
+  rw [ite_eq_right (Nat.not_le.mpr hmajorBound)]
   rw [hmajor, hk]
   simp only [↓reduceIte]
   rw [ReaderT.run_bind]

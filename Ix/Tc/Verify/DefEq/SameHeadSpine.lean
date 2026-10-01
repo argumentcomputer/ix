@@ -198,10 +198,10 @@ theorem trySameHeadSpine_wf
       cases hshape :
           (leftId.addr != rightId.addr || leftArgs.size != rightArgs.size) with
       | true =>
-          simp only [hshape, if_true]
+          simp only [hshape, ite_true]
           exact RecM.WF.pure fun _ => trivial
       | false =>
-          simp only [hshape, Bool.false_eq_true, if_false]
+          simp only [hshape, Bool.false_eq_true, ite_false]
           have hshapeParts := Bool.or_eq_false_iff.mp hshape
           have hid : (leftId.addr == rightId.addr) = true := by
             simpa using hshapeParts.1
@@ -210,10 +210,10 @@ theorem trySameHeadSpine_wf
           cases huniverses :
               sameDefEqUniverses leftLevels rightLevels with
           | false =>
-              simp only [Bool.not_false, if_true]
+              simp only [Bool.not_false, ite_true]
               exact RecM.WF.pure fun _ => trivial
           | true =>
-              simp only [Bool.not_true, Bool.false_eq_true, if_false]
+              simp only [Bool.not_true, Bool.false_eq_true, ite_false]
               have hleftSpine :=
                 trAppSpine_of_collectSpine hleft hleftCollect
               have hrightSpine :=
@@ -237,10 +237,10 @@ theorem trySameHeadSpine_wf
               intro accepted afterArgs haccepted
               cases accepted with
               | false =>
-                  simp only [Bool.not_false, if_true]
+                  simp only [Bool.not_false, ite_true]
                   exact RecM.WF.pure fun _ => trivial
               | true =>
-                  simp only [Bool.not_true, Bool.false_eq_true, if_false]
+                  simp only [Bool.not_true, Bool.false_eq_true, ite_false]
                   exact RecM.WF.pure fun hI _ => by
                     have hDelta : KVLCtx.WF world.venv uvars Delta :=
                       hI.2.1.wf

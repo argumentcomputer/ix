@@ -365,7 +365,7 @@ theorem materializeLoopFast_eq (p : Prep) (table : Array Nat) (limits : Limits)
             predicted := tag0Size table.size, work := 0 } (by omega)
         rw [← List.range_eq_range'] at hl
         unfold materializeTable
-        simp only [h1, h2, h3, hl, if_false, Bool.not_true, Bool.false_eq_true]
+        simp only [h1, h2, h3, hl, ite_false, Bool.not_true, Bool.false_eq_true]
       · simp [h1, h2, h3]
     · unfold materializeTable
       simp [h1, h2]

@@ -122,7 +122,7 @@ theorem cheapBetaPlan?_simul
             simp only [Array.size_extract]
             omega
           by_cases hclosed : body.lbr == 0
-          · simp only [hclosed, if_true, Option.some.injEq] at hplan
+          · simp only [hclosed, ite_true, Option.some.injEq] at hplan
             subst plan
             have hlbr : body.lbr ≤ 0 := by
               rw [beq_iff_eq.mp hclosed]
@@ -136,8 +136,8 @@ theorem cheapBetaPlan?_simul
           · cases body with
             | var k varName varInfo =>
                 by_cases hk : k < consumed.toUInt64
-                · simp only [hclosed, Bool.false_eq_true, if_false, hk,
-                    if_true, Option.some.injEq] at hplan
+                · simp only [hclosed, Bool.false_eq_true, ite_false, hk,
+                    ite_true, Option.some.injEq] at hplan
                   subst plan
                   have hconsumedLt : consumed < UInt64.size := by
                     have hbodySize := KExpr.size_pos
@@ -194,7 +194,7 @@ theorem cheapBetaPlan?_simul
                       KExpr.simulSubstSpec (.var k varName varInfo)
                           (args.extract 0 consumed).reverse 0 =
                         args[consumed - k.toNat - 1]! := by
-                    rw [KExpr.simulSubstSpec, if_pos hkWindow,
+                    rw [KExpr.simulSubstSpec, ite_eq_left hkWindow,
                       UInt64.sub_zero,
                       KExpr.liftSpec_zero hselectedConstructed, hselected]
                   exact ⟨_, _, _, _, rfl, hpeel, hcount.2,

@@ -81,10 +81,10 @@ theorem tryEtaStructFields_wf
       intro equal afterEqual hequal
       cases equal with
       | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           exact RecM.WF.pure fun _ htrue => by contradiction
       | true =>
-          simp only [Bool.not_true, Bool.false_eq_true, if_false]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false]
           apply RecM.WF.mono <|
             ih (state := afterEqual) (field := field + 1)
               (projectedV := fun offset => projectedV (offset + 1))

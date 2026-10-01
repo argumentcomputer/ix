@@ -209,7 +209,7 @@ theorem abstractFVars_support_spec
     by_cases hfast :
         (fvars.isEmpty || (!body.hasFVars && body.lbr == 0)) = true
     · have hrun : abstractFVars body fvars it = (body, it) := by
-        rw [abstractFVars_eq, if_pos hfast]
+        rw [abstractFVars_eq, ite_eq_left hfast]
         rfl
       rw [hrun]
       exact ⟨by simp [KExpr.abstractFVarsResult, hfast], hwf, hsup.expr⟩
@@ -223,11 +223,11 @@ theorem abstractFVars_support_spec
             fvars.size.toUInt64 0 (it, {})).1,
            (abstractFVarsCached body (abstractFVarPositions fvars)
             fvars.size.toUInt64 0 (it, {})).2.1) := by
-        rw [abstractFVars_eq, if_neg hfast]
+        rw [abstractFVars_eq, ite_eq_right hfast]
         rfl
       rw [hrun]
       exact ⟨by
-        rw [KExpr.abstractFVarsResult, if_neg hfast]
+        rw [KExpr.abstractFVarsResult, ite_eq_right hfast]
         exact cached.result, cached.wf, cached.sup⟩
   exact ⟨post.1, post.2.1,
     hsup.of_expr_univs post.2.2

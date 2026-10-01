@@ -45,7 +45,7 @@ theorem getBytes_reads (bytes : ByteArray) :
     bytes := before ++ bytes ++ after
   } : Ixon.GetState) = _
   simp only [EStateM.bind, EStateM.get]
-  rw [if_pos (by simp [ByteArray.size_append])]
+  rw [ite_eq_left (by simp [ByteArray.size_append])]
   change (EStateM.bind (EStateM.set _) _) _ = _
   simp only [EStateM.bind, EStateM.set]
   change (EStateM.pure _) _ = _

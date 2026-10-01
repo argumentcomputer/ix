@@ -29,7 +29,7 @@ theorem internIntLit_preservesInferOnly
   refine bind_preservesInferOnly (prims_preservesInferOnly methods) ?_
   intro p
   by_cases hnegative : value < 0
-  · simp only [hnegative, if_pos]
+  · simp only [hnegative, ite_eq_left]
     refine bindIntern_preservesInferOnly
       (natExprFromValue ((-value).toNat - 1) : KExpr .anon) ?_
     intro natExpr
@@ -52,9 +52,9 @@ theorem tryNormalizeIntDecidable_preservesInferOnly
     ((tryNormalizeIntDecidable addr args).run methods).PreservesInferOnly := by
   unfold tryNormalizeIntDecidable
   by_cases hsmall : args.size < 2
-  · simp only [hsmall, if_pos]
+  · simp only [hsmall, ite_eq_left]
     exact TcM.PreservesInferOnly.pure none
-  · simp only [hsmall, if_false, pure_bind]
+  · simp only [hsmall, ite_false, pure_bind]
     refine bind_preservesInferOnly
       (whnfRec_preservesInferOnly hmethods args[0]!) ?_
     intro leftNormalized
@@ -80,10 +80,10 @@ theorem tryNormalizeIntDecidable_preservesInferOnly
             cases hsame : left.addr == args[0]!.addr &&
                 right.addr == args[1]!.addr with
             | true =>
-                simp only [if_true]
+                simp only [ite_true]
                 exact TcM.PreservesInferOnly.pure none
             | false =>
-                simp only [Bool.false_eq_true, if_false]
+                simp only [Bool.false_eq_true, ite_false]
                 let headId := if addr == p.intDecEq.addr then p.intDecEq
                   else if addr == p.intDecLe.addr then p.intDecLe
                   else p.intDecLt
@@ -207,7 +207,7 @@ private theorem finishNatDecidable_preservesInferOnly
       RecM .anon (Option (KExpr .anon))).run methods).PreservesInferOnly := by
   cases hb : bResult with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       refine bind_preservesInferOnly
         (buildNatDecidableTrue_preservesInferOnly p prop args proofTrueFn u1) ?_
       intro resultExpr
@@ -216,10 +216,10 @@ private theorem finishNatDecidable_preservesInferOnly
       intro finished
       exact TcM.PreservesInferOnly.pure (some finished)
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       cases heq : isDecEq with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           refine bind_preservesInferOnly
             (buildNatDecidableFalse_preservesInferOnly p prop args
               proofFalseFn u1) ?_
@@ -229,7 +229,7 @@ private theorem finishNatDecidable_preservesInferOnly
           intro finished
           exact TcM.PreservesInferOnly.pure (some finished)
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           exact TcM.PreservesInferOnly.pure none
 
 theorem tryReduceDecidable_preservesInferOnly
@@ -241,10 +241,10 @@ theorem tryReduceDecidable_preservesInferOnly
   intro state
   cases hnoAccel : state.noAccel with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact TcM.PreservesInferOnly.pure none
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       rcases hspine : source.collectSpine with ⟨head, args⟩
       cases head with
       | const id levels info =>
@@ -257,21 +257,21 @@ theorem tryReduceDecidable_preservesInferOnly
           cases hint : id.addr == p.intDecLe.addr ||
               id.addr == p.intDecEq.addr || id.addr == p.intDecLt.addr with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact tryNormalizeIntDecidable_preservesInferOnly hmethods
                 id.addr args
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               cases hknown : !isDecLe && !isDecEq && !isDecLt with
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   exact TcM.PreservesInferOnly.pure none
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   by_cases hsmall : args.size < 2
-                  · simp only [hsmall, if_pos]
+                  · simp only [hsmall, ite_eq_left]
                     exact TcM.PreservesInferOnly.pure none
-                  · simp only [hsmall, if_false]
+                  · simp only [hsmall, ite_false]
                     focus
                       refine bind_preservesInferOnly
                         (whnfRec_preservesInferOnly hmethods args[0]!) ?_
@@ -289,7 +289,7 @@ theorem tryReduceDecidable_preservesInferOnly
                               simp only []
                               cases hlt : id.addr == p.natDecLt.addr with
                               | true =>
-                                  simp only [if_true]
+                                  simp only [ite_true]
                                   refine bindIntern_preservesInferOnly
                                     (natExprFromValue (leftValue + 1) :
                                       KExpr .anon) ?_
@@ -310,7 +310,7 @@ theorem tryReduceDecidable_preservesInferOnly
                                   exact TcM.PreservesInferOnly.pure
                                     (some finished)
                               | false =>
-                                  simp only [Bool.false_eq_true, if_false]
+                                  simp only [Bool.false_eq_true, ite_false]
                                   refine bind_preservesInferOnly
                                     (tryInferDecidableProp_preservesInferOnly
                                       hmethods source) ?_
@@ -325,7 +325,7 @@ theorem tryReduceDecidable_preservesInferOnly
                                       cases hle :
                                           id.addr == p.natDecLe.addr with
                                       | true =>
-                                          simp only [if_true]
+                                          simp only [ite_true]
                                           exact
                                             finishNatDecidable_preservesInferOnly
                                               p prop args
@@ -335,7 +335,7 @@ theorem tryReduceDecidable_preservesInferOnly
                                               p.natNotLeOfNotBleEqTrue u1
                                       | false =>
                                           simp only [Bool.false_eq_true,
-                                            if_false]
+                                            ite_false]
                                           exact
                                             finishNatDecidable_preservesInferOnly
                                               p prop args

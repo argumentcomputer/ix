@@ -259,7 +259,7 @@ theorem evalHidden_eq (dag : Dag) (family : Array Family) (spineLen tail : Array
       evalHidden dag family spineLen tail width affected st t := by
   unfold evalStep evalHidden
   by_cases ha : affected[t]! = true
-  · simp only [ha, if_true]
+  · simp only [ha, ite_true]
     split
     · simp only [widthOf_setBang_none, getElem!_setBang]
       by_cases ht : t < st.cost.size <;> simp [ht]
@@ -535,7 +535,7 @@ theorem options_eq_lazy (p : Prep) (ev : DictEval) (index width : Array (Option 
   generalize index[t]?.getD none = o
   by_cases hf : (p.family[t]! == Family.none) = true
   · cases o <;> simp [hf, LazyOpt.bytes, tag4Bytes]
-  · simp only [hf, if_false, Bool.false_eq_true]
+  · simp only [hf, ite_false, Bool.false_eq_true]
     rw [← cutOptions_eq_lazy]
     cases o <;> simp [LazyOpt.bytes, tag4Bytes]
 
@@ -654,7 +654,7 @@ theorem pickLazy_eq_pickBuild (p : Prep) (ev : DictEval) (index width : Array (O
   generalize index[t]?.getD none = o
   cases entry <;> cases o <;>
     by_cases hf : (p.family[t]! == Family.none) = true <;>
-    simp only [hf, if_true, if_false, Bool.false_eq_true, Array.filter_push,
+    simp only [hf, ite_true, ite_false, Bool.false_eq_true, Array.filter_push,
       cutOptionsLazy_filter, cutOptionsLazy_fold, foldl_push_eq] <;> rfl
 
 /-- `build` over the lazy options (`build_eq_fast`). -/
@@ -706,7 +706,7 @@ theorem pick_options_lazy (p : Prep) (ev : DictEval) (index width : Array (Optio
   rw [options_eq_lazy]
   cases entry
   · exact pickOption_lazy _
-  · simp only [if_true]
+  · simp only [ite_true]
     rw [Array.filter_map]
     exact pickOption_lazy _
 

@@ -94,12 +94,12 @@ theorem wf
   obtain ⟨reducedV, hreducedTr, _⟩ := hreducedPost
   cases hcycle : seen.contains reduced.addr with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       apply RecM.WF.pure
       intro _
       exact ⟨hreducedSupport, hprefix⟩
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       apply RecM.WF.bind
         (RecM.WF.withInv
           (tryReduceNative_noAccel_optional_wf

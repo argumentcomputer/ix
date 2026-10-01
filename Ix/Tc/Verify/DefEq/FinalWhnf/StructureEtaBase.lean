@@ -121,7 +121,7 @@ theorem etaExpansionBaseLoop_wf
         cases hshape :
             (id.addr != inductId.addr || idx.toNat != field) with
         | true =>
-            simp only [if_true]
+            simp only [ite_true]
             exact RecM.WF.pure fun _ => trivial
         | false =>
             have hshapeParts := Bool.or_eq_false_iff.mp hshape
@@ -133,7 +133,7 @@ theorem etaExpansionBaseLoop_wf
             have hidx : idx.toNat = field := eq_of_beq
               (show (idx.toNat == field) = true by
                 simpa using hshapeParts.2)
-            simp only [Bool.false_eq_true, if_false, pure_bind]
+            simp only [Bool.false_eq_true, ite_false, pure_bind]
             unfold etaExpansionBaseAfterProjection
             have hvalueSupport := hprojectionValue hreducedSupport
             apply RecM.WF.bind <| RecM.WF.withInv <| tryOptional_wf <|
@@ -224,10 +224,10 @@ theorem etaExpansionBaseLoop_wf
                   rcases hseed with ⟨baseV, hbaseSupport, hbase⟩
                   cases haddr : (base.addr != chosen.addr) with
                   | true =>
-                      simp only [haddr, if_true]
+                      simp only [haddr, ite_true]
                       exact RecM.WF.pure fun _ => trivial
                   | false =>
-                      simp only [haddr, Bool.false_eq_true, if_false,
+                      simp only [haddr, Bool.false_eq_true, ite_false,
                         pure_bind]
                       have haddrEq : (base.addr == chosen.addr) = true := by
                         simpa using haddr

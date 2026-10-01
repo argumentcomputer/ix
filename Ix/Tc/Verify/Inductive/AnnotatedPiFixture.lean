@@ -440,7 +440,7 @@ def blockCatalog : BlockCatalog := fun id => familyIngressAfter.getBlock? id
 private theorem catalogOutParamNative :
     catalog outParamId = some outParamConcrete := by
   unfold catalog
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 
 theorem catalog_outParam : catalog outParamId = some outParamConcrete :=
   catalogOutParamNative
@@ -448,15 +448,15 @@ theorem catalog_outParam : catalog outParamId = some outParamConcrete :=
 private theorem catalogFamilyNative :
     catalog familyId = some familyConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_family : catalog familyId = some familyConcrete :=
   catalogFamilyNative
 
 private theorem catalogMkNative : catalog mkId = some mkConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem catalog_mk : catalog mkId = some mkConcrete :=
   catalogMkNative

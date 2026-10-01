@@ -83,7 +83,7 @@ theorem tryProofIrrel_wf
           simp only [Bool.not_false]
           exact RecM.WF.pure fun _ htrue => by contradiction
       | true =>
-          simp only [Bool.not_true, Bool.false_eq_true, if_false]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false]
           apply RecM.WF.bind
             (tryOptionalInferOnlyCall_wf hbSupport hb)
           intro bTy afterB hbTy
@@ -142,10 +142,10 @@ theorem closesAfterNoDeltaPass
   intro accepted after haccepted
   cases accepted with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ _ => haccepted rfl
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact htail haSupport hbSupport ha hb
 
 /-- Compose proof irrelevance with both preceding cheap passes. -/

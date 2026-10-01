@@ -127,13 +127,13 @@ theorem lazyDeltaReductionStepWithEqualRank_preservesInferOnly
       methods).PreservesInferOnly := by
   unfold lazyDeltaReductionStepWithEqualRank
   by_cases hguard : leftId.addr == rightId.addr
-  · simp only [hguard, if_true]
+  · simp only [hguard, ite_true]
     refine bind_preservesInferOnly
       (isRegular_preservesInferOnly leftId) ?_
     intro regular
     cases regular with
     | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       refine bind_preservesInferOnly
         (trySameHeadSpineSpeculative_preservesInferOnly hmethods left right) ?_
       intro result
@@ -150,7 +150,7 @@ theorem lazyDeltaReductionStepWithEqualRank_preservesInferOnly
               exact lazyDeltaReductionStepAfterSameHeadMiss_preservesInferOnly
                 hmethods hcore left right
     | true =>
-      simp only [if_true]
+      simp only [ite_true]
       refine bind_preservesInferOnly
         (trySameHeadSpine_preservesInferOnly hmethods left right) ?_
       intro result
@@ -166,7 +166,7 @@ theorem lazyDeltaReductionStepWithEqualRank_preservesInferOnly
           | false =>
               exact lazyDeltaReductionStepAfterSameHeadMiss_preservesInferOnly
                 hmethods hcore left right
-  · simp only [hguard, Bool.false_eq_true, if_false]
+  · simp only [hguard, Bool.false_eq_true, ite_false]
     exact lazyDeltaReductionStepAfterSameHeadMiss_preservesInferOnly hmethods
       hcore left right
 
@@ -208,7 +208,7 @@ theorem lazyDeltaReductionStepAfterActive_preservesInferOnly
       rightDelta).run methods).PreservesInferOnly := by
   unfold lazyDeltaReductionStepAfterActive
   by_cases hleftOnly : leftDelta && !rightDelta
-  · simp only [hleftOnly, if_true]
+  · simp only [hleftOnly, ite_true]
     refine bind_preservesInferOnly
       (tryUnfoldProjApp_preservesInferOnly hnoDelta right) ?_
     intro projectionResult
@@ -219,9 +219,9 @@ theorem lazyDeltaReductionStepAfterActive_preservesInferOnly
     | none =>
         exact lazyDeltaReductionStepWithLeftDelta_preservesInferOnly hmethods
           hcore left right
-  · simp only [hleftOnly, Bool.false_eq_true, if_false]
+  · simp only [hleftOnly, Bool.false_eq_true, ite_false]
     by_cases hrightOnly : !leftDelta && rightDelta
-    · simp only [hrightOnly, if_true]
+    · simp only [hrightOnly, ite_true]
       refine bind_preservesInferOnly
         (tryUnfoldProjApp_preservesInferOnly hnoDelta left) ?_
       intro projectionResult
@@ -232,7 +232,7 @@ theorem lazyDeltaReductionStepAfterActive_preservesInferOnly
       | none =>
           exact lazyDeltaReductionStepWithRightDelta_preservesInferOnly
             hmethods hcore left right
-    · simp only [hrightOnly, Bool.false_eq_true, if_false]
+    · simp only [hrightOnly, Bool.false_eq_true, ite_false]
       exact lazyDeltaReductionStepWithBothDelta_preservesInferOnly hmethods
         hcore left right leftHead rightHead
 
@@ -433,7 +433,7 @@ theorem tryDefEqApp_preservesInferOnly
               (rightFunction.app rightArgument rightInfo).collectSpine with
             ⟨rightHead, rightArguments⟩
           simp only [tryDefEqApp, hleft, hright, Bool.not_true,
-            Bool.false_or, Bool.false_eq_true, if_false, pure_bind]
+            Bool.false_or, Bool.false_eq_true, ite_false, pure_bind]
           split
           · exact TcM.PreservesInferOnly.pure false
           · refine bind_preservesInferOnly
@@ -442,7 +442,7 @@ theorem tryDefEqApp_preservesInferOnly
             cases headsEqual with
             | false => exact TcM.PreservesInferOnly.pure false
             | true =>
-                simp only [Bool.not_true, Bool.false_eq_true, if_false]
+                simp only [Bool.not_true, Bool.false_eq_true, ite_false]
                 exact allDefEqSpineArgs_preservesInferOnly hmethods
                   (leftArguments.zip rightArguments)
       | var | fvar | sort | const | lam | all | letE | prj | nat | str =>

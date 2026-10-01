@@ -71,12 +71,12 @@ theorem isDefEqAfterLazyDeltaStopped_wf
   intro structurallyEqual afterStructural hstructural
   cases structurallyEqual with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun hI _ =>
         hleftEq.trans world.venvWF hI.2.1.wf <|
           (hstructural rfl).trans world.venvWF hI.2.1.wf hrightEq.symm
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       apply RecM.WF.bind (RecM.WF.withInv <|
         resources.core hpair.leftSupport hleft)
       intro leftCore afterLeftCore hleftCore
@@ -92,7 +92,7 @@ theorem isDefEqAfterLazyDeltaStopped_wf
       cases hchanged :
           (leftCore.addr != left.addr || rightCore.addr != right.addr) with
       | true =>
-          simp only [if_true, pure_bind]
+          simp only [ite_true, pure_bind]
           refine RecM.WF.mono (RecM.WF.withInv <|
             RecM.isDefEqCall_wf hleftCoreSupport hrightCoreSupport
               hleftCoreTr hrightCoreTr) ?_ (fun _ _ h => h)
@@ -103,10 +103,10 @@ theorem isDefEqAfterLazyDeltaStopped_wf
                 hrightCoreEq.symm.trans world.venvWF hI.2.1.wf
                   hrightEq.symm
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           cases haddr : leftCore.addr == rightCore.addr with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact RecM.WF.pure fun hI _ => by
                 have herase := collision.expr hleftCoreSupport
                   hrightCoreSupport (eq_of_beq haddr)
@@ -123,7 +123,7 @@ theorem isDefEqAfterLazyDeltaStopped_wf
                       hrightCoreEq.symm.trans world.venvWF hI.2.1.wf
                         hrightEq.symm
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               apply RecM.WF.bind <|
                 quickDefEq_wf theory collision resources.sorts
                   resources.quick hleftCoreSupport hrightCoreSupport
@@ -131,7 +131,7 @@ theorem isDefEqAfterLazyDeltaStopped_wf
               intro quicklyEqual afterQuick hquick
               cases quicklyEqual with
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   exact RecM.WF.pure fun hI _ =>
                     hleftEq.trans world.venvWF hI.2.1.wf <|
                       hleftCoreEq.trans world.venvWF hI.2.1.wf <|
@@ -139,14 +139,14 @@ theorem isDefEqAfterLazyDeltaStopped_wf
                           hrightCoreEq.symm.trans world.venvWF hI.2.1.wf
                             hrightEq.symm
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   apply RecM.WF.bind <|
                     resources.application hleftCoreSupport
                       hrightCoreSupport hleftCoreTr hrightCoreTr
                   intro applicationsEqual afterApplication happlication
                   cases applicationsEqual with
                   | true =>
-                      simp only [if_true]
+                      simp only [ite_true]
                       exact RecM.WF.pure fun hI _ =>
                         hleftEq.trans world.venvWF hI.2.1.wf <|
                           hleftCoreEq.trans world.venvWF hI.2.1.wf <|
@@ -155,7 +155,7 @@ theorem isDefEqAfterLazyDeltaStopped_wf
                               hrightCoreEq.symm.trans world.venvWF
                                 hI.2.1.wf hrightEq.symm
                   | false =>
-                      simp only [Bool.false_eq_true, if_false]
+                      simp only [Bool.false_eq_true, ite_false]
                       apply RecM.WF.mono (RecM.WF.withInv <|
                         resources.finalWhnf hleftCoreSupport
                           hrightCoreSupport hleftCoreTr hrightCoreTr)

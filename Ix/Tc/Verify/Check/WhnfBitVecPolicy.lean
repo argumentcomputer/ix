@@ -41,10 +41,10 @@ theorem boolLitValue_preservesInferOnly
       simp only []
       cases htrue : id.addr == p.boolTrue.addr with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact TcM.PreservesInferOnly.pure (some true)
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           split <;> exact TcM.PreservesInferOnly.pure _
   | var | fvar | sort | app | lam | all | letE | prj | nat | str =>
       exact TcM.PreservesInferOnly.pure none
@@ -160,10 +160,10 @@ theorem tryEvalNatValueForPredFuel_preservesInferOnly
           intro isStuck
           cases hstuck : isStuck with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact TcM.PreservesInferOnly.pure none
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               rcases hspine : source.collectSpine with ⟨head, args⟩
               cases head with
               | const id levels info =>
@@ -171,7 +171,7 @@ theorem tryEvalNatValueForPredFuel_preservesInferOnly
                   cases hsucc :
                       id.addr == p.natSucc.addr && args.size == 1 with
                   | true =>
-                      simp only [if_true]
+                      simp only [ite_true]
                       refine bind_preservesInferOnly
                         (tryEvalNatValueForPredFuel_preservesInferOnly hmethods
                           fuel args[0]!) ?_
@@ -181,11 +181,11 @@ theorem tryEvalNatValueForPredFuel_preservesInferOnly
                       | some pred =>
                           exact TcM.PreservesInferOnly.pure (some (pred + 1))
                   | false =>
-                      simp only [Bool.false_eq_true, if_false]
+                      simp only [Bool.false_eq_true, ite_false]
                       cases hpred :
                           id.addr == p.natPred.addr && args.size == 1 with
                       | true =>
-                          simp only [if_true]
+                          simp only [ite_true]
                           refine bind_preservesInferOnly
                             (tryEvalNatValueForPredFuel_preservesInferOnly
                               hmethods fuel args[0]!) ?_
@@ -196,13 +196,13 @@ theorem tryEvalNatValueForPredFuel_preservesInferOnly
                               exact TcM.PreservesInferOnly.pure
                                 (some (value - 1))
                       | false =>
-                          simp only [Bool.false_eq_true, if_false]
+                          simp only [Bool.false_eq_true, ite_false]
                           refine bind_preservesInferOnly
                             (isNatBinArithAddr_preservesInferOnly id.addr) ?_
                           intro isArith
                           cases hbinary : isArith && args.size == 2 with
                           | true =>
-                              simp only [if_true]
+                              simp only [ite_true]
                               refine bind_preservesInferOnly
                                 (tryEvalNatValueForPredFuel_preservesInferOnly
                                   hmethods fuel args[0]!) ?_
@@ -224,7 +224,7 @@ theorem tryEvalNatValueForPredFuel_preservesInferOnly
                                         (computeNatBin id.addr
                                           PrimAddrs.canonical left right)
                           | false =>
-                              simp only [Bool.false_eq_true, if_false]
+                              simp only [Bool.false_eq_true, ite_false]
                               exact
                                 tryEvalNatValueForPredFallback_preservesInferOnly
                                   hmethods
@@ -272,10 +272,10 @@ theorem tryReduceBitvecToNat_preservesInferOnly
           simp only []
           cases hzero : natValue == 0 with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact TcM.PreservesInferOnly.pure _
           | false =>
-              simp only [Bool.false_eq_true, if_false, pure_bind]
+              simp only [Bool.false_eq_true, ite_false, pure_bind]
               refine bind_preservesInferOnly
                 (tryEvalNatValueForPred_preservesInferOnly hmethods width) ?_
               intro widthResult
@@ -283,7 +283,7 @@ theorem tryReduceBitvecToNat_preservesInferOnly
               | none => exact TcM.PreservesInferOnly.pure none
               | some widthValue =>
                   by_cases hlarge : widthValue > (1 <<< 24)
-                  · simp only [hlarge, if_pos]
+                  · simp only [hlarge, ite_eq_left]
                     exact TcM.PreservesInferOnly.pure none
                   · simp only [hlarge]
                     exact TcM.PreservesInferOnly.pure _
@@ -362,13 +362,13 @@ theorem tryReduceBitvecUlt_preservesInferOnly
       simp only []
       cases hzero : rightValue == 0 with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           refine bindIntern_preservesInferOnly
             (.mkConst p.boolFalse #[]) ?_
           intro result
           exact TcM.PreservesInferOnly.pure (some result)
       | false =>
-          simp only [Bool.false_eq_true, if_false, pure_bind]
+          simp only [Bool.false_eq_true, ite_false, pure_bind]
           refine bind_preservesInferOnly
             (whnfRec_preservesInferOnly hmethods leftNat) ?_
           intro leftNormalized
@@ -422,10 +422,10 @@ theorem tryReduceBitvec_preservesInferOnly
   intro state
   cases hnoAccel : state.noAccel with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact TcM.PreservesInferOnly.pure none
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       refine bind_preservesInferOnly (prims_preservesInferOnly methods) ?_
       intro p
       rcases hspine : source.collectSpine with ⟨head, args⟩
@@ -435,7 +435,7 @@ theorem tryReduceBitvec_preservesInferOnly
           cases htoNat :
               id.addr == p.bitVecToNat.addr && decide (args.size ≥ 2) with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               refine bind_preservesInferOnly
                 (tryReduceBitvecToNat_preservesInferOnly hmethods args[1]!) ?_
               intro direct
@@ -447,11 +447,11 @@ theorem tryReduceBitvec_preservesInferOnly
                   intro finished
                   exact TcM.PreservesInferOnly.pure (some finished)
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               cases hult :
                   id.addr == p.bitVecUlt.addr && decide (args.size ≥ 3) with
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   refine bind_preservesInferOnly
                     (tryReduceBitvecUlt_preservesInferOnly hmethods args[0]!
                       args[1]! args[2]!) ?_
@@ -464,12 +464,12 @@ theorem tryReduceBitvec_preservesInferOnly
                       intro finished
                       exact TcM.PreservesInferOnly.pure (some finished)
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   cases hdecide :
                       id.addr == p.decidableDecide.addr &&
                         decide (args.size ≥ 2) with
                   | true =>
-                      simp only [if_true]
+                      simp only [ite_true]
                       refine bind_preservesInferOnly
                         (tryReduceBitvecLtProp_preservesInferOnly hmethods
                           args[0]!) ?_
@@ -482,7 +482,7 @@ theorem tryReduceBitvec_preservesInferOnly
                           intro finished
                           exact TcM.PreservesInferOnly.pure (some finished)
                   | false =>
-                      simp only [Bool.false_eq_true, if_false]
+                      simp only [Bool.false_eq_true, ite_false]
                       exact TcM.PreservesInferOnly.pure none
       | var | fvar | sort | app | lam | all | letE | prj | nat | str =>
           exact TcM.PreservesInferOnly.pure none

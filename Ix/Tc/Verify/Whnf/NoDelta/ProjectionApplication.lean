@@ -27,7 +27,7 @@ theorem tryProjAppReduce_empty
     (hempty : args.isEmpty = true) :
     (tryProjAppReduce source flags).run methods s = .ok none s := by
   unfold tryProjAppReduce
-  simp only [hspine, hempty, if_true]
+  simp only [hspine, hempty, ite_true]
   rfl
 
 theorem tryProjAppReduce_notProjection
@@ -40,7 +40,7 @@ theorem tryProjAppReduce_notProjection
       head ≠ KExpr.prj id field value info) :
     (tryProjAppReduce source flags).run methods s = .ok none s := by
   unfold tryProjAppReduce
-  simp only [hspine, hnonempty, Bool.false_eq_true, if_false]
+  simp only [hspine, hnonempty, Bool.false_eq_true, ite_false]
   cases head <;> simp_all
 
 theorem tryProjAppReduce_projectionWhnfError
@@ -56,7 +56,7 @@ theorem tryProjAppReduce_projectionWhnfError
         else (whnfRec value).run methods s) = .error err s₁) :
     (tryProjAppReduce source flags).run methods s = .error err s₁ := by
   unfold tryProjAppReduce
-  simp only [hspine, hnonempty, Bool.false_eq_true, if_false]
+  simp only [hspine, hnonempty, Bool.false_eq_true, ite_false]
   cases hcheap : flags.cheapProj <;>
       simp only [hcheap, Bool.false_eq_true, ↓reduceIte] at hwhnf ⊢
   all_goals
@@ -80,7 +80,7 @@ theorem tryProjAppReduce_projectionReduceError
       .error err s₂) :
     (tryProjAppReduce source flags).run methods s = .error err s₂ := by
   unfold tryProjAppReduce
-  simp only [hspine, hnonempty, Bool.false_eq_true, if_false]
+  simp only [hspine, hnonempty, Bool.false_eq_true, ite_false]
   cases hcheap : flags.cheapProj <;>
       simp only [hcheap, Bool.false_eq_true, ↓reduceIte] at hwhnf ⊢
   all_goals
@@ -110,7 +110,7 @@ theorem tryProjAppReduce_projectionNone
       .ok none s₂) :
     (tryProjAppReduce source flags).run methods s = .ok none s₂ := by
   unfold tryProjAppReduce
-  simp only [hspine, hnonempty, Bool.false_eq_true, if_false]
+  simp only [hspine, hnonempty, Bool.false_eq_true, ite_false]
   cases hcheap : flags.cheapProj <;>
       simp only [hcheap, Bool.false_eq_true, ↓reduceIte] at hwhnf ⊢
   all_goals
@@ -143,7 +143,7 @@ theorem tryProjAppReduce_projectionSome
     (tryProjAppReduce source flags).run methods s =
       .ok (some (result, args)) s₂ := by
   unfold tryProjAppReduce
-  simp only [hspine, hnonempty, Bool.false_eq_true, if_false]
+  simp only [hspine, hnonempty, Bool.false_eq_true, ite_false]
   cases hcheap : flags.cheapProj <;>
       simp only [hcheap, Bool.false_eq_true, ↓reduceIte] at hwhnf ⊢
   all_goals
@@ -246,7 +246,7 @@ theorem tryProjAppReduceFinished_app_optional_wf
                     else whnfRec value).run methods s =
                     .error err s₁ := by
                 cases hcheap : flags.cheapProj <;>
-                  simp only [hcheap, Bool.false_eq_true, if_false, if_true]
+                  simp only [hcheap, Bool.false_eq_true, ite_false, ite_true]
                     at hcallbackRun ⊢ <;>
                   exact hcallbackRun
               rw [hcallbackRunReader] at hcallbackPost
@@ -261,7 +261,7 @@ theorem tryProjAppReduceFinished_app_optional_wf
                     else whnfRec value).run methods s =
                     .ok wvalue s₁ := by
                 cases hcheap : flags.cheapProj <;>
-                  simp only [hcheap, Bool.false_eq_true, if_false, if_true]
+                  simp only [hcheap, Bool.false_eq_true, ite_false, ite_true]
                     at hcallbackRun ⊢ <;>
                   exact hcallbackRun
               rw [hcallbackRunReader] at hcallbackPost

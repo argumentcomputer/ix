@@ -119,10 +119,10 @@ theorem natOffsetDecompose_state_wf {I : TcState .anon → Prop}
           rcases pair with ⟨base, offset⟩
           cases hzero : offset == 0 with
           | true =>
-              simp only [hzero, if_true]
+              simp only [hzero, ite_true]
               exact TcM.WF.pure fun _ => trivial
           | false =>
-              simp only [hzero, Bool.false_eq_true, if_false]
+              simp only [hzero, Bool.false_eq_true, ite_false]
               rw [ReaderT.run_bind]
               apply TcM.WF.bind (prims_state_wf methods afterOffset)
               intro currentPrims afterSecondRead _
@@ -147,10 +147,10 @@ theorem natOffsetRebuild_state_wf {I : TcState .anon → Prop}
   | some base =>
       cases hzero : remainder == 0 with
       | true =>
-          simp only [natOffsetRebuild, hzero, if_true]
+          simp only [natOffsetRebuild, hzero, ite_true]
           exact TcM.WF.pure fun _ => trivial
       | false =>
-          simp only [natOffsetRebuild, hzero, Bool.false_eq_true, if_false]
+          simp only [natOffsetRebuild, hzero, Bool.false_eq_true, ite_false]
           exact mkNatAdd_state_wf methods base
             (natExprFromValue remainder) s
 
@@ -199,10 +199,10 @@ theorem tryDefEqOffsetAfterCandidates_wf
           rcases rightParts with ⟨baseRight, rightOffset⟩
           cases hzero : (min leftOffset rightOffset == 0) with
           | true =>
-              simp only [hzero, if_true]
+              simp only [hzero, ite_true]
               exact TcM.WF.pure fun _ => trivial
           | false =>
-              simp only [hzero, Bool.false_eq_true, if_false, pure_bind]
+              simp only [hzero, Bool.false_eq_true, ite_false, pure_bind]
               rw [ReaderT.run_bind]
               apply TcM.WF.bind
                 (TcM.WF.withInvRunEq <|

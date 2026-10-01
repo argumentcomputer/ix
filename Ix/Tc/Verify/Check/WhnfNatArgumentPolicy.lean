@@ -30,14 +30,14 @@ theorem whnfNatReducerArg_preservesInferOnly
   intro observed
   cases hdirect : !arg.hasFVars || observed.eagerReduce with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       refine bind_preservesInferOnly
         (x := whnfRec arg)
         (whnfRec_preservesInferOnly hmethods arg) ?_
       intro reduced
       exact TcM.PreservesInferOnly.pure (some reduced)
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       refine bindTcM_preservesInferOnly TcM.PreservesInferOnly.get ?_
       intro (saved : TcState .anon)
       refine bindTcM_preservesInferOnly
@@ -87,10 +87,10 @@ theorem tryNatOffsetStuck_preservesInferOnly
   intro p
   cases hhead : !natOffsetStuckHead p source with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact TcM.PreservesInferOnly.pure none
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       rcases hspine : source.collectSpine with ⟨head, args⟩
       cases head with
       | const id levels info =>
@@ -99,10 +99,10 @@ theorem tryNatOffsetStuck_preservesInferOnly
                   !(id.addr == p.natDiv.addr ||
                     id.addr == p.natMod.addr)) || args.size != 2) with
           | true =>
-              simp only [hshape, if_true]
+              simp only [hshape, ite_true]
               exact TcM.PreservesInferOnly.pure none
           | false =>
-              simp only [hshape, Bool.false_eq_true, if_false]
+              simp only [hshape, Bool.false_eq_true, ite_false]
               refine bind_preservesInferOnly
                 (x := whnfNatReducerArg args[1]!)
                 (whnfNatReducerArg_preservesInferOnly hmethods args[1]!) ?_
@@ -121,18 +121,18 @@ theorem tryNatOffsetStuck_preservesInferOnly
                       simp only
                       cases hzero : value == 0 with
                       | true =>
-                          simp only [if_true]
+                          simp only [ite_true]
                           exact TcM.PreservesInferOnly.pure none
                       | false =>
-                          simp only [Bool.false_eq_true, if_false]
+                          simp only [Bool.false_eq_true, ite_false]
                           cases hone :
                               (id.addr == p.natDiv.addr ||
                                 id.addr == p.natMod.addr) && value == 1 with
                           | true =>
-                              simp only [if_true]
+                              simp only [ite_true]
                               exact TcM.PreservesInferOnly.pure none
                           | false =>
-                              simp only [Bool.false_eq_true, if_false]
+                              simp only [Bool.false_eq_true, ite_false]
                               refine bind_preservesInferOnly
                                 (x := whnfNatReducerArg args[0]!)
                                 (whnfNatReducerArg_preservesInferOnly
@@ -147,10 +147,10 @@ theorem tryNatOffsetStuck_preservesInferOnly
                                   cases hliteral :
                                       (extractNatValue left p).isSome with
                                   | true =>
-                                      simp only [if_true]
+                                      simp only [ite_true]
                                       exact TcM.PreservesInferOnly.pure none
                                   | false =>
-                                      simp only [Bool.false_eq_true, if_false]
+                                      simp only [Bool.false_eq_true, ite_false]
                                       refine bindIntern_preservesInferOnly
                                         (KExpr.mkApp
                                           (.const id levels info) left) ?_

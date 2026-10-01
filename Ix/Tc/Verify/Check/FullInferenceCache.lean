@@ -163,7 +163,7 @@ theorem inferWith_full_wf
   | none =>
       have hfullMiss : afterRead.env.inferCache[key]? = none := by
         simpa [fullFound] using hfullFound
-      simp only [hfullMiss, hpolicy, Bool.false_eq_true, if_false]
+      simp only [hfullMiss, hpolicy, Bool.false_eq_true, ite_false]
       exact context.missTail_full_wf hmatch hsourceSupport hsource
         hpolicyAfterRead
 

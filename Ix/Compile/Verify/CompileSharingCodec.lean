@@ -297,7 +297,7 @@ theorem withRoots_ok_of_size {info : Ixon.ConstantInfo} {roots : Array Ixon.Expr
     ∃ info', withRoots info roots = .ok info' := by
   have hlen : roots.toList.length = (constantInfoRoots info).size := by simpa using hsize
   simp only [withRoots]
-  rw [if_neg (by simp [hsize])]
+  rw [ite_eq_right (by simp [hsize])]
   cases info with
   | defn d =>
     match roots.toList, hlen with

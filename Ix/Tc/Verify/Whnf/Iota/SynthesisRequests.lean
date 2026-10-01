@@ -294,7 +294,7 @@ theorem verifyKSynthCandidate_state_wf_of_requests
         intro equal afterDefEq _
         cases equal with
         | false =>
-            simp only [Bool.not_false, if_true]
+            simp only [Bool.not_false, ite_true]
             apply TcM.WF.bind
               (TcM.bumpStats_whnf_wf
                 (fun st : TcState .anon =>
@@ -386,7 +386,7 @@ theorem verifyKSynthCandidate_state_wf_of_inputs
         intro equal afterDefEq _
         cases equal with
         | false =>
-            simp only [Bool.not_false, if_true]
+            simp only [Bool.not_false, ite_true]
             apply TcM.WF.bind
               (TcM.bumpStats_whnf_wf
                 (fun st : TcState .anon =>
@@ -570,9 +570,9 @@ theorem synthCtorWhenK_state_wf_of_requests
       (fun _ _ => True) := by
   unfold synthCtorWhenK
   by_cases hlevels : (recUs.size.toUInt64 != recr.lvls) = true
-  · simp only [hlevels, if_true]
+  · simp only [hlevels, ite_true]
     exact TcM.WF.pure fun _ => trivial
-  · simp only [hlevels, Bool.false_eq_true, if_false]
+  · simp only [hlevels, Bool.false_eq_true, ite_false]
     rw [ReaderT.run_bind]
     apply TcM.WF.bind (tryOptional_state_wf (hinfer major s))
     intro foundTy afterInfer _
@@ -677,9 +677,9 @@ theorem synthCtorWhenK_state_wf_of_inputs
         KSynthGeneratedInput trProj world support uvars Delta result) := by
   unfold synthCtorWhenK
   by_cases hlevels : (recUs.size.toUInt64 != recr.lvls) = true
-  · simp only [hlevels, if_true]
+  · simp only [hlevels, ite_true]
     exact TcM.WF.pure fun _ => trivial
-  · simp only [hlevels, Bool.false_eq_true, if_false]
+  · simp only [hlevels, Bool.false_eq_true, ite_false]
     rw [ReaderT.run_bind]
     apply TcM.WF.bind
       ((tryOptionalInferOnlyRec_wf

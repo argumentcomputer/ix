@@ -376,7 +376,7 @@ theorem inferUncached_app_full_wf
       obtain ⟨hfunSupport, hargSupport, hsubst⟩ :=
         hcensus hsourceSupport
       unfold inferUncached
-      simp only [Bool.not_false, if_true, ReaderT.run_bind,
+      simp only [Bool.not_false, ite_true, ReaderT.run_bind,
         ReaderT.run_monadLift, pure_bind]
       apply TcM.WF.bind
         (callbacks.infer hpolicy hfunSupport hfunPre)
@@ -402,7 +402,7 @@ theorem inferUncached_app_full_wf
       rcases heager with ⟨rfl, hpolicyEager⟩
       cases eager with
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           apply TcM.WF.bind
             (callbacks.isDefEq hpolicyEager haTySupport hdomSupport
               haTyCoreTr hdomTr)
@@ -410,7 +410,7 @@ theorem inferUncached_app_full_wf
           rcases hequal with ⟨hpolicyEq, heq⟩
           cases equal with
           | false =>
-              simp only [Bool.not_false, if_true]
+              simp only [Bool.not_false, ite_true]
               exact throwApplicationMismatch_full_wf
                 (α := KExpr .anon) (aTy := aTy) (dom := dom)
                 (rest := liftM (TcM.runIntern (subst cod a 0)))
@@ -420,12 +420,12 @@ theorem inferUncached_app_full_wf
                       (.app f a info) (.app fV aV) result)
                 hmethods hpolicyEq
           | true =>
-              simp only [Bool.not_true, Bool.false_eq_true, if_false]
+              simp only [Bool.not_true, Bool.false_eq_true, ite_false]
               exact finishFullApplication_wf hrun theory hpolicyEq hfunTr
                 hargTr hfTy hview haTy haTyEq (heq rfl) hcodTr
                 (hsubst hcodSupport)
       | true =>
-          simp only [if_true, ReaderT.run_bind]
+          simp only [ite_true, ReaderT.run_bind]
           apply TcM.WF.bind
             (setEagerReduce_full_wf true hpolicyEager)
           intro _ afterSet hpolicySet
@@ -439,7 +439,7 @@ theorem inferUncached_app_full_wf
           intro _ afterReset hpolicyReset
           cases equal with
           | false =>
-              simp only [Bool.not_false, if_true, ReaderT.run_bind,
+              simp only [Bool.not_false, ite_true, ReaderT.run_bind,
                 ReaderT.run_monadLift]
               exact throwApplicationMismatch_full_wf
                 (α := KExpr .anon) (aTy := aTy) (dom := dom)
@@ -450,7 +450,7 @@ theorem inferUncached_app_full_wf
                       (.app f a info) (.app fV aV) result)
                 hmethods hpolicyReset
           | true =>
-              simp only [Bool.not_true, Bool.false_eq_true, if_false]
+              simp only [Bool.not_true, Bool.false_eq_true, ite_false]
               exact finishFullApplication_wf hrun theory hpolicyReset
                 hfunTr hargTr hfTy hview haTy haTyEq (heq rfl) hcodTr
                 (hsubst hcodSupport)

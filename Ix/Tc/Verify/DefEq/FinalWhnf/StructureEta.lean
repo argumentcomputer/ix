@@ -189,23 +189,23 @@ theorem tryEtaStructAfterConstructor_wf
   unfold tryEtaStructAfterConstructor
   cases hsize : (args.size != params.toNat + fields.toNat) with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ htrue => by contradiction
   | false =>
       have hsizeEq : args.size = params.toNat + fields.toNat := by
         exact eq_of_beq
           (show (args.size == params.toNat + fields.toNat) = true by
             simpa using hsize)
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       apply RecM.WF.bind resources.classifier
       intro structLike afterClassifier hstructLike
       cases structLike with
       | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           exact RecM.WF.pure fun _ htrue => by contradiction
       | true =>
           have heligible : eligible inductId := hstructLike rfl
-          simp only [Bool.not_true, Bool.false_eq_true, if_false]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false]
           apply RecM.WF.bind
             (tryOptionalInferOnlyCall_wf hsourceSupport hsource)
           intro inferredSource afterSourceType hinferredSource
@@ -239,11 +239,11 @@ theorem tryEtaStructAfterConstructor_wf
                   rcases htypesEqual with ⟨hITypeEquality, htypesEqual⟩
                   cases typesEqual with
                   | false =>
-                      simp only [Bool.not_false, if_true]
+                      simp only [Bool.not_false, ite_true]
                       exact RecM.WF.pure fun _ htrue => by contradiction
                   | true =>
                       simp only [Bool.not_true, Bool.false_eq_true,
-                        if_false]
+                        ite_false]
                       have hDelta : KVLCtx.WF world.venv uvars Delta :=
                         hITypeEquality.2.1.wf
                       have hbaseCoreType : world.venv.HasType uvars
@@ -293,7 +293,7 @@ theorem tryEtaStructAfterConstructor_wf
                           TrKExprS world.venv uvars world.nameOf trProj Delta
                             args[params.toNat + field]! (fieldV field) := by
                         intro field hlt
-                        simp only [fieldV, dif_pos hlt]
+                        simp only [fieldV, dite_eq_left hlt]
                         exact Classical.choose_spec
                           (hfieldWitness field hlt)
                       obtain ⟨structName, projectedV, hname, hprojection⟩ :=
@@ -469,19 +469,19 @@ theorem tryDefEqWhnfStructEta_wf
   intro forward afterForward hforward
   cases forward with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ _ => hforward rfl
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       apply RecM.WF.bind <|
         tryEtaStruct_wf resources hrightSupport hleftSupport hright hleft
       intro reverse afterReverse hreverse
       cases reverse with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact RecM.WF.pure fun _ _ => (hreverse rfl).symm
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           exact RecM.WF.pure fun _ => trivial
 
 namespace TryDefEqWhnfStructEta

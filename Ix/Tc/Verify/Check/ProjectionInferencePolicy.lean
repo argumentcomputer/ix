@@ -150,7 +150,7 @@ theorem inferProjFieldStep_preservesInferOnly
   · cases isPropStruct with
     | false => exact TcM.PreservesInferOnly.pure (ForInStep.done dom)
     | true =>
-        simp only [if_true, ReaderT.run_bind, inferCall]
+        simp only [ite_true, ReaderT.run_bind, inferCall]
         apply TcM.PreservesInferOnly.bind (hmethods.infer dom)
         intro fieldSortTy
         apply TcM.PreservesInferOnly.bind
@@ -163,7 +163,7 @@ theorem inferProjFieldStep_preservesInferOnly
     | false =>
         exact inferProjFieldTail_preservesInferOnly structId i val body
     | true =>
-        simp only [if_true, ReaderT.run_bind, pure_bind,
+        simp only [ite_true, ReaderT.run_bind, pure_bind,
           inferCall]
         apply TcM.PreservesInferOnly.bind (hmethods.infer dom)
         intro fieldSortTy

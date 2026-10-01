@@ -311,7 +311,7 @@ theorem emptyInstantiation
     (hempty : recUs.isEmpty = true) :
     h.rhs = rule.rhs ∧ h.after = s := by
   have hrun := h.instantiate
-  rw [TcM.instantiateUnivParams, if_pos hempty] at hrun
+  rw [TcM.instantiateUnivParams, ite_eq_left hempty] at hrun
   have hinj := EStateM.Result.ok.inj hrun
   exact ⟨hinj.1.symm, hinj.2.symm⟩
 

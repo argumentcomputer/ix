@@ -87,7 +87,7 @@ theorem inferWith_fullMiss_success
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ sKey = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) sKey = .ok sKey sKey from rfl]
-  simp only [hfullMiss, Bool.false_eq_true, if_false]
+  simp only [hfullMiss, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind
     ((inferUncached inferRec false source).run methods) _ sKey = _
@@ -123,7 +123,7 @@ theorem inferWith_fullMiss_error
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ sKey = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) sKey = .ok sKey sKey from rfl]
-  simp only [hfullMiss, Bool.false_eq_true, if_false]
+  simp only [hfullMiss, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind
     ((inferUncached inferRec false source).run methods) _ sKey = _
@@ -161,7 +161,7 @@ theorem inferWith_inferOnlyMiss_success
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) sKey = .ok sKey sKey from rfl]
   simp only [hfullMiss]
-  simp only [pure_bind, if_true]
+  simp only [pure_bind, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ sKey = _
   unfold EStateM.bind
@@ -203,7 +203,7 @@ theorem inferWith_inferOnlyMiss_error
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) sKey = .ok sKey sKey from rfl]
   simp only [hfullMiss]
-  simp only [pure_bind, if_true]
+  simp only [pure_bind, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ sKey = _
   unfold EStateM.bind

@@ -271,7 +271,7 @@ theorem quickBinder_preservesInferOnly
   cases typesEqual with
   | false => exact TcM.PreservesInferOnly.pure false
   | true =>
-      simp only [Bool.not_true, Bool.false_eq_true, if_false]
+      simp only [Bool.not_true, Bool.false_eq_true, ite_false]
       apply withLctxScope_preservesInferOnly
       simp only [ReaderT.run_bind, ReaderT.run_monadLift]
       apply TcM.PreservesInferOnly.bind
@@ -310,7 +310,7 @@ theorem allDefEqSpineArgsList_preservesInferOnly
       cases equal with
       | false => exact TcM.PreservesInferOnly.pure false
       | true =>
-          simp only [Bool.not_true, Bool.false_eq_true, if_false]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false]
           exact allDefEqSpineArgsList_preservesInferOnly hmethods rest
 
 theorem allDefEqSpineArgs_preservesInferOnly
@@ -337,16 +337,16 @@ theorem trySameHeadSpine_preservesInferOnly
       cases hshape :
           (leftId.addr != rightId.addr || leftArgs.size != rightArgs.size) with
       | true =>
-          simp only [hshape, if_true]
+          simp only [hshape, ite_true]
           exact TcM.PreservesInferOnly.pure none
       | false =>
-        simp only [hshape, Bool.false_eq_true, if_false, pure_bind]
+        simp only [hshape, Bool.false_eq_true, ite_false, pure_bind]
         cases huniverses : sameDefEqUniverses leftLevels rightLevels with
         | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           exact TcM.PreservesInferOnly.pure none
         | true =>
-          simp only [Bool.not_true, Bool.false_eq_true, if_false]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false]
           refine bind_preservesInferOnly
             (allDefEqSpineArgs_preservesInferOnly hmethods
               (leftArgs.zip rightArgs)) ?_
@@ -354,7 +354,7 @@ theorem trySameHeadSpine_preservesInferOnly
           cases accepted with
           | false => exact TcM.PreservesInferOnly.pure none
           | true =>
-              simp only [Bool.not_true, Bool.false_eq_true, if_false]
+              simp only [Bool.not_true, Bool.false_eq_true, ite_false]
               exact TcM.PreservesInferOnly.pure (some true)
 
 /-- Bounded speculation restores the caller-visible fuel frame and preserves
@@ -373,10 +373,10 @@ theorem trySameHeadSpineSpeculative_preservesInferOnly
         saved.fuelBudget - saved.recFuel >=
           sameHeadSpeculationStartFuel) with
   | true =>
-      simp only [hskip, if_true]
+      simp only [hskip, ite_true]
       exact TcM.PreservesInferOnly.pure none
   | false =>
-      simp only [hskip, Bool.false_eq_true, if_false, pure_bind]
+      simp only [hskip, Bool.false_eq_true, ite_false, pure_bind]
       refine bindTcM_preservesInferOnly
         (TcM.PreservesInferOnly.modify
           (f := fun state : TcState .anon =>
@@ -431,10 +431,10 @@ theorem trySameHeadSpineCached_preservesInferOnly
       (by
         cases speculative with
         | false =>
-            simp only [Bool.false_eq_true, if_false]
+            simp only [Bool.false_eq_true, ite_false]
             exact trySameHeadSpine_preservesInferOnly hmethods left right
         | true =>
-            simp only [if_true]
+            simp only [ite_true]
             exact trySameHeadSpineSpeculative_preservesInferOnly hmethods
               left right)
     intro result
@@ -456,7 +456,7 @@ theorem tryDefEqWhnfApp_preservesInferOnly
   cases functionsEqual with
   | false => exact TcM.PreservesInferOnly.pure none
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       refine bind_preservesInferOnly
         (isDefEqCall_preservesInferOnly hmethods argumentLeft argumentRight) ?_
       intro argumentsEqual

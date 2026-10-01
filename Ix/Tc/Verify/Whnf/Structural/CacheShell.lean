@@ -154,12 +154,12 @@ theorem whnfCoreWithFlagsNonLeaf_wf
     intro transient s2 _
     cases hfull : flags.isFull with
     | true =>
-        simp only [if_true]
+        simp only [ite_true]
         cases transient with
         | true =>
             simpa using hinner s2
         | false =>
-            simp only [Bool.not_false, if_true]
+            simp only [Bool.not_false, ite_true]
             apply RecM.WF.bind
               (Q₁ := fun observed after => observed = s2 ∧ after = s2)
               (RecM.WF.get fun _ => ⟨rfl, rfl⟩)
@@ -208,7 +208,7 @@ theorem whnfCoreWithFlagsNonLeaf_wf
         | true =>
             simpa using hinner s2
         | false =>
-            simp only [Bool.not_false, if_true]
+            simp only [Bool.not_false, ite_true]
             apply RecM.WF.bind
               (Q₁ := fun observed after => observed = s2 ∧ after = s2)
               (RecM.WF.get fun _ => ⟨rfl, rfl⟩)
@@ -328,7 +328,7 @@ theorem whnfCoreWithFlags_wf
         | false =>
             simpa using hreflexive s
         | true =>
-            simp only [Bool.not_true, Bool.false_eq_true, if_false,
+            simp only [Bool.not_true, Bool.false_eq_true, ite_false,
               pure_bind]
             exact hshell s
 

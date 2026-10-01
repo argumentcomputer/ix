@@ -45,7 +45,7 @@ theorem simulSubstSpec_singleton
         subst idx
         have hwindow : ((depth >= depth && depth < depth + 1) = true) := by
           simp [hdepthLt]
-        rw [if_pos hwindow, if_pos heq]
+        rw [ite_eq_left hwindow, ite_eq_left heq]
         simp
       · by_cases hgt : idx > depth
         · have hgeSucc : depth + 1 <= idx := by
@@ -60,7 +60,7 @@ theorem simulSubstSpec_singleton
           have hwindow :
               ¬((idx >= depth && idx < depth + 1) = true) := by
             simp [hnltSucc]
-          rw [if_neg hwindow, if_pos hgeSucc, if_neg heq, if_pos hgt]
+          rw [ite_eq_right hwindow, ite_eq_left hgeSucc, ite_eq_right heq, ite_eq_left hgt]
         · have hne : idx.toNat ≠ depth.toNat := fun h =>
             heq (beq_iff_eq.mpr (UInt64.toNat_inj.mp h))
           have hngt : ¬(depth.toNat < idx.toNat) := fun h =>
@@ -76,7 +76,7 @@ theorem simulSubstSpec_singleton
           have hwindow :
               ¬((idx >= depth && idx < depth + 1) = true) := by
             simp [hnge]
-          rw [if_neg hwindow, if_neg hgeSucc, if_neg heq, if_neg hgt]
+          rw [ite_eq_right hwindow, ite_eq_right hgeSucc, ite_eq_right heq, ite_eq_right hgt]
   | fvar => rfl
   | sort => rfl
   | const => rfl

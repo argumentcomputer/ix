@@ -91,9 +91,9 @@ theorem indexOfPairs_isSome :
     by_cases htu : t = u
     · subst htu
       left
-      rw [getD_setBang, if_pos ⟨rfl, hu⟩]
+      rw [getD_setBang, ite_eq_left ⟨rfl, hu⟩]
       rfl
-    · rw [getD_setBang, if_neg (fun h => htu h.1)]
+    · rw [getD_setBang, ite_eq_right (fun h => htu h.1)]
       rcases h with h | ⟨i', hi'⟩
       · exact Or.inl h
       · rcases List.mem_cons.mp hi' with h | h
@@ -137,7 +137,7 @@ theorem widthOfStored (n w : Nat) (stored : List Nat) (hin : ∀ t ∈ stored, t
     rw [h stored _ (by simp) hin]
     by_cases hu : u ∈ stored
     · simp [hu]
-    · simp only [hu, decide_false, if_false, Bool.false_eq_true]
+    · simp only [hu, decide_false, ite_false, Bool.false_eq_true]
       simp only [Array.getElem?_replicate]
       split <;> rfl
   intro l
@@ -269,7 +269,7 @@ theorem optimizeUniform_parts {w : Nat} {limits : Limits} {ex : Expanded}
               ↓reduceIte] at h
             cases h
           | true =>
-            simp only [hw, hcp, har, hr, hm, Bool.false_eq_true, if_false, if_true] at h
+            simp only [hw, hcp, har, hr, hm, Bool.false_eq_true, ite_false, ite_true] at h
             cases hs : (List.range ex.dag.size).all
                 (fun t => (Prep.ofDag ex.dag).spineLen[t]! < teleSubaddEnd) with
             | false =>

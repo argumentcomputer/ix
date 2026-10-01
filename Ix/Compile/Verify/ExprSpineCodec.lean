@@ -1152,7 +1152,7 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
           (spineWireEncode base ++ exprListBytes spineWireEncode args)
           whole := by
         simp only [Ixon.getExprFromTag, Ixon.Expr.FLAG_APP, hcountBeq,
-          Bool.false_eq_true, if_false]
+          Bool.false_eq_true, ite_false]
         apply Reads.checkCount args.length.toUInt64 1
           (by
             have hbytes := exprListBytes_size_ge_length args
@@ -1271,7 +1271,7 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
           (lamBinderListBytes spineWireEncode binders ++
             spineWireEncode base) whole := by
         simp only [Ixon.getExprFromTag, Ixon.Expr.FLAG_LAM, hcountBeq,
-          Bool.false_eq_true, if_false]
+          Bool.false_eq_true, ite_false]
         apply Reads.checkCount binders.length.toUInt64 2
           (by
             have hbytes := lamBinderListBytes_size_ge_length binders
@@ -1391,7 +1391,7 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
           (allBinderListBytes spineWireEncode binders ++
             spineWireEncode base) whole := by
         simp only [Ixon.getExprFromTag, Ixon.Expr.FLAG_ALL, hcountBeq,
-          Bool.false_eq_true, if_false]
+          Bool.false_eq_true, ite_false]
         apply Reads.checkCount binders.length.toUInt64 2
           (by
             have hbytes := allBinderListBytes_size_ge_length binders
@@ -1443,7 +1443,7 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
           ([nonDep.binder.toBits].toByteArray ++
             spineWireEncode ty ++ spineWireEncode val ++ spineWireEncode body) (.letE nonDep ty val body) := by
         simp only [Ixon.getExprFromTag, Ixon.Expr.FLAG_LET,
-          if_neg (letFlags_not_gt nonDep)]
+          ite_eq_right (letFlags_not_gt nonDep)]
         simp only [ByteArray.append_assoc]
         apply Reads.bind (getBinderContract_reads nonDep.binder)
         simpa only [Ixon.LetContract.ofFlags?_flags, ByteArray.append_assoc,

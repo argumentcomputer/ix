@@ -540,16 +540,16 @@ theorem complete
       | const mkId mkUs mkInfo =>
           cases hctor : (mkId.addr != prims.quotCtor.addr) with
           | true =>
-              simp only [hctor, if_true] at hrun
+              simp only [hctor, ite_true] at hrun
               cases hrun
           | false =>
-              simp only [hctor, Bool.false_eq_true, if_false] at hrun
+              simp only [hctor, Bool.false_eq_true, ite_false] at hrun
               cases hsize : (mkArgs.size != 3) with
               | true =>
-                  simp only [hsize, if_true] at hrun
+                  simp only [hsize, ite_true] at hrun
                   cases hrun
               | false =>
-                  simp only [hsize, Bool.false_eq_true, if_false] at hrun
+                  simp only [hsize, Bool.false_eq_true, ite_false] at hrun
                   rw [ReaderT.run_bind, ReaderT.run_monadLift] at hrun
                   change EStateM.bind (TcM.intern _) _ afterWhnf = _ at hrun
                   unfold EStateM.bind at hrun
@@ -803,11 +803,11 @@ theorem of_laws
       simp only at hrun
       cases hlift : (id.addr == s.prims.quotLift.addr) with
       | true =>
-          simp only [hlift, if_true] at hrun
+          simp only [hlift, ite_true] at hrun
           by_cases hsmall : args.size < 6
-          · simp only [hsmall, if_pos] at hrun
+          · simp only [hsmall, ite_eq_left] at hrun
             cases hrun
-          · simp only [hsmall, if_false] at hrun
+          · simp only [hsmall, ite_false] at hrun
             have hmajorIdx : 5 < args.size := by omega
             have trace :=
               RecM.QuotientSelectedSuccessTrace.complete hrun
@@ -815,17 +815,17 @@ theorem of_laws
               hmethods hI hsourceSupport hsource hspine
               (beq_iff_eq.mp hlift) hmajorIdx
       | false =>
-          simp only [hlift, Bool.false_eq_true, if_false] at hrun
+          simp only [hlift, Bool.false_eq_true, ite_false] at hrun
           cases hind : (id.addr == s.prims.quotInd.addr) with
           | false =>
-              simp only [hind, Bool.false_eq_true, if_false] at hrun
+              simp only [hind, Bool.false_eq_true, ite_false] at hrun
               cases hrun
           | true =>
-              simp only [hind, if_true] at hrun
+              simp only [hind, ite_true] at hrun
               by_cases hsmall : args.size < 5
-              · simp only [hsmall, if_pos] at hrun
+              · simp only [hsmall, ite_eq_left] at hrun
                 cases hrun
-              · simp only [hsmall, if_false] at hrun
+              · simp only [hsmall, ite_false] at hrun
                 have hmajorIdx : 4 < args.size := by omega
                 have trace :=
                   RecM.QuotientSelectedSuccessTrace.complete hrun

@@ -91,7 +91,7 @@ theorem ofNodes_get? (nodes : Array Node) (k : Node) (u : Nat) :
       rw [Std.HashMap.getElem?_insert]
       have hni : nodes[i.1]! = nodes[i.1] := getElem!_pos nodes i.1 hi'
       by_cases hk : nodes[i.1] = k
-      · rw [if_pos ((Node.beq_iff _ _).mpr hk), Option.some.injEq]
+      · rw [ite_eq_left ((Node.beq_iff _ _).mpr hk), Option.some.injEq]
         constructor
         · rintro rfl
           exact ⟨by omega, by rw [hni, hk], fun v h1 h2 => by omega⟩
@@ -99,7 +99,7 @@ theorem ofNodes_get? (nodes : Array Node) (k : Node) (u : Nat) :
           by_cases hui : u = i.1
           · exact hui.symm
           · exact absurd (by rw [hni, hk]) (h3 i.1 (by omega) (by omega))
-      · rw [if_neg (fun h => hk ((Node.beq_iff _ _).mp h)), ih u]
+      · rw [ite_eq_right (fun h => hk ((Node.beq_iff _ _).mp h)), ih u]
         constructor
         · rintro ⟨h1, h2, h3⟩
           refine ⟨by omega, h2, fun v h4 h5 => ?_⟩
@@ -138,7 +138,7 @@ theorem leafIndex_get? (dag : Dag) (h : Head) (u : Nat) :
       by_cases hk : dag.nodes[i.1] = ⟨h, #[]⟩
       · have he : dag.nodes[i.1].children.isEmpty = true := by rw [hk]; rfl
         have hh : (dag.nodes[i.1].head == h) = true := by rw [hk]; exact (Head.beq_iff _ _).mpr rfl
-        rw [if_pos he, Std.HashMap.getElem?_insert, if_pos hh, Option.some.injEq]
+        rw [ite_eq_left he, Std.HashMap.getElem?_insert, ite_eq_left hh, Option.some.injEq]
         constructor
         · rintro rfl
           exact ⟨by omega, by rw [hni, hk], fun v h1 h2 => by omega⟩
@@ -150,7 +150,7 @@ theorem leafIndex_get? (dag : Dag) (h : Head) (u : Nat) :
             m.insert dag.nodes[i.1].head i.1 else m)[h]? = m[h]? := by
           split
           · rename_i he
-            rw [Std.HashMap.getElem?_insert, if_neg]
+            rw [Std.HashMap.getElem?_insert, ite_eq_right]
             intro hh
             apply hk
             have h1 := (Head.beq_iff _ _).mp hh
@@ -212,7 +212,7 @@ theorem lastMatch_spec (dag : Dag) (n : Node) (ps : Array Nat) (u : Nat)
     simp only [List.foldl_cons] at h
     obtain ⟨h1, h2, h3⟩ := ih _ u h
     by_cases hw : (w < dag.size && dag.node w == n) = true
-    · rw [if_pos hw] at h1 h2
+    · rw [ite_eq_left hw] at h1 h2
       simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hw
       have hacc : ∀ a, acc = some a → a ≤ u := by
         intro a ha
@@ -242,7 +242,7 @@ theorem lastMatch_spec (dag : Dag) (n : Node) (ps : Array Nat) (u : Nat)
         rcases hv with rfl | hv
         · exact hwu
         · exact h3 v hv hv1 hv2
-    · rw [if_neg hw] at h1 h2
+    · rw [ite_eq_right hw] at h1 h2
       refine ⟨?_, h2, ?_⟩
       · rcases h1 with h1 | h1
         · exact Or.inl h1
@@ -512,8 +512,8 @@ theorem sim_prefix (limits : Limits) (dag : Dag) (depth : Nat) (e : Ixon.Expr)
   | some id => simp only [ReSim]; rfl
   | none =>
     by_cases hd : depth > limits.maxDepth
-    · simp only [hd, if_true, ReSim]; rfl
-    · simp only [hd, if_false]
+    · simp only [hd, ite_true, ReSim]; rfl
+    · simp only [hd, ite_false]
       cases hbv : bump visits 1 limits.maxExprVisits .exprVisits with
       | error err => simp [hbv, liftExcept, ReSim]; rfl
       | ok v =>
@@ -585,8 +585,8 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
-      · simp only [hd, if_true, ReSim]; rfl
-      · simp only [hd, if_false]
+      · simp only [hd, ite_true, ReSim]; rfl
+      · simp only [hd, ite_false]
         cases hbv : bump visits 1 limits.maxExprVisits .exprVisits with
         | error err => simp [hbv, liftExcept, ReSim]; rfl
         | ok w =>
@@ -602,8 +602,8 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
-      · simp only [hd, if_true, ReSim]; rfl
-      · simp only [hd, if_false]
+      · simp only [hd, ite_true, ReSim]; rfl
+      · simp only [hd, ite_false]
         cases hbv : bump visits 1 limits.maxExprVisits .exprVisits with
         | error err => simp [hbv, liftExcept, ReSim]; rfl
         | ok w =>
@@ -620,8 +620,8 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
-      · simp only [hd, if_true, ReSim]; rfl
-      · simp only [hd, if_false]
+      · simp only [hd, ite_true, ReSim]; rfl
+      · simp only [hd, ite_false]
         cases hbv : bump visits 1 limits.maxExprVisits .exprVisits with
         | error err => simp [hbv, liftExcept, ReSim]; rfl
         | ok w =>
@@ -638,8 +638,8 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
-      · simp only [hd, if_true, ReSim]; rfl
-      · simp only [hd, if_false]
+      · simp only [hd, ite_true, ReSim]; rfl
+      · simp only [hd, ite_false]
         cases hbv : bump visits 1 limits.maxExprVisits .exprVisits with
         | error err => simp [hbv, liftExcept, ReSim]; rfl
         | ok w =>
@@ -656,8 +656,8 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
-      · simp only [hd, if_true, ReSim]; rfl
-      · simp only [hd, if_false]
+      · simp only [hd, ite_true, ReSim]; rfl
+      · simp only [hd, ite_false]
         cases hbv : bump visits 1 limits.maxExprVisits .exprVisits with
         | error err => simp [hbv, liftExcept, ReSim]; rfl
         | ok w =>
@@ -741,7 +741,7 @@ theorem ingestTable_sim (limits : Limits) (dag : Dag) (sharing roots : Array Ixo
       ((ingestTable limits sharing roots true).run
         { interner := Interner.ofNodes dag.nodes, ptrCache := {}, visits := 0 }) := by
   unfold ingestTable reIngestTable
-  simp only [hw, if_false, Std.Legacy.Range.forIn'_eq_forIn'_range', StateT.run_bind]
+  simp only [hw, ite_false, Std.Legacy.Range.forIn'_eq_forIn'_range', StateT.run_bind]
   refine ReSim.bind' (loop_sim limits dag sharing
     (fun i acc => { resolved := acc, tableSize := sharing.size, entry := some i, root := 0,
                     allowShare := true })
@@ -790,11 +790,11 @@ def reexpandFast (limits : Limits) (dag : Dag) (sharing roots : Array Ixon.Expr)
   funext limits dag sharing roots
   unfold reexpandFast
   by_cases hw : sharing.size ≥ wordBound
-  · simp only [hw, if_true]
+  · simp only [hw, ite_true]
     unfold reexpand ingestTable
-    simp only [hw, if_true]
+    simp only [hw, ite_true]
     rfl
-  · simp only [hw, if_false]
+  · simp only [hw, ite_false]
     have hs := ingestTable_sim limits dag sharing roots hw
     cases hr : reIngestTable limits dag (ReIndex.ofDag dag) sharing roots with
     | ok p cache visits =>

@@ -96,17 +96,17 @@ theorem add_getElem! (tb : CTable) (e : Entry) (j : Nat) :
     · omega
   rw [hget]
   by_cases hb : betterEntry e tb[e.2.size]! = true
-  · rw [if_pos hb, setBang_getElem!]
+  · rw [ite_eq_left hb, setBang_getElem!]
     by_cases hj : j = e.2.size
     · subst hj; simp [hsz, hb]
-    · rw [if_neg (fun h => hj h.1.symm), if_neg (fun h => hj h.1), hget]
-  · rw [if_neg hb, if_neg (fun h => hb h.2), hget]
+    · rw [ite_eq_right (fun h => hj h.1.symm), ite_eq_right (fun h => hj h.1), hget]
+  · rw [ite_eq_right hb, ite_eq_right (fun h => hb h.2), hget]
 
 theorem add_hasAt (tb : CTable) (e : Entry) : HasAt (tb.add e) e.2.size e.1 := by
   by_cases hb : betterEntry e tb[e.2.size]! = true
-  · exact ⟨e, by rw [add_getElem!, if_pos ⟨rfl, hb⟩], Int.le_refl _⟩
+  · exact ⟨e, by rw [add_getElem!, ite_eq_left ⟨rfl, hb⟩], Int.le_refl _⟩
   · have hget : (tb.add e)[e.2.size]! = tb[e.2.size]! := by
-      rw [add_getElem!, if_neg (fun h => hb h.2)]
+      rw [add_getElem!, ite_eq_right (fun h => hb h.2)]
     rw [Bool.not_eq_true] at hb
     cases ho : tb[e.2.size]! with
     | none => rw [ho] at hb; simp [betterEntry] at hb
@@ -121,11 +121,11 @@ theorem add_improves (tb : CTable) (e : Entry) : Improves tb (tb.add e) := by
   intro j x hx
   by_cases hj : j = e.2.size ∧ betterEntry e tb[e.2.size]! = true
   · obtain ⟨rfl, hb⟩ := hj
-    refine ⟨e, by rw [add_getElem!, if_pos ⟨rfl, hb⟩], ?_⟩
+    refine ⟨e, by rw [add_getElem!, ite_eq_left ⟨rfl, hb⟩], ?_⟩
     rw [hx] at hb
     simp only [betterEntry, Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true, beq_iff_eq] at hb
     omega
-  · exact ⟨x, by rw [add_getElem!, if_neg hj, hx], Int.le_refl _⟩
+  · exact ⟨x, by rw [add_getElem!, ite_eq_right hj, hx], Int.le_refl _⟩
 
 theorem add_entries {tb : CTable} {P : Entry → Prop} (h : Entries tb P) {e : Entry} (he : P e) :
     Entries (tb.add e) P := by
@@ -331,7 +331,7 @@ theorem trim_hasAt {tb : CTable} {s k : Nat} {v : _root_.Int} (h : HasAt tb k v)
     rw [he]
     simp only
     have := hv b hb
-    rw [if_neg (by omega)]
+    rw [ite_eq_right (by omega)]
 
 /-! ## Convolution -/
 
@@ -536,17 +536,17 @@ theorem add_improvesT {tb : CTable} {e : Entry} (hs : SortedT tb) (he : e.2.toLi
   intro j x hx
   by_cases hj : j = e.2.size ∧ betterEntry e tb[e.2.size]! = true
   · obtain ⟨rfl, hb⟩ := hj
-    refine ⟨e, by rw [add_getElem!, if_pos ⟨rfl, hb⟩], ?_⟩
+    refine ⟨e, by rw [add_getElem!, ite_eq_left ⟨rfl, hb⟩], ?_⟩
     rw [hx] at hb
     exact (better_tle he (hs _ x hx)).1 hb
-  · exact ⟨x, by rw [add_getElem!, if_neg hj, hx], tle_refl x⟩
+  · exact ⟨x, by rw [add_getElem!, ite_eq_right hj, hx], tle_refl x⟩
 
 theorem add_hasAtT {tb : CTable} {e : Entry} (hs : SortedT tb) (he : e.2.toList.Pairwise (· < ·)) :
     HasAtT (tb.add e) e.2.size e.1 e.2.toList := by
   by_cases hb : betterEntry e tb[e.2.size]! = true
-  · exact ⟨e, by rw [add_getElem!, if_pos ⟨rfl, hb⟩], Or.inr ⟨rfl, leL_refl _⟩⟩
+  · exact ⟨e, by rw [add_getElem!, ite_eq_left ⟨rfl, hb⟩], Or.inr ⟨rfl, leL_refl _⟩⟩
   · have hget : (tb.add e)[e.2.size]! = tb[e.2.size]! := by
-      rw [add_getElem!, if_neg (fun h => hb h.2)]
+      rw [add_getElem!, ite_eq_right (fun h => hb h.2)]
     cases ho : tb[e.2.size]! with
     | none => rw [ho] at hb; simp [betterEntry] at hb
     | some x =>
@@ -660,7 +660,7 @@ theorem trim_tie {tb : CTable} (s : Nat) (hs : SortedT tb) :
     rw [he]
     simp only
     have := hv b hb
-    rw [if_neg (by rcases hgood with h | ⟨h, _⟩ <;> omega)]
+    rw [ite_eq_right (by rcases hgood with h | ⟨h, _⟩ <;> omega)]
 
 theorem mergeSorted_strict {a b : Array Nat} (ha : a.toList.Pairwise (· < ·))
     (hb : b.toList.Pairwise (· < ·)) (hd : ∀ x ∈ a.toList, x ∉ b.toList) :

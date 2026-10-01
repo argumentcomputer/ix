@@ -91,16 +91,16 @@ theorem tierBound_eq (weight : Nat → Nat) (inF : List Nat) :
     simp only [tierBound]
     by_cases hr : room = 0
     · subst hr
-      simp only [if_true]
+      simp only [ite_true]
       cases h : (t :: ts).filter (fun x => !inF.contains x) <;> simp [topSum]
-    · rw [if_neg hr]
+    · rw [ite_eq_right hr]
       by_cases hc : inF.contains t = true
-      · rw [if_pos hc, ih]
+      · rw [ite_eq_left hc, ih]
         have hc' : t ∈ inF := by simpa using hc
         simp [hc']
-      · rw [if_neg hc, ih]
+      · rw [ite_eq_right hc, ih]
         obtain ⟨r, rfl⟩ : ∃ r, room = r + 1 := ⟨room - 1, by omega⟩
-        simp only [List.filter_cons, hc, Bool.not_false, if_true, topSum,
+        simp only [List.filter_cons, hc, Bool.not_false, ite_true, topSum,
           Nat.add_sub_cancel]
         omega
 
@@ -388,7 +388,7 @@ theorem tierClosures_fold {deps : Nat → List Nat} {cap : Nat} :
         exact hok x hx
       · rw [List.mem_singleton] at hx
         subst hx
-        simp only [beq_self_eq_true, if_true]
+        simp only [beq_self_eq_true, ite_true]
         exact closureEntry_spec hdok
     · rcases List.mem_append.mp hx with hx | hx
       · exact List.mem_append_left _ (hclosed x hx d hd)
@@ -568,11 +568,11 @@ theorem leaves_shape {deps : Nat → List Nat} {closure : Nat → Option (List N
     have hitems' : items = (pre ++ [t]) ++ ts := by rw [hitems]; simp
     simp only [tierLeaves] at hF
     by_cases ht : inF.contains t = true
-    · rw [if_pos ht] at hF
+    · rw [ite_eq_left ht] at hF
       obtain ⟨X, rfl, hX, hXr, hfin⟩ := ih _ _ _ hitems' (hinv.skip (contains_iff.mp ht)) F hF
       exact ⟨X, rfl, hX, fun x hx => ⟨List.mem_cons_of_mem _ (hXr x hx).1, (hXr x hx).2⟩, hfin⟩
     · have ht' : t ∉ inF := fun h => ht (contains_iff.mpr h)
-      rw [if_neg ht] at hF
+      rw [ite_eq_right ht] at hF
       rcases List.mem_append.mp hF with hI | hE
       · cases hc : closure t with
         | none => rw [hc] at hI; cases hI
@@ -650,14 +650,14 @@ theorem leaves_complete {deps : Nat → List Nat} {closure : Nat → Option (Lis
     have hitems' : items = (pre ++ [t]) ++ ts := by rw [hitems]; simp
     simp only [tierLeaves]
     by_cases ht : inF.contains t = true
-    · rw [if_pos ht]
+    · rw [ite_eq_left ht]
       have ht' := contains_iff.mp ht
       refine ih _ _ _ hitems' (hinv.skip ht') hin hex fun x hx hxG => ?_
       rcases List.mem_append.mp hx with h | h
       · exact hpre x h hxG
       · rw [List.mem_singleton] at h; exact h ▸ ht'
     · have ht' : t ∉ inF := fun h => ht (contains_iff.mpr h)
-      rw [if_neg ht]
+      rw [ite_eq_right ht]
       have htI : t ∈ items := by rw [hitems]; simp
       by_cases htG : t ∈ G
       · -- include
@@ -705,7 +705,7 @@ theorem leaves_complete {deps : Nat → List Nat} {closure : Nat → Option (Lis
                 exact List.mem_append_right _ htN)
           refine ⟨F, List.mem_append_left _ ?_, hFG⟩
           dsimp only
-          rw [if_pos hcond]
+          rw [ite_eq_left hcond]
           exact hF
       · -- exclude
         obtain ⟨F, hF, hFG⟩ := ih _ _ _ hitems' (hinv.exclude ht') hin
@@ -732,7 +732,7 @@ theorem leaves_order {deps : Nat → List Nat} {closure : Nat → Option (List N
     have hitems' : items = (pre ++ [t]) ++ ts := by rw [hitems]; simp
     simp only [tierLeaves]
     by_cases ht : inF.contains t = true
-    · rw [if_pos ht]
+    · rw [ite_eq_left ht]
       have ht' := contains_iff.mp ht
       have hsub := ih _ _ _ hitems' (hinv.skip ht')
       refine hsub.imp_of_mem fun {A B} hA hB hAB => Or.inr ⟨?_, hAB⟩
@@ -740,7 +740,7 @@ theorem leaves_order {deps : Nat → List Nat} {closure : Nat → Option (List N
       obtain ⟨Y, rfl, -⟩ := leaves_shape hctx ts _ _ _ hitems' (hinv.skip ht') B hB
       exact iff_of_true (List.mem_append_left _ ht') (List.mem_append_left _ ht')
     · have ht' : t ∉ inF := fun h => ht (contains_iff.mpr h)
-      rw [if_neg ht]
+      rw [ite_eq_right ht]
       have hE := ih _ _ _ hitems' (hinv.exclude ht')
       have hEt : ∀ B ∈ tierLeaves closure cap ts inF (t :: ex), t ∉ B := by
         intro B hB
@@ -809,7 +809,7 @@ theorem fold_noop (weight : Nat → Nat) {b : Nat} {B : List Nat} :
   | cons F L ih =>
     intro h
     simp only [List.foldl_cons, leafUpd, tierUpd]
-    rw [if_neg (by have := h F List.mem_cons_self; omega)]
+    rw [ite_eq_right (by have := h F List.mem_cons_self; omega)]
     exact ih fun G hG => h G (List.mem_cons_of_mem _ hG)
 
 /-- The fold over the leaves keeps the first heaviest leaf. -/
@@ -981,12 +981,12 @@ theorem tierDfs_spec {deps : Nat → List Nat} {closure : Nat → Option (List N
           have hb1 : st1.best = st.best := by rw [← hst1]
           split at h
           · rename_i hin
-            rw [if_pos hin, ← hb1]
+            rw [ite_eq_left hin, ← hb1]
             refine ih _ _ _ _ _ _ _ hcur hex ?_ h
             rw [htake]
             exact hinv.skip (contains_iff.mp hin)
           · rename_i hin
-            rw [if_neg hin, List.foldl_append]
+            rw [ite_eq_right hin, List.foldl_append]
             have ht' : items[pos]! ∉ inF := fun h => hin (contains_iff.mpr h)
             have hex' : ∀ u, (excluded.insert items[pos]!).contains u = true ↔
                 u ∈ items[pos]! :: ex := by
@@ -1021,7 +1021,7 @@ theorem tierDfs_spec {deps : Nat → List Nat} {closure : Nat → Option (List N
               rw [hany c] at h
               split at h
               · rename_i hcond
-                rw [if_pos hcond]
+                rw [ite_eq_left hcond]
                 obtain ⟨st2, hst2, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
                 simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hcond
                 obtain ⟨hinv', -⟩ := hinv.include hctx hitems ht' hc hcond.1 hcond.2
@@ -1029,7 +1029,7 @@ theorem tierDfs_spec {deps : Nat → List Nat} {closure : Nat → Option (List N
                   ih _ _ _ _ _ _ _ (by rw [foldl_weight, hcur, wsum_append]) hex
                     (by rw [htake]; exact hinv') hst2, hb1]
               · rename_i hcond
-                rw [if_neg hcond]
+                rw [ite_eq_right hcond]
                 obtain ⟨st2, hst2, h⟩ := Ix.Compile.Verify.SharingExact.bind_eq_ok h
                 simp only [pure, Except.pure, Except.ok.injEq] at hst2
                 subst hst2

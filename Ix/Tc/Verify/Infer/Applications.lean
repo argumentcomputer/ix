@@ -187,7 +187,7 @@ theorem inferUncached_app_wf
       cases inferOnly with
       | false =>
           unfold inferUncached
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           apply RecM.WF.bind
             (RecM.WF.withInv <| RecM.inferCall_wf hfunSupport hfunTr)
           intro fTy afterFun hfunPost
@@ -215,14 +215,14 @@ theorem inferUncached_app_wf
           rcases heager with ⟨_, rfl⟩
           cases eager with
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               apply RecM.WF.bind
                 (RecM.isDefEqCall_wf haTySupport hdomSupport
                   haTyCoreTr hdomTr)
               intro equal afterEq _
               cases equal with
               | false =>
-                  simp only [Bool.not_false, if_true, pure_bind]
+                  simp only [Bool.not_false, ite_true, pure_bind]
                   apply RecM.WF.bind
                     (Q₁ := fun read state => read = state)
                     (RecM.WF.get fun _ => rfl)
@@ -233,11 +233,11 @@ theorem inferUncached_app_wf
                   intro _ _ impossible
                   exact impossible.elim
               | true =>
-                  simp only [Bool.not_true, Bool.false_eq_true, if_false]
+                  simp only [Bool.not_true, Bool.false_eq_true, ite_false]
                   exact finishApplication_wf hrun theory hfun harg hargTr
                     hfTy hview hcodTr (hsubst hcodSupport)
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               apply RecM.WF.bind (RecM.setEagerReduce_wf true)
               intro _ afterSet _
               apply RecM.WF.bind
@@ -248,7 +248,7 @@ theorem inferUncached_app_wf
               intro _ afterReset _
               cases equal with
               | false =>
-                  simp only [Bool.not_false, if_true, pure_bind]
+                  simp only [Bool.not_false, ite_true, pure_bind]
                   apply RecM.WF.bind
                     (Q₁ := fun read state => read = state)
                     (RecM.WF.get fun _ => rfl)
@@ -259,12 +259,12 @@ theorem inferUncached_app_wf
                   intro _ _ impossible
                   exact impossible.elim
               | true =>
-                  simp only [Bool.not_true, Bool.false_eq_true, if_false]
+                  simp only [Bool.not_true, Bool.false_eq_true, ite_false]
                   exact finishApplication_wf hrun theory hfun harg hargTr
                     hfTy hview hcodTr (hsubst hcodSupport)
       | true =>
           unfold inferUncached
-          simp only [Bool.not_true, Bool.false_eq_true, if_false]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false]
           apply RecM.WF.bind
             (RecM.WF.withInv <| RecM.inferCall_wf hfunSupport hfunTr)
           intro fTy afterFun hfunPost

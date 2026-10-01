@@ -173,7 +173,7 @@ theorem pinnedPick_fold {deg : Array Nat} {D B : Nat} (f : Option Nat → Nat �
       rw [hf2]
       have ha := hacc a rfl
       by_cases hb : (deg[t]! > deg[a]! || (deg[t]! == deg[a]! && t < a)) = true
-      · simp only [hb, if_true]
+      · simp only [hb, ite_true]
         have hlt := (better_iff_key ht ha).mp hb
         obtain ⟨hnone, hsome⟩ := ih (some t) hts (fun a ha => by cases ha; exact ht)
         refine ⟨⟨fun h => absurd (hnone.mp h).1 (by simp), fun h => by simp at h⟩, fun m hm => ?_⟩
@@ -187,7 +187,7 @@ theorem pinnedPick_fold {deg : Array Nat} {D B : Nat} (f : Option Nat → Nat �
           · subst h; exact hmt
           · exact hle x h
         · cases ha'; omega
-      · simp only [hb, Bool.false_eq_true, if_false]
+      · simp only [hb, Bool.false_eq_true, ite_false]
         have hge : pinnedKey deg D B a ≤ pinnedKey deg D B t := by
           have := mt (better_iff_key ht ha).mpr hb
           omega
@@ -269,7 +269,7 @@ theorem users_inner (u : Nat) :
     · subst hd
       have hp : ∀ a : Array Nat, x ∈ (a.push u).toList ↔ x ∈ a.toList ∨ x = u := by
         intro a; simp only [Array.toList_push, List.mem_append, List.mem_singleton]
-      simp only [beq_self_eq_true, if_true, Option.getD_some, hp,
+      simp only [beq_self_eq_true, ite_true, Option.getD_some, hp,
         ← Std.HashMap.getD_eq_getD_getElem?, List.mem_cons_self, and_true]
       constructor
       · rintro ((h | h) | ⟨h, _⟩)
@@ -280,7 +280,7 @@ theorem users_inner (u : Nat) :
         · exact Or.inl (Or.inl h)
         · exact Or.inl (Or.inr h)
     · have h1 : (d0 == d) = false := by simpa using hd
-      simp only [h1, Bool.false_eq_true, if_false, List.mem_cons]
+      simp only [h1, Bool.false_eq_true, ite_false, List.mem_cons]
       constructor
       · rintro (h | ⟨h1, h2⟩)
         · exact Or.inl h

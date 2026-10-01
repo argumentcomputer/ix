@@ -53,10 +53,10 @@ theorem tryUnfoldProjApp_wf
     intro reduced afterReduced hreduced
     cases haddr : reduced.addr == source.addr with
     | true =>
-        simp only [if_true]
+        simp only [ite_true]
         exact RecM.WF.pure fun _ => trivial
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         exact RecM.WF.pure fun _ =>
           ⟨hreduced.1, WhnfPost.meaning hsource hreduced.2⟩
 
@@ -88,8 +88,8 @@ theorem defEqLazyDeltaStepAfterDeltaClassification_wf
   case false.false =>
     simp at hactive
   case false.true =>
-    simp only [Bool.false_and, Bool.false_eq_true, if_false,
-      Bool.not_false, Bool.true_and, if_true]
+    simp only [Bool.false_and, Bool.false_eq_true, ite_false,
+      Bool.not_false, Bool.true_and, ite_true]
     apply RecM.WF.bind
       (RecM.WF.withInv <|
         hproj hpair.leftSupport hleft)
@@ -120,7 +120,7 @@ theorem defEqLazyDeltaStepAfterDeltaClassification_wf
           ⟨hpair.leftSupport, hreducedSupport, hpair.left,
             WhnfPost.transMeaning theory hDelta hpair.right hreducedMeaning⟩
   case true.true =>
-    simp only [Bool.not_true, Bool.and_false, Bool.false_eq_true, if_false]
+    simp only [Bool.not_true, Bool.and_false, Bool.false_eq_true, ite_false]
     exact hafter (aHead := aHead) (bHead := bHead) hactive hpair
 
 namespace DefEqLazyDeltaAfterDeltaClassification

@@ -500,7 +500,7 @@ theorem appendNestedAuxiliary_fresh
       final result := by
   unfold NestedFlatAuxiliaryRequest.key at fresh
   unfold appendNestedAuxiliary at run
-  simp only [fresh, Bool.false_eq_true, if_false, ReaderT.run_bind,
+  simp only [fresh, Bool.false_eq_true, ite_false, ReaderT.run_bind,
     ReaderT.run_pure, pure_bind] at run
   change EStateM.bind ((mkIndUnivs request.lvls univOffset).run methods) _
     initial = .ok result final at run
@@ -620,18 +620,18 @@ theorem tryDetectNestedCore_transition
       case const headId occurrenceUs headInfo =>
         simp only at run
         by_cases hblock : blockAddrs.contains headId.addr = true
-        · rw [if_pos hblock] at run
+        · rw [ite_eq_left hblock] at run
           cases run
           exact .unchanged
-        · rw [if_neg hblock] at run
+        · rw [ite_eq_right hblock] at run
           simp only [pure_bind] at run
           by_cases horiginal :
               flat.any (fun mem => mem.id.addr == headId.addr && !mem.isAux) =
                 true
-          · rw [if_pos horiginal] at run
+          · rw [ite_eq_left horiginal] at run
             cases run
             exact .unchanged
-          · rw [if_neg horiginal] at run
+          · rw [ite_eq_right horiginal] at run
             simp only [ReaderT.run_bind, ReaderT.run_monadLift] at run
             change EStateM.bind (TcM.tryGetConst headId) _ after = _ at run
             unfold EStateM.bind at run
@@ -656,19 +656,19 @@ theorem tryDetectNestedCore_transition
                     rename_i indName levelParams extLvls extParams extIndices
                       isUnsafe block memberIdx indTy extCtors leanAll
                     by_cases harity : args.size < extParams.toNat
-                    · rw [if_pos harity] at run
+                    · rw [ite_eq_left harity] at run
                       simp only [ReaderT.run_pure] at run
                       cases run
                       exact .unchanged
-                    · rw [if_neg harity] at run
+                    · rw [ite_eq_right harity] at run
                       by_cases hnested :
                           (!(args.extract 0 extParams.toNat).any
                             (exprMentionsAnyAddr · blockAddrs)) = true
-                      · rw [if_pos hnested] at run
+                      · rw [ite_eq_left hnested] at run
                         simp only [ReaderT.run_pure] at run
                         cases run
                         exact .unchanged
-                      · rw [if_neg hnested] at run
+                      · rw [ite_eq_right hnested] at run
                         rw [ReaderT.run_bind] at run
                         change EStateM.bind
                           ((checkedNatMetadataSum "nested parameter scope"
@@ -689,11 +689,11 @@ theorem tryDetectNestedCore_transition
                                 (!(args.extract 0 extParams.toNat).all
                                   (fun sp => !sp.hasFVars &&
                                     sp.lbr ≤ paramBound)) = true
-                            · rw [if_pos hs7] at run
+                            · rw [ite_eq_left hs7] at run
                               simp only [ReaderT.run_pure] at run
                               cases run
                               exact .unchanged
-                            · rw [if_neg hs7] at run
+                            · rw [ite_eq_right hs7] at run
                               let request : NestedFlatAuxiliaryRequest m :=
                                 { id := headId
                                   occurrenceUs := occurrenceUs
@@ -1050,11 +1050,11 @@ theorem buildFlatBlockQueueStep_history
   unfold buildFlatBlockQueueStep at run
   simp only at run
   by_cases hdone : qi ≥ flat0.size
-  · rw [if_pos hdone] at run
+  · rw [ite_eq_left hdone] at run
     simp only [ReaderT.run_pure] at run
     cases run
     exact .refl (flat0, auxSeen0)
-  · rw [if_neg hdone] at run
+  · rw [ite_eq_right hdone] at run
     rw [ReaderT.run_bind] at run
     change EStateM.bind
       ((scanFlatConstructors allBlockAddrs nRecParams univOffset flat0[qi]!

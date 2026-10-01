@@ -231,13 +231,13 @@ theorem tryApplyIotaCtor_state_wf_of_requests
   | some rule =>
       simp only [pure_bind]
       by_cases hlevels : (recUs.size.toUInt64 != recr.lvls) = true
-      · simp only [hlevels, if_true]
+      · simp only [hlevels, ite_true]
         exact TcM.WF.pure (fun _ => trivial)
-      · simp only [hlevels, Bool.false_eq_true, if_false]
+      · simp only [hlevels, Bool.false_eq_true, ite_false]
         by_cases hfields : ctorFields > ctorArgs.size
-        · simp only [hfields, if_pos]
+        · simp only [hfields, ite_eq_left]
           exact TcM.WF.pure (fun _ => trivial)
-        · simp only [hfields, if_false]
+        · simp only [hfields, ite_false]
           rw [ReaderT.run_bind]
           apply TcM.WF.bind
             (applyIotaRule_state_wf_of_requests hrun

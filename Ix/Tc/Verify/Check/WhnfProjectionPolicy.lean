@@ -120,28 +120,28 @@ theorem tryReduceFinValDecidableRec_preservesInferOnly
   intro state
   cases hnoAccel : state.noAccel with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact TcM.PreservesInferOnly.pure none
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       refine bind_preservesInferOnly
         (x := prims) (prims_preservesInferOnly methods) ?_
       intro p
       cases hfin : id.addr != p.fin.addr || field != 0 with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact TcM.PreservesInferOnly.pure none
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           cases head with
           | const recId recLevels recInfo =>
               cases hrec :
                   recId.addr != p.decidableRec.addr || args.size < 5 with
               | true =>
-                  simp only [hrec, if_true]
+                  simp only [hrec, ite_true]
                   exact TcM.PreservesInferOnly.pure none
               | false =>
-                  simp only [hrec, Bool.false_eq_true, if_false]
+                  simp only [hrec, Bool.false_eq_true, ite_false]
                   cases args[1]! with
                   | lam motiveName motiveBi motiveDomain motiveBody
                       motiveInfo =>

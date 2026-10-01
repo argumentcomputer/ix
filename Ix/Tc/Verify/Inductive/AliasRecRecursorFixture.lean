@@ -419,7 +419,7 @@ def blockCatalog : BlockCatalog := fun id => recursorIngressAfter.getBlock? id
 private theorem catalogRecAliasNative :
     catalog recAliasId = some AliasRecFixture.recAliasConcrete := by
   unfold catalog
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 
 theorem catalog_recAlias :
     catalog recAliasId = some AliasRecFixture.recAliasConcrete :=
@@ -428,7 +428,7 @@ theorem catalog_recAlias :
 private theorem catalogFamilyNative :
     catalog familyId = some AliasRecFixture.familyConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_family :
     catalog familyId = some AliasRecFixture.familyConcrete :=
@@ -437,8 +437,8 @@ theorem catalog_family :
 private theorem catalogMkNative :
     catalog mkId = some AliasRecFixture.mkConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem catalog_mk : catalog mkId = some AliasRecFixture.mkConcrete :=
   catalogMkNative
@@ -446,8 +446,8 @@ theorem catalog_mk : catalog mkId = some AliasRecFixture.mkConcrete :=
 private theorem catalogRecursorNative :
     catalog recursorId = some recursorConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_recursor : catalog recursorId = some recursorConcrete :=
   catalogRecursorNative

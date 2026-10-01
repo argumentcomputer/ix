@@ -75,7 +75,7 @@ theorem firstDiff_spec : ∀ (A B : List Nat), A.Pairwise (· < ·) → B.Pairwi
     by_cases hxy : x = y
     · subst hxy
       obtain ⟨ih1, ih2⟩ := firstDiff_spec xs ys hxs hys
-      simp only [firstDiff, if_true]
+      simp only [firstDiff, ite_true]
       refine ⟨by rw [ih1]; simp, fun m h => ?_⟩
       obtain ⟨h1, h2⟩ := ih2 m h
       -- `m` is in `xs` or `ys`, so it is above `x`
@@ -104,7 +104,7 @@ theorem firstDiff_spec : ∀ (A B : List Nat), A.Pairwise (· < ·) → B.Pairwi
         · simp [hzx]
         · simp only [hzx, false_or]
           exact h2 z hz
-    · simp only [firstDiff, hxy, if_false]
+    · simp only [firstDiff, hxy, ite_false]
       refine ⟨by simp [hxy], fun m h => ?_⟩
       simp only [Option.some.injEq] at h
       subst h
@@ -171,7 +171,7 @@ theorem setPrec_iff_list : ∀ (A B : List Nat), A.Pairwise (· < ·) → B.Pair
     rw [List.compareLex_cons_cons, compareDesc_eq]
     by_cases hxy : x = y
     · subst hxy
-      simp only [Nat.compare_eq_eq.mpr rfl, Ordering.eq_then, firstDiff, if_true]
+      simp only [Nat.compare_eq_eq.mpr rfl, Ordering.eq_then, firstDiff, ite_true]
       rw [setPrec_iff_list xs ys hA.of_cons hB.of_cons]
       constructor
       · rintro ⟨m, h1, h2⟩; exact ⟨m, h1, List.mem_cons_of_mem _ h2⟩
@@ -190,7 +190,7 @@ theorem setPrec_iff_list : ∀ (A B : List Nat), A.Pairwise (· < ·) → B.Pair
               · exact absurd (hfd.mpr hc) hm
             have := List.rel_of_pairwise_cons hB this; omega
         · exact h
-    · simp only [firstDiff, hxy, if_false, Option.some.injEq, exists_eq_left']
+    · simp only [firstDiff, hxy, ite_false, Option.some.injEq, exists_eq_left']
       rcases Nat.lt_or_gt_of_ne hxy with hlt | hgt
       · rw [Nat.compare_eq_gt.mpr hlt, Nat.min_eq_left (Nat.le_of_lt hlt)]
         simp only [Ordering.gt_then, reduceCtorEq, false_iff, List.mem_cons, not_or]
@@ -474,11 +474,11 @@ theorem sparseLevels_ok (adj : Array Nat) :
         rw [getElem!_def, Array.getElem?_push]
         by_cases hil : i ≤ l
         · have hne : i ≠ acc.size := by omega
-          simp only [hne, if_false]
+          simp only [hne, ite_false]
           rw [← getElem!_def]
           exact hall i hil
         · have : i = acc.size := by omega
-          simp only [this, if_true]
+          simp only [this, ite_true]
           rw [show acc.size = l + 1 by omega]
           exact hnext
       · have hp := Nat.two_pow_pos l

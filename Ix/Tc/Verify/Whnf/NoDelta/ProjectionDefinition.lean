@@ -139,9 +139,9 @@ theorem tryReduceProjectionDefinition_inv_wf
                         ⟨arity, structId, field, structArgIdx⟩
                       simp only
                       by_cases hsmall : args.size < arity
-                      · simp only [hsmall, if_pos]
+                      · simp only [hsmall, ite_eq_left]
                         exact RecM.WF.pure fun _ => trivial
-                      · simp only [hsmall, if_false]
+                      · simp only [hsmall, ite_false]
                         let base : KExpr .anon :=
                           KExpr.mkPrj structId field args[structArgIdx]!
                         obtain ⟨hbase, final, plan⟩ :=

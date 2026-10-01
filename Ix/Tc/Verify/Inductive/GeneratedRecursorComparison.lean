@@ -105,7 +105,7 @@ theorem checkGeneratedRecursorRules_success
               generatedRules[index]!.fields =
                 storedRules[index]!.fields := by
             simpa using hfields
-          simp only [hfields, Bool.false_eq_true, if_false, pure_bind,
+          simp only [hfields, Bool.false_eq_true, ite_false, pure_bind,
             ReaderT.run_bind, runTcBind] at hrun
           generalize hcomparison :
               (isDefEq generatedRules[index]!.rhs
@@ -116,7 +116,7 @@ theorem checkGeneratedRecursorRules_success
           | ok answer afterComparison =>
               cases answer with
               | false =>
-                  simp only [Bool.not_false, if_true, throw, ReaderT.run]
+                  simp only [Bool.not_false, ite_true, throw, ReaderT.run]
                     at hrun
                   contradiction
               | true =>
@@ -125,7 +125,7 @@ theorem checkGeneratedRecursorRules_success
                     (checkGeneratedRecursorRules_success generatedRules
                       storedRules methods hrun)
       | true =>
-          simp only [hfields, if_true, throw, ReaderT.run] at hrun
+          simp only [hfields, ite_true, throw, ReaderT.run] at hrun
           contradiction
 
 /-- Every successful selected-candidate comparison takes all guards and
@@ -143,26 +143,26 @@ theorem checkGeneratedRecursorCandidate_success
   unfold checkGeneratedRecursorCandidate at hrun
   cases hlevels : (declaredLvls != generated.lvls) with
   | true =>
-      simp only [hlevels, if_true, throw, ReaderT.run] at hrun
+      simp only [hlevels, ite_true, throw, ReaderT.run] at hrun
       contradiction
   | false =>
       have levels : declaredLvls = generated.lvls := by
         simpa using hlevels
-      simp only [hlevels, Bool.false_eq_true, if_false, pure_bind] at hrun
+      simp only [hlevels, Bool.false_eq_true, ite_false, pure_bind] at hrun
       cases hsafety : (declaredIsUnsafe != generated.isUnsafe) with
       | true =>
-          simp only [hsafety, if_true, throw, ReaderT.run]
+          simp only [hsafety, ite_true, throw, ReaderT.run]
             at hrun
           contradiction
       | false =>
           have safety : declaredIsUnsafe = generated.isUnsafe := by
             simpa using hsafety
-          simp only [hsafety, Bool.false_eq_true, if_false] at hrun
+          simp only [hsafety, Bool.false_eq_true, ite_false] at hrun
           cases hmetadata :
               (params != generated.params || motives != generated.motives ||
                 minors != generated.minors || indices != generated.indices) with
           | true =>
-              simp only [hmetadata, if_true, throw, ReaderT.run]
+              simp only [hmetadata, ite_true, throw, ReaderT.run]
                 at hrun
               contradiction
           | false =>
@@ -172,7 +172,7 @@ theorem checkGeneratedRecursorCandidate_success
                     minors = generated.minors) ∧
                   indices = generated.indices := by
                 simpa using hmetadata
-              simp only [hmetadata, Bool.false_eq_true, if_false,
+              simp only [hmetadata, Bool.false_eq_true, ite_false,
                 ReaderT.run_bind, runTcBind] at hrun
               generalize htype :
                   (isDefEq generated.ty ty).run methods initial = typeResult
@@ -182,7 +182,7 @@ theorem checkGeneratedRecursorCandidate_success
               | ok answer afterType =>
                   cases answer with
                   | false =>
-                      simp only [Bool.not_false, if_true, throw, ReaderT.run]
+                      simp only [Bool.not_false, ite_true, throw, ReaderT.run]
                         at hrun
                       contradiction
                   | true =>
@@ -190,26 +190,26 @@ theorem checkGeneratedRecursorCandidate_success
                       cases hmissing :
                           (generated.rules.isEmpty && !storedRules.isEmpty) with
                       | true =>
-                          simp only [hmissing, if_true, throw,
+                          simp only [hmissing, ite_true, throw,
                             ReaderT.run] at hrun
                           contradiction
                       | false =>
-                          simp only [hmissing, Bool.false_eq_true, if_false]
+                          simp only [hmissing, Bool.false_eq_true, ite_false]
                             at hrun
                           cases hstoredMissing :
                               (!generated.rules.isEmpty &&
                                 storedRules.isEmpty) with
                           | true =>
-                              simp only [hstoredMissing, if_true,
+                              simp only [hstoredMissing, ite_true,
                                 throw, ReaderT.run] at hrun
                               contradiction
                           | false =>
                               simp only [hstoredMissing, Bool.false_eq_true,
-                                if_false] at hrun
+                                ite_false] at hrun
                               cases hcount :
                                   (generated.rules.size != storedRules.size) with
                               | true =>
-                                  simp only [hcount, if_true,
+                                  simp only [hcount, ite_true,
                                     throw, ReaderT.run] at hrun
                                   contradiction
                               | false =>
@@ -218,7 +218,7 @@ theorem checkGeneratedRecursorCandidate_success
                                         storedRules.size := by
                                     simpa using hcount
                                   simp only [hcount, Bool.false_eq_true,
-                                    if_false] at hrun
+                                    ite_false] at hrun
                                   refine ⟨levels, safety, metadata.1.1.1,
                                     metadata.1.1.2, metadata.1.2,
                                     metadata.2, afterType, htype, count, ?_⟩

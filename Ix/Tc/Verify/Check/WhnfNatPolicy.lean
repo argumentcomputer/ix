@@ -149,10 +149,10 @@ theorem tryReduceNatSuccLinearRec_preservesInferOnly
               intro isSuccStep
               cases hnot : !isSuccStep with
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   exact TcM.PreservesInferOnly.pure none
               | false =>
-                  simp only [Bool.false_eq_true, if_false, pure_bind]
+                  simp only [Bool.false_eq_true, ite_false, pure_bind]
                   refine bind_preservesInferOnly
                     (whnfRec_preservesInferOnly hmethods base) ?_
                   intro baseWhnf
@@ -252,11 +252,11 @@ theorem tryReduceNatSuccAfterWhnf_preservesInferOnly
       intro isSucc
       cases hsucc : isSucc with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact tryReduceNatSuccPeel_preservesInferOnly normalized args[0]!
             offset visited
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           refine bind_preservesInferOnly
             (recordNatSuccStuck_preservesInferOnly visited) ?_
           intro _
@@ -351,20 +351,20 @@ theorem tryReduceNatWithSuccMode_preservesInferOnly
       intro p
       cases hsucc : id.addr == p.natSucc.addr && args.size == 1 with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           cases hmode : mode == .stuck with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact TcM.PreservesInferOnly.pure none
           | false =>
-              simp only [Bool.false_eq_true, if_false, pure_bind]
+              simp only [Bool.false_eq_true, ite_false, pure_bind]
               exact tryReduceNatSuccIter_preservesInferOnly hmethods args[0]!
       | false =>
-          simp only [Bool.false_eq_true, if_false, pure_bind]
+          simp only [Bool.false_eq_true, ite_false, pure_bind]
           by_cases hsmall : args.size < 2
-          · simp only [hsmall, if_pos]
+          · simp only [hsmall, ite_eq_left]
             exact TcM.PreservesInferOnly.pure none
-          · simp only [hsmall, if_false]
+          · simp only [hsmall, ite_false]
             focus
               refine bind_preservesInferOnly
                 (isNatBinArithAddr_preservesInferOnly id.addr) ?_
@@ -374,17 +374,17 @@ theorem tryReduceNatWithSuccMode_preservesInferOnly
               intro isPred
               cases hknown : !isArith && !isPred with
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   exact TcM.PreservesInferOnly.pure none
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   cases hpred : isPred with
                   | true =>
-                      simp only [if_true]
+                      simp only [ite_true]
                       exact tryReduceNatPredicate_preservesInferOnly hmethods
                         id.addr args
                   | false =>
-                      simp only [Bool.false_eq_true, if_false]
+                      simp only [Bool.false_eq_true, ite_false]
                       refine bind_preservesInferOnly
                         (whnfNatReducerArg_preservesInferOnly hmethods
                           args[0]!) ?_
@@ -413,7 +413,7 @@ theorem tryReduceNatWithSuccMode_preservesInferOnly
                                       simp only []
                                       cases harith : isArith with
                                       | true =>
-                                          simp only [if_true]
+                                          simp only [ite_true]
                                           cases hcomputed : computeNatBin
                                               id.addr PrimAddrs.canonical
                                               leftValue rightValue with
@@ -433,7 +433,7 @@ theorem tryReduceNatWithSuccMode_preservesInferOnly
                                                   (some result)
                                       | false =>
                                           simp only [Bool.false_eq_true,
-                                            if_false]
+                                            ite_false]
                                           refine bindIntern_preservesInferOnly
                                             (.mkConst
                                               (if (if id.addr ==

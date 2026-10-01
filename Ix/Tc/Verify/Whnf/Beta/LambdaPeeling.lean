@@ -42,9 +42,9 @@ theorem fuel
   | succ fuel ih =>
       rw [consumeBetaLamsFuel_succ]
       by_cases hdone : consumed.size >= args.size
-      · simp only [hdone, if_true]
+      · simp only [hdone, ite_true]
         exact ⟨hpeel, hprefix, hsize⟩
-      · simp only [hdone, if_false]
+      · simp only [hdone, ite_false]
         cases current with
         | lam name bi ty body info =>
             have hlt : consumed.size < args.size := by omega

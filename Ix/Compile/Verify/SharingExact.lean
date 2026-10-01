@@ -93,37 +93,37 @@ theorem tagNWidth_mono {i j : Nat} (h : i ≤ j) : tagNWidth i ≤ tagNWidth j :
 
 theorem tagNWidth_rung1 {i : Nat} (h : i < tagNRung1End) : tagNWidth i = 1 := by
   rw [tagNRung1End_eq] at h
-  rw [tagNWidth_eq, if_pos h]
+  rw [tagNWidth_eq, ite_eq_left h]
 
 theorem tagNWidth_rung2 {i : Nat} (h1 : tagNRung1End ≤ i) (h2 : i < tagNRung2End) :
     tagNWidth i = 2 := by
   rw [tagNRung1End_eq] at h1
   rw [tagNRung2End_eq] at h2
-  rw [tagNWidth_eq, if_neg (by omega), if_pos h2]
+  rw [tagNWidth_eq, ite_eq_right (by omega), ite_eq_left h2]
 
 theorem tagNWidth_rung3 {i : Nat} (h1 : tagNRung2End ≤ i) (h2 : i < tagNRung3End) :
     tagNWidth i = 3 := by
   rw [tagNRung2End_eq] at h1
   rw [tagNRung3End_eq] at h2
-  rw [tagNWidth_eq, if_neg (by omega), if_neg (by omega), if_pos h2]
+  rw [tagNWidth_eq, ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_left h2]
 
 theorem tagNWidth_rung4 {i : Nat} (h1 : tagNRung3End ≤ i) (h2 : i < tagNRung4End) :
     tagNWidth i = 4 := by
   rw [tagNRung3End_eq] at h1
   rw [tagNRung4End_eq] at h2
-  rw [tagNWidth_eq, if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos h2]
+  rw [tagNWidth_eq, ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_left h2]
 
 theorem tagNWidth_rung5 {i : Nat} (h1 : tagNRung4End ≤ i) (h2 : i < tagNRung5End) :
     tagNWidth i = 5 := by
   rw [tagNRung4End_eq] at h1
   rw [tagNRung5End_eq] at h2
-  rw [tagNWidth_eq, if_neg (by omega), if_neg (by omega), if_neg (by omega),
-    if_neg (by omega), if_pos h2]
+  rw [tagNWidth_eq, ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega),
+    ite_eq_right (by omega), ite_eq_left h2]
 
 theorem tagNWidth_rung6 {i : Nat} (h1 : tagNRung5End ≤ i) : tagNWidth i = 9 := by
   rw [tagNRung5End_eq] at h1
-  rw [tagNWidth_eq, if_neg (by omega), if_neg (by omega), if_neg (by omega),
-    if_neg (by omega), if_neg (by omega)]
+  rw [tagNWidth_eq, ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega),
+    ite_eq_right (by omega), ite_eq_right (by omega)]
 
 /-- The Share width is the `f = 4` instance of the TagN width function. -/
 theorem tagNWidth_eq_byteWidth : tagNWidth = Ixon.tagNByteWidth 4 := rfl

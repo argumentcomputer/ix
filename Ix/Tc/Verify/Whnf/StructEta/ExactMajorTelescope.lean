@@ -86,7 +86,7 @@ theorem restoreDepth_go_exact {base : TcState .anon} {n after}
       unfold EStateM.bind
       rw [show (get : TcM .anon (TcState .anon)) after =
         .ok after after from rfl]
-      simp only [gt, if_true]
+      simp only [gt, ite_true]
       change EStateM.bind TcM.popLocal
         (fun _ => TcM.restoreDepth.go base.ctx.size _) after = _
       unfold EStateM.bind

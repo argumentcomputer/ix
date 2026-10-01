@@ -34,7 +34,7 @@ def edgeAll (p : Prep) (y t : Nat) : Nat := edgeMult p y t false + edgeMult p y 
 theorem count_singleton' (a b : Nat) : [a].count b = if a = b then 1 else 0 := by
   by_cases h : a = b
   · subst h; simp
-  · rw [if_neg h, List.count_singleton]
+  · rw [ite_eq_right h, List.count_singleton]
     simp only [beq_iff_eq]
     split <;> omega
 
@@ -134,9 +134,9 @@ theorem PrepWF.spine_count {p : Prep} (hp : PrepWF p) {x j t : Nat} (hx : x < p.
         have := hp.spineAt_strict hx hf (a := 0) (b := k) (by omega) (by omega)
         rw [hk] at this
         exact absurd this (Nat.lt_irrefl _)
-    rw [if_pos ⟨0, by omega, rfl⟩, if_pos rfl, hnone]
+    rw [ite_eq_left ⟨0, by omega, rfl⟩, ite_eq_left rfl, hnone]
     rfl
-  · rw [if_neg hxt, Nat.zero_add]
+  · rw [ite_eq_right hxt, Nat.zero_add]
     congr 1
     apply propext
     rw [spineHit_isSome_iff]
@@ -161,7 +161,7 @@ theorem PrepWF.count_written {p : Prep} (hp : PrepWF p) {S : Nat → Bool} (t : 
     by_cases hxt : x = t
     · subst hxt
       have hle := hp.written_le (.node hf hlen hkids) hx
-      simp only [WTree.written, List.count_cons, WTree.occH, WTree.occC, if_true, beq_self_eq_true]
+      simp only [WTree.written, List.count_cons, WTree.occH, WTree.occC, ite_true, beq_self_eq_true]
       have : (WTree.writtens p kids).count x = 0 := by
         apply count_zero_of_lt
         intro y hy
@@ -171,7 +171,7 @@ theorem PrepWF.count_written {p : Prep} (hp : PrepWF p) {S : Nat → Bool} (t : 
         have := hp.written_le (hkids i hi) (by omega) y hyT
         omega
       simp [this]
-    · simp only [WTree.written, List.count_cons, WTree.occH, WTree.occC, hxt, if_false,
+    · simp only [WTree.written, List.count_cons, WTree.occH, WTree.occC, hxt, ite_false,
         occHs_eq, occCs_eq, writtens_count, beq_iff_eq]
       rw [Nat.add_zero, ← sum_map_add']
       apply congrArg
@@ -197,7 +197,7 @@ theorem PrepWF.count_written {p : Prep} (hp : PrepWF p) {S : Nat → Bool} (t : 
         sum_map_eq_zero fun T hT => count_zero_of_lt (hside T hT).2
       rw [hs0]
       simp [WTree.occH, WTree.occC, hp.spineHit_self hx hf (Nat.le_of_lt hj)]
-    · simp only [WTree.occH, WTree.occC, hxt, if_false, occHs_eq, occCs_eq, Nat.zero_add]
+    · simp only [WTree.occH, WTree.occC, hxt, ite_false, occHs_eq, occCs_eq, Nat.zero_add]
       rw [List.map_congr_left (fun T hT => (hside T hT).1), sum_map_add']
       simp
       omega
@@ -225,7 +225,7 @@ theorem PrepWF.count_written {p : Prep} (hp : PrepWF p) {S : Nat → Bool} (t : 
         omega
       rw [← htl', hs0, ht0]
       simp [WTree.occH, WTree.occC, hp.spineHit_self hx hf (Nat.le_refl _)]
-    · simp only [WTree.occH, WTree.occC, hxt, if_false, occHs_eq, occCs_eq, Nat.zero_add]
+    · simp only [WTree.occH, WTree.occC, hxt, ite_false, occHs_eq, occCs_eq, Nat.zero_add]
       rw [List.map_congr_left (fun T hT => (hside T hT).1), sum_map_add']
       omega
 
@@ -308,18 +308,18 @@ theorem PrepWF.spine_cont_cut {p : Prep} (hp : PrepWF p) {x j t : Nat} (hx : x <
     rw [hsome, sum_range_succ'] at h1
     have hlast : (if snext p (spineAt p x j) = t ∧ p.family[t]! = p.family[spineAt p x j]! then 1
         else 0) = 0 := by
-      rw [if_neg]
+      rw [ite_eq_right]
       rintro ⟨h, _⟩
       rw [snext_spineAt] at h
       have := hp.spineAt_strict hx hf (a := j) (b := j + 1) (by omega) (by omega)
       omega
-    simp only [if_true] at h1
+    simp only [ite_true] at h1
     rw [hlast] at h1
-    rw [hcont j (Nat.le_refl _), hnone, if_pos hjt]
-    simp only [Bool.false_eq_true, if_false]
+    rw [hcont j (Nat.le_refl _), hnone, ite_eq_left hjt]
+    simp only [Bool.false_eq_true, ite_false]
     omega
   · rw [hcont j (Nat.le_refl _), hp.spine_cont_edges hx hf (Nat.le_of_lt hj) (fun _ => hjt),
-      if_neg hjt, Nat.add_zero]
+      ite_eq_right hjt, Nat.add_zero]
 
 /-- **Slots.** In a writing of `x`, the inline occurrences of `t` plus its
 Shares are the top (if `x = t`) plus one per edge from a written node into
@@ -358,7 +358,7 @@ theorem PrepWF.slots_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Na
         rw [List.mem_range] at hi
         rw [List.getElem?_eq_getElem (by omega), Option.getD_some, label_eq (hkids i (by omega))]
         simp
-      simp only [WTree.occH, WTree.occC, WTree.shares, WTree.written, hxt, if_false,
+      simp only [WTree.occH, WTree.occC, WTree.shares, WTree.written, hxt, ite_false,
         occHs_eq, occCs_eq, sharess_count, List.map_cons, List.sum_cons, writtens_sum]
       have e := congrArg List.sum (List.map_congr_left hper)
       simp only [sum_map_add'] at e
@@ -389,7 +389,7 @@ theorem PrepWF.slots_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Na
       have hH := hp.spine_head_sides hx htn hf (Nat.le_of_lt hj)
       have hC := hp.spine_cont_cut hx htn hf hj hj1
       have hne : ¬(j = p.spineLen[x]! ∧ p.tail[x]! = t) := fun h => by omega
-      rw [if_neg hne] at hH
+      rw [ite_eq_right hne] at hH
       have e := congrArg List.sum (List.map_congr_left hper)
       simp only [sum_map_add'] at e
       have hsplit : (((List.range j).map (spineAt p x)).map fun y => edgeAll p y t).sum =
@@ -397,7 +397,7 @@ theorem PrepWF.slots_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Na
             ((List.range j).map fun k => edgeMult p (spineAt p x k) t true).sum := by
         rw [List.map_map, ← sum_map_add']
         rfl
-      simp only [WTree.occH, WTree.occC, WTree.shares, WTree.written, hxt, if_false, occHs_eq,
+      simp only [WTree.occH, WTree.occC, WTree.shares, WTree.written, hxt, ite_false, occHs_eq,
         occCs_eq, sharess_count, List.count_append, count_singleton', writtens_sum,
         List.map_append, List.sum_append, List.append_nil, Nat.zero_add, Nat.add_zero]
       rw [hsplit, hH, hC]
@@ -432,8 +432,8 @@ theorem PrepWF.slots_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Na
       have hti : (if p.spineLen[x]! = p.spineLen[x]! ∧ p.tail[x]! = t then 1 else 0) =
           (if p.tail[x]! = t then 1 else 0) := by
         by_cases h : p.tail[x]! = t
-        · rw [if_pos ⟨rfl, h⟩, if_pos h]
-        · rw [if_neg (fun h' => h h'.2), if_neg h]
+        · rw [ite_eq_left ⟨rfl, h⟩, ite_eq_left h]
+        · rw [ite_eq_right (fun h' => h h'.2), ite_eq_right h]
       rw [hti] at hH
       have e := congrArg List.sum (List.map_congr_left hper)
       simp only [sum_map_add'] at e
@@ -442,7 +442,7 @@ theorem PrepWF.slots_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Na
             ((List.range p.spineLen[x]!).map fun k => edgeMult p (spineAt p x k) t true).sum := by
         rw [List.map_map, ← sum_map_add']
         rfl
-      simp only [WTree.occH, WTree.occC, WTree.shares, WTree.written, hxt, if_false, occHs_eq,
+      simp only [WTree.occH, WTree.occC, WTree.shares, WTree.written, hxt, ite_false, occHs_eq,
         occCs_eq, sharess_count, List.count_append, writtens_sum, List.map_append,
         List.sum_append, Nat.zero_add]
       rw [hsplit, hH, hC]
@@ -474,9 +474,9 @@ theorem sum_ind_range {n y : Nat} (hy : y < n) (f : Nat → Nat) :
     rw [sum_range_succ']
     by_cases hyn : y = n
     · subst hyn
-      rw [sum_zero_of_forall fun z hz => by rw [if_neg (by omega), Nat.zero_mul]]
+      rw [sum_zero_of_forall fun z hz => by rw [ite_eq_right (by omega), Nat.zero_mul]]
       simp
-    · rw [ih (by omega), if_neg (Ne.symm hyn)]
+    · rw [ih (by omega), ite_eq_right (Ne.symm hyn)]
       simp
 
 /-- A sum over a list of terms below `n` as a sum over `0 … n-1` weighted by
@@ -634,7 +634,7 @@ theorem vis_inner (ch : Nat → Nat) (ce : Nat → Bool) (wy : Nat) :
     · rw [h2, List.filter_cons]
       by_cases hce : ce i
       · simp [hce]
-      · simp only [hce, Bool.false_eq_true, if_false, Bool.not_false, Bool.and_true]
+      · simp only [hce, Bool.false_eq_true, ite_false, Bool.not_false, Bool.and_true]
         rw [modify_addc_getElem!]
         by_cases hc : ch i = c
         · subst hc
@@ -740,8 +740,8 @@ theorem propagateCounts_spec {dag : Dag} (h : DagWF dag) (roots : Array Nat)
       intro _
       simp only [List.range_zero, List.foldl_nil]
       refine ⟨(hbase 0).2, (hbase 0).2, fun t _ => ⟨?_, ?_⟩⟩
-      · rw [(hbase t).1, sum_zero_of_forall fun y hy => if_neg (by omega), Nat.add_zero]
-      · rw [(hbase t).1, sum_zero_of_forall fun y hy => if_neg (by omega), Nat.add_zero]
+      · rw [(hbase t).1, sum_zero_of_forall fun y hy => ite_eq_right (by omega), Nat.add_zero]
+      · rw [(hbase t).1, sum_zero_of_forall fun y hy => ite_eq_right (by omega), Nat.add_zero]
     | succ k ih =>
       intro hk
       obtain ⟨hs1, hs2, hv⟩ := ih (by omega)
@@ -771,12 +771,12 @@ theorem propagateCounts_spec {dag : Dag} (h : DagWF dag) (roots : Array Nat)
           rw [List.mem_range] at hy
           by_cases hy0 : y = dag.size - 1 - k
           · subst hy0
-            rw [if_pos (by omega), if_neg (by omega), if_pos rfl, hw _ (Nat.le_refl _)]
+            rw [ite_eq_left (by omega), ite_eq_right (by omega), ite_eq_left rfl, hw _ (Nat.le_refl _)]
             simp [Nat.mul_comm]
-          · simp only [if_neg hy0, Nat.zero_mul, Nat.add_zero]
+          · simp only [ite_eq_right hy0, Nat.zero_mul, Nat.add_zero]
             by_cases hyk : dag.size - k ≤ y
-            · rw [if_pos (by omega), if_pos hyk, hw y (by omega)]
-            · rw [if_neg (by omega), if_neg hyk]
+            · rw [ite_eq_left (by omega), ite_eq_left hyk, hw y (by omega)]
+            · rw [ite_eq_right (by omega), ite_eq_right hyk]
         rw [List.map_congr_left hpt, sum_map_add', sum_ind_range (by omega)]
       refine ⟨h3, h4, fun t ht => ⟨?_, ?_⟩⟩
       · rw [h1, (hv t ht).1, hsum (fun y => edgeAll (Prep.ofDag dag) y t)]
@@ -791,12 +791,12 @@ theorem propagateCounts_spec {dag : Dag} (h : DagWF dag) (roots : Array Nat)
     congr 2
     apply List.map_congr_left
     intro y _
-    rw [if_pos (by omega)]
+    rw [ite_eq_left (by omega)]
   · rw [e2]
     congr 2
     apply List.map_congr_left
     intro y _
-    rw [if_pos (by omega)]
+    rw [ite_eq_left (by omega)]
 
 /-! ## The gain algebra with occurrence lower bounds -/
 
@@ -805,8 +805,8 @@ theorem pos_part_cases (x w : Nat) :
     (w ≤ x ∧ (((if w ≤ x then x - w else 0 : Nat)) : _root_.Int) = (x : _root_.Int) - w) ∨
       (x < w ∧ (((if w ≤ x then x - w else 0 : Nat)) : _root_.Int) = 0) := by
   by_cases h : w ≤ x
-  · left; rw [if_pos h]; exact ⟨h, by omega⟩
-  · right; rw [if_neg h]; exact ⟨by omega, rfl⟩
+  · left; rw [ite_eq_left h]; exact ⟨h, by omega⟩
+  · right; rw [ite_eq_right h]; exact ⟨by omega, rfl⟩
 
 theorem int_mul_le_mul_right' {a b c : _root_.Int} (hab : a ≤ b) (hc : 0 ≤ c) :
     a * c ≤ b * c := _root_.Int.mul_le_mul_of_nonneg_right hab hc
@@ -1048,7 +1048,7 @@ theorem PrepWF.heads_eq {p : Prep} (hp : PrepWF p) {S : List Nat} {E : Nat → W
   have htopS : (S.map fun s => if (E s).topIs t then 1 else 0).sum = 0 := by
     apply sum_map_eq_zero
     intro s hs
-    rw [if_neg]
+    rw [ite_eq_right]
     intro h
     have := (top_iff hSt (hEnc.1 s hs).1).mp h
     exact htS (this ▸ hs)
@@ -1188,18 +1188,18 @@ theorem uniformCost_insert_le_counts {dag : Dag} (hwf : DagWF dag) (roots : Arra
       exact hp.conts_zero hEnc hSin' hroots' htn' htS hf
     subst hC0
     have hfb : ((Prep.ofDag dag).family[t]! == Family.none) = true := by simp [hf]
-    simp only [hfb, if_true]
+    simp only [hfb, ite_true]
     have e := gain_alg_node (d : _root_.Int) (H : _root_.Int) (I : _root_.Int)
       (b.inlineLB[t]! : _root_.Int) (w : _root_.Int) (Ah : _root_.Int) (by omega) (by omega)
       (by have := hb.2.1; omega) (by omega) (by rcases hAh with ⟨h1, h2⟩ | ⟨h1, h2⟩ <;> omega)
     simp only [_root_.Int.natCast_zero, _root_.Int.zero_mul, _root_.Int.add_zero] at hexI
     omega
   · have hfb : ((Prep.ofDag dag).family[t]! == Family.none) = false := by simpa using hf
-    simp only [hfb, Bool.false_eq_true, if_false]
+    simp only [hfb, Bool.false_eq_true, ite_false]
     have hmLB := (hb.2.2 hf).1
     obtain ⟨hIM1, hIM2⟩ := hIMb hf
     by_cases hH1 : h ≥ 1
-    · rw [if_pos hH1]
+    · rw [ite_eq_left hH1]
       have e := gain_alg_head (d : _root_.Int) (h : _root_.Int) (H : _root_.Int) (C : _root_.Int)
         (I : _root_.Int) (M : _root_.Int) (b.mergedLB[t]! : _root_.Int) (w : _root_.Int)
         (Ah : _root_.Int) (Ac : _root_.Int) (by omega) (by omega) (by omega) (by omega) (by omega)
@@ -1207,7 +1207,7 @@ theorem uniformCost_insert_le_counts {dag : Dag} (hwf : DagWF dag) (roots : Arra
         (by rcases hAh with ⟨h1, h2⟩ | ⟨h1, h2⟩ <;> omega)
         (by rcases hAc with ⟨h1, h2⟩ | ⟨h1, h2⟩ <;> omega)
       omega
-    · rw [if_neg hH1]
+    · rw [ite_eq_right hH1]
       have e := gain_alg_cont (d : _root_.Int) (H : _root_.Int) (C : _root_.Int) (I : _root_.Int)
         (M : _root_.Int) (b.mergedLB[t]! : _root_.Int)
         (tag4Size (Prep.ofDag dag).spineLen[t]! : _root_.Int) (w : _root_.Int)
@@ -1486,9 +1486,9 @@ theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (hsp : SpinesFit p) (w : 
     intro hx
     by_cases hxt : x = t
     · subst hxt
-      simp only [WTree.unshare, if_true, WTree.shares, count_singleton', WTree.cost]
+      simp only [WTree.unshare, ite_true, WTree.shares, count_singleton', WTree.cost]
       refine ⟨hW, fun h => by simp [WTree.isShare] at h, by omega⟩
-    · simp only [WTree.unshare, hxt, if_false, WTree.shares, count_singleton', WTree.isShare]
+    · simp only [WTree.unshare, hxt, ite_false, WTree.shares, count_singleton', WTree.isShare]
       refine ⟨.share ((hA' x).mpr ⟨hS, hxt⟩), fun h => by simp at h, by omega⟩
   | @node x kids hf hlen hkids ih =>
     intro hx
@@ -1532,7 +1532,7 @@ theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (hsp : SpinesFit p) (w : 
       exact (hside k (by simpa using hk)).1
     simp only [WTree.unshare, unshares_eq, unshareTele]
     by_cases hut : spineAt p x j = t
-    · rw [if_pos ⟨hut, hj⟩]
+    · rw [ite_eq_left ⟨hut, hj⟩]
       obtain ⟨hts, htf, htlen, httail, hspat, hsideat, hse⟩ := hp.spine_shift hx hf (k := j) hj
       rw [hut] at hts htf htlen httail hspat hsideat hse
       have hft : p.family[t]! ≠ .none := by rw [htf]; exact hf
@@ -1577,7 +1577,7 @@ theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (hsp : SpinesFit p) (w : 
             (WTree.tele x j sides (.share (spineAt p x j))).shares.count t * W.cost p w := by
         simp only [WTree.cost, WTree.costs_eq, List.map_append, List.sum_append, List.map_map,
           Function.comp_def, WTree.shares, sharess_count, List.count_append, count_singleton', hut,
-          if_true]
+          ite_true]
         rw [hse] at hcW
         simp only [Nat.add_mul, Nat.one_mul] at hsum ⊢
         omega
@@ -1591,11 +1591,11 @@ theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (hsp : SpinesFit p) (w : 
         refine ⟨?_, fun _ => rfl, hcost⟩
         rw [hlenx]
         exact .teleFull hf (by rw [hlenL, hlenx]) hsidesV (by rw [← httail]; exact htl')
-    · rw [if_neg (fun h => hut h.1)]
-      simp only [hut, if_false]
+    · rw [ite_eq_right (fun h => hut h.1)]
+      simp only [hut, ite_false]
       refine ⟨.teleCut hf hj1 hj (by simp [hlen]) hL1 ((hA' _).mpr ⟨hS, hut⟩), fun _ => rfl, ?_⟩
       simp only [WTree.cost, WTree.costs_eq, List.map_map, Function.comp_def, WTree.shares,
-        sharess_count, List.count_append, count_singleton', hut, if_false, Nat.add_zero]
+        sharess_count, List.count_append, count_singleton', hut, ite_false, Nat.add_zero]
       omega
   | @teleFull x sides tail hf hlen hsides htail ih iht =>
     intro hx
@@ -1623,7 +1623,7 @@ theorem PrepWF.unshare_spec {p : Prep} (hp : PrepWF p) (hsp : SpinesFit p) (w : 
         .tele x p.spineLen[x]! (sides.map (WTree.unshare p t W)) (WTree.unshare p t W tail) := by
       unfold unshareTele
       split
-      · rw [if_neg (fun h => Nat.lt_irrefl _ h.2)]
+      · rw [ite_eq_right (fun h => Nat.lt_irrefl _ h.2)]
       · rfl
     simp only [WTree.unshare, unshares_eq]
     rw [hU]
@@ -1883,7 +1883,7 @@ theorem refs_le_occ {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
   have hwr := writes_le_occ hwf roots hroots w hX hEnc hcost
   have hsl := hp.enc_slots hEnc hXin hroots' (t := t) (by rw [ofDag_dag]; exact htn)
   rw [ofDag_dag] at hsl
-  have hcnt : X.count t = 1 := by rw [hX.1.1.count, if_pos htX]
+  have hcnt : X.count t = 1 := by rw [hX.1.1.count, ite_eq_left htX]
   have hw1 : 1 ≤ encWrites (Prep.ofDag dag) X E R t := by
     have h1 : 1 ≤ ((E t).written (Prep.ofDag dag)).count t :=
       List.count_pos_iff.mpr (hp.written_self (hEnc.1 t htX).1 (hXin t htX) (hEnc.1 t htX).2)
@@ -1910,7 +1910,7 @@ theorem base_eq_uInl {dag : Dag} (hwf : DagWF dag) (w : Nat) {t : Nat} (ht : t <
   have hrow := hp.evalFrom_spec (w := w) (avail := fun _ => false)
     (Array.replicate dag.size none)
     (fun u => by
-      simp only [widthOf, Array.getElem?_replicate, Bool.false_eq_true, if_false]
+      simp only [widthOf, Array.getElem?_replicate, Bool.false_eq_true, ite_false]
       split <;> rfl)
     { cost := Array.replicate dag.size 0, sides := Array.replicate dag.size 0,
       below := Array.replicate dag.size none }
@@ -1926,7 +1926,7 @@ theorem base_eq_uInl {dag : Dag} (hwf : DagWF dag) (w : Nat) {t : Nat} (ht : t <
       (Array.replicate dag.size none) (Array.replicate dag.size true)).cost := rfl
   rw [hb, hrow.1, hp.uCost_eq w _ t (by rw [ofDag_dag]; exact ht)]
   unfold costOf
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rfl
 
 /-- Inline costs only drop when terms become available. -/

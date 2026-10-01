@@ -163,7 +163,7 @@ theorem foldl_least {α β : Type} (P : α → Prop) (abs : α → β) (lt : β 
       have ha := hacc a rfl
       rw [hf2 a t ha ht]
       by_cases hb : lt (abs t) (abs a) = true
-      · simp only [hb, if_true]
+      · simp only [hb, ite_true]
         obtain ⟨hnone, hsome⟩ := ih (some t) hts (fun a ha => by cases ha; exact ht)
         refine ⟨⟨fun h => absurd (hnone.mp h).1 (by simp), fun h => by simp at h⟩, fun m hm => ?_⟩
         obtain ⟨hmem, hle, hlea⟩ := hsome m hm
@@ -182,7 +182,7 @@ theorem foldl_least {α β : Type} (P : α → Prop) (abs : α → β) (lt : β 
           rcases hmt with h | h
           · subst h; exact Or.inr hb
           · exact Or.inr (htrans _ _ _ h hb)
-      · simp only [hb, Bool.false_eq_true, if_false]
+      · simp only [hb, Bool.false_eq_true, ite_false]
         obtain ⟨hnone, hsome⟩ := ih (some a) hts (fun a' ha' => by cases ha'; exact ha)
         refine ⟨⟨fun h => absurd (hnone.mp h).1 (by simp), fun h => by simp at h⟩, fun m hm => ?_⟩
         obtain ⟨hmem, hle, hlea⟩ := hsome m hm
@@ -295,21 +295,21 @@ theorem knapInner_fold (cap c : Nat) (e : _root_.Int × Array Nat) (bySize : CTa
       unfold srcCands
       by_cases h1 : c ≤ t ∧ t - c < n ∧ t ≤ cap
       · have : c ≤ t ∧ t - c < n + 1 ∧ t ≤ cap := ⟨h1.1, by omega, h1.2.2⟩
-        rw [if_pos this, if_pos h1]
+        rw [ite_eq_left this, ite_eq_left h1]
       · have : ¬(c ≤ t ∧ t - c < n + 1 ∧ t ≤ cap) := by omega
-        rw [if_neg this, if_neg h1]
+        rw [ite_eq_right this, ite_eq_right h1]
     -- the target `c + n` gets entry `n`'s candidate, if any
     have hnew : c + n ≤ cap → srcCands cap c e bySize (n + 1) (c + n) =
         (bySize[n]!).elim [] fun x => [knapCand e x] := by
       intro hle
       unfold srcCands
       have : c ≤ c + n ∧ c + n - c < n + 1 ∧ c + n ≤ cap := ⟨by omega, by omega, hle⟩
-      rw [if_pos this, Nat.add_sub_cancel_left]
+      rw [ite_eq_left this, Nat.add_sub_cancel_left]
     have hold : c + n ≤ cap → srcCands cap c e bySize n (c + n) = [] := by
       intro _
       unfold srcCands
       have : ¬(c ≤ c + n ∧ c + n - c < n ∧ c + n ≤ cap) := by omega
-      rw [if_neg this]
+      rw [ite_eq_right this]
     unfold knapInner
     cases hb : bySize[n]! with
     | none =>
@@ -324,12 +324,12 @@ theorem knapInner_fold (cap c : Nat) (e : _root_.Int × Array Nat) (bySize : CTa
     | some x =>
       simp only [Option.elim_some]
       by_cases hcap : c + n > cap
-      · simp only [hcap, if_true]
+      · simp only [hcap, ite_true]
         refine ⟨hsz, fun t ht => ?_⟩
         rw [hval t ht]
         have htn : t ≠ c + n := by omega
         rw [hsame t ht htn]
-      · simp only [hcap, if_false]
+      · simp only [hcap, ite_false]
         have hle : c + n ≤ cap := by omega
         have hlt : c + n < r.size := by omega
         have hrcn : r[c + n]! = ndp[c + n]! := by
@@ -634,13 +634,13 @@ theorem dedupSorted_mem : ∀ (l : List Nat) (z : Nat), z ∈ dedupSorted l ↔ 
     have ih := dedupSorted_mem (b :: l) z
     by_cases hab : a = b
     · subst hab
-      simp only [dedupSorted, if_true, ih, List.mem_cons]
+      simp only [dedupSorted, ite_true, ih, List.mem_cons]
       constructor
       · intro h; exact Or.inr h
       · rintro (h | h)
         · exact Or.inl h
         · exact h
-    · simp only [dedupSorted, hab, if_false, List.mem_cons, ih]
+    · simp only [dedupSorted, hab, ite_false, List.mem_cons, ih]
 
 /-- The terms of the entries of a table. -/
 def InTable (tab : CTable) (z : Nat) : Prop :=
@@ -732,8 +732,8 @@ theorem LayerInv.prevFD_eq {cap : Nat} {tabs : Array CTable} {j : Nat} {dp} {L :
   unfold prevFD
   by_cases hab : a = b
   · subst hab
-    rw [if_pos rfl, (firstDiff_none (h.sorted a ha hda) (h.sorted a ha hda)).mpr rfl]
-  · rw [if_neg hab]
+    rw [ite_eq_left rfl, (firstDiff_none (h.sorted a ha hda) (h.sorted a ha hda)).mpr rfl]
+  · rw [ite_eq_right hab]
     rcases Nat.lt_trichotomy L.rank[a]! L.rank[b]! with hlt | heq | hgt
     · rw [Nat.min_eq_left (Nat.le_of_lt hlt), Nat.max_eq_right (Nat.le_of_lt hlt)]
       exact (h.fd a b ha hb hda hdb hlt).symm
@@ -846,7 +846,7 @@ theorem candPrec_eq (hok : tablesOK tabs = true) (hj : j < tabs.size)
     have hcand := hfd ▸ hm
     unfold candFD at hcand
     by_cases hpm : prevFD L a b = some m
-    · simp only [hpm, beq_self_eq_true, if_true, decide_eq_true_eq]
+    · simp only [hpm, beq_self_eq_true, ite_true, decide_eq_true_eq]
       have hab : a ≠ b := by intro e; subst e; simp [prevFD] at hpm
       rw [h.prevFD_eq ha hb hda hdb] at hpm
       have hrm := (firstDiff_eq_some_iff (h.sorted a ha hda) (h.sorted b hb hdb)).mp hpm
@@ -867,7 +867,7 @@ theorem candPrec_eq (hok : tablesOK tabs = true) (hj : j < tabs.size)
       simp [hmY]
     · have hpm' : (prevFD L a b == some m) = false := by
         simp only [beq_eq_false_iff_ne, ne_eq]; exact hpm
-      simp only [hpm', Bool.false_eq_true, if_false, Bool.not_eq_true']
+      simp only [hpm', Bool.false_eq_true, ite_false, Bool.not_eq_true']
       rcases minOpt_some hcand with hp | ⟨hq, _⟩
       · exact absurd hp hpm
       · have hxy := (firstDiff_eq_some_iff (entrySet_shape hok hj ka) (entrySet_shape hok hj kb)).mp hq
@@ -983,7 +983,7 @@ theorem specCands_iff (h : LayerInv cap tabs j dp L recon) {tab : CTable} {t : N
     simp only [Option.map_some, Option.elim_some]
     unfold srcCands
     have hcond : t - k ≤ t ∧ t - (t - k) < tab.size ∧ t ≤ cap := ⟨by omega, by omega, ht⟩
-    rw [if_pos hcond, show t - (t - k) = k by omega, htk]
+    rw [ite_eq_left hcond, show t - (t - k) = k by omega, htk]
     simp only [Option.elim_some, List.mem_singleton]
     unfold candVal candSet knapCand entrySet
     rw [htk]
@@ -1083,20 +1083,20 @@ theorem rankOf_aux (n : Nat) :
     rw [hval x hx]
     by_cases hxa : x = a
     · subst hxa
-      simp only [hnd.1, if_false, List.mem_cons_self, if_true, List.idxOf_cons_self]
+      simp only [hnd.1, ite_false, List.mem_cons_self, ite_true, List.idxOf_cons_self]
       rw [getElem!_set!_self' _ _ _ (by omega)]
       omega
     · have hax : (a == x) = false := by simp only [beq_eq_false_iff_ne, ne_eq]; exact fun h => hxa h.symm
       rw [getElem!_set!_ne' _ _ _ _ (fun h => hxa h.symm)]
       by_cases hxl : x ∈ l
-      · simp only [hxl, if_true, List.mem_cons, hxa, false_or, List.idxOf_cons, hax, cond_false]
+      · simp only [hxl, ite_true, List.mem_cons, hxa, false_or, List.idxOf_cons, hax, cond_false]
         omega
-      · simp only [hxl, if_false, List.mem_cons, hxa, false_or]
+      · simp only [hxl, ite_false, List.mem_cons, hxa, false_or]
 
 theorem rankOf_get {n : Nat} {l : List Nat} (hnd : l.Nodup) {x : Nat} (hx : x < n) (hxl : x ∈ l) :
     (rankOf n l)[x]! = l.idxOf x := by
   unfold rankOf
-  rw [(rankOf_aux n l 0 (Array.replicate n 0) hnd (by simp)).2 x hx, if_pos hxl]
+  rw [(rankOf_aux n l 0 (Array.replicate n 0) hnd (by simp)).2 x hx, ite_eq_left hxl]
   rfl
 
 /-! ## Ranks of the next layer -/
@@ -1423,7 +1423,7 @@ theorem knapInit_inv (cap : Nat) (tabs : Array CTable) (recon : Nat → Array Na
     rw [getElem!_pos _ c (by simp; omega)]
     by_cases h0 : c = 0
     · subst h0; simp
-    · simp only [h0, if_false]
+    · simp only [h0, ite_false]
       rw [Array.getElem_append_right (by simp; omega)]
       simp
   have hnon : ∀ c, c ≤ cap → ((knapInit cap).delta[c]!).isSome → c = 0 := by
@@ -1443,7 +1443,7 @@ theorem knapInit_inv (cap : Nat) (tabs : Array CTable) (recon : Nat → Array Na
   · rw [hdel c hc, getElem!_pos _ c (by simp; omega)]
     by_cases h0 : c = 0
     · subst h0; simp [hr]
-    · simp only [h0, if_false, Option.map_none]
+    · simp only [h0, ite_false, Option.map_none]
       rw [Array.getElem_append_right (by simp; omega)]
       simp
   · have := hnon a ha hsa
@@ -1598,7 +1598,7 @@ theorem foldl_least_init {α β : Type} (abs : α → β) (lt : β → β → Bo
     obtain ⟨hmem, hle, hlea⟩ := ih (g init t)
     rw [hg] at hmem hle hlea ⊢
     by_cases hb : lt (abs t) (abs init) = true
-    · simp only [hb, if_true] at hmem hle hlea ⊢
+    · simp only [hb, ite_true] at hmem hle hlea ⊢
       refine ⟨?_, fun x hx => ?_, ?_⟩
       · rcases hmem with h | h
         · exact Or.inl (List.mem_cons_of_mem _ h)
@@ -1612,7 +1612,7 @@ theorem foldl_least_init {α β : Type} (abs : α → β) (lt : β → β → Bo
       · rcases hlea with h | h
         · rw [h]; exact Or.inr hb
         · exact Or.inr (htrans _ _ _ h hb)
-    · simp only [hb, Bool.false_eq_true, if_false] at hmem hle hlea ⊢
+    · simp only [hb, Bool.false_eq_true, ite_false] at hmem hle hlea ⊢
       refine ⟨?_, fun x hx => ?_, hlea⟩
       · rcases hmem with h | h
         · exact Or.inl (List.mem_cons_of_mem _ h)
@@ -1849,7 +1849,7 @@ theorem knapChooseFast_eq {kCS cap : Nat} {tabs : Array CTable} {init : _root_.I
             setPrec (recon c) init.2.1)) = true := by
         rw [hkv] at hlt
         exact hlt
-      rw [if_pos hcond]
+      rw [ite_eq_left hcond]
       -- `r` is the cell's candidate
       rcases hrmem with hrV | hrinit'
       · have : chooseKey kCS r = chooseKey kCS (d, recon c, true) := by
@@ -1876,7 +1876,7 @@ theorem knapChooseFast_eq {kCS cap : Nat} {tabs : Array CTable} {init : _root_.I
           simpa using hlt
         rw [hkv] at h2
         exact h2
-      rw [if_neg (by simp [hcond])]
+      rw [ite_eq_right (by simp [hcond])]
       rcases hrinit with hri | hri
       · exact hri.symm
       · exfalso

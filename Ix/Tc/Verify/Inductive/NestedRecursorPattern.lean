@@ -68,74 +68,74 @@ def nestedRecursorNameOf (address : Address) : Option Lean.Name :=
 theorem nestedRecursorCatalog_box :
     nestedRecursorCatalog boxId = some boxConcrete := by
   unfold nestedRecursorCatalog
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 
 theorem nestedRecursorCatalog_wrap :
     nestedRecursorCatalog wrapId = some wrapConcrete := by
   unfold nestedRecursorCatalog
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nestedRecursorCatalog_tree :
     nestedRecursorCatalog treeId = some treeConcrete := by
   unfold nestedRecursorCatalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem nestedRecursorCatalog_node :
     nestedRecursorCatalog nodeId = some nodeConcrete := by
   unfold nestedRecursorCatalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nestedRecursorCatalog_treeRec :
     nestedRecursorCatalog treeRecId = some treeRecConcrete := by
   unfold nestedRecursorCatalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem nestedRecursorCatalog_treeRecOne :
     nestedRecursorCatalog treeRecOneId = some treeRecOneConcrete := by
   unfold nestedRecursorCatalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nestedRecursorNameOf_box :
     nestedRecursorNameOf boxId.addr = some ``LeanBox := by
   unfold nestedRecursorNameOf
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 
 theorem nestedRecursorNameOf_wrap :
     nestedRecursorNameOf wrapId.addr = some ``LeanBox.wrap := by
   unfold nestedRecursorNameOf
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nestedRecursorNameOf_tree :
     nestedRecursorNameOf treeId.addr = some ``LeanTree := by
   unfold nestedRecursorNameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem nestedRecursorNameOf_node :
     nestedRecursorNameOf nodeId.addr = some ``LeanTree.node := by
   unfold nestedRecursorNameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nestedRecursorNameOf_treeRec :
     nestedRecursorNameOf treeRecId.addr = some ``LeanTree.rec := by
   unfold nestedRecursorNameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem nestedRecursorNameOf_treeRecOne :
     nestedRecursorNameOf treeRecOneId.addr = some ``LeanTree.rec_1 := by
   unfold nestedRecursorNameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 /-! ## Exact physical rules and finite representation facts -/
 

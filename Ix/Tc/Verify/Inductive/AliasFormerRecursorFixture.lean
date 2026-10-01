@@ -403,7 +403,7 @@ private theorem catalogTypeFamilyAliasNative :
     catalog typeFamilyAliasId =
       some AliasFormerFixture.typeFamilyAliasConcrete := by
   unfold catalog
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 
 theorem catalog_typeFamilyAlias :
     catalog typeFamilyAliasId =
@@ -413,7 +413,7 @@ theorem catalog_typeFamilyAlias :
 private theorem catalogFamilyNative :
     catalog familyId = some AliasFormerFixture.familyConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_family :
     catalog familyId = some AliasFormerFixture.familyConcrete :=
@@ -422,8 +422,8 @@ theorem catalog_family :
 private theorem catalogMkNative :
     catalog mkId = some AliasFormerFixture.mkConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem catalog_mk : catalog mkId = some AliasFormerFixture.mkConcrete :=
   catalogMkNative
@@ -431,8 +431,8 @@ theorem catalog_mk : catalog mkId = some AliasFormerFixture.mkConcrete :=
 private theorem catalogRecursorNative :
     catalog recursorId = some recursorConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_recursor : catalog recursorId = some recursorConcrete :=
   catalogRecursorNative

@@ -162,7 +162,7 @@ theorem scratch_computeIsRecFieldStep_scoped
                     .ok (.next body) afterPush := by
                 rw [scratch_computeIsRecFieldStep_run, scratch_bind_ok hrun,
                   computeIsRecFieldStepAfterWhnf, hmentions]
-                simp only [Bool.false_eq_true, if_false, pure_bind]
+                simp only [Bool.false_eq_true, ite_false, pure_bind]
                 rw [ReaderT.run_bind, ReaderT.run_monadLift, monadLift_self,
                   scratch_bind_ok hpush]
                 rfl

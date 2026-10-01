@@ -913,11 +913,11 @@ theorem TcM.instantiateUnivParams_wf {S : KExpr .anon → Prop}
   obtain ⟨hwf, hsup⟩ := hI
   by_cases hemp : us.isEmpty
   · have hrun : TcM.instantiateUnivParams e us s = .ok e s := by
-      rw [TcM.instantiateUnivParams, if_pos hemp]
+      rw [TcM.instantiateUnivParams, ite_eq_left hemp]
       try rfl
     rw [hrun]
     exact ⟨⟨hwf, hsup⟩,
-      by rw [KExpr.instantiateUnivParamsSpec, if_pos hemp], rfl, rfl⟩
+      by rw [KExpr.instantiateUnivParamsSpec, ite_eq_left hemp], rfl, rfl⟩
   · have post := TcM.instUnivInner_spec hcf (e := e) (sc := {}) (s := s)
       hreach hwf hsup (InstUnivScratchInv.empty S us)
     cases hrec : TcM.instUnivInner e us {} s with
@@ -926,19 +926,19 @@ theorem TcM.instantiateUnivParams_wf {S : KExpr .anon → Prop}
       rw [hrec] at post
       obtain ⟨hspec, ⟨hwf', hsup', hunivs, hframe⟩, -⟩ := post
       have hrun : TcM.instantiateUnivParams e us s = .ok r s' := by
-        rw [TcM.instantiateUnivParams, if_neg hemp]
+        rw [TcM.instantiateUnivParams, ite_eq_right hemp]
         show ((TcM.instUnivInner e us).run' {}) s = _
         rw [run_run', hrec]
         try rfl
       rw [hrun]
       exact ⟨⟨hwf', hsup'⟩,
-        by rw [KExpr.instantiateUnivParamsSpec, if_neg hemp]; exact hspec,
+        by rw [KExpr.instantiateUnivParamsSpec, ite_eq_right hemp]; exact hspec,
         hframe, hunivs⟩
     | error err s' =>
       rw [hrec] at post
       obtain ⟨hwf', hsup', hunivs, hframe⟩ := post
       have hrun : TcM.instantiateUnivParams e us s = .error err s' := by
-        rw [TcM.instantiateUnivParams, if_neg hemp]
+        rw [TcM.instantiateUnivParams, ite_eq_right hemp]
         show ((TcM.instUnivInner e us).run' {}) s = _
         rw [run_run', hrec]
         try rfl

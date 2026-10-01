@@ -289,7 +289,7 @@ theorem isDefEq_eq_activeScoped_wf
         (fun _ => rfl) (fun _ => rfl) (fun _ => by constructor <;> rfl)
         afterTrace
     · intro _ _ _
-      simp only [beq_self_eq_true, if_true]
+      simp only [beq_self_eq_true, ite_true]
       apply TcM.WF.pure
       intro hI answerTrue
       apply DefEqMeaning.of_translations theory hI.context.wf

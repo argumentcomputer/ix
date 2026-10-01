@@ -114,11 +114,11 @@ theorem simulSubstSpec_empty {body : KExpr .anon}
       have hge' := UInt64.le_iff_toNat_le.mp (of_decide_eq_true hge)
       have hlt' := UInt64.lt_iff_toNat_lt.mp (of_decide_eq_true hlt)
       omega
-    rw [if_neg hwindow]
+    rw [ite_eq_right hwindow]
     by_cases hge : idx ≥ depth
-    · rw [if_pos hge, UInt64.sub_zero]
+    · rw [ite_eq_left hge, UInt64.sub_zero]
       exact (mkVar_shape idx name info).symm ▸ rfl
-    · rw [if_neg hge]
+    · rw [ite_eq_right hge]
   | fvar => rfl
   | sort => rfl
   | const => rfl
@@ -223,15 +223,15 @@ theorem simulSubstSpec_cons
           omega
         have hdirectEval : simulSubstSpec (mkVar idx name info)
             (#[arg] ++ rest) depth = mkVar idx name info := by
-          rw [mkVar_shape, simulSubstSpec, if_neg hdirectWindow,
-            if_neg hngeBoundary]
+          rw [mkVar_shape, simulSubstSpec, ite_eq_right hdirectWindow,
+            ite_eq_right hngeBoundary]
         have hrestEval : simulSubstSpec (mkVar idx name info) rest
             (depth + 1) = mkVar idx name info := by
-          rw [mkVar_shape, simulSubstSpec, if_neg hrestWindow,
-            if_neg hngeRestBoundary]
+          rw [mkVar_shape, simulSubstSpec, ite_eq_right hrestWindow,
+            ite_eq_right hngeRestBoundary]
         have hsubstEval : substSpec (mkVar idx name info) arg depth =
             mkVar idx name info := by
-          rw [mkVar_shape, substSpec, if_neg hne, if_neg hngt]
+          rw [mkVar_shape, substSpec, ite_eq_right hne, ite_eq_right hngt]
         calc
           simulSubstSpec (mkVar idx name info) (#[arg] ++ rest) depth =
               mkVar idx name info := hdirectEval
@@ -274,15 +274,15 @@ theorem simulSubstSpec_cons
           have hsubZero : (depth - depth).toNat = 0 := by simp
           have hdirectEval : simulSubstSpec (mkVar depth name info)
               (#[arg] ++ rest) depth = liftSpec arg depth 0 := by
-            rw [mkVar_shape, simulSubstSpec, if_pos hdirectWindow, hsubZero,
+            rw [mkVar_shape, simulSubstSpec, ite_eq_left hdirectWindow, hsubZero,
               getElemBang_singleton_append_zero_bw]
           have hrestEval : simulSubstSpec (mkVar depth name info) rest
               (depth + 1) = mkVar depth name info := by
-            rw [mkVar_shape, simulSubstSpec, if_neg hrestWindow,
-              if_neg hngeRestBoundary]
+            rw [mkVar_shape, simulSubstSpec, ite_eq_right hrestWindow,
+              ite_eq_right hngeRestBoundary]
           have hsubstEval : substSpec (mkVar depth name info) arg depth =
               liftSpec arg depth 0 := by
-            rw [mkVar_shape, substSpec, if_pos heqBool]
+            rw [mkVar_shape, substSpec, ite_eq_left heqBool]
           calc
             simulSubstSpec (mkVar depth name info) (#[arg] ++ rest) depth =
                 liftSpec arg depth 0 := hdirectEval
@@ -355,12 +355,12 @@ theorem simulSubstSpec_cons
             have hdirectEval : simulSubstSpec (mkVar idx name info)
                 (#[arg] ++ rest) depth =
                   liftSpec rest[(idx - (depth + 1)).toNat]! depth 0 := by
-              rw [mkVar_shape, simulSubstSpec, if_pos hdirectGuard,
+              rw [mkVar_shape, simulSubstSpec, ite_eq_left hdirectGuard,
                 hselected]
             have hrestEval : simulSubstSpec (mkVar idx name info) rest
                 (depth + 1) =
                   liftSpec rest[(idx - (depth + 1)).toNat]! (depth + 1) 0 := by
-              rw [mkVar_shape, simulSubstSpec, if_pos hrestGuard]
+              rw [mkVar_shape, simulSubstSpec, ite_eq_left hrestGuard]
             have hcancel := substSpec_liftSpec_succ (arg := arg)
               hselectedCon hcancelBig
             calc
@@ -446,21 +446,21 @@ theorem simulSubstSpec_cons
                 (#[arg] ++ rest) depth =
                   mkVar (idx - (#[arg] ++ rest).size.toUInt64)
                     (anonName (m := .anon)) := by
-              rw [mkVar_shape, simulSubstSpec, if_neg hdirectGuard,
-                if_pos hgeBoundary]
+              rw [mkVar_shape, simulSubstSpec, ite_eq_right hdirectGuard,
+                ite_eq_left hgeBoundary]
             have hrestEval : simulSubstSpec (mkVar idx name info) rest
                 (depth + 1) =
                   mkVar (idx - rest.size.toUInt64)
                     (anonName (m := .anon)) := by
-              rw [mkVar_shape, simulSubstSpec, if_neg hrestGuard,
-                if_pos hgeRestBoundary]
+              rw [mkVar_shape, simulSubstSpec, ite_eq_right hrestGuard,
+                ite_eq_left hgeRestBoundary]
             have hsubstEval :
                 substSpec
                     (mkVar (idx - rest.size.toUInt64)
                       (anonName (m := .anon))) arg depth =
                   mkVar (idx - rest.size.toUInt64 - 1)
                     (anonName (m := .anon)) := by
-              rw [mkVar_shape, substSpec, if_neg hqne, if_pos hqgt]
+              rw [mkVar_shape, substSpec, ite_eq_right hqne, ite_eq_left hqgt]
             calc
               simulSubstSpec (mkVar idx name info) (#[arg] ++ rest) depth =
                   mkVar (idx - (#[arg] ++ rest).size.toUInt64)

@@ -37,7 +37,7 @@ theorem finishDefEqLazyDeltaStep_wf
   unfold finishDefEqLazyDeltaStep
   cases haddr : left.addr == right.addr with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun hI _ =>
         hleftEq.trans world.venvWF hI.2.1.wf <|
           (DefEqMeaning.of_translations theory hI.2.1.wf hleft hright
@@ -45,20 +45,20 @@ theorem finishDefEqLazyDeltaStep_wf
               hpair.leftSupport hpair.rightSupport hleft haddr) rfl).trans
             world.venvWF hI.2.1.wf hrightEq.symm
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       apply RecM.WF.bind <|
         quickDefEq_wf theory hcollision hsorts hstructural
           hpair.leftSupport hpair.rightSupport hleft hright
       intro accepted afterQuick haccepted
       cases accepted with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact RecM.WF.pure fun hI _ =>
             hleftEq.trans world.venvWF hI.2.1.wf <|
               (haccepted rfl).trans world.venvWF hI.2.1.wf
                 hrightEq.symm
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           exact RecM.WF.pure fun _ => hpair
 
 end RecM

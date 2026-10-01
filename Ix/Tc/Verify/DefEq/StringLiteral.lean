@@ -141,30 +141,30 @@ theorem closesAfterBoolTrue
   unfold isDefEqInnerAfterBoolTrue
   cases hguard : hasStringLiteralPair a b with
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact htail haSupport hbSupport ha hb
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       apply RecM.WF.bind
         (tryStringLitExpansion_wf context hcanonical
           haSupport hbSupport ha hb)
       intro acceptedAB afterAB hacceptedAB
       cases acceptedAB with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact RecM.WF.pure fun _ _ => hacceptedAB rfl
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           apply RecM.WF.bind
             (tryStringLitExpansion_wf context hcanonical
               hbSupport haSupport hb ha)
           intro acceptedBA afterBA hacceptedBA
           cases acceptedBA with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact RecM.WF.pure fun _ _ => (hacceptedBA rfl).symm
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               exact htail haSupport hbSupport ha hb
 
 /-- Assemble structural comparison, eager Bool reduction, and literal String
