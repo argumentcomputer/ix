@@ -59,8 +59,16 @@ coverage inventory and the coverage-change record. During development:
   `nix develop -c lake build CompilatrixTests.Proofs <executables>`.
 - Run the focused suites for the area: `lake exe tests-ixon-v3`,
   `lake exe check-ixon-v3 …`, `lake exe check-ixon-v3-catalog …`,
-  `lake exe tests-aiur`, and the x86 checks `check-x86-encoder`,
-  `check-x86-bytes`, `check-x86-streams` and `check-x86-object`.
+  `lake exe tests-aiur`, the x86 checks `check-x86-encoder`,
+  `check-x86-bytes`, `check-x86-streams` and `check-x86-object`, and the
+  pipeline suites `tests-src`, `tests-relevance`, `tests-lam`, `tests-anf`,
+  `tests-fir`, `tests-rt --cc cc`, `tests-pipeline --cc cc`,
+  `tests-recheck`, `check-lir`, `check-xv-select`, `check-regalloc`,
+  `check-backend --cc cc`, `corpus check`, `tests-corpus --cc cc` and
+  `check-steps` (the required checks that run each are in the CI guide).
+- After a reviewed change to emitted code, regenerate the step-count
+  baseline with `lake exe check-steps --write` and review its diff; it is
+  a performance-relevant change.
 - After changing imports or Lake roots, run
   `lake exe check-build-graph --write` and review the manifest. After a
   reviewed fence or assertion change, regenerate the coverage inventory

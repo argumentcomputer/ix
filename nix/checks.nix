@@ -9,6 +9,11 @@
     pkgs.lib.optionalString (system == "x86_64-linux")
     "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/x86/native_harness.c";
   nativeInputs = pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
+  # The pipeline suites link their objects with fixtures/x86/runtime_driver.c
+  # (or backend_driver.c) and run them natively with `--cc`; elsewhere they
+  # run every Lean level and say that the native runs are skipped.
+  native = system == "x86_64-linux";
+  ccArg = pkgs.lib.optionalString native "--cc ${pkgs.stdenv.cc}/bin/cc";
 in
   {
     # The catalog reader rejects symlinked files, so the fixture commands read
@@ -71,6 +76,71 @@ in
 
     build-graph = mkCheck "build-graph" [] ''
       ./.lake/build/bin/check-build-graph --root ${auditSrc}
+    '';
+
+    # The pipeline suites (M3.1, MT.8), run from the shared programs build
+    # against the tracked tree. Run one after another they take about 21
+    # minutes in the sandbox, which with the rest of the surface exceeds the
+    # 30-minute budget at --max-jobs 1, so this one check runs them
+    # concurrently, NIX_BUILD_CORES at a time, longest first (docs/ci.md has
+    # each suite's measured time and memory). Each suite's complete output is
+    # printed under its name with its status and wall time; the check fails
+    # if any suite fails, naming each one.
+    suites = mkCheck "suites" nativeInputs ''
+      ${pkgs.lib.optionalString (!native)
+        ''echo "suites: native runs skipped (tests-rt, tests-pipeline, check-backend, tests-corpus): ${system} is not x86_64-linux"''}
+      mkdir -p suite-logs
+      bin=./.lake/build/bin
+      parallel=''${NIX_BUILD_CORES:-1}
+      [ "$parallel" -ge 1 ] || parallel=1
+      names=()
+      launch() {
+        local name=$1
+        shift
+        while [ "$(jobs -rp | wc -l)" -ge "$parallel" ]; do wait -n || true; done
+        names+=("$name")
+        (
+          start=$SECONDS
+          if "$@" > "suite-logs/$name.log" 2>&1; then status=ok; else status="FAILED (exit $?)"; fi
+          echo "$status, $((SECONDS - start)) s" > "suite-logs/$name.status"
+        ) &
+      }
+      # sum-loop's big-step levels run in child processes with a 4 GiB Lean
+      # stack (LEAN_STACK_SIZE_KB): about 4.4 GB peak.
+      launch tests-pipeline $bin/tests-pipeline ${ccArg}
+      launch corpus-check $bin/corpus check
+      launch tests-corpus $bin/tests-corpus ${ccArg}
+      launch check-backend $bin/check-backend ${ccArg}
+      launch check-regalloc $bin/check-regalloc
+      launch tests-src $bin/tests-src
+      launch tests-rt $bin/tests-rt ${ccArg}
+      launch check-xv-select $bin/check-xv-select
+      launch tests-lam $bin/tests-lam
+      launch tests-fir $bin/tests-fir
+      launch check-lir $bin/check-lir
+      launch tests-anf $bin/tests-anf
+      launch tests-relevance $bin/tests-relevance
+      launch tests-recheck $bin/tests-recheck
+      wait
+      failed=()
+      for name in "''${names[@]}"; do
+        status=$(cat "suite-logs/$name.status" 2>/dev/null || echo "FAILED (no status)")
+        echo "=== $name: $status"
+        cat "suite-logs/$name.log"
+        case $status in ok*) ;; *) failed+=("$name") ;; esac
+      done
+      echo "=== summary"
+      for name in "''${names[@]}"; do echo "$name: $(cat "suite-logs/$name.status" 2>/dev/null)"; done
+      if [ ''${#failed[@]} -ne 0 ]; then
+        echo "suites failed: ''${failed[*]}"
+        exit 1
+      fi
+    '';
+
+    # Deterministic typed-x86 and ByteEval step counts (M3.2, MEAS-3) must
+    # equal the reviewed baseline fixtures/ixon-v3/bench-k1/steps.json.
+    x86-steps = mkCheck "x86-steps" [] ''
+      ./.lake/build/bin/check-steps
     '';
   }
   // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
