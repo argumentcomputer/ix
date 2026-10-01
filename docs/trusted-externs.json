@@ -837,6 +837,7 @@
       "CompilatrixTests/Fences/AiurRankAIR.lean": "d4628faa34be1574ac9155001e8fd502485a055da7dff2a42f117405b2e7771d",
       "CompilatrixTests/Fences/AiurStatic.lean": "550b51e3b4e2d6ff40c6dd3681fbd7d31b69802da5e2a480b690304cd98fdc93",
       "CompilatrixTests/Fences/AiurWire.lean": "4d09e898536b367160050ce3f21f4b6cd1b1adf8e6f388cbabbd225e71e3e858",
+      "CompilatrixTests/Fences/Anf.lean": "a7c2160cf729cd4e13cd4656901ee22ef7940a6888aa0656d46acaf9c5b3373d",
       "CompilatrixTests/Fences/Backend.lean": "390d69ecc445d57e329949bb004938ca42c3dc4c5782940a194e3f9a495b576a",
       "CompilatrixTests/Fences/Fir.lean": "79e53693bec36381f021b0bea29e7b53d815e6fae8f3d4f3c99805422d739e47",
       "CompilatrixTests/Fences/IxonV3Catalog.lean": "60650cf621b2b48e62168bc38f8de4c5392ba596b0efc1f3d9586ebe85359015",

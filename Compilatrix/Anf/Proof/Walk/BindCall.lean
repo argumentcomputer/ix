@@ -147,7 +147,8 @@ theorem walkBind_call (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
     obtain ⟨r, hr, hr'⟩ := Option.bind_eq_some_iff.1 hred
     split at hr'
     · next hg =>
-      have hg' : r.g = g := beq_iff_eq.1 hg
+      simp only [Bool.and_eq_true, beq_iff_eq] at hg
+      obtain ⟨hg', -⟩ := hg
       subst hg'
       obtain ⟨os'', hargs, he⟩ := Option.map_eq_some_iff.1 hr'
       simp only [Prod.mk.injEq] at he

@@ -47,8 +47,8 @@ replacing it by a `tick` (tick dominance):
 callee becomes `tick` and `g`'s body with its parameters bound to the
 arguments; its `ret` continues with the caller (a join point when the body
 branches). **Redirection** (`Cfg.redirect`, P4): a call of the specialised
-global whose masked arguments are exactly the specialisation's fixed values
-calls the specialisation.
+global whose masked arguments are its own parameters (`fixedAt`) and exactly
+the specialisation's fixed values calls the specialisation.
 
 Everything recurses on explicit fuel over lists and `NatMap`s
 (kernel-evaluable, D17). The census counts (`Exp.occ`, `Exp.jocc`) are
@@ -305,6 +305,13 @@ def redirectArgs (r : Redirect) (os : List Opd) : Option (List Opd) :=
     | .fixed o => some o
   else none
 
+/-- Every masked argument of a call is the redirected global's parameter
+itself (`d`: the source depth, one per variable in scope), as P4's
+fixed-parameter checker requires of every call it redirects. -/
+def fixedAt (r : Redirect) (d : Nat) (as : List Atom) : Bool :=
+  as.length == r.fixedArgs.length &&
+    (as.zipIdx.zip r.fixedArgs).all fun ((a, i), f) => f.isNone || a == .var (d - 1 - i)
+
 /-- Field levels `d … d + n - 1`, in order. -/
 def fieldOpds (d n : Nat) : List Opd := (List.range n).map fun i => .lvl (d + i)
 
@@ -405,7 +412,7 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
     | .call g as => do
       let os ← resolveList env as
       let redirected := C.redirect.bind fun r =>
-        if r.g == g then (redirectArgs r os).map (r.spec, ·) else none
+        if r.g == g && fixedAt r env.σ.length as then (redirectArgs r os).map (r.spec, ·) else none
       match redirected with
       | some (s, os') => do
         fire fun f => { f with redirect := f.redirect + 1 }
