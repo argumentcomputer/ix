@@ -1276,8 +1276,9 @@ def MSAnalysis.add (a b : MSAnalysis) : MSAnalysis :=
     matchedBytes := a.matchedBytes + b.matchedBytes, matchedTable := a.matchedTable + b.matchedTable }
 
 /-- Expand the primary table, the primary roots and the `metaSharing` entries
-into one canonical DAG (Share nodes in entries resolve against the primary table,
-as in decompilation), then:
+into one canonical DAG (Share nodes in entries resolve against the primary table
+only: an index at or past its size, which the extended metadata index space of
+`docs/sharing-minimum.md` §13 allows, is an expansion error here), then:
 * count entries equal to a subterm of the primary roots, or to a table entry;
 * re-encode every entry optimally with the primary table as a fixed dictionary
   at its current index widths (`Prep.materializeWith`), checking that the output

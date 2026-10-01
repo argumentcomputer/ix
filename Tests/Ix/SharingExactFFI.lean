@@ -457,7 +457,7 @@ def corpusTests (_ : Unit) : TestSeq :=
     -- Optional selection: a file of hex addresses, one per line.
     let select ← match ← IO.getEnv "IX_SHARING_CORPUS_SELECT" with
       | some p => do
-        let lines := (← IO.FS.readFile p).splitOn "\n" |>.map String.trim |>.filter (· != "")
+        let lines := (← IO.FS.readFile p).splitOn "\n" |>.map (String.trimAscii · |>.toString) |>.filter (· != "")
         pure (some (lines.foldl (fun (s : Std.HashSet String) l => s.insert l) {}))
       | none => pure none
     let entries := match select with
