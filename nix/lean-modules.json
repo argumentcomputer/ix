@@ -838,6 +838,26 @@
    ["Compilatrix.Sem.Smallstep",
     "Compilatrix.Sem.Transform",
     "CompilatrixTests.Sem.Toy.Cases"]},
+  "CompilatrixTests.Fences.SelectProof":
+  {"path": "CompilatrixTests/Fences/SelectProof.lean",
+   "imports":
+   ["Compilatrix.Xv.Select.Proof.Place",
+    "Compilatrix.Xv.Select.Proof.Exec",
+    "Compilatrix.Xv.Select.Proof.Words",
+    "Compilatrix.Xv.Select.Proof.Lin",
+    "Compilatrix.Xv.Select.Proof.Monad",
+    "Compilatrix.Xv.Select.Proof.Helpers",
+    "Compilatrix.Xv.Select.Proof.Producer",
+    "Compilatrix.Xv.Select.Proof.Assign",
+    "Compilatrix.Xv.Select.Proof.Arith",
+    "Compilatrix.Xv.Select.Proof.Shift",
+    "Compilatrix.Xv.Select.Proof.Stmt",
+    "Compilatrix.Xv.Select.Proof.Term",
+    "Compilatrix.Xv.Select.Proof.Pending",
+    "Compilatrix.Xv.Select.Proof.Block",
+    "Compilatrix.Xv.Select.Proof.Program",
+    "Compilatrix.Xv.Select.Proof.XvSteps",
+    "Compilatrix.Xv.Select.Proof.Correct"]},
   "CompilatrixTests.Fences.RtProof":
   {"path": "CompilatrixTests/Fences/RtProof.lean",
    "imports":
@@ -1024,7 +1044,8 @@
     "CompilatrixTests.Fences.OwnProof",
     "CompilatrixTests.Fences.CfgLower",
     "CompilatrixTests.Fences.Front",
-    "CompilatrixTests.Fences.LayoutProof"]},
+    "CompilatrixTests.Fences.LayoutProof",
+    "CompilatrixTests.Fences.SelectProof"]},
   "CompilatrixTests.Backend.Support":
   {"path": "CompilatrixTests/Backend/Support.lean",
    "imports":
@@ -1408,11 +1429,46 @@
   "Compilatrix.Xv.Select.Rules":
   {"path": "Compilatrix/Xv/Select/Rules.lean",
    "imports": ["Compilatrix.Xv.Select.Producer"]},
+  "Compilatrix.Xv.Select.Proof.XvSteps":
+  {"path": "Compilatrix/Xv/Select/Proof/XvSteps.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Program"]},
+  "Compilatrix.Xv.Select.Proof.Words":
+  {"path": "Compilatrix/Xv/Select/Proof/Words.lean",
+   "imports":
+   ["Compilatrix.Xv.Select.Proof.Exec", "Compilatrix.Xv.Select.Lemmas"]},
+  "Compilatrix.Xv.Select.Proof.Term":
+  {"path": "Compilatrix/Xv/Select/Proof/Term.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Stmt"]},
+  "Compilatrix.Xv.Select.Proof.Stmt":
+  {"path": "Compilatrix/Xv/Select/Proof/Stmt.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Shift"]},
+  "Compilatrix.Xv.Select.Proof.Shift":
+  {"path": "Compilatrix/Xv/Select/Proof/Shift.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Arith"]},
+  "Compilatrix.Xv.Select.Proof.Program":
+  {"path": "Compilatrix/Xv/Select/Proof/Program.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Block"]},
+  "Compilatrix.Xv.Select.Proof.Producer":
+  {"path": "Compilatrix/Xv/Select/Proof/Producer.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Helpers"]},
   "Compilatrix.Xv.Select.Proof.Place":
   {"path": "Compilatrix/Xv/Select/Proof/Place.lean",
    "imports":
    ["Compilatrix.Xv.Validate.Proof.XvRow",
     "Compilatrix.Xv.Validate.Proof.Assign"]},
+  "Compilatrix.Xv.Select.Proof.Pending":
+  {"path": "Compilatrix/Xv/Select/Proof/Pending.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Term"]},
+  "Compilatrix.Xv.Select.Proof.Monad":
+  {"path": "Compilatrix/Xv/Select/Proof/Monad.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Lin"]},
+  "Compilatrix.Xv.Select.Proof.Lin":
+  {"path": "Compilatrix/Xv/Select/Proof/Lin.lean",
+   "imports":
+   ["Compilatrix.Xv.Select.Proof.Words", "Compilatrix.Lir.Proof.Eval"]},
+  "Compilatrix.Xv.Select.Proof.Helpers":
+  {"path": "Compilatrix/Xv/Select/Proof/Helpers.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Monad"]},
   "Compilatrix.Xv.Select.Proof.Exec":
   {"path": "Compilatrix/Xv/Select/Proof/Exec.lean",
    "imports":
@@ -1420,6 +1476,23 @@
     "Compilatrix.Xv.Select.Driver",
     "Compilatrix.Lir.Proof.Steps",
     "Compilatrix.X86.Width"]},
+  "Compilatrix.Xv.Select.Proof.Correct":
+  {"path": "Compilatrix/Xv/Select/Proof/Correct.lean",
+   "imports":
+   ["Compilatrix.Xv.Select.Proof.XvSteps",
+    "Compilatrix.Lir.Proof.Relabel",
+    "Compilatrix.Xv.Validate.Proof.Diagram",
+    "Compilatrix.Xv.Validate.Proof.Fuel",
+    "Compilatrix.Sem.TracedSim"]},
+  "Compilatrix.Xv.Select.Proof.Block":
+  {"path": "Compilatrix/Xv/Select/Proof/Block.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Pending"]},
+  "Compilatrix.Xv.Select.Proof.Assign":
+  {"path": "Compilatrix/Xv/Select/Proof/Assign.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Producer"]},
+  "Compilatrix.Xv.Select.Proof.Arith":
+  {"path": "Compilatrix/Xv/Select/Proof/Arith.lean",
+   "imports": ["Compilatrix.Xv.Select.Proof.Assign"]},
   "Compilatrix.Xv.Select.Producer":
   {"path": "Compilatrix/Xv/Select/Producer.lean",
    "imports": ["Compilatrix.Xv.Select.Amode", "Compilatrix.Xv.Select.Cond"]},
@@ -3383,6 +3456,21 @@
     "Compilatrix.Xv.Select.Lemmas",
     "Compilatrix.Xv.Select.Proof.Place",
     "Compilatrix.Xv.Select.Proof.Exec",
+    "Compilatrix.Xv.Select.Proof.Words",
+    "Compilatrix.Xv.Select.Proof.Lin",
+    "Compilatrix.Xv.Select.Proof.Monad",
+    "Compilatrix.Xv.Select.Proof.Helpers",
+    "Compilatrix.Xv.Select.Proof.Producer",
+    "Compilatrix.Xv.Select.Proof.Assign",
+    "Compilatrix.Xv.Select.Proof.Arith",
+    "Compilatrix.Xv.Select.Proof.Shift",
+    "Compilatrix.Xv.Select.Proof.Stmt",
+    "Compilatrix.Xv.Select.Proof.Term",
+    "Compilatrix.Xv.Select.Proof.Pending",
+    "Compilatrix.Xv.Select.Proof.Block",
+    "Compilatrix.Xv.Select.Proof.Program",
+    "Compilatrix.Xv.Select.Proof.XvSteps",
+    "Compilatrix.Xv.Select.Proof.Correct",
     "Compilatrix.Src.Level",
     "Compilatrix.Xv.Validate.NatMap",
     "Compilatrix.Xv.Validate.State",
