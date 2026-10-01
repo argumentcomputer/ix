@@ -348,6 +348,16 @@ lean_exe «conleche-level-differential» where
   root := `Tests.Ix.Kernel.ConLecheLevels
   moreLinkObjs := #[ix_rs]
 
+/-- The Ixon reader against a direct translation of Lean's constants over
+`Init` and `Std` (`Tests/Ix/Kernel/ReaderFidelity.lean`): the census corpus
+(`kernel-reader-fidelity .lake/census/initstd.ixe [limit]`), `Init` and `Std`
+compiled in process (`--compile [limit]`), `check-kernel`'s run
+(`--check-kernel`) or the `lake test` fixture (`--fixture`). -/
+lean_exe «kernel-reader-fidelity» where
+  root := `Tests.Ix.Kernel.ReaderFidelityMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 /-- Con-leche's verified checker through the Ixon reader: the
 `checkBytes`-shaped entry and its per-record census (untrusted). -/
 lean_lib KernelConLeche where
@@ -382,7 +392,9 @@ lean_exe «conleche-pin-gen» where
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
 the host-side tests, provenance, the `ConLeche/**` layering and
-trust-surface fences, and the certified entry's host-compiled cases. -/
+trust-surface fences, the certified entry's host-compiled cases, and the
+reader's fidelity against Lean (the fixture closure and the first records of Init
+and Std). -/
 script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
@@ -394,7 +406,7 @@ script "check-kernel" (args) := do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "python3" #["scripts/check-kernel-retirement.py"]
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.ConLecheReader", "Tests.Ix.Kernel.CertifiedEntry"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Ix.Ixon.ProjectionAudit", "Ix.Ixon.BlockOrderAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.ConLecheReader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ConLecheRoundtrip"]
   run ".lake/build/bin/kernel-provenance" #[]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
@@ -426,6 +438,19 @@ script "check-kernel" (args) := do
   IO.eprint entry.stderr
   unless entry.exitCode == 0 do
     throw <| IO.userError "kernel-entry-cases failed; see .lake/build/kernel-entry-cases.jsonl"
+  -- The Ixon reader against a direct translation of the Lean constants it was
+  -- compiled from: the fixture closure (the `lake test` suite's check) and the
+  -- first records of Init and Std (`Tests/Ix/Kernel/ReaderFidelity.lean`).
+  run "lake" #["build", "--wfail", "kernel-reader-fidelity"]
+  let mut fidelityLog := ""
+  for mode in #["--fixture", "--check-kernel"] do
+    let out ← IO.Process.output { cmd := ".lake/build/bin/kernel-reader-fidelity", args := #[mode] }
+    fidelityLog := fidelityLog ++ s!"== {mode}\n{out.stdout}{out.stderr}"
+    IO.FS.writeFile ".lake/build/kernel-reader-fidelity.log" fidelityLog
+    IO.eprint out.stderr
+    unless out.exitCode == 0 do
+      throw <| IO.userError s!"kernel-reader-fidelity {mode} failed; see .lake/build/kernel-reader-fidelity.log"
+  IO.println "Reader fidelity checks passed."
   IO.println "Certified kernel checks passed."
   return 0
 
