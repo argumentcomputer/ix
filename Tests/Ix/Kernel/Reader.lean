@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Ixon.KernelAdmission
 
-/-! # Ixon records through con-leche's verified checker (plan v4, L4)
+/-! # Ixon records through the verified checker
 
 End-to-end fixtures for `Ix.Ixon.KernelAdmission.checkBytes`: canonical
 record bytes are preflighted, decoded, read by `Ix.Kernel.IxonReader`,
@@ -22,13 +22,13 @@ quotient's lift reduction, a Nat literal against its constructors, a String
 literal against its `String.ofList` expansion (over test constants pinned as
 the string-literal support), a compiled block nested through a container
 that is itself nested, whose auxiliary motives Ix's compiler orders with the
-container family's instance before its head (cl-m1), and a compiled theorem
+container family's instance before its head, and a compiled theorem
 whose universe levels Ix's compiler stored in canonical form, which only the
-Géran fallback of con-leche's level comparison equates (cl-m1, cl-level, the
-`RatFunc.liftOn_def` shape).
+Géran fallback of the level comparison equates (the `RatFunc.liftOn_def`
+shape).
 
 Negative: a block of another shape stored under the real `Eq`'s address is
-named `Eq` and rejected by con-leche's reserved-name check; a definition
+named `Eq` and rejected by the checker's reserved-name check; a definition
 block with an ill-typed member is rejected by the checker; a `partial` block
 whose members call each other (the shape of Lean's `_unsafe_rec` companions)
 declines with its safety, as a partial singleton does, and the same block
@@ -455,7 +455,7 @@ def natBlock : Address := match builtinPins.names.toList.find? (toString ·.2 ==
 #guard ((literalEdges stringPins.names strings.toArray)[address 74]?).isNone
 #guard (literalEdges builtinPins.names #[(address 42, litEq)])[address 42]? == some #[natBlock]
 
-/-! ## A block nested through a container that is itself nested (cl-m1)
+/-! ## A block nested through a container that is itself nested
 
 The records Ix's compiler produces for `Tests.Ix.Kernel.EntryCaseDefs.LTree`
 (`lake exe ix compile Tests/Ix/Kernel/EntryCaseDefs.lean --consts` with
@@ -472,12 +472,12 @@ submits for its `nested-through-nested` case:
 The compiler orders `LTree.rec`'s auxiliary motives canonically, as
 `[List (LNode LTree), LNode LTree]`: an instance of the container family before
 the family's head. The kernel's discovery order, and so every lean4export
-stream, has the head first. The in-process modeller formed its container
-groups in motive order, so `List`'s singleton group and `LNode`'s family both
-claimed motive 1, and the block was rejected with `duplicate declaration
-ix.<LTree>.0._model._impl.pack_0`, as `Lean.Elab.InfoTree` was (with `pack_1`)
-in the first Mathlib environment check. The modeller now forms the groups largest family
-first (`Ix/Kernel/Frontend/InModel/Nested.lean`, an adapted row). -/
+stream, has the head first. Container groups formed in motive order would
+both claim motive 1 here (`List`'s singleton group and `LNode`'s family), and
+the block would be rejected with `duplicate declaration
+ix.<LTree>.0._model._impl.pack_0`, as Mathlib's `Lean.Elab.InfoTree` would
+be (with `pack_1`). The modeller forms the groups largest family first
+(`Ix/Kernel/Frontend/InModel/Nested.lean`, an adapted file). -/
 
 /-- (address, canonical record bytes) -/
 def lTreeRecords : List (String × String) := [
@@ -630,7 +630,7 @@ def lTreeNames : List String :=
       names.contains (t ++ ".rec_2") && names.contains (keyString (.member lNodeBlock 0))
   | .error _ => false
 
-/-! ## Universe levels in canonical form (cl-m1, cl-level)
+/-! ## Universe levels in canonical form
 
 The records Ix's compiler produces for
 `Tests.Ix.Kernel.EntryCaseDefs.levelCanon` (`--consts levelCanon,Subtype.rec,
@@ -645,15 +645,16 @@ x)`. Ixon stores each level as the canonical form of its semantic class
 `Eq.{max (x+1) (imax (w+2) x)}`. The checker infers the `Subtype`'s type,
 `Sort (max (imax (max (w+2) (x+1)) x) 1)`, where the `Eq` expects
 `Sort (max (x+1) (imax (w+2) x))`. The two levels are equal at every
-valuation. Nanoda's comparison (the official kernel's `leq`, which con-leche
-ports) establishes only `≤`: the converse `x+1 ≤ max (imax … x) 1` splits
-the `max`, and each branch fails on its own (at `x = 0` and at `x = 1`).
-Until cl-level the theorem was refused with `application type mismatch`, as
-`RatFunc.liftOn_def` and `RatFunc.liftOn'_def` (unfolding lemmas of
-`irreducible_def`) were in the Mathlib environment check. That case of the comparison
-now falls back on Géran's sublevels (`Ix/Kernel/LevelGeran.lean`, a
-decision procedure, `Ix.Kernel.Level.Geran.leq_iff`), and the theorem is
-accepted. The reader converts levels as stored. -/
+valuation. Nanoda's comparison (the official kernel's `leq`, which the
+vendored `Level.leqCore` implements) establishes only `≤`: the converse
+`x+1 ≤ max (imax … x) 1` splits the `max`, and each branch fails on its own
+(at `x = 0` and at `x = 1`); without a fallback the theorem is refused with
+`application type mismatch`, as Mathlib's `RatFunc.liftOn_def` and
+`RatFunc.liftOn'_def` (unfolding lemmas of `irreducible_def`) would be.
+That case of the comparison falls back on Géran's sublevels
+(`Ix/Kernel/LevelGeran.lean`, a decision procedure,
+`Ix.Kernel.Level.Geran.leq_iff`), and the theorem is accepted. The reader
+converts levels as stored. -/
 
 /-- (address, canonical record bytes) -/
 def levelRecords : List (String × String) := [
@@ -733,7 +734,7 @@ def eqLevel : Ix.Kernel.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
 
 /-- A one-constructor `Type` stored under the real `Eq` block's address, with
 its recursor over the real `Eq`/`Eq.refl` projection records: the reader
-names it `Eq` (by address), and con-leche rejects the reserved name. -/
+names it `Eq` (by address), and the checker rejects the reserved name. -/
 def eqBlock : Address := match builtinPins.names.toList.find? (toString ·.2 == "Eq") with
   | some (r, _) => r.block
   | none => address 0
@@ -770,7 +771,7 @@ def natBlockRecord : Ixon.Constant := Id.run do
   toString (cx.nameOf (.member (address 92) 0)) == keyString (.member (address 92) 0) &&
     toString (cx.nameOf (.member (address 92) 0)) != "Nat"
 
--- The address encodings are computed ahead (`Ctx.keys`, T1): an unpinned
+-- The address encodings are computed ahead (`Ctx.keys`): an unpinned
 -- record's reference is in the table, under `keyName`'s spelling, and a
 -- pinned one is not.
 #guard
@@ -782,7 +783,7 @@ def natBlockRecord : Ixon.Constant := Id.run do
 
 /-! ## Negative: malformed and unsupported records -/
 
--- the same address twice: the byte stage rejects it (`uniqueKeys`, L6b),
+-- the same address twice: the byte stage rejects it (`uniqueKeys`),
 -- and the reader rejects it in decoded records (`readRecords_nodup`)
 #guard match run [(address 10, idNat), (address 10, idNat)] with
   | .error (.duplicate .records 1 a) => a == address 10

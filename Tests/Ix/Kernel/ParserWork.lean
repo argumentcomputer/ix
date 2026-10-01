@@ -6,10 +6,13 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Ixon.Verify.WorkAdmission
 import Tests.Ix.Kernel.ByteAdmission
 
+/-! The parser's work accounting (`Ix.Ixon.Verify.Work`): the metered parser
+agrees with production on outcome and cursor, and the exact work of
+malformed and well-formed inputs is pinned, at elaboration. -/
+
 open Ix.Ixon.Verify Tests.Ix.Kernel.IxonFixtures
 
 namespace Tests.Ix.Kernel.ParserWork
-
 
 def sameOutcome [BEq α] : Work.Outcome α → Work.Outcome α → Bool
   | .ok left ls, .ok right rs => left == right && ls.idx == rs.idx && ls.bytes == rs.bytes

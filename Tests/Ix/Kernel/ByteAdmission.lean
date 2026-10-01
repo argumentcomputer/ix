@@ -86,10 +86,9 @@ def decodeFailureAt (records : Records) (position : Nat) (address : Address)
     .lam .linear (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })]
 
 -- A duplicate record or blob address is malformed (the byte stage rejects
--- it, L6b); a reference to a later record and a family stored without its
+-- it); a reference to a later record and a family stored without its
 -- recursor are checker or reader verdicts, which decline at the Ix API
--- (D-trust rows 21-22; the intrinsic kernel rejected the first and admitted
--- the second).
+-- (`Ix.Ixon.Admission.outcome`).
 #guard outcomeOf [(address 1, identity), (address 1, identity)] = some .rejected
 #guard outcomeOf [(address 1, identity)] [(address 9, ⟨#[1]⟩), (address 9, ⟨#[1]⟩)] = some .rejected
 #guard outcomeOf [(address 2, aliasIdentity), (address 1, identity)] = some .declined

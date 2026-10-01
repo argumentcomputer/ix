@@ -7,7 +7,7 @@ import Ix.Kernel.Verify.Level
 import Ix.Kernel.Verify.LevelGeran
 import Ix.IxonUniv
 
-/-! # Con-leche's level comparison against brute-force evaluation (cl-level)
+/-! # The kernel's level comparison against brute-force evaluation
 
 `Ix.Kernel.Level.leq` is nanoda's comparison with Géran's sublevels as the
 fallback of its `(param, max)` case (`Ix/Kernel/Level.lean`,
@@ -35,10 +35,10 @@ parameters in a range:
   (`RatFunc.liftOn_def` is `max (canon W) 1` against `canon (max 1 W)`).
   These pairs are not all equalities: `canonUniv` changes the value of some
   levels (the smallest found is `imax (imax (imax u w + 1) u) v`, whose
-  canonical form is `2` at `u = 0, v = 1, w = 2` where the level is `1`;
-  `plans/review/cl-level`), counted, not failures;
+  canonical form is `2` at `u = 0, v = 1, w = 2` where the level is `1`),
+  counted, not failures;
 * on the recorded witnesses: Ixon's canonical levels of `RatFunc.liftOn_def`
-  (cl-m1) and the equality Ix.Tc's subsumption misses (`g-levels`).
+  and the equality Ix.Tc's subsumption misses.
 
 Some valuation at values in `{0, 1, M}` is a counterexample whenever one
 exists, at offsets up to `2` (the separating valuations of
@@ -306,10 +306,10 @@ def succN (l : Level) : Nat → Level
 def witnesses (c : Counts) : Counts :=
   let u := param 0
   let v := param 1
-  -- Ixon's canonical levels in `RatFunc.liftOn_def` (cl-m1)
+  -- Ixon's canonical levels in `RatFunc.liftOn_def`
   let subtypeLevel := Level.max (.imax (.max (succN u 2) (succN v 1)) v) (succN .zero 1)
   let eqLevel := Level.max (succN v 1) (.imax (succN u 2) v)
-  -- equal; Ix.Tc's `univEq` misses it (plans/review/g-levels)
+  -- equal; Ix.Tc's `univEq` misses it
   let tcX := Level.max (succN v 1) (.imax (.imax (succN .zero 2) u) v)
   let tcY := Level.max (succN v 1) (.imax u v)
   let vals := valuations 2 (List.range 8)
@@ -322,7 +322,7 @@ def main : IO UInt32 := do
   let c := random 3 16 100000 c
   let c := rewrites 3 12 20000 c
   let c := canonical 3 10 20000 c
-  IO.println s!"Con-leche level comparison differential: {c.pairs} pairs, {c.equalities} \
+  IO.println s!"Level comparison against evaluation: {c.pairs} pairs, {c.equalities} \
     equalities; unsound {c.unsound}; incomplete {c.incomplete}; internal errors \
     {c.internal}; Geran.leq disagreements {c.geranWrong}; canonical forms that change \
     their level's value {c.canonChanged}"

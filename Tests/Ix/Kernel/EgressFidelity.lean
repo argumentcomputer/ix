@@ -48,20 +48,22 @@ in the order of its motives (`T.rec`, `T.rec_1`, …; the members' own order for
 a mutual block), which is not always the structural order (2 of the 7
 recursor blocks of two or more members in the fixture closure, `Rose.rec` with
 `Rose.rec_1` and `Args.rec` with `Tm.rec`, are not; none of the 3 in `Init`
-and `Std`). Until 2026-10-01 the entry checked recursor blocks structurally
-and refused compiled batches that contained those two; the Rust kernel checks
+and `Std`). A structural check would refuse compiled batches that contain
+those two; the Rust kernel checks
 only inductive blocks at ingress (`crates/kernel/src/ingress.rs`: "Skip Recr
 blocks (they contain primary + aux recursors, with the aux portion in
 kernel-computed canonical order, not stored sort_consts)"). Every block of
-every environment must now pass (`ProjectionReport.refused` is a problem), the two
+every environment must pass (`ProjectionReport.refused` is a problem), the two
 named fixture blocks are required among the accepted recursor blocks
 (`Tests.Ix.Kernel.ReaderRoundtrip`), and every accepted recursor block with
 its first two members swapped must be refused for its motive order.
 
-**No environment egress exists.** Nothing writes con-leche's `Env` back to
-Ixon records; the intrinsic kernel's record writer over its own syntax was
-retired at L6 (`plans/review/cl-l6`). What it would need is in
-`plans/review/cl-fidelity/README.md` ("Egress of the environment"). -/
+**No environment egress exists.** Nothing writes an accepted `Ix.Kernel.Env`
+back to Ixon records. The installed terms are annotated (binder regimes
+computed, `let` ζ-reduced, projection functions in recursor form, opaques
+installed without their values), so they cannot be inverted from the
+environment; a faithful egress is the accepted input records themselves,
+with `keyName` as the map between addresses and names. -/
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.IxonReader
@@ -200,7 +202,7 @@ def layoutKinds : Ix.Kernel.Egress.ProjectionLayout → List String
   | .constructor => ["constructor"]
 
 /-- Two installed environments agree: the same constants in the same order,
-of the same kinds, with equal types (con-leche's executed equality). -/
+of the same kinds, with equal types (the kernel's executed equality). -/
 def envDiff (a b : Ix.Kernel.Env) : Option String :=
   if a.consts.length != b.consts.length then
     some s!"{a.consts.length} constants vs {b.consts.length}"

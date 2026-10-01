@@ -99,8 +99,8 @@ def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool
 #guard accepts [(address 1, identity), (address 2, aliasIdentity)] 0
 #guard accepts (entry falseProjection :: separatedInput)
 #guard !(accepts separatedInput 0)
--- A family stored without its recursor declines at the reader (the intrinsic
--- kernel admitted it); the request bound and the batch limits apply first.
+-- A family stored without its recursor declines at the reader; the request
+-- bound and the batch limits apply first.
 #guard match check [(address 3, falseFamily)] with
   | .error (.checker error) => Ix.Ixon.Admission.outcome error == .declined
   | _ => false

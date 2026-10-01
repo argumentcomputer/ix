@@ -12,7 +12,7 @@ import Tests.Ix.Kernel.ReaderFidelityDefs
 
 /-! # The Ixon reader's fidelity on compiled Lean declarations (`lake test`)
 
-The Ix.Tc-style roundtrip for con-leche's Ixon reader: the declarations of
+The Ix.Tc-style roundtrip for the Ixon reader: the declarations of
 `Tests.Ix.Kernel.ReaderFidelityDefs` (nested, mutual, indexed, reflexive and
 structure-like inductives, quotients, literals, mutual and well-founded
 definitions) and everything in `Init` they reach are compiled with Ix's

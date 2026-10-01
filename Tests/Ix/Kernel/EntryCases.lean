@@ -185,16 +185,16 @@ def cases : List Case := [
   { label := "string-literal", seeds := [seed "strLit"], expected := .accept },
   { label := "nested-inductive", seeds := [seed "Tree"], expected := .accept },
   -- nested through a container that is itself nested, with the container
-  -- family's instance compiled before its head (cl-m1: was a duplicate
-  -- declaration of the modeller's `pack_0`)
+  -- family's instance compiled before its head (the modeller must not
+  -- declare its `pack_0` twice)
   { label := "nested-through-nested", seeds := [seed "LTree"], expected := .accept },
-  -- `Lean.Elab.InfoTree`'s shape and auxiliary order (cl-m1: was a
-  -- duplicate declaration of `pack_1`)
+  -- `Lean.Elab.InfoTree`'s shape and auxiliary order (the modeller must not
+  -- declare its `pack_1` twice)
   { label := "nested-through-nested-structure", seeds := [seed "ITree"], expected := .accept },
   { label := "partial-definition-face", seeds := [seed "loop"], expected := .accept },
   -- an equation over a `Subtype` whose levels Ix's compiler stores in
-  -- canonical form, equal at every valuation (cl-m1: con-leche's level
-  -- comparison did not equate them; the shape of `RatFunc.liftOn_def`)
+  -- canonical form, equal at every valuation (only the Géran fallback of the
+  -- level comparison equates them; the shape of `RatFunc.liftOn_def`)
   { label := "level-comparison", seeds := [seed "levelCanon"], expected := .accept },
   -- rejected: malformed input
   { label := "malformed-bytes", seeds := [seed "twiceId"],
@@ -303,11 +303,8 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
 The environment check (`Benchmarks.Kernel.CheckIxeStep.checkLoop`) runs the same
 reader and checker one record at a time and classifies each verdict: a
 checker `invalid` is a reject. These cases run the environment check over a case's
-records and check the seed's row. Cl-m1 declined a declaration that was
-`invalid` but accepted at every closed instantiation of its level
-parameters. Cl-level decides the level comparison's missing case by Géran's
-sublevels and removed that rule, so `levelCanon` is accepted by the environment check
-as by the entry. -/
+records and check the seed's row: `levelCanon` is accepted by the
+environment check as by the entry. -/
 
 structure StepCase where
   label : String

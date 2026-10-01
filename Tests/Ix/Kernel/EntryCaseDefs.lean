@@ -72,8 +72,8 @@ inductive LNode (α : Type) where
 /-- A block nested through a container that is itself nested. Ix's compiler
 orders `LTree.rec`'s auxiliary motives canonically, as
 `[List (LNode LTree), LNode LTree]`: the container family's instance before
-its head, the order that made the in-process modeller emit `pack_0` twice
-(cl-m1). -/
+its head, an order in which the in-process modeller must still emit each
+`pack_i` once. -/
 inductive LTree where
   | node : LNode LTree → LTree
 
@@ -107,8 +107,8 @@ partial def loop (n : Nat) : Nat := loop (n + 1)
 `Subtype.{imax (max (u+2) (v+1)) v}` and `Eq.{max (v+1) (imax (u+2) v)}`.
 The `Subtype`'s type `Sort (max (imax (max (u+2) (v+1)) v) 1)` is the
 `Eq`'s domain at every valuation, which nanoda's level comparison (the
-official kernel's) does not establish (cl-m1). Con-leche's comparison
-decides that case by Géran's sublevels since cl-level.
+official kernel's) does not establish; the kernel's comparison decides that
+case by Géran's sublevels (`Ix/Kernel/LevelGeran.lean`).
 -/
 theorem levelCanon.{w, x} {a b : {_f : (K : Type w) → (P : Sort x) → P // True}} (h : a = b) :
     a = b := h
@@ -120,8 +120,8 @@ axiom someAxiom (n : Nat) : n = n
 
 -- `∀ (α : Sort w) (a : α), @Eq.{w+1} α a a`, by `Eq.refl.{w+1}`: an
 -- equation at the wrong universe level, installed in Lean unchecked. No
--- valuation of `w` makes it well typed (cl-m1: a reject, not a level
--- comparison's decline; cl-level: still rejected by the complete comparison).
+-- valuation of `w` makes it well typed: a reject by the complete level
+-- comparison, not a decline.
 bad_decl .thmDecl {
   name := `Tests.Ix.Kernel.EntryCaseDefs.levelWrong
   levelParams := [`w]

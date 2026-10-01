@@ -47,7 +47,7 @@ closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
   with variable `i` named as above.
 * **Expressions.** `mdata` is erased (Ixon keeps it as metadata), binder
   names and infos are dropped, every binder's `pw` is `.never` (the reader's
-  placeholder; con-leche's annotation computes it), `let`'s `nonDep` flag is
+  placeholder; the checker's annotation computes it), `let`'s `nonDep` flag is
   dropped, literals stay literals, a projection names its structure.
 * **Constants.** Axioms, definitions (with Lean's own hint), theorems,
   opaques and quotient constants become the reader's declarations of the
@@ -61,7 +61,7 @@ closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
 ## What is compared
 
 1. **Per constant**, exact structural equality of the reader's entry and the
-   reference (con-leche's executed `Expr`, `Level` and `Name` equalities, field
+   reference (the kernel's executed `Expr`, `Level` and `Name` equalities, field
    by field), with the first difference located when there is one.
 2. **Names**: the reader's `Ctx.nameOf` of each constant's reference against
    the reference name.
@@ -78,14 +78,13 @@ closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
 
 ## Classification of the differences
 
-No reader defect was found (2026-10-01, `plans/review/cl-fidelity`). Every
-difference on the fixture closure and on all of `Init` and `Std` is one of:
+No reader defect is known. Every difference on the fixture closure and on all of `Init` and `Std` is one of:
 
 * **Intentional normalizations** of the reader:
   - *projection rewrite*: the projection functions of a structure-like
     member of a block that goes through the in-process modeller have their
-    value `fun x => x.i` rewritten to recursor form (con-leche's `ProjRec`,
-    `ExportC.projRewriteD`). The entry must equal the same rewrite of the
+    value `fun x => x.i` rewritten to recursor form (`Ix.Kernel.Frontend.ProjRec`,
+    upstream's `ExportC.projRewriteD`). The entry must equal the same rewrite of the
     reference value at the reader's state (`Node.val`, `Node.kids`);
   - *compiler hint (per address)*: the environment check supplies the compiler's hint
     at the record's address (`Env.anonHints`), which Ix min-merges over the
@@ -130,7 +129,7 @@ inductive Entry where
   | recr (cv : CVal) (majorIdx rulePrefix : Nat) (rules : List Ix.Kernel.RecRule)
   deriving Inhabited
 
-/-! Equality is decided field by field with con-leche's executed equalities
+/-! Equality is decided field by field with the kernel's executed equalities
 (`Expr.beq`, `Level.beq`, `Name.beq`: pointer test, cached hash, memoised
 descent), not with the derived `DecidableEq`, whose structural descent does
 not see sharing and is exponential on the DAGs that both sides build. -/
@@ -255,7 +254,7 @@ where
 
 /-! ## The reference translation -/
 
-/-- A Lean name as a con-leche name, component by component. -/
+/-- A Lean name as a kernel name, component by component. -/
 def cname : Lean.Name → CName
   | .anonymous => .anonymous
   | .str p s => .str (cname p) s
@@ -330,7 +329,7 @@ def toUniv (params : List Lean.Name) : Lean.Level → RefM Ixon.Univ
     | none => throw s!"unknown level parameter {n}"
   | .mvar _ => throw "level metavariable"
 
-/-- An Ixon level as a con-leche level, variable `i` named `lps[i]`. -/
+/-- An Ixon level as a kernel level, variable `i` named `lps[i]`. -/
 def ofUniv (lps : List CName) : Ixon.Univ → CLevel
   | .zero => .zero
   | .succ u => .succ (ofUniv lps u)

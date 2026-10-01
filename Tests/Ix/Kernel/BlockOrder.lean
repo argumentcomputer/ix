@@ -6,6 +6,10 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Ixon.BlockOrderProofs
 import Tests.Ix.Kernel.Projection
 
+/-! Canonical block order (`Ix.Ixon.BlockOrder`): canonical classes,
+accepted and refused member orders, and the refinement budget, checked at
+elaboration. -/
+
 open Ix.Kernel
 open Ix.Ixon.BlockOrder
 open Tests.Ix.Kernel.IxonFixtures (address)

@@ -7,13 +7,13 @@ import Ix.Ixon.Consistency
 import Ix.Ixon.BlockOrderProofs
 import Tests.Ix.Kernel.Reader
 
-/-! # The certified Ixon API (plan v4, L5)
+/-! # The certified Ixon API
 
-The public entries from L5 — `Ix.Ixon.Admission.checkBytes`, and its
+The public entries — `Ix.Ixon.Admission.checkBytes`, and its
 projection-reconstructing and block-ordering variants
 `Ix.Ixon.Projection.checkBytes` and `Ix.Ixon.BlockOrder.checkBytes` — run
-con-leche's verified checker behind the Ixon reader. These fixtures are the
-L4 reader fixtures (`Tests.Ix.Kernel.Reader`) through the public
+the verified checker behind the Ixon reader. These fixtures are the
+reader fixtures (`Tests.Ix.Kernel.Reader`) through the public
 names, the failure classification at the Ix API (`Admission.outcome`), a
 theorem of the pinned `False` that is not accepted, and the public theorems
 applied. The byte stage and the shared Ixon record fixtures are tested in
@@ -39,7 +39,7 @@ def outcomeOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × B
   | .ok _ => none
   | .error e => some (Ix.Ixon.Admission.outcome e)
 
-/-! ## The certified entry is the con-leche entry -/
+/-! ## The certified entry is the kernel entry -/
 
 #guard accepted definitions
 #guard accepted twoFixture
@@ -47,18 +47,17 @@ def outcomeOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × B
 #guard accepted [(address 40, quotIota)]
 #guard accepted [(address 42, litEq)] [(address 41, ⟨#[2]⟩)]
 -- a theorem in Ixon's canonical universe levels, which only the Géran
--- fallback of the level comparison equates (cl-m1, cl-level,
--- `RatFunc.liftOn_def`'s shape)
+-- fallback of the level comparison equates (`RatFunc.liftOn_def`'s shape)
 #guard (Ix.Ixon.Admission.checkBytes limits levelStream []).isOk
 -- the empty stream installs the prelude
 #guard match check [] with
   | .ok env => env.consts.length == 27
   | .error _ => false
 
-/-! ## The Ix taxonomy of failures (D-trust rows 21-22)
+/-! ## The Ix taxonomy of failures
 
 A record the reader finds malformed and non-canonical bytes reject; every
-checker verdict declines (a false equation is `invalid` to con-leche, a
+checker verdict declines (a false equation is `invalid` to the checker, a
 failed conversion search, which is not independent evidence of a wrong
 input); a block whose recursor is missing declines at the reader; batch
 limits decline. -/
@@ -80,22 +79,20 @@ limits decline. -/
   | .error e => Ix.Ixon.Admission.outcome e == .declined
   | .ok _ => false
 
-/-! ## Duplicate keys (L6b)
+/-! ## Duplicate keys
 
 Two records, or two blobs, under one address are malformed input: the byte
 stage rejects them (`Ix.Ixon.Admission.uniqueKeys`) at the second
 occurrence, before decoding, in all three byte entries, and the API
-classifies that as a reject. The intrinsic entry rejected both; from L5 to
-L6 the certified entry rejected duplicate records (at the reader) but
-accepted a duplicate blob and read the first copy. The controls are the
-same inputs with distinct keys. -/
+classifies that as a reject. The controls are the same inputs with distinct
+keys. -/
 
 -- a duplicate blob that a literal uses, the copies disagreeing
 #guard match check [(address 42, litEq)] [(address 41, ⟨#[2]⟩), (address 41, ⟨#[3]⟩)] with
   | .error (.duplicate .blobs 1 a) => a == address 41
   | _ => false
 #guard outcomeOf [(address 42, litEq)] [(address 41, ⟨#[2]⟩), (address 41, ⟨#[2]⟩)] == some .rejected
--- a duplicate blob that nothing uses (accepted at L6)
+-- a duplicate blob that nothing uses
 #guard match check definitions [(address 43, ⟨#[2]⟩), (address 43, ⟨#[2]⟩)] with
   | .error (.duplicate .blobs 1 a) => a == address 43
   | _ => false
