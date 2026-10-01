@@ -1,9 +1,20 @@
-//! Exact minimum sharing: the canonical construction rule specified in
-//! `docs/sharing-minimum.md`.
+//! Sharing tables of anonymous Constants: the canonical construction and its
+//! reference searches (`docs/sharing-minimum.md`).
 //!
-//! Given a resolved anonymous Constant (or its ordered expanded roots), the
-//! optimizer returns the feasible backward-reference sharing encoding with
-//! the lexicographically least key
+//! The compiler shares every block with the tiered canonical construction
+//! ([`canonical_sharing_tiered`], `tiered`; Lean
+//! `Ix.Sharing.Exact.canonicalSharingTiered`): phase 1 is the exact
+//! uniform-width optimizer (`uniform`) at widths 1, 2 and 3, phase 2
+//! allocates the table slots, phase 3 re-materializes every part under the
+//! real TagN widths, and the candidate with the fewest bytes wins.
+//!
+//! The rest of this module is the global exact minimum of
+//! `docs/sharing-minimum.md` §3, computed by the width-state search
+//! ([`optimize_sharing`], [`normalize_constant_sharing`], `search`). It is
+//! exponential in the candidates and is a test oracle for small inputs, not
+//! on the compiler path. Given a resolved anonymous Constant (or its ordered
+//! expanded roots), it returns the feasible backward-reference sharing
+//! encoding with the lexicographically least key
 //!
 //! ```text
 //! K(e) = (L(e), Q(e), bytes(e))
@@ -25,7 +36,11 @@
 //!   telescope cuts, and byte-least materialization.
 //! - `search`: the sparse width-state dynamic program (§6) with the proved
 //!   reductions R1/R2, the optimistic-dictionary lower bound (§4.1) and a
-//!   materialization lower bound.
+//!   materialization lower bound (the test oracle above).
+//! - `uniform`: the exact optimizer for a uniform Share width (phase 1).
+//! - `tiered`: the canonical tiered construction.
+//! - `oracle` (tests only): a tiny exhaustive reference search; `mss` (tests
+//!   only): the maximal-structural-sharing reference encoding.
 //!
 //! Every limit in [`ExactSharingLimits`] is enforced with deterministic
 //! counters; exhausting one returns [`SharingError::ResourceExhausted`] and
@@ -64,13 +79,14 @@
 mod cost;
 mod dag;
 mod dict;
-mod mss;
 mod par;
 mod roots;
 mod search;
 mod tiered;
 mod uniform;
 
+#[cfg(test)]
+mod mss;
 #[cfg(test)]
 mod oracle;
 #[cfg(test)]
@@ -85,9 +101,6 @@ pub use cost::{
 };
 pub use dag::{Children, Node, NodeKey, SharingDag, TermId};
 pub use dict::{FixedDictionary, dictionary_cost, materialize_with_dictionary};
-pub use mss::{
-  EncodingInfo, MssEncoding, MssTies, inspect_encoding, mss_constant, mss_dag,
-};
 pub use roots::{
   constant_info_root_count, constant_info_root_exprs, rebuild_constant_info,
 };
@@ -95,13 +108,11 @@ pub use search::{
   candidate_terms, optimize_sharing_uniform_reference, sequence_len,
 };
 pub use tiered::{
-  Phase1Choice, ShareLayout, TAGN_RUNG1_END, TAGN_RUNG2_END, TAGN_RUNG3_END,
-  TAGN_RUNG4_END, TAGN_RUNG5_END, TieredSharingResult, TieredStats,
-  canonical_sharing_tiered, first_tier, layout_bytes,
-  normalize_constant_bytes_tiered, normalize_constant_sharing_tiered,
-  normalize_constant_sharing_tiered_at_width,
-  normalize_constant_sharing_tiered_par,
-  normalize_constant_sharing_tiered_with, tagn_width,
+  ShareLayout, TAGN_RUNG1_END, TAGN_RUNG2_END, TAGN_RUNG3_END, TAGN_RUNG4_END,
+  TAGN_RUNG5_END, TieredSharingResult, TieredStats, canonical_sharing_tiered,
+  first_tier, layout_bytes, normalize_constant_bytes_tiered,
+  normalize_constant_sharing_tiered, normalize_constant_sharing_tiered_par,
+  tagn_width,
 };
 pub use uniform::{
   UniformClass, UniformSharingResult, normalize_constant_sharing_uniform,
@@ -115,10 +126,10 @@ use crate::expr::Expr;
 /// an error. Limits and the pruning options can change success into failure
 /// but never the bytes of a success.
 ///
-/// The defaults are a safety net, not a budget (PR plan §0b-4): each
-/// production limit is at least 2^8 times the previous default, under which
-/// every Mathlib constant built. `max_candidates` bounds only the exhaustive
-/// width-state search (not the production route) and stays at 2^16. A run
+/// The defaults are a safety net, not a budget: each production limit is at
+/// least 2^8 times the previous default, under which every Mathlib constant
+/// built. `max_candidates` bounds only the exhaustive width-state search (a
+/// test oracle, not the compiler path) and stays at 2^16. A run
 /// that reaches a limit fails closed and names it ([`Resource::key`]);
 /// [`ExactSharingLimits::with_overrides`] raises it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -155,8 +166,9 @@ pub struct ExactSharingLimits {
   /// the §4.1 dictionary bound.
   pub materialization_bound: bool,
   /// Uniform-width search: use the plain subset enumeration of each
-  /// component (the reference) instead of the reclassifying branch and
-  /// bound. The result must not change.
+  /// component instead of the reclassifying branch and bound. A test
+  /// oracle, not on the compiler path (off by default; the Lean optimality
+  /// theorems assume it is off). The result must not change.
   pub uniform_subset_search: bool,
 }
 
@@ -629,10 +641,12 @@ pub struct ExactSharingResult {
   pub stats: ExactSharingStats,
 }
 
-/// Exact minimum sharing of ordered, fully expanded roots (no Share leaves).
+/// Exact minimum sharing of ordered, fully expanded roots (no Share leaves):
+/// the width-state search, a test oracle (not the compiler path, which is
+/// [`canonical_sharing_tiered`]).
 ///
 /// The full-Constant key differs from the variable length only by bytes that
-/// do not depend on sharing, so the result is the canonical encoding of any
+/// do not depend on sharing, so the result is the global minimum of any
 /// Constant with these ordered roots.
 pub fn optimize_sharing(
   roots: &[Arc<Expr>],
@@ -653,7 +667,8 @@ pub fn optimize_dag(
 }
 
 /// Expand `c`'s table (validating backward references) and return the
-/// canonical exact-minimum Constant together with its search result.
+/// exact-minimum Constant together with its search result (the width-state
+/// search, a test oracle; see [`optimize_sharing`]).
 pub fn normalize_constant_sharing_with_stats(
   c: &Constant,
   limits: &ExactSharingLimits,
@@ -686,7 +701,8 @@ pub fn normalize_constant_sharing_with_stats(
   Ok((out, result))
 }
 
-/// Expand `c`'s table and return its canonical exact-minimum encoding.
+/// Expand `c`'s table and return its exact-minimum encoding (the test
+/// oracle of [`optimize_sharing`]).
 pub fn normalize_constant_sharing(
   c: &Constant,
   limits: &ExactSharingLimits,
@@ -701,7 +717,9 @@ pub enum CanonicalCheck {
   NonCanonical { expected: Box<Constant> },
 }
 
-/// Whether `c` is byte-identical to its canonical exact-minimum encoding.
+/// Whether `c` is byte-identical to its exact-minimum encoding (the test
+/// oracle of [`optimize_sharing`], not the compiler's canonical
+/// construction).
 pub fn check_canonical_sharing(
   c: &Constant,
   limits: &ExactSharingLimits,
@@ -739,7 +757,7 @@ impl std::error::Error for NormalizeBytesError {}
 
 /// Byte-level normalization: decode exactly one serialized Constant (no
 /// trailing bytes), expand and validate its table, and return the serialized
-/// canonical exact-minimum Constant.
+/// exact-minimum Constant (the test oracle of [`optimize_sharing`]).
 pub fn normalize_constant_bytes(
   bytes: &[u8],
   limits: &ExactSharingLimits,
