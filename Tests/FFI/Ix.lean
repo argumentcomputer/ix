@@ -286,7 +286,8 @@ def compileErrorTests : TestSeq :=
   test "CompileError.unsupportedExpr" (roundtripCompileError (.unsupportedExpr "mvar") == .unsupportedExpr "mvar") ++
   test "CompileError.unknownUnivParam" (roundtripCompileError (.unknownUnivParam "Nat" "u") == .unknownUnivParam "Nat" "u") ++
   test "CompileError.serializeError" (roundtripCompileError (.serializeError se) == .serializeError se) ++
-  test "CompileError.resourceLimit" (roundtripCompileError (.resourceLimit "memory reserve") == .resourceLimit "memory reserve")
+  test "CompileError.resourceLimit" (roundtripCompileError (.resourceLimit "memory reserve") == .resourceLimit "memory reserve") ++
+  test "CompileError.sharingConstruction" (roundtripCompileError (.sharingConstruction "internal") == .sharingConstruction "internal")
 
 /-! ## Test Suite -/
 

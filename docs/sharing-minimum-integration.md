@@ -19,9 +19,10 @@ read in the source; entries taken from a delegated sweep and not re-read are mar
 
 ## 1. Key findings
 
-1. **Share-only TagN is byte-identical to Tag4 for indices 0–7.** Both write `0xB0 | idx`. Every
-   hardcoded Share byte vector and fixture in the repository uses Share 0 or 1, so the Share-only
-   codec change alone alters no existing fixture bytes; only tables with more than 8 entries change.
+1. **Share-only TagN is byte-identical to Tag4 for indices 0–7.** Both write `0xB0 | idx`. The
+   hardcoded Share byte vectors and fixtures found (the sharing tests, `resource.tsv`,
+   `addressed.tsv`, the handoff `.ixe` files *(sweep)*) use Share 0 or 1, so the Share-only codec
+   change alone alters none of them; only tables with more than 8 entries change.
    The construction change and the version header still change addresses.
 2. **The plan's source map misses a third codec: the IxVM circuit.** `Ix/IxVM/IxonDeserialize.lean`
    reads every expression header with `get_tag4` (line 221) and maps `0xB => Expr.Share(size)`
@@ -53,7 +54,7 @@ read in the source; entries taken from a delegated sweep and not re-read are mar
 | Plan statement | Code |
 |---|---|
 | §8.3 "The expression byte grammar need not change." | True for the construction alone. False after §12.8: the Share grammar changes for indices ≥ 8 (TagN rung 2 starts at 8). |
-| §8.2 "Metadata expressions may also contain Share references." | Neither compiler emits Share into `metaSharing` (Lean: `.share` is constructed only by `Ix/Sharing.lean:363` and `Ix/Resource/Addressed.lean:197`; Rust: `compile.rs` emits no Share outside `apply_sharing_*`). The documented "extended sharing table" (`Ix/Ixon.lean` `ConstantMeta.metaSharing` doc; `crates/ixon/src/metadata.rs:237-250`) is not implemented by any reader (§5.3). |
+| §8.2 "Metadata expressions may also contain Share references." | Neither compiler emits Share into `metaSharing` (Lean: `.share` is constructed only by `Ix/Sharing.lean:363` and `Ix/Resource/Addressed.lean:197`; Rust: `compile.rs` emits no Share outside `apply_sharing_*` *(sweep)*). The documented "extended sharing table" (`Ix/Ixon.lean` `ConstantMeta.metaSharing` doc; `crates/ixon/src/metadata.rs:237-250`) is not implemented by any reader (§5.3). |
 | Plan §0 and task brief: `docs/Ixon.md` §"Versioning". | No such heading. The policy text is in "Environment Serialization", `docs/Ixon.md:867-888`. |
 | §2 source map: Lean, Rust, FFI. | Also the IxVM circuit codec and its generated Rust (finding 2). |
 | Task brief: "the 16 expected-bytes vectors" of `tagNUnits`. | `Tests/Ix/Ixon.lean` `tagNUnits` has 11 expected-encoding vectors, 9 rejection vectors and 3 rung-end vectors, plus boundary roundtrips and the short-string canonicity sweep. All of them are ported to Rust on this branch (`crates/ixon/src/tag.rs`). |
@@ -135,7 +136,7 @@ consume the table logically.
 | Site | Today | Change | Scope |
 |---|---|---|---|
 | `Ix/Sharing/Exact/Basic.lean:45` `shareWidth := tag4Size`, `:113` `sizeInfo := sizeInfoWith tag4Size`, `:117` `exprSize`; Rust `sharing_exact/cost.rs:69-81, 115-121` | Tag4 widths ("exact length of `putExpr`") | the wire codec's widths | [Share] |
-| `Ix/Sharing/Exact/Tiered.lean:316-318` measured length and the check `layout == .tag4 && measured != predicted`; Rust `tiered.rs:474-483` | measured with Tag4 | measure with the wire codec; check whenever the layout is the wire layout | [Share] |
+| `Ix/Sharing/Exact/Tiered.lean:316-318` measured length and the check `layout == .tag4 && measured != predicted`; Rust `tiered.rs:474-483` | measured with Tag4 | measure with the wire codec; check whenever the layout is the wire layout (done on this branch, §8) | [Share] |
 | `Ix/Sharing/Exact/Dictionary.lean:264` Share option bytes `tag4Bytes FLAG_SHARE i` | Tag4 | No effect on results in the Share-only scope: a Share option is only ever tied against inline or cut options, whose first byte has a flag nibble `0x0..0xA < 0xB`, so the Share option loses every tie in either code. Make it the wire bytes for hygiene. | [Share] |
 | `Dictionary.lean:254, 272, 276` cut/inline header bytes `tag4Bytes flag j`; Rust `dict.rs:171-181` `tag4_bytes_cmp` | Tag4 | must become the TagN header bytes: two cuts with `j ≥ 8` can order differently, which changes canonical output | [Tag4] |
 | `Ix/Sharing/Exact/Basic.lean` `tag4Size` for every header and `tag0Size` for refs/univs/table count; the uniform model (`Uniform.lean`) and its proofs | Tag4/Tag0 | TagN widths throughout | [Tag4], [all] |
@@ -152,6 +153,10 @@ mentions these names, but `IxTcVerify` has `native_decide` serde fixtures
 current codec.
 
 ### 4.1 Share wire bytes [Share]
+
+On this branch the codec is a parameter whose default is Tag4; the proofs below build unchanged
+because two `@[simp]` lemmas (`Ixon.putShare_current`, `Ixon.getExprHeader_current`) reduce the
+default to the Tag4 code. The changes in this table apply when the default flips.
 
 | Theorem / def | What it says | Must become |
 |---|---|---|
@@ -351,7 +356,31 @@ switch per language, so either TagN outcome is a small delta:
   - The tiered construction measures its output in bytes written with the current codec and
     checks the layout price whenever the layout is the wire layout (`ShareLayout.wire`, Rust
     `ShareLayout::wire()`), so its self-check follows the flip.
-- **Construction.** One compiler switch per language, introduced in the routing commit.
+- **Construction.** One switch per language, `Ix.CompileM.compilerSharing` and Rust
+  `ix_compile::compile::COMPILER_SHARING`, both `heuristic` (`SharingConstruction.heuristic`,
+  `SharingConstruction::Heuristic`); the alternative is `tiered layout`. The tiered route runs under
+  explicit limits (`compilerSharingLimits`, `compiler_sharing_limits()`: each language's library
+  defaults, spelled out).
+  - Lean: every block goes through `buildConstantWithSharingVia` (singletons through
+    `finishConstantWithSharing` → `buildBlockConstant`, standalone inductive families through
+    `finishInductiveFamilyBlock`, mutual blocks through `finishMutualCompilation` →
+    `buildCompiledMutualBlockVia`, aux-gen standalone and mutual blocks in
+    `Ix/AuxGen/CompileAux.lean`). The heuristic branch reduces definitionally to the previous code,
+    so every compiler proof (including the `rfl` run lemmas of §4.3) builds unchanged. The tiered
+    route derives the roots from the payload, checks the caller's root count, and reassembles with
+    the checked `Ix.Sharing.Exact.withRoots` (no `getD` fallback).
+  - Rust: `apply_sharing_to_{definition,axiom,quotient,recursor}_with_stats` and
+    `apply_sharing_to_mutual_block` return `Result` and go through `share_roots` along
+    `SharingRoute::compiler()`; `_via` variants take an explicit route (tests, FFI hook
+    `rs_compiler_sharing_build`). Compile and aux-gen propagate with `?`, kernel egress maps to its
+    `String` errors, decompile recompile maps to `DecompileError::BadConstantFormat` ("recompile
+    sharing: …"), and the `IX_ROUNDTRIP_DEBUG` probe reports the failure.
+  - Errors: resource exhaustion becomes `CompileError.resourceLimit`; every other construction
+    failure the new `CompileError.sharingConstruction` (tag 7, mirrored in Rust and in the FFI
+    constructor tables). There is no fallback to the heuristic.
+  - Flip delta: set both switches to `tiered tagN`. The §4.3 run lemmas state their result with
+    `buildConstantWithSharing`; their `rfl` proofs then fail and the statements must be restated
+    for the tiered route.
 - **Version.** `Env.NEXT_VERSION = 4` in both languages, with the list of what flips with it in its
   doc comment. Nothing writes or accepts it yet.
 

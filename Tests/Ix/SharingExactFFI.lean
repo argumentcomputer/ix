@@ -384,6 +384,91 @@ def codecTests : TestSeq :=
     return (ok, String.intercalate "\n"
       (s!"    {cases.size} Share-bearing Constants ({normalized.size} tiered-tagN outputs, max Share index {normalized.foldl (fun acc (_, c) => max acc (maxShare c)) 0}; {synthetic.size} synthetic); {differ} encode differently under the two codecs; {errs.size} disagreements" :: lines))
 
+/-! ## Compiler sharing routes
+
+The compiler builds every block through `Ix.CompileM.buildConstantWithSharingVia
+compilerSharing compilerSharingLimits` (Lean) and `apply_sharing_to_*_via`
+(Rust). For each route, both languages must build the same bytes from the same
+unshared Constant, and the tiered route must build exactly what the library
+normalizer builds. -/
+
+/-- Rust `apply_sharing_to_*_via` on one unshared Constant; route code 0 =
+heuristic, 1 = tiered Tag4, 2 = tiered TagN. -/
+@[extern "rs_compiler_sharing_build"]
+opaque rsCompilerSharingBuild : UInt8 → @& ByteArray → Except String ByteArray
+
+def routeCode : Ix.CompileM.SharingConstruction → UInt8
+  | .heuristic => 0
+  | .tiered .tag4 => 1
+  | .tiered .tagN => 2
+
+def compilerRoutes : List Ix.CompileM.SharingConstruction :=
+  [.heuristic, .tiered .tag4, .tiered .tagN]
+
+/-- The Lean compiler route on an unshared Constant. -/
+def leanRoute (sc : Ix.CompileM.SharingConstruction) (c : Constant) :
+    Except Ix.CompileM.CompileError Constant :=
+  Ix.CompileM.buildConstantWithSharingVia sc Ix.CompileM.compilerSharingLimits c.info
+    (Ix.CompileM.constantInfoRootExprs c.info) c.refs c.univs
+
+def routeUnits : TestSeq :=
+  let roots := Ix.CompileM.constantInfoRootExprs witness2.info
+  let tiny : Limits := { Ix.CompileM.compilerSharingLimits with maxNodes := 2 }
+  test "the compiler sharing switch is the heuristic"
+    (Ix.CompileM.compilerSharing == .heuristic) ++
+  test "heuristic route: T2 → T2 in the 19-byte heuristic encoding"
+    (match leanRoute .heuristic witness2 with
+     | .ok c => hexOf (serConstant c) == "d200009117b1b10291170000911700b0000100"
+     | .error _ => false : Bool) ++
+  test "tiered TagN route: T2 → T2 in the 17-byte minimum"
+    (match leanRoute (.tiered .tagN) witness2 with
+     | .ok c => hexOf (serConstant c) == "d200009117b0b001921700170000000100"
+     | .error _ => false : Bool) ++
+  test "tiered route fails closed on its limits (resourceLimit, no heuristic fallback)"
+    (match Ix.CompileM.buildConstantWithSharingVia (.tiered .tagN) tiny witness2.info roots
+        witness2.refs witness2.univs with
+     | .error (.resourceLimit _) => true
+     | _ => false : Bool) ++
+  test "tiered route rejects a root array of the wrong length"
+    (match Ix.CompileM.buildConstantWithSharingVia (.tiered .tagN)
+        Ix.CompileM.compilerSharingLimits witness2.info (roots.push (.var 0))
+        witness2.refs witness2.univs with
+     | .error (.sharingConstruction _) => true
+     | _ => false : Bool)
+
+def routeTests : TestSeq :=
+  ioGroup "Lean/Rust: compiler sharing routes" do
+    let cases := (fixtures ++ generatedCases 140).filterMap fun (label, c) =>
+      match expandConstantSharing c with
+      | .ok e => some (label, e)
+      | .error _ => none
+    let mut errs : Array String := #[]
+    let mut same := 0
+    let mut kinds : Array String := #[]
+    for (label, c) in cases do
+      let kind := match c.info with
+        | .defn _ => "defn" | .recr _ => "recr" | .axio _ => "axio" | .quot _ => "quot"
+        | .muts _ => "muts" | _ => "prj"
+      unless kinds.contains kind do kinds := kinds.push kind
+      for sc in compilerRoutes do
+        let tag := s!"{label} [{reprStr sc}]"
+        match leanRoute sc c, rsCompilerSharingBuild (routeCode sc) (serConstant c) with
+        | .ok l, .ok r =>
+          if serConstant l == r then same := same + 1
+          else errs := errs.push s!"{tag}: Lean and Rust bytes differ"
+          if let .tiered layout := sc then
+            match normalizeConstantSharingTiered layout c with
+            | .ok n =>
+              unless serConstant n == serConstant l do
+                errs := errs.push s!"{tag}: route differs from normalizeConstantSharingTiered"
+            | .error e => errs := errs.push s!"{tag}: normalizer failed: {reprStr e}"
+        | .error e, _ => errs := errs.push s!"{tag}: Lean route failed: {e}"
+        | _, .error e => errs := errs.push s!"{tag}: Rust route failed: {e}"
+    let ok := errs.isEmpty && same == cases.size * compilerRoutes.length
+    let lines := (errs.toList.take 50).map (s!"      DISAGREEMENT {·}")
+    return (ok, String.intercalate "\n"
+      (s!"    {cases.size} unshared Constants (kinds {kinds.toList}) × {compilerRoutes.length} routes: {same} same bytes; {errs.size} disagreements" :: lines))
+
 /-! ## Corpus mode -/
 
 def corpusTests (_ : Unit) : TestSeq :=
@@ -458,6 +543,8 @@ public def suite : List TestSeq := [
   fixtureTests,
   generatedTests,
   codecTests,
+  routeUnits,
+  routeTests,
   corpusTests (),
 ]
 

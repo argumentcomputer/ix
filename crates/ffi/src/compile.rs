@@ -1213,7 +1213,7 @@ use ixon::error::{CompileError, DecompileError, SerializeError};
 impl LeanIxSerializeError<LeanOwned> {
   /// Build a Lean Ixon.SerializeError from a Rust SerializeError.
   ///
-  /// Tags 0–6:
+  /// Tags 0–7:
   ///   0: unexpectedEof (expected : String) → 1 obj
   ///   1: invalidTag (tag : UInt8) (context : String) → 1 obj + 1 scalar (UInt8)
   ///   2: invalidFlag (flag : UInt8) (context : String) → 1 obj + 1 scalar (UInt8)
@@ -1471,6 +1471,7 @@ impl LeanIxCompileError<LeanOwned> {
   ///   4: unknownUnivParam (curr param : String) → 2 obj
   ///   5: serializeError (msg : String) → 1 obj
   ///   6: resourceLimit (reason : String) → 1 obj
+  ///   7: sharingConstruction (reason : String) → 1 obj
   pub fn build(err: &CompileError) -> Self {
     match err {
       CompileError::MissingConstant { name, .. } => {
@@ -1509,6 +1510,11 @@ impl LeanIxCompileError<LeanOwned> {
         ctor.set_obj(0, build_lean_string(reason));
         ctor
       },
+      CompileError::SharingConstruction { reason } => {
+        let ctor = LeanIxCompileError::alloc(7);
+        ctor.set_obj(0, build_lean_string(reason));
+        ctor
+      },
     }
   }
 }
@@ -1544,6 +1550,9 @@ impl<R: LeanRef> LeanIxCompileError<R> {
         CompileError::Serialize(LeanIxSerializeError(self.get_obj(0)).decode())
       },
       6 => CompileError::ResourceLimit {
+        reason: self.get_obj(0).as_string().to_string(),
+      },
+      7 => CompileError::SharingConstruction {
         reason: self.get_obj(0).as_string().to_string(),
       },
       tag => unreachable!("Invalid CompileError tag: {tag}"),

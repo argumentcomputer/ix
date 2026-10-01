@@ -42,6 +42,9 @@ use ixon::{
     UnivPatch,
   },
   sharing::{self, analyze_block, build_sharing_vec, decide_sharing},
+  sharing_exact::{
+    ExactSharingLimits, ShareLayout, SharingError, canonical_sharing_tiered,
+  },
   univ::Univ,
 };
 
@@ -2511,6 +2514,129 @@ fn apply_sharing(exprs: Vec<Arc<Expr>>) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
   (result.rewritten, result.sharing)
 }
 
+// ===========================================================================
+// Sharing construction switch
+// ===========================================================================
+
+/// How the compiler shares the expressions of a block. Mirrors
+/// `Ix.CompileM.SharingConstruction`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SharingConstruction {
+  /// The profitability heuristic (`analyze_block` / `decide_sharing` /
+  /// `build_sharing_vec`): the canonical construction of format version 3,
+  /// and afterwards the regression and upper-bound path.
+  Heuristic,
+  /// [`canonical_sharing_tiered`] with this layout. Every construction
+  /// error, resource exhaustion included, is a compile error: there is no
+  /// fallback to the heuristic.
+  Tiered(ShareLayout),
+}
+
+/// The compiler's sharing construction: the single switch every compile,
+/// aux-gen, kernel-egress and decompile-recompile route goes through. It
+/// flips to `Tiered(ShareLayout::TagN)` with `Env::NEXT_VERSION` (see its
+/// doc comment). Mirrors `Ix.CompileM.compilerSharing`.
+pub const COMPILER_SHARING: SharingConstruction =
+  SharingConstruction::Heuristic;
+
+/// Explicit resource limits of the tiered construction in the compiler. The
+/// values are the [`ExactSharingLimits`] defaults, spelled out so that a
+/// change of the library defaults cannot silently change which constants
+/// compile. Mirrors `Ix.CompileM.compilerSharingLimits` (the two languages
+/// meter work differently; the limits are each language's defaults).
+pub fn compiler_sharing_limits() -> ExactSharingLimits {
+  ExactSharingLimits {
+    max_input_nodes: 1 << 26,
+    max_distinct_nodes: 1 << 24,
+    max_height: 1 << 24,
+    max_candidates: 1 << 16,
+    max_states: 1 << 20,
+    max_layer_states: 1 << 18,
+    max_transitions: 1 << 28,
+    max_work: 1 << 36,
+    max_output_bytes: 1 << 32,
+    heuristic_upper_bound: true,
+    greedy_upper_bound: true,
+    lower_bound_pruning: true,
+    materialization_bound: true,
+    uniform_subset_search: false,
+  }
+}
+
+/// A sharing construction together with its limits.
+#[derive(Clone, Debug)]
+pub struct SharingRoute {
+  pub construction: SharingConstruction,
+  pub limits: ExactSharingLimits,
+}
+
+impl SharingRoute {
+  /// The compiler's route: [`COMPILER_SHARING`] under
+  /// [`compiler_sharing_limits`].
+  pub fn compiler() -> Self {
+    SharingRoute {
+      construction: COMPILER_SHARING,
+      limits: compiler_sharing_limits(),
+    }
+  }
+
+  /// A route with the default limits.
+  pub fn new(construction: SharingConstruction) -> Self {
+    SharingRoute { construction, limits: compiler_sharing_limits() }
+  }
+}
+
+/// A sharing-construction failure as a compile error: resource exhaustion is
+/// `ResourceLimit`, every other kind `SharingConstruction`. Mirrors
+/// `Ix.CompileM.sharingCompileError`.
+fn sharing_compile_error(e: SharingError) -> CompileError {
+  match e {
+    SharingError::ResourceExhausted(_) => {
+      CompileError::ResourceLimit { reason: format!("canonical sharing: {e}") }
+    },
+    other => CompileError::SharingConstruction {
+      reason: format!("canonical sharing: {other}"),
+    },
+  }
+}
+
+/// Share the ordered roots of one block along `route`.
+fn share_roots(
+  route: &SharingRoute,
+  exprs: Vec<Arc<Expr>>,
+  block_name: Option<&str>,
+) -> Result<SharingResult, CompileError> {
+  match route.construction {
+    SharingConstruction::Heuristic => {
+      Ok(apply_sharing_with_stats(exprs, block_name))
+    },
+    SharingConstruction::Tiered(layout) => {
+      let hash_consed_size =
+        if TRACK_HASH_CONSED_SIZE.load(AtomicOrdering::Relaxed) {
+          compute_hash_consed_size(&analyze_block(&exprs, true).0)
+        } else {
+          0
+        };
+      let res = canonical_sharing_tiered(layout, &exprs, &route.limits)
+        .map_err(sharing_compile_error)?;
+      if res.roots.len() != exprs.len() {
+        return Err(CompileError::SharingConstruction {
+          reason: format!(
+            "canonical sharing returned {} roots for {}",
+            res.roots.len(),
+            exprs.len()
+          ),
+        });
+      }
+      Ok(SharingResult {
+        rewritten: res.roots,
+        sharing: res.sharing,
+        hash_consed_size,
+      })
+    },
+  }
+}
+
 /// Result of applying sharing to a singleton constant.
 pub struct SingletonSharingResult {
   /// The compiled Constant
@@ -2519,18 +2645,34 @@ pub struct SingletonSharingResult {
   pub hash_consed_size: usize,
 }
 
-/// Apply sharing to a Definition and return a Constant with stats.
-#[allow(clippy::needless_pass_by_value)]
+/// Apply the compiler's sharing ([`SharingRoute::compiler`]) to a definition
+/// payload and return a Constant with stats.
 pub fn apply_sharing_to_definition_with_stats(
   def: Definition,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
   block_name: Option<&str>,
-) -> SingletonSharingResult {
-  let result = apply_sharing_with_stats(
-    vec![def.typ.clone(), def.value.clone()],
+) -> Result<SingletonSharingResult, CompileError> {
+  apply_sharing_to_definition_via(
+    &SharingRoute::compiler(),
+    def,
+    refs,
+    univs,
     block_name,
-  );
+  )
+}
+
+/// [`apply_sharing_to_definition_with_stats`] along an explicit sharing route.
+#[allow(clippy::needless_pass_by_value)]
+pub fn apply_sharing_to_definition_via(
+  route: &SharingRoute,
+  def: Definition,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+  block_name: Option<&str>,
+) -> Result<SingletonSharingResult, CompileError> {
+  let result =
+    share_roots(route, vec![def.typ.clone(), def.value.clone()], block_name)?;
   let def = Definition {
     kind: def.kind,
     safety: def.safety,
@@ -2540,17 +2682,31 @@ pub fn apply_sharing_to_definition_with_stats(
   };
   let constant =
     Constant::with_tables(ConstantInfo::Defn(def), result.sharing, refs, univs);
-  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
+  Ok(SingletonSharingResult {
+    constant,
+    hash_consed_size: result.hash_consed_size,
+  })
 }
 
-/// Apply sharing to an Axiom and return a Constant with stats.
-#[allow(clippy::needless_pass_by_value)]
+/// Apply the compiler's sharing ([`SharingRoute::compiler`]) to an axiom
+/// payload and return a Constant with stats.
 pub fn apply_sharing_to_axiom_with_stats(
   ax: Axiom,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> SingletonSharingResult {
-  let result = apply_sharing_with_stats(vec![ax.typ.clone()], None);
+) -> Result<SingletonSharingResult, CompileError> {
+  apply_sharing_to_axiom_via(&SharingRoute::compiler(), ax, refs, univs)
+}
+
+/// [`apply_sharing_to_axiom_with_stats`] along an explicit sharing route.
+#[allow(clippy::needless_pass_by_value)]
+pub fn apply_sharing_to_axiom_via(
+  route: &SharingRoute,
+  ax: Axiom,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Result<SingletonSharingResult, CompileError> {
+  let result = share_roots(route, vec![ax.typ.clone()], None)?;
   let ax = Axiom {
     is_unsafe: ax.is_unsafe,
     lvls: ax.lvls,
@@ -2558,17 +2714,31 @@ pub fn apply_sharing_to_axiom_with_stats(
   };
   let constant =
     Constant::with_tables(ConstantInfo::Axio(ax), result.sharing, refs, univs);
-  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
+  Ok(SingletonSharingResult {
+    constant,
+    hash_consed_size: result.hash_consed_size,
+  })
 }
 
-/// Apply sharing to a Quotient and return a Constant with stats.
-#[allow(clippy::needless_pass_by_value)]
+/// Apply the compiler's sharing ([`SharingRoute::compiler`]) to a quotient
+/// payload and return a Constant with stats.
 pub fn apply_sharing_to_quotient_with_stats(
   quot: Quotient,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> SingletonSharingResult {
-  let result = apply_sharing_with_stats(vec![quot.typ.clone()], None);
+) -> Result<SingletonSharingResult, CompileError> {
+  apply_sharing_to_quotient_via(&SharingRoute::compiler(), quot, refs, univs)
+}
+
+/// [`apply_sharing_to_quotient_with_stats`] along an explicit sharing route.
+#[allow(clippy::needless_pass_by_value)]
+pub fn apply_sharing_to_quotient_via(
+  route: &SharingRoute,
+  quot: Quotient,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Result<SingletonSharingResult, CompileError> {
+  let result = share_roots(route, vec![quot.typ.clone()], None)?;
   let quot = Quotient {
     kind: quot.kind,
     lvls: quot.lvls,
@@ -2580,22 +2750,36 @@ pub fn apply_sharing_to_quotient_with_stats(
     refs,
     univs,
   );
-  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
+  Ok(SingletonSharingResult {
+    constant,
+    hash_consed_size: result.hash_consed_size,
+  })
 }
 
-/// Apply sharing to a Recursor and return a Constant with stats.
+/// Apply the compiler's sharing ([`SharingRoute::compiler`]) to a recursor
+/// payload and return a Constant with stats.
 pub fn apply_sharing_to_recursor_with_stats(
   rec: Recursor,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> SingletonSharingResult {
+) -> Result<SingletonSharingResult, CompileError> {
+  apply_sharing_to_recursor_via(&SharingRoute::compiler(), rec, refs, univs)
+}
+
+/// [`apply_sharing_to_recursor_with_stats`] along an explicit sharing route.
+pub fn apply_sharing_to_recursor_via(
+  route: &SharingRoute,
+  rec: Recursor,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Result<SingletonSharingResult, CompileError> {
   // Collect all expressions: typ + all rule rhs
   let mut exprs = vec![rec.typ.clone()];
   for rule in &rec.rules {
     exprs.push(rule.rhs.clone());
   }
 
-  let result = apply_sharing_with_stats(exprs, None);
+  let result = share_roots(route, exprs, None)?;
   let typ = result.rewritten[0].clone();
   let rules: Vec<RecursorRule> = rec
     .rules
@@ -2617,7 +2801,10 @@ pub fn apply_sharing_to_recursor_with_stats(
   };
   let constant =
     Constant::with_tables(ConstantInfo::Recr(rec), result.sharing, refs, univs);
-  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
+  Ok(SingletonSharingResult {
+    constant,
+    hash_consed_size: result.hash_consed_size,
+  })
 }
 
 /// Result of applying sharing to a mutual block.
@@ -2628,13 +2815,31 @@ pub struct MutualBlockSharingResult {
   pub hash_consed_size: usize,
 }
 
-/// Apply sharing to a mutual block and return a Constant with stats.
+/// Apply the compiler's sharing ([`SharingRoute::compiler`]) to a mutual
+/// block and return a Constant with stats.
 pub fn apply_sharing_to_mutual_block(
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
   block_name: Option<&str>,
-) -> MutualBlockSharingResult {
+) -> Result<MutualBlockSharingResult, CompileError> {
+  apply_sharing_to_mutual_block_via(
+    &SharingRoute::compiler(),
+    mut_consts,
+    refs,
+    univs,
+    block_name,
+  )
+}
+
+/// [`apply_sharing_to_mutual_block`] along an explicit sharing route.
+pub fn apply_sharing_to_mutual_block_via(
+  route: &SharingRoute,
+  mut_consts: Vec<IxonMutConst>,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+  block_name: Option<&str>,
+) -> Result<MutualBlockSharingResult, CompileError> {
   // Collect all expressions from all constants in the block
   let mut all_exprs: Vec<Arc<Expr>> = Vec::new();
   let mut layout: Vec<(MutConstKind, Vec<usize>)> = Vec::new();
@@ -2672,7 +2877,7 @@ pub fn apply_sharing_to_mutual_block(
   }
 
   // Apply sharing analysis to all expressions at once (with stats)
-  let sharing_result = apply_sharing_with_stats(all_exprs, block_name);
+  let sharing_result = share_roots(route, all_exprs, block_name)?;
   let rewritten = sharing_result.rewritten;
   let sharing = sharing_result.sharing;
   let expr_hash_consed_size = sharing_result.hash_consed_size;
@@ -2781,7 +2986,7 @@ pub fn apply_sharing_to_mutual_block(
 
   let constant =
     Constant::with_tables(ConstantInfo::Muts(new_consts), sharing, refs, univs);
-  MutualBlockSharingResult { constant, hash_consed_size }
+  Ok(MutualBlockSharingResult { constant, hash_consed_size })
 }
 
 /// Helper enum for tracking mutual constant layout during sharing.
@@ -3206,10 +3411,10 @@ pub fn compile_mutual_block(
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
   block_name: Option<&str>,
-) -> CompiledMutualBlock {
-  // Apply sharing analysis across all expressions in the mutual block
+) -> Result<CompiledMutualBlock, CompileError> {
+  // Apply sharing across all expressions in the mutual block
   let result =
-    apply_sharing_to_mutual_block(mut_consts, refs, univs, block_name);
+    apply_sharing_to_mutual_block(mut_consts, refs, univs, block_name)?;
   let constant = result.constant;
   let hash_consed_size = result.hash_consed_size;
 
@@ -3219,7 +3424,7 @@ pub fn compile_mutual_block(
   let serialized_size = bytes.len();
   let addr = Address::hash(&bytes);
 
-  CompiledMutualBlock { constant, addr, hash_consed_size, serialized_size }
+  Ok(CompiledMutualBlock { constant, addr, hash_consed_size, serialized_size })
 }
 
 /// Create Inductive from InductiveVal and Env.
@@ -4165,7 +4370,7 @@ fn compile_const_inner(
       refs,
       univs,
       Some(&name_str),
-    );
+    )?;
     let _t_sharing = _t1.elapsed();
     let _t2 = std::time::Instant::now();
     let mut bytes = Vec::new();
@@ -4245,7 +4450,7 @@ fn compile_const_inner(
       let (data, meta) = compile_axiom(val, cache, stt)?;
       let refs: Vec<Address> = cache.refs.iter().cloned().collect();
       let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-      let result = apply_sharing_to_axiom_with_stats(data, refs, univs);
+      let result = apply_sharing_to_axiom_with_stats(data, refs, univs)?;
       let mut bytes = Vec::new();
       result.constant.put(&mut bytes);
       let serialized_size = bytes.len();
@@ -4276,7 +4481,7 @@ fn compile_const_inner(
       let (data, meta) = compile_quotient(val, cache, stt)?;
       let refs: Vec<Address> = cache.refs.iter().cloned().collect();
       let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-      let result = apply_sharing_to_quotient_with_stats(data, refs, univs);
+      let result = apply_sharing_to_quotient_with_stats(data, refs, univs)?;
       let mut bytes = Vec::new();
       result.constant.put(&mut bytes);
       let serialized_size = bytes.len();
@@ -4314,7 +4519,7 @@ fn compile_const_inner(
           compile_recursor(val, &mut_ctx, &ctx_addrs, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-        let result = apply_sharing_to_recursor_with_stats(data, refs, univs);
+        let result = apply_sharing_to_recursor_with_stats(data, refs, univs)?;
         let mut bytes = Vec::new();
         result.constant.put(&mut bytes);
         let serialized_size = bytes.len();
@@ -4505,9 +4710,9 @@ fn compile_mutual(
         refs,
         univs,
         Some(&name_str),
-      ),
+      )?,
       IxonMutConst::Recr(rec) => {
-        apply_sharing_to_recursor_with_stats(rec, refs, univs)
+        apply_sharing_to_recursor_with_stats(rec, refs, univs)?
       },
       IxonMutConst::Indc(_) => unreachable!(),
     };
@@ -4547,7 +4752,7 @@ fn compile_mutual(
   }
 
   let compiled =
-    compile_mutual_block(ixon_mutuals, refs, univs, Some(&name_str));
+    compile_mutual_block(ixon_mutuals, refs, univs, Some(&name_str))?;
   let block_addr = compiled.addr.clone();
 
   if aux {
@@ -6014,7 +6219,8 @@ mod tests {
       value: Expr::var(1),
     });
 
-    let compiled = compile_mutual_block(vec![def1, def2], vec![], vec![], None);
+    let compiled =
+      compile_mutual_block(vec![def1, def2], vec![], vec![], None).unwrap();
     let constant = compiled.constant;
     let addr = compiled.addr;
 
@@ -7481,5 +7687,150 @@ mod tests {
       },
       _ => panic!("Expected RecInfo"),
     }
+  }
+
+  // ==========================================================================
+  // Sharing construction switch
+  // ==========================================================================
+
+  /// The `T2 → T2` witness of `docs/sharing-minimum.md` §2 as an axiom
+  /// payload (with univs `[Zero]` and no refs).
+  fn t2_arrow_t2() -> Axiom {
+    let p = Expr::sort(0);
+    let t1 = Expr::all(p.clone(), p.clone());
+    let t2 = Expr::all(p, t1);
+    Axiom { is_unsafe: false, lvls: 0, typ: Expr::all(t2.clone(), t2) }
+  }
+
+  fn constant_hex(c: &Constant) -> String {
+    let mut buf = Vec::new();
+    c.put(&mut buf);
+    buf.iter().map(|b| format!("{b:02x}")).collect()
+  }
+
+  #[test]
+  fn compiler_sharing_default_is_the_heuristic() {
+    assert_eq!(COMPILER_SHARING, SharingConstruction::Heuristic);
+    let r = apply_sharing_to_axiom_with_stats(
+      t2_arrow_t2(),
+      vec![],
+      vec![Univ::zero()],
+    )
+    .unwrap();
+    // The plan's 19-byte heuristic encoding.
+    assert_eq!(
+      constant_hex(&r.constant),
+      "d200009117b1b10291170000911700b0000100"
+    );
+  }
+
+  #[test]
+  fn tiered_route_reaches_the_17_byte_minimum() {
+    for layout in [ShareLayout::Tag4, ShareLayout::TagN] {
+      let route = SharingRoute::new(SharingConstruction::Tiered(layout));
+      let r = apply_sharing_to_axiom_via(
+        &route,
+        t2_arrow_t2(),
+        vec![],
+        vec![Univ::zero()],
+      )
+      .unwrap();
+      assert_eq!(
+        constant_hex(&r.constant),
+        "d200009117b0b001921700170000000100",
+        "{layout:?}"
+      );
+    }
+  }
+
+  /// The tiered route builds exactly what the library normalizer builds from
+  /// the unshared Constant, for every payload kind the route dispatches on.
+  #[test]
+  fn tiered_route_matches_the_normalizer() {
+    use ixon::constant::{DefKind, Definition, MutConst as IxonMutConst};
+    use ixon::sharing_exact::normalize_constant_sharing_tiered;
+    let ax = t2_arrow_t2();
+    let def = Definition {
+      kind: DefKind::Definition,
+      safety: ix_common::env::DefinitionSafety::Safe,
+      lvls: 0,
+      typ: ax.typ.clone(),
+      value: Expr::app(ax.typ.clone(), ax.typ.clone()),
+    };
+    for layout in [ShareLayout::Tag4, ShareLayout::TagN] {
+      let route = SharingRoute::new(SharingConstruction::Tiered(layout));
+      let univs = vec![Univ::zero()];
+      let cases = [
+        (
+          ConstantInfo::Axio(ax.clone()),
+          apply_sharing_to_axiom_via(&route, ax.clone(), vec![], univs.clone())
+            .unwrap()
+            .constant,
+        ),
+        (
+          ConstantInfo::Defn(def.clone()),
+          apply_sharing_to_definition_via(
+            &route,
+            def.clone(),
+            vec![],
+            univs.clone(),
+            None,
+          )
+          .unwrap()
+          .constant,
+        ),
+        (
+          ConstantInfo::Muts(vec![
+            IxonMutConst::Defn(def.clone()),
+            IxonMutConst::Defn(def.clone()),
+          ]),
+          apply_sharing_to_mutual_block_via(
+            &route,
+            vec![
+              IxonMutConst::Defn(def.clone()),
+              IxonMutConst::Defn(def.clone()),
+            ],
+            vec![],
+            univs.clone(),
+            None,
+          )
+          .unwrap()
+          .constant,
+        ),
+      ];
+      for (info, routed) in cases {
+        let unshared =
+          Constant::with_tables(info, vec![], vec![], univs.clone());
+        let (normalized, _) = normalize_constant_sharing_tiered(
+          layout,
+          &unshared,
+          &compiler_sharing_limits(),
+        )
+        .unwrap();
+        assert_eq!(routed, normalized, "{layout:?}");
+      }
+    }
+  }
+
+  /// A tiered construction that runs out of its limits is a compile error;
+  /// the route never falls back to the heuristic.
+  #[test]
+  fn tiered_route_fails_closed() {
+    let route = SharingRoute {
+      construction: SharingConstruction::Tiered(ShareLayout::TagN),
+      limits: ExactSharingLimits {
+        max_distinct_nodes: 2,
+        ..compiler_sharing_limits()
+      },
+    };
+    let err = apply_sharing_to_axiom_via(
+      &route,
+      t2_arrow_t2(),
+      vec![],
+      vec![Univ::zero()],
+    )
+    .err()
+    .expect("the tiered route must fail under these limits");
+    assert!(matches!(err, CompileError::ResourceLimit { .. }), "{err}");
   }
 }
