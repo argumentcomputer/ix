@@ -273,25 +273,34 @@ pub(crate) fn all_costs<W: Widths>(
 pub(crate) struct IncrementalCosts<'a> {
   nodes: &'a [Node],
   own: &'a [Len],
-  parents: &'a [Vec<TermId>],
+  /// Parent edges, grouped by child (`edges[edge_start[x]..edge_start[x +
+  /// 1]]` are the distinct parents of `x`), each with what the parent's
+  /// evaluation reads of `x`: [`READS_COST`] and/or [`READS_SPINE`].
+  edge_start: Vec<u32>,
+  edges: Vec<(TermId, u8)>,
   costs: Vec<Len>,
   term_work: Vec<u64>,
   total: u128,
-  /// Stamps of the current step: cost changed, spine-dirty, queued.
+  /// Stamps of the current step: cost changed, spine-dirty.
   changed: Vec<u32>,
   spine_dirty: Vec<u32>,
-  queued: Vec<u32>,
   epoch: u32,
-  heap: std::collections::BinaryHeap<std::cmp::Reverse<TermId>>,
+  /// The terms queued for evaluation in the current step, as a bit set.
+  queued: Vec<u64>,
 }
 
+/// The parent reads the cost of the child (a non-telescope child, a side
+/// child, or a spine successor of another family).
+const READS_COST: u8 = 1;
+/// The child continues the parent's spine: the parent reads its width and
+/// the values along its spine.
+const READS_SPINE: u8 = 2;
+
 impl<'a> IncrementalCosts<'a> {
-  /// A full evaluation of `widths` (as [`all_costs`]). `parents[t]` are the
-  /// distinct parents of `t`.
+  /// A full evaluation of `widths` (as [`all_costs`]).
   pub(crate) fn new<W: Widths>(
     nodes: &'a [Node],
     own: &'a [Len],
-    parents: &'a [Vec<TermId>],
     widths: &W,
   ) -> Self {
     let n = nodes.len();
@@ -307,18 +316,67 @@ impl<'a> IncrementalCosts<'a> {
       term_work.push(w);
       total += u128::from(w);
     }
+    // Parent edges with their read kinds, grouped by child.
+    let reads = |p: &Node| -> [(TermId, u8); 3] {
+      match spine_parts(p) {
+        Some((side, next)) => {
+          let next_reads = if nodes[ix(next)].family() == p.family() {
+            READS_SPINE
+          } else {
+            READS_COST
+          };
+          if side == next {
+            [(side, READS_COST | next_reads), (0, 0), (0, 0)]
+          } else {
+            [(side, READS_COST), (next, next_reads), (0, 0)]
+          }
+        },
+        None => {
+          let mut out = [(0, 0); 3];
+          for (slot, &c) in p.children().as_slice().iter().enumerate() {
+            match out[..slot].iter().position(|&(d, f)| f != 0 && d == c) {
+              Some(_) => {},
+              None => out[slot] = (c, READS_COST),
+            }
+          }
+          out
+        },
+      }
+    };
+    let mut edge_start = vec![0u32; n + 1];
+    for node in nodes {
+      for (c, f) in reads(node) {
+        if f != 0 {
+          edge_start[ix(c) + 1] += 1;
+        }
+      }
+    }
+    for i in 0..n {
+      edge_start[i + 1] += edge_start[i];
+    }
+    let mut fill: Vec<u32> = edge_start[..n].to_vec();
+    let mut edges: Vec<(TermId, u8)> = vec![(0, 0); edge_start[n] as usize];
+    for (p, node) in nodes.iter().enumerate() {
+      let p = TermId::try_from(p).unwrap_or(TermId::MAX);
+      for (c, f) in reads(node) {
+        if f != 0 {
+          edges[fill[ix(c)] as usize] = (p, f);
+          fill[ix(c)] += 1;
+        }
+      }
+    }
     IncrementalCosts {
       nodes,
       own,
-      parents,
+      edge_start,
+      edges,
       costs,
       term_work,
       total,
       changed: vec![0; n],
       spine_dirty: vec![0; n],
-      queued: vec![0; n],
       epoch: 0,
-      heap: std::collections::BinaryHeap::new(),
+      queued: vec![0; n.div_ceil(64)],
     }
   }
 
@@ -338,16 +396,26 @@ impl<'a> IncrementalCosts<'a> {
     if self.epoch == u32::MAX {
       self.changed.fill(0);
       self.spine_dirty.fill(0);
-      self.queued.fill(0);
       self.epoch = 0;
     }
     self.epoch += 1;
     let ep = self.epoch;
     let nodes = self.nodes;
-    self.queued[ix(t)] = ep;
-    self.heap.push(std::cmp::Reverse(t));
-    while let Some(std::cmp::Reverse(x)) = self.heap.pop() {
-      let xi = ix(x);
+    // Queued terms are only ever larger than the term being evaluated, so
+    // one forward sweep over the bit set evaluates them in increasing ID.
+    let mut last = ix(t);
+    self.queued[last / 64] |= 1 << (last % 64);
+    let mut word = last / 64;
+    while word <= last / 64 {
+      let bits = self.queued[word];
+      if bits == 0 {
+        word += 1;
+        continue;
+      }
+      let bit = bits.trailing_zeros() as usize;
+      self.queued[word] &= !(1u64 << bit);
+      let xi = word * 64 + bit;
+      let x = TermId::try_from(xi).unwrap_or(TermId::MAX);
       let mut w = 0u64;
       let c = {
         let costs = &self.costs;
@@ -361,44 +429,32 @@ impl<'a> IncrementalCosts<'a> {
         self.changed[xi] = ep;
       }
       let changed = |y: TermId| self.changed[ix(y)] == ep;
-      // Whether a value read along the spine of `y` (side costs, widths of
+      // Whether a value read along the spine of `x` (side costs, widths of
       // continuing successors, the cost of the natural tail) changed.
-      let spine_inputs = |y: TermId, side: TermId, next: TermId| {
-        changed(side)
-          || if nodes[ix(next)].family() == nodes[ix(y)].family() {
+      if let Some((side, next)) = spine_parts(&nodes[xi])
+        && (changed(side)
+          || if nodes[ix(next)].family() == nodes[xi].family() {
             next == t || self.spine_dirty[ix(next)] == ep
           } else {
             changed(next)
-          }
-      };
-      if let Some((side, next)) = spine_parts(&nodes[xi])
-        && spine_inputs(x, side, next)
+          })
       {
         self.spine_dirty[xi] = ep;
       }
       let x_changed = changed(x);
       let x_spine = x == t || self.spine_dirty[xi] == ep;
-      let parents = self.parents;
-      for &p in &parents[xi] {
-        let pi = ix(p);
-        if self.queued[pi] == ep {
-          continue;
-        }
-        let reads = match spine_parts(&nodes[pi]) {
-          Some((side, next)) => {
-            (side == x && x_changed)
-              || (next == x
-                && if nodes[xi].family() == nodes[pi].family() {
-                  x_spine
-                } else {
-                  x_changed
-                })
-          },
-          None => x_changed,
-        };
-        if reads {
-          self.queued[pi] = ep;
-          self.heap.push(std::cmp::Reverse(p));
+      if !x_changed && !x_spine {
+        continue;
+      }
+      let (lo, hi) =
+        (self.edge_start[xi] as usize, self.edge_start[xi + 1] as usize);
+      for &(p, f) in &self.edges[lo..hi] {
+        if (f & READS_COST != 0 && x_changed)
+          || (f & READS_SPINE != 0 && x_spine)
+        {
+          let pi = ix(p);
+          self.queued[pi / 64] |= 1 << (pi % 64);
+          last = last.max(pi);
         }
       }
     }

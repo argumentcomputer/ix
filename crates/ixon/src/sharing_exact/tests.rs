@@ -3156,14 +3156,6 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
     let nodes = dag.nodes();
     let n = nodes.len();
     let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
-    let mut parents: Vec<Vec<TermId>> = vec![Vec::new(); n];
-    for (t, node) in nodes.iter().enumerate() {
-      for &c in node.children().as_slice() {
-        if !parents[c as usize].contains(&(t as TermId)) {
-          parents[c as usize].push(t as TermId);
-        }
-      }
-    }
     // A random sequence of distinct terms, in any order, with indices that
     // cross the TagN width boundaries.
     let mut terms: Vec<TermId> = (0..n as TermId).collect();
@@ -3172,7 +3164,7 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
     }
     terms.truncate(1 + rng.below(n as u64) as usize);
     let mut dict = FixedDictionary::new();
-    let mut eval = IncrementalCosts::new(nodes, &own, &parents, &dict);
+    let mut eval = IncrementalCosts::new(nodes, &own, &dict);
     let mut mat = Materializer::new(n);
     let mut index = rng.below(20);
     for (step, &t) in terms.iter().enumerate() {

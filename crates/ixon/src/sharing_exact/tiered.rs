@@ -569,7 +569,7 @@ fn tiered_at(
     for (i, &t) in order[..range.start].iter().enumerate() {
       dict.index[ix(t)] = Some(len64(i));
     }
-    let mut eval = IncrementalCosts::new(nodes, own, &facts.parents, &dict);
+    let mut eval = IncrementalCosts::new(nodes, own, &dict);
     let mut mat = Materializer::new(n);
     drop(p);
     let mut out: Vec<Result<(Vec<Arc<Expr>>, Len, u64), SharingError>> =
