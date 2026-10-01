@@ -7,8 +7,8 @@ The stage facts of `uniformChoose` (classification, components, the search
 context of every component), the component decomposition of the uniform
 length, and the final theorem: a successful `optimizeUniformExpanded` (with
 the default branch-and-bound search) stores a minimum of the uniform length
-over the restricted class, when every telescope spine is shorter than
-`teleSubaddEnd` (`SpinesFit`).
+over the restricted class (the optimizer checks that every telescope spine
+is shorter than `teleSubaddEnd`, `SpinesFit`).
 -/
 
 namespace Ix.Compile.Verify.UniformModel
@@ -842,17 +842,16 @@ theorem inClass_of_check {dag : Dag} {roots stored : Array Nat}
 branch-and-bound component search (`uniformSubsetSearch = false`), the set a
 successful `optimizeUniformExpanded` stores minimises the uniform length over
 the restricted class (duplicate-free terms of in-degree at least 2): its
-model length equals its uniform length and is at most every member's.
-Hypothesis `SpinesFit`: every telescope spine is shorter than
-`teleSubaddEnd` (`Ixon.tagNEnd3 4`), where the TagN telescope headers are
-subadditive; the certain-excluded class relies on it. -/
+model length equals its uniform length and is at most every member's. The
+certain-excluded class needs every telescope spine shorter than
+`teleSubaddEnd` (`SpinesFit`), which the optimizer checks before it runs. -/
 theorem optimizeUniform_minimum {w : Nat} {limits : Limits} {ex : Expanded}
     {res : UniformSharingResult} (hsub : limits.uniformSubsetSearch = false)
-    (hsp : SpinesFit (Prep.ofDag ex.dag))
     (h : optimizeUniformExpanded w limits ex = .ok res) :
     IsMinimum ex.dag w ex.roots res.stored.toList ∧
       res.result.modelBytes = ulen ex.dag w ex.roots res.stored.toList := by
-  obtain ⟨_, hwf, hroots, _, c, hc, hfin⟩ := optimizeUniform_parts h
+  obtain ⟨_, hwf, hroots, _, hspines, c, hc, hfin⟩ := optimizeUniform_parts h
+  have hsp : SpinesFit (Prep.ofDag ex.dag) := hspines
   have hreach := optimizeUniform_reach h
   obtain ⟨hin, hcls, hstored, _, hmodel, _⟩ := uniformFinish_spec hfin
   obtain ⟨_, hmb⟩ := optimizeUniform_modelBytes h
@@ -1375,18 +1374,17 @@ default branch-and-bound component search, the set a successful
 `optimizeUniformExpanded` stores minimises the uniform length over the
 restricted class, its `modelBytes` is that length, and it comes first in the
 tie order `setPrec` (the smallest term where it differs from another minimum
-belongs to the other) among all minima. Same `SpinesFit` hypothesis as
-`optimizeUniform_minimum`. -/
+belongs to the other) among all minima. -/
 theorem optimizeUniform_least {w : Nat} {limits : Limits} {ex : Expanded}
     {res : UniformSharingResult} (hsub : limits.uniformSubsetSearch = false)
-    (hsp : SpinesFit (Prep.ofDag ex.dag))
     (h : optimizeUniformExpanded w limits ex = .ok res) :
     IsMinimum ex.dag w ex.roots res.stored.toList ∧
       res.result.modelBytes = ulen ex.dag w ex.roots res.stored.toList ∧
       ∀ Y, IsMinimum ex.dag w ex.roots Y → LeL res.stored.toList Y := by
-  obtain ⟨hmin, hmb⟩ := optimizeUniform_minimum hsub hsp h
+  obtain ⟨hmin, hmb⟩ := optimizeUniform_minimum hsub h
   refine ⟨hmin, hmb, fun Y hY => ?_⟩
-  obtain ⟨_, hwf, hroots, _, c, hc, hfin⟩ := optimizeUniform_parts h
+  obtain ⟨_, hwf, hroots, _, hspines, c, hc, hfin⟩ := optimizeUniform_parts h
+  have hsp : SpinesFit (Prep.ofDag ex.dag) := hspines
   have hreach := optimizeUniform_reach h
   obtain ⟨_, _, hstored, _, hmodel, _⟩ := uniformFinish_spec hfin
   obtain ⟨cx, hcs, hcle⟩ := uniformChoose_tie hsub hwf hsp hroots hreach hc hY

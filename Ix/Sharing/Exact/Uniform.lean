@@ -1035,6 +1035,13 @@ structure UniformSharingResult where
   lowerBracket : Bool
   deriving Inhabited
 
+/-- Telescope spines must be shorter than this. Below `Ixon.tagNEnd5 4` (the
+start of the 9-byte TagN rung) the telescope headers are subadditive,
+`tag4Size (a + b) ≤ tag4Size a + tag4Size b`, which the certain-excluded class
+relies on (merging two telescopes when a Share is unshared).
+`optimizeUniformExpanded` fails closed on a longer spine. -/
+def teleSubaddEnd : Nat := Ixon.tagNEnd5 4
+
 /-- First count with the same TagN (`f = 0`) width as `k` (`tag0Size`): the
 start of `k`'s rung. -/
 def tag0BracketStart (k : Nat) : Nat :=
@@ -1381,7 +1388,9 @@ def uniformFinish (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (c : Un
     uncertain := c.uncertain, lowDegree := c.lowDegree, components := c.components,
     statesVisited := c.states, lowerBracket := c.lowerBracket }
 
-/-- Exact uniform-width optimization of an expanded input. -/
+/-- Exact uniform-width optimization of an expanded input. Fails closed
+(`formatBound "telescope spine length"`) when a telescope spine reaches
+`teleSubaddEnd`. -/
 def optimizeUniformExpanded (w : Nat) (limits : Limits) (ex : Expanded) :
     Except SharingError UniformSharingResult := do
   if w == 0 then throw (.formatBound "uniform Share width" 0)
@@ -1394,6 +1403,8 @@ def optimizeUniformExpanded (w : Nat) (limits : Limits) (ex : Expanded) :
   unless (reachMarks ex.dag.nodes ex.roots).all id do
     throw (.internal "DAG term unreachable from the roots")
   let p := Prep.ofDag ex.dag
+  unless (List.range ex.dag.size).all (fun t => p.spineLen[t]! < teleSubaddEnd) do
+    throw (.formatBound "telescope spine length" teleSubaddEnd)
   let c ← uniformChoose w limits ex p
   uniformFinish w limits ex p c
 
