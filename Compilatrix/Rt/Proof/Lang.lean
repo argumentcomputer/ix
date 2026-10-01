@@ -29,8 +29,11 @@ with a type; nothing at a root without; a result `tagify` rejects is stuck,
 so it imposes nothing). The bridge between the two observations is
 `tagify_value`: a Cfg value related to a word whose observation `tagify`
 accepts is `Typed` at the type, and reads back, at every fuel and in Own
-(`H.readback`), as `tagify` relabels it. Phase 1 reads `Nat` and
-field-less constructors (`Bool`): `tagify` accepts nothing else.
+(`H.readback`), as `tagify` relabels it; `result_view` is the same through
+`Rt.result_readback` for a final result, and `tagify_fir` at Fir
+(`Fir.obsV` against `Fir.readback`, which `Own.readback_den` carries to
+Own). Phase 1 reads `Nat` and field-less constructors (`Bool`): `tagify`
+accepts nothing else.
 -/
 
 set_option autoImplicit false
@@ -298,6 +301,67 @@ theorem tagify_value {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word} {
           | cons _ _ => simp [tagify] at ht
       · cases ho
     · cases hfv
+
+/-- **The bridge at Fir**: a Fir value whose constructors are the table's,
+with their field counts, reads back (`Fir.readback`, by tag) as `tagify`
+relabels its observation (`Fir.obsV`, by source constructor). With
+`Own.readback_den` it is Own's readback of a value that denotes it. -/
+theorem tagify_fir {T : List Lam.CtorInfo} {sig : Sig} {ty : FoTy} {fv : Fir.Val} {o o' : Obs}
+    (hc : ∀ c fs, fv = .ctor c fs → Fir.CtorInfo.ofKey T c.key = some c ∧ c.arity = fs.length)
+    (ho : Fir.obsV fv = some o) (ht : tagify T sig ty o = some o') : Fir.readback fv = some o' := by
+  cases fv with
+  | lit l =>
+    cases l with
+    | nat n =>
+      simp only [Fir.obsV, Option.some.injEq] at ho
+      subst ho
+      cases ty with
+      | nat => simp only [tagify, Option.some.injEq] at ht; subst ht; rfl
+      | ind i => simp [tagify] at ht
+    | str s =>
+      simp only [Fir.obsV, Option.some.injEq] at ho
+      subst ho
+      cases ty <;> simp [tagify] at ht
+  | ctor c fs =>
+    obtain ⟨hkey, har⟩ := hc c fs rfl
+    simp only [Fir.obsV] at ho
+    split at ho
+    · rename_i cid hcid
+      obtain ⟨os, hos, rfl⟩ := Option.map_eq_some_iff.1 ho
+      cases ty with
+      | nat => simp [tagify] at ht
+      | ind i =>
+        cases os with
+        | cons _ _ => simp [tagify] at ht
+        | nil =>
+          have hfs := obsList_nil hos
+          subst hfs
+          simp only [tagify] at ht
+          rw [← hcid, hkey] at ht
+          simp only at ht
+          split at ht
+          · simp only [Option.some.injEq] at ht
+            subst ht
+            simp only [Fir.readback, List.length_nil]
+            rw [if_pos (by simpa using har)]
+            rfl
+          · cases ht
+    · cases ho
+  | erased => simp [Fir.obsV] at ho
+
+/-- **The final result through `Rt.result_readback`**: a Cfg result related
+by `Res` whose observation `tagify` accepts at the root's readback type is
+`Typed` at it, and the runtime's readback at Own's fuel is Own's readback,
+the relabelled observation. -/
+theorem result_view {P : Cfg.Program} {ctx : Word} {v : Own.RVal} {H : Own.Heap} {vals : List Word}
+    {m : X86.Memory} {sig : Sig} {ty : FoTy} {o o' : Obs} (hres : Res P ctx (v, H) (vals, m))
+    (ho : Own.obsV (v, H) = some o) (ht : tagify P.ctors sig ty o = some o') :
+    Typed sig H ty v ∧ ∃ w, vals = [w] ∧ readback sig (H.size + 1) m ty w = H.readback v ∧
+      H.readback v = some o' := by
+  obtain ⟨Pw, w, -, hv, hheap⟩ := id hres
+  obtain ⟨hty, -, hrb⟩ := tagify_value (T := tables P) hv hheap ho ht
+  obtain ⟨w', hw', hrb'⟩ := result_readback hres hty
+  exact ⟨hty, w', hw', hrb', hrb⟩
 
 /-- The view's report for a final Cfg result is the entry's read-back
 observation of the related Lir result. -/

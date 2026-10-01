@@ -34,6 +34,10 @@ result outside its root's type is one more way the source goes wrong
 hidden by `Sem.Refines`: Anf → Fir `k ↦ tickBound A · (k + 1)`, Cfg → Lir
 `k ↦ k + 1`, the rest `id` or forward-only.
 
+At K1's result types the view rejects nothing well typed: a `Nat` root
+reports a `Nat` as itself (`view_nat`), a `Bool` root reports `false` and
+`true` by their tags (`view_bool`).
+
 For M2.8's `Recheck.sound`: `run_runLir` (a successful `Recheck.run` ran
 `runLir`, and its artifact's levels and roots are the front half's) and
 `rootsOf_entry` (each of the artifact's roots is the loaded program's entry
@@ -113,6 +117,30 @@ theorem runLir_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h :
                   simp only [hf, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hm
                   obtain ⟨rfl, rfl, rfl, rfl⟩ := hm
                   exact ⟨rfl, ⟨st, her⟩, rfl, hf, rfl, rfl, Rt.checkSwitches_ok hs, hl⟩
+
+/-! ## The view at K1's result types -/
+
+/-- At a `Nat` root the view reports a `Nat` result as itself. -/
+theorem view_nat {f : Front} {r : Nat} (h : f.tys r = some ({}, .nat)) (n : Nat) :
+    f.view r (some (.nat n)) = some (some (.nat n)) := by
+  simp [Front.view, Rt.viewOf, h, Rt.tagify]
+
+/-- At a `Bool` root (both `Bool` constructors pinned and in the table) the
+view reports `false` and `true` by their tags. -/
+theorem view_bool {f : Front} {r : Nat} (h : f.tys r = some (boolSig f.cfg, .ind 0)) {kF kT : Key.CtorKey}
+    {cF cT : Fir.CtorInfo} (hF : f.cfg.known.boolFalse = some kF) (hT : f.cfg.known.boolTrue = some kT)
+    (hcF : Fir.CtorInfo.ofKey f.cfg.ctors kF = some cF) (hcT : Fir.CtorInfo.ofKey f.cfg.ctors kT = some cT)
+    {cid : Src.CId} {c : Fir.CtorInfo} (hk : Key.CtorKey.src cid = kF ∨ Key.CtorKey.src cid = kT)
+    (hc : Fir.CtorInfo.ofKey f.cfg.ctors (.src cid) = some c) :
+    f.view r (some (.ctor cid [])) = some (some (.ctor c.tag [])) := by
+  have hlt : c.tag < max cF.tag cT.tag + 1 := by
+    rcases hk with rfl | rfl
+    · rw [hcF] at hc; cases hc; omega
+    · rw [hcT] at hc; cases hc; omega
+  have hsig : (boolSig f.cfg).ctor? 0 c.tag = some [] := by
+    simp only [boolSig, hF, hT, Option.bind_some, hcF, hcT, Option.map_some, Rt.Sig.ctor?,
+      List.getElem?_cons_zero, List.getElem?_replicate, hlt, if_true]
+  simp only [Front.view, Rt.viewOf, h, Option.bind_some, Rt.tagify, hc, hsig, if_true, Option.map_some]
 
 /-! ## The front theorem -/
 
