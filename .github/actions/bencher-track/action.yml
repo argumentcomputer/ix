@@ -72,8 +72,11 @@ runs:
         # No data points since the reset → omit thresholds so the reset commit
         # lands without an alert (--thresholds-reset clears stale models); they
         # re-arm next run. Otherwise substitute the window into each measure.
+        # The input spans several lines, so read to end of input (`-d ''`)
+        # rather than to the first newline; `read` then reports end of input
+        # as a failure, hence `|| true`.
         thresholds=()
-        [ "$sample" -gt 0 ] && read -r -a thresholds <<< "${THRESHOLDS//__WINDOW__/$sample}"
+        [ "$sample" -gt 0 ] && read -r -d '' -a thresholds <<< "${THRESHOLDS//__WINDOW__/$sample}" || true
 
         bencher run \
           --project ix \
