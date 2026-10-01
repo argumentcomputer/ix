@@ -39,6 +39,7 @@ join, cites both.
 - [Slowest constants](#slowest-constants)
 - [Lean/Rust parity](#leanrust-parity)
 - [The phase-1 width experiment](#the-phase-1-width-experiment)
+- [Format v4: the TagN-only wire with six rungs](#format-v4-the-tagn-only-wire-with-six-rungs)
 - [What is not covered](#what-is-not-covered)
 - [Reproduction](#reproduction)
 - [Appendix A: runner reports and joins](#appendix-a-runner-reports-and-joins)
@@ -86,6 +87,12 @@ join, cites both.
     on half of Mathlib (339,749 constants) [D1]–[D6].
   - Every one-sided exhaustion was Lean's, and every one gave Rust's bytes once its limit was raised.
     With `maxMaterializeWork` = 2^36 (`3ddda798`) there are none.
+- **Format v4** (TagN-only wire, six rungs; regenerated corpora at `36fe2777`) [R10] [D10] [D11]:
+  - The Rust canonical output is 14.81% below the stored v4 bytes on Init and 21.16% below on Mathlib.
+  - One Mathlib constant hit a limit. `ce38cdc7` gave the table-count knapsack its own limit, after
+    which that constant certifies.
+  - Lean/Rust parity: all 56,622 Init constants are identical. 12,666 of the 20,265-constant Mathlib
+    sample are identical, with the remainder still running at handoff.
 - **Not covered:**
   - distance to the true minimum, because the width-state oracle runs on small inputs only;
   - serialized unshared sizes for 619 Mathlib constants;
@@ -141,6 +148,11 @@ Terms used in the table:
 | [D7] | differential, **best of three**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `a80c16cf` | new | `$S/w2/p4/b3_init_s{0..5}.log` |
 | [D8] | differential, **best of three**, Mathlib sample, tiered-TagN and tiered-Tag4, 4 processes; aborted, no tallies | `a80c16cf` | new | `$S/w2/p4/b3_ml_s{0..3}.log` |
 | [D9] | differential, **best of three with the Kahn order**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `d19f21c0` | new | `$S/w2/p8/init_s{0..5}.log` |
+| [D10] | differential, best of three with the Kahn order, **v4 Init corpus**, all constants, tiered-TagN, 6 processes | `36fe2777` | new | `$S/w2/p10/init_s{0..5}.log` |
+| [D11] | differential, same build, **v4 Mathlib sample** (20,265 constants), tiered-TagN, 8 processes; 5 of 8 finished at handoff | `36fe2777` | new | `$S/w2/p10/ml_s{0..7}.log` |
+| [R10] | Rust canonical runner over the v4 corpora, 20 threads (also writes the address lists and the sample) | `36fe2777` | new | `$S/w2/p10/{init,ml}_rust.{md,err,csv}`, `init_all.txt`, `ml_select.txt` |
+| [C1] | v4 corpus compiles | `36fe2777` | | `$S/w2/p10/compile_{init,mathlib}.log` |
+| [X9] | `IsDenseSubsite…` per width on the v4 corpus: defaults at `36fe2777`, `--max-states 2^26`, and defaults with the knapsack limit | `36fe2777`, `ce38cdc7` | new | `$S/w2/p10/dense_widths{,_26,_knap}.csv` |
 
 Notes on the sources:
 
@@ -959,6 +971,107 @@ All 679,499 Mathlib constants, TagN prices. "all" is the all-candidates construc
   worse than the K-based rule on 14,533 constants.
 - **Cost.** Three constructions per constant instead of one; see
   [Wall time and memory](#wall-time-and-memory).
+
+## Format v4: the TagN-only wire with six rungs
+
+These results come from the code as of `36fe2777` and `ce38cdc7`.
+
+**What changed.** Ixon now writes TagN for every integer (W4 `93e2895c`), and the TagN code gained a
+4-byte rung (W4 `480923f2`): the widths are 1, 2, 3, 4, 5 and 9 bytes [P §12.12] [P §12.16]. The v3
+corpora above can no longer be read; this is by design. The tiered construction now uses TagN only
+(`36fe2777`).
+
+### Corpora
+
+The corpora were regenerated at `36fe2777` and are named after that commit [C1]:
+
+| | Init | Mathlib |
+|---|---:|---:|
+| file | `$S/w2/init_v4r_36fe2777.ixe` | `$S/w2/mathlib_v4r_36fe2777.ixe` |
+| size | 155,259,078 B | 2,620,063,965 B |
+| compile time (GNU `time`, wall) | 0:51.10 | 3:51.09 |
+| compile peak RSS | 2,945,116 kB | 18,726,024 kB |
+| stored constants | 56,622 | 679,499 |
+| stored (heuristic) bytes, all constants | 78,231,552 | 1,422,321,971 |
+
+- The Init corpus was produced with `lake exe ix compile Benchmarks/CompileInit.lean`.
+- The Mathlib corpus was produced with `lake exe ix compile Benchmarks/Compile/CompileMathlib.lean`,
+  using W5's dependency build copied read-only.
+- Both used the compiler's heuristic sharing route, since the route switch had not landed.
+
+### Rust canonical construction (best of three, Kahn order), 20 threads [R10]
+
+| | Init | Mathlib |
+|---|---:|---:|
+| certified | 56,622 / 56,622 | 679,498 / 679,499 (see below) |
+| serialized output, certified constants | 66,644,219 B (−14.81%) | 1,121,360,414 B (−21.16%) |
+| per constant against stored: smaller / equal / larger | 50,400 / 6,174 / 48 | 627,142 / 51,871 / 485 |
+| largest per-constant loss against stored | +7 B | +28 B |
+| processing | 32.6 s | 772.3 s |
+| wall (GNU `time`) | 0:39.93 | 16:52.30 |
+| peak RSS | 754,936 kB | 4,713,784 kB |
+
+- The serialized length and the TagN price coincide now that TagN is the wire code.
+- **Tables are far below the new rung.** No canonical table reaches 66,568 entries: a stored set is
+  part of the `K` candidates, and the largest `K` is 21,461. So the 4-byte rung does not change any
+  Share width in these outputs.
+- Integers of 66,568 or more in other fields now take 4 bytes instead of 5 in both the stored and the
+  canonical encodings. I did not compare the construction's decisions before and after the rung
+  change on the same input, since no old-rung reader exists for the v4 corpus.
+- **The one failure, and its fix** [X9].
+  - The failing constant was `CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`,
+    which hit `resource:States` at every width.
+  - Under TagN (f = 0) the table-count bracket starts at 16,512, which this constant's roughly 18.5k
+    stored entries cross. The knapsack over its roughly 2,550 components therefore needed about 6
+    million cells, which were charged to `max_states` (2^20).
+  - `ce38cdc7` gives the knapsack its own limit, `max_knapsack_cells` (default 2^28), with resource
+    `KnapsackCells`. The rule is unchanged [P].
+  - At default limits the constant now certifies:
+
+    | width | stored | bytes | time (width experiment, 4 threads) |
+    |---|---:|---:|---:|
+    | w = 1 | 18,653 | 338,539 | 89.6 s |
+    | w = 2 | 18,877 | **337,241** (best of three) | 48.6 s |
+    | w = 3 | 18,440 | 340,770 | 38.0 s |
+
+### Lean/Rust parity on the v4 corpora (IxTests at `36fe2777`)
+
+| corpus | mode | constants | same bytes | same error | Lean-only | Rust-only | disagreements | Lean Σ | Rust Σ | source |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Init, all | tiered-TagN | 56,622 | **56,622** | 0 | 0 | 0 | **0** | 3,438.0 s | 350.0 s | [D10] |
+| Mathlib sample, 5 of 8 shards finished at handoff | tiered-TagN | 12,666 | **12,666** | 0 | 0 | 0 | **0** | 20,239.9 s | 1,628.0 s | [D11] |
+
+- The Init run used 6 processes, each taking 7:04–13:06 with a peak RSS of about 839 MB.
+- In every process, the §2 fixtures (76), the generated inputs (2,048) and the 124 Share-bearing
+  constants agree [D10] [D11].
+- **The Mathlib sample** has 20,265 constants: every 50th of the v4 corpus plus every constant with
+  more than 2,000 candidates, selected by the runner [R10]. **The Mathlib-sample run was still in progress at handoff.** It ran 8 processes, one per address
+shard, using IxTests built at `36fe2777`.
+
+- **Finished:** shards 0, 1, 2, 4 and 7, covering 12,666 of the 20,265 constants. All 12,666 give
+  identical bytes, with no exhaustion on either side and 0 disagreements. Summed per-call times were
+  Lean 20,239.9 s and Rust 1,628.0 s. Each process took 1:01:52–1:20:56, with a peak RSS of about
+  4.0 GB.
+- **Still running at 13:57 on 2026-10-01:** shards 3, 5 and 6, which hold 7,599 constants. At that
+  point they had run 1:26.
+- **Logs:** `$S/w2/p10/ml_s{0..7}.log`. Each shard's tally appears there when its process ends, and
+  `$S/w2/p10/ml.done` is written when all eight have ended.
+- **Resuming.** If the processes were lost, rebuild `IxTests` at `36fe2777`, or at any later commit,
+  since the comparison is per constant. Then run, from the worktree root:
+
+  ```text
+  S=/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad
+  for i in 3 5 6; do
+    IX_SHARING_CORPUS=$S/w2/mathlib_v4r_36fe2777.ixe IX_SHARING_CORPUS_MODES=tiered-tagN \
+    IX_SHARING_CORPUS_SELECT=$S/w2/p10/ml_shards/s$i.txt \
+    ./.lake/build/bin/IxTests exact-sharing-ffi > $S/w2/p10/ml_s$i.log 2>&1 &
+  done
+  ```
+
+  One caveat applies to any build at or after `ce38cdc7`. That commit's separate knapsack-cell limit
+  (Rust) has to be matched by W1's Lean change. Otherwise `CategoryTheory.Functor.IsDenseSubsite…`,
+  which is in the sample, can be exhausted on one side only.
+
 
 ## What is not covered
 
@@ -1896,6 +2009,89 @@ exit=0
 	Command being timed: "/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/sharing_corpus_wx4 /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --layout tag4 --threads 12 --width-experiment --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/wx4_ml_tag4.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 23:26.59
 	Maximum resident set size (kbytes): 5024656
+	Exit status: 0
+exit=0
+```
+
+</details>
+
+<details><summary>[R10] v4 Init corpus, TagN, 20 threads (<code>p10/init_rust.md</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe (56622 constants; 56622 processed); layout TagN
+- wall: index 863 ms, processing 32.6 s with 20 threads; peak RSS 756420 KiB
+- certified: 56622 / 56622; failed: 0
+- failures by status: {}
+- certified constants: stored (heuristic) 78231552 B; serialized output 66644219 B (-14.81%); under TagN 66644219 B (-14.81%)
+- unshared (where it fits u64, 56622 constants): 1070039966 B; stored 78231552 B; serialized output 66644219 B
+- serialized output - stored per constant: 50400 smaller, 6174 equal, 48 larger; min -71858 p1 -2227 p10 -373 p50 -49 p90 0 p99 0 p99.9 0 max 7
+- TagN price - stored per constant: min -71858 p1 -2227 p10 -373 p50 -49 p90 0 p99 0 p99.9 0 max 7
+- phase-1 width w: {1: 45323, 2: 11115, 3: 184}
+- uncertain terms per constant: min 0 p1 0 p10 0 p50 2 p90 20 p99 90 p99.9 245 max 736
+- largest component per constant: min 0 p1 0 p10 0 p50 1 p90 3 p99 6 p99.9 13 max 57
+- uniform search states per constant: min 0 p1 0 p10 0 p50 8 p90 84 p99 396 p99.9 1030 max 10626
+- first-tier search states per constant: min 1 p1 1 p10 3 p50 17 p90 101 p99 623 p99.9 1951 max 12236
+- R1/R2 candidates per constant (all): min 0 p1 0 p10 3 p50 33 p90 227 p99 1168 p99.9 4843 max 22458
+- milliseconds per constant (certified): min 0 p1 0 p10 0 p50 1 p90 13 p99 105 p99.9 848 max 12597
+- slowest 10:
+  - 12597 ms _private.Init.Data.Vector.Extract.0.Vector.extract_append._proof_1 (ef115ac219120830): defn ok, N 26943, cand 19283, k 5136, w 2, uncertain 606, components 582 (largest 3), states uniform 2398 first-tier 8970
+  - 11245 ms _private.Init.Data.Array.Extract.0.Array.extract_append._proof_1_1 (af5d4ef692ebbd14): defn ok, N 26754, cand 19091, k 5146, w 2, uncertain 646, components 612 (largest 4), states uniform 2553 first-tier 8926
+  - 9829 ms _private.Init.Data.String.Lemmas.Pattern.String.ForwardSearcher.0.String.Slice.Pattern.Model.ForwardSliceSearcher.Invariants.isValidSearchFrom_toList (72c7500c0af02f24): defn ok, N 27628, cand 22458, k 4874, w 2, uncertain 736, components 665 (largest 4), states uniform 2843 first-tier 12236
+  - 9112 ms _private.Init.Data.Vector.Extract.0.Vector.extract_extract._proof_1 (30211bedcb9622e8): defn ok, N 26494, cand 19017, k 4919, w 3, uncertain 587, components 555 (largest 3), states uniform 2351 first-tier 8577
+  - 8812 ms _private.Init.Data.Vector.Extract.0.Vector.extract_append_extract._proof_1 (a22ec8b0918ea57c): defn ok, N 24658, cand 17290, k 4703, w 3, uncertain 557, components 517 (largest 4), states uniform 2193 first-tier 4104
+  - 8329 ms _private.Init.Data.Array.Extract.0.Array.extract_append_extract._proof_1_1 (be3b04c344146c3f): defn ok, N 24507, cand 17140, k 4678, w 3, uncertain 571, components 530 (largest 4), states uniform 2247 first-tier 4066
+  - 4363 ms _private.Init.Data.Iterators.Lemmas.Combinators.Monadic.FilterMap.0.Std.IterM.toList_filterMapWithPostcondition_filterMapWithPostcondition' (46c14ffcdae3b8d7): defn ok, N 16156, cand 11692, k 2712, w 1, uncertain 338, components 308 (largest 3), states uniform 1304 first-tier 2412
+  - 3941 ms _private.Init.Data.Int.DivMod.Lemmas.0.Int.add_one_tdiv._proof_1_1 (a896f8dffb7117fc): defn ok, N 18802, cand 13281, k 3236, w 3, uncertain 424, components 406 (largest 4), states uniform 1696 first-tier 2748
+  - 3902 ms _private.Init.Data.Array.Extract.0.Array.extract_extract._proof_1_1 (0dc54307e038a95f): defn ok, N 19523, cand 11454, k 3640, w 3, uncertain 454, components 435 (largest 4), states uniform 1816 first-tier 3143
+  - 3430 ms Std.Iter.step_flatMapAfterM (4baea8cab97cbac0): defn ok, N 10787, cand 8261, k 1858, w 1, uncertain 240, components 212 (largest 3), states uniform 917 first-tier 1654
+- total wall 39.8 s
+
+	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p10/init_rust.csv --select-out /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p10/init_all.txt --select-stride 1"
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:39.93
+	Maximum resident set size (kbytes): 754936
+	Exit status: 0
+exit=0
+```
+
+</details>
+
+<details><summary>[R10] v4 Mathlib corpus, TagN, 20 threads (<code>p10/ml_rust.md</code>)</summary>
+
+```text
+# sharing_corpus report
+- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe (679499 constants; 679499 processed); layout TagN
+- wall: index 7453 ms, processing 772.3 s with 20 threads; peak RSS 4696000 KiB
+- certified: 679498 / 679499; failed: 1
+- failures by status: {"resource:States": 1}
+  - FAILED CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite (ca5b91d86331eb4a): resource:States; N 95110, cand 81833, raw 607293 B, 2956 ms
+- certified constants: stored (heuristic) 1422321971 B; serialized output 1121360414 B (-21.16%); under TagN 1121360414 B (-21.16%)
+- unshared (where it fits u64, 679498 constants): 217330168440703 B; stored 1422321971 B; serialized output 1121360414 B
+- serialized output - stored per constant: 627142 smaller, 51871 equal, 485 larger; min -188376 p1 -5562 p10 -901 p50 -118 p90 -2 p99 0 p99.9 0 max 28
+- TagN price - stored per constant: min -188376 p1 -5562 p10 -901 p50 -118 p90 -2 p99 0 p99.9 0 max 28
+- phase-1 width w: {1: 522899, 2: 155204, 3: 1395}
+- uncertain terms per constant: min 0 p1 0 p10 0 p50 2 p90 20 p99 86 p99.9 266 max 2611
+- largest component per constant: min 0 p1 0 p10 0 p50 1 p90 3 p99 6 p99.9 11 max 57
+- uniform search states per constant: min 0 p1 0 p10 0 p50 8 p90 80 p99 370 p99.9 1119 max 11095
+- first-tier search states per constant: min 1 p1 1 p10 5 p50 23 p90 136 p99 661 p99.9 2093 max 42793
+- R1/R2 candidates per constant (all): min 0 p1 0 p10 6 p50 66 p90 424 p99 2004 p99.9 6370 max 81833
+- milliseconds per constant (certified): min 0 p1 0 p10 1 p50 4 p90 27 p99 226 p99.9 1659 max 137855
+- slowest 10:
+  - 137855 ms Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual (08f54b4ec0521425): defn ok, N 78913, cand 59202, k 13054, w 1, uncertain 2611, components 2294 (largest 5), states uniform 11095 first-tier 42793
+  - 121447 ms CategoryTheory.Bicategory.mateEquiv_vcomp (316210aec3b71877): defn ok, N 50497, cand 32338, k 8940, w 3, uncertain 1899, components 1431 (largest 14), states uniform 7942 first-tier 15083
+  - 116752 ms WeierstrassCurve.variableChange_Δ (c4877eb9a43d6ed5): defn ok, N 63501, cand 18996, k 9234, w 3, uncertain 650, components 640 (largest 3), states uniform 2586 first-tier 25596
+  - 83547 ms AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq (76d3f459d3934e38): defn ok, N 53511, cand 44632, k 12056, w 2, uncertain 1969, components 1752 (largest 5), states uniform 7601 first-tier 20448
+  - 71564 ms Algebra.exists_etale_isIdempotentElem_forall_liesOver_eq_aux (cdf39344197c06e4): defn ok, N 64047, cand 41872, k 8745, w 1, uncertain 1864, components 1563 (largest 8), states uniform 7864 first-tier 7173
+  - 69652 ms _private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three (1d6a83d1201da521): defn ok, N 50027, cand 26233, k 10413, w 3, uncertain 1615, components 1567 (largest 4), states uniform 6399 first-tier 8711
+  - 61837 ms sum_eight_sq_mul_sum_eight_sq (b505feb329a45c2e): defn ok, N 49322, cand 10408, k 7281, w 2, uncertain 263, components 256 (largest 4), states uniform 1059 first-tier 7035
+  - 56908 ms AlgebraicGeometry.exists_appTop_π_eq_of_isLimit (c62d6f62c3b83ae7): defn ok, N 43876, cand 33528, k 9848, w 2, uncertain 1374, components 1268 (largest 5), states uniform 5422 first-tier 8529
+  - 55043 ms AlgebraicGeometry.Proj.lift_awayMapₐ_awayMapₐ_surjective (f519c9c82c160c12): defn ok, N 66025, cand 52066, k 10555, w 3, uncertain 1708, components 1543 (largest 3), states uniform 6584 first-tier 8997
+  - 52028 ms WeierstrassCurve.Projective.negDblY_eq' (ce121b7a563b352f): defn ok, N 45785, cand 14522, k 7073, w 3, uncertain 452, components 446 (largest 3), states uniform 1804 first-tier 13128
+- total wall 1011.2 s
+
+	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p10/ml_rust.csv --select-out /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p10/ml_select.txt"
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 16:52.30
+	Maximum resident set size (kbytes): 4713784
 	Exit status: 0
 exit=0
 ```
@@ -3400,6 +3596,20 @@ exit=0
 
 </details>
 
+<details><summary>[X9] join output (<code>p10/dense_widths_all.txt</code>)</summary>
+
+```text
+idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,bytes1,bytes2,bytes3,kbased,best,best_w,rewidth,rewidth_w,ms1,ms2,ms3,status_all,stored_all,bytes_all,best4,best4_w,ms_all,kept1,kept2,kept3,kept_all
+# dense_widths
+0,ca5b91d86331eb4a78896d3a3d6507d595c1fe23606596e426a34ef83bbe33d3,"CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite",defn,607293,21461,3,resource:States,resource:States,resource:States,0,0,0,,,,,,,,1,2737.055,2819.619,2646.535,ok,21461,340538,340538,all,33278.215,false,false,false,false
+# dense_widths_26
+0,ca5b91d86331eb4a78896d3a3d6507d595c1fe23606596e426a34ef83bbe33d3,"CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite",defn,607293,21461,3,ok,ok,ok,18653,18877,18440,338539,337241,340770,340770,337241,2,340770,3,81254.102,49317.505,33608.119,ok,21461,340538,337241,2,30703.228,false,false,false,false
+# dense_widths_knap
+0,ca5b91d86331eb4a78896d3a3d6507d595c1fe23606596e426a34ef83bbe33d3,"CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite",defn,607293,21461,3,ok,ok,ok,18653,18877,18440,338539,337241,340770,340770,337241,2,340770,3,89636.936,48631.322,37994.027,ok,21461,340538,337241,2,43839.404,false,false,false,false
+```
+
+</details>
+
 
 ## Appendix B: differential tallies
 
@@ -4409,6 +4619,194 @@ exit=0
     [corpus: decode failures 0; total 839322 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 14:05.79
 	Maximum resident set size (kbytes): 838816
+exit=0
+```
+
+</details>
+
+<details><summary>[D10] v4 Init corpus, all constants, tiered-TagN (36fe2777)</summary>
+
+`p10/init_s0.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 116 ms, Rust 5 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 889 ms, Rust 187 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 874 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 718281 ms, Rust 60459 ms]
+    [corpus: decode failures 0; total 782552 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 13:06.24
+	Maximum resident set size (kbytes): 839520
+exit=0
+```
+
+`p10/init_s1.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 165 ms, Rust 5 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1343 ms, Rust 325 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 830 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 620439 ms, Rust 63470 ms]
+    [corpus: decode failures 0; total 688022 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:33.34
+	Maximum resident set size (kbytes): 839156
+exit=0
+```
+
+`p10/init_s2.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 145 ms, Rust 5 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1131 ms, Rust 247 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 661 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 503446 ms, Rust 51849 ms]
+    [corpus: decode failures 0; total 558610 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 9:22.59
+	Maximum resident set size (kbytes): 839200
+exit=0
+```
+
+`p10/init_s3.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 116 ms, Rust 5 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1271 ms, Rust 264 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 906 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 682788 ms, Rust 67449 ms]
+    [corpus: decode failures 0; total 754759 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 12:39.03
+	Maximum resident set size (kbytes): 839584
+exit=0
+```
+
+`p10/init_s4.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 155 ms, Rust 9 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1247 ms, Rust 275 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 1262 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 363005 ms, Rust 49208 ms]
+    [corpus: decode failures 0; total 416363 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 7:04.05
+	Maximum resident set size (kbytes): 839052
+exit=0
+```
+
+`p10/init_s5.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 242 ms, Rust 8 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1852 ms, Rust 353 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 1039 ms]
+    [corpus progress: 5000/9437]
+    [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 550026 ms, Rust 57611 ms]
+    [corpus: decode failures 0; total 611339 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:20.57
+	Maximum resident set size (kbytes): 839284
+exit=0
+```
+
+</details>
+
+<details><summary>[D11] v4 Mathlib sample, tiered-TagN (36fe2777); shards 3, 5 and 6 still running at handoff</summary>
+
+`p10/ml_s0.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 169 ms, Rust 7 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1120 ms, Rust 265 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 13779 ms]
+    [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 3372948 ms, Rust 313156 ms]
+    [corpus: decode failures 0; total 3709009 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:01:52
+	Maximum resident set size (kbytes): 4014096
+exit=0
+```
+
+`p10/ml_s1.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 129 ms, Rust 6 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1310 ms, Rust 326 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2534 under [tiered-tagN]; loaded in 13378 ms]
+    [corpus tiered-tagN: 2534 constants; 2534 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4178724 ms, Rust 328739 ms]
+    [corpus: decode failures 0; total 4532338 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:15:36
+	Maximum resident set size (kbytes): 4013832
+exit=0
+```
+
+`p10/ml_s2.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 133 ms, Rust 7 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1179 ms, Rust 300 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 15778 ms]
+    [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4160060 ms, Rust 315849 ms]
+    [corpus: decode failures 0; total 4502713 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:15:06
+	Maximum resident set size (kbytes): 4010636
+exit=0
+```
+
+`p10/ml_s3.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 158 ms, Rust 9 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1077 ms, Rust 225 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 14888 ms]
+    [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4823239 ms, Rust 340491 ms]
+    [corpus: decode failures 0; total 5188350 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:26:31
+	Maximum resident set size (kbytes): 4005344
+exit=0
+```
+
+`p10/ml_s4.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 118 ms, Rust 6 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1014 ms, Rust 230 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 17410 ms]
+    [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4467566 ms, Rust 358723 ms]
+    [corpus: decode failures 0; total 4852768 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:20:56
+	Maximum resident set size (kbytes): 4003724
+exit=0
+```
+
+`p10/ml_s5.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 122 ms, Rust 39 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1007 ms, Rust 241 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 17326 ms]
+    [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4821142 ms, Rust 353157 ms]
+    [corpus: decode failures 0; total 5199302 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:26:43
+	Maximum resident set size (kbytes): 4006108
+exit=0
+```
+
+`p10/ml_s6.log`
+
+```text
+```
+
+`p10/ml_s7.log`
+
+```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 144 ms, Rust 9 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1146 ms, Rust 280 ms
+    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 15357 ms]
+    [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4060627 ms, Rust 311506 ms]
+    [corpus: decode failures 0; total 4394967 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:13:19
+	Maximum resident set size (kbytes): 4009940
 exit=0
 ```
 
