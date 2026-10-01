@@ -206,6 +206,8 @@ structure Global (W : Wrap) (xm : Memory) (m : Machine) (holes : Holes) : Prop w
   limitData : ReadableData holes (W.ctx - 56) 8
   top : W.entrySp.toNat + 64 ≤ 2 ^ 64
   low : maxFrame + slack ≤ W.limit.toNat
+  /-- The wrapper calls with room for a frame without a stack check. -/
+  room : W.limit.toNat + slack ≤ W.entrySp.toNat
 
 /-- A running Xl state in the stacked machine: the running activation
 `fr`/`a` with return frame `ret`, and the suspended ones `below`. -/

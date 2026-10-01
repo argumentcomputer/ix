@@ -82,7 +82,7 @@ theorem Global.mono {W : Wrap} {xm : Memory} {m m' : Machine} {holes holes' : Ho
     · exact h
     · rw [entry_save_toNat hg.top hi hj] at hlt; omega
   refine ⟨fun x hx => ?_, fun i hi => ?_, hg.apart, fun x hx => ?_, ⟨?_, ?_, houter, fun i hi => ?_, ?_, h15, he.rsp0⟩,
-    ?_, ?_, hg.top, hg.low⟩
+    ?_, ?_, hg.top, hg.low, hg.room⟩
   · rw [hr, hw]; exact hg.stack x hx
   · rw [hr, hw]; exact hg.ctxCells i hi
   · rcases hholes x hx with h | ⟨hin, -⟩

@@ -146,7 +146,7 @@ theorem Match.update {S : Stk} {W : Wrap} {s : Xl.State} {m : Machine} {holes : 
     rw [e] at hc
     obtain ⟨-, hlink, -⟩ := hc
     exact (hlink f l pl hf f₁ l₁ pl₁ hf₁).1.room
-  · refine ⟨fun z hz => ?_, fun i hi => ?_, hg.apart, fun z hz => ?_, ?_, ?_, ?_, hg.top, hg.low⟩
+  · refine ⟨fun z hz => ?_, fun i hi => ?_, hg.apart, fun z hz => ?_, ?_, ?_, ?_, hg.top, hg.low, hg.room⟩
     · rw [hperm₁, hperm₂, hperm₃, hperm₄]; exact hg.stack z hz
     · rw [hperm₁, hperm₂, hperm₃, hperm₄]; exact hg.ctxCells i hi
     · rw [hperm₁, hperm₂]; exact hg.holesFree z (hholes z hz)
