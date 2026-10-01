@@ -1,7 +1,14 @@
 # ExprMeta arena encoding (Ixon v4)
 
-Workstream W6, branch `ix-sharing-w6`. Question: can the ExprMeta arenas (43% of the
-Mathlib `.ixe`) be made substantially smaller by a change small enough for the v4 PR?
+Question: can the ExprMeta arenas (43% of the Mathlib `.ixe`) be made substantially
+smaller by a change small enough for the v4 PR?
+
+**Status.** The implicit post-order encoding (§4) is part of format v4 in both
+implementations; `docs/Ixon.md`, "ExprMeta Arena", is its normative description.
+Hash-consing (§5) is not implemented; it is designed here for a stacked PR. §1–§5 were
+measured on v3 files (header `0xE3`, `Tag0` integers, heuristic sharing tables); §6 and §7
+on files with TagN integers everywhere but still the header `0xE3`, heuristic sharing and
+no 4-byte TagN rung.
 
 **Answer.** Yes, for the encoding; no, for deduplication.
 
@@ -31,7 +38,7 @@ equals the production writer on every node and every arena of both corpora.
 | call-site references | 0 | 14,763 |
 
 A v3 App node is a tag byte plus two `Tag0` absolute indices, 5.26 bytes on average.
-W3's study (`sharing-minimum-measurements.md`, "ExprMeta arena structure follow-up") has
+The corpus study (`sharing-minimum-measurements.md`, "ExprMeta arena structure follow-up") has
 the delta histograms and the duplication counts; this note uses its figures where they
 agree and adds the encodings below.
 
@@ -73,7 +80,7 @@ Every row prices the whole arena: length prefix, tags, name indices, mdata and c
 payloads, and child references.
 
 - **abs:** TagN (`f = 0`) for every integer, absolute child indices. This is the v4
-  baseline: what W4's Tag0 → TagN replacement gives with no arena change.
+  baseline: what replacing `Tag0` by TagN gives with no arena change.
 - **delta:** every child is TagN of `i − 1 − c` (candidate 1).
 - **implicit:** this PR's encoding; it generalises candidate 2.
 - **+ hash-consing:** dedup first, then encode (candidate 3; §5).
@@ -89,9 +96,9 @@ payloads, and child references.
 
 - **Against v3,** the implicit encoding with TagN removes 36,620,464 bytes on Init (18.74%
   of the file) and 644,940,304 on Mathlib (19.29%).
-- **The two effects are not additive,** as W3 noted. Measured together, hash-consing adds
-  −20,116,725 (Init) and −355,914,288 (Mathlib) on top of implicit.
-- **Per-slot choice (W3's suggestion) is subsumed.** The one slot where plain deltas lose
+- **The two effects are not additive,** as the corpus study noted. Measured together,
+  hash-consing adds −20,116,725 (Init) and −355,914,288 (Mathlib) on top of implicit.
+- **Per-slot choice (suggested by the corpus study) is subsumed.** The one slot where plain deltas lose
   (Binder type) is handled by the implicit/explicit choice, which is made per child.
 
 Implicit encoding by node kind (Mathlib):
@@ -110,7 +117,7 @@ Implicit encoding by node kind (Mathlib):
 - tag bytes: 272.3 MB;
 - name indices: 174.0 MB.
 
-## 4. The chosen encoding (implemented on this branch)
+## 4. The chosen encoding (implemented in v4)
 
 `docs/Ixon.md`, "ExprMeta Arena", is the normative text. In short:
 
@@ -135,10 +142,10 @@ Implicit encoding by node kind (Mathlib):
   (9 bytes). The encoder is therefore total (Lean's `PutM` cannot fail) and needs no new
   producer invariant. The property tests' generated arenas, which can self-reference at
   node 0, need no change.
-- **Other integers** in the arena keep their helper encodings, which W4 turns into TagN:
-  the length, name indices, mdata, call-site counts and scalars. Only the new child
-  deltas call `putTagN 0` / `TagN::put(0, …)` directly. W4's mechanical replacement
-  therefore applies unchanged.
+- **Other integers** in the arena keep their helper encodings, which are TagN in v4 like
+  every other integer: the length, name indices, mdata, call-site counts and scalars. Only
+  the child deltas call `putTagN 0` / `TagN::put(0, …)` directly, so the arena encoding
+  and the Tag0 → TagN replacement are independent changes.
 
 ### Constraints
 
@@ -167,7 +174,7 @@ position and the block starts.
   `getExprMetaNode`.
 - Rust: the public `ExprMetaData::put_with` / `get_with` become private
   `put_node` / `get_node`.
-- Only one outside caller existed: W3's `Benchmarks/SharingStudy.lean`. Its
+- Only one outside caller existed: `Benchmarks/SharingStudy.lean`. Its
   `getArenaBreak` now threads `lo` (4 lines).
 
 ### Diff size (this PR's share)
@@ -186,31 +193,32 @@ From `git diff --numstat` against `ad2a583a`:
   (934 lines).
 - No consumer, producer, proof or FFI file changes.
 
-### Measured with the production writer (before the W4 merge)
+### Measured with the production writer (before TagN replaced Tag0)
 
 The v3 files were read with a temporary, uncommitted legacy arena reader (the v3
 `ExprMeta::get_with`, switched on only while the cursor parses the file). Each arena and
-each §5 window was then re-serialized with this branch's production writer
+each §5 window was then re-serialized with the implicit encoding's production writer
 (`ExprMeta::put_with`, `put_named_indexed`), and every arena was round-tripped through
 the production reader.
 
-Integers other than the child references were still `Tag0` on this branch: W4's Tag0 →
-TagN replacement had not landed.
+Integers other than the child references were still `Tag0` in this measurement: the
+Tag0 → TagN replacement had not landed.
 
 | | Init | Mathlib |
 |---|---:|---:|
 | arenas re-serialized | 67,995 | 793,394 |
 | size mismatches against the predicted pricing / round-trip mismatches | 0 / 0 | 0 / 0 |
-| arena bytes, v3 → this branch | 83,050,319 → 45,731,058 | 1,436,611,288 → 769,664,251 |
+| arena bytes, v3 → implicit | 83,050,319 → 45,731,058 | 1,436,611,288 → 769,664,251 |
 | §5 windows + length prefixes, v3 | 84,921,487 + 161,358 | 1,469,007,694 + 2,063,780 |
-| §5 windows + length prefixes, this branch | 47,602,226 + 148,104 | 802,060,657 + 1,959,567 |
+| §5 windows + length prefixes, implicit | 47,602,226 + 148,104 | 802,060,657 + 1,959,567 |
 | **file size change** | **−37,332,515 (−19.11%)** | **−667,051,250 (−19.95%)** |
-| file size, v3 → this branch | 195,387,870 → 158,055,355 | 3,343,271,273 → 2,676,220,023 |
+| file size, v3 → implicit | 195,387,870 → 158,055,355 | 3,343,271,273 → 2,676,220,023 |
 
 - **The v3 baseline is independently confirmed.** The v3 window and prefix totals equal
-  the sum of W3's independent §5 breakdown, category by category, on both files.
+  the sum of the independent §5 breakdown in `sharing-minimum-measurements.md`, category
+  by category, on both files.
 - **Larger than the §3 implicit row.** These savings exceed the "implicit" row because
-  name indices are still `Tag0` here. After W4's replacement the arenas cost the §3
+  name indices are still `Tag0` here. With TagN integers the arenas cost the §3
   "implicit" figures (46,429,855 and 791,670,984), and the name-index growth of §6
   applies.
 
@@ -230,11 +238,12 @@ TagN replacement had not landed.
 - **Rust:** `cargo test -p ixon`: 412 passed, 0 failed.
 - **Related Lean suites:** `ffi meta-env catalog import-ixe decompile-unit tc-unit` (run
   under `lake env`): 692 passed, exit 0.
-- **Before the W4 merge.** The results above are from before the merge.
+- **Before TagN replaced Tag0.** The results above are from before that change.
 
-**After merging `ix-sharing` c5cd2078** (W4: TagN is the only integer code):
+**After TagN became the only integer code** (`ix-sharing` at c5cd2078):
 
-- **Lean `ixon` suite: 331 passed, 0 failed.** The share-codec tests were removed by W4.
+- **Lean `ixon` suite: 331 passed, 0 failed.** The share-codec tests were removed with the
+  TagN change.
 - **The `ixon-corpus` gate passed** (242 s).
 - **Rust:** `cargo test --release -p ixon --lib --tests`: 387 passed, 4 failed. The four
   failures also occur on a clean c5cd2078 checkout (382 passed, the same 4 failed), so
@@ -244,13 +253,13 @@ TagN replacement had not landed.
   - `resource::addressed::tests::canonical_cross_language_fixtures`;
   - `sharing_exact::tests::parallel_tiered_matches_sequential`.
 - **Lint:** clippy (`--lib --tests --example arena_study`, `-D warnings`) is clean.
-- **Known breaks on c5cd2078 itself:**
-  - The `sharing_corpus` example does not compile: it imports the removed
+- **Known breaks on c5cd2078 itself** (both fixed later on `ix-sharing`):
+  - The `sharing_corpus` example did not compile: it imported the removed
     `put_expr_with`.
-  - The `sharing-study` harness does not compile: it has 35 uses of `Ixon.getTag0` and
+  - The `sharing-study` harness did not compile: it had 35 uses of `Ixon.getTag0` and
     `getTag4`, including its own arena-length read.
 
-  W6 changes only the harness's node-reader call.
+  The arena change touches only the harness's node-reader call.
 
 ## 5. Stacked PR: within-arena hash-consing
 
@@ -259,7 +268,8 @@ TagN replacement had not landed.
 
 - **Surviving nodes.** 140,419,081 of 272,299,746 (51.6%); on Init, 8,991,706 of
   16,335,501.
-- **Why this differs from W3's count.** W3 found 133,235,031 duplicates on Mathlib. Here
+- **Why this differs from the corpus study's count.** That study found 133,235,031
+  duplicates on Mathlib. Here
   nodes carrying a level-spelling patch are never merged (see the audit), so 1,354,366
   fewer nodes merge.
 - **Redirection cost.** Roots and patch keys outside the arena get *cheaper*, because
@@ -355,25 +365,26 @@ window.
   - Mathlib: arena names +22,243,839, `ConstantMetaInfo` names +3,052,196, §5 keys
     +771,058, §5 ranks +645,449.
   - Init: arena names +712,195, `ConstantMetaInfo` names +209,601, §5 keys +56,370.
-- **A 4-byte rung is free in code space for every flag width.** TagN's last selector
-  `c = 3` is currently invalid. Codes `c = 0, 1, 2, 3` could select 2, 3, 4 and 8
-  following bytes (widths 1, 2, 3, 4, 5, 9).
-  - For `f = 0` the rung would cover [82,048, 16,859,264).
-  - TagN would then never be longer than `Tag0` below 2^32.
-  - The rung also covers `f = 4` Share indices in [66,568, …). The current Mathlib
-    compile still has one sharing table of 81,464 entries, so some Share references there
-    pay the same extra byte. Constant bodies are outside this census, so they are not
-    counted.
-  - Whether to adopt the rung is the owner's call. The figures above are its exact
-    savings.
+- **A 4-byte rung is free in code space for every flag width.** In the five-rung TagN
+  measured here, the last selector `c = 3` was invalid. Codes `c = 0, 1, 2, 3` can select
+  2, 3, 4 and 8 following bytes (widths 1, 2, 3, 4, 5, 9).
+  - For `f = 0` the rung covers [82,048, 16,859,264).
+  - TagN is then never longer than `Tag0` below 2^32.
+  - The rung also covers `f = 4` Share indices in [66,568, …). The Mathlib compile
+    measured here (heuristic sharing) has one sharing table of 81,464 entries, so some
+    Share references there pay the same extra byte. Constant bodies are outside this
+    census, so they are not counted.
+  - The rung was adopted (`docs/sharing-minimum.md` §12.16) and is part of TagN in v4
+    (`docs/Ixon.md`, "Integer Encoding (TagN)"). The figures above are its exact savings.
 - **A per-arena local name table is no fix.** On the v3 files it saves 2.9 MB on Mathlib
   and costs 0.4 MB on Init: there are 28.8M distinct names per arena out of 42.2M
   references.
 
-## 7. Final v4 file sizes (after merging W4's TagN-only codec)
+## 7. File sizes with TagN-only integers and the implicit arenas
 
-Init and Mathlib were recompiled with the merged branch (`ix compile`, same inputs as the
-v3 corpora):
+Init and Mathlib were recompiled once TagN was the only integer code and the implicit
+arena encoding was in place (`ix compile`, same inputs as the v3 corpora; heuristic
+sharing, five-rung TagN, header `0xE3`):
 
 | | v3 file | v4 file | change |
 |---|---:|---:|---:|
@@ -392,15 +403,25 @@ v3 corpora):
 - **Same metadata, fresh compile.** The arenas are the same as in the v3 corpora apart
   from a fresh compile: Init 16,335,501 nodes in both; Mathlib 272,299,589 v4 vs
   272,299,746 v3.
-- **The header byte is still `0xE3`.** The version bump to 4 (`0xE4`, plan §0b-7) has not
-  landed on `ix-sharing` yet.
+- **Not yet the final v4 file.** These files still have the header byte `0xE3`,
+  heuristic sharing tables and no 4-byte rung. The final format adds all three changes
+  (version 4, header `0xE4`; canonical sharing; the rung of §6). At commit `e77bd3a6`,
+  `lake exe ix compile Benchmarks/CompileInit.lean` writes 143,680,738 bytes.
+
+<!-- PENDING: [measure] the Mathlib .ixe size at the PR commit (lake exe ix compile Benchmarks/Compile/CompileMathlib.lean), and the Init size if the PR commit is not e77bd3a6, to complete the final v4 row of this section. -->
 
 ## 8. Reproduction
 
-`S` is the scratchpad holding the corpora.
+`$S` is any directory holding the corpora, and `arena_study` is
+`target/release/examples/arena_study`. `init.ixe` and `mathlib.ixe` are compiled with
+`lake exe ix compile Benchmarks/CompileInit.lean --out $S/init.ixe` and
+`lake exe ix compile Benchmarks/Compile/CompileMathlib.lean --out $S/mathlib.ixe` (the
+Mathlib setup is in `sharing-minimum-measurements-mathlib.md`, "Reproduction"). A reader
+accepts only its own format version, so the v3 rows need v3 files and a v3 checkout
+(the merge base `ad2a583a`), and the §6–§7 rows need files written by the same checkout
+that reads them.
 
 ```text
-cd /home/jcb/projects/ix-sharing-w6
 nix develop --command bash -c 'cargo build --release -p ixon --example arena_study'
 # Pricing of all encodings + v3 writer check: build against the v3 metadata.rs
 # (merge base ad2a583a), then
@@ -420,15 +441,15 @@ nix develop --command bash -c '.lake/build/bin/IxTests ixon'
 nix develop --command bash -c 'lake env .lake/build/bin/IxTests --ignored ixon-corpus'
 ```
 
-After the W4 merge (§6, §7):
+With TagN-only integers (§6, §7):
 
 ```text
 nix develop --command bash -c 'lake build ix'
-lake exe ix compile Benchmarks/CompileInit.lean --out $S/w6/init_v4.ixe              # 27 s
-lake exe ix compile Benchmarks/Compile/CompileMathlib.lean --out $S/w6/mathlib_v4.ixe # 261 s
-#   (Benchmarks/Compile/.lake copied from a worktree with the Mathlib build)
-arena_study $S/w6/init_v4.ixe --check-writer --other-tagn      # 0 / 0 mismatches
-arena_study $S/w6/mathlib_v4.ixe --check-writer --other-tagn   # 0 / 0 mismatches, 231 s
-arena_study $S/w6/init_v4.ixe --int-census                      # 66,621 / 66,621 windows
-arena_study $S/w6/mathlib_v4.ixe --int-census                   # 778,344 / 778,344 windows
+lake exe ix compile Benchmarks/CompileInit.lean --out $S/init_v4.ixe              # 27 s
+lake exe ix compile Benchmarks/Compile/CompileMathlib.lean --out $S/mathlib_v4.ixe # 261 s
+#   (Benchmarks/Compile/.lake copied from a checkout with the Mathlib build)
+arena_study $S/init_v4.ixe --check-writer --other-tagn      # 0 / 0 mismatches
+arena_study $S/mathlib_v4.ixe --check-writer --other-tagn   # 0 / 0 mismatches, 231 s
+arena_study $S/init_v4.ixe --int-census                      # 66,621 / 66,621 windows
+arena_study $S/mathlib_v4.ixe --int-census                   # 778,344 / 778,344 windows
 ```

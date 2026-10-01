@@ -3,20 +3,34 @@
 This document is the P4 deliverable of [`sharing-minimum.md`](sharing-minimum.md), "Production viability
 measurements". It gathers in one place, for a PR reviewer, what has been measured on two corpora:
 
-- `Init`, by W3, in [`sharing-minimum-measurements.md`](sharing-minimum-measurements.md);
-- Mathlib, by W5, in [`sharing-minimum-measurements-mathlib.md`](sharing-minimum-measurements-mathlib.md);
-- both corpora, by W2 in this document: the canonical tiered construction in Rust under both Share
+- `Init`, with the corpus harness, in [`sharing-minimum-measurements.md`](sharing-minimum-measurements.md);
+- Mathlib, with the same harness, in [`sharing-minimum-measurements-mathlib.md`](sharing-minimum-measurements-mathlib.md);
+- both corpora, in this document: the canonical tiered construction in Rust under both Share
   layouts, and the Lean/Rust differential.
 
 The document reports measurements. The design decisions it refers to are recorded in the plan (§12).
+
+**Status.** Most sections were measured on the format-v3 corpora (`Tag0`/`Tag2`/`Tag4` integers,
+heuristic sharing tables written by the compiler of that time), with the canonical construction run
+under two Share layouts: Tag4 (v3's code) and TagN, priced but not serialized. [Format v4: the TagN-only
+wire with six rungs](#format-v4-the-tagn-only-wire-with-six-rungs) repeats the Rust construction and the
+Lean/Rust differential on corpora with TagN integers everywhere (still heuristic tables, header `0xE3`).
+In v4 the canonical construction (best of three, Kahn order, TagN only) is the only compiler sharing
+route in both implementations; the heuristic and the Tag4 layout are removed.
 
 **Canonical construction.** Since plan §12.11, phase 1 runs at each width w ∈ {1, 2, 3}. Each run goes
 through phases 2 and 3, and the result with the fewest real layout bytes is kept ("best of three"). The
 canonical numbers below are that rule's.
 
 They were measured through the experiment hook `normalize_constant_sharing_tiered_at_width`
-(`faf1a7c7`). That hook runs exactly the three candidate constructions the rule compares. The Rust and
-Lean canonical entry points do not yet implement the rule; W1 and W2 are porting it.
+(`faf1a7c7`). That hook runs exactly the three candidate constructions the rule compares. The Lean and
+Rust canonical entry points adopted the rule afterwards (`3eb09b9c`, `a80c16cf`).
+
+The experiment hooks named in this document were removed after the experiments: the best-of-four
+candidate `Phase1Choice::AllCandidates`, the MSS inspector and the runner modes `--width-experiment`,
+`--mss-diff`, `--mss-compare`, `--mss-ties` and `--layout`. The forced-width entry point
+`normalize_constant_sharing_tiered_at_width` remains only as a crate-private test helper. The data keeps
+their names; reproducing it needs the commits in the Sources table.
 
 Numbers for the earlier rule, which chose the width from the candidate count `K` ("K-based"), are marked
 **superseded**. They are kept because they are what led to §12.11 and because the Lean/Rust parity and
@@ -47,8 +61,8 @@ join, cites both.
 
 ## Summary
 
-- **Corpora.** Init has 56,622 constants and 80,208,288 stored bytes [W3]. Mathlib (the whole
-  `import Mathlib` environment) has 679,499 constants and 1,468,890,902 stored bytes [W5].
+- **Corpora.** Init has 56,622 constants and 80,208,288 stored bytes [Init]. Mathlib (the whole
+  `import Mathlib` environment) has 679,499 constants and 1,468,890,902 stored bytes [ML].
 - **Bytes, canonical (best of three), rooted constants** [X1] [X2]:
 
   | layout | corpus | vs heuristic | vs MSS at the same widths |
@@ -91,22 +105,23 @@ join, cites both.
   - The Rust canonical output is 14.81% below the stored v4 bytes on Init and 21.16% below on Mathlib.
   - One Mathlib constant hit a limit. `ce38cdc7` gave the table-count knapsack its own limit, after
     which that constant certifies.
-  - Lean/Rust parity: all 56,622 Init constants are identical. 12,666 of the 20,265-constant Mathlib
-    sample are identical, with the remainder still running at handoff.
+  - Lean/Rust parity: all 56,622 Init constants are identical. Of the 20,265-constant Mathlib sample,
+    20,264 are identical and one (`CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`)
+    fails with a resource-limit error on both sides, the case `ce38cdc7` addresses; 0 disagreements.
 - **Not covered:**
   - distance to the true minimum, because the width-state oracle runs on small inputs only;
   - serialized unshared sizes for 619 Mathlib constants;
-  - serialized TagN bytes;
+  - serialized TagN bytes on the v3 corpora (the v4 section serializes them);
   - Lean on all of Mathlib;
-  - best-of-three byte totals and Lean/Rust parity with the Kahn order beyond the first tier (the totals
-    above predate it; see [X6] for the outlier).
+  - best-of-three byte totals with the Kahn order beyond the first tier on the v3 corpora (the totals
+    above predate it; see [X6] for the outlier, and the v4 section for Kahn-order totals and parity).
 
 ## Sources
 
-`$S` is the session scratchpad,
-`/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad`. Its files are
-not tracked. Each report and join this document cites is reproduced unedited in Appendix A, and each
-differential tally in Appendix B.
+The outputs named in the table are not tracked. Each report and join this document cites is
+reproduced unedited in Appendix A, and each differential tally in Appendix B; [Reproduction](#reproduction)
+gives the commands that regenerate them. In the appendices and commands, `$S` stands for the directory
+holding the corpora and the outputs.
 
 Terms used in the table:
 
@@ -114,45 +129,45 @@ Terms used in the table:
 - **differential:** the Lean/Rust suite `exact-sharing-ffi` (`Tests/Ix/SharingExactFFI.lean`) in corpus
   mode;
 - **search, old:** phase 1's uniform search used the subset enumeration;
-- **search, new:** phase 1 used W1's reclassifying branch and bound (W1 `985de744`, Rust `0aca9b39`).
+- **search, new:** phase 1 used the reclassifying branch and bound (Lean `985de744`, Rust `0aca9b39`).
 
-| key | what | code | search | file(s) |
+| key | what | code | search | outputs (untracked) |
 |---|---|---|---|---|
 | [P] | the plan, §0 and §12 | `6da48067` | | `docs/sharing-minimum.md` |
-| [W3] | Init corpus harness (`sharing-study`), tenth run | see the doc | | `docs/sharing-minimum-measurements.md` |
-| [W5] | Mathlib corpus harness (`sharing-study`) | `5f284b7a` | | `docs/sharing-minimum-measurements-mathlib.md` |
-| [X1] | **best of three**, TagN layout, Init and Mathlib, 8 threads | `faf1a7c7` | new | `$S/w2/p4/wx_{init,ml}_tagN.{md,err,csv}`, `wx_*_tagN_{join,best}.txt` |
-| [X2] | **best of three**, Tag4 layout, Init and Mathlib, 8 threads | `faf1a7c7` | new | `$S/w2/p4/wx_{init,ml}_tag4.{md,err,csv}`, `wx_*_tag4_{join,best}.txt` |
-| [X3] | best of three, TagN layout, Init, 1 thread | `faf1a7c7` | new | `$S/w2/p4/wx_init_tagN_t1.{md,err,csv}` |
-| [X4] | best of four (w = 1, 2, 3 and all candidates), both layouts, Init and Mathlib, 12 threads | `94882265` | new | `$S/w2/p4/wx4_{init,ml}_{tagN,tag4}.{md,err,csv}`, `wx4_*_{join,best}.txt` |
-| [X5] | MSS (ties by structural ID and by blake3) against "all", all of Mathlib; entry-level diffs | `7b083108` | new | `$S/w2/p6/cmp_{id,blake3}.{md,err,csv}`, `outlier_diff2.md`, `diff_up7_blake3.md`, `diff_sample13_id.md` |
-| [X6] | the outlier with the Kahn order, per width and "all", both layouts | `0ef72793` | new | `$S/w2/p5/outlier_kahn_{tagN,tag4}.csv` |
-| [X7] | parallelism timings on Mathlib: whole corpus (a), (b), (c) at 20 threads, and per-constant latency (`--serial-constants`) | `7b083108`, `dcf3b318` | new | `$S/w2/p7/ml_{a,b,c}.{md,err,csv,load,loadlog}`, `serial_{a,b,c}.{md,err,csv,loadlog}` |
-| [X8] | parallel against sequential, all of Init, four budgets (`--check-sequential`) | `dee8604e` | new | `$S/w2/p5/init_check_*.{md,err}` |
-| [R1] | K-based, runner, Init, TagN layout, 16 threads | `2072a9bf` | old | `$S/w2/init_tiered.{md,err,csv}` |
-| [R2] | K-based, runner, Mathlib, TagN layout, 20 threads | `2072a9bf` | old | `$S/w2/mathlib_tiered.{md,err,csv}` |
-| [R3] | K-based, runner, Mathlib, TagN layout, 20 threads | `e4c0dead` | new | `$S/w2/mathlib_tiered_bb.{md,err,csv}` |
-| [R4] | K-based, runner, Init, TagN layout, 20 threads | `e4c0dead` | new | `$S/w2/p4/init_tagN_t20.{md,err,csv}` |
-| [R5] | K-based, runner, Init, Tag4 layout, 20 threads | `e4c0dead` | new | `$S/w2/p4/init_tag4_t20.{md,err,csv}` |
-| [R6] | K-based, runner, Init, TagN layout, 1 thread | `e4c0dead` | new | `$S/w2/p4/init_tagN_t1.{md,err,csv}` |
-| [R7] | K-based, runner, Mathlib, Tag4 layout, 20 threads | `e4c0dead` | new | `$S/w2/p4/ml_tag4_t20.{md,err,csv}` |
-| [J1] | K-based, join of [W3]'s CSV with [R4] and [R5] | | | `$S/w2/p4/init_join.txt`, `init_byw.txt` |
-| [J2] | K-based, join of [W5]'s CSV with [R3] and [R7] | | | `$S/w2/p4/ml_join.txt`, `ml_byw.txt` |
-| [D0] | differential, Init, the 10 Lean-only constants, limit diagnosis | `86df8874` | old | `$S/w2/diag_init.log` |
-| [D1] | differential, Init, all constants, 1 process | `871eef12` | old | `$S/w2/corpus_full.log` |
-| [D2] | differential, Init, all constants, 6 processes | `e4c0dead` | new | `$S/w2/init_bb_s{0..5}.log` |
-| [D3] | differential, Mathlib sample, 2 processes | `86df8874` | old | `$S/w2/mathlib_diff_{a,b}.log` |
-| [D4] | differential, Mathlib sample, 4 processes | `e4c0dead` | new | `$S/w2/ml_bb_s{0..3}.log` |
-| [D5] | differential, the Lean-only constants of [D2]/[D4] | `3ddda798` | new | `$S/w2/lo_s{0..3}.log`, `lo_init.log` |
-| [D6] | differential, K-based, Mathlib, all constants in 6 address shards; 3 shards (339,749 constants) completed | `3ddda798` | new | `$S/w2/p4/lf_s{0,3,4}.log` (and the empty `lf_s{1,2,5}.log`) |
-| [D7] | differential, **best of three**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `a80c16cf` | new | `$S/w2/p4/b3_init_s{0..5}.log` |
-| [D8] | differential, **best of three**, Mathlib sample, tiered-TagN and tiered-Tag4, 4 processes; aborted, no tallies | `a80c16cf` | new | `$S/w2/p4/b3_ml_s{0..3}.log` |
-| [D9] | differential, **best of three with the Kahn order**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `d19f21c0` | new | `$S/w2/p8/init_s{0..5}.log` |
-| [D10] | differential, best of three with the Kahn order, **v4 Init corpus**, all constants, tiered-TagN, 6 processes | `36fe2777` | new | `$S/w2/p10/init_s{0..5}.log` |
-| [D11] | differential, same build, **v4 Mathlib sample** (20,265 constants), tiered-TagN, 8 processes; 5 of 8 finished at handoff | `36fe2777` | new | `$S/w2/p10/ml_s{0..7}.log` |
-| [R10] | Rust canonical runner over the v4 corpora, 20 threads (also writes the address lists and the sample) | `36fe2777` | new | `$S/w2/p10/{init,ml}_rust.{md,err,csv}`, `init_all.txt`, `ml_select.txt` |
-| [C1] | v4 corpus compiles | `36fe2777` | | `$S/w2/p10/compile_{init,mathlib}.log` |
-| [X9] | `IsDenseSubsite…` per width on the v4 corpus: defaults at `36fe2777`, `--max-states 2^26`, and defaults with the knapsack limit | `36fe2777`, `ce38cdc7` | new | `$S/w2/p10/dense_widths{,_26,_knap}.csv` |
+| [Init] | Init corpus harness (`sharing-study`), tenth run | see the doc | | `docs/sharing-minimum-measurements.md` |
+| [ML] | Mathlib corpus harness (`sharing-study`) | `5f284b7a` | | `docs/sharing-minimum-measurements-mathlib.md` |
+| [X1] | **best of three**, TagN layout, Init and Mathlib, 8 threads | `faf1a7c7` | new | `wx_{init,ml}_tagN.{md,err,csv}`, `wx_*_tagN_{join,best}.txt` |
+| [X2] | **best of three**, Tag4 layout, Init and Mathlib, 8 threads | `faf1a7c7` | new | `wx_{init,ml}_tag4.{md,err,csv}`, `wx_*_tag4_{join,best}.txt` |
+| [X3] | best of three, TagN layout, Init, 1 thread | `faf1a7c7` | new | `wx_init_tagN_t1.{md,err,csv}` |
+| [X4] | best of four (w = 1, 2, 3 and all candidates), both layouts, Init and Mathlib, 12 threads | `94882265` | new | `wx4_{init,ml}_{tagN,tag4}.{md,err,csv}`, `wx4_*_{join,best}.txt` |
+| [X5] | MSS (ties by structural ID and by blake3) against "all", all of Mathlib; entry-level diffs | `7b083108` | new | `cmp_{id,blake3}.{md,err,csv}`, `outlier_diff2.md`, `diff_up7_blake3.md`, `diff_sample13_id.md` |
+| [X6] | the outlier with the Kahn order, per width and "all", both layouts | `0ef72793` | new | `outlier_kahn_{tagN,tag4}.csv` |
+| [X7] | parallelism timings on Mathlib: whole corpus (a), (b), (c) at 20 threads, and per-constant latency (`--serial-constants`) | `7b083108`, `dcf3b318` | new | `ml_{a,b,c}.{md,err,csv,load,loadlog}`, `serial_{a,b,c}.{md,err,csv,loadlog}` |
+| [X8] | parallel against sequential, all of Init, four budgets (`--check-sequential`) | `dee8604e` | new | `init_check_*.{md,err}` |
+| [R1] | K-based, runner, Init, TagN layout, 16 threads | `2072a9bf` | old | `init_tiered.{md,err,csv}` |
+| [R2] | K-based, runner, Mathlib, TagN layout, 20 threads | `2072a9bf` | old | `mathlib_tiered.{md,err,csv}` |
+| [R3] | K-based, runner, Mathlib, TagN layout, 20 threads | `e4c0dead` | new | `mathlib_tiered_bb.{md,err,csv}` |
+| [R4] | K-based, runner, Init, TagN layout, 20 threads | `e4c0dead` | new | `init_tagN_t20.{md,err,csv}` |
+| [R5] | K-based, runner, Init, Tag4 layout, 20 threads | `e4c0dead` | new | `init_tag4_t20.{md,err,csv}` |
+| [R6] | K-based, runner, Init, TagN layout, 1 thread | `e4c0dead` | new | `init_tagN_t1.{md,err,csv}` |
+| [R7] | K-based, runner, Mathlib, Tag4 layout, 20 threads | `e4c0dead` | new | `ml_tag4_t20.{md,err,csv}` |
+| [J1] | K-based, join of [Init]'s CSV with [R4] and [R5] | | | `init_join.txt`, `init_byw.txt` |
+| [J2] | K-based, join of [ML]'s CSV with [R3] and [R7] | | | `ml_join.txt`, `ml_byw.txt` |
+| [D0] | differential, Init, the 10 Lean-only constants, limit diagnosis | `86df8874` | old | `diag_init.log` |
+| [D1] | differential, Init, all constants, 1 process | `871eef12` | old | `corpus_full.log` |
+| [D2] | differential, Init, all constants, 6 processes | `e4c0dead` | new | `init_bb_s{0..5}.log` |
+| [D3] | differential, Mathlib sample, 2 processes | `86df8874` | old | `mathlib_diff_{a,b}.log` |
+| [D4] | differential, Mathlib sample, 4 processes | `e4c0dead` | new | `ml_bb_s{0..3}.log` |
+| [D5] | differential, the Lean-only constants of [D2]/[D4] | `3ddda798` | new | `lo_s{0..3}.log`, `lo_init.log` |
+| [D6] | differential, K-based, Mathlib, all constants in 6 address shards; 3 shards (339,749 constants) completed | `3ddda798` | new | `lf_s{0,3,4}.log` (and the empty `lf_s{1,2,5}.log`) |
+| [D7] | differential, **best of three**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `a80c16cf` | new | `b3_init_s{0..5}.log` |
+| [D8] | differential, **best of three**, Mathlib sample, tiered-TagN and tiered-Tag4, 4 processes; aborted, no tallies | `a80c16cf` | new | `b3_ml_s{0..3}.log` |
+| [D9] | differential, **best of three with the Kahn order**, Init, all constants, tiered-TagN and tiered-Tag4, 6 processes | `d19f21c0` | new | `init_s{0..5}.log` |
+| [D10] | differential, best of three with the Kahn order, **v4 Init corpus**, all constants, tiered-TagN, 6 processes | `36fe2777` | new | `init_s{0..5}.log` |
+| [D11] | differential, same build, **v4 Mathlib sample** (20,265 constants), tiered-TagN, 8 processes | `36fe2777` | new | `ml_s{0..7}.log` |
+| [R10] | Rust canonical runner over the v4 corpora, 20 threads (also writes the address lists and the sample) | `36fe2777` | new | `{init,ml}_rust.{md,err,csv}`, `init_all.txt`, `ml_select.txt` |
+| [C1] | v4 corpus compiles | `36fe2777` | | `compile_{init,mathlib}.log` |
+| [X9] | `IsDenseSubsite…` per width on the v4 corpus: defaults at `36fe2777`, `--max-states 2^26`, and defaults with the knapsack limit | `36fe2777`, `ce38cdc7` | new | `dense_widths{,_26,_knap}.csv` |
 
 Notes on the sources:
 
@@ -163,23 +178,24 @@ Notes on the sources:
   commits change only documentation and Rust. [X4] used a copy of the runner built at `94882265`. [X5] and [X6] used runner binaries
   built from the sources of `7b083108` and `0ef72793` before those were committed; only lint and
   documentation edits followed. [D7] and [D8]
-  used `IxTests` built at `a80c16cf`, whose Lean side is W1's best of three (`3eb09b9c`).
+  used `IxTests` built at `a80c16cf`, whose Lean side is the best of three of `3eb09b9c`.
 - **The Mathlib sample** used by [D3]/[D4] has 20,263 constants: every 50th constant in address order,
   plus every constant with more than 2,000 R1/R2 candidates. It was written by the runner's
   `--select-out` during [R2].
 - **The joins** ([J1], [J2], and the `*_join.txt` and `*_best.txt` files of [X1] and [X2]):
-  - They match rows on the 16-hex-digit address prefix, as [W5] does, and are restricted to rooted
+  - They match rows on the 16-hex-digit address prefix, as [ML] does, and are restricted to rooted
     constants.
   - They price MSS at TagN widths per constant as
-    `mss_bytes − (lt8 + 2·[8,256) + 3·≥256) + (lt8f + 2·[8,1032) + 3·≥1032)`, using [W3]'s and [W5]'s
+    `mss_bytes − (lt8 + 2·[8,256) + 3·≥256) + (lt8f + 2·[8,1032) + 3·≥1032)`, using [Init]'s and [ML]'s
     reference counts (scheme F).
   - Their checks: 0 stored-bytes mismatches and 0 unshared-size mismatches between the study CSV and the
-    runner CSV. The heuristic, MSS, scheme-F and unshared totals they compute equal those printed in [W3]
-    and [W5].
-  - The scripts (`join.awk`, `byw.awk`, `wxjoin.awk`, `bestjoin.awk`, `slowest.awk`) are in `$S/w2/p4/`.
-- **Percentiles.** The runner and the joins use the nearest rank, rounded down (`xs[⌊(n−1)·p⌋]`). [W3] and
-  [W5] use their own convention.
-- **Machine.** All runs used one 24-core machine, shared throughout with other agents' builds and tests.
+    runner CSV. The heuristic, MSS, scheme-F and unshared totals they compute equal those printed in [Init]
+    and [ML].
+  - They were computed by gawk scripts (`join.awk`, `byw.awk`, `wxjoin.awk`, `bestjoin.awk`,
+    `slowest.awk`) that are not tracked; the matching and pricing rules above define them.
+- **Percentiles.** The runner and the joins use the nearest rank, rounded down (`xs[⌊(n−1)·p⌋]`). [Init] and
+  [ML] use their own convention.
+- **Machine.** All runs used one 24-core machine, shared throughout with other builds and tests.
   Timings are therefore indicative, and no two runs had the same background load.
 
 ## Corpora
@@ -187,37 +203,38 @@ Notes on the sources:
 | | Init | Mathlib |
 |---|---:|---:|
 | file | `init.ixe` | `mathlib.ixe` |
-| size | 195,387,870 B [W3 §Results] | 3,343,271,273 B [W5 §Corpus] |
-| stored constants (distinct addresses) | 56,622 [W3 §Results] | 679,499 [W5 §Corpus] |
-| names | 66,621 [W3 §Results] | 778,344 [W5 §Corpus] |
-| constants with at least one root | 55,386 [W3 §Results] | 663,254 [W5 §Headline] |
-| stored (heuristic) bytes, all constants | 80,208,288 [W3 §Results] | 1,468,890,902 [W5 §Results] |
-| stored bytes, rooted constants | 80,161,846 [W3 §MSS] | 1,468,281,356 [W5 §MSS vs heuristic] |
-| distinct subterms `N`: median / p99 / max | 86 / 2,015 / 27,628 [W3 §Headline] | 147 / 3,052 / 95,110 [W5 §Headline] |
-| R1/R2 candidates: median / p90 / p99 / max | 34 / 232 / 1,187 / 22,458 [W3 §Headline] | 69 / 432 / 2,029 / 81,833 [W5 §Headline] |
-| rooted constants with ≤ 8 candidates | 17.2% [W3 §Headline] | 10.1% [W5 §Headline] |
+| size | 195,387,870 B [Init §Results] | 3,343,271,273 B [ML §Corpus] |
+| stored constants (distinct addresses) | 56,622 [Init §Results] | 679,499 [ML §Corpus] |
+| names | 66,621 [Init §Results] | 778,344 [ML §Corpus] |
+| constants with at least one root | 55,386 [Init §Results] | 663,254 [ML §Headline] |
+| stored (heuristic) bytes, all constants | 80,208,288 [Init §Results] | 1,468,890,902 [ML §Results] |
+| stored bytes, rooted constants | 80,161,846 [Init §MSS] | 1,468,281,356 [ML §MSS vs heuristic] |
+| distinct subterms `N`: median / p99 / max | 86 / 2,015 / 27,628 [Init §Headline] | 147 / 3,052 / 95,110 [ML §Headline] |
+| R1/R2 candidates: median / p90 / p99 / max | 34 / 232 / 1,187 / 22,458 [Init §Headline] | 69 / 432 / 2,029 / 81,833 [ML §Headline] |
+| rooted constants with ≤ 8 candidates | 17.2% [Init §Headline] | 10.1% [ML §Headline] |
 
 - **Init** is the production Lean compiler's output for `Benchmarks/CompileInit.lean`. Regenerate it with
   `lake exe ix compile Benchmarks/CompileInit.lean --out <path>` [P §0]. The production rebuild check
-  reproduces all 56,622 stored constants byte for byte [W3 §Verification].
+  reproduces all 56,622 stored constants byte for byte [Init §Verification]. These v3 corpora come from v3
+  commits; at a v4 commit the same commands write v4 files with canonical sharing tables.
 - **Mathlib** comes from `lake exe ix compile Benchmarks/Compile/CompileMathlib.lean --out <path>`, which
-  does `import Mathlib` and so compiles the whole import environment [W5 §Corpus]:
+  does `import Mathlib` and so compiles the whole import environment [ML §Corpus]:
   - exit 0, 7 min 29 s end to end, of which the compile itself took 152.42 s;
   - peak RSS 19,107,692 kB; 0 ungrounded constants.
 
-  The production rebuild reproduces all 679,499 constants [W5 §Verification]. The corpus contains Init:
-  56,621 of the 56,622 Init rows, all but `main` [W5 §Corpus].
+  The production rebuild reproduces all 679,499 constants [ML §Verification]. The corpus contains Init:
+  56,621 of the 56,622 Init rows, all but `main` [ML §Corpus].
 
 ## What is measured
 
-- **Heuristic:** the stored bytes (`rawBytes`) written by the production compiler: `Ix.Sharing.applySharing`
-  in Lean and its Rust twin.
+- **Heuristic:** the stored bytes (`rawBytes`) written by the compiler of the time: `Ix.Sharing.applySharing`
+  in Lean and its Rust twin (both removed in v4).
 - **MSS:** store every compact-DAG node with in-degree ≥ 2 and standalone size > 1, reference every
-  occurrence, and order the table by priority topological order [W3 §MSS follow-up]. It is priced two
+  occurrence, and order the table by priority topological order [Init §MSS follow-up]. It is priced two
   ways:
-  - in the current Tag4 format (scheme A: its real serialized length);
+  - in v3's Tag4 format (scheme A: its real serialized length);
   - at TagN widths (scheme F: 1 byte below index 8, 2 below 1,032 and 3 beyond). For tables below 66,568
-    entries this equals TagN [W5 §Share-width schemes].
+    entries this equals TagN [ML §Share-width schemes].
 - **Canonical tiered:** `canonicalSharingTiered` (Lean, `Ix/Sharing/Exact/Tiered.lean`) and
   `normalize_constant_sharing_tiered` (Rust) [P §12.8]. It has three phases:
   1. the exact uniform-model optimum at a width `w`;
@@ -232,12 +249,12 @@ Notes on the sources:
     (TagN), else `3`. Here `K` is the number of terms with in-degree ≥ 2 and unshared length ≥ 2.
 
   The construction runs under two layouts:
-  - **Tag4:** the current Share encoding. Bytes are the real serialized length.
-  - **TagN:** the nibble-bootstrapped Share code [P §12.7]. No serializer writes it yet, so bytes are the
-    output priced with TagN Shares (`layout_bytes`); everything else is serialized exactly.
+  - **Tag4:** v3's Share encoding. Bytes are the real serialized length.
+  - **TagN:** the nibble-bootstrapped Share code [P §12.7]. No serializer wrote it at the time, so bytes are
+    the output priced with TagN Shares (`layout_bytes`); everything else is serialized exactly.
 - **Unshared:** every root fully expanded, with an empty table, computed compositionally. Serialization
   confirmed it for all but 7 Init and 619 Mathlib constants, whose unshared roots exceed 16 MiB
-  [W3 §Verification] [W5 §Verification].
+  [Init §Verification] [ML §Verification].
 
 ## Bytes
 
@@ -252,9 +269,9 @@ Notes on the sources:
 | **canonical, TagN layout** | **66,602,235** | **−16.92%** | **1,121,167,486** | **−23.64%** |
 | unshared | 1,069,954,757 | | 214,351,801,952,039 | |
 
-Sources: [X1] [X2]. The heuristic, MSS and unshared totals equal [W3 §MSS] and [W5 §MSS vs heuristic].
-The scheme-F Mathlib total equals [W5 §Share-width schemes]. The Mathlib unshared total is dominated by a
-few constants (the largest is 2.1·10^14 bytes) and is not meaningful as a total [W5 §Limits and coverage].
+Sources: [X1] [X2]. The heuristic, MSS and unshared totals equal [Init §MSS] and [ML §MSS vs heuristic].
+The scheme-F Mathlib total equals [ML §Share-width schemes]. The Mathlib unshared total is dominated by a
+few constants (the largest is 2.1·10^14 bytes) and is not meaningful as a total [ML §Limits and coverage].
 
 **Canonical against MSS at the same widths** [X1] [X2]:
 
@@ -290,8 +307,8 @@ TagN-priced bytes with the stored Tag4 bytes, so it includes the format change.
 
 - **Never larger than unshared.** The canonical construction is not larger than the unshared encoding for
   any rooted constant of either corpus, under either layout [X1] [X2]. MSS is larger for 26 Mathlib
-  constants [W5 §MSS larger than unshared]. The heuristic is larger for 600 Init and 20,237 Mathlib
-  constants [W3 §Headline] [W5 §Headline].
+  constants [ML §MSS larger than unshared]. The heuristic is larger for 600 Init and 20,237 Mathlib
+  constants [Init §Headline] [ML §Headline].
 - **Against MSS**, the remaining losses are few and small, except for one Mathlib constant (+1,485 bytes,
   TagN). It is described with its statistics in [The phase-1 width experiment](#the-phase-1-width-experiment).
 
@@ -322,7 +339,7 @@ These were the canonical numbers until §12.11. They are kept because they motiv
   −1,102,885 B over 23,301 constants. On Init the w = 2 class was still net smaller than MSS: −464,153 B
   (TagN), with 9,596 constants larger.
 - **The K-based Tag4 layout did not even minimize Tag4 bytes** [J1] [J2] [R4] [R5] [R3] [R7].
-  - The K-based TagN-layout construction, serialized in today's Tag4 format, was smaller than the
+  - The K-based TagN-layout construction, serialized in v3's Tag4 format, was smaller than the
     K-based Tag4-layout construction: by 79,522 B on Init (67,621,877 vs 67,701,399) and by 2,582,709 B
     on Mathlib (1,148,028,605 vs 1,150,611,314).
   - Under Tag4, `K > 256` gave `w = 3` for 1,352 Init and 23,301 Mathlib constants; under TagN,
@@ -337,8 +354,8 @@ These were the canonical numbers until §12.11. They are kept because they motiv
 
 ### Limits
 
-**Rust** limits are `ExactSharingLimits::default()` in `crates/ixon/src/sharing_exact.rs`, used by every
-runner run:
+**Rust** limits were `ExactSharingLimits::default()` in `crates/ixon/src/sharing_exact.rs` at the commits
+of these runs, used by every runner run:
 
 | limit | value |
 |---|---:|
@@ -352,7 +369,7 @@ runner run:
 | `max_work` | 2^36 |
 | `max_output_bytes` | 2^32 |
 
-**Lean** limits are `Ix.Sharing.Exact.Limits` in `Ix/Sharing/Exact/Basic.lean`, defaults at `9341656e`:
+**Lean** limits were `Ix.Sharing.Exact.Limits` in `Ix/Sharing/Exact/Basic.lean`, defaults at `9341656e`:
 
 | limit | value |
 |---|---:|
@@ -366,8 +383,12 @@ runner run:
 | `maxMaterialize` (predicted output size) | 2^26 |
 | `maxMaterializeWork` | 2^36 |
 
-`maxMaterializeWork` was added in W1 `84dd662f`. Before it, the per-entry materialization work was
+`maxMaterializeWork` was added in `84dd662f`. Before it, the per-entry materialization work was
 checked against `maxMaterialize`.
+
+After the v4 runs, the table-count knapsack got its own limit, 2^28 cells (`max_knapsack_cells` in Rust,
+`ce38cdc7`; `maxKnapsackCells` in Lean; see the Format v4 section). The compiler defaults were later raised far above all of these
+values, as a safety net with a `--sharing-limits` override ([`Ixon.md`, "Sharing System"](Ixon.md#sharing-system)).
 
 Exhausting a limit is an error, and limits never change the bytes of a success (the docstrings of both
 limit types).
@@ -394,10 +415,10 @@ limit types).
 
 ### Lean certification
 
-- **Old search, uniform optimizer alone** (W3, Init, `maxStates` 2^20):
+- **Old search, uniform optimizer alone** (Init corpus harness, `maxStates` 2^20):
   - certified 55,294 / 55,358 / 55,338 of 55,386 rooted constants at w = 1 / 2 / 3;
   - failures were `states` (90 / 26 / 46) and `costEvals` (2 at each width);
-  - the limit sat at a largest component of 20–21 [W3 §Certification and failures].
+  - the limit sat at a largest component of 20–21 [Init §Certification and failures].
 - **New search, uniform at w = 2:** no exhaustion in Lean or Rust on any of the 56,622 Init or 20,263
   sampled Mathlib constants [D2] [D4].
 - **New search, K-based tiered-TagN, before `maxMaterializeWork`:** Lean exhausted on 10 Init constants
@@ -506,10 +527,11 @@ times are therefore not directly comparable with the K-based rows below.
 - The sample is heavy by construction (it includes every constant with more than 2,000 candidates), so
   its per-constant times are not corpus averages.
 - **For context; these are not optimizer timings:**
-  - W3's Lean uniform optimizer on Init (old search, w = 1, 2 and 3, single-threaded) took 6,875,358 ms
-    over 166,158 calls, a median of 179–249 µs per call and a maximum of 108 s [W3 §Wall time].
-  - W5's single-threaded `sharing-study` harness, which runs no optimizer, measured Mathlib in 4,101.8 s
-    with 4,709,872 kB peak RSS [W5 §Reproduction].
+  - The Lean uniform optimizer run by the Init corpus harness (old search, w = 1, 2 and 3,
+    single-threaded) took 6,875,358 ms
+    over 166,158 calls, a median of 179–249 µs per call and a maximum of 108 s [Init §Wall time].
+  - The single-threaded `sharing-study` harness, which runs no optimizer, measured Mathlib in 4,101.8 s
+    with 4,709,872 kB peak RSS [ML §Reproduction].
 
 ### Parallelism inside one constant (Rust) [X7] [X8]
 
@@ -623,7 +645,7 @@ percentiles:
 - **Uniform-model classes**, from the harness's own classification of the MSS candidate set:
   - certain-stored 80.5 / 64.1 / 54.4% on Init and 88.4 / 71.0 / 57.9% on Mathlib, at w = 1 / 2 / 3;
   - largest uncertain component ≤ 8 for 99.7–99.9% of constants, max 45
-    [W3 §Uniform-reference-width classification] [W5 §Uniform-reference-width classification and
+    [Init §Uniform-reference-width classification] [ML §Uniform-reference-width classification and
     components].
 
 ## Slowest constants
@@ -692,7 +714,7 @@ How the differential counts:
 - A one-sided exhaustion is reported. `diagnose` then reruns Lean with the limit that fired doubled, at
   most 12 times.
 
-**Best of three** (the canonical rule, Lean W1 `3eb09b9c` and Rust `a80c16cf`):
+**Best of three** (the canonical rule, Lean `3eb09b9c` and Rust `a80c16cf`):
 
 | corpus | build | mode | same bytes | same error | Lean-only exhaustion | Rust-only | disagreements | source |
 |---|---|---|---:|---:|---:|---:|---:|---|
@@ -725,9 +747,9 @@ How the differential counts:
 - **One-sided exhaustions.** After `diagnose` raised the limit that fired, every Lean-only exhaustion in
   every run gave bytes equal to Rust's [D0] [D3] [D4]. With `maxMaterializeWork` (`3ddda798` onwards)
   there were none in [D5]–[D7].
-- **The aborted run [D8].** The best-of-three Mathlib-sample differential was stopped at the coordinator's
-  request after 2 h 5 min, at 07:23 on 2026-10-01. It used the phase-2 order that §12.14 replaces, so the
-  Kahn-order rerun would supersede it, and the CPU was needed by other worktrees' builds. Each
+- **The aborted run [D8].** The best-of-three Mathlib-sample differential was stopped
+  after 2 h 5 min, at 07:23 on 2026-10-01. It used the phase-2 order that §12.14 replaces, so the
+  Kahn-order rerun would supersede it, and the CPU was needed for other builds. Each
   process buffers its output until the end, so no tally was written. Each log ends with GNU `time`'s "Command terminated by signal 15", an
   elapsed time of 2:04:51–2:04:57 and the wrapper's `exit=143`.
 - **The half-corpus run [D6].** The constants were split round-robin into 6 address shards, one process
@@ -738,12 +760,16 @@ How the differential counts:
   driver then failed to spawn `lean`, which was not on their `PATH` [D3].
 - **Rust-only tests.** `cargo test -p ixon` passes 392 tests at `a80c16cf`. Among them are the comparison
   of the branch and bound against the enumeration on 600 generated inputs, and the best-of-three selection
-  rule against the forced-width candidates (`tiered_at_width_hook`).
+  rule against the forced-width candidates (`tiered_at_width_hook`, now
+  `tiered_selects_the_best_width_candidate`).
 
 ## The phase-1 width experiment
 
 This experiment led to plan §12.11. It was run with an experiment hook, before either implementation's
 canonical entry point adopted the rule. The best-of-three figures in [Bytes](#bytes) come from it.
+
+The hook and the runner mode were removed after the experiment (the forced-width entry point remains as a
+crate-private test helper), so reproducing this section needs the commits in the Sources table.
 
 **Hypothesis.** The K-based rule picks the nominal width from `K`, but the optimum stores far fewer terms
 than `K`, so the real references are narrower than modelled. With `K = 100`, for example, TagN gives
@@ -754,13 +780,16 @@ excluded terms that pay at width 1.
 
 - **The hook.** `normalize_constant_sharing_tiered_at_width` (`faf1a7c7`) runs phases 1–3 with the
   phase-1 width forced to `w`. Phases 2 and 3 are unchanged. At the K-based width it reproduces the
-  canonical construction (test `tiered_at_width_hook`).
-- **The runner.** `--width-experiment` runs the hook at `w = 1, 2, 3` for every constant and records the
-  layout bytes of each width.
+  canonical construction (test `tiered_at_width_hook` at that commit; it is now
+  `tiered_selects_the_best_width_candidate`, which checks that the canonical construction is the best of
+  the three forced-width candidates).
+- **The runner.** `--width-experiment` (removed after the experiment) ran the hook at `w = 1, 2, 3` for
+  every constant and recorded the layout bytes of each width.
 - **The choices compared:**
   - K-based (superseded);
   - best of three;
-  - re-solve: take `w = uniform_width(stored count of the K-based run)` and solve once at that width;
+  - re-solve: take `w = uniform_width(stored count of the K-based run)` (the K-based width function,
+    since removed) and solve once at that width;
   - one fixed `w` for every constant.
 - **Pricing.** MSS is priced at the same widths, scheme F for TagN and scheme A for Tag4, over rooted
   constants.
@@ -818,13 +847,13 @@ Mathlib.
 
 | quantity | value | source |
 |---|---:|---|
-| distinct subterms `N` | 19,417 | [W5] CSV, [R3] |
-| R1/R2 candidates | 8,801 | [W5] CSV, [R3] |
-| `K` (in-degree ≥ 2, unshared length ≥ 2) = MSS table size | 2,230 | [X1], [W5] CSV `mss_table` |
-| heuristic: stored bytes / table entries | 96,389 / 8,591 | [W5] CSV |
-| unshared bytes | 13,329,184 | [W5] CSV |
-| MSS: Tag4 bytes / TagN-priced bytes | 72,195 / 63,779 | [W5] CSV, join |
-| MSS Share references at indices < 8 / 8–1,031 / ≥ 1,032 | 1,101 / 13,699 / 4,149 (Σ deg 18,949) | [W5] CSV |
+| distinct subterms `N` | 19,417 | [ML] CSV, [R3] |
+| R1/R2 candidates | 8,801 | [ML] CSV, [R3] |
+| `K` (in-degree ≥ 2, unshared length ≥ 2) = MSS table size | 2,230 | [X1], [ML] CSV `mss_table` |
+| heuristic: stored bytes / table entries | 96,389 / 8,591 | [ML] CSV |
+| unshared bytes | 13,329,184 | [ML] CSV |
+| MSS: Tag4 bytes / TagN-priced bytes | 72,195 / 63,779 | [ML] CSV, join |
+| MSS Share references at indices < 8 / 8–1,031 / ≥ 1,032 | 1,101 / 13,699 / 4,149 (Σ deg 18,949) | [ML] CSV |
 | tiered TagN at w = 1: stored / bytes | 1,924 / 65,444 | [X1] CSV |
 | tiered TagN at w = 2: stored / bytes (best) | 1,895 / **65,264** | [X1] CSV |
 | tiered TagN at w = 3 (= K-based): stored / bytes | 1,755 / 65,325 | [X1] CSV, [R3] |
@@ -874,7 +903,7 @@ above MSS. The best-of-four experiment below stores MSS's exact set as a fourth 
 
 **Method.** A fourth phase-1 candidate, "all", stores every candidate: compact in-degree ≥ 2 and
 unshared length ≥ 2, which is exactly MSS's set. Its bodies are materialized at uniform width 1 and
-carried through phases 2 and 3 like the others (hook `Phase1Choice::AllCandidates`, `94882265`). The best
+carried through phases 2 and 3 like the others (hook `Phase1Choice::AllCandidates`, `94882265`, removed after the experiment). The best
 of four takes the fewest layout bytes, with ties going to w = 1, 2, 3 and then "all". No candidate failed
 on any constant of either corpus under either layout.
 
@@ -901,7 +930,7 @@ on any constant of either corpus under either layout.
   That is worse than its own `w = 2` candidate (65,264) and 3,588 bytes worse than MSS (63,779) [X4] CSV.
   Under Tag4 "all" gives 72,065.
 - §12.14 first attributed the gap to phase 2's pinned order beyond the first tier. Phase 2 now uses the
-  Kahn priority order by reference count there (W1 `7a7113cf`, Rust `0ef72793`), and this does not
+  Kahn priority order by reference count there (Lean `7a7113cf`, Rust `0ef72793`), and this does not
   close the gap [X6]:
   - TagN bytes at w = 1 / 2 / 3: 65,444 / 65,264 / **65,247**; "all" 67,367 (unchanged).
   - The best of three is now 65,247, +1,468 over MSS (was +1,485).
@@ -911,11 +940,11 @@ on any constant of either corpus under either layout.
 
   | encoding | TagN bytes | Tag4 bytes | Shares at TagN widths 1 / 2 / 3 bytes |
   |---|---:|---:|---|
-  | MSS, ties by blake3 hash (W3's `mssBuild` rule) | **63,779** | **72,195** | 1,101 / 13,699 / 4,149 |
+  | MSS, ties by blake3 hash (the harness's `mssBuild` rule) | **63,779** | **72,195** | 1,101 / 13,699 / 4,149 |
   | MSS, ties by structural ID | 67,367 | 72,071 | 1,101 / 10,111 / 7,737 |
   | "all" (tiered phases 2 and 3 on MSS's set) | 67,367 | | 1,101 / 7,891 / 7,737 |
 
-  - The blake3-tie MSS reproduces W5's MSS bytes and scheme-F price exactly.
+  - The blake3-tie MSS reproduces the Mathlib harness's MSS bytes and scheme-F price exactly [ML].
   - The ID-tie MSS and "all" have the same table order (no entry at a different index) and the same
     total entry and root lengths (28,683 and 32,421).
   - "all" writes 2,220 occurrences of size-2 stored terms inline. A 2-byte Share and a 2-byte inline
@@ -927,6 +956,9 @@ on any constant of either corpus under either layout.
 ### Store-all against MSS under both tie rules (plan §12.15) [X5]
 
 All 679,499 Mathlib constants, TagN prices. "all" is the all-candidates construction with the Kahn order.
+The comparison ran with the runner modes `--mss-compare` and `--mss-ties` at `7b083108`; those modes, the
+MSS inspector and the blake3 tie rule were removed after the experiment, and the Rust MSS encoding
+(`mss.rs`) is now a test-only reference encoding.
 
 | comparison | "all" larger | "all" smaller | equal | total difference |
 |---|---:|---:|---:|---:|
@@ -935,8 +967,8 @@ All 679,499 Mathlib constants, TagN prices. "all" is the all-candidates construc
 
 - **Totals:**
   - MSS with ID ties: 1,130,616,480 B.
-  - MSS with blake3 ties: 1,130,990,863 B. This equals [W5]'s scheme-F rooted total plus the 609,546
-    rootless bytes. Its Share bytes, 280,471,878, equal [W5]'s scheme-F reference bytes.
+  - MSS with blake3 ties: 1,130,990,863 B. This equals [ML]'s scheme-F rooted total plus the 609,546
+    rootless bytes. Its Share bytes, 280,471,878, equal [ML]'s scheme-F reference bytes.
   - "all": 1,129,388,537 B.
 - **Shares:** both MSS variants write 159,110,515 Shares; "all" writes 145,331,762. "all" writes
   13,778,893 occurrences of stored terms inline, in 239,559 constants.
@@ -948,7 +980,7 @@ All 679,499 Mathlib constants, TagN prices. "all" is the all-candidates construc
   - The largest ID advantage is 6,980 B (`CartanMatrix.E₈_det`); the largest blake3 advantage is the
     outlier's 3,588 B.
   - Taking the better rule per constant would gain 119,735 B (0.011%).
-- **Twenty constants examined entry by entry** (`--mss-diff`) where "all" and MSS differ by more than 1%:
+- **Twenty constants examined entry by entry** (`--mss-diff`, a runner mode removed after the experiment) where "all" and MSS differ by more than 1%:
   - The 7 where "all" exceeds blake3-tie MSS by more than 1%: in each, ID-tie MSS is at least as large as
     "all", and blake3 ties beat ID ties under TagN.
   - 13 random constants of the 8,440 where "all" is more than 1% below ID-tie MSS: "all" gains through
@@ -974,10 +1006,12 @@ All 679,499 Mathlib constants, TagN prices. "all" is the all-candidates construc
 
 ## Format v4: the TagN-only wire with six rungs
 
-These results come from the code as of `36fe2777` and `ce38cdc7`.
+These results come from the code as of `36fe2777` and `ce38cdc7`. Those corpora still have the header
+byte `0xE3` and heuristic sharing tables: the version flip to 4 (`0xE4`) and the canonical compiler route
+came later.
 
-**What changed.** Ixon now writes TagN for every integer (W4 `93e2895c`), and the TagN code gained a
-4-byte rung (W4 `480923f2`): the widths are 1, 2, 3, 4, 5 and 9 bytes [P §12.12] [P §12.16]. The v3
+**What changed.** Ixon now writes TagN for every integer (`93e2895c`), and the TagN code gained a
+4-byte rung (`480923f2`): the widths are 1, 2, 3, 4, 5 and 9 bytes [P §12.12] [P §12.16]. The v3
 corpora above can no longer be read; this is by design. The tiered construction now uses TagN only
 (`36fe2777`).
 
@@ -987,7 +1021,7 @@ The corpora were regenerated at `36fe2777` and are named after that commit [C1]:
 
 | | Init | Mathlib |
 |---|---:|---:|
-| file | `$S/w2/init_v4r_36fe2777.ixe` | `$S/w2/mathlib_v4r_36fe2777.ixe` |
+| file | `$S/init_v4r_36fe2777.ixe` | `$S/mathlib_v4r_36fe2777.ixe` |
 | size | 155,259,078 B | 2,620,063,965 B |
 | compile time (GNU `time`, wall) | 0:51.10 | 3:51.09 |
 | compile peak RSS | 2,945,116 kB | 18,726,024 kB |
@@ -996,8 +1030,14 @@ The corpora were regenerated at `36fe2777` and are named after that commit [C1]:
 
 - The Init corpus was produced with `lake exe ix compile Benchmarks/CompileInit.lean`.
 - The Mathlib corpus was produced with `lake exe ix compile Benchmarks/Compile/CompileMathlib.lean`,
-  using W5's dependency build copied read-only.
+  using the dependency build of the v3 Mathlib corpus (`Benchmarks/Compile/.lake`) copied read-only.
 - Both used the compiler's heuristic sharing route, since the route switch had not landed.
+- **With the canonical route and version 4** (`e77bd3a6`), `lake exe ix compile Benchmarks/CompileInit.lean`
+  writes 143,680,738 bytes (`Total constants: 65995`); the compile step took 51.6 s, GNU `time` 0:55.74
+  wall and 2,963,976 kB peak RSS, on a loaded machine, so the times are indicative. The Mathlib compile at
+  that commit has not been measured.
+
+<!-- PENDING: [measure] at the PR commit: the serialized size of Init and Mathlib compiled with the canonical route (`lake exe ix compile Benchmarks/CompileInit.lean`, `Benchmarks/Compile/CompileMathlib.lean`) and `ix compile` wall time and peak RSS for both, before (main, heuristic) and after (PR commit, canonical route) on an otherwise idle machine; add a table here and a line to the Summary. -->
 
 ### Rust canonical construction (best of three, Kahn order), 20 threads [R10]
 
@@ -1016,8 +1056,8 @@ The corpora were regenerated at `36fe2777` and are named after that commit [C1]:
   part of the `K` candidates, and the largest `K` is 21,461. So the 4-byte rung does not change any
   Share width in these outputs.
 - Integers of 66,568 or more in other fields now take 4 bytes instead of 5 in both the stored and the
-  canonical encodings. I did not compare the construction's decisions before and after the rung
-  change on the same input, since no old-rung reader exists for the v4 corpus.
+  canonical encodings. The construction's decisions before and after the rung
+  change were not compared on the same input, since no old-rung reader exists for the v4 corpus.
 - **The one failure, and its fix** [X9].
   - The failing constant was `CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`,
     which hit `resource:States` at every width.
@@ -1039,39 +1079,38 @@ The corpora were regenerated at `36fe2777` and are named after that commit [C1]:
 | corpus | mode | constants | same bytes | same error | Lean-only | Rust-only | disagreements | Lean Σ | Rust Σ | source |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | Init, all | tiered-TagN | 56,622 | **56,622** | 0 | 0 | 0 | **0** | 3,438.0 s | 350.0 s | [D10] |
-| Mathlib sample, 5 of 8 shards finished at handoff | tiered-TagN | 12,666 | **12,666** | 0 | 0 | 0 | **0** | 20,239.9 s | 1,628.0 s | [D11] |
+| Mathlib sample | tiered-TagN | 20,265 | **20,264** | 1 | 0 | 0 | **0** | 35,494.4 s | 2,687.7 s | [D11] |
 
 - The Init run used 6 processes, each taking 7:04–13:06 with a peak RSS of about 839 MB.
 - In every process, the §2 fixtures (76), the generated inputs (2,048) and the 124 Share-bearing
   constants agree [D10] [D11].
 - **The Mathlib sample** has 20,265 constants: every 50th of the v4 corpus plus every constant with
-  more than 2,000 candidates, selected by the runner [R10]. **The Mathlib-sample run was still in progress at handoff.** It ran 8 processes, one per address
-shard, using IxTests built at `36fe2777`.
-
-- **Finished:** shards 0, 1, 2, 4 and 7, covering 12,666 of the 20,265 constants. All 12,666 give
-  identical bytes, with no exhaustion on either side and 0 disagreements. Summed per-call times were
-  Lean 20,239.9 s and Rust 1,628.0 s. Each process took 1:01:52–1:20:56, with a peak RSS of about
-  4.0 GB.
-- **Still running at 13:57 on 2026-10-01:** shards 3, 5 and 6, which hold 7,599 constants. At that
-  point they had run 1:26.
-- **Logs:** `$S/w2/p10/ml_s{0..7}.log`. Each shard's tally appears there when its process ends, and
-  `$S/w2/p10/ml.done` is written when all eight have ended.
-- **Resuming.** If the processes were lost, rebuild `IxTests` at `36fe2777`, or at any later commit,
-  since the comparison is per constant. Then run, from the worktree root:
+  more than 2,000 candidates, selected by the runner [R10]. The run used 8 processes, one per address
+  shard (the sample split round-robin), with IxTests built at `36fe2777`. Each process took
+  1:01:52–1:40:01, with a peak RSS of about 4.0 GB.
+- **The one same-error constant** is `CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite`
+  (address `ca5b91d8…`). Lean and Rust both fail with a resource-limit error (the differential's error
+  category `resource`), which counts as agreement of the error category, not as a one-sided exhaustion.
+  The differential does not record which limit fired; the runner at the same commit reports Rust's as
+  `resource:States` at every width [X9]. It is the table-count knapsack case above: with the separate
+  knapsack-cell limit of `ce38cdc7` the constant certifies.
+- **Reproduction.** Build `IxTests`, write the sample with the runner's `--select-out` (as in [R10]),
+  split it round-robin into 8 address files, and run one process per file:
 
   ```text
-  S=/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad
-  for i in 3 5 6; do
-    IX_SHARING_CORPUS=$S/w2/mathlib_v4r_36fe2777.ixe IX_SHARING_CORPUS_MODES=tiered-tagN \
-    IX_SHARING_CORPUS_SELECT=$S/w2/p10/ml_shards/s$i.txt \
-    ./.lake/build/bin/IxTests exact-sharing-ffi > $S/w2/p10/ml_s$i.log 2>&1 &
+  nix develop --command bash -c 'lake build IxTests'
+  for i in 0 1 2 3 4 5 6 7; do
+    IX_SHARING_CORPUS=$S/mathlib_v4r_36fe2777.ixe IX_SHARING_CORPUS_MODES=tiered-tagN \
+    IX_SHARING_CORPUS_SELECT=$S/ml_shards/s$i.txt \
+    ./.lake/build/bin/IxTests exact-sharing-ffi > $S/ml_s$i.log 2>&1 &
   done
   ```
 
-  One caveat applies to any build at or after `ce38cdc7`. That commit's separate knapsack-cell limit
-  (Rust) has to be matched by W1's Lean change. Otherwise `CategoryTheory.Functor.IsDenseSubsite…`,
-  which is in the sample, can be exhausted on one side only.
+  A build at or after `ce38cdc7` needs the matching Lean knapsack-cell limit (`maxKnapsackCells`,
+  `941ce87a`; both implementations have it from then on). Without it
+  `CategoryTheory.Functor.IsDenseSubsite…` can be exhausted on one side only.
 
+<!-- PENDING: [parity] final Lean/Rust differential at the PR commit on corpora compiled at that commit with the canonical route (Init full + the Mathlib sample): constants compared, same bytes, same error, Lean-only, Rust-only, disagreements, Lean Σ, Rust Σ; add as rows of this table and update the Summary. -->
 
 ## What is not covered
 
@@ -1080,30 +1119,33 @@ shard, using IxTests built at `36fe2777`.
   - It is checked against exhaustive enumeration on small generated inputs and on the §2 fixtures (suite
     `exact-sharing`; Rust `optimizer_matches_exhaustive_oracle` and the tests around it).
   - It was not run over either corpus; Mathlib's median candidate count (69) is far beyond its reach
-    [P §12.1] [W5 §Headline].
+    [P §12.1] [ML §Headline].
   - So no corpus number here is a distance to the true minimum.
-  - The only proved lower bound measured on a corpus is W3's w = 1 uniform-model optimum on Init, under
-    the old search. The best of the encodings W3 measured, per constant, is 11.72% above it
-    [W3 §Lower-bound gap]. That bound was not recomputed for the best of three.
+  - The only proved lower bound measured on a corpus is the w = 1 uniform-model optimum on Init, computed
+    by the Init corpus harness under the old search. The best of the encodings measured there, per
+    constant, is 11.72% above it
+    [Init §Lower-bound gap]. That bound was not recomputed for the best of three.
 - **Unshared sizes of 619 Mathlib constants (and 7 Init) were not serialized**, only computed
-  compositionally, because their unshared roots exceed 16 MiB [W5 §Limits and coverage]
-  [W3 §Verification]. The runner's unshared sizes are compositional too, and they agree with the
+  compositionally, because their unshared roots exceed 16 MiB [ML §Limits and coverage]
+  [Init §Verification]. The runner's unshared sizes are compositional too, and they agree with the
   harness's for every row [J1] [J2].
 - **The heuristic's own `occ` counts** were not brute-force checked for 31,049 Mathlib and 1,232 Init
-  constants [W5 §Verification] [W3 §Verification].
-- **The TagN Share encoding is not serialized.** TagN-layout bytes are prices (`layout_bytes`), not
-  measured serializations. W4's selectable `ShareCodec` can write TagN Shares, but the current wire
-  codec is still Tag4 (`ShareCodec::CURRENT`), and these runs predate it [P §12.8]. TagN for all integers
-  [P §12.12] is not priced here.
+  constants [ML §Verification] [Init §Verification].
+- **On the v3 corpora, TagN Shares are not serialized.** TagN-layout bytes there are prices
+  (`layout_bytes`), not measured serializations: those runs predate the TagN wire codec [P §12.8], and
+  TagN for all integers [P §12.12] is not priced in them. The Format v4 section serializes TagN.
 - **Best of three, beyond the byte totals.**
   - The Rust byte figures come from the experiment hook, which runs the same three candidates that the
-    canonical path (`a80c16cf`) compares. No full-corpus run of the canonical runner mode was repeated.
-  - Lean/Rust parity under the best of three covers Init only [D7]; the Mathlib-sample run [D8] was
-    aborted.
+    canonical path (`a80c16cf`) compares. No full-corpus run of the canonical runner mode was repeated on
+    the v3 corpora; [R10] is one on the v4 corpora.
+  - On the v3 corpora, Lean/Rust parity under the best of three covers Init only [D7]; the
+    Mathlib-sample run [D8] was aborted. On the v4 corpora (Kahn order) it covers Init and the Mathlib
+    sample [D10] [D11].
   - The phase statistics above are for one phase-1 run (the K-based width). Per-width search statistics
     (states, components) were not recorded.
-- **The Kahn order beyond the first tier** (W1 `7a7113cf`, Rust `0ef72793`) is measured here only on the
-  outlier [X6] and in the store-all comparison [X5]; the best-of-three byte totals above predate it.
+- **The Kahn order beyond the first tier** (Lean `7a7113cf`, Rust `0ef72793`) is measured on the v3 corpora
+  only on the outlier [X6] and in the store-all comparison [X5] (the best-of-three byte totals above
+  predate it), and on the v4 corpora in [R10] [D10] [D11].
 - **Lean on all of Mathlib.** The K-based tiered-TagN differential over all 679,499 constants ran in 6
   address shards [D6]. Three shards (339,749 constants) completed with 0 disagreements. The other three
   processes ended without output, for reasons not explained. No best-of-three Lean run over all of
@@ -1112,56 +1154,79 @@ shard, using IxTests built at `36fe2777`.
   of per-call times inside the differential, whose processes also run Rust and the diagnosis reruns.
   Lean-only peak memory was not separated from the differential process.
 - **Other corpora.** The 9 other `Benchmarks/Compile` targets, project fixtures, and synthetic families
-  beyond the test generators were not measured [W5 §Limits and coverage].
+  beyond the test generators were not measured [ML §Limits and coverage].
 - **Proofs.** Nothing here measures or checks optimality claims. Phase 1's uniform optimum is proved
-  minimal and `setPrec`-least in Lean (`optimizeUniform_minimum`, `optimizeUniform_least`); phases 2 and
-  3 and the best-of-three selection are tested, not proved [P §12.13].
+  minimal and `setPrec`-least in Lean (`optimizeUniform_minimum`, `optimizeUniform_least`). Phases 2 and
+  3 and the width selection have machine-checked specifications of their own (`allocate_spec`,
+  `firstTier_spec`, `materializeTable_min`, `rematerialize_spec`, `canonicalTieredCore_select`); their
+  composition is not claimed to be a global minimum, and the Rust implementation is held to Lean by the
+  differential [P §12.13] ([`Ixon.md`, "Sharing System"](Ixon.md#sharing-system)).
 
 ## Reproduction
 
-Run from the worktree root, with `S` as above:
+Run from the repository root, with `$S` as above.
+
+- **At the current head** the runner runs only the canonical construction (best of three, Kahn order,
+  TagN) and keeps the flags `--threads`, `--limit`, `--csv`, `--select-out`, `--select-stride`,
+  `--select-min-cand`, `--only`, `--par-widths`/`--par-components`/`--par-materialize`,
+  `--serial-constants`, `--check-sequential` and `--max-states`. Its corpus must be compiled at the same
+  commit, since a reader accepts only its own format version. The first block below is the [R10] run
+  in that form.
+- **Historical runs** need the commit named in the Sources table. `--layout` (and the Tag4 layout) and
+  `--width-experiment` existed only up to the experiment-hook cleanup and are not available at the current
+  head; the K-based rule of [R3]–[R7] exists only at its commits; the best-of-four columns of [X4] only at
+  `94882265`.
 
 ```text
-# Rust runner
+# Rust runner, current head: canonical construction over corpora compiled at the same commit   [R10]
 nix develop --command bash -c 'cargo build --release -p ixon --example sharing_corpus'
 R=./target/release/examples/sharing_corpus
-time -v $R $S/init.ixe    --layout tagN --threads 8 --width-experiment --csv $S/w2/p4/wx_init_tagN.csv     # [X1]
-time -v $R $S/mathlib.ixe --layout tagN --threads 8 --width-experiment --csv $S/w2/p4/wx_ml_tagN.csv       # [X1]
-time -v $R $S/init.ixe    --layout tag4 --threads 8 --width-experiment --csv $S/w2/p4/wx_init_tag4.csv     # [X2]
-time -v $R $S/mathlib.ixe --layout tag4 --threads 8 --width-experiment --csv $S/w2/p4/wx_ml_tag4.csv       # [X2]
-time -v $R $S/init.ixe    --layout tagN --threads 1 --width-experiment --csv $S/w2/p4/wx_init_tagN_t1.csv  # [X3]
+time -v $R $S/init_v4.ixe    --threads 20 --csv $S/init_rust.csv --select-out $S/init_all.txt --select-stride 1
+time -v $R $S/mathlib_v4.ixe --threads 20 --csv $S/ml_rust.csv   --select-out $S/ml_select.txt
+
+# Rust runner, historical: [X1]-[X3] at faf1a7c7, [X4] at 94882265 (--layout and --width-experiment
+# existed only at those commits)
+time -v $R $S/init.ixe    --layout tagN --threads 8 --width-experiment --csv $S/wx_init_tagN.csv     # [X1]
+time -v $R $S/mathlib.ixe --layout tagN --threads 8 --width-experiment --csv $S/wx_ml_tagN.csv       # [X1]
+time -v $R $S/init.ixe    --layout tag4 --threads 8 --width-experiment --csv $S/wx_init_tag4.csv     # [X2]
+time -v $R $S/mathlib.ixe --layout tag4 --threads 8 --width-experiment --csv $S/wx_ml_tag4.csv       # [X2]
+time -v $R $S/init.ixe    --layout tagN --threads 1 --width-experiment --csv $S/wx_init_tagN_t1.csv  # [X3]
 # best of four: the same mode at 94882265, which adds the "all" candidate and the best4 columns   # [X4]
-time -v $R $S/mathlib.ixe --layout tagN --threads 12 --width-experiment --csv $S/w2/p4/wx4_ml_tagN.csv     # [X4]
-time -v $R $S/init.ixe    --layout tagN --threads 1  --csv $S/w2/p4/init_tagN_t1.csv                       # [R6]
-time -v $R $S/init.ixe    --layout tagN --threads 20 --csv $S/w2/p4/init_tagN_t20.csv                      # [R4]
-time -v $R $S/init.ixe    --layout tag4 --threads 20 --csv $S/w2/p4/init_tag4_t20.csv                      # [R5]
-time -v $R $S/mathlib.ixe --layout tagN --threads 20 --csv $S/w2/mathlib_tiered_bb.csv                     # [R3]
-time -v $R $S/mathlib.ixe --layout tag4 --threads 20 --csv $S/w2/p4/ml_tag4_t20.csv \
-    --select-out $S/w2/p4/ml_all.txt --select-stride 1                                                    # [R7]
+time -v $R $S/mathlib.ixe --layout tagN --threads 12 --width-experiment --csv $S/wx4_ml_tagN.csv     # [X4]
+# Rust runner, historical: K-based rule at e4c0dead (--layout existed only up to the cleanup)
+time -v $R $S/init.ixe    --layout tagN --threads 1  --csv $S/init_tagN_t1.csv                       # [R6]
+time -v $R $S/init.ixe    --layout tagN --threads 20 --csv $S/init_tagN_t20.csv                      # [R4]
+time -v $R $S/init.ixe    --layout tag4 --threads 20 --csv $S/init_tag4_t20.csv                      # [R5]
+time -v $R $S/mathlib.ixe --layout tagN --threads 20 --csv $S/mathlib_tiered_bb.csv                  # [R3]
+time -v $R $S/mathlib.ixe --layout tag4 --threads 20 --csv $S/ml_tag4_t20.csv \
+    --select-out $S/ml_all.txt --select-stride 1                                                    # [R7]
 
-# Joins (scripts in $S/w2/p4/); for Init use $S/sharing-minimum-measurements.csv ([W3]'s tenth-run CSV)
-gawk -v layout=tagN -f bestjoin.awk $S/w5/mathlib-sharing.csv wx_ml_tagN.csv                    # [X1]
-gawk -v layout=tagN -f wxjoin.awk   $S/w5/mathlib-sharing.csv wx_ml_tagN.csv                    # [X1]
-gawk -f join.awk $S/w5/mathlib-sharing.csv $S/w2/mathlib_tiered_bb.csv ml_tag4_t20.csv          # [J2]
-gawk -f byw.awk  $S/w5/mathlib-sharing.csv $S/w2/mathlib_tiered_bb.csv ml_tag4_t20.csv          # [J2]
-gawk -f slowest.awk $S/w2/mathlib_tiered_bb.csv wx_ml_tagN.csv                                  # [X1]
-gawk -v layout=tagN -v bestcol=best4 -f wxjoin.awk $S/w5/mathlib-sharing.csv wx4_ml_tagN.csv    # [X4]
+# Joins (untracked gawk scripts; see the notes on the sources). For Init use the Init harness's
+# tenth-run CSV, $S/sharing-minimum-measurements.csv
+gawk -v layout=tagN -f bestjoin.awk $S/mathlib-sharing.csv wx_ml_tagN.csv                    # [X1]
+gawk -v layout=tagN -f wxjoin.awk   $S/mathlib-sharing.csv wx_ml_tagN.csv                    # [X1]
+gawk -f join.awk $S/mathlib-sharing.csv $S/mathlib_tiered_bb.csv ml_tag4_t20.csv          # [J2]
+gawk -f byw.awk  $S/mathlib-sharing.csv $S/mathlib_tiered_bb.csv ml_tag4_t20.csv          # [J2]
+gawk -f slowest.awk $S/mathlib_tiered_bb.csv wx_ml_tagN.csv                                  # [X1]
+gawk -v layout=tagN -v bestcol=best4 -f wxjoin.awk $S/mathlib-sharing.csv wx4_ml_tagN.csv    # [X4]
 
-# Lean/Rust differential (one process per address shard)
+# Lean/Rust differential (one process per address shard). The modes tiered-tagN and uniform-w<k>
+# exist at the current head; tiered-tag4 existed only at the commits of [D1]-[D9].
 nix develop --command bash -c 'lake build IxTests'
 IX_SHARING_CORPUS=$S/mathlib.ixe IX_SHARING_CORPUS_MODES=tiered-tagN \
-IX_SHARING_CORPUS_SELECT=<shard of addresses> time -v ./.lake/build/bin/IxTests exact-sharing-ffi    # [D2]-[D8]
+IX_SHARING_CORPUS_SELECT=<shard of addresses> time -v ./.lake/build/bin/IxTests exact-sharing-ffi    # [D2]-[D11]
 ```
 
 ## Appendix A: runner reports and joins
 
-Each block is the runner's report file, unedited, followed by the GNU `time` lines of its `.err` file.
+Each block is the runner's report file, unedited apart from local paths (written `$S/…`), followed by
+the GNU `time` lines of its `.err` file.
 
-<details><summary>[R6] Init, TagN layout, 1 thread, new search, K-based (<code>p4/init_tagN_t1.md</code>)</summary>
+<details><summary>[R6] Init, TagN layout, 1 thread, new search, K-based (<code>init_tagN_t1.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- corpus: $S/init.ixe (56622 constants; 56622 processed); layout TagN
 - wall: index 206 ms, processing 83.1 s with 1 threads; peak RSS 307508 KiB
 - certified: 56622 / 56622; failed: 0
 - failures by status: {}
@@ -1189,7 +1254,7 @@ Each block is the runner's report file, unedited, followed by the GNU `time` lin
   - 436 ms _private.Init.Data.Vector.Extract.0.Vector.extract_add_left._proof_1 (5a362f9e99724cbf): defn ok, N 14521, cand 8259, k 2854, w 3, uncertain 332, components 310 (largest 3), states uniform 1310 first-tier 4936
 - total wall 85.4 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --layout tagN --threads 1 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/init_tagN_t1.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --layout tagN --threads 1 --csv $S/init_tagN_t1.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:25.43
 	Maximum resident set size (kbytes): 307708
 	Exit status: 0
@@ -1198,11 +1263,11 @@ exit=0
 
 </details>
 
-<details><summary>[R4] Init, TagN layout, 20 threads, new search, K-based (<code>p4/init_tagN_t20.md</code>)</summary>
+<details><summary>[R4] Init, TagN layout, 20 threads, new search, K-based (<code>init_tagN_t20.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- corpus: $S/init.ixe (56622 constants; 56622 processed); layout TagN
 - wall: index 318 ms, processing 7.7 s with 20 threads; peak RSS 620324 KiB
 - certified: 56622 / 56622; failed: 0
 - failures by status: {}
@@ -1230,7 +1295,7 @@ exit=0
   - 890 ms _private.Init.Data.Array.Lemmas.0.Array.toList_reverse.go._unary (c6ad8cd851ef627b): defn ok, N 12884, cand 8661, k 2769, w 3, uncertain 563, components 440 (largest 6), states uniform 2262 first-tier 6387
 - total wall 10.2 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --layout tagN --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/init_tagN_t20.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --layout tagN --threads 20 --csv $S/init_tagN_t20.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:10.24
 	Maximum resident set size (kbytes): 619440
 	Exit status: 0
@@ -1239,11 +1304,11 @@ exit=0
 
 </details>
 
-<details><summary>[R5] Init, Tag4 layout, 20 threads, new search, K-based (<code>p4/init_tag4_t20.md</code>)</summary>
+<details><summary>[R5] Init, Tag4 layout, 20 threads, new search, K-based (<code>init_tag4_t20.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout Tag4
+- corpus: $S/init.ixe (56622 constants; 56622 processed); layout Tag4
 - wall: index 209 ms, processing 7.8 s with 20 threads; peak RSS 619272 KiB
 - certified: 56622 / 56622; failed: 0
 - failures by status: {}
@@ -1271,7 +1336,7 @@ exit=0
   - 905 ms _private.Init.Data.Vector.Extract.0.Vector.extract_add_left._proof_1 (5a362f9e99724cbf): defn ok, N 14521, cand 8259, k 2854, w 3, uncertain 332, components 310 (largest 3), states uniform 1310 first-tier 4936
 - total wall 10.1 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --layout tag4 --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/init_tag4_t20.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --layout tag4 --threads 20 --csv $S/init_tag4_t20.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:10.15
 	Maximum resident set size (kbytes): 618880
 	Exit status: 0
@@ -1284,7 +1349,7 @@ exit=0
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../mathlib.ixe (679499 constants; 679499 processed); layout TagN
+- corpus: $S/mathlib.ixe (679499 constants; 679499 processed); layout TagN
 - wall: index 10950 ms, processing 184.3 s with 20 threads; peak RSS 5282852 KiB
 - certified: 679499 / 679499; failed: 0
 - failures by status: {}
@@ -1312,7 +1377,7 @@ exit=0
   - 13408 ms AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq (2d33bfe7c13b87fd): defn ok, N 53511, cand 44632, k 12056, w 3, uncertain 2146, components 1866 (largest 5), states uniform 8344 first-tier 30126
 - total wall 314.6 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../mathlib.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_tiered_bb.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/mathlib.ixe --threads 20 --csv $S/mathlib_tiered_bb.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 5:15.88
 	Maximum resident set size (kbytes): 5300268
 	Exit status: 0
@@ -1321,11 +1386,11 @@ exit=0
 
 </details>
 
-<details><summary>[R7] Mathlib, Tag4 layout, 20 threads, new search, K-based (<code>p4/ml_tag4_t20.md</code>)</summary>
+<details><summary>[R7] Mathlib, Tag4 layout, 20 threads, new search, K-based (<code>ml_tag4_t20.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 679499 processed); layout Tag4
+- corpus: $S/mathlib.ixe (679499 constants; 679499 processed); layout Tag4
 - wall: index 6355 ms, processing 209.6 s with 20 threads; peak RSS 5246368 KiB
 - certified: 679499 / 679499; failed: 0
 - failures by status: {}
@@ -1353,7 +1418,7 @@ exit=0
   - 14351 ms AlgebraicGeometry.isIso_pushoutSection_of_iSup_eq (2d33bfe7c13b87fd): defn ok, N 53511, cand 44632, k 12056, w 3, uncertain 2146, components 1866 (largest 5), states uniform 8344 first-tier 30126
 - total wall 346.7 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --layout tag4 --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/ml_tag4_t20.csv --select-out /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/ml_all.txt --select-stride 1"
+	Command being timed: "./target/release/examples/sharing_corpus $S/mathlib.ixe --layout tag4 --threads 20 --csv $S/ml_tag4_t20.csv --select-out $S/ml_all.txt --select-stride 1"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 5:47.70
 	Maximum resident set size (kbytes): 5263200
 	Exit status: 0
@@ -1366,7 +1431,7 @@ exit=0
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- corpus: $S/init.ixe (56622 constants; 56622 processed); layout TagN
 - wall: index 209 ms, processing 30.6 s with 16 threads; peak RSS 572040 KiB
 - certified: 56597 / 56622; failed: 25
 - failures by status: {"resource:States": 25}
@@ -1419,7 +1484,7 @@ exit=0
   - 3333 ms BitVec.getMsbD_setWidth (9ba8c88e4f376482): defn resource:States, N 1044, cand 580, k 0, w 0, uncertain 0, components 0 (largest 0), states uniform 0 first-tier 0
 - total wall 32.9 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --threads 16 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_tiered.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --threads 16 --csv $S/init_tiered.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:32.92
 	Maximum resident set size (kbytes): 571680
 	Exit status: 0
@@ -1431,7 +1496,7 @@ exit=0
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 679499 processed); layout TagN
+- corpus: $S/mathlib.ixe (679499 constants; 679499 processed); layout TagN
 - wall: index 10735 ms, processing 293.2 s with 20 threads; peak RSS 4794008 KiB
 - certified: 679157 / 679499; failed: 342
 - failures by status: {"resource:States": 342}
@@ -1801,7 +1866,7 @@ exit=0
   - 29478 ms WeierstrassCurve.Jacobian.negAddY_smul (0c1816c71ee7e564): defn resource:States, N 14839, cand 6369, k 0, w 0, uncertain 0, components 0 (largest 0), states uniform 0 first-tier 0
 - total wall 424.0 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_tiered.csv --select-out /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_select.txt"
+	Command being timed: "./target/release/examples/sharing_corpus $S/mathlib.ixe --threads 20 --csv $S/mathlib_tiered.csv --select-out $S/mathlib_select.txt"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 7:04.72
 	Maximum resident set size (kbytes): 4794008
 	Exit status: 0
@@ -1810,11 +1875,11 @@ exit=0
 
 </details>
 
-<details><summary>[X1] width experiment, Init, TagN layout (<code>p4/wx_init_tagN.md</code>)</summary>
+<details><summary>[X1] width experiment, Init, TagN layout (<code>wx_init_tagN.md</code>)</summary>
 
 ```text
 # sharing_corpus width experiment (not the canonical construction)
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/../../init.ixe (56622 constants processed); layout TagN; phases 1-3 at w = 1, 2, 3
+- corpus: $S/init.ixe (56622 constants processed); layout TagN; phases 1-3 at w = 1, 2, 3
 - wall: processing 43.2 s with 8 threads; peak RSS 487180 KiB
 - failures by width: w=1 0, w=2 0, w=3 0; constants with all three ok: 56622
 - layout bytes over those constants: K-based 67036818; best of three 66648677 (-388141); stored-count re-solve 66959837 (-76981)
@@ -1823,7 +1888,7 @@ exit=0
 - stored-count re-solve vs K-based per constant: better 7339, equal 48569, worse 714
 - total wall 47.5 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/../../init.ixe --layout tagN --threads 8 --width-experiment --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/wx_init_tagN.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --layout tagN --threads 8 --width-experiment --csv $S/wx_init_tagN.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:47.61
 	Maximum resident set size (kbytes): 485008
 	Exit status: 0
@@ -1831,11 +1896,11 @@ exit=0
 
 </details>
 
-<details><summary>[X1] width experiment, Mathlib, TagN layout (<code>p4/wx_ml_tagN.md</code>)</summary>
+<details><summary>[X1] width experiment, Mathlib, TagN layout (<code>wx_ml_tagN.md</code>)</summary>
 
 ```text
 # sharing_corpus width experiment (not the canonical construction)
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants processed); layout TagN; phases 1-3 at w = 1, 2, 3
+- corpus: $S/mathlib.ixe (679499 constants processed); layout TagN; phases 1-3 at w = 1, 2, 3
 - wall: processing 1094.1 s with 8 threads; peak RSS 4841540 KiB
 - failures by width: w=1 0, w=2 0, w=3 0; constants with all three ok: 679499
 - layout bytes over those constants: K-based 1136221078; best of three 1121777032 (-14444046); stored-count re-solve 1135433559 (-787519)
@@ -1844,7 +1909,7 @@ exit=0
 - stored-count re-solve vs K-based per constant: better 64033, equal 600933, worse 14533
 - total wall 1277.0 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --layout tagN --threads 8 --width-experiment --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/wx_ml_tagN.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/mathlib.ixe --layout tagN --threads 8 --width-experiment --csv $S/wx_ml_tagN.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 21:17.93
 	Maximum resident set size (kbytes): 4838516
 	Exit status: 0
@@ -1853,11 +1918,11 @@ exit=0
 
 </details>
 
-<details><summary>[X2] width experiment, Init, Tag4 layout (<code>p4/wx_init_tag4.md</code>)</summary>
+<details><summary>[X2] width experiment, Init, Tag4 layout (<code>wx_init_tag4.md</code>)</summary>
 
 ```text
 # sharing_corpus width experiment (not the canonical construction)
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants processed); layout Tag4; phases 1-3 at w = 1, 2, 3
+- corpus: $S/init.ixe (56622 constants processed); layout Tag4; phases 1-3 at w = 1, 2, 3
 - wall: processing 44.8 s with 8 threads; peak RSS 462596 KiB
 - failures by width: w=1 0, w=2 0, w=3 0; constants with all three ok: 56622
 - layout bytes over those constants: K-based 67747841; best of three 67302328 (-445513); stored-count re-solve 67639163 (-108678)
@@ -1866,7 +1931,7 @@ exit=0
 - stored-count re-solve vs K-based per constant: better 7902, equal 47974, worse 746
 - total wall 49.9 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --layout tag4 --threads 8 --width-experiment --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/wx_init_tag4.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --layout tag4 --threads 8 --width-experiment --csv $S/wx_init_tag4.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:50.00
 	Maximum resident set size (kbytes): 460272
 	Exit status: 0
@@ -1875,11 +1940,11 @@ exit=0
 
 </details>
 
-<details><summary>[X2] width experiment, Mathlib, Tag4 layout (<code>p4/wx_ml_tag4.md</code>)</summary>
+<details><summary>[X2] width experiment, Mathlib, Tag4 layout (<code>wx_ml_tag4.md</code>)</summary>
 
 ```text
 # sharing_corpus width experiment (not the canonical construction)
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants processed); layout Tag4; phases 1-3 at w = 1, 2, 3
+- corpus: $S/mathlib.ixe (679499 constants processed); layout Tag4; phases 1-3 at w = 1, 2, 3
 - wall: processing 1031.8 s with 8 threads; peak RSS 4853268 KiB
 - failures by width: w=1 0, w=2 0, w=3 0; constants with all three ok: 679499
 - layout bytes over those constants: K-based 1151220860; best of three 1135614916 (-15605944); stored-count re-solve 1149312205 (-1908655)
@@ -1888,7 +1953,7 @@ exit=0
 - stored-count re-solve vs K-based per constant: better 73526, equal 591110, worse 14863
 - total wall 1175.2 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --layout tag4 --threads 8 --width-experiment --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/wx_ml_tag4.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/mathlib.ixe --layout tag4 --threads 8 --width-experiment --csv $S/wx_ml_tag4.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 19:36.32
 	Maximum resident set size (kbytes): 4853268
 	Exit status: 0
@@ -1897,11 +1962,11 @@ exit=0
 
 </details>
 
-<details><summary>[X3] width experiment, Init, TagN layout, 1 thread (<code>p4/wx_init_tagN_t1.md</code>)</summary>
+<details><summary>[X3] width experiment, Init, TagN layout, 1 thread (<code>wx_init_tagN_t1.md</code>)</summary>
 
 ```text
 # sharing_corpus width experiment (not the canonical construction)
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants processed); layout TagN; phases 1-3 at w = 1, 2, 3
+- corpus: $S/init.ixe (56622 constants processed); layout TagN; phases 1-3 at w = 1, 2, 3
 - wall: processing 414.9 s with 1 threads; peak RSS 313624 KiB
 - failures by width: w=1 0, w=2 0, w=3 0; constants with all three ok: 56622
 - layout bytes over those constants: K-based 67036818; best of three 66648677 (-388141); stored-count re-solve 66959837 (-76981)
@@ -1910,7 +1975,7 @@ exit=0
 - stored-count re-solve vs K-based per constant: better 7339, equal 48569, worse 714
 - total wall 419.1 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --layout tagN --threads 1 --width-experiment --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/wx_init_tagN_t1.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --layout tagN --threads 1 --width-experiment --csv $S/wx_init_tagN_t1.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 6:59.18
 	Maximum resident set size (kbytes): 311764
 	Exit status: 0
@@ -1919,11 +1984,11 @@ exit=0
 
 </details>
 
-<details><summary>[X4] best of four, Init, TagN layout (<code>p4/wx4_init_tagN.md</code>)</summary>
+<details><summary>[X4] best of four, Init, TagN layout (<code>wx4_init_tagN.md</code>)</summary>
 
 ```text
 # sharing_corpus width experiment (not the canonical construction)
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants processed); layout TagN; phases 1-3 at w = 1, 2, 3
+- corpus: $S/init.ixe (56622 constants processed); layout TagN; phases 1-3 at w = 1, 2, 3
 - wall: processing 44.2 s with 8 threads; peak RSS 455020 KiB
 - failures by candidate: w=1 0, w=2 0, w=3 0, all 0; constants with all four ok: 56622
 - best of four (w = 1, 2, 3, all; ties to the earlier): 66648660 (-17 vs best of three); all candidates stored: 67487013
@@ -1934,7 +1999,7 @@ exit=0
 - stored-count re-solve vs K-based per constant: better 7339, equal 48569, worse 714
 - total wall 47.3 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --layout tagN --threads 8 --width-experiment --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/wx4_init_tagN.csv"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --layout tagN --threads 8 --width-experiment --csv $S/wx4_init_tagN.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:47.33
 	Maximum resident set size (kbytes): 451608
 	Exit status: 0
@@ -1943,11 +2008,11 @@ exit=0
 
 </details>
 
-<details><summary>[X4] best of four, Mathlib, TagN layout (<code>p4/wx4_ml_tagN.md</code>)</summary>
+<details><summary>[X4] best of four, Mathlib, TagN layout (<code>wx4_ml_tagN.md</code>)</summary>
 
 ```text
 # sharing_corpus width experiment (not the canonical construction)
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants processed); layout TagN; phases 1-3 at w = 1, 2, 3
+- corpus: $S/mathlib.ixe (679499 constants processed); layout TagN; phases 1-3 at w = 1, 2, 3
 - wall: processing 1021.8 s with 12 threads; peak RSS 4873620 KiB
 - failures by candidate: w=1 0, w=2 0, w=3 0, all 0; constants with all four ok: 679499
 - best of four (w = 1, 2, 3, all; ties to the earlier): 1121774136 (-2896 vs best of three); all candidates stored: 1129388537
@@ -1958,7 +2023,7 @@ exit=0
 - stored-count re-solve vs K-based per constant: better 64033, equal 600933, worse 14533
 - total wall 1203.0 s
 
-	Command being timed: "/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/sharing_corpus_wx4 /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --layout tagN --threads 12 --width-experiment --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/wx4_ml_tagN.csv"
+	Command being timed: "$S/sharing_corpus_wx4 $S/mathlib.ixe --layout tagN --threads 12 --width-experiment --csv $S/wx4_ml_tagN.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 20:05.59
 	Maximum resident set size (kbytes): 4873620
 	Exit status: 0
@@ -1967,11 +2032,11 @@ exit=0
 
 </details>
 
-<details><summary>[X4] best of four, Init, Tag4 layout (<code>p4/wx4_init_tag4.md</code>)</summary>
+<details><summary>[X4] best of four, Init, Tag4 layout (<code>wx4_init_tag4.md</code>)</summary>
 
 ```text
 # sharing_corpus width experiment (not the canonical construction)
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants processed); layout Tag4; phases 1-3 at w = 1, 2, 3
+- corpus: $S/init.ixe (56622 constants processed); layout Tag4; phases 1-3 at w = 1, 2, 3
 - wall: processing 57.7 s with 12 threads; peak RSS 540732 KiB
 - failures by candidate: w=1 0, w=2 0, w=3 0, all 0; constants with all four ok: 56622
 - best of four (w = 1, 2, 3, all; ties to the earlier): 67302313 (-15 vs best of three); all candidates stored: 68443810
@@ -1982,7 +2047,7 @@ exit=0
 - stored-count re-solve vs K-based per constant: better 7902, equal 47974, worse 746
 - total wall 61.3 s
 
-	Command being timed: "/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/sharing_corpus_wx4 /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --layout tag4 --threads 12 --width-experiment --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/wx4_init_tag4.csv"
+	Command being timed: "$S/sharing_corpus_wx4 $S/init.ixe --layout tag4 --threads 12 --width-experiment --csv $S/wx4_init_tag4.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:01.37
 	Maximum resident set size (kbytes): 538600
 	Exit status: 0
@@ -1991,11 +2056,11 @@ exit=0
 
 </details>
 
-<details><summary>[X4] best of four, Mathlib, Tag4 layout (<code>p4/wx4_ml_tag4.md</code>)</summary>
+<details><summary>[X4] best of four, Mathlib, Tag4 layout (<code>wx4_ml_tag4.md</code>)</summary>
 
 ```text
 # sharing_corpus width experiment (not the canonical construction)
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants processed); layout Tag4; phases 1-3 at w = 1, 2, 3
+- corpus: $S/mathlib.ixe (679499 constants processed); layout Tag4; phases 1-3 at w = 1, 2, 3
 - wall: processing 1141.4 s with 12 threads; peak RSS 5024656 KiB
 - failures by candidate: w=1 0, w=2 0, w=3 0, all 0; constants with all four ok: 679499
 - best of four (w = 1, 2, 3, all; ties to the earlier): 1135612767 (-2149 vs best of three); all candidates stored: 1146903694
@@ -2006,7 +2071,7 @@ exit=0
 - stored-count re-solve vs K-based per constant: better 73526, equal 591110, worse 14863
 - total wall 1405.4 s
 
-	Command being timed: "/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/sharing_corpus_wx4 /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --layout tag4 --threads 12 --width-experiment --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p4/wx4_ml_tag4.csv"
+	Command being timed: "$S/sharing_corpus_wx4 $S/mathlib.ixe --layout tag4 --threads 12 --width-experiment --csv $S/wx4_ml_tag4.csv"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 23:26.59
 	Maximum resident set size (kbytes): 5024656
 	Exit status: 0
@@ -2015,11 +2080,11 @@ exit=0
 
 </details>
 
-<details><summary>[R10] v4 Init corpus, TagN, 20 threads (<code>p10/init_rust.md</code>)</summary>
+<details><summary>[R10] v4 Init corpus, TagN, 20 threads (<code>init_rust.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe (56622 constants; 56622 processed); layout TagN
+- corpus: $S/init_v4r_36fe2777.ixe (56622 constants; 56622 processed); layout TagN
 - wall: index 863 ms, processing 32.6 s with 20 threads; peak RSS 756420 KiB
 - certified: 56622 / 56622; failed: 0
 - failures by status: {}
@@ -2047,7 +2112,7 @@ exit=0
   - 3430 ms Std.Iter.step_flatMapAfterM (4baea8cab97cbac0): defn ok, N 10787, cand 8261, k 1858, w 1, uncertain 240, components 212 (largest 3), states uniform 917 first-tier 1654
 - total wall 39.8 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p10/init_rust.csv --select-out /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p10/init_all.txt --select-stride 1"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init_v4r_36fe2777.ixe --threads 20 --csv $S/init_rust.csv --select-out $S/init_all.txt --select-stride 1"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:39.93
 	Maximum resident set size (kbytes): 754936
 	Exit status: 0
@@ -2056,11 +2121,11 @@ exit=0
 
 </details>
 
-<details><summary>[R10] v4 Mathlib corpus, TagN, 20 threads (<code>p10/ml_rust.md</code>)</summary>
+<details><summary>[R10] v4 Mathlib corpus, TagN, 20 threads (<code>ml_rust.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe (679499 constants; 679499 processed); layout TagN
+- corpus: $S/mathlib_v4r_36fe2777.ixe (679499 constants; 679499 processed); layout TagN
 - wall: index 7453 ms, processing 772.3 s with 20 threads; peak RSS 4696000 KiB
 - certified: 679498 / 679499; failed: 1
 - failures by status: {"resource:States": 1}
@@ -2089,7 +2154,7 @@ exit=0
   - 52028 ms WeierstrassCurve.Projective.negDblY_eq' (ce121b7a563b352f): defn ok, N 45785, cand 14522, k 7073, w 3, uncertain 452, components 446 (largest 3), states uniform 1804 first-tier 13128
 - total wall 1011.2 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p10/ml_rust.csv --select-out /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p10/ml_select.txt"
+	Command being timed: "./target/release/examples/sharing_corpus $S/mathlib_v4r_36fe2777.ixe --threads 20 --csv $S/ml_rust.csv --select-out $S/ml_select.txt"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 16:52.30
 	Maximum resident set size (kbytes): 4713784
 	Exit status: 0
@@ -2098,11 +2163,11 @@ exit=0
 
 </details>
 
-<details><summary>[X7] whole corpus (a), Mathlib, 20 threads (<code>p7/ml_a.md</code>)</summary>
+<details><summary>[X7] whole corpus (a), Mathlib, 20 threads (<code>ml_a.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 679499 processed); layout TagN
+- corpus: $S/mathlib.ixe (679499 constants; 679499 processed); layout TagN
 - wall: index 3995 ms, processing 658.8 s with 20 threads; peak RSS 5596088 KiB
 - certified: 679499 / 679499; failed: 0
 - failures by status: {}
@@ -2130,7 +2195,7 @@ exit=0
   - 49810 ms _private.Mathlib.RingTheory.Etale.QuasiFinite.0.Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq' (3d79d639858e7cc1): defn ok, N 53222, cand 38483, k 7317, w 1, uncertain 1224, components 1037 (largest 3), states uniform 4856 first-tier 6300
 - total wall 807.1 s
 
-	Command being timed: "/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/sharing_corpus_par /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/ml_a.csv --par-widths 1 --par-components 1 --par-materialize 1"
+	Command being timed: "$S/sharing_corpus_par $S/mathlib.ixe --threads 20 --csv $S/ml_a.csv --par-widths 1 --par-components 1 --par-materialize 1"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 13:29.27
 	Maximum resident set size (kbytes): 5599052
 	Exit status: 0
@@ -2139,11 +2204,11 @@ exit=0
 
 </details>
 
-<details><summary>[X7] whole corpus (b), Mathlib, 20 threads (<code>p7/ml_b.md</code>)</summary>
+<details><summary>[X7] whole corpus (b), Mathlib, 20 threads (<code>ml_b.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 679499 processed); layout TagN
+- corpus: $S/mathlib.ixe (679499 constants; 679499 processed); layout TagN
 - wall: index 4732 ms, processing 697.3 s with 20 threads; peak RSS 5555120 KiB
 - certified: 679499 / 679499; failed: 0
 - failures by status: {}
@@ -2171,7 +2236,7 @@ exit=0
   - 51256 ms _private.Mathlib.RingTheory.Etale.QuasiFinite.0.Algebra.exists_etale_completeOrthogonalIdempotents_forall_liesOver_eq' (3d79d639858e7cc1): defn ok, N 53222, cand 38483, k 7317, w 1, uncertain 1224, components 1037 (largest 3), states uniform 4856 first-tier 6300
 - total wall 956.0 s
 
-	Command being timed: "/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/sharing_corpus_par /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/ml_b.csv --par-widths 3 --par-components 1 --par-materialize 1"
+	Command being timed: "$S/sharing_corpus_par $S/mathlib.ixe --threads 20 --csv $S/ml_b.csv --par-widths 3 --par-components 1 --par-materialize 1"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 56:53.50
 	Maximum resident set size (kbytes): 5560880
 	Exit status: 0
@@ -2180,11 +2245,11 @@ exit=0
 
 </details>
 
-<details><summary>[X7] whole corpus (c), Mathlib, 20 threads (<code>p7/ml_c.md</code>)</summary>
+<details><summary>[X7] whole corpus (c), Mathlib, 20 threads (<code>ml_c.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 679499 processed); layout TagN
+- corpus: $S/mathlib.ixe (679499 constants; 679499 processed); layout TagN
 - wall: index 7560 ms, processing 691.2 s with 20 threads; peak RSS 5629852 KiB
 - certified: 679499 / 679499; failed: 0
 - failures by status: {}
@@ -2212,7 +2277,7 @@ exit=0
   - 55227 ms _private.Mathlib.AlgebraicGeometry.EllipticCurve.IsomOfJ.0.WeierstrassCurve.exists_variableChange_of_char_ne_two_or_three (67e377956e9a5e65): defn ok, N 50027, cand 26233, k 10413, w 2, uncertain 1431, components 1407 (largest 3), states uniform 5685 first-tier 9035
 - total wall 897.3 s
 
-	Command being timed: "/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/sharing_corpus_par /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe --threads 20 --csv /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/p7/ml_c.csv --par-widths 3 --par-components 20 --par-materialize 20"
+	Command being timed: "$S/sharing_corpus_par $S/mathlib.ixe --threads 20 --csv $S/ml_c.csv --par-widths 3 --par-components 20 --par-materialize 20"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 14:58.19
 	Maximum resident set size (kbytes): 5643528
 	Exit status: 0
@@ -2221,11 +2286,11 @@ exit=0
 
 </details>
 
-<details><summary>[X8] Init, parallel 3,20,20 against sequential (<code>p5/init_check_3_20_20.md</code>)</summary>
+<details><summary>[X8] Init, parallel 3,20,20 against sequential (<code>init_check_3_20_20.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- corpus: $S/init.ixe (56622 constants; 56622 processed); layout TagN
 - wall: index 451 ms, processing 62.3 s with 20 threads; peak RSS 873372 KiB
 - certified: 56622 / 56622; failed: 0
 - failures by status: {}
@@ -2254,7 +2319,7 @@ exit=0
   - 4165 ms _private.Init.Data.Nat.ToString.0.Nat.digitChar_iff_aux (0691b3f1e8c36b6b): defn ok, N 17671, cand 5848, k 2763, w 1, uncertain 577, components 577 (largest 1), states uniform 2308 first-tier 4383
 - total wall 72.5 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --threads 20 --par-widths 3 --par-components 20 --par-materialize 20 --check-sequential"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --threads 20 --par-widths 3 --par-components 20 --par-materialize 20 --check-sequential"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:12.66
 	Maximum resident set size (kbytes): 873496
 	Exit status: 0
@@ -2263,11 +2328,11 @@ exit=0
 
 </details>
 
-<details><summary>[X8] Init, parallel 3,1,1 against sequential (<code>p5/init_check_3_1_1.md</code>)</summary>
+<details><summary>[X8] Init, parallel 3,1,1 against sequential (<code>init_check_3_1_1.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- corpus: $S/init.ixe (56622 constants; 56622 processed); layout TagN
 - wall: index 319 ms, processing 57.6 s with 20 threads; peak RSS 865016 KiB
 - certified: 56622 / 56622; failed: 0
 - failures by status: {}
@@ -2296,7 +2361,7 @@ exit=0
   - 3486 ms _private.Init.Data.Int.DivMod.Lemmas.0.Int.add_one_tdiv._proof_1_1 (194bacb9fee23ecb): defn ok, N 18802, cand 13281, k 3236, w 3, uncertain 424, components 406 (largest 4), states uniform 1696 first-tier 2748
 - total wall 63.1 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --threads 20 --par-widths 3 --par-components 1 --par-materialize 1 --check-sequential"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --threads 20 --par-widths 3 --par-components 1 --par-materialize 1 --check-sequential"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:03.33
 	Maximum resident set size (kbytes): 864624
 	Exit status: 0
@@ -2305,11 +2370,11 @@ exit=0
 
 </details>
 
-<details><summary>[X8] Init, parallel 1,20,1 against sequential (<code>p5/init_check_1_20_1.md</code>)</summary>
+<details><summary>[X8] Init, parallel 1,20,1 against sequential (<code>init_check_1_20_1.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- corpus: $S/init.ixe (56622 constants; 56622 processed); layout TagN
 - wall: index 391 ms, processing 59.7 s with 20 threads; peak RSS 852536 KiB
 - certified: 56622 / 56622; failed: 0
 - failures by status: {}
@@ -2338,7 +2403,7 @@ exit=0
   - 4228 ms _private.Init.Data.Range.Polymorphic.RangeIterator.0.Std.Rxo.Iterator.instIteratorLoop.loopWf_eq._unary (d97528760a895bf6): defn ok, N 11860, cand 8596, k 2398, w 1, uncertain 471, components 447 (largest 3), states uniform 1852 first-tier 1955
 - total wall 62.8 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --threads 20 --par-widths 1 --par-components 20 --par-materialize 1 --check-sequential"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --threads 20 --par-widths 1 --par-components 20 --par-materialize 1 --check-sequential"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:02.93
 	Maximum resident set size (kbytes): 852852
 	Exit status: 0
@@ -2347,11 +2412,11 @@ exit=0
 
 </details>
 
-<details><summary>[X8] Init, parallel 1,1,20 against sequential (<code>p5/init_check_1_1_20.md</code>)</summary>
+<details><summary>[X8] Init, parallel 1,1,20 against sequential (<code>init_check_1_1_20.md</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe (56622 constants; 56622 processed); layout TagN
+- corpus: $S/init.ixe (56622 constants; 56622 processed); layout TagN
 - wall: index 434 ms, processing 56.2 s with 20 threads; peak RSS 814096 KiB
 - certified: 56622 / 56622; failed: 0
 - failures by status: {}
@@ -2380,7 +2445,7 @@ exit=0
   - 4449 ms _private.Init.Data.Iterators.Lemmas.Combinators.Monadic.FilterMap.0.Std.IterM.toList_filterMapWithPostcondition_filterMapWithPostcondition' (f22512c397919b72): defn ok, N 16156, cand 11692, k 2712, w 1, uncertain 338, components 308 (largest 3), states uniform 1304 first-tier 2412
 - total wall 60.0 s
 
-	Command being timed: "./target/release/examples/sharing_corpus /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe --threads 20 --par-widths 1 --par-components 1 --par-materialize 20 --check-sequential"
+	Command being timed: "./target/release/examples/sharing_corpus $S/init.ixe --threads 20 --par-widths 1 --par-components 1 --par-materialize 20 --check-sequential"
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:00.13
 	Maximum resident set size (kbytes): 813660
 	Exit status: 0
@@ -2389,7 +2454,7 @@ exit=0
 
 </details>
 
-<details><summary>[J1] join output (<code>p4/init_join.txt</code>)</summary>
+<details><summary>[J1] join output (<code>init_join.txt</code>)</summary>
 
 ```text
 study rows 56622
@@ -2409,7 +2474,7 @@ Tag4 construction - TagN construction (Tag4 bytes) (n=55386): min -209 p1 0 p10 
 
 </details>
 
-<details><summary>[J1] join output (<code>p4/init_byw.txt</code>)</summary>
+<details><summary>[J1] join output (<code>init_byw.txt</code>)</summary>
 
 ```text
 w=1  TagN run: 22270 constants, sum(canonical TagN - MSS TagN) -743, larger 0, smaller 700 | Tag4 run: 22270 constants, sum(canonical Tag4 - MSS) -743, larger 0, smaller 700
@@ -2419,7 +2484,7 @@ w=3  TagN run: 108 constants, sum(canonical TagN - MSS TagN) -101315, larger 42,
 
 </details>
 
-<details><summary>[J2] join output (<code>p4/ml_join.txt</code>)</summary>
+<details><summary>[J2] join output (<code>ml_join.txt</code>)</summary>
 
 ```text
 study rows 679499
@@ -2439,7 +2504,7 @@ Tag4 construction - TagN construction (Tag4 bytes) (n=663254): min -1055 p1 0 p1
 
 </details>
 
-<details><summary>[J2] join output (<code>p4/ml_byw.txt</code>)</summary>
+<details><summary>[J2] join output (<code>ml_byw.txt</code>)</summary>
 
 ```text
 w=1  TagN run: 181437 constants, sum(canonical TagN - MSS TagN) -2905, larger 0, smaller 2745 | Tag4 run: 181437 constants, sum(canonical Tag4 - MSS) -2905, larger 0, smaller 2745
@@ -2449,7 +2514,7 @@ w=3  TagN run: 1816 constants, sum(canonical TagN - MSS TagN) -608444, larger 82
 
 </details>
 
-<details><summary>[X1] join output (<code>p4/wx_init_tagN_join.txt</code>)</summary>
+<details><summary>[X1] join output (<code>wx_init_tagN_join.txt</code>)</summary>
 
 ```text
 rooted constants compared 55386 (incomplete 0, missing from study 0)
@@ -2474,7 +2539,7 @@ re-solve - MSS (n=55386): min -7794 p1 -140 p10 -35 p50 0 p90 0 p99 57 p99.9 300
 
 </details>
 
-<details><summary>[X1] join output (<code>p4/wx_init_tagN_best.txt</code>)</summary>
+<details><summary>[X1] join output (<code>wx_init_tagN_best.txt</code>)</summary>
 
 ```text
 all constants 56622 (no best 0): best of three 66648677 vs stored 80208288 (-16.91%)
@@ -2487,7 +2552,7 @@ best of three - MSS (n=55386): min -7794 p1 -150 p10 -41 p50 -3 p90 0 p99 0 p99.
 
 </details>
 
-<details><summary>[X1] join output (<code>p4/wx_ml_tagN_join.txt</code>)</summary>
+<details><summary>[X1] join output (<code>wx_ml_tagN_join.txt</code>)</summary>
 
 ```text
 rooted constants compared 663254 (incomplete 0, missing from study 0)
@@ -2512,7 +2577,7 @@ re-solve - MSS (n=663254): min -16508 p1 -100 p10 -21 p50 0 p90 40 p99 272 p99.9
 
 </details>
 
-<details><summary>[X1] join output (<code>p4/wx_ml_tagN_best.txt</code>)</summary>
+<details><summary>[X1] join output (<code>wx_ml_tagN_best.txt</code>)</summary>
 
 ```text
 all constants 679499 (no best 0): best of three 1121777032 vs stored 1468890902 (-23.63%)
@@ -2525,7 +2590,7 @@ best of three - MSS (n=663254): min -16508 p1 -118 p10 -30 p50 -3 p90 0 p99 0 p9
 
 </details>
 
-<details><summary>[X1] join output (<code>p4/wx_ml_tagN_slowest.txt</code>)</summary>
+<details><summary>[X1] join output (<code>wx_ml_tagN_slowest.txt</code>)</summary>
 
 ```text
 163721 ms total | "CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite" | N 95110 | cand 81833 | K 21461 | K-based w 3 | best w 2 | stored w1/w2/w3 18653/18877/18440 | ms w1/w2/w3 74674/44791/44256
@@ -2542,7 +2607,7 @@ best of three - MSS (n=663254): min -16508 p1 -118 p10 -30 p50 -3 p90 0 p99 0 p9
 
 </details>
 
-<details><summary>[X2] join output (<code>p4/wx_init_tag4_join.txt</code>)</summary>
+<details><summary>[X2] join output (<code>wx_init_tag4_join.txt</code>)</summary>
 
 ```text
 rooted constants compared 55386 (incomplete 0, missing from study 0)
@@ -2567,7 +2632,7 @@ re-solve - MSS (n=55386): min -6588 p1 -360 p10 -36 p50 0 p90 0 p99 51 p99.9 313
 
 </details>
 
-<details><summary>[X2] join output (<code>p4/wx_init_tag4_best.txt</code>)</summary>
+<details><summary>[X2] join output (<code>wx_init_tag4_best.txt</code>)</summary>
 
 ```text
 all constants 56622 (no best 0): best of three 67302328 vs stored 80208288 (-16.09%)
@@ -2580,7 +2645,7 @@ best of three - MSS (n=55386): min -6588 p1 -437 p10 -42 p50 -3 p90 0 p99 0 p99.
 
 </details>
 
-<details><summary>[X2] join output (<code>p4/wx_ml_tag4_join.txt</code>)</summary>
+<details><summary>[X2] join output (<code>wx_ml_tag4_join.txt</code>)</summary>
 
 ```text
 rooted constants compared 663254 (incomplete 0, missing from study 0)
@@ -2605,7 +2670,7 @@ re-solve - MSS (n=663254): min -22505 p1 -228 p10 -22 p50 0 p90 37 p99 228 p99.9
 
 </details>
 
-<details><summary>[X2] join output (<code>p4/wx_ml_tag4_best.txt</code>)</summary>
+<details><summary>[X2] join output (<code>wx_ml_tag4_best.txt</code>)</summary>
 
 ```text
 all constants 679499 (no best 0): best of three 1135614916 vs stored 1468890902 (-22.69%)
@@ -2618,7 +2683,7 @@ best of three - MSS (n=663254): min -22505 p1 -361 p10 -31 p50 -3 p90 0 p99 0 p9
 
 </details>
 
-<details><summary>[X3] join output (<code>p4/wx_init_tagN_t1_slowest.txt</code>)</summary>
+<details><summary>[X3] join output (<code>wx_init_tagN_t1_slowest.txt</code>)</summary>
 
 ```text
 8801 ms total | "_private.Init.Data.Vector.Extract.0.Vector.extract_append._proof_1" | N 26943 | cand 19283 | K 5136 | K-based w 3 | best w 2 | stored w1/w2/w3 4280/4474/4427 | ms w1/w2/w3 2847/2923/3031
@@ -2635,7 +2700,7 @@ best of three - MSS (n=663254): min -22505 p1 -361 p10 -31 p50 -3 p90 0 p99 0 p9
 
 </details>
 
-<details><summary>[X3] join output (<code>p4/wx_init_tagN_t1_ms.txt</code>)</summary>
+<details><summary>[X3] join output (<code>wx_init_tagN_t1_ms.txt</code>)</summary>
 
 ```text
 best-of-three ms per constant (sum of 3 widths, n=56622): p50 1 p90 10 p99 77 p99.9 570 max 8801
@@ -2643,7 +2708,7 @@ best-of-three ms per constant (sum of 3 widths, n=56622): p50 1 p90 10 p99 77 p9
 
 </details>
 
-<details><summary>[X4] join output (<code>p4/wx4_init_tagN_join.txt</code>)</summary>
+<details><summary>[X4] join output (<code>wx4_init_tagN_join.txt</code>)</summary>
 
 ```text
 rooted constants compared 55386 (incomplete 0, missing from study 0)
@@ -2656,7 +2721,7 @@ best of four - MSS (n=55386): min -7794 p1 -150 p10 -41 p50 -3 p90 0 p99 0 p99.9
 
 </details>
 
-<details><summary>[X4] join output (<code>p4/wx4_init_tagN_best.txt</code>)</summary>
+<details><summary>[X4] join output (<code>wx4_init_tagN_best.txt</code>)</summary>
 
 ```text
 all constants 56622 (no best 0): best of four 66648660 vs stored 80208288 (-16.91%)
@@ -2669,7 +2734,7 @@ best of four - MSS (n=55386): min -7794 p1 -150 p10 -41 p50 -3 p90 0 p99 0 p99.9
 
 </details>
 
-<details><summary>[X4] join output (<code>p4/wx4_ml_tagN_join.txt</code>)</summary>
+<details><summary>[X4] join output (<code>wx4_ml_tagN_join.txt</code>)</summary>
 
 ```text
 rooted constants compared 663254 (incomplete 0, missing from study 0)
@@ -2694,7 +2759,7 @@ re-solve - MSS (n=663254): min -16508 p1 -100 p10 -21 p50 0 p90 40 p99 272 p99.9
 
 </details>
 
-<details><summary>[X4] join output (<code>p4/wx4_ml_tagN_best.txt</code>)</summary>
+<details><summary>[X4] join output (<code>wx4_ml_tagN_best.txt</code>)</summary>
 
 ```text
 all constants 679499 (no best 0): best of four 1121774136 vs stored 1468890902 (-23.63%)
@@ -2707,7 +2772,7 @@ best of four - MSS (n=663254): min -16508 p1 -118 p10 -30 p50 -3 p90 0 p99 0 p99
 
 </details>
 
-<details><summary>[X4] join output (<code>p4/wx4_init_tag4_join.txt</code>)</summary>
+<details><summary>[X4] join output (<code>wx4_init_tag4_join.txt</code>)</summary>
 
 ```text
 rooted constants compared 55386 (incomplete 0, missing from study 0)
@@ -2732,7 +2797,7 @@ re-solve - MSS (n=55386): min -6588 p1 -360 p10 -36 p50 0 p90 0 p99 51 p99.9 313
 
 </details>
 
-<details><summary>[X4] join output (<code>p4/wx4_init_tag4_best.txt</code>)</summary>
+<details><summary>[X4] join output (<code>wx4_init_tag4_best.txt</code>)</summary>
 
 ```text
 all constants 56622 (no best 0): best of four 67302313 vs stored 80208288 (-16.09%)
@@ -2745,7 +2810,7 @@ best of four - MSS (n=55386): min -6588 p1 -437 p10 -42 p50 -3 p90 0 p99 0 p99.9
 
 </details>
 
-<details><summary>[X4] join output (<code>p4/wx4_ml_tag4_join.txt</code>)</summary>
+<details><summary>[X4] join output (<code>wx4_ml_tag4_join.txt</code>)</summary>
 
 ```text
 rooted constants compared 663254 (incomplete 0, missing from study 0)
@@ -2770,7 +2835,7 @@ re-solve - MSS (n=663254): min -22505 p1 -228 p10 -22 p50 0 p90 37 p99 228 p99.9
 
 </details>
 
-<details><summary>[X4] join output (<code>p4/wx4_ml_tag4_best.txt</code>)</summary>
+<details><summary>[X4] join output (<code>wx4_ml_tag4_best.txt</code>)</summary>
 
 ```text
 all constants 679499 (no best 0): best of four 1135612767 vs stored 1468890902 (-22.69%)
@@ -2783,7 +2848,7 @@ best of four - MSS (n=663254): min -22505 p1 -361 p10 -31 p50 -3 p90 0 p99 0 p99
 
 </details>
 
-<details><summary>[X5] join output (<code>p6/cmp_id_report.md</code>)</summary>
+<details><summary>[X5] join output (<code>cmp_id_report.md</code>)</summary>
 
 ```text
 # MSS vs all candidates (TagN), 679499 constants (0 failed)
@@ -2798,7 +2863,7 @@ exit=0
 
 </details>
 
-<details><summary>[X5] join output (<code>p6/cmp_blake3_report.md</code>)</summary>
+<details><summary>[X5] join output (<code>cmp_blake3_report.md</code>)</summary>
 
 ```text
 # MSS vs all candidates (TagN), 679499 constants (0 failed)
@@ -2813,7 +2878,7 @@ exit=0
 
 </details>
 
-<details><summary>[X5] join output (<code>p6/outlier_diff2.md</code>)</summary>
+<details><summary>[X5] join output (<code>outlier_diff2.md</code>)</summary>
 
 ```text
 - MSS with StructuralId ties: TagN 67367 B, Tag4 72071 B
@@ -2850,7 +2915,7 @@ exit=0
 
 </details>
 
-<details><summary>[X5] join output (<code>p6/diff_up7_blake3.md</code>)</summary>
+<details><summary>[X5] join output (<code>diff_up7_blake3.md</code>)</summary>
 
 ```text
 - MSS with StructuralId ties: TagN 67367 B, Tag4 72071 B
@@ -3067,7 +3132,7 @@ exit=0
 
 </details>
 
-<details><summary>[X5] join output (<code>p6/diff_sample13_id.md</code>)</summary>
+<details><summary>[X5] join output (<code>diff_sample13_id.md</code>)</summary>
 
 ```text
 - MSS with StructuralId ties: TagN 2819 B, Tag4 2819 B
@@ -3432,7 +3497,7 @@ exit=0
 
 </details>
 
-<details><summary>[X6] join output (<code>p5/outlier_kahn.txt</code>)</summary>
+<details><summary>[X6] join output (<code>outlier_kahn.txt</code>)</summary>
 
 ```text
 idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,bytes1,bytes2,bytes3,kbased,best,best_w,rewidth,rewidth_w,ms1,ms2,ms3,status_all,stored_all,bytes_all,best4,best4_w,ms_all,kept1,kept2,kept3,kept_all
@@ -3443,11 +3508,11 @@ idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,byte
 
 </details>
 
-<details><summary>[X7] join output (<code>p7/serial_a_report.txt</code>)</summary>
+<details><summary>[X7] join output (<code>serial_a_report.txt</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 11 processed); layout TagN
+- corpus: $S/mathlib.ixe (679499 constants; 11 processed); layout TagN
 - wall: index 11664 ms, processing 515.9 s with 20 threads; peak RSS 4493864 KiB
 - certified: 11 / 11; failed: 0
 - failures by status: {}
@@ -3494,11 +3559,11 @@ exit=0
 
 </details>
 
-<details><summary>[X7] join output (<code>p7/serial_b_report.txt</code>)</summary>
+<details><summary>[X7] join output (<code>serial_b_report.txt</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 11 processed); layout TagN
+- corpus: $S/mathlib.ixe (679499 constants; 11 processed); layout TagN
 - wall: index 7646 ms, processing 149.3 s with 20 threads; peak RSS 4506028 KiB
 - certified: 11 / 11; failed: 0
 - failures by status: {}
@@ -3545,11 +3610,11 @@ exit=0
 
 </details>
 
-<details><summary>[X7] join output (<code>p7/serial_c_report.txt</code>)</summary>
+<details><summary>[X7] join output (<code>serial_c_report.txt</code>)</summary>
 
 ```text
 # sharing_corpus report
-- corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe (679499 constants; 11 processed); layout TagN
+- corpus: $S/mathlib.ixe (679499 constants; 11 processed); layout TagN
 - wall: index 4902 ms, processing 69.8 s with 20 threads; peak RSS 4643556 KiB
 - certified: 11 / 11; failed: 0
 - failures by status: {}
@@ -3596,7 +3661,7 @@ exit=0
 
 </details>
 
-<details><summary>[X9] join output (<code>p10/dense_widths_all.txt</code>)</summary>
+<details><summary>[X9] join output (<code>dense_widths_all.txt</code>)</summary>
 
 ```text
 idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,bytes1,bytes2,bytes3,kbased,best,best_w,rewidth,rewidth_w,ms1,ms2,ms3,status_all,stored_all,bytes_all,best4,best4_w,ms_all,kept1,kept2,kept3,kept_all
@@ -3613,7 +3678,8 @@ idx,addr,name,kind,raw,k,wk,status1,status2,status3,stored1,stored2,stored3,byte
 
 ## Appendix B: differential tallies
 
-For each differential log: the tally lines and the `DIAGNOSIS` lines, unedited. The per-constant `NOTE` lines are omitted.
+For each differential log: the tally lines and the `DIAGNOSIS` lines, unedited apart from local paths
+(written `$S/…`). The per-constant `NOTE` lines are omitted, except the one same-error case of [D11].
 
 <details><summary>[D0] Init, the 10 Lean-only constants, limit diagnosis (86df8874)</summary>
 
@@ -3622,7 +3688,7 @@ For each differential log: the tally lines and the `DIAGNOSIS` lines, unedited. 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 97 ms, Rust 6 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1533 ms, Rust 250 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 10 under [tiered-tagN, tiered-tag4]; loaded in 1027 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 10 under [tiered-tagN, tiered-tag4]; loaded in 1027 ms]
       DIAGNOSIS _private.Init.Data.Nat.ToString.«0».Nat.digitChar_iff_aux (0691b3f1e8c36b6ba49eb789ca815ff0583eb48dc4c46886aadb190fe43be2f6) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS _private.Init.Data.Nat.ToString.«0».Nat.digitChar_iff_aux (0691b3f1e8c36b6ba49eb789ca815ff0583eb48dc4c46886aadb190fe43be2f6) [tiered-tag4]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS _private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1 (194bacb9fee23ecb45a13a8fab2095b3f074dceb7bedb7a1a75f47f3ffe5c73b) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
@@ -3657,7 +3723,7 @@ For each differential log: the tally lines and the `DIAGNOSIS` lines, unedited. 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 169 ms, Rust 8 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1242 ms, Rust 207 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 56622 under [tiered-tagN, tiered-tag4, uniform-w2]; loaded in 647 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 56622 under [tiered-tagN, tiered-tag4, uniform-w2]; loaded in 647 ms]
     [corpus progress: 5000/56622]
     [corpus progress: 10000/56622]
     [corpus progress: 15000/56622]
@@ -3685,7 +3751,7 @@ exit=0 wall=4543s
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 43 ms, Rust 3 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 477 ms, Rust 138 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 629 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 629 ms]
       DIAGNOSIS _private.Init.Data.Vector.Extract.«0».Vector.extract_add_left._proof_1 (5a362f9e99724cbf1e4dc40216ab8c45c0629e8394bc419dc3ce03a689ca4173) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
     [corpus progress: 5000/9437]
       DIAGNOSIS _private.Init.Data.Vector.Extract.«0».Vector.extract_extract._proof_1 (89ed0e98891415751b5d901324eb6eece9183078959dd60430cb17bc64d44d79) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728]; succeeded with [maxMaterialize=268435456]; bytes equal to Rust
@@ -3704,7 +3770,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 43 ms, Rust 3 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 474 ms, Rust 137 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 631 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 631 ms]
     [corpus progress: 5000/9437]
       DIAGNOSIS _private.Init.Data.Vector.Extract.«0».Vector.extract_append._proof_1 (d126ef57b21ab268daf3d9cb8faef5455e330eb505556ef14924e8d9cbec2fd9) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728, maxMaterialize=268435456]; succeeded with [maxMaterialize=536870912]; bytes equal to Rust
       DIAGNOSIS _private.Init.Data.Array.Extract.«0».Array.extract_append_extract._proof_1_1 (e07ec5807ddd2514063f3b8c9158d9aea80ca6f8be60d1bdcb3c89b6e7a13333) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728]; succeeded with [maxMaterialize=268435456]; bytes equal to Rust
@@ -3721,7 +3787,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 48 ms, Rust 3 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 526 ms, Rust 141 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 496 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 496 ms]
     [corpus progress: 5000/9437]
       DIAGNOSIS _private.Init.Data.Array.Extract.«0».Array.extract_extract._proof_1_1 (b6be5c1a4db8c149c47bd94b0f4acb4231b46ecc62bc2a05cd4be985c5950a74) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728]; succeeded with [maxMaterialize=268435456]; bytes equal to Rust
     [corpus tiered-tagN: 9437 constants; 9436 same bytes, 0 same error category, 1 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 63983 ms, Rust 11723 ms]
@@ -3737,7 +3803,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 46 ms, Rust 5 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 467 ms, Rust 136 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 496 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 496 ms]
     [corpus progress: 5000/9437]
       DIAGNOSIS _private.Init.Data.Array.Extract.«0».Array.extract_append._proof_1_1 (e852d49c2b3a2ea71d1036e9a19406c99f5db76288c568bceb90e40c939ebfec) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728]; succeeded with [maxMaterialize=268435456]; bytes equal to Rust
     [corpus tiered-tagN: 9437 constants; 9436 same bytes, 0 same error category, 1 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 69022 ms, Rust 11963 ms]
@@ -3753,7 +3819,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 43 ms, Rust 3 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 391 ms, Rust 111 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 477 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 477 ms]
       DIAGNOSIS _private.Init.Data.Nat.ToString.«0».Nat.digitChar_iff_aux (0691b3f1e8c36b6ba49eb789ca815ff0583eb48dc4c46886aadb190fe43be2f6) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS _private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1 (194bacb9fee23ecb45a13a8fab2095b3f074dceb7bedb7a1a75f47f3ffe5c73b) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
     [corpus progress: 5000/9437]
@@ -3770,7 +3836,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 42 ms, Rust 3 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 437 ms, Rust 124 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 446 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, uniform-w2]; loaded in 446 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 67185 ms, Rust 12046 ms]
     [corpus uniform-w2: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 23557 ms, Rust 5529 ms]
@@ -3789,7 +3855,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 48 ms, Rust 3 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 816 ms, Rust 147 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe, 679499 constants, comparing 10132 under [tiered-tagN, uniform-w2]; loaded in 9837 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 10132 under [tiered-tagN, uniform-w2]; loaded in 9837 ms]
       DIAGNOSIS _private.Init.Data.Nat.ToString.«0».Nat.digitChar_iff_aux (0691b3f1e8c36b6ba49eb789ca815ff0583eb48dc4c46886aadb190fe43be2f6) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS WeierstrassCurve.Projective.negAddY_neg (14f75d2691415463319f5dfce1f3668d59f07ffde9b7aad7c8b0169f407f22ba) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS _private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.«0».RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1 (159e2b0d36d95a7feefe9a1f39b7e65da56802a29e83fe00e567d5b963506ede) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728, maxMaterialize=268435456, maxMaterialize=536870912, maxMaterialize=1073741824]; succeeded with [maxMaterialize=2147483648]; bytes equal to Rust
@@ -3856,7 +3922,7 @@ exit=1
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 53 ms, Rust 3 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 839 ms, Rust 141 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe, 679499 constants, comparing 10131 under [tiered-tagN, uniform-w2]; loaded in 9278 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 10131 under [tiered-tagN, uniform-w2]; loaded in 9278 ms]
       DIAGNOSIS WeierstrassCurve.variableChange_Δ (0473473f736e639b9211812b686cac21574deb66f2382c1f0cbf4166f7e542c7) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728, maxMaterialize=268435456, maxMaterialize=536870912, maxMaterialize=1073741824]; succeeded with [maxMaterialize=2147483648]; bytes equal to Rust
       DIAGNOSIS ContinuousMultilinearMap.hasStrictFDerivAt_compContinuousLinearMap (057bc467cdb7583185b00d13e915f514af7be0fb23afc5eb648a60c02bdf766c) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS groupCohomology.H1InfRes_exact (076a4a5d72838673c8b1a235fff84767e47060fe8641e355be2c3c68fbf3fd7a) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728]; succeeded with [maxMaterialize=268435456]; bytes equal to Rust
@@ -3935,7 +4001,7 @@ exit=1
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 42 ms, Rust 3 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 414 ms, Rust 120 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../mathlib.ixe, 679499 constants, comparing 5065 under [tiered-tagN, uniform-w2]; loaded in 22880 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 5065 under [tiered-tagN, uniform-w2]; loaded in 22880 ms]
       DIAGNOSIS WeierstrassCurve.variableChange_Δ (0473473f736e639b9211812b686cac21574deb66f2382c1f0cbf4166f7e542c7) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728, maxMaterialize=268435456, maxMaterialize=536870912, maxMaterialize=1073741824]; succeeded with [maxMaterialize=2147483648]; bytes equal to Rust
       DIAGNOSIS ContinuousMultilinearMap.hasStrictFDerivAt_compContinuousLinearMap (057bc467cdb7583185b00d13e915f514af7be0fb23afc5eb648a60c02bdf766c) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS sum_eight_sq_mul_sum_eight_sq (0bd4b1175ac1d995d92bf0bec451195592d9edf04afe3cee884da42b7b96c766) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728, maxMaterialize=268435456, maxMaterialize=536870912]; succeeded with [maxMaterialize=1073741824]; bytes equal to Rust
@@ -3990,7 +4056,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 33 ms, Rust 2 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 344 ms, Rust 97 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../mathlib.ixe, 679499 constants, comparing 5066 under [tiered-tagN, uniform-w2]; loaded in 23804 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 5066 under [tiered-tagN, uniform-w2]; loaded in 23804 ms]
       DIAGNOSIS Std.DTreeMap.Internal.Impl.balanceR!_eq_balance! (1601895625b67ecddc59ecf9425ca6eae4c66d6b7c8ea8ce5e4490c3ea338e86) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS _private.Init.Data.Int.DivMod.Lemmas.«0».Int.add_one_tdiv._proof_1_1 (194bacb9fee23ecb45a13a8fab2095b3f074dceb7bedb7a1a75f47f3ffe5c73b) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS TopCat.Sheaf.interUnionPullbackConeLift._proof_5 (1f150c14a61c243d759f462e339b7d824e712ee26eb41419aa9f55b98f0de407) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
@@ -4033,7 +4099,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 33 ms, Rust 2 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 335 ms, Rust 95 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../mathlib.ixe, 679499 constants, comparing 5066 under [tiered-tagN, uniform-w2]; loaded in 23498 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 5066 under [tiered-tagN, uniform-w2]; loaded in 23498 ms]
       DIAGNOSIS WeierstrassCurve.addSubMapCoeff_condition (02ae6cb3f3ccb488fbfed20bf778afdf8f835339dc34fbad5538c6a266643fc4) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728, maxMaterialize=268435456, maxMaterialize=536870912]; succeeded with [maxMaterialize=1073741824]; bytes equal to Rust
       DIAGNOSIS groupCohomology.H1InfRes_exact (076a4a5d72838673c8b1a235fff84767e47060fe8641e355be2c3c68fbf3fd7a) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728]; succeeded with [maxMaterialize=268435456]; bytes equal to Rust
       DIAGNOSIS _private.Std.Tactic.BVDecide.Bitblast.BVExpr.Circuit.Lemmas.Operations.Cpop.«0».Std.Tactic.BVDecide.BVExpr.bitblast.denote_blastCpopLayer.go._unary (0f75bea9d5dd4591a6f321934e261404b9a8548358d528223bf692a33527d74b) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728]; succeeded with [maxMaterialize=268435456]; bytes equal to Rust
@@ -4070,7 +4136,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 48 ms, Rust 3 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 517 ms, Rust 136 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../mathlib.ixe, 679499 constants, comparing 5066 under [tiered-tagN, uniform-w2]; loaded in 22773 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 5066 under [tiered-tagN, uniform-w2]; loaded in 22773 ms]
       DIAGNOSIS _private.Init.Data.Nat.ToString.«0».Nat.digitChar_iff_aux (0691b3f1e8c36b6ba49eb789ca815ff0583eb48dc4c46886aadb190fe43be2f6) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS WeierstrassCurve.Projective.negAddY_neg (14f75d2691415463319f5dfce1f3668d59f07ffde9b7aad7c8b0169f407f22ba) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864]; succeeded with [maxMaterialize=134217728]; bytes equal to Rust
       DIAGNOSIS _private.Mathlib.LinearAlgebra.RootSystem.Finite.G2.«0».RootPairing.EmbeddedG2.isOrthogonal_short_and_long_aux._proof_1_1 (159e2b0d36d95a7feefe9a1f39b7e65da56802a29e83fe00e567d5b963506ede) [tiered-tagN]: Lean exhausted [maxMaterialize=67108864, maxMaterialize=134217728, maxMaterialize=268435456, maxMaterialize=536870912, maxMaterialize=1073741824]; succeeded with [maxMaterialize=2147483648]; bytes equal to Rust
@@ -4119,7 +4185,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 69 ms, Rust 4 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 844 ms, Rust 201 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../mathlib.ixe, 679499 constants, comparing 30 under [tiered-tagN]; loaded in 20540 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 30 under [tiered-tagN]; loaded in 20540 ms]
     [corpus tiered-tagN: 30 constants; 30 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 967287 ms, Rust 47357 ms]
     [corpus: decode failures 0; total 1036586 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 17:19.79
@@ -4132,7 +4198,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 91 ms, Rust 4 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 709 ms, Rust 163 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../mathlib.ixe, 679499 constants, comparing 30 under [tiered-tagN]; loaded in 19930 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 30 under [tiered-tagN]; loaded in 19930 ms]
     [corpus tiered-tagN: 30 constants; 30 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1198201 ms, Rust 58739 ms]
     [corpus: decode failures 0; total 1278450 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 21:21.33
@@ -4145,7 +4211,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 113 ms, Rust 7 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 861 ms, Rust 246 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../mathlib.ixe, 679499 constants, comparing 30 under [tiered-tagN]; loaded in 20624 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 30 under [tiered-tagN]; loaded in 20624 ms]
     [corpus tiered-tagN: 30 constants; 30 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1602130 ms, Rust 91515 ms]
     [corpus: decode failures 0; total 1715786 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 28:39.03
@@ -4158,7 +4224,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 103 ms, Rust 6 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 990 ms, Rust 247 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../mathlib.ixe, 679499 constants, comparing 30 under [tiered-tagN]; loaded in 18584 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 30 under [tiered-tagN]; loaded in 18584 ms]
     [corpus tiered-tagN: 30 constants; 30 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1361105 ms, Rust 60011 ms]
     [corpus: decode failures 0; total 1441288 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 24:04.55
@@ -4171,7 +4237,7 @@ exit=0
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 105 ms, Rust 6 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1095 ms, Rust 275 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/../init.ixe, 56622 constants, comparing 10 under [tiered-tagN, tiered-tag4]; loaded in 1303 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 10 under [tiered-tagN, tiered-tag4]; loaded in 1303 ms]
     [corpus tiered-tagN: 10 constants; 10 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 300271 ms, Rust 12945 ms]
     [corpus tiered-tag4: 10 constants; 10 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 244009 ms, Rust 14012 ms]
     [corpus: decode failures 0; total 572790 ms]
@@ -4184,12 +4250,12 @@ exit=0
 
 <details><summary>[D6] Mathlib, all constants, K-based: the 3 completed address shards, then the 3 empty logs (3ddda798)</summary>
 
-`p4/lf_s0.log`
+`lf_s0.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 183 ms, Rust 21 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 609 ms, Rust 172 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe, 679499 constants, comparing 113249 under [tiered-tagN]; loaded in 9841 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 113249 under [tiered-tagN]; loaded in 9841 ms]
     [corpus progress: 5000/113249]
     [corpus progress: 10000/113249]
     [corpus progress: 15000/113249]
@@ -4219,12 +4285,12 @@ exit=0
 exit=0
 ```
 
-`p4/lf_s3.log`
+`lf_s3.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 136 ms, Rust 8 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 710 ms, Rust 191 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe, 679499 constants, comparing 113250 under [tiered-tagN]; loaded in 10888 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 113250 under [tiered-tagN]; loaded in 10888 ms]
     [corpus progress: 5000/113250]
     [corpus progress: 10000/113250]
     [corpus progress: 15000/113250]
@@ -4254,12 +4320,12 @@ exit=0
 exit=0
 ```
 
-`p4/lf_s4.log`
+`lf_s4.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 166 ms, Rust 14 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 605 ms, Rust 163 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe, 679499 constants, comparing 113250 under [tiered-tagN]; loaded in 11094 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 113250 under [tiered-tagN]; loaded in 11094 ms]
     [corpus progress: 5000/113250]
     [corpus progress: 10000/113250]
     [corpus progress: 15000/113250]
@@ -4289,12 +4355,12 @@ exit=0
 exit=0
 ```
 
-`p4/lf_s1.log`
+`lf_s1.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 148 ms, Rust 8 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 599 ms, Rust 153 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe, 679499 constants, comparing 113250 under [tiered-tagN]; loaded in 10395 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 113250 under [tiered-tagN]; loaded in 10395 ms]
     [corpus progress: 5000/113250]
     [corpus progress: 10000/113250]
     [corpus progress: 15000/113250]
@@ -4324,12 +4390,12 @@ exit=0
 exit=0
 ```
 
-`p4/lf_s2.log`
+`lf_s2.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 138 ms, Rust 7 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 569 ms, Rust 163 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe, 679499 constants, comparing 113250 under [tiered-tagN]; loaded in 10272 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 113250 under [tiered-tagN]; loaded in 10272 ms]
     [corpus progress: 5000/113250]
     [corpus progress: 10000/113250]
     [corpus progress: 15000/113250]
@@ -4359,12 +4425,12 @@ exit=0
 exit=0
 ```
 
-`p4/lf_s5.log`
+`lf_s5.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 194 ms, Rust 10 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 640 ms, Rust 173 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe, 679499 constants, comparing 113250 under [tiered-tagN]; loaded in 10619 ms]
+    [corpus: $S/mathlib.ixe, 679499 constants, comparing 113250 under [tiered-tagN]; loaded in 10619 ms]
     [corpus progress: 5000/113250]
     [corpus progress: 10000/113250]
     [corpus progress: 15000/113250]
@@ -4398,12 +4464,12 @@ exit=0
 
 <details><summary>[D7] Init, all constants, best of three, tiered-TagN and tiered-Tag4 (a80c16cf)</summary>
 
-`p4/b3_init_s0.log`
+`b3_init_s0.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 58 ms, Rust 7 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 763 ms, Rust 273 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 821 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 821 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1154355 ms, Rust 64204 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1031664 ms, Rust 66100 ms]
@@ -4413,12 +4479,12 @@ exit=0
 exit=0
 ```
 
-`p4/b3_init_s1.log`
+`b3_init_s1.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 94 ms, Rust 8 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 874 ms, Rust 234 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 771 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 771 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 979395 ms, Rust 73444 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 943637 ms, Rust 77043 ms]
@@ -4428,12 +4494,12 @@ exit=0
 exit=0
 ```
 
-`p4/b3_init_s2.log`
+`b3_init_s2.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 70 ms, Rust 6 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 856 ms, Rust 228 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 744 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 744 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 828231 ms, Rust 59517 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 728887 ms, Rust 59856 ms]
@@ -4443,12 +4509,12 @@ exit=0
 exit=0
 ```
 
-`p4/b3_init_s3.log`
+`b3_init_s3.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 107 ms, Rust 9 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1445 ms, Rust 452 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 728 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 728 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 984823 ms, Rust 67224 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 753423 ms, Rust 61405 ms]
@@ -4458,12 +4524,12 @@ exit=0
 exit=0
 ```
 
-`p4/b3_init_s4.log`
+`b3_init_s4.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 98 ms, Rust 8 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 865 ms, Rust 233 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 681 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 681 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 810440 ms, Rust 62008 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 711211 ms, Rust 65741 ms]
@@ -4473,12 +4539,12 @@ exit=0
 exit=0
 ```
 
-`p4/b3_init_s5.log`
+`b3_init_s5.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 88 ms, Rust 7 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1734 ms, Rust 562 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 2079 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 2079 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 657967 ms, Rust 55090 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 588550 ms, Rust 54413 ms]
@@ -4492,7 +4558,7 @@ exit=0
 
 <details><summary>[D8] Mathlib sample, best of three, tiered-TagN and tiered-Tag4 (a80c16cf), aborted</summary>
 
-`p4/b3_ml_s0.log`
+`b3_ml_s0.log`
 
 ```text
 Command terminated by signal 15
@@ -4501,7 +4567,7 @@ Command terminated by signal 15
 exit=143
 ```
 
-`p4/b3_ml_s1.log`
+`b3_ml_s1.log`
 
 ```text
 Command terminated by signal 15
@@ -4510,7 +4576,7 @@ Command terminated by signal 15
 exit=143
 ```
 
-`p4/b3_ml_s2.log`
+`b3_ml_s2.log`
 
 ```text
 Command terminated by signal 15
@@ -4519,7 +4585,7 @@ Command terminated by signal 15
 exit=143
 ```
 
-`p4/b3_ml_s3.log`
+`b3_ml_s3.log`
 
 ```text
 Command terminated by signal 15
@@ -4532,12 +4598,12 @@ exit=143
 
 <details><summary>[D9] Init, all constants, best of three with the Kahn order, tiered-TagN and tiered-Tag4 (d19f21c0)</summary>
 
-`p8/init_s0.log`
+`init_s0.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 51 ms, Rust 4 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1337 ms, Rust 380 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1154 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1154 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 726305 ms, Rust 72934 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 677491 ms, Rust 74282 ms]
@@ -4547,12 +4613,12 @@ exit=143
 exit=0
 ```
 
-`p8/init_s1.log`
+`init_s1.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 154 ms, Rust 23 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1708 ms, Rust 532 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1651 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1651 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 608095 ms, Rust 70073 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 561240 ms, Rust 69960 ms]
@@ -4562,12 +4628,12 @@ exit=0
 exit=0
 ```
 
-`p8/init_s2.log`
+`init_s2.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 149 ms, Rust 15 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1683 ms, Rust 578 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1385 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1385 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 414956 ms, Rust 54172 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 411295 ms, Rust 50736 ms]
@@ -4577,12 +4643,12 @@ exit=0
 exit=0
 ```
 
-`p8/init_s3.log`
+`init_s3.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 92 ms, Rust 7 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1566 ms, Rust 504 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1765 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1765 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 500682 ms, Rust 56514 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 475709 ms, Rust 58928 ms]
@@ -4592,12 +4658,12 @@ exit=0
 exit=0
 ```
 
-`p8/init_s4.log`
+`init_s4.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 252 ms, Rust 25 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1803 ms, Rust 568 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1248 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1248 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 423984 ms, Rust 55817 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 421238 ms, Rust 53568 ms]
@@ -4607,12 +4673,12 @@ exit=0
 exit=0
 ```
 
-`p8/init_s5.log`
+`init_s5.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tag4, tiered-tagN]: 89 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 80 ms, Rust 6 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2398 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1689 ms, Rust 530 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1334 ms]
+    [corpus: $S/init.ixe, 56622 constants, comparing 9437 under [tiered-tagN, tiered-tag4]; loaded in 1334 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 371574 ms, Rust 50714 ms]
     [corpus tiered-tag4: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 360497 ms, Rust 53412 ms]
@@ -4626,12 +4692,12 @@ exit=0
 
 <details><summary>[D10] v4 Init corpus, all constants, tiered-TagN (36fe2777)</summary>
 
-`p10/init_s0.log`
+`init_s0.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 116 ms, Rust 5 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 889 ms, Rust 187 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 874 ms]
+    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 874 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 718281 ms, Rust 60459 ms]
     [corpus: decode failures 0; total 782552 ms]
@@ -4640,12 +4706,12 @@ exit=0
 exit=0
 ```
 
-`p10/init_s1.log`
+`init_s1.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 165 ms, Rust 5 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1343 ms, Rust 325 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 830 ms]
+    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 830 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 620439 ms, Rust 63470 ms]
     [corpus: decode failures 0; total 688022 ms]
@@ -4654,12 +4720,12 @@ exit=0
 exit=0
 ```
 
-`p10/init_s2.log`
+`init_s2.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 145 ms, Rust 5 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1131 ms, Rust 247 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 661 ms]
+    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 661 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 503446 ms, Rust 51849 ms]
     [corpus: decode failures 0; total 558610 ms]
@@ -4668,12 +4734,12 @@ exit=0
 exit=0
 ```
 
-`p10/init_s3.log`
+`init_s3.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 116 ms, Rust 5 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1271 ms, Rust 264 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 906 ms]
+    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 906 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 682788 ms, Rust 67449 ms]
     [corpus: decode failures 0; total 754759 ms]
@@ -4682,12 +4748,12 @@ exit=0
 exit=0
 ```
 
-`p10/init_s4.log`
+`init_s4.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 155 ms, Rust 9 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1247 ms, Rust 275 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 1262 ms]
+    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 1262 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 363005 ms, Rust 49208 ms]
     [corpus: decode failures 0; total 416363 ms]
@@ -4696,12 +4762,12 @@ exit=0
 exit=0
 ```
 
-`p10/init_s5.log`
+`init_s5.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 242 ms, Rust 8 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1852 ms, Rust 353 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 1039 ms]
+    [corpus: $S/init_v4r_36fe2777.ixe, 56622 constants, comparing 9437 under [tiered-tagN]; loaded in 1039 ms]
     [corpus progress: 5000/9437]
     [corpus tiered-tagN: 9437 constants; 9437 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 550026 ms, Rust 57611 ms]
     [corpus: decode failures 0; total 611339 ms]
@@ -4712,14 +4778,14 @@ exit=0
 
 </details>
 
-<details><summary>[D11] v4 Mathlib sample, tiered-TagN (36fe2777); shards 3, 5 and 6 still running at handoff</summary>
+<details><summary>[D11] v4 Mathlib sample, tiered-TagN (36fe2777)</summary>
 
-`p10/ml_s0.log`
+`ml_s0.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 169 ms, Rust 7 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1120 ms, Rust 265 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 13779 ms]
+    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 13779 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 3372948 ms, Rust 313156 ms]
     [corpus: decode failures 0; total 3709009 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:01:52
@@ -4727,12 +4793,12 @@ exit=0
 exit=0
 ```
 
-`p10/ml_s1.log`
+`ml_s1.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 129 ms, Rust 6 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1310 ms, Rust 326 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2534 under [tiered-tagN]; loaded in 13378 ms]
+    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2534 under [tiered-tagN]; loaded in 13378 ms]
     [corpus tiered-tagN: 2534 constants; 2534 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4178724 ms, Rust 328739 ms]
     [corpus: decode failures 0; total 4532338 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:15:36
@@ -4740,12 +4806,12 @@ exit=0
 exit=0
 ```
 
-`p10/ml_s2.log`
+`ml_s2.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 133 ms, Rust 7 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1179 ms, Rust 300 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 15778 ms]
+    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 15778 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4160060 ms, Rust 315849 ms]
     [corpus: decode failures 0; total 4502713 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:15:06
@@ -4753,12 +4819,12 @@ exit=0
 exit=0
 ```
 
-`p10/ml_s3.log`
+`ml_s3.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 158 ms, Rust 9 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1077 ms, Rust 225 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 14888 ms]
+    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 14888 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4823239 ms, Rust 340491 ms]
     [corpus: decode failures 0; total 5188350 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:26:31
@@ -4766,12 +4832,12 @@ exit=0
 exit=0
 ```
 
-`p10/ml_s4.log`
+`ml_s4.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 118 ms, Rust 6 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1014 ms, Rust 230 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 17410 ms]
+    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 17410 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4467566 ms, Rust 358723 ms]
     [corpus: decode failures 0; total 4852768 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:20:56
@@ -4779,12 +4845,12 @@ exit=0
 exit=0
 ```
 
-`p10/ml_s5.log`
+`ml_s5.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 122 ms, Rust 39 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1007 ms, Rust 241 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 17326 ms]
+    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 17326 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4821142 ms, Rust 353157 ms]
     [corpus: decode failures 0; total 5199302 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:26:43
@@ -4792,17 +4858,26 @@ exit=0
 exit=0
 ```
 
-`p10/ml_s6.log`
+`ml_s6.log`
 
 ```text
+    §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 211 ms, Rust 8 ms
+    350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 944 ms, Rust 198 ms
+    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 13571 ms]
+    [corpus tiered-tagN: 2533 constants; 2532 same bytes, 1 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 5610089 ms, Rust 366112 ms]
+      NOTE CategoryTheory.Functor.IsDenseSubsite.isIso_ranCounit_app_of_isDenseSubsite (ca5b91d86331eb4a78896d3a3d6507d595c1fe23606596e426a34ef83bbe33d3): both resource
+    [corpus: decode failures 0; total 5997624 ms]
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:40:01
+	Maximum resident set size (kbytes): 4012144
+exit=0
 ```
 
-`p10/ml_s7.log`
+`ml_s7.log`
 
 ```text
     §2 fixtures × [exact, uniform-w1, uniform-w2, uniform-w3, uniform-w5, tiered-tagN]: 76 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 144 ms, Rust 9 ms
     350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes: 2048 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 1146 ms, Rust 280 ms
-    [corpus: /tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/w2/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 15357 ms]
+    [corpus: $S/mathlib_v4r_36fe2777.ixe, 679499 constants, comparing 2533 under [tiered-tagN]; loaded in 15357 ms]
     [corpus tiered-tagN: 2533 constants; 2533 same bytes, 0 same error category, 0 Lean-only and 0 Rust-only resource exhaustion, 0 disagreements; Lean 4060627 ms, Rust 311506 ms]
     [corpus: decode failures 0; total 4394967 ms]
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:13:19

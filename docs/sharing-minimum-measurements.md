@@ -5,6 +5,16 @@ Measurements for gate P1.5 of [`sharing-minimum.md`](sharing-minimum.md), taken 
 The plan says these numbers decide P3's design. This document reports them and does not
 choose a design.
 
+**Status.** The corpus `init.ixe` is a format-v3 file (`Tag0`/`Tag2`/`Tag4` integers)
+written by the Rust compiler with the heuristic sharing pass, the compiler route at the
+time; "stored", "current" and "heuristic" below refer to those tables and codes. Format v4
+replaces the integer codes by TagN and the heuristic by the canonical construction
+([`Ixon.md`, "Sharing System"](Ixon.md#sharing-system)); canonical-construction results
+are in [`sharing-minimum-performance.md`](sharing-minimum-performance.md). When the
+heuristic was removed, the harness was trimmed to the stored, canonical, unshared and MSS
+measurements and the `--meta` study; the other sections need the harness at the commits
+listed under Reproduction.
+
 ## Headline
 
 Over the 55,386 stored constants that have at least one expression root (all 56,622
@@ -45,8 +55,7 @@ about one in five, and in the tens of thousands at the top.
 ## Maximal structural sharing (MSS) follow-up
 
 This is a candidate linear-time canonical rule, measured on the same corpus through the
-same harness (`mssBuild` in `Benchmarks/SharingStudy.lean`). It is the rule the
-coordinator defined:
+same harness (`mssBuild` in `Benchmarks/SharingStudy.lean`). The rule is:
 
 1. `deg(t)` is the number of incoming edges of `t` in the compact hash-consed DAG, counted
    with multiplicity (`App(x,x)` contributes 2), plus the number of roots equal to `t`.
@@ -128,7 +137,7 @@ measured decomposition of the losses.
   - *Definition used here:* a stored term that is never a root and whose every DAG
     occurrence is a same-family telescope continuation. That means the function child of
     an App for an App term, or the body of a Lam (All) for a Lam (All) term.
-  - *Interpretation:* I read "function child of an App" as applying only when the stored
+  - *Interpretation:* "function child of an App" is read as applying only when the stored
     term is itself an App, since only then does the Share cut a telescope. A non-App head
     under an App is not counted.
   - *Counts:* there are 567,668 continuation-only entries. Of these, 22,588 have an MSS
@@ -175,7 +184,7 @@ closure of that relation.
 
 ### Change note: corrected `payloadMin`
 
-The first run of this section used the coordinator's first specification of
+The first run of this section used a first specification of
 `payloadMin`: scalar bytes plus 1 byte per child. At `w ≥ 2` that bound is too weak,
 because a stored child costs `w` bytes as a reference, not 1. The numbers below use the
 corrected specification, a width-aware recursive lower bound computed bottom-up on the
@@ -202,7 +211,7 @@ compact DAG for each `w`:
 
 ### Implementation notes and interpretations
 
-- **`headdeg`.** I kept my non-literal reading. An occurrence is a non-head only when `t`
+- **`headdeg`.** The harness keeps a non-literal reading. An occurrence is a non-head only when `t`
   is an App in the function position of an App, or a Lam (All) in the body position of a
   Lam (All). Roots are heads.
   - The same rule decides continuation positions in `payloadMin`.
@@ -480,42 +489,45 @@ only as a reference point for F and G.
   (1 − 67,556,587 / 80,161,846), and under G 15.52% below.
 - The ten largest gains for each scheme are in the harness output below.
 
-## Exact uniform-width optimizer (W1) follow-up
+## Exact uniform-width optimizer follow-up
 
-This section runs W1's exact optimizer for the uniform-width cost model over the corpus.
+This section runs the Lean exact optimizer for the uniform-width cost model
+(`Ix.Sharing.Exact`) over the corpus.
 
-- **Code.** The worktree was updated with `git merge ix-sharing`, a fast-forward to
-  `bd3e7482` that brought in W1's `Ix/Sharing/Exact/*` and W2's Rust code. My three files
-  merged unchanged.
+- **Code.** The harness ran on `ix-sharing` at `bd3e7482`, which contains the Lean exact
+  core (`Ix/Sharing/Exact/*`) and its Rust port. The harness files merged unchanged.
 - **Call.** For every rooted constant and `w ∈ {1, 2, 3}` the harness calls
   `Ix.Sharing.Exact.optimizeSharingUniformTable w c.sharing (constantInfoRoots c.info) limits`.
 - **Limits:**
   - `maxStates` = 2^20 = 1,048,576, the suggested size of about 10^6;
-  - everything else at W1's defaults: `maxCostEvals` 2^30, `maxNodes` 2^20, `maxDepth`
-    2^14, `maxExprVisits` 2^26, `maxMaterialize` 2^26, `maxOutputBytes` 2^28.
+  - everything else at the defaults of that commit: `maxCostEvals` 2^30, `maxNodes` 2^20,
+    `maxDepth` 2^14, `maxExprVisits` 2^26, `maxMaterialize` 2^26, `maxOutputBytes` 2^28.
 - **Processing each certified result:**
   - the roots are placed with the production cursor helpers and serialized with
-    `serConstant`, which gives the real length under the current Tag4 tiers;
+    `serConstant`, which gives the real length under v3's Tag4 tiers;
   - the bytes are decoded, re-encoded, expanded and compared exactly with the original
     expanded roots;
-  - the real length is checked to equal the fixed bytes plus W1's `variableBytes`;
+  - the real length is checked to equal the fixed bytes plus the optimizer's
+    `variableBytes`;
   - the same table and roots are priced under scheme F widths;
-  - the model length is the fixed bytes plus W1's `modelBytes`.
+  - the model length is the fixed bytes plus the optimizer's `modelBytes`.
 - **Wall time** is the optimizer call alone, single-threaded.
 
 ### Checks (every certified run, every `w`)
 
 - **Outputs:** 0 decode/expand failures. The real length equals fixed + `variableBytes`
-  in every case, and W1's distinct-subterm count equals this harness's `N` in every case.
-- **Classes agree with an independent reimplementation.** The harness reimplements W1's
-  classification on its own blake3 DAG (`classifyW1Mode`), with W1's rules:
+  in every case, and the optimizer's distinct-subterm count equals this harness's `N` in
+  every case.
+- **Classes agree with an independent reimplementation.** The harness reimplements the
+  optimizer's classification on its own blake3 DAG (`classifyW1Mode`), with the
+  optimizer's rules:
   - certain-excluded: `(occ−1)·size < occ·w`, for every term;
   - candidates: `deg ≥ 2` and not certain-excluded;
-  - bounds: W1's `inl⁻` / merged bounds with exact headers;
-  - certain-stored: `g ≥ 2` with W1's three gain formulas;
+  - bounds: the optimizer's `inl⁻` / merged bounds with exact headers;
+  - certain-stored: `g ≥ 2` with the optimizer's three gain formulas;
   - components: as defined above.
 
-  W1's reported counts of certain-stored, certain-excluded, uncertain and low-degree
+  The optimizer's reported counts of certain-stored, certain-excluded, uncertain and low-degree
   terms, its number of components and its largest component equal the reimplementation
   for **every** certified constant: 55,294, 55,358 and 55,338 at w = 1, 2 and 3, with 0
   differences.
@@ -532,7 +544,7 @@ This section runs W1's exact optimizer for the uniform-width cost model over the
 | 3 | 55,338 | 48 | 46 | 2 |
 
 - **The two `costEvals` failures** at every width are `Lean.Grind.Config.mk.injEq`
-  (largest component 45 / 44 / 44 under W1's definitions) and
+  (largest component 45 / 44 / 44 under the optimizer's definitions) and
   `Lean.Meta.Simp.Config.mk.injEq` (57 / 57 / 61). These six runs are the six slowest
   overall, at 83–108 s each.
 - **Where the limit bites.** Joining the run-9 certification with the run-10
@@ -588,8 +600,8 @@ failures: the six `costEvals` runs above, then four `states` failures at w = 1
 
 ### Lower-bound gap against the w = 1 model optimum
 
-Under the current tiers every Share costs at least 1 byte. So, per W1's argument, the
-w = 1 model optimum lower-bounds every tiered encoding. Over the 55,263 constants
+Under v3's Tag4 tiers (as under TagN) every Share costs at least 1 byte, so the w = 1
+model optimum lower-bounds every tiered encoding. Over the 55,263 constants
 certified at all three widths, Σ model(w = 1) = 59,370,988:
 
 | encoding | Σ bytes | Σ (bytes − model w=1) | % of Σ model |
@@ -601,20 +613,21 @@ certified at all three widths, Σ model(w = 1) = 59,370,988:
 | uniform w = 3 output | 67,406,916 | 8,035,928 | +13.54% |
 | best of these per constant | 66,331,917 | 6,960,929 | +11.72% |
 
-### W1's classes vs this harness's own classification
+### The optimizer's classes vs this harness's own classification
 
 Over the 55,263 constants certified at all widths. The two classifications are not
 expected to agree, because the definitions differ:
-- W1 uses `g ≥ 2` for certain-stored (mine uses `g > 0`).
-- W1 applies `(occ−1)·size < occ·w` to every term (mine applies the `payloadMax` test to
-  candidates only).
-- W1 drops certain-excluded terms from the "may be stored" set when computing bounds.
-- W1 uses exact header sizes.
+- The optimizer uses `g ≥ 2` for certain-stored (the harness uses `g > 0`).
+- The optimizer applies `(occ−1)·size < occ·w` to every term (the harness applies the
+  `payloadMax` test to candidates only).
+- The optimizer drops certain-excluded terms from the "may be stored" set when computing
+  bounds.
+- The optimizer uses exact header sizes.
 
-Where the definitions coincide, that is with my reimplementation of W1's rules, they agree
-exactly (above).
+Where the definitions coincide, that is with the harness's reimplementation of the
+optimizer's rules, they agree exactly (above).
 
-| w | own certain-stored | W1 | own uncertain | W1 | own max component | W1 |
+| w | own certain-stored | optimizer | own uncertain | optimizer | own max component | optimizer |
 |---:|---:|---:|---:|---:|---:|---:|
 | 1 | 1,842,180 | 1,437,377 | 444,030 | 848,833 | 16 | 21 |
 | 2 | 1,460,911 | 1,189,917 | 480,307 | 751,301 | 14 | 20 |
@@ -683,7 +696,7 @@ The corpus stores 80,208,288 bytes:
 
 ## Metadata and sharing follow-up (Init and Mathlib)
 
-The owner asked whether metadata expressions should participate in sharing. This
+The question is whether metadata expressions should participate in sharing. This
 section measures where the bytes of a whole `.ixe` go, and what `metaSharing`
 contains, on Init (`init.ixe`, 195,387,870 bytes) and on Mathlib (`mathlib.ixe`,
 3,343,271,273 bytes; the corpus of `sharing-minimum-measurements-mathlib.md`). It is
@@ -707,12 +720,13 @@ implemented as the harness's `--meta` mode.
     `serExpr` bytes, `metaRefs`, `metaUnivs`, entries with `original`, and `original`
     `metaSharing` entries.
 - **`metaSharing` analysis.** The constant's primary sharing table, its primary roots
-  and the `metaSharing` entries are expanded into one canonical DAG with W1's
+  and the `metaSharing` entries are expanded into one canonical DAG with the exact core's
   `Ix.Sharing.Exact.expand`.
   - **Which table is "primary".** A `Share` in an entry would index the primary table,
     as in `DecompileM.mkBlockCtx`. For a projection, the primary table is the block's,
     as in `DecompileM.decompileOne`.
-  - **"Structurally equal"** is exact here, because W1's interner keys on the full node.
+  - **"Structurally equal"** is exact here, because the exact core's interner keys on the
+    full node.
     Index-level equality is what a dictionary can exploit.
   - **Re-encoding.** Each entry is re-encoded optimally with the primary table as a fixed
     dictionary at its current index widths (`Prep.materializeWith`). The harness
@@ -865,7 +879,8 @@ the `Tag0` of the child's absolute index within the arena.
 - **Production rebuild: 0 mismatches out of 56,622.** For every constant, the harness
   expanded the stored table and recovered the ordered roots with
   `Ix.CompileM.constantInfoRootExprs`. It then rebuilt the Constant with
-  `Ix.CompileM.buildConstantWithSharing` (Lean `Ix.Sharing.applySharing`) and compared
+  `Ix.CompileM.buildConstantWithSharing` (then the heuristic `Ix.Sharing.applySharing`,
+  since removed) and compared
   `Ixon.serConstant` byte-for-byte with `LazyConstant.rawBytes`. All were identical. The
   corpus was written by the Rust compiler (`ix compile` → `rsCompileEnvBytesFFI`), so this
   also shows that Lean's heuristic reproduces Rust's bytes on all of `Init`.
@@ -894,7 +909,8 @@ the `Tag0` of the child's absolute index within the arena.
   expanded roots are therefore a DAG that is linear in the stored bytes, with no `Share`
   leaves.
 - **`N`:** the number of distinct subterms of all expanded roots of the constant together,
-  leaves and whole roots included. It is computed by `Ix.Sharing.analyzeBlock`.
+  leaves and whole roots included. It is computed by `Ix.Sharing.analyzeBlock` (the
+  heuristic's analysis; the trimmed harness keeps a local copy, `analyzeBlock`).
 - **`occ(t)`:** `SubtermInfo.usageCount`. `countRootUsages` adds 1 per root occurrence, and
   `propagateUsageCounts` then adds each parent's count to each child entry of its `children`
   array, in reverse traversal order. That is the number of occurrences of `t` in the fully
@@ -920,12 +936,12 @@ the `Tag0` of the child's absolute index within the arena.
 
 - **Hash equality is treated as structural equality.** Subterm identity is the blake3
   Merkle hash of `Ix.Sharing.computeNodeHash` (node header bytes plus child hashes), as in
-  the production heuristic. The structural keys of §3.2 are not computed and collisions are
-  not checked.
+  the heuristic sharing pass. The structural keys of §3.2 are not computed and collisions
+  are not checked.
 - Candidate counts apply only R1 and R2. No dominance, decomposition or other reduction has
   been applied. The counts measure the set the exact search would face under the reductions
-  already proved in §4.1. They do not measure DP states, transitions or time, which W1's
-  optimizer must report.
+  already proved in §4.1. They do not measure DP states, transitions or time, which only
+  the exact optimizer reports (see the exact uniform-width optimizer follow-up).
 - The corpus is `Init` only (Rust-compiled `init.ixe`). `Std`, `Lean` and Mathlib were not
   measured.
 - For the 7 constants above 16 MiB unshared, the unshared size is compositional and was not
@@ -937,22 +953,23 @@ the `Tag0` of the child's absolute index within the arena.
 
 ## Reproduction
 
-Worktree `/home/jcb/projects/ix-sharing-w3`, branch `ix-sharing-w3` (with `ix-sharing`
-merged in), and corpus
-`/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe`
-(195,387,870 bytes). The corpus was not regenerated.
+The harness ran at the commits in the table below. `$S` is any directory holding the
+corpus `init.ixe` (195,387,870 bytes, format v3), written by
+`lake exe ix compile Benchmarks/CompileInit.lean --out $S/init.ixe` before format v4. The
+corpus was not regenerated between runs. A reader accepts only its own format version,
+and the harness was later trimmed (see the status note), so these commands need a v3
+checkout: the tenth run's harness is the one at `a6eff514` (the trimmed harness has no
+`--no-uniform` or `--uni-max-states`).
 
 ```text
-cd /home/jcb/projects/ix-sharing-w3
 nix develop --command bash -c 'lake build sharing-study'
 #   -> Build completed successfully.
-S=/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad
-# Ninth run: everything, including the W1 uniform optimizer.
+# Ninth run: everything, including the exact uniform optimizer.
 nix develop --command bash -c "lake exe sharing-study $S/init.ixe \
-    --md $S/w3-results9.md --csv $S/sharing-minimum-measurements.csv --progress 2500"
+    --md $S/results9.md --csv $S/sharing-minimum-measurements.csv --progress 2500"
 # Tenth run: everything except the uniform optimizer.
 nix develop --command bash -c "lake exe sharing-study $S/init.ixe --no-uniform \
-    --md $S/w3-results10.md --csv $S/sharing-minimum-measurements.csv"
+    --md $S/results10.md --csv $S/sharing-minimum-measurements.csv"
 #   -> both exit 0; defaults --validate-max 16777216 --occ-check-max 65536,
 #      --uni-max-states 1048576
 ```
@@ -969,24 +986,23 @@ There were ten full runs.
 | Sixth (commit `74296aaf`) | + scheme D | 210.5 s | 222.0 s |
 | Seventh (commit `7232adbe`) | + scheme E | 237.2 s | 262.0 s |
 | Eighth (commit `43439654`) | + schemes F and G | 295.3 s | 315.7 s |
-| Ninth (see note) | + W1 uniform optimizer, w = 1, 2, 3 | 7,125.3 s, of which 6,875.4 s in the optimizer | 7,140.9 s |
-| Tenth (this commit) | + TagN repricing, `--no-uniform` | 374.7 s | 386.3 s |
+| Ninth (see note) | + exact uniform optimizer, w = 1, 2, 3 | 7,125.3 s, of which 6,875.4 s in the optimizer | 7,140.9 s |
+| Tenth (commit `a6eff514`) | + TagN repricing, `--no-uniform` | 374.7 s | 386.3 s |
 
-- **Ninth run.** It was built from this commit's harness minus the TagN code and the last
+- **Ninth run.** It was built from the tenth run's harness minus the TagN code and the last
   six CSV columns, which were added while it ran. Its sections that also appear in the
   tenth run are identical apart from the timing lines and the "slowest constants" table
   (checked with `diff`).
 - **Timings vary with machine load.** The fifth to eighth runs did more work than the
   fourth yet took less time, so wall times should not be compared across runs.
-- **CSVs.** Both are too large to track and are kept in the scratchpad:
-  - the tenth run's CSV, 13,491,833 bytes, 94 columns:
-    `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/sharing-minimum-measurements.csv`.
+- **CSVs.** Both are too large to track; the commands above regenerate them:
+  - the tenth run's CSV, 13,491,833 bytes, 94 columns (`$S/sharing-minimum-measurements.csv`).
     Its `u{w}_*` columns are empty (`--no-uniform`); its `w1m{w}_comp` and `tagn*_change`
     columns are new.
   - the ninth run's CSV, 16,651,701 bytes, 88 columns, with the uniform columns
     (`u{w}_ok, u{w}_us, u{w}_cs, u{w}_ce, u{w}_unc, u{w}_comp, u{w}_states, u{w}_model,
-    u{w}_real, u{w}_realF, u{w}_table`):
-    `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/sharing-minimum-measurements-run9.csv`.
+    u{w}_real, u{w}_realF, u{w}_table`); it was renamed
+    `sharing-minimum-measurements-run9.csv` before the tenth run wrote the same path.
 - **Earlier CSV columns:**
 
   ```text
@@ -1007,10 +1023,10 @@ Metadata study (`--meta` mode, `ix-sharing` merged at `4cf8ba2e`):
 
 ```text
 nix develop --command bash -c "lake exe sharing-study $S/init.ixe --meta --meta-crosscheck \
-    --progress 0 --md $S/w3-meta-init.md"
+    --progress 0 --md $S/meta-init.md"
 #   -> exit 0; 57 s end to end, peak RSS 2.25 GB (including the deEnv cross-check)
 nix develop --command bash -c "lake exe sharing-study $S/mathlib.ixe --meta \
-    --progress 200000 --md $S/w3-meta-mathlib.md"
+    --progress 200000 --md $S/meta-mathlib.md"
 #   -> exit 0; 203 s end to end, peak RSS 4.75 GB; an earlier identical run gave the same output
 ```
 
@@ -1018,23 +1034,24 @@ With the arena measurements (rerun after commit `f95bea09`; these are the output
 
 ```text
 nix develop --command bash -c "lake exe sharing-study $S/init.ixe --meta --meta-crosscheck \
-    --progress 0 --md $S/w3-meta2-init.md"
+    --progress 0 --md $S/meta2-init.md"
 #   -> exit 0; 43 s end to end, peak RSS 2.26 GB
 nix develop --command bash -c "lake exe sharing-study $S/mathlib.ixe --meta \
-    --progress 200000 --md $S/w3-meta2-mathlib.md"
+    --progress 200000 --md $S/meta2-mathlib.md"
 #   -> exit 0; 529 s end to end, peak RSS 4.74 GB; identical to a run without the
 #      independent recount apart from the scan time and the recount line
 ```
 
 ---
 
-The rest of this document is the harness's `--md` output from the tenth run, unedited.
-It is followed by the uniform-optimizer section of the ninth run's output and by the
-`--meta` outputs for Init and Mathlib, all unedited.
+The rest of this document is the harness's `--md` output from the tenth run. It is
+followed by the uniform-optimizer section of the ninth run's output and by the `--meta`
+outputs for Init and Mathlib. All are unedited apart from the corpus paths (written
+`$S/…`) and the label of the exact optimizer (written "optimizer").
 
 ## Results
 
-- Corpus: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe` (195387870 bytes), 56622 stored constants (distinct addresses), 66621 names.
+- Corpus: `$S/init.ixe` (195387870 bytes), 56622 stored constants (distinct addresses), 66621 names.
 - Constants processed: 56622; skipped: 0; with at least one expression root: 55386.
 - Harness wall time: load 302 ms, measurement 374353 ms, total 374655 ms.
 - Production rebuild (`buildConstantWithSharing` on expanded roots, then `serConstant`) differs from `rawBytes`: **0** constants.
@@ -1606,11 +1623,11 @@ Integers by width (bytes), per tag family, now and repriced:
 
 ---
 
-Uniform-optimizer section of the ninth run's harness output, unedited:
+Uniform-optimizer section of the ninth run's harness output:
 
-## Exact uniform-width optimizer (W1) on the corpus
+## Exact uniform-width optimizer on the corpus
 
-Every rooted constant, w = 1, 2, 3: `Ix.Sharing.Exact.optimizeSharingUniformTable w c.sharing (constantInfoRoots c.info) limits` with maxStates 1048576, maxCostEvals 1073741824, maxNodes 1048576, maxDepth 16384, maxExprVisits 67108864, maxMaterialize 67108864, maxOutputBytes 268435456 (W1 defaults except maxStates). Output roots are placed with the production cursor helpers and serialized with `serConstant` (current Tag4 tiers); the bytes are decoded, re-encoded, expanded and compared exactly with the original expanded roots. Model length = fixed bytes + `modelBytes`; real = serialized size; F = the same table and roots with scheme F Share widths. Wall time is the optimizer call only.
+Every rooted constant, w = 1, 2, 3: `Ix.Sharing.Exact.optimizeSharingUniformTable w c.sharing (constantInfoRoots c.info) limits` with maxStates 1048576, maxCostEvals 1073741824, maxNodes 1048576, maxDepth 16384, maxExprVisits 67108864, maxMaterialize 67108864, maxOutputBytes 268435456 (optimizer defaults except maxStates). Output roots are placed with the production cursor helpers and serialized with `serConstant` (current Tag4 tiers); the bytes are decoded, re-encoded, expanded and compared exactly with the original expanded roots. Model length = fixed bytes + `modelBytes`; real = serialized size; F = the same table and roots with scheme F Share widths. Wall time is the optimizer call only.
 
 ### w = 1
 
@@ -1627,12 +1644,12 @@ Every rooted constant, w = 1, 2, 3: `Ix.Sharing.Exact.optimizeSharingUniformTabl
     - `_private.Init.Data.Range.Polymorphic.Nat.«0».Std.instLawfulRcoIntersectionNat_4._proof_1` (N 1412, 21473 ms): `Ix.Sharing.Exact.SharingError.resourceExhausted (Ix.Sharing.Exact.Resource.states) 1048576`
     - `_private.Init.Data.Array.Extract.«0».Array.extract_append._proof_1_4` (N 11095, 12024 ms): `Ix.Sharing.Exact.SharingError.resourceExhausted (Ix.Sharing.Exact.Resource.states) 1048576`
     - `_private.Init.Data.BitVec.Lemmas.«0».BitVec.toInt_allOnes._proof_1_2` (N 2438, 50360 ms): `Ix.Sharing.Exact.SharingError.resourceExhausted (Ix.Sharing.Exact.Resource.states) 1048576`
-- Output checks on certified constants: real length = fixed + `variableBytes` for 55294; decode/re-encode/expand/exact equality ok for 55294, **0** failed; W1 distinct subterms = this harness's `N` for 55294; class counts and components equal to this harness's reimplementation of W1's definitions for 55294, **0** different.
-- Classes (W1, certified): certain-stored 1441164, certain-excluded 5759148, uncertain 851426, low degree 3655922; components 595302; lower count bracket chosen in 35 constants.
+- Output checks on certified constants: real length = fixed + `variableBytes` for 55294; decode/re-encode/expand/exact equality ok for 55294, **0** failed; optimizer distinct subterms = this harness's `N` for 55294; class counts and components equal to this harness's reimplementation of the optimizer's definitions for 55294, **0** different.
+- Classes (optimizer, certified): certain-stored 1441164, certain-excluded 5759148, uncertain 851426, low degree 3655922; components 595302; lower count bracket chosen in 35 constants.
 
 | Metric | min | median | p90 | p99 | max | mean |
 |---|---:|---:|---:|---:|---:|---:|
-| largest uncertain component (W1) | 0 | 2 | 5 | 12 | 21 | 2.50 |
+| largest uncertain component (optimizer) | 0 | 2 | 5 | 12 | 21 | 2.50 |
 | search states | 0 | 16 | 229 | 9864 | 1044855 | 1128.67 |
 | uniform table size | 0 | 10 | 81 | 337 | 4280 | 33.89 |
 | optimizer wall time (µs), all runs | 5 | 249 | 2964 | 182154 | 108188764 | 66835.26 |
@@ -1695,12 +1712,12 @@ Ten largest losses of uniform w = 1 against MSS:
     - `Std.LinearPreorderPackage.ofOrd._proof_9` (N 401, 27134 ms): `Ix.Sharing.Exact.SharingError.resourceExhausted (Ix.Sharing.Exact.Resource.states) 1048576`
     - `_private.Init.Data.Array.Extract.«0».Array.push_extract_getElem._proof_1_1` (N 5459, 13407 ms): `Ix.Sharing.Exact.SharingError.resourceExhausted (Ix.Sharing.Exact.Resource.states) 1048576`
     - `Int.fdiv_eq_ediv` (N 1262, 33021 ms): `Ix.Sharing.Exact.SharingError.resourceExhausted (Ix.Sharing.Exact.Resource.states) 1048576`
-- Output checks on certified constants: real length = fixed + `variableBytes` for 55358; decode/re-encode/expand/exact equality ok for 55358, **0** failed; W1 distinct subterms = this harness's `N` for 55358; class counts and components equal to this harness's reimplementation of W1's definitions for 55358, **0** different.
-- Classes (W1, certified): certain-stored 1216713, certain-excluded 6417329, uncertain 766911, low degree 3473646; components 537949; lower count bracket chosen in 37 constants.
+- Output checks on certified constants: real length = fixed + `variableBytes` for 55358; decode/re-encode/expand/exact equality ok for 55358, **0** failed; optimizer distinct subterms = this harness's `N` for 55358; class counts and components equal to this harness's reimplementation of the optimizer's definitions for 55358, **0** different.
+- Classes (optimizer, certified): certain-stored 1216713, certain-excluded 6417329, uncertain 766911, low degree 3473646; components 537949; lower count bracket chosen in 37 constants.
 
 | Metric | min | median | p90 | p99 | max | mean |
 |---|---:|---:|---:|---:|---:|---:|
-| largest uncertain component (W1) | 0 | 2 | 5 | 10 | 20 | 2.24 |
+| largest uncertain component (optimizer) | 0 | 2 | 5 | 10 | 20 | 2.24 |
 | search states | 0 | 15 | 171 | 3293 | 776614 | 483.15 |
 | uniform table size | 0 | 7 | 66 | 321 | 4474 | 27.97 |
 | optimizer wall time (µs), all runs | 2 | 210 | 2517 | 47081 | 98799418 | 21681.45 |
@@ -1763,12 +1780,12 @@ Ten largest losses of uniform w = 2 against MSS:
     - `List.eraseP_comm` (N 764, 38566 ms): `Ix.Sharing.Exact.SharingError.resourceExhausted (Ix.Sharing.Exact.Resource.states) 1048576`
     - `Lean.Grind.imp_eq` (N 249, 21377 ms): `Ix.Sharing.Exact.SharingError.resourceExhausted (Ix.Sharing.Exact.Resource.states) 1048576`
     - `_private.Init.Data.Nat.Internal.SOM.«0».Nat.Internal.SOM.Mon.mul_denote.go` (N 1034, 35324 ms): `Ix.Sharing.Exact.SharingError.resourceExhausted (Ix.Sharing.Exact.Resource.states) 1048576`
-- Output checks on certified constants: real length = fixed + `variableBytes` for 55338; decode/re-encode/expand/exact equality ok for 55338, **0** failed; W1 distinct subterms = this harness's `N` for 55338; class counts and components equal to this harness's reimplementation of W1's definitions for 55338, **0** different.
-- Classes (W1, certified): certain-stored 1091768, certain-excluded 6903959, uncertain 672738, low degree 3209123; components 478828; lower count bracket chosen in 30 constants.
+- Output checks on certified constants: real length = fixed + `variableBytes` for 55338; decode/re-encode/expand/exact equality ok for 55338, **0** failed; optimizer distinct subterms = this harness's `N` for 55338; class counts and components equal to this harness's reimplementation of the optimizer's definitions for 55338, **0** different.
+- Classes (optimizer, certified): certain-stored 1091768, certain-excluded 6903959, uncertain 672738, low degree 3209123; components 478828; lower count bracket chosen in 30 constants.
 
 | Metric | min | median | p90 | p99 | max | mean |
 |---|---:|---:|---:|---:|---:|---:|
-| largest uncertain component (W1) | 0 | 1 | 5 | 11 | 20 | 2.08 |
+| largest uncertain component (optimizer) | 0 | 1 | 5 | 11 | 20 | 2.08 |
 | search states | 0 | 9 | 171 | 3680 | 1040448 | 582.86 |
 | uniform table size | 0 | 5 | 55 | 293 | 4427 | 23.82 |
 | optimizer wall time (µs), all runs | 2 | 179 | 2578 | 58856 | 103226807 | 35617.10 |
@@ -1846,11 +1863,11 @@ Over the 55263 rooted constants certified at w = 1, 2 and 3. Σ model(w = 1) = 5
 | uniform w = 3 output | 67406916 | 8035928 | +13.54% | 0 |
 | best of the above, per constant | 66331917 | 6960929 | +11.72% | 0 |
 
-### W1 classes vs this harness's own classification (corrected `payloadMin`)
+### Optimizer classes vs this harness's own classification (corrected `payloadMin`)
 
 Totals over the constants certified at all three widths. The definitions differ (see the hand-written section), so equality is not expected.
 
-| w | own certain-stored | W1 certain-stored | own certain-excluded (candidates) | W1 certain-excluded (all terms) | own uncertain | W1 uncertain | own max component | W1 max component |
+| w | own certain-stored | optimizer certain-stored | own certain-excluded (candidates) | optimizer certain-excluded (all terms) | own uncertain | optimizer uncertain | own max component | optimizer max component |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | 1 | 1842180 | 1437377 | 0 | 5748024 | 444030 | 848833 | 16 | 21 |
 | 2 | 1460911 | 1189917 | 344992 | 6340304 | 480307 | 751301 | 14 | 20 |
@@ -1858,9 +1875,9 @@ Totals over the constants certified at all three widths. The definitions differ 
 
 ---
 
-Metadata study output (`--meta`) for Init, unedited:
+Metadata study output (`--meta`) for Init:
 
-## Metadata study: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/init.ixe`
+## Metadata study: `$S/init.ixe`
 
 - File: 195387870 bytes; blobs 26836; anonymous constants 56622; names 344786; Named entries 66621 (2000 with `original`); comms 0. Scan time 32875 ms.
 - Byte categories sum to 195387870 bytes: **equal to the file size**.
@@ -1958,9 +1975,9 @@ Duplication within each arena (bottom-up hash-consing on kind, payload and canon
 
 ---
 
-Metadata study output (`--meta`) for Mathlib, unedited:
+Metadata study output (`--meta`) for Mathlib:
 
-## Metadata study: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe`
+## Metadata study: `$S/mathlib.ixe`
 
 - File: 3343271273 bytes; blobs 341233; anonymous constants 679499; names 4811656; Named entries 778344 (22265 with `original`); comms 0. Scan time 520978 ms.
 - Byte categories sum to 3343271273 bytes: **equal to the file size**.

@@ -1,12 +1,20 @@
 # Sharing corpus measurements on Mathlib
 
-This document is workstream W5 of [`sharing-minimum.md`](sharing-minimum.md). It reruns the corpus harness
-`Benchmarks/SharingStudy.lean` (`lake exe sharing-study`) on a Mathlib corpus instead of `Init`. The harness is the
-merged version at `5f284b7a`. The Init numbers quoted for comparison come from
-[`sharing-minimum-measurements.md`](sharing-minimum-measurements.md) (the eighth W3 run). Like that document,
+This document reruns the corpus harness of [`sharing-minimum.md`](sharing-minimum.md),
+`Benchmarks/SharingStudy.lean` (`lake exe sharing-study`), on a Mathlib corpus instead of `Init`. The harness is the
+version at `5f284b7a`. The Init numbers quoted for comparison come from
+[`sharing-minimum-measurements.md`](sharing-minimum-measurements.md) (its eighth run). Like that document,
 this one reports measurements and does not choose a design.
 
-The merged harness has eight measurements:
+**Status.** The corpus is a format-v3 file (`Tag0`/`Tag2`/`Tag4` integers) whose sharing tables were built by the
+heuristic sharing pass, the compiler route at the time; "stored", "current" and "heuristic" below refer to those
+tables. Format v4 replaces the integer codes by TagN and the heuristic by the canonical construction
+([`Ixon.md`, "Sharing System"](Ixon.md#sharing-system)); canonical-construction results on Mathlib are in
+[`sharing-minimum-performance.md`](sharing-minimum-performance.md). When the heuristic was removed the harness was
+trimmed to the stored, canonical, unshared and MSS measurements and the `--meta` study, so the classification,
+Share-width-scheme and heuristic-rebuild sections below need the harness at `5f284b7a`.
+
+The harness at `5f284b7a` has six measurements:
 
 - P1.5 statistics;
 - the production rebuild check;
@@ -20,8 +28,8 @@ Their results are therefore not measured here.
 
 ## Corpus
 
-- **Command:** `lake exe ix compile Benchmarks/Compile/CompileMathlib.lean --out <scratchpad>/mathlib.ixe`, run
-  from the worktree root (exact invocation under Reproduction). It exited 0. The dependencies went into the
+- **Command:** `lake exe ix compile Benchmarks/Compile/CompileMathlib.lean --out <dir>/mathlib.ixe`, run
+  from the repository root (exact invocation under Reproduction). It exited 0. The dependencies went into the
   untracked `Benchmarks/Compile/.lake`, and `git status` afterwards showed no tracked or unignored changes.
   - `CompileMathlib.lean` is `import Mathlib`. It is a classic (non-`module`) file, so the compiled scope is the
     whole import environment (`Ix.EnvScope.defaultConstList`). That is the Lean core libraries, Mathlib and Mathlib's
@@ -347,8 +355,8 @@ and 5 constants took more than 2 s. The harness's deliberate verification limits
     206,476,428,890,489 unshared bytes (about 2.1·10^14), stored in 54,261 bytes.
   - The next are `CategoryTheory.Limits.colimitLimitToLimitColimit_surjective` (7.3·10^12) and
     `IsEvenlyCovered.toTrivialization_apply` (1.4·10^11).
-  - The twenty largest are named in the harness output below. All 619 (unshared bytes, kind, stored bytes, name) are
-    listed in the scratchpad file `w5/not-validated-619.txt`.
+  - The twenty largest are named in the harness output below. All 619 are the rows of the per-constant CSV
+    (`--csv`) whose `unshared_validated` column is empty.
   - Because of these constants the aggregate unshared total and the "stored/unshared" ratio (printed as 0.0%) are
     meaningless.
 - **`occ` not checked by the brute-force tree walk: 31,049 constants** (unshared roots > 64 KiB; Init 1,232).
@@ -369,23 +377,20 @@ and 5 constants took more than 2 s. The harness's deliberate verification limits
 
 ## Reproduction
 
-The worktree is `/home/jcb/projects/ix-sharing-w5`, branch `ix-sharing-w5`, at `5f284b7a` (the harness is unchanged
-from `ix-sharing`). The scratchpad is
-`S=/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad`. Every command was run
-from the worktree root and detached with `setsid nohup … > log 2>&1 &`. The `time` command is
-`/run/current-system/sw/bin/time` (GNU time 1.9).
+The commands ran at `5f284b7a`, from the repository root, detached with `setsid nohup … > log 2>&1 &`. `$S` is
+any output directory. The `time` command is GNU time 1.9.
 
 ```text
 nix develop --command bash -c 'lake build ix sharing-study'
 #   -> Build completed successfully (843 jobs).
 
 nix develop --command bash -c "time -v lake exe ix compile Benchmarks/Compile/CompileMathlib.lean \
-    --out $S/mathlib.ixe --verbose --json $S/w5/mathlib-compile.json --report $S/w5/mathlib-report.json"
+    --out $S/mathlib.ixe --verbose --json $S/mathlib-compile.json --report $S/mathlib-report.json"
 #   -> exit 0, 7:29.18 wall, max RSS 19,107,692 kB; "Total constants: 771129";
 #      "Compiled and wrote 3.1 GB env to …/mathlib.ixe in 152.42s"; report: 0 ungrounded.
 
 nix develop --command bash -c "time -v lake exe sharing-study $S/mathlib.ixe \
-    --md $S/w5/mathlib-results.md --csv $S/w5/mathlib-sharing.csv --progress 20000"
+    --md $S/mathlib-results.md --csv $S/mathlib-sharing.csv --progress 20000"
 #   -> exit 0, 1:33:50 wall (5,572 s user), max RSS 4,709,872 kB;
 #      "processed 679499 constants, skipped 0, mismatches 0 in 4101800 ms (total 4106730 ms)"
 ```
@@ -398,24 +403,24 @@ nix develop --command bash -c "time -v lake exe sharing-study $S/mathlib.ixe \
     measure. Init's eighth run took 295.0 s for 12× fewer constants.
   - The remaining ~25 minutes of process wall time are lake startup plus the work after the measurement loop
     (summary tables over 679,499 rows and the CSV). They were not broken down further.
-- **Machine load:** a W3 `sharing-study` run on `init.ixe` was running on the same machine at the same time.
+- **Machine load:** another `sharing-study` run on `init.ixe` was running on the same machine at the same time.
 - **CSV:** the per-constant CSV is 139,383,903 bytes, with 679,499 rows plus a header and the same 55 columns as the
-  Init CSV. It is too large to track and is kept at `$S/w5/mathlib-sharing.csv`.
-- **Other files** in `$S/w5/`:
-  - `compile.log` and `study.log`;
-  - `mathlib-report.json` and `mathlib-compile.json`;
-  - `not-validated-619.txt`;
-  - `mss-gt-unshared.txt`;
-  - `csvcheck.awk` and `overlap.awk`, the gawk scripts behind the CSV-derived numbers. `csvcheck.awk` reproduces the
-    Init document's CSV-derived counts on the Init CSV.
+  Init CSV. It is too large to track; the `--csv` option above regenerates it.
+- **Other untracked outputs** of this run:
+  - the compile and harness logs;
+  - `mathlib-report.json` and `mathlib-compile.json` (from `--report` and `--json`);
+  - the list of the 619 unvalidated constants and of the 26 constants whose MSS encoding exceeds the unshared one,
+    both filtered from the CSV;
+  - two gawk scripts over the CSVs behind the CSV-derived numbers (the overlap with Init and the counts checked
+    against the Init document; the check script reproduces that document's CSV-derived counts on the Init CSV).
 
 ---
 
-The rest of this document is the harness's `--md` output from this run, unedited.
+The rest of this document is the harness's `--md` output from this run, unedited apart from the corpus path.
 
 ## Results
 
-- Corpus: `/tmp/claude-1000/-home-jcb-projects-ix/9f80f39b-580f-424c-aa72-a746c6374a34/scratchpad/mathlib.ixe` (3343271273 bytes), 679499 stored constants (distinct addresses), 778344 names.
+- Corpus: `$S/mathlib.ixe` (3343271273 bytes), 679499 stored constants (distinct addresses), 778344 names.
 - Constants processed: 679499; skipped: 0; with at least one expression root: 663254.
 - Harness wall time: load 4930 ms, measurement 4101800 ms, total 4106730 ms.
 - Production rebuild (`buildConstantWithSharing` on expanded roots, then `serConstant`) differs from `rawBytes`: **0** constants.
