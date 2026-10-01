@@ -396,8 +396,8 @@ theorem conv_hasAt {a b : CTable} {ea eb : Entry} (ha : some ea ∈ a.toList)
   exact this
 
 /-- **Convolution entries are sums of pairs of entries.** -/
-theorem conv_entries {a b : CTable} {Pa Pb : Entry → Prop} (ha : Entries a Pa)
-    (hb : Entries b Pb) :
+theorem conv_entries {a b : CTable} {Pa Pb : Entry → Prop} (ha : ∀ e, some e ∈ a.toList → Pa e)
+    (hb : ∀ e, some e ∈ b.toList → Pb e) :
     Entries (a.conv b) (fun e => ∃ ea eb, Pa ea ∧ Pb eb ∧
       e = (ea.1 + eb.1, mergeSorted ea.2 eb.2)) := by
   rw [conv_eq]
@@ -418,10 +418,10 @@ theorem conv_entries {a b : CTable} {Pa Pb : Entry → Prop} (ha : Entries a Pa)
           exact add_entries hacc' ⟨(da, sa), (db, sb), hPa, hq' (db, sb) rfl, rfl⟩
       · intro ob hob e he
         subst he
-        exact hb.mem hob
+        exact hb _ hob
   · intro oa hoa e he
     subst he
-    exact ha.mem hoa
+    exact ha _ hoa
   · intro k e he
     simp [getElem!_def] at he
 
