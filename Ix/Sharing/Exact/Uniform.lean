@@ -63,7 +63,7 @@
     subtree was, telescopes only shorten. The length drops by at least `g`
     minus the growth of the table count's TagN, contradicting minimality.
     Threshold: with `n` candidates, one more entry grows the count by at most
-    `tag0StepBound n` bytes (1 below 82048, the TagN `f = 0` rung-3 end), so
+    `tag0StepBound n` bytes (1 below 4311826560, the TagN `f = 0` rung-5 end), so
     `θ = θmax = tag0StepBound n + 1` always holds; `θ = 1` holds when
     `tag0Size(#candidates) = tag0Size(#terms with g ≥ θmax)`, since every
     candidate-only minimum contains the `g ≥ θmax` terms and only candidates,
@@ -1042,13 +1042,14 @@ def tag0BracketStart (k : Nat) : Nat :=
   else if k < Ixon.tagNEnd2 0 then Ixon.tagNEnd1 0
   else if k < Ixon.tagNEnd3 0 then Ixon.tagNEnd2 0
   else if k < Ixon.tagNEnd4 0 then Ixon.tagNEnd3 0
-  else Ixon.tagNEnd4 0
+  else if k < Ixon.tagNEnd5 0 then Ixon.tagNEnd4 0
+  else Ixon.tagNEnd5 0
 
 /-- An upper bound on `tag0Size (k + 1) - tag0Size k` for every `k < n`: the
-TagN (`f = 0`) width grows by one byte at 128 and 16512, by two at 82048 and
-by four at 4295049344. -/
+TagN (`f = 0`) width grows by one byte at 128, 16512, 82048 and 16859264, and
+by four at 4311826560. -/
 def tag0StepBound (n : Nat) : Nat :=
-  if n < Ixon.tagNEnd3 0 then 1 else if n < Ixon.tagNEnd4 0 then 2 else 4
+  if n < Ixon.tagNEnd5 0 then 1 else 4
 
 /-- The next term of the pinned order: among the remaining terms whose
 nearest stored descendants are all placed, the larger in-degree first, then
@@ -1256,7 +1257,7 @@ def uniformStage (w : Nat) (ex : Expanded) (p : Prep) : UStage :=
   let vis0 := visibleCounts ex.dag ex.roots cand
   -- The certain-stored threshold: `1 + tag0StepBound nCand` always holds (one
   -- more entry grows the table count by at most that many bytes; 2 below
-  -- 82048 candidates); 1 holds when every minimum lies in one count bracket
+  -- 4311826560 candidates); 1 holds when every minimum lies in one count bracket
   -- (it contains the certain-stored terms and only candidates).
   let nCand := (cand.filter id).size
   let thetaMax : _root_.Int := tag0StepBound nCand + 1

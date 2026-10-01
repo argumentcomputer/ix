@@ -186,43 +186,46 @@ Every integer field of the wire format is a TagN integer: `f = 4` for
 expression, constant, environment, commitment, claim and proof headers (the
 flag selects the variant), `f = 2` for universe terms and `f = 0` (no flag)
 for counts, indices and every other unsigned integer. A TagN integer is one
-header byte
-`[flag : f bits][payload : r = 8 − f bits]` (`f ∈ {0, 2, 4}`) followed by 0,
-1, 2, 4 or 8 little-endian bytes. With `L` the top payload bit and `M` the
-next one:
+header byte `[flag : f bits][payload : r = 8 − f bits]` (`f ∈ {0, 2, 4}`)
+followed by 0, 1, 2, 3, 4 or 8 little-endian bytes. With `L` the top payload
+bit and `M` the next one:
 
 * `L = 0`: the low `r − 1` payload bits are the value (rung 1, `[0, R₁)`,
   `R₁ = 2^(r−1)`);
 * `L = 1, M = 0`: the low `r − 2` bits followed by one byte hold `value − R₁`
   (rung 2, `[R₁, R₂)`, `R₂ = R₁ + 2^(r−2+8)`);
-* `L = 1, M = 1`: the low `r − 2` bits are a code `c`; `c = 0, 1, 2` select 2,
-  4, 8 following bytes holding `value − R₂`, `value − R₃`, `value − R₄`
-  (rungs `[R₂, R₃)`, `[R₃, R₄)`, `[R₄, R₅)` with `R₃ = R₂ + 2^16`,
-  `R₄ = R₃ + 2^32`, `R₅ = R₄ + 2^64`); every other code is invalid.
+* `L = 1, M = 1`: the low `r − 2` bits are a code `c`; `c = 0, 1, 2, 3`
+  select 2, 3, 4, 8 following bytes holding `value − R₂`, `value − R₃`,
+  `value − R₄`, `value − R₅` (rungs `[R₂, R₃)`, `[R₃, R₄)`, `[R₄, R₅)`,
+  `[R₅, R₆)` with `R₃ = R₂ + 2^16`, `R₄ = R₃ + 2^24`, `R₅ = R₄ + 2^32`,
+  `R₆ = R₅ + 2^64`); every other code is invalid (none for `f = 4`, whose
+  code has two bits).
 
 Each rung starts where the previous one ends, so a value has exactly one
-encoding. Rung ends and widths (1, 2, 3, 5, 9 bytes):
+encoding. Rung ends and widths (1, 2, 3, 4, 5, 9 bytes):
 
-| f | R₁ | R₂ | R₃ | R₄ |
-|---|---|---|---|---|
-| 0 | 128 | 16512 | 82048 | 4295049344 |
-| 2 | 32 | 4128 | 69664 | 4295036960 |
-| 4 | 8 | 1032 | 66568 | 4295033864 |
+| f | R₁ | R₂ | R₃ | R₄ | R₅ |
+|---|---|---|---|---|---|
+| 0 | 128 | 16512 | 82048 | 16859264 | 4311826560 |
+| 2 | 32 | 4128 | 69664 | 16846880 | 4311814176 |
+| 4 | 8 | 1032 | 66568 | 16843784 | 4311811080 |
 
-The code itself represents `[0, R₅)`. Since `R₄ < 2^33`, `R₅ > 2^64`: every
+The code itself represents `[0, R₆)`. Since `R₅ < 2^33`, `R₆ > 2^64`: every
 `UInt64` is representable for each `f`, and the decoder rejects 8-byte
 payloads whose value would reach `2^64`. -/
 
 /-- End of TagN rung 1 for an `f`-bit flag. -/
 def tagNEnd1 (f : Nat) : Nat := 2 ^ (8 - f - 1)
-/-- End of TagN rung 2. -/
+/-- End of TagN rung 2 (one trailing byte). -/
 def tagNEnd2 (f : Nat) : Nat := tagNEnd1 f + 2 ^ (8 - f - 2 + 8)
-/-- End of TagN rung 3. -/
+/-- End of TagN rung 3 (two trailing bytes). -/
 def tagNEnd3 (f : Nat) : Nat := tagNEnd2 f + 2 ^ 16
-/-- End of TagN rung 4. -/
-def tagNEnd4 (f : Nat) : Nat := tagNEnd3 f + 2 ^ 32
-/-- End of TagN rung 5 (beyond every `UInt64`). -/
-def tagNEnd5 (f : Nat) : Nat := tagNEnd4 f + 2 ^ 64
+/-- End of TagN rung 4 (three trailing bytes). -/
+def tagNEnd4 (f : Nat) : Nat := tagNEnd3 f + 2 ^ 24
+/-- End of TagN rung 5 (four trailing bytes). -/
+def tagNEnd5 (f : Nat) : Nat := tagNEnd4 f + 2 ^ 32
+/-- End of TagN rung 6 (eight trailing bytes; beyond every `UInt64`). -/
+def tagNEnd6 (f : Nat) : Nat := tagNEnd5 f + 2 ^ 64
 
 /-- Byte width of the TagN encoding of `value`: the single width-by-index
 function for the TagN code. -/
@@ -230,7 +233,8 @@ def tagNByteWidth (f value : Nat) : Nat :=
   if value < tagNEnd1 f then 1
   else if value < tagNEnd2 f then 2
   else if value < tagNEnd3 f then 3
-  else if value < tagNEnd4 f then 5
+  else if value < tagNEnd4 f then 4
+  else if value < tagNEnd5 f then 5
   else 9
 
 /-- A decoded TagN flag and value. -/
@@ -258,10 +262,13 @@ def putTagN (f : Nat) (flag : UInt8) (value : UInt64) : PutM Unit :=
     putU64TrimmedLEAux (v - tagNEnd2 f).toUInt64 2
   else if v < tagNEnd4 f then do
     putU8 (tagNHeader f flag (lead + mbit + 1))
-    putU64TrimmedLEAux (v - tagNEnd3 f).toUInt64 4
-  else do
+    putU64TrimmedLEAux (v - tagNEnd3 f).toUInt64 3
+  else if v < tagNEnd5 f then do
     putU8 (tagNHeader f flag (lead + mbit + 2))
-    putU64TrimmedLEAux (v - tagNEnd4 f).toUInt64 8
+    putU64TrimmedLEAux (v - tagNEnd4 f).toUInt64 4
+  else do
+    putU8 (tagNHeader f flag (lead + mbit + 3))
+    putU64TrimmedLEAux (v - tagNEnd5 f).toUInt64 8
 
 /-- The multi-byte TagN rungs, selected by the code `c` in the low `8 − f − 2`
 header bits. -/
@@ -270,12 +277,15 @@ def getTagNWide (f : Nat) (flag : UInt8) (c : Nat) : GetM TagN :=
     let x ← getU64TrimmedLEAux 2
     pure ⟨flag, (tagNEnd2 f + x.toNat).toUInt64⟩
   else if c = 1 then do
-    let x ← getU64TrimmedLEAux 4
+    let x ← getU64TrimmedLEAux 3
     pure ⟨flag, (tagNEnd3 f + x.toNat).toUInt64⟩
   else if c = 2 then do
+    let x ← getU64TrimmedLEAux 4
+    pure ⟨flag, (tagNEnd4 f + x.toNat).toUInt64⟩
+  else if c = 3 then do
     let x ← getU64TrimmedLEAux 8
-    if tagNEnd4 f + x.toNat < 2 ^ 64 then
-      pure ⟨flag, (tagNEnd4 f + x.toNat).toUInt64⟩
+    if tagNEnd5 f + x.toNat < 2 ^ 64 then
+      pure ⟨flag, (tagNEnd5 f + x.toNat).toUInt64⟩
     else
       throw "TagN value exceeds UInt64"
   else

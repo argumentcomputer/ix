@@ -85,7 +85,7 @@ The implementation is Lean `Ixon.putTagN f flag value` / `Ixon.getTagN f`
 
 ### Layout
 
-A TagN integer is one header byte followed by 0, 1, 2, 4 or 8 bytes. The
+A TagN integer is one header byte followed by 0, 1, 2, 3, 4 or 8 bytes. The
 header is
 
 ```
@@ -100,25 +100,27 @@ Let `L` be the top payload bit, `M` the next bit, and `c` the remaining low
 | `L = 0` | none | `[0, R₁)` | the low `r − 1` payload bits |
 | `L = 1, M = 0` | 1 | `[R₁, R₂)` | `R₁ + c·256 + byte` (`c` is the high part, the byte the low 8 bits) |
 | `L = 1, M = 1, c = 0` | 2, little-endian | `[R₂, R₃)` | `R₂ + u16` |
-| `L = 1, M = 1, c = 1` | 4, little-endian | `[R₃, R₄)` | `R₃ + u32` |
-| `L = 1, M = 1, c = 2` | 8, little-endian | `[R₄, 2^64)` | `R₄ + u64` |
-| `L = 1, M = 1, c ≥ 3` | — | invalid | |
+| `L = 1, M = 1, c = 1` | 3, little-endian | `[R₃, R₄)` | `R₃ + u24` |
+| `L = 1, M = 1, c = 2` | 4, little-endian | `[R₄, R₅)` | `R₄ + u32` |
+| `L = 1, M = 1, c = 3` | 8, little-endian | `[R₅, 2^64)` | `R₅ + u64` |
+| `L = 1, M = 1, c ≥ 4` | — | invalid (`f = 0, 2` only: for `f = 4`, `c` has two bits) | |
 
-The rung ends are `R₁ = 2^(r−1)`, `R₂ = R₁ + 2^(r−2+8)`, `R₃ = R₂ + 2^16` and
-`R₄ = R₃ + 2^32`. The encoded widths are 1, 2, 3, 5 and 9 bytes.
+The rung ends are `R₁ = 2^(r−1)`, `R₂ = R₁ + 2^(r−2+8)`, `R₃ = R₂ + 2^16`,
+`R₄ = R₃ + 2^24` and `R₅ = R₄ + 2^32`. The encoded widths are 1, 2, 3, 4, 5
+and 9 bytes.
 
-| `f` | R₁ | R₂ | R₃ | R₄ |
-|---|---:|---:|---:|---:|
-| 0 | 128 | 16,512 | 82,048 | 4,295,049,344 |
-| 2 | 32 | 4,128 | 69,664 | 4,295,036,960 |
-| 4 | 8 | 1,032 | 66,568 | 4,295,033,864 |
+| `f` | R₁ | R₂ | R₃ | R₄ | R₅ |
+|---|---:|---:|---:|---:|---:|
+| 0 | 128 | 16,512 | 82,048 | 16,859,264 | 4,311,826,560 |
+| 2 | 32 | 4,128 | 69,664 | 16,846,880 | 4,311,814,176 |
+| 4 | 8 | 1,032 | 66,568 | 16,843,784 | 4,311,811,080 |
 
 **Bijective.** Each rung starts where the previous one ends. So every
 `UInt64` value has exactly one encoding, and every accepted byte string is the
 encoding of the value it decodes to. There is no non-minimal form for readers
 to reject. A reader rejects only three things:
 
-- a code `c ≥ 3`;
+- a code `c ≥ 4` (`f = 0` or `2`);
 - an 8-byte rung whose value would reach `2^64`;
 - truncated input.
 
@@ -165,7 +167,9 @@ value with `Ixon.getTagN`:
 | `N4(0xB, 8)` (`Share(8)`) | `B8 00` | 2 |
 | `N4(0xB, 1031)` | `BB FF` | 2 |
 | `N4(0xB, 1032)` | `BC 00 00` | 3 |
-| `N4(0xB, 66568)` | `BD 00 00 00 00` | 5 |
+| `N4(0xB, 66568)` | `BD 00 00 00` | 4 |
+| `N4(0xB, 16843784)` | `BE 00 00 00 00` | 5 |
+| `N4(0xB, 4311811080)` | `BF 00 00 00 00 00 00 00 00` | 9 |
 | `N4(0x2, 256)` (`Ref` with 256 universe arguments) | `28 F8` | 2 |
 | `N4(0xE, 4)` (the version-4 `.ixe` header) | `E4` | 1 |
 | `N4(0xE, 9)` (Resource claim) | `E8 01` | 2 |
@@ -174,10 +178,12 @@ value with `Ixon.getTagN`:
 | `N0(128)` | `80 00` | 2 |
 | `N0(1000)` | `83 68` | 2 |
 | `N0(16512)` | `C0 00 00` | 3 |
-| `N0(2^64 − 1)` | `C2 7F BF FE FF FE FF FF FF` | 9 |
+| `N0(82048)` | `C1 00 00 00` | 4 |
+| `N0(16859264)` | `C2 00 00 00 00` | 5 |
+| `N0(2^64 − 1)` | `C3 7F BF FE FE FE FF FF FF` | 9 |
 
-`getTagN 4` rejects the header `BF` (`L = M = 1`, `c = 3`) with "invalid TagN
-code 3".
+`getTagN 0` rejects the header `C4` (`L = M = 1`, `c = 4`) with "invalid TagN
+code 4". `getTagN 4` has no invalid header: its code `c` has two bits.
 
 ---
 

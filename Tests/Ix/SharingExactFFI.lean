@@ -318,7 +318,8 @@ indices at every TagN rung end (and indices beyond any table, which the codec
 does not bound). -/
 
 /-- A Constant with an `n`-entry table (`sharing[i] = app (var i) (Share (i-1))`)
-whose root references the Share indices at the TagN rung ends below `n`, then
+whose root references the Share indices at the TagN rung ends below `n` (and
+at the old byte-count boundaries), then
 `n - 1`. -/
 def wideTable (n : Nat) : Constant :=
   let sharing := (Array.range n).map fun i =>
@@ -328,10 +329,10 @@ def wideTable (n : Nat) : Constant :=
   let root := idxs.foldl (fun acc i => Ixon.Expr.app acc (.share i.toUInt64)) (.var 0)
   { info := .axio ⟨false, 0, root⟩, sharing, refs := #[], univs := #[] }
 
-/-- Share indices in the 5- and 9-byte TagN rungs (no table backs them; the
+/-- Share indices in the 4-, 5- and 9-byte TagN rungs (no table backs them; the
 codec does not bound Share indices). -/
 def farShares : Constant :=
-  let root := [4294967295, 4294967296, 4295033863, 4295033864, 0xFFFFFFFFFFFFFFFF].foldl
+  let root := [16843783, 16843784, 4294967296, 4311811079, 4311811080, 0xFFFFFFFFFFFFFFFF].foldl
     (fun acc (i : UInt64) => Ixon.Expr.app acc (.share i)) (.var 0)
   { info := .axio ⟨false, 0, root⟩, sharing := #[], refs := #[], univs := #[] }
 

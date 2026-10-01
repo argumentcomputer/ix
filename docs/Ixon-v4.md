@@ -240,14 +240,14 @@ layouts, examples and proof references.
 
 **TagN.** Every variable-length integer is a TagN integer. That is one header
 byte `[flag : f bits][payload : 8 − f bits]` with `f ∈ {0, 2, 4}`, followed
-by 0, 1, 2, 4 or 8 bytes:
+by 0, 1, 2, 3, 4 or 8 bytes:
 
 - `f = 4` is used for expression, constant, environment, claim and proof
   headers;
 - `f = 2` for universe terms;
 - `f = 0` for counts, indices and lengths.
 
-The rungs hold 1, 2, 3, 5 and 9 bytes, and each rung starts where the
+The rungs hold 1, 2, 3, 4, 5 and 9 bytes, and each rung starts where the
 previous one ends, so the code is bijective. Values below 128, 32 or 8 (for
 `f` = 0, 2 or 4) encode to the same single byte as v3's Tag0, Tag2 or Tag4.
 Larger values encode differently: for example, `Share(8)` is `B8 00`, and the

@@ -159,7 +159,7 @@ def strictExprUnits : TestSeq :=
 
 /-- Rung boundary values for an `f`-bit flag, plus the `UInt64` extremes. -/
 def tagNBoundaries (f : Nat) : List Nat :=
-  let ends := [tagNEnd1 f, tagNEnd2 f, tagNEnd3 f, tagNEnd4 f]
+  let ends := [tagNEnd1 f, tagNEnd2 f, tagNEnd3 f, tagNEnd4 f, tagNEnd5 f]
   [0, 1, 2 ^ 64 - 1] ++ ends.flatMap fun e => [e - 1, e, e + 1]
 
 /-- Encode, check the width, decode exactly. -/
@@ -200,34 +200,54 @@ def tagNUnits : TestSeq :=
       acc ++ test s!"TagN f={f} flag={flag} value={v}: width and roundtrip"
         (tagNRoundtrip f flag v)
   perF 0 ++ perF 2 ++ perF 4 ++
-  test "TagN rung ends f=0" ([tagNEnd1 0, tagNEnd2 0, tagNEnd3 0, tagNEnd4 0]
-    == [128, 16512, 82048, 4295049344]) ++
-  test "TagN rung ends f=2" ([tagNEnd1 2, tagNEnd2 2, tagNEnd3 2, tagNEnd4 2]
-    == [32, 4128, 69664, 4295036960]) ++
-  test "TagN rung ends f=4" ([tagNEnd1 4, tagNEnd2 4, tagNEnd3 4, tagNEnd4 4]
-    == [8, 1032, 66568, 4295033864]) ++
+  test "TagN rung ends f=0" ([tagNEnd1 0, tagNEnd2 0, tagNEnd3 0, tagNEnd4 0, tagNEnd5 0]
+    == [128, 16512, 82048, 16859264, 4311826560]) ++
+  test "TagN rung ends f=2" ([tagNEnd1 2, tagNEnd2 2, tagNEnd3 2, tagNEnd4 2, tagNEnd5 2]
+    == [32, 4128, 69664, 16846880, 4311814176]) ++
+  test "TagN rung ends f=4" ([tagNEnd1 4, tagNEnd2 4, tagNEnd3 4, tagNEnd4 4, tagNEnd5 4]
+    == [8, 1032, 66568, 16843784, 4311811080]) ++
   test "TagN f=4 bytes: 7" (tagNEncodes 4 0xA 7 #[0xA7]) ++
   test "TagN f=4 bytes: 8" (tagNEncodes 4 0xA 8 #[0xA8, 0x00]) ++
   test "TagN f=4 bytes: 1031" (tagNEncodes 4 0x1 1031 #[0x1B, 0xFF]) ++
   test "TagN f=4 bytes: 1032" (tagNEncodes 4 0 1032 #[0x0C, 0x00, 0x00]) ++
-  test "TagN f=4 bytes: 66568" (tagNEncodes 4 0 66568 #[0x0D, 0, 0, 0, 0]) ++
-  test "TagN f=4 bytes: 4295033864"
-    (tagNEncodes 4 0 4295033864 #[0x0E, 0, 0, 0, 0, 0, 0, 0, 0]) ++
+  test "TagN f=4 bytes: 66567" (tagNEncodes 4 0 66567 #[0x0C, 0xFF, 0xFF]) ++
+  test "TagN f=4 bytes: 66568" (tagNEncodes 4 0 66568 #[0x0D, 0, 0, 0]) ++
+  test "TagN f=4 bytes: 16843783" (tagNEncodes 4 0 16843783 #[0x0D, 0xFF, 0xFF, 0xFF]) ++
+  test "TagN f=4 bytes: 16843784" (tagNEncodes 4 0 16843784 #[0x0E, 0, 0, 0, 0]) ++
+  test "TagN f=4 bytes: 4311811079"
+    (tagNEncodes 4 0 4311811079 #[0x0E, 0xFF, 0xFF, 0xFF, 0xFF]) ++
+  test "TagN f=4 bytes: 4311811080"
+    (tagNEncodes 4 0 4311811080 #[0x0F, 0, 0, 0, 0, 0, 0, 0, 0]) ++
   test "TagN f=0 bytes: 127" (tagNEncodes 0 0 127 #[0x7F]) ++
   test "TagN f=0 bytes: 128" (tagNEncodes 0 0 128 #[0x80, 0x00]) ++
   test "TagN f=0 bytes: 16512" (tagNEncodes 0 0 16512 #[0xC0, 0x00, 0x00]) ++
+  test "TagN f=0 bytes: 82047" (tagNEncodes 0 0 82047 #[0xC0, 0xFF, 0xFF]) ++
+  test "TagN f=0 bytes: 82048" (tagNEncodes 0 0 82048 #[0xC1, 0, 0, 0]) ++
+  test "TagN f=0 bytes: 16859263" (tagNEncodes 0 0 16859263 #[0xC1, 0xFF, 0xFF, 0xFF]) ++
+  test "TagN f=0 bytes: 16859264" (tagNEncodes 0 0 16859264 #[0xC2, 0, 0, 0, 0]) ++
+  test "TagN f=0 bytes: 4311826560"
+    (tagNEncodes 0 0 4311826560 #[0xC3, 0, 0, 0, 0, 0, 0, 0, 0]) ++
+  test "TagN f=0 bytes: 2^64 - 1"
+    (tagNEncodes 0 0 (2 ^ 64 - 1) #[0xC3, 0x7F, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
   test "TagN f=2 bytes: 32" (tagNEncodes 2 3 32 #[0xE0, 0x00]) ++
   test "TagN f=2 bytes: 4128" (tagNEncodes 2 3 4128 #[0xF0, 0x00, 0x00]) ++
-  test "TagN f=4 rejects code 3" (tagNRejects 4 #[0x0F, 0, 0, 0, 0, 0, 0, 0, 0]) ++
-  test "TagN f=2 rejects code 3" (tagNRejects 2 #[0x33]) ++
+  test "TagN f=2 bytes: 69663" (tagNEncodes 2 3 69663 #[0xF0, 0xFF, 0xFF]) ++
+  test "TagN f=2 bytes: 69664" (tagNEncodes 2 3 69664 #[0xF1, 0, 0, 0]) ++
+  test "TagN f=2 bytes: 16846879" (tagNEncodes 2 3 16846879 #[0xF1, 0xFF, 0xFF, 0xFF]) ++
+  test "TagN f=2 bytes: 16846880" (tagNEncodes 2 3 16846880 #[0xF2, 0, 0, 0, 0]) ++
+  test "TagN f=2 bytes: 4311814176"
+    (tagNEncodes 2 3 4311814176 #[0xF3, 0, 0, 0, 0, 0, 0, 0, 0]) ++
+  test "TagN f=2 rejects code 4" (tagNRejects 2 #[0x34]) ++
   test "TagN f=2 rejects code 15" (tagNRejects 2 #[0x3F]) ++
-  test "TagN f=0 rejects code 3" (tagNRejects 0 #[0xC3]) ++
+  test "TagN f=0 rejects code 4" (tagNRejects 0 #[0xC4]) ++
   test "TagN f=0 rejects code 63" (tagNRejects 0 #[0xFF]) ++
   test "TagN f=4 rejects overflow"
-    (tagNRejects 4 #[0x0E, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) ++
+    (tagNRejects 4 #[0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) ++
   test "TagN f=0 rejects overflow"
-    (tagNRejects 0 #[0xC2, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) ++
+    (tagNRejects 0 #[0xC3, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) ++
   test "TagN rejects truncated rung 2" (tagNRejects 4 #[0x08]) ++
+  test "TagN rejects truncated rung 4" (tagNRejects 4 #[0x0D, 0x00, 0x00]) ++
+  test "TagN rejects truncated rung 6" (tagNRejects 4 #[0x0F, 0x00, 0x00, 0x00]) ++
   test "TagN rejects trailing byte" (tagNRejects 4 #[0x07, 0x00]) ++
   test "TagN f=0 short strings canonical" (tagNShortCanonical 0) ++
   test "TagN f=2 short strings canonical" (tagNShortCanonical 2) ++

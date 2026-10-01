@@ -2075,7 +2075,7 @@ structure MetaBreak where
 /-- The arena, node by node, mirroring `getExprMetaArenaIndexed`. -/
 def getArenaBreak (rev : Ixon.NameReverseIndex) (mb : MetaBreak) : Ixon.GetM MetaBreak := do
   let p0 ← getPos
-  let len := (← Ixon.getTag0).size.toNat
+  let len := (← Ixon.getTagN 0).value.toNat
   let mut kb := mb.kindBytes
   let mut kc := mb.kindCount
   let mut nodes : Array Ixon.ExprMetaData := Array.mkEmpty len
@@ -2104,41 +2104,41 @@ def getInfoBreak (rev : Ixon.NameReverseIndex) : Ixon.GetM MetaBreak := do
     let _ ← Ixon.getIdx rev
     for _ in [0:3] do let _ ← Ixon.getIdxVec rev
     mb ← getArenaBreak rev mb
-    let _ ← Ixon.getTag0
-    let _ ← Ixon.getTag0
+    let _ ← Ixon.getTagN 0
+    let _ ← Ixon.getTagN 0
   | 1 | 2 =>
     let _ ← Ixon.getIdx rev
     let _ ← Ixon.getIdxVec rev
     mb ← getArenaBreak rev mb
-    let _ ← Ixon.getTag0
+    let _ ← Ixon.getTagN 0
   | 3 =>
     let _ ← Ixon.getIdx rev
     for _ in [0:4] do let _ ← Ixon.getIdxVec rev
     mb ← getArenaBreak rev mb
-    let _ ← Ixon.getTag0
+    let _ ← Ixon.getTagN 0
   | 4 =>
     let _ ← Ixon.getIdx rev
     let _ ← Ixon.getIdxVec rev
     let _ ← Ixon.getIdx rev
     mb ← getArenaBreak rev mb
-    let _ ← Ixon.getTag0
+    let _ ← Ixon.getTagN 0
   | 5 =>
     let _ ← Ixon.getIdx rev
     for _ in [0:4] do let _ ← Ixon.getIdxVec rev
     mb ← getArenaBreak rev mb
-    let _ ← Ixon.getTag0
-    let n := (← Ixon.getTag0).size.toNat
-    for _ in [0:n] do let _ ← Ixon.getTag0
+    let _ ← Ixon.getTagN 0
+    let n := (← Ixon.getTagN 0).value.toNat
+    for _ in [0:n] do let _ ← Ixon.getTagN 0
   | 6 =>
-    let n := (← Ixon.getTag0).size.toNat
+    let n := (← Ixon.getTagN 0).value.toNat
     for _ in [0:n] do let _ ← Ixon.getIdxVec rev
     match ← Ixon.getU8 with
     | 0 => pure ()
     | 1 =>
       for _ in [0:2] do
-        let k := (← Ixon.getTag0).size.toNat
-        for _ in [0:k] do let _ ← Ixon.getTag0
-      let k := (← Ixon.getTag0).size.toNat
+        let k := (← Ixon.getTagN 0).value.toNat
+        for _ in [0:k] do let _ ← Ixon.getTagN 0
+      let k := (← Ixon.getTagN 0).value.toNat
       for _ in [0:k] do let _ ← Ixon.getU8
     | x => throw s!"invalid aux_layout tag {x}"
   | x => throw s!"invalid ConstantMeta tag {x}"
@@ -2149,7 +2149,7 @@ def getInfoBreak (rev : Ixon.NameReverseIndex) : Ixon.GetM MetaBreak := do
 def getMetaBreak (rev : Ixon.NameReverseIndex) : Ixon.GetM MetaBreak := do
   let mb ← getInfoBreak rev
   let a ← getPos
-  let n := (← Ixon.getTag0).size.toNat
+  let n := (← Ixon.getTagN 0).value.toNat
   let mut sh : Array (Expr × Nat) := #[]
   for _ in [0:n] do
     let s ← getPos
@@ -2157,17 +2157,17 @@ def getMetaBreak (rev : Ixon.NameReverseIndex) : Ixon.GetM MetaBreak := do
     let t ← getPos
     sh := sh.push (e, t - s)
   let b ← getPos
-  let nr := (← Ixon.getTag0).size.toNat
+  let nr := (← Ixon.getTagN 0).value.toNat
   for _ in [0:nr] do let _ ← Ixon.Serialize.get (α := Address)
   let c ← getPos
-  let nu := (← Ixon.getTag0).size.toNat
+  let nu := (← Ixon.getTagN 0).value.toNat
   for _ in [0:nu] do let _ ← Ixon.getUniv
   let d ← getPos
-  let np := (← Ixon.getTag0).size.toNat
+  let np := (← Ixon.getTagN 0).value.toNat
   for _ in [0:np] do
-    let _ ← Ixon.getTag0
-    let k := (← Ixon.getTag0).size.toNat
-    for _ in [0:k] do let _ ← Ixon.getTag0
+    let _ ← Ixon.getTagN 0
+    let k := (← Ixon.getTagN 0).value.toNat
+    for _ in [0:k] do let _ ← Ixon.getTagN 0
   let e ← getPos
   return { mb with sharingBytes := b - a, sharing := sh, refs := c - b, nRefs := nr,
                    univs := d - c, nUnivs := nu, patches := e - d }
@@ -2350,21 +2350,21 @@ def metaStudy (path : String) (progress : Nat) : IO MetaStudy := do
   let mut st : MetaStudy := { fileSize := buf.size }
   -- Header.
   let (_, off) ← liftExcept <| runAt buf 0 do
-    let _ ← Ixon.getTag4
+    let _ ← Ixon.getTagN 4
     let _ ← Ixon.Serialize.get (α := Address)
     if (← Ixon.getU8) == 1 then let _ ← Ixon.Serialize.get (α := Address)
-    let n := (← Ixon.getTag0).size.toNat
+    let n := (← Ixon.getTagN 0).value.toNat
     for _ in [0:n] do let _ ← Ixon.Serialize.get (α := Address)
   st := st.bump 0 off
   -- §1 blobs.
-  let (nb, o2) ← liftExcept <| runAt buf off do return (← Ixon.getTag0).size.toNat
+  let (nb, o2) ← liftExcept <| runAt buf off do return (← Ixon.getTagN 0).value.toNat
   let mut cur := o2
   let mut ovh := o2 - off
   let mut payload := 0
   for _ in [0:nb] do
     let (len, o) ← liftExcept <| runAt buf cur do
       let _ ← Ixon.Serialize.get (α := Address)
-      return (← Ixon.getTag0).size.toNat
+      return (← Ixon.getTagN 0).value.toNat
     ovh := ovh + (o - cur)
     payload := payload + len
     cur := o + len
@@ -2372,7 +2372,7 @@ def metaStudy (path : String) (progress : Nat) : IO MetaStudy := do
   IO.println s!"[meta] blobs {nb}, {payload} payload bytes"
   -- §2 constants.
   let s2 := cur
-  let (nc, o3) ← liftExcept <| runAt buf cur do return (← Ixon.getTag0).size.toNat
+  let (nc, o3) ← liftExcept <| runAt buf cur do return (← Ixon.getTagN 0).value.toNat
   cur := o3
   let mut addrs : Array Address := Array.mkEmpty nc
   let mut offs : Array Nat := Array.mkEmpty nc
@@ -2380,7 +2380,7 @@ def metaStudy (path : String) (progress : Nat) : IO MetaStudy := do
   for _ in [0:nc] do
     let ((a, len), o) ← liftExcept <| runAt buf cur do
       let a ← Ixon.Serialize.get (α := Address)
-      return (a, (← Ixon.getTag0).size.toNat)
+      return (a, (← Ixon.getTagN 0).value.toNat)
     addrs := addrs.push a
     offs := offs.push o
     bodies := bodies + len
@@ -2390,15 +2390,15 @@ def metaStudy (path : String) (progress : Nat) : IO MetaStudy := do
   -- §3 anonymous hints.
   let s3 := cur
   let (_, o4) ← liftExcept <| runAt buf cur do
-    let n := (← Ixon.getTag0).size.toNat
+    let n := (← Ixon.getTagN 0).value.toNat
     for _ in [0:n] do
-      let _ ← Ixon.getTag0
+      let _ ← Ixon.getTagN 0
       let _ ← Ixon.getFusedHint
   cur := o4
   st := st.bump 5 (cur - s3)
   -- §4 names: keep the reverse index for name-indexed metadata.
   let s4 := cur
-  let (nn, o5) ← liftExcept <| runAt buf cur do return (← Ixon.getTag0).size.toNat
+  let (nn, o5) ← liftExcept <| runAt buf cur do return (← Ixon.getTagN 0).value.toNat
   cur := o5
   let mut rev : Ixon.NameReverseIndex := Array.mkEmpty nn
   let mut comp := 0
@@ -2410,7 +2410,7 @@ def metaStudy (path : String) (progress : Nat) : IO MetaStudy := do
       | 0 => pure ()
       | 1 | 2 =>
         let _ ← Ixon.Serialize.get (α := Address)
-        let len := (← Ixon.getTag0).size.toNat
+        let len := (← Ixon.getTagN 0).value.toNat
         let _ ← Ixon.getBytes len
       | t => throw s!"invalid name component tag {t}"
     comp := comp + (o' - o)
@@ -2418,7 +2418,7 @@ def metaStudy (path : String) (progress : Nat) : IO MetaStudy := do
   st := { (st.bump 6 (cur - s4 - comp) |>.bump 7 comp) with names := nn }
   IO.println s!"[meta] names {nn}"
   -- §5 Named.
-  let (nm, o6) ← liftExcept <| runAt buf cur do return (← Ixon.getTag0).size.toNat
+  let (nm, o6) ← liftExcept <| runAt buf cur do return (← Ixon.getTagN 0).value.toNat
   st := st.bump 8 (o6 - cur)
   cur := o6
   -- Primary constant of a named entry: its constant, or the block of a projection.
@@ -2437,12 +2437,12 @@ def metaStudy (path : String) (progress : Nat) : IO MetaStudy := do
   let t0 ← IO.monoMsNow
   for i in [0:nm] do
     let ((nameIdx, rank), o) ← liftExcept <| runAt buf cur do
-      let ni := (← Ixon.getTag0).size.toNat
-      return (ni, (← Ixon.getTag0).size.toNat)
+      let ni := (← Ixon.getTagN 0).value.toNat
+      return (ni, (← Ixon.getTagN 0).value.toNat)
     st := st.bump 8 (o - cur)
     let (_, oh) ← liftExcept <| runAt buf o Ixon.getFusedOptHint
     st := st.bump 9 (oh - o)
-    let (len, ob) ← liftExcept <| runAt buf oh do return (← Ixon.getTag0).size.toNat
+    let (len, ob) ← liftExcept <| runAt buf oh do return (← Ixon.getTagN 0).value.toNat
     st := st.bump 10 (ob - oh)
     let (mb, om) ← liftExcept <| runAt buf ob (getMetaBreak rev)
     st := { st.addMeta mb false with
@@ -2490,7 +2490,7 @@ def metaStudy (path : String) (progress : Nat) : IO MetaStudy := do
   -- §6 comms.
   let s6 := cur
   let (nco, o7) ← liftExcept <| runAt buf cur do
-    let n := (← Ixon.getTag0).size.toNat
+    let n := (← Ixon.getTagN 0).value.toNat
     for _ in [0:n] do
       let _ ← Ixon.Serialize.get (α := Address)
       let _ ← Ixon.getComm

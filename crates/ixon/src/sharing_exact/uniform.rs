@@ -39,7 +39,7 @@
 //!   one per root occurrence plus, per edge from `z` (head edges only for
 //!   `h`), 1 if `z` is in `M`, else `min(d(z), 2^20)`.
 //!   Threshold: with `theta_max = 1 + tag0_step_bound(#candidates)` (2 below
-//!   82048 candidates), `theta = 1` when `tag0(#candidates) = tag0(#terms
+//!   4311826560 candidates), `theta = 1` when `tag0(#candidates) = tag0(#terms
 //!   with g >= theta_max)`, else `theta = theta_max`.
 //! * UNCERTAIN: the other candidates; LOW-DEGREE: the other terms.
 //!
@@ -1315,22 +1315,18 @@ fn tag0_bracket_start(k: u64) -> u64 {
     TagN::end2(0)
   } else if k < TagN::end4(0) {
     TagN::end3(0)
-  } else {
+  } else if k < TagN::end5(0) {
     TagN::end4(0)
+  } else {
+    TagN::end5(0)
   }
 }
 
 /// An upper bound on `tag0_len(k + 1) - tag0_len(k)` for every `k < n`: the
-/// TagN (f = 0) width grows by one byte at 128 and 16512, by two at 82048
-/// and by four at 4295049344. Mirrors Lean `tag0StepBound`.
+/// TagN (f = 0) width grows by one byte at 128, 16512, 82048 and 16859264,
+/// and by four at 4311826560. Mirrors Lean `tag0StepBound`.
 fn tag0_step_bound(n: u64) -> u64 {
-  if n < TagN::end3(0) {
-    1
-  } else if n < TagN::end4(0) {
-    2
-  } else {
-    4
-  }
+  if n < TagN::end5(0) { 1 } else { 4 }
 }
 
 /// Pinned table order of a stored set: stored descendants first; among
@@ -1439,7 +1435,7 @@ pub(crate) fn optimize_uniform(
     Ok(cls)
   };
   // theta = 1 + tag0_step_bound(#candidates) always holds (one more entry
-  // grows the table count by at most that many bytes; 2 below 82048
+  // grows the table count by at most that many bytes; 2 below 4311826560
   // candidates); 1 when every minimum lies in one count bracket.
   let n_cand = len64(cand.iter().filter(|&&c| c).count());
   let theta_max = i128::from(tag0_step_bound(n_cand)) + 1;
@@ -1883,7 +1879,13 @@ mod count_bracket_tests {
 
   fn counts() -> Vec<u64> {
     let mut v = vec![0u64, 1, 2, 255, 256, u64::MAX - 1, u64::MAX];
-    for e in [TagN::end1(0), TagN::end2(0), TagN::end3(0), TagN::end4(0)] {
+    for e in [
+      TagN::end1(0),
+      TagN::end2(0),
+      TagN::end3(0),
+      TagN::end4(0),
+      TagN::end5(0),
+    ] {
       v.extend([e - 1, e, e + 1]);
     }
     v
@@ -1901,8 +1903,8 @@ mod count_bracket_tests {
         assert!(tag0_len(k) - tag0_len(k - 1) <= tag0_step_bound(k), "{k}");
       }
     }
-    assert_eq!(tag0_step_bound(82047), 1);
-    assert_eq!(tag0_step_bound(82048), 2);
-    assert_eq!(tag0_step_bound(TagN::end4(0)), 4);
+    assert_eq!(tag0_step_bound(82048), 1);
+    assert_eq!(tag0_step_bound(TagN::end5(0) - 1), 1);
+    assert_eq!(tag0_step_bound(TagN::end5(0)), 4);
   }
 }

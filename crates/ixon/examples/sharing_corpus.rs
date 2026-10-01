@@ -47,7 +47,7 @@ use ix_common::address::Address;
 use ixon::Env;
 use ixon::constant::{Constant, ConstantInfo};
 use ixon::expr::Expr;
-use ixon::serialize::{ShareCodec, put_expr_with};
+use ixon::serialize::put_expr;
 use ixon::sharing_exact::{
   ExactSharingLimits, MssTies, Parallelism, Phase1Choice, ShareLayout,
   SharingDag, SharingError, TieredSharingResult, candidate_terms,
@@ -916,7 +916,7 @@ fn tagn_len(e: &Expr) -> u64 {
 
 fn tagn_hex(e: &Expr, max: usize) -> String {
   let mut buf = Vec::new();
-  put_expr_with(e, ShareCodec::TagN, &mut buf);
+  put_expr(e, &mut buf);
   let s: String = buf.iter().take(max).map(|b| format!("{b:02x}")).collect();
   if buf.len() > max { format!("{s}… ({} bytes)", buf.len()) } else { s }
 }
