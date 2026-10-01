@@ -846,3 +846,15 @@ code with one proof of roundtrip/bijectivity (`Ix/Compile/Verify/TagN.lean`); th
 "noncanonical … integer" reader checks are removed; every codec theorem that mentions
 `tag0Bytes`/`tag4Bytes` sizes is restated with `tagNBytes`; the format version bumps once for
 sharing + integers together.
+
+### 12.13 Certified minimality of phase 1 (2026-10-01, W1 HEAD 3eb09b9c)
+
+`Ix/Compile/Verify/UniformOptimality.lean`: `optimizeUniform_minimum` (a successful
+`optimizeUniformExpanded w limits ex` returns a stored set that is a minimum of the uniform
+model `ulen` over the restricted class, with `modelBytes` equal to it) and `optimizeUniform_least`
+(it is the `setPrec`-least such minimum), both under `limits.uniformSubsetSearch = false`, no
+`sorry`, no new axioms, all `Uniform*` modules registered in the sorry-frontier audit (196 roots).
+Reachability of every term from a root is a runtime check plus `optimizeUniform_reach`. Phases 2
+and 3 and the best-of-three width selection are tested, not proved. The reference enumeration
+path (`uniformSubsetSearch = true`) is excluded from the theorems. Failure semantics: an error at
+any width fails the whole call (no fallback to other widths); Rust must match.
