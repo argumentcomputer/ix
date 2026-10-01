@@ -340,7 +340,8 @@ retires.
 
 The benchmark runner's entry profile
 ([`benchmarks/runner/entry/`](../benchmarks/runner/entry/): the timing
-driver, one adapter per row, and tagged C twins of `ackermann` and `tak`)
+driver, one adapter per row, and tagged C twins of `ackermann`, `tak`,
+`collatz`, `prime-count`, `even-odd` and `sfib`)
 is untrusted measurement code, integrity-pinned so that a change to how a
 row is built or timed is reviewed with the ledger. Its compilatrix adapter
 calls `cx_init` once and then the root's SysV wrapper directly, under the

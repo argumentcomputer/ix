@@ -17,8 +17,8 @@ implements.
 | `lir-kernel` | Diagnostic, entry profile only: MEAS-4's hand-written Lir kernels (fib, sum-loop, gcd) through the current backend, from `backend-probe` |
 | `compilatrix@NAME` | Diagnostic, entry profile only (`build --variant NAME=DIR`): objects `DIR/<fixture>.o` with the compilatrix row's interface (`cx_init`, `cx_entry`), such as another commit's compiler output (an A/B pair) or a hand-edited what-if; reports then add a ratio to `compilatrix` |
 
-The `compilatrix` row exists where a frozen closure exists (the five K1
-fixtures). A compiler decline or rejection is recorded in `build.json` with
+The `compilatrix` row exists where a frozen closure exists (the nine K1
+fixtures: the original five and the MT.2 corpus four). A compiler decline or rejection is recorded in `build.json` with
 its `stage: code: message`, and the row is left out. Diagnostic rows
 attribute a gap; they are never real-program results.
 

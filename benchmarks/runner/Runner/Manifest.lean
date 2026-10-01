@@ -121,8 +121,9 @@ def Row.diagnostic : Row → Bool
   | _ => false
 
 /-- K1 fixtures whose natural twin the entry adapter calls, and which have a
-tagged twin. -/
-def k1Twins : List String := ["fib", "sum-loop", "ackermann", "tak", "gcd"]
+tagged twin: the original five and the MT.2 corpus four. -/
+def k1Twins : List String :=
+  ["fib", "sum-loop", "ackermann", "tak", "gcd", "collatz", "prime-count", "even-odd", "sfib"]
 
 /-- MEAS-4's hand-written Lir kernels: fixture name and object stem. -/
 def lirKernels : List (String × String) := [("fib", "fib"), ("sum-loop", "sumLoop"), ("gcd", "gcd")]

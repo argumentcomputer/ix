@@ -8,8 +8,9 @@
  * twin's path and FIXTURE_<name> selects the call (the fixture's name with
  * '-' as '_').
  *
- * Only the K1 twins are wired here; a fixture without a case does not
- * build, and the runner leaves the row out of its entry profile.
+ * Only the K1 twins (the original five and the MT.2 corpus four) are wired
+ * here; a fixture without a case does not build, and the runner leaves the
+ * row out of its entry profile.
  */
 #define main twin_main
 #include TWIN_SOURCE
@@ -28,6 +29,14 @@ uint64_t row_entry(const uint64_t *a) {
   return tak(a[0], a[1], a[2], a[3]);
 #elif defined(FIXTURE_gcd)
   return gcd(a[0], a[1]);
+#elif defined(FIXTURE_collatz)
+  return collatz_sum(a[0]);
+#elif defined(FIXTURE_prime_count)
+  return prime_count(a[0]);
+#elif defined(FIXTURE_even_odd)
+  return is_even(a[0]) ? 1 : 0;
+#elif defined(FIXTURE_sfib)
+  return sfib(a[0]);
 #else
 #error "no idiomatic entry for this fixture"
 #endif
