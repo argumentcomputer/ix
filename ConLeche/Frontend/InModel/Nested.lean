@@ -1,3 +1,13 @@
+/-
+Ported from con-leche at ae0c0c4e4ce6a0081648aff03fe9c39d002c4526.
+Source: ConLeche/Frontend/InModel/Nested.lean
+Transformations: in `genNested`, the container groups are formed in
+decreasing order of the container family's size instead of in motive
+order, and a group that would share a member with an earlier one
+declines (Ix's compiler orders a nested block's auxiliary motives
+canonically, not in the kernel's discovery order; see the comment at
+the change, cl-m1); this header added. Nothing else changes.
+-/
 module
 
 public import ConLeche.Frontend.InModel.Mutual
@@ -485,7 +495,26 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- container's motive order; `pack`/`unpackPack` for a group are one
   -- application of each group member's recursor with the group's
   -- motives.  A plain container is a singleton group.
-  let mimics := mems.filter (·.real?.isNone)
+  -- (Ix adaptation, cl-m1.)  The groups are formed in decreasing order
+  -- of the container family's size (its recursor's motive count), in
+  -- motive order among equals.  The kernel's nested→mutual reduction
+  -- discovers a nested container's head before the instances its family
+  -- adds, so in a lean4export stream a group's first mimic is its head.
+  -- Ix's compiler orders the auxiliary motives canonically
+  -- (`Ix/AuxGen/Nested.lean`), and `Array (PersistentArrayNode InfoTree)`
+  -- can come before `PersistentArrayNode InfoTree`: in motive order it
+  -- formed `Array`'s singleton group and `PersistentArrayNode`'s family
+  -- then claimed it again, so `pack_j` and its companions were emitted
+  -- twice.  A family that contains another is strictly larger, so the
+  -- largest claim their members first; a group that would still share a
+  -- member with an earlier one declines.
+  let familySize : Mem → Nat := fun mem =>
+    match ctx.blocks mem.I with
+    | some cb =>
+      let I1 := (cb.types.getD 0 default).cv.name
+      ((cb.recs.find? (·.cv.name == I1.str "rec")).map (·.nM)).getD 0
+    | none => 0
+  let mimics := (mems.filter (·.real?.isNone)).mergeSort fun a b => familySize b ≤ familySize a
   let mut groups : List Group := []
   for mem in mimics do
     if groups.any (·.tags.contains mem.tag) then continue
@@ -521,6 +550,8 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
         | some m => (cb.types.getD m default).cv.name.str "rec"
         | none => I1.str s!"rec_{memI.j + 1}"]
     let large := rI.cv.levelParams.length == lpsI.length + 1
+    if groups.any (fun g => tags.any g.tags.contains) then
+      throw s!"container {mem.I}: its family shares a member with another container group"
     groups := groups ++ [⟨tags, recNames, mem.lv, mem.pins, nPI, large⟩]
   -- dependency order among the groups: a group needs another when a
   -- field of one of its constructors has a carrier outside the group

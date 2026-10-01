@@ -106,7 +106,19 @@ address, a reject): the entry grows from 5280 to 5290 functions with
 `firstDuplicate`; externs, unsafe and rulings are unchanged. The fidelity
 statements gain `UniqueKeys`, and the reader's own duplicate-record check
 is proved (`readRecords_nodup`, through `LawfulBEq Address` in
-`Ix.Kernel.Ingress.Records`). -/
+`Ix.Kernel.Ingress.Records`). cl-m1 (2026-10-01) adapts the in-process
+modeller's `genNested` (`ConLeche/Frontend/InModel/Nested.lean`): it forms
+its container groups largest family first, by `List.mergeSort`, and
+declines a group that shares a member with an earlier one. The reader grows
+from 1856 to 1871 functions and the entry from 5290 to 5296: in both,
+`genNested`'s three new lifted lambdas (the family size, the sort's order,
+the overlap test), two `List.any` specializations for the overlap test, and
+a net one closed term from re-specializing the group loop (+4, −3); in the
+reader also the nine functions of Lean's `List.mergeSort` implementation
+(`mergeSortTR₂` with `run` and `run'`, `mergeTR` with `go`, `splitRevAt`
+with `go`, `splitRevInTwo`, `splitRevInTwo'`), which the entry already
+reaches through `Frontend.preparePrelude`. Externs, unsafe and rulings are
+unchanged. -/
 
 open Lean
 
@@ -356,7 +368,7 @@ implemented_by 0, unsafe 22, csimp 4; ruled computed_field 18, csimp 20 -/
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.ConLecheReader.readRecords,
- Ix.Ixon.ConLecheAdmission.readStream]: 1856 compiled functions; inherited externs 81, implemented_by 0,
+ Ix.Ixon.ConLecheAdmission.readStream]: 1871 compiled functions; inherited externs 81, implemented_by 0,
 unsafe 23, csimp 0; ruled computed_field 18, csimp 7, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
@@ -365,7 +377,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
  Ix.Ixon.ConLecheAdmission.checkBytes,
  Ix.Ixon.ConLecheAdmission.checkBytesWith,
  Ix.Ixon.ConLecheAdmission.checkConstantsWith,
- Ix.Ixon.ConLecheAdmission.checkConstants]: 5290 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.ConLecheAdmission.checkConstants]: 5296 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings

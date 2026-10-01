@@ -280,15 +280,16 @@ Frozen runtime closures (compiled functions; inherited externs):
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
 | fold `ConLeche.Cached.checkDecls` | 3010 | 83 |
-| reader `readRecords`, `readStream` | 1856 | 81 |
-| entry: the API, `ConLecheAdmission.checkBytes{,With}`, `checkConstants{,With}` | 5290 | 123 |
-| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5288 | 123 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5410 | 132 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5534 | 132 |
+| reader `readRecords`, `readStream` | 1871 | 81 |
+| entry: the API, `ConLecheAdmission.checkBytes{,With}`, `checkConstants{,With}` | 5296 | 123 |
+| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5294 | 123 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5416 | 132 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5540 | 132 |
 
 A frozen value changes only in a commit that explains the change in the
 audit's comment (the closures above include L6b's `uniqueKeys`, 10
-functions). Statements are re-recorded the same way.
+functions, and cl-m1's adapted modeller grouping: 6, and 15 in the reader,
+which also reaches `List.mergeSort`). Statements are re-recorded the same way.
 
 `lake run check-kernel [--with-model]` is the gate. In order:
 

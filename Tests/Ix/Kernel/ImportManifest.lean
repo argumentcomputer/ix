@@ -202,7 +202,9 @@ def licenses : Array PortRow := #[
 `ConLeche/MainTheorem.lean`, and `ConLeche/Kernel/CheckerBase.lean` adapted
 to import `NatOpPinSet` instead of `NatOpPins`, L4b), the eight frontend
 modules the Ixon reader imports (`ConLeche/Frontend/**` and
-`ConLeche/Verify/Frontend/Prepare.lean`, verbatim, L4a),
+`ConLeche/Verify/Frontend/Prepare.lean`, verbatim, L4a, except
+`ConLeche/Frontend/InModel/Nested.lean`, adapted at cl-m1 to form its
+container groups independently of the auxiliary motives' order),
 `ConLeche/Verify/Cached/StreamThm.lean` (verbatim; the no-False theorem at
 the stream, L5), and the adapted axiom pin `Tests/ConLeche/Axioms.lean`.
 
@@ -233,7 +235,7 @@ def conLecheRows : Array PortRow := #[
   ⟨"ConLeche/Frontend/InModel.lean", "ConLeche/Frontend/InModel.lean", "aa0f6cddb2f4478d038e8f2c19aae65fc0bc81eb7adbe9189ed20a4185c0b358", "aa0f6cddb2f4478d038e8f2c19aae65fc0bc81eb7adbe9189ed20a4185c0b358", .verbatim⟩,
   ⟨"ConLeche/Frontend/InModel/Kit.lean", "ConLeche/Frontend/InModel/Kit.lean", "5602c1926326cb46b0f55e14a496609a284804e2fe8de5060b9edb5ab603f6de", "5602c1926326cb46b0f55e14a496609a284804e2fe8de5060b9edb5ab603f6de", .verbatim⟩,
   ⟨"ConLeche/Frontend/InModel/Mutual.lean", "ConLeche/Frontend/InModel/Mutual.lean", "8884e3c820d619c364ac6a3008b9e675374735720fb504da5e83beb102e4f466", "8884e3c820d619c364ac6a3008b9e675374735720fb504da5e83beb102e4f466", .verbatim⟩,
-  ⟨"ConLeche/Frontend/InModel/Nested.lean", "ConLeche/Frontend/InModel/Nested.lean", "75ac54033a53fe4076d687ddebf05c601767892db01189082ba8e3e3e0d86fd4", "75ac54033a53fe4076d687ddebf05c601767892db01189082ba8e3e3e0d86fd4", .verbatim⟩,
+  ⟨"ConLeche/Frontend/InModel/Nested.lean", "ConLeche/Frontend/InModel/Nested.lean", "75ac54033a53fe4076d687ddebf05c601767892db01189082ba8e3e3e0d86fd4", "7dad272e45ac6b2fc0594c33f6aad0f8095aff085b1e3359e1ae1eae440d472e", .adapted "adapted: genNested forms the container groups largest family first (not in motive order) and declines a group that shares a member with an earlier one, since Ix's compiler orders a nested block's auxiliary motives canonically (cl-m1); port header added"⟩,
   ⟨"ConLeche/Frontend/NatOpGround.lean", "ConLeche/Frontend/NatOpGround.lean", "4c9c4d081a0152d6dff1395485f29fdf26f90ed6f4cdcf5d0fd6064a326f2356", "4c9c4d081a0152d6dff1395485f29fdf26f90ed6f4cdcf5d0fd6064a326f2356", .verbatim⟩,
   ⟨"ConLeche/Frontend/Prepare.lean", "ConLeche/Frontend/Prepare.lean", "cb12fc5b5e5e0a7c1028cdd05869f46862faee514e2d89118eae622e7adec9ae", "cb12fc5b5e5e0a7c1028cdd05869f46862faee514e2d89118eae622e7adec9ae", .verbatim⟩,
   ⟨"ConLeche/Frontend/ProjRec.lean", "ConLeche/Frontend/ProjRec.lean", "83edeabc2c033ee5410bf76700d0cdf9983d7ad63056e54be4708373eafd91c3", "83edeabc2c033ee5410bf76700d0cdf9983d7ad63056e54be4708373eafd91c3", .verbatim⟩,

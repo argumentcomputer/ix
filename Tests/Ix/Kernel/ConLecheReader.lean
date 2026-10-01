@@ -20,7 +20,9 @@ inductive with its separately stored recursor and an ι-reduction, a
 structure with a projection function and a projection reduction, the
 quotient's lift reduction, a Nat literal against its constructors, a String
 literal against its `String.ofList` expansion (over test constants pinned as
-the string-literal support).
+the string-literal support), and a compiled block nested through a container
+that is itself nested, whose auxiliary motives Ix's compiler orders with the
+container family's instance before its head (cl-m1).
 
 Negative: a block of another shape stored under the real `Eq`'s address is
 named `Eq` and rejected by con-leche's reserved-name check; a definition
@@ -449,6 +451,181 @@ def natBlock : Address := match builtinPins.names.toList.find? (toString ·.2 ==
   some #[natBlock, address 70, address 74, address 50, address 60, address 64]
 #guard ((literalEdges stringPins.names strings.toArray)[address 74]?).isNone
 #guard (literalEdges builtinPins.names #[(address 42, litEq)])[address 42]? == some #[natBlock]
+
+/-! ## A block nested through a container that is itself nested (cl-m1)
+
+The records Ix's compiler produces for `Tests.Ix.Kernel.EntryCaseDefs.LTree`
+(`lake exe ix compile Tests/Ix/Kernel/EntryCaseDefs.lean --consts` with
+`LTree`, its recursors, `LNode`'s recursors and `List.rec`), in the census
+order with the projections last; the same records `kernel-entry-cases`
+submits for its `nested-through-nested` case:
+
+    inductive LNode (α : Type) where
+      | node : List (LNode α) → LNode α
+      | leaf : α → LNode α
+    inductive LTree where
+      | node : LNode LTree → LTree
+
+The compiler orders `LTree.rec`'s auxiliary motives canonically, as
+`[List (LNode LTree), LNode LTree]`: an instance of the container family before
+the family's head. The kernel's discovery order, and so every lean4export
+stream, has the head first. The in-process modeller formed its container
+groups in motive order, so `List`'s singleton group and `LNode`'s family both
+claimed motive 1, and the block was rejected with `duplicate declaration
+ix.<LTree>.0._model._impl.pack_0`, as `Lean.Elab.InfoTree` was (with `pack_1`)
+in the first Mathlib census. The modeller now forms the groups largest family
+first (`ConLeche/Frontend/InModel/Nested.lean`, an adapted row). -/
+
+/-- (address, canonical record bytes) -/
+def lTreeRecords : List (String × String) := [
+  ("6cff906dbfa2bdafe0ec2bf0131e80052cce7e2c653b81495fe5197e53ac67ab",
+    "c101000101009117000002000100010091170071b010000101010293170017101771b011" ++
+    "71b01201310001000201c0c0"),
+  ("8f2c84a1f74bacc1ba80610719e487949eefc2518be0681faff3f6d21f72aef1",
+    "c1010000010091170101020000000101921701177121000071b010b10000010101921701" ++
+    "1710b102300071b011014fb6b41c30532e6ab4acb4eefe01da1314ee7f2129af8989fd63" ++
+    "f7ec277aaf0102000100"),
+  ("697b5ac9c6a84d59c3031db23bdf61fcc97fe6dd9174bd143c9a3107294ce91d",
+    "c10100000000000100000000019117712000300030000001b1caa16e96b96d2e28a1c57e" ++
+    "c79241fc2c43c99a2e6bd1d04d696a24f64caf86010100"),
+  ("a2eaa01e342f9c820f114762edf81a37a2ff6934c44da151fcd8e55522e2bba3",
+    "c302000100000305980917b82517b82417b82317b617b80917b81617b81c17b82217b071" ++
+    "1808100101880907b82507b82407b82307b607b80907b81607b81c07b82207b171b81778" ++
+    "093102011808171615141312111002000100000305980917b82517b82417b82317b617b8" ++
+    "0917b81617b81c17b82217b80bb81d0200880807b82507b82407b82307b607b80907b816" ++
+    "07b81c07b8221302880a07b82507b82407b82307b607b80907b81607b81c07b82207b107" ++
+    "b80b73b80c10780931020118091808171615141312117809310101180918081716151413" ++
+    "121002000100000305980917b82517b82417b82317b617b80917b81617b81c17b82217b1" ++
+    "7116100201880907b82507b82407b82307b607b80907b81607b81c07b82207b80b721210" ++
+    "78093101011808171615141312111001880907b82507b82407b82307b607b80907b81607" ++
+    "b81c07b82207b071b2780931000118081716151413121110262003712005b07111107120" ++
+    "07117114b39117b2b49117b1b521010071b7b17112b80821020071b80ab1711411711611" ++
+    "21060071b80eb171b80f1371b810127117b8119117b80db8129117b80cb8139117b80bb8" ++
+    "149117b1b815711510712000b071b818117115b8199117b817b81a9117b80bb81b711710" ++
+    "712004b071b81e117116b81f9117b81db8209117b0b8219117b1019117b80b019117b001" ++
+    "082dedbc9529f414cf80965bda79c404438c0abc0022f44e0a0162aba67999cbb23994bc" ++
+    "51e3686f30a1d483d69d0a835a7b484d892393c084f87a5849de54f3024fb6b41c30532e" ++
+    "6ab4acb4eefe01da1314ee7f2129af8989fd63f7ec277aaf017054a806e9971efe990263" ++
+    "e8c434a35481dd97542f41e4b6d1a16399d2116d16ad1dc96cc152a07f2d28507d5afe39" ++
+    "59fa67597f9a01a529dc7411e1c9c293c6b1caa16e96b96d2e28a1c57ec79241fc2c43c9" ++
+    "9a2e6bd1d04d696a24f64caf86b3a7d80249fd823100ee03626232d1412a0e8335275d5d" ++
+    "f53b92943887b650f7fd903efe0bb38382178634c0d7c1de9bd89d01657d50d3b04044d6" ++
+    "ea0d8686340200c0"),
+  ("d1ee163ce244c0d4d191cea6ce6271c1f39708ecdb1916db0861a38aa810fa90",
+    "c2020001010002049808170117b82417b82317b80917b80d17b81117b81f17b813711610" ++
+    "02018808070107b82407b82307b80907b80d07b81107b81f07b814721410780831010217" ++
+    "16151413121110018808070107b82407b82307b80907b80d07b81107b81f071671131002" ++
+    "0001010002049808170117b82417b82317b80917b80d17b81117b81f17b8147115100200" ++
+    "87070107b82407b82307b80907b80d07b81107b81f11028809070107b82407b82307b809" ++
+    "07b80d07b81107b81f07b8130771b071b117741211107808310002180817161514131211" ++
+    "780831010218081716151413121025210200200471b11271b0b27111107120001471b511" ++
+    "7113b69117b4b79117b3b8087120031471b80a107113b80b911713b80c21010071b11471" ++
+    "b80eb80f7112b81071b11571b11671b0b81371161121050071b1180971b816b81771b818" ++
+    "1371b819127117b81a9117b815b81b9117b815b81c9117b814b81d9117b812b81e71b110" ++
+    "71b11171b0b8219117b822029117b82002062dedbc9529f414cf80965bda79c404438c0a" ++
+    "bc0022f44e0a0162aba67999cbb23994bc51e3686f30a1d483d69d0a835a7b484d892393" ++
+    "c084f87a5849de54f3024fb6b41c30532e6ab4acb4eefe01da1314ee7f2129af8989fd63" ++
+    "f7ec277aaf01ad1dc96cc152a07f2d28507d5afe3959fa67597f9a01a529dc7411e1c9c2" ++
+    "93c6b1caa16e96b96d2e28a1c57ec79241fc2c43c99a2e6bd1d04d696a24f64caf86b3a7" ++
+    "d80249fd823100ee03626232d1412a0e8335275d5df53b92943887b650f703000100c0"),
+  ("efcb43e45afb1a5785f12434d45eb437e4b77f06cf23eb25a73e79a91e58dea8",
+    "d100020100010295170017b417b617b80d17b1b2020084070007b407b607b80d11028607" ++
+    "0007b407b607b80d07130771b01473121110753200010215141312100e21010271b01371" ++
+    "131071b0109117b30171210002117110b5712102021571b71271b808117114b8099117b2" ++
+    "b80a9117b1b80b911712b80c033994bc51e3686f30a1d483d69d0a835a7b484d892393c0" ++
+    "84f87a5849de54f3024fb6b41c30532e6ab4acb4eefe01da1314ee7f2129af8989fd63f7" ++
+    "ec277aaf01b3a7d80249fd823100ee03626232d1412a0e8335275d5df53b92943887b650" ++
+    "f70301c1c0c1"),
+  ("0e935c80d533525d156d40e0b1488a324d9bc9dfa17a55ecb74b468e63eb9a09",
+    "d502a2eaa01e342f9c820f114762edf81a37a2ff6934c44da151fcd8e55522e2bba30000" ++
+    "00"),
+  ("2dedbc9529f414cf80965bda79c404438c0abc0022f44e0a0162aba67999cbb2",
+    "d400008f2c84a1f74bacc1ba80610719e487949eefc2518be0681faff3f6d21f72aef100" ++
+    "0000"),
+  ("3994bc51e3686f30a1d483d69d0a835a7b484d892393c084f87a5849de54f302",
+    "d400006cff906dbfa2bdafe0ec2bf0131e80052cce7e2c653b81495fe5197e53ac67ab00" ++
+    "0000"),
+  ("4fb6b41c30532e6ab4acb4eefe01da1314ee7f2129af8989fd63f7ec277aaf01",
+    "d6006cff906dbfa2bdafe0ec2bf0131e80052cce7e2c653b81495fe5197e53ac67ab0000" ++
+    "00"),
+  ("7054a806e9971efe990263e8c434a35481dd97542f41e4b6d1a16399d2116d16",
+    "d600697b5ac9c6a84d59c3031db23bdf61fcc97fe6dd9174bd143c9a3107294ce91d0000" ++
+    "00"),
+  ("841d72f6b0a13975c32fd724e6c7ab1bbc7cd6becb992f1ac51ec40ff3473f4d",
+    "d501d1ee163ce244c0d4d191cea6ce6271c1f39708ecdb1916db0861a38aa810fa900000" ++
+    "00"),
+  ("ad1dc96cc152a07f2d28507d5afe3959fa67597f9a01a529dc7411e1c9c293c6",
+    "d400018f2c84a1f74bacc1ba80610719e487949eefc2518be0681faff3f6d21f72aef100" ++
+    "0000"),
+  ("b1caa16e96b96d2e28a1c57ec79241fc2c43c99a2e6bd1d04d696a24f64caf86",
+    "d6008f2c84a1f74bacc1ba80610719e487949eefc2518be0681faff3f6d21f72aef10000" ++
+    "00"),
+  ("b3a7d80249fd823100ee03626232d1412a0e8335275d5df53b92943887b650f7",
+    "d400016cff906dbfa2bdafe0ec2bf0131e80052cce7e2c653b81495fe5197e53ac67ab00" ++
+    "0000"),
+  ("b933100634e2fd70929bcb62d1bac8762209fdbee66e4d4afa0e631c4b611d73",
+    "d500a2eaa01e342f9c820f114762edf81a37a2ff6934c44da151fcd8e55522e2bba30000" ++
+    "00"),
+  ("d96c789c997e527c9a09485df2c314adfb4e9182b9c10b796a131deea477e00b",
+    "d501a2eaa01e342f9c820f114762edf81a37a2ff6934c44da151fcd8e55522e2bba30000" ++
+    "00"),
+  ("dc65e7d5f52c3233376da36832382eff62e93606ef392dc467e43ce2aae2c9e8",
+    "d500d1ee163ce244c0d4d191cea6ce6271c1f39708ecdb1916db0861a38aa810fa900000" ++
+    "00"),
+  ("fd903efe0bb38382178634c0d7c1de9bd89d01657d50d3b04044d6ea0d868634",
+    "d40000697b5ac9c6a84d59c3031db23bdf61fcc97fe6dd9174bd143c9a3107294ce91d00" ++
+    "0000")]
+
+def lTreeStream : Ix.Ixon.Admission.Records :=
+  lTreeRecords.filterMap fun (a, b) => do pure (← addressOfHex a, ← bytesOfHex b)
+
+def lTreeBlock : Address := (addressOfHex "697b5ac9c6a84d59c3031db23bdf61fcc97fe6dd9174bd143c9a3107294ce91d").getD (address 0)
+def lNodeBlock : Address := (addressOfHex "8f2c84a1f74bacc1ba80610719e487949eefc2518be0681faff3f6d21f72aef1").getD (address 0)
+
+/-- The reader's state and declarations after the stream. -/
+def lTreeRead : Option (State × Array ConLeche.Declaration) := do
+  let constants ← (Ix.Ixon.Admission.decodeRecords limits lTreeStream).toOption
+  let cx := streamContext builtinPins builtinPre constants [] (fun _ => none)
+  (readRecords cx builtinPre.state constants.toArray).toOption
+
+/-- The carriers' heads of `LTree.rec`'s motives, in motive order, as the
+modeller reads them. -/
+def lTreeMotiveHeads : Option (List String) := do
+  let (st, _) ← lTreeRead
+  let b ← st.indBlocks[keyName (.member lTreeBlock 0)]?
+  let t0 ← b.types.head?
+  let r0 ← b.recs.find? (·.cv.name == t0.cv.name.str "rec")
+  let (_, afterP) ← r0.cv.type.stripPis t0.nP
+  let (motives, _) ← afterP.stripPis r0.nM
+  let mems ← (ConLeche.Frontend.InModel.readMems t0.cv.levelParams t0.nP b.types
+    (motives.map (·.1))).toOption
+  pure (mems.map (toString ·.I))
+
+/-- Every name the reader's declarations of the stream introduce. -/
+def lTreeNames : List String :=
+  match lTreeRead with
+  | some (_, decls) => decls.toList.flatMap fun
+    | .indDecl block _ => block.map (toString ·.toConstantVal.name)
+    | .defnDecl cv _ _ | .thmDecl cv _ | .opaqueDecl cv _ | .axiomDecl cv | .quotDecl _ cv =>
+      [toString cv.name]
+    | .basisDecl k => k.decls.map (toString ·.toConstantVal.name)
+  | none => []
+
+#guard lTreeStream.length == lTreeRecords.length && lTreeRecords.length == 19
+-- the order that exercises the grouping: `List (LNode LTree)` before `LNode LTree`
+#guard lTreeMotiveHeads ==
+  some [keyString (.member lTreeBlock 0), "List", keyString (.member lNodeBlock 0)]
+-- the modeller's records introduce every name once (`pack_0` was emitted twice)
+#guard !lTreeNames.isEmpty && lTreeNames.eraseDups.length == lTreeNames.length
+#guard (lTreeNames.filter (· == keyString (.member lTreeBlock 0) ++ "._model._impl.pack_0")).length == 1
+-- and the block, its three recursors and the container's install
+#guard match checkBytesWith builtinPins builtinPre builtinNatPins limits lTreeStream [] with
+  | .ok env =>
+    let names := env.consts.map (toString ·.name)
+    let t := keyString (.member lTreeBlock 0)
+    names.contains t && names.contains (t ++ ".rec") && names.contains (t ++ ".rec_1") &&
+      names.contains (t ++ ".rec_2") && names.contains (keyString (.member lNodeBlock 0))
+  | .error _ => false
 
 /-! ## Negative: pinned names on constants of another shape -/
 

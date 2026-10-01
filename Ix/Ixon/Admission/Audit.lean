@@ -72,11 +72,13 @@ byte stage's intrinsic `kernel` error, whose message printed a `Kernel.Error`
 (10 functions; `Ix.Kernel.Audit.Roots`): 5288 at int-4, 5278 at L6. L6b adds
 the key check `uniqueKeys` (now also an operation here, already reached
 through `checkBytes`) with `firstDuplicate` and its `Std.HashSet Address`
-specializations: 10 functions, the same as in `Ix.Kernel.Audit.Roots`. -/
+specializations: 10 functions, the same as in `Ix.Kernel.Audit.Roots`. cl-m1 adapts the in-process modeller's `genNested` (container groups
+largest family first): 6 functions, the same as in `Ix.Kernel.Audit.Roots`:
+5288 to 5294. -/
 /-- info: runtime closure of [Ix.Ixon.Admission.preflight,
  Ix.Ixon.Admission.uniqueKeys,
  Ix.Ixon.Admission.decodeRecords,
- Ix.Ixon.Admission.checkBytes]: 5288 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.Admission.checkBytes]: 5294 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings

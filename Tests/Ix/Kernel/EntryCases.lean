@@ -184,6 +184,13 @@ def cases : List Case := [
   { label := "nat-operation", seeds := [seed "natAdd"], expected := .accept },
   { label := "string-literal", seeds := [seed "strLit"], expected := .accept },
   { label := "nested-inductive", seeds := [seed "Tree"], expected := .accept },
+  -- nested through a container that is itself nested, with the container
+  -- family's instance compiled before its head (cl-m1: was a duplicate
+  -- declaration of the modeller's `pack_0`)
+  { label := "nested-through-nested", seeds := [seed "LTree"], expected := .accept },
+  -- `Lean.Elab.InfoTree`'s shape and auxiliary order (cl-m1: was a
+  -- duplicate declaration of `pack_1`)
+  { label := "nested-through-nested-structure", seeds := [seed "ITree"], expected := .accept },
   { label := "partial-definition-face", seeds := [seed "loop"], expected := .accept },
   -- rejected: malformed input
   { label := "malformed-bytes", seeds := [seed "twiceId"],

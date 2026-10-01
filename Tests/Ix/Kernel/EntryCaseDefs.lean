@@ -64,6 +64,37 @@ theorem strLit : "ab" = String.ofList [Char.ofNat 97, Char.ofNat 98] := rfl
 inductive Tree where
   | node : List Tree → Tree
 
+/-- A container that is itself nested (through `List`). -/
+inductive LNode (α : Type) where
+  | node : List (LNode α) → LNode α
+  | leaf : α → LNode α
+
+/-- A block nested through a container that is itself nested. Ix's compiler
+orders `LTree.rec`'s auxiliary motives canonically, as
+`[List (LNode LTree), LNode LTree]`: the container family's instance before
+its head, the order that made the in-process modeller emit `pack_0` twice
+(cl-m1). -/
+inductive LTree where
+  | node : LNode LTree → LTree
+
+/-- The shape of `Lean.Elab.InfoTree`: nested through a structure whose field
+is nested through `Array` (`PersistentArray` → `PersistentArrayNode`). Its
+auxiliary motives are compiled as `[Array ITree, Array (PNode ITree), PArr
+ITree, List (PNode ITree), List ITree, PNode ITree]`, as `InfoTree`'s are. -/
+inductive PNode (α : Type) where
+  | node : Array (PNode α) → PNode α
+  | leaf : Array α → PNode α
+
+structure PArr (α : Type) where
+  root : PNode α
+  tail : Array α
+  size : Nat
+
+inductive ITree where
+  | context : Nat → ITree → ITree
+  | node : Nat → PArr ITree → ITree
+  | hole : Nat → ITree
+
 /-- The face of a `partial` definition: an opaque constant whose value is an
 inhabitant of its type. The recursive body is the `partial` companion
 `loop._unsafe_rec`. -/
