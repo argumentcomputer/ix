@@ -348,6 +348,9 @@ switch per language, so either TagN outcome is a small delta:
     language).
   - All-tags scope: the codec already reaches every expression-level Tag0 and the constant-level
     counts; the metadata, name and env sections would need the same parameter.
+  - The tiered construction measures its output in bytes written with the current codec and
+    checks the layout price whenever the layout is the wire layout (`ShareLayout.wire`, Rust
+    `ShareLayout::wire()`), so its self-check follows the flip.
 - **Construction.** One compiler switch per language, introduced in the routing commit.
 - **Version.** `Env.NEXT_VERSION = 4` in both languages, with the list of what flips with it in its
   doc comment. Nothing writes or accepts it yet.

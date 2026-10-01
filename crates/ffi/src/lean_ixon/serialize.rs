@@ -9,10 +9,11 @@ use crate::lean::{
   LeanIxAddress, LeanIxonConstant, LeanIxonExpr, LeanIxonRawEnv, LeanIxonUniv,
 };
 use ix_common::address::Address;
-use ixon::serialize::put_expr;
+use ixon::constant::Constant;
+use ixon::serialize::{ShareCodec, put_expr, put_expr_with};
 use ixon::sharing::hash_expr;
 use ixon::univ::put_univ;
-use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanOwned};
+use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned};
 
 /// Check if Lean's computed hash matches Rust's computed hash.
 #[unsafe(no_mangle)]
@@ -76,6 +77,80 @@ pub extern "C" fn rs_eq_expr_serialization(
   let mut buf = Vec::with_capacity(bytes_data.len());
   put_expr(&expr, &mut buf);
   buf == bytes_data
+}
+
+/// Check if Lean's `Ixon.serExpr e sc` matches Rust's `put_expr_with` for
+/// the Share codec `codec` (0 = Tag4, 1 = TagN; any other code is `false`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_eq_expr_serialization_with(
+  codec: u8,
+  expr_obj: LeanIxonExpr<LeanBorrowed<'_>>,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> bool {
+  let Some(codec) = ShareCodec::from_code(codec) else {
+    return false;
+  };
+  let expr = expr_obj.decode();
+  let bytes_data = bytes_obj.as_bytes();
+  let mut buf = Vec::with_capacity(bytes_data.len());
+  put_expr_with(&expr, codec, &mut buf);
+  buf == bytes_data
+}
+
+/// Check if Lean's `Ixon.serConstant c sc` matches Rust's
+/// `Constant::put_with` for the Share codec `codec` (0 = Tag4, 1 = TagN; any
+/// other code is `false`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_eq_constant_serialization_with(
+  codec: u8,
+  constant_obj: LeanIxonConstant<LeanBorrowed<'_>>,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> bool {
+  let Some(codec) = ShareCodec::from_code(codec) else {
+    return false;
+  };
+  let constant = constant_obj.decode();
+  let bytes_data = bytes_obj.as_bytes();
+  let mut buf = Vec::with_capacity(bytes_data.len());
+  constant.put_with(codec, &mut buf);
+  buf == bytes_data
+}
+
+/// FFI: decode exactly one serialized Constant with the Share codec `from`
+/// and re-encode it with `to` (0 = Tag4, 1 = TagN).
+///
+/// Lean signature:
+/// `@[extern "rs_share_codec_recode"]
+///  opaque rsShareCodecRecode : UInt8 → UInt8 → @& ByteArray → Except String ByteArray`
+///
+/// Trailing bytes and unknown codec codes are errors.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_share_codec_recode(
+  from: u8,
+  to: u8,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let (Some(from_codec), Some(to_codec)) =
+    (ShareCodec::from_code(from), ShareCodec::from_code(to))
+  else {
+    return LeanExcept::error_string(&format!(
+      "unknown Share codec code {from} or {to}"
+    ));
+  };
+  let mut input = bytes_obj.as_bytes();
+  let constant = match Constant::get_with(&mut input, from_codec) {
+    Ok(c) => c,
+    Err(e) => return LeanExcept::error_string(&format!("decode: {e}")),
+  };
+  if !input.is_empty() {
+    return LeanExcept::error_string(&format!(
+      "decode: {} trailing bytes after the Constant",
+      input.len()
+    ));
+  }
+  let mut out = Vec::new();
+  constant.put_with(to_codec, &mut out);
+  LeanExcept::ok(LeanByteArray::from_bytes(&out))
 }
 
 /// Check if Lean's Ixon.Constant serialization matches Rust.

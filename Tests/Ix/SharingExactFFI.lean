@@ -12,6 +12,11 @@
   separately: the two implementations count work differently, and limits
   may change success but never the bytes of a success.
 
+  A third group checks the Share codec: Lean and Rust serialize Share-bearing
+  Constants (tiered TagN outputs and synthetic tables up to 66,600 entries)
+  to the same bytes under both Share codecs, and Rust recodes between them
+  (`rs_eq_constant_serialization_with`, `rs_share_codec_recode`).
+
   Inputs: every §2 fixture, the generated families of the uniform and tiered
   tests, and, when `IX_SHARING_CORPUS` names an `.ixe` file, every constant of
   that corpus (expanded from its stored table). Corpus mode compares the
@@ -24,6 +29,7 @@ module
 public import Tests.Ix.SharingExact
 public import Tests.Ix.SharingUniform
 public import Tests.Ix.SharingTiered
+public import Tests.FFI.Ixon
 
 public section
 
@@ -305,6 +311,79 @@ def generatedTests : TestSeq :=
     let t ← compareMany (generatedCases 350) generatedModes
     return judge "350 generated inputs (prefixes, 2-byte payloads, pairs, chains, heavy parents, general) × modes" t false
 
+/-! ## Share codec parity
+
+Lean and Rust serialize Share-bearing Constants to the same bytes under both
+Share codecs, and Rust re-encodes Lean's bytes between the codecs exactly.
+Inputs: the tiered (TagN layout) canonical sharing of every §2 fixture and of
+generated inputs, plus synthetic tables whose roots reference the indices at
+every TagN rung end (and indices beyond any table, which the codec does not
+bound). -/
+
+/-- A Constant with an `n`-entry table (`sharing[i] = app (var i) (Share (i-1))`)
+whose root references the Share indices at the Tag4 and TagN width
+boundaries below `n`, then `n - 1`. -/
+def wideTable (n : Nat) : Constant :=
+  let sharing := (Array.range n).map fun i =>
+    if i == 0 then Ixon.Expr.var 0 else .app (.var i.toUInt64) (.share (i - 1).toUInt64)
+  let idxs := ([0, 7, 8, 255, 256, 1031, 1032, 65535, 65536, 66567, 66568].filter (· < n))
+    ++ [n - 1]
+  let root := idxs.foldl (fun acc i => Ixon.Expr.app acc (.share i.toUInt64)) (.var 0)
+  { info := .axio ⟨false, 0, root⟩, sharing, refs := #[], univs := #[] }
+
+/-- Share indices in the 5- and 9-byte TagN rungs (no table backs them; the
+codec does not bound Share indices). -/
+def farShares : Constant :=
+  let root := [4294967295, 4294967296, 4295033863, 4295033864, 0xFFFFFFFFFFFFFFFF].foldl
+    (fun acc (i : UInt64) => Ixon.Expr.app acc (.share i)) (.var 0)
+  { info := .axio ⟨false, 0, root⟩, sharing := #[], refs := #[], univs := #[] }
+
+/-- Check one Constant: Lean bytes under both codecs equal Rust's, Rust
+recodes between them, and Lean decodes its TagN bytes back. -/
+def codecCheck (label : String) (c : Constant) : Array String := Id.run do
+  let b4 := serConstant c .tag4
+  let bN := serConstant c .tagN
+  let mut errs : Array String := #[]
+  unless Tests.FFI.Ixon.rsEqConstantSerializationWith 0 c b4 do
+    errs := errs.push s!"{label}: Rust Tag4 bytes differ"
+  unless Tests.FFI.Ixon.rsEqConstantSerializationWith 1 c bN do
+    errs := errs.push s!"{label}: Rust TagN bytes differ"
+  match Tests.FFI.Ixon.rsShareCodecRecode 0 1 b4 with
+  | .ok b => unless b == bN do errs := errs.push s!"{label}: Rust Tag4→TagN recode differs"
+  | .error e => errs := errs.push s!"{label}: Rust Tag4→TagN recode failed: {e}"
+  match Tests.FFI.Ixon.rsShareCodecRecode 1 0 bN with
+  | .ok b => unless b == b4 do errs := errs.push s!"{label}: Rust TagN→Tag4 recode differs"
+  | .error e => errs := errs.push s!"{label}: Rust TagN→Tag4 recode failed: {e}"
+  match deConstant bN .tagN with
+  | .ok c' => unless c' == c do errs := errs.push s!"{label}: Lean TagN decode differs"
+  | .error e => errs := errs.push s!"{label}: Lean TagN decode failed: {e}"
+  return errs
+
+/-- The highest Share index of a Constant's table entries and roots. -/
+def maxShare (c : Constant) : Nat :=
+  (c.sharing ++ constantInfoRoots c.info).foldl
+    (fun acc e => (shareIndices e #[]).foldl max acc) 0
+
+def codecTests : TestSeq :=
+  ioGroup "Lean/Rust: Share codec parity on Share-bearing Constants" do
+    let normalized := (fixtures ++ generatedCases 120).filterMap fun (label, c) =>
+      match normalizeConstantSharingTiered .tagN c with
+      | .ok n => if n.sharing.isEmpty then none else some (s!"{label} [tiered-tagN]", n)
+      | .error _ => none
+    let synthetic := #[("wide table 9", wideTable 9), ("wide table 300", wideTable 300),
+      ("wide table 1100", wideTable 1100), ("wide table 66600", wideTable 66600),
+      ("far Shares", farShares)]
+    let cases := normalized ++ synthetic
+    let mut errs : Array String := #[]
+    let mut differ := 0
+    for (label, c) in cases do
+      errs := errs ++ codecCheck label c
+      if serConstant c .tag4 != serConstant c .tagN then differ := differ + 1
+    let ok := errs.isEmpty && normalized.size > 0 && differ ≥ synthetic.size
+    let lines := (errs.toList.take 50).map (s!"      DISAGREEMENT {·}")
+    return (ok, String.intercalate "\n"
+      (s!"    {cases.size} Share-bearing Constants ({normalized.size} tiered-tagN outputs, max Share index {normalized.foldl (fun acc (_, c) => max acc (maxShare c)) 0}; {synthetic.size} synthetic); {differ} encode differently under the two codecs; {errs.size} disagreements" :: lines))
+
 /-! ## Corpus mode -/
 
 def corpusTests (_ : Unit) : TestSeq :=
@@ -378,6 +457,7 @@ def corpusTests (_ : Unit) : TestSeq :=
 public def suite : List TestSeq := [
   fixtureTests,
   generatedTests,
+  codecTests,
   corpusTests (),
 ]
 

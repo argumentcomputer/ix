@@ -7,9 +7,11 @@
     65536, … (the serialized width).
   * `tagN` (TagN): the nibble-bootstrapped Share code whose widths
     climb in rungs of 1, 2, 3, 5 and 9 bytes (`tagNWidth`, which also
-    documents the bit layout). No serializer uses it yet: the output is
-    still written with Tag4 Shares and `modelBytes` reports the TagN
-    price.
+    documents the bit layout). It is the wire code when
+    `Ixon.ShareCodec.current` is `.tagN` (format version 3 writes Tag4).
+  The output is written with the current wire codec; `modelBytes` is the
+  layout price, and the two agree whenever the layout is the wire layout
+  (`ShareLayout.wire`), which is checked.
 
   ## Phase 1: selection (exact for the uniform model)
   `K` = number of terms with compact in-degree ≥ 2 and unshared length ≥ 2.
@@ -107,6 +109,14 @@ inductive ShareLayout where
   /-- The TagN Share code (`tagNWidth`). -/
   | tagN
   deriving BEq, Repr, Inhabited
+
+/-- The layout of a wire Share codec. -/
+def ShareLayout.ofCodec : Ixon.ShareCodec → ShareLayout
+  | .tag4 => .tag4
+  | .tagN => .tagN
+
+/-- The layout of the current wire codec `Ixon.ShareCodec.current`. -/
+def ShareLayout.wire : ShareLayout := .ofCodec Ixon.ShareCodec.current
 
 /-- Width of the Share at table index `i`. -/
 def ShareLayout.widthAt : ShareLayout → Nat → Nat
@@ -260,7 +270,8 @@ structure TieredStats where
   deriving Repr, Inhabited
 
 /-- Tiered result: the usual result (`modelBytes` = layout price,
-`variableBytes` = Tag4-serialized length), the phase-1 result, statistics. -/
+`variableBytes` = length serialized with `Ixon.ShareCodec.current`), the phase-1
+result, statistics. -/
 structure TieredSharingResult where
   result : ExactSharingResult
   phase1 : UniformSharingResult
@@ -313,9 +324,11 @@ def canonicalTieredExpanded (layout : ShareLayout) (limits : Limits) (ex : Expan
     throw (.internal "re-materialized entries do not expand to the stored terms")
   unless rootIds == ex.roots do
     throw (.internal "re-materialized roots do not expand to the input roots")
-  let measured := tag0Size entries.size + exprsSize entries + exprsSize roots
-  if layout == .tag4 && measured != predicted then
-    throw (.internal s!"serialized length {measured} differs from the Tag4 price {predicted}")
+  -- The real length: the bytes written with the current wire codec.
+  let measured := tag0Size entries.size +
+    (entries ++ roots).foldl (fun acc e => acc + (serExpr e).size) 0
+  if layout == ShareLayout.wire && measured != predicted then
+    throw (.internal s!"serialized length {measured} differs from the wire-layout price {predicted}")
   let stats : TieredStats :=
     { layout := layout, candidateCount := k, w := w, phase1ModelBytes := u.result.modelBytes,
       phase1LayoutBytes := phase1Layout, slotStates := slotStates, firstTier := tier,

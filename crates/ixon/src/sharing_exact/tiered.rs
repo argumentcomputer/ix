@@ -7,9 +7,12 @@
 //! * `Tag4`: the Ixon Tag4 Share (1 byte below index 8, 2 below 256, ...),
 //!   the serialized width.
 //! * `TagN`: the nibble-bootstrapped Share code whose widths climb in rungs
-//!   of 1, 2, 3, 5 and 9 bytes ([`tagn_width`]). No serializer uses it yet:
-//!   the output is still written with Tag4 Shares and the model length
-//!   reports the TagN price.
+//!   of 1, 2, 3, 5 and 9 bytes ([`tagn_width`]). It is the wire code when
+//!   [`ShareCodec::CURRENT`] is `TagN` (format version 3 writes Tag4).
+//!
+//! The output is written with the current wire codec; the model length is
+//! the layout price, and the two agree whenever the layout is the wire layout
+//! ([`ShareLayout::wire`]), which is checked.
 //!
 //! **Phase 1 (selection).** `K` = terms with compact in-degree >= 2 and
 //! unshared length >= 2; `w = 1` if `K <= 8`, `2` if `K <= tier2_end` (256
@@ -37,7 +40,7 @@ use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::cost::{Len, expr_len, expr_len_with, share_width, tag0_len};
+use super::cost::{Len, expr_len_with, share_width, tag0_len};
 use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{Indices, Widths, all_costs, materialize};
 use super::uniform::{
@@ -50,6 +53,7 @@ use super::{
 };
 use crate::constant::Constant;
 use crate::expr::Expr;
+use crate::serialize::ShareCodec;
 
 fn internal(msg: impl Into<String>) -> SharingError {
   SharingError::Internal(msg.into())
@@ -123,6 +127,19 @@ impl ShareLayout {
     } else {
       3
     }
+  }
+
+  /// The layout of a wire Share codec.
+  pub fn of_codec(codec: ShareCodec) -> ShareLayout {
+    match codec {
+      ShareCodec::Tag4 => ShareLayout::Tag4,
+      ShareCodec::TagN => ShareLayout::TagN,
+    }
+  }
+
+  /// The layout of the current wire codec [`ShareCodec::CURRENT`].
+  pub fn wire() -> ShareLayout {
+    Self::of_codec(ShareCodec::CURRENT)
   }
 
   /// The layout code used at the FFI boundary: 0 = Tag4, 1 = TagN.
@@ -351,7 +368,7 @@ pub struct TieredSharingResult {
   pub table_terms: Vec<TermId>,
   /// Variable length priced by the layout.
   pub model_len: u64,
-  /// Real (Tag4-serialized) variable length.
+  /// Real variable length, serialized with [`ShareCodec::CURRENT`].
   pub variable_len: u64,
   pub unshared_len: Option<u64>,
   pub phase1: UniformSharingResult,
@@ -473,14 +490,19 @@ pub(crate) fn tiered(
       "re-materialized entries do not expand to the stored terms",
     ));
   }
+  // The real length: Shares priced by the current wire codec, every other
+  // header as written by `put_expr`.
+  let wire = |i: u64| len64(ShareCodec::CURRENT.width(i));
   let mut measured = tag0_len(len64(entries.len()));
   for e in entries.iter().chain(&roots) {
-    measured =
-      expr_len(e).and_then(|l| measured.checked_add(l)).ok_or_else(overflow)?;
+    measured = expr_len_with(e, &wire)
+      .and_then(|l| measured.checked_add(l))
+      .ok_or_else(overflow)?;
   }
-  if layout == ShareLayout::Tag4 && measured != predicted {
+  if layout == ShareLayout::wire() && measured != predicted {
     return Err(internal(format!(
-      "serialized length {measured} differs from the Tag4 price {predicted}"
+      "serialized length {measured} differs from the wire-layout price \
+       {predicted}"
     )));
   }
   meter.output(measured)?;

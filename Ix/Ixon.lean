@@ -1161,52 +1161,121 @@ private theorem nodeCount_right_lt_sum3 (left middle right : Nat) :
   Nat.lt_of_le_of_lt (Nat.le_add_left right (left + middle))
     (Nat.lt_succ_self _)
 
+/-! ### Share index codec
+
+`Share(idx)` (flag `0xB`) is the one expression integer whose encoding is
+selectable. Both codecs put the Share flag in the high nibble of the first
+byte, so a reader can tell a Share header from every other expression header
+before decoding its payload:
+
+* `tag4`: `putTag4 ⟨0xB, idx⟩` (format v3): one byte below 8, then one header
+  byte plus the minimal little-endian bytes of `idx` (widths 2, 3, 4, …, 9).
+* `tagN`: `putTagN 4 0xB idx`: rungs of 1, 2, 3, 5 and 9 bytes ending at 8,
+  1032, 66568 and 4295033864 (the TagN code above). Bijective, so the reader
+  needs no canonical-integer check.
+
+Every serializer and deserializer below that reaches an expression takes the
+codec as a trailing argument defaulting to `ShareCodec.current`, so call sites
+and statements that omit it use the codec of the current format version, and
+tests can select either codec explicitly. -/
+
+/-- How a `Share` index is written on the wire. Mirrors Rust
+`ixon::serialize::ShareCodec`. -/
+inductive ShareCodec where
+  /-- `Tag4 ⟨0xB, idx⟩` (format version 3). -/
+  | tag4
+  /-- `TagN` with a 4-bit flag (`putTagN 4 0xB idx`). -/
+  | tagN
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+/-- The Share codec of the current format version `Env.VERSION`.
+
+It flips to `.tagN` together with `Env.VERSION := Env.NEXT_VERSION`; see
+`Env.NEXT_VERSION` for everything that flips with it. Mirrors Rust
+`ShareCodec::CURRENT`. -/
+@[expose] def ShareCodec.current : ShareCodec := .tag4
+
+/-- Write a Share index with codec `sc`. -/
+@[expose] def putShare : ShareCodec → UInt64 → PutM Unit
+  | .tag4, idx => putTag4 ⟨Expr.FLAG_SHARE, idx⟩
+  | .tagN, idx => putTagN 4 Expr.FLAG_SHARE idx
+
+/-- The current codec writes Share as `Tag4 ⟨0xB, idx⟩`. Restate (and re-prove
+the Share arms of the codec proofs) when `ShareCodec.current` flips. -/
+@[simp] theorem putShare_current (idx : UInt64) :
+    putShare ShareCodec.current idx = putTag4 ⟨Expr.FLAG_SHARE, idx⟩ := rfl
+
+/-- The next byte, without consuming it. -/
+def peekU8? : GetM (Option UInt8) := do
+  let st ← get
+  return if st.idx < st.bytes.size then some st.bytes[st.idx]! else none
+
+/-- Read an expression header as a `Tag4` value. With `.tag4` every header is
+a `Tag4`. With `.tagN` a header whose high nibble is the Share flag is a TagN
+(`f = 4`) integer and every other header is a `Tag4`. -/
+@[expose] def getExprHeader : ShareCodec → GetM Tag4
+  | .tag4 => getTag4
+  | .tagN => do
+    match ← peekU8? with
+    | some b =>
+      if b >>> 4 == Expr.FLAG_SHARE then do
+        let t ← getTagN 4
+        pure ⟨t.flag, t.value⟩
+      else getTag4
+    | none => getTag4
+
+/-- The current codec reads every expression header as a `Tag4`. Restate when
+`ShareCodec.current` flips. -/
+@[simp] theorem getExprHeader_current :
+    getExprHeader ShareCodec.current = getTag4 := rfl
+
 /-- Total canonical v3 expression writer. Telescope collection preserves the
     Rust byte grammar; the node-count lemmas above expose its recursive calls
-    to the kernel termination checker. -/
-def putExpr : Expr → PutM Unit
-  | .sort idx => putTag4 ⟨Expr.FLAG_SORT, idx⟩
-  | .var idx => putTag4 ⟨Expr.FLAG_VAR, idx⟩
-  | .ref refIdx univIdxs => do
+    to the kernel termination checker. `sc` selects the Share codec and
+    defaults to the codec of the current format version. -/
+def putExpr : Expr → (sc : ShareCodec := ShareCodec.current) → PutM Unit
+  | .sort idx, _ => putTag4 ⟨Expr.FLAG_SORT, idx⟩
+  | .var idx, _ => putTag4 ⟨Expr.FLAG_VAR, idx⟩
+  | .ref refIdx univIdxs, _ => do
     -- Rust format: Tag4(flag, array_len), Tag0(ref_idx), then elements
     putTag4 ⟨Expr.FLAG_REF, univIdxs.size.toUInt64⟩
     putTag0 ⟨refIdx⟩
     for idx in univIdxs do putTag0 ⟨idx⟩
-  | .recur recIdx univIdxs => do
+  | .recur recIdx univIdxs, _ => do
     -- Rust format: Tag4(flag, array_len), Tag0(rec_idx), then elements
     putTag4 ⟨Expr.FLAG_REC, univIdxs.size.toUInt64⟩
     putTag0 ⟨recIdx⟩
     for idx in univIdxs do putTag0 ⟨idx⟩
-  | .prj typeRefIdx fieldIdx val => do
+  | .prj typeRefIdx fieldIdx val, sc => do
     -- Rust format: Tag4(flag, field_idx), Tag0(type_ref_idx), then val
     putTag4 ⟨Expr.FLAG_PRJ, fieldIdx⟩
     putTag0 ⟨typeRefIdx⟩
-    putExpr val
-  | .str refIdx => putTag4 ⟨Expr.FLAG_STR, refIdx⟩
-  | .nat refIdx => putTag4 ⟨Expr.FLAG_NAT, refIdx⟩
-  | e@(.app _ _) => do
+    putExpr val sc
+  | .str refIdx, _ => putTag4 ⟨Expr.FLAG_STR, refIdx⟩
+  | .nat refIdx, _ => putTag4 ⟨Expr.FLAG_NAT, refIdx⟩
+  | e@(.app _ _), sc => do
     putTag4 ⟨Expr.FLAG_APP, e.collectAppArgs.1.length.toUInt64⟩
-    putExpr e.collectAppArgs.2
-    for arg in e.collectAppArgs.1 do putExpr arg
-  | e@(.lam _ _ _) => do
+    putExpr e.collectAppArgs.2 sc
+    for arg in e.collectAppArgs.1 do putExpr arg sc
+  | e@(.lam _ _ _), sc => do
     putTag4 ⟨Expr.FLAG_LAM, e.collectLamBinders.1.length.toUInt64⟩
     for binder in e.collectLamBinders.1 do
       putU8 binder.1.toBits
-      putExpr binder.2
-    putExpr e.collectLamBinders.2
-  | e@(.all _ _ _ _) => do
+      putExpr binder.2 sc
+    putExpr e.collectLamBinders.2 sc
+  | e@(.all _ _ _ _), sc => do
     putTag4 ⟨Expr.FLAG_ALL, e.collectAllBinders.1.length.toUInt64⟩
     for binder in e.collectAllBinders.1 do
       putU8 (packAllContract binder.1 binder.2.1)
-      putExpr binder.2.2
-    putExpr e.collectAllBinders.2
-  | .letE contract ty val body => do
+      putExpr binder.2.2 sc
+    putExpr e.collectAllBinders.2 sc
+  | .letE contract ty val body, sc => do
     putTag4 ⟨Expr.FLAG_LET, contract.flags⟩
     putBinderContract contract.binder
-    putExpr ty
-    putExpr val
-    putExpr body
-  | .share idx => putTag4 ⟨Expr.FLAG_SHARE, idx⟩
+    putExpr ty sc
+    putExpr val sc
+    putExpr body sc
+  | .share idx, sc => putShare sc idx
 termination_by e => e.nodeCount
 decreasing_by
   all_goals simp_wf
@@ -1339,18 +1408,19 @@ def getExprFromTag (recur : GetM Expr) (tag : Tag4) : GetM Expr := do
   | 0xB => return .share tag.size
   | f => throw s!"getExpr: invalid flag {f}"
 
-/-- Total v3 expression reader. Every recursive layer consumes a `Tag4`
-    header, so a caller-supplied byte budget is a complete termination
-    measure even for telescope-compressed applications and binders. -/
-def getExprFuel : Nat → GetM Expr
-  | 0 => throw "getExpr: recursion budget exhausted"
-  | fuel + 1 => getTag4 >>= getExprFromTag (getExprFuel fuel)
+/-- Total v3 expression reader. Every recursive layer consumes an expression
+    header (`getExprHeader sc`), so a caller-supplied byte budget is a
+    complete termination measure even for telescope-compressed applications
+    and binders. -/
+def getExprFuel : Nat → (sc : ShareCodec := ShareCodec.current) → GetM Expr
+  | 0, _ => throw "getExpr: recursion budget exhausted"
+  | fuel + 1, sc => getExprHeader sc >>= getExprFromTag (getExprFuel fuel sc)
 
 /-- Decode one expression from the current cursor. Remaining bytes plus one
     are sufficient fuel because every recursive expression consumes a tag. -/
-def getExpr : GetM Expr := do
+def getExpr (sc : ShareCodec := ShareCodec.current) : GetM Expr := do
   let state ← get
-  getExprFuel (state.bytes.size - state.idx + 1)
+  getExprFuel (state.bytes.size - state.idx + 1) sc
 
 instance : Serialize Expr where
   put := putExpr
@@ -1375,51 +1445,51 @@ def unpackDefKindSafety (b : UInt8) : DefKind × DefinitionSafety :=
   let safety := match b &&& 0x3 with | 0 => .unsaf | 1 => .safe | _ => .part
   (kind, safety)
 
-def putDefinition (d : Definition) : PutM Unit := do
+def putDefinition (d : Definition) (sc : ShareCodec := ShareCodec.current) : PutM Unit := do
   putU8 (packDefKindSafety d.kind d.safety)
   putTag0 ⟨d.lvls⟩
-  putExpr d.typ
-  putExpr d.value
+  putExpr d.typ sc
+  putExpr d.value sc
 
-def getDefinition : GetM Definition := do
+def getDefinition (sc : ShareCodec := ShareCodec.current) : GetM Definition := do
   let flags ← getU8
   if flags >>> 2 > 2 || (flags &&& 3) > 2 then
     throw "invalid definition kind/safety"
   let (kind, safety) := unpackDefKindSafety flags
   let lvls := (← getTag0).size
-  let typ ← getExpr
-  let value ← getExpr
+  let typ ← getExpr sc
+  let value ← getExpr sc
   return ⟨kind, safety, lvls, typ, value⟩
 
 instance : Serialize Definition where
   put := putDefinition
   get := getDefinition
 
-def putRecursorRule (r : RecursorRule) : PutM Unit := do
+def putRecursorRule (r : RecursorRule) (sc : ShareCodec := ShareCodec.current) : PutM Unit := do
   putTag0 ⟨r.fields⟩
-  putExpr r.rhs
+  putExpr r.rhs sc
 
-def getRecursorRule : GetM RecursorRule := do
+def getRecursorRule (sc : ShareCodec := ShareCodec.current) : GetM RecursorRule := do
   let fields := (← getTag0).size
-  let rhs ← getExpr
+  let rhs ← getExpr sc
   return ⟨fields, rhs⟩
 
 instance : Serialize RecursorRule where
   put := putRecursorRule
   get := getRecursorRule
 
-def putRecursor (r : Recursor) : PutM Unit := do
+def putRecursor (r : Recursor) (sc : ShareCodec := ShareCodec.current) : PutM Unit := do
   putU8 (packBools [r.k, r.isUnsafe])
   putTag0 ⟨r.lvls⟩
   putTag0 ⟨r.params⟩
   putTag0 ⟨r.indices⟩
   putTag0 ⟨r.motives⟩
   putTag0 ⟨r.minors⟩
-  putExpr r.typ
+  putExpr r.typ sc
   putTag0 ⟨r.rules.size.toUInt64⟩
-  for rule in r.rules do putRecursorRule rule
+  for rule in r.rules do putRecursorRule rule sc
 
-def getRecursor : GetM Recursor := do
+def getRecursor (sc : ShareCodec := ShareCodec.current) : GetM Recursor := do
   let flags ← getU8
   if flags > 3 then throw "invalid recursor flags"
   let bools := unpackBools 2 flags
@@ -1430,93 +1500,93 @@ def getRecursor : GetM Recursor := do
   let indices := (← getTag0).size
   let motives := (← getTag0).size
   let minors := (← getTag0).size
-  let typ ← getExpr
+  let typ ← getExpr sc
   let numRules := (← getTag0).size.toNat
   checkCount numRules.toUInt64 2
   let mut rules := #[]
   for _ in [0:numRules] do
-    rules := rules.push (← getRecursorRule)
+    rules := rules.push (← getRecursorRule sc)
   return ⟨k, isUnsafe, lvls, params, indices, motives, minors, typ, rules⟩
 
 instance : Serialize Recursor where
   put := putRecursor
   get := getRecursor
 
-def putAxiom (a : Axiom) : PutM Unit := do
+def putAxiom (a : Axiom) (sc : ShareCodec := ShareCodec.current) : PutM Unit := do
   putU8 (if a.isUnsafe then 1 else 0)
   putTag0 ⟨a.lvls⟩
-  putExpr a.typ
+  putExpr a.typ sc
 
-def getAxiom : GetM Axiom := do
+def getAxiom (sc : ShareCodec := ShareCodec.current) : GetM Axiom := do
   let isUnsafe ← Serialize.get
   let lvls := (← getTag0).size
-  let typ ← getExpr
+  let typ ← getExpr sc
   return ⟨isUnsafe, lvls, typ⟩
 
 instance : Serialize Axiom where
   put := putAxiom
   get := getAxiom
 
-def putQuotient (q : Quotient) : PutM Unit := do
+def putQuotient (q : Quotient) (sc : ShareCodec := ShareCodec.current) : PutM Unit := do
   let k : UInt8 := match q.kind with | .type => 0 | .ctor => 1 | .lift => 2 | .ind => 3
   putU8 k
   putTag0 ⟨q.lvls⟩
-  putExpr q.typ
+  putExpr q.typ sc
 
-def getQuotient : GetM Quotient := do
+def getQuotient (sc : ShareCodec := ShareCodec.current) : GetM Quotient := do
   let v ← getU8
   let k : QuotKind ← match v with
     | 0 => pure .type | 1 => pure .ctor | 2 => pure .lift | 3 => pure .ind
     | _ => throw s!"invalid QuotKind tag {v}"
   let lvls := (← getTag0).size
-  let typ ← getExpr
+  let typ ← getExpr sc
   return ⟨k, lvls, typ⟩
 
 instance : Serialize Quotient where
   put := putQuotient
   get := getQuotient
 
-def putConstructor (c : Constructor) : PutM Unit := do
+def putConstructor (c : Constructor) (sc : ShareCodec := ShareCodec.current) : PutM Unit := do
   putU8 (if c.isUnsafe then 1 else 0)
   putTag0 ⟨c.lvls⟩
   putTag0 ⟨c.cidx⟩
   putTag0 ⟨c.params⟩
   putTag0 ⟨c.fields⟩
-  putExpr c.typ
+  putExpr c.typ sc
 
-def getConstructor : GetM Constructor := do
+def getConstructor (sc : ShareCodec := ShareCodec.current) : GetM Constructor := do
   let isUnsafe ← Serialize.get
   let lvls := (← getTag0).size
   let cidx := (← getTag0).size
   let params := (← getTag0).size
   let fields := (← getTag0).size
-  let typ ← getExpr
+  let typ ← getExpr sc
   return ⟨isUnsafe, lvls, cidx, params, fields, typ⟩
 
 instance : Serialize Constructor where
   put := putConstructor
   get := getConstructor
 
-def putInductive (i : Inductive) : PutM Unit := do
+def putInductive (i : Inductive) (sc : ShareCodec := ShareCodec.current) : PutM Unit := do
   putU8 (packBools [i.isUnsafe])
   putTag0 ⟨i.lvls⟩
   putTag0 ⟨i.params⟩
   putTag0 ⟨i.indices⟩
-  putExpr i.typ
+  putExpr i.typ sc
   putTag0 ⟨i.ctors.size.toUInt64⟩
-  for c in i.ctors do putConstructor c
+  for c in i.ctors do putConstructor c sc
 
-def getInductive : GetM Inductive := do
+def getInductive (sc : ShareCodec := ShareCodec.current) : GetM Inductive := do
   let isUnsafe ← Serialize.get
   let lvls := (← getTag0).size
   let params := (← getTag0).size
   let indices := (← getTag0).size
-  let typ ← getExpr
+  let typ ← getExpr sc
   let numCtors := (← getTag0).size.toNat
   checkCount numCtors.toUInt64 6
   let mut ctors := #[]
   for _ in [0:numCtors] do
-    ctors := ctors.push (← getConstructor)
+    ctors := ctors.push (← getConstructor sc)
   return ⟨isUnsafe, lvls, params, indices, typ, ctors⟩
 
 instance : Serialize Inductive where
@@ -1577,48 +1647,48 @@ instance : Serialize DefinitionProj where
   put := putDefinitionProj
   get := getDefinitionProj
 
-def putMutConst : MutConst → PutM Unit
-  | .defn d => putU8 0 *> putDefinition d
-  | .indc i => putU8 1 *> putInductive i
-  | .recr r => putU8 2 *> putRecursor r
+def putMutConst : MutConst → (sc : ShareCodec := ShareCodec.current) → PutM Unit
+  | .defn d, sc => putU8 0 *> putDefinition d sc
+  | .indc i, sc => putU8 1 *> putInductive i sc
+  | .recr r, sc => putU8 2 *> putRecursor r sc
 
-def getMutConst : GetM MutConst := do
+def getMutConst (sc : ShareCodec := ShareCodec.current) : GetM MutConst := do
   match ← getU8 with
-  | 0 => .defn <$> getDefinition
-  | 1 => .indc <$> getInductive
-  | 2 => .recr <$> getRecursor
+  | 0 => .defn <$> getDefinition sc
+  | 1 => .indc <$> getInductive sc
+  | 2 => .recr <$> getRecursor sc
   | t => throw s!"getMutConst: invalid tag {t}"
 
 instance : Serialize MutConst where
   put := putMutConst
   get := getMutConst
 
-def putConstantInfo : ConstantInfo → PutM Unit
-  | .defn d => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_DEFN⟩ *> putDefinition d
-  | .recr r => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_RECR⟩ *> putRecursor r
-  | .axio a => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_AXIO⟩ *> putAxiom a
-  | .quot q => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_QUOT⟩ *> putQuotient q
-  | .cPrj p => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_CPRJ⟩ *> putConstructorProj p
-  | .rPrj p => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_RPRJ⟩ *> putRecursorProj p
-  | .iPrj p => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_IPRJ⟩ *> putInductiveProj p
-  | .dPrj p => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_DPRJ⟩ *> putDefinitionProj p
-  | .muts ms => do
+def putConstantInfo : ConstantInfo → (sc : ShareCodec := ShareCodec.current) → PutM Unit
+  | .defn d, sc => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_DEFN⟩ *> putDefinition d sc
+  | .recr r, sc => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_RECR⟩ *> putRecursor r sc
+  | .axio a, sc => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_AXIO⟩ *> putAxiom a sc
+  | .quot q, sc => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_QUOT⟩ *> putQuotient q sc
+  | .cPrj p, _ => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_CPRJ⟩ *> putConstructorProj p
+  | .rPrj p, _ => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_RPRJ⟩ *> putRecursorProj p
+  | .iPrj p, _ => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_IPRJ⟩ *> putInductiveProj p
+  | .dPrj p, _ => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_DPRJ⟩ *> putDefinitionProj p
+  | .muts ms, sc => do
     putTag4 ⟨Constant.FLAG_MUTS, ms.size.toUInt64⟩
-    for m in ms do putMutConst m
+    for m in ms do putMutConst m sc
 
-def getConstantInfo : GetM ConstantInfo := do
+def getConstantInfo (sc : ShareCodec := ShareCodec.current) : GetM ConstantInfo := do
   let tag ← getTag4
   if tag.flag == Constant.FLAG_MUTS then
     let mut ms := #[]
     for _ in [0:tag.size.toNat] do
-      ms := ms.push (← getMutConst)
+      ms := ms.push (← getMutConst sc)
     return .muts ms
   else if tag.flag == Constant.FLAG then
     match tag.size with
-    | 0 => .defn <$> getDefinition
-    | 1 => .recr <$> getRecursor
-    | 2 => .axio <$> getAxiom
-    | 3 => .quot <$> getQuotient
+    | 0 => .defn <$> getDefinition sc
+    | 1 => .recr <$> getRecursor sc
+    | 2 => .axio <$> getAxiom sc
+    | 3 => .quot <$> getQuotient sc
     | 4 => .cPrj <$> getConstructorProj
     | 5 => .rPrj <$> getRecursorProj
     | 6 => .iPrj <$> getInductiveProj
@@ -1631,21 +1701,21 @@ instance : Serialize ConstantInfo where
   put := putConstantInfo
   get := getConstantInfo
 
-def putConstant (c : Constant) : PutM Unit := do
-  putConstantInfo c.info
+def putConstant (c : Constant) (sc : ShareCodec := ShareCodec.current) : PutM Unit := do
+  putConstantInfo c.info sc
   putTag0 ⟨c.sharing.size.toUInt64⟩
-  for e in c.sharing do putExpr e
+  for e in c.sharing do putExpr e sc
   putTag0 ⟨c.refs.size.toUInt64⟩
   for a in c.refs do Serialize.put a
   putTag0 ⟨c.univs.size.toUInt64⟩
   for u in c.univs do putUniv u
 
-def getConstant : GetM Constant := do
-  let info ← getConstantInfo
+def getConstant (sc : ShareCodec := ShareCodec.current) : GetM Constant := do
+  let info ← getConstantInfo sc
   let numSharing := (← getTag0).size.toNat
   let mut sharing := #[]
   for _ in [0:numSharing] do
-    sharing := sharing.push (← getExpr)
+    sharing := sharing.push (← getExpr sc)
   let numRefs := (← getTag0).size.toNat
   let mut refs := #[]
   for _ in [0:numRefs] do
@@ -1665,11 +1735,17 @@ instance : Serialize Constant where
 def serUniv (u : Univ) : ByteArray := runPut (putUniv u)
 def deUniv (bytes : ByteArray) : Except String Univ := runGetExact getUniv bytes
 
-def serExpr (e : Expr) : ByteArray := runPut (putExpr e)
-def deExpr (bytes : ByteArray) : Except String Expr := runGetExact getExpr bytes
+def serExpr (e : Expr) (sc : ShareCodec := ShareCodec.current) : ByteArray :=
+  runPut (putExpr e sc)
+def deExpr (bytes : ByteArray) (sc : ShareCodec := ShareCodec.current) :
+    Except String Expr :=
+  runGetExact (getExpr sc) bytes
 
-def serConstant (c : Constant) : ByteArray := runPut (putConstant c)
-def deConstant (bytes : ByteArray) : Except String Constant := runGet getConstant bytes
+def serConstant (c : Constant) (sc : ShareCodec := ShareCodec.current) : ByteArray :=
+  runPut (putConstant c sc)
+def deConstant (bytes : ByteArray) (sc : ShareCodec := ShareCodec.current) :
+    Except String Constant :=
+  runGet (getConstant sc) bytes
 
 /-- Parse a `Constant` starting at byte offset `off` within `buf`, WITHOUT
     copying out a sub-buffer. The window length bounds the constant, so any
@@ -2770,6 +2846,26 @@ def FLAG : UInt8 := 0xE
     `.ixe` files are regenerated artifacts. Mirrors Rust
     `Env::VERSION` in `crates/ixon/src/serialize.rs`. -/
 def VERSION : UInt64 := 3
+
+/-- The next `.ixe` format version: the one in which the tiered canonical
+    sharing construction (`Ix.Sharing.Exact.canonicalSharingTiered .tagN`)
+    and the TagN Share codec (`ShareCodec.tagN`) become canonical. Nothing
+    writes or accepts it yet. Mirrors Rust `Env::NEXT_VERSION`.
+
+    TODO(format v4): flip these together, in one change, with the Rust
+    mirrors (`docs/sharing-minimum-integration.md` §6 has the full list):
+    * `VERSION := NEXT_VERSION` here and `Env::VERSION` in Rust;
+    * `ShareCodec.current := .tagN` (Rust `ShareCodec::CURRENT`), restating
+      `putShare_current` / `getExprHeader_current` and re-proving the Share
+      arms of `Ix/Compile/Verify/ExprCodec.lean` and `ExprSpineCodec.lean`;
+    * the exact-sharing price of a Share (`Ix.Sharing.Exact.shareWidth`,
+      Rust `sharing_exact::cost::share_width`) and its width pins;
+    * the compiler sharing switch (`Ix.CompileM.compilerSharing`, Rust
+      `COMPILER_SHARING`);
+    * the IxVM codec (`Ix/IxVM/IxonDeserialize.lean`,
+      `Ix/IxVM/IxonSerialize.lean`) and `lake exe ix codegen`;
+    * regenerated fixtures, primitive addresses and manifest pins. -/
+def NEXT_VERSION : UInt64 := 4
 
 /-- Serialize a name component (references parent by address).
     Format: tag (1 byte) + parent_addr (32 bytes) + data -/
