@@ -1262,6 +1262,7 @@ def compileEnvParallelAuxWith (env : Ix.Environment) (blocks : Ix.CondensedBlock
     | .error e => return .error e
   let mut vAcc : DriverAcc :=
     { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
+  let tPrereqs ← IO.monoMsNow
   match precompileAuxGenPrereqs blocks vAcc with
   | .error e => return .error e
   | .ok a => vAcc := a
@@ -1365,7 +1366,8 @@ rss{(rssKb.getD "?").trimAscii}"
   if cfg.dbg then
     IO.println s!"  [Lean CompileAux] {n} blocks, {numWorkers} workers, \
 {if cfg.speculate then "speculative" else "wave"} schedule\
-{if cfg.verify then ", verify" else ""}{if cfg.seed != 0 then s!", seed {cfg.seed}" else ""}"
+{if cfg.verify then ", verify" else ""}{if cfg.seed != 0 then s!", seed {cfg.seed}" else ""}; \
+aux_gen prereqs {tStart - tPrereqs}ms, setup {(← IO.monoMsNow) - tStart}ms"
 
   let mut st : Array SchedBlock := Array.replicate n {}
   let mut specOut : Array (Option (AuxBlockOutcome × Option PlainFacts)) :=
@@ -1681,7 +1683,11 @@ the wave outcome, {nVerifyViolation} of them passed validation" else ""}"
   if cfg.verify && nVerifyViolation > 0 then
     return .error s!"speculative validation accepted {nVerifyViolation} \
 outcome(s) that differ from their wave outcome"
-  return .ok (assembleEnv vAcc)
+  let tAssemble ← IO.monoMsNow
+  let out ← IO.lazyPure fun _ => assembleEnv vAcc
+  if cfg.dbg then
+    IO.println s!"  [Lean CompileAux] assembleEnv {(← IO.monoMsNow) - tAssemble}ms"
+  return .ok out
 
 /-- Parallel aux-aware environment compile. Same output as
     `compileEnvAux` and as the wave schedule (see the section docstring);

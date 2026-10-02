@@ -126,6 +126,23 @@ def compareEnvResults
 def serializeEnv (env : Ixon.Env) : IO ByteArray :=
   IO.ofExcept (Ixon.serEnv env)
 
+/-- CPU time (user + system) of this process so far, in milliseconds, from
+    `/proc/self/stat` (clock ticks of 10 ms); 0 where that file is absent. -/
+def processCpuMs : IO Nat := do
+  try
+    let stat ← IO.FS.readFile "/proc/self/stat"
+    -- Fields after the parenthesized command name: state is field 3, so
+    -- utime (field 14) and stime (field 15) are at offsets 11 and 12.
+    let rest := ((stat.splitOn ")").getLast!).trimAscii.toString.splitOn " "
+    let ticks (i : Nat) : Nat := ((rest[i]?).bind (·.toNat?)).getD 0
+    return (ticks 11 + ticks 12) * 10
+  catch _ => return 0
+
+/-- `wall` and `cpu` (both in milliseconds) as `wall Xms, cpu Ys (Z cores)`. -/
+def fmtWallCpu (wall cpu : Nat) : String :=
+  let cores := cpu * 10 / max wall 1
+  s!"wall {wall}ms, cpu {cpu / 1000}.{(cpu % 1000) / 100}s ({cores / 10}.{cores % 10} cores)"
+
 /-! ## Integrated Test -/
 
 /-- Cross-implementation compilation test using the new CompilePhases API -/
@@ -141,10 +158,26 @@ def testCrossImpl : TestSeq :=
     -- Step 1: Get all compilation phases from Rust in one call
     IO.println s!"[Step 1] Running Rust compilation pipeline (rsCompilePhases)..."
     let rustStart ← IO.monoMsNow
-    let phases ← Ix.CompileM.rsCompilePhases leanEnv
+    let rustCpu0 ← processCpuMs
+    -- `Ix.CompileM.rsCompilePhases`, timed in two parts: the FFI call (the
+    -- Rust pipeline and the Lean objects it returns) and the Lean-side
+    -- conversion of that result to `CompilePhases`.
+    let constants ← IO.ofExcept <|
+      Ix.Compile.prepareRegisteredConstants leanEnv leanEnv.constants.toList
+    let raw ← Ix.CompileM.rsCompilePhasesFFI constants
+    let ffiTime := (← IO.monoMsNow) - rustStart
+    let ffiCpu := (← processCpuMs) - rustCpu0
+    let phases : Ix.CompileM.CompilePhases ← IO.lazyPure fun _ =>
+      { rawEnv := raw.rawEnv.toEnvironment
+        condensed := raw.condensed.toCondensedBlocks
+        compileEnv := raw.compileEnv.toEnv }
     let rustTime := (← IO.monoMsNow) - rustStart
+    let rustCpu := (← processCpuMs) - rustCpu0
 
     IO.println s!"[Step 1]   Rust: {phases.rawEnv.consts.size} consts, {phases.condensed.blocks.size} blocks, {phases.compileEnv.constCount} compiled in {rustTime}ms"
+    IO.println s!"[Step 1]   FFI call (Rust pipeline + result objects): {fmtWallCpu ffiTime ffiCpu}; \
+Lean conversion of the result: {fmtWallCpu (rustTime - ffiTime) (rustCpu - ffiCpu)}; \
+total: {fmtWallCpu rustTime rustCpu}"
     IO.println ""
 
     -- Step 2: Compile with Lean using Rust's rawEnv and condensed blocks
@@ -152,6 +185,7 @@ def testCrossImpl : TestSeq :=
     -- no-aux originals — full production semantics).
     IO.println s!"[Step 2] Running Lean parallel compilation (aux-aware)..."
     let leanStart ← IO.monoMsNow
+    let leanCpu0 ← processCpuMs
 
     match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (dbg := true) with
     | .error err =>
@@ -162,18 +196,21 @@ def testCrossImpl : TestSeq :=
 
     | .ok (leanIxonEnv, totalBytes, _driverCenv) =>
       let leanTime := (← IO.monoMsNow) - leanStart
+      let leanCpu := (← processCpuMs) - leanCpu0
       IO.println s!"[Step 2]   Lean: {leanIxonEnv.constCount} constants, {fmtBytes totalBytes} in {leanTime}ms"
+      IO.println s!"[Step 2]   {fmtWallCpu leanTime leanCpu}"
       IO.println ""
 
       -- Step 3: Compare compilation results
       IO.println s!"[Step 3] Comparing Lean and Rust results..."
       let compareStart ← IO.monoMsNow
+      let compareCpu0 ← processCpuMs
 
       let result := compareEnvResults leanIxonEnv phases.compileEnv
 
       IO.print s!"[Step 3]   Compared {result.totalConstants} "
       let compareTime := (← IO.monoMsNow) - compareStart
-      IO.println s!"constants in {compareTime}ms"
+      IO.println s!"constants in {compareTime}ms ({fmtWallCpu compareTime ((← processCpuMs) - compareCpu0)})"
 
       if result.mismatchedConstants.isEmpty && result.missingInRust.isEmpty && result.missingInLean.isEmpty then
         IO.println s!"[Step 3]   All {result.matchingConstants} constants match! ✓"
@@ -304,6 +341,7 @@ def testCrossImpl : TestSeq :=
         -- Step 4: Compare serialized environments
         IO.println s!"[Step 4] Comparing serialized environments..."
         let serStart ← IO.monoMsNow
+        let serCpu0 ← processCpuMs
 
         -- Count total ExprMeta entries and mdata sizes across all named constants
         let (leanTotalMetas, leanTotalMdata) := leanIxonEnv.named.fold (init := (0, 0)) fun (accMeta, accMdata) _ named =>
@@ -339,8 +377,10 @@ def testCrossImpl : TestSeq :=
 
         let (leanBlobs, leanConsts, leanHints, leanNames, leanNamed, leanComms) := Ixon.envSectionSizes leanIxonEnv
         IO.println s!"[Step 4]   Lean sections: blobs={fmtBytes leanBlobs}, consts={fmtBytes leanConsts}, hints={fmtBytes leanHints}, names={fmtBytes leanNames}, named={fmtBytes leanNamed}, comms={fmtBytes leanComms}"
+        let leanStatsEnd ← IO.monoMsNow
         let leanEnvBytes ← serializeEnv leanIxonEnv
         IO.println s!"[Step 4]   Lean env done: {fmtBytes leanEnvBytes.size}"
+        let leanSerEnd ← IO.monoMsNow
 
         IO.println s!"[Step 4]   Serializing Rust env ({phases.compileEnv.constCount} consts)..."
         IO.println s!"[Step 4]   Rust env has {phases.compileEnv.named.size} named, {phases.compileEnv.blobs.size} blobs, {phases.compileEnv.names.size} names"
@@ -360,13 +400,19 @@ def testCrossImpl : TestSeq :=
 
         let (rustBlobs, rustConsts, rustHints, rustNames, rustNamed, rustComms) := Ixon.envSectionSizes phases.compileEnv
         IO.println s!"[Step 4]   Rust sections: blobs={fmtBytes rustBlobs}, consts={fmtBytes rustConsts}, hints={fmtBytes rustHints}, names={fmtBytes rustNames}, named={fmtBytes rustNamed}, comms={fmtBytes rustComms}"
+        let rustStatsEnd ← IO.monoMsNow
         let rustEnvBytes ← serializeEnv phases.compileEnv
         IO.println s!"[Step 4]   Rust env done: {fmtBytes rustEnvBytes.size}"
-        let serTime := (← IO.monoMsNow) - serStart
+        let serEnd ← IO.monoMsNow
+        let serTime := serEnd - serStart
+        let serCpu := (← processCpuMs) - serCpu0
 
         IO.println s!"[Step 4]   Lean env: {fmtBytes leanEnvBytes.size}"
         IO.println s!"[Step 4]   Rust env: {fmtBytes rustEnvBytes.size}"
         IO.println s!"[Step 4]   Serialization time: {serTime}ms"
+        IO.println s!"[Step 4]   statistics + section sizes: Lean {leanStatsEnd - serStart}ms, \
+Rust {rustStatsEnd - leanSerEnd}ms; serEnv: Lean {leanSerEnd - leanStatsEnd}ms, \
+Rust {serEnd - rustStatsEnd}ms; {fmtWallCpu serTime serCpu}"
 
         if leanEnvBytes == rustEnvBytes then
           IO.println s!"[Step 4]   Serialized environments match exactly! ✓"
