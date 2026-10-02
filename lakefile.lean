@@ -305,7 +305,7 @@ section IxKernelTree
 
 /- `Ix.Kernel` and every module under `Ix/Kernel/`, as a library of its own for
 one option: `linter.deprecated` is off, so the con-leche-derived sources,
-written for Lean 4.33.0, build under `--wfail` on 4.34.0 without renaming the
+written for Lean 4.33.0, build under `--wfail` on 4.34.1 without renaming the
 deprecated `if_pos`/`if_neg`/`dif_pos`/`dif_neg` lemmas they use (Lake options
 are per library). Lake gives a module to the last-declared library that can
 build it, and `Ix` (above) can build every `Ix.*` module, so this library stays

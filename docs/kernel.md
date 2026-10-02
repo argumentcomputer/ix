@@ -581,7 +581,7 @@ and `Ix/Kernel/NOTICE` states the origin, the revisions and the changes;
 **Builds.** All of `Ix/Kernel` is one library, `IxKernelTree`, in both
 `lakefile.lean` and `IxKernel/lakefile.lean`, for one option:
 `linter.deprecated` is off, so the con-leche-derived sources, written for
-Lean 4.33.0, build under `--wfail` on 4.34.0 without renaming the deprecated
+Lean 4.33.0, build under `--wfail` on 4.34.1 without renaming the deprecated
 `if_pos`/`if_neg`/`dif_pos`/`dif_neg` lemmas they use (2,885 uses in 209
 files). Ix's own files there do not rely on it: they build without warnings
 with the linter on.
