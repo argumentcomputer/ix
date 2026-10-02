@@ -179,8 +179,8 @@ def cases : Array Case := #[
     lam (b .many .unique) (borrow (v 0) (borrow (v 0) (call 1 (v 0))) .erased), "unsupported"⟩,
 
   -- Captures and projections
-  ⟨"shared closure cannot hide affine capture", arr (b .affine) .shared natTy (closureType .shared),
-    lam (b .affine) (lam (b .many) (v 1)), "capture"⟩,
+  ⟨"shared closure may copy an affine immediate capture", arr (b .affine) .shared natTy (closureType .shared),
+    lam (b .affine) (lam (b .many) (v 1)), "ok"⟩,
   ⟨"unique closure retains finite capture", arr (b .linear) .unique natTy (closureType .shared),
     lam (b .linear) (lam (b .many) (v 1)), "ok"⟩,
   ⟨"local closure may retain local input", arr (b .many .localShared) .localShared natTy (closureType .localShared),
@@ -284,7 +284,12 @@ def modesProgram : Program := { program with
     { type := arr (b .many) .shared resTy resTy, kind := .assumption },       -- 12 Res consumer
     { type := .sort 1, kind := .typeConstructor },                            -- 13 Prf : Prop
     { type := arr (b .many) .shared prfTy natTy, kind := .assumption },       -- 14 proof consumer
-    { type := arr (b .many) .shared natTy (arr (b .many)), kind := .assumption } -- 15 binary
+    { type := arr (b .many) .shared natTy (arr (b .many)), kind := .assumption }, -- 15 binary
+    { type := arr (b .many) .shared natTy (.sort 1),
+      body := some (lam (b .many) (.prj 0 0 (v 0))) },                       -- 16 a proposition whose
+                                                                              --    unfolding has no field rule
+    { type := arr (b .many) .shared (.app (ref 16) zero) natTy,
+      kind := .assumption }                                                  -- 17 consumes its proof
   ]
   propSort := some 1 }
 
@@ -306,7 +311,21 @@ def modeCases : Array Case := #[
   ⟨"erased data passed to an ordinary binder", arr (b .erased),
     lam (b .erased) (call 5 (v 0)), "usage"⟩,
   ⟨"a returned proof is still checked as a value", arr (b .linear .localShared) .shared prfTy prfTy,
-    lam (b .linear .localShared) (v 0) prfTy, "unrestricted"⟩
+    lam (b .linear .localShared) (v 0) prfTy, "unrestricted"⟩,
+  -- A proposition is typed before it is reduced.
+  ⟨"a proposition is recognized before its unfolding", arr (b .erased) .shared (.app (ref 16) zero) natTy,
+    lam (b .erased) (call 17 (v 0)) (.app (ref 16) zero), "ok"⟩,
+  -- Captured immediates are copied into a closure.
+  ⟨"a linear immediate capture keeps a closure reusable", arr (b .linear) .shared natTy (arr (b .linear)),
+    lam (b .linear) (lam (b .linear) (.app (call 15 (v 1)) (v 0))), "ok"⟩,
+  ⟨"a unique immediate capture keeps a closure reusable", arr (b .linear .unique) .shared natTy (arr (b .linear)),
+    lam (b .linear .unique) (lam (b .linear) (.app (call 15 (v 1)) (v 0))), "ok"⟩,
+  ⟨"a finite non-shareable capture stays one-shot", arr (b .affine) .shared resTy (arr (b .many) .shared natTy resTy),
+    lam (b .affine) (lam (b .many) (v 1)) resTy, "capture"⟩,
+  ⟨"a unique non-shareable capture stays one-shot", arr (b .linear .unique) .shared resTy (arr (b .many) .unique natTy resTy),
+    lam (b .linear .unique) (lam (b .many) (v 1)) resTy, "capture"⟩,
+  ⟨"a one-shot closure may carry a unique non-shareable capture", arr (b .linear .unique) .unique resTy (arr (b .many) .unique natTy resTy),
+    lam (b .linear .unique) (lam (b .many) (v 1)) resTy, "ok"⟩
 ]
 
 def runCaseIn (base : Program) (type value : E) (limits : Limits := {}) : Except Error Unit :=

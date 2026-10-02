@@ -638,10 +638,31 @@ impl<'a> Checker<'a> {
       _ => false,
     })
   }
+  /// Whether the bounded inference types `typ` as the sort `prop`. An
+  /// expression it cannot type is not.
+  fn has_sort(
+    &mut self,
+    fuel: usize,
+    ctx: &Context,
+    typ: &Term,
+    prop: u64,
+  ) -> Result<bool, Error> {
+    let before = self.state.bindings.clone();
+    let sort =
+      self.type_of(fuel, ctx, typ).and_then(|sort| self.whnf(fuel, &sort));
+    self.state.bindings = before;
+    match sort {
+      Ok(sort) => Ok(matches!(sort.as_ref(), Expr::Sort(s) if *s == prop)),
+      Err(Error::Budget) => Err(Error::Budget),
+      Err(_) => Ok(false),
+    }
+  }
   /// Whether `typ` is a proposition, so that its values are erased proofs.
   /// A `∀` is a proposition when its body is (impredicativity); otherwise the
-  /// type's own type must reduce to the program's `Prop` sort. Anything this
-  /// bounded inference cannot type is conservatively not a proposition.
+  /// type's own type must reduce to the program's `Prop` sort. The unreduced
+  /// type is tried first: reduction can unfold a proposition such as `a ≤ b`
+  /// to a class projection that has no field rule. Anything this bounded
+  /// inference cannot type is conservatively not a proposition.
   fn is_proposition(
     &mut self,
     fuel: usize,
@@ -650,8 +671,8 @@ impl<'a> Checker<'a> {
   ) -> Result<bool, Error> {
     let Some(prop) = self.program.prop_sort else { return Ok(false) };
     let fuel = self.tick(fuel)?;
-    let typ = self.whnf(fuel, typ)?;
-    match typ.as_ref() {
+    let reduced = self.whnf(fuel, typ)?;
+    match reduced.as_ref() {
       Expr::All(c, _, domain, body) => {
         let before = self.state.bindings.clone();
         let id = self.push(*c, Value::shared(domain.clone()));
@@ -662,17 +683,10 @@ impl<'a> Checker<'a> {
         result
       },
       Expr::Sort(_) | Expr::Lam(..) => Ok(false),
-      _ => {
-        let before = self.state.bindings.clone();
-        let sort =
-          self.type_of(fuel, ctx, &typ).and_then(|sort| self.whnf(fuel, &sort));
-        self.state.bindings = before;
-        match sort {
-          Ok(sort) => Ok(matches!(sort.as_ref(), Expr::Sort(s) if *s == prop)),
-          Err(Error::Budget) => Err(Error::Budget),
-          Err(_) => Ok(false),
-        }
-      },
+      _ => Ok(
+        self.has_sort(fuel, ctx, typ, prop)?
+          || self.has_sort(fuel, ctx, &reduced, prop)?,
+      ),
     }
   }
   /// Argument demand at a call. A callee's multiplicity does not scale the
@@ -1083,11 +1097,18 @@ impl<'a> Checker<'a> {
         let mut bindings = vec![];
         for (id, old) in before.into_iter().enumerate() {
           let used = self.binding(id)?;
+          let used_touched = used.touched;
           let mut owner = used.owner.clone();
           let mut demand = used.demand;
-          if used.touched {
+          if used_touched {
             origins = union(&origins, &old.value.origins);
-            if old.contract.uses != Uses::Many || !old.value.duplicable {
+            // A captured immediate (a value of a profile-shareable type) is
+            // copied into the closure, as at a call boundary: neither its
+            // finite use nor its uniqueness makes the closure one-shot.
+            let immediate = self.is_shareable(fuel, &old.value.typ)?;
+            if (old.contract.uses != Uses::Many && !immediate)
+              || !old.value.duplicable
+            {
               duplicable = false;
             }
             if old.owner.unique {
@@ -1096,11 +1117,13 @@ impl<'a> Checker<'a> {
               if demand == Uses::Erased {
                 demand = Uses::Linear;
               }
-              duplicable = false;
+              if !immediate {
+                duplicable = false;
+              }
             }
           }
           let demand = add(old.demand, scale(grade, demand));
-          let touched = old.touched || used.touched;
+          let touched = old.touched || used_touched;
           bindings.push(Binding { owner, demand, touched, ..old });
         }
         self.state.bindings = bindings;
@@ -1730,6 +1753,23 @@ mod tests {
         ValueContract::shared(),
         nat(),
         unary(many, ValueContract::shared()),
+      )),
+      // 16 a proposition whose unfolding has no field rule.
+      Declaration {
+        typ: arr(many, ValueContract::shared(), nat(), Expr::sort(1)),
+        body: Some(Expr::lam_contract(
+          many,
+          nat(),
+          Expr::prj(0, 0, Expr::var(0)),
+        )),
+        kind: DeclKind::Definition,
+      },
+      // 17 consumes a proof of it.
+      assumption(arr(
+        many,
+        ValueContract::shared(),
+        Expr::app(Expr::reference(16, vec![]), Expr::nat(0)),
+        nat(),
       )),
     ]);
     p.prop_sort = Some(1);

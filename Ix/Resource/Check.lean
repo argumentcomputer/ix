@@ -298,10 +298,25 @@ def typeOf : Nat → Context → Ixon.Expr → CheckM Ixon.Expr
       modify fun s => { s with bindings := before.bindings }
       substitute ctx.program fuel type initializer 0
 
+/-- Whether the bounded inference types `type` as the sort `prop`. An
+expression it cannot type is not. -/
+def hasSort (fuel : Nat) (ctx : Context) (type : Ixon.Expr) (prop : UInt64) : CheckM Bool := do
+  let before ← get
+  let sort ← tryCatch (some <$> (do whnf ctx.program fuel (← typeOf fuel ctx type)))
+    fun error => match error with
+      | .budget => throw .budget
+      | _ => pure none
+  modify fun s => { s with bindings := before.bindings }
+  return match sort with
+    | some (.sort s) => s == prop
+    | _ => false
+
 /-- Whether `type` is a proposition, so that its values are erased proofs.
 A `∀` is a proposition when its body is (impredicativity); otherwise the
-type's own type must reduce to the program's `Prop` sort. Anything this
-bounded inference cannot type is conservatively not a proposition. -/
+type's own type must reduce to the program's `Prop` sort. The unreduced type
+is tried first: reduction can unfold a proposition such as `a ≤ b` to a class
+projection that has no field rule. Anything this bounded inference cannot
+type is conservatively not a proposition. -/
 def isProposition : Nat → Context → Ixon.Expr → CheckM Bool
   | 0, _, _ => throw .budget
   | fuel + 1, ctx, type => do
@@ -315,16 +330,9 @@ def isProposition : Nat → Context → Ixon.Expr → CheckM Bool
       modify fun s => { s with bindings := before.bindings }
       return result
     | .sort _ | .lam .. => return false
-    | type =>
-      let before ← get
-      let sort ← tryCatch (some <$> (do whnf ctx.program fuel (← typeOf fuel ctx type)))
-        fun error => match error with
-          | .budget => throw .budget
-          | _ => pure none
-      modify fun s => { s with bindings := before.bindings }
-      return match sort with
-        | some (.sort s) => s == prop
-        | _ => false
+    | reduced =>
+      if ← hasSort fuel ctx type prop then return true
+      hasSort fuel ctx reduced prop
 
 /-- Argument demand at a call. A callee's multiplicity does not scale the
 demand on a value of a profile-shareable (immediate) type: the callee
@@ -448,7 +456,12 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
           let mut demand := used.demand
           if used.touched then
             origins := unionOrigins origins old.value.origins
-            if old.contract.uses != .many || !old.value.duplicable then duplicable := false
+            -- A captured immediate (a value of a profile-shareable type) is
+            -- copied into the closure, as at a call boundary: neither its
+            -- finite use nor its uniqueness makes the closure one-shot.
+            let immediate ← isShareable ctx.program fuel old.value.type
+            if (old.contract.uses != .many && !immediate) || !old.value.duplicable then
+              duplicable := false
             if old.owner.unique then
               -- Capturing an owner transfers its availability even when the
               -- body only borrows it. An explicit outer view permits reusable
@@ -456,12 +469,12 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
               let _ ← liftExcept (moveOwner id old.owner)
               owner := { owner with live := false }
               if demand == .erased then demand := .linear
-              duplicable := false
+              if !immediate then duplicable := false
           bindings := bindings.set! id { old with
             owner
             demand := old.demand.add (grade.mul demand)
             touched := old.touched || used.touched }
-        set { after with bindings }
+        modify fun s => { s with bindings }
         let codomain := codomain.getD output.type
         pure {
           type := .all input result domain codomain

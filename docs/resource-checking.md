@@ -47,10 +47,17 @@ Two call-boundary rules refine the scaling. A value of a profile-shareable type
 is an immediate: the callee receives a copy that holds no resource, so passing
 it to a nonzero input counts as one consumption whatever the callee's
 multiplicity. The caller's own reads still add, and a zero-use input still has
-zero demand. An argument whose domain is a proposition is a proof, which is
-erased computation: it has no demand, owner transfer, or origin. The adapter
-recognizes propositions from addressed universes (only a literal `Sort 0` is
-`Prop`). A proof returned or bound by a let is still checked as a value. A safe
+zero demand. A closure boundary crosses in the same way: a captured value of a
+profile-shareable type is copied into the closure, so neither its finite use
+nor its uniqueness makes the closure one-shot. A curried definition such as
+`(1 x : Nat) → (1 y : Nat) → Nat` therefore keeps its shared intermediate
+result, while a finite or unique capture of any other type still requires a
+unique (one-shot) closure. An argument whose domain is a proposition is a proof,
+which is erased computation: it has no demand, owner transfer, or origin. The
+adapter recognizes propositions from addressed universes (only a literal
+`Sort 0` is `Prop`); the unreduced type is typed first, because reduction can
+unfold a proposition such as `a ≤ b` to a class projection that has no field
+rule. A proof returned or bound by a let is still checked as a value. A safe
 theorem's own proof carries no resource obligation; its statement still takes
 part in relevance.
 
@@ -65,7 +72,8 @@ A branch join preserves availability only when every incoming path does.
 
 Constructing a closure transfers captured unique owners. That transfer counts
 even when the closure's body only borrows the captured owner. A reusable shared
-closure cannot hide a finite-use or uniquely consumed capture. A unique
+closure cannot hide a finite-use or uniquely consumed capture, unless the
+captured value is a shareable immediate (above). A unique
 closure can carry these captures and is consumed when invoked. Borrowing does
 not turn such a closure into a reusable shared callback.
 

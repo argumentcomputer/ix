@@ -36,7 +36,7 @@ projected loan ends before owner transfer	ok	910120072007	81012007a0062000a20f20
 discarding borrow before narrowing fresh result	ok	913320002000	81032000a20f20001071200110
 erased owner cannot be restored through a borrow	unsupported	911020002000	81002000a20f20001071200110
 erased view cannot be restored through a reborrow	unsupported	911320002000	81032000a20c200010a20f20001071200110
-shared closure cannot hide affine capture	capture	921620001720002000	8206200007200011
+shared closure may copy an affine immediate capture	ok	921620001720002000	8206200007200011
 unique closure retains finite capture	ok	920520001720002000	8205200007200011
 local closure may retain local input	ok	923f20003720002000	820f200007200011
 closure cannot hide local escape	unrestricted	921f20003720002000	820f200007200011
