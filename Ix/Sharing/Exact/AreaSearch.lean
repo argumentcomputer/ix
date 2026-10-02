@@ -201,12 +201,102 @@ def phiA (cx : SCtx) (posA : Array Nat) (tb : TBase) (aux : AAux)
       match fb () with
       | (cs, posC) => phiEL2 cs posA posC avail stored
 
+/-! ## Bounds and visible counts without tuples -/
+
+/-- Flags by area position of the area terms among `ts`. -/
+@[inline] def areaFlags (k : Nat) (posA ts : Array Nat) : Array Bool :=
+  ts.foldl (fun f t => let q := posA[t]!; if q != 0 then f.set! (q - 1) true else f)
+    (Array.replicate k false)
+
+/-- `reboundL` as four tables by area position: inline, merged, head and
+continuation bounds. -/
+structure RB where
+  inl : Array Nat
+  mrg : Array Nat
+  head : Array Nat
+  cont : Array Nat
+
+/-- `reboundL`, by area position, without tuples; the decided-out terms are
+read from flags by area position (`reboundL` reads them only at area terms). -/
+def reboundA (cx : SCtx) (posA : Array Nat) (outAll : Array Nat) : RB :=
+  let b0 := cx.bounds0
+  let k := cx.area.size
+  let of := areaFlags k posA outAll
+  match foldRange (fun (st : Array Nat × Array Nat × Array Nat × Array Nat) i =>
+      match st with
+      | (I, M, H, C) =>
+        let t := cx.area[i]!
+        match boundsValsG cx.up.prep cx.up.w (cx.cand[t]! && !of[i]!) (rdA posA H b0.headLB)
+            (rdA posA C b0.contLB) t with
+        | (a, b, c, d) => (I.push a, M.push b, H.push c, C.push d))
+      0 k (Array.mkEmpty k, Array.mkEmpty k, Array.mkEmpty k, Array.mkEmpty k) with
+  | (I, M, H, C) => { inl := I, mrg := M, head := H, cont := C }
+
+/-- `opaqueUnderL` on the tables of `reboundA`. -/
+@[inline] def opaqueUnderA (cx : SCtx) (posA : Array Nat) (b : RB) (t : Nat) : Bool :=
+  if cx.up.prep.family[t]! == .none then rdA posA b.inl cx.bounds0.inlineLB t ≥ cx.up.w
+  else rdA posA b.mrg cx.bounds0.mergedLB t ≥ cx.up.w
+
+/-- `opqArrR` on the tables of `reboundA`. -/
+@[inline] def opqArrA (cx : SCtx) (posA : Array Nat) (b : RB) (inAll : Array Nat) (t : Nat) :
+    Bool :=
+  cx.up.opaq[t]! || (decide (t < cx.up.opaq.size) && inAll.contains t && opaqueUnderA cx posA b t)
+
+/-- The value of `u` in a table by reversed area position, else `base`. -/
+@[inline] def rdRev (k : Nat) (pos : Array Nat) (L base : Array Nat) (u : Nat) : Nat :=
+  let q := pos[u]!
+  if q != 0 && k - q < L.size then L[k - q]! else base[u]!
+
+/-- Whether `q` is listed in `o`, from the flags `of` by area position when
+every listed term is in the area (`allIn`). -/
+@[inline] def outAt (posA : Array Nat) (of : Array Bool) (allIn : Bool) (o : Array Nat)
+    (q : Nat) : Bool :=
+  if allIn then (let p := posA[q]!; p != 0 && of[p - 1]!) else o.contains q
+
+/-- The visible weight of a parent `q` in `revisibleA`: 1 if it may be stored,
+else its capped visible count. -/
+@[inline] def visW (cx : SCtx) (posA : Array Nat) (isOut : Nat → Bool) (D : Array Nat)
+    (q : Nat) : Nat :=
+  if cx.cand[q]! && !isOut q then 1 else min (rdRev cx.area.size posA D cx.vis0.1 q) visibleCap
+
+/-- `revisibleL` as two tables by reversed area position, without tuples. -/
+def revisibleA (cx : SCtx) (posA : Array Nat) (outAll : Array Nat) : Array Nat × Array Nat :=
+  let k := cx.area.size
+  let isOut := outAt posA (areaFlags k posA outAll) (outAll.all (posA[·]! != 0)) outAll
+  foldRange (fun (st : Array Nat × Array Nat) i =>
+    match st with
+    | (D, Hh) =>
+      let j := k - 1 - i
+      let r := cx.rootOcc[j]!
+      let es := cx.inEdges[j]!
+      let d := es.foldl (fun acc (e : Nat × Nat × Nat) => acc + e.2.1 * visW cx posA isOut D e.1) r
+      let h := es.foldl (fun acc (e : Nat × Nat × Nat) => acc + e.2.2 * visW cx posA isOut D e.1) r
+      (D.push d, Hh.push h))
+    0 k (Array.mkEmpty k, Array.mkEmpty k)
+
+/-- `reclassifyL` on the tables of `reboundA` and `revisibleA`. -/
+def reclassifyA (cx : SCtx) (posA : Array Nat) (outAll localIn und : Array Nat) :
+    Array Nat × Array (Nat × _root_.Int) × RB :=
+  let b := reboundA cx posA outAll
+  let vis := revisibleA cx posA outAll
+  let k := cx.area.size
+  let gains := und.map fun t =>
+    let d := rdRev k posA vis.1 cx.vis0.1 t
+    let h := rdRev k posA vis.2 cx.vis0.2 t
+    (t, storedGainG cx.up.prep (rdA posA b.inl cx.bounds0.inlineLB)
+      (rdA posA b.mrg cx.bounds0.mergedLB) cx.up.w t d h, 1 ≤ d && h ≤ d)
+  let isForced := fun (e : Nat × _root_.Int × Bool) => e.2.2 && e.2.1 ≥ cx.theta
+  let forced := (gains.filter isForced).map (·.1)
+  let localIn := if forced.isEmpty then localIn else mergeSorted localIn forced
+  let open_ := (gains.filter (!isForced ·)).map fun e => (e.1, e.2.1)
+  (localIn, open_, b)
+
 /-- `SCtx.sepCheck` over the area: the reach labels of the area terms, every
 other term unlabeled-reaching. -/
 def sepCheckA (cx : SCtx) (posA : Array Nat) (g inRed outRed : Array Nat) : Bool :=
   let n := cx.up.prep.dag.size
-  let bR := reboundL cx posA outRed
-  let opqR := fun t => opqArrR cx posA bR inRed t
+  let bR := reboundA cx posA outRed
+  let opqR := fun t => opqArrA cx posA bR inRed t
   let lab := sepLab n cx.members g inRed outRed
   let rl := reachLabelsL cx.up.prep.dag cx.area posA opqR lab
   g.all (fun t => (decide (t < n) && cx.members.contains t) && lab t == some 1) &&
@@ -222,8 +312,8 @@ def solvePA (cx : SCtx) (posA : Array Nat) (tb : TBase) (aux : AAux)
     Nat → Array Nat → Array Nat → Array Nat → SState → Except SharingError (CTable × SState)
   | 0, _, _, _, _ => throw (.internal "component search fuel exhausted")
   | fuel + 1, g, inAll, outAll, st => do
-    let bA := reboundL cx posA outAll
-    let opqA := fun t => opqArrR cx posA bA inAll t
+    let bA := reboundA cx posA outAll
+    let opqA := fun t => opqArrA cx posA bA inAll t
     let inSet : Std.HashSet Nat := inAll.foldl (·.insert ·) {}
     let outSet : Std.HashSet Nat := outAll.foldl (·.insert ·) {}
     let (entries, _) := cx.memoKey opqA inSet outSet g
@@ -258,7 +348,7 @@ def nodePA (cx : SCtx) (posA : Array Nat) (tb : TBase) (aux : AAux)
       Except SharingError (CTable × SState)
   | 0, _, _, _, _, _, _, _, _ => throw (.internal "component search fuel exhausted")
   | fuel + 1, phi0, inCtx, outAll, nOutCtx, localIn, und, ct, st => do
-    let (localIn, open_, b) := reclassifyL cx posA outAll localIn und
+    let (localIn, open_, b) := reclassifyA cx posA outAll localIn und
     let und := open_.map (·.1)
     let inAll := inCtx ++ localIn
     let inSet : Std.HashSet Nat := inAll.foldl (·.insert ·) {}
@@ -268,7 +358,7 @@ def nodePA (cx : SCtx) (posA : Array Nat) (tb : TBase) (aux : AAux)
     let delta : _root_.Int := (phi : _root_.Int) - (phi0 : _root_.Int)
     if und.isEmpty then return (ct.add (delta, localIn), st)
     if ct.prunes delta cx.slack then return (ct, st)
-    let opq := fun t => cx.up.opaq[t]! || (inSet.contains t && opaqueUnderL cx posA b t)
+    let opq := fun t => cx.up.opaq[t]! || (inSet.contains t && opaqueUnderA cx posA b t)
     let availFixed := fun t => inSet.contains t && !opq t
     let groups := cx.groups opq availFixed und
     unless partitionCheck und groups do

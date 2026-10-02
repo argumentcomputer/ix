@@ -41,7 +41,10 @@ theorem searchComponentA_eq {cx : SCtx} {posA posC : Array Nat} (hr : Ready cx p
     rw [Array.all_eq_true']
     intro m hmm
     exact hm m (Array.contains_iff_mem.mpr hmm))]
-  simp only [(block_eq cx posA posC tb aux fb limits hphi hsep _).1] <;> rfl
+  simp only [(block_eq cx posA posC tb aux fb limits hphi hsep
+    (fun o l u => reclassifyA_eq cx posA hr.area o l u)
+    (fun o t => opaqueUnderA_eq cx posA hr.area o t)
+    (fun o i t => opqArrA_eq cx posA hr.area o i t) _).1] <;> rfl
 
 /-! ## Position tables -/
 

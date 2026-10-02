@@ -1,7 +1,10 @@
 /-
-  The area search computes the specification's search, part 5: the
-  separation check. `sepCheckA` (reach labels over the area) equals
-  `sepCheckL` (reach labels over the closure) (`sepCheckA_eq`).
+  The area search computes the specification's search, part 5: the search
+  block. The bound and visible-count tables without tuples are those of
+  `reboundL` and `revisibleL` field by field (`reboundA_eq`, `revisibleA_eq`);
+  `sepCheckA` (reach labels over the area) equals `sepCheckL` (reach labels
+  over the closure) (`sepCheckA_eq`); and the mutual search block on the area
+  is the local one (`block_eq`).
 -/
 module
 
@@ -46,6 +49,286 @@ theorem arr_all_congr {α : Type} (a : Array α) (p q : α → Bool)
   | cons x l ih =>
     simp only [List.all_cons]
     rw [h x List.mem_cons_self, ih (fun y hy => h y (List.mem_cons_of_mem _ hy))]
+
+/-! ## Bounds and visible counts without tuples
+
+`reboundA` and `revisibleA` keep the tables of `reboundL` and `revisibleL`
+field by field (`reboundA_eq`, `revisibleA_eq`), so every reader of them is
+the specification's reader. -/
+
+theorem rdA_eq_readAtF (pos L base : Array Nat) (u : Nat) :
+    rdA pos L base u = readAtF (posOf pos) L id (base[·]!) u := by
+  unfold rdA readAtF posOf
+  by_cases h : pos[u]! = 0
+  · simp [h]
+  · have hb : (pos[u]! == 0) = false := by simpa using h
+    have hn : (pos[u]! != 0) = true := by simpa using h
+    simp only [hb, hn, Bool.false_eq_true, if_false, Bool.true_and, decide_eq_true_eq, id]
+
+theorem rdA_map {α : Type} [Inhabited α] (pos : Array Nat) (L : Array α) (proj : α → Nat)
+    (base : Array Nat) (u : Nat) :
+    rdA pos (L.map proj) base u = readAtF (posOf pos) L proj (base[·]!) u := by
+  rw [rdA_eq_readAtF, Ix.Sharing.Exact.LocalSearch.readAtF_map]
+
+theorem rdRev_eq_readAtF (k : Nat) (pos L base : Array Nat) (u : Nat) :
+    rdRev k pos L base u = readAtF (posRev k pos) L id (base[·]!) u := by
+  unfold rdRev readAtF posRev posOf
+  by_cases h : pos[u]! = 0
+  · simp [h]
+  · have hb : (pos[u]! == 0) = false := by simpa using h
+    have hn : (pos[u]! != 0) = true := by simpa using h
+    have hk : k - 1 - (pos[u]! - 1) = k - pos[u]! := by omega
+    simp only [hb, hn, Bool.false_eq_true, if_false, hk, Bool.true_and, decide_eq_true_eq, id]
+
+theorem rdRev_map {α : Type} [Inhabited α] (k : Nat) (pos : Array Nat) (L : Array α)
+    (proj : α → Nat) (base : Array Nat) (u : Nat) :
+    rdRev k pos (L.map proj) base u = readAtF (posRev k pos) L proj (base[·]!) u := by
+  rw [rdRev_eq_readAtF, Ix.Sharing.Exact.LocalSearch.readAtF_map]
+
+theorem areaFlags_spec (k : Nat) (posA ts : Array Nat) (i : Nat) :
+    (areaFlags k posA ts)[i]! = true ↔ (i < k ∧ ∃ x ∈ ts.toList, posA[x]! = i + 1) := by
+  unfold areaFlags
+  rw [← Array.foldl_toList]
+  have key : ∀ (l : List Nat) (f : Array Bool), f.size = k →
+      (l.foldl (fun f t => let q := posA[t]!; if q != 0 then f.set! (q - 1) true else f) f).size = k ∧
+      ((l.foldl (fun f t => let q := posA[t]!; if q != 0 then f.set! (q - 1) true else f) f)[i]!
+        = true ↔ (f[i]! = true ∨ (i < k ∧ ∃ x ∈ l, posA[x]! = i + 1))) := by
+    intro l
+    induction l with
+    | nil => intro f hf; simp [hf]
+    | cons x l ih =>
+      intro f hf
+      simp only [List.foldl_cons]
+      by_cases hx : posA[x]! = 0
+      · have hb : (posA[x]! != 0) = false := by simp [hx]
+        simp only [hb, Bool.false_eq_true, if_false]
+        obtain ⟨h1, h2⟩ := ih f hf
+        refine ⟨h1, ?_⟩
+        rw [h2]
+        constructor
+        · rintro (h | ⟨hi, y, hy, hyi⟩)
+          · exact Or.inl h
+          · exact Or.inr ⟨hi, y, List.mem_cons_of_mem _ hy, hyi⟩
+        · rintro (h | ⟨hi, y, hy, hyi⟩)
+          · exact Or.inl h
+          · rcases List.mem_cons.mp hy with rfl | hy
+            · omega
+            · exact Or.inr ⟨hi, y, hy, hyi⟩
+      · have hb : (posA[x]! != 0) = true := by simp [hx]
+        simp only [hb, if_true]
+        obtain ⟨h1, h2⟩ := ih (f.set! (posA[x]! - 1) true) (by simp [hf])
+        refine ⟨h1, ?_⟩
+        rw [h2, getElem!_setBang]
+        constructor
+        · rintro (h | ⟨hi, y, hy, hyi⟩)
+          · split at h
+            · rename_i hc
+              exact Or.inr ⟨by omega, x, List.mem_cons_self, by omega⟩
+            · exact Or.inl h
+          · exact Or.inr ⟨hi, y, List.mem_cons_of_mem _ hy, hyi⟩
+        · rintro (h | ⟨hi, y, hy, hyi⟩)
+          · left
+            split
+            · rfl
+            · exact h
+          · rcases List.mem_cons.mp hy with rfl | hy
+            · left
+              rw [if_pos ⟨by omega, by omega⟩]
+            · exact Or.inr ⟨hi, y, hy, hyi⟩
+  obtain ⟨_, h2⟩ := key ts.toList (Array.replicate k false) (by simp)
+  rw [h2]
+  have h0 : (Array.replicate k false)[i]! = false := by
+    by_cases hi : i < k
+    · rw [getElem!_pos _ i (by simpa using hi)]; simp
+    · rw [getElem!_neg _ i (by simpa using hi)]; rfl
+  rw [h0]
+  simp
+
+/-- The flags of `areaFlags` at an area position: whether the term there is
+listed. -/
+theorem areaFlags_at {area posA ts : Array Nat} (hpos : PosFn area.size (area[·]!) (posOf posA))
+    {i : Nat} (hi : i < area.size) :
+    (areaFlags area.size posA ts)[i]! = ts.contains area[i]! := by
+  have h := areaFlags_spec area.size posA ts i
+  cases hc : ts.contains area[i]! with
+  | true =>
+    rw [h]
+    refine ⟨hi, area[i]!, Array.mem_toList_iff.mpr (Array.contains_iff_mem.mp hc), ?_⟩
+    exact (Ix.Sharing.Exact.LocalSearch.posOf_some posA _ i).mp ((hpos _ i).mpr ⟨hi, rfl⟩)
+  | false =>
+    cases hf : (areaFlags area.size posA ts)[i]! with
+    | false => rfl
+    | true =>
+      obtain ⟨_, x, hx, hxi⟩ := h.mp hf
+      have := (hpos x i).mp ((Ix.Sharing.Exact.LocalSearch.posOf_some posA x i).mpr hxi)
+      simp only at this
+      rw [this.2] at hc
+      rw [Array.contains_iff_mem.mpr (Array.mem_toList_iff.mp hx)] at hc
+      cases hc
+
+theorem reboundA_eq (cx : SCtx) (posA : Array Nat)
+    (hpos : PosFn cx.area.size (cx.area[·]!) (posOf posA)) (o : Array Nat) :
+    (reboundA cx posA o).inl = (reboundL cx posA o).map (·.1) ∧
+      (reboundA cx posA o).mrg = (reboundL cx posA o).map (·.2.1) ∧
+      (reboundA cx posA o).head = (reboundL cx posA o).map (·.2.2.1) ∧
+      (reboundA cx posA o).cont = (reboundL cx posA o).map (·.2.2.2) := by
+  have key : ∀ m, m ≤ cx.area.size →
+      foldRange (fun (st : Array Nat × Array Nat × Array Nat × Array Nat) i =>
+        match st with
+        | (I, M, H, C) =>
+          match boundsValsG cx.up.prep cx.up.w
+              (cx.cand[cx.area[i]!]! && !(areaFlags cx.area.size posA o)[i]!)
+              (rdA posA H cx.bounds0.headLB) (rdA posA C cx.bounds0.contLB) cx.area[i]! with
+          | (a, b, c, d) => (I.push a, M.push b, H.push c, C.push d))
+        0 m (Array.mkEmpty cx.area.size, Array.mkEmpty cx.area.size, Array.mkEmpty cx.area.size,
+          Array.mkEmpty cx.area.size) =
+      ((foldRange (fun L i => L.push (boundsValsG cx.up.prep cx.up.w
+          (maybeStoredAt cx o cx.area[i]!)
+          (readAtF (posOf posA) L (·.2.2.1) (cx.bounds0.headLB[·]!))
+          (readAtF (posOf posA) L (·.2.2.2) (cx.bounds0.contLB[·]!)) cx.area[i]!)) 0 m
+          (Array.mkEmpty cx.area.size)).map (·.1),
+       (foldRange (fun L i => L.push (boundsValsG cx.up.prep cx.up.w
+          (maybeStoredAt cx o cx.area[i]!)
+          (readAtF (posOf posA) L (·.2.2.1) (cx.bounds0.headLB[·]!))
+          (readAtF (posOf posA) L (·.2.2.2) (cx.bounds0.contLB[·]!)) cx.area[i]!)) 0 m
+          (Array.mkEmpty cx.area.size)).map (·.2.1),
+       (foldRange (fun L i => L.push (boundsValsG cx.up.prep cx.up.w
+          (maybeStoredAt cx o cx.area[i]!)
+          (readAtF (posOf posA) L (·.2.2.1) (cx.bounds0.headLB[·]!))
+          (readAtF (posOf posA) L (·.2.2.2) (cx.bounds0.contLB[·]!)) cx.area[i]!)) 0 m
+          (Array.mkEmpty cx.area.size)).map (·.2.2.1),
+       (foldRange (fun L i => L.push (boundsValsG cx.up.prep cx.up.w
+          (maybeStoredAt cx o cx.area[i]!)
+          (readAtF (posOf posA) L (·.2.2.1) (cx.bounds0.headLB[·]!))
+          (readAtF (posOf posA) L (·.2.2.2) (cx.bounds0.contLB[·]!)) cx.area[i]!)) 0 m
+          (Array.mkEmpty cx.area.size)).map (·.2.2.2)) := by
+    intro m
+    induction m with
+    | zero => intro _; simp [Ix.Sharing.Exact.LocalSearch.foldRange_zero]
+    | succ m ih =>
+      intro hm
+      rw [Ix.Sharing.Exact.LocalSearch.foldRange_succ, Ix.Sharing.Exact.LocalSearch.foldRange_succ,
+        Nat.zero_add, ih (by omega)]
+      generalize foldRange (fun L i => L.push (boundsValsG cx.up.prep cx.up.w
+          (maybeStoredAt cx o cx.area[i]!)
+          (readAtF (posOf posA) L (·.2.2.1) (cx.bounds0.headLB[·]!))
+          (readAtF (posOf posA) L (·.2.2.2) (cx.bounds0.contLB[·]!)) cx.area[i]!)) 0 m
+          (Array.mkEmpty cx.area.size) = L
+      have hfl : (cx.cand[cx.area[m]!]! && !(areaFlags cx.area.size posA o)[m]!) =
+          maybeStoredAt cx o cx.area[m]! := by
+        rw [areaFlags_at hpos (by omega)]; rfl
+      have hH : rdA posA (L.map (·.2.2.1)) cx.bounds0.headLB =
+          readAtF (posOf posA) L (·.2.2.1) (cx.bounds0.headLB[·]!) := funext (rdA_map _ _ _ _)
+      have hC : rdA posA (L.map (·.2.2.2)) cx.bounds0.contLB =
+          readAtF (posOf posA) L (·.2.2.2) (cx.bounds0.contLB[·]!) := funext (rdA_map _ _ _ _)
+      simp only [hfl, hH, hC, Array.map_push]
+  have := key cx.area.size (Nat.le_refl _)
+  simp only [reboundA, reboundL, localFold]
+  rw [this]
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+theorem fold_pair (l : List (Nat × Nat × Nat)) (f g : Nat × Nat × Nat → Nat) (a b : Nat) :
+    l.foldl (fun (dh : Nat × Nat) e => (dh.1 + f e, dh.2 + g e)) (a, b) =
+      (l.foldl (fun acc e => acc + f e) a, l.foldl (fun acc e => acc + g e) b) := by
+  induction l generalizing a b with
+  | nil => rfl
+  | cons x l ih => simp only [List.foldl_cons]; exact ih _ _
+
+theorem foldRange_sim {σ τ : Type} (f : σ → Nat → σ) (g : τ → Nat → τ) (R : σ → τ → Prop)
+    (k : Nat) (hstep : ∀ s t i, i < k → R s t → R (f s i) (g t i)) (s0 : σ) (t0 : τ)
+    (h0 : R s0 t0) : R (foldRange f 0 k s0) (foldRange g 0 k t0) := by
+  have key : ∀ m, m ≤ k → R (foldRange f 0 m s0) (foldRange g 0 m t0) := by
+    intro m
+    induction m with
+    | zero => intro _; exact h0
+    | succ m ih =>
+      intro hm
+      rw [Ix.Sharing.Exact.LocalSearch.foldRange_succ, Ix.Sharing.Exact.LocalSearch.foldRange_succ,
+        Nat.zero_add]
+      exact hstep _ _ m (by omega) (ih (by omega))
+  exact key k (Nat.le_refl _)
+
+theorem outAt_eq {area posA : Array Nat} (hpos : PosFn area.size (area[·]!) (posOf posA))
+    (o : Array Nat) (q : Nat) :
+    outAt posA (areaFlags area.size posA o) (o.all (posA[·]! != 0)) o q = o.contains q := by
+  unfold outAt
+  split
+  · rename_i hall
+    by_cases hq : posA[q]! = 0
+    · have hc : o.contains q = false := by
+        cases hc : o.contains q
+        · rfl
+        · have := Array.all_eq_true'.mp hall q (Array.contains_iff_mem.mp hc)
+          simp [hq] at this
+      rw [hc]
+      simp [hq]
+    · obtain ⟨i, hi⟩ : ∃ i, posA[q]! = i + 1 := ⟨posA[q]! - 1, by omega⟩
+      have hpi := (hpos q i).mp ((Ix.Sharing.Exact.LocalSearch.posOf_some posA q i).mpr hi)
+      simp only at hpi
+      simp only []
+      rw [hi, Nat.add_sub_cancel, areaFlags_at hpos hpi.1, hpi.2]
+      simp
+  · rfl
+
+theorem revisibleA_eq (cx : SCtx) (posA : Array Nat)
+    (hpos : PosFn cx.area.size (cx.area[·]!) (posOf posA)) (o : Array Nat) :
+    (revisibleA cx posA o).1 = (revisibleL cx posA o).map (·.1) ∧
+      (revisibleA cx posA o).2 = (revisibleL cx posA o).map (·.2) := by
+  have hR : (fun (s : Array Nat × Array Nat) (t : Array (Nat × Nat)) =>
+      s = (t.map (·.1), t.map (·.2))) (revisibleA cx posA o) (revisibleL cx posA o) := by
+    simp only [revisibleA, revisibleL, localFold]
+    apply foldRange_sim (R := fun (s : Array Nat × Array Nat) (t : Array (Nat × Nat)) =>
+      s = (t.map (·.1), t.map (·.2)))
+    · intro s t i _ hst
+      subst hst
+      have hw : ∀ q, visW cx posA (outAt posA (areaFlags cx.area.size posA o)
+          (o.all (posA[·]! != 0)) o) (t.map (·.1)) q =
+          (if maybeStoredAt cx o q then 1
+           else min (readAtF (posRev cx.area.size posA) t (·.1) (cx.vis0.1[·]!) q) visibleCap) := by
+        intro q
+        unfold visW maybeStoredAt
+        rw [outAt_eq hpos, rdRev_map]
+      simp only [hw, Array.map_push]
+      rw [← Array.foldl_toList, ← Array.foldl_toList, ← Array.foldl_toList, fold_pair]
+    · simp
+  simp only at hR
+  rw [hR]
+  exact ⟨rfl, rfl⟩
+
+theorem opaqueUnderA_eq (cx : SCtx) (posA : Array Nat)
+    (hpos : PosFn cx.area.size (cx.area[·]!) (posOf posA)) (o : Array Nat) (t : Nat) :
+    opaqueUnderA cx posA (reboundA cx posA o) t = opaqueUnderL cx posA (reboundL cx posA o) t := by
+  obtain ⟨h1, h2, _, _⟩ := reboundA_eq cx posA hpos o
+  unfold opaqueUnderA opaqueUnderL
+  rw [h1, h2, rdA_map, rdA_map]
+
+theorem opqArrA_eq (cx : SCtx) (posA : Array Nat)
+    (hpos : PosFn cx.area.size (cx.area[·]!) (posOf posA)) (o inAll : Array Nat) (t : Nat) :
+    opqArrA cx posA (reboundA cx posA o) inAll t = opqArrR cx posA (reboundL cx posA o) inAll t := by
+  unfold opqArrA opqArrR
+  rw [opaqueUnderA_eq cx posA hpos]
+
+theorem reclassifyA_eq (cx : SCtx) (posA : Array Nat)
+    (hpos : PosFn cx.area.size (cx.area[·]!) (posOf posA)) (o localIn und : Array Nat) :
+    reclassifyA cx posA o localIn und =
+      ((reclassifyL cx posA o localIn und).1, (reclassifyL cx posA o localIn und).2.1,
+        reboundA cx posA o) := by
+  obtain ⟨h1, h2, _, _⟩ := reboundA_eq cx posA hpos o
+  obtain ⟨v1, v2⟩ := revisibleA_eq cx posA hpos o
+  have e1 : rdA posA (reboundA cx posA o).inl cx.bounds0.inlineLB =
+      readAtF (posOf posA) (reboundL cx posA o) (·.1) (cx.bounds0.inlineLB[·]!) := by
+    rw [h1]; exact funext (rdA_map _ _ _ _)
+  have e2 : rdA posA (reboundA cx posA o).mrg cx.bounds0.mergedLB =
+      readAtF (posOf posA) (reboundL cx posA o) (·.2.1) (cx.bounds0.mergedLB[·]!) := by
+    rw [h2]; exact funext (rdA_map _ _ _ _)
+  have e3 : ∀ t, rdRev cx.area.size posA (revisibleA cx posA o).1 cx.vis0.1 t =
+      readAtF (posRev cx.area.size posA) (revisibleL cx posA o) (·.1) (cx.vis0.1[·]!) t := by
+    intro t; rw [v1, rdRev_map]
+  have e4 : ∀ t, rdRev cx.area.size posA (revisibleA cx posA o).2 cx.vis0.2 t =
+      readAtF (posRev cx.area.size posA) (revisibleL cx posA o) (·.2) (cx.vis0.2[·]!) t := by
+    intro t; rw [v2, rdRev_map]
+  unfold reclassifyA reclassifyL
+  simp only [e1, e2, e3, e4]
 
 /-! ## Local folds as fixed points -/
 
@@ -295,7 +578,11 @@ theorem sepCheckA_eq {cx : SCtx} {posA posC : Array Nat}
   obtain ⟨_, _, _, _, _, _, _, _, hareaLt, hclLt⟩ :=
     Ix.Sharing.Exact.LocalSearch.localSearchOK_spec hr.ok
   obtain ⟨hincA, hincC⟩ := Ix.Sharing.Exact.LocalSearch.localSearchOK_inc hr.ok
+  have hoa : ∀ t, opqArrA (lightCx cx) posA (reboundA (lightCx cx) posA outRed) inRed t =
+      opqArrR cx posA (reboundL cx posA outRed) inRed t :=
+    fun t => opqArrA_eq cx posA hr.area outRed inRed t
   unfold sepCheckA sepCheckL
+  simp only [hoa]
   exact sep_core hdag cx.members g inRed outRed
     (fun t => opqArrR cx posA (reboundL cx posA outRed) inRed t) (cx.up.opaq[·]!)
     cx.area posA cx.closure posC hincA hr.area hincC hr.closure
@@ -308,7 +595,14 @@ theorem block_eq (cx : SCtx) (posA posC : Array Nat) (tb : TBase) (aux : AAux)
     (fb : Unit → SCtx × Array Nat) (limits : Limits)
     (hphi : ∀ avail stored, phiA (lightCx cx) posA tb aux fb avail stored =
       phiEL2 cx posA posC avail stored)
-    (hsep : ∀ g i o, sepCheckA (lightCx cx) posA g i o = sepCheckL cx posA posC g i o) :
+    (hsep : ∀ g i o, sepCheckA (lightCx cx) posA g i o = sepCheckL cx posA posC g i o)
+    (hrc : ∀ o l u, reclassifyA (lightCx cx) posA o l u =
+      ((reclassifyL cx posA o l u).1, (reclassifyL cx posA o l u).2.1,
+        reboundA (lightCx cx) posA o))
+    (hou : ∀ o t, opaqueUnderA (lightCx cx) posA (reboundA (lightCx cx) posA o) t =
+      opaqueUnderL cx posA (reboundL cx posA o) t)
+    (hoa : ∀ o i t, opqArrA (lightCx cx) posA (reboundA (lightCx cx) posA o) i t =
+      opqArrR cx posA (reboundL cx posA o) i t) :
     ∀ fuel,
     (∀ g inAll outAll st, solvePA (lightCx cx) posA tb aux fb limits fuel g inAll outAll st =
       solvePL cx posA posC limits fuel g inAll outAll st) ∧
@@ -328,13 +622,14 @@ theorem block_eq (cx : SCtx) (posA posC : Array Nat) (tb : TBase) (aux : AAux)
     · simp only [nodePA, nodePL]
     · simp only [splitPA, splitPL]
   | fuel + 1 => by
-    obtain ⟨ihP, ihB, ihN, ihS⟩ := block_eq cx posA posC tb aux fb limits hphi hsep fuel
+    obtain ⟨ihP, ihB, ihN, ihS⟩ :=
+      block_eq cx posA posC tb aux fb limits hphi hsep hrc hou hoa fuel
     refine ⟨fun g inAll outAll st => ?_, fun g inRed outRed st => ?_,
       fun phi0 inCtx outAll nOutCtx localIn und ct st => ?_,
       fun inAll outAll grps comb st => ?_⟩
-    · simp only [solvePA, solvePL, hsep, ihB] <;> rfl
+    · simp only [solvePA, solvePL, hsep, hoa, ihB] <;> rfl
     · simp only [solveBodyA, solveBodyL, hphi, ihN] <;> rfl
-    · simp only [nodePA, nodePL, hphi, ihN, ihS] <;> rfl
+    · simp only [nodePA, nodePL, hphi, hrc, hou, ihN, ihS] <;> rfl
     · cases grps with
       | nil => simp only [splitPA, splitPL]
       | cons grp grps => simp only [splitPA, splitPL, ihP, ihS]
