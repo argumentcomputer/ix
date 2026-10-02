@@ -51,4 +51,8 @@ extern "C" {
 int aiur_trace_seed_cache_upload(int device, const uint8_t* const* spans,
     const size_t* lengths, size_t count, size_t total, uint8_t** cached);
 int aiur_trace_seed_cache_free(int device, uint8_t* cached);
+// A device tile for driving a writer outside the prover; the download copies
+// it to `host` after the per-thread stream's work on it and frees it.
+int aiur_trace_tile_alloc(int device, size_t words, uint64_t** tile);
+int aiur_trace_tile_download(int device, uint64_t* tile, size_t words, uint64_t* host);
 }

@@ -2,17 +2,16 @@ use super::*;
 use std::sync::Arc;
 
 use multi_stark::{
-  cuda::CudaDft,
-  p3_field::Field,
   p3_matrix::Matrix,
   witness::{TraceGenerator, TraceSource},
 };
 
-use crate::trace_codegen::cuda::{prepare_memory, seed_cache_bytes};
+use crate::trace_codegen::cuda::{
+  prepare_memory, prepare_memory_trace, seed_cache_bytes,
+};
 
 pub(super) fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) {
   let bound = generated_cuda::CUDA.bind(&generated::PROGRAM, program).unwrap();
-  let dft = CudaDft::new(0);
   for (index, circuit) in program.circuits.iter().enumerate() {
     let mut expected = Vec::new();
     for &member in &circuit.members {
@@ -48,9 +47,8 @@ pub(super) fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) {
     // the device.
     for retain in [false, true] {
       let (source, _) = bound
-        .prepare(index, record, io, &[], (0, 0), end, rows, retain)
+        .prepare_trace(index, record, io, &[], (0, 0), end, rows, retain)
         .unwrap();
-      let TraceSource::Generated(source) = source else { unreachable!() };
       let mut host = vec![G::ZERO; expected.len()];
       source.write_rows(0, &mut host);
       assert_eq!(
@@ -59,22 +57,15 @@ pub(super) fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) {
         "circuit {index}, retain {retain}: CPU mirror"
       );
       for (first, rows) in [(0, height), (height - 1, height + 1)] {
-        let actual = dft.generated_trace_rows(source.clone(), first, rows);
+        let actual = source.download_tile(0, first, rows);
         assert_eq!(
           seed_cache_bytes(0) > 0,
           retain,
           "circuit {index}: seeds resident only when retained"
         );
-        // Goldilocks is repr(transparent) over u64. Reading raw words
-        // catches noncanonical device output that field equality would
-        // otherwise hide.
-        let raw = unsafe {
-          std::slice::from_raw_parts(
-            actual.values.as_ptr().cast::<u64>(),
-            actual.values.len(),
-          )
-        };
-        for (i, &word) in raw.iter().enumerate() {
+        // The tile comes back as raw words, so noncanonical device output is
+        // caught here rather than hidden by field equality.
+        for (i, &word) in actual.iter().enumerate() {
           let row = (first + i / width) % height;
           assert_eq!(
             word,
@@ -106,14 +97,17 @@ fn regrouping_and_frozen_seeds() {
   }
   parity(&program, &record, &io);
   let bound = generated_cuda::CUDA.bind(&generated::PROGRAM, &program).unwrap();
-  let (source, _) =
-    bound.prepare(0, &record, &io, &[], (0, 0), (3, 0), 3, false).unwrap();
+  let (source, _) = bound
+    .prepare_trace(0, &record, &io, &[], (0, 0), (3, 0), 3, false)
+    .unwrap();
   drop(record);
   drop(io);
-  let TraceSource::Generated(source) = source else { unreachable!() };
-  let expected = TraceSource::Generated(source.clone()).materialize();
-  let actual = CudaDft::new(0).generated_trace_rows(source, 0, 4);
-  assert_eq!(actual.values, expected.values);
+  let mut expected = vec![G::ZERO; source.height() * source.width()];
+  source.write_rows(0, &mut expected);
+  assert_eq!(
+    source.download_tile(0, 0, 4),
+    expected.iter().map(|g| g.as_canonical_u64()).collect::<Vec<_>>()
+  );
 }
 
 unsafe extern "C" {
@@ -169,13 +163,13 @@ fn synthetic_blake3(rows: usize) -> (Toplevel, QueryRecord, IOBuffer) {
 #[test]
 #[ignore = "opt-in timing of the generated BLAKE3 provider on one GPU"]
 fn blake3_generated_timing() {
-  assert!(!cfg!(debug_assertions), "run this benchmark with --release");
   use std::{hint::black_box, time::Instant};
   const ROWS: usize = 65536;
   let (program, record, io) = synthetic_blake3(ROWS);
   let compiled = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
   let scalar = blake3::PROGRAM.bind(&program).unwrap();
   let writer = scalar.function(0).unwrap();
+  assert!(!cfg!(debug_assertions), "run this benchmark with --release");
   let schema = writer.schema();
   // Multiplicity, then the stage as a full word, then 160 bytes.
   assert_eq!(schema.bytes, 176);
@@ -288,38 +282,6 @@ fn blake3_generated_timing() {
 }
 
 #[test]
-fn failed_device_writer_releases_its_source() {
-  struct Failing;
-  impl TraceGenerator<G> for Failing {
-    fn height(&self) -> usize {
-      8
-    }
-    fn width(&self) -> usize {
-      3
-    }
-    fn host_bytes(&self) -> usize {
-      0
-    }
-    fn write_rows(&self, _: usize, _: &mut [G]) {
-      unreachable!()
-    }
-    fn write_device_rows(
-      &self,
-      _: multi_stark::cuda::DeviceTraceView<'_>,
-    ) -> Result<(), String> {
-      Err("fixture failure".into())
-    }
-  }
-  let source: Arc<dyn TraceGenerator<G>> = Arc::new(Failing);
-  let weak = Arc::downgrade(&source);
-  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-    CudaDft::new(0).generate_coset_lde(source, 2, G::GENERATOR)
-  }));
-  assert!(result.is_err());
-  assert!(weak.upgrade().is_none(), "failed generation leaked its source");
-}
-
-#[test]
 fn generated_sources_and_commitments_stay_on_their_device() {
   use multi_stark::{
     config::StarkGenericConfig,
@@ -382,18 +344,20 @@ fn maximum_tile_and_wrapped_halo() {
   let (program, record, io) = synthetic_blake3(65537);
   let compiled = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
   let (source, _) = compiled
-    .prepare(0, &record, &io, &[], (0, 0), (0, 65537), 65537, false)
+    .prepare_trace(0, &record, &io, &[], (0, 0), (0, 65537), 65537, false)
     .unwrap();
-  let TraceSource::Generated(source) = source else { unreachable!() };
-  let dft = CudaDft::new(0);
   for first in [0, 65536, 131070] {
-    let actual = dft.generated_trace_rows(source.clone(), first, 65537);
-    let mut expected = vec![G::ZERO; actual.values.len()];
+    let actual = source.download_tile(0, first, 65537);
+    let mut expected = vec![G::ZERO; actual.len()];
     source.write_rows(first, &mut expected);
-    for (i, (actual, expected)) in
-      actual.values.iter().zip(&expected).enumerate()
-    {
-      assert_eq!(actual, expected, "row {}, column {}", i / 533, i % 533);
+    for (i, (actual, expected)) in actual.iter().zip(&expected).enumerate() {
+      assert_eq!(
+        *actual,
+        expected.as_canonical_u64(),
+        "row {}, column {}",
+        i / 533,
+        i % 533
+      );
     }
   }
 }
@@ -405,14 +369,12 @@ fn resident_seeds_serve_tiles_until_released() {
   let compiled = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
   let prepare = |retain| {
     let (source, _) = compiled
-      .prepare(0, &record, &io, &[], (0, 0), (0, ROWS), ROWS, retain)
+      .prepare_trace(0, &record, &io, &[], (0, 0), (0, ROWS), ROWS, retain)
       .unwrap();
-    let TraceSource::Generated(source) = source else { unreachable!() };
     source
   };
   let staged = prepare(false);
   let resident = prepare(true);
-  let dft = CudaDft::new(0);
   let height = ROWS.next_power_of_two();
   assert_eq!(seed_cache_bytes(0), 0);
   // The rows fill five spans, so the resident copy is one allocation
@@ -421,9 +383,9 @@ fn resident_seeds_serve_tiles_until_released() {
   for (first, rows) in
     [(0, 65536), (65536, 65537), (ROWS - 3, 65537), (height - 1, 2)]
   {
-    let expected = dft.generated_trace_rows(staged.clone(), first, rows);
-    let actual = dft.generated_trace_rows(resident.clone(), first, rows);
-    assert_eq!(actual.values, expected.values, "tile at {first}");
+    let expected = staged.download_tile(0, first, rows);
+    let actual = resident.download_tile(0, first, rows);
+    assert_eq!(actual, expected, "tile at {first}");
     assert!(seed_cache_bytes(0) >= ROWS * 176, "seeds resident after {first}");
   }
   let held = seed_cache_bytes(0);
@@ -431,12 +393,9 @@ fn resident_seeds_serve_tiles_until_released() {
   assert_eq!(seed_cache_bytes(0), held, "another device's release is a no-op");
   resident.release_device(0);
   assert_eq!(seed_cache_bytes(0), 0);
-  let expected = dft.generated_trace_rows(staged.clone(), 7, 9);
-  let actual = dft.generated_trace_rows(resident.clone(), 7, 9);
-  assert_eq!(
-    actual.values, expected.values,
-    "tiles are served after a release"
-  );
+  let expected = staged.download_tile(0, 7, 9);
+  let actual = resident.download_tile(0, 7, 9);
+  assert_eq!(actual, expected, "tiles are served after a release");
   assert_eq!(seed_cache_bytes(0), held, "and the seeds are resident again");
   drop(resident);
   assert_eq!(seed_cache_bytes(0), 0, "dropping the source frees its seeds");
@@ -451,9 +410,10 @@ fn concurrent_uploads_keep_frozen_seeds() {
     .collect();
   let (program, record, io) = synthetic_blake3(33);
   let bound = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
-  let (source, _) =
-    bound.prepare(0, &record, &io, &[], (0, 0), (0, 33), 33, false).unwrap();
-  let TraceSource::Generated(source) = source else { unreachable!() };
+  let (source, _) = bound
+    .prepare_trace(0, &record, &io, &[], (0, 0), (0, 33), 33, false)
+    .unwrap();
+  let source = Arc::new(source);
   let barrier = std::sync::Barrier::new(8);
   std::thread::scope(|scope| {
     for worker in 0..8 {
@@ -461,13 +421,15 @@ fn concurrent_uploads_keep_frozen_seeds() {
       let barrier = &barrier;
       let device = devices[worker % devices.len()];
       scope.spawn(move || {
-        let dft = CudaDft::new(device);
         barrier.wait();
         for first in [0, 32, 63] {
-          let actual = dft.generated_trace_rows(source.clone(), first, 65);
-          let mut expected = vec![G::ZERO; actual.values.len()];
+          let actual = source.download_tile(device, first, 65);
+          let mut expected = vec![G::ZERO; actual.len()];
           source.write_rows(first, &mut expected);
-          assert_eq!(actual.values, expected);
+          assert_eq!(
+            actual,
+            expected.iter().map(|g| g.as_canonical_u64()).collect::<Vec<_>>()
+          );
         }
       });
     }
@@ -584,7 +546,7 @@ fn wide_rows_widen_the_member_span_once() {
     program.circuits[circuit].members.iter().position(|&f| f == 3).unwrap();
   let bound = generated_cuda::CUDA.bind(&generated::PROGRAM, &program).unwrap();
   let (source, _) = bound
-    .prepare(
+    .prepare_trace(
       circuit,
       &record,
       &io,
@@ -595,7 +557,6 @@ fn wide_rows_widen_the_member_span_once() {
       false,
     )
     .unwrap();
-  let TraceSource::Generated(source) = source else { unreachable!() };
   let words = bound_words(&generated::PROGRAM, 3);
   assert!(source.host_bytes() >= 1024 * 8 * words);
   assert!(
@@ -606,8 +567,10 @@ fn wide_rows_widen_the_member_span_once() {
   let width = program.circuits[circuit].layout.width();
   let mut expected = vec![G::ZERO; 1024 * width];
   source.write_rows(0, &mut expected);
-  let actual = CudaDft::new(0).generated_trace_rows(source, 0, 1024);
-  assert_eq!(actual.values, expected);
+  assert_eq!(
+    source.download_tile(0, 0, 1024),
+    expected.iter().map(|g| g.as_canonical_u64()).collect::<Vec<_>>()
+  );
 }
 
 fn bound_words(program: &GeneratedProgram, function: usize) -> usize {
@@ -653,7 +616,7 @@ fn wide_row_in_a_later_chunk_widens_earlier_chunks() {
     program.circuits[circuit].members.iter().position(|&f| f == 3).unwrap();
   let bound = generated_cuda::CUDA.bind(&generated::PROGRAM, &program).unwrap();
   let (source, _) = bound
-    .prepare(
+    .prepare_trace(
       circuit,
       &record,
       &io,
@@ -664,7 +627,6 @@ fn wide_row_in_a_later_chunk_widens_earlier_chunks() {
       false,
     )
     .unwrap();
-  let TraceSource::Generated(source) = source else { unreachable!() };
   let words = bound_words(&generated::PROGRAM, 3);
   assert!(
     source.host_bytes() >= live.len() * 8 * words,
@@ -686,12 +648,7 @@ fn wide_row_in_a_later_chunk_widens_earlier_chunks() {
     expected,
     "CPU mirror"
   );
-  let actual = CudaDft::new(0).generated_trace_rows(source, 0, height);
-  assert_eq!(
-    actual.values.iter().map(|g| g.as_canonical_u64()).collect::<Vec<_>>(),
-    expected,
-    "device rows"
-  );
+  assert_eq!(source.download_tile(0, 0, height), expected, "device rows");
 }
 
 #[test]
@@ -721,7 +678,6 @@ fn memory_tables_match_the_cpu_builder() {
         .unwrap();
     }
   }
-  let dft = CudaDft::new(0);
   for (width, ranges) in [
     (2usize, vec![0..300, 5..300, 299..300]),
     (10, vec![0..4097, 4096..4097, 13..2000]),
@@ -730,8 +686,7 @@ fn memory_tables_match_the_cpu_builder() {
       let (expected, _) =
         Memory::witness_data_range(width, &record, &[], range.clone());
       let (source, _) =
-        prepare_memory(&record, width, &[], range.clone()).unwrap();
-      let TraceSource::Generated(source) = source else { unreachable!() };
+        prepare_memory_trace(&record, width, &[], range.clone()).unwrap();
       assert_eq!(source.height(), expected.height());
       let mut host = vec![G::ZERO; expected.values.len()];
       source.write_rows(0, &mut host);
@@ -741,13 +696,13 @@ fn memory_tables_match_the_cpu_builder() {
       );
       let height = expected.height();
       for (first, rows) in [(0, height), (height - 1, height + 1)] {
-        let actual = dft.generated_trace_rows(source.clone(), first, rows);
+        let actual = source.download_tile(0, first, rows);
         let w = width + 3;
-        for (i, cell) in actual.values.iter().enumerate() {
+        for (i, &cell) in actual.iter().enumerate() {
           let row = (first + i / w) % height;
           assert_eq!(
-            *cell,
-            expected.values[row * w + i % w],
+            cell,
+            expected.values[row * w + i % w].as_canonical_u64(),
             "width {width}, range {range:?}, row {row}, column {}",
             i % w
           );

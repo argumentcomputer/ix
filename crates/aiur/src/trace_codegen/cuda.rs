@@ -176,6 +176,32 @@ impl BoundCudaProgram<'_> {
     row_count: usize,
     retain_device_seeds: bool,
   ) -> TraceResult<(TraceSource<G>, LookupValues<G>)> {
+    let (source, lookups) = self.prepare_trace(
+      circuit,
+      record,
+      io,
+      slots,
+      start,
+      end,
+      row_count,
+      retain_device_seeds,
+    )?;
+    Ok((TraceSource::Generated(Arc::new(source)), lookups))
+  }
+
+  /// [`Self::prepare`] before the source is erased behind the trait, so the
+  /// packed seeds can be inspected.
+  pub(crate) fn prepare_trace(
+    &self,
+    circuit: usize,
+    record: &QueryRecord,
+    io: &IOBuffer,
+    slots: &[usize],
+    start: QueryPosition,
+    end: QueryPosition,
+    row_count: usize,
+    retain_device_seeds: bool,
+  ) -> TraceResult<(CudaTrace, LookupValues<G>)> {
     let _span =
       tracing::info_span!("aiur/codegen_seeds", circuit, rows = row_count)
         .entered();
@@ -319,10 +345,7 @@ impl BoundCudaProgram<'_> {
       seed_spans = source.spans.len(),
       "prepared generated CUDA trace"
     );
-    Ok((
-      TraceSource::Generated(Arc::new(source)),
-      LookupValues::shape_only(height, slots),
-    ))
+    Ok((source, LookupValues::shape_only(height, slots)))
   }
 }
 
@@ -588,16 +611,21 @@ impl Drop for CudaTrace {
   }
 }
 
+#[cfg(test)]
+impl CudaTrace {
+  /// Host memory the packed seeds occupy, reservations included.
+  pub(crate) fn host_bytes(&self) -> usize {
+    self.spans.capacity() * size_of::<SeedSpan>()
+      + self.spans.iter().map(|s| s.bytes.capacity()).sum::<usize>()
+  }
+}
+
 impl TraceGenerator<G> for CudaTrace {
   fn height(&self) -> usize {
     self.height
   }
   fn width(&self) -> usize {
     self.width
-  }
-  fn host_bytes(&self) -> usize {
-    self.spans.capacity() * size_of::<SeedSpan>()
-      + self.spans.iter().map(|s| s.bytes.capacity()).sum::<usize>()
   }
   fn write_rows(&self, first: usize, output: &mut [G]) {
     assert_eq!(output.len() % self.width, 0);
@@ -631,29 +659,48 @@ impl TraceGenerator<G> for CudaTrace {
       index = (index + 1) % self.height;
     }
   }
-  fn write_device_rows(
+  fn write_device_rows(&self, view: DeviceTraceView<'_>) -> Result<(), String> {
+    if view.width() != self.width {
+      return Err("CUDA trace width mismatch".into());
+    }
+    self.write_tile(
+      view.device_id(),
+      view.first_row(),
+      view.rows(),
+      view.as_mut_ptr(),
+    )
+  }
+  fn release_device(&self, device_id: i32) {
+    self.free_device_seeds(|device| device != device_id);
+  }
+}
+
+impl CudaTrace {
+  /// Rows `[first_row, first_row + tile_rows)` of the padded trace, wrapping at
+  /// its height, written to `output` on `device`: the writer behind
+  /// [`TraceGenerator::write_device_rows`], reachable without a view.
+  fn write_tile(
     &self,
-    output: DeviceTraceView<'_>,
+    device: i32,
+    first_row: usize,
+    tile_rows: usize,
+    output: *mut u64,
   ) -> Result<(), String> {
     let _span = tracing::info_span!(
       "aiur/codegen_device_rows",
-      device = output.device_id(),
-      first = output.first_row(),
-      rows = output.rows(),
+      device,
+      first = first_row,
+      rows = tile_rows,
       width = self.width
     )
     .entered();
-    if output.width() != self.width {
-      return Err("CUDA trace width mismatch".into());
-    }
-    let resident = self.resident_seeds(output.device_id());
+    let resident = self.resident_seeds(device);
     let mut done = 0;
-    let mut first = output.first_row() % self.height;
-    while done < output.rows() {
+    let mut first = first_row % self.height;
+    while done < tile_rows {
       let index = self.span_index(first.min(self.real - 1));
       let span = &self.spans[index];
-      let remaining =
-        (output.rows() - done).min(self.height - first).min(MAX_ROWS);
+      let remaining = (tile_rows - done).min(self.height - first).min(MAX_ROWS);
       let (rows, real, seeds) = if first >= self.real {
         (remaining, 0, std::ptr::null())
       } else {
@@ -671,7 +718,7 @@ impl TraceGenerator<G> for CudaTrace {
       };
       let status = unsafe {
         (span.kernel)(
-          output.device_id(),
+          device,
           seeds,
           encoding,
           real,
@@ -679,7 +726,7 @@ impl TraceGenerator<G> for CudaTrace {
           self.width,
           span.offsets.selectors,
           span.offsets.auxiliaries,
-          output.as_mut_ptr().add(done * self.width),
+          output.add(done * self.width),
         )
       };
       if status != 0 {
@@ -693,8 +740,28 @@ impl TraceGenerator<G> for CudaTrace {
     }
     Ok(())
   }
-  fn release_device(&self, device_id: i32) {
-    self.free_device_seeds(|device| device != device_id);
+
+  /// The tile [`Self::write_tile`] writes on `device`, read back as raw
+  /// words.
+  #[cfg(test)]
+  pub(crate) fn download_tile(
+    &self,
+    device: i32,
+    first_row: usize,
+    tile_rows: usize,
+  ) -> Vec<u64> {
+    let words = tile_rows * self.width;
+    let mut tile = std::ptr::null_mut();
+    let status = unsafe { aiur_trace_tile_alloc(device, words, &mut tile) };
+    assert_eq!(status, 0, "device tile allocation");
+    let written = self.write_tile(device, first_row, tile_rows, tile);
+    let mut host = vec![0u64; words];
+    let status = unsafe {
+      aiur_trace_tile_download(device, tile, words, host.as_mut_ptr())
+    };
+    written.expect("device writer");
+    assert_eq!(status, 0, "device tile download");
+    host
   }
 }
 
@@ -708,6 +775,19 @@ unsafe extern "C" {
     cached: *mut *mut u8,
   ) -> i32;
   fn aiur_trace_seed_cache_free(device: i32, cached: *mut u8) -> i32;
+  #[cfg(test)]
+  fn aiur_trace_tile_alloc(
+    device: i32,
+    words: usize,
+    tile: *mut *mut u64,
+  ) -> i32;
+  #[cfg(test)]
+  fn aiur_trace_tile_download(
+    device: i32,
+    tile: *mut u64,
+    words: usize,
+    host: *mut u64,
+  ) -> i32;
   fn aiur_trace_memory(
     device: i32,
     seeds: *const u8,
@@ -757,6 +837,17 @@ pub fn prepare_memory(
   slots: &[usize],
   range: std::ops::Range<usize>,
 ) -> TraceResult<(TraceSource<G>, LookupValues<G>)> {
+  let (source, lookups) = prepare_memory_trace(record, size, slots, range)?;
+  Ok((TraceSource::Generated(Arc::new(source)), lookups))
+}
+
+/// [`prepare_memory`] before the source is erased behind the trait.
+pub(crate) fn prepare_memory_trace(
+  record: &QueryRecord,
+  size: usize,
+  slots: &[usize],
+  range: std::ops::Range<usize>,
+) -> TraceResult<(MemoryTrace, LookupValues<G>)> {
   let _span =
     tracing::info_span!("aiur/codegen_memory_seeds", size, rows = range.len())
       .entered();
@@ -806,12 +897,7 @@ pub fn prepare_memory(
     "prepared generated memory trace"
   );
   Ok((
-    TraceSource::Generated(Arc::new(MemoryTrace {
-      values: size,
-      spans,
-      height,
-      real: count,
-    })),
+    MemoryTrace { values: size, spans, height, real: count },
     LookupValues::shape_only(height, slots),
   ))
 }
@@ -822,10 +908,6 @@ impl TraceGenerator<G> for MemoryTrace {
   }
   fn width(&self) -> usize {
     self.values + 3
-  }
-  fn host_bytes(&self) -> usize {
-    self.spans.capacity() * size_of::<MemorySpan>()
-      + self.spans.iter().map(|s| s.bytes.capacity()).sum::<usize>()
   }
   fn write_rows(&self, first: usize, output: &mut [G]) {
     let width = self.width();
@@ -853,28 +935,44 @@ impl TraceGenerator<G> for MemoryTrace {
       index = (index + 1) % self.height;
     }
   }
-  fn write_device_rows(
+  fn write_device_rows(&self, view: DeviceTraceView<'_>) -> Result<(), String> {
+    if view.width() != self.width() {
+      return Err("memory trace width mismatch".into());
+    }
+    self.write_tile(
+      view.device_id(),
+      view.first_row(),
+      view.rows(),
+      view.as_mut_ptr(),
+    )
+  }
+}
+
+impl MemoryTrace {
+  /// Rows `[first_row, first_row + tile_rows)` of the padded trace, wrapping at
+  /// its height, written to `output` on `device`: the writer behind
+  /// [`TraceGenerator::write_device_rows`], reachable without a view.
+  fn write_tile(
     &self,
-    output: DeviceTraceView<'_>,
+    device: i32,
+    first_row: usize,
+    tile_rows: usize,
+    output: *mut u64,
   ) -> Result<(), String> {
     let _span = tracing::info_span!(
       "aiur/codegen_memory_rows",
-      device = output.device_id(),
-      first = output.first_row(),
-      rows = output.rows(),
+      device,
+      first = first_row,
+      rows = tile_rows,
       width = self.width()
     )
     .entered();
-    if output.width() != self.width() {
-      return Err("memory trace width mismatch".into());
-    }
     let stride = self.stride();
     let mut done = 0;
-    let mut first = output.first_row() % self.height;
-    while done < output.rows() {
+    let mut first = first_row % self.height;
+    while done < tile_rows {
       let span = self.span(first.min(self.real - 1));
-      let remaining =
-        (output.rows() - done).min(self.height - first).min(MAX_ROWS);
+      let remaining = (tile_rows - done).min(self.height - first).min(MAX_ROWS);
       let (rows, real, seeds) = if first >= self.real {
         (remaining, 0, std::ptr::null())
       } else {
@@ -884,12 +982,12 @@ impl TraceGenerator<G> for MemoryTrace {
       };
       let status = unsafe {
         aiur_trace_memory(
-          output.device_id(),
+          device,
           seeds,
           self.values,
           real,
           rows,
-          output.as_mut_ptr().add(done * self.width()),
+          output.add(done * self.width()),
         )
       };
       if status != 0 {
@@ -902,5 +1000,28 @@ impl TraceGenerator<G> for MemoryTrace {
       first = (first + rows) % self.height;
     }
     Ok(())
+  }
+
+  /// The tile [`Self::write_tile`] writes on `device`, read back as raw
+  /// words.
+  #[cfg(test)]
+  pub(crate) fn download_tile(
+    &self,
+    device: i32,
+    first_row: usize,
+    tile_rows: usize,
+  ) -> Vec<u64> {
+    let words = tile_rows * self.width();
+    let mut tile = std::ptr::null_mut();
+    let status = unsafe { aiur_trace_tile_alloc(device, words, &mut tile) };
+    assert_eq!(status, 0, "device tile allocation");
+    let written = self.write_tile(device, first_row, tile_rows, tile);
+    let mut host = vec![0u64; words];
+    let status = unsafe {
+      aiur_trace_tile_download(device, tile, words, host.as_mut_ptr())
+    };
+    written.expect("device writer");
+    assert_eq!(status, 0, "device tile download");
+    host
   }
 }

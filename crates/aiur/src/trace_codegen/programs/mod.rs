@@ -70,11 +70,7 @@ mod tests {
     execute::{IOBuffer, QueryRecord},
     gpu_trace::TraceProvider,
   };
-  use ::multi_stark::{
-    cuda::CudaDft,
-    p3_field::{PrimeCharacteristicRing, PrimeField64},
-    witness::TraceSource,
-  };
+  use ::multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
   #[test]
   fn production_registration_and_dispatch_match_oracle() {
@@ -114,7 +110,6 @@ mod tests {
         .position(|c| c.members.contains(&function))
         .unwrap();
       assert_eq!(top.circuits[circuit].members, [function]);
-      let provider = TraceProvider::Generated(registered);
       let mut record = QueryRecord::new(&top);
       for (input, result) in fixture_record.function_queries[0].iter() {
         record.function_queries[function]
@@ -122,9 +117,9 @@ mod tests {
           .unwrap();
       }
       let count = record.function_queries[function].len();
-      let (source, _) = provider
-        .prepare(
-          &top,
+      let (source, _) = registered
+        .bound()
+        .prepare_trace(
           circuit,
           &record,
           &io,
@@ -144,17 +139,7 @@ mod tests {
       let width = top.circuits[circuit].layout.width();
       let height = count.next_power_of_two();
       expected.resize(height * width, 0);
-      let TraceSource::Generated(source) = source else {
-        panic!("{name}: missing generated source")
-      };
-      let rows =
-        CudaDft::new(0).generated_trace_rows(source, height - 1, height + 1);
-      let raw = unsafe {
-        std::slice::from_raw_parts(
-          rows.values.as_ptr().cast::<u64>(),
-          rows.values.len(),
-        )
-      };
+      let raw = source.download_tile(0, height - 1, height + 1);
       for (i, &word) in raw.iter().enumerate() {
         assert_eq!(
           word,
@@ -164,6 +149,7 @@ mod tests {
       }
       let uncovered =
         (0..top.circuits.len()).find(|&c| !covered.contains(&c)).unwrap();
+      let provider = TraceProvider::Generated(registered);
       assert!(
         provider
           .prepare(&top, uncovered, &record, &io, &[], (0, 0), (0, 1), 1, false)

@@ -184,7 +184,6 @@ The ones a run needs, then the ones a measurement might.
 | `--retention retain\|regenerate\|auto` | What a batch keeps between its two rounds. Every real GPU plan runs `regenerate`: round two rebuilds each shard from its seeds, which the resident seed cache makes cheap. |
 | `MULTI_STARK_CUDA_MIN_FREE_BYTES` | Device headroom the backend keeps by spilling LDEs to the host; default a quarter of the card. |
 | `MULTI_STARK_CUDA_MEMORY_LOG=1` | Logs stage-1 placement and per-lookup-job budget and free bytes to stderr. |
-| `MULTI_STARK_CUDA_TRACE_FORCE_SPILL=1`, `MULTI_STARK_CUDA_LOOKUP_TRACE_TILE_ROWS=3` | Validation only: spill every LDE and regenerate from tiny tiles, to exercise the recovery path. |
 | `--texray` | Per-phase wall and RSS lines on stderr, as on the CPU. |
 
 ## 6. Benchmarking a multi-GPU run

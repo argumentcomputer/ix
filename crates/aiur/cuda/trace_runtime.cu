@@ -229,6 +229,36 @@ extern "C" int aiur_trace_seed_cache_free(int device, uint8_t* cached) {
     if (status == cudaSuccess) status = cudaFree(cached);
     return int(status);
 }
+
+// A tile of `words` u64 on `device` for a caller that drives a writer
+// outside the prover and reads the rows back; `aiur_trace_tile_download`
+// copies it out after the per-thread stream's work on it and frees it.
+extern "C" int aiur_trace_tile_alloc(int device, size_t words, uint64_t** tile) {
+    if (!tile) return int(cudaErrorInvalidValue);
+    *tile = nullptr;
+    cudaError_t status = cudaSetDevice(device);
+    if (status != cudaSuccess) return int(status);
+    status = cudaMalloc(reinterpret_cast<void**>(tile), words * sizeof(uint64_t));
+    if (status != cudaSuccess) {
+        cudaGetLastError();
+        *tile = nullptr;
+    }
+    return int(status);
+}
+
+extern "C" int aiur_trace_tile_download(int device, uint64_t* tile, size_t words,
+    uint64_t* host) {
+    if (!tile || !host) return int(cudaErrorInvalidValue);
+    cudaError_t status = cudaSetDevice(device);
+    if (status == cudaSuccess)
+        status = cudaMemcpyAsync(host, tile, words * sizeof(uint64_t),
+            cudaMemcpyDeviceToHost, cudaStreamPerThread);
+    const auto synced = cudaStreamSynchronize(cudaStreamPerThread);
+    if (status == cudaSuccess) status = synced;
+    const auto freed = cudaFree(tile);
+    if (status == cudaSuccess) status = freed;
+    return int(status);
+}
 // Memory-table rows: `[multiplicity, 1, pointer, values...]` from seeds of
 // `[multiplicity, pointer, values...]`, one thread per row. Every table row
 // is real, zero multiplicities included; the padding rows keep the blank
