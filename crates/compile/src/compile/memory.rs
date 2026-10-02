@@ -215,33 +215,39 @@ pub(super) enum Pressure {
   Critical,
 }
 
-/// Reclaim signals are honoured only below this many reserves of headroom.
+/// This process's own swap-out counts below this many reserves of headroom.
 ///
-/// With more headroom than that, swapping and memory stalls come from LRU
-/// balancing against other workloads' page cache, or from refaults of this
-/// process's own file mappings; admitting fewer blocks cures neither, and
+/// With more headroom than that, swapping comes from LRU balancing against
+/// other workloads' page cache: admitting fewer blocks does not cure it, and
 /// the headroom itself shows that memory is not short.
-const RECLAIM_HEADROOM: u64 = 4;
+const SWAP_HEADROOM: u64 = 4;
+/// Memory stalls count below this many reserves of headroom. Stall time is
+/// not attributable: the system-wide figure is every workload's, and the
+/// innermost cgroup is often shared too (a terminal's or a build service's,
+/// with every job started from it), and it includes refaults of this
+/// process's own file mappings, which running fewer blocks does not cure.
+/// Only where memory is genuinely short should every consumer back off.
+const STALL_HEADROOM: u64 = 2;
 
-/// Reclaim activity attributable to this process, while headroom is not
-/// wide: its own pages being swapped out (more than 8 MiB since the last
-/// sample), or its innermost cgroup stalled on memory for over a tenth of
-/// the interval. System-wide swap traffic and other workloads' stalls are
-/// not this process's doing, and are deliberately not consulted.
+/// Reclaim activity that this process should answer by running fewer
+/// blocks: its own pages being swapped out (more than 8 MiB since the last
+/// sample) below four reserves of headroom, or its innermost cgroup stalled
+/// on memory for over a tenth of the interval below two. System-wide swap
+/// traffic is never consulted.
 pub(super) fn reclaiming(
   now: Memory,
   before: Memory,
   elapsed: Duration,
   budget: Option<u64>,
 ) -> bool {
-  if now.headroom(budget)
-    >= now.reserve(budget).saturating_mul(RECLAIM_HEADROOM)
-  {
-    return false;
-  }
-  let stalls = now.stall_us.saturating_sub(before.stall_us);
-  stalls > (elapsed.as_micros() as u64 / 10).max(1)
-    || now.process_swap.saturating_sub(before.process_swap) > 8 * MIB
+  let headroom = now.headroom(budget);
+  let reserve = now.reserve(budget);
+  let swapping = headroom < reserve.saturating_mul(SWAP_HEADROOM)
+    && now.process_swap.saturating_sub(before.process_swap) > 8 * MIB;
+  let stalled = headroom < reserve.saturating_mul(STALL_HEADROOM)
+    && now.stall_us.saturating_sub(before.stall_us)
+      > (elapsed.as_micros() as u64 / 10).max(1);
+  swapping || stalled
 }
 
 pub(super) fn pressure(

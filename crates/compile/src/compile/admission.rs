@@ -15,11 +15,12 @@
 //! starts on a machine with memory to spare; a linear share between two and
 //! three; one block (serial progress) between one and two; and no admissions
 //! below one reserve. Below the supported cap the gate ramps up by doubling
-//! per sample after completed work. Reclaim (this process swapping, or its
-//! cgroup stalling on memory) counts only below four reserves of headroom
-//! and only once it lasts two samples: it halves the cap, but not below
-//! `RECLAIM_FLOOR` while two reserves remain, and it closes admissions
-//! below two reserves. With no block active, the gate fails after
+//! per sample after completed work. Reclaim counts once it lasts two
+//! samples: this process's own swap-out below four reserves of headroom,
+//! memory stalls of its cgroup (which may be shared, so not attributable)
+//! only below two. It halves the cap, but not below `RECLAIM_FLOOR` while
+//! two reserves remain, and closes admissions below two reserves. System-wide
+//! swap is not consulted. With no block active, the gate fails after
 //! `idle_timeout` when headroom is below two reserves; with more headroom
 //! it waits `STUCK_TIMEOUTS` times as long before giving up.
 
@@ -747,6 +748,38 @@ mod tests {
       assert_eq!((policy.limit, policy.open), (24, true), "sample {tick}");
       assert_eq!(policy.pressure, Pressure::Healthy);
     }
+  }
+
+  #[test]
+  fn shared_cgroup_stalls_with_moderate_headroom_are_ignored() {
+    // A final-binary Init run (run_init_dx_d1, 2026-10-02) halved its cap
+    // at 44.6 GiB available on the 93 GiB machine (four reserves: 46.5 GiB)
+    // on stalls of the terminal's cgroup, which every agent shares, while
+    // its own swap stayed at zero. Stalls now count only below two reserves.
+    let opt = options(24);
+    let now = Instant::now();
+    let start = Memory {
+      capacity: 93 * GIB,
+      available: 44 * GIB + 600 * MIB,
+      process: 2 * GIB + 500 * MIB,
+      process_swap: 0,
+      stall_us: 0,
+    };
+    let mut policy = Policy::new(start, now, opt);
+    for tick in 1..=40u64 {
+      let stalled = Memory { stall_us: tick * 250_000, ..start };
+      policy.sample(stalled, now + ms(250 * tick), tick, opt);
+      assert_eq!((policy.limit, policy.open), (24, true), "sample {tick}");
+    }
+    // Below two reserves (23.25 GiB) the same stalls close admissions.
+    let low = Memory { available: 22 * GIB, ..start };
+    let mut policy = Policy::new(low, now, opt);
+    for tick in 1..=2u64 {
+      let stalled = Memory { stall_us: tick * 250_000, ..low };
+      policy.sample(stalled, now + Duration::from_secs(tick), tick, opt);
+    }
+    assert!(!policy.open);
+    assert_eq!(policy.pressure, Pressure::Critical);
   }
 
   #[test]

@@ -48,9 +48,11 @@ is healthy. The controller samples
 `MemAvailable`, visible cgroup-v2 ancestor limits, the growth of this
 process's own swapped-out memory, and the memory stall pressure of its
 innermost cgroup (system-wide when the cgroup exposes none) every 250 ms.
-Swap growth and stalls count only below four safety reserves of headroom;
-above that they come from other workloads or from refaults of this process's
-file mappings. It stops admissions and cancels excess attempts
+This process's swap growth counts only below four safety reserves of
+headroom (above that it is LRU balancing against other workloads), and
+stalls only below two: the cgroup is often shared with other jobs, and its
+stalls include refaults of this process's file mappings, which running fewer
+jobs does not cure. It stops admissions and cancels excess attempts
 under pressure; those attempts return normally, drop their scratch data, and
 retry once alone after other work finishes. Completed validations are retained.
 When retained data leaves limited headroom, validation continues one job at a
@@ -84,15 +86,15 @@ budget): every worker from three reserves up, a linear share between two and
 three, one block between one and two (stable retained output keeps growing
 serially), and no new admissions below one reserve. With ample memory it
 therefore starts at full concurrency; below the supported cap it doubles the
-cap every sample after completed work. Reclaim (this process's own pages
-being swapped out, or its cgroup stalling on memory) counts only below four
-reserves of headroom and only after two consecutive samples: it halves the
-cap, keeps at least four blocks while two reserves remain, and stops
-admissions below that. After pressure the cap stays down for five seconds
-before ramping again. System-wide swap and stall figures are not used: with
-wide headroom they come from other workloads, which admitting fewer blocks
-cannot help. Main-stage expression transforms also preserve DAG sharing
-instead of repeatedly copying shared subexpressions.
+cap every sample after completed work. Reclaim, with the thresholds above
+(this process's own swap-out below four reserves, cgroup stalls below two),
+counts only after two consecutive samples: it halves the cap, keeps at least
+four blocks while two reserves remain, and stops admissions below that.
+After pressure the cap stays down for five seconds before ramping again.
+System-wide swap is not used: with wide headroom it comes from other
+workloads, which admitting fewer blocks cannot help. Main-stage expression
+transforms also preserve DAG sharing instead of repeatedly copying shared
+subexpressions.
 
 Unlike validation, main-stage blocks publish shared metadata during their
 execution, so active blocks are **not cancelled or retried**: they finish and

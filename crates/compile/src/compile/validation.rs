@@ -552,23 +552,10 @@ mod tests {
       ),
       Pressure::Critical
     );
-    // This process's reclaim (its cgroup stalling, its own pages swapped
-    // out) counts below four reserves (50 GiB) of headroom...
+    // This process's own pages being swapped out count below four reserves
+    // (50 GiB) of headroom...
     let moderate = Memory { available: 40 * GIB, ..mem };
     let second = Duration::from_secs(1);
-    assert_eq!(
-      pressure(
-        Memory { stall_us: 110_000, ..moderate },
-        moderate,
-        second,
-        None
-      ),
-      Pressure::Backoff
-    );
-    assert_eq!(
-      pressure(Memory { stall_us: 90_000, ..moderate }, moderate, second, None),
-      Pressure::Healthy
-    );
     assert_eq!(
       pressure(
         Memory { process_swap: 9 * MIB, ..moderate },
@@ -587,14 +574,35 @@ mod tests {
       ),
       Pressure::Healthy
     );
-    // ...and above that it is other workloads' churn or refaults of this
-    // process's file mappings, which running fewer jobs does not cure.
-    assert_eq!(
-      pressure(Memory { stall_us: 1_000_000, ..mem }, mem, second, None),
-      Pressure::Healthy
-    );
+    // ...and above that they are LRU balancing against other workloads.
     assert_eq!(
       pressure(Memory { process_swap: GIB, ..mem }, mem, second, None),
+      Pressure::Healthy
+    );
+    // Memory stalls (of a cgroup that may be shared, or of the system) count
+    // only below two reserves (25 GiB), where memory is genuinely short.
+    for (available, stalls, expected) in [
+      (20 * GIB, 110_000, true),
+      (20 * GIB, 90_000, false),
+      (30 * GIB, 1_000_000, false),
+      (40 * GIB, 1_000_000, false),
+      (90 * GIB, 1_000_000, false),
+    ] {
+      let before = Memory { available, ..mem };
+      let after = Memory { stall_us: stalls, ..before };
+      assert_eq!(
+        reclaiming(after, before, second, None),
+        expected,
+        "{available} {stalls}"
+      );
+    }
+    assert_eq!(
+      pressure(
+        Memory { stall_us: 1_000_000, ..moderate },
+        moderate,
+        second,
+        None
+      ),
       Pressure::Healthy
     );
     // A budget scales the threshold: 40 GiB of budget headroom is moderate.
