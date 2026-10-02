@@ -340,17 +340,35 @@ fn compile_env_inner(
   allow_partial: u8,
   strict_anon: bool,
 ) -> LeanIOResult<LeanOwned> {
-  let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
+  let (rust_env, scanner) =
+    crate::lean_env::decode_env_for_compile_with_scanner(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
 
-  let compile_stt =
-    match compile_env_with_options(&rust_env, CompileOptions::default()) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+  let compiled = ix_compile::compile::compile_env_with_scanner(
+    &rust_env,
+    CompileOptions::default(),
+    None,
+    Some(&scanner),
+  );
+  if std::env::var("IX_VERBOSE").is_ok() {
+    eprintln!(
+      "[compile] setup scan: {} constants took the decoding path; {} \
+       constant decodes in all for {} constants",
+      scanner.fallbacks(),
+      scanner.decodes(),
+      rust_env.len(),
+    );
+  }
+  // The scanner holds the Lean handles and the name cache; like the env
+  // below, it is left to the process exit.
+  std::mem::forget(scanner);
+  let compile_stt = match compiled {
+    Ok(stt) => stt,
+    Err(e) => {
+      let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
+      return LeanIOResult::error_string(&msg);
+    },
+  };
 
   // Deterministically ordered (pretty name, reason) pairs — DashMap
   // iteration order is shard-dependent.
