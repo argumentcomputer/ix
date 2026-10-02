@@ -552,6 +552,33 @@ impl Env {
     }
   }
 
+  /// [`Self::store_const`] for a constant whose serialization the caller
+  /// already holds — the compiler serializes every constant to hash its
+  /// address. `bytes` must be exactly what `constant.put` produces (the
+  /// bytes `addr` was hashed from); the stored entry is the one
+  /// `store_const` would build, without serializing the constant again.
+  /// Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn store_const_serialized(
+    &self,
+    addr: Address,
+    constant: Constant,
+    bytes: Vec<u8>,
+  ) {
+    debug_assert_eq!(Address::hash(&bytes), addr, "bytes do not hash to addr");
+    if *DEMOTE {
+      // As in `store_const_demoted`: a re-store is a no-op.
+      if self.consts.contains_key(&addr) {
+        return;
+      }
+      self.consts.insert(addr, LazyConstant::from_bytes(bytes.into()));
+    } else {
+      self
+        .consts
+        .insert(addr, LazyConstant::from_constant_serialized(constant, bytes));
+    }
+  }
+
   /// Store an already-serialized constant under `addr` (lazy load path).
   /// `bytes` must be exactly what `Constant::put` produced for `addr`.
   /// Host-only — see `store_blob`.

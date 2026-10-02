@@ -3282,6 +3282,9 @@ pub struct CompiledMutualBlock {
   pub constant: Constant,
   /// Content-addressed hash
   pub addr: Address,
+  /// The constant's serialization (`Constant::put`), which `addr` hashes
+  /// (for [`ixon::env::Env::store_const_serialized`]).
+  pub bytes: Vec<u8>,
 }
 
 /// Compile a mutual block with block-level sharing under `limits`.
@@ -3300,7 +3303,7 @@ pub fn compile_mutual_block(
   constant.put(&mut bytes);
   let addr = Address::hash(&bytes);
 
-  Ok(CompiledMutualBlock { constant, addr })
+  Ok(CompiledMutualBlock { constant, addr, bytes })
 }
 
 /// Create Inductive from InductiveVal and Env.
@@ -4268,7 +4271,7 @@ fn compile_const_inner(
       );
     }
     if aux {
-      stt.env.store_const(addr.clone(), constant);
+      stt.env.store_const_serialized(addr.clone(), constant, bytes);
       stt
         .env
         .register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
@@ -4329,7 +4332,7 @@ fn compile_const_inner(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.env.store_const(addr.clone(), constant);
+        stt.env.store_const_serialized(addr.clone(), constant, bytes);
         stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
       }
       addr
@@ -4356,7 +4359,7 @@ fn compile_const_inner(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.env.store_const(addr.clone(), constant);
+        stt.env.store_const_serialized(addr.clone(), constant, bytes);
         stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
       }
       addr
@@ -4392,7 +4395,7 @@ fn compile_const_inner(
         constant.put(&mut bytes);
         let addr = Address::hash(&bytes);
         if aux {
-          stt.env.store_const(addr.clone(), constant);
+          stt.env.store_const_serialized(addr.clone(), constant, bytes);
           stt.env.register_name(
             name.clone(),
             Named::new(addr.clone(), meta.clone()),
@@ -4578,7 +4581,7 @@ fn compile_mutual(
     let addr = Address::hash(&bytes);
 
     if aux {
-      stt.env.store_const(addr.clone(), standalone_constant);
+      stt.env.store_const_serialized(addr.clone(), standalone_constant, bytes);
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
@@ -4606,7 +4609,11 @@ fn compile_mutual(
   let block_addr = compiled.addr.clone();
 
   if aux {
-    stt.env.store_const(block_addr.clone(), compiled.constant);
+    stt.env.store_const_serialized(
+      block_addr.clone(),
+      compiled.constant,
+      compiled.bytes,
+    );
     // Register class ordering for each inductive name in the block.
     let class_ordering: Vec<Vec<Name>> = sorted_classes
       .iter()
@@ -4640,7 +4647,11 @@ fn compile_mutual(
           indc_proj.put(&mut proj_bytes);
           let proj_addr = Address::hash(&proj_bytes);
           if aux {
-            stt.env.store_const(proj_addr.clone(), indc_proj);
+            stt.env.store_const_serialized(
+              proj_addr.clone(),
+              indc_proj,
+              proj_bytes,
+            );
             stt
               .env
               .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
@@ -4659,7 +4670,11 @@ fn compile_mutual(
             ctor_proj.put(&mut ctor_bytes);
             let ctor_addr = Address::hash(&ctor_bytes);
             if aux {
-              stt.env.store_const(ctor_addr.clone(), ctor_proj);
+              stt.env.store_const_serialized(
+                ctor_addr.clone(),
+                ctor_proj,
+                ctor_bytes,
+              );
               stt.env.register_name(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
@@ -4679,7 +4694,7 @@ fn compile_mutual(
       proj.put(&mut proj_bytes);
       let proj_addr = Address::hash(&proj_bytes);
       if aux {
-        stt.env.store_const(proj_addr.clone(), proj);
+        stt.env.store_const_serialized(proj_addr.clone(), proj, proj_bytes);
         stt.env.register_name(n.clone(), Named::new(proj_addr.clone(), meta));
         stt.name_to_addr.insert(n.clone(), proj_addr);
       } else {
@@ -4698,9 +4713,9 @@ fn compile_mutual(
   // reaches the kernel env.
   //
   // Only register on `aux=true` since that's the path that actually stores
-  // the block constant (`stt.env.store_const(block_addr, ...)` above is
-  // guarded by `if aux`). The `aux=false` promotion path reuses entries
-  // that were already registered in a prior `aux=true` call.
+  // the block constant (`stt.env.store_const_serialized(block_addr, ...)`
+  // above is guarded by `if aux`). The `aux=false` promotion path reuses
+  // entries that were already registered in a prior `aux=true` call.
   if aux {
     let first_name = sorted_classes
       .first()
