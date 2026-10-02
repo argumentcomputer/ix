@@ -60,6 +60,7 @@ areas! {
   HashAddr => "Address::hash (block)",
   Publish => "publish (store/register)",
   AuxGen => "aux_gen (excl nested)",
+  AuxPatches => "aux_gen: generate_aux_patches (excl nested)",
   KernelIngress => "ensure_in_kenv",
   Other => "other",
 }
@@ -215,6 +216,74 @@ pub fn report(label: &str) {
     DUP_SHARE_NS.load(Ordering::Relaxed) as f64 / 1e9,
     DUP_PUTHASH_NS.load(Ordering::Relaxed) as f64 / 1e9,
   );
+}
+
+static HIST_N: [AtomicU64; 40] = [const { AtomicU64::new(0) }; 40];
+static HIST_NS: [AtomicU64; 40] = [const { AtomicU64::new(0) }; 40];
+static AUXH_N: [AtomicU64; 40] = [const { AtomicU64::new(0) }; 40];
+static AUXH_NS: [AtomicU64; 40] = [const { AtomicU64::new(0) }; 40];
+static SLOW: std::sync::Mutex<Vec<(u64, String)>> =
+  std::sync::Mutex::new(Vec::new());
+
+fn bucket(ns: u64) -> usize {
+  (64 - ns.max(1).leading_zeros() as usize).min(39)
+}
+
+/// Record one scheduler block's wall time (and its name if slow).
+pub fn note_block(ns: u64, name: impl FnOnce() -> String) {
+  if !*ENABLED {
+    return;
+  }
+  let b = bucket(ns);
+  HIST_N[b].fetch_add(1, Ordering::Relaxed);
+  HIST_NS[b].fetch_add(ns, Ordering::Relaxed);
+  if ns >= 200_000_000 {
+    SLOW.lock().unwrap().push((ns, name()));
+  }
+}
+
+/// Record one aux_gen call's wall time.
+pub fn note_aux(ns: u64) {
+  if !*ENABLED {
+    return;
+  }
+  let b = bucket(ns);
+  AUXH_N[b].fetch_add(1, Ordering::Relaxed);
+  AUXH_NS[b].fetch_add(ns, Ordering::Relaxed);
+}
+
+/// Print the block-time histograms and the slowest blocks.
+pub fn report_blocks() {
+  if !*ENABLED {
+    return;
+  }
+  for (label, n, s) in
+    [("block", &HIST_N, &HIST_NS), ("aux_gen", &AUXH_N, &AUXH_NS)]
+  {
+    let tot: u64 = s.iter().map(|x| x.load(Ordering::Relaxed)).sum();
+    eprintln!("[areas] {label} time histogram (bucket < 2^k ns): count | sum s | share");
+    for k in 0..40 {
+      let c = n[k].load(Ordering::Relaxed);
+      if c == 0 {
+        continue;
+      }
+      let ns = s[k].load(Ordering::Relaxed);
+      eprintln!(
+        "[areas] {label} <2^{k:<2} ns ({:>10.3} ms) | {:>8} | {:>9.2} | {:>5.1}%",
+        (1u64 << k) as f64 / 1e6,
+        c,
+        ns as f64 / 1e9,
+        100.0 * ns as f64 / tot.max(1) as f64
+      );
+    }
+  }
+  let mut slow = SLOW.lock().unwrap().clone();
+  slow.sort_by(|a, b| b.0.cmp(&a.0));
+  let total: f64 = slow.iter().map(|x| x.0 as f64).sum::<f64>() / 1e9;
+  eprintln!("[areas] blocks >= 0.2 s: {} totalling {:.1} s; slowest 40:", slow.len(), total);
+  for (ns, name) in slow.iter().take(40) {
+    eprintln!("[areas]   {:>8.3} s  {name}", *ns as f64 / 1e9);
+  }
 }
 
 /// Reset all counters (between phases).

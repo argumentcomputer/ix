@@ -884,6 +884,7 @@ pub fn compile_env_with_profile(
 
               // Check for slow blocks
               let elapsed = block_start.elapsed();
+              areas::note_block(elapsed.as_nanos() as u64, || format!("{} ({} members)", lo.pretty(), all.len()));
               if *crate::compile::IX_TIMING && elapsed.as_secs_f32() > 1.0 {
                 let cc_time = _cc_start.elapsed().as_secs_f32();
                 eprintln!(
@@ -1019,6 +1020,7 @@ pub fn compile_env_with_profile(
     );
   }
   areas::report("scheduler");
+  areas::report_blocks();
 
   // Check for errors
   if let Some(e) = error.into_inner().unwrap() {

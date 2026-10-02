@@ -4597,6 +4597,7 @@ fn compile_mutual(
       .map(|class| class.iter().map(|c| c.name()).collect())
       .collect();
     let _area_aux = areas::scope(Area::AuxGen);
+    let t_aux = std::time::Instant::now();
     let aux_layout_stored = mutual::generate_and_compile_aux_recursors(
       &cs,
       &class_names,
@@ -4604,6 +4605,7 @@ fn compile_mutual(
       stt,
       kctx,
     )?;
+    areas::note_aux(t_aux.elapsed().as_nanos() as u64);
 
     // Compute call-site surgery plans for reordered/collapsed blocks.
     // Extract the original inductive `all` list from any InductiveVal in the block.

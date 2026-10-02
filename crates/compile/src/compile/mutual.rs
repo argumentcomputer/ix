@@ -593,6 +593,7 @@ pub fn generate_and_compile_aux_recursors(
   // Phase 1: Generate patches. Errors here indicate a bug in aux_gen
   // (the input has already been validated by sort_consts and the compile
   // loop), so we propagate rather than swallow.
+  let area_patches = ix_common::areas::scope(ix_common::areas::Area::AuxPatches);
   let t0 = std::time::Instant::now();
   let aux_out = aux_gen::generate_aux_patches(
     &aux_class_names,
@@ -601,6 +602,7 @@ pub fn generate_and_compile_aux_recursors(
     stt,
     kctx,
   )?;
+  drop(area_patches);
   let patches = &aux_out.patches;
   let gen_elapsed = t0.elapsed();
   if patches.is_empty() {
