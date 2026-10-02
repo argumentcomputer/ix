@@ -291,6 +291,111 @@ def reclassifyA (cx : SCtx) (posA : Array Nat) (outAll localIn und : Array Nat) 
   let open_ := (gains.filter (!isForced ·)).map fun e => (e.1, e.2.1)
   (localIn, open_, b)
 
+/-! ## Specialized copies
+
+The area block passes the opacity test and the labels as closures; these
+copies of `reachLabelsL`, `SCtx.groups` and `SCtx.memoKey` (the same bodies,
+`reachLabelsA_eq`, `groupsA_eq`, `memoKeyA_eq`) are specialized to them. -/
+
+/-- `reachLabelsL`, specialized to its closures. -/
+@[specialize] def reachLabelsA (dag : Dag) (closure posC : Array Nat) (opq : Nat → Bool)
+    (lab : Nat → Option Nat) : Array (Option (Option Nat)) :=
+  localFold closure.size (closure[·]!) fun L _ t =>
+    (dag.node t).children.foldl (fun v c =>
+      labelJoin v (if opq c then (lab c).map some else readAtF (posOf posC) L id (fun _ => none) c))
+      ((lab t).map some)
+
+theorem reachLabelsA_eq : @reachLabelsA = @reachLabelsL := by rfl
+
+/-- `SCtx.groups`, specialized to its closures. -/
+@[specialize] def groupsA (cx : SCtx) (opq : Nat → Bool) (availFixed : Nat → Bool)
+    (und : Array Nat) : Array (Array Nat) := Id.run do
+  let undSet : Std.HashSet Nat := und.foldl (·.insert ·) {}
+  let mut uf : Array Nat := Array.range cx.members.size
+  let mut reps : Array (Array Nat) := Array.replicate cx.area.size #[]
+  for j in [0:cx.area.size] do
+    let y := cx.area[j]!
+    if opq y then continue
+    let mut rs : Array Nat := #[]
+    for c in (cx.up.prep.dag.node y).children do
+      match cx.areaIdx.get? c with
+      | none => pure ()
+      | some jc =>
+        for r in reps[jc]! do
+          let fr := ufFind uf r
+          unless rs.contains fr do rs := rs.push fr
+    if undSet.contains y then
+      let iy := cx.memberIdx.getD y 0
+      for r in rs do
+        let a := ufFind uf iy
+        let b := ufFind uf r
+        if a != b then
+          if a < b then uf := uf.set! b a else uf := uf.set! a b
+      reps := reps.set! j #[ufFind uf iy]
+    else if availFixed y && rs.size > 1 then
+      for r in rs do
+        let a := ufFind uf rs[0]!
+        let b := ufFind uf r
+        if a != b then
+          if a < b then uf := uf.set! b a else uf := uf.set! a b
+      reps := reps.set! j #[ufFind uf rs[0]!]
+    else
+      reps := reps.set! j rs
+  let mut groups : Std.HashMap Nat (Array Nat) := {}
+  for t in und do
+    let r := ufFind uf (cx.memberIdx.getD t 0)
+    groups := groups.insert r ((groups.getD r #[]).push t)
+  let gs := groups.toArray.map fun (_, g) => g.qsort (· < ·)
+  return gs.qsort fun a b => a[0]! < b[0]!
+
+theorem groupsA_eq : @groupsA = @SCtx.groups := by rfl
+
+/-- `SCtx.memoKey`, specialized to its closure. -/
+@[specialize] def memoKeyA (cx : SCtx) (opq : Nat → Bool) (inSet outSet : Std.HashSet Nat)
+    (g : Array Nat) : Array Nat × Std.HashSet Nat := Id.run do
+  let mut entries : Array Nat := #[]
+  let mut rel : Std.HashSet Nat := {}
+  let mut downStart := g
+  let mut seen : Std.HashSet Nat := g.foldl (·.insert ·) {}
+  let mut stack := g
+  for _ in [0:cx.area.size + 1] do
+    match stack.back? with
+    | none => break
+    | some y =>
+      stack := stack.pop
+      for q in cx.facts.parents[y]! do
+        if !cx.areaIdx.contains q || seen.contains q then continue
+        seen := seen.insert q
+        if outSet.contains q then
+          entries := entries.push (3 * q)
+          rel := rel.insert q
+        else if inSet.contains q then
+          entries := entries.push (3 * q + (if opq q then 2 else 1))
+          rel := rel.insert q
+          unless opq q do downStart := downStart.push q
+        unless opq q do stack := stack.push q
+  seen := downStart.foldl (·.insert ·) {}
+  stack := downStart
+  for _ in [0:cx.area.size + 1] do
+    match stack.back? with
+    | none => break
+    | some y =>
+      stack := stack.pop
+      for c in (cx.up.prep.dag.node y).children do
+        if !cx.areaIdx.contains c || seen.contains c then continue
+        seen := seen.insert c
+        if !rel.contains c then
+          if outSet.contains c then
+            entries := entries.push (3 * c)
+            rel := rel.insert c
+          else if inSet.contains c then
+            entries := entries.push (3 * c + (if opq c then 2 else 1))
+            rel := rel.insert c
+        unless opq c do stack := stack.push c
+  return (entries.qsort (· < ·), rel)
+
+theorem memoKeyA_eq : @memoKeyA = @SCtx.memoKey := by rfl
+
 /-- `SCtx.sepCheck` over the area: the reach labels of the area terms, every
 other term unlabeled-reaching. -/
 def sepCheckA (cx : SCtx) (posA : Array Nat) (g inRed outRed : Array Nat) : Bool :=
@@ -298,7 +403,7 @@ def sepCheckA (cx : SCtx) (posA : Array Nat) (g inRed outRed : Array Nat) : Bool
   let bR := reboundA cx posA outRed
   let opqR := fun t => opqArrA cx posA bR inRed t
   let lab := sepLab n cx.members g inRed outRed
-  let rl := reachLabelsL cx.up.prep.dag cx.area posA opqR lab
+  let rl := reachLabelsA cx.up.prep.dag cx.area posA opqR lab
   g.all (fun t => (decide (t < n) && cx.members.contains t) && lab t == some 1) &&
     cx.members.all fun v => (decide (v < n) && outRed.contains v) || opqR v ||
       readAtF (posOf posA) rl id (fun _ => none) v != some none
@@ -316,7 +421,7 @@ def solvePA (cx : SCtx) (posA : Array Nat) (tb : TBase) (aux : AAux)
     let opqA := fun t => opqArrA cx posA bA inAll t
     let inSet : Std.HashSet Nat := inAll.foldl (·.insert ·) {}
     let outSet : Std.HashSet Nat := outAll.foldl (·.insert ·) {}
-    let (entries, _) := cx.memoKey opqA inSet outSet g
+    let (entries, _) := memoKeyA cx opqA inSet outSet g
     let (inRed, outRed) := keyContext entries
     unless strictInc g && strictInc inRed && strictInc outRed &&
         inRed.all inSet.contains && outRed.all outSet.contains do
@@ -360,14 +465,14 @@ def nodePA (cx : SCtx) (posA : Array Nat) (tb : TBase) (aux : AAux)
     if ct.prunes delta cx.slack then return (ct, st)
     let opq := fun t => cx.up.opaq[t]! || (inSet.contains t && opaqueUnderA cx posA b t)
     let availFixed := fun t => inSet.contains t && !opq t
-    let groups := cx.groups opq availFixed und
+    let groups := groupsA cx opq availFixed und
     unless partitionCheck und groups do
       throw (.internal "search groups do not partition the undecided members")
     let route :=
       if groups.size > 1 then true
       else if groups.size == 1 then
         let outSet : Std.HashSet Nat := outAll.foldl (·.insert ·) {}
-        let (_, rel) := cx.memoKey opq inSet outSet groups[0]!
+        let (_, rel) := memoKeyA cx opq inSet outSet groups[0]!
         localIn.any (!rel.contains ·) || (outAll.extract nOutCtx outAll.size).any (!rel.contains ·)
       else false
     if route then

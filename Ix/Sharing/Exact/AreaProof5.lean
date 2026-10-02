@@ -582,7 +582,7 @@ theorem sepCheckA_eq {cx : SCtx} {posA posC : Array Nat}
       opqArrR cx posA (reboundL cx posA outRed) inRed t :=
     fun t => opqArrA_eq cx posA hr.area outRed inRed t
   unfold sepCheckA sepCheckL
-  simp only [hoa]
+  simp only [hoa, reachLabelsA_eq]
   exact sep_core hdag cx.members g inRed outRed
     (fun t => opqArrR cx posA (reboundL cx posA outRed) inRed t) (cx.up.opaq[·]!)
     cx.area posA cx.closure posC hincA hr.area hincC hr.closure
@@ -627,9 +627,9 @@ theorem block_eq (cx : SCtx) (posA posC : Array Nat) (tb : TBase) (aux : AAux)
     refine ⟨fun g inAll outAll st => ?_, fun g inRed outRed st => ?_,
       fun phi0 inCtx outAll nOutCtx localIn und ct st => ?_,
       fun inAll outAll grps comb st => ?_⟩
-    · simp only [solvePA, solvePL, hsep, hoa, ihB] <;> rfl
+    · simp only [solvePA, solvePL, hsep, hoa, memoKeyA_eq, ihB] <;> rfl
     · simp only [solveBodyA, solveBodyL, hphi, ihN] <;> rfl
-    · simp only [nodePA, nodePL, hphi, hrc, hou, ihN, ihS] <;> rfl
+    · simp only [nodePA, nodePL, hphi, hrc, hou, groupsA_eq, memoKeyA_eq, ihN, ihS] <;> rfl
     · cases grps with
       | nil => simp only [splitPA, splitPL]
       | cons grp grps => simp only [splitPA, splitPL, ihP, ihS]
