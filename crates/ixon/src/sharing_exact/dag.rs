@@ -164,19 +164,20 @@ impl Node {
     }
   }
 
-  fn map_children(&self, f: impl Fn(TermId) -> TermId) -> Node {
+  /// The node with its children mapped by `f`.
+  fn into_mapped(self, f: impl Fn(TermId) -> TermId) -> Node {
     match self {
       Node::Sort(_)
       | Node::Var(_)
       | Node::Ref(..)
       | Node::Rec(..)
       | Node::Str(_)
-      | Node::Nat(_) => self.clone(),
-      Node::Prj(t, i, v) => Node::Prj(*t, *i, f(*v)),
-      Node::App(a, b) => Node::App(f(*a), f(*b)),
-      Node::Lam(c, a, b) => Node::Lam(*c, f(*a), f(*b)),
-      Node::All(c, v, a, b) => Node::All(*c, *v, f(*a), f(*b)),
-      Node::Let(c, a, b, d) => Node::Let(*c, f(*a), f(*b), f(*d)),
+      | Node::Nat(_) => self,
+      Node::Prj(t, i, v) => Node::Prj(t, i, f(v)),
+      Node::App(a, b) => Node::App(f(a), f(b)),
+      Node::Lam(c, a, b) => Node::Lam(c, f(a), f(b)),
+      Node::All(c, v, a, b) => Node::All(c, v, f(a), f(b)),
+      Node::Let(c, a, b, d) => Node::Let(c, f(a), f(b), f(d)),
     }
   }
 
@@ -281,11 +282,14 @@ struct Builder<'m, 'l> {
 
 impl Builder<'_, '_> {
   fn intern(&mut self, node: Node) -> Result<TermId, SharingError> {
-    if let Some(&id) = self.index.get(&node) {
-      return Ok(id);
-    }
+    // One lookup: a new node is inserted through its vacant entry (after
+    // the checks, which return without inserting).
+    let slot = match self.index.entry(node) {
+      std::collections::hash_map::Entry::Occupied(o) => return Ok(*o.get()),
+      std::collections::hash_map::Entry::Vacant(v) => v,
+    };
     let mut height: u32 = 0;
-    for &c in node.children().as_slice() {
+    for &c in slot.key().children().as_slice() {
       let h = self.heights[ix(c)].checked_add(1).ok_or_else(|| {
         SharingError::FormatBound(FormatBound::TermIdSpace {
           nodes: u64_len(self.nodes.len()),
@@ -302,9 +306,9 @@ impl Builder<'_, '_> {
       .ok_or(SharingError::FormatBound(FormatBound::TermIdSpace {
         nodes: count,
       }))?;
-    self.nodes.push(node.clone());
+    self.nodes.push(slot.key().clone());
     self.heights.push(height);
-    self.index.insert(node, id);
+    slot.insert(id);
     Ok(id)
   }
 
@@ -357,7 +361,10 @@ impl Builder<'_, '_> {
     let mut stack: Vec<(&Expr, bool)> = vec![(root.as_ref(), false)];
     while let Some((e, ready)) = stack.pop() {
       let key = std::ptr::from_ref(e);
-      if memo.contains_key(&key) {
+      // A node is memoized by its own "ready" entry, which is below every
+      // entry of its subtree (none of which is the node itself), so only
+      // a first visit can find it memoized.
+      if !ready && memo.contains_key(&key) {
         continue;
       }
       if !ready {
@@ -403,7 +410,7 @@ impl Builder<'_, '_> {
 
   /// Keep the subterms reachable from `roots` and renumber them by §3.2.
   fn finalize(
-    self,
+    mut self,
     roots: &[TermId],
   ) -> Result<(SharingDag, Vec<TermId>), SharingError> {
     let n = self.nodes.len();
@@ -420,26 +427,47 @@ impl Builder<'_, '_> {
         }
       }
     }
-    let max_h =
-      (0..n).filter(|&p| reach[p]).map(|p| self.heights[p]).max().unwrap_or(0);
-    let mut buckets: Vec<Vec<usize>> =
-      vec![Vec::new(); usize::try_from(max_h).unwrap_or(0) + 1];
+    // The reachable terms by height (a counting sort; ascending provisional
+    // IDs within a height): `by_height[start[h]..start[h + 1]]`.
+    let height = |p: usize| usize::try_from(self.heights[p]).unwrap_or(0);
+    let max_h = (0..n).filter(|&p| reach[p]).map(height).max().unwrap_or(0);
+    let mut start = vec![0usize; max_h + 2];
     for p in (0..n).filter(|&p| reach[p]) {
-      buckets[usize::try_from(self.heights[p]).unwrap_or(0)].push(p);
+      start[height(p) + 1] += 1;
+    }
+    for h in 0..=max_h {
+      start[h + 1] += start[h];
+    }
+    let mut fill: Vec<usize> = start[..=max_h].to_vec();
+    let mut by_height = vec![0usize; start[max_h + 1]];
+    for p in (0..n).filter(|&p| reach[p]) {
+      by_height[fill[height(p)]] = p;
+      fill[height(p)] += 1;
     }
     let mut new_id = vec![TermId::MAX; n];
-    let mut nodes = Vec::new();
-    let mut heights = Vec::new();
+    let mut nodes = Vec::with_capacity(by_height.len());
+    let mut heights = Vec::with_capacity(by_height.len());
     let mut next: TermId = 0;
-    for (h, mut keyed) in buckets.into_iter().enumerate() {
-      // Sorted by the [`NodeKey`] order (compared in place), then by the
-      // provisional ID, as sorting `(NodeKey, usize)` pairs.
-      let key_cmp = |a: usize, b: usize| {
-        node_key_cmp(&self.nodes[a], &self.nodes[b], &new_id)
+    let mut keyed: Vec<(SortKey, usize)> = Vec::new();
+    for h in 0..=max_h {
+      // Sorted by the [`NodeKey`] order, then by the provisional ID, as
+      // sorting `(NodeKey, usize)` pairs: the children of this height's
+      // terms have their final IDs already.
+      keyed.clear();
+      keyed.extend(
+        by_height[start[h]..start[h + 1]]
+          .iter()
+          .map(|&p| (SortKey::of(&self.nodes[p], &new_id), p)),
+      );
+      let nodes_here = &self.nodes;
+      let key_cmp = |a: &(SortKey, usize), b: &(SortKey, usize)| {
+        a.0
+          .cmp(&b.0)
+          .then_with(|| ref_args_cmp(&nodes_here[a.1], &nodes_here[b.1]))
       };
-      keyed.sort_by(|&a, &b| key_cmp(a, b).then(a.cmp(&b)));
+      keyed.sort_unstable_by(|a, b| key_cmp(a, b).then(a.1.cmp(&b.1)));
       for w in keyed.windows(2) {
-        if key_cmp(w[0], w[1]) == std::cmp::Ordering::Equal {
+        if key_cmp(&w[0], &w[1]) == std::cmp::Ordering::Equal {
           return Err(SharingError::Internal(
             "two interned nodes share one structural key".into(),
           ));
@@ -447,18 +475,59 @@ impl Builder<'_, '_> {
       }
       let h = u32::try_from(h)
         .map_err(|_e| SharingError::Internal("height exceeds u32".into()))?;
-      for p in keyed {
+      for &(_, p) in &keyed {
         new_id[p] = next;
         next = next.checked_add(1).ok_or(SharingError::FormatBound(
           FormatBound::TermIdSpace { nodes: u64_len(n) },
         ))?;
-        nodes.push(self.nodes[p].map_children(|c| new_id[ix(c)]));
+        // Each term is renumbered once; its node is not read again.
+        let node = std::mem::replace(&mut self.nodes[p], Node::Sort(0));
+        nodes.push(node.into_mapped(|c| new_id[ix(c)]));
         heights.push(h);
       }
     }
     let roots = roots.iter().map(|&r| new_id[ix(r)]).collect();
     let dag = SharingDag { nodes, heights, roots };
     Ok((dag, new_id))
+  }
+}
+
+/// The [`NodeKey`] of a node in fixed width: its tag, its scalar payload
+/// (`[n, |us|]` for `Ref`/`Rec`, whose `us` follow in [`ref_args_cmp`];
+/// the others have at most two scalars) and its child IDs mapped by `ids`,
+/// padded with zeros. Two nodes of the same tag have payloads and children
+/// of the same lengths, so the padded order is the [`NodeKey`] order up to
+/// the `us` of `Ref`/`Rec`.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct SortKey {
+  tag: u8,
+  scalars: [u64; 2],
+  children: [TermId; 3],
+}
+
+impl SortKey {
+  fn of(node: &Node, ids: &[TermId]) -> SortKey {
+    let scalars = match node {
+      Node::Ref(n, us) | Node::Rec(n, us) => [*n, u64_len(us.len())],
+      _ => small_scalars(node).0,
+    };
+    let mut children = [0; 3];
+    for (slot, &c) in children.iter_mut().zip(node.children().as_slice()) {
+      *slot = ids[ix(c)];
+    }
+    SortKey { tag: node.tag(), scalars, children }
+  }
+}
+
+/// The order of the universe arguments of two `Ref`/`Rec` nodes (the rest
+/// of their [`NodeKey`] after [`SortKey`]); equal for other nodes.
+fn ref_args_cmp(a: &Node, b: &Node) -> std::cmp::Ordering {
+  match (a, b) {
+    (
+      Node::Ref(_, us) | Node::Rec(_, us),
+      Node::Ref(_, vs) | Node::Rec(_, vs),
+    ) => us.cmp(vs),
+    _ => std::cmp::Ordering::Equal,
   }
 }
 
@@ -476,7 +545,8 @@ fn small_scalars(node: &Node) -> ([u64; 2], usize) {
 }
 
 /// The order of the [`NodeKey`]s of two nodes (tag, scalar payload, child
-/// IDs mapped by `ids`), compared in place.
+/// IDs mapped by `ids`), compared in place: the reference of [`SortKey`].
+#[cfg(test)]
 fn node_key_cmp(a: &Node, b: &Node, ids: &[TermId]) -> std::cmp::Ordering {
   a.tag()
     .cmp(&b.tag())
@@ -959,5 +1029,82 @@ impl SharingDag {
   pub fn root_exprs(&self) -> Vec<Arc<Expr>> {
     let terms = self.term_exprs();
     self.roots.iter().map(|&r| terms[ix(r)].clone()).collect()
+  }
+}
+
+#[cfg(test)]
+mod key_tests {
+  use super::*;
+
+  struct Rng(u64);
+
+  impl Rng {
+    fn below(&mut self, n: u64) -> u64 {
+      self.0 ^= self.0 << 13;
+      self.0 ^= self.0 >> 7;
+      self.0 ^= self.0 << 17;
+      self.0 % n
+    }
+
+    fn id(&mut self) -> TermId {
+      TermId::try_from(self.below(8)).unwrap()
+    }
+
+    fn node(&mut self, b: &[BinderContract], v: &[ValueContract]) -> Node {
+      let small = |r: &mut Rng| r.below(3);
+      match self.below(11) {
+        0 => Node::Sort(small(self)),
+        1 => Node::Var(small(self)),
+        2 | 3 => {
+          let n = small(self);
+          let len = self.below(3);
+          let us = (0..len).map(|_| small(self)).collect();
+          if self.below(2) == 0 { Node::Ref(n, us) } else { Node::Rec(n, us) }
+        },
+        4 => Node::Prj(self.below(2), self.below(2), self.id()),
+        5 => Node::Str(small(self)),
+        6 => Node::Nat(small(self)),
+        7 => Node::App(self.id(), self.id()),
+        8 => {
+          let c = b[usize::try_from(self.below(b.len() as u64)).unwrap()];
+          Node::Lam(c, self.id(), self.id())
+        },
+        9 => {
+          let c = b[usize::try_from(self.below(b.len() as u64)).unwrap()];
+          let x = v[usize::try_from(self.below(v.len() as u64)).unwrap()];
+          Node::All(c, x, self.id(), self.id())
+        },
+        _ => Node::Let(
+          LetContract::plain(self.below(2) == 1),
+          self.id(),
+          self.id(),
+          self.id(),
+        ),
+      }
+    }
+  }
+
+  /// The fixed-width key with the `Ref`/`Rec` arguments orders nodes as
+  /// their [`NodeKey`]s do (`node_key_cmp`), on random nodes of every kind
+  /// with small payloads and colliding child IDs.
+  #[test]
+  fn sort_key_matches_node_key() {
+    let mut rng = Rng(0x2545_F491_4F6C_DD1D);
+    let b: Vec<BinderContract> =
+      (0..=255u8).filter_map(BinderContract::from_bits).take(3).collect();
+    let v: Vec<ValueContract> =
+      (0..=255u8).filter_map(ValueContract::from_bits).take(3).collect();
+    let ids: Vec<TermId> = (0..8).map(|_| rng.id() % 5).collect();
+    let mut equal = 0;
+    for _ in 0..50_000 {
+      let (x, y) = (rng.node(&b, &v), rng.node(&b, &v));
+      let fast = SortKey::of(&x, &ids)
+        .cmp(&SortKey::of(&y, &ids))
+        .then_with(|| ref_args_cmp(&x, &y));
+      let want = node_key_cmp(&x, &y, &ids);
+      assert_eq!(fast, want, "{x:?} {y:?}");
+      equal += usize::from(want == std::cmp::Ordering::Equal);
+    }
+    assert!(equal > 100, "{equal} equal pairs");
   }
 }
