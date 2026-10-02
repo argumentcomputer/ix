@@ -34,7 +34,7 @@
 //!
 //! Wire format: Convention B (own magic + explicit version, the
 //! `.ixes`/`.ixprof` precedent). Fixed-width little-endian integers —
-//! deliberately unlike `.ixe`'s Tag0 varints. Trailing bytes after the
+//! deliberately unlike `.ixe`'s TagN varints. Trailing bytes after the
 //! storage section are preserved opaquely (future sections: 0x01 agg
 //! tree, 0x02 per-unit assumption roots); readers of this version stop
 //! after storage, the `.ixes` trick.
@@ -64,7 +64,8 @@ pub const CATALOG_MAGIC: &[u8; 8] = b"IXC\0\0\0\0\0";
 /// The manifest's filename inside a `.ixc` directory.
 pub const MANIFEST_FILE: &str = "manifest";
 
-/// Manifest v2 binds Ixon v3 and erased-lean-v1 catalog claims.
+/// Manifest v2 binds the Ixon object format (`Env::OBJECT_FORMAT`) and
+/// erased-lean-v1 catalog claims.
 pub const CATALOG_VERSION: u32 = 2;
 
 /// Storage-profile flag: bit0 of the header `flags` word.
@@ -228,7 +229,8 @@ impl Catalog {
     out.extend_from_slice(&CATALOG_VERSION.to_le_bytes());
     let flags: u32 = if self.is_chunked() { FLAG_CHUNKED } else { 0 };
     out.extend_from_slice(&flags.to_le_bytes());
-    out.extend_from_slice(&[3, 1]); // Ixon v3, erased-lean-v1.
+    // Ixon object format, erased-lean-v1.
+    out.extend_from_slice(&[crate::env::Env::OBJECT_FORMAT, 1]);
     out.extend_from_slice(self.members_root.as_bytes());
     out.extend_from_slice(self.content_root.as_bytes());
     let count = u32::try_from(self.members.len())
@@ -307,8 +309,13 @@ impl Catalog {
       // they may change the meaning of everything that follows.
       return Err(format!("unknown .ixc flags 0x{flags:X}"));
     }
-    if c.u8()? != 3 {
-      return Err("catalog: unsupported object format".into());
+    let format = c.u8()?;
+    if format != crate::env::Env::OBJECT_FORMAT {
+      return Err(format!(
+        "catalog: unsupported object format {format}, expected {} — \
+         regenerate the catalog",
+        crate::env::Env::OBJECT_FORMAT
+      ));
     }
     if c.u8()? != 1 {
       return Err("catalog: wrong validator identity".into());

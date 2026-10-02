@@ -8,12 +8,12 @@ use crate::constant::{
   defn_proj_constant, indc_proj_constant, recr_proj_constant,
 };
 use crate::env::Env;
-use crate::tag::Tag0;
+use crate::tag::TagN;
 use ix_common::address::Address;
 use ix_common::env::DefinitionSafety;
 use rustc_hash::FxHashMap;
 
-pub const VALIDATOR_ID: &str = "ixon-v3/resource-v1";
+pub const VALIDATOR_ID: &str = "ixon-v4/resource-v1";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Profile {
@@ -49,7 +49,7 @@ impl Profile {
   pub fn bytes(&self) -> Vec<u8> {
     let mut bytes = format!("{VALIDATOR_ID}/profile\0").into_bytes();
     for list in [&self.assumptions, &self.shareable_types, &self.choices] {
-      Tag0::new(list.len() as u64).put(&mut bytes);
+      TagN::put(0, 0, list.len() as u64, &mut bytes);
       for address in list {
         bytes.extend_from_slice(address.as_bytes());
       }
@@ -63,8 +63,8 @@ impl Profile {
         },
       }
     }
-    Tag0::new(self.limits.depth as u64).put(&mut bytes);
-    Tag0::new(self.limits.steps as u64).put(&mut bytes);
+    TagN::put(0, 0, self.limits.depth as u64, &mut bytes);
+    TagN::put(0, 0, self.limits.steps as u64, &mut bytes);
     bytes
   }
 
@@ -79,7 +79,7 @@ impl Profile {
       .strip_prefix(prefix.as_bytes())
       .ok_or("resource profile: wrong validator identifier")?;
     fn list(bytes: &mut &[u8]) -> Result<Vec<Address>, String> {
-      let count = Tag0::get(bytes)?.size;
+      let count = TagN::get(0, bytes)?.value;
       if count > (bytes.len() / 32) as u64 {
         return Err("resource profile: impossible address count".into());
       }
@@ -117,9 +117,9 @@ impl Profile {
       nat_type: optional(&mut bytes)?,
       string_type: optional(&mut bytes)?,
       limits: Limits {
-        depth: usize::try_from(Tag0::get(&mut bytes)?.size)
+        depth: usize::try_from(TagN::get(0, &mut bytes)?.value)
           .map_err(|_error| "resource profile: depth overflow")?,
-        steps: usize::try_from(Tag0::get(&mut bytes)?.size)
+        steps: usize::try_from(TagN::get(0, &mut bytes)?.value)
           .map_err(|_error| "resource profile: steps overflow")?,
       },
     };
@@ -675,6 +675,15 @@ mod tests {
   use crate::constant::{Axiom, Constructor, DefKind, Inductive, RecursorRule};
   use crate::univ::Univ;
 
+  /// The validator identity and the wire-format id move with the format
+  /// version: a version bump cannot leave profile addresses in the old
+  /// domain.
+  #[test]
+  fn validator_id_follows_the_wire_format() {
+    assert_eq!(crate::WIRE_FORMAT_ID, format!("ixon-v{}", Env::VERSION));
+    assert_eq!(VALIDATOR_ID, format!("{}/resource-v1", crate::WIRE_FORMAT_ID));
+  }
+
   fn store(env: &Env, c: Constant) -> Address {
     let addr = c.commit().0;
     env.store_const(addr.clone(), c);
@@ -1000,7 +1009,7 @@ mod tests {
       ),
     ];
     let fixture =
-      include_str!("../../../../Tests/Fixtures/ixon-v3/addressed.tsv");
+      include_str!("../../../../Tests/Fixtures/ixon-v4/addressed.tsv");
     for (name, constant) in cases {
       let (address, bytes) = constant.commit();
       let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();

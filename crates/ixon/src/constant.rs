@@ -181,8 +181,8 @@ pub enum ConstantInfo {
 }
 
 impl ConstantInfo {
-  // Constant variant indices (used as Tag4 size field)
-  // These are 0-7, fitting in 3 bits for single-byte Tag4
+  // Constant variant indices (the value of the TagN header)
+  // These are 0-7, fitting in 3 bits for single-byte TagN
   // Note: Muts uses a separate flag (0xC), not a variant here
   pub const CONST_DEFN: u64 = 0;
   pub const CONST_RECR: u64 = 1;
@@ -193,7 +193,7 @@ impl ConstantInfo {
   pub const CONST_IPRJ: u64 = 6;
   pub const CONST_DPRJ: u64 = 7;
 
-  /// Returns the variant index (used as Tag4 size field)
+  /// Returns the variant index (the value of the TagN header)
   /// Returns None for Muts (which uses its own flag)
   pub fn variant(&self) -> Option<u64> {
     match self {
@@ -224,9 +224,9 @@ pub struct Constant {
 }
 
 impl Constant {
-  /// Tag4 flag used for non-Muts constants (variant in size field, always 1 byte)
+  /// TagN flag used for non-Muts constants (the variant is the value; one byte)
   pub const FLAG: u8 = 0xD;
-  /// Tag4 flag used for Muts constants (entry count in size field)
+  /// TagN flag used for Muts constants (the entry count is the value)
   pub const FLAG_MUTS: u8 = 0xC;
 
   /// Create a new constant with no sharing, refs, or univs
@@ -472,7 +472,7 @@ pub mod tests {
   }
 
   #[test]
-  fn constant_tag4_serialization() {
+  fn constant_tagn_serialization() {
     let defn = gen_definition(&mut Gen::new(10));
     let cnst = Constant::new(ConstantInfo::Defn(defn));
     let mut buf = Vec::new();

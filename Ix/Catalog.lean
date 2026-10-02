@@ -44,7 +44,8 @@ open Ixon (PutM GetM putU8 getU8 putBytes getBytes runPut runGet)
 /-- Magic bytes at the head of every `.ixc` file. -/
 def MAGIC : ByteArray := String.toUTF8 "IXC" ++ ⟨#[0, 0, 0, 0, 0]⟩
 
-/-- Manifest v2 binds Ixon v3 and erased-lean-v1 catalog claims. -/
+/-- Manifest v2 binds the Ixon object format (`Ixon.Env.OBJECT_FORMAT`)
+    and erased-lean-v1 catalog claims. -/
 def VERSION : UInt32 := 2
 
 /-- Storage-profile flag: bit0 of the header `flags` word. -/
@@ -185,7 +186,7 @@ def ser (c : Catalog) : ByteArray := runPut do
   putU32LE (match c.storage with
     | .chunked _ => FLAG_CHUNKED
     | .fat _ => 0)
-  putU8 3
+  putU8 Ixon.Env.OBJECT_FORMAT
   putU8 1
   putAddr c.membersRoot
   putAddr c.contentRoot
@@ -247,7 +248,10 @@ where
       let flags ← getU32LE
       if flags &&& (~~~FLAG_CHUNKED) != 0 then
         throw s!"unknown .ixc flags {flags}"
-      unless (← getU8) == 3 do throw "catalog: unsupported object format"
+      let format ← getU8
+      unless format == Ixon.Env.OBJECT_FORMAT do
+        throw s!"catalog: unsupported object format {format}, expected \
+          {Ixon.Env.OBJECT_FORMAT} — regenerate the catalog"
       unless (← getU8) == 1 do throw "catalog: wrong validator identity"
       let membersRoot ← getAddr
       let contentRoot ← getAddr

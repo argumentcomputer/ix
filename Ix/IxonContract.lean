@@ -161,7 +161,7 @@ def lean (nonDep : Bool) : LetContract := { nonDep }
 def borrow (nonDep : Bool) (uses : Uses := .many) : LetContract :=
   { nonDep, kind := .borrowShared, binder := ⟨uses, .localShared⟩ }
 
-/-- The existing let Tag4 size holds the dependency and borrow-kind flags. -/
+/-- The let header's TagN value holds the dependency and borrow-kind flags. -/
 def flags (c : LetContract) : UInt64 :=
   (if c.nonDep then 1 else 0) ||| (match c.kind with | .value => 0 | .borrowShared => 2)
 

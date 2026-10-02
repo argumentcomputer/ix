@@ -2877,8 +2877,8 @@ mod tests {
         let (o, slots) =
           count_occ(e, &cnst.sharing, &geran_idxs, &mut memo_geran);
         geran_occurrences += o;
-        // UnivPatch wire estimate: Tag0 arenaIdx (~3B) + Tag0 len (1B)
-        // + Tag0 per index (~2B).
+        // UnivPatch wire estimate: TagN arenaIdx (~3B) + TagN len (1B)
+        // + TagN per index (~2B).
         geran_patch_bytes += o * 4 + slots * 2;
       }
     }

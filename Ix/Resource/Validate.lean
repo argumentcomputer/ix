@@ -4,7 +4,7 @@ public import Ix.Resource.Addressed
 public import Ix.Tc.Driver
 
 /-! The combined native validation boundary. Both validators consume the same
-addressed v3 bytes. Kernel typechecking alone has no resource meaning. -/
+addressed v4 bytes. Kernel typechecking alone has no resource meaning. -/
 
 @[expose] public section
 

@@ -132,7 +132,7 @@ impl LeanIxonExpr<LeanOwned> {
 }
 
 impl<R: LeanRef> LeanIxonExpr<R> {
-  /// Decode all v3 expression forms without erasing contracts.
+  /// Decode all Ixon expression forms without erasing contracts.
   pub fn decode(&self) -> IxonExpr {
     let ctor = self.as_ctor();
     let tag = ctor.tag();

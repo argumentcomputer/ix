@@ -1,4 +1,4 @@
-//! Combined resource and erased-type validation for addressed Ixon v3.
+//! Combined resource and erased-type validation for addressed Ixon.
 //! Kernel typechecking on its own makes no resource promise.
 
 use crate::anon_work::build_anon_work;
@@ -127,23 +127,23 @@ mod tests {
   #[test]
   fn cross_language_consumer_handoff() {
     let profile = Profile::from_bytes(include_bytes!(
-      "../../../Tests/Fixtures/ixon-v3/handoff/profile.bin"
+      "../../../Tests/Fixtures/ixon-v4/handoff/profile.bin"
     ))
     .unwrap();
     let claim = ixon::proof::Claim::from_bytes(include_bytes!(
-      "../../../Tests/Fixtures/ixon-v3/handoff/accepted.claim"
+      "../../../Tests/Fixtures/ixon-v4/handoff/accepted.claim"
     ))
     .unwrap();
     let accepted = Env::get(
       &mut include_bytes!(
-        "../../../Tests/Fixtures/ixon-v3/handoff/accepted.ixe"
+        "../../../Tests/Fixtures/ixon-v4/handoff/accepted.ixe"
       )
       .as_slice(),
     )
     .unwrap();
     let rejected = Env::get(
       &mut include_bytes!(
-        "../../../Tests/Fixtures/ixon-v3/handoff/rejected-local-escape.ixe"
+        "../../../Tests/Fixtures/ixon-v4/handoff/rejected-local-escape.ixe"
       )
       .as_slice(),
     )

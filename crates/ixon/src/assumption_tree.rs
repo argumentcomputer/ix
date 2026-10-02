@@ -18,10 +18,10 @@
 //!
 //! ## Serialization
 //!
-//! Tag4 size 2 under flag 0xE:
+//! TagN size 2 under flag 0xE:
 //!
 //! ```text
-//! [Tag4(0xE, 2) = 0xE2] [body]
+//! [TagN(0xE, 2) = 0xE2] [body]
 //!
 //! body recursive:
 //!   Leaf(addr):  [0x00] [addr:32]
@@ -40,7 +40,7 @@ use ix_common::address::Address;
 
 use super::merkle::{MerklePath, leaf_hash, node_hash, zero_address};
 use super::proof::{FLAG_CLAIM, VARIANT_ASSUMPTION_TREE};
-use super::tag::Tag4;
+use super::tag::TagN;
 
 // Body-tag bytes (within the AssumptionTree-flagged payload).
 const BODY_LEAF: u8 = 0x00;
@@ -178,9 +178,9 @@ impl AssumptionTree {
 
   // ---- Serialization ----
 
-  /// Serialize with Tag4(0xE, 2) outer header + recursive body.
+  /// Serialize with TagN(0xE, 2) outer header + recursive body.
   pub fn put(&self, buf: &mut Vec<u8>) {
-    Tag4::new(FLAG_CLAIM, VARIANT_ASSUMPTION_TREE).put(buf);
+    TagN::put(4, FLAG_CLAIM, VARIANT_ASSUMPTION_TREE, buf);
     self.put_body(buf);
   }
 
@@ -201,13 +201,13 @@ impl AssumptionTree {
     }
   }
 
-  /// Deserialize: expects Tag4(0xE, 2) outer header.
+  /// Deserialize: expects TagN(0xE, 2) outer header.
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let tag = Tag4::get(buf)?;
-    if tag.flag != FLAG_CLAIM || tag.size != VARIANT_ASSUMPTION_TREE {
+    let tag = TagN::get(4, buf)?;
+    if tag.flag != FLAG_CLAIM || tag.value != VARIANT_ASSUMPTION_TREE {
       return Err(format!(
-        "AssumptionTree::get: expected Tag4{{0xE, 2}}, got Tag4{{{}, {}}}",
-        tag.flag, tag.size,
+        "AssumptionTree::get: expected header {{0xE, 2}}, got {{{}, {}}}",
+        tag.flag, tag.value,
       ));
     }
     Self::get_body(buf)
@@ -490,7 +490,7 @@ mod tests {
 
   #[test]
   fn serde_rejects_wrong_tag() {
-    // Tag4(0xE, 3) = Eval claim, not AssumptionTree.
+    // TagN(0xE, 3) = Eval claim, not AssumptionTree.
     let bytes = [0xE3, 0x00, 0x00];
     assert!(AssumptionTree::get(&mut &bytes[..]).is_err());
   }
