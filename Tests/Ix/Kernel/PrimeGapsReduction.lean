@@ -86,9 +86,6 @@ emit_prime_gaps_erase_table
 
 /-! The two reducer-facing folds, copied without simplification. -/
 
--- Keeps the upstream generator's exact `Bool.and'`/`or'`/`not'` terms, which Lean
--- 4.34 deprecates in favour of the unprimed functions.
-set_option linter.deprecated false in
 noncomputable def dataCheck (S n maxNib aBound sigEnc eraseEnc labelEnc : Nat) : Bool :=
   Nat.rec (motive := fun _ => Nat → Nat → Bool)
     (fun _ uT =>
@@ -98,8 +95,8 @@ noncomputable def dataCheck (S n maxNib aBound sigEnc eraseEnc labelEnc : Nat) :
           (fun fL =>
             Bool.rec (motive := fun _ => Bool) false
               (ihL (Nat.succ i))
-              (Bool.and'
-                (Bool.and' (Nat.blt (labelSignature fL) S)
+              (Bool.and
+                (Bool.and (Nat.blt (labelSignature fL) S)
                   (Nat.beq (labelDegree fL)
                     (Nat.land
                       (Nat.shiftRight uT (Nat.shiftLeft (labelSignature fL) (nat_lit 4)))
@@ -120,7 +117,7 @@ noncomputable def dataCheck (S n maxNib aBound sigEnc eraseEnc labelEnc : Nat) :
                         (Nat.add uT
                           (Nat.shiftLeft (Nat.shiftLeft usum (nat_lit 1))
                             (Nat.shiftLeft s (nat_lit 4)))))
-                      (Bool.and' (Nat.ble jSlot (nat_lit 4))
+                      (Bool.and (Nat.ble jSlot (nat_lit 4))
                         (Nat.beq (slotField eraseEnc s (nat_lit 4))
                           (Nat.succ (Nat.shiftLeft s (nat_lit 5))))))
                   (fun _ ihJ j =>
@@ -140,15 +137,15 @@ noncomputable def dataCheck (S n maxNib aBound sigEnc eraseEnc labelEnc : Nat) :
                         ((fun fS =>
                           Bool.rec (motive := fun _ => Bool) false
                             (ihT (Nat.succ t) nib (Nat.succ jSlot) (Nat.add usum nib))
-                            (Bool.and'
-                              (Bool.and' (slotUsed fS) (Nat.beq (slotPart2 fS) nib))
-                              (Bool.and' (Nat.blt (slotTarget fS) S)
+                            (Bool.and
+                              (Bool.and (slotUsed fS) (Nat.beq (slotPart2 fS) nib))
+                              (Bool.and (Nat.blt (slotTarget fS) S)
                                 (Nat.beq (sigField sigEnc (slotTarget fS))
                                   (eraseAt enc t)))))
                           (slotField eraseEnc s jSlot))
-                        (Bool.or' (Nat.beq t (nat_lit 0))
-                          (Bool.not' (Nat.beq nib prev))))
-                      (Bool.and' (Nat.blt (nat_lit 0) nib) (Nat.ble prev nib)))
+                        (Bool.or (Nat.beq t (nat_lit 0))
+                          (Bool.not (Nat.beq nib prev))))
+                      (Bool.and (Nat.blt (nat_lit 0) nib) (Nat.ble prev nib)))
                     (Nat.blt t m))
                   (sigNib enc t))
               maxNib (nat_lit 0) (nat_lit 0) (nat_lit 0) (nat_lit 0))
