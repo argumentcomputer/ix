@@ -237,6 +237,41 @@ enum ShareCtx<'a> {
   },
 }
 
+/// The interning maps of [`SharingDag::build_full`], kept per thread
+/// between builds: emptied, with their tables, while those stay small.
+#[derive(Default)]
+struct BuildMaps {
+  index: FxHashMap<Node, TermId>,
+  memo: FxHashMap<*const Expr, TermId>,
+}
+
+thread_local! {
+  static BUILD_MAPS: std::cell::Cell<Option<Box<BuildMaps>>> =
+    const { std::cell::Cell::new(None) };
+}
+
+impl BuildMaps {
+  /// Tables larger than this many entries are not kept (emptying a table
+  /// costs its size).
+  const KEEP: usize = 1 << 12;
+
+  /// This thread's maps (fresh ones when a build on this thread holds
+  /// them).
+  fn take() -> Box<BuildMaps> {
+    BUILD_MAPS.take().unwrap_or_default()
+  }
+
+  /// Keep the maps, emptied, for the next build on this thread.
+  fn keep(mut self: Box<Self>) {
+    if self.index.capacity() > Self::KEEP || self.memo.capacity() > Self::KEEP {
+      return;
+    }
+    self.index.clear();
+    self.memo.clear();
+    BUILD_MAPS.set(Some(self));
+  }
+}
+
 struct Builder<'m, 'l> {
   nodes: Vec<Node>,
   heights: Vec<u32>,
@@ -531,13 +566,14 @@ impl SharingDag {
     table: Option<&[Arc<Expr>]>,
     meter: &mut Meter<'_>,
   ) -> Result<(SharingDag, Vec<Option<TermId>>), SharingError> {
+    let mut maps = BuildMaps::take();
     let mut b = Builder {
       nodes: Vec::new(),
       heights: Vec::new(),
-      index: FxHashMap::default(),
+      index: std::mem::take(&mut maps.index),
       meter,
     };
-    let mut memo: FxHashMap<*const Expr, TermId> = FxHashMap::default();
+    let mut memo = std::mem::take(&mut maps.memo);
     let mut root_ids = Vec::with_capacity(roots.len());
     let mut entry_ids: Vec<TermId> = Vec::new();
     match table {
@@ -569,6 +605,9 @@ impl SharingDag {
         }
       },
     }
+    maps.index = std::mem::take(&mut b.index);
+    maps.memo = memo;
+    maps.keep();
     let (dag, new_id) = b.finalize(&root_ids)?;
     let entries = entry_ids
       .iter()

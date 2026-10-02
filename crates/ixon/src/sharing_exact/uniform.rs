@@ -1159,6 +1159,62 @@ struct Pool {
   walk: RefCell<WalkScratch>,
 }
 
+impl Pool {
+  /// Bound what the pool keeps between constructions: at most `COUNT`
+  /// buffers per kind, none above `BYTES`, and the memo's and the walk's
+  /// tables only while they are as small (a kept buffer serves the areas
+  /// of up to that size; larger ones allocate as before).
+  fn trim(&self) {
+    const BYTES: usize = 1 << 16;
+    const COUNT: usize = 8;
+    fn keep<T>(list: &RefCell<Vec<Vec<T>>>) {
+      let mut list = list.borrow_mut();
+      list.retain(|v| v.capacity() * size_of::<T>() <= BYTES);
+      list.truncate(COUNT);
+    }
+    keep(&self.flags);
+    keep(&self.vals);
+    keep(&self.vis);
+    keep(&self.uvals);
+    keep(&self.positions);
+    keep(&self.counts);
+    let memo_bytes =
+      self.memo.borrow().capacity() * size_of::<(Vec<u64>, Rc<CTable>)>();
+    if memo_bytes > BYTES {
+      self.memo.replace(FxHashMap::default());
+    }
+    let mut w = self.walk.borrow_mut();
+    let bytes = 8
+      * (w.uf.capacity()
+        + w.reps.capacity()
+        + w.start.capacity()
+        + w.rs.capacity()
+        + w.slot.capacity()
+        + w.entries.capacity())
+      + 4 * (w.stack.capacity() + w.down.capacity());
+    if bytes > BYTES {
+      *w = WalkScratch::default();
+    }
+  }
+}
+
+thread_local! {
+  /// The search pool of this thread, kept between the widths and the
+  /// constructions it runs.
+  static POOL: std::cell::Cell<Option<Box<Pool>>> =
+    const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with this thread's search pool (a fresh one when a construction
+/// on this thread holds it, as a nested one under rayon can), then keep it.
+fn with_pool<R>(f: impl FnOnce(&Pool) -> R) -> R {
+  let pool = POOL.take().unwrap_or_default();
+  let r = f(&pool);
+  pool.trim();
+  POOL.set(Some(pool));
+  r
+}
+
 #[derive(Default)]
 struct WalkScratch {
   uf: Vec<usize>,
@@ -2407,10 +2463,12 @@ pub(crate) fn optimize_uniform_with(
   let mut results: Vec<(Choice, CTable)> = Vec::with_capacity(comps.len());
   if budget <= 1 {
     let mut pos = vec![NO_POS; n];
-    let pool = Pool::default();
-    for members in &comps {
-      results.push(search_one(members, meter, &mut pos, &pool)?);
-    }
+    with_pool(|pool| {
+      for members in &comps {
+        results.push(search_one(members, meter, &mut pos, pool)?);
+      }
+      Ok::<(), SharingError>(())
+    })?;
   } else {
     // Each component on its own meter; the counts are added in component
     // order afterwards (`Meter::absorb`), then the results are used in the
@@ -2418,13 +2476,14 @@ pub(crate) fn optimize_uniform_with(
     let limits = meter.limits();
     let outs = super::par::map_ranges(comps.len(), budget, |r| {
       let mut pos = vec![NO_POS; n];
-      let pool = Pool::default();
-      r.map(|j| {
-        let mut m = Meter::new(limits);
-        let res = search_one(&comps[j], &mut m, &mut pos, &pool);
-        (res, m.stats)
+      with_pool(|pool| {
+        r.map(|j| {
+          let mut m = Meter::new(limits);
+          let res = search_one(&comps[j], &mut m, &mut pos, pool);
+          (res, m.stats)
+        })
+        .collect()
       })
-      .collect()
     });
     for (res, stats) in outs {
       meter.absorb(&stats)?;
