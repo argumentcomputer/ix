@@ -42,7 +42,7 @@ path = "../.."
 [[require]]
 name = "flt"
 git = "https://github.com/ImperialCollegeLondon/FLT"
-rev = "v4.33.0"
+rev = "v4.34.0"
 
 [[require]]
 name = "flt_e2e"
@@ -69,9 +69,9 @@ name = "TauCeti"
 git = "https://github.com/TauCetiProject/TauCeti"
 rev = "afb1aacb3632d3236eee756ea1683290c07270a3"
 
-# Keep the workspace's Lean 4.33 dependency closure authoritative over
+# Keep the workspace's Lean 4.34 dependency closure authoritative over
 # older or moving transitive Mathlib pins.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4"
-rev = "v4.33.1"
+rev = "v4.34.0"
