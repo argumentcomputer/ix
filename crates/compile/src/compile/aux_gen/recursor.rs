@@ -2486,7 +2486,8 @@ fn compute_is_large_and_k(
   let first_n_indices = ind_infos[0].2;
 
   // Use the TC for the appropriate context.
-  let mut tc = ix_kernel::tc::TypeChecker::new(&mut kctx.kenv);
+  let mut tc =
+    ix_kernel::tc::TypeChecker::new(&mut kctx.kenv).with_deferred_source(stt);
 
   // Compute the WHNF-reduced result sort level via the kernel. This peels
   // params+indices with whnf at each step — crucial for inductives whose
@@ -2567,7 +2568,7 @@ fn compute_is_large_and_k(
       _cilk_elapsed.as_secs_f32(),
       _ingress_total.as_secs_f32(),
       n_classes,
-      kctx.kenv.consts.len(),
+      kctx.kenv.view_len(),
     );
   }
   Ok((is_large, k, is_prop))
@@ -2613,6 +2614,10 @@ fn ingress_field_deps(
 /// see the field docs) instead of a per-call set: the dispatch is
 /// deterministic per constant kind, so a seen id is already at final
 /// kenv fidelity and re-expanding its closure would be pure cost.
+///
+/// On a deferring kernel environment the same walk only registers what
+/// it would ingest (`deferred_ingress::drain`); the kernel converts a
+/// constant when something reads it.
 fn drain_ingress_queue(
   queue: &mut Vec<Name>,
   lean_env: &LeanEnv,
@@ -2623,6 +2628,10 @@ fn drain_ingress_queue(
   use ix_kernel::ingress::resolve_lean_name_addr;
   use ix_kernel::mode::Meta;
 
+  if super::deferred_ingress::defers(lean_env, stt, kctx) {
+    super::deferred_ingress::drain(queue, lean_env, stt, kctx);
+    return;
+  }
   let mut seen = std::mem::take(&mut kctx.aux_ingress_seen);
   while let Some(name) = queue.pop() {
     let addr = resolve_lean_name_addr(
@@ -2700,11 +2709,9 @@ fn ingress_type_stub(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) {
-  use ix_kernel::constant::KConst;
+  use super::deferred_ingress::{stub_const, to_z};
   use ix_kernel::id::KId;
-  use ix_kernel::ingress::{
-    lean_expr_to_zexpr_with_kenv, resolve_lean_name_addr,
-  };
+  use ix_kernel::ingress::resolve_lean_name_addr;
   use ix_kernel::mode::Meta;
 
   let n2a = Some(&stt.name_to_addr);
@@ -2712,28 +2719,13 @@ fn ingress_type_stub(
 
   let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
   let zid: KId<Meta> = KId::new(addr, name.clone());
-  if kctx.kenv.contains_key(&zid) {
+  // Keep whatever is there, registered-but-unconverted entries included.
+  if kctx.kenv.view_contains(&zid) {
     return;
   }
 
-  let ty_z = lean_expr_to_zexpr_with_kenv(
-    typ,
-    level_params,
-    &mut kctx.kenv,
-    n2a,
-    aux_n2a,
-  );
-  let n_lvls = level_params.len() as u64;
-  kctx.kenv.insert(
-    zid,
-    KConst::Axio {
-      name: name.clone(),
-      level_params: level_params.to_vec(),
-      is_unsafe: false,
-      lvls: n_lvls,
-      ty: ty_z,
-    },
-  );
+  let ty_z = to_z(typ, level_params, &mut kctx.kenv, stt);
+  kctx.kenv.insert(zid, stub_const(name, level_params, ty_z));
 }
 
 /// Collect all constant names referenced in a LeanExpr.
@@ -2742,7 +2734,7 @@ fn ingress_type_stub(
 /// subterms are walked once (DAG cost) instead of once per occurrence
 /// (unshared-tree cost — exponential on the eta-expanded structure
 /// types this pass sees constantly).
-fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
+pub(super) fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
   let mut visited: rustc_hash::FxHashSet<&LeanExpr> =
     rustc_hash::FxHashSet::default();
   let mut stack: Vec<&LeanExpr> = vec![expr];
@@ -4764,5 +4756,311 @@ mod tests {
     // generated if they existed in the original Lean env.
     // The full pipeline test (lake test -- rust-compile) exercises real
     // environments where these constants exist.
+  }
+
+  // =======================================================================
+  // Deferred kernel ingress (`deferred_ingress`) against the eager walk
+  // =======================================================================
+
+  /// `W (α : Type) : Pred α` with `Pred α := α → Prop` (an alias target, so
+  /// the index binder only appears under WHNF), a recursive constructor, and
+  /// a field of type `Box`, whose constructor mentions an axiom the kernel
+  /// never needs: the walk reaches `Box`, `Box.mk`'s type and `ax`; the
+  /// kernel reads `Pred` and `Box` but not `ax`.
+  fn build_alias_target_env() -> (LeanEnv, Name) {
+    let type1 = LeanExpr::sort(Level::succ(Level::zero()));
+    let prop = LeanExpr::sort(Level::zero());
+    let bv = |i: u64| LeanExpr::bvar(Nat::from(i));
+    let (ax, bx, pred, w) = (n("ax"), n("Box"), n("Pred"), n("W"));
+    let bx_mk = Name::str(bx.clone(), "mk".into());
+    let (w_base, w_step) = (
+      Name::str(w.clone(), "base".into()),
+      Name::str(w.clone(), "step".into()),
+    );
+    let cval = |name: &Name, typ: LeanExpr| ConstantVal {
+      name: name.clone(),
+      level_params: vec![],
+      typ,
+    };
+    let mut env = LeanEnv::default();
+    env.insert(
+      ax.clone(),
+      ConstantInfo::AxiomInfo(ix_common::env::AxiomVal {
+        cnst: cval(&ax, prop.clone()),
+        is_unsafe: false,
+      }),
+    );
+    env.insert(
+      bx.clone(),
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: cval(&bx, type1.clone()),
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        all: vec![bx.clone()],
+        ctors: vec![bx_mk.clone()],
+        num_nested: Nat::from(0u64),
+        is_rec: false,
+        is_unsafe: false,
+        is_reflexive: false,
+      }),
+    );
+    env.insert(
+      bx_mk.clone(),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: cval(
+          &bx_mk,
+          epi(
+            n("h"),
+            LeanExpr::cnst(ax.clone(), vec![]),
+            LeanExpr::cnst(bx.clone(), vec![]),
+          ),
+        ),
+        induct: bx.clone(),
+        cidx: Nat::from(0u64),
+        num_params: Nat::from(0u64),
+        num_fields: Nat::from(1u64),
+        is_unsafe: false,
+      }),
+    );
+    // Pred : Type → Type := fun α => α → Prop
+    env.insert(
+      pred.clone(),
+      ConstantInfo::DefnInfo(ix_common::env::DefinitionVal {
+        cnst: cval(&pred, epi(n("α"), type1.clone(), type1.clone())),
+        value: LeanExpr::lam(
+          n("α"),
+          type1.clone(),
+          epi(n("a"), bv(0), prop.clone()),
+          BinderInfo::Default,
+        ),
+        hints: ix_common::env::ReducibilityHints::Abbrev,
+        safety: ix_common::env::DefinitionSafety::Safe,
+        all: vec![pred.clone()],
+      }),
+    );
+    let w_app = |a: LeanExpr, b: LeanExpr| {
+      LeanExpr::app(LeanExpr::app(LeanExpr::cnst(w.clone(), vec![]), a), b)
+    };
+    env.insert(
+      w.clone(),
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: cval(
+          &w,
+          epi(
+            n("α"),
+            type1.clone(),
+            LeanExpr::app(LeanExpr::cnst(pred.clone(), vec![]), bv(0)),
+          ),
+        ),
+        num_params: Nat::from(1u64),
+        num_indices: Nat::from(1u64),
+        all: vec![w.clone()],
+        ctors: vec![w_base.clone(), w_step.clone()],
+        num_nested: Nat::from(0u64),
+        is_rec: true,
+        is_unsafe: false,
+        is_reflexive: false,
+      }),
+    );
+    // W.base : ∀ (α : Type) (a : α) (b : Box), W α a
+    env.insert(
+      w_base.clone(),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: cval(
+          &w_base,
+          epi(
+            n("α"),
+            type1.clone(),
+            epi(
+              n("a"),
+              bv(0),
+              epi(
+                n("b"),
+                LeanExpr::cnst(bx.clone(), vec![]),
+                w_app(bv(2), bv(1)),
+              ),
+            ),
+          ),
+        ),
+        induct: w.clone(),
+        cidx: Nat::from(0u64),
+        num_params: Nat::from(1u64),
+        num_fields: Nat::from(2u64),
+        is_unsafe: false,
+      }),
+    );
+    // W.step : ∀ (α : Type) (a : α) (h : W α a), W α a
+    env.insert(
+      w_step.clone(),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: cval(
+          &w_step,
+          epi(
+            n("α"),
+            type1,
+            epi(
+              n("a"),
+              bv(0),
+              epi(n("h"), w_app(bv(1), bv(0)), w_app(bv(2), bv(1))),
+            ),
+          ),
+        ),
+        induct: w.clone(),
+        cidx: Nat::from(1u64),
+        num_params: Nat::from(1u64),
+        num_fields: Nat::from(2u64),
+        is_unsafe: false,
+      }),
+    );
+    add_punit_pprod(&mut env);
+    (env, w)
+  }
+
+  /// Everything aux_gen generates for `classes`, rendered with full
+  /// metadata (Lean expression hashes cover binder names and infos), plus
+  /// the kernel environment's id order and the deferral counters.
+  struct AuxRun {
+    outputs: Vec<String>,
+    view: Vec<String>,
+    consts: Vec<String>,
+    stats: Option<ix_kernel::env::DeferredStats>,
+  }
+
+  fn run_aux_pipeline(
+    env: &LeanEnv,
+    classes: &[Vec<Name>],
+    deferred: bool,
+  ) -> AuxRun {
+    use crate::compile::aux_gen::below::BelowConstant;
+    use crate::compile::aux_gen::brecon::generate_brecon_constants;
+    let lean_env = std::sync::Arc::new(env.clone());
+    let stt = crate::compile::CompileState {
+      lean_env: Some(lean_env.clone()),
+      ..Default::default()
+    };
+    let mut kctx = crate::compile::KernelCtx::new();
+    if deferred {
+      super::super::deferred_ingress::enable(&lean_env, &stt, &mut kctx);
+      assert!(kctx.kenv.is_deferring());
+    }
+    let (recs, is_prop) =
+      generate_canonical_recursors(classes, &lean_env, &stt, &mut kctx)
+        .unwrap();
+    let below = generate_below_constants(
+      classes, &recs, &lean_env, is_prop, &stt, &mut kctx,
+    )
+    .unwrap();
+    crate::compile::aux_gen::populate_canon_kenv_with_below(
+      &below, classes, &lean_env, &stt, &mut kctx,
+    );
+    let brecon = generate_brecon_constants(
+      classes, &recs, &below, &lean_env, is_prop, &stt, &mut kctx,
+    )
+    .unwrap();
+    let h = |e: &LeanExpr| e.get_hash().to_hex().to_string();
+    let mut outputs = Vec::new();
+    for (name, r) in &recs {
+      let rules: Vec<String> = r
+        .rules
+        .iter()
+        .map(|rule| format!("{}:{}", rule.ctor.pretty(), h(&rule.rhs)))
+        .collect();
+      outputs.push(format!(
+        "rec {} {:?} {} k={} {:?}",
+        name.pretty(),
+        r.cnst.level_params,
+        h(&r.cnst.typ),
+        r.k,
+        rules
+      ));
+    }
+    for b in &below {
+      match b {
+        BelowConstant::Def(d) => outputs.push(format!(
+          "below-def {} {:?} {} {}",
+          d.name.pretty(),
+          d.level_params,
+          h(&d.typ),
+          h(&d.value)
+        )),
+        BelowConstant::Indc(i) => {
+          let ctors: Vec<String> = i
+            .ctors
+            .iter()
+            .map(|c| format!("{}:{}", c.name.pretty(), h(&c.typ)))
+            .collect();
+          outputs.push(format!(
+            "below-indc {} {:?} {} {:?}",
+            i.name.pretty(),
+            i.level_params,
+            h(&i.typ),
+            ctors
+          ));
+        },
+      }
+    }
+    for d in &brecon {
+      outputs.push(format!(
+        "brecon {} {:?} {} {}",
+        d.name.pretty(),
+        d.level_params,
+        h(&d.typ),
+        h(&d.value)
+      ));
+    }
+    AuxRun {
+      outputs,
+      view: kctx.kenv.view_ids().map(|id| id.to_string()).collect(),
+      consts: kctx.kenv.consts.keys().map(|id| id.to_string()).collect(),
+      stats: kctx.kenv.deferred_stats(),
+    }
+  }
+
+  /// Deferred ingress generates exactly what the eager walk generates, and
+  /// its view holds the eager environment's ids in the eager map's order.
+  fn assert_deferred_matches_eager(
+    env: &LeanEnv,
+    classes: &[Vec<Name>],
+  ) -> AuxRun {
+    let eager = run_aux_pipeline(env, classes, false);
+    let deferred = run_aux_pipeline(env, classes, true);
+    assert!(!eager.outputs.is_empty());
+    assert_eq!(deferred.outputs, eager.outputs, "generated constants differ");
+    assert_eq!(
+      deferred.view, eager.view,
+      "kernel environment ids or order differ"
+    );
+    assert!(eager.stats.is_none());
+    deferred
+  }
+
+  #[test]
+  fn deferred_ingress_matches_eager_on_fixtures() {
+    let (env, t) = build_type_nat_env();
+    assert_deferred_matches_eager(&env, &[vec![t]]);
+    let (env, p) = build_prop_drec_env();
+    assert_deferred_matches_eager(&env, &[vec![p]]);
+    let (env, a, b) = build_alpha_collapse_env();
+    assert_deferred_matches_eager(&env, &[vec![a, b]]);
+    let (env, a, b, c) = build_alpha_collapse_3_env();
+    assert_deferred_matches_eager(&env, &[vec![a, b, c]]);
+  }
+
+  #[test]
+  fn deferred_ingress_converts_only_what_the_kernel_reads() {
+    let (env, w) = build_alias_target_env();
+    let run = assert_deferred_matches_eager(&env, &[vec![w]]);
+    let stats = run.stats.expect("the deferred run defers");
+    // The walk reaches Pred, Box, Box.mk and ax (W itself is already in
+    // the environment); the kernel needs Pred to expose the index and Box
+    // for the field's sort, never the axiom behind Box.mk.
+    assert!(stats.registered >= 4, "{stats:?}");
+    assert!(stats.materialized < stats.registered, "{stats:?}");
+    let has = |ids: &[String], prefix: &str| {
+      ids.iter().any(|id| id.starts_with(prefix))
+    };
+    assert!(has(&run.view, "ax@"), "the walk reached ax");
+    assert!(!has(&run.consts, "ax@"), "ax was never converted");
+    assert!(has(&run.consts, "Pred@"), "Pred was converted on demand");
   }
 }

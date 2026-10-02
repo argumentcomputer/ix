@@ -78,6 +78,7 @@ pub mod below;
 pub mod brecon;
 pub mod cases_on;
 mod checked_expr;
+pub mod deferred_ingress;
 #[cfg(test)]
 mod expr_reference;
 pub mod expr_utils;

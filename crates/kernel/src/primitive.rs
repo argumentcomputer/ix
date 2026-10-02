@@ -209,9 +209,12 @@ impl<M: KernelMode> Primitives<M> {
   /// table. See `from_env` (canonical) and `from_env_orig` (LEON) for
   /// the entry points.
   fn from_env_with(env: &KEnv<M>, a: &PrimAddrs) -> Self {
-    // Build addr → KId index from the env.
+    // Build addr → KId index from the env. The first id met per address
+    // wins, so the order matters: `view_ids` is the `consts` order, or for
+    // a deferring env the order its eagerly ingested twin would iterate in
+    // (registered constants count as present; see `env/deferred.rs`).
     let mut by_addr = rustc_hash::FxHashMap::default();
-    for (id, _) in env.iter() {
+    for id in env.view_ids() {
       by_addr.entry(id.addr.clone()).or_insert_with(|| id.clone());
     }
 

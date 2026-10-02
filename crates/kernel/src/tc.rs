@@ -95,6 +95,15 @@ pub struct IotaInfo<M: KernelMode> {
   pub lvls: u64,
 }
 
+/// The owner of constants registered with an environment for deferred
+/// ingestion (`env/deferred.rs`): it alone knows what a registration
+/// stands for.
+pub trait DeferredSource<M: KernelMode> {
+  /// Convert the registration of `id` pending in `env` (see
+  /// [`KEnv::take_pending`]) and insert the constant it stands for.
+  fn materialize(&self, env: &mut KEnv<M>, id: &KId<M>);
+}
+
 pub struct LazyIxonIngress<'a> {
   ixon_env: &'a IxonEnv,
   lookups: &'a IxonIngressLookups,
@@ -127,6 +136,10 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// `lazy_ingress_addr` dispatcher uses whichever is set. The anon path
   /// never reads `Env::named`/`Env::names`.
   lazy_anon: Option<LazyAnonIngress<'a>>,
+  /// Materializes a constant registered with `env` for deferred ingestion
+  /// (`env/deferred.rs`) when a lookup misses it. Installed by the caller
+  /// that registered it.
+  deferred_source: Option<&'a dyn DeferredSource<M>>,
   /// Primitive constant KIds. Copied from `env.prims()` at construction;
   /// overridable for tests via `tc.prims = custom`.
   pub prims: Primitives<M>,
@@ -230,6 +243,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       env,
       lazy_ixon: None,
       lazy_anon: None,
+      deferred_source: None,
       ixon_ingress: false,
       prims,
       ctx: Vec::new(),
@@ -286,11 +300,43 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     tc
   }
 
+  /// Install the owner of constants registered with the environment for
+  /// deferred ingestion (`env/deferred.rs`), which materializes them when
+  /// a lookup misses.
+  pub fn with_deferred_source(
+    mut self,
+    source: &'a dyn DeferredSource<M>,
+  ) -> Self {
+    self.deferred_source = Some(source);
+    self
+  }
+
+  /// Materialize `id` if it is registered for deferred ingestion; returns
+  /// whether it was. A registered id is present for every reader, so a
+  /// registration without a source to convert it is a caller bug.
+  fn materialize_deferred(&mut self, id: &KId<M>) -> bool {
+    if self.env.pending(id).is_none() {
+      return false;
+    }
+    let source = self.deferred_source.unwrap_or_else(|| {
+      panic!(
+        "{id} is registered for deferred ingestion but no source is installed"
+      )
+    });
+    source.materialize(self.env, id);
+    true
+  }
+
   pub fn try_get_const(
     &mut self,
     id: &KId<M>,
   ) -> Result<Option<KConst<M>>, TcError<M>> {
     if let Some(c) = self.env.get(id) {
+      return Ok(Some(c));
+    }
+    if self.materialize_deferred(id)
+      && let Some(c) = self.env.get(id)
+    {
       return Ok(Some(c));
     }
     let lazy_enabled = self.lazy_ixon.is_some() || self.lazy_anon.is_some();
