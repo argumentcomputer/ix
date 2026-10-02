@@ -4,9 +4,9 @@ import Std.Data.HashSet.Lemmas
 
 /-! # What the Ixon reader produces
 
-Facts about the executed reader (`Ix.Kernel.IxonReader`), proved about
+Facts about the executed reader (`Ix.Kernel.Reader`), proved about
 its definitions as they stand. They are the reader half of the fidelity
-theorem of the kernel entry (`Ix.Ixon.Admission.Theorems`): the
+theorem of the kernel entry (`Ix.Kernel.Admission.Theorems`): the
 declarations the fold checks are the ones the records describe.
 
 * `readRecords_spec`: an accepted stream reading is a record-by-record
@@ -25,12 +25,12 @@ declarations the fold checks are the ones the records describe.
   (`SingletonRead`).
 * `Ctx.nameOf_of_pin`, `Ctx.nameOf_of_unpinned`: when a reference takes its
   pinned name and when its address encoding. The encoding is injective
-  (`keyName_injective`, proved in `Ix.Kernel.IxonReader` itself).
+  (`keyName_injective`, proved in `Ix.Kernel.Reader` itself).
 
 None of this is needed for consistency: `Ix.Kernel.model_exists` holds for
 every declaration array. -/
 
-namespace Ix.Kernel.IxonReader
+namespace Ix.Kernel.Reader
 
 open Ix.Kernel (ConstRef)
 
@@ -367,4 +367,4 @@ theorem MemberReader.read_ref {mr : MemberReader} {i : UInt64} {a : Address}
   simp only [MemberReader.mk']
   rfl
 
-end Ix.Kernel.IxonReader
+end Ix.Kernel.Reader

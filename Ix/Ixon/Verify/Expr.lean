@@ -15,7 +15,7 @@ singleton application/lambda/forall spines. Numeric fields use the complete
 `Tag0`/`Tag4` laws, so they are not artificially restricted to one-byte tags.
 -/
 
-namespace Ix.Ixon.Verify.Codec.Ixon.Expr
+namespace Ixon.Verify.Codec.Expr
 
 theorem byteArray_append_singleton (bytes : ByteArray) (byte : UInt8) :
     bytes ++ [byte].toByteArray = bytes.push byte := by
@@ -222,9 +222,9 @@ theorem getTag0Sizes_reads (idxs : List UInt64) :
       hhead htail
     simpa [Ixon.getTag0Sizes, tag0ListBytes] using hall
 
-end Ix.Ixon.Verify.Codec.Ixon.Expr
+end Ixon.Verify.Codec.Expr
 
-namespace Ix.Ixon.Verify.Codec.Ixon.Expr
+namespace Ixon.Verify.Codec.Expr
 
 theorem putExpr_writes_single (e : Ixon.Expr) (h : SingleWireWF e) :
     Writes (Ixon.putExpr e) (wireEncode e) := by
@@ -297,9 +297,9 @@ theorem putExpr_writes_single (e : Ixon.Expr) (h : SingleWireWF e) :
     simpa [Ixon.putExpr, wireEncode] using
       putTag4_writes Ixon.Expr.FLAG_SHARE idx
 
-end Ix.Ixon.Verify.Codec.Ixon.Expr
+end Ixon.Verify.Codec.Expr
 
-namespace Ix.Ixon.Verify.Codec.Ixon.Expr
+namespace Ixon.Verify.Codec.Expr
 
 theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
     (fuel : Nat) (hfuel : (wireEncode e).size ≤ fuel) :
@@ -800,16 +800,16 @@ theorem deExpr_serExpr_single (e : Ixon.Expr) (h : SingleWireWF e) :
   rw [hread]
   simp
 
-end Ix.Ixon.Verify.Codec.Ixon.Expr
+end Ixon.Verify.Codec.Expr
 
-namespace Ix.Ixon.Verify
+namespace Ixon.Verify
 
 abbrev ExprSingleWireWF : Ixon.Expr → Prop :=
-  Codec.Ixon.Expr.SingleWireWF
+  Codec.Expr.SingleWireWF
 
 theorem deExpr_serExpr_single (e : Ixon.Expr) (h : ExprSingleWireWF e) :
     Ixon.deExpr (Ixon.serExpr e) = .ok e :=
-  Codec.Ixon.Expr.deExpr_serExpr_single e h
+  Codec.Expr.deExpr_serExpr_single e h
 
 theorem sortExpr_singleWireWF (univIdx : UInt64) :
     ExprSingleWireWF (.sort univIdx) := by
@@ -818,12 +818,12 @@ theorem sortExpr_singleWireWF (univIdx : UInt64) :
 theorem idAType_singleWireWF (aRef : UInt64) :
     ExprSingleWireWF
       (.all .many .shared (.ref aRef #[]) (.ref aRef #[])) := by
-  simp [ExprSingleWireWF, Codec.Ixon.Expr.SingleWireWF,
-    Codec.Ixon.Expr.IndexVectorWF, Codec.Ixon.Expr.notAll]
+  simp [ExprSingleWireWF, Codec.Expr.SingleWireWF,
+    Codec.Expr.IndexVectorWF, Codec.Expr.notAll]
 
 theorem idAValue_singleWireWF (aRef : UInt64) :
     ExprSingleWireWF (.lam .many (.ref aRef #[]) (.var 0)) := by
-  simp [ExprSingleWireWF, Codec.Ixon.Expr.SingleWireWF,
-    Codec.Ixon.Expr.IndexVectorWF, Codec.Ixon.Expr.notLam]
+  simp [ExprSingleWireWF, Codec.Expr.SingleWireWF,
+    Codec.Expr.IndexVectorWF, Codec.Expr.notLam]
 
-end Ix.Ixon.Verify
+end Ixon.Verify

@@ -11,7 +11,7 @@ constructors and universe-index slots. Universe successor expansion uses its
 separate explicit node budget.
 -/
 
-namespace Ix.Ixon.Verify.ReaderBounds
+namespace Ixon.Verify.ReaderBounds
 
 open _root_.Ixon
 
@@ -607,4 +607,4 @@ theorem deExpr_resource_bound (bytes : ByteArray) (value : Expr)
     (read : deExpr bytes = .ok value) : value.resourceSize + 1 ≤ 2 * bytes.size :=
   getExpr_bound.runGetExact bytes value read
 
-end Ix.Ixon.Verify.ReaderBounds
+end Ixon.Verify.ReaderBounds

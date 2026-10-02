@@ -1,7 +1,7 @@
 import Ix.Ixon.Verify.Work
 import Ix.Ixon.Verify.BoundedConstant
 
-namespace Ix.Ixon.Verify.Work
+namespace Ixon.Verify.Work
 
 open _root_.Ixon
 
@@ -69,4 +69,4 @@ theorem address_bound : Bound address 16 0 (fun _ => 2) :=
   (bytes_positive_bound 32 (by decide)).bind fun _ =>
     charged_pure_bound _ _ _ _ _ (by decide)
 
-end Ix.Ixon.Verify.Work
+end Ixon.Verify.Work

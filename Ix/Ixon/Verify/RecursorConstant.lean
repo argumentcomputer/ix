@@ -16,17 +16,17 @@ type, and the losslessly counted rule table.  Lifting the payload through the
 the final theorem retains arbitrary well-formed top-level side tables.
 -/
 
-namespace Ix.Ixon.Verify.Codec.Ixon.RecursorConstant
+namespace Ixon.Verify.Codec.RecursorConstant
 
 open Ix
-open Ix.Ixon.Verify.Codec
-open Ix.Ixon.Verify.Codec.Ixon.Constant
-open Ix.Ixon.Verify.Codec.Ixon.ConstantTables
-open Ix.Ixon.Verify.Codec.Ixon.NonrecursiveConstant
+open Ixon.Verify.Codec
+open Ixon.Verify.Codec.Constant
+open Ixon.Verify.Codec.ConstantTables
+open Ixon.Verify.Codec.NonrecursiveConstant
 
 def recursorRuleBytes (rule : Ixon.RecursorRule) : ByteArray :=
   tag0Bytes rule.fields ++
-    Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode rule.rhs
+    Ixon.Verify.Codec.Expr.spineWireEncode rule.rhs
 
 theorem listBytes_size_ge (encode : α → ByteArray) (minimum : Nat) (values : List α)
     (h : ∀ value, minimum ≤ (encode value).size) :
@@ -54,13 +54,13 @@ theorem putRecursorRule_writes (rule : Ixon.RecursorRule)
     Writes (Ixon.putRecursorRule rule) (recursorRuleBytes rule) := by
   simpa [Ixon.putRecursorRule, recursorRuleBytes] using
     (putTag0_writes rule.fields).bind
-      (Ix.Ixon.Verify.Codec.Ixon.Expr.putExpr_writes_spine rule.rhs h)
+      (Ixon.Verify.Codec.Expr.putExpr_writes_spine rule.rhs h)
 
 theorem getRecursorRule_reads (rule : Ixon.RecursorRule)
     (h : RecursorRuleWireWF rule) :
     Reads Ixon.getRecursorRule (recursorRuleBytes rule) rule := by
   have hfields := getTag0_reads rule.fields
-  have hrhs := Ix.Ixon.Verify.Codec.Ixon.Expr.getExpr_reads_spine rule.rhs h
+  have hrhs := Ixon.Verify.Codec.Expr.getExpr_reads_spine rule.rhs h
   have hreturn := Reads.pure rule
   have hafterRhs := Reads.bind
     (next := fun rhs : Ixon.Expr =>
@@ -105,7 +105,7 @@ def recursorBytes (recursor : Ixon.Recursor) : ByteArray :=
     tag0Bytes recursor.lvls ++ tag0Bytes recursor.params ++
       tag0Bytes recursor.indices ++ tag0Bytes recursor.motives ++
         tag0Bytes recursor.minors ++
-          Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode recursor.typ ++
+          Ixon.Verify.Codec.Expr.spineWireEncode recursor.typ ++
             tag0Bytes recursor.rules.size.toUInt64 ++
               listBytes recursorRuleBytes recursor.rules.toList
 
@@ -123,7 +123,7 @@ theorem putRecursor_writes (recursor : Ixon.Recursor)
         ((putTag0_writes recursor.indices).bind
           ((putTag0_writes recursor.motives).bind
             ((putTag0_writes recursor.minors).bind
-              ((Ix.Ixon.Verify.Codec.Ixon.Expr.putExpr_writes_spine
+              ((Ixon.Verify.Codec.Expr.putExpr_writes_spine
                 recursor.typ h.typ).bind
                 ((putTag0_writes recursor.rules.size.toUInt64).bind
                   (putRecursorRuleArray_writes recursor.rules h.rules))))))))
@@ -205,7 +205,7 @@ theorem getRecursorAfterFlags_reads (recursor : Ixon.Recursor)
       (tag0Bytes recursor.lvls ++ tag0Bytes recursor.params ++
         tag0Bytes recursor.indices ++ tag0Bytes recursor.motives ++
           tag0Bytes recursor.minors ++
-            Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode recursor.typ ++
+            Ixon.Verify.Codec.Expr.spineWireEncode recursor.typ ++
               tag0Bytes recursor.rules.size.toUInt64 ++
                 listBytes recursorRuleBytes recursor.rules.toList)
       recursor := by
@@ -214,7 +214,7 @@ theorem getRecursorAfterFlags_reads (recursor : Ixon.Recursor)
   have hindices := getTag0_reads recursor.indices
   have hmotives := getTag0_reads recursor.motives
   have hminors := getTag0_reads recursor.minors
-  have htyp := Ix.Ixon.Verify.Codec.Ixon.Expr.getExpr_reads_spine
+  have htyp := Ixon.Verify.Codec.Expr.getExpr_reads_spine
     recursor.typ h.typ
   have hrules := getRecursorRules_reads recursor h
   have hafterTyp := Reads.bind
@@ -274,7 +274,7 @@ theorem getRecursor_reads (recursor : Ixon.Recursor)
       (tag0Bytes recursor.lvls ++ tag0Bytes recursor.params ++
         tag0Bytes recursor.indices ++ tag0Bytes recursor.motives ++
           tag0Bytes recursor.minors ++
-            Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode recursor.typ ++
+            Ixon.Verify.Codec.Expr.spineWireEncode recursor.typ ++
               tag0Bytes recursor.rules.size.toUInt64 ++
                 listBytes recursorRuleBytes recursor.rules.toList)
       recursor := by
@@ -334,17 +334,17 @@ structure StandaloneConstantWireWF (constant : Ixon.Constant) : Prop where
   refsEntries : ∀ value, value ∈ constant.refs.toList → AddressWireWF value
   univsCount : ArrayCountWF constant.univs
   univsEntries : ∀ value, value ∈ constant.univs.toList →
-    Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF value
+    Ixon.Verify.Codec.Univ.WireWF value
 
 def standaloneConstantBytes (constant : Ixon.Constant) : ByteArray :=
   standaloneInfoBytes constant.info ++
     tag0Bytes constant.sharing.size.toUInt64 ++
-      listBytes Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode
+      listBytes Ixon.Verify.Codec.Expr.spineWireEncode
         constant.sharing.toList ++
         tag0Bytes constant.refs.size.toUInt64 ++
           listBytes Address.hash constant.refs.toList ++
             tag0Bytes constant.univs.size.toUInt64 ++
-              listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode
+              listBytes Ixon.Verify.Codec.Univ.wireEncode
                 constant.univs.toList
 
 theorem putConstant_writes_standalone (constant : Ixon.Constant)
@@ -385,21 +385,21 @@ theorem deConstant_serConstant_standalone (constant : Ixon.Constant)
     { bytes := standaloneConstantBytes constant } = _ at hread
   rw [hread]
 
-end Ix.Ixon.Verify.Codec.Ixon.RecursorConstant
+end Ixon.Verify.Codec.RecursorConstant
 
-namespace Ix.Ixon.Verify
+namespace Ixon.Verify
 
 abbrev RecursorRuleWireWF : Ixon.RecursorRule → Prop :=
-  Codec.Ixon.RecursorConstant.RecursorRuleWireWF
+  Codec.RecursorConstant.RecursorRuleWireWF
 
 abbrev RecursorWireWF : Ixon.Recursor → Prop :=
-  Codec.Ixon.RecursorConstant.RecursorWireWF
+  Codec.RecursorConstant.RecursorWireWF
 
 abbrev StandaloneConstantInfoWireWF : Ixon.ConstantInfo → Prop :=
-  Codec.Ixon.RecursorConstant.StandaloneInfoWireWF
+  Codec.RecursorConstant.StandaloneInfoWireWF
 
 abbrev StandaloneConstantWireWF : Ixon.Constant → Prop :=
-  Codec.Ixon.RecursorConstant.StandaloneConstantWireWF
+  Codec.RecursorConstant.StandaloneConstantWireWF
 
 theorem standaloneConstantInfoWireWF_of_nonrecursive {info : Ixon.ConstantInfo}
     (h : NonrecursiveConstantInfoWireWF info) :
@@ -416,6 +416,6 @@ theorem recursorConstantInfoWireWF (recursor : Ixon.Recursor)
 theorem deConstant_serConstant_standalone (constant : Ixon.Constant)
     (h : StandaloneConstantWireWF constant) :
     Ixon.deConstant (Ixon.serConstant constant) = .ok constant :=
-  Codec.Ixon.RecursorConstant.deConstant_serConstant_standalone constant h
+  Codec.RecursorConstant.deConstant_serConstant_standalone constant h
 
-end Ix.Ixon.Verify
+end Ixon.Verify

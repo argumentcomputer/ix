@@ -2,7 +2,7 @@ import Ix.Ixon.Verify.WorkExpr
 import Ix.Ixon.Verify.WorkArray
 import Ix.Ixon.Verify.WorkUniverse
 
-namespace Ix.Ixon.Verify.Work
+namespace Ixon.Verify.Work
 
 open _root_.Ixon
 
@@ -52,7 +52,7 @@ def axiomDecl : M Axiom := do
 
 def quotient : M Quotient := do
   let flags ← u8
-  let kind : QuotKind ← match flags with
+  let kind : Ix.QuotKind ← match flags with
     | 0 => pure .type | 1 => pure .ctor | 2 => pure .lift | 3 => pure .ind
     | _ => fail s!"invalid QuotKind tag {flags}"
   let lvls ← tag0
@@ -488,4 +488,4 @@ theorem constant_bound (budget : Nat) : Bound (constant budget) 16 (2 * budget) 
   · rintro ⟨univs, remaining⟩
     exact charged_pure_bound _ _ _ _ _ (by omega)
 
-end Ix.Ixon.Verify.Work
+end Ixon.Verify.Work

@@ -18,7 +18,7 @@ necessary `UInt64` bound on compressed successor chains.  The smaller theorem
 for `Sort 1` remains as a compatibility corollary.
 -/
 
-namespace Ix.Ixon.Verify.Codec
+namespace Ixon.Verify.Codec
 
 
 def Reads (getm : Ixon.GetM α) (bytes : ByteArray) (value : α) : Prop :=
@@ -938,7 +938,7 @@ theorem tag2_var_header (idx : UInt64) :
   simp only [Ixon.Univ.FLAG_VAR]
   bv_decide
 
-namespace Ixon.Univ
+namespace Univ
 
 def SmallWireWF : Ixon.Univ → Prop
   | .zero => True
@@ -1106,7 +1106,7 @@ theorem getUnivFuel_reads_small (u : Ixon.Univ) (h : SmallWireWF u)
           (pure (whole.succBase.addSucc whole.succCount.toNat) : Ixon.GetM _)
           ByteArray.empty whole := by
         simpa [hcountToNat,
-          Ixon.Univ.addSucc_succCountNat_succBase whole] using
+          Codec.Univ.addSucc_succCountNat_succBase whole] using
           Reads.pure whole
       have hafterBase := Reads.bind
         (next := fun base : Ixon.Univ =>
@@ -1230,9 +1230,9 @@ theorem deUniv_serUniv_small (u : Ixon.Univ) (h : SmallWireWF u) :
   rw [hread]
   simp
 
-end Ixon.Univ
+end Univ
 
-namespace Ixon.Univ
+namespace Univ
 
 /-- Universes whose compressed successor-chain counts are representable on
     the v2 wire.  All explicit universe variables are already `UInt64`. -/
@@ -1524,45 +1524,45 @@ theorem deUniv_serUniv_small_via_full (u : Ixon.Univ)
     Ixon.deUniv (Ixon.serUniv u) = .ok u :=
   deUniv_serUniv u h.toWireWF
 
-end Ixon.Univ
+end Univ
 
-end Ix.Ixon.Verify.Codec
+end Ixon.Verify.Codec
 
-namespace Ix.Ixon.Verify
+namespace Ixon.Verify
 
 /-- Universe values whose compressed successor counts fit the v2 `UInt64`
     field.  Explicit variables are representable by construction. -/
 abbrev UnivWireWF : Ixon.Univ → Prop :=
-  Codec.Ixon.Univ.WireWF
+  Codec.Univ.WireWF
 
 /-- Universe values whose v2 tags all use the one-byte `Tag2` form. -/
 abbrev SmallUnivWireWF : Ixon.Univ → Prop :=
-  Codec.Ixon.Univ.SmallWireWF
+  Codec.Univ.SmallWireWF
 
 /-- X1-U64: exact full-buffer universe round trip across both the one-byte
     and trimmed large-size `Tag2` forms. -/
 theorem deUniv_serUniv (u : Ixon.Univ) (h : UnivWireWF u) :
     Ixon.deUniv (Ixon.serUniv u) = .ok u :=
-  Codec.Ixon.Univ.deUniv_serUniv u h
+  Codec.Univ.deUniv_serUniv u h
 
 /-- X1-U8: exact full-buffer universe round trip for the one-byte tag domain.
     This domain contains `.succ .zero`, the encoding of `Sort 1`. -/
 theorem deUniv_serUniv_small (u : Ixon.Univ) (h : SmallUnivWireWF u) :
     Ixon.deUniv (Ixon.serUniv u) = .ok u :=
-  Codec.Ixon.Univ.deUniv_serUniv_small_via_full u h
+  Codec.Univ.deUniv_serUniv_small_via_full u h
 
 /-- The first fixture's universe lies in the proved codec domain. -/
 theorem sortOne_smallUnivWireWF :
     SmallUnivWireWF (.succ .zero) := by
-  simp [SmallUnivWireWF, Codec.Ixon.Univ.SmallWireWF,
+  simp [SmallUnivWireWF, Codec.Univ.SmallWireWF,
     Ixon.Univ.succCountNat]
 
 theorem sortOne_univWireWF :
     UnivWireWF (.succ .zero) :=
-  Codec.Ixon.Univ.SmallWireWF.toWireWF sortOne_smallUnivWireWF
+  Codec.Univ.SmallWireWF.toWireWF sortOne_smallUnivWireWF
 
 theorem deUniv_serUniv_sortOne :
     Ixon.deUniv (Ixon.serUniv (.succ .zero)) = .ok (.succ .zero) :=
   deUniv_serUniv _ sortOne_univWireWF
 
-end Ix.Ixon.Verify
+end Ixon.Verify

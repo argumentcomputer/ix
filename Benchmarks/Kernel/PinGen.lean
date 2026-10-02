@@ -64,7 +64,7 @@ Usage: `kernel-pin-gen <init.ixe> <certs.ixe> <PinData.lean> <NatOpPinData.lean>
 namespace Benchmarks.Kernel.PinGen
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
 def fixedNames : List CName :=
@@ -593,7 +593,7 @@ def run (args : List String) : IO UInt32 := do
   let started ← IO.monoMsNow
   let (env, store) ← loadStore input
   IO.eprintln s!"pin-gen: {store.size} records loaded in {(← IO.monoMsNow) - started} ms"
-  let lookup : Ix.Kernel.IxonReader.Store := (store[·]?)
+  let lookup : Ix.Kernel.Reader.Store := (store[·]?)
   -- 1-2: names and candidates
   let wanted := (fixedNames ++ preludeGroups.flatten).eraseDups
   let mut pins : Array Pin := #[]
@@ -743,7 +743,7 @@ names), for the pinned constants and their recursors.
 `prelude`: (record address, canonical record bytes), in the checker's
 prelude order. -/
 
-namespace Ix.Kernel.IxonReader.PinData
+namespace Ix.Kernel.Reader.PinData
 
 def source : String := {s!"sha256:{digest}".quote}
 
@@ -756,7 +756,7 @@ def levels : Array (String × Nat × Nat × List (List (String ⊕ Nat))) := #[
 def prelude : Array (String × String) := #[
 {",\n".intercalate preLines}]
 
-end Ix.Kernel.IxonReader.PinData
+end Ix.Kernel.Reader.PinData
 "
   IO.FS.writeFile output text
   IO.eprintln s!"pin-gen: wrote {output}: {sorted.size} pins, {preRecords.size} prelude records"
@@ -787,7 +787,7 @@ the data carries no trust. `table` is a share table and `ops` its roots per
 operation, in `NatOpPinSet` field order; the format and the decoder are in
 `Ix/Kernel/Ixon/Prelude.lean`. -/
 
-namespace Ix.Kernel.IxonReader.NatOpPinData
+namespace Ix.Kernel.Reader.NatOpPinData
 
 def source : String := {s!"sha256:{digest} sha256:{certDigest}".quote}
 
@@ -800,7 +800,7 @@ def table : String := r\"
 {table}
 \"
 
-end Ix.Kernel.IxonReader.NatOpPinData
+end Ix.Kernel.Reader.NatOpPinData
 "
   IO.FS.writeFile natOutput natText
   let proofCount := (opRoots.toList.map (·.2.2.length)).foldl (· + ·) 0

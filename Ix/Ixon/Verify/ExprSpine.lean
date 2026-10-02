@@ -17,7 +17,7 @@ spine behind one wire-sized count.  This module establishes the telescope
 algebra needed to lift the codec proof to that production domain.
 -/
 
-namespace Ix.Ixon.Verify.Codec.Ixon.Expr
+namespace Ixon.Verify.Codec.Expr
 
 /-! ## Application telescopes -/
 
@@ -1526,14 +1526,14 @@ theorem deExpr_serExpr (expr : Ixon.Expr) (h : expr.wireWF) :
   rw [hread]
   simp
 
-end Ix.Ixon.Verify.Codec.Ixon.Expr
+end Ixon.Verify.Codec.Expr
 
-namespace Ix.Ixon.Verify
+namespace Ixon.Verify
 
 abbrev ExprWireWF : Ixon.Expr → Prop := Ixon.Expr.wireWF
 
 theorem deExpr_serExpr (expr : Ixon.Expr) (h : ExprWireWF expr) :
     Ixon.deExpr (Ixon.serExpr expr) = .ok expr :=
-  Codec.Ixon.Expr.deExpr_serExpr expr h
+  Codec.Expr.deExpr_serExpr expr h
 
-end Ix.Ixon.Verify
+end Ixon.Verify

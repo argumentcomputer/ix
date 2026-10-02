@@ -1,6 +1,6 @@
 import Ix.Ixon.WireCheck
 
-namespace Ix.Ixon.Verify.WireCheck
+namespace Ixon.Verify.WireCheck
 
 open _root_.Ixon _root_.Ixon.WireCheck
 
@@ -98,4 +98,4 @@ theorem validConstant_iff (constant : Constant) :
   simp [validConstant, Constant.wireWF, validArray, -Array.all_eq_true,
     Array.all_eq_true', and_assoc]
 
-end Ix.Ixon.Verify.WireCheck
+end Ixon.Verify.WireCheck

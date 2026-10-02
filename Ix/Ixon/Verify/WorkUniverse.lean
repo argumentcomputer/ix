@@ -1,7 +1,7 @@
 import Ix.Ixon.Verify.WorkTags
 import Ix.Ixon.Bounded.Constant
 
-namespace Ix.Ixon.Verify.Work
+namespace Ixon.Verify.Work
 
 open _root_.Ixon
 
@@ -167,4 +167,4 @@ theorem univArray_bound (count budget : Nat) :
     Bound (univArray count budget) 16 (2 * budget) (fun value => 2 * value.2) :=
   univArrayLoop_bound count budget #[]
 
-end Ix.Ixon.Verify.Work
+end Ixon.Verify.Work

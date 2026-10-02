@@ -12,9 +12,9 @@ records are retained exactly; a conflicting payload at a generated key is
 an error, so no collision assumption is needed to extend the supplied store.
 -/
 
-namespace Ix.Ixon.Projection
+namespace Ixon.Projection
 
-open Kernel
+open Ix.Kernel
 
 structure Request where
   layout : Egress.ProjectionLayout
@@ -105,4 +105,4 @@ def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (records : Adm
   let expanded ← (reconstruct maxProjections constants).mapError .reconstruction
   (Admission.checkConstants expanded blobs hint).mapError .checker
 
-end Ix.Ixon.Projection
+end Ixon.Projection

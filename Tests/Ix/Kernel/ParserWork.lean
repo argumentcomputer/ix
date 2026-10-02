@@ -1,11 +1,11 @@
 import Ix.Ixon.Verify.WorkAdmission
 import Tests.Ix.Kernel.ByteAdmission
 
-/-! The parser's work accounting (`Ix.Ixon.Verify.Work`): the metered parser
+/-! The parser's work accounting (`Ixon.Verify.Work`): the metered parser
 agrees with production on outcome and cursor, and the exact work of
 malformed and well-formed inputs is pinned, at elaboration. -/
 
-open Ix.Ixon.Verify Tests.Ix.Kernel.IxonFixtures
+open Ixon.Verify Tests.Ix.Kernel.IxonFixtures
 
 namespace Tests.Ix.Kernel.ParserWork
 
@@ -176,15 +176,15 @@ def recordCases : List Ixon.Constant := variants.map Prod.snd ++
 #guard recordChecked 256 64 (Codec.recordUnivsPayload 18446744073709551615 ⟨#[]⟩)
 #guard recordChecked 256 64 (Codec.recordUnivsPayload 2 (Ixon.serUniv .zero ++ Codec.successorBomb))
 
-def sameStage : Except _root_.Ix.Ixon.Admission.ByteError _root_.Ix.Kernel.Ingress.Constants →
-    Except _root_.Ix.Ixon.Admission.ByteError _root_.Ix.Kernel.Ingress.Constants → Bool
+def sameStage : Except _root_.Ix.Kernel.Admission.ByteError _root_.Ix.Kernel.Ingress.Constants →
+    Except _root_.Ix.Kernel.Admission.ByteError _root_.Ix.Kernel.Ingress.Constants → Bool
   | .ok left, .ok right => left == right
   | .error left, .error right => decide (left = right)
   | _, _ => false
 
-def stageChecked (limits : _root_.Ix.Ixon.Admission.Limits) (records : _root_.Ix.Ixon.Admission.Records) : Bool :=
+def stageChecked (limits : _root_.Ix.Kernel.Admission.Limits) (records : _root_.Ix.Kernel.Admission.Records) : Bool :=
   let parsed := Work.Admission.parserStage limits records []
-  sameStage parsed.1 (do _root_.Ix.Ixon.Admission.preflight limits records []; _root_.Ix.Ixon.Admission.decodeRecords limits records) &&
+  sameStage parsed.1 (do _root_.Ix.Kernel.Admission.preflight limits records []; _root_.Ix.Kernel.Admission.decodeRecords limits records) &&
     parsed.2 ≤ 16 * limits.maxTotalBytes + limits.maxRecords * (2 * limits.maxRecordUnivNodes + 3)
 
 #guard stageChecked ByteAdmission.limits (ByteAdmission.encode variants)

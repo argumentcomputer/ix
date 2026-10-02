@@ -5,8 +5,8 @@ import Ix.Kernel.Ingress.Records
 /-! # Projection records from kernel references
 
 The exact projection-record reading and writer that projection
-reconstruction (`Ix.Ixon.Projection`) and canonical block order
-(`Ix.Ixon.BlockOrder`) run: a projection record is its variant and the
+reconstruction (`Ixon.Projection`) and canonical block order
+(`Ixon.BlockOrder`) run: a projection record is its variant and the
 member/constructor position of its owner block, with empty tables. -/
 
 namespace Ix.Kernel.Egress

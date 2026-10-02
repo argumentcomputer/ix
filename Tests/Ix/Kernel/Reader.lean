@@ -2,8 +2,8 @@ import Ix.Kernel.Admission.Theorems
 
 /-! # Ixon records through the verified checker
 
-End-to-end fixtures for `Ix.Ixon.Admission.checkBytes`: canonical
-record bytes are preflighted, decoded, read by `Ix.Kernel.IxonReader`,
+End-to-end fixtures for `Ix.Kernel.Admission.checkBytes`: canonical
+record bytes are preflighted, decoded, read by `Ix.Kernel.Reader`,
 prepared with the Ixon prelude (`Eq`, `Nat`, `PUnit`, `Empty`, `False`, the
 quotient package, `And`, `Bool`, from the compiled Init's own records) and
 checked by `Ix.Kernel.Cached.checkDecls .verified`.
@@ -35,8 +35,8 @@ and unsafe declarations;
 `pinMap`'s refusals. -/
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.IxonReader
-open Ix.Ixon.Admission
+open Ix.Kernel.Reader
+open Ix.Kernel.Admission
 
 namespace Tests.Ix.Kernel.Reader
 
@@ -67,9 +67,9 @@ def iPrj (block : Address) (i : Nat := 0) : Ixon.Constant := const (.iPrj ⟨i.t
 def cPrj (block : Address) (c : Nat) (i : Nat := 0) : Ixon.Constant :=
   const (.cPrj ⟨i.toUInt64, c.toUInt64, block⟩) [] []
 
-def limits : Ix.Ixon.Admission.Limits := ⟨1024, 1024, 1 <<< 24, 1 <<< 20, 1 <<< 16⟩
+def limits : Ix.Kernel.Admission.Limits := ⟨1024, 1024, 1 <<< 24, 1 <<< 20, 1 <<< 16⟩
 
-def encode (cs : List (Address × Ixon.Constant)) : Ix.Ixon.Admission.Records :=
+def encode (cs : List (Address × Ixon.Constant)) : Ix.Kernel.Admission.Records :=
   cs.map fun (a, c) => (a, Ixon.serConstant c)
 
 def builtinPins : Pins := match defaultPins with | .ok p => p | .error _ => {}
@@ -574,7 +574,7 @@ def lTreeRecords : List (String × String) := [
     "d40000697b5ac9c6a84d59c3031db23bdf61fcc97fe6dd9174bd143c9a3107294ce91d00" ++
     "0000")]
 
-def lTreeStream : Ix.Ixon.Admission.Records :=
+def lTreeStream : Ix.Kernel.Admission.Records :=
   lTreeRecords.filterMap fun (a, b) => do pure (← addressOfHex a, ← bytesOfHex b)
 
 def lTreeBlock : Address := (addressOfHex "697b5ac9c6a84d59c3031db23bdf61fcc97fe6dd9174bd143c9a3107294ce91d").getD (address 0)
@@ -582,7 +582,7 @@ def lNodeBlock : Address := (addressOfHex "8f2c84a1f74bacc1ba80610719e487949eefc
 
 /-- The reader's state and declarations after the stream. -/
 def lTreeRead : Option (State × Array Ix.Kernel.Declaration) := do
-  let constants ← (Ix.Ixon.Admission.decodeRecords limits lTreeStream).toOption
+  let constants ← (Ix.Kernel.Admission.decodeRecords limits lTreeStream).toOption
   let cx := streamContext builtinPins builtinPre constants [] (fun _ => none)
   (readRecords cx builtinPre.state constants.toArray).toOption
 
@@ -690,7 +690,7 @@ def levelRecords : List (String × String) := [
 /-- The theorem's record. -/
 def levelTheorem : String := "10cebb826088ceb379d85969e9cc3f60ee05aaa02088e7ab36cb7caa3d28b410"
 
-def levelStream : Ix.Ixon.Admission.Records :=
+def levelStream : Ix.Kernel.Admission.Records :=
   levelRecords.filterMap fun (a, b) => do pure (← addressOfHex a, ← bytesOfHex b)
 
 /-- The theorem's level parameters as the reader names them. -/
@@ -819,12 +819,12 @@ def natBlockRecord : Ixon.Constant := Id.run do
 
 example {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := keyName_injective h
 
-/-- info: 'Ix.Kernel.IxonReader.keyName_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Ix.Kernel.Reader.keyName_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms keyName_injective
 
 /-! ## Model existence -/
 
-example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Ixon.Admission.Records}
+example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
     {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytes_has_model V h

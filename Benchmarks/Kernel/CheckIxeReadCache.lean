@@ -27,7 +27,7 @@ header check.
 
 **What may use it.** The environment-check drivers (`kernel-check-ixe`:
 `CHECK_IXE_READ_CACHE=<dir>`) and other host tools. Never the certified entry
-(`Ix.Ixon.Admission.checkBytes`): its theorems are about the bytes it is
+(`Ix.Kernel.Admission.checkBytes`): its theorems are about the bytes it is
 given, so it decodes and reads them itself every time. Nothing here is
 imported by the `IxKernel` package.
 
@@ -39,7 +39,7 @@ freed during a run. -/
 
 namespace Benchmarks.Kernel.CheckIxeReadCache
 
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
 /-! ## The plan -/

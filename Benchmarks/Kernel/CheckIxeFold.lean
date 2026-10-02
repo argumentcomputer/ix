@@ -38,7 +38,7 @@ every reference-table entry). -/
 namespace Benchmarks.Kernel.CheckIxeFold
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
 /-- The records the environment check would accept or check (in check order), and
@@ -179,7 +179,7 @@ def run (args : List String) : IO UInt32 := do
   let blobs := env.blobs.toList
   let r0 ← IO.monoNanosNow
   let decls ← IO.lazyPure fun _ =>
-    Ix.Ixon.Admission.readStream pins pre records.toList blobs hints.lookup
+    Ix.Kernel.Admission.readStream pins pre records.toList blobs hints.lookup
   let decls ← match decls with
     | .ok ds => pure ds
     | .error e => IO.eprintln s!"fold: read failed: {e}"; return 1

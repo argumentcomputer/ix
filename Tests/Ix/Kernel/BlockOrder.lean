@@ -1,12 +1,12 @@
 import Ix.Ixon.BlockOrder.Theorems
 import Tests.Ix.Kernel.Projection
 
-/-! Canonical block order (`Ix.Ixon.BlockOrder`): canonical classes,
+/-! Canonical block order (`Ixon.BlockOrder`): canonical classes,
 accepted and refused member orders, and the refinement budget, checked at
 elaboration. -/
 
 open Ix.Kernel
-open Ix.Ixon.BlockOrder
+open Ixon.BlockOrder
 open Tests.Ix.Kernel.IxonFixtures (address)
 
 namespace Tests.Ix.Kernel.BlockOrder
@@ -109,7 +109,7 @@ def blobs : List (Address × ByteArray) := [(address 1, ⟨#[0, 1]⟩), (address
 -- Ref and recur denote the same physical key; projection heads use the
 -- local constructor offsets. Unequal external alias keys stay unequal.
 def localAliases : Ixon.Constant :=
-  { weak with refs := #[Ix.Ixon.Projection.address ⟨.dPrj ⟨1, owner⟩, #[], #[], #[]⟩, address 1] }
+  { weak with refs := #[Ixon.Projection.address ⟨.dPrj ⟨1, owner⟩, #[], #[], #[]⟩, address 1] }
 #guard compareIn localAliases (.ref 0 #[]) (.recur 1 #[]) [] [[0], [1], [2]] == .ok .eq
 #guard compareIn localAliases (.recur 1 #[]) (.ref 1 #[]) [] [[0], [1], [2]] == .ok .lt
 #guard compareIn localAliases (.prj 0 0 (.var 0)) (.prj 1 0 (.var 0)) [] [[0], [1], [2]] == .ok .lt

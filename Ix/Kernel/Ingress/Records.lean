@@ -40,7 +40,7 @@ The derived `BEq` compares the key bytes with `ByteArray.beq`, whose
 definition compares the underlying `Array UInt8`s (the `lean_sarray_dec_eq`
 extern implements it, as it implements `ByteArray.decEq`). It is therefore
 lawful, which the `Std.HashSet Address` lemmas behind the duplicate-key
-checks need (`Ix.Ixon.Admission.uniqueKeys`, the reader's `readRecords`).
+checks need (`Ix.Kernel.Admission.uniqueKeys`, the reader's `readRecords`).
 Proof only: these add no runtime code. -/
 
 theorem _root_.Address.beq_eq (a b : Address) : (a == b) = (a.hash == b.hash) := rfl

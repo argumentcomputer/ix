@@ -5,7 +5,7 @@ derived from [con-leche](https://github.com/leanprover/con-leche)'s verified
 checker: `Ix/Kernel/**` holds a modified copy under the namespace
 `Ix.Kernel` (see "Origin and attribution" below), run on Ixon records by Ix's
 reader in `Ix/Kernel/Ixon/`. The certified API is
-`Ix.Ixon.Admission.checkBytes`. This page states what that entry does, what
+`Ix.Kernel.Admission.checkBytes`. This page states what that entry does, what
 is proved about it, what is trusted, how the gate checks the trust boundary,
 where the kernel comes from, and how to check a whole compiled environment.
 This page is the contract: what an accept promises (a set-theoretic model,
@@ -23,7 +23,7 @@ the original Lean source meant is outside the claim.
 ## The certified entry
 
 ```lean
-def Ix.Ixon.Admission.checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
+def Ix.Kernel.Admission.checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Admission.Error Ix.Kernel.Env
 ```
@@ -39,16 +39,16 @@ reducibility hint per constant. The entry runs, in order:
 | batch limits: record and blob counts, total payload bytes | `Admission.preflight` | `.limit resource` |
 | key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
 | canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
-| the Ixon reader: records to `Array Ix.Kernel.Declaration` | `IxonReader.readRecords` | `.read position (.malformed _ / .declined _)` |
+| the Ixon reader: records to `Array Ix.Kernel.Declaration` | `Reader.readRecords` | `.read position (.malformed _ / .declined _)` |
 | the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
 | the verified fold | `Ix.Kernel.Cached.checkDecls .verified natPins` | `.kernel error position` |
 
-The pipeline is `Ix.Ixon.Admission.checkBytes`; `checkBytesWith`
+The pipeline is `Ix.Kernel.Admission.checkBytes`; `checkBytesWith`
 takes the pin table, prelude and Nat-operation pin list as parameters, and
 `checkConstants{,With}` start from decoded records. Two variants share the
-byte stage and the checker: `Ix.Ixon.Projection.checkBytes` reconstructs
+byte stage and the checker: `Ixon.Projection.checkBytes` reconstructs
 omitted projection records (addresses by pure BLAKE3 of their canonical
-bytes) before checking, and `Ix.Ixon.BlockOrder.checkBytes` also checks the
+bytes) before checking, and `Ixon.BlockOrder.checkBytes` also checks the
 order of mutual blocks: an inductive, definition or mixed block in canonical
 structural order (`canonicalClasses`, as Rust's `canonical_check.rs`), a block
 of recursors in motive order (member `j` eliminates motive `j`, read off its
@@ -76,7 +76,7 @@ blobs. Addresses are keys, not authenticated hashes (only the projection
 variant derives addresses). The entry does not reorder beyond
 `preparePrelude`: each record must follow the records it references; a
 record that contains a literal must follow the constants the literal names
-(`IxonReader.literalEdges`: the `Nat` block, and for a string literal
+(`Reader.literalEdges`: the `Nat` block, and for a string literal
 `String`, `String.ofList`, `List`, `Char`, `Char.ofNat`); a pinned `Nat`
 operation must follow its certificate ground. A host order that violates
 this declines; it cannot cause an unsound accept. The environment check's
@@ -85,14 +85,14 @@ order (`Benchmarks/Kernel/CheckIxeStep.lean`, `order`) satisfies it.
 ## The theorems
 
 All public theorems are in `Ix/Kernel/Admission/Theorems.lean` (namespace
-`Ix.Ixon.Admission`), about the executed function `checkBytes`, at the
+`Ix.Kernel.Admission`), about the executed function `checkBytes`, at the
 committed tables. Each follows from the corresponding theorem at
 `checkBytesWith`, where it holds for every pin table, prelude and
 Nat-operation pin list, so no theorem depends on how the tables were
 generated. Every public and fidelity root depends on exactly `propext`,
 `Classical.choice` and `Quot.sound`.
 
-| Theorem (`Ix.Ixon.Admission.`) | Statement, for `h : checkBytes limits records blobs hint = .ok env` |
+| Theorem (`Ix.Kernel.Admission.`) | Statement, for `h : checkBytes limits records blobs hint = .ok env` |
 | --- | --- |
 | `checkBytes_has_model` | `∀ V [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V env)` |
 | `checkBytes_has_model_values` | there is a model `M` in which every stored `defnInfo cv value _` satisfies `Denotes M.cval env φ ρ value (M.cval cv.name φ)` for all `φ ρ` |
@@ -111,7 +111,7 @@ model theorem is `Ix.Kernel.model_exists` (`Ix/Kernel/MainTheorem.lean`,
 upstream's statement and proof) at the prepared declarations: it holds for
 every declaration array the fold accepts, so the reader owes nothing for
 consistency. Definition values come from the kernel's model invariant
-`defn_reads` through `Ix.Kernel.IxonFold.checkDecls_model_defn_values`
+`defn_reads` through `Ix.Kernel.Cached.checkDecls_model_defn_values`
 (`Ix/Kernel/Ixon/Values.lean`). Theorem and opaque bodies have no value
 equation, by upstream's design.
 
@@ -154,8 +154,8 @@ Not proved:
   at `falseName` and hold for any table.
 
 The projection and block-order variants have the same shape:
-`Ix.Ixon.Projection.checkBytes_{run_iff, ok_iff, of_expansion, reading,
-has_model, no_proof_of_False}` and `Ix.Ixon.BlockOrder.checkBytes_{run_iff,
+`Ixon.Projection.checkBytes_{run_iff, ok_iff, of_expansion, reading,
+has_model, no_proof_of_False}` and `Ixon.BlockOrder.checkBytes_{run_iff,
 ok_iff, of_ordered, reading, has_model, no_proof_of_False}`, each with
 `UniqueKeys` in its reading. The separate package `Models/SetTheory`
 (Mathlib) provides `IxSetTheoryModel.zfSetTheoryOfCarneiro`, a
@@ -281,12 +281,12 @@ Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
   the reader, the record store, the projection writer and the pure Ixon
   types.
 - `importAllowlist` (the certified API's closure, rooted at
-  `Ix.Ixon.Admission`): the above plus exactly `Ix.Ixon.{Codec, Wire,
+  `Ix.Kernel.Admission`): the above plus exactly `Ix.Ixon.{Codec, Wire,
   WireCheck, Bounded.Constant, Bounded.Universe, Canonical, Admission}`.
   No projection hashing, block order, `Ix.Address.Pure`,
   proof module or `Lean` (outside `elaborationImports`).
 - `proofImportAllowlist` (the theorem modules): `importAllowlist` plus
-  `Ix.Ixon.Bounded.Size`, `Ix.Ixon.Verify`, the theorem module and
+  `Ix.Ixon.Bounded.Size`, `Ixon.Verify`, the theorem module and
   `Lean`.
 - `elaborationImports`: below `Ix.Kernel.BasisGen` only `Init`, `Std`,
   `Lean` and `Ix.Kernel`.
@@ -396,7 +396,7 @@ Mathlib tag but regenerates nothing), the change also does the following.
    `Ix/Kernel/Admission/Audit.lean` (built by `lake -d IxKernel build
    --wfail`), and in `Ix/Ixon/Projection/Audit.lean` and
    `Ix/Ixon/BlockOrder/Audit.lean` (built by `lake build --wfail
-   Ix.Ixon.Projection.Audit Ix.Ixon.BlockOrder.Audit`). A record that no
+   Ixon.Projection.Audit Ixon.BlockOrder.Audit`). A record that no
    longer matches fails the build and prints the message its command now
    produces; re-record it by replacing the record's docstring with that
    message, and update the closure table above and the counts in
@@ -592,10 +592,10 @@ acceptance/rejection behavior or full `Nat.add_comm` certified parity.
 
 | Old contract | Selected replacement | Explicit limits |
 | --- | --- | --- |
-| `deUniv_serUniv` | `Ix.Ixon.Verify.deUniv_serUniv` (implemented) | Compressed-successor and UInt64 wire bounds retained |
-| `deExpr_serExpr` | `Ix.Ixon.Verify.deExpr_serExpr` (implemented) | Wire-sized vectors, spine counts, binder bits, and whole-buffer consumption retained |
-| `deConstant_serConstant` | `Ix.Ixon.Verify.deConstant_serConstant`, plus `deConstantExact_serConstant` (implemented) | All variants and arbitrary side tables retained with count/address/table bounds |
-| `Reads` / `Writes` | `Ix.Ixon.Verify.Codec` cursor and append laws (implemented) | Codec behavior only; exact consumption and suffix rejection added in `Verify.Framing` |
+| `deUniv_serUniv` | `Ixon.Verify.deUniv_serUniv` (implemented) | Compressed-successor and UInt64 wire bounds retained |
+| `deExpr_serExpr` | `Ixon.Verify.deExpr_serExpr` (implemented) | Wire-sized vectors, spine counts, binder bits, and whole-buffer consumption retained |
+| `deConstant_serConstant` | `Ixon.Verify.deConstant_serConstant`, plus `deConstantExact_serConstant` (implemented) | All variants and arbitrary side tables retained with count/address/table bounds |
+| `Reads` / `Writes` | `Ixon.Verify.Codec` cursor and append laws (implemented) | Codec behavior only; exact consumption and suffix rejection added in `Verify.Framing` |
 | `ExprTableWF`, decreasing sharing bounds, reference/universe table resolution | Checked resolution in the canonical decoder and the Ixon reader (a bad index or a missing payload is a malformed record) | Detect bad indexes, missing payloads, sharing cycles/forward entries, and unsupported modes before certification |
 | Binder-mode erasure relation | An explicit accepted mode policy: the Ixon reader erases binder contracts | No Lean4Lean interpretation is retained as a hidden premise |
 | Production compiler refinement/value-preservation and end-to-end semantic square | Retired; a separate compiler-correctness project would need new source semantics and proofs | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |

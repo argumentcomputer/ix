@@ -2,7 +2,7 @@ import Ix.Ixon.Canonical
 import Ix.Ixon.Verify.BoundedConstant
 import Ix.Ixon.Verify.WireCheck
 
-namespace Ix.Ixon.Verify.Canonical
+namespace Ixon.Verify.Canonical
 
 open _root_.Ixon
 
@@ -76,4 +76,4 @@ theorem deConstant_noTrailing (constant : Constant) (wf : constant.wireWF)
     rw [bounded] at rejected
     cases rejected
 
-end Ix.Ixon.Verify.Canonical
+end Ixon.Verify.Canonical

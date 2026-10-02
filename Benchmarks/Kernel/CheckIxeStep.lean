@@ -16,7 +16,7 @@ over table references with projections replaced by their owners, in which a
 pinned `Nat` operation also depends on its certificate ground
 (`natOpDeps`), as `Frontend.preparePrelude`'s hoist arranges, and a record
 that contains a literal depends on the constants the literal references
-(`IxonReader.literalEdges`: the `Nat` trio, and for a string literal the
+(`Reader.literalEdges`: the `Nat` trio, and for a string literal the
 string-support constants).
 
 **The step.** `Checker.step` is phase A of `Ix.Kernel.Cached.checkDecls`
@@ -28,12 +28,12 @@ from the constant list before the step and the memo state is reset (it is
 only a cache), so a failure leaves no constant behind. A record that
 references a failed or blocked one is blocked and not checked. Recursor
 records are read with their inductive block and take its outcome. None of
-this is a certified verdict; `Ix.Ixon.Admission.checkBytes` is. -/
+this is a certified verdict; `Ix.Kernel.Admission.checkBytes` is. -/
 
 namespace Benchmarks.Kernel.CheckIxeStep
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 
 /-! ## The per-record step -/
 

@@ -6,14 +6,14 @@ import Benchmarks.Kernel.CheckIxePool
 
 The certified checker's environment check: the verified checker, read through
 the Ixon reader
-(`Ix.Kernel.IxonReader`): every primary record of an `.ixe`, in
+(`Ix.Kernel.Reader`): every primary record of an `.ixe`, in
 dependency order (the Ixon prelude's records first), read into kernel
 declarations and installed and checked one record at a time by the
 incremental step of `Benchmarks.Kernel.CheckIxeStep` (`annotDeclStep`, then
 `checkPendingList` on what it left pending), continuing past failures and
 reporting the dependents of a failure as blocked. Reducibility hints are the
 compiler's (`Env.anonHints`). Not a certified verdict:
-`Ix.Ixon.Admission.checkBytes` is.
+`Ix.Kernel.Admission.checkBytes` is.
 
 Rows are JSONL with the fields of `kernel-check-ixe` (`address, names, kind,
 outcome, reason, micros, readMicros`; a blocked row's reason is its root's
@@ -59,7 +59,7 @@ certified entry never uses it. -/
 namespace Benchmarks.Kernel.CheckIxe
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
 /-- A dot-separated name as the rows print it: `«n»` is the numeric

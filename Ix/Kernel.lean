@@ -15,14 +15,14 @@ The kernel-side boundary of the certified Ixon checker. The checker
 is derived from con-leche (`Ix/Kernel/NOTICE`); Ix contributes only the
 boundary:
 
-* `Ix.Kernel.IxonReader` (`Ix/Kernel/Ixon/Reader.lean`, with
+* `Ix.Kernel.Reader` (`Ix/Kernel/Ixon/Reader.lean`, with
   `ReaderSpec`): the Ixon reader from decoded records to
   `Array Ix.Kernel.Declaration`, its address-to-name encoding (`keyName`,
   injective) and its record-by-record specification;
 * `Ix/Kernel/Ixon/{PinData,NatOpPinData,Prelude}.lean`: the committed pin
   table, Nat-operation pins and Ixon prelude, generated from the compiled
   Init's records;
-* `Ix.Kernel.IxonFold` (`Installed`, `Values`): installation and
+* `Ix.Kernel.Cached` (`Installed`, `Values`): installation and
   definition values of the fold, used by the public theorems;
 * `Ix.Kernel.ConstRef` (`Ref`), the decoded-record store
   (`Ix.Kernel.Ingress`, `Ingress/Records.lean`), bounded search outcomes
@@ -30,7 +30,7 @@ boundary:
   `Egress/Projection.lean`) that projection reconstruction runs;
 * `Ix.Kernel.Audit`: the certified gate's manifest and audits.
 
-The certified API is `Ix.Ixon.Admission.checkBytes`; its public theorems
+The certified API is `Ix.Kernel.Admission.checkBytes`; its public theorems
 (model existence over `Ix.Kernel.Model`, no proof of the pinned `False`,
-fidelity, resources) are in `Ix.Ixon.Admission.Theorems`. The contract, trust surface, audits and
+fidelity, resources) are in `Ix.Kernel.Admission.Theorems`. The contract, trust surface, audits and
 origin are described in `docs/kernel.md`. -/

@@ -17,7 +17,7 @@ relates the actual `serConstant` and `deConstant` entry points without an
 assumed serialization law.
 -/
 
-namespace Ix.Ixon.Verify.Codec.Ixon.Constant
+namespace Ixon.Verify.Codec.Constant
 
 open Ix
 
@@ -428,15 +428,15 @@ theorem deConstant_serConstant_core_empty (info : Ixon.ConstantInfo)
     at hread
   rw [hread]
 
-end Ix.Ixon.Verify.Codec.Ixon.Constant
+end Ixon.Verify.Codec.Constant
 
-namespace Ix.Ixon.Verify
+namespace Ixon.Verify
 
 abbrev CoreConstantInfoWireWF : Ixon.ConstantInfo → Prop :=
-  Codec.Ixon.Constant.CoreInfoWireWF
+  Codec.Constant.CoreInfoWireWF
 
 abbrev emptyCoreConstant : Ixon.ConstantInfo → Ixon.Constant :=
-  Codec.Ixon.Constant.emptyConstant
+  Codec.Constant.emptyConstant
 
 theorem definitionCoreInfoWireWF (definition : Ixon.Definition)
     (htyp : ExprWireWF definition.typ)
@@ -455,6 +455,6 @@ theorem deConstant_serConstant_core_empty (info : Ixon.ConstantInfo)
     (h : CoreConstantInfoWireWF info) :
     Ixon.deConstant (Ixon.serConstant (emptyCoreConstant info)) =
       .ok (emptyCoreConstant info) :=
-  Codec.Ixon.Constant.deConstant_serConstant_core_empty info h
+  Codec.Constant.deConstant_serConstant_core_empty info h
 
-end Ix.Ixon.Verify
+end Ixon.Verify

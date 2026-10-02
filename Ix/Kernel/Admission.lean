@@ -12,23 +12,23 @@ verified checker `Ix.Kernel` (derived from con-leche, `Ix/Kernel/NOTICE`):
               → Ix.Kernel.Cached.checkDecls .verified natPins
 
 * `preflight`, `uniqueKeys` and `decodeRecords` are the byte stage
-  (`Ix.Ixon.Admission.Bytes`): the batch limits, key uniqueness (no two
+  (`Ix.Kernel.Admission.Bytes`): the batch limits, key uniqueness (no two
   records and no two blobs under one address) and canonical per-record
   decoding, with their error positions.
-* The reader is `Ix.Kernel.IxonReader` (address keys as reserved names, regrouping of
+* The reader is `Ix.Kernel.Reader` (address keys as reserved names, regrouping of
   `muts` blocks and projection records, the in-process modeller and the
   projection rewrite), against the supplied records with the Ixon prelude's
   records as a fallback store.
 * `preparePrelude` is `Ix.Kernel.Frontend.preparePrelude`
-  (`Ix/Kernel/Frontend/Prepare.lean`), with the Ixon prelude (`Ix.Kernel.IxonReader.builtinPrelude`).
+  (`Ix/Kernel/Frontend/Prepare.lean`), with the Ixon prelude (`Ix.Kernel.Reader.builtinPrelude`).
 * The fold is `Ix.Kernel.Cached.checkDecls` at `.verified`, at the committed
   Nat-operation pin variant generated from Ixon records
-  (`Ix.Kernel.IxonReader.builtinNatOpPins`, decoded from
+  (`Ix.Kernel.Reader.builtinNatOpPins`, decoded from
   `Ix/Kernel/Ixon/NatOpPinData.lean`; the theorem holds at every pin
   list, so the pins are untrusted).
 
 This module holds definitions only, so that running the entry does not
-build the proof tree; its theorems are in `Ix.Ixon.Admission.Theorems`.
+build the proof tree; its theorems are in `Ix.Kernel.Admission.Theorems`.
 There `checkBytes_has_model` is `Ix.Kernel.model_exists` at the prepared
 declarations: the reader owes nothing, because the main theorem holds for
 every declaration array. The host supplies record order, address keys
@@ -38,14 +38,14 @@ participates in this path. The
 entry does not reorder beyond `preparePrelude`: a host order is a dependency
 order in which each record follows its references, a pinned `Nat` operation's
 certificate ground, and the constants its literals reference
-(`IxonReader.literalEdges`; the checker declines a string literal before the
+(`Reader.literalEdges`; the checker declines a string literal before the
 string-support declarations), as the environment-check driver's order is.
 -/
 
-namespace Ix.Ixon.Admission
+namespace Ix.Kernel.Admission
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 
 /-- Byte, reader and checker failures, kept apart. Positions are the
 supplied records' (decoding, reading) or the fold's (checking). -/
@@ -172,4 +172,4 @@ def Error.outcome : Error → Outcome
   | .read _ (.declined _) => .declined
   | .kernel _ _ => .declined
 
-end Ix.Ixon.Admission
+end Ix.Kernel.Admission

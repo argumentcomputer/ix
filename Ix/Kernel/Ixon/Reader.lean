@@ -25,7 +25,7 @@ only make the fold reject or decline, or make it accept a different
 environment than the records describe, which is still a modelled one. What
 the reader does decide is coverage, and the faithfulness of the accepted
 environment to the Ixon records; the latter is the fidelity theorem
-(`Ix.Kernel.Ixon.ReaderSpec`, `Ix.Ixon.Admission.Theorems`).
+(`Ix.Kernel.Ixon.ReaderSpec`, `Ix.Kernel.Admission.Theorems`).
 
 ## Keys
 
@@ -110,7 +110,7 @@ Three kinds of names are not of this form:
   the host supplies a hint (the environment check supplies the compiler's own).
 -/
 
-namespace Ix.Kernel.IxonReader
+namespace Ix.Kernel.Reader
 
 open Ix.Kernel (ConstRef)
 
@@ -1190,4 +1190,4 @@ def readRecords (cx : Ctx) (st : State) (records : Array (Address × Ixon.Consta
     | .error e => throw (e, i)
   return (st, out)
 
-end Ix.Kernel.IxonReader
+end Ix.Kernel.Reader

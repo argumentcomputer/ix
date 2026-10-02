@@ -1,6 +1,6 @@
 import Ix.Ixon.Verify.WorkTags
 
-namespace Ix.Ixon.Verify.Work
+namespace Ixon.Verify.Work
 
 open _root_.Ixon
 
@@ -396,4 +396,4 @@ theorem expr_bound : Bound expr 16 0 (fun _ => 4) := by
   intro state valid
   exact exprFuel_bound _ state valid
 
-end Ix.Ixon.Verify.Work
+end Ixon.Verify.Work

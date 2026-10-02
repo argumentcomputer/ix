@@ -16,20 +16,20 @@ production variant.  The top-level theorem composes that complete payload
 domain with arbitrary well-formed sharing, reference, and universe tables.
 -/
 
-namespace Ix.Ixon.Verify.Codec.Ixon.MutualConstant
+namespace Ixon.Verify.Codec.MutualConstant
 
 open Ix
-open Ix.Ixon.Verify.Codec
-open Ix.Ixon.Verify.Codec.Ixon.Constant
-open Ix.Ixon.Verify.Codec.Ixon.ConstantTables
-open Ix.Ixon.Verify.Codec.Ixon.NonrecursiveConstant
-open Ix.Ixon.Verify.Codec.Ixon.RecursorConstant
+open Ixon.Verify.Codec
+open Ixon.Verify.Codec.Constant
+open Ixon.Verify.Codec.ConstantTables
+open Ixon.Verify.Codec.NonrecursiveConstant
+open Ixon.Verify.Codec.RecursorConstant
 
 def constructorBytes (constructor : Ixon.Constructor) : ByteArray :=
   [if constructor.isUnsafe then 1 else 0].toByteArray ++
     tag0Bytes constructor.lvls ++ tag0Bytes constructor.cidx ++
       tag0Bytes constructor.params ++ tag0Bytes constructor.fields ++
-        Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode constructor.typ
+        Ixon.Verify.Codec.Expr.spineWireEncode constructor.typ
 
 theorem constructorBytes_size_ge (constructor : Ixon.Constructor) :
     6 ≤ (constructorBytes constructor).size := by
@@ -54,7 +54,7 @@ theorem putConstructor_writes (constructor : Ixon.Constructor)
         ((putTag0_writes constructor.cidx).bind
           ((putTag0_writes constructor.params).bind
             ((putTag0_writes constructor.fields).bind
-              (Ix.Ixon.Verify.Codec.Ixon.Expr.putExpr_writes_spine
+              (Ixon.Verify.Codec.Expr.putExpr_writes_spine
                 constructor.typ h)))))
   simpa [Ixon.putConstructor, constructorBytes,
     ByteArray.append_assoc] using hwrite
@@ -67,7 +67,7 @@ theorem getConstructor_reads (constructor : Ixon.Constructor)
   have hcidx := getTag0_reads constructor.cidx
   have hparams := getTag0_reads constructor.params
   have hfields := getTag0_reads constructor.fields
-  have htyp := Ix.Ixon.Verify.Codec.Ixon.Expr.getExpr_reads_spine
+  have htyp := Ixon.Verify.Codec.Expr.getExpr_reads_spine
     constructor.typ h
   have hreturn := Reads.pure constructor
   have hafterTyp := Reads.bind
@@ -148,7 +148,7 @@ def inductiveBytes (inductiveInfo : Ixon.Inductive) : ByteArray :=
   [inductiveFlags inductiveInfo].toByteArray ++
     tag0Bytes inductiveInfo.lvls ++ tag0Bytes inductiveInfo.params ++
       tag0Bytes inductiveInfo.indices ++
-        Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode inductiveInfo.typ ++
+        Ixon.Verify.Codec.Expr.spineWireEncode inductiveInfo.typ ++
           tag0Bytes inductiveInfo.ctors.size.toUInt64 ++
             listBytes constructorBytes inductiveInfo.ctors.toList
 
@@ -165,7 +165,7 @@ theorem putInductive_writes (inductiveInfo : Ixon.Inductive)
     ((putTag0_writes inductiveInfo.lvls).bind
       ((putTag0_writes inductiveInfo.params).bind
         ((putTag0_writes inductiveInfo.indices).bind
-          ((Ix.Ixon.Verify.Codec.Ixon.Expr.putExpr_writes_spine
+          ((Ixon.Verify.Codec.Expr.putExpr_writes_spine
             inductiveInfo.typ h.typ).bind
             ((putTag0_writes inductiveInfo.ctors.size.toUInt64).bind
               (putConstructorArray_writes inductiveInfo.ctors
@@ -242,14 +242,14 @@ theorem getInductiveAfterFlags_reads (inductiveInfo : Ixon.Inductive)
     Reads (getInductiveAfterFlags inductiveInfo.isUnsafe)
       (tag0Bytes inductiveInfo.lvls ++ tag0Bytes inductiveInfo.params ++
         tag0Bytes inductiveInfo.indices ++
-          Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode inductiveInfo.typ ++
+          Ixon.Verify.Codec.Expr.spineWireEncode inductiveInfo.typ ++
             tag0Bytes inductiveInfo.ctors.size.toUInt64 ++
               listBytes constructorBytes inductiveInfo.ctors.toList)
       inductiveInfo := by
   have hlvls := getTag0_reads inductiveInfo.lvls
   have hparams := getTag0_reads inductiveInfo.params
   have hindices := getTag0_reads inductiveInfo.indices
-  have htyp := Ix.Ixon.Verify.Codec.Ixon.Expr.getExpr_reads_spine
+  have htyp := Ixon.Verify.Codec.Expr.getExpr_reads_spine
     inductiveInfo.typ h.typ
   have hconstructors := getInductiveConstructors_reads inductiveInfo h
   have hafterTyp := Reads.bind
@@ -453,7 +453,7 @@ structure ConstantWireWF (constant : Ixon.Constant) : Prop where
   refsEntries : ∀ value, value ∈ constant.refs.toList → AddressWireWF value
   univsCount : ArrayCountWF constant.univs
   univsEntries : ∀ value, value ∈ constant.univs.toList →
-    Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF value
+    Ixon.Verify.Codec.Univ.WireWF value
 
 theorem recursorWireWF_of_catalog (recursor : Ixon.Recursor)
     (h : recursor.wireWF) : RecursorWireWF recursor := by
@@ -596,12 +596,12 @@ theorem constantWireWF_iff_catalog (constant : Ixon.Constant) :
 def constantBytes (constant : Ixon.Constant) : ByteArray :=
   constantInfoBytes constant.info ++
     tag0Bytes constant.sharing.size.toUInt64 ++
-      listBytes Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode
+      listBytes Ixon.Verify.Codec.Expr.spineWireEncode
         constant.sharing.toList ++
         tag0Bytes constant.refs.size.toUInt64 ++
           listBytes Address.hash constant.refs.toList ++
             tag0Bytes constant.univs.size.toUInt64 ++
-              listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode
+              listBytes Ixon.Verify.Codec.Univ.wireEncode
                 constant.univs.toList
 
 theorem putConstant_writes (constant : Ixon.Constant)
@@ -640,21 +640,21 @@ theorem deConstant_serConstant (constant : Ixon.Constant)
     at hread
   rw [hread]
 
-end Ix.Ixon.Verify.Codec.Ixon.MutualConstant
+end Ixon.Verify.Codec.MutualConstant
 
-namespace Ix.Ixon.Verify
+namespace Ixon.Verify
 
 abbrev ConstructorWireWF : Ixon.Constructor → Prop :=
-  Codec.Ixon.MutualConstant.ConstructorWireWF
+  Codec.MutualConstant.ConstructorWireWF
 
 abbrev InductiveWireWF : Ixon.Inductive → Prop :=
-  Codec.Ixon.MutualConstant.InductiveWireWF
+  Codec.MutualConstant.InductiveWireWF
 
 abbrev MutConstWireWF : Ixon.MutConst → Prop :=
-  Codec.Ixon.MutualConstant.MutConstWireWF
+  Codec.MutualConstant.MutConstWireWF
 
 abbrev ConstantInfoWireWF : Ixon.ConstantInfo → Prop :=
-  Codec.Ixon.MutualConstant.ConstantInfoWireWF
+  Codec.MutualConstant.ConstantInfoWireWF
 
 abbrev ConstantWireWF : Ixon.Constant → Prop := Ixon.Constant.wireWF
 
@@ -689,8 +689,8 @@ theorem mutualConstantInfoWireWF (members : Array Ixon.MutConst)
     describe the same constants. -/
 theorem constantWireWF_iff_codec (constant : Ixon.Constant) :
     ConstantWireWF constant ↔
-      Codec.Ixon.MutualConstant.ConstantWireWF constant :=
-  (Codec.Ixon.MutualConstant.constantWireWF_iff_catalog constant).symm
+      Codec.MutualConstant.ConstantWireWF constant :=
+  (Codec.MutualConstant.constantWireWF_iff_catalog constant).symm
 
 /-- Production serializer/decoder round trip for every `ConstantInfo` variant,
     arbitrary canonical expression spines, and arbitrary wire-representable
@@ -698,7 +698,7 @@ theorem constantWireWF_iff_codec (constant : Ixon.Constant) :
 theorem deConstant_serConstant (constant : Ixon.Constant)
     (h : ConstantWireWF constant) :
     Ixon.deConstant (Ixon.serConstant constant) = .ok constant :=
-  Codec.Ixon.MutualConstant.deConstant_serConstant constant
-    (Codec.Ixon.MutualConstant.constantWireWF_of_catalog constant h)
+  Codec.MutualConstant.deConstant_serConstant constant
+    (Codec.MutualConstant.constantWireWF_of_catalog constant h)
 
-end Ix.Ixon.Verify
+end Ixon.Verify

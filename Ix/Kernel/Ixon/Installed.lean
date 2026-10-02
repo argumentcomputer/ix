@@ -3,7 +3,7 @@ import Ix.Kernel.Verify.Cached.AgreeFloor
 /-! # What the verified fold installs
 
 The kernel half of the fidelity theorem of the kernel entry
-(`Ix.Ixon.Admission.Theorems`). The kernel proves that the environment an
+(`Ix.Kernel.Admission.Theorems`). The kernel proves that the environment an
 accepted `Cached.checkDecls` returns has exactly the install skeletons its
 input declares (`Cached.checkDecls_skels`, `Ix/Kernel/Verify/Cached/AgreeFloor.lean`):
 the same constants, in the same order, with the same names, kinds,
@@ -18,7 +18,7 @@ nothing of their own, as the kernel specifies (`declCSkels`): `sorryAx`
 (tolerated, never modelled) and `Quot.sound` (a member of the pinned
 quotient block). -/
 
-namespace Ix.Kernel.IxonFold
+namespace Ix.Kernel.Cached
 
 open Ix.Kernel Ix.Kernel.Cached
 
@@ -139,4 +139,4 @@ theorem checkDecls_installs {pins : List NatOpPinSet} {mode : CheckMode} {ds : A
   obtain ⟨ci, hci, rfl⟩ := List.mem_map.mp hm
   exact ⟨ci, hci, rfl⟩
 
-end Ix.Kernel.IxonFold
+end Ix.Kernel.Cached

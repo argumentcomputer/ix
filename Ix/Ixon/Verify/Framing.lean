@@ -1,6 +1,6 @@
 import Ix.Ixon.Verify.MutualConstant
 
-namespace Ix.Ixon.Verify
+namespace Ixon.Verify
 
 theorem Codec.Reads.runGetExact {decoder : Ixon.GetM α} {bytes : ByteArray} {value : α}
     (h : Codec.Reads decoder bytes value) : Ixon.runGetExact decoder bytes = .ok value := by
@@ -42,17 +42,17 @@ theorem Codec.Reads.noTrailing {decoder : Ixon.GetM α} {bytes : ByteArray} {val
 the strengthened entry point also checks whole-buffer consumption. -/
 theorem deConstantExact_serConstant (constant : Ixon.Constant) (h : constant.wireWF) :
     Ixon.deConstantExact (Ixon.serConstant constant) = .ok constant := by
-  have valid := Codec.Ixon.MutualConstant.constantWireWF_of_catalog constant h
+  have valid := Codec.MutualConstant.constantWireWF_of_catalog constant h
   unfold Ixon.deConstantExact Ixon.serConstant
-  rw [(Codec.Ixon.MutualConstant.putConstant_writes constant valid).runPut]
-  exact (Codec.Ixon.MutualConstant.getConstant_reads constant valid).runGetExact
+  rw [(Codec.MutualConstant.putConstant_writes constant valid).runPut]
+  exact (Codec.MutualConstant.getConstant_reads constant valid).runGetExact
 
 theorem deConstantExact_noTrailing (constant : Ixon.Constant) (h : constant.wireWF)
     (suffix : ByteArray) (nonempty : suffix.size ≠ 0) :
     (Ixon.deConstantExact (Ixon.serConstant constant ++ suffix)).isOk = false := by
-  have valid := Codec.Ixon.MutualConstant.constantWireWF_of_catalog constant h
+  have valid := Codec.MutualConstant.constantWireWF_of_catalog constant h
   unfold Ixon.deConstantExact Ixon.serConstant
-  rw [(Codec.Ixon.MutualConstant.putConstant_writes constant valid).runPut]
-  exact (Codec.Ixon.MutualConstant.getConstant_reads constant valid).noTrailing suffix nonempty
+  rw [(Codec.MutualConstant.putConstant_writes constant valid).runPut]
+  exact (Codec.MutualConstant.getConstant_reads constant valid).noTrailing suffix nonempty
 
-end Ix.Ixon.Verify
+end Ixon.Verify

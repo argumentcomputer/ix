@@ -1,7 +1,7 @@
 import Ix.Ixon.Bounded.Universe
 import Ix.Ixon.Verify.Framing
 
-namespace Ix.Ixon.Verify.BoundedUniverse
+namespace Ixon.Verify.BoundedUniverse
 
 open _root_.Ixon
 
@@ -259,11 +259,11 @@ theorem getUniv_spec (budget : Nat) (start finish : GetState)
 theorem getUniv_reads (u : Univ) (wf : u.wireWF) (budget : Nat)
     (fits : u.nodeCount ≤ budget) :
     Codec.Reads (Bounded.getUniv budget)
-      (Codec.Ixon.Univ.wireEncode u) (u, budget - u.nodeCount) := by
+      (Codec.Univ.wireEncode u) (u, budget - u.nodeCount) := by
   intro before after
   change Bounded.getUnivFuel _ budget _ = _
   apply getUnivFuel_complete _ _ _ _ _ _ fits
-  exact Codec.Ixon.Univ.getUniv_reads u wf before after
+  exact Codec.Univ.getUniv_reads u wf before after
 
 theorem reads_fst {decoder : GetM (α × β)} {bytes : ByteArray} {value : α × β}
     (h : Codec.Reads decoder bytes value) :
@@ -276,7 +276,7 @@ theorem reads_fst {decoder : GetM (α × β)} {bytes : ByteArray} {value : α ×
 theorem deUniv_serUniv (u : Univ) (wf : u.wireWF) (maxBytes maxNodes : Nat)
     (bytesFit : (serUniv u).size ≤ maxBytes) (nodesFit : u.nodeCount ≤ maxNodes) :
     Bounded.deUniv maxBytes maxNodes (serUniv u) = .ok u := by
-  rw [Bounded.deUniv, ite_eq_left bytesFit, Codec.Ixon.Univ.serUniv_eq_wireEncode u wf]
+  rw [Bounded.deUniv, ite_eq_left bytesFit, Codec.Univ.serUniv_eq_wireEncode u wf]
   exact (reads_fst (getUniv_reads u wf maxNodes nodesFit)).runGetExact
 
 /-- A successful bounded universe decode respects both limits and agrees
@@ -306,7 +306,7 @@ theorem deUniv_noTrailing (u : Univ) (wf : u.wireWF) (maxBytes maxNodes : Nat)
     (Bounded.deUniv maxBytes maxNodes (serUniv u ++ suffix)).isOk = false := by
   unfold Bounded.deUniv
   split
-  · rw [Codec.Ixon.Univ.serUniv_eq_wireEncode u wf]
+  · rw [Codec.Univ.serUniv_eq_wireEncode u wf]
     exact (reads_fst (getUniv_reads u wf maxNodes nodesFit)).noTrailing suffix nonempty
   · rfl
 
@@ -333,4 +333,4 @@ theorem deUniv_wireWF (maxBytes maxNodes : Nat) (bytes : ByteArray) (u : Univ)
     (h : Bounded.deUniv maxBytes maxNodes bytes = .ok u) : u.wireWF :=
   wireWF_of_nodeCount u (Nat.lt_of_le_of_lt (deUniv_spec _ _ _ _ h).2.1 capacity)
 
-end Ix.Ixon.Verify.BoundedUniverse
+end Ixon.Verify.BoundedUniverse

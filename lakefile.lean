@@ -328,7 +328,7 @@ lean_exe «kernel-order» where
   moreLinkObjs := #[ix_rs_test]
 
 /-- Host-compiled Lean declarations through the certified entry
-`Ix.Ixon.Admission.checkBytes`, each with an exact expected verdict. -/
+`Ix.Kernel.Admission.checkBytes`, each with an exact expected verdict. -/
 lean_exe «kernel-entry-cases» where
   root := `Tests.Ix.Kernel.EntryCases
   supportInterpreter := true

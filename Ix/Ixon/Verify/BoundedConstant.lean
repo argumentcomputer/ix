@@ -1,7 +1,7 @@
 import Ix.Ixon.Bounded.Constant
 import Ix.Ixon.Verify.BoundedUniverse
 
-namespace Ix.Ixon.Verify.BoundedConstant
+namespace Ixon.Verify.BoundedConstant
 
 open _root_.Ixon
 
@@ -19,7 +19,7 @@ theorem getArray_succ (decoder : GetM α) (count : Nat) :
       let value ← decoder
       let rest ← getArray decoder count
       return #[value] ++ rest :=
-  Codec.Ixon.ConstantTables.getMany_succ_head decoder count
+  Codec.ConstantTables.getMany_succ_head decoder count
 
 theorem getArray_zero (decoder : GetM α) : getArray decoder 0 = pure #[] := by
   simp [getArray]
@@ -229,4 +229,4 @@ theorem deConstant_noTrailing (constant : Constant) (wf : constant.wireWF)
     simp [same] at rejected
     cases rejected
 
-end Ix.Ixon.Verify.BoundedConstant
+end Ixon.Verify.BoundedConstant

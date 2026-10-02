@@ -249,7 +249,7 @@ def rewrites (params size count : Nat) (c : Counts) : Counts := Id.run do
   return c
 
 /-- Ixon's universe of a level over `param`s (`u{i}` is `var i`), and back,
-as the reader converts it (`Ix.Kernel.IxonReader.convUniv`). -/
+as the reader converts it (`Ix.Kernel.Reader.convUniv`). -/
 def toUniv : Level → Ixon.Univ
   | .zero => .zero
   | .succ l => .succ (toUniv l)

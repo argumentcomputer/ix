@@ -30,12 +30,12 @@ A row's `readMicros` is phase A's reading; its `micros` is the record's
 install in phase A plus its recorded checks in phase B, summed over the
 workers that ran them (0 for a blocked, skipped or unread record, as in the
 per-record check). A recursor record read with its inductive block shares
-the block's. Not a certified verdict: `Ix.Ixon.Admission.checkBytes`
+the block's. Not a certified verdict: `Ix.Kernel.Admission.checkBytes`
 is. -/
 
 namespace Benchmarks.Kernel.CheckIxePool
 
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
 /-! ## Phase A -/

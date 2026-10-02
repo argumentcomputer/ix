@@ -1,11 +1,11 @@
 import Ix.Ixon.Verify.WorkRecord
 import Ix.Kernel.Admission.Bytes.Theorems
 
-namespace Ix.Ixon.Verify.Work.Admission
+namespace Ixon.Verify.Work.Admission
 
 open _root_.Ixon
-open Kernel
-open Ix.Ixon.Admission
+open Ix.Kernel
+open Ix.Kernel.Admission
 
 /-! Accounting for the parser portion of the actual byte-admission path.
 
@@ -63,7 +63,7 @@ theorem canonicalRecord_work_le (limits : Limits) (input : ByteArray) :
 theorem decodeLoop_erases (limits : Limits) (position : Nat) (records : Records)
     (reversed : Ingress.Constants) :
     (decodeLoop limits position records reversed).1 =
-      Ix.Ixon.Admission.decodeLoop limits position records reversed := by
+      Ix.Kernel.Admission.decodeLoop limits position records reversed := by
   induction records generalizing position reversed with
   | nil => rfl
   | cons pair rest ih =>
@@ -72,11 +72,11 @@ theorem decodeLoop_erases (limits : Limits) (position : Nat) (records : Records)
     cases parsed : (canonicalRecord limits input).1 with
     | error reason =>
       rw [parsed] at same
-      simp [decodeLoop, Ix.Ixon.Admission.decodeLoop, parsed, ← same, Except.mapError,
+      simp [decodeLoop, Ix.Kernel.Admission.decodeLoop, parsed, ← same, Except.mapError,
         Bind.bind, Except.bind]
     | ok value =>
       rw [parsed] at same
-      simp [decodeLoop, Ix.Ixon.Admission.decodeLoop, parsed, ← same, Except.mapError,
+      simp [decodeLoop, Ix.Kernel.Admission.decodeLoop, parsed, ← same, Except.mapError,
         Bind.bind, Except.bind, ih]
 
 theorem decodeLoop_work_le (limits : Limits) (position : Nat) (records : Records)
@@ -123,11 +123,11 @@ theorem parserStage_work_le (limits : Limits) (records : Records) (blobs : Ingre
   | ok done =>
     cases done
     dsimp only
-    have fits := (Ix.Ixon.Verify.Admission.preflight_ok_iff limits records blobs).mp checked
+    have fits := (Ix.Kernel.Admission.preflight_ok_iff limits records blobs).mp checked
     have count := Nat.mul_le_mul_right (2 * limits.maxRecordUnivNodes + 3) fits.1
     have bytes : payloadBytes records ≤ limits.maxTotalBytes := by have := fits.2.2; omega
     have bytesBound := Nat.mul_le_mul_left 16 bytes
     have work := decodeLoop_work_le limits 0 records []
     omega
 
-end Ix.Ixon.Verify.Work.Admission
+end Ixon.Verify.Work.Admission

@@ -10,7 +10,7 @@ import Ix.Kernel.MainTheorem
 /-! # The public theorems of the certified Ixon entry
 
 The certified contract of Ix's Ixon checker (`docs/kernel.md`):
-`Ix.Ixon.Admission.checkBytes`, the verified fold
+`Ix.Kernel.Admission.checkBytes`, the verified fold
 (`Ix.Kernel.Cached.checkDecls .verified`) behind the Ixon reader, stated for
 the executed functions.
 
@@ -42,7 +42,7 @@ the executed functions.
   installed under that name with its kind.
 * **Definition values** (`checkBytesWith_has_model_values`): the model can
   be chosen so that every stored definition's value denotes the constant
-  (`Ix.Kernel.IxonFold.checkDecls_model_defn_values`).
+  (`Ix.Kernel.Cached.checkDecls_model_defn_values`).
 * **Resources** (`checkBytesWith_resources`): the byte limits checked
   before decoding bound the whole decoded representation.
 
@@ -53,12 +53,11 @@ The set theory is the standing hypothesis; `Models/SetTheory` provides an
 instance on Mathlib's `ZFSet` under `ω` inaccessible cardinals.
 -/
 
-namespace Ix.Ixon.Admission
+namespace Ix.Kernel.Admission
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.IxonReader
-open Ix.Kernel.IxonFold (declSkel checkDecls_installs)
-open Ix.Ixon.Verify.Admission (WithinBatch UniqueKeys RecordsRead resourceUnits)
+open Ix.Kernel.Reader
+open Ix.Kernel.Cached (declSkel checkDecls_installs)
 
 universe u
 
@@ -66,7 +65,7 @@ universe u
 
 `checkBytesWith_checkDecls`, `checkBytesWith_has_model` and
 `checkBytes_has_model` live here, beside the other theorems, so that the
-entry (`Ix.Ixon.Admission`) holds definitions only and its import
+entry (`Ix.Kernel.Admission`) holds definitions only and its import
 closure does not reach the main theorem (`Ix.Kernel.MainTheorem`). -/
 
 /-- Every accept of the entry, at any pin table and prelude, is an accept
@@ -123,7 +122,7 @@ theorem checkBytes_has_model (V : Type u) [Ix.Kernel.SetTheory V]
 /-! ## Checking decoded records
 
 `streamContext`, `checkConstantsWith` and `checkConstants` are defined with
-the entry (`Ix.Ixon.Admission`). -/
+the entry (`Ix.Kernel.Admission`). -/
 
 /-- The bytes entry is byte admission (`preflight`, `uniqueKeys`,
 `decodeRecords`) followed by the check of the decoded records. -/
@@ -313,7 +312,7 @@ theorem Installed.has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {pins : 
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
       ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
   obtain ⟨decls, _, _, hc⟩ := h.reading
-  exact Ix.Kernel.IxonFold.checkDecls_model_defn_values V natPins _ env hc
+  exact Ix.Kernel.Cached.checkDecls_model_defn_values V natPins _ env hc
 
 /-- No constant of an accepted environment has the pinned `False` as its
 type (`Ix.Kernel.Cached.no_proof_of_False_cached`). -/
@@ -376,9 +375,9 @@ theorem checkBytesWith_reading {pins : Pins} {pre : Prelude} {natPins : List Ix.
       | error e => simp [hf, hu, hd, Except.mapError, bind, Except.bind] at h
       | ok constants =>
         simp only [hf, hu, hd, Except.mapError, bind, Except.bind] at h
-        exact ⟨(Ix.Ixon.Verify.Admission.preflight_ok_iff _ _ _).mp hf,
-          (Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff _ _).mp hu, constants,
-          (Ix.Ixon.Verify.Admission.decodeRecords_ok_iff _ _ _).mp hd, checkConstantsWith_installed h⟩
+        exact ⟨(Ix.Kernel.Admission.preflight_ok_iff _ _ _).mp hf,
+          (Ix.Kernel.Admission.uniqueKeys_ok_iff _ _).mp hu, constants,
+          (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp hd, checkConstantsWith_installed h⟩
 
 /-- The byte limits bound the whole decoded representation, including
 expanded universes, while retaining the exact reading and installation. -/
@@ -529,4 +528,4 @@ theorem checkConstants_has_model (V : Type u) [Ix.Kernel.SetTheory V]
   obtain ⟨_, _, _, _, _, _, hw⟩ := checkConstants_with h
   exact checkConstantsWith_has_model V hw
 
-end Ix.Ixon.Admission
+end Ix.Kernel.Admission

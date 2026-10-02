@@ -5,7 +5,7 @@ import Tests.Ix.Kernel.TutorialMeta
 Ordinary Lean declarations that `kernel-entry-cases`
 (`Tests.Ix.Kernel.EntryCases`) loads from this module's `.olean`, compiles
 with Ix's compiler and submits, as canonical record bytes, to the certified
-entry `Ix.Ixon.Admission.checkBytes`. Lean's kernel checked every
+entry `Ix.Kernel.Admission.checkBytes`. Lean's kernel checked every
 declaration here except `falseThm`, whose value is `True.intro` installed
 unchecked (`TutorialMeta.bad_thm`): it is the one input of the wrong type.
 -/

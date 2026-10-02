@@ -2,10 +2,10 @@ import Tests.Ix.Kernel.BlockOrder
 import Lean.Data.Json
 
 /-! Canonical block order against Rust (`kernel-order`): for each case, the
-classes `Ix.Ixon.BlockOrder.canonicalClasses` computes and the Rust kernel's
+classes `Ixon.BlockOrder.canonicalClasses` computes and the Rust kernel's
 (`rs_kernel_canonical_classes`), one JSON row per case. -/
 
-open Ix.Kernel Ix.Ixon.BlockOrder Tests.Ix.Kernel.BlockOrder
+open Ix.Kernel Ixon.BlockOrder Tests.Ix.Kernel.BlockOrder
 open Tests.Ix.Kernel.IxonFixtures (address)
 
 namespace Tests.Ix.Kernel.BlockOrderHost

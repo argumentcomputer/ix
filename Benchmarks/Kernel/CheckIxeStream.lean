@@ -24,7 +24,7 @@ the same reader from the same decoded records. -/
 
 namespace Benchmarks.Kernel.CheckIxeStream
 
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
 /-! ## Skeletons -/

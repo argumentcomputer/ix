@@ -18,7 +18,7 @@ value (binder regimes computed, `let` reduced). Theorems and opaques keep
 no such equation: their values are opaque to reduction and the invariant
 records none (upstream's design, `AcvalDefnInst`'s docstring). -/
 
-namespace Ix.Kernel.IxonFold
+namespace Ix.Kernel.Cached
 
 open Ix.Kernel Ix.Kernel.Model
 
@@ -48,4 +48,4 @@ theorem checkDecls_model_defn_values (V : Type w) [SetTheory V] (pins : List Nat
   rw [Expr.closeN_of_hasFvar _ 0 0 hv.1, interp_cvalOf m.base2.cval_closedL] at hb
   exact hb
 
-end Ix.Kernel.IxonFold
+end Ix.Kernel.Cached

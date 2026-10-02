@@ -15,10 +15,10 @@ array lengths survive the `Nat → UInt64 → Nat` wire-count conversion, and
 serialized addresses contain exactly 32 bytes.
 -/
 
-namespace Ix.Ixon.Verify.Codec.Ixon.ConstantTables
+namespace Ixon.Verify.Codec.ConstantTables
 
 open Ix
-open Ix.Ixon.Verify.Codec
+open Ixon.Verify.Codec
 
 theorem putBytes_writes (bytes : ByteArray) :
     Writes (Ixon.putBytes bytes) bytes := by
@@ -163,7 +163,7 @@ theorem getAddress_reads (address : Address) (h : AddressWireWF address) :
   change Reads (Address.mk <$> Ixon.getBytes 32) address.hash address
   rw [← h]
   simpa using
-    Ix.Ixon.Verify.Codec.Ixon.Constant.reads_map Address.mk
+    Ixon.Verify.Codec.Constant.reads_map Address.mk
       (getBytes_reads address.hash)
 
 /-- An array count survives the production `Nat → UInt64 → Nat` conversion. -/
@@ -180,25 +180,25 @@ theorem putExprArray_writes (values : Array Ixon.Expr)
     (h : ∀ value, value ∈ values.toList →
       Ixon.Expr.wireWF value) :
     Writes (do for value in values do Ixon.putExpr value)
-      (listBytes Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode values.toList) := by
+      (listBytes Ixon.Verify.Codec.Expr.spineWireEncode values.toList) := by
   exact arrayPut_writes Ixon.putExpr
-    Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode
+    Ixon.Verify.Codec.Expr.spineWireEncode
     Ixon.Expr.wireWF values h
-    Ix.Ixon.Verify.Codec.Ixon.Expr.putExpr_writes_spine
+    Ixon.Verify.Codec.Expr.putExpr_writes_spine
 
 theorem getExprArray_reads (values : Array Ixon.Expr)
     (h : ∀ value, value ∈ values.toList →
       Ixon.Expr.wireWF value) :
     Reads (getMany Ixon.getExpr values.size)
-      (listBytes Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode values.toList)
+      (listBytes Ixon.Verify.Codec.Expr.spineWireEncode values.toList)
       values := by
   have hall : ∀ value, value ∈ values.toList →
       Ixon.Expr.wireWF value := by
     exact h
   simpa using getMany_reads Ixon.getExpr
-    Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode values.toList
+    Ixon.Verify.Codec.Expr.spineWireEncode values.toList
     (fun value hmem =>
-      Ix.Ixon.Verify.Codec.Ixon.Expr.getExpr_reads_spine value
+      Ixon.Verify.Codec.Expr.getExpr_reads_spine value
         (hall value hmem))
 
 theorem putAddressArray_writes (values : Array Address)
@@ -220,30 +220,30 @@ theorem getAddressArray_reads (values : Array Address)
 
 theorem putUnivArray_writes (values : Array Ixon.Univ)
     (h : ∀ value, value ∈ values.toList →
-      Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF value) :
+      Ixon.Verify.Codec.Univ.WireWF value) :
     Writes (do for value in values do Ixon.putUniv value)
-      (listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode values.toList) := by
+      (listBytes Ixon.Verify.Codec.Univ.wireEncode values.toList) := by
   exact arrayPut_writes Ixon.putUniv
-    Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode
-    Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF values h
-    Ix.Ixon.Verify.Codec.Ixon.Univ.putUniv_writes
+    Ixon.Verify.Codec.Univ.wireEncode
+    Ixon.Verify.Codec.Univ.WireWF values h
+    Ixon.Verify.Codec.Univ.putUniv_writes
 
 theorem getUnivArray_reads (values : Array Ixon.Univ)
     (h : ∀ value, value ∈ values.toList →
-      Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF value) :
+      Ixon.Verify.Codec.Univ.WireWF value) :
     Reads (getMany Ixon.getUniv values.size)
-      (listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode values.toList)
+      (listBytes Ixon.Verify.Codec.Univ.wireEncode values.toList)
       values := by
   have hall : ∀ value, value ∈ values.toList →
-      Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF value := by
+      Ixon.Verify.Codec.Univ.WireWF value := by
     exact h
   simpa using getMany_reads Ixon.getUniv
-    Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode values.toList
+    Ixon.Verify.Codec.Univ.wireEncode values.toList
     (fun value hmem =>
-      Ix.Ixon.Verify.Codec.Ixon.Univ.getUniv_reads value
+      Ixon.Verify.Codec.Univ.getUniv_reads value
         (hall value hmem))
 
-open Ix.Ixon.Verify.Codec.Ixon.Constant
+open Ixon.Verify.Codec.Constant
 
 /-- Full wire domain for definition/axiom constants with arbitrary side
     tables. -/
@@ -256,17 +256,17 @@ structure CoreConstantWireWF (constant : Ixon.Constant) : Prop where
   refsEntries : ∀ value, value ∈ constant.refs.toList → AddressWireWF value
   univsCount : ArrayCountWF constant.univs
   univsEntries : ∀ value, value ∈ constant.univs.toList →
-    Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF value
+    Ixon.Verify.Codec.Univ.WireWF value
 
 def constantBytes (constant : Ixon.Constant) : ByteArray :=
   infoBytes constant.info ++
     tag0Bytes constant.sharing.size.toUInt64 ++
-      listBytes Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode
+      listBytes Ixon.Verify.Codec.Expr.spineWireEncode
         constant.sharing.toList ++
         tag0Bytes constant.refs.size.toUInt64 ++
           listBytes Address.hash constant.refs.toList ++
             tag0Bytes constant.univs.size.toUInt64 ++
-              listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode
+              listBytes Ixon.Verify.Codec.Univ.wireEncode
                 constant.univs.toList
 
 theorem putConstant_writes_core (constant : Ixon.Constant)
@@ -285,10 +285,10 @@ theorem getConstantUnivs_reads_core (info : Ixon.ConstantInfo)
     (sharing : Array Ixon.Expr) (refs : Array Address)
     (univs : Array Ixon.Univ) (hcount : ArrayCountWF univs)
     (hentries : ∀ value, value ∈ univs.toList →
-      Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF value) :
+      Ixon.Verify.Codec.Univ.WireWF value) :
     Reads (getConstantUnivs info sharing refs)
       (tag0Bytes univs.size.toUInt64 ++
-        listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode univs.toList)
+        listBytes Ixon.Verify.Codec.Univ.wireEncode univs.toList)
       ⟨info, sharing, refs, univs⟩ := by
   have htag := getTag0_reads univs.size.toUInt64
   have hdecode := arrayCount_decode univs hcount
@@ -305,7 +305,7 @@ theorem getConstantUnivs_reads_core (info : Ixon.ConstantInfo)
         for _ in [0:univs.size.toUInt64.toNat] do
           decoded := decoded.push (← Ixon.getUniv)
         return (⟨info, sharing, refs, decoded⟩ : Ixon.Constant))
-      (listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode univs.toList)
+      (listBytes Ixon.Verify.Codec.Univ.wireEncode univs.toList)
       ⟨info, sharing, refs, univs⟩ := by
     simpa [getMany, hdecode] using hafterValues
   have hall := Reads.bind
@@ -323,11 +323,11 @@ theorem getConstantRefs_reads_core (info : Ixon.ConstantInfo)
     (hrefEntries : ∀ value, value ∈ refs.toList → AddressWireWF value)
     (hunivCount : ArrayCountWF univs)
     (hunivEntries : ∀ value, value ∈ univs.toList →
-      Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF value) :
+      Ixon.Verify.Codec.Univ.WireWF value) :
     Reads (getConstantRefs info sharing)
       (tag0Bytes refs.size.toUInt64 ++ listBytes Address.hash refs.toList ++
         tag0Bytes univs.size.toUInt64 ++
-          listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode univs.toList)
+          listBytes Ixon.Verify.Codec.Univ.wireEncode univs.toList)
       ⟨info, sharing, refs, univs⟩ := by
   have htag := getTag0_reads refs.size.toUInt64
   have hdecode := arrayCount_decode refs hrefCount
@@ -346,7 +346,7 @@ theorem getConstantRefs_reads_core (info : Ixon.ConstantInfo)
         getConstantUnivs info sharing decoded)
       (listBytes Address.hash refs.toList ++
         tag0Bytes univs.size.toUInt64 ++
-          listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode univs.toList)
+          listBytes Ixon.Verify.Codec.Univ.wireEncode univs.toList)
       ⟨info, sharing, refs, univs⟩ := by
     simpa [getMany, hdecode, ByteArray.append_assoc] using hafterValues
   have hall := Reads.bind
@@ -367,13 +367,13 @@ theorem getConstantAfterInfo_reads_core (info : Ixon.ConstantInfo)
     (hrefEntries : ∀ value, value ∈ refs.toList → AddressWireWF value)
     (hunivCount : ArrayCountWF univs)
     (hunivEntries : ∀ value, value ∈ univs.toList →
-      Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF value) :
+      Ixon.Verify.Codec.Univ.WireWF value) :
     Reads (getConstantAfterInfo info)
       (tag0Bytes sharing.size.toUInt64 ++
-        listBytes Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode sharing.toList ++
+        listBytes Ixon.Verify.Codec.Expr.spineWireEncode sharing.toList ++
           tag0Bytes refs.size.toUInt64 ++ listBytes Address.hash refs.toList ++
             tag0Bytes univs.size.toUInt64 ++
-              listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode univs.toList)
+              listBytes Ixon.Verify.Codec.Univ.wireEncode univs.toList)
       ⟨info, sharing, refs, univs⟩ := by
   have htag := getTag0_reads sharing.size.toUInt64
   have hdecode := arrayCount_decode sharing hsharingCount
@@ -389,10 +389,10 @@ theorem getConstantAfterInfo_reads_core (info : Ixon.ConstantInfo)
         for _ in [0:sharing.size.toUInt64.toNat] do
           decoded := decoded.push (← Ixon.getExpr)
         getConstantRefs info decoded)
-      (listBytes Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode sharing.toList ++
+      (listBytes Ixon.Verify.Codec.Expr.spineWireEncode sharing.toList ++
         tag0Bytes refs.size.toUInt64 ++ listBytes Address.hash refs.toList ++
           tag0Bytes univs.size.toUInt64 ++
-            listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode univs.toList)
+            listBytes Ixon.Verify.Codec.Univ.wireEncode univs.toList)
       ⟨info, sharing, refs, univs⟩ := by
     simpa [getMany, hdecode, ByteArray.append_assoc] using hafterValues
   have hall := Reads.bind
@@ -431,24 +431,24 @@ theorem deConstant_serConstant_core (constant : Ixon.Constant)
     at hread
   rw [hread]
 
-end Ix.Ixon.Verify.Codec.Ixon.ConstantTables
+end Ixon.Verify.Codec.ConstantTables
 
-namespace Ix.Ixon.Verify
+namespace Ixon.Verify
 
 abbrev ConstantAddressWireWF : Address → Prop :=
-  Codec.Ixon.ConstantTables.AddressWireWF
+  Codec.ConstantTables.AddressWireWF
 
 abbrev ConstantArrayCountWF {α : Type} : Array α → Prop :=
-  Codec.Ixon.ConstantTables.ArrayCountWF
+  Codec.ConstantTables.ArrayCountWF
 
 abbrev CoreConstantWireWF : Ixon.Constant → Prop :=
-  Codec.Ixon.ConstantTables.CoreConstantWireWF
+  Codec.ConstantTables.CoreConstantWireWF
 
 /-- Production top-level constant round trip for core declaration payloads
     and arbitrary wire-representable sharing/reference/universe tables. -/
 theorem deConstant_serConstant_core (constant : Ixon.Constant)
     (h : CoreConstantWireWF constant) :
     Ixon.deConstant (Ixon.serConstant constant) = .ok constant :=
-  Codec.Ixon.ConstantTables.deConstant_serConstant_core constant h
+  Codec.ConstantTables.deConstant_serConstant_core constant h
 
-end Ix.Ixon.Verify
+end Ixon.Verify

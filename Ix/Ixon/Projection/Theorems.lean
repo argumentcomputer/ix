@@ -2,9 +2,9 @@ import Ix.Ixon.Projection
 import Ix.Kernel.Admission.Bytes.Theorems
 import Ix.Kernel.Admission.Theorems
 
-namespace Ix.Ixon.Projection
+namespace Ixon.Projection
 
-open Kernel
+open Ix.Kernel
 
 /-- Projection identities are determined by the physical member kind and
 array positions. Constructor metadata is checked later by kernel ingress. -/
@@ -120,7 +120,7 @@ theorem Reads.matchesRecord {request : Request} {record : _root_.Ixon.Constant}
     (h : Reads request record) : matchesRecord request record = true := by
   rcases request with ⟨layout, reference⟩
   rcases h with ⟨_, reading⟩
-  cases reading <;> simp [Ix.Ixon.Projection.matchesRecord, Egress.readProjection,
+  cases reading <;> simp [Ixon.Projection.matchesRecord, Egress.readProjection,
     Egress.readProjectionC, Ingress.emptyTables, Except.map]
 
 theorem matchesRecord_eq {request : Request} {existing record : _root_.Ixon.Constant}
@@ -298,7 +298,7 @@ universe v
 
 /-! ## The certified entry -/
 
-open Ix.Kernel.IxonReader (defaultPins builtinPrelude builtinNatOpPins)
+open Ix.Kernel.Reader (defaultPins builtinPrelude builtinNatOpPins)
 
 theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
@@ -334,27 +334,27 @@ theorem checkBytes_ok_iff (maxProjections : Nat) (limits : Admission.Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
     checkBytes maxProjections limits records blobs hint = .ok env ↔
-      Verify.Admission.WithinBatch limits records blobs ∧
-      Verify.Admission.UniqueKeys records blobs ∧ ∃ input output,
-        Verify.Admission.RecordsRead limits records input ∧ Expanded maxProjections input output ∧
+      Admission.WithinBatch limits records blobs ∧
+      Admission.UniqueKeys records blobs ∧ ∃ input output,
+        Admission.RecordsRead limits records input ∧ Expanded maxProjections input output ∧
         Admission.checkConstants output blobs hint = .ok env := by
-  simp only [checkBytes_run_iff, Verify.Admission.preflight_ok_iff, Verify.Admission.uniqueKeys_ok_iff,
-    Verify.Admission.decodeRecords_ok_iff, reconstruct_ok_iff]
+  simp only [checkBytes_run_iff, Admission.preflight_ok_iff, Admission.uniqueKeys_ok_iff,
+    Admission.decodeRecords_ok_iff, reconstruct_ok_iff]
 
 /-- Every checker outcome is preserved after a bounded canonical reading and
 projection extension. -/
 theorem checkBytes_of_expansion {maxProjections : Nat} {limits : Admission.Limits}
     {records : Admission.Records} {input output : Ingress.Constants} {blobs : Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    (within : Verify.Admission.WithinBatch limits records blobs)
-    (keys : Verify.Admission.UniqueKeys records blobs)
-    (reading : Verify.Admission.RecordsRead limits records input)
+    (within : Admission.WithinBatch limits records blobs)
+    (keys : Admission.UniqueKeys records blobs)
+    (reading : Admission.RecordsRead limits records input)
     (expanded : Expanded maxProjections input output) :
     checkBytes maxProjections limits records blobs hint =
       (Admission.checkConstants output blobs hint).mapError .checker := by
-  have flight := (Verify.Admission.preflight_ok_iff _ _ _).mpr within
-  have unique := (Verify.Admission.uniqueKeys_ok_iff _ _).mpr keys
-  have decoded := (Verify.Admission.decodeRecords_ok_iff _ _ _).mpr reading
+  have flight := (Admission.preflight_ok_iff _ _ _).mpr within
+  have unique := (Admission.uniqueKeys_ok_iff _ _).mpr keys
+  have decoded := (Admission.decodeRecords_ok_iff _ _ _).mpr reading
   have reconstructed := (reconstruct_ok_iff _ _ _).mpr expanded
   simp [checkBytes, flight, unique, decoded, reconstructed, Except.mapError, bind, Except.bind]
 
@@ -365,8 +365,8 @@ theorem checkBytes_reading {maxProjections : Nat} {limits : Admission.Limits}
     {records : Admission.Records} {blobs : Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes maxProjections limits records blobs hint = .ok env) :
-    Verify.Admission.UniqueKeys records blobs ∧
-    ∃ input output, Verify.Admission.RecordsRead limits records input ∧
+    Admission.UniqueKeys records blobs ∧
+    ∃ input output, Admission.RecordsRead limits records input ∧
       Expanded maxProjections input output ∧ ∃ pins pre natPins, defaultPins = .ok pins ∧
         builtinPrelude = .ok pre ∧ builtinNatOpPins = .ok natPins ∧
         Admission.Installed pins pre natPins output blobs hint env := by
@@ -393,4 +393,4 @@ theorem checkBytes_no_proof_of_False (V : Type v) [Ix.Kernel.SetTheory V] {maxPr
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.no_proof_of_False V
 
-end Ix.Ixon.Projection
+end Ixon.Projection

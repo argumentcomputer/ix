@@ -1,6 +1,6 @@
 import Ix.Ixon.Verify.WorkConstant
 
-namespace Ix.Ixon.Verify.Work
+namespace Ixon.Verify.Work
 
 open _root_.Ixon
 
@@ -65,4 +65,4 @@ theorem record_accounted (maxBytes budget : Nat) (input : ByteArray) :
       (record maxBytes budget input).2 ≤ 16 * input.size + 2 * budget + 3 :=
   ⟨record_erases maxBytes budget input, record_work_le maxBytes budget input⟩
 
-end Ix.Ixon.Verify.Work
+end Ixon.Verify.Work

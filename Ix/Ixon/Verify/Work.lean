@@ -16,7 +16,7 @@ charges each copied byte. Grammar-specific construction/iteration charges
 are introduced with `charge` and must be funded in the bound proof.
 -/
 
-namespace Ix.Ixon.Verify.Work
+namespace Ixon.Verify.Work
 
 open _root_.Ixon
 
@@ -293,4 +293,4 @@ theorem bytes_bound (count : Nat) : Bound (bytes count) 1 1 (fun _ => 0) := by
   · simp only [bytes, getBytes_run, ite_eq_right fits, Costs, finish]
     exact ⟨Progress.refl start valid, by simp⟩
 
-end Ix.Ixon.Verify.Work
+end Ixon.Verify.Work

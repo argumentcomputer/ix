@@ -15,7 +15,7 @@ under another version is not used. -/
 namespace Tests.Ix.Kernel.ReadCache
 
 open LSpec
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 open Tests.Ix.Kernel.ReaderFidelity
 

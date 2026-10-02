@@ -7,13 +7,12 @@ import Std.Data.HashSet.Lemmas
 
 The reading relation names every supplied address and canonical payload in
 order, independently of any decoder. It is the byte half of the certified
-entry's theorems (`Ix.Ixon.Admission.Theorems`).
+entry's theorems (`Ix.Kernel.Admission.Theorems`).
 -/
 
-namespace Ix.Ixon.Verify.Admission
+namespace Ix.Kernel.Admission
 
 open _root_.Ixon Kernel
-open Ix.Ixon.Admission
 
 theorem consume_ok_iff (resource : Resource) (count budget : Nat) (records : Records)
     (remaining : Nat) :
@@ -125,7 +124,7 @@ theorem uniqueKeys_ok_iff (records : Records) (blobs : Ingress.Blobs) :
     | none => simp [hrn, (firstDuplicate_empty_eq_none_iff blobs).mp hb]
 
 /-- An exact ordered reading of record bytes. Keys are unchanged; each
-payload satisfies the per-record canonical contract `Canonical.Reads`: it is
+payload satisfies the per-record canonical contract `Ixon.Verify.Canonical.Reads`: it is
 the canonical encoding of its entire wire-well-formed constant, including
 sharing and side tables, within the per-record limits. This does not assert
 canonical mutual-block order or authenticate address hashes. -/
@@ -133,7 +132,7 @@ inductive RecordsRead (limits : Limits) : Records → Ingress.Constants → Prop
   | nil : RecordsRead limits [] []
   | cons {address : Address} {bytes : ByteArray} {constant : Constant}
       {rest : Records} {constants : Ingress.Constants}
-      (reads : Canonical.Reads limits.maxRecordBytes limits.maxRecordUnivNodes bytes constant)
+      (reads : Ixon.Verify.Canonical.Reads limits.maxRecordBytes limits.maxRecordUnivNodes bytes constant)
       (tail : RecordsRead limits rest constants) :
       RecordsRead limits ((address, bytes) :: rest) ((address, constant) :: constants)
 
@@ -176,9 +175,9 @@ theorem RecordsRead.resourceUnits_le {limits : Limits} {records : Records}
   | nil => simp [resourceUnits, payloadBytes]
   | cons reads _ ih =>
     have nodesFit := reads.nodesFit
-    have exactRead := deConstantExact_serConstant _ reads.wire
+    have exactRead := Ixon.Verify.deConstantExact_serConstant _ reads.wire
     rw [reads.encoded] at exactRead
-    have structural := ConstantBounds.deConstantExact_resource_bound _ _ exactRead
+    have structural := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound _ _ exactRead
     simp only [resourceUnits] at ih
     simp only [resourceUnits, List.map_cons, List.sum_cons, payloadBytes, List.length_cons,
       Nat.mul_add, Nat.add_mul, Nat.one_mul]
@@ -202,7 +201,7 @@ theorem decodeLoop_spec {limits : Limits} {position : Nat} {records : Records}
         simpa [decodeLoop, decoded, Except.mapError, bind, Except.bind] using accepted
       obtain ⟨constants, reading, same⟩ := ih tail
       exact ⟨(address, constant) :: constants,
-        .cons ((Canonical.deConstant_reads_iff _ _ _ _).mp decoded) reading,
+        .cons ((Ixon.Verify.Canonical.deConstant_reads_iff _ _ _ _).mp decoded) reading,
         by simpa [List.reverse_cons, List.append_assoc] using same⟩
 
 theorem decodeLoop_complete {limits : Limits} {records : Records} {constants : Ingress.Constants}
@@ -211,7 +210,7 @@ theorem decodeLoop_complete {limits : Limits} {records : Records} {constants : I
   induction reading generalizing position reversed with
   | nil => simp [decodeLoop]
   | cons reads _ ih =>
-    have decoded := (Canonical.deConstant_reads_iff _ _ _ _).mpr reads
+    have decoded := (Ixon.Verify.Canonical.deConstant_reads_iff _ _ _ _).mpr reads
     simp only [decodeLoop, decoded, Except.mapError, bind, Except.bind]
     simpa [List.reverse_cons, List.append_assoc] using ih (position + 1) (_ :: reversed)
 
@@ -232,4 +231,4 @@ theorem RecordsRead.deterministic {limits : Limits} {records : Records}
   rw [h₁] at h₂
   exact Except.ok.inj h₂
 
-end Ix.Ixon.Verify.Admission
+end Ix.Kernel.Admission

@@ -20,7 +20,7 @@ names), for the pinned constants and their recursors.
 `prelude`: (record address, canonical record bytes), in the checker's
 prelude order. -/
 
-namespace Ix.Kernel.IxonReader.PinData
+namespace Ix.Kernel.Reader.PinData
 
 def source : String := "sha256:e10f71e76e218e05db36502da3cd803bc5de6a099cbf210f9b67ea9e9bd2b84a"
 
@@ -219,4 +219,4 @@ def prelude : Array (String × String) := #[
   ("09dd984bd4b4936e6beee7d9f027ddeb1703e3d129676a91e5837a24f9850983",
    "d10001000001029417b117b317b517b071131002008307b107b307b511008307b107b307b5100620029117b00020017110b220007111b403a29a636176cf1135d077eb074798f9007c78e7801383e9cff363bae5edf05762dda12bcb330727f6dfb816bc9752aabd0520e6515b79fc8a5a9e713866f4c63ee6eba3c8b4d19f6a1076b39fa89aec61dccbb960f83d9a62e6acf35a69c9a0a401c0")]
 
-end Ix.Kernel.IxonReader.PinData
+end Ix.Kernel.Reader.PinData

@@ -7,7 +7,7 @@ import Tests.Ix.Kernel.ReaderFidelity
 The certified entries write Ixon records on one path only: projection
 records, from a block member or constructor reference
 (`Ix.Kernel.Egress.writeProjection`), keyed by their pure BLAKE3 address
-(`Ix.Ixon.Projection.address`). `Projection.reconstruct` writes a batch's
+(`Ixon.Projection.address`). `Projection.reconstruct` writes a batch's
 projections from its `muts` blocks, and `BlockOrder` decides that a block's
 members are in canonical order with the same addresses. This module checks
 that output against real compiled environments:
@@ -61,7 +61,7 @@ environment; a faithful egress is the accepted input records themselves,
 with `keyName` as the map between addresses and names. -/
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep (RecordStore Hints setup Setup owner)
 
 namespace Tests.Ix.Kernel.EgressFidelity
@@ -145,7 +145,7 @@ def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : Pr
   for (a, c) in store.toList do
     let .muts ms := c.info | continue
     report := { report with blocks := report.blocks + 1 }
-    match Ix.Ixon.Projection.reconstruct maxProjections [(a, c)] with
+    match Ixon.Projection.reconstruct maxProjections [(a, c)] with
     | .error e => report := { report with problems := report.problems.push s!"{a}: {reprStr e}" }
     | .ok expanded =>
       let written := expanded.filter (·.1 != a)
@@ -164,13 +164,13 @@ def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : Pr
     if ms.size ≥ 2 then
       let kind := blockKind ms
       report := { report with ordered := report.ordered.insert kind (report.ordered.getD kind 0 + 1) }
-      match Ix.Ixon.BlockOrder.checkRecord {} blobs a c with
+      match Ixon.BlockOrder.checkRecord {} blobs a c with
       | .ok () =>
         if kind == "recursor" then
           report := { report with motiveOrdered := report.motiveOrdered.push a }
           -- the wrong order: the first two members swapped
           let swapped := { c with info := .muts (ms.swapIfInBounds 0 1) }
-          if let .error (.motiveOrder ..) := Ix.Ixon.BlockOrder.checkRecord {} blobs a swapped then
+          if let .error (.motiveOrder ..) := Ixon.BlockOrder.checkRecord {} blobs a swapped then
             report := { report with swapsRefused := report.swapsRefused + 1 }
       | .error _ =>
         report := { report with refused := report.refused.insert kind ((report.refused.getD kind #[]).push a) }
@@ -229,7 +229,7 @@ def EntryReport.summary (r : EntryReport) : String :=
     {r.constants} installed constants, {r.projectionsInstalled} projections installed; \
     {r.problems.size} problems" ++ String.join (r.problems.toList.take 20 |>.map ("\n  " ++ ·))
 
-def limits : Ix.Ixon.Admission.Limits := ⟨1 <<< 16, 1 <<< 16, 1 <<< 28, 1 <<< 22, 1 <<< 20⟩
+def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 16, 1 <<< 16, 1 <<< 28, 1 <<< 22, 1 <<< 20⟩
 
 /-- The re-reading and installed-environment checks over the primary
 records `primaries` (in a dependency order the checker accepts), with all
@@ -249,18 +249,18 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   let mut report : EntryReport := { records := prim.length, projectionRecords := projs.length }
   -- the reader, with the compiler's projections and with the written ones
   let compiled := prim ++ projs
-  let reconstructed ← match Ix.Ixon.Projection.reconstruct maxProjections prim with
+  let reconstructed ← match Ixon.Projection.reconstruct maxProjections prim with
     | .ok cs => pure cs
     | .error e => throw (IO.userError s!"reconstruct: {reprStr e}")
-  let decls₁ ← IO.ofExcept ((Ix.Ixon.Admission.readStream pins pre compiled blobs hints.lookup).mapError toString)
-  let decls₂ ← IO.ofExcept ((Ix.Ixon.Admission.readStream pins pre reconstructed blobs hints.lookup).mapError toString)
+  let decls₁ ← IO.ofExcept ((Ix.Kernel.Admission.readStream pins pre compiled blobs hints.lookup).mapError toString)
+  let decls₂ ← IO.ofExcept ((Ix.Kernel.Admission.readStream pins pre reconstructed blobs hints.lookup).mapError toString)
   if let some d := declsDiff decls₁ decls₂ then
     report := { report with problems := report.problems.push s!"re-read with written projections: {d}" }
   -- the three certified entries
-  let env₁ ← IO.ofExcept ((Ix.Ixon.Admission.checkConstants compiled blobs hints.lookup).mapError
+  let env₁ ← IO.ofExcept ((Ix.Kernel.Admission.checkConstants compiled blobs hints.lookup).mapError
     fun e => s!"checkConstants: {e}")
   let bytes := prim.map fun (a, c) => (a, Ixon.serConstant c)
-  let env₂ ← match Ix.Ixon.Projection.checkBytes maxProjections limits bytes blobs hints.lookup with
+  let env₂ ← match Ixon.Projection.checkBytes maxProjections limits bytes blobs hints.lookup with
     | .ok env => pure env
     | .error (.reconstruction e) => throw (IO.userError s!"Projection.checkBytes: {reprStr e}")
     | .error (.checker e) => throw (IO.userError s!"Projection.checkBytes: {e}")
@@ -268,7 +268,7 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   if let some d := envDiff env₁ env₂ then
     report := { report with problems := report.problems.push s!"projection entry: {d}" }
   -- the block-order entry accepts the same batch with the same environment
-  match Ix.Ixon.BlockOrder.checkBytes maxProjections limits {} bytes blobs hints.lookup with
+  match Ixon.BlockOrder.checkBytes maxProjections limits {} bytes blobs hints.lookup with
   | .ok env₃ =>
     if let some d := envDiff env₁ env₃ then
       report := { report with problems := report.problems.push s!"block-order entry: {d}" }
@@ -277,7 +277,7 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   | .error (.checker e) =>
     report := { report with problems := report.problems.push s!"block-order entry: {e}" }
   -- each projection record names an installed constant of its kind
-  let cx := Ix.Ixon.Admission.streamContext pins pre compiled blobs hints.lookup
+  let cx := Ix.Kernel.Admission.streamContext pins pre compiled blobs hints.lookup
   let installed : Std.HashMap CName String := env₁.consts.foldl
     (fun m ci => m.insert ci.toConstantVal.name (infoKind ci)) {}
   for (k, p) in projs do

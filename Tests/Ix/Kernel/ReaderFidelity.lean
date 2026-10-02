@@ -7,7 +7,7 @@ import Benchmarks.Kernel.CheckIxeStep
 
 /-! # The Ixon reader against a direct translation of Lean's constants
 
-The fidelity test of `Ix.Kernel.IxonReader`, in the style of Ix.Tc's
+The fidelity test of `Ix.Kernel.Reader`, in the style of Ix.Tc's
 meta roundtrip (`Tests/Ix/Tc/Roundtrip.lean`, `Ix.Tc.metaRoundtripEnv`):
 compile a Lean environment to Ixon with Ix's compiler, read every primary
 record through the reader exactly as the environment check does (the Ixon prelude's
@@ -104,7 +104,7 @@ No reader defect is known. Every difference on the fixture closure and on all of
 * Anything else is **unexplained** and fails the drivers. -/
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep (RecordStore Hints setup Setup owner)
 
 namespace Tests.Ix.Kernel.ReaderFidelity

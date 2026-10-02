@@ -14,16 +14,16 @@ loads the serialized environment with the host codec, orders the primary
 records as the environment check does (`Benchmarks.Kernel.CheckIxeStep`: dependencies,
 `Nat`-operation grounds and literal edges first; projections last), and
 submits canonical record bytes, the literal blobs and the compiler's
-reducibility hints to the certified entry `Ix.Ixon.Admission.checkBytes`.
+reducibility hints to the certified entry `Ix.Kernel.Admission.checkBytes`.
 Some cases first alter the input (bytes, keys, a recursor header).
 
 Every case has an exact expected verdict: accepted with each seed installed
 under its reader name, or the entry's error at a named stage with the
-classification of `Ix.Ixon.Admission.Error.outcome`. The compiler, loader, order
+classification of `Ix.Kernel.Admission.Error.outcome`. The compiler, loader, order
 and hints are untrusted producers of the input; only the verdict of
 `checkBytes` is under test. One JSON row per case goes to stdout. -/
 
-open Ix.Kernel.IxonReader
+open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep (RecordStore Hints setup)
 
 namespace Tests.Ix.Kernel.EntryCases
@@ -122,8 +122,8 @@ def prepare (leanEnv : Lean.Environment) (seeds : List Lean.Name) : IO Input := 
 inductive Expected where
   | accept
   /-- the classification, the stage, and what the error must be -/
-  | fail (outcome : Ix.Ixon.Admission.Outcome) (stage : String)
-      (check : Input → Ix.Ixon.Admission.Error → Bool)
+  | fail (outcome : Ix.Kernel.Admission.Outcome) (stage : String)
+      (check : Input → Ix.Kernel.Admission.Error → Bool)
 
 def Expected.label : Expected → String
   | .accept => "accept"
@@ -132,7 +132,7 @@ def Expected.label : Expected → String
 
 /-- The records and blobs submitted, after a case's alteration. -/
 structure Submission where
-  records : Ix.Ixon.Admission.Records
+  records : Ix.Kernel.Admission.Records
   blobs : List (Address × ByteArray)
 
 def encode (input : Input) : Submission :=
@@ -263,7 +263,7 @@ def cases : List Case := [
       | .kernel (.invalid m) _, some key => m == s!"type mismatch in theorem {key}"
       | _, _ => false } ]
 
-def limits : Ix.Ixon.Admission.Limits := ⟨1 <<< 14, 1 <<< 14, 1 <<< 26, 1 <<< 22, 1 <<< 20⟩
+def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 14, 1 <<< 14, 1 <<< 26, 1 <<< 22, 1 <<< 20⟩
 
 /-- The names the seeds are installed under. -/
 def seedNames (input : Input) : List (Lean.Name × Option CName) :=
@@ -273,7 +273,7 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   let started ← IO.monoMsNow
   let input ← prepare leanEnv test.seeds
   let submission ← IO.ofExcept (test.alter input)
-  let result := Ix.Ixon.Admission.checkBytes limits submission.records submission.blobs input.hints.lookup
+  let result := Ix.Kernel.Admission.checkBytes limits submission.records submission.blobs input.hints.lookup
   let (outcome, detail, passed) := match result, test.expected with
     | .ok env, .accept =>
       let missing : List Lean.Name := (seedNames input).filterMap fun (seed, n) => match n with

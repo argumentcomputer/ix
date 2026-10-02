@@ -23,13 +23,13 @@ parser. A stream that declares any of them is checked on its own record
 (`preparePrelude` moves the stream's copy to the front); the prelude's copy
 fills in only where the stream has none.
 
-`PinData.pins` is the pin table (`Ix.Kernel.IxonReader.Pin`), from the
+`PinData.pins` is the pin table (`Ix.Kernel.Reader.Pin`), from the
 same generator; see the reader's module docstring for what it may and may not
 affect. `NatOpPinData` is the pin variant of the pin-certified `Nat`
 operations, from the same generator and also from Ixon records only (below,
 "The Nat-operation pins, from Ixon"). -/
 
-namespace Ix.Kernel.IxonReader
+namespace Ix.Kernel.Reader
 
 open Ix.Kernel (ConstRef)
 
@@ -267,4 +267,4 @@ empty prelude. -/
 def builtinPrelude : Except String Prelude := do
   readPrelude (← defaultPins) (← preludeRecords)
 
-end Ix.Kernel.IxonReader
+end Ix.Kernel.Reader

@@ -1,6 +1,6 @@
 import Ix.Ixon.Verify.ReaderBounds
 
-namespace Ix.Ixon.Verify.ConstantBounds
+namespace Ixon.Verify.ConstantBounds
 
 open _root_.Ixon ReaderBounds
 
@@ -103,7 +103,7 @@ theorem getConstructorProj_bound : ReaderBound getConstructorProj (fun _ => 0) :
   intro ctorIndex
   exact address_bound.map _ _ (fun _ => Nat.zero_le _)
 
-open Codec.Ixon.RecursorConstant in
+open Codec.RecursorConstant in
 theorem getRecursorRules_bound (k unsafeFlag : Bool) (levels params indices motives minors : UInt64)
     (type : Expr) : ReaderBound (getRecursorRules k unsafeFlag levels params indices motives minors type)
       (fun value => value.resourceSize - (type.resourceSize + 1)) := by
@@ -117,7 +117,7 @@ theorem getRecursorRules_bound (k unsafeFlag : Bool) (levels params indices moti
     (fun value => value.resourceSize - (type.resourceSize + 1))
     (fun _ => by simp [Recursor.resourceSize, Nat.add_comm])
 
-open Codec.Ixon.RecursorConstant in
+open Codec.RecursorConstant in
 theorem getRecursor_bound : ReaderBound getRecursor Recursor.resourceSize := by
   rw [getRecursor_eq]
   apply getU8_bound.skip
@@ -137,7 +137,7 @@ theorem getRecursor_bound : ReaderBound getRecursor Recursor.resourceSize := by
   exact getExpr_bound.bind (fun type => getRecursorRules_bound _ _ _ _ _ _ _ type) _
     (fun type value => by omega)
 
-open Codec.Ixon.MutualConstant in
+open Codec.MutualConstant in
 theorem getInductiveConstructors_bound (unsafeFlag : Bool) (levels params indices : UInt64)
     (type : Expr) : ReaderBound (getInductiveConstructors unsafeFlag levels params indices type)
       (fun value => value.resourceSize - (type.resourceSize + 1)) := by
@@ -151,7 +151,7 @@ theorem getInductiveConstructors_bound (unsafeFlag : Bool) (levels params indice
     (fun value => value.resourceSize - (type.resourceSize + 1))
     (fun _ => by simp [Inductive.resourceSize, Nat.add_comm])
 
-open Codec.Ixon.MutualConstant in
+open Codec.MutualConstant in
 theorem getInductive_bound : ReaderBound getInductive Inductive.resourceSize := by
   rw [getInductive_eq]
   apply getBool_bound.skip
@@ -166,7 +166,7 @@ theorem getInductive_bound : ReaderBound getInductive Inductive.resourceSize := 
   exact getExpr_bound.bind (fun type => getInductiveConstructors_bound _ _ _ _ type) _
     (fun type value => by omega)
 
-open Codec.Ixon.MutualConstant in
+open Codec.MutualConstant in
 theorem getMutConst_bound : ReaderBound getMutConst MutConst.resourceSize := by
   rw [getMutConst_eq]
   apply getU8_bound.bind (rightUnits := fun _ value => value.resourceSize - 1)
@@ -276,4 +276,4 @@ theorem boundedConstant_resource_bound (maxBytes maxUnivNodes : Nat) (bytes : By
   have structural := deConstantExact_resource_bound _ _ exactRead
   omega
 
-end Ix.Ixon.Verify.ConstantBounds
+end Ixon.Verify.ConstantBounds

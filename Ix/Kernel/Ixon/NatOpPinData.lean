@@ -27,7 +27,7 @@ the data carries no trust. `table` is a share table and `ops` its roots per
 operation, in `NatOpPinSet` field order; the format and the decoder are in
 `Ix/Kernel/Ixon/Prelude.lean`. -/
 
-namespace Ix.Kernel.IxonReader.NatOpPinData
+namespace Ix.Kernel.Reader.NatOpPinData
 
 def source : String := "sha256:e10f71e76e218e05db36502da3cd803bc5de6a099cbf210f9b67ea9e9bd2b84a sha256:adfbe59f986d19439e7e247a6ae596f9b34483aa528c8c93080193d939dd89c1"
 
@@ -17859,4 +17859,4 @@ L 3 17812
 L 3 17813
 "
 
-end Ix.Kernel.IxonReader.NatOpPinData
+end Ix.Kernel.Reader.NatOpPinData

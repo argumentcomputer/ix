@@ -4,9 +4,9 @@ import Tests.Ix.Kernel.Reader
 
 /-! # The certified Ixon API
 
-The public entries — `Ix.Ixon.Admission.checkBytes`, and its
+The public entries — `Ix.Kernel.Admission.checkBytes`, and its
 projection-reconstructing and block-ordering variants
-`Ix.Ixon.Projection.checkBytes` and `Ix.Ixon.BlockOrder.checkBytes` — run
+`Ixon.Projection.checkBytes` and `Ixon.BlockOrder.checkBytes` — run
 the verified checker behind the Ixon reader. These fixtures are the
 reader fixtures (`Tests.Ix.Kernel.Reader`) through the public
 names, the failure classification at the Ix API (`Admission.outcome`), a
@@ -16,20 +16,20 @@ applied. The byte stage and the shared Ixon record fixtures are tested in
 `Tests.Ix.Kernel.Projection`. -/
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.IxonReader (isSingleton SingletonRead keyName keyName_injective)
+open Ix.Kernel.Reader (isSingleton SingletonRead keyName keyName_injective)
 open Tests.Ix.Kernel.Reader
 
 namespace Tests.Ix.Kernel.CertifiedEntry
 
 def check (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) :
-    Except Ix.Ixon.Admission.Error Ix.Kernel.Env :=
-  Ix.Ixon.Admission.checkBytes limits (encode cs) blobs
+    Except Ix.Kernel.Admission.Error Ix.Kernel.Env :=
+  Ix.Kernel.Admission.checkBytes limits (encode cs) blobs
 
 def accepted (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Bool :=
   (check cs blobs).isOk
 
 def outcomeOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) :
-    Option Ix.Ixon.Admission.Outcome :=
+    Option Ix.Kernel.Admission.Outcome :=
   match check cs blobs with
   | .ok _ => none
   | .error e => some (e.outcome)
@@ -43,7 +43,7 @@ def outcomeOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × B
 #guard accepted [(address 42, litEq)] [(address 41, ⟨#[2]⟩)]
 -- a theorem in Ixon's canonical universe levels, which only the Géran
 -- fallback of the level comparison equates (`RatFunc.liftOn_def`'s shape)
-#guard (Ix.Ixon.Admission.checkBytes limits levelStream []).isOk
+#guard (Ix.Kernel.Admission.checkBytes limits levelStream []).isOk
 -- the empty stream installs the prelude
 #guard match check [] with
   | .ok env => env.consts.length == 27
@@ -66,18 +66,18 @@ limits decline. -/
 -- a literal blob that is not supplied
 #guard outcomeOf [(address 42, litEq)] == some .rejected
 -- a non-canonical record
-#guard match Ix.Ixon.Admission.checkBytes limits [(address 10, ⟨#[0xff]⟩)] [] with
+#guard match Ix.Kernel.Admission.checkBytes limits [(address 10, ⟨#[0xff]⟩)] [] with
   | .error e => e.outcome == .rejected
   | .ok _ => false
 -- batch limits
-#guard match Ix.Ixon.Admission.checkBytes { limits with maxRecords := 0 } (encode definitions) [] with
+#guard match Ix.Kernel.Admission.checkBytes { limits with maxRecords := 0 } (encode definitions) [] with
   | .error e => e.outcome == .declined
   | .ok _ => false
 
 /-! ## Duplicate keys
 
 Two records, or two blobs, under one address are malformed input: the byte
-stage rejects them (`Ix.Ixon.Admission.uniqueKeys`) at the second
+stage rejects them (`Ix.Kernel.Admission.uniqueKeys`) at the second
 occurrence, before decoding, in all three byte entries, and the API
 classifies that as a reject. The controls are the same inputs with distinct
 keys. -/
@@ -121,9 +121,9 @@ The `Two` fixture with its projection records omitted: the recursor and the
 ι theorem name the projections by their reconstructed addresses (the pure
 BLAKE3 of their canonical encodings). -/
 
-def twoI : Address := Ix.Ixon.Projection.address (iPrj (address 20))
-def twoA : Address := Ix.Ixon.Projection.address (cPrj (address 20) 0)
-def twoB : Address := Ix.Ixon.Projection.address (cPrj (address 20) 1)
+def twoI : Address := Ixon.Projection.address (iPrj (address 20))
+def twoA : Address := Ixon.Projection.address (cPrj (address 20) 0)
+def twoB : Address := Ixon.Projection.address (cPrj (address 20) 1)
 
 def twoRecR : Ixon.Constant := { twoRec with refs := #[twoI, twoA, twoB] }
 def twoIotaR : Ixon.Constant :=
@@ -132,69 +132,69 @@ def twoIotaR : Ixon.Constant :=
 def omitted : List (Address × Ixon.Constant) :=
   [(address 20, twoBlock), (address 24, twoRecR), (address 25, twoIotaR)]
 
-#guard (Ix.Ixon.Projection.checkBytes 16 limits (encode omitted) []).isOk
+#guard (Ixon.Projection.checkBytes 16 limits (encode omitted) []).isOk
 -- without reconstruction the projections are missing
 #guard !accepted omitted
 -- the projection request bound applies
-#guard match Ix.Ixon.Projection.checkBytes 0 limits (encode omitted) [] with
+#guard match Ixon.Projection.checkBytes 0 limits (encode omitted) [] with
   | .error (.reconstruction .limit) => true
   | _ => false
 
 -- duplicate keys reject before reconstruction
-#guard match Ix.Ixon.Projection.checkBytes 16 limits (encode omitted)
+#guard match Ixon.Projection.checkBytes 16 limits (encode omitted)
     [(address 43, ⟨#[2]⟩), (address 43, ⟨#[2]⟩)] with
   | .error (.reconstruction (.admission (.duplicate .blobs 1 _))) => true
   | _ => false
-#guard match Ix.Ixon.Projection.checkBytes 16 limits (encode (omitted ++ [(address 20, twoBlock)])) [] with
+#guard match Ixon.Projection.checkBytes 16 limits (encode (omitted ++ [(address 20, twoBlock)])) [] with
   | .error (.reconstruction (.admission (.duplicate .records 3 _))) => true
   | _ => false
 
 /-! ## Block order -/
 
-#guard (Ix.Ixon.BlockOrder.checkBytes 16 limits {} (encode omitted) []).isOk
-#guard match Ix.Ixon.BlockOrder.checkBytes 16 limits {} (encode omitted)
+#guard (Ixon.BlockOrder.checkBytes 16 limits {} (encode omitted) []).isOk
+#guard match Ixon.BlockOrder.checkBytes 16 limits {} (encode omitted)
     [(address 43, ⟨#[2]⟩), (address 43, ⟨#[2]⟩)] with
   | .error (.order (.admission (.duplicate .blobs 1 _))) => true
   | _ => false
-#guard match Ix.Ixon.BlockOrder.checkBytes 16 limits {} (encode (omitted ++ [(address 20, twoBlock)])) [] with
+#guard match Ixon.BlockOrder.checkBytes 16 limits {} (encode (omitted ++ [(address 20, twoBlock)])) [] with
   | .error (.order (.admission (.duplicate .records 3 _))) => true
   | _ => false
-#guard match Ix.Ixon.BlockOrder.checkBytes 16 limits ⟨0, 0⟩ (encode omitted) [] with
+#guard match Ixon.BlockOrder.checkBytes 16 limits ⟨0, 0⟩ (encode omitted) [] with
   | .error (.order _) => true
   | _ => false
 
 /-! ## The public theorems, applied -/
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
-    (h : Ix.Ixon.Admission.checkBytes limits (encode definitions) [] = .ok env) :
+    (h : Ix.Kernel.Admission.checkBytes limits (encode definitions) [] = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
-  Ix.Ixon.Admission.checkBytes_has_model V h
+  Ix.Kernel.Admission.checkBytes_has_model V h
 
-example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Ixon.Admission.Records}
+example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
     {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
-    (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
+    (h : Ix.Kernel.Admission.checkBytes limits records blobs = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False :=
-  Ix.Ixon.Admission.checkBytes_no_proof_of_False V h
+  Ix.Kernel.Admission.checkBytes_no_proof_of_False V h
 
-example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Ixon.Admission.Records}
+example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
     {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
-    (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
+    (h : Ix.Kernel.Admission.checkBytes limits records blobs = .ok env) :
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint, Ix.Kernel.ConstantInfo.defnInfo cv value hint ∈ env.consts →
       ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) :=
-  Ix.Ixon.Admission.checkBytes_has_model_values V h
+  Ix.Kernel.Admission.checkBytes_has_model_values V h
 
 /-- Fidelity at a record: each accepted singleton record's declaration is
 installed under its name with its kind. -/
-example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
-    (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
-    ∃ pins pre constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
+example {records : Ix.Kernel.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    (h : Ix.Kernel.Admission.checkBytes limits records blobs = .ok env) :
+    ∃ pins pre constants, Ix.Kernel.Admission.RecordsRead limits records constants ∧
       ∀ owner c, (owner, c) ∈ constants → isSingleton c.info = true →
-        ∃ st decl, SingletonRead (Ix.Ixon.Admission.streamContext pins pre constants blobs
+        ∃ st decl, SingletonRead (Ix.Kernel.Admission.streamContext pins pre constants blobs
           (fun _ => none)) st owner c decl ∧
-          ∀ s, Ix.Kernel.IxonFold.declSkel decl = some s →
+          ∀ s, Ix.Kernel.Cached.declSkel decl = some s →
             ∃ ci ∈ env.consts, Ix.Kernel.Cached.ciSkel ci = s := by
   obtain ⟨pins, pre, _, _, _, _, _, _, constants, reading, installed⟩ :=
-    Ix.Ixon.Admission.checkBytes_reading h
+    Ix.Kernel.Admission.checkBytes_reading h
   refine ⟨pins, pre, constants, reading, fun owner c hmem hs => ?_⟩
   obtain ⟨st, decl, _, hread, _, _, hinst⟩ := installed.singleton hmem hs
   exact ⟨st, decl, hread, hinst⟩
@@ -202,27 +202,27 @@ example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArra
 /-- Key uniqueness at the API: no two records and no two blobs of accepted
 bytes share an address, and no two of the decoded records the reader read
 (`Installed.keys`). -/
-example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
-    (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
+example {records : Ix.Kernel.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    (h : Ix.Kernel.Admission.checkBytes limits records blobs = .ok env) :
     (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup ∧
-      ∃ pins pre natPins constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-        Ix.Ixon.Admission.Installed pins pre natPins constants blobs (fun _ => none) env ∧
+      ∃ pins pre natPins constants, Ix.Kernel.Admission.RecordsRead limits records constants ∧
+        Ix.Kernel.Admission.Installed pins pre natPins constants blobs (fun _ => none) env ∧
         (constants.map Prod.fst).Nodup := by
   obtain ⟨pins, pre, natPins, _, _, _, _, keys, constants, reading, installed⟩ :=
-    Ix.Ixon.Admission.checkBytes_reading h
+    Ix.Kernel.Admission.checkBytes_reading h
   exact ⟨keys.1, keys.2, pins, pre, natPins, constants, reading, installed, installed.keys⟩
 
-example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Ixon.Admission.Records}
+example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
     {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
-    (h : Ix.Ixon.Projection.checkBytes 16 limits records blobs = .ok env) :
+    (h : Ixon.Projection.checkBytes 16 limits records blobs = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
-  Ix.Ixon.Projection.checkBytes_has_model V h
+  Ixon.Projection.checkBytes_has_model V h
 
-example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Ixon.Admission.Records}
+example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
     {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
-    (h : Ix.Ixon.BlockOrder.checkBytes 16 limits {} records blobs = .ok env) :
+    (h : Ixon.BlockOrder.checkBytes 16 limits {} records blobs = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
-  Ix.Ixon.BlockOrder.checkBytes_has_model V h
+  Ixon.BlockOrder.checkBytes_has_model V h
 
 example : Function.Injective keyName := fun _ _ h => keyName_injective h
 

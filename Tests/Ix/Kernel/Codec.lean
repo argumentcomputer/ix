@@ -325,26 +325,26 @@ def failsAt (reader : Ixon.GetM α) (bytes : ByteArray) (start finish : Nat) : B
 
 example (value : Ixon.Constant) (h : value.wireWF) :
     Ixon.deConstantExact (Ixon.serConstant value) = .ok value :=
-  Ix.Ixon.Verify.deConstantExact_serConstant value h
+  Ixon.Verify.deConstantExact_serConstant value h
 
 example (value : Ixon.Constant) (h : value.wireWF) :
     Ixon.Bounded.deConstant (Ixon.serConstant value).size
       (Ixon.Bounded.univNodes value.univs) (Ixon.serConstant value) = .ok value :=
-  Ix.Ixon.Verify.BoundedConstant.deConstant_serConstant value h _ _ (by omega) (by omega)
+  Ixon.Verify.BoundedConstant.deConstant_serConstant value h _ _ (by omega) (by omega)
 
 example (value : Ixon.Constant) (h : value.wireWF) :
     Ixon.Canonical.deConstant (Ixon.serConstant value).size
       (Ixon.Bounded.univNodes value.univs) (Ixon.serConstant value) = .ok value :=
-  Ix.Ixon.Verify.Canonical.deConstant_serConstant value h _ _ (by omega) (by omega)
+  Ixon.Verify.Canonical.deConstant_serConstant value h _ _ (by omega) (by omega)
 
 example (start finish : Ixon.GetState) (value : Ixon.Expr)
     (valid : start.idx ≤ start.bytes.size) (read : Ixon.getExpr start = .ok value finish) :
     value.resourceSize + 1 ≤ 2 * (finish.idx - start.idx) :=
-  (Ix.Ixon.Verify.ReaderBounds.getExpr_bound _ _ _ valid read).units_le
+  (Ixon.Verify.ReaderBounds.getExpr_bound _ _ _ valid read).units_le
 
 example (bytes : ByteArray) (value : Ixon.Constant)
     (read : Ixon.deConstantExact bytes = .ok value) : value.resourceSize ≤ 2 * bytes.size :=
-  Ix.Ixon.Verify.ConstantBounds.deConstantExact_resource_bound bytes value read
+  Ixon.Verify.ConstantBounds.deConstantExact_resource_bound bytes value read
 
 end Tests.Ix.Kernel.Codec
 

@@ -177,7 +177,7 @@ Ix consists of the following core components:
 `Ix/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
 consistency. It is Ix's own kernel, derived from the verified checker of
 [con-leche](https://github.com/leanprover/con-leche). Its entry,
-`Ix.Ixon.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
+`Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
 environment it accepts the theorems give a set-theoretic model and no proof of
 `False`, on the standard axioms only. It does not certify the compiler, the
 Rust kernel, `Ix.Tc` or IxVM. [docs/kernel.md](docs/kernel.md) states what is

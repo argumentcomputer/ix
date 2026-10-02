@@ -3,7 +3,7 @@ import Tests.Ix.Kernel.Codec
 
 /-! Byte admission: the byte stage (batch limits, key uniqueness, canonical
 decoding) of the
-certified entry `Ix.Ixon.Admission.checkBytes`, and that entry's verdicts on
+certified entry `Ix.Kernel.Admission.checkBytes`, and that entry's verdicts on
 the shared Ixon record fixtures. The entry's reader and checker are tested
 in `Tests.Ix.Kernel.Reader` and `Tests.Ix.Kernel.CertifiedEntry`. -/
 
@@ -11,7 +11,7 @@ open Tests.Ix.Kernel.IxonFixtures Tests.Ix.Kernel.Codec
 
 namespace Tests.Ix.Kernel.ByteAdmission
 
-open Ix.Ixon.Admission
+open Ix.Kernel.Admission
 
 def limits : Limits := ⟨256, 256, 1048576, 65536, 65536⟩
 
@@ -24,7 +24,7 @@ def roundtrip (constants : List (Address × Ixon.Constant)) : Bool :=
   | .error _ => false
 
 def check (records : Records) (blobs : List (Address × ByteArray) := []) (bounds : Limits := limits) :
-    Except Ix.Ixon.Admission.Error Ix.Kernel.Env :=
+    Except Ix.Kernel.Admission.Error Ix.Kernel.Env :=
   checkBytes bounds records blobs
 
 def accepts (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Bool :=
@@ -39,7 +39,7 @@ def outcomeOf (constants : List (Address × Ixon.Constant)) (blobs : List (Addre
 /-- The byte stage's verdict alone: `none` when the batch limits hold, no
 key repeats in its table, and every record decodes canonically. -/
 def failure (records : Records) (blobs : List (Address × ByteArray) := []) (bounds : Limits := limits) :
-    Option Ix.Ixon.Admission.ByteError :=
+    Option Ix.Kernel.Admission.ByteError :=
   match preflight bounds records blobs, uniqueKeys records blobs, decodeRecords bounds records with
   | .error error, _, _ => some error
   | .ok _, .error error, _ => some error
@@ -83,7 +83,7 @@ def decodeFailureAt (records : Records) (position : Nat) (address : Address)
 -- A duplicate record or blob address is malformed (the byte stage rejects
 -- it); a reference to a later record and a family stored without its
 -- recursor are checker or reader verdicts, which decline at the Ix API
--- (`Ix.Ixon.Admission.Error.outcome`).
+-- (`Ix.Kernel.Admission.Error.outcome`).
 #guard outcomeOf [(address 1, identity), (address 1, identity)] = some .rejected
 #guard outcomeOf [(address 1, identity)] [(address 9, ⟨#[1]⟩), (address 9, ⟨#[1]⟩)] = some .rejected
 #guard outcomeOf [(address 2, aliasIdentity), (address 1, identity)] = some .declined
@@ -166,7 +166,7 @@ example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
   checkBytes_has_model V h
 
 example {constants : List (Address × Ixon.Constant)} {records : Records}
-    (h : Ix.Ixon.Verify.Admission.RecordsRead limits records constants) : records = encode constants :=
+    (h : Ix.Kernel.Admission.RecordsRead limits records constants) : records = encode constants :=
   h.encode
 
 example {records : Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
@@ -177,8 +177,8 @@ example {records : Records} {blobs : List (Address × ByteArray)} {env : Ix.Kern
 
 example {records : Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs = .ok env) :
-    ∃ constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-      Ix.Ixon.Verify.Admission.resourceUnits constants ≤
+    ∃ constants, Ix.Kernel.Admission.RecordsRead limits records constants ∧
+      Ix.Kernel.Admission.resourceUnits constants ≤
         2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes :=
   checkBytes_resources h
 

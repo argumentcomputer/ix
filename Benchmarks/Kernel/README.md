@@ -5,7 +5,7 @@ The certified checker's measurements are its environment check:
 `CheckIxeMain.lean`) checks a compiled environment (an `.ixe`) constant by
 constant with the verified checker behind the Ixon reader and writes one JSON
 row per constant. It measures coverage and time; it is not a certified
-verdict (`Ix.Ixon.Admission.checkBytes` is). Its inputs, options and
+verdict (`Ix.Kernel.Admission.checkBytes` is). Its inputs, options and
 watchdog are described in `docs/kernel.md` ("Environment check").
 
 ```sh
@@ -129,4 +129,4 @@ The prototype wrote no rows in this mode; `--jobs` now writes the per-record
 rows after phase B, which adds a pass over the order without reading or
 checking.
 
-The certified entry `Ix.Ixon.Admission.checkBytes` is sequential.
+The certified entry `Ix.Kernel.Admission.checkBytes` is sequential.

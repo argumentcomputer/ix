@@ -1,6 +1,6 @@
 import Ix.Ixon.Verify.Work
 
-namespace Ix.Ixon.Verify.Work
+namespace Ixon.Verify.Work
 
 open _root_.Ixon
 
@@ -182,4 +182,4 @@ theorem tag4_bound (rate : Nat) (enough : 2 ≤ rate) :
     ((pure_bound rate (rate - 2) _ _ (Nat.le_refl (rate - 2))).charged 1).weaken
       (by omega) (fun _ => Nat.le_refl _)
 
-end Ix.Ixon.Verify.Work
+end Ixon.Verify.Work

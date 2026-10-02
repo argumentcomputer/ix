@@ -6,18 +6,18 @@ import Std.Data.HashSet.Basic
 
 Batch limits (`preflight`), key uniqueness (`uniqueKeys`) and canonical
 per-record decoding (`decodeRecords`) of the certified entry
-(`Ix.Ixon.Admission.checkBytes`, the verified checker behind the Ixon reader), in that
-order. Their composition is proved in `Ix.Ixon.Admission.Bytes.Theorems`.
+(`Ix.Kernel.Admission.checkBytes`, the verified checker behind the Ixon reader), in that
+order. Their composition is proved in `Ix.Kernel.Admission.Bytes.Theorems`.
 
 The host supplies record order, address keys, and literal blobs. Addresses
 are keys, not authenticated content hashes, but a batch may use each key
 once per table: two records, or two blobs, under one address are malformed
-input (a reject at the Ix API, `Ix.Ixon.Admission.Error.outcome`), not a choice
+input (a reject at the Ix API, `Ix.Kernel.Admission.Error.outcome`), not a choice
 for the reader to make. Blobs retain their exact supplied bytes. No host
 decoder or verdict participates in this path.
 -/
 
-namespace Ix.Ixon.Admission
+namespace Ix.Kernel.Admission
 
 open Kernel
 
@@ -51,7 +51,7 @@ inductive Table where
 /-- Byte failures: a batch limit, a key used twice in one table, or a record
 that does not decode canonically. Positions are zero-based and identify the
 original input record or blob; a duplicate's is its second occurrence.
-The entry's failures (`Ix.Ixon.Admission.Error`) include them unchanged
+The entry's failures (`Ix.Kernel.Admission.Error`) include them unchanged
 (`Error.ofBytes`). -/
 inductive ByteError where
   | limit (resource : Resource)
@@ -91,7 +91,7 @@ def firstDuplicate {α : Type} : Nat → Std.HashSet Address → List (Address �
     else firstDuplicate (position + 1) (seen.insert address) rest
 
 /-- Each record address and each blob address occurs once
-(`Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff`). The entries run it after
+(`Ix.Kernel.Admission.uniqueKeys_ok_iff`). The entries run it after
 `preflight`, so its work is bounded by the batch limits, and before
 decoding. -/
 def uniqueKeys (records : Records) (blobs : Ingress.Blobs) : Except ByteError Unit :=

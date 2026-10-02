@@ -1,9 +1,9 @@
 import Ix.Ixon.BlockOrder
 import Ix.Ixon.Projection.Theorems
 
-namespace Ix.Ixon.BlockOrder
+namespace Ixon.BlockOrder
 
-open Kernel
+open Ix.Kernel
 
 /-- An independently counted refinement derivation. A terminal derivation
 must exhibit an unchanged complete pass; a changing pass cannot be terminal.
@@ -112,9 +112,9 @@ theorem checkBlock_ok_iff (limits : Limits) (owner : Address) (source : _root_.I
 
 /-! ## Recursor blocks in motive order -/
 
-open Ix.Kernel.IxonReader in
+open Ix.Kernel.Reader in
 /-- `recursorMotive` is the motive the Ixon reader indexes a recursor under:
-whenever the reader's analysis (`IxonReader.analyseRecursor`) succeeds,
+whenever the reader's analysis (`Reader.analyseRecursor`) succeeds,
 it reads the same motive, so a recursor block in motive order is a block the
 reader regroups without permuting it. -/
 theorem recursorMotive_of_analyse {store owner c r m carriers major}
@@ -236,7 +236,7 @@ universe v
 
 /-! ## The certified entry -/
 
-open Ix.Kernel.IxonReader (defaultPins builtinPrelude builtinNatOpPins)
+open Ix.Kernel.Reader (defaultPins builtinPrelude builtinNatOpPins)
 
 theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
@@ -277,13 +277,13 @@ theorem checkBytes_ok_iff (maxProjections : Nat) (limits : Admission.Limits) (or
     (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
     checkBytes maxProjections limits orderLimits records blobs hint = .ok env ↔
-      Verify.Admission.WithinBatch limits records blobs ∧
-      Verify.Admission.UniqueKeys records blobs ∧ ∃ input output,
-        Verify.Admission.RecordsRead limits records input ∧
+      Admission.WithinBatch limits records blobs ∧
+      Admission.UniqueKeys records blobs ∧ ∃ input output,
+        Admission.RecordsRead limits records input ∧
         Projection.Expanded maxProjections input output ∧ Ordered orderLimits blobs input ∧
         Admission.checkConstants output blobs hint = .ok env := by
-  simp only [checkBytes_run_iff, Verify.Admission.preflight_ok_iff, Verify.Admission.uniqueKeys_ok_iff,
-    Verify.Admission.decodeRecords_ok_iff, Projection.reconstruct_ok_iff, checkConstants_ok_iff]
+  simp only [checkBytes_run_iff, Admission.preflight_ok_iff, Admission.uniqueKeys_ok_iff,
+    Admission.decodeRecords_ok_iff, Projection.reconstruct_ok_iff, checkConstants_ok_iff]
 
 /-- **Fidelity**: unique keys, exact reading, computed projections,
 canonical order, and the checker installed what the expanded records
@@ -292,7 +292,7 @@ theorem checkBytes_reading {maxProjections : Nat} {limits : Admission.Limits} {o
     {records : Admission.Records} {blobs : Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes maxProjections limits orderLimits records blobs hint = .ok env) :
-    Verify.Admission.UniqueKeys records blobs ∧ ∃ input output, Verify.Admission.RecordsRead limits records input ∧
+    Admission.UniqueKeys records blobs ∧ ∃ input output, Admission.RecordsRead limits records input ∧
       Projection.Expanded maxProjections input output ∧ Ordered orderLimits blobs input ∧
       ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
         builtinNatOpPins = .ok natPins ∧
@@ -324,18 +324,18 @@ theorem checkBytes_no_proof_of_False (V : Type v) [Ix.Kernel.SetTheory V] {maxPr
 /-- On a read, expanded, canonically ordered input, every checker outcome
 survives unchanged. -/
 theorem checkBytes_of_ordered {maxProjections limits orderLimits records input output blobs hint}
-    (within : Verify.Admission.WithinBatch limits records blobs)
-    (keys : Verify.Admission.UniqueKeys records blobs)
-    (reading : Verify.Admission.RecordsRead limits records input)
+    (within : Admission.WithinBatch limits records blobs)
+    (keys : Admission.UniqueKeys records blobs)
+    (reading : Admission.RecordsRead limits records input)
     (expanded : Projection.Expanded maxProjections input output)
     (ordered : Ordered orderLimits blobs input) :
     checkBytes maxProjections limits orderLimits records blobs hint =
       (Admission.checkConstants output blobs hint).mapError .checker := by
-  have flight := (Verify.Admission.preflight_ok_iff _ _ _).mpr within
-  have unique := (Verify.Admission.uniqueKeys_ok_iff _ _).mpr keys
-  have decoded := (Verify.Admission.decodeRecords_ok_iff _ _ _).mpr reading
+  have flight := (Admission.preflight_ok_iff _ _ _).mpr within
+  have unique := (Admission.uniqueKeys_ok_iff _ _).mpr keys
+  have decoded := (Admission.decodeRecords_ok_iff _ _ _).mpr reading
   have reconstructed := (Projection.reconstruct_ok_iff _ _ _).mpr expanded
   have order := (checkConstants_ok_iff _ _ _).mpr ordered
   simp [checkBytes, flight, unique, decoded, reconstructed, order, Except.mapError, bind, Except.bind]
 
-end Ix.Ixon.BlockOrder
+end Ixon.BlockOrder

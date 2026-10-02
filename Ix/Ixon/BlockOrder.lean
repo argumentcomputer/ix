@@ -22,7 +22,7 @@ A block whose members are all recursors is checked in motive order instead
 (`checkMotives`): member `j` eliminates motive `j` and declares one motive per
 member. That is the order the compiler stores a recursor block in (`T.rec`,
 `T.rec_1`, …; for a mutual block, its members' order) and the order in which
-the Ixon reader regroups a block's recursors (`IxonReader.buildIndex`
+the Ixon reader regroups a block's recursors (`Reader.buildIndex`
 reads each recursor's motive off its type), and it is not always the
 structural order (a nested block's auxiliary recursors, or a mutual block's
 recursors whose types compare otherwise). Inductive, definition and mixed
@@ -32,9 +32,9 @@ This is an ordering check, not a second typechecker or a complete validator
 of unused tables: the final kernel admission still checks the entire input.
 -/
 
-namespace Ix.Ixon.BlockOrder
+namespace Ixon.BlockOrder
 
-open Kernel hiding Expr  -- `Expr` is Ixon's here (the kernel's is `Ix.Kernel.Expr`)
+open Ix.Kernel hiding Expr  -- `Expr` is Ixon's here (the kernel's is `Ix.Kernel.Expr`)
 open _root_.Ixon (Univ Expr MutConst)
 
 abbrev Classes := List (List Nat)
@@ -256,7 +256,7 @@ def compareRule (block : Block) (ctx : LocalContext) (fuel : Nat)
     (left right : _root_.Ixon.RecursorRule) : Except Error Ordering :=
   thenM (compare left.fields right.fields) fun _ => compareRoot block ctx fuel left.rhs right.rhs
 
-def definitionKind : DefKind → Nat
+def definitionKind : Ix.DefKind → Nat
   | .defn => 0
   | .opaq => 1
   | .thm => 2
@@ -372,15 +372,15 @@ def isRecursor : MutConst → Bool
   | _ => false
 
 /-- The motive a recursor eliminates, read off its type exactly as the Ixon
-reader does (the first component of `IxonReader.analyseRecursor`): after
+reader does (the first component of `Reader.analyseRecursor`): after
 the parameters, motives, minors, indices and the major premise, the head of
 the result is the bound variable of one of the motives. -/
 def recursorMotive (source : _root_.Ixon.Constant) (r : _root_.Ixon.Recursor) : Option Nat := do
   let nP := r.params.toNat
   let nM := r.motives.toNat
   let depth := nP + nM + r.minors.toNat + r.indices.toNat + 1
-  let (_, body) ← IxonReader.stripAll source depth r.typ
-  let .var k := IxonReader.appHead source IxonReader.spineFuel body | none
+  let (_, body) ← Reader.stripAll source depth r.typ
+  let .var k := Reader.appHead source Reader.spineFuel body | none
   let pos := depth - 1 - k.toNat
   guard (k.toNat < depth && nP ≤ pos && pos < nP + nM)
   pure (pos - nP)
@@ -439,4 +439,4 @@ def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits :
   (checkConstants orderLimits blobs constants).mapError .order
   (Admission.checkConstants expanded blobs hint).mapError .checker
 
-end Ix.Ixon.BlockOrder
+end Ixon.BlockOrder

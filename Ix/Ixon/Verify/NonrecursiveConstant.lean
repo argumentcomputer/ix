@@ -18,12 +18,12 @@ well-formed top-level sharing,
 reference, and universe tables.
 -/
 
-namespace Ix.Ixon.Verify.Codec.Ixon.NonrecursiveConstant
+namespace Ixon.Verify.Codec.NonrecursiveConstant
 
 open Ix
-open Ix.Ixon.Verify.Codec
-open Ix.Ixon.Verify.Codec.Ixon.Constant
-open Ix.Ixon.Verify.Codec.Ixon.ConstantTables
+open Ixon.Verify.Codec
+open Ixon.Verify.Codec.Constant
+open Ixon.Verify.Codec.ConstantTables
 
 def quotKindByte : QuotKind → UInt8
   | .type => 0
@@ -34,7 +34,7 @@ def quotKindByte : QuotKind → UInt8
 def quotientBytes (quotient : Ixon.Quotient) : ByteArray :=
   [quotKindByte quotient.kind].toByteArray ++
     tag0Bytes quotient.lvls ++
-      Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode quotient.typ
+      Ixon.Verify.Codec.Expr.spineWireEncode quotient.typ
 
 theorem putQuotient_writes (quotient : Ixon.Quotient)
     (htyp : Ixon.Expr.wireWF quotient.typ) :
@@ -44,19 +44,19 @@ theorem putQuotient_writes (quotient : Ixon.Quotient)
   | type => simpa [Ixon.putQuotient, quotientBytes, quotKindByte,
       ByteArray.append_assoc] using
       (putU8_writes 0).bind ((putTag0_writes lvls).bind
-        (Ix.Ixon.Verify.Codec.Ixon.Expr.putExpr_writes_spine typ htyp))
+        (Ixon.Verify.Codec.Expr.putExpr_writes_spine typ htyp))
   | ctor => simpa [Ixon.putQuotient, quotientBytes, quotKindByte,
       ByteArray.append_assoc] using
       (putU8_writes 1).bind ((putTag0_writes lvls).bind
-        (Ix.Ixon.Verify.Codec.Ixon.Expr.putExpr_writes_spine typ htyp))
+        (Ixon.Verify.Codec.Expr.putExpr_writes_spine typ htyp))
   | lift => simpa [Ixon.putQuotient, quotientBytes, quotKindByte,
       ByteArray.append_assoc] using
       (putU8_writes 2).bind ((putTag0_writes lvls).bind
-        (Ix.Ixon.Verify.Codec.Ixon.Expr.putExpr_writes_spine typ htyp))
+        (Ixon.Verify.Codec.Expr.putExpr_writes_spine typ htyp))
   | ind => simpa [Ixon.putQuotient, quotientBytes, quotKindByte,
       ByteArray.append_assoc] using
       (putU8_writes 3).bind ((putTag0_writes lvls).bind
-        (Ix.Ixon.Verify.Codec.Ixon.Expr.putExpr_writes_spine typ htyp))
+        (Ixon.Verify.Codec.Expr.putExpr_writes_spine typ htyp))
 
 def decodeQuotKind (value : UInt8) : Ixon.GetM QuotKind :=
   match value with
@@ -88,10 +88,10 @@ theorem getQuotient_reads (quotient : Ixon.Quotient)
         let decodedTyp ← Ixon.getExpr
         return (⟨decodedKind, decodedLvls, decodedTyp⟩ : Ixon.Quotient))
       (tag0Bytes lvls ++
-        Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode typ)
+        Ixon.Verify.Codec.Expr.spineWireEncode typ)
       ⟨decodedKind, lvls, typ⟩ := by
     have hlvls := getTag0_reads lvls
-    have htypRead := Ix.Ixon.Verify.Codec.Ixon.Expr.getExpr_reads_spine
+    have htypRead := Ixon.Verify.Codec.Expr.getExpr_reads_spine
       typ htyp
     have hreturn := Reads.pure (⟨decodedKind, lvls, typ⟩ : Ixon.Quotient)
     have hafterTyp := Reads.bind
@@ -103,7 +103,7 @@ theorem getQuotient_reads (quotient : Ixon.Quotient)
         (do
           let decodedTyp ← Ixon.getExpr
           return (⟨decodedKind, lvls, decodedTyp⟩ : Ixon.Quotient))
-        (Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode typ)
+        (Ixon.Verify.Codec.Expr.spineWireEncode typ)
         ⟨decodedKind, lvls, typ⟩ := by
       simpa using hafterTyp
     exact Reads.bind
@@ -423,17 +423,17 @@ structure NonrecursiveConstantWireWF (constant : Ixon.Constant) : Prop where
   refsEntries : ∀ value, value ∈ constant.refs.toList → AddressWireWF value
   univsCount : ArrayCountWF constant.univs
   univsEntries : ∀ value, value ∈ constant.univs.toList →
-    Ix.Ixon.Verify.Codec.Ixon.Univ.WireWF value
+    Ixon.Verify.Codec.Univ.WireWF value
 
 def nonrecursiveConstantBytes (constant : Ixon.Constant) : ByteArray :=
   nonrecursiveInfoBytes constant.info ++
     tag0Bytes constant.sharing.size.toUInt64 ++
-      listBytes Ix.Ixon.Verify.Codec.Ixon.Expr.spineWireEncode
+      listBytes Ixon.Verify.Codec.Expr.spineWireEncode
         constant.sharing.toList ++
         tag0Bytes constant.refs.size.toUInt64 ++
           listBytes Address.hash constant.refs.toList ++
             tag0Bytes constant.univs.size.toUInt64 ++
-              listBytes Ix.Ixon.Verify.Codec.Ixon.Univ.wireEncode
+              listBytes Ixon.Verify.Codec.Univ.wireEncode
                 constant.univs.toList
 
 theorem putConstant_writes_nonrecursive (constant : Ixon.Constant)
@@ -475,15 +475,15 @@ theorem deConstant_serConstant_nonrecursive (constant : Ixon.Constant)
     { bytes := nonrecursiveConstantBytes constant } = _ at hread
   rw [hread]
 
-end Ix.Ixon.Verify.Codec.Ixon.NonrecursiveConstant
+end Ixon.Verify.Codec.NonrecursiveConstant
 
-namespace Ix.Ixon.Verify
+namespace Ixon.Verify
 
 abbrev NonrecursiveConstantInfoWireWF : Ixon.ConstantInfo → Prop :=
-  Codec.Ixon.NonrecursiveConstant.NonrecursiveInfoWireWF
+  Codec.NonrecursiveConstant.NonrecursiveInfoWireWF
 
 abbrev NonrecursiveConstantWireWF : Ixon.Constant → Prop :=
-  Codec.Ixon.NonrecursiveConstant.NonrecursiveConstantWireWF
+  Codec.NonrecursiveConstant.NonrecursiveConstantWireWF
 
 theorem definitionNonrecursiveConstantInfoWireWF
     (definition : Ixon.Definition)
@@ -528,7 +528,7 @@ theorem definitionProjConstantInfoWireWF (projection : Ixon.DefinitionProj)
 theorem deConstant_serConstant_nonrecursive (constant : Ixon.Constant)
     (h : NonrecursiveConstantWireWF constant) :
     Ixon.deConstant (Ixon.serConstant constant) = .ok constant :=
-  Codec.Ixon.NonrecursiveConstant.deConstant_serConstant_nonrecursive
+  Codec.NonrecursiveConstant.deConstant_serConstant_nonrecursive
     constant h
 
-end Ix.Ixon.Verify
+end Ixon.Verify
