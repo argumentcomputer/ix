@@ -30,6 +30,9 @@ end Ixon.Audit
 #guard_kernel_axioms Ixon.Verify.deConstantExact_serConstant [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.deConstantExact_noTrailing [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.runGetExact_complete [propext]
+#guard_kernel_axioms Ixon.Verify.TagN.getTagN_consumed [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ixon.Verify.TagN.runGetExact_getTagN_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ixon.Verify.TagN.putTagN_inj [propext, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.BoundedUniverse.getUnivFuel_spec [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.BoundedUniverse.getUnivFuel_complete [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.BoundedUniverse.deUniv_serUniv [propext, Classical.choice, Quot.sound]
@@ -42,7 +45,8 @@ end Ixon.Audit
 #guard_kernel_axioms Ixon.Verify.BoundedConstant.deConstant_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.BoundedConstant.deConstant_serConstant [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.BoundedConstant.deConstant_noTrailing [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ixon.Verify.ReaderBounds.getTag0Sizes_spec [propext, Quot.sound]
+#guard_kernel_axioms Ixon.Verify.ReaderBounds.getTagN0Values_spec [propext, Quot.sound]
+#guard_kernel_axioms Ixon.Verify.ReaderBounds.getTagN_bound [propext, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.ReaderBounds.getArray_spec [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.ReaderBounds.getArray_error_prefix [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.ReaderBounds.getArray_error_work [propext, Classical.choice, Quot.sound]
@@ -54,6 +58,8 @@ end Ixon.Audit
 #guard_kernel_axioms Ixon.Verify.ConstantBounds.deConstantExact_resource_bound [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.ConstantBounds.boundedConstant_resource_bound [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.Work.Erases.bind [propext, Quot.sound]
+#guard_kernel_axioms Ixon.Verify.Work.tagN_erases [propext, Quot.sound]
+#guard_kernel_axioms Ixon.Verify.Work.tagN_bound [propext, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.Work.Bound.bind [propext, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.Work.Bound.work_le [propext, Quot.sound]
 #guard_kernel_axioms Ixon.Verify.Work.expr_erases [propext, Quot.sound]
@@ -81,15 +87,21 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Codec, `Ix.Ixon.Wire,
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify] Ixon.Audit.proofImports
 
 /- The production codec reaches Init's byte-array access/copy/push, UInt8/UInt64
-bit operations and conversions, array iteration, numeric formatting for
-errors, and the inherited panic primitive in checked indexing helpers.
-Canonical re-encoding additionally uses Init's `ByteArray.decEq`, backed by
-`lean_sarray_dec_eq`. These were measured before freezing; no project FFI or
-hash is reached. -/
+bit operations and conversions, `Nat` arithmetic for the TagN rung ends and
+header fields, array iteration, numeric formatting for errors, and the
+inherited panic primitive in checked indexing helpers. Canonical re-encoding
+additionally uses Init's `ByteArray.decEq`, backed by `lean_sarray_dec_eq`.
+These were measured before freezing; no project FFI or hash is reached.
+The TagN integer code (Ixon v4) replaced the v3 Tag0/Tag2/Tag4 readers and
+writers: `getTag0/2/4`, `getTag0Sizes`, `putTag0/2/4`, `get/putU64TrimmedLE`,
+`u64ByteCount` and the writers' cached UInt8 constants left the closure;
+`getTagN`, `getTagNWide`, `getTagN0Values`, `putTagN`, `tagNHeader`,
+`tagNEnd1..5` and the `Nat.shiftRight` extern entered, and the `UInt8.add` and
+`UInt8.sub` externs left (352 compiled functions and 54 externs before). -/
 /-- info: runtime closure of [Ixon.serUniv, Ixon.deUniv, Ixon.serExpr, Ixon.deExpr,
 Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv,
-Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 352 compiled functions;
-inherited externs 54, implemented_by 0, unsafe 2, csimp 0 -/
+Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 339 compiled functions;
+inherited externs 53, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ixon.Audit.operations #[`Init, `Std]
 
