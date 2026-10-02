@@ -13,6 +13,7 @@ use std::{cmp::Ordering, sync::Arc};
 use bignat::Nat;
 
 use ix_common::address::Address;
+use ix_common::areas::{self, Area};
 use ix_common::env::{
   AxiomVal, BinderInfo, ConstantInfo as LeanConstantInfo, ConstructorVal,
   DataValue as LeanDataValue, Env as LeanEnv, Expr as LeanExpr, ExprData,
@@ -670,6 +671,7 @@ pub fn preseed_expr_tables(
   stt: &CompileState,
   caller: &str,
 ) -> Result<(), CompileError> {
+  let _area = areas::scope(Area::Preseed);
   let mut refs = Vec::new();
   let mut univs = Vec::new();
   let mut seen_exprs = FxHashMap::default();
@@ -881,6 +883,7 @@ pub fn compile_expr(
   stt: &CompileState,
 ) -> Result<Arc<Expr>, CompileError> {
   use ixon::metadata::CallSiteEntry;
+  let _area = areas::scope(Area::CompileExpr);
 
   // Stack-based iterative compilation to avoid stack overflow
   enum Frame {
@@ -2260,6 +2263,7 @@ fn audit_constant_info_plan_heads(
   ci: &LeanConstantInfo,
   stt: &CompileState,
 ) -> Result<(), CompileError> {
+  let _area = areas::scope(Area::Audit);
   let owner = ci.get_name();
   audit_plan_head_arities(owner, ci.get_type(), stt)?;
   if let Some(value) = ci.get_value() {
@@ -2464,6 +2468,7 @@ fn share_roots(
   limits: &ExactSharingLimits,
   exprs: &[Arc<Expr>],
 ) -> Result<(Vec<Arc<Expr>>, Vec<Arc<Expr>>), CompileError> {
+  let _area = areas::scope(Area::Share);
   let res = canonical_sharing_tiered(ShareLayout::TagN, exprs, limits)
     .map_err(sharing_compile_error)?;
   if res.roots.len() != exprs.len() {
@@ -2708,6 +2713,7 @@ pub fn compile_definition(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Definition, ConstantMeta), CompileError> {
+  let _area = areas::scope(Area::CompileConst);
   cache.compiling = Some(def.name.clone());
   let univ_params = &def.level_params;
 
@@ -2785,6 +2791,7 @@ pub fn compile_recursor(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Recursor, ConstantMeta), CompileError> {
+  let _area = areas::scope(Area::CompileConst);
   cache.compiling = Some(rec.cnst.name.clone());
   let univ_params = &rec.cnst.level_params;
 
@@ -2926,6 +2933,7 @@ pub fn compile_inductive(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Inductive, ConstantMeta, Vec<ConstantMeta>), CompileError> {
+  let _area = areas::scope(Area::CompileConst);
   cache.compiling = Some(ind.ind.cnst.name.clone());
   let univ_params = &ind.ind.cnst.level_params;
 
@@ -3110,9 +3118,17 @@ pub fn compile_mutual_block(
   let constant =
     apply_sharing_to_mutual_block_with_limits(limits, mut_consts, refs, univs)?;
 
+  let t_ph = std::time::Instant::now();
   let mut bytes = Vec::new();
-  constant.put(&mut bytes);
-  let addr = Address::hash(&bytes);
+  {
+    let _a = areas::scope(Area::Serialize);
+    constant.put(&mut bytes);
+  }
+  let addr = {
+    let _a = areas::scope(Area::HashAddr);
+    Address::hash(&bytes)
+  };
+  areas::note_puthash(t_ph.elapsed().as_nanos() as u64);
 
   Ok(CompiledMutualBlock { constant, addr })
 }
@@ -3122,6 +3138,7 @@ pub fn mk_indc(
   ind: &InductiveVal,
   env: &Arc<LeanEnv>,
 ) -> Result<Ind, CompileError> {
+  let _area = areas::scope(Area::MkIndc);
   let mut ctors = Vec::with_capacity(ind.ctors.len());
   for ctor_name in &ind.ctors {
     if let Some(LeanConstantInfo::CtorInfo(c)) =
@@ -3725,6 +3742,7 @@ pub fn sort_consts<'a>(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Vec<Vec<&'a MutConst>>, CompileError> {
+  let _area = areas::scope(Area::SortConsts);
   let dump =
     std::env::var("IX_RECURSOR_DUMP").ok().filter(|s| !s.is_empty()).filter(
       |prefix| cs.iter().any(|c| c.name().pretty().contains(prefix.as_str())),
@@ -3995,6 +4013,7 @@ fn compile_const_inner(
   aux: bool,
 ) -> Result<Address, CompileError> {
   let _cci_start = std::time::Instant::now();
+  let _area_other = areas::scope(Area::Other);
   if let Some(cached) = stt.resolve_addr_aux(name, aux) {
     return Ok(cached);
   }
@@ -4063,10 +4082,17 @@ fn compile_const_inner(
     let _t_sharing = _t1.elapsed();
     let _t2 = std::time::Instant::now();
     let mut bytes = Vec::new();
-    constant.put(&mut bytes);
+    {
+      let _a = areas::scope(Area::Serialize);
+      constant.put(&mut bytes);
+    }
     let serialized_size = bytes.len();
-    let addr = Address::hash(&bytes);
+    let addr = {
+      let _a = areas::scope(Area::HashAddr);
+      Address::hash(&bytes)
+    };
     let _t_serial = _t2.elapsed();
+    areas::note_puthash(_t_serial.as_nanos() as u64);
     if *IX_TIMING && _t0.elapsed().as_secs_f32() > 1.0 {
       eprintln!(
         "[slow_single] {:?} compile={:.2}s sharing={:.2}s serial={:.2}s unique_exprs={} refs={} bytes={}",
@@ -4080,6 +4106,8 @@ fn compile_const_inner(
       );
     }
     if aux {
+      let _a = areas::scope(Area::Publish);
+      areas::note_store(stt.env.consts.contains_key(&addr));
       stt.env.store_const(addr.clone(), constant);
       stt
         .env
@@ -4198,10 +4226,20 @@ fn compile_const_inner(
           refs,
           univs,
         )?;
+        let t_ph = std::time::Instant::now();
         let mut bytes = Vec::new();
-        constant.put(&mut bytes);
-        let addr = Address::hash(&bytes);
+        {
+          let _a = areas::scope(Area::Serialize);
+          constant.put(&mut bytes);
+        }
+        let addr = {
+          let _a = areas::scope(Area::HashAddr);
+          Address::hash(&bytes)
+        };
+        areas::note_puthash(t_ph.elapsed().as_nanos() as u64);
         if aux {
+          let _a = areas::scope(Area::Publish);
+          areas::note_store(stt.env.consts.contains_key(&addr));
           stt.env.store_const(addr.clone(), constant);
           stt.env.register_name(
             name.clone(),
@@ -4381,11 +4419,21 @@ fn compile_mutual(
       },
       IxonMutConst::Indc(_) => unreachable!(),
     };
+    let t_ph = std::time::Instant::now();
     let mut bytes = Vec::new();
-    standalone_constant.put(&mut bytes);
-    let addr = Address::hash(&bytes);
+    {
+      let _a = areas::scope(Area::Serialize);
+      standalone_constant.put(&mut bytes);
+    }
+    let addr = {
+      let _a = areas::scope(Area::HashAddr);
+      Address::hash(&bytes)
+    };
+    areas::note_puthash(t_ph.elapsed().as_nanos() as u64);
 
     if aux {
+      let _a = areas::scope(Area::Publish);
+      areas::note_store(stt.env.consts.contains_key(&addr));
       stt.env.store_const(addr.clone(), standalone_constant);
       for class in &sorted_classes {
         for cnst in class {
@@ -4414,6 +4462,8 @@ fn compile_mutual(
   let block_addr = compiled.addr.clone();
 
   if aux {
+    let _a = areas::scope(Area::Publish);
+    areas::note_store(stt.env.consts.contains_key(&block_addr));
     stt.env.store_const(block_addr.clone(), compiled.constant);
     // Register class ordering for each inductive name in the block.
     let class_ordering: Vec<Vec<Name>> = sorted_classes
@@ -4546,6 +4596,7 @@ fn compile_mutual(
       .iter()
       .map(|class| class.iter().map(|c| c.name()).collect())
       .collect();
+    let _area_aux = areas::scope(Area::AuxGen);
     let aux_layout_stored = mutual::generate_and_compile_aux_recursors(
       &cs,
       &class_names,

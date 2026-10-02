@@ -340,8 +340,20 @@ fn compile_env_inner(
   allow_partial: u8,
   strict_anon: bool,
 ) -> LeanIOResult<LeanOwned> {
+  // PROTOTYPE (measurement only): FFI-side phase marks with process CPU.
+  let verbose = std::env::var("IX_VERBOSE").is_ok();
+  let mark = |what: &str| {
+    if verbose {
+      eprintln!(
+        "[ffi] {what}{}",
+        ix_compile::diag::rss_log_suffix()
+      );
+    }
+  };
+  mark("enter");
   let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
+  mark("decoded name index");
 
   let compile_stt =
     match compile_env_with_options(&rust_env, CompileOptions::default()) {
@@ -374,6 +386,7 @@ fn compile_env_inner(
   }
   let root = ixon::merkle::merkle_root_canonical_sorted(&const_addrs)
     .unwrap_or_else(ixon::merkle::zero_address);
+  mark("ungrounded sorted + merkle root");
   if strict_anon {
     // Strict-anon piece (`ix compile --anon`): drop §4 names, §5
     // metadata, and §6 commitments. This runs strictly AFTER
@@ -400,6 +413,7 @@ fn compile_env_inner(
       s.push(".tmp");
       std::path::PathBuf::from(s)
     };
+    mark("put_file begin");
     let written =
       match compile_stt.env.put_file_with_header(&tmp, &const_addrs, &root) {
         Ok(n) => n,
@@ -433,6 +447,7 @@ fn compile_env_inner(
   status.set_num_64(1, named_count);
   status.set_num_64(2, unique_anon);
 
+  mark("returning to Lean");
   // Skip destructors: the compile CLI is a one-shot process, the OS
   // reclaims at exit, and dropping the maps costs tens of seconds at
   // Mathlib scale.

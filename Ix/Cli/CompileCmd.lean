@@ -32,12 +32,54 @@ def applySharingLimitsFlag (p : Cli.Parsed) : IO (Option String) := do
     Std.Internal.UV.System.osSetenv Ix.CompileM.sharingLimitsEnvVar spec
     return none
 
+/-- PROTOTYPE (measurement only): a phase mark with the monotonic clock and
+the process CPU ticks (10 ms) from `/proc/self/stat`. -/
+def phaseMark (what : String) : IO Unit := do
+  if (← IO.getEnv "IX_VERBOSE").isSome then
+    let cpu ← try
+        let s ← IO.FS.readFile "/proc/self/stat"
+        let up ← IO.FS.readFile "/proc/uptime"
+        match s.splitOn ") " with
+        | [_, rest] =>
+          let f := rest.splitOn " "
+          pure s!" · cpu {f[11]!}+{f[12]!} ticks · start {f[19]!} ticks · uptime {(up.splitOn " ")[0]!}"
+        | _ => pure ""
+      catch _ => pure ""
+    IO.eprintln s!"[lean] {(← IO.monoMsNow)} ms: {what}{cpu}"
+
+open Lean Elab in
+/-- PROTOTYPE (measurement only): `getFileEnvCore` with phase marks. -/
+def getFileEnvTimed (path : FilePath) : IO FileEnv := do
+  let path ← IO.FS.realPath path
+  initLeanSearchPathFor path
+  phaseMark "search path (lake env printenv)"
+  let source ← IO.FS.readFile path
+  let inputCtx := Parser.mkInputContext source path.toString
+  let (header, parserState, messages) ← Parser.parseHeader inputCtx
+  unsafe enableInitializersExecution
+  let (env, messages) ← processHeaderCore
+    (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
+    (isModule := false) default messages inputCtx 0
+  phaseMark "import (processHeaderCore)"
+  if messages.hasErrors then
+    throw $ IO.userError $ "\n\n".intercalate $
+      (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
+  let env := env.setMainModule default
+  let s ← IO.processCommands inputCtx parserState (Command.mkState env messages)
+  phaseMark "elaborated file body"
+  let cmdMessages := s.commandState.messages
+  if cmdMessages.hasErrors then
+    throw $ IO.userError $ "\n\n".intercalate $
+      (← cmdMessages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
+  return ⟨s.commandState.env, HeaderSyntax.isModule header⟩
+
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Keep the environment-variable interface for scripts, while giving the
   -- CLI an ordinary discoverable switch. The Rust compiler and serializer
   -- both consult IX_VERBOSE, so setting it once enables the whole pipeline.
   if p.hasFlag "verbose" then
     Std.Internal.UV.System.osSetenv "IX_VERBOSE" "1"
+  phaseMark "enter runCompileCmd"
   if let some e ← applySharingLimitsFlag p then
     p.printError s!"error: {e}"
     return 1
@@ -53,7 +95,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- elaborates the input file; only Lake's dependency build/cache step is skipped.
   unless p.hasFlag "no-build" do
     buildFile pathStr
-  let fe ← getFileEnvCore pathStr
+  phaseMark "lake build done"
+  let fe ← getFileEnvTimed pathStr
   let leanEnv := fe.env
 
   println! "Running Ix compiler on {pathStr}"
@@ -157,6 +200,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
   let totalConsts := constList.length
   println! "Total constants: {totalConsts}"
+  phaseMark s!"constant list ({totalConsts})"
 
   -- Window the tree-RSS sampler around the compile so the row's peak-rss
   -- is the compile step's own high-water (the loaded Lean env is still in
@@ -177,10 +221,12 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let constList ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv constList
   if (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome then
     IO.eprintln s!"[compile] source contract preparation: {((← IO.monoMsNow) - start).formatMs}"
+  phaseMark "contract preparation done"
   let status ← if strictAnon then
       Ix.CompileM.rsCompileEnvBytesAnonFFI constList outPath allowPartial
     else
       Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
+  phaseMark "ffi returned"
   let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
 
@@ -254,6 +300,7 @@ serialized the grounded subset ({status.named} named, \
       , ("constants", Lean.toJson totalConsts)
       , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput)
       , ("peak-rss", Lean.toJson peakRss) ]
+  phaseMark "runCompileCmd done"
   return 0
 
 

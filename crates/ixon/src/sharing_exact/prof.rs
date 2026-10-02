@@ -128,17 +128,29 @@ mod imp {
 #[cfg(not(feature = "sharing-profile"))]
 mod imp {
   use super::Phase;
+  use ix_common::areas::{self, Area};
 
-  pub(crate) struct Scope;
-
-  // Scopes are ended with `drop`, as with the feature.
-  impl Drop for Scope {
-    fn drop(&mut self) {}
-  }
+  // PROTOTYPE (measurement only): the phases feed the area timers.
+  pub(crate) type Scope = areas::Scope;
 
   #[inline(always)]
-  pub(crate) fn scope(_phase: Phase) -> Scope {
-    Scope
+  pub(crate) fn scope(phase: Phase) -> Scope {
+    areas::scope(match phase {
+      Phase::Total => Area::ShareTotal,
+      Phase::Dag => Area::ShareDag,
+      Phase::Prep => Area::SharePrep,
+      Phase::Classify => Area::ShareClassify,
+      Phase::Search => Area::ShareSearch,
+      Phase::Knapsack => Area::ShareKnapsack,
+      Phase::UniformMaterialize => Area::ShareUMat,
+      Phase::UniformCheck => Area::ShareUCheck,
+      Phase::Allocate => Area::ShareAllocate,
+      Phase::RematerializeCosts => Area::ShareP3Costs,
+      Phase::RematerializeDecide => Area::ShareP3Decide,
+      Phase::RematerializeBuild => Area::ShareP3Build,
+      Phase::RematerializeCheck => Area::ShareP3Check,
+      Phase::Output => Area::ShareOutput,
+    })
   }
 
   pub(crate) fn report() -> Vec<(&'static str, u64, u64)> {

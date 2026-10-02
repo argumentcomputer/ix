@@ -1578,6 +1578,7 @@ impl LazyEnv {
     let decoded = Arc::new((self.fetch)(name)?);
     let mut segment = self.segments[segment_idx].lock().unwrap();
     if segment.len() >= self.cap_per_segment {
+      let _area = crate::areas::scope(crate::areas::Area::Evict);
       segment.swap_remove_index(0);
     }
     segment.insert(name.clone(), decoded.clone());

@@ -35,10 +35,29 @@ pub fn rss_log_suffix() -> String {
       let (r, rt) = gib_tenths(rss);
       let (a, at) = gib_tenths(anon);
       let (f, ft) = gib_tenths(file);
-      format!(" · rss {r}.{rt} GiB (anon {a}.{at}, file {f}.{ft})")
+      format!(" · rss {r}.{rt} GiB (anon {a}.{at}, file {f}.{ft}){}", cpu_suffix())
     },
     _ => String::new(),
   }
+}
+
+/// PROTOTYPE (measurement only): ` · cpu U+S s` of the process so far, from
+/// `/proc/self/stat` (clock ticks of 10 ms).
+pub fn cpu_suffix() -> String {
+  let Ok(stat) = std::fs::read_to_string("/proc/self/stat") else {
+    return String::new();
+  };
+  let Some(rest) = stat.rsplit_once(") ").map(|(_, r)| r) else {
+    return String::new();
+  };
+  let f: Vec<&str> = rest.split_whitespace().collect();
+  let (Some(u), Some(s)) = (
+    f.get(11).and_then(|x| x.parse::<u64>().ok()),
+    f.get(12).and_then(|x| x.parse::<u64>().ok()),
+  ) else {
+    return String::new();
+  };
+  format!(" · cpu {:.2}+{:.2} s", u as f64 / 100.0, s as f64 / 100.0)
 }
 
 // Stream maps instead of allocating a String proportional to the mapping

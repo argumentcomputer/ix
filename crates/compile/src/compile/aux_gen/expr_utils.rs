@@ -1934,6 +1934,7 @@ fn ensure_in_kenv_of_inner(
   kctx: &mut crate::compile::KernelCtx,
   replace_axio_stub: bool,
 ) {
+  let _area = ix_common::areas::scope(ix_common::areas::Area::KernelIngress);
   ensure_in_kenv_of_inner_env(
     name,
     lean_env,

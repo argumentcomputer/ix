@@ -1217,6 +1217,7 @@ pub fn decode_env_lazy(
   let handles: FxHashMap<Name, LeanShared> = named.into_iter().collect();
 
   let fetch = move |name: &Name| {
+    let _area = ix_common::areas::scope(ix_common::areas::Area::Fetch);
     let obj = handles.get(name)?;
     let mut cache = Cache::new(&global);
     Some(decode_constant_info(obj.borrow().as_ctor().get(1), &mut cache))

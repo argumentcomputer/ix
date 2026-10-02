@@ -14,6 +14,7 @@ use indexmap::{IndexMap, IndexSet};
 use rustc_hash::FxBuildHasher;
 
 pub mod address;
+pub mod areas;
 pub mod env;
 pub mod prim_addrs;
 pub mod strong_ordering;

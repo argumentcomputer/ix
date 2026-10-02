@@ -53,6 +53,7 @@ use crate::condense::compute_sccs;
 use crate::graph::{NameSet, setup_scan};
 use crate::ground::proliferate_ungrounded;
 use ix_common::address::Address;
+use ix_common::areas::{self, Area};
 use ix_common::env::{Env as LeanEnv, Name};
 use ixon::CompileError;
 
@@ -184,6 +185,8 @@ pub fn compile_env_with_profile(
       crate::diag::rss_log_suffix(),
     );
   }
+  areas::report("setup_scan");
+  areas::reset();
 
   // Grounding: constants whose transitive Const-refs can't all be
   // resolved are collected into `stt.ungrounded` and filtered from the
@@ -580,7 +583,11 @@ pub fn compile_env_with_profile(
         loop {
           // Wait without holding a ready-queue lock or any block scratch.
           // A permit covers compilation, publication, and dependency release.
-          let permit = match admission_ref.acquire() {
+          let acquired = {
+            let _a = areas::scope(Area::Admission);
+            admission_ref.acquire()
+          };
+          let permit = match acquired {
             Ok(Some(permit)) => permit,
             Ok(None) => return,
             Err(failure) => {
@@ -607,6 +614,7 @@ pub fn compile_env_with_profile(
               if !processed_ref.insert(lo.clone()) {
                 continue;
               }
+              let _blk = areas::scope(Area::Block);
 
               // Track time for slow block detection
               let block_start = Instant::now();
@@ -678,6 +686,7 @@ pub fn compile_env_with_profile(
                         unresolved_names.iter().cloned().collect();
                       let mut cache = BlockCache::default();
                       let cross_name = unresolved_names[0].clone();
+                      let _a = areas::scope(Area::CrossScc);
                       let res = run_compile_catching_panic(
                         &cross_name,
                         "compile_const(cross-SCC)",
@@ -721,6 +730,7 @@ pub fn compile_env_with_profile(
                   // each constant, setting Named.original with the
                   // original (addr, meta) for decompilation roundtrip.
                   let mut orig_cache = BlockCache::default();
+                  let _a = areas::scope(Area::NoAux);
                   let res = run_compile_catching_panic(
                     &lo,
                     "compile_const_no_aux",
@@ -895,6 +905,7 @@ pub fn compile_env_with_profile(
 
               // Collect newly-ready blocks by removing satisfied deps.
               // HashSet::remove is idempotent — no double-decrement risk.
+              let _rel = areas::scope(Area::Release);
               let mut newly_ready = Vec::new();
 
               let resolve_name =
@@ -959,6 +970,7 @@ pub fn compile_env_with_profile(
               if error_ref.lock().unwrap().is_some() {
                 return;
               }
+              let _qw = areas::scope(Area::QueueWait);
               // Wait for new work to become available
               let queue = ready_queue_ref.lock().unwrap();
               let _ = condvar_ref
@@ -1006,6 +1018,7 @@ pub fn compile_env_with_profile(
       crate::diag::rss_log_suffix(),
     );
   }
+  areas::report("scheduler");
 
   // Check for errors
   if let Some(e) = error.into_inner().unwrap() {
