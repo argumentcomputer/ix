@@ -2728,6 +2728,7 @@ impl Env {
           &named,
           &|na| names.get(na).cloned(),
           &|ba| self.get_blob(ba),
+          &|a| self.holds_or_assumed(a, assumed),
           &mut visited,
           &mut pending,
           &mut named_refs,

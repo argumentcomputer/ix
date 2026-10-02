@@ -1050,9 +1050,14 @@ canonicalization), the compiler:
    (`compile.rs:2584`), which is a pristine compile that does NOT
    enter aux_gen — its address becomes `named.original.0`, its
    metadata `named.original.1`.
-3. Both entries go into `env.consts` (keyed by distinct addresses);
-   the `Named` entry points at the canonical via `addr` and retains
-   the original via `original`.
+3. Only the canonical patch goes into `env.consts`. The source-form
+   compile is ephemeral: its constant is never stored (validate-aux
+   phase 3, "No ephemeral leaks", fails if one is), so `original.0` is
+   a provenance address, not a reference. The `Named` entry points at
+   the canonical via `addr` and records the original via `original`;
+   decompile tolerates the original's bytes being absent, and
+   `Env::prune_to_closure` (`ix pack`) follows `original.0` only when
+   the source env happens to store it.
 
 **Who reads it.** `src/ix/decompile.rs`:
 

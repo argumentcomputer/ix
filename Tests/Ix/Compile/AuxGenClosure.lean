@@ -28,12 +28,23 @@
   --consts` does, and checks the file with the meta Rust kernel, as
   `ix check-rs` does.
 
+  A third case, `ix pack` on regenerated auxiliaries: a regenerated
+  `.rec`/`.below`/`.brecOn` records in `Named.original` the address of
+  Lean's source form, which the compiler never stores. Before the fix,
+  `Env::prune_to_closure` followed that address as a constant edge, so
+  `ix pack` failed on any constant whose closure carried such an entry:
+  `prune_to_closure: <addr> reachable from main but not in consts/blobs
+  and not assumed`. That case compiles a closure to a file, checks that
+  it holds an unstored original, packs the seed with `rsPackEnv` (the
+  `ix pack` path) and checks the bundle with the meta Rust kernel.
+
   Run with: `lake test -- --ignored aux-gen-closure`.
 -/
 import Ix.Meta
 import Ix.EnvScope
 import Ix.KernelCheck
 import Ix.CompileM
+import Ix.Ixon
 import LSpec
 
 open LSpec
@@ -98,6 +109,19 @@ def mutualSeeds : List (Lean.Name × Lean.Name) := [
   (``oddN, ``evenN), (``wfOdd, ``wfEven), (``pOdd, ``pEven), (``oddN_one, ``evenN)
 ]
 
+/-- Regenerated auxiliaries whose `Named.original` is not stored. -/
+def packSeeds : List Lean.Name := [``A.rec, ``A.below, ``A.brecOn, ``B.rec]
+
+/-- Named entries of the file at `path` whose `original` differs from
+    their address and is absent from its constants and blobs. -/
+def unstoredOriginals (path : String) : IO Nat := do
+  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+  return env.named.fold (init := 0) fun n _ e =>
+    match e.original with
+    | some (a, _) =>
+      if a != e.addr && !env.consts.contains a && !env.blobs.contains a then n + 1 else n
+    | none => n
+
 def suite : List TestSeq := [
   .individualIO "aux_gen on closure-only environments" none (do
     let env ← get_env!
@@ -159,7 +183,43 @@ def suite : List TestSeq := [
     let n := mutualSeeds.length
     return (failed == 0, n - failed, n,
       if failed == 0 then none else some s!"{failed} closure(s) failed"))
-    .done)
+    (.individualIO "ix pack on regenerated auxiliaries" none (do
+    let env ← get_env!
+    let mut failed := 0
+    let dir ← IO.FS.createTempDir
+    for seed in packSeeds do
+      let mut errs : Array String := #[]
+      let closure := Ix.EnvScope.collectDeps env [seed]
+      let path := (dir / s!"{seed}.ixe").toString
+      let prepared ← IO.ofExcept <|
+        Ix.Compile.prepareRegisteredConstants env closure
+      let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared path false
+      if let some (n, r) := status.ungrounded[0]? then
+        errs := errs.push s!"compile ({status.ungrounded.size} ungrounded): {n}: {r}"
+      else
+        -- The fixture must exercise an unstored original.
+        if (← unstoredOriginals path) == 0 then
+          errs := errs.push "fixture: no unstored Named.original in the closure"
+        -- The `ix pack` path, then `ix check-rs` (meta) on the bundle.
+        let bundle := (dir / s!"pack-{seed}.ixe").toString
+        match ← (Ixon.rsPackEnv path (toString seed) #[] bundle false false).toBaseIO with
+        | .error e => errs := errs.push s!"pack: {e}"
+        | .ok () =>
+          let results ← rsCheckIxonFFI bundle #[seed] #[true] true ""
+          match results[0]? with
+          | some none => pure ()
+          | some (some (CheckError.kernelException m)) => errs := errs.push s!"kernel: {m}"
+          | some (some (CheckError.compileError m)) => errs := errs.push s!"check-compile: {m}"
+          | none => errs := errs.push "no kernel result"
+      if errs.isEmpty then
+        IO.println s!"[aux-gen-closure] pack {seed}: ok"
+      else
+        failed := failed + 1
+        for e in errs do IO.println s!"[aux-gen-closure] FAIL pack {seed}: {e}"
+    let n := packSeeds.length
+    return (failed == 0, n - failed, n,
+      if failed == 0 then none else some s!"{failed} pack(s) failed"))
+    .done))
 ]
 
 end Tests.Ix.Compile.AuxGenClosure

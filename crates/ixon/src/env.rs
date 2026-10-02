@@ -925,7 +925,10 @@ impl Env {
   ///   share one address), the name components they reference (with
   ///   full parent chains and string-component blobs), `DataValue`
   ///   payload blobs, `meta_refs` extension DAG edges, and aux_gen
-  ///   `original` constants. Metadata can introduce new DAG edges, so
+  ///   `original` constants when the source stores them (a compiled
+  ///   env never stores an original that differs from its canonical
+  ///   address; the `Named` row keeps the address as provenance — see
+  ///   [`Self::carry_named_entry`]). Metadata can introduce new DAG edges, so
   ///   the walk runs to fixpoint (usually two rounds).
   /// - The constants that carried metadata names for meta kernel
   ///   ingress to resolve through `named` ([`ConstantMeta::named_refs`]:
@@ -966,6 +969,7 @@ impl Env {
           named,
           &|na| self.get_name(na),
           &|ba| self.get_blob(ba),
+          &|a| self.holds_or_assumed(a, assumed),
           &mut visited,
           &mut pending,
           &mut named_refs,
@@ -1026,6 +1030,21 @@ impl Env {
     Ok((out, visited, pending))
   }
 
+  /// Whether a prune can resolve `addr` against this source under the
+  /// cut `assumed`: the source stores it (constant or blob), or it is
+  /// a declared cut-point. Gates the aux_gen `original` edge (see
+  /// [`Self::carry_named_entry`]).
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn holds_or_assumed(
+    &self,
+    addr: &Address,
+    assumed: &FxHashSet<Address>,
+  ) -> bool {
+    assumed.contains(addr)
+      || self.consts.contains_key(addr)
+      || self.blobs.contains_key(addr)
+  }
+
   /// One value pass: 3-edge BFS over pending roots, cut at `assumed`.
   /// Carries constant bytes + per-constant hints + reached blobs;
   /// records reached cut points in `out.assumptions`.
@@ -1073,9 +1092,20 @@ impl Env {
   /// Carry one named entry and its metadata dependencies into `out`:
   /// the `Named` row, its name's component chain, every
   /// metadata-referenced name component and blob, and (via
-  /// `visited`/`pending`) any new constant DAG edges (aux `original`s,
-  /// `meta_refs`) for the next value pass. `resolve_name`/`get_blob`
-  /// abstract the source: the in-memory env for
+  /// `visited`/`pending`) any new constant DAG edges (`meta_refs`, and
+  /// aux `original`s the source holds) for the next value pass.
+  ///
+  /// An aux_gen `original` address is provenance, not a reference: the
+  /// compiler computes the Lean-source form's address but never stores
+  /// that constant (`compile_const_no_aux` is ephemeral; `validate-aux`
+  /// phase 3 fails if one leaks into `consts`). It is followed only
+  /// when `holds(addr)` — the source stores it, or it is assumed;
+  /// otherwise the `Named` row still carries the address and its
+  /// metadata, exactly as the full env does, and decompile falls back
+  /// as it does on the full env.
+  ///
+  /// `resolve_name`/`get_blob`/`holds` abstract the source: the
+  /// in-memory env for
   /// [`Self::prune_to_closure`]; the §4 lookup + lazy env for the
   /// streaming variant (`Env::prune_to_closure_streaming` in
   /// `serialize.rs`) — one body, so the two paths cannot drift.
@@ -1091,6 +1121,7 @@ impl Env {
     named: &Named,
     resolve_name: &dyn Fn(&Address) -> Option<Name>,
     get_blob: &dyn Fn(&Address) -> Option<Vec<u8>>,
+    holds: &dyn Fn(&Address) -> bool,
     visited: &mut FxHashSet<Address>,
     pending: &mut VecDeque<Address>,
     named_refs: &mut Vec<Name>,
@@ -1111,7 +1142,9 @@ impl Env {
     let mut dag_addrs: Vec<Address> = Vec::new();
     named.meta().collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
     if let Some((orig_addr, orig_meta)) = named.original() {
-      dag_addrs.push(orig_addr);
+      if holds(&orig_addr) {
+        dag_addrs.push(orig_addr);
+      }
       orig_meta.collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
     }
     for na in name_addrs {
@@ -1913,6 +1946,90 @@ mod tests {
 
     let anon = env.prune_to_closure_anon(&odd_c, &none).unwrap();
     assert!(!anon.consts.contains_key(&even_c), "anon: value closure only");
+  }
+
+  /// A regenerated auxiliary (`.rec`/`.below`/`.brecOn` of a reordered,
+  /// alpha-collapsed or nested block) records in `Named.original` the
+  /// address of Lean's source form, which the compiler never stores
+  /// (`compile_const_no_aux` is ephemeral). `Foo.rec` here is such an
+  /// entry, and `Bar.rec` shares its canonical constant (as `Nat.rec`
+  /// does with an alpha-collapsed user recursor) with an original equal
+  /// to its address. Packing either must succeed on both prune paths,
+  /// byte-identically: the original is kept as provenance (address and
+  /// metadata, names carried), not followed. Assumed, it is still
+  /// recorded as a cut-point, as before.
+  #[test]
+  fn prune_to_closure_keeps_unstored_aux_original_as_provenance() {
+    use crate::metadata::{ConstantMetaInfo, ExprMeta};
+    let env = Env::new();
+    let rec_c = store_canonical(&env, const_with_refs(vec![]));
+    // Lean-source form's address: computed, never stored.
+    let ghost = Address::hash(b"ephemeral source-form recursor");
+    let (foo, bar, src) = (n("Foo.rec"), n("Bar.rec"), n("srcBinder"));
+    let foo_a = Address::from_blake3_hash(*foo.get_hash());
+    let bar_a = Address::from_blake3_hash(*bar.get_hash());
+    let src_a = Address::from_blake3_hash(*src.get_hash());
+    for (a, nm) in [(&foo_a, &foo), (&bar_a, &bar), (&src_a, &src)] {
+      env.store_name(a.clone(), nm.clone());
+    }
+    let def_meta = |name: &Address, lvls: Vec<Address>| {
+      ConstantMeta::new(ConstantMetaInfo::Def {
+        name: name.clone(),
+        lvls,
+        all: vec![],
+        ctx: vec![],
+        arena: ExprMeta::default(),
+        type_root: 0,
+        value_root: 0,
+      })
+    };
+    let mut foo_named = Named::new(rec_c.clone(), def_meta(&foo_a, vec![]));
+    foo_named
+      .set_original(ghost.clone(), def_meta(&foo_a, vec![src_a.clone()]));
+    env.register_name(foo.clone(), foo_named);
+    let mut bar_named = Named::new(rec_c.clone(), def_meta(&bar_a, vec![]));
+    bar_named.set_original(rec_c.clone(), def_meta(&bar_a, vec![]));
+    env.register_name(bar.clone(), bar_named);
+    assert!(env.consts.get(&ghost).is_none() && env.get_blob(&ghost).is_none());
+
+    let mut bytes = Vec::new();
+    env.put(&mut bytes).unwrap();
+    let ser = |e: &Env| {
+      let mut v = Vec::new();
+      e.put(&mut v).unwrap();
+      v
+    };
+    let (index, names) = Env::parse_lazy_index_with_names(&bytes).unwrap();
+    let lazy = Env::from_lazy_index(&index, &bytes).unwrap();
+
+    let none = FxHashSet::default();
+    let bundle = env.prune_to_closure(&rec_c, &none).unwrap();
+    bundle.validate_closed().unwrap();
+    assert!(bundle.consts.get(&ghost).is_none(), "original not stored");
+    assert!(!bundle.assumptions.contains(&ghost), "nor assumed");
+    let foo_b = bundle.named.get(&foo).expect("Foo.rec carried").clone();
+    assert_eq!(foo_b.original().expect("original kept").0, ghost);
+    assert!(bundle.named.get(&bar).is_some(), "alias carried");
+    assert!(bundle.names.get(&src_a).is_some(), "original's names carried");
+    let streamed = lazy
+      .prune_to_closure_streaming(&index, &bytes, &names, &rec_c, &none)
+      .unwrap();
+    assert_eq!(ser(&bundle), ser(&streamed), "streaming parity");
+    let back = {
+      let buf = ser(&bundle);
+      let mut cur = buf.as_slice();
+      Env::get(&mut cur).unwrap()
+    };
+    assert_eq!(back.named.get(&foo).unwrap().original().unwrap().0, ghost);
+
+    // Declared as a cut-point: recorded, as before.
+    let cut: FxHashSet<Address> = [ghost.clone()].into_iter().collect();
+    let thin = env.prune_to_closure(&rec_c, &cut).unwrap();
+    assert!(thin.assumptions.contains(&ghost));
+    let thin_s = lazy
+      .prune_to_closure_streaming(&index, &bytes, &names, &rec_c, &cut)
+      .unwrap();
+    assert_eq!(ser(&thin), ser(&thin_s), "streaming parity (cut)");
   }
 
   /// A cut bundle serializes a `Named.original` whose address is

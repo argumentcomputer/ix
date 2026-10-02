@@ -1004,8 +1004,10 @@ readers parse the blob and reject entries whose parsed size disagrees
 with `meta_len`.
 
 The `original` address (aux_gen provenance) stays a **raw 32 bytes**:
-a prune cut can carry a `Named` whose original references an *assumed*
-constant that is not stored in §2, which a §2 index cannot represent.
+the compiler records the address of Lean's source form but never stores
+that constant, so an original that differs from the entry's address is
+not in §2 (nor, after a prune cut, is an *assumed* one), which a §2
+index cannot represent.
 
 Because §2 order is load-bearing for §3/§5 index resolution, every
 reader enforces strictly ascending §2 addresses during its scan (this
