@@ -1,16 +1,41 @@
-# Ixon v3: usage, ownership, and relative locality
+# Ixon v4: contracts, TagN integers, and canonical sharing
 
-This specification describes the implemented Ixon v3 format and the admitted
-Ix source fragment. Relative locality replaces explicit lifetime parameters.
-The format is incompatible with v2; all typed addresses and primitive pins
-must be regenerated.
+This specification describes the Ixon v4 format and the admitted Ix source
+fragment.
+
+Version 4 keeps the contract model that v3 introduced: usage, ownership and
+relative locality, with no explicit lifetime parameters (§1–§3). It changes
+the byte grammar in two ways (§5):
+
+- **TagN integers.** One integer code, TagN, replaces v3's Tag0, Tag2 and
+  Tag4 everywhere.
+- **Canonical sharing.** A constant's sharing table is part of its canonical
+  definition, built by the two-phase construction instead of a heuristic.
+
+The format is incompatible with v3: all typed addresses, primitive pins,
+claims and `.ixe` files must be regenerated.
+
+This file replaces the v3 specification (`Ixon-v3.md`). That file's content
+is preserved here: §1–§3 and §6 are unchanged, and §4 has been updated for
+v4. The byte-level reference is [Ixon](Ixon.md).
 
 See the [text format](ixon-text-v3.md) and the
 [resource checker](resource-checking.md) for supported behavior and checking
-limits, and the [consumer handoff](compilatrix-ixon-v3.md) for migration fixtures.
-Native resource claims are implemented. IxVM checks erased Lean typing and
-explicitly rejects resource-proof requests. The [verification record](ixon-v3-verification.md)
-lists the executed gates and formal trust boundary.
+limits, and the [consumer handoff](compilatrix-ixon-v3.md) for migration
+fixtures. Native resource claims are implemented. IxVM checks erased Lean
+typing and explicitly rejects resource-proof requests. The
+[v3 verification record](ixon-v3-verification.md) lists the gates executed
+for the contract model.
+
+The IxVM circuit has its own codec (`Ix/IxVM/IxonDeserialize.lean`,
+`Ix/IxVM/IxonSerialize.lean`, generated into
+`crates/ixvm-codegen/src/aiur_ixvm.rs`). It reads and writes TagN with the
+host codec's accept and reject rules. The suite `ixvm-tagn` checks it
+against `Ixon.putTagN`/`getTagN` on every rung boundary, the rejection
+vectors, every one-byte string, and every header with a sample of second
+bytes. Its claim readers require object format `4`, and its kernel
+recognizes primitives by their v4 canonical addresses. The circuit reads
+neither `.ixe` headers nor `ConstantMeta`.
 
 ## 1. Independent contracts
 
@@ -154,11 +179,17 @@ Ordinary typechecking and native calling-convention hints do not certify them.
 
 ## 4. Representation and canonical wire layout
 
-The binary environment version is **3** and the typed-constant protocol
-identifier is **`ixon-v3`**. Constants remain BLAKE3-addressed canonical bytes;
-the surrounding catalog/artifact protocol binds the format. Blob addresses
-remain BLAKE3 of raw bytes. No v2 fallback or mixed-version typed environment
-is admitted.
+The binary environment version is **4**, the `.ixe` header byte is `0xE4`
+(`TagN(0xE, 4)`), and the typed-constant protocol identifier is
+**`ixon-v4`**. Constants remain BLAKE3-addressed canonical bytes; the
+surrounding catalog/artifact protocol binds the format. Claims and proofs
+carry object format `4`, and the resource validator identity is
+`ixon-v4/resource-v1`. Blob addresses remain BLAKE3 of raw bytes. No v3
+fallback or mixed-version typed environment is admitted.
+
+The `0xE4` header byte is also the byte of the Check claim tag (`0xE3` was
+also the Eval claim tag). Readers interpret it by context, and the enclosing
+protocol identifies the object kind.
 
 The original twelve expression variants remain. Lambda and forall payloads
 carry complete contracts. The let payload carries `LetContract`. Declaration
@@ -181,25 +212,129 @@ Lambda binders require one contract byte and forall binders require one
 contract byte. Application, lambda, and forall use their original maximal
 ordinary telescopes, with no term/region packet discriminants.
 
-Let uses its existing Tag4 category `0xA`. The size encodes the non-dependent
-flag in bit 0 and `borrowShared` in bit 1. Sizes above 3 are invalid. The
-payload is one binder-contract byte followed by type, initializer, and body
-expressions, in that order. Ordinary let sizes remain 0 or 1; shared-borrow
-sizes are 2 or 3. Borrowing introduces no new expression constructor or tag.
+Let uses expression flag `0xA` (a TagN header with a 4-bit flag). The header
+value encodes the non-dependent flag in bit 0 and `borrowShared` in bit 1.
+Values above 3 are invalid. The payload is one binder-contract byte followed
+by type, initializer, and body expressions, in that order. Ordinary lets use
+values 0 or 1; shared borrows use 2 or 3. Borrowing introduces no new
+expression constructor or flag.
 
-All counts and indices use the shortest existing unsigned encodings. Readers
-reject nonminimal tags, reserved mode bits, invalid enum/Boolean flags, empty
-or nonmaximal telescopes, impossible counts, truncation, and trailing bytes
-at a whole-object boundary. Native readers bound count-based preallocation by
-the remaining byte budget. IxVM parses counted lists incrementally and rejects
-exhausted input through strict byte reads, without a preliminary byte traversal.
-Readers do not normalize adversarial bytes into other addresses.
+All counts, indices and headers use TagN (§5). TagN is bijective, so no value
+has a non-minimal encoding. Readers reject:
+
+- invalid TagN codes and values reaching `2^64`;
+- reserved mode bits and invalid enum/Boolean flags;
+- empty or non-maximal telescopes;
+- impossible counts;
+- truncation, and trailing bytes at a whole-object boundary.
+
+Native readers bound count-based preallocation by the remaining byte budget.
+IxVM parses counted lists incrementally and rejects exhausted input through
+strict byte reads, without a preliminary byte traversal. Readers do not
+normalize adversarial bytes into other addresses.
 
 Source annotations, semantic contracts, canonical bytes, structural sharing
-hashes, equality, and cache keys must all distinguish the four value modes,
+IDs, equality, and cache keys must all distinguish the four value modes,
 four quantities, independent arrow results, and two let kinds.
 
-## 5. Admission, transport, and verification
+## 5. Integers and canonical sharing
+
+These are the two byte-level changes from v3. [Ixon](Ixon.md) gives the full
+layouts, examples and proof references.
+
+**TagN.** Every variable-length integer is a TagN integer. That is one header
+byte `[flag : f bits][payload : 8 − f bits]` with `f ∈ {0, 2, 4}`, followed
+by 0, 1, 2, 3, 4 or 8 bytes:
+
+- `f = 4` is used for expression, constant, environment, claim and proof
+  headers;
+- `f = 2` for universe terms;
+- `f = 0` for counts, indices and lengths.
+
+The rungs hold 1, 2, 3, 4, 5 and 9 bytes, and each rung starts where the
+previous one ends, so the code is bijective. Values below 128, 32 or 8 (for
+`f` = 0, 2 or 4) encode to the same single byte as v3's Tag0, Tag2 or Tag4.
+Larger values encode differently: for example, `Share(8)` is `B8 00`, and the
+Resource claim tag is `E8 01`. The Lean proofs of injectivity, canonicity
+and rejection are in `Ix/Compile/Verify/TagN.lean`.
+
+**Canonical sharing.** A constant's sharing table, and every `Share`
+occurrence, is determined by its expanded anonymous expressions. It is the
+output of the two-phase construction `canonicalSharingTiered .tagN`:
+
+1. **Phase 1:** an exact minimum of the uniform-width model at each width
+   `w ∈ {1, 2, 3}`.
+2. **Phase 2:** an exact first tier of at most eight 1-byte slots, followed by
+   the Kahn priority order.
+3. **Phase 3:** minimum-length re-materialization of each part at the real
+   TagN widths.
+4. **Selection:** the candidate with the fewest real bytes is kept, ties going
+   to the lower `w`.
+
+The construction keeps two properties:
+
+- **Backward references.** Entry `i` references only entries below `i`.
+- **Independence from metadata and history.** By definition, metadata never
+  influences the table, and neither do pointer sharing, construction history
+  or the compiler that ran.
+
+**Scope of the guarantees.** [Ixon](Ixon.md#what-is-proved-and-what-is-not)
+gives the exact statements.
+
+- **Machine-checked (Lean),** for a successful run on the canonical DAG of the
+  input:
+  - Phase 1 returns the `setPrec`-least minimum of the uniform model over
+    tables of in-degree ≥ 2 terms (`optimizeUniform_minimum`,
+    `optimizeUniform_least`).
+  - Phases 2 and 3 and the width selection meet their per-phase
+    specifications (`allocate_spec`, `allocate_optimal`,
+    `materializeTable_min`, `rematerialize_spec`,
+    `canonicalTieredCore_select`).
+  - The length the construction minimizes and reports is the serialized TagN
+    length of its output (`canonicalSharingTiered_serialized`).
+  - Every output entry and root is in the codec's wire domain, the table
+    count is below `2^64` and Shares point backward
+    (`canonicalSharingTiered_format`). The compiler endpoint theorems are
+    stated over it: a compiler run returns an exactly decodable block or
+    fails with an error of the sharing builder.
+  - The compiler runs fast twins of the specifications, each tied to its
+    specification by an audited `@[csimp]` equality.
+- **Not claimed.**
+  - The composed result is not claimed to be a global byte minimum.
+  - The step that builds the canonical DAG from the input expressions
+    (`expand`, with the interner's pointer cache) is outside the proofs.
+    Independence from in-memory pointer sharing is tested and the round trip
+    is checked at run time, not proved.
+  - The Rust implementation is checked by differential tests, not proofs.
+    Its phase-1 length arithmetic is 128-bit and fails closed beyond that
+    range, where Lean succeeds; no Init or Mathlib constant comes near it.
+
+Both compilers build every table with this construction; it is the only
+sharing construction.
+
+**Metadata expressions.** A `Share(i)` inside entry `j` of
+`ConstantMeta.metaSharing` (the collapsed call-site arguments) is read in an
+extended index space. With `p` the size of the primary table:
+
+- `i < p` refers to primary entry `i`;
+- `p ≤ i < p + j` refers to `metaSharing[i − p]`;
+- every other index is a decode error (out of range, or a forward or self
+  reference).
+
+A `Share` in a primary expression always refers to the primary table. The
+two decompilers implement this rule; the compilers emit no such `Share`, and
+there is no canonical metadata construction.
+[Ixon](Ixon.md#sharing-in-metadata-expressions) gives the details.
+
+**Compilation failures.** The construction runs under explicit resource
+limits, a safety net far above every corpus maximum that
+`ix compile --sharing-limits` overrides. Exceeding one is a compile error
+that names the limit. There is no fallback construction.
+
+These changes do not affect the contract model: §1–§3 and the admission
+rules of §6 are the same as in v3.
+
+## 6. Admission, transport, and verification
 
 Wire validation establishes representation. Scope/type validation establishes
 term scope, types, and permitted owner-place shapes. Resource validation
