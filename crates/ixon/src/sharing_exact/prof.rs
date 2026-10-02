@@ -125,6 +125,11 @@ mod imp {
 
   pub(crate) struct Scope;
 
+  // Scopes are ended with `drop`, as with the feature.
+  impl Drop for Scope {
+    fn drop(&mut self) {}
+  }
+
   #[inline(always)]
   pub(crate) fn scope(_phase: Phase) -> Scope {
     Scope

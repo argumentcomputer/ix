@@ -3296,11 +3296,8 @@ fn encoding_check_matches_reexpansion() {
     ] {
       let fast = dag.check_encoding(order, es, rs);
       assert!(fast.is_some());
-      let len = super::cost::exprs_len_with(
-        es.len() as u64,
-        es.iter().chain(rs),
-        &tag4_len,
-      );
+      let len =
+        cost::exprs_len_with(es.len() as u64, es.iter().chain(rs), &tag4_len);
       assert_eq!(
         dag.check_and_measure(order, es, rs, &tag4_len),
         fast.zip(len)
@@ -3324,7 +3321,7 @@ fn encoding_check_matches_reexpansion() {
         let fast = dag.check_encoding(order, &es2, &rs2);
         let slow = reference(&dag, order, &es2, &rs2);
         let fused = dag.check_and_measure(order, &es2, &rs2, &tag4_len);
-        let len = super::cost::exprs_len_with(
+        let len = cost::exprs_len_with(
           es2.len() as u64,
           es2.iter().chain(&rs2),
           &tag4_len,

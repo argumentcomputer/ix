@@ -2230,6 +2230,7 @@ mod count_bracket_tests {
 }
 
 #[cfg(test)]
+#[allow(clippy::cast_possible_truncation, clippy::needless_range_loop)]
 mod knapsack_tests {
   use super::{CTable, Knapsack, TermId, knapsack_reference, set_prec};
 

@@ -433,11 +433,10 @@ fn small_scalars(node: &Node) -> ([u64; 2], usize) {
   match node {
     Node::Sort(n) | Node::Var(n) | Node::Str(n) | Node::Nat(n) => ([*n, 0], 1),
     Node::Prj(t, f, _) => ([*t, *f], 2),
-    Node::App(..) => ([0, 0], 0),
     Node::Lam(c, ..) => ([u64::from(c.to_bits()), 0], 1),
     Node::All(c, v, ..) => ([u64::from(pack_all_contract(*c, *v)), 0], 1),
     Node::Let(c, ..) => ([c.flags(), u64::from(c.binder.to_bits())], 2),
-    Node::Ref(..) | Node::Rec(..) => ([0, 0], 0),
+    Node::App(..) | Node::Ref(..) | Node::Rec(..) => ([0, 0], 0),
   }
 }
 
