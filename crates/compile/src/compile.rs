@@ -248,15 +248,15 @@ pub struct BlockCache {
   /// Cache for compiled universes (Level -> Univ conversion)
   /// Keyed by `(level, univ_params_key)` — the level by its blake3
   /// address, so a lookup touches no reference count — NOT by `level`
-  /// alone. A
-  /// `Level::Param` compiles to `Univ::Var(i)` where `i` is the
+  /// alone. A `Level::Param` compiles to `Univ::Var(i)` where `i` is the
   /// parameter's POSITION in `univ_params`, so the result depends on the
   /// context. This cache lives for a whole block (unlike the expression
   /// cache, which is cleared per constant) and `compile_definition`
   /// compiles each member under its own `level_params`, so a shared key
   /// would hand the second member the first member's index — a silently
   /// wrong constant under a correct-looking name, with no abort.
-  /// `collect_expr_tables` keys its `seen_exprs` the same way.
+  /// `collect_expr_tables` keys its `seen_exprs` by context the same way
+  /// (by the context's index among one preseed's contexts).
   pub univ_cache: FxHashMap<(Address, Address), Arc<Univ>>,
   /// Cache for expression comparisons
   pub cmps: FxHashMap<(Name, Name), Ordering>,
@@ -686,33 +686,53 @@ fn univ_params_key(univ_params: &[Name]) -> Address {
   Address::from_blake3_hash(hasher.finalize())
 }
 
+/// Expressions [`collect_expr_tables`] has visited, as (expression hash,
+/// index of the universe context among the contexts of one
+/// [`preseed_expr_tables`] call): the pair stands for (expression, context
+/// key) one-to-one.
+type PreseedSeen = FxHashSet<(blake3::Hash, u32)>;
+
+thread_local! {
+  /// [`preseed_expr_tables`]'s seen-set, kept per thread and cleared before
+  /// each use, so a block's walk does not regrow it from empty. Dropped
+  /// instead when it has grown past [`PRESEED_SEEN_KEEP`] entries, so one
+  /// huge block does not keep its memory.
+  static PRESEED_SEEN: std::cell::RefCell<PreseedSeen> =
+    std::cell::RefCell::new(PreseedSeen::default());
+}
+
+/// Capacity up to which [`PRESEED_SEEN`] is kept between uses. Clearing
+/// costs time proportional to the capacity, so a set grown by a large
+/// block is dropped rather than cleared for every small one after it.
+const PRESEED_SEEN_KEEP: usize = 1 << 12;
+
 fn collect_expr_tables(
   expr: &LeanExpr,
   univ_params: &[Name],
+  ctx_key: &Address,
+  ctx_idx: u32,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
   stt: &CompileState,
   refs: &mut Vec<Address>,
   univs: &mut Vec<Arc<Univ>>,
-  seen_exprs: &mut FxHashMap<(Address, Address), ()>,
+  seen_exprs: &mut PreseedSeen,
   caller: &str,
 ) -> Result<(), CompileError> {
-  let ctx_key = univ_params_key(univ_params);
   let mut stack = vec![expr];
   while let Some(e) = stack.pop() {
-    let key = Address::from_blake3_hash(*e.get_hash());
-    if seen_exprs.insert((key, ctx_key.clone()), ()).is_some() {
+    if !seen_exprs.insert((*e.get_hash(), ctx_idx)) {
       continue;
     }
 
     match e.as_data() {
       ExprData::Bvar(..) => {},
       ExprData::Sort(level, _) => {
-        univs.push(compile_univ_keyed(level, univ_params, &ctx_key, cache)?);
+        univs.push(compile_univ_keyed(level, univ_params, ctx_key, cache)?);
       },
       ExprData::Const(name, levels, _) => {
         for level in levels {
-          univs.push(compile_univ_keyed(level, univ_params, &ctx_key, cache)?);
+          univs.push(compile_univ_keyed(level, univ_params, ctx_key, cache)?);
         }
         if !mut_ctx.contains_key(name) {
           let const_addr = stt.resolve_addr(name).ok_or_else(|| {
@@ -781,21 +801,40 @@ pub fn preseed_expr_tables(
 ) -> Result<(), CompileError> {
   let mut refs = Vec::new();
   let mut univs = Vec::new();
-  let mut seen_exprs = FxHashMap::default();
+  // The universe contexts of `exprs`, in first-use order; a context's
+  // position stands for its key in the seen-set.
+  let mut ctx_keys: Vec<Address> = Vec::new();
 
-  for (expr, univ_params) in exprs {
-    collect_expr_tables(
-      expr,
-      univ_params,
-      mut_ctx,
-      cache,
-      stt,
-      &mut refs,
-      &mut univs,
-      &mut seen_exprs,
-      caller,
-    )?;
-  }
+  PRESEED_SEEN.with_borrow_mut(|seen_exprs| {
+    seen_exprs.clear();
+    let walked = exprs.iter().try_for_each(|(expr, univ_params)| {
+      let ctx_key = univ_params_key(univ_params);
+      let ctx_idx = match ctx_keys.iter().position(|k| *k == ctx_key) {
+        Some(i) => i,
+        None => {
+          ctx_keys.push(ctx_key.clone());
+          ctx_keys.len() - 1
+        },
+      };
+      collect_expr_tables(
+        expr,
+        univ_params,
+        &ctx_key,
+        u32::try_from(ctx_idx).expect("universe contexts exceed u32"),
+        mut_ctx,
+        cache,
+        stt,
+        &mut refs,
+        &mut univs,
+        seen_exprs,
+        caller,
+      )
+    });
+    if seen_exprs.capacity() > PRESEED_SEEN_KEEP {
+      *seen_exprs = PreseedSeen::default();
+    }
+    walked
+  })?;
 
   refs.sort();
   refs.dedup();
