@@ -488,22 +488,36 @@ CHECK_IXE_WATCH_MB=12000 .lake/build/bin/kernel-check-ixe --guarded --memory-max
 .lake/build/bin/kernel-check-ixe --report .lake/envs/initstd.jsonl
 ```
 
-Usage: `kernel-check-ixe <input.ixe> <output.jsonl> [limit]`. Environment:
+Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] <input.ixe>
+<output.jsonl> [limit]`. The records are streamed by default
+(`Benchmarks/Kernel/CheckIxeStream.lean`): the order and the record views
+are built over record skeletons, and each record is decoded in full at its
+turn and dropped once it is read. `--load eager` decodes and keeps the whole
+environment up front. `--jobs <n>` installs every record first and then runs
+the recorded checks on `n` worker threads
+(`Benchmarks/Kernel/CheckIxePool.lean`). All three write the same rows
+(`kernel-check-ixe --compare` shows it); with `--jobs`, a row's `micros` is
+its install plus its checks. Environment:
 
 - `CHECK_IXE_WATCH_MS` (default 60000) and `CHECK_IXE_WATCH_MB` (default 20000):
   a watchdog ends the run with exit code 3 when one constant's check exceeds
   the time or the process's resident memory exceeds the size, and appends
-  the constant's address to `<output>.runaway`. The resident size includes
-  the decoded environment, which the driver holds in memory: the peak is
-  about 4.6 GB for Init+Std and about 47 GB for Mathlib. `CHECK_IXE_WATCH_MB`
-  must exceed it, or the watchdog fires before the first check (for Mathlib,
-  for example, `CHECK_IXE_WATCH_MB=60000` under a `MemoryMax` above that);
+  the constant's address to `<output>.runaway` (with `--jobs`, every
+  worker's check is watched). The resident size includes what the driver
+  holds of the environment: for Mathlib, a peak of about 20 GB with the
+  streaming load and about 47 GB with `--load eager` (4.6 GB eager for
+  Init+Std). `CHECK_IXE_WATCH_MB` must exceed it, or the watchdog fires
+  before the check ends (for Mathlib, for example, `CHECK_IXE_WATCH_MB=60000`
+  under a `MemoryMax` above that);
 - `CHECK_IXE_SKIP` (comma-separated addresses) declines those constants
   unchecked; `kernel-check-ixe --guarded` reruns with every recorded runaway
   skipped until the run completes (`--memory-max <GB>` runs each attempt in
   a memory-capped cgroup scope, `Ix.Watchdog`);
 - `CHECK_IXE_ROOTS` (comma-separated Lean names) restricts the run to the
-  prelude and the dependency closure of those constants.
+  prelude and the dependency closure of those constants;
+- `CHECK_IXE_THREAD=0` runs the check on the main thread instead of a
+  dedicated one, and `CHECK_IXE_READ_CACHE=<dir>` keeps a persistent read
+  cache (`Benchmarks/Kernel/CheckIxeReadCache.lean`).
 
 Run one environment check at a time, under a memory cap, with no concurrent build.
 `kernel-check-ixe --report` and `--summary` summarize a run's rows, and
