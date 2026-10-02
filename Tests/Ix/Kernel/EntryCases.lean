@@ -1,4 +1,4 @@
-import Ix.Kernel.Admission
+import IxKernel.Kernel.Admission
 import Ix.CompileDriver
 import Ix.Meta
 import Benchmarks.Kernel.CheckIxeStep

@@ -280,7 +280,7 @@
           ixLib = lake2nix.mkPackage (
             lakeBuildArgs
             // {
-              name = "IxImports";
+              name = "Ix";
               # Shared facets traverse whole dependency libraries, including proofs.
               # Executables compile native objects for their actual import closures.
               buildLibrary = false;

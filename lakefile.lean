@@ -119,44 +119,16 @@ the benchmark machines). The default build is unaffected. -/
 def profileLeancArgs : Array String :=
   if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
 
-/-- Namespace roots of the main Ix library. Explicit globs keep these modules
-separate from the certified libraries and their dependencies. -/
-def ixRoots : Array Lean.Name :=
-  #[`Ix.Aggr, `Ix.Aiur, `Ix.AssumptionTree, `Ix.BenchConstants,
-    `Ix.CallSitePlan, `Ix.CallSiteSurgery, `Ix.CanonM, `Ix.Catalog, `Ix.Check,
-    `Ix.Claim, `Ix.Commit, `Ix.Common, `Ix.CompileDriver, `Ix.CompileM,
-    `Ix.CondenseM, `Ix.Cronos, `Ix.DecompileDriver, `Ix.DecompileM,
-    `Ix.DecompileRoundtrip, `Ix.EnvScope, `Ix.Environment, `Ix.GraphM,
-    `Ix.Ground, `Ix.ImportIxe, `Ix.IndexMap, `Ix.IxEval, `Ix.IxVM,
-    `Ix.IxonContract, `Ix.IxonSyntax, `Ix.IxonUniv, `Ix.Keccak,
-    `Ix.KernelCheck, `Ix.Lib, `Ix.Merkle, `Ix.Meta, `Ix.Mutual, `Ix.Replay,
-    `Ix.SOrder, `Ix.SemanticContract, `Ix.ShardMap, `Ix.Sharing.Exact, `Ix.SmallMap,
-    `Ix.Store, `Ix.Tc, `Ix.TracingTexray, `Ix.UnionFind, `Ix.Unsigned,
-    `Ix.Watchdog]
-
+/-- The main library, with Lake's default roots: every `Ix.*` module. Nothing the
+`ix-kernel` dependency or `IxSharingVerify` owns is under the `Ix.` module root
+(their declaration namespaces are, their module names are not), so this
+library never shadows them. Keep new modules of theirs under their roots. -/
+@[default_target]
 lean_lib Ix where
-  roots := ixRoots
-  globs := ixRoots.map .one ++ #[.one `Ix.Address, .one `Ix.Ixon] ++
-    (#[`Ix.AuxGen, `Ix.Benchmark, `Ix.Cli, `Ix.Compile, `Ix.Iroh,
-      `Ix.Resource, `Ix.Shard].map .submodules)
   moreLinkObjs := #[ix_rs]
   moreLeancArgs := profileLeancArgs
   -- disabled because it breaks the binary
   --precompileModules := true
-
-/-- The public umbrella builds only its import closure by default. -/
-@[default_target]
-lean_lib IxImports where
-  roots := #[]
-  globs := #[.one `Ix]
-  moreLeancArgs := profileLeancArgs
-
-/-- Certified extensions that compute projection addresses with pure BLAKE3. -/
-lean_lib IxCertified where
-  roots := #[]
-  globs := #[.one `Ix.Address.Pure, .one `Ix.Ixon.ReduceUniverse,
-    .andSubmodules `Ix.Ixon.Projection, .andSubmodules `Ix.Ixon.BlockOrder]
-  moreLeancArgs := profileLeancArgs
 
 lean_exe ix where
   root := `Main
@@ -342,12 +314,13 @@ end Scripts
 section IxSharingVerify
 
 /- Proofs of the canonical sharing construction (`Ix.Sharing.Exact`) and their
-audits: `Ix.Sharing.Verify` and every module under `Ix/Sharing/Verify/`. Not a
-default target; `lake lint` builds it. The runtime modules under
-`Ix.Sharing.Exact` belong to `Ix`. -/
+audits: `IxSharingVerify` and every module under `IxSharingVerify/`, declaring
+the `Ix.Sharing.Verify` namespace. Not a default target; `lake lint` builds
+it. The module root is outside `Ix.` so that `Ix` never owns these modules.
+The runtime modules under `Ix.Sharing.Exact` belong to `Ix`. -/
 lean_lib IxSharingVerify where
-  roots := #[`Ix.Sharing.Verify]
-  globs := #[.andSubmodules `Ix.Sharing.Verify]
+  roots := #[`IxSharingVerify]
+  globs := #[.andSubmodules `IxSharingVerify]
 
 end IxSharingVerify
 
@@ -415,7 +388,7 @@ lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
-/-- Regenerates `Ix/Kernel/Ixon/PinData.lean` (pins and prelude) from a
+/-- Regenerates `IxKernel/IxKernel/Kernel/Ixon/PinData.lean` (pins and prelude) from a
 compiled Init (`.lake/envs/initstd.ixe`), verified by the verified fold. -/
 lean_exe «kernel-pin-gen» where
   root := `Benchmarks.Kernel.PinGen
@@ -437,7 +410,7 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.IxonFixtures", "Tests.Ix.Kernel.Codec", "Tests.Ix.Kernel.ByteAdmission", "Tests.Ix.Kernel.ParserWork", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
+  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms"]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
   IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)

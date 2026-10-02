@@ -1,7 +1,14 @@
 # Design: moving the certified kernel out of the `Ix.` module namespace
 
-Status: proposed. Depends on the `ix-kernel` dependency restructuring
-(root `lakefile.lean` requires `IxKernel/`) having landed first.
+Status: implemented on top of the `ix-kernel` dependency restructuring
+(root `lakefile.lean` requires `IxKernel/`). Three details were settled
+during implementation and are not in the plan below: the layering fence
+derives module names relative to the package directory (`KernelLayout.pkgDir`)
+rather than the repository root; the sharing audits in
+`IxSharingVerify/Audit/` accept the `IxSharingVerify` module prefix alongside
+`Ix.Sharing`, since their scope was defined by module name; and the
+`check-kernel` host step no longer lists the four fixtures, which the
+standalone step already builds.
 
 ## Problem
 

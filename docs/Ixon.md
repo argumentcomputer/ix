@@ -78,7 +78,7 @@ and Tag0, which had the same flag widths (4, 2 and 0 bits). For values below
 byte. Larger values are encoded differently.
 
 The implementation is Lean `Ixon.putTagN f flag value` / `Ixon.getTagN f`
-(`Ix/Ixon/Codec.lean`, which documents the bit layout) and Rust
+(`IxKernel/IxKernel/Ixon/Codec.lean`, which documents the bit layout) and Rust
 `ixon::tag::TagN::put` / `TagN::get`.
 
 ### Layout
@@ -122,7 +122,7 @@ to reject. A reader rejects only three things:
 - an 8-byte rung whose value would reach `2^64`;
 - truncated input.
 
-The Lean proofs are in `Ix/Ixon/Verify/TagN.lean` (namespace
+The Lean proofs are in `IxKernel/IxKernel/Ixon/Verify/TagN.lean` (namespace
 `Ixon.Verify.TagN`, built with the codec proofs by `lake -d IxKernel build`):
 
 - `runGetExact_getTagN_eq`: accepted encodings are canonical;
@@ -130,7 +130,7 @@ The Lean proofs are in `Ix/Ixon/Verify/TagN.lean` (namespace
 - `getTagN_rejects_code` and `getTagN_rejects_overflow`: the two rejection rules.
 
 All four are roots of the sharing proofs' audit manifest
-(`Ix/Sharing/Verify/Audit/Statements.lean`).
+(`IxSharingVerify/Audit/Statements.lean`).
 
 ### Flag allocation (`f = 4`)
 
@@ -693,7 +693,7 @@ table normalizes to the same bytes (tested; proved under a hypothesis, see
    (`docs/sharing-minimum.md` §3.2). Hashes and the interner's pointer
    cache only speed up discovery: identity is the structural key, never a
    hash, pointer or traversal order. `canonicalize_det`
-   (`Ix/Sharing/Verify/SharingExactCanon.lean`) proves that the numbering
+   (`IxSharingVerify/SharingExactCanon.lean`) proves that the numbering
    of interned terms depends only on the terms the roots denote, not on the
    interner's temporary IDs.
 2. **Phase 1: selection, at each uniform width `w ∈ {1, 2, 3}`.**
@@ -786,10 +786,10 @@ construction, and a partial or best-so-far table is never emitted.
 
 ### What is proved, and what is not
 
-The following theorems are machine-checked in Lean, in `Ix/Sharing/Verify`
+The following theorems are machine-checked in Lean, in `IxSharingVerify`
 (the `IxSharingVerify` library; the TagN theorems are in
-`Ix/Ixon/Verify/TagN.lean`). They are roots of the audit manifest
-`Ix/Sharing/Verify/Audit/Statements.lean` (111 roots), which
+`IxKernel/IxKernel/Ixon/Verify/TagN.lean`). They are roots of the audit manifest
+`IxSharingVerify/Audit/Statements.lean` (111 roots), which
 `lake build --wfail IxSharingVerify` checks: every root uses exactly its
 listed axioms, which are among `propext`, `Classical.choice` and
 `Quot.sound`, and no declaration of an `Ix.Sharing` module uses `sorry`
@@ -797,7 +797,7 @@ listed axioms, which are among `propext`, `Classical.choice` and
 successful run on the canonical DAG of the input (`ex.dag`, `ex.roots`); the
 step that builds that DAG is outside them (see "Expansion" below).
 
-- **Phase 1 minimality** (`Ix/Sharing/Verify/UniformOptimality.lean`):
+- **Phase 1 minimality** (`IxSharingVerify/UniformOptimality.lean`):
   `optimizeUniform_minimum` and `optimizeUniform_least`. Suppose
   `optimizeUniformExpanded w limits ex` succeeds with the default
   branch-and-bound search (`limits.uniformSubsetSearch = false`; the
@@ -846,7 +846,7 @@ step that builds that DAG is outside them (see "Expansion" below).
   every output entry and root is `wireWF`, the table count is below `2^64`,
   and Shares are backward: entry `k` references only entries below `k`, and
   roots only table entries.
-- **The compiler's sharing builder** (`Ix/Sharing/Verify/Builder.lean`,
+- **The compiler's sharing builder** (`IxSharingVerify/Builder.lean`,
   stated over the wire-validity theorem): every block
   `Ix.CompileM.buildConstantWithSharing` builds from a `wireWF` payload and
   representable reference and universe tables is `wireWF`
@@ -874,7 +874,7 @@ the theorems describe. Each fast twin is attached to its specification by a
 (results, metered counts and errors), so compiled code calls the twin while
 every theorem keeps talking about the specification; the module map of
 `Ix/Sharing/Exact.lean` lists them. The audit module
-`Ix/Sharing/Verify/Audit/CompiledCode.lean` fails the build unless every
+`IxSharingVerify/Audit/CompiledCode.lean` fails the build unless every
 `@[csimp]` theorem of an `Ix` module on the compiler's import path is an audit
 root (19), and unless no declaration of `Ix.Sharing.*` is
 `unsafe`, `partial`, `@[implemented_by]` or `@[extern]`, except the

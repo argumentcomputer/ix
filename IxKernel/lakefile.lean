@@ -3,15 +3,18 @@ open Lake DSL
 
 /-! # The certified kernel as its own package
 
-`ix-kernel` builds the certified Ixon checker from the repository sources
-(`srcDir := ".."`) with no dependencies beyond the Lean toolchain: the kernel
-`Ix.Kernel` (the checker derived from con-leche, and Ix's
-boundary beside it: the certified entry `Ix.Kernel.Admission` with its
-theorems, the Ixon reader, pins and prelude, record store, projection
-writer, audits), `Ix.Address.Core`, and the pure Ixon types, codecs and
-their proofs. Data import closures use Lean core and the kernel only (`Lean` only
-at elaboration time, in the kernel's ruled generators); proofs additionally
-use Lean/Std proof tooling.
+`ix-kernel` builds the certified Ixon checker with no dependencies beyond the
+Lean toolchain: the kernel `IxKernel.Kernel` (the checker derived from
+con-leche, and Ix's boundary beside it: the certified entry
+`Ix.Kernel.Admission` with its theorems, the Ixon reader, pins and prelude,
+record store, projection writer, audits), `IxKernel.Address.Core`, the pure
+Ixon types, codecs and their proofs under `IxKernel.Ixon`, and the certified
+fixtures under `IxKernelFixtures`. Module names live under the `IxKernel` and
+`IxKernelFixtures` roots so the root package's `Ix` library never shadows
+them; declaration namespaces (`Ix.Kernel.*`, `Ixon.*`) are unchanged. Data
+import closures use Lean core and the kernel only (`Lean` only at elaboration
+time, in the kernel's ruled generators); proofs additionally use Lean/Std
+proof tooling.
 The root `ix` package depends on this package for its host consumers; this
 package is what the certified gate builds (`lake -d IxKernel build --wfail`),
 so a kernel module that imports anything outside the kernel fails here even
@@ -21,28 +24,37 @@ kernel only. See `docs/kernel.md`. -/
 
 package «ix-kernel» where
   version := v!"0.1.0"
-  -- Keep dependency artifacts with the root workspace's reusable build cache.
+  /- `Package.buildDir` is relative to the package directory, so this resolves
+  to `<repo>/.lake/kernel` from this package, the root workspace,
+  `Models/SetTheory` and `Benchmarks/Compile` alike: one artifact set, which
+  `flake.nix` also adds to `LEAN_PATH`. `lake -d IxKernel clean` deletes it
+  for every workspace. -/
   buildDir := "../.lake/kernel"
   moreLeancArgs :=
     if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
 
-/-- `Ix.Kernel` and every module under `Ix/Kernel/`, with `linter.deprecated`
-off for the con-leche-derived sources written for Lean 4.33.0. -/
+/-- `IxKernel.Kernel` and every module under `IxKernel/Kernel/`, with
+`linter.deprecated` off for the con-leche-derived sources written for Lean
+4.33.0. The glob, not the root's import closure, is what makes the standalone
+build cover every kernel module and audit. -/
 @[default_target]
 lean_lib IxKernelTree where
-  srcDir := ".."
-  roots := #[`Ix.Kernel]
-  globs := #[.andSubmodules `Ix.Kernel]
+  roots := #[`IxKernel.Kernel]
+  globs := #[.andSubmodules `IxKernel.Kernel]
   leanOptions := #[⟨`linter.deprecated, false⟩]
 
 /-- The pure Ixon types, codecs and their proofs, which the certified entry
-decodes with, and the address key. -/
+decodes with, and the address key. A separate library so the kernel's
+`linter.deprecated` option does not reach the codec. -/
 @[default_target]
 lean_lib IxKernel where
-  srcDir := ".."
-  roots := #[`Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
-    `Ix.Ixon.WireCheck, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant, `Ix.Ixon.Bounded.Size,
-    `Ix.Ixon.Canonical, `Ix.Ixon.Verify, `Ix.Ixon.Audit]
-  globs := #[.one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types,
-    .one `Ix.Ixon.Codec, .one `Ix.Ixon.Wire, .one `Ix.Ixon.WireCheck, .submodules `Ix.Ixon.Bounded,
-    .one `Ix.Ixon.Canonical, .andSubmodules `Ix.Ixon.Verify, .one `Ix.Ixon.Audit]
+  roots := #[`IxKernel.Address.Core, `IxKernel.Ixon]
+  globs := #[.one `IxKernel.Address.Core, .submodules `IxKernel.Ixon]
+
+/-- Certified fixtures that also build without the host package's
+dependencies: the Ixon record fixtures, the codec, and the certified entry's
+byte admission. The root test library imports them. -/
+@[default_target]
+lean_lib IxKernelFixtures where
+  roots := #[`IxKernelFixtures]
+  globs := #[.submodules `IxKernelFixtures]
