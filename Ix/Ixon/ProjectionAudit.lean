@@ -155,7 +155,7 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
         ∃ input output,
           Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
             Ix.Ixon.Projection.Expanded maxProjections input output ∧
-              Ix.Ixon.KernelAdmission.checkConstants output blobs hint = Except.ok env -/
+              Ix.Ixon.Admission.checkConstants output blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_ok_iff
 
@@ -168,7 +168,7 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
         Ix.Ixon.Projection.Expanded maxProjections input output →
           Ix.Ixon.Projection.checkBytes maxProjections limits records blobs hint =
             Except.mapError Ix.Ixon.Projection.CheckError.checker
-              (Ix.Ixon.KernelAdmission.checkConstants output blobs hint) -/
+              (Ix.Ixon.Admission.checkConstants output blobs hint) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_of_expansion
 
@@ -184,7 +184,7 @@ fun record => Address.blake3Pure (Ixon.serConstant record) -/
               Ix.Kernel.IxonReader.defaultPins = Except.ok pins ∧
                 Ix.Kernel.IxonReader.builtinPrelude = Except.ok pre ∧
                   Ix.Kernel.IxonReader.builtinNatOpPins = Except.ok natPins ∧
-                    Ix.Ixon.KernelAdmission.Installed pins pre natPins output blobs hint env -/
+                    Ix.Ixon.Admission.Installed pins pre natPins output blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Projection.checkBytes_reading
 

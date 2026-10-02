@@ -1,6 +1,6 @@
 import Ix.Ixon.Verify.Admission
 import Ix.Ixon.Verify.WorkAdmission
-import Ix.Ixon.Consistency
+import Ix.Ixon.KernelConsistency
 import Ix.Ixon.Audit
 import Ix.Kernel.Audit.Roots
 
@@ -20,16 +20,15 @@ def operations : Array Lean.Name :=
     ``Ix.Ixon.Admission.checkBytes]
 
 /-- Admission runs the kernel's checker behind the Ixon reader
-(`Ix.Ixon.KernelAdmission`, and the kernel `Ix.Kernel`: the checker with the
+(`Ix.Ixon.Admission`, with the kernel `Ix.Kernel`: the checker with the
 reader beside it; `Lean` only below the kernel's ruled
 elaboration-time imports), whose closure admits `Std`
 (`Ix.Kernel.Audit.importAllowlist`). -/
 def dataImports : Array Lean.Name :=
-  Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Ixon.Admission,
-    `Ix.Ixon.KernelAdmission]
+  Ix.Ixon.Audit.dataImports ++ #[`Ix.Kernel, `Std, `Ix.Ixon.Admission]
 
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `Ix.Ixon.Verify,
-  `Ix.Ixon.KernelConsistency, `Ix.Ixon.Consistency]
+  `Ix.Ixon.KernelConsistency]
 
 end Ix.Ixon.Admission.Audit
 
@@ -43,7 +42,7 @@ run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.Admission] Ix.Ixon.Admiss
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify.WorkAdmission] Ix.Ixon.Admission.Audit.proofImports
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Consistency] Ix.Ixon.Admission.Audit.proofImports
+run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.KernelConsistency] Ix.Ixon.Admission.Audit.proofImports
 
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Ix.Ixon.Verify.Admission
 #guard !Ix.Kernel.Audit.allowed Ix.Ixon.Admission.Audit.dataImports `Lean
@@ -59,11 +58,15 @@ constructs are the fold's computed-field overrides and proved csimps and
 the in-model generator's `partial` definitions. The committed
 Nat-operation pins are decoded from a string table at first use
 (`Ix.Kernel.IxonReader.builtinNatOpPins`), which adds eight
-string-scanning externs (below). -/
+string-scanning externs (below). 5307 is one less than the 5308 frozen before
+the alias `Ix.Ixon.Admission.checkBytes` (which only called the kernel entry
+`Ix.Ixon.KernelAdmission.checkBytes`) was deleted and the entry took its name:
+the alias's own compiled function left the closure, and nothing else did
+(compared name by name). -/
 /-- info: runtime closure of [Ix.Ixon.Admission.preflight,
  Ix.Ixon.Admission.uniqueKeys,
  Ix.Ixon.Admission.decodeRecords,
- Ix.Ixon.Admission.checkBytes]: 5308 compiled functions; inherited externs 123, implemented_by 0,
+ Ix.Ixon.Admission.checkBytes]: 5307 compiled functions; inherited externs 123, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
@@ -82,7 +85,6 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
 #guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.parserStage_erases [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.Work.Admission.parserStage_work_le [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Admission.checkBytes [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Ixon.Admission.checkBytes_eq [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Admission.checkBytes_has_model [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Admission.checkBytes_has_model_values [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Admission.checkBytes_no_proof_of_False [propext, Classical.choice, Quot.sound]
@@ -127,13 +129,6 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
 
 /-! ### The certified entry's public theorems -/
 
-/-- info: Ix.Ixon.Admission.checkBytes_eq : ∀ (limits : Ix.Ixon.Admission.Limits) (records : Ix.Ixon.Admission.Records)
-  (blobs : Ix.Kernel.Ingress.Blobs) (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint),
-  Ix.Ixon.Admission.checkBytes limits records blobs hint =
-    Ix.Ixon.KernelAdmission.checkBytes limits records blobs hint -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Ixon.Admission.checkBytes_eq
-
 /-- info: Ix.Ixon.Admission.checkBytes_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
   {limits : Ix.Ixon.Admission.Limits} {records : Ix.Ixon.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
   {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
@@ -176,7 +171,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
                   c.info = Ixon.ConstantInfo.defn d →
                     d.kind = Ix.DefKind.thm →
                       (Ix.Kernel.IxonReader.definitionReader
-                                (Ix.Ixon.KernelAdmission.streamContext pins pre constants blobs hint) owner c d).read
+                                (Ix.Ixon.Admission.streamContext pins pre constants blobs hint) owner c d).read
                             d.typ =
                           Except.ok (Ix.Kernel.Expr.const Ix.Kernel.falseName []) →
                         False -/
@@ -195,7 +190,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Ixon.Admission.Audit.operations #[`I
               Ix.Ixon.Verify.Admission.UniqueKeys records blobs ∧
                 ∃ constants,
                   Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-                    Ix.Ixon.KernelAdmission.Installed pins pre natPins constants blobs hint env -/
+                    Ix.Ixon.Admission.Installed pins pre natPins constants blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Admission.checkBytes_reading
 

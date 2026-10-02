@@ -247,7 +247,7 @@ theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits) (o
         Admission.decodeRecords limits records = .ok input ∧
         Projection.reconstruct maxProjections input = .ok output ∧
         checkConstants orderLimits blobs input = .ok () ∧
-        KernelAdmission.checkConstants output blobs hint = .ok env := by
+        Admission.checkConstants output blobs hint = .ok env := by
   cases flight : Admission.preflight limits records blobs with
   | error error => simp [checkBytes, flight, Except.mapError, bind, Except.bind]
   | ok value =>
@@ -269,7 +269,7 @@ theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits) (o
               Except.bind]
           | ok value =>
             cases value
-            cases checked : KernelAdmission.checkConstants output blobs hint <;>
+            cases checked : Admission.checkConstants output blobs hint <;>
               simp [checkBytes, flight, unique, decoded, expanded, ordered, checked, Except.mapError,
                 bind, Except.bind]
 
@@ -281,7 +281,7 @@ theorem checkBytes_ok_iff (maxProjections : Nat) (limits : Admission.Limits) (or
       Verify.Admission.UniqueKeys records blobs ∧ ∃ input output,
         Verify.Admission.RecordsRead limits records input ∧
         Projection.Expanded maxProjections input output ∧ Ordered orderLimits blobs input ∧
-        KernelAdmission.checkConstants output blobs hint = .ok env := by
+        Admission.checkConstants output blobs hint = .ok env := by
   simp only [checkBytes_run_iff, Verify.Admission.preflight_ok_iff, Verify.Admission.uniqueKeys_ok_iff,
     Verify.Admission.decodeRecords_ok_iff, Projection.reconstruct_ok_iff, checkConstants_ok_iff]
 
@@ -296,12 +296,12 @@ theorem checkBytes_reading {maxProjections : Nat} {limits : Admission.Limits} {o
       Projection.Expanded maxProjections input output ∧ Ordered orderLimits blobs input ∧
       ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
         builtinNatOpPins = .ok natPins ∧
-        KernelAdmission.Installed pins pre natPins output blobs hint env := by
+        Admission.Installed pins pre natPins output blobs hint env := by
   obtain ⟨_, keys, input, output, reading, expanded, ordered, checked⟩ :=
     (checkBytes_ok_iff _ _ _ _ _ _ _).mp h
-  obtain ⟨pins, pre, natPins, hp, hq, hn, hw⟩ := KernelAdmission.checkConstants_with checked
+  obtain ⟨pins, pre, natPins, hp, hq, hn, hw⟩ := Admission.checkConstants_with checked
   exact ⟨keys, input, output, reading, expanded, ordered, pins, pre, natPins, hp, hq, hn,
-    KernelAdmission.checkConstantsWith_installed hw⟩
+    Admission.checkConstantsWith_installed hw⟩
 
 /-- **Model existence** for the certified ordered entry. -/
 theorem checkBytes_has_model (V : Type v) [Ix.Kernel.SetTheory V] {maxProjections : Nat}
@@ -330,7 +330,7 @@ theorem checkBytes_of_ordered {maxProjections limits orderLimits records input o
     (expanded : Projection.Expanded maxProjections input output)
     (ordered : Ordered orderLimits blobs input) :
     checkBytes maxProjections limits orderLimits records blobs hint =
-      (KernelAdmission.checkConstants output blobs hint).mapError .checker := by
+      (Admission.checkConstants output blobs hint).mapError .checker := by
   have flight := (Verify.Admission.preflight_ok_iff _ _ _).mpr within
   have unique := (Verify.Admission.uniqueKeys_ok_iff _ _).mpr keys
   have decoded := (Verify.Admission.decodeRecords_ok_iff _ _ _).mpr reading

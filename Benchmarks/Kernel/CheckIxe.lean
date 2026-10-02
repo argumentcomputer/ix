@@ -13,7 +13,7 @@ incremental step of `Benchmarks.Kernel.CheckIxeStep` (`annotDeclStep`, then
 `checkPendingList` on what it left pending), continuing past failures and
 reporting the dependents of a failure as blocked. Reducibility hints are the
 compiler's (`Env.anonHints`). Not a certified verdict:
-`Ix.Ixon.KernelAdmission.checkBytes` is.
+`Ix.Ixon.Admission.checkBytes` is.
 
 Rows are JSONL with the fields of `kernel-check-ixe` (`address, names, kind,
 outcome, reason, micros, readMicros`; a blocked row's reason is its root's

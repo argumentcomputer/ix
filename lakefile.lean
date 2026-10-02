@@ -354,7 +354,7 @@ lean_exe «kernel-reader-fidelity» where
 /-- The verified checker through the Ixon reader: the `checkBytes`-shaped
 entry and its per-constant check (untrusted). -/
 lean_lib KernelEntry where
-  roots := #[`Ix.Ixon.KernelAdmission, `Ix.Ixon.KernelConsistency, `Ix.Ixon.Consistency,
+  roots := #[`Ix.Ixon.Admission, `Ix.Ixon.KernelConsistency,
     `Benchmarks.Kernel.CheckIxeStep,
     `Benchmarks.Kernel.CheckIxeReadCache, `Benchmarks.Kernel.CheckIxeStream, `Benchmarks.Kernel.CheckIxePool,
     `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold,

@@ -19,7 +19,7 @@ Some cases first alter the input (bytes, keys, a recursor header).
 
 Every case has an exact expected verdict: accepted with each seed installed
 under its reader name, or the entry's error at a named stage with the
-classification of `Ix.Ixon.Admission.outcome`. The compiler, loader, order
+classification of `Ix.Ixon.Admission.Error.outcome`. The compiler, loader, order
 and hints are untrusted producers of the input; only the verdict of
 `checkBytes` is under test. One JSON row per case goes to stdout. -/
 
@@ -123,7 +123,7 @@ inductive Expected where
   | accept
   /-- the classification, the stage, and what the error must be -/
   | fail (outcome : Ix.Ixon.Admission.Outcome) (stage : String)
-      (check : Input → Ix.Ixon.KernelAdmission.Error → Bool)
+      (check : Input → Ix.Ixon.Admission.Error → Bool)
 
 def Expected.label : Expected → String
   | .accept => "accept"
@@ -282,7 +282,7 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
       ("accept", if missing.isEmpty then "" else s!"not installed: {missing}", missing.isEmpty)
     | .ok _, .fail .. => ("accept", "", false)
     | .error e, expected =>
-      let o := Ix.Ixon.Admission.outcome e
+      let o := e.outcome
       let label := match o with | .rejected => "reject" | .declined => "decline"
       let ok := match expected with
         | .accept => false

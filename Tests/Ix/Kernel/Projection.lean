@@ -97,7 +97,7 @@ def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool
 -- A family stored without its recursor declines at the reader; the request
 -- bound and the batch limits apply first.
 #guard match check [(address 3, falseFamily)] with
-  | .error (.checker error) => Ix.Ixon.Admission.outcome error == .declined
+  | .error (.checker error) => error.outcome == .declined
   | _ => false
 #guard match check separatedInput 0 with
   | .error (.reconstruction .limit) => true
@@ -117,7 +117,7 @@ def wrongConstructorIndex : Ixon.Constant :=
 -- The reconstructed constructor projection does not match the block's
 -- metadata: the reader finds it malformed, which rejects.
 #guard match check [(address 20, wrongConstructorIndex)] with
-  | .error (.checker error) => Ix.Ixon.Admission.outcome error == .rejected
+  | .error (.checker error) => error.outcome == .rejected
   | _ => false
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}

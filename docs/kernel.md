@@ -25,7 +25,7 @@ the original Lean source meant is outside the claim.
 ```lean
 def Ix.Ixon.Admission.checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except KernelAdmission.Error Ix.Kernel.Env
+    Except Admission.Error Ix.Kernel.Env
 ```
 
 `records` is an ordered list of `(Address, ByteArray)` pairs, one canonical
@@ -43,7 +43,7 @@ reducibility hint per constant. The entry runs, in order:
 | the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
 | the verified fold | `Ix.Kernel.Cached.checkDecls .verified natPins` | `.kernel error position` |
 
-The pipeline is `Ix.Ixon.KernelAdmission.checkBytes`; `checkBytesWith`
+The pipeline is `Ix.Ixon.Admission.checkBytes`; `checkBytesWith`
 takes the pin table, prelude and Nat-operation pin list as parameters, and
 `checkConstants{,With}` start from decoded records. Two variants share the
 byte stage and the checker: `Ix.Ixon.Projection.checkBytes` reconstructs
@@ -84,22 +84,21 @@ order (`Benchmarks/Kernel/CheckIxeStep.lean`, `order`) satisfies it.
 
 ## The theorems
 
-All public theorems are in `Ix/Ixon/Consistency.lean`, about the executed
-function, at the committed tables. Each is the corresponding theorem of
-`Ix/Ixon/KernelConsistency.lean` (namespace `Ix.Ixon.KernelAdmission`)
-at `checkBytesWith`, where it holds for every pin table, prelude and
+All public theorems are in `Ix/Ixon/KernelConsistency.lean` (namespace
+`Ix.Ixon.Admission`), about the executed function `checkBytes`, at the
+committed tables. Each follows from the corresponding theorem at
+`checkBytesWith`, where it holds for every pin table, prelude and
 Nat-operation pin list, so no theorem depends on how the tables were
 generated. Every public and fidelity root depends on exactly `propext`,
 `Classical.choice` and `Quot.sound`.
 
 | Theorem (`Ix.Ixon.Admission.`) | Statement, for `h : checkBytes limits records blobs hint = .ok env` |
 | --- | --- |
-| `checkBytes_eq` | `checkBytes = KernelAdmission.checkBytes` (definitional) |
 | `checkBytes_has_model` | `∀ V [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V env)` |
 | `checkBytes_has_model_values` | there is a model `M` in which every stored `defnInfo cv value _` satisfies `Denotes M.cval env φ ρ value (M.cval cv.name φ)` for all `φ ρ` |
 | `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const Ix.Kernel.falseName []` |
 | `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader reads as `.const Ix.Kernel.falseName []` |
-| `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `RecordsRead limits records constants` for some `constants`; and `KernelAdmission.Installed pins pre natPins constants blobs hint env` |
+| `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `RecordsRead limits records constants` for some `constants`; and `Installed pins pre natPins constants blobs hint env` |
 | `checkBytes_resources` | `resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
 
 `Ix.Kernel.Model V env` (`Ix/Kernel/Denotes.lean`) assigns a set
@@ -283,11 +282,11 @@ Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
   types.
 - `importAllowlist` (the certified API's closure, rooted at
   `Ix.Ixon.Admission`): the above plus exactly `Ix.Ixon.{Codec, Wire,
-  WireCheck, Bounded.Constant, Bounded.Universe, Canonical, Admission,
-  KernelAdmission}`. No projection hashing, block order, `Ix.Address.Pure`,
+  WireCheck, Bounded.Constant, Bounded.Universe, Canonical, Admission}`.
+  No projection hashing, block order, `Ix.Address.Pure`,
   proof module or `Lean` (outside `elaborationImports`).
 - `proofImportAllowlist` (the theorem modules): `importAllowlist` plus
-  `Ix.Ixon.Bounded.Size`, `Ix.Ixon.Verify`, the two theorem modules and
+  `Ix.Ixon.Bounded.Size`, `Ix.Ixon.Verify`, the theorem module and
   `Lean`.
 - `elaborationImports`: below `Ix.Kernel.BasisGen` only `Init`, `Std`,
   `Lean` and `Ix.Kernel`.
@@ -302,7 +301,7 @@ built by the strict standalone package `IxKernel/` (`lake -d IxKernel build
 
 | Module | Checks |
 | --- | --- |
-| `Ix/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 20, `fidelityRoots` 17, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements; a control showing the fold fails without the rulings |
+| `Ix/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 15, `fidelityRoots` 16, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements; a control showing the fold fails without the rulings |
 | `Ix/Ixon/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
 | `Ix/Ixon/ProjectionAudit.lean`, `Ix/Ixon/BlockOrderAudit.lean` | the variants' imports, closures, extern differences and statements, and the projection writer's guards |
 | `Ix/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
@@ -314,8 +313,8 @@ Frozen runtime closures (compiled functions; inherited externs):
 | --- | ---: | ---: |
 | fold `Ix.Kernel.Cached.checkDecls` | 3022 | 83 |
 | reader `readRecords`, `readStream` | 1886 | 82 |
-| entry: the API, `KernelAdmission.checkBytes{,With}`, `checkConstants{,With}` | 5310 | 123 |
-| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5308 | 123 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5309 | 123 |
+| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5307 | 123 |
 | projection: `address`, `reconstruct`, `Projection.checkBytes` | 5430 | 132 |
 | block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5563 | 132 |
 

@@ -40,13 +40,11 @@ lean_lib IxKernel where
   roots := #[`Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
     `Ix.Ixon.WireCheck, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant, `Ix.Ixon.Bounded.Size,
     `Ix.Ixon.Canonical, `Ix.Ixon.Verify, `Ix.Ixon.Audit,
-    `Ix.Ixon.Admission, `Ix.Ixon.Admission.Audit, `Ix.Ixon.KernelAdmission,
-    `Ix.Ixon.KernelConsistency, `Ix.Ixon.Consistency]
+    `Ix.Ixon.Admission, `Ix.Ixon.Admission.Audit, `Ix.Ixon.KernelConsistency]
   globs := #[.one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types,
     .one `Ix.Ixon.Codec, .one `Ix.Ixon.Wire, .one `Ix.Ixon.WireCheck, .submodules `Ix.Ixon.Bounded,
     .one `Ix.Ixon.Canonical, .andSubmodules `Ix.Ixon.Verify, .one `Ix.Ixon.Audit,
-    .andSubmodules `Ix.Ixon.Admission, .one `Ix.Ixon.KernelAdmission,
-    .one `Ix.Ixon.KernelConsistency, .one `Ix.Ixon.Consistency]
+    .andSubmodules `Ix.Ixon.Admission, .one `Ix.Ixon.KernelConsistency]
 
 /-- Certified fixtures also run without the host package's dependencies: the
 Ixon record fixtures, the codec, and the certified entry's byte admission. -/

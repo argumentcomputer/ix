@@ -55,7 +55,7 @@ inductive Error where
   | ownerWidth (owner : Address)
   | projection (reason : SearchFailure)
   | conflict (address : Address)
-  | admission (reason : Admission.Error)
+  | admission (reason : Admission.ByteError)
   deriving DecidableEq, Repr
 
 /-- Reserve one request before writing or hashing it. Existing identical
@@ -83,14 +83,14 @@ def reconstruct (maxProjections : Nat) (constants : Ingress.Constants) :
   reconstructLoop maxProjections (requests constants) constants
 
 /-- Failures of the certified entry: byte admission and reconstruction
-(`Error`), or the checker (`KernelAdmission.Error`). -/
+(`Error`), or the checker (`Admission.Error`). -/
 inductive CheckError where
   | reconstruction (error : Error)
-  | checker (error : KernelAdmission.Error)
+  | checker (error : Admission.Error)
 
 /-- **The certified entry with optional omission of projection records**:
 canonical byte admission, projection reconstruction, then the
-verified checker behind the Ixon reader (`KernelAdmission.checkConstants`)
+verified checker behind the Ixon reader (`Admission.checkConstants`)
 on the expanded records. Input byte limits and key uniqueness apply before
 reconstruction; the separate projection limit bounds generated requests. Owner keys remain
 supplied keys: only derived projection addresses are authenticated here. -/
@@ -103,6 +103,6 @@ def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (records : Adm
   let constants ← (Admission.decodeRecords limits records).mapError
     (fun error => .reconstruction (.admission error))
   let expanded ← (reconstruct maxProjections constants).mapError .reconstruction
-  (KernelAdmission.checkConstants expanded blobs hint).mapError .checker
+  (Admission.checkConstants expanded blobs hint).mapError .checker
 
 end Ix.Ixon.Projection

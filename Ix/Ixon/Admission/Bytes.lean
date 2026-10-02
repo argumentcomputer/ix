@@ -12,7 +12,7 @@ order. Their composition is proved in `Ix.Ixon.Verify.Admission`.
 The host supplies record order, address keys, and literal blobs. Addresses
 are keys, not authenticated content hashes, but a batch may use each key
 once per table: two records, or two blobs, under one address are malformed
-input (a reject at the Ix API, `Ix.Ixon.Admission.outcome`), not a choice
+input (a reject at the Ix API, `Ix.Ixon.Admission.Error.outcome`), not a choice
 for the reader to make. Blobs retain their exact supplied bytes. No host
 decoder or verdict participates in this path.
 -/
@@ -51,8 +51,9 @@ inductive Table where
 /-- Byte failures: a batch limit, a key used twice in one table, or a record
 that does not decode canonically. Positions are zero-based and identify the
 original input record or blob; a duplicate's is its second occurrence.
-Checker failures are the entry's own (`Ix.Ixon.KernelAdmission.Error`). -/
-inductive Error where
+The entry's failures (`Ix.Ixon.Admission.Error`) include them unchanged
+(`Error.ofBytes`). -/
+inductive ByteError where
   | limit (resource : Resource)
   | duplicate (table : Table) (position : Nat) (address : Address)
   | decode (position : Nat) (address : Address) (reason : String)
@@ -67,7 +68,7 @@ def payloadBytes : Records → Nat
 /-- Reserve payload bytes and one entry before visiting the rest. A batch
 cannot reset the total byte budget between constants or between constants
 and blobs. No record decoding occurs during this preflight. -/
-def consume (resource : Resource) : Nat → Nat → Records → Except Error Nat
+def consume (resource : Resource) : Nat → Nat → Records → Except ByteError Nat
   | _, remaining, [] => .ok remaining
   | 0, _, _ :: _ => .error (.limit resource)
   | count + 1, remaining, (_, bytes) :: rest =>
@@ -75,7 +76,7 @@ def consume (resource : Resource) : Nat → Nat → Records → Except Error Nat
     else .error (.limit .totalBytes)
 
 def preflight (limits : Limits) (records : Records) (blobs : Ingress.Blobs) :
-    Except Error Unit := do
+    Except ByteError Unit := do
   let remaining ← consume .records limits.maxRecords limits.maxTotalBytes records
   let _ ← consume .blobs limits.maxBlobs remaining blobs
   return ()
@@ -93,7 +94,7 @@ def firstDuplicate {α : Type} : Nat → Std.HashSet Address → List (Address �
 (`Ix.Ixon.Verify.Admission.uniqueKeys_ok_iff`). The entries run it after
 `preflight`, so its work is bounded by the batch limits, and before
 decoding. -/
-def uniqueKeys (records : Records) (blobs : Ingress.Blobs) : Except Error Unit :=
+def uniqueKeys (records : Records) (blobs : Ingress.Blobs) : Except ByteError Unit :=
   match firstDuplicate 0 {} records with
   | some (position, address) => .error (.duplicate .records position address)
   | none =>
@@ -104,7 +105,7 @@ def uniqueKeys (records : Records) (blobs : Ingress.Blobs) : Except Error Unit :
 /-- Tail-recursive decoding retains all records, keys, and their order,
 including projections and unused side tables. -/
 def decodeLoop (limits : Limits) : Nat → Records → Ingress.Constants →
-    Except Error Ingress.Constants
+    Except ByteError Ingress.Constants
   | _, [], reversed => .ok reversed.reverse
   | position, (address, bytes) :: rest, reversed => do
     let constant ← (_root_.Ixon.Canonical.deConstant limits.maxRecordBytes
@@ -113,5 +114,5 @@ def decodeLoop (limits : Limits) : Nat → Records → Ingress.Constants →
 
 /-- Decode canonical records with per-record byte/universe limits. The batch
 preflight is part of `checkBytes`, not this independently useful operation. -/
-def decodeRecords (limits : Limits) (records : Records) : Except Error Ingress.Constants :=
+def decodeRecords (limits : Limits) (records : Records) : Except ByteError Ingress.Constants :=
   decodeLoop limits 0 records []

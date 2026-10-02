@@ -176,8 +176,8 @@ def recordCases : List Ixon.Constant := variants.map Prod.snd ++
 #guard recordChecked 256 64 (Codec.recordUnivsPayload 18446744073709551615 ⟨#[]⟩)
 #guard recordChecked 256 64 (Codec.recordUnivsPayload 2 (Ixon.serUniv .zero ++ Codec.successorBomb))
 
-def sameStage : Except _root_.Ix.Ixon.Admission.Error _root_.Ix.Kernel.Ingress.Constants →
-    Except _root_.Ix.Ixon.Admission.Error _root_.Ix.Kernel.Ingress.Constants → Bool
+def sameStage : Except _root_.Ix.Ixon.Admission.ByteError _root_.Ix.Kernel.Ingress.Constants →
+    Except _root_.Ix.Ixon.Admission.ByteError _root_.Ix.Kernel.Ingress.Constants → Bool
   | .ok left, .ok right => left == right
   | .error left, .error right => decide (left = right)
   | _, _ => false

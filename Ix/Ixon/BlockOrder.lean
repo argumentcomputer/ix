@@ -54,7 +54,7 @@ inductive Error where
   type eliminates, if it has the recursor shape) -/
   | motiveOrder (owner : Address) (position : Nat) (motive : Option Nat)
   | projection (reason : Projection.Error)
-  | admission (reason : Admission.Error)
+  | admission (reason : Admission.ByteError)
   deriving Repr, DecidableEq
 
 /-- Comparison bounds recursive expression/sharing descent; refinement
@@ -417,10 +417,10 @@ def checkConstants (limits : Limits) (blobs : Ingress.Blobs) :
     checkConstants limits blobs rest
 
 /-- Failures of the certified entry: byte admission, reconstruction and
-order (`Error`), or the checker (`KernelAdmission.Error`). -/
+order (`Error`), or the checker (`Admission.Error`). -/
 inductive CheckError where
   | order (error : Error)
-  | checker (error : KernelAdmission.Error)
+  | checker (error : Admission.Error)
 
 /-- **The certified entry with canonical block order**: byte spelling,
 computed projections, canonical block order (recursor blocks in motive
@@ -437,6 +437,6 @@ def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits :
   let expanded ← (Projection.reconstruct maxProjections constants).mapError
     (fun error => .order (.projection error))
   (checkConstants orderLimits blobs constants).mapError .order
-  (KernelAdmission.checkConstants expanded blobs hint).mapError .checker
+  (Admission.checkConstants expanded blobs hint).mapError .checker
 
 end Ix.Ixon.BlockOrder

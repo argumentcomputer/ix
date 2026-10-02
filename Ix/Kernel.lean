@@ -32,6 +32,5 @@ boundary:
 
 The certified API is `Ix.Ixon.Admission.checkBytes`; its public theorems
 (model existence over `Ix.Kernel.Model`, no proof of the pinned `False`,
-fidelity, resources) are in `Ix.Ixon.Consistency` and
-`Ix.Ixon.KernelConsistency`. The contract, trust surface, audits and
+fidelity, resources) are in `Ix.Ixon.KernelConsistency`. The contract, trust surface, audits and
 origin are described in `docs/kernel.md`. -/

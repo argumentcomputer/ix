@@ -24,8 +24,8 @@ that output against real compiled environments:
    installed environment** (`entries`, the fixture): over a set of records the
    checker accepts,
    - the reader's declarations with the compiler's projections and with the
-     reconstructed ones are equal (`KernelAdmission.readStream`);
-   - `KernelAdmission.checkConstants` with the compiler's projections,
+     reconstructed ones are equal (`Admission.readStream`);
+   - `Admission.checkConstants` with the compiler's projections,
      `Projection.checkBytes` with the projections omitted (reconstructed) and
      `BlockOrder.checkBytes` (reconstructed, order decided) install the same
      environment: the same constants, in the same order, of the same kinds,
@@ -252,12 +252,12 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   let reconstructed ← match Ix.Ixon.Projection.reconstruct maxProjections prim with
     | .ok cs => pure cs
     | .error e => throw (IO.userError s!"reconstruct: {reprStr e}")
-  let decls₁ ← IO.ofExcept ((Ix.Ixon.KernelAdmission.readStream pins pre compiled blobs hints.lookup).mapError toString)
-  let decls₂ ← IO.ofExcept ((Ix.Ixon.KernelAdmission.readStream pins pre reconstructed blobs hints.lookup).mapError toString)
+  let decls₁ ← IO.ofExcept ((Ix.Ixon.Admission.readStream pins pre compiled blobs hints.lookup).mapError toString)
+  let decls₂ ← IO.ofExcept ((Ix.Ixon.Admission.readStream pins pre reconstructed blobs hints.lookup).mapError toString)
   if let some d := declsDiff decls₁ decls₂ then
     report := { report with problems := report.problems.push s!"re-read with written projections: {d}" }
   -- the three certified entries
-  let env₁ ← IO.ofExcept ((Ix.Ixon.KernelAdmission.checkConstants compiled blobs hints.lookup).mapError
+  let env₁ ← IO.ofExcept ((Ix.Ixon.Admission.checkConstants compiled blobs hints.lookup).mapError
     fun e => s!"checkConstants: {e}")
   let bytes := prim.map fun (a, c) => (a, Ixon.serConstant c)
   let env₂ ← match Ix.Ixon.Projection.checkBytes maxProjections limits bytes blobs hints.lookup with
@@ -277,7 +277,7 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   | .error (.checker e) =>
     report := { report with problems := report.problems.push s!"block-order entry: {e}" }
   -- each projection record names an installed constant of its kind
-  let cx := Ix.Ixon.KernelAdmission.streamContext pins pre compiled blobs hints.lookup
+  let cx := Ix.Ixon.Admission.streamContext pins pre compiled blobs hints.lookup
   let installed : Std.HashMap CName String := env₁.consts.foldl
     (fun m ci => m.insert ci.toConstantVal.name (infoKind ci)) {}
   for (k, p) in projs do

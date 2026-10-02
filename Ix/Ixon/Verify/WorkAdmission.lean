@@ -32,7 +32,7 @@ def canonicalRecord (limits : Limits) (input : ByteArray) : Except String Consta
   (result, parsed.2)
 
 def decodeLoop (limits : Limits) : Nat → Records → Ingress.Constants →
-    Except Error Ingress.Constants × Nat
+    Except ByteError Ingress.Constants × Nat
   | _, [], reversed => (.ok reversed.reverse, 0)
   | position, (address, input) :: rest, reversed =>
     let parsed := canonicalRecord limits input
@@ -43,7 +43,7 @@ def decodeLoop (limits : Limits) : Nat → Records → Ingress.Constants →
       (tail.1, parsed.2 + tail.2)
 
 def parserStage (limits : Limits) (records : Records) (blobs : Ingress.Blobs) :
-    Except Error Ingress.Constants × Nat :=
+    Except ByteError Ingress.Constants × Nat :=
   match preflight limits records blobs with
   | .error reason => (.error reason, 0)
   | .ok () => decodeLoop limits 0 records []

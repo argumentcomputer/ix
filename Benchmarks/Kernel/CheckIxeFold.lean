@@ -1,5 +1,5 @@
 import Benchmarks.Kernel.CheckIxeStep
-import Ix.Ixon.KernelAdmission
+import Ix.Ixon.Admission
 
 /-! # The batch fold over an environment check's accepted records (untrusted harness)
 
@@ -16,9 +16,9 @@ what that step left pending).
 The records: the check order (`CheckIxeStep.setup`); a record the reader
 declines or fails, and every record that depends on one, is left out, as are
 the recursor and projection records of left-out blocks. What remains is read
-by the certified entry's own reader path (`KernelAdmission.readStream`,
+by the certified entry's own reader path (`Admission.readStream`,
 with the prelude) and prepared by `Frontend.preparePrelude`, so the fold runs
-over exactly the declarations `KernelAdmission.checkConstants` would check.
+over exactly the declarations `Admission.checkConstants` would check.
 
 Phase B runs as `Main.lean` runs it at `--jobs=1`: on a dedicated thread (a
 fresh allocator heap), after marking the installed environment and the
@@ -179,7 +179,7 @@ def run (args : List String) : IO UInt32 := do
   let blobs := env.blobs.toList
   let r0 ← IO.monoNanosNow
   let decls ← IO.lazyPure fun _ =>
-    Ix.Ixon.KernelAdmission.readStream pins pre records.toList blobs hints.lookup
+    Ix.Ixon.Admission.readStream pins pre records.toList blobs hints.lookup
   let decls ← match decls with
     | .ok ds => pure ds
     | .error e => IO.eprintln s!"fold: read failed: {e}"; return 1

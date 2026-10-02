@@ -29,7 +29,7 @@ certified writer writes them against the compiler's, every block's order
 `Args.rec`/`Tm.rec`, which are not in structural order; every one refused
 with two members swapped), and over two accepted batches the reader's
 declarations with written projections and the installed environments of
-`KernelAdmission.checkConstants`, `Projection.checkBytes` and
+`Admission.checkConstants`, `Projection.checkBytes` and
 `BlockOrder.checkBytes`, with every projection record naming an installed
 constant of its kind.
 

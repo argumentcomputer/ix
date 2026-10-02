@@ -1,4 +1,4 @@
-import Ix.Ixon.Consistency
+import Ix.Ixon.KernelConsistency
 import Ix.Ixon.BlockOrderProofs
 import Tests.Ix.Kernel.Reader
 
@@ -22,7 +22,7 @@ open Tests.Ix.Kernel.Reader
 namespace Tests.Ix.Kernel.CertifiedEntry
 
 def check (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) :
-    Except Ix.Ixon.KernelAdmission.Error Ix.Kernel.Env :=
+    Except Ix.Ixon.Admission.Error Ix.Kernel.Env :=
   Ix.Ixon.Admission.checkBytes limits (encode cs) blobs
 
 def accepted (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Bool :=
@@ -32,7 +32,7 @@ def outcomeOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × B
     Option Ix.Ixon.Admission.Outcome :=
   match check cs blobs with
   | .ok _ => none
-  | .error e => some (Ix.Ixon.Admission.outcome e)
+  | .error e => some (e.outcome)
 
 /-! ## The certified entry is the kernel entry -/
 
@@ -67,11 +67,11 @@ limits decline. -/
 #guard outcomeOf [(address 42, litEq)] == some .rejected
 -- a non-canonical record
 #guard match Ix.Ixon.Admission.checkBytes limits [(address 10, ⟨#[0xff]⟩)] [] with
-  | .error e => Ix.Ixon.Admission.outcome e == .rejected
+  | .error e => e.outcome == .rejected
   | .ok _ => false
 -- batch limits
 #guard match Ix.Ixon.Admission.checkBytes { limits with maxRecords := 0 } (encode definitions) [] with
-  | .error e => Ix.Ixon.Admission.outcome e == .declined
+  | .error e => e.outcome == .declined
   | .ok _ => false
 
 /-! ## Duplicate keys
@@ -189,7 +189,7 @@ example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArra
     (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
     ∃ pins pre constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
       ∀ owner c, (owner, c) ∈ constants → isSingleton c.info = true →
-        ∃ st decl, SingletonRead (Ix.Ixon.KernelAdmission.streamContext pins pre constants blobs
+        ∃ st decl, SingletonRead (Ix.Ixon.Admission.streamContext pins pre constants blobs
           (fun _ => none)) st owner c decl ∧
           ∀ s, Ix.Kernel.IxonFold.declSkel decl = some s →
             ∃ ci ∈ env.consts, Ix.Kernel.Cached.ciSkel ci = s := by
@@ -206,7 +206,7 @@ example {records : Ix.Ixon.Admission.Records} {blobs : List (Address × ByteArra
     (h : Ix.Ixon.Admission.checkBytes limits records blobs = .ok env) :
     (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup ∧
       ∃ pins pre natPins constants, Ix.Ixon.Verify.Admission.RecordsRead limits records constants ∧
-        Ix.Ixon.KernelAdmission.Installed pins pre natPins constants blobs (fun _ => none) env ∧
+        Ix.Ixon.Admission.Installed pins pre natPins constants blobs (fun _ => none) env ∧
         (constants.map Prod.fst).Nodup := by
   obtain ⟨pins, pre, natPins, _, _, _, _, keys, constants, reading, installed⟩ :=
     Ix.Ixon.Admission.checkBytes_reading h

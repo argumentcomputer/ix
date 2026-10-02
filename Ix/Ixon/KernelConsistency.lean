@@ -1,4 +1,4 @@
-import Ix.Ixon.KernelAdmission
+import Ix.Ixon.Admission
 import Ix.Ixon.Verify.Admission
 import Ix.Kernel.Ixon.ReaderSpec
 import Ix.Kernel.Ixon.Installed
@@ -7,11 +7,12 @@ import Ix.Kernel.Verify.Cached.StreamThm
 import Ix.Kernel.Verify.Frontend.Prepare
 import Ix.Kernel.MainTheorem
 
-/-! # The public theorems of the kernel entry
+/-! # The public theorems of the certified Ixon entry
 
-The certified contract of Ix's Ixon checker (`docs/kernel.md`): the
-verified fold (`Ix.Kernel.Cached.checkDecls .verified`) behind the Ixon
-reader, stated for the executed functions.
+The certified contract of Ix's Ixon checker (`docs/kernel.md`):
+`Ix.Ixon.Admission.checkBytes`, the verified fold
+(`Ix.Kernel.Cached.checkDecls .verified`) behind the Ixon reader, stated for
+the executed functions.
 
 * **Model existence** (`checkConstantsWith_has_model`,
   `checkBytesWith_has_model`, `checkBytes_has_model`): every accepted input
@@ -48,14 +49,15 @@ reader, stated for the executed functions.
 Every theorem holds at every pin table, prelude and Nat-operation pin list
 (`checkBytesWith`), so none depends on how the pins are generated;
 `checkBytes` (the committed tables) inherits them through `checkBytes_with`.
+The set theory is the standing hypothesis; `Models/SetTheory` provides an
+instance on Mathlib's `ZFSet` under `ω` inaccessible cardinals.
 -/
 
-namespace Ix.Ixon.KernelAdmission
+namespace Ix.Ixon.Admission
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.IxonReader
 open Ix.Kernel.IxonFold (declSkel checkDecls_installs)
-open Ix.Ixon.Admission (Limits Records preflight uniqueKeys decodeRecords)
 open Ix.Ixon.Verify.Admission (WithinBatch UniqueKeys RecordsRead resourceUnits)
 
 universe u
@@ -64,14 +66,14 @@ universe u
 
 `checkBytesWith_checkDecls`, `checkBytesWith_has_model` and
 `checkBytes_has_model` live here, beside the other theorems, so that the
-entry (`Ix.Ixon.KernelAdmission`) holds definitions only and its import
+entry (`Ix.Ixon.Admission`) holds definitions only and its import
 closure does not reach the main theorem (`Ix.Kernel.MainTheorem`). -/
 
 /-- Every accept of the entry, at any pin table and prelude, is an accept
 of the verified fold on the prepared declarations. -/
 theorem checkBytesWith_checkDecls {pins : Pins} {pre : Prelude}
     {natPins : List Ix.Kernel.NatOpPinSet}
-    {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
+    {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
     ∃ decls, prepareWith pins pre limits records blobs hint = .ok decls ∧
@@ -91,7 +93,7 @@ theorem checkBytesWith_checkDecls {pins : Pins} {pre : Prelude}
 Nat-operation pin list). -/
 theorem checkBytesWith_has_model (V : Type u) [Ix.Kernel.SetTheory V]
     {pins : Pins} {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet}
-    {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
+    {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) := by
@@ -101,7 +103,7 @@ theorem checkBytesWith_has_model (V : Type u) [Ix.Kernel.SetTheory V]
 /-- **Model existence for the Ixon entry**: every environment `checkBytes`
 accepts has a model in every set theory. -/
 theorem checkBytes_has_model (V : Type u) [Ix.Kernel.SetTheory V]
-    {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
+    {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) := by
@@ -121,17 +123,17 @@ theorem checkBytes_has_model (V : Type u) [Ix.Kernel.SetTheory V]
 /-! ## Checking decoded records
 
 `streamContext`, `checkConstantsWith` and `checkConstants` are defined with
-the entry (`Ix.Ixon.KernelAdmission`). -/
+the entry (`Ix.Ixon.Admission`). -/
 
 /-- The bytes entry is byte admission (`preflight`, `uniqueKeys`,
 `decodeRecords`) followed by the check of the decoded records. -/
 theorem checkBytesWith_eq (pins : Pins) (pre : Prelude) (natPins : List Ix.Kernel.NatOpPinSet)
-    (limits : Limits) (records : Records) (blobs : List (Address × ByteArray))
+    (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
     checkBytesWith pins pre natPins limits records blobs hint = (do
-      (preflight limits records blobs).mapError Error.ofAdmission
-      (uniqueKeys records blobs).mapError Error.ofAdmission
-      let constants ← (decodeRecords limits records).mapError Error.ofAdmission
+      (preflight limits records blobs).mapError Error.ofBytes
+      (uniqueKeys records blobs).mapError Error.ofBytes
+      let constants ← (decodeRecords limits records).mapError Error.ofBytes
       checkConstantsWith pins pre natPins constants blobs hint) := by
   unfold checkBytesWith prepareWith checkConstantsWith
   cases preflight limits records blobs with
@@ -149,7 +151,7 @@ theorem checkBytesWith_eq (pins : Pins) (pre : Prelude) (natPins : List Ix.Kerne
 
 /-- The committed tables load, and the bytes entry is `checkBytesWith` at
 them. -/
-theorem checkBytes_with {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
+theorem checkBytes_with {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
     ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
@@ -170,7 +172,7 @@ theorem checkBytes_with {limits : Limits} {records : Records} {blobs : List (Add
 
 /-- `checkConstants` is `checkConstantsWith` at the committed tables. -/
 theorem checkConstants_with {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)}
+    {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkConstants constants blobs hint = .ok env) :
     ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
@@ -192,7 +194,7 @@ theorem checkConstants_with {constants : List (Address × Ixon.Constant)}
 /-- An accepted reading of decoded records is a record-by-record reading
 from the prelude's state. -/
 theorem readStream_spec {pins : Pins} {pre : Prelude} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)}
+    {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {decls : Array Ix.Kernel.Declaration}
     (h : readStream pins pre constants blobs hint = .ok decls) :
     ∃ st', StreamRead (streamContext pins pre constants blobs hint) pre.state constants st' decls := by
@@ -210,7 +212,7 @@ theorem readStream_spec {pins : Pins} {pre : Prelude} {constants : List (Address
 /-- An accepted reading of decoded records has no two records under one
 address (the reader's own check, `readRecords_nodup`). -/
 theorem readStream_nodup {pins : Pins} {pre : Prelude} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)}
+    {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {decls : Array Ix.Kernel.Declaration}
     (h : readStream pins pre constants blobs hint = .ok decls) :
     (constants.map Prod.fst).Nodup := by
@@ -233,7 +235,7 @@ No two of the records share an address (`keys`, the reader's check).
 `Installed.skels`: the environment has exactly the install skeletons of
 that array. -/
 structure Installed (pins : Pins) (pre : Prelude) (natPins : List Ix.Kernel.NatOpPinSet)
-    (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray))
+    (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) : Prop where
   reading : ∃ decls st', StreamRead (streamContext pins pre constants blobs hint) pre.state constants st' decls ∧
     Ix.Kernel.Cached.checkDecls .verified natPins (Ix.Kernel.Frontend.preparePrelude pre.ix decls) = .ok env
@@ -241,7 +243,7 @@ structure Installed (pins : Pins) (pre : Prelude) (natPins : List Ix.Kernel.NatO
 
 theorem checkConstantsWith_installed {pins : Pins} {pre : Prelude}
     {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env} (h : checkConstantsWith pins pre natPins constants blobs hint = .ok env) :
     Installed pins pre natPins constants blobs hint env := by
   unfold checkConstantsWith at h
@@ -262,7 +264,7 @@ accepted array (`Ix.Kernel.Cached.checkDecls_skels`): the same constants,
 in the same order, with the same names, kinds, constructor arities and
 recursor rule constructors. -/
 theorem Installed.skels {pins : Pins} {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet}
-    {constants : List (Address × Ixon.Constant)} {blobs : List (Address × ByteArray)}
+    {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : Installed pins pre natPins constants blobs hint env) :
     ∃ decls st', StreamRead (streamContext pins pre constants blobs hint) pre.state constants st' decls ∧
@@ -279,7 +281,7 @@ accepted, and the declaration is installed under its name with its kind
 (for every declaration but a quotient record's, `sorryAx` and
 `Quot.sound`, whose skeletons are the pinned blocks'; `declSkel`). -/
 theorem Installed.singleton {pins : Pins} {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet}
-    {constants : List (Address × Ixon.Constant)} {blobs : List (Address × ByteArray)}
+    {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : Installed pins pre natPins constants blobs hint env) {owner : Address} {c : Ixon.Constant}
     (hmem : (owner, c) ∈ constants) (hs : isSingleton c.info = true) :
@@ -295,7 +297,7 @@ theorem Installed.singleton {pins : Pins} {pre : Prelude} {natPins : List Ix.Ker
 
 theorem Installed.has_model (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins} {pre : Prelude}
     {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env} (h : Installed pins pre natPins constants blobs hint env) :
     Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨decls, _, _, hc⟩ := h.reading
@@ -306,7 +308,7 @@ the constant (the counterpart of Ix's `Realizes.bodyValue` for
 definitions). -/
 theorem Installed.has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins} {pre : Prelude}
     {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env} (h : Installed pins pre natPins constants blobs hint env) :
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
       ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
@@ -317,7 +319,7 @@ theorem Installed.has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {pins : 
 type (`Ix.Kernel.Cached.no_proof_of_False_cached`). -/
 theorem Installed.no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins} {pre : Prelude}
     {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env} (h : Installed pins pre natPins constants blobs hint env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False := by
   obtain ⟨decls, _, _, hc⟩ := h.reading
@@ -328,7 +330,7 @@ pinned `False`: `Ix.Kernel.no_False_theorem_accepted` at the record's
 reading. -/
 theorem Installed.no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins} {pre : Prelude}
     {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env} (h : Installed pins pre natPins constants blobs hint env)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
     (hmem : (owner, c) ∈ constants) (hc : c.info = .defn d) (hk : d.kind = .thm)
@@ -357,7 +359,7 @@ records read exactly and canonically as `constants` (`RecordsRead`, unique
 by `RecordsRead.deterministic`), and the check of those records installed
 what they describe (`Installed`). -/
 theorem checkBytesWith_reading {pins : Pins} {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet}
-    {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
+    {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
     WithinBatch limits records blobs ∧ UniqueKeys records blobs ∧
@@ -381,7 +383,7 @@ theorem checkBytesWith_reading {pins : Pins} {pre : Prelude} {natPins : List Ix.
 /-- The byte limits bound the whole decoded representation, including
 expanded universes, while retaining the exact reading and installation. -/
 theorem checkBytesWith_resources {pins : Pins} {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet}
-    {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
+    {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
     ∃ constants, RecordsRead limits records constants ∧
@@ -395,7 +397,7 @@ theorem checkBytesWith_resources {pins : Pins} {pre : Prelude} {natPins : List I
 
 theorem checkBytesWith_has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
     {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {limits : Limits} {records : Records}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
       ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
@@ -404,7 +406,7 @@ theorem checkBytesWith_has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {pi
 
 theorem checkBytesWith_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
     {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {limits : Limits} {records : Records}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False := by
   obtain ⟨_, _, _, _, installed⟩ := checkBytesWith_reading h
@@ -415,7 +417,7 @@ form): no theorem record of accepted bytes has a type that reads as
 the pinned `False`. -/
 theorem checkBytesWith_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
     {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {limits : Limits} {records : Records}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env)
     {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
@@ -432,7 +434,7 @@ accepted. Under the committed pin table that is Init's `False` block
 (`Ctx.nameOf_of_pin`). -/
 theorem checkBytesWith_no_False_reference (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
     {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {limits : Limits} {records : Records}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env} (h : checkBytesWith pins pre natPins limits records blobs hint = .ok env)
     {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
@@ -448,8 +450,11 @@ theorem checkBytesWith_no_False_reference (V : Type u) [Ix.Kernel.SetTheory V] {
 
 /-! ## The committed tables -/
 
-/-- The reading of bytes accepted under the committed tables. -/
-theorem checkBytes_reading {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
+/-- **Fidelity.** Accepted bytes are within the batch limits, use each
+record address and each blob address once, read exactly and canonically,
+and the checker installed what the records describe
+(`Installed`). -/
+theorem checkBytes_reading {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
     ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
@@ -460,7 +465,8 @@ theorem checkBytes_reading {limits : Limits} {records : Records} {blobs : List (
   obtain ⟨pins, pre, natPins, hp, hq, hn, hw⟩ := checkBytes_with h
   exact ⟨pins, pre, natPins, hp, hq, hn, checkBytesWith_reading hw⟩
 
-theorem checkBytes_resources {limits : Limits} {records : Records} {blobs : List (Address × ByteArray)}
+/-- **Resources.** The byte limits bound the whole decoded representation. -/
+theorem checkBytes_resources {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
     ∃ constants, RecordsRead limits records constants ∧
@@ -469,8 +475,10 @@ theorem checkBytes_resources {limits : Limits} {records : Records} {blobs : List
   obtain ⟨constants, reading, _, bound⟩ := checkBytesWith_resources hw
   exact ⟨constants, reading, bound⟩
 
+/-- **Model existence with definition values.** The model can be chosen so
+that every stored definition's value denotes the constant. -/
 theorem checkBytes_has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {limits : Limits}
-    {records : Records} {blobs : List (Address × ByteArray)}
+    {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
@@ -478,16 +486,20 @@ theorem checkBytes_has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {limits
   obtain ⟨_, _, _, _, _, _, hw⟩ := checkBytes_with h
   exact checkBytesWith_has_model_values V hw
 
+/-- **No proof of `False`.** No constant of an accepted environment has the
+pinned `False` as its type. -/
 theorem checkBytes_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {limits : Limits}
-    {records : Records} {blobs : List (Address × ByteArray)}
+    {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False := by
   obtain ⟨_, _, _, _, _, _, hw⟩ := checkBytes_with h
   exact checkBytesWith_no_proof_of_False V hw
 
+/-- **No accepted theorem of `False`, at the records.** No theorem record of
+accepted bytes has a type that reads as the pinned `False`. -/
 theorem checkBytes_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {limits : Limits}
-    {records : Records} {blobs : List (Address × ByteArray)}
+    {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkBytes limits records blobs hint = .ok env) {pins : Pins} {pre : Prelude}
     (hpins : defaultPins = .ok pins) (hpre : builtinPrelude = .ok pre)
@@ -505,16 +517,16 @@ theorem checkBytes_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {limits
 
 theorem checkConstantsWith_has_model (V : Type u) [Ix.Kernel.SetTheory V] {pins : Pins}
     {pre : Prelude} {natPins : List Ix.Kernel.NatOpPinSet} {constants : List (Address × Ixon.Constant)}
-    {blobs : List (Address × ByteArray)} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env} (h : checkConstantsWith pins pre natPins constants blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   (checkConstantsWith_installed h).has_model V
 
 theorem checkConstants_has_model (V : Type u) [Ix.Kernel.SetTheory V]
-    {constants : List (Address × Ixon.Constant)} {blobs : List (Address × ByteArray)}
+    {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
     (h : checkConstants constants blobs hint = .ok env) : Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, _, _, _, _, hw⟩ := checkConstants_with h
   exact checkConstantsWith_has_model V hw
 
-end Ix.Ixon.KernelAdmission
+end Ix.Ixon.Admission

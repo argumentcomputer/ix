@@ -2,7 +2,7 @@ import Ix.Ixon.KernelConsistency
 
 /-! # Ixon records through the verified checker
 
-End-to-end fixtures for `Ix.Ixon.KernelAdmission.checkBytes`: canonical
+End-to-end fixtures for `Ix.Ixon.Admission.checkBytes`: canonical
 record bytes are preflighted, decoded, read by `Ix.Kernel.IxonReader`,
 prepared with the Ixon prelude (`Eq`, `Nat`, `PUnit`, `Empty`, `False`, the
 quotient package, `And`, `Bool`, from the compiled Init's own records) and
@@ -36,7 +36,7 @@ and unsafe declarations;
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.IxonReader
-open Ix.Ixon.KernelAdmission
+open Ix.Ixon.Admission
 
 namespace Tests.Ix.Kernel.Reader
 

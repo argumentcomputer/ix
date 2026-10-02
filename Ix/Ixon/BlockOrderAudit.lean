@@ -129,7 +129,7 @@ fun source size start members =>
           Ix.Ixon.Verify.Admission.RecordsRead limits records input ∧
             Ix.Ixon.Projection.Expanded maxProjections input output ∧
               Ix.Ixon.BlockOrder.Ordered orderLimits blobs input ∧
-                Ix.Ixon.KernelAdmission.checkConstants output blobs hint = Except.ok env -/
+                Ix.Ixon.Admission.checkConstants output blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_ok_iff
 
@@ -146,7 +146,7 @@ fun source size start members =>
                 Ix.Kernel.IxonReader.defaultPins = Except.ok pins ∧
                   Ix.Kernel.IxonReader.builtinPrelude = Except.ok pre ∧
                     Ix.Kernel.IxonReader.builtinNatOpPins = Except.ok natPins ∧
-                      Ix.Ixon.KernelAdmission.Installed pins pre natPins output blobs hint env -/
+                      Ix.Ixon.Admission.Installed pins pre natPins output blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_reading
 
@@ -180,7 +180,7 @@ fun source size start members =>
           Ix.Ixon.BlockOrder.Ordered orderLimits blobs input →
             Ix.Ixon.BlockOrder.checkBytes maxProjections limits orderLimits records blobs hint =
               Except.mapError Ix.Ixon.BlockOrder.CheckError.checker
-                (Ix.Ixon.KernelAdmission.checkConstants output blobs hint) -/
+                (Ix.Ixon.Admission.checkConstants output blobs hint) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.BlockOrder.checkBytes_of_ordered
 

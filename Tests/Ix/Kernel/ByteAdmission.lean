@@ -1,4 +1,4 @@
-import Ix.Ixon.Consistency
+import Ix.Ixon.KernelConsistency
 import Tests.Ix.Kernel.Codec
 
 /-! Byte admission: the byte stage (batch limits, key uniqueness, canonical
@@ -24,7 +24,7 @@ def roundtrip (constants : List (Address × Ixon.Constant)) : Bool :=
   | .error _ => false
 
 def check (records : Records) (blobs : List (Address × ByteArray) := []) (bounds : Limits := limits) :
-    Except Ix.Ixon.KernelAdmission.Error Ix.Kernel.Env :=
+    Except Ix.Ixon.Admission.Error Ix.Kernel.Env :=
   checkBytes bounds records blobs
 
 def accepts (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Bool :=
@@ -34,12 +34,12 @@ def outcomeOf (constants : List (Address × Ixon.Constant)) (blobs : List (Addre
     Option Outcome :=
   match check (encode constants) blobs with
   | .ok _ => none
-  | .error error => some (outcome error)
+  | .error error => some error.outcome
 
 /-- The byte stage's verdict alone: `none` when the batch limits hold, no
 key repeats in its table, and every record decodes canonically. -/
 def failure (records : Records) (blobs : List (Address × ByteArray) := []) (bounds : Limits := limits) :
-    Option Ix.Ixon.Admission.Error :=
+    Option Ix.Ixon.Admission.ByteError :=
   match preflight bounds records blobs, uniqueKeys records blobs, decodeRecords bounds records with
   | .error error, _, _ => some error
   | .ok _, .error error, _ => some error
@@ -83,7 +83,7 @@ def decodeFailureAt (records : Records) (position : Nat) (address : Address)
 -- A duplicate record or blob address is malformed (the byte stage rejects
 -- it); a reference to a later record and a family stored without its
 -- recursor are checker or reader verdicts, which decline at the Ix API
--- (`Ix.Ixon.Admission.outcome`).
+-- (`Ix.Ixon.Admission.Error.outcome`).
 #guard outcomeOf [(address 1, identity), (address 1, identity)] = some .rejected
 #guard outcomeOf [(address 1, identity)] [(address 9, ⟨#[1]⟩), (address 9, ⟨#[1]⟩)] = some .rejected
 #guard outcomeOf [(address 2, aliasIdentity), (address 1, identity)] = some .declined

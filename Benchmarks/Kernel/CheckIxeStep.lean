@@ -28,7 +28,7 @@ from the constant list before the step and the memo state is reset (it is
 only a cache), so a failure leaves no constant behind. A record that
 references a failed or blocked one is blocked and not checked. Recursor
 records are read with their inductive block and take its outcome. None of
-this is a certified verdict; `Ix.Ixon.KernelAdmission.checkBytes` is. -/
+this is a certified verdict; `Ix.Ixon.Admission.checkBytes` is. -/
 
 namespace Benchmarks.Kernel.CheckIxeStep
 
