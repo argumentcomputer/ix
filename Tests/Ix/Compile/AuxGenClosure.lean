@@ -14,7 +14,12 @@
     `aux_gen alias target missing: … maps to canonical aux #0 but no
     generated brecOn (below) patch exists`;
   - `A.brecOn` (`B` sorts first): compiled in its source form against the
-    canonical `.rec`/`.below` and rejected, `AppTypeMismatch`.
+    canonical `.rec`/`.below` and rejected, `AppTypeMismatch`;
+  - `PV.brecOn`, `PV.brecOn_1` (a Prop inductive nested through a Prop
+    inductive): `.brecOn` generation indexed the classes' `.below` names
+    by motive number and panicked (index out of bounds), aborting the
+    process; `PV.below_1`: no `.below_N` was generated for a Prop-level
+    block, `aux_gen alias target missing`.
 
   A second case, `mutual` definitions on closure-only environments: a
   structural, well-founded or `partial` `mutual` member's value goes
@@ -64,9 +69,21 @@ inductive B where
   | mk : A → B
 end
 
-/-- Seeds whose closure lacks the canonical first class's `.brecOn`/`.below`. -/
+/-- Prop nested through a Prop-valued family: one class, one auxiliary
+    (`PV.below_1` is an inductive, `PV.brecOn_1` a theorem). -/
+inductive Pw (R : Nat → Nat → Prop) : List Nat → List Nat → Prop where
+  | nil : Pw R [] []
+  | cons : R a b → Pw R as bs → Pw R (a :: as) (b :: bs)
+
+inductive PV : Nat → Nat → Prop where
+  | base : PV 0 0
+  | node : Pw PV xs ys → PV xs.length ys.length
+
+/-- Seeds whose closure lacks the canonical first class's `.brecOn`/`.below`,
+    and the auxiliaries of a nested Prop block. -/
 def seeds : List Lean.Name := [
-  ``T.brecOn_1, ``T.below_1, ``A.brecOn_1, ``A.below_1, ``A.brecOn
+  ``T.brecOn_1, ``T.below_1, ``A.brecOn_1, ``A.below_1, ``A.brecOn,
+  ``PV.brecOn, ``PV.brecOn_1, ``PV.below_1
 ]
 
 -- `mutual` definitions whose values do not mention their siblings.

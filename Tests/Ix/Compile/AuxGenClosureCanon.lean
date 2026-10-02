@@ -117,6 +117,31 @@ inductive B2 where
   | nil
 end
 
+-- Prop nested through a Prop-valued family (`.below_N` is an inductive,
+-- `.brecOn_N` a theorem)
+inductive Pw (R : Nat → Nat → Prop) : List Nat → List Nat → Prop where
+  | nil : Pw R [] []
+  | cons : R a b → Pw R as bs → Pw R (a :: as) (b :: bs)
+inductive NV : Nat → Nat → Prop where
+  | base : NV 0 0
+  | node : Pw NV xs ys → NV xs.length ys.length
+
+-- Prop with two nested auxiliaries in a non-canonical order, and
+-- structural recursion over it (matchers on the `.below` constructors)
+inductive NW : Nat → Nat → Prop where
+  | base : NW 0 0
+  | node : Pw NW xs ys → NW 0 1 ∧ NW 1 0 → NW xs.length ys.length
+mutual
+theorem NW.ok : NW a b → True
+  | .base => trivial
+  | .node h p => (fun _ _ => trivial) (pwNW_ok h) (andNW_ok p)
+theorem pwNW_ok : Pw NW xs ys → True
+  | .nil => trivial
+  | .cons h hs => (fun _ _ => trivial) (NW.ok h) (pwNW_ok hs)
+theorem andNW_ok : NW 0 1 ∧ NW 1 0 → True
+  | ⟨h1, h2⟩ => (fun _ _ => trivial) (NW.ok h1) (NW.ok h2)
+end
+
 -- structural recursion over the mutual pair
 mutual
 def A.size : A → Nat
