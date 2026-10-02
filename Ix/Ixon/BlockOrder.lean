@@ -422,6 +422,27 @@ inductive CheckError where
   | order (error : Error)
   | checker (error : Admission.Error)
 
+/-- How an Ix caller classifies an order failure, as
+`Admission.Error.outcome` does the entry's (`docs/kernel.md`, "Outcomes"):
+an exhausted comparison or refinement bound declines; a block that is
+malformed, not in canonical order, or whose recursors are not in motive
+order rejects; projection reconstruction as `Projection.Error.outcome` and
+the byte stage as `Admission.ByteError.outcome`. -/
+def Error.outcome : Error → Admission.Outcome
+  | .exhausted _ => .declined
+  | .malformed _ => .rejected
+  | .nonCanonical .. => .rejected
+  | .motiveOrder .. => .rejected
+  | .projection error => error.outcome
+  | .admission error => error.outcome
+
+/-- The classification of a failure of `checkBytes` (call it as
+`e.outcome`): the order stage as `Error.outcome`, the checker as
+`Admission.Error.outcome`. -/
+def CheckError.outcome : CheckError → Admission.Outcome
+  | .order error => error.outcome
+  | .checker error => error.outcome
+
 /-- **The certified entry with canonical block order**: byte spelling,
 computed projections, canonical block order (recursor blocks in motive
 order), and the verified

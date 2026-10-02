@@ -172,4 +172,13 @@ def Error.outcome : Error → Outcome
   | .read _ (.declined _) => .declined
   | .kernel _ _ => .declined
 
+/-- The classification of a byte-stage failure, as `Error.outcome` makes it:
+a batch limit declines; a key used twice in one table and a record that does
+not decode canonically reject. The variants (`Ixon.Projection`,
+`Ixon.BlockOrder`) classify their byte stage with it. -/
+def ByteError.outcome : ByteError → Outcome
+  | .limit _ => .declined
+  | .duplicate .. => .rejected
+  | .decode .. => .rejected
+
 end Ix.Kernel.Admission

@@ -9,7 +9,7 @@ projection-reconstructing and block-ordering variants
 `Ixon.Projection.checkBytes` and `Ixon.BlockOrder.checkBytes` — run
 the verified checker behind the Ixon reader. These fixtures are the
 reader fixtures (`Tests.Ix.Kernel.Reader`) through the public
-names, the failure classification at the Ix API (`Admission.outcome`), a
+names, the failure classification at the Ix API (`e.outcome`), a
 theorem of the pinned `False` that is not accepted, and the public theorems
 applied. The byte stage and the shared Ixon record fixtures are tested in
 `Tests.Ix.Kernel.ByteAdmission`, projection reconstruction in
@@ -137,13 +137,13 @@ def omitted : List (Address × Ixon.Constant) :=
 #guard !accepted omitted
 -- the projection request bound applies
 #guard match Ixon.Projection.checkBytes 0 limits (encode omitted) [] with
-  | .error (.reconstruction .limit) => true
+  | .error e@(.reconstruction .limit) => e.outcome == .declined
   | _ => false
 
 -- duplicate keys reject before reconstruction
 #guard match Ixon.Projection.checkBytes 16 limits (encode omitted)
     [(address 43, ⟨#[2]⟩), (address 43, ⟨#[2]⟩)] with
-  | .error (.reconstruction (.admission (.duplicate .blobs 1 _))) => true
+  | .error e@(.reconstruction (.admission (.duplicate .blobs 1 _))) => e.outcome == .rejected
   | _ => false
 #guard match Ixon.Projection.checkBytes 16 limits (encode (omitted ++ [(address 20, twoBlock)])) [] with
   | .error (.reconstruction (.admission (.duplicate .records 3 _))) => true
@@ -154,7 +154,7 @@ def omitted : List (Address × Ixon.Constant) :=
 #guard (Ixon.BlockOrder.checkBytes 16 limits {} (encode omitted) []).isOk
 #guard match Ixon.BlockOrder.checkBytes 16 limits {} (encode omitted)
     [(address 43, ⟨#[2]⟩), (address 43, ⟨#[2]⟩)] with
-  | .error (.order (.admission (.duplicate .blobs 1 _))) => true
+  | .error e@(.order (.admission (.duplicate .blobs 1 _))) => e.outcome == .rejected
   | _ => false
 #guard match Ixon.BlockOrder.checkBytes 16 limits {} (encode (omitted ++ [(address 20, twoBlock)])) [] with
   | .error (.order (.admission (.duplicate .records 3 _))) => true

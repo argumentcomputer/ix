@@ -97,18 +97,31 @@ def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool
 -- A family stored without its recursor declines at the reader; the request
 -- bound and the batch limits apply first.
 #guard match check [(address 3, falseFamily)] with
-  | .error (.checker error) => error.outcome == .declined
+  | .error e@(.checker _) => e.outcome == .declined
   | _ => false
 #guard match check separatedInput 0 with
-  | .error (.reconstruction .limit) => true
+  | .error e@(.reconstruction .limit) => e.outcome == .declined
   | _ => false
 #guard match check [] 0 { ByteAdmission.limits with maxRecords := 0 } with
   | .ok _ => true
   | _ => false
 #guard match Ixon.Projection.checkBytes 0 { ByteAdmission.limits with maxRecords := 0 }
     [(address 1, ⟨#[]⟩)] [] with
-  | .error (.reconstruction (.admission (.limit .records))) => true
+  | .error e@(.reconstruction (.admission (.limit .records))) => e.outcome == .declined
   | _ => false
+
+-- The classification of every reconstruction failure (`Error.outcome`):
+-- the request bound and a writer failure other than a malformed projection
+-- decline; a malformed projection, an owner key of the wrong width and a
+-- conflicting record reject; the byte stage as `Admission.ByteError.outcome`.
+#guard (Ixon.Projection.Error.limit).outcome == .declined
+#guard (Ixon.Projection.Error.ownerWidth (address 1)).outcome == .rejected
+#guard (Ixon.Projection.Error.projection (.malformed "")).outcome == .rejected
+#guard (Ixon.Projection.Error.projection .exhausted).outcome == .declined
+#guard (Ixon.Projection.Error.projection (.unresolved "")).outcome == .declined
+#guard (Ixon.Projection.Error.conflict (address 1)).outcome == .rejected
+#guard (Ixon.Projection.Error.admission (.duplicate .blobs 1 (address 1))).outcome == .rejected
+#guard (Ixon.Projection.Error.admission (.limit .records)).outcome == .declined
 
 def wrongConstructorIndex : Ixon.Constant :=
   ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0,
@@ -117,7 +130,7 @@ def wrongConstructorIndex : Ixon.Constant :=
 -- The reconstructed constructor projection does not match the block's
 -- metadata: the reader finds it malformed, which rejects.
 #guard match check [(address 20, wrongConstructorIndex)] with
-  | .error (.checker error) => error.outcome == .rejected
+  | .error e@(.checker _) => e.outcome == .rejected
   | _ => false
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}

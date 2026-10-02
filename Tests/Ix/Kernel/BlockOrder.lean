@@ -173,10 +173,10 @@ def motiveSwapped : Ixon.Constant := record #[motive 1, motive 0]
 -- checker then declines recursors without their inductive block); the swapped
 -- one stops at the order stage
 #guard match checkBytes 16 ByteAdmission.limits {} (Projection.encode [(owner, motiveOrdered)]) [] with
-  | .error (.checker _) => true
+  | .error e@(.checker _) => e.outcome == .declined
   | _ => false
 #guard match checkBytes 16 ByteAdmission.limits {} (Projection.encode [(owner, motiveSwapped)]) [] with
-  | .error (.order (.motiveOrder _ 0 (some 1))) => true
+  | .error e@(.order (.motiveOrder _ 0 (some 1))) => e.outcome == .rejected
   | _ => false
 
 -- The certified entry with canonical block order admits the separately
@@ -188,12 +188,24 @@ def byteAccepts : Bool := (checkBytes 16 ByteAdmission.limits {}
 
 #guard match checkBytes 16 ByteAdmission.limits {}
     (Projection.encode [(owner, reversed)]) [] with
-  | .error (.order (.nonCanonical _ _)) => true
+  | .error e@(.order (.nonCanonical _ _)) => e.outcome == .rejected
   | _ => false
 #guard match checkBytes 16 ByteAdmission.limits ⟨32, 2⟩
     (Projection.encode [(owner, weak)]) [] with
-  | .error (.order (.exhausted .refinement)) => true
+  | .error e@(.order (.exhausted .refinement)) => e.outcome == .declined
   | _ => false
+
+-- The classification of every order failure (`Error.outcome`): bounds
+-- decline; a malformed, non-canonical or motive-misordered block rejects;
+-- reconstruction and the byte stage as their own classifiers.
+#guard (Error.exhausted .comparison).outcome == .declined
+#guard (Error.malformed "member index outside block").outcome == .rejected
+#guard (Error.nonCanonical owner [[1], [0]]).outcome == .rejected
+#guard (Error.motiveOrder owner 0 none).outcome == .rejected
+#guard (Error.projection (.ownerWidth owner)).outcome == .rejected
+#guard (Error.projection .limit).outcome == .declined
+#guard (Error.admission (.decode 0 owner "")).outcome == .rejected
+#guard (Error.admission (.limit .totalBytes)).outcome == .declined
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
     (h : checkBytes 16 ByteAdmission.limits {}

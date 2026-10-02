@@ -88,6 +88,27 @@ inductive CheckError where
   | reconstruction (error : Error)
   | checker (error : Admission.Error)
 
+/-- How an Ix caller classifies a reconstruction failure, as
+`Admission.Error.outcome` does the entry's (`docs/kernel.md`, "Outcomes"):
+the request bound is a coverage bound and declines; an owner key that is
+not a 32-byte hash, a projection the writer finds malformed and a supplied
+record that conflicts with a derived one at its key reject; any other
+writer failure declines; the byte stage as `Admission.ByteError.outcome`. -/
+def Error.outcome : Error → Admission.Outcome
+  | .limit => .declined
+  | .ownerWidth _ => .rejected
+  | .projection (.malformed _) => .rejected
+  | .projection _ => .declined
+  | .conflict _ => .rejected
+  | .admission error => error.outcome
+
+/-- The classification of a failure of `checkBytes` (call it as
+`e.outcome`): reconstruction as `Error.outcome`, the checker as
+`Admission.Error.outcome`. -/
+def CheckError.outcome : CheckError → Admission.Outcome
+  | .reconstruction error => error.outcome
+  | .checker error => error.outcome
+
 /-- **The certified entry with optional omission of projection records**:
 canonical byte admission, projection reconstruction, then the
 verified checker behind the Ixon reader (`Admission.checkConstants`)
