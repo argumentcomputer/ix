@@ -217,7 +217,7 @@ pub fn compile_env_with_profile(
     lean_env.pin(by_deg[..k].iter().map(|(n, _)| (*n).clone()));
   }
 
-  let ungrounded_map: DashMap<Name, String> =
+  let ungrounded_map: crate::compile::FxDashMap<Name, String> =
     ungrounded.iter().map(|(n, e)| (n.clone(), format!("{e:?}"))).collect();
   if !ungrounded.is_empty() && *IX_VERBOSE {
     eprintln!(

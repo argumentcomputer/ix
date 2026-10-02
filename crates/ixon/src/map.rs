@@ -5,9 +5,16 @@
 //! whose `HashTable::new` calls `Instant::now()` (unavailable in guest
 //! standard libraries). Instead, alias to a thin single-threaded wrapper around
 //! `rustc_hash::FxHashMap` that mirrors the subset of DashMap's API used here.
+//!
+//! Both hash with `FxBuildHasher`: every key is an `Address` or a `Name`,
+//! whose `Hash` feeds 32 blake3 bytes, so the default SipHash buys nothing
+//! but cost. Construct with `IxonMap::default()` (`DashMap::new` exists
+//! only for the default hasher). Iteration order is unspecified either way
+//! and nothing may depend on it (the serializer puts every section in a
+//! canonical order of its own).
 
 #[cfg(not(target_arch = "riscv64"))]
-pub use dashmap::DashMap as IxonMap;
+pub type IxonMap<K, V> = dashmap::DashMap<K, V, rustc_hash::FxBuildHasher>;
 
 #[cfg(target_arch = "riscv64")]
 pub use riscv_impl::IxonMap;

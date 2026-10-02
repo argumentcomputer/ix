@@ -115,16 +115,25 @@ impl KernelCtx {
   }
 }
 
+/// `DashMap` hashed with `FxBuildHasher`. The compile state's keys are
+/// `Name`s, whose `Hash` feeds 32 blake3 bytes, so SipHash buys nothing.
+/// Iteration order is unspecified with either hasher; nothing reads it.
+pub type FxDashMap<K, V> = DashMap<K, V, rustc_hash::FxBuildHasher>;
+/// `DashSet` hashed with `FxBuildHasher` (see [`FxDashMap`]).
+pub type FxDashSet<K> = DashSet<K, rustc_hash::FxBuildHasher>;
+
 /// Compile state for building the Ixon environment.
 pub struct CompileState {
   /// Ixon environment being built
   pub env: IxonEnv,
-  /// Map from Lean constant name to Ixon address
+  /// Map from Lean constant name to Ixon address. (This map and
+  /// `aux_name_to_addr` keep the default hasher: kernel ingress takes
+  /// them as `&DashMap<Name, Address>`.)
   pub name_to_addr: DashMap<Name, Address>,
   /// Mutual block canonical class ordering, keyed by any inductive name in the
   /// block. Each entry is the list of equivalence classes (in `sort_consts` order),
   /// where each class is a list of names.
-  pub blocks: DashMap<Name, Vec<Vec<Name>>>,
+  pub blocks: FxDashMap<Name, Vec<Vec<Name>>>,
   /// Constants that couldn't be compiled (name -> error description).
   ///
   /// Populated in two phases:
@@ -137,11 +146,11 @@ pub struct CompileState {
   ///
   /// `DashMap` (rather than `FxHashMap`) because scheduler workers insert
   /// concurrently on per-block failure paths.
-  pub ungrounded: DashMap<Name, String>,
+  pub ungrounded: FxDashMap<Name, String>,
   /// Persistent set of names compiled by aux_gen. Used for membership
   /// checks (e.g., "is this name aux_gen-rewritten?") throughout compilation.
   /// Never drained — callers rely on `.contains()` long after insertion.
-  pub aux_gen_extra_names: DashSet<Name>,
+  pub aux_gen_extra_names: FxDashSet<Name>,
   /// Pending aux_gen names awaiting scheduler dependency resolution.
   /// Drained after each block completion. Separated from the persistent
   /// `aux_gen_extra_names` to avoid O(N×M) re-iteration of the full set
@@ -157,11 +166,11 @@ pub struct CompileState {
   /// Per-auxiliary-name surgery plans for call-site argument reordering.
   /// Keyed by the original auxiliary name (e.g., `A.rec`, `B.rec`).
   /// Computed per original recursor name in `compile_mutual` after `sort_consts`.
-  pub call_site_plans: DashMap<Name, surgery::CallSitePlan>,
+  pub call_site_plans: FxDashMap<Name, surgery::CallSitePlan>,
   /// Per-`.brecOn` surgery plans. These share the motive permutation with
   /// `.rec`, but `.brecOn` places indices+major before the handler binders,
   /// so the telescope has to be rewritten by a separate layout rule.
-  pub brec_on_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
+  pub brec_on_call_site_plans: FxDashMap<Name, surgery::BRecOnCallSitePlan>,
   /// Per-`.below`-family surgery plans. A `X.below`/`X.below_N` HEAD has
   /// the motive-only telescope `params, motives, indices, major`. For
   /// Prop-level (IndPredBelow) families the map also carries the rest of
@@ -179,7 +188,7 @@ pub struct CompileState {
   /// member); `X.below.rec` is deliberately NOT registered (nothing
   /// user-visible references it — only regenerated wrappers, which skip
   /// surgery via the aux-regen guard).
-  pub below_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
+  pub below_call_site_plans: FxDashMap<Name, surgery::BRecOnCallSitePlan>,
   /// Set once one of the three call-site plan maps above has been seen
   /// holding an entry. Entries are never removed from them, so it stays
   /// true, and the plan-head audit skips their emptiness test, which
@@ -196,14 +205,14 @@ pub struct CompileState {
   /// Computed once per block in `generate_and_compile_aux_recursors`
   /// right after `aux_gen::generate_aux_patches`. Blocks without nested
   /// auxiliaries simply aren't inserted.
-  pub aux_perms: DashMap<Name, surgery::AuxLayout>,
+  pub aux_perms: FxDashMap<Name, surgery::AuxLayout>,
   /// Reducibility hints per definition NAME, recorded by
   /// `compile_definition` (the only place the Lean-side hints are in
   /// scope — hints are not part of `ConstantMeta`). The constant
   /// address a name resolves to isn't final until its `Named` entry is
   /// registered, so [`Self::finalize_hints`] resolves this map through
   /// `env.named` into `env.anon_hints` once compilation completes.
-  pub def_hints: DashMap<Name, ReducibilityHints>,
+  pub def_hints: FxDashMap<Name, ReducibilityHints>,
   /// Resource limits of every canonical sharing construction run against
   /// this state: compilation, and the decompiler's recompile check.
   /// `compile_env` sets them once, from [`SHARING_LIMITS_ENV`], before it
@@ -246,12 +255,12 @@ pub struct BlockCache {
   /// Arena root indices parallel to the results stack
   pub arena_roots: Vec<u64>,
   /// Reference table: unique addresses of constants referenced by Expr::Ref
-  pub refs: indexmap::IndexSet<Address>,
+  pub refs: ix_common::FxIndexSet<Address>,
   /// Universe table: unique universes referenced by expressions.
   /// Canonicity §10.6: every entry is `canon_univ`-fixed —
   /// `compile_univ_idx` interns only canonical forms and
   /// `preseed_expr_tables` canonicalizes before sorting.
-  pub univs: indexmap::IndexSet<Arc<Univ>>,
+  pub univs: ix_common::FxIndexSet<Arc<Univ>>,
   /// `canon_univ` memo (positional trees — context-free, so the cache is
   /// sound across constants and univ contexts).
   pub canon_cache: FxHashMap<Arc<Univ>, Arc<Univ>>,
@@ -265,7 +274,7 @@ pub struct BlockCache {
   /// spellings referenced by `univ_patches`, in first-use order.
   /// Canonicity §10.6 — drained into `ConstantMeta.meta_univs` alongside
   /// the arena.
-  pub meta_univs: indexmap::IndexSet<Arc<Univ>>,
+  pub meta_univs: ix_common::FxIndexSet<Arc<Univ>>,
   /// Level-spelling patches of the CURRENT constant, keyed by the arena
   /// root of each affected `sort`/`const` occurrence — drained into
   /// `ConstantMeta.univ_patches` alongside the arena.

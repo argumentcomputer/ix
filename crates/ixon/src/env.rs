@@ -451,12 +451,12 @@ pub struct Env {
 impl Env {
   pub fn new() -> Self {
     Env {
-      consts: IxonMap::new(),
-      named: IxonMap::new(),
-      blobs: IxonMap::new(),
-      names: IxonMap::new(),
-      comms: IxonMap::new(),
-      anon_hints: IxonMap::new(),
+      consts: IxonMap::default(),
+      named: IxonMap::default(),
+      blobs: IxonMap::default(),
+      names: IxonMap::default(),
+      comms: IxonMap::default(),
+      anon_hints: IxonMap::default(),
       main: None,
       assumptions: FxHashSet::default(),
     }
