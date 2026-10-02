@@ -13,7 +13,7 @@ One pin variant (`Ix.Kernel.NatOpPinSet`) of the eight pin-certified `Nat`
 operations, from Ixon records only:
 
 * the pins are the operations' stored values in the compiled Init (sha256
-  df7ceec2a5da43db1cc351220dd27c0e23ff97e186e1847794b446479354caf8), as the Ixon reader reads them;
+  adb7e1840b27c059df4cd7136b898e422d29dd4a3e19af094f96c8cf8ca8de95), as the Ixon reader reads them;
 * the certificate proofs are the theorems of `Ix/Kernel/PinGen/Certs.lean`,
   compiled by the Ix compiler (sha256 6f15c4176891a706e5f236400fce2574d4c7de8a2fb2e275514914545c89fed7) and read by the same
   reader, with every constant outside the operation's dependency cone, its
@@ -29,9 +29,9 @@ operation, in `NatOpPinSet` field order; the format and the decoder are in
 
 namespace Ix.Kernel.Reader.NatOpPinData
 
-def source : String := "sha256:df7ceec2a5da43db1cc351220dd27c0e23ff97e186e1847794b446479354caf8 sha256:6f15c4176891a706e5f236400fce2574d4c7de8a2fb2e275514914545c89fed7"
+def source : String := "sha256:adb7e1840b27c059df4cd7136b898e422d29dd4a3e19af094f96c8cf8ca8de95 sha256:6f15c4176891a706e5f236400fce2574d4c7de8a2fb2e275514914545c89fed7"
 
-def toolchain : String := "leanprover/lean4:v4.34.0"
+def toolchain : String := "leanprover/lean4:v4.34.1"
 
 def ops : Array (String × Nat × List Nat) := #[
   ("Nat.div", 65, [2093, 2552, 2599]),

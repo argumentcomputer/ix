@@ -12,7 +12,7 @@ together with `NatOpPinData.lean`; do not edit. To regenerate:
 Every pinned constant's record, and the literal capabilities, were checked by
 the verified fold through the Ixon reader when this file was
 generated; see `Ix/Kernel/Ixon/Reader.lean` for what the table may affect
-(coverage, never soundness). Source: sha256 df7ceec2a5da43db1cc351220dd27c0e23ff97e186e1847794b446479354caf8.
+(coverage, never soundness). Source: sha256 adb7e1840b27c059df4cd7136b898e422d29dd4a3e19af094f96c8cf8ca8de95.
 
 `pins`: (name components, block address, member, constructor + 1 or 0).
 `levels`: (block address, member, constructor + 1 or 0, level-parameter
@@ -22,7 +22,7 @@ prelude order. -/
 
 namespace Ix.Kernel.Reader.PinData
 
-def source : String := "sha256:df7ceec2a5da43db1cc351220dd27c0e23ff97e186e1847794b446479354caf8"
+def source : String := "sha256:adb7e1840b27c059df4cd7136b898e422d29dd4a3e19af094f96c8cf8ca8de95"
 
 def pins : Array (List (String ⊕ Nat) × String × Nat × Nat) := #[
   ([.inl "And"], "a9ef5c092a1b1653338bb9fb9dfaa9e1861d4921b694ae8b0fba0c1fa6dafed8", 0, 0),
