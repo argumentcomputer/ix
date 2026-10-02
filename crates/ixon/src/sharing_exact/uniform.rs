@@ -88,9 +88,11 @@
 //! [`FormatBound::LengthOverflow`] instead of guessing. The exclusion test is
 //! evaluated exactly even when an occurrence count saturates.
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use super::cost::{Len, exprs_len_with, tag0_len, tag4_len};
 use super::dag::{Node, SharingDag, TermId, ix};
@@ -195,11 +197,12 @@ fn side_extra(node: &Node) -> u128 {
   }
 }
 
-/// Bytes a non-telescope node writes itself, excluding its children.
-fn own_bytes(node: &Node) -> Result<u128, SharingError> {
+/// Bytes a non-telescope node writes itself, excluding its children, from
+/// its `Node::own_len` `own`.
+fn own_bytes(node: &Node, own: Len) -> Result<u128, SharingError> {
   match node.family() {
     Some(_) => Ok(0),
-    None => node.own_len().exact().map(u).ok_or_else(overflow),
+    None => own.exact().map(u).ok_or_else(overflow),
   }
 }
 
@@ -216,24 +219,83 @@ fn continuation_edge(parent: &Node, i: usize, child: &Node) -> bool {
 pub(crate) struct Facts {
   pub(crate) deg: Vec<u64>,
   occ: Vec<u128>,
-  /// Distinct parents of each term.
-  pub(crate) parents: Vec<Vec<TermId>>,
+  /// Distinct parents of each term, ascending:
+  /// `parents[parent_start[t]..parent_start[t + 1]]`.
+  parent_start: Vec<usize>,
+  parents: Vec<TermId>,
+  /// Per entry of `parents`: the edges from that parent to the term, and
+  /// how many of them are head edges (not continuing the parent's
+  /// telescope).
+  parent_edges: Vec<(u64, u64)>,
+}
+
+impl Facts {
+  /// The distinct parents of `t`, ascending.
+  #[inline]
+  pub(crate) fn parents(&self, t: TermId) -> &[TermId] {
+    &self.parents[self.parent_start[ix(t)]..self.parent_start[ix(t) + 1]]
+  }
+
+  /// The distinct parents of `t`, ascending, each with its edges to `t`
+  /// and its head edges to `t`.
+  #[inline]
+  fn parent_edges(
+    &self,
+    t: TermId,
+  ) -> impl Iterator<Item = (TermId, u64, u64)> + '_ {
+    let r = self.parent_start[ix(t)]..self.parent_start[ix(t) + 1];
+    self.parents[r.clone()]
+      .iter()
+      .zip(&self.parent_edges[r])
+      .map(|(&q, &(ma, mh))| (q, ma, mh))
+  }
 }
 
 pub(crate) fn graph_facts(dag: &SharingDag) -> Facts {
   let nodes = dag.nodes();
   let n = nodes.len();
   let mut deg = vec![0u64; n];
-  let mut parents: Vec<Vec<TermId>> = vec![Vec::new(); n];
   for &r in dag.roots() {
     deg[ix(r)] += 1;
   }
+  // The distinct children of a node: a child repeated in one node (the
+  // only way a parent repeats, parents being added in increasing ID) is
+  // listed once.
+  let distinct = |kids: &[TermId], i: usize| !kids[..i].contains(&kids[i]);
+  let mut parent_start = vec![0usize; n + 1];
+  for node in nodes {
+    let kids = node.children();
+    let kids = kids.as_slice();
+    for (i, &c) in kids.iter().enumerate() {
+      deg[ix(c)] += 1;
+      if distinct(kids, i) {
+        parent_start[ix(c) + 1] += 1;
+      }
+    }
+  }
+  for i in 0..n {
+    parent_start[i + 1] += parent_start[i];
+  }
+  let mut fill: Vec<usize> = parent_start[..n].to_vec();
+  let mut parents: Vec<TermId> = vec![0; parent_start[n]];
+  let mut parent_edges: Vec<(u64, u64)> = vec![(0, 0); parent_start[n]];
   for (t, node) in nodes.iter().enumerate() {
     let kids = node.children();
-    for &c in kids.as_slice() {
-      deg[ix(c)] += 1;
-      if !parents[ix(c)].contains(&tid(t)) {
-        parents[ix(c)].push(tid(t));
+    let kids = kids.as_slice();
+    for (i, &c) in kids.iter().enumerate() {
+      if distinct(kids, i) {
+        let (mut ma, mut mh) = (0u64, 0u64);
+        for (k, &d) in kids.iter().enumerate() {
+          if d == c {
+            ma += 1;
+            if !continuation_edge(node, k, &nodes[ix(c)]) {
+              mh += 1;
+            }
+          }
+        }
+        parents[fill[ix(c)]] = tid(t);
+        parent_edges[fill[ix(c)]] = (ma, mh);
+        fill[ix(c)] += 1;
       }
     }
   }
@@ -250,7 +312,7 @@ pub(crate) fn graph_facts(dag: &SharingDag) -> Facts {
       occ[ix(c)] = occ[ix(c)].saturating_add(o);
     }
   }
-  Facts { deg, occ, parents }
+  Facts { deg, occ, parent_start, parents, parent_edges }
 }
 
 /// Spine lengths and natural tails, with spines ending at `stop` terms.
@@ -288,6 +350,8 @@ struct UVal {
 /// Evaluation tables with `opaq` terms as `w`-byte leaves ending spines.
 struct UPrep<'d> {
   nodes: &'d [Node],
+  /// `Node::own_len` of every term.
+  own: &'d [Len],
   w: u128,
   opaq: Vec<bool>,
   t_len: Vec<u64>,
@@ -298,11 +362,12 @@ struct UPrep<'d> {
 impl<'d> UPrep<'d> {
   fn new(
     nodes: &'d [Node],
+    own: &'d [Len],
     w: u128,
     opaq: Vec<bool>,
   ) -> Result<Self, SharingError> {
     let (t_len, t_tail) = spine_tables(nodes, &opaq);
-    let mut up = UPrep { nodes, w, opaq, t_len, t_tail, base: Vec::new() };
+    let mut up = UPrep { nodes, own, w, opaq, t_len, t_tail, base: Vec::new() };
     let mut base: Vec<UVal> = Vec::with_capacity(nodes.len());
     for t in 0..nodes.len() {
       let (v, _) = up.node(&|c| base[ix(c)], &|_| false, tid(t))?;
@@ -314,17 +379,18 @@ impl<'d> UPrep<'d> {
 
   /// One term's value given its children's values; also the number of
   /// available spine descendants visited.
-  fn node(
+  #[inline]
+  fn node<G: Fn(TermId) -> UVal, A: Fn(TermId) -> bool>(
     &self,
-    get: &dyn Fn(TermId) -> UVal,
-    avail: &dyn Fn(TermId) -> bool,
+    get: &G,
+    avail: &A,
     t: TermId,
   ) -> Result<(UVal, u64), SharingError> {
     let node = &self.nodes[ix(t)];
     let mut steps = 0u64;
     let mut v = UVal::default();
     if node.family().is_none() {
-      let mut inl = own_bytes(node)?;
+      let mut inl = own_bytes(node, self.own[ix(t)])?;
       for &c in node.children().as_slice() {
         inl = inl.saturating_add(get(c).cost);
       }
@@ -404,18 +470,21 @@ pub(crate) struct Bounds {
 }
 
 /// One step of the bounds (Lean `boundsStep`): `[inl, merged, head_lb,
-/// cont_lb]` of `t` from its children's head/continuation bounds.
-fn bound_step(
+/// cont_lb]` of `t` from its children's head/continuation bounds; `own` is
+/// `Node::own_len` of every term.
+#[inline]
+fn bound_step<H: Fn(TermId) -> u128, C: Fn(TermId) -> u128>(
   nodes: &[Node],
+  own: &[Len],
   t: TermId,
   w: u128,
   maybe: bool,
-  head: &dyn Fn(TermId) -> u128,
-  cont: &dyn Fn(TermId) -> u128,
+  head: &H,
+  cont: &C,
 ) -> Result<[u128; 4], SharingError> {
   let node = &nodes[ix(t)];
   let (i, m) = if node.family().is_none() {
-    let mut i = own_bytes(node)?;
+    let mut i = own_bytes(node, own[ix(t)])?;
     for &c in node.children().as_slice() {
       i = i.saturating_add(head(c));
     }
@@ -441,6 +510,7 @@ fn bound_step(
 
 fn uniform_bounds(
   nodes: &[Node],
+  own: &[Len],
   w: u128,
   maybe: &[bool],
 ) -> Result<Bounds, SharingError> {
@@ -454,7 +524,7 @@ fn uniform_bounds(
   for (t, &mb) in maybe[..n].iter().enumerate() {
     let v = {
       let (hl, cl) = (&b.head_lb, &b.cont_lb);
-      bound_step(nodes, tid(t), w, mb, &|c| hl[ix(c)], &|c| cl[ix(c)])?
+      bound_step(nodes, own, tid(t), w, mb, &|c| hl[ix(c)], &|c| cl[ix(c)])?
     };
     b.inl[t] = v[0];
     b.merged[t] = v[1];
@@ -470,9 +540,9 @@ const VISIBLE_CAP: u64 = 1 << 20;
 /// Lean `propagateCounts`: per term, root occurrences plus, over the edges
 /// from each parent `y` (descending IDs), `weight(y, count of y)`; the second
 /// array counts only head (non-continuation) edges.
-fn propagate_counts(
+fn propagate_counts<F: Fn(usize, u64) -> u64>(
   dag: &SharingDag,
-  weight: &dyn Fn(usize, u64) -> u64,
+  weight: &F,
 ) -> (Vec<u64>, Vec<u64>) {
   let nodes = dag.nodes();
   let n = nodes.len();
@@ -559,14 +629,21 @@ fn uncertain_components(
   let nodes = dag.nodes();
   let n = nodes.len();
   let mut uf: Vec<usize> = (0..n).collect();
-  let mut reps: Vec<Vec<usize>> = vec![Vec::new(); n];
+  // The representatives of each term, `reps[start[t]..start[t + 1]]`: each
+  // term's list is final once computed and is read only by its parents
+  // (larger IDs), so the lists are appended to one buffer in ID order.
+  let mut reps: Vec<usize> = Vec::new();
+  let mut start: Vec<usize> = Vec::with_capacity(n + 1);
+  start.push(0);
+  let mut rs: Vec<usize> = Vec::new();
   for t in 0..n {
     if cls[t] == UniformClass::CertainStored {
+      start.push(reps.len());
       continue;
     }
-    let mut rs: Vec<usize> = Vec::new();
+    rs.clear();
     for &c in nodes[t].children().as_slice() {
-      for &r in &reps[ix(c)] {
+      for &r in &reps[start[ix(c)]..start[ix(c) + 1]] {
         let fr = uf_find(&uf, r);
         if !rs.contains(&fr) {
           rs.push(fr);
@@ -585,10 +662,11 @@ fn uncertain_components(
           }
         }
       }
-      reps[t] = vec![t];
+      reps.push(t);
     } else {
-      reps[t] = rs;
+      reps.extend_from_slice(&rs);
     }
+    start.push(reps.len());
   }
   let mut groups: std::collections::BTreeMap<usize, Vec<TermId>> =
     std::collections::BTreeMap::new();
@@ -602,26 +680,42 @@ fn uncertain_components(
   comps
 }
 
-/// Members and their ancestors, not continuing above an opaque term.
+/// Members and their ancestors, not continuing above an opaque term,
+/// ascending. `pos` holds `NO_POS` for every term on entry; on return it
+/// holds each area term's position in the area (it serves as the visited
+/// set of the walk).
 fn component_area(
   up: &UPrep<'_>,
   facts: &Facts,
   members: &[TermId],
+  pos: &mut [u32],
 ) -> Vec<TermId> {
-  let mut seen: FxHashSet<TermId> = members.iter().copied().collect();
+  // Any value but `NO_POS` marks a visited term during the walk.
+  const SEEN: u32 = 0;
+  let mut out: Vec<TermId> = Vec::with_capacity(members.len());
+  for &t in members {
+    if pos[ix(t)] == NO_POS {
+      pos[ix(t)] = SEEN;
+      out.push(t);
+    }
+  }
   let mut stack: Vec<TermId> = members.to_vec();
   while let Some(t) = stack.pop() {
     if up.opaq[ix(t)] {
       continue;
     }
-    for &q in &facts.parents[ix(t)] {
-      if seen.insert(q) {
+    for &q in facts.parents(t) {
+      if pos[ix(q)] == NO_POS {
+        pos[ix(q)] = SEEN;
+        out.push(q);
         stack.push(q);
       }
     }
   }
-  let mut out: Vec<TermId> = seen.into_iter().collect();
   out.sort_unstable();
+  for (j, &t) in out.iter().enumerate() {
+    pos[ix(t)] = u32::try_from(j).unwrap_or(NO_POS);
+  }
   out
 }
 
@@ -1048,13 +1142,77 @@ fn pick_branch(gains: &[(TermId, i128)]) -> Option<(TermId, i128)> {
 /// Area position of no term (`SCtx::pos`).
 const NO_POS: u32 = u32::MAX;
 
+/// Spare buffers of the component searches, reused across the calls of the
+/// branch and bound and across components instead of allocated per call.
+/// Buffers are lent as [`Buf`]s, which come back when dropped.
+#[derive(Default)]
+struct Pool {
+  flags: RefCell<Vec<Vec<bool>>>,
+  vals: RefCell<Vec<Vec<[u128; 4]>>>,
+  vis: RefCell<Vec<Vec<(u64, u64)>>>,
+  uvals: RefCell<Vec<Vec<UVal>>>,
+  positions: RefCell<Vec<Vec<u32>>>,
+  counts: RefCell<Vec<Vec<u64>>>,
+  /// The memo of a component search, emptied after each component.
+  memo: RefCell<FxHashMap<Vec<u64>, Rc<CTable>>>,
+  /// Scratch of `SCtx::groups` and `SCtx::memo_walk`, which do not recurse.
+  walk: RefCell<WalkScratch>,
+}
+
+#[derive(Default)]
+struct WalkScratch {
+  uf: Vec<usize>,
+  reps: Vec<usize>,
+  start: Vec<usize>,
+  rs: Vec<usize>,
+  slot: Vec<usize>,
+  stack: Vec<TermId>,
+  down: Vec<TermId>,
+  entries: Vec<u64>,
+}
+
+/// A buffer lent by a [`Pool`]; it goes back to the pool when dropped.
+struct Buf<'p, T> {
+  v: Vec<T>,
+  home: &'p RefCell<Vec<Vec<T>>>,
+}
+
+impl<'p, T: Clone> Buf<'p, T> {
+  /// A buffer of `len` copies of `x`.
+  fn filled(home: &'p RefCell<Vec<Vec<T>>>, len: usize, x: T) -> Self {
+    let mut v = home.borrow_mut().pop().unwrap_or_default();
+    v.clear();
+    v.resize(len, x);
+    Buf { v, home }
+  }
+}
+
+impl<T> Drop for Buf<'_, T> {
+  fn drop(&mut self) {
+    self.home.borrow_mut().push(std::mem::take(&mut self.v));
+  }
+}
+
+impl<T> std::ops::Deref for Buf<'_, T> {
+  type Target = Vec<T>;
+  fn deref(&self) -> &Vec<T> {
+    &self.v
+  }
+}
+
+impl<T> std::ops::DerefMut for Buf<'_, T> {
+  fn deref_mut(&mut self) -> &mut Vec<T> {
+    &mut self.v
+  }
+}
+
 /// Bounds of the area under a maybe-stored predicate, over the root-level
 /// bounds (Lean `SCtx.rebound`): `vals[j]` for the area term at position
 /// `j`, the root-level bounds elsewhere.
 struct Overlay<'b> {
   base: &'b Bounds,
   pos: &'b [u32],
-  vals: Vec<[u128; 4]>,
+  vals: Buf<'b, [u128; 4]>,
 }
 
 impl Overlay<'_> {
@@ -1072,6 +1230,39 @@ impl Overlay<'_> {
       j => self.vals[j as usize],
     }
   }
+
+  /// `get(t)[2]`, the head bound.
+  #[inline]
+  fn head(&self, t: TermId) -> u128 {
+    match self.pos[ix(t)] {
+      NO_POS => self.base.head_lb[ix(t)],
+      j => self.vals[j as usize][2],
+    }
+  }
+
+  /// `get(t)[3]`, the continuation bound.
+  #[inline]
+  fn cont(&self, t: TermId) -> u128 {
+    match self.pos[ix(t)] {
+      NO_POS => self.base.cont_lb[ix(t)],
+      j => self.vals[j as usize][3],
+    }
+  }
+}
+
+/// What a `node` call takes from its caller instead of computing it: the
+/// bounds (`SCtx::rebound`) and visible counts (`SCtx::revisible`) of its
+/// "not stored" set, when the caller has them for the same set. Both are
+/// functions of that set alone.
+struct Known<'b> {
+  bounds: Option<Overlay<'b>>,
+  vis: Option<Buf<'b, (u64, u64)>>,
+}
+
+impl Known<'_> {
+  fn none() -> Self {
+    Known { bounds: None, vis: None }
+  }
 }
 
 /// The search of one component (Lean `SCtx`). Sets of decided members are
@@ -1086,27 +1277,26 @@ struct SCtx<'a, 'd> {
   vis0: &'a (Vec<u64>, Vec<u64>),
   spine_len: &'a [u64],
   dag_size: u64,
-  members: Vec<TermId>,
+  members: &'a [TermId],
   /// Member index of each area position (`NO_POS` for other terms).
-  member_of: Vec<u32>,
-  area: Vec<TermId>,
+  member_of: Buf<'a, u32>,
+  area: &'a [TermId],
   /// Area position of every term of the DAG (`NO_POS` outside the area).
   pos: &'a [u32],
-  /// Per area node: `(parent, its area position, edges, head edges)` per
-  /// distinct parent.
-  in_edges: Vec<Vec<(TermId, u32, u64, u64)>>,
-  root_occ: Vec<u64>,
+  /// Root occurrences of each area term (by area position).
+  root_occ: Buf<'a, u64>,
   root_mult: Vec<(TermId, u128)>,
   stored_in: Vec<TermId>,
   slack: i128,
   theta: i128,
-  memo: FxHashMap<Vec<u64>, CTable>,
+  memo: FxHashMap<Vec<u64>, Rc<CTable>>,
   memo_hits: u64,
   /// Scratch of `phi`: the value of each area term.
-  vals: Vec<UVal>,
+  vals: Buf<'a, UVal>,
+  pool: &'a Pool,
 }
 
-impl SCtx<'_, '_> {
+impl<'a> SCtx<'a, '_> {
   fn at(&self, t: TermId) -> Option<usize> {
     match self.pos[ix(t)] {
       NO_POS => None,
@@ -1115,8 +1305,8 @@ impl SCtx<'_, '_> {
   }
 
   /// Flags over the area positions of the terms `ts`.
-  fn flags(&self, ts: &[TermId]) -> Vec<bool> {
-    let mut f = vec![false; self.area.len()];
+  fn flags(&self, ts: &[TermId]) -> Buf<'a, bool> {
+    let mut f = Buf::filled(&self.pool.flags, self.area.len(), false);
     for &t in ts {
       if let Some(j) = self.at(t) {
         f[j] = true;
@@ -1179,22 +1369,21 @@ impl SCtx<'_, '_> {
     self.cand[ix(t)] && self.at(t).is_none_or(|j| !out[j])
   }
 
-  fn rebound(&self, out: &[bool]) -> Result<Overlay<'_>, SharingError> {
-    let mut ov = Overlay {
-      base: self.b0,
-      pos: self.pos,
-      vals: Vec::with_capacity(self.area.len()),
-    };
+  fn rebound(&self, out: &[bool]) -> Result<Overlay<'a>, SharingError> {
+    let mut vals = Buf::filled(&self.pool.vals, 0, [0; 4]);
+    vals.reserve(self.area.len());
+    let mut ov = Overlay { base: self.b0, pos: self.pos, vals };
     for (j, &t) in self.area.iter().enumerate() {
       let v = {
         let ovr = &ov;
         bound_step(
           self.up.nodes,
+          self.up.own,
           t,
           self.up.w,
           self.cand[ix(t)] && !out[j],
-          &|c| ovr.get(c)[2],
-          &|c| ovr.get(c)[3],
+          &|c| ovr.head(c),
+          &|c| ovr.cont(c),
         )?
       };
       ov.vals.push(v);
@@ -1203,16 +1392,16 @@ impl SCtx<'_, '_> {
   }
 
   /// Visible counts of the area terms (by area position).
-  fn revisible(&self, out: &[bool]) -> Vec<(u64, u64)> {
-    let mut vis: Vec<(u64, u64)> = vec![(0, 0); self.area.len()];
+  fn revisible(&self, out: &[bool]) -> Buf<'a, (u64, u64)> {
+    let mut vis = Buf::filled(&self.pool.vis, self.area.len(), (0, 0));
     for j in (0..self.area.len()).rev() {
       let r = self.root_occ[j];
       let (mut d, mut h) = (r, r);
-      for &(q, qj, ma, mh) in &self.in_edges[j] {
+      for (q, ma, mh) in self.facts.parent_edges(self.area[j]) {
         let wq = if self.maybe(out, q) {
           1
         } else {
-          match qj {
+          match self.pos[ix(q)] {
             NO_POS => self.vis0.0[ix(q)],
             qj => vis[qj as usize].0,
           }
@@ -1244,8 +1433,10 @@ impl SCtx<'_, '_> {
     und: &[TermId],
   ) -> Vec<Vec<TermId>> {
     let und_f = self.flags(und);
-    let mut uf: Vec<usize> = (0..self.members.len()).collect();
-    let mut reps: Vec<Vec<usize>> = vec![Vec::new(); self.area.len()];
+    let mut ws = self.pool.walk.borrow_mut();
+    let WalkScratch { uf, reps, start, rs, slot, .. } = &mut *ws;
+    uf.clear();
+    uf.extend(0..self.members.len());
     let union = |uf: &mut Vec<usize>, x: usize, y: usize| {
       let a = uf_find(uf, x);
       let b = uf_find(uf, y);
@@ -1261,16 +1452,23 @@ impl SCtx<'_, '_> {
       NO_POS => 0,
       m => m as usize,
     };
+    // The representatives of area position `j` are
+    // `reps[start[j]..start[j + 1]]`, appended in position order: a list is
+    // final once computed and is read only by parents (later positions).
+    reps.clear();
+    start.clear();
+    start.push(0);
     for j in 0..self.area.len() {
       let y = self.area[j];
       if opq[j] {
+        start.push(reps.len());
         continue;
       }
-      let mut rs: Vec<usize> = Vec::new();
+      rs.clear();
       for &c in self.up.nodes[ix(y)].children().as_slice() {
         if let Some(jc) = self.at(c) {
-          for &r in &reps[jc] {
-            let fr = uf_find(&uf, r);
+          for &r in &reps[start[jc]..start[jc + 1]] {
+            let fr = uf_find(&uf[..], r);
             if !rs.contains(&fr) {
               rs.push(fr);
             }
@@ -1279,65 +1477,78 @@ impl SCtx<'_, '_> {
       }
       if und_f[j] {
         let iy = member(j);
-        for &r in &rs {
-          union(&mut uf, iy, r);
+        for &r in rs.iter() {
+          union(uf, iy, r);
         }
-        reps[j] = vec![uf_find(&uf, iy)];
+        reps.push(uf_find(&uf[..], iy));
       } else if avail_fixed[j] && rs.len() > 1 {
         let r0 = rs[0];
-        for &r in &rs {
-          union(&mut uf, r0, r);
+        for &r in rs.iter() {
+          union(uf, r0, r);
         }
-        reps[j] = vec![uf_find(&uf, r0)];
+        reps.push(uf_find(&uf[..], r0));
       } else {
-        reps[j] = rs;
+        reps.extend_from_slice(rs);
       }
+      start.push(reps.len());
     }
-    let mut groups: FxHashMap<usize, Vec<TermId>> = FxHashMap::default();
+    // One group per root, in order of first occurrence in `und`.
+    slot.clear();
+    slot.resize(self.members.len(), usize::MAX);
+    let mut gs: Vec<Vec<TermId>> = Vec::new();
     for &t in und {
-      let r = uf_find(&uf, self.at(t).map_or(0, member));
-      groups.entry(r).or_default().push(t);
+      let r = uf_find(&uf[..], self.at(t).map_or(0, member));
+      if slot[r] == usize::MAX {
+        slot[r] = gs.len();
+        gs.push(Vec::new());
+      }
+      gs[slot[r]].push(t);
     }
-    let mut gs: Vec<Vec<TermId>> = groups
-      .into_values()
-      .map(|mut g| {
-        g.sort_unstable();
-        g
-      })
-      .collect();
+    for g in &mut gs {
+      g.sort_unstable();
+    }
     gs.sort_by_key(|g| g[0]);
     gs
   }
 
-  /// Memo key of a group and the decided members that reach it (Lean
-  /// `SCtx.memoKey`), and those members as flags over the area positions.
-  /// `opq`, `in_f` and `out` are flags over the area positions.
-  fn memo_key(
+  /// The walk of `memo_key` (Lean `SCtx.memoKey`) from group `g`: the
+  /// decided members that reach it, as flags over the area positions, and,
+  /// with `entries`, their key codes (unsorted). `opq`, `in_f` and `out` are
+  /// flags over the area positions.
+  fn memo_walk(
     &self,
     opq: &[bool],
     in_f: &[bool],
     out: &[bool],
     g: &[TermId],
-  ) -> (Vec<u64>, Vec<bool>) {
+    mut entries: Option<&mut Vec<u64>>,
+  ) -> Buf<'a, bool> {
     let code =
       |q: TermId, j: usize| u64::from(q) * 3 + if opq[j] { 2 } else { 1 };
-    let mut entries: Vec<u64> = Vec::new();
-    let mut rel = vec![false; self.area.len()];
-    let mut down_start: Vec<TermId> = g.to_vec();
+    let mut rel = self.flags(&[]);
     let mut seen = self.flags(g);
-    let mut stack: Vec<TermId> = g.to_vec();
+    let mut ws = self.pool.walk.borrow_mut();
+    let WalkScratch { stack, down: down_start, .. } = &mut *ws;
+    down_start.clear();
+    down_start.extend_from_slice(g);
+    stack.clear();
+    stack.extend_from_slice(g);
     while let Some(y) = stack.pop() {
-      for &q in &self.facts.parents[ix(y)] {
+      for &q in self.facts.parents(y) {
         let Some(j) = self.at(q) else { continue };
         if seen[j] {
           continue;
         }
         seen[j] = true;
         if out[j] {
-          entries.push(u64::from(q) * 3);
+          if let Some(e) = entries.as_deref_mut() {
+            e.push(u64::from(q) * 3);
+          }
           rel[j] = true;
         } else if in_f[j] {
-          entries.push(code(q, j));
+          if let Some(e) = entries.as_deref_mut() {
+            e.push(code(q, j));
+          }
           rel[j] = true;
           if !opq[j] {
             down_start.push(q);
@@ -1348,8 +1559,14 @@ impl SCtx<'_, '_> {
         }
       }
     }
-    let mut seen = self.flags(&down_start);
-    let mut stack = down_start;
+    seen.fill(false);
+    for &t in down_start.iter() {
+      if let Some(j) = self.at(t) {
+        seen[j] = true;
+      }
+    }
+    // The second walk starts from `down_start`, in its order.
+    std::mem::swap(stack, down_start);
     while let Some(y) = stack.pop() {
       for &c in self.up.nodes[ix(y)].children().as_slice() {
         let Some(j) = self.at(c) else { continue };
@@ -1359,10 +1576,14 @@ impl SCtx<'_, '_> {
         seen[j] = true;
         if !rel[j] {
           if out[j] {
-            entries.push(u64::from(c) * 3);
+            if let Some(e) = entries.as_deref_mut() {
+              e.push(u64::from(c) * 3);
+            }
             rel[j] = true;
           } else if in_f[j] {
-            entries.push(code(c, j));
+            if let Some(e) = entries.as_deref_mut() {
+              e.push(code(c, j));
+            }
             rel[j] = true;
           }
         }
@@ -1371,42 +1592,65 @@ impl SCtx<'_, '_> {
         }
       }
     }
+    rel
+  }
+
+  /// Memo key of a group and the decided members that reach it (Lean
+  /// `SCtx.memoKey`). `opq`, `in_f` and `out` are flags over the area
+  /// positions.
+  fn memo_key(
+    &self,
+    opq: &[bool],
+    in_f: &[bool],
+    out: &[bool],
+    g: &[TermId],
+  ) -> Vec<u64> {
+    let mut entries = std::mem::take(&mut self.pool.walk.borrow_mut().entries);
+    entries.clear();
+    drop(self.memo_walk(opq, in_f, out, g, Some(&mut entries)));
     entries.sort_unstable();
-    let mut key: Vec<u64> = g.iter().map(|&t| u64::from(t)).collect();
+    let mut key: Vec<u64> = Vec::with_capacity(g.len() + 1 + entries.len());
+    key.extend(g.iter().map(|&t| u64::from(t)));
     key.push(3 * self.dag_size + 3);
-    key.extend(entries);
-    (key, rel)
+    key.extend_from_slice(&entries);
+    self.pool.walk.borrow_mut().entries = entries;
+    key
   }
 
   /// Exact table of a group under the decided members outside it (Lean
-  /// `SCtx.solve`).
+  /// `SCtx.solve`). `phi_in` is `phi` with the area terms of `in_all`
+  /// available and the entries of `in_all`, when the caller has it.
   fn solve(
     &mut self,
     meter: &mut Meter<'_>,
     g: &[TermId],
     in_all: &[TermId],
     out_all: &[TermId],
-  ) -> Result<CTable, SharingError> {
+    phi_in: Option<(u128, u64)>,
+  ) -> Result<Rc<CTable>, SharingError> {
     let out = self.flags(out_all);
     let in_f = self.flags(in_all);
+    let b = self.rebound(&out)?;
     let key = {
-      let b = self.rebound(&out)?;
-      let opq: Vec<bool> = self
-        .area
-        .iter()
-        .enumerate()
-        .map(|(j, &t)| {
-          self.up.opaq[ix(t)] || (in_f[j] && self.opaque_under(&b, t))
-        })
-        .collect();
-      self.memo_key(&opq, &in_f, &out, g).0
+      let mut opq = self.flags(&[]);
+      for (j, &t) in self.area.iter().enumerate() {
+        opq[j] = self.up.opaq[ix(t)] || (in_f[j] && self.opaque_under(&b, t));
+      }
+      self.memo_key(&opq, &in_f, &out, g)
     };
+    drop(out);
     if let Some(tb) = self.memo.get(&key) {
+      let tb = Rc::clone(tb);
       self.memo_hits += 1;
-      return Ok(tb.clone());
+      return Ok(tb);
     }
-    let (phi0, work) = self.phi(&in_f, in_all)?;
+    let (phi0, work) = match phi_in {
+      Some(p) => p,
+      None => self.phi(&in_f, in_all)?,
+    };
+    drop(in_f);
     Self::charge(meter, work.saturating_add(len64(self.area.len())))?;
+    // `node` decides "not stored" exactly `out_all`, whose bounds are `b`.
     let tb = self.node(
       meter,
       phi0,
@@ -1416,13 +1660,15 @@ impl SCtx<'_, '_> {
       Vec::new(),
       g,
       Vec::new(),
+      Known { bounds: Some(b), vis: None },
     )?;
-    let tb = table_trim(tb, self.slack);
-    self.memo.insert(key, tb.clone());
+    let tb = Rc::new(table_trim(tb, self.slack));
+    self.memo.insert(key, Rc::clone(&tb));
     Ok(tb)
   }
 
-  /// Branch-and-bound node of a group (Lean `SCtx.node`).
+  /// Branch-and-bound node of a group (Lean `SCtx.node`). `known` holds
+  /// what the caller already computed for the "not stored" set `out_all`.
   #[allow(clippy::too_many_arguments)]
   fn node(
     &mut self,
@@ -1434,45 +1680,49 @@ impl SCtx<'_, '_> {
     local_in: Vec<TermId>,
     und: &[TermId],
     mut tb: CTable,
+    known: Known<'a>,
   ) -> Result<CTable, SharingError> {
     let out = self.flags(&out_all);
     // Reclassify.
-    let (gains, opaque_in) = {
-      let b = self.rebound(&out)?;
-      let vis = self.revisible(&out);
-      let mut gains: Vec<(TermId, i128)> = Vec::with_capacity(und.len());
-      for &t in und {
-        let (d, h) = self
-          .at(t)
-          .map_or((self.vis0.0[ix(t)], self.vis0.1[ix(t)]), |j| vis[j]);
-        let v = b.get(t);
-        let gt = stored_gain(
-          &self.up.nodes[ix(t)],
-          d,
-          h,
-          self.spine_len[ix(t)],
-          v[0],
-          v[1],
-          self.up.w,
-        )?;
-        gains.push((t, gt));
-      }
-      // Opacity of every decided-stored member under these bounds (the
-      // forced members included), for the split below.
-      let mut opaque_in = vec![false; self.area.len()];
-      for &t in in_ctx
-        .iter()
-        .chain(&local_in)
-        .chain(gains.iter().filter(|(_, g)| *g >= self.theta).map(|(t, _)| t))
-      {
-        if self.opaque_under(&b, t)
-          && let Some(j) = self.at(t)
-        {
-          opaque_in[j] = true;
-        }
-      }
-      (gains, opaque_in)
+    let b = match known.bounds {
+      Some(b) => b,
+      None => self.rebound(&out)?,
     };
+    let vis = match known.vis {
+      Some(v) => v,
+      None => self.revisible(&out),
+    };
+    let mut gains: Vec<(TermId, i128)> = Vec::with_capacity(und.len());
+    for &t in und {
+      let (d, h) =
+        self.at(t).map_or((self.vis0.0[ix(t)], self.vis0.1[ix(t)]), |j| vis[j]);
+      let v = b.get(t);
+      let gt = stored_gain(
+        &self.up.nodes[ix(t)],
+        d,
+        h,
+        self.spine_len[ix(t)],
+        v[0],
+        v[1],
+        self.up.w,
+      )?;
+      gains.push((t, gt));
+    }
+    // Opacity of every decided-stored member under these bounds (the
+    // forced members included), for the split below.
+    let mut opaque_in = self.flags(&[]);
+    for &t in in_ctx
+      .iter()
+      .chain(&local_in)
+      .chain(gains.iter().filter(|(_, g)| *g >= self.theta).map(|(t, _)| t))
+    {
+      if self.opaque_under(&b, t)
+        && let Some(j) = self.at(t)
+      {
+        opaque_in[j] = true;
+      }
+    }
+    let known = Known { bounds: Some(b), vis: Some(vis) };
     let forced: Vec<TermId> =
       gains.iter().filter(|(_, g)| *g >= self.theta).map(|(t, _)| *t).collect();
     let local_in = if forced.is_empty() {
@@ -1487,10 +1737,11 @@ impl SCtx<'_, '_> {
     let in_f = self.flags(&in_all);
     // Lower bound: every undecided member available, its entry free.
     let mut in_und = self.flags(&und);
-    for (a, &b) in in_und.iter_mut().zip(&in_f) {
+    for (a, &b) in in_und.iter_mut().zip(in_f.iter()) {
       *a |= b;
     }
     let (phi, work) = self.phi(&in_und, &in_all)?;
+    drop(in_und);
     Self::charge(meter, work.saturating_add(2 * len64(self.area.len())))?;
     let delta = to_i(phi)? - to_i(phi0)?;
     if und.is_empty() {
@@ -1503,32 +1754,39 @@ impl SCtx<'_, '_> {
       return Ok(tb);
     }
     // Split into independent groups.
-    let opq: Vec<bool> = self
-      .area
-      .iter()
-      .enumerate()
-      .map(|(j, &t)| self.up.opaq[ix(t)] || (in_f[j] && opaque_in[j]))
-      .collect();
-    let avail_fixed: Vec<bool> =
-      in_f.iter().zip(&opq).map(|(&i, &o)| i && !o).collect();
+    let mut opq = self.flags(&[]);
+    let mut avail_fixed = self.flags(&[]);
+    for (j, &t) in self.area.iter().enumerate() {
+      opq[j] = self.up.opaq[ix(t)] || (in_f[j] && opaque_in[j]);
+      avail_fixed[j] = in_f[j] && !opq[j];
+    }
+    drop(opaque_in);
     let groups = self.groups(&opq, &avail_fixed, &und);
+    drop(avail_fixed);
     let route = if groups.len() > 1 {
       true
     } else if groups.len() == 1 {
-      let (_, rel) = self.memo_key(&opq, &in_f, &out, &groups[0]);
+      let rel = self.memo_walk(&opq, &in_f, &out, &groups[0], None);
       let related = |t: &TermId| self.at(*t).is_some_and(|j| rel[j]);
       local_in.iter().any(|t| !related(t))
         || out_all[n_out_ctx..].iter().any(|t| !related(t))
     } else {
       false
     };
+    drop(opq);
+    drop(out);
     if route {
+      drop(known);
       let (phi_none, work) = self.phi(&in_f, &in_all)?;
+      drop(in_f);
       Self::charge(meter, work)?;
       let base = to_i(phi_none)? - to_i(phi0)?;
       let mut comb: CTable = vec![Some((base, local_in.clone()))];
+      // Each group's `solve` evaluates `phi` with exactly `in_all`
+      // available and stored: `phi_none`, with its work.
       for grp in &groups {
-        let sub = self.solve(meter, grp, &in_all, &out_all)?;
+        let sub =
+          self.solve(meter, grp, &in_all, &out_all, Some((phi_none, work)))?;
         comb = table_trim(table_conv(&comb, &sub), self.slack);
       }
       for e in comb.into_iter().flatten() {
@@ -1536,7 +1794,10 @@ impl SCtx<'_, '_> {
       }
       return Ok(tb);
     }
-    // Branch on the largest |gain|, "stored" first when it is positive.
+    drop(in_f);
+    // Branch on the largest |gain|, "stored" first when it is positive. The
+    // "stored" child decides "not stored" the same set, `out_all`, and takes
+    // its bounds and visible counts.
     let Some((t, gt)) = pick_branch(&open) else {
       return Ok(tb);
     };
@@ -1548,9 +1809,20 @@ impl SCtx<'_, '_> {
     let mut out_t = out_all.clone();
     out_t.push(t);
     if gt > 0 {
-      let tb = self
-        .node(meter, phi0, in_ctx, out_all, n_out_ctx, with_t, &und2, tb)?;
-      self.node(meter, phi0, in_ctx, out_t, n_out_ctx, local_in, &und2, tb)
+      let tb = self.node(
+        meter, phi0, in_ctx, out_all, n_out_ctx, with_t, &und2, tb, known,
+      )?;
+      self.node(
+        meter,
+        phi0,
+        in_ctx,
+        out_t,
+        n_out_ctx,
+        local_in,
+        &und2,
+        tb,
+        Known::none(),
+      )
     } else {
       let tb = self.node(
         meter,
@@ -1561,8 +1833,10 @@ impl SCtx<'_, '_> {
         local_in.clone(),
         &und2,
         tb,
+        Known::none(),
       )?;
-      self.node(meter, phi0, in_ctx, out_all, n_out_ctx, with_t, &und2, tb)
+      self
+        .node(meter, phi0, in_ctx, out_all, n_out_ctx, with_t, &und2, tb, known)
     }
   }
 }
@@ -1716,7 +1990,7 @@ impl DagPrep {
     // With no opaque and no available term, `UPrep::node` reads the width
     // nowhere (no cut is available and every cost is the inline bound), so
     // any width gives these sizes.
-    let size = UPrep::new(nodes, 1, vec![false; n])
+    let size = UPrep::new(nodes, &own, 1, vec![false; n])
       .map(|empty| empty.base.iter().map(|v| v.cost).collect());
     DagPrep { own, base, edges, facts, spine_len, size }
   }
@@ -1757,16 +2031,16 @@ pub(crate) fn optimize_uniform_with(
   let ce: Vec<bool> =
     (0..n).map(|t| certainly_excluded(facts.occ[t], size[t], wu)).collect();
   let cand: Vec<bool> = (0..n).map(|t| !ce[t] && facts.deg[t] >= 2).collect();
-  let bounds = uniform_bounds(nodes, wu, &cand)?;
+  let own = &prep.own;
+  let bounds = uniform_bounds(nodes, own, wu, &cand)?;
   let vis0 = visible_counts(dag, &cand);
-  let classify = |theta: i128| -> Result<Vec<UniformClass>, SharingError> {
-    let mut cls = Vec::with_capacity(n);
-    for t in 0..n {
-      cls.push(if ce[t] {
-        UniformClass::CertainExcluded
-      } else if facts.deg[t] < 2 {
-        UniformClass::LowDegree
-      } else if stored_gain(
+  // The gain bound of every candidate (the terms the gain test reads),
+  // computed once for both thresholds, in increasing ID (the first overflow
+  // is the error).
+  let mut gain: Vec<i128> = vec![0; n];
+  for t in 0..n {
+    if cand[t] {
+      gain[t] = stored_gain(
         &nodes[t],
         vis0.0[t],
         vis0.1[t],
@@ -1774,27 +2048,32 @@ pub(crate) fn optimize_uniform_with(
         bounds.inl[t],
         bounds.merged[t],
         wu,
-      )? >= theta
-      {
-        UniformClass::CertainStored
-      } else {
-        UniformClass::Uncertain
-      });
+      )?;
     }
-    Ok(cls)
-  };
+  }
   // theta = 1 + tag0_step_bound(#candidates) always holds (one more entry
   // grows the table count by at most that many bytes; 2 below 4311826560
   // candidates); 1 when every minimum lies in one count bracket.
   let n_cand = len64(cand.iter().filter(|&&c| c).count());
   let theta_max = i128::from(tag0_step_bound(n_cand)) + 1;
-  let cls_max = classify(theta_max)?;
-  let n_cs_max = len64(
-    cls_max.iter().filter(|&&c| c == UniformClass::CertainStored).count(),
-  );
+  let n_cs_max =
+    len64((0..n).filter(|&t| cand[t] && gain[t] >= theta_max).count());
   let theta: i128 =
     if tag0_len(n_cand) == tag0_len(n_cs_max) { 1 } else { theta_max };
-  let cls = if theta == 1 { classify(1)? } else { cls_max };
+  let cls: Vec<UniformClass> = (0..n)
+    .map(|t| {
+      if ce[t] {
+        UniformClass::CertainExcluded
+      } else if facts.deg[t] < 2 {
+        UniformClass::LowDegree
+      } else if gain[t] >= theta {
+        UniformClass::CertainStored
+      } else {
+        UniformClass::Uncertain
+      }
+    })
+    .collect();
+  drop(gain);
   let pick = |c: UniformClass| -> Vec<TermId> {
     (0..n).filter(|&t| cls[t] == c).map(tid).collect()
   };
@@ -1810,7 +2089,7 @@ pub(crate) fn optimize_uniform_with(
   for &t in &cs {
     opaq[ix(t)] = true;
   }
-  let up = UPrep::new(nodes, wu, opaq)?;
+  let up = UPrep::new(nodes, own, wu, opaq)?;
   let comps = uncertain_components(dag, &cls);
   let k_cs = u64::try_from(cs.len()).unwrap_or(u64::MAX);
   let k_unc = u64::try_from(unc.len()).unwrap_or(u64::MAX);
@@ -1819,27 +2098,31 @@ pub(crate) fn optimize_uniform_with(
   let slack = i128::from(tag0_len(k_cs.saturating_add(k_unc)))
     - i128::from(tag0_len(k_cs));
   // Search each component (independent searches; see `Parallelism`).
-  let search_area = |members: &Vec<TermId>,
-                     area: Vec<TermId>,
+  let search_area = |members: &[TermId],
+                     area: &[TermId],
                      meter: &mut Meter<'_>,
-                     pos: &[u32]|
+                     pos: &[u32],
+                     pool: &Pool|
    -> Result<(Choice, CTable), SharingError> {
-    let mut mult: std::collections::BTreeMap<TermId, u128> =
-      std::collections::BTreeMap::new();
-    for &r in dag.roots() {
-      if pos[ix(r)] != NO_POS {
-        *mult.entry(r).or_default() += 1;
+    // Root occurrences in the area, by increasing root.
+    let mut in_area: Vec<TermId> =
+      dag.roots().iter().copied().filter(|&r| pos[ix(r)] != NO_POS).collect();
+    in_area.sort_unstable();
+    let mut root_mult: Vec<(TermId, u128)> = Vec::new();
+    for r in in_area {
+      match root_mult.last_mut() {
+        Some((q, m)) if *q == r => *m += 1,
+        _ => root_mult.push((r, 1)),
       }
     }
-    let root_mult: Vec<(TermId, u128)> = mult.into_iter().collect();
     let stored_in: Vec<TermId> =
       area.iter().copied().filter(|&t| up.opaq[ix(t)]).collect();
     if meter.limits().uniform_subset_search {
       // The reference: plain subset enumeration.
       let mut cx = CompCtx {
         up: &up,
-        members: members.clone(),
-        area,
+        members: members.to_vec(),
+        area: area.to_vec(),
         root_mult,
         stored_in,
         phi0: 0,
@@ -1853,7 +2136,7 @@ pub(crate) fn optimize_uniform_with(
       cx.phi0 = phi0;
       return cx.search(meter);
     }
-    let mut member_of: Vec<u32> = vec![NO_POS; area.len()];
+    let mut member_of = Buf::filled(&pool.positions, area.len(), NO_POS);
     for (m, &t) in members.iter().enumerate() {
       if let Some(j) =
         usize::try_from(pos[ix(t)]).ok().filter(|&j| j < area.len())
@@ -1861,37 +2144,13 @@ pub(crate) fn optimize_uniform_with(
         member_of[j] = u32::try_from(m).unwrap_or(NO_POS);
       }
     }
-    let in_edges: Vec<Vec<(TermId, u32, u64, u64)>> = area
-      .iter()
-      .map(|&y| {
-        facts.parents[ix(y)]
-          .iter()
-          .map(|&q| {
-            let node = &nodes[ix(q)];
-            let (mut ma, mut mh) = (0u64, 0u64);
-            for (i, &c) in node.children().as_slice().iter().enumerate() {
-              if c == y {
-                ma += 1;
-                if !continuation_edge(node, i, &nodes[ix(y)]) {
-                  mh += 1;
-                }
-              }
-            }
-            (q, pos[ix(q)], ma, mh)
-          })
-          .collect()
-      })
-      .collect();
-    let root_occ: Vec<u64> = area
-      .iter()
-      .map(|y| {
-        root_mult
-          .iter()
-          .find(|(r, _)| r == y)
-          .map_or(0, |(_, m)| u64::try_from(*m).unwrap_or(u64::MAX))
-      })
-      .collect();
-    let area_len = area.len();
+    let mut root_occ = Buf::filled(&pool.counts, area.len(), 0);
+    for (j, y) in area.iter().enumerate() {
+      root_occ[j] = root_mult
+        .iter()
+        .find(|(r, _)| r == y)
+        .map_or(0, |(_, m)| u64::try_from(*m).unwrap_or(u64::MAX));
+    }
     let mut cx = SCtx {
       up: &up,
       facts,
@@ -1900,21 +2159,28 @@ pub(crate) fn optimize_uniform_with(
       vis0: &vis0,
       spine_len,
       dag_size: len64(n),
-      members: members.clone(),
+      members,
       member_of,
       area,
       pos,
-      in_edges,
       root_occ,
       root_mult,
       stored_in,
       slack,
       theta,
-      memo: FxHashMap::default(),
+      memo: pool.memo.take(),
       memo_hits: 0,
-      vals: vec![UVal::default(); area_len],
+      vals: Buf::filled(&pool.uvals, area.len(), UVal::default()),
+      pool,
     };
-    let tb = cx.solve(meter, members, &[], &[])?;
+    let tb = cx.solve(meter, members, &[], &[], None);
+    // The memo holds the other references of the table; it goes back to
+    // the pool empty.
+    let mut memo = std::mem::take(&mut cx.memo);
+    drop(cx);
+    memo.clear();
+    pool.memo.replace(memo);
+    let tb = Rc::unwrap_or_clone(tb?);
     let bd = table_best(&tb)
       .ok_or_else(|| internal("component search found no choice"))?;
     let mut best_set: Option<&Vec<TermId>> = None;
@@ -1933,13 +2199,11 @@ pub(crate) fn optimize_uniform_with(
   // cleared afterwards, so one buffer serves every component.
   let search_one = |members: &Vec<TermId>,
                     meter: &mut Meter<'_>,
-                    pos: &mut [u32]|
+                    pos: &mut [u32],
+                    pool: &Pool|
    -> Result<(Choice, CTable), SharingError> {
-    let area = component_area(&up, facts, members);
-    for (j, &t) in area.iter().enumerate() {
-      pos[ix(t)] = u32::try_from(j).unwrap_or(NO_POS);
-    }
-    let res = search_area(members, area.clone(), meter, pos);
+    let area = component_area(&up, facts, members, pos);
+    let res = search_area(members, &area, meter, pos, pool);
     for &t in &area {
       pos[ix(t)] = NO_POS;
     }
@@ -1951,8 +2215,9 @@ pub(crate) fn optimize_uniform_with(
   let mut results: Vec<(Choice, CTable)> = Vec::with_capacity(comps.len());
   if budget <= 1 {
     let mut pos = vec![NO_POS; n];
+    let pool = Pool::default();
     for members in &comps {
-      results.push(search_one(members, meter, &mut pos)?);
+      results.push(search_one(members, meter, &mut pos, &pool)?);
     }
   } else {
     // Each component on its own meter; the counts are added in component
@@ -1961,9 +2226,10 @@ pub(crate) fn optimize_uniform_with(
     let limits = meter.limits();
     let outs = super::par::map_ranges(comps.len(), budget, |r| {
       let mut pos = vec![NO_POS; n];
+      let pool = Pool::default();
       r.map(|j| {
         let mut m = Meter::new(limits);
-        let res = search_one(&comps[j], &mut m, &mut pos);
+        let res = search_one(&comps[j], &mut m, &mut pos, &pool);
         (res, m.stats)
       })
       .collect()
