@@ -16,6 +16,7 @@
 module
 
 public import Ix.Ixon
+import all Ix.Ixon
 public import Std.Data.HashMap
 
 public section
@@ -37,6 +38,36 @@ def natByteCount (n : Nat) : Nat :=
   if h : n = 0 then 0 else natByteCount (n / 256) + 1
 termination_by n
 decreasing_by exact Nat.div_lt_self (Nat.pos_of_ne_zero h) (by decide)
+
+/-- `Ixon.tagNByteWidth` with the rung ends of the two flags used here
+(`f = 0`, `f = 4`) as literals; the general case is the definition. The
+definition computes the rung ends with `Nat.pow` on every call, so compiled
+code runs this instead (`tagNByteWidth_eq_fast`). -/
+def tagNByteWidthFast (f value : Nat) : Nat :=
+  if f = 4 then
+    if value < 8 then 1
+    else if value < 1032 then 2
+    else if value < 66568 then 3
+    else if value < 16843784 then 4
+    else if value < 4311811080 then 5
+    else 9
+  else if f = 0 then
+    if value < 128 then 1
+    else if value < 16512 then 2
+    else if value < 82048 then 3
+    else if value < 16859264 then 4
+    else if value < 4311826560 then 5
+    else 9
+  else Ixon.tagNByteWidth f value
+
+@[csimp] theorem tagNByteWidth_eq_fast : @Ixon.tagNByteWidth = @tagNByteWidthFast := by
+  funext f value
+  unfold tagNByteWidthFast
+  split
+  · subst f; rfl
+  · split
+    · subst f; rfl
+    · rfl
 
 /-- Exact byte length of `Ixon.putTagN 0 0 n`, for `n < 2^64`: 1, 2, 3, 4, 5 or 9
 (`Ixon.tagNByteWidth 0`). -/

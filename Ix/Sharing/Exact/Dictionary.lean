@@ -175,6 +175,99 @@ def evalStep (dag : Dag) (family : Array Family) (spineLen tail : Array Nat)
       { cost := st.cost.set! t c, sides, below, work := work + 1 }
   else st
 
+/-! ### One term's cost with its own Share hidden, in place
+
+`(evalStep … (width.set! t none) affected st t).cost[t]!` is the cost of `t`
+written inline (its own Share hidden). Computing it that way copies `width`
+and the three tables of `st`, which the caller keeps; `evalHidden` reads them
+in place instead (`evalHidden_eq`). -/
+
+theorem getElem!_setBang {α : Type} [Inhabited α] (a : Array α) (i j : Nat) (v : α) :
+    (a.set! i v)[j]! = if j = i ∧ i < a.size then v else a[j]! := by
+  simp only [Array.set!, getElem!_def, Array.getElem?_setIfInBounds]
+  by_cases hij : i = j
+  · subst hij
+    by_cases hi : i < a.size <;> simp [hi]
+  · simp [hij, Ne.symm hij]
+
+theorem widthOf_setBang_none (width : Array (Option Nat)) (t u : Nat) :
+    widthOf (width.set! t none) u = if u = t then none else widthOf width u := by
+  unfold widthOf
+  simp only [Array.set!, Array.getElem?_setIfInBounds]
+  by_cases hut : u = t
+  · subst hut
+    by_cases hu : u < width.size <;> simp [hu]
+  · simp [hut, Ne.symm hut]
+
+/-- `cutScan` over `sides.set! t s'`, `below.set! t bl'` and
+`width.set! t none`, read in place. -/
+def cutScanAt (spineLen sides : Array Nat) (below : Array (Option Nat))
+    (width : Array (Option Nat)) (t s' : Nat) (bl' : Option Nat) (l s : Nat) :
+    Nat → Option Nat → Nat → Nat → Nat × Nat
+  | 0, _, best, work => (best, work)
+  | _ + 1, none, best, work => (best, work)
+  | fuel + 1, some u, best, work =>
+    let su := if u = t ∧ t < sides.size then s' else sides[u]!
+    let wu := if u = t then none else widthOf width u
+    let cand := tag4Size (l - spineLen[u]!) + (s - su) + wu.getD 0
+    cutScanAt spineLen sides below width t s' bl' l s fuel
+      (if u = t ∧ t < below.size then bl' else below[u]!) (if cand < best then cand else best)
+      (work + 1)
+
+theorem cutScan_setBang (spineLen sides : Array Nat) (below : Array (Option Nat))
+    (width : Array (Option Nat)) (t s' : Nat) (bl' : Option Nat) (l s : Nat) :
+    ∀ fuel cur best work,
+      cutScan spineLen (sides.set! t s') (below.set! t bl') (width.set! t none) l s fuel cur
+          best work =
+        cutScanAt spineLen sides below width t s' bl' l s fuel cur best work
+  | 0, _, _, _ => rfl
+  | _ + 1, none, _, _ => rfl
+  | fuel + 1, some u, best, work => by
+    simp only [cutScan, cutScanAt, getElem!_setBang, widthOf_setBang_none]
+    exact cutScan_setBang spineLen sides below width t s' bl' l s fuel _ _ _
+
+/-- The cost of `t` with its own Share hidden under the evaluation `st` and
+the widths `width` (`evalHidden_eq`), without copying either. -/
+def evalHidden (dag : Dag) (family : Array Family) (spineLen tail : Array Nat)
+    (width : Array (Option Nat)) (affected : Array Bool) (st : DictEval) (t : Nat) : Nat :=
+  if affected[t]! then
+    let node := dag.node t
+    let fam := family[t]!
+    if fam == .none then
+      if t < st.cost.size then
+        node.children.foldl (fun acc c => acc + st.cost[c]!) node.head.ownBytes
+      else st.cost[t]!
+    else
+      let nxt := node.spineNext
+      let same := family[nxt]! == fam
+      let s := node.sideExtra + st.cost[node.sideChild]! + (if same then st.sides[nxt]! else 0)
+      let bl : Option Nat :=
+        if same then
+          (if (if nxt = t then none else widthOf width nxt).isSome then some nxt
+           else st.below[nxt]!)
+        else none
+      let l := spineLen[t]!
+      if t < st.cost.size then
+        (cutScanAt spineLen st.sides st.below width t s bl l s l bl
+          (tag4Size l + s + st.cost[tail[t]!]!) st.work).1
+      else st.cost[t]!
+  else st.cost[t]!
+
+theorem evalHidden_eq (dag : Dag) (family : Array Family) (spineLen tail : Array Nat)
+    (width : Array (Option Nat)) (affected : Array Bool) (st : DictEval) (t : Nat) :
+    (evalStep dag family spineLen tail (width.set! t none) affected st t).cost[t]! =
+      evalHidden dag family spineLen tail width affected st t := by
+  unfold evalStep evalHidden
+  by_cases ha : affected[t]! = true
+  · simp only [ha, if_true]
+    split
+    · simp only [widthOf_setBang_none, getElem!_setBang]
+      by_cases ht : t < st.cost.size <;> simp [ht]
+    · simp only [widthOf_setBang_none, getElem!_setBang, ← cutScan_setBang]
+      by_cases ht : t < st.cost.size <;> simp [ht]
+  · simp only [ha]
+    rfl
+
 /-- Evaluate a dictionary. Terms with `affected[t] = false` keep their `init`
 entries (sound when no available term occurs inside them, since then their
 cost, spine sums and descendant links are those of the empty dictionary). -/

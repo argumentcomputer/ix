@@ -306,6 +306,32 @@ def propagateCounts (dag : Dag) (roots : Array Nat) (weight : Nat → Nat → Na
         st)
     0 n (base, base)
 
+/-- `propagateCounts` with the pair of counts taken apart before it is
+updated, so that both arrays are updated in place. -/
+def propagateCountsFast (dag : Dag) (roots : Array Nat) (weight : Nat → Nat → Nat) :
+    Array Nat × Array Nat :=
+  let n := dag.size
+  let base := roots.foldl (fun acc r => acc.modify r (· + 1)) (Array.replicate n 0)
+  foldRange (fun (st : Array Nat × Array Nat) k =>
+      match st with
+      | (ds, hs) =>
+        let y := n - 1 - k
+        let wy := weight y ds[y]!
+        let node := dag.node y
+        (List.range node.children.size).foldl (fun (st : Array Nat × Array Nat) i =>
+          match st with
+          | (ds, hs) =>
+            let c := node.child i
+            (ds.modify c (· + wy),
+             if continuationEdge node i (dag.node c) then hs else hs.modify c (· + wy)))
+          (ds, hs))
+    0 n (base, base)
+
+@[csimp] theorem propagateCounts_eq_fast : @propagateCounts = @propagateCountsFast := by
+  funext dag roots weight
+  unfold propagateCounts propagateCountsFast
+  rfl
+
 /-- Logical occurrence count of every term in the expanded roots, counted
 through every DAG edge with multiplicity and every root occurrence. -/
 def occurrences (dag : Dag) (roots : Array Nat) : Array Nat :=

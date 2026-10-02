@@ -22,6 +22,8 @@ private def noChoice : Array Lean.Name := #[``propext, ``Quot.sound]
 
 private def propextOnly : Array Lean.Name := #[``propext]
 
+private def quotOnly : Array Lean.Name := #[``Quot.sound]
+
 private def blake3Native : Array Lean.Name := #[
   nativeAxiom `Blake3
     `Blake3.HasherOps.hash._native.native_decide.ax_1
@@ -512,7 +514,17 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.Verify.Tiered.phase3_le_phase1,
     standardAxioms := standard },
   { root := ``Ix.Compile.Verify.Tiered.allocate_optimal,
-    standardAxioms := standard }
+    standardAxioms := standard },
+  -- Compiled-code replacements (`@[csimp]`): compiled code runs the
+  -- right-hand side wherever the specification on the left is called.
+  { root := ``Ix.Sharing.Exact.tagNByteWidth_eq_fast,
+    standardAxioms := quotOnly },
+  { root := ``Ix.Sharing.Exact.propagateCounts_eq_fast,
+    standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Exact.SCtx.phiE_eq_fast,
+    standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Exact.csBase_eq_fast,
+    standardAxioms := noChoice }
 ]
 
 

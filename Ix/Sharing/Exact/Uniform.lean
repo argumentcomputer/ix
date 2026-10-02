@@ -714,6 +714,22 @@ def SCtx.phiE (cx : SCtx) (avail : Nat → Bool) (stored : Array Nat) : Nat × N
   let entries := stored.foldl (fun acc x => acc + inl x) 0
   (roots + base + entries, cx.closure.size + stored.size)
 
+/-- `SCtx.phiE` with each entry cost read in place (`evalHidden`). -/
+def SCtx.phiEFast (cx : SCtx) (avail : Nat → Bool) (stored : Array Nat) : Nat × Nat :=
+  let p := cx.up.prep
+  let width := cx.members.foldl (fun acc t => if avail t then acc.set! t (some cx.up.w) else acc)
+    cx.widthCs
+  let ev := cx.closure.foldl (evalStep p.dag p.family p.spineLen p.tail width cx.allTrue) cx.baseEv
+  let inl := fun x => evalHidden p.dag p.family p.spineLen p.tail width cx.allTrue ev x
+  let roots := cx.rootsC.foldl (fun acc r => acc + ev.cost[r]!) 0
+  let base := cx.storedInC.foldl (fun acc c => acc + inl c) 0
+  let entries := stored.foldl (fun acc x => acc + inl x) 0
+  (roots + base + entries, cx.closure.size + stored.size)
+
+@[csimp] theorem SCtx.phiE_eq_fast : @SCtx.phiE = @SCtx.phiEFast := by
+  funext cx avail stored
+  simp only [SCtx.phiE, SCtx.phiEFast, evalHidden_eq]
+
 /-- Bounds under a decided-out set: the root-level bounds recomputed over the
 area (ascending) with the decided-out members no longer maybe-stored. Every
 value is at most the bounds of exactly that maybe-stored set (`boundsStep` is
@@ -1329,6 +1345,16 @@ def csBase (ex : Expanded) (p : Prep) (sg : UStage) : Nat :=
     sg.cs.foldl (fun acc c => acc +
       (evalStep p.dag p.family p.spineLen p.tail (sg.widthCs.set! c none) sg.allTrue sg.baseEv
         c).cost[c]!) 0
+
+/-- `csBase` with each entry cost read in place (`evalHidden`). -/
+def csBaseFast (ex : Expanded) (p : Prep) (sg : UStage) : Nat :=
+  ex.roots.foldl (fun acc r => acc + sg.baseEv.cost[r]!) 0 +
+    sg.cs.foldl (fun acc c => acc +
+      evalHidden p.dag p.family p.spineLen p.tail sg.widthCs sg.allTrue sg.baseEv c) 0
+
+@[csimp] theorem csBase_eq_fast : @csBase = @csBaseFast := by
+  funext ex p sg
+  simp only [csBase, csBaseFast, evalHidden_eq]
 
 /-- Classify, search every component and combine: the stored set and its
 model length. -/
