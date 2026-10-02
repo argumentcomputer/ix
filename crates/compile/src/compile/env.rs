@@ -306,11 +306,21 @@ pub fn compile_env_with_scanner(
       .collect()
   };
 
-  // Setup stages 3 and 4 are independent (the condensation reads only the
-  // grounded reference graph; the flag validation reads only the inductive
-  // groups and the Lean environment), so they run side by side. Each
-  // reports its own time; a panic in `compute_sccs` still wins over a
-  // validation error, as when they ran in sequence.
+  let phase_start = Instant::now();
+  let condensed = compute_sccs(&grounded_out_refs);
+  if *IX_VERBOSE {
+    eprintln!(
+      "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s{}",
+      condensed.blocks.len(),
+      phase_start.elapsed().as_secs_f32(),
+      crate::diag::rss_log_suffix(),
+    );
+  }
+
+  // Domain restriction: reject environments with non-canonical inductive
+  // flags. Groups come from the fused scan; only inductive families are
+  // re-read here.
+  let phase_start = Instant::now();
   if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 4/7 validate_ind_flags BEGIN ({} groups, {} Rayon threads){}",
@@ -319,37 +329,14 @@ pub fn compile_env_with_scanner(
       crate::diag::rss_log_suffix(),
     );
   }
-  let (condensed, validated) = rayon::join(
-    || {
-      let phase_start = Instant::now();
-      let condensed = compute_sccs(&grounded_out_refs);
-      if *IX_VERBOSE {
-        eprintln!(
-          "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s{}",
-          condensed.blocks.len(),
-          phase_start.elapsed().as_secs_f32(),
-          crate::diag::rss_log_suffix(),
-        );
-      }
-      condensed
-    },
-    || {
-      // Domain restriction: reject environments with non-canonical
-      // inductive flags. Groups come from the fused scan; only inductive
-      // families are re-read here.
-      let phase_start = Instant::now();
-      let validated = validate_ind_groups(&scan.ind_groups, lean_env.as_ref());
-      if *IX_VERBOSE && validated.is_ok() {
-        eprintln!(
-          "[compile_env] setup 4/7 validate_ind_flags: {:.2}s{}",
-          phase_start.elapsed().as_secs_f32(),
-          crate::diag::rss_log_suffix(),
-        );
-      }
-      validated
-    },
-  );
-  validated?;
+  validate_ind_groups(&scan.ind_groups, lean_env.as_ref())?;
+  if *IX_VERBOSE {
+    eprintln!(
+      "[compile_env] setup 4/7 validate_ind_flags: {:.2}s{}",
+      phase_start.elapsed().as_secs_f32(),
+      crate::diag::rss_log_suffix(),
+    );
+  }
 
   let stt = CompileState {
     lean_env: Some(lean_env.clone()),
