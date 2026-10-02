@@ -8,6 +8,7 @@
 
 use dashmap::{DashMap, DashSet};
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::{cmp::Ordering, sync::Arc};
 
 use bignat::Nat;
@@ -179,6 +180,11 @@ pub struct CompileState {
   /// user-visible references it — only regenerated wrappers, which skip
   /// surgery via the aux-regen guard).
   pub below_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
+  /// Set once one of the three call-site plan maps above has been seen
+  /// holding an entry. Entries are never removed from them, so it stays
+  /// true, and the plan-head audit skips their emptiness test, which
+  /// read-locks every shard of each map (see `plan_maps_empty`).
+  pub plan_maps_nonempty: AtomicBool,
   /// Per-block nested-auxiliary layout (permutation + source ctor
   /// counts) for each source `InductiveVal.all[0]` name. Used by:
   ///  - `compute_call_site_plans` to rewrite source-order aux motive/minor
@@ -293,6 +299,7 @@ impl Default for CompileState {
       call_site_plans: Default::default(),
       brec_on_call_site_plans: Default::default(),
       below_call_site_plans: Default::default(),
+      plan_maps_nonempty: AtomicBool::new(false),
       aux_perms: Default::default(),
       def_hints: Default::default(),
       sharing_limits: ExactSharingLimits::default(),
@@ -2127,23 +2134,55 @@ fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
   None
 }
 
+/// Whether all three call-site plan maps are empty. `DashMap::is_empty`
+/// read-locks every shard of a map (`4 × threads` of them); once a map has
+/// been seen non-empty, [`CompileState::plan_maps_nonempty`] answers
+/// instead, which is exact because entries are never removed.
+fn plan_maps_empty(stt: &CompileState) -> bool {
+  if stt.plan_maps_nonempty.load(AtomicOrdering::Relaxed) {
+    return false;
+  }
+  let empty = stt.call_site_plans.is_empty()
+    && stt.below_call_site_plans.is_empty()
+    && stt.brec_on_call_site_plans.is_empty();
+  if !empty {
+    stt.plan_maps_nonempty.store(true, AtomicOrdering::Relaxed);
+  }
+  empty
+}
+
 /// Read-only pre-walk over an ORIGINAL Lean expression.  Tier B handles
 /// ordinary partial and bare references locally; this audit closes the two
 /// deliberately unsupported holes that would otherwise silently reach the
 /// kernel: an under-applied evaporated-aux head rewrite, and a plan head whose
 /// App spine is split by `Mdata`/`LetE` (the telescope collector cannot see the
 /// surrounding arguments).
+///
+/// `heads` memoizes [`plan_head_arity`] by head name across the walks over
+/// one constant: a head that recurs costs one set of plan-map lookups
+/// instead of up to three `DashMap` reads (each taking a shard lock) at each
+/// occurrence. The memo answers what a fresh lookup would: a head's plans
+/// are installed when the block that defines it compiles, which is either a
+/// dependency of the audited constant's block (finished before it starts)
+/// or that block itself (whose plans are installed after its members are
+/// audited).
 fn audit_plan_head_arities(
   owner: &Name,
   top: &LeanExpr,
   stt: &CompileState,
+  heads: &mut FxHashMap<Name, Option<PlanHeadArity>>,
 ) -> Result<usize, CompileError> {
-  if stt.call_site_plans.is_empty()
-    && stt.below_call_site_plans.is_empty()
-    && stt.brec_on_call_site_plans.is_empty()
-  {
+  if plan_maps_empty(stt) {
     return Ok(0);
   }
+  let mut head_arity = |name: &Name| -> Option<PlanHeadArity> {
+    if let Some(arity) = heads.get(name) {
+      return *arity;
+    }
+    let arity = plan_head_arity(stt, name);
+    heads.insert(name.clone(), arity);
+    arity
+  };
 
   let annotated = crate::semantic_contract::inspect(top)?;
   // `obscured` means this expression occurs in the function part of an outer
@@ -2158,17 +2197,18 @@ fn audit_plan_head_arities(
   // is safe in an argument position but may be invalid in a wrapped function
   // position.
   let mut seen: FxHashSet<(blake3::Hash, bool)> = FxHashSet::default();
-  let mut stack: Vec<(LeanExpr, bool)> = vec![(top.clone(), false)];
+  let mut stack: Vec<(&LeanExpr, bool)> = vec![(top, false)];
   while let Some((e, obscured)) = stack.pop() {
     if !seen.insert((*e.get_hash(), obscured)) {
       continue;
     }
     match e.as_data() {
       ExprData::App(..) => {
-        let (head, args) = surgery::collect_lean_telescope(&e);
+        let (head, args) = surgery::collect_lean_telescope(e);
         match head.as_data() {
           ExprData::Const(name, _, _) => {
-            if annotated && plan_head_arity(stt, name).is_some() {
+            let arity = head_arity(name);
+            if annotated && arity.is_some() {
               return Err(CompileError::UnsupportedExpr {
                 desc: format!(
                   "resource contracts across non-identity call-site surgery: {} calls {}",
@@ -2177,7 +2217,7 @@ fn audit_plan_head_arities(
                 ),
               });
             }
-            if let Some(arity) = plan_head_arity(stt, name)
+            if let Some(arity) = arity
               && args.len()
                 < if arity.head_rewrite { arity.expected } else { arity.floor }
               && (obscured || arity.head_rewrite)
@@ -2202,15 +2242,16 @@ fn audit_plan_head_arities(
           // Lambda-headed applications are the supported split-redex shape.
           // Recurse into the lambda normally; its inner partial plan head gets
           // the same local Tier-B adapter as every other short reference.
-          ExprData::Lam(..) => stack.push((head.clone(), false)),
-          _ => stack.push((head.clone(), true)),
+          ExprData::Lam(..) => stack.push((head, false)),
+          _ => stack.push((head, true)),
         }
         for arg in args {
-          stack.push((arg.clone(), false));
+          stack.push((arg, false));
         }
       },
       ExprData::Const(name, _, _) => {
-        if annotated && plan_head_arity(stt, name).is_some() {
+        let arity = head_arity(name);
+        if annotated && arity.is_some() {
           return Err(CompileError::UnsupportedExpr {
             desc: format!(
               "resource contracts across non-identity call-site surgery: {} calls {}",
@@ -2219,7 +2260,7 @@ fn audit_plan_head_arities(
             ),
           });
         }
-        if let Some(arity) = plan_head_arity(stt, name)
+        if let Some(arity) = arity
           && (obscured || arity.head_rewrite)
         {
           return Err(CompileError::InvalidMutualBlock {
@@ -2240,16 +2281,16 @@ fn audit_plan_head_arities(
       },
       ExprData::Lam(_, ty, body, _, _)
       | ExprData::ForallE(_, ty, body, _, _) => {
-        stack.push((body.clone(), obscured));
-        stack.push((ty.clone(), false));
+        stack.push((body, obscured));
+        stack.push((ty, false));
       },
       ExprData::LetE(_, ty, val, body, _, _) => {
-        stack.push((body.clone(), obscured));
-        stack.push((val.clone(), false));
-        stack.push((ty.clone(), false));
+        stack.push((body, obscured));
+        stack.push((val, false));
+        stack.push((ty, false));
       },
-      ExprData::Mdata(_, inner, _) => stack.push((inner.clone(), obscured)),
-      ExprData::Proj(_, _, s, _) => stack.push((s.clone(), false)),
+      ExprData::Mdata(_, inner, _) => stack.push((inner, obscured)),
+      ExprData::Proj(_, _, s, _) => stack.push((s, false)),
       _ => {},
     }
   }
@@ -2261,13 +2302,14 @@ fn audit_constant_info_plan_heads(
   stt: &CompileState,
 ) -> Result<(), CompileError> {
   let owner = ci.get_name();
-  audit_plan_head_arities(owner, ci.get_type(), stt)?;
+  let mut heads = FxHashMap::default();
+  audit_plan_head_arities(owner, ci.get_type(), stt, &mut heads)?;
   if let Some(value) = ci.get_value() {
-    audit_plan_head_arities(owner, value, stt)?;
+    audit_plan_head_arities(owner, value, stt, &mut heads)?;
   }
   if let LeanConstantInfo::RecInfo(rec) = ci {
     for rule in &rec.rules {
-      audit_plan_head_arities(owner, &rule.rhs, stt)?;
+      audit_plan_head_arities(owner, &rule.rhs, stt, &mut heads)?;
     }
   }
   Ok(())
@@ -5054,9 +5096,10 @@ mod tests {
       LeanExpr::bvar(Nat::from(2u64)),
     );
     let owner = Name::str(Name::anon(), "offending".to_string());
-    let err = audit_plan_head_arities(&owner, &split, &stt)
-      .expect_err("mdata-split plan spine must fail the preflight audit")
-      .to_string();
+    let err =
+      audit_plan_head_arities(&owner, &split, &stt, &mut FxHashMap::default())
+        .expect_err("mdata-split plan spine must fail the preflight audit")
+        .to_string();
     assert!(err.contains("offending"), "missing owner in: {err}");
     assert!(err.contains("A.rec"), "missing head in: {err}");
     assert!(err.contains("has 2 args"), "missing arity in: {err}");
@@ -5097,9 +5140,72 @@ mod tests {
       );
     }
     let owner = Name::str(Name::anon(), "shared-dag".to_string());
-    let visited = audit_plan_head_arities(&owner, &shared, &stt)
-      .expect("shared DAG without plan references should pass the audit");
+    let visited =
+      audit_plan_head_arities(&owner, &shared, &stt, &mut FxHashMap::default())
+        .expect("shared DAG without plan references should pass the audit");
     assert_eq!(visited, 41, "audit should expand each shared node once");
+  }
+
+  #[test]
+  fn test_plan_head_arity_audit_follows_plan_installation() {
+    let stt = CompileState::default();
+    let head =
+      Name::str(Name::str(Name::anon(), "A".to_string()), "rec".to_string());
+    // The type applies the plan head directly (a short spine Tier B
+    // adapts: no error); the value reaches it again, bare, in an
+    // Mdata-obscured function position (an error), answered by the memo
+    // filled during the type's walk.
+    let direct = LeanExpr::app(
+      LeanExpr::cnst(head.clone(), vec![]),
+      LeanExpr::bvar(Nat::from(0u64)),
+    );
+    let bare = LeanExpr::app(
+      LeanExpr::mdata(vec![], LeanExpr::cnst(head.clone(), vec![])),
+      LeanExpr::bvar(Nat::from(0u64)),
+    );
+    let ci = LeanConstantInfo::DefnInfo(ix_common::env::DefinitionVal {
+      cnst: ix_common::env::ConstantVal {
+        name: Name::str(Name::anon(), "user".to_string()),
+        level_params: vec![],
+        typ: direct,
+      },
+      value: bare.clone(),
+      hints: ReducibilityHints::Opaque,
+      safety: ix_common::env::DefinitionSafety::Safe,
+      all: vec![],
+    });
+    // No plan anywhere yet: the audit stops before the walk.
+    assert_eq!(
+      audit_plan_head_arities(&head, &bare, &stt, &mut FxHashMap::default())
+        .unwrap(),
+      0
+    );
+    assert!(audit_constant_info_plan_heads(&ci, &stt).is_ok());
+    assert!(!stt.plan_maps_nonempty.load(AtomicOrdering::Relaxed));
+
+    stt.call_site_plans.insert(
+      head,
+      surgery::CallSitePlan {
+        n_params: 0,
+        n_source_motives: 2,
+        n_source_minors: 2,
+        n_indices: 0,
+        motive_keep: vec![true, true],
+        minor_keep: vec![true, true],
+        source_to_canon_motive: vec![1, 0],
+        source_to_canon_minor: vec![1, 0],
+        source_in_block: vec![true, true],
+        head_rewrite: None,
+      },
+    );
+    // Installed later: the next audit sees it, and from then on the
+    // emptiness test is skipped.
+    let err = audit_constant_info_plan_heads(&ci, &stt)
+      .expect_err("an obscured short plan head must fail the audit")
+      .to_string();
+    assert!(err.contains("A.rec"), "missing head in: {err}");
+    assert!(err.contains("has 0 args"), "missing arity in: {err}");
+    assert!(stt.plan_maps_nonempty.load(AtomicOrdering::Relaxed));
   }
 
   #[test]
