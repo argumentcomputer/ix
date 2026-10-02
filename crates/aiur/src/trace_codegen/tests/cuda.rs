@@ -161,7 +161,7 @@ fn synthetic_blake3(rows: usize) -> (Toplevel, QueryRecord, IOBuffer) {
 /// materializing the same rows on the host. The retired handwritten kernel
 /// measured 2.30 ms upload and 7.45 to 7.84 ms preparation on this tile.
 #[test]
-#[ignore = "opt-in timing of the generated BLAKE3 provider on one GPU"]
+#[ignore = "opt-in timing of the generated BLAKE3 provider on one GPU; run with --release"]
 fn blake3_generated_timing() {
   use std::{hint::black_box, time::Instant};
   const ROWS: usize = 65536;
@@ -169,7 +169,6 @@ fn blake3_generated_timing() {
   let compiled = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
   let scalar = blake3::PROGRAM.bind(&program).unwrap();
   let writer = scalar.function(0).unwrap();
-  assert!(!cfg!(debug_assertions), "run this benchmark with --release");
   let schema = writer.schema();
   // Multiplicity, then the stage as a full word, then 160 bytes.
   assert_eq!(schema.bytes, 176);
@@ -180,7 +179,7 @@ fn blake3_generated_timing() {
   let mut typed = vec![0; ROWS * schema.bytes];
   let mut canonical = vec![0; ROWS * canonical_stride];
   for query in 0..ROWS {
-    writer.pack_row(&record, &io, query, false, &mut seed).unwrap();
+    writer.pack_row(&record, &io, query, &mut seed).unwrap();
     SeedEncoding::Typed
       .encode(
         schema,
@@ -583,7 +582,7 @@ fn wide_row_in_a_later_chunk_widens_earlier_chunks() {
   // in the third chunk, with zero-multiplicity queries scattered through the
   // run. Every chunk must end up full width, rows must keep query order with
   // the dead queries skipped, and the device rows must match the oracle.
-  const ROWS: u64 = 3 * 4096 + 300;
+  const ROWS: usize = 3 * 4096 + 300;
   let program = (generated::PROGRAM.expected)();
   let mut record = QueryRecord::new(&program);
   let mut io = io();
@@ -596,17 +595,17 @@ fn wide_row_in_a_later_chunk_widens_earlier_chunks() {
     program
       .execute_in(
         3,
-        vec![G::from_u64(tag), G::from_u64(value)],
+        vec![G::from_usize(tag), G::from_usize(value)],
         &mut io,
         &mut record,
       )
       .unwrap();
   }
-  assert_eq!(record.function_queries[3].len(), ROWS as usize);
-  for dead in [0usize, 5, 4095, 4096, 9000, ROWS as usize - 1] {
+  assert_eq!(record.function_queries[3].len(), ROWS);
+  for dead in [0usize, 5, 4095, 4096, 9000, ROWS - 1] {
     *record.function_queries[3].get_index_mut(dead).unwrap().1 = G::ZERO;
   }
-  let live: Vec<usize> = (0..ROWS as usize)
+  let live: Vec<usize> = (0..ROWS)
     .filter(|&q| {
       record.function_queries[3].get_index(q).unwrap().1.multiplicity != G::ZERO
     })
@@ -622,7 +621,7 @@ fn wide_row_in_a_later_chunk_widens_earlier_chunks() {
       &io,
       &[],
       (member, 0),
-      (member, ROWS as usize),
+      (member, ROWS),
       live.len(),
       false,
     )

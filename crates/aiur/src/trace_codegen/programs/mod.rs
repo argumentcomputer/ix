@@ -43,20 +43,21 @@ pub(crate) fn register(
   else {
     return Err("no generated CUDA library matches this bytecode; regenerate with ix codegen --trace-bundle and rebuild".into());
   };
+  let function_circuits = bytecode.circuits.len();
+  let constrained_functions =
+    bytecode.functions.iter().filter(|f| f.constrained).count();
   let registered = cuda
-    .register(generated, bytecode.clone())
+    .register(generated, bytecode)
     .map_err(|error| format!("{name}: {error}"))?;
-  let covered = (0..bytecode.circuits.len())
-    .filter(|&c| registered.bound().supports(c))
-    .count();
+  let covered =
+    (0..function_circuits).filter(|&c| registered.bound().supports(c)).count();
   tracing::info!(
     program = name,
     generated_functions =
       generated.functions.iter().filter(|f| f.is_some()).count(),
-    constrained_functions =
-      bytecode.functions.iter().filter(|f| f.constrained).count(),
+    constrained_functions,
     generated_circuits = covered,
-    function_circuits = bytecode.circuits.len(),
+    function_circuits,
     "registered generated CUDA traces; uncovered circuits use CPU traces"
   );
   Ok(registered)

@@ -54,7 +54,9 @@ pub fn schema_contract(functions: &[Option<FunctionWriter>]) -> [u8; 32] {
       hasher.update(&(word as u64).to_le_bytes());
     }
     for &width in writer.schema.widths {
-      hasher.update(&[width.bytes() as u8]);
+      hasher.update(&[
+        u8::try_from(width.bytes()).expect("seed widths fit a byte")
+      ]);
     }
     for &offset in writer.schema.offsets {
       hasher.update(&(offset as u64).to_le_bytes());
@@ -879,8 +881,9 @@ pub(crate) fn prepare_memory_trace(
           &result.multiplicity.as_canonical_u64().to_le_bytes(),
         );
         seed[8..16].copy_from_slice(&pointer.as_canonical_u64().to_le_bytes());
-        for (dst, value) in seed[16..].chunks_exact_mut(8).zip(values) {
-          dst.copy_from_slice(&value.as_canonical_u64().to_le_bytes());
+        let (words, _) = seed[16..].as_chunks_mut::<8>();
+        for (dst, value) in words.iter_mut().zip(values) {
+          *dst = value.as_canonical_u64().to_le_bytes();
         }
       }
       MemorySpan { first, rows, bytes }
