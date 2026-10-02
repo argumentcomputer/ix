@@ -287,14 +287,17 @@ script "build-all" (args) := do
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
   let allNames := (libNames ++ exeNames).toList
+  let mut failed : Array String := #[]
   for name in allNames do
     IO.println s!"Building: {name}"
     let child ← IO.Process.spawn {
       cmd := "lake", args := #["build", name] ++ args
       stdout := .inherit, stderr := .inherit }
     let exitCode ← child.wait
-    if exitCode != 0 then return exitCode
-  return 0
+    if exitCode != 0 then failed := failed.push name
+  if failed.isEmpty then return 0
+  IO.eprintln s!"Failed to build {failed.size} of {allNames.length} targets: {", ".intercalate failed.toList}"
+  return 1
 
 end Scripts
 
