@@ -179,7 +179,7 @@ impl PrimAddrs {
         "824d1c53d8c1c3cf0a27f24639ec2be1ecc13d4a01c993171595edccf6949737",
       ),
       nat_bitwise: h(
-        "6eff55f72c856bd08aa02896fb78d93c28e11aae2be05c318b9d1f9fab8d7a53",
+        "adaf32f49aa6fee4ac8b0742563494b381e0742d9ea685fe2456eb71b25fec08",
       ),
       nat_beq: h(
         "d3d8ff924af9dc4b5cd869760615b3e7ee80916bb617259d45890c69f4128337",
@@ -188,13 +188,13 @@ impl PrimAddrs {
         "9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92",
       ),
       nat_land: h(
-        "d98bed1e14cda0eea470a5a49ff7926c80eb4bc7bfbdd0c3e14d4baa5c2dd0d7",
+        "de8c100c22f82a5c3533c67e4370671813434a6fec5d023998ded090df4a4934",
       ),
       nat_lor: h(
-        "88ff34dd42e57766beefc229d8b62dabba9cef6aadcc85c88ad67323d02bbf21",
+        "93afc1cd298c63606e5f468d1e5989ab4680d256e95d07a8642a88b5c6b858e1",
       ),
       nat_xor: h(
-        "1b0acdd4080abe5bc4acb5f06527cb62ad92792eb429c2b3bcb6f471d7945085",
+        "77dd40d7b6ca310cc59466d1f24df4f180ef50e1b00fd850698458cd26901c5d",
       ),
       nat_shift_left: h(
         "05bb657e8b9d5dc224e7ef3d53e54153ce3ac26da8d1f1b1d61069a3726566cd",
@@ -420,10 +420,10 @@ impl PrimAddrs {
         "ea81aee4a7d154faa8211a2594406dfdc7442020c0f29d2d0f79b4e62314da51",
       ),
       string_back: h(
-        "b052e814120ea6299aecf4e9bb2b656d67c1f9537e8f0e9f16479c98a04fde93",
+        "616eeeb0735f93dd10891b72bb659dd80418a6e84a9ce1313ecb41b0adc7623a",
       ),
       string_legacy_back: h(
-        "10af1decd5d2cd085adff8ae7fb44cfc5d22a89bbc40b81b809d3d556fda3e8f",
+        "2f4e032675b915bfd44c2099b41c819971c259ec42f4b5e24fdddf20c03fe573",
       ),
       string_utf8_byte_size: h(
         "4c086826cc679df3b6aa57a29f3d093a8a92d0de4edecef46a908d8398733dc0",
