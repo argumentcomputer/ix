@@ -238,7 +238,9 @@ pub struct BlockCache {
   /// Cache for compiled expressions (keyed by Lean hash address)
   pub exprs: FxHashMap<Address, CachedExpr>,
   /// Cache for compiled universes (Level -> Univ conversion)
-  /// Keyed by `(level, univ_params_key)`, NOT by `level` alone. A
+  /// Keyed by `(level, univ_params_key)` — the level by its blake3
+  /// address, so a lookup touches no reference count — NOT by `level`
+  /// alone. A
   /// `Level::Param` compiles to `Univ::Var(i)` where `i` is the
   /// parameter's POSITION in `univ_params`, so the result depends on the
   /// context. This cache lives for a whole block (unlike the expression
@@ -247,7 +249,7 @@ pub struct BlockCache {
   /// would hand the second member the first member's index — a silently
   /// wrong constant under a correct-looking name, with no abort.
   /// `collect_expr_tables` keys its `seen_exprs` the same way.
-  pub univ_cache: FxHashMap<(Level, Address), Arc<Univ>>,
+  pub univ_cache: FxHashMap<(Address, Address), Arc<Univ>>,
   /// Cache for expression comparisons
   pub cmps: FxHashMap<(Name, Name), Ordering>,
   /// Arena for expression metadata (append-only within a constant)
@@ -518,26 +520,37 @@ pub fn compile_univ(
   univ_params: &[Name],
   cache: &mut BlockCache,
 ) -> Result<Arc<Univ>, CompileError> {
-  let ctx_key = univ_params_key(univ_params);
-  if let Some(cached) = cache.univ_cache.get(&(level.clone(), ctx_key.clone()))
-  {
+  compile_univ_keyed(level, univ_params, &univ_params_key(univ_params), cache)
+}
+
+/// [`compile_univ`] with `ctx_key = univ_params_key(univ_params)` supplied
+/// by the caller, which computes it once per expression instead of once per
+/// level node visited (cache hits included).
+fn compile_univ_keyed(
+  level: &Level,
+  univ_params: &[Name],
+  ctx_key: &Address,
+  cache: &mut BlockCache,
+) -> Result<Arc<Univ>, CompileError> {
+  let key = (Address::from_blake3_hash(*level.get_hash()), ctx_key.clone());
+  if let Some(cached) = cache.univ_cache.get(&key) {
     return Ok(cached.clone());
   }
 
   let univ = match level.as_data() {
     LevelData::Zero(_) => Univ::zero(),
     LevelData::Succ(inner, _) => {
-      let inner_univ = compile_univ(inner, univ_params, cache)?;
+      let inner_univ = compile_univ_keyed(inner, univ_params, ctx_key, cache)?;
       Univ::succ(inner_univ)
     },
     LevelData::Max(a, b, _) => {
-      let a_univ = compile_univ(a, univ_params, cache)?;
-      let b_univ = compile_univ(b, univ_params, cache)?;
+      let a_univ = compile_univ_keyed(a, univ_params, ctx_key, cache)?;
+      let b_univ = compile_univ_keyed(b, univ_params, ctx_key, cache)?;
       Univ::max(a_univ, b_univ)
     },
     LevelData::Imax(a, b, _) => {
-      let a_univ = compile_univ(a, univ_params, cache)?;
-      let b_univ = compile_univ(b, univ_params, cache)?;
+      let a_univ = compile_univ_keyed(a, univ_params, ctx_key, cache)?;
+      let b_univ = compile_univ_keyed(b, univ_params, ctx_key, cache)?;
       Univ::imax(a_univ, b_univ)
     },
     LevelData::Param(name, _) => {
@@ -557,7 +570,7 @@ pub fn compile_univ(
     },
   };
 
-  cache.univ_cache.insert((level.clone(), ctx_key), univ.clone());
+  cache.univ_cache.insert(key, univ.clone());
   Ok(univ)
 }
 
@@ -580,9 +593,10 @@ fn canon_univ_cached(u: &Arc<Univ>, cache: &mut BlockCache) -> Arc<Univ> {
 fn compile_univ_idx(
   level: &Level,
   univ_params: &[Name],
+  ctx_key: &Address,
   cache: &mut BlockCache,
 ) -> Result<(u64, Option<u64>), CompileError> {
-  let univ = compile_univ(level, univ_params, cache)?;
+  let univ = compile_univ_keyed(level, univ_params, ctx_key, cache)?;
   let canon = canon_univ_cached(&univ, cache);
   let (idx, fresh) = cache.univs.insert_full(canon.clone());
   debug_assert!(
@@ -605,9 +619,13 @@ fn compile_univ_idx(
 fn compile_univ_indices(
   levels: &[Level],
   univ_params: &[Name],
+  ctx_key: &Address,
   cache: &mut BlockCache,
 ) -> Result<Vec<(u64, Option<u64>)>, CompileError> {
-  levels.iter().map(|l| compile_univ_idx(l, univ_params, cache)).collect()
+  levels
+    .iter()
+    .map(|l| compile_univ_idx(l, univ_params, ctx_key, cache))
+    .collect()
 }
 
 fn univ_sort_key(univ: &Arc<Univ>) -> Vec<u8> {
@@ -646,11 +664,11 @@ fn collect_expr_tables(
     match e.as_data() {
       ExprData::Bvar(..) => {},
       ExprData::Sort(level, _) => {
-        univs.push(compile_univ(level, univ_params, cache)?);
+        univs.push(compile_univ_keyed(level, univ_params, &ctx_key, cache)?);
       },
       ExprData::Const(name, levels, _) => {
         for level in levels {
-          univs.push(compile_univ(level, univ_params, cache)?);
+          univs.push(compile_univ_keyed(level, univ_params, &ctx_key, cache)?);
         }
         if !mut_ctx.contains_key(name) {
           let const_addr = stt.resolve_addr(name).ok_or_else(|| {
@@ -883,11 +901,12 @@ fn compile_const_expr_raw(
   name: &Name,
   levels: &[Level],
   univ_params: &[Name],
+  univ_key: &Address,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Arc<Expr>, u64), CompileError> {
-  let compiled = compile_univ_indices(levels, univ_params, cache)?;
+  let compiled = compile_univ_indices(levels, univ_params, univ_key, cache)?;
   let univ_indices: Vec<u64> = compiled.iter().map(|(c, _)| *c).collect();
   let patch_idxs: Option<Vec<u64>> =
     if compiled.iter().any(|(_, o)| o.is_some()) {
@@ -974,6 +993,9 @@ pub fn compile_expr(
     return Ok(cached.expr);
   }
 
+  // The context key of the universe cache, once per expression rather
+  // than once per level node.
+  let univ_key = univ_params_key(univ_params);
   let mut stack: Vec<Frame> = vec![Frame::Compile(expr.clone())];
   let mut results: Vec<Arc<Expr>> = Vec::new();
 
@@ -989,6 +1011,7 @@ pub fn compile_expr(
           name,
           levels,
           univ_params,
+          &univ_key,
           mut_ctx,
           cache,
           stt,
@@ -1017,7 +1040,8 @@ pub fn compile_expr(
           },
 
           ExprData::Sort(level, _) => {
-            let (univ_idx, orig) = compile_univ_idx(level, univ_params, cache)?;
+            let (univ_idx, orig) =
+              compile_univ_idx(level, univ_params, &univ_key, cache)?;
             results.push(Expr::sort(univ_idx));
             let root = cache.arena.alloc(ExprMetaData::Leaf);
             cache.arena_roots.push(root);
@@ -1044,6 +1068,7 @@ pub fn compile_expr(
               name,
               levels,
               univ_params,
+              &univ_key,
               mut_ctx,
               cache,
               stt,
