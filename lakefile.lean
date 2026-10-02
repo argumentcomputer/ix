@@ -315,6 +315,19 @@ lean_lib IxKernelTree where
 
 end IxKernelTree
 
+section IxSharingVerify
+
+/- Proofs of the canonical sharing construction (`Ix.Sharing.Exact`) and their
+audits: `Ix.Sharing.Verify` and every module under `Ix/Sharing/Verify/`. Not a
+default target; `lake lint` builds it. Declared below `Ix` for the reason given
+at `IxKernelTree`: `Ix` can build every `Ix.*` module, and the last-declared
+library that can build a module owns it. -/
+lean_lib IxSharingVerify where
+  roots := #[`Ix.Sharing.Verify]
+  globs := #[.andSubmodules `Ix.Sharing.Verify]
+
+end IxSharingVerify
+
 section IxKernel
 
 /- The certified kernel, `Ix.Kernel`, lives in this repository's `Ix/` tree but
