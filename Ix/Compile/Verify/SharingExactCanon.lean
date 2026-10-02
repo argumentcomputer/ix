@@ -862,7 +862,7 @@ theorem bucket_step (h₁ : Run temp₁ roots₁) (h₂ : Run temp₂ roots₂)
             ((sortedGroup temp₁ canon₁ B₁).map (·.2))[j]'hj' := by
           rw [hni, hkey, ← hnj]
           simp only [hnodes]
-        exact (List.getElem_inj hnd).mp this
+        exact (List.Nodup.getElem_inj hnd).mp this
       subst hij
       have e₁ := hp₁ i hi
       have e₂ := hp₂ i hj

@@ -1089,7 +1089,7 @@ theorem rankOf_aux (n : Nat) :
     · have hax : (a == x) = false := by simp only [beq_eq_false_iff_ne, ne_eq]; exact fun h => hxa h.symm
       rw [getElem!_set!_ne' _ _ _ _ (fun h => hxa h.symm)]
       by_cases hxl : x ∈ l
-      · simp only [hxl, ite_true, List.mem_cons, hxa, false_or, List.idxOf_cons, hax, cond_false]
+      · simp only [hxl, ite_true, List.mem_cons, hxa, false_or, List.idxOf_cons, hax, Bool.false_eq_true, ite_false]
         omega
       · simp only [hxl, ite_false, List.mem_cons, hxa, false_or]
 
@@ -1136,7 +1136,7 @@ theorem mergeSort_setPrec (S : Nat → Array Nat) (cells : List Nat) (r : Nat �
   have hndo : (cells.mergeSort r).Nodup := hnd.perm (List.mergeSort_perm cells r).symm
   have hne : (cells.mergeSort r)[i] ≠ (cells.mergeSort r)[k] := by
     intro he
-    have := (List.getElem_inj hndo).mp he
+    have := (List.Nodup.getElem_inj hndo).mp he
     omega
   have hmi : (cells.mergeSort r)[i] ∈ cells :=
     List.mem_mergeSort.mp (List.getElem_mem (by omega))
