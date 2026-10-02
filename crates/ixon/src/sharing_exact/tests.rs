@@ -3132,3 +3132,328 @@ fn knapsack_cells_limit() {
   }
   assert!(knapsack_failures > 0);
 }
+
+/// The incremental evaluation of a growing dictionary equals a full
+/// evaluation (`all_costs`) after every addition, costs and work count, for
+/// additions in any order; the sparse materializer writes the same
+/// expressions with the same work as `materialize`.
+#[test]
+fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
+  use super::dict::{
+    Evaluation, IncrementalCosts, LazyCosts, Materializer, ReadEdges,
+    all_costs, materialize,
+  };
+  let mut rng = Rng(97);
+  let mut cases: Vec<Vec<E>> =
+    par_cases().iter().map(|c| constant_info_root_exprs(&c.info)).collect();
+  for _ in 0..60 {
+    cases.push(gen_search_roots(&mut rng));
+    cases.push(gen_spines(&mut rng));
+  }
+  let (mut steps, mut materialized, mut lazy_steps) = (0u64, 0u64, 0u64);
+  for (i, roots) in cases.iter().enumerate() {
+    if roots.is_empty() {
+      continue;
+    }
+    let dag = SharingDag::from_expanded_roots(roots, &limits()).unwrap();
+    let nodes = dag.nodes();
+    let n = nodes.len();
+    let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
+    // A random sequence of distinct terms, in any order, with indices that
+    // cross the TagN width boundaries.
+    let mut terms: Vec<TermId> = (0..n as TermId).collect();
+    for k in (1..terms.len()).rev() {
+      terms.swap(k, rng.below(k as u64 + 1) as usize);
+    }
+    terms.truncate(1 + rng.below(n as u64) as usize);
+    let mut dict = FixedDictionary::new();
+    let edges = ReadEdges::new(nodes);
+    let mut eval = IncrementalCosts::new(
+      nodes,
+      &own,
+      &edges,
+      Evaluation::new(nodes, &own, &dict),
+    );
+    let base = Evaluation::new(nodes, &own, &dict);
+    let lazy_applies = LazyCosts::applies(&base);
+    let mut lazy = LazyCosts::new(nodes, &own, &edges, base, &dict);
+    let all: Vec<TermId> = (0..n as TermId).collect();
+    let mut mat = Materializer::new(n);
+    let mut index = rng.below(20);
+    for (step, &t) in terms.iter().enumerate() {
+      let gap = if rng.pct(10) { 200 } else { 3 };
+      index += 1 + rng.below(gap);
+      dict.insert(t, index);
+      eval.add(t, &dict);
+      let mut w = 0u64;
+      let full = all_costs(nodes, &own, &dict, &mut w);
+      assert_eq!(eval.costs(), &full[..], "case {i} step {step}");
+      assert_eq!(eval.work(), w, "case {i} step {step}");
+      if lazy_applies {
+        lazy.add(t, &dict);
+        assert_eq!(lazy.work(), w, "lazy case {i} step {step}");
+        // Some steps prepare one target, others every term.
+        let targets: &[TermId] =
+          if step % 4 == 3 { &all } else { std::slice::from_ref(&t) };
+        lazy.prepare(targets, &dict);
+        for &x in targets {
+          assert_eq!(
+            lazy.costs()[x as usize],
+            full[x as usize],
+            "lazy case {i} step {step}"
+          );
+        }
+        assert_eq!(lazy.work(), w, "lazy case {i} step {step}");
+        lazy_steps += 1;
+      }
+      steps += 1;
+      if step % 3 == 0 || step + 1 == terms.len() {
+        let mut targets =
+          vec![t, terms[rng.below(terms.len() as u64) as usize]];
+        targets.push(rng.below(n as u64) as TermId);
+        targets.extend_from_slice(dag.roots());
+        let (mut wa, mut wb) = (w, w);
+        let a =
+          materialize(nodes, &own, &dict, &full, &targets, &mut wa).unwrap();
+        let b = mat.run(nodes, &own, &dict, &full, &targets, &mut wb).unwrap();
+        assert_eq!(wa, wb, "case {i} step {step}");
+        let bytes = |es: &[E]| {
+          let mut out = Vec::new();
+          for e in es {
+            put_expr(e, &mut out);
+          }
+          out
+        };
+        assert_eq!(bytes(&a), bytes(&b), "case {i} step {step}");
+        materialized += 1;
+      }
+    }
+  }
+  eprintln!(
+    "incremental evaluation: {steps} steps, {materialized} materializations"
+  );
+  assert!(steps > 1000 && materialized > 300 && lazy_steps > 1000);
+}
+
+/// Replace one random leaf of `e` (a Share index or a variable) by a
+/// different one, returning whether something changed.
+fn mutate_leaf(e: &E, rng: &mut Rng, budget: &mut u64) -> E {
+  match e.as_ref() {
+    Expr::Share(k) if *budget == 0 => {
+      *budget = u64::MAX;
+      Arc::new(Expr::Share(k ^ (1 + rng.below(3))))
+    },
+    Expr::Var(n) if *budget == 0 => {
+      *budget = u64::MAX;
+      Arc::new(Expr::Var(n + 1))
+    },
+    Expr::Share(_) | Expr::Var(_) => {
+      *budget = budget.saturating_sub(1);
+      e.clone()
+    },
+    _ => {
+      let kids: Vec<E> =
+        e.children().into_iter().map(|c| mutate_leaf(c, rng, budget)).collect();
+      Arc::new(e.with_children(&kids).unwrap())
+    },
+  }
+}
+
+/// The re-expansion check without interning (`check_encoding`) accepts
+/// exactly the encodings that `build_full` expands back to the DAG with the
+/// table terms, and counts the input nodes `build_full` charges.
+#[test]
+fn encoding_check_matches_reexpansion() {
+  let mut rng = Rng(101);
+  let (mut valid, mut rejected) = (0, 0);
+  let unbounded = ExactSharingLimits::unbounded();
+  let reference = |dag: &SharingDag, order: &[TermId], es: &[E], rs: &[E]| {
+    let mut m = Meter::new(&unbounded);
+    match SharingDag::build_full(rs, Some(es), &mut m) {
+      Ok((d, ids)) => (d == *dag
+        && ids
+          .iter()
+          .map(|x| x.unwrap_or(TermId::MAX))
+          .eq(order.iter().copied()))
+      .then_some(m.stats.input_nodes),
+      Err(_) => None,
+    }
+  };
+  for c in par_cases() {
+    let roots = constant_info_root_exprs(&c.info);
+    if roots.is_empty() {
+      continue;
+    }
+    let (_, t) =
+      normalize_constant_sharing_tiered(ShareLayout::TagN, &c, &limits())
+        .unwrap();
+    let u =
+      optimize_sharing_uniform(1 + rng.below(3), &roots, &limits()).unwrap();
+    let dag = SharingDag::from_expanded_roots(&roots, &limits()).unwrap();
+    for (order, es, rs) in [
+      (&t.table_terms, &t.sharing, &t.roots),
+      (&u.table_terms, &u.sharing, &u.roots),
+    ] {
+      let fast = dag.check_encoding(order, es, rs);
+      assert!(fast.is_some());
+      let len =
+        cost::exprs_len_with(es.len() as u64, es.iter().chain(rs), &tag4_len);
+      assert_eq!(
+        dag.check_and_measure(order, es, rs, &tag4_len),
+        fast.zip(len)
+      );
+      assert_eq!(fast, reference(&dag, order, es, rs));
+      valid += 1;
+      for _ in 0..4 {
+        let (mut es2, mut rs2) = (es.clone(), rs.clone());
+        let pick = rng.below((es2.len() + rs2.len()) as u64) as usize;
+        let mut budget = rng.below(6);
+        let target = if pick < es2.len() {
+          &mut es2[pick]
+        } else {
+          &mut rs2[pick - es.len()]
+        };
+        *target = mutate_leaf(target, &mut rng, &mut budget);
+        if rng.below(4) == 0 && es2.len() > 1 {
+          let i = rng.below(es2.len() as u64 - 1) as usize;
+          es2.swap(i, i + 1);
+        }
+        let fast = dag.check_encoding(order, &es2, &rs2);
+        let slow = reference(&dag, order, &es2, &rs2);
+        let fused = dag.check_and_measure(order, &es2, &rs2, &tag4_len);
+        let len = cost::exprs_len_with(
+          es2.len() as u64,
+          es2.iter().chain(&rs2),
+          &tag4_len,
+        );
+        assert_eq!(fused, fast.zip(len));
+        if fast.is_some() {
+          assert_eq!(fast, slow);
+        } else {
+          rejected += 1;
+          assert_eq!(slow, None);
+        }
+      }
+    }
+  }
+  eprintln!(
+    "encoding check: {valid} valid encodings, {rejected} mutations rejected"
+  );
+  assert!(valid > 300 && rejected > 300);
+}
+
+/// Phase 3 in one pass (orders closed under stored descendants) gives the
+/// bytes, tables and lengths of the per-prefix phase 3, which the test
+/// forces with the `FORCE_PER_PREFIX` hook, on the parallel cases and
+/// generated families.
+#[test]
+fn one_pass_phase3_matches_per_prefix() {
+  use super::tiered::FORCE_PER_PREFIX;
+  let mut rng = Rng(103);
+  let mut cases = par_cases();
+  for _ in 0..80 {
+    let roots = gen_search_roots(&mut rng);
+    cases.push(wrap(&mut rng, roots));
+  }
+  let mut compared = 0;
+  for (i, c) in cases.iter().enumerate() {
+    let one =
+      normalize_constant_sharing_tiered(ShareLayout::TagN, c, &limits());
+    FORCE_PER_PREFIX.with(|f| f.set(true));
+    let per =
+      normalize_constant_sharing_tiered(ShareLayout::TagN, c, &limits());
+    FORCE_PER_PREFIX.with(|f| f.set(false));
+    match (one, per) {
+      (Ok((a, ra)), Ok((b, rb))) => {
+        assert_eq!(put(&a), put(&b), "case {i}");
+        assert_eq!(ra.table_terms, rb.table_terms, "case {i}");
+        assert_eq!(ra.stats.candidate_lengths, rb.stats.candidate_lengths);
+        assert_eq!(ra.stats.w, rb.stats.w, "case {i}");
+        compared += 1;
+      },
+      (a, b) => panic!(
+        "case {i}: one-pass ok {} per-prefix ok {}",
+        a.is_ok(),
+        b.is_ok()
+      ),
+    }
+  }
+  assert!(compared > 200);
+}
+
+/// The phase-1 dry run reports what the materialized phase-1 expressions
+/// contain: the Shares of each entry in all expression trees, the entries
+/// each entry shares in pre-order of first occurrence, the number of
+/// expression nodes (the re-expansion check's input nodes) and the real
+/// length; everything else in the result is the same.
+#[test]
+fn phase1_dry_run_matches_materialized_expressions() {
+  use super::tiered::share_indices;
+  use super::uniform::{DagPrep, optimize_uniform_with};
+  let mut rng = Rng(107);
+  let mut cases: Vec<Vec<E>> =
+    par_cases().iter().map(|c| constant_info_root_exprs(&c.info)).collect();
+  for _ in 0..80 {
+    cases.push(gen_search_roots(&mut rng));
+    cases.push(gen_spines(&mut rng));
+  }
+  let mut compared = 0;
+  for (i, roots) in cases.iter().enumerate() {
+    if roots.is_empty() {
+      continue;
+    }
+    let dag = SharingDag::from_expanded_roots(roots, &limits()).unwrap();
+    let prep = DagPrep::new(&dag);
+    for w in 1..=3 {
+      let (full, none) =
+        optimize_uniform_with(w, &dag, &prep, &mut Meter::new(&limits()), true)
+          .unwrap();
+      assert!(none.is_none());
+      let (dry, shares) = optimize_uniform_with(
+        w,
+        &dag,
+        &prep,
+        &mut Meter::new(&limits()),
+        false,
+      )
+      .unwrap();
+      let shares = shares.unwrap();
+      let order = &full.table_terms;
+      let mut refs = vec![0u64; order.len()];
+      let mut deps: Vec<Vec<TermId>> = Vec::new();
+      let mut idx = Vec::new();
+      for e in full.sharing.iter().chain(&full.roots) {
+        idx.clear();
+        share_indices(e, &mut idx);
+        for &j in &idx {
+          refs[j as usize] += 1;
+        }
+      }
+      for e in &full.sharing {
+        idx.clear();
+        share_indices(e, &mut idx);
+        let mut ds: Vec<TermId> = Vec::new();
+        for &j in &idx {
+          let d = order[j as usize];
+          if !ds.contains(&d) {
+            ds.push(d);
+          }
+        }
+        deps.push(ds);
+      }
+      let visited = dag.check_encoding(order, &full.sharing, &full.roots);
+      assert_eq!(shares.refs, refs, "case {i} w {w}");
+      assert_eq!(shares.deps, deps, "case {i} w {w}");
+      assert_eq!(Some(shares.nodes), visited, "case {i} w {w}");
+      assert_eq!(dry.variable_len, full.variable_len, "case {i} w {w}");
+      assert_eq!(
+        (&dry.table_terms, dry.model_len, &dry.stored, &dry.stats),
+        (&full.table_terms, full.model_len, &full.stored, &full.stats),
+        "case {i} w {w}"
+      );
+      assert!(dry.sharing.is_empty() && dry.roots.is_empty());
+      compared += 1;
+    }
+  }
+  assert!(compared > 900);
+}

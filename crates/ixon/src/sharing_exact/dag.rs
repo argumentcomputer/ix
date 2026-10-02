@@ -338,7 +338,7 @@ impl Builder<'_, '_> {
           continue;
         }
         stack.push((e, true));
-        for c in e.children() {
+        for c in super::cost::expr_children(e).into_iter().flatten() {
           if !memo.contains_key(&Arc::as_ptr(c)) {
             stack.push((c.as_ref(), false));
           }
@@ -396,27 +396,15 @@ impl Builder<'_, '_> {
     let mut nodes = Vec::new();
     let mut heights = Vec::new();
     let mut next: TermId = 0;
-    for (h, bucket) in buckets.into_iter().enumerate() {
-      let mut keyed: Vec<(NodeKey, usize)> = bucket
-        .into_iter()
-        .map(|p| {
-          let node = &self.nodes[p];
-          let key = NodeKey {
-            tag: node.tag(),
-            scalars: node.scalars(),
-            children: node
-              .children()
-              .as_slice()
-              .iter()
-              .map(|&c| new_id[ix(c)])
-              .collect(),
-          };
-          (key, p)
-        })
-        .collect();
-      keyed.sort();
+    for (h, mut keyed) in buckets.into_iter().enumerate() {
+      // Sorted by the [`NodeKey`] order (compared in place), then by the
+      // provisional ID, as sorting `(NodeKey, usize)` pairs.
+      let key_cmp = |a: usize, b: usize| {
+        node_key_cmp(&self.nodes[a], &self.nodes[b], &new_id)
+      };
+      keyed.sort_by(|&a, &b| key_cmp(a, b).then(a.cmp(&b)));
       for w in keyed.windows(2) {
-        if w[0].0 == w[1].0 {
+        if key_cmp(w[0], w[1]) == std::cmp::Ordering::Equal {
           return Err(SharingError::Internal(
             "two interned nodes share one structural key".into(),
           ));
@@ -424,7 +412,7 @@ impl Builder<'_, '_> {
       }
       let h = u32::try_from(h)
         .map_err(|_e| SharingError::Internal("height exceeds u32".into()))?;
-      for (_, p) in keyed {
+      for p in keyed {
         new_id[p] = next;
         next = next.checked_add(1).ok_or(SharingError::FormatBound(
           FormatBound::TermIdSpace { nodes: u64_len(n) },
@@ -437,6 +425,46 @@ impl Builder<'_, '_> {
     let dag = SharingDag { nodes, heights, roots };
     Ok((dag, new_id))
   }
+}
+
+/// The scalar payload of a node other than `Ref`/`Rec` ([`Node::scalars`],
+/// at most two values), without allocating.
+fn small_scalars(node: &Node) -> ([u64; 2], usize) {
+  match node {
+    Node::Sort(n) | Node::Var(n) | Node::Str(n) | Node::Nat(n) => ([*n, 0], 1),
+    Node::Prj(t, f, _) => ([*t, *f], 2),
+    Node::Lam(c, ..) => ([u64::from(c.to_bits()), 0], 1),
+    Node::All(c, v, ..) => ([u64::from(pack_all_contract(*c, *v)), 0], 1),
+    Node::Let(c, ..) => ([c.flags(), u64::from(c.binder.to_bits())], 2),
+    Node::App(..) | Node::Ref(..) | Node::Rec(..) => ([0, 0], 0),
+  }
+}
+
+/// The order of the [`NodeKey`]s of two nodes (tag, scalar payload, child
+/// IDs mapped by `ids`), compared in place.
+fn node_key_cmp(a: &Node, b: &Node, ids: &[TermId]) -> std::cmp::Ordering {
+  a.tag()
+    .cmp(&b.tag())
+    .then_with(|| match (a, b) {
+      (
+        Node::Ref(n, us) | Node::Rec(n, us),
+        Node::Ref(m, vs) | Node::Rec(m, vs),
+      ) => {
+        // `[n, |us|, us...]`, lexicographically.
+        n.cmp(m).then(us.len().cmp(&vs.len())).then_with(|| us.cmp(vs))
+      },
+      _ => {
+        let ((x, i), (y, j)) = (small_scalars(a), small_scalars(b));
+        x[..i].cmp(&y[..j])
+      },
+    })
+    .then_with(|| {
+      let (ca, cb) = (a.children(), b.children());
+      ca.as_slice()
+        .iter()
+        .map(|&c| ids[ix(c)])
+        .cmp(cb.as_slice().iter().map(|&c| ids[ix(c)]))
+    })
 }
 
 /// Classify a reference from `entry` to `index`, with
@@ -547,6 +575,255 @@ impl SharingDag {
       .map(|&p| Some(new_id[ix(p)]).filter(|&id| id != TermId::MAX))
       .collect();
     Ok((dag, entries))
+  }
+
+  /// Whether the table `entries` and `roots` expand exactly to the terms
+  /// `order` and to this DAG's roots, decided without interning: every
+  /// expression is matched top-down against the term it must denote, a Share
+  /// in entry `i` must name an entry `< i` and one in a root an entry `<
+  /// entries.len()`, memoized by pointer (a pointer checked under a smaller
+  /// bound stays valid under a larger one). On success returns the number of
+  /// pointer-distinct expression nodes reachable from `entries` and
+  /// `roots`.
+  ///
+  /// A success implies that [`SharingDag::build_full`]`(roots,
+  /// Some(entries))` returns this DAG and the entry IDs `order` (the
+  /// expansions are the same terms, and the DAG and its IDs are a function of
+  /// the terms reachable from the roots), and that its only possible error is
+  /// exhausting `max_input_nodes`: it charges one input node per
+  /// pointer-distinct node (its pointer memo is shared by all entries and
+  /// roots, and a pointer is only revisited after it was memoized), interns
+  /// the same distinct nodes at the same heights as the build of this DAG,
+  /// and finds no malformed Share. `None` means a mismatch; callers then run
+  /// the build itself.
+  pub(crate) fn check_encoding(
+    &self,
+    order: &[TermId],
+    entries: &[Arc<Expr>],
+    roots: &[Arc<Expr>],
+  ) -> Option<u64> {
+    if entries.len() != order.len() || roots.len() != self.roots.len() {
+      return None;
+    }
+    let mut memo: FxHashMap<*const Expr, TermId> = FxHashMap::default();
+    let mut stack: Vec<(&Expr, TermId)> = Vec::new();
+    let tasks = entries
+      .iter()
+      .zip(order)
+      .enumerate()
+      .map(|(i, (e, &t))| (e, t, i))
+      .chain(
+        roots.iter().zip(&self.roots).map(|(e, &t)| (e, t, entries.len())),
+      );
+    for (e, t, bound) in tasks {
+      stack.push((e.as_ref(), t));
+      while let Some((x, t)) = stack.pop() {
+        let key = std::ptr::from_ref(x);
+        match memo.get(&key) {
+          Some(&u) if u == t => continue,
+          Some(_) => return None,
+          None => {},
+        }
+        let node = self.nodes.get(ix(t))?;
+        let ok = match (x, node) {
+          (Expr::Share(k), _) => {
+            usize::try_from(*k).ok().is_some_and(|k| k < bound && order[k] == t)
+          },
+          (Expr::Sort(a), Node::Sort(b))
+          | (Expr::Var(a), Node::Var(b))
+          | (Expr::Str(a), Node::Str(b))
+          | (Expr::Nat(a), Node::Nat(b)) => a == b,
+          (Expr::Ref(a, us), Node::Ref(b, vs))
+          | (Expr::Rec(a, us), Node::Rec(b, vs)) => a == b && us == vs,
+          (Expr::Prj(a, f, v), Node::Prj(b, g, tv)) => {
+            stack.push((v.as_ref(), *tv));
+            a == b && f == g
+          },
+          (Expr::App(f, a), Node::App(tf, ta)) => {
+            stack.push((a.as_ref(), *ta));
+            stack.push((f.as_ref(), *tf));
+            true
+          },
+          (Expr::Lam(c, ty, b), Node::Lam(d, tty, tb)) => {
+            stack.push((b.as_ref(), *tb));
+            stack.push((ty.as_ref(), *tty));
+            c == d
+          },
+          (Expr::All(c, v, ty, b), Node::All(d, u, tty, tb)) => {
+            stack.push((b.as_ref(), *tb));
+            stack.push((ty.as_ref(), *tty));
+            c == d && v == u
+          },
+          (Expr::Let(c, ty, v, b), Node::Let(d, tty, tv, tb)) => {
+            stack.push((b.as_ref(), *tb));
+            stack.push((v.as_ref(), *tv));
+            stack.push((ty.as_ref(), *tty));
+            c == d
+          },
+          _ => false,
+        };
+        if !ok {
+          return None;
+        }
+        memo.insert(key, t);
+      }
+    }
+    u64::try_from(memo.len()).ok()
+  }
+
+  /// [`SharingDag::check_encoding`] and, in the same walk with the same
+  /// pointer memo, the length `exprs_len_with(entries.len(), entries ++
+  /// roots, share)`. `None` on a mismatch or a length overflow (callers then
+  /// run the separate checks); otherwise the visited count and the length.
+  pub(crate) fn check_and_measure(
+    &self,
+    order: &[TermId],
+    entries: &[Arc<Expr>],
+    roots: &[Arc<Expr>],
+    share: &dyn Fn(u64) -> u64,
+  ) -> Option<(u64, u64)> {
+    use super::cost::{ExprLenInfo, expr_children, expr_len_info};
+    if entries.len() != order.len() || roots.len() != self.roots.len() {
+      return None;
+    }
+    // Per pointer: the term it denotes and, once its children are done, its
+    // length information.
+    let mut memo: FxHashMap<*const Expr, (TermId, Option<ExprLenInfo>)> =
+      FxHashMap::default();
+    let mut stack: Vec<(&Expr, TermId, bool)> = Vec::new();
+    let mut total = tag0_len(u64_len(entries.len()));
+    let tasks = entries
+      .iter()
+      .zip(order)
+      .enumerate()
+      .map(|(i, (e, &t))| (e, t, i))
+      .chain(
+        roots.iter().zip(&self.roots).map(|(e, &t)| (e, t, entries.len())),
+      );
+    for (e, t, bound) in tasks {
+      stack.push((e.as_ref(), t, false));
+      while let Some((x, t, ready)) = stack.pop() {
+        let key = std::ptr::from_ref(x);
+        if ready {
+          let info = {
+            let get = |c: &Arc<Expr>| {
+              memo
+                .get(&Arc::as_ptr(c))
+                .and_then(|m| m.1)
+                .unwrap_or(ExprLenInfo::ZERO)
+            };
+            expr_len_info(x, &get, share)?
+          };
+          memo.insert(key, (t, Some(info)));
+          continue;
+        }
+        match memo.get(&key) {
+          Some(&(u, _)) if u == t => continue,
+          Some(_) => return None,
+          None => {},
+        }
+        let node = self.nodes.get(ix(t))?;
+        let mut kids: [Option<TermId>; 3] = [None; 3];
+        let ok = match (x, node) {
+          (Expr::Share(k), _) => {
+            usize::try_from(*k).ok().is_some_and(|k| k < bound && order[k] == t)
+          },
+          (Expr::Sort(a), Node::Sort(b))
+          | (Expr::Var(a), Node::Var(b))
+          | (Expr::Str(a), Node::Str(b))
+          | (Expr::Nat(a), Node::Nat(b)) => a == b,
+          (Expr::Ref(a, us), Node::Ref(b, vs))
+          | (Expr::Rec(a, us), Node::Rec(b, vs)) => a == b && us == vs,
+          (Expr::Prj(a, f, _), Node::Prj(b, g, tv)) => {
+            kids[0] = Some(*tv);
+            a == b && f == g
+          },
+          (Expr::App(..), Node::App(tf, ta)) => {
+            kids = [Some(*tf), Some(*ta), None];
+            true
+          },
+          (Expr::Lam(c, ..), Node::Lam(d, tty, tb)) => {
+            kids = [Some(*tty), Some(*tb), None];
+            c == d
+          },
+          (Expr::All(c, v, ..), Node::All(d, u, tty, tb)) => {
+            kids = [Some(*tty), Some(*tb), None];
+            c == d && v == u
+          },
+          (Expr::Let(c, ..), Node::Let(d, tty, tv, tb)) => {
+            kids = [Some(*tty), Some(*tv), Some(*tb)];
+            c == d
+          },
+          _ => false,
+        };
+        if !ok {
+          return None;
+        }
+        memo.insert(key, (t, None));
+        stack.push((x, t, true));
+        for (c, tc) in expr_children(x).into_iter().zip(kids).rev() {
+          if let (Some(c), Some(tc)) = (c, tc) {
+            stack.push((c.as_ref(), tc, false));
+          }
+        }
+      }
+      total = total
+        .checked_add(memo.get(&std::ptr::from_ref(e.as_ref()))?.1?.len())?;
+    }
+    Some((u64::try_from(memo.len()).ok()?, total))
+  }
+
+  /// The only error the re-expansion build can report once
+  /// [`SharingDag::check_encoding`] (or [`SharingDag::check_and_measure`])
+  /// succeeded with `visited` nodes: `max_input_nodes` exhausted.
+  pub(crate) fn check_input_nodes(
+    &self,
+    visited: u64,
+    limits: &super::ExactSharingLimits,
+  ) -> Result<(), SharingError> {
+    if visited > limits.max_input_nodes {
+      return Err(SharingError::ResourceExhausted(super::ResourceExhausted {
+        resource: super::Resource::InputNodes,
+        limit: limits.max_input_nodes,
+      }));
+    }
+    Ok(())
+  }
+
+  /// The re-expansion check of an encoding of this DAG with table terms
+  /// `order`: `build_full(roots, Some(entries))` under a fresh meter of
+  /// `limits` must return this DAG and the entry IDs `order`, otherwise the
+  /// internal error `ast_msg` or `ids_msg`.
+  ///
+  /// When [`SharingDag::check_encoding`] succeeds the build would succeed,
+  /// unless its node count exceeds `max_input_nodes`, so only that limit is
+  /// checked; otherwise the build itself runs and reports.
+  pub(crate) fn check_reexpansion(
+    &self,
+    order: &[TermId],
+    entries: &[Arc<Expr>],
+    roots: &[Arc<Expr>],
+    limits: &super::ExactSharingLimits,
+    ast_msg: &str,
+    ids_msg: &str,
+  ) -> Result<(), SharingError> {
+    if let Some(visited) = self.check_encoding(order, entries, roots) {
+      return self.check_input_nodes(visited, limits);
+    }
+    let mut check_meter = Meter::new(limits);
+    let (check, entry_ids) =
+      SharingDag::build_full(roots, Some(entries), &mut check_meter)?;
+    if check != *self {
+      return Err(SharingError::Internal(ast_msg.into()));
+    }
+    if entry_ids
+      .iter()
+      .map(|x| x.unwrap_or(TermId::MAX))
+      .ne(order.iter().copied())
+    {
+      return Err(SharingError::Internal(ids_msg.into()));
+    }
+    Ok(())
   }
 
   /// Build from fully expanded roots; any Share leaf is an error.

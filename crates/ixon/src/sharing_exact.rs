@@ -80,6 +80,7 @@ mod cost;
 mod dag;
 mod dict;
 mod par;
+mod prof;
 mod roots;
 mod search;
 mod tiered;
@@ -101,6 +102,7 @@ pub use cost::{
 };
 pub use dag::{Children, Node, NodeKey, SharingDag, TermId};
 pub use dict::{FixedDictionary, dictionary_cost, materialize_with_dictionary};
+pub use prof::profile_report;
 pub use roots::{
   constant_info_root_count, constant_info_root_exprs, rebuild_constant_info,
 };
