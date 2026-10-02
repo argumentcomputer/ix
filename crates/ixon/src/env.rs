@@ -927,6 +927,12 @@ impl Env {
   ///   payload blobs, `meta_refs` extension DAG edges, and aux_gen
   ///   `original` constants. Metadata can introduce new DAG edges, so
   ///   the walk runs to fixpoint (usually two rounds).
+  /// - The constants that carried metadata names for meta kernel
+  ///   ingress to resolve through `named` ([`ConstantMeta::named_refs`]:
+  ///   `all`, `ctx`, `ctors`) are carried too, with their Named
+  ///   entries: a `mutual` definition's `all` names siblings its value
+  ///   need not reach, and without them `ix check-rs` (meta) fails the
+  ///   bundle with `resolve_all: Named entry … missing`.
   ///
   /// Errors if a reached address is in neither `consts`, `blobs`, nor
   /// `assumed` — the source env cannot produce a closed bundle for
@@ -947,6 +953,7 @@ impl Env {
       // ── Named pass: carry display metadata for every carried
       // constant. Metadata references content the value walk cannot
       // see; new DAG edges feed the next value pass.
+      let mut named_refs: Vec<Name> = Vec::new();
       for entry in self.named.iter() {
         let (name, named) = (entry.key(), entry.value());
         if !out.consts.contains_key(&named.addr) || named_done.contains(name) {
@@ -961,8 +968,16 @@ impl Env {
           &|ba| self.get_blob(ba),
           &mut visited,
           &mut pending,
+          &mut named_refs,
         )?;
       }
+      // Resolved after the iteration (no `named` lookup while iterating it).
+      Self::enqueue_named_refs(
+        named_refs,
+        &|nm| self.named.get(nm).map(|e| e.addr.clone()),
+        &mut visited,
+        &mut pending,
+      );
 
       // The named pass ran against the final consts of this round; if
       // it produced no new DAG work, the walk is complete.
@@ -1064,7 +1079,12 @@ impl Env {
   /// [`Self::prune_to_closure`]; the §4 lookup + lazy env for the
   /// streaming variant (`Env::prune_to_closure_streaming` in
   /// `serialize.rs`) — one body, so the two paths cannot drift.
+  /// The names whose Named entries meta ingress resolves
+  /// ([`ConstantMeta::named_refs`]) are appended to `named_refs`, for
+  /// the caller to resolve with [`Self::enqueue_named_refs`] once its
+  /// named pass is done.
   #[cfg(not(target_arch = "riscv64"))]
+  #[allow(clippy::too_many_arguments)]
   pub(crate) fn carry_named_entry(
     out: &mut Env,
     name: &Name,
@@ -1073,9 +1093,18 @@ impl Env {
     get_blob: &dyn Fn(&Address) -> Option<Vec<u8>>,
     visited: &mut FxHashSet<Address>,
     pending: &mut VecDeque<Address>,
+    named_refs: &mut Vec<Name>,
   ) -> Result<(), String> {
     out.named.insert(name.clone(), named.clone());
     Self::carry_name(out, name);
+
+    let mut ref_addrs: Vec<Address> = Vec::new();
+    named.meta().named_refs(&mut ref_addrs);
+    for na in ref_addrs {
+      if let Some(n) = resolve_name(&na) {
+        named_refs.push(n);
+      }
+    }
 
     let mut name_addrs: Vec<Address> = Vec::new();
     let mut blob_addrs: Vec<Address> = Vec::new();
@@ -1109,6 +1138,26 @@ impl Env {
       }
     }
     Ok(())
+  }
+
+  /// Queue the constants of `named_refs` (from [`Self::carry_named_entry`])
+  /// for the next value pass; that round's named pass then carries their
+  /// Named entries. A name with no Named entry in the source is skipped:
+  /// the source itself lacks it, and the bundle cannot do better.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn enqueue_named_refs(
+    named_refs: Vec<Name>,
+    named_addr: &dyn Fn(&Name) -> Option<Address>,
+    visited: &mut FxHashSet<Address>,
+    pending: &mut VecDeque<Address>,
+  ) {
+    for n in named_refs {
+      if let Some(addr) = named_addr(&n)
+        && visited.insert(addr.clone())
+      {
+        pending.push_back(addr);
+      }
+    }
   }
 
   /// Copy `name` and its full parent chain into `out.names`, storing
@@ -1803,6 +1852,67 @@ mod tests {
     assert!(via_stream_cut.named.get(&bar).is_none());
     assert!(via_stream_cut.assumptions.contains(&b));
     assert_eq!(ser(&via_full_cut), ser(&via_stream_cut));
+  }
+
+  /// A structural/well-founded/`partial` `mutual` definition (`Odd`)
+  /// whose value does not reach its sibling (`Even`) still names it in
+  /// its metadata `all`, which meta kernel ingress resolves through
+  /// `named`. Both prune paths carry the sibling's constant and Named
+  /// entry (byte-identically); the anon prune does not.
+  #[test]
+  fn prune_to_closure_carries_mutual_siblings_named_in_all() {
+    use crate::metadata::{ConstantMetaInfo, ExprMeta};
+    let env = Env::new();
+    let odd_c = store_canonical(&env, const_with_refs(vec![]));
+    let even_c =
+      store_canonical(&env, const_with_refs_discriminator(vec![], 3));
+    let (odd, even) = (n("Odd"), n("Even"));
+    let odd_addr = Address::from_blake3_hash(*odd.get_hash());
+    let even_addr = Address::from_blake3_hash(*even.get_hash());
+    env.store_name(odd_addr.clone(), odd.clone());
+    env.store_name(even_addr.clone(), even.clone());
+    let def_meta = |name: &Address| {
+      ConstantMeta::new(ConstantMetaInfo::Def {
+        name: name.clone(),
+        lvls: vec![],
+        all: vec![even_addr.clone(), odd_addr.clone()],
+        ctx: vec![name.clone()],
+        arena: ExprMeta::default(),
+        type_root: 0,
+        value_root: 0,
+      })
+    };
+    env.register_name(
+      odd.clone(),
+      Named::new(odd_c.clone(), def_meta(&odd_addr)),
+    );
+    env.register_name(
+      even.clone(),
+      Named::new(even_c.clone(), def_meta(&even_addr)),
+    );
+    let mut bytes = Vec::new();
+    env.put(&mut bytes).unwrap();
+    let ser = |e: &Env| {
+      let mut v = Vec::new();
+      e.put(&mut v).unwrap();
+      v
+    };
+
+    let none = FxHashSet::default();
+    let bundle = env.prune_to_closure(&odd_c, &none).unwrap();
+    assert!(bundle.consts.contains_key(&even_c), "sibling constant carried");
+    assert!(bundle.named.get(&even).is_some(), "sibling Named entry carried");
+    bundle.validate_closed().unwrap();
+
+    let (index, names) = Env::parse_lazy_index_with_names(&bytes).unwrap();
+    let lazy = Env::from_lazy_index(&index, &bytes).unwrap();
+    let streamed = lazy
+      .prune_to_closure_streaming(&index, &bytes, &names, &odd_c, &none)
+      .unwrap();
+    assert_eq!(ser(&bundle), ser(&streamed), "streaming parity");
+
+    let anon = env.prune_to_closure_anon(&odd_c, &none).unwrap();
+    assert!(!anon.consts.contains_key(&even_c), "anon: value closure only");
   }
 
   /// A cut bundle serializes a `Named.original` whose address is
