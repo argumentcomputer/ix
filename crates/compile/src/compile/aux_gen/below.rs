@@ -115,6 +115,36 @@ pub fn generate_below_constants(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<Vec<BelowConstant>, CompileError> {
+  generate_below_constants_with(
+    sorted_classes,
+    canonical_recs,
+    lean_env,
+    is_prop,
+    false,
+    stt,
+    kctx,
+  )
+}
+
+/// [`generate_below_constants`], with the per-name existence gate on the
+/// nested auxiliaries' `.below_N` optionally lifted.
+///
+/// `all_aux = true` generates `.below_N` for every canonical auxiliary
+/// recursor, whether or not its own name is in `lean_env`. The compile path
+/// (`aux_gen::generate_aux_patches`) passes it once the block's `.below`
+/// family is exported at all: the members of the below-definition block
+/// must not depend on which of its names happen to be in a closure-only
+/// environment, or the block (and every `.below` projection into it) gets a
+/// different address than in a whole-environment compile.
+pub fn generate_below_constants_with(
+  sorted_classes: &[Vec<Name>],
+  canonical_recs: &[(Name, RecursorVal)],
+  lean_env: &LeanEnv,
+  is_prop: bool,
+  all_aux: bool,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) -> Result<Vec<BelowConstant>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() {
     return Ok(vec![]);
@@ -221,7 +251,8 @@ pub fn generate_below_constants(
         // stt.env.named (Ixon compile state — has all constants during
         // decompilation where lean_env is the incrementally-built work_env
         // and won't contain the constant we're about to generate).
-        let exists = lean_env.contains_key(&below_name)
+        let exists = all_aux
+          || lean_env.contains_key(&below_name)
           || stt.env.named.contains_key(&below_name);
         if !exists {
           continue;

@@ -2742,7 +2742,7 @@ fn ingress_type_stub(
 /// subterms are walked once (DAG cost) instead of once per occurrence
 /// (unshared-tree cost — exponential on the eta-expanded structure
 /// types this pass sees constantly).
-fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
+pub(crate) fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
   let mut visited: rustc_hash::FxHashSet<&LeanExpr> =
     rustc_hash::FxHashSet::default();
   let mut stack: Vec<&LeanExpr> = vec![expr];

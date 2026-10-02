@@ -1734,7 +1734,7 @@ def buildPropBrecon (ci : Nat) (recVal0 : RecursorVal) (ind : InductiveVal)
 def generateBreconConstants (sortedClasses : Array (Array Name))
     (canonicalRecs : Array (Name × RecursorVal))
     (belowConsts : Array BelowConstant) (isProp : Bool) (maps : AddrMaps)
-    : KBridgeM (Array BRecOnDef) := do
+    (allAux : Bool := false) : KBridgeM (Array BRecOnDef) := do
   let nClasses := sortedClasses.size
   if nClasses == 0 || canonicalRecs.isEmpty || belowConsts.isEmpty then
     return #[]
@@ -1812,7 +1812,9 @@ source-indexed; refusing to synthesize brecOn_{j + 1}")
         -- state — decompilation's work_env won't contain the constant
         -- we're about to generate).
         let cenv ← Ix.CompileM.getCompileEnv
-        let existsInEnv := (← lookupConst? breconName).isSome
+        -- `allAux`: see `generateBelowConstants` (brecon.rs
+        -- `generate_brecon_constants_with`).
+        let existsInEnv := allAux || (← lookupConst? breconName).isSome
           || cenv.nameToNamed.contains breconName
         if existsInEnv then
           let ci := nClasses + j -- target motive index in the flat block

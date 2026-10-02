@@ -933,7 +933,8 @@ def buildBelowIndc (ci : Nat) (belowName : Name) (recVal : RecursorVal)
     `IndPredBelow`. -/
 def generateBelowConstants (sortedClasses : Array (Array Name))
     (canonicalRecs : Array (Name × RecursorVal)) (isProp : Bool)
-    (maps : AddrMaps) : KBridgeM (Array BelowConstant) := do
+    (maps : AddrMaps) (allAux : Bool := false) :
+    KBridgeM (Array BelowConstant) := do
   let nClasses := sortedClasses.size
   if nClasses == 0 || canonicalRecs.isEmpty then
     return #[]
@@ -1015,7 +1016,11 @@ source-indexed; refusing to synthesize below_{j + 1}")
         -- incrementally-built work_env and won't contain the constant
         -- we're about to generate).
         let cenv ← Ix.CompileM.getCompileEnv
-        let existsInEnv := (← lookupConst? belowName).isSome
+        -- `allAux` (the compile path, once the block's `.below` family is
+        -- exported; below.rs `generate_below_constants_with`) lifts the
+        -- per-name gate: block membership must not depend on which names
+        -- a closure-only environment holds.
+        let existsInEnv := allAux || (← lookupConst? belowName).isSome
           || cenv.nameToNamed.contains belowName
         if existsInEnv then
           -- Extract the actual external inductive from the auxiliary

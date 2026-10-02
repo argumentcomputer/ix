@@ -15,6 +15,7 @@ import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
+import Tests.Ix.Compile.AuxGenClosureCanon
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -169,6 +170,8 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-ingress-meta", Tests.Tc.IngressMeta.suite),
   -- aux_gen on closure-only environments (`ix compile --consts`)
   ("aux-gen-closure", Tests.Ix.Compile.AuxGenClosure.suite),
+  -- aux addresses do not depend on the compile set (closure vs whole env)
+  ("canon-closure-aux", Tests.Ix.Compile.AuxGenClosureCanon.suite),
 ]
 
 /-- Primary test runners — quick suites run by default alongside

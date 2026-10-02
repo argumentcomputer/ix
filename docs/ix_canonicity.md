@@ -509,6 +509,17 @@ A few key consequences:
   them for user-declared inductives. The blocks contain exactly
   `n` entries.
 
+- **Block membership is per family, not per name.** A closure-only
+  compile (`ix compile --consts`, a claim's dependency closure) may hold
+  `A.brecOn` without `B.brecOn`, or `T.brecOn` without `T.brecOn_1`.
+  `generate_aux_patches` emits a family's whole block whenever Lean
+  exported any of its members, so each block (and every projection into
+  it) has the same address as in a whole-environment compile. The one
+  exception: a brecOn batch whose whole block needs a constant the slice
+  lacks (a nested block's `.brecOn.eq` block cases on the external
+  inductive, `List.casesOn`) falls back to the members present; closing
+  the slice over that dependency restores the canonical block.
+
 This structure is what gives canonicity its operational form: the
 content of each block is byte-determined by `(sorted_classes, expanded
 nested aux, level params, parameter telescope)` — none of which depend

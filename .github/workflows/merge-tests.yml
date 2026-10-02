@@ -131,7 +131,7 @@ jobs:
               rust-canon-roundtrip serial-canon-roundtrip parallel-canon-roundtrip
               graph-cross condense-cross rust-serialize ixon-corpus
               rust-decompile validate-aux aux-gen-diff decompile-diff
-              aux-gen-closure
+              aux-gen-closure canon-closure-aux
           - name: Lake ignored tests (compile)
             kind: lake
             test_args: --ignored compile

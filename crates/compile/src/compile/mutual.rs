@@ -1265,14 +1265,26 @@ fn compile_below_recursors(
   // family's Phase-2b: regenerate each casesOn from its canonical rec
   // and register it here so the ordinary compile of the Lean value is
   // skipped (aux registrations suppress it, like every other patch).
+  //
+  // Per family, not per name (as `aux_gen::generate_aux_patches` decides
+  // every other aux block): if Lean exported any below inductive's
+  // `.casesOn`, regenerate all of them, so the block does not depend on
+  // which of its names a closure-only environment happens to hold.
+  let below_cases_name = |rec_name: &Name| match rec_name.as_data() {
+    ix_common::env::NameData::Str(parent, _, _) => {
+      Some(Name::str(parent.clone(), "casesOn".to_string()))
+    },
+    _ => None,
+  };
+  let emit_below_cases = recs.iter().any(|(rec_name, _)| {
+    below_cases_name(rec_name).is_some_and(|n| lean_env.get(&n).is_some())
+  });
   let mut below_cases: Vec<MutConst> = Vec::new();
   for (rec_name, rec_val) in &recs {
-    let ind_name = match rec_name.as_data() {
-      ix_common::env::NameData::Str(parent, _, _) => parent.clone(),
-      _ => continue,
+    let Some(cases_on_name) = below_cases_name(rec_name) else {
+      continue;
     };
-    let cases_on_name = Name::str(ind_name, "casesOn".to_string());
-    if lean_env.get(&cases_on_name).is_some()
+    if emit_below_cases
       && let Some(d) =
         aux_gen::cases_on::generate_cases_on(&cases_on_name, rec_val, lean_env)
     {

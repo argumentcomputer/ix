@@ -68,6 +68,34 @@ pub fn generate_brecon_constants(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
+  generate_brecon_constants_with(
+    sorted_classes,
+    canonical_recs,
+    below_consts,
+    lean_env,
+    is_prop,
+    false,
+    stt,
+    kctx,
+  )
+}
+
+/// [`generate_brecon_constants`], with the per-name existence gate on the
+/// nested auxiliaries' `.brecOn_N` optionally lifted (`all_aux = true`:
+/// generate `.brecOn_N[.go|.eq]` for every canonical auxiliary recursor).
+/// See [`super::below::generate_below_constants_with`] for why the compile
+/// path decides block membership by family rather than by name.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_brecon_constants_with(
+  sorted_classes: &[Vec<Name>],
+  canonical_recs: &[(Name, RecursorVal)],
+  below_consts: &[BelowConstant],
+  lean_env: &LeanEnv,
+  is_prop: bool,
+  all_aux: bool,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) -> Result<Vec<BRecOnDef>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() || below_consts.is_empty() {
     return Ok(vec![]);
@@ -172,7 +200,8 @@ pub fn generate_brecon_constants(
         // stt.env.named (Ixon compile state — has all constants during
         // decompilation where lean_env is the incrementally-built work_env
         // and won't contain the constant we're about to generate).
-        let exists = lean_env.contains_key(&brecon_name)
+        let exists = all_aux
+          || lean_env.contains_key(&brecon_name)
           || stt.env.named.contains_key(&brecon_name);
         if !exists {
           continue;
