@@ -19,7 +19,7 @@
     cuda-nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
     # Lean 4 & Lake
-    lean4-nix.url = "github:argumentcomputer/lean4-nix";
+    lean4-nix.url = "github:argumentcomputer/lean4-nix/install-modes";
 
     # Helper: flake-parts for easier outputs
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -267,72 +267,46 @@
             // {
               name = "Ix";
               buildLibrary = true;
+              # The executables below continue from this tree; archived, it
+              # is a single small file for Nix and Cachix to move around.
+              artifactsFormat = "zstd";
             }
           );
-          # Executables continue from ixLib's artifacts and install only the
-          # binaries plus the module files the wrapper puts on LEAN_PATH, which
-          # binaries that import Ix.Meta read at runtime. The rest of Lake's
-          # tree (static libraries, C output, IR, traces) only serves a build
-          # that continues from these artifacts, and nothing continues from an
-          # executable; it would multiply the output size several times over
-          # and put every file through the ELF fixup.
-          exeArtifacts = {
+          # Executables continue from ixLib's artifacts. lean4-nix installs
+          # them wrapped for standalone use, with the module files that
+          # binaries importing Ix.Meta read at runtime. The IR files are left
+          # out: every module these binaries can import is linked into them,
+          # so the interpreter never needs IR for it.
+          exeArgs = {
             lakeArtifacts = ixLib;
-            installArtifacts = false;
-            postInstall = ''
-              mkdir -p $out/.lake/build/lib/lean
-              rsync -a --prune-empty-dirs \
-                --include='*/' \
-                --include='*.olean' \
-                --include='*.olean.private' \
-                --include='*.olean.server' \
-                --exclude='*' \
-                .lake/build/lib/lean/ $out/.lake/build/lib/lean/
-              find .lake/build/bin -maxdepth 1 -type f -executable \
-                -exec install -Dm755 -t $out/bin {} +
-            '';
+            installBin = true;
+            binFiles = [
+              "*.olean"
+              "*.olean.private"
+              "*.olean.server"
+            ];
           };
-          lakeBinArgs = lakeBuildArgs // exeArtifacts;
-          leanPath = pkgs.lib.concatStringsSep ":" (
-            map (d: "${d}/.lake/build/lib/lean") ([ ixLib ] ++ builtins.attrValues lakeDeps)
-          );
-          wrapBin =
-            drv:
-            pkgs.runCommand drv.name { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
-              mkdir -p $out/bin
-              for f in ${drv}/bin/*; do
-                [ -x "$f" ] || continue
-                makeWrapper "$f" "$out/bin/$(basename "$f")" \
-                  --set LEAN_SYSROOT "${lean}" \
-                  --set LEAN_PATH "${drv}/.lake/build/lib/lean:${leanPath}"
-              done
-            '';
+          lakeBinArgs = lakeBuildArgs // exeArgs;
           # The CLI reuses ixLib's oleans and links the same static library.
-          ixCLI = wrapBin (
-            lake2nix.mkPackage (
-              lakeBinArgs
-              // {
-                name = "ix";
-              }
-            )
+          ixCLI = lake2nix.mkPackage (
+            lakeBinArgs
+            // {
+              name = "ix";
+            }
           );
           # Test binary links rustPkgTest (with test-ffi) instead of rustPkg
-          ixTest = wrapBin (
-            lake2nix.mkPackage (
-              lakeTestBuildArgs
-              // exeArtifacts
-              // {
-                name = "IxTests";
-              }
-            )
+          ixTest = lake2nix.mkPackage (
+            lakeTestBuildArgs
+            // exeArgs
+            // {
+              name = "IxTests";
+            }
           );
-          ZKVotingProver = wrapBin (
-            lake2nix.mkPackage (
-              lakeBinArgs
-              // {
-                name = "Apps.ZKVoting.Prover";
-              }
-            )
+          ZKVotingProver = lake2nix.mkPackage (
+            lakeBinArgs
+            // {
+              name = "Apps.ZKVoting.Prover";
+            }
           );
         in
         {
