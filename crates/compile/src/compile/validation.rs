@@ -205,7 +205,12 @@ where
       if let Some(memory) = read() {
         blocked = memory.headroom(options.process_budget)
           < memory.reserve(options.process_budget)
-          || reclaiming(memory, previous, now.duration_since(sampled));
+          || reclaiming(
+            memory,
+            previous,
+            now.duration_since(sampled),
+            options.process_budget,
+          );
         state = pressure(
           memory,
           previous,
@@ -466,7 +471,7 @@ mod tests {
       capacity: 100 * GIB,
       available: 90 * GIB,
       process: 10 * GIB,
-      swap_used: 0,
+      process_swap: 0,
       stall_us: 0,
     }
   }
@@ -544,21 +549,59 @@ mod tests {
       ),
       Pressure::Critical
     );
+    // This process's reclaim (its cgroup stalling, its own pages swapped
+    // out) counts below four reserves (50 GiB) of headroom...
+    let moderate = Memory { available: 40 * GIB, ..mem };
+    let second = Duration::from_secs(1);
     assert_eq!(
       pressure(
-        Memory { stall_us: 110_000, ..mem },
-        mem,
-        Duration::from_secs(1),
+        Memory { stall_us: 110_000, ..moderate },
+        moderate,
+        second,
+        None
+      ),
+      Pressure::Backoff
+    );
+    assert_eq!(
+      pressure(Memory { stall_us: 90_000, ..moderate }, moderate, second, None),
+      Pressure::Healthy
+    );
+    assert_eq!(
+      pressure(
+        Memory { process_swap: 9 * MIB, ..moderate },
+        moderate,
+        second,
         None
       ),
       Pressure::Backoff
     );
     assert_eq!(
       pressure(
-        Memory { swap_used: 9 * MIB, ..mem },
-        mem,
-        Duration::from_secs(1),
+        Memory { process_swap: 8 * MIB, ..moderate },
+        moderate,
+        second,
         None
+      ),
+      Pressure::Healthy
+    );
+    // ...and above that it is other workloads' churn or refaults of this
+    // process's file mappings, which running fewer jobs does not cure.
+    assert_eq!(
+      pressure(Memory { stall_us: 1_000_000, ..mem }, mem, second, None),
+      Pressure::Healthy
+    );
+    assert_eq!(
+      pressure(Memory { process_swap: GIB, ..mem }, mem, second, None),
+      Pressure::Healthy
+    );
+    // A budget scales the threshold: 40 GiB of budget headroom is moderate.
+    let budgeted = Memory { process: 60 * GIB, ..mem };
+    assert_eq!(
+      pressure(
+        Memory { process_swap: 9 * MIB, ..budgeted },
+        budgeted,
+        second,
+        Some(100 * GIB)
       ),
       Pressure::Backoff
     );
@@ -572,7 +615,7 @@ mod tests {
       Pressure::Critical
     );
     // Old swap occupancy is not new pressure.
-    let swapped = Memory { swap_used: 90 * GIB, ..mem };
+    let swapped = Memory { process_swap: 30 * GIB, ..moderate };
     assert_eq!(
       pressure(swapped, swapped, Duration::from_secs(1), None),
       Pressure::Healthy
@@ -587,8 +630,9 @@ mod tests {
     );
     assert_eq!(
       psi_total("some avg10=0 total=999\nfull avg10=0 total=123\n"),
-      123
+      Some(123)
     );
+    assert_eq!(psi_total("some avg10=0 total=999\n"), None);
     let mount = "30 20 0:25 / /sys/fs/cgroup rw - cgroup2 cgroup rw";
     assert_eq!(
       cgroup_dirs("0::/a/b\n", mount),
@@ -856,7 +900,7 @@ mod tests {
               } else {
                 8 * GIB
               },
-              swap_used: if reclaiming { reads * 9 * MIB } else { 0 },
+              process_swap: if reclaiming { reads * 9 * MIB } else { 0 },
               ..healthy()
             })
           },
