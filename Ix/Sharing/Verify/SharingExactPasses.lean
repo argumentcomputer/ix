@@ -8,8 +8,8 @@ import Ix.Sharing.Verify.SharingExact
   (each entry built against the dictionary of the entries before it) and of
   `Prep.materializeDependent` (one dictionary, table in dependency order):
   entry `k` only references Share indices below `k`, the roots only indices
-  below the table size (the Share part of `DecodeCtx.SharingWF`), and every
-  output expands to its term.
+  below the table size (the backward-reference rule the Ixon decoders
+  check), and every output expands to its term.
 -/
 
 namespace Ix.Sharing.Verify.SharingExact
@@ -617,7 +617,7 @@ theorem indexModel_prefix (size : Nat) (table : Array Nat) (k : Nat)
 
 /-- Loop-level backwardness of `materializeTable`: entry `k` only references
 Share indices below `k`, and the roots only indices below the table size
-(the Share part of `DecodeCtx.SharingWF`). -/
+(the backward-reference rule the Ixon decoders check). -/
 theorem materializeTable_backward (p : Prep) (table roots : Array Nat) (limits : Limits)
     (widthAt : Nat → Nat) (hsize : table.size ≤ UInt64.size)
     {entries rs : Array Ixon.Expr} {predicted work : Nat}
@@ -702,7 +702,8 @@ theorem materializeDependent_parts (p : Prep) (table roots : Array Nat)
 /-- Loop-level backwardness of `materializeDependent`: if the table is in
 dependency order (a stored term below entry `k` is stored at an index below
 `k`), entry `k` only references Share indices below `k` and the roots only
-indices below the table size (the Share part of `DecodeCtx.SharingWF`). -/
+indices below the table size (the backward-reference rule the Ixon
+decoders check). -/
 theorem materializeDependent_backward (p : Prep) (table roots : Array Nat)
     (width : Array (Option Nat)) (limits : Limits) (harity : DagArity p.dag)
     (horder : ∀ (k j : Nat) (hk : k < table.size) (hj : j < table.size),

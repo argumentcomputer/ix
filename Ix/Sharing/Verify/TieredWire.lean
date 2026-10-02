@@ -8,8 +8,9 @@ For the format switch: every expression the tiered construction returns
 (table entries and roots) is in the expression codec's public wire domain
 (`Ixon.Expr.wireWF`: every `UInt64` count it writes is representable), the
 table count fits a `UInt64` (capacity), table entry `k` references only
-entries below `k`, and every root only table entries (the Share part of
-`DecodeCtx.SharingWF`). The wire domain is established by phase 3's
+entries below `k`, and every root only table entries (the rule that a
+`Share` refers only to an earlier table entry, which the Ixon decoders and
+the certified reader check). The wire domain is established by phase 3's
 `wireCounts` check over the output (`wireCounts_spec`); the other facts
 are proved from the construction. For the wire layout the length the
 construction reports is the serialized length of its output
