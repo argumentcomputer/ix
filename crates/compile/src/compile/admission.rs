@@ -7,9 +7,11 @@
 //! Backoff stops admissions; already-active blocks keep running, never park
 //! holding their scratch. This is not an allocator-enforced memory limit.
 //!
-//! The cap follows the headroom left after a ten-second growth forecast, in
-//! units of the safety reserve (an eighth of the visible memory, or of the
-//! budget): every worker from three reserves up, which is where a compile
+//! The cap follows the headroom left after a ten-second growth forecast (of
+//! this process and of falling availability against system or cgroup
+//! memory, of this process alone against a budget), in units of the safety
+//! reserve (an eighth of the visible memory, or of the budget): every
+//! worker from three reserves up, which is where a compile
 //! starts on a machine with memory to spare; a linear share between two and
 //! three; one block (serial progress) between one and two; and no admissions
 //! below one reserve. Below the supported cap the gate ramps up by doubling
@@ -67,18 +69,12 @@ impl Options {
   }
 }
 
-/// The active-block cap that `headroom` supports once `forecast` growth is
-/// set aside: none below one reserve, one block below two (retained output
-/// cannot be reclaimed by running fewer blocks, so serial progress beats
-/// waiting for it to shrink), every worker from three reserves up, and a
-/// linear share in between.
-fn supported(
-  headroom: u64,
-  reserve: u64,
-  forecast: u64,
-  max_workers: usize,
-) -> usize {
-  let net = headroom.saturating_sub(forecast);
+/// The active-block cap that `net` headroom (what remains once the growth
+/// forecast is set aside) supports: none below one reserve, one block below
+/// two (retained output cannot be reclaimed by running fewer blocks, so
+/// serial progress beats waiting for it to shrink), every worker from three
+/// reserves up, and a linear share in between.
+fn supported(net: u64, reserve: u64, max_workers: usize) -> usize {
   let reserve = reserve.max(1);
   if net < reserve {
     0
@@ -103,9 +99,21 @@ struct Policy {
   sampled: Instant,
   pressured: Option<Instant>,
   reclaim_samples: u32,
+  /// Growth rates in bytes per second, rising at once and decaying by a
+  /// quarter per sample: of this process (resident plus swap), and of the
+  /// faster of that and the fall in system or cgroup availability.
+  process_growth: u64,
   growth_per_second: u64,
+  /// The two rates over the lookahead.
+  projected_process_growth: u64,
   projected_growth: u64,
   completed: u64,
+}
+
+/// Bytes per second.
+fn rate(delta: u64, elapsed: Duration) -> u64 {
+  (u128::from(delta) * 1_000_000 / elapsed.as_micros().max(1))
+    .min(u128::from(u64::MAX)) as u64
 }
 
 impl Policy {
@@ -113,7 +121,7 @@ impl Policy {
     let budget = options.process_budget;
     let reserve = memory.reserve(budget);
     let headroom = memory.headroom(budget);
-    let supported = supported(headroom, reserve, 0, options.max_workers);
+    let supported = supported(headroom, reserve, options.max_workers);
     // Start at the supported cap: with wide headroom, every worker, without
     // a ramp to sit through. Below two reserves, first wait out a recovery
     // period, as after pressure.
@@ -130,10 +138,27 @@ impl Policy {
       sampled: now,
       pressured: low.then_some(now),
       reclaim_samples: 0,
+      process_growth: 0,
       growth_per_second: 0,
+      projected_process_growth: 0,
       projected_growth: 0,
       completed: 0,
     }
+  }
+
+  /// Headroom once the forecast growth is set aside, against each limit that
+  /// applies: system (or cgroup) availability, which any workload can use
+  /// up, and the budget, which only this process can. Other workloads'
+  /// allocations say nothing about the budget, so they are not forecast
+  /// against it.
+  fn net_headroom(&self, memory: Memory, budget: Option<u64>) -> u64 {
+    let system = memory.available.saturating_sub(self.projected_growth);
+    budget.map_or(system, |b| {
+      system.min(
+        b.saturating_sub(memory.process)
+          .saturating_sub(self.projected_process_growth),
+      )
+    })
   }
 
   /// The state reported in verbose logs.
@@ -164,24 +189,28 @@ impl Policy {
     options: Options,
   ) {
     let elapsed = now.duration_since(self.sampled);
-    let delta = memory
-      .process
-      .saturating_sub(self.previous.process)
-      .max(self.previous.available.saturating_sub(memory.available));
+    let grown = memory.process.saturating_sub(self.previous.process);
+    let drained = self.previous.available.saturating_sub(memory.available);
     // Fast rise, gradual decay: reserve space for another ten seconds of
     // recent growth, including external pressure, before starting more work.
     // This is process-level prediction, NOT an attributed per-block footprint.
-    let growth = (u128::from(delta) * 1_000_000 / elapsed.as_micros().max(1))
-      .min(u128::from(u64::MAX)) as u64;
+    let decay =
+      |rate: u64, previous: u64| rate.max(previous.saturating_mul(3) / 4);
+    self.process_growth = decay(rate(grown, elapsed), self.process_growth);
     self.growth_per_second =
-      growth.max(self.growth_per_second.saturating_mul(3) / 4);
-    self.projected_growth =
-      self.growth_per_second.saturating_mul(options.lookahead.as_secs());
+      decay(rate(grown.max(drained), elapsed), self.growth_per_second);
+    let lookahead = options.lookahead.as_secs();
+    self.projected_process_growth =
+      self.process_growth.saturating_mul(lookahead);
+    self.projected_growth = self.growth_per_second.saturating_mul(lookahead);
     let budget = options.process_budget;
     let reserve = memory.reserve(budget);
     let headroom = memory.headroom(budget);
-    let supported =
-      supported(headroom, reserve, self.projected_growth, options.max_workers);
+    let supported = supported(
+      self.net_headroom(memory, budget),
+      reserve,
+      options.max_workers,
+    );
     let low = headroom < reserve.saturating_mul(2);
     // Attributed and gated by headroom in `reclaiming`; debounced here.
     self.reclaim_samples = if reclaiming(memory, self.previous, elapsed, budget)
@@ -361,13 +390,14 @@ impl Admission {
           policy.sample(memory, now, completed, options);
           if options.verbose && (before != (policy.limit, policy.open, policy.pressure)
             || now.duration_since(logged) >= Duration::from_secs(5)) {
-            eprintln!("[compile_memory] {:?}: limit={}/{} active={active} admitting={} completed={completed} available={:.1} GiB reserve={:.1} GiB resident+swap={:.1} GiB (swap {:.2}) growth_forecast={:.1} GiB reclaim_samples={}",
+            eprintln!("[compile_memory] {:?}: limit={}/{} active={active} admitting={} completed={completed} available={:.1} GiB reserve={:.1} GiB resident+swap={:.1} GiB (swap {:.2}) growth_forecast={:.1} GiB (process {:.1}) reclaim_samples={}",
               policy.pressure, policy.limit, options.max_workers, policy.open,
               memory.available as f64 / GIB as f64,
               memory.reserve(options.process_budget) as f64 / GIB as f64,
               memory.process as f64 / GIB as f64,
               memory.process_swap as f64 / GIB as f64,
               policy.projected_growth as f64 / GIB as f64,
+              policy.projected_process_growth as f64 / GIB as f64,
               policy.reclaim_samples);
             logged = now;
           }
@@ -412,20 +442,21 @@ impl Admission {
           options.idle_timeout.saturating_mul(STUCK_TIMEOUTS)
         };
         if start.elapsed() >= timeout {
-          let (headroom, reserve, forecast) =
+          let budget = options.process_budget;
+          let (headroom, net, reserve) =
             state.policy.as_ref().map_or((0, 0, 0), |p| {
               (
-                p.previous.headroom(options.process_budget),
-                p.previous.reserve(options.process_budget),
-                p.projected_growth,
+                p.previous.headroom(budget),
+                p.net_headroom(p.previous, budget),
+                p.previous.reserve(budget),
               )
             });
           let error = resource_error(format!(
-            "not enough memory headroom to admit a compiler block; no active work for {:.0}s (headroom {:.1} GiB, reserve {:.1} GiB, growth forecast {:.1} GiB). Increase IX_COMPILE_MEMORY_GIB if set, or make more RAM available",
+            "not enough memory headroom to admit a compiler block; no active work for {:.0}s (headroom {:.1} GiB, {:.1} GiB after the growth forecast; reserve {:.1} GiB). Increase IX_COMPILE_MEMORY_GIB if set, or make more RAM available",
             timeout.as_secs_f64(),
             headroom as f64 / GIB as f64,
+            net as f64 / GIB as f64,
             reserve as f64 / GIB as f64,
-            forecast as f64 / GIB as f64,
           ));
           state.error = Some(error.clone());
           state.stopped = true;
@@ -510,20 +541,56 @@ mod tests {
   #[test]
   fn supported_cap_follows_headroom_net_of_the_forecast() {
     let r = 8 * GIB;
-    assert_eq!(supported(r - 1, r, 0, 24), 0);
-    assert_eq!(supported(r, r, 0, 24), 1);
-    assert_eq!(supported(2 * r - 1, r, 0, 24), 1);
-    assert_eq!(supported(2 * r, r, 0, 24), 1);
-    assert_eq!(supported(2 * r + r / 2, r, 0, 24), 12);
-    assert_eq!(supported(3 * r - 1, r, 0, 24), 23);
-    assert_eq!(supported(3 * r, r, 0, 24), 24);
-    assert_eq!(supported(80 * GIB, r, 0, 24), 24);
-    // The forecast is set aside first.
-    assert_eq!(supported(80 * GIB, r, 80 * GIB - 2 * r, 24), 1);
-    assert_eq!(supported(80 * GIB, r, 80 * GIB, 24), 0);
-    assert_eq!(supported(80 * GIB, r, u64::MAX, 24), 0);
-    assert_eq!(supported(2 * r + r / 2, r, 0, 1), 1);
-    assert_eq!(supported(GIB, 0, 0, 4), 4);
+    assert_eq!(supported(0, r, 24), 0);
+    assert_eq!(supported(r - 1, r, 24), 0);
+    assert_eq!(supported(r, r, 24), 1);
+    assert_eq!(supported(2 * r - 1, r, 24), 1);
+    assert_eq!(supported(2 * r, r, 24), 1);
+    assert_eq!(supported(2 * r + r / 2, r, 24), 12);
+    assert_eq!(supported(3 * r - 1, r, 24), 23);
+    assert_eq!(supported(3 * r, r, 24), 24);
+    assert_eq!(supported(u64::MAX, r, 24), 24);
+    assert_eq!(supported(2 * r + r / 2, r, 1), 1);
+    assert_eq!(supported(GIB, 0, 4), 4);
+    // The forecast is set aside first: the system's against availability,
+    // and only this process's own against a budget.
+    let opt = Options { process_budget: Some(20 * GIB), ..options(8) };
+    let mut policy = Policy::new(memory(), Instant::now(), opt);
+    policy.projected_growth = 30 * GIB;
+    policy.projected_process_growth = GIB;
+    assert_eq!(policy.net_headroom(memory(), None), 60 * GIB);
+    assert_eq!(policy.net_headroom(memory(), Some(20 * GIB)), 9 * GIB);
+    policy.projected_growth = 85 * GIB;
+    assert_eq!(policy.net_headroom(memory(), Some(20 * GIB)), 5 * GIB);
+    policy.projected_growth = u64::MAX;
+    assert_eq!(policy.net_headroom(memory(), Some(20 * GIB)), 0);
+  }
+
+  #[test]
+  fn budget_headroom_is_not_forecast_with_other_workloads_allocations() {
+    // A 20 GiB budget with 12 GiB used leaves 8 GiB, over three budget
+    // reserves (2.5 GiB). Another workload takes 0.5 GiB of system memory
+    // per sample: a 20 GiB system forecast, against 86-90 GiB available.
+    let opt = Options { process_budget: Some(20 * GIB), ..options(8) };
+    let now = Instant::now();
+    let start = Memory { process: 12 * GIB, ..memory() };
+    let mut policy = Policy::new(start, now, opt);
+    assert_eq!((policy.limit, policy.open), (8, true));
+    for tick in 1..=8u64 {
+      let others =
+        Memory { available: start.available - tick * GIB / 2, ..start };
+      policy.sample(others, now + ms(250 * tick), tick, opt);
+      assert_eq!((policy.limit, policy.open), (8, true), "sample {tick}");
+    }
+    // This process's own growth does count against the budget.
+    let grown = Memory {
+      process: 13 * GIB,
+      available: start.available - 5 * GIB,
+      ..start
+    };
+    policy.sample(grown, now + ms(250 * 9), 9, opt);
+    assert!(!policy.open);
+    assert_eq!(policy.projected_process_growth, 40 * GIB);
   }
 
   #[test]
@@ -857,7 +924,12 @@ mod tests {
     let Err(CompileError::ResourceLimit { reason }) = gate.acquire() else {
       panic!("admitted a block without headroom");
     };
-    assert!(reason.contains("headroom 1.0 GiB, reserve 12.5 GiB"), "{reason}");
+    assert!(
+      reason.contains(
+        "headroom 1.0 GiB, 1.0 GiB after the growth forecast; reserve 12.5 GiB"
+      ),
+      "{reason}"
+    );
     // Genuinely short of memory: one idle timeout, not the long one.
     assert!(start.elapsed() < Duration::from_millis(100 * 5));
     assert_eq!(gate.shared.state.lock().unwrap().active, 0);

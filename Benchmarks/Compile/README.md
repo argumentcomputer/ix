@@ -77,7 +77,8 @@ group IDs. Optional controls:
 
 The main dependency scheduler also uses adaptive admission on Linux. It
 samples the same memory signals every 250 ms, plus a ten-second forecast of
-recent memory growth, and caps active blocks by the headroom left after that
+recent memory growth (against `IX_COMPILE_MEMORY_GIB`, only this process's
+own growth), and caps active blocks by the headroom left after that
 forecast, measured in safety reserves (an eighth of visible memory, or of the
 budget): every worker from three reserves up, a linear share between two and
 three, one block between one and two (stable retained output keeps growing
