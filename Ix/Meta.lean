@@ -26,21 +26,45 @@ def leanPhaseLine (what : String) (startMs : Nat) : IO Unit := do
   if (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome then
     IO.eprintln s!"[lean] {what}: {((← IO.monoMsNow) - startMs).formatMs}"
 
+/-- `lake env printenv LEAN_PATH` run in `cwd`: Lake's exit code and stdout. -/
+def queryLakeLeanPath (cwd : Option FilePath) : IO (UInt32 × String) := do
+  let out ← IO.Process.output
+    { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd, env := lakeSpawnEnv }
+  return (out.exitCode, out.stdout)
+
+/-- Successful `lake env printenv LEAN_PATH` outputs of this process, keyed by
+the directory Lake ran in. A workspace's search path changes only when Lake
+reconfigures or materializes the workspace, which happens in `lake build`;
+`buildFile` refreshes the entry of the workspace it builds. Without the memo a
+compile asks Lake twice for module-mode files (`getFileEnvCore`, then
+`moduleVisibleNames`), at about 2.4 s per query on Mathlib. -/
+initialize leanPathMemo : IO.Ref (Std.HashMap String String) ← IO.mkRef {}
+
 /-- Initialize Lean's module search path.
 
 When `cwd` is provided, query `lake env printenv LEAN_PATH` from that directory
 unconditionally — the caller is loading a file from a specific lake project, and
 the inherited `LEAN_PATH` (e.g., set by an outer `lake exe ix` invocation) would
 point at the wrong project's packages. When `cwd` is `none`, honor the inherited
-`LEAN_PATH` if set, falling back to querying lake in the current directory. -/
+`LEAN_PATH` if set, falling back to querying lake in the current directory.
+A query this process already made for the same directory is reused
+(`leanPathMemo`). -/
 def initLeanSearchPath (cwd : Option FilePath := none) : IO Unit := do
   -- If a target cwd is supplied, always query that cwd's LEAN_PATH.
   -- Otherwise, trust the inherited LEAN_PATH when present.
   if cwd.isSome || (← IO.getEnv "LEAN_PATH").isNone then
-    let start ← IO.monoMsNow
-    let out ← IO.Process.output { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd, env := lakeSpawnEnv }
-    leanPhaseLine "search path (lake env)" start
-    let paths := out.stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
+    let key := (← match cwd with | some dir => pure dir | none => IO.currentDir).toString
+    let stdout ← match (← leanPathMemo.get)[key]? with
+      | some stdout => pure stdout
+      | none =>
+        let start ← IO.monoMsNow
+        let (exitCode, stdout) ← queryLakeLeanPath cwd
+        leanPhaseLine "search path (lake env)" start
+        -- As before the memo, a failed query still yields its (empty) output
+        -- here; it is just not remembered.
+        if exitCode == 0 then leanPathMemo.modify (·.insert key stdout)
+        pure stdout
+    let paths := stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
     initSearchPath (← findSysroot) paths
   else
     initSearchPath (← findSysroot)
