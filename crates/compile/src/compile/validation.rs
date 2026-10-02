@@ -112,7 +112,10 @@ impl Options {
     let max_workers = rayon::current_num_threads().max(1);
     Ok(Self {
       max_workers,
-      initial_workers: max_workers.min(2),
+      // Every worker when the first sample is Healthy (three reserves of
+      // headroom, no reclaim); `coordinate` starts at one otherwise. Excess
+      // attempts are cancelled and retried if pressure appears later.
+      initial_workers: max_workers,
       process_budget: budget,
       tick: Duration::from_millis(250),
       ramp_interval: Duration::from_secs(1),
@@ -450,7 +453,7 @@ where
   }
   if options.verbose {
     eprintln!(
-      "[validate_memory] adaptive admission: initial={} max={} budget_gib={:?}",
+      "[validate_memory] adaptive admission: initial={} if healthy, else 1; max={} budget_gib={:?}",
       options.initial_workers,
       options.max_workers,
       options.process_budget.map(|b| b as f64 / GIB as f64)
@@ -682,6 +685,37 @@ mod tests {
     assert_eq!(peak.load(Ordering::SeqCst), 4);
     assert!(calls.iter().all(|n| n.load(Ordering::SeqCst) == 1));
     assert_eq!(live.load(Ordering::SeqCst), 0);
+  }
+
+  #[test]
+  fn healthy_memory_admits_every_worker_without_a_ramp() {
+    let live = AtomicUsize::new(0);
+    let peak = AtomicUsize::new(0);
+    let jobs: Vec<_> = (0..4).collect();
+    // No ramp step can happen within the test: only the start admits four.
+    let opt = Options {
+      initial_workers: 4,
+      ramp_interval: Duration::from_secs(60),
+      ..options(4)
+    };
+    pool(4)
+      .install(|| {
+        run_with(
+          &jobs,
+          &|_: &usize, c: &Checkpoint| {
+            let n = live.fetch_add(1, Ordering::SeqCst) + 1;
+            let _scratch = Scratch { live: &live, dropping: None };
+            peak.fetch_max(n, Ordering::SeqCst);
+            until(|| peak.load(Ordering::SeqCst) == 4);
+            c.visit()?;
+            Ok(())
+          },
+          opt,
+          || Some(healthy()),
+        )
+      })
+      .unwrap();
+    assert_eq!(peak.load(Ordering::SeqCst), 4);
   }
 
   #[test]

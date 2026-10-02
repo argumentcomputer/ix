@@ -41,8 +41,10 @@ metadata for 16 GiB arenas and eventually exhausting `vm.max_map_count`
 despite available RAM and swap ([upstream issue #1309](https://github.com/microsoft/mimalloc/issues/1309)).
 
 Inductive-flag validation (setup stage 4) uses adaptive admission on Linux.
-The Rayon pool keeps its configured size, but validation starts with two
-active jobs and ramps up while memory is healthy. The controller samples
+The Rayon pool keeps its configured size. Validation starts with every
+worker when headroom is at least three safety reserves (an eighth of visible
+memory, or of the budget), otherwise with one job, and ramps up while memory
+is healthy. The controller samples
 `MemAvailable`, visible cgroup-v2 ancestor limits, the growth of this
 process's own swapped-out memory, and the memory stall pressure of its
 innermost cgroup (system-wide when the cgroup exposes none) every 250 ms.
