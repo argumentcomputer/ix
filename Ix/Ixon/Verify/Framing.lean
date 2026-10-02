@@ -2,13 +2,8 @@ import Ix.Ixon.Verify.MutualConstant
 
 namespace Ixon.Verify
 
-theorem Codec.Reads.runGetExact {decoder : Ixon.GetM α} {bytes : ByteArray} {value : α}
-    (h : Codec.Reads decoder bytes value) : Ixon.runGetExact decoder bytes = .ok value := by
-  have read := h ByteArray.empty ByteArray.empty
-  simp only [ByteArray.empty_append, ByteArray.append_empty,
-    ByteArray.size_empty, Nat.zero_add] at read
-  change decoder.run { bytes } = .ok value { idx := bytes.size, bytes } at read
-  simp [Ixon.runGetExact, read]
+-- `Codec.Reads.runGetExact` (a read law gives the exact full-buffer decode)
+-- is proved in `Ix.Ixon.Verify.Basic`.
 
 /-- Success exposes the actual decoder result and its final cursor. -/
 theorem runGetExact_complete {decoder : Ixon.GetM α} {bytes : ByteArray} {value : α}

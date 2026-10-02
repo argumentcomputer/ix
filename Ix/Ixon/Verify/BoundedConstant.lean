@@ -109,12 +109,12 @@ theorem getUnivArray_complete (count budget : Nat) (start finish : GetState)
 allocate this tuple. -/
 def getPrefix : GetM (ConstantInfo × Array Expr × Array Address × Nat) := do
   let info ← getConstantInfo
-  let sharingCount ← getTag0
-  let sharing ← getArray getExpr sharingCount.size.toNat
-  let refsCount ← getTag0
-  let refs ← getArray Serialize.get refsCount.size.toNat
-  let univsCount ← getTag0
-  return (info, sharing, refs, univsCount.size.toNat)
+  let sharingCount ← getTagN 0
+  let sharing ← getArray getExpr sharingCount.value.toNat
+  let refsCount ← getTagN 0
+  let refs ← getArray Serialize.get refsCount.value.toNat
+  let univsCount ← getTagN 0
+  return (info, sharing, refs, univsCount.value.toNat)
 
 theorem getConstantWithUnivs_eq (readUnivs : Nat → GetM (Array Univ)) :
     getConstantWithUnivs readUnivs = do

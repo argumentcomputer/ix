@@ -6,7 +6,7 @@ namespace Ixon.Verify.Work
 
 open Ixon
 
-/-- Ixon v3's strict Boolean byte. -/
+/-- Ixon's strict Boolean byte. -/
 def bool : M Bool := do
   let byte ← u8
   match byte with
@@ -18,87 +18,87 @@ def defn : M Definition := do
   let flags ← u8
   reject (flags >>> 2 > 2 || (flags &&& 3) > 2) "invalid definition kind/safety"
   let (kind, safety) := unpackDefKindSafety flags
-  let lvls ← tag0
+  let lvls ← tagN 0
   let typ ← expr
   let value ← expr
-  charged 1 (pure ⟨kind, safety, lvls.size, typ, value⟩)
+  charged 1 (pure ⟨kind, safety, lvls.value, typ, value⟩)
 
 def recursorRule : M RecursorRule := do
-  let fields ← tag0
+  let fields ← tagN 0
   let rhs ← expr
-  charged 1 (pure ⟨fields.size, rhs⟩)
+  charged 1 (pure ⟨fields.value, rhs⟩)
 
 def recursor : M Recursor := do
   let flags ← u8
   reject (flags > 3) "invalid recursor flags"
   let bools := unpackBools 2 flags
-  let lvls ← tag0
-  let params ← tag0
-  let indices ← tag0
-  let motives ← tag0
-  let minors ← tag0
+  let lvls ← tagN 0
+  let params ← tagN 0
+  let indices ← tagN 0
+  let motives ← tagN 0
+  let minors ← tagN 0
   let typ ← expr
-  let count ← tag0
-  check count.size.toNat.toUInt64 2
-  let rules ← array recursorRule count.size.toNat
-  charged 1 (pure ⟨bools[0]!, bools[1]!, lvls.size, params.size, indices.size,
-    motives.size, minors.size, typ, rules⟩)
+  let count ← tagN 0
+  check count.value.toNat.toUInt64 2
+  let rules ← array recursorRule count.value.toNat
+  charged 1 (pure ⟨bools[0]!, bools[1]!, lvls.value, params.value, indices.value,
+    motives.value, minors.value, typ, rules⟩)
 
 def axiomDecl : M Axiom := do
   let isUnsafe ← bool
-  let lvls ← tag0
+  let lvls ← tagN 0
   let typ ← expr
-  charged 1 (pure ⟨isUnsafe, lvls.size, typ⟩)
+  charged 1 (pure ⟨isUnsafe, lvls.value, typ⟩)
 
 def quotient : M Quotient := do
   let flags ← u8
   let kind : Ix.QuotKind ← match flags with
     | 0 => pure .type | 1 => pure .ctor | 2 => pure .lift | 3 => pure .ind
     | _ => fail s!"invalid QuotKind tag {flags}"
-  let lvls ← tag0
+  let lvls ← tagN 0
   let typ ← expr
-  charged 1 (pure ⟨kind, lvls.size, typ⟩)
+  charged 1 (pure ⟨kind, lvls.value, typ⟩)
 
 def ctor : M Constructor := do
   let isUnsafe ← bool
-  let lvls ← tag0
-  let cidx ← tag0
-  let params ← tag0
-  let fields ← tag0
+  let lvls ← tagN 0
+  let cidx ← tagN 0
+  let params ← tagN 0
+  let fields ← tagN 0
   let typ ← expr
-  charged 1 (pure ⟨isUnsafe, lvls.size, cidx.size, params.size, fields.size, typ⟩)
+  charged 1 (pure ⟨isUnsafe, lvls.value, cidx.value, params.value, fields.value, typ⟩)
 
 def inductiveDecl : M Inductive := do
   let isUnsafe ← bool
-  let lvls ← tag0
-  let params ← tag0
-  let indices ← tag0
+  let lvls ← tagN 0
+  let params ← tagN 0
+  let indices ← tagN 0
   let typ ← expr
-  let count ← tag0
-  check count.size.toNat.toUInt64 6
-  let ctors ← array ctor count.size.toNat
-  charged 1 (pure ⟨isUnsafe, lvls.size, params.size, indices.size, typ, ctors⟩)
+  let count ← tagN 0
+  check count.value.toNat.toUInt64 6
+  let ctors ← array ctor count.value.toNat
+  charged 1 (pure ⟨isUnsafe, lvls.value, params.value, indices.value, typ, ctors⟩)
 
 def inductiveProj : M InductiveProj := do
-  let idx ← tag0
+  let idx ← tagN 0
   let block ← address
-  charged 1 (pure ⟨idx.size, block⟩)
+  charged 1 (pure ⟨idx.value, block⟩)
 
 def constructorProj : M ConstructorProj := do
-  let idx ← tag0
-  let cidx ← tag0
+  let idx ← tagN 0
+  let cidx ← tagN 0
   let block ← address
-  charged 1 (pure ⟨idx.size, cidx.size, block⟩)
+  charged 1 (pure ⟨idx.value, cidx.value, block⟩)
 
 def recursorProj : M RecursorProj := do
-  let idx ← tag0
+  let idx ← tagN 0
   let block ← address
-  charged 1 (pure ⟨idx.size, block⟩)
+  charged 1 (pure ⟨idx.value, block⟩)
 
 def definitionProj : M DefinitionProj := do
-  let idx ← tag0
+  let idx ← tagN 0
   let block ← address
-  charged 1 (pure ⟨idx.size, block⟩)
+  charged 1 (pure ⟨idx.value, block⟩)
 
 def wrap (make : α → β) (reader : M α) : M β := do
   let value ← reader
@@ -113,11 +113,11 @@ def mutConst : M MutConst := do
   | t => fail s!"getMutConst: invalid tag {t}"
 
 def constantInfo : M ConstantInfo := do
-  let tag ← tag4
+  let tag ← tagN 4
   if tag.flag == Constant.FLAG_MUTS then
-    wrap ConstantInfo.muts (array mutConst tag.size.toNat)
+    wrap ConstantInfo.muts (array mutConst tag.value.toNat)
   else if tag.flag == Constant.FLAG then
-    match tag.size with
+    match tag.value with
     | 0 => wrap ConstantInfo.defn defn
     | 1 => wrap ConstantInfo.recr recursor
     | 2 => wrap ConstantInfo.axio axiomDecl
@@ -133,12 +133,12 @@ def constantInfo : M ConstantInfo := do
 charged conservatively even though production does not allocate this tuple. -/
 def recordPrefix : M (ConstantInfo × Array Expr × Array Address × Nat) := do
   let info ← constantInfo
-  let sharingCount ← tag0
-  let sharing ← array expr sharingCount.size.toNat
-  let refsCount ← tag0
-  let refs ← array address refsCount.size.toNat
-  let univsCount ← tag0
-  charged 1 (pure (info, sharing, refs, univsCount.size.toNat))
+  let sharingCount ← tagN 0
+  let sharing ← array expr sharingCount.value.toNat
+  let refsCount ← tagN 0
+  let refs ← array address refsCount.value.toNat
+  let univsCount ← tagN 0
+  charged 1 (pure (info, sharing, refs, univsCount.value.toNat))
 
 def constant (budget : Nat) : M Constant := do
   let (info, sharing, refs, count) ← recordPrefix
@@ -154,43 +154,43 @@ theorem bool_erases : Erases bool (Serialize.get (α := Bool)) := by
 
 theorem defn_erases : Erases defn getDefinition := by
   unfold defn getDefinition
-  exact u8_erases.bind fun _ => reject_erases _ _ (tag0_erases.bind fun _ =>
+  exact u8_erases.bind fun _ => reject_erases _ _ ((tagN_erases 0).bind fun _ =>
     expr_erases.bind fun _ => expr_erases.bind fun _ => (pure_erases _).charged 1)
 
 theorem recursorRule_erases : Erases recursorRule getRecursorRule := by
   unfold recursorRule getRecursorRule
-  exact tag0_erases.bind fun _ => expr_erases.bind fun _ => (pure_erases _).charged 1
+  exact (tagN_erases 0).bind fun _ => expr_erases.bind fun _ => (pure_erases _).charged 1
 
 theorem recursor_erases : Erases recursor getRecursor := by
   unfold recursor getRecursor
   apply u8_erases.bind
   intro flags
   apply reject_erases
-  apply tag0_erases.bind
+  apply (tagN_erases 0).bind
   intro lvls
-  apply tag0_erases.bind
+  apply (tagN_erases 0).bind
   intro params
-  apply tag0_erases.bind
+  apply (tagN_erases 0).bind
   intro indices
-  apply tag0_erases.bind
+  apply (tagN_erases 0).bind
   intro motives
-  apply tag0_erases.bind
+  apply (tagN_erases 0).bind
   intro minors
   apply expr_erases.bind
   intro typ
-  apply tag0_erases.bind
+  apply (tagN_erases 0).bind
   intro count
   apply (check_erases _ _).bind
   intro checked
-  have h := (array_erases recursorRule_erases count.size.toNat).bind
+  have h := (array_erases recursorRule_erases count.value.toNat).bind
     (fun rules => (pure_erases (⟨(unpackBools 2 flags)[0]!, (unpackBools 2 flags)[1]!,
-      lvls.size, params.size, indices.size, motives.size, minors.size, typ, rules⟩ : Recursor)).charged 1)
+      lvls.value, params.value, indices.value, motives.value, minors.value, typ, rules⟩ : Recursor)).charged 1)
   refine h.trans ?_
   simp only [getArray, bind_assoc, pure_bind]
 
 theorem axiomDecl_erases : Erases axiomDecl getAxiom := by
   unfold axiomDecl getAxiom
-  exact bool_erases.bind fun _ => tag0_erases.bind fun _ => expr_erases.bind fun _ =>
+  exact bool_erases.bind fun _ => (tagN_erases 0).bind fun _ => expr_erases.bind fun _ =>
     (pure_erases _).charged 1
 
 theorem quotient_erases : Erases quotient getQuotient := by
@@ -200,52 +200,52 @@ theorem quotient_erases : Erases quotient getQuotient := by
   split <;> simp_all only
   all_goals first
   | exact fail_erases _
-  | exact tag0_erases.bind fun _ => expr_erases.bind fun _ => (pure_erases _).charged 1
+  | exact (tagN_erases 0).bind fun _ => expr_erases.bind fun _ => (pure_erases _).charged 1
 
 theorem ctor_erases : Erases ctor getConstructor := by
   unfold ctor getConstructor
-  exact bool_erases.bind fun _ => tag0_erases.bind fun _ => tag0_erases.bind fun _ =>
-    tag0_erases.bind fun _ => tag0_erases.bind fun _ => expr_erases.bind fun _ =>
+  exact bool_erases.bind fun _ => (tagN_erases 0).bind fun _ => (tagN_erases 0).bind fun _ =>
+    (tagN_erases 0).bind fun _ => (tagN_erases 0).bind fun _ => expr_erases.bind fun _ =>
     (pure_erases _).charged 1
 
 theorem inductiveDecl_erases : Erases inductiveDecl getInductive := by
   unfold inductiveDecl getInductive
   apply bool_erases.bind
   intro isUnsafe
-  apply tag0_erases.bind
+  apply (tagN_erases 0).bind
   intro lvls
-  apply tag0_erases.bind
+  apply (tagN_erases 0).bind
   intro params
-  apply tag0_erases.bind
+  apply (tagN_erases 0).bind
   intro indices
   apply expr_erases.bind
   intro typ
-  apply tag0_erases.bind
+  apply (tagN_erases 0).bind
   intro count
   apply (check_erases _ _).bind
   intro checked
-  have h := (array_erases ctor_erases count.size.toNat).bind
-    (fun ctors => (pure_erases (⟨isUnsafe, lvls.size, params.size,
-      indices.size, typ, ctors⟩ : Inductive)).charged 1)
+  have h := (array_erases ctor_erases count.value.toNat).bind
+    (fun ctors => (pure_erases (⟨isUnsafe, lvls.value, params.value,
+      indices.value, typ, ctors⟩ : Inductive)).charged 1)
   refine h.trans ?_
   simp only [getArray, bind_assoc, pure_bind]
 
 theorem inductiveProj_erases : Erases inductiveProj getInductiveProj := by
   unfold inductiveProj getInductiveProj
-  exact tag0_erases.bind fun _ => address_erases.bind fun _ => (pure_erases _).charged 1
+  exact (tagN_erases 0).bind fun _ => address_erases.bind fun _ => (pure_erases _).charged 1
 
 theorem constructorProj_erases : Erases constructorProj getConstructorProj := by
   unfold constructorProj getConstructorProj
-  exact tag0_erases.bind fun _ => tag0_erases.bind fun _ => address_erases.bind fun _ =>
+  exact (tagN_erases 0).bind fun _ => (tagN_erases 0).bind fun _ => address_erases.bind fun _ =>
     (pure_erases _).charged 1
 
 theorem recursorProj_erases : Erases recursorProj getRecursorProj := by
   unfold recursorProj getRecursorProj
-  exact tag0_erases.bind fun _ => address_erases.bind fun _ => (pure_erases _).charged 1
+  exact (tagN_erases 0).bind fun _ => address_erases.bind fun _ => (pure_erases _).charged 1
 
 theorem definitionProj_erases : Erases definitionProj getDefinitionProj := by
   unfold definitionProj getDefinitionProj
-  exact tag0_erases.bind fun _ => address_erases.bind fun _ => (pure_erases _).charged 1
+  exact (tagN_erases 0).bind fun _ => address_erases.bind fun _ => (pure_erases _).charged 1
 
 theorem wrap_erases {metered : M α} {reader : GetM α} (same : Erases metered reader) (make : α → β) :
     Erases (wrap make metered) (make <$> reader) :=
@@ -263,11 +263,11 @@ theorem mutConst_erases : Erases mutConst getMutConst := by
 
 theorem constantInfo_erases : Erases constantInfo getConstantInfo := by
   unfold constantInfo getConstantInfo
-  apply tag4_erases.bind
+  apply (tagN_erases 4).bind
   intro tag
   split
   · simpa only [getArray, map_eq_pure_bind, bind_pure] using
-      wrap_erases (array_erases mutConst_erases tag.size.toNat) ConstantInfo.muts
+      wrap_erases (array_erases mutConst_erases tag.value.toNat) ConstantInfo.muts
   · split
     · split <;> simp_all only
       · exact wrap_erases defn_erases _
@@ -283,9 +283,9 @@ theorem constantInfo_erases : Erases constantInfo getConstantInfo := by
 
 theorem prefix_erases : Erases recordPrefix BoundedConstant.getPrefix := by
   unfold recordPrefix BoundedConstant.getPrefix
-  exact constantInfo_erases.bind fun _ => tag0_erases.bind fun _ =>
-    (array_erases expr_erases _).bind fun _ => tag0_erases.bind fun _ =>
-    (array_erases address_erases _).bind fun _ => tag0_erases.bind fun _ =>
+  exact constantInfo_erases.bind fun _ => (tagN_erases 0).bind fun _ =>
+    (array_erases expr_erases _).bind fun _ => (tagN_erases 0).bind fun _ =>
+    (array_erases address_erases _).bind fun _ => (tagN_erases 0).bind fun _ =>
     (pure_erases _).charged 1
 
 theorem constant_erases (budget : Nat) : Erases (constant budget) (Bounded.getConstant budget) := by
@@ -313,7 +313,7 @@ theorem defn_bound : Bound defn 16 0 (fun _ => 2) := by
   intro flags
   apply (reject_bound 16 0 _ _).bind
   intro checked
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro lvls
   apply expr_bound.bind_zero
   intro typ
@@ -321,7 +321,7 @@ theorem defn_bound : Bound defn 16 0 (fun _ => 2) := by
 
 theorem recursorRule_bound : Bound recursorRule 16 0 (fun _ => 2) := by
   unfold recursorRule
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro fields
   exact expr_bound.bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
@@ -331,19 +331,19 @@ theorem recursor_bound : Bound recursor 16 0 (fun _ => 2) := by
   intro flags
   apply (reject_bound 16 0 _ _).bind
   intro checked
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro lvls
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro params
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro indices
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro motives
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro minors
   apply expr_bound.bind_zero
   intro typ
-  apply (tag0_bound 16 (by decide)).bind
+  apply (tagN_bound 0 16 (by decide)).bind
   intro count
   apply (check_bound _ _ _ _).bind
   intro checked
@@ -354,7 +354,7 @@ theorem axiomDecl_bound : Bound axiomDecl 16 0 (fun _ => 2) := by
   unfold axiomDecl
   apply bool_bound.bind_zero
   intro isUnsafe
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro lvls
   exact expr_bound.bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
@@ -365,7 +365,7 @@ theorem quotient_bound : Bound quotient 16 0 (fun _ => 2) := by
   split <;> simp only [Bind.bind, bind_pure_left, bind_fail_left]
   all_goals first
   | exact fail_bound _ _ _ _
-  | apply (tag0_bound 16 (by decide)).bind_zero
+  | apply (tagN_bound 0 16 (by decide)).bind_zero
     intro lvls
     exact expr_bound.bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
@@ -373,13 +373,13 @@ theorem ctor_bound : Bound ctor 16 0 (fun _ => 2) := by
   unfold ctor
   apply bool_bound.bind_zero
   intro isUnsafe
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro lvls
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro cidx
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro params
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro fields
   exact expr_bound.bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
@@ -387,15 +387,15 @@ theorem inductiveDecl_bound : Bound inductiveDecl 16 0 (fun _ => 2) := by
   unfold inductiveDecl
   apply bool_bound.bind_zero
   intro isUnsafe
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro lvls
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro params
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro indices
   apply expr_bound.bind_zero
   intro typ
-  apply (tag0_bound 16 (by decide)).bind
+  apply (tagN_bound 0 16 (by decide)).bind
   intro count
   apply (check_bound _ _ _ _).bind
   intro checked
@@ -404,27 +404,27 @@ theorem inductiveDecl_bound : Bound inductiveDecl 16 0 (fun _ => 2) := by
 
 theorem inductiveProj_bound : Bound inductiveProj 16 0 (fun _ => 2) := by
   unfold inductiveProj
-  apply (tag0_bound 16 (by decide)).bind
+  apply (tagN_bound 0 16 (by decide)).bind
   intro idx
   exact (address_bound.carry 14).bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
 theorem constructorProj_bound : Bound constructorProj 16 0 (fun _ => 2) := by
   unfold constructorProj
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro idx
-  apply (tag0_bound 16 (by decide)).bind
+  apply (tagN_bound 0 16 (by decide)).bind
   intro cidx
   exact (address_bound.carry 14).bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
 theorem recursorProj_bound : Bound recursorProj 16 0 (fun _ => 2) := by
   unfold recursorProj
-  apply (tag0_bound 16 (by decide)).bind
+  apply (tagN_bound 0 16 (by decide)).bind
   intro idx
   exact (address_bound.carry 14).bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
 theorem definitionProj_bound : Bound definitionProj 16 0 (fun _ => 2) := by
   unfold definitionProj
-  apply (tag0_bound 16 (by decide)).bind
+  apply (tagN_bound 0 16 (by decide)).bind
   intro idx
   exact (address_bound.carry 14).bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
@@ -444,7 +444,7 @@ theorem mutConst_bound : Bound mutConst 16 0 (fun _ => 2) := by
 
 theorem constantInfo_bound : Bound constantInfo 16 0 (fun _ => 2) := by
   unfold constantInfo
-  apply (tag4_bound 16 (by decide)).bind
+  apply (tagN_bound 4 16 (by decide)).bind
   intro tag
   split
   · exact ((array_bound mutConst_bound _).carry 14).bind fun _ =>
@@ -466,15 +466,15 @@ theorem prefix_bound : Bound recordPrefix 16 0 (fun _ => 4) := by
   unfold recordPrefix
   apply constantInfo_bound.bind_zero
   intro info
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro sharingCount
   apply (array_bound (expr_bound.weaken (Nat.le_refl _) (fun _ => by decide)) _).bind_zero
   intro sharing
-  apply (tag0_bound 16 (by decide)).bind_zero
+  apply (tagN_bound 0 16 (by decide)).bind_zero
   intro refsCount
   apply (array_bound address_bound _).bind_zero
   intro refs
-  exact (tag0_bound 16 (by decide)).bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
+  exact (tagN_bound 0 16 (by decide)).bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
 /-- Complete record work, including arbitrary failures in descendants and
 tables. The additive constructor allowance is shared by the whole universe

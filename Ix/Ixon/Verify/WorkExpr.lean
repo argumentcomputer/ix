@@ -15,12 +15,12 @@ noncanonical encodings and every error path. These are abstract parser units;
 arithmetic bit complexity and runtime allocation behavior are not modeled.
 -/
 
-def tag0Sizes : Nat → M (List UInt64)
+def tagN0Values : Nat → M (List UInt64)
   | 0 => pure []
   | count + 1 => do
-    let head ← tag0
-    let tail ← tag0Sizes count
-    charged 1 (pure (head.size :: tail))
+    let head ← tagN 0
+    let tail ← tagN0Values count
+    charged 1 (pure (head.value :: tail))
 
 def appArgs (recur : M Expr) : Nat → Expr → M Expr
   | 0, result => pure result
@@ -28,11 +28,11 @@ def appArgs (recur : M Expr) : Nat → Expr → M Expr
     let arg ← recur
     charged 2 (appArgs recur count (.app result arg))
 
-/-- Ixon v3's `checkCount` reads the cursor and consumes nothing. -/
+/-- Ixon's `checkCount` reads the cursor and consumes nothing. -/
 def check (count : UInt64) (minBytes : Nat := 1) : M Unit := fun state =>
   (checkCount count minBytes state, 0)
 
-/-- One Ixon v3 binder contract byte. -/
+/-- One Ixon binder contract byte. -/
 def binderContract : M BinderContract := do
   let bits ← u8
   let some contract := BinderContract.ofBits? bits
@@ -57,39 +57,39 @@ def allBinders (recur : M Expr) : Nat → M (List (BinderContract × ValueContra
     let tail ← allBinders recur count
     charged 3 (pure ((contract, result, ty) :: tail))
 
-def exprFromTag (recur : M Expr) (tag : Tag4) : M Expr := do
+def exprFromTag (recur : M Expr) (tag : TagN) : M Expr := do
   match tag.flag with
-  | 0x0 => charged 1 (pure (.sort tag.size))
-  | 0x1 => charged 1 (pure (.var tag.size))
+  | 0x0 => charged 1 (pure (.sort tag.value))
+  | 0x1 => charged 1 (pure (.var tag.value))
   | 0x2 => do
-    let refIdx ← tag0
-    check tag.size
-    let univIdxs ← tag0Sizes tag.size.toNat
-    charged (2 * univIdxs.length + 1) (pure (.ref refIdx.size univIdxs.toArray))
+    let refIdx ← tagN 0
+    check tag.value
+    let univIdxs ← tagN0Values tag.value.toNat
+    charged (2 * univIdxs.length + 1) (pure (.ref refIdx.value univIdxs.toArray))
   | 0x3 => do
-    let recIdx ← tag0
-    check tag.size
-    let univIdxs ← tag0Sizes tag.size.toNat
-    charged (2 * univIdxs.length + 1) (pure (.recur recIdx.size univIdxs.toArray))
+    let recIdx ← tagN 0
+    check tag.value
+    let univIdxs ← tagN0Values tag.value.toNat
+    charged (2 * univIdxs.length + 1) (pure (.recur recIdx.value univIdxs.toArray))
   | 0x4 => do
-    let typeRefIdx ← tag0
+    let typeRefIdx ← tagN 0
     let val ← recur
-    charged 1 (pure (.prj typeRefIdx.size tag.size val))
-  | 0x5 => charged 1 (pure (.str tag.size))
-  | 0x6 => charged 1 (pure (.nat tag.size))
+    charged 1 (pure (.prj typeRefIdx.value tag.value val))
+  | 0x5 => charged 1 (pure (.str tag.value))
+  | 0x6 => charged 1 (pure (.nat tag.value))
   | 0x7 =>
-    if tag.size == 0 then fail "getExpr: empty app spine"
+    if tag.value == 0 then fail "getExpr: empty app spine"
     else do
-      check tag.size
+      check tag.value
       let base ← recur
       match base with
       | .app .. => fail "getExpr: non-canonical app base"
-      | _ => appArgs recur tag.size.toNat base
+      | _ => appArgs recur tag.value.toNat base
   | 0x8 =>
-    if tag.size == 0 then fail "getExpr: Lam with zero binders"
+    if tag.value == 0 then fail "getExpr: Lam with zero binders"
     else do
-      check tag.size 2
-      let binders ← lamBinders recur tag.size.toNat
+      check tag.value 2
+      let binders ← lamBinders recur tag.value.toNat
       let body ← recur
       match body with
       | .lam .. => fail "getExpr: non-canonical lam telescope"
@@ -97,10 +97,10 @@ def exprFromTag (recur : M Expr) (tag : Tag4) : M Expr := do
         charged (2 * binders.length)
           (pure (binders.foldr (fun (uses, ty) result => .lam uses ty result) body))
   | 0x9 =>
-    if tag.size == 0 then fail "getExpr: All with zero binders"
+    if tag.value == 0 then fail "getExpr: All with zero binders"
     else do
-      check tag.size 2
-      let binders ← allBinders recur tag.size.toNat
+      check tag.value 2
+      let binders ← allBinders recur tag.value.toNat
       let body ← recur
       match body with
       | .all .. => fail "getExpr: non-canonical all telescope"
@@ -108,30 +108,30 @@ def exprFromTag (recur : M Expr) (tag : Tag4) : M Expr := do
         charged (2 * binders.length)
           (pure (binders.foldr (fun (uses, owned, ty) result => .all uses owned ty result) body))
   | 0xA =>
-    if tag.size > 3 then fail s!"getExpr: invalid let flags {tag.size}"
+    if tag.value > 3 then fail s!"getExpr: invalid let flags {tag.value}"
     else do
       let binder ← binderContract
-      let some contract := LetContract.ofFlags? tag.size binder
+      let some contract := LetContract.ofFlags? tag.value binder
         | fail "getExpr: invalid let flags"
       let ty ← recur
       let val ← recur
       let body ← recur
       charged 1 (pure (.letE contract ty val body))
-  | 0xB => charged 1 (pure (.share tag.size))
+  | 0xB => charged 1 (pure (.share tag.value))
   | f => fail s!"getExpr: invalid flag {f}"
 
 def exprFuel : Nat → M Expr
   | 0 => fail "getExpr: recursion budget exhausted"
-  | fuel + 1 => bind tag4 (exprFromTag (exprFuel fuel))
+  | fuel + 1 => bind (tagN 4) (exprFromTag (exprFuel fuel))
 
 def expr : M Expr := fun state => exprFuel (state.bytes.size - state.idx + 1) state
 
-theorem tag0Sizes_erases (count : Nat) : Erases (tag0Sizes count) (getTag0Sizes count) := by
+theorem tagN0Values_erases (count : Nat) : Erases (tagN0Values count) (getTagN0Values count) := by
   induction count with
   | zero => exact pure_erases []
   | succ count ih =>
-    unfold tag0Sizes getTag0Sizes
-    exact tag0_erases.bind fun _ => ih.bind fun _ => (pure_erases _).charged 1
+    unfold tagN0Values getTagN0Values
+    exact (tagN_erases 0).bind fun _ => ih.bind fun _ => (pure_erases _).charged 1
 
 theorem appArgs_erases {recur : M Expr} {reader : GetM Expr} (same : Erases recur reader)
     (count : Nat) (base : Expr) : Erases (appArgs recur count base) (getExprAppArgs reader count base) := by
@@ -173,13 +173,13 @@ theorem allBinders_erases {recur : M Expr} {reader : GetM Expr} (same : Erases r
     | none => exact fail_erases _
     | some contracts => exact same.bind fun _ => ih.bind fun _ => (pure_erases _).charged 3
 
-theorem tag0Sizes_bound (count : Nat) :
-    Bound (tag0Sizes count) 16 0 (fun values => 2 * values.length) := by
+theorem tagN0Values_bound (count : Nat) :
+    Bound (tagN0Values count) 16 0 (fun values => 2 * values.length) := by
   induction count with
   | zero => exact pure_bound 16 0 _ [] (Nat.le_refl _)
   | succ count ih =>
-    unfold tag0Sizes
-    apply (tag0_bound 16 (by decide)).bind
+    unfold tagN0Values
+    apply (tagN_bound 0 16 (by decide)).bind
     intro head
     apply (ih.frame 14).bind
     intro tail
@@ -252,17 +252,17 @@ theorem allBinders_bound {recur : M Expr} (bound : Bound recur 16 0 (fun _ => 4)
       omega
 
 theorem exprFromTag_erases {recur : M Expr} {reader : GetM Expr}
-    (same : Erases recur reader) (tag : Tag4) :
+    (same : Erases recur reader) (tag : TagN) :
     Erases (exprFromTag recur tag) (getExprFromTag reader tag) := by
   unfold exprFromTag getExprFromTag
   split <;> simp_all only
   · exact (pure_erases _).charged 1
   · exact (pure_erases _).charged 1
-  · exact tag0_erases.bind fun _ => (check_erases _ _).bind fun _ =>
-      (tag0Sizes_erases _).bind fun _ => (pure_erases _).charged _
-  · exact tag0_erases.bind fun _ => (check_erases _ _).bind fun _ =>
-      (tag0Sizes_erases _).bind fun _ => (pure_erases _).charged _
-  · exact tag0_erases.bind fun _ => same.bind fun _ => (pure_erases _).charged 1
+  · exact (tagN_erases 0).bind fun _ => (check_erases _ _).bind fun _ =>
+      (tagN0Values_erases _).bind fun _ => (pure_erases _).charged _
+  · exact (tagN_erases 0).bind fun _ => (check_erases _ _).bind fun _ =>
+      (tagN0Values_erases _).bind fun _ => (pure_erases _).charged _
+  · exact (tagN_erases 0).bind fun _ => same.bind fun _ => (pure_erases _).charged 1
   · exact (pure_erases _).charged 1
   · exact (pure_erases _).charged 1
   · split
@@ -294,7 +294,7 @@ theorem exprFromTag_erases {recur : M Expr} {reader : GetM Expr}
     · exact fail_erases _
     · apply binderContract_erases.bind
       intro binder
-      cases LetContract.ofFlags? tag.size binder with
+      cases LetContract.ofFlags? tag.value binder with
       | none => exact fail_erases _
       | some contract =>
         exact same.bind fun _ => same.bind fun _ => same.bind fun _ => (pure_erases _).charged 1
@@ -304,33 +304,33 @@ theorem exprFromTag_erases {recur : M Expr} {reader : GetM Expr}
 theorem exprFuel_erases (fuel : Nat) : Erases (exprFuel fuel) (getExprFuel fuel) := by
   induction fuel with
   | zero => exact fail_erases _
-  | succ fuel ih => exact tag4_erases.bind (exprFromTag_erases ih)
+  | succ fuel ih => exact (tagN_erases 4).bind (exprFromTag_erases ih)
 
 theorem expr_erases : Erases expr getExpr := by
   funext state
   exact congrFun (exprFuel_erases _) state
 
 theorem exprFromTag_bound {recur : M Expr} (bound : Bound recur 16 0 (fun _ => 4))
-    (tag : Tag4) : Bound (exprFromTag recur tag) 16 14 (fun _ => 4) := by
+    (tag : TagN) : Bound (exprFromTag recur tag) 16 14 (fun _ => 4) := by
   unfold exprFromTag
   split
   · exact charged_pure_bound _ _ _ _ _ (by decide)
   · exact charged_pure_bound _ _ _ _ _ (by decide)
-  · apply ((tag0_bound 16 (by decide)).frame 14).bind
+  · apply ((tagN_bound 0 16 (by decide)).frame 14).bind
     intro refIdx
     apply (check_bound _ _ _ _).bind
     intro checked
-    apply ((tag0Sizes_bound _).frame 28).bind
+    apply ((tagN0Values_bound _).frame 28).bind
     intro univIdxs
     exact charged_pure_bound _ _ _ _ _ (by omega)
-  · apply ((tag0_bound 16 (by decide)).frame 14).bind
+  · apply ((tagN_bound 0 16 (by decide)).frame 14).bind
     intro recIdx
     apply (check_bound _ _ _ _).bind
     intro checked
-    apply ((tag0Sizes_bound _).frame 28).bind
+    apply ((tagN0Values_bound _).frame 28).bind
     intro univIdxs
     exact charged_pure_bound _ _ _ _ _ (by omega)
-  · apply ((tag0_bound 16 (by decide)).frame 14).bind
+  · apply ((tagN_bound 0 16 (by decide)).frame 14).bind
     intro typeRefIdx
     apply (bound.frame 28).bind
     intro val
@@ -372,7 +372,7 @@ theorem exprFromTag_bound {recur : M Expr} (bound : Bound recur 16 0 (fun _ => 4
     · exact fail_bound _ _ _ _
     · apply (binderContract_bound.frame 14).bind
       intro binder
-      cases LetContract.ofFlags? tag.size binder with
+      cases LetContract.ofFlags? tag.value binder with
       | none => exact fail_bound _ _ _ _
       | some contract =>
         apply ((bound.frame 25).weaken (by decide) (fun _ => Nat.le_refl _)).bind
@@ -388,7 +388,7 @@ theorem exprFromTag_bound {recur : M Expr} (bound : Bound recur 16 0 (fun _ => 4
 theorem exprFuel_bound (fuel : Nat) : Bound (exprFuel fuel) 16 0 (fun _ => 4) := by
   induction fuel with
   | zero => exact fail_bound _ _ _ _
-  | succ fuel ih => exact (tag4_bound 16 (by decide)).bind (exprFromTag_bound ih)
+  | succ fuel ih => exact (tagN_bound 4 16 (by decide)).bind (exprFromTag_bound ih)
 
 /-- Includes arbitrary nonzero valid cursors and all malformed/truncated reads.
 The production reader executes no accounting state. -/

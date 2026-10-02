@@ -34,7 +34,7 @@ theorem getUnivFuel_spec (fuel budget : Nat) (start finish : GetState)
   | zero => cases h
   | succ fuel ih =>
     simp only [Bounded.getUnivFuel, bind, EStateM.bind] at h
-    cases readTag : getTag2 start with
+    cases readTag : getTagN 2 start with
     | error reason state => simp [readTag] at h
     | ok tag state =>
       simp only [readTag] at h
@@ -130,7 +130,7 @@ theorem getUnivFuel_complete (fuel budget : Nat) (start finish : GetState)
   | zero => cases h
   | succ fuel ih =>
     simp only [Ixon.getUnivFuel, bind, EStateM.bind] at h
-    cases readTag : getTag2 start with
+    cases readTag : getTagN 2 start with
     | error reason state => simp [readTag] at h
     | ok tag state =>
       simp only [readTag] at h
@@ -139,26 +139,26 @@ theorem getUnivFuel_complete (fuel budget : Nat) (start finish : GetState)
       · simp only [Ixon.getUnivFromTag, flagZero] at h
         split at h
         next sizeZero =>
-          have sizeEq : tag.size = 0 := by simpa using sizeZero
+          have sizeEq : tag.value = 0 := by simpa using sizeZero
           simp only [pure, EStateM.pure, EStateM.Result.ok.injEq] at h
           rcases h with ⟨rfl, rfl⟩
           have chargeFits : 1 ≤ budget := fits
           simp [Bounded.getUnivFromTag, Bounded.univTagCharge, flagZero,
             sizeEq, chargeFits, Univ.nodeCount, pure, EStateM.pure]
         next sizeNonzero =>
-          have sizeNe : tag.size ≠ 0 := by simpa using sizeNonzero
+          have sizeNe : tag.value ≠ 0 := by simpa using sizeNonzero
           simp only [bind, EStateM.bind] at h
           split at h
           next base childState childRead =>
             simp only [pure, EStateM.pure, EStateM.Result.ok.injEq] at h
             rcases h with ⟨rfl, rfl⟩
-            have chargeFits : tag.size.toNat ≤ budget := by
+            have chargeFits : tag.value.toNat ≤ budget := by
               simp only [nodeCount_addSucc] at fits
               omega
-            have childFits : base.nodeCount ≤ budget - tag.size.toNat := by
+            have childFits : base.nodeCount ≤ budget - tag.value.toNat := by
               simp only [nodeCount_addSucc] at fits
               omega
-            have child := ih (budget - tag.size.toNat) _ _ _ childRead childFits
+            have child := ih (budget - tag.value.toNat) _ _ _ childRead childFits
             simp [Bounded.getUnivFromTag, Bounded.univTagCharge, flagZero,
               sizeNe, chargeFits, bind, EStateM.bind, child, pure, EStateM.pure] <;> omega
           next => cases h
@@ -183,7 +183,7 @@ where
         Ixon.getUnivFuel fuel start = .ok u finish →
         u.nodeCount ≤ budget →
         Bounded.getUnivFuel fuel budget start = .ok (u, budget - u.nodeCount) finish)
-      (budget : Nat) (state finish : GetState) (u : Univ) (tag : Tag2)
+      (budget : Nat) (state finish : GetState) (u : Univ) (tag : TagN)
       (flagMax : tag.flag = 1)
       (h : (do
         let left ← Ixon.getUnivFuel fuel
@@ -218,7 +218,7 @@ where
         Ixon.getUnivFuel fuel start = .ok u finish →
         u.nodeCount ≤ budget →
         Bounded.getUnivFuel fuel budget start = .ok (u, budget - u.nodeCount) finish)
-      (budget : Nat) (state finish : GetState) (u : Univ) (tag : Tag2)
+      (budget : Nat) (state finish : GetState) (u : Univ) (tag : TagN)
       (flagIMax : tag.flag = 2)
       (h : (do
         let left ← Ixon.getUnivFuel fuel

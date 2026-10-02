@@ -4,7 +4,7 @@ namespace Ixon.Verify.ConstantBounds
 
 open Ixon ReaderBounds
 
-/-- Ixon v3 validates flag bytes before the payload: a rejected flag stops. -/
+/-- Ixon validates flag bytes before the payload: a rejected flag stops. -/
 theorem guard_bound {p : Prop} [Decidable p] {rest : GetM α} {units : α → Nat} (reason : String)
     (h : ReaderBound rest units) :
     ReaderBound (if p then (throw reason : GetM PUnit) >>= (fun _ => rest) else rest) units := by
@@ -12,7 +12,7 @@ theorem guard_bound {p : Prop} [Decidable p] {rest : GetM α} {units : α → Na
   · exact (throw_bound reason (fun _ => 0)).bind (fun _ => h) units (fun _ _ => by omega)
   · exact h
 
-/-- The strict v3 Boolean reader consumes one byte. -/
+/-- The strict Boolean reader consumes one byte. -/
 theorem getBool_bound : ReaderBound (Serialize.get (α := Bool)) (fun _ => 2) := by
   intro start finish value valid read
   change (EStateM.bind getU8 _) start = _ at read
@@ -25,14 +25,14 @@ theorem getDefinition_bound : ReaderBound getDefinition Definition.resourceSize 
   apply getU8_bound.skip
   intro mode
   refine guard_bound _ ?_
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro levels
   exact getExpr_bound.bind_map (fun _ => getExpr_bound) _ _
     (fun type value => by simp [Definition.resourceSize]; omega)
 
 theorem getRecursorRule_bound : ReaderBound getRecursorRule RecursorRule.resourceSize := by
   unfold getRecursorRule
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro fields
   exact getExpr_bound.map _ _ (fun rhs => by simp [RecursorRule.resourceSize, Nat.add_comm])
 
@@ -40,7 +40,7 @@ theorem getAxiom_bound : ReaderBound getAxiom Axiom.resourceSize := by
   unfold getAxiom
   apply getBool_bound.skip
   intro unsafeFlag
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro levels
   exact getExpr_bound.map _ _ (fun type => by simp [Axiom.resourceSize, Nat.add_comm])
 
@@ -48,13 +48,13 @@ theorem getConstructor_bound : ReaderBound getConstructor Constructor.resourceSi
   unfold getConstructor
   apply getBool_bound.skip
   intro unsafeFlag
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro levels
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro index
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro params
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro fields
   exact getExpr_bound.map _ _ (fun type => by simp [Constructor.resourceSize, Nat.add_comm])
 
@@ -63,10 +63,10 @@ theorem getQuotient_bound : ReaderBound getQuotient Quotient.resourceSize := by
   apply getU8_bound.skip
   intro tag
   have payload (kind : Ix.QuotKind) : ReaderBound (do
-      let levels ← getTag0
+      let levels ← getTagN 0
       let type ← getExpr
-      pure (⟨kind, levels.size, type⟩ : Quotient)) Quotient.resourceSize := by
-    apply getTag0_bound.skip
+      pure (⟨kind, levels.value, type⟩ : Quotient)) Quotient.resourceSize := by
+    apply (getTagN_bound 0).skip
     intro levels
     exact getExpr_bound.map _ _ (fun type => by simp [Quotient.resourceSize, Nat.add_comm])
   intro start finish value valid read
@@ -79,27 +79,27 @@ theorem getQuotient_bound : ReaderBound getQuotient Quotient.resourceSize := by
 
 theorem getInductiveProj_bound : ReaderBound getInductiveProj (fun _ => 0) := by
   unfold getInductiveProj
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro index
   exact address_bound.map _ _ (fun _ => Nat.zero_le _)
 
 theorem getRecursorProj_bound : ReaderBound getRecursorProj (fun _ => 0) := by
   unfold getRecursorProj
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro index
   exact address_bound.map _ _ (fun _ => Nat.zero_le _)
 
 theorem getDefinitionProj_bound : ReaderBound getDefinitionProj (fun _ => 0) := by
   unfold getDefinitionProj
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro index
   exact address_bound.map _ _ (fun _ => Nat.zero_le _)
 
 theorem getConstructorProj_bound : ReaderBound getConstructorProj (fun _ => 0) := by
   unfold getConstructorProj
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro index
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro ctorIndex
   exact address_bound.map _ _ (fun _ => Nat.zero_le _)
 
@@ -108,11 +108,11 @@ theorem getRecursorRules_bound (k unsafeFlag : Bool) (levels params indices moti
     (type : Expr) : ReaderBound (getRecursorRules k unsafeFlag levels params indices motives minors type)
       (fun value => value.resourceSize - (type.resourceSize + 1)) := by
   unfold getRecursorRules
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro count
   apply (checkCount_bound _ _).skip
   intro checked
-  simpa [getArray] using (getArray_bound _ _ getRecursorRule_bound count.size.toNat).map
+  simpa [getArray] using (getArray_bound _ _ getRecursorRule_bound count.value.toNat).map
     (fun rules => (⟨k, unsafeFlag, levels, params, indices, motives, minors, type, rules⟩ : Recursor))
     (fun value => value.resourceSize - (type.resourceSize + 1))
     (fun _ => by simp [Recursor.resourceSize, Nat.add_comm])
@@ -124,15 +124,15 @@ theorem getRecursor_bound : ReaderBound getRecursor Recursor.resourceSize := by
   intro flags
   unfold getRecursorFromFlags getRecursorAfterFlags
   refine guard_bound _ ?_
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro levels
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro params
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro indices
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro motives
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro minors
   exact getExpr_bound.bind (fun type => getRecursorRules_bound _ _ _ _ _ _ _ type) _
     (fun type value => by omega)
@@ -142,11 +142,11 @@ theorem getInductiveConstructors_bound (unsafeFlag : Bool) (levels params indice
     (type : Expr) : ReaderBound (getInductiveConstructors unsafeFlag levels params indices type)
       (fun value => value.resourceSize - (type.resourceSize + 1)) := by
   unfold getInductiveConstructors
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro count
   apply (checkCount_bound _ _).skip
   intro checked
-  simpa [getArray] using (getArray_bound _ _ getConstructor_bound count.size.toNat).map
+  simpa [getArray] using (getArray_bound _ _ getConstructor_bound count.value.toNat).map
     (fun ctors => (⟨unsafeFlag, levels, params, indices, type, ctors⟩ : Inductive))
     (fun value => value.resourceSize - (type.resourceSize + 1))
     (fun _ => by simp [Inductive.resourceSize, Nat.add_comm])
@@ -157,11 +157,11 @@ theorem getInductive_bound : ReaderBound getInductive Inductive.resourceSize := 
   apply getBool_bound.skip
   intro unsafeFlag
   unfold getInductiveAfterFlags
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro levels
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro params
-  apply getTag0_bound.skip
+  apply (getTagN_bound 0).skip
   intro indices
   exact getExpr_bound.bind (fun type => getInductiveConstructors_bound _ _ _ _ type) _
     (fun type value => by omega)
@@ -180,11 +180,11 @@ theorem getMutConst_bound : ReaderBound getMutConst MutConst.resourceSize := by
 
 theorem getConstantInfo_bound : ReaderBound getConstantInfo ConstantInfo.resourceSize := by
   unfold getConstantInfo
-  apply getTag4_bound.bind (rightUnits := fun _ value => value.resourceSize - 1)
+  apply (getTagN_bound 4).bind (rightUnits := fun _ value => value.resourceSize - 1)
     (fun tag => ?_) _ (fun _ value => by omega)
   by_cases mutualTag : (tag.flag == Constant.FLAG_MUTS) = true
   · simp only [ite_eq_left mutualTag]
-    simpa [getArray] using (getArray_bound _ _ getMutConst_bound tag.size.toNat).map
+    simpa [getArray] using (getArray_bound _ _ getMutConst_bound tag.value.toNat).map
       ConstantInfo.muts (fun value => value.resourceSize - 1)
       (fun _ => by simp [ConstantInfo.resourceSize])
   · simp only [ite_eq_right mutualTag]
@@ -207,7 +207,7 @@ theorem getConstantInfo_bound : ReaderBound getConstantInfo ConstantInfo.resourc
 lemma intentionally measures only byte progress; compressed successor
 allocation is controlled by the separate expanded-node budget. -/
 theorem getUnivFromTag_progress (recur : GetM Univ)
-    (bound : ReaderBound recur (fun _ => 2)) (tag : Tag2) :
+    (bound : ReaderBound recur (fun _ => 2)) (tag : TagN) :
     ReaderBound (getUnivFromTag recur tag) (fun _ => 0) := by
   unfold getUnivFromTag
   split
@@ -223,7 +223,7 @@ theorem getUnivFuel_progress (fuel : Nat) : ReaderBound (getUnivFuel fuel) (fun 
   induction fuel with
   | zero => exact throw_bound _ _
   | succ fuel ih =>
-    exact getTag2_bound.bind (fun tag => getUnivFromTag_progress _ ih tag) _
+    exact (getTagN_bound 2).bind (fun tag => getUnivFromTag_progress _ ih tag) _
       (fun _ _ => Nat.le_refl _)
 
 theorem getUniv_progress : ReaderBound getUniv (fun _ => 2) := by
@@ -241,18 +241,18 @@ theorem getConstant_bound : ReaderBound getConstant Constant.resourceSize := by
   obtain ⟨info, infoState, infoRead, read⟩ := bind_ok.mp read
   have infoSpan := getConstantInfo_bound _ _ _ valid infoRead
   obtain ⟨sharingCount, sharingState, sharingCountRead, read⟩ := bind_ok.mp read
-  have sharingCountSpan := getTag0_bound _ _ _ infoSpan.valid sharingCountRead
+  have sharingCountSpan := (getTagN_bound 0) _ _ _ infoSpan.valid sharingCountRead
   obtain ⟨sharing, refsCountState, sharingRead, read⟩ := bind_ok.mp read
   have sharingBound := getExpr_bound.weaken Expr.resourceSize (fun _ => by omega)
   have sharingSpan := getArray_bound _ _ sharingBound _ _ _ _ sharingCountSpan.valid sharingRead
   obtain ⟨refsCount, refsState, refsCountRead, read⟩ := bind_ok.mp read
-  have refsCountSpan := getTag0_bound _ _ _ sharingSpan.valid refsCountRead
+  have refsCountSpan := (getTagN_bound 0) _ _ _ sharingSpan.valid refsCountRead
   obtain ⟨refs, univsCountState, refsRead, read⟩ := bind_ok.mp read
   have refsBound := address_bound.weaken (fun _ => 1) (fun _ => by decide)
   have refsSpan : Span refsState univsCountState refs.size := by
     simpa [sum_const] using getArray_bound _ _ refsBound _ _ _ _ refsCountSpan.valid refsRead
   obtain ⟨univsCount, univsState, univsCountRead, read⟩ := bind_ok.mp read
-  have univsCountSpan := getTag0_bound _ _ _ refsSpan.valid univsCountRead
+  have univsCountSpan := (getTagN_bound 0) _ _ _ refsSpan.valid univsCountRead
   obtain ⟨univs, final, univsRead, result⟩ := bind_ok.mp read
   have univsBound := getUniv_progress.weaken (fun _ => 1) (fun _ => by decide)
   have univsSpan : Span univsState final univs.size := by

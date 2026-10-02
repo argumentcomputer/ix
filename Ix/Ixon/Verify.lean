@@ -9,6 +9,7 @@ import Ix.Ixon.Verify.BoundedConstant
 import Ix.Ixon.Verify.ConstantBounds
 import Ix.Ixon.Verify.WorkRecord
 import Ix.Ixon.Verify.Canonical
+import Ix.Ixon.Verify.TagN
 
 /-! The production codec contracts.
 The universe/expression entry points consume the whole buffer. The

@@ -12,13 +12,13 @@ hide partial expansion or restart its budget. A successful universe returns the
 unused budget and four byte-funded credits for its enclosing reader.
 -/
 
-def univBody (recur : Nat → M (Univ × Nat)) (remaining : Nat) (tag : Tag2) : M (Univ × Nat) :=
+def univBody (recur : Nat → M (Univ × Nat)) (remaining : Nat) (tag : TagN) : M (Univ × Nat) :=
   match tag.flag with
   | 0 =>
-    if tag.size == 0 then charged 1 (pure (.zero, remaining))
+    if tag.value == 0 then charged 1 (pure (.zero, remaining))
     else do
       let (base, remaining) ← recur remaining
-      charged 1 (pure (base.addSucc tag.size.toNat, remaining))
+      charged 1 (pure (base.addSucc tag.value.toNat, remaining))
   | 1 => do
     let (left, remaining) ← recur remaining
     let (right, remaining) ← recur remaining
@@ -27,10 +27,10 @@ def univBody (recur : Nat → M (Univ × Nat)) (remaining : Nat) (tag : Tag2) : 
     let (left, remaining) ← recur remaining
     let (right, remaining) ← recur remaining
     charged 1 (pure (.imax left right, remaining))
-  | 3 => charged 1 (pure (.var tag.size, remaining))
+  | 3 => charged 1 (pure (.var tag.value, remaining))
   | flag => fail s!"getUniv: invalid flag {flag}"
 
-def univFromTag (recur : Nat → M (Univ × Nat)) (budget : Nat) (tag : Tag2) : M (Univ × Nat) :=
+def univFromTag (recur : Nat → M (Univ × Nat)) (budget : Nat) (tag : TagN) : M (Univ × Nat) :=
   let amount := Bounded.univTagCharge tag
   if amount ≤ budget then
     charged (2 * amount) (univBody recur (budget - amount) tag)
@@ -38,7 +38,7 @@ def univFromTag (recur : Nat → M (Univ × Nat)) (budget : Nat) (tag : Tag2) : 
 
 def univFuel : Nat → Nat → M (Univ × Nat)
   | 0, _ => fail "getUniv: recursion budget exhausted"
-  | fuel + 1, budget => bind tag2 (univFromTag (univFuel fuel) budget)
+  | fuel + 1, budget => bind (tagN 2) (univFromTag (univFuel fuel) budget)
 
 def univ (budget : Nat) : M (Univ × Nat) := fun state =>
   univFuel (state.bytes.size - state.idx + 1) budget state
@@ -52,7 +52,7 @@ def univArrayLoop : Nat → Nat → Array Univ → M (Array Univ × Nat)
 def univArray (count budget : Nat) : M (Array Univ × Nat) := univArrayLoop count budget #[]
 
 theorem univFromTag_erases {recur : Nat → M (Univ × Nat)} {reader : Nat → GetM (Univ × Nat)}
-    (same : ∀ budget, Erases (recur budget) (reader budget)) (budget : Nat) (tag : Tag2) :
+    (same : ∀ budget, Erases (recur budget) (reader budget)) (budget : Nat) (tag : TagN) :
     Erases (univFromTag recur budget tag) (Bounded.getUnivFromTag reader budget tag) := by
   unfold univFromTag Bounded.getUnivFromTag
   dsimp only
@@ -83,7 +83,7 @@ theorem univFuel_erases (fuel budget : Nat) :
     Erases (univFuel fuel budget) (Bounded.getUnivFuel fuel budget) := by
   induction fuel generalizing budget with
   | zero => exact fail_erases _
-  | succ fuel ih => exact tag2_erases.bind (univFromTag_erases ih budget)
+  | succ fuel ih => exact (tagN_erases 2).bind (univFromTag_erases ih budget)
 
 theorem univ_erases (budget : Nat) : Erases (univ budget) (Bounded.getUniv budget) := by
   funext state
@@ -105,7 +105,7 @@ theorem univArray_erases (count budget : Nat) :
 
 theorem univBody_bound {recur : Nat → M (Univ × Nat)}
     (bound : ∀ budget, Bound (recur budget) 16 (2 * budget) (fun value => 2 * value.2 + 4))
-    (remaining : Nat) (tag : Tag2) :
+    (remaining : Nat) (tag : TagN) :
     Bound (univBody recur remaining tag) 16 (2 * remaining + 14) (fun value => 2 * value.2 + 4) := by
   unfold univBody
   split
@@ -131,7 +131,7 @@ theorem univBody_bound {recur : Nat → M (Univ × Nat)}
 
 theorem univFromTag_bound {recur : Nat → M (Univ × Nat)}
     (bound : ∀ budget, Bound (recur budget) 16 (2 * budget) (fun value => 2 * value.2 + 4))
-    (budget : Nat) (tag : Tag2) :
+    (budget : Nat) (tag : TagN) :
     Bound (univFromTag recur budget tag) 16 (14 + 2 * budget) (fun value => 2 * value.2 + 4) := by
   unfold univFromTag
   dsimp only
@@ -144,7 +144,7 @@ theorem univFuel_bound (fuel budget : Nat) :
   induction fuel generalizing budget with
   | zero => exact fail_bound _ _ _ _
   | succ fuel ih =>
-    exact ((tag2_bound 16 (by decide)).carry (2 * budget)).bind (univFromTag_bound ih budget)
+    exact ((tagN_bound 2 16 (by decide)).carry (2 * budget)).bind (univFromTag_bound ih budget)
 
 theorem univ_bound (budget : Nat) :
     Bound (univ budget) 16 (2 * budget) (fun value => 2 * value.2 + 4) := by
