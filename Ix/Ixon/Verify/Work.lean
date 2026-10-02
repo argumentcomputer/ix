@@ -18,7 +18,7 @@ are introduced with `charge` and must be funded in the bound proof.
 
 namespace Ixon.Verify.Work
 
-open _root_.Ixon
+open Ixon
 
 abbrev Outcome (α : Type) := EStateM.Result String GetState α
 abbrev M (α : Type) := GetState → Outcome α × Nat

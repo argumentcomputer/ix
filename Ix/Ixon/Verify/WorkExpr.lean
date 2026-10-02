@@ -2,7 +2,7 @@ import Ix.Ixon.Verify.WorkTags
 
 namespace Ixon.Verify.Work
 
-open _root_.Ixon
+open Ixon
 
 /-! Expression accounting includes list cells and tuples, array materialization,
 and telescope folds, in addition to byte/tag work. Collection readers retain

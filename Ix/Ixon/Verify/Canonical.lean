@@ -4,7 +4,7 @@ import Ix.Ixon.Verify.WireCheck
 
 namespace Ixon.Verify.Canonical
 
-open _root_.Ixon
+open Ixon
 
 /-- The per-record canonical contract: `bytes` is exactly the serialization of
 a wire-well-formed constant, within the byte and aggregate universe-node

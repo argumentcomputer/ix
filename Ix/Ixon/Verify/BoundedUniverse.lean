@@ -3,7 +3,7 @@ import Ix.Ixon.Verify.Framing
 
 namespace Ixon.Verify.BoundedUniverse
 
-open _root_.Ixon
+open Ixon
 
 @[simp] theorem nodeCount_addSucc (count : Nat) (base : Univ) :
     (base.addSucc count).nodeCount = base.nodeCount + count := by
@@ -28,7 +28,7 @@ and spend precisely one unit for each expanded universe constructor. -/
 theorem getUnivFuel_spec (fuel budget : Nat) (start finish : GetState)
     (u : Univ) (remaining : Nat)
     (h : Bounded.getUnivFuel fuel budget start = .ok (u, remaining) finish) :
-    _root_.Ixon.getUnivFuel fuel start = .ok u finish ∧
+    Ixon.getUnivFuel fuel start = .ok u finish ∧
       remaining + u.nodeCount = budget := by
   induction fuel generalizing budget start finish u remaining with
   | zero => cases h
@@ -38,7 +38,7 @@ theorem getUnivFuel_spec (fuel budget : Nat) (start finish : GetState)
     | error reason state => simp [readTag] at h
     | ok tag state =>
       simp only [readTag] at h
-      simp only [_root_.Ixon.getUnivFuel, bind, EStateM.bind, readTag]
+      simp only [Ixon.getUnivFuel, bind, EStateM.bind, readTag]
       unfold Bounded.getUnivFromTag at h
       split at h
       next chargeFits =>
@@ -50,7 +50,7 @@ theorem getUnivFuel_spec (fuel budget : Nat) (start finish : GetState)
               Prod.mk.injEq] at h
             rcases h with ⟨⟨rfl, rfl⟩, rfl⟩
             constructor
-            · simp [_root_.Ixon.getUnivFromTag, flagZero, sizeZero,
+            · simp [Ixon.getUnivFromTag, flagZero, sizeZero,
                 pure, EStateM.pure]
             · simp_all [Univ.nodeCount, Bounded.univTagCharge]
           next sizeNonzero =>
@@ -63,7 +63,7 @@ theorem getUnivFuel_spec (fuel budget : Nat) (start finish : GetState)
               rcases h with ⟨⟨rfl, rfl⟩, rfl⟩
               obtain ⟨same, spent⟩ := ih _ _ _ _ _ childRead
               constructor
-              · simp [_root_.Ixon.getUnivFromTag, flagZero, sizeNonzero,
+              · simp [Ixon.getUnivFromTag, flagZero, sizeNonzero,
                   bind, EStateM.bind, same, pure, EStateM.pure]
               · simp_all [nodeCount_addSucc, Bounded.univTagCharge]
                 omega
@@ -82,7 +82,7 @@ theorem getUnivFuel_spec (fuel budget : Nat) (start finish : GetState)
               obtain ⟨sameLeft, spentLeft⟩ := ih _ _ _ _ _ leftRead
               obtain ⟨sameRight, spentRight⟩ := ih _ _ _ _ _ rightRead
               constructor
-              · simp [_root_.Ixon.getUnivFromTag, flagMax, bind, EStateM.bind,
+              · simp [Ixon.getUnivFromTag, flagMax, bind, EStateM.bind,
                   sameLeft, sameRight, pure, EStateM.pure]
               · simp_all [Univ.nodeCount, Bounded.univTagCharge]
                 omega
@@ -102,7 +102,7 @@ theorem getUnivFuel_spec (fuel budget : Nat) (start finish : GetState)
               obtain ⟨sameLeft, spentLeft⟩ := ih _ _ _ _ _ leftRead
               obtain ⟨sameRight, spentRight⟩ := ih _ _ _ _ _ rightRead
               constructor
-              · simp [_root_.Ixon.getUnivFromTag, flagIMax, bind, EStateM.bind,
+              · simp [Ixon.getUnivFromTag, flagIMax, bind, EStateM.bind,
                   sameLeft, sameRight, pure, EStateM.pure]
               · simp_all [Univ.nodeCount, Bounded.univTagCharge]
                 omega
@@ -113,7 +113,7 @@ theorem getUnivFuel_spec (fuel budget : Nat) (start finish : GetState)
             Prod.mk.injEq] at h
           rcases h with ⟨⟨rfl, rfl⟩, rfl⟩
           constructor
-          · simp [_root_.Ixon.getUnivFromTag, flagVar, pure, EStateM.pure]
+          · simp [Ixon.getUnivFromTag, flagVar, pure, EStateM.pure]
           · simp_all [Univ.nodeCount, Bounded.univTagCharge]
         next => cases h
       next => cases h
@@ -122,21 +122,21 @@ theorem getUnivFuel_spec (fuel budget : Nat) (start finish : GetState)
 budget. The budget cannot silently narrow coverage within its stated limit. -/
 theorem getUnivFuel_complete (fuel budget : Nat) (start finish : GetState)
     (u : Univ)
-    (h : _root_.Ixon.getUnivFuel fuel start = .ok u finish)
+    (h : Ixon.getUnivFuel fuel start = .ok u finish)
     (fits : u.nodeCount ≤ budget) :
     Bounded.getUnivFuel fuel budget start =
       .ok (u, budget - u.nodeCount) finish := by
   induction fuel generalizing budget start finish u with
   | zero => cases h
   | succ fuel ih =>
-    simp only [_root_.Ixon.getUnivFuel, bind, EStateM.bind] at h
+    simp only [Ixon.getUnivFuel, bind, EStateM.bind] at h
     cases readTag : getTag2 start with
     | error reason state => simp [readTag] at h
     | ok tag state =>
       simp only [readTag] at h
       simp only [Bounded.getUnivFuel, bind, EStateM.bind, readTag]
       by_cases flagZero : tag.flag = 0
-      · simp only [_root_.Ixon.getUnivFromTag, flagZero] at h
+      · simp only [Ixon.getUnivFromTag, flagZero] at h
         split at h
         next sizeZero =>
           have sizeEq : tag.size = 0 := by simpa using sizeZero
@@ -163,31 +163,31 @@ theorem getUnivFuel_complete (fuel budget : Nat) (start finish : GetState)
               sizeNe, chargeFits, bind, EStateM.bind, child, pure, EStateM.pure] <;> omega
           next => cases h
       · by_cases flagMax : tag.flag = 1
-        · simp only [_root_.Ixon.getUnivFromTag, flagMax] at h
+        · simp only [Ixon.getUnivFromTag, flagMax] at h
           exact maxStep fuel ih budget state finish u tag flagMax h fits
         · by_cases flagIMax : tag.flag = 2
-          · simp only [_root_.Ixon.getUnivFromTag, flagIMax] at h
+          · simp only [Ixon.getUnivFromTag, flagIMax] at h
             exact imaxStep fuel ih budget state finish u tag flagIMax h fits
           · by_cases flagVar : tag.flag = 3
-            · simp only [_root_.Ixon.getUnivFromTag, flagVar] at h
+            · simp only [Ixon.getUnivFromTag, flagVar] at h
               simp only [pure, EStateM.pure, EStateM.Result.ok.injEq] at h
               rcases h with ⟨rfl, rfl⟩
               have chargeFits : 1 ≤ budget := fits
               simp [Bounded.getUnivFromTag, Bounded.univTagCharge, flagVar,
                 chargeFits, Univ.nodeCount, pure, EStateM.pure]
-            · simp_all [_root_.Ixon.getUnivFromTag]
+            · simp_all [Ixon.getUnivFromTag]
               cases h
 where
   maxStep (fuel : Nat)
       (ih : ∀ (budget : Nat) (start finish : GetState) (u : Univ),
-        _root_.Ixon.getUnivFuel fuel start = .ok u finish →
+        Ixon.getUnivFuel fuel start = .ok u finish →
         u.nodeCount ≤ budget →
         Bounded.getUnivFuel fuel budget start = .ok (u, budget - u.nodeCount) finish)
       (budget : Nat) (state finish : GetState) (u : Univ) (tag : Tag2)
       (flagMax : tag.flag = 1)
       (h : (do
-        let left ← _root_.Ixon.getUnivFuel fuel
-        let right ← _root_.Ixon.getUnivFuel fuel
+        let left ← Ixon.getUnivFuel fuel
+        let right ← Ixon.getUnivFuel fuel
         pure (Univ.max left right)) state = .ok u finish)
       (fits : u.nodeCount ≤ budget) :
       Bounded.getUnivFromTag (Bounded.getUnivFuel fuel) budget tag state =
@@ -215,14 +215,14 @@ where
         next => cases h
   imaxStep (fuel : Nat)
       (ih : ∀ (budget : Nat) (start finish : GetState) (u : Univ),
-        _root_.Ixon.getUnivFuel fuel start = .ok u finish →
+        Ixon.getUnivFuel fuel start = .ok u finish →
         u.nodeCount ≤ budget →
         Bounded.getUnivFuel fuel budget start = .ok (u, budget - u.nodeCount) finish)
       (budget : Nat) (state finish : GetState) (u : Univ) (tag : Tag2)
       (flagIMax : tag.flag = 2)
       (h : (do
-        let left ← _root_.Ixon.getUnivFuel fuel
-        let right ← _root_.Ixon.getUnivFuel fuel
+        let left ← Ixon.getUnivFuel fuel
+        let right ← Ixon.getUnivFuel fuel
         pure (Univ.imax left right)) state = .ok u finish)
       (fits : u.nodeCount ≤ budget) :
       Bounded.getUnivFromTag (Bounded.getUnivFuel fuel) budget tag state =
@@ -252,7 +252,7 @@ where
 theorem getUniv_spec (budget : Nat) (start finish : GetState)
     (u : Univ) (remaining : Nat)
     (h : Bounded.getUniv budget start = .ok (u, remaining) finish) :
-    _root_.Ixon.getUniv start = .ok u finish ∧ remaining + u.nodeCount = budget := by
+    Ixon.getUniv start = .ok u finish ∧ remaining + u.nodeCount = budget := by
   change Bounded.getUnivFuel (start.bytes.size - start.idx + 1) budget start = _ at h
   exact getUnivFuel_spec _ _ _ _ _ _ h
 
@@ -284,7 +284,7 @@ with exact production decoding of the entire supplied buffer. -/
 theorem deUniv_spec (maxBytes maxNodes : Nat) (bytes : ByteArray) (u : Univ)
     (h : Bounded.deUniv maxBytes maxNodes bytes = .ok u) :
     bytes.size ≤ maxBytes ∧ u.nodeCount ≤ maxNodes ∧
-      _root_.Ixon.deUniv bytes = .ok u := by
+      Ixon.deUniv bytes = .ok u := by
   unfold Bounded.deUniv at h
   split at h
   next bytesFit =>
@@ -298,7 +298,7 @@ theorem deUniv_spec (maxBytes maxNodes : Nat) (bytes : ByteArray) (u : Univ)
       rcases decoded with ⟨rfl, rfl⟩
       obtain ⟨same, spent⟩ := getUniv_spec maxNodes _ _ _ remaining read
       refine ⟨bytesFit, by omega, ?_⟩
-      simp [_root_.Ixon.deUniv, runGetExact, EStateM.run, same, consumed]
+      simp [Ixon.deUniv, runGetExact, EStateM.run, same, consumed]
   next => cases h
 
 theorem deUniv_noTrailing (u : Univ) (wf : u.wireWF) (maxBytes maxNodes : Nat)

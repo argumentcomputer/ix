@@ -13,7 +13,7 @@ separate explicit node budget.
 
 namespace Ixon.Verify.ReaderBounds
 
-open _root_.Ixon
+open Ixon
 
 /-- A successful read preserves the buffer, advances within it, and obtains
 at most two structural units from each byte consumed. -/
@@ -590,7 +590,7 @@ theorem getExpr_bound : ReaderBound getExpr (fun expr => expr.resourceSize + 1) 
 theorem ReaderBound.runGetExact {reader : GetM α} {units : α → Nat}
     (bound : ReaderBound reader units) (bytes : ByteArray) (value : α)
     (read : runGetExact reader bytes = .ok value) : units value ≤ 2 * bytes.size := by
-  unfold _root_.Ixon.runGetExact at read
+  unfold Ixon.runGetExact at read
   simp only [EStateM.run] at read
   cases parsed : reader { bytes := bytes } with
   | error reason state => simp [parsed] at read

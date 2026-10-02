@@ -3,7 +3,7 @@ import Ix.Kernel.Admission.Bytes.Theorems
 
 namespace Ixon.Verify.Work.Admission
 
-open _root_.Ixon
+open Ixon
 open Ix.Kernel
 open Ix.Kernel.Admission
 

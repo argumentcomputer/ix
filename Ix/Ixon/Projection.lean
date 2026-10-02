@@ -23,7 +23,7 @@ structure Request where
 
 /-- Member positions, followed by constructor positions for inductives.
 Standalone definitions and recursors already use their primary address. -/
-def memberRequests (owner : Address) (index : Nat) : _root_.Ixon.MutConst → List Request
+def memberRequests (owner : Address) (index : Nat) : Ixon.MutConst → List Request
   | .defn _ => [⟨.definition, .member owner index⟩]
   | .recr _ => [⟨.recursor, .member owner index⟩]
   | .indc source => ⟨.inductive, .member owner index⟩ ::
@@ -40,12 +40,12 @@ def primaries (constants : Ingress.Constants) : Ingress.Constants :=
   constants.filter fun pair => !Ingress.isProjection pair.2.info
 
 /-- The address is a theorem-level computation, not a host hash result. -/
-def address (record : _root_.Ixon.Constant) : Address :=
-  Address.blake3Pure (_root_.Ixon.serConstant record)
+def address (record : Ixon.Constant) : Address :=
+  Address.blake3Pure (Ixon.serConstant record)
 
 /-- Compare only exact projection records, including their empty tables.
 This avoids evaluating structural equality on unrelated declaration trees. -/
-def matchesRecord (request : Request) (record : _root_.Ixon.Constant) : Bool :=
+def matchesRecord (request : Request) (record : Ixon.Constant) : Bool :=
   match Egress.readProjection record with
   | .ok (layout, reference) => decide (layout = request.layout ∧ reference = request.reference)
   | .error _ => false

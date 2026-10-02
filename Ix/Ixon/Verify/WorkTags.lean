@@ -2,7 +2,7 @@ import Ix.Ixon.Verify.Work
 
 namespace Ixon.Verify.Work
 
-open _root_.Ixon
+open Ixon
 
 /-- One byte read and one word-reconstruction step per completed limb. On
 failure the unfinished suffix does not reconstruct words on its way out. -/

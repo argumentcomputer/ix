@@ -35,7 +35,7 @@ of unused tables: the final kernel admission still checks the entire input.
 namespace Ixon.BlockOrder
 
 open Ix.Kernel hiding Expr  -- `Expr` is Ixon's here (the kernel's is `Ix.Kernel.Expr`)
-open _root_.Ixon (Univ Expr MutConst)
+open Ixon (Univ Expr MutConst)
 
 abbrev Classes := List (List Nat)
 abbrev LocalContext := List (Address × Nat)
@@ -71,7 +71,7 @@ structure Entry where
   value : MutConst
 
 structure Block where
-  source : _root_.Ixon.Constant
+  source : Ixon.Constant
   entries : Array Entry
   universes : Array Univ
   blobs : Ingress.Blobs
@@ -94,11 +94,11 @@ def prepareEntry (owner : Address) (index : Nat) (member : MutConst) : Except Er
       projectionAddress .constructor (.ctor owner index ctor)
     return ⟨address, constructors, member⟩
 
-def prepare (owner : Address) (source : _root_.Ixon.Constant) (blobs : Ingress.Blobs) :
+def prepare (owner : Address) (source : Ixon.Constant) (blobs : Ingress.Blobs) :
     Except Error Block := do
   let .muts members := source.info | throw (.malformed "expected a mutual block")
   let entries ← members.toList.zipIdx.mapM fun (member, index) => prepareEntry owner index member
-  return ⟨source, entries.toArray, source.univs.map _root_.Ixon.reduceUniv, blobs⟩
+  return ⟨source, entries.toArray, source.univs.map Ixon.reduceUniv, blobs⟩
 
 def required (reason : String) : Option α → Except Error α
   | some value => .ok value
@@ -247,13 +247,13 @@ def compareRoot (block : Block) (ctx : LocalContext) (fuel : Nat) (left right : 
   compareExpr block ctx fuel block.source.sharing.size left block.source.sharing.size right
 
 def compareConstructor (block : Block) (ctx : LocalContext) (fuel : Nat)
-    (left right : _root_.Ixon.Constructor) : Except Error Ordering :=
+    (left right : Ixon.Constructor) : Except Error Ordering :=
   thenM (compare [left.lvls, left.cidx, left.params, left.fields]
     [right.lvls, right.cidx, right.params, right.fields]) fun _ =>
     compareRoot block ctx fuel left.typ right.typ
 
 def compareRule (block : Block) (ctx : LocalContext) (fuel : Nat)
-    (left right : _root_.Ixon.RecursorRule) : Except Error Ordering :=
+    (left right : Ixon.RecursorRule) : Except Error Ordering :=
   thenM (compare left.fields right.fields) fun _ => compareRoot block ctx fuel left.rhs right.rhs
 
 def definitionKind : Ix.DefKind → Nat
@@ -358,7 +358,7 @@ def canonicalClasses (limits : Limits) (block : Block) : Except Error Classes :=
 
 def orderedSingletons (size : Nat) : Classes := (List.range size).map fun index => [index]
 
-def checkBlock (limits : Limits) (owner : Address) (source : _root_.Ixon.Constant)
+def checkBlock (limits : Limits) (owner : Address) (source : Ixon.Constant)
     (blobs : Ingress.Blobs) : Except Error Unit := do
   let block ← prepare owner source blobs
   let classes ← canonicalClasses limits block
@@ -375,7 +375,7 @@ def isRecursor : MutConst → Bool
 reader does (the first component of `Reader.analyseRecursor`): after
 the parameters, motives, minors, indices and the major premise, the head of
 the result is the bound variable of one of the motives. -/
-def recursorMotive (source : _root_.Ixon.Constant) (r : _root_.Ixon.Recursor) : Option Nat := do
+def recursorMotive (source : Ixon.Constant) (r : Ixon.Recursor) : Option Nat := do
   let nP := r.params.toNat
   let nM := r.motives.toNat
   let depth := nP + nM + r.minors.toNat + r.indices.toNat + 1
@@ -387,7 +387,7 @@ def recursorMotive (source : _root_.Ixon.Constant) (r : _root_.Ixon.Recursor) : 
 
 /-- The members from `position` on are recursors in motive order: the one at
 `position` eliminates motive `position`, of `size` motives. -/
-def checkMotives (owner : Address) (source : _root_.Ixon.Constant) (size : Nat) :
+def checkMotives (owner : Address) (source : Ixon.Constant) (size : Nat) :
     Nat → List MutConst → Except Error Unit
   | _, [] => .ok ()
   | position, member :: rest => do
@@ -402,7 +402,7 @@ def checkMotives (owner : Address) (source : _root_.Ixon.Constant) (size : Nat) 
 /-- One record's order check: a recursor block in motive order, any other
 `muts` block in canonical structural order (`checkBlock`), nothing else. -/
 def checkRecord (limits : Limits) (blobs : Ingress.Blobs) (owner : Address)
-    (source : _root_.Ixon.Constant) : Except Error Unit :=
+    (source : Ixon.Constant) : Except Error Unit :=
   match source.info with
   | .muts members =>
     if members.all isRecursor then checkMotives owner source members.size 0 members.toList

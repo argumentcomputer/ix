@@ -2,7 +2,7 @@ import Ix.Ixon.Verify.ReaderBounds
 
 namespace Ixon.Verify.ConstantBounds
 
-open _root_.Ixon ReaderBounds
+open Ixon ReaderBounds
 
 /-- Ixon v3 validates flag bytes before the payload: a rejected flag stops. -/
 theorem guard_bound {p : Prop} [Decidable p] {rest : GetM α} {units : α → Nat} (reason : String)

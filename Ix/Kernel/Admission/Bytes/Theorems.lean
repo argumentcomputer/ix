@@ -12,7 +12,7 @@ entry's theorems (`Ix.Kernel.Admission.Theorems`).
 
 namespace Ix.Kernel.Admission
 
-open _root_.Ixon Kernel
+open Ixon
 
 theorem consume_ok_iff (resource : Resource) (count budget : Nat) (records : Records)
     (remaining : Nat) :

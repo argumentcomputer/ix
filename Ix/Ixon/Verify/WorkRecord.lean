@@ -2,7 +2,7 @@ import Ix.Ixon.Verify.WorkConstant
 
 namespace Ixon.Verify.Work
 
-open _root_.Ixon
+open Ixon
 
 /-- Account for a framing attempt, conservatively also on reader failure. -/
 def exact (reader : M α) (input : ByteArray) : Except String α × Nat :=

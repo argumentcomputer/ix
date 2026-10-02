@@ -10,11 +10,11 @@ bit-vector decision proofs. Neither boundary imports the host. -/
 namespace Ixon.Audit
 
 def operations : Array Lean.Name :=
-  #[``_root_.Ixon.serUniv, ``_root_.Ixon.deUniv,
-    ``_root_.Ixon.serExpr, ``_root_.Ixon.deExpr,
-    ``_root_.Ixon.serConstant, ``_root_.Ixon.deConstant, ``_root_.Ixon.deConstantExact,
-    ``_root_.Ixon.Bounded.deUniv, ``_root_.Ixon.Bounded.deConstant,
-    ``_root_.Ixon.Canonical.deConstant]
+  #[``Ixon.serUniv, ``Ixon.deUniv,
+    ``Ixon.serExpr, ``Ixon.deExpr,
+    ``Ixon.serConstant, ``Ixon.deConstant, ``Ixon.deConstantExact,
+    ``Ixon.Bounded.deUniv, ``Ixon.Bounded.deConstant,
+    ``Ixon.Canonical.deConstant]
 
 def dataImports : Array Lean.Name :=
   #[`Init, `Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,

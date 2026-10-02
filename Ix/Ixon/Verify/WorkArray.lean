@@ -3,7 +3,7 @@ import Ix.Ixon.Verify.BoundedConstant
 
 namespace Ixon.Verify.Work
 
-open _root_.Ixon
+open Ixon
 
 /-- Each successful element pays one iteration and one append. The reader's
 own work is also counted, including when it fails after partial consumption.

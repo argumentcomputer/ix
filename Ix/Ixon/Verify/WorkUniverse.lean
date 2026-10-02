@@ -3,7 +3,7 @@ import Ix.Ixon.Bounded.Constant
 
 namespace Ixon.Verify.Work
 
-open _root_.Ixon
+open Ixon
 
 /-! Universe work reserves two units per expanded constructor before descending
 into children: one expansion step and one constructed node. This upper estimate

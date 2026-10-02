@@ -2,7 +2,7 @@ import Ix.Ixon.WireCheck
 
 namespace Ixon.Verify.WireCheck
 
-open _root_.Ixon _root_.Ixon.WireCheck
+open Ixon Ixon.WireCheck
 
 theorem checkUniv_complete (u : Univ) (wf : u.wireWF) :
     ∃ result, checkUniv u = some result := by

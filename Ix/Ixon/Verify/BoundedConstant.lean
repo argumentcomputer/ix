@@ -3,7 +3,7 @@ import Ix.Ixon.Verify.BoundedUniverse
 
 namespace Ixon.Verify.BoundedConstant
 
-open _root_.Ixon
+open Ixon
 
 @[simp] theorem univNodes_empty : Bounded.univNodes #[] = 0 := rfl
 
@@ -29,7 +29,7 @@ those entries to its accumulator, and spends their aggregate node count. -/
 theorem getUnivArray_go_spec (count budget : Nat) (acc : Array Univ)
     (start finish : GetState) (values : Array Univ) (remaining : Nat)
     (h : Bounded.getUnivArrayLoop count budget acc start = .ok (values, remaining) finish) :
-    ∃ added, getArray _root_.Ixon.getUniv count start = .ok added finish ∧
+    ∃ added, getArray Ixon.getUniv count start = .ok added finish ∧
       values = acc ++ added ∧ remaining + Bounded.univNodes added = budget := by
   induction count generalizing budget acc start finish values remaining with
   | zero =>
@@ -55,7 +55,7 @@ theorem getUnivArray_go_spec (count budget : Nat) (acc : Array Univ)
 theorem getUnivArray_spec (count budget : Nat) (start finish : GetState)
     (values : Array Univ) (remaining : Nat)
     (h : Bounded.getUnivArray count budget start = .ok (values, remaining) finish) :
-    getArray _root_.Ixon.getUniv count start = .ok values finish ∧
+    getArray Ixon.getUniv count start = .ok values finish ∧
       remaining + Bounded.univNodes values = budget := by
   obtain ⟨added, read, appended, spent⟩ := getUnivArray_go_spec count budget #[] _ _ _ _ h
   simp only [Array.empty_append] at appended
@@ -66,7 +66,7 @@ theorem getUnivArray_spec (count budget : Nat) (start finish : GetState)
 whose aggregate universe size fits, for any existing accumulator. -/
 theorem getUnivArray_go_complete (count budget : Nat) (acc : Array Univ)
     (start finish : GetState) (values : Array Univ)
-    (h : getArray _root_.Ixon.getUniv count start = .ok values finish)
+    (h : getArray Ixon.getUniv count start = .ok values finish)
     (fits : Bounded.univNodes values ≤ budget) :
     Bounded.getUnivArrayLoop count budget acc start =
       .ok (acc ++ values, budget - Bounded.univNodes values) finish := by
@@ -78,11 +78,11 @@ theorem getUnivArray_go_complete (count budget : Nat) (acc : Array Univ)
   | succ count ih =>
     rw [getArray_succ] at h
     simp only [bind, EStateM.bind] at h
-    cases readHead : _root_.Ixon.getUniv start with
+    cases readHead : Ixon.getUniv start with
     | error reason state => simp [readHead] at h
     | ok head headState =>
       simp only [readHead] at h
-      cases readTail : getArray _root_.Ixon.getUniv count headState with
+      cases readTail : getArray Ixon.getUniv count headState with
       | error reason state => simp [readTail] at h
       | ok tail tailState =>
         simp only [readTail, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
@@ -99,7 +99,7 @@ theorem getUnivArray_go_complete (count budget : Nat) (acc : Array Univ)
 
 theorem getUnivArray_complete (count budget : Nat) (start finish : GetState)
     (values : Array Univ)
-    (h : getArray _root_.Ixon.getUniv count start = .ok values finish)
+    (h : getArray Ixon.getUniv count start = .ok values finish)
     (fits : Bounded.univNodes values ≤ budget) :
     Bounded.getUnivArray count budget start =
       .ok (values, budget - Bounded.univNodes values) finish := by
@@ -152,7 +152,7 @@ theorem getConstantWithUnivs_ok_iff (readUnivs : Nat → GetM (Array Univ))
 enforcing one aggregate limit for the entire universe table. -/
 theorem getConstant_spec (budget : Nat) (start finish : GetState) (constant : Constant)
     (h : Bounded.getConstant budget start = .ok constant finish) :
-    _root_.Ixon.getConstant start = .ok constant finish ∧
+    Ixon.getConstant start = .ok constant finish ∧
       Bounded.univNodes constant.univs ≤ budget := by
   obtain ⟨count, middle, prefixRead, univsRead⟩ :=
     (getConstantWithUnivs_ok_iff _ start finish constant).mp h
@@ -171,7 +171,7 @@ theorem getConstant_spec (budget : Nat) (start finish : GetState) (constant : Co
 /-- A successful production record read remains accepted whenever the whole
 universe table, rather than just each individual entry, fits the limit. -/
 theorem getConstant_complete (budget : Nat) (start finish : GetState) (constant : Constant)
-    (h : _root_.Ixon.getConstant start = .ok constant finish)
+    (h : Ixon.getConstant start = .ok constant finish)
     (fits : Bounded.univNodes constant.univs ≤ budget) :
     Bounded.getConstant budget start = .ok constant finish := by
   obtain ⟨count, middle, prefixRead, univsRead⟩ :=

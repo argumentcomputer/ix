@@ -19,8 +19,6 @@ decoder or verdict participates in this path.
 
 namespace Ix.Kernel.Admission
 
-open Kernel
-
 abbrev Records := List (Address × ByteArray)
 
 /-- Explicit coverage limits. `maxTotalBytes` counts all constant and blob
@@ -108,7 +106,7 @@ def decodeLoop (limits : Limits) : Nat → Records → Ingress.Constants →
     Except ByteError Ingress.Constants
   | _, [], reversed => .ok reversed.reverse
   | position, (address, bytes) :: rest, reversed => do
-    let constant ← (_root_.Ixon.Canonical.deConstant limits.maxRecordBytes
+    let constant ← (Ixon.Canonical.deConstant limits.maxRecordBytes
       limits.maxRecordUnivNodes bytes).mapError (.decode position address)
     decodeLoop limits (position + 1) rest ((address, constant) :: reversed)
 

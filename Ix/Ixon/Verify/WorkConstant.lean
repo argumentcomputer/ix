@@ -4,7 +4,7 @@ import Ix.Ixon.Verify.WorkUniverse
 
 namespace Ixon.Verify.Work
 
-open _root_.Ixon
+open Ixon
 
 /-- Ixon v3's strict Boolean byte. -/
 def bool : M Bool := do

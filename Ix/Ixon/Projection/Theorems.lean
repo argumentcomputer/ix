@@ -8,7 +8,7 @@ open Ix.Kernel
 
 /-- Projection identities are determined by the physical member kind and
 array positions. Constructor metadata is checked later by kernel ingress. -/
-inductive MemberRequest (owner : Address) (index : Nat) : _root_.Ixon.MutConst → Request → Prop where
+inductive MemberRequest (owner : Address) (index : Nat) : Ixon.MutConst → Request → Prop where
   | definition : MemberRequest owner index (.defn value) ⟨.definition, .member owner index⟩
   | recursor : MemberRequest owner index (.recr value) ⟨.recursor, .member owner index⟩
   | family : MemberRequest owner index (.indc value) ⟨.inductive, .member owner index⟩
@@ -19,7 +19,7 @@ def Requested (constants : Ingress.Constants) (request : Request) : Prop :=
   ∃ owner source members member index, (owner, source) ∈ constants ∧ source.info = .muts members ∧
     members[index]? = some member ∧ MemberRequest owner index member request
 
-theorem memberRequests_spec (owner : Address) (index : Nat) (member : _root_.Ixon.MutConst)
+theorem memberRequests_spec (owner : Address) (index : Nat) (member : Ixon.MutConst)
     (request : Request) : request ∈ memberRequests owner index member ↔
       MemberRequest owner index member request := by
   cases member with
@@ -80,7 +80,7 @@ theorem requests_spec (constants : Ingress.Constants) (request : Request) :
 
 /-- A structural projection reading together with its representable owner.
 The writer checks positions fit UInt64 rather than silently wrapping them. -/
-def Reads (request : Request) (record : _root_.Ixon.Constant) : Prop :=
+def Reads (request : Request) (record : Ixon.Constant) : Prop :=
   request.reference.block.hash.size = 32 ∧
     Egress.ProjectionReads record request.layout request.reference
 
@@ -99,31 +99,31 @@ inductive Added : List Request → Ingress.Constants → Ingress.Constants → P
 def Expanded (maxProjections : Nat) (input output : Ingress.Constants) : Prop :=
   (requests input).length ≤ maxProjections ∧ Added (requests input) input output
 
-theorem address_width (record : _root_.Ixon.Constant) : (address record).hash.size = 32 :=
-  (Blake3.Pure.hash (_root_.Ixon.serConstant record)).property
+theorem address_width (record : Ixon.Constant) : (address record).hash.size = 32 :=
+  (Blake3.Pure.hash (Ixon.serConstant record)).property
 
-theorem Reads.projection {request : Request} {record : _root_.Ixon.Constant}
+theorem Reads.projection {request : Request} {record : Ixon.Constant}
     (h : Reads request record) : Ingress.isProjection record.info = true := by
   rcases request with ⟨layout, reference⟩
   rcases h with ⟨_, reading⟩
   cases reading <;> rfl
 
-theorem Reads.wireWF {request : Request} {record : _root_.Ixon.Constant}
+theorem Reads.wireWF {request : Request} {record : Ixon.Constant}
     (h : Reads request record) : record.wireWF := by
   rcases request with ⟨layout, reference⟩
   rcases h with ⟨width, reading⟩
   cases reading <;> simpa [
-    _root_.Ixon.Constant.wireWF, _root_.Ixon.ConstantInfo.wireWF,
+    Ixon.Constant.wireWF, Ixon.ConstantInfo.wireWF,
     ConstRef.block] using width
 
-theorem Reads.matchesRecord {request : Request} {record : _root_.Ixon.Constant}
+theorem Reads.matchesRecord {request : Request} {record : Ixon.Constant}
     (h : Reads request record) : matchesRecord request record = true := by
   rcases request with ⟨layout, reference⟩
   rcases h with ⟨_, reading⟩
   cases reading <;> simp [Ixon.Projection.matchesRecord, Egress.readProjection,
     Egress.readProjectionC, Ingress.emptyTables, Except.map]
 
-theorem matchesRecord_eq {request : Request} {existing record : _root_.Ixon.Constant}
+theorem matchesRecord_eq {request : Request} {existing record : Ixon.Constant}
     (h : matchesRecord request existing = true) (reading : Reads request record) : existing = record := by
   unfold matchesRecord at h
   cases parsed : Egress.readProjection existing with
@@ -203,7 +203,7 @@ theorem reconstruct_ok_iff (limit : Nat) (input output : Ingress.Constants) :
   ⟨reconstruct_spec, fun h => reconstructLoop_complete h.2 h.1⟩
 
 theorem Added.preserves {todo : List Request} {input output : Ingress.Constants}
-    (h : Added todo input output) {pair : Address × _root_.Ixon.Constant} (mem : pair ∈ input) :
+    (h : Added todo input output) {pair : Address × Ixon.Constant} (mem : pair ∈ input) :
     pair ∈ output := by
   induction h with
   | nil => exact mem
@@ -211,7 +211,7 @@ theorem Added.preserves {todo : List Request} {input output : Ingress.Constants}
   | fresh _ _ _ ih => exact ih (List.mem_cons_of_mem _ mem)
 
 theorem Added.lookup {todo : List Request} {input output : Ingress.Constants}
-    (h : Added todo input output) {key : Address} {record : _root_.Ixon.Constant}
+    (h : Added todo input output) {key : Address} {record : Ixon.Constant}
     (found : Ingress.lookup input key = some record) : Ingress.lookup output key = some record := by
   induction h with
   | nil => exact found
@@ -266,7 +266,7 @@ theorem Expanded.complete {limit : Nat} {input output : Ingress.Constants}
   h.2.complete ((requests_spec _ _).mpr requested)
 
 theorem Added.origin {todo : List Request} {input output : Ingress.Constants}
-    (h : Added todo input output) {pair : Address × _root_.Ixon.Constant} (mem : pair ∈ output) :
+    (h : Added todo input output) {pair : Address × Ixon.Constant} (mem : pair ∈ output) :
     pair ∈ input ∨ ∃ request ∈ todo, Reads request pair.2 ∧ pair.1 = address pair.2 := by
   induction h with
   | nil => exact .inl mem
@@ -282,16 +282,16 @@ theorem Added.origin {todo : List Request} {input output : Ingress.Constants}
     · exact .inr ⟨request, List.mem_cons_of_mem _ requested, reading, hashed⟩
 
 theorem Expanded.origin {limit : Nat} {input output : Ingress.Constants}
-    (h : Expanded limit input output) {pair : Address × _root_.Ixon.Constant} (mem : pair ∈ output) :
+    (h : Expanded limit input output) {pair : Address × Ixon.Constant} (mem : pair ∈ output) :
     pair ∈ input ∨ ∃ request, Requested input request ∧ Reads request pair.2 ∧
-      pair.1 = Address.blake3Pure (_root_.Ixon.serConstant pair.2) := by
+      pair.1 = Address.blake3Pure (Ixon.serConstant pair.2) := by
   rcases h.2.origin mem with old | ⟨request, requested, reading, hashed⟩
   · exact .inl old
   · exact .inr ⟨request, (requests_spec _ _).mp requested, reading, hashed⟩
 
-theorem Reads.decode {request : Request} {record : _root_.Ixon.Constant}
+theorem Reads.decode {request : Request} {record : Ixon.Constant}
     (h : Reads request record) :
-    _root_.Ixon.deConstantExact (_root_.Ixon.serConstant record) = .ok record :=
+    Ixon.deConstantExact (Ixon.serConstant record) = .ok record :=
   Verify.deConstantExact_serConstant record h.wireWF
 
 universe v

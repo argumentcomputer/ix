@@ -80,7 +80,7 @@ theorem refine_mono {block comparison small large initial result}
 /-- The stored order must be the recomputed list of ordered singletons.
 This predicate records physical preparation, deterministic seeding, and a
 finite refinement derivation, independently of the bounded loop's verdict. -/
-def Canonical (limits : Limits) (owner : Address) (source : _root_.Ixon.Constant)
+def Canonical (limits : Limits) (owner : Address) (source : Ixon.Constant)
     (blobs : Ingress.Blobs) : Prop :=
   ∃ block initial rounds, prepare owner source blobs = .ok block ∧ seed block = .ok initial ∧
     rounds ≤ limits.refinement ∧
@@ -94,7 +94,7 @@ theorem canonicalClasses_ok_iff (limits : Limits) (block : Block) (classes : Cla
   | error error => simp [canonicalClasses, seeded, bind, Except.bind]
   | ok initial => simp [canonicalClasses, seeded, bind, Except.bind, refine_ok_iff]
 
-theorem checkBlock_ok_iff (limits : Limits) (owner : Address) (source : _root_.Ixon.Constant)
+theorem checkBlock_ok_iff (limits : Limits) (owner : Address) (source : Ixon.Constant)
     (blobs : Ingress.Blobs) : checkBlock limits owner source blobs = .ok () ↔
       Canonical limits owner source blobs := by
   cases prepared : prepare owner source blobs with
@@ -141,18 +141,18 @@ theorem recursorMotive_of_analyse {store owner c r m carriers major}
 /-- The members, from `start` on, are recursors in motive order: the one at
 position `start + j` eliminates motive `start + j` (`recursorMotive`, as the
 reader reads it) and declares `size` motives. -/
-def MotivesFrom (source : _root_.Ixon.Constant) (size start : Nat)
-    (members : List _root_.Ixon.MutConst) : Prop :=
+def MotivesFrom (source : Ixon.Constant) (size start : Nat)
+    (members : List Ixon.MutConst) : Prop :=
   ∀ j (h : j < members.length), ∃ r, members[j] = .recr r ∧ r.motives.toNat = size ∧
     recursorMotive source r = some (start + j)
 
 /-- A recursor block in motive order: member `j` eliminates motive `j`, and
 every member declares one motive per member of the block. -/
-def MotiveOrdered (source : _root_.Ixon.Constant) (members : Array _root_.Ixon.MutConst) : Prop :=
+def MotiveOrdered (source : Ixon.Constant) (members : Array Ixon.MutConst) : Prop :=
   MotivesFrom source members.size 0 members.toList
 
-theorem motivesFrom_cons (source : _root_.Ixon.Constant) (size start : Nat)
-    (member : _root_.Ixon.MutConst) (rest : List _root_.Ixon.MutConst) :
+theorem motivesFrom_cons (source : Ixon.Constant) (size start : Nat)
+    (member : Ixon.MutConst) (rest : List Ixon.MutConst) :
     MotivesFrom source size start (member :: rest) ↔
       (∃ r, member = .recr r ∧ r.motives.toNat = size ∧ recursorMotive source r = some start) ∧
         MotivesFrom source size (start + 1) rest := by
@@ -169,8 +169,8 @@ theorem motivesFrom_cons (source : _root_.Ixon.Constant) (size start : Nat)
       obtain ⟨r', hr', hm', hmot'⟩ := h j (by simp at hj; omega)
       exact ⟨r', by simpa using hr', hm', by rw [hmot']; congr 1; omega⟩
 
-theorem checkMotives_ok_iff (owner : Address) (source : _root_.Ixon.Constant) (size : Nat) :
-    ∀ (start : Nat) (members : List _root_.Ixon.MutConst),
+theorem checkMotives_ok_iff (owner : Address) (source : Ixon.Constant) (size : Nat) :
+    ∀ (start : Nat) (members : List Ixon.MutConst),
       checkMotives owner source size start members = .ok () ↔ MotivesFrom source size start members
   | start, [] => by simp [checkMotives, MotivesFrom]
   | start, member :: rest => by
@@ -188,22 +188,22 @@ theorem checkMotives_ok_iff (owner : Address) (source : _root_.Ixon.Constant) (s
     | defn _ | indc _ =>
       simp [checkMotives, bind, Except.bind, throw, throwThe, MonadExceptOf.throw]
 
-theorem checkMotiveOrder_ok_iff (owner : Address) (source : _root_.Ixon.Constant)
-    (members : Array _root_.Ixon.MutConst) :
+theorem checkMotiveOrder_ok_iff (owner : Address) (source : Ixon.Constant)
+    (members : Array Ixon.MutConst) :
     checkMotives owner source members.size 0 members.toList = .ok () ↔
       MotiveOrdered source members :=
   checkMotives_ok_iff owner source members.size 0 members.toList
 
 /-- A record's order: a recursor block in motive order, any other `muts`
 block in canonical structural order, any other record unconstrained. -/
-def OrderedRecord (limits : Limits) (blobs : Ingress.Blobs) (pair : Address × _root_.Ixon.Constant) : Prop :=
+def OrderedRecord (limits : Limits) (blobs : Ingress.Blobs) (pair : Address × Ixon.Constant) : Prop :=
   match pair.2.info with
   | .muts members =>
     if members.all isRecursor then MotiveOrdered pair.2 members else Canonical limits pair.1 pair.2 blobs
   | _ => True
 
 theorem checkRecord_ok_iff (limits : Limits) (blobs : Ingress.Blobs) (owner : Address)
-    (source : _root_.Ixon.Constant) :
+    (source : Ixon.Constant) :
     checkRecord limits blobs owner source = .ok () ↔ OrderedRecord limits blobs (owner, source) := by
   rcases source with ⟨info, sharing, refs, univs⟩
   cases info with

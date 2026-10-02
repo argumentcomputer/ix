@@ -1236,7 +1236,7 @@ namespace Univ
 
 /-- Universes whose compressed successor-chain counts are representable on
     the v2 wire.  All explicit universe variables are already `UInt64`. -/
-abbrev WireWF : Ixon.Univ → Prop := _root_.Ixon.Univ.wireWF
+abbrev WireWF : Ixon.Univ → Prop := Ixon.Univ.wireWF
 
 theorem WireWF.succBase {u : Ixon.Univ} (h : WireWF u) :
     WireWF u.succBase := by
