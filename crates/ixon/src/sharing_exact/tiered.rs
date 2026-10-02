@@ -45,9 +45,10 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 
 use super::cost::{Len, exprs_len_with, tag0_len};
-use super::dag::{SharingDag, TermId, ix};
+use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{
-  Evaluation, IncrementalCosts, Indices, LazyCosts, Materializer, Plan, Widths,
+  Evaluation, Hide, IncrementalCosts, Indices, LazyCosts, Materializer, Plan,
+  Widths, eval_node,
 };
 use super::prof::{self, Phase};
 use super::uniform::{
@@ -372,6 +373,86 @@ pub fn first_tier(
   }
 }
 
+/// Whether every stored term of `order` comes after all its stored
+/// descendants (the order is closed under stored descendants). One pass in
+/// increasing ID: the frontier of a term is the largest position among its
+/// nearest stored descendants-or-self, and every stored term's children's
+/// frontiers must be before it (then, by induction, every stored descendant
+/// is).
+fn descendant_closed(nodes: &[Node], order: &[TermId]) -> bool {
+  #[cfg(test)]
+  if FORCE_PER_PREFIX.with(std::cell::Cell::get) {
+    return false;
+  }
+  let n = nodes.len();
+  let mut pos: Vec<u64> = vec![u64::MAX; n];
+  for (i, &t) in order.iter().enumerate() {
+    pos[ix(t)] = len64(i);
+  }
+  // `frontier[x] = 0` for none, else the position plus one.
+  let mut frontier: Vec<u64> = vec![0; n];
+  for x in 0..n {
+    let below = nodes[x]
+      .children()
+      .as_slice()
+      .iter()
+      .map(|&c| frontier[ix(c)])
+      .max()
+      .unwrap_or(0);
+    if pos[x] == u64::MAX {
+      frontier[x] = below;
+    } else {
+      if below > pos[x] {
+        return false;
+      }
+      frontier[x] = pos[x] + 1;
+    }
+  }
+  true
+}
+
+#[cfg(test)]
+thread_local! {
+  /// Test hook: take the per-prefix phase 3 even for closed orders.
+  pub(crate) static FORCE_PER_PREFIX: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// The phase-3 decisions of every task of a candidate whose order is closed
+/// under stored descendants, from the evaluation `costs` of the full
+/// dictionary `dict`: entry `j` under `dict` with its own Share hidden, the
+/// roots under `dict`. They equal the per-prefix decisions: the choice and
+/// cost of a term read only the dictionary at and below it, and below entry
+/// `j` the prefix `order[..j]` and the full dictionary agree (every stored
+/// descendant is in the prefix, at the same index; the entry itself is
+/// absent from one and hidden in the other).
+#[allow(clippy::too_many_arguments)]
+fn one_pass_plans(
+  dag: &SharingDag,
+  own: &[Len],
+  order: &[TermId],
+  dict: &LayoutIndex,
+  costs: &[Len],
+  mat: &mut Materializer,
+  work: &mut u64,
+) -> Result<Vec<Plan>, SharingError> {
+  let nodes = dag.nodes();
+  let mut plans = Vec::with_capacity(order.len() + 1);
+  for t in order {
+    let hide = Hide { inner: dict, hidden: *t };
+    plans.push(mat.decide(
+      nodes,
+      own,
+      &hide,
+      costs,
+      std::slice::from_ref(t),
+      work,
+    )?);
+  }
+  plans.push(mat.decide(nodes, own, dict, costs, dag.roots(), work)?);
+  Ok(plans)
+}
+
 /// The phase-3 evaluation of the growing dictionary: [`LazyCosts`] when its
 /// work argument applies, otherwise [`IncrementalCosts`]. Both give the
 /// costs of the descendants of prepared targets and the work count of a
@@ -429,6 +510,9 @@ pub struct TieredStats {
   /// length, states_created, work)`, the last two the totals charged to that
   /// candidate's meter. Diagnostic: the counts that the limits act on.
   pub candidate_meters: Vec<(u64, u64, u64, u64)>,
+  /// Candidates whose phase 3 ran per prefix (their order is not closed
+  /// under stored descendants); the others ran in one pass.
+  pub per_prefix_candidates: u64,
   /// Phase-1 uniform-model length.
   pub phase1_model_bytes: u64,
   /// Phase-1 output priced by the layout (its own order).
@@ -495,9 +579,11 @@ pub(crate) fn tiered(
   let mut best: Option<Candidate> = None;
   let mut lengths = Vec::with_capacity(3);
   let mut meters = Vec::with_capacity(3);
+  let mut per_prefix = 0;
   for (w, c) in (1..=3).zip(candidates) {
     // In width order: the error of the lowest failing width, as above.
     let c = c?;
+    per_prefix += u64::from(matches!(c.phase3, Phase3::Plans(_)));
     lengths.push((w, c.result.stats.phase3_layout_bytes));
     meters.extend_from_slice(&c.result.stats.candidate_meters);
     if best.as_ref().is_none_or(|b| tiered_better(&c.result, &b.result)) {
@@ -505,9 +591,10 @@ pub(crate) fn tiered(
     }
   }
   let best = best.ok_or_else(|| internal("no tiered candidate"))?;
-  let mut best = finish(layout, dag, best)?;
+  let mut best = finish(layout, dag, &prep, limits, best)?;
   best.stats.candidate_lengths = lengths;
   best.stats.candidate_meters = meters;
+  best.stats.per_prefix_candidates = per_prefix;
   Ok(best)
 }
 
@@ -526,7 +613,17 @@ pub(crate) fn tiered(
 /// candidate.
 pub(crate) struct Candidate {
   result: TieredSharingResult,
-  plans: Vec<Plan>,
+  phase3: Phase3,
+}
+
+/// How a candidate's phase-3 expressions are obtained.
+enum Phase3 {
+  /// The order is closed under stored descendants: every task is decided
+  /// under the full dictionary (with the entry's own Share hidden), whose
+  /// evaluation `costs` is kept.
+  OnePass { costs: Vec<Len> },
+  /// The per-prefix decisions of every task.
+  Plans(Vec<Plan>),
 }
 
 /// Build the expressions of a candidate and check them: the layout price
@@ -536,9 +633,11 @@ pub(crate) struct Candidate {
 fn finish(
   layout: ShareLayout,
   dag: &SharingDag,
+  prep: &DagPrep,
+  limits: &ExactSharingLimits,
   cand: Candidate,
 ) -> Result<TieredSharingResult, SharingError> {
-  let Candidate { mut result, plans } = cand;
+  let Candidate { mut result, phase3 } = cand;
   let nodes = dag.nodes();
   let p = prof::scope(Phase::RematerializeBuild);
   let order = &result.table_terms;
@@ -550,6 +649,33 @@ fn finish(
     dict.index[ix(t)] = Some(len64(i));
   }
   let mut mat = Materializer::new(nodes.len());
+  let plans = match phase3 {
+    Phase3::Plans(plans) => plans,
+    Phase3::OnePass { costs } => {
+      // The decisions of every task under the full dictionary (see
+      // `one_pass_plans`), and their work.
+      let mut work = 0u64;
+      let plans = one_pass_plans(
+        dag, &prep.own, order, &dict, &costs, &mut mat, &mut work,
+      )?;
+      let total = result
+        .stats
+        .candidate_meters
+        .first()
+        .map_or(0, |m| m.3)
+        .saturating_add(work);
+      if total > limits.max_work {
+        return Err(SharingError::ResourceExhausted(ResourceExhausted {
+          resource: Resource::Work,
+          limit: limits.max_work,
+        }));
+      }
+      if let Some(m) = result.stats.candidate_meters.first_mut() {
+        m.3 = total;
+      }
+      plans
+    },
+  };
   let mut entries = Vec::with_capacity(k_entries);
   let mut roots = Vec::new();
   let mut allocated = 0u64;
@@ -710,84 +836,124 @@ fn tiered_at(
   }
   drop(p);
   // Phase 3: each entry under the entries before it, priced by the layout,
-  // then the roots under all entries. Task `j < k` is entry `j`, task `k`
-  // the roots; each depends only on the prefix `order[..j]`, so the tasks
-  // run independently (see `Parallelism::materialize`) and are combined in
-  // task order exactly as the sequential loop proceeds.
+  // then the roots under all entries.
   //
-  // Task `j` is charged the work of a full evaluation `all_costs` of the
-  // dictionary `order[..j]` plus its materialization. The evaluation is
-  // maintained from one prefix to the next (`LazyCosts`, or
-  // `IncrementalCosts` when its work argument does not apply), which yields
-  // the same costs for the materialized terms and the same work count as
-  // evaluating every prefix from scratch; the materialization decisions
-  // (`Materializer::decide`) are those of `materialize`, with its work.
+  // When the order is closed under stored descendants (always so far on
+  // Init and Mathlib, but checked), the cost and choice of every term below
+  // entry `j` are the same under the prefix `order[..j]` as under the full
+  // dictionary (they read the dictionary only at and below the term; Lean
+  // `gCost_local`), so one evaluation of the full dictionary gives every
+  // task's length: entry `j` with its own Share hidden, the roots as they
+  // are. The decisions and expressions are made for the returned candidate
+  // only (`finish`). The work charged is the work done: the evaluation and
+  // the hidden-top evaluations.
+  //
+  // Otherwise every task is evaluated under its prefix. Task `j < k` is
+  // entry `j`, task `k` the roots; each depends only on the prefix
+  // `order[..j]`, so the tasks run independently (see
+  // `Parallelism::materialize`) and are combined in task order exactly as
+  // the sequential loop proceeds. Task `j` is charged the work of a full
+  // evaluation `all_costs` of the dictionary `order[..j]` plus its
+  // materialization decisions. The evaluation is maintained from one prefix
+  // to the next (`LazyCosts`, or `IncrementalCosts` when its work argument
+  // does not apply), which yields the same costs for the materialized terms
+  // and the same work count as evaluating every prefix from scratch; the
+  // materialization decisions (`Materializer::decide`) are those of
+  // `materialize`, with its work.
   let k_entries = order.len();
-  let phase3 = |range: std::ops::Range<usize>| {
+  let (phase3, predicted, allocated) = if descendant_closed(nodes, &order) {
     let p = prof::scope(Phase::RematerializeCosts);
     let mut dict = LayoutIndex { index: vec![None; n], layout };
-    for (i, &t) in order[..range.start].iter().enumerate() {
+    for (i, &t) in order.iter().enumerate() {
       dict.index[ix(t)] = Some(len64(i));
     }
-    // The evaluation of the empty prefix is `C_0`, the same for every
-    // candidate.
-    let start = if range.start == 0 {
-      prep.base.clone()
-    } else {
-      Evaluation::new(nodes, own, &dict)
-    };
-    let mut eval = if LazyCosts::applies(&prep.base) {
-      Phase3Eval::Lazy(LazyCosts::new(nodes, own, &prep.edges, start, &dict))
-    } else {
-      Phase3Eval::Eager(IncrementalCosts::new(nodes, own, &prep.edges, start))
-    };
-    let mut mat = Materializer::new(n);
-    drop(p);
-    let mut out: Vec<Result<(Plan, Len, u64), SharingError>> =
-      Vec::with_capacity(range.len());
-    for j in range.clone() {
-      if j > range.start {
-        let p = prof::scope(Phase::RematerializeCosts);
-        let t = order[j - 1];
-        dict.index[ix(t)] = Some(len64(j - 1));
-        eval.add(t, &dict);
-        drop(p);
-      }
-      let target = order.get(j).map(std::slice::from_ref);
-      let p = prof::scope(Phase::RematerializeCosts);
-      eval.prepare(target.unwrap_or(dag.roots()), &dict);
-      drop(p);
-      let _p = prof::scope(Phase::RematerializeBuild);
-      let mut w = eval.work();
-      let costs = eval.costs();
-      if let Some(&t) = order.get(j) {
-        let r = mat.decide(nodes, own, &dict, costs, &[t], &mut w);
-        out.push(r.map(|plan| (plan, costs[ix(t)], w)));
-      } else {
-        let mut c = Len::ZERO;
-        for &r in dag.roots() {
-          c = c.plus(costs[ix(r)]);
-        }
-        let r = mat.decide(nodes, own, &dict, costs, dag.roots(), &mut w);
-        out.push(r.map(|plan| (plan, c, w)));
-      }
+    let eval = Evaluation::new(nodes, own, &dict);
+    let mut w = eval.work();
+    let mut predicted = Len::new(tag0_len(len64(k_entries)));
+    for &t in &order {
+      let hide = Hide { inner: &dict, hidden: t };
+      let costs = &eval.costs;
+      let (c, _) =
+        eval_node(nodes, own, t, &hide, &|x| costs[ix(x)], false, &mut w);
+      predicted = predicted.plus(c);
     }
-    out
+    for &r in dag.roots() {
+      predicted = predicted.plus(eval.costs[ix(r)]);
+    }
+    // The work counted before phase 3 (`C_0`) is charged with it.
+    meter.work(work.saturating_add(w))?;
+    drop(p);
+    (Phase3::OnePass { costs: eval.costs }, predicted, None)
+  } else {
+    let phase3 = |range: std::ops::Range<usize>| {
+      let p = prof::scope(Phase::RematerializeCosts);
+      let mut dict = LayoutIndex { index: vec![None; n], layout };
+      for (i, &t) in order[..range.start].iter().enumerate() {
+        dict.index[ix(t)] = Some(len64(i));
+      }
+      // The evaluation of the empty prefix is `C_0`, the same for every
+      // candidate.
+      let start = if range.start == 0 {
+        prep.base.clone()
+      } else {
+        Evaluation::new(nodes, own, &dict)
+      };
+      let mut eval = if LazyCosts::applies(&prep.base) {
+        Phase3Eval::Lazy(LazyCosts::new(nodes, own, &prep.edges, start, &dict))
+      } else {
+        Phase3Eval::Eager(IncrementalCosts::new(nodes, own, &prep.edges, start))
+      };
+      let mut mat = Materializer::new(n);
+      drop(p);
+      let mut out: Vec<Result<(Plan, Len, u64), SharingError>> =
+        Vec::with_capacity(range.len());
+      for j in range.clone() {
+        if j > range.start {
+          let p = prof::scope(Phase::RematerializeCosts);
+          let t = order[j - 1];
+          dict.index[ix(t)] = Some(len64(j - 1));
+          eval.add(t, &dict);
+          drop(p);
+        }
+        let target = order.get(j).map(std::slice::from_ref);
+        let p = prof::scope(Phase::RematerializeCosts);
+        eval.prepare(target.unwrap_or(dag.roots()), &dict);
+        drop(p);
+        let _p = prof::scope(Phase::RematerializeBuild);
+        let mut w = eval.work();
+        let costs = eval.costs();
+        if let Some(&t) = order.get(j) {
+          let r = mat.decide(nodes, own, &dict, costs, &[t], &mut w);
+          out.push(r.map(|plan| (plan, costs[ix(t)], w)));
+        } else {
+          let mut c = Len::ZERO;
+          for &r in dag.roots() {
+            c = c.plus(costs[ix(r)]);
+          }
+          let r = mat.decide(nodes, own, &dict, costs, dag.roots(), &mut w);
+          out.push(r.map(|plan| (plan, c, w)));
+        }
+      }
+      out
+    };
+    let tasks =
+      super::par::map_ranges(k_entries + 1, meter.parallel.materialize, phase3);
+    let mut plans = Vec::with_capacity(k_entries + 1);
+    let mut predicted = Len::new(tag0_len(len64(k_entries)));
+    // The work counted before phase 3 is charged with the first task, as the
+    // sequential loop does.
+    let mut carried = work;
+    for task in tasks {
+      let (plan, cost, w) = task?;
+      plans.push(plan);
+      predicted = predicted.plus(cost);
+      meter.work(carried.saturating_add(w))?;
+      carried = 0;
+    }
+    let allocated =
+      plans.iter().fold(0u64, |acc, plan| acc.saturating_add(plan.nodes));
+    (Phase3::Plans(plans), predicted, Some(allocated))
   };
-  let tasks =
-    super::par::map_ranges(k_entries + 1, meter.parallel.materialize, phase3);
-  let mut plans = Vec::with_capacity(k_entries + 1);
-  let mut predicted = Len::new(tag0_len(len64(k_entries)));
-  // The work counted before phase 3 is charged with the first task, as the
-  // sequential loop does.
-  let mut carried = work;
-  for task in tasks {
-    let (plan, cost, w) = task?;
-    plans.push(plan);
-    predicted = predicted.plus(cost);
-    meter.work(carried.saturating_add(w))?;
-    carried = 0;
-  }
   let _p = prof::scope(Phase::RematerializeCheck);
   let predicted = predicted.exact().ok_or_else(overflow)?;
   if predicted > phase1_layout {
@@ -797,10 +963,38 @@ fn tiered_at(
   }
   // The input nodes the re-expansion check of the built expressions
   // charges: one per expression node, all of them pointer-distinct (every
-  // task builds fresh nodes).
-  let allocated =
-    plans.iter().fold(0u64, |acc, plan| acc.saturating_add(plan.nodes));
-  dag.check_input_nodes(allocated, meter.limits())?;
+  // task builds fresh nodes). A serialized tree has at most two nodes per
+  // byte (every node but an App writes at least one byte of its own, and an
+  // App's argument starts with a byte no other App claims), so the count is
+  // at most twice the length; only when that bound exceeds the limit are
+  // the one-pass decisions made here to count exactly.
+  let allocated = match allocated {
+    Some(a) => Some(a),
+    None if predicted.saturating_mul(2) > meter.limits().max_input_nodes => {
+      let Phase3::OnePass { costs } = &phase3 else {
+        return Err(internal("one-pass phase 3 without its evaluation"));
+      };
+      let mut dict = LayoutIndex { index: vec![None; n], layout };
+      for (i, &t) in order.iter().enumerate() {
+        dict.index[ix(t)] = Some(len64(i));
+      }
+      let mut scratch = 0u64;
+      let plans = one_pass_plans(
+        dag,
+        own,
+        &order,
+        &dict,
+        costs,
+        &mut Materializer::new(n),
+        &mut scratch,
+      )?;
+      Some(plans.iter().fold(0u64, |acc, plan| acc.saturating_add(plan.nodes)))
+    },
+    None => None,
+  };
+  if let Some(a) = allocated {
+    dag.check_input_nodes(a, meter.limits())?;
+  }
   // The real length equals the evaluated one (checked when the candidate
   // is built).
   let measured = predicted;
@@ -816,6 +1010,7 @@ fn tiered_at(
       meter.stats.states_created,
       meter.stats.work,
     )],
+    per_prefix_candidates: u64::from(matches!(phase3, Phase3::Plans(_))),
     phase1_model_bytes: u.model_len,
     phase1_layout_bytes: phase1_layout,
     slot_states,
@@ -837,7 +1032,7 @@ fn tiered_at(
     phase1: u,
     stats,
   };
-  Ok(Candidate { result, plans })
+  Ok(Candidate { result, phase3 })
 }
 
 /// Tiered canonical sharing of fully expanded roots under a layout.
@@ -890,7 +1085,7 @@ pub(crate) fn normalize_constant_sharing_tiered_at_width(
   normalize_tiered_with(c, limits, |dag| {
     let prep = DagPrep::new(dag);
     let c = tiered_at(layout, dag, &prep, &mut Meter::new(limits), w)?;
-    finish(layout, dag, c)
+    finish(layout, dag, &prep, limits, c)
   })
 }
 

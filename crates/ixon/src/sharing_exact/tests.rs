@@ -3344,3 +3344,42 @@ fn encoding_check_matches_reexpansion() {
   );
   assert!(valid > 300 && rejected > 300);
 }
+
+/// Phase 3 in one pass (orders closed under stored descendants) gives the
+/// bytes, tables and lengths of the per-prefix phase 3, which the test
+/// forces with the `FORCE_PER_PREFIX` hook, on the parallel cases and
+/// generated families.
+#[test]
+fn one_pass_phase3_matches_per_prefix() {
+  use super::tiered::FORCE_PER_PREFIX;
+  let mut rng = Rng(103);
+  let mut cases = par_cases();
+  for _ in 0..80 {
+    let roots = gen_search_roots(&mut rng);
+    cases.push(wrap(&mut rng, roots));
+  }
+  let mut compared = 0;
+  for (i, c) in cases.iter().enumerate() {
+    let one =
+      normalize_constant_sharing_tiered(ShareLayout::TagN, c, &limits());
+    FORCE_PER_PREFIX.with(|f| f.set(true));
+    let per =
+      normalize_constant_sharing_tiered(ShareLayout::TagN, c, &limits());
+    FORCE_PER_PREFIX.with(|f| f.set(false));
+    match (one, per) {
+      (Ok((a, ra)), Ok((b, rb))) => {
+        assert_eq!(put(&a), put(&b), "case {i}");
+        assert_eq!(ra.table_terms, rb.table_terms, "case {i}");
+        assert_eq!(ra.stats.candidate_lengths, rb.stats.candidate_lengths);
+        assert_eq!(ra.stats.w, rb.stats.w, "case {i}");
+        compared += 1;
+      },
+      (a, b) => panic!(
+        "case {i}: one-pass ok {} per-prefix ok {}",
+        a.is_ok(),
+        b.is_ok()
+      ),
+    }
+  }
+  assert!(compared > 200);
+}

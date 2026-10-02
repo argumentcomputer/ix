@@ -152,6 +152,8 @@ struct Row {
   /// Per phase-1 width 1, 2, 3: `(final layout bytes, phase-1 model bytes,
   /// states_created, work)` of that candidate's run.
   per_width: Vec<(u64, u64, u64, u64)>,
+  /// Candidates whose phase 3 ran per prefix.
+  per_prefix: u64,
   ms: f64,
 }
 
@@ -235,6 +237,7 @@ fn process(
       let mut bytes = Vec::new();
       out.put(&mut bytes);
       row.out_hash = blake3::hash(&bytes).to_hex().to_string();
+      row.per_prefix = res.stats.per_prefix_candidates;
       row.per_width = res
         .stats
         .candidate_lengths
@@ -563,6 +566,12 @@ fn main() -> Result<(), String> {
   let tdeltas: Vec<i64> =
     ok.iter().map(|r| signed(r.tagn) - signed(r.raw)).collect();
   println!("- TagN price - stored per constant: {}", percentiles(tdeltas));
+  println!(
+    "- candidates with a per-prefix phase 3 (order not closed under stored \
+     descendants): {}; largest work charged to one candidate: {}",
+    ok.iter().map(|r| r.per_prefix).sum::<u64>(),
+    ok.iter().flat_map(|r| r.per_width.iter().map(|x| x.3)).max().unwrap_or(0)
+  );
   println!(
     "- phase-1 width w: {:?}",
     ok.iter().fold(BTreeMap::<u64, usize>::new(), |mut m, r| {
