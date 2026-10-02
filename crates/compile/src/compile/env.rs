@@ -349,7 +349,7 @@ pub fn compile_env_with_profile(
   // the name from a per-block set of remaining names, which this replaces.
   let block_entries: Vec<(&Name, &NameSet)> = condensed.blocks.iter().collect();
   let block_info: Vec<SchedBlock<'_>> = block_entries
-    .iter()
+    .par_iter()
     .map(|&(lo, all)| {
       let deps = condensed.block_refs.get(lo).ok_or(
         CompileError::InvalidMutualBlock {
@@ -367,7 +367,9 @@ pub fn compile_env_with_profile(
 
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 6/7 block_info init: {:.2}s",
+      "[compile_env] setup 6/7 block_info init ({} names, {} edges): {:.2}s",
+      reverse_deps.resolved.len(),
+      reverse_deps.dependents.len(),
       phase_start.elapsed().as_secs_f32()
     );
   }
@@ -1101,28 +1103,35 @@ impl<'a> SchedDeps<'a> {
         ids.entry(name).or_insert(next);
       }
     }
-    // Dependency names are graph nodes, so members of some block; a name
-    // that is not still gets an index, and resolves exactly when it did
-    // with per-block name sets (only if aux_gen queues it).
-    let missing: Vec<&'a Name> = blocks
-      .par_iter()
-      .flat_map_iter(|b| b.deps.iter().filter(|d| !ids.contains_key(*d)))
-      .collect();
-    for dep in missing {
-      let next = dense(ids.len());
-      ids.entry(dep).or_insert(next);
+    // Every (dependency name, dependent block) edge as `name << 32 | block`.
+    // A name without an index (`u32::MAX`) is outside every block, which
+    // a dependency name, being a graph node, never is; such names get
+    // indices too, and resolve exactly when they did with per-block name
+    // sets (only if aux_gen queues them).
+    let edge_list = |ids: &FxHashMap<&'a Name, u32>| -> Vec<u64> {
+      blocks
+        .par_iter()
+        .enumerate()
+        .flat_map_iter(|(b, block)| {
+          let b = u64::from(dense(b));
+          block.deps.iter().map(move |d| {
+            (u64::from(ids.get(d).copied().unwrap_or(u32::MAX)) << 32) | b
+          })
+        })
+        .collect()
+    };
+    let mut edges = edge_list(&ids);
+    if edges.par_iter().any(|&e| e >> 32 == u64::from(u32::MAX)) {
+      for block in blocks {
+        for dep in block.deps {
+          let next = dense(ids.len());
+          ids.entry(dep).or_insert(next);
+        }
+      }
+      edges = edge_list(&ids);
     }
-    // Every (dependency name, dependent block) edge, sorted by name, then
-    // block: the dependents of each name in block order.
-    let mut edges: Vec<u64> = blocks
-      .par_iter()
-      .enumerate()
-      .flat_map_iter(|(b, block)| {
-        let ids = &ids;
-        let b = u64::from(dense(b));
-        block.deps.iter().map(move |d| (u64::from(ids[d]) << 32) | b)
-      })
-      .collect();
+    // Sorted by name, then block: the dependents of each name in block
+    // order.
     edges.par_sort_unstable();
     let n_names = ids.len();
     let mut offsets = vec![0usize; n_names + 1];
