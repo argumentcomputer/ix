@@ -111,7 +111,7 @@ was chosen from one environment's measurements; revisit it when a heavier
 one is profiled. -/
 def weightedCircuits : List (String × Array String) := [
   ("ixvm", #[
-    "blake3_compress_chunks", "get_tag4", "get_u64_le", "g_list_has", "list_snoc.G",
+    "blake3_compress_chunks", "get_tagn4", "get_u64_le", "g_list_has", "list_snoc.G",
     "expr_glb_walk", "expr_inst_many_walk", "get_app_telescope", "expr_glb", "expr_lower",
     "get_expr", "expr_lbr", "k_infer_app_spine_loop", "list_drop.G", "expr_inst_many_bvar",
     "expr_lower_walk", "bytes_to_block", "expr_inst_many", "get_expr_list", "collect_spine",

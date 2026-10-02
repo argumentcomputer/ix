@@ -8,7 +8,7 @@ unsafe extern "C" {
   pub(super) fn aiur_trace_ix_aggr_220(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
   pub(super) fn aiur_trace_ix_aggr_230(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
 }
-pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([192, 114, 108, 80, 224, 251, 146, 62, 231, 56, 127, 105, 147, 26, 68, 117, 241, 169, 63, 124, 221, 174, 220, 212, 61, 234, 92, 95, 60, 118, 170, 102], aiur_trace_ix_aggr_contract, aiur_trace_ix_aggr_schema, &[
+pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([187, 28, 234, 211, 2, 117, 245, 27, 105, 215, 208, 29, 121, 223, 99, 160, 204, 146, 145, 61, 215, 153, 253, 154, 131, 64, 84, 54, 111, 142, 52, 188], aiur_trace_ix_aggr_contract, aiur_trace_ix_aggr_schema, &[
 None,
 None,
 None,

@@ -2791,7 +2791,7 @@ extern "C" int aiur_trace_ix_aggr_230(int device, const uint8_t* seeds, uint32_t
 }
 
 extern "C" const uint8_t* aiur_trace_ix_aggr_contract() {
-  static const uint8_t hash[32] = {192, 114, 108, 80, 224, 251, 146, 62, 231, 56, 127, 105, 147, 26, 68, 117, 241, 169, 63, 124, 221, 174, 220, 212, 61, 234, 92, 95, 60, 118, 170, 102};
+  static const uint8_t hash[32] = {187, 28, 234, 211, 2, 117, 245, 27, 105, 215, 208, 29, 121, 223, 99, 160, 204, 146, 145, 61, 215, 153, 253, 154, 131, 64, 84, 54, 111, 142, 52, 188};
   return hash;
 }
 extern "C" const uint8_t* aiur_trace_ix_aggr_schema() {
