@@ -37,7 +37,7 @@ and its `ByteError`), `Ix/Kernel/Admission/{Theorems,Bytes/Theorems,
 Audit}.lean`; the variants `Ix/Ixon/{Projection,BlockOrder}.lean` with
 `Ix/Ixon/{Projection,BlockOrder}/{Theorems,Audit}.lean`. Running the entry
 does not build the proof tree: the import closure of
-`Ix.Kernel.Admission` is 77 repository modules and does not reach
+`Ix.Kernel.Admission` is 76 repository modules and does not reach
 `Ix.Kernel.MainTheorem`.
 
 `records` is an ordered list of `(Address, ByteArray)` pairs, one canonical
