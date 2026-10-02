@@ -77,6 +77,7 @@ import Tests.Ix.Catalog
 import Tests.Ix.CatalogDedup
 import Tests.Ix.CompileDeterminism
 import Tests.Ix.CompileFidelity
+import Tests.Ix.CompileSchedule
 import Tests.Ix.ImportIxe
 import Tests.Ix.TruthMinesRecords
 import Tests.Ix.TruthMines
@@ -310,6 +311,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
   ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
+  -- Scheduling independence of the parallel Lean compile driver (see
+  -- Tests.Ix.CompileSchedule).
+  ("compile-schedule", Tests.Ix.CompileSchedule.run env),
   ("decompile-diff", Tests.Compile.DecompileDiff.run env),
   -- lean4lean dependency smoke: accept a real closure, reject an
   -- ill-typed decl (see Tests.Ix.Lean4Lean).
