@@ -6,23 +6,51 @@
 //! dequeuing work and released AFTER block-local scratch and publication.
 //! Backoff stops admissions; already-active blocks keep running, never park
 //! holding their scratch. This is not an allocator-enforced memory limit.
+//!
+//! The cap follows the headroom left after a ten-second growth forecast (of
+//! this process and of falling availability against system or cgroup
+//! memory, of this process alone against a budget), in units of the safety
+//! reserve (an eighth of the visible memory, or of the budget): every
+//! worker from three reserves up, which is where a compile
+//! starts on a machine with memory to spare; a linear share between two and
+//! three; one block (serial progress) between one and two; and no admissions
+//! below one reserve. Below the supported cap the gate ramps up by doubling
+//! per sample after completed work. Reclaim counts once it lasts two
+//! samples: this process's own swap-out below four reserves of system (or
+//! cgroup) headroom, memory stalls of its cgroup (which may be shared, so
+//! not attributable) only below two; a budget does not lower these
+//! thresholds. It halves the cap, but not below `RECLAIM_FLOOR` while
+//! two reserves remain, and closes admissions below two reserves. System-wide
+//! swap is not consulted. With no block active, the gate fails after
+//! `idle_timeout` when headroom is below two reserves; with more headroom
+//! it waits `STUCK_TIMEOUTS` times as long before giving up.
 
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::memory::{
-  GIB, Memory, MemoryReader, Pressure, budget_from_env, pressure,
+  GIB, Memory, MemoryReader, Pressure, budget_from_env, reclaiming,
   resource_error,
 };
 use ixon::CompileError;
+
+/// Consecutive samples of attributed reclaim needed before backing off for
+/// it: a single 250 ms sample cannot tell sustained reclaim from a burst.
+const RECLAIM_SAMPLES: u32 = 2;
+/// While at least two reserves of headroom remain, reclaim halves the cap
+/// but leaves this many workers: the headroom itself is still real.
+const RECLAIM_FLOOR: usize = 4;
+/// With two reserves of headroom or more, a closed gate is not short of
+/// memory (only a growth forecast keeps it closed), so it gives up only
+/// after this many idle timeouts instead of one.
+const STUCK_TIMEOUTS: u32 = 10;
 
 #[derive(Clone, Copy)]
 struct Options {
   max_workers: usize,
   process_budget: Option<u64>,
   tick: Duration,
-  ramp_interval: Duration,
   recovery: Duration,
   idle_timeout: Duration,
   lookahead: Duration,
@@ -35,12 +63,33 @@ impl Options {
       max_workers: max_workers.max(1),
       process_budget: budget_from_env("IX_COMPILE_MEMORY_GIB")?,
       tick: Duration::from_millis(250),
-      ramp_interval: Duration::from_secs(1),
       recovery: Duration::from_secs(5),
       idle_timeout: Duration::from_secs(30),
       lookahead: Duration::from_secs(10),
       verbose: *super::env::IX_VERBOSE,
     })
+  }
+}
+
+/// The active-block cap that `net` headroom (what remains once the growth
+/// forecast is set aside) supports: none below one reserve, one block below
+/// two (retained output cannot be reclaimed by running fewer blocks, so
+/// serial progress beats waiting for it to shrink), every worker from three
+/// reserves up, and a linear share in between.
+fn supported(net: u64, reserve: u64, max_workers: usize) -> usize {
+  let reserve = reserve.max(1);
+  if net < reserve {
+    0
+  } else if net < reserve.saturating_mul(2) {
+    1
+  } else if net >= reserve.saturating_mul(3) {
+    max_workers
+  } else {
+    // net - 2·reserve < reserve, so the share stays below max_workers - 1.
+    let share = u128::from(net - reserve * 2)
+      * (max_workers.saturating_sub(1) as u128)
+      / u128::from(reserve);
+    1 + share as usize
   }
 }
 
@@ -50,87 +99,157 @@ struct Policy {
   pressure: Pressure,
   previous: Memory,
   sampled: Instant,
-  ramped: Instant,
   pressured: Option<Instant>,
+  reclaim_samples: u32,
+  /// Growth rates in bytes per second, rising at once and decaying by a
+  /// quarter per sample: of this process (resident plus swap), and of the
+  /// faster of that and the fall in system or cgroup availability.
+  process_growth: u64,
   growth_per_second: u64,
+  /// The two rates over the lookahead.
+  projected_process_growth: u64,
   projected_growth: u64,
   completed: u64,
 }
 
+/// Bytes per second.
+fn rate(delta: u64, elapsed: Duration) -> u64 {
+  (u128::from(delta) * 1_000_000 / elapsed.as_micros().max(1))
+    .min(u128::from(u64::MAX)) as u64
+}
+
 impl Policy {
   fn new(memory: Memory, now: Instant, options: Options) -> Self {
-    let pressure =
-      pressure(memory, memory, options.tick, options.process_budget);
+    let budget = options.process_budget;
+    let reserve = memory.reserve(budget);
+    let headroom = memory.headroom(budget);
+    let supported = supported(headroom, reserve, options.max_workers);
+    // Start at the supported cap: with wide headroom, every worker, without
+    // a ramp to sit through. Below two reserves, first wait out a recovery
+    // period, as after pressure.
+    let low = headroom < reserve.saturating_mul(2);
     Self {
-      limit: options.max_workers.min(2),
-      open: pressure == Pressure::Healthy,
-      pressure,
+      limit: supported.max(1),
+      open: !low,
+      pressure: Self::classify(
+        supported == 0,
+        low,
+        supported < options.max_workers,
+      ),
       previous: memory,
       sampled: now,
-      ramped: now,
-      pressured: (pressure != Pressure::Healthy).then_some(now),
+      pressured: low.then_some(now),
+      reclaim_samples: 0,
+      process_growth: 0,
       growth_per_second: 0,
+      projected_process_growth: 0,
       projected_growth: 0,
       completed: 0,
     }
+  }
+
+  /// Headroom once the forecast growth is set aside, against each limit that
+  /// applies: system (or cgroup) availability, which any workload can use
+  /// up, and the budget, which only this process can. Other workloads'
+  /// allocations say nothing about the budget, so they are not forecast
+  /// against it.
+  fn net_headroom(&self, memory: Memory, budget: Option<u64>) -> u64 {
+    let system = memory.available.saturating_sub(self.projected_growth);
+    budget.map_or(system, |b| {
+      system.min(
+        b.saturating_sub(memory.process)
+          .saturating_sub(self.projected_process_growth),
+      )
+    })
+  }
+
+  /// The state reported in verbose logs.
+  fn classify(closed: bool, backoff: bool, held: bool) -> Pressure {
+    if closed {
+      Pressure::Critical
+    } else if backoff {
+      Pressure::Backoff
+    } else if held {
+      Pressure::Hold
+    } else {
+      Pressure::Healthy
+    }
+  }
+
+  /// Headroom below two reserves: memory is genuinely short.
+  fn starving(&self, options: &Options) -> bool {
+    let budget = options.process_budget;
+    self.previous.headroom(budget)
+      < self.previous.reserve(budget).saturating_mul(2)
   }
 
   fn sample(
     &mut self,
     memory: Memory,
     now: Instant,
-    active: usize,
     completed: u64,
     options: Options,
   ) {
     let elapsed = now.duration_since(self.sampled);
-    let delta = memory
-      .process
-      .saturating_sub(self.previous.process)
-      .max(self.previous.available.saturating_sub(memory.available));
+    let grown = memory.process.saturating_sub(self.previous.process);
+    let drained = self.previous.available.saturating_sub(memory.available);
     // Fast rise, gradual decay: reserve space for another ten seconds of
     // recent growth, including external pressure, before starting more work.
     // This is process-level prediction, NOT an attributed per-block footprint.
-    let growth = (u128::from(delta) * 1_000_000 / elapsed.as_micros().max(1))
-      .min(u128::from(u64::MAX)) as u64;
+    let decay =
+      |rate: u64, previous: u64| rate.max(previous.saturating_mul(3) / 4);
+    self.process_growth = decay(rate(grown, elapsed), self.process_growth);
     self.growth_per_second =
-      growth.max(self.growth_per_second.saturating_mul(3) / 4);
-    self.projected_growth =
-      self.growth_per_second.saturating_mul(options.lookahead.as_secs());
-    let reserve = memory.reserve(options.process_budget);
-    let headroom = memory.headroom(options.process_budget);
-    self.pressure =
-      pressure(memory, self.previous, elapsed, options.process_budget);
-    let forecast_tight =
-      headroom < reserve.saturating_add(self.projected_growth);
-    let reclaiming = super::memory::reclaiming(memory, self.previous, elapsed);
-    let blocked =
-      self.pressure == Pressure::Critical || reclaiming || forecast_tight;
-    let wide_headroom = self.pressure == Pressure::Healthy
-      && headroom
-        >= reserve.saturating_mul(3).saturating_add(self.projected_growth);
-    if blocked {
-      self.limit = self.limit.min((active / 2).max(1));
+      decay(rate(grown.max(drained), elapsed), self.growth_per_second);
+    let lookahead = options.lookahead.as_secs();
+    self.projected_process_growth =
+      self.process_growth.saturating_mul(lookahead);
+    self.projected_growth = self.growth_per_second.saturating_mul(lookahead);
+    let budget = options.process_budget;
+    let reserve = memory.reserve(budget);
+    let headroom = memory.headroom(budget);
+    let supported = supported(
+      self.net_headroom(memory, budget),
+      reserve,
+      options.max_workers,
+    );
+    let low = headroom < reserve.saturating_mul(2);
+    // Attributed and gated by system headroom in `reclaiming`; debounced here.
+    self.reclaim_samples = if reclaiming(memory, self.previous, elapsed) {
+      self.reclaim_samples.saturating_add(1)
+    } else {
+      0
+    };
+    let reclaim = self.reclaim_samples >= RECLAIM_SAMPLES;
+    let closed = supported == 0 || (reclaim && low);
+    if closed {
+      // Halve the cap once per closure; it applies when admission resumes.
+      // Not the active count: with admissions stopped, active blocks drain
+      // within milliseconds, so halving that count on every closed sample
+      // collapsed the cap to one after a single burst.
+      if self.open {
+        self.limit = (self.limit / 2).max(1);
+      }
       self.pressured = Some(now);
-    } else if !wide_headroom {
-      // Retained, successfully compiled data cannot be reclaimed by reducing
-      // workers. With stable memory and a reserve, allow one job at a time
-      // instead of waiting forever for the accumulator to shrink.
-      self.limit = 1;
+    } else {
+      if reclaim {
+        self.limit = self.limit.min((self.limit / 2).max(RECLAIM_FLOOR));
+        self.pressured = Some(now);
+      }
+      self.limit = self.limit.min(supported);
     }
     let recovered =
       self.pressured.is_none_or(|t| now.duration_since(t) >= options.recovery);
-    self.open = !blocked && recovered;
+    // With two reserves of headroom, admit at the reduced cap at once; below
+    // that, wait out the recovery period first.
+    self.open = !closed && (!low || recovered);
     // A long-running block with no completions is not evidence that it is
     // safe to ramp up. Require actual completed work before raising the cap.
-    if self.open
-      && wide_headroom
-      && completed > self.completed
-      && now.duration_since(self.ramped) >= options.ramp_interval
-    {
-      self.limit = (self.limit + 1).min(options.max_workers);
-      self.ramped = now;
+    if self.open && !reclaim && recovered && completed > self.completed {
+      self.limit = self.limit.saturating_mul(2).min(supported);
     }
+    self.pressure =
+      Self::classify(closed, low || reclaim, supported < options.max_workers);
     self.previous = memory;
     self.sampled = now;
     self.completed = completed;
@@ -204,10 +323,33 @@ impl Admission {
     mut read: impl FnMut() -> Option<Memory> + Send + 'static,
   ) -> Result<Self, CompileError> {
     let now = Instant::now();
+    let policy = initial.map(|memory| Policy::new(memory, now, options));
+    if options.verbose {
+      eprintln!(
+        "[compile_memory] {}: initial={}{} max={} budget_gib={:?}{}; active blocks finish before slots are reused",
+        if policy.is_some() {
+          "adaptive admission"
+        } else {
+          "fixed admission (disabled or telemetry unavailable)"
+        },
+        policy.as_ref().map_or(options.max_workers, |p| p.limit),
+        match &policy {
+          Some(p) if !p.open => " (closed)",
+          _ => "",
+        },
+        options.max_workers,
+        options.process_budget.map(|v| v as f64 / GIB as f64),
+        initial.map_or(String::new(), |m| format!(
+          " headroom={:.1} GiB reserve={:.1} GiB",
+          m.headroom(options.process_budget) as f64 / GIB as f64,
+          m.reserve(options.process_budget) as f64 / GIB as f64
+        )),
+      );
+    }
     let shared = Arc::new(Shared {
       options,
       state: Mutex::new(State {
-        policy: initial.map(|memory| Policy::new(memory, now, options)),
+        policy,
         active: 0,
         completed: 0,
         stopped: false,
@@ -217,23 +359,6 @@ impl Admission {
       changed: Condvar::new(),
       shutdown: Condvar::new(),
     });
-    if options.verbose {
-      eprintln!(
-        "[compile_memory] {}: initial={} max={} budget_gib={:?}; active blocks finish before slots are reused",
-        if initial.is_some() {
-          "adaptive admission"
-        } else {
-          "fixed admission (disabled or telemetry unavailable)"
-        },
-        if initial.is_some() {
-          options.max_workers.min(2)
-        } else {
-          options.max_workers
-        },
-        options.max_workers,
-        options.process_budget.map(|v| v as f64 / GIB as f64)
-      );
-    }
     let monitor = if initial.is_some() {
       let shared = Arc::clone(&shared);
       Some(thread::Builder::new().name("ix-compile-memory".into()).spawn(move || {
@@ -263,13 +388,18 @@ impl Admission {
           let completed = state.completed;
           let policy = state.policy.as_mut().unwrap();
           let before = (policy.limit, policy.open, policy.pressure);
-          policy.sample(memory, now, active, completed, options);
+          policy.sample(memory, now, completed, options);
           if options.verbose && (before != (policy.limit, policy.open, policy.pressure)
             || now.duration_since(logged) >= Duration::from_secs(5)) {
-            eprintln!("[compile_memory] {:?}: limit={}/{} active={active} admitting={} completed={completed} available={:.1} GiB resident+swap={:.1} GiB growth_forecast={:.1} GiB",
+            eprintln!("[compile_memory] {:?}: limit={}/{} active={active} admitting={} completed={completed} available={:.1} GiB reserve={:.1} GiB resident+swap={:.1} GiB (swap {:.2}) growth_forecast={:.1} GiB (process {:.1}) reclaim_samples={}",
               policy.pressure, policy.limit, options.max_workers, policy.open,
-              memory.available as f64 / GIB as f64, memory.process as f64 / GIB as f64,
-              policy.projected_growth as f64 / GIB as f64);
+              memory.available as f64 / GIB as f64,
+              memory.reserve(options.process_budget) as f64 / GIB as f64,
+              memory.process as f64 / GIB as f64,
+              memory.process_swap as f64 / GIB as f64,
+              policy.projected_growth as f64 / GIB as f64,
+              policy.projected_process_growth as f64 / GIB as f64,
+              policy.reclaim_samples);
             logged = now;
           }
           shared.changed.notify_all();
@@ -301,10 +431,33 @@ impl Admission {
       }
       if state.active == 0 {
         let start = *state.idle_since.get_or_insert_with(Instant::now);
-        if start.elapsed() >= self.shared.options.idle_timeout {
+        let options = &self.shared.options;
+        // Fail promptly only when memory is genuinely short. With ample
+        // headroom the gate can only be held shut by a growth forecast that
+        // has not settled; give it far longer before giving up.
+        let starving =
+          state.policy.as_ref().is_none_or(|p| p.starving(options));
+        let timeout = if starving {
+          options.idle_timeout
+        } else {
+          options.idle_timeout.saturating_mul(STUCK_TIMEOUTS)
+        };
+        if start.elapsed() >= timeout {
+          let budget = options.process_budget;
+          let (headroom, net, reserve) =
+            state.policy.as_ref().map_or((0, 0, 0), |p| {
+              (
+                p.previous.headroom(budget),
+                p.net_headroom(p.previous, budget),
+                p.previous.reserve(budget),
+              )
+            });
           let error = resource_error(format!(
-            "not enough memory headroom to admit a compiler block; no active work for {:.0}s. Increase IX_COMPILE_MEMORY_GIB if set, or make more RAM available",
-            self.shared.options.idle_timeout.as_secs_f64()
+            "not enough memory headroom to admit a compiler block; no active work for {:.0}s (headroom {:.1} GiB, {:.1} GiB after the growth forecast; reserve {:.1} GiB). Increase IX_COMPILE_MEMORY_GIB if set, or make more RAM available",
+            timeout.as_secs_f64(),
+            headroom as f64 / GIB as f64,
+            net as f64 / GIB as f64,
+            reserve as f64 / GIB as f64,
           ));
           state.error = Some(error.clone());
           state.stopped = true;
@@ -347,21 +500,25 @@ mod tests {
   use crate::compile::memory::MIB;
   use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+  /// 100 GiB visible, so the reserve is 12.5 GiB: two reserves are 25 GiB,
+  /// three 37.5 GiB, and reclaim counts below four (50 GiB).
   fn memory() -> Memory {
     Memory {
       capacity: 100 * GIB,
       available: 90 * GIB,
       process: 10 * GIB,
-      swap_used: 0,
+      process_swap: 0,
       stall_us: 0,
     }
+  }
+  fn with_available(available: u64) -> Memory {
+    Memory { available, process: 100 * GIB - available, ..memory() }
   }
   fn options(max_workers: usize) -> Options {
     Options {
       max_workers,
       process_budget: None,
       tick: Duration::from_millis(2),
-      ramp_interval: Duration::from_millis(5),
       recovery: Duration::from_millis(5),
       idle_timeout: Duration::from_millis(100),
       lookahead: Duration::from_secs(10),
@@ -378,28 +535,135 @@ mod tests {
       thread::sleep(Duration::from_millis(1));
     }
   }
+  fn ms(n: u64) -> Duration {
+    Duration::from_millis(n)
+  }
 
   #[test]
-  fn healthy_memory_requires_completions_to_ramp_and_respects_the_ceiling() {
-    let opt = options(4);
+  fn supported_cap_follows_headroom_net_of_the_forecast() {
+    let r = 8 * GIB;
+    assert_eq!(supported(0, r, 24), 0);
+    assert_eq!(supported(r - 1, r, 24), 0);
+    assert_eq!(supported(r, r, 24), 1);
+    assert_eq!(supported(2 * r - 1, r, 24), 1);
+    assert_eq!(supported(2 * r, r, 24), 1);
+    assert_eq!(supported(2 * r + r / 2, r, 24), 12);
+    assert_eq!(supported(3 * r - 1, r, 24), 23);
+    assert_eq!(supported(3 * r, r, 24), 24);
+    assert_eq!(supported(u64::MAX, r, 24), 24);
+    assert_eq!(supported(2 * r + r / 2, r, 1), 1);
+    assert_eq!(supported(GIB, 0, 4), 4);
+    // The forecast is set aside first: the system's against availability,
+    // and only this process's own against a budget.
+    let opt = Options { process_budget: Some(20 * GIB), ..options(8) };
+    let mut policy = Policy::new(memory(), Instant::now(), opt);
+    policy.projected_growth = 30 * GIB;
+    policy.projected_process_growth = GIB;
+    assert_eq!(policy.net_headroom(memory(), None), 60 * GIB);
+    assert_eq!(policy.net_headroom(memory(), Some(20 * GIB)), 9 * GIB);
+    policy.projected_growth = 85 * GIB;
+    assert_eq!(policy.net_headroom(memory(), Some(20 * GIB)), 5 * GIB);
+    policy.projected_growth = u64::MAX;
+    assert_eq!(policy.net_headroom(memory(), Some(20 * GIB)), 0);
+  }
+
+  #[test]
+  fn budget_headroom_is_not_forecast_with_other_workloads_allocations() {
+    // A 20 GiB budget with 12 GiB used leaves 8 GiB, over three budget
+    // reserves (2.5 GiB). Another workload takes 0.5 GiB of system memory
+    // per sample: a 20 GiB system forecast, against 86-90 GiB available.
+    let opt = Options { process_budget: Some(20 * GIB), ..options(8) };
     let now = Instant::now();
-    let mut policy = Policy::new(memory(), now, opt);
-    for second in 1..10 {
-      policy.sample(memory(), now + Duration::from_secs(second), 2, 0, opt);
-      assert_eq!(policy.limit, 2, "a long job should not trigger ramp-up");
+    let start = Memory { process: 12 * GIB, ..memory() };
+    let mut policy = Policy::new(start, now, opt);
+    assert_eq!((policy.limit, policy.open), (8, true));
+    for tick in 1..=8u64 {
+      let others =
+        Memory { available: start.available - tick * GIB / 2, ..start };
+      policy.sample(others, now + ms(250 * tick), tick, opt);
+      assert_eq!((policy.limit, policy.open), (8, true), "sample {tick}");
     }
-    for second in 10..20 {
-      policy.sample(
-        memory(),
-        now + Duration::from_secs(second),
-        2,
-        second,
-        opt,
-      );
-      assert!(policy.limit <= 4);
+    // This process's own growth does count against the budget.
+    let grown = Memory {
+      process: 13 * GIB,
+      available: start.available - 5 * GIB,
+      ..start
+    };
+    policy.sample(grown, now + ms(250 * 9), 9, opt);
+    assert!(!policy.open);
+    assert_eq!(policy.projected_process_growth, 40 * GIB);
+  }
+
+  #[test]
+  fn wide_headroom_starts_at_the_ceiling_without_a_ramp() {
+    for max in [1, 4, 24] {
+      let opt = options(max);
+      let now = Instant::now();
+      let mut policy = Policy::new(memory(), now, opt);
+      assert_eq!(policy.limit, max);
       assert!(policy.open);
+      assert_eq!(policy.pressure, Pressure::Healthy);
+      // Long-running first blocks (no completions) do not lower the cap.
+      for tick in 1..10 {
+        policy.sample(memory(), now + ms(tick), 0, opt);
+        assert_eq!((policy.limit, policy.open), (max, true));
+      }
     }
-    assert_eq!(policy.limit, 4);
+  }
+
+  #[test]
+  fn narrower_headroom_starts_lower() {
+    let opt = options(24);
+    let now = Instant::now();
+    // Between two and three reserves: a linear share of the workers.
+    let policy = Policy::new(with_available(30 * GIB), now, opt);
+    assert_eq!((policy.limit, policy.open), (10, true));
+    assert_eq!(policy.pressure, Pressure::Hold);
+    // Between one and two: one block, after a recovery period.
+    let policy = Policy::new(with_available(20 * GIB), now, opt);
+    assert_eq!((policy.limit, policy.open), (1, false));
+    assert_eq!(policy.pressure, Pressure::Backoff);
+    // Below one reserve: closed.
+    let policy = Policy::new(with_available(10 * GIB), now, opt);
+    assert_eq!((policy.limit, policy.open), (1, false));
+    assert_eq!(policy.pressure, Pressure::Critical);
+  }
+
+  #[test]
+  fn ramp_doubles_per_sample_after_completions_up_to_the_supported_cap() {
+    let opt = options(24);
+    let now = Instant::now();
+    let mut policy = Policy::new(with_available(20 * GIB), now, opt);
+    assert_eq!(policy.limit, 1);
+    // Memory is freed; the start's recovery period still holds the ramp.
+    policy.sample(memory(), now + ms(2), 1, opt);
+    assert_eq!((policy.limit, policy.open), (1, true));
+    // A long-running block (no completions) is no evidence for ramping.
+    for t in [6, 8, 10] {
+      policy.sample(memory(), now + ms(t), 1, opt);
+      assert_eq!(policy.limit, 1, "ramped without completed work");
+    }
+    let mut limits = Vec::new();
+    for (i, t) in (12..24).step_by(2).enumerate() {
+      policy.sample(memory(), now + ms(t), 2 + i as u64, opt);
+      limits.push(policy.limit);
+    }
+    assert_eq!(limits, [2, 4, 8, 16, 24, 24]);
+    assert_eq!(policy.pressure, Pressure::Healthy);
+  }
+
+  #[test]
+  fn ramp_stops_at_a_share_of_the_workers_with_moderate_headroom() {
+    let opt = options(24);
+    let now = Instant::now();
+    let mut policy = Policy::new(with_available(20 * GIB), now, opt);
+    let moderate = with_available(30 * GIB);
+    for (i, t) in (10..30).step_by(2).enumerate() {
+      policy.sample(moderate, now + ms(t), 1 + i as u64, opt);
+      assert!(policy.limit <= 10);
+    }
+    assert_eq!((policy.limit, policy.open), (10, true));
+    assert_eq!(policy.pressure, Pressure::Hold);
   }
 
   #[test]
@@ -407,33 +671,177 @@ mod tests {
     let opt = options(64);
     let now = Instant::now();
     let mut policy = Policy::new(memory(), now, opt);
+    assert_eq!(policy.limit, 64);
     let rising = Memory { process: 16 * GIB, available: 84 * GIB, ..memory() };
-    policy.sample(rising, now + Duration::from_millis(250), 2, 0, opt);
-    assert_eq!(policy.pressure, Pressure::Healthy);
+    policy.sample(rising, now + ms(250), 0, opt);
     assert_eq!(policy.projected_growth, 240 * GIB);
     assert!(
       !policy.open,
       "high current availability must not hide a growth burst"
     );
-    assert_eq!(policy.limit, 1);
+    assert_eq!(policy.pressure, Pressure::Critical);
+    assert_eq!(policy.limit, 32, "the cap halves, not the drained count");
+    policy.sample(rising, now + ms(500), 0, opt);
+    assert!(!policy.open);
+    assert_eq!(policy.limit, 32, "halved once per closure");
+    // Growth stops: admissions resume, at no more than the reduced cap,
+    // once the decaying forecast leaves a reserve of headroom.
+    let mut t = 500;
+    while !policy.open {
+      t += 250;
+      policy.sample(rising, now + ms(t), 0, opt);
+      assert!(t < 5_000, "the forecast never decayed");
+    }
+    assert!((1..=32).contains(&policy.limit));
   }
 
   #[test]
-  fn swap_pressure_reduces_limit_and_recovers_with_hysteresis() {
-    let opt = options(8);
+  fn reclaim_with_wide_headroom_is_ignored() {
+    let opt = options(24);
     let now = Instant::now();
     let mut policy = Policy::new(memory(), now, opt);
-    policy.limit = 8;
-    let swapped = Memory { swap_used: 9 * MIB, ..memory() };
-    policy.sample(swapped, now + Duration::from_millis(2), 8, 0, opt);
-    assert_eq!(policy.pressure, Pressure::Backoff);
-    assert_eq!(policy.limit, 4);
+    // Every sample: 64 MiB of this process swapped out, and its cgroup
+    // stalled for the whole interval. With 90 GiB available that is LRU
+    // balancing against other workloads, not a shortage.
+    for tick in 1..=40u64 {
+      let churn = Memory {
+        process_swap: tick * 64 * MIB,
+        stall_us: tick * 250_000,
+        ..memory()
+      };
+      policy.sample(churn, now + ms(250 * tick), tick, opt);
+      assert_eq!((policy.limit, policy.open), (24, true));
+      assert_eq!(policy.pressure, Pressure::Healthy);
+    }
+  }
+
+  #[test]
+  fn baseline_mathlib_backoff_samples_keep_every_worker() {
+    // The base binary's Mathlib runs (SP/base/run_mathlib_{a,b}.log, 2026-10-02)
+    // backed off to 1-12 of 24 workers at these samples: 93 GiB machine,
+    // 65.5-70.1 GiB available, 11.8-16.9 GiB resident+swap, growth forecasts
+    // up to 10 GiB, and a reclaim signal. Here every sample carries both
+    // attributable reclaim signals as well; none of it may cost a worker.
+    let opt = options(24);
+    let now = Instant::now();
+    let start = Memory {
+      capacity: 93 * GIB,
+      available: 70 * GIB,
+      process: 12 * GIB,
+      process_swap: 0,
+      stall_us: 0,
+    };
+    let mut policy = Policy::new(start, now, opt);
+    assert_eq!((policy.limit, policy.open), (24, true));
+    for tick in 1..=400u64 {
+      // 12 MiB of growth per sample plus a 250 MiB burst every 20th (a
+      // 10 GiB forecast): 9.6 GiB in all, and availability falls by as much.
+      let grown = tick * 12 * MIB + (tick / 20) * 250 * MIB;
+      let memory = Memory {
+        available: start.available - grown,
+        process: start.process + grown,
+        process_swap: tick * 16 * MIB,
+        stall_us: tick * 100_000,
+        ..start
+      };
+      policy.sample(memory, now + ms(250 * tick), tick * 1_000, opt);
+      assert_eq!((policy.limit, policy.open), (24, true), "sample {tick}");
+      assert_eq!(policy.pressure, Pressure::Healthy);
+    }
+  }
+
+  #[test]
+  fn shared_cgroup_stalls_with_moderate_headroom_are_ignored() {
+    // A final-binary Init run (run_init_dx_d1, 2026-10-02) halved its cap
+    // at 44.6 GiB available on the 93 GiB machine (four reserves: 46.5 GiB)
+    // on stalls of the terminal's cgroup, which every agent shares, while
+    // its own swap stayed at zero. Stalls now count only below two reserves.
+    let opt = options(24);
+    let now = Instant::now();
+    let start = Memory {
+      capacity: 93 * GIB,
+      available: 44 * GIB + 600 * MIB,
+      process: 2 * GIB + 500 * MIB,
+      process_swap: 0,
+      stall_us: 0,
+    };
+    let mut policy = Policy::new(start, now, opt);
+    for tick in 1..=40u64 {
+      let stalled = Memory { stall_us: tick * 250_000, ..start };
+      policy.sample(stalled, now + ms(250 * tick), tick, opt);
+      assert_eq!((policy.limit, policy.open), (24, true), "sample {tick}");
+    }
+    // Below two reserves (23.25 GiB) the same stalls close admissions.
+    let low = Memory { available: 22 * GIB, ..start };
+    let mut policy = Policy::new(low, now, opt);
+    for tick in 1..=2u64 {
+      let stalled = Memory { stall_us: tick * 250_000, ..low };
+      policy.sample(stalled, now + Duration::from_secs(tick), tick, opt);
+    }
     assert!(!policy.open);
-    policy.sample(swapped, now + Duration::from_millis(4), 4, 1, opt);
-    assert!(!policy.open, "one healthy tick is not enough to recover");
-    policy.sample(swapped, now + Duration::from_millis(20), 2, 2, opt);
-    assert!(policy.open);
-    assert_eq!(policy.limit, 5);
+    assert_eq!(policy.pressure, Pressure::Critical);
+  }
+
+  #[test]
+  fn reclaim_with_moderate_headroom_is_debounced_and_keeps_a_floor() {
+    let opt = options(24);
+    let now = Instant::now();
+    let base = with_available(40 * GIB);
+    let mut policy = Policy::new(base, now, opt);
+    assert_eq!(policy.limit, 24);
+    let mut swap = 0;
+    let mut t = 0;
+    let mut tick = |policy: &mut Policy, reclaim: bool| {
+      if reclaim {
+        swap += 9 * MIB;
+      }
+      t += 2;
+      let memory = Memory { process_swap: swap, ..base };
+      policy.sample(memory, now + ms(t), t, opt);
+      (policy.limit, policy.open)
+    };
+    // One sample is a burst, not sustained reclaim.
+    assert_eq!(tick(&mut policy, true), (24, true));
+    assert_eq!(tick(&mut policy, false), (24, true));
+    assert_eq!(tick(&mut policy, true), (24, true));
+    // The second consecutive sample halves the cap; admission stays open.
+    assert_eq!(tick(&mut policy, true), (12, true));
+    assert_eq!(policy.pressure, Pressure::Backoff);
+    assert_eq!(tick(&mut policy, true), (6, true));
+    assert_eq!(tick(&mut policy, true), (4, true));
+    assert_eq!(tick(&mut policy, true), (4, true), "two reserves remain");
+    // Reclaim stops: no ramp during the recovery period, then doubling.
+    assert_eq!(tick(&mut policy, false), (4, true));
+    assert_eq!(tick(&mut policy, false), (4, true));
+    assert_eq!(tick(&mut policy, false), (8, true));
+    assert_eq!(tick(&mut policy, false), (16, true));
+    assert_eq!(tick(&mut policy, false), (24, true));
+  }
+
+  #[test]
+  fn reclaim_with_low_headroom_closes_admissions() {
+    // No growth forecast: isolate the headroom and reclaim decisions.
+    let opt = Options { lookahead: Duration::ZERO, ..options(24) };
+    let now = Instant::now();
+    let mut policy = Policy::new(with_available(40 * GIB), now, opt);
+    assert_eq!(policy.limit, 24);
+    let low = with_available(22 * GIB);
+    let swapped = |n: u64| Memory { process_swap: n * 9 * MIB, ..low };
+    // Headroom below two reserves allows one block at once...
+    policy.sample(swapped(1), now + ms(2), 0, opt);
+    assert_eq!((policy.limit, policy.open), (1, true));
+    assert_eq!(policy.pressure, Pressure::Backoff);
+    // ...and sustained reclaim there stops admissions altogether.
+    policy.sample(swapped(2), now + ms(4), 0, opt);
+    assert_eq!((policy.limit, policy.open), (1, false));
+    assert_eq!(policy.pressure, Pressure::Critical);
+    policy.sample(swapped(3), now + ms(6), 0, opt);
+    assert!(!policy.open);
+    // Reclaim ends: serial progress resumes only after the recovery period.
+    policy.sample(swapped(3), now + ms(8), 0, opt);
+    assert!(!policy.open);
+    policy.sample(swapped(3), now + ms(12), 0, opt);
+    assert_eq!((policy.limit, policy.open), (1, true));
   }
 
   #[test]
@@ -444,16 +852,37 @@ mod tests {
     let policy = Policy::new(memory, now, opt);
     assert!(!policy.open);
     assert_eq!(policy.pressure, Pressure::Critical);
+    // Reclaim is judged by system headroom, not the budget's: own swap-out
+    // with 8 GiB of budget headroom left but 90 GiB available is ignored...
+    let near = Memory { process: 12 * GIB, process_swap: GIB, ..memory };
+    let mut policy = Policy::new(near, now, opt);
+    assert_eq!(policy.limit, 8);
+    for n in 1..=2 {
+      let swapped = Memory { process_swap: GIB + n * 9 * MIB, ..near };
+      policy.sample(swapped, now + ms(2 * n), 0, opt);
+    }
+    assert_eq!((policy.limit, policy.open), (8, true));
+    // ...and counts when the system is short (40 GiB available, under four
+    // system reserves), however far away the budget is.
+    let opt = Options { process_budget: Some(1000 * GIB), ..options(8) };
+    let short = Memory { available: 40 * GIB, ..memory };
+    let mut policy = Policy::new(short, now, opt);
+    assert_eq!(policy.limit, 8);
+    for n in 1..=2 {
+      let swapped = Memory { process_swap: n * 9 * MIB, ..short };
+      policy.sample(swapped, now + ms(2 * n), 0, opt);
+    }
+    assert_eq!((policy.limit, policy.open), (4, true));
   }
 
   #[test]
   fn stable_retained_data_allows_serial_forward_progress() {
     let opt = options(8);
     let now = Instant::now();
-    let memory = Memory { process: 70 * GIB, available: 30 * GIB, ..memory() };
+    let memory = with_available(22 * GIB);
     let mut policy = Policy::new(memory, now, opt);
-    policy.sample(memory, now + Duration::from_secs(1), 0, 0, opt);
-    assert_eq!(policy.pressure, Pressure::Hold);
+    policy.sample(memory, now + Duration::from_secs(1), 0, opt);
+    assert_eq!(policy.pressure, Pressure::Backoff);
     assert!(policy.open);
     assert_eq!(policy.limit, 1);
   }
@@ -534,11 +963,82 @@ mod tests {
   #[test]
   fn no_headroom_returns_resource_error_without_starting_a_block() {
     let low = Memory { available: GIB, ..memory() };
+    let start = Instant::now();
     let gate =
       Admission::with_reader(options(4), Some(low), move || Some(low)).unwrap();
-    assert!(matches!(gate.acquire(), Err(CompileError::ResourceLimit { .. })));
+    let Err(CompileError::ResourceLimit { reason }) = gate.acquire() else {
+      panic!("admitted a block without headroom");
+    };
+    assert!(
+      reason.contains(
+        "headroom 1.0 GiB, 1.0 GiB after the growth forecast; reserve 12.5 GiB"
+      ),
+      "{reason}"
+    );
+    // Genuinely short of memory: one idle timeout, not the long one.
+    assert!(start.elapsed() < Duration::from_millis(100 * 5));
     assert_eq!(gate.shared.state.lock().unwrap().active, 0);
     assert!(matches!(gate.check(), Err(CompileError::ResourceLimit { .. })));
+  }
+
+  #[test]
+  fn background_reclaim_with_wide_headroom_does_not_stall_admissions() {
+    // Every sample shows this process swapping and its cgroup stalled for
+    // the whole interval, while 90 GiB stay available.
+    let reads = Arc::new(AtomicUsize::new(0));
+    let reader_reads = Arc::clone(&reads);
+    let gate = Admission::with_reader(options(8), Some(memory()), move || {
+      let n = reader_reads.fetch_add(1, Ordering::SeqCst) as u64 + 1;
+      Some(Memory {
+        process_swap: n * 64 * MIB,
+        stall_us: n * 1_000_000,
+        ..memory()
+      })
+    })
+    .unwrap();
+    // Started wide: every worker is admitted at once, with no ramp.
+    let permits: Vec<_> =
+      (0..8).map(|_| gate.acquire().unwrap().unwrap()).collect();
+    until(|| reads.load(Ordering::SeqCst) >= 20);
+    {
+      let state = gate.shared.state.lock().unwrap();
+      let policy = state.policy.as_ref().unwrap();
+      assert_eq!((policy.limit, policy.open), (8, true));
+    }
+    for permit in permits {
+      permit.complete();
+    }
+    let again: Vec<_> =
+      (0..8).map(|_| gate.acquire().unwrap().unwrap()).collect();
+    assert_eq!(gate.shared.state.lock().unwrap().active, again.len());
+  }
+
+  #[test]
+  fn closed_gate_with_wide_headroom_outlasts_the_idle_timeout() {
+    // Another workload allocates and frees 40 GiB between samples. The
+    // growth forecast keeps admission closed, although at least 50 GiB stay
+    // available: that is not a shortage, so one idle timeout is not enough
+    // to fail, but the gate still gives up rather than wait forever.
+    let reads = Arc::new(AtomicUsize::new(0));
+    let reader_reads = Arc::clone(&reads);
+    let start = Instant::now();
+    let gate = Admission::with_reader(options(2), Some(memory()), move || {
+      let n = reader_reads.fetch_add(1, Ordering::SeqCst);
+      let available = if n.is_multiple_of(2) { 50 * GIB } else { 90 * GIB };
+      Some(Memory { available, ..memory() })
+    })
+    .unwrap();
+    until(|| !gate.shared.state.lock().unwrap().policy.as_ref().unwrap().open);
+    thread::scope(|scope| {
+      let waiting =
+        scope.spawn(|| gate.acquire().map(|permit| permit.is_some()));
+      thread::sleep(Duration::from_millis(300));
+      assert!(gate.check().is_ok(), "failed while headroom was wide");
+      assert!(!waiting.is_finished());
+      let result = waiting.join().unwrap();
+      assert!(matches!(result, Err(CompileError::ResourceLimit { .. })));
+    });
+    assert!(start.elapsed() >= Duration::from_secs(1));
   }
 
   #[test]

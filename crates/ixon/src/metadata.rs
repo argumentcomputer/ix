@@ -9,8 +9,9 @@
 
 #![allow(clippy::cast_possible_truncation)]
 
-use std::collections::HashMap;
 use std::sync::Arc;
+
+use rustc_hash::FxHashMap;
 
 use ix_common::address::Address;
 use ix_common::env::{self, BinderInfo, Name};
@@ -795,8 +796,12 @@ impl IxonByteSerde for BinderInfo {
 // Indexed serialization (Address -> u64 index)
 // ===========================================================================
 
-/// Name index for serialization: Address -> u64
-pub type NameIndex = HashMap<Address, u64>;
+/// Name index for serialization: Address -> u64. The keys are blake3
+/// digests, which the Fx hash spreads as well as SipHash does at a fraction
+/// of the cost (a Mathlib `.ixe` inserts and looks up millions of them).
+/// Only lookups go through it, so its iteration order never reaches the
+/// bytes.
+pub type NameIndex = FxHashMap<Address, u64>;
 
 /// Reverse name index for deserialization: position -> Address
 pub type NameReverseIndex = Vec<Address>;
@@ -1645,7 +1650,7 @@ mod tests {
     let addr3 = Address::from_slice(&[3u8; 32]).unwrap();
 
     // Build index
-    let mut idx = NameIndex::new();
+    let mut idx = NameIndex::default();
     idx.insert(addr1.clone(), 0);
     idx.insert(addr2.clone(), 1);
     idx.insert(addr3.clone(), 2);
@@ -1733,7 +1738,7 @@ mod tests {
   fn test_expr_meta_arena_roundtrip() {
     let addr1 = Address::from_slice(&[1u8; 32]).unwrap();
 
-    let mut idx = NameIndex::new();
+    let mut idx = NameIndex::default();
     idx.insert(addr1.clone(), 0);
     let rev: NameReverseIndex = vec![addr1.clone()];
 
@@ -1768,7 +1773,7 @@ mod tests {
   fn vec_names() -> (Address, Address, NameIndex, NameReverseIndex) {
     let a = Address::from_slice(&[1u8; 32]).unwrap();
     let b = Address::from_slice(&[2u8; 32]).unwrap();
-    let mut idx = NameIndex::new();
+    let mut idx = NameIndex::default();
     idx.insert(a.clone(), 0);
     idx.insert(b.clone(), 1);
     (a.clone(), b.clone(), idx, vec![a, b])

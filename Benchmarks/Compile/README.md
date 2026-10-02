@@ -41,10 +41,20 @@ metadata for 16 GiB arenas and eventually exhausting `vm.max_map_count`
 despite available RAM and swap ([upstream issue #1309](https://github.com/microsoft/mimalloc/issues/1309)).
 
 Inductive-flag validation (setup stage 4) uses adaptive admission on Linux.
-The Rayon pool keeps its configured size, but validation starts with two
-active jobs and ramps up while memory is healthy. The controller samples
-`MemAvailable`, visible cgroup-v2 ancestor limits, swap growth, and memory
-stall pressure every 250 ms. It stops admissions and cancels excess attempts
+The Rayon pool keeps its configured size. Validation starts with every
+worker when headroom is at least three safety reserves (an eighth of visible
+memory, or of the budget), otherwise with one job, and ramps up while memory
+is healthy. The controller samples
+`MemAvailable`, visible cgroup-v2 ancestor limits, the growth of this
+process's own swapped-out memory, and the memory stall pressure of its
+innermost cgroup (system-wide when the cgroup exposes none) every 250 ms.
+This process's swap growth counts only below four safety reserves of system
+or cgroup headroom (above that it is LRU balancing against other workloads),
+and stalls only below two: the cgroup is often shared with other jobs, and
+its stalls include refaults of this process's file mappings, which running
+fewer jobs does not cure. A memory budget does not change these thresholds:
+the kernel reclaims when memory is short, not when this process nears its
+own budget. It stops admissions and cancels excess attempts
 under pressure; those attempts return normally, drop their scratch data, and
 retry once alone after other work finishes. Completed validations are retained.
 When retained data leaves limited headroom, validation continues one job at a
@@ -70,21 +80,33 @@ group IDs. Optional controls:
   with an explicit memory budget). DAG-preserving walks remain enabled.
 
 The main dependency scheduler also uses adaptive admission on Linux. It
-starts with up to two active blocks and samples the same memory signals
-every 250 ms, plus a ten-second forecast of recent memory growth. It raises
-concurrency only after completed work and sufficient headroom, stops new
-admissions under pressure, and waits five seconds after recovery before
-resuming. Stable retained output can continue growing with one active block
-while the safety reserve remains available. Main-stage expression transforms
-also preserve DAG sharing instead of repeatedly copying shared subexpressions.
+samples the same memory signals every 250 ms, plus a ten-second forecast of
+recent memory growth (against `IX_COMPILE_MEMORY_GIB`, only this process's
+own growth), and caps active blocks by the headroom left after that
+forecast, measured in safety reserves (an eighth of visible memory, or of the
+budget): every worker from three reserves up, a linear share between two and
+three, one block between one and two (stable retained output keeps growing
+serially), and no new admissions below one reserve. With ample memory it
+therefore starts at full concurrency; below the supported cap it doubles the
+cap every sample after completed work. Reclaim, with the thresholds above
+(this process's own swap-out below four reserves, cgroup stalls below two),
+counts only after two consecutive samples: it halves the cap, keeps at least
+four blocks while two reserves remain, and stops admissions below that.
+After pressure the cap stays down for five seconds before ramping again.
+System-wide swap is not used: with wide headroom it comes from other
+workloads, which admitting fewer blocks cannot help. Main-stage expression
+transforms also preserve DAG sharing instead of repeatedly copying shared
+subexpressions.
 
 Unlike validation, main-stage blocks publish shared metadata during their
 execution, so active blocks are **not cancelled or retried**: they finish and
 release their scratch before the slot is reused. This is a soft safeguard,
 not a hard memory cap; one large block can still exhaust memory. If no block
-is active and admission cannot resume for 30 seconds, compilation returns
-`resourceLimit`. The gate covers the main block scheduler, not graph setup,
-final serialization, or other work outside that scheduler. Without Linux
+is active and admission cannot resume for 30 seconds while headroom is below
+two reserves, compilation returns `resourceLimit`; with more headroom (only
+an unsettled growth forecast can hold the gate shut) it waits ten times as
+long first. The gate covers the main block scheduler, not graph setup, final
+serialization, or other work outside that scheduler. Without Linux
 telemetry, the scheduler retains fixed concurrency.
 
 `--verbose` reports `[compile_memory]` limits, active blocks, admissions,

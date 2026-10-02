@@ -114,3 +114,55 @@ pub extern "C" fn rs_compute_sccs(
   let result = LeanIxCondensedBlocks::build(&mut cache, &condensed);
   LeanIOResult::ok(result)
 }
+
+/// Compare `compute_sccs` with the original name-keyed implementation
+/// (`compute_sccs_reference`) on the reference graphs of an environment:
+/// the compiler's own (`setup_scan`, references to missing names dropped
+/// as the compile's grounding filter would), its reverse graph, and
+/// `build_ref_graph`'s. Every map and set of the result is compared in
+/// iteration order. Returns the empty string when all agree, otherwise a
+/// description of the first difference.
+#[cfg(feature = "test-ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_compute_sccs_reference_diff(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  use ix_compile::condense::{compute_sccs_reference, condensed_difference};
+  use ix_compile::graph::{RefMap, setup_scan};
+  use lean_ffi::object::LeanString;
+
+  let rust_env = decode_env(env_consts_ptr);
+  let scan = setup_scan(&rust_env);
+  let present = |refs: &RefMap| -> RefMap {
+    let mut out = RefMap::default();
+    for (name, set) in refs {
+      let kept =
+        set.iter().filter(|r| refs.contains_key(*r)).cloned().collect();
+      out.insert(name.clone(), kept);
+    }
+    out
+  };
+  let graphs: [(&str, RefMap); 3] = [
+    ("setup_scan out_refs", present(&scan.graph.out_refs)),
+    ("setup_scan in_refs", scan.graph.in_refs),
+    ("build_ref_graph out_refs", present(&build_ref_graph(&rust_env).out_refs)),
+  ];
+  let mut report = String::new();
+  for (what, refs) in &graphs {
+    let new = compute_sccs(refs);
+    let old = compute_sccs_reference(refs);
+    if let Some(diff) = condensed_difference(&old, &new) {
+      report = format!("{what} ({} nodes): {diff}", refs.len());
+      break;
+    }
+    if new.blocks.len() < 2 || new.blocks.len() == refs.len() {
+      report = format!(
+        "{what}: degenerate graph ({} nodes, {} components)",
+        refs.len(),
+        new.blocks.len()
+      );
+      break;
+    }
+  }
+  LeanIOResult::ok(LeanString::new(&report))
+}
