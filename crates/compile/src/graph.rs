@@ -5,7 +5,7 @@
 //! compute SCCs (strongly connected components) for mutual block detection.
 //! Construction is parallelized via rayon.
 
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
@@ -146,6 +146,354 @@ pub fn setup_scan(env: &Env) -> SetupScan {
   }
 }
 
+/// What the setup scan records for one constant: the inputs of every
+/// [`SetupScan`] field that constant contributes to.
+pub struct ConstScan {
+  /// Names the constant references (its `out_refs` entry).
+  pub deps: NameSet,
+  /// Whether some `Mdata` key lies in the reserved source-contract
+  /// namespace (see [`is_source_contract_key`]).
+  pub source_contract: bool,
+  /// [`crate::semantic_contract::inspect_constant`]'s result.
+  pub semantic: Result<bool, Box<ixon::CompileError>>,
+  /// [`crate::ground::ground_const_check`]'s result.
+  pub ground: Result<(), Box<crate::ground::GroundError>>,
+  /// `(all[0], all)` for an inductive with a non-empty `all`.
+  pub ind_group: Option<(Name, Vec<Name>)>,
+}
+
+/// The reference per-constant scan over a decoded constant: the same
+/// three walks and the same inductive-group entry as [`setup_scan`].
+pub fn scan_constant(constant: &ConstantInfo, env: &Env) -> ConstScan {
+  let semantic =
+    crate::semantic_contract::inspect_constant(constant).map_err(Box::new);
+  let (deps, source_contract) = inspect_constant_references(constant);
+  let ground =
+    crate::ground::ground_const_check(constant, env).map_err(Box::new);
+  let ind_group = match constant {
+    ConstantInfo::InductInfo(v) => {
+      v.all.first().map(|first| (first.clone(), v.all.clone()))
+    },
+    _ => None,
+  };
+  ConstScan { deps, source_contract, semantic, ground, ind_group }
+}
+
+/// Produces each constant's [`ConstScan`] for [`setup_scan_with`].
+/// An implementation may read the constant from wherever it lives (the
+/// ffi crate walks the Lean objects without decoding them), but its
+/// results must equal [`scan_constant`] on the decoded constant.
+pub trait ConstScanner: Sync {
+  /// `None` exactly when `env.get(name)` is `None`.
+  fn scan(&self, name: &Name, env: &Env) -> Option<ConstScan>;
+
+  /// The setup scan is over: release what only the scan needed.
+  fn release(&self) {}
+}
+
+/// [`ConstScanner`] over the decoded environment.
+pub struct DecodedScanner;
+
+impl ConstScanner for DecodedScanner {
+  fn scan(&self, name: &Name, env: &Env) -> Option<ConstScan> {
+    let constant = env.get(name)?;
+    Some(scan_constant(&constant, env))
+  }
+}
+
+/// [`setup_scan`] with a pluggable per-constant scan.
+///
+/// The outputs equal [`setup_scan`]'s whenever `scanner` agrees with
+/// [`scan_constant`]: the reference graph, the immediately-ungrounded
+/// set, `ind_groups` (first `all[0]` in key order wins), and
+/// `source_contracts`/`semantic_sources` in `env.keys()` order, which is
+/// the order rayon's order-preserving fold/reduce gives the old pass.
+/// With several semantic errors the old pass reported the last error of
+/// the leftmost fold chunk that had one, which depends on how rayon
+/// split the work; this pass reports the first in key order, the result
+/// the old pass gives when every chunk holds one constant.
+///
+/// The scans are collected per constant, then the maps are assembled:
+/// `in_refs` by a parallel group-by on the dependency, with no serial
+/// merge of per-thread maps.
+pub fn setup_scan_with(env: &Env, scanner: &dyn ConstScanner) -> SetupScan {
+  let start = std::time::Instant::now();
+  let names: Vec<&Name> = env.keys().collect();
+  let mut scans: Vec<Option<ConstScan>> =
+    names.par_iter().map(|name| scanner.scan(name, env)).collect();
+  let scanned = start.elapsed();
+
+  let mut immediate_ungrounded = FxHashMap::default();
+  let mut ind_groups: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
+  let mut source_contracts = Vec::new();
+  let mut semantic_sources = Vec::new();
+  let mut semantic_error = None;
+  for (name, scan) in names.iter().zip(scans.iter_mut()) {
+    let Some(scan) = scan else {
+      continue;
+    };
+    match std::mem::replace(&mut scan.semantic, Ok(false)) {
+      Ok(true) => semantic_sources.push((*name).clone()),
+      Ok(false) => {},
+      Err(error) => {
+        semantic_error.get_or_insert(*error);
+      },
+    }
+    if scan.source_contract {
+      source_contracts.push((*name).clone());
+    }
+    if let Err(error) = std::mem::replace(&mut scan.ground, Ok(())) {
+      immediate_ungrounded.insert((*name).clone(), *error);
+    }
+    if let Some((first, all)) = scan.ind_group.take() {
+      ind_groups.entry(first).or_insert(all);
+    }
+  }
+
+  let collected = start.elapsed();
+  let in_refs = build_in_refs(&names, &scans);
+  let grouped = start.elapsed();
+  let mut out_refs = RefMap::with_capacity_and_hasher(
+    scans.iter().filter(|scan| scan.is_some()).count(),
+    Default::default(),
+  );
+  for (name, scan) in names.iter().zip(scans) {
+    if let Some(scan) = scan {
+      out_refs.insert((*name).clone(), scan.deps);
+    }
+  }
+  if *crate::compile::IX_VERBOSE {
+    eprintln!(
+      "[compile_env] setup_scan phases: per-constant scans {:.2}s, \
+       collect {:.2}s, in_refs {:.2}s, out_refs {:.2}s",
+      scanned.as_secs_f32(),
+      (collected - scanned).as_secs_f32(),
+      (grouped - collected).as_secs_f32(),
+      (start.elapsed() - grouped).as_secs_f32(),
+    );
+  }
+
+  SetupScan {
+    graph: RefGraph { out_refs, in_refs },
+    immediate_ungrounded,
+    ind_groups,
+    source_contracts,
+    semantic_sources: match semantic_error {
+      Some(error) => Err(error),
+      None => Ok(semantic_sources),
+    },
+  }
+}
+
+/// Reverse edges of the scanned constants, grouped in parallel.
+///
+/// Every scanned constant gets an entry (empty when nothing references
+/// it), and so does every referenced name, present in the environment
+/// or not. Edges are first bucketed by a shard of the dependency's
+/// digest, chunk by chunk; then each shard builds its own map; the
+/// shards hold disjoint keys, so the final union only moves entries.
+fn build_in_refs(names: &[&Name], scans: &[Option<ConstScan>]) -> RefMap {
+  const SHARDS: usize = 256;
+  // The digest is uniform. The keys of one shard share this byte; each
+  // shard's map hashes the whole digest.
+  fn shard(name: &Name) -> usize {
+    usize::from(name.get_hash().as_bytes()[31]) % SHARDS
+  }
+  // `u32::MAX` as the source marks the constant's own (possibly empty)
+  // entry.
+  const SELF: u32 = u32::MAX;
+  assert!(names.len() < SELF as usize, "setup scan: too many constants");
+  let chunk_len =
+    names.len().div_ceil(rayon::current_num_threads() * 8).max(1024);
+  let parts: Vec<Vec<Vec<(&Name, u32)>>> = scans
+    .par_chunks(chunk_len)
+    .enumerate()
+    .map(|(chunk, scans)| {
+      let mut out: Vec<Vec<(&Name, u32)>> = vec![Vec::new(); SHARDS];
+      for (offset, scan) in scans.iter().enumerate() {
+        let Some(scan) = scan else {
+          continue;
+        };
+        let src = chunk * chunk_len + offset;
+        let name = names[src];
+        // `src < names.len() < u32::MAX`, checked above.
+        #[allow(clippy::cast_possible_truncation)]
+        let src = src as u32;
+        out[shard(name)].push((name, SELF));
+        for dep in &scan.deps {
+          out[shard(dep)].push((dep, src));
+        }
+      }
+      out
+    })
+    .collect();
+  let t_parts = std::time::Instant::now();
+  let shards: Vec<RefMap> = (0..SHARDS)
+    .into_par_iter()
+    .map(|shard| {
+      let mut map = RefMap::default();
+      // Start each shard at a different chunk, so that concurrent shards
+      // do not clone the same source names at the same time.
+      let start = shard * parts.len() / SHARDS;
+      for part in parts[start..].iter().chain(&parts[..start]) {
+        for &(dep, src) in &part[shard] {
+          let src = (src != SELF).then(|| names[src as usize].clone());
+          // Clone the key only when it is new.
+          if let Some(set) = map.get_mut(dep) {
+            set.extend(src);
+          } else {
+            map.insert(dep.clone(), src.into_iter().collect());
+          }
+        }
+      }
+      map
+    })
+    .collect();
+  let t_shards = std::time::Instant::now();
+  drop(parts);
+  let t_drop = std::time::Instant::now();
+  let mut in_refs = RefMap::with_capacity_and_hasher(
+    shards.iter().map(RefMap::len).sum(),
+    Default::default(),
+  );
+  for map in shards {
+    in_refs.extend(map);
+  }
+  if *crate::compile::IX_VERBOSE {
+    eprintln!(
+      "[compile_env] in_refs: shards {:.3}s, drop {:.3}s, union {:.3}s",
+      (t_shards - t_parts).as_secs_f32(),
+      (t_drop - t_shards).as_secs_f32(),
+      t_drop.elapsed().as_secs_f32()
+    );
+  }
+  in_refs
+}
+
+/// Compare two setup scans field by field: the reference graph (both
+/// directions), the immediately-ungrounded set with each error's
+/// `Debug` rendering, `ind_groups`, `source_contracts` and
+/// `semantic_sources` (in order; an error by its `Debug` rendering).
+/// Returns a description of the first difference.
+pub fn compare_setup_scans(
+  actual: &SetupScan,
+  expected: &SetupScan,
+) -> Result<(), String> {
+  fn compare_maps(
+    what: &str,
+    actual: &RefMap,
+    expected: &RefMap,
+  ) -> Result<(), String> {
+    if actual.len() != expected.len() {
+      return Err(format!(
+        "{what}: {} entries, expected {}",
+        actual.len(),
+        expected.len()
+      ));
+    }
+    for (name, set) in expected {
+      match actual.get(name) {
+        None => return Err(format!("{what}: no entry for {}", name.pretty())),
+        Some(other) if other != set => {
+          return Err(format!(
+            "{what}: entry for {} has {} names, expected {}",
+            name.pretty(),
+            other.len(),
+            set.len()
+          ));
+        },
+        Some(_) => {},
+      }
+    }
+    Ok(())
+  }
+  compare_maps("out_refs", &actual.graph.out_refs, &expected.graph.out_refs)?;
+  compare_maps("in_refs", &actual.graph.in_refs, &expected.graph.in_refs)?;
+  if actual.immediate_ungrounded.len() != expected.immediate_ungrounded.len() {
+    return Err(format!(
+      "immediate_ungrounded: {} entries, expected {}",
+      actual.immediate_ungrounded.len(),
+      expected.immediate_ungrounded.len()
+    ));
+  }
+  for (name, error) in &expected.immediate_ungrounded {
+    let expected = format!("{error:?}");
+    match actual.immediate_ungrounded.get(name) {
+      Some(other) if format!("{other:?}") == expected => {},
+      other => {
+        return Err(format!(
+          "immediate_ungrounded: {} is {other:?}, expected {expected}",
+          name.pretty()
+        ));
+      },
+    }
+  }
+  if actual.ind_groups != expected.ind_groups {
+    return Err(format!(
+      "ind_groups differ ({} vs {} groups)",
+      actual.ind_groups.len(),
+      expected.ind_groups.len()
+    ));
+  }
+  if actual.source_contracts != expected.source_contracts {
+    return Err(format!(
+      "source_contracts differ ({} vs {} names)",
+      actual.source_contracts.len(),
+      expected.source_contracts.len()
+    ));
+  }
+  match (&actual.semantic_sources, &expected.semantic_sources) {
+    (Ok(a), Ok(b)) if a == b => Ok(()),
+    (Err(a), Err(b)) if format!("{a:?}") == format!("{b:?}") => Ok(()),
+    (a, b) => Err(format!(
+      "semantic_sources differ: {:?} vs {:?}",
+      a.as_ref().map(Vec::len),
+      b.as_ref().map(Vec::len)
+    )),
+  }
+}
+
+/// Compare two per-constant scans, as [`compare_setup_scans`] does.
+pub fn compare_const_scans(
+  actual: &ConstScan,
+  expected: &ConstScan,
+) -> Result<(), String> {
+  if actual.deps != expected.deps {
+    return Err(format!(
+      "deps: {} names, expected {}",
+      actual.deps.len(),
+      expected.deps.len()
+    ));
+  }
+  if actual.source_contract != expected.source_contract {
+    return Err(format!(
+      "source_contract: {}, expected {}",
+      actual.source_contract, expected.source_contract
+    ));
+  }
+  let semantic = |s: &Result<bool, Box<ixon::CompileError>>| format!("{s:?}");
+  if semantic(&actual.semantic) != semantic(&expected.semantic) {
+    return Err(format!(
+      "semantic: {}, expected {}",
+      semantic(&actual.semantic),
+      semantic(&expected.semantic)
+    ));
+  }
+  let ground =
+    |g: &Result<(), Box<crate::ground::GroundError>>| format!("{g:?}");
+  if ground(&actual.ground) != ground(&expected.ground) {
+    return Err(format!(
+      "ground: {}, expected {}",
+      ground(&actual.ground),
+      ground(&expected.ground)
+    ));
+  }
+  if actual.ind_group != expected.ind_group {
+    return Err("ind_group differs".into());
+  }
+  Ok(())
+}
+
 /// Size-aware map union (drain the smaller side into the bigger).
 fn merge_ref_maps(l: RefMap, r: RefMap) -> RefMap {
   let (smaller, mut bigger) = if l.len() < r.len() { (l, r) } else { (r, l) };
@@ -271,7 +619,7 @@ fn inspect_constant_references(
 
 /// Match the reserved Lean metadata namespace by components, without allocating
 /// strings or relying on a hash match. This also catches malformed markers.
-fn is_source_contract_key(mut key: &Name) -> bool {
+pub fn is_source_contract_key(mut key: &Name) -> bool {
   loop {
     if let NameData::Str(source_parent, binder, _) = key.as_data()
       && binder == "binder"
@@ -682,12 +1030,121 @@ mod tests {
       let pool =
         rayon::ThreadPoolBuilder::new().num_threads(workers).build().unwrap();
       pool.install(|| {
-        assert_same_scan(&setup_scan(&env), &expected);
+        let scan = setup_scan(&env);
+        assert_same_scan(&scan, &expected);
+        let assembled = setup_scan_with(&env, &DecodedScanner);
+        assert_same_scan(&assembled, &expected);
+        compare_setup_scans(&assembled, &scan).unwrap();
         assert_same_scan(
           &setup_scan(&Env::default()),
           &setup_scan_reference(&Env::default()),
         );
+        compare_setup_scans(
+          &setup_scan_with(&Env::default(), &DecodedScanner),
+          &setup_scan(&Env::default()),
+        )
+        .unwrap();
       });
+    }
+  }
+
+  /// The assembled scan of a lazy environment whose name list repeats
+  /// names (each fetch returns the same constant, as the ffi's handle map
+  /// keeps one object per name) equals the fold's, including the order
+  /// of `source_contracts` and `semantic_sources`.
+  #[test]
+  fn setup_scan_with_matches_fold_on_repeated_lazy_names() {
+    use crate::semantic_contract::{Contract, Kind};
+    use ixon::contract::{BinderContract, LetKind, ValueContract};
+    use std::sync::Arc;
+    let mut backing = setup_fixture(300);
+    let contract = Contract {
+      kind: Kind::All,
+      binder: BinderContract::default(),
+      result: ValueContract::shared(),
+      let_kind: LetKind::Value,
+    };
+    for i in 0..40 {
+      let name = n(&format!("semantic_{i}"));
+      let typ = if i % 3 == 0 {
+        Expr::mdata(vec![(source_key(), DataValue::OfBool(true))], sort0())
+      } else {
+        contract.attach(Expr::all(
+          n("x"),
+          sort0(),
+          sort0(),
+          BinderInfo::Default,
+        ))
+      };
+      backing.insert(
+        name.clone(),
+        ConstantInfo::AxiomInfo(AxiomVal {
+          cnst: ConstantVal { name, level_params: vec![], typ },
+          is_unsafe: false,
+        }),
+      );
+    }
+    let mut names: Vec<_> = backing.keys().cloned().collect();
+    names.sort();
+    let repeated: Vec<_> = names.iter().step_by(7).cloned().collect();
+    names.extend(repeated);
+    names.push(n("Unavailable"));
+    let backing = Arc::new(backing);
+    let lazy = |names: Vec<Name>| {
+      let backing = Arc::clone(&backing);
+      Env::new_lazy(
+        names,
+        Box::new(move |name| backing.get(name).map(|entry| entry.cloned())),
+        16,
+      )
+    };
+    for workers in [1, 3, 8] {
+      let pool =
+        rayon::ThreadPoolBuilder::new().num_threads(workers).build().unwrap();
+      pool.install(|| {
+        let env = lazy(names.clone());
+        let scan = setup_scan(&env);
+        assert!(!scan.source_contracts.is_empty());
+        assert!(scan.semantic_sources.as_ref().is_ok_and(|s| !s.is_empty()));
+        compare_setup_scans(&setup_scan_with(&env, &DecodedScanner), &scan)
+          .unwrap();
+      });
+    }
+    // Exactly one semantic error: both report it.
+    let mut broken = (*backing).clone();
+    let name = n("semantic_1");
+    broken.insert(
+      name.clone(),
+      ConstantInfo::AxiomInfo(AxiomVal {
+        cnst: ConstantVal {
+          name,
+          level_params: vec![],
+          typ: contract.attach(sort0()),
+        },
+        is_unsafe: false,
+      }),
+    );
+    let scan = setup_scan(&broken);
+    assert!(scan.semantic_sources.is_err());
+    compare_setup_scans(&setup_scan_with(&broken, &DecodedScanner), &scan)
+      .unwrap();
+  }
+
+  /// `Env::key` returns the environment's own `Arc` for an equal name
+  /// built separately, in both the eager and the lazy environment.
+  #[test]
+  fn env_key_returns_the_environments_own_name() {
+    let backing = setup_fixture(4);
+    let lazy =
+      Env::new_lazy(backing.keys().cloned().collect(), Box::new(|_| None), 16);
+    for env in [&backing, &lazy] {
+      let fresh = n("alias_2");
+      let key = env.key(&fresh).unwrap();
+      assert_eq!(key, &fresh);
+      assert!(!std::sync::Arc::ptr_eq(&key.0, &fresh.0));
+      let own = env.keys().find(|k| *k == &fresh).unwrap();
+      assert!(std::sync::Arc::ptr_eq(&key.0, &own.0));
+      assert!(env.key(&n("absent")).is_none());
     }
   }
 

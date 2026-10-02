@@ -12,7 +12,8 @@
 //! owned copy, accumulator constants and named metadata live as their
 //! serialized bytes rather than ~20×-larger structured forms, worker
 //! kernel contexts are fresh per block (canonicity §10.5), the setup
-//! passes share one whole-env decode, and the `.ixe` streams to disk
+//! scan reads the Lean objects without decoding them (a
+//! [`ConstScanner`] from the ffi crate), and the `.ixe` streams to disk
 //! from Rust rather than crossing the FFI as an env-sized ByteArray.
 //! All of it is always on, and every mode produces a bit-identical
 //! `.ixe`.
@@ -28,9 +29,13 @@
 //!   `ix validate`); `ix compile` itself never reads them back.
 //! - `IX_COMPILE_EAGER=1` — decode the whole Lean environment up
 //!   front instead of on demand. Spends the single largest memory
-//!   term (FLT: +13 GiB for −8 % wall; Mathlib needs a large-memory
-//!   machine) to shave the last few percent on hardware with RAM to
-//!   spare.
+//!   term (Mathlib: peak 38–44 GB against 18–19 GB, for about 15%
+//!   less user CPU) on hardware with RAM to spare; see
+//!   `decode_env_for_compile` in the ffi crate.
+//!
+//! And one validation knob: `IX_SETUP_SCAN_CHECK=1` also runs the
+//! decoding setup scan and fails the compile unless the scanner's
+//! outputs are identical to it.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -40,9 +45,8 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant};
 
-use dashmap::DashMap;
 use rayon::prelude::*;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::admission::Admission;
 use crate::compile::{
@@ -50,7 +54,9 @@ use crate::compile::{
   aux_gen::nested::validate_ind_groups, compile_const, compile_const_no_aux,
 };
 use crate::condense::compute_sccs;
-use crate::graph::{NameSet, setup_scan};
+use crate::graph::{
+  ConstScanner, NameSet, compare_setup_scans, setup_scan, setup_scan_with,
+};
 use crate::ground::proliferate_ungrounded;
 use ix_common::address::Address;
 use ix_common::env::{Env as LeanEnv, Name};
@@ -64,7 +70,7 @@ use ixon::CompileError;
 /// per-phase timings and scheduler progress. `IX_COMPILE_DBG=1` (the
 /// Lean driver's phase-attribution knob) is accepted as an alias so one
 /// flag lights up both sides of the pipeline.
-pub(super) static IX_VERBOSE: LazyLock<bool> = LazyLock::new(|| {
+pub(crate) static IX_VERBOSE: LazyLock<bool> = LazyLock::new(|| {
   std::env::var("IX_VERBOSE").is_ok() || std::env::var("IX_COMPILE_DBG").is_ok()
 });
 
@@ -156,6 +162,25 @@ pub fn compile_env_with_profile(
   options: CompileOptions,
   profile: Option<&ixon::resource::addressed::Profile>,
 ) -> Result<CompileState, CompileError> {
+  compile_env_with_scanner(lean_env, options, profile, None)
+}
+
+/// `IX_SETUP_SCAN_CHECK=1`: when the compile runs its setup scan through
+/// a [`ConstScanner`], also run the decoding [`setup_scan`] and fail the
+/// compile unless every output is identical. A validation knob: the
+/// second scan decodes the whole environment.
+static IX_SETUP_SCAN_CHECK: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_SETUP_SCAN_CHECK").as_deref() == Ok("1"));
+
+/// [`compile_env_with_profile`] whose setup scan reads each constant
+/// through `scanner` (see [`setup_scan_with`]) instead of decoding it.
+/// The ffi crate passes a scanner that walks the Lean objects directly.
+pub fn compile_env_with_scanner(
+  lean_env: &Arc<LeanEnv>,
+  options: CompileOptions,
+  profile: Option<&ixon::resource::addressed::Profile>,
+  scanner: Option<&dyn ConstScanner>,
+) -> Result<CompileState, CompileError> {
   let _memory_sampler = crate::diag::memory_sampler("compile_env");
   // The sharing limits of the whole run, read once: an invalid
   // `IX_SHARING_LIMITS` fails the compile here, before any block is
@@ -164,10 +189,40 @@ pub fn compile_env_with_profile(
     .map_err(|reason| CompileError::SharingConstruction { reason })?;
   let setup_start = Instant::now();
   // Whole-env scan: ref graph + immediate groundedness + inductive
-  // groups in one decode per constant — the env decodes lazily, so
-  // each additional full sweep would decode every constant again.
+  // groups in one pass per constant — the env decodes lazily, so each
+  // additional full sweep would decode every constant again. A scanner
+  // reads the source objects without decoding them at all.
   let phase_start = Instant::now();
-  let scan = setup_scan(lean_env.as_ref());
+  let scan = match scanner {
+    Some(scanner) => {
+      let scan = setup_scan_with(lean_env.as_ref(), scanner);
+      if *IX_SETUP_SCAN_CHECK {
+        let check_start = Instant::now();
+        let reference = setup_scan(lean_env.as_ref());
+        compare_setup_scans(&scan, &reference).map_err(|diff| {
+          CompileError::UnsupportedExpr {
+            desc: format!("IX_SETUP_SCAN_CHECK: setup scans differ: {diff}"),
+          }
+        })?;
+        eprintln!(
+          "[compile_env] IX_SETUP_SCAN_CHECK: identical to the decoding scan \
+           ({} out_refs, {} in_refs, {} edges, {} ungrounded, {} groups, \
+           {} source contracts, semantic {:?}; reference scan {:.2}s)",
+          scan.graph.out_refs.len(),
+          scan.graph.in_refs.len(),
+          scan.graph.out_refs.values().map(NameSet::len).sum::<usize>(),
+          scan.immediate_ungrounded.len(),
+          scan.ind_groups.len(),
+          scan.source_contracts.len(),
+          scan.semantic_sources.as_ref().map(Vec::len),
+          check_start.elapsed().as_secs_f32(),
+        );
+      }
+      scanner.release();
+      scan
+    },
+    None => setup_scan(lean_env.as_ref()),
+  };
   let semantic_sources = scan.semantic_sources?;
   if let Some(name) =
     scan.source_contracts.iter().min_by_key(|name| name.pretty())
@@ -217,7 +272,7 @@ pub fn compile_env_with_profile(
     lean_env.pin(by_deg[..k].iter().map(|(n, _)| (*n).clone()));
   }
 
-  let ungrounded_map: DashMap<Name, String> =
+  let ungrounded_map: crate::compile::FxDashMap<Name, String> =
     ungrounded.iter().map(|(n, e)| (n.clone(), format!("{e:?}"))).collect();
   if !ungrounded.is_empty() && *IX_VERBOSE {
     eprintln!(
@@ -299,6 +354,9 @@ pub fn compile_env_with_profile(
   let stt = CompileState {
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
+    // `setup_scan` inspected every constant and `semantic_sources?` above
+    // stopped on any malformed annotation.
+    contract_sources: Some(semantic_sources.iter().cloned().collect()),
     sharing_limits,
     ..Default::default()
   };
@@ -349,62 +407,38 @@ pub fn compile_env_with_profile(
   let total_blocks = condensed.blocks.len();
   let phase_start = Instant::now();
 
-  // For each block: (all names in block, original deps, remaining deps).
-  // Using an explicit HashSet instead of an atomic counter prevents silent
-  // corruption from double-decrements — removing an already-removed name
-  // is a no-op.
-  let block_info: DashMap<
-    Name,
-    (NameSet, FxHashSet<Name>, Mutex<FxHashSet<Name>>),
-  > = DashMap::default();
-
-  // Reverse deps: name -> set of block leaders that depend on this name
-  let reverse_deps: DashMap<Name, Vec<Name>> = DashMap::default();
-
-  // Initialize block info and reverse deps in parallel.
-  //
-  // `condensed.blocks` is an `FxHashMap` so we collect a `Vec` of references
-  // first; `par_iter` on `FxHashMap` would require enabling the `rayon`
-  // feature on `hashbrown`, which is not a current dep. The collection is
-  // sub-millisecond on 193k entries.
-  //
-  // Both `block_info` and `reverse_deps` are `DashMap`s; `DashMap::insert`
-  // and `DashMap::entry` are atomic against the per-shard lock, so parallel
-  // writes are safe. `reverse_deps.entry(dep).or_default().push(lo)` holds
-  // the shard write-lock for the duration of the `push`, which briefly
-  // serializes threads that hit the same shard for the same `dep`. The
-  // shard count (DashMap default 64) is large enough relative to thread
-  // count (32) that contention stays low. Vec insertion order within a
-  // reverse-dep entry becomes non-deterministic — that is fine because the
-  // consumer (the scheduler's unblock loop) only iterates the Vec to
-  // notify workers, never compares it for equality.
+  // Blocks are numbered by their position in `condensed.blocks` and
+  // borrow their leader, members and dependency names from `condensed`.
+  // A block becomes ready when every one of its dependency names is
+  // resolved: a name resolves when the block containing it completes or
+  // when aux_gen compiled it early (`aux_gen_pending`), whichever comes
+  // first, and only its first resolution counts (`resolved`), so each
+  // (dependency name, dependent block) edge decrements the dependent's
+  // `remaining` count exactly once — the same release rule as removing
+  // the name from a per-block set of remaining names, which this replaces.
   let block_entries: Vec<(&Name, &NameSet)> = condensed.blocks.iter().collect();
-  block_entries.par_iter().try_for_each(
-    |(lo, all)| -> Result<(), CompileError> {
-      let deps = condensed.block_refs.get(*lo).ok_or(
+  let block_info: Vec<SchedBlock<'_>> = block_entries
+    .par_iter()
+    .map(|&(lo, all)| {
+      let deps = condensed.block_refs.get(lo).ok_or(
         CompileError::InvalidMutualBlock {
           reason: "missing block refs".into(),
         },
       )?;
-
-      block_info.insert(
-        (*lo).clone(),
-        ((*all).clone(), deps.clone(), Mutex::new(deps.clone())),
-      );
-
-      for dep_name in deps {
-        reverse_deps.entry(dep_name.clone()).or_default().push((*lo).clone());
-      }
-      Ok(())
-    },
-  )?;
+      Ok(SchedBlock { lo, all, deps, remaining: AtomicUsize::new(deps.len()) })
+    })
+    .collect::<Result<_, CompileError>>()?;
+  drop(block_entries);
+  let reverse_deps = SchedDeps::new(&block_info);
 
   // Shared ready queue: blocks that are ready to compile
-  let ready_queue: Mutex<Vec<(Name, NameSet)>> = Mutex::new(Vec::new());
+  let ready_queue: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 6/7 block_info init: {:.2}s",
+      "[compile_env] setup 6/7 block_info init ({} names, {} edges): {:.2}s",
+      reverse_deps.resolved.len(),
+      reverse_deps.dependents.len(),
       phase_start.elapsed().as_secs_f32()
     );
   }
@@ -413,11 +447,9 @@ pub fn compile_env_with_profile(
   // Initialize with blocks that have zero remaining dependencies
   {
     let mut queue = ready_queue.lock().unwrap();
-    for entry in block_info.iter() {
-      let lo = entry.key();
-      let (all, _, remaining) = entry.value();
-      if remaining.lock().unwrap().is_empty() {
-        queue.push((lo.clone(), all.clone()));
+    for (id, block) in block_info.iter().enumerate() {
+      if block.deps.is_empty() {
+        queue.push(dense(id));
       }
     }
   }
@@ -433,9 +465,10 @@ pub fn compile_env_with_profile(
   // Track completed count for termination
   let completed = Arc::new(AtomicUsize::new(0));
 
-  // Guard against duplicate processing: a block leader that's already been
+  // Guard against duplicate processing: a block that's already been
   // handled is skipped. This prevents infinite loops from double-enqueuing.
-  let processed: dashmap::DashSet<Name> = dashmap::DashSet::new();
+  let processed: Vec<AtomicBool> =
+    (0..total_blocks).map(|_| AtomicBool::new(false)).collect();
 
   // Error storage for propagating errors from workers
   let error: Mutex<Option<CompileError>> = Mutex::new(None);
@@ -609,7 +642,9 @@ pub fn compile_env_with_profile(
           };
 
           match work {
-            Some((lo, all)) => {
+            Some(id) => {
+              let block = &block_info_ref[id as usize];
+              let (lo, all): (&Name, &NameSet) = (block.lo, block.all);
               // Check if we should stop due to error
               if error_ref.lock().unwrap().is_some() {
                 return;
@@ -617,7 +652,8 @@ pub fn compile_env_with_profile(
 
               // Skip if already processed (prevents double-counting from
               // duplicate enqueuing)
-              if !processed_ref.insert(lo.clone()) {
+              if processed_ref[id as usize].swap(true, AtomicOrdering::Relaxed)
+              {
                 continue;
               }
 
@@ -640,7 +676,7 @@ pub fn compile_env_with_profile(
               // Check if this block was pre-compiled into aux_name_to_addr.
               // Promote to name_to_addr without re-compiling.
               let _cc_start = Instant::now();
-              let _is_precompiled = stt_ref.resolve_addr(&lo).is_some();
+              let _is_precompiled = stt_ref.resolve_addr(lo).is_some();
               if _is_precompiled {
                 // Check if any names in this block are aux_gen-rewritten.
                 let any_aux_gen =
@@ -654,7 +690,7 @@ pub fn compile_env_with_profile(
                 let mut aux_precompile_incomplete = false;
                 {
                   let mut unresolved_names = Vec::new();
-                  for name in &all {
+                  for name in all {
                     if stt_ref.name_to_addr.contains_key(name) {
                       continue;
                     }
@@ -683,7 +719,7 @@ pub fn compile_env_with_profile(
                         all.len(),
                         msg,
                       );
-                      for member in &all {
+                      for member in all {
                         stt_ref.ungrounded.insert(member.clone(), msg.clone());
                       }
                     } else {
@@ -735,12 +771,12 @@ pub fn compile_env_with_profile(
                   // original (addr, meta) for decompilation roundtrip.
                   let mut orig_cache = BlockCache::default();
                   let res = run_compile_catching_panic(
-                    &lo,
+                    lo,
                     "compile_const_no_aux",
                     || {
                       compile_const_no_aux(
-                        &lo,
-                        &all,
+                        lo,
+                        all,
                         lean_env,
                         &mut orig_cache,
                         stt_ref,
@@ -756,7 +792,7 @@ pub fn compile_env_with_profile(
                     // inspect `stt.ungrounded` to report per-constant
                     // compile-side rejections.
                     let msg = format!("{e}");
-                    for member in &all {
+                    for member in all {
                       stt_ref.ungrounded.insert(member.clone(), msg.clone());
                     }
                     if *IX_LOG_BLOCKS {
@@ -771,7 +807,7 @@ pub fn compile_env_with_profile(
 
                 if !aux_precompile_incomplete {
                   // Promote remaining names from aux_name_to_addr.
-                  for name in &all {
+                  for name in all {
                     if stt_ref.name_to_addr.contains_key(name) {
                       continue;
                     }
@@ -783,13 +819,21 @@ pub fn compile_env_with_profile(
               } else {
                 // Compile this block
                 let mut cache = BlockCache::default();
+                // The block's dependency names come from the reference
+                // graph of its members' expressions; with the members
+                // themselves they cover every constant the plan-head audit
+                // can meet.
+                cache.exempt_from_plan_audit(
+                  stt_ref,
+                  block.deps.iter().chain(all.iter()),
+                );
                 let res = run_compile_catching_panic(
-                  &lo,
+                  lo,
                   "compile_const",
                   || {
                     compile_const(
-                      &lo,
-                      &all,
+                      lo,
+                      all,
                       lean_env,
                       &mut cache,
                       stt_ref,
@@ -805,7 +849,7 @@ pub fn compile_env_with_profile(
                   // inspect `stt.ungrounded` to report per-constant
                   // compile-side rejections.
                   let msg = format!("{e}");
-                  for member in &all {
+                  for member in all {
                     stt_ref.ungrounded.insert(member.clone(), msg.clone());
                   }
                   // The first time we fail on a given block, log a brief
@@ -818,7 +862,7 @@ pub fn compile_env_with_profile(
                     msg,
                   );
                   if *IX_LOG_BLOCKS {
-                    for member in &all {
+                    for member in all {
                       eprintln!("    member: {}", member.pretty());
                     }
                     if let CompileError::MissingConstant {
@@ -829,7 +873,7 @@ pub fn compile_env_with_profile(
                       eprintln!(
                         "[compile_env] MissingConstant: {name} (from {caller})"
                       );
-                      for member in &all {
+                      for member in all {
                         let in_main = stt_ref.name_to_addr.contains_key(member);
                         let in_aux =
                           stt_ref.aux_name_to_addr.contains_key(member);
@@ -846,8 +890,8 @@ pub fn compile_env_with_profile(
                         };
                         eprintln!("    {} [{}]", member.pretty(), status);
                       }
-                      if let Some(entry) = block_info_ref.get(&lo) {
-                        let (_, orig_deps, remaining) = entry.value();
+                      {
+                        let orig_deps = block.deps;
                         eprintln!("  deps ({}):", orig_deps.len());
                         for d in orig_deps.iter() {
                           let in_main = stt_ref.name_to_addr.contains_key(d);
@@ -864,10 +908,10 @@ pub fn compile_env_with_profile(
                           };
                           eprintln!("    {} [{}]", d.pretty(), status);
                         }
-                        let rem = remaining.lock().unwrap();
+                        let rem = reverse_deps_ref.unresolved(block.deps);
                         if !rem.is_empty() {
                           eprintln!("  unsatisfied ({}):", rem.len());
-                          for d in rem.iter() {
+                          for d in rem {
                             eprintln!("    {}", d.pretty());
                           }
                         }
@@ -883,7 +927,7 @@ pub fn compile_env_with_profile(
               // to wake right after bump and before this cleanup, it
               // might show a completed block as in-flight, but the
               // numbers still reconcile on the next tick.
-              active_ref.lock().unwrap().retain(|(n, _)| n != &lo);
+              active_ref.lock().unwrap().retain(|(n, _)| n != lo);
 
               // Check for slow blocks
               let elapsed = block_start.elapsed();
@@ -906,30 +950,14 @@ pub fn compile_env_with_profile(
                 );
               }
 
-              // Collect newly-ready blocks by removing satisfied deps.
-              // HashSet::remove is idempotent — no double-decrement risk.
+              // Collect newly-ready blocks by resolving this block's names.
+              // Only a name's first resolution decrements its dependents,
+              // so there is no double-decrement risk.
               let mut newly_ready = Vec::new();
 
-              let resolve_name =
-                |name: &Name, newly_ready: &mut Vec<(Name, NameSet)>| {
-                  if let Some(dependents) = reverse_deps_ref.get(name) {
-                    for dependent_lo in dependents.value() {
-                      if let Some(entry) = block_info_ref.get(dependent_lo) {
-                        let (dep_all, _, remaining) = entry.value();
-                        let mut deps = remaining.lock().unwrap();
-                        let was_present = deps.remove(name);
-                        if was_present && deps.is_empty() {
-                          newly_ready
-                            .push((dependent_lo.clone(), dep_all.clone()));
-                        }
-                      }
-                    }
-                  }
-                };
-
               // For each name in this block, resolve deps
-              for name in &all {
-                resolve_name(name, &mut newly_ready);
+              for name in all {
+                reverse_deps_ref.resolve(name, block_info_ref, &mut newly_ready);
               }
 
               // Drain pending aux_gen names and resolve their deps.
@@ -940,7 +968,11 @@ pub fn compile_env_with_profile(
                 let extra: Vec<Name> =
                   std::mem::take(&mut *stt_ref.aux_gen_pending.lock().unwrap());
                 for name in &extra {
-                  resolve_name(name, &mut newly_ready);
+                  reverse_deps_ref.resolve(
+                    name,
+                    block_info_ref,
+                    &mut newly_ready,
+                  );
                 }
               }
 
@@ -1030,15 +1062,14 @@ pub fn compile_env_with_profile(
   if final_completed != total_blocks {
     // Find what's still blocked
     let mut blocked_count = 0;
-    for entry in block_info.iter() {
-      let (_, _, remaining) = entry.value();
-      let deps = remaining.lock().unwrap();
+    for block in &block_info {
+      let deps = reverse_deps.unresolved(block.deps);
       if !deps.is_empty() {
         blocked_count += 1;
         if blocked_count <= 5 {
           eprintln!(
             "Still blocked: {:?} with {} deps remaining: {:?}",
-            entry.key().pretty(),
+            block.lo.pretty(),
             deps.len(),
             deps.iter().map(|n| n.pretty()).collect::<Vec<_>>()
           );
@@ -1051,18 +1082,19 @@ pub fn compile_env_with_profile(
   }
 
   // Nothing below reads the scheduler's bookkeeping or the setup graphs.
-  // They hold millions of small allocations (Mathlib: ~1 s to free on one
-  // thread), so free them on a background thread rather than serially at
-  // the end of this function. `compile_env_inner` forgets the whole
-  // compile state for the same reason, which is right only for the
-  // one-shot CLI; this function also serves long-lived callers (`ix
+  // The scheduler's own tables are a few flat vectors and borrow from
+  // `condensed`, so they go first, here. The condensation and the
+  // reference graphs hold millions of small allocations (one name set per
+  // constant or block), so they are freed on a background thread rather
+  // than serially at the end of this function. `compile_env_inner` forgets
+  // the whole compile state for the same reason, which is right only for
+  // the one-shot CLI; this function also serves long-lived callers (`ix
   // check`, the FFI test entry points, the crate's tests) that need the
   // memory back.
-  drop(block_entries);
+  drop(reverse_deps);
+  drop(block_info);
+  drop(processed);
   drop_in_background((
-    block_info,
-    reverse_deps,
-    processed,
     condensed,
     grounded_out_refs,
     graph.in_refs,
@@ -1124,6 +1156,133 @@ fn drop_in_background<T: Send + 'static>(value: T) {
   let _ = thread::Builder::new()
     .name("ix-compile-free".into())
     .spawn(move || drop(value));
+}
+
+/// A block of the scheduler, borrowed from the SCC condensation. Blocks are
+/// identified by their index in the scheduler's block list (a `u32` in the
+/// ready queue).
+struct SchedBlock<'a> {
+  /// The block's leader (its SCC representative).
+  lo: &'a Name,
+  /// The block's members.
+  all: &'a NameSet,
+  /// The names outside the block that its members reference.
+  deps: &'a NameSet,
+  /// How many of `deps` are not resolved yet; the block is ready at zero.
+  remaining: AtomicUsize,
+}
+
+/// A dense index as stored in the scheduler's `u32` tables.
+fn dense(i: usize) -> u32 {
+  u32::try_from(i).expect("scheduler index exceeds u32")
+}
+
+/// The scheduler's reverse dependency index: for each member or dependency
+/// name, the blocks that depend on it, and whether it has been resolved.
+struct SchedDeps<'a> {
+  /// Index of every member name and dependency name.
+  ids: FxHashMap<&'a Name, u32>,
+  /// `dependents[offsets[i]..offsets[i + 1]]` are the blocks that depend
+  /// on name `i`, in block order.
+  offsets: Vec<usize>,
+  dependents: Vec<u32>,
+  /// Whether name `i` has been resolved.
+  resolved: Vec<AtomicBool>,
+}
+
+impl<'a> SchedDeps<'a> {
+  fn new(blocks: &[SchedBlock<'a>]) -> Self {
+    let n_members: usize = blocks.iter().map(|b| b.all.len()).sum();
+    let mut ids: FxHashMap<&'a Name, u32> =
+      FxHashMap::with_capacity_and_hasher(n_members, Default::default());
+    for block in blocks {
+      for name in block.all {
+        let next = dense(ids.len());
+        ids.entry(name).or_insert(next);
+      }
+    }
+    // Every (dependency name, dependent block) edge as `name << 32 | block`.
+    // A name without an index (`u32::MAX`) is outside every block, which
+    // a dependency name, being a graph node, never is; such names get
+    // indices too, and resolve exactly when they did with per-block name
+    // sets (only if aux_gen queues them).
+    let edge_list = |ids: &FxHashMap<&'a Name, u32>| -> Vec<u64> {
+      blocks
+        .par_iter()
+        .enumerate()
+        .flat_map_iter(|(b, block)| {
+          let b = u64::from(dense(b));
+          block.deps.iter().map(move |d| {
+            (u64::from(ids.get(d).copied().unwrap_or(u32::MAX)) << 32) | b
+          })
+        })
+        .collect()
+    };
+    let mut edges = edge_list(&ids);
+    if edges.par_iter().any(|&e| e >> 32 == u64::from(u32::MAX)) {
+      for block in blocks {
+        for dep in block.deps {
+          let next = dense(ids.len());
+          ids.entry(dep).or_insert(next);
+        }
+      }
+      edges = edge_list(&ids);
+    }
+    // Sorted by name, then block: the dependents of each name in block
+    // order.
+    edges.par_sort_unstable();
+    let n_names = ids.len();
+    let mut offsets = vec![0usize; n_names + 1];
+    for &e in &edges {
+      offsets[(e >> 32) as usize + 1] += 1;
+    }
+    for i in 0..n_names {
+      offsets[i + 1] += offsets[i];
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    let dependents: Vec<u32> = edges.par_iter().map(|&e| e as u32).collect();
+    drop(edges);
+    let resolved = (0..n_names).map(|_| AtomicBool::new(false)).collect();
+    SchedDeps { ids, offsets, dependents, resolved }
+  }
+
+  /// Resolve `name`: on its first resolution, count it off every block that
+  /// depends on it and push the blocks that become ready onto
+  /// `newly_ready`. Later resolutions of the same name do nothing.
+  fn resolve(
+    &self,
+    name: &Name,
+    blocks: &[SchedBlock<'_>],
+    newly_ready: &mut Vec<u32>,
+  ) {
+    let Some(&i) = self.ids.get(name) else {
+      return;
+    };
+    let i = i as usize;
+    // The read-modify-writes below carry each releasing thread's work
+    // (its compiled constants) to the thread that queues the dependent.
+    if self.resolved[i].swap(true, AtomicOrdering::AcqRel) {
+      return;
+    }
+    for &b in &self.dependents[self.offsets[i]..self.offsets[i + 1]] {
+      if blocks[b as usize].remaining.fetch_sub(1, AtomicOrdering::AcqRel) == 1
+      {
+        newly_ready.push(b);
+      }
+    }
+  }
+
+  /// The names of `deps` not resolved yet, in `deps` iteration order.
+  fn unresolved<'d>(&self, deps: &'d NameSet) -> Vec<&'d Name> {
+    deps
+      .iter()
+      .filter(|d| {
+        self.ids.get(*d).is_none_or(|&i| {
+          !self.resolved[i as usize].load(AtomicOrdering::Acquire)
+        })
+      })
+      .collect()
+  }
 }
 
 /// Seed names for the aux_gen prereq closure.
