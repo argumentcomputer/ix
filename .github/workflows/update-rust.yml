@@ -1,0 +1,36 @@
+name: Update Rust toolchain
+
+on:
+  schedule:
+    # Weekly on Monday at midnight
+    - cron: "0 0 * * 1"
+      timezone: America/New_York
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # `update-flake` below rewrites the fenix hash and runs `nix flake update`
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ github.token }}
+
+      # Moves the root `rust-toolchain.toml` to the latest stable release,
+      # with the fenix `sha256` and the fenix and crane inputs in `flake.nix`,
+      # and opens a PR on `update/rust-<version>`. The zisk and sp1
+      # sub-workspaces pin their own toolchains and are left alone. The PR is
+      # opened with `GITHUB_TOKEN`, so a maintainer closes and reopens it to
+      # run CI.
+      - uses: argumentcomputer/ci-workflows/.github/actions/rust-version@main
+        with:
+          update-flake: 'true'
+          pr: 'true'
