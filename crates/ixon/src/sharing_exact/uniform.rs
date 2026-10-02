@@ -1881,6 +1881,122 @@ fn tag0_step_bound(n: u64) -> u64 {
   if n < TagN::end5(0) { 1 } else { 4 }
 }
 
+/// The nearest stored descendants of every term of a stored set: the stored
+/// terms reachable from its children through unstored terms, as positions
+/// in the stored list, `succ[start[k]..start[k + 1]]` for its `k`-th term
+/// (in the order a depth-first walk finds them).
+///
+/// A DAG path between two stored terms is a sequence of such steps, so the
+/// relation decides every question about stored descendants within the
+/// set: closure of an order ([`NearestStored::closed_under`]) and the
+/// pinned order of a subset ([`pinned_suborder`]).
+#[derive(Default)]
+pub(crate) struct NearestStored {
+  start: Vec<usize>,
+  succ: Vec<u32>,
+}
+
+impl NearestStored {
+  /// The relation of `stored` (any order, no repetition) in `dag`.
+  pub(crate) fn new(dag: &SharingDag, stored: &[TermId]) -> Self {
+    let nodes = dag.nodes();
+    // `slot[x]`: the position of `x` in `stored` plus one (0: not stored).
+    let mut slot: Vec<u32> = vec![0; nodes.len()];
+    for (k, &t) in stored.iter().enumerate() {
+      slot[ix(t)] = u32::try_from(k + 1).unwrap_or(u32::MAX);
+    }
+    // `seen[x] == k + 1`: visited from the `k`-th stored term.
+    let mut seen: Vec<u32> = vec![0; nodes.len()];
+    let mut start: Vec<usize> = Vec::with_capacity(stored.len() + 1);
+    start.push(0);
+    let mut succ: Vec<u32> = Vec::new();
+    let mut stack: Vec<TermId> = Vec::new();
+    for (k, &t) in stored.iter().enumerate() {
+      let mark = u32::try_from(k + 1).unwrap_or(u32::MAX);
+      stack.clear();
+      stack.extend_from_slice(nodes[ix(t)].children().as_slice());
+      while let Some(x) = stack.pop() {
+        if seen[ix(x)] == mark {
+          continue;
+        }
+        seen[ix(x)] = mark;
+        match slot[ix(x)] {
+          0 => stack.extend_from_slice(nodes[ix(x)].children().as_slice()),
+          s => succ.push(s - 1),
+        }
+      }
+      start.push(succ.len());
+    }
+    NearestStored { start, succ }
+  }
+
+  /// The nearest stored descendants of the `k`-th stored term.
+  fn succ(&self, k: usize) -> &[u32] {
+    &self.succ[self.start[k]..self.start[k + 1]]
+  }
+
+  /// Whether an order of the stored terms (`pos[k]`: the position of the
+  /// `k`-th stored term) puts every stored term after all its stored
+  /// descendants. After its nearest ones suffices: along the steps of a
+  /// path to any stored descendant the positions then decrease.
+  pub(crate) fn closed_under(&self, pos: &[u32]) -> bool {
+    (0..pos.len())
+      .all(|k| self.succ(k).iter().all(|&x| pos[x as usize] < pos[k]))
+  }
+}
+
+/// The pinned order of `ids` (in-degree `deg`) given the nearest stored
+/// descendants `near` among them (positions in `ids`): stored descendants
+/// first; among ready terms the larger in-degree first, then the smaller ID.
+/// Returns positions in `ids`.
+fn heap_order(near: &NearestStored, ids: &[TermId], deg: &[u64]) -> Vec<u32> {
+  let m = ids.len();
+  let mut pending: Vec<usize> = (0..m).map(|k| near.succ(k).len()).collect();
+  // The dependents of each term (the reverse relation), grouped by term.
+  let mut dstart = vec![0usize; m + 1];
+  for &x in &near.succ {
+    dstart[x as usize + 1] += 1;
+  }
+  for i in 0..m {
+    dstart[i + 1] += dstart[i];
+  }
+  let mut fill: Vec<usize> = dstart[..m].to_vec();
+  let mut dependents: Vec<u32> = vec![0; near.succ.len()];
+  for k in 0..m {
+    for &x in near.succ(k) {
+      dependents[fill[x as usize]] = u32::try_from(k).unwrap_or(u32::MAX);
+      fill[x as usize] += 1;
+    }
+  }
+  // The position breaks no tie: the term IDs are distinct.
+  let mut heap: std::collections::BinaryHeap<(
+    u64,
+    std::cmp::Reverse<TermId>,
+    u32,
+  )> = std::collections::BinaryHeap::new();
+  let entry = |k: usize| {
+    (deg[ix(ids[k])], std::cmp::Reverse(ids[k]), u32::try_from(k).unwrap_or(0))
+  };
+  for (k, &p) in pending.iter().enumerate() {
+    if p == 0 {
+      heap.push(entry(k));
+    }
+  }
+  let mut order = Vec::with_capacity(m);
+  while let Some((_, _, k)) = heap.pop() {
+    order.push(k);
+    let k = k as usize;
+    for &d in &dependents[dstart[k]..dstart[k + 1]] {
+      let d = d as usize;
+      pending[d] -= 1;
+      if pending[d] == 0 {
+        heap.push(entry(d));
+      }
+    }
+  }
+  order
+}
+
 /// Pinned table order of a stored set: stored descendants first; among
 /// ready terms the larger in-degree first, then the smaller ID.
 pub(crate) fn pinned_order(
@@ -1888,58 +2004,57 @@ pub(crate) fn pinned_order(
   deg: &[u64],
   stored: &[TermId],
 ) -> Vec<TermId> {
-  let nodes = dag.nodes();
-  let mut is_stored = vec![false; nodes.len()];
-  for &t in stored {
-    is_stored[ix(t)] = true;
+  let near = NearestStored::new(dag, stored);
+  heap_order(&near, stored, deg)
+    .into_iter()
+    .map(|k| stored[k as usize])
+    .collect()
+}
+
+/// [`pinned_order`] of the subset `sub` (positions in `stored`, no
+/// repetition) of the stored set of `near`, from `near` alone: a term of
+/// `sub` is a nearest `sub`-descendant of another exactly when the walk of
+/// nearest-stored steps through terms outside `sub` reaches it (a DAG path
+/// between two stored terms is a sequence of such steps, and the path avoids
+/// `sub` between its ends exactly when its intermediate stored terms do).
+/// Returns positions in `stored`.
+pub(crate) fn pinned_suborder(
+  near: &NearestStored,
+  stored: &[TermId],
+  deg: &[u64],
+  sub: &[u32],
+) -> Vec<u32> {
+  // `slot[k]`: the position of the `k`-th stored term in `sub` plus one.
+  let mut slot: Vec<u32> = vec![0; stored.len()];
+  for (i, &k) in sub.iter().enumerate() {
+    slot[k as usize] = u32::try_from(i + 1).unwrap_or(u32::MAX);
   }
-  // Nearest stored descendants of each stored term (`seen[x] == k + 1`:
-  // visited from the `k`-th stored term).
-  let mut pending: Vec<usize> = Vec::with_capacity(stored.len());
-  let mut dependents: FxHashMap<TermId, Vec<TermId>> = FxHashMap::default();
-  let mut seen: Vec<usize> = vec![0; nodes.len()];
-  let mut stack: Vec<TermId> = Vec::new();
-  for (k, &t) in stored.iter().enumerate() {
+  let mut seen: Vec<u32> = vec![0; stored.len()];
+  let mut start: Vec<usize> = Vec::with_capacity(sub.len() + 1);
+  start.push(0);
+  let mut succ: Vec<u32> = Vec::new();
+  let mut stack: Vec<u32> = Vec::new();
+  for (i, &k) in sub.iter().enumerate() {
+    let mark = u32::try_from(i + 1).unwrap_or(u32::MAX);
     stack.clear();
-    stack.extend_from_slice(nodes[ix(t)].children().as_slice());
-    let mut deps = 0usize;
+    stack.extend_from_slice(near.succ(k as usize));
     while let Some(x) = stack.pop() {
-      if seen[ix(x)] == k + 1 {
+      if seen[x as usize] == mark {
         continue;
       }
-      seen[ix(x)] = k + 1;
-      if is_stored[ix(x)] {
-        deps += 1;
-        dependents.entry(x).or_default().push(t);
-      } else {
-        stack.extend_from_slice(nodes[ix(x)].children().as_slice());
+      seen[x as usize] = mark;
+      match slot[x as usize] {
+        0 => stack.extend_from_slice(near.succ(x as usize)),
+        s => succ.push(s - 1),
       }
     }
-    pending.push(deps);
+    start.push(succ.len());
   }
-  let pos: FxHashMap<TermId, usize> =
-    stored.iter().enumerate().map(|(k, &t)| (t, k)).collect();
-  let mut heap: std::collections::BinaryHeap<(u64, std::cmp::Reverse<TermId>)> =
-    std::collections::BinaryHeap::new();
-  for (k, &t) in stored.iter().enumerate() {
-    if pending[k] == 0 {
-      heap.push((deg[ix(t)], std::cmp::Reverse(t)));
-    }
-  }
-  let mut order = Vec::with_capacity(stored.len());
-  while let Some((_, std::cmp::Reverse(t))) = heap.pop() {
-    order.push(t);
-    if let Some(ds) = dependents.get(&t) {
-      for &d in ds {
-        let k = pos[&d];
-        pending[k] -= 1;
-        if pending[k] == 0 {
-          heap.push((deg[ix(d)], std::cmp::Reverse(d)));
-        }
-      }
-    }
-  }
-  order
+  let ids: Vec<TermId> = sub.iter().map(|&k| stored[k as usize]).collect();
+  heap_order(&NearestStored { start, succ }, &ids, deg)
+    .into_iter()
+    .map(|i| sub[i as usize])
+    .collect()
 }
 
 /// Exact uniform-width optimization of a DAG.
@@ -2315,7 +2430,11 @@ pub(crate) fn optimize_uniform_with(
   meter.output(model)?;
   // Materialize in the pinned order with the full evaluation and check.
   let stored = merge_sorted(&cs, &chosen_x);
-  let order = pinned_order(dag, &facts.deg, &stored);
+  let nearest = NearestStored::new(dag, &stored);
+  let order: Vec<TermId> = heap_order(&nearest, &stored, &facts.deg)
+    .into_iter()
+    .map(|k| stored[k as usize])
+    .collect();
   if order.len() != stored.len() {
     return Err(internal("pinned order dropped a stored term"));
   }
@@ -2365,7 +2484,7 @@ pub(crate) fn optimize_uniform_with(
     stats: meter.stats.clone(),
   };
   drop(p);
-  Ok((result, UniformPlan { dict, plan, model, k }))
+  Ok((result, UniformPlan { dict, plan, model, k, nearest }))
 }
 
 /// The decisions of one uniform-width optimum ([`optimize_uniform_with`]):
@@ -2380,6 +2499,9 @@ pub(crate) struct UniformPlan {
   model: u64,
   /// The table length.
   k: u64,
+  /// The nearest stored descendants of the stored set
+  /// (`UniformSharingResult::stored`, ascending), which phase 2 reuses.
+  pub(crate) nearest: NearestStored,
 }
 
 /// The phase-1 expressions of a [`UniformPlan`], checked by re-expansion.

@@ -2548,7 +2548,9 @@ fn tiered_first_tier_matches_brute_force() {
     let dmap: FxHashMap<u32, Vec<u32>> =
       (0..n).map(|t| (t as u32, deps[t].clone())).collect();
     let stored: Vec<u32> = (0..n as u32).collect();
-    let (s, _) = first_tier(&stored, &wmap, &dmap, cap, &limits()).unwrap();
+    let g = SlotGraph::from_maps(&stored, &wmap, &dmap);
+    let (s, _) = first_tier(&g, cap, &limits()).unwrap();
+    let s: Vec<u32> = s.iter().map(|&i| g.id(i)).collect();
     assert_eq!(
       s,
       brute_tier(n, &weight, &deps, cap),
@@ -2966,7 +2968,15 @@ fn kahn_order_matches_reference() {
         .unwrap();
       placed.push(next);
     }
-    assert_eq!(kahn_order(&weight, &deps, &rest), placed, "case {case}");
+    // The stored set also holds the outside IDs (as the first tier is
+    // outside `rest` in phase 2): dependencies on them are ignored.
+    let mut stored = rest.clone();
+    stored.extend(10_000..10_005);
+    let g = SlotGraph::from_maps(&stored, &weight, &deps);
+    let rest_pos: Vec<u32> = (0..m as u32).collect();
+    let got: Vec<TermId> =
+      kahn_order(&g, &rest_pos).iter().map(|&i| g.id(i)).collect();
+    assert_eq!(got, placed, "case {case}");
   }
 }
 
@@ -3794,6 +3804,7 @@ fn per_prefix_phase3_witness() {
 #[test]
 fn descendant_closed_matches_brute_force() {
   use super::tiered::descendant_closed;
+  use super::uniform::NearestStored;
   let mut rng = Rng(127);
   let (mut closed, mut open) = (0, 0);
   for case in 0..600 {
@@ -3836,6 +3847,13 @@ fn descendant_closed_matches_brute_force() {
       true
     });
     assert_eq!(descendant_closed(nodes, &order), brute, "case {case}");
+    // The same test from the nearest stored descendants (phase 3's), over
+    // the stored set in ascending order.
+    let mut stored = order.clone();
+    stored.sort_unstable();
+    let near = NearestStored::new(&dag, &stored);
+    let place: Vec<u32> = stored.iter().map(|t| pos[t] as u32).collect();
+    assert_eq!(near.closed_under(&place), brute, "case {case} (nearest)");
     if brute {
       closed += 1;
     } else {
@@ -3843,4 +3861,44 @@ fn descendant_closed_matches_brute_force() {
     }
   }
   assert!(closed > 100 && open > 100, "{closed} closed, {open} open");
+}
+
+/// The pinned order of a subset of a stored set from the nearest stored
+/// descendants of the set (phase 2's first tier) equals the pinned order
+/// computed on the DAG.
+#[test]
+fn pinned_suborder_matches_pinned_order() {
+  use super::uniform::{NearestStored, pinned_order, pinned_suborder};
+  let mut rng = Rng(131);
+  let mut nonempty = 0;
+  for case in 0..600 {
+    let roots = gen_search_roots(&mut rng);
+    if roots.is_empty() {
+      continue;
+    }
+    let dag = SharingDag::from_expanded_roots(&roots, &limits()).unwrap();
+    let n = dag.len();
+    // Small in-degrees, so that ties between ready terms are common.
+    let deg: Vec<u64> = (0..n).map(|_| rng.below(3)).collect();
+    let stored: Vec<TermId> =
+      (0..n as TermId).filter(|_| rng.pct(50)).collect();
+    let sub: Vec<u32> =
+      (0..stored.len() as u32).filter(|_| rng.pct(40)).collect();
+    let near = NearestStored::new(&dag, &stored);
+    let got: Vec<TermId> = pinned_suborder(&near, &stored, &deg, &sub)
+      .iter()
+      .map(|&k| stored[k as usize])
+      .collect();
+    let sub_ids: Vec<TermId> =
+      sub.iter().map(|&k| stored[k as usize]).collect();
+    assert_eq!(got, pinned_order(&dag, &deg, &sub_ids), "case {case}");
+    let all: Vec<u32> = (0..stored.len() as u32).collect();
+    let whole: Vec<TermId> = pinned_suborder(&near, &stored, &deg, &all)
+      .iter()
+      .map(|&k| stored[k as usize])
+      .collect();
+    assert_eq!(whole, pinned_order(&dag, &deg, &stored), "case {case} (all)");
+    nonempty += usize::from(sub.len() > 1);
+  }
+  assert!(nonempty > 200, "{nonempty} subsets of two or more terms");
 }

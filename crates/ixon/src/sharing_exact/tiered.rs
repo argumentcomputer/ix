@@ -106,6 +106,7 @@
 
 use std::sync::Arc;
 
+#[cfg(test)]
 use rustc_hash::FxHashMap;
 
 use super::cost::{Len, exprs_len_with, tag0_len};
@@ -117,7 +118,7 @@ use super::dict::{
 use super::prof::{self, Phase};
 use super::uniform::{
   DagPrep, UniformPlan, UniformSharingResult, optimize_uniform_with,
-  pinned_order, set_prec,
+  pinned_order, pinned_suborder, set_prec,
 };
 use super::{
   ExactSharingLimits, FormatBound, Meter, NormalizeBytesError, Parallelism,
@@ -227,93 +228,210 @@ impl Indices for LayoutIndex {
 // First-tier allocation
 // ---------------------------------------------------------------------------
 
-/// Whether every term of `order` comes after all its dependencies (Lean
-/// `respectsDeps`).
-fn respects_deps(
-  order: &[TermId],
-  deps: &FxHashMap<TermId, Vec<TermId>>,
-) -> bool {
-  let pos: FxHashMap<TermId, usize> =
-    order.iter().enumerate().map(|(i, &t)| (t, i)).collect();
-  order.iter().enumerate().all(|(i, t)| {
-    deps
-      .get(t)
-      .is_none_or(|ds| ds.iter().all(|d| pos.get(d).is_some_and(|&p| p < i)))
+/// The inputs of phase 2 over the stored terms `ids` (ascending), each
+/// addressed by its position in `ids`: its reference count `weight` and the
+/// positions of the entries its phase-1 body references (`deps`, in
+/// pre-order of first occurrence). Positions order the terms as their IDs
+/// do.
+pub(crate) struct SlotGraph {
+  ids: Vec<TermId>,
+  weight: Vec<u64>,
+  dep_start: Vec<usize>,
+  deps: Vec<u32>,
+}
+
+/// The position of a term in a list of positions.
+fn pos32(i: usize) -> u32 {
+  u32::try_from(i).unwrap_or(u32::MAX)
+}
+
+impl SlotGraph {
+  /// From the phase-1 table `order` (a permutation of `ids`, ascending),
+  /// with `refs[j]` and `deps[j]` the reference count and the referenced
+  /// entries of `order[j]`. Every referenced entry is a stored term.
+  fn new(
+    ids: &[TermId],
+    order: &[TermId],
+    refs: &[u64],
+    deps: &[Vec<TermId>],
+  ) -> Result<Self, SharingError> {
+    let at = |t: TermId| {
+      ids
+        .binary_search(&t)
+        .map_err(|_e| internal("phase 2: a table term outside the stored set"))
+    };
+    let m = ids.len();
+    let mut weight = vec![0u64; m];
+    let mut row = vec![usize::MAX; m];
+    for (j, &t) in order.iter().enumerate() {
+      let i = at(t)?;
+      weight[i] = refs.get(j).copied().unwrap_or(0);
+      row[i] = j;
+    }
+    let mut dep_start = Vec::with_capacity(m + 1);
+    dep_start.push(0);
+    let mut dl: Vec<u32> = Vec::new();
+    for &j in &row {
+      for &d in deps.get(j).into_iter().flatten() {
+        dl.push(pos32(at(d)?));
+      }
+      dep_start.push(dl.len());
+    }
+    Ok(SlotGraph { ids: ids.to_vec(), weight, dep_start, deps: dl })
+  }
+
+  /// From maps keyed by term (`ids` ascending); a dependency outside `ids`
+  /// is dropped (phase 2 never has one; the order of `kahn_order` ignores
+  /// them).
+  #[cfg(test)]
+  pub(crate) fn from_maps(
+    ids: &[TermId],
+    weight: &FxHashMap<TermId, u64>,
+    deps: &FxHashMap<TermId, Vec<TermId>>,
+  ) -> Self {
+    let mut dep_start = vec![0];
+    let mut dl = Vec::new();
+    for t in ids {
+      for d in deps.get(t).into_iter().flatten() {
+        if let Ok(i) = ids.binary_search(d) {
+          dl.push(pos32(i));
+        }
+      }
+      dep_start.push(dl.len());
+    }
+    SlotGraph {
+      ids: ids.to_vec(),
+      weight: ids.iter().map(|t| weight.get(t).copied().unwrap_or(0)).collect(),
+      dep_start,
+      deps: dl,
+    }
+  }
+
+  /// The term at position `i`.
+  pub(crate) fn id(&self, i: u32) -> TermId {
+    self.ids[i as usize]
+  }
+
+  fn deps(&self, i: u32) -> &[u32] {
+    &self.deps[self.dep_start[i as usize]..self.dep_start[i as usize + 1]]
+  }
+
+  fn weight(&self, i: u32) -> u64 {
+    self.weight[i as usize]
+  }
+}
+
+/// Whether every term of `order` (positions) comes after all its
+/// dependencies (Lean `respectsDeps`); `pos[i]` is set to the place of
+/// position `i` in `order`.
+fn respects_deps(g: &SlotGraph, order: &[u32], pos: &mut Vec<u32>) -> bool {
+  pos.clear();
+  pos.resize(g.ids.len(), u32::MAX);
+  for (p, &i) in order.iter().enumerate() {
+    pos[i as usize] = pos32(p);
+  }
+  order.iter().enumerate().all(|(p, &i)| {
+    g.deps(i).iter().all(|&d| {
+      let q = pos[d as usize];
+      q != u32::MAX && (q as usize) < p
+    })
   })
 }
 
-/// The Kahn priority order of `rest` (Lean `kahnOrder`): repeatedly place
-/// the available term (every dependency of it in `rest` already placed) of
-/// the largest weight, ties by the smaller ID. Terms left over, which
-/// acyclic dependencies never leave, follow in priority order.
-pub(crate) fn kahn_order(
-  weight: &FxHashMap<TermId, u64>,
-  deps: &FxHashMap<TermId, Vec<TermId>>,
-  rest: &[TermId],
-) -> Vec<TermId> {
-  let w = |t: TermId| weight.get(&t).copied().unwrap_or(0);
+/// The Kahn priority order of `rest` (positions, ascending; Lean
+/// `kahnOrder`): repeatedly place the available term (every dependency of
+/// it in `rest` already placed) of the largest weight, ties by the smaller
+/// ID. Terms left over, which acyclic dependencies never leave, follow in
+/// priority order. Returns positions.
+pub(crate) fn kahn_order(g: &SlotGraph, rest: &[u32]) -> Vec<u32> {
   let mut sorted = rest.to_vec();
-  sorted.sort_by(|&a, &b| w(b).cmp(&w(a)).then(a.cmp(&b)));
+  // Positions order the terms as their IDs do; the order is total.
+  sorted
+    .sort_unstable_by(|&a, &b| g.weight(b).cmp(&g.weight(a)).then(a.cmp(&b)));
   let m = sorted.len();
-  let rank: FxHashMap<TermId, usize> =
-    sorted.iter().enumerate().map(|(i, &t)| (t, i)).collect();
+  let mut rank = vec![u32::MAX; g.ids.len()];
+  for (r, &i) in sorted.iter().enumerate() {
+    rank[i as usize] = pos32(r);
+  }
   // A repeated dependency is counted once per repetition in `pend` and
   // listed as often in `users`, so it is released as often as it is counted:
   // repetitions do not change the order, and no dedup (quadratic in an
   // entry's dependencies) is needed.
   let mut pend = vec![0usize; m];
-  let mut users: Vec<Vec<usize>> = vec![Vec::new(); m];
-  for (i, t) in sorted.iter().enumerate() {
-    for d in deps.get(t).into_iter().flatten() {
-      if let Some(&r) = rank.get(d) {
-        pend[i] += 1;
-        users[r].push(i);
+  let mut ustart = vec![0usize; m + 1];
+  for (r, &i) in sorted.iter().enumerate() {
+    for &d in g.deps(i) {
+      let rd = rank[d as usize];
+      if rd != u32::MAX {
+        pend[r] += 1;
+        ustart[rd as usize + 1] += 1;
       }
     }
   }
-  let mut ready: std::collections::BTreeSet<usize> =
-    (0..m).filter(|&i| pend[i] == 0).collect();
+  for r in 0..m {
+    ustart[r + 1] += ustart[r];
+  }
+  let mut fill: Vec<usize> = ustart[..m].to_vec();
+  let mut users = vec![0u32; ustart[m]];
+  for (r, &i) in sorted.iter().enumerate() {
+    for &d in g.deps(i) {
+      let rd = rank[d as usize];
+      if rd != u32::MAX {
+        users[fill[rd as usize]] = pos32(r);
+        fill[rd as usize] += 1;
+      }
+    }
+  }
+  // The available terms, least rank first.
+  let mut ready: std::collections::BinaryHeap<std::cmp::Reverse<u32>> = (0..m)
+    .filter(|&r| pend[r] == 0)
+    .map(|r| std::cmp::Reverse(pos32(r)))
+    .collect();
   let mut placed = vec![false; m];
   let mut out = Vec::with_capacity(m);
-  while let Some(r) = ready.pop_first() {
+  while let Some(std::cmp::Reverse(r)) = ready.pop() {
+    let r = r as usize;
     placed[r] = true;
     out.push(sorted[r]);
-    for &u in &users[r] {
+    for &u in &users[ustart[r]..ustart[r + 1]] {
+      let u = u as usize;
       pend[u] -= 1;
       if pend[u] == 0 {
-        ready.insert(u);
+        ready.push(std::cmp::Reverse(pos32(u)));
       }
     }
   }
-  out.extend((0..m).filter(|&i| !placed[i]).map(|i| sorted[i]));
+  out.extend((0..m).filter(|&r| !placed[r]).map(|r| sorted[r]));
   out
 }
 
 /// Maximum-weight dependency-closed set of at most `cap` stored terms, with
-/// the tie order of the module docs. `deps[t]` are the terms `t`
-/// references. Returns the set (ascending) and the states visited.
+/// the tie order of the module docs. Returns the set (positions, ascending)
+/// and the states visited.
 pub(crate) fn first_tier(
-  stored: &[TermId],
-  weight: &FxHashMap<TermId, u64>,
-  deps: &FxHashMap<TermId, Vec<TermId>>,
+  g: &SlotGraph,
   cap: usize,
   limits: &ExactSharingLimits,
-) -> Result<(Vec<TermId>, u64), SharingError> {
-  let w = |t: TermId| weight.get(&t).copied().unwrap_or(0);
-  let mut items: Vec<TermId> = stored.to_vec();
-  items.sort_by(|&a, &b| w(b).cmp(&w(a)).then(a.cmp(&b)));
+) -> Result<(Vec<u32>, u64), SharingError> {
+  let m = g.ids.len();
+  let w = |i: u32| g.weight(i);
+  let mut items: Vec<u32> = (0..m).map(pos32).collect();
+  // Positions order the terms as their IDs do; the order is total.
+  items.sort_unstable_by(|&a, &b| w(b).cmp(&w(a)).then(a.cmp(&b)));
   // Closures with early cutoff above `cap`, with the same pop budget as
-  // the reference (`4 * |stored| + 4` pops).
-  let mut closure: FxHashMap<TermId, Vec<TermId>> = FxHashMap::default();
-  let fuel = stored.len().saturating_mul(4).saturating_add(4);
+  // the reference (`4 * |stored| + 4` pops): `closure[i]` is the range of
+  // `clos` holding the closure of position `i` (ascending), if it has one.
+  let mut clos: Vec<u32> = Vec::new();
+  let mut closure: Vec<Option<(usize, usize)>> = vec![None; m];
+  let fuel = m.saturating_mul(4).saturating_add(4);
   // The visited set never exceeds `cap + 1` terms (the search stops there),
   // so it is a short vector.
-  let mut seen: Vec<TermId> = Vec::new();
-  let mut stack: Vec<TermId> = Vec::new();
-  for &t in stored {
+  let mut seen: Vec<u32> = Vec::new();
+  let mut stack: Vec<u32> = Vec::new();
+  for (t, slot) in closure.iter_mut().enumerate() {
     seen.clear();
     stack.clear();
-    stack.push(t);
+    stack.push(pos32(t));
     let mut ok = true;
     for _ in 0..fuel {
       let Some(u) = stack.pop() else { break };
@@ -325,14 +443,13 @@ pub(crate) fn first_tier(
         ok = false;
         break;
       }
-      if let Some(ds) = deps.get(&u) {
-        stack.extend_from_slice(ds);
-      }
+      stack.extend_from_slice(g.deps(u));
     }
     if ok {
-      let mut cl: Vec<TermId> = seen.clone();
-      cl.sort_unstable();
-      closure.insert(t, cl);
+      let s = clos.len();
+      clos.extend_from_slice(&seen);
+      clos[s..].sort_unstable();
+      *slot = Some((s, clos.len()));
     }
   }
   // Depth-first branch and bound, "include" before "exclude"; the first
@@ -343,17 +460,18 @@ pub(crate) fn first_tier(
   struct Frame {
     pos: usize,
     cur: u64,
-    in_f: Vec<TermId>,
+    in_f: Vec<u32>,
     excluded: Vec<u64>,
   }
-  let item_pos: FxHashMap<TermId, usize> =
-    items.iter().enumerate().map(|(i, &t)| (t, i)).collect();
-  let is_excluded = |excluded: &[u64], u: &TermId| {
-    item_pos.get(u).is_some_and(|&i| {
-      excluded.get(i / 64).is_some_and(|w| w >> (i % 64) & 1 == 1)
-    })
+  let mut item_pos = vec![0usize; m];
+  for (p, &i) in items.iter().enumerate() {
+    item_pos[i as usize] = p;
+  }
+  let is_excluded = |excluded: &[u64], u: u32| {
+    let i = item_pos[u as usize];
+    excluded.get(i / 64).is_some_and(|w| w >> (i % 64) & 1 == 1)
   };
-  let mut best: Option<(u64, Vec<TermId>)> = None;
+  let mut best: Option<(u64, Vec<u32>)> = None;
   let mut states: u64 = 0;
   let mut stack =
     vec![Frame { pos: 0, cur: 0, in_f: Vec::new(), excluded: Vec::new() }];
@@ -400,10 +518,11 @@ pub(crate) fn first_tier(
     }
     exclude[pos / 64] |= 1 << (pos % 64);
     let mut include: Option<Frame> = None;
-    if let Some(cl) = closure.get(&t) {
-      let new: Vec<TermId> =
+    if let Some((s, e)) = closure[t as usize] {
+      let cl = &clos[s..e];
+      let new: Vec<u32> =
         cl.iter().copied().filter(|u| !in_f.contains(u)).collect();
-      if !cl.iter().any(|u| is_excluded(&excluded, u))
+      if !cl.iter().any(|&u| is_excluded(&excluded, u))
         && in_f.len() + new.len() <= cap
       {
         let add = new.iter().fold(0u64, |acc, &u| acc.saturating_add(w(u)));
@@ -1067,12 +1186,15 @@ fn tiered_at(
   // Phase 1, without building its expressions: phase 2 reads only what they
   // contain, which the dry run reports from the same decisions
   // (`PlanShares`), with the real length.
-  let (mut u, plan1) = optimize_uniform_with(w, dag, prep, meter)?;
+  let (mut u, mut plan1) = optimize_uniform_with(w, dag, prep, meter)?;
   let (shares, real1) = plan1.shares(dag, &u.table_terms, limits)?;
   u.variable_len = real1;
   if limits.full_check {
     check_phase1(layout, dag, &u, &plan1, &shares)?;
   }
+  // The nearest stored descendants of the stored set (`u.stored`), which
+  // phase 1 computed for its pinned order.
+  let nearest = std::mem::take(&mut plan1.nearest);
   drop(plan1);
   let p = prof::scope(Phase::Allocate);
   let order1 = u.table_terms.clone();
@@ -1083,35 +1205,55 @@ fn tiered_at(
   };
   // Phase 2: reference counts (the Shares of each entry in all the phase-1
   // expression trees) and dependencies (the entries an entry's phase-1
-  // expression shares, in pre-order of first occurrence).
-  let mut weight: FxHashMap<TermId, u64> = FxHashMap::default();
-  let mut deps: FxHashMap<TermId, Vec<TermId>> = FxHashMap::default();
+  // expression shares, in pre-order of first occurrence), over the stored
+  // terms (`u.stored`, ascending) by position.
+  let stored = &u.stored;
   let PlanShares { refs, deps: entry_deps, .. } = shares;
-  for ((&t, &r), ds) in order1.iter().zip(&refs).zip(entry_deps) {
-    weight.insert(t, r);
-    deps.insert(t, ds);
-  }
-  let mut stored = order1.clone();
-  stored.sort_unstable();
+  let g = SlotGraph::new(stored, &order1, &refs, &entry_deps)?;
+  drop(entry_deps);
+  let order1_pos: Vec<u32> = order1
+    .iter()
+    .map(|t| stored.binary_search(t).map(pos32))
+    .collect::<Result<_, _>>()
+    .map_err(|_e| internal("phase 2: a table term outside the stored set"))?;
   let cap = stored.len().min(8);
-  let (tier, slot_states) = first_tier(&stored, &weight, &deps, cap, limits)?;
-  let rest: Vec<TermId> =
-    stored.iter().copied().filter(|t| !tier.contains(t)).collect();
-  let mut order2 = pinned_order(dag, &facts.deg, &tier);
-  order2.extend(kahn_order(&weight, &deps, &rest));
-  let ref_cost = |ord: &[TermId]| -> u128 {
-    ord.iter().enumerate().fold(0u128, |acc, (i, t)| {
-      let wt = u128::from(weight.get(t).copied().unwrap_or(0));
+  let (tier, slot_states) = first_tier(&g, cap, limits)?;
+  let mut in_tier = vec![false; stored.len()];
+  for &i in &tier {
+    in_tier[i as usize] = true;
+  }
+  let rest: Vec<u32> =
+    (0..stored.len()).filter(|&i| !in_tier[i]).map(pos32).collect();
+  // The pinned order of the tier, from the nearest stored descendants of
+  // the stored set (the checked mode compares it with `pinned_order`).
+  let mut order2 = pinned_suborder(&nearest, stored, &facts.deg, &tier);
+  let tier: Vec<TermId> = tier.iter().map(|&i| g.id(i)).collect();
+  if limits.full_check {
+    let direct = pinned_order(dag, &facts.deg, &tier);
+    if order2.iter().map(|&i| g.id(i)).ne(direct.iter().copied()) {
+      return Err(internal(
+        "full check: the pinned order of the first tier from the nearest \
+         stored descendants differs from the direct one",
+      ));
+    }
+  }
+  order2.extend(kahn_order(&g, &rest));
+  let ref_cost = |ord: &[u32]| -> u128 {
+    ord.iter().enumerate().fold(0u128, |acc, (i, &t)| {
+      let wt = u128::from(g.weight(t));
       acc.saturating_add(wt * u128::from(layout.width_at(len64(i))))
     })
   };
-  let kept = ref_cost(&order2) > ref_cost(&order1);
-  let order = if kept { order1.clone() } else { order2 };
-  if !respects_deps(&order, &deps) {
+  let kept = ref_cost(&order2) > ref_cost(&order1_pos);
+  let order_pos = if kept { order1_pos.clone() } else { order2 };
+  // `pos[i]`: the place of the `i`-th stored term in the order.
+  let mut pos: Vec<u32> = Vec::new();
+  if !respects_deps(&g, &order_pos, &mut pos) {
     return Err(internal(
       "the allocated order places a body reference after its user",
     ));
   }
+  let order: Vec<TermId> = order_pos.iter().map(|&i| g.id(i)).collect();
   drop(p);
   // Phase 3: each entry under the entries before it, priced by the layout,
   // then the roots under all entries (module docs).
@@ -1126,7 +1268,18 @@ fn tiered_at(
   // of a full evaluation of its prefix plus its decisions, combined in task
   // order exactly as the sequential loop proceeds.
   let k_entries = order.len();
-  let one_pass = !limits.phase3_per_prefix && descendant_closed(nodes, &order);
+  // Closure under stored descendants from the nearest ones (the checked mode
+  // compares it with `descendant_closed`).
+  let one_pass = !limits.phase3_per_prefix && {
+    let closed = nearest.closed_under(&pos);
+    if limits.full_check && closed != descendant_closed(nodes, &order) {
+      return Err(internal(
+        "full check: closure under stored descendants from the nearest \
+         ones differs from the direct test",
+      ));
+    }
+    closed
+  };
   // With `full_check`, the one-pass length of every task.
   let mut task_lengths: Vec<Len> = Vec::new();
   let (phase3, predicted, allocated) = if one_pass {
@@ -1255,8 +1408,8 @@ fn tiered_at(
     slot_states,
     first_tier: tier,
     kept_phase1_order: kept,
-    phase1_ref_cost: ref_cost(&order1),
-    final_ref_cost: ref_cost(&order),
+    phase1_ref_cost: ref_cost(&order1_pos),
+    final_ref_cost: ref_cost(&order_pos),
     phase3_layout_bytes: predicted,
     savings: phase1_layout - predicted,
   };

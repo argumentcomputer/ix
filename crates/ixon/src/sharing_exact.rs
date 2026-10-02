@@ -131,7 +131,7 @@ pub use uniform::{
 };
 // The first-tier search of phase 2, for the tests; not part of the API.
 #[cfg(test)]
-pub(crate) use tiered::first_tier;
+pub(crate) use tiered::{SlotGraph, first_tier};
 
 use crate::constant::Constant;
 use crate::expr::Expr;
