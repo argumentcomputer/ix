@@ -82,7 +82,7 @@ instance : ToString SerializeError := ⟨SerializeError.toString⟩
 
 /-! ## Primitive Serialization -/
 
-def putU8 (x : UInt8) : PutM Unit :=
+@[inline] def putU8 (x : UInt8) : PutM Unit :=
   StateT.modifyGet (fun s => ((), s.push x))
 
 def getU8 : GetM UInt8 := do
@@ -113,7 +113,7 @@ instance : Serialize UInt64 where
   put := putU64LE
   get := getU64LE
 
-def putBytes (x : ByteArray) : PutM Unit :=
+@[inline] def putBytes (x : ByteArray) : PutM Unit :=
   StateT.modifyGet (fun s => ((), s.append x))
 
 def getBytes (len : Nat) : GetM ByteArray := do
@@ -186,16 +186,21 @@ The code itself represents `[0, R₆)`. Since `R₅ < 2^33`, `R₆ > 2^64`: ever
 `UInt64` is representable for each `f`, and the decoder rejects 8-byte
 payloads whose value would reach `2^64`. -/
 
+/-! The rung ends, the header and the writer are `@[inline]`: every caller
+passes a literal `f`, so after inlining the compiler folds the powers of two
+to constants. Called out of line, `putTagN` evaluated them with `Nat.pow`
+(through GMP) for every integer it wrote. -/
+
 /-- End of TagN rung 1 for an `f`-bit flag. -/
-def tagNEnd1 (f : Nat) : Nat := 2 ^ (8 - f - 1)
+@[inline] def tagNEnd1 (f : Nat) : Nat := 2 ^ (8 - f - 1)
 /-- End of TagN rung 2 (one trailing byte). -/
-def tagNEnd2 (f : Nat) : Nat := tagNEnd1 f + 2 ^ (8 - f - 2 + 8)
+@[inline] def tagNEnd2 (f : Nat) : Nat := tagNEnd1 f + 2 ^ (8 - f - 2 + 8)
 /-- End of TagN rung 3 (two trailing bytes). -/
-def tagNEnd3 (f : Nat) : Nat := tagNEnd2 f + 2 ^ 16
+@[inline] def tagNEnd3 (f : Nat) : Nat := tagNEnd2 f + 2 ^ 16
 /-- End of TagN rung 4 (three trailing bytes). -/
-def tagNEnd4 (f : Nat) : Nat := tagNEnd3 f + 2 ^ 24
+@[inline] def tagNEnd4 (f : Nat) : Nat := tagNEnd3 f + 2 ^ 24
 /-- End of TagN rung 5 (four trailing bytes). -/
-def tagNEnd5 (f : Nat) : Nat := tagNEnd4 f + 2 ^ 32
+@[inline] def tagNEnd5 (f : Nat) : Nat := tagNEnd4 f + 2 ^ 32
 /-- End of TagN rung 6 (eight trailing bytes; beyond every `UInt64`). -/
 def tagNEnd6 (f : Nat) : Nat := tagNEnd5 f + 2 ^ 64
 
@@ -216,11 +221,11 @@ structure TagN where
   deriving BEq, Repr, Inhabited
 
 /-- Header byte: `flag` in the high `f` bits, `payload` in the low `8 − f`. -/
-def tagNHeader (f : Nat) (flag : UInt8) (payload : Nat) : UInt8 :=
+@[inline] def tagNHeader (f : Nat) (flag : UInt8) (payload : Nat) : UInt8 :=
   (flag.toNat * 2 ^ (8 - f) + payload).toUInt8
 
 /-- Write `value` in the TagN code with an `f`-bit `flag` (`flag < 2^f`). -/
-def putTagN (f : Nat) (flag : UInt8) (value : UInt64) : PutM Unit :=
+@[inline] def putTagN (f : Nat) (flag : UInt8) (value : UInt64) : PutM Unit :=
   let v := value.toNat
   let lead := 2 ^ (8 - f - 1)
   let mbit := 2 ^ (8 - f - 2)
