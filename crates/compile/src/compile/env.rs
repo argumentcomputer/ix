@@ -1037,6 +1037,25 @@ pub fn compile_env_with_profile(
     });
   }
 
+  // Nothing below reads the scheduler's bookkeeping or the setup graphs.
+  // They hold millions of small allocations (Mathlib: ~1 s to free on one
+  // thread), so free them on a background thread rather than serially at
+  // the end of this function. `compile_env_inner` forgets the whole
+  // compile state for the same reason, which is right only for the
+  // one-shot CLI; this function also serves long-lived callers (`ix
+  // check`, the FFI test entry points, the crate's tests) that need the
+  // memory back.
+  drop(block_entries);
+  drop_in_background((
+    block_info,
+    reverse_deps,
+    processed,
+    condensed,
+    grounded_out_refs,
+    graph.in_refs,
+    scan.ind_groups,
+  ));
+
   stt.finalize_hints();
 
   if !semantic_sources.is_empty() || profile.is_some() {
@@ -1083,6 +1102,15 @@ pub fn compile_env_with_profile(
   }
 
   Ok(stt)
+}
+
+/// Drop `value` on a detached thread so the caller does not wait for it.
+/// If the thread cannot be spawned, `spawn` drops the closure, and with it
+/// `value`, right here.
+fn drop_in_background<T: Send + 'static>(value: T) {
+  let _ = thread::Builder::new()
+    .name("ix-compile-free".into())
+    .spawn(move || drop(value));
 }
 
 /// Seed names for the aux_gen prereq closure.
