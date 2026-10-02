@@ -30,7 +30,7 @@ use ix_common::env::{
 };
 
 use ixon::{
-  DecompileError, Tag0,
+  CompileError, DecompileError, TagN,
   constant::{
     Axiom, Constant, ConstantInfo, Constructor, DefKind, Definition,
     DefinitionProj, Inductive, InductiveProj, MutConst, Quotient, Recursor,
@@ -310,7 +310,7 @@ pub struct BlockCache {
   /// Mutual context for resolving Rec references
   pub ctx: MutCtx,
   /// Block-level sharing table: target of `Expr::Share(idx)` in
-  /// post-`apply_sharing` body exprs. Initialized from
+  /// the block body exprs. Initialized from
   /// `Constant.sharing`.
   pub sharing: Vec<Arc<Expr>>,
   /// Per-constant surgery sharing table: target of
@@ -318,6 +318,8 @@ pub struct BlockCache {
   /// metadata arena nodes. Populated by `load_meta_extensions` from
   /// `ConstantMeta.meta_sharing`. Empty for constants without surgery
   /// (non-aux_gen singleton defs and all `roundtrip_block` callers).
+  /// `Share` nodes inside these expressions are read in the extended
+  /// index space (`ShareScope::Meta`).
   pub meta_sharing: Vec<Arc<Expr>>,
   /// Reference table for resolving Ref indices to addresses
   pub refs: Vec<Address>,
@@ -342,10 +344,13 @@ pub struct BlockCache {
   pub primary_univ_len: Option<usize>,
   /// Cache for decompiled universes
   pub univ_cache: FxHashMap<*const Univ, Level>,
-  /// Cache for decompiled expressions keyed by (Ixon pointer, arena index).
+  /// Cache for decompiled expressions keyed by (Ixon pointer, arena index,
+  /// share scope).
   /// Same Ixon expression at same arena index → same metadata → same result.
   /// Same Ixon expression at different arena index → different metadata → different cache key.
-  pub expr_cache: FxHashMap<(*const Expr, u64), LeanExpr>,
+  /// The scope is part of the key because an expression valid in a
+  /// metadata scope may be invalid in the primary scope.
+  pub expr_cache: FxHashMap<(*const Expr, u64, ShareScope), LeanExpr>,
   /// Current constant being decompiled (for error messages)
   pub current_const: String,
 }
@@ -368,8 +373,19 @@ impl BlockCache {
   ///   indices map (overwrite semantics, like `meta_sharing`).
   ///
   /// Call at most once per cache, immediately after the primary tables
-  /// are installed — `primary_univ_len` is captured here.
-  pub fn load_meta_extensions(&mut self, meta: &ConstantMeta) {
+  /// are installed — `primary_univ_len` is captured here, and
+  /// `meta_sharing` is checked against the primary `sharing` length
+  /// (`validate_meta_sharing`): a malformed table is rejected here even
+  /// where decompilation never reads it.
+  pub fn load_meta_extensions(
+    &mut self,
+    meta: &ConstantMeta,
+  ) -> Result<(), DecompileError> {
+    validate_meta_sharing(
+      self.sharing.len(),
+      &meta.meta_sharing,
+      &self.current_const,
+    )?;
     self.meta_sharing = meta.meta_sharing.clone();
     self.refs.extend(meta.meta_refs.iter().cloned());
     self.primary_univ_len = Some(self.univ_table.len());
@@ -379,7 +395,121 @@ impl BlockCache {
       .iter()
       .map(|p| (p.arena_idx, p.univ_idxs.clone()))
       .collect();
+    Ok(())
   }
+
+  /// Resolve `Share(idx)` read in `scope` (see [`ShareScope`]): the target
+  /// expression and the scope its own `Share` nodes are read in. Mirrors
+  /// Lean `Ix.DecompileM.resolveShareIn`.
+  pub fn resolve_share(
+    &self,
+    scope: ShareScope,
+    idx: u64,
+  ) -> Result<(Arc<Expr>, ShareScope), DecompileError> {
+    let p = self.sharing.len();
+    let i = usize::try_from(idx).ok();
+    if let Some(e) = i.and_then(|i| self.sharing.get(i)) {
+      // `i < p`: a primary entry in either scope; its own shares are
+      // primary again.
+      return Ok((e.clone(), ShareScope::Primary));
+    }
+    match scope {
+      ShareScope::Primary => Err(DecompileError::InvalidShareIndex {
+        idx,
+        max: p,
+        constant: self.current_const.clone(),
+      }),
+      ShareScope::Meta { entry } => {
+        // `i >= p` here; only `p <= i < p + entry` (an EARLIER metadata
+        // entry) is valid.
+        let target = i
+          .map(|i| i - p)
+          .filter(|m| *m < entry)
+          .and_then(|m| self.meta_sharing.get(m).map(|e| (m, e)));
+        match target {
+          Some((m, e)) => Ok((e.clone(), ShareScope::Meta { entry: m })),
+          None => Err(DecompileError::InvalidMetaShareIndex {
+            idx,
+            entry: entry as u64,
+            primary_len: p,
+            meta_len: self.meta_sharing.len(),
+            constant: self.current_const.clone(),
+          }),
+        }
+      },
+    }
+  }
+}
+
+/// The index space a `Share(i)` node is read in: the extended index space
+/// of `ConstantMeta::meta_sharing`. With `p = sharing.len()` primary and
+/// `q = meta_sharing.len()` metadata entries:
+///
+/// - `Primary`: a primary expression (a root or a primary table entry).
+///   `Share(i)` is `sharing[i]`; `i >= p` is `InvalidShareIndex`. Metadata
+///   never changes how a primary expression decodes.
+/// - `Meta { entry: j }`: an expression of `meta_sharing[j]`. `Share(i)` is
+///   primary entry `i` when `i < p` (read in `Primary`: shares nested in a
+///   primary entry stay primary) and `meta_sharing[i - p]` when
+///   `p <= i < p + j` (read in `Meta { entry: i - p }`). Any other index is
+///   `InvalidMetaShareIndex`: `i >= p + q` is out of range,
+///   `p + j <= i < p + q` a forward or self reference. The entry strictly
+///   decreases along metadata-to-metadata resolution, so expansion is well
+///   founded.
+///
+/// Call-site references (`CallSiteEntry::Collapsed.sharing_idx`,
+/// `orig_head = Some((sharing_idx, _))`) index `meta_sharing` directly (no
+/// offset by `p`) and read the entry in `Meta { entry: sharing_idx }`.
+/// Mirrors Lean `Ix.DecompileM.ShareScope`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ShareScope {
+  Primary,
+  Meta { entry: usize },
+}
+
+/// Well-foundedness of a `meta_sharing` table against `primary_len`
+/// primary entries: every `Share(i)` occurring in `meta_sharing[j]` must
+/// have `i < primary_len + j` (a primary entry, or a metadata entry BEFORE
+/// `j`). Reports the first violation in entry order, then in left-to-right
+/// pre-order, as `InvalidMetaShareIndex` (Lean `validateMetaSharing` walks
+/// in the same order). Iterative; `Share` nodes are not expanded.
+///
+/// Each shared node (`Arc`) is visited once across the whole table, so the
+/// walk is linear in the DAG size: in-memory tables share subterms through
+/// the compiler's expression memo, and a tree walk is exponential in the
+/// depth of such sharing. Skipping a node seen before keeps the first
+/// violation: its whole subterm passed then, under a bound no larger than
+/// the current one (the bound grows with the entry).
+pub fn validate_meta_sharing(
+  primary_len: usize,
+  meta_sharing: &[Arc<Expr>],
+  constant: &str,
+) -> Result<(), DecompileError> {
+  let mut stack: Vec<&Arc<Expr>> = Vec::new();
+  let mut seen: FxHashSet<*const Expr> = FxHashSet::default();
+  for (j, root) in meta_sharing.iter().enumerate() {
+    let bound = primary_len.saturating_add(j);
+    stack.push(root);
+    while let Some(e) = stack.pop() {
+      if !seen.insert(Arc::as_ptr(e)) {
+        continue;
+      }
+      if let Expr::Share(i) = e.as_ref() {
+        if !matches!(usize::try_from(*i), Ok(i) if i < bound) {
+          return Err(DecompileError::InvalidMetaShareIndex {
+            idx: *i,
+            entry: j as u64,
+            primary_len,
+            meta_len: meta_sharing.len(),
+            constant: constant.to_string(),
+          });
+        }
+      } else {
+        stack.extend(e.children().into_iter().rev());
+      }
+    }
+  }
+  Ok(())
 }
 
 // ===========================================================================
@@ -472,12 +602,10 @@ fn deserialize_int(bytes: &[u8]) -> Result<Int, DecompileError> {
   }
 }
 
-/// Read a Tag0-encoded u64 from a byte slice, advancing the cursor.
-fn read_tag0(buf: &mut &[u8]) -> Result<u64, DecompileError> {
-  Tag0::get(buf).map(|t| t.size).map_err(|_| {
-    DecompileError::BadConstantFormat {
-      msg: "read_tag0: unexpected EOF".into(),
-    }
+/// Read a TagN (f = 0) u64 from a byte slice, advancing the cursor.
+fn read_tagn0(buf: &mut &[u8]) -> Result<u64, DecompileError> {
+  TagN::get(0, buf).map(|t| t.value).map_err(|e| {
+    DecompileError::BadConstantFormat { msg: format!("read_tagn0: {e}") }
   })
 }
 
@@ -502,8 +630,8 @@ fn deserialize_substring(
 ) -> Result<Substring, DecompileError> {
   let str_addr = read_addr_bytes(buf)?;
   let s = read_string(&str_addr, stt)?;
-  let start_pos = Nat::from(read_tag0(buf)?);
-  let stop_pos = Nat::from(read_tag0(buf)?);
+  let start_pos = Nat::from(read_tagn0(buf)?);
+  let stop_pos = Nat::from(read_tagn0(buf)?);
   Ok(Substring { str: s, start_pos, stop_pos })
 }
 
@@ -522,14 +650,14 @@ fn deserialize_source_info(
   match tag {
     0 => {
       let leading = deserialize_substring(buf, stt)?;
-      let leading_pos = Nat::from(read_tag0(buf)?);
+      let leading_pos = Nat::from(read_tagn0(buf)?);
       let trailing = deserialize_substring(buf, stt)?;
-      let trailing_pos = Nat::from(read_tag0(buf)?);
+      let trailing_pos = Nat::from(read_tagn0(buf)?);
       Ok(SourceInfo::Original(leading, leading_pos, trailing, trailing_pos))
     },
     1 => {
-      let start = Nat::from(read_tag0(buf)?);
-      let end = Nat::from(read_tag0(buf)?);
+      let start = Nat::from(read_tagn0(buf)?);
+      let end = Nat::from(read_tagn0(buf)?);
       if buf.is_empty() {
         return Err(DecompileError::BadConstantFormat {
           msg: "source_info: missing canonical".into(),
@@ -567,7 +695,7 @@ fn deserialize_preresolved(
     1 => {
       let name_addr = read_addr_bytes(buf)?;
       let name = decompile_name(&name_addr, stt)?;
-      let count = read_tag0(buf)? as usize;
+      let count = read_tagn0(buf)? as usize;
       let mut fields = Vec::with_capacity(count);
       for _ in 0..count {
         let field_addr = read_addr_bytes(buf)?;
@@ -609,7 +737,7 @@ fn deserialize_syntax_inner(
       let info = deserialize_source_info(buf, stt)?;
       let kind_addr = read_addr_bytes(buf)?;
       let kind = decompile_name(&kind_addr, stt)?;
-      let arg_count = read_tag0(buf)? as usize;
+      let arg_count = read_tagn0(buf)? as usize;
       let mut args = Vec::with_capacity(arg_count);
       for _ in 0..arg_count {
         args.push(deserialize_syntax_inner(buf, stt)?);
@@ -627,7 +755,7 @@ fn deserialize_syntax_inner(
       let raw_val = deserialize_substring(buf, stt)?;
       let val_addr = read_addr_bytes(buf)?;
       let val = decompile_name(&val_addr, stt)?;
-      let pr_count = read_tag0(buf)? as usize;
+      let pr_count = read_tagn0(buf)? as usize;
       let mut preresolved = Vec::with_capacity(pr_count);
       for _ in 0..pr_count {
         preresolved.push(deserialize_preresolved(buf, stt)?);
@@ -804,27 +932,26 @@ pub fn decompile_expr(
     })
   }
 
+  /// Collect the canonical App telescope of `expr` (read in `scope`),
+  /// expanding `Share` nodes along the spine. Each argument carries the
+  /// scope it is read in: a spine `Share` can lead from a metadata
+  /// expression into a primary entry.
+  #[allow(clippy::type_complexity)]
   fn collect_ixon_telescope_expanding_shares(
     expr: &Arc<Expr>,
+    scope: ShareScope,
     cache: &BlockCache,
-  ) -> Result<(Arc<Expr>, Vec<Arc<Expr>>), DecompileError> {
-    let mut args: Vec<Arc<Expr>> = Vec::new();
+  ) -> Result<(Arc<Expr>, Vec<(Arc<Expr>, ShareScope)>), DecompileError> {
+    let mut args: Vec<(Arc<Expr>, ShareScope)> = Vec::new();
     let mut cur = expr.clone();
+    let mut scope = scope;
     loop {
       while let Expr::Share(share_idx) = cur.as_ref() {
-        cur = cache
-          .sharing
-          .get(*share_idx as usize)
-          .ok_or_else(|| DecompileError::InvalidShareIndex {
-            idx: *share_idx,
-            max: cache.sharing.len(),
-            constant: cache.current_const.clone(),
-          })?
-          .clone();
+        (cur, scope) = cache.resolve_share(scope, *share_idx)?;
       }
       match cur.as_ref() {
         Expr::App(f, a) => {
-          args.push(a.clone());
+          args.push((a.clone(), scope));
           cur = f.clone();
         },
         _ => break,
@@ -835,7 +962,8 @@ pub fn decompile_expr(
   }
 
   enum Frame {
-    Decompile(Arc<Expr>, u64),
+    /// Decompile an Ixon expression read in a share scope at an arena index.
+    Decompile(Arc<Expr>, u64, ShareScope),
     BuildApp(LeanMdata),
     BuildLam(Name, BinderInfo, LeanMdata),
     BuildAll(Name, BinderInfo, LeanMdata),
@@ -844,7 +972,7 @@ pub fn decompile_expr(
     /// Undo the BVar lift applied when an existing source argument was moved
     /// underneath a synthesized eta telescope.
     LowerVars(usize),
-    CacheResult(*const Expr, u64),
+    CacheResult(*const Expr, u64, ShareScope),
     /// Assemble a source-order App spine from head + N decompiled args.
     BuildTelescope {
       n_args: usize,
@@ -852,29 +980,26 @@ pub fn decompile_expr(
     },
   }
 
-  let mut stack: Vec<Frame> = vec![Frame::Decompile(expr.clone(), arena_idx)];
+  // The root is a primary expression; metadata scopes are entered only
+  // through call-site references into `meta_sharing`.
+  let mut stack: Vec<Frame> =
+    vec![Frame::Decompile(expr.clone(), arena_idx, ShareScope::Primary)];
   let mut results: Vec<LeanExpr> = Vec::new();
 
   while let Some(frame) = stack.pop() {
     match frame {
-      Frame::Decompile(e, idx) => {
-        // Expand Share transparently with the SAME arena_idx
+      Frame::Decompile(e, idx, scope) => {
+        // Expand Share transparently with the SAME arena_idx, in the
+        // target's scope.
         if let Expr::Share(share_idx) = e.as_ref() {
-          let shared_expr = cache
-            .sharing
-            .get(*share_idx as usize)
-            .ok_or_else(|| DecompileError::InvalidShareIndex {
-              idx: *share_idx,
-              max: cache.sharing.len(),
-              constant: cache.current_const.clone(),
-            })?
-            .clone();
-          stack.push(Frame::Decompile(shared_expr, idx));
+          let (shared_expr, shared_scope) =
+            cache.resolve_share(scope, *share_idx)?;
+          stack.push(Frame::Decompile(shared_expr, idx, shared_scope));
           continue;
         }
 
-        // Cache check: (Ixon pointer, arena index)
-        let cache_key = (Arc::as_ptr(&e), idx);
+        // Cache check: (Ixon pointer, arena index, share scope)
+        let cache_key = (Arc::as_ptr(&e), idx, scope);
         if let Some(cached) = cache.expr_cache.get(&cache_key) {
           results.push(cached.clone());
           continue;
@@ -902,14 +1027,14 @@ pub fn decompile_expr(
         let node = arena_lookup(arena, current_idx, &cache.current_const)?;
 
         // Push CacheResult frame
-        stack.push(Frame::CacheResult(Arc::as_ptr(&e), idx));
+        stack.push(Frame::CacheResult(Arc::as_ptr(&e), idx, scope));
 
         if matches!(
           node,
           ExprMetaData::CallSite { .. } | ExprMetaData::EtaCallSite { .. }
-        ) && crate::semantic_contract::contains_ixon(&e, &cache.sharing)
-          .map_err(|msg| DecompileError::BadConstantFormat { msg })?
-        {
+        ) && crate::semantic_contract::contains_ixon(&e, scope, |s, i| {
+          cache.resolve_share(s, i)
+        })? {
           return Err(DecompileError::BadConstantFormat {
             msg: "optional call-site replay would rewrite a semantic contract"
               .into(),
@@ -1101,17 +1226,11 @@ pub fn decompile_expr(
               }
             })?;
             let mut body = e.clone();
+            let mut body_scope = scope;
             for _ in 0..n_synth {
               while let Expr::Share(share_idx) = body.as_ref() {
-                body = cache
-                  .sharing
-                  .get(*share_idx as usize)
-                  .ok_or_else(|| DecompileError::InvalidShareIndex {
-                    idx: *share_idx,
-                    max: cache.sharing.len(),
-                    constant: cache.current_const.clone(),
-                  })?
-                  .clone();
+                (body, body_scope) =
+                  cache.resolve_share(body_scope, *share_idx)?;
               }
               match body.as_ref() {
                 Expr::Lam(_, _, b) => body = b.clone(),
@@ -1127,7 +1246,9 @@ pub fn decompile_expr(
             }
 
             let (head_ixon, canonical_args) =
-              collect_ixon_telescope_expanding_shares(&body, cache)?;
+              collect_ixon_telescope_expanding_shares(
+                &body, body_scope, cache,
+              )?;
             if canon_meta.len() != canonical_args.len() {
               return Err(DecompileError::BadConstantFormat {
                 msg: format!(
@@ -1168,7 +1289,7 @@ pub fn decompile_expr(
               stack.push(Frame::LowerVars(n_synth));
               match entry {
                 CallSiteEntry::Kept { canon_idx, meta } => {
-                  let arg_ixon = canonical_args
+                  let (arg_ixon, arg_scope) = canonical_args
                     .get(*canon_idx as usize)
                     .ok_or_else(|| DecompileError::BadConstantFormat {
                       msg: format!(
@@ -1179,9 +1300,16 @@ pub fn decompile_expr(
                         canonical_args.len()
                       ),
                     })?;
-                  stack.push(Frame::Decompile(arg_ixon.clone(), *meta));
+                  stack.push(Frame::Decompile(
+                    arg_ixon.clone(),
+                    *meta,
+                    *arg_scope,
+                  ));
                 },
                 CallSiteEntry::Collapsed { sharing_idx, meta } => {
+                  // Direct `meta_sharing` index (no offset by the primary
+                  // length); the entry's own shares are read in its
+                  // metadata scope.
                   let arg_ixon = cache
                     .meta_sharing
                     .get(*sharing_idx as usize)
@@ -1191,7 +1319,11 @@ pub fn decompile_expr(
                       constant: cache.current_const.clone(),
                     })?
                     .clone();
-                  stack.push(Frame::Decompile(arg_ixon, *meta));
+                  stack.push(Frame::Decompile(
+                    arg_ixon,
+                    *meta,
+                    ShareScope::Meta { entry: *sharing_idx as usize },
+                  ));
                 },
               }
             }
@@ -1204,7 +1336,7 @@ pub fn decompile_expr(
           ) => {
             // Collect the canonical Ixon App telescope
             let (head_ixon, canonical_args) =
-              collect_ixon_telescope_expanding_shares(&e, cache)?;
+              collect_ixon_telescope_expanding_shares(&e, scope, cache)?;
 
             // Most CallSites have one Kept entry per canonical arg. Split-SCC
             // minor adaptation is the exception: the canonical arg is a
@@ -1244,7 +1376,11 @@ pub fn decompile_expr(
                   constant: cache.current_const.clone(),
                 })?
                 .clone();
-              Some(Frame::Decompile(head_share, *meta))
+              Some(Frame::Decompile(
+                head_share,
+                *meta,
+                ShareScope::Meta { entry: *sharing_idx as usize },
+              ))
             } else {
               // Decompile head: resolve name from CallSite. This must
               // succeed — a CallSite metadata node without a resolvable
@@ -1308,7 +1444,7 @@ pub fn decompile_expr(
             for entry in entries.iter().rev() {
               match entry {
                 CallSiteEntry::Kept { canon_idx, meta } => {
-                  let arg_ixon = canonical_args
+                  let (arg_ixon, arg_scope) = canonical_args
                     .get(*canon_idx as usize)
                     .ok_or_else(|| DecompileError::BadConstantFormat {
                       msg: format!(
@@ -1319,16 +1455,22 @@ pub fn decompile_expr(
                         canonical_args.len()
                       ),
                     })?;
-                  stack.push(Frame::Decompile(arg_ixon.clone(), *meta));
+                  stack.push(Frame::Decompile(
+                    arg_ixon.clone(),
+                    *meta,
+                    *arg_scope,
+                  ));
                 },
                 CallSiteEntry::Collapsed { sharing_idx, meta } => {
                   // `sharing_idx` addresses `ConstantMeta.meta_sharing`
-                  // (per-constant, 0-based), NOT the block's primary
-                  // sharing table — see `BlockCache` docs. Reading it
-                  // from `cache.sharing` silently returned the wrong
-                  // subtree whenever the block had any `apply_sharing`
-                  // output, producing the "Binder arena vs Expr::Ref"
-                  // mismatch on surgered `_sizeOf_N` constants.
+                  // (per-constant, 0-based, no offset by the primary
+                  // length), NOT the block's primary sharing table — see
+                  // `BlockCache` docs. Reading it from `cache.sharing`
+                  // silently returned the wrong subtree whenever the block
+                  // had any `apply_sharing` output, producing the "Binder
+                  // arena vs Expr::Ref" mismatch on surgered `_sizeOf_N`
+                  // constants. The entry's own shares are read in its
+                  // metadata scope.
                   let arg_ixon = cache
                     .meta_sharing
                     .get(*sharing_idx as usize)
@@ -1338,7 +1480,11 @@ pub fn decompile_expr(
                       constant: cache.current_const.clone(),
                     })?
                     .clone();
-                  stack.push(Frame::Decompile(arg_ixon, *meta));
+                  stack.push(Frame::Decompile(
+                    arg_ixon,
+                    *meta,
+                    ShareScope::Meta { entry: *sharing_idx as usize },
+                  ));
                 },
               }
             }
@@ -1357,15 +1503,15 @@ pub fn decompile_expr(
           // App: follow arena children
           (ExprMetaData::App { children }, Expr::App(f, a)) => {
             stack.push(Frame::BuildApp(mdata_layers));
-            stack.push(Frame::Decompile(a.clone(), children[1]));
-            stack.push(Frame::Decompile(f.clone(), children[0]));
+            stack.push(Frame::Decompile(a.clone(), children[1], scope));
+            stack.push(Frame::Decompile(f.clone(), children[0], scope));
           },
 
           (_, Expr::App(f, a)) => {
             // No App metadata — use dummy indices (Leaf fallback)
             stack.push(Frame::BuildApp(mdata_layers));
-            stack.push(Frame::Decompile(a.clone(), u64::MAX));
-            stack.push(Frame::Decompile(f.clone(), u64::MAX));
+            stack.push(Frame::Decompile(a.clone(), u64::MAX, scope));
+            stack.push(Frame::Decompile(f.clone(), u64::MAX, scope));
           },
 
           // Lam: extract binder name/info from arena
@@ -1384,8 +1530,8 @@ pub fn decompile_expr(
               info.clone(),
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), children[1]));
-            stack.push(Frame::Decompile(ty.clone(), children[0]));
+            stack.push(Frame::Decompile(body.clone(), children[1], scope));
+            stack.push(Frame::Decompile(ty.clone(), children[0], scope));
           },
 
           (_, Expr::Lam(_, ty, body)) => {
@@ -1394,8 +1540,8 @@ pub fn decompile_expr(
               BinderInfo::Default,
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), u64::MAX));
-            stack.push(Frame::Decompile(ty.clone(), u64::MAX));
+            stack.push(Frame::Decompile(body.clone(), u64::MAX, scope));
+            stack.push(Frame::Decompile(ty.clone(), u64::MAX, scope));
           },
 
           // All: extract binder name/info from arena
@@ -1410,8 +1556,8 @@ pub fn decompile_expr(
               info.clone(),
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), children[1]));
-            stack.push(Frame::Decompile(ty.clone(), children[0]));
+            stack.push(Frame::Decompile(body.clone(), children[1], scope));
+            stack.push(Frame::Decompile(ty.clone(), children[0], scope));
           },
 
           (_, Expr::All(_, _, ty, body)) => {
@@ -1420,8 +1566,8 @@ pub fn decompile_expr(
               BinderInfo::Default,
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), u64::MAX));
-            stack.push(Frame::Decompile(ty.clone(), u64::MAX));
+            stack.push(Frame::Decompile(body.clone(), u64::MAX, scope));
+            stack.push(Frame::Decompile(ty.clone(), u64::MAX, scope));
           },
 
           // Let: extract name from arena
@@ -1436,9 +1582,9 @@ pub fn decompile_expr(
               non_dep.non_dep,
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), children[2]));
-            stack.push(Frame::Decompile(val.clone(), children[1]));
-            stack.push(Frame::Decompile(ty.clone(), children[0]));
+            stack.push(Frame::Decompile(body.clone(), children[2], scope));
+            stack.push(Frame::Decompile(val.clone(), children[1], scope));
+            stack.push(Frame::Decompile(ty.clone(), children[0], scope));
           },
 
           (_, Expr::Let(non_dep, ty, val, body)) => {
@@ -1447,9 +1593,9 @@ pub fn decompile_expr(
               non_dep.non_dep,
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(body.clone(), u64::MAX));
-            stack.push(Frame::Decompile(val.clone(), u64::MAX));
-            stack.push(Frame::Decompile(ty.clone(), u64::MAX));
+            stack.push(Frame::Decompile(body.clone(), u64::MAX, scope));
+            stack.push(Frame::Decompile(val.clone(), u64::MAX, scope));
+            stack.push(Frame::Decompile(ty.clone(), u64::MAX, scope));
           },
 
           // Prj: extract struct name from arena
@@ -1463,7 +1609,7 @@ pub fn decompile_expr(
               Nat::from(*field_idx),
               mdata_layers,
             ));
-            stack.push(Frame::Decompile(struct_val.clone(), *child));
+            stack.push(Frame::Decompile(struct_val.clone(), *child, scope));
           },
 
           (_, Expr::Prj(type_ref_idx, _field_idx, _struct_val)) => {
@@ -1610,9 +1756,9 @@ pub fn decompile_expr(
         results.push(apply_mdata(expr, mdata));
       },
 
-      Frame::CacheResult(e_ptr, arena_idx) => {
+      Frame::CacheResult(e_ptr, arena_idx, scope) => {
         if let Some(result) = results.last() {
-          cache.expr_cache.insert((e_ptr, arena_idx), result.clone());
+          cache.expr_cache.insert((e_ptr, arena_idx, scope), result.clone());
         }
       },
     }
@@ -2085,7 +2231,13 @@ fn decompile_inductive(
     // own `meta_sharing` table, and any constructor can carry its own
     // `univ_patches` (canonicity §10.6). Install those extensions only while
     // walking this constructor so they do not leak across sibling
-    // constructor arenas.
+    // constructor arenas. The constructor's `meta_sharing` is checked
+    // against the block's primary table, as `load_meta_extensions` does.
+    validate_meta_sharing(
+      cache.sharing.len(),
+      &ctor_meta.meta_sharing,
+      &cache.current_const,
+    )?;
     let saved_meta_sharing = std::mem::replace(
       &mut cache.meta_sharing,
       ctor_meta.meta_sharing.clone(),
@@ -2205,7 +2357,7 @@ fn decompile_projection(
   // every `_sizeOf_N` — which is a DPrj into its mutual block and
   // whose body's `.rec` surgery produces `Collapsed` entries under
   // alpha-collapse — would fail with shape mismatches on decompile.
-  cache.load_meta_extensions(&named_meta);
+  cache.load_meta_extensions(&named_meta)?;
 
   // Each projection variant must land on the matching `MutConst` kind
   // at its block index. A silent fall-through would leave `name`
@@ -2331,7 +2483,7 @@ fn decompile_const(
         current_const: current_const.clone(),
         ..Default::default()
       };
-      cache.load_meta_extensions(&named_meta);
+      cache.load_meta_extensions(&named_meta)?;
       let info = decompile_definition(def, &named_meta, &mut cache, stt, dstt)?;
       dstt.insert_interned(name.clone(), info);
     },
@@ -2350,7 +2502,7 @@ fn decompile_const(
       // Defn branch above — omitting this desyncs
       // `CallSiteEntry::Collapsed.sharing_idx` from the intended
       // `meta_sharing` slot.
-      cache.load_meta_extensions(&named_meta);
+      cache.load_meta_extensions(&named_meta)?;
       let info = decompile_recursor(rec, &named_meta, &mut cache, stt, dstt)?;
       dstt.insert_interned(name.clone(), info);
     },
@@ -2366,7 +2518,7 @@ fn decompile_const(
       };
       // Axioms have only a type (no body), so no surgery today — but
       // load extensions for consistency with the other branches.
-      cache.load_meta_extensions(&named_meta);
+      cache.load_meta_extensions(&named_meta)?;
       let info = decompile_axiom(ax, &named_meta, &mut cache, stt, dstt)?;
       dstt.insert_interned(name.clone(), info);
     },
@@ -2382,7 +2534,7 @@ fn decompile_const(
       };
       // Quotient types have only a type signature — same story as
       // axioms. Load extensions for consistency.
-      cache.load_meta_extensions(&named_meta);
+      cache.load_meta_extensions(&named_meta)?;
       let info = decompile_quotient(quot, &named_meta, &mut cache, stt, dstt)?;
       dstt.insert_interned(name.clone(), info);
     },
@@ -2984,13 +3136,50 @@ fn ixon_mut_const_summary(
   }
 }
 
+/// A failure recorded by the aux_gen pass of [`decompile_env`].
+///
+/// Recompiling a regenerated block (`roundtrip_block`, Phase A) is a compile
+/// step: its failure keeps the compile error, and with it the category (a
+/// sharing `ResourceLimit` stays a resource limit), together with the
+/// constant and the step that failed. Recompile must reproduce
+/// `Named.original`, so a sharing failure has no fallback. Every other
+/// failure is a decompile error.
+#[derive(Clone, Debug)]
+enum AuxGenError {
+  Recompile { constant: String, step: &'static str, err: CompileError },
+  Decompile(DecompileError),
+}
+
+impl AuxGenError {
+  fn recompile(constant: &Name, step: &'static str, err: CompileError) -> Self {
+    AuxGenError::Recompile { constant: constant.pretty(), step, err }
+  }
+}
+
+impl From<DecompileError> for AuxGenError {
+  fn from(e: DecompileError) -> Self {
+    AuxGenError::Decompile(e)
+  }
+}
+
+impl std::fmt::Display for AuxGenError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      AuxGenError::Recompile { constant, step, err } => {
+        write!(f, "recompile of '{constant}' ({step}): {err}")
+      },
+      AuxGenError::Decompile(e) => write!(f, "{e}"),
+    }
+  }
+}
+
 fn roundtrip_block(
   consts: &[LeanMutConst],
   generated_consts: &FxHashMap<Name, LeanConstantInfo>,
   orig_env: Option<&LeanEnv>,
   stt: &CompileState,
   dstt: &DecompileState,
-) -> Result<FxHashMap<Name, LeanConstantInfo>, DecompileError> {
+) -> Result<FxHashMap<Name, LeanConstantInfo>, AuxGenError> {
   use crate::compile::{
     BlockCache as CompileBlockCache, collect_mut_const_exprs,
     compile_definition, compile_inductive, compile_mutual_block, compile_name,
@@ -3008,12 +3197,10 @@ fn roundtrip_block(
   // ------------------------------------------------------------------
   let mut cache = CompileBlockCache::default();
 
+  let first_name = consts[0].name();
   let refs: Vec<&LeanMutConst> = consts.iter().collect();
-  let sorted_classes = sort_consts(&refs, &mut cache, stt).map_err(|e| {
-    DecompileError::BadConstantFormat {
-      msg: format!("roundtrip sort_consts: {e}"),
-    }
-  })?;
+  let sorted_classes = sort_consts(&refs, &mut cache, stt)
+    .map_err(|e| AuxGenError::recompile(&first_name, "sort_consts", e))?;
   let mut_ctx = LeanMutConst::ctx(&sorted_classes);
 
   // Mirror the production compile paths (`compile_single_def`, the
@@ -3035,9 +3222,7 @@ fn roundtrip_block(
       }
     }
     preseed_expr_tables(&exprs, &mut_ctx, &mut cache, stt, "roundtrip_block")
-      .map_err(|e| DecompileError::BadConstantFormat {
-      msg: format!("roundtrip preseed {}: {e}", consts[0].name().pretty()),
-    })?;
+      .map_err(|e| AuxGenError::recompile(&first_name, "preseed", e))?;
   }
 
   // Map from name → (class_idx, MutConst kind) for projection construction.
@@ -3055,11 +3240,8 @@ fn roundtrip_block(
         LeanMutConst::Recr(rec) => {
           let (data, meta) =
             compile_recursor(rec, &mut_ctx, &ctx_addrs, &mut cache, stt)
-              .map_err(|e| DecompileError::BadConstantFormat {
-                msg: format!(
-                  "roundtrip compile_rec {}: {e}",
-                  rec.cnst.name.pretty()
-                ),
+              .map_err(|e| {
+                AuxGenError::recompile(&rec.cnst.name, "compile_rec", e)
               })?;
           if !rep_pushed {
             ixon_mutuals.push(MutConst::Recr(data));
@@ -3070,11 +3252,8 @@ fn roundtrip_block(
         LeanMutConst::Defn(def) => {
           let (data, meta) =
             compile_definition(def, &mut_ctx, &ctx_addrs, &mut cache, stt)
-              .map_err(|e| DecompileError::BadConstantFormat {
-                msg: format!(
-                  "roundtrip compile_def {}: {e}",
-                  def.name.pretty()
-                ),
+              .map_err(|e| {
+                AuxGenError::recompile(&def.name, "compile_def", e)
               })?;
           if !rep_pushed {
             ixon_mutuals.push(MutConst::Defn(data));
@@ -3085,11 +3264,8 @@ fn roundtrip_block(
         LeanMutConst::Indc(ind) => {
           let (data, meta, ctor_metas) =
             compile_inductive(ind, &mut_ctx, &ctx_addrs, &mut cache, stt)
-              .map_err(|e| DecompileError::BadConstantFormat {
-                msg: format!(
-                  "roundtrip compile_indc {}: {e}",
-                  ind.ind.cnst.name.pretty()
-                ),
+              .map_err(|e| {
+                AuxGenError::recompile(&ind.ind.cnst.name, "compile_indc", e)
               })?;
           if !rep_pushed {
             ixon_mutuals.push(MutConst::Indc(data));
@@ -3105,7 +3281,7 @@ fn roundtrip_block(
     }
   }
 
-  // Singleton non-inductive: use apply_sharing_to_definition/recursor_with_stats
+  // Singleton non-inductive: use apply_sharing_to_{definition,recursor}
   // (matching compile_single_def/recursor) instead of compile_mutual_block.
   // This ensures the sharing analysis and arena match the original compilation.
   let singleton = sorted_classes.len() == 1
@@ -3113,7 +3289,6 @@ fn roundtrip_block(
 
   let block_refs: Vec<Address> = cache.refs.iter().cloned().collect();
   let block_univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-  let name_str = consts[0].name().pretty();
 
   // Precompute (debug-gated) component-level summaries of the compiled
   // class representatives BEFORE `ixon_mutuals` is moved into the block
@@ -3130,38 +3305,42 @@ fn roundtrip_block(
         .collect()
     });
 
+  // The recompile shares under the state's limits; a failure (a resource
+  // limit included) keeps its compile error and names the block.
+  let limits = &stt.sharing_limits;
+  let sharing_err = |e| AuxGenError::recompile(&first_name, "sharing", e);
   let (block_constant, block_addr) = if singleton && ixon_mutuals.len() == 1 {
     // Singleton: compile as bare constant (no Muts wrapper).
     let result = match &ixon_mutuals[0] {
       MutConst::Defn(def) => {
-        crate::compile::apply_sharing_to_definition_with_stats(
+        crate::compile::apply_sharing_to_definition_with_limits(
+          limits,
           def.clone(),
           block_refs,
           block_univs,
-          Some(&name_str),
         )
+        .map_err(sharing_err)?
       },
       MutConst::Recr(rec) => {
-        crate::compile::apply_sharing_to_recursor_with_stats(
+        crate::compile::apply_sharing_to_recursor_with_limits(
+          limits,
           rec.clone(),
           block_refs,
           block_univs,
         )
+        .map_err(sharing_err)?
       },
       MutConst::Indc(_) => unreachable!("singleton guard excludes inductives"),
     };
     let mut bytes = Vec::new();
-    result.constant.put(&mut bytes);
+    result.put(&mut bytes);
     let addr = Address::hash(&bytes);
-    (result.constant, addr)
+    (result, addr)
   } else {
     // Multi-class or inductive: compile as mutual block (Muts wrapper).
-    let compiled = compile_mutual_block(
-      ixon_mutuals,
-      block_refs,
-      block_univs,
-      Some(&name_str),
-    );
+    let compiled =
+      compile_mutual_block(limits, ixon_mutuals, block_refs, block_univs)
+        .map_err(sharing_err)?;
     let addr = compiled.addr.clone();
     (compiled.constant, addr)
   };
@@ -3175,7 +3354,6 @@ fn roundtrip_block(
   // so we compare the block_addr against the original block stored in the
   // first member's projection metadata.
   {
-    let first_name = consts[0].name();
     let orig_addr = if singleton {
       // Singleton: compare directly against the constant's original address.
       stt.env.named.get(&first_name).map(|named| {
@@ -3343,31 +3521,35 @@ fn roundtrip_block(
               },
               LeanMutConst::Indc(_) => unreachable!("probe is Defn/Recr only"),
             });
+            let compiled = compiled.and_then(|data| {
+              let prefs: Vec<Address> = pcache.refs.iter().cloned().collect();
+              let punivs: Vec<Arc<Univ>> =
+                pcache.univs.iter().cloned().collect();
+              let result = match &data {
+                MutConst::Defn(def) => {
+                  crate::compile::apply_sharing_to_definition_with_limits(
+                    limits,
+                    def.clone(),
+                    prefs,
+                    punivs,
+                  )
+                },
+                MutConst::Recr(rec) => {
+                  crate::compile::apply_sharing_to_recursor_with_limits(
+                    limits,
+                    rec.clone(),
+                    prefs,
+                    punivs,
+                  )
+                },
+                MutConst::Indc(_) => unreachable!(),
+              }?;
+              Ok((data, result))
+            });
             match compiled {
-              Ok(data) => {
-                let prefs: Vec<Address> = pcache.refs.iter().cloned().collect();
-                let punivs: Vec<Arc<Univ>> =
-                  pcache.univs.iter().cloned().collect();
-                let result = match &data {
-                  MutConst::Defn(def) => {
-                    crate::compile::apply_sharing_to_definition_with_stats(
-                      def.clone(),
-                      prefs,
-                      punivs,
-                      Some(&name_str),
-                    )
-                  },
-                  MutConst::Recr(rec) => {
-                    crate::compile::apply_sharing_to_recursor_with_stats(
-                      rec.clone(),
-                      prefs,
-                      punivs,
-                    )
-                  },
-                  MutConst::Indc(_) => unreachable!(),
-                };
+              Ok((data, result)) => {
                 let mut pbytes = Vec::new();
-                result.constant.put(&mut pbytes);
+                result.put(&mut pbytes);
                 let paddr = Address::hash(&pbytes);
                 eprintln!(
                   "  -- probe original-form recompile: addr={:.12} vs orig {:.12} => {}",
@@ -3396,14 +3578,14 @@ fn roundtrip_block(
       // is a regression, not an expected divergence. Callers record it
       // in `aux_gen_errors` (recovery keeps the Lean-facing env
       // populated for diagnosis, but the error is never silent).
-      return Err(DecompileError::BadConstantFormat {
+      return Err(AuxGenError::Decompile(DecompileError::BadConstantFormat {
         msg: format!(
           "roundtrip recompile hash mismatch for '{}': recompiled={:.12} original={:.12}",
           first_name.pretty(),
           block_addr.hex(),
           orig.hex(),
         ),
-      });
+      }));
     }
   }
 
@@ -3471,7 +3653,7 @@ fn roundtrip_block(
       // surgery of `.below`/`.brecOn` calls. Load the per-constant metadata
       // extensions so Collapsed entries have their source-order arguments
       // available during binder-name restoration.
-      dec_cache.load_meta_extensions(&orig_meta);
+      dec_cache.load_meta_extensions(&orig_meta)?;
 
       // Find the Ixon data for this constant.
       let class_idx = name_to_class.get(&name).copied().unwrap_or(0);
@@ -3615,14 +3797,16 @@ fn roundtrip_block(
                 generated_consts.get(&n),
                 orig_env,
               );
-              return Err(DecompileError::BadConstantFormat {
-                msg: format!(
-                  "roundtrip hash mismatch for '{}' (decompiled={} original={})",
-                  n.pretty(),
-                  ci_kind(&ci),
-                  ci_kind(lean_ci),
-                ),
-              });
+              return Err(AuxGenError::Decompile(
+                DecompileError::BadConstantFormat {
+                  msg: format!(
+                    "roundtrip hash mismatch for '{}' (decompiled={} original={})",
+                    n.pretty(),
+                    ci_kind(&ci),
+                    ci_kind(lean_ci),
+                  ),
+                },
+              ));
             }
             // Validate Ixon projection hash for the primary constant
             // (not constructors — they have CPrj addresses that depend on
@@ -3700,18 +3884,20 @@ fn roundtrip_block(
                         format!("{:?}", std::mem::discriminant(other))
                       },
                     });
-                  return Err(DecompileError::BadConstantFormat {
-                    msg: format!(
-                      "[roundtrip ixon] {} proj mismatch: orig={:.12} [{:?}] \
+                  return Err(AuxGenError::Decompile(
+                    DecompileError::BadConstantFormat {
+                      msg: format!(
+                        "[roundtrip ixon] {} proj mismatch: orig={:.12} [{:?}] \
                        recomp={:.12} [idx={}, block={:.12}]",
-                      n.pretty(),
-                      orig_addr.hex(),
-                      orig_detail,
-                      proj_addr.hex(),
-                      class_idx,
-                      block_addr.hex(),
-                    ),
-                  });
+                        n.pretty(),
+                        orig_addr.hex(),
+                        orig_detail,
+                        proj_addr.hex(),
+                        class_idx,
+                        block_addr.hex(),
+                      ),
+                    },
+                  ));
                 }
               }
             }
@@ -3728,7 +3914,7 @@ fn roundtrip_block(
               name.pretty()
             );
           }
-          return Err(e);
+          return Err(e.into());
         },
       }
     }
@@ -4543,7 +4729,7 @@ fn regen_one_cases_on(
   orig_env: Option<&LeanEnv>,
   stt: &CompileState,
   dstt: &DecompileState,
-  aux_gen_errors: &mut Vec<(Name, DecompileError)>,
+  aux_gen_errors: &mut Vec<(Name, AuxGenError)>,
 ) {
   use crate::compile::aux_gen::cases_on::generate_cases_on;
   if let Some(aux_def) = generate_cases_on(co_name, rec_val, gen_env) {
@@ -4624,7 +4810,7 @@ fn decompile_block_aux_gen(
   stt: &CompileState,
   dstt: &DecompileState,
   muts_index: &MutsPlanIndex,
-) -> Vec<(Name, DecompileError)> {
+) -> Vec<(Name, AuxGenError)> {
   use crate::compile::aux_gen::{
     below::{BelowConstant, generate_below_constants},
     brecon::generate_brecon_constants,
@@ -4635,7 +4821,7 @@ fn decompile_block_aux_gen(
   let orig_env: Option<&LeanEnv> =
     stt.lean_env.as_ref().map(|arc| arc.as_ref());
 
-  let mut aux_gen_errors: Vec<(Name, DecompileError)> = Vec::new();
+  let mut aux_gen_errors: Vec<(Name, AuxGenError)> = Vec::new();
 
   // Map from name -> raw generated LeanConstantInfo (before roundtrip).
   // Used for three-way diagnostic: generated vs decompiled vs original.
@@ -4723,13 +4909,13 @@ fn decompile_block_aux_gen(
       Err(e) => {
         aux_gen_errors.push((
           all_names[0].clone(),
-          DecompileError::BadConstantFormat {
+          AuxGenError::Decompile(DecompileError::BadConstantFormat {
             msg: format!(
               "aux_gen rec failed for {}: {}",
               all_names[0].pretty(),
               e
             ),
-          },
+          }),
         ));
         return aux_gen_errors;
       },
@@ -4814,7 +5000,7 @@ fn decompile_block_aux_gen(
     stt,
     muts_index,
   ) {
-    aux_gen_errors.push((all_names[0].clone(), e));
+    aux_gen_errors.push((all_names[0].clone(), e.into()));
   }
 
   // Phase 1b: Generate .casesOn definitions.
@@ -4962,13 +5148,13 @@ fn decompile_block_aux_gen(
       Err(e) => {
         aux_gen_errors.push((
           all_names[0].clone(),
-          DecompileError::BadConstantFormat {
+          AuxGenError::Decompile(DecompileError::BadConstantFormat {
             msg: format!(
               "aux_gen below failed for {}: {}",
               all_names[0].pretty(),
               e
             ),
-          },
+          }),
         ));
         vec![]
       },
@@ -5278,13 +5464,13 @@ fn decompile_block_aux_gen(
         Err(e) => {
           aux_gen_errors.push((
             all_names[0].clone(),
-            DecompileError::BadConstantFormat {
+            AuxGenError::Decompile(DecompileError::BadConstantFormat {
               msg: format!(
                 "aux_gen below.rec failed for {}: {}",
                 all_names[0].pretty(),
                 e
               ),
-            },
+            }),
           ));
         },
       }
@@ -5394,13 +5580,13 @@ fn decompile_block_aux_gen(
       Err(e) => {
         aux_gen_errors.push((
           all_names[0].clone(),
-          DecompileError::BadConstantFormat {
+          AuxGenError::Decompile(DecompileError::BadConstantFormat {
             msg: format!(
               "aux_gen brecOn failed for {}: {}",
               all_names[0].pretty(),
               e
             ),
-          },
+          }),
         ));
       },
     }
@@ -5415,7 +5601,8 @@ fn decompile_block_aux_gen(
       {
         aux_gen_errors.push((
           name.clone(),
-          DecompileError::BadConstantFormat { msg: format!("congruence: {e}") },
+          DecompileError::BadConstantFormat { msg: format!("congruence: {e}") }
+            .into(),
         ));
       }
     }
@@ -5626,7 +5813,7 @@ pub fn decompile_env(
   let mut work_env: LeanEnv =
     dstt.env.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
 
-  let mut aux_gen_errors: Vec<(Name, DecompileError)> = Vec::new();
+  let mut aux_gen_errors: Vec<(Name, AuxGenError)> = Vec::new();
 
   // Tracks constants already ingressed into `kctx.kenv` across all blocks,
   // so the BFS below doesn't redundantly walk the same dependency subgraph
@@ -5983,6 +6170,64 @@ mod tests {
     assert_eq!(
       decompile_kenv_clear_entries_from(Some("invalid")),
       Some(DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES),
+    );
+  }
+
+  /// The recompile of `roundtrip_block` shares under the state's limits, and
+  /// a sharing failure keeps its compile error (a resource limit stays a
+  /// resource limit) and names the constant.
+  #[test]
+  fn roundtrip_recompile_sharing_failure_names_the_constant() {
+    use ixon::sharing_exact::ExactSharingLimits;
+    let name = Name::str(Name::str(Name::anon(), "RT".into()), "d".into());
+    let sort0 = LeanExpr::sort(Level::zero());
+    let def = Def {
+      name: name.clone(),
+      level_params: vec![],
+      typ: LeanExpr::all(
+        Name::anon(),
+        sort0.clone(),
+        sort0.clone(),
+        BinderInfo::Default,
+      ),
+      kind: DefKind::Definition,
+      value: LeanExpr::lam(
+        Name::anon(),
+        sort0.clone(),
+        LeanExpr::bvar(Nat::from(0u64)),
+        BinderInfo::Default,
+      ),
+      hints: ReducibilityHints::Abbrev,
+      safety: DefinitionSafety::Safe,
+      all: vec![name.clone()],
+    };
+    let stt = CompileState {
+      sharing_limits: ExactSharingLimits {
+        max_output_bytes: 1,
+        ..Default::default()
+      },
+      ..CompileState::default()
+    };
+    let err = roundtrip_block(
+      &[LeanMutConst::Defn(def)],
+      &FxHashMap::default(),
+      None,
+      &stt,
+      &DecompileState::default(),
+    )
+    .expect_err("one output byte cannot hold the definition");
+    match &err {
+      AuxGenError::Recompile { constant, step, err: inner } => {
+        assert_eq!((constant.as_str(), *step), ("RT.d", "sharing"));
+        assert!(matches!(inner, CompileError::ResourceLimit { .. }), "{err}");
+      },
+      AuxGenError::Decompile(e) => panic!("expected a recompile error: {e}"),
+    }
+    assert!(
+      err
+        .to_string()
+        .starts_with("recompile of 'RT.d' (sharing): resource limit:"),
+      "{err}"
     );
   }
 
@@ -6402,5 +6647,465 @@ mod tests {
     // machinery pulls univs via the cache, not via `Level`, but we
     // imported it for symmetry with the production callers.
     let _ = Level::zero();
+  }
+}
+
+// ===========================================================================
+// Extended index space for `Share` inside `meta_sharing`
+//
+// `Share(i)` inside `meta_sharing[j]` denotes primary entry `i` (`i < p`) or
+// `meta_sharing[i - p]` (`p <= i < p + j`); anything else is
+// `InvalidMetaShareIndex`. No compiler emits such a share today, so these
+// hand-built fixtures pin the reader rule. They mirror the Lean
+// `decompile-unit` "metadata share" tests in `Tests/Ix/Decompile.lean`.
+//
+// Every fixture has one primary entry (`p = 1`), `prim0 = (#1 #2)`, and a
+// primary root `head #99` whose `CallSite` metadata reads one collapsed
+// argument from `meta_sharing` before the kept `#99`.
+// ===========================================================================
+
+#[cfg(test)]
+mod meta_share_tests {
+  use super::*;
+  use crate::compile::compile_name;
+
+  struct Fx {
+    stt: CompileState,
+    head: Name,
+    head_addr: Address,
+    head2: Name,
+    head2_addr: Address,
+  }
+
+  fn fx() -> Fx {
+    let stt = CompileState::default();
+    let head = Name::str(Name::anon(), "MS.head".to_string());
+    let head2 = Name::str(Name::anon(), "MS.head2".to_string());
+    let head_addr = compile_name(&head, &stt);
+    let head2_addr = compile_name(&head2, &stt);
+    Fx { stt, head, head_addr, head2, head2_addr }
+  }
+
+  fn prim0() -> Arc<Expr> {
+    Expr::app(Expr::var(1), Expr::var(2))
+  }
+  /// `meta_sharing[0]`, shared: `Share(0)` is primary entry 0.
+  fn shared_m0() -> Arc<Expr> {
+    Expr::app(Expr::share(0), Expr::var(3))
+  }
+  /// `meta_sharing[1]`, shared: `Share(1) = p + 0` is `meta_sharing[0]`.
+  fn shared_m1() -> Arc<Expr> {
+    Expr::app(Expr::share(1), Expr::share(0))
+  }
+  fn plain_m0() -> Arc<Expr> {
+    Expr::app(prim0(), Expr::var(3))
+  }
+  fn plain_m1() -> Arc<Expr> {
+    Expr::app(plain_m0(), prim0())
+  }
+
+  fn bv(n: u64) -> LeanExpr {
+    LeanExpr::bvar(Nat::from(n))
+  }
+  fn lean_prim0() -> LeanExpr {
+    LeanExpr::app(bv(1), bv(2))
+  }
+  fn lean_m0() -> LeanExpr {
+    LeanExpr::app(lean_prim0(), bv(3))
+  }
+  fn lean_m1() -> LeanExpr {
+    LeanExpr::app(lean_m0(), lean_prim0())
+  }
+
+  /// The primary root `head #99`.
+  fn root() -> Arc<Expr> {
+    Expr::app(Expr::reference(0, vec![]), Expr::var(99))
+  }
+
+  /// `head x #99`.
+  fn spine(fx: &Fx, x: LeanExpr) -> LeanExpr {
+    LeanExpr::app(
+      LeanExpr::app(LeanExpr::cnst(fx.head.clone(), vec![]), x),
+      bv(99),
+    )
+  }
+
+  /// Arena `0` leaf (the kept argument), `1` the call site, whose source
+  /// spine is `head <meta_sharing[k]> #99`.
+  fn arena(fx: &Fx, k: u64, orig_head: Option<(u64, u64)>) -> ExprMeta {
+    let mut arena = ExprMeta::default();
+    let leaf = arena.alloc(ExprMetaData::Leaf);
+    arena.alloc(ExprMetaData::CallSite {
+      name: fx.head_addr.clone(),
+      entries: vec![
+        CallSiteEntry::Collapsed { sharing_idx: k, meta: u64::MAX },
+        CallSiteEntry::Kept { canon_idx: 0, meta: leaf },
+      ],
+      canon_meta: vec![leaf],
+      orig_head,
+    });
+    arena
+  }
+
+  /// A cache with the primary table `[prim0]` and `meta_sharing` installed
+  /// directly (no table check), so the lazy checks are exercised.
+  fn cache(fx: &Fx, meta_sharing: Vec<Arc<Expr>>) -> BlockCache {
+    BlockCache {
+      sharing: vec![prim0()],
+      meta_sharing,
+      refs: vec![fx.head_addr.clone()],
+      current_const: "meta_share".into(),
+      ..Default::default()
+    }
+  }
+
+  fn run(
+    fx: &Fx,
+    meta_sharing: Vec<Arc<Expr>>,
+    arena: &ExprMeta,
+    root: &Arc<Expr>,
+    root_idx: u64,
+  ) -> Result<LeanExpr, DecompileError> {
+    let mut cache = cache(fx, meta_sharing);
+    decompile_expr(
+      root,
+      arena,
+      root_idx,
+      &[],
+      &mut cache,
+      &fx.stt,
+      &DecompileState::default(),
+    )
+  }
+
+  fn assert_meta_share_err<T: std::fmt::Debug>(
+    r: Result<T, DecompileError>,
+    want_idx: u64,
+    want_entry: u64,
+    want_p: usize,
+    want_q: usize,
+  ) {
+    match r {
+      Err(DecompileError::InvalidMetaShareIndex {
+        idx,
+        entry,
+        primary_len,
+        meta_len,
+        ..
+      }) => assert_eq!(
+        (idx, entry, primary_len, meta_len),
+        (want_idx, want_entry, want_p, want_q)
+      ),
+      other => panic!("expected InvalidMetaShareIndex, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn meta_share_primary_entry() {
+    let fx = fx();
+    let got = run(&fx, vec![shared_m0()], &arena(&fx, 0, None), &root(), 1);
+    assert_eq!(got.expect("decompiles"), spine(&fx, lean_m0()));
+  }
+
+  #[test]
+  fn meta_share_earlier_meta_entry() {
+    let fx = fx();
+    let got = run(
+      &fx,
+      vec![shared_m0(), shared_m1()],
+      &arena(&fx, 1, None),
+      &root(),
+      1,
+    );
+    assert_eq!(got.expect("decompiles"), spine(&fx, lean_m1()));
+  }
+
+  /// The shared table decompiles exactly like the unshared original.
+  #[test]
+  fn meta_share_round_trip_equals_unshared() {
+    let fx = fx();
+    let a = arena(&fx, 1, None);
+    let shared =
+      run(&fx, vec![shared_m0(), shared_m1()], &a, &root(), 1).unwrap();
+    let plain = run(&fx, vec![plain_m0(), plain_m1()], &a, &root(), 1).unwrap();
+    assert_eq!(shared, plain);
+    assert_eq!(shared, spine(&fx, lean_m1()));
+  }
+
+  /// `orig_head` reads its entry in that entry's metadata scope too:
+  /// source spine `<meta_sharing[1]> <meta_sharing[0]> #99`.
+  #[test]
+  fn meta_share_orig_head() {
+    let fx = fx();
+    let got = run(
+      &fx,
+      vec![shared_m0(), shared_m1()],
+      &arena(&fx, 0, Some((1, u64::MAX))),
+      &root(),
+      1,
+    );
+    assert_eq!(
+      got.expect("decompiles"),
+      LeanExpr::app(LeanExpr::app(lean_m1(), lean_m0()), bv(99))
+    );
+  }
+
+  #[test]
+  fn meta_share_forward_reference_rejected() {
+    let fx = fx();
+    let table = vec![Expr::app(Expr::share(2), Expr::var(3)), Expr::var(4)];
+    let lazy = run(&fx, table.clone(), &arena(&fx, 0, None), &root(), 1);
+    assert_meta_share_err(lazy, 2, 0, 1, 2);
+    assert_meta_share_err(validate_meta_sharing(1, &table, "t"), 2, 0, 1, 2);
+  }
+
+  #[test]
+  fn meta_share_self_reference_rejected() {
+    let fx = fx();
+    let table = vec![Expr::app(Expr::share(1), Expr::var(3))];
+    let lazy = run(&fx, table.clone(), &arena(&fx, 0, None), &root(), 1);
+    assert_meta_share_err(lazy, 1, 0, 1, 1);
+    assert_meta_share_err(validate_meta_sharing(1, &table, "t"), 1, 0, 1, 1);
+  }
+
+  #[test]
+  fn meta_share_out_of_range_rejected() {
+    let fx = fx();
+    let table = vec![Expr::var(0), Expr::app(Expr::share(5), Expr::var(3))];
+    let lazy = run(&fx, table.clone(), &arena(&fx, 1, None), &root(), 1);
+    let msg = lazy.as_ref().unwrap_err().to_string();
+    assert!(msg.contains("out of range"), "{msg}");
+    assert_meta_share_err(lazy, 5, 1, 1, 2);
+    assert_meta_share_err(validate_meta_sharing(1, &table, "t"), 5, 1, 1, 2);
+  }
+
+  /// A primary `Share(i)` with `i >= p` stays invalid although
+  /// `meta_sharing` has entries: metadata never changes how primary bytes
+  /// decode.
+  #[test]
+  fn meta_share_primary_share_unchanged() {
+    let fx = fx();
+    let root = Expr::app(Expr::reference(0, vec![]), Expr::share(1));
+    let got = run(&fx, vec![shared_m0()], &arena(&fx, 0, None), &root, 1);
+    assert!(
+      matches!(
+        got,
+        Err(DecompileError::InvalidShareIndex { idx: 1, max: 1, .. })
+      ),
+      "{got:?}"
+    );
+  }
+
+  /// The expression cache is keyed by scope: `sub = Share(1) #7` is valid
+  /// in `meta_sharing[1]` (decoded first, as the collapsed argument of the
+  /// call site in function position) and must still be rejected when the
+  /// primary root applies the call site to the same `sub` (same pointer,
+  /// same arena index; no call-site scan covers that occurrence).
+  #[test]
+  fn meta_share_cache_keyed_by_scope() {
+    let fx = fx();
+    let sub = Expr::app(Expr::share(1), Expr::var(7));
+    let root = Expr::app(root(), sub.clone());
+    let mut a = arena(&fx, 1, None);
+    let root_idx = a.alloc(ExprMetaData::App { children: [1, u64::MAX] });
+    let got = run(&fx, vec![shared_m0(), sub], &a, &root, root_idx);
+    assert!(
+      matches!(
+        got,
+        Err(DecompileError::InvalidShareIndex { idx: 1, max: 1, .. })
+      ),
+      "{got:?}"
+    );
+  }
+
+  /// A call site nested in a metadata expression: its canonical spine runs
+  /// through a metadata share into `meta_sharing[0]`, and an argument there
+  /// is a primary share. Source: `head (head2 (#1 #2) #9) #99`.
+  #[test]
+  fn meta_share_nested_call_site_crosses_scopes() {
+    let fx = fx();
+    let m0 = Expr::app(Expr::reference(0, vec![]), Expr::share(0));
+    let m1 = Expr::app(Expr::share(1), Expr::var(9));
+    let mut a = ExprMeta::default();
+    let leaf = a.alloc(ExprMetaData::Leaf);
+    let inner = a.alloc(ExprMetaData::CallSite {
+      name: fx.head2_addr.clone(),
+      entries: vec![
+        CallSiteEntry::Kept { canon_idx: 0, meta: u64::MAX },
+        CallSiteEntry::Kept { canon_idx: 1, meta: u64::MAX },
+      ],
+      canon_meta: vec![u64::MAX, u64::MAX],
+      orig_head: None,
+    });
+    let outer = a.alloc(ExprMetaData::CallSite {
+      name: fx.head_addr.clone(),
+      entries: vec![
+        CallSiteEntry::Collapsed { sharing_idx: 1, meta: inner },
+        CallSiteEntry::Kept { canon_idx: 0, meta: leaf },
+      ],
+      canon_meta: vec![leaf],
+      orig_head: None,
+    });
+    let got = run(&fx, vec![m0, m1], &a, &root(), outer);
+    let inner_lean = LeanExpr::app(
+      LeanExpr::app(LeanExpr::cnst(fx.head2.clone(), vec![]), lean_prim0()),
+      bv(9),
+    );
+    assert_eq!(got.expect("decompiles"), spine(&fx, inner_lean));
+  }
+
+  /// An eta call site in a metadata expression: the synthesized wrapper is
+  /// stripped across a metadata share (`meta_sharing[1] = λ. Share(1)`, the
+  /// inner lambda being `meta_sharing[0]`). Source: `head (head2 #1) #99`
+  /// (the kept `#3` is lowered by the two synthesized binders).
+  #[test]
+  fn meta_share_eta_wrapper_across_meta_share() {
+    let fx = fx();
+    let m0 = Expr::lam(
+      Expr::var(5),
+      Expr::app(
+        Expr::app(Expr::reference(0, vec![]), Expr::var(3)),
+        Expr::var(0),
+      ),
+    );
+    let m1 = Expr::lam(Expr::var(6), Expr::share(1));
+    let mut a = ExprMeta::default();
+    let leaf = a.alloc(ExprMetaData::Leaf);
+    let eta = a.alloc(ExprMetaData::EtaCallSite {
+      n_synth: 2,
+      name: fx.head2_addr.clone(),
+      entries: vec![CallSiteEntry::Kept { canon_idx: 0, meta: u64::MAX }],
+      canon_meta: vec![u64::MAX, u64::MAX],
+      wrapper_meta: u64::MAX,
+    });
+    let outer = a.alloc(ExprMetaData::CallSite {
+      name: fx.head_addr.clone(),
+      entries: vec![
+        CallSiteEntry::Collapsed { sharing_idx: 1, meta: eta },
+        CallSiteEntry::Kept { canon_idx: 0, meta: leaf },
+      ],
+      canon_meta: vec![leaf],
+      orig_head: None,
+    });
+    let got = run(&fx, vec![m0, m1], &a, &root(), outer);
+    let inner_lean =
+      LeanExpr::app(LeanExpr::cnst(fx.head2.clone(), vec![]), bv(1));
+    assert_eq!(got.expect("decompiles"), spine(&fx, inner_lean));
+  }
+
+  /// Register an axiom `MS.ax : head <meta_sharing[1]> #99` with the given
+  /// `meta_sharing` and run the whole `decompile_env` path (the table is
+  /// checked by `load_meta_extensions`).
+  fn decompile_axiom_env(
+    meta_sharing: Vec<Arc<Expr>>,
+  ) -> (Result<DecompileState, DecompileError>, Fx, Name) {
+    let fx = fx();
+    let ax_name = Name::str(Name::anon(), "MS.ax".to_string());
+    let ax_addr_name = compile_name(&ax_name, &fx.stt);
+    let ax = Constant {
+      info: ConstantInfo::Axio(Axiom {
+        is_unsafe: false,
+        lvls: 0,
+        typ: root(),
+      }),
+      sharing: vec![prim0()],
+      refs: vec![fx.head_addr.clone()],
+      univs: vec![],
+    };
+    let mut bytes = Vec::new();
+    ax.put(&mut bytes);
+    let addr = Address::hash(&bytes);
+    fx.stt.env.store_const(addr.clone(), ax);
+    let mut meta = ConstantMeta::new(ConstantMetaInfo::Axio {
+      name: ax_addr_name,
+      lvls: vec![],
+      arena: arena(&fx, 1, None),
+      type_root: 1,
+    });
+    meta.meta_sharing = meta_sharing;
+    fx.stt.env.register_name(ax_name.clone(), Named::new(addr, meta));
+    (decompile_env(&fx.stt), fx, ax_name)
+  }
+
+  #[test]
+  fn meta_share_whole_constant_decompiles() {
+    let (dstt, fx, ax_name) =
+      decompile_axiom_env(vec![shared_m0(), shared_m1()]);
+    let dstt = dstt.expect("decompile_env succeeds");
+    let entry = dstt.env.get(&ax_name).expect("MS.ax decompiled");
+    match &*entry {
+      LeanConstantInfo::AxiomInfo(v) => {
+        assert_eq!(v.cnst.typ, spine(&fx, lean_m1()));
+      },
+      other => {
+        panic!("expected AxiomInfo, got {:?}", std::mem::discriminant(other))
+      },
+    }
+  }
+
+  /// Entry 2 is never read (the call site reads entry 1) but references
+  /// itself (`Share(3) = p + 2`): the table check still rejects it.
+  #[test]
+  fn meta_share_unread_malformed_entry_rejected() {
+    let (dstt, _, _) = decompile_axiom_env(vec![
+      shared_m0(),
+      shared_m1(),
+      Expr::app(Expr::share(3), Expr::var(0)),
+    ]);
+    assert_meta_share_err(dstt.map(|_| ()), 3, 2, 1, 3);
+  }
+
+  /// Regression: metadata without shares behaves as before.
+  #[test]
+  fn meta_share_tables_without_shares_unchanged() {
+    let fx = fx();
+    let got = run(&fx, vec![plain_m0()], &arena(&fx, 0, None), &root(), 1);
+    assert_eq!(got.expect("decompiles"), spine(&fx, lean_m0()));
+    validate_meta_sharing(0, &[plain_m0(), plain_m1()], "t")
+      .expect("no shares: valid against an empty primary table");
+  }
+
+  /// The table check visits each shared node once. In-memory tables share
+  /// subterms through `Arc`s (the compiler's expression memo); on the chain
+  /// `e(k+1) = App(e(k), e(k))` a tree walk is 2^depth (depth 26 took 1.6 s,
+  /// doubling per level), so depth 64 only finishes as a DAG walk. A
+  /// violation behind shared subterms is still the one the tree walk
+  /// reports first.
+  #[test]
+  fn validate_meta_sharing_visits_shared_subterms_once() {
+    let mut e = Expr::app(Expr::share(0), Expr::var(0));
+    for _ in 0..64 {
+      e = Expr::app(e.clone(), e);
+    }
+    validate_meta_sharing(1, &[e.clone(), e.clone()], "t")
+      .expect("every share is primary entry 0");
+    // Entry 1 reads `e` (seen in entry 0) and then `Share(2)`, a self
+    // reference of entry 1 (`p + 1 = 2`).
+    let err = validate_meta_sharing(
+      1,
+      &[e.clone(), Expr::app(e.clone(), Expr::share(2))],
+      "t",
+    )
+    .unwrap_err();
+    assert_eq!(
+      err,
+      DecompileError::InvalidMetaShareIndex {
+        idx: 2,
+        entry: 1,
+        primary_len: 1,
+        meta_len: 2,
+        constant: "t".into(),
+      }
+    );
+    // Inside the shared chain itself, the first violation in pre-order is
+    // the leftmost leaf: `Share(0)` against an empty primary table.
+    let err = validate_meta_sharing(0, &[e], "t").unwrap_err();
+    assert!(
+      matches!(
+        err,
+        DecompileError::InvalidMetaShareIndex { idx: 0, entry: 0, .. }
+      ),
+      "{err}"
+    );
   }
 }

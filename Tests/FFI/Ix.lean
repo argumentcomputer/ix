@@ -275,7 +275,8 @@ def decompileErrorTests : TestSeq :=
   test "DecompileError.blobNotFound" (roundtripDecompileError (.blobNotFound addr) == .blobNotFound addr) ++
   test "DecompileError.badBlobFormat" (roundtripDecompileError (.badBlobFormat addr "UTF-8") == .badBlobFormat addr "UTF-8") ++
   test "DecompileError.badConstantFormat" (roundtripDecompileError (.badConstantFormat "bad") == .badConstantFormat "bad") ++
-  test "DecompileError.serializeError" (roundtripDecompileError (.serializeError se) == .serializeError se)
+  test "DecompileError.serializeError" (roundtripDecompileError (.serializeError se) == .serializeError se) ++
+  test "DecompileError.invalidMetaShareIndex" (roundtripDecompileError (.invalidMetaShareIndex 9 2 4 3 "meta") == .invalidMetaShareIndex 9 2 4 3 "meta")
 
 def compileErrorTests : TestSeq :=
   let addr := Address.blake3 (ByteArray.mk #[4, 5, 6])
@@ -286,7 +287,8 @@ def compileErrorTests : TestSeq :=
   test "CompileError.unsupportedExpr" (roundtripCompileError (.unsupportedExpr "mvar") == .unsupportedExpr "mvar") ++
   test "CompileError.unknownUnivParam" (roundtripCompileError (.unknownUnivParam "Nat" "u") == .unknownUnivParam "Nat" "u") ++
   test "CompileError.serializeError" (roundtripCompileError (.serializeError se) == .serializeError se) ++
-  test "CompileError.resourceLimit" (roundtripCompileError (.resourceLimit "memory reserve") == .resourceLimit "memory reserve")
+  test "CompileError.resourceLimit" (roundtripCompileError (.resourceLimit "memory reserve") == .resourceLimit "memory reserve") ++
+  test "CompileError.sharingConstruction" (roundtripCompileError (.sharingConstruction "internal") == .sharingConstruction "internal")
 
 /-! ## Test Suite -/
 

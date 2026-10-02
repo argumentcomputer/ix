@@ -49,17 +49,37 @@ def get (label : String) (result : Except String α) : IO α :=
   | .ok value => pure value
   | .error e => throw <| IO.userError s!"addressed resource {label}: {e}"
 
+/-- The profile the shared fixture pins. -/
+def fixtureProfile : Profile :=
+  let (_, unit) := unitEnv
+  { natType := some unit, shareableTypes := #[unit] }
+
+/-- One `addressed.tsv` row: a constant's address and canonical bytes. -/
+def fixtureLine (label : String) (constant : Constant) : String :=
+  s!"{label}\t{Addressed.commit constant}\t{hexOfBytes (serConstant constant)}"
+
+/-- The shared `addressed.tsv` fixture, also read by the Rust resource
+validator. `lake exe ixon-v4-tests --export-fixtures` writes it. -/
+def fixtureText : Except String String := do
+  let profileAddress ← fixtureProfile.address
+  let rows := fixtures.map fun (label, constant) => fixtureLine label constant
+  let rows := rows.push s!"profile\t{profileAddress}\t{hexOfBytes fixtureProfile.bytes}"
+  return rows.foldl (fun text row => text ++ row ++ "\n") "# name\taddress\tcanonical bytes\n"
+
 def run : IO Unit := do
   let (base, unit) := unitEnv
-  let profile : Profile := { natType := some unit, shareableTypes := #[unit] }
-  let fixture ← IO.FS.readFile "Tests/Fixtures/ixon-v3/addressed.tsv"
+  let profile := fixtureProfile
+  let fixture ← IO.FS.readFile "Tests/Fixtures/ixon-v4/addressed.tsv"
   let lines := fixture.splitOn "\n"
   for (label, constant) in fixtures do
-    let line := s!"{label}\t{Addressed.commit constant}\t{hexOfBytes (serConstant constant)}"
-    unless lines.contains line do throw <| IO.userError s!"addressed fixture differs: {label}"
+    unless lines.contains (fixtureLine label constant) do
+      throw <| IO.userError s!"addressed fixture differs: {label}"
   let profileAddress ← get "profile address" profile.address
   unless lines.contains s!"profile\t{profileAddress}\t{hexOfBytes profile.bytes}" do
     throw <| IO.userError "addressed profile fixture differs"
+  unless fixture == (← get "fixture text" fixtureText) do
+    throw <| IO.userError "addressed fixture differs from its producer; regenerate it with \
+      `lake exe ixon-v4-tests --export-fixtures`"
   let decoded ← get "profile roundtrip" (Profile.ofBytes profile.bytes)
   unless decoded.bytes == profile.bytes do throw <| IO.userError "profile roundtrip differs"
   for length in [:profile.bytes.size] do

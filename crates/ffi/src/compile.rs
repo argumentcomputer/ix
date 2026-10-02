@@ -19,6 +19,7 @@ use ix_common::address::Address;
 use ix_common::env::{Name, ReducibilityHints};
 use ix_compile::compile::{
   CompileOptions, CompileState, compile_env_with_options,
+  compiler_sharing_limits,
 };
 use ix_compile::condense::compute_sccs;
 use ix_compile::decompile::decompile_env;
@@ -960,7 +961,7 @@ extern "C" fn rs_get_block_sharing_len(
 // =============================================================================
 
 #[cfg(feature = "test-ffi")]
-/// Expand shares while preserving all v3 contracts and static groups.
+/// Expand shares while preserving all Ixon contracts and static groups.
 fn unshare_expr(
   expr: &Arc<IxonExpr>,
   sharing: &[Arc<IxonExpr>],
@@ -1379,6 +1380,21 @@ impl LeanIxDecompileError<LeanOwned> {
         ctor.set_obj(0, LeanIxSerializeError::build(se));
         ctor
       },
+      DecompileError::InvalidMetaShareIndex {
+        idx,
+        entry,
+        primary_len,
+        meta_len,
+        constant,
+      } => {
+        let ctor = LeanIxDecompileError::alloc(11);
+        ctor.set_obj(0, build_lean_nat_usize(*primary_len));
+        ctor.set_obj(1, build_lean_nat_usize(*meta_len));
+        ctor.set_obj(2, build_lean_string(constant));
+        ctor.set_num_64(0, *idx);
+        ctor.set_num_64(1, *entry);
+        ctor
+      },
     }
   }
 }
@@ -1455,6 +1471,26 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
       10 => DecompileError::Serialize(
         LeanIxSerializeError(self.get_obj(0)).decode(),
       ),
+      11 => {
+        let primary_len = LeanNat::to_nat(&self.get_obj(0))
+          .to_u64()
+          .and_then(|x| usize::try_from(x).ok())
+          .unwrap_or(0);
+        let meta_len = LeanNat::to_nat(&self.get_obj(1))
+          .to_u64()
+          .and_then(|x| usize::try_from(x).ok())
+          .unwrap_or(0);
+        let constant = self.get_obj(2).as_string().to_string();
+        let idx = self.get_num_64(0);
+        let entry = self.get_num_64(1);
+        DecompileError::InvalidMetaShareIndex {
+          idx,
+          entry,
+          primary_len,
+          meta_len,
+          constant,
+        }
+      },
       tag => unreachable!("Invalid DecompileError tag: {tag}"),
     }
   }
@@ -1463,14 +1499,15 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
 impl LeanIxCompileError<LeanOwned> {
   /// Build a Lean CompileError from a Rust CompileError.
   ///
-  /// Tags 0–6:
+  /// Tags 0–7:
   ///   0: missingConstant (name : String) → 1 obj
   ///   1: missingAddress (addr : Address) → 1 obj
   ///   2: invalidMutualBlock (reason : String) → 1 obj
   ///   3: unsupportedExpr (desc : String) → 1 obj
   ///   4: unknownUnivParam (curr param : String) → 2 obj
-  ///   5: serializeError (msg : String) → 1 obj
+  ///   5: serializeError (err : SerializeError) → 1 obj
   ///   6: resourceLimit (reason : String) → 1 obj
+  ///   7: sharingConstruction (reason : String) → 1 obj
   pub fn build(err: &CompileError) -> Self {
     match err {
       CompileError::MissingConstant { name, .. } => {
@@ -1509,6 +1546,11 @@ impl LeanIxCompileError<LeanOwned> {
         ctor.set_obj(0, build_lean_string(reason));
         ctor
       },
+      CompileError::SharingConstruction { reason } => {
+        let ctor = LeanIxCompileError::alloc(7);
+        ctor.set_obj(0, build_lean_string(reason));
+        ctor
+      },
     }
   }
 }
@@ -1544,6 +1586,9 @@ impl<R: LeanRef> LeanIxCompileError<R> {
         CompileError::Serialize(LeanIxSerializeError(self.get_obj(0)).decode())
       },
       6 => CompileError::ResourceLimit {
+        reason: self.get_obj(0).as_string().to_string(),
+      },
+      7 => CompileError::SharingConstruction {
         reason: self.get_obj(0).as_string().to_string(),
       },
       tag => unreachable!("Invalid CompileError tag: {tag}"),
@@ -1676,7 +1721,14 @@ pub extern "C" fn rs_decompile_env(
   // reconstructs the block structure from the env itself —
   // `name_to_addr` so aux_gen resolves addresses for the names it
   // regenerates (mirroring `rs_compile_validate_aux`'s Phase 7 setup).
-  let stt = CompileState { env, ..CompileState::default() };
+  // The recompile check runs under the compiler's sharing limits.
+  let sharing_limits = match compiler_sharing_limits() {
+    Ok(l) => l,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!("rs_decompile_env: {e}"));
+    },
+  };
+  let stt = CompileState { env, sharing_limits, ..CompileState::default() };
   for entry in stt.env.named.iter() {
     stt.name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
   }
@@ -1776,7 +1828,15 @@ pub extern "C" fn rs_decompile_env_consts(
     ));
   }
 
-  let stt = CompileState { env, ..CompileState::default() };
+  let sharing_limits = match compiler_sharing_limits() {
+    Ok(l) => l,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_decompile_env_consts: {e}"
+      ));
+    },
+  };
+  let stt = CompileState { env, sharing_limits, ..CompileState::default() };
   for entry in stt.env.named.iter() {
     stt.name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
   }

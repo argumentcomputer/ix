@@ -64,7 +64,7 @@ namespace Ix.AuxGen
 
 open Ix.CompileM (CompileM CompileError getBlockState modifyBlockState
   getCompileEnv compileName withMutCtx preseedExprTables
-  mutConstPreseedExprs compileMutConsts sortConsts buildConstantWithSharing)
+  mutConstPreseedExprs compileMutConsts sortConsts buildBlockConstant)
 
 /-! ## State-model helpers (Rust `CompileState` mutations) -/
 
@@ -187,19 +187,16 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
   -- member (collecting metas, incl. ctor metas), push only the first
   -- representative's data/exprs. Runs under the block's mutCtx like
   -- Rust's explicit `&mut_ctx` threading.
-  let (mutConsts, allExprs, allMetas, blockRefs, blockUnivs) ←
+  let (mutConsts, allMetas, blockRefs, blockUnivs) ←
     liftM (withMutCtx mutCtx (do
       preseedExprTables preseedExprs
-      let (dat, exprs, metas) ← compileMutConsts sortedClasses
+      let (dat, _, metas) ← compileMutConsts sortedClasses
       let st ← getBlockState
-      pure (dat, exprs, metas, st.refs, st.univs)) : CompileM _)
+      pure (dat, metas, st.refs, st.univs)) : CompileM _)
 
   -- `all_metas` name → meta view (Rust FxHashMap; keys are unique).
   let metaMap : Std.HashMap Name Ixon.ConstantMeta :=
     allMetas.foldl (init := {}) fun m (n, cm) => m.insert n cm
-
-  -- `name_str` (mutual.rs:192) feeds Rust's sharing debug stats only —
-  -- not modeled.
 
   -- Singleton non-inductive aux blocks: standalone `Defn`/`Recr`
   -- Constant instead of `Muts([one])` (mutual.rs:199-247).
@@ -209,11 +206,11 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
       | .defn d => .defn d
       | .recr r => .recr r
       | .indc _ => unreachable!
-    -- `apply_sharing_to_{definition,recursor}_with_stats`
-    -- (mutual.rs:208-218): `buildConstantWithSharing` dispatches on the
-    -- info variant; `allExprs` holds exactly the single representative's
-    -- root exprs ([typ, value] / [typ, rule rhss…]).
-    let constant := buildConstantWithSharing info allExprs blockRefs blockUnivs
+    -- `apply_sharing_to_{definition,recursor}_with_limits`
+    -- (mutual.rs:208-218): `buildBlockConstant` shares the single
+    -- representative's roots ([typ, value] / [typ, rule rhss…]).
+    let constant ←
+      liftM (buildBlockConstant info blockRefs blockUnivs : CompileM _)
     let standaloneAddr := contentAddress constant
     liftM <| show CompileM Unit from do
       auxStoreConst standaloneAddr constant
@@ -235,8 +232,8 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
     return ()
 
   -- Compile the mutual block (mutual.rs:249-256).
-  let block := buildConstantWithSharing (.muts mutConsts) allExprs
-    blockRefs blockUnivs
+  let block ← liftM
+    (buildBlockConstant (.muts mutConsts) blockRefs blockUnivs : CompileM _)
   let blockBytes := Ixon.ser block
   let blockAddr := Address.blake3 blockBytes
   liftM (auxStoreConst blockAddr block : CompileM _)

@@ -3,7 +3,7 @@ module
 /-!
 # Ixon binder modes
 
-Ixon v3 carries independent usage, ownership, and locality contracts. Ordinary
+Ixon carries independent usage, ownership, and locality contracts. Ordinary
 Lean compilation inhabits the conservative fragment: every lambda/forall
 binder is `.many`, and every forall result is `.shared`.
 -/

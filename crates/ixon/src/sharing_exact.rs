@@ -1,0 +1,856 @@
+//! Sharing tables of anonymous Constants: the canonical construction and its
+//! reference searches (`docs/sharing-minimum.md`).
+//!
+//! The compiler shares every block with the tiered canonical construction
+//! ([`canonical_sharing_tiered`], `tiered`; Lean
+//! `Ix.Sharing.Exact.canonicalSharingTiered`): phase 1 is the exact
+//! uniform-width optimizer (`uniform`) at widths 1, 2 and 3, phase 2
+//! allocates the table slots, phase 3 re-materializes every part under the
+//! real TagN widths, and the candidate with the fewest bytes wins.
+//!
+//! The rest of this module is the global exact minimum of
+//! `docs/sharing-minimum.md` §3, computed by the width-state search
+//! ([`optimize_sharing`], [`normalize_constant_sharing`], `search`). It is
+//! exponential in the candidates and is a test oracle for small inputs, not
+//! on the compiler path. Given a resolved anonymous Constant (or its ordered
+//! expanded roots), it returns the feasible backward-reference sharing
+//! encoding with the lexicographically least key
+//!
+//! ```text
+//! K(e) = (L(e), Q(e), bytes(e))
+//! ```
+//!
+//! where `L` is the byte length of the complete serialized Constant, `Q` the
+//! vector of structural term IDs (§3.2) of the table entries in stored order
+//! and `bytes` the serialized Constant. All non-sharing fields, root order and
+//! the refs/univs tables are fixed; only the table sequence and per-occurrence
+//! inline/reference choices vary. A table entry may reference only earlier
+//! entries (the backward-reference class of §3.1); this module does not claim
+//! optimality over forward-acyclic tables.
+//!
+//! Structure:
+//! - [`SharingDag`] (`dag`): collision-independent hash-consing of the
+//!   expanded roots with §3.2 structural IDs, built from expanded roots or by
+//!   bounded, validated expansion of an existing table; also the re-expansion
+//!   checks of an encoding.
+//! - `cost`: exact serialized lengths of expressions and Constants, mirroring
+//!   the writers of `serialize.rs`, and the [`Len`] overflow sentinel.
+//! - `roots`: the ordered roots of a `ConstantInfo` and its reassembly.
+//! - `dict`: the fixed-dictionary recurrence `C_M` (§5) with explicit
+//!   telescope cuts, its incremental and lazy evaluations of a growing
+//!   dictionary, and byte-least materialization.
+//! - `search`: the sparse width-state dynamic program (§6) with the proved
+//!   reductions R1/R2, the optimistic-dictionary lower bound (§4.1) and a
+//!   materialization lower bound (the test oracle above).
+//! - `uniform`: the exact optimizer for a uniform Share width (phase 1).
+//! - `tiered`: the canonical tiered construction, its checks and its
+//!   checked mode ([`ExactSharingLimits::full_check`]).
+//! - `par`: deterministic task splitting for [`Parallelism`]; `prof`: phase
+//!   timers behind the `sharing-profile` feature.
+//! - `oracle` (tests only): a tiny exhaustive reference search; `mss` (tests
+//!   only): the maximal-structural-sharing reference encoding.
+//!
+//! Every limit in [`ExactSharingLimits`] is enforced with deterministic
+//! counters where it applies (`max_candidates` and the layer and transition
+//! limits bound the width-state search only); exhausting one returns
+//! [`SharingError::ResourceExhausted`] and never a best-so-far encoding.
+//! Lengths use checked arithmetic or the exact overflow sentinel [`Len`].
+//!
+//! # Pinned interpretations
+//!
+//! These choices are part of the canonical result and must match any other
+//! implementation of the rule:
+//!
+//! - **ID domain.** Structural IDs number exactly the distinct subterms
+//!   reachable from the ordered roots after expansion. Entries of an
+//!   incoming table that no root reaches are validated but do not receive
+//!   IDs, so they cannot influence `Q`.
+//! - **Admission.** Expansion accepts only the backward-reference class:
+//!   a Share in entry `i` must name an entry `< i`, a Share in a root must
+//!   name an entry `< len`. Out-of-range, forward and cyclic references are
+//!   [`MalformedSharing`] errors, including in unreachable entries.
+//!   [`optimize_sharing`] rejects any Share leaf in its input.
+//! - **Byte tie.** For a fixed table sequence each entry and root is
+//!   materialized as its byte-least minimum-length representation. This
+//!   equals the rule: an inline constructor precedes a Share of the same
+//!   length (flags `0x0..=0xA` < `0xB`); among telescope prefixes of one
+//!   node the least TagN header bytes win (distinct prefix lengths always
+//!   differ inside the header); then children independently.
+//! - **Variable length.** [`ExactSharingResult::variable_len`] is the sum of
+//!   the root encodings, the table's TagN count and the entry encodings; the
+//!   rest of the Constant is fixed and checked against `Constant::put`.
+//!
+//! Pruning (the §4.1 bound strengthened with `share_width(k)` for future
+//! entries, the materialization bound, and the greedy upper bound seed)
+//! never changes a successful result, only which inputs finish
+//! within the limits; `search` documents the proofs.
+
+mod cost;
+mod dag;
+mod dict;
+mod par;
+mod prof;
+mod roots;
+mod search;
+mod tiered;
+mod uniform;
+
+#[cfg(test)]
+mod mss;
+#[cfg(test)]
+mod oracle;
+#[cfg(test)]
+mod tests;
+
+use std::fmt;
+use std::sync::Arc;
+
+pub use cost::{
+  Len, byte_count, constant_fixed_len, constant_len, expr_len, expr_len_with,
+  share_width, sharing_table_len, tag0_len, tag4_len,
+};
+pub use dag::{Children, Node, NodeKey, SharingDag, TermId};
+pub use dict::{FixedDictionary, dictionary_cost, materialize_with_dictionary};
+// Diagnostic only (empty without the `sharing-profile` feature).
+#[doc(hidden)]
+pub use prof::profile_report;
+pub use roots::{
+  constant_info_root_count, constant_info_root_exprs, rebuild_constant_info,
+};
+pub use search::{candidate_terms, sequence_len};
+pub use tiered::{
+  ShareLayout, TAGN_RUNG1_END, TAGN_RUNG2_END, TAGN_RUNG3_END, TAGN_RUNG4_END,
+  TAGN_RUNG5_END, TieredSharingResult, TieredStats, canonical_sharing_tiered,
+  layout_bytes, normalize_constant_bytes_tiered,
+  normalize_constant_sharing_tiered, normalize_constant_sharing_tiered_par,
+  tagn_width,
+};
+pub use uniform::{
+  UniformSharingResult, normalize_constant_sharing_uniform,
+  optimize_sharing_uniform,
+};
+// The first-tier search of phase 2, for the tests; not part of the API.
+#[cfg(test)]
+pub(crate) use tiered::first_tier;
+
+use crate::constant::Constant;
+use crate::expr::Expr;
+
+/// Deterministic resource limits and search options. Exhausting a limit is
+/// an error. Limits and the pruning and checking options can change success
+/// into failure but never the bytes of a success.
+///
+/// The defaults are a safety net, not a budget: each production limit is at
+/// least 2^8 times the previous default, under which every Mathlib constant
+/// built. `max_candidates` bounds only the exhaustive width-state search (a
+/// test oracle, not the compiler path) and stays at 2^16; the canonical
+/// construction records its candidate count without limiting it, as Lean
+/// does. A run that reaches a limit fails closed and names it
+/// ([`Resource::key`]); [`ExactSharingLimits::with_overrides`] raises it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExactSharingLimits {
+  /// Pointer-distinct input expression nodes visited during expansion.
+  pub max_input_nodes: u64,
+  /// Distinct structural nodes interned (including unreachable entries).
+  pub max_distinct_nodes: u64,
+  /// Maximum height of the expanded DAG.
+  pub max_height: u64,
+  /// Sharing candidates remaining after reductions R1/R2 (the width-state
+  /// search only).
+  pub max_candidates: u64,
+  /// Width states created by the dynamic program.
+  pub max_states: u64,
+  /// States in one layer (entries stored) of the dynamic program.
+  pub max_layer_states: u64,
+  /// Candidate transitions examined.
+  pub max_transitions: u64,
+  /// Node evaluations, spine steps and marking steps, per candidate of the
+  /// tiered construction. Its phase 3 charges one evaluation of the whole
+  /// table when the order is closed under stored descendants (one pass), and
+  /// one evaluation per table prefix otherwise, so the two paths charge
+  /// different amounts for the same output (see `tiered`).
+  pub max_work: u64,
+  /// Length of the complete serialized output.
+  pub max_output_bytes: u64,
+  /// Cells `(components + 1) * (cap + 1)` of the uniform optimizer's
+  /// table-count knapsack (Lean `maxKnapsackCells`), checked before it runs
+  /// and counted separately from `max_states`.
+  pub max_knapsack_cells: u64,
+  /// Prune states by proved lower bounds. Disabling it explores every
+  /// reachable width state (a reference mode for tests).
+  pub lower_bound_pruning: bool,
+  /// Seed the upper bound with a deterministic greedy table sequence.
+  /// Affects pruning only.
+  pub greedy_upper_bound: bool,
+  /// Also prune by the materialization bound (see `search`), in addition to
+  /// the §4.1 dictionary bound.
+  pub materialization_bound: bool,
+  /// Uniform-width search: use the plain subset enumeration of each
+  /// component instead of the reclassifying branch and bound. A test
+  /// oracle, not on the compiler path (off by default; the Lean optimality
+  /// theorems assume it is off). The result must not change.
+  pub uniform_subset_search: bool,
+  /// Tiered construction: build and check every candidate, not only the
+  /// returned one, and cross-check every shortcut against the computation
+  /// it replaces (the checked mode; see `tiered`, "Checks"). Off on the
+  /// compiler path; on in the unit tests, the Lean/Rust FFI parity hooks and
+  /// `sharing_corpus --full-check`. The output, the statistics and the
+  /// outcome of every limit are those of the default mode; a discrepancy is
+  /// an [`SharingError::Internal`] error.
+  pub full_check: bool,
+  /// Tiered construction: run phase 3 per table prefix for every candidate,
+  /// also when the order is closed under stored descendants (the reference
+  /// of the one-pass phase 3; off by default). The bytes do not change; the
+  /// `work` charged does (see `max_work`).
+  pub phase3_per_prefix: bool,
+}
+
+/// Thread budgets for the tiered construction inside one constant (Rust
+/// only; [`normalize_constant_sharing_tiered_par`]). A budget is the number of
+/// tasks a level is split into on the current rayon pool; 0 and 1 run that
+/// level sequentially, and [`Parallelism::SEQUENTIAL`] is the reference path
+/// of every other entry point. Every budget gives byte-identical output.
+///
+/// * `widths`: the three phase-1 widths of the best of three run as separate
+///   tasks, each under its own meter (as in the sequential path), and are
+///   compared afterwards by the same rule. An error at any width fails the
+///   call with the error of the lowest failing width, as sequentially.
+/// * `components`: the uncertain components of phase 1 are searched as
+///   separate tasks and their tables combined in component order. Each
+///   component counts its `states_created` and `work` on a meter of its own;
+///   the counts are then added to the call's meter in component order,
+///   checking `states_created` and then `work` after each component. The
+///   totals equal the sequential ones and a call fails if and only if the
+///   sequential call fails, but when both counters reach their limits within
+///   the same component the reported resource can differ from the sequential
+///   path's (which reports whichever was reached first).
+/// * `materialize`: the per-prefix phase 3 (an order not closed under
+///   stored descendants, [`ExactSharingLimits::phase3_per_prefix`], and the
+///   per-prefix reference of [`ExactSharingLimits::full_check`]) evaluates
+///   the entries (each under the entries before it) and the roots as
+///   separate tasks; their work is charged in entry order afterwards, so
+///   counters, errors and output equal the sequential path's. The one-pass
+///   phase 3, which every order of Init and Mathlib takes, has no tasks to
+///   split and ignores this budget.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Parallelism {
+  pub widths: usize,
+  pub components: usize,
+  pub materialize: usize,
+}
+
+impl Parallelism {
+  /// Every level sequential (the reference).
+  pub const SEQUENTIAL: Parallelism =
+    Parallelism { widths: 1, components: 1, materialize: 1 };
+}
+
+impl Default for Parallelism {
+  fn default() -> Self {
+    Self::SEQUENTIAL
+  }
+}
+
+impl Default for ExactSharingLimits {
+  fn default() -> Self {
+    ExactSharingLimits {
+      max_input_nodes: 1 << 40,
+      max_distinct_nodes: 1 << 32,
+      max_height: 1 << 32,
+      max_candidates: 1 << 16,
+      max_states: 1 << 40,
+      max_layer_states: 1 << 40,
+      max_transitions: 1 << 40,
+      max_work: 1 << 56,
+      max_output_bytes: 1 << 40,
+      max_knapsack_cells: 1 << 28,
+      greedy_upper_bound: true,
+      lower_bound_pruning: true,
+      materialization_bound: true,
+      uniform_subset_search: false,
+      full_check: false,
+      phase3_per_prefix: false,
+    }
+  }
+}
+
+impl ExactSharingLimits {
+  /// No limits except those of the representation itself.
+  pub fn unbounded() -> Self {
+    ExactSharingLimits {
+      max_input_nodes: u64::MAX,
+      max_distinct_nodes: u64::MAX,
+      max_height: u64::MAX,
+      max_candidates: u64::MAX,
+      max_states: u64::MAX,
+      max_layer_states: u64::MAX,
+      max_transitions: u64::MAX,
+      max_work: u64::MAX,
+      max_output_bytes: u64::MAX,
+      max_knapsack_cells: u64::MAX,
+      ..Self::default()
+    }
+  }
+
+  /// Limit keys of the Lean implementation (`Ix.Sharing.Exact.Limits`) that
+  /// the Rust limits do not have. [`Self::with_overrides`] accepts and
+  /// ignores them, so one override string serves both compilers; `states`,
+  /// `transitions` and `output_bytes` name a limit in both.
+  pub const LEAN_ONLY_KEYS: [&'static str; 6] = [
+    "expr_visits",
+    "depth",
+    "nodes",
+    "cost_evals",
+    "materialize",
+    "materialize_work",
+  ];
+
+  /// Set the limit named `key` ([`Resource::key`]); `false` if the key names
+  /// no Rust limit.
+  pub fn set_limit(&mut self, key: &str, value: u64) -> bool {
+    let slot = match key {
+      "input_nodes" => &mut self.max_input_nodes,
+      "distinct_nodes" => &mut self.max_distinct_nodes,
+      "height" => &mut self.max_height,
+      "candidates" => &mut self.max_candidates,
+      "states" => &mut self.max_states,
+      "layer_states" => &mut self.max_layer_states,
+      "transitions" => &mut self.max_transitions,
+      "work" => &mut self.max_work,
+      "output_bytes" => &mut self.max_output_bytes,
+      "knapsack_cells" => &mut self.max_knapsack_cells,
+      _ => return false,
+    };
+    *slot = value;
+    true
+  }
+
+  /// Apply a limit override: comma-separated items, each `key=value`
+  /// ([`Resource::key`] names; values ASCII decimal digits, `2^k` with
+  /// `k <= 63`, or `max`; no sign or separator) or `unbounded` (every limit
+  /// at `u64::MAX`), applied left to right. Items, keys and values are
+  /// trimmed of space, tab, line feed and carriage return only. Lean-only
+  /// keys ([`Self::LEAN_ONLY_KEYS`]) are accepted and ignored; any other key
+  /// is an error. This is the grammar of Lean
+  /// `Ix.Sharing.Exact.Limits.withOverrides`, of `ix compile
+  /// --sharing-limits` and of `IX_SHARING_LIMITS`; the test list
+  /// `LIMIT_SPEC_PARITY` pins it for both languages.
+  pub fn with_overrides(mut self, spec: &str) -> Result<Self, String> {
+    for raw in spec.split(',') {
+      let item = trim_ascii(raw);
+      if item.is_empty() {
+        continue;
+      }
+      if item == "unbounded" {
+        for key in [
+          "input_nodes",
+          "distinct_nodes",
+          "height",
+          "candidates",
+          "states",
+          "layer_states",
+          "transitions",
+          "work",
+          "output_bytes",
+          "knapsack_cells",
+        ] {
+          self.set_limit(key, u64::MAX);
+        }
+        continue;
+      }
+      let Some((key, value)) = item.split_once('=') else {
+        return Err(format!(
+          "sharing limit item {item}: expected key=value or unbounded"
+        ));
+      };
+      let key = trim_ascii(key);
+      let value = parse_limit_value(value)?;
+      if !self.set_limit(key, value) && !Self::LEAN_ONLY_KEYS.contains(&key) {
+        return Err(format!(
+          "unknown sharing limit {key} (expected input_nodes, distinct_nodes, \
+           height, candidates, states, layer_states, transitions, work, \
+           output_bytes, knapsack_cells, or a Lean key: {})",
+          Self::LEAN_ONLY_KEYS.join(", ")
+        ));
+      }
+    }
+    Ok(self)
+  }
+}
+
+/// Trim the whitespace Lean `String.trimAscii` trims: space, tab, line feed
+/// and carriage return.
+fn trim_ascii(s: &str) -> &str {
+  s.trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\r'))
+}
+
+/// A limit value: ASCII decimal digits, `2^k` (`k <= 63`, `k` digits) or
+/// `max` (`u64::MAX`). No sign, separator or other spelling: the grammar of
+/// Lean `parseLimitValue`.
+fn parse_limit_value(raw: &str) -> Result<u64, String> {
+  let s = trim_ascii(raw);
+  if s == "max" {
+    return Ok(u64::MAX);
+  }
+  let digits = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
+  if let Some(k) = s.strip_prefix("2^") {
+    if !digits(k) {
+      return Err(format!(
+        "sharing limit value {s}: expected digits, 2^k or max"
+      ));
+    }
+    return match k.parse::<u32>() {
+      Ok(k) if k <= 63 => Ok(1u64 << k),
+      Ok(_) => Err(format!("sharing limit value {s}: exponent above 63")),
+      Err(e) => Err(format!(
+        "sharing limit value {s}: expected digits, 2^k or max: {e}"
+      )),
+    };
+  }
+  if !digits(s) {
+    return Err(format!(
+      "sharing limit value {s}: expected digits, 2^k or max"
+    ));
+  }
+  s.parse::<u64>().map_err(|e| {
+    format!(
+      "sharing limit value {s}: expected digits, 2^k or max (at most 2^64 - \
+       1): {e}"
+    )
+  })
+}
+
+/// Non-semantic statistics of one invocation.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ExactSharingStats {
+  pub input_nodes: u64,
+  pub distinct_nodes: u64,
+  pub height: u64,
+  pub candidates: u64,
+  pub states_created: u64,
+  pub states_expanded: u64,
+  pub states_pruned: u64,
+  pub transitions: u64,
+  pub max_layer: u64,
+  pub layers: u64,
+  pub work: u64,
+  /// Variable length of the greedy seed, when it was computed.
+  pub greedy_len: Option<u64>,
+  /// Variable length of the unshared encoding (`None` if it overflows).
+  pub unshared_len: Option<u64>,
+}
+
+/// Where a Share reference occurred.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShareLocation {
+  Entry(u64),
+  Root(u64),
+}
+
+/// The input is not a valid backward-reference sharing encoding.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MalformedSharing {
+  /// A Share index is not below the table length.
+  ShareOutOfRange { location: ShareLocation, index: u64, table_len: u64 },
+  /// Entry `entry` references a later entry without closing a cycle.
+  ForwardShare { entry: u64, index: u64 },
+  /// Entry `entry` references `index >= entry` and that closes a cycle.
+  CyclicShare { entry: u64, index: u64 },
+  /// A Share leaf in input that must already be expanded.
+  UnresolvedShare { root: u64, index: u64 },
+  /// Reassembly did not consume exactly the ConstantInfo's roots.
+  RootCountMismatch { expected: u64, actual: u64 },
+}
+
+/// A value exceeds a representable index or length domain.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FormatBound {
+  /// More distinct terms than the `u32` term-ID space.
+  TermIdSpace { nodes: u64 },
+  /// A serialized length reaches `u64::MAX`.
+  LengthOverflow,
+  /// A uniform Share width of 0.
+  UniformWidth { w: u64 },
+  /// A telescope spine of length at least `bound` (Lean's `formatBound
+  /// "telescope spine length" teleSubaddEnd`): below it the TagN Share-flag
+  /// width is subadditive, which the uniform classes rely on.
+  TelescopeSpine { bound: u64 },
+}
+
+/// Which deterministic limit was exhausted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Resource {
+  InputNodes,
+  DistinctNodes,
+  Height,
+  Candidates,
+  States,
+  LayerStates,
+  Transitions,
+  Work,
+  OutputBytes,
+  /// The uniform optimizer's table-count knapsack (`max_knapsack_cells`).
+  KnapsackCells,
+}
+
+impl Resource {
+  /// The name of the resource in error messages and limit overrides
+  /// ([`ExactSharingLimits::with_overrides`], `--sharing-limits`).
+  pub fn key(self) -> &'static str {
+    match self {
+      Resource::InputNodes => "input_nodes",
+      Resource::DistinctNodes => "distinct_nodes",
+      Resource::Height => "height",
+      Resource::Candidates => "candidates",
+      Resource::States => "states",
+      Resource::LayerStates => "layer_states",
+      Resource::Transitions => "transitions",
+      Resource::Work => "work",
+      Resource::OutputBytes => "output_bytes",
+      Resource::KnapsackCells => "knapsack_cells",
+    }
+  }
+}
+
+/// A deterministic resource limit was reached before certification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResourceExhausted {
+  pub resource: Resource,
+  pub limit: u64,
+}
+
+/// Failure of an exact-sharing operation. No variant carries a partial or
+/// uncertified encoding.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SharingError {
+  Malformed(MalformedSharing),
+  FormatBound(FormatBound),
+  ResourceExhausted(ResourceExhausted),
+  /// An internal invariant failed; this is a bug, reported instead of a
+  /// wrong answer.
+  Internal(String),
+}
+
+impl fmt::Display for SharingError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      SharingError::Malformed(m) => write!(f, "malformed sharing: {m:?}"),
+      SharingError::FormatBound(b) => write!(f, "format bound: {b:?}"),
+      SharingError::ResourceExhausted(r) => {
+        write!(
+          f,
+          "resource exhausted: {} (limit {})",
+          r.resource.key(),
+          r.limit
+        )
+      },
+      SharingError::Internal(s) => write!(f, "internal error: {s}"),
+    }
+  }
+}
+
+impl std::error::Error for SharingError {}
+
+/// Deterministic work accounting against [`ExactSharingLimits`].
+pub(crate) struct Meter<'l> {
+  limits: &'l ExactSharingLimits,
+  pub(crate) stats: ExactSharingStats,
+  /// Thread budgets of the tiered construction (sequential by default).
+  pub(crate) parallel: Parallelism,
+}
+
+impl<'l> Meter<'l> {
+  pub(crate) fn new(limits: &'l ExactSharingLimits) -> Self {
+    Meter {
+      limits,
+      stats: ExactSharingStats::default(),
+      parallel: Parallelism::SEQUENTIAL,
+    }
+  }
+
+  pub(crate) fn with_parallelism(
+    limits: &'l ExactSharingLimits,
+    parallel: Parallelism,
+  ) -> Self {
+    Meter { parallel, ..Meter::new(limits) }
+  }
+
+  pub(crate) fn limits(&self) -> &'l ExactSharingLimits {
+    self.limits
+  }
+
+  fn exhausted(resource: Resource, limit: u64) -> SharingError {
+    SharingError::ResourceExhausted(ResourceExhausted { resource, limit })
+  }
+
+  pub(crate) fn input_node(&mut self) -> Result<(), SharingError> {
+    self.stats.input_nodes = self.stats.input_nodes.saturating_add(1);
+    if self.stats.input_nodes > self.limits.max_input_nodes {
+      return Err(Self::exhausted(
+        Resource::InputNodes,
+        self.limits.max_input_nodes,
+      ));
+    }
+    Ok(())
+  }
+
+  pub(crate) fn distinct_nodes(&mut self, n: u64) -> Result<(), SharingError> {
+    self.stats.distinct_nodes = self.stats.distinct_nodes.max(n);
+    if n > self.limits.max_distinct_nodes {
+      return Err(Self::exhausted(
+        Resource::DistinctNodes,
+        self.limits.max_distinct_nodes,
+      ));
+    }
+    Ok(())
+  }
+
+  pub(crate) fn height(&mut self, h: u64) -> Result<(), SharingError> {
+    self.stats.height = self.stats.height.max(h);
+    if h > self.limits.max_height {
+      return Err(Self::exhausted(Resource::Height, self.limits.max_height));
+    }
+    Ok(())
+  }
+
+  pub(crate) fn candidates(&mut self, k: u64) -> Result<(), SharingError> {
+    self.stats.candidates = k;
+    if k > self.limits.max_candidates {
+      return Err(Self::exhausted(
+        Resource::Candidates,
+        self.limits.max_candidates,
+      ));
+    }
+    Ok(())
+  }
+
+  pub(crate) fn work(&mut self, n: u64) -> Result<(), SharingError> {
+    self.stats.work = self.stats.work.saturating_add(n);
+    if self.stats.work > self.limits.max_work {
+      return Err(Self::exhausted(Resource::Work, self.limits.max_work));
+    }
+    Ok(())
+  }
+
+  pub(crate) fn state(&mut self) -> Result<(), SharingError> {
+    self.stats.states_created = self.stats.states_created.saturating_add(1);
+    if self.stats.states_created > self.limits.max_states {
+      return Err(Self::exhausted(Resource::States, self.limits.max_states));
+    }
+    Ok(())
+  }
+
+  pub(crate) fn transition(&mut self) -> Result<(), SharingError> {
+    self.stats.transitions = self.stats.transitions.saturating_add(1);
+    if self.stats.transitions > self.limits.max_transitions {
+      return Err(Self::exhausted(
+        Resource::Transitions,
+        self.limits.max_transitions,
+      ));
+    }
+    Ok(())
+  }
+
+  pub(crate) fn layer(&mut self, size: u64) -> Result<(), SharingError> {
+    self.stats.max_layer = self.stats.max_layer.max(size);
+    if size > self.limits.max_layer_states {
+      return Err(Self::exhausted(
+        Resource::LayerStates,
+        self.limits.max_layer_states,
+      ));
+    }
+    Ok(())
+  }
+
+  /// Add the `states_created` and `work` counted on another meter (one
+  /// parallel task), checking `states_created` and then `work`.
+  pub(crate) fn absorb(
+    &mut self,
+    other: &ExactSharingStats,
+  ) -> Result<(), SharingError> {
+    self.stats.states_created =
+      self.stats.states_created.saturating_add(other.states_created);
+    if self.stats.states_created > self.limits.max_states {
+      return Err(Self::exhausted(Resource::States, self.limits.max_states));
+    }
+    self.work(other.work)
+  }
+
+  pub(crate) fn output(&mut self, len: u64) -> Result<(), SharingError> {
+    if len > self.limits.max_output_bytes {
+      return Err(Self::exhausted(
+        Resource::OutputBytes,
+        self.limits.max_output_bytes,
+      ));
+    }
+    Ok(())
+  }
+}
+
+/// A certified exact-minimum sharing encoding of ordered expanded roots.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExactSharingResult {
+  /// Rewritten roots, in input order.
+  pub roots: Vec<Arc<Expr>>,
+  /// The sharing table; entry `i` references only entries `< i`.
+  pub sharing: Vec<Arc<Expr>>,
+  /// `Q`: structural term ID of each table entry, in stored order.
+  pub table_terms: Vec<TermId>,
+  /// Exact variable bytes: roots + table TagN count + table entries.
+  pub variable_len: u64,
+  /// Nonsemantic statistics.
+  pub stats: ExactSharingStats,
+}
+
+/// Exact minimum sharing of ordered, fully expanded roots (no Share leaves):
+/// the width-state search, a test oracle (not the compiler path, which is
+/// [`canonical_sharing_tiered`]).
+///
+/// The full-Constant key differs from the variable length only by bytes that
+/// do not depend on sharing, so the result is the global minimum of any
+/// Constant with these ordered roots.
+pub fn optimize_sharing(
+  roots: &[Arc<Expr>],
+  limits: &ExactSharingLimits,
+) -> Result<ExactSharingResult, SharingError> {
+  let mut meter = Meter::new(limits);
+  let dag = SharingDag::build(roots, None, &mut meter)?;
+  search::optimize(&dag, 0, &mut meter)
+}
+
+/// Expand `c`'s table (validating backward references) and return the
+/// exact-minimum Constant together with its search result (the width-state
+/// search, a test oracle; see [`optimize_sharing`]).
+pub fn normalize_constant_sharing_with_stats(
+  c: &Constant,
+  limits: &ExactSharingLimits,
+) -> Result<(Constant, ExactSharingResult), SharingError> {
+  let mut meter = Meter::new(limits);
+  let roots = constant_info_root_exprs(&c.info);
+  let dag = SharingDag::build(&roots, Some(&c.sharing), &mut meter)?;
+  let fixed = constant_fixed_len(c)
+    .ok_or(SharingError::FormatBound(FormatBound::LengthOverflow))?;
+  let result = search::optimize(&dag, fixed, &mut meter)?;
+  let info = rebuild_constant_info(&c.info, &result.roots)?;
+  let out = Constant {
+    info,
+    sharing: result.sharing.clone(),
+    refs: c.refs.clone(),
+    univs: c.univs.clone(),
+  };
+  // Fixed-cost accounting: the real serializer must agree with the
+  // decomposition the search optimized.
+  let mut bytes = Vec::new();
+  out.put(&mut bytes);
+  let expected = fixed.checked_add(result.variable_len);
+  if u64::try_from(bytes.len()).ok() != expected {
+    return Err(SharingError::Internal(format!(
+      "serialized length {} differs from fixed {fixed} + variable {}",
+      bytes.len(),
+      result.variable_len
+    )));
+  }
+  Ok((out, result))
+}
+
+/// Expand `c`'s table and return its exact-minimum encoding (the test
+/// oracle of [`optimize_sharing`]).
+pub fn normalize_constant_sharing(
+  c: &Constant,
+  limits: &ExactSharingLimits,
+) -> Result<Constant, SharingError> {
+  normalize_constant_sharing_with_stats(c, limits).map(|(c, _)| c)
+}
+
+/// Outcome of [`check_exact_minimum`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExactMinimumCheck {
+  /// `c` is its exact-minimum encoding.
+  Minimum,
+  /// `c` differs from its exact-minimum encoding `expected`.
+  NotMinimum { expected: Box<Constant> },
+}
+
+/// Whether `c` is byte-identical to its exact-minimum encoding: a check
+/// against the width-state search, the test oracle of [`optimize_sharing`]
+/// (Lean `checkExactMinimum`). It does not check the compiler's
+/// canonical construction ([`canonical_sharing_tiered`]).
+pub fn check_exact_minimum(
+  c: &Constant,
+  limits: &ExactSharingLimits,
+) -> Result<ExactMinimumCheck, SharingError> {
+  let expected = normalize_constant_sharing(c, limits)?;
+  let mut have = Vec::new();
+  c.put(&mut have);
+  let mut want = Vec::new();
+  expected.put(&mut want);
+  Ok(if have == want {
+    ExactMinimumCheck::Minimum
+  } else {
+    ExactMinimumCheck::NotMinimum { expected: Box::new(expected) }
+  })
+}
+
+/// Failure of [`normalize_constant_bytes`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NormalizeBytesError {
+  /// The input is not exactly one wire-valid serialized Constant.
+  Decode(String),
+  Sharing(SharingError),
+}
+
+impl fmt::Display for NormalizeBytesError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      NormalizeBytesError::Decode(e) => write!(f, "decode: {e}"),
+      NormalizeBytesError::Sharing(e) => write!(f, "{e}"),
+    }
+  }
+}
+
+impl std::error::Error for NormalizeBytesError {}
+
+/// Byte-level normalization: decode exactly one serialized Constant (no
+/// trailing bytes), expand and validate its table, and return the serialized
+/// exact-minimum Constant (the test oracle of [`optimize_sharing`]).
+pub fn normalize_constant_bytes(
+  bytes: &[u8],
+  limits: &ExactSharingLimits,
+) -> Result<Vec<u8>, NormalizeBytesError> {
+  let mut input = bytes;
+  let c = Constant::get(&mut input).map_err(NormalizeBytesError::Decode)?;
+  if !input.is_empty() {
+    return Err(NormalizeBytesError::Decode(format!(
+      "{} trailing bytes after the Constant",
+      input.len()
+    )));
+  }
+  let out = normalize_constant_sharing(&c, limits)
+    .map_err(NormalizeBytesError::Sharing)?;
+  let mut buf = Vec::new();
+  out.put(&mut buf);
+  Ok(buf)
+}
+
+/// Byte-level uniform-width normalization: decode exactly one serialized
+/// Constant, re-share it with the uniform-width optimum for Share width `w`,
+/// and return the serialized result.
+pub fn normalize_constant_bytes_uniform(
+  w: u64,
+  bytes: &[u8],
+  limits: &ExactSharingLimits,
+) -> Result<Vec<u8>, NormalizeBytesError> {
+  let mut input = bytes;
+  let c = Constant::get(&mut input).map_err(NormalizeBytesError::Decode)?;
+  if !input.is_empty() {
+    return Err(NormalizeBytesError::Decode(format!(
+      "{} trailing bytes after the Constant",
+      input.len()
+    )));
+  }
+  let (out, _) = normalize_constant_sharing_uniform(w, &c, limits)
+    .map_err(NormalizeBytesError::Sharing)?;
+  let mut buf = Vec::new();
+  out.put(&mut buf);
+  Ok(buf)
+}

@@ -104,7 +104,7 @@
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               (pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.))
-              ./Tests/Fixtures/ixon-v3
+              ./Tests/Fixtures/ixon-v4
             ];
           };
           # Rust code generation for the sandboxed builds. `.cargo/config.toml`

@@ -342,6 +342,7 @@ lean_ffi::lean_inductive! {
     { num_obj: 2 },                           // tag 8: badBlobFormat
     { num_obj: 1 },                           // tag 9: badConstantFormat
     { num_obj: 1 },                           // tag 10: serialize
+    { num_obj: 3, num_64: 2 },                // tag 11: invalidMetaShareIndex
   ];
 
   LeanIxCompileError [
@@ -352,6 +353,7 @@ lean_ffi::lean_inductive! {
     { num_obj: 2 },                           // tag 4: unknownUnivParam
     { num_obj: 1 },                           // tag 5: serialize
     { num_obj: 1 },                           // tag 6: resourceLimit
+    { num_obj: 1 },                           // tag 7: sharingConstruction
   ];
 
   // Defined in `Ix/KernelCheck.lean`.

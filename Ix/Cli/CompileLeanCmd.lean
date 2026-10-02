@@ -25,6 +25,7 @@ public import Ix.Meta
 public import Ix.CompileM
 public import Ix.CompileDriver
 public import Ix.Cli.ValidateCmd
+public import Ix.Cli.CompileCmd
 public section
 
 open System (FilePath)
@@ -45,6 +46,9 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let workers := match p.flag? "workers" with
     | some f => max 1 (f.as! Nat)
     | none => 32
+  if let some e ← applySharingLimitsFlag p then
+    p.printError s!"error: {e}"
+    return 2
 
   IO.println s!"[compile-lean] building {pathStr}..."
   buildFile pathStr
@@ -116,6 +120,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
+    "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); applies to the Lean compile and to --rust-check. Sets IX_SHARING_LIMITS."
 
   ARGS:
     ...path : String; "Path to the Lean source file to compile."

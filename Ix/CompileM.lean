@@ -18,7 +18,7 @@ public import Ix.IxonUniv
 public import Ix.Environment
 public import Ix.SemanticContract
 public import Ix.Compile.SourceContract.Transport
-public import Ix.Sharing
+public import Ix.Sharing.Exact
 public import Ix.Common
 public import Ix.Store
 public import Ix.Mutual
@@ -109,6 +109,12 @@ structure CompileEnv where
       keys sees nothing there). Materialized-env callers leave this
       empty and keep the scan. -/
   nameByHash : Std.HashMap Address Name := {}
+  /-- Resource limits of the canonical sharing construction
+      (`buildBlockConstant`, `finishMutualCompilation`): `compilerSharingLimits`
+      unless a driver sets the `IX_SHARING_LIMITS` override
+      (`compilerSharingLimitsFromEnv`). Limits decide only whether a block
+      compiles, never its bytes. -/
+  sharingLimits : Ix.Sharing.Exact.Limits := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -252,7 +258,7 @@ structure BlockEnv where
 
 /-! ## Compilation Error -/
 
-/-- Compilation error type. Variant order matches Rust CompileError (tags 0–6). -/
+/-- Compilation error type. Variant order matches Rust CompileError (tags 0–7). -/
 inductive CompileError where
   | missingConstant (name : String)
   | missingAddress (addr : Address)
@@ -261,6 +267,9 @@ inductive CompileError where
   | unknownUnivParam (curr param : String)
   | serializeError (err : Ixon.SerializeError)
   | resourceLimit (reason : String)
+  /-- The sharing construction failed (other than by resource exhaustion, which is
+      `resourceLimit`). -/
+  | sharingConstruction (reason : String)
   deriving Repr, BEq
 
 instance : ToString CompileError where
@@ -272,6 +281,7 @@ instance : ToString CompileError where
   | .unknownUnivParam curr param => s!"unknownUnivParam: compiling {curr}, param {param}"
   | .serializeError err => s!"serializeError: {err}"
   | .resourceLimit reason => s!"resourceLimit: {reason}"
+  | .sharingConstruction reason => s!"sharingConstruction: {reason}"
 
 abbrev CompileM := ReaderT (CompileEnv × BlockEnv) (ExceptT CompileError (StateT BlockState Id))
 
@@ -583,31 +593,14 @@ def BlockState.compileNames (state : BlockState)
 def compileNames (names : Array Ix.Name) : CompileM Unit :=
   modifyBlockState fun state => state.compileNames names
 
-/-- Serialize a u64 in trimmed little-endian format (only necessary bytes).
-    Uses Ixon.u64ByteCount for the byte count calculation. -/
-def putU64TrimmedLE (x : UInt64) : ByteArray := Id.run do
-  let count := Ixon.u64ByteCount x
-  let mut bytes := ByteArray.empty
-  let mut v := x
-  for _ in [:count.toNat] do
-    bytes := bytes.push (v &&& 0xFF).toUInt8
-    v := v >>> 8
-  bytes
-
-/-- Serialize a Nat using Tag0 encoding (variable length, compact for small values).
-    Uses Ixon.u64ByteCount for the byte count calculation. -/
-def putTag0 (n : Nat) : ByteArray :=
-  let x := n.toUInt64
-  if x < 128 then
-    ByteArray.mk #[x.toUInt8]
-  else
-    let byteCount := Ixon.u64ByteCount x
-    ByteArray.mk #[0x80 ||| (byteCount - 1)] ++ putU64TrimmedLE x
+/-- A Nat as a TagN (`f = 0`) integer (`Ixon.putTagN 0 0`). -/
+def tagN0Bytes (n : Nat) : ByteArray :=
+  Ixon.runPut (Ixon.putTagN 0 0 n.toUInt64)
 
 /-- Serialize an Ix.Substring to bytes, storing strings as blobs. -/
 def serializeIxSubstring (ss : Ix.Substring) : CompileM ByteArray := do
   let strAddr ← storeString ss.str
-  pure (strAddr.hash ++ putTag0 ss.startPos ++ putTag0 ss.stopPos)
+  pure (strAddr.hash ++ tagN0Bytes ss.startPos ++ tagN0Bytes ss.stopPos)
 
 /-- Serialize an Ix.SourceInfo to bytes, storing strings as blobs. -/
 def serializeIxSourceInfo (si : Ix.SourceInfo) : CompileM ByteArray := do
@@ -615,10 +608,10 @@ def serializeIxSourceInfo (si : Ix.SourceInfo) : CompileM ByteArray := do
   | .original leading leadingPos trailing trailingPos =>
     let leadingBytes ← serializeIxSubstring leading
     let trailingBytes ← serializeIxSubstring trailing
-    pure (ByteArray.mk #[0] ++ leadingBytes ++ putTag0 leadingPos ++
-      trailingBytes ++ putTag0 trailingPos)
+    pure (ByteArray.mk #[0] ++ leadingBytes ++ tagN0Bytes leadingPos ++
+      trailingBytes ++ tagN0Bytes trailingPos)
   | .synthetic start stop canonical =>
-    pure (ByteArray.mk #[1] ++ putTag0 start ++ putTag0 stop ++
+    pure (ByteArray.mk #[1] ++ tagN0Bytes start ++ tagN0Bytes stop ++
       ByteArray.mk #[if canonical then 1 else 0])
   | .none => pure (ByteArray.mk #[2])
 
@@ -630,7 +623,7 @@ def serializeIxSyntaxPreresolved (sp : Ix.SyntaxPreresolved) : CompileM ByteArra
     pure (ByteArray.mk #[0] ++ name.getHash.hash)
   | .decl name aliases =>
     compileName name
-    let header := ByteArray.mk #[1] ++ name.getHash.hash ++ putTag0 aliases.size
+    let header := ByteArray.mk #[1] ++ name.getHash.hash ++ tagN0Bytes aliases.size
     let aliasAddrs ← aliases.mapM storeString
     let aliasesBytes := aliasAddrs.foldl (fun bytes addr => bytes ++ addr.hash)
       ByteArray.empty
@@ -647,7 +640,7 @@ def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
     let header := ByteArray.mk #[1]
     let infoBytes ← serializeIxSourceInfo info
     let kindBytes := kind.getHash.hash
-    let lenBytes := putTag0 args.size
+    let lenBytes := tagN0Bytes args.size
     let serializedArgs ← args.attach.mapM fun arg => serializeIxSyntax arg.1
     let argsBytes := serializedArgs.foldl (fun bytes arg => bytes ++ arg)
       ByteArray.empty
@@ -662,7 +655,7 @@ def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
     let infoBytes ← serializeIxSourceInfo info
     let rawBytes ← serializeIxSubstring rawVal
     let valBytes := val.getHash.hash
-    let lenBytes := putTag0 preresolved.size
+    let lenBytes := tagN0Bytes preresolved.size
     let serializedPres ← preresolved.mapM serializeIxSyntaxPreresolved
     let presBytes := serializedPres.foldl (fun bytes pr => bytes ++ pr)
       ByteArray.empty
@@ -2357,68 +2350,8 @@ def sortConstsIsolated (sources : List MutConst) :
 
 /-! ## Constant Building -/
 
-/-- Count Share references in an expression (for debugging). -/
-partial def countShareRefs : Ixon.Expr → Nat
-  | .share _ => 1
-  | .prj _ _ val => countShareRefs val
-  | .app f a => countShareRefs f + countShareRefs a
-  | .lam _ ty body => countShareRefs ty + countShareRefs body
-  | .all _ _ ty body => countShareRefs ty + countShareRefs body
-  | .letE _ ty val body => countShareRefs ty + countShareRefs val + countShareRefs body
-  | _ => 0
-
-/-- Update recursor rules with rewritten expressions starting at given index.
-    Returns updated rules and next index. -/
-def updateRecursorRules (rules : Array Ixon.RecursorRule) (rewrittenExprs : Array Ixon.Expr) (startIdx : Nat)
-    : Array Ixon.RecursorRule × Nat :=
-  let result := rules.mapIdx fun i rule =>
-    { rule with rhs := rewrittenExprs[startIdx + i]?.getD rule.rhs }
-  (result, startIdx + rules.size)
-
-/-- Update inductive constructor types with rewritten expressions starting at given index.
-    Returns updated constructors and next index. -/
-def updateConstructorTypes (ctors : Array Ixon.Constructor) (rewrittenExprs : Array Ixon.Expr) (startIdx : Nat)
-    : Array Ixon.Constructor × Nat :=
-  let result := ctors.mapIdx fun i ctor =>
-    { ctor with typ := rewrittenExprs[startIdx + i]?.getD ctor.typ }
-  (result, startIdx + ctors.size)
-
-/-- State threaded while mutual members consume rewritten expressions. -/
-structure MutConstUpdateState where
-  result : Array Ixon.MutConst := #[]
-  nextIdx : Nat := 0
-
-/-- Rewrite one mutual member and advance its expression cursor. -/
-def updateMutConst (rewrittenExprs : Array Ixon.Expr)
-    (state : MutConstUpdateState) (member : Ixon.MutConst) :
-    MutConstUpdateState :=
-  match member with
-  | .indc ind =>
-    let typ := rewrittenExprs[state.nextIdx]?.getD ind.typ
-    let (ctors, nextIdx) :=
-      updateConstructorTypes ind.ctors rewrittenExprs (state.nextIdx + 1)
-    { result := state.result.push (.indc { ind with typ, ctors })
-      nextIdx }
-  | .defn definition =>
-    let typ := rewrittenExprs[state.nextIdx]?.getD definition.typ
-    let value :=
-      rewrittenExprs[state.nextIdx + 1]?.getD definition.value
-    { result := state.result.push (.defn { definition with typ, value })
-      nextIdx := state.nextIdx + 2 }
-  | .recr recursor =>
-    let typ := rewrittenExprs[state.nextIdx]?.getD recursor.typ
-    let (rules, nextIdx) :=
-      updateRecursorRules recursor.rules rewrittenExprs (state.nextIdx + 1)
-    { result := state.result.push (.recr { recursor with typ, rules })
-      nextIdx }
-
-/-- Update Ixon MutConsts with rewritten expressions. -/
-def updateMutConsts (ms : Array Ixon.MutConst) (rewrittenExprs : Array Ixon.Expr)
-    : Array Ixon.MutConst :=
-  (ms.foldl (init := {}) (updateMutConst rewrittenExprs)).result
-
 /-- Expressions rewritten by production sharing for one mutual member, in
-the exact cursor order consumed by `updateMutConst`. -/
+the cursor order `withRootExprs` writes them back. -/
 def mutConstRootExprs : Ixon.MutConst → List Ixon.Expr
   | .defn definition => [definition.typ, definition.value]
   | .indc indInfo =>
@@ -2427,8 +2360,9 @@ def mutConstRootExprs : Ixon.MutConst → List Ixon.Expr
     recursor.typ :: recursor.rules.toList.map (·.rhs)
 
 /-- Canonical production sharing roots for a `ConstantInfo`.  Projection
-payloads contain no expressions, while mutual members are flattened in the
-same order as `updateMutConsts`. -/
+payloads contain no expressions, while mutual members are flattened in member
+order. This is the order of `Ix.Sharing.Exact.constantInfoRoots`, which
+`withRootExprs` consumes. -/
 def constantInfoRootExprs : Ixon.ConstantInfo → Array Ixon.Expr
   | .defn definition =>
     (mutConstRootExprs (.defn definition)).toArray
@@ -2440,34 +2374,82 @@ def constantInfoRootExprs : Ixon.ConstantInfo → Array Ixon.Expr
   | .muts members =>
     (members.toList.flatMap mutConstRootExprs).toArray
 
-/-- Apply sharing analysis to expressions and build a Constant. -/
-def buildConstantWithSharing (info : Ixon.ConstantInfo) (rootExprs : Array Ixon.Expr)
-    (refs : Array Address) (univs : Array Ixon.Univ) (dbg : Bool := false) : Ixon.Constant := Id.run do
-  let (rewrittenExprs, sharingVec) := Sharing.applySharing rootExprs dbg
-  -- Debug: count Share refs in rewritten expressions
-  if dbg && sharingVec.size > 0 then
-    let totalShareRefs := rewrittenExprs.foldl (fun acc e => acc + countShareRefs e) 0
-    dbg_trace s!"[buildConstant] sharingVec.size={sharingVec.size}, totalShareRefs in rewritten={totalShareRefs}"
-  -- Update expressions in info with rewritten versions
-  let info' := match info with
-  | .defn d =>
-    let typ := rewrittenExprs[0]?.getD d.typ
-    let value := rewrittenExprs[1]?.getD d.value
-    Ixon.ConstantInfo.defn { d with typ, value }
-  | .axio a =>
-    let typ := rewrittenExprs[0]?.getD a.typ
-    Ixon.ConstantInfo.axio { a with typ }
-  | .quot q =>
-    let typ := rewrittenExprs[0]?.getD q.typ
-    Ixon.ConstantInfo.quot { q with typ }
-  | .recr r =>
-    let typ := rewrittenExprs[0]?.getD r.typ
-    let (rules, _) := updateRecursorRules r.rules rewrittenExprs 1
-    Ixon.ConstantInfo.recr { r with typ, rules }
-  | .muts ms =>
-    Ixon.ConstantInfo.muts (updateMutConsts ms rewrittenExprs)
-  | other => other
-  return { info := info', sharing := sharingVec, refs, univs }
+/-! ## Canonical sharing
+
+The compiler builds every block Constant with the canonical sharing
+construction `Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Rust
+`canonical_sharing_tiered`), under the limits of `CompileEnv.sharingLimits`.
+There is no fallback: every construction failure is a compile error. -/
+
+/-- Resource limits of the compiler's canonical sharing construction: the
+    library defaults (`Ix.Sharing.Exact.Limits`), a safety net far above every
+    corpus maximum. `CompileEnv.sharingLimits` carries the limits a compile
+    runs under. Mirrors Rust `compiler_sharing_limits`. -/
+def compilerSharingLimits : Ix.Sharing.Exact.Limits := {}
+
+/-- Environment variable carrying a sharing-limit override in the format of
+    `Ix.Sharing.Exact.Limits.withOverrides` (for example `states=2^44,depth=2^22`
+    or `unbounded`). `ix compile --sharing-limits` and `ix compile-lean
+    --sharing-limits` set it. `compilerSharingLimitsFromEnv` reads it, once per
+    run, in the Lean drivers `compileEnvParallelAux` and
+    `Ix.DecompileM.decompileEnvFullParallel`; Rust's `compiler_sharing_limits`
+    reads it once per compile or decompile entry point. -/
+def sharingLimitsEnvVar : String := "IX_SHARING_LIMITS"
+
+/-- `compilerSharingLimits` with the `IX_SHARING_LIMITS` override applied, or
+    the parse error. -/
+def compilerSharingLimitsFromEnv : IO (Except String Ix.Sharing.Exact.Limits) := do
+  match ← IO.getEnv sharingLimitsEnvVar with
+  | none => pure (.ok compilerSharingLimits)
+  | some spec =>
+    pure ((compilerSharingLimits.withOverrides spec).mapError (s!"{sharingLimitsEnvVar}: " ++ ·))
+
+/-- A sharing-construction failure as a compile error: resource exhaustion is
+    `resourceLimit` (naming the limit and its override), every other kind
+    `sharingConstruction`. Mirrors Rust `sharing_compile_error`. -/
+def sharingCompileError : Ix.Sharing.Exact.SharingError → CompileError
+  | .resourceExhausted r limit =>
+    .resourceLimit s!"canonical sharing: resource exhausted: {r.key} (limit {limit}); \
+      raise it with --sharing-limits {r.key}=N ({sharingLimitsEnvVar})"
+  | e => .sharingConstruction s!"canonical sharing: {e}"
+
+/-- Write `rewrittenExprs` back into the root slots of `info`, in
+    `constantInfoRootExprs` order: `Ix.Sharing.Exact.withRoots`, which fails
+    unless there is exactly one expression per root, so no slot keeps its old
+    value. -/
+def withRootExprs (info : Ixon.ConstantInfo) (rewrittenExprs : Array Ixon.Expr) :
+    Except CompileError Ixon.ConstantInfo :=
+  (Ix.Sharing.Exact.withRoots info rewrittenExprs).mapError sharingCompileError
+
+/-- Build a block Constant with the canonical sharing of its payload: the
+    roots are `constantInfoRootExprs info`, shared by
+    `Ix.Sharing.Exact.canonicalSharingTiered .tagN` under `limits`, and written
+    back by `withRootExprs` (the construction must return one root per input
+    root). There is no fallback: every failure is a compile error. -/
+def buildConstantWithSharing (limits : Ix.Sharing.Exact.Limits)
+    (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
+    Except CompileError Ixon.Constant := do
+  let roots := constantInfoRootExprs info
+  let r ← (Ix.Sharing.Exact.canonicalSharingTiered .tagN roots limits).mapError
+    sharingCompileError
+  unless r.result.roots.size == roots.size do
+    throw (.sharingConstruction
+      s!"canonical sharing: {r.result.roots.size} roots returned for {roots.size}")
+  let info ← withRootExprs info r.result.roots
+  pure { info, sharing := r.result.sharing, refs, univs }
+
+/-- Lift a sharing result into `CompileM`. -/
+def liftSharing (r : Except CompileError Ixon.Constant) : CompileM Ixon.Constant :=
+  match r with
+  | .ok c => pure c
+  | .error e => throw e
+
+/-- Build a block Constant with the compiler's canonical sharing under
+    `CompileEnv.sharingLimits`. Every block the compiler emits goes through
+    here. -/
+def buildBlockConstant (info : Ixon.ConstantInfo) (refs : Array Address)
+    (univs : Array Ixon.Univ) : CompileM Ixon.Constant := do
+  liftSharing (buildConstantWithSharing (← read).1.sharingLimits info refs univs)
 
 /-! ## Individual Constant Compilation -/
 
@@ -3022,7 +3004,10 @@ def compileMutConstClasses :
     compileMutConstClasses rest state
 
 /-- Compile sorted equivalence classes of mutual constants.
-    Returns compiled constants, all root expressions, and metadata for each constant. -/
+    Returns compiled constants, all root expressions, and metadata for each constant.
+    No caller uses the roots (`buildBlockConstant` derives them from the payload
+    with `constantInfoRootExprs`); they remain because the theorems of
+    `Ix.Compile.Verify.CompileMutualCodec` state their wire safety. -/
 def compileMutConsts (classes : List (List MutConst))
     : CompileM (Array Ixon.MutConst × Array Ixon.Expr × Array (Name × Ixon.ConstantMeta)) := do
   let state ← compileMutConstClasses classes {}
@@ -3137,35 +3122,38 @@ def buildMutualProjections (classes : List (List MutConst))
     idx := idx + 1
   return projections
 
-/-- Pure assembly of an already compiled mutual payload. Projection arrays
-do not affect the serialized main-block codec but remain part of the exact
+/-- Assembly of an already compiled mutual payload with the canonical sharing
+under `limits`; fails exactly when the construction does. Projection arrays do
+not affect the serialized main-block codec but remain part of the exact
 production result. -/
-def buildCompiledMutualBlock (classes : List (List MutConst))
-    (payloads : Array Ixon.MutConst) (roots : Array Ixon.Expr)
+def buildCompiledMutualBlock (limits : Ix.Sharing.Exact.Limits)
+    (classes : List (List MutConst)) (payloads : Array Ixon.MutConst)
     (metas : Array (Name × Ixon.ConstantMeta))
-    (cache : BlockState) : BlockResult :=
+    (cache : BlockState) : Except CompileError BlockResult := do
   if let some info := standaloneMutConstInfo? payloads then
-    let block := buildConstantWithSharing info roots cache.refs cache.univs
-    BlockResult.mk' block .empty
-      (buildStandaloneMutualProjections classes block metas)
+    let block ← buildConstantWithSharing limits info cache.refs cache.univs
+    pure (BlockResult.mk' block .empty
+      (buildStandaloneMutualProjections classes block metas))
   else
-    let block :=
-      buildConstantWithSharing (.muts payloads) roots cache.refs cache.univs
-    BlockResult.mk' block .empty
-      (buildMutualProjections classes (Address.blake3 (Ixon.ser block)) metas)
+    let block ← buildConstantWithSharing limits (.muts payloads) cache.refs cache.univs
+    pure (BlockResult.mk' block .empty
+      (buildMutualProjections classes (Address.blake3 (Ixon.ser block)) metas))
 
-/-- Read the finished table state and assemble a compiled mutual payload. -/
+/-- Read the finished table state and assemble a compiled mutual payload with
+the compiler's canonical sharing (`CompileEnv.sharingLimits`). -/
 def finishMutualCompilation (classes : List (List MutConst))
-    (payloads : Array Ixon.MutConst) (roots : Array Ixon.Expr)
+    (payloads : Array Ixon.MutConst)
     (metas : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
-  pure <| buildCompiledMutualBlock classes payloads roots metas
-    (← getBlockState)
+  let cache ← getBlockState
+  match buildCompiledMutualBlock (← read).1.sharingLimits classes payloads metas cache with
+  | .ok result => pure result
+  | .error e => throw e
 
 /-- Compile all mutual members and assemble their retained representatives. -/
 def compileMutualPayload (classes : List (List MutConst)) :
     CompileM BlockResult := do
-  let (payloads, roots, metas) ← compileMutConsts classes
-  finishMutualCompilation classes payloads roots metas
+  let (payloads, _, metas) ← compileMutConsts classes
+  finishMutualCompilation classes payloads metas
 
 /-- Compile a mutual block and create projections for each constant.
     Returns the Muts block constant and projections for each name with metadata. -/
@@ -3227,11 +3215,10 @@ def buildInductiveProjections (i : InductiveVal)
 family. -/
 def finishInductiveFamilyBlock (i : InductiveVal)
     (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
-    (ctorMetaPairs : Array (Name × Ixon.ConstantMeta))
-    (ctorExprs : Array Ixon.Expr) : CompileM BlockResult := do
+    (ctorMetaPairs : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
   let cache ← getBlockState
-  let block := buildConstantWithSharing
-    (.muts #[.indc ind]) ctorExprs cache.refs cache.univs
+  let block ← buildBlockConstant
+    (.muts #[.indc ind]) cache.refs cache.univs
   let blockBytes := Ixon.ser block
   let blockAddr := Address.blake3 blockBytes
   let projections :=
@@ -3239,20 +3226,19 @@ def finishInductiveFamilyBlock (i : InductiveVal)
   pure (BlockResult.mk' block .empty projections)
 
 /-- Finish a compiled singleton payload using the current block tables, the
-production sharing pass, and the canonical `BlockResult` serializer. -/
+compiler's canonical sharing (`buildBlockConstant`, roots derived from the
+payload), and the canonical `BlockResult` serializer. -/
 def finishConstantWithSharing (info : Ixon.ConstantInfo)
-    (rootExprs : Array Ixon.Expr) (blockMeta : Ixon.ConstantMeta := .empty) :
-    CompileM BlockResult := do
+    (blockMeta : Ixon.ConstantMeta := .empty) : CompileM BlockResult := do
   let cache ← getBlockState
-  let block := buildConstantWithSharing
-    info rootExprs cache.refs cache.univs
+  let block ← buildBlockConstant info cache.refs cache.univs
   pure (BlockResult.mk' block blockMeta)
 
-/-- Finish a singleton declaration with the canonical sharing-root ordering
-derived from its compiled `ConstantInfo`. -/
+/-- Finish a singleton declaration (`finishConstantWithSharing`; the sharing
+roots are the payload's). -/
 def finishConstantInfoWithSharing (info : Ixon.ConstantInfo)
     (blockMeta : Ixon.ConstantMeta := .empty) : CompileM BlockResult :=
-  finishConstantWithSharing info (constantInfoRootExprs info) blockMeta
+  finishConstantWithSharing info blockMeta
 
 /-- Compile and finalize the payload of a singleton definition declaration.
 The outer singleton driver remains responsible for auditing and preseeding. -/
@@ -3328,9 +3314,9 @@ def compileRecursorInfo (recursorVal : RecursorVal) : CompileM BlockResult := do
 context and preseed have been installed. -/
 def compileInductiveFamilyBlock (inductiveVal : InductiveVal)
     (ctorVals : Array ConstructorVal) : CompileM BlockResult := do
-  let (ind, indMeta, ctorMetaPairs, ctorExprs) ←
+  let (ind, indMeta, ctorMetaPairs, _) ←
     compileInductive inductiveVal ctorVals
-  finishInductiveFamilyBlock inductiveVal ind indMeta ctorMetaPairs ctorExprs
+  finishInductiveFamilyBlock inductiveVal ind indMeta ctorMetaPairs
 
 def compileInductiveFamilyInfo (inductiveVal : InductiveVal)
     (ctorVals : Array ConstructorVal) : CompileM BlockResult := do

@@ -90,7 +90,7 @@ pub enum Expr {
 }
 
 impl Expr {
-  // Tag4 flags for expression variants (0x0-0xB)
+  // TagN flags for expression variants (0x0-0xB)
   pub const FLAG_SORT: u8 = 0x0;
   pub const FLAG_VAR: u8 = 0x1;
   pub const FLAG_REF: u8 = 0x2;
@@ -600,7 +600,7 @@ pub mod tests {
   #[test]
   fn telescope_lam_byte_boundaries() {
     for (n, tag_bytes) in
-      [(1u64, 1), (7, 1), (8, 2), (255, 2), (256, 3), (500, 3)]
+      [(1u64, 1), (7, 1), (8, 2), (255, 2), (256, 2), (1031, 2), (1032, 3)]
     {
       let ty = Expr::var(1);
       let mut expr: Arc<Expr> = Expr::var(0);

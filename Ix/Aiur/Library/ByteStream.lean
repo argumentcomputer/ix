@@ -30,22 +30,6 @@ def byteStream := ⟦
     bytes
   }
 
-  -- Count bytes needed to represent a u64.
-  -- Important: this implementation differs from the Lean and Rust ones, returning
-  -- 1 for [0; 8] instead of 0.
-  fn u64_byte_count(x: U64) -> U8 {
-    match x {
-      [_, 0, 0, 0, 0, 0, 0, 0] => 1u8,
-      [_, _, 0, 0, 0, 0, 0, 0] => 2u8,
-      [_, _, _, 0, 0, 0, 0, 0] => 3u8,
-      [_, _, _, _, 0, 0, 0, 0] => 4u8,
-      [_, _, _, _, _, 0, 0, 0] => 5u8,
-      [_, _, _, _, _, _, 0, 0] => 6u8,
-      [_, _, _, _, _, _, _, 0] => 7u8,
-      _ => 8u8,
-    }
-  }
-
   fn u64_is_zero(x: U64) -> G {
     match x {
       [0, 0, 0, 0, 0, 0, 0, 0] => 1,

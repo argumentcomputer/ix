@@ -476,6 +476,9 @@ structure Pass2Ctx where
   nameToAddr : Std.HashMap Ix.Name Address
   /-- Debug-track source env (Rust `stt.lean_env`). -/
   origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo)
+  /-- Sharing limits of every recompile in the run (Rust
+      `stt.sharing_limits`). -/
+  sharingLimits : Ix.Sharing.Exact.Limits
 
 /-- Mutable state threaded through Pass 2. -/
 structure Pass2St where
@@ -529,6 +532,7 @@ def Pass2Ctx.cenvFor (ctx : Pass2Ctx)
   { env := { consts := view }
     nameToNamed := ctx.ixonEnv.named
     nameToAddr := ctx.nameToAddr
+    sharingLimits := ctx.sharingLimits
     constants := {}, blobs := {}, totalBytes := 0 }
 
 /-- Run a `KBridgeM` action over the CURRENT work env, threading the
@@ -659,7 +663,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
     let recMutConsts : List Ix.MutConst :=
       (canonicalRecs.map fun (_, rv) => Ix.MutConst.recr rv).toList
     match roundtripBlock recMutConsts generatedConsts ctx.origEnv?
-        st.workEnv ctx.ixonEnv st.callSitePlans st.brecOnPlans st.belowPlans with
+        st.workEnv ctx.ixonEnv ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
     | .ok roundtripped =>
       for (n, ci) in roundtripped do
         if recMembers.contains n || st.workEnv.contains n then
@@ -752,7 +756,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
         all := #[auxDef.name] }
       let allGen := baseGen.fold (fun m k v => m.insert k v) newGen
       match roundtripBlock [mc] allGen ctx.origEnv? st.workEnv ctx.ixonEnv
-          st.callSitePlans st.brecOnPlans st.belowPlans with
+          ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
       | .ok roundtripped =>
         if roundtripped.isEmpty then
           st := recoverOr ctx st auxDef.name allGen
@@ -817,7 +821,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
       belowIndcMcs := []
     if !belowIndcMcs.isEmpty then
       match roundtripBlock belowIndcMcs generatedConsts ctx.origEnv?
-          st.workEnv ctx.ixonEnv st.callSitePlans st.brecOnPlans st.belowPlans with
+          st.workEnv ctx.ixonEnv ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
       | .ok roundtripped => st := insertAll st roundtripped
       | .error e =>
         for bc in belowConsts do
@@ -835,7 +839,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
         safety := if d.isUnsafe then .unsaf else .safe
         all := #[d.name] }
       match roundtripBlock [mc] generatedConsts ctx.origEnv? st.workEnv
-          ctx.ixonEnv st.callSitePlans st.brecOnPlans st.belowPlans with
+          ctx.ixonEnv ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
       | .ok roundtripped => st := insertAll st roundtripped
       | .error e =>
         st := recoverOr ctx st d.name generatedConsts
@@ -864,7 +868,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
           if belowRecMembers.contains n then some (Ix.MutConst.recr rv)
           else none).toList
         match roundtripBlock mcs generatedConsts ctx.origEnv? st.workEnv
-            ctx.ixonEnv st.callSitePlans st.brecOnPlans st.belowPlans with
+            ctx.ixonEnv ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
         | .ok roundtripped => st := insertAll st roundtripped
         | .error e =>
           for (n, rv) in belowRecs do
@@ -932,7 +936,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
           safety := if d.isUnsafe then .unsaf else .safe
           all := #[d.name] }
         match roundtripBlock [mc] generatedConsts ctx.origEnv? st.workEnv
-            ctx.ixonEnv st.callSitePlans st.brecOnPlans st.belowPlans with
+            ctx.ixonEnv ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
         | .ok roundtripped =>
           if roundtripped.isEmpty then
             match recoverAuxFromOriginal d.name ctx.ixonEnv st.workEnv
@@ -959,9 +963,11 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   return st
 
 /-- Pass 2 driver: group aux blocks, topo-sort by cross-block deps, and
-    regenerate each (decompile.rs:5060-5330 minus diagnostics). -/
+    regenerate each (decompile.rs:5060-5330 minus diagnostics). Every
+    recompile runs under `sharingLimits`. -/
 def decompileEnvPass2 (ixonEnv : Ixon.Env)
     (pass1 : Std.HashMap Ix.Name Ix.ConstantInfo)
+    (sharingLimits : Ix.Sharing.Exact.Limits)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     : Pass2St := Id.run do
   let mutsIndex := buildMutsPlanIndex ixonEnv
@@ -971,7 +977,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
     ixonEnv, mutsIndex
     nameToAddr := ixonEnv.named.fold (init := {})
       fun m n named => m.insert n named.addr
-    origEnv? }
+    origEnv?, sharingLimits }
   -- name → block key (members + their ctors), then block deps
   -- (decompile.rs:5096-5133).
   let mut nameToBlock : Std.HashMap Ix.Name Ix.Name := {}
@@ -1098,6 +1104,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
     whole-env scale. -/
 def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
     (pass1 : Std.HashMap Ix.Name Ix.ConstantInfo)
+    (sharingLimits : Ix.Sharing.Exact.Limits)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     (numWorkers : Nat := 16)
     : IO Pass2St := do
@@ -1108,7 +1115,7 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
     ixonEnv, mutsIndex
     nameToAddr := ixonEnv.named.fold (init := {})
       fun m n named => m.insert n named.addr
-    origEnv? }
+    origEnv?, sharingLimits }
   -- name → block key + block deps, exactly as the sequential driver.
   let mut nameToBlock : Std.HashMap Ix.Name Ix.Name := {}
   for (blockKey, (allNames, _)) in blocks do
@@ -1295,10 +1302,12 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
   return st
 
 /-- Full decompile driver: Pass 1 (aux skipped) → Pass 1.5 flags →
-    Pass 2 regeneration/recovery. Returns the decompiled env, the
-    per-name errors from both passes, and the final Pass-2 state (plan
-    maps for callers that recompile). -/
+    Pass 2 regeneration/recovery, whose recompiles run under
+    `sharingLimits`. Returns the decompiled env, the per-name errors from
+    both passes, and the final Pass-2 state (plan maps for callers that
+    recompile). -/
 def decompileEnvFull (ixonEnv : Ixon.Env)
+    (sharingLimits : Ix.Sharing.Exact.Limits)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     : Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String) × Pass2St := Id.run do
   let (pass1Raw, pass1Errs) := decompileAllParallel ixonEnv
@@ -1307,18 +1316,24 @@ def decompileEnvFull (ixonEnv : Ixon.Env)
   let pass1 := match fixupInductiveFlags pass1Raw with
     | .ok fixed => fixed
     | .error _ => pass1Raw
-  let st := decompileEnvPass2 ixonEnv pass1 origEnv?
+  let st := decompileEnvPass2 ixonEnv pass1 sharingLimits origEnv?
   return (st.dstt, pass1Errs ++ st.errors, st)
 
 /-- `decompileEnvFull` with the wave-parallel Pass 2
     (`decompileEnvPass2Parallel`). Same outputs — hash-identity is
     enforced by the whole-env decompile suites — with Pass-2 errors in
-    merge order rather than topo order. -/
+    merge order rather than topo order. The recompiles run under the
+    compiler's sharing limits with the `IX_SHARING_LIMITS` override, read
+    once here (`Ix.CompileM.compilerSharingLimitsFromEnv`): an invalid
+    override fails the run before any work, as in Rust `rs_decompile_env`. -/
 def decompileEnvFullParallel (ixonEnv : Ixon.Env)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     (numWorkers : Nat := 16)
     : IO (Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String)
       × Pass2St) := do
+  let sharingLimits ← match ← Ix.CompileM.compilerSharingLimitsFromEnv with
+    | .ok l => pure l
+    | .error e => throw (IO.userError s!"decompileEnvFullParallel: {e}")
   -- `IX_DECOMPILE_WORKERS` overrides the worker count (memory/debug
   -- tuning); `0` selects the sequential Pass-2 driver.
   let numWorkers ← do
@@ -1332,9 +1347,9 @@ def decompileEnvFullParallel (ixonEnv : Ixon.Env)
     | .ok fixed => fixed
     | .error _ => pass1Raw
   if numWorkers == 0 then
-    let st := decompileEnvPass2 ixonEnv pass1 origEnv?
+    let st := decompileEnvPass2 ixonEnv pass1 sharingLimits origEnv?
     return (st.dstt, pass1Errs ++ st.errors, st)
-  let st ← decompileEnvPass2Parallel ixonEnv pass1 origEnv? numWorkers
+  let st ← decompileEnvPass2Parallel ixonEnv pass1 sharingLimits origEnv? numWorkers
   return (st.dstt, pass1Errs ++ st.errors, st)
 
 end Ix.DecompileM

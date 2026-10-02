@@ -1,4 +1,4 @@
-//! Resource checking for Ixon v3. Mirrors `Ix/Resource/{Basic,Check}.lean`.
+//! Resource checking for Ixon. Mirrors `Ix/Resource/{Basic,Check}.lean`.
 //!
 //! The address adapter supplies a globally indexed program whose erased types
 //! have been checked. External interfaces and special primitives are explicit
@@ -1596,7 +1596,7 @@ mod tests {
   #[test]
   fn shared_resource_acceptance_and_rejection_fixtures() {
     let mut count = 0;
-    for line in include_str!("../../../Tests/Fixtures/ixon-v3/resource.tsv")
+    for line in include_str!("../../../Tests/Fixtures/ixon-v4/resource.tsv")
       .lines()
       .filter(|l| !l.starts_with('#') && !l.is_empty())
     {

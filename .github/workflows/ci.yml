@@ -67,11 +67,11 @@ jobs:
       - name: Test Ix CLI
         if: github.event_name != 'push'
         run: lake test --wfail -- cli
-      - name: Test Ixon v3 contracts and consumers
+      - name: Test Ixon v4 contracts and consumers
         if: github.event_name != 'push'
         run: |
-          lake exe ixon-v3-primitives
-          lake exe ixon-v3-tests --primitives
+          lake exe ixon-v4-primitives
+          lake exe ixon-v4-tests --primitives
 
   # A fresh package build keeps host dependencies out of the certified import
   # closure. Mathlib is confined to its separate model package; its cache only
@@ -150,9 +150,9 @@ jobs:
         if: github.event_name != 'push'
         uses: actions-rust-lang/rustfmt@4066006ec54a31931b9b1fddfd38f2fdf2d27143 # v1.1.2
       - name: Check clippy warnings
-        run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi -- -D warnings
+        run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile -- -D warnings
       - name: Check *everything* compiles
-        run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi
+        run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile
       - name: Tests
         run: cargo nextest run --release --profile ci --workspace ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Get Rust version

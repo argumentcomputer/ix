@@ -14,24 +14,24 @@ def Univ.nodeCount : Univ → Nat
 namespace Bounded
 
 /-- Constructors contributed by this tag, excluding recursive children. -/
-def univTagCharge (tag : Tag2) : Nat :=
-  if tag.flag == 0 && tag.size != 0 then tag.size.toNat else 1
+def univTagCharge (tag : TagN) : Nat :=
+  if tag.flag == 0 && tag.value != 0 then tag.value.toNat else 1
 
 /-- Universe payload decoding with a shared budget for expanded constructors.
 The charge is reserved before reading children or constructing a successor
 chain. Binary children consume the same budget sequentially. -/
 def getUnivFromTag (recur : Nat → GetM (Univ × Nat))
-    (budget : Nat) (tag : Tag2) : GetM (Univ × Nat) := do
+    (budget : Nat) (tag : TagN) : GetM (Univ × Nat) := do
   let charge := univTagCharge tag
   if charge ≤ budget then
     let remaining := budget - charge
     match tag.flag with
     | 0 =>
-      if tag.size == 0 then
+      if tag.value == 0 then
         return (.zero, remaining)
       else
         let (base, remaining) ← recur remaining
-        return (base.addSucc tag.size.toNat, remaining)
+        return (base.addSucc tag.value.toNat, remaining)
     | 1 =>
       let (left, remaining) ← recur remaining
       let (right, remaining) ← recur remaining
@@ -40,7 +40,7 @@ def getUnivFromTag (recur : Nat → GetM (Univ × Nat))
       let (left, remaining) ← recur remaining
       let (right, remaining) ← recur remaining
       return (.imax left right, remaining)
-    | 3 => return (.var tag.size, remaining)
+    | 3 => return (.var tag.value, remaining)
     | flag => throw s!"getUniv: invalid flag {flag}"
   else
     throw "getUnivBounded: expanded-node budget exhausted"
@@ -49,7 +49,7 @@ def getUnivFromTag (recur : Nat → GetM (Univ × Nat))
 On success the second component is the unspent constructor budget. -/
 def getUnivFuel : Nat → Nat → GetM (Univ × Nat)
   | 0, _ => throw "getUniv: recursion budget exhausted"
-  | fuel + 1, budget => getTag2 >>= getUnivFromTag (getUnivFuel fuel) budget
+  | fuel + 1, budget => getTagN 2 >>= getUnivFromTag (getUnivFuel fuel) budget
 
 def getUniv (budget : Nat) : GetM (Univ × Nat) := do
   let state ← get

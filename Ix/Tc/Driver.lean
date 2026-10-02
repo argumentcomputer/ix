@@ -17,7 +17,7 @@ without consulting metadata sections. For each entry:
   whose `primary` is the first member's projection address and whose
   `targets` list every member projection plus one CPrj per constructor.
 
-Dispatch is on the leading Tag4 byte (`LazyConstant.peekTag`), avoiding body
+Dispatch is on the leading TagN header byte (`LazyConstant.peekTag`), avoiding body
 parses for the ~95% of constants that are standalones or projections. Keys
 are visited in ascending byte-lexicographic address order (Rust
 `keys.sort_unstable()` parity).

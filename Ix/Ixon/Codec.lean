@@ -1,7 +1,10 @@
 /-
 Extracted from Ix/Ixon.lean at Ix revision
 b067697b9d97552c6f52b2f72c892f84e4c7170f, with the Ixon v3 changes from
-Ix/Ixon.lean at Ix revision b413cd93a43d75a37c358491ca65cd79f1a2a42c.
+Ix/Ixon.lean at Ix revision b413cd93a43d75a37c358491ca65cd79f1a2a42c, and the
+Ixon v4 codec (TagN integers) from Ix/Ixon.lean at Ix revision
+22afee6d9245bd5f974ad59019affed034d84615 (introduced in
+0c08dba94d028ca5fd7939de57523ad194513adf).
 -/
 
 module
@@ -9,7 +12,7 @@ public import Ix.Ixon.Types
 
 public section
 
-/-! Pure production Ixon v3 codecs. Anonymous encodings and decoder
+/-! Pure production Ixon v4 codecs. Anonymous encodings and decoder
 behavior are shared with the host; metadata, environments, hashing,
 and lazy transport remain in `Ix.Ixon`. -/
 
@@ -17,8 +20,9 @@ namespace Ixon
 
 open Ix (DefKind DefinitionSafety QuotKind)
 
-/-- Stable identifier for the v2 Ixon wire grammar. -/
-def wireFormatId : String := "ixon-v3"
+/-- Stable identifier for the Ixon wire format, version 4 (`Env.VERSION`).
+Mirrors Rust `WIRE_FORMAT_ID`. -/
+def wireFormatId : String := "ixon-v4"
 
 /-! ## Serialization Monad and Typeclass -/
 
@@ -135,28 +139,12 @@ instance : Serialize Address where
 
 /-! ## Tag Encoding -/
 
-/-- Count bytes needed to represent a u64 in minimal little-endian form. -/
-def u64ByteCount (x : UInt64) : UInt8 :=
-  if x == 0 then 0
-  else if x < 0x100 then 1
-  else if x < 0x10000 then 2
-  else if x < 0x1000000 then 3
-  else if x < 0x100000000 then 4
-  else if x < 0x10000000000 then 5
-  else if x < 0x1000000000000 then 6
-  else if x < 0x100000000000000 then 7
-  else 8
-
 /-- Write the requested low bytes of a `UInt64`, least significant first. -/
 def putU64TrimmedLEAux (x : UInt64) : Nat → PutM Unit
   | 0 => pure ()
   | len + 1 => do
     putU8 x.toUInt8
     putU64TrimmedLEAux (x >>> 8) len
-
-/-- Write a u64 in minimal little-endian bytes. -/
-def putU64TrimmedLE (x : UInt64) : PutM Unit :=
-  putU64TrimmedLEAux x (u64ByteCount x).toNat
 
 /-- Read exactly `len` little-endian bytes into a `UInt64`. -/
 def getU64TrimmedLEAux : Nat → GetM UInt64
@@ -166,110 +154,130 @@ def getU64TrimmedLEAux : Nat → GetM UInt64
     let high ← getU64TrimmedLEAux len
     return low.toUInt64 ||| (high <<< 8)
 
-/-- Read a u64 from minimal little-endian bytes.
+/-! ### TagN: the Ixon integer code
 
-    Widths past 8 are rejected, matching Rust `u64_get_trimmed_le`.
-    Without the guard the shift below wraps — `UInt64.shiftLeft` is taken
-    mod 64 — so byte 8 would OR back into bits 0-7 and a `Tag0` whose
-    payload claims nine bytes would read as a *different value* here than
-    in the kernel, which discards the surplus. Same bytes, same address,
-    two constants. -/
-def getU64TrimmedLE (len : Nat) : GetM UInt64 := do
-  if len > 8 then
-    throw "getU64TrimmedLE: len > 8"
-  getU64TrimmedLEAux len
+Every integer field of the wire format is a TagN integer: `f = 4` for
+expression, constant, environment, commitment, claim and proof headers (the
+flag selects the variant), `f = 2` for universe terms and `f = 0` (no flag)
+for counts, indices and every other unsigned integer. A TagN integer is one
+header byte `[flag : f bits][payload : r = 8 − f bits]` (`f ∈ {0, 2, 4}`)
+followed by 0, 1, 2, 3, 4 or 8 little-endian bytes. With `L` the top payload
+bit and `M` the next one:
 
-/-- Tag0: Variable-length encoding for small integers.
-    Header byte: [large:1][size:7]
-    - If large=0: size is in low 7 bits (0-127)
-    - If large=1: (size+1) bytes follow containing actual size -/
-structure Tag0 where
-  size : UInt64
-  deriving BEq, Repr
+* `L = 0`: the low `r − 1` payload bits are the value (rung 1, `[0, R₁)`,
+  `R₁ = 2^(r−1)`);
+* `L = 1, M = 0`: the low `r − 2` bits followed by one byte hold `value − R₁`
+  (rung 2, `[R₁, R₂)`, `R₂ = R₁ + 2^(r−2+8)`);
+* `L = 1, M = 1`: the low `r − 2` bits are a code `c`; `c = 0, 1, 2, 3`
+  select 2, 3, 4, 8 following bytes holding `value − R₂`, `value − R₃`,
+  `value − R₄`, `value − R₅` (rungs `[R₂, R₃)`, `[R₃, R₄)`, `[R₄, R₅)`,
+  `[R₅, R₆)` with `R₃ = R₂ + 2^16`, `R₄ = R₃ + 2^24`, `R₅ = R₄ + 2^32`,
+  `R₆ = R₅ + 2^64`); every other code is invalid (none for `f = 4`, whose
+  code has two bits).
 
-def putTag0 (t : Tag0) : PutM Unit := do
-  if t.size < 128 then
-    putU8 t.size.toUInt8
-  else
-    let byteCount := u64ByteCount t.size
-    putU8 (0x80 ||| (byteCount - 1))
-    putU64TrimmedLE t.size
+Each rung starts where the previous one ends, so a value has exactly one
+encoding. Rung ends and widths (1, 2, 3, 4, 5, 9 bytes):
 
-def getTag0 : GetM Tag0 := do
-  let b ← getU8
-  let large := b &&& 0x80 != 0
-  let small := b &&& 0x7F
-  let size ← if large then
-    getU64TrimmedLE (small.toNat + 1)
-  else
-    pure small.toUInt64
-  if large && (size < 128 || u64ByteCount size != small + 1) then
-    throw "noncanonical Tag0 integer"
-  return ⟨size⟩
+| f | R₁ | R₂ | R₃ | R₄ | R₅ |
+|---|---|---|---|---|---|
+| 0 | 128 | 16512 | 82048 | 16859264 | 4311826560 |
+| 2 | 32 | 4128 | 69664 | 16846880 | 4311814176 |
+| 4 | 8 | 1032 | 66568 | 16843784 | 4311811080 |
 
-/-- Tag2: 2-bit flag + size.
-    Header byte: [flag:2][large:1][size:5]
-    - If large=0: size is in low 5 bits (0-31)
-    - If large=1: (size+1) bytes follow containing actual size -/
-structure Tag2 where
+The code itself represents `[0, R₆)`. Since `R₅ < 2^33`, `R₆ > 2^64`: every
+`UInt64` is representable for each `f`, and the decoder rejects 8-byte
+payloads whose value would reach `2^64`. -/
+
+/-- End of TagN rung 1 for an `f`-bit flag. -/
+def tagNEnd1 (f : Nat) : Nat := 2 ^ (8 - f - 1)
+/-- End of TagN rung 2 (one trailing byte). -/
+def tagNEnd2 (f : Nat) : Nat := tagNEnd1 f + 2 ^ (8 - f - 2 + 8)
+/-- End of TagN rung 3 (two trailing bytes). -/
+def tagNEnd3 (f : Nat) : Nat := tagNEnd2 f + 2 ^ 16
+/-- End of TagN rung 4 (three trailing bytes). -/
+def tagNEnd4 (f : Nat) : Nat := tagNEnd3 f + 2 ^ 24
+/-- End of TagN rung 5 (four trailing bytes). -/
+def tagNEnd5 (f : Nat) : Nat := tagNEnd4 f + 2 ^ 32
+/-- End of TagN rung 6 (eight trailing bytes; beyond every `UInt64`). -/
+def tagNEnd6 (f : Nat) : Nat := tagNEnd5 f + 2 ^ 64
+
+/-- Byte width of the TagN encoding of `value`: the single width-by-index
+function for the TagN code. -/
+def tagNByteWidth (f value : Nat) : Nat :=
+  if value < tagNEnd1 f then 1
+  else if value < tagNEnd2 f then 2
+  else if value < tagNEnd3 f then 3
+  else if value < tagNEnd4 f then 4
+  else if value < tagNEnd5 f then 5
+  else 9
+
+/-- A decoded TagN flag and value. -/
+structure TagN where
   flag : UInt8
-  size : UInt64
-  deriving BEq, Repr
+  value : UInt64
+  deriving BEq, Repr, Inhabited
 
-def putTag2 (t : Tag2) : PutM Unit := do
-  if t.size < 32 then
-    putU8 ((t.flag <<< 6) ||| t.size.toUInt8)
+/-- Header byte: `flag` in the high `f` bits, `payload` in the low `8 − f`. -/
+def tagNHeader (f : Nat) (flag : UInt8) (payload : Nat) : UInt8 :=
+  (flag.toNat * 2 ^ (8 - f) + payload).toUInt8
+
+/-- Write `value` in the TagN code with an `f`-bit `flag` (`flag < 2^f`). -/
+def putTagN (f : Nat) (flag : UInt8) (value : UInt64) : PutM Unit :=
+  let v := value.toNat
+  let lead := 2 ^ (8 - f - 1)
+  let mbit := 2 ^ (8 - f - 2)
+  if v < tagNEnd1 f then
+    putU8 (tagNHeader f flag v)
+  else if v < tagNEnd2 f then do
+    putU8 (tagNHeader f flag (lead + (v - tagNEnd1 f) / 256))
+    putU8 ((v - tagNEnd1 f) % 256).toUInt8
+  else if v < tagNEnd3 f then do
+    putU8 (tagNHeader f flag (lead + mbit))
+    putU64TrimmedLEAux (v - tagNEnd2 f).toUInt64 2
+  else if v < tagNEnd4 f then do
+    putU8 (tagNHeader f flag (lead + mbit + 1))
+    putU64TrimmedLEAux (v - tagNEnd3 f).toUInt64 3
+  else if v < tagNEnd5 f then do
+    putU8 (tagNHeader f flag (lead + mbit + 2))
+    putU64TrimmedLEAux (v - tagNEnd4 f).toUInt64 4
+  else do
+    putU8 (tagNHeader f flag (lead + mbit + 3))
+    putU64TrimmedLEAux (v - tagNEnd5 f).toUInt64 8
+
+/-- The multi-byte TagN rungs, selected by the code `c` in the low `8 − f − 2`
+header bits. -/
+def getTagNWide (f : Nat) (flag : UInt8) (c : Nat) : GetM TagN :=
+  if c = 0 then do
+    let x ← getU64TrimmedLEAux 2
+    pure ⟨flag, (tagNEnd2 f + x.toNat).toUInt64⟩
+  else if c = 1 then do
+    let x ← getU64TrimmedLEAux 3
+    pure ⟨flag, (tagNEnd3 f + x.toNat).toUInt64⟩
+  else if c = 2 then do
+    let x ← getU64TrimmedLEAux 4
+    pure ⟨flag, (tagNEnd4 f + x.toNat).toUInt64⟩
+  else if c = 3 then do
+    let x ← getU64TrimmedLEAux 8
+    if tagNEnd5 f + x.toNat < 2 ^ 64 then
+      pure ⟨flag, (tagNEnd5 f + x.toNat).toUInt64⟩
+    else
+      throw "TagN value exceeds UInt64"
   else
-    let byteCount := u64ByteCount t.size
-    putU8 ((t.flag <<< 6) ||| 0x20 ||| (byteCount - 1))
-    putU64TrimmedLE t.size
+    throw s!"invalid TagN code {c}"
 
-def getTag2 : GetM Tag2 := do
+/-- Read a TagN integer with an `f`-bit flag. Invalid codes and values
+reaching `2^64` are rejected. -/
+def getTagN (f : Nat) : GetM TagN := do
   let b ← getU8
-  let flag := b >>> 6
-  let large := b &&& 0x20 != 0
-  let small := b &&& 0x1F
-  let size ← if large then
-    getU64TrimmedLE (small.toNat + 1)
+  let flag := (b.toNat / 2 ^ (8 - f)).toUInt8
+  let p := b.toNat % 2 ^ (8 - f)
+  if p < 2 ^ (8 - f - 1) then
+    pure ⟨flag, p.toUInt64⟩
+  else if p - 2 ^ (8 - f - 1) < 2 ^ (8 - f - 2) then do
+    let lo ← getU8
+    pure ⟨flag, (tagNEnd1 f + (p - 2 ^ (8 - f - 1)) * 256 + lo.toNat).toUInt64⟩
   else
-    pure small.toUInt64
-  if large && (size < 32 || u64ByteCount size != small + 1) then
-    throw "noncanonical Tag2 integer"
-  return ⟨flag, size⟩
-
-/-- Tag4: 4-bit flag + size.
-    Header byte: [flag:4][large:1][size:3]
-    - If large=0: size is in low 3 bits (0-7)
-    - If large=1: (size+1) bytes follow containing actual size -/
-structure Tag4 where
-  flag : UInt8
-  size : UInt64
-  deriving BEq, Repr, Inhabited, Ord, Hashable
-
-def putTag4 (t : Tag4) : PutM Unit := do
-  if t.size < 8 then
-    putU8 ((t.flag <<< 4) ||| t.size.toUInt8)
-  else
-    let byteCount := u64ByteCount t.size
-    putU8 ((t.flag <<< 4) ||| 0x08 ||| (byteCount - 1))
-    putU64TrimmedLE t.size
-
-def getTag4 : GetM Tag4 := do
-  let b ← getU8
-  let flag := b >>> 4
-  let large := b &&& 0x08 != 0
-  let small := b &&& 0x07
-  let size ← if large then
-    getU64TrimmedLE (small.toNat + 1)
-  else
-    pure small.toUInt64
-  if large && (size < 8 || u64ByteCount size != small + 1) then
-    throw "noncanonical Tag4 integer"
-  return ⟨flag, size⟩
-
-instance : Serialize Tag4 where
-  put := putTag4
-  get := getTag4
+    getTagNWide f flag (p - 2 ^ (8 - f - 1) - 2 ^ (8 - f - 2))
 
 /-! ## Contract serialization -/
 
@@ -324,23 +332,23 @@ theorem Univ.succBase_sizeOf_le (u : Univ) :
   | imax a b => simp [Univ.succBase]
   | var idx => simp [Univ.succBase]
 
-/-- Total v2 universe writer.  Successor telescopes retain the production
+/-- Total universe writer.  Successor telescopes retain the production
     compressed representation; `succBase_sizeOf_le` supplies the non-obvious
     structural decrease. -/
 def putUniv : Univ → PutM Unit
-  | .zero => putTag2 ⟨Univ.FLAG_ZERO_SUCC, 0⟩
+  | .zero => putTagN 2 Univ.FLAG_ZERO_SUCC 0
   | u@(.succ _) => do
-    putTag2 ⟨Univ.FLAG_ZERO_SUCC, u.succCount⟩
+    putTagN 2 Univ.FLAG_ZERO_SUCC u.succCount
     putUniv u.succBase
   | .max a b => do
-    putTag2 ⟨Univ.FLAG_MAX, 0⟩
+    putTagN 2 Univ.FLAG_MAX 0
     putUniv a
     putUniv b
   | .imax a b => do
-    putTag2 ⟨Univ.FLAG_IMAX, 0⟩
+    putTagN 2 Univ.FLAG_IMAX 0
     putUniv a
     putUniv b
-  | .var idx => putTag2 ⟨Univ.FLAG_VAR, idx⟩
+  | .var idx => putTagN 2 Univ.FLAG_VAR idx
 termination_by u => sizeOf u
 decreasing_by
   all_goals simp_wf
@@ -359,14 +367,14 @@ def Univ.addSucc : Nat → Univ → Univ
 /-- Decode the payload selected by one universe tag, using `recur` for every
     recursive child.  Naming the post-tag continuation keeps its wire grammar
     directly available to codec proofs. -/
-def getUnivFromTag (recur : GetM Univ) (tag : Tag2) : GetM Univ := do
+def getUnivFromTag (recur : GetM Univ) (tag : TagN) : GetM Univ := do
   match tag.flag with
   | 0 =>  -- ZERO_SUCC
-    if tag.size == 0 then
+    if tag.value == 0 then
       return .zero
     else
       let base ← recur
-      return base.addSucc tag.size.toNat
+      return base.addSucc tag.value.toNat
   | 1 =>  -- MAX
     let a ← recur
     let b ← recur
@@ -376,14 +384,14 @@ def getUnivFromTag (recur : GetM Univ) (tag : Tag2) : GetM Univ := do
     let b ← recur
     return .imax a b
   | 3 =>  -- VAR
-    return .var tag.size
+    return .var tag.value
   | f => throw s!"getUniv: invalid flag {f}"
 
-/-- Total v2 universe reader.  Each recursive layer consumes a tag byte, so
+/-- Total universe reader.  Each recursive layer consumes a tag byte, so
     a caller-supplied byte budget is a complete termination measure. -/
 def getUnivFuel : Nat → GetM Univ
   | 0 => throw "getUniv: recursion budget exhausted"
-  | fuel + 1 => getTag2 >>= getUnivFromTag (getUnivFuel fuel)
+  | fuel + 1 => getTagN 2 >>= getUnivFromTag (getUnivFuel fuel)
 
 /-- Decode one universe from the current cursor.  Remaining bytes plus one
     are sufficient fuel because every recursive layer consumes a tag. -/
@@ -571,52 +579,52 @@ private theorem nodeCount_right_lt_sum3 (left middle right : Nat) :
   Nat.lt_of_le_of_lt (Nat.le_add_left right (left + middle))
     (Nat.lt_succ_self _)
 
-/-- Total canonical v3 expression writer. Telescope collection preserves the
+/-- Total canonical expression writer. Telescope collection preserves the
     Rust byte grammar; the node-count lemmas above expose its recursive calls
     to the kernel termination checker. -/
 def putExpr : Expr → PutM Unit
-  | .sort idx => putTag4 ⟨Expr.FLAG_SORT, idx⟩
-  | .var idx => putTag4 ⟨Expr.FLAG_VAR, idx⟩
+  | .sort idx => putTagN 4 Expr.FLAG_SORT idx
+  | .var idx => putTagN 4 Expr.FLAG_VAR idx
   | .ref refIdx univIdxs => do
-    -- Rust format: Tag4(flag, array_len), Tag0(ref_idx), then elements
-    putTag4 ⟨Expr.FLAG_REF, univIdxs.size.toUInt64⟩
-    putTag0 ⟨refIdx⟩
-    for idx in univIdxs do putTag0 ⟨idx⟩
+    -- Rust format: TagN(4, flag, array_len), TagN(0, ref_idx), then elements
+    putTagN 4 Expr.FLAG_REF univIdxs.size.toUInt64
+    putTagN 0 0 refIdx
+    for idx in univIdxs do putTagN 0 0 idx
   | .recur recIdx univIdxs => do
-    -- Rust format: Tag4(flag, array_len), Tag0(rec_idx), then elements
-    putTag4 ⟨Expr.FLAG_REC, univIdxs.size.toUInt64⟩
-    putTag0 ⟨recIdx⟩
-    for idx in univIdxs do putTag0 ⟨idx⟩
+    -- Rust format: TagN(4, flag, array_len), TagN(0, rec_idx), then elements
+    putTagN 4 Expr.FLAG_REC univIdxs.size.toUInt64
+    putTagN 0 0 recIdx
+    for idx in univIdxs do putTagN 0 0 idx
   | .prj typeRefIdx fieldIdx val => do
-    -- Rust format: Tag4(flag, field_idx), Tag0(type_ref_idx), then val
-    putTag4 ⟨Expr.FLAG_PRJ, fieldIdx⟩
-    putTag0 ⟨typeRefIdx⟩
+    -- Rust format: TagN(4, flag, field_idx), TagN(0, type_ref_idx), then val
+    putTagN 4 Expr.FLAG_PRJ fieldIdx
+    putTagN 0 0 typeRefIdx
     putExpr val
-  | .str refIdx => putTag4 ⟨Expr.FLAG_STR, refIdx⟩
-  | .nat refIdx => putTag4 ⟨Expr.FLAG_NAT, refIdx⟩
+  | .str refIdx => putTagN 4 Expr.FLAG_STR refIdx
+  | .nat refIdx => putTagN 4 Expr.FLAG_NAT refIdx
   | e@(.app _ _) => do
-    putTag4 ⟨Expr.FLAG_APP, e.collectAppArgs.1.length.toUInt64⟩
+    putTagN 4 Expr.FLAG_APP e.collectAppArgs.1.length.toUInt64
     putExpr e.collectAppArgs.2
     for arg in e.collectAppArgs.1 do putExpr arg
   | e@(.lam _ _ _) => do
-    putTag4 ⟨Expr.FLAG_LAM, e.collectLamBinders.1.length.toUInt64⟩
+    putTagN 4 Expr.FLAG_LAM e.collectLamBinders.1.length.toUInt64
     for binder in e.collectLamBinders.1 do
       putU8 binder.1.toBits
       putExpr binder.2
     putExpr e.collectLamBinders.2
   | e@(.all _ _ _ _) => do
-    putTag4 ⟨Expr.FLAG_ALL, e.collectAllBinders.1.length.toUInt64⟩
+    putTagN 4 Expr.FLAG_ALL e.collectAllBinders.1.length.toUInt64
     for binder in e.collectAllBinders.1 do
       putU8 (packAllContract binder.1 binder.2.1)
       putExpr binder.2.2
     putExpr e.collectAllBinders.2
   | .letE contract ty val body => do
-    putTag4 ⟨Expr.FLAG_LET, contract.flags⟩
+    putTagN 4 Expr.FLAG_LET contract.flags
     putBinderContract contract.binder
     putExpr ty
     putExpr val
     putExpr body
-  | .share idx => putTag4 ⟨Expr.FLAG_SHARE, idx⟩
+  | .share idx => putTagN 4 Expr.FLAG_SHARE idx
 termination_by e => e.nodeCount
 decreasing_by
   all_goals simp_wf
@@ -648,12 +656,12 @@ decreasing_by
     simpa only [Expr.nodeCount] using
       Expr.collectAllBinders_base_nodeCount_lt _ _ _ _
 
-/-- Read `count` `Tag0` sizes in wire order. -/
-def getTag0Sizes : Nat → GetM (List UInt64)
+/-- Read `count` TagN (`f = 0`) values in wire order. -/
+def getTagN0Values : Nat → GetM (List UInt64)
   | 0 => pure []
   | count + 1 => do
-    let head := (← getTag0).size
-    let tail ← getTag0Sizes count
+    let head := (← getTagN 0).value
+    let tail ← getTagN0Values count
     return head :: tail
 
 /-- Read and apply one canonical application argument at a time. -/
@@ -684,52 +692,52 @@ def getExprAllBinders (recur : GetM Expr) :
     let tail ← getExprAllBinders recur count
     return (contract, result, ty) :: tail
 
-/-- Parse a v3 expression after its leading `Tag4`. Recursive reads are
+/-- Parse an expression after its leading TagN (`f = 4`) header. Recursive reads are
     supplied explicitly so `getExprFuel` below remains structurally total. -/
-def getExprFromTag (recur : GetM Expr) (tag : Tag4) : GetM Expr := do
+def getExprFromTag (recur : GetM Expr) (tag : TagN) : GetM Expr := do
   match tag.flag with
-  | 0x0 => return .sort tag.size
-  | 0x1 => return .var tag.size
-  | 0x2 => do  -- REF: tag.size is array_len, then ref_idx, then elements
-    let refIdx := (← getTag0).size
-    checkCount tag.size
-    let univIdxs ← getTag0Sizes tag.size.toNat
+  | 0x0 => return .sort tag.value
+  | 0x1 => return .var tag.value
+  | 0x2 => do  -- REF: tag.value is array_len, then ref_idx, then elements
+    let refIdx := (← getTagN 0).value
+    checkCount tag.value
+    let univIdxs ← getTagN0Values tag.value.toNat
     return .ref refIdx univIdxs.toArray
-  | 0x3 => do  -- REC: tag.size is array_len, then rec_idx, then elements
-    let recIdx := (← getTag0).size
-    checkCount tag.size
-    let univIdxs ← getTag0Sizes tag.size.toNat
+  | 0x3 => do  -- REC: tag.value is array_len, then rec_idx, then elements
+    let recIdx := (← getTagN 0).value
+    checkCount tag.value
+    let univIdxs ← getTagN0Values tag.value.toNat
     return .recur recIdx univIdxs.toArray
-  | 0x4 => do  -- PRJ: tag.size is field_idx, then type_ref_idx, then val
-    let typeRefIdx := (← getTag0).size
+  | 0x4 => do  -- PRJ: tag.value is field_idx, then type_ref_idx, then val
+    let typeRefIdx := (← getTagN 0).value
     let val ← recur
-    return .prj typeRefIdx tag.size val
-  | 0x5 => return .str tag.size
-  | 0x6 => return .nat tag.size
+    return .prj typeRefIdx tag.value val
+  | 0x5 => return .str tag.value
+  | 0x6 => return .nat tag.value
   | 0x7 => do  -- APP (telescope)
-    if tag.size == 0 then
+    if tag.value == 0 then
       throw "getExpr: empty app spine"
-    checkCount tag.size
+    checkCount tag.value
     let base ← recur
     match base with
     | .app .. => throw "getExpr: non-canonical app base"
     | _ => pure ()
-    getExprAppArgs recur tag.size.toNat base
+    getExprAppArgs recur tag.value.toNat base
   | 0x8 => do  -- LAM (telescope)
-    if tag.size == 0 then
+    if tag.value == 0 then
       throw "getExpr: Lam with zero binders"
-    checkCount tag.size 2
-    let binders ← getExprLamBinders recur tag.size.toNat
+    checkCount tag.value 2
+    let binders ← getExprLamBinders recur tag.value.toNat
     let body ← recur
     match body with
     | .lam .. => throw "getExpr: non-canonical lam telescope"
     | _ => pure ()
     return binders.foldr (fun (uses, ty) result => .lam uses ty result) body
   | 0x9 => do  -- ALL (telescope)
-    if tag.size == 0 then
+    if tag.value == 0 then
       throw "getExpr: All with zero binders"
-    checkCount tag.size 2
-    let binders ← getExprAllBinders recur tag.size.toNat
+    checkCount tag.value 2
+    let binders ← getExprAllBinders recur tag.value.toNat
     let body ← recur
     match body with
     | .all .. => throw "getExpr: non-canonical all telescope"
@@ -737,24 +745,24 @@ def getExprFromTag (recur : GetM Expr) (tag : Tag4) : GetM Expr := do
     return binders.foldr
       (fun (uses, owned, ty) result => .all uses owned ty result) body
   | 0xA => do  -- LET
-    if tag.size > 3 then
-      throw s!"getExpr: invalid let flags {tag.size}"
+    if tag.value > 3 then
+      throw s!"getExpr: invalid let flags {tag.value}"
     let binder ← getBinderContract
-    let some contract := LetContract.ofFlags? tag.size binder
+    let some contract := LetContract.ofFlags? tag.value binder
       | throw "getExpr: invalid let flags"
     let ty ← recur
     let val ← recur
     let body ← recur
     return .letE contract ty val body
-  | 0xB => return .share tag.size
+  | 0xB => return .share tag.value
   | f => throw s!"getExpr: invalid flag {f}"
 
-/-- Total v3 expression reader. Every recursive layer consumes a `Tag4`
+/-- Total expression reader. Every recursive layer consumes a TagN (`f = 4`) header
     header, so a caller-supplied byte budget is a complete termination
     measure even for telescope-compressed applications and binders. -/
 def getExprFuel : Nat → GetM Expr
   | 0 => throw "getExpr: recursion budget exhausted"
-  | fuel + 1 => getTag4 >>= getExprFromTag (getExprFuel fuel)
+  | fuel + 1 => getTagN 4 >>= getExprFromTag (getExprFuel fuel)
 
 /-- Decode one expression from the current cursor. Remaining bytes plus one
     are sufficient fuel because every recursive expression consumes a tag. -/
@@ -787,7 +795,7 @@ def unpackDefKindSafety (b : UInt8) : DefKind × DefinitionSafety :=
 
 def putDefinition (d : Definition) : PutM Unit := do
   putU8 (packDefKindSafety d.kind d.safety)
-  putTag0 ⟨d.lvls⟩
+  putTagN 0 0 d.lvls
   putExpr d.typ
   putExpr d.value
 
@@ -796,7 +804,7 @@ def getDefinition : GetM Definition := do
   if flags >>> 2 > 2 || (flags &&& 3) > 2 then
     throw "invalid definition kind/safety"
   let (kind, safety) := unpackDefKindSafety flags
-  let lvls := (← getTag0).size
+  let lvls := (← getTagN 0).value
   let typ ← getExpr
   let value ← getExpr
   return ⟨kind, safety, lvls, typ, value⟩
@@ -806,11 +814,11 @@ instance : Serialize Definition where
   get := getDefinition
 
 def putRecursorRule (r : RecursorRule) : PutM Unit := do
-  putTag0 ⟨r.fields⟩
+  putTagN 0 0 r.fields
   putExpr r.rhs
 
 def getRecursorRule : GetM RecursorRule := do
-  let fields := (← getTag0).size
+  let fields := (← getTagN 0).value
   let rhs ← getExpr
   return ⟨fields, rhs⟩
 
@@ -820,13 +828,13 @@ instance : Serialize RecursorRule where
 
 def putRecursor (r : Recursor) : PutM Unit := do
   putU8 (packBools [r.k, r.isUnsafe])
-  putTag0 ⟨r.lvls⟩
-  putTag0 ⟨r.params⟩
-  putTag0 ⟨r.indices⟩
-  putTag0 ⟨r.motives⟩
-  putTag0 ⟨r.minors⟩
+  putTagN 0 0 r.lvls
+  putTagN 0 0 r.params
+  putTagN 0 0 r.indices
+  putTagN 0 0 r.motives
+  putTagN 0 0 r.minors
   putExpr r.typ
-  putTag0 ⟨r.rules.size.toUInt64⟩
+  putTagN 0 0 r.rules.size.toUInt64
   for rule in r.rules do putRecursorRule rule
 
 def getRecursor : GetM Recursor := do
@@ -835,13 +843,13 @@ def getRecursor : GetM Recursor := do
   let bools := unpackBools 2 flags
   let k := bools[0]!
   let isUnsafe := bools[1]!
-  let lvls := (← getTag0).size
-  let params := (← getTag0).size
-  let indices := (← getTag0).size
-  let motives := (← getTag0).size
-  let minors := (← getTag0).size
+  let lvls := (← getTagN 0).value
+  let params := (← getTagN 0).value
+  let indices := (← getTagN 0).value
+  let motives := (← getTagN 0).value
+  let minors := (← getTagN 0).value
   let typ ← getExpr
-  let numRules := (← getTag0).size.toNat
+  let numRules := (← getTagN 0).value.toNat
   checkCount numRules.toUInt64 2
   let mut rules := #[]
   for _ in [0:numRules] do
@@ -854,12 +862,12 @@ instance : Serialize Recursor where
 
 def putAxiom (a : Axiom) : PutM Unit := do
   putU8 (if a.isUnsafe then 1 else 0)
-  putTag0 ⟨a.lvls⟩
+  putTagN 0 0 a.lvls
   putExpr a.typ
 
 def getAxiom : GetM Axiom := do
   let isUnsafe ← Serialize.get
-  let lvls := (← getTag0).size
+  let lvls := (← getTagN 0).value
   let typ ← getExpr
   return ⟨isUnsafe, lvls, typ⟩
 
@@ -870,7 +878,7 @@ instance : Serialize Axiom where
 def putQuotient (q : Quotient) : PutM Unit := do
   let k : UInt8 := match q.kind with | .type => 0 | .ctor => 1 | .lift => 2 | .ind => 3
   putU8 k
-  putTag0 ⟨q.lvls⟩
+  putTagN 0 0 q.lvls
   putExpr q.typ
 
 def getQuotient : GetM Quotient := do
@@ -878,7 +886,7 @@ def getQuotient : GetM Quotient := do
   let k : QuotKind ← match v with
     | 0 => pure .type | 1 => pure .ctor | 2 => pure .lift | 3 => pure .ind
     | _ => throw s!"invalid QuotKind tag {v}"
-  let lvls := (← getTag0).size
+  let lvls := (← getTagN 0).value
   let typ ← getExpr
   return ⟨k, lvls, typ⟩
 
@@ -888,18 +896,18 @@ instance : Serialize Quotient where
 
 def putConstructor (c : Constructor) : PutM Unit := do
   putU8 (if c.isUnsafe then 1 else 0)
-  putTag0 ⟨c.lvls⟩
-  putTag0 ⟨c.cidx⟩
-  putTag0 ⟨c.params⟩
-  putTag0 ⟨c.fields⟩
+  putTagN 0 0 c.lvls
+  putTagN 0 0 c.cidx
+  putTagN 0 0 c.params
+  putTagN 0 0 c.fields
   putExpr c.typ
 
 def getConstructor : GetM Constructor := do
   let isUnsafe ← Serialize.get
-  let lvls := (← getTag0).size
-  let cidx := (← getTag0).size
-  let params := (← getTag0).size
-  let fields := (← getTag0).size
+  let lvls := (← getTagN 0).value
+  let cidx := (← getTagN 0).value
+  let params := (← getTagN 0).value
+  let fields := (← getTagN 0).value
   let typ ← getExpr
   return ⟨isUnsafe, lvls, cidx, params, fields, typ⟩
 
@@ -909,20 +917,20 @@ instance : Serialize Constructor where
 
 def putInductive (i : Inductive) : PutM Unit := do
   putU8 (packBools [i.isUnsafe])
-  putTag0 ⟨i.lvls⟩
-  putTag0 ⟨i.params⟩
-  putTag0 ⟨i.indices⟩
+  putTagN 0 0 i.lvls
+  putTagN 0 0 i.params
+  putTagN 0 0 i.indices
   putExpr i.typ
-  putTag0 ⟨i.ctors.size.toUInt64⟩
+  putTagN 0 0 i.ctors.size.toUInt64
   for c in i.ctors do putConstructor c
 
 def getInductive : GetM Inductive := do
   let isUnsafe ← Serialize.get
-  let lvls := (← getTag0).size
-  let params := (← getTag0).size
-  let indices := (← getTag0).size
+  let lvls := (← getTagN 0).value
+  let params := (← getTagN 0).value
+  let indices := (← getTagN 0).value
   let typ ← getExpr
-  let numCtors := (← getTag0).size.toNat
+  let numCtors := (← getTagN 0).value.toNat
   checkCount numCtors.toUInt64 6
   let mut ctors := #[]
   for _ in [0:numCtors] do
@@ -934,11 +942,11 @@ instance : Serialize Inductive where
   get := getInductive
 
 def putInductiveProj (p : InductiveProj) : PutM Unit := do
-  putTag0 ⟨p.idx⟩
+  putTagN 0 0 p.idx
   Serialize.put p.block
 
 def getInductiveProj : GetM InductiveProj := do
-  let idx := (← getTag0).size
+  let idx := (← getTagN 0).value
   let block ← Serialize.get
   return ⟨idx, block⟩
 
@@ -947,13 +955,13 @@ instance : Serialize InductiveProj where
   get := getInductiveProj
 
 def putConstructorProj (p : ConstructorProj) : PutM Unit := do
-  putTag0 ⟨p.idx⟩
-  putTag0 ⟨p.cidx⟩
+  putTagN 0 0 p.idx
+  putTagN 0 0 p.cidx
   Serialize.put p.block
 
 def getConstructorProj : GetM ConstructorProj := do
-  let idx := (← getTag0).size
-  let cidx := (← getTag0).size
+  let idx := (← getTagN 0).value
+  let cidx := (← getTagN 0).value
   let block ← Serialize.get
   return ⟨idx, cidx, block⟩
 
@@ -962,11 +970,11 @@ instance : Serialize ConstructorProj where
   get := getConstructorProj
 
 def putRecursorProj (p : RecursorProj) : PutM Unit := do
-  putTag0 ⟨p.idx⟩
+  putTagN 0 0 p.idx
   Serialize.put p.block
 
 def getRecursorProj : GetM RecursorProj := do
-  let idx := (← getTag0).size
+  let idx := (← getTagN 0).value
   let block ← Serialize.get
   return ⟨idx, block⟩
 
@@ -975,11 +983,11 @@ instance : Serialize RecursorProj where
   get := getRecursorProj
 
 def putDefinitionProj (p : DefinitionProj) : PutM Unit := do
-  putTag0 ⟨p.idx⟩
+  putTagN 0 0 p.idx
   Serialize.put p.block
 
 def getDefinitionProj : GetM DefinitionProj := do
-  let idx := (← getTag0).size
+  let idx := (← getTagN 0).value
   let block ← Serialize.get
   return ⟨idx, block⟩
 
@@ -1004,27 +1012,27 @@ instance : Serialize MutConst where
   get := getMutConst
 
 def putConstantInfo : ConstantInfo → PutM Unit
-  | .defn d => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_DEFN⟩ *> putDefinition d
-  | .recr r => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_RECR⟩ *> putRecursor r
-  | .axio a => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_AXIO⟩ *> putAxiom a
-  | .quot q => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_QUOT⟩ *> putQuotient q
-  | .cPrj p => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_CPRJ⟩ *> putConstructorProj p
-  | .rPrj p => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_RPRJ⟩ *> putRecursorProj p
-  | .iPrj p => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_IPRJ⟩ *> putInductiveProj p
-  | .dPrj p => putTag4 ⟨Constant.FLAG, ConstantInfo.CONST_DPRJ⟩ *> putDefinitionProj p
+  | .defn d => putTagN 4 Constant.FLAG ConstantInfo.CONST_DEFN *> putDefinition d
+  | .recr r => putTagN 4 Constant.FLAG ConstantInfo.CONST_RECR *> putRecursor r
+  | .axio a => putTagN 4 Constant.FLAG ConstantInfo.CONST_AXIO *> putAxiom a
+  | .quot q => putTagN 4 Constant.FLAG ConstantInfo.CONST_QUOT *> putQuotient q
+  | .cPrj p => putTagN 4 Constant.FLAG ConstantInfo.CONST_CPRJ *> putConstructorProj p
+  | .rPrj p => putTagN 4 Constant.FLAG ConstantInfo.CONST_RPRJ *> putRecursorProj p
+  | .iPrj p => putTagN 4 Constant.FLAG ConstantInfo.CONST_IPRJ *> putInductiveProj p
+  | .dPrj p => putTagN 4 Constant.FLAG ConstantInfo.CONST_DPRJ *> putDefinitionProj p
   | .muts ms => do
-    putTag4 ⟨Constant.FLAG_MUTS, ms.size.toUInt64⟩
+    putTagN 4 Constant.FLAG_MUTS ms.size.toUInt64
     for m in ms do putMutConst m
 
 def getConstantInfo : GetM ConstantInfo := do
-  let tag ← getTag4
+  let tag ← getTagN 4
   if tag.flag == Constant.FLAG_MUTS then
     let mut ms := #[]
-    for _ in [0:tag.size.toNat] do
+    for _ in [0:tag.value.toNat] do
       ms := ms.push (← getMutConst)
     return .muts ms
   else if tag.flag == Constant.FLAG then
-    match tag.size with
+    match tag.value with
     | 0 => .defn <$> getDefinition
     | 1 => .recr <$> getRecursor
     | 2 => .axio <$> getAxiom
@@ -1043,11 +1051,11 @@ instance : Serialize ConstantInfo where
 
 def putConstant (c : Constant) : PutM Unit := do
   putConstantInfo c.info
-  putTag0 ⟨c.sharing.size.toUInt64⟩
+  putTagN 0 0 c.sharing.size.toUInt64
   for e in c.sharing do putExpr e
-  putTag0 ⟨c.refs.size.toUInt64⟩
+  putTagN 0 0 c.refs.size.toUInt64
   for a in c.refs do Serialize.put a
-  putTag0 ⟨c.univs.size.toUInt64⟩
+  putTagN 0 0 c.univs.size.toUInt64
   for u in c.univs do putUniv u
 
 /-- Read a counted array by consuming each entry before appending it. -/
@@ -1061,11 +1069,11 @@ def getArray (getm : GetM α) (count : Nat) : GetM (Array α) := do
 keeps the record prefix identical for production and bounded decoding. -/
 def getConstantWithUnivs (readUnivs : Nat → GetM (Array Univ)) : GetM Constant := do
   let info ← getConstantInfo
-  let numSharing := (← getTag0).size.toNat
+  let numSharing := (← getTagN 0).value.toNat
   let sharing ← getArray getExpr numSharing
-  let numRefs := (← getTag0).size.toNat
+  let numRefs := (← getTagN 0).value.toNat
   let refs ← getArray Serialize.get numRefs
-  let numUnivs := (← getTag0).size.toNat
+  let numUnivs := (← getTagN 0).value.toNat
   let univs ← readUnivs numUnivs
   return ⟨info, sharing, refs, univs⟩
 

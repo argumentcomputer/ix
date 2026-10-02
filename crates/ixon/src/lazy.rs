@@ -1,7 +1,7 @@
 //! Lazy materialization of `Constant` from on-disk bytes.
 //!
 //! Stored inside `Env::consts`: `DashMap<Address, LazyConstant>`. The
-//! `.ixe` loader reads each constant's bytes (preceded by a Tag0
+//! `.ixe` loader reads each constant's bytes (preceded by a TagN
 //! length sidecar at the env-section level — see `Env::get`) into a
 //! `LazyConstant::from_bytes`, deferring `Constant::get` until first
 //! access via [`LazyConstant::get`].
@@ -27,7 +27,7 @@
 //!
 //! Invariants:
 //! - `raw_bytes()` returns exactly what `Constant::put` produces and
-//!   `Address::hash` consumes — the Tag0 length prefix is *not*
+//!   `Address::hash` consumes — the TagN length prefix is *not*
 //!   included.
 //! - `Address::hash(self.raw_bytes()) == addr` for the address this
 //!   lazy entry was stored under (`verify_address` checks this).
@@ -96,7 +96,7 @@ pub enum ConstVariantTag {
 /// Lazy-materialized `Constant` backed by serialized bytes.
 #[derive(Debug, Clone)]
 pub struct LazyConstant {
-  /// Tag4-encoded constant bytes (exactly the slice consumed by
+  /// TagN-encoded constant bytes (exactly the slice consumed by
   /// `Constant::get` and hashed by `Address::hash`).
   bytes: BytesSource,
   /// Pre-materialized `Constant`. Populated *only* by
@@ -258,16 +258,16 @@ impl LazyConstant {
   }
 
   /// Identify the `ConstantInfo` variant by reading just the outer
-  /// `Tag4` head byte — no allocation, no body parse.
+  /// TagN (f = 4) header byte — no allocation, no body parse.
   ///
-  /// `Tag4` encoding (see `src/ix/ixon/tag.rs:64-70`): head is
-  /// `[flag:4][large:1][size:3]`. For `Constant`:
-  /// - `flag = 0xC` (`Constant::FLAG_MUTS`) → Muts block (size field
-  ///   encodes the entry count, possibly in large form; we ignore it
+  /// TagN (f = 4) encoding (`crate::tag::TagN`): head is
+  /// `[flag:4][L:1][payload:3]`, `L = 0` for values below 8. For `Constant`:
+  /// - `flag = 0xC` (`Constant::FLAG_MUTS`) → Muts block (the value is
+  ///   the entry count, possibly multi-byte; we ignore it
   ///   here — knowing it's Muts is enough).
   /// - `flag = 0xD` (`Constant::FLAG`) → non-Muts variant; index
-  ///   0..=7 in the `size` field. All non-Muts variants fit in 3
-  ///   bits, so `large=0` always; the index is read directly.
+  ///   0..=7 as the value. All non-Muts variants fit in 3
+  ///   bits, so `L = 0` always; the index is read directly.
   ///
   /// Used by `build_anon_work` to dispatch on variant without
   /// materializing the entire `Arc<Expr>` body. For the ~95% of
@@ -286,7 +286,7 @@ impl LazyConstant {
       Constant::FLAG => {
         if large {
           return Err(format!(
-            "LazyConstant::peek_variant: unexpected large-form Tag4 for non-Muts constant (head=0x{head:02X})"
+            "LazyConstant::peek_variant: unexpected multi-byte header for non-Muts constant (head=0x{head:02X})"
           ));
         }
         match u64::from(small) {
@@ -304,12 +304,12 @@ impl LazyConstant {
         }
       },
       _ => Err(format!(
-        "LazyConstant::peek_variant: unexpected Tag4 flag 0x{flag:X} (expected 0xC or 0xD)"
+        "LazyConstant::peek_variant: unexpected constant header flag 0x{flag:X} (expected 0xC or 0xD)"
       )),
     }
   }
 
-  /// Raw serialized bytes (the Tag4 constant body, no length prefix).
+  /// Raw serialized bytes (the TagN constant body, no length prefix).
   pub fn raw_bytes(&self) -> &[u8] {
     self.bytes.as_slice()
   }

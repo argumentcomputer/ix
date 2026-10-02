@@ -67,10 +67,10 @@ namespace Expr
   def FLAG_LET : UInt8 := 0xA
   def FLAG_SHARE : UInt8 := 0xB
 
-  /-- Embed an ordinary Lean lambda in Ixon v3. -/
+  /-- Embed an ordinary Lean lambda in Ixon. -/
   def leanLam (ty body : Expr) : Expr := .lam .many ty body
 
-  /-- Embed an ordinary Lean forall in Ixon v3. -/
+  /-- Embed an ordinary Lean forall in Ixon. -/
   def leanAll (ty body : Expr) : Expr := .all .many .shared ty body
 
   /-- Embed an ordinary Lean let with default contracts. -/

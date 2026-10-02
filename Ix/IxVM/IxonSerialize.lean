@@ -8,56 +8,56 @@ namespace IxVM
 def ixonSerialize := ⟦
   fn put_expr(expr: Expr, rest: ByteStream) -> ByteStream {
     match expr {
-      -- Srt: Tag4(0x0, univ_idx)
-      Expr.Srt(univ_idx) => put_tag4(0x0, univ_idx, rest),
+      -- Srt: TagN4(0x0, univ_idx)
+      Expr.Srt(univ_idx) => put_tagn4(0x0, univ_idx, rest),
 
-      -- Var: Tag4(0x1, idx)
-      Expr.Var(idx) => put_tag4(0x1, idx, rest),
+      -- Var: TagN4(0x1, idx)
+      Expr.Var(idx) => put_tagn4(0x1, idx, rest),
 
-      -- Ref: Tag4(0x2, len) + Tag0(ref_idx) + univ_list
+      -- Ref: TagN4(0x2, len) + TagN0(ref_idx) + univ_list
       Expr.Ref(ref_idx, univ_list) =>
         let len = list_length_u64(univ_list);
-        put_tag4(0x2, len, put_tag0(ref_idx, put_u64_list(univ_list, rest))),
+        put_tagn4(0x2, len, put_tagn0(ref_idx, put_u64_list(univ_list, rest))),
 
-      -- Rec: Tag4(0x3, len) + Tag0(rec_idx) + univ_list
+      -- Rec: TagN4(0x3, len) + TagN0(rec_idx) + univ_list
       Expr.Rec(rec_idx, univ_list) =>
         let len = list_length_u64(univ_list);
-        put_tag4(0x3, len, put_tag0(rec_idx, put_u64_list(univ_list, rest))),
+        put_tagn4(0x3, len, put_tagn0(rec_idx, put_u64_list(univ_list, rest))),
 
-      -- Prj: Tag4(0x4, field_idx) + Tag0(type_ref_idx) + put_expr(val)
+      -- Prj: TagN4(0x4, field_idx) + TagN0(type_ref_idx) + put_expr(val)
       Expr.Prj(type_ref_idx, field_idx, &val) =>
-        put_tag4(0x4, field_idx, put_tag0(type_ref_idx, put_expr(val, rest))),
+        put_tagn4(0x4, field_idx, put_tagn0(type_ref_idx, put_expr(val, rest))),
 
-      -- Str: Tag4(0x5, ref_idx)
-      Expr.Str(ref_idx) => put_tag4(0x5, ref_idx, rest),
+      -- Str: TagN4(0x5, ref_idx)
+      Expr.Str(ref_idx) => put_tagn4(0x5, ref_idx, rest),
 
-      -- Nat: Tag4(0x6, ref_idx)
-      Expr.Nat(ref_idx) => put_tag4(0x6, ref_idx, rest),
+      -- Nat: TagN4(0x6, ref_idx)
+      Expr.Nat(ref_idx) => put_tagn4(0x6, ref_idx, rest),
 
-      -- App: Tag4(0x7, count) + telescope
+      -- App: TagN4(0x7, count) + telescope
       Expr.App(_, _) =>
         let count = app_telescope_count(expr);
-        put_tag4(0x7, count, put_app_telescope(expr, rest)),
+        put_tagn4(0x7, count, put_app_telescope(expr, rest)),
 
-      -- Lam: Tag4(0x8, count) + telescope
+      -- Lam: TagN4(0x8, count) + telescope
       Expr.Lam(_, _, _) =>
         let count = lam_telescope_count(expr);
-        put_tag4(0x8, count, put_lam_telescope(expr, rest)),
+        put_tagn4(0x8, count, put_lam_telescope(expr, rest)),
 
-      -- All: Tag4(0x9, count) + telescope
+      -- All: TagN4(0x9, count) + telescope
       Expr.All(_, _, _, _) =>
         let count = all_telescope_count(expr);
-        put_tag4(0x9, count, put_all_telescope(expr, rest)),
+        put_tagn4(0x9, count, put_all_telescope(expr, rest)),
 
-      -- Let: flags in Tag4 size, then the binder byte and three children.
+      -- Let: flags in the TagN4 value, then the binder byte and three children.
       Expr.Let(LetContract.Mk(non_dep, kind, contract), &ty, &val, &body) =>
         let kind_bit = match kind { LetKind.Value => 0, LetKind.BorrowShared => 1, };
         let flags = [u8_from_field_unsafe(non_dep + 2 * kind_bit), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-        put_tag4(0xA, flags, put_lam_mode(contract,
+        put_tagn4(0xA, flags, put_lam_mode(contract,
           put_expr(ty, put_expr(val, put_expr(body, rest))))),
 
-      -- Share: Tag4(0xB, idx)
-      Expr.Share(idx) => put_tag4(0xB, idx, rest),
+      -- Share: TagN4(0xB, idx)
+      Expr.Share(idx) => put_tagn4(0xB, idx, rest),
     }
   }
 
@@ -71,53 +71,111 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_tag0(bs: U64, rest: ByteStream) -> ByteStream {
-    let byte_count = u64_byte_count(bs);
-    let small = u8_less_than(bs[0], 128u8);
-    match (byte_count, small) {
-      (1, 1) => store(ListNode.Cons(bs[0], rest)),
-      _ =>
-        let head = u8_from_field_unsafe(128 + (to_field(byte_count) - 1));
-        store(ListNode.Cons(head, put_u64_le(bs, to_field(byte_count), rest))),
+  -- ============================================================================
+  -- TagN integers (`Ixon.putTagN`; layout in IxonDeserialize.lean)
+  -- ============================================================================
+
+  -- Rung 1 (value < R1 = 2h) is the header byte alone; every larger value
+  -- goes through `put_tagn_tail`. `base` is the flag in the header's high
+  -- bits. The values written here are range-checked bytes (decoded fields,
+  -- list lengths), so the sum of the high seven is zero only when each is.
+
+  -- TagN, f = 4.
+  fn put_tagn4(flag: G, v: U64, rest: ByteStream) -> ByteStream {
+    let [v0, v1, v2, v3, v4, v5, v6, v7] = v;
+    match to_field(v1) + to_field(v2) + to_field(v3) + to_field(v4)
+        + to_field(v5) + to_field(v6) + to_field(v7) {
+      0 =>
+        match u8_less_than(v0, 8u8) {
+          1 => store(ListNode.Cons(u8_from_field_unsafe(16 * flag + to_field(v0)), rest)),
+          0 => put_tagn_tail(16 * flag, 4, v, rest),
+        },
+      _ => put_tagn_tail(16 * flag, 4, v, rest),
     }
   }
 
-  -- Tag2: 2-bit flag, variable size
-  -- Format: [flag:2][large:1][size:5] or [flag:2][large:1][size_bytes...]
-  fn put_tag2(flag: G, size: U64, rest: ByteStream) -> ByteStream {
-    let byte_count = u64_byte_count(size);
-    let small = u8_less_than(size[0], 32u8);
-    match (byte_count, small) {
-      (1, 1) =>
-        -- Single byte: flag in bits 6-7, size in bits 0-4
-        let head = u8_from_field_unsafe(flag * 64 + to_field(size[0]));
-        store(ListNode.Cons(head, rest)),
-      _ =>
-        -- Multi-byte: flag in bits 6-7, large=1 in bit 5, size_bytes-1 in bits 0-4
-        let head = u8_from_field_unsafe(flag * 64 + 32 + (to_field(byte_count) - 1));
-        store(ListNode.Cons(head, put_u64_le(size, to_field(byte_count), rest))),
+  -- TagN, f = 2.
+  fn put_tagn2(flag: G, v: U64, rest: ByteStream) -> ByteStream {
+    let [v0, v1, v2, v3, v4, v5, v6, v7] = v;
+    match to_field(v1) + to_field(v2) + to_field(v3) + to_field(v4)
+        + to_field(v5) + to_field(v6) + to_field(v7) {
+      0 =>
+        match u8_less_than(v0, 32u8) {
+          1 => store(ListNode.Cons(u8_from_field_unsafe(64 * flag + to_field(v0)), rest)),
+          0 => put_tagn_tail(64 * flag, 16, v, rest),
+        },
+      _ => put_tagn_tail(64 * flag, 16, v, rest),
     }
   }
 
-  fn put_tag4(flag: G, bs: U64, rest: ByteStream) -> ByteStream {
-    let byte_count = u64_byte_count(bs);
-    let small = u8_less_than(bs[0], 8u8);
-    match (byte_count, small) {
-      (1, 1) =>
-        let head = u8_from_field_unsafe(flag * 16 + to_field(bs[0]));
-        store(ListNode.Cons(head, rest)),
-      _ =>
-        let head = u8_from_field_unsafe(flag * 16 + 8 + (to_field(byte_count) - 1));
-        store(ListNode.Cons(head, put_u64_le(bs, to_field(byte_count), rest))),
+  -- TagN, f = 0.
+  fn put_tagn0(v: U64, rest: ByteStream) -> ByteStream {
+    let [v0, v1, v2, v3, v4, v5, v6, v7] = v;
+    match to_field(v1) + to_field(v2) + to_field(v3) + to_field(v4)
+        + to_field(v5) + to_field(v6) + to_field(v7) {
+      0 =>
+        match u8_less_than(v0, 128u8) {
+          1 => store(ListNode.Cons(v0, rest)),
+          0 => put_tagn_tail(0, 64, v, rest),
+        },
+      _ => put_tagn_tail(0, 64, v, rest),
     }
   }
 
-  -- Serialize field list (each element as Tag0)
+  -- Rungs 2 to 6 of `v >= R1 = 2h`. Subtracting R2 = [2h, h] is adding its
+  -- two's complement; the carry is set exactly when v >= R2.
+  fn put_tagn_tail(base: G, h: G, v: U64, rest: ByteStream) -> ByteStream {
+    let (d, at_least_r2) = u64_add(v, [u8_from_field_unsafe(256 - 2 * h),
+      u8_from_field_unsafe(255 - h), 255u8, 255u8, 255u8, 255u8, 255u8, 255u8]);
+    match to_field(at_least_r2) {
+      -- Rung 2: v - R1 = 256 hi + lo with hi < h, and v < R2 < 2^16.
+      0 =>
+        let (lo, no_borrow) = u8_add(v[0], u8_from_field_unsafe(256 - 2 * h));
+        let hi = to_field(v[1]) + to_field(no_borrow) - 1;
+        store(ListNode.Cons(u8_from_field_unsafe(base + 2 * h + hi),
+          store(ListNode.Cons(lo, rest)))),
+      1 => put_tagn_wide(base + 3 * h, 0, d, rest),
+    }
+  }
+
+  -- Rungs 3 to 6: `d = v - R(c + 2)`. Code c (0, 1, 2) holds d below 2^16,
+  -- 2^24, 2^32 in 2, 3, 4 bytes; otherwise d moves to the next rung, whose
+  -- start is 2^16, 2^24, 2^32 further. Code 3 holds the rest in 8 bytes.
+  fn put_tagn_wide(header: G, c: G, d: U64, rest: ByteStream) -> ByteStream {
+    let [_, _, d2, d3, d4, d5, d6, d7] = d;
+    match c {
+      0 =>
+        match to_field(d2) + to_field(d3) + to_field(d4) + to_field(d5)
+            + to_field(d6) + to_field(d7) {
+          0 => store(ListNode.Cons(u8_from_field_unsafe(header), put_u64_le(d, 2, rest))),
+          _ =>
+            let (next, _) = u64_add(d, [0u8, 0u8, 255u8, 255u8, 255u8, 255u8, 255u8, 255u8]);
+            put_tagn_wide(header, 1, next, rest),
+        },
+      1 =>
+        match to_field(d3) + to_field(d4) + to_field(d5) + to_field(d6) + to_field(d7) {
+          0 => store(ListNode.Cons(u8_from_field_unsafe(header + 1), put_u64_le(d, 3, rest))),
+          _ =>
+            let (next, _) = u64_add(d, [0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8, 255u8]);
+            put_tagn_wide(header, 2, next, rest),
+        },
+      2 =>
+        match to_field(d4) + to_field(d5) + to_field(d6) + to_field(d7) {
+          0 => store(ListNode.Cons(u8_from_field_unsafe(header + 2), put_u64_le(d, 4, rest))),
+          _ =>
+            let (next, _) = u64_add(d, [0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]);
+            put_tagn_wide(header, 3, next, rest),
+        },
+      3 => store(ListNode.Cons(u8_from_field_unsafe(header + 3), put_u64_le(d, 8, rest))),
+    }
+  }
+
+  -- Serialize field list (each element as TagN0)
   fn put_u64_list(list: List‹U64›, rest: ByteStream) -> ByteStream {
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(idx, rest_list) =>
-        put_tag0(idx, put_u64_list(rest_list, rest)),
+        put_tagn0(idx, put_u64_list(rest_list, rest)),
     }
   }
 
@@ -272,7 +330,7 @@ def ixonSerialize := ⟦
   fn put_univ(u: Univ, rest: ByteStream) -> ByteStream {
     match u {
       Univ.Zero =>
-        -- Tag2(FLAG_ZERO_SUCC=0, size=0)
+        -- TagN2(FLAG_ZERO_SUCC=0, size=0)
         store(ListNode.Cons(0u8, rest)),
 
       Univ.Succ(_) =>
@@ -280,20 +338,20 @@ def ixonSerialize := ⟦
         let count = univ_succ_count(u);
         -- Find the base (non-Succ) universe
         let base = univ_succ_base(u);
-        -- Tag2(FLAG_ZERO_SUCC=0, size=count) + base
-        put_tag2(0, count, put_univ(base, rest)),
+        -- TagN2(FLAG_ZERO_SUCC=0, size=count) + base
+        put_tagn2(0, count, put_univ(base, rest)),
 
       Univ.Max(&a, &b) =>
-        -- Tag2(FLAG_MAX=1, size=0)
-        put_tag2(1, [0u8; 8], put_univ(a, put_univ(b, rest))),
+        -- TagN2(FLAG_MAX=1, size=0)
+        put_tagn2(1, [0u8; 8], put_univ(a, put_univ(b, rest))),
 
       Univ.IMax(&a, &b) =>
-        -- Tag2(FLAG_IMAX=2, size=0)
-        put_tag2(2, [0u8; 8], put_univ(a, put_univ(b, rest))),
+        -- TagN2(FLAG_IMAX=2, size=0)
+        put_tagn2(2, [0u8; 8], put_univ(a, put_univ(b, rest))),
 
       Univ.Var(idx) =>
-        -- Tag2(FLAG_VAR=3, size=idx)
-        put_tag2(3, idx, rest),
+        -- TagN2(FLAG_VAR=3, size=idx)
+        put_tagn2(3, idx, rest),
     }
   }
 
@@ -342,14 +400,14 @@ def ixonSerialize := ⟦
     match defn {
       Definition.Mk(kind, safety, lvls, &typ, &value) =>
         let packed = pack_def_kind_safety(kind, safety);
-        store(ListNode.Cons(u8_from_field_unsafe(packed), put_tag0(lvls, put_expr(typ, put_expr(value, rest))))),
+        store(ListNode.Cons(u8_from_field_unsafe(packed), put_tagn0(lvls, put_expr(typ, put_expr(value, rest))))),
     }
   }
 
   fn put_recursor_rule(rule: RecursorRule, rest: ByteStream) -> ByteStream {
     match rule {
       RecursorRule.Mk(fields, &rhs) =>
-        put_tag0(fields, put_expr(rhs, rest)),
+        put_tagn0(fields, put_expr(rhs, rest)),
     }
   }
 
@@ -367,13 +425,13 @@ def ixonSerialize := ⟦
         let bools = k + 2 * is_unsafe;
         let rules_len = list_length_u64(rules);
         store(ListNode.Cons(u8_from_field_unsafe(bools),
-          put_tag0(lvls,
-            put_tag0(params,
-              put_tag0(indices,
-                put_tag0(motives,
-                  put_tag0(minors,
+          put_tagn0(lvls,
+            put_tagn0(params,
+              put_tagn0(indices,
+                put_tagn0(motives,
+                  put_tagn0(minors,
                     put_expr(typ,
-                      put_tag0(rules_len,
+                      put_tagn0(rules_len,
                         put_recursor_rule_list(rules, rest)))))))))),
     }
   }
@@ -381,14 +439,14 @@ def ixonSerialize := ⟦
   fn put_axiom(axim: Axiom, rest: ByteStream) -> ByteStream {
     match axim {
       Axiom.Mk(is_unsafe, lvls, &typ) =>
-        store(ListNode.Cons(u8_from_field_unsafe(is_unsafe), put_tag0(lvls, put_expr(typ, rest)))),
+        store(ListNode.Cons(u8_from_field_unsafe(is_unsafe), put_tagn0(lvls, put_expr(typ, rest)))),
     }
   }
 
   fn put_quotient(quot: Quotient, rest: ByteStream) -> ByteStream {
     match quot {
       Quotient.Mk(kind, lvls, &typ) =>
-        put_quot_kind(kind, put_tag0(lvls, put_expr(typ, rest))),
+        put_quot_kind(kind, put_tagn0(lvls, put_expr(typ, rest))),
     }
   }
 
@@ -396,10 +454,10 @@ def ixonSerialize := ⟦
     match ctor {
       Constructor.Mk(is_unsafe, lvls, cidx, params, fields, &typ) =>
         store(ListNode.Cons(u8_from_field_unsafe(is_unsafe),
-          put_tag0(lvls,
-            put_tag0(cidx,
-              put_tag0(params,
-                put_tag0(fields,
+          put_tagn0(lvls,
+            put_tagn0(cidx,
+              put_tagn0(params,
+                put_tagn0(fields,
                   put_expr(typ, rest))))))),
     }
   }
@@ -417,11 +475,11 @@ def ixonSerialize := ⟦
       Inductive.Mk(is_unsafe, lvls, params, indices, &typ, ctors) =>
         let ctors_len = list_length_u64(ctors);
         store(ListNode.Cons(u8_from_field_unsafe(is_unsafe),
-          put_tag0(lvls,
-            put_tag0(params,
-              put_tag0(indices,
+          put_tagn0(lvls,
+            put_tagn0(params,
+              put_tagn0(indices,
                 put_expr(typ,
-                  put_tag0(ctors_len,
+                  put_tagn0(ctors_len,
                     put_constructor_list(ctors, rest)))))))),
     }
   }
@@ -429,28 +487,28 @@ def ixonSerialize := ⟦
   fn put_inductive_proj(prj: InductiveProj, rest: ByteStream) -> ByteStream {
     match prj {
       InductiveProj.Mk(idx, block) =>
-        put_tag0(idx, put_address(block, rest)),
+        put_tagn0(idx, put_address(block, rest)),
     }
   }
 
   fn put_constructor_proj(prj: ConstructorProj, rest: ByteStream) -> ByteStream {
     match prj {
       ConstructorProj.Mk(idx, cidx, block) =>
-        put_tag0(idx, put_tag0(cidx, put_address(block, rest))),
+        put_tagn0(idx, put_tagn0(cidx, put_address(block, rest))),
     }
   }
 
   fn put_recursor_proj(prj: RecursorProj, rest: ByteStream) -> ByteStream {
     match prj {
       RecursorProj.Mk(idx, block) =>
-        put_tag0(idx, put_address(block, rest)),
+        put_tagn0(idx, put_address(block, rest)),
     }
   }
 
   fn put_definition_proj(prj: DefinitionProj, rest: ByteStream) -> ByteStream {
     match prj {
       DefinitionProj.Mk(idx, block) =>
-        put_tag0(idx, put_address(block, rest)),
+        put_tagn0(idx, put_address(block, rest)),
     }
   }
 
@@ -488,17 +546,17 @@ def ixonSerialize := ⟦
 
   fn put_sharing(list: List‹&Expr›, rest: ByteStream) -> ByteStream {
     let len = list_length_u64(list);
-    put_tag0(len, put_expr_list(list, rest))
+    put_tagn0(len, put_expr_list(list, rest))
   }
 
   fn put_refs(list: List‹Addr›, rest: ByteStream) -> ByteStream {
     let len = list_length_u64(list);
-    put_tag0(len, put_address_list(list, rest))
+    put_tagn0(len, put_address_list(list, rest))
   }
 
   fn put_univs(list: List‹&Univ›, rest: ByteStream) -> ByteStream {
     let len = list_length_u64(list);
-    put_tag0(len, put_univ_list(list, rest))
+    put_tagn0(len, put_univ_list(list, rest))
   }
 
   fn put_constant(cnst: Constant, rest: ByteStream) -> ByteStream {
@@ -507,26 +565,26 @@ def ixonSerialize := ⟦
         let up_to_sharing = put_sharing(sharing, put_refs(refs, put_univs(univs, rest)));
         match info {
           ConstantInfo.Muts(mutuals) =>
-            -- Use FLAG_MUTS (0xC) with entry count in size field
+            -- Use FLAG_MUTS (0xC) with the entry count as the TagN value
             let count = list_length_u64(mutuals);
-            put_tag4(0xC, count, put_mut_const_list(mutuals, up_to_sharing)),
-          -- Use FLAG (0xD) with variant in size field
+            put_tagn4(0xC, count, put_mut_const_list(mutuals, up_to_sharing)),
+          -- Use FLAG (0xD) with the variant as the TagN value
           ConstantInfo.Defn(_) =>
-            put_tag4(0xD, [0u8; 8], put_constant_info(info, up_to_sharing)),
+            put_tagn4(0xD, [0u8; 8], put_constant_info(info, up_to_sharing)),
           ConstantInfo.Recr(_) =>
-            put_tag4(0xD, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
+            put_tagn4(0xD, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
           ConstantInfo.Axio(_) =>
-            put_tag4(0xD, [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
+            put_tagn4(0xD, [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
           ConstantInfo.Quot(_) =>
-            put_tag4(0xD, [3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
+            put_tagn4(0xD, [3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
           ConstantInfo.CPrj(_) =>
-            put_tag4(0xD, [4u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
+            put_tagn4(0xD, [4u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
           ConstantInfo.RPrj(_) =>
-            put_tag4(0xD, [5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
+            put_tagn4(0xD, [5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
           ConstantInfo.IPrj(_) =>
-            put_tag4(0xD, [6u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
+            put_tagn4(0xD, [6u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
           ConstantInfo.DPrj(_) =>
-            put_tag4(0xD, [7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
+            put_tagn4(0xD, [7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], put_constant_info(info, up_to_sharing)),
         },
     }
   }
