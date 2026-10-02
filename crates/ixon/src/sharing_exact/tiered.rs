@@ -113,7 +113,7 @@ use super::cost::{Len, exprs_len_with, tag0_len};
 use super::dag::{Node, SharingDag, TermId, ix};
 use super::dict::{
   Evaluation, Hide, IncrementalCosts, Indices, LazyCosts, Materializer, Plan,
-  PlanShares, Widths, eval_node,
+  PlanShares, Widths, all_costs, eval_node,
 };
 use super::prof::{self, Phase};
 use super::uniform::{
@@ -206,21 +206,42 @@ pub(crate) fn share_indices(e: &Expr, out: &mut Vec<u64>) {
   }
 }
 
-/// Real table indices priced by a layout.
+/// Real table indices priced by a layout. A table index is below the term
+/// count, so it fits a `u32` other than the absent marker `u32::MAX`.
 struct LayoutIndex {
-  index: Vec<Option<u64>>,
+  index: Vec<u32>,
   layout: ShareLayout,
+}
+
+impl LayoutIndex {
+  const NONE: u32 = u32::MAX;
+
+  /// The terms of `order` at their positions as table indices, in a DAG of
+  /// `n` terms.
+  fn new(n: usize, layout: ShareLayout, order: &[TermId]) -> Self {
+    let mut dict = LayoutIndex { index: vec![Self::NONE; n], layout };
+    for (i, &t) in order.iter().enumerate() {
+      dict.set(t, i);
+    }
+    dict
+  }
+
+  /// Give `t` the table index `i` (`i` is below the term count).
+  fn set(&mut self, t: TermId, i: usize) {
+    self.index[ix(t)] = u32::try_from(i).unwrap_or(Self::NONE);
+  }
 }
 
 impl Widths for LayoutIndex {
   fn width(&self, t: TermId) -> Option<u64> {
-    self.index[ix(t)].map(|i| self.layout.width_at(i))
+    self.index(t).map(|i| self.layout.width_at(i))
   }
 }
 
 impl Indices for LayoutIndex {
   fn index(&self, t: TermId) -> Option<u64> {
-    self.index[ix(t)]
+    let i = self.index[ix(t)];
+    (i != Self::NONE).then_some(u64::from(i))
   }
 }
 
@@ -455,27 +476,50 @@ pub(crate) fn first_tier(
   // Depth-first branch and bound, "include" before "exclude"; the first
   // maximum found wins ties, so later subtrees are pruned when their bound
   // does not exceed the best weight.
-  // `excluded` holds the item positions decided "exclude" on the path, as a
-  // bit set (a term is excluded exactly when its item position is).
-  struct Frame {
-    pos: usize,
-    cur: u64,
-    in_f: Vec<u32>,
-    excluded: Vec<u64>,
+  //
+  // The path's state is kept in place and restored on the way back, in the
+  // order the frames are visited: `in_f`, the terms included on the path,
+  // and `excluded`, the item positions decided "exclude" on the path as a
+  // bit set (a term is excluded exactly when its item position is). The
+  // "include" child runs first with the closure added to `in_f`; then
+  // `in_f` is truncated back, bit `pos` set for the "exclude" child, and
+  // cleared after it.
+  enum Op {
+    Visit { pos: usize, cur: u64 },
+    Truncate(usize),
+    Exclude(usize),
+    Unexclude(usize),
   }
   let mut item_pos = vec![0usize; m];
   for (p, &i) in items.iter().enumerate() {
     item_pos[i as usize] = p;
   }
+  let mut excluded: Vec<u64> = vec![0; m.div_ceil(64)];
   let is_excluded = |excluded: &[u64], u: u32| {
     let i = item_pos[u as usize];
     excluded.get(i / 64).is_some_and(|w| w >> (i % 64) & 1 == 1)
   };
+  let mut in_f: Vec<u32> = Vec::new();
+  let mut new: Vec<u32> = Vec::new();
   let mut best: Option<(u64, Vec<u32>)> = None;
   let mut states: u64 = 0;
-  let mut stack =
-    vec![Frame { pos: 0, cur: 0, in_f: Vec::new(), excluded: Vec::new() }];
-  while let Some(Frame { pos, cur, in_f, excluded }) = stack.pop() {
+  let mut ops = vec![Op::Visit { pos: 0, cur: 0 }];
+  while let Some(op) = ops.pop() {
+    let (pos, cur) = match op {
+      Op::Visit { pos, cur } => (pos, cur),
+      Op::Truncate(len) => {
+        in_f.truncate(len);
+        continue;
+      },
+      Op::Exclude(p) => {
+        excluded[p / 64] |= 1 << (p % 64);
+        continue;
+      },
+      Op::Unexclude(p) => {
+        excluded[p / 64] &= !(1 << (p % 64));
+        continue;
+      },
+    };
     states += 1;
     if states > limits.max_states {
       return Err(SharingError::ResourceExhausted(ResourceExhausted {
@@ -503,42 +547,31 @@ pub(crate) fn first_tier(
     }
     if pos >= items.len() {
       if best.as_ref().is_none_or(|(b, _)| cur > *b) {
-        best = Some((cur, in_f));
+        best = Some((cur, in_f.clone()));
       }
       continue;
     }
     let t = items[pos];
     if in_f.contains(&t) {
-      stack.push(Frame { pos: pos + 1, cur, in_f, excluded });
+      ops.push(Op::Visit { pos: pos + 1, cur });
       continue;
     }
-    let mut exclude = excluded.clone();
-    if exclude.len() <= pos / 64 {
-      exclude.resize(pos / 64 + 1, 0);
-    }
-    exclude[pos / 64] |= 1 << (pos % 64);
-    let mut include: Option<Frame> = None;
+    // The "exclude" child, after the "include" child.
+    ops.push(Op::Unexclude(pos));
+    ops.push(Op::Visit { pos: pos + 1, cur });
+    ops.push(Op::Exclude(pos));
     if let Some((s, e)) = closure[t as usize] {
       let cl = &clos[s..e];
-      let new: Vec<u32> =
-        cl.iter().copied().filter(|u| !in_f.contains(u)).collect();
+      new.clear();
+      new.extend(cl.iter().copied().filter(|u| !in_f.contains(u)));
       if !cl.iter().any(|&u| is_excluded(&excluded, u))
         && in_f.len() + new.len() <= cap
       {
         let add = new.iter().fold(0u64, |acc, &u| acc.saturating_add(w(u)));
-        let mut in2 = in_f.clone();
-        in2.extend_from_slice(&new);
-        include = Some(Frame {
-          pos: pos + 1,
-          cur: cur.saturating_add(add),
-          in_f: in2,
-          excluded,
-        });
+        ops.push(Op::Truncate(in_f.len()));
+        ops.push(Op::Visit { pos: pos + 1, cur: cur.saturating_add(add) });
+        in_f.extend_from_slice(&new);
       }
-    }
-    stack.push(Frame { pos: pos + 1, cur, in_f, excluded: exclude });
-    if let Some(f) = include {
-      stack.push(f);
     }
   }
   match best {
@@ -685,10 +718,7 @@ pub(crate) fn per_prefix_tasks(
   let own = &prep.own;
   let tasks = |range: std::ops::Range<usize>| {
     let p = prof::scope(Phase::RematerializeCosts);
-    let mut dict = LayoutIndex { index: vec![None; n], layout };
-    for (i, &t) in order[..range.start].iter().enumerate() {
-      dict.index[ix(t)] = Some(len64(i));
-    }
+    let mut dict = LayoutIndex::new(n, layout, &order[..range.start]);
     // The evaluation of the empty prefix is `C_0`, the same for every
     // candidate.
     let start = if range.start == 0 {
@@ -708,7 +738,7 @@ pub(crate) fn per_prefix_tasks(
       if j > range.start {
         let p = prof::scope(Phase::RematerializeCosts);
         let t = order[j - 1];
-        dict.index[ix(t)] = Some(len64(j - 1));
+        dict.set(t, j - 1);
         eval.add(t, &dict);
         drop(p);
       }
@@ -932,10 +962,7 @@ fn finish(
   let k_entries = order.len();
   // Every Share of a task names an entry before it, whose index is its
   // position in the final order.
-  let mut dict = LayoutIndex { index: vec![None; nodes.len()], layout };
-  for (i, &t) in order.iter().enumerate() {
-    dict.index[ix(t)] = Some(len64(i));
-  }
+  let dict = LayoutIndex::new(nodes.len(), layout, order);
   let mut mat = Materializer::new(nodes.len());
   let plans = match phase3 {
     Phase3::Plans(plans) => plans,
@@ -995,7 +1022,10 @@ fn finish(
   // The layout price and the re-expansion check in one walk; when it
   // reports a mismatch or an overflow, the separate checks run.
   let price = |i: u64| layout.width_at(i);
-  let fused = dag.check_and_measure(order, &entries, &roots, &price);
+  // The walk visits the `allocated` nodes the build made (checked below).
+  let hint = usize::try_from(allocated).unwrap_or(0);
+  let fused =
+    dag.check_and_measure_sized(order, &entries, &roots, &price, hint);
   let priced = match fused {
     Some((_, len)) => len,
     None => layout_bytes(layout, &entries, &roots).ok_or_else(overflow)?,
@@ -1177,11 +1207,7 @@ fn tiered_at(
   // The work of the evaluation `C_0` (`prep.base`), charged with phase 3.
   let work = prep.base.work();
   let facts = &prep.facts;
-  let k = len64(
-    (0..n)
-      .filter(|&t| facts.deg[t] >= 2 && prep.base.costs[t] >= Len::new(2))
-      .count(),
-  );
+  let k = prep.candidate_count;
   drop(p);
   // Phase 1, without building its expressions: phase 2 reads only what they
   // contain, which the dry run reports from the same decisions
@@ -1284,16 +1310,14 @@ fn tiered_at(
   let mut task_lengths: Vec<Len> = Vec::new();
   let (phase3, predicted, allocated) = if one_pass {
     let p = prof::scope(Phase::RematerializeCosts);
-    let mut dict = LayoutIndex { index: vec![None; n], layout };
-    for (i, &t) in order.iter().enumerate() {
-      dict.index[ix(t)] = Some(len64(i));
-    }
-    let eval = Evaluation::new(nodes, own, &dict);
-    let mut w = eval.work();
+    let dict = LayoutIndex::new(n, layout, &order);
+    // `all_costs` counts the work of `Evaluation::new` (the sum of every
+    // term's work, saturating) without keeping each term's.
+    let mut w = 0u64;
+    let costs = all_costs(nodes, own, &dict, &mut w);
     let mut predicted = Len::new(tag0_len(len64(k_entries)));
     for &t in &order {
       let hide = Hide { inner: &dict, hidden: t };
-      let costs = &eval.costs;
       let (c, _) =
         eval_node(nodes, own, t, &hide, &|x| costs[ix(x)], false, &mut w);
       predicted = predicted.plus(c);
@@ -1303,7 +1327,7 @@ fn tiered_at(
     }
     let mut roots = Len::ZERO;
     for &r in dag.roots() {
-      roots = roots.plus(eval.costs[ix(r)]);
+      roots = roots.plus(costs[ix(r)]);
     }
     predicted = predicted.plus(roots);
     if limits.full_check {
@@ -1312,7 +1336,7 @@ fn tiered_at(
     // The work counted before phase 3 (`C_0`) is charged with it.
     meter.work(work.saturating_add(w))?;
     drop(p);
-    (Phase3::OnePass { costs: eval.costs }, predicted, None)
+    (Phase3::OnePass { costs }, predicted, None)
   } else {
     let tasks =
       per_prefix_tasks(layout, dag, prep, &order, meter.parallel.materialize);
@@ -1352,10 +1376,7 @@ fn tiered_at(
       let Phase3::OnePass { costs } = &phase3 else {
         return Err(internal("one-pass phase 3 without its evaluation"));
       };
-      let mut dict = LayoutIndex { index: vec![None; n], layout };
-      for (i, &t) in order.iter().enumerate() {
-        dict.index[ix(t)] = Some(len64(i));
-      }
+      let dict = LayoutIndex::new(n, layout, &order);
       let mut scratch = 0u64;
       let plans = one_pass_plans(
         dag,

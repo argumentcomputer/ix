@@ -763,21 +763,23 @@ fn for_each_needed(
   }
 }
 
-/// The spine nodes of a telescope choice of `j` nodes at `t`, the node
-/// after them, and whether the telescope stops at a Share of it (a cut).
+/// The spine nodes of a telescope choice of `j` nodes at `t` (into `spine`,
+/// replacing its contents), the node after them, and whether the telescope
+/// stops at a Share of it (a cut).
 fn telescope_parts(
   nodes: &[Node],
   t: TermId,
   j: u64,
-) -> Result<(Vec<TermId>, TermId, bool), SharingError> {
-  let mut spine = Vec::new();
+  spine: &mut Vec<TermId>,
+) -> Result<(TermId, bool), SharingError> {
+  spine.clear();
   let mut cur = t;
   for _ in 0..j {
     spine.push(cur);
     cur = spine_next(&nodes[ix(cur)]).ok_or_else(|| internal("spine"))?;
   }
   let cut = nodes[ix(cur)].family() == nodes[ix(t)].family();
-  Ok((spine, cur, cut))
+  Ok((cur, cut))
 }
 
 /// The standalone representation of `c` built earlier, from `rep`.
@@ -789,32 +791,42 @@ fn built(
 }
 
 /// The expression of `t` written with choice `ch` under `dict`, the
-/// standalone representations of the terms it needs read from `rep`.
+/// standalone representations of the terms it needs read from `rep`;
+/// `spine` is scratch space.
 fn build_choice<D: Indices>(
   nodes: &[Node],
   dict: &D,
   t: TermId,
   ch: Choice,
   rep: &[Option<Arc<Expr>>],
+  spine: &mut Vec<TermId>,
 ) -> Result<Arc<Expr>, SharingError> {
   let node = &nodes[ix(t)];
   Ok(match ch {
     Choice::Share => Arc::new(Expr::Share(
       dict.index(t).ok_or_else(|| internal("share index"))?,
     )),
-    Choice::Inline => {
-      let mut kids: Vec<Arc<Expr>> = Vec::new();
-      for &c in node.children().as_slice() {
-        kids.push(built(rep, c)?);
-      }
-      let slot = |c: TermId| {
-        let pos = node.children().as_slice().iter().position(|&x| x == c);
-        kids[pos.unwrap_or(0)].clone()
-      };
-      Arc::new(node.to_expr(slot))
-    },
+    // The node's own constructor over its children's representations, read
+    // in child order.
+    Choice::Inline => Arc::new(match node {
+      Node::Sort(n) => Expr::Sort(*n),
+      Node::Var(n) => Expr::Var(*n),
+      Node::Ref(n, us) => Expr::Ref(*n, us.clone()),
+      Node::Rec(n, us) => Expr::Rec(*n, us.clone()),
+      Node::Str(n) => Expr::Str(*n),
+      Node::Nat(n) => Expr::Nat(*n),
+      Node::Prj(ty, f, v) => Expr::Prj(*ty, *f, built(rep, *v)?),
+      Node::App(a, b) => Expr::App(built(rep, *a)?, built(rep, *b)?),
+      Node::Lam(c, a, b) => Expr::Lam(*c, built(rep, *a)?, built(rep, *b)?),
+      Node::All(c, v, a, b) => {
+        Expr::All(*c, *v, built(rep, *a)?, built(rep, *b)?)
+      },
+      Node::Let(c, a, b, d) => {
+        Expr::Let(*c, built(rep, *a)?, built(rep, *b)?, built(rep, *d)?)
+      },
+    }),
     Choice::Telescope(j) => {
-      let (spine, cur, cut) = telescope_parts(nodes, t, j)?;
+      let (cur, cut) = telescope_parts(nodes, t, j, spine)?;
       let mut e = if cut {
         Arc::new(Expr::Share(
           dict.index(cur).ok_or_else(|| internal("cut index"))?,
@@ -868,10 +880,11 @@ pub(crate) fn materialize<D: Indices>(
   }
   // Bottom-up: build each needed standalone representation once.
   let mut rep: Vec<Option<Arc<Expr>>> = vec![None; top + 1];
+  let mut spine = Vec::new();
   for t in 0..=top {
     let Some(ch) = choice[t] else { continue };
     let tid = TermId::try_from(t).map_err(|_e| internal("term id"))?;
-    rep[t] = Some(build_choice(nodes, dict, tid, ch, &rep)?);
+    rep[t] = Some(build_choice(nodes, dict, tid, ch, &rep, &mut spine)?);
   }
   targets.iter().map(|&t| built(&rep, t)).collect()
 }
@@ -890,6 +903,8 @@ pub(crate) struct Materializer {
   epoch: u32,
   rep: Vec<Option<Arc<Expr>>>,
   heap: std::collections::BinaryHeap<TermId>,
+  /// Scratch of `build_choice`.
+  spine: Vec<TermId>,
 }
 
 impl Materializer {
@@ -899,6 +914,7 @@ impl Materializer {
       epoch: 0,
       rep: vec![None; n],
       heap: std::collections::BinaryHeap::new(),
+      spine: Vec::new(),
     }
   }
 
@@ -975,7 +991,7 @@ impl Materializer {
   ) -> Result<Vec<Arc<Expr>>, SharingError> {
     // Bottom-up: build each needed standalone representation once.
     for &(tid, ch) in plan.decided.iter().rev() {
-      let e = build_choice(nodes, dict, tid, ch, &self.rep)?;
+      let e = build_choice(nodes, dict, tid, ch, &self.rep, &mut self.spine)?;
       self.rep[ix(tid)] = Some(e);
     }
     let out: Result<Vec<Arc<Expr>>, SharingError> =
@@ -1172,29 +1188,35 @@ impl DependentPlan {
         Ok(1)
       },
       Choice::Telescope(j) => {
-        let (spine, cur, cut) = telescope_parts(nodes, t, j)?;
-        let head = if cut { WalkItem::Shr(cur) } else { WalkItem::Rep(cur) };
         // App: `App(App(head, a_{j-1}) .., a_0)`, so the head, then the
         // arguments from the deepest spine node up. Lam/All:
         // `Lam(ty_0, Lam(ty_1, .. head))`, so the binder types from the top,
-        // then the head.
-        if matches!(nodes[ix(t)], Node::App(..)) {
-          out.push(head);
-          for &s in spine.iter().rev() {
-            if let Node::App(_, a) = nodes[ix(s)] {
-              out.push(WalkItem::Rep(a));
-            }
+        // then the head. The side children are collected from the top down
+        // in one walk of the spine (`telescope_parts`); an App telescope's
+        // are reversed with its head at the end.
+        let app = matches!(nodes[ix(t)], Node::App(..));
+        // Lam/All: a spine node of another family fails once the walk is
+        // done (the walk's own error comes first).
+        let mut off_spine = false;
+        let mut cur = t;
+        for _ in 0..j {
+          match (app, &nodes[ix(cur)]) {
+            (true, Node::App(_, a)) => out.push(WalkItem::Rep(*a)),
+            (true, _) => {},
+            (false, Node::Lam(_, ty, _) | Node::All(_, _, ty, _)) => {
+              out.push(WalkItem::Rep(*ty));
+            },
+            (false, _) => off_spine = true,
           }
-        } else {
-          for &s in &spine {
-            match nodes[ix(s)] {
-              Node::Lam(_, ty, _) | Node::All(_, _, ty, _) => {
-                out.push(WalkItem::Rep(ty));
-              },
-              _ => return Err(internal("telescope walked off its spine")),
-            }
-          }
-          out.push(head);
+          cur = spine_next(&nodes[ix(cur)]).ok_or_else(|| internal("spine"))?;
+        }
+        if off_spine {
+          return Err(internal("telescope walked off its spine"));
+        }
+        let cut = nodes[ix(cur)].family() == nodes[ix(t)].family();
+        out.push(if cut { WalkItem::Shr(cur) } else { WalkItem::Rep(cur) });
+        if app {
+          out.reverse();
         }
         Ok(j + u64::from(cut))
       },
@@ -1251,11 +1273,11 @@ impl DependentPlan {
     // representation met again contributes nothing new, so each is walked
     // once per entry.
     let mut deps = Vec::with_capacity(table.len());
-    let mut seen_rep = vec![0usize; n];
-    let mut seen_dep = vec![0usize; n];
+    let mut seen_rep = vec![0u32; n];
+    let mut seen_dep = vec![0u32; n];
     let mut stack: Vec<WalkItem> = Vec::new();
     for (e, (&t, &ch)) in table.iter().zip(&self.entry_choice).enumerate() {
-      let ep = e + 1;
+      let ep = u32::try_from(e + 1).unwrap_or(u32::MAX);
       let mut ds: Vec<TermId> = Vec::new();
       Self::items(nodes, t, ch, &mut items)?;
       stack.clear();
@@ -1298,15 +1320,16 @@ pub(crate) fn build_dependent<D: Indices>(
   let n = nodes.len();
   let DependentPlan { entry_choice, choice, .. } = plan;
   let mut rep: Vec<Option<Arc<Expr>>> = vec![None; n];
+  let mut spine = Vec::new();
   for t in 0..n {
     if let Some(ch) = choice[t] {
       let tid = TermId::try_from(t).map_err(|_e| internal("term id"))?;
-      rep[t] = Some(build_choice(nodes, dict, tid, ch, &rep)?);
+      rep[t] = Some(build_choice(nodes, dict, tid, ch, &rep, &mut spine)?);
     }
   }
   let mut entries = Vec::with_capacity(table.len());
   for (&t, &ch) in table.iter().zip(entry_choice) {
-    entries.push(build_choice(nodes, dict, t, ch, &rep)?);
+    entries.push(build_choice(nodes, dict, t, ch, &rep, &mut spine)?);
   }
   let roots_out =
     roots.iter().map(|&r| built(&rep, r)).collect::<Result<_, _>>()?;

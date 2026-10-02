@@ -682,6 +682,20 @@ impl SharingDag {
     roots: &[Arc<Expr>],
     share: &dyn Fn(u64) -> u64,
   ) -> Option<(u64, u64)> {
+    self.check_and_measure_sized(order, entries, roots, share, 0)
+  }
+
+  /// [`SharingDag::check_and_measure`] with room for `expected` pointers in
+  /// its memo from the start (the number of nodes the caller expects it to
+  /// visit; a hint only).
+  pub(crate) fn check_and_measure_sized(
+    &self,
+    order: &[TermId],
+    entries: &[Arc<Expr>],
+    roots: &[Arc<Expr>],
+    share: &dyn Fn(u64) -> u64,
+    expected: usize,
+  ) -> Option<(u64, u64)> {
     use super::cost::{ExprLenInfo, expr_children, expr_len_info};
     if entries.len() != order.len() || roots.len() != self.roots.len() {
       return None;
@@ -689,7 +703,7 @@ impl SharingDag {
     // Per pointer: the term it denotes and, once its children are done, its
     // length information.
     let mut memo: FxHashMap<*const Expr, (TermId, Option<ExprLenInfo>)> =
-      FxHashMap::default();
+      FxHashMap::with_capacity_and_hasher(expected, Default::default());
     let mut stack: Vec<(&Expr, TermId, bool)> = Vec::new();
     let mut total = tag0_len(u64_len(entries.len()));
     let tasks = entries

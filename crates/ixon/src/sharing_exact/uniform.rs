@@ -2091,6 +2091,9 @@ pub(crate) struct DagPrep {
   /// Unshared sizes of the uniform model (the empty evaluation; it does not
   /// read the width), or its overflow error.
   size: Result<Vec<u128>, SharingError>,
+  /// Terms with in-degree >= 2 and unshared length >= 2 (`TieredStats::
+  /// candidate_count`).
+  pub(crate) candidate_count: u64,
 }
 
 impl DagPrep {
@@ -2107,7 +2110,12 @@ impl DagPrep {
     // any width gives these sizes.
     let size = UPrep::new(nodes, &own, 1, vec![false; n])
       .map(|empty| empty.base.iter().map(|v| v.cost).collect());
-    DagPrep { own, base, edges, facts, spine_len, size }
+    let candidate_count = len64(
+      (0..n)
+        .filter(|&t| facts.deg[t] >= 2 && base.costs[t] >= Len::new(2))
+        .count(),
+    );
+    DagPrep { own, base, edges, facts, spine_len, size, candidate_count }
   }
 }
 
@@ -2143,16 +2151,26 @@ pub(crate) fn optimize_uniform_with(
   let size: &[u128] = prep.size.as_ref().map_err(Clone::clone)?;
   // Classes: certain-excluded, low degree, and the gain test on visible
   // counts with threshold theta.
-  let ce: Vec<bool> =
-    (0..n).map(|t| certainly_excluded(facts.occ[t], size[t], wu)).collect();
-  let cand: Vec<bool> = (0..n).map(|t| !ce[t] && facts.deg[t] >= 2).collect();
+  let mut ce: Vec<bool> = Vec::with_capacity(n);
+  let mut cand: Vec<bool> = Vec::with_capacity(n);
+  for ((&o, &s), &d) in facts.occ.iter().zip(size).zip(&facts.deg) {
+    let x = certainly_excluded(o, s, wu);
+    ce.push(x);
+    cand.push(!x && d >= 2);
+  }
   let own = &prep.own;
   let bounds = uniform_bounds(nodes, own, wu, &cand)?;
   let vis0 = visible_counts(dag, &cand);
+  // theta = 1 + tag0_step_bound(#candidates) always holds (one more entry
+  // grows the table count by at most that many bytes; 2 below 4311826560
+  // candidates); 1 when every minimum lies in one count bracket.
+  let n_cand = len64(cand.iter().filter(|&&c| c).count());
+  let theta_max = i128::from(tag0_step_bound(n_cand)) + 1;
   // The gain bound of every candidate (the terms the gain test reads),
   // computed once for both thresholds, in increasing ID (the first overflow
   // is the error).
   let mut gain: Vec<i128> = vec![0; n];
+  let mut n_cs_max = 0usize;
   for t in 0..n {
     if cand[t] {
       gain[t] = stored_gain(
@@ -2164,46 +2182,39 @@ pub(crate) fn optimize_uniform_with(
         bounds.merged[t],
         wu,
       )?;
+      n_cs_max += usize::from(gain[t] >= theta_max);
     }
   }
-  // theta = 1 + tag0_step_bound(#candidates) always holds (one more entry
-  // grows the table count by at most that many bytes; 2 below 4311826560
-  // candidates); 1 when every minimum lies in one count bracket.
-  let n_cand = len64(cand.iter().filter(|&&c| c).count());
-  let theta_max = i128::from(tag0_step_bound(n_cand)) + 1;
-  let n_cs_max =
-    len64((0..n).filter(|&t| cand[t] && gain[t] >= theta_max).count());
+  let n_cs_max = len64(n_cs_max);
   let theta: i128 =
     if tag0_len(n_cand) == tag0_len(n_cs_max) { 1 } else { theta_max };
-  let cls: Vec<UniformClass> = (0..n)
-    .map(|t| {
-      if ce[t] {
-        UniformClass::CertainExcluded
-      } else if facts.deg[t] < 2 {
-        UniformClass::LowDegree
-      } else if gain[t] >= theta {
-        UniformClass::CertainStored
-      } else {
-        UniformClass::Uncertain
-      }
-    })
-    .collect();
+  // The classes, and the terms of each class in increasing ID.
+  let mut cls: Vec<UniformClass> = Vec::with_capacity(n);
+  let (mut cs, mut ce_terms, mut unc, mut low) =
+    (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+  let mut opaq = vec![false; n];
+  for t in 0..n {
+    let c = if ce[t] {
+      ce_terms.push(tid(t));
+      UniformClass::CertainExcluded
+    } else if facts.deg[t] < 2 {
+      low.push(tid(t));
+      UniformClass::LowDegree
+    } else if gain[t] >= theta {
+      cs.push(tid(t));
+      opaq[t] = true;
+      UniformClass::CertainStored
+    } else {
+      unc.push(tid(t));
+      UniformClass::Uncertain
+    };
+    cls.push(c);
+  }
   drop(gain);
-  let pick = |c: UniformClass| -> Vec<TermId> {
-    (0..n).filter(|&t| cls[t] == c).map(tid).collect()
-  };
-  let cs = pick(UniformClass::CertainStored);
-  let ce_terms = pick(UniformClass::CertainExcluded);
-  let unc = pick(UniformClass::Uncertain);
-  let low = pick(UniformClass::LowDegree);
   // The candidate count is a statistic here (Lean `Stats.candidates`), not
   // a limit: `max_candidates` bounds only the width-state search (`search`),
   // and Lean's uniform optimizer has no such limit.
   meter.stats.candidates = len64(cs.len() + unc.len());
-  let mut opaq = vec![false; n];
-  for &t in &cs {
-    opaq[ix(t)] = true;
-  }
   let up = UPrep::new(nodes, own, wu, opaq)?;
   let comps = uncertain_components(dag, &cls);
   let k_cs = u64::try_from(cs.len()).unwrap_or(u64::MAX);
