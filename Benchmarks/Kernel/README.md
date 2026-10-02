@@ -129,7 +129,7 @@ failures:
 | 4 | 242.4 s | 3.89× | 8 min 28.2 s | 2.38× | 15.5 GB |
 | 8 | 122.1 s | 7.72× | 6 min 28.7 s | 3.11× | 15.6 GB |
 | 16 | 61.2 s | 15.4× | 5 min 27.7 s | 3.69× | 15.6 GB |
-| 32 | 32.6 s | 28.9× | 4 min 59.2 s | 4.05× | 16.0 GB |
+| 32 | 32.6 s | 28.9× | 4 min 59.2 s | 4.04× | 16.0 GB |
 
 Phase B's time summed over the workers grows from 942.3 s at one worker to
 987.6 s at 32. The sequential part bounds the wall time: the load (61 s),
