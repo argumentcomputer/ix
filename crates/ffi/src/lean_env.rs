@@ -1161,26 +1161,25 @@ fn decode_name_constant_info(
 
 /// Resident-decoded-constant bound for [`decode_env_lazy`]'s cache.
 ///
-/// Sized by sweep, not by hit rate: on FLT (511k consts) wall time is
-/// flat from 4096 through 1M entries (60–67 s; misses hide in the
-/// scheduler's dependency-stall slack) while peak RSS climbs from
-/// 11.5 GiB (4k) → 13.0 (64k) → 24.7 (1M); Mathlib (737k consts)
-/// confirms parity at this size (87.5 s / 17.0 GiB vs 87.3 s /
-/// 18.3 GiB at 64k). So the cache buys RAM, not speed, and the bound
-/// sits at the small end with headroom over the 4k floor measured to
-/// still not thrash.
+/// Mathlib (771k constants, canonical sharing, FIFO eviction): the
+/// whole compile decodes 896k constants at 8192 entries (peak RSS
+/// 18.7 GB), 860k at 16384 (19.3 GB), 821k at 65536 (22.8 GB) and 771k,
+/// one per constant, at 1M (40.7 GB). An older sweep that found wall
+/// time flat from 4k to 1M entries ran with an eviction that kept the
+/// first constants and evicted the newest. Override with
+/// `IX_COMPILE_LAZY_CACHE=N`.
 const LAZY_ENV_CACHE_ENTRIES: usize = 16384;
 
 /// Decode for the production compile FFI entries: an on-demand view
 /// that avoids materializing the full Rust copy of the environment —
-/// the eager copy is the single largest memory term at scale. The
-/// on-demand decode costs a few percent of wall (per-constant fetches
-/// vs one batched decode); `IX_COMPILE_EAGER=1` buys that back on
-/// machines with RAM to spare. Measured on FLT: −8 % wall for
-/// +13 GiB peak; Mathlib eager exceeds a 56 GB machine outright
-/// (the copy sits alongside the Lean-held env). Test and roundtrip
-/// entries keep [`decode_env`] (they re-read the env structurally
-/// throughout).
+/// the eager copy is the single largest memory term at scale.
+/// `IX_COMPILE_EAGER=1` decodes everything up front instead: on Mathlib
+/// it peaks at 38–44 GB against 18–19 GB and spends about 15% less user
+/// CPU than the FIFO-evicting lazy view, and under memory pressure
+/// from other processes the larger footprint makes the admission gate
+/// back off (measured runs of 5–8 min instead of 2.5–3.5). Test and
+/// roundtrip entries keep [`decode_env`] (they re-read the env
+/// structurally throughout).
 pub fn decode_env_for_compile(list: LeanList<LeanBorrowed<'_>>) -> Env {
   decode_env_for_compile_with_scanner(list).0
 }
