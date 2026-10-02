@@ -1,0 +1,842 @@
+/-
+  Exact minimum sharing: fixed-dictionary optimizer (§5).
+
+  For a dictionary `M` (available term IDs with their Share widths),
+  `Prep.eval` computes `C_M(t)`, the minimum byte length of a standalone
+  expression expanding to `t`, for every term in increasing ID order
+  (children first). Leaves, `Prj` and `Let` add their fixed header to optimal
+  children. `App`, `Lam` and `All` have a maximal same-family spine
+  `t = t₀, t₁, …, t_{l-1}` with natural tail `t_l` of another family, and every
+  inline prefix length `j ∈ 1..l` is a candidate:
+
+  * Tag4 header for `j`, plus every emitted contract byte and every side
+    child's optimal standalone cost along the prefix;
+  * for `j < l` the prefix ends at the same-family node `t_j`, which can only
+    be written as a Share (an inline tail would be merged back by the
+    canonical writer), so the cut is legal only if `t_j` is available;
+  * for `j = l` the natural tail is written at its optimal standalone cost.
+
+  Whole-term sharing is another option when `t` itself is available.
+
+  Evaluation is O(1 + number of available spine descendants) per term: the
+  per-dictionary suffix sum `sides[t]` of spine bytes gives every prefix sum
+  as `sides[t] - sides[t_j]`, and `below[t]` links each telescope node to its
+  nearest available spine descendant, so only legal cuts are visited. This is
+  the same recurrence as a walk over all `j` (the tests compare it with that
+  walk and with exhaustive enumeration).
+
+  `materialize` rebuilds, for a dictionary with actual table indices, the
+  byte-lexicographically least encoding among the minimum-length ones. At
+  every node the competing options (Share, or inline with a different spine
+  length) have distinct Tag4 headers that differ inside the header, so the
+  header alone decides their byte order; children are independent,
+  fixed-length parts, so choosing each child's least encoding yields the
+  least concatenation.
+-/
+module
+
+public import Ix.Sharing.Exact.Dag
+
+public section
+
+namespace Ix.Sharing.Exact
+
+open Ixon
+
+/-! ## Telescope structure -/
+
+/-- Telescope family of a node. -/
+inductive Family where
+  | app
+  | lam
+  | all
+  | none
+  deriving BEq, Repr, Inhabited
+
+/-- Family of a head. -/
+def Head.family : Head → Family
+  | .app => .app
+  | .lam _ => .lam
+  | .all .. => .all
+  | _ => .none
+
+/-- Next node on a telescope spine: the function of an `App`, the body of a
+`Lam`/`All`. -/
+@[inline] def Node.spineNext (n : Node) : Nat :=
+  match n.head with
+  | .app => n.child 0
+  | _ => n.child 1
+
+/-- Side child of a telescope node: the argument of an `App`, the binder type
+of a `Lam`/`All`. -/
+@[inline] def Node.sideChild (n : Node) : Nat :=
+  match n.head with
+  | .app => n.child 1
+  | _ => n.child 0
+
+/-- Bytes a telescope node emits besides its side child: the contract byte of
+a `Lam`/`All` binder. -/
+@[inline] def Node.sideExtra (n : Node) : Nat :=
+  match n.head with
+  | .app => 0
+  | _ => 1
+
+/-- One dictionary evaluation. `cost[t] = C_M(t)`. For a telescope node `t`,
+`sides[t]` is the byte sum of the contract bytes and side-child costs along
+its maximal spine, and `below[t]` is the nearest available node strictly
+below `t` on that spine. Non-telescope nodes have `sides = 0`,
+`below = none`. -/
+structure DictEval where
+  cost : Array Nat
+  sides : Array Nat
+  below : Array (Option Nat)
+  /-- Terms evaluated plus available spine descendants visited. -/
+  work : Nat := 0
+  deriving Inhabited
+
+/-- Per-DAG tables shared by every dictionary evaluation. -/
+structure Prep where
+  dag : Dag
+  family : Array Family
+  /-- For a telescope node, the number of nodes in its maximal same-family
+  spine (at least 1); 0 for other nodes. -/
+  spineLen : Array Nat
+  /-- For a telescope node, the natural tail below its maximal spine. -/
+  tail : Array Nat
+  /-- Evaluation under the empty dictionary (`empty.cost = C_∅`). -/
+  empty : DictEval
+  deriving Inhabited
+
+/-- `C_∅`: the standalone unshared length of every term. -/
+@[inline] def Prep.base (p : Prep) : Array Nat := p.empty.cost
+
+/-- One step of `spineTables`: the spine length and natural tail of `t` from
+those of its spine successor. -/
+def spineStep (dag : Dag) (family : Array Family) (st : Array Nat × Array Nat) (t : Nat) :
+    Array Nat × Array Nat :=
+  let fam := family[t]!
+  if fam != .none then
+    let nxt := (dag.node t).spineNext
+    if family[nxt]! == fam then (st.1.set! t (st.1[nxt]! + 1), st.2.set! t st.2[nxt]!)
+    else (st.1.set! t 1, st.2.set! t nxt)
+  else st
+
+/-- Spine lengths and natural tails, children before parents. -/
+def spineTables (dag : Dag) (family : Array Family) : Array Nat × Array Nat :=
+  foldRange (spineStep dag family) 0 dag.size
+    (Array.replicate dag.size 0, Array.replicate dag.size 0)
+
+/-- Width of term `t` in a dictionary (`none` when unavailable). -/
+@[inline] def widthOf (width : Array (Option Nat)) (t : Nat) : Option Nat :=
+  width[t]?.getD none
+
+/-- The internal cuts of one telescope node: follow the `below` links through
+the available spine descendants (at most `fuel` of them), keeping the
+cheapest option. Returns the best cost and the work count. -/
+def cutScan (spineLen sides : Array Nat) (below : Array (Option Nat))
+    (width : Array (Option Nat)) (l s : Nat) : Nat → Option Nat → Nat → Nat → Nat × Nat
+  | 0, _, best, work => (best, work)
+  | _ + 1, none, best, work => (best, work)
+  | fuel + 1, some u, best, work =>
+    let cand := tag4Size (l - spineLen[u]!) + (s - sides[u]!) + (widthOf width u).getD 0
+    cutScan spineLen sides below width l s fuel below[u]! (if cand < best then cand else best)
+      (work + 1)
+
+/-- One step of `evalFrom`: evaluate term `t` from its children's entries. -/
+def evalStep (dag : Dag) (family : Array Family) (spineLen tail : Array Nat)
+    (width : Array (Option Nat)) (affected : Array Bool) (st : DictEval) (t : Nat) :
+    DictEval :=
+  if affected[t]! then
+    let node := dag.node t
+    let fam := family[t]!
+    if fam == .none then
+      let inl := node.children.foldl (fun acc c => acc + st.cost[c]!) node.head.ownBytes
+      let c := match widthOf width t with
+        | some w => min inl w
+        | none => inl
+      { st with cost := st.cost.set! t c, work := st.work + 1 }
+    else
+      let nxt := node.spineNext
+      let same := family[nxt]! == fam
+      let s := node.sideExtra + st.cost[node.sideChild]! + (if same then st.sides[nxt]! else 0)
+      let bl : Option Nat :=
+        if same then (if (widthOf width nxt).isSome then some nxt else st.below[nxt]!)
+        else none
+      let sides := st.sides.set! t s
+      let below := st.below.set! t bl
+      let l := spineLen[t]!
+      -- Natural end: all `l` spine nodes inline, then the tail; then the
+      -- internal cuts at available spine descendants.
+      let (inl, work) := cutScan spineLen sides below width l s l bl
+        (tag4Size l + s + st.cost[tail[t]!]!) st.work
+      let c := match widthOf width t with
+        | some w => min inl w
+        | none => inl
+      { cost := st.cost.set! t c, sides, below, work := work + 1 }
+  else st
+
+/-! ### One term's cost with its own Share hidden, in place
+
+`(evalStep … (width.set! t none) affected st t).cost[t]!` is the cost of `t`
+written inline (its own Share hidden). Computing it that way copies `width`
+and the three tables of `st`, which the caller keeps; `evalHidden` reads them
+in place instead (`evalHidden_eq`). -/
+
+theorem getElem!_setBang {α : Type} [Inhabited α] (a : Array α) (i j : Nat) (v : α) :
+    (a.set! i v)[j]! = if j = i ∧ i < a.size then v else a[j]! := by
+  simp only [Array.set!, getElem!_def, Array.getElem?_setIfInBounds]
+  by_cases hij : i = j
+  · subst hij
+    by_cases hi : i < a.size <;> simp [hi]
+  · simp [hij, Ne.symm hij]
+
+theorem widthOf_setBang_none (width : Array (Option Nat)) (t u : Nat) :
+    widthOf (width.set! t none) u = if u = t then none else widthOf width u := by
+  unfold widthOf
+  simp only [Array.set!, Array.getElem?_setIfInBounds]
+  by_cases hut : u = t
+  · subst hut
+    by_cases hu : u < width.size <;> simp [hu]
+  · simp [hut, Ne.symm hut]
+
+/-- `cutScan` over `sides.set! t s'`, `below.set! t bl'` and
+`width.set! t none`, read in place. -/
+def cutScanAt (spineLen sides : Array Nat) (below : Array (Option Nat))
+    (width : Array (Option Nat)) (t s' : Nat) (bl' : Option Nat) (l s : Nat) :
+    Nat → Option Nat → Nat → Nat → Nat × Nat
+  | 0, _, best, work => (best, work)
+  | _ + 1, none, best, work => (best, work)
+  | fuel + 1, some u, best, work =>
+    let su := if u = t ∧ t < sides.size then s' else sides[u]!
+    let wu := if u = t then none else widthOf width u
+    let cand := tag4Size (l - spineLen[u]!) + (s - su) + wu.getD 0
+    cutScanAt spineLen sides below width t s' bl' l s fuel
+      (if u = t ∧ t < below.size then bl' else below[u]!) (if cand < best then cand else best)
+      (work + 1)
+
+theorem cutScan_setBang (spineLen sides : Array Nat) (below : Array (Option Nat))
+    (width : Array (Option Nat)) (t s' : Nat) (bl' : Option Nat) (l s : Nat) :
+    ∀ fuel cur best work,
+      cutScan spineLen (sides.set! t s') (below.set! t bl') (width.set! t none) l s fuel cur
+          best work =
+        cutScanAt spineLen sides below width t s' bl' l s fuel cur best work
+  | 0, _, _, _ => rfl
+  | _ + 1, none, _, _ => rfl
+  | fuel + 1, some u, best, work => by
+    simp only [cutScan, cutScanAt, getElem!_setBang, widthOf_setBang_none]
+    exact cutScan_setBang spineLen sides below width t s' bl' l s fuel _ _ _
+
+/-- The cost of `t` with its own Share hidden under the evaluation `st` and
+the widths `width` (`evalHidden_eq`), without copying either. -/
+def evalHidden (dag : Dag) (family : Array Family) (spineLen tail : Array Nat)
+    (width : Array (Option Nat)) (affected : Array Bool) (st : DictEval) (t : Nat) : Nat :=
+  if affected[t]! then
+    let node := dag.node t
+    let fam := family[t]!
+    if fam == .none then
+      if t < st.cost.size then
+        node.children.foldl (fun acc c => acc + st.cost[c]!) node.head.ownBytes
+      else st.cost[t]!
+    else
+      let nxt := node.spineNext
+      let same := family[nxt]! == fam
+      let s := node.sideExtra + st.cost[node.sideChild]! + (if same then st.sides[nxt]! else 0)
+      let bl : Option Nat :=
+        if same then
+          (if (if nxt = t then none else widthOf width nxt).isSome then some nxt
+           else st.below[nxt]!)
+        else none
+      let l := spineLen[t]!
+      if t < st.cost.size then
+        (cutScanAt spineLen st.sides st.below width t s bl l s l bl
+          (tag4Size l + s + st.cost[tail[t]!]!) st.work).1
+      else st.cost[t]!
+  else st.cost[t]!
+
+theorem evalHidden_eq (dag : Dag) (family : Array Family) (spineLen tail : Array Nat)
+    (width : Array (Option Nat)) (affected : Array Bool) (st : DictEval) (t : Nat) :
+    (evalStep dag family spineLen tail (width.set! t none) affected st t).cost[t]! =
+      evalHidden dag family spineLen tail width affected st t := by
+  unfold evalStep evalHidden
+  by_cases ha : affected[t]! = true
+  · simp only [ha, if_true]
+    split
+    · simp only [widthOf_setBang_none, getElem!_setBang]
+      by_cases ht : t < st.cost.size <;> simp [ht]
+    · simp only [widthOf_setBang_none, getElem!_setBang, ← cutScan_setBang]
+      by_cases ht : t < st.cost.size <;> simp [ht]
+  · simp only [ha]
+    rfl
+
+/-- Evaluate a dictionary. Terms with `affected[t] = false` keep their `init`
+entries (sound when no available term occurs inside them, since then their
+cost, spine sums and descendant links are those of the empty dictionary). -/
+def evalFrom (dag : Dag) (family : Array Family) (spineLen tail : Array Nat)
+    (init : DictEval) (width : Array (Option Nat)) (affected : Array Bool) :
+    DictEval :=
+  foldRange (evalStep dag family spineLen tail width affected) 0 dag.size
+    { init with work := 0 }
+
+/-- Build the per-DAG tables, including the empty-dictionary evaluation. -/
+def Prep.ofDag (dag : Dag) : Prep :=
+  let family := dag.nodes.map (·.head.family)
+  let (spineLen, tail) := spineTables dag family
+  let n := dag.size
+  let zero : DictEval :=
+    { cost := Array.replicate n 0, sides := Array.replicate n 0,
+      below := Array.replicate n none }
+  let empty := evalFrom dag family spineLen tail zero (Array.replicate n none)
+    (Array.replicate n true)
+  { dag, family, spineLen, tail, empty := { empty with work := 0 } }
+
+/-- Evaluate `width`, recomputing only `affected` terms. -/
+def Prep.eval (p : Prep) (width : Array (Option Nat)) (affected : Array Bool) : DictEval :=
+  evalFrom p.dag p.family p.spineLen p.tail p.empty width affected
+
+/-- Evaluate `width`, recomputing every term. -/
+def Prep.evalAll (p : Prep) (width : Array (Option Nat)) : DictEval :=
+  p.eval width (Array.replicate p.dag.size true)
+
+/-- Marks of `t` and of the terms above it (those with `t` among their
+descendants). Only terms from `t` on can lie above it. -/
+def ancestorMarks (dag : Dag) (t : Nat) : Array Bool :=
+  foldRange (fun (acc : Array Bool) u =>
+      acc.set! u (u == t || (dag.node u).children.any (acc[·]!))) t (dag.size - t)
+    (Array.replicate dag.size false)
+
+/-- Re-evaluate after the dictionary changed only at `t` (now `width`): only
+`t` and the terms above it are recomputed, starting from the evaluation `ev`
+of the previous dictionary. -/
+def Prep.evalUp (p : Prep) (ev : DictEval) (width : Array (Option Nat)) (t : Nat) : DictEval :=
+  foldRange (evalStep p.dag p.family p.spineLen p.tail width (ancestorMarks p.dag t)) t
+    (p.dag.size - t) { ev with work := 0 }
+
+/-- `C_M` for every term under `width` (recomputing `affected` terms) and the
+work performed. -/
+def Prep.costs (p : Prep) (width : Array (Option Nat)) (affected : Array Bool) :
+    Array Nat × Nat :=
+  let ev := p.eval width affected
+  (ev.cost, ev.work)
+
+/-- `C_M` for every term, recomputing everything. -/
+def Prep.costsAll (p : Prep) (width : Array (Option Nat)) : Array Nat × Nat :=
+  let ev := p.evalAll width
+  (ev.cost, ev.work)
+
+/-! ## Materialization with the byte-least tie-break -/
+
+/-- One way to write a term at the top of a standalone expression. -/
+inductive Choice where
+  /-- `Share(index)`. -/
+  | share
+  /-- The inline node of a non-telescope head. -/
+  | inline
+  /-- An inline telescope of `j` spine nodes; if `j` is less than the spine
+  length the tail is a Share. -/
+  | cut (j : Nat)
+  deriving BEq, Repr, Inhabited
+
+/-- Widths of a dictionary given by table indices. -/
+def widthsOfIndex (index : Array (Option Nat)) : Array (Option Nat) :=
+  index.map (·.map shareWidth)
+
+/-- Tag4 header bytes from the production encoder. -/
+def tag4Bytes (flag : UInt8) (n : Nat) : ByteArray := runPut (putTagN 4 flag n.toUInt64)
+
+/-- The internal-cut options of a telescope node: follow the `below` links
+through the available spine descendants (at most `fuel`), adding a cut for
+each one present in `index`. -/
+def Prep.cutOptions (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (flag : UInt8) (l s : Nat) :
+    Nat → Option Nat → Array (Choice × Nat × ByteArray) → Array (Choice × Nat × ByteArray)
+  | 0, _, opts => opts
+  | _ + 1, none, opts => opts
+  | fuel + 1, some u, opts =>
+    let j := l - p.spineLen[u]!
+    let opts := if (index[u]?.getD none).isSome then
+        opts.push (.cut j, tag4Size j + (s - ev.sides[u]!) + (widthOf width u).getD 0,
+          tag4Bytes flag j)
+      else opts
+    p.cutOptions ev index width flag l s fuel ev.below[u]! opts
+
+/-- Every legal option at `t` with its exact cost and header bytes, given the
+evaluation `ev` of the dictionary with Share widths `width`; headers use the
+actual table indices `index`. -/
+def Prep.options (p : Prep) (ev : DictEval) (index : Array (Option Nat))
+    (width : Array (Option Nat)) (t : Nat) :
+    Array (Choice × Nat × ByteArray) :=
+  let node := p.dag.node t
+  let opts : Array (Choice × Nat × ByteArray) :=
+    match index[t]?.getD none with
+    | some i => #[(.share, (widthOf width t).getD 0, tag4Bytes Ixon.Expr.FLAG_SHARE i)]
+    | none => #[]
+  if p.family[t]! == .none then
+    let c := node.children.foldl (fun acc c => acc + ev.cost[c]!) node.head.ownBytes
+    opts.push (.inline, c, runPut (putTagN 4 node.head.flag node.head.tag4Field))
+  else
+    let l := p.spineLen[t]!
+    let s := ev.sides[t]!
+    let opts := opts.push (.cut l, tag4Size l + s + ev.cost[p.tail[t]!]!,
+      tag4Bytes node.head.flag l)
+    p.cutOptions ev index width node.head.flag l s l ev.below[t]! opts
+
+/-- The minimum-cost option whose header is byte-least. -/
+def pickOption (opts : Array (Choice × Nat × ByteArray)) : Option (Choice × Nat) :=
+  let best := opts.foldl (init := none) fun best o =>
+    match best with
+    | none => some o
+    | some b =>
+      if o.2.1 < b.2.1 then some o
+      else if o.2.1 == b.2.1 && compareBytes o.2.2 b.2.2 == .lt then some o
+      else best
+  best.map fun o => (o.1, o.2.1)
+
+/-- The first `j` nodes of the telescope spine from `t`, outermost first,
+and the term after them. -/
+def Prep.spineWalk (p : Prep) : Nat → Nat → List Node × Nat
+  | 0, t => ([], t)
+  | j + 1, t =>
+    let n := p.dag.node t
+    let (ns, e) := p.spineWalk j n.spineNext
+    (n :: ns, e)
+
+/-- Rebuild one telescope node around its rebuilt continuation (`inner`)
+and side child. -/
+def rebuildSpineNode (n : Node) (inner side : Ixon.Expr) : Except SharingError Ixon.Expr :=
+  match n.head with
+  | .app => .ok (.app inner side)
+  | .lam bc => .ok (.lam bc side inner)
+  | .all bc r => .ok (.all bc r side inner)
+  | _ => .error (.internal "spine node is not a telescope node")
+
+/-- Build the chosen encoding of `t`. With `entry = true` the top may not be
+`Share(t)` (the body of `t`'s own table entry); nested terms always use
+their standalone choice. Pure and structurally recursive on `fuel`; every
+recursive call descends to a strictly smaller term ID, so `dag.size + 1`
+suffices. Each call emits one node of the output, so the work is bounded
+by the output size. Every inconsistency is an internal error, including a
+cut of zero spine nodes (`options` never offers one). -/
+def Prep.build (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) :
+    Bool → Nat → Nat → Except SharingError Ixon.Expr
+  | _, 0, _ => throw (.internal "materialization fuel exhausted")
+  | entry, fuel + 1, t => do
+    let opts := p.options ev index width t
+    let opts := if entry then opts.filter (·.1 != .share) else opts
+    let some (choice, c) := pickOption opts
+      | throw (.internal s!"no option for term {t}")
+    unless entry || c == ev.cost[t]! do
+      throw (.internal s!"option cost {c} differs from C_M = {ev.cost[t]!} at term {t}")
+    let node := p.dag.node t
+    match choice with
+    | .share =>
+      match index[t]?.getD none with
+      | some i => pure (Ixon.Expr.share i.toUInt64)
+      | none => throw (.internal "share choice without index")
+    | .inline =>
+      match node.head with
+      | .prj ti f => do
+        let v ← p.build ev index width false fuel (node.child 0)
+        pure (Ixon.Expr.prj ti f v)
+      | .letE lc => do
+        let ty ← p.build ev index width false fuel (node.child 0)
+        let v ← p.build ev index width false fuel (node.child 1)
+        let b ← p.build ev index width false fuel (node.child 2)
+        pure (Ixon.Expr.letE lc ty v b)
+      | .app | .lam _ | .all .. => throw (.internal "inline choice at a telescope head")
+      | _ => pure (node.toExpr fun _ => default)
+    | .cut j =>
+      if j = 0 then throw (.internal "empty telescope cut") else do
+      let (spine, cur) := p.spineWalk j t
+      let tail ← if j < p.spineLen[t]! then
+          match index[cur]?.getD none with
+          | some i => pure (Ixon.Expr.share i.toUInt64)
+          | none => throw (.internal "telescope cut at unavailable term")
+        else p.build ev index width false fuel cur
+      spine.foldrM (fun n acc => do
+        let side ← p.build ev index width false fuel n.sideChild
+        rebuildSpineNode n acc side) tail
+
+/-! ### Options with their headers encoded only on a cost tie
+
+`options` encodes the Tag4 header of every option into a `ByteArray`, but
+`pickOption` reads the bytes only when two options cost the same.
+`optionsLazy` keeps each header as its flag and value (`LazyOpt.bytes`
+encodes it), and `pickLazy` encodes the two headers only on a cost tie;
+`options_eq_lazy` and `pickOption_lazy` prove them equal to the byte form.
+`buildFast` is `build` over them (`build_eq_fast`). -/
+
+/-- An option with its header as a flag and a value. -/
+abbrev LazyOpt := Choice × Nat × UInt8 × Nat
+
+/-- The option with its header bytes. -/
+@[inline] def LazyOpt.bytes (o : LazyOpt) : Choice × Nat × ByteArray :=
+  (o.1, o.2.1, tag4Bytes o.2.2.1 o.2.2.2)
+
+/-- `cutOptions` with lazy headers. -/
+def Prep.cutOptionsLazy (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (flag : UInt8) (l s : Nat) : Nat → Option Nat → Array LazyOpt → Array LazyOpt
+  | 0, _, opts => opts
+  | _ + 1, none, opts => opts
+  | fuel + 1, some u, opts =>
+    let j := l - p.spineLen[u]!
+    let opts := if (index[u]?.getD none).isSome then
+        opts.push (.cut j, tag4Size j + (s - ev.sides[u]!) + (widthOf width u).getD 0, flag, j)
+      else opts
+    p.cutOptionsLazy ev index width flag l s fuel ev.below[u]! opts
+
+/-- `options` with lazy headers. -/
+def Prep.optionsLazy (p : Prep) (ev : DictEval) (index : Array (Option Nat))
+    (width : Array (Option Nat)) (t : Nat) : Array LazyOpt :=
+  let node := p.dag.node t
+  let opts : Array LazyOpt :=
+    match index[t]?.getD none with
+    | some i => #[(.share, (widthOf width t).getD 0, Ixon.Expr.FLAG_SHARE, i)]
+    | none => #[]
+  if p.family[t]! == .none then
+    let c := node.children.foldl (fun acc c => acc + ev.cost[c]!) node.head.ownBytes
+    opts.push (.inline, c, node.head.flag, node.head.tag4Field.toNat)
+  else
+    let l := p.spineLen[t]!
+    let s := ev.sides[t]!
+    let opts := opts.push (.cut l, tag4Size l + s + ev.cost[p.tail[t]!]!, node.head.flag, l)
+    p.cutOptionsLazy ev index width node.head.flag l s l ev.below[t]! opts
+
+/-- One step of `pickLazy`: `o` replaces `best` if cheaper, or as cheap with
+a byte-smaller header. -/
+@[inline] def pickLazyStep (best : Option LazyOpt) (o : LazyOpt) : Option LazyOpt :=
+  match best with
+  | none => some o
+  | some b =>
+    if o.2.1 < b.2.1 then some o
+    else if o.2.1 == b.2.1 && compareBytes o.bytes.2.2 b.bytes.2.2 == .lt then some o
+    else best
+
+/-- `pickOption` with lazy headers. -/
+def pickLazy (opts : Array LazyOpt) : Option (Choice × Nat) :=
+  (opts.foldl pickLazyStep none).map fun o => (o.1, o.2.1)
+
+theorem cutOptions_eq_lazy (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (flag : UInt8) (l s : Nat) :
+    ∀ (fuel : Nat) (cur : Option Nat) (opts : Array LazyOpt),
+      p.cutOptions ev index width flag l s fuel cur (opts.map LazyOpt.bytes) =
+        (p.cutOptionsLazy ev index width flag l s fuel cur opts).map LazyOpt.bytes
+  | 0, _, _ => rfl
+  | _ + 1, none, _ => rfl
+  | fuel + 1, some u, opts => by
+    unfold Prep.cutOptions Prep.cutOptionsLazy
+    split
+    · rw [← cutOptions_eq_lazy p ev index width flag l s fuel, Array.map_push]
+      rfl
+    · exact cutOptions_eq_lazy p ev index width flag l s fuel _ opts
+
+theorem options_eq_lazy (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (t : Nat) : p.options ev index width t = (p.optionsLazy ev index width t).map LazyOpt.bytes := by
+  unfold Prep.options Prep.optionsLazy
+  generalize index[t]?.getD none = o
+  by_cases hf : (p.family[t]! == Family.none) = true
+  · cases o <;> simp [hf, LazyOpt.bytes, tag4Bytes]
+  · simp only [hf, if_false, Bool.false_eq_true]
+    rw [← cutOptions_eq_lazy]
+    cases o <;> simp [LazyOpt.bytes, tag4Bytes]
+
+theorem pickOption_lazy (opts : Array LazyOpt) :
+    pickOption (opts.map LazyOpt.bytes) = pickLazy opts := by
+  unfold pickOption pickLazy
+  rw [Array.foldl_map]
+  suffices h : ∀ (l : List LazyOpt) (b : Option LazyOpt),
+      l.foldl (fun best y => match best with
+        | none => some y.bytes
+        | some b =>
+          if y.bytes.2.1 < b.2.1 then some y.bytes
+          else if y.bytes.2.1 == b.2.1 && compareBytes y.bytes.2.2 b.2.2 == .lt then some y.bytes
+          else best) (b.map LazyOpt.bytes) =
+        (l.foldl pickLazyStep b).map LazyOpt.bytes by
+    rw [← Array.foldl_toList, ← Array.foldl_toList, ← Option.map_none (f := LazyOpt.bytes), h,
+      Option.map_map]
+    rfl
+  intro l
+  induction l with
+  | nil => intro b; rfl
+  | cons o l ih =>
+    intro b
+    simp only [List.foldl_cons]
+    rw [← ih]
+    congr 1
+    cases b with
+    | none => rfl
+    | some b =>
+      simp only [Option.map_some, pickLazyStep]
+      by_cases h1 : o.2.1 < b.2.1
+      · simp [h1, LazyOpt.bytes]
+      · by_cases h2 : (o.2.1 == b.2.1 && compareBytes o.bytes.2.2 b.bytes.2.2 == .lt) = true
+        · simp only [LazyOpt.bytes] at h2 ⊢
+          simp [h1, h2, LazyOpt.bytes]
+        · simp only [LazyOpt.bytes] at h2 ⊢
+          simp [h1, h2, LazyOpt.bytes]
+
+/-! ### The pick without the option array
+
+`pickBuild` makes the choice of `pickLazy` over the options of `t` (all of
+them, or those other than the Share of `t`) as the options are generated,
+without collecting them in an array (`pickLazy_eq_pickBuild`). -/
+
+/-- `cutOptionsLazy` folded into the running pick. -/
+def Prep.cutPickLazy (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (flag : UInt8) (l s : Nat) : Nat → Option Nat → Option LazyOpt → Option LazyOpt
+  | 0, _, best => best
+  | _ + 1, none, best => best
+  | fuel + 1, some u, best =>
+    let j := l - p.spineLen[u]!
+    let best := if (index[u]?.getD none).isSome then
+        pickLazyStep best (.cut j, tag4Size j + (s - ev.sides[u]!) + (widthOf width u).getD 0, flag, j)
+      else best
+    p.cutPickLazy ev index width flag l s fuel ev.below[u]! best
+
+/-- The option `pickLazy` picks among the options of `t` (without the Share of
+`t` when `entry`). -/
+def Prep.pickBuild (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) (entry : Bool)
+    (t : Nat) : Option (Choice × Nat) :=
+  let node := p.dag.node t
+  let best : Option LazyOpt := if entry then none else
+    match index[t]?.getD none with
+    | some i => some (.share, (widthOf width t).getD 0, Ixon.Expr.FLAG_SHARE, i)
+    | none => none
+  let best := if p.family[t]! == .none then
+      pickLazyStep best (.inline, node.children.foldl (fun acc c => acc + ev.cost[c]!)
+        node.head.ownBytes, node.head.flag, node.head.tag4Field.toNat)
+    else
+      let l := p.spineLen[t]!
+      let s := ev.sides[t]!
+      p.cutPickLazy ev index width node.head.flag l s l ev.below[t]!
+        (pickLazyStep best (.cut l, tag4Size l + s + ev.cost[p.tail[t]!]!, node.head.flag, l))
+  best.map fun o => (o.1, o.2.1)
+
+/-- `Array.foldl_push` without the choice axiom. -/
+theorem foldl_push_eq {α β : Type} (f : β → α → β) (init : β) (a : Array α) (x : α) :
+    (a.push x).foldl f init = f (a.foldl f init) x := by
+  rw [← Array.foldl_toList, ← Array.foldl_toList, Array.toList_push, List.foldl_append]
+  rfl
+
+theorem cutOptionsLazy_fold (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (flag : UInt8) (l s : Nat) :
+    ∀ (fuel : Nat) (cur : Option Nat) (opts : Array LazyOpt),
+      (p.cutOptionsLazy ev index width flag l s fuel cur opts).foldl pickLazyStep none =
+        p.cutPickLazy ev index width flag l s fuel cur (opts.foldl pickLazyStep none)
+  | 0, _, _ => rfl
+  | _ + 1, none, _ => rfl
+  | fuel + 1, some u, opts => by
+    simp only [Prep.cutOptionsLazy, Prep.cutPickLazy]
+    split
+    · rw [cutOptionsLazy_fold p ev index width flag l s fuel, foldl_push_eq]
+    · exact cutOptionsLazy_fold p ev index width flag l s fuel _ opts
+
+theorem cutOptionsLazy_filter (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (flag : UInt8) (l s : Nat) :
+    ∀ (fuel : Nat) (cur : Option Nat) (opts : Array LazyOpt),
+      (p.cutOptionsLazy ev index width flag l s fuel cur opts).filter (·.1 != .share) =
+        p.cutOptionsLazy ev index width flag l s fuel cur (opts.filter (·.1 != .share))
+  | 0, _, _ => rfl
+  | _ + 1, none, _ => rfl
+  | fuel + 1, some u, opts => by
+    simp only [Prep.cutOptionsLazy]
+    split
+    · rw [cutOptionsLazy_filter p ev index width flag l s fuel, Array.filter_push]
+      rfl
+    · exact cutOptionsLazy_filter p ev index width flag l s fuel _ opts
+
+/-- **Streaming pick.** `pickBuild` picks what `pickLazy` picks from the
+options of `t`. -/
+theorem pickLazy_eq_pickBuild (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (entry : Bool) (t : Nat) :
+    pickLazy (if entry then (p.optionsLazy ev index width t).filter (·.1 != .share)
+      else p.optionsLazy ev index width t) = p.pickBuild ev index width entry t := by
+  unfold pickLazy Prep.pickBuild Prep.optionsLazy
+  generalize index[t]?.getD none = o
+  cases entry <;> cases o <;>
+    by_cases hf : (p.family[t]! == Family.none) = true <;>
+    simp only [hf, if_true, if_false, Bool.false_eq_true, Array.filter_push,
+      cutOptionsLazy_filter, cutOptionsLazy_fold, foldl_push_eq] <;> rfl
+
+/-- `build` over the lazy options (`build_eq_fast`). -/
+def Prep.buildFast (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) :
+    Bool → Nat → Nat → Except SharingError Ixon.Expr
+  | _, 0, _ => throw (.internal "materialization fuel exhausted")
+  | entry, fuel + 1, t => do
+    let some (choice, c) := p.pickBuild ev index width entry t
+      | throw (.internal s!"no option for term {t}")
+    unless entry || c == ev.cost[t]! do
+      throw (.internal s!"option cost {c} differs from C_M = {ev.cost[t]!} at term {t}")
+    let node := p.dag.node t
+    match choice with
+    | .share =>
+      match index[t]?.getD none with
+      | some i => pure (Ixon.Expr.share i.toUInt64)
+      | none => throw (.internal "share choice without index")
+    | .inline =>
+      match node.head with
+      | .prj ti f => do
+        let v ← p.buildFast ev index width false fuel (node.child 0)
+        pure (Ixon.Expr.prj ti f v)
+      | .letE lc => do
+        let ty ← p.buildFast ev index width false fuel (node.child 0)
+        let v ← p.buildFast ev index width false fuel (node.child 1)
+        let b ← p.buildFast ev index width false fuel (node.child 2)
+        pure (Ixon.Expr.letE lc ty v b)
+      | .app | .lam _ | .all .. => throw (.internal "inline choice at a telescope head")
+      | _ => pure (node.toExpr fun _ => default)
+    | .cut j =>
+      if j = 0 then throw (.internal "empty telescope cut") else do
+      let (spine, cur) := p.spineWalk j t
+      let tail ← if j < p.spineLen[t]! then
+          match index[cur]?.getD none with
+          | some i => pure (Ixon.Expr.share i.toUInt64)
+          | none => throw (.internal "telescope cut at unavailable term")
+        else p.buildFast ev index width false fuel cur
+      spine.foldrM (fun n acc => do
+        let side ← p.buildFast ev index width false fuel n.sideChild
+        rebuildSpineNode n acc side) tail
+
+/-- The option `build` picks at `t`, from the lazy options. -/
+theorem pick_options_lazy (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (entry : Bool) (t : Nat) :
+    pickOption (if entry then (p.options ev index width t).filter (·.1 != .share)
+      else p.options ev index width t) =
+    pickLazy (if entry then (p.optionsLazy ev index width t).filter (·.1 != .share)
+      else p.optionsLazy ev index width t) := by
+  rw [options_eq_lazy]
+  cases entry
+  · exact pickOption_lazy _
+  · simp only [if_true]
+    rw [Array.filter_map]
+    exact pickOption_lazy _
+
+@[csimp] theorem build_eq_fast : @Prep.build = @Prep.buildFast := by
+  funext p ev index width entry fuel t
+  induction fuel generalizing entry t with
+  | zero => rfl
+  | succ fuel ih =>
+    have ih' : p.build ev index width false fuel = p.buildFast ev index width false fuel := by
+      funext t'; exact ih false t'
+    unfold Prep.build Prep.buildFast
+    simp only [ih', pick_options_lazy, pickLazy_eq_pickBuild]
+
+/-- Materialize the byte-least minimum-cost standalone encodings of `targets`
+under the dictionary `index` (term ID ↦ table index), pricing each Share by
+`width` (which must be `some` exactly where `index` is). The predicted
+output size, which bounds the nodes built, is checked against
+`maxMaterialize` first. Returns the expressions, the costs used, and the
+work performed. -/
+def Prep.materializeWith (p : Prep) (index width : Array (Option Nat)) (targets : Array Nat)
+    (limits : Limits) : Except SharingError (Array Ixon.Expr × Array Nat × Nat) := do
+  for i in index do
+    if let some i := i then
+      if i ≥ wordBound then throw (.formatBound "share index" i)
+  let ev := p.evalAll width
+  let total := targets.foldl (fun acc t => acc + ev.cost[t]!) 0
+  if total > limits.maxMaterialize then
+    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  let out ← targets.mapM fun t => p.build ev index width false (p.dag.size + 1) t
+  return (out, ev.cost, ev.work + total)
+
+/-- Materialize the byte-least minimum-length standalone encodings of
+`targets` under the dictionary `index` (term ID ↦ table index), with the
+real Share widths. Returns the expressions, the costs `C_M` used, and the
+work performed. -/
+def Prep.materialize (p : Prep) (index : Array (Option Nat)) (targets : Array Nat)
+    (limits : Limits) : Except SharingError (Array Ixon.Expr × Array Nat × Nat) :=
+  p.materializeWith index (widthsOfIndex index) targets limits
+
+/-- A dictionary index from `(term, table index)` pairs. -/
+def indexOfPairs (size : Nat) (pairs : List (Nat × Nat)) : Array (Option Nat) :=
+  pairs.foldl (fun acc (t, i) => acc.set! t (some i)) (Array.replicate size none)
+
+/-- The dictionary of the first `k` entries of a table sequence. -/
+def indexOfPrefix (size : Nat) (table : Array Nat) (k : Nat) : Array (Option Nat) :=
+  indexOfPairs size ((table.toList.take k).zipIdx)
+
+/-- Minimum cost of `t` written with an inline top (the body of its own table
+entry) under the evaluation `ev`. -/
+def Prep.inlineCost (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) (t : Nat) :
+    Nat :=
+  ((pickOption ((p.options ev index width t).filter (·.1 != .share))).map (·.2)).getD 0
+
+/-- `inlineCost` over the lazy options (`inlineCost_eq_fast`). -/
+def Prep.inlineCostFast (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
+    (t : Nat) : Nat :=
+  ((p.pickBuild ev index width true t).map (·.2)).getD 0
+
+@[csimp] theorem inlineCost_eq_fast : @Prep.inlineCost = @Prep.inlineCostFast := by
+  funext p ev index width t
+  unfold Prep.inlineCost Prep.inlineCostFast
+  rw [options_eq_lazy, Array.filter_map, pickOption_lazy, ← pickLazy_eq_pickBuild]
+  rfl
+
+/-- The body of a table entry at `t` under a dictionary that contains `t`
+itself: `build` with the top Share excluded, the chosen option's cost checked
+against `cost` (the cost of `t` with its own Share hidden), and every nested
+term built as by `build`. -/
+def Prep.buildTop (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) (cost : Nat) :
+    Nat → Nat → Except SharingError Ixon.Expr
+  | 0, _ => throw (.internal "materialization fuel exhausted")
+  | fuel + 1, t => do
+    let some (choice, c) := p.pickBuild ev index width true t
+      | throw (.internal s!"no option for term {t}")
+    unless c == cost do
+      throw (.internal s!"option cost {c} differs from C_M = {cost} at term {t}")
+    let node := p.dag.node t
+    match choice with
+    | .share =>
+      match index[t]?.getD none with
+      | some i => pure (Ixon.Expr.share i.toUInt64)
+      | none => throw (.internal "share choice without index")
+    | .inline =>
+      match node.head with
+      | .prj ti f => do
+        let v ← p.build ev index width false fuel (node.child 0)
+        pure (Ixon.Expr.prj ti f v)
+      | .letE lc => do
+        let ty ← p.build ev index width false fuel (node.child 0)
+        let v ← p.build ev index width false fuel (node.child 1)
+        let b ← p.build ev index width false fuel (node.child 2)
+        pure (Ixon.Expr.letE lc ty v b)
+      | .app | .lam _ | .all .. => throw (.internal "inline choice at a telescope head")
+      | _ => pure (node.toExpr fun _ => default)
+    | .cut j =>
+      if j = 0 then throw (.internal "empty telescope cut") else do
+      let (spine, cur) := p.spineWalk j t
+      let tail ← if j < p.spineLen[t]! then
+          match index[cur]?.getD none with
+          | some i => pure (Ixon.Expr.share i.toUInt64)
+          | none => throw (.internal "telescope cut at unavailable term")
+        else p.build ev index width false fuel cur
+      spine.foldrM (fun n acc => do
+        let side ← p.build ev index width false fuel n.sideChild
+        rebuildSpineNode n acc side) tail
+
+/-- Materialize a table given in dependency order (every stored descendant of
+an entry precedes it) and the roots, from one evaluation of the whole
+dictionary. In such an order the entry for `t` can use every stored term
+that can occur inside `t`, and no other stored term can occur there, so the
+full dictionary prices and builds its body exactly. Shares are priced by
+`width` (`some` exactly on the table's terms). Returns entries, roots, the
+total variable cost (table count, entry bodies, roots) and the work. The
+caller must re-expand the output: a table that is not in dependency order
+is rejected there as a non-backward reference. -/
+def Prep.materializeDependent (p : Prep) (table roots : Array Nat)
+    (width : Array (Option Nat)) (limits : Limits) :
+    Except SharingError (Array Ixon.Expr × Array Ixon.Expr × Nat × Nat) := do
+  if table.size ≥ wordBound then throw (.formatBound "share index" table.size)
+  let index := indexOfPairs p.dag.size table.toList.zipIdx
+  let ev := p.evalAll width
+  let entryCost := table.foldl (fun acc t => acc + p.inlineCost ev index width t) 0
+  let rootCost := roots.foldl (fun acc r => acc + ev.cost[r]!) 0
+  let total := tag0Size table.size + entryCost + rootCost
+  if total > limits.maxMaterialize then
+    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  let es ← table.mapM fun t => p.build ev index width true (p.dag.size + 1) t
+  let rs ← roots.mapM fun r => p.build ev index width false (p.dag.size + 1) r
+  return (es, rs, total, ev.work + total)
+
+end Ix.Sharing.Exact
+
+end
