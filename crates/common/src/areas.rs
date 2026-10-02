@@ -73,6 +73,58 @@ static INCL: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
 static EXCL: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
 static CALLS: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
 
+/// Whether area timing is on.
+pub fn enabled() -> bool {
+  *ENABLED
+}
+
+/// Named counters of the width-certificate experiment.
+#[derive(Clone, Copy, Debug)]
+#[repr(usize)]
+pub enum Ctr {
+  Calls,
+  W1Ns,
+  W2Ns,
+  W3Ns,
+  WinW1,
+  WinW2,
+  WinW3,
+  Violations,
+  CertAfterW1,
+  CertAfterW1Ns,
+  CertAfterW2,
+  CertAfterW2Ns,
+  SmallTable,
+  SmallTableNs,
+}
+const CTR_NAMES: [&str; 14] = [
+  "tiered calls",
+  "width-1 ns",
+  "width-2 ns",
+  "width-3 ns",
+  "w1 wins",
+  "w2 wins",
+  "w3 wins",
+  "lower-bound violations (some L_w < M_1)",
+  "certified after w1 (L_1 == M_1)",
+  "  ns of w2+w3 there",
+  "certified after w2 (min(L_1,L_2) == M_1)",
+  "  ns of w3 there",
+  "w1 table <= 8 entries",
+  "  ns of all widths there",
+];
+static CTRS: [AtomicU64; 14] = [const { AtomicU64::new(0) }; 14];
+
+/// Add to a named counter.
+pub fn ctr(c: Ctr, v: u64) {
+  CTRS[c as usize].fetch_add(v, Ordering::Relaxed);
+}
+
+/// Add to a counter by index.
+pub fn ctr_ix(i: usize, v: u64) {
+  CTRS[i].fetch_add(v, Ordering::Relaxed);
+}
+
 /// Extra counters: duplicate constructions.
 pub static DUP_SHARE_NS: AtomicU64 = AtomicU64::new(0);
 pub static DUP_PUTHASH_NS: AtomicU64 = AtomicU64::new(0);
@@ -216,6 +268,14 @@ pub fn report(label: &str) {
     DUP_SHARE_NS.load(Ordering::Relaxed) as f64 / 1e9,
     DUP_PUTHASH_NS.load(Ordering::Relaxed) as f64 / 1e9,
   );
+  for (i, name) in CTR_NAMES.iter().enumerate() {
+    let v = CTRS[i].load(Ordering::Relaxed);
+    if name.contains("ns") {
+      eprintln!("[areas] ctr {name}: {:.2} s", v as f64 / 1e9);
+    } else {
+      eprintln!("[areas] ctr {name}: {v}");
+    }
+  }
 }
 
 static HIST_N: [AtomicU64; 40] = [const { AtomicU64::new(0) }; 40];

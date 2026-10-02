@@ -701,11 +701,16 @@ pub(crate) fn tiered(
     let mut meter = Meter::with_parallelism(limits, par);
     tiered_at(layout, dag, &prep, &mut meter, w)
   };
+  // PROTOTYPE (measurement only): per-width time, for the width
+  // certificate experiment below.
+  let mut width_ns = [0u64; 3];
   let candidates: Vec<Result<Candidate, SharingError>> = if par.widths <= 1 {
     // The sequential reference stops at the first failing width.
     let mut v = Vec::with_capacity(3);
     for w in 1..=3 {
+      let t = std::time::Instant::now();
       v.push(Ok(run(w)?));
+      width_ns[(w - 1) as usize] = t.elapsed().as_nanos() as u64;
     }
     v
   } else {
@@ -730,6 +735,34 @@ pub(crate) fn tiered(
     built.push(c);
   }
   let best_ix = best.ok_or_else(|| internal("no tiered candidate"))?;
+  // PROTOTYPE (measurement only): the width-1 model minimum M_1 is a lower
+  // bound of every candidate's real length; when a candidate reaches it,
+  // the later widths cannot win (ties go to the smaller width).
+  if ix_common::areas::enabled() && built.len() == 3 {
+    use ix_common::areas::{Ctr, ctr, ctr_ix};
+    let m1 = built[0].result.phase1.model_len;
+    let l: Vec<u64> =
+      built.iter().map(|c| c.result.stats.phase3_layout_bytes).collect();
+    ctr(Ctr::Calls, 1);
+    ctr(Ctr::W1Ns, width_ns[0]);
+    ctr(Ctr::W2Ns, width_ns[1]);
+    ctr(Ctr::W3Ns, width_ns[2]);
+    ctr_ix(Ctr::WinW1 as usize + best_ix, 1);
+    if l.iter().any(|&x| x < m1) {
+      ctr(Ctr::Violations, 1);
+    }
+    if l[0] == m1 {
+      ctr(Ctr::CertAfterW1, 1);
+      ctr(Ctr::CertAfterW1Ns, width_ns[1] + width_ns[2]);
+    } else if l[0].min(l[1]) == m1 {
+      ctr(Ctr::CertAfterW2, 1);
+      ctr(Ctr::CertAfterW2Ns, width_ns[2]);
+    }
+    if built[0].result.table_terms.len() <= 8 {
+      ctr(Ctr::SmallTable, 1);
+      ctr(Ctr::SmallTableNs, width_ns[0] + width_ns[1] + width_ns[2]);
+    }
+  }
   // The returned candidate first, so that its errors are the default
   // mode's; then, in the checked mode, the others.
   let mut rest: Vec<Candidate> = Vec::with_capacity(2);
