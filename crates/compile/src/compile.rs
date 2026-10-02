@@ -275,6 +275,21 @@ pub struct BlockCache {
   /// Accumulated compiled Ixon expressions for collapsed call-site args.
   /// Drained into `ConstantMeta.meta_sharing` after compilation completes.
   pub surgery_sharing: Vec<Arc<Expr>>,
+  /// [`plan_head_arity`] by head name, for the whole block: the plan-head
+  /// audit and `compile_expr` ask it for every head and bare constant
+  /// they meet, and a fresh answer costs three `DashMap` reads. The memo
+  /// answers what a fresh lookup would: a head's plans are installed when
+  /// the block that defines it compiles, which is either a dependency of
+  /// this block (finished before it started) or this block itself, which
+  /// installs its plans at the very end of `compile_mutual`, after its
+  /// last use of this cache.
+  plan_heads: FxHashMap<Name, Option<PlanHeadArity>>,
+  /// Addresses of the names this block has passed through
+  /// [`compile_name_cached`]: their `env.names` entries (and those of
+  /// their prefixes and string components) exist, and nothing removes
+  /// entries from those maps while compiling, so a repeated name needs
+  /// no `DashMap` read.
+  stored_names: FxHashSet<Address>,
 }
 
 #[derive(Debug)]
@@ -465,6 +480,22 @@ pub fn compile_name(name: &Name, stt: &CompileState) -> Address {
 
   // Store Name struct directly in env.names
   stt.env.names.insert(addr.clone(), name.clone());
+  addr
+}
+
+/// [`compile_name`] through the block's memo ([`BlockCache::stored_names`]):
+/// the same address and the same stored entries, without a `DashMap` read
+/// for a name the block has already stored.
+fn compile_name_cached(
+  name: &Name,
+  stt: &CompileState,
+  cache: &mut BlockCache,
+) -> Address {
+  let addr = Address::from_blake3_hash(*name.get_hash());
+  if !cache.stored_names.contains(&addr) {
+    compile_name(name, stt);
+    cache.stored_names.insert(addr.clone());
+  }
   addr
 }
 
@@ -761,14 +792,14 @@ fn compiling_is_aux_regen(cache: &BlockCache, stt: &CompileState) -> bool {
 fn eta_adapter_needed(
   name: &Name,
   n_args: usize,
-  cache: &BlockCache,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> bool {
-  if compiling_is_aux_regen(cache, stt) {
-    return false;
-  }
-  plan_head_arity(stt, name)
+  // Both conjuncts are pure reads; the plan test goes first because it
+  // answers from the block memo and almost every head has no plan.
+  plan_head_arity_cached(name, cache, stt)
     .is_some_and(|arity| !arity.head_rewrite && n_args < arity.floor)
+    && !compiling_is_aux_regen(cache, stt)
 }
 
 /// Build the source-interface eta wrapper for a short plan-bearing
@@ -855,7 +886,7 @@ fn compile_const_expr_raw(
     } else {
       None
     };
-  let name_addr = compile_name(name, stt);
+  let name_addr = compile_name_cached(name, stt, cache);
   let expr = if let Some(idx) = mut_ctx.get(name) {
     let idx_u64 = nat_to_u64(idx, "mutual index too large")?;
     Expr::rec(idx_u64, univ_indices)
@@ -1036,7 +1067,16 @@ pub fn compile_expr(
             // `AppTypeMismatch` whenever `sort_consts` reordered a
             // mutual block (the `Alt`↔`Cases`, `EqCnstr`↔`DiseqCnstr`
             // failure family in `kernel-check-env`).
-            if let ExprData::Const(name, levels, _) = head_expr.as_data() {
+            //
+            // A head without a non-identity plan in any of the three maps
+            // (the block memo's `None`, almost every head) takes none of
+            // the branches below — each requires such a plan, the eta
+            // adapter included — so the guard skips them, and with them
+            // three plan-map reads and the aux-regen test per application.
+            if let ExprData::Const(name, levels, _) = head_expr.as_data()
+              && (*IX_SURGERY_APPLY_DEBUG
+                || plan_head_arity_cached(name, cache, stt).is_some())
+            {
               // Call-site surgery guard. Surgery applies iff:
               //  (1) the compiling constant is *not* an AuxRegen name —
               //      i.e. not one of the Lean auto-generated auxiliaries
@@ -1150,7 +1190,7 @@ pub fn compile_expr(
                           ),
                         }
                       })?;
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name_cached(name, stt, cache);
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
                     let params = &args_owned[..plan.n_params];
@@ -1298,7 +1338,7 @@ pub fn compile_expr(
                   if args.len() >= minimal_full_prefix {
                     // Surgery path: separate args into kept/collapsed,
                     // reorder kept to canonical, compile everything.
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name_cached(name, stt, cache);
 
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
@@ -1455,7 +1495,7 @@ pub fn compile_expr(
                   // major+minors alike.
                   let minimal_full_prefix = plan.below_minimal_full_prefix();
                   if args.len() >= minimal_full_prefix {
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name_cached(name, stt, cache);
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
                     let params = &args_owned[..plan.n_params];
@@ -1540,7 +1580,7 @@ pub fn compile_expr(
                   let fixed_tail_len = plan.n_indices + 1; // indices + major
                   let expected_total = plan.brecon_minimal_full_prefix();
                   if args.len() >= expected_total {
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name_cached(name, stt, cache);
 
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
@@ -1688,21 +1728,21 @@ pub fn compile_expr(
           },
 
           ExprData::Lam(name, ty, body, info, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name_cached(name, stt, cache);
             stack.push(Frame::BuildLam(name_addr, info.clone()));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::ForallE(name, ty, body, info, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name_cached(name, stt, cache);
             stack.push(Frame::BuildAll(name_addr, info.clone()));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::LetE(name, ty, val, body, non_dep, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name_cached(name, stt, cache);
             stack.push(Frame::BuildLet(name_addr, *non_dep));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(val.clone()));
@@ -1738,7 +1778,7 @@ pub fn compile_expr(
             })?;
 
             let (ref_idx, _) = cache.refs.insert_full(type_addr.clone());
-            let name_addr = compile_name(type_name, stt);
+            let name_addr = compile_name_cached(type_name, stt, cache);
 
             stack.push(Frame::BuildProj(ref_idx as u64, idx_u64, name_addr));
             stack.push(Frame::Compile(struct_val.clone()));
@@ -1754,7 +1794,7 @@ pub fn compile_expr(
             // Compile KV map
             let mut pairs = Vec::new();
             for (k, v) in kv {
-              let k_addr = compile_name(k, stt);
+              let k_addr = compile_name_cached(k, stt, cache);
               let v_data = compile_data_value(v, stt);
               pairs.push((k_addr, v_data));
             }
@@ -2134,6 +2174,20 @@ fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
   None
 }
 
+/// [`plan_head_arity`] through the block memo ([`BlockCache::plan_heads`]).
+fn plan_head_arity_cached(
+  name: &Name,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+) -> Option<PlanHeadArity> {
+  if let Some(arity) = cache.plan_heads.get(name) {
+    return *arity;
+  }
+  let arity = plan_head_arity(stt, name);
+  cache.plan_heads.insert(name.clone(), arity);
+  arity
+}
+
 /// Whether all three call-site plan maps are empty. `DashMap::is_empty`
 /// read-locks every shard of a map (`4 × threads` of them); once a map has
 /// been seen non-empty, [`CompileState::plan_maps_nonempty`] answers
@@ -2158,14 +2212,11 @@ fn plan_maps_empty(stt: &CompileState) -> bool {
 /// App spine is split by `Mdata`/`LetE` (the telescope collector cannot see the
 /// surrounding arguments).
 ///
-/// `heads` memoizes [`plan_head_arity`] by head name across the walks over
-/// one constant: a head that recurs costs one set of plan-map lookups
-/// instead of up to three `DashMap` reads (each taking a shard lock) at each
-/// occurrence. The memo answers what a fresh lookup would: a head's plans
-/// are installed when the block that defines it compiles, which is either a
-/// dependency of the audited constant's block (finished before it starts)
-/// or that block itself (whose plans are installed after its members are
-/// audited).
+/// `heads` memoizes [`plan_head_arity`] by head name (the compiler passes
+/// its block memo, [`BlockCache::plan_heads`], whose docs say why the memo
+/// answers what a fresh lookup would): a head that recurs costs one set of
+/// plan-map lookups instead of up to three `DashMap` reads (each taking a
+/// shard lock) at each occurrence.
 fn audit_plan_head_arities(
   owner: &Name,
   top: &LeanExpr,
@@ -2300,16 +2351,16 @@ fn audit_plan_head_arities(
 fn audit_constant_info_plan_heads(
   ci: &LeanConstantInfo,
   stt: &CompileState,
+  heads: &mut FxHashMap<Name, Option<PlanHeadArity>>,
 ) -> Result<(), CompileError> {
   let owner = ci.get_name();
-  let mut heads = FxHashMap::default();
-  audit_plan_head_arities(owner, ci.get_type(), stt, &mut heads)?;
+  audit_plan_head_arities(owner, ci.get_type(), stt, heads)?;
   if let Some(value) = ci.get_value() {
-    audit_plan_head_arities(owner, value, stt, &mut heads)?;
+    audit_plan_head_arities(owner, value, stt, heads)?;
   }
   if let LeanConstantInfo::RecInfo(rec) = ci {
     for rule in &rec.rules {
-      audit_plan_head_arities(owner, &rule.rhs, stt, &mut heads)?;
+      audit_plan_head_arities(owner, &rule.rhs, stt, heads)?;
     }
   }
   Ok(())
@@ -2771,11 +2822,11 @@ pub fn compile_definition(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&def.name, stt);
+  let name_addr = compile_name_cached(&def.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
   let all_addrs: Vec<Address> =
-    def.all.iter().map(|n| compile_name(n, stt)).collect();
+    def.all.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let data = Definition {
@@ -2812,7 +2863,7 @@ fn compile_recursor_rule(
   stt: &CompileState,
 ) -> Result<(RecursorRule, Address), CompileError> {
   let rhs = compile_expr(&rule.rhs, univ_params, mut_ctx, cache, stt)?;
-  let ctor_addr = compile_name(&rule.ctor, stt);
+  let ctor_addr = compile_name_cached(&rule.ctor, stt, cache);
   let fields = nat_to_u64(&rule.n_fields, "n_fields too large")?;
 
   Ok((RecursorRule { fields, rhs }, ctor_addr))
@@ -2862,9 +2913,9 @@ pub fn compile_recursor(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&rec.cnst.name, stt);
+  let name_addr = compile_name_cached(&rec.cnst.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
 
   let data = Recursor {
     k: rec.k,
@@ -2879,7 +2930,7 @@ pub fn compile_recursor(
   };
 
   let all_addrs: Vec<Address> =
-    rec.all.iter().map(|n| compile_name(n, stt)).collect();
+    rec.all.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Rec {
@@ -2929,10 +2980,10 @@ fn compile_constructor(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&ctor.cnst.name, stt);
+  let name_addr = compile_name_cached(&ctor.cnst.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
-  let induct_addr = compile_name(&ctor.induct, stt);
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
+  let induct_addr = compile_name_cached(&ctor.induct, stt, cache);
 
   let data = Constructor {
     is_unsafe: ctor.is_unsafe,
@@ -2995,15 +3046,15 @@ pub fn compile_inductive(
   let mut ctor_name_addrs = Vec::new();
   for ctor in &ind.ctors {
     let (c, m) = compile_constructor(ctor, mut_ctx, cache, stt)?;
-    let ctor_name_addr = compile_name(&ctor.cnst.name, stt);
+    let ctor_name_addr = compile_name_cached(&ctor.cnst.name, stt, cache);
     ctor_name_addrs.push(ctor_name_addr);
     ctor_const_metas.push(m);
     ctors.push(c);
   }
 
-  let name_addr = compile_name(&ind.ind.cnst.name, stt);
+  let name_addr = compile_name_cached(&ind.ind.cnst.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
 
   let data = Inductive {
     is_unsafe: ind.ind.is_unsafe,
@@ -3018,7 +3069,7 @@ pub fn compile_inductive(
   };
 
   let all_addrs: Vec<Address> =
-    ind.ind.all.iter().map(|n| compile_name(n, stt)).collect();
+    ind.ind.all.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Indc {
@@ -3063,9 +3114,9 @@ fn compile_axiom(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&val.cnst.name, stt);
+  let name_addr = compile_name_cached(&val.cnst.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
 
   let data =
     Axiom { is_unsafe: val.is_unsafe, lvls: univ_params.len() as u64, typ };
@@ -3109,9 +3160,9 @@ fn compile_quotient(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&val.cnst.name, stt);
+  let name_addr = compile_name_cached(&val.cnst.name, stt, cache);
   let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+    univ_params.iter().map(|n| compile_name_cached(n, stt, cache)).collect();
 
   let data = Quotient { kind: val.kind, lvls: univ_params.len() as u64, typ };
 
@@ -4052,7 +4103,7 @@ fn compile_const_inner(
       caller: "compile_const".into(),
     })?
     .clone();
-  audit_constant_info_plan_heads(&cnst, stt)?;
+  audit_constant_info_plan_heads(&cnst, stt, &mut cache.plan_heads)?;
   let _cnst_kind = match &cnst {
     LeanConstantInfo::DefnInfo(_) => "defn",
     LeanConstantInfo::ThmInfo(_) => "thm",
@@ -4087,8 +4138,10 @@ fn compile_const_inner(
       stt,
       "compile_single_def",
     )?;
-    let ctx_addrs: Vec<Address> =
-      ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+    let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+      .iter()
+      .map(|n| compile_name_cached(n, stt, cache))
+      .collect();
     let (data, meta) =
       compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
     let _t_compile = _t0.elapsed();
@@ -4228,8 +4281,10 @@ fn compile_const_inner(
           exprs.push((&rule.rhs, val.cnst.level_params.as_slice()));
         }
         preseed_expr_tables(&exprs, &mut_ctx, cache, stt, "compile_recursor")?;
-        let ctx_addrs: Vec<Address> =
-          ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+        let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+          .iter()
+          .map(|n| compile_name_cached(n, stt, cache))
+          .collect();
         let (data, meta) =
           compile_recursor(val, &mut_ctx, &ctx_addrs, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
@@ -4312,7 +4367,7 @@ fn compile_mutual(
         caller: "compile_mutual".into(),
       });
     };
-    audit_constant_info_plan_heads(&const_info, stt)?;
+    audit_constant_info_plan_heads(&const_info, stt, &mut cache.plan_heads)?;
     let mut_const = match &const_info {
       LeanConstantInfo::InductInfo(val) => {
         for ctor_name in &val.ctors {
@@ -4322,7 +4377,7 @@ fn compile_mutual(
               caller: "plan-head arity audit (constructor)".into(),
             }
           })?;
-          audit_constant_info_plan_heads(&ctor, stt)?;
+          audit_constant_info_plan_heads(&ctor, stt, &mut cache.plan_heads)?;
         }
         MutConst::Indc(mk_indc(val, lean_env)?)
       },
@@ -4350,8 +4405,10 @@ fn compile_mutual(
   // computed once here instead of sorted+re-interned per member.
   let mut ixon_mutuals = Vec::new();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+    .iter()
+    .map(|n| compile_name_cached(n, stt, cache))
+    .collect();
 
   for class in &sorted_classes {
     // Only push one representative per equivalence class into ixon_mutuals,
@@ -5180,7 +5237,10 @@ mod tests {
         .unwrap(),
       0
     );
-    assert!(audit_constant_info_plan_heads(&ci, &stt).is_ok());
+    assert!(
+      audit_constant_info_plan_heads(&ci, &stt, &mut FxHashMap::default())
+        .is_ok()
+    );
     assert!(!stt.plan_maps_nonempty.load(AtomicOrdering::Relaxed));
 
     stt.call_site_plans.insert(
@@ -5200,9 +5260,10 @@ mod tests {
     );
     // Installed later: the next audit sees it, and from then on the
     // emptiness test is skipped.
-    let err = audit_constant_info_plan_heads(&ci, &stt)
-      .expect_err("an obscured short plan head must fail the audit")
-      .to_string();
+    let err =
+      audit_constant_info_plan_heads(&ci, &stt, &mut FxHashMap::default())
+        .expect_err("an obscured short plan head must fail the audit")
+        .to_string();
     assert!(err.contains("A.rec"), "missing head in: {err}");
     assert!(err.contains("has 0 args"), "missing arity in: {err}");
     assert!(stt.plan_maps_nonempty.load(AtomicOrdering::Relaxed));
