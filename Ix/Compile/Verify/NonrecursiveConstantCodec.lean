@@ -79,7 +79,7 @@ theorem getQuotient_reads (quotient : Ixon.Quotient)
   rcases quotient with ⟨kind, lvls, typ⟩
   have hpayload (decodedKind : QuotKind) : Reads
       (do
-        let decodedLvls := (← Ixon.getTag0).size
+        let decodedLvls := (← Ixon.getTagN 0).value
         let decodedTyp ← Ixon.getExpr
         return (⟨decodedKind, decodedLvls, decodedTyp⟩ : Ixon.Quotient))
       (tag0Bytes lvls ++
@@ -102,9 +102,9 @@ theorem getQuotient_reads (quotient : Ixon.Quotient)
         ⟨decodedKind, lvls, typ⟩ := by
       simpa using hafterTyp
     exact Reads.bind
-      (next := fun decodedLvls : Ixon.Tag0 => do
+      (next := fun decodedLvls : Ixon.TagN => do
         let decodedTyp ← Ixon.getExpr
-        return (⟨decodedKind, decodedLvls.size, decodedTyp⟩ : Ixon.Quotient))
+        return (⟨decodedKind, decodedLvls.value, decodedTyp⟩ : Ixon.Quotient))
       hlvls hafterTyp'
   let next := fun encoded : UInt8 => do
       let decodedKind : QuotKind ← match encoded with
@@ -113,7 +113,7 @@ theorem getQuotient_reads (quotient : Ixon.Quotient)
         | 2 => pure .lift
         | 3 => pure .ind
         | _ => throw s!"invalid QuotKind tag {encoded}"
-      let lvls := (← Ixon.getTag0).size
+      let lvls := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
       return (⟨decodedKind, lvls, typ⟩ : Ixon.Quotient)
   have hget : Ixon.getQuotient = (Ixon.getU8 >>= next) := by
@@ -173,9 +173,9 @@ theorem getInductiveProj_reads (projection : Ixon.InductiveProj)
         Ixon.GetM Ixon.InductiveProj))
     hblockRead hreturn
   have hall := Reads.bind
-    (next := fun idx : Ixon.Tag0 => do
+    (next := fun idx : Ixon.TagN => do
       let block ← (Ixon.Serialize.get : Ixon.GetM Address)
-      return (⟨idx.size, block⟩ : Ixon.InductiveProj))
+      return (⟨idx.value, block⟩ : Ixon.InductiveProj))
     hidx hafterBlock
   simpa [Ixon.getInductiveProj, inductiveProjBytes] using hall
 
@@ -202,16 +202,16 @@ theorem getConstructorProj_reads (projection : Ixon.ConstructorProj)
         Ixon.GetM Ixon.ConstructorProj))
     hblockRead hreturn
   have hafterCidx := Reads.bind
-    (next := fun cidx : Ixon.Tag0 => do
+    (next := fun cidx : Ixon.TagN => do
       let block ← (Ixon.Serialize.get : Ixon.GetM Address)
-      return ({ projection with cidx := cidx.size, block } :
+      return ({ projection with cidx := cidx.value, block } :
         Ixon.ConstructorProj))
     hcidx hafterBlock
   have hall := Reads.bind
-    (next := fun idx : Ixon.Tag0 => do
-      let cidx := (← Ixon.getTag0).size
+    (next := fun idx : Ixon.TagN => do
+      let cidx := (← Ixon.getTagN 0).value
       let block ← (Ixon.Serialize.get : Ixon.GetM Address)
-      return (⟨idx.size, cidx, block⟩ : Ixon.ConstructorProj))
+      return (⟨idx.value, cidx, block⟩ : Ixon.ConstructorProj))
     hidx hafterCidx
   simpa [Ixon.getConstructorProj, constructorProjBytes,
     ByteArray.append_assoc] using hall
@@ -235,9 +235,9 @@ theorem getRecursorProj_reads (projection : Ixon.RecursorProj)
         Ixon.GetM Ixon.RecursorProj))
     hblockRead hreturn
   have hall := Reads.bind
-    (next := fun idx : Ixon.Tag0 => do
+    (next := fun idx : Ixon.TagN => do
       let block ← (Ixon.Serialize.get : Ixon.GetM Address)
-      return (⟨idx.size, block⟩ : Ixon.RecursorProj))
+      return (⟨idx.value, block⟩ : Ixon.RecursorProj))
     hidx hafterBlock
   simpa [Ixon.getRecursorProj, recursorProjBytes] using hall
 
@@ -260,9 +260,9 @@ theorem getDefinitionProj_reads (projection : Ixon.DefinitionProj)
         Ixon.GetM Ixon.DefinitionProj))
     hblockRead hreturn
   have hall := Reads.bind
-    (next := fun idx : Ixon.Tag0 => do
+    (next := fun idx : Ixon.TagN => do
       let block ← (Ixon.Serialize.get : Ixon.GetM Address)
-      return (⟨idx.size, block⟩ : Ixon.DefinitionProj))
+      return (⟨idx.value, block⟩ : Ixon.DefinitionProj))
     hidx hafterBlock
   simpa [Ixon.getDefinitionProj, definitionProjBytes] using hall
 

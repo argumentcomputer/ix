@@ -3,7 +3,7 @@ import Lean4Lean.Theory.Literals
 import Lean4Lean.Theory.Typing.Env
 
 /-!
-# Ixon v3 expressions and Lean4Lean values
+# Ixon expressions and Lean4Lean values
 
 This is the first compiler-facing semantic boundary.  It interprets an Ixon
 expression directly as a Lean4Lean `VExpr`; it does not run Ix.Tc and does not
@@ -13,7 +13,7 @@ The relation is table-aware.  It resolves universe, reference, mutual-member,
 sharing, and literal indices against an explicit immutable context.  A cyclic
 sharing table has no finite derivation.  Lambda usage and forall
 usage/ownership are intentionally absent from the semantic premises: ordinary
-Lean compilation inhabits `.many`/`.shared`, while v3 contracts remain
+Lean compilation inhabits `.many`/`.shared`, while Ixon contracts remain
 available to later substructural passes without changing the Lean meaning.
 -/
 
@@ -192,7 +192,7 @@ theorem mono {venv venv' : VEnv} (henv : venv ≤ venv')
 
 end IxonExprRel
 
-/-- Erase v3 contracts into the conservative Lean fragment. -/
+/-- Erase Ixon contracts into the conservative Lean fragment. -/
 def eraseBinderModes : Ixon.Expr → Ixon.Expr
   | .sort idx => .sort idx
   | .var idx => .var idx
@@ -248,7 +248,7 @@ theorem eraseBinderModes_eq_self_of_leanFragment {expr : Ixon.Expr}
 
 namespace IxonExprRel
 
-/-- Erasing v3 contracts preserves every direct Theory value derivation. -/
+/-- Erasing Ixon contracts preserves every direct Theory value derivation. -/
 theorem eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
     {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}
     {expr : Ixon.Expr} {value : VExpr}
@@ -273,7 +273,7 @@ theorem eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
   | share href hexp _ => exact .share href hexp
 
 /-- A derivation for the conservative erasure can be decorated with the
-original v3 contracts.  No semantic evidence is invented or discarded. -/
+original Ixon contracts.  No semantic evidence is invented or discarded. -/
 theorem of_eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
     {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}
     {expr : Ixon.Expr} {value : VExpr}
@@ -301,7 +301,7 @@ theorem of_eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
     | letE hty hval hbody =>
       exact .letE (ihty hty) (ihval hval) (ihbody hbody)
 
-/-- V3 contracts are semantically inert at the Lean compiler boundary. -/
+/-- Ixon contracts are semantically inert at the Lean compiler boundary. -/
 theorem eraseModes_iff {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
     {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}
     {expr : Ixon.Expr} {value : VExpr} :

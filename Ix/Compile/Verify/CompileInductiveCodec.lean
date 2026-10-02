@@ -596,15 +596,11 @@ theorem finishInductiveFamilyBlock_run_codecWF
     (inductiveVal : Ix.InductiveVal)
     (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (ctorMetaPairs : Array (Ix.Name × Ixon.ConstantMeta))
-    (ctorExprs : Array Ixon.Expr)
-    (hind : ind.wireWF) (hroots : ExprArrayWireWF ctorExprs)
-    (htables : BlockWireTablesWF state) :
-    ∃ result,
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
+    (hind : ind.wireWF) (htables : BlockWireTablesWF state) :
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.finishInductiveFamilyBlock inductiveVal ind indMeta
-            ctorMetaPairs ctorExprs) =
-        .ok (result, state) ∧
-      BlockResultCodecWF result := by
+            ctorMetaPairs)) := by
   let info : Ixon.ConstantInfo := .muts #[.indc ind]
   have hinfo : info.wireWF := by
     refine ⟨?_, ?_⟩
@@ -614,16 +610,25 @@ theorem finishInductiveFamilyBlock_run_codecWF
       have heq : member = .indc ind := by simpa [info] using hmem
       subst member
       exact hind
-  let block := Ix.CompileM.buildConstantWithSharing
-    info ctorExprs state.refs state.univs
-  let blockAddr := Address.blake3 (Ixon.ser block)
-  let projections := Ix.CompileM.buildInductiveProjections inductiveVal
-    indMeta ctorMetaPairs blockAddr
-  let result := Ix.CompileM.BlockResult.mk' block .empty projections
-  have hblock : block.wireWF :=
-    buildConstantWithSharing_wireWF info ctorExprs hinfo hroots htables
-  refine ⟨result, ?_, BlockResult.mk'_codecWF block .empty projections hblock⟩
-  rfl
+  have hrun : Ix.CompileM.CompileM.run compileEnv blockEnv state
+      (Ix.CompileM.finishInductiveFamilyBlock inductiveVal ind indMeta ctorMetaPairs) =
+      match Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
+          state.refs state.univs with
+      | .ok block => .ok (Ix.CompileM.BlockResult.mk' block .empty
+          (Ix.CompileM.buildInductiveProjections inductiveVal indMeta ctorMetaPairs
+            (Address.blake3 (Ixon.ser block))), state)
+      | .error err => .error err := by
+    simp only [Ix.CompileM.finishInductiveFamilyBlock, Ix.CompileM.buildBlockConstant,
+      run_bind, run_getBlockState_eq, run_read_eq, run_liftSharing_eq]
+    cases Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
+      state.refs state.univs <;> rfl
+  rw [hrun]
+  cases hbuild : Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
+      state.refs state.univs with
+  | ok block =>
+    exact .inl ⟨_, _, rfl, BlockResult.mk'_codecWF block .empty _
+      (buildConstantWithSharing_wireWF hinfo htables hbuild)⟩
+  | error err => exact .inr ⟨info, state, err, hbuild, rfl⟩
 
 theorem compileInductiveFamilyBlock_run_ordinary_codecWF
     (compileEnv : Ix.CompileM.CompileEnv)
@@ -656,21 +661,18 @@ theorem compileInductiveFamilyBlock_run_ordinary_codecWF
         (frozenRefCompileCtx compileEnv
           (inductiveCompileBlockEnv blockEnv inductiveVal) snapshot)
         ctor.cnst.type = some target) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileInductiveFamilyBlock inductiveVal ctorVals) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileInductiveFamilyBlock inductiveVal ctorVals)) := by
   obtain ⟨ind, indMeta, ctorMetaPairs, ctorExprs, state', hindRun,
-      htables', _, hind, hroots, _, _⟩ :=
+      htables', _, hind, _, _, _⟩ :=
     compileInductive_run_ordinary_wireWF compileEnv blockEnv snapshot hfree
       hclosed hlevelFaithful hexprFaithful htables inductiveVal ctorVals
       htypeSource hctorSources htypeBound hctorBounds hctorCount hstate
       htypeRef hctorRefs
-  obtain ⟨result, hfinish, hcodec⟩ :=
+  have hfinish :=
     finishInductiveFamilyBlock_run_codecWF compileEnv blockEnv state'
-      inductiveVal ind indMeta ctorMetaPairs ctorExprs hind hroots htables'
-  refine ⟨result, state', ?_, hcodec⟩
+      inductiveVal ind indMeta ctorMetaPairs hind htables'
   unfold Ix.CompileM.compileInductiveFamilyBlock
   rw [run_bind, hindRun]
   exact hfinish
@@ -710,17 +712,14 @@ theorem compileInductiveFamilyInfo_run_ordinary_codecWF
         (frozenRefCompileCtx compileEnv
           (inductiveCompileBlockEnv blockEnv inductiveVal) snapshot)
         ctor.cnst.type = some target) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileInductiveFamilyInfo inductiveVal ctorVals) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
-  obtain ⟨result, state', hrun, hcodec⟩ :=
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileInductiveFamilyInfo inductiveVal ctorVals)) := by
+  have hrun :=
     compileInductiveFamilyBlock_run_ordinary_codecWF compileEnv blockEnv
       snapshot hfree hclosed hlevelFaithful hexprFaithful htables
       inductiveVal ctorVals htypeSource hctorSources htypeBound hctorBounds
       hctorCount hstate htypeRef hctorRefs
-  refine ⟨result, state', ?_, hcodec⟩
   unfold Ix.CompileM.compileInductiveFamilyInfo
   rw [run_bind, hpreseed]
   exact hrun
@@ -785,11 +784,9 @@ theorem compileInductiveFamilyInfo_run_ready_codecWF
       Ix.CompileM.inductiveSourceExprs inductiveVal ctorVals,
       ExprWireBound source)
     (hctorCount : ctorVals.size < UInt64.size) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileInductiveFamilyInfo inductiveVal ctorVals) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileInductiveFamilyInfo inductiveVal ctorVals)) := by
   let params := inductiveVal.cnst.levelParams.toList
   let rest := ctorVals.toList.map (·.cnst.type)
   have htypeMem : inductiveVal.cnst.type ∈
@@ -970,27 +967,30 @@ theorem compileInductiveInfo_run_ready_codecWF
       Ix.CompileM.inductiveSourceExprs inductiveVal ctorVals,
       ExprWireBound source)
     (hctorCount : ctorVals.size < UInt64.size) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileInductiveInfo inductiveVal) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileInductiveInfo inductiveVal)) := by
   have hlookupRun := lookupInductiveConstructors_run_of_lookup compileEnv
     blockEnv state inductiveVal ctorVals hlookup hfree
-  obtain ⟨result, state', hfamily, hcodec⟩ :=
+  have hfamily :=
     compileInductiveFamilyInfo_run_ready_codecWF compileEnv
       (inductiveFamilyBlockEnv blockEnv inductiveVal ctorVals) hfree hclosed
       hlevelFaithful hexprFaithful inductiveVal ctorVals state hexprCache
       hcanonCache hrefTable hunivTable hparams hready htableBound
       hexprBounds hctorCount
-  refine ⟨result, state', ?_, hcodec⟩
-  unfold Ix.CompileM.compileInductiveInfo
-  rw [run_bind, hlookupRun]
-  simpa only [inductiveFamilyBlockEnv] using
-    run_withMutCtx compileEnv blockEnv state
-      (Ix.CompileM.buildInductiveMutCtx inductiveVal ctorVals)
-      (Ix.CompileM.compileInductiveFamilyInfo inductiveVal ctorVals) |>.trans
-        hfamily
+  have hgoal : Ix.CompileM.CompileM.run compileEnv blockEnv state
+      (Ix.CompileM.compileInductiveInfo inductiveVal) =
+      Ix.CompileM.CompileM.run compileEnv
+        (inductiveFamilyBlockEnv blockEnv inductiveVal ctorVals) state
+        (Ix.CompileM.compileInductiveFamilyInfo inductiveVal ctorVals) := by
+    unfold Ix.CompileM.compileInductiveInfo
+    rw [run_bind, hlookupRun]
+    simpa only [inductiveFamilyBlockEnv] using
+      run_withMutCtx compileEnv blockEnv state
+        (Ix.CompileM.buildInductiveMutCtx inductiveVal ctorVals)
+        (Ix.CompileM.compileInductiveFamilyInfo inductiveVal ctorVals)
+  rw [hgoal]
+  exact hfamily
 
 def singletonInductiveBlockEnv (blockEnv : Ix.CompileM.BlockEnv)
     (inductiveVal : Ix.InductiveVal) : Ix.CompileM.BlockEnv :=
@@ -1073,18 +1073,15 @@ theorem compileConstantInfo_inductive_run_ready_codecWF
       Ix.CompileM.inductiveSourceExprs inductiveVal ctorVals,
       ExprWireBound source)
     (hctorCount : ctorVals.size < UInt64.size) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileConstantInfo (.inductInfo inductiveVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileConstantInfo (.inductInfo inductiveVal))) := by
   let singletonEnv := singletonInductiveBlockEnv blockEnv inductiveVal
-  obtain ⟨result, state', hrun, hcodec⟩ :=
+  have hrun :=
     compileInductiveInfo_run_ready_codecWF compileEnv singletonEnv hfree
       hclosed hlevelFaithful hexprFaithful inductiveVal ctorVals state
       hlookup hexprCache hcanonCache hrefTable hunivTable hparams hready
       htableBound hexprBounds hctorCount
-  refine ⟨result, state', ?_, hcodec⟩
   rw [compileConstantInfo_inductive_run_surgeryFree_eq compileEnv blockEnv
     state inductiveVal hfree]
   exact hrun
@@ -1122,12 +1119,10 @@ theorem compileConstantInfo_inductive_default_run_ready_codecWF
       Ix.CompileM.inductiveSourceExprs inductiveVal ctorVals,
       ExprWireBound source)
     (hctorCount : ctorVals.size < UInt64.size) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv
           (default : Ix.CompileM.BlockState)
-          (Ix.CompileM.compileConstantInfo (.inductInfo inductiveVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+          (Ix.CompileM.compileConstantInfo (.inductInfo inductiveVal))) := by
   apply compileConstantInfo_inductive_run_ready_codecWF compileEnv blockEnv
     hfree hclosed hlevelFaithful hexprFaithful inductiveVal ctorVals
     (default : Ix.CompileM.BlockState) hlookup rfl CanonUnivCacheWF.empty
@@ -1172,19 +1167,16 @@ theorem compileConstructorInfo_run_ready_codecWF
       Ix.CompileM.inductiveSourceExprs inductiveVal ctorVals,
       ExprWireBound source)
     (hctorCount : ctorVals.size < UInt64.size) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileConstructorInfo constructorVal) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileConstructorInfo constructorVal)) := by
   have hparentRun := findConst_run_of_get compileEnv blockEnv state
     constructorVal.induct (.inductInfo inductiveVal) hparent
-  obtain ⟨result, state', hrun, hcodec⟩ :=
+  have hrun :=
     compileInductiveInfo_run_ready_codecWF compileEnv blockEnv hfree hclosed
       hlevelFaithful hexprFaithful inductiveVal ctorVals state hlookup
       hexprCache hcanonCache hrefTable hunivTable hparams hready htableBound
       hexprBounds hctorCount
-  refine ⟨result, state', ?_, hcodec⟩
   unfold Ix.CompileM.compileConstructorInfo
   rw [run_bind, hparentRun]
   exact hrun
@@ -1272,18 +1264,15 @@ theorem compileConstantInfo_constructor_run_ready_codecWF
       Ix.CompileM.inductiveSourceExprs inductiveVal ctorVals,
       ExprWireBound source)
     (hctorCount : ctorVals.size < UInt64.size) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv state
-          (Ix.CompileM.compileConstantInfo (.ctorInfo constructorVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv state
+          (Ix.CompileM.compileConstantInfo (.ctorInfo constructorVal))) := by
   let singletonEnv := singletonConstructorBlockEnv blockEnv constructorVal
-  obtain ⟨result, state', hrun, hcodec⟩ :=
+  have hrun :=
     compileConstructorInfo_run_ready_codecWF compileEnv singletonEnv hfree
       hclosed hlevelFaithful hexprFaithful constructorVal inductiveVal
       ctorVals state hparent hlookup hexprCache hcanonCache hrefTable
       hunivTable hparams hready htableBound hexprBounds hctorCount
-  refine ⟨result, state', ?_, hcodec⟩
   rw [compileConstantInfo_constructor_run_surgeryFree_eq compileEnv blockEnv
     state constructorVal hfree]
   exact hrun
@@ -1323,12 +1312,10 @@ theorem compileConstantInfo_constructor_default_run_ready_codecWF
       Ix.CompileM.inductiveSourceExprs inductiveVal ctorVals,
       ExprWireBound source)
     (hctorCount : ctorVals.size < UInt64.size) :
-    ∃ result state',
-      Ix.CompileM.CompileM.run compileEnv blockEnv
+    SharingRunOK compileEnv.sharingLimits
+      (Ix.CompileM.CompileM.run compileEnv blockEnv
           (default : Ix.CompileM.BlockState)
-          (Ix.CompileM.compileConstantInfo (.ctorInfo constructorVal)) =
-        .ok (result, state') ∧
-      BlockResultCodecWF result := by
+          (Ix.CompileM.compileConstantInfo (.ctorInfo constructorVal))) := by
   apply compileConstantInfo_constructor_run_ready_codecWF compileEnv blockEnv
     hfree hclosed hlevelFaithful hexprFaithful constructorVal inductiveVal
     ctorVals (default : Ix.CompileM.BlockState) hparent hlookup rfl
