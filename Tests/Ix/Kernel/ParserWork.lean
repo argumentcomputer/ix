@@ -46,17 +46,33 @@ def exactExprCost (value : Ixon.Expr) (expected : Nat) : Bool :=
   exactExprCost ((List.range n).foldl (fun e _ => .lam .many (.sort 0) e) (.var 0)) (5 + 8 * n)
 #guard [1, 2, 7].all fun n =>
   exactExprCost ((List.range n).foldl (fun e _ => .all .many .shared (.sort 0) e) (.var 0)) (5 + 9 * n)
--- A v3 let reads one binder-contract byte after its flags.
+-- A let reads one binder-contract byte after its flags.
 #guard exactExprCost (.letE (.lean false) (.sort 0) (.var 0) (.var 0)) 13
 
-#guard match Work.tag0 { bytes := ⟨#[0x88]⟩ } with
-  | (.error reason stop, work) => reason == "getU64TrimmedLE: len > 8" && stop.idx == 1 && work == 1
+-- The metered TagN reader (`Work.tagN`): one unit per byte read, plus one
+-- per byte of a 2-, 3-, 4- or 8-byte payload and one for the construction.
+-- `0x88` (`f = 0`) opens rung 2, which reads one more byte: alone it stops
+-- at EOF after both reads were charged. (In Ixon v3 the same byte was a Tag0
+-- header claiming a 9-byte payload, rejected at once.)
+#guard match Work.tagN 0 { bytes := ⟨#[0x88]⟩ } with
+  | (.error reason stop, work) => reason == "EOF" && stop.idx == 1 && work == 2
   | _ => false
-#guard match Work.tag0 { bytes := ⟨#[0x87, 255, 255, 255, 255, 255, 255, 255, 255]⟩ } with
-  | (.ok value stop, work) => value.size == 18446744073709551615 && stop.idx == 9 && work == 18
+#guard match Work.tagN 0 { bytes := ⟨#[0x88, 0x00]⟩ } with
+  | (.ok value stop, work) => value == ⟨0, 2176⟩ && stop.idx == 2 && work == 3
+  | _ => false
+-- An invalid code fails after the header byte; a 9-byte value reaching 2^64
+-- after its payload, without the construction.
+#guard match Work.tagN 0 { bytes := ⟨#[0xC4]⟩ } with
+  | (.error reason stop, work) => reason == "invalid TagN code 4" && stop.idx == 1 && work == 1
+  | _ => false
+#guard match Work.tagN 0 { bytes := ⟨#[0xC3, 0x80, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]⟩ } with
+  | (.error reason stop, work) => reason == "TagN value exceeds UInt64" && stop.idx == 9 && work == 17
+  | _ => false
+#guard match Work.tagN 0 { bytes := ⟨#[0xC3, 0x7F, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]⟩ } with
+  | (.ok value stop, work) => value.value == 18446744073709551615 && stop.idx == 9 && work == 18
   | _ => false
 #guard (List.range 8).all fun n =>
-  match Work.tag0 { bytes := (⟨#[0x87]⟩ : ByteArray) ++ ⟨Array.replicate n 255⟩ } with
+  match Work.tagN 0 { bytes := (⟨#[0xC3]⟩ : ByteArray) ++ ⟨Array.replicate n 0⟩ } with
   | (.error reason stop, work) => reason == "EOF" && stop.idx == n + 1 && work == n + 2
   | _ => false
 
@@ -67,31 +83,31 @@ def exactExprCost (value : Ixon.Expr) (expected : Nat) : Bool :=
   match Work.array Work.expr count { bytes := ⟨#[0x10, 0xA0, 0x03, 0x10]⟩ } with
   | (.error reason stop, work) => reason == "EOF" && stop.idx == 4 && work == 12
   | _ => false
--- A let binder byte outside the sixteen v3 contracts fails before its type.
+-- A let binder byte outside the sixteen binder contracts fails before its type.
 #guard match Work.array Work.expr 2 { bytes := ⟨#[0x10, 0xA0, 0x10]⟩ } with
   | (.error reason stop, work) => reason == "invalid binder contract 16" && stop.idx == 3 && work == 8
   | _ => false
--- Ixon v3 checks a claimed spine length against the remaining bytes first.
+-- A claimed spine length is checked against the remaining bytes first.
 #guard match Work.expr { bytes := ⟨#[0x72, 0x10]⟩ } with
   | (.error reason stop, work) =>
     reason == "count exceeds remaining bytes" && stop.idx == 1 && work == 2
   | _ => false
 
--- Ixon v3 rejects a claimed count larger than the remaining bytes before
--- reading any element: the stop index is right after the count's tag (and the
--- reference index for `ref`/`recur`).
+-- A claimed count larger than the remaining bytes is rejected before any
+-- element is read: the stop index is right after the count's 9-byte TagN (and
+-- the reference index for `ref`/`recur`).
 def expressionCountBombs : List (ByteArray × Nat × Nat) :=
   [((Ixon.runPut do
-      Ixon.putTag4 ⟨7, 18446744073709551615⟩
+      Ixon.putTagN 4 7 18446744073709551615
       Ixon.putExpr (.var 0)), 9, 18)] ++
     [8, 9].map (fun flag => ((Ixon.runPut do
-      Ixon.putTag4 ⟨flag, 18446744073709551615⟩
+      Ixon.putTagN 4 flag 18446744073709551615
       Ixon.putU8 3
       Ixon.putExpr (.var 0)), 9, 18)) ++
     [2, 3].map (fun flag => ((Ixon.runPut do
-      Ixon.putTag4 ⟨flag, 18446744073709551615⟩
-      Ixon.putTag0 ⟨0⟩
-      Ixon.putTag0 ⟨0⟩), 10, 20))
+      Ixon.putTagN 4 flag 18446744073709551615
+      Ixon.putTagN 0 0 0
+      Ixon.putTagN 0 0 0), 10, 20))
 
 #guard expressionCountBombs.all fun (input, stopIdx, expected) =>
   checked Work.expr Ixon.getExpr 0 input &&
@@ -117,8 +133,15 @@ def expressionCases : List Ixon.Expr := [
   checked Work.expr Ixon.getExpr 0 ((⟨#[0xff, 0xee]⟩ : ByteArray) ++ Ixon.serExpr value ++ ⟨#[0xdd]⟩) 2
 #guard (List.range 256).all fun byte =>
   let input : ByteArray := ⟨#[byte.toUInt8]⟩
-  checked Work.tag0 Ixon.getTag0 0 input && checked Work.tag2 Ixon.getTag2 0 input &&
-    checked Work.tag4 Ixon.getTag4 0 input && checked Work.expr Ixon.getExpr 0 input
+  checked (Work.tagN 0) (Ixon.getTagN 0) 0 input && checked (Work.tagN 2) (Ixon.getTagN 2) 0 input &&
+    checked (Work.tagN 4) (Ixon.getTagN 4) 0 input && checked Work.expr Ixon.getExpr 0 input
+-- Every TagN vector and rejection of `Tests.Ix.Kernel.Codec`, metered and in
+-- production, from a nonzero cursor, with every truncation.
+#guard Codec.tagNVectors.all fun (f, _, _, bytes) =>
+  (List.range (bytes.length + 1)).all fun size =>
+    checked (Work.tagN f) (Ixon.getTagN f) 0 ((⟨#[0xff, 0xee]⟩ : ByteArray) ++ ⟨(bytes.take size).toArray⟩) 2
+#guard Codec.tagNRejected.all fun (f, bytes, _, _) =>
+  checked (Work.tagN f) (Ixon.getTagN f) 0 ((⟨#[0xff, 0xee]⟩ : ByteArray) ++ ⟨bytes.toArray⟩) 2
 
 #guard match Work.univ 64 { bytes := Codec.successorBomb } with
   | (.error reason stop, work) =>
@@ -130,7 +153,10 @@ def expressionCases : List Ixon.Expr := [
 #guard match Work.univArray 2 4 { bytes := ⟨#[0, 0x40, 0]⟩ } with
   | (.error reason stop, work) => reason == "EOF" && stop.idx == 3 && work == 17
   | _ => false
-#guard [(1, 10), (31, 70), (32, 74), (256, 524)].all fun (count, cost) =>
+-- Successor counts 1 and 31 are in rung 1 of `f = 2`; 32 and 256 in rung 2,
+-- whose header and one payload byte cost one unit each with one construction
+-- (Ixon v3's Tag2 charged its 1- and 2-byte payloads as 74 and 524).
+#guard [(1, 10), (31, 70), (32, 73), (256, 521)].all fun (count, cost) =>
   match Work.univ (count + 1) { bytes := Ixon.serUniv (.addSucc count .zero) } with
   | (.ok (value, remaining) _, work) => value == .addSucc count .zero && remaining == 0 && work == cost
   | _ => false
@@ -189,7 +215,7 @@ def stageChecked (limits : _root_.Ix.Kernel.Admission.Limits) (records : _root_.
 
 #guard stageChecked ByteAdmission.limits (ByteAdmission.encode variants)
 #guard stageChecked ByteAdmission.limits (ByteAdmission.one ++ [(address 2, ⟨#[]⟩)])
-#guard stageChecked ByteAdmission.limits (ByteAdmission.one ++ [(address 2, Codec.nonminimalSharingCount)])
+#guard stageChecked ByteAdmission.limits (ByteAdmission.one ++ [(address 2, Codec.invalidSharingCount)])
 #guard (Work.Admission.parserStage { ByteAdmission.limits with maxRecords := 0 }
   [(address 1, ⟨#[]⟩)] []).2 == 0
 #guard (Work.Admission.parserStage { ByteAdmission.limits with maxTotalBytes := 0 }
@@ -198,7 +224,7 @@ def stageChecked (limits : _root_.Ix.Kernel.Admission.Limits) (records : _root_.
 -- A failed canonical record terminates the batch. Trailing records contribute
 -- no parser work; the work of earlier records and the failed record remains.
 #guard
-  let initial := ByteAdmission.one ++ [(address 2, Codec.nonminimalSharingCount)]
+  let initial := ByteAdmission.one ++ [(address 2, Codec.invalidSharingCount)]
   let first := Work.Admission.parserStage ByteAdmission.limits initial []
   let more := Work.Admission.parserStage ByteAdmission.limits
     (initial ++ ByteAdmission.encode variants) []

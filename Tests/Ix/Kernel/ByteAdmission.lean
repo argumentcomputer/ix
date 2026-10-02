@@ -75,7 +75,9 @@ def decodeFailureAt (records : Records) (position : Nat) (address : Address)
 #guard accepts separatedFalse
 #guard accepts [(address 1, sharedIdentity)]
 #guard accepts [(address 1, identity), (address 2, aliasIdentity)]
--- Ixon v3 admits single-use sharing entries and erases binder contracts.
+-- The entry admits a sharing table that is not the canonical one (a slot
+-- referenced once): Ixon v4 does not check the table's canonicity on read.
+-- Binder contracts are erased.
 #guard accepts [(address 1, singleUseSharing)]
 #guard accepts [(address 1, { identity with info := .defn ⟨.defn, .safe, 1, idType,
     .lam .linear (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })]
@@ -158,7 +160,9 @@ def blob : List (Address × ByteArray) := [(address 9, ⟨#[1, 2, 3]⟩)]
 #guard alternateSpellings.all fun bytes =>
   decodeFailureAt [(address 1, bytes)] 0 (address 1)
 #guard decodeFailureAt (one ++ [(address 2, ⟨#[]⟩)]) 1 (address 2)
-#guard decodeFailureAt (one ++ [(address 2, nonminimalSharingCount)]) 1 (address 2)
+#guard decodeFailureAt (one ++ [(address 2, invalidSharingCount)]) 1 (address 2)
+#guard decodeFailureAt (one ++ [(address 2, recordSharingCount [0xC3, 0x80, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])])
+  1 (address 2)
 #guard decodeFailureAt [(address 1, recordUnivsPayload 1 successorBomb)] 0 (address 1)
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
