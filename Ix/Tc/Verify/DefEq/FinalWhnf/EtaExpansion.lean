@@ -272,7 +272,7 @@ theorem tryEtaExpansion_wf
         world.venv.IsDefEqU uvars Delta.toCtx targetV sourceV) := by
   cases target <;> cases source <;>
     simp only [tryEtaExpansion, Bool.not_false, Bool.not_true,
-      Bool.false_or, Bool.true_or, if_true]
+      Bool.false_or, Bool.true_or, ite_true]
   all_goals first
     | exact tryEtaExpansionAfterGuard_wf theory resources hcollision hwhnf
         htargetSupport hsourceSupport htarget hsource
@@ -307,20 +307,20 @@ theorem tryDefEqWhnfEtaAfterGuard_wf
   intro accepted afterFirst hfirst
   cases accepted with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ _ => hfirst rfl
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       apply RecM.WF.bind <|
         tryEtaExpansion_wf theory resources hcollision hwhnf
           hrightSupport hleftSupport hright hleft
       intro reverseAccepted afterSecond hsecond
       cases reverseAccepted with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact RecM.WF.pure fun _ _ => (hsecond rfl).symm
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           exact RecM.WF.pure fun _ => trivial
 
 /-- Exhaust the outer "either operand is a lambda" phase guard. -/
@@ -345,7 +345,7 @@ theorem tryDefEqWhnfEta_wf
         | some answer => answer = true →
             world.venv.IsDefEqU uvars Delta.toCtx leftV rightV) := by
   cases left <;> cases right <;>
-    simp only [tryDefEqWhnfEta, Bool.false_or, Bool.true_or, if_true]
+    simp only [tryDefEqWhnfEta, Bool.false_or, Bool.true_or, ite_true]
   all_goals
     exact tryDefEqWhnfEtaAfterGuard_wf theory resources hcollision hwhnf
       hleftSupport hrightSupport hleft hright

@@ -113,7 +113,7 @@ theorem firstPosMap_getElem? (l : List Nat) (i : Nat) (m : Std.HashMap Nat Nat) 
       · have hn : m[t]? = none := Std.HashMap.getElem?_eq_none hm
         simp [hm]
     · have h1 : (t == u) = false := by simpa using htu
-      simp only [h1, Bool.false_eq_true, false_and, if_false, Option.map_map]
+      simp only [h1, Bool.false_eq_true, false_and, ite_false, Option.map_map]
       congr 2
       funext q
       simp only [Function.comp]
@@ -144,11 +144,11 @@ theorem idxBefore_succ (l : List Nat) (u : Nat) :
       cases pos with
       | zero => simp
       | succ p =>
-        simp only [beq_self_eq_true, if_true, Option.any_some]
+        simp only [beq_self_eq_true, ite_true, Option.any_some]
         have : 0 < p + 1 := Nat.zero_lt_succ p
         simp [this]
     · have h1 : (a == u) = false := by simpa using hau
-      simp only [h1, Bool.false_eq_true, if_false, Option.any_map]
+      simp only [h1, Bool.false_eq_true, ite_false, Option.any_map]
       cases pos with
       | zero =>
         have h2 : (u == a) = false := by
@@ -274,18 +274,18 @@ theorem tierDfs_eq_fast (items : Array Nat) (weight : Nat → Nat)
       · rfl
       · by_cases hpos : pos ≥ items.size
         · have hd : items.toList.drop pos = [] := by simp; omega
-          simp only [hpos, if_true, hd]
+          simp only [hpos, ite_true, hd]
         · have hlt : pos < items.size := by omega
           have hd : items.toList.drop pos = items[pos] :: items.toList.drop (pos + 1) := by
             rw [List.drop_eq_getElem_cons (by simpa using hlt)]
             simp
-          simp only [hpos, if_false, hd, getElem!_pos items pos hlt]
+          simp only [hpos, ite_false, hd, getElem!_pos items pos hlt]
           by_cases hin : items[pos] ∈ inF
           · have hc : inF.contains items[pos] = true := by simpa using hin
-            simp only [hc, if_true]
+            simp only [hc, ite_true]
             exact ih _ _ _ _ _ (hinv.skip hlt hin)
           · have hc : inF.contains items[pos] = false := by simpa using hin
-            simp only [hc, Bool.false_eq_true, if_false]
+            simp only [hc, Bool.false_eq_true, ite_false]
             have hfun : excluded.contains = tierExcluded (firstPosMap items.toList 0 {}) pos inF :=
               funext hinv
             have hex := hinv.exclude hlt hin

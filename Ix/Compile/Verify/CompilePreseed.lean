@@ -1059,10 +1059,10 @@ theorem collectExprTablesStructural_run_ready
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen :
         seen.contains ((Ix.Expr.bvar idx hash).getHash, ctxKey) = true
-    · rw [if_pos hseen]
+    · rw [ite_eq_left hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
-    · rw [if_neg hseen]
+    · rw [ite_eq_right hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
   | @sort level hash hlevel href =>
@@ -1070,10 +1070,10 @@ theorem collectExprTablesStructural_run_ready
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen :
         seen.contains ((Ix.Expr.sort level hash).getHash, ctxKey) = true
-    · rw [if_pos hseen]
+    · rw [ite_eq_left hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
-    · rw [if_neg hseen]
+    · rw [ite_eq_right hseen]
       obtain ⟨target, href, htargetWire⟩ := href
       obtain ⟨state', hrun, huniv, htables, hexpr, hcanon, harena⟩ :=
         compileUniv_run_refines compileEnv blockEnv hclosed hfaithful
@@ -1092,10 +1092,10 @@ theorem collectExprTablesStructural_run_ready
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen :
         seen.contains ((Ix.Expr.const name levels hash).getHash, ctxKey) = true
-    · rw [if_pos hseen]
+    · rw [ite_eq_left hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
-    · rw [if_neg hseen]
+    · rw [ite_eq_right hseen]
       have hlevelsList : ∀ level ∈ levels.toList, levelSupport level ∧
           ∃ u, compileUnivRef (univParamIndex blockEnv.univCtx) level =
             some u ∧ Codec.Ixon.Univ.WireWF (Ixon.canonUniv u) := by
@@ -1144,7 +1144,7 @@ theorem collectExprTablesStructural_run_ready
         rw [run_bind, hunivsRun]
         simp only
         rw [hmut]
-        simp only [Option.isNone, if_true]
+        simp only [Option.isNone, ite_true]
         rw [run_bind, hlookup]
         rfl
   | @app fn arg hash hfn harg ihfn iharg =>
@@ -1152,10 +1152,10 @@ theorem collectExprTablesStructural_run_ready
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen :
         seen.contains ((Ix.Expr.app fn arg hash).getHash, ctxKey) = true
-    · rw [if_pos hseen]
+    · rw [ite_eq_left hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
-    · rw [if_neg hseen]
+    · rw [ite_eq_right hseen]
       obtain ⟨fnAcc, fnState, hfnRun, hfnState, hfnCollection,
           hfnSize⟩ :=
         ihfn (refs, univs,
@@ -1181,10 +1181,10 @@ theorem collectExprTablesStructural_run_ready
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen : seen.contains
       ((Ix.Expr.lam name ty body bi hash).getHash, ctxKey) = true
-    · rw [if_pos hseen]
+    · rw [ite_eq_left hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
-    · rw [if_neg hseen]
+    · rw [ite_eq_right hseen]
       obtain ⟨tyAcc, tyState, htyRun, htyState, htyCollection,
           htySize⟩ :=
         ihty (refs, univs, seen.insert
@@ -1210,10 +1210,10 @@ theorem collectExprTablesStructural_run_ready
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen : seen.contains
       ((Ix.Expr.forallE name ty body bi hash).getHash, ctxKey) = true
-    · rw [if_pos hseen]
+    · rw [ite_eq_left hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
-    · rw [if_neg hseen]
+    · rw [ite_eq_right hseen]
       obtain ⟨tyAcc, tyState, htyRun, htyState, htyCollection,
           htySize⟩ :=
         ihty (refs, univs, seen.insert
@@ -1239,10 +1239,10 @@ theorem collectExprTablesStructural_run_ready
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen : seen.contains
       ((Ix.Expr.letE name ty val body nonDep hash).getHash, ctxKey) = true
-    · rw [if_pos hseen]
+    · rw [ite_eq_left hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
-    · rw [if_neg hseen]
+    · rw [ite_eq_right hseen]
       obtain ⟨tyAcc, tyState, htyRun, htyState, htyCollection,
           htySize⟩ :=
         ihty (refs, univs, seen.insert
@@ -1275,10 +1275,10 @@ theorem collectExprTablesStructural_run_ready
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen :
       seen.contains ((Ix.Expr.lit literal hash).getHash, ctxKey) = true
-    · rw [if_pos hseen]
+    · rw [ite_eq_left hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
-    · rw [if_neg hseen]
+    · rw [ite_eq_right hseen]
       cases literal with
       | natVal n =>
         let bytes := ByteArray.mk (Nat.toBytesLE n)
@@ -1307,10 +1307,10 @@ theorem collectExprTablesStructural_run_ready
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen : seen.contains
       ((Ix.Expr.proj typeName field val hash).getHash, ctxKey) = true
-    · rw [if_pos hseen]
+    · rw [ite_eq_left hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
-    · rw [if_neg hseen]
+    · rw [ite_eq_right hseen]
       obtain ⟨addr, haddr, haddrWire⟩ := hresolve
       have haddrLive : resolveConstAddr? compileEnv state typeName =
           some addr := by
@@ -1339,10 +1339,10 @@ theorem collectExprTablesStructural_run_ready
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen : seen.contains
       ((Ix.Expr.mdata data inner hash).getHash, ctxKey) = true
-    · rw [if_pos hseen]
+    · rw [ite_eq_left hseen]
       exact ⟨_, state, rfl, hstate, hcollection.withSeen,
         PreseedCollectionSizeBound.same ..⟩
-    · rw [if_neg hseen]
+    · rw [ite_eq_right hseen]
       obtain ⟨innerAcc, innerState, hinnerRun, hinnerState,
           hinnerCollection, hinnerSize⟩ := ihinner
         (refs, univs,
@@ -1404,11 +1404,11 @@ theorem collectExprTablesStructural_run_ready_covers
     have hordinary : OrdinaryExpr source := .bvar
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
-    · rw [if_pos hhit]
+    · rw [ite_eq_left hhit]
       have hcovered := hseen.cover_of_hit hexprFaithful hordinary hactive hhit
       exact ⟨_, state, rfl, hstate, hcollection,
         .refl _, hcovered, hseen⟩
-    · rw [if_neg hhit]
+    · rw [ite_eq_right hhit]
       have hinsert := hseen.insert source hordinary
       have hcovered : PreseedCollectionCovers compileEnv blockEnv origin
           refs univs source := .bvar
@@ -1421,11 +1421,11 @@ theorem collectExprTablesStructural_run_ready_covers
     have hordinary : OrdinaryExpr source := .sort
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
-    · rw [if_pos hhit]
+    · rw [ite_eq_left hhit]
       have hcovered := hseen.cover_of_hit hexprFaithful hordinary hactive hhit
       exact ⟨_, state, rfl, hstate, hcollection,
         .refl _, hcovered, hseen⟩
-    · rw [if_neg hhit]
+    · rw [ite_eq_right hhit]
       obtain ⟨target, href, htargetWire⟩ := href
       obtain ⟨state', hrun, huniv, htables, hexpr, hcanon, harena⟩ :=
         compileUniv_run_refines compileEnv blockEnv hclosed hlevelFaithful
@@ -1456,11 +1456,11 @@ theorem collectExprTablesStructural_run_ready_covers
     have hordinary : OrdinaryExpr source := .const
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
-    · rw [if_pos hhit]
+    · rw [ite_eq_left hhit]
       have hcovered := hseen.cover_of_hit hexprFaithful hordinary hactive hhit
       exact ⟨_, state, rfl, hstate, hcollection,
         .refl _, hcovered, hseen⟩
-    · rw [if_neg hhit]
+    · rw [ite_eq_right hhit]
       have hlevelsList : ∀ level ∈ levels.toList,
           levelSupport level ∧ ∃ u,
             compileUnivRef (univParamIndex blockEnv.univCtx) level = some u ∧
@@ -1534,7 +1534,7 @@ theorem collectExprTablesStructural_run_ready_covers
         rw [run_bind, hunivsRun]
         simp only
         rw [hmut]
-        simp only [Option.isNone, if_true]
+        simp only [Option.isNone, ite_true]
         rw [run_bind, hlookup]
         rfl
   | @app fn arg hash hfn harg ihfn iharg =>
@@ -1544,11 +1544,11 @@ theorem collectExprTablesStructural_run_ready_covers
       .app hfn.supported.ordinary harg.supported.ordinary
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
-    · rw [if_pos hhit]
+    · rw [ite_eq_left hhit]
       have hcovered := hseen.cover_of_hit hexprFaithful hordinary hactive hhit
       exact ⟨_, state, rfl, hstate, hcollection,
         .refl _, hcovered, hseen⟩
-    · rw [if_neg hhit]
+    · rw [ite_eq_right hhit]
       let inserted : Ix.CompileM.ExprTableCollection :=
         (refs, univs, seen.insert (source.getHash, ctxKey) ())
       have hinsert := hseen.insert source hordinary
@@ -1586,11 +1586,11 @@ theorem collectExprTablesStructural_run_ready_covers
       .lam hty.supported.ordinary hbody.supported.ordinary
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
-    · rw [if_pos hhit]
+    · rw [ite_eq_left hhit]
       have hcovered := hseen.cover_of_hit hexprFaithful hordinary hactive hhit
       exact ⟨_, state, rfl, hstate, hcollection,
         .refl _, hcovered, hseen⟩
-    · rw [if_neg hhit]
+    · rw [ite_eq_right hhit]
       let inserted : Ix.CompileM.ExprTableCollection :=
         (refs, univs, seen.insert (source.getHash, ctxKey) ())
       have hinsert := hseen.insert source hordinary
@@ -1628,11 +1628,11 @@ theorem collectExprTablesStructural_run_ready_covers
       .all hty.supported.ordinary hbody.supported.ordinary
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
-    · rw [if_pos hhit]
+    · rw [ite_eq_left hhit]
       have hcovered := hseen.cover_of_hit hexprFaithful hordinary hactive hhit
       exact ⟨_, state, rfl, hstate, hcollection,
         .refl _, hcovered, hseen⟩
-    · rw [if_neg hhit]
+    · rw [ite_eq_right hhit]
       let inserted : Ix.CompileM.ExprTableCollection :=
         (refs, univs, seen.insert (source.getHash, ctxKey) ())
       have hinsert := hseen.insert source hordinary
@@ -1672,11 +1672,11 @@ theorem collectExprTablesStructural_run_ready_covers
         hbody.supported.ordinary
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
-    · rw [if_pos hhit]
+    · rw [ite_eq_left hhit]
       have hcovered := hseen.cover_of_hit hexprFaithful hordinary hactive hhit
       exact ⟨_, state, rfl, hstate, hcollection,
         .refl _, hcovered, hseen⟩
-    · rw [if_neg hhit]
+    · rw [ite_eq_right hhit]
       let inserted : Ix.CompileM.ExprTableCollection :=
         (refs, univs, seen.insert (source.getHash, ctxKey) ())
       have hinsert := hseen.insert source hordinary
@@ -1726,11 +1726,11 @@ theorem collectExprTablesStructural_run_ready_covers
     have hordinary : OrdinaryExpr source := .lit
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
-    · rw [if_pos hhit]
+    · rw [ite_eq_left hhit]
       have hcovered := hseen.cover_of_hit hexprFaithful hordinary hactive hhit
       exact ⟨_, state, rfl, hstate, hcollection,
         .refl _, hcovered, hseen⟩
-    · rw [if_neg hhit]
+    · rw [ite_eq_right hhit]
       have hinsert := hseen.insert source hordinary
       cases literal with
       | natVal n =>
@@ -1773,11 +1773,11 @@ theorem collectExprTablesStructural_run_ready_covers
     have hordinary : OrdinaryExpr source := .proj hvalue.supported.ordinary
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
-    · rw [if_pos hhit]
+    · rw [ite_eq_left hhit]
       have hcovered := hseen.cover_of_hit hexprFaithful hordinary hactive hhit
       exact ⟨_, state, rfl, hstate, hcollection,
         .refl _, hcovered, hseen⟩
-    · rw [if_neg hhit]
+    · rw [ite_eq_right hhit]
       obtain ⟨addr, haddr, haddrWire⟩ := hresolve
       have haddrLive : resolveConstAddr? compileEnv state typeName =
           some addr := by
@@ -1819,11 +1819,11 @@ theorem collectExprTablesStructural_run_ready_covers
     have hordinary : OrdinaryExpr source := .mdata hplain hinner.supported.ordinary
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
-    · rw [if_pos hhit]
+    · rw [ite_eq_left hhit]
       have hcovered := hseen.cover_of_hit hexprFaithful hordinary hactive hhit
       exact ⟨_, state, rfl, hstate, hcollection,
         .refl _, hcovered, hseen⟩
-    · rw [if_neg hhit]
+    · rw [ite_eq_right hhit]
       let inserted : Ix.CompileM.ExprTableCollection :=
         (refs, univs, seen.insert (source.getHash, ctxKey) ())
       have hinsert := hseen.insert source hordinary
@@ -2833,7 +2833,7 @@ theorem internPreseedRefs_run_wf
         harena.trans hnextArena,
         hunivs.trans hnextUnivs⟩
       · rw [Ix.CompileM.internPreseedRefs, hnew]
-        simp only [if_pos]
+        simp only [ite_eq_left]
         rw [run_bind, run_discard_internRef]
         change Ix.CompileM.CompileM.run compileEnv blockEnv next
           (Ix.CompileM.internPreseedRefs rest (some addr)) = _
@@ -2890,7 +2890,7 @@ theorem internPreseedRefs_run_total
         harena.trans hnextArena,
         hunivs.trans hnextUnivs⟩
       rw [Ix.CompileM.internPreseedRefs, hnew]
-      simp only [if_pos]
+      simp only [ite_eq_left]
       rw [run_bind, run_discard_internRef]
       change Ix.CompileM.CompileM.run compileEnv blockEnv next
         (Ix.CompileM.internPreseedRefs rest (some addr)) = _
@@ -3204,7 +3204,7 @@ theorem internPreseedUnivs_run_wf
         harena.trans hnextArena,
         hrefs.trans hnextRefs⟩
       · rw [Ix.CompileM.internPreseedUnivs, hnew]
-        simp only [if_pos]
+        simp only [ite_eq_left]
         rw [run_bind, run_discard_internUniv]
         change Ix.CompileM.CompileM.run compileEnv blockEnv next
           (Ix.CompileM.internPreseedUnivs rest (some key)) = _
@@ -3263,7 +3263,7 @@ theorem internPreseedUnivs_run_total
         harena.trans hnextArena,
         hrefs.trans hnextRefs⟩
       rw [Ix.CompileM.internPreseedUnivs, hnew]
-      simp only [if_pos]
+      simp only [ite_eq_left]
       rw [run_bind, run_discard_internUniv]
       change Ix.CompileM.CompileM.run compileEnv blockEnv next
         (Ix.CompileM.internPreseedUnivs rest (some key)) = _

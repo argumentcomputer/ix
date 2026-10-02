@@ -119,10 +119,10 @@ theorem computeIsRecFieldStepAfterWhnf_preservesInferOnly
   cases normalized with
   | all name bi domain body info =>
       by_cases hmentions : exprMentionsAnyAddr domain blockAddrs
-      · simp only [hmentions, if_pos]
+      · simp only [hmentions, ite_eq_left]
         exact TcM.PreservesInferOnly.pure (BoundedStep.done true)
       · simp only [hmentions]
-        simpa only [Bool.false_eq_true, if_false, pure_bind] using
+        simpa only [Bool.false_eq_true, ite_false, pure_bind] using
           (bindTcM_preservesInferOnly
             (methods := methods)
             (next := fun _ => pure (BoundedStep.next body))
@@ -202,12 +202,12 @@ theorem computeIsRec_preservesInferOnly
             intro found
             cases found with
             | true =>
-                simp only [if_true]
+                simp only [ite_true]
                 exact TcM.PreservesInferOnly.pure
                   (ForInStep.done
                     (⟨some true, PUnit.unit⟩ : MProd (Option Bool) PUnit))
             | false =>
-                simp only [Bool.false_eq_true, if_false]
+                simp only [Bool.false_eq_true, ite_false]
                 exact TcM.PreservesInferOnly.pure
                   (ForInStep.yield
                     (⟨none, PUnit.unit⟩ : MProd (Option Bool) PUnit))

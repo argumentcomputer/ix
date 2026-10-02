@@ -1082,7 +1082,7 @@ theorem lookupLetVal_eval {idx : UInt64}
     TcM.lookupLetVal idx s = .ok (some result) s' := by
   unfold TcM.lookupLetVal
   rw [get_bind_run]
-  rw [if_neg (by omega)]
+  rw [ite_eq_right (by omega)]
   rw [hval]
   change EStateM.bind (TcM.runIntern (lift val (idx + 1) 0))
     (fun r => pure (some r)) s = _
@@ -1279,7 +1279,7 @@ theorem tick_success {s : TcState .anon}
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s = .ok s s from rfl]
-  simp only [h, Bool.false_eq_true, if_false]
+  simp only [h, Bool.false_eq_true, ite_false]
   rfl
 
 end TcM
@@ -4084,7 +4084,7 @@ theorem whnfNoDeltaImplNonLeaf_fullMiss
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s₃ = .ok s₃ s₃ from rfl]
   simp only
-  rw [if_pos hnative]
+  rw [ite_eq_left hnative]
   rfl
 
 theorem whnfNoDeltaImplNonLeaf_cheapMiss
@@ -4129,7 +4129,7 @@ theorem whnfNoDeltaImplNonLeaf_cheapMiss
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s₃ = .ok s₃ s₃ from rfl]
   simp only
-  rw [if_pos hnative]
+  rw [ite_eq_left hnative]
   rfl
 
 /-- Stuck-succ mode reads and writes neither no-delta cache partition. -/
@@ -4408,7 +4408,7 @@ theorem whnfNoDeltaImplNonLeaf_wf
             cases hfull : flags.isFull with
             | true =>
                 simp only [natSuccMode_collapse_beq, Bool.not_false,
-                  Bool.true_and, if_true]
+                  Bool.true_and, ite_true]
                 apply RecM.WF.bind
                   (Q₁ := fun observed after => observed = s2 ∧ after = s2)
                   (RecM.WF.get fun _ => ⟨rfl, rfl⟩)
@@ -4449,11 +4449,11 @@ theorem whnfNoDeltaImplNonLeaf_wf
                     cases hnative : s3.inNativeReduce with
                     | true =>
                         simp only [Bool.not_true, Bool.false_and,
-                          Bool.false_eq_true, if_false]
+                          Bool.false_eq_true, ite_false]
                         exact RecM.WF.pure fun _ => hpost
                     | false =>
                         simp only [Bool.not_false, Bool.true_and,
-                          if_true]
+                          ite_true]
                         let next := {s3 with env := {s3.env with
                           whnfNoDeltaCache :=
                             s3.env.whnfNoDeltaCache.insert key result}}
@@ -4473,7 +4473,7 @@ theorem whnfNoDeltaImplNonLeaf_wf
                           exact RecM.WF.pure fun _ => hpost
             | false =>
                 simp only [natSuccMode_collapse_beq, Bool.not_false,
-                  Bool.true_and, if_true]
+                  Bool.true_and, ite_true]
                 apply RecM.WF.bind
                   (Q₁ := fun observed after => observed = s2 ∧ after = s2)
                   (RecM.WF.get fun _ => ⟨rfl, rfl⟩)
@@ -4516,11 +4516,11 @@ theorem whnfNoDeltaImplNonLeaf_wf
                     cases hnative : s3.inNativeReduce with
                     | true =>
                         simp only [Bool.not_true, Bool.false_and,
-                          Bool.false_eq_true, if_false]
+                          Bool.false_eq_true, ite_false]
                         exact RecM.WF.pure fun _ => hpost
                     | false =>
                         simp only [Bool.not_false, Bool.true_and,
-                          if_true]
+                          ite_true]
                         let next := {s3 with env := {s3.env with
                           whnfNoDeltaCheapCache :=
                             s3.env.whnfNoDeltaCheapCache.insert key result}}
@@ -4665,7 +4665,7 @@ theorem whnfWithNatSuccModeNonLeaf_wf
             simpa [natSuccMode_collapse_beq] using hwork s2
         | false =>
             simp only [natSuccMode_collapse_beq, Bool.not_false,
-              Bool.true_and, if_true]
+              Bool.true_and, ite_true]
             apply RecM.WF.bind
               (Q₁ := fun observed after => observed = s2 ∧ after = s2)
               (RecM.WF.get fun _ => ⟨rfl, rfl⟩)
@@ -4707,10 +4707,10 @@ theorem whnfWithNatSuccModeNonLeaf_wf
                 cases hnative : s4.inNativeReduce with
                 | true =>
                     simp only [Bool.not_true, Bool.false_and,
-                      Bool.false_eq_true, if_false]
+                      Bool.false_eq_true, ite_false]
                     exact RecM.WF.pure fun _ => hpost
                 | false =>
-                    simp only [Bool.not_false, Bool.true_and, if_true]
+                    simp only [Bool.not_false, Bool.true_and, ite_true]
                     let next := {s4 with env := {s4.env with
                       whnfCache := s4.env.whnfCache.insert key result}}
                     apply RecM.WF.bind
@@ -4919,7 +4919,7 @@ theorem whnfNoDeltaImpl_wf
         | false =>
             simpa using hreflexive s
         | true =>
-            simp only [Bool.not_true, Bool.false_eq_true, if_false,
+            simp only [Bool.not_true, Bool.false_eq_true, ite_false,
               pure_bind]
             exact whnfNoDeltaImplNonLeaf_wf theory hkeyRep htransient hstep
               hwrites hsupport (s := s) hsource
@@ -5000,7 +5000,7 @@ theorem whnfWithNatSuccMode_wf
         | false =>
             simpa using hreflexive s
         | true =>
-            simp only [Bool.not_true, Bool.false_eq_true, if_false,
+            simp only [Bool.not_true, Bool.false_eq_true, ite_false,
               pure_bind]
             exact hshell s
 
@@ -5336,7 +5336,7 @@ theorem whnfWithNatSuccModeNonLeaf_miss
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s₅ = .ok s₅ s₅ from rfl]
   simp only
-  rw [if_pos hnative]
+  rw [ite_eq_left hnative]
   rfl
 
 /-- Stuck-succ full WHNF still pays the miss charge but bypasses both the
@@ -7684,34 +7684,34 @@ theorem computeNatBin_defeq
   generalize hfixed : PrimAddrs.canonical = fixed at hcompute
   unfold computeNatBin at hcompute
   by_cases hopAdd : addr == fixed.natAdd
-  · rw [if_pos hopAdd] at hcompute
+  · rw [ite_eq_left hopAdd] at hcompute
     have haddr := beq_iff_eq.mp hopAdd
     simp only [Option.some.injEq] at hcompute
     subst result
     refine ⟨``Nat.add, ?_,
       liftReflection htable.natAdd context.theoryPrimitives.natAdd⟩
     simpa only [haddr, ← hfixed, ← hnatAdd] using htable.natAdd.2
-  · rw [if_neg hopAdd] at hcompute
+  · rw [ite_eq_right hopAdd] at hcompute
     by_cases hopSub : addr == fixed.natSub
-    · rw [if_pos hopSub] at hcompute
+    · rw [ite_eq_left hopSub] at hcompute
       have haddr := beq_iff_eq.mp hopSub
       simp only [Option.some.injEq] at hcompute
       subst result
       refine ⟨``Nat.sub, ?_,
         liftReflection htable.natSub context.theoryPrimitives.natSub⟩
       simpa only [haddr, ← hfixed, ← hnatSub] using htable.natSub.2
-    · rw [if_neg hopSub] at hcompute
+    · rw [ite_eq_right hopSub] at hcompute
       by_cases hopMul : addr == fixed.natMul
-      · rw [if_pos hopMul] at hcompute
+      · rw [ite_eq_left hopMul] at hcompute
         have haddr := beq_iff_eq.mp hopMul
         simp only [Option.some.injEq] at hcompute
         subst result
         refine ⟨``Nat.mul, ?_,
           liftReflection htable.natMul context.theoryPrimitives.natMul⟩
         simpa only [haddr, ← hfixed, ← hnatMul] using htable.natMul.2
-      · rw [if_neg hopMul] at hcompute
+      · rw [ite_eq_right hopMul] at hcompute
         by_cases hopDiv : addr == fixed.natDiv
-        · rw [if_pos hopDiv] at hcompute
+        · rw [ite_eq_left hopDiv] at hcompute
           have haddr := beq_iff_eq.mp hopDiv
           simp only [Option.some.injEq] at hcompute
           have hresult : result = a / b := by
@@ -7723,9 +7723,9 @@ theorem computeNatBin_defeq
           refine ⟨``Nat.div, ?_,
             liftReflection htable.natDiv context.theoryPrimitives.natDiv⟩
           simpa only [haddr, ← hfixed, ← hnatDiv] using htable.natDiv.2
-        · rw [if_neg hopDiv] at hcompute
+        · rw [ite_eq_right hopDiv] at hcompute
           by_cases hopMod : addr == fixed.natMod
-          · rw [if_pos hopMod] at hcompute
+          · rw [ite_eq_left hopMod] at hcompute
             have haddr := beq_iff_eq.mp hopMod
             simp only [Option.some.injEq] at hcompute
             have hresult : result = a % b := by
@@ -7737,12 +7737,12 @@ theorem computeNatBin_defeq
             refine ⟨``Nat.mod, ?_,
               liftReflection htable.natMod context.theoryPrimitives.natMod⟩
             simpa only [haddr, ← hfixed, ← hnatMod] using htable.natMod.2
-          · rw [if_neg hopMod] at hcompute
+          · rw [ite_eq_right hopMod] at hcompute
             by_cases hopPow : addr == fixed.natPow
-            · rw [if_pos hopPow] at hcompute
+            · rw [ite_eq_left hopPow] at hcompute
               have haddr := beq_iff_eq.mp hopPow
               by_cases hbound : b ≤ 16777216
-              · rw [if_pos hbound] at hcompute
+              · rw [ite_eq_left hbound] at hcompute
                 simp only [Option.some.injEq] at hcompute
                 subst result
                 refine ⟨``Nat.pow, ?_,
@@ -7750,11 +7750,11 @@ theorem computeNatBin_defeq
                     context.theoryPrimitives.natPow⟩
                 simpa only [haddr, ← hfixed, ← hnatPow] using
                   htable.natPow.2
-              · rw [if_neg hbound] at hcompute
+              · rw [ite_eq_right hbound] at hcompute
                 contradiction
-            · rw [if_neg hopPow] at hcompute
+            · rw [ite_eq_right hopPow] at hcompute
               by_cases hopGcd : addr == fixed.natGcd
-              · rw [if_pos hopGcd] at hcompute
+              · rw [ite_eq_left hopGcd] at hcompute
                 have haddr := beq_iff_eq.mp hopGcd
                 simp only [Option.some.injEq] at hcompute
                 subst result
@@ -7763,9 +7763,9 @@ theorem computeNatBin_defeq
                     context.theoryPrimitives.natGcd⟩
                 simpa only [haddr, ← hfixed, ← hnatGcd] using
                   htable.natGcd.2
-              · rw [if_neg hopGcd] at hcompute
+              · rw [ite_eq_right hopGcd] at hcompute
                 by_cases hopLand : addr == fixed.natLand
-                · rw [if_pos hopLand] at hcompute
+                · rw [ite_eq_left hopLand] at hcompute
                   have haddr := beq_iff_eq.mp hopLand
                   simp only [Option.some.injEq] at hcompute
                   subst result
@@ -7774,9 +7774,9 @@ theorem computeNatBin_defeq
                       context.theoryPrimitives.natLAnd⟩
                   simpa only [haddr, ← hfixed, ← hnatLand] using
                     htable.natLand.2
-                · rw [if_neg hopLand] at hcompute
+                · rw [ite_eq_right hopLand] at hcompute
                   by_cases hopLor : addr == fixed.natLor
-                  · rw [if_pos hopLor] at hcompute
+                  · rw [ite_eq_left hopLor] at hcompute
                     have haddr := beq_iff_eq.mp hopLor
                     simp only [Option.some.injEq] at hcompute
                     subst result
@@ -7785,9 +7785,9 @@ theorem computeNatBin_defeq
                         context.theoryPrimitives.natLOr⟩
                     simpa only [haddr, ← hfixed, ← hnatLor] using
                       htable.natLor.2
-                  · rw [if_neg hopLor] at hcompute
+                  · rw [ite_eq_right hopLor] at hcompute
                     by_cases hopXor : addr == fixed.natXor
-                    · rw [if_pos hopXor] at hcompute
+                    · rw [ite_eq_left hopXor] at hcompute
                       have haddr := beq_iff_eq.mp hopXor
                       simp only [Option.some.injEq] at hcompute
                       subst result
@@ -7796,12 +7796,12 @@ theorem computeNatBin_defeq
                           context.theoryPrimitives.natXor⟩
                       simpa only [haddr, ← hfixed, ← hnatXor] using
                         htable.natXor.2
-                    · rw [if_neg hopXor] at hcompute
+                    · rw [ite_eq_right hopXor] at hcompute
                       by_cases hopShiftLeft : addr == fixed.natShiftLeft
-                      · rw [if_pos hopShiftLeft] at hcompute
+                      · rw [ite_eq_left hopShiftLeft] at hcompute
                         have haddr := beq_iff_eq.mp hopShiftLeft
                         by_cases hbound : b < 2 ^ 64
-                        · rw [if_pos hbound] at hcompute
+                        · rw [ite_eq_left hbound] at hcompute
                           simp only [Option.some.injEq] at hcompute
                           subst result
                           refine ⟨``Nat.shiftLeft, ?_,
@@ -7809,14 +7809,14 @@ theorem computeNatBin_defeq
                               context.theoryPrimitives.natShiftLeft⟩
                           simpa only [haddr, ← hfixed, ← hnatShiftLeft] using
                             htable.natShiftLeft.2
-                        · rw [if_neg hbound] at hcompute
+                        · rw [ite_eq_right hbound] at hcompute
                           contradiction
-                      · rw [if_neg hopShiftLeft] at hcompute
+                      · rw [ite_eq_right hopShiftLeft] at hcompute
                         by_cases hopShiftRight : addr == fixed.natShiftRight
-                        · rw [if_pos hopShiftRight] at hcompute
+                        · rw [ite_eq_left hopShiftRight] at hcompute
                           have haddr := beq_iff_eq.mp hopShiftRight
                           by_cases hbound : b < 2 ^ 64
-                          · rw [if_pos hbound] at hcompute
+                          · rw [ite_eq_left hbound] at hcompute
                             simp only [Option.some.injEq] at hcompute
                             subst result
                             refine ⟨``Nat.shiftRight, ?_,
@@ -7825,9 +7825,9 @@ theorem computeNatBin_defeq
                             simpa only [haddr, ← hfixed,
                               ← hnatShiftRight] using
                               htable.natShiftRight.2
-                          · rw [if_neg hbound] at hcompute
+                          · rw [ite_eq_right hbound] at hcompute
                             contradiction
-                        · rw [if_neg hopShiftRight] at hcompute
+                        · rw [ite_eq_right hopShiftRight] at hcompute
                           contradiction
 
 /-- A successful binary-Nat computation is classified as arithmetic and not
@@ -7931,69 +7931,69 @@ theorem computeNatBin_classifiers
   generalize hfixed : PrimAddrs.canonical = fixed at hcompute
   unfold computeNatBin at hcompute
   by_cases hopAdd : addr == fixed.natAdd
-  · rw [if_pos hopAdd] at hcompute
+  · rw [ite_eq_left hopAdd] at hcompute
     apply classify htable.natAdd (by simp) (by decide) (by decide)
     simpa only [← hfixed, ← hnatAdd] using beq_iff_eq.mp hopAdd
-  · rw [if_neg hopAdd] at hcompute
+  · rw [ite_eq_right hopAdd] at hcompute
     by_cases hopSub : addr == fixed.natSub
-    · rw [if_pos hopSub] at hcompute
+    · rw [ite_eq_left hopSub] at hcompute
       apply classify htable.natSub (by simp) (by decide) (by decide)
       simpa only [← hfixed, ← hnatSub] using beq_iff_eq.mp hopSub
-    · rw [if_neg hopSub] at hcompute
+    · rw [ite_eq_right hopSub] at hcompute
       by_cases hopMul : addr == fixed.natMul
-      · rw [if_pos hopMul] at hcompute
+      · rw [ite_eq_left hopMul] at hcompute
         apply classify htable.natMul (by simp) (by decide) (by decide)
         simpa only [← hfixed, ← hnatMul] using beq_iff_eq.mp hopMul
-      · rw [if_neg hopMul] at hcompute
+      · rw [ite_eq_right hopMul] at hcompute
         by_cases hopDiv : addr == fixed.natDiv
-        · rw [if_pos hopDiv] at hcompute
+        · rw [ite_eq_left hopDiv] at hcompute
           apply classify htable.natDiv (by simp) (by decide) (by decide)
           simpa only [← hfixed, ← hnatDiv] using beq_iff_eq.mp hopDiv
-        · rw [if_neg hopDiv] at hcompute
+        · rw [ite_eq_right hopDiv] at hcompute
           by_cases hopMod : addr == fixed.natMod
-          · rw [if_pos hopMod] at hcompute
+          · rw [ite_eq_left hopMod] at hcompute
             apply classify htable.natMod (by simp) (by decide) (by decide)
             simpa only [← hfixed, ← hnatMod] using beq_iff_eq.mp hopMod
-          · rw [if_neg hopMod] at hcompute
+          · rw [ite_eq_right hopMod] at hcompute
             by_cases hopPow : addr == fixed.natPow
-            · rw [if_pos hopPow] at hcompute
+            · rw [ite_eq_left hopPow] at hcompute
               apply classify htable.natPow (by simp) (by decide) (by decide)
               simpa only [← hfixed, ← hnatPow] using beq_iff_eq.mp hopPow
-            · rw [if_neg hopPow] at hcompute
+            · rw [ite_eq_right hopPow] at hcompute
               by_cases hopGcd : addr == fixed.natGcd
-              · rw [if_pos hopGcd] at hcompute
+              · rw [ite_eq_left hopGcd] at hcompute
                 apply classify htable.natGcd (by simp) (by decide) (by decide)
                 simpa only [← hfixed, ← hnatGcd] using beq_iff_eq.mp hopGcd
-              · rw [if_neg hopGcd] at hcompute
+              · rw [ite_eq_right hopGcd] at hcompute
                 by_cases hopLand : addr == fixed.natLand
-                · rw [if_pos hopLand] at hcompute
+                · rw [ite_eq_left hopLand] at hcompute
                   apply classify htable.natLand (by simp) (by decide) (by decide)
                   simpa only [← hfixed, ← hnatLand] using beq_iff_eq.mp hopLand
-                · rw [if_neg hopLand] at hcompute
+                · rw [ite_eq_right hopLand] at hcompute
                   by_cases hopLor : addr == fixed.natLor
-                  · rw [if_pos hopLor] at hcompute
+                  · rw [ite_eq_left hopLor] at hcompute
                     apply classify htable.natLor (by simp) (by decide) (by decide)
                     simpa only [← hfixed, ← hnatLor] using beq_iff_eq.mp hopLor
-                  · rw [if_neg hopLor] at hcompute
+                  · rw [ite_eq_right hopLor] at hcompute
                     by_cases hopXor : addr == fixed.natXor
-                    · rw [if_pos hopXor] at hcompute
+                    · rw [ite_eq_left hopXor] at hcompute
                       apply classify htable.natXor (by simp) (by decide) (by decide)
                       simpa only [← hfixed, ← hnatXor] using beq_iff_eq.mp hopXor
-                    · rw [if_neg hopXor] at hcompute
+                    · rw [ite_eq_right hopXor] at hcompute
                       by_cases hopShiftLeft : addr == fixed.natShiftLeft
-                      · rw [if_pos hopShiftLeft] at hcompute
+                      · rw [ite_eq_left hopShiftLeft] at hcompute
                         apply classify htable.natShiftLeft (by simp)
                           (by decide) (by decide)
                         simpa only [← hfixed, ← hnatShiftLeft] using
                           beq_iff_eq.mp hopShiftLeft
-                      · rw [if_neg hopShiftLeft] at hcompute
+                      · rw [ite_eq_right hopShiftLeft] at hcompute
                         by_cases hopShiftRight : addr == fixed.natShiftRight
-                        · rw [if_pos hopShiftRight] at hcompute
+                        · rw [ite_eq_left hopShiftRight] at hcompute
                           apply classify htable.natShiftRight (by simp)
                             (by decide) (by decide)
                           simpa only [← hfixed, ← hnatShiftRight] using
                             beq_iff_eq.mp hopShiftRight
-                        · rw [if_neg hopShiftRight] at hcompute
+                        · rw [ite_eq_right hopShiftRight] at hcompute
                           contradiction
 
 /-- Either trusted binary-Nat predicate address is classified by the two
@@ -8594,11 +8594,11 @@ theorem tryReduceNatWithSuccMode_bin_inv_wf
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   apply RecM.WF.bind (isNatBinArithAddr_inv_wf headId.addr)
   intro isArith afterArith hafterArith
@@ -8618,7 +8618,7 @@ theorem tryReduceNatWithSuccMode_bin_inv_wf
         hargASupport hargATr hargBSupport hargBTr
   | true, false =>
       simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-        Bool.false_eq_true, if_false]
+        Bool.false_eq_true, ite_false]
       apply RecM.WF.bind (Q₂ := fun _ _ => True) <|
         whnfNatReducerArg_post_wf hargASupport hargATr
       intro first afterFirst hfirst
@@ -8989,11 +8989,11 @@ theorem tryReduceNatWithSuccMode_binPredExact
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9005,7 +9005,7 @@ theorem tryReduceNatWithSuccMode_binPredExact
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_false, Bool.not_true, Bool.and_false,
-    Bool.false_eq_true, if_false, if_true]
+    Bool.false_eq_true, ite_false, ite_true]
   simpa using hhelper
 
 /-- Predicate classification has precedence even if an unconstrained method
@@ -9046,11 +9046,11 @@ theorem tryReduceNatWithSuccMode_binPredAnyExact
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9063,7 +9063,7 @@ theorem tryReduceNatWithSuccMode_binPredAnyExact
   rw [hpred]
   cases isArith <;>
     simp only [Bool.not_false, Bool.not_true, Bool.and_false,
-      Bool.false_eq_true, if_false, if_true] <;>
+      Bool.false_eq_true, ite_false, ite_true] <;>
     simpa using hhelper
 
 /-- General-spine predicate routing.  Predicate precedence is independent of
@@ -9100,11 +9100,11 @@ theorem tryReduceNatWithSuccMode_binPredSuffixExact
     rw [hargs]
     grind
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort : ¬(args.size < 2) := by
     rw [hargs]
     grind
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9117,7 +9117,7 @@ theorem tryReduceNatWithSuccMode_binPredSuffixExact
   rw [hpred]
   cases isArith <;>
     simp only [Bool.not_false, Bool.not_true, Bool.and_false,
-      Bool.false_eq_true, if_false, if_true] <;>
+      Bool.false_eq_true, ite_false, ite_true] <;>
     simpa using hhelper
 
 /-- A predicate-helper miss is returned unchanged by the exact binary outer
@@ -9154,11 +9154,11 @@ theorem tryReduceNatWithSuccMode_binPredMiss
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9170,7 +9170,7 @@ theorem tryReduceNatWithSuccMode_binPredMiss
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_false, Bool.not_true, Bool.and_false,
-    Bool.false_eq_true, if_false, if_true]
+    Bool.false_eq_true, ite_false, ite_true]
   simpa using hhelper
 
 /-- A predicate-helper error is propagated unchanged by the exact binary
@@ -9207,11 +9207,11 @@ theorem tryReduceNatWithSuccMode_binPredError
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9223,7 +9223,7 @@ theorem tryReduceNatWithSuccMode_binPredError
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_false, Bool.not_true, Bool.and_false,
-    Bool.false_eq_true, if_false, if_true]
+    Bool.false_eq_true, ite_false, ite_true]
   simpa using hhelper
 
 /-- Exact production execution for the two-argument arithmetic hit.  Keeping
@@ -9272,11 +9272,11 @@ theorem tryReduceNatWithSuccMode_binArithExact
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9288,7 +9288,7 @@ theorem tryReduceNatWithSuccMode_binArithExact
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-    Bool.false_eq_true, if_false]
+    Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
   unfold EStateM.bind
@@ -9354,11 +9354,11 @@ theorem tryReduceNatWithSuccMode_binArithSuffixExact
     rw [hargs]
     grind
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort : ¬(args.size < 2) := by
     rw [hargs]
     grind
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9370,7 +9370,7 @@ theorem tryReduceNatWithSuccMode_binArithSuffixExact
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-    Bool.false_eq_true, if_false]
+    Bool.false_eq_true, ite_false]
   rw [hzero]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
@@ -9386,7 +9386,7 @@ theorem tryReduceNatWithSuccMode_binArithSuffixExact
   rw [hextractA, hextractB]
   simp only
   rw [hcompute]
-  simp only [if_true]
+  simp only [ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind
     ((finishAppResult (natExprFromValue result) args 2).run methods) _ s₂ = _
@@ -9427,11 +9427,11 @@ theorem tryReduceNatWithSuccMode_binArithArgAMiss
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9443,7 +9443,7 @@ theorem tryReduceNatWithSuccMode_binArithArgAMiss
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-    Bool.false_eq_true, if_false]
+    Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
   unfold EStateM.bind
@@ -9483,11 +9483,11 @@ theorem tryReduceNatWithSuccMode_binArithArgAError
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9499,7 +9499,7 @@ theorem tryReduceNatWithSuccMode_binArithArgAError
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-    Bool.false_eq_true, if_false]
+    Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
   unfold EStateM.bind
@@ -9540,11 +9540,11 @@ theorem tryReduceNatWithSuccMode_binArithArgBMiss
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9556,7 +9556,7 @@ theorem tryReduceNatWithSuccMode_binArithArgBMiss
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-    Bool.false_eq_true, if_false]
+    Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
   unfold EStateM.bind
@@ -9603,11 +9603,11 @@ theorem tryReduceNatWithSuccMode_binArithArgBError
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9619,7 +9619,7 @@ theorem tryReduceNatWithSuccMode_binArithArgBError
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-    Bool.false_eq_true, if_false]
+    Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
   unfold EStateM.bind
@@ -9667,11 +9667,11 @@ theorem tryReduceNatWithSuccMode_binArithExtractAMiss
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9683,7 +9683,7 @@ theorem tryReduceNatWithSuccMode_binArithExtractAMiss
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-    Bool.false_eq_true, if_false]
+    Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
   unfold EStateM.bind
@@ -9735,11 +9735,11 @@ theorem tryReduceNatWithSuccMode_binArithExtractBMiss
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9751,7 +9751,7 @@ theorem tryReduceNatWithSuccMode_binArithExtractBMiss
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-    Bool.false_eq_true, if_false]
+    Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
   unfold EStateM.bind
@@ -9805,11 +9805,11 @@ theorem tryReduceNatWithSuccMode_binArithComputeMiss
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity]
-  simp only [Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false]
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort]
+  rw [ite_eq_right hnotShort]
   simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -9821,7 +9821,7 @@ theorem tryReduceNatWithSuccMode_binArithComputeMiss
   unfold EStateM.bind
   rw [hpred]
   simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-    Bool.false_eq_true, if_false]
+    Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
   unfold EStateM.bind
@@ -10088,11 +10088,11 @@ theorem complete
       ((#[argA, argB] : Array (KExpr .anon)).size == 1) = false := by
     simp
   rw [hnotSuccArity] at hrun
-  simp only [Bool.and_false, Bool.false_eq_true, if_false] at hrun
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false] at hrun
   have hnotShort :
       ¬((#[argA, argB] : Array (KExpr .anon)).size < 2) := by
     simp
-  rw [if_neg hnotShort] at hrun
+  rw [ite_eq_right hnotShort] at hrun
   simp only [pure_bind] at hrun
   rw [ReaderT.run_bind] at hrun
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -10110,7 +10110,7 @@ theorem complete
       cases hisPred : isPred with
       | false =>
           simp only [hisArith, hisPred, Bool.not_false,
-            Bool.false_eq_true, if_false] at hrun
+            Bool.false_eq_true, ite_false] at hrun
           change EStateM.Result.ok none s = .ok (some result) s' at hrun
           cases hrun
       | true =>
@@ -10143,7 +10143,7 @@ theorem complete
           have hpred' : (isNatBinPredAddr headId.addr).run methods s =
               .ok false s := by simpa [hisPred] using hpred
           simp only [hisArith, hisPred, Bool.not_true, Bool.not_false,
-            Bool.false_and, Bool.false_eq_true, if_false] at hrun
+            Bool.false_and, Bool.false_eq_true, ite_false] at hrun
           rw [ReaderT.run_bind] at hrun
           change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
             at hrun
@@ -11003,11 +11003,11 @@ theorem complete
     rw [hargs]
     grind
   rw [hnotSuccArity] at hrun
-  simp only [Bool.and_false, Bool.false_eq_true, if_false] at hrun
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false] at hrun
   have hnotShort : ¬(args.size < 2) := by
     rw [hargs]
     grind
-  rw [if_neg hnotShort] at hrun
+  rw [ite_eq_right hnotShort] at hrun
   simp only [pure_bind] at hrun
   rw [ReaderT.run_bind] at hrun
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s = _
@@ -11025,7 +11025,7 @@ theorem complete
       cases hisPred : isPred with
       | false =>
           simp only [hisArith, hisPred, Bool.not_false,
-            Bool.false_eq_true, if_false] at hrun
+            Bool.false_eq_true, ite_false] at hrun
           change EStateM.Result.ok none s = .ok (some result) s' at hrun
           cases hrun
       | true =>
@@ -11056,7 +11056,7 @@ theorem complete
           have hpred' : (isNatBinPredAddr headId.addr).run methods s =
               .ok false s := by simpa [hisPred] using hpred
           simp only [hisArith, hisPred, Bool.not_true, Bool.not_false,
-            Bool.false_and, Bool.false_eq_true, if_false] at hrun
+            Bool.false_and, Bool.false_eq_true, ite_false] at hrun
           rw [hzero] at hrun
           rw [ReaderT.run_bind] at hrun
           change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = _
@@ -11122,7 +11122,7 @@ theorem complete
                                       cases hrun
                                   | some value =>
                                       rw [hcompute] at hrun
-                                      simp only [if_true] at hrun
+                                      simp only [ite_true] at hrun
                                       rw [ReaderT.run_bind] at hrun
                                       change EStateM.bind
                                         ((finishAppResult
@@ -11533,11 +11533,11 @@ theorem tryReduceNatWithSuccMode_spine_nonhit_inv
     rw [hargs]
     grind
   rw [hnotSuccArity] at hrun
-  simp only [Bool.and_false, Bool.false_eq_true, if_false] at hrun
+  simp only [Bool.and_false, Bool.false_eq_true, ite_false] at hrun
   have hnotShort : ¬(args.size < 2) := by
     rw [hargs]
     grind
-  rw [if_neg hnotShort] at hrun
+  rw [ite_eq_right hnotShort] at hrun
   simp only [pure_bind] at hrun
   rw [ReaderT.run_bind] at hrun
   change EStateM.bind ((isNatBinArithAddr headId.addr).run methods) _ s =
@@ -11552,17 +11552,17 @@ theorem tryReduceNatWithSuccMode_spine_nonhit_inv
   rw [hpred] at hrun
   cases hisArith : isArith <;> cases hisPred : isPred
   · simp only [hisArith, hisPred, Bool.not_false, Bool.false_eq_true,
-      if_false] at hrun
+      ite_false] at hrun
     rw [← hrun]
     exact hI
   · simp only [hisArith, hisPred, Bool.not_false, Bool.not_true,
-      Bool.and_false, Bool.false_eq_true, if_false, if_true] at hrun
+      Bool.and_false, Bool.false_eq_true, ite_false, ite_true] at hrun
     have hhelper : (tryReduceNatPredicate headId.addr args).run methods s =
         outcome := by simpa using hrun
     exact tryReduceNatPredicate_spine_nonhit_inv context hmethods hI
       hargASupport hargATr hargBSupport hargBTr hargs hhelper
   · simp only [hisArith, hisPred, Bool.not_true, Bool.not_false,
-      Bool.false_and, Bool.false_eq_true, if_false] at hrun
+      Bool.false_and, Bool.false_eq_true, ite_false] at hrun
     rw [hzero, ReaderT.run_bind] at hrun
     change EStateM.bind ((whnfNatReducerArg argA).run methods) _ s = outcome
       at hrun
@@ -11629,7 +11629,7 @@ theorem tryReduceNatWithSuccMode_spine_nonhit_inv
                       exact hI₂
                     | some value =>
                       rw [hcompute] at hrun
-                      simp only [if_true] at hrun
+                      simp only [ite_true] at hrun
                       obtain ⟨final, s₃, hfinish⟩ :=
                         finishAppResult_total
                           (methods := methods) (s := s₂)
@@ -11644,7 +11644,7 @@ theorem tryReduceNatWithSuccMode_spine_nonhit_inv
                       rw [← hrun]
                       trivial
   · simp only [hisArith, hisPred, Bool.not_true,
-      Bool.and_false, Bool.false_eq_true, if_false, if_true] at hrun
+      Bool.and_false, Bool.false_eq_true, ite_false, ite_true] at hrun
     have hhelper : (tryReduceNatPredicate headId.addr args).run methods s =
         outcome := by simpa using hrun
     exact tryReduceNatPredicate_spine_nonhit_inv context hmethods hI
@@ -12581,7 +12581,7 @@ theorem tryReduceNatSuccAfterWhnf_stuck
   change EStateM.bind ((isNatSuccSpine w).run methods) _ s = _
   unfold EStateM.bind
   rw [hclass]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rfl
 
 /-- Exact evaluator for the shared stuck-marker commit. -/
@@ -12754,7 +12754,7 @@ theorem tryReduceNatSuccAfterWhnf_succ
   change EStateM.bind ((isNatSuccSpine w).run methods) _ s = _
   unfold EStateM.bind
   rw [hclass]
-  simp only [if_true]
+  simp only [ite_true]
   rw [harg]
   simpa using hpeel
 
@@ -13239,10 +13239,10 @@ theorem tryReduceNatSuccLinearRec_effect_wf
                       cases hsize :
                           parts.spine.size != parts.majorIdx + 1 with
                       | true =>
-                          simp only [if_true]
+                          simp only [ite_true]
                           exact RecM.WF.pure fun _ => trivial
                       | false =>
-                          simp only [Bool.false_eq_true, if_false, pure_bind]
+                          simp only [Bool.false_eq_true, ite_false, pure_bind]
                           have hadd : RecM.WF layer semantics trProj world
                               support uvars Delta afterRead
                               (mkNatAdd baseWhnf
@@ -14554,7 +14554,7 @@ theorem whnfNoDeltaReducersStep_projectionDef
   rw [hstring]
   simp only
   rw [hfull]
-  simp only [if_true]
+  simp only [ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryReduceProjectionDefinition cur) methods) _ s₅ = _
@@ -14611,7 +14611,7 @@ theorem whnfNoDeltaReducersStep_quotFull
   rw [hstring]
   simp only
   rw [hfull]
-  simp only [if_true]
+  simp only [ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryReduceProjectionDefinition cur) methods) _ s₅ = _
@@ -14672,7 +14672,7 @@ theorem whnfNoDeltaReducersStep_quotCheap
   rw [hstring]
   simp only
   rw [hcheap]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (ReaderT.run (tryQuotReduce cur) methods) _ s₅ = _
   unfold EStateM.bind
@@ -14728,7 +14728,7 @@ theorem whnfNoDeltaReducersStep_doneFull
   rw [hstring]
   simp only
   rw [hfull]
-  simp only [if_true]
+  simp only [ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryReduceProjectionDefinition cur) methods) _ s₅ = _
@@ -14788,7 +14788,7 @@ theorem whnfNoDeltaReducersStep_doneCheap
   rw [hstring]
   simp only
   rw [hcheap]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (ReaderT.run (tryQuotReduce cur) methods) _ s₅ = _
   unfold EStateM.bind
@@ -14989,7 +14989,7 @@ theorem whnfNoDeltaReducersStep_projectionDefError
   rw [hstring]
   simp only
   rw [hfull]
-  simp only [if_true]
+  simp only [ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryReduceProjectionDefinition cur) methods) _ s₅ = _
@@ -15045,7 +15045,7 @@ theorem whnfNoDeltaReducersStep_quotFullError
   rw [hstring]
   simp only
   rw [hfull]
-  simp only [if_true]
+  simp only [ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryReduceProjectionDefinition cur) methods) _ s₅ = _
@@ -15104,7 +15104,7 @@ theorem whnfNoDeltaReducersStep_quotCheapError
   rw [hstring]
   simp only
   rw [hcheap]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (ReaderT.run (tryQuotReduce cur) methods) _ s₅ = _
   unfold EStateM.bind
@@ -15298,7 +15298,7 @@ theorem whnfNoDeltaReducersStep_wf
                   | none =>
                       cases hfull : flags.isFull with
                       | false =>
-                          simp only [Bool.false_eq_true, if_false]
+                          simp only [Bool.false_eq_true, ite_false]
                           apply RecM.WF.bind
                             (oracle.quot hsourceSupport hsourceTr)
                           intro quotResult s₆ hquot
@@ -15314,7 +15314,7 @@ theorem whnfNoDeltaReducersStep_wf
                                 WhnfMeaning.refl hsourceTr
                                   (theory.exprWF hI.2.1 hsourceTr)⟩
                       | true =>
-                          simp only [if_true]
+                          simp only [ite_true]
                           apply RecM.WF.bind
                             (oracle.projectionDef hsourceSupport hsourceTr)
                           intro projectionResult s₆ hprojection

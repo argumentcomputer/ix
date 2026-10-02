@@ -81,7 +81,7 @@ theorem natOffsetReaders_state_wf (fuel : Nat) :
             intro p after _
             by_cases hsucc :
                 (id.addr == p.natSucc.addr && args.size == 1) = true
-            · simp only [hsucc, if_true]
+            · simp only [hsucc, ite_true]
               rw [ReaderT.run_bind]
               apply TcM.WF.bind (ih.1 I methods args[0]! after)
               intro found afterOffset _
@@ -96,8 +96,8 @@ theorem natOffsetReaders_state_wf (fuel : Nat) :
             · simp only [hsucc, pure_bind]
               by_cases hadd :
                   (id.addr == p.natAdd.addr && args.size == 2) = true
-              · simp only [hadd, if_true]
-                simp only [Bool.false_eq_true, if_false]
+              · simp only [hadd, ite_true]
+                simp only [Bool.false_eq_true, ite_false]
                 rw [ReaderT.run_bind]
                 apply TcM.WF.bind (ih.2 I methods args[1]! after)
                 intro rhs afterRhs _
@@ -137,7 +137,7 @@ theorem natOffsetReaders_state_wf (fuel : Nat) :
             | const id us info =>
                 by_cases hpred :
                     (id.addr == p.natPred.addr && args.size == 1) = true
-                · simp only [hpred, if_true]
+                · simp only [hpred, ite_true]
                   rw [ReaderT.run_bind]
                   apply TcM.WF.bind (ih.2 I methods args[0]! after)
                   intro value afterValue _
@@ -145,14 +145,14 @@ theorem natOffsetReaders_state_wf (fuel : Nat) :
                     exact TcM.WF.pure (Q := fun _ _ => True)
                       (fun _ => trivial)
                 · simp only [hpred]
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   rw [ReaderT.run_bind]
                   apply TcM.WF.bind
                     (isNatBinArithAddr_state_wf methods id.addr after)
                   intro answer afterAddr _
                   by_cases hbinary :
                       (answer && args.size == 2) = true
-                  · simp only [hbinary, if_true]
+                  · simp only [hbinary, ite_true]
                     rw [ReaderT.run_bind]
                     apply TcM.WF.bind
                       (ih.2 I methods args[0]! afterAddr)
@@ -255,7 +255,7 @@ theorem cleanupNatOffsetMajor_state_wf {I : TcState .anon → Prop}
   cases hsome : literal.isSome with
   | true => exact TcM.WF.pure (fun _ => trivial)
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       rw [ReaderT.run_bind]
       apply TcM.WF.bind (natOffset_state_wf methods e 0 afterLiteral)
       intro offsetResult afterOffset _
@@ -265,19 +265,19 @@ theorem cleanupNatOffsetMajor_state_wf {I : TcState .anon → Prop}
       | some pair =>
           rcases pair with ⟨base, offset⟩
           by_cases hzero : (offset == 0) = true
-          · simp only [hzero, if_true]
+          · simp only [hzero, ite_true]
             exact TcM.WF.pure (Q := fun _ _ => True) (fun _ => trivial)
           · simp only [hzero]
             by_cases hpredZero : (offset - 1 == 0) = true
-            · simp only [hpredZero, if_true]
-              simp only [Bool.false_eq_true, if_false]
+            · simp only [hpredZero, ite_true]
+              simp only [Bool.false_eq_true, ite_false]
               rw [ReaderT.run_bind]
               apply TcM.WF.bind
                 (mkNatSucc_state_wf methods base afterOffset)
               intro result afterResult _
               exact TcM.WF.pure (Q := fun _ _ => True) (fun _ => trivial)
             · simp only [hpredZero]
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               rw [ReaderT.run_bind]
               apply TcM.WF.bind
                 (mkNatAdd_state_wf methods base
@@ -467,14 +467,14 @@ theorem tryIotaAfterCleanup_state_wf
       rcases hexpanded with ⟨hexpandedSupport, expandedV, hexpandedTr⟩
       cases hcheap : flags.cheapRec with
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           rw [ReaderT.run_bind]
           apply TcM.WF.bind
             (hmethods.whnf hexpandedSupport hexpandedTr)
           intro reduced afterWhnf _
           exact hdispatch reduced afterWhnf
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           rw [ReaderT.run_bind]
           apply TcM.WF.bind
             (hmethods.whnfCoreFlags hexpandedSupport hexpandedTr)

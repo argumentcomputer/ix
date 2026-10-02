@@ -147,7 +147,7 @@ protected theorem LocalContext.WF.push {m : Mode}
       simp
     · obtain ⟨decl, hd⟩ := h.sound hi
       refine ⟨decl, ?_⟩
-      rw [Array.getElem?_push, if_neg]
+      rw [Array.getElem?_push, ite_eq_right]
       · exact hd
       · intro hieq
         subst i
@@ -205,7 +205,7 @@ theorem LocalContext.WF.truncate_pred {m : Mode}
     obtain ⟨d, hd⟩ := h.sound hi
     by_cases hlt : i < lctx.decls.pop.size
     · refine ⟨d, ?_⟩
-      rw [Array.getElem?_pop, if_pos (by simpa using hlt)]
+      rw [Array.getElem?_pop, ite_eq_left (by simpa using hlt)]
       exact hd
     · have hiOld : i < lctx.decls.size :=
         (Array.getElem?_eq_some_iff.mp hd).choose

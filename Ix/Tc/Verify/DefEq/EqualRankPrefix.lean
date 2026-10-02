@@ -46,10 +46,10 @@ theorem defEqLazyDeltaStepWithEqualRank_wf
       | some rightId =>
           cases hguard : (leftId.addr == rightId.addr) with
           | false =>
-              simp only [hguard, Bool.false_eq_true, if_false]
+              simp only [hguard, Bool.false_eq_true, ite_false]
               exact hafter hpair
           | true =>
-              simp only [hguard, if_true]
+              simp only [hguard, ite_true]
               apply RecM.WF.bind (isRegular_wf hfault leftId)
               intro regular afterRegular _
               apply RecM.WF.bind <|

@@ -149,7 +149,7 @@ theorem checkPositivityDomainFuel_direct
     (checkPositiveRecursiveApplication id us args groups rootGroup.addrs).run
         methods afterWhnf = .ok () final := by
   unfold checkPositivityDomainFuel at hrun
-  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, if_false]
+  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, ite_false]
     at hrun
   rw [ReaderT.run_bind] at hrun
   change EStateM.bind ((whnf dom).run methods) _ initial = _ at hrun
@@ -180,7 +180,7 @@ theorem checkPositivityDomainFuel_direct_run
     (checkPositivityDomainFuel (fuel + 1) dom groups activeAddrs).run
         methods initial = .ok () final := by
   unfold checkPositivityDomainFuel
-  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, if_false]
+  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnf dom).run methods) _ initial = _
   unfold EStateM.bind
@@ -231,7 +231,7 @@ theorem checkPositivityDomainFuel_nested
     (checkNestedPositivityApplicationFuel fuel id us args groups
       rootGroup.addrs activeAddrs).run methods afterWhnf = .ok () final := by
   unfold checkPositivityDomainFuel at hrun
-  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, if_false]
+  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, ite_false]
     at hrun
   rw [ReaderT.run_bind] at hrun
   change EStateM.bind ((whnf dom).run methods) _ initial = _ at hrun
@@ -265,13 +265,13 @@ theorem checkPositivityDomainFuel_forall_success
         final = { afterRecursive with
           lctx := afterRecursive.lctx.truncate afterWhnf.lctx.size } := by
   unfold checkPositivityDomainFuel at hrun
-  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, if_false]
+  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, ite_false]
     at hrun
   rw [ReaderT.run_bind] at hrun
   change EStateM.bind ((whnf dom).run methods) _ initial = _ at hrun
   unfold EStateM.bind at hrun
   rw [hwhnf] at hrun
-  simp only [hnegative, Bool.false_eq_true, if_false] at hrun
+  simp only [hnegative, Bool.false_eq_true, ite_false] at hrun
   rw [ReaderT.run_bind] at hrun
   change EStateM.bind (get : TcM m (TcState m)) _ afterWhnf = _ at hrun
   unfold EStateM.bind at hrun
@@ -315,12 +315,12 @@ theorem checkPositivityDomainFuel_forall_negative
         methods initial =
       .error (.other "strict positivity violation") afterWhnf := by
   unfold checkPositivityDomainFuel
-  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, if_false]
+  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind ((whnf dom).run methods) _ initial = _
   unfold EStateM.bind
   rw [hwhnf]
-  simp only [hnegative, if_true, throw]
+  simp only [hnegative, ite_true, throw]
   rfl
 
 end RecM

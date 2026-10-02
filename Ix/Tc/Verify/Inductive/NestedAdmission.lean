@@ -78,31 +78,31 @@ def nestedNameOf (address : Address) : Option Lean.Name :=
 
 theorem nestedCatalog_tree : nestedCatalog treeId = some treeConcrete := by
   unfold nestedCatalog
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 
 theorem nestedCatalog_node : nestedCatalog nodeId = some nodeConcrete := by
   unfold nestedCatalog
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nestedNameOf_box : nestedNameOf boxId.addr = some ``LeanBox := by
   unfold nestedNameOf
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 
 theorem nestedNameOf_wrap :
     nestedNameOf wrapId.addr = some ``LeanBox.wrap := by
   unfold nestedNameOf
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem nestedNameOf_tree : nestedNameOf treeId.addr = some ``LeanTree := by
   unfold nestedNameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem nestedNameOf_node :
     nestedNameOf nodeId.addr = some ``LeanTree.node := by
   unfold nestedNameOf
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 def nestedBlockCatalog : BlockCatalog := fun id =>
   treeIngressAfter.getBlock? id

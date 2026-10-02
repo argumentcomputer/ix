@@ -79,8 +79,8 @@ theorem whnfCoreWithFlagsStep_projection_wf
               (whnfCoreFlagsRec value flags).run methods s
             else (whnfRec value).run methods s) = .error err s1 := by
         cases hcheap : flags.cheapProj
-        · simpa only [hcheap, Bool.false_eq_true, if_false] using hcallbackRun
-        · simpa only [hcheap, if_true] using hcallbackRun
+        · simpa only [hcheap, Bool.false_eq_true, ite_false] using hcallbackRun
+        · simpa only [hcheap, ite_true] using hcallbackRun
       rw [whnfCoreWithFlagsStep_projectionWhnfError hwhnf]
       exact ⟨hcallbackPost.1, trivial⟩
   | .ok wvalue s1 =>
@@ -90,8 +90,8 @@ theorem whnfCoreWithFlagsStep_projection_wf
               (whnfCoreFlagsRec value flags).run methods s
             else (whnfRec value).run methods s) = .ok wvalue s1 := by
         cases hcheap : flags.cheapProj
-        · simpa only [hcheap, Bool.false_eq_true, if_false] using hcallbackRun
-        · simpa only [hcheap, if_true] using hcallbackRun
+        · simpa only [hcheap, Bool.false_eq_true, ite_false] using hcallbackRun
+        · simpa only [hcheap, ite_true] using hcallbackRun
       have hhelperPost :=
         hhelper (id := id) (field := field) hmethods
           hcallbackPost.2.1 hcallbackPost.1

@@ -236,7 +236,7 @@ theorem validation_execution :
         .ok () initialState := by
     unfold RecM.validateExprWellScoped
     rw [RecM.validateExprWellScoped.go.eq_def]
-    simp only [Std.HashSet.contains_empty, Bool.false_eq_true, if_false]
+    simp only [Std.HashSet.contains_empty, Bool.false_eq_true, ite_false]
     have hsource : source = .sort sourceUniv source.info := by rfl
     rw [hsource]
     rw [ReaderT.run_bind]
@@ -250,7 +250,7 @@ theorem validation_execution :
           .ok seen initialState := by
       unfold sourceUniv KUniv.mkZero RecM.validateUnivParamsSeen
       rw [RecM.validateUnivParamsSeen.go.eq_def]
-      simp only [Std.HashSet.contains_empty, Bool.false_eq_true, if_false]
+      simp only [Std.HashSet.contains_empty, Bool.false_eq_true, ite_false]
       rw [RecM.validateUnivParamsSeen.go.eq_def]
       rfl
     unfold EStateM.bind
@@ -345,7 +345,7 @@ theorem member_execution (separation : AddressSeparation) :
       (RecM.checkConstMember targetId concreteAxiom).run methods initialState =
         .ok () after := by
     unfold RecM.checkConstMember
-    simp only [concreteAxiom, Mode.F.hasDups, Bool.false_eq_true, if_false,
+    simp only [concreteAxiom, Mode.F.hasDups, Bool.false_eq_true, ite_false,
       ReaderT.run_bind]
     change EStateM.bind
       ((RecM.validateConstWellScoped concreteAxiom).run methods) _

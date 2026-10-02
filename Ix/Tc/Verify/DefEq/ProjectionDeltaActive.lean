@@ -49,8 +49,8 @@ theorem lazyDeltaReductionStepAfterActive_wf
   case false.false =>
     simp at hactive
   case false.true =>
-    simp only [Bool.false_and, Bool.false_eq_true, if_false,
-      Bool.not_false, Bool.true_and, if_true]
+    simp only [Bool.false_and, Bool.false_eq_true, ite_false,
+      Bool.not_false, Bool.true_and, ite_true]
     apply RecM.WF.bind (RecM.WF.withInv <|
       hprojection hpair.leftSupport hleft)
     intro reduced afterProjection hreduced
@@ -65,7 +65,7 @@ theorem lazyDeltaReductionStepAfterActive_wf
         exact finishLazyDeltaReductionStep_wf context.finish
           ⟨hreducedSupport, hpair.rightSupport, hleftReduced, hpair.right⟩
   case true.false =>
-    simp only [Bool.not_false, Bool.true_and, if_true]
+    simp only [Bool.not_false, Bool.true_and, ite_true]
     apply RecM.WF.bind (RecM.WF.withInv <|
       hprojection hpair.rightSupport hright)
     intro reduced afterProjection hreduced
@@ -80,7 +80,7 @@ theorem lazyDeltaReductionStepAfterActive_wf
         exact finishLazyDeltaReductionStep_wf context.finish
           ⟨hpair.leftSupport, hreducedSupport, hpair.left, hrightReduced⟩
   case true.true =>
-    simp only [Bool.not_true, Bool.and_false, Bool.false_eq_true, if_false]
+    simp only [Bool.not_true, Bool.and_false, Bool.false_eq_true, ite_false]
     exact lazyDeltaReductionStepWithBothDelta_wf hfault hsame context
       hDelta hpair
 

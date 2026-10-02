@@ -198,7 +198,7 @@ theorem inferUncached_lam_wf
       cases inferOnly with
       | false =>
           unfold inferUncached
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           apply RecM.WF.bind
             (RecM.WF.withInv <| RecM.inferCall_wf htySupport htyTr)
           intro tyTy afterTy htyPost

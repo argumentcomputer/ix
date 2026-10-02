@@ -122,16 +122,16 @@ theorem tryQuotReduceSelected_inv_wf
   | const mkId mkUs mkInfo =>
       cases hctor : (mkId.addr != prims.quotCtor.addr) with
       | true =>
-          simp only [hctor, if_true]
+          simp only [hctor, ite_true]
           exact RecM.WF.pure fun _ => trivial
       | false =>
-          simp only [hctor, Bool.false_eq_true, if_false]
+          simp only [hctor, Bool.false_eq_true, ite_false]
           cases hsize : (mkArgs.size != 3) with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact RecM.WF.pure fun _ => trivial
           | false =>
-              simp only [Bool.false_eq_true, if_false, pure_bind]
+              simp only [Bool.false_eq_true, ite_false, pure_bind]
               let base : KExpr .anon :=
                 KExpr.mkApp args[fIdx]! mkArgs[2]!
               obtain ⟨hbase, final, plan⟩ :=
@@ -186,11 +186,11 @@ theorem tryQuotReduce_inv_wf
       subst afterRead
       cases hlift : (id.addr == prims.quotLift.addr) with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           by_cases hsize : args.size < 6
-          · simp only [hsize, if_pos]
+          · simp only [hsize, ite_eq_left]
             exact RecM.WF.pure fun _ => trivial
-          · simp only [hsize, if_false]
+          · simp only [hsize, ite_false]
             have hfIdx : 3 < args.size := by omega
             have hmajorIdx : 5 < args.size := by omega
             exact
@@ -198,17 +198,17 @@ theorem tryQuotReduce_inv_wf
                 (semantics := semantics) (trProj := trProj) (world := world)
                 hsourceSupport hsource hspine hfIdx hmajorIdx
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           cases hind : (id.addr == prims.quotInd.addr) with
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               exact RecM.WF.pure fun _ => trivial
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               by_cases hsize : args.size < 5
-              · simp only [hsize, if_pos]
+              · simp only [hsize, ite_eq_left]
                 exact RecM.WF.pure fun _ => trivial
-              · simp only [hsize, if_false]
+              · simp only [hsize, ite_false]
                 have hfIdx : 3 < args.size := by omega
                 have hmajorIdx : 4 < args.size := by omega
                 exact

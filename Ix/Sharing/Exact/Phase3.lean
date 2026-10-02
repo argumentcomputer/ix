@@ -254,7 +254,7 @@ theorem ancestorMarks_spec {dag : Dag} (hcp : childrenPrecede dag.nodes = true) 
       rw [getElem!_setBang]
       by_cases huj : u = j
       · subst huj
-        rw [if_pos ⟨rfl, by rw [hsz]; exact hjn⟩]
+        rw [ite_eq_left ⟨rfl, by rw [hsz]; exact hjn⟩]
         simp only [Bool.or_eq_true, beq_iff_eq, Array.any_eq_true', hacc]
         constructor
         · rintro (rfl | ⟨c, hm, _, _, hc⟩)
@@ -265,7 +265,7 @@ theorem ancestorMarks_spec {dag : Dag} (hcp : childrenPrecede dag.nodes = true) 
           · exact Or.inl h
           · have hcu := child_lt_of_childrenPrecede hcp hjn hm
             exact Or.inr ⟨c, hm, hcu, by omega, hc⟩
-      · simp only [huj, false_and, if_false, hacc]
+      · simp only [huj, false_and, ite_false, hacc]
         constructor
         · rintro ⟨h1, h2, h3⟩; exact ⟨by omega, h2, h3⟩
         · rintro ⟨h1, h2, h3⟩; exact ⟨by omega, h2, h3⟩)
@@ -299,7 +299,7 @@ theorem modify_push_fold (u : Nat) :
     rw [h2, Array.getElem?_modify, Array.size_modify, List.mem_cons]
     by_cases hdc : d = c
     · subst hdc
-      rw [if_pos rfl]
+      rw [ite_eq_left rfl]
       by_cases hd : d < ps.size
       · rw [Array.getElem?_eq_getElem hd]
         simp only [Option.map_some, Option.getD_some, Array.mem_push]
@@ -307,7 +307,7 @@ theorem modify_push_fold (u : Nat) :
       · rw [Array.getElem?_eq_none (Nat.le_of_not_lt hd)]
         simp only [Option.map_none]
         grind
-    · rw [if_neg hdc]
+    · rw [ite_eq_right hdc]
       grind
 
 theorem parentEdgeLists_ok (dag : Dag) : ParentsOK dag (parentEdgeLists dag) := by
@@ -375,7 +375,7 @@ theorem ancVisit_fold {dag : Dag} {t : Nat} :
     have hl' : ∀ q ∈ l, q < dag.size ∧ AncOf dag t q := fun q hq => hl q (by simp [hq])
     rw [ancVisit_pair]
     by_cases hmp : mark[p]! = true
-    · simp only [hmp, if_true]
+    · simp only [hmp, ite_true]
       obtain ⟨h1, h2, h3, h4, l', h5⟩ := ancVisit_fold l mark out hs hm ha hl'
       refine ⟨h1, h2, h3, ?_, l', h5⟩
       intro q hq
@@ -384,7 +384,7 @@ theorem ancVisit_fold {dag : Dag} {t : Nat} :
       · rw [Array.mem_def, h5, List.mem_append]
         exact Or.inl (Array.mem_def.mp ((hm q).mp hmp))
       · exact h4 q hq
-    · simp only [hmp, Bool.false_eq_true, if_false]
+    · simp only [hmp, Bool.false_eq_true, ite_false]
       have hs' : (mark.set! p true).size = dag.size := by
         simp [Array.set!_eq_setIfInBounds, hs]
       have hm' : ∀ u, (mark.set! p true)[u]! = true ↔ u ∈ out.push p := by
@@ -502,10 +502,10 @@ theorem unmark_spec (mark : Array Bool) (s : Array Nat) :
     · subst huv
       by_cases hs : u < m.size
       · simp [hs] at a
-      · simp only [hs, and_false, if_false] at a
+      · simp only [hs, and_false, ite_false] at a
         rw [getElem!_neg m u hs] at a
         exact absurd a (by decide)
-    · simp only [huv, false_and, if_false] at a
+    · simp only [huv, false_and, ite_false] at a
       exact ⟨a, by simp [huv, b]⟩
 
 theorem getElem!_replicate_false (n u : Nat) : (Array.replicate n false)[u]! = false := by
@@ -565,7 +565,7 @@ theorem Prep.evalUpFast_eq (p : Prep) (ev : DictEval) (width : Array (Option Nat
       · rfl
       · obtain ⟨h3, h4⟩ := h2 u hu
         exact absurd ((hinv.marked u).mp h3) h4
-    simp only [if_true]
+    simp only [ite_true]
     rw [evalMarked_eq, hun, hmark]
     rfl
 

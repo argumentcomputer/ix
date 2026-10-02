@@ -51,14 +51,14 @@ theorem stage_cls_theta :
   by_cases hc : (tag0Size ((ucand ex.dag ex.roots w).filter id).size ==
       tag0Size ((ucls ex.dag ex.roots w (uthetaMax ex.dag ex.roots w)).filter
         (· == .certainStored)).size) = true
-  · have ht : (stg w ex).theta = 1 := by rw [htheta, if_pos hc]
+  · have ht : (stg w ex).theta = 1 := by rw [htheta, ite_eq_left hc]
     refine ⟨?_, Or.inr ⟨ht, by simpa using hc⟩⟩
     rw [hcls, ht]
     rfl
-  · have ht : (stg w ex).theta = uthetaMax ex.dag ex.roots w := by rw [htheta, if_neg hc]
+  · have ht : (stg w ex).theta = uthetaMax ex.dag ex.roots w := by rw [htheta, ite_eq_right hc]
     refine ⟨?_, Or.inl ht⟩
     rw [hcls, ht]
-    simp only [hmax, Bool.false_eq_true, if_false]
+    simp only [hmax, Bool.false_eq_true, ite_false]
 
 theorem stage_pick (c : UClass) :
     ((Array.range ex.dag.size).filter ((stg w ex).cls[·]! == c)).toList =
@@ -86,7 +86,7 @@ theorem stage_opaq (u : Nat) : (stg w ex).opaq[u]! = decide (u ∈ (stg w ex).cs
   by_cases hu : u ∈ (stg w ex).cs.toList
   · have := stage_cs_lt w ex u hu
     simp [hu, this]
-  · simp only [hu, false_and, if_false, decide_false]
+  · simp only [hu, false_and, ite_false, decide_false]
     by_cases hn : u < ex.dag.size
     · rw [getElem!_pos _ u (by simpa using hn)]; simp
     · simp [hn]
@@ -136,9 +136,9 @@ theorem edgeCount_fold (dag : Dag) (q y : Nat) (node : Node) :
   | i :: l, a, b => by
     rw [List.foldl_cons]
     by_cases hi : (node.child i == y) = true
-    · rw [if_pos hi, edgeCount_fold dag q y node l]
+    · rw [ite_eq_left hi, edgeCount_fold dag q y node l]
       cases hc : continuationEdge node i (dag.node y) <;> simp [hi, hc] <;> omega
-    · rw [if_neg hi, edgeCount_fold dag q y node l]
+    · rw [ite_eq_right hi, edgeCount_fold dag q y node l]
       simp only [Bool.not_eq_true] at hi
       simp [hi]
 
@@ -360,7 +360,7 @@ theorem searchComponents_spec {w : Nat} {limits : Limits} {ex : Expanded}
       rw [List.foldlM_cons] at hres
       obtain ⟨acc', hstep, hres⟩ := bind_eq_ok hres
       obtain ⟨results0, states0, costEvals0⟩ := acc
-      simp only [hsub, Bool.false_eq_true, if_false] at hstep
+      simp only [hsub, Bool.false_eq_true, ite_false] at hstep
       obtain ⟨⟨r, s1, c1⟩, hsc, hstep⟩ := bind_eq_ok hstep
       simp only [pure, Except.pure, Except.ok.injEq] at hstep
       subst hstep
@@ -983,7 +983,7 @@ theorem bestSetOf_spec {tb : CTable} (hs : SortedT tb) {bd : _root_.Int} {bs : A
             subst he
             obtain ⟨d, s⟩ := e
             simp only at hed
-            simp only [bestStepSet, hed, beq_self_eq_true, if_true] at hst
+            simp only [bestStepSet, hed, beq_self_eq_true, ite_true] at hst
             cases acc with
             | none => cases hst
             | some a0 => simp only at hst; split at hst <;> cases hst

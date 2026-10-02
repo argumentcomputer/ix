@@ -1914,7 +1914,7 @@ theorem familyMemberComputeKTargetRunNeutral :
   rw [familyMemberDiscoveryRunNeutral]
   simp only
   rw [familyMemberSingletonSizeNative]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   change EStateM.bind
     ((RecM.checkedMetadataSum "inductive params + indices" #[1, 1]).run
       checkerMethods) _ familyMemberMajorAfter = _

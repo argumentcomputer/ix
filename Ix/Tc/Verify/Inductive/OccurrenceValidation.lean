@@ -270,7 +270,7 @@ theorem checkPositiveParametersFrom_success
       | ok answer afterComparison =>
           cases answer with
           | false =>
-              simp only [Bool.not_false, if_true] at hrun
+              simp only [Bool.not_false, ite_true] at hrun
               change EStateM.Result.error _ afterComparison = .ok () final
                 at hrun
               contradiction
@@ -416,7 +416,7 @@ theorem checkPositiveRecursiveApplicationHeader_success
           cases hindependent :
               positiveIndicesIndependent args nParams rootAddrs with
           | false =>
-              simp only [hindependent, Bool.not_false, if_true] at hrun
+              simp only [hindependent, Bool.not_false, ite_true] at hrun
               change EStateM.Result.error _ afterParameters = .ok () final
                 at hrun
               contradiction

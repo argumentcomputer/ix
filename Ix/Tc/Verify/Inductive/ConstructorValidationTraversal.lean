@@ -112,7 +112,7 @@ theorem run
       simp only
       cases positivity with
       | safe positivityRun positivityTrace =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           rw [ReaderT.run_bind]
           change EStateM.bind
             ((RecM.checkPositivity _ indParams blockAddrs).run methods) _ _ = _
@@ -127,7 +127,7 @@ theorem run
           simp only
           exact returnType
       | skipped =>
-          simp only [Bool.not_true, Bool.false_eq_true, if_false]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false]
           rw [ReaderT.run_bind]
           change EStateM.bind
             ((RecM.checkFieldUniverses _ indParams indLevel).run methods) _ _ = _
@@ -381,7 +381,7 @@ theorem checkInductiveConstructor_success (methods : Methods m)
           cases hunsafe : indIsUnsafe with
           | false =>
               simp only [hunsafe] at hmetadata
-              simp only [hunsafe, Bool.not_false, if_true] at hrun
+              simp only [hunsafe, Bool.not_false, ite_true] at hrun
               rw [ReaderT.run_bind] at hrun
               change EStateM.bind
                 ((checkPositivity ctorTy indParams blockAddrs).run methods) _
@@ -416,7 +416,7 @@ theorem checkInductiveConstructor_success (methods : Methods m)
                         huniverses hrun
           | true =>
               simp only [hunsafe] at hmetadata
-              simp only [hunsafe, Bool.not_true, Bool.false_eq_true, if_false,
+              simp only [hunsafe, Bool.not_true, Bool.false_eq_true, ite_false,
                 ReaderT.run_pure, pure_bind] at hrun
               rw [ReaderT.run_bind] at hrun
               change EStateM.bind

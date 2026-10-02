@@ -345,15 +345,15 @@ theorem isSubset_mem :
   | a :: as, b :: bs, h, x, hx => by
     rw [isSubset] at h
     by_cases hlt : b < a
-    · rw [if_pos hlt] at h
+    · rw [ite_eq_left hlt] at h
       exact List.mem_cons_of_mem b (isSubset_mem h x hx)
-    · rw [if_neg hlt] at h
+    · rw [ite_eq_right hlt] at h
       by_cases heq : (b == a) = true
-      · rw [if_pos heq] at h
+      · rw [ite_eq_left heq] at h
         rcases List.mem_cons.mp hx with rfl | hx'
         · exact List.mem_cons.mpr (.inl (eq_of_beq heq).symm)
         · exact List.mem_cons_of_mem b (isSubset_mem h x hx')
-      · rw [if_neg heq] at h
+      · rw [ite_eq_right heq] at h
         simp at h
   termination_by p q => q.length + p.length
 
@@ -401,11 +401,11 @@ theorem evalPath_orderedInsert {ρ : List Nat} {a : UInt64} {p q : Path}
     evalPath ρ q n = if 0 < evalParam ρ a then evalPath ρ p n else 0 := by
   simp only [evalPath]
   by_cases ha : 0 < evalParam ρ a
-  · rw [if_pos ha]
+  · rw [ite_eq_left ha]
     by_cases hp : allNZ ρ p = true
-    · rw [if_pos ((allNZ_orderedInsert h).mpr ⟨ha, hp⟩), if_pos hp]
-    · rw [if_neg fun hq => hp ((allNZ_orderedInsert h).mp hq).2, if_neg hp]
-  · rw [if_neg ha, if_neg fun hq => ha ((allNZ_orderedInsert h).mp hq).1]
+    · rw [ite_eq_left ((allNZ_orderedInsert h).mpr ⟨ha, hp⟩), ite_eq_left hp]
+    · rw [ite_eq_right fun hq => hp ((allNZ_orderedInsert h).mp hq).2, ite_eq_right hp]
+  · rw [ite_eq_right ha, ite_eq_right fun hq => ha ((allNZ_orderedInsert h).mp hq).1]
 
 theorem EvalPaths.mono {ρ : List Nat} {path : Path} {n n' : Nat}
     (hle : n ≤ n') : EvalPaths ρ path n → EvalPaths ρ path n'
@@ -482,7 +482,7 @@ private theorem forall_mem_set {α : Type _} {l : List α} {i : Nat}
     refine ⟨H b (List.mem_set hi b), fun j hj hne => ?_⟩
     have hj' : j < (l.set i b).length := by simpa using hj
     have := H _ (List.getElem_mem hj')
-    rwa [List.getElem_set, if_neg fun h => hne h.symm] at this
+    rwa [List.getElem_set, ite_eq_right fun h => hne h.symm] at this
   · rintro ⟨hb, hrest⟩ a ha
     obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp ha
     rw [List.getElem_set]
@@ -602,7 +602,7 @@ private theorem insert_findD_eval {ρ : List Nat} {l : NormLevel} {path : Path}
     constructor
     · intro H
       have hpath : evalPath ρ path (v'.eval ρ) ≤ x :=
-        H path _ (by rw [hfind, if_pos Std.ReflCmp.compare_self])
+        H path _ (by rw [hfind, ite_eq_left Std.ReflCmp.compare_self])
       rw [hv, evalPath_max, Nat.max_le] at hpath
       refine ⟨fun p n hf => ?_, hpath.2⟩
       by_cases hcmp : compare p path = .eq
@@ -611,7 +611,7 @@ private theorem insert_findD_eval {ρ : List Nat} {l : NormLevel} {path : Path}
           rw [RBTree.RBMap.findD, hf, Option.getD_some]
         rw [← hD]
         exact hpath.1
-      · exact H p n (by rw [hfind, if_neg hcmp]; exact hf)
+      · exact H p n (by rw [hfind, ite_eq_right hcmp]; exact hf)
     · rintro ⟨hl, hnew⟩ p n hf
       rw [hfind] at hf
       split at hf
@@ -794,23 +794,23 @@ private theorem normalizeAux_eval' {ρ : List Nat} :
       rw [NormLevel.addVar_eval, NormLevel.addConst_eval hp,
         evalPath_orderedInsert h₁]
       by_cases hz : 0 < evalParam ρ idx
-      · rw [if_pos hz]
+      · rw [ite_eq_left hz]
         by_cases hnz : allNZ ρ path = true
-        · simp only [evalPath, if_pos hnz]
+        · simp only [evalPath, ite_eq_left hnz]
           refine ext_le fun x => ?_
           simp only [Nat.max_le]
           omega
-        · simp only [evalPath, if_neg hnz]
+        · simp only [evalPath, ite_eq_right hnz]
           refine ext_le fun x => ?_
           simp only [Nat.max_le]
           omega
-      · rw [if_neg hz, Nat.eq_zero_of_not_pos hz]
+      · rw [ite_eq_right hz, Nat.eq_zero_of_not_pos hz]
         by_cases hnz : allNZ ρ path = true
-        · simp only [evalPath, if_pos hnz, Nat.zero_add]
+        · simp only [evalPath, ite_eq_left hnz, Nat.zero_add]
           refine ext_le fun x => ?_
           simp only [Nat.max_le]
           omega
-        · simp only [evalPath, if_neg hnz]
+        · simp only [evalPath, ite_eq_right hnz]
           refine ext_le fun x => ?_
           simp only [Nat.max_le]
           omega
@@ -826,11 +826,11 @@ private theorem normalizeAux_eval' {ρ : List Nat} :
         by_cases hnz : allNZ ρ path = true
         · have hle : evalParam ρ idx ≤ NormLevel.eval ρ acc :=
             hp.mem_le hmem hnz
-          simp only [evalPath, if_pos hnz]
+          simp only [evalPath, ite_eq_left hnz]
           refine ext_le fun x => ?_
           simp only [Nat.max_le]
           omega
-        · simp only [evalPath, if_neg hnz]
+        · simp only [evalPath, ite_eq_right hnz]
           refine ext_le fun x => ?_
           simp only [Nat.max_le]
           omega
@@ -1009,9 +1009,9 @@ private theorem normalize_param_some_eval {ρ : List Nat} {u : KUniv m}
       refine Nat.le_trans ?_ (Nat.le_max_right ..)
       rw [evalPath_orderedInsert h₁]
       by_cases hz : 0 < evalParam ρ idx
-      · rw [if_pos hz]
+      · rw [ite_eq_left hz]
         exact evalPath_mono (Nat.le_add_right ..)
-      · rw [if_neg hz, Nat.eq_zero_of_not_pos hz]
+      · rw [ite_eq_right hz, Nat.eq_zero_of_not_pos hz]
         exact evalPath_le.mpr fun _ => Nat.le_refl _
     · rw [hvar, hconst]
       exact Nat.le_trans (Nat.le_max_left ..) (Nat.le_max_left ..)
@@ -1019,25 +1019,25 @@ private theorem normalize_param_some_eval {ρ : List Nat} {u : KUniv m}
       ((acc.addConst k path).addVar idx k newPath) (by omega) hp₂,
     hvar, hconst, evalPath_orderedInsert h₁, evalPath_orderedInsert h₁]
   by_cases hnz : allNZ ρ path = true <;> by_cases hz : 0 < evalParam ρ idx
-  · rw [if_pos hz, if_pos hz]
-    simp only [evalPath, if_pos hnz, Lean.Nat.imax,
-      if_neg (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max,
+  · rw [ite_eq_left hz, ite_eq_left hz]
+    simp only [evalPath, ite_eq_left hnz, Lean.Nat.imax,
+      ite_eq_right (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max,
       ← Nat.add_max_add_right]
     refine ext_le fun x => ?_
     simp only [Nat.max_le]
     omega
-  · rw [if_neg hz, if_neg hz, Nat.eq_zero_of_not_pos hz]
-    simp only [evalPath, if_pos hnz, Lean.Nat.imax, reduceIte, Nat.zero_add]
+  · rw [ite_eq_right hz, ite_eq_right hz, Nat.eq_zero_of_not_pos hz]
+    simp only [evalPath, ite_eq_left hnz, Lean.Nat.imax, reduceIte, Nat.zero_add]
     refine ext_le fun x => ?_
     simp only [Nat.max_le]
     omega
-  · rw [if_pos hz, if_pos hz]
-    simp only [evalPath, if_neg hnz]
+  · rw [ite_eq_left hz, ite_eq_left hz]
+    simp only [evalPath, ite_eq_right hnz]
     refine ext_le fun x => ?_
     simp only [Nat.max_le]
     omega
-  · rw [if_neg hz, if_neg hz]
-    simp only [evalPath, if_neg hnz]
+  · rw [ite_eq_right hz, ite_eq_right hz]
+    simp only [evalPath, ite_eq_right hnz]
     refine ext_le fun x => ?_
     simp only [Nat.max_le]
     omega
@@ -1074,13 +1074,13 @@ private theorem normalize_param_none_eval {ρ : List Nat} {u : KUniv m}
     · have hz : 0 < evalParam ρ idx := by
         simp only [allNZ, List.all_eq_true, decide_eq_true_eq] at hnz
         exact hnz idx hmem
-      simp only [evalPath, if_pos hnz, Lean.Nat.imax,
-        if_neg (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max,
+      simp only [evalPath, ite_eq_left hnz, Lean.Nat.imax,
+        ite_eq_right (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max,
         ← Nat.add_max_add_right]
       refine ext_le fun x => ?_
       simp only [Nat.max_le]
       omega
-    · simp only [evalPath, if_neg hnz]
+    · simp only [evalPath, ite_eq_right hnz]
       refine ext_le fun x => ?_
       simp only [Nat.max_le]
       omega
@@ -1095,12 +1095,12 @@ private theorem normalize_param_none_eval {ρ : List Nat} {u : KUniv m}
         exact hnz idx hmem
       have hle : evalParam ρ idx ≤ NormLevel.eval ρ acc :=
         hp.mem_le hmem hnz
-      simp only [evalPath, if_pos hnz, Lean.Nat.imax,
-        if_neg (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max]
+      simp only [evalPath, ite_eq_left hnz, Lean.Nat.imax,
+        ite_eq_right (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max]
       refine ext_le fun x => ?_
       simp only [Nat.max_le]
       omega
-    · simp only [evalPath, if_neg hnz]
+    · simp only [evalPath, ite_eq_right hnz]
 termination_by 3 * u.size + 1
 decreasing_by all_goals omega
 
@@ -1188,24 +1188,24 @@ theorem subsumption_eq_model (acc : NormLevel) :
     · split
       · split
         · rename_i h4
-          try rw [if_pos h4]
+          try rw [ite_eq_left h4]
           rfl
         · rename_i h4
-          try rw [if_neg h4]
+          try rw [ite_eq_right h4]
           rfl
       · split
         · rename_i h4
-          try rw [if_pos h4]
+          try rw [ite_eq_left h4]
           rfl
         · rename_i h4
-          try rw [if_neg h4]
+          try rw [ite_eq_right h4]
           rfl
     · split
       · rename_i h4
-        try rw [if_pos h4]
+        try rw [ite_eq_left h4]
         rfl
       · rename_i h4
-        try rw [if_neg h4]
+        try rw [ite_eq_right h4]
         rfl
   · rfl
 
@@ -1736,8 +1736,8 @@ private theorem match_id_ite {β : Type _} {c : Prop} [Decidable c]
       = if c then (match t with | .yield b' => b' | .done b' => b')
         else (match e with | .yield b' => b' | .done b' => b') := by
   by_cases h : c
-  · rw [if_pos h, if_pos h]
-  · rw [if_neg h, if_neg h]
+  · rw [ite_eq_left h, ite_eq_left h]
+  · rw [ite_eq_right h, ite_eq_right h]
 
 /-- Strip a unit-valued `Id` bind (the do-elaborator's join-point
     plumbing) under the selector — definitional by `PUnit` eta. -/
@@ -2014,7 +2014,7 @@ private theorem subsumeVars_go_drop {xs ys : Array VarNode} :
               subst hji
               by_cases hoff : xs[j]!.offset > ys[yi]!.offset
               · exfalso
-                rw [if_pos hoff] at hd
+                rw [ite_eq_left hoff] at hd
                 exact hd (subsumeVars_go_mono _ _ _ _
                   (Array.mem_push.mpr (.inr (by rw [hxi, hje]))))
               · have hn : ¬(ys[yi]!.offset.toNat < xs[j]!.offset.toNat) :=
@@ -2189,10 +2189,10 @@ private theorem foldl_max_cases :
       by_cases hle : init ≤ a.offset
       · refine .inr ⟨a, List.mem_cons_self .., ?_⟩
         show (if init ≤ a.offset then a.offset else init) = a.offset
-        rw [if_pos hle]
+        rw [ite_eq_left hle]
       · left
         show (if init ≤ a.offset then a.offset else init) = init
-        rw [if_neg hle]
+        rw [ite_eq_right hle]
     · exact .inr ⟨v, List.mem_cons_of_mem _ hv, h⟩
 
 /-- The hard half: every original contribution is still dominated in the
@@ -2586,7 +2586,7 @@ theorem isNeverZero_eval (ρ : List Nat) : ∀ {u : KUniv m},
     have hb := isNeverZero_eval ρ (u := b) (by simpa [isNeverZero] using h)
     show 0 < Lean.Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
     simp only [Lean.Nat.imax]
-    rw [if_neg (by omega)]
+    rw [ite_eq_right (by omega)]
     simp only [Nat.max_eq_max, Nat.max_def]
     split <;> omega
 
@@ -2814,7 +2814,7 @@ theorem toVLevel_mkIMax {a b : KUniv m}
     have hpos := isNeverZero_eval ρ (u := b) hnz
     rw [hmax]
     simp only [Lean.Nat.imax]
-    rw [if_neg (by omega)]
+    rw [ite_eq_right (by omega)]
     rfl
   · split
     · -- b is zero: imax _ 0 = 0

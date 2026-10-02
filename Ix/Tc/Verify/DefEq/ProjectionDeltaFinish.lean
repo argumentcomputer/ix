@@ -46,10 +46,10 @@ theorem finishLazyDeltaReductionStep_wf
   intro accepted afterQuick haccepted
   cases hresult : (left.addr == right.addr || accepted) with
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact RecM.WF.pure fun _ => hpair
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun hI => by
         have hcurrent : world.venv.IsDefEqU uvars Delta.toCtx leftV rightV := by
           rcases Bool.or_eq_true_iff.mp hresult with haddr | hquick

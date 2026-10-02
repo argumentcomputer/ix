@@ -42,20 +42,20 @@ theorem tryDefEqWhnfStringAfterGuard_wf
   intro accepted afterFirst hfirst
   cases accepted with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ _ => hfirst rfl
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       apply RecM.WF.bind <|
         tryStringLitExpansion_wf context hcanonical hrightSupport
           hleftSupport hright hleft
       intro reverseAccepted afterSecond hsecond
       cases reverseAccepted with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact RecM.WF.pure fun _ _ => (hsecond rfl).symm
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           exact RecM.WF.pure fun _ => trivial
 
 /-- Exhaust the outer "either operand is a String literal" guard. -/

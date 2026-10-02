@@ -117,11 +117,11 @@ theorem natSuccOf_wf
   | nat value blob info =>
       cases value with
       | zero =>
-          simp only [beq_self_eq_true, if_true]
+          simp only [beq_self_eq_true, ite_true]
           exact RecM.WF.pure fun _ => trivial
       | succ predecessor =>
           have hnonzero : (Nat.succ predecessor == 0) = false := by simp
-          simp only [hnonzero, Bool.false_eq_true, if_false,
+          simp only [hnonzero, Bool.false_eq_true, ite_false,
             Nat.succ_sub_one, pure_bind]
           apply RecM.WF.bind
             (RecM.WF.withInv <| RecM.WF.liftTcM <|
@@ -148,10 +148,10 @@ theorem natSuccOf_wf
       | const id levels fnInfo =>
           cases haddr : id.addr == state.prims.natSucc.addr with
           | false =>
-              simp only [haddr, Bool.false_eq_true, if_false]
+              simp only [haddr, Bool.false_eq_true, ite_false]
               exact RecM.WF.pure fun _ => trivial
           | true =>
-              simp only [haddr, if_true]
+              simp only [haddr, ite_true]
               exact RecM.WF.pure fun _ => by
                 cases hsource with
                 | app hfnType hargType hfn harg =>
@@ -234,7 +234,7 @@ theorem isDefEqNatAfterLiteral_wf
   | true =>
       cases rightZero with
       | true =>
-          simp only [Bool.true_and, if_true]
+          simp only [Bool.true_and, ite_true]
           exact RecM.WF.pure fun hI _ => by
             have hleftValue := hleftZero rfl
             have hrightValue := hrightZero rfl
@@ -244,7 +244,7 @@ theorem isDefEqNatAfterLiteral_wf
               hleft.wf world.venvWF.ordered theory.literalWF
                 theory.projections.wf hI.2.1.wf
       | false =>
-          simp only [Bool.true_and, Bool.false_eq_true, if_false]
+          simp only [Bool.true_and, Bool.false_eq_true, ite_false]
           apply RecM.WF.bind <|
             natSuccOf_wf resources hleftSupport hleft
           intro leftPred afterLeftPred hleftPred
@@ -281,7 +281,7 @@ theorem isDefEqNatAfterLiteral_wf
               trivial
   | false =>
       cases rightZero <;>
-        simp only [Bool.false_and, Bool.false_eq_true, if_false]
+        simp only [Bool.false_and, Bool.false_eq_true, ite_false]
       all_goals
         apply RecM.WF.bind <|
           natSuccOf_wf resources hleftSupport hleft
@@ -376,8 +376,8 @@ theorem tryDefEqWhnfNat_wf
   intro rightLike afterRight hafterRight
   subst afterRight
   cases leftLike <;> cases rightLike <;>
-    simp only [Bool.false_and, Bool.true_and, Bool.false_eq_true, if_false,
-      if_true]
+    simp only [Bool.false_and, Bool.true_and, Bool.false_eq_true, ite_false,
+      ite_true]
   all_goals
     first
     | exact RecM.WF.pure fun _ => trivial

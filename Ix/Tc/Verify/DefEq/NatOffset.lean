@@ -167,10 +167,10 @@ theorem tryDefEqOffsetAfterZeroMiss_wf
       (!natOffsetCandidate state.prims left ||
         !natOffsetCandidate state.prims right) with
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact hafter hleftSupport hrightSupport hleft hright
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ => trivial
 
 namespace TryDefEqOffsetAfterZeroMiss
@@ -221,15 +221,15 @@ theorem tryDefEqOffsetAfterLiteral_wf
   cases leftIsZero with
   | false =>
       cases rightIsZero <;>
-        simp only [Bool.false_and, Bool.false_eq_true, if_false] <;>
+        simp only [Bool.false_and, Bool.false_eq_true, ite_false] <;>
         exact hafter hleftSupport hrightSupport hleft hright
   | true =>
       cases rightIsZero with
       | false =>
-          simp only [Bool.true_and, Bool.false_eq_true, if_false]
+          simp only [Bool.true_and, Bool.false_eq_true, ite_false]
           exact hafter hleftSupport hrightSupport hleft hright
       | true =>
-          simp only [Bool.true_and, if_true]
+          simp only [Bool.true_and, ite_true]
           exact RecM.WF.pure fun _ _ => by
             have hleftValue := hleftZero rfl
             have hrightValue := hrightZero rfl

@@ -159,7 +159,7 @@ theorem Std.HashMap.getElem?_foldl_insert_of_pairwise_distinct_aux
           (p := fun x => x.1 == name) hhd
       rw [hfind_cons]
       simp only [Option.map_none, Option.or, Option.map_some,
-                 Std.HashMap.getElem?_insert, hhd, if_true]
+                 Std.HashMap.getElem?_insert, hhd, ite_true]
     · have hhd_ff : (hd.1 == name) = false := Bool.not_eq_true _ |>.mp hhd
       have hfind_cons : (hd :: tl).find? (fun x => x.1 == name)
           = tl.find? (fun x => x.1 == name) :=

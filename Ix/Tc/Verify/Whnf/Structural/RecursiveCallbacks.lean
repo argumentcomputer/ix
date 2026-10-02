@@ -95,10 +95,10 @@ theorem projectionValueCallback_wf
       have hvalueSupport := hinputs.projection hsupport
       cases hcheap : flags.cheapProj with
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           exact whnfRec_wf hvalueSupport hvalueTr
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact whnfCoreFlagsRec_wf hvalueSupport hvalueTr
 
 /-- The application-head callback is justified by the actual production

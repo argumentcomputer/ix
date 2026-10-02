@@ -73,10 +73,10 @@ theorem isDefEqWhnfAfterStructEta_wf
   intro accepted afterUnit haccepted
   cases accepted with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ _ => haccepted rfl
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact htail hleftSupport hrightSupport hleft hright
 
 namespace IsDefEqWhnfAfterStructEta

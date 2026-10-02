@@ -107,10 +107,10 @@ theorem tryReduceString_inv_wf
   rcases spine with ⟨head, args⟩
   cases hsize : args.size != 1 with
   | true =>
-      simp only [hsize, if_true]
+      simp only [hsize, ite_true]
       exact RecM.WF.pure fun _ => trivial
   | false =>
-      simp only [hsize, Bool.false_eq_true, if_false]
+      simp only [hsize, Bool.false_eq_true, ite_false]
       cases head with
       | const id us headInfo =>
           simp only [pure_bind]
@@ -127,10 +127,10 @@ theorem tryReduceString_inv_wf
                 !(id.addr == prims.stringUtf8ByteSize.addr) &&
                 !(id.addr == prims.stringToByteArray.addr)) with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact RecM.WF.pure fun _ => trivial
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               cases harg : args[0]! with
               | str value blob stringInfo =>
                   unfold tryReduceStringLiteral
@@ -138,7 +138,7 @@ theorem tryReduceString_inv_wf
                   cases hutf8 :
                       (id.addr == prims.stringUtf8ByteSize.addr) with
                   | true =>
-                      simp only [if_true]
+                      simp only [ite_true]
                       let requested : KExpr .anon :=
                         natExprFromValue value.utf8ByteSize
                       have hrequested : support requested := by
@@ -153,14 +153,14 @@ theorem tryReduceString_inv_wf
                       subst interned
                       exact RecM.WF.pure fun _ => hrequested
                   | false =>
-                      simp only [Bool.false_eq_true, if_false]
+                      simp only [Bool.false_eq_true, ite_false]
                       cases hbytes :
                           (id.addr == prims.stringToByteArray.addr) with
                       | true =>
-                          simp only [if_true]
+                          simp only [ite_true]
                           cases hempty : value.isEmpty with
                           | true =>
-                              simp only [if_true, pure_bind]
+                              simp only [ite_true, pure_bind]
                               let requested : KExpr .anon :=
                                 KExpr.mkConst prims.byteArrayEmpty #[]
                               have hrequested : support requested := by
@@ -177,10 +177,10 @@ theorem tryReduceString_inv_wf
                               subst interned
                               exact RecM.WF.pure fun _ => hrequested
                           | false =>
-                              simp only [Bool.false_eq_true, if_false]
+                              simp only [Bool.false_eq_true, ite_false]
                               exact RecM.WF.pure fun _ => trivial
                       | false =>
-                          simp only [Bool.false_eq_true, if_false, pure_bind]
+                          simp only [Bool.false_eq_true, ite_false, pure_bind]
                           have hback :
                               (id.addr == prims.stringBack.addr ||
                                 id.addr ==

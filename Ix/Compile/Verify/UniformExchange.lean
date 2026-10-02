@@ -47,7 +47,7 @@ theorem merged_mem_mergedCuts (p : Prep) (w : Nat) (S : Nat → Bool) (f : Nat �
   unfold mergedCuts
   apply List.mem_filterMap.mpr
   refine ⟨j, List.mem_range'_1.mpr ⟨hj1, by omega⟩, ?_⟩
-  rw [if_pos hS]
+  rw [ite_eq_left hS]
 
 theorem tag4Size_pos (n : Nat) : 1 ≤ tag4Size n :=
   Ix.Compile.Verify.TagN.tagNByteWidth_pos 4 n
@@ -239,7 +239,7 @@ theorem PrepWF.below_t {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat} (
         a.subst p t rh rc = a) fun i hi => by
       have hc := hp.dag.childAt_lt hx (k := i) (by omega)
       exact ih i hi (by omega) (by omega)
-    simp only [WTree.occH, WTree.occC, WTree.subst, hne, if_false, occHs_eq, occCs_eq,
+    simp only [WTree.occH, WTree.occC, WTree.subst, hne, ite_false, occHs_eq, occCs_eq,
       substs_eq]
     exact ⟨sum_map_eq_zero fun a ha => (hk a ha).1, sum_map_eq_zero fun a ha => (hk a ha).2.1,
       by rw [map_eq_self fun a ha => (hk a ha).2.2]⟩
@@ -252,7 +252,7 @@ theorem PrepWF.below_t {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat} (
       exact ih i hi (by omega) (by omega)
     have hhit : spineHit p x j t = none := spineHit_none fun k h1 h2 => by
       have := hp.spineAt_le hx hf (k := k) (by omega); omega
-    simp only [WTree.occH, WTree.occC, WTree.subst, hne, if_false, occHs_eq, occCs_eq,
+    simp only [WTree.occH, WTree.occC, WTree.subst, hne, ite_false, occHs_eq, occCs_eq,
       substs_eq, hhit, Option.isSome_none, Bool.false_eq_true]
     exact ⟨by rw [sum_map_eq_zero fun a ha => (hk a ha).1],
       by rw [sum_map_eq_zero fun a ha => (hk a ha).2.1],
@@ -268,7 +268,7 @@ theorem PrepWF.below_t {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat} (
     have hhit : spineHit p x p.spineLen[x]! t = none := spineHit_none fun k h1 h2 => by
       have := hp.spineAt_le hx hf (k := k) (by omega); omega
     obtain ⟨ht1, ht2, ht3⟩ := iht (by omega) (by omega)
-    simp only [WTree.occH, WTree.occC, WTree.subst, hne, if_false, occHs_eq, occCs_eq,
+    simp only [WTree.occH, WTree.occC, WTree.subst, hne, ite_false, occHs_eq, occCs_eq,
       substs_eq, hhit, Option.isSome_none, Bool.false_eq_true]
     exact ⟨by rw [sum_map_eq_zero fun a ha => (hk a ha).1, ht1],
       by rw [sum_map_eq_zero fun a ha => (hk a ha).2.1, ht2],
@@ -400,7 +400,7 @@ theorem PrepWF.subst_spec {p : Prep} (hp : PrepWF p) (w : Nat) {S : Nat → Bool
     | true =>
       refine ⟨.share (addT_self S t), ?_⟩
       have := hrh rfl
-      simp only [if_true, WTree.cost]
+      simp only [ite_true, WTree.cost]
       omega
     | false =>
       exact ⟨hT.mono (addT_le S t), by simp⟩
@@ -422,7 +422,7 @@ theorem PrepWF.subst_spec {p : Prep} (hp : PrepWF p) (w : Nat) {S : Nat → Bool
               kids[i].occC p t * (if rc then mergedOf p w S (uCost p w S) t - w else 0) ≤
             kids[i].cost p w := fun i hi =>
         ih i hi (by have := hp.dag.childAt_lt hx (k := i) (by omega); omega)
-      simp only [WTree.subst, hxt, if_false, WTree.occH, WTree.occC, WTree.cost, substs_eq,
+      simp only [WTree.subst, hxt, ite_false, WTree.occH, WTree.occC, WTree.cost, substs_eq,
         occHs_eq, occCs_eq, WTree.costs_eq]
       refine ⟨.node hf (by simp [hlen]) fun i hi => by
         simp only [List.getElem_map]
@@ -460,9 +460,9 @@ theorem PrepWF.subst_spec {p : Prep} (hp : PrepWF p) (w : Nat) {S : Nat → Bool
             a.cost p w) fun i hi => (hk i hi).2)
       cases hhit : spineHit p x j t with
       | none =>
-        simp only [WTree.subst, hxt, if_false, hhit, WTree.occH, WTree.occC, WTree.cost,
+        simp only [WTree.subst, hxt, ite_false, hhit, WTree.occH, WTree.occC, WTree.cost,
           substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Option.isSome_none, Bool.false_eq_true,
-          if_false, Nat.add_zero, Nat.zero_add]
+          ite_false, Nat.add_zero, Nat.zero_add]
         refine ⟨.teleCut hf hj1 hj (by simp [hlen]) hvalid (addT_le S t _ hS), ?_⟩
         simp only [List.map_map, Function.comp_def]
         omega
@@ -470,15 +470,15 @@ theorem PrepWF.subst_spec {p : Prep} (hp : PrepWF p) (w : Nat) {S : Nat → Bool
         obtain ⟨hk1, hkj, hkt⟩ := spineHit_spec hhit
         cases rc with
         | false =>
-          simp only [WTree.subst, hxt, if_false, hhit, WTree.occH, WTree.occC, WTree.cost,
+          simp only [WTree.subst, hxt, ite_false, hhit, WTree.occH, WTree.occC, WTree.cost,
             substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Bool.false_eq_true,
             Nat.add_zero]
           refine ⟨.teleCut hf hj1 hj (by simp [hlen]) hvalid (addT_le S t _ hS), ?_⟩
           simp only [List.map_map, Function.comp_def] at hsum ⊢
-          simp only [Bool.false_eq_true, if_false, Nat.mul_zero] at hsum ⊢
+          simp only [Bool.false_eq_true, ite_false, Nat.mul_zero] at hsum ⊢
           omega
         | true =>
-          simp only [WTree.subst, hxt, if_false, hhit, if_true, WTree.occH, WTree.occC, WTree.cost,
+          simp only [WTree.subst, hxt, ite_false, hhit, ite_true, WTree.occH, WTree.occC, WTree.cost,
             substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Option.isSome_some,
             Nat.add_zero]
           have hM := hp.merged_le_rest w S hx hf hlen hsides
@@ -561,9 +561,9 @@ theorem PrepWF.subst_spec {p : Prep} (hp : PrepWF p) (w : Nat) {S : Nat → Bool
       obtain ⟨htv, htc⟩ := iht (by omega)
       cases hhit : spineHit p x p.spineLen[x]! t with
       | none =>
-        simp only [WTree.subst, hxt, if_false, hhit, WTree.occH, WTree.occC, WTree.cost,
+        simp only [WTree.subst, hxt, ite_false, hhit, WTree.occH, WTree.occC, WTree.cost,
           substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Option.isSome_none, Bool.false_eq_true,
-          if_false, Nat.zero_add]
+          ite_false, Nat.zero_add]
         refine ⟨.teleFull hf (by simp [hlen]) hvalid htv, ?_⟩
         simp only [List.map_map, Function.comp_def, Nat.add_mul] at hsum htc ⊢
         omega
@@ -571,14 +571,14 @@ theorem PrepWF.subst_spec {p : Prep} (hp : PrepWF p) (w : Nat) {S : Nat → Bool
         obtain ⟨hk1, hkj, hkt⟩ := spineHit_spec hhit
         cases rc with
         | false =>
-          simp only [WTree.subst, hxt, if_false, hhit, WTree.occH, WTree.occC, WTree.cost,
+          simp only [WTree.subst, hxt, ite_false, hhit, WTree.occH, WTree.occC, WTree.cost,
             substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Bool.false_eq_true]
           refine ⟨.teleFull hf (by simp [hlen]) hvalid htv, ?_⟩
           simp only [List.map_map, Function.comp_def, Nat.add_mul] at hsum htc ⊢
-          simp only [Bool.false_eq_true, if_false, Nat.mul_zero, Nat.add_zero] at hsum htc ⊢
+          simp only [Bool.false_eq_true, ite_false, Nat.mul_zero, Nat.add_zero] at hsum htc ⊢
           omega
         | true =>
-          simp only [WTree.subst, hxt, if_false, hhit, if_true, WTree.occH, WTree.occC, WTree.cost,
+          simp only [WTree.subst, hxt, ite_false, hhit, ite_true, WTree.occH, WTree.occC, WTree.cost,
             substs_eq, occHs_eq, occCs_eq, WTree.costs_eq, Option.isSome_some]
           obtain ⟨hts, htf, hlen', httail, _, hsideat, _⟩ :=
             hp.spine_shift hx hf (k := k) (by omega)
@@ -731,12 +731,12 @@ theorem sum_indicator_unique (P : Nat → Prop) [DecidablePred P] (j : Nat)
         rintro ⟨k, hk, hPk⟩
         have := huniq k j (by omega) (by omega) hPk hj
         omega
-      rw [if_neg hnone, if_pos hj, if_pos ⟨j, by omega, hj⟩]
-    · rw [if_neg hj, Nat.add_zero]
+      rw [ite_eq_right hnone, ite_eq_left hj, ite_eq_left ⟨j, by omega, hj⟩]
+    · rw [ite_eq_right hj, Nat.add_zero]
       by_cases hex : ∃ k, k < j ∧ P k
       · obtain ⟨k, hk, hPk⟩ := hex
-        rw [if_pos ⟨k, hk, hPk⟩, if_pos ⟨k, by omega, hPk⟩]
-      · rw [if_neg hex, if_neg]
+        rw [ite_eq_left ⟨k, hk, hPk⟩, ite_eq_left ⟨k, by omega, hPk⟩]
+      · rw [ite_eq_right hex, ite_eq_right]
         rintro ⟨k, hk, hPk⟩
         by_cases hkj : k = j
         · subst hkj; exact hj hPk
@@ -773,7 +773,7 @@ theorem PrepWF.spine_head_edges {p : Prep} (hp : PrepWF p) {x j t : Nat} (hx : x
   have hzero : ∀ k, k + 1 < p.spineLen[x]! →
       (if snext p (spineAt p x k) = t ∧ p.family[t]! ≠ p.family[spineAt p x k]! then 1 else 0) = 0 := by
     intro k hk1
-    rw [if_neg]
+    rw [ite_eq_right]
     rintro ⟨hn, hne⟩
     rw [snext_spineAt] at hn
     apply hne
@@ -786,9 +786,9 @@ theorem PrepWF.spine_head_edges {p : Prep} (hp : PrepWF p) {x j t : Nat} (hx : x
     have hfm := (hk m (by omega)).2.1
     by_cases htt : p.tail[x]! = t
     · subst htt
-      rw [if_pos ⟨rfl, by rw [hfm]; exact htf⟩, if_pos ⟨rfl, rfl⟩]
-    · rw [if_neg (fun h => htt h.1), if_neg (fun h => htt h.2)]
-  · rw [sum_zero_of_forall fun k hk => hzero k (by omega), if_neg (fun h => hjl h.1)]
+      rw [ite_eq_left ⟨rfl, by rw [hfm]; exact htf⟩, ite_eq_left ⟨rfl, rfl⟩]
+    · rw [ite_eq_right (fun h => htt h.1), ite_eq_right (fun h => htt h.2)]
+  · rw [sum_zero_of_forall fun k hk => hzero k (by omega), ite_eq_right (fun h => hjl h.1)]
 
 /-- The continuation spine edges of a telescope prefix into `t`: one if `t`
 is among its inner spine nodes. -/
@@ -809,10 +809,10 @@ theorem PrepWF.spine_cont_edges {p : Prep} (hp : PrepWF p) {x j t : Nat} (hx : x
     · have hfam : p.family[spineAt p x (k + 1)]! = p.family[spineAt p x k]! := by
         rw [(hk (k + 1) (by omega)).2.1, (hk k (by omega)).2.1]
       by_cases ht : spineAt p x (k + 1) = t
-      · rw [if_pos ⟨ht, by rw [← ht, hfam]⟩, if_pos ⟨ht, hkj⟩]
-      · rw [if_neg (fun h => ht h.1), if_neg (fun h => ht h.1)]
-    · rw [if_neg (show ¬(spineAt p x (k + 1) = t ∧ k + 1 < j) from fun h => hkj h.2)]
-      rw [if_neg]
+      · rw [ite_eq_left ⟨ht, by rw [← ht, hfam]⟩, ite_eq_left ⟨ht, hkj⟩]
+      · rw [ite_eq_right (fun h => ht h.1), ite_eq_right (fun h => ht h.1)]
+    · rw [ite_eq_right (show ¬(spineAt p x (k + 1) = t ∧ k + 1 < j) from fun h => hkj h.2)]
+      rw [ite_eq_right]
       rintro ⟨ht, hfam⟩
       have hkj' : k + 1 = j := by omega
       by_cases hjl : j < p.spineLen[x]!
@@ -963,9 +963,9 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
       rw [h1]
       congr 1
       by_cases hct : (p.dag.node x).child i = t
-      · rw [if_pos ((top_iff hSt (hkids i hi)).mpr hct), if_pos hct]
-      · rw [if_neg (fun h => hct ((top_iff hSt (hkids i hi)).mp (by simpa using h))),
-          if_neg hct]
+      · rw [ite_eq_left ((top_iff hSt (hkids i hi)).mpr hct), ite_eq_left hct]
+      · rw [ite_eq_right (fun h => hct ((top_iff hSt (hkids i hi)).mp (by simpa using h))),
+          ite_eq_right hct]
     have hwle : ∀ y ∈ (WTree.node x kids).written p, y ≤ x := by
       intro y hy
       simp only [WTree.written] at hy
@@ -981,7 +981,7 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
       · subst hxt
         rw [hzero false _ hwle]
         simp [WTree.occH, WTree.topIs]
-      · simp only [WTree.occH, hxt, if_false, WTree.topIs, occHs_eq, WTree.written,
+      · simp only [WTree.occH, hxt, ite_false, WTree.topIs, occHs_eq, WTree.written,
           List.map_cons, List.sum_cons, writtens_sum, beq_iff_eq]
         have hper : ∀ T ∈ kids, T.occH t = (if T.topIs t then 1 else 0) +
             ((T.written p).map fun y => edgeMult p y t false).sum := by
@@ -999,8 +999,8 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
           rw [List.mem_range] at hi
           rw [List.getElem?_eq_getElem (by omega), Option.getD_some]
           by_cases hct : (p.dag.node x).child i = t
-          · rw [if_pos ((top_iff hSt (hkids i (by omega))).mpr hct)]; simp [hct]
-          · rw [if_neg (fun h => hct ((top_iff hSt (hkids i (by omega))).mp (by simpa using h)))]
+          · rw [ite_eq_left ((top_iff hSt (hkids i (by omega))).mpr hct)]; simp [hct]
+          · rw [ite_eq_right (fun h => hct ((top_iff hSt (hkids i (by omega))).mp (by simpa using h)))]
             simp [hct]
         rw [hind]
         omega
@@ -1008,7 +1008,7 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
       · subst hxt
         rw [hzero true _ hwle]
         simp [WTree.occC]
-      · simp only [WTree.occC, hxt, if_false, occCs_eq, WTree.written, List.map_cons,
+      · simp only [WTree.occC, hxt, ite_false, occCs_eq, WTree.written, List.map_cons,
           List.sum_cons, writtens_sum]
         rw [(hp.edgeMult_node hx hf t).1, Nat.zero_add]
         congr 1
@@ -1042,7 +1042,7 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
         simp [WTree.occH, WTree.topIs]
       · have hjt : spineAt p x j ≠ t := by intro h; rw [h] at hS; rw [hS] at hSt; cases hSt
         obtain ⟨hF, _⟩ := hp.spine_edges hx htn hf (Nat.le_of_lt hj) (fun _ => hjt)
-        simp only [WTree.occH, hxt, if_false, WTree.topIs, occHs_eq, WTree.written,
+        simp only [WTree.occH, hxt, ite_false, WTree.topIs, occHs_eq, WTree.written,
           List.map_append, List.sum_append, writtens_sum, beq_iff_eq, List.append_nil]
         rw [hF, List.map_congr_left (fun T hT => (hside T hT).1), sum_map_add']
         have hind : (sides.map fun T => if T.topIs t then 1 else 0).sum =
@@ -1054,10 +1054,10 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
           rw [List.mem_range] at hi
           rw [List.getElem?_eq_getElem (by omega), Option.getD_some]
           by_cases hct : sideAt p x i = t
-          · rw [if_pos ((top_iff hSt (hsides i (by omega))).mpr hct), if_pos hct]
-          · rw [if_neg (fun h => hct ((top_iff hSt (hsides i (by omega))).mp (by simpa using h))),
-              if_neg hct]
-        rw [hind, if_neg (fun h => by omega)]
+          · rw [ite_eq_left ((top_iff hSt (hsides i (by omega))).mpr hct), ite_eq_left hct]
+          · rw [ite_eq_right (fun h => hct ((top_iff hSt (hsides i (by omega))).mp (by simpa using h))),
+              ite_eq_right hct]
+        rw [hind, ite_eq_right (fun h => by omega)]
         simp
     · by_cases hxt : x = t
       · subst hxt
@@ -1065,7 +1065,7 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
         simp [WTree.occC]
       · have hjt : spineAt p x j ≠ t := by intro h; rw [h] at hS; rw [hS] at hSt; cases hSt
         obtain ⟨_, hT⟩ := hp.spine_edges hx htn hf (Nat.le_of_lt hj) (fun _ => hjt)
-        simp only [WTree.occC, hxt, if_false, occCs_eq, WTree.written, List.map_append,
+        simp only [WTree.occC, hxt, ite_false, occCs_eq, WTree.written, List.map_append,
           List.sum_append, writtens_sum, List.append_nil]
         rw [hT, List.map_congr_left (fun T hT => (hside T hT).2.1)]
         simp
@@ -1097,7 +1097,7 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
         rw [hzero false _ hwle]
         simp [WTree.occH, WTree.topIs]
       · obtain ⟨hF, _⟩ := hp.spine_edges hx htn hf (Nat.le_refl _) (fun h => absurd h (by omega))
-        simp only [WTree.occH, hxt, if_false, WTree.topIs, occHs_eq, WTree.written,
+        simp only [WTree.occH, hxt, ite_false, WTree.topIs, occHs_eq, WTree.written,
           List.map_append, List.sum_append, writtens_sum, beq_iff_eq]
         rw [hF, List.map_congr_left (fun T hT => (hside T hT).1), sum_map_add', ht1]
         have hind : (sides.map fun T => if T.topIs t then 1 else 0).sum =
@@ -1109,15 +1109,15 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
           rw [List.mem_range] at hi
           rw [List.getElem?_eq_getElem (by omega), Option.getD_some]
           by_cases hct : sideAt p x i = t
-          · rw [if_pos ((top_iff hSt (hsides i (by omega))).mpr hct), if_pos hct]
-          · rw [if_neg (fun h => hct ((top_iff hSt (hsides i (by omega))).mp (by simpa using h))),
-              if_neg hct]
+          · rw [ite_eq_left ((top_iff hSt (hsides i (by omega))).mpr hct), ite_eq_left hct]
+          · rw [ite_eq_right (fun h => hct ((top_iff hSt (hsides i (by omega))).mp (by simpa using h))),
+              ite_eq_right hct]
         have htop : (if tail.topIs t then 1 else 0) =
             (if p.spineLen[x]! = p.spineLen[x]! ∧ p.tail[x]! = t then 1 else 0) := by
           by_cases htt : p.tail[x]! = t
-          · rw [if_pos ((top_iff hSt htail).mpr htt), if_pos ⟨rfl, htt⟩]
-          · rw [if_neg (fun h => htt ((top_iff hSt htail).mp (by simpa using h))),
-              if_neg (fun h => htt h.2)]
+          · rw [ite_eq_left ((top_iff hSt htail).mpr htt), ite_eq_left ⟨rfl, htt⟩]
+          · rw [ite_eq_right (fun h => htt ((top_iff hSt htail).mp (by simpa using h))),
+              ite_eq_right (fun h => htt h.2)]
         rw [hind, htop]
         omega
     · by_cases hxt : x = t
@@ -1125,7 +1125,7 @@ theorem PrepWF.occ_edges {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {t : Nat}
         rw [hzero true _ hwle]
         simp [WTree.occC]
       · obtain ⟨_, hT⟩ := hp.spine_edges hx htn hf (Nat.le_refl _) (fun h => absurd h (by omega))
-        simp only [WTree.occC, hxt, if_false, occCs_eq, WTree.written, List.map_append,
+        simp only [WTree.occC, hxt, ite_false, occCs_eq, WTree.written, List.map_append,
           List.sum_append, writtens_sum]
         rw [hT, List.map_congr_left (fun T hT => (hside T hT).2.1), ht2]
 /-! ## Every reachable term is written -/

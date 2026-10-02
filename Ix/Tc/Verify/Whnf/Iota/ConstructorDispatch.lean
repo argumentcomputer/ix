@@ -84,7 +84,7 @@ theorem eval
     simp [h.levelArity]
   rw [hlevels]
   simp only [Bool.false_eq_true, ↓reduceIte]
-  rw [if_neg (Nat.not_lt.mpr h.fieldBound)]
+  rw [ite_eq_right (Nat.not_lt.mpr h.fieldBound)]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run
@@ -428,7 +428,7 @@ theorem tryIotaWithFlags_nonKPrefix
   simp only
   rw [hinfo]
   simp only
-  rw [if_neg (Nat.not_le.mpr hmajorBound)]
+  rw [ite_eq_right (Nat.not_le.mpr hmajorBound)]
   rw [hmajor, hk]
   simp only [Bool.false_eq_true, ↓reduceIte]
   rw [ReaderT.run_bind]

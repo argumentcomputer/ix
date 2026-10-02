@@ -1951,13 +1951,13 @@ theorem compareExpr_run_ready
           rw [run_bind, hunivs]
           simp only
           by_cases horder : univs.ord != .eq
-          · rw [if_pos horder]
+          · rw [ite_eq_left horder]
             exact ⟨_, rfl⟩
-          · rw [if_neg horder]
+          · rw [ite_eq_right horder]
             by_cases hname : xname == yname
-            · rw [if_pos hname]
+            · rw [ite_eq_left hname]
               exact ⟨_, rfl⟩
-            · rw [if_neg hname]
+            · rw [ite_eq_right hname]
               cases hxctx : ctx.get? xname with
               | some nx =>
                   cases hyctx : ctx.get? yname <;> exact ⟨_, rfl⟩
@@ -2084,9 +2084,9 @@ theorem compareExpr_run_ready
                   exact htail ⟨true, .gt⟩
               | none =>
                   by_cases hname : xtypeName == ytypeName
-                  · rw [if_pos hname]
+                  · rw [ite_eq_left hname]
                     exact htail ⟨true, .eq⟩
-                  · rw [if_neg hname]
+                  · rw [ite_eq_right hname]
                     obtain ⟨xaddr, hxaddr⟩ := hxresolve hxctx
                     obtain ⟨yaddr, hyaddr⟩ := hyresolve hyctx
                     rw [run_bind, run_lookupConstAddr_resolved_entry
@@ -3120,9 +3120,9 @@ private theorem insertSortMutConstMemberByName_length
   | cons current rest ih =>
       rw [Ix.CompileM.insertSortMutConstMemberByName]
       by_cases horder : compare source.1.name current.1.name == .gt
-      · rw [if_pos horder]
+      · rw [ite_eq_left horder]
         simp only [List.length_cons, ih]
-      · rw [if_neg horder]
+      · rw [ite_eq_right horder]
         simp
 
 private theorem sortMutConstMembersByName_length
@@ -3652,15 +3652,15 @@ theorem sortConsts_run_classesWF
         else pure mappedClasses) = .ok (classes, sortState) at hsort
       by_cases hempty : mappedClasses.any
           (fun constClass => constClass.isEmpty) = true
-      · rw [if_pos hempty,
+      · rw [ite_eq_left hempty,
           run_throw compileEnv blockEnv taggedState] at hsort
         contradiction
-      · rw [if_neg hempty] at hsort
+      · rw [ite_eq_right hempty] at hsort
         by_cases htooMany : sources.length < mappedClasses.length
-        · rw [if_pos htooMany,
+        · rw [ite_eq_left htooMany,
             run_throw compileEnv blockEnv taggedState] at hsort
           contradiction
-        · rw [if_neg htooMany,
+        · rw [ite_eq_right htooMany,
             run_pure compileEnv blockEnv taggedState] at hsort
           have hpair : (mappedClasses, taggedState) =
               (classes, sortState) := Except.ok.inj hsort
@@ -3772,7 +3772,7 @@ theorem sortConsts_run_ready
       else if sources.length < classes.length then
         throw (.invalidMutualBlock "too many classes after sortConsts")
       else pure classes) = .ok (classes, taggedState)
-    rw [if_neg hempty, if_neg htooMany]
+    rw [ite_eq_right hempty, ite_eq_right htooMany]
     rfl
   exact ⟨classes, taggedState, hsort, hloopView,
     sortConsts_run_classesWF compileEnv blockEnv state taggedState sources

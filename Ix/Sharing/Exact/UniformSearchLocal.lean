@@ -733,12 +733,12 @@ theorem fold_local {S V : Type} [Inhabited V] (get : S → Nat → V) (step : S 
       have hxm : posf (xsAt m) = some m := (hpos _ m).mpr ⟨by omega, rfl⟩
       by_cases hu : u = xsAt m
       · subst hu
-        simp only [if_true]
+        simp only [ite_true]
         unfold readAtF
         rw [hxm]
         subst hsz
         simp
-      · simp only [hu, if_false]
+      · simp only [hu, ite_false]
         rw [hrd u]
         unfold readAtF
         cases hp : posf u with
@@ -750,10 +750,10 @@ theorem fold_local {S V : Type} [Inhabited V] (get : S → Nat → V) (step : S 
             exact hu ((hpos u j).mp hp).2.symm
           simp only [Array.size_push, hsz]
           by_cases hj : j < m
-          · simp only [hj, if_true, show j < m + 1 by omega]
+          · simp only [hj, ite_true, show j < m + 1 by omega]
             rw [getElem!_pos (L.push _) j (by simp [hsz]; omega), getElem!_pos L j (by omega)]
             simp [Array.getElem_push_lt (show j < L.size by omega)]
-          · simp only [hj, if_false, show ¬ j < m + 1 by omega]
+          · simp only [hj, ite_false, show ¬ j < m + 1 by omega]
   obtain ⟨hok, _, h⟩ := key k (Nat.le_refl _)
   exact ⟨hok, h⟩
 
@@ -856,7 +856,7 @@ theorem phiWidth_eq (cx : SCtx) (avail : Nat → Bool) (u : Nat) :
       intro a ha
       rw [List.foldl_cons]
       by_cases hat : avail t
-      · simp only [hat, if_true]
+      · simp only [hat, ite_true]
         rw [ih _ (by simp [ha])]
         unfold widthOf
         simp only [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds]
@@ -866,7 +866,7 @@ theorem phiWidth_eq (cx : SCtx) (avail : Nat → Bool) (u : Nat) :
           · simp [h, ha.symm ▸ h, hat]
           · simp [h, ha ▸ h, hat]
         · simp [hut, Ne.symm hut]
-      · simp only [hat, Bool.false_eq_true, if_false]
+      · simp only [hat, Bool.false_eq_true, ite_false]
         rw [ih _ ha]
         by_cases hut : u = t
         · subst hut; simp [hat]
@@ -950,30 +950,30 @@ theorem evalStep_get (dag : Dag) (family : Array Family) (spineLen tail : Array 
   obtain ⟨hc, hs, hb⟩ := hst
   unfold evalStep
   by_cases ha : affected[t]! = true
-  · simp only [ha, if_true]
+  · simp only [ha, ite_true]
     by_cases hf : (family[t]! == Family.none) = true
-    · simp only [hf, if_true]
+    · simp only [hf, ite_true]
       refine ⟨⟨by simp [hc], hs, hb⟩, fun u => ?_⟩
       unfold eget evalRowG
-      simp only [hf, if_true]
+      simp only [hf, ite_true]
       rw [setBang_read ht _ _ hc]
       by_cases hu : u = t
       · subst hu
-        simp only [if_true]
+        simp only [ite_true]
         rcases widthOf width u with _ | w <;> rfl
       · simp [hu]
-    · simp only [hf, Bool.false_eq_true, if_false]
+    · simp only [hf, Bool.false_eq_true, ite_false]
       refine ⟨⟨by simp [hc], by simp [hs], by simp [hb]⟩, fun u => ?_⟩
       unfold eget evalRowG
-      simp only [hf, Bool.false_eq_true, if_false]
+      simp only [hf, Bool.false_eq_true, ite_false]
       rw [setBang_read ht _ _ hc, setBang_read ht _ _ hs, setBang_read ht _ _ hb]
       by_cases hu : u = t
       · subst hu
-        simp only [if_true]
+        simp only [ite_true]
         rw [cutScan_set_fst _ _ _ _ _ _ _ _ (by omega) (by omega)]
         rcases widthOf width u with _ | w <;> rfl
       · simp [hu]
-  · simp only [ha, Bool.false_eq_true, if_false]
+  · simp only [ha, Bool.false_eq_true, ite_false]
     refine ⟨⟨hc, hs, hb⟩, fun u => ?_⟩
     by_cases hu : u = t
     · subst hu; simp
@@ -988,17 +988,17 @@ theorem evalHidden_eq_G (dag : Dag) (family : Array Family) (spineLen tail : Arr
         (decide (t < st.cost.size)) (st.cost[·]!) (st.sides[·]!) (st.below[·]!) t := by
   unfold evalHidden evalHiddenG
   by_cases ha : affected[t]! = true
-  · simp only [ha, if_true]
+  · simp only [ha, ite_true]
     split
     · by_cases ht : t < st.cost.size <;> simp [ht]
     · by_cases ht : t < st.cost.size
-      · simp only [ht, decide_true, if_true]
+      · simp only [ht, decide_true, ite_true]
         rw [cutScanAt_eq_G, cutScanG_fst _ _ _ _ _ _ _ _ _ _ 0]
         congr 2
         · funext v; simp only [hs, ht, and_true]
         · funext v; simp only [hb, ht, and_true]
       · simp [ht]
-  · simp only [ha, Bool.false_eq_true, if_false]
+  · simp only [ha, Bool.false_eq_true, ite_false]
 
 /-- The bounds of a term. -/
 def bget (b : UBounds) (u : Nat) : Nat × Nat × Nat × Nat :=
@@ -1019,8 +1019,8 @@ theorem boundsStep_get (p : Prep) (w : Nat) (ms : Array Bool) {n : Nat} (b : UBo
   unfold bget boundsValsG
   by_cases hu : u = t
   · subst hu
-    simp only [getElem!_setBang, h1, h2, h3, h4, ht, and_self, if_true]
-  · simp only [getElem!_setBang, hu, false_and, if_false]
+    simp only [getElem!_setBang, h1, h2, h3, h4, ht, and_self, ite_true]
+  · simp only [getElem!_setBang, hu, false_and, ite_false]
 
 end LocalSearch
 
@@ -1130,7 +1130,7 @@ theorem foldl_setOr_read (l : List Nat) (f : Nat → Bool) (a : Array Bool) (u :
     by_cases hut : u = t
     · subst hut
       by_cases h : u < a.size
-      · simp only [h, and_self, if_true, decide_true, Bool.true_and]
+      · simp only [h, and_self, ite_true, decide_true, Bool.true_and]
         cases a[u]! <;> cases f u <;> simp
       · simp [h]
     · have hne : (u == t) = false := by simpa using hut
@@ -1174,7 +1174,7 @@ theorem phiFold_read {cx : SCtx} {posA posC : Array Nat} (hr : Ready cx posA pos
     exact evalStep_get _ _ _ _ _ _ s hs (hclo i hi)
   · intro L i hL hi
     by_cases ha : cx.allTrue[cx.closure[i]!]! = true
-    · simp only [ha, if_true]
+    · simp only [ha, ite_true]
       rw [hwid,
         readAtF_field_fun (posOf posC) L (fun e : Nat × Nat × Option Nat => e.1) (eget cx.baseEv)
           (fun x => cx.baseEv.cost[x]!) (fun _ => rfl),
@@ -1182,7 +1182,7 @@ theorem phiFold_read {cx : SCtx} {posA posC : Array Nat} (hr : Ready cx posA pos
           (fun x => cx.baseEv.sides[x]!) (fun _ => rfl),
         readAtF_field_fun (posOf posC) L (fun e : Nat × Nat × Option Nat => e.2.2) (eget cx.baseEv)
           (fun x => cx.baseEv.below[x]!) (fun _ => rfl)]
-    · simp only [ha, Bool.false_eq_true, if_false]
+    · simp only [ha, Bool.false_eq_true, ite_false]
       rw [readAtF_at_new hr.closure L id (eget cx.baseEv) hi hL]
       rfl
 
@@ -1260,10 +1260,10 @@ theorem readAtF_map {α β : Type} [Inhabited α] [Inhabited β] (posf : Nat →
   | some j =>
     simp only [Array.size_map, id]
     by_cases hj : j < L.size
-    · simp only [hj, if_true]
+    · simp only [hj, ite_true]
       rw [getElem!_pos (L.map proj) j (by simpa using hj), getElem!_pos L j hj]
       simp
-    · simp only [hj, if_false]
+    · simp only [hj, ite_false]
 
 theorem readAtF_map_fun {α β : Type} [Inhabited α] [Inhabited β] (posf : Nat → Option Nat)
     (L : Array α) (proj : α → β) (base : Nat → β) :
@@ -1313,13 +1313,13 @@ theorem memberFlags_spec {cx : SCtx} {posA : Array Nat}
           simp only
           obtain ⟨hj', hm⟩ := (hA m j').mp hp
           by_cases ha : avail m = true
-          · simp only [ha, if_true, and_true]
+          · simp only [ha, ite_true, and_true]
             rw [getElem!_setBang]
             by_cases hjj : j = j'
             · subst hjj
               have hm' : cx.area[j]! = m := hm
               have hT : (j = j ∧ j < fl.size) := ⟨rfl, by rw [hfl]; exact hj'⟩
-              simp only [hT, and_self, if_true, true_iff]
+              simp only [hT, and_self, ite_true, true_iff]
               exact Or.inr hm'
             · have : cx.area[j]! ≠ m := fun h => by
                 have := (hA m j).mpr ⟨hj, h⟩
@@ -1381,7 +1381,7 @@ theorem flagWidth_eq {cx : SCtx} {posA posC : Array Nat} (hr : Ready cx posA pos
       · have := hm u hc
         rw [hp] at this
         cases this
-    simp only [hc, Bool.and_false, Bool.false_and, Bool.false_eq_true, if_false]
+    simp only [hc, Bool.and_false, Bool.false_and, Bool.false_eq_true, ite_false]
   | some j =>
     obtain ⟨hj, hu⟩ := (hr.area u j).mp hp
     have hu' : cx.area[j]! = u := hu
@@ -1393,15 +1393,15 @@ theorem flagWidth_eq {cx : SCtx} {posA posC : Array Nat} (hr : Ready cx posA pos
     cases hf : (memberFlags cx posA avail)[j]! with
     | true =>
       obtain ⟨h1, h2⟩ := hfj.mp hf
-      simp only [h1, h2, Bool.and_self, if_true]
+      simp only [h1, h2, Bool.and_self, ite_true]
     | false =>
       have hn : ¬ (cx.members.contains u = true ∧ avail u = true) := fun h => by
         rw [hfj.mpr h] at hf; cases hf
       cases hc : cx.members.contains u with
-      | false => simp only [Bool.false_and, Bool.false_eq_true, if_false]
+      | false => simp only [Bool.false_and, Bool.false_eq_true, ite_false]
       | true =>
         cases ha : avail u with
-        | false => simp only [Bool.and_false, Bool.false_eq_true, if_false]
+        | false => simp only [Bool.and_false, Bool.false_eq_true, ite_false]
         | true => exact absurd ⟨hc, ha⟩ hn
 
 /-- A fold that pushes one row per step, kept as three tables. -/
@@ -1525,8 +1525,8 @@ theorem revisible_read {cx : SCtx} {posA posC : Array Nat} (hr : Ready cx posA p
     simp only
     rw [setBang_read (by omega) _ _ h1, setBang_read (by omega) _ _ h2]
     by_cases hv : v = cx.area[cx.area.size - 1 - i]!
-    · simp only [hv, if_true]
-    · simp only [hv, if_false]
+    · simp only [hv, ite_true]
+    · simp only [hv, ite_false]
   · intro L i hL hi
     simp only [ms_read, maybeStoredAt]
     simp only [readAtF_field (posRev cx.area.size posA) L (fun e : Nat × Nat => e.1)
@@ -1740,7 +1740,7 @@ theorem setPositions_read (pos xs : Array Nat) (hd : strictInc xs = true)
       intro _
       refine ⟨rfl, fun u => ?_⟩
       have : ¬ ∃ j, j < 0 ∧ xs[j]! = u := by omega
-      simp only [foldRange_zero, this, dif_neg, not_false_eq_true]
+      simp only [foldRange_zero, this, dite_eq_right, not_false_eq_true]
     | succ m ih =>
       intro hm
       obtain ⟨hsz, hrd⟩ := ih (by omega)
@@ -1750,17 +1750,17 @@ theorem setPositions_read (pos xs : Array Nat) (hd : strictInc xs = true)
       by_cases hu : u = xs[m]!
       · have hex : ∃ j, j < m + 1 ∧ xs[j]! = u := ⟨m, by omega, hu.symm⟩
         have hlt : xs[m]! < pos.size := hin m (by omega)
-        simp only [hu, hsz, hlt, and_self, if_true]
-        rw [dif_pos (hu ▸ hex)]
+        simp only [hu, hsz, hlt, and_self, ite_true]
+        rw [dite_eq_left (hu ▸ hex)]
         have hc := Classical.choose_spec (hu ▸ hex)
         have := strictInc_inj hd (i := Classical.choose (hu ▸ hex)) (j := m) (by omega) (by omega)
           hc.2
         omega
-      · simp only [hu, false_and, if_false]
+      · simp only [hu, false_and, ite_false]
         by_cases hex : ∃ j, j < m ∧ xs[j]! = u
         · have hex' : ∃ j, j < m + 1 ∧ xs[j]! = u := by
             obtain ⟨j, hj, hx⟩ := hex; exact ⟨j, by omega, hx⟩
-          rw [dif_pos hex, dif_pos hex']
+          rw [dite_eq_left hex, dite_eq_left hex']
           have h1 := Classical.choose_spec hex
           have h2 := Classical.choose_spec hex'
           have : Classical.choose hex = Classical.choose hex' :=
@@ -1771,14 +1771,14 @@ theorem setPositions_read (pos xs : Array Nat) (hd : strictInc xs = true)
             by_cases hjm : j = m
             · subst hjm; exact hu hx.symm
             · exact hex ⟨j, by omega, hx⟩
-          rw [dif_neg hex, dif_neg hex']
+          rw [dite_eq_right hex, dite_eq_right hex']
   exact key xs.size (Nat.le_refl _)
 
 theorem posOf_some (pos : Array Nat) (u j : Nat) : posOf pos u = some j ↔ pos[u]! = j + 1 := by
   unfold posOf
   by_cases h : pos[u]! = 0
   · simp [h]
-  · simp only [h, beq_iff_eq, if_false, Option.some.injEq]
+  · simp only [h, beq_iff_eq, ite_false, Option.some.injEq]
     omega
 
 /-- `setPositions` of an all-`0` table is a position table. -/
@@ -1789,7 +1789,7 @@ theorem setPositions_posFn (xs : Array Nat) (n : Nat) (hd : strictInc xs = true)
   intro u j
   rw [posOf_some, hrd u]
   by_cases hex : ∃ j, j < xs.size ∧ xs[j]! = u
-  · rw [dif_pos hex]
+  · rw [dite_eq_left hex]
     have hc := Classical.choose_spec hex
     constructor
     · intro h
@@ -1799,7 +1799,7 @@ theorem setPositions_posFn (xs : Array Nat) (n : Nat) (hd : strictInc xs = true)
     · rintro ⟨hj, hx⟩
       have := strictInc_inj hd hc.1 hj (hc.2.trans hx.symm)
       omega
-  · rw [dif_neg hex]
+  · rw [dite_eq_right hex]
     have h0 : (Array.replicate n 0)[u]! = 0 := by
       by_cases h : u < n
       · rw [getElem!_pos _ u (by simpa using h)]; simp
@@ -1844,7 +1844,7 @@ theorem clearPositions_zero (pos xs : Array Nat) (n : Nat) (hsz : pos.size = n)
     rw [this]
     by_cases hm : i ∈ xs.toList
     · simp [hm]
-    · simp only [hm, if_false, Array.getElem_replicate]
+    · simp only [hm, ite_false, Array.getElem_replicate]
       have hne : ∀ j, j < xs.size → xs[j]! ≠ i := by
         intro j hj hx
         apply hm
@@ -1901,7 +1901,7 @@ theorem mem_parentsOf (dag : Dag) (c q : Nat) :
       by_cases hc : c0 = c
       · subst hc
         by_cases hlt : c0 < P.size
-        · simp only [hlt, and_self, if_true, Array.mem_push, List.mem_cons, true_or, and_true]
+        · simp only [hlt, and_self, ite_true, Array.mem_push, List.mem_cons, true_or, and_true]
           rw [hP] at hlt
           simp only [hlt, true_and]
           constructor
@@ -1909,7 +1909,7 @@ theorem mem_parentsOf (dag : Dag) (c q : Nat) :
           · rintro (h | h) <;> simp_all
         · have : ¬ c0 < dag.size := by omega
           simp [hlt, this]
-      · simp only [hc, false_and, if_false, List.mem_cons]
+      · simp only [hc, false_and, ite_false, List.mem_cons]
         constructor
         · rintro (h | ⟨h1, h2, h3⟩)
           · exact Or.inl h
@@ -2000,7 +2000,7 @@ theorem mem_upClosure {dag : Dag} (hcp : childrenPrecede dag.nodes = true)
       rw [getElem!_setBang]
       by_cases htm : t = m
       · subst htm
-        simp only [hs, show t < dag.size by omega, and_self, if_true, Bool.or_eq_true,
+        simp only [hs, show t < dag.size by omega, and_self, ite_true, Bool.or_eq_true,
           Array.any_eq_true]
         constructor
         · rintro (h | ⟨k, hk, hc⟩)
@@ -2014,7 +2014,7 @@ theorem mem_upClosure {dag : Dag} (hcp : childrenPrecede dag.nodes = true)
             right
             obtain ⟨k, hk, rfl⟩ := Array.mem_iff_getElem.mp hc
             exact ⟨k, hk, (hr _).mpr ⟨node_children_lt hcp (by omega) hc, hu'⟩⟩
-      · simp only [htm, false_and, if_false]
+      · simp only [htm, false_and, ite_false]
         rw [hr t]
         constructor
         · rintro ⟨h1, h2⟩; exact ⟨by omega, h2⟩
@@ -2066,9 +2066,9 @@ theorem walkPush_spec {dag : Dag} {isMember : Nat → Bool} {P : Array (Array Na
   unfold r walkPush
   by_cases hnew : q < n ∧ vis[q]! = 0
   · have hc : (decide (q < n) && vis[q]! == 0) = true := by simp [hnew.1, hnew.2]
-    simp only [hc, if_true]
+    simp only [hc, ite_true]
     have hqo : q ∉ out.toList := by
-      intro h; have := hmk q; rw [if_pos h] at this; omega
+      intro h; have := hmk q; rw [ite_eq_left h] at this; omega
     refine ⟨by rw [Array.set!_eq_setIfInBounds, Array.size_setIfInBounds, hsz], fun t => ?_,
       ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · rw [setBang_read (n := n) hnew.1 _ _ hsz, hmk t]
@@ -2112,13 +2112,13 @@ theorem walkPush_spec {dag : Dag} {isMember : Nat → Bool} {P : Array (Array Na
       by_cases h1 : q < n
       · exact Or.inr (fun h2 => hnew ⟨h1, h2⟩)
       · exact Or.inl h1
-    simp only [hc, Bool.false_eq_true, if_false]
+    simp only [hc, Bool.false_eq_true, ite_false]
     refine ⟨hsz, hmk, hnd, hup, hsi, hsn, hdn, fun t ht => ht, fun hqn => ?_⟩
     have h0 : vis[q]! ≠ 0 := fun h => hnew ⟨hqn, h⟩
     have := hmk q
     by_cases hm : q ∈ out.toList
     · exact hm
-    · rw [if_neg hm] at this; exact absurd this h0
+    · rw [ite_eq_right hm] at this; exact absurd this h0
 
 end LocalSearch
 
@@ -2297,8 +2297,8 @@ theorem setPositions_congr (a b xs : Array Nat) (hs : strictInc xs = true)
     rw [getElem!_pos _ i hi2] at e2
     rw [e1, e2]
     by_cases hex : ∃ j, j < xs.size ∧ xs[j]! = i
-    · rw [dif_pos hex, dif_pos hex]
-    · rw [dif_neg hex, dif_neg hex]
+    · rw [dite_eq_left hex, dite_eq_left hex]
+    · rw [dite_eq_right hex, dite_eq_right hex]
       exact h i (fun j hj hx => hex ⟨j, hj, hx⟩)
 
 /-- **Context.** With children before their parents, `mkSCtxL` builds the
@@ -2341,7 +2341,7 @@ theorem mkSCtxL_eq (ex : Expanded) (f : GraphFacts) (up : UPrep) (cand : Array B
     generalize upWalk (parentsOf ex.dag) members (Array.replicate ex.dag.size 0) = r at hinv hdone
     obtain ⟨vis, out, stack⟩ := r
     by_cases he : stack.isEmpty = true
-    · simp only [he, if_true]
+    · simp only [he, ite_true]
       have hst : stack.toList = [] := by
         rw [Array.isEmpty_iff] at he; subst he; rfl
       have hfound := hdone hst
@@ -2359,11 +2359,11 @@ theorem mkSCtxL_eq (ex : Expanded) (f : GraphFacts) (up : UPrep) (cand : Array B
         rw [Array.mem_toList_iff, Array.mem_iff_getElem] at hmC
         obtain ⟨i, hi, rfl⟩ := hmC
         exact hu i hi (by rw [getElem!_pos _ i hi])
-      rw [if_neg hnot]
+      rw [ite_eq_right hnot]
       by_cases hlt : u < ex.dag.size
       · rw [getElem!_pos _ u (by simpa using hlt)]; simp
       · rw [getElem!_neg _ u (by simpa using hlt)]; rfl
-    · simp only [he, Bool.false_eq_true, if_false]
+    · simp only [he, Bool.false_eq_true, ite_false]
       refine ⟨trivial, ?_⟩
       rw [clearPositions_zero vis out ex.dag.size hinv.size (fun u hu => by
         rw [hinv.marks u]
@@ -2372,7 +2372,7 @@ theorem mkSCtxL_eq (ex : Expanded) (f : GraphFacts) (up : UPrep) (cand : Array B
           rw [Array.mem_toList_iff, Array.mem_iff_getElem] at hm
           obtain ⟨i, hi, rfl⟩ := hm
           exact hu i hi (by rw [getElem!_pos _ i hi])
-        rw [if_neg hnot])]
+        rw [ite_eq_right hnot])]
   obtain ⟨hcl, hpos⟩ := hres
   unfold mkSCtxL mkSCtx
   simp only
@@ -2429,7 +2429,7 @@ theorem clear_set_zero (n : Nat) (xs : Array Nat) (hs : strictInc xs = true)
   obtain ⟨h1, h2⟩ := setPositions_read (Array.replicate n 0) xs hs (by simpa using hin)
   apply clearPositions_zero _ _ n (by rw [h1]; simp)
   intro u hu
-  rw [h2 u, dif_neg (fun ⟨j, hj, hx⟩ => hu j hj hx)]
+  rw [h2 u, dite_eq_right (fun ⟨j, hj, hx⟩ => hu j hj hx)]
   by_cases h : u < n
   · rw [getElem!_pos _ u (by simpa using h)]; simp
   · rw [getElem!_neg _ u (by simpa using h)]; rfl
@@ -2465,7 +2465,7 @@ theorem fastStep_eq (limits : Limits) (ex : Expanded) (f : GraphFacts) (up : UPr
         (fun a => (a, Array.replicate up.prep.dag.size 0, Array.replicate ex.dag.size 0)) := by
   obtain ⟨results, states, costEvals⟩ := a
   unfold fastStep specStep
-  simp only [hss, Bool.false_eq_true, if_false]
+  simp only [hss, Bool.false_eq_true, ite_false]
   rw [mkSCtxL_eq ex f up cand b0 vis0 rootCount slack theta baseEv widthCs allTrue unc members hcp]
   simp only
   have hCs := upClosure_sorted ex.dag ((markTable ex.dag.size members)[·]!)
@@ -2485,7 +2485,7 @@ theorem fastStep_eq (limits : Limits) (ex : Expanded) (f : GraphFacts) (up : UPr
   have hup : cx.up = up := by rw [← hcx]; unfold mkSCtx; rfl
   rw [hcl, hzC]
   by_cases hok : localSearchOK cx = true
-  · rw [if_pos hok]
+  · rw [ite_eq_left hok]
     obtain ⟨_, _, _, _, _, _, _, _, harea, _⟩ := localSearchOK_spec hok
     have hainc := (localSearchOK_inc hok).1
     have hain : ∀ i, i < cx.area.size → cx.area[i]! < up.prep.dag.size := by
@@ -2501,7 +2501,7 @@ theorem fastStep_eq (limits : Limits) (ex : Expanded) (f : GraphFacts) (up : UPr
     cases searchComponent cx limits states costEvals with
     | error _ => rfl
     | ok v => rfl
-  · rw [if_neg hok]
+  · rw [ite_eq_right hok]
     cases searchComponent cx limits states costEvals with
     | error _ => rfl
     | ok v => rfl
@@ -2517,8 +2517,8 @@ walk, the area- and closure-local search, two shared position tables) computes
   funext limits ex f up cand b0 vis0 rootCount slack theta baseEv widthCs allTrue unc opaq comps
   unfold searchComponentsWithFast
   by_cases hg : (limits.uniformSubsetSearch || !childrenPrecede ex.dag.nodes) = true
-  · rw [if_pos hg]
-  · rw [if_neg hg]
+  · rw [ite_eq_left hg]
+  · rw [ite_eq_right hg]
     simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false] at hg
     obtain ⟨hss, hcp⟩ := hg
     unfold searchComponentsWith

@@ -46,10 +46,10 @@ theorem natOffsetRebuild_preservesInferOnly
   | some source =>
       cases hzero : (offset == 0) with
       | true =>
-        simp only [if_true]
+        simp only [ite_true]
         exact TcM.PreservesInferOnly.pure source
       | false =>
-        simp only [Bool.false_eq_true, if_false, pure_bind]
+        simp only [Bool.false_eq_true, ite_false, pure_bind]
         exact mkNatAdd_preservesInferOnly source (natExprFromValue offset)
 
 theorem isDefEqNatAfterLiteral_preservesInferOnly
@@ -64,10 +64,10 @@ theorem isDefEqNatAfterLiteral_preservesInferOnly
   intro rightZero
   cases hzero : (leftZero && rightZero) with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact TcM.PreservesInferOnly.pure true
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       refine bind_preservesInferOnly (natSuccOf_preservesInferOnly left) ?_
       intro leftPredecessor
       refine bind_preservesInferOnly (natSuccOf_preservesInferOnly right) ?_
@@ -114,10 +114,10 @@ theorem tryDefEqOffsetAfterCandidates_preservesInferOnly
           simp only
           cases hshared : (min leftOffset rightOffset == 0) with
           | true =>
-            simp only [if_true]
+            simp only [ite_true]
             exact TcM.PreservesInferOnly.pure none
           | false =>
-            simp only [Bool.false_eq_true, if_false, pure_bind]
+            simp only [Bool.false_eq_true, ite_false, pure_bind]
             refine bind_preservesInferOnly
               (natOffsetRebuild_preservesInferOnly leftBase
                 (leftOffset - min leftOffset rightOffset)) ?_
@@ -156,10 +156,10 @@ theorem tryDefEqOffsetAfterLiteral_preservesInferOnly
   intro rightZero
   cases hzero : (leftZero && rightZero) with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact TcM.PreservesInferOnly.pure (some true)
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       exact tryDefEqOffsetAfterZeroMiss_preservesInferOnly hmethods left right
 
 theorem tryDefEqOffset_preservesInferOnly

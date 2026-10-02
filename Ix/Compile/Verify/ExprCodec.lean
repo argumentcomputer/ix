@@ -738,7 +738,7 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
             wireEncode ty ++ wireEncode val ++ wireEncode body)
           (.letE nonDep ty val body) := by
         simp only [Ixon.getExprFromTag, Ixon.Expr.FLAG_LET,
-          if_neg (letFlags_not_gt nonDep)]
+          ite_eq_right (letFlags_not_gt nonDep)]
         simp only [ByteArray.append_assoc]
         apply Reads.bind (getBinderContract_reads nonDep.binder)
         simpa only [Ixon.LetContract.ofFlags?_flags, ByteArray.append_assoc,

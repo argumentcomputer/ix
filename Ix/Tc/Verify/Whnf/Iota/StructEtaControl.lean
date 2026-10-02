@@ -114,7 +114,7 @@ theorem isStructLike_shapeQualified
   rw [hlookup]
   simp only
   rw [hshape]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (ReaderT.run (computedIsRec id) methods) _ sLookup = _
   unfold EStateM.bind
@@ -140,7 +140,7 @@ theorem isStructLike_recError
   rw [hlookup]
   simp only
   rw [hshape]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (ReaderT.run (computedIsRec id) methods) _ sLookup = _
   unfold EStateM.bind
@@ -297,7 +297,7 @@ theorem finishStructEtaAfterSort_success
   unfold StructEtaSortAdmissible at hadmissible
   unfold finishStructEtaAfterSort
   rw [hadmissible]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind, ReaderT.run_monadLift]
   change EStateM.bind (TcM.instantiateUnivParams rule.rhs recUs) _ s = _
   unfold EStateM.bind
@@ -327,7 +327,7 @@ theorem finishStructEtaAfterSort_instantiateError
   unfold StructEtaSortAdmissible at hadmissible
   unfold finishStructEtaAfterSort
   rw [hadmissible]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind, ReaderT.run_monadLift]
   change EStateM.bind (TcM.instantiateUnivParams rule.rhs recUs) _ s = _
   unfold EStateM.bind
@@ -355,7 +355,7 @@ theorem finishStructEtaAfterSort_finishError
   unfold StructEtaSortAdmissible at hadmissible
   unfold finishStructEtaAfterSort
   rw [hadmissible]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind, ReaderT.run_monadLift]
   change EStateM.bind (TcM.instantiateUnivParams rule.rhs recUs) _ s = _
   unfold EStateM.bind
@@ -418,7 +418,7 @@ theorem tryStructEtaAfterInductive_majorInferMiss
   change EStateM.bind (ReaderT.run (isStructLike indId) methods) _ s = _
   unfold EStateM.bind
   rw [hstruct]
-  simp only [Bool.not_true, Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.not_true, Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec spine[recr.majorIdx]!)) methods) _
@@ -459,7 +459,7 @@ theorem tryStructEtaAfterInductive_sortInferMiss
   change EStateM.bind (ReaderT.run (isStructLike indId) methods) _ s = _
   unfold EStateM.bind
   rw [hstruct]
-  simp only [Bool.not_true, Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.not_true, Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec spine[recr.majorIdx]!)) methods) _
@@ -510,7 +510,7 @@ theorem tryStructEtaAfterInductive_sortWhnfMiss
   change EStateM.bind (ReaderT.run (isStructLike indId) methods) _ s = _
   unfold EStateM.bind
   rw [hstruct]
-  simp only [Bool.not_true, Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.not_true, Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec spine[recr.majorIdx]!)) methods) _
@@ -588,7 +588,7 @@ theorem eval
   change EStateM.bind (ReaderT.run (isStructLike indId) methods) _ s = _
   unfold EStateM.bind
   rw [h.structLike]
-  simp only [Bool.not_true, Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.not_true, Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec spine[recr.majorIdx]!)) methods) _
@@ -677,7 +677,7 @@ theorem tryStructEtaIota_levelMismatch
     (tryStructEtaIota recId recr recUs spine).run methods s = .ok none s := by
   unfold tryStructEtaIota
   rw [hcount]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [hlevels]
   rfl
 
@@ -692,11 +692,11 @@ theorem tryStructEtaIota_recursorMissing
     (tryStructEtaIota recId recr recUs spine).run methods s = .ok none sf := by
   unfold tryStructEtaIota
   rw [hcount]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
   rw [hlevelsNe]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   change EStateM.bind (TcM.tryGetConst recId) _ s = _
   unfold EStateM.bind
   rw [hlookup]
@@ -714,11 +714,11 @@ theorem tryStructEtaIota_recursorError
       .error err sf := by
   unfold tryStructEtaIota
   rw [hcount]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
   rw [hlevelsNe]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   change EStateM.bind (TcM.tryGetConst recId) _ s = _
   unfold EStateM.bind
   rw [hlookup]
@@ -745,11 +745,11 @@ theorem tryStructEtaIota_majorInductiveMiss
     (tryStructEtaIota recId recr recUs spine).run methods s = .ok none sf := by
   unfold tryStructEtaIota
   rw [hcount]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
   rw [hlevelsNe]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [hrule]
   change EStateM.bind (TcM.tryGetConst recId) _ s = _
   unfold EStateM.bind
@@ -825,11 +825,11 @@ theorem eval
     (tryStructEtaIota recId recr recUs spine).run methods s = outcome := by
   unfold tryStructEtaIota
   rw [h.ruleCount]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [h.levelArity]
   rw [hlevelsNe]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [h.selectedRule]
   change EStateM.bind (TcM.tryGetConst recId) _ s = _
   unfold EStateM.bind

@@ -72,10 +72,10 @@ theorem quickBinder_wf
   intro domainsEqual afterDomains hdomains
   cases domainsEqual with
   | false =>
-      simp only [Bool.not_false, if_true]
+      simp only [Bool.not_false, ite_true]
       exact RecM.WF.pure fun _ h => by contradiction
   | true =>
-      simp only [Bool.not_true, Bool.false_eq_true, if_false]
+      simp only [Bool.not_true, Bool.false_eq_true, ite_false]
       apply RecM.withLctxScope_openBinder_wf
         (layer := layer) (semantics := semantics) (trProj := trProj)
         (world := world) (uvars := uvars) (Delta := Delta)
@@ -305,10 +305,10 @@ theorem closesInner
   intro quick afterQuick hquick
   cases quick with
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact htail haSupport hbSupport ha hb
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ _ => hquick rfl
 
 end DefEqAfterQuick

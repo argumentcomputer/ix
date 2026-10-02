@@ -41,7 +41,7 @@ private theorem finishDefEqCacheWrite_preservesInferOnly
             defEqCache := state.env.defEqCache.insert cacheKey answer } }
         pure answer : RecM .anon Bool).run methods) := by
   by_cases hanswer : answer
-  · simp only [hanswer, if_true]
+  · simp only [hanswer, ite_true]
     apply bind_preservesInferOnly
       (modifyRec_preservesInferOnly
         (fun state => { state with
@@ -49,7 +49,7 @@ private theorem finishDefEqCacheWrite_preservesInferOnly
         fun _ => rfl)
     intro _
     by_cases hcheap : cheapMode
-    · simp only [hcheap, if_true]
+    · simp only [hcheap, ite_true]
       apply bind_preservesInferOnly
         (modifyRec_preservesInferOnly
           (fun state => { state with env := { state.env with
@@ -58,7 +58,7 @@ private theorem finishDefEqCacheWrite_preservesInferOnly
           fun _ => rfl)
       intro _
       exact TcM.PreservesInferOnly.pure true
-    · simp only [hcheap, Bool.false_eq_true, if_false]
+    · simp only [hcheap, Bool.false_eq_true, ite_false]
       apply bind_preservesInferOnly
         (modifyRec_preservesInferOnly
           (fun state => { state with env := { state.env with
@@ -66,9 +66,9 @@ private theorem finishDefEqCacheWrite_preservesInferOnly
           fun _ => rfl)
       intro _
       exact TcM.PreservesInferOnly.pure true
-  · simp only [hanswer, Bool.false_eq_true, if_false, pure_bind]
+  · simp only [hanswer, Bool.false_eq_true, ite_false, pure_bind]
     by_cases hcheap : cheapMode
-    · simp only [hcheap, if_true]
+    · simp only [hcheap, ite_true]
       apply bind_preservesInferOnly
         (modifyRec_preservesInferOnly
           (fun state => { state with env := { state.env with
@@ -77,7 +77,7 @@ private theorem finishDefEqCacheWrite_preservesInferOnly
           fun _ => rfl)
       intro _
       exact TcM.PreservesInferOnly.pure false
-    · simp only [hcheap, Bool.false_eq_true, if_false]
+    · simp only [hcheap, Bool.false_eq_true, ite_false]
       apply bind_preservesInferOnly
         (modifyRec_preservesInferOnly
           (fun state => { state with env := { state.env with
@@ -106,12 +106,12 @@ theorem isDefEqAfterRootCacheMiss_preservesInferOnly
   refine bindTcM_preservesInferOnly TcM.PreservesInferOnly.get ?_
   intro state
   by_cases hdepth : state.defEqDepth > maxDefEqDepth
-  · simp only [hdepth, if_true]
+  · simp only [hdepth, ite_true]
     refine bindTcM_preservesInferOnly
       (TcM.PreservesInferOnly.modify fun _ => rfl) ?_
     intro _
     exact TcM.PreservesInferOnly.throw .maxRecDepth
-  · simp only [hdepth, if_false, pure_bind]
+  · simp only [hdepth, ite_false, pure_bind]
     refine bind_preservesInferOnly
       (captureErrors_preservesInferOnly (hinner left right)) ?_
     intro result
@@ -176,10 +176,10 @@ theorem isDefEqAfterDirectCacheMiss_preservesInferOnly
       | some rightRoot =>
           simp only
           by_cases hchanged : leftRoot != leftKey || rightRoot != rightKey
-          · simp only [hchanged, if_true]
+          · simp only [hchanged, ite_true]
             by_cases hscope : leftRoot.rootCacheScopeMatches rightRoot
                 contextAddress (max left.lbr right.lbr)
-            · simp only [hscope, if_true]
+            · simp only [hscope, ite_true]
               let rootPair := canonicalPair leftRoot.exprAddr rightRoot.exprAddr
               let rootCacheKey := (rootPair.1, rootPair.2, contextAddress)
               refine bind_preservesInferOnly
@@ -193,7 +193,7 @@ theorem isDefEqAfterDirectCacheMiss_preservesInferOnly
                     cacheKey cheapMode cached false
               | none =>
                   by_cases hcheap : cheapMode
-                  · simp only [hcheap, if_true]
+                  · simp only [hcheap, ite_true]
                     refine bind_preservesInferOnly
                       (show ((get : RecM .anon (TcState .anon)).run
                         methods).PreservesInferOnly by intro before; rfl) ?_
@@ -208,13 +208,13 @@ theorem isDefEqAfterDirectCacheMiss_preservesInferOnly
                         simp only [pure_bind]
                         exact hrootMiss left right leftKey rightKey cacheKey
                           true
-                  · simp only [hcheap, Bool.false_eq_true, if_false,
+                  · simp only [hcheap, Bool.false_eq_true, ite_false,
                       pure_bind]
                     exact hrootMiss left right leftKey rightKey cacheKey
                       false
-            · simp only [hscope, Bool.false_eq_true, if_false]
+            · simp only [hscope, Bool.false_eq_true, ite_false]
               exact hrootMiss left right leftKey rightKey cacheKey cheapMode
-          · simp only [hchanged, Bool.false_eq_true, if_false]
+          · simp only [hchanged, Bool.false_eq_true, ite_false]
             exact hrootMiss left right leftKey rightKey cacheKey cheapMode
 
 private theorem finishDirectFullCacheHit_preservesInferOnly
@@ -264,9 +264,9 @@ theorem isDefEq_preservesInferOnly
     (TcM.PreservesInferOnly.bumpStats _ fun _ => rfl) ?_
   intro _
   by_cases haddress : left.addr == right.addr
-  · simp only [haddress, if_true]
+  · simp only [haddress, ite_true]
     exact TcM.PreservesInferOnly.pure true
-  · simp only [haddress, Bool.false_eq_true, if_false, pure_bind]
+  · simp only [haddress, Bool.false_eq_true, ite_false, pure_bind]
     refine bindTcM_preservesInferOnly
       (TcM.PreservesInferOnly.defEqCtxKey left right) ?_
     intro contextAddress
@@ -282,7 +282,7 @@ theorem isDefEq_preservesInferOnly
     cases equivalent with
     | true => exact TcM.PreservesInferOnly.pure true
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         let pair := canonicalPair left.addr right.addr
         let cacheKey := (pair.1, pair.2, contextAddress)
         refine bind_preservesInferOnly

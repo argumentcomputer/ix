@@ -177,7 +177,7 @@ theorem inferUncached_let_wf
       cases inferOnly with
       | false =>
           unfold inferUncached
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           apply RecM.WF.bind
             (RecM.WF.withInv <| RecM.inferCall_wf htySupport htyTr)
           intro tyTy afterTy htyPost
@@ -200,7 +200,7 @@ theorem inferUncached_let_wf
           intro equal afterEq hequal
           cases equal with
           | false =>
-              simp only [Bool.not_false, if_true]
+              simp only [Bool.not_false, ite_true]
               apply RecM.WF.bind
                 (Q₁ := fun _ _ => False)
                 (RecM.WF.throw fun _ => trivial)

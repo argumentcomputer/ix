@@ -61,10 +61,10 @@ theorem markTable_spec (n : Nat) (ts : Array Nat) (x : Nat) :
   unfold markTable
   rw [← Array.foldl_toList, foldl_setBang_const]
   by_cases h : x ∈ ts.toList ∧ x < (Array.replicate n false).size
-  · rw [if_pos h]
+  · rw [ite_eq_left h]
     simp only [Array.size_replicate, Array.mem_toList_iff] at h
     simp [h]
-  · rw [if_neg h]
+  · rw [ite_eq_right h]
     simp only [Array.size_replicate, Array.mem_toList_iff, not_and] at h
     constructor
     · intro hx
@@ -275,14 +275,14 @@ theorem reachLabelsOn_allows {dag : Dag} (hwf : DagWF dag) (order : Array Nat)
             refine ⟨(dag.node y).child k, ?_, ?_⟩
             · rw [child_eq_getElem _ k (by rw [hwf.children_size hx]; exact hk)]
               exact Array.mem_toList_iff.mpr (Array.getElem_mem _)
-            · rw [if_pos hO, hℓ]; exact Or.inr rfl
+            · rw [ite_eq_left hO, hℓ]; exact Or.inr rfl
           · right
             simp only [ofDag_dag] at hk hO hc ⊢
             have hclt := hwf.childAt_lt hx hk
             refine ⟨(dag.node y).child k, ?_, ?_⟩
             · rw [child_eq_getElem _ k (by rw [hwf.children_size hx]; exact hk)]
               exact Array.mem_toList_iff.mpr (Array.getElem_mem _)
-            · rw [if_neg (by simp [hO])]
+            · rw [ite_eq_right (by simp [hO])]
               rcases hcl y List.mem_cons_self k hk hO v ℓ hc hℓ with hcP | hcl'
               · exact hinv _ hcP v hc ℓ hℓ
               · rcases List.mem_cons.mp hcl' with he | he
@@ -343,7 +343,7 @@ theorem sepCheck_spec {cx : SCtx} (hwf : DagWF cx.up.prep.dag)
     rw [sepLabels_spec] at h2
     by_cases hc : t < dag.size ∧ t ∉ inRed ∧ t ∉ outRed
     · exact ⟨h1.1, hc⟩
-    · rw [if_neg hc] at h2; cases h2
+    · rw [ite_eq_right hc] at h2; cases h2
   refine ⟨hga, ?_⟩
   intro v hvm hvo hvO a b ha hb hag hbm hbg hbi hbo
   have hvn := hmem v hvm
@@ -353,24 +353,24 @@ theorem sepCheck_spec {cx : SCtx} (hwf : DagWF cx.up.prep.dag)
   have hla : lab[a]! = some 1 := by
     obtain ⟨_, han, hai, hao⟩ := hga a hag
     show (sepLabels dag.size cx.members g inRed outRed)[a]! = some 1
-    rw [sepLabels_spec, if_pos ⟨han, hai, hao⟩, if_pos hag]
+    rw [sepLabels_spec, ite_eq_left ⟨han, hai, hao⟩, ite_eq_left hag]
   have hlb : lab[b]! = some 2 := by
     show (sepLabels dag.size cx.members g inRed outRed)[b]! = some 2
-    rw [sepLabels_spec, if_pos ⟨hbn, hbi, hbo⟩, if_neg hbg, if_pos hbm]
+    rw [sepLabels_spec, ite_eq_left ⟨hbn, hbi, hbo⟩, ite_eq_right hbg, ite_eq_left hbm]
   -- every labeled term is a member
   have hlabm : ∀ x ℓ, lab[x]! = some ℓ → x ∈ cx.members ∧ x < dag.size := by
     intro x ℓ hx
     have hx' : (sepLabels dag.size cx.members g inRed outRed)[x]! = some ℓ := hx
     rw [sepLabels_spec] at hx'
     by_cases hc : x < dag.size ∧ x ∉ inRed ∧ x ∉ outRed
-    · rw [if_pos hc] at hx'
+    · rw [ite_eq_left hc] at hx'
       by_cases hxg : x ∈ g
       · exact ⟨(hga x hxg).1, hc.1⟩
-      · rw [if_neg hxg] at hx'
+      · rw [ite_eq_right hxg] at hx'
         by_cases hxm : x ∈ cx.members
         · exact ⟨hxm, hc.1⟩
-        · rw [if_neg hxm] at hx'; cases hx'
-    · rw [if_neg hc] at hx'; cases hx'
+        · rw [ite_eq_right hxm] at hx'; cases hx'
+    · rw [ite_eq_right hc] at hx'; cases hx'
   -- the closure facts
   let isMem := markTable dag.size cx.members
   have hcl_mem : ∀ t, t ∈ cx.closure.toList ↔ t < dag.size ∧ ∃ m, isMem[m]! = true ∧ Desc dag t m := by
@@ -435,7 +435,7 @@ theorem widthFold_spec (w : Nat) (avail : Nat → Bool) :
     by_cases hut : u = t
     · subst hut
       by_cases hav : avail u = true
-      · simp only [hav, if_true, widthOf_eq]
+      · simp only [hav, ite_true, widthOf_eq]
         by_cases hu : u < a.size
         · simp [hu]
         · simp [hu]
@@ -614,7 +614,7 @@ theorem entry_inl {dag : Dag} (hwf : DagWF dag) {w : Nat} {A : Nat → Bool}
     ev x hx (by simp [hx]) hsz rows'
   rw [(hr x (Nat.lt_succ_self x)).1, hp.uCost_eq w A' x hx]
   unfold costOf uInl
-  rw [if_neg (by simp [A'])]
+  rw [ite_eq_right (by simp [A'])]
   rw [hp.inlOf_congr (avail := A') hx (g := uCost (Prep.ofDag dag) w A) (fun c hc =>
     uCost_desc_local hwf w (Nat.lt_trans hc hx) (fun v hv => (hag c hc v hv).symm))]
   apply inlOf_avail_congr

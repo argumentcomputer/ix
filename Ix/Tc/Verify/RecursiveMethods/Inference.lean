@@ -203,10 +203,10 @@ theorem inferWith_wfOn
         simp only [hfullMiss]
         cases hpolicy : s.inferOnly with
         | false =>
-            simp only [Bool.false_eq_true, if_false]
+            simp only [Bool.false_eq_true, ite_false]
             exact context.missTail_wfOn hmatch hcall hsource
         | true =>
-            simp only [pure_bind, if_true]
+            simp only [pure_bind, ite_true]
             apply RecM.WFOn.bind
               (Q1 := fun currentState after =>
                 currentState = afterKey ∧ after = afterKey)

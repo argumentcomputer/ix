@@ -83,8 +83,8 @@ theorem children_corr {temp₁ temp₂ : Array Node} (hcp₁ : CP temp₁) (hcp�
   refine ⟨hhead, hsize, fun k hk₁ hk₂ => ?_⟩
   have := hk k (by rw [← har₁ t ht]; exact hk₁)
   rw [child_eq_getElem _ k hk₁, child_eq_getElem _ k hk₂] at this
-  rw [if_pos (hcp₁ t ht _ (Array.getElem_mem hk₁)),
-    if_pos (hcp₂ s hs _ (Array.getElem_mem hk₂))] at this
+  rw [ite_eq_left (hcp₁ t ht _ (Array.getElem_mem hk₁)),
+    ite_eq_left (hcp₂ s hs _ (Array.getElem_mem hk₂))] at this
   exact this
 
 /-! ## Reachability -/
@@ -150,7 +150,7 @@ theorem foldl_setTrue_getElem (l : List Nat) (arr : Array Bool) (t : Nat) :
     by_cases hx : x = t
     · subst hx
       by_cases hlt : x < arr.size <;> simp [hlt]
-    · simp only [hx, if_false]
+    · simp only [hx, ite_false]
       constructor
       · rintro (h | ⟨h1, h2⟩)
         · exact Or.inl h
@@ -351,7 +351,7 @@ theorem nodeHeights_spec {temp : Array Node} (hcp : CP temp) (t : Nat) (ht : t <
       have hsame : ∀ c, c < m → (step H m)[c]! = H[c]! := by
         intro c hc
         simp only [step, setBang_getElem!]
-        rw [if_neg (by omega)]
+        rw [ite_eq_right (by omega)]
       refine ⟨by simp [step, hsize], fun t' ht' => ?_⟩
       have hcongr : heightOf temp (step H m) t' = heightOf temp H t' :=
         heightOf_congr temp _ _ t' fun c hc =>
@@ -360,7 +360,7 @@ theorem nodeHeights_spec {temp : Array Node} (hcp : CP temp) (t : Nat) (ht : t <
       by_cases htm : t' = m
       · subst htm
         simp only [step, setBang_getElem!, hsize]
-        rw [if_pos (by simp; omega)]
+        rw [ite_eq_left (by simp; omega)]
       · rw [hsame t' (by omega)]
         exact hprev t' (by omega)
   have := (hinv temp.size (Nat.le_refl _)).2 t ht
@@ -622,11 +622,11 @@ theorem placeFold_spec :
     · rw [hout]
       simp
     · simp only [List.map_cons, List.mem_cons, not_or] at hu
-      rw [hother u hu.2, setBang_getElem!, if_neg (by intro h; exact hu.1 h.1.symm)]
+      rw [hother u hu.2, setBang_getElem!, ite_eq_right (by intro h; exact hu.1 h.1.symm)]
     · cases i with
       | zero =>
         simp only [List.getElem_cons_zero]
-        rw [hother t htnot, setBang_getElem!, if_pos ⟨rfl, ht⟩]
+        rw [hother t htnot, setBang_getElem!, ite_eq_left ⟨rfl, ht⟩]
         simp
       | succ i =>
         simp only [List.getElem_cons_succ]
@@ -742,7 +742,7 @@ theorem bucket_perm
   have hφ : ∀ t, Reach temp₁ roots₁ t → Corr temp₁ temp₂ roots₁ roots₂ t (φ t) := by
     intro t ht
     have hex := corr_total h₁ h₂ hroots ht
-    simp only [φ, dif_pos hex]
+    simp only [φ, dite_eq_left hex]
     exact hex.choose_spec
   have hnd : (B₁.toList.map φ).Nodup := by
     refine nodup_map_on ?_ (bucket_nodup hB₁)
@@ -810,7 +810,7 @@ theorem bucket_step (h₁ : Run temp₁ roots₁) (h₂ : Run temp₂ roots₂)
   rw [placeBucket_eq, placeBucket_eq, placeSorted_eq, placeSorted_eq, ← hnodes]
   by_cases hk : keysIncreasing none ((sortedGroup temp₁ st₁.1 B₁).map (·.2)) = true
   · right
-    rw [if_pos hk, if_pos hk]
+    rw [ite_eq_left hk, ite_eq_left hk]
     refine ⟨_, _, rfl, rfl, ?_⟩
     obtain ⟨hout, hs₁, hs₂, hagree⟩ := hinv
     obtain ⟨canon₁, out₁⟩ := st₁
@@ -862,7 +862,7 @@ theorem bucket_step (h₁ : Run temp₁ roots₁) (h₂ : Run temp₂ roots₂)
             ((sortedGroup temp₁ canon₁ B₁).map (·.2))[j]'hj' := by
           rw [hni, hkey, ← hnj]
           simp only [hnodes]
-        exact (List.getElem_inj hnd).mp this
+        exact (List.Nodup.getElem_inj hnd).mp this
       subst hij
       have e₁ := hp₁ i hi
       have e₂ := hp₂ i hj
@@ -871,7 +871,7 @@ theorem bucket_step (h₁ : Run temp₁ roots₁) (h₂ : Run temp₂ roots₂)
       simp only at e₁ e₂
       rw [e₁, e₂]
   · left
-    rw [if_neg hk, if_neg hk]
+    rw [ite_eq_right hk, ite_eq_right hk]
     exact ⟨_, rfl, rfl⟩
 
 /-! ## All height groups -/

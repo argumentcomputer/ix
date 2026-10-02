@@ -107,10 +107,10 @@ theorem tryStructuralCongruence_wf
     cases hguard :
         (leftId.addr != rightId.addr || leftField != rightField) with
     | true =>
-        simp only [if_true]
+        simp only [ite_true]
         exact RecM.WF.pure fun _ h => by contradiction
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         obtain ⟨hid, hfield⟩ := Bool.or_eq_false_iff.mp hguard
         have hid' : leftId = rightId :=
           KId.anon_eq_of_addr_eq <| eq_of_beq

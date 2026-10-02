@@ -182,7 +182,7 @@ theorem scratch_restoreDepth_go
               else pure ()) s = .ok () final
           unfold EStateM.bind
           rw [show (get : TcM .anon (TcState .anon)) s = .ok s s from rfl]
-          simp only [hgt, if_true]
+          simp only [hgt, ite_true]
           change EStateM.bind TcM.popLocal
             (fun _ => TcM.restoreDepth.go saved n) s = .ok () final
           unfold EStateM.bind

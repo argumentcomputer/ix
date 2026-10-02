@@ -75,20 +75,20 @@ theorem tryDefEqWhnfApp_wf
           intro functionsEqual afterFunction hfunctions
           cases functionsEqual with
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               exact RecM.WF.pure fun _ => trivial
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               apply RecM.WF.bind <|
                 RecM.isDefEqCall_wf hleftArgSupport hrightArgSupport
                   hleftArg hrightArg
               intro argumentsEqual afterArgument harguments
               cases argumentsEqual with
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   exact RecM.WF.pure fun _ => trivial
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   exact RecM.WF.pure fun hI _ => by
                     have hDelta : KVLCtx.WF world.venv uvars Delta :=
                       hI.2.1.wf

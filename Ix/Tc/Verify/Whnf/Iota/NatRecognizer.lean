@@ -179,7 +179,7 @@ theorem eval
       unfold EStateM.bind
       rw [hlookup]
       simp only
-      rw [if_neg (by omega)]
+      rw [ite_eq_right (by omega)]
       simp only [hmajor]
       rfl
 
@@ -222,7 +222,7 @@ theorem complete
               case recr name levelParams k isUnsafe lvls params indices
                   motives minors block memberIdx ty rules leanAll =>
                 by_cases hminors : 2 ≤ minors.toNat
-                · rw [if_neg (by omega : ¬ minors.toNat < 2)] at hrun
+                · rw [ite_eq_right (by omega : ¬ minors.toNat < 2)] at hrun
                   match hmajor : spine[params.toNat + motives.toNat +
                       minors.toNat + indices.toNat]? with
                   | none =>
@@ -236,7 +236,7 @@ theorem complete
                         exact .intro hcollect haddr hlookup hminors hmajor
                       all_goals simp at hrun
                 · have hlt : minors.toNat < 2 := by omega
-                  rw [if_pos hlt] at hrun
+                  rw [ite_eq_left hlt] at hrun
                   cases hrun
     · simp [haddr] at hrun
 

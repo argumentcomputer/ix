@@ -102,10 +102,10 @@ theorem boolTrueReductionAllowed_wf
   unfold boolTrueReductionAllowed
   cases hfv : source.hasFVars with
   | false =>
-      simp only [Bool.not_false, if_true]
+      simp only [Bool.not_false, ite_true]
       exact RecM.WF.pure fun _ => rfl
   | true =>
-      simp only [Bool.not_true, Bool.false_eq_true, if_false]
+      simp only [Bool.not_true, Bool.false_eq_true, ite_false]
       apply RecM.WF.bind
         (Q₁ := fun observed after => observed = s ∧ after = s)
         (RecM.WF.get fun _ => ⟨rfl, rfl⟩)
@@ -210,24 +210,24 @@ theorem isDefEqInnerAfterFirstBoolGuardMiss_wf
   cases aIsTrue with
   | false =>
       cases allowed <;>
-        simp only [Bool.false_and, Bool.false_eq_true, if_false] <;>
+        simp only [Bool.false_and, Bool.false_eq_true, ite_false] <;>
         exact htail haSupport hbSupport ha hb
   | true =>
       cases allowed with
       | false =>
-          simp only [Bool.true_and, Bool.false_eq_true, if_false]
+          simp only [Bool.true_and, Bool.false_eq_true, ite_false]
           exact htail haSupport hbSupport ha hb
       | true =>
-          simp only [Bool.true_and, if_true]
+          simp only [Bool.true_and, ite_true]
           apply RecM.WF.bind
             (whnfThenIsBoolTrue_wf context hcanonical hwhnf hbSupport hb)
           intro normalizedTrue afterNormalize hnormalized
           cases normalizedTrue with
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               exact htail haSupport hbSupport ha hb
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact RecM.WF.pure fun _ _ => by
                 have haEq := haTrue rfl
                 simpa [haEq] using (hnormalized rfl).symm
@@ -261,26 +261,26 @@ theorem DefEqAfterBoolTrue.closesAfterQuick
   cases bIsTrue with
   | false =>
       cases allowed <;>
-        simp only [Bool.false_and, Bool.false_eq_true, if_false] <;>
+        simp only [Bool.false_and, Bool.false_eq_true, ite_false] <;>
         exact isDefEqInnerAfterFirstBoolGuardMiss_wf
           context hcanonical hwhnf htail haSupport hbSupport ha hb
   | true =>
       cases allowed with
       | false =>
-          simp only [Bool.true_and, Bool.false_eq_true, if_false]
+          simp only [Bool.true_and, Bool.false_eq_true, ite_false]
           exact isDefEqInnerAfterFirstBoolGuardMiss_wf
             context hcanonical hwhnf htail haSupport hbSupport ha hb
       | true =>
-          simp only [Bool.true_and, if_true]
+          simp only [Bool.true_and, ite_true]
           apply RecM.WF.bind
             (whnfThenIsBoolTrue_wf context hcanonical hwhnf haSupport ha)
           intro normalizedTrue afterNormalize hnormalized
           cases normalizedTrue with
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               exact htail haSupport hbSupport ha hb
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact RecM.WF.pure fun _ _ => by
                 have hbEq := hbTrue rfl
                 simpa [hbEq] using hnormalized rfl

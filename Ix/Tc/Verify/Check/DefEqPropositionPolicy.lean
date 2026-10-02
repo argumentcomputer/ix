@@ -79,7 +79,7 @@ theorem tryProofIrrel_preservesInferOnly
       cases isProposition with
       | false => exact TcM.PreservesInferOnly.pure false
       | true =>
-          simp only [Bool.not_true, Bool.false_eq_true, if_false, pure_bind]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false, pure_bind]
           refine bind_preservesInferOnly
             (tryQuestion_preservesInferOnly
               (inferOnlyCall_preservesInferOnly hmethods right)) ?_
@@ -148,7 +148,7 @@ theorem tryDefEqUnit_preservesInferOnly
               cases isUnitLike with
               | false => exact TcM.PreservesInferOnly.pure false
               | true =>
-                  simp only [Bool.not_true, Bool.false_eq_true, if_false,
+                  simp only [Bool.not_true, Bool.false_eq_true, ite_false,
                     pure_bind]
                   refine bind_preservesInferOnly
                     (tryQuestion_preservesInferOnly

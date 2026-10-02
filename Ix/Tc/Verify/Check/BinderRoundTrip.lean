@@ -91,7 +91,7 @@ theorem abstractFVarsSpec_instantiateRevSpec_singleton
         have hwindow :
             ((depth ≥ depth && depth < depth + 1) = true) := by
           simp [hlt]
-        rw [if_pos hwindow]
+        rw [ite_eq_left hwindow]
         have hindex : (1 - 1 - (depth - depth)).toNat = 0 := by simp
         rw [hindex, getElem!_pos #[KExpr.mkFVar fv name] 0 (by simp)]
         change abstractFVarsSpec (KExpr.mkFVar fv name)
@@ -133,8 +133,8 @@ theorem abstractFVarsSpec_instantiateRevSpec_singleton
               show (1 : UInt64).toNat = 1 from rfl]
             rw [Nat.sub_add_cancel honeNat]
             exact Nat.mod_eq_of_lt (Nat.lt_trans (Nat.lt_succ_self _) hidx)
-          rw [if_neg hwindow, if_pos hgeSucc, mkVar_shape,
-            abstractFVarsSpec, if_pos hshift, hround]
+          rw [ite_eq_right hwindow, ite_eq_left hgeSucc, mkVar_shape,
+            abstractFVarsSpec, ite_eq_left hshift, hround]
           exact mkVar_shape idx varName info
         · have hnge : ¬idx ≥ depth := fun hge => by
             have hle := UInt64.le_iff_toNat_le.mp hge
@@ -149,8 +149,8 @@ theorem abstractFVarsSpec_instantiateRevSpec_singleton
               have hgeNat := UInt64.le_iff_toNat_le.mp hge
               rw [hsucc] at hgeNat
               omega))
-          rw [if_neg hwindow, if_neg hngeSucc, abstractFVarsSpec,
-            if_neg hnge]
+          rw [ite_eq_right hwindow, ite_eq_right hngeSucc, abstractFVarsSpec,
+            ite_eq_right hnge]
   | @fvar id fvarName info =>
       have hne : id ≠ fv := by
         rw [mkFVar_shape] at hfresh

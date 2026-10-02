@@ -82,12 +82,12 @@ theorem inferUncached_preservesInferOnly
           intro isEager
           cases isEager with
           | false =>
-              simp only [Bool.false_eq_true, if_false, pure_bind]
+              simp only [Bool.false_eq_true, ite_false, pure_bind]
               apply TcM.PreservesInferOnly.bind (hmethods.isDefEq aTy dom)
               intro equal
               cases equal with
               | false =>
-                  simp only [Bool.not_false, if_true]
+                  simp only [Bool.not_false, ite_true]
                   apply TcM.PreservesInferOnly.bind
                     TcM.PreservesInferOnly.get
                   intro state
@@ -97,7 +97,7 @@ theorem inferUncached_preservesInferOnly
                   simp only [Bool.not_true]
                   exact TcM.PreservesInferOnly.runIntern (subst cod a 0)
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               show ((do
                 modify fun state : TcState .anon =>
                   { state with eagerReduce := true }
@@ -124,7 +124,7 @@ theorem inferUncached_preservesInferOnly
               intro _
               cases equal with
               | false =>
-                  simp only [Bool.not_false, if_true]
+                  simp only [Bool.not_false, ite_true]
                   apply TcM.PreservesInferOnly.bind
                     TcM.PreservesInferOnly.get
                   intro state
@@ -157,7 +157,7 @@ theorem inferUncached_preservesInferOnly
           exact TcM.PreservesInferOnly.runIntern
             (internExprM (.mkAll anonN anonBi ty abstracted))
       | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           apply TcM.PreservesInferOnly.bind (hmethods.infer ty)
           intro tyTy
           apply TcM.PreservesInferOnly.bind
@@ -226,7 +226,7 @@ theorem inferUncached_preservesInferOnly
           exact TcM.PreservesInferOnly.runIntern
             (cheapBetaReduce substituted)
       | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           apply TcM.PreservesInferOnly.bind (hmethods.infer ty)
           intro tyTy
           apply TcM.PreservesInferOnly.bind
@@ -238,7 +238,7 @@ theorem inferUncached_preservesInferOnly
           intro equal
           cases equal with
           | false =>
-              simp only [Bool.not_false, if_true]
+              simp only [Bool.not_false, ite_true]
               exact TcM.PreservesInferOnly.throw (alpha := KExpr .anon)
                 .declTypeMismatch
           | true =>

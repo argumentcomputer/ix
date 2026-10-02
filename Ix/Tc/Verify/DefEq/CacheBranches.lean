@@ -61,7 +61,7 @@ theorem isDefEq_fullHitCheapMode_true
       _ s1 = _
   unfold EStateM.bind
   rw [hstats]
-  simp only [haddr, Bool.false_eq_true, if_false]
+  simp only [haddr, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
   unfold EStateM.bind
@@ -80,7 +80,7 @@ theorem isDefEq_fullHitCheapMode_true
         ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
   unfold EStateM.bind
   rw [hequiv]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -90,7 +90,7 @@ theorem isDefEq_fullHitCheapMode_true
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
-  simp only [hhit, if_true]
+  simp only [hhit, ite_true]
   rfl
 
 /-- The cheap-mode copy of a positive full entry is justified by re-kinding
@@ -271,7 +271,7 @@ theorem isDefEq_rootCheapHit_true
       _ s1 = _
   unfold EStateM.bind
   rw [hstats]
-  simp only [haddr, Bool.false_eq_true, if_false]
+  simp only [haddr, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
   unfold EStateM.bind
@@ -290,7 +290,7 @@ theorem isDefEq_rootCheapHit_true
         ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
   unfold EStateM.bind
   rw [hequiv]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -300,7 +300,7 @@ theorem isDefEq_rootCheapHit_true
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
-  simp only [hfullMiss, if_true]
+  simp only [hfullMiss, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -325,7 +325,7 @@ theorem isDefEq_rootCheapHit_true
       ((aRoot?, bRoot?), em))) _ s4 = _
   unfold EStateM.bind
   rw [hroots]
-  simp only [hchanged, hscope, if_true]
+  simp only [hchanged, hscope, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s5 = _
   unfold EStateM.bind
@@ -334,7 +334,7 @@ theorem isDefEq_rootCheapHit_true
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s5 = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s5 = .ok s5 s5 from rfl]
-  simp only [hhit, if_true]
+  simp only [hhit, ite_true]
   rfl
 
 /-- Soundness of the guarded positive root/cheap branch.  Root paths and the
@@ -657,7 +657,7 @@ theorem isDefEq_rootFullHitCheapMode_true
       _ s1 = _
   unfold EStateM.bind
   rw [hstats]
-  simp only [haddr, Bool.false_eq_true, if_false]
+  simp only [haddr, Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
   unfold EStateM.bind
@@ -676,7 +676,7 @@ theorem isDefEq_rootFullHitCheapMode_true
         ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
   unfold EStateM.bind
   rw [hequiv]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -686,7 +686,7 @@ theorem isDefEq_rootFullHitCheapMode_true
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
-  simp only [hfullMiss, if_true]
+  simp only [hfullMiss, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
   unfold EStateM.bind
@@ -711,12 +711,12 @@ theorem isDefEq_rootFullHitCheapMode_true
       ((aRoot?, bRoot?), em))) _ s4 = _
   unfold EStateM.bind
   rw [hroots]
-  simp only [hchanged, hscope, if_true]
+  simp only [hchanged, hscope, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s5 = _
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s5 = .ok s5 s5 from rfl]
-  simp only [hhit, if_true]
+  simp only [hhit, ite_true]
   rfl
 
 /-- Semantic acceptance of the positive root/full hit in cheap mode. -/

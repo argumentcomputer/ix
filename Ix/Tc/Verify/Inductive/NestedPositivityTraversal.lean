@@ -429,7 +429,7 @@ theorem checkNestedPositivityApplicationCheckedFuel_success
       simp only at hrun
       cases hmention : nestedParametersMentionRoot args nParams rootAddrs with
       | false =>
-          simp only [hmention, Bool.not_false, if_true] at hrun
+          simp only [hmention, Bool.not_false, ite_true] at hrun
           change EStateM.Result.error _ initial = .ok () final at hrun
           contradiction
       | true =>
@@ -437,7 +437,7 @@ theorem checkNestedPositivityApplicationCheckedFuel_success
           cases hindependent :
               positiveIndicesIndependent args nParams rootAddrs with
           | false =>
-              simp only [hindependent, Bool.not_false, if_true] at hrun
+              simp only [hindependent, Bool.not_false, ite_true] at hrun
               change EStateM.Result.error _ initial = .ok () final at hrun
               contradiction
           | true =>
@@ -447,7 +447,7 @@ theorem checkNestedPositivityApplicationCheckedFuel_success
       simp only at hrun
       cases hindependent : positiveIndicesIndependent args nParams rootAddrs with
       | false =>
-          simp only [hindependent, Bool.not_false, if_true] at hrun
+          simp only [hindependent, Bool.not_false, ite_true] at hrun
           change EStateM.Result.error _ initial = .ok () final at hrun
           contradiction
       | true =>

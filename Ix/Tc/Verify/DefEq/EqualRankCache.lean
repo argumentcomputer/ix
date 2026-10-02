@@ -228,17 +228,17 @@ theorem trySameHeadSpineCached_wf
   cases hhit : afterRead.env.defEqFailure.contains
       (defEqFailureKey left right ctxAddr) with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ => trivial
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       apply RecM.WF.bind <| by
         cases speculative with
         | false =>
-            simp only [Bool.false_eq_true, if_false]
+            simp only [Bool.false_eq_true, ite_false]
             exact hsame hleftSupport hrightSupport hleft hright
         | true =>
-            simp only [if_true]
+            simp only [ite_true]
             exact trySameHeadSpineSpeculative_wf hsame hleftSupport
               hrightSupport hleft hright
       intro result afterAttempt hresult

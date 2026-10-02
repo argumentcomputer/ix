@@ -177,7 +177,7 @@ theorem inferUncached_lam_full_wf
   | lam htyPre hbodyPre =>
       rename_i tyV bodyV
       unfold inferUncached
-      simp only [Bool.not_false, if_true, ReaderT.run_bind,
+      simp only [Bool.not_false, ite_true, ReaderT.run_bind,
         ReaderT.run_monadLift, inferCall, pure_bind]
       apply TcM.WF.bind
         (TcM.WF.withInv <| callbacks.infer hpolicy htySupport htyPre)
@@ -575,7 +575,7 @@ theorem inferUncached_let_full_wf
   | letE htypePre hvaluePre hbodyPre =>
       rename_i typeV valueV
       unfold inferUncached
-      simp only [Bool.not_false, if_true, ReaderT.run_bind,
+      simp only [Bool.not_false, ite_true, ReaderT.run_bind,
         ReaderT.run_monadLift, inferCall, isDefEqCall, pure_bind]
       apply TcM.WF.bind
         (TcM.WF.withInv <| callbacks.infer hpolicy htypeSupport htypePre)
@@ -603,10 +603,10 @@ theorem inferUncached_let_full_wf
       rcases hequal with ⟨hIEq, hpolicyEq, heq⟩
       cases equal with
       | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           exact TcM.WF.throw fun _ => hpolicyEq
       | true =>
-          simp only [Bool.not_true, Bool.false_eq_true, if_false]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false]
           have hvalueType : world.venv.HasType uvars Delta.toCtx
               valueV typeV :=
             hvalueTy.defeqU_r world.venvWF hIEq.2.1.wf.toCtx <|

@@ -301,7 +301,7 @@ theorem tryReduceStringLiteral_preservesInferOnly
   unfold tryReduceStringLiteral
   cases hutf8 : id.addr == p.stringUtf8ByteSize.addr with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       change (TcM.runIntern
         (internExprM
           (natExprFromValue value.utf8ByteSize : KExpr .anon)) >>= fun result =>
@@ -313,13 +313,13 @@ theorem tryReduceStringLiteral_preservesInferOnly
       intro result
       exact TcM.PreservesInferOnly.pure (some result)
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       cases hbytes : id.addr == p.stringToByteArray.addr with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           cases hempty : value.isEmpty with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               change (TcM.runIntern
                 (internExprM (KExpr.mkConst p.byteArrayEmpty #[])) >>=
                   fun result => pure (some result)).PreservesInferOnly
@@ -329,10 +329,10 @@ theorem tryReduceStringLiteral_preservesInferOnly
               intro result
               exact TcM.PreservesInferOnly.pure (some result)
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               exact TcM.PreservesInferOnly.pure none
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           exact charOfNatExpr_preservesInferOnly (methods := methods) _
 
 theorem tryReduceString_preservesInferOnly
@@ -342,10 +342,10 @@ theorem tryReduceString_preservesInferOnly
   rcases hspine : source.collectSpine with ⟨head, args⟩
   cases hsize : args.size != 1 with
   | true =>
-      simp only [hsize, if_true]
+      simp only [hsize, ite_true]
       exact TcM.PreservesInferOnly.pure none
   | false =>
-      simp only [hsize, Bool.false_eq_true, if_false]
+      simp only [hsize, Bool.false_eq_true, ite_false]
       cases head with
       | const id levels info =>
           simp only [pure_bind, ReaderT.run_bind]
@@ -358,10 +358,10 @@ theorem tryReduceString_preservesInferOnly
                 !(id.addr == p.stringUtf8ByteSize.addr) &&
                 !(id.addr == p.stringToByteArray.addr)) with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact TcM.PreservesInferOnly.pure none
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               cases args[0]! with
               | str value blob info =>
                   exact tryReduceStringLiteral_preservesInferOnly
@@ -389,16 +389,16 @@ theorem tryQuotReduceSelected_preservesInferOnly
   | const id levels info =>
       cases hctor : id.addr != p.quotCtor.addr with
       | true =>
-          simp only [hctor, if_true]
+          simp only [hctor, ite_true]
           exact TcM.PreservesInferOnly.pure none
       | false =>
-          simp only [hctor, Bool.false_eq_true, if_false]
+          simp only [hctor, Bool.false_eq_true, ite_false]
           cases hsize : majorArgs.size != 3 with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact TcM.PreservesInferOnly.pure none
           | false =>
-              simp only [Bool.false_eq_true, if_false, pure_bind,
+              simp only [Bool.false_eq_true, ite_false, pure_bind,
                 ReaderT.run_bind, ReaderT.run_monadLift]
               apply TcM.PreservesInferOnly.bind
                 (TcM.PreservesInferOnly.runIntern
@@ -428,26 +428,26 @@ theorem tryQuotReduce_preservesInferOnly
       intro p
       cases hlift : id.addr == p.quotLift.addr with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           by_cases hsize : args.size < 6
-          · simp only [hsize, if_pos]
+          · simp only [hsize, ite_eq_left]
             exact TcM.PreservesInferOnly.pure none
-          · simp only [hsize, if_false]
+          · simp only [hsize, ite_false]
             exact
               tryQuotReduceSelected_preservesInferOnly hmethods p args 3 5
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           cases hind : id.addr == p.quotInd.addr with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               by_cases hsize : args.size < 5
-              · simp only [hsize, if_pos]
+              · simp only [hsize, ite_eq_left]
                 exact TcM.PreservesInferOnly.pure none
-              · simp only [hsize, if_false]
+              · simp only [hsize, ite_false]
                 exact
                   tryQuotReduceSelected_preservesInferOnly hmethods p args 3 4
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               exact TcM.PreservesInferOnly.pure none
   | var | fvar | sort | app | lam | all | letE | prj | nat | str =>
       simp only

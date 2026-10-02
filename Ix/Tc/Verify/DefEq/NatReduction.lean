@@ -59,10 +59,10 @@ theorem defEqLazyDeltaStepAfterOffsetMiss_wf
   cases hgate :
       ((!left.hasFVars && !right.hasFVars) || state.eagerReduce) with
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact hafter hpair
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       apply RecM.WF.bind
         (RecM.WF.withInv <|
           hnat hpair.leftSupport hleft)

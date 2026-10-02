@@ -61,7 +61,7 @@ theorem validation_function :
         .ok () state := by
     unfold RecM.validateExprWellScoped
     rw [RecM.validateExprWellScoped.go.eq_def]
-    simp only [Std.HashSet.contains_empty, Bool.false_eq_true, if_false]
+    simp only [Std.HashSet.contains_empty, Bool.false_eq_true, ite_false]
     have hsource : source = .sort sourceUniv source.info := by rfl
     rw [hsource]
     rw [ReaderT.run_bind]
@@ -74,7 +74,7 @@ theorem validation_function :
           .ok seen state := by
       unfold sourceUniv KUniv.mkZero RecM.validateUnivParamsSeen
       rw [RecM.validateUnivParamsSeen.go.eq_def]
-      simp only [Std.HashSet.contains_empty, Bool.false_eq_true, if_false]
+      simp only [Std.HashSet.contains_empty, Bool.false_eq_true, ite_false]
       rw [RecM.validateUnivParamsSeen.go.eq_def]
       rfl
     unfold EStateM.bind
@@ -113,7 +113,7 @@ theorem cacheInferResult_requests (state : TcState .anon)
       ((RecM.cacheInferResult false inferKey inferred).run methods)
       state [] := by
   unfold RecM.cacheInferResult
-  simp only [Bool.not_false, if_true]
+  simp only [Bool.not_false, ite_true]
   exact ExecutionRequests.modify state _ rfl
 
 theorem inferUncached_function :
@@ -150,7 +150,7 @@ theorem inference_requests :
   simp only
   have hinferOnly : initialState.inferOnly = false := by rfl
   rw [hinferOnly]
-  simp only [Bool.false_eq_true, if_false, ReaderT.run_pure, pure_bind,
+  simp only [Bool.false_eq_true, ite_false, ReaderT.run_pure, pure_bind,
     ReaderT.run_bind]
   apply ExecutionRequests.bind (inferUncached_requests initialState)
   intro inferred after _hinfer
@@ -177,7 +177,7 @@ theorem member_requests (separation : AddressSeparation) :
       initialState [.internExpr result] := by
   obtain ⟨afterInfer, hinfer⟩ := inference_run separation
   unfold RecM.checkConstMember
-  simp only [concreteAxiom, Mode.F.hasDups, Bool.false_eq_true, if_false,
+  simp only [concreteAxiom, Mode.F.hasDups, Bool.false_eq_true, ite_false,
     ReaderT.run_bind]
   apply ExecutionRequests.bind validation_requests
   intro _ afterValidation hvalidation

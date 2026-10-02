@@ -211,7 +211,7 @@ theorem cleanupNatOffsetMajor_str
       s = _
   unfold EStateM.bind
   rw [evalNatOffsetLiteral_str]
-  simp only [Option.isSome, Bool.false_eq_true, if_false, pure_bind]
+  simp only [Option.isSome, Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (natOffset (.str value blob info) 0) methods) _ s = _

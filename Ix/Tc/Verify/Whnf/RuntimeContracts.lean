@@ -301,7 +301,7 @@ theorem isTransientNatLiteralWork_wf {I : TcState .anon → Prop}
   cases first with
   | true => exact TcM.WF.pure fun _ => trivial
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       rcases hcollect : source.collectSpine with ⟨head, args⟩
       cases head <;> simp only
       all_goals try exact TcM.WF.pure fun _ => trivial
@@ -378,7 +378,7 @@ theorem isTransientNatLiteralWork_noLazy {methods : Methods .anon}
   cases first with
   | true => exact ⟨true, rfl⟩
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       rcases hcollect : source.collectSpine with ⟨head, args⟩
       cases head <;> simp only
       all_goals try exact ⟨false, rfl⟩

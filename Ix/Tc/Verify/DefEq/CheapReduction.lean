@@ -203,7 +203,7 @@ theorem closesAfterStringExpansion
   rcases hcb with ⟨hIB, hcbSupport, cbV, hcbTr, hbCb⟩
   cases haddr : ca.addr == cb.addr with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ _ => by
         have herase :=
           hcollision.expr hcaSupport hcbSupport (eq_of_beq haddr)
@@ -216,19 +216,19 @@ theorem closesAfterStringExpansion
         exact haCa.trans world.venvWF hIB.2.1.wf <|
           hmiddle.trans world.venvWF hIB.2.1.wf hbCb.symm
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       apply RecM.WF.bind
         (quickDefEq_wf theory hcollision hsorts hstructural
           hcaSupport hcbSupport hcaTr hcbTr)
       intro accepted afterQuick haccepted
       cases accepted with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact RecM.WF.pure fun hI _ =>
             haCa.trans world.venvWF hI.2.1.wf <|
               (haccepted rfl).trans world.venvWF hI.2.1.wf hbCb.symm
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           exact htail haSupport hbSupport ha hb
 
 end DefEqAfterCorePass
@@ -275,7 +275,7 @@ theorem closesAfterCorePass
   rcases hwb with ⟨hIB, hwbSupport, wbV, hwbTr, hbWb⟩
   cases haddr : wa.addr == wb.addr with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact RecM.WF.pure fun _ _ => by
         have herase :=
           hcollision.expr hwaSupport hwbSupport (eq_of_beq haddr)
@@ -288,19 +288,19 @@ theorem closesAfterCorePass
         exact haWa.trans world.venvWF hIB.2.1.wf <|
           hmiddle.trans world.venvWF hIB.2.1.wf hbWb.symm
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       apply RecM.WF.bind
         (quickDefEq_wf theory hcollision hsorts hstructural
           hwaSupport hwbSupport hwaTr hwbTr)
       intro accepted afterQuick haccepted
       cases accepted with
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           exact RecM.WF.pure fun hI _ =>
             haWa.trans world.venvWF hI.2.1.wf <|
               (haccepted rfl).trans world.venvWF hI.2.1.wf hbWb.symm
       | false =>
-          simp only [Bool.false_eq_true, if_false]
+          simp only [Bool.false_eq_true, ite_false]
           apply RecM.WF.mono (RecM.WF.withInv <|
             htail hwaSupport hwbSupport hwaTr hwbTr)
           · intro answer final hpost htrue

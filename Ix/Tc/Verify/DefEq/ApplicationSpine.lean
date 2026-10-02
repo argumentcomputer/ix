@@ -67,10 +67,10 @@ theorem tryDefEqApp_wf
     rcases hrightCollect : right.collectSpine with ⟨rightHead, rightArgs⟩
     cases hsize : leftArgs.size != rightArgs.size with
     | true =>
-        simp only [if_true]
+        simp only [ite_true]
         exact RecM.WF.pure fun _ h => by contradiction
     | false =>
-        simp only [Bool.false_or, Bool.false_eq_true, if_false]
+        simp only [Bool.false_or, Bool.false_eq_true, ite_false]
         have hlength : leftArgs.toList.length = rightArgs.toList.length := by
           simpa only [Array.length_toList] using
             eq_of_beq (show (leftArgs.size == rightArgs.size) = true by
@@ -88,10 +88,10 @@ theorem tryDefEqApp_wf
         intro headsEqual afterHead hheadsEqual
         cases headsEqual with
         | false =>
-            simp only [Bool.not_false, if_true]
+            simp only [Bool.not_false, ite_true]
             exact RecM.WF.pure fun _ h => by contradiction
         | true =>
-            simp only [Bool.not_true, Bool.false_eq_true, if_false,
+            simp only [Bool.not_true, Bool.false_eq_true, ite_false,
               pure_bind]
             apply RecM.WF.mono (RecM.WF.withInv <|
               allDefEqSpineArgs_wf _ (by

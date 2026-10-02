@@ -85,23 +85,23 @@ theorem defEqLazyDeltaStepAfterProjectionMiss_wf
   case false.false =>
     simp at hactive
   case false.true =>
-    simp only [Bool.false_and, Bool.false_eq_true, if_false]
+    simp only [Bool.false_and, Bool.false_eq_true, ite_false]
     exact defEqLazyDeltaStepWithRightDelta_wf context hDelta hpair
   case true.false =>
-    simp only [Bool.true_and, Bool.false_eq_true, if_false, if_true]
+    simp only [Bool.true_and, Bool.false_eq_true, ite_false, ite_true]
     exact defEqLazyDeltaStepWithLeftDelta_wf context hDelta hpair
   case true.true =>
-    simp only [Bool.true_and, if_true]
+    simp only [Bool.true_and, ite_true]
     apply RecM.WF.bind (rankDeltaHead_wf hfault aHead)
     intro leftRank afterLeftRank _
     apply RecM.WF.bind (rankDeltaHead_wf hfault bHead)
     intro rightRank afterRightRank _
     cases heq : leftRank == rightRank with
     | true =>
-        simp only [if_true]
+        simp only [ite_true]
         exact hequal hpair
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         cases hcompare : compareRank leftRank rightRank with
         | lt =>
             exact defEqLazyDeltaStepWithRightDelta_wf context hDelta hpair

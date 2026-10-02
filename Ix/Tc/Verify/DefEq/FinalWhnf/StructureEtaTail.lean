@@ -105,7 +105,7 @@ theorem tryEtaStructAfterTypes_wf
       rcases hequal with ⟨hIEqual, hequal⟩
       cases equal with
       | false =>
-          simpa only [Bool.false_eq_true, if_false, pure_bind] using
+          simpa only [Bool.false_eq_true, ite_false, pure_bind] using
             hexplicit afterEqual
       | true =>
           exact RecM.WF.pure fun _ _ => by

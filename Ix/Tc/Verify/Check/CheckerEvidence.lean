@@ -157,7 +157,7 @@ theorem checkValuePipeline_sound
     intro answer _ heq
     cases answer with
     | false =>
-        simp only [Bool.not_false, if_true]
+        simp only [Bool.not_false, ite_true]
         exact TcM.WF.throw fun _ => trivial
     | true =>
         simp only [Bool.not_true, Bool.false_eq]

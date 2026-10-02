@@ -17,10 +17,10 @@ private theorem toNat_max_bv (a b : UInt64) :
   show (if a ≤ b then b else a).toNat = max a.toNat b.toNat
   rw [Nat.max_def]
   by_cases h : a ≤ b
-  · rw [if_pos h, if_pos (UInt64.le_iff_toNat_le.mp h)]
+  · rw [ite_eq_left h, ite_eq_left (UInt64.le_iff_toNat_le.mp h)]
   · have hn : ¬a.toNat ≤ b.toNat := fun h' =>
       h (UInt64.le_iff_toNat_le.mpr h')
-    rw [if_neg h, if_neg hn]
+    rw [ite_eq_right h, ite_eq_right hn]
 
 /-- Saturating predecessor changes the represented natural by at most one. -/
 private theorem toNat_le_sat1_add_one_bv (x : UInt64) :
@@ -98,9 +98,9 @@ private theorem substSpec_liftSpec_succ_aux
           rw [hidxShift, hshiftCutoff] at heq'
           have hge' := UInt64.le_iff_toNat_le.mp hidxCutoff
           omega
-        rw [mkVar_shape, liftSpec, if_pos hidxCutoff, mkVar_shape,
-          substSpec, if_neg hne, if_pos hgt, hsub,
-          liftSpec, if_pos hidxCutoff]
+        rw [mkVar_shape, liftSpec, ite_eq_left hidxCutoff, mkVar_shape,
+          substSpec, ite_eq_right hne, ite_eq_left hgt, hsub,
+          liftSpec, ite_eq_left hidxCutoff]
       · have hidxLtNat : idx.toNat < cutoff.toNat := by
           have hnle : ¬cutoff.toNat ≤ idx.toNat := fun h =>
             hidxCutoff (UInt64.le_iff_toNat_le.mpr h)
@@ -120,8 +120,8 @@ private theorem substSpec_liftSpec_succ_aux
           have hgt' := UInt64.lt_iff_toNat_lt.mp hgt
           have hlt' := UInt64.lt_iff_toNat_lt.mp hlt
           omega
-        rw [mkVar_shape, liftSpec, if_neg hidxCutoff, substSpec,
-          if_neg hne, if_neg hngt, liftSpec, if_neg hidxCutoff]
+        rw [mkVar_shape, liftSpec, ite_eq_right hidxCutoff, substSpec,
+          ite_eq_right hne, ite_eq_right hngt, liftSpec, ite_eq_right hidxCutoff]
   | fvar => rfl
   | sort => rfl
   | const => rfl

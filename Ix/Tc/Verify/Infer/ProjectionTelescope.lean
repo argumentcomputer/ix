@@ -495,10 +495,10 @@ theorem inferProjFieldStep_wf
         currentV projectedV := hplan.selected hi
     cases isPropStruct with
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         exact finishSelectedProjectionField_wf theory hview hresult
     | true =>
-        simp only [if_true, pure_bind]
+        simp only [ite_true, pure_bind]
         rw [← bind_assoc]
         apply RecM.WF.bind
           (inferProjectionFieldSort_wf hwhnf hsorts hdomSupport' hdomTr')
@@ -512,11 +512,11 @@ theorem inferProjFieldStep_wf
     obtain ⟨hprojSupport, hfits⟩ := hplan.preceding hi
     cases isPropStruct with
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         exact finishPrecedingProjectionField_wf theory hsubst hcollision
           hview hprojSupport hfits
     | true =>
-        simp only [if_true, pure_bind]
+        simp only [ite_true, pure_bind]
         rw [← bind_assoc]
         apply RecM.WF.bind
           (inferProjectionFieldSort_wf hwhnf hsorts hdomSupport' hdomTr')

@@ -88,9 +88,9 @@ theorem forIn_pinnedStep (dag : Dag) (isStored : Array Bool)
     | some u =>
       simp only [Option.elim_some]
       by_cases hs : seen.contains u = true
-      · simp only [hs, if_true]
+      · simp only [hs, ite_true]
         exact ih _ _ _ _
-      · simp only [hs, Bool.false_eq_true, if_false]
+      · simp only [hs, Bool.false_eq_true, ite_false]
         split
         · exact ih _ _ _ _
         · exact ih _ _ _ _
@@ -125,12 +125,12 @@ theorem pinnedWalk_eq (dag : Dag) (isStored : Array Bool) (hiS : isStored.size =
       · -- a term of the DAG: the two visited sets agree on it
         by_cases hs : seen.contains u = true
         · have hm : (stamp[u]! == mark) = true := by simpa using (hrel u hu).mp hs
-          simp only [hs, if_true, hm]
+          simp only [hs, ite_true, hm]
           exact ih _ _ _ _ ⟨hsz, hrel⟩
         · have hm : (stamp[u]! == mark) = false := by
             simp only [beq_eq_false_iff_ne, ne_eq]
             exact fun h' => hs ((hrel u hu).mpr h')
-          simp only [hs, Bool.false_eq_true, if_false, hm]
+          simp only [hs, Bool.false_eq_true, ite_false, hm]
           have hrel' : WalkRel dag.size mark (seen.insert u) (stamp.set! u mark) := by
             refine ⟨by simp [hsz], fun v hv => ?_⟩
             rw [Std.HashSet.contains_insert]
@@ -185,7 +185,7 @@ theorem pinnedWalk_eq (dag : Dag) (isStored : Array Bool) (hiS : isStored.size =
         have hset : stamp.set! u mark = stamp := by
           simp only [Array.set!_eq_setIfInBounds]
           exact Array.setIfInBounds_eq_of_size_le (by omega)
-        simp only [hm, hst, Bool.false_eq_true, if_false, hnode, Array.append_empty, hset]
+        simp only [hm, hst, Bool.false_eq_true, ite_false, hnode, Array.append_empty, hset]
         have hrel' : WalkRel dag.size mark (seen.insert u) stamp := by
           refine ⟨hsz, fun v hv => ?_⟩
           rw [Std.HashSet.contains_insert]
@@ -194,9 +194,9 @@ theorem pinnedWalk_eq (dag : Dag) (isStored : Array Bool) (hiS : isStored.size =
           rw [this, Bool.false_or]
           exact hrel v hv
         by_cases hs : seen.contains u = true
-        · simp only [hs, if_true]
+        · simp only [hs, ite_true]
           exact ih _ _ _ _ ⟨hsz, hrel⟩
-        · simp only [hs, Bool.false_eq_true, if_false]
+        · simp only [hs, Bool.false_eq_true, ite_false]
           exact ih _ _ _ _ hrel'
 
 /-! ## All walks -/

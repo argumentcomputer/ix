@@ -192,7 +192,7 @@ theorem tryStructEtaAfterInductive_wf
   cases structLike with
   | false => exact TcM.WF.pure fun _ => trivial
   | true =>
-      simp only [Bool.not_true, Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.not_true, Bool.false_eq_true, ite_false, pure_bind]
       rw [ReaderT.run_bind]
       apply TcM.WF.bind
         ((tryOptionalInferOnlyRec_wf
@@ -258,13 +258,13 @@ theorem tryStructEtaIota_trusted_prefix_wf
       (fun _ _ => True) := by
   unfold tryStructEtaIota
   by_cases hrules : (recr.rules.size != 1) = true
-  · simp only [hrules, if_true]
+  · simp only [hrules, ite_true]
     exact TcM.WF.pure fun _ => trivial
-  · simp only [hrules, Bool.false_eq_true, if_false]
+  · simp only [hrules, Bool.false_eq_true, ite_false]
     by_cases hlevels : (recUs.size.toUInt64 != recr.lvls) = true
-    · simp only [hlevels, if_true]
+    · simp only [hlevels, ite_true]
       exact TcM.WF.pure fun _ => trivial
-    · simp only [hlevels, Bool.false_eq_true, if_false, pure_bind]
+    · simp only [hlevels, Bool.false_eq_true, ite_false, pure_bind]
       rw [ReaderT.run_bind, ReaderT.run_monadLift]
       apply TcM.WF.bind
         (Q₁ := fun found after =>

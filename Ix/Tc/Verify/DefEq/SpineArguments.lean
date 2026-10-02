@@ -62,10 +62,10 @@ theorem allDefEqSpineArgsList_wf
       intro answer after hanswer
       cases answer with
       | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           exact RecM.WF.pure fun _ htrue => by contradiction
       | true =>
-          simp only [Bool.not_true, Bool.false_eq_true, if_false]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false]
           apply RecM.WF.mono
             (ih (fun tail hmem => hinputs tail (by simp [hmem])) after)
           · intro result final htail hresult candidate hmem

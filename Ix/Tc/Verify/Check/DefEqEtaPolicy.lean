@@ -113,10 +113,10 @@ theorem etaExpansionBaseLoop_preservesInferOnly
               (projectionId.addr != inductiveId.addr ||
                 projectionIndex.toNat != field) with
           | true =>
-            simp only [hshape, if_true]
+            simp only [hshape, ite_true]
             exact TcM.PreservesInferOnly.pure none
           | false =>
-            simp only [hshape, Bool.false_eq_true, if_false, pure_bind]
+            simp only [hshape, Bool.false_eq_true, ite_false, pure_bind]
             unfold etaExpansionBaseAfterProjection
             refine bind_preservesInferOnly
               (tryQuestion_preservesInferOnly (hnoDelta value)) ?_
@@ -132,10 +132,10 @@ theorem etaExpansionBaseLoop_preservesInferOnly
                 | some prior =>
                     cases hsame : (prior.addr != normalizedValue.addr) with
                     | true =>
-                      simp only [hsame, if_true]
+                      simp only [hsame, ite_true]
                       exact TcM.PreservesInferOnly.pure none
                     | false =>
-                      simp only [hsame, Bool.false_eq_true, if_false,
+                      simp only [hsame, Bool.false_eq_true, ite_false,
                         pure_bind]
                       exact etaExpansionBaseLoop_preservesInferOnly hnoDelta
                         inductiveId numParams arguments fuel (field + 1)
@@ -149,10 +149,10 @@ theorem etaExpansionBaseLoop_preservesInferOnly
                 | some prior =>
                     cases hsame : (prior.addr != value.addr) with
                     | true =>
-                      simp only [hsame, if_true]
+                      simp only [hsame, ite_true]
                       exact TcM.PreservesInferOnly.pure none
                     | false =>
-                      simp only [hsame, Bool.false_eq_true, if_false,
+                      simp only [hsame, Bool.false_eq_true, ite_false,
                         pure_bind]
                       exact etaExpansionBaseLoop_preservesInferOnly hnoDelta
                         inductiveId numParams arguments fuel (field + 1)
@@ -177,10 +177,10 @@ theorem etaExpansionBaseAfterValue_preservesInferOnly
   | some prior =>
       cases hsame : (prior.addr != value.addr) with
       | true =>
-        simp only [hsame, if_true]
+        simp only [hsame, ite_true]
         exact TcM.PreservesInferOnly.pure none
       | false =>
-        simp only [hsame, Bool.false_eq_true, if_false, pure_bind]
+        simp only [hsame, Bool.false_eq_true, ite_false, pure_bind]
         exact etaExpansionBaseLoop_preservesInferOnly hnoDelta inductiveId
           numParams arguments fuel (field + 1) (some prior)
 
@@ -236,7 +236,7 @@ theorem tryEtaStructFields_preservesInferOnly
       cases equal with
       | false => exact TcM.PreservesInferOnly.pure false
       | true =>
-          simp only [Bool.not_true, Bool.false_eq_true, if_false]
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false]
           exact tryEtaStructFields_preservesInferOnly hmethods inductiveId
             numParams target arguments fuel (field + 1)
 
@@ -265,7 +265,7 @@ theorem tryEtaStructAfterTypes_preservesInferOnly
       cases equal with
       | true => exact TcM.PreservesInferOnly.pure true
       | false =>
-          simp only [Bool.false_eq_true, if_false, pure_bind]
+          simp only [Bool.false_eq_true, ite_false, pure_bind]
           exact tryEtaStructFields_preservesInferOnly hmethods inductiveId
             numParams target arguments numFields 0
 
@@ -286,7 +286,7 @@ theorem tryEtaStructAfterConstructor_preservesInferOnly
     cases isStructure with
     | false => exact TcM.PreservesInferOnly.pure false
     | true =>
-        simp only [Bool.not_true, Bool.false_eq_true, if_false]
+        simp only [Bool.not_true, Bool.false_eq_true, ite_false]
         refine bind_preservesInferOnly
           (tryQuestion_preservesInferOnly
             (inferOnlyCall_preservesInferOnly hmethods source)) ?_
@@ -310,7 +310,7 @@ theorem tryEtaStructAfterConstructor_preservesInferOnly
                 cases typesEqual with
                 | false => exact TcM.PreservesInferOnly.pure false
                 | true =>
-                    simp only [Bool.not_true, Bool.false_eq_true, if_false]
+                    simp only [Bool.not_true, Bool.false_eq_true, ite_false]
                     exact tryEtaStructAfterTypes_preservesInferOnly hmethods
                       hnoDelta inductiveId numParams numFields target arguments
 

@@ -4059,10 +4059,10 @@ theorem noDeltaNatAddReduction :
         (noAccelState Primitives.ofAnonAddrs) from rfl]
   simp only
   rw [natAdd_ne_natSucc]
-  simp only [Bool.false_and, Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_and, Bool.false_eq_true, ite_false, pure_bind]
   have hsize : ¬((#[RecM.natExprFromValue 2,
       RecM.natExprFromValue 3] : Array (KExpr .anon)).size < 2) := by decide
-  simp only [hsize, if_false]
+  simp only [hsize, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind
     ((RecM.isNatBinArithAddr Primitives.ofAnonAddrs.natAdd.addr).run
@@ -4077,7 +4077,7 @@ theorem noDeltaNatAddReduction :
   unfold EStateM.bind
   rw [noDeltaNatAddIsPred]
   simp only [Bool.not_true, Bool.not_false, Bool.false_and,
-    Bool.false_eq_true, if_false, if_true]
+    Bool.false_eq_true, ite_false, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind
     ((RecM.whnfNatReducerArg (RecM.natExprFromValue 2)).run
@@ -4563,7 +4563,7 @@ theorem betaFullChargedNatOffsetStuckNone (prims : Primitives .anon) :
   cases hprobe : RecM.natOffsetStuckHead prims betaArg with
   | false => rfl
   | true =>
-    simp only [Bool.not_true, Bool.false_eq_true, if_false]
+    simp only [Bool.not_true, Bool.false_eq_true, ite_false]
     unfold betaArg
     rw [KExpr.mkConst_shape]
     simp [KExpr.collectSpine, KExpr.collectSpine.go]
@@ -4638,7 +4638,7 @@ theorem betaFullWhnfStep (prims : Primitives .anon) :
   have hcycle : ({} : Std.HashSet Address).contains betaArg.addr = false := by
     change ({} : Std.HashMap Address Unit).contains betaArg.addr = false
     exact Std.HashMap.contains_empty
-  simp only [hcycle, Bool.false_eq_true, if_false, pure_bind]
+  simp only [hcycle, Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind
     ((RecM.tryReduceNative betaArg).run betaHarnessMethods) _
@@ -5680,13 +5680,13 @@ theorem multiIotaFirstResult :
         KExpr.mkConst succId #[] () := by
     rw [KExpr.mkVar_shape, substNoIntern]
     change (if (2 : UInt64) ≤ 1 then _ else _) = _
-    rw [if_neg (by decide)]
-    simp only [beq_self_eq_true, if_true]
+    rw [ite_eq_right (by decide)]
+    simp only [beq_self_eq_true, ite_true]
     exact KExpr.liftNoIntern_of_lbr_le (by simp)
   rw [KExpr.mkLam_shape]
   rw [substNoIntern]
   change (if (1 : UInt64) ≤ 0 then _ else _) = _
-  rw [if_neg (by decide)]
+  rw [ite_eq_right (by decide)]
   rw [show (0 : UInt64) + 1 = 1 from rfl]
   rw [hty, hbody]
 

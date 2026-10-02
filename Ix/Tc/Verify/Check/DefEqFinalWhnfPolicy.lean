@@ -28,14 +28,14 @@ theorem tryDefEqWhnfLet_preservesInferOnly
   cases typesEqual with
   | false => exact TcM.PreservesInferOnly.pure none
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       refine bind_preservesInferOnly
         (isDefEqCall_preservesInferOnly hmethods valueLeft valueRight) ?_
       intro valuesEqual
       cases valuesEqual with
       | false => exact TcM.PreservesInferOnly.pure none
       | true =>
-          simp only [if_true]
+          simp only [ite_true]
           have hbody :
               ((withLctxScope do
                 let (leftOpen, fresh, _) ←
@@ -158,10 +158,10 @@ theorem tryDefEqWhnfNat_preservesInferOnly
   intro rightNat
   cases hboth : (leftNat && rightNat) with
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact TcM.PreservesInferOnly.pure none
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       refine bind_preservesInferOnly
         (isDefEqNat_preservesInferOnly hmethods left right) ?_
       intro answer
@@ -181,7 +181,7 @@ theorem tryDefEqWhnfEtaAfterGuard_preservesInferOnly
   cases firstAccepted with
   | true => exact TcM.PreservesInferOnly.pure (some true)
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       refine bind_preservesInferOnly
         (tryEtaExpansion_preservesInferOnly hmethods hwhnf right left) ?_
       intro secondAccepted
@@ -210,7 +210,7 @@ theorem tryDefEqWhnfStringAfterGuard_preservesInferOnly
   cases firstAccepted with
   | true => exact TcM.PreservesInferOnly.pure (some true)
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       refine bind_preservesInferOnly
         (tryStringLitExpansion_preservesInferOnly hmethods right left) ?_
       intro secondAccepted
@@ -239,7 +239,7 @@ theorem tryDefEqWhnfStructEta_preservesInferOnly
   cases firstAccepted with
   | true => exact TcM.PreservesInferOnly.pure (some true)
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       refine bind_preservesInferOnly
         (tryEtaStruct_preservesInferOnly hmethods hnoDelta right left) ?_
       intro secondAccepted
@@ -269,7 +269,7 @@ theorem isDefEqWhnfAfterStructEta_preservesInferOnly
   cases accepted with
   | true => exact TcM.PreservesInferOnly.pure true
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       exact isDefEqWhnfAfterUnit_preservesInferOnly hmethods hwhnf left right
 
 theorem isDefEqWhnfAfterString_preservesInferOnly

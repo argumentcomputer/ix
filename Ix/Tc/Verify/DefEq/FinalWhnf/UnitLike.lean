@@ -93,7 +93,7 @@ theorem isUnitLikeInductive_wf
           ty ctors leanAll =>
         cases hshape : (indices != 0 || ctors.size != 1) with
         | true =>
-            simp only [if_true]
+            simp only [ite_true]
             exact RecM.WF.pure fun _ htrue => by contradiction
         | false =>
             have hshapeParts := Bool.or_eq_false_iff.mp hshape
@@ -103,7 +103,7 @@ theorem isUnitLikeInductive_wf
             have hctors : ctors.size = 1 := by
               exact eq_of_beq
                 (show (ctors.size == 1) = true by simpa using hshapeParts.2)
-            simp only [Bool.false_eq_true, if_false]
+            simp only [Bool.false_eq_true, ite_false]
             let ctorId := ctors[0]!
             apply RecM.WF.bind <| RecM.WF.withInv <| RecM.WF.liftTcM <|
               TcM.tryGetConst_loaded_wf hfault ctorId afterInd
@@ -187,7 +187,7 @@ theorem tryDefEqUnit_wf
                   simp only [Bool.not_false]
                   exact RecM.WF.pure fun _ htrue => by contradiction
               | true =>
-                  simp only [Bool.not_true, Bool.false_eq_true, if_false]
+                  simp only [Bool.not_true, Bool.false_eq_true, ite_false]
                   obtain ⟨entry, hentry, hshape⟩ := hisUnit rfl
                   apply RecM.WF.bind
                     (tryOptionalInferOnlyCall_wf hrightSupport hright)

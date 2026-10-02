@@ -171,7 +171,7 @@ theorem selectKSynthCandidate_missing
       methods s = .ok .inconclusive sf := by
   unfold selectKSynthCandidate
   rw [hsame]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   change EStateM.bind (TcM.tryGetConst indId) _ s = _
   unfold EStateM.bind
   rw [hlookup]
@@ -190,7 +190,7 @@ theorem selectKSynthCandidate_nonInductive
       methods s = .ok .inconclusive sf := by
   unfold selectKSynthCandidate
   rw [hsame]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   change EStateM.bind (TcM.tryGetConst indId) _ s = _
   unfold EStateM.bind
   rw [hlookup]
@@ -212,7 +212,7 @@ theorem selectKSynthCandidate_empty
       methods s = .ok .inconclusive sf := by
   unfold selectKSynthCandidate
   rw [hsame]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   change EStateM.bind (TcM.tryGetConst indId) _ s = _
   unfold EStateM.bind
   rw [hlookup]
@@ -239,7 +239,7 @@ theorem selectKSynthCandidate_selected
       methods s = .ok result sf := by
   unfold selectKSynthCandidate
   rw [hsame]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   change EStateM.bind (TcM.tryGetConst indId) _ s = _
   unfold EStateM.bind
   rw [hlookup]
@@ -267,7 +267,7 @@ theorem selectKSynthCandidate_selectedError
       methods s = .error err sf := by
   unfold selectKSynthCandidate
   rw [hsame]
-  simp only [Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.false_eq_true, ite_false, pure_bind]
   change EStateM.bind (TcM.tryGetConst indId) _ s = _
   unfold EStateM.bind
   rw [hlookup]
@@ -300,7 +300,7 @@ theorem synthCtorWhenK_majorInferMiss
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
   rw [hlevelsNe]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec major)) methods) _ s = _
@@ -335,7 +335,7 @@ theorem synthCtorWhenK_majorWhnfMiss
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
   rw [hlevelsNe]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec major)) methods) _ s = _
@@ -381,7 +381,7 @@ theorem synthCtorWhenK_nonConstHead
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
   rw [hlevelsNe]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec major)) methods) _ s = _
@@ -417,7 +417,7 @@ theorem synthCtorWhenK_recursorMissing
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
   rw [hlevelsNe]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec major)) methods) _ s = _
@@ -465,7 +465,7 @@ theorem synthCtorWhenK_majorInductiveMiss
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [hlevels]
   rw [hlevelsNe]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec major)) methods) _ s = _
@@ -574,7 +574,7 @@ theorem eval
   have hlevelsNe : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [h.levelArity]
   rw [hlevelsNe]
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run (tryOptional (inferOnlyRec major)) methods) _ s = _

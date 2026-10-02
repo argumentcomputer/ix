@@ -81,7 +81,7 @@ theorem TrKExprS.instN_lbr {env : Lean4Lean.VEnv} {uvars : Nat}
     rw [KExpr.substSpec]
     by_cases heq : (i == depth) = true
     · have hik : i.toNat = dk := by rw [eq_of_beq heq]; exact hdepth
-      rw [if_pos heq]
+      rw [ite_eq_left heq]
       rw [show e.inst e₀' k = e₀'.liftN k from
         W.find?_hit (by rw [← hik]; exact h)]
       exact TrKExprS.weakBV_lbr henv htp harg h₀ W.toKBVLift hdepth rfl
@@ -90,7 +90,7 @@ theorem TrKExprS.instN_lbr {env : Lean4Lean.VEnv} {uvars : Nat}
       · have hik : dk < i.toNat := by
           have := UInt64.lt_iff_toNat_lt.mp hgt
           omega
-        rw [if_neg heq, if_pos hgt, KExpr.mkVar_shape]
+        rw [ite_eq_right heq, ite_eq_left hgt, KExpr.mkVar_shape]
         refine .var (A := A.inst e₀' k) ?_
         have h1i : (1 : UInt64) ≤ i :=
           UInt64.le_iff_toNat_le.mpr (by
@@ -105,7 +105,7 @@ theorem TrKExprS.instN_lbr {env : Lean4Lean.VEnv} {uvars : Nat}
           have hnlt : ¬(depth.toNat < i.toNat) := fun hh =>
             hgt (UInt64.lt_iff_toNat_lt.mpr hh)
           omega
-        rw [if_neg heq, if_neg hgt]
+        rw [ite_eq_right heq, ite_eq_right hgt]
         exact .var (A := A.inst e₀' k) (W.find?_lt hik h)
   | @fvar Δ₁' fv nm md e A h =>
     intro Δ dk k depth W hdepth hbig

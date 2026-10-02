@@ -130,7 +130,7 @@ theorem PrepWF.opaque_cost {p : Prep} (hp : PrepWF p) {w : Nat} {A : Nat → Boo
     (ht : t < p.dag.size) (h : OpaqueAt p w A t) : uCost p w A t = w := by
   rw [hp.uCost_eq w A t ht]
   unfold costOf
-  rw [if_pos h.1]
+  rw [ite_eq_left h.1]
   have hinl : w ≤ inlOf p w A (uCost p w A) t := by
     by_cases hf : p.family[t]! = .none
     · exact h.2.1 hf
@@ -192,7 +192,7 @@ theorem PrepWF.inl_split {p : Prep} (_hp : PrepWF p) (w : Nat) (A : Nat → Bool
     (hkl : k ≤ p.spineLen[y]!) (hnone : ∀ j, 1 ≤ j → j < k → A (spineAt p y j) = false) :
     inlOf p w A cost y = prefixSides p cost y k + teleFrom p w A cost y k := by
   unfold inlOf teleFrom
-  rw [if_neg hf]
+  rw [ite_eq_right hf]
   have hcuts : cutCosts p w A cost y =
       (cutsRange p w A cost y k p.spineLen[y]!).map (prefixSides p cost y k + ·) := by
     unfold cutCosts cutsRange
@@ -243,7 +243,7 @@ theorem mem_cutsRange {p : Prep} {w : Nat} {A : Nat → Bool} {cost : Nat → Na
       exact ⟨j, hj.1, by omega, hA, (Option.some.inj he).symm⟩
     · cases he
   · rintro ⟨j, h1, h2, hA, rfl⟩
-    exact ⟨j, List.mem_range'_1.mpr ⟨h1, by omega⟩, by rw [if_pos hA]⟩
+    exact ⟨j, List.mem_range'_1.mpr ⟨h1, by omega⟩, by rw [ite_eq_left hA]⟩
 
 theorem prefixSides_mono (p : Prep) (cost : Nat → Nat) (t : Nat) {a b : Nat} (h : a ≤ b) :
     prefixSides p cost t a ≤ prefixSides p cost t b := by
@@ -466,7 +466,7 @@ theorem PrepWF.uCost_local {p : Prep} (hp : PrepWF p) (w : Nat) (O : Nat → Boo
       unfold uInl
       by_cases hf : p.family[y]! = .none
       · unfold inlOf
-        rw [if_pos hf, if_pos hf]
+        rw [ite_eq_left hf, ite_eq_left hf]
         apply foldl_add_congr
         intro c hcm
         obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.mp hcm
@@ -592,7 +592,7 @@ theorem PrepWF.uCost_modular {p : Prep} (hp : PrepWF p) (w : Nat) (O A0 Z1 Z2 : 
       unfold uInl
       by_cases hf : p.family[y]! = .none
       · unfold inlOf
-        simp only [if_pos hf]
+        simp only [ite_eq_left hf]
         rw [arr_foldl_add_eq_sum, arr_foldl_add_eq_sum, arr_foldl_add_eq_sum,
           arr_foldl_add_eq_sum]
         have hch : ∀ c ∈ (p.dag.node y).children.toList,
@@ -695,7 +695,7 @@ theorem PrepWF.uCost_modular {p : Prep} (hp : PrepWF p) (w : Nat) (O A0 Z1 Z2 : 
           hp.uCost_eq w (addAvail A0 Z2) y hy]
         unfold costOf
         rw [hA, hA0, hA1, hA2]
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         unfold uInl at hinl
         exact hinl
 
@@ -803,7 +803,7 @@ theorem gain_opaque_bounds {p : Prep} {b : UBounds} {w t d h : Nat} (hhd : h ≤
   simp only [_root_.Int.ofNat_eq_natCast] at hg
   refine ⟨fun hf => ?_, fun hf => ?_⟩
   · have hfb : (p.family[t]! == Family.none) = true := by simp [hf]
-    rw [if_pos hfb] at hg
+    rw [ite_eq_left hfb] at hg
     by_cases hlt : w < b.inlineLB[t]!
     · exact hlt
     · exfalso
@@ -812,7 +812,7 @@ theorem gain_opaque_bounds {p : Prep} {b : UBounds} {w t d h : Nat} (hhd : h ≤
       simp only [_root_.Int.sub_mul, _root_.Int.one_mul] at e hg
       omega
   · have hfb : (p.family[t]! == Family.none) = false := by simpa using hf
-    rw [if_neg (by simp [hfb])] at hg
+    rw [ite_eq_right (by simp [hfb])] at hg
     by_cases hle : w ≤ b.mergedLB[t]!
     · exact hle
     · exfalso
@@ -908,10 +908,10 @@ theorem components_modular {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
     rw [getElem!_range_map _ (by rw [ofDag_dag]; exact ht)]
     simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq]
     by_cases hce : certainExcludedTest (Prep.ofDag dag) (graphFacts dag roots) w t = true
-    · exact absurd (by rw [if_pos hce]) h1
-    · rw [if_neg hce] at h1 h2
+    · exact absurd (by rw [ite_eq_left hce]) h1
+    · rw [ite_eq_right hce] at h1 h2
       by_cases hdeg : (graphFacts dag roots).deg[t]! < 2
-      · exact absurd (by rw [if_pos hdeg]) h2
+      · exact absurd (by rw [ite_eq_left hdeg]) h2
       · exact ⟨by simpa using hce, by omega⟩
   have hin : ∀ t ∈ cs ++ z1 ++ z2, t < dag.size := by
     intro t ht

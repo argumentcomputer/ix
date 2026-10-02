@@ -27,10 +27,10 @@ theorem finishDefEqLazyDeltaStep_preservesInferOnly
       methods).PreservesInferOnly := by
   unfold finishDefEqLazyDeltaStep
   by_cases haddress : left.addr == right.addr
-  · simp only [haddress, if_true]
+  · simp only [haddress, ite_true]
     exact TcM.PreservesInferOnly.pure
       (BoundedStep.done (LazyDeltaLoopResult.answer true))
-  · simp only [haddress, Bool.false_eq_true, if_false, pure_bind]
+  · simp only [haddress, Bool.false_eq_true, ite_false, pure_bind]
     refine bind_preservesInferOnly
       (quickDefEq_preservesInferOnly hmethods left right) ?_
     intro equal
@@ -141,7 +141,7 @@ theorem defEqLazyDeltaStepWithEqualRank_preservesInferOnly
             hcheapNoDelta left right
       | some rightId =>
           by_cases hguard : leftId.addr == rightId.addr
-          · simp only [hguard, if_true]
+          · simp only [hguard, ite_true]
             refine bind_preservesInferOnly
               (isRegular_preservesInferOnly leftId) ?_
             intro regular
@@ -156,7 +156,7 @@ theorem defEqLazyDeltaStepWithEqualRank_preservesInferOnly
             | none =>
                 exact defEqLazyDeltaStepAfterSameHeadMiss_preservesInferOnly
                   hmethods hcheapNoDelta left right
-          · simp only [hguard, Bool.false_eq_true, if_false]
+          · simp only [hguard, Bool.false_eq_true, ite_false]
             exact defEqLazyDeltaStepAfterSameHeadMiss_preservesInferOnly
               hmethods hcheapNoDelta left right
 
@@ -171,7 +171,7 @@ theorem defEqLazyDeltaStepAfterProjectionMiss_preservesInferOnly
       leftDelta rightDelta).run methods).PreservesInferOnly := by
   unfold defEqLazyDeltaStepAfterProjectionMiss
   by_cases hboth : leftDelta && rightDelta
-  · simp only [hboth, if_true]
+  · simp only [hboth, ite_true]
     refine bind_preservesInferOnly
       (rankDeltaHead_preservesInferOnly leftHead) ?_
     intro leftRank
@@ -179,21 +179,21 @@ theorem defEqLazyDeltaStepAfterProjectionMiss_preservesInferOnly
       (rankDeltaHead_preservesInferOnly rightHead) ?_
     intro rightRank
     by_cases hequal : leftRank == rightRank
-    · simp only [hequal, if_true]
+    · simp only [hequal, ite_true]
       exact defEqLazyDeltaStepWithEqualRank_preservesInferOnly hmethods
         hcheapNoDelta left right leftHead rightHead
-    · simp only [hequal, Bool.false_eq_true, if_false]
+    · simp only [hequal, Bool.false_eq_true, ite_false]
       split
       · exact defEqLazyDeltaStepWithLeftDelta_preservesInferOnly hmethods
           hcheapNoDelta left right
       · exact defEqLazyDeltaStepWithRightDelta_preservesInferOnly hmethods
           hcheapNoDelta left right
-  · simp only [hboth, Bool.false_eq_true, if_false]
+  · simp only [hboth, Bool.false_eq_true, ite_false]
     by_cases hleft : leftDelta
-    · simp only [hleft, if_true]
+    · simp only [hleft, ite_true]
       exact defEqLazyDeltaStepWithLeftDelta_preservesInferOnly hmethods
         hcheapNoDelta left right
-    · simp only [hleft, Bool.false_eq_true, if_false]
+    · simp only [hleft, Bool.false_eq_true, ite_false]
       exact defEqLazyDeltaStepWithRightDelta_preservesInferOnly hmethods
         hcheapNoDelta left right
 
@@ -210,7 +210,7 @@ theorem defEqLazyDeltaStepAfterDeltaClassification_preservesInferOnly
       leftDelta rightDelta).run methods).PreservesInferOnly := by
   unfold defEqLazyDeltaStepAfterDeltaClassification
   by_cases hleftOnly : leftDelta && !rightDelta
-  · simp only [hleftOnly, if_true]
+  · simp only [hleftOnly, ite_true]
     refine bind_preservesInferOnly
       (tryUnfoldProjApp_preservesInferOnly hnoDelta right) ?_
     intro result
@@ -221,9 +221,9 @@ theorem defEqLazyDeltaStepAfterDeltaClassification_preservesInferOnly
     | none =>
         exact defEqLazyDeltaStepAfterProjectionMiss_preservesInferOnly hmethods
           hcheapNoDelta left right leftHead rightHead leftDelta rightDelta
-  · simp only [hleftOnly, Bool.false_eq_true, if_false]
+  · simp only [hleftOnly, Bool.false_eq_true, ite_false]
     by_cases hrightOnly : rightDelta && !leftDelta
-    · simp only [hrightOnly, if_true]
+    · simp only [hrightOnly, ite_true]
       refine bind_preservesInferOnly
         (tryUnfoldProjApp_preservesInferOnly hnoDelta left) ?_
       intro result
@@ -235,7 +235,7 @@ theorem defEqLazyDeltaStepAfterDeltaClassification_preservesInferOnly
           exact
             defEqLazyDeltaStepAfterProjectionMiss_preservesInferOnly hmethods
               hcheapNoDelta left right leftHead rightHead leftDelta rightDelta
-    · simp only [hrightOnly, Bool.false_eq_true, if_false, pure_bind]
+    · simp only [hrightOnly, Bool.false_eq_true, ite_false, pure_bind]
       exact defEqLazyDeltaStepAfterProjectionMiss_preservesInferOnly hmethods
         hcheapNoDelta left right leftHead rightHead leftDelta rightDelta
 
@@ -256,10 +256,10 @@ theorem defEqLazyDeltaStepAfterAcceleratorMiss_preservesInferOnly
     (classifyDeltaHead_preservesInferOnly right) ?_
   intro rightDelta
   by_cases hnone : !leftDelta && !rightDelta
-  · simp only [hnone, if_true]
+  · simp only [hnone, ite_true]
     exact TcM.PreservesInferOnly.pure
       (BoundedStep.done (LazyDeltaLoopResult.stopped left right))
-  · simp only [hnone, Bool.false_eq_true, if_false, pure_bind]
+  · simp only [hnone, Bool.false_eq_true, ite_false, pure_bind]
     exact defEqLazyDeltaStepAfterDeltaClassification_preservesInferOnly
       hmethods hnoDelta hcheapNoDelta left right (headConstId left)
       (headConstId right) leftDelta rightDelta
@@ -337,7 +337,7 @@ theorem defEqLazyDeltaStepAfterOffsetMiss_preservesInferOnly
   apply TcM.PreservesInferOnly.bind TcM.PreservesInferOnly.get
   intro state
   by_cases hnat : (!left.hasFVars && !right.hasFVars) || state.eagerReduce
-  · simp only [hnat, if_true]
+  · simp only [hnat, ite_true]
     apply TcM.PreservesInferOnly.bind
       (tryReduceNat_preservesInferOnly hmethods left)
     intro leftNat
@@ -362,7 +362,7 @@ theorem defEqLazyDeltaStepAfterOffsetMiss_preservesInferOnly
         | none =>
             exact defEqLazyDeltaStepAfterNatMiss_preservesInferOnly hmethods
               hnoDelta hcheapNoDelta left right
-  · simp only [hnat, Bool.false_eq_true, if_false, pure_bind]
+  · simp only [hnat, Bool.false_eq_true, ite_false, pure_bind]
     exact defEqLazyDeltaStepAfterNatMiss_preservesInferOnly hmethods hnoDelta
       hcheapNoDelta left right
 
@@ -419,34 +419,34 @@ theorem isDefEqAfterLazyDeltaStopped_preservesInferOnly
   cases structural with
   | true => exact TcM.PreservesInferOnly.pure true
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       refine bind_preservesInferOnly (hcore left) ?_
       intro leftCore
       refine bind_preservesInferOnly (hcore right) ?_
       intro rightCore
       by_cases hchanged :
           (leftCore.addr != left.addr) || (rightCore.addr != right.addr)
-      · simp only [hchanged, if_true]
+      · simp only [hchanged, ite_true]
         exact isDefEqCall_preservesInferOnly hmethods leftCore rightCore
-      · simp only [hchanged, Bool.false_eq_true, if_false]
+      · simp only [hchanged, Bool.false_eq_true, ite_false]
         by_cases haddress : leftCore.addr == rightCore.addr
-        · simp only [haddress, if_true]
+        · simp only [haddress, ite_true]
           exact TcM.PreservesInferOnly.pure true
-        · simp only [haddress, Bool.false_eq_true, if_false]
+        · simp only [haddress, Bool.false_eq_true, ite_false]
           refine bind_preservesInferOnly
             (quickDefEq_preservesInferOnly hmethods leftCore rightCore) ?_
           intro quick
           cases quick with
           | true => exact TcM.PreservesInferOnly.pure true
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               refine bind_preservesInferOnly
                 (tryDefEqApp_preservesInferOnly hmethods leftCore rightCore) ?_
               intro application
               cases application with
               | true => exact TcM.PreservesInferOnly.pure true
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   exact isDefEqWhnf_preservesInferOnly hmethods hwhnf hnoDelta
                     leftCore rightCore
 

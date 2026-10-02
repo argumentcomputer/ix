@@ -207,7 +207,7 @@ theorem inferUncached_const_wf
         exact hrel.uvars.trans harity.symm
       have hcheckNe : (c.lvls.toNat != us.size) = false := by
         simp [hcheck]
-      simp only [hcheckNe, Bool.false_eq_true, if_false, pure_bind]
+      simp only [hcheckNe, Bool.false_eq_true, ite_false, pure_bind]
       obtain ⟨hmem, resources⟩ := hcensus hsourceSupport hcatalog
       apply RecM.WF.mono
         (RecM.WF.withInv <| RecM.WF.liftTcM <|

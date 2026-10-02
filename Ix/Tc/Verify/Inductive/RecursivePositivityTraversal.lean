@@ -108,7 +108,7 @@ private theorem positivityTerminal_success
         activeAddrs methods afterWhnf final := by
   have hfull := hrun
   unfold checkPositivityDomainFuel at hrun
-  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, if_false]
+  simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true, ite_false]
     at hrun
   rw [ReaderT.run_bind] at hrun
   change EStateM.bind ((whnf dom).run methods) _ initial = _ at hrun
@@ -211,7 +211,7 @@ theorem checkPositivityDomainFuel_success
               have hfull := hrun
               unfold checkPositivityDomainFuel at hrun
               simp only [hroot, hmentions, Bool.not_true, Bool.false_eq_true,
-                if_false] at hrun
+                ite_false] at hrun
               rw [ReaderT.run_bind] at hrun
               change EStateM.bind ((whnf dom).run methods) _ initial = _ at hrun
               unfold EStateM.bind at hrun
@@ -226,7 +226,7 @@ theorem checkPositivityDomainFuel_success
                       cases hnegative :
                           exprMentionsAnyAddr innerDom rootGroup.addrs with
                       | true =>
-                          simp only [hnegative, if_true, throw, ReaderT.run] at hrun
+                          simp only [hnegative, ite_true, throw, ReaderT.run] at hrun
                           contradiction
                       | false =>
                           rcases checkPositivityDomainFuel_forall_success hroot

@@ -243,7 +243,7 @@ theorem checkInductive_cached_run
       state = _
   unfold EStateM.bind
   rw [scan]
-  simp only [Bool.not_true, Bool.false_eq_true, if_false, pure_bind]
+  simp only [Bool.not_true, Bool.false_eq_true, ite_false, pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ state = _
   unfold EStateM.bind
@@ -428,7 +428,7 @@ theorem findUsableGeneratedRecursorBlock_loaded_run
   rw [show (get : TcM .anon (TcState .anon)) state =
     .ok state state from rfl]
   simp only [cache]
-  rw [if_pos largeEnough]
+  rw [ite_eq_left largeEnough]
   rfl
 
 /-- The successful usable-cache branch of block resolution performs no work

@@ -317,19 +317,19 @@ theorem tryDefEqWhnfLet_wf
           intro typesEqual afterTypes htypes
           cases typesEqual with
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               exact RecM.WF.pure fun _ => trivial
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               apply RecM.WF.bind <|
                 RecM.isDefEqCall_wf hval1Support hval2Support hval1 hval2
               intro valuesEqual afterValues hvalues
               cases valuesEqual with
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   exact RecM.WF.pure fun _ => trivial
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   apply RecM.WF.bind <| by
                     apply withLctxScope_openLetWithFV_wf
                       (layer := layer) (semantics := semantics)
@@ -422,10 +422,10 @@ theorem tryDefEqWhnfLet_wf
                   intro bodiesEqual afterBodies hbodies
                   cases bodiesEqual with
                   | false =>
-                      simp only [Bool.false_eq_true, if_false]
+                      simp only [Bool.false_eq_true, ite_false]
                       exact RecM.WF.pure fun _ => trivial
                   | true =>
-                      simp only [if_true]
+                      simp only [ite_true]
                       exact RecM.WF.pure fun _ => hbodies
 
 namespace TryDefEqWhnfLet

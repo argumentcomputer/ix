@@ -67,7 +67,7 @@ theorem tryReduceNativeMarker_preservesInferOnly
         | ok result =>
             cases hbool : isReduceBool with
             | true =>
-                simp only [if_true]
+                simp only [ite_true]
                 cases hresult : result with
                 | const resultId resultLevels resultInfo =>
                     simp only []
@@ -76,7 +76,7 @@ theorem tryReduceNativeMarker_preservesInferOnly
                       str =>
                     exact TcM.PreservesInferOnly.pure none
             | false =>
-                simp only [Bool.false_eq_true, if_false]
+                simp only [Bool.false_eq_true, ite_false]
                 cases hresult : result <;>
                   exact TcM.PreservesInferOnly.pure _
       all_goals exact TcM.PreservesInferOnly.pure none
@@ -92,10 +92,10 @@ theorem tryReduceNative_preservesInferOnly
   intro state
   cases hnoAccel : state.noAccel with
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       exact TcM.PreservesInferOnly.pure none
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       rcases hspine : source.collectSpine with ⟨head, args⟩
       cases head with
       | const id levels info =>
@@ -109,10 +109,10 @@ theorem tryReduceNative_preservesInferOnly
               intro guardState
               cases hguard : guardState.inNativeReduce with
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   exact TcM.PreservesInferOnly.pure none
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   cases harg : arg with
                   | const argId argLevels argInfo =>
                       exact tryReduceNativeMarker_preservesInferOnly hmethods

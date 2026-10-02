@@ -29,10 +29,10 @@ theorem applyIotaArg_preservesInferOnly
   unfold applyIotaArg
   cases transient with
   | false =>
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       exact intern_preservesInferOnly (.mkApp result arg)
   | true =>
-      simp only [if_true]
+      simp only [ite_true]
       split <;> exact TcM.PreservesInferOnly.pure _
 
 theorem applyIotaArgs_preservesInferOnly
@@ -84,14 +84,14 @@ theorem tryApplyIotaCtor_preservesInferOnly
   | some rule =>
       simp only []
       by_cases hlevels : recUs.size.toUInt64 != recr.lvls
-      · simp only [hlevels, if_pos]
+      · simp only [hlevels, ite_eq_left]
         exact TcM.PreservesInferOnly.pure none
       · simp only [hlevels]
         by_cases hfields : ctorFields > ctorArgs.size
-        · simp only [hfields, if_pos]
+        · simp only [hfields, ite_eq_left]
           exact TcM.PreservesInferOnly.pure none
-        · simp only [hfields, if_false]
-          simpa only [Bool.false_eq_true, if_false, pure_bind] using
+        · simp only [hfields, ite_false]
+          simpa only [Bool.false_eq_true, ite_false, pure_bind] using
             (bind_preservesInferOnly
               (methods := methods)
               (next := fun result => pure (some result))
@@ -118,7 +118,7 @@ theorem natOffsetFuel_preservesInferOnly
           intro p
           cases hsucc : id.addr == p.natSucc.addr && args.size == 1 with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               let arg := args[0]!
               refine bind_preservesInferOnly
                 (natOffsetFuel_preservesInferOnly fuel arg) ?_
@@ -127,13 +127,13 @@ theorem natOffsetFuel_preservesInferOnly
                 (some ((result.getD (arg, 0)).1,
                   (result.getD (arg, 0)).2 + 1))
           | false =>
-              simp only [Bool.false_eq_true, if_false, pure_bind]
+              simp only [Bool.false_eq_true, ite_false, pure_bind]
               cases hadd : id.addr == p.natAdd.addr && args.size == 2 with
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   exact TcM.PreservesInferOnly.pure none
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   refine bind_preservesInferOnly
                     (evalNatOffsetLiteralFuel_preservesInferOnly fuel args[1]!) ?_
                   intro rhsResult
@@ -172,7 +172,7 @@ theorem evalNatOffsetLiteralFuel_preservesInferOnly
           | const id levels info =>
               cases hpred : id.addr == p.natPred.addr && args.size == 1 with
               | true =>
-                  simp only [hpred, if_true]
+                  simp only [hpred, ite_true]
                   refine bind_preservesInferOnly
                     (evalNatOffsetLiteralFuel_preservesInferOnly fuel args[0]!) ?_
                   intro result
@@ -181,16 +181,16 @@ theorem evalNatOffsetLiteralFuel_preservesInferOnly
                   | some value =>
                       exact TcM.PreservesInferOnly.pure (some (value - 1))
               | false =>
-                  simp only [hpred, Bool.false_eq_true, if_false]
+                  simp only [hpred, Bool.false_eq_true, ite_false]
                   refine bind_preservesInferOnly
                     (isNatBinArithAddr_preservesInferOnly id.addr) ?_
                   intro isArith
                   cases hbin : isArith && args.size == 2 with
                   | false =>
-                      simp only [Bool.false_eq_true, if_false]
+                      simp only [Bool.false_eq_true, ite_false]
                       exact TcM.PreservesInferOnly.pure none
                   | true =>
-                      simp only [if_true]
+                      simp only [ite_true]
                       refine bind_preservesInferOnly
                         (evalNatOffsetLiteralFuel_preservesInferOnly fuel
                           args[0]!) ?_
@@ -244,10 +244,10 @@ theorem cleanupNatOffsetMajor_preservesInferOnly
   intro literalResult
   cases literalResult with
   | some value =>
-      simp only [Option.isSome, if_true]
+      simp only [Option.isSome, ite_true]
       exact TcM.PreservesInferOnly.pure none
   | none =>
-      simp only [Option.isSome, Bool.false_eq_true, if_false, pure_bind]
+      simp only [Option.isSome, Bool.false_eq_true, ite_false, pure_bind]
       refine bind_preservesInferOnly
         (natOffset_preservesInferOnly source 0) ?_
       intro offsetResult
@@ -258,20 +258,20 @@ theorem cleanupNatOffsetMajor_preservesInferOnly
           rcases baseOffset with ⟨base, offset⟩
           cases hzero : offset == 0 with
           | true =>
-              simp only [if_true]
+              simp only [ite_true]
               exact TcM.PreservesInferOnly.pure none
           | false =>
-              simp only [Bool.false_eq_true, if_false]
+              simp only [Bool.false_eq_true, ite_false]
               let predOffset := offset - 1
               cases hpredZero : predOffset == 0 with
               | true =>
-                  simp only [if_true]
+                  simp only [ite_true]
                   refine bind_preservesInferOnly
                     (mkNatSucc_preservesInferOnly base) ?_
                   intro result
                   exact TcM.PreservesInferOnly.pure (some result)
               | false =>
-                  simp only [Bool.false_eq_true, if_false]
+                  simp only [Bool.false_eq_true, ite_false]
                   refine bind_preservesInferOnly
                     (mkNatAdd_preservesInferOnly base
                       (natExprFromValue predOffset)) ?_

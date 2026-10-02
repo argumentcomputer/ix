@@ -32,7 +32,7 @@ theorem isDefEqInnerAfterNoDeltaPass_preservesInferOnly
   cases proofIrrelevant with
   | true => exact TcM.PreservesInferOnly.pure true
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       exact isDefEqInnerAfterProofIrrelevance_preservesInferOnly hmethods
         hwhnf hcore hnoDelta hcheapNoDelta left right
 
@@ -55,16 +55,16 @@ theorem isDefEqInnerAfterCorePass_preservesInferOnly
   refine bind_preservesInferOnly (hcheapNoDelta right) ?_
   intro normalizedRight
   by_cases haddress : normalizedLeft.addr == normalizedRight.addr
-  · simp only [haddress, if_true]
+  · simp only [haddress, ite_true]
     exact TcM.PreservesInferOnly.pure true
-  · simp only [haddress, Bool.false_eq_true, if_false, pure_bind]
+  · simp only [haddress, Bool.false_eq_true, ite_false, pure_bind]
     refine bind_preservesInferOnly
       (quickDefEq_preservesInferOnly hmethods normalizedLeft normalizedRight) ?_
     intro quick
     cases quick with
     | true => exact TcM.PreservesInferOnly.pure true
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         exact isDefEqInnerAfterNoDeltaPass_preservesInferOnly hmethods hwhnf
           hcore hnoDelta hcheapNoDelta normalizedLeft normalizedRight
 
@@ -89,16 +89,16 @@ theorem isDefEqInnerAfterStringExpansion_preservesInferOnly
   refine bind_preservesInferOnly (hcheapCore right) ?_
   intro coreRight
   by_cases haddress : coreLeft.addr == coreRight.addr
-  · simp only [haddress, if_true]
+  · simp only [haddress, ite_true]
     exact TcM.PreservesInferOnly.pure true
-  · simp only [haddress, Bool.false_eq_true, if_false, pure_bind]
+  · simp only [haddress, Bool.false_eq_true, ite_false, pure_bind]
     refine bind_preservesInferOnly
       (quickDefEq_preservesInferOnly hmethods coreLeft coreRight) ?_
     intro quick
     cases quick with
     | true => exact TcM.PreservesInferOnly.pure true
     | false =>
-        simp only [Bool.false_eq_true, if_false]
+        simp only [Bool.false_eq_true, ite_false]
         exact isDefEqInnerAfterCorePass_preservesInferOnly hmethods hwhnf
           hcore hnoDelta hcheapNoDelta left right
 
@@ -119,24 +119,24 @@ theorem isDefEqInnerAfterBoolTrue_preservesInferOnly
       methods).PreservesInferOnly := by
   unfold isDefEqInnerAfterBoolTrue
   by_cases hstring : hasStringLiteralPair left right
-  · simp only [hstring, if_true]
+  · simp only [hstring, ite_true]
     refine bind_preservesInferOnly
       (tryStringLitExpansion_preservesInferOnly hmethods left right) ?_
     intro forward
     cases forward with
     | true => exact TcM.PreservesInferOnly.pure true
     | false =>
-        simp only [Bool.false_eq_true, if_false, pure_bind]
+        simp only [Bool.false_eq_true, ite_false, pure_bind]
         refine bind_preservesInferOnly
           (tryStringLitExpansion_preservesInferOnly hmethods right left) ?_
         intro backward
         cases backward with
         | true => exact TcM.PreservesInferOnly.pure true
         | false =>
-            simp only [Bool.false_eq_true, if_false]
+            simp only [Bool.false_eq_true, ite_false]
             exact isDefEqInnerAfterStringExpansion_preservesInferOnly
               hmethods hwhnf hcore hnoDelta hcheapCore hcheapNoDelta left right
-  · simp only [hstring, Bool.false_eq_true, if_false]
+  · simp only [hstring, Bool.false_eq_true, ite_false]
     exact isDefEqInnerAfterStringExpansion_preservesInferOnly hmethods hwhnf
       hcore hnoDelta hcheapCore hcheapNoDelta left right
 
@@ -162,17 +162,17 @@ theorem isDefEqInnerAfterFirstBoolGuardMiss_preservesInferOnly
     (boolTrueReductionAllowed_preservesInferOnly right) ?_
   intro rightAllowed
   by_cases hguard : leftIsTrue && rightAllowed
-  · simp only [hguard, if_true]
+  · simp only [hguard, ite_true]
     refine bind_preservesInferOnly
       (whnfIsBoolTrue_preservesInferOnly hwhnf right) ?_
     intro normalizedTrue
     cases normalizedTrue with
     | true => exact TcM.PreservesInferOnly.pure true
     | false =>
-        simp only [Bool.false_eq_true, if_false, pure_bind]
+        simp only [Bool.false_eq_true, ite_false, pure_bind]
         exact isDefEqInnerAfterBoolTrue_preservesInferOnly hmethods hwhnf
           hcore hnoDelta hcheapCore hcheapNoDelta left right
-  · simp only [hguard, Bool.false_eq_true, if_false]
+  · simp only [hguard, Bool.false_eq_true, ite_false]
     exact isDefEqInnerAfterBoolTrue_preservesInferOnly hmethods hwhnf hcore
       hnoDelta hcheapCore hcheapNoDelta left right
 
@@ -198,17 +198,17 @@ theorem isDefEqInnerAfterQuick_preservesInferOnly
     (boolTrueReductionAllowed_preservesInferOnly left) ?_
   intro leftAllowed
   by_cases hguard : rightIsTrue && leftAllowed
-  · simp only [hguard, if_true]
+  · simp only [hguard, ite_true]
     refine bind_preservesInferOnly
       (whnfIsBoolTrue_preservesInferOnly hwhnf left) ?_
     intro normalizedTrue
     cases normalizedTrue with
     | true => exact TcM.PreservesInferOnly.pure true
     | false =>
-        simp only [Bool.false_eq_true, if_false, pure_bind]
+        simp only [Bool.false_eq_true, ite_false, pure_bind]
         exact isDefEqInnerAfterBoolTrue_preservesInferOnly hmethods hwhnf
           hcore hnoDelta hcheapCore hcheapNoDelta left right
-  · simp only [hguard, Bool.false_eq_true, if_false]
+  · simp only [hguard, Bool.false_eq_true, ite_false]
     exact isDefEqInnerAfterFirstBoolGuardMiss_preservesInferOnly hmethods
       hwhnf hcore hnoDelta hcheapCore hcheapNoDelta left right
 
@@ -233,7 +233,7 @@ theorem isDefEqInner_preservesInferOnly
   cases quick with
   | true => exact TcM.PreservesInferOnly.pure true
   | false =>
-      simp only [Bool.false_eq_true, if_false, pure_bind]
+      simp only [Bool.false_eq_true, ite_false, pure_bind]
       exact isDefEqInnerAfterQuick_preservesInferOnly hmethods hwhnf hcore
         hnoDelta hcheapCore hcheapNoDelta left right
 

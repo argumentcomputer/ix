@@ -29,7 +29,7 @@ theorem isStructLike_preservesInferOnly
       | indc name levelParams lvls params indices isUnsafe block memberIdx ty
           ctors leanAll =>
           by_cases hinvalid : indices != 0 || ctors.size != 1
-          · simp only [hinvalid, if_pos]
+          · simp only [hinvalid, ite_eq_left]
             exact TcM.PreservesInferOnly.pure false
           · simp only [hinvalid, pure_bind]
             refine bind_preservesInferOnly
@@ -84,7 +84,7 @@ theorem finishStructEtaAfterSort_preservesInferOnly
       methods).PreservesInferOnly := by
   unfold finishStructEtaAfterSort
   by_cases hrejected : structEtaSortRejected majorSortW
-  · simp only [hrejected, if_pos]
+  · simp only [hrejected, ite_eq_left]
     exact TcM.PreservesInferOnly.pure none
   · simp only [hrejected]
     let pmmEnd := recr.params + recr.motives + recr.minors
@@ -105,7 +105,7 @@ theorem finishStructEtaAfterSort_preservesInferOnly
           (spine.extract (recr.majorIdx + 1) spine.size)) ?_
       intro result
       exact TcM.PreservesInferOnly.pure (some result)
-    simpa only [Bool.false_eq_true, if_false, pure_bind] using htail
+    simpa only [Bool.false_eq_true, ite_false, pure_bind] using htail
 
 theorem tryStructEtaAfterInductive_preservesInferOnly
     {methods : Methods .anon} (hmethods : methods.PreservesInferOnly)
@@ -118,7 +118,7 @@ theorem tryStructEtaAfterInductive_preservesInferOnly
   intro structLike
   cases structLike with
   | false =>
-      simp only [Bool.not_false, if_true]
+      simp only [Bool.not_false, ite_true]
       exact TcM.PreservesInferOnly.pure none
   | true =>
       simp only [Bool.not_true, pure_bind]
@@ -159,13 +159,13 @@ theorem tryStructEtaIota_preservesInferOnly
       methods).PreservesInferOnly := by
   unfold tryStructEtaIota
   by_cases hrules : recr.rules.size != 1
-  · simp only [hrules, if_pos]
+  · simp only [hrules, ite_eq_left]
     exact TcM.PreservesInferOnly.pure none
-  · simp only [hrules, Bool.false_eq_true, if_false, pure_bind]
+  · simp only [hrules, Bool.false_eq_true, ite_false, pure_bind]
     by_cases hlevels : recUs.size.toUInt64 != recr.lvls
-    · simp only [hlevels, if_pos]
+    · simp only [hlevels, ite_eq_left]
       exact TcM.PreservesInferOnly.pure none
-    · simp only [hlevels, Bool.false_eq_true, if_false]
+    · simp only [hlevels, Bool.false_eq_true, ite_false]
       let rule := recr.rules[0]!
       refine bindTcM_preservesInferOnly
         (TcM.PreservesInferOnly.tryGetConst recId) ?_
@@ -235,7 +235,7 @@ theorem verifyKSynthCandidate_preservesInferOnly
           exact TcM.PreservesInferOnly.pure
             (KSynthOutcome.synthesized ctorApp)
       | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           refine bindTcM_preservesInferOnly
             (TcM.PreservesInferOnly.bumpStats
               (fun state : TcState .anon => { state with
@@ -257,9 +257,9 @@ theorem selectKSynthCandidate_preservesInferOnly
       methods).PreservesInferOnly := by
   unfold selectKSynthCandidate
   by_cases hmismatch : tyHeadId.addr != indId.addr
-  · simp only [hmismatch, if_pos]
+  · simp only [hmismatch, ite_eq_left]
     exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
-  · simp only [hmismatch, Bool.false_eq_true, if_false, pure_bind]
+  · simp only [hmismatch, Bool.false_eq_true, ite_false, pure_bind]
     refine bindTcM_preservesInferOnly
       (TcM.PreservesInferOnly.tryGetConst indId) ?_
     intro declaration
@@ -292,9 +292,9 @@ theorem synthCtorWhenK_preservesInferOnly
       methods).PreservesInferOnly := by
   unfold synthCtorWhenK
   by_cases hlevels : recUs.size.toUInt64 != recr.lvls
-  · simp only [hlevels, if_pos]
+  · simp only [hlevels, ite_eq_left]
     exact TcM.PreservesInferOnly.pure KSynthOutcome.inconclusive
-  · simp only [hlevels, Bool.false_eq_true, if_false, pure_bind]
+  · simp only [hlevels, Bool.false_eq_true, ite_false, pure_bind]
     refine bind_preservesInferOnly
       (tryOptional_preservesInferOnly
         (inferOnlyRec_preservesInferOnly hmethods major)) ?_

@@ -161,7 +161,7 @@ theorem whnfCoreWithFlags_preservesInferOnly
       intro isLet
       cases isLet with
       | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           exact TcM.PreservesInferOnly.pure _
       | true =>
           simp only [Bool.not_true, pure_bind]
@@ -346,7 +346,7 @@ theorem whnfNoDeltaImpl_preservesInferOnly
       intro isLet
       cases isLet with
       | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           exact TcM.PreservesInferOnly.pure _
       | true =>
           simp only [Bool.not_true, pure_bind]
@@ -512,7 +512,7 @@ theorem whnfWithNatSuccMode_preservesInferOnly
       intro isLet
       cases isLet with
       | false =>
-          simp only [Bool.not_false, if_true]
+          simp only [Bool.not_false, ite_true]
           exact TcM.PreservesInferOnly.pure _
       | true =>
           simp only [Bool.not_true, pure_bind]

@@ -1148,7 +1148,7 @@ theorem trustedCatalog : TrustedCatalogRel RawProjRel.none world :=
 private theorem catalogFamilyNative :
     catalog familyId = some familyConcrete := by
   unfold catalog
-  rw [if_pos (by native_decide)]
+  rw [ite_eq_left (by native_decide)]
 
 theorem catalog_family : catalog familyId = some familyConcrete :=
   catalogFamilyNative
@@ -1156,7 +1156,7 @@ theorem catalog_family : catalog familyId = some familyConcrete :=
 private theorem catalogFalseNative :
     catalog falseId = some falseConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_false : catalog falseId = some falseConcrete :=
   catalogFalseNative
@@ -1164,8 +1164,8 @@ theorem catalog_false : catalog falseId = some falseConcrete :=
 private theorem catalogTrueNative :
     catalog trueId = some trueConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_left (by native_decide)]
 
 theorem catalog_true : catalog trueId = some trueConcrete :=
   catalogTrueNative
@@ -1173,8 +1173,8 @@ theorem catalog_true : catalog trueId = some trueConcrete :=
 private theorem catalogRecursorNative :
     catalog recursorId = some recursorConcrete := by
   unfold catalog
-  rw [if_neg (by native_decide), if_neg (by native_decide),
-    if_neg (by native_decide), if_pos (by native_decide)]
+  rw [ite_eq_right (by native_decide), ite_eq_right (by native_decide),
+    ite_eq_right (by native_decide), ite_eq_left (by native_decide)]
 
 theorem catalog_recursor : catalog recursorId = some recursorConcrete :=
   catalogRecursorNative

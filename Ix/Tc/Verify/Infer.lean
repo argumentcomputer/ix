@@ -113,7 +113,7 @@ theorem inferWith_inferOnlyHit
   unfold EStateM.bind
   rw [show (get : TcM .anon (TcState .anon)) s' = .ok s' s' from rfl]
   simp only [hfullMiss, hpolicy]
-  simp only [pure_bind, if_true]
+  simp only [pure_bind, ite_true]
   rw [ReaderT.run_bind]
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ s' = _
   unfold EStateM.bind

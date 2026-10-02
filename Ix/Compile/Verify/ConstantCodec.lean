@@ -116,7 +116,7 @@ theorem getDefinition_reads (definition : Ixon.Definition)
         return (⟨kind, safety, lvls, typ, value⟩ : Ixon.Definition))
       (tag0Bytes definition.lvls ++ Expr.spineWireEncode definition.typ ++
         Expr.spineWireEncode definition.value) definition := by
-    simpa only [packDefKindSafety_valid, Bool.false_eq_true, if_false]
+    simpa only [packDefKindSafety_valid, Bool.false_eq_true, ite_false]
       using hafterLvls'
   have hall := Reads.bind
     (next := fun packed : UInt8 => do

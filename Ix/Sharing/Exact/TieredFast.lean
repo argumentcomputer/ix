@@ -280,7 +280,7 @@ theorem tieredAtWidth_eq_F (layout : ShareLayout) (limits : Limits) (ex : Expand
           (tieredCandidateCount ex.dag.size (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots)) := by
   unfold tieredAtWidth tieredAtWidthF
   rw [optimizeUniformExpanded_eq_F]
-  simp only [hw, Bool.false_eq_true, if_false, tieredResult_eq_F, rematerialize_eq_P]
+  simp only [hw, Bool.false_eq_true, ite_false, tieredResult_eq_F, rematerialize_eq_P]
   cases uniformDagChecks ex <;> rfl
 
 /-- `tieredAtWidth` with the width-independent tables computed once for its
@@ -302,7 +302,7 @@ def tieredAtWidthC (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w :
   · rename_i hw
     unfold tieredAtWidth
     rw [optimizeUniformExpanded_eq_F]
-    simp only [hw, if_true]
+    simp only [hw, ite_true]
     rfl
   · rename_i hw
     exact tieredAtWidth_eq_F layout limits ex w (by simpa using hw)
