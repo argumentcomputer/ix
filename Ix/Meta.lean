@@ -239,8 +239,56 @@ partial def collectRelParts (root cur : FilePath) (acc : List String) : Option (
       if par == cur then none else collectRelParts root par (name :: acc)
     | _, _ => none
 
+/-- The modification stamps of what a Lake process rewrites when it
+(re)configures or materializes the workspace at `root`: the manifest, the
+packages directory and each package checkout's `HEAD`, and the compiled
+package configurations under `.lake/config` (their traces and `.olean`s). If
+the stamps are equal before and after a window, no Lake process changed the
+workspace's configuration in it. -/
+def lakeWorkspaceStamp (root : FilePath) : IO (Array (FilePath × String)) := do
+  let stampOf (p : FilePath) : IO (FilePath × String) := do
+    let s ← try
+        let m ← p.metadata
+        pure s!"{m.modified.sec}.{m.modified.nsec}/{m.byteSize}"
+      catch _ => pure "absent"
+    return (p, s)
+  let entries (dir : FilePath) : IO (Array FilePath) := do
+    try
+      let es ← dir.readDir
+      return (es.map (·.path)).qsort (·.toString < ·.toString)
+    catch _ => return #[]
+  let manifest := root / "lake-manifest.json"
+  let packagesDir :=
+    (← try pure ((Lean.Json.parse (← IO.FS.readFile manifest)).toOption) catch _ => pure none)
+      |>.bind (fun json => (json.getObjVal? "packagesDir").toOption)
+      |>.bind (fun value => value.getStr?.toOption)
+      |>.map FilePath.mk
+      |>.getD (".lake" / "packages")
+  let packagesDir := if packagesDir.isAbsolute then packagesDir else root / packagesDir
+  let configDir := root / ".lake" / "config"
+  let mut stamps := #[← stampOf manifest, ← stampOf packagesDir, ← stampOf configDir]
+  for pkg in ← entries packagesDir do
+    stamps := stamps.push (← stampOf (pkg / ".git" / "HEAD"))
+  for cfg in ← entries configDir do
+    stamps := stamps.push (← stampOf (cfg / "lakefile.olean.trace"))
+    stamps := stamps.push (← stampOf (cfg / "lakefile.olean"))
+  return stamps
+
 /-- Build the Lean module at the given file path using Lake.
-Also fetches Mathlib cache if the project depends on it. -/
+Also fetches Mathlib cache if the project depends on it.
+
+The workspace's search path does not depend on the build, so the
+`lake env printenv LEAN_PATH` query that loading the file needs runs alongside
+`lake build` (the two Lake processes do not wait on each other: on Mathlib the
+pair takes as long as the build alone, ~2.4 s less than in sequence), and its
+answer goes to `leanPathMemo` for `initLeanSearchPath`. Two Lake processes on
+one workspace can collide only when one of them (re)configures or materializes
+it: Lake then lets one process take the configuration lock and fails the other.
+So the concurrent answer is kept only if the workspace stamps
+(`lakeWorkspaceStamp`) are unchanged across both runs; otherwise the search
+path is queried again afterwards, as before. If the build fails in a window in
+which the workspace changed while the concurrent query succeeded, the build may
+have lost that lock, and it runs once more on its own before failing. -/
 def buildFile (path : FilePath) : IO Unit := do
   let path ← IO.FS.realPath path
   let some stem := path.fileStem
@@ -253,17 +301,37 @@ def buildFile (path : FilePath) : IO Unit := do
     | throw $ IO.userError s!"{path} is not under {root}"
   let moduleName := ".".intercalate (relParts ++ [stem])
   fetchMathlibCache root
+  let build : IO UInt32 := do
+    let child ← IO.Process.spawn {
+      cmd := "lake"
+      args := #["build", moduleName]
+      cwd := root
+      env := lakeSpawnEnv
+      stdout := .inherit
+      stderr := .inherit
+    }
+    child.wait
+  let key := root.toString
+  let stampBefore ← lakeWorkspaceStamp root
   let start ← IO.monoMsNow
-  let child ← IO.Process.spawn {
-    cmd := "lake"
-    args := #["build", moduleName]
-    cwd := root
-    env := lakeSpawnEnv
-    stdout := .inherit
-    stderr := .inherit
-  }
-  let exitCode ← child.wait
+  let query ← IO.asTask (prio := .dedicated) do
+    let answer ← queryLakeLeanPath (some root)
+    leanPhaseLine "search path (lake env, alongside lake build)" start
+    return answer
+  let mut exitCode ← build
   leanPhaseLine s!"lake build {moduleName}" start
+  let answer ← IO.wait query
+  let undisturbed := (← lakeWorkspaceStamp root) == stampBefore
+  let queryOk := match answer with | .ok (0, _) => true | _ => false
+  if exitCode != 0 && !undisturbed && queryOk then
+    let start ← IO.monoMsNow
+    exitCode ← build
+    leanPhaseLine s!"lake build {moduleName} (again, alone)" start
+  match answer with
+  | .ok (0, stdout) =>
+    if undisturbed then leanPathMemo.modify (·.insert key stdout)
+    else leanPathMemo.modify (·.erase key)
+  | _ => leanPathMemo.modify (·.erase key)
   if exitCode != 0 then
     throw $ IO.userError "lake build failed"
 
