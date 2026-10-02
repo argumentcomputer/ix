@@ -1523,9 +1523,8 @@ pub struct LazyEnv {
   fetch: Box<dyn Fn(&Name) -> Option<ConstantInfo> + Send + Sync>,
   /// Independently locked cache segments so concurrent
   /// `get`s rarely contend; per-segment capacity bounds resident
-  /// decoded constants. Eviction is `swap_remove_index(0)` — cheap
-  /// oldest-biased pseudo-FIFO, adequate for the scheduler's
-  /// topological locality.
+  /// decoded constants. Eviction is FIFO (oldest insert first),
+  /// adequate for the scheduler's topological locality.
   segments: Vec<std::sync::Mutex<indexmap::IndexMap<Name, Arc<ConstantInfo>>>>,
   cap_per_segment: usize,
   /// Never-evicted overlay for hot names, installed once via
@@ -1577,8 +1576,13 @@ impl LazyEnv {
     // names hashing to this segment shouldn't wait on them.
     let decoded = Arc::new((self.fetch)(name)?);
     let mut segment = self.segments[segment_idx].lock().unwrap();
-    if segment.len() >= self.cap_per_segment {
-      segment.swap_remove_index(0);
+    if segment.len() >= self.cap_per_segment && !segment.contains_key(name) {
+      // Evict the oldest entry. `shift_remove_index` keeps insertion
+      // order (O(capacity) moves, a few hundred bytes here); the
+      // `swap_remove_index(0)` used before moved the newest entry to the
+      // front, so after warm-up every insert evicted the previous insert
+      // and the segment's first entries stayed forever.
+      segment.shift_remove_index(0);
     }
     segment.insert(name.clone(), decoded.clone());
     Some(decoded)
@@ -1806,5 +1810,51 @@ pub mod arbitrary {
         _ => Self::Regular(u32::arbitrary(g)),
       }
     }
+  }
+}
+
+#[cfg(all(test, not(target_arch = "riscv64")))]
+mod lazy_tests {
+  use super::*;
+  use std::sync::Mutex;
+
+  /// A full cache segment evicts its oldest entry first.
+  #[test]
+  fn lazy_cache_evicts_oldest_first() {
+    let segments = LazyEnv::segment_count();
+    // Four names that share segment 0.
+    let names: Vec<Name> = (0..)
+      .map(|i| Name::str(Name::anon(), format!("c{i}")))
+      .filter(|name| {
+        let bytes = name.get_hash().as_bytes();
+        usize::from(u16::from_le_bytes([bytes[0], bytes[1]])) & (segments - 1)
+          == 0
+      })
+      .take(4)
+      .collect();
+    let fetched = Arc::new(Mutex::new(Vec::new()));
+    let log = Arc::clone(&fetched);
+    let env = Env::new_lazy(
+      names.clone(),
+      Box::new(move |name| {
+        log.lock().unwrap().push(name.clone());
+        Some(ConstantInfo::AxiomInfo(AxiomVal {
+          cnst: ConstantVal {
+            name: name.clone(),
+            level_params: vec![],
+            typ: Expr::sort(Level::zero()),
+          },
+          is_unsafe: false,
+        }))
+      }),
+      3 * segments,
+    );
+    let [a, b, c, d] = [0, 1, 2, 3].map(|i| names[i].clone());
+    for name in [&a, &b, &c, &d, &b, &c, &a, &c, &d] {
+      assert!(env.get(name).is_some());
+    }
+    // `d` evicts `a`; `b` and `c` hit; `a` evicts `b`; `c` and `d` hit.
+    // (Evicting by `swap_remove_index(0)` refetched `c` as well.)
+    assert_eq!(*fetched.lock().unwrap(), vec![a.clone(), b, c, d, a]);
   }
 }
