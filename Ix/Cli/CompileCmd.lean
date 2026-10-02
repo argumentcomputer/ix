@@ -32,6 +32,25 @@ def applySharingLimitsFlag (p : Cli.Parsed) : IO (Option String) := do
     Std.Internal.UV.System.osSetenv Ix.CompileM.sharingLimitsEnvVar spec
     return none
 
+/-- Run this process's command line (`/proc/self/cmdline`) again in a child
+process with `IX_IMPORT_ALONGSIDE_BUILD=0`, inheriting the standard streams,
+and return the child's exit code. For a stale import alongside the build
+(`BuildImport.stale`): this process cannot import the file a second time, and
+the child does the whole command the ordinary way. -/
+def rerunInFreshProcess : IO UInt32 := do
+  let cmdline ← IO.FS.readFile "/proc/self/cmdline"
+  -- NUL-terminated arguments: drop the program name and the final empty field.
+  let args := ((cmdline.splitOn "\x00").dropLast.drop 1).toArray
+  let child ← IO.Process.spawn {
+    cmd := (← IO.appPath).toString
+    args
+    env := #[("IX_IMPORT_ALONGSIDE_BUILD", some "0")]
+    stdin := .inherit
+    stdout := .inherit
+    stderr := .inherit
+  }
+  child.wait
+
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Keep the environment-variable interface for scripts, while giving the
   -- CLI an ordinary discoverable switch. The Rust compiler and serializer
@@ -51,9 +70,25 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
   -- Reuse existing imports when retrying the Ix compiler. The frontend still
   -- elaborates the input file; only Lake's dependency build/cache step is skipped.
-  unless p.hasFlag "no-build" do
-    buildFile pathStr
-  let fe ← getFileEnvCore pathStr
+  -- Otherwise the header is imported while `lake build` runs, when that is safe
+  -- (`buildFileImporting`) and this process can start over if Lake replaced a
+  -- file the import read (`rerunInFreshProcess`, which needs /proc).
+  let canRestart ← System.FilePath.pathExists "/proc/self/cmdline"
+  let loaded ← if p.hasFlag "no-build" then some <$> getFileEnvCore pathStr
+    else if !canRestart then do
+      buildFile pathStr
+      some <$> getFileEnvCore pathStr
+    else match ← buildFileImporting pathStr with
+    | .imported header => some <$> elaborateFileBody header
+    | .notAttempted why =>
+      if (← IO.getEnv "IX_VERBOSE").isSome then
+        IO.eprintln s!"[lean] no import alongside lake build: {why}"
+      some <$> getFileEnvCore pathStr
+    | .stale why =>
+      IO.eprintln s!"[compile] the import made while Lake was building is stale ({why}); \
+running this command again in a fresh process"
+      pure none
+  let some fe := loaded | rerunInFreshProcess
   let leanEnv := fe.env
   let scopeStart ← IO.monoMsNow
 
