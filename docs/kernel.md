@@ -5,7 +5,8 @@ derived from [con-leche](https://github.com/leanprover/con-leche)'s verified
 checker: `Ix/Kernel/**` holds a modified copy under the namespace
 `Ix.Kernel` (see "Origin and attribution" below), run on Ixon records by Ix's
 reader in `Ix/Kernel/Ixon/`. The certified API is
-`Ix.Kernel.Admission.checkBytes`. This page states what that entry does, what
+`Ix.Kernel.Admission.checkBytes` (`import Ix.Kernel.Admission`; its theorems
+are in `Ix.Kernel.Admission.Theorems`). This page states what that entry does, what
 is proved about it, what is trusted, how the gate checks the trust boundary,
 where the kernel comes from, and how to check a whole compiled environment.
 This page is the contract: what an accept promises (a set-theoretic model,
@@ -23,10 +24,21 @@ the original Lean source meant is outside the claim.
 ## The certified entry
 
 ```lean
-def Ix.Kernel.Admission.checkBytes (limits : Limits) (records : Records) (blobs : Ingress.Blobs)
+def Ix.Kernel.Admission.checkBytes (limits : Limits) (records : Records)
+    (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except Admission.Error Ix.Kernel.Env
+    Except Error Ix.Kernel.Env
 ```
+
+Each entry has one runnable module, which holds definitions only, and its
+theorems and audit beside it: `Ix/Kernel/Admission.lean` (the entry, its
+`Error` and `Outcome`), `Ix/Kernel/Admission/Bytes.lean` (the byte stage
+and its `ByteError`), `Ix/Kernel/Admission/{Theorems,Bytes/Theorems,
+Audit}.lean`; the variants `Ix/Ixon/{Projection,BlockOrder}.lean` with
+`Ix/Ixon/{Projection,BlockOrder}/{Theorems,Audit}.lean`. Running the entry
+does not build the proof tree: the import closure of
+`Ix.Kernel.Admission` is 77 repository modules and does not reach
+`Ix.Kernel.MainTheorem`.
 
 `records` is an ordered list of `(Address, ByteArray)` pairs, one canonical
 Ixon constant per pair; `blobs` holds literal payloads (`Nat` little-endian
@@ -57,8 +69,9 @@ the compiler stores it in and not always the structural one (a structural
 check would refuse 2 of the 7 compiled recursor blocks of the fidelity
 fixture, `Rose.rec`/`Rose.rec_1` and `Args.rec`/`Tm.rec`).
 
-**Outcomes.** `Admission.outcome` classifies every failure as a reject (the
-input is wrong) or a decline (the checker does not certify it):
+**Outcomes.** `Admission.Error.outcome` (called as `e.outcome`) classifies
+every failure as a reject (the input is wrong) or a decline (the checker
+does not certify it):
 
 | Error | Outcome | Why |
 | --- | --- | --- |
@@ -68,6 +81,19 @@ input is wrong) or a decline (the checker does not certify it):
 | `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions, unsafe axioms, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
 | `.prelude` | decline | a corrupted committed table |
 | `.kernel` | decline | every checker verdict: the checker reports fuel exhaustion as `internal` and a failed conversion search as `invalid`, and neither is independent evidence that the input is wrong |
+
+The variants keep their own errors (`Ixon.Projection.CheckError`,
+`Ixon.BlockOrder.CheckError`) and the same classifier, `e.outcome`: a
+checker failure (`.checker e`) as above, the byte stage
+(`Admission.ByteError.outcome`) as `.limit`, `.duplicate` and `.decode`
+above, and their own failures as follows.
+
+| Error | Outcome | Why |
+| --- | --- | --- |
+| `Projection.Error.limit`, `BlockOrder.Error.exhausted` | decline | coverage bounds (projection requests; comparison and refinement fuel) |
+| `Projection.Error.ownerWidth`, `.conflict`, `.projection (.malformed _)` | reject | an owner key that is not a 32-byte hash, a supplied record that differs from the derived one at its key, a projection the writer finds malformed |
+| `Projection.Error.projection` (any other search failure) | decline | the writer did not establish the projection |
+| `BlockOrder.Error.malformed`, `.nonCanonical`, `.motiveOrder` | reject | a malformed block, or a block out of canonical (or motive) order |
 
 Only an accept carries the theorems below.
 
@@ -134,7 +160,7 @@ equation, by upstream's design.
   type's reading and its value's reading (or the projection rewrite), and
   is installed under that name with its kind (a quotient record,
   `sorryAx` and `Quot.sound` install as the pinned blocks do).
-- `keyName_injective` and `Ctx.nameOf_of_pin`/`Ctx.nameOf_of_unpinned`
+- `Ix.Kernel.Reader.keyName_injective` and `Ctx.nameOf_of_pin`/`Ctx.nameOf_of_unpinned`
   (`Ix/Kernel/Ixon/{Reader,ReaderSpec}.lean`): which name a reference
   is read under.
 
@@ -282,11 +308,14 @@ Import allowlists (`Ix/Kernel/Audit/Roots.lean`):
   types.
 - `importAllowlist` (the certified API's closure, rooted at
   `Ix.Kernel.Admission`): the above plus exactly `Ix.Ixon.{Codec, Wire,
-  WireCheck, Bounded.Constant, Bounded.Universe, Canonical, Admission}`.
+  WireCheck, Bounded.Constant, Bounded.Universe, Canonical}`, without the
+  entry's theorem and audit modules and the kernel's audits
+  (`importDenylist`; `kernelImportDenylist` likewise keeps
+  `Ix.Kernel.Admission` and `Ix.Kernel.Audit` out of the kernel-side list).
   No projection hashing, block order, `Ix.Address.Pure`,
   proof module or `Lean` (outside `elaborationImports`).
 - `proofImportAllowlist` (the theorem modules): `importAllowlist` plus
-  `Ix.Ixon.Bounded.Size`, `Ixon.Verify`, the theorem module and
+  `Ix.Ixon.Bounded.Size`, `Ix.Ixon.Verify`, the theorem module and
   `Lean`.
 - `elaborationImports`: below `Ix.Kernel.BasisGen` only `Init`, `Std`,
   `Lean` and `Ix.Kernel`.
@@ -396,7 +425,7 @@ Mathlib tag but regenerates nothing), the change also does the following.
    `Ix/Kernel/Admission/Audit.lean` (built by `lake -d IxKernel build
    --wfail`), and in `Ix/Ixon/Projection/Audit.lean` and
    `Ix/Ixon/BlockOrder/Audit.lean` (built by `lake build --wfail
-   Ixon.Projection.Audit Ixon.BlockOrder.Audit`). A record that no
+   Ix.Ixon.Projection.Audit Ix.Ixon.BlockOrder.Audit`). A record that no
    longer matches fails the build and prints the message its command now
    produces; re-record it by replacing the record's docstring with that
    message, and update the closure table above and the counts in
@@ -458,7 +487,8 @@ and `Ix/Kernel/NOTICE` states the origin, the revisions and the changes;
 `linter.deprecated` is off, so the con-leche-derived sources, written for
 Lean 4.33.0, build under `--wfail` on 4.34.0 without renaming the deprecated
 `if_pos`/`if_neg`/`dif_pos`/`dif_neg` lemmas they use (2,885 uses in 209
-files).
+files). Ix's own files there do not rely on it: they build without warnings
+with the linter on.
 
 **Bringing over an upstream change.** By hand: take upstream's diff between
 the recorded revision and the new one for the files concerned, map its

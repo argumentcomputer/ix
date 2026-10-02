@@ -22,15 +22,19 @@ boundary:
 * `Ix/Kernel/Ixon/{PinData,NatOpPinData,Prelude}.lean`: the committed pin
   table, Nat-operation pins and Ixon prelude, generated from the compiled
   Init's records;
-* `Ix.Kernel.Cached` (`Installed`, `Values`): installation and
-  definition values of the fold, used by the public theorems;
+* `Ix/Kernel/Ixon/{Installed,Values}.lean`: installation and definition
+  values of the fold (`Ix.Kernel.Cached.checkDecls_installs`,
+  `Ix.Kernel.Cached.checkDecls_model_defn_values`, beside the fold they
+  are about), used by the public theorems;
 * `Ix.Kernel.ConstRef` (`Ref`), the decoded-record store
   (`Ix.Kernel.Ingress`, `Ingress/Records.lean`), bounded search outcomes
   (`Search`), and the projection-record writer (`Ix.Kernel.Egress`,
   `Egress/Projection.lean`) that projection reconstruction runs;
 * `Ix.Kernel.Audit`: the certified gate's manifest and audits.
 
-The certified API is `Ix.Kernel.Admission.checkBytes`; its public theorems
-(model existence over `Ix.Kernel.Model`, no proof of the pinned `False`,
-fidelity, resources) are in `Ix.Kernel.Admission.Theorems`. The contract, trust surface, audits and
-origin are described in `docs/kernel.md`. -/
+The certified API, `Ix.Kernel.Admission.checkBytes`
+(`Ix/Kernel/Admission.lean`), runs the byte stage, this reader and the
+fold; this umbrella does not import it. Its public theorems (model
+existence over `Ix.Kernel.Model`, no proof of the pinned `False`, fidelity,
+resources) are in `Ix.Kernel.Admission.Theorems`. The contract, trust
+surface, audits and origin are described in `docs/kernel.md`. -/
