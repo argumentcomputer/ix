@@ -55,6 +55,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     buildFile pathStr
   let fe ← getFileEnvCore pathStr
   let leanEnv := fe.env
+  let scopeStart ← IO.monoMsNow
 
   println! "Running Ix compiler on {pathStr}"
 
@@ -157,6 +158,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
   let totalConsts := constList.length
   println! "Total constants: {totalConsts}"
+  leanPhaseLine "constant list" scopeStart
 
   -- Window the tree-RSS sampler around the compile so the row's peak-rss
   -- is the compile step's own high-water (the loaded Lean env is still in

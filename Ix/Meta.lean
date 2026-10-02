@@ -19,19 +19,52 @@ open System (FilePath)
 def lakeSpawnEnv : Array (String × Option String) :=
   #[("LD_LIBRARY_PATH", none)]
 
+/-- Print `[lean] <what>: <time since start>` to stderr when `IX_VERBOSE` (or
+the driver's `IX_COMPILE_DBG`) is set: the wall time of one step of the Lean
+side before the compiler runs (Lake, search path, import, elaboration). -/
+def leanPhaseLine (what : String) (startMs : Nat) : IO Unit := do
+  if (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome then
+    IO.eprintln s!"[lean] {what}: {((← IO.monoMsNow) - startMs).formatMs}"
+
+/-- `lake env printenv LEAN_PATH` run in `cwd`: Lake's exit code and stdout. -/
+def queryLakeLeanPath (cwd : Option FilePath) : IO (UInt32 × String) := do
+  let out ← IO.Process.output
+    { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd, env := lakeSpawnEnv }
+  return (out.exitCode, out.stdout)
+
+/-- Successful `lake env printenv LEAN_PATH` outputs of this process, keyed by
+the directory Lake ran in. A workspace's search path changes only when Lake
+reconfigures or materializes the workspace, which happens in `lake build`;
+`buildFile` refreshes the entry of the workspace it builds. Without the memo a
+compile asks Lake twice for module-mode files (`getFileEnvCore`, then
+`moduleVisibleNames`), at about 2.4 s per query on Mathlib. -/
+initialize leanPathMemo : IO.Ref (Std.HashMap String String) ← IO.mkRef {}
+
 /-- Initialize Lean's module search path.
 
 When `cwd` is provided, query `lake env printenv LEAN_PATH` from that directory
 unconditionally — the caller is loading a file from a specific lake project, and
 the inherited `LEAN_PATH` (e.g., set by an outer `lake exe ix` invocation) would
 point at the wrong project's packages. When `cwd` is `none`, honor the inherited
-`LEAN_PATH` if set, falling back to querying lake in the current directory. -/
+`LEAN_PATH` if set, falling back to querying lake in the current directory.
+A query this process already made for the same directory is reused
+(`leanPathMemo`). -/
 def initLeanSearchPath (cwd : Option FilePath := none) : IO Unit := do
   -- If a target cwd is supplied, always query that cwd's LEAN_PATH.
   -- Otherwise, trust the inherited LEAN_PATH when present.
   if cwd.isSome || (← IO.getEnv "LEAN_PATH").isNone then
-    let out ← IO.Process.output { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd, env := lakeSpawnEnv }
-    let paths := out.stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
+    let key := (← match cwd with | some dir => pure dir | none => IO.currentDir).toString
+    let stdout ← match (← leanPathMemo.get)[key]? with
+      | some stdout => pure stdout
+      | none =>
+        let start ← IO.monoMsNow
+        let (exitCode, stdout) ← queryLakeLeanPath cwd
+        leanPhaseLine "search path (lake env)" start
+        -- As before the memo, a failed query still yields its (empty) output
+        -- here; it is just not remembered.
+        if exitCode == 0 then leanPathMemo.modify (·.insert key stdout)
+        pure stdout
+    let paths := stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
     initSearchPath (← findSysroot) paths
   else
     initSearchPath (← findSysroot)
@@ -88,9 +121,11 @@ def getFileEnvCore (path : FilePath) : IO FileEnv := do
   -- Required for `processHeaderCore`'s `loadExts := true` import; a completed
   -- import resets the flag, so it is re-armed before every import.
   unsafe enableInitializersExecution
+  let start ← IO.monoMsNow
   let (env, messages) ← processHeaderCore
     (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
     (isModule := false) default messages inputCtx 0
+  leanPhaseLine "import" start
   if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
       (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
@@ -98,7 +133,9 @@ def getFileEnvCore (path : FilePath) : IO FileEnv := do
   -- definitions and not just its imports. Classic elaboration accepts
   -- module-syntax bodies (`public def` etc.) and yields their real content.
   let env := env.setMainModule default
+  let start ← IO.monoMsNow
   let s ← IO.processCommands inputCtx parserState (Command.mkState env messages)
+  leanPhaseLine "elaborate file body" start
   let cmdMessages := s.commandState.messages
   if cmdMessages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
@@ -126,9 +163,11 @@ def moduleVisibleNames (path : FilePath) : IO (Option NameSet) := do
   let (header, _, messages) ← Parser.parseHeader inputCtx
   if !HeaderSyntax.isModule header then return none
   unsafe enableInitializersExecution  -- re-armed per import; see `getFileEnvCore`
+  let start ← IO.monoMsNow
   let (env, messages) ← processHeaderCore
     (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
     (isModule := true) default messages inputCtx 0
+  leanPhaseLine "import at the exported level (module-visible names)" start
   if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
       (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
@@ -200,8 +239,56 @@ partial def collectRelParts (root cur : FilePath) (acc : List String) : Option (
       if par == cur then none else collectRelParts root par (name :: acc)
     | _, _ => none
 
+/-- The modification stamps of what a Lake process rewrites when it
+(re)configures or materializes the workspace at `root`: the manifest, the
+packages directory and each package checkout's `HEAD`, and the compiled
+package configurations under `.lake/config` (their traces and `.olean`s). If
+the stamps are equal before and after a window, no Lake process changed the
+workspace's configuration in it. -/
+def lakeWorkspaceStamp (root : FilePath) : IO (Array (FilePath × String)) := do
+  let stampOf (p : FilePath) : IO (FilePath × String) := do
+    let s ← try
+        let m ← p.metadata
+        pure s!"{m.modified.sec}.{m.modified.nsec}/{m.byteSize}"
+      catch _ => pure "absent"
+    return (p, s)
+  let entries (dir : FilePath) : IO (Array FilePath) := do
+    try
+      let es ← dir.readDir
+      return (es.map (·.path)).qsort (·.toString < ·.toString)
+    catch _ => return #[]
+  let manifest := root / "lake-manifest.json"
+  let packagesDir :=
+    (← try pure ((Lean.Json.parse (← IO.FS.readFile manifest)).toOption) catch _ => pure none)
+      |>.bind (fun json => (json.getObjVal? "packagesDir").toOption)
+      |>.bind (fun value => value.getStr?.toOption)
+      |>.map FilePath.mk
+      |>.getD (".lake" / "packages")
+  let packagesDir := if packagesDir.isAbsolute then packagesDir else root / packagesDir
+  let configDir := root / ".lake" / "config"
+  let mut stamps := #[← stampOf manifest, ← stampOf packagesDir, ← stampOf configDir]
+  for pkg in ← entries packagesDir do
+    stamps := stamps.push (← stampOf (pkg / ".git" / "HEAD"))
+  for cfg in ← entries configDir do
+    stamps := stamps.push (← stampOf (cfg / "lakefile.olean.trace"))
+    stamps := stamps.push (← stampOf (cfg / "lakefile.olean"))
+  return stamps
+
 /-- Build the Lean module at the given file path using Lake.
-Also fetches Mathlib cache if the project depends on it. -/
+Also fetches Mathlib cache if the project depends on it.
+
+The workspace's search path does not depend on the build, so the
+`lake env printenv LEAN_PATH` query that loading the file needs runs alongside
+`lake build` (the two Lake processes do not wait on each other: on Mathlib the
+pair takes as long as the build alone, ~2.4 s less than in sequence), and its
+answer goes to `leanPathMemo` for `initLeanSearchPath`. Two Lake processes on
+one workspace can collide only when one of them (re)configures or materializes
+it: Lake then lets one process take the configuration lock and fails the other.
+So the concurrent answer is kept only if the workspace stamps
+(`lakeWorkspaceStamp`) are unchanged across both runs; otherwise the search
+path is queried again afterwards, as before. If the build fails in a window in
+which the workspace changed while the concurrent query succeeded, the build may
+have lost that lock, and it runs once more on its own before failing. -/
 def buildFile (path : FilePath) : IO Unit := do
   let path ← IO.FS.realPath path
   let some stem := path.fileStem
@@ -214,15 +301,37 @@ def buildFile (path : FilePath) : IO Unit := do
     | throw $ IO.userError s!"{path} is not under {root}"
   let moduleName := ".".intercalate (relParts ++ [stem])
   fetchMathlibCache root
-  let child ← IO.Process.spawn {
-    cmd := "lake"
-    args := #["build", moduleName]
-    cwd := root
-    env := lakeSpawnEnv
-    stdout := .inherit
-    stderr := .inherit
-  }
-  let exitCode ← child.wait
+  let build : IO UInt32 := do
+    let child ← IO.Process.spawn {
+      cmd := "lake"
+      args := #["build", moduleName]
+      cwd := root
+      env := lakeSpawnEnv
+      stdout := .inherit
+      stderr := .inherit
+    }
+    child.wait
+  let key := root.toString
+  let stampBefore ← lakeWorkspaceStamp root
+  let start ← IO.monoMsNow
+  let query ← IO.asTask (prio := .dedicated) do
+    let answer ← queryLakeLeanPath (some root)
+    leanPhaseLine "search path (lake env, alongside lake build)" start
+    return answer
+  let mut exitCode ← build
+  leanPhaseLine s!"lake build {moduleName}" start
+  let answer ← IO.wait query
+  let undisturbed := (← lakeWorkspaceStamp root) == stampBefore
+  let queryOk := match answer with | .ok (0, _) => true | _ => false
+  if exitCode != 0 && !undisturbed && queryOk then
+    let start ← IO.monoMsNow
+    exitCode ← build
+    leanPhaseLine s!"lake build {moduleName} (again, alone)" start
+  match answer with
+  | .ok (0, stdout) =>
+    if undisturbed then leanPathMemo.modify (·.insert key stdout)
+    else leanPathMemo.modify (·.erase key)
+  | _ => leanPathMemo.modify (·.erase key)
   if exitCode != 0 then
     throw $ IO.userError "lake build failed"
 

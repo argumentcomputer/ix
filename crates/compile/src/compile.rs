@@ -428,13 +428,23 @@ impl CompileState {
   ///   the address the anon-mode kernel looks hints up under). Alias
   ///   collisions resolve through `Env::register_hint`'s
   ///   order-independent merge.
+  ///
+  /// Each name is written once and the merge is order-independent, so the
+  /// entries are resolved in parallel (Mathlib: ~780k names, ~0.5 s on one
+  /// thread).
   pub fn finalize_hints(&self) {
-    for entry in self.def_hints.iter() {
-      if let Some(mut named) = self.env.named.get_mut(entry.key()) {
-        named.set_hints(Some(*entry.value()));
-        self.env.register_hint(named.addr.clone(), *entry.value());
-      }
-    }
+    use rayon::prelude::*;
+    self.def_hints.par_iter().for_each(|entry| {
+      let hints = *entry.value();
+      let addr = match self.env.named.get_mut(entry.key()) {
+        Some(mut named) => {
+          named.set_hints(Some(hints));
+          named.addr.clone()
+        },
+        None => return,
+      };
+      self.env.register_hint(addr, hints);
+    });
   }
 
   /// Promote a constant from `aux_name_to_addr` to `name_to_addr`, setting

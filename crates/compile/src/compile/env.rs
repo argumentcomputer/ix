@@ -337,6 +337,12 @@ pub fn compile_env_with_scanner(
       crate::diag::rss_log_suffix(),
     );
   }
+  // The reference graphs and the inductive groups are not read again (the
+  // scheduler works from `condensed`). They are the largest setup
+  // structures, one name set per constant (Mathlib: about 1 GB), so free
+  // them now, on a background thread while the scheduler runs, instead of
+  // holding them through it and freeing them serially at the end.
+  drop_in_background((grounded_out_refs, graph.in_refs, scan.ind_groups));
 
   let stt = CompileState {
     lean_env: Some(lean_env.clone()),
@@ -1072,6 +1078,20 @@ pub fn compile_env_with_scanner(
     });
   }
 
+  // Nothing below reads the scheduler's bookkeeping or the condensation.
+  // The scheduler's own tables are a few flat vectors and borrow from
+  // `condensed`, so they go first, here. The condensation holds two name
+  // sets per block, so it is freed on a background thread rather than
+  // serially at the end of this function. `compile_env_inner` forgets the
+  // whole compile state for the same reason, which is right only for the
+  // one-shot CLI; this function also serves long-lived callers (`ix
+  // check`, the FFI test entry points, the crate's tests) that need the
+  // memory back.
+  drop(reverse_deps);
+  drop(block_info);
+  drop(processed);
+  drop_in_background(condensed);
+
   stt.finalize_hints();
 
   if !semantic_sources.is_empty() || profile.is_some() {
@@ -1118,6 +1138,15 @@ pub fn compile_env_with_scanner(
   }
 
   Ok(stt)
+}
+
+/// Drop `value` on a detached thread so the caller does not wait for it.
+/// If the thread cannot be spawned, `spawn` drops the closure, and with it
+/// `value`, right here.
+fn drop_in_background<T: Send + 'static>(value: T) {
+  let _ = thread::Builder::new()
+    .name("ix-compile-free".into())
+    .spawn(move || drop(value));
 }
 
 /// A block of the scheduler, borrowed from the SCC condensation. Blocks are
