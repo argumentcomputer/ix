@@ -135,23 +135,35 @@ def load (path : System.FilePath) (ixe : String) : IO (Option Plan) := do
 
 /-! ## Running from a plan -/
 
-/-- The check loop over a plan: every view and reading is the plan's, and
-the reading state is not threaded (no record is read). `limit` bounds the
-records, as for a live run. -/
+/-- A plan's report names. -/
+def Plan.nameMap (plan : Plan) : Std.HashMap Address (Array String) :=
+  plan.names.foldl (fun m (a, ns) => m.insert a ns) {}
+
+/-- A plan's records in order, `limit` bounding them as for a live run. -/
+def Plan.addresses (plan : Plan) (limit : Option Nat) : Array Address :=
+  let addresses := plan.records.map (·.address)
+  match limit with | some n => addresses.extract 0 n | none => addresses
+
+/-- A plan as a loop source: every view and reading is the plan's, and the
+reading state is not threaded (no record is read). -/
+def Plan.source (plan : Plan) : LoopSource Unit :=
+  let byAddress : Std.HashMap Address PlanRecord :=
+    plan.records.foldl (fun m r => m.insert r.address r) {}
+  { view := fun a => (byAddress[a]?).map fun r => { kind := r.kind, recs := r.recs, deps := fun _ => r.deps }
+    read := fun _ a => match byAddress[a]? with
+      | some r => r.reading
+      | none => .error (.malformed "record is missing from the read cache")
+    commit := fun _ _ _ => ()
+    init := pure () }
+
+/-- The check loop over a plan, with the per-record step. -/
 def checkLoopPlan (plan : Plan) (pins : List Ix.Kernel.NatOpPinSet) (limit : Option Nat)
     (skip : Std.HashSet String) (emit : Row → IO Unit)
     (before : Address → IO Unit := fun _ => pure ()) (after : IO Unit := pure ())
     (progress : Nat → Outcome → IO Unit := fun _ _ => pure ()) : IO Outcome := do
-  let byAddress : Std.HashMap Address PlanRecord :=
-    plan.records.foldl (fun m r => m.insert r.address r) {}
-  let names : Std.HashMap Address (Array String) := plan.names.foldl (fun m (a, ns) => m.insert a ns) {}
-  let addresses := plan.records.map (·.address)
-  let addresses := match limit with | some n => addresses.extract 0 n | none => addresses
-  checkLoopWith
-    (fun a => (byAddress[a]?).map fun r => { kind := r.kind, recs := r.recs, deps := fun _ => r.deps })
-    (fun (_ : Unit) a => match byAddress[a]? with
-      | some r => r.reading
-      | none => .error (.malformed "record is missing from the read cache"))
-    (fun _ _ => ()) () pins (names.getD · #[]) addresses skip emit before after progress
+  let src := plan.source
+  let names := plan.nameMap
+  checkLoopWith src.view src.read src.commit (← src.init) (Checker.stepRecord pins) {}
+    (names.getD · #[]) (plan.addresses limit) skip emit before after progress
 
 end Benchmarks.Kernel.CheckIxeReadCache
