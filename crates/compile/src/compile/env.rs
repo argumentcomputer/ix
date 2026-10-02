@@ -286,6 +286,9 @@ pub fn compile_env_with_profile(
   let stt = CompileState {
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
+    // `setup_scan` inspected every constant and `semantic_sources?` above
+    // stopped on any malformed annotation.
+    contract_sources: Some(semantic_sources.iter().cloned().collect()),
     sharing_limits,
     ..Default::default()
   };
@@ -770,6 +773,17 @@ pub fn compile_env_with_profile(
               } else {
                 // Compile this block
                 let mut cache = BlockCache::default();
+                // The block's dependency names come from the reference
+                // graph of its members' expressions; with the members
+                // themselves they cover every constant the plan-head audit
+                // can meet.
+                if let Some(entry) = block_info_ref.get(&lo) {
+                  let (_, deps, _) = entry.value();
+                  cache.exempt_from_plan_audit(
+                    stt_ref,
+                    deps.iter().chain(all.iter()),
+                  );
+                }
                 let res = run_compile_catching_panic(
                   &lo,
                   "compile_const",

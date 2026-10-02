@@ -213,6 +213,14 @@ pub struct CompileState {
   /// registered, so [`Self::finalize_hints`] resolves this map through
   /// `env.named` into `env.anon_hints` once compilation completes.
   pub def_hints: FxDashMap<Name, ReducibilityHints>,
+  /// The constants of `lean_env` whose expressions carry semantic contract
+  /// annotations, when a whole-environment scan has established it: the
+  /// compile-env setup runs `semantic_contract::inspect_constant` on every
+  /// constant and stops on any error, so for a constant not in this set
+  /// `semantic_contract::inspect` answers `Ok(false)` on each of its
+  /// expressions, and the plan-head audit skips that walk. `None` (any
+  /// other entry point) makes the audit inspect every expression.
+  pub contract_sources: Option<FxHashSet<Name>>,
   /// Resource limits of every canonical sharing construction run against
   /// this state: compilation, and the decompiler's recompile check.
   /// `compile_env` sets them once, from [`SHARING_LIMITS_ENV`], before it
@@ -294,13 +302,48 @@ pub struct BlockCache {
   /// this block (finished before it started) or this block itself, which
   /// installs its plans at the very end of `compile_mutual`, after its
   /// last use of this cache.
-  plan_heads: FxHashMap<Name, Option<PlanHeadArity>>,
+  plan_heads: PlanHeadMemo,
   /// Addresses of the names this block has passed through
   /// [`compile_name_cached`]: their `env.names` entries (and those of
   /// their prefixes and string components) exist, and nothing removes
   /// entries from those maps while compiling, so a repeated name needs
   /// no `DashMap` read.
   stored_names: FxHashSet<Address>,
+  /// Set by [`BlockCache::exempt_from_plan_audit`]: the plan-head audit
+  /// provably finds nothing in this block, so it is skipped.
+  plan_audit_exempt: bool,
+}
+
+impl BlockCache {
+  /// Before compiling a block, establish that the plan-head audit
+  /// ([`audit_constant_info_plan_heads`]) can find nothing in it, and if so
+  /// let the block skip it. `referenced` must include every constant name
+  /// the block's audited expressions mention: the block's members (with
+  /// constructors) and the names they reference outside the block (the
+  /// scheduler passes the members and the block's dependency names, which
+  /// come from the reference graph of exactly those expressions).
+  ///
+  /// The audit fails only (a) at a constant with a non-identity call-site
+  /// plan, or (b) on a malformed contract annotation. (a) is ruled out when
+  /// no referenced name has a plan: the answers come from the block memo
+  /// (`plan_heads`), which the audit would consult itself. (b) is ruled out
+  /// when [`CompileState::contract_sources`] is known: the setup scan then
+  /// validated every annotation of the environment.
+  pub fn exempt_from_plan_audit<'a>(
+    &mut self,
+    stt: &CompileState,
+    referenced: impl IntoIterator<Item = &'a Name>,
+  ) {
+    if stt.contract_sources.is_none() {
+      return;
+    }
+    for name in referenced {
+      if plan_head_arity_cached(name, self, stt).is_some() {
+        return;
+      }
+    }
+    self.plan_audit_exempt = true;
+  }
 }
 
 #[derive(Debug)]
@@ -328,6 +371,7 @@ impl Default for CompileState {
       plan_maps_nonempty: AtomicBool::new(false),
       aux_perms: Default::default(),
       def_hints: Default::default(),
+      contract_sources: None,
       sharing_limits: ExactSharingLimits::default(),
     }
   }
@@ -2208,17 +2252,23 @@ fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
   None
 }
 
+/// Memo of [`plan_head_arity`] keyed by the head name's blake3 hash, the
+/// name's identity, compared as 32 bytes: equal names reached through
+/// different `Arc`s (the reference graph's and an expression's) would
+/// otherwise compare structurally, component by component.
+type PlanHeadMemo = FxHashMap<blake3::Hash, Option<PlanHeadArity>>;
+
 /// [`plan_head_arity`] through the block memo ([`BlockCache::plan_heads`]).
 fn plan_head_arity_cached(
   name: &Name,
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Option<PlanHeadArity> {
-  if let Some(arity) = cache.plan_heads.get(name) {
+  if let Some(arity) = cache.plan_heads.get(name.get_hash()) {
     return *arity;
   }
   let arity = plan_head_arity(stt, name);
-  cache.plan_heads.insert(name.clone(), arity);
+  cache.plan_heads.insert(*name.get_hash(), arity);
   arity
 }
 
@@ -2255,21 +2305,26 @@ fn audit_plan_head_arities(
   owner: &Name,
   top: &LeanExpr,
   stt: &CompileState,
-  heads: &mut FxHashMap<Name, Option<PlanHeadArity>>,
+  heads: &mut PlanHeadMemo,
 ) -> Result<usize, CompileError> {
   if plan_maps_empty(stt) {
     return Ok(0);
   }
   let mut head_arity = |name: &Name| -> Option<PlanHeadArity> {
-    if let Some(arity) = heads.get(name) {
+    if let Some(arity) = heads.get(name.get_hash()) {
       return *arity;
     }
     let arity = plan_head_arity(stt, name);
-    heads.insert(name.clone(), arity);
+    heads.insert(*name.get_hash(), arity);
     arity
   };
 
-  let annotated = crate::semantic_contract::inspect(top)?;
+  // A constant the setup scan found free of contract annotations (see
+  // `CompileState::contract_sources`) needs no second walk to say so.
+  let annotated = match &stt.contract_sources {
+    Some(sources) if !sources.contains(owner) => false,
+    _ => crate::semantic_contract::inspect(top)?,
+  };
   // `obscured` means this expression occurs in the function part of an outer
   // App whose telescope stopped at a non-App wrapper.  A short plan spine in
   // that position cannot be assigned a local source-order interface safely.
@@ -2385,8 +2440,12 @@ fn audit_plan_head_arities(
 fn audit_constant_info_plan_heads(
   ci: &LeanConstantInfo,
   stt: &CompileState,
-  heads: &mut FxHashMap<Name, Option<PlanHeadArity>>,
+  cache: &mut BlockCache,
 ) -> Result<(), CompileError> {
+  if cache.plan_audit_exempt {
+    return Ok(());
+  }
+  let heads = &mut cache.plan_heads;
   let owner = ci.get_name();
   audit_plan_head_arities(owner, ci.get_type(), stt, heads)?;
   if let Some(value) = ci.get_value() {
@@ -4137,7 +4196,7 @@ fn compile_const_inner(
       caller: "compile_const".into(),
     })?
     .clone();
-  audit_constant_info_plan_heads(&cnst, stt, &mut cache.plan_heads)?;
+  audit_constant_info_plan_heads(&cnst, stt, cache)?;
   let _cnst_kind = match &cnst {
     LeanConstantInfo::DefnInfo(_) => "defn",
     LeanConstantInfo::ThmInfo(_) => "thm",
@@ -4401,7 +4460,7 @@ fn compile_mutual(
         caller: "compile_mutual".into(),
       });
     };
-    audit_constant_info_plan_heads(&const_info, stt, &mut cache.plan_heads)?;
+    audit_constant_info_plan_heads(&const_info, stt, cache)?;
     let mut_const = match &const_info {
       LeanConstantInfo::InductInfo(val) => {
         for ctor_name in &val.ctors {
@@ -4411,7 +4470,7 @@ fn compile_mutual(
               caller: "plan-head arity audit (constructor)".into(),
             }
           })?;
-          audit_constant_info_plan_heads(&ctor, stt, &mut cache.plan_heads)?;
+          audit_constant_info_plan_heads(&ctor, stt, cache)?;
         }
         MutConst::Indc(mk_indc(val, lean_env)?)
       },
@@ -5272,7 +5331,7 @@ mod tests {
       0
     );
     assert!(
-      audit_constant_info_plan_heads(&ci, &stt, &mut FxHashMap::default())
+      audit_constant_info_plan_heads(&ci, &stt, &mut BlockCache::default())
         .is_ok()
     );
     assert!(!stt.plan_maps_nonempty.load(AtomicOrdering::Relaxed));
@@ -5295,7 +5354,7 @@ mod tests {
     // Installed later: the next audit sees it, and from then on the
     // emptiness test is skipped.
     let err =
-      audit_constant_info_plan_heads(&ci, &stt, &mut FxHashMap::default())
+      audit_constant_info_plan_heads(&ci, &stt, &mut BlockCache::default())
         .expect_err("an obscured short plan head must fail the audit")
         .to_string();
     assert!(err.contains("A.rec"), "missing head in: {err}");
