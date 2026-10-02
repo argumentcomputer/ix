@@ -535,11 +535,14 @@ its install plus its checks. Environment:
   the time or the process's resident memory exceeds the size, and appends
   the constant's address to `<output>.runaway` (with `--jobs`, every
   worker's check is watched). The resident size includes what the driver
-  holds of the environment: for Mathlib, a peak of about 20 GB with the
-  streaming load and about 47 GB with `--load eager` (4.6 GB eager for
-  Init+Std). `CHECK_IXE_WATCH_MB` must exceed it, or the watchdog fires
-  before the check ends (for Mathlib, for example, `CHECK_IXE_WATCH_MB=60000`
-  under a `MemoryMax` above that);
+  holds of the environment. Measured peaks: Init+Std 1.5 GB streaming and
+  3.9 GB with `--load eager`; Mathlib 15.2 GB streaming (16.0 GB with
+  `--jobs 32`) and 38.8 GB with `--load eager`
+  (`Benchmarks/Kernel/README.md`). `CHECK_IXE_WATCH_MB` must exceed the
+  run's peak, or the watchdog fires before the check ends: the default
+  covers every streaming run, including Mathlib's; an eager Mathlib run
+  needs more (for example `CHECK_IXE_WATCH_MB=60000`, under a `MemoryMax`
+  above that);
 - `CHECK_IXE_SKIP` (comma-separated addresses) declines those constants
   unchecked; `kernel-check-ixe --guarded` reruns with every recorded runaway
   skipped until the run completes (`--memory-max <GB>` runs each attempt in

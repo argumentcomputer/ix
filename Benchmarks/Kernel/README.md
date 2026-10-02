@@ -78,11 +78,14 @@ coverage is flagged next to the wall-time ratio.
   batch fold over the constants the environment check accepts, for
   comparison with the per-constant step.
 
-## Recorded results (2026-10-01)
+## Recorded results (2026-10-02)
 
-Init+Std compiled with Lean 4.34.0 (`initstd.ixe`, 97,877 constants), on an
-AWS Xeon 6975P, one core per run (times measured with the earlier driver,
-which loaded eagerly):
+Measured on an AWS r8i.16xlarge (Intel Xeon 6975P-C, 32 cores, 64 threads),
+one process at a time on an otherwise idle machine, each started with the
+1-minute load below 1, under `CHECK_IXE_WATCH_MB=60000`; one-core runs are
+pinned with `taskset -c 6`. Lean 4.34.0.
+
+Init+Std (`initstd.ixe`, 97,877 constants):
 
 | Outcome | Constants |
 | --- | ---: |
@@ -90,43 +93,49 @@ which loaded eagerly):
 | declined: 813 `partial` and 75 `unsafe` definitions, 8 unsafe opaques, 6 unsafe axioms | 902 |
 | rejected, blocked | 0 |
 
-Check time summed over accepted constants is 75.1 s and reading 3.5 s; the
-process takes 101.0 s wall with a 4.55 GB peak RSS. On the same machine,
-upstream con-leche (`ae0c0c4e`, Lean 4.33.0) takes 88.0 s of install plus
-check at one worker (90.2 s wall) on a lean4export of the same Init+Std.
+| Load | Wall | Peak RSS | Check (summed over accepts) | Reading |
+| --- | ---: | ---: | ---: | ---: |
+| streaming (default) | 1 min 32.7 s | 1.53 GB | 76.1 s | 7.0 s |
+| `--load eager` | 1 min 38.7 s | 3.93 GB | 75.4 s | 3.6 s |
+
+On the same machine, upstream con-leche (`ae0c0c4e`, Lean 4.33.0) takes
+88.0 s of install plus check at one worker (90.2 s wall) on a lean4export of
+the same Init+Std.
 
 Mathlib (`mathlib.ixe`, 672,938 constants): 669,032 accepted, 3,906
 declined (3,314 `partial` and 561 `unsafe` definitions, 15 unsafe opaques,
 6 unsafe axioms, 5 unsafe inductive blocks with their recursors), 0
-rejected, 0 blocked. Measured with the earlier driver, which loaded eagerly
-(as `--load eager` does): load 147.8 s, check 875.0 s summed over accepted constants, reading 41.5 s;
-19 min 38 s wall at one core; the driver holds the decoded environment, so
-the peak RSS is 47.3 GB. On the same machine,
-upstream con-leche (`3ca9e2fe`, `--verified --jobs=1`) takes 17.8 min and
-9.6 GB on a lean4export of Mathlib.
+rejected, 0 blocked, with the same rows in every mode below.
 
-The streaming load and the pool, measured with the earlier prototype of
-these modes (the same reader, verified check, load and phases) on the same
-machine (AWS r8i.16xlarge, Xeon 6975P-C, one process at a time on an idle
-machine): the streaming load (the default now) gives the same rows in
-19 min 43 s at one core with a 20.2 GB peak, about 85 s less loading and as
-much more reading, since a record is decoded at its turn. The two phases
-(`--jobs <n>`; the prototype kept the `.ixe`'s buffer resident) install in a
-sequential phase A (234 s after a 60 s load, then 10 s of marking) and check
-the 659,344 recorded checks in phase B, with 0 failures:
+| Load | Wall | Peak RSS | Load phase | Check (summed over accepts) | Reading |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| streaming (default) | 18 min 3.4 s | 15.2 GB | 61.2 s | 896.7 s | 86.2 s |
+| `--load eager` | 18 min 56.6 s | 38.8 GB | 198.0 s | 850.8 s | 39.7 s |
 
-| Workers | Phase B | Speed-up | Wall | Peak RSS |
-| ---: | ---: | ---: | ---: | ---: |
-| 1 | 997.9 s | 1.00× | 21 min 49 s | 22.3 GB |
-| 4 | 253.3 s | 3.94× | 9 min 24 s | 22.3 GB |
-| 8 | 127.1 s | 7.85× | 7 min 18 s | 22.3 GB |
-| 16 | 64.1 s | 15.6× | 6 min 15 s | 22.3 GB |
-| 32 | 34.0 s | 29.4× | 5 min 45 s | 22.3 GB |
+The eager load holds the decoded environment; the streaming load decodes a
+record at its turn (its reading time includes the decoding) and drops its
+bytes once read. On the same machine, upstream con-leche (`3ca9e2fe`,
+`--verified --jobs=1`) takes 17.8 min and 9.6 GB on a lean4export of
+Mathlib.
 
-At one worker the two phases are slower than the per-record check, and the
-sequential part (load, phase A, marking: about 310 s) bounds the wall time.
-The prototype wrote no rows in this mode; `--jobs` now writes the per-record
-rows after phase B, which adds a pass over the order without reading or
-checking.
+`--jobs <n>` on Mathlib (streaming load; pinned to cores 8-9, 8-12, 8-16,
+8-24 and 0-31 for 1, 4, 8, 16 and 32 workers): phase A installs every record
+and records 659,344 checks, and phase B checks them on the workers, with 0
+failures:
+
+| Workers | Phase B | Phase B speed-up | Wall | Wall speed-up | Peak RSS |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 943.1 s | 1.00× | 20 min 10.0 s | 1.00× | 15.5 GB |
+| 4 | 242.4 s | 3.89× | 8 min 28.2 s | 2.38× | 15.5 GB |
+| 8 | 122.1 s | 7.72× | 6 min 28.7 s | 3.11× | 15.6 GB |
+| 16 | 61.2 s | 15.4× | 5 min 27.7 s | 3.69× | 15.6 GB |
+| 32 | 32.6 s | 28.9× | 4 min 59.2 s | 4.05× | 16.0 GB |
+
+Phase B's time summed over the workers grows from 942.3 s at one worker to
+987.6 s at 32. The sequential part bounds the wall time: the load (61 s),
+phase A's install (177–179 s, ending about 241 s after the start), marking
+the installed environment persistent (7.8 s), and the rows pass after phase
+B (about 17 s), about 266 s in all. At one worker the two phases are slower
+than the per-record check.
 
 The certified entry `Ix.Kernel.Admission.checkBytes` is sequential.
