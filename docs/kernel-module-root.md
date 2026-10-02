@@ -246,6 +246,16 @@ Two points are deliberate:
   removed by this change.
 - The profile-flag plumbing (`require ... with` and `moreLeancArgs`).
 
+## Migrating a local checkout
+
+A checkout that built the intermediate layout (the root requiring
+`ix-kernel` before this move) still holds the old `Ix/` olean tree under
+`.lake/kernel/lib/lean/` and `.lake/kernel/ir/`. Lean's module loader takes
+the first search-path entry whose root directory exists, and the dependency's
+entries precede the root's, so that stale `Ix/` directory shadows every
+`Ix.*` module at runtime (`lake test` fails loading `Ix.Common`). Delete
+`.lake/kernel` once after switching; a fresh checkout and CI never see it.
+
 ## Cost and timing
 
 Roughly a day of scripted work plus one full kernel rebuild to verify. It is a
