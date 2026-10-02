@@ -45,6 +45,11 @@ v4 codec laws of `Ixon.Verify.Codec` and the TagN bijection of
   and root of `canonicalSharingTiered` is wire-safe and the reported length
   is the serialized length.
 
+`Ix.Sharing.Verify.Builder` (not imported here, since it imports the compiler
+`Ix.CompileM`) applies the format theorem to the compiler's sharing builder
+`Ix.CompileM.buildConstantWithSharing`: every block it builds is in the
+constant codec's wire domain.
+
 The `@[csimp]` theorems in `Ix.Sharing.Exact` make compiled code run fast
 bodies in place of these specifications. The audits under
 `Ix.Sharing.Verify.Audit` fix every root's axioms, require each such csimp
