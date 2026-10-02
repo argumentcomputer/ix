@@ -424,7 +424,7 @@ structure Limits where
   /-- Uniform width: search each component by plain subset enumeration
   instead of the reclassifying branch and bound. A test oracle, not the
   compiler path (off by default; the optimality theorems of
-  `Ix.Compile.Verify.UniformOptimality` assume it is off). The result must
+  `Ix.Sharing.Verify.UniformOptimality` assume it is off). The result must
   not change. -/
   uniformSubsetSearch : Bool := false
   deriving Repr, Inhabited

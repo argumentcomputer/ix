@@ -3,8 +3,8 @@
 
   * `ingestTable` expands an existing sharing table and its roots into a
     hash-consed DAG without materializing the occurrence tree. Entry `i` may
-    refer only to entries `< i` (the backward-reference class of
-    `Ix.Compile.Verify.ExprTableWF`); forward/self references, out-of-range
+    refer only to entries `< i` (the backward-reference rule the Ixon
+    decoders check); forward/self references, out-of-range
     indices, excessive depth and excessive work are reported as errors.
   * `canonicalize` keeps the subterms reachable from the roots and assigns
     the §3.2 structural IDs: increasing height, then the
